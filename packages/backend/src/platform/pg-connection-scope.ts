@@ -1,12 +1,14 @@
 import {
-	createMaplePgPool,
 	type MapleDb,
-	type MaplePgPool,
-	type MaplePgPoolOptions,
+	type MaplePgClient,
+	type MaplePgClientOptions,
 	makeMapleEffectDb,
+	makeMaplePgClient,
 } from "@maple/db/client"
 import { trackOutboundSlot } from "@maple/cache"
 import { Context, Effect, Exit, Option, Schema, Scope, Semaphore } from "effect"
+import type * as Reactivity from "effect/unstable/reactivity/Reactivity"
+import type { SqlError } from "effect/unstable/sql/SqlError"
 import { MapleDbConnection } from "./bindings"
 import {
 	type DatabaseError,
@@ -111,14 +113,16 @@ const CLOSED_MESSAGE =
 	"Postgres connection scope is already closed — this call outlived the request, cron tick or Workflow run that owned the connection"
 
 /**
- * Test seam: how to create the scope's pool. Real callers pass nothing.
+ * Test seam: how to open the scope's client. Real callers pass nothing.
  *
  * It receives the options the real factory would have been given, so a test can
  * assert the pool ceiling and the dial bound without dialing anything. Both
  * have regressed in production before.
  */
 export interface PgConnectionScopeSeams {
-	readonly openPool?: (options: MaplePgPoolOptions) => MaplePgPool
+	readonly openClient?: (
+		options: MaplePgClientOptions,
+	) => Effect.Effect<MaplePgClient, SqlError, Scope.Scope | Reactivity.Reactivity>
 }
 
 /**
@@ -139,12 +143,12 @@ export const makePgConnectionScope = (
 	extraAttributes?: Record<string, unknown>,
 	seams?: PgConnectionScopeSeams,
 ): PgConnectionScopeApi => {
-	const options: MaplePgPoolOptions = {
+	const options: MaplePgClientOptions = {
 		maxConnections: MAX_CONNECTIONS,
 		connectTimeoutSeconds: CONNECT_TIMEOUT_SECONDS,
 	}
-	const openPool =
-		seams?.openPool ?? ((opts: MaplePgPoolOptions) => createMaplePgPool(connectionString, opts))
+	const openClient =
+		seams?.openClient ?? ((opts: MaplePgClientOptions) => makeMaplePgClient(connectionString, opts))
 
 	// Three states, not a nullable handle. Cold and Closed both used to be
 	// `undefined`, which made "never dialed" and "already released" the same
@@ -163,11 +167,9 @@ export const makePgConnectionScope = (
 	const gate = Semaphore.makeUnsafe(1)
 	const closedFailure = () => toDatabaseError(new PgConnectionScopeClosedError({ message: CLOSED_MESSAGE }))
 
-	// Never let a pool-teardown error shadow the real DB error from the call.
-	const acquirePool = Effect.acquireRelease(
-		Effect.sync(() => openPool(options)),
-		(pool) => Effect.promise(() => pool.end().catch(() => undefined)),
-	)
+	// The client is scoped: it registers its own close on the scope below, and a
+	// teardown error there never shadows the real DB error from the call.
+	const acquireClient = Effect.suspend(() => openClient(options))
 
 	// Lazy: an invocation that never touches the database never creates one.
 	const open: Effect.Effect<MapleDb, DatabaseError> = gate.withPermits(1)(
@@ -179,7 +181,7 @@ export const makePgConnectionScope = (
 			return Effect.uninterruptible(
 				Effect.gen(function* () {
 					const scope = yield* Scope.make()
-					const db = yield* makeMapleEffectDb(acquirePool).pipe(
+					const db = yield* makeMapleEffectDb(acquireClient).pipe(
 						Scope.provide(scope),
 						Effect.mapError(toDatabaseError),
 						Effect.onError(() => Scope.close(scope, Exit.void)),

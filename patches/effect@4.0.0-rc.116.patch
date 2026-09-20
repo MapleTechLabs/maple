@@ -16,10 +16,10 @@ index b71c514f6c36983a6fb94a663e9ff878d58a3c1b..6192bdac6f761aef3c8e1ed2f3b4747f
  export const value = self => {
    if (redactedRegistry.has(self)) {
 diff --git a/dist/unstable/ai/LanguageModel.js b/dist/unstable/ai/LanguageModel.js
-index b1a664b645baa85f19904e2f2f7d5538b39d79ea..f1080868d6410b26b83621ca035df46319ab37e1 100644
+index e2f77b2c4104355f487259f3a5798a0716628160..7ed73ef178c53282e38243e47a4c78c230065429 100644
 --- a/dist/unstable/ai/LanguageModel.js
 +++ b/dist/unstable/ai/LanguageModel.js
-@@ -339,16 +339,19 @@ export const make = /*#__PURE__*/Effect.fnUntraced(function* (params) {
+@@ -338,16 +338,19 @@ export const make = /*#__PURE__*/Effect.fnUntraced(function* (params) {
        previousResponseId: undefined,
        incrementalPrompt: undefined
      };
@@ -43,18 +43,18 @@ index b1a664b645baa85f19904e2f2f7d5538b39d79ea..f1080868d6410b26b83621ca035df463
      return stream.pipe(Stream.mapArray(parts => {
        content.push(...parts);
        return parts;
-@@ -524,7 +527,7 @@ export const make = /*#__PURE__*/Effect.fnUntraced(function* (params) {
-     // Return the content merged with the tool call results
-     return [...content, ...toolResults];
+@@ -525,7 +528,7 @@ export const make = /*#__PURE__*/Effect.fnUntraced(function* (params) {
+     // Retain pre-resolved results so Chat can recognize completed approvals on later turns.
+     return [...preResolvedResults, ...content, ...toolResults];
    });
 -  const streamContent = Effect.fnUntraced(function* (options, providerOptions) {
 +  const streamContent = Effect.fnUntraced(function* (options, providerOptions, undelivered) {
      const tracker = Option.getOrUndefined(yield* Effect.serviceOption(ResponseIdTracker.ResponseIdTracker));
      const toolChoice = options.toolChoice ?? "auto";
      const concurrency = options.concurrency ?? "unbounded";
-@@ -542,6 +545,43 @@ export const make = /*#__PURE__*/Effect.fnUntraced(function* (params) {
-       };
-       return requestOptions.incrementalPrompt ? params.streamText(requestOptions).pipe(Stream.catchReason("AiError", "InvalidRequestError", _ => params.streamText(fallbackOptions))) : params.streamText(requestOptions);
+@@ -548,6 +551,43 @@ export const make = /*#__PURE__*/Effect.fnUntraced(function* (params) {
+         if (part.type !== "response-metadata") emitted = true;
+       })), Stream.catchReason("AiError", "InvalidRequestError", (_, error) => emitted ? Stream.fail(error) : params.streamText(fallbackOptions))) : params.streamText(requestOptions);
      };
 +    // Patched (maple): a chunk the response schema rejects fails the stream
 +    // only once the provider's stream has been read to its end.
@@ -96,7 +96,7 @@ index b1a664b645baa85f19904e2f2f7d5538b39d79ea..f1080868d6410b26b83621ca035df463
      // Check for pending approvals that need resolution
      const {
        approved: pendingApproved,
-@@ -571,14 +611,7 @@ export const make = /*#__PURE__*/Effect.fnUntraced(function* (params) {
+@@ -577,14 +617,7 @@ export const make = /*#__PURE__*/Effect.fnUntraced(function* (params) {
        }
        const schema = Schema.NonEmptyArray(Response.StreamPart(Toolkit.empty));
        const decodeParts = Schema.decodeEffect(schema);
@@ -112,7 +112,7 @@ index b1a664b645baa85f19904e2f2f7d5538b39d79ea..f1080868d6410b26b83621ca035df463
      }
      // If there is a toolkit resolve and apply it to the provider options
      const toolkit = yield* resolveToolkit(options.toolkit);
-@@ -603,14 +636,7 @@ export const make = /*#__PURE__*/Effect.fnUntraced(function* (params) {
+@@ -609,14 +642,7 @@ export const make = /*#__PURE__*/Effect.fnUntraced(function* (params) {
        }
        const schema = Schema.NonEmptyArray(Response.StreamPart(Toolkit.empty));
        const decodeParts = Schema.decodeEffect(schema);
@@ -128,7 +128,7 @@ index b1a664b645baa85f19904e2f2f7d5538b39d79ea..f1080868d6410b26b83621ca035df463
      }
      // Pre-resolve pending tool approvals before calling the LLM
      let preResolvedStreamParts = [];
-@@ -678,14 +704,7 @@ export const make = /*#__PURE__*/Effect.fnUntraced(function* (params) {
+@@ -679,14 +705,7 @@ export const make = /*#__PURE__*/Effect.fnUntraced(function* (params) {
      // If tool call resolution is disabled, return the response without
      // resolving the tool calls that were generated
      if (options.disableToolCallResolution === true) {
@@ -145,16 +145,18 @@ index b1a664b645baa85f19904e2f2f7d5538b39d79ea..f1080868d6410b26b83621ca035df463
      // Queue for decoded parts and tool results
      const queue = yield* Queue.make();
 diff --git a/dist/unstable/httpapi/HttpApiBuilder.js b/dist/unstable/httpapi/HttpApiBuilder.js
-index 6ef6f4b25b9ae549ed9d983386b2c5df8a3c82a7..d0d9e9f772a1f5534e27f8453aea9ce762e4042b 100644
+index 0e2a1b906f0ff3a065489cd9489f543490a29938..98ce2bccbc8d4a75a312ed56366a52bc0e2fcbca 100644
 --- a/dist/unstable/httpapi/HttpApiBuilder.js
 +++ b/dist/unstable/httpapi/HttpApiBuilder.js
-@@ -347,7 +347,8 @@ function handlerToHttpEffect(group, endpoint, context, handler, isRaw) {
+@@ -365,7 +365,10 @@ function handlerToHttpEffect(api, group, endpoint, context, handler, isRaw) {
  /** @internal */
- export function handlerToRoute(group, handler, context) {
+ export function handlerToRoute(api, group, handler, context) {
    const endpoint = handler.endpoint;
--  return HttpRouter.route(endpoint.method, endpoint.path, handlerToHttpEffect(group, endpoint, context, handler.handler, handler.isRaw), {
+-  return HttpRouter.route(endpoint.method, HttpApiPath.toRouterPath(endpoint.path, endpoint.params), handlerToHttpEffect(api, group, endpoint, context, handler.handler, handler.isRaw), {
++  // Patched (maple): build the handler Effect on first request, not while the
++  // router graph is built, so a Worker's cold start does not pay for every route.
 +  let httpEffect;
-+  return HttpRouter.route(endpoint.method, endpoint.path, Effect.suspend(() => httpEffect ??= handlerToHttpEffect(group, endpoint, context, handler.handler, handler.isRaw)), {
++  return HttpRouter.route(endpoint.method, HttpApiPath.toRouterPath(endpoint.path, endpoint.params), Effect.suspend(() => httpEffect ??= handlerToHttpEffect(api, group, endpoint, context, handler.handler, handler.isRaw)), {
      uninterruptible: handler.uninterruptible
    });
  }

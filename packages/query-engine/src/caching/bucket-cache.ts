@@ -404,10 +404,10 @@ export interface BucketCacheServiceApi {
 	) => Effect.Effect<BucketCacheOutcome, E, R>
 }
 
-const enabledConfig = Config.boolean("QE_BUCKET_CACHE_ENABLED").pipe(Config.withDefault(true))
-const ttlSecondsConfig = Config.number("QE_BUCKET_CACHE_TTL_SECONDS").pipe(Config.withDefault(86400))
-const fluxSecondsConfig = Config.number("QE_BUCKET_CACHE_FLUX_SECONDS").pipe(Config.withDefault(60))
-const segmentBucketsConfig = Config.number("QE_BUCKET_CACHE_SEGMENT_BUCKETS").pipe(Config.withDefault(120))
+const enabledConfig = Config.Boolean("QE_BUCKET_CACHE_ENABLED").pipe(Config.withDefault(true))
+const ttlSecondsConfig = Config.Number("QE_BUCKET_CACHE_TTL_SECONDS").pipe(Config.withDefault(86400))
+const fluxSecondsConfig = Config.Number("QE_BUCKET_CACHE_FLUX_SECONDS").pipe(Config.withDefault(60))
+const segmentBucketsConfig = Config.Number("QE_BUCKET_CACHE_SEGMENT_BUCKETS").pipe(Config.withDefault(120))
 // A validated query contains at most 1,500 points, so 120-bucket segments
 // produce at most 13 reads. In practice 98% of prod requests read one or two
 // segments (measured 2026-08-04: 1 segment 70.2%, 2 segments 27.8%), so this
@@ -425,12 +425,12 @@ const segmentBucketsConfig = Config.number("QE_BUCKET_CACHE_SEGMENT_BUCKETS").pi
 // issued at concurrency 16 are still 13 simultaneous `cache.match()` calls. Six
 // is the ceiling that keeps every read in a connection slot instead of queueing
 // behind its own siblings and being abandoned at `EDGE_CACHE_READ_TIMEOUT_MS`.
-const readConcurrencyConfig = Config.number("QE_BUCKET_CACHE_READ_CONCURRENCY").pipe(Config.withDefault(6))
+const readConcurrencyConfig = Config.Number("QE_BUCKET_CACHE_READ_CONCURRENCY").pipe(Config.withDefault(6))
 // Cap how many missing sub-ranges fan out to the warehouse per cache miss. A
 // single cold dashboard request only ever splits into a few ranges, but
 // "unbounded" let a burst of concurrent misses multiply into a warehouse
 // stampede (the mechanism behind the eval-bucket-cache regression). Bound it.
-const fillConcurrencyConfig = Config.number("QE_BUCKET_CACHE_FILL_CONCURRENCY").pipe(Config.withDefault(4))
+const fillConcurrencyConfig = Config.Number("QE_BUCKET_CACHE_FILL_CONCURRENCY").pipe(Config.withDefault(4))
 
 export class BucketCacheService extends Context.Service<BucketCacheService, BucketCacheServiceApi>()(
 	"@maple/api/lib/BucketCacheService",

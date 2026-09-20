@@ -100,9 +100,9 @@ const stripTrailingSlash = (s: string) => s.replace(/\/+$/, "")
 
 export class BenchConfig extends Context.Service<BenchConfig, BenchConfigValues>()("bench/BenchConfig", {
 	make: Effect.gen(function* () {
-		const tbHost = yield* Config.option(Config.string("TINYBIRD_HOST"))
-		const tbToken = yield* Config.option(Config.redacted("TINYBIRD_TOKEN"))
-		const internalOrgId = yield* Config.string("MAPLE_INTERNAL_ORG_ID").pipe(
+		const tbHost = yield* Config.option(Config.String("TINYBIRD_HOST"))
+		const tbToken = yield* Config.option(Config.Redacted("TINYBIRD_TOKEN"))
+		const internalOrgId = yield* Config.String("MAPLE_INTERNAL_ORG_ID").pipe(
 			Config.withDefault("internal"),
 		)
 
@@ -435,36 +435,36 @@ const catalogHandler = Effect.fn("bench.catalog")(function* (config: {
 const fetchCommand = Command.make(
 	"fetch",
 	{
-		context: Flag.string("context").pipe(
+		context: Flag.String("context").pipe(
 			Flag.withDescription("Filter by query.context label"),
 			Flag.optional,
 		),
-		profile: Flag.string("profile").pipe(Flag.withDescription("Filter by query.profile"), Flag.optional),
-		since: Flag.string("since").pipe(
+		profile: Flag.String("profile").pipe(Flag.withDescription("Filter by query.profile"), Flag.optional),
+		since: Flag.String("since").pipe(
 			Flag.withDescription("Look-back window, e.g. 24h or 7d"),
 			Flag.withDefault("24h"),
 		),
-		top: Flag.integer("top").pipe(
+		top: Flag.Int("top").pipe(
 			Flag.withDescription("Number of fingerprints to keep"),
 			Flag.withDefault(20),
 		),
-		out: Flag.string("out").pipe(Flag.withDescription("Output JSON path"), Flag.optional),
-		org: Flag.string("org").pipe(Flag.withDescription("Source org (default: internal)"), Flag.optional),
+		out: Flag.String("out").pipe(Flag.withDescription("Output JSON path"), Flag.optional),
+		org: Flag.String("org").pipe(Flag.withDescription("Source org (default: internal)"), Flag.optional),
 	},
 	fetchHandler,
 ).pipe(Command.withDescription("Mine recent db.query.text spans from production traces into a JSON file"))
 
-const matchFlag = Flag.string("match").pipe(
+const matchFlag = Flag.String("match").pipe(
 	Flag.withDescription("Case ID/context substring filter"),
 	Flag.optional,
 )
-const outFlag = Flag.string("out").pipe(Flag.withDescription("Output JSON path"), Flag.optional)
+const outFlag = Flag.String("out").pipe(Flag.withDescription("Output JSON path"), Flag.optional)
 const catalogCommand = Command.make(
 	"catalog",
 	{
 		match: matchFlag,
 		out: outFlag,
-		suite: Flag.string("suite").pipe(
+		suite: Flag.String("suite").pipe(
 			Flag.withDescription("TS module exporting a benchmark suite (default export)"),
 			Flag.optional,
 		),

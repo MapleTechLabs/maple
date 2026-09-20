@@ -1,7 +1,7 @@
 import { assert, describe, it } from "@effect/vitest"
 import { Effect, Fiber } from "effect"
 import { forkRequestScoped } from "./fork-request-scoped"
-import { createMaplePgPool } from "@maple/db/client"
+import { makeMaplePgClient } from "@maple/db/client"
 import {
 	makePgConnectionScope,
 	PgConnectionScope,
@@ -47,7 +47,7 @@ describe("forkRequestScoped", () => {
 		Effect.gen(function* () {
 			let finished = false
 			const scope: PgConnectionScopeApi = makePgConnectionScope("postgres://unused", undefined, {
-				openPool: (options) => createMaplePgPool("postgres://maple:maple@127.0.0.1:1/never", options),
+				openClient: (options) => makeMaplePgClient("postgres://maple:maple@127.0.0.1:1/never", options),
 			})
 
 			yield* withPgConnectionScopeOf(

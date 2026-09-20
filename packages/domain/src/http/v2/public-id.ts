@@ -181,7 +181,7 @@ export const PublicId = <S extends Schema.Codec<any, string>>(prefix: PublicIdPr
 		})
 			.pipe(
 				Schema.decodeTo(Schema.String, {
-					decode: SchemaGetter.transformOrFail((publicId: string) => {
+					decode: SchemaGetter.transformEffect((publicId: string) => {
 						const internalId = decodePublicId(prefix, publicId)
 						return internalId === null
 							? Effect.fail(
