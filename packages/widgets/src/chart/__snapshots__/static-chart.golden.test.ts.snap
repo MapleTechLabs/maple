@@ -1,0 +1,99 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`a chart out of a reply > draws several series 1`] = `
+"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 280" width="720" height="280">
+<rect x="0.5" y="0.5" width="719" height="279" rx="8" fill="#1e1b17" stroke="#2a2520"/>
+<line x1="12" y1="268" x2="708" y2="268" stroke="#2a2520" stroke-width="1"/>
+<line x1="12" y1="204" x2="708" y2="204" stroke="#2a2520" stroke-opacity="0.5" stroke-width="1"/>
+<line x1="12" y1="140" x2="708" y2="140" stroke="#2a2520" stroke-opacity="0.5" stroke-width="1"/>
+<line x1="12" y1="76" x2="708" y2="76" stroke="#2a2520" stroke-opacity="0.5" stroke-width="1"/>
+<line x1="12" y1="12" x2="708" y2="12" stroke="#2a2520" stroke-opacity="0.5" stroke-width="1"/>
+<path d="M 12.0 177.1 L 244.0 152.8 L 476.0 101.6 L 708.0 19.7" fill="none" stroke="#e8872a" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+<circle cx="708.0" cy="19.7" r="4" fill="#e8872a" stroke="#1e1b17" stroke-width="2"/>
+<path d="M 12.0 207.2 L 244.0 191.2 L 476.0 200.8 L 708.0 205.3" fill="none" stroke="#4a9eff" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+<circle cx="708.0" cy="205.3" r="4" fill="#4a9eff" stroke="#1e1b17" stroke-width="2"/>
+<path d="M 12.0 229.0 L 244.0 230.9 L 476.0 227.0 L 708.0 223.2" fill="none" stroke="#49a866" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+<circle cx="708.0" cy="223.2" r="4" fill="#49a866" stroke="#1e1b17" stroke-width="2"/>
+</svg>"
+`;
+
+exports[`the alert chart, which is already in delivered notifications > draws a downward breach band as it did before 1`] = `
+"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 280" width="720" height="280">
+<rect x="0.5" y="0.5" width="719" height="279" rx="8" fill="#1e1b17" stroke="#2a2520"/>
+<line x1="12" y1="268" x2="708" y2="268" stroke="#2a2520" stroke-width="1"/>
+<line x1="12" y1="204" x2="708" y2="204" stroke="#2a2520" stroke-opacity="0.5" stroke-width="1"/>
+<line x1="12" y1="140" x2="708" y2="140" stroke="#2a2520" stroke-opacity="0.5" stroke-width="1"/>
+<line x1="12" y1="76" x2="708" y2="76" stroke="#2a2520" stroke-opacity="0.5" stroke-width="1"/>
+<line x1="12" y1="12" x2="708" y2="12" stroke="#2a2520" stroke-opacity="0.5" stroke-width="1"/>
+<rect x="12" y="140.0" width="696" height="128.0" fill="#ef2e43" fill-opacity="0.06"/>
+<path d="M 12.0 216.8 L 151.2 191.2 L 290.4 114.4 L 429.6 18.4 L 568.8 197.6 L 708.0 229.6" fill="none" stroke="#ef2e43" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+<circle cx="708.0" cy="229.6" r="4" fill="#ef2e43" stroke="#1e1b17" stroke-width="2"/>
+<line x1="12" y1="140.0" x2="708" y2="140.0" stroke="#ef2e43" stroke-width="1.5" stroke-dasharray="6 4"/>
+</svg>"
+`;
+
+exports[`the alert chart, which is already in delivered notifications > draws area exactly as it did before the renderers merged 1`] = `
+"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 280" width="720" height="280">
+<rect x="0.5" y="0.5" width="719" height="279" rx="8" fill="#1e1b17" stroke="#2a2520"/>
+<defs><linearGradient id="areaFill" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stop-color="#ef2e43" stop-opacity="0.8"/><stop offset="95%" stop-color="#ef2e43" stop-opacity="0.1"/></linearGradient></defs>
+<line x1="12" y1="268" x2="708" y2="268" stroke="#2a2520" stroke-width="1"/>
+<line x1="12" y1="204" x2="708" y2="204" stroke="#2a2520" stroke-opacity="0.5" stroke-width="1"/>
+<line x1="12" y1="140" x2="708" y2="140" stroke="#2a2520" stroke-opacity="0.5" stroke-width="1"/>
+<line x1="12" y1="76" x2="708" y2="76" stroke="#2a2520" stroke-opacity="0.5" stroke-width="1"/>
+<line x1="12" y1="12" x2="708" y2="12" stroke="#2a2520" stroke-opacity="0.5" stroke-width="1"/>
+<rect x="12" y="12.0" width="696" height="128.0" fill="#ef2e43" fill-opacity="0.06"/>
+<path d="M 12.0 216.8 L 151.2 191.2 L 290.4 114.4 L 429.6 18.4 L 568.8 197.6 L 708.0 229.6 L 708.0 268.0 L 12.0 268.0 Z" fill="url(#areaFill)"/>
+<path d="M 12.0 216.8 L 151.2 191.2 L 290.4 114.4 L 429.6 18.4 L 568.8 197.6 L 708.0 229.6" fill="none" stroke="#ef2e43" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+<circle cx="708.0" cy="229.6" r="4" fill="#ef2e43" stroke="#1e1b17" stroke-width="2"/>
+<line x1="12" y1="140.0" x2="708" y2="140.0" stroke="#ef2e43" stroke-width="1.5" stroke-dasharray="6 4"/>
+</svg>"
+`;
+
+exports[`the alert chart, which is already in delivered notifications > draws bar exactly as it did before the renderers merged 1`] = `
+"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 280" width="720" height="280">
+<rect x="0.5" y="0.5" width="719" height="279" rx="8" fill="#1e1b17" stroke="#2a2520"/>
+<line x1="12" y1="268" x2="708" y2="268" stroke="#2a2520" stroke-width="1"/>
+<line x1="12" y1="204" x2="708" y2="204" stroke="#2a2520" stroke-opacity="0.5" stroke-width="1"/>
+<line x1="12" y1="140" x2="708" y2="140" stroke="#2a2520" stroke-opacity="0.5" stroke-width="1"/>
+<line x1="12" y1="76" x2="708" y2="76" stroke="#2a2520" stroke-opacity="0.5" stroke-width="1"/>
+<line x1="12" y1="12" x2="708" y2="12" stroke="#2a2520" stroke-opacity="0.5" stroke-width="1"/>
+<rect x="12" y="12.0" width="696" height="128.0" fill="#ef2e43" fill-opacity="0.06"/>
+<path d="M 50.0 268.0 V 220.8 Q 50.0 216.8 54.0 216.8 H 86.0 Q 90.0 216.8 90.0 220.8 V 268.0 Z" fill="#ef2e43"/>
+<path d="M 166.0 268.0 V 195.2 Q 166.0 191.2 170.0 191.2 H 202.0 Q 206.0 191.2 206.0 195.2 V 268.0 Z" fill="#ef2e43"/>
+<path d="M 282.0 268.0 V 118.4 Q 282.0 114.4 286.0 114.4 H 318.0 Q 322.0 114.4 322.0 118.4 V 268.0 Z" fill="#ef2e43"/>
+<path d="M 398.0 268.0 V 22.4 Q 398.0 18.4 402.0 18.4 H 434.0 Q 438.0 18.4 438.0 22.4 V 268.0 Z" fill="#ef2e43"/>
+<path d="M 514.0 268.0 V 201.6 Q 514.0 197.6 518.0 197.6 H 550.0 Q 554.0 197.6 554.0 201.6 V 268.0 Z" fill="#ef2e43"/>
+<path d="M 630.0 268.0 V 233.6 Q 630.0 229.6 634.0 229.6 H 666.0 Q 670.0 229.6 670.0 233.6 V 268.0 Z" fill="#ef2e43"/>
+<line x1="12" y1="140.0" x2="708" y2="140.0" stroke="#ef2e43" stroke-width="1.5" stroke-dasharray="6 4"/>
+</svg>"
+`;
+
+exports[`the alert chart, which is already in delivered notifications > draws line exactly as it did before the renderers merged 1`] = `
+"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 280" width="720" height="280">
+<rect x="0.5" y="0.5" width="719" height="279" rx="8" fill="#1e1b17" stroke="#2a2520"/>
+<line x1="12" y1="268" x2="708" y2="268" stroke="#2a2520" stroke-width="1"/>
+<line x1="12" y1="204" x2="708" y2="204" stroke="#2a2520" stroke-opacity="0.5" stroke-width="1"/>
+<line x1="12" y1="140" x2="708" y2="140" stroke="#2a2520" stroke-opacity="0.5" stroke-width="1"/>
+<line x1="12" y1="76" x2="708" y2="76" stroke="#2a2520" stroke-opacity="0.5" stroke-width="1"/>
+<line x1="12" y1="12" x2="708" y2="12" stroke="#2a2520" stroke-opacity="0.5" stroke-width="1"/>
+<rect x="12" y="12.0" width="696" height="128.0" fill="#ef2e43" fill-opacity="0.06"/>
+<path d="M 12.0 216.8 L 151.2 191.2 L 290.4 114.4 L 429.6 18.4 L 568.8 197.6 L 708.0 229.6" fill="none" stroke="#ef2e43" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+<circle cx="708.0" cy="229.6" r="4" fill="#ef2e43" stroke="#1e1b17" stroke-width="2"/>
+<line x1="12" y1="140.0" x2="708" y2="140.0" stroke="#ef2e43" stroke-width="1.5" stroke-dasharray="6 4"/>
+</svg>"
+`;
+
+exports[`the alert chart, which is already in delivered notifications > draws no rule and no band when the rule has no threshold 1`] = `
+"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 280" width="720" height="280">
+<rect x="0.5" y="0.5" width="719" height="279" rx="8" fill="#1e1b17" stroke="#2a2520"/>
+<defs><linearGradient id="areaFill" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stop-color="#ef2e43" stop-opacity="0.8"/><stop offset="95%" stop-color="#ef2e43" stop-opacity="0.1"/></linearGradient></defs>
+<line x1="12" y1="268" x2="708" y2="268" stroke="#2a2520" stroke-width="1"/>
+<line x1="12" y1="204" x2="708" y2="204" stroke="#2a2520" stroke-opacity="0.5" stroke-width="1"/>
+<line x1="12" y1="140" x2="708" y2="140" stroke="#2a2520" stroke-opacity="0.5" stroke-width="1"/>
+<line x1="12" y1="76" x2="708" y2="76" stroke="#2a2520" stroke-opacity="0.5" stroke-width="1"/>
+<line x1="12" y1="12" x2="708" y2="12" stroke="#2a2520" stroke-opacity="0.5" stroke-width="1"/>
+<path d="M 12.0 216.8 L 151.2 191.2 L 290.4 114.4 L 429.6 18.4 L 568.8 197.6 L 708.0 229.6 L 708.0 268.0 L 12.0 268.0 Z" fill="url(#areaFill)"/>
+<path d="M 12.0 216.8 L 151.2 191.2 L 290.4 114.4 L 429.6 18.4 L 568.8 197.6 L 708.0 229.6" fill="none" stroke="#ef2e43" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+<circle cx="708.0" cy="229.6" r="4" fill="#ef2e43" stroke="#1e1b17" stroke-width="2"/>
+</svg>"
+`;
