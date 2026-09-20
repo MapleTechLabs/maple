@@ -1,6 +1,6 @@
 import { HttpApiEndpoint, HttpApiGroup } from "effect/unstable/httpapi"
 import { Schema } from "effect"
-import { AlertChartPoint, AlertChartUnit } from "./alerts"
+import { AlertChartUnit } from "./alerts"
 import { SessionAuthorization } from "./current-tenant"
 
 /**
