@@ -65,6 +65,11 @@ const INDENT = "flex w-6 shrink-0 justify-center"
 /** Past this the prose column is narrower than the gutters framing it, and a
  *  deeper lane says nothing the lane header did not. Matches the waterfall. */
 const MAX_INDENT_DEPTH = 6
+/** The whole transcript, centred on the page: the clock gutter (88), two lanes
+ *  of nesting (48), the body's own left padding (16) and the prose column (900)
+ *  — what a typical row actually wants. Without it the column pins to the left
+ *  edge and a wide window is all empty space to its right. */
+const COLUMN = "mx-auto w-full max-w-[1052px]"
 
 /** A raw attribute value in a pill: upper-casing a wire string reads as shouting. */
 const WIRE_PILL = "font-mono text-[11px] normal-case tracking-normal"
@@ -192,7 +197,7 @@ export function SessionTranscript({
 		// The padding sits OUTSIDE the measured element: the virtualizer positions
 		// rows against this list's own top edge, and padding on it would offset
 		// every row by its height.
-		<div className="pt-2">
+		<div className={cn(COLUMN, "pt-2")}>
 			<div ref={listRef}>
 				{/* The virtualizer writes each row's offset — `start` less the margin,
 				    back in this list's own coordinates — and this container's height
