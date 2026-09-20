@@ -182,12 +182,22 @@ export const normalizeTriageSubmission = (
 			? (submission.confidence as "high" | "medium" | "low")
 			: (filled.push("confidence"), "low" as const)
 
-	const evidence = (submission.evidence ?? []).map((entry) => ({
-		traceIds: entry.traceIds ?? [],
-		logPatterns: entry.logPatterns ?? [],
-		relatedServices: entry.relatedServices ?? [],
-		note: entry.note ?? "",
-	}))
+	// Indexed paths, because `evidence[0].logPatterns` is one of the four keys prod actually saw
+	// missing. Recording the entry as present while silently completing the arrays inside it would
+	// hide the omission this list exists to measure.
+	const evidence = (submission.evidence ?? []).map((entry, index) => {
+		const supplied = <A>(value: A | undefined, key: string, fallback: A): A => {
+			if (value !== undefined) return value
+			filled.push(`evidence[${index}].${key}`)
+			return fallback
+		}
+		return {
+			traceIds: supplied(entry.traceIds, "traceIds", []),
+			logPatterns: supplied(entry.logPatterns, "logPatterns", []),
+			relatedServices: supplied(entry.relatedServices, "relatedServices", []),
+			note: supplied(entry.note, "note", ""),
+		}
+	})
 	if (submission.evidence === undefined) filled.push("evidence")
 
 	const summary = text(submission.summary, "summary")

@@ -80,6 +80,26 @@ describe("normalizeTriageSubmission", () => {
 		expect(filled).not.toContain("evidence")
 	})
 
+	/** `evidence[0].logPatterns` is one of the four keys prod saw missing; it has to be countable. */
+	it("names the omitted field inside an evidence entry, not just the entry", () => {
+		const { filled } = normalizeTriageSubmission(decode({ evidence: [{ traceIds: ["t1"], note: "n" }] }))
+		expect(filled).toContain("evidence[0].logPatterns")
+		expect(filled).toContain("evidence[0].relatedServices")
+		expect(filled).not.toContain("evidence[0].traceIds")
+	})
+
+	it("indexes each entry separately so two partials do not read as one", () => {
+		const { filled } = normalizeTriageSubmission(
+			decode({
+				evidence: [
+					{ traceIds: ["t1"], logPatterns: ["p"], relatedServices: ["s"], note: "n" },
+					{ traceIds: ["t2"], logPatterns: ["p"], relatedServices: ["s"] },
+				],
+			}),
+		)
+		expect(filled.filter((field) => field.startsWith("evidence"))).toEqual(["evidence[1].note"])
+	})
+
 	it("drops a severity the report cannot hold and says it did", () => {
 		const { report, filled } = normalizeTriageSubmission(decode({ severityAssessment: "unclassified" }))
 		expect(report.severityAssessment).toBeUndefined()
