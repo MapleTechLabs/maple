@@ -13,7 +13,6 @@
  * behaviour under a different name.
  */
 import type { ChatTurnOrigin } from "@maple/domain/chat-session"
-import type { McpToolSurface } from "@maple/domain/mcp-manifest"
 import type { PermissionRuleset } from "@maple/domain/permission"
 import type { AgentDefinition } from "./agents"
 import { READ_ONLY_RULESET } from "./permissions"
@@ -27,15 +26,14 @@ export type ChatSurface = "chat" | "bot"
 
 export interface TurnProfile {
 	/**
-	 * Which audience of tools exists at all. `bot` is deliberately NOT an internal surface
+	 * The one answer, for the tool audience and for every label. `bot` is deliberately NOT an
+	 * internal surface
 	 * (`INTERNAL_SURFACES` in `../mcp/tools/types.ts`), so the agents-only tools — the repository
 	 * sandbox above all — are absent from a connector turn's catalog rather than merely gated. A
 	 * reply lands wherever the thread is readable, and nothing proposes `sandbox_exec` for approval
 	 * first.
 	 */
-	readonly toolSurface: McpToolSurface
-	/** The one label. See {@link ChatSurface}. */
-	readonly label: ChatSurface
+	readonly surface: ChatSurface
 	/** The ruleset this turn is evaluated against, which is not always its agent's. */
 	readonly ruleset: PermissionRuleset
 	/** The persona this turn speaks as, which is not always its mode's. */
@@ -46,8 +44,7 @@ export const profileForTurn = (agent: AgentDefinition, origin: ChatTurnOrigin): 
 	switch (origin.kind) {
 		case "app":
 			return {
-				toolSurface: "chat",
-				label: "chat",
+				surface: "chat",
 				ruleset: agent.permission,
 				prompt: agent.prompt,
 			}
@@ -56,8 +53,7 @@ export const profileForTurn = (agent: AgentDefinition, origin: ChatTurnOrigin): 
 			// it: a schema on every model call, and a wasted call plus a repeated-failure slot the
 			// moment it tries one. Denial is what works where nobody can approve.
 			return {
-				toolSurface: "chat",
-				label: "chat",
+				surface: "chat",
 				ruleset: READ_ONLY_RULESET,
 				prompt: agent.prompt,
 			}
@@ -66,8 +62,7 @@ export const profileForTurn = (agent: AgentDefinition, origin: ChatTurnOrigin): 
 			// their real schema and resolve to `ask`, so the call is emitted as a proposal and the
 			// handler refuses. The connector renders the approval in the thread.
 			return {
-				toolSurface: "bot",
-				label: "bot",
+				surface: "bot",
 				ruleset: agent.permission,
 				prompt: CONNECTOR_SYSTEM_PROMPT,
 			}

@@ -463,6 +463,8 @@ export const decodeChatTurnTenant = Schema.decodeSync(ChatTurnTenant)
  * A `Struct` union, not a `Class` one, for the same structured-clone reason as
  * {@link ChatTurnTenant}.
  */
+const ChatTurnOriginKind = Schema.Literals(["app", "autonomous", "connector"])
+
 export const ChatTurnOrigin = Schema.Union([
 	/** A signed-in person in the Maple app. */
 	Schema.Struct({ kind: Schema.Literal("app") }),
@@ -517,12 +519,18 @@ export const connectorTurnTenant = (orgId: OrgId): ChatTurnTenantEncoded =>
 	})
 
 /**
- * The origin a `beginTurn` without one is treated as.
+ * The origin for a caller that did not state one.
  *
- * Deploy skew is real: api, alerting and ai are separate Workers, so an old caller that predates
- * the field keeps calling during a rollout. Everything defaults to `app` except the one caller
- * whose turns must not silently become attended — the investigation pass, still recognised by the
- * actor it has always used. **Skew-only**: delete this read once every caller sets an origin.
+ * Two reach it, and the one sentinel read left in the codebase lives here rather than at either.
+ * Deploy skew is the first: api, alerting and ai are separate Workers, so a caller that predates
+ * the field keeps calling through a rollout. The second is the v1 chat route, which authenticates
+ * Maple's own service token and is handed nothing but the user id the auth layer stamps on it —
+ * until `resolveHttpMcpTenant` reports an auth kind of its own, that id is the only signal there
+ * is.
+ *
+ * Everything defaults to `app` except the caller whose turns must not silently become attended:
+ * the investigation pass, recognised by the actor it has always used. An explicit origin always
+ * wins, so the skew half of this disappears on its own.
  */
 const INTERNAL_SERVICE_USER_ID = "internal-service"
 
@@ -544,25 +552,39 @@ export class ChatTurnOriginMismatch extends Schema.TaggedError<ChatTurnOriginMis
 	"@maple/chat/ChatTurnOriginMismatch",
 	{
 		message: Schema.String,
-		sessionId: Schema.String,
-		originKind: Schema.String,
+		sessionId: ChatSessionId,
+		originKind: ChatTurnOriginKind,
 	},
 ) {}
 
-/** Connector origin ⇔ connector session. Both directions, so neither can be forged into the other. */
+/**
+ * Connector origin ⇔ *this* connector's session, in both directions.
+ *
+ * Not merely "is a connector thread": the tab names the connector and the workspace, and the
+ * origin carries both, so one connector must not drive another's thread and one workspace must
+ * not drive another's. Comparing the prefix is enough — the tab is built from exactly these two
+ * escaped segments, and the thread id is the remainder.
+ */
 export const checkTurnOriginPairing = (
 	sessionId: string,
 	origin: ChatTurnOriginEncoded,
 ): ChatTurnOriginMismatch | undefined => {
-	const connectorSession = isConnectorSessionId(sessionId)
-	if (connectorSession === (origin.kind === "connector")) return undefined
-	return new ChatTurnOriginMismatch({
-		message: connectorSession
-			? "A connector conversation can only be driven by its connector"
-			: "A connector turn cannot be run on an app conversation",
-		sessionId,
-		originKind: origin.kind,
-	})
+	const tab = tabIdFromChatSessionId(sessionId)
+	const refuse = (message: string) =>
+		new ChatTurnOriginMismatch({
+			message,
+			sessionId: decodeChatSessionId(sessionId),
+			originKind: origin.kind,
+		})
+	if (origin.kind !== "connector") {
+		return tab.startsWith(CONNECTOR_TAB_PREFIX)
+			? refuse("A connector conversation can only be driven by its connector")
+			: undefined
+	}
+	const expected = `${CONNECTOR_TAB_PREFIX}${origin.connectorId}-${encodeTabSegment(origin.workspaceId)}-`
+	return tab.startsWith(expected)
+		? undefined
+		: refuse("A connector turn can only run on its own connector and workspace")
 }
 
 // Requests

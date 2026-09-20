@@ -170,8 +170,9 @@ describe("meterTurn", () => {
 	})
 
 	it("charges by origin, not by session id", async () => {
-		// The meter reads the same profile the toolkit does, so a turn cannot run on one surface
-		// and be billed as another.
+		// `meterTurn` in isolation: the pairing check refuses this combination before a real turn
+		// reaches the meter. What it pins is that the source comes from the origin's profile, which
+		// is the same one the toolkit is built from — never from the session id.
 		await meter(`${ORG}:default`, "msg-1", 1000, 100, CONNECTOR_ORIGIN)
 
 		assert.deepEqual(keysFor("ai_input_tokens"), [`${ORG}:default:msg-1:bot:input`])
@@ -236,56 +237,37 @@ describe("meterTurn", () => {
 /**
  * The pairing refusal, on the real turn path.
  *
- * `runChatSessionTurn` checks it before it builds a runtime or meters anything, so a mismatch
- * costs a terminal event and nothing else. Reached here with a session whose org is not a real
- * one, which is enough: the refusal happens before any service is resolved.
+ * `runChatSessionTurn` checks it before it builds a runtime or meters anything, and rejects with
+ * the domain's own error rather than swallowing it — `ChatSession.runTurn`'s catch is what records
+ * the terminal event and logs the cause, so there is one place that does.
  */
 describe("runChatSessionTurn origin pairing", () => {
-	const session = () => {
-		const events: Array<{ readonly type: string; readonly reason?: string }> = []
-		return {
-			events,
-			holdsTurn: () => true,
-			append: (event: { readonly type: string; readonly reason?: string }) => {
-				events.push(event)
-				return events.length
-			},
-			history: () => [],
-		}
-	}
-
-	it("refuses a connector turn pointed at an app conversation", async () => {
-		const stub = session()
-		await runChatSessionTurn({
+	const stub = { holdsTurn: () => true, append: () => 1, history: () => [] }
+	const refuse = (sessionId: string, origin: ChatTurnOrigin) =>
+		runChatSessionTurn({
 			session: stub as never,
-			sessionId: `${ORG}:tab-1`,
+			sessionId,
 			env,
 			messageId: "msg-1",
 			tenant: { orgId: ORG, userId: "u", roles: [], authMode: "self_hosted" },
-			origin: CONNECTOR_ORIGIN,
-		})
-
-		assert.deepEqual(
-			stub.events.map((event) => [event.type, event.reason]),
-			[["turn-end", "error"]],
+			origin,
+		}).then(
+			() => undefined,
+			(cause: { readonly _tag?: string }) => cause._tag,
 		)
+
+	it("refuses a connector turn pointed at an app conversation", async () => {
+		assert.equal(await refuse(`${ORG}:tab-1`, CONNECTOR_ORIGIN), "@maple/chat/ChatTurnOriginMismatch")
 		assert.isEmpty(tracked, "a refused turn must not be metered")
 	})
 
 	it("refuses an app turn posted into a connector conversation", async () => {
-		const stub = session()
-		await runChatSessionTurn({
-			session: stub as never,
-			sessionId: connectorSessionId(orgId, CONNECTOR_ORIGIN.connectorId, "w1", "994"),
-			env,
-			messageId: "msg-1",
-			tenant: { orgId: ORG, userId: "u", roles: [], authMode: "self_hosted" },
-			origin: APP_ORIGIN,
-		})
+		const session = connectorSessionId(orgId, CONNECTOR_ORIGIN.connectorId, "w1", "994")
+		assert.equal(await refuse(session, APP_ORIGIN), "@maple/chat/ChatTurnOriginMismatch")
+	})
 
-		assert.deepEqual(
-			stub.events.map((event) => [event.type, event.reason]),
-			[["turn-end", "error"]],
-		)
+	it("refuses a connector driving another workspace's thread", async () => {
+		const session = connectorSessionId(orgId, CONNECTOR_ORIGIN.connectorId, "w2", "994")
+		assert.equal(await refuse(session, CONNECTOR_ORIGIN), "@maple/chat/ChatTurnOriginMismatch")
 	})
 })

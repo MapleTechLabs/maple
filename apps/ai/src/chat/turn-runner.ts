@@ -188,7 +188,7 @@ const renderToolValue = (value: unknown): string => {
  *
  * **Source and key follow the session.** An investigation session bills as `triage`, keyed
  * `<investigationId>:turn-<messageId>`; every other session keys on `<sessionId>:<messageId>` and
- * bills under its origin's profile label. The `turn-` prefix is kept: the deleted fan-out billed
+ * bills under its origin's profile surface. The `turn-` prefix is kept: the deleted fan-out billed
  * `<id>:<attempt>` under this same source, and rows under those keys are still in Autumn, so an
  * unprefixed turn id could still collide with an old attempt number and swallow a real charge.
  * Either way the key carries the turn, so a turn that somehow ran twice still meters once, and a
@@ -211,7 +211,7 @@ export const meterTurn = (
 ): Effect.Effect<void> => {
 	if (usage.input <= 0 && usage.output <= 0) return Effect.void
 	const billing = investigationBilling(input.sessionId, input.messageId) ?? {
-		source: profileForTurn(agentForSession(input.sessionId), origin).label,
+		source: profileForTurn(agentForSession(input.sessionId), origin).surface,
 		idempotencyKey: `${input.sessionId}:${input.messageId}`,
 	}
 	// Bookkeeping must never fail a delivered answer. `trackTokenUsage` already swallows its own
@@ -253,25 +253,13 @@ const investigationBilling = (
  */
 export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promise<void> => {
 	const origin = decodeChatTurnOrigin(originForTurn(input.origin, input.tenant))
-	// Refused before any work, and before the turn is metered: a connector thread is driven only by
-	// its connector, and a connector cannot be pointed at an app conversation. Downgrading either
-	// side would run the turn on one surface and file it under another.
+	// Refused before any work: before a runtime exists to dispose, and before the turn can be
+	// metered. A connector thread is driven only by its own connector and workspace, and a
+	// connector cannot be pointed at an app conversation — downgrading either side would run the
+	// turn on one surface and file it under another. Thrown rather than handled here so
+	// `ChatSession.runTurn`'s catch records the terminal event and logs the real cause, once.
 	const mismatch = checkTurnOriginPairing(input.sessionId, origin)
-	if (mismatch !== undefined) {
-		console.error("[chat.turn] Refused a turn whose origin and session disagree", {
-			sessionId: mismatch.sessionId,
-			originKind: mismatch.originKind,
-		})
-		if (input.session.holdsTurn(input.messageId)) {
-			input.session.append({
-				type: "turn-end",
-				messageId: input.messageId,
-				reason: "error",
-				error: CHAT_TURN_FAILED,
-			})
-		}
-		return
-	}
+	if (mismatch !== undefined) throw mismatch
 
 	const [
 		{ InvestigationServicesLive },
@@ -303,7 +291,7 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 	const tenant = toTenantContext(input.tenant)
 	// One answer for the model's tags and the turn span, the same one the toolkit is built from.
 	// `meterTurn` resolves its own because it runs as a finalizer and is separately exported.
-	const surface = profileForTurn(agentForSession(input.sessionId), origin).label
+	const surface = profileForTurn(agentForSession(input.sessionId), origin).surface
 	const observability = makeTurnObservability()
 	// Hoisted out of the program: `submit_diagnosis` reads it mid-run — the tool is invoked mid-run
 	// so there is no later moment to hand it a total — and the metering finalizer reads it after the

@@ -23,13 +23,13 @@
  * written.
  */
 import {
-	APP_ORIGIN,
 	ChatHistoryResponse,
 	ChatSendRequest,
 	ChatSendResponse,
 	encodeChatTurnTenant,
 	isConnectorSessionId,
 	orgIdFromChatSessionId,
+	originForTurn,
 	type ChatTurnTenantEncoded,
 } from "@maple/domain/chat-session"
 import { chatSessionStub, type ChatSessionStub } from "@maple/domain/chat-session-stub"
@@ -193,6 +193,10 @@ export const ChatSessionsRouter = HttpRouter.use((router) =>
 				}
 
 				const messageId = crypto.randomUUID()
+				// Not `APP_ORIGIN` outright: this route also authenticates Maple's own service
+				// token, and the only thing distinguishing that caller here is the user id the auth
+				// layer stamps on it. `originForTurn` owns that read, so it stays in one place.
+				const turnTenant = toChatTurnTenant(tenant)
 				// `beginTurn` claims the slot, records the user message AND starts the turn, all
 				// inside the Durable Object. This request answers in milliseconds and deliberately
 				// does not run the turn: anything forked off it here would be cancelled as soon as
@@ -202,8 +206,8 @@ export const ChatSessionsRouter = HttpRouter.use((router) =>
 						sessionId,
 						messageId,
 						text: parsed.value.text,
-						tenant: toChatTurnTenant(tenant),
-						origin: APP_ORIGIN,
+						tenant: turnTenant,
+						origin: originForTurn(undefined, turnTenant),
 					}),
 				).pipe(Effect.option)
 

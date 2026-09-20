@@ -294,4 +294,21 @@ describe("ChatTurnOrigin", () => {
 			"@maple/chat/ChatTurnOriginMismatch",
 		)
 	})
+
+	it("refuses a connector driving another connector's or another workspace's thread", () => {
+		// The tab names both, and the origin carries both, so "is a connector thread" is not the
+		// guarantee — "is THIS connector's thread, in THIS workspace" is.
+		const session = connectorSessionId(orgId("o"), connectorId, "w1", "994")
+		const other = Schema.decodeSync(ChatConnectorId)("otherchat")
+
+		expect(checkTurnOriginPairing(session, { ...connector, connectorId: other })?._tag).toBe(
+			"@maple/chat/ChatTurnOriginMismatch",
+		)
+		expect(checkTurnOriginPairing(session, { ...connector, workspaceId: "w2" })?._tag).toBe(
+			"@maple/chat/ChatTurnOriginMismatch",
+		)
+		// A workspace whose escaped form is a prefix of another's must not pass either.
+		const wide = connectorSessionId(orgId("o"), connectorId, "w1-extra", "994")
+		expect(checkTurnOriginPairing(wide, connector)?._tag).toBe("@maple/chat/ChatTurnOriginMismatch")
+	})
 })

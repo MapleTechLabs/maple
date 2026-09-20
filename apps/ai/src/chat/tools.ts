@@ -15,7 +15,7 @@ import {
 	normalizeTriageSubmission,
 	SubmitDiagnosisRequest,
 } from "@maple/domain/http"
-import { InvestigationId, UserId } from "@maple/domain/primitives"
+import { InvestigationId } from "@maple/domain/primitives"
 import type { RunBudgetHook, RunUsageDelta } from "@effect-agent/engine/RunOptions"
 import { Effect, Option, Schema } from "effect"
 import { Tool, Toolkit } from "effect/unstable/ai"

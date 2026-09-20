@@ -122,7 +122,7 @@ export const runChatTurn = (input: ChatRunInput) => {
 		input.toolExecutor,
 		input.tenant,
 		profile.ruleset,
-		profile.toolSurface,
+		profile.surface,
 		agentSessionSpanAttributes(input.model.tags),
 	)
 	const completion = buildDiagnosisCompletion(

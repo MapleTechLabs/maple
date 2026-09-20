@@ -86,7 +86,7 @@ describe("profileForTurn", () => {
 		const profile = profileForTurn(agentForSession(sessionId), origin)
 		return {
 			profile,
-			tools: buildChatToolkit(executor, tenant, profile.ruleset, profile.toolSurface).toolkit.tools,
+			tools: buildChatToolkit(executor, tenant, profile.ruleset, profile.surface).toolkit.tools,
 		}
 	}
 
@@ -137,15 +137,14 @@ describe("profileForTurn", () => {
 	it("leaves an app turn its own persona, surface and internal tools", () => {
 		// The converse, so the connector guards cannot pass by treating every turn as a connector's.
 		const { profile, tools } = toolsFor(appSession, APP_ORIGIN)
-		assert.equal(profile.toolSurface, "chat")
-		assert.equal(profile.label, "chat")
+		assert.equal(profile.surface, "chat")
 		assert.property(tools, "sandbox_exec")
 	})
 
 	it("denies the autonomous pass its mutations while leaving it the internal tools", () => {
 		// Unchanged behaviour: the pass has no reader, so a gated tool is a wasted call.
 		const { profile, tools } = toolsFor(makeChatSessionId(orgId, "inv-abc"), AUTONOMOUS_ORIGIN)
-		assert.equal(profile.label, "chat")
+		assert.equal(profile.surface, "chat")
 		assert.property(tools, "sandbox_exec")
 		for (const name of MUTATING_TOOL_NAMES) assert.notProperty(tools, name)
 	})
