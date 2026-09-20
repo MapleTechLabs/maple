@@ -13,6 +13,8 @@
 
 import type { AiSessionSpan } from "@maple/domain/http"
 
+import { classifyAiSpan, isLlmCall } from "./session-turns"
+
 export type SpanMessagePart =
 	| { readonly kind: "text"; readonly text: string }
 	| {
@@ -105,6 +107,55 @@ export function spanToolCalls(span: AiSessionSpan, results?: SessionToolResults)
 		}
 	}
 	return calls
+}
+
+/**
+ * The model call each tool span belongs under, by span id.
+ *
+ * Runtimes that execute a tool after the model's stream has closed report the
+ * tool span as the model call's sibling, so the tree alone lists a turn as one
+ * flat run of calls and executions. The call id says which request each
+ * execution answers: a tool span is placed under the model call whose output
+ * made that call. Matched by id within one trace only — ids repeat across
+ * traces, and nothing is paired by timing. A tool span the tree already nests
+ * under its model call is left where it is.
+ */
+export function toolSpanIssuers(spans: readonly AiSessionSpan[]): ReadonlyMap<string, string> {
+	const byId = new Map(spans.map((span) => [span.spanId, span]))
+	const issuerByCall = new Map<string, string>()
+	for (const span of spans) {
+		if (!isLlmCall(span)) continue
+		for (const call of spanToolCalls(span)) {
+			if (call.own || call.id === undefined) continue
+			const key = scopedResultKey(span.traceId, call.id)
+			if (!issuerByCall.has(key)) issuerByCall.set(key, span.spanId)
+		}
+	}
+
+	const issuers = new Map<string, string>()
+	for (const span of spans) {
+		const callId = span.genAi.toolCallId
+		if (callId === undefined || classifyAiSpan(span) !== "tool") continue
+		const issuer = issuerByCall.get(scopedResultKey(span.traceId, callId))
+		if (issuer === undefined || issuer === span.spanId) continue
+		if (!hasAncestor(span, issuer, byId)) issuers.set(span.spanId, issuer)
+	}
+	return issuers
+}
+
+function hasAncestor(
+	span: AiSessionSpan,
+	ancestorId: string,
+	byId: ReadonlyMap<string, AiSessionSpan>,
+): boolean {
+	const seen = new Set<string>()
+	let current = byId.get(span.parentSpanId)
+	while (current !== undefined && !seen.has(current.spanId)) {
+		if (current.spanId === ancestorId) return true
+		seen.add(current.spanId)
+		current = byId.get(current.parentSpanId)
+	}
+	return false
 }
 
 /** The span's own evidence wins; the session index only fills an absence. */

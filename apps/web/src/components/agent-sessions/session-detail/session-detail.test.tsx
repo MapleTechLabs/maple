@@ -652,6 +652,46 @@ describe("SessionWaterfall", () => {
 		expect(screen.getByText("GET /repo/file")).toBeTruthy()
 	})
 
+	// A runtime that executes a tool once the model's stream has closed reports
+	// the two as siblings; the call id is what puts the execution under its call.
+	it("nests a sibling tool span under the model call that issued it", () => {
+		const { turns: flatTurns, summary: flatSummary } = sessionOf([
+			agentSpan({ spanId: "nt-agent", startMs: 0, durationMs: 6 * SECOND }),
+			llmSpan({
+				spanId: "nt-llm-1",
+				parentSpanId: "nt-agent",
+				startMs: 0,
+				durationMs: SECOND,
+				genAi: {
+					outputMessages: [
+						{ role: "assistant", parts: [{ type: "tool_call", id: "call_n", name: "run_sql" }] },
+					],
+				},
+			}),
+			toolSpan({
+				spanId: "nt-tool",
+				parentSpanId: "nt-agent",
+				startMs: SECOND,
+				durationMs: SECOND,
+				toolName: "run_sql",
+				genAi: { toolCallId: "call_n" },
+			}),
+			llmSpan({
+				spanId: "nt-llm-2",
+				parentSpanId: "nt-agent",
+				startMs: 2 * SECOND,
+				durationMs: SECOND,
+			}),
+		])
+		render(<Waterfall turns={flatTurns} summary={flatSummary} />)
+
+		const indentOf = (spanId: string) =>
+			(document.querySelector(`[data-span-row="${spanId}"] > span`) as HTMLElement).style.paddingLeft
+		expect(indentOf("nt-llm-1")).toBe("14px")
+		expect(indentOf("nt-tool")).toBe("28px")
+		expect(indentOf("nt-llm-2")).toBe("14px")
+	})
+
 	it("narrows to the spans that match the filter", () => {
 		render(<Waterfall query="run_tests" />)
 
