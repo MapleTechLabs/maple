@@ -3,7 +3,9 @@
 import { Option, Schema } from "effect"
 
 /**
- * The chart a model may draw inside a reply.
+ * The chart a model may draw inside a reply, and the schema that decides whether a fence holds
+ * one. The agent is taught to write it (see the chat prompt); every consumer of a reply — the web
+ * transcript, a chat-platform bot — reads it back through this module.
  *
  * A table already carries the numbers; a chart is for the shape of them — a
  * latency climb, a burst of errors, a ranking. The payload mirrors the one

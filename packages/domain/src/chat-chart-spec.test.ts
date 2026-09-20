@@ -1,6 +1,6 @@
 import { expect, it } from "vitest"
 
-import { normalizeUnit, parseChartSpec, rankedRows, timeseriesRows } from "./chart-spec"
+import { normalizeUnit, parseChartSpec, rankedRows, timeseriesRows } from "./chat-chart-spec"
 
 const timeseries = JSON.stringify({
 	type: "line",
