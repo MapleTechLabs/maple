@@ -20,7 +20,12 @@
  */
 import * as MapleCloudflareSDK from "@maple-dev/effect-sdk/cloudflare"
 import { MCP_ANTICIPATED_ERROR_IDENTIFIERS } from "../mcp/expected-failures"
-import { ChatMessage, decodeChatTurnTenant, type ChatTurnTenantEncoded } from "@maple/domain/chat-session"
+import {
+	ChatMessage,
+	chatModeFromSessionId,
+	decodeChatTurnTenant,
+	type ChatTurnTenantEncoded,
+} from "@maple/domain/chat-session"
 import type { InvestigationProgress } from "@maple/domain/http"
 import { workerEnvLayer } from "@maple/infra/worker-runtime"
 import { workerTelemetryConfig } from "@maple/infra/worker-telemetry"
@@ -116,6 +121,16 @@ const toTenantContext = (encoded: ChatTurnTenantEncoded): TenantContext => {
 }
 
 /**
+ * Which surface a turn ran on, for the LLM call's tags and for the meter.
+ *
+ * The chat-platform bot shares this runner, the engine and the Durable Object with in-app chat, so
+ * the session id is the only thing that tells them apart — and both readers have to agree, or a
+ * bot's tokens are filed under one surface and traced under another.
+ */
+const turnSurface = (sessionId: string): "chat" | "bot" =>
+	chatModeFromSessionId(sessionId) === "bot" ? "bot" : "chat"
+
+/**
  * Metering is housekeeping, and it runs after the answer, on the way out of the turn.
  *
  * `endTurn` sits in the `finally` of `ChatSession.runTurn`, so whatever the metering finalizer
@@ -174,12 +189,12 @@ const renderToolValue = (value: unknown): string => {
  * tokens on the row, and this bills them, once, per turn.
  *
  * **Source and key follow the session.** An investigation session bills as `triage`, keyed
- * `<investigationId>:turn-<messageId>`. The `turn-` prefix is kept: the deleted fan-out billed
+ * `<investigationId>:turn-<messageId>`; every other session keys on `<sessionId>:<messageId>` and
+ * bills under its {@link turnSurface}. The `turn-` prefix is kept: the deleted fan-out billed
  * `<id>:<attempt>` under this same source, and rows under those keys are still in Autumn, so an
- * unprefixed turn id could still collide with an old attempt number and swallow a real charge. Every other session is an attended
- * chat turn and bills as `chat`, keyed `<sessionId>:<messageId>`. Either way the key carries the
- * turn, so a turn that somehow ran twice still meters once, and a restarted investigation's new
- * turn is real new spend that bills.
+ * unprefixed turn id could still collide with an old attempt number and swallow a real charge.
+ * Either way the key carries the turn, so a turn that somehow ran twice still meters once, and a
+ * restarted investigation's new turn is real new spend that bills.
  *
  * `usage` is the turn's whole total: every model call the run made, including any the engine spent
  * compacting, and any a sub-agent made against the parent's accumulator.
@@ -197,7 +212,7 @@ export const meterTurn = (
 ): Effect.Effect<void> => {
 	if (usage.input <= 0 && usage.output <= 0) return Effect.void
 	const billing = investigationBilling(input.sessionId, input.messageId) ?? {
-		source: "chat" as const,
+		source: turnSurface(input.sessionId),
 		idempotencyKey: `${input.sessionId}:${input.messageId}`,
 	}
 	// Bookkeeping must never fail a delivered answer. `trackTokenUsage` already swallows its own
@@ -326,7 +341,7 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 		const toolExecutor = yield* McpToolExecutor
 		const history = input.session.history()
 		const model = resolveTriageModel(input.env, {
-			surface: "chat",
+			surface: turnSurface(input.sessionId),
 			orgId: tenant.orgId,
 			sessionId: input.sessionId,
 			turnId: input.messageId,

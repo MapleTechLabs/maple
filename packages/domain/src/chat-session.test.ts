@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest"
 import {
+	botSessionId,
+	botTurnTenant,
+	CHAT_BOT_USER_ID,
 	ChatTurnTenant,
 	chatModeFromSessionId,
 	decodeChatTurnTenant,
@@ -44,6 +47,16 @@ describe("chat session ids", () => {
 		expect(chatModeFromSessionId("o:alert-inc_1")).toBe("alert")
 		expect(chatModeFromSessionId("o:widget-fix-d1-w2")).toBe("widget-fix")
 		expect(chatModeFromSessionId("o:inv-123")).toBe("investigate")
+		expect(chatModeFromSessionId("o:bot-discord-994")).toBe("bot")
+	})
+
+	it("builds a bot thread's session id in bot mode", () => {
+		// The prefix is the only thing that puts a turn on the read-only bot agent, so the builder
+		// and `chatModeFromSessionId` have to agree.
+		const id = botSessionId("org_abc", "discord", "994")
+		expect(id).toBe("org_abc:bot-discord-994")
+		expect(chatModeFromSessionId(id)).toBe("bot")
+		expect(orgIdFromChatSessionId(id)).toBe("org_abc")
 	})
 
 	it("recovers the investigation id only for investigate sessions", () => {
@@ -183,5 +196,20 @@ describe("ChatTurnTenant", () => {
 		const decoded = decodeChatTurnTenant(structuredClone(encoded))
 		expect(decoded.orgId).toBe("org_1")
 		expect(decoded.authMode).toBe("self_hosted")
+	})
+
+	it("runs a bot turn as the org-level bot actor, with no roles", () => {
+		const encoded = botTurnTenant("org_1" as ChatTurnTenant["orgId"])
+
+		expect(encoded).toEqual({
+			orgId: "org_1",
+			userId: CHAT_BOT_USER_ID,
+			roles: [],
+			authMode: "self_hosted",
+		})
+		// Never the investigation pass's actor: that id decides whether a turn on an `inv-` session
+		// is the autonomous pass or a person's follow-up.
+		expect(CHAT_BOT_USER_ID).not.toBe("internal-service")
+		expect(() => structuredClone(encoded)).not.toThrow()
 	})
 })

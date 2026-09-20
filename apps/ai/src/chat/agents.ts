@@ -10,9 +10,10 @@
  * evaluated stage by stage while the failures lived in between. The agent that gathers the
  * evidence is the agent that acts on it.
  *
- * `ChatMode` and `chatModeFromSessionId` are deliberately untouched — they are on the wire and the
- * web client derives from them. Every mode names an agent, by construction; `agents.test.ts` fails
- * if one is ever added without one.
+ * `ChatMode` and `chatModeFromSessionId` stay in the domain package — they are on the wire and the
+ * web client derives from them — so a new surface is a literal there and a record here, added
+ * together. Every mode names an agent, by construction; `agents.test.ts` fails if one is ever
+ * added without one.
  */
 import * as Agent from "@effect-agent/core/Agent"
 import { AgentPolicy } from "@effect-agent/core/AgentPolicy"
@@ -32,8 +33,8 @@ import {
 } from "./budgets"
 import type { PermissionRuleset } from "@maple/domain/permission"
 import type { ResolvedModel } from "../platform/Llm"
-import { DEFAULT_RULESET } from "./permissions"
-import { INVESTIGATE_SYSTEM_PROMPT, SYSTEM_PROMPT } from "./prompts"
+import { DEFAULT_RULESET, READ_ONLY_RULESET } from "./permissions"
+import { BOT_SYSTEM_PROMPT, INVESTIGATE_SYSTEM_PROMPT, SYSTEM_PROMPT } from "./prompts"
 
 export interface AgentDefinition {
 	readonly name: string
@@ -78,6 +79,17 @@ export const AGENTS: Readonly<Record<string, AgentDefinition>> = {
 		// session gets.
 		permission: DEFAULT_RULESET,
 		budget: INVESTIGATION_BUDGET,
+	},
+	bot: {
+		name: "bot",
+		description: "Answers in a chat platform's channels.",
+		prompt: BOT_SYSTEM_PROMPT,
+		// Denied, not gated. A bot turn is raised by whoever is in the channel, under an org-level
+		// actor with no Maple user behind it, and the surface has nowhere to render an approval card
+		// — so a mutating tool here would be a proposal nobody can ever apply. This is the whole of
+		// "the bot is read-only": an unoffered tool cannot be called.
+		permission: READ_ONLY_RULESET,
+		budget: CHAT_BUDGET,
 	},
 } as const satisfies Readonly<Record<string, AgentDefinition>>
 

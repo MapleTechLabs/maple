@@ -52,7 +52,7 @@ export const investigationIdFromChatSessionId = (sessionId: string): string | un
 	return tab.startsWith("inv-") ? tab.slice("inv-".length) : undefined
 }
 
-export const ChatMode = Schema.Literals(["default", "alert", "widget-fix", "investigate"])
+export const ChatMode = Schema.Literals(["default", "alert", "widget-fix", "investigate", "bot"])
 export type ChatMode = Schema.Schema.Type<typeof ChatMode>
 
 /** Mode is derived from the tab-id prefix, never sent by the client. */
@@ -61,8 +61,19 @@ export const chatModeFromSessionId = (sessionId: string): ChatMode => {
 	if (tab.startsWith("alert-")) return "alert"
 	if (tab.startsWith("widget-fix-")) return "widget-fix"
 	if (tab.startsWith("inv-")) return "investigate"
+	if (tab.startsWith("bot-")) return "bot"
 	return "default"
 }
+
+/**
+ * The session a chat-platform bot thread's conversation lives in.
+ *
+ * One session per thread, so the transcript the bot replays is the thread it is answering in.
+ * `platform` names the transport (`discord`, `slack`) and keeps two platforms' thread ids from
+ * colliding on one org.
+ */
+export const botSessionId = (orgId: string, platform: string, threadId: string): ChatSessionId =>
+	makeChatSessionId(orgId, `bot-${platform}-${threadId}`)
 
 // Durable transcript
 
@@ -402,6 +413,27 @@ export type ChatTurnTenantEncoded = (typeof ChatTurnTenant)["Encoded"]
 
 export const encodeChatTurnTenant = Schema.encodeSync(ChatTurnTenant)
 export const decodeChatTurnTenant = Schema.decodeSync(ChatTurnTenant)
+
+/**
+ * The actor a chat-platform bot turn runs as.
+ *
+ * Org-level by design: anyone in the channel can address the bot, and no Maple user stands behind a
+ * turn. Deliberately not the autonomous investigation's `internal-service`, which is a claim rather
+ * than an identity — it is what marks a turn as an investigation's own pass instead of a person's
+ * follow-up in the same session.
+ */
+export const CHAT_BOT_USER_ID = Schema.decodeSync(UserId)("chat-bot")
+
+/**
+ * The turn identity a bot Worker hands `beginTurn`, already in the form that crosses the Durable
+ * Object boundary.
+ *
+ * No roles, because the only things that read them are the mutating tools' authorization checks,
+ * and the bot agent's ruleset denies every one of those (`apps/ai/src/chat/permissions.ts`).
+ * `authMode` matches the investigation path: the turn was not raised through a browser session.
+ */
+export const botTurnTenant = (orgId: OrgId): ChatTurnTenantEncoded =>
+	encodeChatTurnTenant({ orgId, userId: CHAT_BOT_USER_ID, roles: [], authMode: "self_hosted" })
 
 // Requests
 

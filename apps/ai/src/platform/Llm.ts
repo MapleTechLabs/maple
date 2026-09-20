@@ -44,7 +44,8 @@ const OPENROUTER_APP_TITLE = "Maple"
  * be filed under different sessions.
  */
 export interface LlmCallTags {
-	readonly surface: "chat"
+	/** `bot` is the chat-platform bot, which shares the engine and the Durable Object with `chat`. */
+	readonly surface: "chat" | "bot"
 	readonly orgId: string
 	/** Groups one conversation or investigation. OpenRouter caps this at 256 characters. */
 	readonly sessionId?: string

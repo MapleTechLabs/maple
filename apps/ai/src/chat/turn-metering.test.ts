@@ -133,6 +133,15 @@ describe("meterTurn", () => {
 		assert.deepEqual(keysFor("ai_output_tokens"), [`${ORG}:default:msg-1:chat:output`])
 	})
 
+	it("charges a chat-platform bot session as `bot`", async () => {
+		// Same features and the same org; the source is what separates the bot's spend from the
+		// in-app chat it shares this runner with.
+		await meter(`${ORG}:bot-discord-994`, "msg-1", 1000, 100)
+
+		assert.deepEqual(keysFor("ai_input_tokens"), [`${ORG}:bot-discord-994:msg-1:bot:input`])
+		assert.deepEqual(keysFor("ai_output_tokens"), [`${ORG}:bot-discord-994:msg-1:bot:output`])
+	})
+
 	it("bills an investigation turn once, not once per source", async () => {
 		// The merge hazard this guards: two meters on the same tail, one keyed `triage` and one
 		// `chat`. The source segment makes those keys disjoint, so nothing would deduplicate them
