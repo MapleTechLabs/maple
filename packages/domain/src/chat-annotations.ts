@@ -1,6 +1,63 @@
+/**
+ * The entity cards a model may embed in a reply, and the parser that lifts them out of its prose.
+ *
+ * The agent is taught to write `<<maple:trace|service|error|log:{…}>>` inline (see the chat
+ * prompt); every consumer of a reply — the web transcript, a chat-platform bot — has to take them
+ * back out before rendering the rest as markdown. The contract lives here so those renderings
+ * cannot disagree about what counts as a card.
+ *
+ * The payloads are model output, not tool output, so each one is structurally checked before it
+ * reaches a card — a payload missing a field, or with the wrong type in one, renders as text
+ * rather than crashing the transcript. The *values* are still whatever the model wrote: a trace
+ * id that decodes here may well name no trace.
+ */
 import { Option, Schema } from "effect"
 
-import { InlineErrorData, InlineLogData, InlineServiceData, InlineTraceData, type Segment } from "./types"
+export const InlineTraceData = Schema.Struct({
+	id: Schema.String,
+	name: Schema.String,
+	durationMs: Schema.Number,
+	hasError: Schema.optionalKey(Schema.Boolean),
+	spanCount: Schema.optionalKey(Schema.Number),
+	services: Schema.optionalKey(Schema.Array(Schema.String)),
+})
+export type InlineTraceData = Schema.Schema.Type<typeof InlineTraceData>
+
+export const InlineServiceData = Schema.Struct({
+	name: Schema.String,
+	/** Requests per minute — the unit every service-metric tool reports. */
+	throughputRpm: Schema.optionalKey(Schema.Number),
+	/** Percent, not a fraction: 45.45 means 45.45%. */
+	errorRate: Schema.optionalKey(Schema.Number),
+	/** Whichever percentile the tool returned; the card labels the one it was given. */
+	p95Ms: Schema.optionalKey(Schema.Number),
+	p99Ms: Schema.optionalKey(Schema.Number),
+})
+export type InlineServiceData = Schema.Schema.Type<typeof InlineServiceData>
+
+export const InlineErrorData = Schema.Struct({
+	errorType: Schema.String,
+	count: Schema.optionalKey(Schema.Number),
+	affectedServices: Schema.optionalKey(Schema.Array(Schema.String)),
+})
+export type InlineErrorData = Schema.Schema.Type<typeof InlineErrorData>
+
+export const InlineLogData = Schema.Struct({
+	severity: Schema.String,
+	body: Schema.String,
+	serviceName: Schema.optionalKey(Schema.String),
+	timestamp: Schema.optionalKey(Schema.String),
+	traceId: Schema.optionalKey(Schema.String),
+})
+export type InlineLogData = Schema.Schema.Type<typeof InlineLogData>
+
+/** One run of prose, or one card, in the order the model wrote them. */
+export type AnnotationSegment =
+	| { type: "text"; content: string }
+	| { type: "trace"; data: InlineTraceData }
+	| { type: "service"; data: InlineServiceData }
+	| { type: "error"; data: InlineErrorData }
+	| { type: "log"; data: InlineLogData }
 
 /**
  * Openers are deliberately loose. The prompt asks for `<<maple:type:{…}>>` on its
@@ -49,7 +106,7 @@ function scanJsonObject(text: string, start: number): number | null {
 	return null
 }
 
-function decodeSegment(type: string, raw: string): Segment | null {
+function decodeSegment(type: string, raw: string): AnnotationSegment | null {
 	switch (type) {
 		case "trace": {
 			const decoded = decodeTrace(raw)
@@ -72,8 +129,12 @@ function decodeSegment(type: string, raw: string): Segment | null {
 	}
 }
 
-export function parseAnnotations(text: string): Segment[] {
-	const segments: Segment[] = []
+/**
+ * Split a reply into prose and cards. Safe on a partial reply: a card whose payload has not
+ * finished streaming is held back as nothing at all, and the next token re-parses from scratch.
+ */
+export function parseAnnotations(text: string): AnnotationSegment[] {
+	const segments: AnnotationSegment[] = []
 	let lastIndex = 0
 
 	const pushText = (content: string) => {
@@ -123,7 +184,7 @@ export function parseAnnotations(text: string): Segment[] {
 	return finish(segments, text)
 }
 
-function finish(segments: Segment[], text: string): Segment[] {
+function finish(segments: AnnotationSegment[], text: string): AnnotationSegment[] {
 	if (segments.length === 0) segments.push({ type: "text", content: text })
 	return segments
 }

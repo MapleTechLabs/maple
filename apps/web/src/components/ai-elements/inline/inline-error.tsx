@@ -1,3 +1,4 @@
+import type { InlineErrorData } from "@maple/domain/chat-annotations"
 import { formatNumber } from "@maple/ui/lib/format"
 import { CircleWarningIcon } from "@/components/icons"
 import {
@@ -7,7 +8,6 @@ import {
 	InlineServiceChips,
 	inlineCardClass,
 } from "./inline-card"
-import type { InlineErrorData } from "./types"
 
 /**
  * An error fingerprint. Not a link: the model reports the *message*, and Maple's

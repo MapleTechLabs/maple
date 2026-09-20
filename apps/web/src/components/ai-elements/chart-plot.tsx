@@ -1,13 +1,12 @@
 import { useMemo } from "react"
 
+import { rankedRows, timeseriesRows, type ChartSpec } from "@maple/domain/chat-chart-spec"
 import {
 	QueryBuilderAreaChart,
 	QueryBuilderBarChart,
 	QueryBuilderLineChart,
 } from "@maple/ui/components/charts"
 import { QueryBuilderHbarChart } from "@maple/ui/components/charts/hbar/query-builder-hbar-chart"
-
-import { rankedRows, timeseriesRows, type ChartSpec } from "./chart-spec"
 
 /**
  * The plot behind a ```chart fence, split out so `markdown-chart.tsx` can load

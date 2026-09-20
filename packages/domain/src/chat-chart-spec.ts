@@ -3,7 +3,9 @@
 import { Option, Schema } from "effect"
 
 /**
- * The chart a model may draw inside a reply.
+ * The chart a model may draw inside a reply, and the schema that decides whether a fence holds
+ * one. The agent is taught to write it (see the chat prompt); every consumer of a reply — the web
+ * transcript, a chat-platform bot — reads it back through this module.
  *
  * A table already carries the numbers; a chart is for the shape of them — a
  * latency climb, a burst of errors, a ranking. The payload mirrors the one
@@ -16,33 +18,35 @@ import { Option, Schema } from "effect"
  */
 
 /** A time bucket and the value of each series in it. */
-const TimeseriesPoint = Schema.Struct({
+export const TimeseriesPoint = Schema.Struct({
 	/** Anything `Date` parses — the charts drop a row whose bucket does not. */
 	bucket: Schema.String,
 	series: Schema.Record(Schema.String, Schema.Finite),
 })
 
 /** One named category and its value, for a ranking. */
-const RankedPoint = Schema.Struct({
+export const RankedPoint = Schema.Struct({
 	name: Schema.String,
 	value: Schema.Finite,
 })
 
-const TimeseriesSpec = Schema.Struct({
+export const TimeseriesSpec = Schema.Struct({
 	type: Schema.Literals(["line", "area", "bar"]),
 	title: Schema.optionalKey(Schema.String),
 	unit: Schema.optionalKey(Schema.String),
 	data: Schema.Array(TimeseriesPoint),
 })
+export type TimeseriesSpec = Schema.Schema.Type<typeof TimeseriesSpec>
 
-const RankedSpec = Schema.Struct({
+export const RankedSpec = Schema.Struct({
 	type: Schema.Literal("ranked"),
 	title: Schema.optionalKey(Schema.String),
 	unit: Schema.optionalKey(Schema.String),
 	data: Schema.Array(RankedPoint),
 })
+export type RankedSpec = Schema.Schema.Type<typeof RankedSpec>
 
-const ChartSpec = Schema.Union([TimeseriesSpec, RankedSpec])
+export const ChartSpec = Schema.Union([TimeseriesSpec, RankedSpec])
 export type ChartSpec = Schema.Schema.Type<typeof ChartSpec>
 
 // `fromJsonString` folds the parse and the shape check into one decode, so a
@@ -93,6 +97,7 @@ const KNOWN_UNITS = new Set([
 	"requests_per_sec",
 ])
 
+/** A model-written unit, resolved to one `formatValueByUnit` knows, or `"number"`. */
 export function normalizeUnit(unit: string | undefined): string {
 	if (!unit) return "number"
 	const lower = unit.trim().toLowerCase()
