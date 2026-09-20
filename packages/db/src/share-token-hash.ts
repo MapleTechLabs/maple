@@ -165,11 +165,14 @@ const AlertChartPayload = Schema.Tuple([
 	Schema.String,
 	Schema.String,
 	Schema.NullOr(Schema.String),
-	Schema.Number,
-	Schema.Number,
+	// Finite rather than plain numbers, which costs nothing — `JSON.stringify`
+	// writes `null` for a non-finite, so no id this repo ever minted can carry
+	// one — and states the invariant the response schema now relies on.
+	Schema.Finite,
+	Schema.Finite,
 	Schema.String,
 	ChartUnit,
-	Schema.NullOr(Schema.Number),
+	Schema.NullOr(Schema.Finite),
 	ChartBreachSide,
 ])
 

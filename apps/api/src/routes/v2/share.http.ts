@@ -529,18 +529,16 @@ export const HttpV2SharePublicLive = HttpApiBuilder.group(MapleApiV2, "sharePubl
 					// One series, because that is what a rule measures. The card puts
 					// its latest value in the header rather than drawing a legend for
 					// a chart with nothing to tell apart.
+					const points = series.points.map((point) => [point[0], point[1]] as const)
 					return new ChartTimeseries({
 						kind: "area",
 						title: claims.title,
 						unit: claims.unit,
-						series: [
-							{
-								name: claims.title,
-								points: series.points.map((point) => [point[0], point[1]] as const),
-							},
-						],
+						series: [{ name: claims.title, points }],
 						threshold: claims.threshold,
 						breachSide: claims.breachSide,
+						// Alongside, for one release — see `ChartTimeseries.points`.
+						points,
 					})
 				}),
 			)

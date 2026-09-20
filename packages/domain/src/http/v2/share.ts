@@ -42,7 +42,7 @@
  * not a credential and cannot be turned back into a token.
  */
 import { HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/unstable/httpapi"
-import { ShareChartRequest, ShareChartResponse } from "../share-chart"
+import { ChartTimeseries, ShareChartRequest, ShareChartResponse } from "../share-chart"
 import {
 	ShareNotConfiguredError,
 	ShareNotFoundError,
@@ -159,7 +159,9 @@ export class V2SharePublicApiGroup extends HttpApiGroup.make("sharePublic")
 	.add(
 		HttpApiEndpoint.post("alertChart", "/alert-chart", {
 			payload: ShareChartRequest,
-			success: ShareChartResponse,
+			// Never a ranking: a rule measures one quantity over time. The chat
+			// operation below takes the wider union.
+			success: ChartTimeseries,
 			error: [shareNotFound, shareRateLimited, shareNotConfigured, sharePersistence],
 		}).annotateMerge(
 			OpenApi.annotations({

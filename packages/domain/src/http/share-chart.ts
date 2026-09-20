@@ -36,6 +36,13 @@ export const ShareChartRequest = Schema.Struct({
  * declares a structurally identical union — it sits below this package and
  * cannot import it — and the two meet in `apps/web`, where a divergence is a
  * type error rather than a runtime surprise.
+ *
+ * **Append only.** `AlertChartPayload` decodes a signed id's `unit` through
+ * this schema, and those ids are live in notifications already delivered.
+ * Removing or renaming a member makes every id carrying it fail to decode,
+ * which is a 404 on a chart someone can still see in their channel. Adding one
+ * is free. The list is now shared with charts an agent draws, so it is under
+ * more pressure to change than when it belonged to alerts alone.
  */
 export const ChartUnit = Schema.Literals([
 	"number",
@@ -84,6 +91,22 @@ export class ChartTimeseries extends Schema.Class<ChartTimeseries>("ChartTimeser
 	/** Drawn as a dashed rule. `null` on a chart that is not about a limit. */
 	threshold: Schema.NullOr(Schema.Finite),
 	breachSide: ChartBreachSide,
+	/**
+	 * The single series again, flat — **for one release, and only on
+	 * `/v2/share/alert-chart`.**
+	 *
+	 * api and web are separate Workers that can serve different commits at
+	 * once: alchemy isolates per-resource failures, and on 2026-09-07 prod ran
+	 * a six-hour-old api behind a current web because one upload was rejected
+	 * and its siblings shipped. Alert chart images are live in notifications
+	 * already delivered, so a window where they 500 is a window a customer
+	 * sees. Emitting the old field alongside the new one is what makes the
+	 * change safe in *both* deploy orders rather than one.
+	 *
+	 * Delete once a deploy has put both Workers past this commit: nothing in
+	 * this repo reads it, and `renderChartImage` only falls back to it.
+	 */
+	points: Schema.optionalKey(Schema.Array(ChartPoint)),
 }) {}
 
 /** A ranking: categories, not a time axis, and no alert counterpart. */

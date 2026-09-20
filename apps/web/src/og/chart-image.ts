@@ -69,22 +69,39 @@ export const chartRequestFromPath = (
 	if (!pathname.endsWith(CHART_SUFFIX)) return undefined
 	const kind = CHART_KINDS.find((candidate) => pathname.startsWith(candidate.pathPrefix))
 	if (kind === undefined) return undefined
-	const chartId = decodeURIComponent(
-		pathname.slice(kind.pathPrefix.length, pathname.length - CHART_SUFFIX.length),
-	)
+
+	const encoded = pathname.slice(kind.pathPrefix.length, pathname.length - CHART_SUFFIX.length)
+	let chartId: string
+	try {
+		chartId = decodeURIComponent(encoded)
+	} catch {
+		// A lone `%` is a `URIError`, and this runs before the SPA shell — letting
+		// it out turns a malformed URL into a 500 on an unauthenticated route
+		// whose whole posture is that every bad request looks the same.
+		return undefined
+	}
 	return chartId.length === 0 || chartId.includes("/") ? undefined : { kind, chartId }
 }
 
-/** The card to draw, or `undefined` for a chart with nothing in it. */
-const cardFor = (chart: ShareChartResponse): ChartCard | undefined => {
+/**
+ * The card to draw, or `undefined` for a chart with nothing in it.
+ *
+ * Exported for the deploy-skew test, which is the only thing that can prove
+ * both response shapes still draw.
+ */
+export const cardFor = (chart: ShareChartResponse): ChartCard | undefined => {
 	if (chart.kind === "ranked") {
 		return chart.points.length === 0 ? undefined : rankedCard(chart)
 	}
-	return chart.series.some((series) => series.points.length > 0)
+	// `?? points` reads an api that predates `series` — see
+	// `ChartTimeseries.points`, and delete both together.
+	const series =
+		chart.series ?? (chart.points === undefined ? [] : [{ name: chart.title, points: chart.points }])
+	return series.some((entry) => entry.points.length > 0)
 		? chartCard(chart.title, {
 				kind: chart.kind,
 				unit: chart.unit,
-				series: chart.series,
+				series,
 				threshold: chart.threshold,
 				breachSide: chart.breachSide,
 			})

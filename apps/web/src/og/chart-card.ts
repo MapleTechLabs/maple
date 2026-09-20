@@ -194,14 +194,22 @@ const legendEntry = (entry: LegendChip): Node =>
  * all, which the caller has already excluded.
  */
 export const chartCard = (title: string, spec: ChartSpec): ChartCard => {
+	// Empty series are dropped up front so "is this a chart of one thing" has a
+	// single answer. The renderer drops them too, and asking the question on
+	// either side of that would let a two-series spec with one empty series take
+	// the solo layout in the palette's colour.
+	const series = spec.series.filter((entry) => entry.points.length > 0)
+
 	// A chart about one measured quantity takes that unit's semantic colour —
 	// latency amber, error-rate red — rather than "the first slot in the
 	// palette", which only means anything next to a second slot. The same rule
 	// decides the header below, and it is what makes an alert's chart look like
 	// an alert's chart without anything here knowing what an alert is.
-	const plot = renderChartSvg(
-		spec.series.length === 1 ? { ...spec, color: spec.color ?? unitColor(spec.unit) } : spec,
-	)
+	const plot = renderChartSvg({
+		...spec,
+		series,
+		...(series.length === 1 ? { color: spec.color ?? unitColor(spec.unit) } : undefined),
+	})
 
 	// One series needs no legend: its colour distinguishes it from nothing, and
 	// its name is the title. Its value goes where the legend would have been
