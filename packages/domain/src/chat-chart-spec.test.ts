@@ -51,7 +51,9 @@ it.each([
 
 it("keeps a chart whose unit is a shorthand, and falls back to plain numbers for one it cannot place", () => {
 	expect(normalizeUnit("ms")).toBe("duration_ms")
-	expect(normalizeUnit("%")).toBe("percent")
+	expect(normalizeUnit("%")).toBe("percent_100")
+	expect(normalizeUnit("percent")).toBe("percent_100")
+	expect(normalizeUnit("fraction")).toBe("percent")
 	expect(normalizeUnit("duration_ms")).toBe("duration_ms")
 	expect(normalizeUnit("furlongs")).toBe("number")
 	expect(normalizeUnit(undefined)).toBe("number")

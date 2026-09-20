@@ -199,9 +199,11 @@ export const buildChatToolkit = (
 	tenant: TenantContext,
 	ruleset: PermissionRuleset,
 	surface: McpToolSurface = "chat",
+	sessionAttributes?: Readonly<Record<string, string>>,
 ) =>
 	buildMapleToolkit(executor, tenant, {
 		surface,
+		...(sessionAttributes === undefined ? undefined : { sessionAttributes }),
 		// `deny` means the model never sees the tool. That is a stronger guarantee than refusing the
 		// call afterwards, and it is free — an unoffered tool cannot be called.
 		include: (name) => evaluatePermission(ruleset, name) !== "deny",

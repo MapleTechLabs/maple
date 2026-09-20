@@ -1633,10 +1633,12 @@ const summaryMeasures_ = ($: SpanColumns) => {
 		),
 	)
 	const conversationId = attr([
-		...aiFieldSourceKeys("conversationId"),
-		// What `eveIntegration` and `mapleIntegration` lift into the field.
-		"eve.turn.id",
+		// First, as `mapleIntegration` reads it: Maple's turn id wins over the
+		// conversation id its engine's tool spans carry, which names the session.
 		MAPLE_NATIVE_TURN_ID_ATTR,
+		...aiFieldSourceKeys("conversationId"),
+		// What `eveIntegration` lifts into the field.
+		"eve.turn.id",
 	])
 	const inputTokens = number("usageInputTokens")
 	const outputTokens = number("usageOutputTokens")

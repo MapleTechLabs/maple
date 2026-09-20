@@ -14,7 +14,7 @@ import { ThreadId } from "@effect-agent/core/Identifiers"
 import { Effect, Layer, Schema, Stream } from "effect"
 import { Prompt, Toolkit } from "effect/unstable/ai"
 import type { McpToolExecutorApi } from "../mcp/dispatcher"
-import type { ResolvedModel } from "../platform/Llm"
+import { agentSessionSpanAttributes, type ResolvedModel } from "../platform/Llm"
 import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
 import { agentForSession, chatAgent } from "./agents"
 import { rulesetForTurn } from "./permissions"
@@ -119,7 +119,13 @@ export const runChatTurn = (input: ChatRunInput) => {
 	// Not `definition.permission`: an unattended pass is offered fewer tools than the same agent
 	// answering a person in the same session. See `rulesetForTurn`.
 	const ruleset = rulesetForTurn(definition, isAutonomousInvestigationTurn(input.sessionId, input.tenant))
-	const maple = buildChatToolkit(input.toolExecutor, input.tenant, ruleset)
+	const maple = buildChatToolkit(
+		input.toolExecutor,
+		input.tenant,
+		ruleset,
+		"chat",
+		agentSessionSpanAttributes(input.model.tags),
+	)
 	const completion = buildDiagnosisCompletion(
 		input.sessionId,
 		input.tenant,
