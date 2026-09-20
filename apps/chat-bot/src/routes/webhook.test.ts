@@ -1,5 +1,6 @@
-import type { ChatConnector, InboundEvent } from "@maple/chat-platform"
-import { makeChatConnectorId } from "@maple/chat-platform"
+import type { InboundEvent } from "@maple/chat-platform"
+import type { IngressConnector } from "../config.ts"
+import { chatConnectorId } from "@maple/chat-platform"
 import { Context, Effect, Exit, Layer, Tracer } from "effect"
 import { HttpRouter, HttpServerResponse } from "effect/unstable/http"
 import { describe, expect, it } from "vitest"
@@ -55,7 +56,7 @@ const capturingTracer = () => {
 }
 
 const call = async (
-	registry: ReadonlyArray<ChatConnector>,
+	registry: ReadonlyArray<IngressConnector>,
 	env: Record<string, unknown>,
 	request: Request,
 ) => {
@@ -154,7 +155,7 @@ describe("the generic connector webhook route", () => {
 	})
 
 	it("dispatches to the right connector when several are registered", async () => {
-		const other = { ...testWebhookConnector(), id: makeChatConnectorId("otherhook") }
+		const other = { ...testWebhookConnector(), id: chatConnectorId("otherhook") }
 		const { response } = await call(
 			[other, testWebhookConnector(() => Effect.succeed({ response: HttpServerResponse.text("ok", { status: 202 }), events: [] }))],
 			configured,

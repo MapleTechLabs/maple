@@ -151,7 +151,7 @@ function enrichServices(
 					(incident) =>
 						anomalyAffectsServiceHealth(incident) &&
 						incident.serviceName === service.serviceName &&
-						incident.deploymentEnv === service.environment,
+						(incident.deploymentEnv || "unknown") === service.environment,
 				)
 				.map((incident) => ({
 					severity: incident.severity,

@@ -17,6 +17,7 @@
  */
 import { Option, Schema } from "effect"
 import type { ConnectorConfig, SocketDirective, SocketIngressDefinition, SocketStep } from "../../ingress.ts"
+import { BOT_TOKEN_CONFIG } from "./api.ts"
 import { mapDispatch } from "./gateway-events.ts"
 import {
 	decodeGatewayFrame,
@@ -31,8 +32,13 @@ import {
 	SESSION_RESET_CLOSE_CODES,
 } from "./gateway-payloads.ts"
 
-/** The bot token, from the application's Bot tab. See this directory's README. */
-export const BOT_TOKEN = "MAPLE_DISCORD_BOT_TOKEN"
+/**
+ * The bot token, from the application's Bot tab. See this directory's README.
+ *
+ * Named in `./api.ts`, which is also where the outbound half's `DiscordBotToken`
+ * service says the host reads it from — one secret under one name.
+ */
+export const BOT_TOKEN = BOT_TOKEN_CONFIG
 
 /**
  * How long a connection may go without a HELLO before it is abandoned.

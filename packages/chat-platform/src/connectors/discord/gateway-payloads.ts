@@ -13,9 +13,6 @@ import { Schema } from "effect"
 export const GATEWAY_QUERY = "?v=10&encoding=json"
 export const GATEWAY_URL = `wss://gateway.discord.gg/${GATEWAY_QUERY}`
 
-/** The REST base the interaction acknowledgement is issued against. */
-export const API_BASE_URL = "https://discord.com/api/v10"
-
 /** Receive and send opcodes this connector acts on. Others are ignored. */
 export const OP = {
 	dispatch: 0,

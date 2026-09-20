@@ -4,9 +4,9 @@ import { EffectDrizzleQueryError, EffectLogger } from "drizzle-orm/effect-core"
 import * as PgDrizzle from "drizzle-orm/effect-postgres"
 import type { EffectPgQueryEffectHKT, EffectPgQueryResultHKT } from "drizzle-orm/effect-postgres"
 import type { PgEffectDatabase } from "drizzle-orm/pg-core/effect"
-import { Context, Effect, Layer, type Scope } from "effect"
+import { Context, Duration, Effect, Layer, Redacted, type Scope } from "effect"
+import type * as Reactivity from "effect/unstable/reactivity/Reactivity"
 import { SqlError } from "effect/unstable/sql/SqlError"
-import { Client, type ClientConfig, Pool } from "pg"
 
 /**
  * The drizzle database every Maple service codes against: Effect-native, over
@@ -69,20 +69,23 @@ const mapleDrizzleLogger = Layer.succeed(EffectLogger, {
  */
 export const mapleDrizzleServices = Layer.merge(mapleDrizzleLogger, EffectCache.Default)
 
-/** A node-postgres pool — one per invocation on Workers, dialed lazily on the first statement. */
-export type MaplePgPool = Pool
+/**
+ * The scope's Postgres handle: `@effect/sql-pg`'s own pooled client, scoped —
+ * one per invocation on Workers, dialed lazily on the first statement.
+ */
+export type MaplePgClient = PgClient.PgClient
 
-export interface MaplePgPoolOptions {
+export interface MaplePgClientOptions {
 	readonly maxConnections?: number
 	/**
-	 * Bound on one socket dial, in SECONDS. Unset, a stalled dial has no bound at
-	 * all. Always pass this; see `CONNECT_TIMEOUT_SECONDS` in
+	 * Bound on one socket dial, in SECONDS. Unset, the driver's own default (5s)
+	 * applies. Always pass this; see `CONNECT_TIMEOUT_SECONDS` in
 	 * packages/backend/src/platform/pg-connection-scope.ts.
 	 *
-	 * Set on each `Client`, never on the `Pool`: pg-pool applies a pool-level
-	 * `connectionTimeoutMillis` to waiting for a free client as well, so a
-	 * fan-out wider than the pool would fail as a connection error after that
-	 * long although the server is healthy. postgres.js bounded only the dial.
+	 * The driver bounds connect, TLS and auth for ONE connection with it, never
+	 * the wait for a free connection — a fan-out wider than the pool queues
+	 * rather than failing as a connection error, which is what the old
+	 * node-postgres pool needed a custom `Client` subclass to achieve.
 	 *
 	 * The driver option rather than an `Effect.timeout` on purpose: interrupting
 	 * the fiber does not cancel the socket, so only the driver's own timer frees
@@ -92,70 +95,49 @@ export interface MaplePgPoolOptions {
 }
 
 /**
- * Create one node-postgres pool, for real Postgres (PlanetScale via Hyperdrive
- * in Workers, docker-compose Postgres under `alchemy dev`, direct URLs in
- * scripts).
+ * Open one `@effect/sql-pg` client, for real Postgres (PlanetScale via
+ * Hyperdrive in Workers, docker-compose Postgres under `alchemy dev`, direct
+ * URLs in scripts).
  *
- * Creating one costs nothing: the pool dials on the first statement, so this is
- * synchronous and does not touch the network. There is deliberately no probe
- * (`PgClient.make` runs `SELECT 1` at acquire); a round trip on every request
- * bought nothing but a telemetry split, which `error.type` now states outright.
+ * Scoped and lazy: the pool opens no connection until the first statement, so
+ * building this costs nothing and does not touch the network, and closing the
+ * scope closes whatever it opened. There is deliberately no probe; a round trip
+ * on every request bought nothing but a telemetry split, which `error.type` now
+ * states outright.
  *
- * Workers note: TCP sockets are tied to the request that opened them, so a pool
- * may be reused freely WITHIN a request but must never outlive it. The request
- * path holds one of these per request and ends it at the boundary.
- *
- * Unnamed statements only (node-postgres prepares nothing unless a statement
- * is given a `name`), which is what a pooler-fronted, request-lived connection
- * wants: a named statement is per connection and the classic way to pin one.
+ * Workers note: TCP sockets are tied to the request that opened them, so a
+ * client may be reused freely WITHIN a request but must never outlive it. The
+ * request path holds one of these per request and closes it at the boundary.
  */
-export const createMaplePgPool = (connectionString: string, options?: MaplePgPoolOptions): MaplePgPool => {
-	const connectTimeoutSeconds = options?.connectTimeoutSeconds
-	const pool = new Pool({
-		connectionString,
-		max: options?.maxConnections ?? 5,
-		...(!(connectTimeoutSeconds === undefined)
-			? { Client: dialBoundedClient(connectTimeoutSeconds * 1000) }
-			: undefined),
+export const makeMaplePgClient = (
+	connectionString: string,
+	options?: MaplePgClientOptions,
+): Effect.Effect<MaplePgClient, SqlError, Scope.Scope | Reactivity.Reactivity> =>
+	PgClient.make({
+		url: Redacted.make(connectionString),
+		maxConnections: options?.maxConnections ?? 5,
+		...(options?.connectTimeoutSeconds === undefined
+			? undefined
+			: { connectTimeout: Duration.seconds(options.connectTimeoutSeconds) }),
+		// Unnamed statements only, as the node-postgres pool did: a named prepared
+		// statement belongs to one connection, and a pooler in front of Postgres
+		// (PSBouncer, Hyperdrive) need not hand that same connection back.
+		prepare: false,
 	})
-	// An idle client's socket error is emitted on the pool; unhandled, it is an
-	// uncaught exception rather than the next statement's failure.
-	pool.on("error", () => undefined)
-	return pool
-}
-
-/** A `Client` whose own dial timer is the bound; the pool it is handed to sets none. */
-const dialBoundedClient = (connectionTimeoutMillis: number): typeof Client =>
-	class DialBoundedClient extends Client {
-		constructor(config?: string | ClientConfig) {
-			super(
-				typeof config === "string"
-					? { connectionString: config, connectionTimeoutMillis }
-					: { ...config, connectionTimeoutMillis },
-			)
-		}
-	}
 
 /**
- * Build the drizzle database over a pool the caller acquires.
+ * Build the drizzle database over a client the caller acquires.
  *
- * `acquire` runs inside the given Scope, and the pool is ended when that Scope
- * closes — the invocation-scope machinery in `pg-connection-scope.ts` owns
- * both. The client layer is built with `Layer.build` rather than
+ * `acquire` runs inside the given Scope, and the client's pool is closed when
+ * that Scope closes — the invocation-scope machinery in `pg-connection-scope.ts`
+ * owns both. The client layer is built with `Layer.build` rather than
  * `Effect.provide` for exactly that reason: `provide` scopes the layer to the
- * effect it wraps and would end the pool the moment the database was built.
- * `PgClient.fromPool` rather than `PgClient.make` because `make` probes with
- * `SELECT 1` at acquire and caps `pool.end()` at one second.
+ * effect it wraps and would close the pool the moment the database was built.
  */
 export const makeMapleEffectDb = (
-	acquire: Effect.Effect<MaplePgPool, SqlError, Scope.Scope>,
+	acquire: Effect.Effect<MaplePgClient, SqlError, Scope.Scope | Reactivity.Reactivity>,
 ): Effect.Effect<MapleDb, SqlError, Scope.Scope> =>
 	Effect.gen(function* () {
-		const services = yield* Layer.build(
-			Layer.merge(
-				mapleDrizzleServices,
-				PgClient.layerFrom(PgClient.fromPool({ acquire })),
-			),
-		)
+		const services = yield* Layer.build(Layer.merge(mapleDrizzleServices, PgClient.layerFrom(acquire)))
 		return yield* PgDrizzle.make().pipe(Effect.provideContext(services))
 	})

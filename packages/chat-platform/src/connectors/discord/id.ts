@@ -1,3 +1,7 @@
-import { makeChatConnectorId } from "../../connector-id.ts"
+import { chatConnectorId } from "../../connector"
 
-export const CONNECTOR_ID = makeChatConnectorId("discord")
+/**
+ * Its own module so the outbound half can name the connector without importing the structure that
+ * is assembled from it.
+ */
+export const DISCORD_CONNECTOR_ID = chatConnectorId("discord")

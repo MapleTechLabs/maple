@@ -8,10 +8,13 @@
  * widget to find the one bad key. Every route that can reject a hand-authored
  * document should render the issue tree instead.
  *
- * Each line reads `<json path> (widget "<id>"): Expected …, got …`, with the
- * widget attribution present only when the path actually points inside a
- * `widgets[]` array — resolved from the offending value itself, so it survives
- * reordering and is stable across the v1/v2 key spellings.
+ * Each line reads `<json path> (widget "<id>"): Expected …`, with the widget
+ * attribution present only when the failure reports the offending value and the
+ * path points inside a `widgets[]` array. It is resolved from that value, so
+ * where it appears it survives reordering and is stable across the v1/v2 key
+ * spellings — but effect rc.116 no longer attaches an input to a struct or array
+ * decode failure, so the common request-decode path now renders the path alone.
+ * The path still identifies the widget positionally (`widgets[0]`).
  */
 import { SchemaIssue } from "effect"
 
@@ -103,9 +106,10 @@ const MAX_DETAILS = 20
  * one problem rather than two.
  */
 export const describeSchemaIssue = (issue: SchemaIssue.Issue): ReadonlyArray<SchemaIssueDetail> => {
-	// JSON-body decoding may wrap the decoded object in an outer issue whose
-	// reported input is the raw request string. Keep every reported input so the
-	// decoded root object can still resolve an enclosing widget id.
+	// Best-effort: keep every reported input, so whichever one is the decoded root
+	// object can resolve an enclosing widget id. Struct and array failures report
+	// none of their own since rc.116, which is why the widget label is optional
+	// rather than assumed.
 	const inputs = reportedInputs(issue)
 	const byPath = new Map<string, { path: ReadonlyArray<PropertyKey>; messages: Array<string> }>()
 

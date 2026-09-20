@@ -18,7 +18,7 @@ export class WorkerEnvironment extends Context.Service<WorkerEnvironment, Record
 	"Cloudflare.Workers.WorkerEnvironment",
 ) {}
 
-/** The env as `WorkerEnvironment` plus Effect's `ConfigProvider`, so `Config.string("FOO")` resolves against the bindings. */
+/** The env as `WorkerEnvironment` plus Effect's `ConfigProvider`, so `Config.String("FOO")` resolves against the bindings. */
 export const workerEnvLayer = (env: Record<string, unknown>): Layer.Layer<WorkerEnvironment> =>
 	Layer.mergeAll(
 		Layer.succeed(WorkerEnvironment, env),

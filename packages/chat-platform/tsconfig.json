@@ -3,7 +3,7 @@
 	"compilerOptions": {
 		"target": "ES2022",
 		"module": "ESNext",
-		"lib": ["ES2022", "DOM"],
+		"lib": ["ES2022"],
 		"types": ["node"],
 		"moduleResolution": "bundler",
 		"allowImportingTsExtensions": true,

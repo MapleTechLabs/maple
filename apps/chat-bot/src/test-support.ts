@@ -7,18 +7,18 @@
  * and the vendor-isolation guard would reject it anyway.
  */
 import type {
-	ChatConnector,
 	ConnectorConfig,
 	InboundEvent,
 	InboundMessage,
 	SocketStep,
 } from "@maple/chat-platform"
-import { ConnectorIngressError, makeChatConnectorId, socketIngress } from "@maple/chat-platform"
+import type { IngressConnector } from "./config.ts"
+import { ConnectorIngressError, chatConnectorId, socketIngress } from "@maple/chat-platform"
 import { Effect, Schema } from "effect"
 import { HttpServerResponse } from "effect/unstable/http"
 
-export const TEST_SOCKET_ID = makeChatConnectorId("testchat")
-export const TEST_WEBHOOK_ID = makeChatConnectorId("testhook")
+export const TEST_SOCKET_ID = chatConnectorId("testchat")
+export const TEST_WEBHOOK_ID = chatConnectorId("testhook")
 export const TEST_TOKEN_KEY = "MAPLE_TESTCHAT_TOKEN"
 
 /**
@@ -41,7 +41,7 @@ export const testMessage: InboundMessage = {
 const TestState = Schema.Struct({ seen: Schema.Number })
 const unchanged = (state: { seen: number }): SocketStep<{ seen: number }> => ({ state })
 
-export const testSocketConnector = (): ChatConnector => ({
+export const testSocketConnector = (): IngressConnector => ({
 	id: TEST_SOCKET_ID,
 	ingress: socketIngress({
 		requiredConfig: [{ name: TEST_TOKEN_KEY, secret: true }],
@@ -60,7 +60,7 @@ export const testWebhookConnector = (
 		{ response: HttpServerResponse.HttpServerResponse; events: ReadonlyArray<InboundEvent> },
 		ConnectorIngressError
 	> = () => Effect.succeed({ response: HttpServerResponse.text("ok"), events: [] }),
-): ChatConnector => ({
+): IngressConnector => ({
 	id: TEST_WEBHOOK_ID,
 	ingress: {
 		kind: "webhook",
@@ -69,7 +69,7 @@ export const testWebhookConnector = (
 	},
 })
 
-export const rejectingWebhookConnector = (): ChatConnector =>
+export const rejectingWebhookConnector = (): IngressConnector =>
 	testWebhookConnector(() =>
 		Effect.fail(
 			new ConnectorIngressError({

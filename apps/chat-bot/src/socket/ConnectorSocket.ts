@@ -28,12 +28,12 @@
  * resolved from another request's I/O context is how this codebase has broken
  * workerd before.
  */
-import type { ChatConnector, ChatConnectorId, ConnectorConfig, SocketDirective, SocketIngress, SocketStep } from "@maple/chat-platform"
+import type { ChatConnectorId, ConnectorConfig, SocketDirective, SocketIngress, SocketStep } from "@maple/chat-platform"
 import { connectors } from "@maple/chat-platform/connectors"
 import * as Cloudflare from "alchemy/Cloudflare"
 import { Effect, Layer } from "effect"
 import { FetchHttpClient } from "effect/unstable/http"
-import { resolveConnectorConfig } from "../config.ts"
+import { resolveConnectorConfig, type IngressConnector } from "../config.ts"
 import { InboundHandler } from "../inbound.ts"
 import { applyStep, reconnectDelayMs } from "./driver.ts"
 
@@ -127,7 +127,7 @@ const socketUrl = (url: string): string | undefined => {
 }
 
 interface ResolvedConnector {
-	readonly connector: ChatConnector
+	readonly connector: IngressConnector
 	readonly ingress: SocketIngress
 	readonly config: ConnectorConfig
 }
@@ -423,8 +423,10 @@ export class ConnectorSocketObject extends Cloudflare.DurableObject<
 	ConnectorSocketApi
 >()("ConnectorSocket") {}
 
-// `<never>` pinned for the same reason `ChatSessionObject`'s is: the activation's
-// requirements are all `DurableObjectServices`, which `.make` discharges, and
-// inference would otherwise widen them into the layer and surface them in the
-// root stack.
-export const ConnectorSocketLive = ConnectorSocketObject.make<never>(activateConnectorSocket)
+// The activation's requirements are named rather than inferred, exactly as
+// `ChatSessionObject`'s are: `.make` discharges `DurableObjectServices` (both of
+// these) through its own `Exclude`, while inference would widen them into the
+// layer's requirements and surface them all the way up in `alchemy.run.ts`.
+export const ConnectorSocketLive = ConnectorSocketObject.make<
+	Cloudflare.DurableObjectState | Cloudflare.WorkerEnvironment
+>(activateConnectorSocket)

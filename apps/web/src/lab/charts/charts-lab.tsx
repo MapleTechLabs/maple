@@ -8,6 +8,7 @@ import { QueryBuilderLineChart } from "@maple/ui/components/charts/line/query-bu
 import { QueryBuilderPieChart } from "@maple/ui/components/charts/pie/query-builder-pie-chart"
 import { Profiler, useMemo, type ReactNode } from "react"
 
+import { MetricsGrid } from "@/components/dashboard/metrics-grid"
 import { useMountEffect } from "@/hooks/use-mount-effect"
 import {
 	createReactRecorder,
@@ -504,9 +505,22 @@ export function ChartsLab({
 					))}
 				</div>
 			</Section>
+			<Section title="Empty window — MetricsGrid">
+				<div data-testid="charts-lab-empty">
+					<MetricsGrid items={EMPTY_GRID_ITEMS} syncId="lab-empty" />
+				</div>
+			</Section>
 		</LabShell>
 	)
 }
+
+/** The service-detail grid as it renders when the window returned no buckets. */
+const EMPTY_GRID_ITEMS = [
+	{ id: "latency", chartId: "latency-line", title: "Latency" },
+	{ id: "throughput", chartId: "throughput-area", title: "Throughput" },
+	{ id: "apdex", chartId: "apdex-area", title: "Apdex" },
+	{ id: "error-rate", chartId: "error-rate-area", title: "Error Rate" },
+].map((item, index) => ({ ...item, data: [], layout: { x: (index % 2) * 6, y: 0, w: 6, h: 4 } }))
 
 function LabShell({
 	renderer,

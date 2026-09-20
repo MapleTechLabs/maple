@@ -1,12 +1,13 @@
 /**
- * The registry.
+ * Every chat platform this build ships.
  *
- * These import lines are the ONLY place outside `src/connectors/<id>/` that may
- * name a chat vendor. Adding a platform is a directory beside this file plus a
- * line here — no new Worker, no new Durable Object class, no infrastructure
- * change. `vendor-isolation.test.ts` is what keeps that true.
+ * The one file above a connector directory that is allowed to name a vendor, and the only edit a
+ * new platform needs outside its own directory. `vendor-isolation.test.ts` enforces the rest.
+ *
+ * Deliberately not annotated: the inferred element type unions every registered connector's
+ * requirements, which is exactly what a host Worker supplies — it provides all of them, and picks
+ * the one an incoming event belongs to by id.
  */
-import type { ChatConnector } from "../connector.ts"
-import { discord } from "./discord/index.ts"
+import { discord } from "./discord"
 
-export const connectors: ReadonlyArray<ChatConnector> = [discord]
+export const connectors = [discord]

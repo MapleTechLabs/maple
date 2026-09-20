@@ -9,6 +9,16 @@
  */
 import type { ChatConnector, ConnectorConfig } from "@maple/chat-platform"
 
+/**
+ * The half of a connector this Worker touches.
+ *
+ * Structural rather than `ChatConnector<R>` itself: `R` is what a connector's OUTBOUND needs from
+ * its host — an HTTP client, a credential service — and the registry's element type unions every
+ * registered connector's requirements. Ingress has no requirements of its own, so naming just the
+ * two members it reads keeps those out of every signature on this path.
+ */
+export type IngressConnector = Pick<ChatConnector, "id" | "ingress">
+
 export type ConnectorConfigResult =
 	| { readonly _tag: "ready"; readonly config: ConnectorConfig }
 	/** The names that are absent or blank, for the one log line a skipped connector gets. */
@@ -23,7 +33,7 @@ export type ConnectorConfigResult =
  */
 export const resolveConnectorConfig = (
 	env: Record<string, unknown>,
-	connector: ChatConnector,
+	connector: IngressConnector,
 ): ConnectorConfigResult => {
 	const config = new Map<string, string>()
 	const missing: string[] = []
@@ -40,6 +50,6 @@ export const resolveConnectorConfig = (
 
 /** The connectors whose events arrive over a long-lived socket rather than an HTTP request. */
 export const socketConnectors = (
-	registry: ReadonlyArray<ChatConnector>,
-): ReadonlyArray<ChatConnector> =>
+	registry: ReadonlyArray<IngressConnector>,
+): ReadonlyArray<IngressConnector> =>
 	registry.filter((connector) => connector.ingress.kind === "socket")

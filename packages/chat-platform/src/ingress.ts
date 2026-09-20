@@ -27,7 +27,7 @@
 import type { Effect } from "effect"
 import { Option, Schema } from "effect"
 import type { HttpServerRequest, HttpServerResponse } from "effect/unstable/http"
-import { ChatConnectorId } from "./connector-id.ts"
+import { ChatConnectorId } from "./connector.ts"
 
 // Configuration
 
@@ -110,9 +110,15 @@ export const InboundAction = Schema.Struct({
 	/** The message carrying the control, so the reply can update it in place. */
 	messageId: Schema.String,
 	/**
-	 * Opaque to everything outside the connector: whatever Maple put on the
-	 * control when it rendered it, handed back verbatim. The connector round-trips
-	 * it; it never parses it.
+	 * Whatever Maple put on the control when it rendered it, handed back verbatim.
+	 * The connector round-trips it; it never parses it.
+	 *
+	 * Deliberately a plain string and NOT `ChatActionToken`, which is what
+	 * `./action-token.ts` mints on the way out. What arrives here came off the
+	 * wire and may be anything a forged interaction carried, so branding it at
+	 * this boundary would launder unvalidated input into a type that claims it
+	 * was validated. The handler decodes it with `decodeChatActionToken`, which
+	 * answers `undefined` for everything that is not one.
 	 */
 	actionToken: Schema.String,
 	actor: InboundActor,

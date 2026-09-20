@@ -8,9 +8,9 @@
  */
 import { Option } from "effect"
 import type { ConnectorRequest, InboundEvent } from "../../ingress.ts"
+import { API_BASE } from "./api.ts"
 import {
 	ADMINISTRATOR,
-	API_BASE_URL,
 	CALLBACK_DEFERRED_UPDATE_MESSAGE,
 	decodeGuildDelete,
 	decodeInteractionCreate,
@@ -18,7 +18,7 @@ import {
 	INTERACTION_MESSAGE_COMPONENT,
 	MANAGE_GUILD,
 } from "./gateway-payloads.ts"
-import { CONNECTOR_ID } from "./id.ts"
+import { DISCORD_CONNECTOR_ID } from "./id.ts"
 
 /** What one dispatch produced. Both lists are usually empty — most dispatches are noise. */
 export interface DispatchResult {
@@ -68,10 +68,15 @@ const isWorkspaceAdmin = (permissions: string | undefined): boolean => {
  * that changes nothing on screen, which is what a click whose real answer takes
  * an agent turn needs. The host issues it the moment the frame is handled; the
  * turn's actual reply arrives later over the outbound driver.
+ *
+ * Deliberately NOT the outbound half's request helper, and it carries no bot
+ * token: an interaction callback is authenticated by the interaction token in
+ * its own URL, and `onFrame` is a pure function that cannot reach an Effect
+ * transport. The two halves share the base URL and nothing else here.
  */
 const acknowledgeInteraction = (id: string, token: string): ConnectorRequest => ({
 	method: "POST",
-	url: `${API_BASE_URL}/interactions/${id}/${encodeURIComponent(token)}/callback`,
+	url: `${API_BASE}/interactions/${id}/${encodeURIComponent(token)}/callback`,
 	headers: new Map([["content-type", "application/json"]]),
 	body: JSON.stringify({ type: CALLBACK_DEFERRED_UPDATE_MESSAGE }),
 })
@@ -99,7 +104,7 @@ const messageCreate = (data: unknown, botUserId: string | undefined): DispatchRe
 		events: [
 			{
 				type: "message",
-				connector: CONNECTOR_ID,
+				connector: DISCORD_CONNECTOR_ID,
 				workspaceId: message.guild_id,
 				// A Discord thread IS a channel with its own id, and a reply goes to
 				// that id — so `channelId` already addresses it and `threadId` stays
@@ -146,7 +151,7 @@ const interactionCreate = (data: unknown): DispatchResult => {
 		events: [
 			{
 				type: "action",
-				connector: CONNECTOR_ID,
+				connector: DISCORD_CONNECTOR_ID,
 				workspaceId: guild_id,
 				channelId: channel_id,
 				messageId: message.id,
@@ -169,7 +174,7 @@ const guildDelete = (data: unknown): DispatchResult => {
 	const decoded = decodeGuildDelete(data)
 	if (Option.isNone(decoded) || decoded.value.unavailable === true) return NOTHING
 	return {
-		events: [{ type: "workspace-removed", connector: CONNECTOR_ID, workspaceId: decoded.value.id }],
+		events: [{ type: "workspace-removed", connector: DISCORD_CONNECTOR_ID, workspaceId: decoded.value.id }],
 		requests: [],
 	}
 }

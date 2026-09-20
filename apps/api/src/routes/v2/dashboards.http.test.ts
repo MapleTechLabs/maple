@@ -405,11 +405,16 @@ describe("v2 dashboards over HTTP", () => {
 		expect(response.status).toBe(400)
 		expect(response.body.error.type).toBe("invalid_request_error")
 		expect(response.body.error.code).toBe("parameter_invalid")
-		// `param` is the whole path, not just its first segment.
+		// `param` is the whole path, not just its first segment, and the message
+		// repeats it: that path is what points a caller at the offending widget.
+		// It no longer names the widget's `id` or echoes the rejected value —
+		// effect rc.116 reports neither the input nor the actual for a struct or
+		// array decode failure.
 		expect(response.body.error.param).toContain("widgets[0]")
 		expect(response.body.error.param).toContain("fill_nulls")
-		expect(response.body.error.message).toContain('widget "error-rate"')
-		expect(response.body.error.message).toContain("true")
+		expect(response.body.error.message).toContain("widgets[0]")
+		expect(response.body.error.message).toContain("fill_nulls")
+		expect(response.body.error.message).toContain("Expected")
 
 		await harness.dispose()
 	})

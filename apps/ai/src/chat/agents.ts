@@ -143,6 +143,10 @@ export const chatAgent = (
 	Agent.withModel(
 		Agent.make(agent.name, {
 			input: Schema.String,
+			// The turn's message is already prose, and without this projection the engine falls back to
+			// `JSON.stringify` of the encoded input: the model reads a quoted literal whose newlines are
+			// two characters, and Agent Sessions replays that escaped blob back to the engineer.
+			inputPrompt: (text: string) => text,
 			output: Output.text(Schema.String),
 			instructions: buildSystemPrompt(agent),
 			description: agent.description,

@@ -27,7 +27,6 @@
  * `bun dev` the portless route reaches it; the first webhook connector is what
  * should buy the hostname.
  */
-import type { ChatConnector } from "@maple/chat-platform"
 import { connectors } from "@maple/chat-platform/connectors"
 import {
 	cachedRecoverable,
@@ -41,7 +40,7 @@ import { WorkerTelemetry } from "@maple/infra/worker-telemetry"
 import * as Cloudflare from "alchemy/Cloudflare"
 import { Effect, Layer, Ref, Scope } from "effect"
 import { HttpRouter } from "effect/unstable/http"
-import { resolveConnectorConfig, socketConnectors } from "./config.ts"
+import { resolveConnectorConfig, socketConnectors, type IngressConnector } from "./config.ts"
 import { InboundHandler } from "./inbound.ts"
 import { connectorConfigEnv } from "./resources/env.ts"
 import { connectorWebhookRouter } from "./routes/webhook.ts"
@@ -107,7 +106,7 @@ export default ChatBot.make(
 		// once a minute.
 		const announced = yield* Ref.make(new Set<string>())
 		const announceSkip = Effect.fnUntraced(function* (
-			connector: ChatConnector,
+			connector: IngressConnector,
 			names: ReadonlyArray<string>,
 		) {
 			if ((yield* Ref.get(announced)).has(connector.id)) return

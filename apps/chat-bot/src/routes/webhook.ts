@@ -11,11 +11,10 @@
  * connector. It is also why the Worker takes no public hostname yet; see
  * `../worker.ts`.
  */
-import type { ChatConnector } from "@maple/chat-platform"
 import { connectors as registeredConnectors } from "@maple/chat-platform/connectors"
 import { Effect, Schema } from "effect"
 import { HttpRouter, HttpServerResponse } from "effect/unstable/http"
-import { resolveConnectorConfig } from "../config.ts"
+import { resolveConnectorConfig, type IngressConnector } from "../config.ts"
 import { InboundHandler } from "../inbound.ts"
 
 /**
@@ -45,7 +44,7 @@ const rejectCaller = (status: number, errorType: string, detail: string) =>
 
 export const connectorWebhookRouter = (
 	env: Record<string, unknown>,
-	registry: ReadonlyArray<ChatConnector> = registeredConnectors,
+	registry: ReadonlyArray<IngressConnector> = registeredConnectors,
 ) =>
 	HttpRouter.use((router) =>
 		Effect.gen(function* () {

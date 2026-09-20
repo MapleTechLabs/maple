@@ -1,17 +1,21 @@
-import type { ChatConnector } from "../../connector.ts"
-import { socketIngress } from "../../ingress.ts"
-import { gatewayProtocol } from "./gateway.ts"
-import { CONNECTOR_ID } from "./id.ts"
+import type { HttpClient } from "effect/unstable/http"
+import type { ChatConnector } from "../../connector"
+import { socketIngress } from "../../ingress"
+import { gatewayProtocol } from "./gateway"
+import { DISCORD_CONNECTOR_ID } from "./id"
+import { DiscordBotToken, discordOutbound } from "./outbound"
+
+export { DiscordBotToken }
 
 /**
- * Discord, over the Gateway.
+ * Discord, both halves.
  *
- * A mention only reaches a bot over the persistent socket — Discord has no
- * webhook that delivers one — so this connector's ingress is the socket kind and
- * the host keeps a connection open for it. See `README.md` in this directory for
- * the application setup that has to exist before any of it runs.
+ * Its events arrive over the Gateway rather than a webhook — a mention reaches a bot no other way
+ * — so `ingress` is the socket kind and the host keeps a connection open for it. See `README.md`
+ * in this directory for the application setup both halves depend on.
  */
-export const discord: ChatConnector = {
-	id: CONNECTOR_ID,
+export const discord: ChatConnector<HttpClient.HttpClient | DiscordBotToken> = {
+	id: DISCORD_CONNECTOR_ID,
+	outbound: discordOutbound,
 	ingress: socketIngress(gatewayProtocol),
 }

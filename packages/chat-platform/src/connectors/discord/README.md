@@ -9,10 +9,13 @@ platform it is talking to.
 One Discord application, created at <https://discord.com/developers/applications>.
 
 1. **Bot tab → Token.** Reset it once and put the value in the deploy
-   environment as `MAPLE_DISCORD_BOT_TOKEN`. That name is declared by
-   `gateway.ts` (`requiredConfig`) and read back generically by the host — the
-   connector never touches `process.env`. Without it the connector is skipped
-   with one log line and the rest of the Worker runs.
+   environment as `MAPLE_DISCORD_BOT_TOKEN` — declared once, as
+   `BOT_TOKEN_CONFIG` in `api.ts`. The gateway half names it in `requiredConfig`
+   so the host resolves it generically; the outbound half receives the same
+   secret as the `DiscordBotToken` service, because an Effect transport can take
+   a service where a pure state machine cannot. Two mechanisms, one secret, one
+   name — and the connector never touches `process.env`. Without it the ingress
+   half is skipped with one log line and the rest of the Worker runs.
 2. **Bot tab → Privileged Gateway Intents: leave all three OFF.** This connector
    identifies with `GUILDS | GUILD_MESSAGES` only. Discord delivers message
    content without the privileged `MESSAGE_CONTENT` intent for messages in which
