@@ -1,7 +1,13 @@
 import { describe, expect, it } from "vitest"
 
-import { sessionToolResults, spanMessages, spanToolCalls, toolResultFor } from "./span-detail"
-import { llmSpan, toolSpan } from "./span-test-support"
+import {
+	sessionToolResults,
+	spanMessages,
+	spanToolCalls,
+	toolResultFor,
+	toolSpanIssuers,
+} from "./span-detail"
+import { llmSpan, makeSpan, toolSpan } from "./span-test-support"
 
 describe("spanMessages", () => {
 	it("reads the documented shape: system instructions, then input, then output", () => {
@@ -432,5 +438,75 @@ describe("sessionToolResults", () => {
 		expect(toolResultFor(results, "trace-b", "toolu_1")).toBe("the b answer")
 		// A caller from a third trace still gets the session-wide answer.
 		expect(toolResultFor(results, "trace-z", "toolu_1")).toBe("the a answer")
+	})
+})
+
+describe("toolSpanIssuers", () => {
+	const calling = (spanId: string, callId: string, traceId?: string, parentSpanId = "run") =>
+		llmSpan({
+			spanId,
+			traceId,
+			parentSpanId,
+			startMs: 0,
+			durationMs: 1000,
+			genAi: {
+				outputMessages: [
+					{ role: "assistant", parts: [{ type: "tool_call", id: callId, name: "read_file" }] },
+				],
+			},
+		})
+	const run = makeSpan({ spanId: "run", startMs: 0, durationMs: 5000, spanName: "AgentRuntime.run" })
+
+	it("places a sibling tool span under the model call that issued its call id", () => {
+		const issuers = toolSpanIssuers([
+			run,
+			calling("llm-1", "call_1"),
+			toolSpan({
+				spanId: "tool-1",
+				parentSpanId: "run",
+				startMs: 1000,
+				durationMs: 50,
+				genAi: { toolCallId: "call_1" },
+			}),
+			toolSpan({
+				spanId: "tool-2",
+				parentSpanId: "run",
+				startMs: 1100,
+				durationMs: 50,
+				genAi: { toolCallId: "call_x" },
+			}),
+			toolSpan({ spanId: "tool-3", parentSpanId: "run", startMs: 1200, durationMs: 50 }),
+		])
+		expect([...issuers]).toEqual([["tool-1", "llm-1"]])
+	})
+
+	it("leaves a tool span the tree already nests under its model call", () => {
+		const issuers = toolSpanIssuers([
+			run,
+			calling("llm-1", "call_1"),
+			makeSpan({ spanId: "wrapper", parentSpanId: "llm-1", startMs: 900, durationMs: 100 }),
+			toolSpan({
+				spanId: "tool-1",
+				parentSpanId: "wrapper",
+				startMs: 900,
+				durationMs: 50,
+				genAi: { toolCallId: "call_1" },
+			}),
+		])
+		expect(issuers.size).toBe(0)
+	})
+
+	it("never pairs a call id across traces", () => {
+		const issuers = toolSpanIssuers([
+			calling("llm-a", "call_1", "trace-a", ""),
+			toolSpan({
+				spanId: "tool-b",
+				traceId: "trace-b",
+				startMs: 1000,
+				durationMs: 50,
+				genAi: { toolCallId: "call_1" },
+			}),
+		])
+		expect(issuers.size).toBe(0)
 	})
 })
