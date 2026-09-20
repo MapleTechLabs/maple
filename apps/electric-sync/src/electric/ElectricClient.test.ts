@@ -449,7 +449,10 @@ describe("ElectricClient.fetchShape", () => {
 			const error = yield* Fiber.join(fiber)
 			assert.strictEqual(error._tag, "@maple/electric-sync/ElectricUpstreamUnreachable")
 			// The span must be able to say a timeout is what happened, not `undefined`.
-			assert.include(error.message, "Timeout")
+			// effect rc.116's `TimeoutException` carries its own text, so the ceiling
+			// that fired is named too; it used to carry only a tag.
+			assert.include(error.message, "timed out")
+			assert.include(error.message, "30s")
 		}).pipe(Effect.provide(clientLayer())),
 	)
 

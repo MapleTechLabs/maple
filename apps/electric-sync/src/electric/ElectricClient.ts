@@ -50,8 +50,9 @@ const redactSecrets = (text: string): string => text.replace(/(secret=)[^&\s)]*/
  * upstream failure that may or may not carry a URL in its cause.
  */
 export const describeUpstreamFailure = (error: unknown): string => {
-	// `Cause.TimeoutError` carries no `message`, so fall back through name to the
-	// string form rather than interpolating `undefined` into a span.
+	// Fall back through name to the string form rather than interpolating
+	// `undefined` into a span: not every failure reaching here carries a message,
+	// and one that does not used to be the timeout itself.
 	const text = error instanceof Error ? error.message || error.name || String(error) : String(error)
 	const cause = error instanceof Error && error.cause !== undefined ? String(error.cause) : undefined
 	// Redact AFTER composing, never per-part: a fetch failure's cause commonly

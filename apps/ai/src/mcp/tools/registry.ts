@@ -97,12 +97,20 @@ class McpDecodeError extends Schema.TaggedError<McpDecodeError>()("@maple/mcp/de
 }
 
 /**
- * Effect emits exactly `{ anyOf: [{ type: "object" }, { type: "array" }] }` — no
- * `type`, no `properties` — for an empty `Struct({})`. Matched structurally so
- * the normalization below cannot swallow any other rootless schema.
+ * Effect emits a rootless schema for an empty `Struct({})` — `{ not: { type:
+ * "null" } }` since rc.116, `{ anyOf: [{ type: "object" }, { type: "array" }] }`
+ * before it. Both are matched structurally, so the normalization below cannot
+ * swallow any other rootless schema.
  */
 const isEmptyStructSchema = (base: Record<string, unknown>): boolean => {
 	if ("type" in base || "properties" in base) return false
+	const not = base.not
+	if (typeof not === "object" && not !== null) {
+		const keys = Object.keys(base).filter((key) => key !== "$defs")
+		if (keys.length === 1 && (not as { type?: unknown }).type === "null") {
+			return Object.keys(not).length === 1
+		}
+	}
 	const anyOf = base.anyOf
 	if (!Array.isArray(anyOf) || anyOf.length === 0) return false
 	return anyOf.every((member) => {
@@ -150,7 +158,11 @@ const collapseNullableUnions = (node: unknown): unknown => {
 }
 
 export const toInputSchema = (schema: Schema.Top): Record<string, unknown> => {
-	const document = Schema.toJsonSchemaDocument(schema)
+	// `onExcessProperty: "error"` keeps `additionalProperties: false` on every
+	// published tool. rc.116 made the emitted value follow this option and
+	// defaults it to the decoder's behaviour, which would have loosened the
+	// schema all 57 public MCP tools advertise.
+	const document = Schema.toJsonSchemaDocument(schema, { onExcessProperty: "error" })
 	const rawBase =
 		Object.keys(document.definitions).length > 0
 			? { ...document.schema, $defs: document.definitions }

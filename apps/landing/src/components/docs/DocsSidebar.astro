@@ -71,7 +71,7 @@ const rowClass = (active: boolean) =>
                             <a
                                 href={`/docs/${doc.id}`}
                                 aria-current={active ? "page" : undefined}
-                                class:list={["flex items-center gap-2 px-2.5 py-1.5 text-[13px] leading-5 transition-colors", rowClass(active)]}
+                                class:list={["flex items-center gap-2 px-2.5 py-1.5 text-[13px] leading-5 transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-primary", rowClass(active)]}
                             >
                                 {doc.data.sdk && (
                                     <LanguageLogo id={doc.data.sdk} class="h-3.5 w-3.5 shrink-0" />
@@ -93,7 +93,7 @@ const rowClass = (active: boolean) =>
                                                     href={`/docs/${child.id}`}
                                                     aria-current={on ? "page" : undefined}
                                                     class:list={[
-                                                        "-ml-px block py-1 pl-3 pr-2 text-[13px] leading-5 transition-colors",
+                                                        "-ml-px block py-1 pl-3 pr-2 text-[13px] leading-5 transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-primary",
                                                         on
                                                             ? "text-primary border-l border-primary"
                                                             : "text-fg-muted hover:text-fg border-l border-transparent",

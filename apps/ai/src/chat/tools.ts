@@ -22,6 +22,7 @@ import { Tool, Toolkit } from "effect/unstable/ai"
 import type { McpToolExecutorApi } from "../mcp/dispatcher"
 import type { McpToolSurface } from "@maple/domain/mcp-manifest"
 import { buildMapleToolkit, MapleToolFailure, summarizeToolFailure } from "../mcp/tools/llm-tools"
+import { toolHandlersWithContent } from "../platform/genai-spans"
 import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
 
 const decodeInvestigationIdOption = Schema.decodeUnknownOption(InvestigationId)
@@ -137,6 +138,8 @@ export const buildDiagnosisCompletion = (
 	modelName: string,
 	/** This run is the close-out: whatever it files is a partial, and lands as `inconclusive`. */
 	partial = false,
+	/** The run's agent-session identity, stamped on the tool span like every other tool's. */
+	sessionAttributes?: Readonly<Record<string, string>>,
 ) => {
 	const investigationId = investigationForSession(sessionId)
 	if (investigationId === undefined) return undefined
@@ -144,7 +147,7 @@ export const buildDiagnosisCompletion = (
 	let submitted = false
 	return {
 		toolkit,
-		layer: toolkit.toLayer({
+		...toolHandlersWithContent(toolkit, {
 			[SUBMIT_DIAGNOSIS]: (submission: AiTriageSubmission) =>
 				Effect.suspend(() => {
 					const { report, filled } = normalizeTriageSubmission(submission)
@@ -181,7 +184,7 @@ export const buildDiagnosisCompletion = (
 						),
 					),
 				),
-		}),
+		}, sessionAttributes),
 		autonomous: isAutonomousInvestigationTurn(sessionId, tenant),
 		submitted: () => submitted,
 	}

@@ -5,13 +5,13 @@
 // everywhere.
 import { Config, Option, Redacted } from "effect"
 
-/** `Config.string(key)` with a fallback when the env var is unset. */
+/** `Config.String(key)` with a fallback when the env var is unset. */
 export const stringWithDefault = (key: string, fallback: string) =>
-	Config.string(key).pipe(Config.withDefault(fallback))
+	Config.String(key).pipe(Config.withDefault(fallback))
 
 /** Optional string; treats a blank/whitespace-only value as absent (`None`). */
 export const optionalString = (key: string) =>
-	Config.option(Config.string(key)).pipe(
+	Config.option(Config.String(key)).pipe(
 		Config.map((opt) =>
 			Option.flatMap(opt, (s) => (s.trim().length > 0 ? Option.some(s) : Option.none())),
 		),
@@ -19,7 +19,7 @@ export const optionalString = (key: string) =>
 
 /** Optional redacted secret; treats a blank/whitespace-only value as absent (`None`). */
 export const optionalRedacted = (key: string) =>
-	Config.option(Config.string(key)).pipe(
+	Config.option(Config.String(key)).pipe(
 		Config.map((opt) =>
 			Option.flatMap(opt, (s) => (s.trim().length > 0 ? Option.some(Redacted.make(s)) : Option.none())),
 		),
