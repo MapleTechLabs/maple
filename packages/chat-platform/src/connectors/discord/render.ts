@@ -43,6 +43,9 @@ export interface DiscordMessagePayload {
 
 export const MAX_CONTENT_CHARS = 2000
 export const MAX_EMBEDS = 10
+export const MAX_ACTION_ROWS = 5
+const MAX_EMBED_TITLE_CHARS = 256
+const MAX_EMBED_DESCRIPTION_CHARS = 4096
 export const MAX_CUSTOM_ID_CHARS = 100
 const MAX_BUTTON_LABEL_CHARS = 80
 
@@ -59,9 +62,13 @@ export const renderDiscordMessage = (blocks: ReadonlyArray<ChatBlock>): DiscordM
 				break
 			case "chart": {
 				if (block.imageUrl !== null && embeds.length < MAX_EMBEDS) {
+					// A title and a summary are built from model-authored chart JSON, which is bounded by
+					// nothing; an over-long field is not a bad embed, it is a rejected message.
 					embeds.push({
-						...(block.title === null ? undefined : { title: block.title }),
-						description: block.summary,
+						...(block.title === null
+							? undefined
+							: { title: clamp(block.title, MAX_EMBED_TITLE_CHARS) }),
+						description: clamp(block.summary, MAX_EMBED_DESCRIPTION_CHARS),
 						image: { url: block.imageUrl },
 					})
 					break
@@ -84,7 +91,9 @@ export const renderDiscordMessage = (blocks: ReadonlyArray<ChatBlock>): DiscordM
 				lines.push(
 					`**Approve \`${block.toolName}\`?**${block.summary === "" ? "" : `\n${block.summary}`}`,
 				)
-				const row = approvalRow(block.token, block.toolName)
+				// Each approval is one action row, and a message carries at most five of them — a sixth
+				// would be rejected along with the whole turn.
+				const row = rows.length < MAX_ACTION_ROWS ? approvalRow(block.token, block.toolName) : null
 				if (row === null) lines.push("This one has to be approved in Maple.")
 				else rows.push(row)
 				break
@@ -103,12 +112,7 @@ export const renderDiscordMessage = (blocks: ReadonlyArray<ChatBlock>): DiscordM
 	return {
 		// The neutral cut works to an estimate of what a dialect costs, and a body over the limit is
 		// rejected whole — so the estimate is clamped here rather than trusted.
-		content:
-			content.length > MAX_CONTENT_CHARS
-				? `${content.slice(0, MAX_CONTENT_CHARS - 1)}…`
-				: content === "" && embeds.length === 0
-					? EMPTY_CONTENT
-					: content,
+		content: content === "" && embeds.length === 0 ? EMPTY_CONTENT : clamp(content, MAX_CONTENT_CHARS),
 		embeds,
 		components: rows,
 		allowed_mentions: { parse: [] },
@@ -120,6 +124,9 @@ export const renderDiscordMessage = (blocks: ReadonlyArray<ChatBlock>): DiscordM
  * component, and the driver empties a message that a retraction shrank a turn past.
  */
 export const EMPTY_CONTENT = "—"
+
+const clamp = (text: string, max: number): string =>
+	text.length <= max ? text : `${text.slice(0, max - 1)}…`
 
 const ENTITY_LABELS = {
 	trace: "Trace",

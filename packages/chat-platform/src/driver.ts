@@ -27,6 +27,14 @@ import {
 export interface ChatTurnDriverOptions<E, RE, RO> {
 	/** The turn's events, from seq 0 or from the cursor taken before it started. */
 	readonly events: Stream.Stream<ChatEvent, E, RE>
+	/**
+	 * The assistant message this turn writes — what `beginTurn` answered with.
+	 *
+	 * Named rather than discovered from the first `turn-start`, because a stream from seq 0 replays
+	 * whole earlier turns: a driver watching for any `turn-start` would adopt an old message, and one
+	 * watching for any `turn-end` would stop on an old turn's ending before this one had said a word.
+	 */
+	readonly messageId: string
 	readonly outbound: ChatOutbound<RO>
 	readonly target: ChatTarget
 	readonly context: ChatRenderContext
@@ -35,10 +43,11 @@ export interface ChatTurnDriverOptions<E, RE, RO> {
 export const driveChatTurn = Effect.fn("ChatPlatform.driveChatTurn")(function* <E, RE, RO>(
 	options: ChatTurnDriverOptions<E, RE, RO>,
 ) {
-	const { context, outbound, target } = options
+	const { context, messageId, outbound, target } = options
 	yield* Effect.annotateCurrentSpan({
 		"chat.connector": outbound.connectorId,
 		"chat.session_id": context.sessionId,
+		"chat.message_id": messageId,
 	})
 
 	const transport = yield* outbound.transport
@@ -54,16 +63,11 @@ export const driveChatTurn = Effect.fn("ChatPlatform.driveChatTurn")(function* <
 	// because fibers interleave only at yield points within one isolate, and everything that reads
 	// the transcript does so under `gate`: `dirty` is cleared BEFORE the render, so an event that
 	// lands during a post or an edit marks the turn dirty again rather than being swallowed.
-	/** The turn's assistant message. Null until `turn-start`, which is also what posts anything. */
-	let messageId: string | null = null
 	let ending: ChatNoticeBlock | null = null
 	let dirty = false
 
 	const flush = gate.withPermit(
 		Effect.gen(function* () {
-			// Before `turn-start` there is nothing to say — unless the turn ended without ever
-			// starting one, which is a failure the reader would otherwise never hear about.
-			if (messageId === null && ending === null) return
 			dirty = false
 			const message = transcript.messages.find((candidate) => candidate.id === messageId)
 			const blocks: Array<ChatBlock> =
@@ -104,21 +108,17 @@ export const driveChatTurn = Effect.fn("ChatPlatform.driveChatTurn")(function* <
 			dirty = true
 			return
 		}
-		if (event.type === "turn-end") {
+		if (event.type === "turn-end" && event.messageId === messageId) {
 			ending = turnEndNotice(event)
-			return
-		}
-		if (event.type === "turn-start" && messageId === null) {
-			messageId = event.messageId
-			// The placeholder, immediately: the platform should show the bot working before the first
-			// token lands, not after the first throttle interval.
-			yield* flush
 			return
 		}
 		dirty = true
 	})
 
 	yield* Effect.forkChild(transport.typing(target).pipe(Effect.tapCause(Effect.logDebug), Effect.ignore))
+	// The placeholder, before a single event: the platform should show the bot working on it rather
+	// than saying nothing until the first token, or until the first throttle interval.
+	yield* flush
 	const throttled = yield* Effect.forkChild(
 		Effect.repeat(
 			// A mid-turn edit that fails takes its fiber with it and nothing joins this one, so the
@@ -128,9 +128,14 @@ export const driveChatTurn = Effect.fn("ChatPlatform.driveChatTurn")(function* <
 		),
 	)
 
-	// `takeUntil` is inclusive, so `turn-end` itself reaches the fold and sets the closing notice
-	// before the stream completes.
-	const outcome = yield* Stream.runForEach(options.events.pipe(Stream.takeUntil(isTurnEnd)), onEvent).pipe(
+	// `takeUntil` is inclusive, so THIS turn's `turn-end` reaches the fold and sets the closing
+	// notice before the stream completes. An earlier turn's does not stop the stream.
+	const endsThisTurn = (event: ChatEvent) =>
+		event.type === "turn-end" && event.task === undefined && event.messageId === messageId
+	const outcome = yield* Stream.runForEach(
+		options.events.pipe(Stream.takeUntil(endsThisTurn)),
+		onEvent,
+	).pipe(
 		// A stream that dies has no `turn-end` to close on, and the reader would be left looking at
 		// the placeholder forever. Say so, flush, and then fail.
 		Effect.tapError(() =>
@@ -154,8 +159,6 @@ const DISCONNECTED: ChatNoticeBlock = {
 	tone: "error",
 	text: "Lost the connection to the agent — this answer stops here.",
 }
-
-const isTurnEnd = (event: ChatEvent): boolean => event.type === "turn-end" && event.task === undefined
 
 /** How much of a failure's own message a channel is worth showing. */
 const MAX_ERROR_CHARS = 200

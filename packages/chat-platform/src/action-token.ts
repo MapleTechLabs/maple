@@ -16,13 +16,18 @@ const asActionToken = Schema.decodeSync(ChatActionToken)
 const decodeSessionId = Schema.decodeUnknownOption(ChatSessionId)
 
 /**
- * The session id owns the `:`, so the pair joins on a character it cannot contain. A tool call id
- * is provider-assigned and could hold anything, which is why the split takes the FIRST separator.
+ * The two halves join on `|`, and the split takes the FIRST one — a tool call id is
+ * provider-assigned and may well contain one, a session id must not.
+ *
+ * "Must not" is enforced rather than assumed: `ChatSessionId` is a bare brand, its tab half is
+ * whatever minted the session, and a session id carrying a `|` would otherwise decode back as a
+ * SHORTER session id that still looks valid — the wrong conversation, silently.
  */
 const SEPARATOR = "|"
+const ESCAPED_SEPARATOR = "%7C"
 
 export const encodeChatActionToken = (sessionId: ChatSessionId, toolCallId: string): ChatActionToken =>
-	asActionToken(`${sessionId}${SEPARATOR}${toolCallId}`)
+	asActionToken(`${sessionId.replaceAll(SEPARATOR, ESCAPED_SEPARATOR)}${SEPARATOR}${toolCallId}`)
 
 export interface ChatAction {
 	readonly sessionId: ChatSessionId
@@ -38,7 +43,7 @@ export interface ChatAction {
 export const decodeChatActionToken = (token: string): ChatAction | undefined => {
 	const separator = token.indexOf(SEPARATOR)
 	if (separator <= 0) return undefined
-	const rawSessionId = token.slice(0, separator)
+	const rawSessionId = token.slice(0, separator).replaceAll(ESCAPED_SEPARATOR, SEPARATOR)
 	const toolCallId = token.slice(separator + SEPARATOR.length)
 	if (toolCallId.length === 0 || orgIdFromChatSessionId(rawSessionId) === undefined) return undefined
 	// Through the schema rather than a cast: `ChatSessionId` carries no checks today, and the day it

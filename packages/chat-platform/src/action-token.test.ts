@@ -29,4 +29,13 @@ describe("chat action token", () => {
 		const token = encodeChatActionToken(sessionId, "call|weird")
 		expect(decodeChatActionToken(token)?.toolCallId).toBe("call|weird")
 	})
+
+	it("survives a session id that carries the separator", () => {
+		// A tab id is whatever minted the session — a platform's own message id, on a platform that
+		// allows anything. Unescaped, this decoded back as a shorter session id that still looked
+		// valid: the wrong conversation, silently.
+		const awkward = makeChatSessionId("org_1", "bot|42")
+		const token = encodeChatActionToken(awkward, "call_1")
+		expect(decodeChatActionToken(token)).toEqual({ sessionId: awkward, toolCallId: "call_1" })
+	})
 })

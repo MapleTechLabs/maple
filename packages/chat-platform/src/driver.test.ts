@@ -99,6 +99,7 @@ describe("driveChatTurn", () => {
 						],
 						[NOW, event(5, { type: "turn-end", messageId: "a1", reason: "stop" })],
 					]),
+					messageId: "a1",
 					outbound: chat.outbound,
 					target,
 					context,
@@ -141,6 +142,7 @@ describe("driveChatTurn", () => {
 					[NOW, event(4, { type: "text-delta", messageId: "a1", text: "The answer." })],
 					[NOW, event(5, { type: "turn-end", messageId: "a1", reason: "stop" })],
 				]),
+				messageId: "a1",
 				outbound: chat.outbound,
 				target,
 				context,
@@ -159,6 +161,7 @@ describe("driveChatTurn", () => {
 					[NOW, event(2, { type: "text-delta", messageId: "a1", text: "line\n".repeat(30) })],
 					[NOW, event(3, { type: "turn-end", messageId: "a1", reason: "stop" })],
 				]),
+				messageId: "a1",
 				outbound: chat.outbound,
 				target,
 				context,
@@ -198,6 +201,7 @@ describe("driveChatTurn", () => {
 						}),
 					],
 				]),
+				messageId: "a1",
 				outbound: chat.outbound,
 				target,
 				context,
@@ -227,13 +231,14 @@ describe("driveChatTurn", () => {
 						event(1, { type: "turn-end", messageId: "a1", reason: "error", error: "no model" }),
 					],
 				]),
+				messageId: "a1",
 				outbound: chat.outbound,
 				target,
 				context,
 			})
 
-			expect(chat.calls).toHaveLength(1)
-			expect(chat.calls[0].blocks).toEqual([
+			expect(chat.calls.map((call) => call.verb)).toEqual(["post", "edit"])
+			expect(chat.calls[1].blocks).toEqual([
 				{ kind: "notice", tone: "error", text: "Failed: no model" },
 			])
 		}),
@@ -253,6 +258,7 @@ describe("driveChatTurn", () => {
 							event(3, { type: "turn-end", messageId: "a1", reason: "stop" }),
 						],
 					]),
+					messageId: "a1",
 					outbound: chat.outbound,
 					target,
 					context,
@@ -293,6 +299,7 @@ describe("driveChatTurn", () => {
 							event(4, { type: "turn-end", messageId: "a1", reason: "stop" }),
 						],
 					]),
+					messageId: "a1",
 					outbound: chat.outbound,
 					target,
 					context,
@@ -318,7 +325,7 @@ describe("driveChatTurn", () => {
 			]).pipe(Stream.concat(Stream.fail("the session went away")))
 
 			const error = yield* Effect.flip(
-				driveChatTurn({ events, outbound: chat.outbound, target, context }),
+				driveChatTurn({ events, messageId: "a1", outbound: chat.outbound, target, context }),
 			)
 
 			expect(error).toBe("the session went away")
@@ -342,6 +349,7 @@ describe("driveChatTurn", () => {
 					[NOW, event(3, { type: "text-delta", messageId: "a1", text: "ing." })],
 					[NOW, event(4, { type: "turn-end", messageId: "a1", reason: "stop" })],
 				]),
+				messageId: "a1",
 				outbound: chat.outbound,
 				target,
 				context,

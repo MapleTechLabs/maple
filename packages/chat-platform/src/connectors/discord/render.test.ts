@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
 import type { ChatBlock } from "../../render/blocks"
 import type { ChatActionToken } from "../../action-token"
-import { EMPTY_CONTENT, MAX_CONTENT_CHARS, renderDiscordMessage } from "./render"
+import { EMPTY_CONTENT, MAX_ACTION_ROWS, MAX_CONTENT_CHARS, renderDiscordMessage } from "./render"
 
 const token = (value: string) => value as ChatActionToken
 
@@ -93,6 +93,30 @@ describe("renderDiscordMessage", () => {
 
 		expect(payload.components).toEqual([])
 		expect(payload.content).toContain("has to be approved in Maple")
+	})
+
+	it("stops at the action rows a message may carry, rather than losing the message", () => {
+		const approvals = Array.from({ length: 7 }, (_, index) => ({
+			kind: "approval" as const,
+			toolName: `tool_${index}`,
+			summary: "",
+			token: token(`org_1:bot-42|call_${index}`),
+		}))
+		const payload = renderDiscordMessage(approvals)
+
+		expect(payload.components).toHaveLength(MAX_ACTION_ROWS)
+		expect(payload.content.match(/has to be approved in Maple/g)).toHaveLength(2)
+	})
+
+	it("clamps embed fields the model had no reason to keep short", () => {
+		const payload = renderDiscordMessage([
+			{
+				...(chart("https://img.maple.dev/a.png") as Extract<ChatBlock, { kind: "chart" }>),
+				title: "t".repeat(400),
+			},
+		])
+
+		expect(payload.embeds[0].title).toHaveLength(256)
 	})
 
 	it("gives an emptied message something Discord accepts", () => {
