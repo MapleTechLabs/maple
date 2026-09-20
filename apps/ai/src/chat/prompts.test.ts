@@ -45,6 +45,10 @@ describe("CONNECTOR_SYSTEM_PROMPT", () => {
 		assert.include(CONNECTOR_SYSTEM_PROMPT, 'NEVER emit "[Approve]"')
 	})
 
+	it("sends nobody to the Maple app, because it can act from the channel", () => {
+		assert.notInclude(CONNECTOR_SYSTEM_PROMPT, "Maple app")
+	})
+
 	it("drops what does not survive the trip to a channel", () => {
 		// No 420px panel, and no markdown tables: the in-app prompt teaches both.
 		assert.notInclude(CONNECTOR_SYSTEM_PROMPT, "420px")

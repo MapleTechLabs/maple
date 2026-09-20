@@ -71,13 +71,20 @@ describe("chat session ids", () => {
 		expect(isConnectorSessionId(makeChatSessionId("org_abc", "tab-1"))).toBe(false)
 	})
 
-	it("refuses a conversation key that would blur the tab", () => {
-		// `-` is what the tab splits on; the rest is what a Durable Object name can carry.
-		const decode = Schema.decodeUnknownSync(ChatConversationKey)
+	it("refuses an id or key that would blur the tab", () => {
+		// `-` is what the tab splits on, and nothing else escapes it — so both segments' charsets
+		// are what keeps `bot-<connectorId>-<conversationKey>` unambiguous.
+		const key = Schema.decodeUnknownSync(ChatConversationKey)
 		for (const bad of ["has-dash", "has space", "", "a".repeat(129)]) {
-			expect(() => decode(bad), bad).toThrow()
+			expect(() => key(bad), bad).toThrow()
 		}
-		expect(decode("C123.g:4_x")).toBe("C123.g:4_x")
+		expect(key("C123.g:4_x")).toBe("C123.g:4_x")
+
+		const id = Schema.decodeUnknownSync(ChatConnectorId)
+		for (const bad of ["two-words", "Upper", "9lead", "has_underscore", "", "a".repeat(33)]) {
+			expect(() => id(bad), bad).toThrow()
+		}
+		expect(id("testchat2")).toBe("testchat2")
 	})
 
 	it("recovers the investigation id only for investigate sessions", () => {

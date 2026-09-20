@@ -30,11 +30,12 @@ const orgId = Schema.decodeSync(OrgId)(ORG)
 /** An ordinary signed-in caller. Who drives a turn is its origin, never its user id. */
 const tenant = { orgId }
 
+const connectorId = Schema.decodeSync(ChatConnectorId)("testchat")
 const conversationKey = Schema.decodeSync(ChatConversationKey)("c1")
 
 const CONNECTOR_ORIGIN: ChatTurnOrigin = {
 	kind: "connector",
-	connectorId: Schema.decodeSync(ChatConnectorId)("testchat"),
+	connectorId,
 	workspaceId: "w1",
 	externalUserId: Schema.decodeSync(ExternalUserId)("u-1"),
 	displayName: "Ada",
@@ -164,7 +165,7 @@ describe("meterTurn", () => {
 		// Same features and the same org; the source is what separates a connector's spend from the
 		// in-app chat it shares this runner with. Built rather than spelled, so the tab format lives
 		// in one place.
-		const session = connectorSessionId(orgId, CONNECTOR_ORIGIN.connectorId, conversationKey)
+		const session = connectorSessionId(orgId, connectorId, conversationKey)
 		await meter(session, "msg-1", 1000, 100, CONNECTOR_ORIGIN)
 
 		assert.deepEqual(keysFor("ai_input_tokens"), [`${session}:msg-1:bot:input`])
@@ -172,9 +173,8 @@ describe("meterTurn", () => {
 	})
 
 	it("charges by origin, not by session id", async () => {
-		// `meterTurn` in isolation: the pairing check refuses this combination before a real turn
-		// reaches the meter. What it pins is that the source comes from the origin's profile, which
-		// is the same one the toolkit is built from — never from the session id.
+		// The source comes from the origin's profile — the same one the toolkit is built from —
+		// never from the session id.
 		await meter(`${ORG}:default`, "msg-1", 1000, 100, CONNECTOR_ORIGIN)
 
 		assert.deepEqual(keysFor("ai_input_tokens"), [`${ORG}:default:msg-1:bot:input`])

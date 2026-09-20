@@ -20,7 +20,6 @@ import { MUTATING_TOOL_NAMES } from "../mcp/tools/mutating"
 import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
 import { AGENTS, agentForSession, buildSystemPrompt } from "./agents"
 import { profileForTurn } from "./profiles"
-import { CHAT_BUDGET } from "./budgets"
 import { CONNECTOR_SYSTEM_PROMPT } from "./prompts"
 import { buildChatToolkit } from "./tools"
 

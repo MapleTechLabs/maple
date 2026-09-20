@@ -464,6 +464,7 @@ export const ChatTurnOrigin = Schema.Union([
 	/**
 	 * Someone addressing Maple from a chat platform. The identity is the platform's, not Maple's:
 	 * there is no user row behind `externalUserId`, and `displayName` is what that platform shows.
+	 * The engine reads only `kind`; the rest is what the audit model will attribute a turn by.
 	 */
 	Schema.Struct({
 		kind: Schema.Literal("connector"),
