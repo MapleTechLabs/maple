@@ -107,18 +107,23 @@ const StepLayer = Layer.mergeAll(FetchHttpClient.layer, InboundHandler.layer)
 const textFrame = (data: unknown): string | undefined => (typeof data === "string" ? data : undefined)
 
 /**
- * The URL to dial, if it is one.
+ * The URL to dial, if it is one this host will carry a credential over.
  *
- * A connector's connect URL is wire-influenced — a resumable session's host
- * comes back from the platform — and `new WebSocket` THROWS on a URL it cannot
- * parse. Thrown inside `blockConcurrencyWhile` that resets the object, and the
- * alarm would bring it straight back to the same value, so the check is what
- * turns a bad URL into one backed-off reconnect instead of a reset loop.
+ * Two things are being refused. A connector's connect URL is wire-influenced —
+ * a resumable session's host comes back from the platform — and `new WebSocket`
+ * THROWS on a URL it cannot parse; thrown inside `blockConcurrencyWhile` that
+ * resets the object, and the alarm would bring it straight back to the same
+ * value, so parsing here turns a bad URL into one backed-off reconnect rather
+ * than a reset loop.
+ *
+ * And `wss:` only. Every socket connector authenticates over its connection —
+ * that is what its `requiredConfig` secrets are for — so a `ws:` URL arriving
+ * in persisted state would put a token on the wire in the clear. A connector
+ * that genuinely needs plaintext should have to argue for it here.
  */
 const socketUrl = (url: string): string | undefined => {
 	if (!URL.canParse(url)) return undefined
-	const { protocol } = new URL(url)
-	return protocol === "wss:" || protocol === "ws:" ? url : undefined
+	return new URL(url).protocol === "wss:" ? url : undefined
 }
 
 interface ResolvedConnector {
