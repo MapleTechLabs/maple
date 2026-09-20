@@ -81,6 +81,19 @@ const CreatedThread = Schema.Struct({ id: Schema.String })
 /** 1–100 characters, per the Start Thread documentation. */
 const MAX_THREAD_NAME_CHARS = 100
 
+/** What a thread is called when the caller had nothing to call it. */
+const DEFAULT_THREAD_NAME = "Maple"
+
+/**
+ * A name Discord will accept. The ceiling is the documented 100; the FLOOR is the point — the
+ * limit is 1–100, and a caller that truncated an empty question down to nothing would otherwise
+ * turn the thread into a 400 and the answer into no answer at all.
+ */
+const threadName = (title: string): string => {
+	const trimmed = title.trim().slice(0, MAX_THREAD_NAME_CHARS)
+	return trimmed.length === 0 ? DEFAULT_THREAD_NAME : trimmed
+}
+
 /** A day of quiet before the thread leaves the channel list. Long enough to come back to an answer. */
 const THREAD_ARCHIVE_MINUTES = 1440
 
@@ -228,7 +241,7 @@ export const discordOutbound: ChatOutbound<HttpClient.HttpClient | DiscordBotTok
 						`${API_BASE}/channels/${request.channelId}/messages/${request.anchorMessageId}/threads`,
 					).pipe(
 						HttpClientRequest.bodyJsonUnsafe({
-							name: request.title.slice(0, MAX_THREAD_NAME_CHARS),
+							name: threadName(request.title),
 							auto_archive_duration: THREAD_ARCHIVE_MINUTES,
 						}),
 					),

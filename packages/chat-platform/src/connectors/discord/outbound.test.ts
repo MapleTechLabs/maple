@@ -128,6 +128,22 @@ describe("discord transport", () => {
 		}).pipe(Effect.provide(http.layer))
 	})
 
+	it.effect("names a thread the caller could not name, rather than sending a name Discord refuses", () => {
+		const http = stub([{ status: 201, body: '{"id":"thread_8"}' }])
+		return Effect.gen(function* () {
+			const transport = yield* discordOutbound.transport
+			yield* transport.openThread({
+				workspaceId: "guild_1",
+				channelId: "conv_1",
+				anchorMessageId: "msg_3",
+				title: "   ",
+			})
+
+			// The limit is 1–100, so an empty name is a 400 and the answer never arrives.
+			expect(sentThreadBody(http.seen[0]).name).toBe("Maple")
+		}).pipe(Effect.provide(http.layer))
+	})
+
 	it.effect("addresses the thread once the turn is answering in one", () => {
 		const http = stub([{ status: 200, body: CREATED }])
 		return Effect.gen(function* () {
