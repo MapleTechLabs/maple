@@ -830,8 +830,6 @@ function ToolBlock({
 	showPayloads,
 	openRows,
 	onToggleRow,
-	selected,
-	onSelectSpan,
 }: BlockProps & { row: Extract<TranscriptRow, { kind: "tool" }> }) {
 	const payloadsKey = `${row.key}:payloads`
 	const open = disclosed(openRows, payloadsKey, showPayloads)
@@ -849,52 +847,48 @@ function ToolBlock({
 				className={cn(
 					"flex min-w-0 flex-col overflow-hidden rounded-md border",
 					row.failed ? "border-destructive/40 bg-destructive/5" : "border-border bg-card",
-					selected && "ring-1 ring-primary",
 				)}
 			>
-				<div className="flex h-9 items-center gap-2.5 px-3">
-					<button
-						type="button"
-						onClick={() => onSelectSpan(selected ? undefined : row.span.spanId)}
-						aria-pressed={selected}
-						className="flex min-w-0 grow cursor-pointer items-center gap-2.5 text-left"
+				{/* The whole header opens the pair — the chevron is where the eye goes
+				    for it, but a reader aiming at the tool's name means the same thing. */}
+				<button
+					type="button"
+					onClick={() => onToggleRow(payloadsKey)}
+					aria-expanded={open}
+					className="group flex h-9 w-full min-w-0 cursor-pointer items-center gap-2.5 px-3 text-left"
+				>
+					<GearIcon size={13} className={cn("shrink-0", tone)} />
+					<span className={cn(LABEL, tone)}>Tool</span>
+					<span
+						className="min-w-0 truncate font-medium font-mono text-foreground text-xs"
+						title={row.toolName ?? row.span.spanName}
 					>
-						<GearIcon size={13} className={cn("shrink-0", tone)} />
-						<span className={cn(LABEL, tone)}>Tool</span>
+						{row.toolName ?? row.span.spanName}
+					</span>
+					<span className={cn(META, "shrink-0")}>
+						· {row.span.serviceName}
+						{!row.fromMessageOnly && ` · ${formatDuration(row.span.durationMs)}`}
+					</span>
+					{/* Sizes in gutter order while the pair is shut, so the reader knows
+					    what opening it costs before they pay for it. */}
+					{!open && <ToolIoSummary args={row.args} result={row.result} />}
+					<span className="ml-auto flex min-w-0 shrink-0 items-center gap-2.5">
+						{row.failed && row.span.genAi.errorType !== undefined && (
+							<Pill tone="error" className={WIRE_PILL}>
+								error.type {row.span.genAi.errorType}
+							</Pill>
+						)}
+						{!row.failed && row.callId !== undefined && (
+							<span className={cn(META, "shrink-0")}>{row.callId}</span>
+						)}
 						<span
-							className="min-w-0 truncate font-medium font-mono text-foreground text-xs"
-							title={row.toolName ?? row.span.spanName}
+							aria-hidden
+							className="-mr-1 p-1 text-muted-foreground group-hover:text-foreground"
 						>
-							{row.toolName ?? row.span.spanName}
+							{open ? <ChevronDownIcon size={12} /> : <ChevronRightIcon size={12} />}
 						</span>
-						<span className={cn(META, "shrink-0")}>
-							· {row.span.serviceName}
-							{!row.fromMessageOnly && ` · ${formatDuration(row.span.durationMs)}`}
-						</span>
-						{/* Sizes in gutter order while the pair is shut, so the reader knows
-						    what opening it costs before they pay for it. */}
-						{!open && <ToolIoSummary args={row.args} result={row.result} />}
-					</button>
-					{row.failed && row.span.genAi.errorType !== undefined && (
-						<Pill tone="error" className={WIRE_PILL}>
-							error.type {row.span.genAi.errorType}
-						</Pill>
-					)}
-					{!row.failed && row.callId !== undefined && (
-						<span className={cn(META, "shrink-0")}>{row.callId}</span>
-					)}
-					{/* The one control that opens the pair, in the header where the reader
-					    already is — not a footer they have to scroll the payloads to reach. */}
-					<button
-						type="button"
-						onClick={() => onToggleRow(payloadsKey)}
-						aria-expanded={open}
-						aria-label={open ? "Collapse payloads" : "Expand payloads"}
-						className="-mr-1 shrink-0 cursor-pointer p-1 text-muted-foreground hover:text-foreground"
-					>
-						{open ? <ChevronDownIcon size={12} /> : <ChevronRightIcon size={12} />}
-					</button>
-				</div>
+					</span>
+				</button>
 
 				{open && (
 					<ToolIo
