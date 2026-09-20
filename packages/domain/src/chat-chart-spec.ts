@@ -1,6 +1,7 @@
 // BOUNDARY: This module reads a model-authored ```chart fence and narrows it
 // before it becomes a plot.
 import { Option, Schema } from "effect"
+import type { ChartUnit } from "@maple/widgets/chart/static-chart"
 
 /**
  * The chart a model may draw inside a reply, and the schema that decides whether a fence holds
@@ -103,6 +104,94 @@ export function normalizeUnit(unit: string | undefined): string {
 	const lower = unit.trim().toLowerCase()
 	if (KNOWN_UNITS.has(lower)) return lower
 	return UNIT_ALIASES.get(lower) ?? "number"
+}
+
+/**
+ * The same unit as the *static* renderer names them, plus the factor its values
+ * need to be in it.
+ *
+ * `@maple/widgets`' image renderer knows five units where
+ * `formatValueByUnit` knows nine, so the four it does not carry are converted
+ * rather than dropped: a chart labelled `s` keeps reading in seconds because
+ * the formatter scales milliseconds back up, and one labelled `ratio` keeps
+ * reading as a percentage because 0–1 is scaled onto the renderer's 0–100
+ * `percent`. Dropping to plain numbers instead would strip the axis suffix off
+ * exactly the charts that need it most.
+ */
+export function staticChartUnit(unit: string | undefined): {
+	readonly unit: ChartUnit
+	readonly scale: number
+} {
+	switch (normalizeUnit(unit)) {
+		case "bytes":
+			return { unit: "bytes", scale: 1 }
+		case "duration_ms":
+			return { unit: "duration_ms", scale: 1 }
+		case "duration_ns":
+			return { unit: "duration_ms", scale: 1 / 1_000_000 }
+		case "duration_s":
+			return { unit: "duration_ms", scale: 1000 }
+		case "duration_us":
+			return { unit: "duration_ms", scale: 1 / 1000 }
+		case "percent_100":
+			return { unit: "percent", scale: 1 }
+		// `normalizeUnit` reserves a bare `percent` for the 0–1 aliases.
+		case "percent":
+			return { unit: "percent", scale: 100 }
+		case "requests_per_sec":
+			return { unit: "requests_per_sec", scale: 1 }
+		default:
+			return { unit: "number", scale: 1 }
+	}
+}
+
+const FENCE_OPEN = /^\s{0,3}(`{3,})\s*([^\s`]*)/
+const CHART_FENCE_INFO = "chart"
+
+/**
+ * Every ```chart fence in a reply, in the order they appear in it.
+ *
+ * Position *is* the identity of a chart here: a reply can hold several, nothing
+ * numbers them, and the image URL for one has to name it somehow. Order of
+ * appearance is the one answer the transcript, the web renderer and an image
+ * request can all reach independently, so it is the contract — which is why
+ * this is shared rather than reimplemented per consumer.
+ *
+ * A line scan rather than a regex over the whole reply: fences nest, a chart
+ * payload can legitimately contain a line of backticks, and a regex that pairs
+ * the wrong two of them silently reindexes every chart after it.
+ */
+export function chartFences(text: string): ReadonlyArray<string> {
+	const fences: Array<string> = []
+	let open: { readonly ticks: number; readonly isChart: boolean } | undefined
+	let body: Array<string> = []
+
+	for (const line of text.split("\n")) {
+		const fence = FENCE_OPEN.exec(line)
+		const ticks = fence?.[1]?.length ?? 0
+		const info = fence?.[2] ?? ""
+
+		if (open === undefined) {
+			if (ticks === 0) continue
+			open = { ticks, isChart: info === CHART_FENCE_INFO }
+			body = []
+			continue
+		}
+		// A closing fence is at least as long as the one that opened it and
+		// carries no info string of its own.
+		if (ticks >= open.ticks && info === "") {
+			if (open.isChart) fences.push(body.join("\n"))
+			open = undefined
+			continue
+		}
+		if (open.isChart) body.push(line)
+	}
+
+	// An unclosed fence is a reply that stopped mid-chart. Its partial JSON will
+	// not parse, and returning it keeps the *indexes* of the charts before it
+	// right, which is what a caller asking for the Nth one depends on.
+	if (open?.isChart === true) fences.push(body.join("\n"))
+	return fences
 }
 
 /**

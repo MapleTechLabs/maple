@@ -2,9 +2,11 @@ import { describe, expect, it } from "vitest"
 import {
 	downsample,
 	formatValue,
+	MAX_PLOT_SERIES,
 	niceTicks,
 	PLOT_HEIGHT,
 	renderPlotSvg,
+	renderSeriesPlotSvg,
 	sparkline,
 	type ChartPoint,
 } from "./static-chart"
@@ -127,6 +129,94 @@ describe("renderPlotSvg", () => {
 
 	it("refuses an empty series instead of shipping an empty card", () => {
 		expect(() => renderPlotSvg({ ...spec, points: [] })).toThrow(/at least one/)
+	})
+})
+
+describe("renderSeriesPlotSvg", () => {
+	const named = (name: string, values: ReadonlyArray<number>) => ({ name, points: series(values) })
+
+	it("draws one line per series, each in its own colour, and no text", () => {
+		const render = renderSeriesPlotSvg({
+			kind: "line",
+			unit: "duration_ms",
+			series: [named("checkout-api", [120, 180, 240]), named("cart-api", [90, 95, 88])],
+		})
+
+		expect(render.svg).not.toContain("<text")
+		expect(new Set(render.legend.map((entry) => entry.color)).size).toBe(2)
+		expect(render.legend.map((entry) => entry.name)).toEqual(["checkout-api", "cart-api"])
+	})
+
+	it("labels each series with its latest value, which is the y axis it does not draw", () => {
+		const render = renderSeriesPlotSvg({
+			kind: "line",
+			unit: "duration_ms",
+			series: [named("checkout-api", [120, 1500])],
+		})
+
+		expect(render.legend[0]?.latest).toBe("1.5 s")
+	})
+
+	it("orders the legend by peak, so the biggest series is named first", () => {
+		const render = renderSeriesPlotSvg({
+			kind: "area",
+			unit: "number",
+			series: [named("small", [1, 2]), named("large", [900, 950])],
+		})
+
+		expect(render.legend.map((entry) => entry.name)).toEqual(["large", "small"])
+	})
+
+	it("draws at most five series and says how many it left out", () => {
+		const render = renderSeriesPlotSvg({
+			kind: "line",
+			unit: "number",
+			series: Array.from({ length: 8 }, (_, i) => named(`svc-${i}`, [i + 1, i + 2])),
+		})
+
+		expect(render.legend).toHaveLength(MAX_PLOT_SERIES)
+		expect(render.hidden).toBe(3)
+		// The ones kept are the largest, which is what makes hiding the rest safe.
+		expect(render.legend.map((entry) => entry.name)).not.toContain("svc-0")
+	})
+
+	it("fades overlapping area fills, so one series cannot paint over the rest", () => {
+		const one = renderSeriesPlotSvg({ kind: "area", unit: "number", series: [named("a", [1, 2])] })
+		const two = renderSeriesPlotSvg({
+			kind: "area",
+			unit: "number",
+			series: [named("a", [1, 2]), named("b", [3, 4])],
+		})
+
+		expect(one.svg).toContain('stop-opacity="0.8"')
+		expect(two.svg).not.toContain('stop-opacity="0.8"')
+		// One gradient per series, or the second area would fill with the first's.
+		expect(two.svg).toContain('id="areaFill0"')
+		expect(two.svg).toContain('id="areaFill1"')
+	})
+
+	it("stands grouped bars side by side inside a bucket rather than over each other", () => {
+		const two = renderSeriesPlotSvg({
+			kind: "bar",
+			unit: "number",
+			series: [named("a", [1, 2]), named("b", [3, 4])],
+		})
+		const starts = [...two.svg.matchAll(/<path d="M ([\d.]+) /g)].map((match) => match[1])
+
+		expect(new Set(starts).size).toBe(starts.length)
+	})
+
+	it("drops a series with no points, and refuses a spec where none has any", () => {
+		const render = renderSeriesPlotSvg({
+			kind: "line",
+			unit: "number",
+			series: [named("live", [1, 2]), { name: "empty", points: [] }],
+		})
+		expect(render.legend.map((entry) => entry.name)).toEqual(["live"])
+
+		expect(() =>
+			renderSeriesPlotSvg({ kind: "line", unit: "number", series: [{ name: "empty", points: [] }] }),
+		).toThrow(/at least one/)
 	})
 })
 

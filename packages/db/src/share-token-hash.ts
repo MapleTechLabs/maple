@@ -30,14 +30,43 @@ export const hashShareToken = (rawToken: string, hmacKey: string): string =>
 export const shareTokenSuffix = (rawToken: string): string => rawToken.slice(-SHARE_TOKEN_SUFFIX_LENGTH)
 
 /**
- * Domain separation for the OG-card id below, so a signature minted for one
- * purpose can never be replayed as another. Same reasoning as the AAD label in
+ * A payload and its signature, as one URL-safe string.
+ *
+ * `label` is domain separation, so a signature minted for one purpose can never
+ * be replayed as another. Same reasoning as the AAD label in
  * `SharedDashboardService` (`dashboard_shares:v1:{orgId}:{shareId}:token`).
  */
-const SHARE_OG_ID_LABEL = "og:v1:"
+const signedId = (label: string, payload: string, hmacKey: string): string =>
+	`${Buffer.from(payload, "utf8").toString("base64url")}.${signPayload(label, payload, hmacKey)}`
 
-const signShareOgId = (shareId: string, hmacKey: string): string =>
-	createHmac("sha256", hmacKey).update(`${SHARE_OG_ID_LABEL}${shareId}`, "utf8").digest("base64url")
+const signPayload = (label: string, payload: string, hmacKey: string): string =>
+	createHmac("sha256", hmacKey).update(`${label}${payload}`, "utf8").digest("base64url")
+
+/**
+ * The payload inside a signed id, or `undefined` if the signature does not match.
+ *
+ * Constant-time, unlike `hashShareToken`: there the value is looked up by
+ * equality in an index and no comparison happens in JS, whereas here a
+ * candidate signature is compared against a computed one, which is exactly the
+ * shape a timing oracle needs. A malformed id fails identically to a tampered
+ * one — the caller gets no signal about which.
+ */
+const verifiedPayload = (label: string, id: string, hmacKey: string): string | undefined => {
+	const separator = id.indexOf(".")
+	if (separator <= 0) return undefined
+
+	const payload = Buffer.from(id.slice(0, separator), "base64url").toString("utf8")
+	if (payload.length === 0) return undefined
+
+	const presented = Buffer.from(id.slice(separator + 1), "utf8")
+	const expected = Buffer.from(signPayload(label, payload, hmacKey), "utf8")
+	// `timingSafeEqual` throws on a length mismatch, which would itself be the
+	// oracle it exists to remove.
+	if (presented.length !== expected.length) return undefined
+	return timingSafeEqual(presented, expected) ? payload : undefined
+}
+
+const SHARE_OG_ID_LABEL = "og:v1:"
 
 /**
  * The public, opaque id of a share's social-preview image.
@@ -55,31 +84,11 @@ const signShareOgId = (shareId: string, hmacKey: string): string =>
  * rather than reaching a database lookup.
  */
 export const shareOgId = (shareId: string, hmacKey: string): string =>
-	`${Buffer.from(shareId, "utf8").toString("base64url")}.${signShareOgId(shareId, hmacKey)}`
+	signedId(SHARE_OG_ID_LABEL, shareId, hmacKey)
 
-/**
- * The share id inside an OG id, or `undefined` if the signature does not match.
- *
- * Constant-time, unlike `hashShareToken`: there the value is looked up by
- * equality in an index and no comparison happens in JS, whereas here a
- * candidate signature is compared against a computed one, which is exactly the
- * shape a timing oracle needs.
- */
-export const verifyShareOgId = (ogId: string, hmacKey: string): string | undefined => {
-	const separator = ogId.indexOf(".")
-	if (separator <= 0) return undefined
-
-	const shareId = Buffer.from(ogId.slice(0, separator), "base64url").toString("utf8")
-	if (shareId.length === 0) return undefined
-
-	const presented = Buffer.from(ogId.slice(separator + 1), "utf8")
-	const expected = Buffer.from(signShareOgId(shareId, hmacKey), "utf8")
-	// `timingSafeEqual` throws on a length mismatch, which would itself be the
-	// oracle it exists to remove.
-	if (presented.length !== expected.length) return undefined
-
-	return timingSafeEqual(presented, expected) ? shareId : undefined
-}
+/** The share id inside an OG id, or `undefined` if the signature does not match. */
+export const verifyShareOgId = (ogId: string, hmacKey: string): string | undefined =>
+	verifiedPayload(SHARE_OG_ID_LABEL, ogId, hmacKey)
 
 /**
  * Domain separation for the alert-chart id, distinct from `og:v1:` so a
@@ -179,9 +188,6 @@ const encodeAlertChartClaims = (claims: AlertChartClaims): string =>
 		claims.breachSide,
 	])
 
-const signAlertChartId = (payload: string, hmacKey: string): string =>
-	createHmac("sha256", hmacKey).update(`${ALERT_CHART_ID_LABEL}${payload}`, "utf8").digest("base64url")
-
 /**
  * The public, opaque id of an alert notification's chart image.
  *
@@ -190,33 +196,13 @@ const signAlertChartId = (payload: string, hmacKey: string): string =>
  * is the same exposure a public dashboard share already accepts, and the
  * signature is what keeps it to *that* series over *that* window.
  */
-export const alertChartId = (claims: AlertChartClaims, hmacKey: string): string => {
-	const payload = encodeAlertChartClaims(claims)
-	const encoded = Buffer.from(payload, "utf8").toString("base64url")
-	return `${encoded}.${signAlertChartId(payload, hmacKey)}`
-}
+export const alertChartId = (claims: AlertChartClaims, hmacKey: string): string =>
+	signedId(ALERT_CHART_ID_LABEL, encodeAlertChartClaims(claims), hmacKey)
 
-/**
- * The claims inside an alert-chart id, or `undefined` if it does not verify.
- *
- * Constant-time for the same reason as `verifyShareOgId`: a presented signature
- * is compared against a computed one, which is the shape a timing oracle needs.
- * A malformed id fails identically to a tampered one — the caller gets no
- * signal about which.
- */
+/** The claims inside an alert-chart id, or `undefined` if it does not verify. */
 export const verifyAlertChartId = (id: string, hmacKey: string): VerifiedAlertChartClaims | undefined => {
-	const separator = id.indexOf(".")
-	if (separator <= 0) return undefined
-
-	const payload = Buffer.from(id.slice(0, separator), "base64url").toString("utf8")
-	if (payload.length === 0) return undefined
-
-	const presented = Buffer.from(id.slice(separator + 1), "utf8")
-	const expected = Buffer.from(signAlertChartId(payload, hmacKey), "utf8")
-	// `timingSafeEqual` throws on a length mismatch, which would itself be the
-	// oracle it exists to remove.
-	if (presented.length !== expected.length) return undefined
-	if (!timingSafeEqual(presented, expected)) return undefined
+	const payload = verifiedPayload(ALERT_CHART_ID_LABEL, id, hmacKey)
+	if (payload === undefined) return undefined
 
 	// Reached only for a payload this repo signed, so the shape is ours — but it
 	// is decoded rather than trusted. A signature written by an older or newer
@@ -226,4 +212,78 @@ export const verifyAlertChartId = (id: string, hmacKey: string): VerifiedAlertCh
 
 	const [rawOrgId, rawRuleId, groupKey, fromMs, toMs, title, unit, threshold, breachSide] = decoded.success
 	return { rawOrgId, rawRuleId, groupKey, fromMs, toMs, title, unit, threshold, breachSide }
+}
+
+/**
+ * Domain separation for the chat-chart id, distinct from the two labels above.
+ */
+const CHAT_CHART_ID_LABEL = "chatchart:v1:"
+
+/**
+ * Which chart in which reply an image is allowed to draw.
+ *
+ * A reference, not the chart. The agent's own event log already holds the
+ * reply and the fence inside it, so the id names them and the endpoint reads
+ * them back — which is what keeps this URL a fixed length whatever the chart
+ * plots. A chat platform caps how long a link it will unfurl, and a series with
+ * two hundred points does not fit in one.
+ *
+ * `orgId` rides along although `sessionId` starts with it: it is the value the
+ * endpoint scopes its read by, so the endpoint cross-checks the two rather than
+ * parsing an org out of a string and trusting the halves to agree.
+ *
+ * `chartIndex` is the fence's position in the reply, counted by `chartFences`.
+ */
+export interface ChatChartClaims {
+	readonly orgId: OrgId
+	readonly sessionId: string
+	readonly messageId: string
+	readonly chartIndex: number
+}
+
+/**
+ * What comes back out of a chat-chart id, which is **not** what went in — see
+ * {@link VerifiedAlertChartClaims} for why the ids come back unbranded.
+ */
+export interface VerifiedChatChartClaims {
+	readonly rawOrgId: string
+	readonly rawSessionId: string
+	readonly rawMessageId: string
+	readonly chartIndex: number
+}
+
+/** Positional, for the same reason {@link AlertChartPayload} is. */
+const ChatChartPayload = Schema.Tuple([
+	Schema.String,
+	Schema.String,
+	Schema.String,
+	Schema.Finite.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(0)),
+])
+
+const decodeChatChartPayload = Schema.decodeUnknownResult(Schema.fromJsonString(ChatChartPayload))
+
+const encodeChatChartClaims = (claims: ChatChartClaims): string =>
+	JSON.stringify([claims.orgId, claims.sessionId, claims.messageId, claims.chartIndex])
+
+/**
+ * The public, opaque id of a chart an agent drew inside a reply.
+ *
+ * Carries no credential: a conversation id, a message id and a position in it,
+ * signed. Anyone holding the URL sees the numbers behind one chart in one
+ * reply — never the reply, the conversation, or anything else the org owns —
+ * and the signature is what keeps it to *that* chart.
+ */
+export const chatChartId = (claims: ChatChartClaims, hmacKey: string): string =>
+	signedId(CHAT_CHART_ID_LABEL, encodeChatChartClaims(claims), hmacKey)
+
+/** The claims inside a chat-chart id, or `undefined` if it does not verify. */
+export const verifyChatChartId = (id: string, hmacKey: string): VerifiedChatChartClaims | undefined => {
+	const payload = verifiedPayload(CHAT_CHART_ID_LABEL, id, hmacKey)
+	if (payload === undefined) return undefined
+
+	const decoded = decodeChatChartPayload(payload)
+	if (Result.isFailure(decoded)) return undefined
+
+	const [rawOrgId, rawSessionId, rawMessageId, chartIndex] = decoded.success
+	return { rawOrgId, rawSessionId, rawMessageId, chartIndex }
 }

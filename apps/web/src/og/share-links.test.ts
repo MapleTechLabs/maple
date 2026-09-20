@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest"
 import {
 	alertChartIdFromPath,
+	chatChartIdFromPath,
 	escapeAttribute,
 	ogIdFromPath,
 	ogMetaAdditions,
@@ -115,5 +116,37 @@ describe("alertChartIdFromPath", () => {
 	it("does not collide with the share image path", () => {
 		expect(alertChartIdFromPath("/share/og/abc.png")).toBeUndefined()
 		expect(ogIdFromPath(`/alerts/chart/${ID}.png`)).toBeUndefined()
+	})
+})
+
+describe("chatChartIdFromPath", () => {
+	const ID = "eyJhIjoxfQ.s1gn4tur3"
+
+	it("reads the id out of the image path", () => {
+		expect(chatChartIdFromPath(`/chat/chart/${ID}.png`)).toBe(ID)
+	})
+
+	it("ignores the SPA's own chat routes", () => {
+		expect(chatChartIdFromPath("/chat")).toBeUndefined()
+		expect(chatChartIdFromPath("/chat/tab-8f21")).toBeUndefined()
+		expect(chatChartIdFromPath("/chat/chart/")).toBeUndefined()
+	})
+
+	it("rejects an id carrying path structure", () => {
+		expect(chatChartIdFromPath(`/chat/chart/../${ID}.png`)).toBeUndefined()
+		expect(chatChartIdFromPath("/chat/chart/a/b.png")).toBeUndefined()
+	})
+
+	it("requires the .png extension", () => {
+		expect(chatChartIdFromPath(`/chat/chart/${ID}`)).toBeUndefined()
+		expect(chatChartIdFromPath(`/chat/chart/${ID}.jpg`)).toBeUndefined()
+	})
+
+	it("does not collide with the alert chart path", () => {
+		// The two ids are signed under different labels, so serving one at the
+		// other's path would be a verification failure rather than a wrong image —
+		// but it would also be a 404 nobody could explain.
+		expect(chatChartIdFromPath(`/alerts/chart/${ID}.png`)).toBeUndefined()
+		expect(alertChartIdFromPath(`/chat/chart/${ID}.png`)).toBeUndefined()
 	})
 })

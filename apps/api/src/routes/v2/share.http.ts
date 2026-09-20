@@ -38,7 +38,9 @@ import {
 } from "@maple/domain/http"
 import { MapleApiV2 } from "@maple/domain/http/v2"
 import { MAX_LIST_RANGE_SECONDS, MAX_QUERY_RANGE_SECONDS } from "@maple/query-engine"
-import { hashShareToken, shareOgId, verifyAlertChartId, verifyShareOgId } from "@maple/db"
+import { hashShareToken, shareOgId, verifyAlertChartId, verifyChatChartId, verifyShareOgId } from "@maple/db"
+import { chatSessionStub } from "@maple/domain/chat-session-stub"
+import { WorkerEnvironment } from "@maple/infra/worker-runtime"
 import { redactForShare } from "@maple/widgets/dashboard"
 import { Effect, Option, Redacted, Schema } from "effect"
 import { Env } from "@maple/backend/platform/Env"
@@ -50,6 +52,7 @@ import {
 	shareTokenRateLimitKey,
 } from "@maple/backend/services/auth/ApiV2RateLimiter"
 import { loadChartSeries } from "@maple/backend/services/alerts/alert-chart-series"
+import { chatChartFrom, chatChartSession } from "@maple/backend/services/chat/chat-chart"
 import { systemTenant } from "@maple/backend/services/alerts/system-tenant"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { DashboardPersistenceService } from "@maple/backend/services/dashboards/DashboardPersistenceService"
@@ -416,6 +419,40 @@ export const HttpV2SharePublicLive = HttpApiBuilder.group(MapleApiV2, "sharePubl
 					}
 					const described = description === undefined ? card : { ...card, description }
 					return new ShareOgCardResponse(org === undefined ? described : { ...described, org })
+				}),
+			)
+			.handle("chatChart", ({ payload }) =>
+				Effect.gen(function* () {
+					const hmacKey = yield* requireHmacKey
+					// Keyed on the id as presented, before verification, for the same
+					// reason as `ogCard`.
+					yield* enforceOgRateLimit(payload.chartId)
+
+					const claims = verifyChatChartId(payload.chartId, hmacKey)
+					if (claims === undefined) return yield* notFound
+
+					// The id's org and its session id's org have to agree before this
+					// reaches for a conversation at all — `chatChartSession` is what
+					// hands back the id to address, so the check cannot be stepped past.
+					const sessionId = chatChartSession(claims)
+					if (sessionId === null) return yield* notFound
+
+					// The conversation's own Durable Object, bound cross-script. No
+					// binding — an `alchemy dev` stack without the ai Worker — reads as
+					// no such chart, like every other reason this can fail.
+					const workerEnv = yield* Effect.serviceOption(WorkerEnvironment)
+					const stub = Option.isNone(workerEnv)
+						? undefined
+						: chatSessionStub(workerEnv.value, sessionId)
+					if (stub === undefined) return yield* notFound
+
+					const messages = yield* Effect.tryPromise(() => stub.history()).pipe(
+						Effect.catch(() => notFound),
+					)
+					const chart = chatChartFrom(messages, claims)
+					if (chart === null) return yield* notFound
+
+					return chart
 				}),
 			)
 			.handle("alertChart", ({ payload }) =>

@@ -3,11 +3,13 @@ import { Schema } from "effect"
 import { AlertRuleId, OrgId } from "@maple/domain/primitives"
 import {
 	alertChartId,
+	chatChartId,
 	generateShareToken,
 	hashShareToken,
 	shareOgId,
 	shareTokenSuffix,
 	verifyAlertChartId,
+	verifyChatChartId,
 	verifyShareOgId,
 } from "./share-token-hash"
 
@@ -171,5 +173,79 @@ describe("alertChartId", () => {
 		// dashboard preview must not render an alert chart.
 		expect(verifyAlertChartId(shareOgId("share_1", KEY), KEY)).toBeUndefined()
 		expect(verifyShareOgId(alertChartId(claims, KEY), KEY)).toBeUndefined()
+	})
+})
+
+const chatClaims = {
+	orgId: ORG_ID,
+	sessionId: `${ORG_ID}:tab-8f21`,
+	messageId: "01JB8QK0Q9R5W0C4V8ZD2M6X7T",
+	chartIndex: 1,
+}
+
+const verifiedChat = {
+	rawOrgId: ORG_ID as string,
+	rawSessionId: chatClaims.sessionId,
+	rawMessageId: chatClaims.messageId,
+	chartIndex: chatClaims.chartIndex,
+}
+
+/** Swaps one claim inside a chat-chart id and keeps the original signature. */
+const tamperChatChartClaim = (id: string, index: number, value: unknown): string => {
+	// SAFETY: `chatChartId` always emits exactly `<payload>.<signature>`.
+	const [encoded, signature] = id.split(".") as [string, string]
+	// SAFETY: the payload is the array `encodeChatChartClaims` just wrote.
+	const parsed = JSON.parse(Buffer.from(encoded, "base64url").toString("utf8")) as unknown[]
+	parsed[index] = value
+	return `${Buffer.from(JSON.stringify(parsed), "utf8").toString("base64url")}.${signature}`
+}
+
+describe("chatChartId", () => {
+	it("round-trips the claims, with the ids left undecoded", () => {
+		expect(verifyChatChartId(chatChartId(chatClaims, KEY), KEY)).toEqual(verifiedChat)
+	})
+
+	it("is deterministic, so a relayed reply keeps one image URL", () => {
+		expect(chatChartId(chatClaims, KEY)).toBe(chatChartId(chatClaims, KEY))
+	})
+
+	it("rejects an id minted under a different key", () => {
+		expect(verifyChatChartId(chatChartId(chatClaims, "other-key"), KEY)).toBeUndefined()
+	})
+
+	it("rejects a swapped conversation, which is what keeps the URL to one org's reply", () => {
+		const forged = tamperChatChartClaim(chatChartId(chatClaims, KEY), 1, "org_other:tab-8f21")
+		expect(verifyChatChartId(forged, KEY)).toBeUndefined()
+	})
+
+	it("rejects a swapped message, so one reply's URL cannot read another", () => {
+		const forged = tamperChatChartClaim(chatChartId(chatClaims, KEY), 2, "some-other-message")
+		expect(verifyChatChartId(forged, KEY)).toBeUndefined()
+	})
+
+	it("rejects a walked chart index", () => {
+		const forged = tamperChatChartClaim(chatChartId(chatClaims, KEY), 3, 4)
+		expect(verifyChatChartId(forged, KEY)).toBeUndefined()
+	})
+
+	it("refuses a signed index that is not a whole count", () => {
+		// Reached only for a payload this repo signed, and it is still decoded:
+		// the position is an array index, and -1 or 1.5 is not one.
+		for (const index of [-1, 1.5]) {
+			const id = chatChartId({ ...chatClaims, chartIndex: index }, KEY)
+			expect(verifyChatChartId(id, KEY)).toBeUndefined()
+		}
+	})
+
+	it("rejects malformed ids without throwing", () => {
+		for (const bad of ["", ".", "nodot", ".onlysig", "a.b", "!!!.???"]) {
+			expect(verifyChatChartId(bad, KEY)).toBeUndefined()
+		}
+	})
+
+	it("does not accept an alert-chart id, and vice versa", () => {
+		expect(verifyChatChartId(alertChartId(claims, KEY), KEY)).toBeUndefined()
+		expect(verifyAlertChartId(chatChartId(chatClaims, KEY), KEY)).toBeUndefined()
+		expect(verifyShareOgId(chatChartId(chatClaims, KEY), KEY)).toBeUndefined()
 	})
 })

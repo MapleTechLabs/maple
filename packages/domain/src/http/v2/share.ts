@@ -27,11 +27,13 @@
  * a span attribute, an access log, or a `Referer` — no tracer suppression rule
  * required.
  *
- * `alertChart` is not about a shared dashboard at all — it lives here because
- * this is the API's one unauthenticated surface, and it is unauthenticated for
- * the same reason: the image is fetched by Slack's and Discord's servers, which
- * hold no Maple credential. Like `ogCard` it takes a signed id, never a token,
- * and that id pins the rule and the window it may read.
+ * `alertChart` and `chatChart` are not about a shared dashboard at all — they
+ * live here because this is the API's one unauthenticated surface, and they are
+ * unauthenticated for the same reason: the image is fetched by a chat
+ * platform's own servers, which hold no Maple credential. Like `ogCard` each
+ * takes a signed id, never a token, and that id pins everything it may read —
+ * the rule and its window for one, the reply and the chart inside it for the
+ * other.
  *
  * `ogCard` is the one operation that names a share without a token at all. It
  * cannot have one: it exists so a social-preview image can be drawn, and an
@@ -41,6 +43,7 @@
  */
 import { HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/unstable/httpapi"
 import { AlertChartRequest, AlertChartResponse } from "../alerts"
+import { ChatChartRequest, ChatChartResponse } from "../chat"
 import {
 	ShareNotConfiguredError,
 	ShareNotFoundError,
@@ -165,6 +168,20 @@ export class V2SharePublicApiGroup extends HttpApiGroup.make("sharePublic")
 				summary: "Read the series an alert notification's chart draws",
 				description:
 					"Takes the signed chart id embedded in a Slack, Discord or email alert and returns the observed values over the window that id pins. Unauthenticated for the same reason as the rest of this group: the image is fetched by Slack and Discord themselves, which carry no Maple credential.",
+			}),
+		),
+	)
+	.add(
+		HttpApiEndpoint.post("chatChart", "/chat-chart", {
+			payload: ChatChartRequest,
+			success: ChatChartResponse,
+			error: [shareNotFound, shareRateLimited, shareNotConfigured, sharePersistence],
+		}).annotateMerge(
+			OpenApi.annotations({
+				identifier: "resolveChatChart",
+				summary: "Read the numbers behind a chart an agent drew in a reply",
+				description:
+					"Takes the signed chart id minted for a relayed agent reply and returns the one chart that id names — the conversation, the message and the chart's position within it are all pinned by the signature. Unauthenticated for the same reason as the rest of this group: the image is fetched by a chat platform's own servers, which carry no Maple credential.",
 			}),
 		),
 	)

@@ -1,5 +1,6 @@
 import { HttpApiEndpoint, HttpApiGroup } from "effect/unstable/httpapi"
 import { Schema } from "effect"
+import { AlertChartPoint, AlertChartUnit } from "./alerts"
 import { SessionAuthorization } from "./current-tenant"
 
 /**
@@ -69,6 +70,75 @@ export class ChatToolExecutionError extends Schema.TaggedError<ChatToolExecution
 	},
 	{ httpApiStatus: 500 },
 ) {}
+
+/**
+ * The opaque, signed id of a chart an agent drew inside a reply (see
+ * `chatChartId` in `@maple/db`).
+ *
+ * Loosely checked here for the same reason `AlertChartId` is: its structure is
+ * the signer's business, and a malformed id fails verification into the same
+ * uniform "no such chart" as a tampered one.
+ */
+export const ChatChartId = Schema.String.check(Schema.isMinLength(3), Schema.isMaxLength(1024)).annotate({
+	identifier: "ChatChartId",
+})
+
+export const ChatChartRequest = Schema.Struct({
+	chartId: ChatChartId,
+}).annotate({ identifier: "ChatChartRequest" })
+
+/**
+ * The units the image renderer knows.
+ *
+ * Imported rather than restated: `AlertChartUnit` is the declaration of what
+ * `@maple/widgets`' static renderer can draw, and a chart out of a reply is
+ * drawn by that same renderer. A fence's own unit vocabulary is wider, and
+ * `staticChartUnit` in `@maple/domain/chat-chart-spec` is what lands it here.
+ */
+export const ChatChartUnit = AlertChartUnit
+export type ChatChartUnit = AlertChartUnit
+
+/** One named series over the reply's time axis; `[epochMillis, value]`, oldest first. */
+export const ChatChartSeries = Schema.Struct({
+	name: Schema.String,
+	points: Schema.Array(AlertChartPoint),
+}).annotate({ identifier: "ChatChartSeries" })
+
+/** One category and its value, for a ranking. */
+export const ChatChartRankedPoint = Schema.Struct({
+	name: Schema.String,
+	value: Schema.Finite,
+}).annotate({ identifier: "ChatChartRankedPoint" })
+
+export class ChatChartTimeseries extends Schema.Class<ChatChartTimeseries>("ChatChartTimeseries")({
+	kind: Schema.Literals(["line", "area", "bar"]),
+	title: Schema.String,
+	unit: ChatChartUnit,
+	series: Schema.Array(ChatChartSeries),
+}) {}
+
+export class ChatChartRanked extends Schema.Class<ChatChartRanked>("ChatChartRanked")({
+	kind: Schema.Literal("ranked"),
+	title: Schema.String,
+	unit: ChatChartUnit,
+	points: Schema.Array(ChatChartRankedPoint),
+}) {}
+
+/**
+ * Everything the image needs, and nothing else.
+ *
+ * Deliberately not the reply it came from: this is fetched by whatever renders
+ * the picture, so it carries the chart's own numbers and the words drawn on
+ * the card. No prose, no conversation, no org name.
+ *
+ * A union on `kind` rather than one class with both payloads, because a ranking
+ * has categories where a timeseries has a time axis, and a renderer that has to
+ * check which array is empty is a renderer that will one day draw neither.
+ */
+export const ChatChartResponse = Schema.Union([ChatChartTimeseries, ChatChartRanked]).annotate({
+	identifier: "ChatChartResponse",
+})
+export type ChatChartResponse = Schema.Schema.Type<typeof ChatChartResponse>
 
 export class ChatApiGroup extends HttpApiGroup.make("chat")
 	.add(
