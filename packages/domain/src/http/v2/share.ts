@@ -42,8 +42,7 @@
  * not a credential and cannot be turned back into a token.
  */
 import { HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/unstable/httpapi"
-import { AlertChartRequest, AlertChartResponse } from "../alerts"
-import { ChatChartRequest, ChatChartResponse } from "../chat"
+import { ShareChartRequest, ShareChartResponse } from "../share-chart"
 import {
 	ShareNotConfiguredError,
 	ShareNotFoundError,
@@ -159,8 +158,8 @@ export class V2SharePublicApiGroup extends HttpApiGroup.make("sharePublic")
 	)
 	.add(
 		HttpApiEndpoint.post("alertChart", "/alert-chart", {
-			payload: AlertChartRequest,
-			success: AlertChartResponse,
+			payload: ShareChartRequest,
+			success: ShareChartResponse,
 			error: [shareNotFound, shareRateLimited, shareNotConfigured, sharePersistence],
 		}).annotateMerge(
 			OpenApi.annotations({
@@ -173,8 +172,8 @@ export class V2SharePublicApiGroup extends HttpApiGroup.make("sharePublic")
 	)
 	.add(
 		HttpApiEndpoint.post("chatChart", "/chat-chart", {
-			payload: ChatChartRequest,
-			success: ChatChartResponse,
+			payload: ShareChartRequest,
+			success: ShareChartResponse,
 			error: [shareNotFound, shareRateLimited, shareNotConfigured, sharePersistence],
 		}).annotateMerge(
 			OpenApi.annotations({

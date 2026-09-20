@@ -22,8 +22,8 @@ import {
 } from "@maple/domain/chat-chart-spec"
 import { chatChartId, type VerifiedChatChartClaims } from "@maple/db"
 import { orgIdFromChatSessionId, type ChatMessage } from "@maple/domain/chat-session"
-import type { ChatChartResponse, OrgId } from "@maple/domain/http"
-import { ChatChartRanked, ChatChartTimeseries } from "@maple/domain/http"
+import type { OrgId, ShareChartResponse } from "@maple/domain/http"
+import { ChartRanked, ChartTimeseries } from "@maple/domain/http"
 import { downsample, type ChartPoint } from "@maple/widgets/chart/static-chart"
 
 /**
@@ -116,7 +116,7 @@ export const chatChartSession = (claims: VerifiedChatChartClaims): string | null
 export const chatChartFrom = (
 	messages: ReadonlyArray<ChatMessage>,
 	claims: VerifiedChatChartClaims,
-): ChatChartResponse | null => {
+): ShareChartResponse | null => {
 	const message = messages.find(
 		(candidate) => candidate.id === claims.rawMessageId && candidate.role === "assistant",
 	)
@@ -139,10 +139,7 @@ const peak = (points: ReadonlyArray<ChartPoint>): number =>
  * cap here and the cap there drop the same series rather than two different
  * sets of them.
  */
-const seriesOf = (
-	spec: TimeseriesSpec,
-	scale: number,
-): ReadonlyArray<ChatChartTimeseries["series"][number]> => {
+const seriesOf = (spec: TimeseriesSpec, scale: number): ReadonlyArray<ChartTimeseries["series"][number]> => {
 	const byName = new Map<string, Array<ChartPoint>>()
 	for (const row of spec.data) {
 		// `parseChartSpec` has already dropped the rows whose bucket is not a time.
@@ -178,12 +175,12 @@ const seriesOf = (
  * nothing upstream caps how many of any of them it may hold, and an unbounded
  * one is a response body and a raster the Worker has to pay for.
  */
-export const chatChartResponse = (spec: ChartSpec): ChatChartResponse => {
+export const chatChartResponse = (spec: ChartSpec): ShareChartResponse => {
 	const { unit, scale } = staticChartUnit(spec.unit)
 	const title = spec.title ?? ""
 
 	if (spec.type === "ranked") {
-		return new ChatChartRanked({
+		return new ChartRanked({
 			kind: "ranked",
 			title,
 			unit,
@@ -196,10 +193,14 @@ export const chatChartResponse = (spec: ChartSpec): ChatChartResponse => {
 		})
 	}
 
-	return new ChatChartTimeseries({
+	return new ChartTimeseries({
 		kind: spec.type,
 		title,
 		unit,
 		series: seriesOf(spec, scale),
+		// A fence has no limit to be about — a threshold belongs to a rule's
+		// comparator, and a model writing one would be inventing it.
+		threshold: null,
+		breachSide: "none",
 	})
 }

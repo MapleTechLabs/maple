@@ -35,14 +35,14 @@ exports[`the alert chart, which is already in delivered notifications > draws a 
 exports[`the alert chart, which is already in delivered notifications > draws area exactly as it did before the renderers merged 1`] = `
 "<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 280" width="720" height="280">
 <rect x="0.5" y="0.5" width="719" height="279" rx="8" fill="#1e1b17" stroke="#2a2520"/>
-<defs><linearGradient id="areaFill" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stop-color="#ef2e43" stop-opacity="0.8"/><stop offset="95%" stop-color="#ef2e43" stop-opacity="0.1"/></linearGradient></defs>
+<defs><linearGradient id="areaFill0" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stop-color="#ef2e43" stop-opacity="0.8"/><stop offset="95%" stop-color="#ef2e43" stop-opacity="0.1"/></linearGradient></defs>
 <line x1="12" y1="268" x2="708" y2="268" stroke="#2a2520" stroke-width="1"/>
 <line x1="12" y1="204" x2="708" y2="204" stroke="#2a2520" stroke-opacity="0.5" stroke-width="1"/>
 <line x1="12" y1="140" x2="708" y2="140" stroke="#2a2520" stroke-opacity="0.5" stroke-width="1"/>
 <line x1="12" y1="76" x2="708" y2="76" stroke="#2a2520" stroke-opacity="0.5" stroke-width="1"/>
 <line x1="12" y1="12" x2="708" y2="12" stroke="#2a2520" stroke-opacity="0.5" stroke-width="1"/>
 <rect x="12" y="12.0" width="696" height="128.0" fill="#ef2e43" fill-opacity="0.06"/>
-<path d="M 12.0 216.8 L 151.2 191.2 L 290.4 114.4 L 429.6 18.4 L 568.8 197.6 L 708.0 229.6 L 708.0 268.0 L 12.0 268.0 Z" fill="url(#areaFill)"/>
+<path d="M 12.0 216.8 L 151.2 191.2 L 290.4 114.4 L 429.6 18.4 L 568.8 197.6 L 708.0 229.6 L 708.0 268.0 L 12.0 268.0 Z" fill="url(#areaFill0)"/>
 <path d="M 12.0 216.8 L 151.2 191.2 L 290.4 114.4 L 429.6 18.4 L 568.8 197.6 L 708.0 229.6" fill="none" stroke="#ef2e43" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
 <circle cx="708.0" cy="229.6" r="4" fill="#ef2e43" stroke="#1e1b17" stroke-width="2"/>
 <line x1="12" y1="140.0" x2="708" y2="140.0" stroke="#ef2e43" stroke-width="1.5" stroke-dasharray="6 4"/>
@@ -86,13 +86,13 @@ exports[`the alert chart, which is already in delivered notifications > draws li
 exports[`the alert chart, which is already in delivered notifications > draws no rule and no band when the rule has no threshold 1`] = `
 "<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 280" width="720" height="280">
 <rect x="0.5" y="0.5" width="719" height="279" rx="8" fill="#1e1b17" stroke="#2a2520"/>
-<defs><linearGradient id="areaFill" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stop-color="#ef2e43" stop-opacity="0.8"/><stop offset="95%" stop-color="#ef2e43" stop-opacity="0.1"/></linearGradient></defs>
+<defs><linearGradient id="areaFill0" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stop-color="#ef2e43" stop-opacity="0.8"/><stop offset="95%" stop-color="#ef2e43" stop-opacity="0.1"/></linearGradient></defs>
 <line x1="12" y1="268" x2="708" y2="268" stroke="#2a2520" stroke-width="1"/>
 <line x1="12" y1="204" x2="708" y2="204" stroke="#2a2520" stroke-opacity="0.5" stroke-width="1"/>
 <line x1="12" y1="140" x2="708" y2="140" stroke="#2a2520" stroke-opacity="0.5" stroke-width="1"/>
 <line x1="12" y1="76" x2="708" y2="76" stroke="#2a2520" stroke-opacity="0.5" stroke-width="1"/>
 <line x1="12" y1="12" x2="708" y2="12" stroke="#2a2520" stroke-opacity="0.5" stroke-width="1"/>
-<path d="M 12.0 216.8 L 151.2 191.2 L 290.4 114.4 L 429.6 18.4 L 568.8 197.6 L 708.0 229.6 L 708.0 268.0 L 12.0 268.0 Z" fill="url(#areaFill)"/>
+<path d="M 12.0 216.8 L 151.2 191.2 L 290.4 114.4 L 429.6 18.4 L 568.8 197.6 L 708.0 229.6 L 708.0 268.0 L 12.0 268.0 Z" fill="url(#areaFill0)"/>
 <path d="M 12.0 216.8 L 151.2 191.2 L 290.4 114.4 L 429.6 18.4 L 568.8 197.6 L 708.0 229.6" fill="none" stroke="#ef2e43" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
 <circle cx="708.0" cy="229.6" r="4" fill="#ef2e43" stroke="#1e1b17" stroke-width="2"/>
 </svg>"

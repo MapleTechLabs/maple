@@ -149,22 +149,47 @@ const FENCE_OPEN = /^\s{0,3}(`{3,})\s*([^\s`]*)/
 const CHART_FENCE_INFO = "chart"
 
 /**
- * Every ```chart fence in a reply, in the order they appear in it.
+ * A reply cut into the prose between its charts and the charts themselves.
  *
- * Position *is* the identity of a chart here: a reply can hold several, nothing
- * numbers them, and the image URL for one has to name it somehow. Order of
- * appearance is the one answer the transcript, the web renderer and an image
- * request can all reach independently, so it is the contract — which is why
- * this is shared rather than reimplemented per consumer.
- *
- * A line scan rather than a regex over the whole reply: fences nest, a chart
- * payload can legitimately contain a line of backticks, and a regex that pairs
- * the wrong two of them silently reindexes every chart after it.
+ * `closed` is false for a fence whose closing line has not arrived — a reply
+ * still streaming. It is always the last part, so a consumer may drop it
+ * without shifting anything before it.
  */
-export function chartFences(text: string): ReadonlyArray<string> {
-	const fences: Array<string> = []
+export type ChartFencePart =
+	| { readonly kind: "text"; readonly value: string }
+	| { readonly kind: "chart"; readonly value: string; readonly closed: boolean }
+
+/**
+ * A reply, split at its ```chart fences, in the order they appear in it.
+ *
+ * **Position is the identity of a chart.** A reply can hold several, nothing
+ * numbers them, and the image URL for one has to name it somehow. Order of
+ * appearance is the one answer every consumer can reach independently, so it is
+ * the contract — and the reason this is one function rather than one per
+ * surface. Two implementations of it disagreed once: counting only the fences
+ * that *parsed* renumbered every chart after a malformed one, so a reader got
+ * the wrong plot under the right words.
+ *
+ * Counted on the way in, therefore, before anything asks whether the payload is
+ * a chart at all. A caller that cannot draw the Nth fence skips it; it does not
+ * renumber the rest.
+ *
+ * A line scan rather than a regex over the whole reply: a fence is a line
+ * construct, fences nest, a chart payload can legitimately contain a line of
+ * backticks, and a regex that pairs the wrong two of them silently reindexes
+ * everything after it. Fences that are not charts keep their own lines and pass
+ * through as prose, so splitting a reply and rejoining it loses nothing.
+ */
+export function splitChartFences(text: string): ReadonlyArray<ChartFencePart> {
+	const parts: Array<ChartFencePart> = []
+	let prose: Array<string> = []
 	let open: { readonly ticks: number; readonly isChart: boolean } | undefined
 	let body: Array<string> = []
+
+	const flushProse = () => {
+		parts.push({ kind: "text", value: prose.join("\n") })
+		prose = []
+	}
 
 	for (const line of text.split("\n")) {
 		const fence = FENCE_OPEN.exec(line)
@@ -172,26 +197,38 @@ export function chartFences(text: string): ReadonlyArray<string> {
 		const info = fence?.[2] ?? ""
 
 		if (open === undefined) {
-			if (ticks === 0) continue
+			if (ticks === 0) {
+				prose.push(line)
+				continue
+			}
 			open = { ticks, isChart: info === CHART_FENCE_INFO }
-			body = []
+			if (open.isChart) {
+				flushProse()
+				body = []
+			} else prose.push(line)
 			continue
 		}
+
 		// A closing fence is at least as long as the one that opened it and
 		// carries no info string of its own.
 		if (ticks >= open.ticks && info === "") {
-			if (open.isChart) fences.push(body.join("\n"))
+			if (open.isChart) parts.push({ kind: "chart", value: body.join("\n"), closed: true })
+			else prose.push(line)
 			open = undefined
 			continue
 		}
 		if (open.isChart) body.push(line)
+		else prose.push(line)
 	}
 
-	// An unclosed fence is a reply that stopped mid-chart. Its partial JSON will
-	// not parse, and returning it keeps the *indexes* of the charts before it
-	// right, which is what a caller asking for the Nth one depends on.
-	if (open?.isChart === true) fences.push(body.join("\n"))
-	return fences
+	if (open?.isChart === true) parts.push({ kind: "chart", value: body.join("\n"), closed: false })
+	else flushProse()
+	return parts
+}
+
+/** Every ```chart fence in a reply, in the order they appear in it. */
+export function chartFences(text: string): ReadonlyArray<string> {
+	return splitChartFences(text).flatMap((part) => (part.kind === "chart" ? [part.value] : []))
 }
 
 /**

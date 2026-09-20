@@ -75,29 +75,3 @@ export const ogMetaAdditions = (meta: ShareOgMeta): string =>
 	`<meta property="og:image:width" content="${OG_IMAGE_WIDTH}" />` +
 	`<meta property="og:image:height" content="${OG_IMAGE_HEIGHT}" />` +
 	`<meta property="og:image:alt" content="${escapeAttribute(meta.title)}" />`
-
-const ALERT_CHART_PREFIX = "/alerts/chart/"
-const CHAT_CHART_PREFIX = "/chat/chart/"
-const CHART_SUFFIX = ".png"
-
-/**
- * The signed chart id in a `<prefix><id>.png` path, or `undefined`.
- *
- * The id is base64url plus a `.` plus a signature, so unlike a share OG id it
- * legitimately contains a dot — only the `.png` at the very end is the
- * extension. A `/` anywhere is rejected: the id is one path segment, and
- * anything with structure in it is not one this repo minted.
- */
-const chartIdFromPath = (pathname: string, prefix: string): string | undefined => {
-	if (!pathname.startsWith(prefix) || !pathname.endsWith(CHART_SUFFIX)) return undefined
-	const id = decodeURIComponent(pathname.slice(prefix.length, pathname.length - CHART_SUFFIX.length))
-	return id.length === 0 || id.includes("/") ? undefined : id
-}
-
-/** The signed chart id in an `/alerts/chart/<id>.png` path, or `undefined`. */
-export const alertChartIdFromPath = (pathname: string): string | undefined =>
-	chartIdFromPath(pathname, ALERT_CHART_PREFIX)
-
-/** The signed chart id in a `/chat/chart/<id>.png` path, or `undefined`. */
-export const chatChartIdFromPath = (pathname: string): string | undefined =>
-	chartIdFromPath(pathname, CHAT_CHART_PREFIX)

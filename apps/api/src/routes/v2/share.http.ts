@@ -21,7 +21,7 @@
 import { HttpApiBuilder } from "effect/unstable/httpapi"
 import { HttpServerRequest } from "effect/unstable/http"
 import {
-	AlertChartResponse,
+	ChartTimeseries,
 	AlertRuleId,
 	OrgId,
 	SHARE_NOT_FOUND_MESSAGE,
@@ -526,11 +526,19 @@ export const HttpV2SharePublicLive = HttpApiBuilder.group(MapleApiV2, "sharePubl
 					// picture to draw, and the uniform not-found is the honest reply.
 					if (series === null) return yield* notFound
 
-					return new AlertChartResponse({
+					// One series, because that is what a rule measures. The card puts
+					// its latest value in the header rather than drawing a legend for
+					// a chart with nothing to tell apart.
+					return new ChartTimeseries({
+						kind: "area",
 						title: claims.title,
 						unit: claims.unit,
-						kind: "area",
-						points: series.points.map((point) => [point[0], point[1]] as const),
+						series: [
+							{
+								name: claims.title,
+								points: series.points.map((point) => [point[0], point[1]] as const),
+							},
+						],
 						threshold: claims.threshold,
 						breachSide: claims.breachSide,
 					})

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import { Result, Schema } from "effect"
-import { ChatChartResponse } from "@maple/domain/http"
+import { ShareChartResponse } from "@maple/domain/http"
 import { OrgId } from "@maple/domain/primitives"
 import { ChatMessage } from "@maple/domain/chat-session"
 import { chatChartId, verifyChatChartId, type VerifiedChatChartClaims } from "@maple/db"
@@ -255,7 +255,7 @@ describe("chatChartResponse", () => {
 		// `Schema.Class`'s type side is structural, so an object literal would
 		// type-check here and fail at response encoding. This runs the real encode.
 		for (const source of [RANKED_SOURCE, LINE_SOURCE]) {
-			const encoded = Schema.encodeUnknownResult(ChatChartResponse)(chatChartResponse(specOf(source)))
+			const encoded = Schema.encodeUnknownResult(ShareChartResponse)(chatChartResponse(specOf(source)))
 			expect(Result.isSuccess(encoded)).toBe(true)
 		}
 	})

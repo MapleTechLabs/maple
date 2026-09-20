@@ -14,7 +14,7 @@
  * *unintended* one cannot pass.
  */
 import { describe, expect, it } from "vitest"
-import { renderPlotSvg, renderSeriesPlotSvg, type ChartPoint } from "./static-chart"
+import { renderChartSvg, unitColor, type ChartPoint } from "./static-chart"
 
 const at = (minutesAgo: number): number => Date.UTC(2026, 7, 18, 14, 32) - minutesAgo * 60_000
 
@@ -23,32 +23,33 @@ const points = (values: ReadonlyArray<number>): ReadonlyArray<ChartPoint> =>
 
 describe("the alert chart, which is already in delivered notifications", () => {
 	const spec = {
-		title: "checkout-api error rate",
 		unit: "percent",
-		points: points([0.8, 1.2, 2.4, 3.9, 1.1, 0.6]),
+		series: [{ name: "checkout-api error rate", points: points([0.8, 1.2, 2.4, 3.9, 1.1, 0.6]) }],
 		threshold: 2,
 		breachSide: "above",
+		// The alert chart takes its unit's semantic colour, not the palette's first.
+		color: unitColor("percent"),
 	} as const
 
 	for (const kind of ["line", "area", "bar"] as const) {
 		it(`draws ${kind} exactly as it did before the renderers merged`, () => {
-			expect(renderPlotSvg({ ...spec, kind }).svg).toMatchSnapshot()
+			expect(renderChartSvg({ ...spec, kind }).svg).toMatchSnapshot()
 		})
 	}
 
 	it("draws a downward breach band as it did before", () => {
-		expect(renderPlotSvg({ ...spec, kind: "line", breachSide: "below" }).svg).toMatchSnapshot()
+		expect(renderChartSvg({ ...spec, kind: "line", breachSide: "below" }).svg).toMatchSnapshot()
 	})
 
 	it("draws no rule and no band when the rule has no threshold", () => {
-		expect(renderPlotSvg({ ...spec, kind: "area", threshold: null }).svg).toMatchSnapshot()
+		expect(renderChartSvg({ ...spec, kind: "area", threshold: null }).svg).toMatchSnapshot()
 	})
 })
 
 describe("a chart out of a reply", () => {
 	it("draws several series", () => {
 		expect(
-			renderSeriesPlotSvg({
+			renderChartSvg({
 				kind: "line",
 				unit: "duration_ms",
 				series: [

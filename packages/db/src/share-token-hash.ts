@@ -1,6 +1,6 @@
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto"
 import type { AlertRuleId, OrgId } from "@maple/domain/primitives"
-import { AlertChartBreachSide, AlertChartUnit } from "@maple/domain/http"
+import { ChartBreachSide, ChartUnit } from "@maple/domain/http"
 import { Result, Schema } from "effect"
 
 const SHARE_TOKEN_PREFIX = "mshare_"
@@ -122,10 +122,10 @@ export interface AlertChartClaims {
 	readonly toMs: number
 	/** What the card is titled — the rule's measured quantity, as the message names it. */
 	readonly title: string
-	readonly unit: AlertChartUnit
+	readonly unit: ChartUnit
 	readonly threshold: number | null
 	/** Which side of the threshold the renderer shades. */
-	readonly breachSide: AlertChartBreachSide
+	readonly breachSide: ChartBreachSide
 }
 
 /**
@@ -168,9 +168,9 @@ const AlertChartPayload = Schema.Tuple([
 	Schema.Number,
 	Schema.Number,
 	Schema.String,
-	AlertChartUnit,
+	ChartUnit,
 	Schema.NullOr(Schema.Number),
-	AlertChartBreachSide,
+	ChartBreachSide,
 ])
 
 const decodeAlertChartPayload = Schema.decodeUnknownResult(Schema.fromJsonString(AlertChartPayload))

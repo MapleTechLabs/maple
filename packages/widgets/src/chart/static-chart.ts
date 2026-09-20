@@ -12,7 +12,7 @@
  *     every glyph inside an SVG image node renders as nothing — registering a
  *     font changes the output not at all (verified: byte-identical PNGs).
  *     Type has to be composed as takumi nodes *around* this SVG, so
- *     {@link renderPlotSvg} returns the strings to draw and where, and draws
+ *     {@link renderChartSvg} returns the strings to draw and where, and draws
  *     none of them itself.
  *
  * Fixed to the Maple dark theme: a PNG has no theme, and the product default
@@ -21,7 +21,7 @@
  *
  * It lives in `@maple/widgets` rather than `@maple/ui` because both consumers
  * are Workers: `apps/api` needs {@link sparkline} for message text and
- * `apps/web` needs {@link renderPlotSvg} for the image. `@maple/ui` peer-depends
+ * `apps/web` needs {@link renderChartSvg} for the image. `@maple/ui` peer-depends
  * on react, react-dom and tailwind, and no Worker in this repo imports it.
  *
  * A near-identical renderer lives at `apps/slack-agent/agent/lib/chart.ts`.
@@ -42,21 +42,6 @@ export type ChartPoint = readonly [number, number]
 /** Which side of the threshold counts as breaching, for the shaded band. */
 export type BreachSide = "above" | "below" | "none"
 
-export interface StaticChartSpec {
-	readonly title: string
-	readonly kind: ChartKind
-	readonly unit: ChartUnit
-	readonly points: ReadonlyArray<ChartPoint>
-	/** Drawn as a dashed rule. Omit for a chart with no threshold to show. */
-	readonly threshold?: number | null
-	/**
-	 * Shades the breaching side of the threshold. `"none"` for comparators
-	 * where "beyond" is not a half-plane (`between`, `eq`, …) — the rule still
-	 * draws, the band does not.
-	 */
-	readonly breachSide?: BreachSide
-}
-
 /**
  * A string the caller must draw as its own text node, and where to put it.
  *
@@ -68,35 +53,40 @@ export interface PlotLabel {
 	readonly yFraction: number
 }
 
-export interface PlotRender {
-	/** Self-contained SVG, `PLOT_WIDTH`×`PLOT_HEIGHT` viewBox, no `<text>`. */
-	readonly svg: string
-	readonly title: string
-	/** Latest value, formatted. The number the message is about. */
-	readonly latest: string
-	/** Threshold rule label, absent when the spec carries no threshold. */
-	readonly threshold: PlotLabel | null
-	/** Range ends, UTC. */
-	readonly start: string
-	readonly end: string
-}
-
-/** One named line/area/bar in a chart that carries several. */
+/** One named line/area/bar. A chart carries one or several. */
 export interface NamedSeries {
 	readonly name: string
 	readonly points: ReadonlyArray<ChartPoint>
 }
 
 /**
- * A chart of several named series over one time axis.
+ * One chart, whatever produced it.
  *
- * No threshold: a rule belongs to a comparator, and a chart with N series has
- * no single quantity for one to be about.
+ * An alert chart is this with a single series and a threshold; a chart out of
+ * an agent's reply is this with several and none. They were two renderers
+ * once, which bought nothing: the threshold is the only thing a second series
+ * cannot have, and it is already optional.
  */
-export interface SeriesChartSpec {
+export interface ChartSpec {
 	readonly kind: ChartKind
 	readonly unit: ChartUnit
 	readonly series: ReadonlyArray<NamedSeries>
+	/** Drawn as a dashed rule, and kept inside the y domain so it cannot fall off. */
+	readonly threshold?: number | null
+	/**
+	 * Shades the breaching side of the threshold. `"none"` for comparators
+	 * where "beyond" is not a half-plane (`between`, `eq`, …) — the rule still
+	 * draws, the band does not.
+	 */
+	readonly breachSide?: BreachSide
+	/**
+	 * One colour for the whole chart, instead of the per-series palette.
+	 *
+	 * What makes an alert chart look like an alert chart: it is about a single
+	 * measured quantity, so it takes that unit's semantic colour rather than
+	 * "the first one in the palette".
+	 */
+	readonly color?: string
 }
 
 /** A series as the caller has to label it — the colour is drawn, the words are not. */
@@ -107,12 +97,15 @@ export interface LegendEntry {
 	readonly latest: string
 }
 
-export interface SeriesPlotRender {
+export interface ChartRender {
 	/** Self-contained SVG, `PLOT_WIDTH`×`PLOT_HEIGHT` viewBox, no `<text>`. */
 	readonly svg: string
+	/** One entry per drawn series, biggest first. */
 	readonly legend: ReadonlyArray<LegendEntry>
 	/** Series left undrawn by {@link MAX_PLOT_SERIES}, for the caller to note. */
 	readonly hidden: number
+	/** Threshold rule label, `null` when the spec carries no threshold. */
+	readonly threshold: PlotLabel | null
 	/** Range ends, UTC. */
 	readonly start: string
 	readonly end: string
@@ -398,99 +391,24 @@ const lineMarks = (
 const byTime = (a: ChartPoint, b: ChartPoint): number => a[0] - b[0]
 
 /**
- * Plot geometry as an SVG string, plus the type the caller has to draw.
+ * A chart as an SVG string, plus the type the caller has to draw.
  *
- * Throws on an empty series: an alert chart with no points is a bug at the
- * call site, and silently returning an empty card would ship it to a customer.
+ * One function for both kinds of chart this repo draws. An alert's is a single
+ * series with a threshold; an agent's is several with none — and the threshold
+ * was already optional, so keeping them apart bought a second copy of the
+ * scales, the grid and the marks in exchange for nothing.
+ *
+ * Series compete for the {@link MAX_PLOT_SERIES} slots on peak magnitude, so
+ * what a reader loses on a crowded chart is the flattest lines on it. A chart
+ * with one series loses nothing.
+ *
+ * Throws on a spec with nothing in it: a chart with no points is a bug at the
+ * call site, and silently returning an empty card would ship it to a reader.
  */
-export function renderPlotSvg(spec: StaticChartSpec): PlotRender {
-	const points = [...spec.points].sort(byTime)
-	const firstPoint = points[0]
-	const lastPoint = points.at(-1)
-	if (firstPoint === undefined || lastPoint === undefined) {
-		throw new Error("renderPlotSvg needs at least one data point.")
-	}
-
+export function renderChartSvg(spec: ChartSpec): ChartRender {
 	const threshold = spec.threshold ?? null
 	const breachSide = spec.breachSide ?? "none"
 
-	const values = points.map((p) => p[1])
-	// The threshold joins the domain so its rule is always on the canvas — a
-	// chart whose breach line sits off the top edge is worse than no chart.
-	const domain = threshold === null ? values : [...values, threshold]
-	const tMin = firstPoint[0]
-	const tMax = lastPoint[0]
-	const tRange = Math.max(1, tMax - tMin)
-	const scales = plotScales(domain, tMin, tRange)
-
-	const color = SERIES_COLORS[spec.unit]
-	const parts: string[] = [...SVG_OPEN]
-
-	if (spec.kind === "area") parts.push(`<defs>${areaGradient("areaFill", color)}</defs>`)
-	parts.push(...gridLines(scales))
-
-	// Breach band under the threshold rule, so the eye finds the excursion
-	// before it reads a single number.
-	if (threshold !== null && breachSide !== "none") {
-		const ty = scales.y(threshold)
-		const bandTop = breachSide === "above" ? PAD : ty
-		const bandHeight =
-			breachSide === "above" ? Math.max(0, ty - PAD) : Math.max(0, PAD + scales.plotH - ty)
-		if (bandHeight > 0) {
-			parts.push(
-				`<rect x="${PAD}" y="${bandTop.toFixed(1)}" width="${scales.plotW}" height="${bandHeight.toFixed(1)}" fill="${COLORS.danger}" fill-opacity="0.06"/>`,
-			)
-		}
-	}
-
-	parts.push(
-		...(spec.kind === "bar"
-			? // Bars imply regular buckets, so each point owns one slot.
-				barMarks(
-					points.map(([, value], slot) => ({ slot, value })),
-					color,
-					scales,
-					{ slots: points.length, bands: 1, band: 0 },
-				)
-			: lineMarks(points, { filled: spec.kind === "area", color, fillId: "areaFill", scales })),
-	)
-
-	// Threshold rule last, so it reads above the marks.
-	if (threshold !== null) {
-		const ty = scales.y(threshold)
-		parts.push(
-			`<line x1="${PAD}" y1="${ty.toFixed(1)}" x2="${PLOT_WIDTH - PAD}" y2="${ty.toFixed(1)}" stroke="${COLORS.danger}" stroke-width="1.5" stroke-dasharray="6 4"/>`,
-		)
-	}
-
-	parts.push("</svg>")
-
-	return {
-		svg: parts.join("\n"),
-		title: spec.title,
-		latest: formatValue(lastPoint[1], spec.unit),
-		threshold:
-			threshold === null
-				? null
-				: {
-						text: formatValue(threshold, spec.unit),
-						yFraction: (scales.y(threshold) - PAD) / scales.plotH,
-					},
-		start: formatTimestamp(tMin, tRange),
-		end: `${formatTimestamp(tMax, tRange)} UTC`,
-	}
-}
-
-/**
- * A chart of several named series, plus the legend the caller has to draw.
- *
- * Series compete for the {@link MAX_PLOT_SERIES} slots on peak magnitude, so
- * what a reader loses on a crowded chart is the flattest lines on it.
- *
- * Throws on a spec with nothing to draw, for the same reason
- * {@link renderPlotSvg} does: an empty card is a bug shipped to a reader.
- */
-export function renderSeriesPlotSvg(spec: SeriesChartSpec): SeriesPlotRender {
 	const ranked = spec.series
 		.flatMap((series) => {
 			const points = [...series.points].sort(byTime)
@@ -509,19 +427,18 @@ export function renderSeriesPlotSvg(spec: SeriesChartSpec): SeriesPlotRender {
 
 	const drawn = ranked.slice(0, MAX_PLOT_SERIES).map((series, index) => ({
 		...series,
-		color: SERIES_PALETTE[index] ?? SERIES_PALETTE[0],
+		color: spec.color ?? SERIES_PALETTE[index] ?? SERIES_PALETTE[0],
 	}))
-	if (drawn.length === 0) throw new Error("renderSeriesPlotSvg needs at least one data point.")
+	if (drawn.length === 0) throw new Error("renderChartSvg needs at least one data point.")
 
 	const times = drawn.flatMap((series) => series.points.map((point) => point[0]))
 	const tMin = Math.min(...times)
 	const tMax = Math.max(...times)
 	const tRange = Math.max(1, tMax - tMin)
-	const scales = plotScales(
-		drawn.flatMap((series) => series.points.map((point) => point[1])),
-		tMin,
-		tRange,
-	)
+	// The threshold joins the domain so its rule is always on the canvas — a
+	// chart whose breach line sits off the top edge is worse than no chart.
+	const values = drawn.flatMap((series) => series.points.map((point) => point[1]))
+	const scales = plotScales(threshold === null ? values : [...values, threshold], tMin, tRange)
 
 	// Bars stand side by side inside one bucket, so every series has to agree on
 	// what the buckets are — the union of the times drawn, left to right.
@@ -538,6 +455,20 @@ export function renderSeriesPlotSvg(spec: SeriesChartSpec): SeriesPlotRender {
 		)
 	}
 	parts.push(...gridLines(scales))
+
+	// Breach band under the threshold rule, so the eye finds the excursion
+	// before it reads a single number.
+	if (threshold !== null && breachSide !== "none") {
+		const ty = scales.y(threshold)
+		const bandTop = breachSide === "above" ? PAD : ty
+		const bandHeight =
+			breachSide === "above" ? Math.max(0, ty - PAD) : Math.max(0, PAD + scales.plotH - ty)
+		if (bandHeight > 0) {
+			parts.push(
+				`<rect x="${PAD}" y="${bandTop.toFixed(1)}" width="${scales.plotW}" height="${bandHeight.toFixed(1)}" fill="${COLORS.danger}" fill-opacity="0.06"/>`,
+			)
+		}
+	}
 
 	for (const [index, series] of drawn.entries()) {
 		parts.push(
@@ -556,6 +487,15 @@ export function renderSeriesPlotSvg(spec: SeriesChartSpec): SeriesPlotRender {
 					})),
 		)
 	}
+
+	// Threshold rule last, so it reads above the marks.
+	if (threshold !== null) {
+		const ty = scales.y(threshold)
+		parts.push(
+			`<line x1="${PAD}" y1="${ty.toFixed(1)}" x2="${PLOT_WIDTH - PAD}" y2="${ty.toFixed(1)}" stroke="${COLORS.danger}" stroke-width="1.5" stroke-dasharray="6 4"/>`,
+		)
+	}
+
 	parts.push("</svg>")
 
 	return {
@@ -566,6 +506,13 @@ export function renderSeriesPlotSvg(spec: SeriesChartSpec): SeriesPlotRender {
 			latest: formatValue(series.latest, spec.unit),
 		})),
 		hidden: ranked.length - drawn.length,
+		threshold:
+			threshold === null
+				? null
+				: {
+						text: formatValue(threshold, spec.unit),
+						yFraction: (scales.y(threshold) - PAD) / scales.plotH,
+					},
 		start: formatTimestamp(tMin, tRange),
 		end: `${formatTimestamp(tMax, tRange)} UTC`,
 	}
