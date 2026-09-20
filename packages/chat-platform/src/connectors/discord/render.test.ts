@@ -119,6 +119,25 @@ describe("renderDiscordMessage", () => {
 		expect(payload.embeds[0].title).toHaveLength(256)
 	})
 
+	it("falls back to text once the embeds together would be too long", () => {
+		// Each embed is within its own limits; Discord bounds their COMBINED text as well, and
+		// rejects the whole message over it.
+		const wide = (index: number): ChatBlock => ({
+			...(chart(`https://img.maple.dev/${index}.png`) as Extract<ChatBlock, { kind: "chart" }>),
+			summary: "s".repeat(3000),
+		})
+		const payload = renderDiscordMessage([wide(0), wide(1), wide(2)])
+
+		expect(payload.embeds.length).toBeLessThan(3)
+		const spent = payload.embeds.reduce(
+			(total, embed) => total + (embed.title?.length ?? 0) + (embed.description?.length ?? 0),
+			0,
+		)
+		expect(spent).toBeLessThanOrEqual(6000)
+		// The chart a budget pushed out is still reported, as the line it would have had anyway.
+		expect(payload.content).toContain("Errors by service")
+	})
+
 	it("gives an emptied message something Discord accepts", () => {
 		expect(renderDiscordMessage([]).content).toBe(EMPTY_CONTENT)
 	})

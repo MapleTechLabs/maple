@@ -90,8 +90,13 @@ export type ChatBlock =
 export interface ChatChartRef {
 	readonly sessionId: ChatSessionId
 	readonly messageId: string
-	/** Position among this message's charts, in the order the model wrote them. */
-	readonly index: number
+	/**
+	 * Position among this message's chart fences, counted in order of appearance from zero.
+	 *
+	 * The ordering rule matters more than the number: whatever renders the image has to count the
+	 * same fences the same way, or a turn with two charts shows each of them the other's plot.
+	 */
+	readonly chartIndex: number
 	readonly spec: ChartSpec
 }
 

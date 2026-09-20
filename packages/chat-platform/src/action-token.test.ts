@@ -30,6 +30,15 @@ describe("chat action token", () => {
 		expect(decodeChatActionToken(token)?.toolCallId).toBe("call|weird")
 	})
 
+	it("survives a session id that carries the escape marker itself", () => {
+		// Escaping the separator without escaping the marker is not injective: a tab id already
+		// holding `%7C` would come back as a `|` it never had — a different session that still
+		// resolves an org and still passes the brand.
+		const awkward = makeChatSessionId("org_1", "bot%7C42")
+		const token = encodeChatActionToken(awkward, "call_1")
+		expect(decodeChatActionToken(token)).toEqual({ sessionId: awkward, toolCallId: "call_1" })
+	})
+
 	it("survives a session id that carries the separator", () => {
 		// A tab id is whatever minted the session — a platform's own message id, on a platform that
 		// allows anything. Unescaped, this decoded back as a shorter session id that still looked

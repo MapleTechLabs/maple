@@ -12,18 +12,35 @@ import { Schema } from "effect"
 import { ChatConnectorId } from "./connector"
 import type { ChatBlock } from "./render/blocks"
 
-/** Where a turn is posted. Both ids are opaque strings the connector minted or was handed. */
+/**
+ * Where a turn is posted. Every id is an opaque string the connector minted or was handed.
+ *
+ * `workspaceId` rides on every call because it is what a connector with per-install credentials
+ * resolves its token from, inside its own transport — the contract carries the address, never the
+ * secret, and a connector with one process-wide credential simply ignores it.
+ */
 export interface ChatTarget {
-	/** The platform conversation — a channel, a thread, a direct message. */
-	readonly conversationId: string
-	/** The message this turn answers, where the platform threads replies. */
-	readonly replyToMessageId?: string | undefined
+	/** The install this conversation belongs to — a workspace, a guild, a team. */
+	readonly workspaceId: string
+	/** The channel, group or direct message. */
+	readonly channelId: string
+	/** The thread inside it, when the turn is answering in one. */
+	readonly threadId?: string | undefined
 }
 
-/** A message this driver posted, and can still edit. */
+/** A message this driver posted, and can still edit. Carries its target, so an edit is addressable. */
 export interface ChatMessageRef {
-	readonly conversationId: string
+	readonly target: ChatTarget
 	readonly messageId: string
+}
+
+/** What a thread is opened around, and what it is called. */
+export interface ChatThreadRequest {
+	readonly workspaceId: string
+	readonly channelId: string
+	/** The message the thread hangs off — a mention, a command, an alert. */
+	readonly anchorMessageId: string
+	readonly title: string
 }
 
 export interface ChatOutboundLimits {
@@ -57,6 +74,18 @@ export interface ChatOutboundTransport {
 	) => Effect.Effect<void, ChatOutboundError>
 	/** Show the bot as busy while the first message is still on its way. Best effort by nature. */
 	readonly typing: (target: ChatTarget) => Effect.Effect<void, ChatOutboundError>
+	/**
+	 * Open a thread around a message, and answer with the id to address it by.
+	 *
+	 * An answer belongs beside the question, not in the middle of a channel, and every platform
+	 * worth connecting can put it there — but they disagree about what a thread IS. Where it is a
+	 * first-class object this is an API call; where a thread is just replies to a message, the
+	 * connector answers with the anchor's own id and performs no I/O at all. Either way the caller
+	 * gets back something to put in {@link ChatTarget.threadId}.
+	 *
+	 * WHEN to open one is the caller's decision, not the driver's.
+	 */
+	readonly openThread: (request: ChatThreadRequest) => Effect.Effect<string, ChatOutboundError>
 }
 
 /**
@@ -78,7 +107,7 @@ export class ChatOutboundError extends Schema.TaggedError<ChatOutboundError>()(
 	{
 		message: Schema.String,
 		connectorId: ChatConnectorId,
-		operation: Schema.Literals(["post", "edit", "typing"]),
+		operation: Schema.Literals(["post", "edit", "typing", "thread"]),
 		/** The platform's HTTP status, where the failure had one. */
 		status: Schema.optionalKey(Schema.Finite),
 		cause: Schema.optionalKey(Schema.Defect()),

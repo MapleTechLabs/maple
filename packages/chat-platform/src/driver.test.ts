@@ -28,7 +28,7 @@ const context: ChatRenderContext = {
 	chartImageUrl: () => null,
 }
 
-const target: ChatTarget = { conversationId: "conv_1" }
+const target: ChatTarget = { workspaceId: "guild_1", channelId: "chan_1" }
 
 const EDIT_INTERVAL = Duration.seconds(1)
 
@@ -55,12 +55,14 @@ const recorder = (maxMessageChars = 500): Recorder => {
 			transport: Effect.sync(() => ({
 				post: (postTarget, blocks) =>
 					Effect.sync(() => {
-						const ref = { conversationId: postTarget.conversationId, messageId: `m${++posted}` }
+						const ref = { target: postTarget, messageId: `m${++posted}` }
 						calls.push({ verb: "post", ref, blocks })
 						return ref
 					}),
 				edit: (ref, blocks) => Effect.sync(() => void calls.push({ verb: "edit", ref, blocks })),
-				typing: (typingTarget) => Effect.sync(() => void typing.push(typingTarget.conversationId)),
+				typing: (typingTarget) => Effect.sync(() => void typing.push(typingTarget.channelId)),
+				// A platform where a thread is just replies to a message opens one without any I/O.
+				openThread: (request) => Effect.succeed(request.anchorMessageId),
 			})),
 		},
 	}
@@ -117,7 +119,7 @@ describe("driveChatTurn", () => {
 			// Two deltas, one edit: the throttle coalesces rather than editing per token.
 			expect(prose(chat.calls[1].blocks)).toBe("Checking")
 			expect(prose(chat.calls[2].blocks)).toBe("Checking it.")
-			expect(chat.typing).toEqual(["conv_1"])
+			expect(chat.typing).toEqual(["chan_1"])
 		}),
 	)
 

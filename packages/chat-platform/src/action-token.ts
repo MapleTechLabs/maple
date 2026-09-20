@@ -24,10 +24,17 @@ const decodeSessionId = Schema.decodeUnknownOption(ChatSessionId)
  * SHORTER session id that still looks valid — the wrong conversation, silently.
  */
 const SEPARATOR = "|"
+const ESCAPE = "%"
 const ESCAPED_SEPARATOR = "%7C"
+const ESCAPED_ESCAPE = "%25"
 
 export const encodeChatActionToken = (sessionId: ChatSessionId, toolCallId: string): ChatActionToken =>
-	asActionToken(`${sessionId.replaceAll(SEPARATOR, ESCAPED_SEPARATOR)}${SEPARATOR}${toolCallId}`)
+	asActionToken(
+		// The marker goes first and comes back last: a session id already containing `%7C` would
+		// otherwise decode to a `|` it never had — a different session that still looks valid.
+		`${sessionId.replaceAll(ESCAPE, ESCAPED_ESCAPE).replaceAll(SEPARATOR, ESCAPED_SEPARATOR)}` +
+			`${SEPARATOR}${toolCallId}`,
+	)
 
 export interface ChatAction {
 	readonly sessionId: ChatSessionId
@@ -43,7 +50,10 @@ export interface ChatAction {
 export const decodeChatActionToken = (token: string): ChatAction | undefined => {
 	const separator = token.indexOf(SEPARATOR)
 	if (separator <= 0) return undefined
-	const rawSessionId = token.slice(0, separator).replaceAll(ESCAPED_SEPARATOR, SEPARATOR)
+	const rawSessionId = token
+		.slice(0, separator)
+		.replaceAll(ESCAPED_SEPARATOR, SEPARATOR)
+		.replaceAll(ESCAPED_ESCAPE, ESCAPE)
 	const toolCallId = token.slice(separator + SEPARATOR.length)
 	if (toolCallId.length === 0 || orgIdFromChatSessionId(rawSessionId) === undefined) return undefined
 	// Through the schema rather than a cast: `ChatSessionId` carries no checks today, and the day it

@@ -42,7 +42,7 @@ describe("renderChatMessage", () => {
 	it("lifts a chart fence out of the prose and keeps the order it was written in", () => {
 		const blocks = renderChatMessage(text(`Before.\n\n\`\`\`chart\n${CHART}\n\`\`\`\n\nAfter.`), {
 			...context,
-			chartImageUrl: (ref) => `https://img.maple.dev/${ref.messageId}/${ref.index}.png`,
+			chartImageUrl: (ref) => `https://img.maple.dev/${ref.messageId}/${ref.chartIndex}.png`,
 		})
 
 		expect(blocks.map((block) => block.kind)).toEqual(["prose", "chart", "prose"])

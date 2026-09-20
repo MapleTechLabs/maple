@@ -9,8 +9,14 @@
  *
  * Checked against Discord's REST documentation for API v10: create is
  * `POST /channels/{id}/messages`, edit is `PATCH /channels/{id}/messages/{id}`, typing is
- * `POST /channels/{id}/typing` and expires after ten seconds, and a 429 answers with
- * `retry_after` in SECONDS (fractional).
+ * `POST /channels/{id}/typing` and expires after ten seconds, a thread is
+ * `POST /channels/{id}/messages/{id}/threads` with a 1–100 character name and an
+ * `auto_archive_duration` of 60, 1440, 4320 or 10080 minutes, and a 429 answers with `retry_after`
+ * in SECONDS (fractional).
+ *
+ * A Discord thread IS a channel, so once a turn is answering in one every call addresses the
+ * thread's id — which is why the target's channel is resolved through {@link channelOf} rather
+ * than read directly.
  */
 import { Context, Duration, Effect, Option, Redacted, Schema } from "effect"
 import { HttpClient, HttpClientRequest, type HttpClientResponse } from "effect/unstable/http"
@@ -20,6 +26,7 @@ import {
 	type ChatOutbound,
 	type ChatOutboundOperation,
 	type ChatTarget,
+	type ChatThreadRequest,
 } from "../../outbound"
 import type { ChatBlock } from "../../render/blocks"
 import { DISCORD_CONNECTOR_ID } from "./id"
@@ -67,6 +74,18 @@ const CreatedMessage = Schema.Struct({
 	id: Schema.String,
 	channel_id: Schema.String,
 })
+
+/** A started thread is a channel, and its id is what every later call addresses. */
+const CreatedThread = Schema.Struct({ id: Schema.String })
+
+/** 1–100 characters, per the Start Thread documentation. */
+const MAX_THREAD_NAME_CHARS = 100
+
+/** A day of quiet before the thread leaves the channel list. Long enough to come back to an answer. */
+const THREAD_ARCHIVE_MINUTES = 1440
+
+/** The thread when the turn is in one, the channel otherwise — on Discord both are channel ids. */
+const channelOf = (target: ChatTarget): string => target.threadId ?? target.channelId
 
 /** Seconds, fractional. Anything outside the window falls through to the header and the default. */
 const RETRY_AFTER_SECONDS = Schema.Finite.pipe(
@@ -158,16 +177,16 @@ export const discordOutbound: ChatOutbound<HttpClient.HttpClient | DiscordBotTok
 			return tryOnce(1)
 		}
 
-		const body = (blocks: ReadonlyArray<ChatBlock>, extra?: Record<string, unknown>) =>
-			HttpClientRequest.bodyJsonUnsafe({ ...renderDiscordMessage(blocks), ...extra })
+		const body = (blocks: ReadonlyArray<ChatBlock>) =>
+			HttpClientRequest.bodyJsonUnsafe(renderDiscordMessage(blocks))
 
 		return {
 			post: Effect.fn("Discord.post")(function* (target: ChatTarget, blocks: ReadonlyArray<ChatBlock>) {
 				const response = yield* send(
 					"post",
 					"/channels/{channel_id}/messages",
-					HttpClientRequest.post(`${API_BASE}/channels/${target.conversationId}/messages`).pipe(
-						body(blocks, reference(target)),
+					HttpClientRequest.post(`${API_BASE}/channels/${channelOf(target)}/messages`).pipe(
+						body(blocks),
 					),
 				)
 				// Inside the span, so a reply we cannot read fails the operation rather than leaving an
@@ -182,7 +201,7 @@ export const discordOutbound: ChatOutbound<HttpClient.HttpClient | DiscordBotTok
 						failed("post", "Discord answered with no message id", { cause }),
 					),
 				)
-				return { conversationId: created.channel_id, messageId: created.id }
+				return { target, messageId: created.id }
 			}),
 
 			edit: (ref: ChatMessageRef, blocks: ReadonlyArray<ChatBlock>) =>
@@ -190,7 +209,7 @@ export const discordOutbound: ChatOutbound<HttpClient.HttpClient | DiscordBotTok
 					"edit",
 					"/channels/{channel_id}/messages/{message_id}",
 					HttpClientRequest.patch(
-						`${API_BASE}/channels/${ref.conversationId}/messages/${ref.messageId}`,
+						`${API_BASE}/channels/${channelOf(ref.target)}/messages/${ref.messageId}`,
 					).pipe(body(blocks)),
 				).pipe(Effect.asVoid),
 
@@ -198,20 +217,37 @@ export const discordOutbound: ChatOutbound<HttpClient.HttpClient | DiscordBotTok
 				send(
 					"typing",
 					"/channels/{channel_id}/typing",
-					HttpClientRequest.post(`${API_BASE}/channels/${target.conversationId}/typing`),
+					HttpClientRequest.post(`${API_BASE}/channels/${channelOf(target)}/typing`),
 				).pipe(Effect.asVoid),
+
+			openThread: Effect.fn("Discord.openThread")(function* (request: ChatThreadRequest) {
+				const response = yield* send(
+					"thread",
+					"/channels/{channel_id}/messages/{message_id}/threads",
+					HttpClientRequest.post(
+						`${API_BASE}/channels/${request.channelId}/messages/${request.anchorMessageId}/threads`,
+					).pipe(
+						HttpClientRequest.bodyJsonUnsafe({
+							name: request.title.slice(0, MAX_THREAD_NAME_CHARS),
+							auto_archive_duration: THREAD_ARCHIVE_MINUTES,
+						}),
+					),
+				)
+				const json = yield* response.json.pipe(
+					Effect.mapError((cause) =>
+						failed("thread", "Discord's reply could not be read", { cause }),
+					),
+				)
+				const thread = yield* Schema.decodeUnknownEffect(CreatedThread)(json).pipe(
+					Effect.mapError((cause) =>
+						failed("thread", "Discord answered with no thread id", { cause }),
+					),
+				)
+				return thread.id
+			}),
 		}
 	}),
 }
-
-/**
- * `fail_if_not_exists: false` keeps a turn from being lost when the message it answers was deleted
- * while the agent was thinking — Discord would otherwise reject the whole post.
- */
-const reference = (target: ChatTarget) =>
-	target.replyToMessageId === undefined
-		? undefined
-		: { message_reference: { message_id: target.replyToMessageId, fail_if_not_exists: false } }
 
 const failed = (
 	operation: ChatOutboundOperation,

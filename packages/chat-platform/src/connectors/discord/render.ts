@@ -46,6 +46,8 @@ export const MAX_EMBEDS = 10
 export const MAX_ACTION_ROWS = 5
 const MAX_EMBED_TITLE_CHARS = 256
 const MAX_EMBED_DESCRIPTION_CHARS = 4096
+/** Discord's limit across EVERY embed on a message, which the per-field clamps cannot enforce. */
+const MAX_EMBED_TOTAL_CHARS = 6000
 export const MAX_CUSTOM_ID_CHARS = 100
 const MAX_BUTTON_LABEL_CHARS = 80
 
@@ -54,6 +56,7 @@ export const renderDiscordMessage = (blocks: ReadonlyArray<ChatBlock>): DiscordM
 	const lines: Array<string> = []
 	const embeds: Array<DiscordEmbed> = []
 	const rows: Array<DiscordActionRow> = []
+	let embedChars = 0
 
 	for (const block of blocks) {
 		switch (block.kind) {
@@ -61,16 +64,23 @@ export const renderDiscordMessage = (blocks: ReadonlyArray<ChatBlock>): DiscordM
 				lines.push(block.markdown)
 				break
 			case "chart": {
-				if (block.imageUrl !== null && embeds.length < MAX_EMBEDS) {
-					// A title and a summary are built from model-authored chart JSON, which is bounded by
-					// nothing; an over-long field is not a bad embed, it is a rejected message.
+				// A title and a summary are built from model-authored chart JSON, which is bounded by
+				// nothing; an over-long field is not a bad embed, it is a rejected message — and so is
+				// a set of embeds that is individually fine but too long together.
+				const title = block.title === null ? null : clamp(block.title, MAX_EMBED_TITLE_CHARS)
+				const description = clamp(block.summary, MAX_EMBED_DESCRIPTION_CHARS)
+				const cost = (title?.length ?? 0) + description.length
+				if (
+					block.imageUrl !== null &&
+					embeds.length < MAX_EMBEDS &&
+					embedChars + cost <= MAX_EMBED_TOTAL_CHARS
+				) {
 					embeds.push({
-						...(block.title === null
-							? undefined
-							: { title: clamp(block.title, MAX_EMBED_TITLE_CHARS) }),
-						description: clamp(block.summary, MAX_EMBED_DESCRIPTION_CHARS),
+						...(title === null ? undefined : { title }),
+						description,
 						image: { url: block.imageUrl },
 					})
+					embedChars += cost
 					break
 				}
 				lines.push(block.title === null ? block.summary : `**${block.title}** — ${block.summary}`)

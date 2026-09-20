@@ -16,7 +16,10 @@ ChatEvent stream ──▶ makeChatTranscript ──▶ renderChatMessage ──
   prose here, through `@maple/domain`'s parsers, so this surface and the web transcript cannot
   disagree about what counts as one.
 - `src/outbound.ts` — what a connector has to implement: its id, a budget, an edit interval,
-  `post`, `edit`, `typing`.
+  `post`, `edit`, `typing`, `openThread`. Every call addresses a target
+  (`{ workspaceId, channelId, threadId? }`), so a connector with per-install credentials resolves
+  its token from `workspaceId` inside its own transport — the contract carries the address, never
+  the secret.
 - `src/driver.ts` — one turn, named by the message id `beginTurn` answered with: placeholder,
   throttled edits, retraction, splitting, approvals, and a short notice for a turn that did not
   simply finish. A stream from seq 0 replays whole earlier turns, which is why the turn is named

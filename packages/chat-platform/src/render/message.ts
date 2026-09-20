@@ -42,7 +42,7 @@ export const renderChatMessage = (
 				imageUrl: context.chartImageUrl({
 					sessionId: context.sessionId,
 					messageId: message.id,
-					index,
+					chartIndex: index,
 					spec,
 				}),
 			})
@@ -85,6 +85,10 @@ interface TextPart {
 
 /**
  * Cut the ```chart fences out of a reply, keeping the order of what is left.
+ *
+ * Fences are numbered in order of appearance from zero, and that rule is shared, not local:
+ * whatever renders a chart's image counts the same fences the same way, or a turn with two charts
+ * shows each of them the other's plot.
  *
  * Line-based rather than a regular expression over the whole text: a fence is a line construct,
  * and the streaming case — an opener whose body has not finished arriving — has to be recognised
