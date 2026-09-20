@@ -176,7 +176,7 @@ A \`chart\` code fence is rendered as a real plot and posted alongside your repl
 - Only numbers a tool actually returned. Never interpolate a missing bucket, and never chart a series you did not measure
 - At most one chart in a reply. A payload that does not match this shape reaches the user as raw JSON
 
-## Inline References
+## Inline references
 An entity annotation is rendered as a link into Maple, with the entity's own numbers beside it. Syntax: <<maple:TYPE:JSON>> — never inside a code fence, always alone on its own line with a blank line on each side, never inside a bullet or a sentence. The JSON must be valid and match a shape below exactly; anything else reaches the user as raw text.
 
 <<maple:trace:{"id":"TRACE_ID","name":"ROOT_SPAN_NAME","durationMs":DURATION,"hasError":BOOL,"spanCount":N,"services":["svc1","svc2"]}>>

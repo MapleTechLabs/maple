@@ -1,4 +1,6 @@
+import { Schema } from "effect"
 import { describe, expect, it } from "vitest"
+import { OrgId } from "./primitives"
 import {
 	botSessionId,
 	botTurnTenant,
@@ -21,6 +23,8 @@ import {
 	ChatTurnRetryEvent,
 	type ChatEventInput,
 } from "./chat-session"
+
+const orgId = Schema.decodeSync(OrgId)
 
 describe("chat session ids", () => {
 	it("round-trips org and tab", () => {
@@ -53,7 +57,7 @@ describe("chat session ids", () => {
 	it("builds a bot thread's session id in bot mode", () => {
 		// The prefix is the only thing that puts a turn on the read-only bot agent, so the builder
 		// and `chatModeFromSessionId` have to agree.
-		const id = botSessionId("org_abc", "discord", "994")
+		const id = botSessionId(orgId("org_abc"), "discord", "994")
 		expect(id).toBe("org_abc:bot-discord-994")
 		expect(chatModeFromSessionId(id)).toBe("bot")
 		expect(orgIdFromChatSessionId(id)).toBe("org_abc")
@@ -199,17 +203,20 @@ describe("ChatTurnTenant", () => {
 	})
 
 	it("runs a bot turn as the org-level bot actor, with no roles", () => {
-		const encoded = botTurnTenant("org_1" as ChatTurnTenant["orgId"])
+		const encoded = botTurnTenant(orgId("org_1"))
 
-		expect(encoded).toEqual({
+		expect(encoded).toStrictEqual({
 			orgId: "org_1",
 			userId: CHAT_BOT_USER_ID,
 			roles: [],
 			authMode: "self_hosted",
 		})
+		// The prototype, not `structuredClone`: Node clones a class instance happily and only
+		// workerd raises `DataCloneError`, so the throw check above is the one that catches this
+		// and a green `structuredClone` here would prove nothing.
+		expect(Object.getPrototypeOf(encoded)).toBe(Object.prototype)
 		// Never the investigation pass's actor: that id decides whether a turn on an `inv-` session
 		// is the autonomous pass or a person's follow-up.
 		expect(CHAT_BOT_USER_ID).not.toBe("internal-service")
-		expect(() => structuredClone(encoded)).not.toThrow()
 	})
 })

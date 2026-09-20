@@ -9,7 +9,9 @@
  * The rest are about the routing: `meterTurn` is the single meter on this path, so it has to
  * charge an investigation turn as `triage` and an attended chat turn as `chat`, and never both.
  */
-import { Effect } from "effect"
+import { botSessionId } from "@maple/domain/chat-session"
+import { OrgId } from "@maple/domain/primitives"
+import { Effect, Schema } from "effect"
 import { afterEach, assert, beforeEach, describe, it } from "vitest"
 import { meterTurn } from "./turn-runner"
 
@@ -135,11 +137,13 @@ describe("meterTurn", () => {
 
 	it("charges a chat-platform bot session as `bot`", async () => {
 		// Same features and the same org; the source is what separates the bot's spend from the
-		// in-app chat it shares this runner with.
-		await meter(`${ORG}:bot-discord-994`, "msg-1", 1000, 100)
+		// in-app chat it shares this runner with. Built rather than spelled, so the tab format
+		// lives in one place.
+		const session = botSessionId(Schema.decodeSync(OrgId)(ORG), "discord", "994")
+		await meter(session, "msg-1", 1000, 100)
 
-		assert.deepEqual(keysFor("ai_input_tokens"), [`${ORG}:bot-discord-994:msg-1:bot:input`])
-		assert.deepEqual(keysFor("ai_output_tokens"), [`${ORG}:bot-discord-994:msg-1:bot:output`])
+		assert.deepEqual(keysFor("ai_input_tokens"), [`${session}:msg-1:bot:input`])
+		assert.deepEqual(keysFor("ai_output_tokens"), [`${session}:msg-1:bot:output`])
 	})
 
 	it("bills an investigation turn once, not once per source", async () => {

@@ -5,8 +5,9 @@
  * Object owns ordering and the turn slot, and `turn-runner.ts` owns tenancy, metering and the turn
  * span. Nothing here decides *when* a tool is called — that is the engine's job now.
  */
-import { evaluatePermission } from "@maple/domain/permission"
-import type { ChatMessage } from "@maple/domain/chat-session"
+import { evaluatePermission, type PermissionRuleset } from "@maple/domain/permission"
+import { CHAT_BOT_USER_ID, type ChatMessage } from "@maple/domain/chat-session"
+import type { McpToolSurface } from "@maple/domain/mcp-manifest"
 import * as AgentRuntime from "@effect-agent/engine/AgentRuntime"
 import { ThreadHistory } from "@effect-agent/engine/ThreadHistory"
 import { IdGenerator } from "@effect-agent/core/IdGenerator"
@@ -108,6 +109,36 @@ export interface ChatRunOutcome {
 }
 
 /**
+ * What a turn may call: the ruleset it is evaluated against, and the surface it calls through.
+ *
+ * The two answer different questions and both have to be right. The ruleset decides which tools
+ * are offered and which are proposals; the surface decides which *audience* of tools exists at all
+ * — `bot` is not an internal surface, so the agents-only tools, the repository sandbox among them,
+ * are absent from its catalog rather than merely denied.
+ *
+ * Either signal alone makes a turn the bot's, and neither is redundant: the session's tab prefix is
+ * what picks the bot agent, while the actor is what a transport Worker outside this app actually
+ * controls. A mismatched pair must not hand an org-level actor the internal toolset, or an approval
+ * gate nobody in a channel can answer.
+ *
+ * Its own function, and exported, because this is the read-only guarantee — it should be assertable
+ * without standing up a run. `runChatTurn` is the only caller.
+ */
+export const turnToolPolicy = (
+	sessionId: string,
+	tenant: TenantContext,
+): { readonly ruleset: PermissionRuleset; readonly surface: McpToolSurface } => {
+	const definition = agentForSession(sessionId)
+	const bot = definition.surface === "bot" || tenant.userId === CHAT_BOT_USER_ID
+	return {
+		// Not `definition.permission`: an unattended pass is offered fewer tools than the same agent
+		// answering a person in the same session. See `rulesetForTurn`.
+		ruleset: rulesetForTurn(definition, bot || isAutonomousInvestigationTurn(sessionId, tenant)),
+		surface: bot ? "bot" : definition.surface,
+	}
+}
+
+/**
  * Build and drain one run.
  *
  * The returned Effect settles when the run does. Every chat event it produces has already been
@@ -116,10 +147,8 @@ export interface ChatRunOutcome {
  */
 export const runChatTurn = (input: ChatRunInput) => {
 	const definition = agentForSession(input.sessionId)
-	// Not `definition.permission`: an unattended pass is offered fewer tools than the same agent
-	// answering a person in the same session. See `rulesetForTurn`.
-	const ruleset = rulesetForTurn(definition, isAutonomousInvestigationTurn(input.sessionId, input.tenant))
-	const maple = buildChatToolkit(input.toolExecutor, input.tenant, ruleset)
+	const { ruleset, surface } = turnToolPolicy(input.sessionId, input.tenant)
+	const maple = buildChatToolkit(input.toolExecutor, input.tenant, ruleset, surface)
 	const completion = buildDiagnosisCompletion(
 		input.sessionId,
 		input.tenant,

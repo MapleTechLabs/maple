@@ -20,12 +20,7 @@
  */
 import * as MapleCloudflareSDK from "@maple-dev/effect-sdk/cloudflare"
 import { MCP_ANTICIPATED_ERROR_IDENTIFIERS } from "../mcp/expected-failures"
-import {
-	ChatMessage,
-	chatModeFromSessionId,
-	decodeChatTurnTenant,
-	type ChatTurnTenantEncoded,
-} from "@maple/domain/chat-session"
+import { ChatMessage, decodeChatTurnTenant, type ChatTurnTenantEncoded } from "@maple/domain/chat-session"
 import type { InvestigationProgress } from "@maple/domain/http"
 import { workerEnvLayer } from "@maple/infra/worker-runtime"
 import { workerTelemetryConfig } from "@maple/infra/worker-telemetry"
@@ -54,6 +49,7 @@ interface TurnObservability {
 }
 
 const makeTurnObservability = (): TurnObservability => ({})
+import { agentForSession, type ChatSurface } from "./agents"
 import { runChatTurn, type ChatRunOutcome } from "./run"
 import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
@@ -121,14 +117,14 @@ const toTenantContext = (encoded: ChatTurnTenantEncoded): TenantContext => {
 }
 
 /**
- * Which surface a turn ran on, for the LLM call's tags and for the meter.
+ * Which surface a turn ran on: its agent's own, so the answer is total over `ChatMode` rather than
+ * a default everything unrecognised falls into.
  *
  * The chat-platform bot shares this runner, the engine and the Durable Object with in-app chat, so
- * the session id is the only thing that tells them apart — and both readers have to agree, or a
- * bot's tokens are filed under one surface and traced under another.
+ * without this every reader would have to re-derive it from the session id and agree — and the
+ * readers are the turn span, the LLM call's tags and the meter.
  */
-const turnSurface = (sessionId: string): "chat" | "bot" =>
-	chatModeFromSessionId(sessionId) === "bot" ? "bot" : "chat"
+const turnSurface = (sessionId: string): ChatSurface => agentForSession(sessionId).surface
 
 /**
  * Metering is housekeeping, and it runs after the answer, on the way out of the turn.
@@ -505,6 +501,9 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 				orgId: tenant.orgId,
 				"maple.chat.session": input.sessionId,
 				"maple.chat.message_id": input.messageId,
+				// Two values, so it groups. Without it "how many bot turns ran, and how many failed"
+				// is answerable only by substring-matching the session id.
+				"maple.chat.surface": turnSurface(input.sessionId),
 			},
 		}),
 	)

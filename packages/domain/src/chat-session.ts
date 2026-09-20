@@ -66,13 +66,21 @@ export const chatModeFromSessionId = (sessionId: string): ChatMode => {
 }
 
 /**
+ * The chat platforms a bot session can belong to.
+ *
+ * Closed, and closed on names with no `-` in them, because the platform sits between two dashes in
+ * a tab id that is parsed by prefix: an open string would let one platform's thread id spell
+ * another's session and land two conversations in the same Durable Object.
+ */
+export const ChatBotPlatform = Schema.Literals(["discord", "slack"])
+export type ChatBotPlatform = Schema.Schema.Type<typeof ChatBotPlatform>
+
+/**
  * The session a chat-platform bot thread's conversation lives in.
  *
  * One session per thread, so the transcript the bot replays is the thread it is answering in.
- * `platform` names the transport (`discord`, `slack`) and keeps two platforms' thread ids from
- * colliding on one org.
  */
-export const botSessionId = (orgId: string, platform: string, threadId: string): ChatSessionId =>
+export const botSessionId = (orgId: OrgId, platform: ChatBotPlatform, threadId: string): ChatSessionId =>
 	makeChatSessionId(orgId, `bot-${platform}-${threadId}`)
 
 // Durable transcript

@@ -36,11 +36,21 @@ import type { ResolvedModel } from "../platform/Llm"
 import { DEFAULT_RULESET, READ_ONLY_RULESET } from "./permissions"
 import { BOT_SYSTEM_PROMPT, INVESTIGATE_SYSTEM_PROMPT, SYSTEM_PROMPT } from "./prompts"
 
+/**
+ * What a turn as this agent *is*, to everything downstream of the run.
+ *
+ * One literal, three readers that already accept it: the tool registry's audience filter
+ * (`McpToolSurface`), the LLM call's tags, and the billing meter's source. They used to be told
+ * separately, which is how a surface ends up traced as one thing and charged as another.
+ */
+export type ChatSurface = "chat" | "bot"
+
 export interface AgentDefinition {
 	readonly name: string
 	readonly description: string
 	readonly prompt: string
 	readonly permission: PermissionRuleset
+	readonly surface: ChatSurface
 	/**
 	 * What a turn as this agent may spend. An attended reply and an unattended investigation are
 	 * different work; they shared one budget until 2026-09-20, and it was the investigation's.
@@ -48,12 +58,17 @@ export interface AgentDefinition {
 	readonly budget: AgentBudget
 }
 
-export const AGENTS: Readonly<Record<string, AgentDefinition>> = {
+/**
+ * Keyed by `ChatMode`, not by `string`: a new mode is then a compile error here rather than an
+ * `undefined` discovered mid-turn, and `agentForSession` needs no non-null assertion.
+ */
+export const AGENTS: Readonly<Record<ChatMode, AgentDefinition>> = {
 	default: {
 		name: "default",
 		description: "General Maple assistant.",
 		prompt: SYSTEM_PROMPT,
 		permission: DEFAULT_RULESET,
+		surface: "chat",
 		budget: CHAT_BUDGET,
 	},
 	alert: {
@@ -61,6 +76,7 @@ export const AGENTS: Readonly<Record<string, AgentDefinition>> = {
 		description: "Assists with an alert in context.",
 		prompt: SYSTEM_PROMPT,
 		permission: DEFAULT_RULESET,
+		surface: "chat",
 		budget: CHAT_BUDGET,
 	},
 	"widget-fix": {
@@ -68,6 +84,7 @@ export const AGENTS: Readonly<Record<string, AgentDefinition>> = {
 		description: "Repairs a dashboard widget in context.",
 		prompt: SYSTEM_PROMPT,
 		permission: DEFAULT_RULESET,
+		surface: "chat",
 		budget: CHAT_BUDGET,
 	},
 	investigate: {
@@ -78,6 +95,7 @@ export const AGENTS: Readonly<Record<string, AgentDefinition>> = {
 		// see `rulesetForTurn` in `./permissions`. This is what an attended follow-up in the same
 		// session gets.
 		permission: DEFAULT_RULESET,
+		surface: "chat",
 		budget: INVESTIGATION_BUDGET,
 	},
 	bot: {
@@ -89,16 +107,16 @@ export const AGENTS: Readonly<Record<string, AgentDefinition>> = {
 		// — so a mutating tool here would be a proposal nobody can ever apply. This is the whole of
 		// "the bot is read-only": an unoffered tool cannot be called.
 		permission: READ_ONLY_RULESET,
+		// And the other half of read-only: `bot` is not an internal surface, so the agents-only
+		// tools — the repository sandbox above all — are never even in its catalog.
+		surface: "bot",
 		budget: CHAT_BUDGET,
 	},
-} as const satisfies Readonly<Record<string, AgentDefinition>>
+} as const satisfies Readonly<Record<ChatMode, AgentDefinition>>
 
 /** Every `ChatMode` literal names an agent; the mode string *is* the agent name. */
-export const agentForSession = (sessionId: string): AgentDefinition => {
-	const mode: ChatMode = chatModeFromSessionId(sessionId)
-	// Non-null by construction, and pinned by `agents.test.ts` rather than by hope.
-	return AGENTS[mode]!
-}
+export const agentForSession = (sessionId: string): AgentDefinition =>
+	AGENTS[chatModeFromSessionId(sessionId)]
 
 /** The system prompt for a turn: the agent's own persona. */
 export const buildSystemPrompt = (agent: AgentDefinition): string => agent.prompt
