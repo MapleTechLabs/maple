@@ -33,15 +33,14 @@ import {
 } from "./budgets"
 import type { PermissionRuleset } from "@maple/domain/permission"
 import type { ResolvedModel } from "../platform/Llm"
-import { DEFAULT_RULESET, READ_ONLY_RULESET } from "./permissions"
+import { DEFAULT_RULESET } from "./permissions"
 import { BOT_SYSTEM_PROMPT, INVESTIGATE_SYSTEM_PROMPT, SYSTEM_PROMPT } from "./prompts"
 
 /**
  * What a turn as this agent *is*, to everything downstream of the run.
  *
  * One literal, three readers that already accept it: the tool registry's audience filter
- * (`McpToolSurface`), the LLM call's tags, and the billing meter's source. They used to be told
- * separately, which is how a surface ends up traced as one thing and charged as another.
+ * (`McpToolSurface`), the LLM call's tags, and the billing meter's source.
  */
 export type ChatSurface = "chat" | "bot"
 
@@ -102,13 +101,13 @@ export const AGENTS: Readonly<Record<ChatMode, AgentDefinition>> = {
 		name: "bot",
 		description: "Answers in a chat platform's channels.",
 		prompt: BOT_SYSTEM_PROMPT,
-		// Denied, not gated. A bot turn is raised by whoever is in the channel, under an org-level
-		// actor with no Maple user behind it, and the surface has nowhere to render an approval card
-		// — so a mutating tool here would be a proposal nobody can ever apply. This is the whole of
-		// "the bot is read-only": an unoffered tool cannot be called.
-		permission: READ_ONLY_RULESET,
-		// And the other half of read-only: `bot` is not an internal surface, so the agents-only
-		// tools — the repository sandbox above all — are never even in its catalog.
+		// The same propose-then-apply model as in-app chat: reads run, mutations are proposed and
+		// wait. The platform adapter renders the proposal for the channel to approve or reject.
+		permission: DEFAULT_RULESET,
+		// What the bot does *not* get is the internal audience: `bot` is not an internal surface, so
+		// the agents-only tools — the repository sandbox above all — are never in its catalog. A
+		// reply lands wherever the thread is readable, and `sandbox_exec` alone is code execution
+		// against the org's checkout.
 		surface: "bot",
 		budget: CHAT_BUDGET,
 	},
@@ -119,18 +118,19 @@ export const agentForSession = (sessionId: string): AgentDefinition =>
 	AGENTS[chatModeFromSessionId(sessionId)]
 
 /**
- * The surface a turn runs on, which is not always its agent's.
+ * The agent a turn runs as, which the session id alone does not decide.
  *
- * Either signal alone makes a turn the bot's, and neither is redundant: the session's tab prefix is
- * what picks the bot agent, while the actor is what a transport Worker outside this app actually
- * controls. A mismatched pair must not hand an org-level actor the internal toolset — and must not
- * be filed under a different surface than the one it really ran on either, which is why every
- * reader takes its answer from here rather than re-deriving one.
+ * Either signal makes a turn the bot's, and neither is redundant: the tab prefix is what a session
+ * built in this app carries, while the actor is what a transport Worker outside it controls. A
+ * mismatched pair must not hand an org-level actor the internal toolset — `bot` is not an internal
+ * surface, and that is the audience boundary a channel-invoked turn stays behind.
+ *
+ * Returning the whole agent rather than just its surface is what keeps prompt, permission and
+ * surface one answer: a turn cannot run on the bot's surface while being told it is answering in a
+ * 420px panel, or be filed under a surface it did not run on. Every reader takes it from here.
  */
-export const surfaceForTurn = (sessionId: string, userId: string): ChatSurface => {
-	const agent = agentForSession(sessionId)
-	return agent.surface === "bot" || userId === CHAT_BOT_USER_ID ? "bot" : agent.surface
-}
+export const agentForTurn = (sessionId: string, userId: string): AgentDefinition =>
+	userId === CHAT_BOT_USER_ID ? AGENTS.bot : agentForSession(sessionId)
 
 /** The system prompt for a turn: the agent's own persona. */
 export const buildSystemPrompt = (agent: AgentDefinition): string => agent.prompt

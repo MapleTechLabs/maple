@@ -17,7 +17,7 @@ import { Prompt, Toolkit } from "effect/unstable/ai"
 import type { McpToolExecutorApi } from "../mcp/dispatcher"
 import { agentSessionSpanAttributes, type ResolvedModel } from "../platform/Llm"
 import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
-import { agentForSession, chatAgent, surfaceForTurn } from "./agents"
+import { agentForTurn, chatAgent } from "./agents"
 import { rulesetForTurn } from "./permissions"
 import { toChatEvents, type ChatTurnEvent } from "./events"
 import {
@@ -112,29 +112,23 @@ export interface ChatRunOutcome {
  * What a turn may call: the ruleset it is evaluated against, and the surface it calls through.
  *
  * The two answer different questions and both have to be right. The ruleset decides which tools
- * are offered and which are proposals; the surface decides which *audience* of tools exists at all
- * — `bot` is not an internal surface, so the agents-only tools, the repository sandbox among them,
- * are absent from its catalog rather than merely denied.
+ * are offered and which of them are proposals; the surface decides which *audience* of tools
+ * exists at all — `bot` is not an internal surface, so the agents-only tools, the repository
+ * sandbox among them, are absent from its catalog rather than merely gated.
  *
- * The surface comes from `surfaceForTurn`, which is also what the turn span, the model's tags and
- * the meter read, so a turn cannot run on one surface and be filed under another.
- *
- * Its own function, and exported, because this is the read-only guarantee — it should be assertable
- * without standing up a run. `runChatTurn` is the only caller.
+ * Its own function, and exported, because the audience boundary should be assertable without
+ * standing up a run. `runChatTurn` is the only caller.
  */
 export const turnToolPolicy = (
 	sessionId: string,
 	tenant: TenantContext,
 ): { readonly ruleset: PermissionRuleset; readonly surface: McpToolSurface } => {
-	const surface = surfaceForTurn(sessionId, tenant.userId)
+	const agent = agentForTurn(sessionId, tenant.userId)
 	return {
-		// Not `agentForSession(...).permission`: an unattended pass is offered fewer tools than the
-		// same agent answering a person in the same session. See `rulesetForTurn`.
-		ruleset: rulesetForTurn(
-			agentForSession(sessionId),
-			surface === "bot" || isAutonomousInvestigationTurn(sessionId, tenant),
-		),
-		surface,
+		// Not `agent.permission`: an unattended pass is offered fewer tools than the same agent
+		// answering a person in the same session. See `rulesetForTurn`.
+		ruleset: rulesetForTurn(agent, isAutonomousInvestigationTurn(sessionId, tenant)),
+		surface: agent.surface,
 	}
 }
 
@@ -146,7 +140,7 @@ export const turnToolPolicy = (
  * module never invents one.
  */
 export const runChatTurn = (input: ChatRunInput) => {
-	const definition = agentForSession(input.sessionId)
+	const definition = agentForTurn(input.sessionId, input.tenant.userId)
 	const { ruleset, surface } = turnToolPolicy(input.sessionId, input.tenant)
 	const maple = buildChatToolkit(
 		input.toolExecutor,

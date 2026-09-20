@@ -72,7 +72,8 @@ export interface McpToolOptions {
  * lands in a channel that anyone who can post there reads, under an org-level actor with no Maple
  * user behind it. `sandbox_exec` alone is code execution against the org's repository; handing that
  * to a channel is not the same decision as handing it to a signed-in user's chat panel. The bot
- * therefore sees exactly what the public MCP transport sees, minus its mutations.
+ * therefore sees exactly the tools the public MCP transport sees — its mutations included, since
+ * those are proposed and approved rather than executed, which code execution is not.
  */
 const INTERNAL_SURFACES: ReadonlySet<McpToolSurface> = new Set<McpToolSurface>(["chat", "workflow"])
 

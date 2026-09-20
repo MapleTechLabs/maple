@@ -9,7 +9,7 @@
  * The rest are about the routing: `meterTurn` is the single meter on this path, so it has to charge
  * an investigation turn as `triage`, an attended chat turn as `chat` and a bot turn as `bot` — one
  * of the three, never two. The source it picks must be the surface the turn actually ran on, which
- * is why the bot cases go through the same `surfaceForTurn` the toolkit does.
+ * is why the bot cases go through the same `agentForTurn` the toolkit does.
  */
 import { botSessionId, CHAT_BOT_USER_ID } from "@maple/domain/chat-session"
 import { OrgId, UserId } from "@maple/domain/primitives"

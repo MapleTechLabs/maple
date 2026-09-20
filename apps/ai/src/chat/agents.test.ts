@@ -11,7 +11,7 @@ import type { McpToolExecutorApi } from "../mcp/dispatcher"
 import { mapleToolCatalog } from "../mcp/tools/registry"
 import { MUTATING_TOOL_NAMES } from "../mcp/tools/mutating"
 import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
-import { AGENTS, agentForSession, buildSystemPrompt } from "./agents"
+import { AGENTS, agentForSession, agentForTurn, buildSystemPrompt } from "./agents"
 import { CHAT_BUDGET } from "./budgets"
 import { turnToolPolicy } from "./run"
 import { buildChatToolkit } from "./tools"
@@ -41,10 +41,10 @@ describe("agentForSession", () => {
 })
 
 /**
- * The bot answers in a channel anyone can post in, under an org-level actor, with no way to render
- * an approval card. Two things follow, and the tests below are the whole of "the bot is read-only":
- * its mutations are denied rather than gated, and it runs on a surface that is not internal, so the
- * agents-only tools never enter its catalog at all.
+ * The bot answers in a channel anyone can post in, under an org-level actor. It proposes mutations
+ * exactly as in-app chat does — the approval is rendered by the platform adapter instead of the
+ * Maple UI — but it runs on a surface that is not internal, so the agents-only tools never enter
+ * its catalog at all. The tests below are that boundary in both directions.
  */
 describe("the bot agent", () => {
 	const orgId = Schema.decodeSync(OrgId)("org_test")
@@ -71,16 +71,21 @@ describe("the bot agent", () => {
 		assert.strictEqual(AGENTS.bot.budget, CHAT_BUDGET)
 	})
 
-	it("is offered no mutating tool at all", () => {
-		const { tools } = toolsFor(botSession, CHAT_BOT_USER_ID)
+	it("is offered every mutating tool, and proposes rather than performs each one", () => {
+		// `ask` is the whole of a proposal — it is what `run.ts`'s `isProposed` reads, and what makes
+		// the dispatched call refuse. The tool is still offered with its real schema, so the adapter
+		// has the arguments to render for approval.
+		const { policy, tools } = toolsFor(botSession, CHAT_BOT_USER_ID)
 		for (const name of MUTATING_TOOL_NAMES) {
-			assert.notProperty(tools, name, `${name} was offered to the bot`)
+			assert.property(tools, name, `${name} was withheld from the bot`)
+			assert.equal(evaluatePermission(policy.ruleset, name), "ask", name)
 		}
 	})
 
 	it("is offered no internal-audience tool, so a channel cannot reach the repository sandbox", () => {
 		// The reply lands wherever the thread is readable. `sandbox_exec` alone is code execution
-		// against the org's checkout; the ruleset would have allowed it, and only the surface does not.
+		// against the org's checkout, and nothing proposes it for approval first — which is why the
+		// audience boundary, not the ruleset, is what holds it back.
 		const { tools } = toolsFor(botSession, CHAT_BOT_USER_ID)
 		const internal = mapleToolCatalog.filter((definition) => definition.audience === "internal")
 		assert.isNotEmpty(internal, "no internal tools in the catalog — this test would pass vacuously")
@@ -89,52 +94,46 @@ describe("the bot agent", () => {
 		}
 	})
 
-	it("proposes nothing, because nobody on this surface can approve", () => {
-		// `ask` is the whole of a proposal — it is what `run.ts`'s `isProposed` reads — and a
-		// proposal nobody can apply is a promise the surface cannot keep.
-		const { policy } = toolsFor(botSession, CHAT_BOT_USER_ID)
-		for (const definition of mapleToolCatalog) {
-			assert.notEqual(evaluatePermission(policy.ruleset, definition.name), "ask", definition.name)
-		}
-	})
-
-	it("keeps the read-only tools it answers with", () => {
-		const { tools } = toolsFor(botSession, CHAT_BOT_USER_ID)
+	it("keeps the read tools it answers with, ungated", () => {
+		const { policy, tools } = toolsFor(botSession, CHAT_BOT_USER_ID)
 		for (const name of ["find_errors", "search_traces", "list_services", "query_data"]) {
 			assert.property(tools, name)
+			assert.equal(evaluatePermission(policy.ruleset, name), "allow", name)
 		}
 	})
 
-	it("stays read-only when the actor lands on a session that is not a bot one", () => {
-		// The session id is built by a Worker outside this app. A mismatch must not promote an
-		// org-level actor to the default agent's gated mutations and internal toolset.
+	it("runs as the bot when the actor lands on a session that is not a bot one", () => {
+		// The session id is built by a Worker outside this app, so the actor is the signal it cannot
+		// forge. A mismatch must not hand an org-level actor the internal toolset — and must not
+		// hand it the in-app prompt either, which teaches a 420px panel and markdown tables.
 		const { policy, tools } = toolsFor(makeChatSessionId(orgId, "tab"), CHAT_BOT_USER_ID)
 		assert.equal(policy.surface, "bot")
-		for (const name of MUTATING_TOOL_NAMES) assert.notProperty(tools, name)
+		assert.equal(agentForTurn(makeChatSessionId(orgId, "tab"), CHAT_BOT_USER_ID), AGENTS.bot)
 		assert.notProperty(tools, "sandbox_exec")
 	})
 
-	it("leaves an ordinary chat turn its gated mutations and internal tools", () => {
-		// The converse, so the guard above cannot pass by denying everyone.
+	it("leaves an ordinary chat turn its own agent and internal tools", () => {
+		// The converse, so the guard above cannot pass by treating everyone as the bot.
 		const { policy, tools } = toolsFor(makeChatSessionId(orgId, "tab"), "user_1")
 		assert.equal(policy.surface, "chat")
-		assert.equal(evaluatePermission(policy.ruleset, "create_dashboard"), "ask")
+		assert.equal(agentForTurn(makeChatSessionId(orgId, "tab"), "user_1"), AGENTS.default)
 		assert.property(tools, "sandbox_exec")
 	})
 })
 
-/**
- * The bot prompt's own invariants. Re-adding `APPROVAL_NOTE` is a one-line edit in a file where
- * every other prompt carries it, and it would put approval prose in front of a model that has no
- * gated tool to approve.
- */
+/** The bot prompt's own invariants. */
 describe("BOT_SYSTEM_PROMPT", () => {
-	it("teaches no approval step, but keeps the prohibition on imitating one", () => {
-		// `APPROVAL_NOTE`'s own words, which would tell this model its mutations are gated when it
-		// has none. The prohibition quotes "[Approve]" on purpose and must survive.
-		assert.notInclude(AGENTS.bot.prompt, "approval step")
-		assert.notInclude(AGENTS.bot.prompt, "approval-gated")
+	it("teaches the approval step, and the prohibition on imitating one in prose", () => {
+		// The model's mutations are gated, so it has to be told — and told not to render the gate
+		// itself, which the adapter does. The prohibition quotes "[Approve]" on purpose.
+		assert.include(AGENTS.bot.prompt, "approved before they take effect")
 		assert.include(AGENTS.bot.prompt, 'NEVER emit "[Approve]"')
+	})
+
+	it("points nobody at the Maple app, because it can act from here", () => {
+		// The prompt said the opposite while the bot was read-only; a model still carrying that
+		// would refuse the gated tools it is now offered.
+		assert.notInclude(AGENTS.bot.prompt, "Maple app")
 	})
 
 	it("names no chat platform, because the adapters differ and the model must not write for one", () => {

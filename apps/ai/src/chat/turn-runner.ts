@@ -49,7 +49,7 @@ interface TurnObservability {
 }
 
 const makeTurnObservability = (): TurnObservability => ({})
-import { surfaceForTurn } from "./agents"
+import { agentForTurn } from "./agents"
 import { runChatTurn, type ChatRunOutcome } from "./run"
 import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
@@ -176,7 +176,7 @@ const renderToolValue = (value: unknown): string => {
  *
  * **Source and key follow the session.** An investigation session bills as `triage`, keyed
  * `<investigationId>:turn-<messageId>`; every other session keys on `<sessionId>:<messageId>` and
- * bills under its `surfaceForTurn`. The `turn-` prefix is kept: the deleted fan-out billed
+ * bills under its `agentForTurn` surface. The `turn-` prefix is kept: the deleted fan-out billed
  * `<id>:<attempt>` under this same source, and rows under those keys are still in Autumn, so an
  * unprefixed turn id could still collide with an old attempt number and swallow a real charge.
  * Either way the key carries the turn, so a turn that somehow ran twice still meters once, and a
@@ -198,7 +198,7 @@ export const meterTurn = (
 ): Effect.Effect<void> => {
 	if (usage.input <= 0 && usage.output <= 0) return Effect.void
 	const billing = investigationBilling(input.sessionId, input.messageId) ?? {
-		source: surfaceForTurn(input.sessionId, tenant.userId),
+		source: agentForTurn(input.sessionId, tenant.userId).surface,
 		idempotencyKey: `${input.sessionId}:${input.messageId}`,
 	}
 	// Bookkeeping must never fail a delivered answer. `trackTokenUsage` already swallows its own
@@ -327,7 +327,7 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 		const toolExecutor = yield* McpToolExecutor
 		const history = input.session.history()
 		const model = resolveTriageModel(input.env, {
-			surface: surfaceForTurn(input.sessionId, tenant.userId),
+			surface: agentForTurn(input.sessionId, tenant.userId).surface,
 			orgId: tenant.orgId,
 			sessionId: input.sessionId,
 			turnId: input.messageId,
@@ -493,7 +493,7 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 				"maple.chat.message_id": input.messageId,
 				// Two values, so it groups. Without it "how many bot turns ran, and how many failed"
 				// is answerable only by substring-matching the session id.
-				"maple.chat.surface": surfaceForTurn(input.sessionId, tenant.userId),
+				"maple.chat.surface": agentForTurn(input.sessionId, tenant.userId).surface,
 			},
 		}),
 	)

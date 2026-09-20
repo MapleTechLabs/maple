@@ -436,9 +436,10 @@ export const CHAT_BOT_USER_ID = Schema.decodeSync(UserId)("chat-bot")
  * The turn identity a bot Worker hands `beginTurn`, already in the form that crosses the Durable
  * Object boundary.
  *
- * No roles, because the only things that read them are the mutating tools' authorization checks,
- * and the bot agent's ruleset denies every one of those (`apps/ai/src/chat/permissions.ts`).
- * `authMode` matches the investigation path: the turn was not raised through a browser session.
+ * No roles: a bot turn proposes mutations rather than performing them, so the only reader of roles
+ * — the authorization check inside a mutating tool — is reached by the apply path, under whoever
+ * approved the proposal, not by the turn that wrote it. `authMode` matches the investigation path:
+ * the turn was not raised through a browser session.
  */
 export const botTurnTenant = (orgId: OrgId): ChatTurnTenantEncoded =>
 	encodeChatTurnTenant({ orgId, userId: CHAT_BOT_USER_ID, roles: [], authMode: "self_hosted" })

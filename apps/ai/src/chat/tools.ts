@@ -119,7 +119,7 @@ export const isAutonomousInvestigationTurn = (sessionId: string, tenant: TenantC
  * Its arguments ARE the structured report. Deliberately not approval-gated: it is the structured
  * output channel, not a user-facing mutation. The investigation id and org ride from the session id,
  * so the agent never chooses which investigation it writes. Being outside the ruleset is why the
- * bot actor is refused here by name rather than left to `READ_ONLY_RULESET`.
+ * bot actor is refused here by name rather than left to the gate.
  *
  * `submitDiagnosis` arrives as a callback rather than being resolved from `InvestigationService`
  * here: that service is itself what starts an investigation's autonomous run, so resolving it
@@ -142,10 +142,10 @@ export const buildDiagnosisCompletion = (
 	const investigationId = investigationForSession(sessionId)
 	if (investigationId === undefined) return undefined
 	// The bot never files a diagnosis. This tool rides *outside* the ruleset — it is the
-	// investigation's structured output channel, not a gated mutation — so `READ_ONLY_RULESET`
-	// alone does not withhold it, and it does write: a report row, and the investigation's status.
-	// Only a session id built as an investigation's while carrying the bot actor could reach here,
-	// which is exactly the mismatch the actor check in `turnToolPolicy` exists to refuse.
+	// investigation's structured output channel, not a gated mutation — so nothing else withholds
+	// it, and it does write: a report row, and the investigation's status. Only a session id built
+	// as an investigation's while carrying the bot actor could reach here, and a channel is not
+	// where a diagnosis gets settled.
 	if (tenant.userId === CHAT_BOT_USER_ID) return undefined
 	const toolkit = Toolkit.make(diagnosisTool)
 	let submitted = false

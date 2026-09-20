@@ -55,7 +55,7 @@ describe("chat session ids", () => {
 	})
 
 	it("builds a bot thread's session id in bot mode", () => {
-		// The prefix is the only thing that puts a turn on the read-only bot agent, so the builder
+		// The prefix is what puts a turn on the bot agent when the actor does not, so the builder
 		// and `chatModeFromSessionId` have to agree.
 		const id = botSessionId(orgId("org_abc"), "discord", "994")
 		expect(id).toBe("org_abc:bot-discord-994")
