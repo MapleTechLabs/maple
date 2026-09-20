@@ -23,10 +23,12 @@
  * written.
  */
 import {
+	APP_ORIGIN,
 	ChatHistoryResponse,
 	ChatSendRequest,
 	ChatSendResponse,
 	encodeChatTurnTenant,
+	isConnectorSessionId,
 	orgIdFromChatSessionId,
 	type ChatTurnTenantEncoded,
 } from "@maple/domain/chat-session"
@@ -177,6 +179,12 @@ export const ChatSessionsRouter = HttpRouter.use((router) =>
 				const resolved = yield* resolveSession(request)
 				if (!resolved.ok) return resolved.failure
 				const { sessionId, tenant, stub } = resolved.session
+				// A connector thread is driven only by its connector. History and events stay
+				// readable — this is the one verb that would otherwise let any member of the org
+				// post into a channel conversation, metered as the connector with nobody listening.
+				if (isConnectorSessionId(sessionId)) {
+					return problem("This conversation is driven by its chat connector", 403)
+				}
 
 				const body = yield* request.text.pipe(Effect.orElseSucceed(() => ""))
 				const parsed = yield* decodeSendRequest(body).pipe(Effect.option)
@@ -195,6 +203,7 @@ export const ChatSessionsRouter = HttpRouter.use((router) =>
 						messageId,
 						text: parsed.value.text,
 						tenant: toChatTurnTenant(tenant),
+						origin: APP_ORIGIN,
 					}),
 				).pipe(Effect.option)
 

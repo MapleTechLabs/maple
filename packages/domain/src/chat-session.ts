@@ -15,7 +15,7 @@
  * turn lifecycle. `apps/api/src/chat/events.ts` is the only place the two are mapped.
  */
 import { Option, Schema } from "effect"
-import { ActorId, AuthMode, OrgId, RoleName, UserId } from "./primitives"
+import { ActorId, AuthMode, ChatConnectorId, ExternalUserId, OrgId, RoleName, UserId } from "./primitives"
 
 // Session addressing
 
@@ -52,7 +52,15 @@ export const investigationIdFromChatSessionId = (sessionId: string): string | un
 	return tab.startsWith("inv-") ? tab.slice("inv-".length) : undefined
 }
 
-export const ChatMode = Schema.Literals(["default", "alert", "widget-fix", "investigate", "bot"])
+/**
+ * What a conversation *is* — its persona and its budget.
+ *
+ * Deliberately not who drives a turn: that is {@link ChatTurnOrigin}, and fusing the two would
+ * mean a new mode, a new agent record and a new prompt every time a conversation became reachable
+ * from somewhere new. A connector-driven thread is an ordinary chat-mode conversation that a
+ * connector is answering in, and it stays free to be anchored on an alert later.
+ */
+export const ChatMode = Schema.Literals(["default", "alert", "widget-fix", "investigate"])
 export type ChatMode = Schema.Schema.Type<typeof ChatMode>
 
 /** Mode is derived from the tab-id prefix, never sent by the client. */
@@ -61,38 +69,46 @@ export const chatModeFromSessionId = (sessionId: string): ChatMode => {
 	if (tab.startsWith("alert-")) return "alert"
 	if (tab.startsWith("widget-fix-")) return "widget-fix"
 	if (tab.startsWith("inv-")) return "investigate"
-	if (tab.startsWith("bot-")) return "bot"
 	return "default"
 }
 
-/**
- * Which chat connector a bot session arrived through.
- *
- * Opaque here on purpose: the engine runs one bot, and every difference between one chat platform
- * and the next belongs to that platform's connector, never to a literal the core would have to be
- * reopened to extend. This is the only thing the core needs to know about a connector — that its
- * sessions are its own.
- *
- * Lowercase alphanumeric, no `-`, because the id sits between two dashes in a tab id that is parsed
- * by prefix: a dash in the id would let one connector's thread id spell another's session and land
- * two conversations in the same Durable Object.
- */
-export const ChatConnectorId = Schema.String.check(
-	Schema.isMinLength(1),
-	Schema.isPattern(/^[a-z][a-z0-9]*$/),
-).pipe(
-	Schema.brand("@maple/ChatConnectorId"),
-	Schema.annotate({ identifier: "@maple/ChatConnectorId", title: "Chat Connector ID" }),
-)
-export type ChatConnectorId = Schema.Schema.Type<typeof ChatConnectorId>
+const CONNECTOR_TAB_PREFIX = "bot-"
+
+/** Whether this session's transcript belongs to a connector thread rather than the Maple app. */
+export const isConnectorSessionId = (sessionId: string): boolean =>
+	tabIdFromChatSessionId(sessionId).startsWith(CONNECTOR_TAB_PREFIX)
+
+// Owned by `./primitives` so the connector packages and the engine cannot drift into four
+// definitions of it; re-exported here because a connector reads the rest of its turn contract here.
+export { ChatConnectorId } from "./primitives"
 
 /**
- * The session a bot thread's conversation lives in.
+ * One dash-separated segment of a connector tab id, escaped so it cannot forge another.
  *
- * One session per thread, so the transcript the bot replays is the thread it is answering in.
+ * Workspace and thread ids are opaque platform strings and routinely contain `-`. Left raw, a
+ * thread called `b-c` in workspace `a` and a thread called `c` in workspace `a-b` would spell the
+ * same tab and land two conversations in the same Durable Object. `%` is escaped first, so the
+ * escape itself cannot be spelled by the input.
  */
-export const botSessionId = (orgId: OrgId, connectorId: ChatConnectorId, threadId: string): ChatSessionId =>
-	makeChatSessionId(orgId, `bot-${connectorId}-${threadId}`)
+const encodeTabSegment = (value: string): string => value.replaceAll("%", "%25").replaceAll("-", "%2D")
+
+/**
+ * The session a connector thread's conversation lives in.
+ *
+ * One session per thread, so the transcript the agent replays is the thread it is answering in.
+ * The workspace is part of the id because a thread id is only unique within its workspace on some
+ * platforms — without it, two workspaces of the same org could share a conversation.
+ */
+export const connectorSessionId = (
+	orgId: OrgId,
+	connectorId: ChatConnectorId,
+	workspaceId: string,
+	threadId: string,
+): ChatSessionId =>
+	makeChatSessionId(
+		orgId,
+		`${CONNECTOR_TAB_PREFIX}${connectorId}-${encodeTabSegment(workspaceId)}-${encodeTabSegment(threadId)}`,
+	)
 
 // Durable transcript
 
@@ -434,26 +450,120 @@ export const encodeChatTurnTenant = Schema.encodeSync(ChatTurnTenant)
 export const decodeChatTurnTenant = Schema.decodeSync(ChatTurnTenant)
 
 /**
- * The actor a chat-platform bot turn runs as.
+ * Who drives this turn, stated rather than inferred.
  *
- * Org-level by design: anyone in the channel can address the bot, and no Maple user stands behind a
- * turn. Deliberately not the autonomous investigation's `internal-service`, which is a claim rather
- * than an identity — it is what marks a turn as an investigation's own pass instead of a person's
- * follow-up in the same session.
+ * The second axis of a turn, beside {@link ChatMode}: the mode says what the conversation is, the
+ * origin says who is pushing it forward. They are independent — a person can follow up inside an
+ * investigation, and a connector answers in what is otherwise an ordinary chat conversation — and
+ * every behaviour that used to be recovered from a sentinel user id hangs off this instead. A
+ * sentinel is an identity being asked a question it cannot answer: `internal-service` is a claim
+ * about *how* the turn was raised, wearing the shape of *who* raised it.
+ *
+ * Set server-side by whoever calls `beginTurn`, which is reachable only from Maple's own Workers.
+ * A `Struct` union, not a `Class` one, for the same structured-clone reason as
+ * {@link ChatTurnTenant}.
  */
-export const CHAT_BOT_USER_ID = Schema.decodeSync(UserId)("chat-bot")
+export const ChatTurnOrigin = Schema.Union([
+	/** A signed-in person in the Maple app. */
+	Schema.Struct({ kind: Schema.Literal("app") }),
+	/** An investigation's own unattended pass, which has no reader at all. */
+	Schema.Struct({ kind: Schema.Literal("autonomous") }),
+	/**
+	 * Someone addressing Maple from a chat platform. The identity is the platform's, not Maple's:
+	 * there is no user row behind `externalUserId`, and `displayName` is what that platform shows.
+	 */
+	Schema.Struct({
+		kind: Schema.Literal("connector"),
+		connectorId: ChatConnectorId,
+		workspaceId: Schema.String,
+		externalUserId: ExternalUserId,
+		displayName: Schema.String,
+	}),
+])
+export type ChatTurnOrigin = Schema.Schema.Type<typeof ChatTurnOrigin>
+
+/** The plain form that crosses the Durable Object boundary — see {@link ChatTurnTenantEncoded}. */
+export type ChatTurnOriginEncoded = (typeof ChatTurnOrigin)["Encoded"]
+
+export const encodeChatTurnOrigin = Schema.encodeSync(ChatTurnOrigin)
+export const decodeChatTurnOrigin = Schema.decodeSync(ChatTurnOrigin)
+
+export const APP_ORIGIN: ChatTurnOriginEncoded = { kind: "app" }
+export const AUTONOMOUS_ORIGIN: ChatTurnOriginEncoded = { kind: "autonomous" }
 
 /**
- * The turn identity a bot Worker hands `beginTurn`, already in the form that crosses the Durable
- * Object boundary.
+ * The user id a connector turn's tenant carries.
  *
- * No roles: a bot turn proposes mutations rather than performing them, so the only reader of roles
- * — the authorization check inside a mutating tool — is reached by the apply path, under whoever
- * approved the proposal, not by the turn that wrote it. `authMode` matches the investigation path:
- * the turn was not raised through a browser session.
+ * `TenantContext` requires one and no Maple user stands behind a connector turn, so this is a
+ * placeholder to satisfy that type — **nothing branches on it**. Every behavioural question is
+ * answered by {@link ChatTurnOrigin}; the moment a guard reads this value instead, the sentinel is
+ * back.
  */
-export const botTurnTenant = (orgId: OrgId): ChatTurnTenantEncoded =>
-	encodeChatTurnTenant({ orgId, userId: CHAT_BOT_USER_ID, roles: [], authMode: "self_hosted" })
+export const CONNECTOR_TENANT_USER_ID = Schema.decodeSync(UserId)("chat-connector")
+
+/**
+ * The turn identity a connector Worker hands `beginTurn`, already encoded for the DO hop.
+ *
+ * No roles: a connector turn proposes mutations rather than performing them, so the only reader of
+ * roles — the authorization check inside a mutating tool — is reached by the apply path, under
+ * whoever approved the proposal, not by the turn that wrote it.
+ */
+export const connectorTurnTenant = (orgId: OrgId): ChatTurnTenantEncoded =>
+	encodeChatTurnTenant({
+		orgId,
+		userId: CONNECTOR_TENANT_USER_ID,
+		roles: [],
+		authMode: "self_hosted",
+	})
+
+/**
+ * The origin a `beginTurn` without one is treated as.
+ *
+ * Deploy skew is real: api, alerting and ai are separate Workers, so an old caller that predates
+ * the field keeps calling during a rollout. Everything defaults to `app` except the one caller
+ * whose turns must not silently become attended — the investigation pass, still recognised by the
+ * actor it has always used. **Skew-only**: delete this read once every caller sets an origin.
+ */
+const INTERNAL_SERVICE_USER_ID = "internal-service"
+
+export const originForTurn = (
+	origin: ChatTurnOriginEncoded | undefined,
+	tenant: ChatTurnTenantEncoded,
+): ChatTurnOriginEncoded =>
+	origin ?? (tenant.userId === INTERNAL_SERVICE_USER_ID ? AUTONOMOUS_ORIGIN : APP_ORIGIN)
+
+/**
+ * A turn whose origin and session disagree.
+ *
+ * The pairing is a guarantee, not a preference: a connector thread's transcript must only ever be
+ * driven by that connector, and a connector must not be pointed at an app conversation. Refusing
+ * is the only safe answer — downgrading either side would silently file a turn under the wrong
+ * surface, and silently meter it there too.
+ */
+export class ChatTurnOriginMismatch extends Schema.TaggedError<ChatTurnOriginMismatch>()(
+	"@maple/chat/ChatTurnOriginMismatch",
+	{
+		message: Schema.String,
+		sessionId: Schema.String,
+		originKind: Schema.String,
+	},
+) {}
+
+/** Connector origin ⇔ connector session. Both directions, so neither can be forged into the other. */
+export const checkTurnOriginPairing = (
+	sessionId: string,
+	origin: ChatTurnOriginEncoded,
+): ChatTurnOriginMismatch | undefined => {
+	const connectorSession = isConnectorSessionId(sessionId)
+	if (connectorSession === (origin.kind === "connector")) return undefined
+	return new ChatTurnOriginMismatch({
+		message: connectorSession
+			? "A connector conversation can only be driven by its connector"
+			: "A connector turn cannot be run on an app conversation",
+		sessionId,
+		originKind: origin.kind,
+	})
+}
 
 // Requests
 

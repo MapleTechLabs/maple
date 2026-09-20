@@ -11,6 +11,7 @@ import { LanguageModel } from "effect/unstable/ai"
 import type { Prompt, Response } from "effect/unstable/ai"
 import * as AiModel from "effect/unstable/ai/Model"
 import { assert, describe, it } from "vitest"
+import { APP_ORIGIN } from "@maple/domain/chat-session"
 import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
 import type { McpToolExecutorApi } from "../mcp/dispatcher"
 import type { ResolvedModel } from "../platform/Llm"
@@ -71,6 +72,7 @@ const run = (model: ResolvedModel, executor: McpToolExecutorApi) => {
 		sessionId: "org_test:tab-1",
 		messageId: "msg-1",
 		tenant: TENANT,
+		origin: APP_ORIGIN,
 		toolExecutor: executor,
 		model,
 		submitDiagnosis: () => Effect.die("no investigation in a default session"),

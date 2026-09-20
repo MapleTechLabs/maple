@@ -10,7 +10,13 @@
  * a cross-script reference to it. Keeping the shape in one place is what makes
  * that reference structurally safe.
  */
-import type { ChatEvent, ChatEventInput, ChatMessage, ChatTurnTenantEncoded } from "./chat-session"
+import type {
+	ChatEvent,
+	ChatEventInput,
+	ChatMessage,
+	ChatTurnOriginEncoded,
+	ChatTurnTenantEncoded,
+} from "./chat-session"
 
 /**
  * The `ChatSession` Durable Object's RPC surface, and how to reach it off a Worker env.
@@ -38,6 +44,11 @@ export interface ChatSessionStub {
 		readonly messageId: string
 		readonly text: string
 		readonly tenant: ChatTurnTenantEncoded
+		/**
+		 * Who is driving the turn. Optional only for deploy skew — api, alerting and ai are separate
+		 * Workers, so an older caller keeps calling through a rollout. See `originForTurn`.
+		 */
+		readonly origin?: ChatTurnOriginEncoded
 	}) => Promise<{ cursor: number; messageId: string } | undefined>
 	readonly holdsTurn: (messageId: string) => Promise<boolean>
 	readonly endTurn: (messageId: string) => Promise<void>

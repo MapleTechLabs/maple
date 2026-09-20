@@ -300,3 +300,23 @@ export type WidgetId = Schema.Schema.Type<typeof WidgetId>
 
 export const ChartId = MapleId("@maple/ChartId", "Chart ID")
 export type ChartId = Schema.Schema.Type<typeof ChartId>
+
+/**
+ * Which chat connector a conversation reached Maple through.
+ *
+ * Opaque: Maple's core runs one agent, and everything that differs between one chat platform and
+ * the next belongs to that platform's connector rather than to a literal here.
+ *
+ * Lowercase alphanumeric with no `-`, because the id is one dash-separated segment of a chat
+ * session's tab id (`bot-<connectorId>-<workspaceId>-<threadId>`), which is parsed by prefix.
+ * Bounded at 32 so a connector name cannot eat the session id a Durable Object is named by.
+ */
+export const ChatConnectorId = Schema.String.check(
+	Schema.isMinLength(1),
+	Schema.isMaxLength(32),
+	Schema.isPattern(/^[a-z][a-z0-9]*$/),
+).pipe(
+	Schema.brand("@maple/ChatConnectorId"),
+	Schema.annotate({ identifier: "@maple/ChatConnectorId", title: "Chat Connector ID" }),
+)
+export type ChatConnectorId = Schema.Schema.Type<typeof ChatConnectorId>

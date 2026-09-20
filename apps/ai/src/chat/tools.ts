@@ -5,7 +5,7 @@
  * module's. Swapping the tool set — a read-only sub-agent, a mode with narrower reach — should not
  * touch control flow at all.
  */
-import { CHAT_BOT_USER_ID, investigationIdFromChatSessionId } from "@maple/domain/chat-session"
+import { type ChatTurnOrigin, investigationIdFromChatSessionId } from "@maple/domain/chat-session"
 import { evaluatePermission, type PermissionRuleset } from "@maple/domain/permission"
 import {
 	AiTriageSubmission,
@@ -34,15 +34,6 @@ export type SubmitDiagnosis = (
 	unknown,
 	InvestigationPersistenceError | InvestigationNotFoundError | InvestigationDataCorruptionError
 >
-
-/**
- * The user id every machine-started run runs as.
- *
- * An investigation's own autonomous pass is claimed under this actor; a human opening the same
- * session and asking a follow-up is not. That difference decides whether the diagnosis tool merely
- * exists or is the run's *answer*.
- */
-const INTERNAL_SERVICE_USER_ID = Schema.decodeSync(UserId)("internal-service")
 
 export const SUBMIT_DIAGNOSIS = "submit_diagnosis"
 
@@ -106,12 +97,15 @@ export const investigationForSession = (sessionId: string): InvestigationId | un
 }
 
 /**
- * Whether this turn is an investigation's own autonomous pass — claimed under the internal actor —
- * rather than a person asking a follow-up in the same session. The pass must end on
- * `submit_diagnosis`; the follow-up may answer in prose.
+ * Whether this turn is an investigation's own autonomous pass rather than a person asking a
+ * follow-up in the same session. The pass must end on `submit_diagnosis`; the follow-up may answer
+ * in prose.
+ *
+ * Both halves are stated, not inferred: the session says it is an investigation, the turn's origin
+ * says it is the unattended pass.
  */
-export const isAutonomousInvestigationTurn = (sessionId: string, tenant: TenantContext): boolean =>
-	investigationForSession(sessionId) !== undefined && tenant.userId === INTERNAL_SERVICE_USER_ID
+export const isAutonomousInvestigationTurn = (sessionId: string, origin: ChatTurnOrigin): boolean =>
+	investigationForSession(sessionId) !== undefined && origin.kind === "autonomous"
 
 /**
  * The `submit_diagnosis` tool for an investigate-mode session (`"<orgId>:inv-<id>"`).
@@ -119,7 +113,7 @@ export const isAutonomousInvestigationTurn = (sessionId: string, tenant: TenantC
  * Its arguments ARE the structured report. Deliberately not approval-gated: it is the structured
  * output channel, not a user-facing mutation. The investigation id and org ride from the session id,
  * so the agent never chooses which investigation it writes. Being outside the ruleset is why the
- * bot actor is refused here by name rather than left to the gate.
+ * origin is consulted here directly rather than left to the gate.
  *
  * `submitDiagnosis` arrives as a callback rather than being resolved from `InvestigationService`
  * here: that service is itself what starts an investigation's autonomous run, so resolving it
@@ -133,6 +127,7 @@ export const isAutonomousInvestigationTurn = (sessionId: string, tenant: TenantC
 export const buildDiagnosisCompletion = (
 	sessionId: string,
 	tenant: TenantContext,
+	origin: ChatTurnOrigin,
 	submitDiagnosis: SubmitDiagnosis,
 	usage: RunUsage,
 	modelName: string,
@@ -141,12 +136,11 @@ export const buildDiagnosisCompletion = (
 ) => {
 	const investigationId = investigationForSession(sessionId)
 	if (investigationId === undefined) return undefined
-	// The bot never files a diagnosis. This tool rides *outside* the ruleset — it is the
+	// A connector never files a diagnosis. This tool rides *outside* the ruleset — it is the
 	// investigation's structured output channel, not a gated mutation — so nothing else withholds
-	// it, and it does write: a report row, and the investigation's status. Only a session id built
-	// as an investigation's while carrying the bot actor could reach here, and a channel is not
-	// where a diagnosis gets settled.
-	if (tenant.userId === CHAT_BOT_USER_ID) return undefined
+	// it, and it does write: a report row, and the investigation's status. An attended follow-up in
+	// the app may file one; a channel is not where a diagnosis gets settled.
+	if (origin.kind === "connector") return undefined
 	const toolkit = Toolkit.make(diagnosisTool)
 	let submitted = false
 	return {
@@ -189,7 +183,7 @@ export const buildDiagnosisCompletion = (
 					),
 				),
 		}),
-		autonomous: isAutonomousInvestigationTurn(sessionId, tenant),
+		autonomous: isAutonomousInvestigationTurn(sessionId, origin),
 		submitted: () => submitted,
 	}
 }

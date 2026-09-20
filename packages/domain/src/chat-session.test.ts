@@ -2,12 +2,19 @@ import { Schema } from "effect"
 import { describe, expect, it } from "vitest"
 import { OrgId } from "./primitives"
 import {
-	botSessionId,
-	botTurnTenant,
-	CHAT_BOT_USER_ID,
+	APP_ORIGIN,
+	AUTONOMOUS_ORIGIN,
 	ChatConnectorId,
 	ChatTurnTenant,
+	checkTurnOriginPairing,
+	connectorSessionId,
+	connectorTurnTenant,
+	CONNECTOR_TENANT_USER_ID,
+	isConnectorSessionId,
+	originForTurn,
 	chatModeFromSessionId,
+	decodeChatTurnOrigin,
+	encodeChatTurnOrigin,
 	decodeChatTurnTenant,
 	encodeChatTurnTenant,
 	decodeChatEvent,
@@ -54,16 +61,27 @@ describe("chat session ids", () => {
 		expect(chatModeFromSessionId("o:alert-inc_1")).toBe("alert")
 		expect(chatModeFromSessionId("o:widget-fix-d1-w2")).toBe("widget-fix")
 		expect(chatModeFromSessionId("o:inv-123")).toBe("investigate")
-		expect(chatModeFromSessionId("o:bot-testchat-994")).toBe("bot")
+		// A connector thread is an ordinary chat conversation someone is answering in from
+		// elsewhere; what differs is the turn's origin, not the mode.
+		expect(chatModeFromSessionId("o:bot-testchat-w1-994")).toBe("default")
 	})
 
-	it("builds a bot thread's session id in bot mode", () => {
-		// The prefix is what puts a turn on the bot agent when the actor does not, so the builder
-		// and `chatModeFromSessionId` have to agree.
-		const id = botSessionId(orgId("org_abc"), connectorId, "994")
-		expect(id).toBe("org_abc:bot-testchat-994")
-		expect(chatModeFromSessionId(id)).toBe("bot")
+	it("builds a connector thread's session id, org and prefix intact", () => {
+		const id = connectorSessionId(orgId("org_abc"), connectorId, "w1", "994")
+		expect(id).toBe("org_abc:bot-testchat-w1-994")
+		expect(isConnectorSessionId(id)).toBe(true)
 		expect(orgIdFromChatSessionId(id)).toBe("org_abc")
+		expect(isConnectorSessionId(makeChatSessionId("org_abc", "tab-1"))).toBe(false)
+	})
+
+	it("cannot let one workspace's thread spell another's session", () => {
+		// The collision the escape exists for: raw, ("a", "b-c") and ("a-b", "c") are the same tab.
+		const left = connectorSessionId(orgId("o"), connectorId, "a", "b-c")
+		const right = connectorSessionId(orgId("o"), connectorId, "a-b", "c")
+		expect(left).not.toBe(right)
+		// And the escape itself cannot be spelled by the input, because `%` is escaped first.
+		expect(connectorSessionId(orgId("o"), connectorId, "a%2Db", "c")).not.toBe(left)
+		expect(connectorSessionId(orgId("o"), connectorId, "a%2Db", "c")).not.toBe(right)
 	})
 
 	it("refuses a connector id that would blur the tab encoding", () => {
@@ -216,12 +234,12 @@ describe("ChatTurnTenant", () => {
 		expect(decoded.authMode).toBe("self_hosted")
 	})
 
-	it("runs a bot turn as the org-level bot actor, with no roles", () => {
-		const encoded = botTurnTenant(orgId("org_1"))
+	it("runs a connector turn as an org-level tenant, with no roles", () => {
+		const encoded = connectorTurnTenant(orgId("org_1"))
 
 		expect(encoded).toStrictEqual({
 			orgId: "org_1",
-			userId: CHAT_BOT_USER_ID,
+			userId: CONNECTOR_TENANT_USER_ID,
 			roles: [],
 			authMode: "self_hosted",
 		})
@@ -229,8 +247,51 @@ describe("ChatTurnTenant", () => {
 		// workerd raises `DataCloneError`, so the throw check above is the one that catches this
 		// and a green `structuredClone` here would prove nothing.
 		expect(Object.getPrototypeOf(encoded)).toBe(Object.prototype)
-		// Never the investigation pass's actor: that id decides whether a turn on an `inv-` session
-		// is the autonomous pass or a person's follow-up.
-		expect(CHAT_BOT_USER_ID).not.toBe("internal-service")
+	})
+})
+
+describe("ChatTurnOrigin", () => {
+	const connector = {
+		kind: "connector" as const,
+		connectorId: "testchat",
+		workspaceId: "w1",
+		externalUserId: "u-1",
+		displayName: "Ada",
+	}
+
+	it("crosses the Durable Object boundary as a plain object", () => {
+		// Same constraint as `ChatTurnTenant`: DO RPC serializes with structured clone, which
+		// refuses class instances outright.
+		for (const origin of [APP_ORIGIN, AUTONOMOUS_ORIGIN, connector]) {
+			const encoded = encodeChatTurnOrigin(decodeChatTurnOrigin(origin))
+			expect(Object.getPrototypeOf(encoded)).toBe(Object.prototype)
+			expect(encoded).toStrictEqual(origin)
+		}
+	})
+
+	it("defaults a missing origin to `app`, and the investigation actor to `autonomous`", () => {
+		// Deploy skew only: api, alerting and ai are separate Workers, so a caller that predates
+		// the field keeps calling through a rollout. The pass must not silently become attended.
+		const app = { orgId: "org_1", userId: "user_1", roles: [], authMode: "self_hosted" } as const
+		const pass = { ...app, userId: "internal-service" } as const
+		expect(originForTurn(undefined, app)).toStrictEqual(APP_ORIGIN)
+		expect(originForTurn(undefined, pass)).toStrictEqual(AUTONOMOUS_ORIGIN)
+		// An explicit origin always wins, so the compatibility read disappears on its own.
+		expect(originForTurn(APP_ORIGIN, pass)).toStrictEqual(APP_ORIGIN)
+	})
+
+	it("refuses an origin and a session that disagree, in both directions", () => {
+		const connectorSession = connectorSessionId(orgId("o"), connectorId, "w1", "994")
+		const appSession = makeChatSessionId("o", "tab-1")
+
+		expect(checkTurnOriginPairing(connectorSession, connector)).toBeUndefined()
+		expect(checkTurnOriginPairing(appSession, APP_ORIGIN)).toBeUndefined()
+		expect(checkTurnOriginPairing(appSession, AUTONOMOUS_ORIGIN)).toBeUndefined()
+		// A connector must not be pointed at an app conversation, and an app caller must not post
+		// into a channel thread.
+		expect(checkTurnOriginPairing(appSession, connector)?._tag).toBe("@maple/chat/ChatTurnOriginMismatch")
+		expect(checkTurnOriginPairing(connectorSession, APP_ORIGIN)?._tag).toBe(
+			"@maple/chat/ChatTurnOriginMismatch",
+		)
 	})
 })

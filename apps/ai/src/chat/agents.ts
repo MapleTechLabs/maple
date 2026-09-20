@@ -10,17 +10,20 @@
  * evaluated stage by stage while the failures lived in between. The agent that gathers the
  * evidence is the agent that acts on it.
  *
- * `ChatMode` and `chatModeFromSessionId` stay in the domain package — they are on the wire and the
- * web client derives from them — so a new surface is a literal there and a record here, added
- * together. Every mode names an agent, by construction; `agents.test.ts` fails if one is ever
- * added without one.
+ * An agent is what a conversation IS, never who is driving it. Who is driving a turn is its
+ * `ChatTurnOrigin`, and `./profiles.ts` is the one place that reads it — so a surface becoming
+ * reachable from somewhere new costs a profile branch rather than a mode, a record and a prompt.
+ *
+ * `ChatMode` and `chatModeFromSessionId` stay in the domain package because the session id is on
+ * the wire and the mode is derived from it server-side. Every mode names an agent, by
+ * construction; `agents.test.ts` fails if one is ever added without one.
  */
 import * as Agent from "@effect-agent/core/Agent"
 import { AgentPolicy } from "@effect-agent/core/AgentPolicy"
 import * as Output from "@effect-agent/engine/Output"
 import { Schema } from "effect"
 import type { Toolkit } from "effect/unstable/ai"
-import { CHAT_BOT_USER_ID, chatModeFromSessionId, type ChatMode } from "@maple/domain/chat-session"
+import { chatModeFromSessionId, type ChatMode } from "@maple/domain/chat-session"
 // The specific file, not the `./loop` barrel: the barrel re-exports `turn.ts`, which imports this
 // module back. `budgets.ts` depends on nothing but `effect`.
 import {
@@ -34,22 +37,13 @@ import {
 import type { PermissionRuleset } from "@maple/domain/permission"
 import type { ResolvedModel } from "../platform/Llm"
 import { DEFAULT_RULESET } from "./permissions"
-import { BOT_SYSTEM_PROMPT, INVESTIGATE_SYSTEM_PROMPT, SYSTEM_PROMPT } from "./prompts"
-
-/**
- * What a turn as this agent *is*, to everything downstream of the run.
- *
- * One literal, three readers that already accept it: the tool registry's audience filter
- * (`McpToolSurface`), the LLM call's tags, and the billing meter's source.
- */
-export type ChatSurface = "chat" | "bot"
+import { INVESTIGATE_SYSTEM_PROMPT, SYSTEM_PROMPT } from "./prompts"
 
 export interface AgentDefinition {
 	readonly name: string
 	readonly description: string
 	readonly prompt: string
 	readonly permission: PermissionRuleset
-	readonly surface: ChatSurface
 	/**
 	 * What a turn as this agent may spend. An attended reply and an unattended investigation are
 	 * different work; they shared one budget until 2026-09-20, and it was the investigation's.
@@ -67,7 +61,6 @@ export const AGENTS: Readonly<Record<ChatMode, AgentDefinition>> = {
 		description: "General Maple assistant.",
 		prompt: SYSTEM_PROMPT,
 		permission: DEFAULT_RULESET,
-		surface: "chat",
 		budget: CHAT_BUDGET,
 	},
 	alert: {
@@ -75,7 +68,6 @@ export const AGENTS: Readonly<Record<ChatMode, AgentDefinition>> = {
 		description: "Assists with an alert in context.",
 		prompt: SYSTEM_PROMPT,
 		permission: DEFAULT_RULESET,
-		surface: "chat",
 		budget: CHAT_BUDGET,
 	},
 	"widget-fix": {
@@ -83,54 +75,22 @@ export const AGENTS: Readonly<Record<ChatMode, AgentDefinition>> = {
 		description: "Repairs a dashboard widget in context.",
 		prompt: SYSTEM_PROMPT,
 		permission: DEFAULT_RULESET,
-		surface: "chat",
 		budget: CHAT_BUDGET,
 	},
 	investigate: {
 		name: "investigate",
 		description: "Runs an autonomous investigation.",
 		prompt: INVESTIGATE_SYSTEM_PROMPT,
-		// The ruleset a *turn* runs under is narrowed further when the turn is the autonomous pass;
-		// see `rulesetForTurn` in `./permissions`. This is what an attended follow-up in the same
-		// session gets.
+		// What an attended follow-up in the same session gets. The unattended pass is narrowed
+		// further by its origin — see `profileForTurn` in `./profiles`.
 		permission: DEFAULT_RULESET,
-		surface: "chat",
 		budget: INVESTIGATION_BUDGET,
-	},
-	bot: {
-		name: "bot",
-		description: "Answers in a chat platform's channels.",
-		prompt: BOT_SYSTEM_PROMPT,
-		// The same propose-then-apply model as in-app chat: reads run, mutations are proposed and
-		// wait. The platform connector renders the proposal for the channel to approve or reject.
-		permission: DEFAULT_RULESET,
-		// What the bot does *not* get is the internal audience: `bot` is not an internal surface, so
-		// the agents-only tools — the repository sandbox above all — are never in its catalog. A
-		// reply lands wherever the thread is readable, and `sandbox_exec` alone is code execution
-		// against the org's checkout.
-		surface: "bot",
-		budget: CHAT_BUDGET,
 	},
 } as const satisfies Readonly<Record<ChatMode, AgentDefinition>>
 
 /** Every `ChatMode` literal names an agent; the mode string *is* the agent name. */
 export const agentForSession = (sessionId: string): AgentDefinition =>
 	AGENTS[chatModeFromSessionId(sessionId)]
-
-/**
- * The agent a turn runs as, which the session id alone does not decide.
- *
- * Either signal makes a turn the bot's, and neither is redundant: the tab prefix is what a session
- * built in this app carries, while the actor is what a transport Worker outside it controls. A
- * mismatched pair must not hand an org-level actor the internal toolset — `bot` is not an internal
- * surface, and that is the audience boundary a channel-invoked turn stays behind.
- *
- * Returning the whole agent rather than just its surface is what keeps prompt, permission and
- * surface one answer: a turn cannot run on the bot's surface while being told it is answering in a
- * 420px panel, or be filed under a surface it did not run on. Every reader takes it from here.
- */
-export const agentForTurn = (sessionId: string, userId: string): AgentDefinition =>
-	userId === CHAT_BOT_USER_ID ? AGENTS.bot : agentForSession(sessionId)
 
 /** The system prompt for a turn: the agent's own persona. */
 export const buildSystemPrompt = (agent: AgentDefinition): string => agent.prompt

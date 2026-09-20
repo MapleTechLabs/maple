@@ -9,10 +9,15 @@
  * The rest are about the routing: `meterTurn` is the single meter on this path, so it has to charge
  * an investigation turn as `triage`, an attended chat turn as `chat` and a bot turn as `bot` — one
  * of the three, never two. The source it picks must be the surface the turn actually ran on, which
- * is why the bot cases go through the same `agentForTurn` the toolkit does.
+ * is why it resolves the same `profileForTurn` label the toolkit is built from.
  */
-import { botSessionId, CHAT_BOT_USER_ID, ChatConnectorId } from "@maple/domain/chat-session"
-import { OrgId, UserId } from "@maple/domain/primitives"
+import {
+	APP_ORIGIN,
+	type ChatTurnOrigin,
+	ChatConnectorId,
+	connectorSessionId,
+} from "@maple/domain/chat-session"
+import { ExternalUserId, OrgId } from "@maple/domain/primitives"
 import { Effect, Schema } from "effect"
 import { afterEach, assert, beforeEach, describe, it } from "vitest"
 import { meterTurn } from "./turn-runner"
@@ -21,10 +26,17 @@ const ORG = "org_test"
 const INVESTIGATION = "0199a4d1-9f3c-7c8e-b2a1-3f5e7d9c1b40"
 
 const orgId = Schema.decodeSync(OrgId)(ORG)
-const userId = Schema.decodeSync(UserId)
 
-/** An ordinary signed-in caller, unless a test names the bot actor instead. */
-const tenant = { orgId, userId: userId("user_1") }
+/** An ordinary signed-in caller. Who drives a turn is its origin, never its user id. */
+const tenant = { orgId }
+
+const CONNECTOR_ORIGIN: ChatTurnOrigin = {
+	kind: "connector",
+	connectorId: Schema.decodeSync(ChatConnectorId)("testchat"),
+	workspaceId: "w1",
+	externalUserId: Schema.decodeSync(ExternalUserId)("u-1"),
+	displayName: "Ada",
+}
 
 const env = { AUTUMN_SECRET_KEY: "sk_test" }
 
@@ -62,8 +74,13 @@ afterEach(() => {
 	globalThis.fetch = realFetch
 })
 
-const meter = (sessionId: string, messageId: string, input: number, output: number, as = tenant) =>
-	Effect.runPromise(meterTurn(turn(sessionId, messageId), as, { input, output }))
+const meter = (
+	sessionId: string,
+	messageId: string,
+	input: number,
+	output: number,
+	origin: ChatTurnOrigin = APP_ORIGIN,
+) => Effect.runPromise(meterTurn(turn(sessionId, messageId), tenant, origin, { input, output }))
 
 const keysFor = (featureId: string) => tracked.filter((t) => t.featureId === featureId).map((t) => t.key)
 
@@ -141,22 +158,21 @@ describe("meterTurn", () => {
 		assert.deepEqual(keysFor("ai_output_tokens"), [`${ORG}:default:msg-1:chat:output`])
 	})
 
-	it("charges a bot session as `bot`", async () => {
-		// Same features and the same org; the source is what separates the bot's spend from the
-		// in-app chat it shares this runner with. Built rather than spelled, so the tab format
-		// lives in one place.
-		const session = botSessionId(orgId, Schema.decodeSync(ChatConnectorId)("testchat"), "994")
-		await meter(session, "msg-1", 1000, 100)
+	it("charges a connector turn as `bot`", async () => {
+		// Same features and the same org; the source is what separates a connector's spend from the
+		// in-app chat it shares this runner with. Built rather than spelled, so the tab format lives
+		// in one place.
+		const session = connectorSessionId(orgId, CONNECTOR_ORIGIN.connectorId, "w1", "994")
+		await meter(session, "msg-1", 1000, 100, CONNECTOR_ORIGIN)
 
 		assert.deepEqual(keysFor("ai_input_tokens"), [`${session}:msg-1:bot:input`])
 		assert.deepEqual(keysFor("ai_output_tokens"), [`${session}:msg-1:bot:output`])
 	})
 
-	it("charges the bot actor as `bot` even on a session that is not a bot one", async () => {
-		// The session id is built by a Worker outside this app, and `turnToolPolicy` already treats
-		// the actor alone as enough to run the turn read-only on the `bot` surface. The meter has to
-		// agree, or a turn runs as one surface and is billed as another.
-		await meter(`${ORG}:default`, "msg-1", 1000, 100, { orgId, userId: CHAT_BOT_USER_ID })
+	it("charges by origin, not by session id", async () => {
+		// The meter reads the same profile the toolkit does, so a turn cannot run on one surface
+		// and be billed as another.
+		await meter(`${ORG}:default`, "msg-1", 1000, 100, CONNECTOR_ORIGIN)
 
 		assert.deepEqual(keysFor("ai_input_tokens"), [`${ORG}:default:msg-1:bot:input`])
 	})

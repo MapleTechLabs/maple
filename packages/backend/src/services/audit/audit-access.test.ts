@@ -8,7 +8,7 @@ import { Effect, Result, Schema } from "effect"
 import { TestClock } from "effect/testing"
 import { CurrentAuditActor } from "@maple/backend/services/auth/audit-actor"
 import { makeMemoryAuditLog } from "./AuditLogService"
-import { auditAttribution, recordMcpToolAudit, recordRawSqlAudit, withAuditedRead } from "./audit-access"
+import { auditAttribution, recordRawSqlAudit, withAuditedRead } from "./audit-access"
 import { AuditLogService } from "./AuditLogService"
 
 const ORG = Schema.decodeUnknownSync(OrgId)("org_audit_access_test")
@@ -188,33 +188,5 @@ describe("recordRawSqlAudit", () => {
 			Effect.provideService(CurrentAuditActor, { type: "api_key", source: "mcp" }),
 			Effect.provide(AuditLogService.layerMemory),
 		),
-	)
-})
-
-describe("recordMcpToolAudit", () => {
-	/**
-	 * The chat-platform bot's tenant is org-level: a sentinel user id that matches no user row, and
-	 * no actor. Attributed through the tenant it would file every call under that non-existent user,
-	 * from the dashboard it did not come from — so it is a machine surface, like a workflow pass.
-	 */
-	it.effect("files a bot turn's tool call as the surface, not as a user", () =>
-		Effect.gen(function* () {
-			const audit = yield* AuditLogService
-			const tenant = { orgId: ORG, userId: Schema.decodeUnknownSync(UserId)("chat-bot") }
-			yield* recordMcpToolAudit({ tenant, name: "find_errors", surface: "bot", input: {} })
-			yield* TestClock.adjust("1 second")
-			// The converse: an in-app chat turn has a real signed-in user and still attributes to one.
-			yield* recordMcpToolAudit({
-				tenant: { orgId: ORG, userId: USER },
-				name: "find_errors",
-				surface: "chat",
-				input: {},
-			})
-
-			const entries = yield* audit.list(ORG, { limit: 10, offset: 0 })
-			expect(entries.map((entry) => entry.source)).toEqual(["dashboard", "system"])
-			expect(entries[1]!.userId).toBeNull()
-			expect(entries[0]!.userId).toBe(USER)
-		}).pipe(Effect.provide(AuditLogService.layerMemory)),
 	)
 })

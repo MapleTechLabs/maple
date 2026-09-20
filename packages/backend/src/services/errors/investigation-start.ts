@@ -10,7 +10,7 @@
  */
 import { investigations } from "@maple/db"
 import { wrapChatContext } from "@maple/domain/chat-preamble"
-import { encodeChatTurnTenant } from "@maple/domain/chat-session"
+import { AUTONOMOUS_ORIGIN, encodeChatTurnTenant } from "@maple/domain/chat-session"
 import { chatSessionStub } from "@maple/domain/chat-session-stub"
 import type { InvestigationSubject, InvestigationSubjectSnapshot, OrgId } from "@maple/domain/http"
 import { AUTONOMOUS_KICKOFF_LEAD, buildIncidentContextMessage } from "@maple/domain/incident-context"
@@ -99,6 +99,7 @@ export const startInvestigationTurn: (
 					roles: [],
 					authMode: "self_hosted",
 				}),
+				origin: AUTONOMOUS_ORIGIN,
 			}),
 		),
 	)

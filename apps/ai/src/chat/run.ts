@@ -5,9 +5,8 @@
  * Object owns ordering and the turn slot, and `turn-runner.ts` owns tenancy, metering and the turn
  * span. Nothing here decides *when* a tool is called — that is the engine's job now.
  */
-import { evaluatePermission, type PermissionRuleset } from "@maple/domain/permission"
-import type { ChatMessage } from "@maple/domain/chat-session"
-import type { McpToolSurface } from "@maple/domain/mcp-manifest"
+import { evaluatePermission } from "@maple/domain/permission"
+import type { ChatMessage, ChatTurnOrigin } from "@maple/domain/chat-session"
 import * as AgentRuntime from "@effect-agent/engine/AgentRuntime"
 import { ThreadHistory } from "@effect-agent/engine/ThreadHistory"
 import { IdGenerator } from "@effect-agent/core/IdGenerator"
@@ -17,14 +16,13 @@ import { Prompt, Toolkit } from "effect/unstable/ai"
 import type { McpToolExecutorApi } from "../mcp/dispatcher"
 import { agentSessionSpanAttributes, type ResolvedModel } from "../platform/Llm"
 import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
-import { type AgentDefinition, agentForTurn, chatAgent } from "./agents"
-import { rulesetForTurn } from "./permissions"
+import { agentForSession, chatAgent } from "./agents"
+import { profileForTurn } from "./profiles"
 import { toChatEvents, type ChatTurnEvent } from "./events"
 import {
 	accumulateUsage,
 	buildChatToolkit,
 	buildDiagnosisCompletion,
-	isAutonomousInvestigationTurn,
 	SUBMIT_DIAGNOSIS,
 	type RunUsage,
 	type SubmitDiagnosis,
@@ -78,6 +76,8 @@ export interface ChatRunInput {
 	readonly sessionId: string
 	readonly messageId: string
 	readonly tenant: TenantContext
+	/** Who is driving this turn. Decides surface, ruleset, persona and labels — see `./profiles`. */
+	readonly origin: ChatTurnOrigin
 	readonly toolExecutor: McpToolExecutorApi
 	readonly model: ResolvedModel
 	readonly submitDiagnosis: SubmitDiagnosis
@@ -109,35 +109,6 @@ export interface ChatRunOutcome {
 }
 
 /**
- * What a turn may call: the ruleset it is evaluated against, and the surface it calls through.
- *
- * The two answer different questions and both have to be right. The ruleset decides which tools
- * are offered and which of them are proposals; the surface decides which *audience* of tools
- * exists at all — `bot` is not an internal surface, so the agents-only tools, the repository
- * sandbox among them, are absent from its catalog rather than merely gated.
- *
- * Its own function, and exported, because the audience boundary should be assertable without
- * standing up a run. `runChatTurn` is the only caller.
- */
-export const turnToolPolicy = (
-	sessionId: string,
-	tenant: TenantContext,
-): {
-	readonly agent: AgentDefinition
-	readonly ruleset: PermissionRuleset
-	readonly surface: McpToolSurface
-} => {
-	const agent = agentForTurn(sessionId, tenant.userId)
-	return {
-		agent,
-		// Not `agent.permission`: an unattended pass is offered fewer tools than the same agent
-		// answering a person in the same session. See `rulesetForTurn`.
-		ruleset: rulesetForTurn(agent, isAutonomousInvestigationTurn(sessionId, tenant)),
-		surface: agent.surface,
-	}
-}
-
-/**
  * Build and drain one run.
  *
  * The returned Effect settles when the run does. Every chat event it produces has already been
@@ -145,17 +116,19 @@ export const turnToolPolicy = (
  * module never invents one.
  */
 export const runChatTurn = (input: ChatRunInput) => {
-	const { agent: definition, ruleset, surface } = turnToolPolicy(input.sessionId, input.tenant)
+	const agent = agentForSession(input.sessionId)
+	const profile = profileForTurn(agent, input.origin)
 	const maple = buildChatToolkit(
 		input.toolExecutor,
 		input.tenant,
-		ruleset,
-		surface,
+		profile.ruleset,
+		profile.toolSurface,
 		agentSessionSpanAttributes(input.model.tags),
 	)
 	const completion = buildDiagnosisCompletion(
 		input.sessionId,
 		input.tenant,
+		input.origin,
 		input.submitDiagnosis,
 		input.usage,
 		input.model.name,
@@ -166,7 +139,7 @@ export const runChatTurn = (input: ChatRunInput) => {
 	const handlers = Layer.mergeAll(maple.layer, ...(completion === undefined ? [] : [completion.layer]))
 
 	// Declared but never *required*: see `buildDiagnosisCompletion`. A call still settles the run.
-	const agent = chatAgent(definition, toolkit, input.model, {
+	const run = chatAgent({ ...agent, prompt: profile.prompt }, toolkit, input.model, {
 		...(completion === undefined
 			? undefined
 			: { completion: { tool: SUBMIT_DIAGNOSIS, required: false } }),
@@ -174,11 +147,11 @@ export const runChatTurn = (input: ChatRunInput) => {
 
 	// A gated tool is announced exactly like any other and refuses when dispatched, so only the
 	// ruleset knows the call is a proposal.
-	const isProposed = (name: string) => evaluatePermission(ruleset, name) === "ask"
+	const isProposed = (name: string) => evaluatePermission(profile.ruleset, name) === "ask"
 
 	let compactions = 0
 
-	return AgentRuntime.stream(agent, input.text, {
+	return AgentRuntime.stream(run, input.text, {
 		threadId: decodeThreadId(input.sessionId),
 		history: Prompt.make(promptFromHistory(input.history)),
 		// Not a budget: the ceilings live in the agent's policy. This is the only place the engine
