@@ -172,6 +172,9 @@ export function ChatIntegrationCard({ connector }: { connector: ChatConnectorId 
 		)
 
 	if (manifest === undefined) return null
+	// Bound once for the handlers below: a function declaration is hoisted, so
+	// the narrowing above does not reach inside one.
+	const platform = manifest.name
 
 	async function handleInstall() {
 		setBusy("install")
@@ -184,7 +187,7 @@ export function ChatIntegrationCard({ connector }: { connector: ChatConnectorId 
 		}
 		setBusy(null)
 		toastManager.add({
-			title: getExitErrorMessage(result, `Failed to start the ${manifest.name} install`),
+			title: getExitErrorMessage(result, `Failed to start the ${platform} install`),
 			type: "error",
 		})
 	}
