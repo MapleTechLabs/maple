@@ -149,17 +149,69 @@ const MESSAGE_BASE = "flex items-center justify-center px-3 text-center font-mon
  */
 export function ChartEmpty({
 	children,
+	hint,
 	height,
 	className,
 }: {
 	children: ReactNode
+	/** What to try next, under the message — "Try a wider time range". */
+	hint?: ReactNode
 	height?: number
 	className?: string
 }) {
 	return (
-		<ChartStateBox height={height} className={cn(MESSAGE_BASE, "text-muted-foreground", className)}>
-			{children}
+		<ChartStateBox
+			height={height}
+			className={cn(MESSAGE_BASE, "relative text-muted-foreground", className)}
+		>
+			<EmptyAxes />
+			<div className="relative flex flex-col items-center gap-1">
+				<span className="text-foreground/70">{children}</span>
+				{hint != null && <span className="text-[10px] text-muted-foreground/80">{hint}</span>}
+			</div>
 		</ChartStateBox>
+	)
+}
+
+/**
+ * The axes of a chart with nothing plotted on them: three gridlines and a dashed
+ * baseline. It keeps an empty card reading as a chart rather than a hole, and —
+ * unlike the loading ghost — draws no series, so it cannot be mistaken for data
+ * on its way. Masked out behind the message so no line runs through the text.
+ */
+function EmptyAxes() {
+	return (
+		<svg
+			aria-hidden
+			viewBox="0 0 100 100"
+			preserveAspectRatio="none"
+			className="pointer-events-none absolute inset-0 h-full w-full [mask-image:radial-gradient(ellipse_at_center,transparent_25%,black_75%)]"
+		>
+			{[20, 44, 68].map((y) => (
+				<line
+					key={y}
+					x1={0}
+					y1={y}
+					x2={100}
+					y2={y}
+					stroke="currentColor"
+					strokeOpacity={0.14}
+					strokeWidth={1}
+					vectorEffect="non-scaling-stroke"
+				/>
+			))}
+			<line
+				x1={0}
+				y1={92}
+				x2={100}
+				y2={92}
+				stroke="currentColor"
+				strokeOpacity={0.4}
+				strokeWidth={1}
+				strokeDasharray="3 4"
+				vectorEffect="non-scaling-stroke"
+			/>
+		</svg>
 	)
 }
 
