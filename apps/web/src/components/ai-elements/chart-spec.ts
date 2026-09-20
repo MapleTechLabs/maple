@@ -94,6 +94,23 @@ export function normalizeUnit(unit: string | undefined): string {
 }
 
 /**
+ * The unit a spec plots under, checked against the numbers it carries.
+ *
+ * `percent` multiplies a 0–1 fraction by 100, but tools print error rates to the
+ * model as `92.86%`, and a model that copies the printed number draws a 9286%
+ * axis. A percent series peaking well above 1 is already on the 0–100 scale.
+ */
+export function resolveUnit(spec: ChartSpec): string {
+	const unit = normalizeUnit(spec.unit)
+	if (unit !== "percent") return unit
+	const values =
+		spec.type === "ranked"
+			? spec.data.map((point) => point.value)
+			: spec.data.flatMap((point) => Object.values(point.series))
+	return values.some((value) => Math.abs(value) > 1.5) ? "percent_100" : unit
+}
+
+/**
  * The spec a fence holds, or null when it holds something else.
  *
  * An empty `data` array is a null too: a plot of nothing is a labelled blank

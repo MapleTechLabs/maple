@@ -1,6 +1,6 @@
 import { expect, it } from "vitest"
 
-import { normalizeUnit, parseChartSpec, rankedRows, timeseriesRows } from "./chart-spec"
+import { normalizeUnit, parseChartSpec, rankedRows, resolveUnit, timeseriesRows } from "./chart-spec"
 
 const timeseries = JSON.stringify({
 	type: "line",
@@ -55,6 +55,19 @@ it("keeps a chart whose unit is a shorthand, and falls back to plain numbers for
 	expect(normalizeUnit("duration_ms")).toBe("duration_ms")
 	expect(normalizeUnit("furlongs")).toBe("number")
 	expect(normalizeUnit(undefined)).toBe("number")
+})
+
+it("plots a percent series already on the 0–100 scale as written", () => {
+	const at = (value: number) =>
+		parseChartSpec(
+			JSON.stringify({
+				type: "area",
+				unit: "percent",
+				data: [{ bucket: "2026-09-20T14:15:00Z", series: { all: value } }],
+			}),
+		)!
+	expect(resolveUnit(at(92.86))).toBe("percent_100")
+	expect(resolveUnit(at(0.9286))).toBe("percent")
 })
 
 it("drops the timeseries rows a chart cannot plot and keeps the rest", () => {
