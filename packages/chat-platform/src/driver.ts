@@ -44,6 +44,8 @@ export const driveChatTurn = Effect.fn("ChatPlatform.driveChatTurn")(function* <
 	const transport = yield* outbound.transport
 	const transcript = makeChatTranscript()
 	const posted: Array<ChatMessageRef> = []
+	/** What each posted message currently holds, so an unchanged one is not edited again. */
+	const sent: Array<string> = []
 	// One flush at a time: the throttle fiber and the final flush would otherwise race, and the
 	// loser's edit would put a stale render back on a finished turn.
 	const gate = yield* Semaphore.make(1)
@@ -74,8 +76,21 @@ export const driveChatTurn = Effect.fn("ChatPlatform.driveChatTurn")(function* <
 				// A retraction can shrink a turn below a message it had already needed, so a surplus
 				// message is emptied rather than left holding text the turn no longer says.
 				const group = index < groups.length ? groups[index] : NO_BLOCKS
-				if (index < posted.length) yield* transport.edit(posted[index], group)
-				else posted.push(yield* transport.post(target, group))
+				// A fingerprint of what this message should now say, not a wire format — nothing decodes
+				// it, it is only ever compared with the previous flush's.
+				// oxlint-disable-next-line effecttsgo/prefer-schema-over-json
+				const rendered = JSON.stringify(group)
+				if (index >= posted.length) {
+					posted.push(yield* transport.post(target, group))
+					sent.push(rendered)
+					continue
+				}
+				// Only what changed. A turn cut into three messages would otherwise spend three edits
+				// per tick, almost all of them rewriting a message with what it already says — and a
+				// platform's edit budget is per channel, not per message.
+				if (sent[index] === rendered) continue
+				yield* transport.edit(posted[index], group)
+				sent[index] = rendered
 			}
 		}),
 	)
@@ -115,14 +130,30 @@ export const driveChatTurn = Effect.fn("ChatPlatform.driveChatTurn")(function* <
 
 	// `takeUntil` is inclusive, so `turn-end` itself reaches the fold and sets the closing notice
 	// before the stream completes.
-	yield* Stream.runForEach(options.events.pipe(Stream.takeUntil(isTurnEnd)), onEvent)
+	const outcome = yield* Stream.runForEach(options.events.pipe(Stream.takeUntil(isTurnEnd)), onEvent).pipe(
+		// A stream that dies has no `turn-end` to close on, and the reader would be left looking at
+		// the placeholder forever. Say so, flush, and then fail.
+		Effect.tapError(() =>
+			Effect.sync(() => {
+				if (ending === null) ending = DISCONNECTED
+			}),
+		),
+		Effect.exit,
+	)
 	yield* Fiber.interrupt(throttled)
 	yield* flush
+	return yield* outcome
 })
 
 const NO_BLOCKS: ReadonlyArray<ChatBlock> = []
 
 const PENDING: ChatNoticeBlock = { kind: "notice", tone: "pending", text: "Working on it…" }
+
+const DISCONNECTED: ChatNoticeBlock = {
+	kind: "notice",
+	tone: "error",
+	text: "Lost the connection to the agent — this answer stops here.",
+}
 
 const isTurnEnd = (event: ChatEvent): boolean => event.type === "turn-end" && event.task === undefined
 

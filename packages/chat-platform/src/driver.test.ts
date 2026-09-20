@@ -239,6 +239,94 @@ describe("driveChatTurn", () => {
 		}),
 	)
 
+	it.effect("spends no edit on a message that already says the right thing", () =>
+		Effect.gen(function* () {
+			const chat = recorder()
+			const fiber = yield* Effect.forkChild(
+				driveChatTurn({
+					events: timeline([
+						[NOW, event(1, { type: "turn-start", messageId: "a1" })],
+						[NOW, event(2, { type: "text-delta", messageId: "a1", text: "Done." })],
+						// Three throttle ticks with nothing new to say, then the close.
+						[
+							Duration.seconds(4),
+							event(3, { type: "turn-end", messageId: "a1", reason: "stop" }),
+						],
+					]),
+					outbound: chat.outbound,
+					target,
+					context,
+				}),
+			)
+
+			yield* TestClock.adjust("5 seconds")
+			yield* Fiber.join(fiber)
+
+			// The placeholder, one edit carrying the answer, and nothing else — a turn cut into
+			// several messages would otherwise rewrite each of them on every tick.
+			expect(chat.calls.map((call) => call.verb)).toEqual(["post", "edit"])
+		}),
+	)
+
+	it.effect("empties a message a retraction shrank the turn past", () =>
+		Effect.gen(function* () {
+			const chat = recorder(80)
+			const long = "line\n".repeat(30)
+			const fiber = yield* Effect.forkChild(
+				driveChatTurn({
+					events: timeline([
+						[NOW, event(1, { type: "turn-start", messageId: "a1" })],
+						[NOW, event(2, { type: "text-delta", messageId: "a1", text: long })],
+						[
+							Duration.seconds(2),
+							event(3, {
+								type: "turn-retry",
+								messageId: "a1",
+								attempt: 2,
+								retractChars: long.length - 20,
+								reason: "overloaded",
+								delayMs: 0,
+							}),
+						],
+						[
+							Duration.seconds(2),
+							event(4, { type: "turn-end", messageId: "a1", reason: "stop" }),
+						],
+					]),
+					outbound: chat.outbound,
+					target,
+					context,
+				}),
+			)
+
+			yield* TestClock.adjust("6 seconds")
+			yield* Fiber.join(fiber)
+
+			const second = chat.calls.filter((call) => call.ref.messageId === "m2")
+			expect(second.length).toBeGreaterThan(1)
+			// The follow-up message is emptied rather than left holding text the turn took back.
+			expect(second[second.length - 1].blocks).toEqual([])
+		}),
+	)
+
+	it.effect("says so when the event stream dies instead of leaving the placeholder up", () =>
+		Effect.gen(function* () {
+			const chat = recorder()
+			const events = Stream.fromIterable([
+				event(1, { type: "turn-start", messageId: "a1" }),
+				event(2, { type: "text-delta", messageId: "a1", text: "Half an ans" }),
+			]).pipe(Stream.concat(Stream.fail("the session went away")))
+
+			const error = yield* Effect.flip(
+				driveChatTurn({ events, outbound: chat.outbound, target, context }),
+			)
+
+			expect(error).toBe("the session went away")
+			const last = chat.calls[chat.calls.length - 1].blocks
+			expect(last[last.length - 1]).toMatchObject({ kind: "notice", tone: "error" })
+		}),
+	)
+
 	it.effect("takes a reconnect's replay as the same turn, not a second one", () =>
 		Effect.gen(function* () {
 			const chat = recorder()

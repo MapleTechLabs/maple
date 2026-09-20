@@ -109,11 +109,23 @@ export const cutMarkdown = (markdown: string, maxChars: number): Array<string> =
 	}
 
 	for (const line of markdown.split("\n")) {
+		// A line that OPENS a fence pays for the closing ``` from its own budget, and counts as open
+		// the moment its first character is packed — not after the whole line, which left an opener
+		// that had to be cut mid-line sitting unbalanced at the end of a chunk.
+		//
+		// It cannot count as open any EARLIER either: a cut forced by this very line must close the
+		// outgoing chunk only if that chunk was already inside a fence.
+		const opens = fence === null && isFence(line)
+		const lineBudget = opens ? maxChars - FENCE_CLOSE_COST : budget()
+		const pack = (piece: string) => {
+			add(piece)
+			if (opens) fence = reopener(line)
+		}
 		let rest = line
 		for (;;) {
 			const needed = current.length === 0 ? rest.length : rest.length + 1
-			if (needed <= budget() - length) {
-				add(rest)
+			if (needed <= lineBudget - length) {
+				pack(rest)
 				break
 			}
 			// A fresh chunk would fit it: start one. Otherwise the line itself is longer than a whole
@@ -125,13 +137,13 @@ export const cutMarkdown = (markdown: string, maxChars: number): Array<string> =
 			}
 			// At least one character, always: a budget small enough to leave no room would otherwise
 			// slice from the tail and repeat the line instead of advancing through it.
-			const room = Math.max(budget() - length - (current.length === 0 ? 0 : 1), 1)
-			add(rest.slice(0, room))
+			const room = Math.max(lineBudget - length - (current.length === 0 ? 0 : 1), 1)
+			pack(rest.slice(0, room))
 			rest = rest.slice(room)
 			flush()
 			if (rest.length === 0) break
 		}
-		if (isFence(line)) fence = fence === null ? line : null
+		if (!opens && isFence(line)) fence = null
 	}
 
 	flush()
@@ -141,3 +153,18 @@ export const cutMarkdown = (markdown: string, maxChars: number): Array<string> =
 const FENCE = "```"
 
 const isFence = (line: string): boolean => line.trimStart().startsWith(FENCE)
+
+/** An info string is at most this long once a cut has to repeat it at the top of every chunk. */
+const MAX_REOPENER_CHARS = 24
+
+/**
+ * What a cut reopens a fence with: the delimiter and its language, never the opening line itself.
+ *
+ * A model writing ```` ```json ```` followed by the payload ON THE SAME LINE opens a fence whose
+ * opener is longer than a whole message. Re-seeding every chunk with that line put each one over
+ * the budget, forever — the cut has to repeat the fence, not the content that shared its line.
+ */
+const reopener = (line: string): string => {
+	const info = line.trimStart().slice(FENCE.length).trim().split(/\s+/)[0] ?? ""
+	return `${FENCE}${info}`.slice(0, MAX_REOPENER_CHARS)
+}
