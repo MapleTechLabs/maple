@@ -12,15 +12,15 @@
  * is why it resolves the same `profileForTurn` label the toolkit is built from.
  */
 import {
-	APP_ORIGIN,
 	type ChatTurnOrigin,
 	ChatConnectorId,
+	ChatConversationKey,
 	connectorSessionId,
 } from "@maple/domain/chat-session"
 import { ExternalUserId, OrgId } from "@maple/domain/primitives"
 import { Effect, Schema } from "effect"
 import { afterEach, assert, beforeEach, describe, it } from "vitest"
-import { meterTurn, runChatSessionTurn } from "./turn-runner"
+import { meterTurn } from "./turn-runner"
 
 const ORG = "org_test"
 const INVESTIGATION = "0199a4d1-9f3c-7c8e-b2a1-3f5e7d9c1b40"
@@ -29,6 +29,8 @@ const orgId = Schema.decodeSync(OrgId)(ORG)
 
 /** An ordinary signed-in caller. Who drives a turn is its origin, never its user id. */
 const tenant = { orgId }
+
+const conversationKey = Schema.decodeSync(ChatConversationKey)("c1")
 
 const CONNECTOR_ORIGIN: ChatTurnOrigin = {
 	kind: "connector",
@@ -79,7 +81,7 @@ const meter = (
 	messageId: string,
 	input: number,
 	output: number,
-	origin: ChatTurnOrigin = APP_ORIGIN,
+	origin: ChatTurnOrigin = { kind: "app" },
 ) => Effect.runPromise(meterTurn(turn(sessionId, messageId), tenant, origin, { input, output }))
 
 const keysFor = (featureId: string) => tracked.filter((t) => t.featureId === featureId).map((t) => t.key)
@@ -162,7 +164,7 @@ describe("meterTurn", () => {
 		// Same features and the same org; the source is what separates a connector's spend from the
 		// in-app chat it shares this runner with. Built rather than spelled, so the tab format lives
 		// in one place.
-		const session = connectorSessionId(orgId, CONNECTOR_ORIGIN.connectorId, "w1", "994")
+		const session = connectorSessionId(orgId, CONNECTOR_ORIGIN.connectorId, conversationKey)
 		await meter(session, "msg-1", 1000, 100, CONNECTOR_ORIGIN)
 
 		assert.deepEqual(keysFor("ai_input_tokens"), [`${session}:msg-1:bot:input`])
@@ -231,43 +233,5 @@ describe("meterTurn", () => {
 
 		assert.isNotEmpty(signals)
 		for (const signal of signals) assert.instanceOf(signal, AbortSignal)
-	})
-})
-
-/**
- * The pairing refusal, on the real turn path.
- *
- * `runChatSessionTurn` checks it before it builds a runtime or meters anything, and rejects with
- * the domain's own error rather than swallowing it — `ChatSession.runTurn`'s catch is what records
- * the terminal event and logs the cause, so there is one place that does.
- */
-describe("runChatSessionTurn origin pairing", () => {
-	const stub = { holdsTurn: () => true, append: () => 1, history: () => [] }
-	const refuse = (sessionId: string, origin: ChatTurnOrigin) =>
-		runChatSessionTurn({
-			session: stub as never,
-			sessionId,
-			env,
-			messageId: "msg-1",
-			tenant: { orgId: ORG, userId: "u", roles: [], authMode: "self_hosted" },
-			origin,
-		}).then(
-			() => undefined,
-			(cause: { readonly _tag?: string }) => cause._tag,
-		)
-
-	it("refuses a connector turn pointed at an app conversation", async () => {
-		assert.equal(await refuse(`${ORG}:tab-1`, CONNECTOR_ORIGIN), "@maple/chat/ChatTurnOriginMismatch")
-		assert.isEmpty(tracked, "a refused turn must not be metered")
-	})
-
-	it("refuses an app turn posted into a connector conversation", async () => {
-		const session = connectorSessionId(orgId, CONNECTOR_ORIGIN.connectorId, "w1", "994")
-		assert.equal(await refuse(session, APP_ORIGIN), "@maple/chat/ChatTurnOriginMismatch")
-	})
-
-	it("refuses a connector driving another workspace's thread", async () => {
-		const session = connectorSessionId(orgId, CONNECTOR_ORIGIN.connectorId, "w2", "994")
-		assert.equal(await refuse(session, CONNECTOR_ORIGIN), "@maple/chat/ChatTurnOriginMismatch")
 	})
 })

@@ -41,7 +41,7 @@ import {
 	type ChatEvent,
 	type ChatEventInput,
 	type ChatMessage,
-	type ChatTurnOriginEncoded,
+	type ChatTurnOrigin,
 	type ChatTurnTenantEncoded,
 } from "@maple/domain/chat-session"
 import { type ChatSessionStub } from "@maple/domain/chat-session-stub"
@@ -349,7 +349,7 @@ export class ChatSession {
 		readonly text: string
 		readonly tenant: ChatTurnTenantEncoded
 		/** Optional only for deploy skew between Workers; `originForTurn` resolves a missing one. */
-		readonly origin?: ChatTurnOriginEncoded
+		readonly origin?: ChatTurnOrigin
 	}): { cursor: number; messageId: string } | undefined {
 		if (this.isRunning()) return undefined
 		const cursor = this.cursor()
@@ -449,7 +449,7 @@ export class ChatSession {
 		sessionId: string,
 		messageId: string,
 		tenant: ChatTurnTenantEncoded,
-		origin: ChatTurnOriginEncoded | undefined,
+		origin: ChatTurnOrigin | undefined,
 	): Promise<void> {
 		try {
 			const { runChatSessionTurn } = await import("./turn-runner")

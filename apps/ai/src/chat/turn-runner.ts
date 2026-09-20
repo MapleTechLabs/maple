@@ -23,10 +23,7 @@ import { MCP_ANTICIPATED_ERROR_IDENTIFIERS } from "../mcp/expected-failures"
 import {
 	ChatMessage,
 	type ChatTurnOrigin,
-	type ChatTurnOriginEncoded,
 	type ChatTurnTenantEncoded,
-	checkTurnOriginPairing,
-	decodeChatTurnOrigin,
 	decodeChatTurnTenant,
 	originForTurn,
 } from "@maple/domain/chat-session"
@@ -107,7 +104,7 @@ export interface RunChatSessionTurnInput {
 	readonly messageId: string
 	readonly tenant: ChatTurnTenantEncoded
 	/** Absent only from a caller that predates the field; see `originForTurn`. */
-	readonly origin?: ChatTurnOriginEncoded
+	readonly origin?: ChatTurnOrigin
 }
 
 /**
@@ -252,14 +249,7 @@ const investigationBilling = (
  * client reads, so a turn that dies without one is indistinguishable from a turn that hung.
  */
 export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promise<void> => {
-	const origin = decodeChatTurnOrigin(originForTurn(input.origin, input.tenant))
-	// Refused before any work: before a runtime exists to dispose, and before the turn can be
-	// metered. A connector thread is driven only by its own connector and workspace, and a
-	// connector cannot be pointed at an app conversation — downgrading either side would run the
-	// turn on one surface and file it under another. Thrown rather than handled here so
-	// `ChatSession.runTurn`'s catch records the terminal event and logs the real cause, once.
-	const mismatch = checkTurnOriginPairing(input.sessionId, origin)
-	if (mismatch !== undefined) throw mismatch
+	const origin = originForTurn(input.origin, input.tenant)
 
 	const [
 		{ InvestigationServicesLive },

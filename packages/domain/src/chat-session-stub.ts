@@ -14,7 +14,7 @@ import type {
 	ChatEvent,
 	ChatEventInput,
 	ChatMessage,
-	ChatTurnOriginEncoded,
+	ChatTurnOrigin,
 	ChatTurnTenantEncoded,
 } from "./chat-session"
 
@@ -48,7 +48,7 @@ export interface ChatSessionStub {
 		 * Who is driving the turn. Optional only for deploy skew — api, alerting and ai are separate
 		 * Workers, so an older caller keeps calling through a rollout. See `originForTurn`.
 		 */
-		readonly origin?: ChatTurnOriginEncoded
+		readonly origin?: ChatTurnOrigin
 	}) => Promise<{ cursor: number; messageId: string } | undefined>
 	readonly holdsTurn: (messageId: string) => Promise<boolean>
 	readonly endTurn: (messageId: string) => Promise<void>

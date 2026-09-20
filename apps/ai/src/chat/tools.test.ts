@@ -4,7 +4,7 @@
  * The tool and whether the run is an autonomous pass travel together: the turn runner closes a
  * pass out itself when `submitted()` stays false, and must never do that to a human follow-up.
  */
-import { APP_ORIGIN, AUTONOMOUS_ORIGIN, type ChatTurnOrigin } from "@maple/domain/chat-session"
+import type { ChatTurnOrigin } from "@maple/domain/chat-session"
 import { ChatConnectorId, ExternalUserId, OrgId, UserId } from "@maple/domain/primitives"
 import { Effect, Schema } from "effect"
 import { assert, describe, it } from "vitest"
@@ -40,15 +40,15 @@ const build = (sessionId: string, origin: ChatTurnOrigin) =>
 
 describe("buildDiagnosisCompletion", () => {
 	it("gives an ordinary conversation no completion at all", () => {
-		assert.isUndefined(build(`${orgId}:tab`, APP_ORIGIN))
+		assert.isUndefined(build(`${orgId}:tab`, { kind: "app" }))
 	})
 
 	it("gives a session whose inv- suffix is not an id no completion", () => {
-		assert.isUndefined(build(`${orgId}:inv-not-a-uuid`, APP_ORIGIN))
+		assert.isUndefined(build(`${orgId}:inv-not-a-uuid`, { kind: "app" }))
 	})
 
 	it("marks the autonomous investigation turn as one the runner must close out", () => {
-		const completion = build(INVESTIGATION_SESSION, AUTONOMOUS_ORIGIN)
+		const completion = build(INVESTIGATION_SESSION, { kind: "autonomous" })
 
 		assert.isDefined(completion?.toolkit)
 		assert.isTrue(completion?.autonomous)
@@ -60,7 +60,7 @@ describe("buildDiagnosisCompletion", () => {
 	 * a superseding diagnosis, but "what did you mean by the pool?" must be answerable in prose.
 	 */
 	it("offers the same tool to a human follow-up without treating it as a pass", () => {
-		const completion = build(INVESTIGATION_SESSION, APP_ORIGIN)
+		const completion = build(INVESTIGATION_SESSION, { kind: "app" })
 
 		assert.isDefined(completion?.toolkit)
 		assert.isFalse(completion?.autonomous)

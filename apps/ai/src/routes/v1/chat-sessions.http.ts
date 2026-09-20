@@ -193,9 +193,9 @@ export const ChatSessionsRouter = HttpRouter.use((router) =>
 				}
 
 				const messageId = crypto.randomUUID()
-				// Not `APP_ORIGIN` outright: this route also authenticates Maple's own service
-				// token, and the only thing distinguishing that caller here is the user id the auth
-				// layer stamps on it. `originForTurn` owns that read, so it stays in one place.
+				// Not `{ kind: "app" }` outright: this route also authenticates Maple's own service
+				// token, and the only thing distinguishing that caller is the user id the auth layer
+				// stamps on it. `originForTurn` owns that read, so it stays in one place.
 				const turnTenant = toChatTurnTenant(tenant)
 				// `beginTurn` claims the slot, records the user message AND starts the turn, all
 				// inside the Durable Object. This request answers in milliseconds and deliberately

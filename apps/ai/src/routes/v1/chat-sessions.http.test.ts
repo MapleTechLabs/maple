@@ -8,8 +8,8 @@ import { Env } from "@maple/backend/platform/Env"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
 import { AuthService } from "@maple/backend/services/auth/AuthService"
 import { ApiKeysService } from "@maple/backend/services/org/ApiKeysService"
-import { APP_ORIGIN, AUTONOMOUS_ORIGIN, connectorSessionId } from "@maple/domain/chat-session"
-import { ChatConnectorId } from "@maple/domain/primitives"
+import { connectorSessionId } from "@maple/domain/chat-session"
+import { ChatConnectorId, ChatConversationKey } from "@maple/domain/primitives"
 import { ChatSessionsRouter } from "./chat-sessions.http"
 
 const trackedDbs: TestDb[] = []
@@ -19,6 +19,7 @@ const ORG = Schema.decodeUnknownSync(OrgId)("org_chat")
 const USER = Schema.decodeUnknownSync(UserId)("user_chat")
 const INTERNAL_TOKEN = "chat-internal-service-token"
 const connectorId = Schema.decodeUnknownSync(ChatConnectorId)("testchat")
+const conversationKey = Schema.decodeUnknownSync(ChatConversationKey)("c1")
 const SESSION_PATH = `/api/chat/sessions/${encodeURIComponent(`${ORG}:quick`)}`
 
 const config = ConfigProvider.layer(
@@ -154,7 +155,7 @@ describe("ChatSessionsRouter", () => {
 				})
 				assert.strictEqual(response.status, 202)
 				assert.strictEqual(turns.length, 1)
-				assert.deepStrictEqual(turns[0]?.origin, AUTONOMOUS_ORIGIN)
+				assert.deepStrictEqual(turns[0]?.origin, { kind: "autonomous" })
 			}),
 		)
 	})
@@ -169,7 +170,7 @@ describe("ChatSessionsRouter", () => {
 				turns,
 				Effect.fnUntraced(function* (handler) {
 					yield* send(handler, { authorization: `Bearer ${key}` })
-					assert.deepStrictEqual(turns[0]?.origin, APP_ORIGIN)
+					assert.deepStrictEqual(turns[0]?.origin, { kind: "app" })
 				}),
 			)
 		})
@@ -190,7 +191,7 @@ describe("ChatSessionsRouter", () => {
 						handler(
 							new Request(
 								`http://api.localhost/api/chat/sessions/${encodeURIComponent(
-									connectorSessionId(ORG, connectorId, "w1", "994"),
+									connectorSessionId(ORG, connectorId, conversationKey),
 								)}/messages`,
 								{
 									method: "POST",

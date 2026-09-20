@@ -3,10 +3,9 @@
  * a turn, which is cheap to assert here and expensive to debug live.
  */
 import {
-	APP_ORIGIN,
-	AUTONOMOUS_ORIGIN,
 	type ChatTurnOrigin,
 	ChatConnectorId,
+	ChatConversationKey,
 	ChatMode,
 	connectorSessionId,
 	makeChatSessionId,
@@ -27,6 +26,7 @@ import { buildChatToolkit } from "./tools"
 
 /** A connector id, not a real one: the engine never learns which chat platform it answers in. */
 const CONNECTOR = Schema.decodeSync(ChatConnectorId)("testchat")
+const CONVERSATION = Schema.decodeSync(ChatConversationKey)("c1")
 
 const CONNECTOR_ORIGIN: ChatTurnOrigin = {
 	kind: "connector",
@@ -55,7 +55,7 @@ describe("agentForSession", () => {
 		assert.equal(agentForSession(makeChatSessionId("org_1", "inv-abc")).name, "investigate")
 		// A connector thread is an ordinary chat conversation; its ORIGIN is what differs.
 		assert.equal(
-			agentForSession(connectorSessionId(Schema.decodeSync(OrgId)("org_1"), CONNECTOR, "w1", "994"))
+			agentForSession(connectorSessionId(Schema.decodeSync(OrgId)("org_1"), CONNECTOR, CONVERSATION))
 				.name,
 			"default",
 		)
@@ -63,14 +63,13 @@ describe("agentForSession", () => {
 })
 
 /**
- * What a turn's ORIGIN decides. A connector answers in a channel anyone can post in: it proposes
- * mutations exactly as the app does — the approval is rendered by the connector rather than the
- * Maple UI — but it runs on a surface that is not internal, so the agents-only tools never enter
- * its catalog at all. The tests below are that boundary in both directions.
+ * What a turn's origin decides, through the toolkit a run actually builds. A connector proposes
+ * mutations exactly as the app does, but runs on a surface that is not internal — so the
+ * agents-only tools never enter its catalog. Both directions, so neither can pass vacuously.
  */
 describe("profileForTurn", () => {
 	const orgId = Schema.decodeSync(OrgId)("org_test")
-	const connectorSession = connectorSessionId(orgId, CONNECTOR, "w1", "994")
+	const connectorSession = connectorSessionId(orgId, CONNECTOR, CONVERSATION)
 	const appSession = makeChatSessionId(orgId, "tab")
 	const tenant: TenantContext = {
 		orgId,
@@ -90,15 +89,9 @@ describe("profileForTurn", () => {
 		}
 	}
 
-	it("spends an attended turn's budget on a connector thread, not the investigation rail", () => {
-		// The mode decides the budget, and a connector thread is a chat-mode conversation.
-		assert.strictEqual(agentForSession(connectorSession).budget, CHAT_BUDGET)
-	})
-
 	it("offers a connector every mutating tool, and proposes rather than performs each one", () => {
-		// `ask` is the whole of a proposal — it is what `run.ts`'s `isProposed` reads, and what makes
-		// the dispatched call refuse. The tool is still offered with its real schema, so the connector
-		// has the arguments to render for approval.
+		// `ask` is the whole of a proposal: `run.ts`'s `isProposed` reads it, the dispatched call
+		// refuses, and the schema the connector renders for approval is the real one.
 		const { profile, tools } = toolsFor(connectorSession, CONNECTOR_ORIGIN)
 		for (const name of MUTATING_TOOL_NAMES) {
 			assert.property(tools, name, `${name} was withheld from the connector`)
@@ -107,9 +100,8 @@ describe("profileForTurn", () => {
 	})
 
 	it("offers a connector no internal-audience tool, so a channel cannot reach the sandbox", () => {
-		// The reply lands wherever the thread is readable. `sandbox_exec` alone is code execution
-		// against the org's checkout, and nothing proposes it for approval first — which is why the
-		// audience boundary, not the ruleset, is what holds it back.
+		// `sandbox_exec` is code execution against the org's checkout, answering into a thread
+		// anyone can read, and nothing proposes it for approval first.
 		const { tools } = toolsFor(connectorSession, CONNECTOR_ORIGIN)
 		const internal = mapleToolCatalog.filter((definition) => definition.audience === "internal")
 		assert.isNotEmpty(internal, "no internal tools in the catalog — this test would pass vacuously")
@@ -126,24 +118,23 @@ describe("profileForTurn", () => {
 		}
 	})
 
+	it("leaves an app turn its own persona, surface and internal tools", () => {
+		const { profile, tools } = toolsFor(appSession, { kind: "app" })
+		assert.equal(profile.surface, "chat")
+		assert.equal(profile.prompt, AGENTS.default.prompt)
+		assert.property(tools, "sandbox_exec")
+	})
+
 	it("speaks the connector persona, not the in-app one that teaches a 420px panel", () => {
 		assert.equal(
 			profileForTurn(agentForSession(connectorSession), CONNECTOR_ORIGIN).prompt,
 			CONNECTOR_SYSTEM_PROMPT,
 		)
-		assert.equal(profileForTurn(agentForSession(appSession), APP_ORIGIN).prompt, AGENTS.default.prompt)
-	})
-
-	it("leaves an app turn its own persona, surface and internal tools", () => {
-		// The converse, so the connector guards cannot pass by treating every turn as a connector's.
-		const { profile, tools } = toolsFor(appSession, APP_ORIGIN)
-		assert.equal(profile.surface, "chat")
-		assert.property(tools, "sandbox_exec")
 	})
 
 	it("denies the autonomous pass its mutations while leaving it the internal tools", () => {
-		// Unchanged behaviour: the pass has no reader, so a gated tool is a wasted call.
-		const { profile, tools } = toolsFor(makeChatSessionId(orgId, "inv-abc"), AUTONOMOUS_ORIGIN)
+		// Unchanged: the pass has no reader, so a gated tool is a wasted call.
+		const { profile, tools } = toolsFor(makeChatSessionId(orgId, "inv-abc"), { kind: "autonomous" })
 		assert.equal(profile.surface, "chat")
 		assert.property(tools, "sandbox_exec")
 		for (const name of MUTATING_TOOL_NAMES) assert.notProperty(tools, name)

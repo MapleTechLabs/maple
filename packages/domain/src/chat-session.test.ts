@@ -2,19 +2,15 @@ import { Schema } from "effect"
 import { describe, expect, it } from "vitest"
 import { OrgId } from "./primitives"
 import {
-	APP_ORIGIN,
-	AUTONOMOUS_ORIGIN,
 	ChatConnectorId,
+	ChatConversationKey,
 	ChatTurnTenant,
-	checkTurnOriginPairing,
+	chatModeFromSessionId,
 	connectorSessionId,
 	connectorTurnTenant,
 	CONNECTOR_TENANT_USER_ID,
 	isConnectorSessionId,
 	originForTurn,
-	chatModeFromSessionId,
-	decodeChatTurnOrigin,
-	encodeChatTurnOrigin,
 	decodeChatTurnTenant,
 	encodeChatTurnTenant,
 	decodeChatEvent,
@@ -35,6 +31,7 @@ import {
 const orgId = Schema.decodeSync(OrgId)
 /** A connector id, not a real one: the domain never learns which chat platform it answers in. */
 const connectorId = Schema.decodeSync(ChatConnectorId)("testchat")
+const conversationKey = Schema.decodeSync(ChatConversationKey)("c1")
 
 describe("chat session ids", () => {
 	it("round-trips org and tab", () => {
@@ -63,36 +60,24 @@ describe("chat session ids", () => {
 		expect(chatModeFromSessionId("o:inv-123")).toBe("investigate")
 		// A connector thread is an ordinary chat conversation someone is answering in from
 		// elsewhere; what differs is the turn's origin, not the mode.
-		expect(chatModeFromSessionId("o:bot-testchat-w1-994")).toBe("default")
+		expect(chatModeFromSessionId("o:bot-testchat-c1")).toBe("default")
 	})
 
-	it("builds a connector thread's session id, org and prefix intact", () => {
-		const id = connectorSessionId(orgId("org_abc"), connectorId, "w1", "994")
-		expect(id).toBe("org_abc:bot-testchat-w1-994")
+	it("builds a connector conversation's session id, org and prefix intact", () => {
+		const id = connectorSessionId(orgId("org_abc"), connectorId, conversationKey)
+		expect(id).toBe("org_abc:bot-testchat-c1")
 		expect(isConnectorSessionId(id)).toBe(true)
 		expect(orgIdFromChatSessionId(id)).toBe("org_abc")
 		expect(isConnectorSessionId(makeChatSessionId("org_abc", "tab-1"))).toBe(false)
 	})
 
-	it("cannot let one workspace's thread spell another's session", () => {
-		// The collision the escape exists for: raw, ("a", "b-c") and ("a-b", "c") are the same tab.
-		const left = connectorSessionId(orgId("o"), connectorId, "a", "b-c")
-		const right = connectorSessionId(orgId("o"), connectorId, "a-b", "c")
-		expect(left).not.toBe(right)
-		// And the escape itself cannot be spelled by the input, because `%` is escaped first.
-		expect(connectorSessionId(orgId("o"), connectorId, "a%2Db", "c")).not.toBe(left)
-		expect(connectorSessionId(orgId("o"), connectorId, "a%2Db", "c")).not.toBe(right)
-	})
-
-	it("refuses a connector id that would blur the tab encoding", () => {
-		// The id sits between two dashes in `bot-<connector>-<thread>`, which is parsed by prefix, so
-		// a dash inside it would let one connector's thread id spell another's session — and land two
-		// conversations in the same Durable Object.
-		const decode = Schema.decodeUnknownSync(ChatConnectorId)
-		for (const bad of ["two-words", "Upper", "9lead", "has_underscore", ""]) {
+	it("refuses a conversation key that would blur the tab", () => {
+		// `-` is what the tab splits on; the rest is what a Durable Object name can carry.
+		const decode = Schema.decodeUnknownSync(ChatConversationKey)
+		for (const bad of ["has-dash", "has space", "", "a".repeat(129)]) {
 			expect(() => decode(bad), bad).toThrow()
 		}
-		expect(decode("testchat2")).toBe("testchat2")
+		expect(decode("C123.g:4_x")).toBe("C123.g:4_x")
 	})
 
 	it("recovers the investigation id only for investigate sessions", () => {
@@ -250,65 +235,14 @@ describe("ChatTurnTenant", () => {
 	})
 })
 
-describe("ChatTurnOrigin", () => {
-	const connector = {
-		kind: "connector" as const,
-		connectorId: "testchat",
-		workspaceId: "w1",
-		externalUserId: "u-1",
-		displayName: "Ada",
-	}
-
-	it("crosses the Durable Object boundary as a plain object", () => {
-		// Same constraint as `ChatTurnTenant`: DO RPC serializes with structured clone, which
-		// refuses class instances outright.
-		for (const origin of [APP_ORIGIN, AUTONOMOUS_ORIGIN, connector]) {
-			const encoded = encodeChatTurnOrigin(decodeChatTurnOrigin(origin))
-			expect(Object.getPrototypeOf(encoded)).toBe(Object.prototype)
-			expect(encoded).toStrictEqual(origin)
-		}
-	})
-
-	it("defaults a missing origin to `app`, and the investigation actor to `autonomous`", () => {
-		// Deploy skew only: api, alerting and ai are separate Workers, so a caller that predates
-		// the field keeps calling through a rollout. The pass must not silently become attended.
+describe("originForTurn", () => {
+	it("defaults a missing origin to `app`, and the legacy pass tenant to `autonomous`", () => {
+		// Compatibility only, for callers that predate the field. An explicit origin always wins,
+		// which is what lets this go away.
 		const app = { orgId: "org_1", userId: "user_1", roles: [], authMode: "self_hosted" } as const
 		const pass = { ...app, userId: "internal-service" } as const
-		expect(originForTurn(undefined, app)).toStrictEqual(APP_ORIGIN)
-		expect(originForTurn(undefined, pass)).toStrictEqual(AUTONOMOUS_ORIGIN)
-		// An explicit origin always wins, so the compatibility read disappears on its own.
-		expect(originForTurn(APP_ORIGIN, pass)).toStrictEqual(APP_ORIGIN)
-	})
-
-	it("refuses an origin and a session that disagree, in both directions", () => {
-		const connectorSession = connectorSessionId(orgId("o"), connectorId, "w1", "994")
-		const appSession = makeChatSessionId("o", "tab-1")
-
-		expect(checkTurnOriginPairing(connectorSession, connector)).toBeUndefined()
-		expect(checkTurnOriginPairing(appSession, APP_ORIGIN)).toBeUndefined()
-		expect(checkTurnOriginPairing(appSession, AUTONOMOUS_ORIGIN)).toBeUndefined()
-		// A connector must not be pointed at an app conversation, and an app caller must not post
-		// into a channel thread.
-		expect(checkTurnOriginPairing(appSession, connector)?._tag).toBe("@maple/chat/ChatTurnOriginMismatch")
-		expect(checkTurnOriginPairing(connectorSession, APP_ORIGIN)?._tag).toBe(
-			"@maple/chat/ChatTurnOriginMismatch",
-		)
-	})
-
-	it("refuses a connector driving another connector's or another workspace's thread", () => {
-		// The tab names both, and the origin carries both, so "is a connector thread" is not the
-		// guarantee — "is THIS connector's thread, in THIS workspace" is.
-		const session = connectorSessionId(orgId("o"), connectorId, "w1", "994")
-		const other = Schema.decodeSync(ChatConnectorId)("otherchat")
-
-		expect(checkTurnOriginPairing(session, { ...connector, connectorId: other })?._tag).toBe(
-			"@maple/chat/ChatTurnOriginMismatch",
-		)
-		expect(checkTurnOriginPairing(session, { ...connector, workspaceId: "w2" })?._tag).toBe(
-			"@maple/chat/ChatTurnOriginMismatch",
-		)
-		// A workspace whose escaped form is a prefix of another's must not pass either.
-		const wide = connectorSessionId(orgId("o"), connectorId, "w1-extra", "994")
-		expect(checkTurnOriginPairing(wide, connector)?._tag).toBe("@maple/chat/ChatTurnOriginMismatch")
+		expect(originForTurn(undefined, app)).toStrictEqual({ kind: "app" })
+		expect(originForTurn(undefined, pass)).toStrictEqual({ kind: "autonomous" })
+		expect(originForTurn({ kind: "app" }, pass)).toStrictEqual({ kind: "app" })
 	})
 })

@@ -6,14 +6,6 @@ import { DEFAULT_RULESET, READ_ONLY_RULESET } from "../../chat/permissions"
 import { profileForTurn } from "../../chat/profiles"
 import { CHAT_BUDGET } from "../../chat/budgets"
 
-const CONNECTOR_ORIGIN = {
-	kind: "connector",
-	connectorId: "testchat",
-	workspaceId: "w1",
-	externalUserId: "u-1",
-	displayName: "Ada",
-} as const
-
 describe("MUTATING_TOOL_NAMES", () => {
 	it("every approval-gated tool exists in the registry", () => {
 		const registered = new Set(mapleToolCatalog.map((d) => d.name))
@@ -99,8 +91,7 @@ describe("profileForTurn", () => {
 		permission: DEFAULT_RULESET,
 		budget: CHAT_BUDGET,
 	}
-	const rulesetFor = (kind: "app" | "autonomous" | "connector") =>
-		profileForTurn(agent, kind === "connector" ? CONNECTOR_ORIGIN : { kind }).ruleset
+	const rulesetFor = (kind: "app" | "autonomous") => profileForTurn(agent, { kind }).ruleset
 
 	it("offers an autonomous pass no mutating tool at all", () => {
 		for (const name of MUTATING_TOOL_NAMES) {
@@ -111,12 +102,6 @@ describe("profileForTurn", () => {
 	it("still gates rather than denies them for an attended turn", () => {
 		for (const name of MUTATING_TOOL_NAMES) {
 			expect(evaluatePermission(rulesetFor("app"), name), name).toBe("ask")
-		}
-	})
-
-	it("gates rather than denies for a connector turn, which proposes into the thread", () => {
-		for (const name of MUTATING_TOOL_NAMES) {
-			expect(evaluatePermission(rulesetFor("connector"), name), name).toBe("ask")
 		}
 	})
 
