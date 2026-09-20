@@ -31,6 +31,7 @@ import { PullRequestLookupLive } from "@maple/backend/services/errors/pull-reque
 import { IssueFixVerificationService } from "@maple/backend/services/errors/IssueFixVerificationService"
 import { ErrorPolicyService } from "@maple/backend/services/errors/ErrorPolicyService"
 import { ErrorsService } from "@maple/backend/services/errors/ErrorsService"
+import { IncidentClassifier } from "@maple/backend/services/errors/IncidentClassifier"
 import { InvestigationService } from "@maple/backend/services/errors/InvestigationService"
 import { RecommendationIssueService } from "@maple/backend/services/errors/RecommendationIssueService"
 import { CloudflareAnalyticsService } from "@maple/backend/services/integrations/CloudflareAnalyticsService"
@@ -115,6 +116,9 @@ export const HttpServicesLive = Layer.mergeAll(
 	ErrorPolicyService.layer,
 	ErrorIssueReadModelsService.layer,
 	ErrorsService.layer,
+	// The investigation gate's classifier, for the alert path that opens
+	// incidents from a request. Read optionally by `maybeEnqueueTriage`.
+	IncidentClassifier.layer,
 	IssueFixVerificationService.layer,
 	RecommendationIssueService.layer,
 	SetupAuditService.layer,
