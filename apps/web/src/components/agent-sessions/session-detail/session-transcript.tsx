@@ -159,8 +159,9 @@ export function SessionTranscript({
 				if (speaker !== undefined && speaker.depth === row.depth && speaker.model === model) {
 					keys.add(row.key)
 				}
-				// A failure breaks the run: the reply after it is a fresh start.
-				speaker = row.failed ? undefined : { depth: row.depth, model }
+				// A failure breaks the run: the reply after it is a fresh start. So
+				// does a call that names no model — two unknowns are not one speaker.
+				speaker = row.failed || model === undefined ? undefined : { depth: row.depth, model }
 			} else if (row.kind !== "tool" && row.kind !== "thinking" && row.kind !== "structure") {
 				speaker = undefined
 			}
@@ -1171,8 +1172,12 @@ function ParallelRule({ label, range }: { label: string; range: string }) {
 	return (
 		<div className="flex items-center gap-2 py-1.5 text-muted-foreground">
 			<BranchForkIcon size={12} className="shrink-0" />
-			<span className={LABEL}>{label}</span>
-			<span className={META}>{range}</span>
+			{/* The label joins agent names, which are emitter input: it truncates
+			    rather than widening the page. */}
+			<span className="min-w-0 truncate font-medium text-xs" title={label}>
+				{label}
+			</span>
+			<span className={cn(META, "shrink-0")}>{range}</span>
 			<span aria-hidden className="h-px min-w-6 grow bg-border/60" />
 		</div>
 	)
