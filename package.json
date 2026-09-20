@@ -90,7 +90,6 @@
 		},
 		"effect": {
 			"@effect/ai-openai-compat": "4.0.0-rc.116",
-			"@effect/ai-typesafe": "4.0.0-rc.116",
 			"@effect/ai-openrouter": "4.0.0-rc.116",
 			"@effect/atom-react": "4.0.0-rc.116",
 			"@effect/language-service": "^0.87.2",

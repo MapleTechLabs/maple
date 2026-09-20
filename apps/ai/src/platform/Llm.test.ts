@@ -559,11 +559,12 @@ describe("streamed completion — a stream that ends without a usage block", () 
 /**
  * The decision model's own transport check.
  *
- * Jev is a second provider with a second credential, and the only honest way to check that the
- * key, the model id and the questions all reach it is to watch what leaves.
+ * Jev is served from a different endpoint than chat completions, and the only honest way to check
+ * that the model id, the questions and the OpenRouter credential all reach it is to watch what
+ * leaves.
  */
-describe("layerDecisionModel — Jev transport", () => {
-	const sentiment = Decision.make({
+describe("layerDecisionModel — Jev over OpenRouter", () => {
+	const ticket = Decision.make({
 		input: Schema.Struct({ message: Schema.String }),
 		decisions: {
 			department: Decision.classify({
@@ -591,9 +592,9 @@ describe("layerDecisionModel — Jev transport", () => {
 				return new Response(JSON.stringify({ error: "captured" }), { status: 400 })
 			}
 
-			yield* DecisionModel.decide(sentiment, { input: { message: "refund me" } }).pipe(
+			yield* DecisionModel.decide(ticket, { input: { message: "refund me" } }).pipe(
 				Effect.ignore,
-				Effect.provide(layerDecisionModel(env)),
+				Effect.provide(Layer.provide(layerDecisionModel(env), layerLlm(env))),
 				Effect.provideService(FetchHttpClient.Fetch, fakeFetch),
 			)
 
@@ -601,12 +602,13 @@ describe("layerDecisionModel — Jev transport", () => {
 			return captured
 		})
 
-	it.live("posts the configured model and the decision's questions to TypeSafe", () =>
+	it.live("posts the configured model and the decision's questions to the decisions endpoint", () =>
 		Effect.gen(function* () {
-			const captured = yield* captureDecision({ TYPESAFE_API_KEY: "ts-test-key" })
+			const captured = yield* captureDecision(openRouterEnv)
 
-			assert.strictEqual(captured.url, "https://api.typesafe.ai/v1/systemone")
-			assert.strictEqual(captured.headers.authorization, "Bearer ts-test-key")
+			// Not `/v1/decisions`: the alpha endpoint sits beside the versioned API, not under it.
+			assert.strictEqual(captured.url, "https://openrouter.ai/api/alpha/decisions")
+			assert.strictEqual(captured.headers.authorization, "Bearer test-key")
 			assert.strictEqual(captured.body.model, DEFAULT_DECISION_MODEL)
 			assert.deepStrictEqual(captured.body.questions, {
 				department: {
@@ -617,13 +619,21 @@ describe("layerDecisionModel — Jev transport", () => {
 			})
 		}))
 
+	it.live("carries the same app attribution as a model call", () =>
+		Effect.gen(function* () {
+			const captured = yield* captureDecision(openRouterEnv)
+
+			assert.strictEqual(captured.headers["http-referer"], "https://maple.dev")
+			assert.strictEqual(captured.headers["x-title"], "Maple")
+		}))
+
 	it.live("takes the model id from the environment", () =>
 		Effect.gen(function* () {
 			const captured = yield* captureDecision({
-				TYPESAFE_API_KEY: "ts-test-key",
-				MAPLE_DECISION_MODEL: "jev-preview",
+				...openRouterEnv,
+				MAPLE_DECISION_MODEL: "typesafe/jev-1.13",
 			})
 
-			assert.strictEqual(captured.body.model, "jev-preview")
+			assert.strictEqual(captured.body.model, "typesafe/jev-1.13")
 		}))
 })

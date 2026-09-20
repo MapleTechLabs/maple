@@ -107,10 +107,9 @@ const configuredEnv = (stage: MapleStage) =>
 		optionalPlain("MAPLE_TRIAGE_MODEL_OPENROUTER"),
 		optionalPlain("MAPLE_TRIAGE_MODEL_WORKERS_AI"),
 		optionalSecret("OPENROUTER_API_KEY"),
-		// The decision model (Jev) is a second provider with its own credential; the
-		// agent surfaces reach it through `layerDecisionModel`.
+		// The decision model (Jev) rides the same OpenRouter key, on OpenRouter's
+		// separate decisions endpoint. See `layerDecisionModel` in `@/platform/Llm`.
 		optionalPlain("MAPLE_DECISION_MODEL"),
-		optionalSecret("TYPESAFE_API_KEY"),
 		// The chat agent authenticates to `/mcp` as an internal caller.
 		optionalSecret("INTERNAL_SERVICE_TOKEN"),
 		// The source and sandbox tools resolve a connected repository through the

@@ -33,7 +33,6 @@
         "@effect-agent/sandbox": "0.1.0-beta.85",
         "@effect/ai-openai-compat": "catalog:effect",
         "@effect/ai-openrouter": "catalog:effect",
-        "@effect/ai-typesafe": "catalog:effect",
         "@maple-dev/effect-sdk": "workspace:*",
         "@maple/agent-sessions": "workspace:*",
         "@maple/backend": "workspace:*",
@@ -917,7 +916,6 @@
     "effect": {
       "@effect/ai-openai-compat": "4.0.0-rc.116",
       "@effect/ai-openrouter": "4.0.0-rc.116",
-      "@effect/ai-typesafe": "4.0.0-rc.116",
       "@effect/atom-react": "4.0.0-rc.116",
       "@effect/language-service": "^0.87.2",
       "@effect/platform-bun": "4.0.0-rc.116",
@@ -1220,8 +1218,6 @@
     "@effect/ai-openai-compat": ["@effect/ai-openai-compat@4.0.0-rc.116", "", { "peerDependencies": { "effect": "^4.0.0-rc.116" } }, "sha512-9gYbiqpmfH6kQX/DU99yslov+wLFjs1D4Cm3Fa1m3fCgW/vplqGv/WbXSQUeoMdrQAFfG56BpJxqJ+94OSldAw=="],
 
     "@effect/ai-openrouter": ["@effect/ai-openrouter@4.0.0-rc.116", "", { "peerDependencies": { "effect": "^4.0.0-rc.116" } }, "sha512-V99cwtWwBpDncdQNG1TXgsqYb6314MlgZ4gtt4Qt9apRqZK5Bjf7bgvzFYwT5Snku8NXYXwelGiF6hzvHrdVlg=="],
-
-    "@effect/ai-typesafe": ["@effect/ai-typesafe@4.0.0-rc.116", "", { "peerDependencies": { "effect": "^4.0.0-rc.116" } }, "sha512-yk3PFGCwAHajpTVs7VkCbywgCxbVWDFm90mxjRkTktQZcET8qkenZbNf576V3aWHuKKfp1kDfsWNLdxd/345UA=="],
 
     "@effect/atom-react": ["@effect/atom-react@4.0.0-rc.116", "", { "peerDependencies": { "effect": "^4.0.0-rc.116", "react": ">=19.0.0 <20.0.0", "scheduler": ">=0.25.0 <0.28.0" } }, "sha512-Kk5tEw0U5PoAcUaELWwQ34wuCVyLFZsjyyRePSIh3hL6rjORLamPfigJ8xDqYZS3CJg8HMtbND1eVethv404Jw=="],
 
@@ -5242,8 +5238,6 @@
     "hast-util-raw/parse5/entities": ["entities@6.0.1", "", {}, "sha512-aN97NXWF6AWBTahfVOIrB/NShkzi5H7F9r1s9mD3cDj4Ko5f2qhhVoYMibXF7GlLveb/D2ioWay8lxI97Ven3g=="],
 
     "ink-confirm-input/ink-text-input/chalk": ["chalk@3.0.0", "", { "dependencies": { "ansi-styles": "^4.1.0", "supports-color": "^7.1.0" } }, "sha512-4D3B6Wf41KOYRFdszmDqMCGq5VV/uMAB273JILmO+3jAlh8X4qDtdtgCR3fxtbLEMzSx22QdhnDcJvu2u1fVwg=="],
-
-    "ink-confirm-input/ink-text-input/react": ["react@19.2.8", "", {}, "sha512-PWaYA1L/q9u2u7xYQi+Y3L3Yfnie7XyLeaJICV1MGD6LprsBxcAqGjYyr0eY3p+QdsA+x/Irkt4Qif8D63+Sbw=="],
 
     "jest-worker/@types/node/undici-types": ["undici-types@8.3.0", "", {}, "sha512-j375ScV60dom+YkPFIfTLcOiPxkN/buHz5GobjLhixFuANaNs3C9l4GmrWqejgXWJ7BbJcFYpTEUkS1Ge8bpZQ=="],
 

@@ -11,8 +11,7 @@
  * `/chat/completions`, which is what lets one shim serve the binding path.
  */
 import { OpenAiClient, OpenAiLanguageModel } from "@effect/ai-openai-compat"
-import { OpenRouterClient, OpenRouterLanguageModel } from "@effect/ai-openrouter"
-import { TypeSafeClient, TypeSafeDecisionModel } from "@effect/ai-typesafe"
+import { OpenRouterClient, OpenRouterDecisionModel, OpenRouterLanguageModel } from "@effect/ai-openrouter"
 import { MAPLE_NATIVE_SESSION_ID_ATTR, MAPLE_NATIVE_TURN_ID_ATTR } from "@maple/domain/gen-ai"
 import { Effect, Layer, Option, Redacted, Schema } from "effect"
 import type * as DecisionModel from "effect/unstable/ai/DecisionModel"
@@ -26,13 +25,16 @@ import { layerWorkersAi } from "./WorkersAiHttpClient"
 export const DEFAULT_OPENROUTER_MODEL = "z-ai/glm-5.3-flash:nitro"
 
 /**
- * Default decision model: TypeSafe's Jev.
+ * Default decision model: TypeSafe's Jev, reached through OpenRouter.
  *
  * A decision model answers a bounded question — pick one of these labels, rate this, how likely is
  * that — and returns the whole distribution. It is not a language model and does not replace one:
  * it is what a gate should ask when the answer is a choice rather than prose.
+ *
+ * The `~` alias tracks the latest Jev; `typesafe/jev-1.13` pins one, through
+ * `MAPLE_DECISION_MODEL`, if a gate ever needs a fixed judge.
  */
-export const DEFAULT_DECISION_MODEL = "jev-latest"
+export const DEFAULT_DECISION_MODEL = "~typesafe/jev-latest"
 
 /**
  * OpenRouter app attribution. `HTTP-Referer` is the header that actually creates the app page — a
@@ -111,8 +113,6 @@ export interface LlmEnv extends Record<string, unknown> {
 	/** `low` | `medium` | `high` | `off`. See {@link ReasoningEffort}. */
 	readonly MAPLE_TRIAGE_REASONING_EFFORT?: string
 	readonly OPENROUTER_API_KEY?: string
-	/** TypeSafe's own credential, for the decision model — not an LLM provider key. */
-	readonly TYPESAFE_API_KEY?: string
 	/** Decision model id, overriding {@link DEFAULT_DECISION_MODEL}. */
 	readonly MAPLE_DECISION_MODEL?: string
 }
@@ -432,19 +432,16 @@ export const layerLlm = (env: LlmEnv): Layer.Layer<LlmClients> => {
 }
 
 /**
- * The decision model, as its own stack.
+ * The decision model, over the same OpenRouter client as everything else.
  *
- * Separate from {@link layerLlm} because it answers a different question through a different
- * provider: no OpenRouter attribution, no Workers AI shim, and a failure to configure it must not
- * take the language model down with it. An absent `TYPESAFE_API_KEY` builds the same way and fails
- * at the first decision, which is where the missing credential is legible.
+ * OpenRouter serves Jev from a separate endpoint (`/alpha/decisions`, not chat completions), which
+ * is why this is its own layer rather than another entry in {@link resolveTriageModel}. It is not
+ * its own provider though: one key, one set of app-attribution headers, and decision spend lands in
+ * the same account as model spend. `layerLlm` answers the client it requires.
  */
-export const layerDecisionModel = (env: LlmEnv): Layer.Layer<DecisionModel.DecisionModel> =>
-	TypeSafeDecisionModel.layer({
+export const layerDecisionModel = (
+	env: LlmEnv,
+): Layer.Layer<DecisionModel.DecisionModel, never, OpenRouterClient.OpenRouterClient> =>
+	OpenRouterDecisionModel.layer({
 		model: readString(env, "MAPLE_DECISION_MODEL") ?? DEFAULT_DECISION_MODEL,
-	}).pipe(
-		Layer.provide(
-			TypeSafeClient.layer({ apiKey: Redacted.make(readString(env, "TYPESAFE_API_KEY") ?? "") }),
-		),
-		Layer.provide(FetchHttpClient.layer),
-	)
+	})

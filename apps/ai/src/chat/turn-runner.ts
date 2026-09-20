@@ -257,8 +257,10 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 
 	const runtime = ManagedRuntime.make(
 		InvestigationServicesLive.pipe(
-			Layer.provideMerge(layerLlm(input.env)),
+			// Decisions before the clients: `layerLlm` is what answers the OpenRouter
+			// client the decision model runs on.
 			Layer.provideMerge(layerDecisionModel(input.env)),
+			Layer.provideMerge(layerLlm(input.env)),
 			Layer.provideMerge(layerPg),
 			Layer.provideMerge(mapleDbConnectionLayer(input.env)),
 			Layer.provideMerge(workerEnvLayer(input.env)),
