@@ -8,6 +8,8 @@ import { Env } from "@maple/backend/platform/Env"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
 import { AuthService } from "@maple/backend/services/auth/AuthService"
 import { ApiKeysService } from "@maple/backend/services/org/ApiKeysService"
+import { APP_ORIGIN, AUTONOMOUS_ORIGIN, connectorSessionId } from "@maple/domain/chat-session"
+import { ChatConnectorId } from "@maple/domain/primitives"
 import { ChatSessionsRouter } from "./chat-sessions.http"
 
 const trackedDbs: TestDb[] = []
@@ -16,6 +18,7 @@ afterEach(() => cleanupTestDbs(trackedDbs))
 const ORG = Schema.decodeUnknownSync(OrgId)("org_chat")
 const USER = Schema.decodeUnknownSync(UserId)("user_chat")
 const INTERNAL_TOKEN = "chat-internal-service-token"
+const connectorId = Schema.decodeUnknownSync(ChatConnectorId)("testchat")
 const SESSION_PATH = `/api/chat/sessions/${encodeURIComponent(`${ORG}:quick`)}`
 
 const config = ConfigProvider.layer(
@@ -135,7 +138,10 @@ describe("ChatSessionsRouter", () => {
 		})
 	})
 
-	it.effect("starts a turn for an internal-service caller", () => {
+	it.effect("starts a turn for an internal-service caller, as the autonomous pass", () => {
+		// This route authenticates Maple's own service token, and that caller on an investigation
+		// session IS the pass. Stamping `app` on it would hand it the attended ruleset and stop the
+		// runner closing the pass out.
 		const testDb = createTestDb(trackedDbs)
 		const turns: Array<BeginTurnInput> = []
 		return withHandler(
@@ -148,8 +154,60 @@ describe("ChatSessionsRouter", () => {
 				})
 				assert.strictEqual(response.status, 202)
 				assert.strictEqual(turns.length, 1)
+				assert.deepStrictEqual(turns[0]?.origin, AUTONOMOUS_ORIGIN)
 			}),
 		)
+	})
+
+	it.effect("stamps an ordinary caller's turn as `app`", () => {
+		const testDb = createTestDb(trackedDbs)
+		const turns: Array<BeginTurnInput> = []
+		return Effect.gen(function* () {
+			const key = yield* mintApiKey(testDb)
+			yield* withHandler(
+				testDb,
+				turns,
+				Effect.fnUntraced(function* (handler) {
+					yield* send(handler, { authorization: `Bearer ${key}` })
+					assert.deepStrictEqual(turns[0]?.origin, APP_ORIGIN)
+				}),
+			)
+		})
+	})
+
+	it.effect("refuses to post into a connector conversation", () => {
+		// Any member of the org could otherwise drop a message into a channel thread and have the
+		// answer metered as the connector, with nobody in the channel expecting it.
+		const testDb = createTestDb(trackedDbs)
+		const turns: Array<BeginTurnInput> = []
+		return Effect.gen(function* () {
+			const key = yield* mintApiKey(testDb)
+			yield* withHandler(
+				testDb,
+				turns,
+				Effect.fnUntraced(function* (handler) {
+					const response = yield* Effect.promise(() =>
+						handler(
+							new Request(
+								`http://api.localhost/api/chat/sessions/${encodeURIComponent(
+									connectorSessionId(ORG, connectorId, "w1", "994"),
+								)}/messages`,
+								{
+									method: "POST",
+									headers: {
+										"content-type": "application/json",
+										authorization: `Bearer ${key}`,
+									},
+									body: JSON.stringify({ text: "hello" }),
+								},
+							),
+						),
+					)
+					assert.strictEqual(response.status, 403)
+					assert.strictEqual(turns.length, 0)
+				}),
+			)
+		})
 	})
 
 	it.effect("answers 401, never 500, to a credential nobody issued", () => {
