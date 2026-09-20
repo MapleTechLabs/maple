@@ -35,6 +35,15 @@ export const AuditResources = {
 		prefix: PublicIdPrefixes.dashboard,
 		verbs: ["created", "updated", "deleted", "version_restored"],
 	},
+	/**
+	 * Chat workspaces linked to the org. `install_started` is the admin action
+	 * Maple sees; the platform's callback completes the link. `metadata` names
+	 * the connector — the platform is a value here, never part of the action.
+	 */
+	chat_integration: {
+		prefix: PublicIdPrefixes.chatWorkspace,
+		verbs: ["install_started", "settings_updated", "uninstalled"],
+	},
 	dashboard_share: { prefix: PublicIdPrefixes.dashboardShare, verbs: ["created", "rotated", "deleted"] },
 	/** Verbs mirror the issue event types — `recordEvent` audits every one it attributes. */
 	error_issue: { prefix: PublicIdPrefixes.errorIssue, verbs: ErrorIssueEventType.literals },

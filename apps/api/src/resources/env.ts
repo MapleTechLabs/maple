@@ -10,6 +10,7 @@
  * optional-omit rule, the PR-preview exclusions and the `derived` values the
  * environment must not override.
  */
+import { chatConnectorConfigNames } from "@maple/chat-platform"
 import type { MapleDomains, MapleStage } from "@maple/infra/cloudflare"
 import {
 	apnsEnv,
@@ -89,6 +90,10 @@ export const apiConfiguredEnv = (stage: MapleStage, domains: MapleDomains) =>
 		optionalPlain("HAZEL_OAUTH_CLIENT_ID"),
 		optionalSecret("HAZEL_OAUTH_CLIENT_SECRET"),
 		optionalPlain("HAZEL_OAUTH_SCOPES"),
+		// Chat connectors bind the config each one declares; the names live in the
+		// connector directory, and an unset one just reports that connector
+		// unavailable. Secrets, so a client id is never printed in a plan either.
+		...chatConnectorConfigNames.map(optionalSecret),
 		// Slack integration (bot install via OAuth v2)
 		optionalPlain("SLACK_CLIENT_ID"),
 		optionalSecret("SLACK_CLIENT_SECRET"),

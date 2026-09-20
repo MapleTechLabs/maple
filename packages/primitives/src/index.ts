@@ -113,6 +113,21 @@ export type AlertDeliveryEventId = Schema.Schema.Type<typeof AlertDeliveryEventI
 export const MobileDeviceId = MapleUuidId("@maple/MobileDeviceId", "Mobile Device ID")
 export type MobileDeviceId = Schema.Schema.Type<typeof MobileDeviceId>
 
+export const ChatWorkspaceId = MapleUuidId("@maple/ChatWorkspaceId", "Chat Workspace ID")
+export type ChatWorkspaceId = Schema.Schema.Type<typeof ChatWorkspaceId>
+
+/**
+ * Identifies one chat-platform connector. Lowercase alphanumerics only: the id
+ * appears in URL paths, in a stored column and as a directory name, and keeping
+ * the alphabet that narrow means no escaping or separator convention has to be
+ * agreed between them.
+ */
+export const ChatConnectorId = Schema.String.check(Schema.isPattern(/^[a-z0-9]+$/)).pipe(
+	Schema.brand("@maple/ChatConnectorId"),
+	Schema.annotate({ identifier: "@maple/ChatConnectorId", title: "Chat Connector ID" }),
+)
+export type ChatConnectorId = Schema.Schema.Type<typeof ChatConnectorId>
+
 export const ErrorIssueId = MapleUuidId("@maple/ErrorIssueId", "Error Issue ID")
 export type ErrorIssueId = Schema.Schema.Type<typeof ErrorIssueId>
 
