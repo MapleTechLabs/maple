@@ -79,6 +79,8 @@ export interface BuildMapleToolsOptions {
 	 * agent passes pass `"workflow"` so the two are separable in traces despite sharing this builder.
 	 */
 	readonly surface?: McpToolSurface
+	/** The agent-session identity of the run, stamped on every tool span — see `withToolCallContent`. */
+	readonly sessionAttributes?: Readonly<Record<string, string>>
 }
 
 /**
@@ -190,7 +192,13 @@ export const buildMapleToolkit = (
 				(params: unknown) =>
 					withToolCallContent(
 						Effect.suspend(() => handle(params)),
-						{ description: describe(definition, gated), params },
+						{
+							description: describe(definition, gated),
+							params,
+							...(options.sessionAttributes === undefined
+								? undefined
+								: { sessionAttributes: options.sessionAttributes }),
+						},
 					),
 			]
 			// A dynamic tool's shape is known only at runtime, so the model's arguments arrive
