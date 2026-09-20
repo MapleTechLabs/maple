@@ -123,6 +123,7 @@ const errorTick = makeTick(
 		issuesArchived: result.issuesArchived,
 		issuesDeleted: result.issuesDeleted,
 		retentionRan: result.retentionRan,
+		investigationsAbandoned: result.investigationsAbandoned,
 	}),
 )
 
