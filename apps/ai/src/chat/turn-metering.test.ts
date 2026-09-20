@@ -20,7 +20,7 @@ import {
 import { ExternalUserId, OrgId } from "@maple/domain/primitives"
 import { Effect, Schema } from "effect"
 import { afterEach, assert, beforeEach, describe, it } from "vitest"
-import { meterTurn } from "./turn-runner"
+import { meterTurn, runChatSessionTurn } from "./turn-runner"
 
 const ORG = "org_test"
 const INVESTIGATION = "0199a4d1-9f3c-7c8e-b2a1-3f5e7d9c1b40"
@@ -230,5 +230,62 @@ describe("meterTurn", () => {
 
 		assert.isNotEmpty(signals)
 		for (const signal of signals) assert.instanceOf(signal, AbortSignal)
+	})
+})
+
+/**
+ * The pairing refusal, on the real turn path.
+ *
+ * `runChatSessionTurn` checks it before it builds a runtime or meters anything, so a mismatch
+ * costs a terminal event and nothing else. Reached here with a session whose org is not a real
+ * one, which is enough: the refusal happens before any service is resolved.
+ */
+describe("runChatSessionTurn origin pairing", () => {
+	const session = () => {
+		const events: Array<{ readonly type: string; readonly reason?: string }> = []
+		return {
+			events,
+			holdsTurn: () => true,
+			append: (event: { readonly type: string; readonly reason?: string }) => {
+				events.push(event)
+				return events.length
+			},
+			history: () => [],
+		}
+	}
+
+	it("refuses a connector turn pointed at an app conversation", async () => {
+		const stub = session()
+		await runChatSessionTurn({
+			session: stub as never,
+			sessionId: `${ORG}:tab-1`,
+			env,
+			messageId: "msg-1",
+			tenant: { orgId: ORG, userId: "u", roles: [], authMode: "self_hosted" },
+			origin: CONNECTOR_ORIGIN,
+		})
+
+		assert.deepEqual(
+			stub.events.map((event) => [event.type, event.reason]),
+			[["turn-end", "error"]],
+		)
+		assert.isEmpty(tracked, "a refused turn must not be metered")
+	})
+
+	it("refuses an app turn posted into a connector conversation", async () => {
+		const stub = session()
+		await runChatSessionTurn({
+			session: stub as never,
+			sessionId: connectorSessionId(orgId, CONNECTOR_ORIGIN.connectorId, "w1", "994"),
+			env,
+			messageId: "msg-1",
+			tenant: { orgId: ORG, userId: "u", roles: [], authMode: "self_hosted" },
+			origin: APP_ORIGIN,
+		})
+
+		assert.deepEqual(
+			stub.events.map((event) => [event.type, event.reason]),
+			[["turn-end", "error"]],
+		)
 	})
 })

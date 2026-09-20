@@ -25,6 +25,7 @@ import {
 	type ChatTurnOrigin,
 	type ChatTurnOriginEncoded,
 	type ChatTurnTenantEncoded,
+	checkTurnOriginPairing,
 	decodeChatTurnOrigin,
 	decodeChatTurnTenant,
 	originForTurn,
@@ -251,6 +252,27 @@ const investigationBilling = (
  * client reads, so a turn that dies without one is indistinguishable from a turn that hung.
  */
 export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promise<void> => {
+	const origin = decodeChatTurnOrigin(originForTurn(input.origin, input.tenant))
+	// Refused before any work, and before the turn is metered: a connector thread is driven only by
+	// its connector, and a connector cannot be pointed at an app conversation. Downgrading either
+	// side would run the turn on one surface and file it under another.
+	const mismatch = checkTurnOriginPairing(input.sessionId, origin)
+	if (mismatch !== undefined) {
+		console.error("[chat.turn] Refused a turn whose origin and session disagree", {
+			sessionId: mismatch.sessionId,
+			originKind: mismatch.originKind,
+		})
+		if (input.session.holdsTurn(input.messageId)) {
+			input.session.append({
+				type: "turn-end",
+				messageId: input.messageId,
+				reason: "error",
+				error: CHAT_TURN_FAILED,
+			})
+		}
+		return
+	}
+
 	const [
 		{ InvestigationServicesLive },
 		{ layerPg },
@@ -279,7 +301,6 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 	)
 
 	const tenant = toTenantContext(input.tenant)
-	const origin = decodeChatTurnOrigin(originForTurn(input.origin, input.tenant))
 	// One answer for the model's tags and the turn span, the same one the toolkit is built from.
 	// `meterTurn` resolves its own because it runs as a finalizer and is separately exported.
 	const surface = profileForTurn(agentForSession(input.sessionId), origin).label
