@@ -39,6 +39,29 @@ const MAX_POINTS_PER_SERIES = 60
 const MAX_RANKED_BARS = 12
 
 /**
+ * Series carried, before the renderer picks the five it draws.
+ *
+ * Above `MAX_PLOT_SERIES` so the card's "+N more" still has something to
+ * count, and bounded at all because a fence names its series rather than
+ * declaring them: one row with four hundred keys is four hundred series.
+ */
+const MAX_SERIES = 12
+
+/**
+ * A value in the renderer's unit, or `null` when scaling took it off the number
+ * line.
+ *
+ * `ChartSpec` checks finiteness *before* scaling, and scaling can undo it — a
+ * fence in seconds near the top of the double range is `Infinity` in
+ * milliseconds. Past here a non-finite number is a JSON `null` on the wire and
+ * a NaN coordinate in the plot, so the point is dropped instead of drawn.
+ */
+const scaled = (value: number, scale: number): number | null => {
+	const result = value * scale
+	return Number.isFinite(result) ? result : null
+}
+
+/**
  * The public URL of one chart inside one reply, or `null` when this deployment
  * cannot sign one.
  *
@@ -105,10 +128,16 @@ export const chatChartFrom = (
 	return spec === null ? null : chatChartResponse(spec)
 }
 
+/** How big a series draws, which is how it earns one of the {@link MAX_SERIES} slots. */
+const peak = (points: ReadonlyArray<ChartPoint>): number =>
+	points.reduce((max, [, value]) => Math.max(max, Math.abs(value)), 0)
+
 /**
- * `{ bucket, series: { … } }` rows turned inside out: one entry per series
- * name, in the order the rows first name them, so a legend reads the way the
- * model wrote it.
+ * `{ bucket, series: { … } }` rows turned inside out: one entry per series name.
+ *
+ * Biggest first, matching how the renderer picks the ones it draws, so the
+ * cap here and the cap there drop the same series rather than two different
+ * sets of them.
  */
 const seriesOf = (
 	spec: TimeseriesSpec,
@@ -119,30 +148,35 @@ const seriesOf = (
 		// `parseChartSpec` has already dropped the rows whose bucket is not a time.
 		const at = Date.parse(row.bucket)
 		for (const [name, value] of Object.entries(row.series)) {
+			const scaledValue = scaled(value, scale)
+			if (scaledValue === null) continue
 			const points = byName.get(name) ?? []
-			points.push([at, value * scale])
+			points.push([at, scaledValue])
 			byName.set(name, points)
 		}
 	}
-	return [...byName].map(([name, points]) => ({
-		name,
-		// The renderer sorts, but downsampling picks extremes per stride and needs
-		// the strides to be time-ordered to mean anything.
-		points: downsample(
-			[...points].sort((a, b) => a[0] - b[0]),
-			MAX_POINTS_PER_SERIES,
-		),
-	}))
+	return [...byName]
+		.map(([name, points]) => ({
+			name,
+			// The renderer sorts, but downsampling picks extremes per stride and
+			// needs the strides to be time-ordered to mean anything.
+			points: downsample(
+				[...points].sort((a, b) => a[0] - b[0]),
+				MAX_POINTS_PER_SERIES,
+			),
+		}))
+		.sort((a, b) => peak(b.points) - peak(a.points))
+		.slice(0, MAX_SERIES)
 }
 
 /**
  * A parsed fence as the wire payload the image is drawn from.
  *
  * Units are resolved to the five the static renderer knows, and the values
- * scaled into them — see `staticChartUnit`. The rows are bounded here rather
- * than at the renderer because the fence is model output: nothing upstream caps
- * how many points it may hold, and an unbounded one is a response body and a
- * raster the Worker has to pay for.
+ * scaled into them — see `staticChartUnit`. Rows, series and bars are all
+ * bounded here rather than at the renderer because the fence is model output:
+ * nothing upstream caps how many of any of them it may hold, and an unbounded
+ * one is a response body and a raster the Worker has to pay for.
  */
 export const chatChartResponse = (spec: ChartSpec): ChatChartResponse => {
 	const { unit, scale } = staticChartUnit(spec.unit)
@@ -154,8 +188,11 @@ export const chatChartResponse = (spec: ChartSpec): ChatChartResponse => {
 			title,
 			unit,
 			points: spec.data
-				.slice(0, MAX_RANKED_BARS)
-				.map((point) => ({ name: point.name, value: point.value * scale })),
+				.flatMap((point) => {
+					const value = scaled(point.value, scale)
+					return value === null ? [] : [{ name: point.name, value }]
+				})
+				.slice(0, MAX_RANKED_BARS),
 		})
 	}
 

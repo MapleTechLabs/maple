@@ -53,6 +53,7 @@ import {
 } from "@maple/backend/services/auth/ApiV2RateLimiter"
 import { loadChartSeries } from "@maple/backend/services/alerts/alert-chart-series"
 import { chatChartFrom, chatChartSession } from "@maple/backend/services/chat/chat-chart"
+import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import { systemTenant } from "@maple/backend/services/alerts/system-tenant"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { DashboardPersistenceService } from "@maple/backend/services/dashboards/DashboardPersistenceService"
@@ -120,6 +121,28 @@ export const HttpV2SharePublicLive = HttpApiBuilder.group(MapleApiV2, "sharePubl
 		 */
 		const enforceOgRateLimit = Effect.fn("share.ogRateLimit")(function* (shareKey: string) {
 			const outcome = yield* rateLimiter.check(shareOgRateLimitKey(shareKey.slice(0, 24)))
+			if (outcome === "limited") {
+				return yield* Effect.fail(
+					new ShareRateLimitedError({
+						message: "This shared dashboard is receiving too many requests. Try again shortly.",
+					}),
+				)
+			}
+		})
+
+		/**
+		 * The bucket a signed chart id falls in: its **signature**, not its head.
+		 *
+		 * A chart id is `<base64url payload>.<signature>` and every payload starts
+		 * with the org, so the first 24 characters of two charts in one org are the
+		 * same string. Keying on those put every chart image an org had posted into
+		 * one bucket — and, because this runs before verification, let anyone who
+		 * knew an org id fill that bucket with ids that never verify. The signature
+		 * is a digest of the whole payload, so it differs from the first character.
+		 */
+		const enforceChartRateLimit = Effect.fn("share.chartRateLimit")(function* (chartId: string) {
+			const signature = chartId.slice(chartId.indexOf(".") + 1)
+			const outcome = yield* rateLimiter.check(shareOgRateLimitKey(signature.slice(0, 24)))
 			if (outcome === "limited") {
 				return yield* Effect.fail(
 					new ShareRateLimitedError({
@@ -425,8 +448,9 @@ export const HttpV2SharePublicLive = HttpApiBuilder.group(MapleApiV2, "sharePubl
 				Effect.gen(function* () {
 					const hmacKey = yield* requireHmacKey
 					// Keyed on the id as presented, before verification, for the same
-					// reason as `ogCard`.
-					yield* enforceOgRateLimit(payload.chartId)
+					// reason as `ogCard`: otherwise the cheap way to hammer this is to
+					// send ids that never reach a bucket.
+					yield* enforceChartRateLimit(payload.chartId)
 
 					const claims = verifyChatChartId(payload.chartId, hmacKey)
 					if (claims === undefined) return yield* notFound
@@ -441,13 +465,20 @@ export const HttpV2SharePublicLive = HttpApiBuilder.group(MapleApiV2, "sharePubl
 					// binding — an `alchemy dev` stack without the ai Worker — reads as
 					// no such chart, like every other reason this can fail.
 					const workerEnv = yield* Effect.serviceOption(WorkerEnvironment)
-					const stub = Option.isNone(workerEnv)
-						? undefined
-						: chatSessionStub(workerEnv.value, sessionId)
+					if (Option.isNone(workerEnv)) return yield* notFound
+					const stub = chatSessionStub(workerEnv.value, sessionId)
 					if (stub === undefined) return yield* notFound
 
+					// The uniform not-found is the answer, not the diagnosis: a cross-script
+					// binding error and an evicted isolate are operator problems, and
+					// answering both with a silent 404 would leave nothing to find them by.
 					const messages = yield* Effect.tryPromise(() => stub.history()).pipe(
-						Effect.catch(() => notFound),
+						Effect.catchCause((cause) =>
+							Effect.logWarning("Chat chart transcript unavailable").pipe(
+								Effect.annotateLogs({ cause: summarizeCause(cause) }),
+								Effect.andThen(notFound),
+							),
+						),
 					)
 					const chart = chatChartFrom(messages, claims)
 					if (chart === null) return yield* notFound
@@ -461,7 +492,7 @@ export const HttpV2SharePublicLive = HttpApiBuilder.group(MapleApiV2, "sharePubl
 					// Keyed on the id as presented, before verification, for the same
 					// reason as `ogCard`: otherwise the cheap way to hammer this is to
 					// send ids that never reach a bucket.
-					yield* enforceOgRateLimit(payload.chartId)
+					yield* enforceChartRateLimit(payload.chartId)
 
 					const claims = verifyAlertChartId(payload.chartId, hmacKey)
 					if (claims === undefined) return yield* notFound

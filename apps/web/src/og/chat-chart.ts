@@ -74,15 +74,16 @@ export const renderChatChartImage = async (
 		return notFound
 	}
 
-	const card = chatChartCard(chart)
-	if (card === undefined) return notFound
-
 	let png: Uint8Array
 	try {
+		// Laying the card out is inside the try, not before it: `chart` is a cast
+		// over `response.json()`, so a body missing `series` throws on the first
+		// property read — and a throw here must not become a 500 in a chat client's
+		// image slot, where it shows as a broken-image glyph next to a real reply.
+		const card = chatChartCard(chart)
+		if (card === undefined) return notFound
 		png = await renderNode(card.node, assets, { width: card.width, height: card.height })
 	} catch {
-		// A render that throws must not become a 500 in a chat client's image
-		// slot, where it shows as a broken-image glyph next to a real reply.
 		return notFound
 	}
 

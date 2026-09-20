@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest"
-import { Schema } from "effect"
+import { Result, Schema } from "effect"
+import { ChatChartResponse } from "@maple/domain/http"
 import { OrgId } from "@maple/domain/primitives"
 import { ChatMessage } from "@maple/domain/chat-session"
 import { chatChartId, verifyChatChartId, type VerifiedChatChartClaims } from "@maple/db"
@@ -42,17 +43,16 @@ const reply = (text: string, overrides?: { readonly role?: "user" | "assistant";
 		startSeq: 1,
 	})
 
-const LINE = fence(
-	JSON.stringify({
-		type: "line",
-		title: "p95 latency",
-		unit: "ms",
-		data: [
-			{ bucket: "2026-09-11T10:00:00Z", series: { "checkout-api": 142, "cart-api": 61 } },
-			{ bucket: "2026-09-11T10:01:00Z", series: { "checkout-api": 388, "cart-api": 58 } },
-		],
-	}),
-)
+const LINE_SOURCE = JSON.stringify({
+	type: "line",
+	title: "p95 latency",
+	unit: "ms",
+	data: [
+		{ bucket: "2026-09-11T10:00:00Z", series: { "checkout-api": 142, "cart-api": 61 } },
+		{ bucket: "2026-09-11T10:01:00Z", series: { "checkout-api": 388, "cart-api": 58 } },
+	],
+})
+const LINE = fence(LINE_SOURCE)
 
 const RANKED_SOURCE = JSON.stringify({
 	type: "ranked",
@@ -206,6 +206,58 @@ describe("chatChartResponse", () => {
 		if (chart.kind === "ranked") throw new Error("expected a timeseries chart")
 
 		expect(chart.series[0]?.points.length).toBeLessThanOrEqual(60)
+	})
+
+	it("drops a value that scaling took off the number line", () => {
+		// `ChartSpec` checks finiteness before scaling; ×1000 for seconds can undo
+		// it. A non-finite number encodes as a JSON `null` and plots as a NaN
+		// coordinate, so it must not reach the wire.
+		const chart = chatChartResponse(
+			specOf(
+				JSON.stringify({
+					type: "line",
+					unit: "s",
+					data: [
+						{ bucket: "2026-09-11T10:00:00Z", series: { api: 1.5 } },
+						{ bucket: "2026-09-11T10:01:00Z", series: { api: Number.MAX_VALUE } },
+					],
+				}),
+			),
+		)
+		if (chart.kind === "ranked") throw new Error("expected a timeseries chart")
+
+		expect(chart.series[0]?.points).toEqual([[Date.parse("2026-09-11T10:00:00Z"), 1500]])
+	})
+
+	it("bounds the series a fence can name, keeping the biggest", () => {
+		const chart = chatChartResponse(
+			specOf(
+				JSON.stringify({
+					type: "line",
+					data: [
+						{
+							bucket: "2026-09-11T10:00:00Z",
+							series: Object.fromEntries(
+								Array.from({ length: 200 }, (_, i) => [`svc-${i}`, i]),
+							),
+						},
+					],
+				}),
+			),
+		)
+		if (chart.kind === "ranked") throw new Error("expected a timeseries chart")
+
+		expect(chart.series.length).toBeLessThanOrEqual(12)
+		expect(chart.series[0]?.name).toBe("svc-199")
+	})
+
+	it("encodes as the wire contract, not just as something the compiler accepts", () => {
+		// `Schema.Class`'s type side is structural, so an object literal would
+		// type-check here and fail at response encoding. This runs the real encode.
+		for (const source of [RANKED_SOURCE, LINE_SOURCE]) {
+			const encoded = Schema.encodeUnknownResult(ChatChartResponse)(chatChartResponse(specOf(source)))
+			expect(Result.isSuccess(encoded)).toBe(true)
+		}
 	})
 
 	it("keeps a ranking in the order the model ranked it", () => {

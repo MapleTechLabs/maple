@@ -95,13 +95,26 @@ export const ChatChartRequest = Schema.Struct({
  * drawn by that same renderer. A fence's own unit vocabulary is wider, and
  * `staticChartUnit` in `@maple/domain/chat-chart-spec` is what lands it here.
  */
-export const ChatChartUnit = AlertChartUnit
-export type ChatChartUnit = AlertChartUnit
+export const ChatChartUnit = AlertChartUnit.annotate({ identifier: "ChatChartUnit" })
+export type ChatChartUnit = typeof ChatChartUnit.Type
 
-/** One named series over the reply's time axis; `[epochMillis, value]`, oldest first. */
+/**
+ * `[epochMillis, value]`, oldest first.
+ *
+ * Finite on both axes, unlike `AlertChartPoint`: these numbers come out of a
+ * model-written fence and are then *scaled* into the renderer's unit, and a
+ * value that leaves the number line on the way serializes as a JSON `null` —
+ * a failure moved to the far side of the wire. `chatChartResponse` drops those
+ * points; this is what says so.
+ */
+export const ChatChartPoint = Schema.Tuple([Schema.Finite, Schema.Finite]).annotate({
+	identifier: "ChatChartPoint",
+})
+
+/** One named series over the reply's time axis. */
 export const ChatChartSeries = Schema.Struct({
 	name: Schema.String,
-	points: Schema.Array(AlertChartPoint),
+	points: Schema.Array(ChatChartPoint),
 }).annotate({ identifier: "ChatChartSeries" })
 
 /** One category and its value, for a ranking. */
