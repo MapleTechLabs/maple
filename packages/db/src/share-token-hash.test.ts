@@ -171,9 +171,13 @@ describe.each(SIGNERS)("$name", ({ mint, verify, expected, forgeries }) => {
 		expect(verify(mint("other-key"), KEY)).toBeUndefined()
 	})
 
-	it.each(forgeries)("rejects $what", ({ index, value }) => {
-		expect(verify(tamperClaim(mint(KEY), index, value), KEY)).toBeUndefined()
-	})
+	// A loop rather than `it.each`: the table is `as const`, so its rows arrive
+	// as a readonly tuple and `it.each` resolves to its spread-the-tuple overload.
+	for (const { what, index, value } of forgeries) {
+		it(`rejects ${what}`, () => {
+			expect(verify(tamperClaim(mint(KEY), index, value), KEY)).toBeUndefined()
+		})
+	}
 
 	it("rejects malformed ids without throwing", () => {
 		for (const bad of ["", ".", "nodot", ".onlysig", "a.b", "!!!.???"]) {

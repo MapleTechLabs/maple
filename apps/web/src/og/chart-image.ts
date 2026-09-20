@@ -17,7 +17,7 @@
  */
 import { chartCard, rankedCard, type ChartCard } from "./chart-card"
 import { renderNode, type AssetFetcher } from "./render"
-import type { ShareChartResponse } from "@maple/domain/http"
+import type { ChartRanked, ChartTimeseries } from "@maple/domain/http"
 import type { ApiTarget } from "../worker-env"
 
 /** The API has to answer before an image request is worth abandoning. */
@@ -84,12 +84,29 @@ export const chartRequestFromPath = (
 }
 
 /**
+ * The body an endpoint hands back, as it may actually arrive.
+ *
+ * `ShareChartResponse` is the contract; this is the contract plus the one way
+ * reality departs from it. Nothing validates `response.json()` below, and
+ * across a deploy an api that predates `series` sends only the flat `points` —
+ * see `ChartTimeseries.points`. Saying so in the type is what makes the
+ * fallback in {@link cardFor} a branch the compiler checks rather than an
+ * assertion, and it goes away with the field it exists for.
+ */
+interface TimeseriesBody extends Omit<ChartTimeseries, "series"> {
+	/** Absent on an api that predates it, where `points` carries the one series. */
+	readonly series?: ChartTimeseries["series"]
+}
+
+type ChartImageBody = ChartRanked | TimeseriesBody
+
+/**
  * The card to draw, or `undefined` for a chart with nothing in it.
  *
  * Exported for the deploy-skew test, which is the only thing that can prove
  * both response shapes still draw.
  */
-export const cardFor = (chart: ShareChartResponse): ChartCard | undefined => {
+export const cardFor = (chart: ChartImageBody): ChartCard | undefined => {
 	if (chart.kind === "ranked") {
 		return chart.points.length === 0 ? undefined : rankedCard(chart)
 	}
@@ -122,7 +139,7 @@ export const renderChartImage = async (
 ): Promise<Response> => {
 	const notFound = new Response(null, { status: 404 })
 
-	let chart: ShareChartResponse
+	let chart: ChartImageBody
 	try {
 		const response = await api.fetch(
 			new Request(new URL(request.kind.apiPath, api.baseUrl), {
@@ -133,7 +150,7 @@ export const renderChartImage = async (
 			}),
 		)
 		if (!response.ok) return notFound
-		chart = (await response.json()) as ShareChartResponse
+		chart = (await response.json()) as ChartImageBody
 	} catch {
 		return notFound
 	}
@@ -141,9 +158,10 @@ export const renderChartImage = async (
 	let png: Uint8Array
 	try {
 		// Laying the card out is inside the try, not before it: `chart` is a cast
-		// over `response.json()`, so a body missing `series` throws on the first
-		// property read — and a throw here must not become a 500 in a chat client's
-		// image slot, where it shows as a broken-image glyph next to a real message.
+		// over `response.json()`, so a body that is not either shape at all throws
+		// on the first property read — and a throw here must not become a 500 in a
+		// chat client's image slot, where it shows as a broken-image glyph next to
+		// a real message.
 		const card = cardFor(chart)
 		if (card === undefined) return notFound
 		png = await renderNode(card.node, assets, { width: card.width, height: card.height })
