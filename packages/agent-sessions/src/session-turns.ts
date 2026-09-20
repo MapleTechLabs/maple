@@ -247,16 +247,26 @@ export function buildSessionTurns(spans: readonly AiSessionSpan[]): readonly Ses
 				spans: turnSpans,
 				// Only AI spans that root the turn count: a retried inference that
 				// errored and then succeeded is a retry, not a failed turn, and the
-				// app's own errored HTTP span is not the agent failing.
+				// app's own errored HTTP span is not the agent failing. A tool call
+				// roots the turn whenever the run span above it carries no turn id,
+				// and one the agent carried on from did not end the turn either.
 				failed: turnSpans.some(
 					(span) =>
 						span.isAiSpan &&
 						spanFailed(span) &&
-						(span.parentSpanId === "" || !spanIds.has(span.parentSpanId)),
+						(span.parentSpanId === "" || !spanIds.has(span.parentSpanId)) &&
+						!(classifyAiSpan(span) === "tool" && recoveredFrom(span, turnSpans)),
 				),
 				traceIds,
 			}
 		})
+}
+
+/** Whether the agent carried on after `failed`: an AI span of the same turn
+ *  started once it had ended, and succeeded. */
+function recoveredFrom(failed: AiSessionSpan, turnSpans: readonly AiSessionSpan[]): boolean {
+	const endMs = spanEndMs(failed)
+	return turnSpans.some((span) => span.isAiSpan && spanStartMs(span) >= endMs && !spanFailed(span))
 }
 
 /**
