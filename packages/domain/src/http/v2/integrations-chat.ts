@@ -77,7 +77,10 @@ export const V2ChatWorkspace = Schema.Struct({
 export type V2ChatWorkspace = Schema.Schema.Type<typeof V2ChatWorkspace>
 
 export const V2ChatConnector = Schema.Struct({
-	id: connectorField,
+	id: ChatConnectorId.annotate({
+		description: "The connector's id, as used in the install path.",
+		examples: [CONNECTOR_EXAMPLE],
+	}),
 	object: Schema.Literal("chat_connector").annotate({
 		description: 'The object type — always `"chat_connector"`.',
 	}),

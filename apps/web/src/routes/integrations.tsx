@@ -96,7 +96,12 @@ const SLACK_ERROR_COPY = new Map<string, string>([
 
 const GENERIC_SLACK_ERROR = "Slack connection failed. Try installing again."
 
-/** Curated copy per `chat_reason` code; anything unrecognized falls back. */
+/**
+ * Curated copy per `chat_reason` code. `failed` — which the callback emits for
+ * an upstream, persistence or malformed-callback failure — deliberately has no
+ * entry: there is nothing specific to say, so it takes the generic line, as does
+ * any code a newer API emits than this bundle knows.
+ */
 const CHAT_ERROR_COPY = new Map<string, string>([
 	["state", "The install link expired. Start the install again."],
 	["conflict", "That workspace is already linked to a different Maple organization."],

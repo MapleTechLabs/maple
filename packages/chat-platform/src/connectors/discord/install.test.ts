@@ -1,6 +1,6 @@
-import { describe, expect, it } from "@effect/vitest"
-import { Effect, Redacted } from "effect"
-import { HttpClient } from "effect/unstable/http"
+import { assert, describe, it } from "@effect/vitest"
+import { Effect, Layer, Redacted } from "effect"
+import { FetchHttpClient, HttpClient } from "effect/unstable/http"
 import { discord } from "./index"
 import { DISCORD_CLIENT_ID, DISCORD_CLIENT_SECRET, discordAuthorizeUrl } from "./install"
 
@@ -10,24 +10,46 @@ const config = new Map([
 ])
 
 const REDIRECT_URI = "https://api.maple.test/oauth/chat/discord/callback"
+const TOKEN_URL = "https://discord.com/api/v10/oauth2/token"
 
 /**
- * A client that dies if anything reaches it. Every callback case below is
+ * A client that dies if anything reaches it. The callback cases that use it are
  * refused before the token exchange, and this is what proves it.
  */
 const noNetwork = HttpClient.make(() => Effect.die("the test made a network call"))
 
+/** Canned token endpoint; anything else rejects. Records the form body it saw. */
+const tokenFetch = (respond: () => Response, bodies: Array<string> = []) =>
+	Layer.succeed(FetchHttpClient.Fetch, ((input: RequestInfo | URL, init?: RequestInit) => {
+		const url = String(input)
+		if (!url.startsWith(TOKEN_URL)) return Promise.reject(new Error(`unexpected fetch: ${url}`))
+		// Read the body through `Request` rather than off `init`: the client is
+		// free to hand fetch a stream there.
+		return new Request(url, init).text().then((body) => {
+			bodies.push(body)
+			return respond()
+		})
+	}) as typeof globalThis.fetch)
+
+const jsonResponse = (body: unknown, status = 200) =>
+	new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } })
+
+const completeWith = (params: URLSearchParams, fetchLayer: ReturnType<typeof tokenFetch>) =>
+	discord.install
+		.complete({ config, params, redirectUri: REDIRECT_URI })
+		.pipe(Effect.provide(Layer.provide(FetchHttpClient.layer, fetchLayer)))
+
 describe("discord authorize URL", () => {
 	it("asks for a bot authorization on the authorization-code grant", () => {
 		const url = new URL(discordAuthorizeUrl("client-1", { state: "nonce", redirectUri: REDIRECT_URI }))
-		expect(url.origin + url.pathname).toBe("https://discord.com/oauth2/authorize")
-		expect(url.searchParams.get("client_id")).toBe("client-1")
-		expect(url.searchParams.get("scope")).toBe("bot")
+		assert.strictEqual(url.origin + url.pathname, "https://discord.com/oauth2/authorize")
+		assert.strictEqual(url.searchParams.get("client_id"), "client-1")
+		assert.strictEqual(url.searchParams.get("scope"), "bot")
 		// Without these the redirect carries no code, and the guild would only be
 		// knowable from the query parameter this connector refuses to trust.
-		expect(url.searchParams.get("response_type")).toBe("code")
-		expect(url.searchParams.get("redirect_uri")).toBe(REDIRECT_URI)
-		expect(url.searchParams.get("state")).toBe("nonce")
+		assert.strictEqual(url.searchParams.get("response_type"), "code")
+		assert.strictEqual(url.searchParams.get("redirect_uri"), REDIRECT_URI)
+		assert.strictEqual(url.searchParams.get("state"), "nonce")
 	})
 
 	it("requests exactly the seven documented bot permissions", () => {
@@ -35,7 +57,7 @@ describe("discord authorize URL", () => {
 		const requested = BigInt(url.searchParams.get("permissions") ?? "0")
 		const expected =
 			(1n << 10n) | (1n << 11n) | (1n << 14n) | (1n << 16n) | (1n << 6n) | (1n << 35n) | (1n << 38n)
-		expect(requested).toBe(expected)
+		assert.strictEqual(requested, expected)
 	})
 
 	it.effect("reports an unconfigured deployment instead of minting a broken URL", () =>
@@ -43,12 +65,76 @@ describe("discord authorize URL", () => {
 			const failure = yield* discord.install
 				.authorizeUrl({ config: new Map(), state: "nonce", redirectUri: REDIRECT_URI })
 				.pipe(Effect.flip)
-			expect(failure._tag).toBe("@maple/chat-platform/ChatConnectorNotConfigured")
+			assert.strictEqual(failure._tag, "@maple/chat-platform/ChatConnectorNotConfigured")
 		}),
 	)
 })
 
 describe("discord callback", () => {
+	it.effect("takes the guild from the token response, never from the callback parameter", () =>
+		Effect.gen(function* () {
+			const bodies: Array<string> = []
+			const installed = yield* completeWith(
+				// The callback names a different guild than the authorization covers:
+				// this is the parameter an attacker controls, and it must not decide
+				// which workspace gets linked.
+				new URLSearchParams({ code: "auth-code", guild_id: "999999999999999999" }),
+				tokenFetch(
+					() =>
+						jsonResponse({
+							access_token: "discarded",
+							refresh_token: "discarded",
+							guild: { id: "123456789012345678", name: "Acme Engineering" },
+						}),
+					bodies,
+				),
+			)
+			assert.strictEqual(installed.externalWorkspaceId, "123456789012345678")
+			assert.strictEqual(installed.name, "Acme Engineering")
+			// The exchange sends the code and the same redirect URI, form-encoded.
+			const body = new URLSearchParams(bodies[0] ?? "")
+			assert.strictEqual(body.get("grant_type"), "authorization_code")
+			assert.strictEqual(body.get("code"), "auth-code")
+			assert.strictEqual(body.get("redirect_uri"), REDIRECT_URI)
+		}),
+	)
+
+	it.effect("falls back to the guild id when the platform reports no name", () =>
+		Effect.gen(function* () {
+			const installed = yield* completeWith(
+				new URLSearchParams({ code: "auth-code" }),
+				tokenFetch(() => jsonResponse({ guild: { id: "123456789012345678" } })),
+			)
+			assert.strictEqual(installed.name, "123456789012345678")
+		}),
+	)
+
+	it.effect("refuses an authorization that added no bot to a server", () =>
+		Effect.gen(function* () {
+			const failure = yield* completeWith(
+				new URLSearchParams({ code: "auth-code" }),
+				tokenFetch(() => jsonResponse({ access_token: "user-only", scope: "identify" })),
+			).pipe(Effect.flip)
+			assert.strictEqual(failure._tag, "@maple/chat-platform/ChatInstallFailed")
+		}),
+	)
+
+	it.effect("refuses a rejected exchange and a non-JSON answer", () =>
+		Effect.gen(function* () {
+			const rejected = yield* completeWith(
+				new URLSearchParams({ code: "auth-code" }),
+				tokenFetch(() => jsonResponse({ error: "invalid_grant" }, 400)),
+			).pipe(Effect.flip)
+			assert.strictEqual(rejected._tag, "@maple/chat-platform/ChatInstallFailed")
+
+			const garbled = yield* completeWith(
+				new URLSearchParams({ code: "auth-code" }),
+				tokenFetch(() => new Response("<html>gateway</html>", { status: 200 })),
+			).pipe(Effect.flip)
+			assert.strictEqual(garbled._tag, "@maple/chat-platform/ChatInstallFailed")
+		}),
+	)
+
 	it.effect("refuses a callback with no code before touching the network", () =>
 		Effect.gen(function* () {
 			const failure = yield* discord.install
@@ -58,7 +144,7 @@ describe("discord callback", () => {
 					redirectUri: REDIRECT_URI,
 				})
 				.pipe(Effect.provideService(HttpClient.HttpClient, noNetwork), Effect.flip)
-			expect(failure._tag).toBe("@maple/chat-platform/ChatInstallFailed")
+			assert.strictEqual(failure._tag, "@maple/chat-platform/ChatInstallFailed")
 		}),
 	)
 
@@ -71,7 +157,20 @@ describe("discord callback", () => {
 					redirectUri: REDIRECT_URI,
 				})
 				.pipe(Effect.provideService(HttpClient.HttpClient, noNetwork), Effect.flip)
-			expect(failure.message).toContain("access_denied")
+			assert.include(failure.message, "access_denied")
+		}),
+	)
+
+	it.effect("reports an unconfigured deployment rather than exchanging the code", () =>
+		Effect.gen(function* () {
+			const failure = yield* discord.install
+				.complete({
+					config: new Map([[DISCORD_CLIENT_ID, Redacted.make("client-1")]]),
+					params: new URLSearchParams({ code: "auth-code" }),
+					redirectUri: REDIRECT_URI,
+				})
+				.pipe(Effect.provideService(HttpClient.HttpClient, noNetwork), Effect.flip)
+			assert.strictEqual(failure._tag, "@maple/chat-platform/ChatConnectorNotConfigured")
 		}),
 	)
 })
@@ -79,21 +178,22 @@ describe("discord callback", () => {
 describe("discord settings", () => {
 	it.effect("accepts a role id and drops an empty one", () =>
 		Effect.gen(function* () {
-			expect(yield* discord.install.decodeSettings({ approver_role_id: "123456789012345678" })).toEqual(
-				{
-					approver_role_id: "123456789012345678",
-				},
+			assert.deepStrictEqual(
+				yield* discord.install.decodeSettings({ approver_role_id: "123456789012345678" }),
+				{ approver_role_id: "123456789012345678" },
 			)
-			expect(yield* discord.install.decodeSettings({})).toEqual({})
+			assert.deepStrictEqual(yield* discord.install.decodeSettings({}), {})
 		}),
 	)
 
 	it.effect("rejects anything that is not a role id", () =>
 		Effect.gen(function* () {
-			const failure = yield* discord.install
-				.decodeSettings({ approver_role_id: "@moderators" })
-				.pipe(Effect.flip)
-			expect(failure._tag).toBe("@maple/chat-platform/ChatSettingsRejected")
+			for (const value of ["@moderators", "1234567890123456", "123456789012345678901"]) {
+				const failure = yield* discord.install
+					.decodeSettings({ approver_role_id: value })
+					.pipe(Effect.flip)
+				assert.strictEqual(failure._tag, "@maple/chat-platform/ChatSettingsRejected")
+			}
 		}),
 	)
 
@@ -102,7 +202,7 @@ describe("discord settings", () => {
 			const failure = yield* discord.install
 				.decodeSettings({ webhook_url: "https://example.test" })
 				.pipe(Effect.flip)
-			expect(failure._tag).toBe("@maple/chat-platform/ChatSettingsRejected")
+			assert.strictEqual(failure._tag, "@maple/chat-platform/ChatSettingsRejected")
 		}),
 	)
 })

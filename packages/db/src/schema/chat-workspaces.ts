@@ -52,4 +52,3 @@ export const chatWorkspaces = pgTable(
 )
 
 export type ChatWorkspaceRow = typeof chatWorkspaces.$inferSelect
-export type ChatWorkspaceInsert = typeof chatWorkspaces.$inferInsert

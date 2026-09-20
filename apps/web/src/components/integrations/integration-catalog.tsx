@@ -14,6 +14,8 @@ import {
 	SlackIcon,
 	WarpStreamIcon,
 } from "@/components/icons"
+import { Option, Schema } from "effect"
+import { ChatConnectorId } from "@maple/domain/primitives"
 import { chatConnectorManifests } from "@maple/chat-platform/manifests"
 import type { ChatConnectorManifest } from "@maple/chat-platform/manifests"
 import { PLANETSCALE_COLOR } from "@/components/infra/planetscale/metrics"
@@ -40,11 +42,17 @@ export type IntegrationId =
 	| "slack"
 	| ChatIntegrationId
 
+const decodeConnectorId = Schema.decodeUnknownOption(ChatConnectorId)
+
 export const chatIntegrationId = (connector: string): ChatIntegrationId => `chat-${connector}`
 
-/** The connector behind a chat catalog id, or `null` for every other entry. */
-export const chatConnectorOf = (id: IntegrationId): string | null =>
-	id.startsWith("chat-") ? id.slice("chat-".length) : null
+/**
+ * The connector behind a chat catalog id, or `null` for every other entry.
+ * Decoded rather than sliced: the id arrives from a URL, and the branded value
+ * is what the API client's path parameter takes.
+ */
+export const chatConnectorOf = (id: IntegrationId): ChatConnectorId | null =>
+	id.startsWith("chat-") ? Option.getOrNull(decodeConnectorId(id.slice("chat-".length))) : null
 
 /** Renders a manifest's icon data — one `<svg>` for every chat connector. */
 export const chatConnectorIcon = (
@@ -61,8 +69,10 @@ export const chatConnectorIcon = (
 				fill="currentColor"
 				aria-hidden="true"
 			>
-				{icon.paths.map((path) => (
-					<path key={path} d={path} />
+				{icon.paths.map((path, index) => (
+					// Path data carries no id of its own, and the array is a module
+					// constant — the index is stable for the lifetime of the app.
+					<path key={index} d={path} />
 				))}
 			</svg>
 		)
@@ -226,6 +236,8 @@ interface CardStatus {
 }
 
 const NOT_CONNECTED: CardStatus = { label: "Not connected", variant: "outline" }
+/** Shipped, but this deployment holds no credentials for it. */
+const NOT_CONFIGURED: CardStatus = { label: "Not configured", variant: "outline" }
 // Status query failed — distinct from "Not connected" so a fetch error doesn't
 // masquerade as a disconnected integration.
 const STATUS_UNAVAILABLE: CardStatus = { label: "Status unavailable", variant: "outline" }
@@ -344,9 +356,13 @@ export function useIntegrationStatuses(): Partial<Record<IntegrationId, CardStat
 			chatIntegrationId(manifest.id),
 			Result.builder(chatResult)
 				.onSuccess((response): CardStatus => {
-					const workspaces =
-						response.data.find((entry) => entry.id === manifest.id)?.workspaces ?? []
-					if (workspaces.length === 0) return NOT_CONNECTED
+					const connector = response.data.find((entry) => entry.id === manifest.id)
+					const workspaces = connector?.workspaces ?? []
+					if (workspaces.length === 0) {
+						// A deployment without the connector's credentials cannot link
+						// anything — say so rather than implying a connect that will fail.
+						return connector?.available === false ? NOT_CONFIGURED : NOT_CONNECTED
+					}
 					return {
 						label:
 							workspaces.length === 1

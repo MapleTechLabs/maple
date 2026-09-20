@@ -122,7 +122,10 @@ export type ChatWorkspaceId = Schema.Schema.Type<typeof ChatWorkspaceId>
  * the alphabet that narrow means no escaping or separator convention has to be
  * agreed between them.
  */
-export const ChatConnectorId = Schema.String.check(Schema.isPattern(/^[a-z0-9]+$/)).pipe(
+export const ChatConnectorId = Schema.String.check(
+	Schema.isPattern(/^[a-z0-9]+$/),
+	Schema.isMaxLength(32),
+).pipe(
 	Schema.brand("@maple/ChatConnectorId"),
 	Schema.annotate({ identifier: "@maple/ChatConnectorId", title: "Chat Connector ID" }),
 )

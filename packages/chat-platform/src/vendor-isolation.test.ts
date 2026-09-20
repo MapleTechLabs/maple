@@ -28,9 +28,21 @@ const GUARDED_PATHS: ReadonlyArray<string> = [
 	"packages/db/src/schema/chat-workspaces.ts",
 	"packages/domain/src/http/v2/integrations-chat.ts",
 	"packages/backend/src/services/integrations/ChatWorkspaceService.ts",
+	"packages/backend/src/services/integrations/ChatWorkspaceService.test.ts",
 	"apps/api/src/routes/v2/integrations-chat.http.ts",
 	"apps/api/src/routes/v1/chat-integration.http.ts",
 	"apps/web/src/components/integrations/chat-integration-card.tsx",
+]
+
+/**
+ * Files this feature only *touched*, which name a vendor for reasons that
+ * predate it — the integrations catalog has carried a Slack card for a year.
+ * They are still guarded against every OTHER vendor, which is what stops a
+ * `connector === "…"` branch appearing in the generic chat code they now hold.
+ */
+const PARTIALLY_GUARDED: ReadonlyArray<{ readonly path: string; readonly allow: ReadonlyArray<string> }> = [
+	{ path: "apps/web/src/components/integrations/integration-catalog.tsx", allow: ["slack"] },
+	{ path: "apps/web/src/routes/integrations.tsx", allow: ["slack"] },
 ]
 
 /**
@@ -58,6 +70,11 @@ const collectFiles = (absolute: string): ReadonlyArray<string> => {
 	return readdirSync(absolute).flatMap((entry) => collectFiles(join(absolute, entry)))
 }
 
+const namedVendors = (absolute: string, allowed: ReadonlyArray<string>): ReadonlyArray<string> => {
+	const contents = readFileSync(absolute, "utf8").toLowerCase()
+	return VENDORS.filter((vendor) => !allowed.includes(vendor) && contents.includes(vendor))
+}
+
 describe("chat platform vendor isolation", () => {
 	it("names no chat platform outside its own connector directory", () => {
 		const offenders: Array<string> = []
@@ -65,17 +82,23 @@ describe("chat platform vendor isolation", () => {
 			for (const absolute of collectFiles(join(REPO_ROOT, guarded))) {
 				const path = relative(REPO_ROOT, absolute)
 				if (isInsideConnector(path) || EXEMPT_FILES.includes(path)) continue
-				const contents = readFileSync(absolute, "utf8").toLowerCase()
-				for (const vendor of VENDORS) {
-					if (contents.includes(vendor)) offenders.push(`${path}: ${vendor}`)
-				}
+				offenders.push(...namedVendors(absolute, []).map((vendor) => `${path}: ${vendor}`))
 			}
 		}
 		expect(offenders).toEqual([])
 	})
 
+	it("keeps the shared dashboard files free of every vendor they did not already carry", () => {
+		const offenders = PARTIALLY_GUARDED.flatMap((guarded) =>
+			namedVendors(join(REPO_ROOT, guarded.path), guarded.allow).map(
+				(vendor) => `${guarded.path}: ${vendor}`,
+			),
+		)
+		expect(offenders).toEqual([])
+	})
+
 	it("guards files that exist", () => {
-		const missing = GUARDED_PATHS.filter(
+		const missing = [...GUARDED_PATHS, ...PARTIALLY_GUARDED.map((guarded) => guarded.path)].filter(
 			(guarded) => statSync(join(REPO_ROOT, guarded), { throwIfNoEntry: false }) === undefined,
 		)
 		expect(missing).toEqual([])

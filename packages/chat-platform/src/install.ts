@@ -37,10 +37,17 @@ export class ChatConnectorNotConfigured extends Schema.TaggedError<ChatConnector
 	{ connector: ChatConnectorId, message: Schema.String },
 ) {}
 
-/** The platform refused the authorization, or answered with something unusable. */
+/**
+ * The platform refused the authorization, or answered with something unusable.
+ *
+ * Deliberately message-only. The causes available at an install boundary are an
+ * HTTP client error, which carries the request whose body holds the client
+ * secret, and a decode error, which carries the token response — so a `cause`
+ * here would be a credential on its way into a log.
+ */
 export class ChatInstallFailed extends Schema.TaggedError<ChatInstallFailed>()(
 	"@maple/chat-platform/ChatInstallFailed",
-	{ connector: ChatConnectorId, message: Schema.String, cause: Schema.optionalKey(Schema.Defect()) },
+	{ connector: ChatConnectorId, message: Schema.String },
 ) {}
 
 /** A settings value did not satisfy the connector's own rules. */

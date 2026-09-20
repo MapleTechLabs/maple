@@ -938,6 +938,7 @@ export class IntegrationsNotFoundError extends HttpTaggedError<IntegrationsNotFo
 export type IntegrationHttpError =
 	| IntegrationsForbiddenError
 	| IntegrationsConfigurationError
+	| IntegrationsNotFoundError
 	| IntegrationsNotConnectedError
 	| IntegrationsRevokedError
 	| IntegrationsValidationError

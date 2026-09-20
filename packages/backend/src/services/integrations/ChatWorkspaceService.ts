@@ -14,9 +14,8 @@ import {
 } from "@maple/domain/http"
 import { chatWorkspaces, type ChatWorkspaceRow } from "@maple/db"
 import {
-	findConnector,
-	isConnectorConfigured,
 	connectors,
+	isConnectorConfigured,
 	type ChatConnector,
 	type ChatWorkspaceSettings,
 } from "@maple/chat-platform"
@@ -25,7 +24,7 @@ import { Array as Arr, Clock, Context, Effect, Layer, Option, Schema } from "eff
 import { FetchHttpClient, HttpClient } from "effect/unstable/http"
 import { Database, type DatabaseError } from "@maple/backend/platform/DatabaseLive"
 import { Env } from "@maple/backend/platform/Env"
-import { msToDate } from "@maple/backend/platform/time"
+import { dateToMs, msToDate } from "@maple/backend/platform/time"
 import { OAuthStateRepository } from "@maple/backend/services/auth/OAuthStateRepository"
 
 /**
@@ -50,8 +49,26 @@ export const chatCallbackPath = (connector: ChatConnectorId): string => `/oauth/
 const CROSS_ORG_CONFLICT_MESSAGE =
 	"This chat workspace is already linked to a different Maple organization. Unlink it there first."
 
+/**
+ * The connectors this service resolves ids against. A reference rather than a
+ * direct import of the registry: production gets the real one by default, and a
+ * test can hand the host half a fake connector and exercise the install flow
+ * without a chat platform on the other end.
+ */
+export class ChatConnectorRegistry extends Context.Reference<ReadonlyArray<ChatConnector>>(
+	"@maple/api/services/ChatConnectorRegistry",
+	{ defaultValue: (): ReadonlyArray<ChatConnector> => connectors },
+) {}
+
 /** The row id is a UUID we mint, so the brand is a decode that cannot fail. */
 const newWorkspaceId = () => Schema.decodeSync(ChatWorkspaceId)(randomUUID())
+
+/**
+ * Stored settings are decoded rather than trusted: the column's type is a cast,
+ * and a value that is not a string map would otherwise surface as a 500 when the
+ * response is encoded instead of as this service's own persistence failure.
+ */
+const decodeStoredSettings = Schema.decodeUnknownEffect(Schema.Record(Schema.String, Schema.String))
 
 const decodeOrgId = Schema.decodeUnknownEffect(OrgId)
 const decodeChatWorkspaceId = Schema.decodeUnknownEffect(ChatWorkspaceId)
@@ -139,6 +156,7 @@ const make: Effect.Effect<
 	const env = yield* Env
 	const states = yield* OAuthStateRepository
 	const httpClient = yield* HttpClient.HttpClient
+	const registry = yield* ChatConnectorRegistry
 
 	const config = env.CHAT_CONNECTOR_CONFIG
 
@@ -148,10 +166,13 @@ const make: Effect.Effect<
 	const notFound = (message: string) => new IntegrationsNotFoundError({ message })
 
 	const requireConnector = (connectorId: ChatConnectorId) =>
-		Option.match(findConnector(connectorId), {
-			onNone: () => Effect.fail(notFound(`No chat connector named ${connectorId}`)),
-			onSome: (connector) => Effect.succeed(connector),
-		})
+		Option.match(
+			Arr.findFirst(registry, (connector) => connector.id === connectorId),
+			{
+				onNone: () => Effect.fail(notFound(`No chat connector named ${connectorId}`)),
+				onSome: (connector) => Effect.succeed(connector),
+			},
+		)
 
 	/**
 	 * Settings reach the connector as the admin typed them, minus blanks: a
@@ -175,6 +196,7 @@ const make: Effect.Effect<
 		Effect.all({
 			id: decodeChatWorkspaceId(row.id),
 			connector: decodeConnectorId(row.connector),
+			settings: decodeStoredSettings(row.settings),
 		}).pipe(
 			Effect.mapError(
 				(error) =>
@@ -182,13 +204,13 @@ const make: Effect.Effect<
 						message: `Stored chat workspace is unreadable: ${error.message}`,
 					}),
 			),
-			Effect.map(({ id, connector }) => ({
+			Effect.map(({ id, connector, settings }) => ({
 				id,
 				connector,
 				externalWorkspaceId: row.externalWorkspaceId,
 				name: row.name,
-				settings: row.settings,
-				createdAt: row.createdAt.getTime(),
+				settings,
+				createdAt: dateToMs(row.createdAt),
 			})),
 		)
 
@@ -207,7 +229,7 @@ const make: Effect.Effect<
 		yield* Effect.annotateCurrentSpan({ orgId })
 		const rows = yield* rowsForOrg(orgId)
 		const summaries = yield* Effect.forEach(rows, toSummary)
-		return connectors.map((connector) => ({
+		return Arr.map(registry, (connector) => ({
 			connector,
 			available: isConnectorConfigured(connector, config),
 			workspaces: Arr.filter(summaries, (workspace) => workspace.connector === connector.id),
@@ -223,6 +245,11 @@ const make: Effect.Effect<
 		yield* Effect.annotateCurrentSpan({ orgId, "chat.connector": connectorId })
 		const connector = yield* requireConnector(connectorId)
 		const state = randomBytes(24).toString("base64url")
+		// The URL first: an unconfigured connector fails here, before a state row
+		// nobody will ever redeem is written.
+		const url = yield* connector.install
+			.authorizeUrl({ config, state, redirectUri: callbackUrl })
+			.pipe(Effect.mapError((error) => new IntegrationsConfigurationError({ message: error.message })))
 		const now = yield* Clock.currentTimeMillis
 		yield* states.purgeExpired(now).pipe(Effect.mapError(toPersistenceError))
 		yield* states
@@ -237,22 +264,19 @@ const make: Effect.Effect<
 				expiresAt: msToDate(now + STATE_TTL_MS),
 			})
 			.pipe(Effect.mapError(toPersistenceError))
-		const url = yield* connector.install
-			.authorizeUrl({ config, state, redirectUri: callbackUrl })
-			.pipe(Effect.mapError((error) => new IntegrationsConfigurationError({ message: error.message })))
 		return { url }
 	})
 
 	// The same known gap the other OAuth install service in this directory
-	// documents: `state` is unguessable,
-	// single-use and TTL-bounded, but it is not bound to the browser that started
-	// the install, so an attacker who gets a chat-workspace manager to complete
-	// THEIR authorize URL links that manager's workspace to the attacker's org.
-	// Closing it is the same architecture call, unmade for the same reason (that
-	// service's `completeInstall` lists the three options). What is closed here: the
-	// workspace identity comes from the connector, which must read it from
-	// whatever the platform bound to the callback credential, and a workspace
-	// already linked to another org is rejected below rather than moved.
+	// documents: `state` is unguessable, single-use and TTL-bounded, but it is not
+	// bound to the browser that started the install, so an attacker who gets a
+	// chat-workspace manager to complete THEIR authorize URL links that manager's
+	// workspace to the attacker's org. Closing it is the same architecture call,
+	// unmade for the same reason — that service's `completeInstall` lists the three
+	// options. What is closed here: the workspace identity comes from the
+	// connector, which must read it from whatever the platform bound to the
+	// callback credential, and a workspace already linked to another org is
+	// rejected below rather than moved.
 	const completeInstall = Effect.fn("ChatWorkspaceService.completeInstall")(function* (
 		connectorId: ChatConnectorId,
 		params: URLSearchParams,
@@ -277,7 +301,7 @@ const make: Effect.Effect<
 		const now = yield* Clock.currentTimeMillis
 		// Single-use: burn the state before doing any side effects.
 		yield* states.deleteByState(state).pipe(Effect.mapError(toPersistenceError))
-		if (row.expiresAt.getTime() < now) {
+		if (dateToMs(row.expiresAt) < now) {
 			return yield* Effect.fail(
 				new IntegrationsValidationError({
 					message: "Install state expired — start the install again",
@@ -301,11 +325,12 @@ const make: Effect.Effect<
 			.complete({ config, params, redirectUri: row.redirectUri })
 			.pipe(
 				Effect.provideService(HttpClient.HttpClient, httpClient),
-				Effect.mapError((error) =>
-					error._tag === "@maple/chat-platform/ChatConnectorNotConfigured"
-						? new IntegrationsConfigurationError({ message: error.message })
-						: new IntegrationsUpstreamError({ message: error.message }),
-				),
+				Effect.catchTags({
+					"@maple/chat-platform/ChatConnectorNotConfigured": (error) =>
+						Effect.fail(new IntegrationsConfigurationError({ message: error.message })),
+					"@maple/chat-platform/ChatInstallFailed": (error) =>
+						Effect.fail(new IntegrationsUpstreamError({ message: error.message })),
+				}),
 			)
 
 		const inserted = yield* database
@@ -333,6 +358,13 @@ const make: Effect.Effect<
 			)
 			.pipe(Effect.mapError(toPersistenceError))
 		if (inserted.length === 0) {
+			// The branch the conflict guard exists to produce: this workspace is
+			// already linked to a different org. Worth counting, so it is logged.
+			yield* Effect.logWarning("Chat workspace is already linked to another organization", {
+				orgId,
+				connector: connectorId,
+				externalWorkspaceId: installed.externalWorkspaceId,
+			})
 			return yield* Effect.fail(new IntegrationsForbiddenError({ message: CROSS_ORG_CONFLICT_MESSAGE }))
 		}
 		yield* Effect.logInfo("Chat workspace linked", {

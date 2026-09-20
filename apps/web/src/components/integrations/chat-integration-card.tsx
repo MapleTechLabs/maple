@@ -1,5 +1,6 @@
 import { useState } from "react"
-import { Exit } from "effect"
+import { Exit, Option } from "effect"
+import type { ChatConnectorId, ChatWorkspaceId } from "@maple/domain/primitives"
 
 import {
 	AlertDialog,
@@ -23,7 +24,9 @@ import { ErrorState } from "@/components/common/error-state"
 import { LoaderIcon } from "@/components/icons"
 import { useIsOrgAdmin } from "@/hooks/use-is-org-admin"
 import { Result, useAtomRefresh, useAtomSet, useAtomValue } from "@/lib/effect-atom"
+import { retainedQuery } from "@/lib/services/common/atom-client"
 import { MapleApiV2AtomClient, retainedQueryV2 } from "@/lib/services/common/v2-atom-client"
+import { isClerkAuthEnabled } from "@/lib/services/common/auth-mode"
 import { getExitErrorMessage } from "@/lib/alerts/form-utils"
 import { catalogEntry, chatIntegrationId, IntegrationIconPlate } from "./integration-catalog"
 import {
@@ -44,47 +47,57 @@ import {
 
 const REACTIVITY_KEYS = ["chatIntegration"]
 
-/** A workspace's settings form: one text input per manifest field. */
+/**
+ * A workspace's settings form: one text input per manifest field.
+ *
+ * The draft is seeded once per mounted instance, so the caller remounts it when
+ * the stored settings change — the server normalizes what it stores (blanks
+ * dropped, values trimmed), and a draft left holding what was typed would read
+ * as unsaved changes forever.
+ */
 function WorkspaceSettings({
 	fields,
 	workspaceId,
 	settings,
-	disabled,
-	onSaved,
+	canEdit,
+	busy,
+	onBusy,
 }: {
 	fields: ReadonlyArray<{ key: string; label: string; help: string }>
-	workspaceId: string
+	workspaceId: ChatWorkspaceId
 	settings: Readonly<Record<string, string>>
-	disabled: boolean
-	onSaved: () => void
+	canEdit: boolean
+	/** Card-level busy marker; one write at a time across every workspace. */
+	busy: string | null
+	onBusy: (busy: string | null) => void
 }) {
 	const [draft, setDraft] = useState<Record<string, string>>(() =>
 		Object.fromEntries(fields.map((field) => [field.key, settings[field.key] ?? ""])),
 	)
-	const [saving, setSaving] = useState(false)
 	const update = useAtomSet(MapleApiV2AtomClient.mutation("chatIntegration", "updateWorkspace"), {
 		mode: "promiseExit",
 	})
 
+	const saving = busy === workspaceId
+	const disabled = !canEdit || busy !== null
 	const dirty = fields.some((field) => (draft[field.key] ?? "") !== (settings[field.key] ?? ""))
 
 	async function handleSave() {
-		setSaving(true)
+		onBusy(workspaceId)
 		const result = await update({
 			params: { id: workspaceId },
 			payload: { settings: draft },
 			reactivityKeys: REACTIVITY_KEYS,
 		})
-		setSaving(false)
-		if (Exit.isSuccess(result)) {
-			onSaved()
-			toastManager.add({ title: "Settings saved", type: "success" })
-		} else {
-			toastManager.add({
-				title: getExitErrorMessage(result, "Failed to save the settings"),
-				type: "error",
-			})
-		}
+		onBusy(null)
+		toastManager.add(
+			Exit.isSuccess(result)
+				? { title: "Settings saved", type: "success" }
+				: {
+						title: getExitErrorMessage(result, "Failed to save the settings"),
+						type: "error",
+					},
+		)
 	}
 
 	if (fields.length === 0) return null
@@ -99,7 +112,7 @@ function WorkspaceSettings({
 					<Input
 						id={`${workspaceId}-${field.key}`}
 						value={draft[field.key] ?? ""}
-						disabled={disabled || saving}
+						disabled={disabled}
 						onChange={(event) =>
 							setDraft((current) => ({ ...current, [field.key]: event.target.value }))
 						}
@@ -108,12 +121,7 @@ function WorkspaceSettings({
 				</div>
 			))}
 			<div>
-				<Button
-					size="sm"
-					variant="outline"
-					onClick={handleSave}
-					disabled={disabled || saving || !dirty}
-				>
+				<Button size="sm" variant="outline" onClick={handleSave} disabled={disabled || !dirty}>
 					{saving ? <LoaderIcon size={14} className="animate-spin" /> : null}
 					Save settings
 				</Button>
@@ -122,14 +130,22 @@ function WorkspaceSettings({
 	)
 }
 
-export function ChatIntegrationCard({ connector }: { connector: string }) {
+export function ChatIntegrationCard({ connector }: { connector: ChatConnectorId }) {
 	const manifest = chatConnectorManifests.find((entry) => entry.id === connector)
 	const listAtom = retainedQueryV2("chatIntegration", "connectors", {
 		reactivityKeys: REACTIVITY_KEYS,
 	})
 	const listResult = useAtomValue(listAtom)
 	const refresh = useAtomRefresh(listAtom)
+
+	// Same gate the API applies (and always true on self-hosted, which runs as a
+	// single root user). `useIsOrgAdmin` reports false until the session lands, so
+	// the admin-only copy waits for a settled session; the controls stay disabled
+	// meanwhile either way.
 	const isAdmin = useIsOrgAdmin()
+	const sessionResult = useAtomValue(retainedQuery("auth", "session", {}))
+	const adminKnown = !isClerkAuthEnabled || !Result.isInitial(sessionResult)
+	const showNotAdmin = adminKnown && !isAdmin
 
 	const install = useAtomSet(MapleApiV2AtomClient.mutation("chatIntegration", "install"), {
 		mode: "promiseExit",
@@ -138,11 +154,22 @@ export function ChatIntegrationCard({ connector }: { connector: string }) {
 		mode: "promiseExit",
 	})
 	const [busy, setBusy] = useState<string | null>(null)
-	const [confirmId, setConfirmId] = useState<string | null>(null)
+	const [confirmId, setConfirmId] = useState<ChatWorkspaceId | null>(null)
 
+	// A refetch that fails must not wipe a card that already loaded — the list is
+	// refetched after every save and disconnect.
 	const status = Result.builder(listResult)
 		.onSuccess((response) => response.data.find((entry) => entry.id === connector) ?? null)
-		.orElse(() => null)
+		.orElse(() =>
+			Result.isFailure(listResult)
+				? Option.getOrNull(
+						Option.map(
+							listResult.previousSuccess,
+							(previous) => previous.value.data.find((entry) => entry.id === connector) ?? null,
+						),
+					)
+				: null,
+		)
 
 	if (manifest === undefined) return null
 
@@ -157,12 +184,12 @@ export function ChatIntegrationCard({ connector }: { connector: string }) {
 		}
 		setBusy(null)
 		toastManager.add({
-			title: getExitErrorMessage(result, `Failed to start the ${manifest?.name} install`),
+			title: getExitErrorMessage(result, `Failed to start the ${manifest.name} install`),
 			type: "error",
 		})
 	}
 
-	async function handleDisconnect(workspaceId: string) {
+	async function handleDisconnect(workspaceId: ChatWorkspaceId) {
 		setBusy(workspaceId)
 		const result = await disconnect({
 			params: { id: workspaceId },
@@ -170,15 +197,14 @@ export function ChatIntegrationCard({ connector }: { connector: string }) {
 		})
 		setBusy(null)
 		setConfirmId(null)
-		if (Exit.isSuccess(result)) {
-			refresh()
-			toastManager.add({ title: "Workspace disconnected", type: "success" })
-		} else {
-			toastManager.add({
-				title: getExitErrorMessage(result, "Failed to disconnect the workspace"),
-				type: "error",
-			})
-		}
+		toastManager.add(
+			Exit.isSuccess(result)
+				? { title: "Workspace disconnected", type: "success" }
+				: {
+						title: getExitErrorMessage(result, "Failed to disconnect the workspace"),
+						type: "error",
+					},
+		)
 	}
 
 	if (Result.isInitial(listResult) && status === null) {
@@ -205,7 +231,9 @@ export function ChatIntegrationCard({ connector }: { connector: string }) {
 	const entry = catalogEntry(chatIntegrationId(connector))
 	const Icon = entry.icon
 	const workspaces = status?.workspaces ?? []
-	const available = status?.available !== false
+	// Strictly true: a connector the API did not list is one this deployment
+	// cannot install either.
+	const available = status?.available === true
 	const connectDisabled = !isAdmin || !available || busy !== null
 
 	if (workspaces.length === 0) {
@@ -225,7 +253,7 @@ export function ChatIntegrationCard({ connector }: { connector: string }) {
 					<IntegrationEmptyFooter>
 						{!available
 							? `${manifest.name} is not configured in this Maple deployment. Contact support.`
-							: !isAdmin
+							: showNotAdmin
 								? `Only organization admins can connect ${manifest.name}.`
 								: `You'll approve the install in ${manifest.name}.`}
 					</IntegrationEmptyFooter>
@@ -257,12 +285,16 @@ export function ChatIntegrationCard({ connector }: { connector: string }) {
 						<div className="text-[11px] text-muted-foreground">
 							Connected {formatRelativeTime(workspace.created_at)}
 						</div>
+						{/* Keyed by the stored settings so a save reseeds the form from what
+						    the server actually kept. */}
 						<WorkspaceSettings
+							key={JSON.stringify(workspace.settings)}
 							fields={manifest.settingsFields}
 							workspaceId={workspace.id}
 							settings={workspace.settings}
-							disabled={!isAdmin || busy !== null}
-							onSaved={refresh}
+							canEdit={isAdmin}
+							busy={busy}
+							onBusy={setBusy}
 						/>
 						<div>
 							<Button
@@ -283,6 +315,11 @@ export function ChatIntegrationCard({ connector }: { connector: string }) {
 					Add another workspace
 				</Button>
 			</div>
+			{showNotAdmin ? (
+				<p className="text-[11px] text-muted-foreground">
+					Only organization admins can change or disconnect {manifest.name} workspaces.
+				</p>
+			) : null}
 
 			<AlertDialog open={confirmId !== null} onOpenChange={(open) => !open && setConfirmId(null)}>
 				<AlertDialogContent>
@@ -300,9 +337,7 @@ export function ChatIntegrationCard({ connector }: { connector: string }) {
 							onClick={() => confirmId !== null && handleDisconnect(confirmId)}
 							disabled={busy !== null}
 						>
-							{busy !== null && busy !== "install" ? (
-								<LoaderIcon size={14} className="animate-spin" />
-							) : null}
+							{busy === confirmId ? <LoaderIcon size={14} className="animate-spin" /> : null}
 							Disconnect
 						</AlertDialogAction>
 					</AlertDialogFooter>

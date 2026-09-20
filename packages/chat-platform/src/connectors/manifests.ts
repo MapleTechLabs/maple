@@ -1,7 +1,7 @@
 import type { ChatConnectorManifest } from "../install"
 import { discordManifest } from "./discord/manifest"
 
-export type { ChatConnectorIcon, ChatConnectorManifest, ChatConnectorSettingsField } from "../install"
+export type { ChatConnectorManifest } from "../install"
 
 /**
  * The dashboard's half of the registry: every connector's presentation data,

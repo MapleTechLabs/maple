@@ -102,12 +102,7 @@ const authorizeUrl = (input: ChatInstallStart) =>
 		discordAuthorizeUrl(clientId, { state: input.state, redirectUri: input.redirectUri }),
 	)
 
-const installFailed = (message: string, cause?: unknown) =>
-	new ChatInstallFailed({
-		connector: DISCORD_CONNECTOR_ID,
-		message,
-		...(cause === undefined ? undefined : { cause }),
-	})
+const installFailed = (message: string) => new ChatInstallFailed({ connector: DISCORD_CONNECTOR_ID, message })
 
 /**
  * Exchange the callback's code for the guild it was issued against.
@@ -145,19 +140,15 @@ const complete = Effect.fnUntraced(function* (input: ChatInstallCallback) {
 	)
 	const response = yield* httpClient
 		.execute(request)
-		.pipe(
-			Effect.mapError((error) =>
-				installFailed(`Discord token exchange failed: ${error.message}`, error),
-			),
-		)
+		.pipe(Effect.mapError((error) => installFailed(`Discord token exchange failed: ${error.message}`)))
 	if (response.status < 200 || response.status >= 300) {
 		return yield* Effect.fail(installFailed(`Discord token exchange failed with HTTP ${response.status}`))
 	}
 	const json = yield* response.json.pipe(
-		Effect.mapError((error) => installFailed("Discord returned a non-JSON token response", error)),
+		Effect.mapError(() => installFailed("Discord returned a non-JSON token response")),
 	)
 	const decoded = yield* decodeTokenResponse(json).pipe(
-		Effect.mapError((error) => installFailed("Discord returned an unexpected token response", error)),
+		Effect.mapError(() => installFailed("Discord returned an unexpected token response")),
 	)
 	const guild = decoded.guild
 	if (guild === undefined) {
@@ -177,7 +168,7 @@ const decodeSettings = (
 				new ChatSettingsRejected({
 					connector: DISCORD_CONNECTOR_ID,
 					message:
-						"Discord takes one setting, approver_role_id, and it must be a Discord role ID (17–20 digits)",
+						"Discord accepts one setting, approver_role_id, and its value must be a Discord role ID (17–20 digits)",
 				}),
 		),
 		Effect.map(
