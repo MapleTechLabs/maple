@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from "react"
+import { useMemo, useRef, useState, type ReactNode, type Ref } from "react"
 
 import type { GetAiSessionSummaryResponse } from "@maple/domain/http"
 
@@ -89,6 +89,8 @@ export function SessionOverview({
 	)
 
 	const openSpan = (spanId: string) => onSelectSpan(selectedSpanId === spanId ? undefined : spanId)
+	const toolsRef = useRef<HTMLElement>(null)
+	const openTools = () => toolsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })
 
 	if (progress !== undefined && !progress.agentSpansComplete) {
 		return (
@@ -114,11 +116,9 @@ export function SessionOverview({
 				    question, so every boundary is the same hairline with the same
 				    air either side of it. */}
 				<div className="flex min-w-0 grow flex-col gap-6">
-					<SessionChecks report={checks} onOpenSpan={openSpan} />
+					<SessionChecks report={checks} onOpenSpan={openSpan} onOpenTools={openTools} />
 					<Separator />
-					<TimeComposition summary={summary} />
-					<Separator />
-					<ToolUsage summary={summary} onOpenSpan={openSpan} />
+					<ToolUsage ref={toolsRef} summary={summary} onOpenSpan={openSpan} />
 				</div>
 				<Rail summary={summary} />
 			</div>
@@ -144,7 +144,7 @@ type OpenSpan = (spanId: string) => void
 /* -------------------------------------------------------------------------- */
 
 function TimeComposition({ summary }: { summary: SessionSummary }) {
-	const { segments, totalMs, peakParallel } = summary.agentTime
+	const { segments, totalMs } = summary.agentTime
 	// Agent time, not the clock: each band is the whole time that class of work
 	// ran, summed across every agent, so two subagents inferring at once are two
 	// seconds here per second of wall clock — the fan-out made visible rather
@@ -166,36 +166,19 @@ function TimeComposition({ summary }: { summary: SessionSummary }) {
 		.filter((band) => band.percent >= 0.5)
 
 	return (
-		<section className="flex flex-col gap-3">
-			<div className="flex flex-wrap items-baseline justify-between gap-x-5 gap-y-2">
-				<h3 className="font-semibold text-[11px] text-muted-foreground uppercase tracking-[0.09em]">
-					Where the time went
-				</h3>
-				{/* The two clocks the bands are read against, stated rather than left
-				    to be inferred from the bar — and the fan-out that makes them
-				    differ, which is the one number the bar itself cannot show. */}
-				<div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
-					<Clock
-						label="Agent time"
-						value={formatSessionDuration(totalMs)}
-						className="text-chart-ai-inference"
-					/>
-					<Clock label="Wall clock" value={formatSessionDuration(summary.wallClockMs)} />
-					{peakParallel > 1 && (
-						<span
-							className="flex items-baseline gap-1.5 rounded-sm bg-chart-ai-agent/12 px-1.5 py-0.5 text-chart-ai-agent"
-							title={`At its widest, ${peakParallel} model calls or tools were running at the same time.`}
-						>
-							<span className="font-mono font-semibold text-xs tabular-nums">
-								{peakParallel}×
-							</span>
-							<span className="text-[11px]">agents in parallel</span>
-						</span>
-					)}
-				</div>
+		<RailSection title="Where the time went">
+			{/* The two clocks the bands are read against, stated rather than left
+			    to be inferred from the bar. */}
+			<div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
+				<Clock
+					label="Agent time"
+					value={formatSessionDuration(totalMs)}
+					className="text-chart-ai-inference"
+				/>
+				<Clock label="Wall clock" value={formatSessionDuration(summary.wallClockMs)} />
 			</div>
 
-			<div className="flex h-4 w-full overflow-hidden rounded-sm bg-muted">
+			<div className="flex h-2 w-full gap-px overflow-hidden rounded-xs bg-muted">
 				{bands.map((band) => (
 					<div
 						key={band.kind}
@@ -205,25 +188,19 @@ function TimeComposition({ summary }: { summary: SessionSummary }) {
 				))}
 			</div>
 
-			<div className="flex flex-wrap gap-x-6 gap-y-2">
-				{legend.map((band) => {
-					const Icon = AGENT_TIME_ICON[band.kind]
-					return (
-						<span key={band.kind} className="flex items-center gap-2 text-[13px]">
-							<Icon
-								size={14}
-								aria-hidden
-								className={cn("shrink-0", AGENT_TIME_TEXT[band.kind])}
-							/>
-							<span>{AGENT_TIME_LABEL[band.kind]}</span>
-							<span className="font-mono text-muted-foreground text-xs tabular-nums">
-								{formatSessionDuration(band.ms)} · {formatPercent(band.percent / 100)}
-							</span>
+			{legend.map((band) => {
+				const Icon = AGENT_TIME_ICON[band.kind]
+				return (
+					<div key={band.kind} className="flex items-center gap-2.5">
+						<Icon size={13} aria-hidden className={cn("shrink-0", AGENT_TIME_TEXT[band.kind])} />
+						<span className="min-w-0 flex-1 truncate text-xs">{AGENT_TIME_LABEL[band.kind]}</span>
+						<span className="font-mono text-muted-foreground text-xs tabular-nums">
+							{formatSessionDuration(band.ms)} · {formatPercent(band.percent / 100)}
 						</span>
-					)
-				})}
-			</div>
-		</section>
+					</div>
+				)
+			})}
+		</RailSection>
 	)
 }
 
@@ -252,6 +229,7 @@ function Rail({ summary }: { summary: SessionSummary }) {
 
 	return (
 		<aside className="flex shrink-0 flex-col gap-6 @4xl:w-[21rem] @4xl:border-border @4xl:border-l @4xl:pl-8">
+			<TimeComposition summary={summary} />
 			<RailSection
 				title="Cost by model"
 				aside={
@@ -384,7 +362,16 @@ function Rail({ summary }: { summary: SessionSummary }) {
  * them puts every call on the session's own clock, so a row also says *when*. A
  * mark is a call: clicking it opens that span.
  */
-function ToolUsage({ summary, onOpenSpan }: { summary: SessionSummary; onOpenSpan: OpenSpan }) {
+function ToolUsage({
+	ref,
+	summary,
+	onOpenSpan,
+}: {
+	/** The scroll target of the checklist's "see the Tools section". */
+	ref: Ref<HTMLElement>
+	summary: SessionSummary
+	onOpenSpan: OpenSpan
+}) {
 	const [expanded, setExpanded] = useState<string | undefined>(undefined)
 	const axis = useMemo(
 		() => buildSessionAxis({ startMs: summary.startMs, endMs: summary.endMs, collapsedGaps: [] }),
@@ -394,7 +381,9 @@ function ToolUsage({ summary, onOpenSpan }: { summary: SessionSummary; onOpenSpa
 	const toggle = (key: string) => setExpanded((current) => (current === key ? undefined : key))
 
 	return (
-		<section className="flex flex-col gap-3">
+		// `scroll-mt`: the views' sticky control bar, which a plain scroll-to
+		// would otherwise park the header under.
+		<section ref={ref} className="flex scroll-mt-14 flex-col gap-3">
 			<ToolLedgerHeader summary={summary} />
 
 			{summary.tools.length === 0 ? (

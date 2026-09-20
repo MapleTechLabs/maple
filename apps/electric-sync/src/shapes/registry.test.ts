@@ -49,7 +49,7 @@ describe("lookupShape", () => {
 
 describe("scoped shapes", () => {
 	it("marks exactly the investigation shape as scoped", () => {
-		assert.strictEqual(subscriptionScopeColumn("investigation"), "id")
+		assert.strictEqual(subscriptionScopeColumn("investigation_v2"), "id")
 		// Everything else is org-wide; a stray `scope` on one of these is ignored.
 		assert.isNull(subscriptionScopeColumn("dashboards"))
 		assert.isNull(subscriptionScopeColumn("alert_rules"))

@@ -20,6 +20,10 @@ enum Typo {
 
 	/// Page titles. `font-display text-3xl font-semibold tracking-tight`.
 	static let pageTitle = Font.custom(Face.display, size: 28).leading(.tight)
+	/// A detail screen's verdict line ("Degraded"), under an inline nav title.
+	/// Display face like `pageTitle`, sized so it leads the screen without
+	/// competing with the bar above it.
+	static let title = Font.custom(Face.display, size: 22).leading(.tight)
 	/// Empty-state and card headings.
 	static let heading = Font.custom(Face.display, size: 17)
 	/// A prominent identifier — an exception type, a service name in a header.

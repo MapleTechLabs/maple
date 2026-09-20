@@ -72,13 +72,43 @@ describe("buildSpendModel", () => {
 		expect(result.baseCents).toBe(3_900)
 		expect(result.overageCents).toBe(16_040)
 		expect(result.spendCents).toBe(19_940)
-		// Overage extrapolates on elapsed time (28.5 of 31 days at noon on the
-		// 29th), the base fee stays flat. Fractional elapsed on purpose: rounding
-		// to whole days makes the projection jump at midnight.
-		expect(result.projectedCents).toBe(21_347)
+		// Usage extrapolates on elapsed time (28.5 of 31 days at noon on the
+		// 29th) and is then priced; the base fee stays flat. Fractional elapsed on
+		// purpose: rounding to whole days makes the projection jump at midnight.
+		expect(result.projectedCents).toBe(22_224)
 		expect(result.dayOfCycle).toBe(29)
 		expect(result.cycleDays).toBe(31)
 		expect(result.planName).toBe("Startup")
+	})
+
+	it("paces on this cycle's events when the balance still carries the trial", () => {
+		const day = 86_400_000
+		const paidStart = Date.UTC(2026, 6, 15)
+		const customer = buildCustomer({
+			subscriptions: [
+				{
+					planId: "startup",
+					status: "active",
+					addOn: false,
+					currentPeriodStart: paidStart,
+					currentPeriodEnd: paidStart + 30 * day,
+				},
+			],
+			// Autumn didn't reset the balance at conversion: 280 GB of it is trial.
+			balances: { logs: { granted: 100, usage: 320 } },
+		})
+		const result = buildSpendModel({
+			customer,
+			plans: [startupPlan],
+			usage: { logs: { sum: 40 } } as BillingUsage["total"],
+			nowMs: paidStart + 2 * day,
+		})
+		if (result === null) throw new Error("expected a model")
+
+		expect(result.dayOfCycle).toBe(3)
+		// 320 GB + 40 GB/2 days × 28 days = 880 GB, 780 GB over at $0.30.
+		// Pacing the whole balance over 2 days would have projected 4,800 GB.
+		expect(result.projectedCents).toBe(3_900 + 23_400)
 	})
 
 	it("names the top cost driver by overage dollars, not by volume", () => {

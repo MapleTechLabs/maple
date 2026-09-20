@@ -13,7 +13,7 @@
  * a summed fan-out).
  */
 import { errorIssueEvents, investigations } from "@maple/db"
-import type { MaplePgClient } from "@maple/db/client"
+import type { MapleDb } from "@maple/db/client"
 import {
 	InvestigationSubjectDiscriminator,
 	type AiTriageResult,
@@ -27,7 +27,10 @@ import { and, eq } from "drizzle-orm"
 import { Effect, identity, Option, Schema } from "effect"
 import { Database, type DatabaseError } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute } from "@maple/backend/platform/db-execute"
-import { applyTriageSeverity } from "@maple/backend/services/errors/issue-severity"
+import {
+	applyTriageSeverity,
+	type TriageActorMissingError,
+} from "@maple/backend/services/errors/issue-severity"
 
 const decodeIssueId = Schema.decodeUnknownSync(ErrorIssueId)
 const decodeEventId = Schema.decodeUnknownSync(ErrorIssueEventId)
@@ -101,64 +104,67 @@ export interface ApplyDiagnosisInput {
  * transaction matters: a crash between them would leave an issue escalated with
  * no audit event explaining why.
  */
-const writeDiagnosis = async (db: MaplePgClient, input: ApplyDiagnosisInput): Promise<void> => {
-	const confidence: InvestigationConfidence = input.report.confidence
-	const now = new Date(input.nowMs)
+const writeDiagnosis = (db: MapleDb, input: ApplyDiagnosisInput) =>
+	Effect.gen(function* () {
+		const confidence: InvestigationConfidence = input.report.confidence
+		const now = new Date(input.nowMs)
 
-	await db
-		.update(investigations)
-		.set({
-			status: "diagnosed",
-			reportJson: input.report,
-			// Explicit null rather than `undefined`: an unassessed report must write
-			// "no severity" onto the row, not silently omit the column from the UPDATE
-			// and leave a stale one standing.
-			severity: input.report.severityAssessment ?? null,
-			confidence,
-			model: input.model,
-			inputTokens: input.inputTokens,
-			outputTokens: input.outputTokens,
-			error: null,
-			diagnosedAt: now,
-			updatedAt: now,
-		})
-		.where(and(eq(investigations.orgId, input.orgId), eq(investigations.id, input.investigationId)))
-
-	if (!input.issueId) return
-	// See `subjectType` above: a verification's report must not re-rank the issue.
-	if (Option.contains(input.subjectType, "fix_verification")) return
-	const decodedIssueId = decodeIssueId(input.issueId)
-	await db.transaction(async (tx) => {
-		const applied = await applyTriageSeverity(tx, {
-			orgId: input.orgId,
-			issueId: decodedIssueId,
-			runId: input.investigationId,
-			investigationId: input.investigationId,
-			severity: input.report.severityAssessment,
-			confidence,
-			timestamp: input.nowMs,
-			result: input.report,
-		})
-		await tx
-			.insert(errorIssueEvents)
-			.values({
-				id: decodeEventId(deterministicInvestigationEventId(input.investigationId)),
-				orgId: input.orgId,
-				issueId: decodedIssueId,
-				actorId: applied.actorId,
-				type: "ai_triage",
-				payloadJson: {
-					investigationId: input.investigationId,
-					summary: input.report.summary,
-					severityAssessment: input.report.severityAssessment ?? null,
-					confidence,
-					applied: applied.applied,
-				},
-				createdAt: now,
+		yield* db
+			.update(investigations)
+			.set({
+				status: "diagnosed",
+				reportJson: input.report,
+				// Explicit null rather than `undefined`: an unassessed report must write
+				// "no severity" onto the row, not silently omit the column from the UPDATE
+				// and leave a stale one standing.
+				severity: input.report.severityAssessment ?? null,
+				confidence,
+				model: input.model,
+				inputTokens: input.inputTokens,
+				outputTokens: input.outputTokens,
+				error: null,
+				diagnosedAt: now,
+				updatedAt: now,
 			})
-			.onConflictDoNothing()
+			.where(and(eq(investigations.orgId, input.orgId), eq(investigations.id, input.investigationId)))
+
+		if (!input.issueId) return
+		// See `subjectType` above: a verification's report must not re-rank the issue.
+		if (Option.contains(input.subjectType, "fix_verification")) return
+		const decodedIssueId = decodeIssueId(input.issueId)
+		yield* db.transaction((tx) =>
+			Effect.gen(function* () {
+				const applied = yield* applyTriageSeverity(tx, {
+					orgId: input.orgId,
+					issueId: decodedIssueId,
+					runId: input.investigationId,
+					investigationId: input.investigationId,
+					severity: input.report.severityAssessment,
+					confidence,
+					timestamp: input.nowMs,
+					result: input.report,
+				})
+				yield* tx
+					.insert(errorIssueEvents)
+					.values({
+						id: decodeEventId(deterministicInvestigationEventId(input.investigationId)),
+						orgId: input.orgId,
+						issueId: decodedIssueId,
+						actorId: applied.actorId,
+						type: "ai_triage",
+						payloadJson: {
+							investigationId: input.investigationId,
+							summary: input.report.summary,
+							severityAssessment: input.report.severityAssessment ?? null,
+							confidence,
+							applied: applied.applied,
+						},
+						createdAt: now,
+					})
+					.onConflictDoNothing()
+			}),
+		)
 	})
-}
 
 /**
  * Publish a diagnosis onto an investigation.
@@ -170,11 +176,6 @@ const writeDiagnosis = async (db: MaplePgClient, input: ApplyDiagnosisInput): Pr
  * hold one (the request path, the fan-out workflow's per-run scope) keep using
  * exactly that connection.
  *
- * The body below stays a Promise callback because that is the shape
- * `Database.execute` takes — drizzle's `transaction` is a Promise API and there
- * is no Effect-native equivalent in this repo. Wrapping it here is what keeps
- * the seam at one place per logical call rather than at every call site.
- *
  * Fails with the raw `DatabaseError` rather than a domain persistence error:
  * this write straddles two domains (it updates `investigations` and, when an
  * issue is linked, the error-issue tables), and its two callers map to
@@ -184,7 +185,9 @@ const writeDiagnosis = async (db: MaplePgClient, input: ApplyDiagnosisInput): Pr
  */
 export const applyDiagnosisWrites: (
 	input: ApplyDiagnosisInput,
-) => Effect.Effect<void, DatabaseError, Database> = Effect.fn("applyDiagnosisWrites")(function* (input) {
+) => Effect.Effect<void, DatabaseError | TriageActorMissingError, Database> = Effect.fn(
+	"applyDiagnosisWrites",
+)(function* (input) {
 	const database = yield* Database
 	yield* makeDbExecute(database, "applyDiagnosisWrites", identity)((db) => writeDiagnosis(db, input))
 })
@@ -222,27 +225,28 @@ export interface ApplyInconclusiveInput {
  * - `error: null` — the raw error string in that column is what the UI used to
  *   render in a destructive box. The report replaces it.
  */
-const writeInconclusive = async (db: MaplePgClient, input: ApplyInconclusiveInput): Promise<void> => {
-	const now = new Date(input.nowMs)
-	await db
-		.update(investigations)
-		.set({
-			status: "inconclusive",
-			reportJson: input.report,
-			severity: null,
-			// Always low, whatever the report says. Nothing was established, and a
-			// partial that claims medium confidence in a lead is a promotion nobody
-			// made, reintroduced one layer down.
-			confidence: "low",
-			model: input.model,
-			inputTokens: input.inputTokens,
-			outputTokens: input.outputTokens,
-			error: null,
-			diagnosedAt: null,
-			updatedAt: now,
-		})
-		.where(and(eq(investigations.orgId, input.orgId), eq(investigations.id, input.investigationId)))
-}
+const writeInconclusive = (db: MapleDb, input: ApplyInconclusiveInput) =>
+	Effect.gen(function* () {
+		const now = new Date(input.nowMs)
+		yield* db
+			.update(investigations)
+			.set({
+				status: "inconclusive",
+				reportJson: input.report,
+				severity: null,
+				// Always low, whatever the report says. Nothing was established, and a
+				// partial that claims medium confidence in a lead is a promotion nobody
+				// made, reintroduced one layer down.
+				confidence: "low",
+				model: input.model,
+				inputTokens: input.inputTokens,
+				outputTokens: input.outputTokens,
+				error: null,
+				diagnosedAt: null,
+				updatedAt: now,
+			})
+			.where(and(eq(investigations.orgId, input.orgId), eq(investigations.id, input.investigationId)))
+	})
 
 /**
  * Publish a partial result. See {@link applyInconclusiveWrites}' body above for

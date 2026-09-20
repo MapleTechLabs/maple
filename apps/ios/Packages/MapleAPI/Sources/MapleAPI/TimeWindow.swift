@@ -71,6 +71,16 @@ public struct ResolvedTimeWindow: Hashable, Sendable {
 	public var startTime: String { Self.format(start) }
 	public var endTime: String { Self.format(end) }
 
+	/// The bucket length that gives this window roughly `targetPoints` buckets,
+	/// snapped up to a whole number of minutes: the server's rollup tiers are
+	/// minute-grain, and a whole number of minutes keeps bucket boundaries
+	/// aligned with the window's minute-snapped end. A sparkline on an hour and
+	/// one on a week then carry the same visual density.
+	public func bucketSeconds(targetPoints: Int) -> Int {
+		let raw = end.timeIntervalSince(start) / Double(max(1, targetPoints))
+		return max(60, Int((raw / 60).rounded(.up)) * 60)
+	}
+
 	/// ISO-8601 with fractional seconds, always UTC.
 	///
 	/// The server checks `^\d{4}-\d{2}-\d{2}T.+(?:Z|[+-]00:00)$`, so a

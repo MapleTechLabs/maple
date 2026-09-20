@@ -35,6 +35,7 @@ const IOS_OPERATIONS = [
 	"listServices",
 	"listEnvironments",
 	"getService",
+	"getServiceOverview",
 	"queryTraceTimeseries",
 	"queryTraceBreakdown",
 	"listErrorIssues",

@@ -10,5 +10,7 @@ export default defineConfig({
 	dbCredentials: {
 		url: process.env.DATABASE_URL ?? "postgres://maple:maple@localhost:5499/maple",
 	},
-	strict: true,
+	// v1 manages every schema by default; Maple owns only `public` (the `drizzle`
+	// migrations schema and Electric's publication objects must stay out of diffs).
+	schemaFilter: ["public"],
 })

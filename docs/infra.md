@@ -151,8 +151,8 @@ Gotchas worth knowing:
 
 - **The dev Hyperdrive origin must set `sslmode: "disable"`.** Alchemy defaults a local
   origin to `sslmode=prefer` (`Cloudflare/Hyperdrive/ConnectBinding.ts`), the driver then
-  attempts TLS against the docker Postgres, which has SSL off, and every DB call 503s with
-  `CONNECT_TIMEOUT` after the dial budget. See `ManagedMapleDb`.
+  attempts TLS against the docker Postgres, which has SSL off, and every DB call 503s after the
+  dial budget (`error.type = ConnectionError`; `CONNECT_TIMEOUT` under the old postgres.js driver). See `ManagedMapleDb`.
 - **`MAPLE_OTEL_INGEST_KEY` is optional on dev stages only** (`selfObservabilityEnv`). The
   local stack resolves the same env contract as a deploy, and no developer has a real
   ingest key; without the exemption the whole stack refuses to start over a key whose only
@@ -239,8 +239,9 @@ impl)` over the plain `ChatSession` class — the outer Effect resolves state an
   not the only way to run this image — an alchemy `Cloudflare.DurableObject` in the api
   can front a `Cloudflare.Container` and talk to its port directly — but that means
   owning the container's control protocol instead of using the vendor client, so this
-  buys the client at the price of an app. It has no route and no hostname: the api reaches
-  it over a `SANDBOX` service binding, provided by the root as `SandboxWorker`, and every
+  buys the client at the price of an app. It has no route and no hostname: maple-ai, whose
+  agents run the sandbox tools, reaches it over a `SANDBOX` service binding, provided by the
+  root as `SandboxWorker`, and every
   request carries `SANDBOX_INTERNAL_SERVICE_TOKEN` — deliberately not the shared
   `INTERNAL_SERVICE_TOKEN`, which lets its holder act as any organization.
 

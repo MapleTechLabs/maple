@@ -3,7 +3,7 @@ import type { IssueSeverity } from "@maple/domain/http"
 import {
 	DEFAULT_MAX_PASSES_PER_DAY,
 	DEFAULT_MAX_RUNS_PER_DAY,
-	effectivePassLimit,
+	effectiveLimit,
 	evaluateInvestigationQuota,
 	RESERVED_PASS_FRACTION,
 	startOfUtcDay,
@@ -12,8 +12,10 @@ import {
 const NOW = Date.UTC(2026, 7, 9, 13, 30)
 const MIDNIGHT_TOMORROW = Date.UTC(2026, 7, 10)
 
-/** The ceiling an unclassified or low-severity start is judged against. */
+/** The pass ceiling an unclassified or low-severity start is judged against. */
 const ORDINARY_LIMIT = Math.floor(DEFAULT_MAX_PASSES_PER_DAY * (1 - RESERVED_PASS_FRACTION))
+/** The same, in runs. */
+const ORDINARY_RUNS = Math.floor(DEFAULT_MAX_RUNS_PER_DAY * (1 - RESERVED_PASS_FRACTION))
 
 const verdict = (input: {
 	runs: number
@@ -41,7 +43,9 @@ describe("evaluateInvestigationQuota", () => {
 	 * the start, so the two cases must stay distinguishable.
 	 */
 	it("names the runs ceiling when runs are spent", () => {
-		expect(verdict({ runs: DEFAULT_MAX_RUNS_PER_DAY, passes: 0, passCount: 1 })).toEqual({
+		expect(
+			verdict({ runs: DEFAULT_MAX_RUNS_PER_DAY, passes: 0, passCount: 1, severity: "critical" }),
+		).toEqual({
 			kind: "exceeded",
 			dimension: "runs",
 			limit: DEFAULT_MAX_RUNS_PER_DAY,
@@ -68,9 +72,9 @@ describe("evaluateInvestigationQuota", () => {
 
 	/** Passes are checked as `used + requested`; runs as `used`, so the last slot stays usable. */
 	it("lets the last run slot be used", () => {
-		expect(verdict({ runs: DEFAULT_MAX_RUNS_PER_DAY - 1, passes: 0, passCount: 1 })).toEqual({
-			kind: "allowed",
-		})
+		expect(
+			verdict({ runs: DEFAULT_MAX_RUNS_PER_DAY - 1, passes: 0, passCount: 1, severity: "critical" }),
+		).toEqual({ kind: "allowed" })
 	})
 
 	it("resets at the next UTC midnight regardless of the time of day", () => {
@@ -124,8 +128,46 @@ describe("evaluateInvestigationQuota", () => {
 
 		/** A start judged against 700 must not report "limit 1000" — that sends the reader to the wrong number. */
 		it("reports the ceiling that actually applied", () => {
-			expect(effectivePassLimit(1000, "low")).toBe(700)
-			expect(effectivePassLimit(1000, "critical")).toBe(1000)
+			expect(effectiveLimit(1000, "low")).toBe(700)
+			expect(effectiveLimit(1000, "critical")).toBe(1000)
+		})
+
+		/**
+		 * The reserve used to guard passes only, which made it unreachable for any
+		 * org that configured a run ceiling at all: runs are tested first, and a
+		 * configured run ceiling is always the smaller number. Measured on the
+		 * internal org 2026-09-17..19: 100 runs against a 700-pass effective
+		 * ceiling, every refusal `dimension: "runs"`, the day's budget spent
+		 * overnight on `medium` anomalies.
+		 */
+		it("refuses an ordinary start once it would eat the run reserve", () => {
+			expect(verdict({ runs: ORDINARY_RUNS, passes: 0, passCount: 1, severity: "medium" })).toEqual({
+				kind: "exceeded",
+				dimension: "runs_reserved",
+				limit: ORDINARY_RUNS,
+				retryableAtMs: MIDNIGHT_TOMORROW,
+			})
+		})
+
+		it("admits a critical start from the run reserve the same noise was refused from", () => {
+			expect(verdict({ runs: ORDINARY_RUNS, passes: 0, passCount: 1, severity: "critical" })).toEqual({
+				kind: "allowed",
+			})
+		})
+
+		it("treats an unknown severity as ordinary against the run ceiling too", () => {
+			for (const severity of [undefined, null] as const) {
+				expect(verdict({ runs: ORDINARY_RUNS, passes: 0, passCount: 1, severity })).toMatchObject({
+					kind: "exceeded",
+					dimension: "runs_reserved",
+				})
+			}
+		})
+
+		it("still names the plain runs ceiling for a priority start", () => {
+			expect(
+				verdict({ runs: DEFAULT_MAX_RUNS_PER_DAY, passes: 0, passCount: 1, severity: "critical" }),
+			).toMatchObject({ dimension: "runs", limit: DEFAULT_MAX_RUNS_PER_DAY })
 		})
 
 		it("still names the plain passes ceiling for a priority start", () => {

@@ -29,21 +29,23 @@ const makeLayer = () => {
 describe("ErrorActorsService", () => {
 	it.effect("retains the shared Postgres contention retry contract", () =>
 		Effect.gen(function* () {
+			const real = yield* Database
 			let attempts = 0
 			const contention = new DatabaseError({
 				message: "could not serialize access",
 				cause: Object.assign(new Error("serialization failure"), { code: "40001" }),
 			})
+			// Two contention failures, then the real database takes the call.
 			const database: DatabaseApi = {
-				execute: <T>() =>
+				execute: (fn) =>
 					Effect.suspend(() => {
 						attempts += 1
-						return attempts < 3 ? Effect.fail(contention) : Effect.succeed("ok" as T)
+						return attempts < 3 ? Effect.fail(contention) : real.execute(fn)
 					}),
 			}
 
 			const fiber = yield* Effect.forkChild(
-				makeErrorDatabaseExecute(database, "ErrorActorsService")(async () => "unused"),
+				makeErrorDatabaseExecute(database, "ErrorActorsService")(() => Effect.succeed("ok")),
 				{ startImmediately: true },
 			)
 			yield* TestClock.adjust("1 second")
@@ -51,7 +53,7 @@ describe("ErrorActorsService", () => {
 
 			assert.strictEqual(result, "ok")
 			assert.strictEqual(attempts, 3)
-		}),
+		}).pipe(Effect.provide(createTestDb(createdDbs).layer)),
 	)
 
 	it.effect("ensures one stable user actor", () =>

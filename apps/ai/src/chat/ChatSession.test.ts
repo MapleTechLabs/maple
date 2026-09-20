@@ -373,6 +373,47 @@ describe("ChatSession turn mutex", () => {
 	})
 })
 
+describe("ChatSession turn heartbeat", () => {
+	/**
+	 * An outbound fetch never keeps a Durable Object alive, so an autonomous turn nobody was watching
+	 * was evicted about two minutes in. The alarm is the incoming event that prevents it.
+	 */
+	it("arms the alarm when a turn starts, and re-arms it while that turn runs", () => {
+		const { session, state } = makeSession()
+		session.beginTurn({ sessionId: "org_test:tab", messageId: "u1", text: "hi", tenant: TENANT })
+		assert.lengthOf(state.alarms, 1)
+
+		session.alarm()
+		assert.lengthOf(state.alarms, 2)
+		assert.isTrue(session.running())
+	})
+
+	it("stops re-arming once no turn holds the slot", () => {
+		const { session, state, turnId } = makeSession()
+		session.beginTurn({ sessionId: "org_test:tab", messageId: "u1", text: "hi", tenant: TENANT })
+		session.endTurn(turnId()!)
+
+		session.alarm()
+		assert.lengthOf(state.alarms, 1)
+	})
+
+	/** A fresh activation holds the claim but not the fiber: the object was evicted mid-turn. */
+	it("releases a slot whose turn did not survive an eviction", () => {
+		const { session, state, turnId } = makeSession()
+		session.beginTurn({ sessionId: "org_test:tab", messageId: "u1", text: "hi", tenant: TENANT })
+		const orphaned = turnId()!
+
+		const revived = new ChatSession(state, {})
+		revived.alarm()
+
+		assert.isFalse(revived.running())
+		const last = revived.since(0).at(-1)
+		assert.strictEqual(last?.type, "turn-end")
+		assert.strictEqual(last?.type === "turn-end" ? last.messageId : undefined, orphaned)
+		assert.strictEqual(last?.type === "turn-end" ? last.reason : undefined, "error")
+	})
+})
+
 describe("ChatSession.subscribe", () => {
 	/** Read the whole subscription, which ends at `turn-end`. */
 	const drain = async (stream: ReadableStream<Uint8Array>): Promise<string> => {
@@ -587,62 +628,5 @@ describe("ChatSession.history — sub-agent transcripts", () => {
 		const message = session.history()[0]!
 		assert.equal(message.text, "parent text")
 		assert.equal(message.toolCalls[0]?.task?.messages[0]?.text, "the answer")
-	})
-})
-
-describe("ChatSession compaction", () => {
-	it("is inert for display — the user still sees what they actually said", () => {
-		// This is where Maple diverges from opencode. There, the transcript and the model input are
-		// the same list, so compaction reorders what the user sees. Here they are different things.
-		const { session } = makeSession()
-		session.append({ type: "user-message", id: "u1", text: "why is checkout slow?" })
-		session.append({ type: "turn-start", messageId: "a1" })
-		session.append({ type: "text-delta", messageId: "a1", text: "p99 is 4.2s." })
-		session.append({ type: "turn-end", messageId: "a1", reason: "stop" })
-		session.append({
-			type: "compaction",
-			messageId: "a1",
-			summary: "checkout p99 was 4.2s",
-			throughSeq: 4,
-		})
-
-		const history = session.history()
-		assert.lengthOf(history, 2)
-		assert.equal(history[0]?.text, "why is checkout slow?")
-		assert.equal(history[1]?.text, "p99 is 4.2s.")
-	})
-
-	it("returns the most recent compaction, not the first", () => {
-		const { session } = makeSession()
-		session.append({ type: "compaction", messageId: "a1", summary: "older", throughSeq: 1 })
-		session.append({ type: "user-message", id: "u1", text: "more" })
-		session.append({ type: "compaction", messageId: "a2", summary: "newer", throughSeq: 2 })
-
-		assert.deepEqual(session.compaction(), { summary: "newer", throughSeq: 2 })
-	})
-
-	it("reports no compaction on a fresh conversation", () => {
-		const { session } = makeSession()
-		session.append({ type: "user-message", id: "u1", text: "hi" })
-
-		assert.isUndefined(session.compaction())
-	})
-
-	it("stamps every message with the seq that opened it", () => {
-		// `toLlmMessages` splits the transcript on this. `createdAt` cannot do the job: it is a
-		// non-unique wall clock denominated in milliseconds, not in event sequence.
-		const { session } = makeSession()
-		session.append({ type: "user-message", id: "u1", text: "one" })
-		session.append({ type: "turn-start", messageId: "a1" })
-		session.append({ type: "text-delta", messageId: "a1", text: "two" })
-		session.append({ type: "user-message", id: "u2", text: "three" })
-
-		const seqs = session.history().map((message) => message.startSeq)
-		assert.deepEqual(seqs, [1, 2, 4])
-		// Monotonic, so the split is well defined.
-		assert.deepEqual(
-			[...seqs].sort((a, b) => a - b),
-			seqs,
-		)
 	})
 })

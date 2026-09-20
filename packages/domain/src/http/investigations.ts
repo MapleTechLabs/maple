@@ -49,6 +49,31 @@ export const InvestigationConfidence = Schema.Literals(["high", "medium", "low"]
 })
 export type InvestigationConfidence = Schema.Schema.Type<typeof InvestigationConfidence>
 
+// Run progress
+
+/** One thing the pass did. `tool` stays beside the display `label` because it is the only part worth matching on later. */
+export const InvestigationStep = Schema.Struct({
+	tool: Schema.String,
+	label: Schema.String,
+	at: Schema.Number,
+}).annotate({ identifier: "@maple/InvestigationStep", title: "Investigation Step" })
+export type InvestigationStep = Schema.Schema.Type<typeof InvestigationStep>
+
+/** How many steps a progress record keeps. */
+export const INVESTIGATION_PROGRESS_STEPS = 12
+
+/**
+ * What a running pass is doing, durably. `steps` is a tail capped at
+ * {@link INVESTIGATION_PROGRESS_STEPS} (the transcript is the full record, and the table
+ * replicates with REPLICA IDENTITY FULL), so `stepCount` is stored rather than derived.
+ */
+export const InvestigationProgress = Schema.Struct({
+	stepCount: Schema.Number,
+	steps: Schema.Array(InvestigationStep),
+	updatedAt: Schema.Number,
+}).annotate({ identifier: "@maple/InvestigationProgress", title: "Investigation Progress" })
+export type InvestigationProgress = Schema.Schema.Type<typeof InvestigationProgress>
+
 // Subject (what is being investigated)
 
 /**
@@ -197,6 +222,8 @@ export class InvestigationDocument extends Schema.Class<InvestigationDocument>("
 	snapshot: InvestigationSubjectSnapshot,
 	/** The latest structured diagnosis, or null until the first `submit_diagnosis`. */
 	report: Schema.NullOr(AiTriageResult),
+	/** What the pass is doing, or got as far as doing. Null before the first step; kept after the run ends. */
+	progress: Schema.NullOr(InvestigationProgress),
 	model: Schema.NullOr(Schema.String),
 	/** Denormalized from the report for cheap war-room list rendering. */
 	severity: Schema.NullOr(IssueSeverity),

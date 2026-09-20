@@ -44,10 +44,15 @@ vi.mock("@maple/ui/components/ui/sheet", () => {
 	}
 })
 
-vi.mock("@/hooks/use-chat-tabs", () => ({
-	ensureStoredTab,
-	useChatTabs: () => ({ createTab, renameTab }),
-}))
+vi.mock("@/hooks/use-chat-tabs", async (importOriginal) => {
+	const actual = await importOriginal<typeof import("@/hooks/use-chat-tabs")>()
+	return {
+		ensureStoredTab,
+		loadSheetTab: actual.loadSheetTab,
+		saveSheetTab: actual.saveSheetTab,
+		useChatTabs: () => ({ createTab, renameTab }),
+	}
+})
 
 vi.mock("./global-chat-content", () => ({
 	GlobalChatContent: ({
@@ -67,13 +72,44 @@ vi.mock("./global-chat-content", () => ({
 
 import { GlobalChatPanel } from "./global-chat-panel"
 
+const { ensureStoredTab: registerStoredTab } =
+	await vi.importActual<typeof import("@/hooks/use-chat-tabs")>("@/hooks/use-chat-tabs")
+
 afterEach(cleanup)
 
 describe("GlobalChatPanel", () => {
 	beforeEach(() => {
+		localStorage.clear()
 		createTab.mockClear()
 		ensureStoredTab.mockClear()
 		renameTab.mockClear()
+	})
+
+	it("reopens on the conversation it last showed", async () => {
+		// The real createTab registers the new tab; the mock only returns its id.
+		createTab.mockImplementationOnce(() => {
+			registerStoredTab("org-1", "new-tab", "New Chat")
+			return "new-tab"
+		})
+		const first = render(<GlobalChatPanel orgId="org-1" onOpenChange={vi.fn()} />)
+		expect((await screen.findByTestId("conversation")).dataset.tab).toBe("quick")
+		fireEvent.click(screen.getByRole("button", { name: "New chat" }))
+		expect(screen.getByTestId("conversation").dataset.tab).toBe("new-tab")
+		first.unmount()
+
+		render(<GlobalChatPanel orgId="org-1" onOpenChange={vi.fn()} />)
+		expect((await screen.findByTestId("conversation")).dataset.tab).toBe("new-tab")
+		cleanup()
+
+		// Another org never inherits the tab.
+		render(<GlobalChatPanel orgId="org-2" onOpenChange={vi.fn()} />)
+		expect((await screen.findByTestId("conversation")).dataset.tab).toBe("quick")
+	})
+
+	it("falls back to the quick thread when the remembered tab was closed", async () => {
+		localStorage.setItem("maple-chat-sheet-tab:org-1", "gone")
+		render(<GlobalChatPanel orgId="org-1" onOpenChange={vi.fn()} />)
+		expect((await screen.findByTestId("conversation")).dataset.tab).toBe("quick")
 	})
 
 	it("creates and opens a fresh conversation from the AI sheet", async () => {

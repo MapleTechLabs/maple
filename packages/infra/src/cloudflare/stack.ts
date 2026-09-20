@@ -47,9 +47,10 @@ export class MapleStack extends Context.Service<MapleStack, MapleStackContext>()
 export class ApiWorker extends Context.Service<ApiWorker, Cloudflare.Worker>()("@maple/infra/ApiWorker") {}
 
 /**
- * The deployed sandbox Worker, for the api's service binding to it. Provided by
- * the root right after yielding it, for the same reason as {@link ApiWorker}: a
- * `Worker.ref` reads stored state and cannot see a sibling this deploy creates.
+ * The deployed sandbox Worker, for maple-ai's service binding to it — the
+ * Worker whose agents run the sandbox tools. Provided by the root right after
+ * yielding it, for the same reason as {@link ApiWorker}: a `Worker.ref` reads
+ * stored state and cannot see a sibling this deploy creates.
  */
 export class SandboxWorker extends Context.Service<SandboxWorker, Cloudflare.Worker>()(
 	"@maple/infra/SandboxWorker",

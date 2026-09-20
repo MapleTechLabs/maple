@@ -8,9 +8,11 @@
  * `worker.ts`, which is what keeps the two in step.
  *
  * Everything except `ASSETS` is optional because absence is a real runtime
- * state, not a type error: this worker only exists on deployed stages (`bun
- * dev` serves the SPA through Vite, not through this worker), and a dev-stage
- * deploy without an api domain binds neither key.
+ * state, not a type error: a dev-stage deploy without an api domain binds
+ * neither key. Since web became a `Cloudflare.Website.Vite` Worker this handler
+ * also runs under `bun dev`, in workerd, in front of the vite dev server, so
+ * the share-preview and OG paths are exercisable locally rather than only on a
+ * deployed stage.
  */
 export interface WebWorkerEnv {
 	readonly ASSETS: { fetch: (request: Request) => Promise<Response> }

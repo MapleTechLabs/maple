@@ -21,25 +21,33 @@ boundary — use `msToDate` / `dateToMs` from `packages/backend/src/platform/tim
 
 ## Connections on Workers
 
-One connection per invocation — request, cron tick, or Workflow run — created lazily on the first
+One connection pool per invocation — request, cron tick, or Workflow run — created lazily on the first
 query and closed at the boundary. This is Cloudflare's documented Hyperdrive shape, and
 `makePgConnectionScope` (`packages/backend/src/platform/pg-connection-scope.ts`) is the only implementation
-of it: `pgConnectionMiddleware` installs a scope for HTTP, `withPgConnectionScope` for cron, and
+of it: `withPgConnectionScope` installs a scope around each worker's request handler and cron tick, and
 `executeOnFreshPgClient` is the same scope one call long for entry points that have none.
 
 Workers tie TCP sockets to the invocation that opened them, so a connection may be reused freely
 within one but must never outlive it. Two settings carry hard-won history:
 
-- **`max: 5`** — Cloudflare's documented value. `max` is a ceiling, not a reservation: postgres.js
+The driver is node-postgres through `@effect/sql-pg`: one `pg.Pool` per invocation, built lazily
+by `createMaplePgPool` (`packages/db/src/client.ts`) and handed to `PgClient.fromPool` rather than
+`PgClient.make`, because `make` probes with `SELECT 1` at acquire. Two settings carry hard-won
+history:
+
+- **`max: 5`** — Cloudflare's documented value. `max` is a ceiling, not a reservation: the pool
   opens a second socket only when a second statement is genuinely in flight. It was 1 for one day
   on the theory that Postgres should hold at most one of the Worker's six outbound slots, which
   serialized every statement in a cron tick behind one connection (`SELECT actors` p50 928ms →
   5687ms at flat volume).
-- **A bounded `connect_timeout`** — postgres.js only raises `CONNECT_TIMEOUT` from
-  `connectTimedOut()`, and its `timer()` is a no-op when the option is unset, so an unbounded dial
-  hangs for the whole invocation and lands with no `error.type` to classify. The bound is generous
-  and single: a 2s cap alone once took production 5xx from 0.06% to 5.01%, and the retry ladder
-  that followed existed only to compensate for it.
+- **A bounded dial** (10s, `connectionTimeoutMillis` on each `Client`, never on the `Pool`) —
+  unset, a stalled dial hangs for the whole invocation and lands with no `error.type` to classify.
+  On the pool the same option also times out waiting for a free client, so a fan-out wider than
+  `max` would fail against a healthy server. A dial that hits the bound carries no driver code and
+  lands as `error.type = ConnectionError` (`postgres-errors.ts` classifies code-less acquire
+  failures); a refused one carries the socket's own code (`ECONNREFUSED`). The bound is generous and single: a
+  2s cap alone once took production 5xx from 0.06% to 5.01%, and the retry ladder that followed
+  existed only to compensate for it.
 
 ## Local development
 
@@ -61,9 +69,12 @@ Change the Drizzle schema, then generate the SQL and metadata together:
 bun run --cwd packages/db db:generate
 ```
 
-Review the generated file in `packages/db/drizzle/` and its matching journal/snapshot changes.
-Do not hand-create a migration without also updating `drizzle/meta/_journal.json`; both deployed
-Postgres and PGlite use Drizzle's journal ordering.
+Review the generated folder in `packages/db/drizzle/`: one `<timestamp>_<name>/` per migration
+holding `migration.sql` and the DDL `snapshot.json` (drizzle-kit v1 layout, no journal). The
+migrator orders folders by name and applies every folder the database has not recorded. A
+hand-authored migration (data backfill, publication change) still needs a folder with both
+files: run `drizzle-kit generate --custom --name <name>` to scaffold it rather than creating the
+folder by hand, so the snapshot chain stays intact.
 
 Useful local commands:
 
@@ -77,9 +88,31 @@ bun run --cwd packages/db db:studio
 
 ## Deployment and tests
 
-CI runs `drizzle-kit migrate` against the stage's PlanetScale **direct** port 5432 before the
-Alchemy deployment. Never run migrations through a pooler or Hyperdrive. The deployed Worker
-does not migrate on boot.
+Production migrations are applied by hand, before the Worker deploy: `bun run --cwd packages/db
+ps:migrations-preflight main` (read-only, below), then `bun run migrate:prod`, which runs
+`drizzle-kit migrate` against PlanetScale's **direct** port 5432. Never run migrations through a
+pooler or Hyperdrive. The deployed Worker does not migrate on boot.
+
+The first v1 migrate on a database migrated by drizzle 0.x upgrades `drizzle.__drizzle_migrations`
+in place (adds `name` and `applied_at`), matching every existing row to a local folder by
+`created_at` truncated to the second, then by hash, and **refusing the whole run if any row matches
+nothing**. A row like that is a migration that was applied and later renumbered or re-timestamped,
+or one applied from a branch that never merged. Check before migrating. The report prints a
+DELETE for a superseded row and an UPDATE for a renumbered row whose SQL is byte-identical; a row
+whose SQL changed after it ran gets a `git diff` instead, because relabelling it would record
+statements this database never saw as applied.
+
+The report also lists every local migration no row matches, because the v1 migrator applies all
+of them where the 0.x migrator only applied those newer than the newest recorded timestamp. A
+migration whose DDL reached the schema without a row (a `db:push`, a run that died after its
+transaction committed) used to be skipped silently and now fails on the objects that already
+exist. Compare each pending folder's first statement with the schema; record the ones already
+applied with the INSERT the report prints rather than replaying them:
+
+```bash
+bun run --cwd packages/db db:migrate:preflight              # DATABASE_URL, defaults to the docker Postgres
+bun run --cwd packages/db ps:migrations-preflight main      # a PlanetScale branch, read-only
+```
 
 PGlite applies the same bundled migrations while its layer is built. The test harness caches a
 fresh migrated PGlite snapshot and restores it per test, so integration tests exercise the

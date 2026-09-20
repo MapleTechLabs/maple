@@ -68,7 +68,8 @@ export function buildBaselineMap(
 ): Map<string, LatencyBaselineSignal> {
 	const map = new Map<string, LatencyBaselineSignal>()
 	for (const row of rows) {
-		map.set(baselineKey(row.serviceName, row.serviceNamespace, row.environment), {
+		// Overview rows label the empty environment "unknown"; baseline rows are raw.
+		map.set(baselineKey(row.serviceName, row.serviceNamespace, row.environment || "unknown"), {
 			p95LatencyMs: row.baselineP95LatencyMs,
 			spanCount: row.baselineSpanCount,
 		})

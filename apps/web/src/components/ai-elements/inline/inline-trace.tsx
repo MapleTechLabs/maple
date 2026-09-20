@@ -1,4 +1,5 @@
 import { Link } from "@tanstack/react-router"
+import type { InlineTraceData } from "@maple/domain/chat-annotations"
 import { cn } from "@maple/ui/lib/utils"
 import { LatencyValue } from "@maple/ui/components/latency-value"
 import { PulseIcon } from "@/components/icons"
@@ -10,7 +11,6 @@ import {
 	InlineServiceChips,
 	inlineCardClass,
 } from "./inline-card"
-import type { InlineTraceData } from "./types"
 
 export function InlineTrace({ data }: { data: InlineTraceData }) {
 	const services = data.services ?? []

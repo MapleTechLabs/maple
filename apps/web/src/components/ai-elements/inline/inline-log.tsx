@@ -1,8 +1,8 @@
 import { Link } from "@tanstack/react-router"
+import type { InlineLogData } from "@maple/domain/chat-annotations"
 import { SeverityBadge } from "@maple/ui/components/logs/severity-badge"
 import { normalizeTimestampInput } from "@/lib/timezone-format"
 import { INLINE_CARD_ROW, inlineCardClass } from "./inline-card"
-import type { InlineLogData } from "./types"
 
 /**
  * One log line. The card is not itself a link — the trace link inside it is the

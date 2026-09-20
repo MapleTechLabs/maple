@@ -1,7 +1,8 @@
 import { memo } from "react"
+import { parseAnnotations } from "@maple/domain/chat-annotations"
 import { cn } from "@maple/ui/lib/utils"
 import { MessageResponse } from "./message-response"
-import { parseAnnotations, InlineTrace, InlineService, InlineError, InlineLog } from "./inline"
+import { InlineTrace, InlineService, InlineError, InlineLog } from "./inline"
 
 interface RichTextProps {
 	children: string

@@ -80,7 +80,7 @@ const makeLogRecord = (logOptions: Logger.Options<unknown>, excludeLogSpans: boo
 		droppedAttributesCount: 0,
 	}
 
-	const currentSpan = logOptions.fiber.currentSpan
+	const currentSpan = logOptions.fiber.cache.span
 	if (currentSpan) {
 		record.traceId = currentSpan.traceId
 		record.spanId = currentSpan.spanId

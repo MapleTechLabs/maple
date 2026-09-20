@@ -1,29 +1,21 @@
 /**
  * Every ceiling a run answers to, in one place.
  *
- * Collected deliberately. These numbers only make sense against each other — the call ceiling
- * multiplies against tool concurrency and against the sub-agent fan-out, and the product has to
- * stay under `ChatSession`'s `TURN_STALE_MS` watchdog or the Durable Object will declare a
- * *still-running* turn abandoned and write a terminal event underneath it.
+ * Collected deliberately. These numbers only make sense against each other, and against the two
+ * rails outside this file: the product has to stay under `ChatSession`'s `TURN_STALE_MS` watchdog
+ * or the Durable Object will declare a *still-running* turn abandoned and write a terminal event
+ * underneath it, and `contextTokenLimit` is a hard failure rather than a nudge (see
+ * {@link liveContextLimit}).
  *
  * `agentPolicyFor` in `./agents.ts` is the only reader: these are the inputs to an `AgentPolicy`,
  * and the engine enforces them.
+ *
+ * The numbers below are set from prod, internal org, 2026-09-17..19: per turn p50 343k input
+ * tokens and p95 1.16M (max 2.06M); p50 21 tool calls and max 54; the largest single call's input
+ * p95 98k and max 140k.
  */
 
-/**
- * Hard cap on tool calls per submission, sub-agents included.
- *
- * A guardrail against a loop that lost the plot, not a budget the model should pace itself
- * against — which is why it sits far above what any answer needs. A run that hits it gets one
- * further, tool-less step so the model can answer from what it found, rather than stopping dead on
- * a wall of tool rows with no words.
- *
- * It replaced a step budget of ten assistant turns, six for sub-agents. That was low enough that
- * ordinary work reached it: sub-agents returned truncated partials, and the model spent the user's
- * reply explaining its own plumbing. `TURN_MAX_DURATION` is what usually stops a runaway turn
- * first, and is the bound worth tuning.
- */
-export const MAX_TOOL_CALLS = 100
+import type * as Duration from "effect/Duration"
 
 /** Fan-out cap for tool calls issued in the same assistant turn. */
 export const TOOL_CONCURRENCY = 4
@@ -43,10 +35,80 @@ export const TOOL_CONCURRENCY = 4
 export const REPEATED_TOOL_CALLS = 5
 
 /**
- * Wall clock one run may take.
+ * What one kind of turn may spend.
  *
- * Held well under `ChatSession`'s `TURN_STALE_MS` (15 minutes) so the deadline that stops a turn is
- * the turn's own, not the Durable Object's watchdog declaring a still-running turn abandoned and
- * writing a terminal event underneath it.
+ * Per agent, because the two kinds of turn are not the same work and used to share one budget: a
+ * one-line chat reply was given the autonomous investigation's 100-call, ten-minute rail, so a
+ * conversation could hold a person waiting for ten minutes over a question that wanted two tool
+ * calls.
  */
-export const TURN_MAX_DURATION = "10 minutes"
+export interface AgentBudget {
+	/** Hard cap on tool calls, and on assistant turns, so a turn can never be stopped for thinking more often than it called a tool. */
+	readonly maxToolCalls: number
+	/** Wall clock. Held well under `ChatSession`'s 15-minute `TURN_STALE_MS` so the deadline that stops a turn is the turn's own. */
+	readonly maxDuration: Duration.Input
+	/**
+	 * Total tokens, input plus output, the run may consume.
+	 *
+	 * Unset until 2026-09-20, which meant nothing bounded a run's spend at all: `maxToolCalls` was
+	 * never reached (max 54 of 100) and `maxDuration` stopped only the truly stuck, so the long tail
+	 * ran to 2.06M tokens. Crossing it flips the run to its final answer rather than failing it,
+	 * which is the behaviour worth having: a run that has burned this much is not going to improve,
+	 * and what we want from it is the diagnosis it already has evidence for.
+	 */
+	readonly tokenBudget: number
+	/**
+	 * Tokens withheld from research calls so one final delivery call stays admissible.
+	 *
+	 * The engine stops offering tools once the next call would eat into this, then admits the final
+	 * call regardless of the budget. Sized as one real call rather than the engine's 4,096 default,
+	 * which is smaller than any prompt this agent sends and would let research run to the last token.
+	 */
+	readonly completionReserveTokens: number
+}
+
+/**
+ * An autonomous investigation: a long evidence-gathering pass that must end on `submit_diagnosis`.
+ *
+ * `maxToolCalls` stays a runaway guard rather than a budget the model should pace against, which is
+ * why it sits far above the 54 calls the worst observed run made. `tokenBudget` sits just above the
+ * p95 turn, so roughly one run in twenty is asked to conclude and the rest are untouched.
+ */
+export const INVESTIGATION_BUDGET: AgentBudget = {
+	maxToolCalls: 100,
+	maxDuration: "10 minutes",
+	tokenBudget: 1_200_000,
+	completionReserveTokens: 64_000,
+}
+
+/** An attended chat turn: someone is watching it, so the ceilings are what a person will wait for. */
+export const CHAT_BUDGET: AgentBudget = {
+	maxToolCalls: 40,
+	maxDuration: "5 minutes",
+	tokenBudget: 600_000,
+	completionReserveTokens: 32_000,
+}
+
+/**
+ * The largest prompt one model call may carry before the engine compacts.
+ *
+ * This used to be the model's entire context window, which made compaction unreachable: a single
+ * call would have had to reach a million tokens on `glm-5.3-flash` before anything pruned, while the
+ * worst call actually observed was 140k. The `CompactionPolicy` underneath it had therefore never
+ * run, and `agents.ts` claimed compaction was "the engine's job" when it was nobody's.
+ *
+ * Two bounds, because the failure modes differ by model. The fraction keeps a small-window model
+ * from compacting into a prompt that leaves no room for its own output. The absolute cap is what
+ * bites on a million-token model, and is set above the observed p95 of 98k so compaction stays
+ * exceptional.
+ *
+ * Do not set this near the floor. It is a hard rail, not a nudge: when compaction cannot fit the
+ * next prompt underneath it the engine raises `ContextBudgetError` and the run dies. The floor is
+ * the system prompt plus the tool schemas plus `CompactionPolicy.keepRecentTokens` (20k), so the
+ * headroom above it is what keeps a long run alive.
+ */
+export const MAX_LIVE_CONTEXT_TOKENS = 128_000
+const LIVE_CONTEXT_FRACTION = 0.6
+
+export const liveContextLimit = (modelContextTokens: number): number =>
+	Math.max(1, Math.min(Math.floor(modelContextTokens * LIVE_CONTEXT_FRACTION), MAX_LIVE_CONTEXT_TOKENS))

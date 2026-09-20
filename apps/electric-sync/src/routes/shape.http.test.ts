@@ -72,7 +72,7 @@ describe("shape route: a served shape", () => {
 	it.effect("passes a scoped shape's scope value through to the upstream", () =>
 		Effect.gen(function* () {
 			const calls: Array<ElectricCall> = []
-			yield* syncRequest(routes({ calls }), "/api/sync/shape?shape=investigation&scope=inv_1&offset=-1")
+			yield* syncRequest(routes({ calls }), "/api/sync/shape?shape=investigation_v2&scope=inv_1&offset=-1")
 			assert.deepStrictEqual(calls[0]?.request.scope, { column: "id", value: "inv_1" })
 		}),
 	)
@@ -136,10 +136,10 @@ describe("shape route: rejections", () => {
 		Effect.gen(function* () {
 			const { status, body } = yield* syncRequest(
 				routes({}),
-				"/api/sync/shape?shape=investigation&offset=-1",
+				"/api/sync/shape?shape=investigation_v2&offset=-1",
 			)
 			assert.strictEqual(status, 400)
-			assert.strictEqual(body, "Shape investigation requires a scope")
+			assert.strictEqual(body, "Shape investigation_v2 requires a scope")
 		}),
 	)
 

@@ -1,0 +1,248 @@
+.account-layout {
+	min-height: 100dvh;
+	display: grid;
+	/* The content column stops growing past a readable width so ultrawide monitors
+	 * give the engraving the extra space rather than the void around the form. */
+	grid-template-columns: minmax(0, 1fr) minmax(460px, 46%);
+	background: var(--background);
+	color: var(--foreground);
+	font-family: "Geist Variable", sans-serif;
+}
+.account-layout :is(button, input, a):focus-visible {
+	outline: 2px solid var(--ring);
+	outline-offset: 2px;
+}
+.account-layout a:focus-visible {
+	outline-offset: 6px;
+}
+.account-art {
+	position: relative;
+	display: flex;
+	flex-direction: column;
+	overflow: hidden;
+	background: #e9831a;
+	color: #241d16;
+}
+.account-art-image {
+	order: 3;
+	flex: 1;
+	min-height: 320px;
+	width: 100%;
+	height: 0;
+	object-fit: cover;
+	object-position: 60% center;
+	/* The engraving has a textured orange sky: blend its edge into the panel. */
+	mask-image: linear-gradient(to bottom, transparent, black 32px);
+}
+.account-wordmark {
+	position: relative;
+	display: inline-flex;
+	align-items: center;
+	gap: 12px;
+	margin: 40px 48px 0;
+	align-self: flex-start;
+	order: 1;
+	font-size: 30px;
+	font-weight: 750;
+	letter-spacing: -0.03em;
+}
+.account-art-copy {
+	position: relative;
+	order: 2;
+	margin: 56px 48px 24px;
+}
+.account-eyebrow {
+	font-family: "Geist Mono Variable", ui-monospace, monospace;
+	font-size: 12px;
+	font-weight: 500;
+	letter-spacing: 0.02em;
+	margin-bottom: 20px;
+}
+.account-art-headline {
+	font-size: clamp(36px, 3.8vw, 60px);
+	font-weight: 750;
+	letter-spacing: -0.03em;
+	line-height: 1.02;
+	text-wrap: balance;
+}
+.account-art-copy > p:last-child {
+	margin-top: 24px;
+	font-size: 16px;
+	line-height: 1.6;
+	max-width: 34ch;
+}
+.account-content {
+	display: flex;
+	flex-direction: column;
+	min-width: 0;
+	padding: 40px 48px 28px;
+}
+.account-header {
+	display: flex;
+	justify-content: flex-end;
+	align-items: center;
+}
+.account-back,
+.account-footer {
+	font-family: "Geist Mono Variable", ui-monospace, monospace;
+	font-size: 12px;
+	letter-spacing: 0.02em;
+	color: var(--muted-foreground);
+}
+.account-layout a {
+	transition: color 150ms;
+}
+.account-content a:hover {
+	color: var(--foreground);
+}
+.account-mobile-wordmark {
+	display: none;
+}
+.account-form {
+	width: 100%;
+	max-width: 380px;
+	margin: auto;
+	/* Breathing room on tall screens without pushing a 14" laptop into a scroll. */
+	padding-block: clamp(32px, 6vh, 64px);
+}
+.account-footer {
+	display: flex;
+	justify-content: space-between;
+	gap: 16px;
+	flex-wrap: wrap;
+}
+
+/* --- Clerk card -----------------------------------------------------------
+ * Clerk's appearance object owns colour, type and control metrics (see
+ * clerk-appearance.ts). These rules cover what an element descriptor cannot
+ * reach: its own focus shadows, and the branding block it renders with no
+ * public descriptor. Clerk injects its stylesheet after this one, so every
+ * rule here needs one class more than Clerk's `.cl-internal-*` pair to win.
+ */
+.account-layout .account-form :is(.cl-formFieldInput, .cl-socialButtonsBlockButton, .cl-formButtonPrimary) {
+	box-shadow: none;
+	transition: background-color 150ms, border-color 150ms;
+}
+/* Clerk draws control edges as a shadow ring over a 0-width border; the system
+ * forbids shadows in chrome, so the edge becomes a real hairline instead. */
+.account-layout .account-form :is(.cl-formFieldInput, .cl-socialButtonsBlockButton) {
+	border: var(--border-hairline) solid var(--input);
+}
+/* Clerk marks the field itself; without this the only error signal is the text
+ * below it, and the hairline rule above would have overridden Clerk's own. */
+.account-layout .account-form .cl-formFieldInput[aria-invalid="true"] {
+	border-color: var(--destructive);
+}
+/* Clerk's own focus indicator is colorRing at 15% — under 3:1 on this canvas. */
+.account-layout .account-form :is(.cl-formFieldInput, .cl-socialButtonsBlockButton, .cl-formButtonPrimary, .cl-footerActionLink, .cl-formFieldAction, .cl-formFieldInputShowPasswordButton):is(:focus, :focus-visible) {
+	box-shadow: none;
+	outline: 2px solid var(--ring);
+	outline-offset: 2px;
+}
+.account-layout .account-form .cl-formFieldInput::placeholder {
+	/* The placeholder sits on the field fill, not the page: plain
+	 * --muted-foreground lands at 4.13:1 there, so lift it toward --foreground. */
+	color: color-mix(in oklch, var(--muted-foreground) 82%, var(--foreground));
+	opacity: 1;
+}
+.account-layout .account-form .cl-socialButtonsBlockButton:hover {
+	background-color: var(--muted);
+	border-color: var(--ring);
+}
+.account-layout .account-form .cl-formFieldInput:hover:not(:focus) {
+	border-color: var(--ring);
+}
+/* The eye toggle ships at 41% white — a control, so it needs to be readable. */
+.account-layout .account-form .cl-formFieldInputShowPasswordButton {
+	color: var(--muted-foreground);
+}
+.account-layout .account-form .cl-formFieldInputShowPasswordButton:hover {
+	color: var(--foreground);
+}
+/* Mono is the card's base voice (clerk-appearance.ts); these are the label role
+ * from DESIGN.md — 12px with the 0.02em tracking that size needs. */
+.account-layout .account-form :is(.cl-formFieldLabel, .cl-formFieldHintText, .cl-dividerText, .cl-footerActionText, .cl-footerActionLink) {
+	font-size: 12px;
+	letter-spacing: 0.02em;
+}
+/* Clerk centers the footer column and insets the action by its own gutter;
+ * the rest of the page is left-aligned on the form's edge. */
+.account-layout .account-form .cl-footer {
+	align-items: flex-start;
+}
+.account-layout .account-form .cl-footerAction {
+	padding-inline: 0;
+}
+/* "Secured by Clerk" sits in the footer with no element descriptor of its own;
+ * it is the only footer child that is not the sign-in/sign-up action. */
+.account-layout .account-form .cl-footer > div:not([class*="cl-footerAction"]) {
+	display: none;
+}
+
+/* --- Self-hosted form ------------------------------------------------------
+ * Square controls at a touch height, matching the Clerk card. <Input> draws its
+ * border and radius on the control wrapper, so the radius has to land there —
+ * on the inner <input> it would leave a rounded field on a square page.
+ */
+.account-form :is([data-slot="input-control"], button[type="submit"]) {
+	min-height: 44px;
+	border-radius: 0;
+}
+.account-form [data-slot="input-control"] > input {
+	height: 100%;
+}
+
+@media (max-width: 959px) {
+	.account-layout {
+		grid-template-columns: 1fr;
+	}
+	.account-art {
+		display: none;
+	}
+	.account-content {
+		min-height: 100dvh;
+		padding: 28px 32px;
+	}
+	/* One column: the header and footer share the form's edges instead of
+	 * spanning a width the form does not, which reads as three left margins. */
+	.account-header,
+	.account-footer {
+		width: 100%;
+		max-width: 380px;
+		margin-inline: auto;
+	}
+	.account-header {
+		justify-content: space-between;
+	}
+	.account-mobile-wordmark {
+		display: inline-flex;
+		align-items: center;
+		gap: 10px;
+		font-size: 22px;
+		font-weight: 750;
+		letter-spacing: -0.03em;
+	}
+	/* Amber mark, foreground word — the same lockup the onboarding shell uses,
+	 * so the entrance and the destination read as one product. */
+	.account-mobile-wordmark svg {
+		color: var(--primary);
+	}
+}
+@media (max-width: 480px) {
+	.account-content {
+		padding: 24px;
+	}
+	.account-form {
+		padding-block: 48px;
+	}
+}
+@media (prefers-reduced-motion: reduce) {
+	.account-layout a,
+	.account-layout .account-form :is(.cl-formFieldInput, .cl-socialButtonsBlockButton, .cl-formButtonPrimary) {
+		transition: none;
+	}
+}
+
+.account-layout .account-wordmark:focus-visible {
+	outline-color: #241d16;
+}

@@ -46,7 +46,6 @@ vi.mock("@/lib/services/atoms/warehouse-query-atoms", async (importOriginal) => 
 })
 
 import type { AiSessionSpan, GetAiSessionSummaryResponse } from "@maple/domain/http"
-import { formatSessionDuration } from "@maple/ui/lib/replay-format"
 import type { SessionLoadProgress } from "@/hooks/use-session-spans"
 import {
 	buildSessionSummary,
@@ -406,13 +405,12 @@ describe("SessionOverview", () => {
 
 	// Agent time, not the clock: 23s of tools and 18s of model calls inside a
 	// 5m 12s session, with two of those tools running at the same time.
-	it("splits agent time by class of work, and says how wide the fan-out got", () => {
+	it("splits agent time by class of work", () => {
 		render(<Overview />)
 
 		expect(screen.getByText("Tool execution")).toBeTruthy()
 		expect(screen.getByText("Agent time").nextElementSibling?.textContent).toBe("41s")
 		expect(screen.getByText("Wall clock").nextElementSibling?.textContent).toBe("5m 12s")
-		expect(screen.getByText("agents in parallel").previousElementSibling?.textContent).toBe("2×")
 	})
 
 	// Idle is not agent time, but nothing at all was running then — disjoint
@@ -454,8 +452,16 @@ describe("SessionOverview", () => {
 		const errors = within(screen.getByTestId("check-tool-errors"))
 		expect(errors.getByText("Tool errors")).toBeTruthy()
 		// The tool name is set as code, so the sentence's own text starts after it.
-		expect(errors.getByText(/failed once on turn 1: exit 1; the session carried on$/)).toBeTruthy()
-		expect(errors.getByText(/^Fix the tool/)).toBeTruthy()
+		expect(errors.getByText(/^1 tool call failed; the session carried on$/)).toBeTruthy()
+		const scrollIntoView = vi.fn()
+		const original = Element.prototype.scrollIntoView
+		Element.prototype.scrollIntoView = scrollIntoView
+		try {
+			fireEvent.click(errors.getByRole("button", { name: "Tools section" }))
+			expect(scrollIntoView).toHaveBeenCalledWith({ behavior: "smooth", block: "start" })
+		} finally {
+			Element.prototype.scrollIntoView = original
+		}
 		fireEvent.click(screen.getByText("error · run_tests"))
 		expect(onSelectSpan).toHaveBeenCalledWith("tool-3")
 	})
@@ -504,7 +510,8 @@ describe("SessionOverview", () => {
 		render(<Overview turns={quietTurns} summary={quiet} />)
 
 		expect(screen.getByText("Completed")).toBeTruthy()
-		expect(screen.getByText(/^cleanly — \d+ checks passed across \d+ (turn|segment)s?$/)).toBeTruthy()
+		// The headline is the count strip's job here; only a failed session names a cause.
+		expect(screen.queryByText(/^cleanly —/)).toBeNull()
 		expect(screen.getByText(/^Nothing to fix/)).toBeTruthy()
 		expect(screen.getByRole("button", { name: /^Passed/ }).getAttribute("aria-expanded")).toBe("true")
 		expect(screen.getByText("No model call was rate-limited")).toBeTruthy()
@@ -643,6 +650,46 @@ describe("SessionWaterfall", () => {
 
 		view.rerender(<Waterfall agentSpansOnly={false} />)
 		expect(screen.getByText("GET /repo/file")).toBeTruthy()
+	})
+
+	// A runtime that executes a tool once the model's stream has closed reports
+	// the two as siblings; the call id is what puts the execution under its call.
+	it("nests a sibling tool span under the model call that issued it", () => {
+		const { turns: flatTurns, summary: flatSummary } = sessionOf([
+			agentSpan({ spanId: "nt-agent", startMs: 0, durationMs: 6 * SECOND }),
+			llmSpan({
+				spanId: "nt-llm-1",
+				parentSpanId: "nt-agent",
+				startMs: 0,
+				durationMs: SECOND,
+				genAi: {
+					outputMessages: [
+						{ role: "assistant", parts: [{ type: "tool_call", id: "call_n", name: "run_sql" }] },
+					],
+				},
+			}),
+			toolSpan({
+				spanId: "nt-tool",
+				parentSpanId: "nt-agent",
+				startMs: SECOND,
+				durationMs: SECOND,
+				toolName: "run_sql",
+				genAi: { toolCallId: "call_n" },
+			}),
+			llmSpan({
+				spanId: "nt-llm-2",
+				parentSpanId: "nt-agent",
+				startMs: 2 * SECOND,
+				durationMs: SECOND,
+			}),
+		])
+		render(<Waterfall turns={flatTurns} summary={flatSummary} />)
+
+		const indentOf = (spanId: string) =>
+			(document.querySelector(`[data-span-row="${spanId}"] > span`) as HTMLElement).style.paddingLeft
+		expect(indentOf("nt-llm-1")).toBe("14px")
+		expect(indentOf("nt-tool")).toBe("28px")
+		expect(indentOf("nt-llm-2")).toBe("14px")
 	})
 
 	it("narrows to the spans that match the filter", () => {
@@ -1420,13 +1467,14 @@ describe("SessionViews", () => {
 })
 
 describe("SessionHeader", () => {
-	it("names the session after its agent, with the framework as a fact beside it", () => {
+	it("names the session after its agent, and leaves the framework to its mark", () => {
 		const { summary: vendorSummary } = sessionOf([
 			agentSpan({ spanId: "v-agent", startMs: 0, durationMs: SECOND, vendorId: "langchain" }),
 		])
 		render(<SessionHeader sessionId="sess-1" summary={vendorSummary} />)
 		expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("billing-agent")
-		expect(screen.getByText("Framework").nextElementSibling?.textContent).toBe("LangChain")
+		expect(screen.queryByText("Framework")).toBeNull()
+		expect(screen.queryByText("LangChain")).toBeNull()
 	})
 
 	it("leaves the opening prompt to the transcript, in the heading or anywhere else", () => {
@@ -1434,18 +1482,28 @@ describe("SessionHeader", () => {
 		expect(screen.queryByText(/webhook/)).toBeNull()
 	})
 
-	it("shows the full session id as a copyable fact, never as the heading", () => {
+	it("shows the session id as a copyable fact, never as the heading", () => {
 		render(<SessionHeader sessionId="0f3c9a1e-long-session-id" summary={summary} />)
 		const copy = screen.getByRole("button", { name: "Copy Session ID" })
 		expect(copy.textContent).toContain("0f3c9a1e-long-session-id")
 		expect(screen.getByRole("heading", { level: 1 }).textContent).not.toContain("0f3c9a1e")
 	})
 
-	it("shows the duration, and neither the model nor a turn count", () => {
+	// An id is emitter input of any length: the fact shows a prefix, the
+	// clipboard and the tooltip carry the whole.
+	it("shortens a long session id to its first 32 characters, keeping the whole to copy", () => {
+		const long = "a".repeat(32) + "b".repeat(20)
+		render(<SessionHeader sessionId={long} summary={summary} />)
+		const copy = screen.getByRole("button", { name: "Copy Session ID" })
+		expect(copy.textContent).toContain(`${"a".repeat(32)}…`)
+		expect(copy.textContent).not.toContain("b")
+		expect(screen.getByTitle(long)).toBeTruthy()
+	})
+
+	it("states neither the duration, the framework, the model nor a turn count", () => {
 		render(<SessionHeader sessionId="sess-1" summary={summary} />)
-		expect(screen.getByText("Duration").nextElementSibling?.textContent).toBe(
-			formatSessionDuration(summary.wallClockMs),
-		)
+		expect(screen.queryByText("Duration")).toBeNull()
+		expect(screen.queryByText("Framework")).toBeNull()
 		expect(screen.queryByText("Turns")).toBeNull()
 		expect(screen.queryByText("Model")).toBeNull()
 	})
@@ -1458,22 +1516,14 @@ describe("SessionHeader", () => {
 	})
 
 	it("falls back to the framework, then to a generic name, when no agent is named", () => {
-		expect(sessionIdentity({ agentNames: [], vendorIds: ["claude_agent_sdk"] })).toEqual({
-			heading: "Claude Agent SDK session",
-			framework: undefined,
-		})
-		expect(sessionIdentity({ agentNames: [], vendorIds: ["unknown:foo"] })).toEqual({
-			heading: "Agent session",
-			framework: undefined,
-		})
-		expect(sessionIdentity({ agentNames: ["planner"], vendorIds: [] })).toEqual({
-			heading: "planner",
-			framework: undefined,
-		})
+		expect(sessionIdentity({ agentNames: [], vendorIds: ["claude_agent_sdk"] })).toBe(
+			"Claude Agent SDK session",
+		)
+		expect(sessionIdentity({ agentNames: [], vendorIds: ["unknown:foo"] })).toBe("Agent session")
+		expect(sessionIdentity({ agentNames: ["planner"], vendorIds: [] })).toBe("planner")
 		// `default` is the SDK's placeholder, not a name.
-		expect(sessionIdentity({ agentNames: ["default"], vendorIds: ["claude_agent_sdk"] })).toEqual({
-			heading: "Claude Agent SDK session",
-			framework: undefined,
-		})
+		expect(sessionIdentity({ agentNames: ["default"], vendorIds: ["claude_agent_sdk"] })).toBe(
+			"Claude Agent SDK session",
+		)
 	})
 })

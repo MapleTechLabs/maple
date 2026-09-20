@@ -447,42 +447,44 @@ export class VcsRepository extends Context.Service<VcsRepository>()("@maple/api/
 			// snapshot writes nothing instead of resurrecting purged data.
 			yield* database
 				.execute((db) =>
-					db.transaction(async (tx) => {
-						const parent = await tx
-							.select({ id: vcsInstallations.id })
-							.from(vcsInstallations)
-							.where(eq(vcsInstallations.id, installation.id))
-							.for("share")
-						if (parent.length === 0) return
-						for (const chunk of Arr.chunksOf(values, INSERT_CHUNK_SIZE)) {
-							await tx
-								.insert(vcsRepositories)
-								.values(chunk)
-								.onConflictDoUpdate({
-									target: [
-										vcsRepositories.orgId,
-										vcsRepositories.provider,
-										vcsRepositories.externalRepoId,
-									],
-									set: {
-										// A repo can be reassigned to a different installation; refresh the link.
-										installationId: sql`excluded.installation_id`,
-										owner: sql`excluded.owner`,
-										name: sql`excluded.name`,
-										fullName: sql`excluded.full_name`,
-										defaultBranch: sql`excluded.default_branch`,
-										htmlUrl: sql`excluded.html_url`,
-										isPrivate: sql`excluded.is_private`,
-										isArchived: sql`excluded.is_archived`,
-										// Reactivate on re-add: a repo present in this upsert is visible
-										// again, so a prior "removed" soft-delete is cleared. (sync_status
-										// is deliberately left untouched — its backfill state still holds.)
-										status: sql`excluded.status`,
-										updatedAt: sql`excluded.updated_at`,
-									},
-								})
-						}
-					}),
+					db.transaction((tx) =>
+						Effect.gen(function* () {
+							const parent = yield* tx
+								.select({ id: vcsInstallations.id })
+								.from(vcsInstallations)
+								.where(eq(vcsInstallations.id, installation.id))
+								.for("share")
+							if (parent.length === 0) return
+							for (const chunk of Arr.chunksOf(values, INSERT_CHUNK_SIZE)) {
+								yield* tx
+									.insert(vcsRepositories)
+									.values(chunk)
+									.onConflictDoUpdate({
+										target: [
+											vcsRepositories.orgId,
+											vcsRepositories.provider,
+											vcsRepositories.externalRepoId,
+										],
+										set: {
+											// A repo can be reassigned to a different installation; refresh the link.
+											installationId: sql`excluded.installation_id`,
+											owner: sql`excluded.owner`,
+											name: sql`excluded.name`,
+											fullName: sql`excluded.full_name`,
+											defaultBranch: sql`excluded.default_branch`,
+											htmlUrl: sql`excluded.html_url`,
+											isPrivate: sql`excluded.is_private`,
+											isArchived: sql`excluded.is_archived`,
+											// Reactivate on re-add: a repo present in this upsert is visible
+											// again, so a prior "removed" soft-delete is cleared. (sync_status
+											// is deliberately left untouched — its backfill state still holds.)
+											status: sql`excluded.status`,
+											updatedAt: sql`excluded.updated_at`,
+										},
+									})
+							}
+						}),
+					),
 				)
 				.pipe(Effect.mapError(toPersistenceError))
 		})
@@ -525,13 +527,15 @@ export class VcsRepository extends Context.Service<VcsRepository>()("@maple/api/
 			// in-flight sync either commits before this delete acquires the row lock
 			// (its rows are swept below) or sees the row gone and writes nothing.
 			yield* database.execute((db) =>
-				db.transaction(async (tx) => {
-					await tx.delete(vcsRepositories).where(eq(vcsRepositories.id, repositoryId))
-					await tx
-						.delete(vcsRepositoryBranches)
-						.where(eq(vcsRepositoryBranches.repositoryId, repositoryId))
-					await tx.delete(vcsCommits).where(eq(vcsCommits.repositoryId, repositoryId))
-				}),
+				db.transaction((tx) =>
+					Effect.gen(function* () {
+						yield* tx.delete(vcsRepositories).where(eq(vcsRepositories.id, repositoryId))
+						yield* tx
+							.delete(vcsRepositoryBranches)
+							.where(eq(vcsRepositoryBranches.repositoryId, repositoryId))
+						yield* tx.delete(vcsCommits).where(eq(vcsCommits.repositoryId, repositoryId))
+					}),
+				),
 			)
 			return true
 		}, Effect.mapError(toPersistenceError))
@@ -626,33 +630,35 @@ export class VcsRepository extends Context.Service<VcsRepository>()("@maple/api/
 			// commits. Returns 0 when the repo is gone.
 			return yield* database
 				.execute((db) =>
-					db.transaction(async (tx) => {
-						const parent = await tx
-							.select({ id: vcsRepositories.id })
-							.from(vcsRepositories)
-							.where(eq(vcsRepositories.id, repository.id))
-							.for("share")
-						if (parent.length === 0) return 0
-						for (const chunk of Arr.chunksOf(values, INSERT_CHUNK_SIZE)) {
-							await tx
-								.insert(vcsCommits)
-								.values(chunk)
-								.onConflictDoUpdate({
-									target: [vcsCommits.repositoryId, vcsCommits.sha],
-									set: {
-										message: sql`excluded.message`,
-										authorName: sql`excluded.author_name`,
-										authorEmail: sql`excluded.author_email`,
-										authorLogin: sql`excluded.author_login`,
-										authorAvatarUrl: sql`excluded.author_avatar_url`,
-										authoredAt: sql`excluded.authored_at`,
-										committedAt: sql`excluded.committed_at`,
-										htmlUrl: sql`excluded.html_url`,
-									},
-								})
-						}
-						return values.length
-					}),
+					db.transaction((tx) =>
+						Effect.gen(function* () {
+							const parent = yield* tx
+								.select({ id: vcsRepositories.id })
+								.from(vcsRepositories)
+								.where(eq(vcsRepositories.id, repository.id))
+								.for("share")
+							if (parent.length === 0) return 0
+							for (const chunk of Arr.chunksOf(values, INSERT_CHUNK_SIZE)) {
+								yield* tx
+									.insert(vcsCommits)
+									.values(chunk)
+									.onConflictDoUpdate({
+										target: [vcsCommits.repositoryId, vcsCommits.sha],
+										set: {
+											message: sql`excluded.message`,
+											authorName: sql`excluded.author_name`,
+											authorEmail: sql`excluded.author_email`,
+											authorLogin: sql`excluded.author_login`,
+											authorAvatarUrl: sql`excluded.author_avatar_url`,
+											authoredAt: sql`excluded.authored_at`,
+											committedAt: sql`excluded.committed_at`,
+											htmlUrl: sql`excluded.html_url`,
+										},
+									})
+							}
+							return values.length
+						}),
+					),
 				)
 				.pipe(Effect.mapError(toPersistenceError))
 		})
@@ -736,27 +742,32 @@ export class VcsRepository extends Context.Service<VcsRepository>()("@maple/api/
 			// worker cannot repopulate the picker of a purged repo.
 			yield* database
 				.execute((db) =>
-					db.transaction(async (tx) => {
-						const parent = await tx
-							.select({ id: vcsRepositories.id })
-							.from(vcsRepositories)
-							.where(eq(vcsRepositories.id, repository.id))
-							.for("share")
-						if (parent.length === 0) return
-						for (const chunk of Arr.chunksOf(values, INSERT_CHUNK_SIZE)) {
-							await tx
-								.insert(vcsRepositoryBranches)
-								.values(chunk)
-								.onConflictDoUpdate({
-									target: [vcsRepositoryBranches.repositoryId, vcsRepositoryBranches.name],
-									set: {
-										isDefault: sql`excluded.is_default`,
-										headSha: sql`excluded.head_sha`,
-										updatedAt: sql`excluded.updated_at`,
-									},
-								})
-						}
-					}),
+					db.transaction((tx) =>
+						Effect.gen(function* () {
+							const parent = yield* tx
+								.select({ id: vcsRepositories.id })
+								.from(vcsRepositories)
+								.where(eq(vcsRepositories.id, repository.id))
+								.for("share")
+							if (parent.length === 0) return
+							for (const chunk of Arr.chunksOf(values, INSERT_CHUNK_SIZE)) {
+								yield* tx
+									.insert(vcsRepositoryBranches)
+									.values(chunk)
+									.onConflictDoUpdate({
+										target: [
+											vcsRepositoryBranches.repositoryId,
+											vcsRepositoryBranches.name,
+										],
+										set: {
+											isDefault: sql`excluded.is_default`,
+											headSha: sql`excluded.head_sha`,
+											updatedAt: sql`excluded.updated_at`,
+										},
+									})
+							}
+						}),
+					),
 				)
 				.pipe(Effect.mapError(toPersistenceError))
 		})
@@ -827,22 +838,30 @@ export class VcsRepository extends Context.Service<VcsRepository>()("@maple/api/
 			const now = msToDate(yield* Clock.currentTimeMillis)
 			yield* database
 				.execute((db) =>
-					db.transaction(async (tx) => {
-						await tx
-							.update(vcsRepositories)
-							.set({ trackedBranch: branch, updatedAt: now })
-							.where(
-								and(eq(vcsRepositories.orgId, orgId), eq(vcsRepositories.id, repositoryId)),
-							)
-						// Org-scope the commit wipe too: without it, an id belonging to
-						// another org would no-op the update but still delete that org's
-						// commits. Mirrors the org-scoped delete in purgeRepository.
-						await tx
-							.delete(vcsCommits)
-							.where(
-								and(eq(vcsCommits.orgId, orgId), eq(vcsCommits.repositoryId, repositoryId)),
-							)
-					}),
+					db.transaction((tx) =>
+						Effect.gen(function* () {
+							yield* tx
+								.update(vcsRepositories)
+								.set({ trackedBranch: branch, updatedAt: now })
+								.where(
+									and(
+										eq(vcsRepositories.orgId, orgId),
+										eq(vcsRepositories.id, repositoryId),
+									),
+								)
+							// Org-scope the commit wipe too: without it, an id belonging to
+							// another org would no-op the update but still delete that org's
+							// commits. Mirrors the org-scoped delete in purgeRepository.
+							yield* tx
+								.delete(vcsCommits)
+								.where(
+									and(
+										eq(vcsCommits.orgId, orgId),
+										eq(vcsCommits.repositoryId, repositoryId),
+									),
+								)
+						}),
+					),
 				)
 				.pipe(Effect.mapError(toPersistenceError))
 		})
@@ -933,39 +952,44 @@ export class VcsRepository extends Context.Service<VcsRepository>()("@maple/api/
 			// repo-id read happens INSIDE the transaction, after the installation
 			// delete, so a repo created moments earlier is swept rather than escaping.
 			yield* database.execute((db) =>
-				db.transaction(async (tx) => {
-					await tx
-						.delete(vcsInstallations)
-						.where(
-							and(eq(vcsInstallations.orgId, orgId), eq(vcsInstallations.id, installationId)),
-						)
-					const repoRows = await tx
-						.select({ id: vcsRepositories.id })
-						.from(vcsRepositories)
-						.where(
-							and(
-								eq(vcsRepositories.orgId, orgId),
-								eq(vcsRepositories.installationId, installationId),
-							),
-						)
-					const repoIds = repoRows.map((r) => r.id)
-					await tx
-						.delete(vcsRepositories)
-						.where(
-							and(
-								eq(vcsRepositories.orgId, orgId),
-								eq(vcsRepositories.installationId, installationId),
-							),
-						)
-					for (const chunk of Arr.chunksOf(repoIds, INARRAY_CHUNK_SIZE)) {
-						await tx
-							.delete(vcsRepositoryBranches)
-							.where(inArray(vcsRepositoryBranches.repositoryId, chunk))
-					}
-					for (const chunk of Arr.chunksOf(repoIds, INARRAY_CHUNK_SIZE)) {
-						await tx.delete(vcsCommits).where(inArray(vcsCommits.repositoryId, chunk))
-					}
-				}),
+				db.transaction((tx) =>
+					Effect.gen(function* () {
+						yield* tx
+							.delete(vcsInstallations)
+							.where(
+								and(
+									eq(vcsInstallations.orgId, orgId),
+									eq(vcsInstallations.id, installationId),
+								),
+							)
+						const repoRows = yield* tx
+							.select({ id: vcsRepositories.id })
+							.from(vcsRepositories)
+							.where(
+								and(
+									eq(vcsRepositories.orgId, orgId),
+									eq(vcsRepositories.installationId, installationId),
+								),
+							)
+						const repoIds = repoRows.map((r) => r.id)
+						yield* tx
+							.delete(vcsRepositories)
+							.where(
+								and(
+									eq(vcsRepositories.orgId, orgId),
+									eq(vcsRepositories.installationId, installationId),
+								),
+							)
+						for (const chunk of Arr.chunksOf(repoIds, INARRAY_CHUNK_SIZE)) {
+							yield* tx
+								.delete(vcsRepositoryBranches)
+								.where(inArray(vcsRepositoryBranches.repositoryId, chunk))
+						}
+						for (const chunk of Arr.chunksOf(repoIds, INARRAY_CHUNK_SIZE)) {
+							yield* tx.delete(vcsCommits).where(inArray(vcsCommits.repositoryId, chunk))
+						}
+					}),
+				),
 			)
 		}, Effect.mapError(toPersistenceError))
 

@@ -979,6 +979,7 @@ describe("ErrorsService.runTick", () => {
 				issuesDeleted: 0,
 				leasesExpired: 0,
 				retentionRan: false,
+				investigationsAbandoned: 0,
 			})
 		}).pipe(Effect.provide(makeErrorsLayer())),
 	)
@@ -1085,6 +1086,7 @@ describe("ErrorsService.runTick", () => {
 					issuesDeleted: 0,
 					leasesExpired: 0,
 					retentionRan: false,
+					investigationsAbandoned: 0,
 				})
 
 				const issues = yield* loadIssuesByFingerprint(SCAN_FINGERPRINT)
@@ -1524,6 +1526,7 @@ describe("ErrorsService.runTick", () => {
 				issuesDeleted: 0,
 				leasesExpired: 0,
 				retentionRan: false,
+				investigationsAbandoned: 0,
 			})
 
 			const after = yield* database.execute((db) =>

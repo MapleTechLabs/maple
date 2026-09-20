@@ -68,15 +68,23 @@ export interface SessionCheck {
 	readonly findings: readonly SessionFinding[]
 }
 
+/**
+ * Whether a signal was there to read. `absent` is not a gap: a session that
+ * called no tool has no tool payloads to capture, and saying it failed to
+ * capture them would send someone to fix instrumentation that is fine.
+ */
+export type SessionCoverageSignal = "captured" | "missing" | "absent"
+
 /** What the instrumentation gave the checks to work with: why a check was
  *  skipped, and what capturing more would unlock. */
 export interface SessionCoverage {
 	/** Some model call recorded its messages. */
-	readonly messages: boolean
+	readonly messages: SessionCoverageSignal
 	/** Some tool call recorded its arguments or its result. */
-	readonly toolPayloads: boolean
-	readonly usage: SessionTokenReporting
-	readonly cost: boolean
+	readonly toolPayloads: SessionCoverageSignal
+	/** `absent` when there was no model call to report usage. */
+	readonly usage: SessionTokenReporting | "absent"
+	readonly cost: SessionCoverageSignal
 	readonly turns: TurnAnchorKind | undefined
 }
 
@@ -183,22 +191,27 @@ function readCoverage(
 	summary: SessionSummary,
 	turns: readonly SessionTurn[],
 ): SessionCoverage {
+	const llmCalls = spans.filter(isLlmCall)
+	const toolCalls = spans.filter((span) => classifyAiSpan(span) === "tool")
+	// JSON-decoded payloads: an emitter that wrote `null` lands as `null`,
+	// not as a missing key, and recorded nothing.
+	const recorded = (
+		span: AiSessionSpan,
+		keys: readonly ("inputMessages" | "outputMessages" | "toolCallArguments" | "toolCallResult")[],
+	) => keys.some((key) => (span.genAi[key] ?? undefined) !== undefined)
+	const signal = (population: readonly AiSessionSpan[], captured: boolean): SessionCoverageSignal =>
+		population.length === 0 ? "absent" : captured ? "captured" : "missing"
 	return {
-		// JSON-decoded payloads: an emitter that wrote `null` lands as `null`,
-		// not as a missing key, and recorded nothing.
-		messages: spans.some(
-			(span) =>
-				(span.genAi.inputMessages ?? undefined) !== undefined ||
-				(span.genAi.outputMessages ?? undefined) !== undefined,
+		messages: signal(
+			llmCalls,
+			llmCalls.some((span) => recorded(span, ["inputMessages", "outputMessages"])),
 		),
-		toolPayloads: spans.some(
-			(span) =>
-				((span.genAi.toolCallArguments ?? undefined) !== undefined ||
-					(span.genAi.toolCallResult ?? undefined) !== undefined) &&
-				classifyAiSpan(span) === "tool",
+		toolPayloads: signal(
+			toolCalls,
+			toolCalls.some((span) => recorded(span, ["toolCallArguments", "toolCallResult"])),
 		),
-		usage: summary.tokenReporting,
-		cost: summary.cost !== undefined,
+		usage: llmCalls.length === 0 ? "absent" : summary.tokenReporting,
+		cost: signal(llmCalls, summary.cost !== undefined),
 		turns: turns[0]?.anchorKind,
 	}
 }
@@ -523,16 +536,9 @@ function toolErrorCheck(findings: readonly SessionFinding[], summary: SessionSum
 					: `${plural(calls, "tool call")}; the ${failed === 1 ? "one that failed is" : `${failed} that failed are`} named by the checks above`,
 		)
 	}
-	const single = findings.length === 1 ? findings[0] : undefined
-	const headline =
-		single !== undefined
-			? `${toolName(single)} failed ${times(single.count)} on ${where(single)}${detailText(single)}`
-			: `${plural(total(findings), "tool call")} failed: ${clauses(
-					findings,
-					(finding) =>
-						`${toolName(finding)} (${finding.detail ?? finding.label}, ${where(finding)})`,
-					", ",
-				)}`
+	// The count only: the evidence rows under it name each call, its turn and
+	// its line, and the Overview's tool ledger has the rest.
+	const headline = `${plural(total(findings), "tool call")} failed`
 	return check(
 		identity,
 		foundStatus(findings),
@@ -574,7 +580,7 @@ function repetitionCheck(
 			"passed",
 			summary.tools.length === 0
 				? "No tool was called"
-				: coverage.toolPayloads
+				: coverage.toolPayloads === "captured"
 					? "No tool was called on repeat within a turn"
 					: "No tool was hammered within a turn; arguments were not captured, so identical retries could not be checked",
 		)

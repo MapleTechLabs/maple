@@ -6,7 +6,8 @@ import { toEpochMs } from "@maple/ui/lib/time-format"
 import { SEVERITY_LABEL } from "@/components/errors/severity-badge"
 import { CircleQuestionIcon, CircleXmarkIcon } from "@/components/icons"
 import { useTickingNow } from "@/hooks/use-ticking-now"
-import { type Elapsed, splitDuration } from "./investigation-display"
+import { type Elapsed, reportHeadline, splitDuration } from "./investigation-display"
+import { RunProgress } from "./run-progress"
 import { ConfidenceMeter } from "./confidence-meter"
 
 /**
@@ -140,6 +141,7 @@ function DiagnosedVerdict({ investigation }: { investigation: V2Investigation })
 	}
 
 	const timeToDiagnosis = elapsedBetween(investigation.created_at, investigation.diagnosed_at)
+	const heading = reportHeadline(report)
 
 	return (
 		<VerdictShell
@@ -173,11 +175,58 @@ function DiagnosedVerdict({ investigation }: { investigation: V2Investigation })
 			}
 		>
 			<Eyebrow tone="text-primary">Suspected cause</Eyebrow>
+			{/* `headline` is the only field prompted to be one line; `reportHeadline` falls back for older reports. */}
 			<h2 className="font-display text-xl font-semibold leading-7 tracking-[-0.01em] text-foreground">
-				{report.suspectedCause}
+				{heading}
 			</h2>
-			<p className="text-sm leading-6 text-muted-foreground">{report.summary}</p>
+			{/* Each body field is drawn only if the heading is not already it (older reports fall back to `summary`). */}
+			<Body heading={heading} text={report.summary} />
+			<Mechanism heading={heading} text={report.suspectedCause} />
+			<NextActions actions={report.suggestedActions} />
 		</VerdictShell>
+	)
+}
+
+/** Whether a body field would only repeat the heading above it. */
+const repeatsHeading = (heading: string | null, text: string): boolean =>
+	text.trim().length === 0 || text.trim() === heading?.trim()
+
+/** The summary, unless the heading fell back to being it. */
+function Body({ heading, text }: { heading: string | null; text: string }) {
+	if (repeatsHeading(heading, text)) return null
+	return <p className="text-sm leading-6 text-muted-foreground">{text}</p>
+}
+
+/** The mechanism, set off by a rule so a reader who already believes the verdict can skip it. */
+function Mechanism({ heading, text }: { heading: string | null; text: string }) {
+	if (repeatsHeading(heading, text)) return null
+	return (
+		<div className="mt-1 border-l-2 pl-4">
+			<p className="whitespace-pre-line text-sm leading-6 text-muted-foreground">{text}</p>
+		</div>
+	)
+}
+
+/** Suggested actions on the card; they used to be reachable only as graph nodes behind a click. */
+function NextActions({ actions }: { actions: ReadonlyArray<string> }) {
+	if (actions.length === 0) return null
+	return (
+		<div className="mt-2 flex flex-col gap-2.5 border-t pt-4">
+			<span className="text-[10px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
+				What to do
+			</span>
+			{/* Ordered, because the report is prompted for ordered steps. */}
+			<ol className="flex flex-col gap-2">
+				{actions.map((action, index) => (
+					<li key={index} className="flex gap-3 text-sm leading-6 text-foreground">
+						<span className="mt-px shrink-0 text-xs tabular-nums text-muted-foreground">
+							{index + 1}
+						</span>
+						<span className="min-w-0">{action}</span>
+					</li>
+				))}
+			</ol>
+		</div>
 	)
 }
 
@@ -220,8 +269,9 @@ function InvestigatingVerdict({ investigation }: { investigation: V2Investigatio
 			</h2>
 			<p className="text-sm leading-6 text-muted-foreground">
 				One agent is working this question: reading the traces, logs and metrics around it and testing
-				the likely explanations. The transcript shows what it is doing as it goes.
+				the likely explanations.
 			</p>
+			<RunProgress investigation={investigation} className="mt-1 border-t pt-4" />
 		</VerdictShell>
 	)
 }
@@ -262,8 +312,7 @@ function FailedVerdict({ investigation }: { investigation: V2Investigation }) {
 				The pass ended without a diagnosis
 			</h2>
 			<p className="text-sm leading-6 text-muted-foreground">
-				Nothing was recorded. The transcript keeps whatever the agent gathered; retry to run the pass
-				again.
+				No report was recorded. Retry to run the pass again.
 			</p>
 			{/* The raw error was on the wire and rendered nowhere but a toast. */}
 			{investigation.error ? (
@@ -276,6 +325,8 @@ function FailedVerdict({ investigation }: { investigation: V2Investigation }) {
 					</code>
 				</div>
 			) : null}
+			{/* How far the pass got: on a failed run, the only account that outlives the event stream. */}
+			<RunProgress investigation={investigation} className="mt-1 border-t pt-4" />
 		</VerdictShell>
 	)
 }
@@ -311,7 +362,7 @@ function InconclusiveVerdict({ investigation }: { investigation: V2Investigation
 	const ruledOut = report?.ruledOut ?? []
 	const unchecked = report?.unchecked ?? []
 	// Legacy rows backfilled to `inconclusive` have no report at all.
-	const headline = report?.suspectedCause ?? "No cause was established, and this run recorded no partial."
+	const headline = reportHeadline(report) ?? "No cause was established, and this run recorded no partial."
 
 	return (
 		<VerdictShell
@@ -354,7 +405,7 @@ function InconclusiveVerdict({ investigation }: { investigation: V2Investigation
 			<h2 className="font-display text-xl font-semibold leading-7 tracking-[-0.01em] text-foreground">
 				{headline}
 			</h2>
-			{report ? <p className="text-sm leading-6 text-muted-foreground">{report.summary}</p> : null}
+			{report ? <Body heading={headline} text={report.summary} /> : null}
 
 			{/* Two columns above `lg`, stacked below — the shell's own breakpoint, so
 			    the lists reflow with the stat rail rather than against it. */}

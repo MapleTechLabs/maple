@@ -165,7 +165,8 @@ export function coerceServiceOverviewRow(
 	return {
 		serviceName: String(raw.serviceName ?? ""),
 		serviceNamespace: String(raw.serviceNamespace ?? ""),
-		environment: String(raw.environment ?? "unknown"),
+		// `||`, not `??`: the warehouse stores a missing environment as "".
+		environment: String(raw.environment || "unknown"),
 		commits,
 		p50LatencyMs: Number(raw.p50LatencyMs ?? 0),
 		p95LatencyMs: Number(raw.p95LatencyMs ?? 0),

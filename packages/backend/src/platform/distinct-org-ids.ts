@@ -1,8 +1,9 @@
 import { OrgId, type OrgId as OrgIdType } from "@maple/domain"
 import { sql } from "drizzle-orm"
-import { Schema } from "effect"
+import type { MapleDbLike } from "@maple/db/client"
+import type { EffectDrizzleQueryError } from "drizzle-orm/effect-core"
 import type { PgColumn, PgTable } from "drizzle-orm/pg-core"
-import type { DatabaseClient } from "./DatabaseLive"
+import { Effect, Schema } from "effect"
 
 /**
  * `SELECT DISTINCT org_id FROM <table>` via a loose index scan.
@@ -20,12 +21,13 @@ import type { DatabaseClient } from "./DatabaseLive"
  *
  * Pattern: https://wiki.postgresql.org/wiki/Loose_indexscan
  */
-export const selectDistinctOrgIds = async (
-	db: DatabaseClient,
+export const selectDistinctOrgIds = (
+	db: MapleDbLike,
 	table: PgTable,
 	column: PgColumn,
-): Promise<ReadonlyArray<OrgIdType>> => {
-	const result = await db.execute(sql`
+): Effect.Effect<ReadonlyArray<OrgIdType>, EffectDrizzleQueryError> =>
+	Effect.map(
+		db.execute(sql`
 		with recursive t as (
 			(
 				select ${column} as org_id
@@ -46,15 +48,14 @@ export const selectDistinctOrgIds = async (
 			where t.org_id is not null
 		)
 		select org_id from t where org_id is not null
-	`)
-	return toOrgIds(result)
-}
+	`),
+		toOrgIds,
+	)
 
 /**
- * `db.execute` hands back driver-shaped results: postgres.js yields a row array,
- * PGlite yields `{ rows }`. `MaplePgClient` is typed as the postgres.js
- * client and the PGlite layer casts into it, so the declared array type is a lie
- * under test — normalize both shapes instead of trusting it.
+ * `db.execute` hands back the driver's own result object under the Effect
+ * drivers (`{ rows, … }` from both node-postgres and PGlite) although drizzle
+ * declares a row array — normalize both shapes instead of trusting the type.
  */
 const decodeOrgIdSync = Schema.decodeUnknownSync(OrgId)
 

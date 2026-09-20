@@ -35,7 +35,7 @@ import {
 	type SandboxEvent,
 	type SandboxRequest,
 } from "@effect-agent/sandbox/Sandbox"
-import { Duration, Effect, Layer, Option, Schema, Stream } from "effect"
+import { Duration, Effect, Layer, Option, Schedule, Schema, Stream } from "effect"
 import { SandboxClient } from "@maple/backend/sandbox/client"
 import {
 	VcsSourceService,
@@ -61,6 +61,18 @@ const unsupported = (feature: SandboxUnsupportedRequestError["feature"], message
 const CONTRACT_MAX_OUTPUT_BYTES = 16 * 1024 * 1024
 
 const decodeOrgId = Schema.decodeUnknownOption(OrgId)
+
+/**
+ * The sandbox Worker answers "still cloning" at once because a cold clone outlives its request
+ * cap; this side has no cap, so it waits here instead of handing the model a "call again" it
+ * would act on immediately. The clone keeps running after the wait ends, so a later call finds it.
+ */
+export const CHECKOUT_WAIT = Duration.seconds(90)
+const CHECKOUT_POLL = Duration.seconds(2)
+const checkoutWait = Schedule.spaced(CHECKOUT_POLL).pipe(Schedule.upTo({ duration: CHECKOUT_WAIT }))
+
+const isPending = (answer: Option.Option<SandboxExecResponse>): boolean =>
+	Option.isSome(answer) && answer.value._tag === "SandboxRunCheckoutPending"
 
 interface AdmittedRequest {
 	readonly orgId: OrgId
@@ -256,26 +268,39 @@ export const makeCloudflareRepoSandbox = (deps: CloudflareRepoSandboxDeps): Sand
 					"vcs.ref.head.revision": checkout.sha,
 					"maple.sandbox.command": request.command,
 				})
-				const answered = yield* deps
-					.exec(
-						new SandboxExecRequest({
-							sandboxKey: yield* sandboxKey(admitted.orgId, checkout),
-							checkout: new SandboxCheckout({
-								repository: checkout.fullName,
-								sha: checkout.sha,
-								remoteUrl: checkout.remoteUrl,
-								token: checkout.token,
-							}),
-							command: request.command,
-							args: request.args,
-							cwd: admitted.cwd,
-							timeoutMs: Duration.toMillis(request.limits.maxWallTime),
-							maxOutputBytes: request.limits.maxOutputBytes,
-						}),
-					)
-					.pipe(Effect.mapError((error) => spawnError(request.command, error.message, error)))
+				const exec = new SandboxExecRequest({
+					sandboxKey: yield* sandboxKey(admitted.orgId, checkout),
+					checkout: new SandboxCheckout({
+						repository: checkout.fullName,
+						sha: checkout.sha,
+						remoteUrl: checkout.remoteUrl,
+						token: checkout.token,
+					}),
+					command: request.command,
+					args: request.args,
+					cwd: admitted.cwd,
+					timeoutMs: Duration.toMillis(request.limits.maxWallTime),
+					maxOutputBytes: request.limits.maxOutputBytes,
+				})
+				// Each poll is one cheap round trip that only starts a clone on the first call;
+				// suspended so every repetition asks the port again rather than replaying one answer.
+				// `attempt` counts the schedule steps before this poll, so the last write is the total.
+				const poll = Effect.gen(function* () {
+					const { attempt } = yield* Schedule.CurrentMetadata
+					yield* Effect.annotateCurrentSpan("maple.sandbox.checkout_polls", attempt + 1)
+					return yield* deps.exec(exec)
+				})
+				const answered = yield* poll.pipe(
+					Effect.repeat({ while: isPending, schedule: checkoutWait }),
+					Effect.mapError((error) => spawnError(request.command, error.message, error)),
+				)
 				if (Option.isNone(answered))
 					return yield* unsupported("runtime", "no repository sandbox is bound in this deployment")
+				if (answered.value._tag === "SandboxRunCheckoutPending")
+					return yield* spawnError(
+						request.command,
+						`The checkout of ${checkout.fullName} at ${checkout.sha} is still being cloned after ${Duration.toSeconds(CHECKOUT_WAIT)}s. The clone continues in the background: gather other evidence first and come back to this repository later rather than calling again immediately.`,
+					)
 				return Stream.fromIterable(yield* toEvents(request, answered.value))
 			}),
 		),

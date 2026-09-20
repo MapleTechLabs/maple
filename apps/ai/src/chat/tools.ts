@@ -8,10 +8,11 @@
 import { investigationIdFromChatSessionId } from "@maple/domain/chat-session"
 import { evaluatePermission, type PermissionRuleset } from "@maple/domain/permission"
 import {
-	AiTriageResult,
+	AiTriageSubmission,
 	InvestigationDataCorruptionError,
 	InvestigationNotFoundError,
 	InvestigationPersistenceError,
+	normalizeTriageSubmission,
 	SubmitDiagnosisRequest,
 } from "@maple/domain/http"
 import { InvestigationId, UserId } from "@maple/domain/primitives"
@@ -78,12 +79,20 @@ export const accumulateUsage = (usage: RunUsage): RunBudgetHook => ({
 		}),
 })
 
+/**
+ * `parameters` is the lenient {@link AiTriageSubmission}, not the stored `AiTriageResult`.
+ *
+ * The engine decodes a tool call's arguments before the handler runs, and a decode failure lands in
+ * the model stream's error channel, which ends the run. Against a strict report schema that made
+ * one missing key at the end of a full investigation throw the whole investigation away. The
+ * handler normalizes instead, and records what the model left out.
+ */
 export const diagnosisTool = Tool.make(SUBMIT_DIAGNOSIS, {
 	description:
 		"Record your structured diagnosis for THIS investigation. Call it exactly once, " +
 		"after you have gathered evidence, with your final assessment. It persists the report " +
 		"and renders it for the user. After calling it, stop unless the user asks a follow-up.",
-	parameters: AiTriageResult,
+	parameters: AiTriageSubmission,
 	success: Schema.String,
 	failure: MapleToolFailure,
 })
@@ -136,18 +145,30 @@ export const buildDiagnosisCompletion = (
 	return {
 		toolkit,
 		layer: toolkit.toLayer({
-			[SUBMIT_DIAGNOSIS]: (report: AiTriageResult) =>
-				submitDiagnosis(
-					tenant.orgId,
-					investigationId,
-					new SubmitDiagnosisRequest({
-						report,
-						model: modelName,
-						inputTokens: usage.input,
-						outputTokens: usage.output,
-						...(partial ? { partial: true } : undefined),
-					}),
-				).pipe(
+			[SUBMIT_DIAGNOSIS]: (submission: AiTriageSubmission) =>
+				Effect.suspend(() => {
+					const { report, filled } = normalizeTriageSubmission(submission)
+					return submitDiagnosis(
+						tenant.orgId,
+						investigationId,
+						new SubmitDiagnosisRequest({
+							report,
+							model: modelName,
+							inputTokens: usage.input,
+							outputTokens: usage.output,
+							...(partial ? { partial: true } : undefined),
+						}),
+					).pipe(
+						Effect.tap(() =>
+							// What the model omitted is the signal that the prompt or the model is the
+							// problem; without it a filled-in report is indistinguishable from a written one.
+							Effect.annotateCurrentSpan({
+								"maple.diagnosis.filled_fields": filled.join(","),
+								"maple.diagnosis.filled_count": filled.length,
+							}),
+						),
+					)
+				}).pipe(
 					Effect.tap(() => Effect.sync(() => (submitted = true))),
 					Effect.as("Diagnosis recorded."),
 					// Named failures only. A rendered Effect cause carries stack frames and, inside a
@@ -178,9 +199,11 @@ export const buildChatToolkit = (
 	tenant: TenantContext,
 	ruleset: PermissionRuleset,
 	surface: McpToolSurface = "chat",
+	sessionAttributes?: Readonly<Record<string, string>>,
 ) =>
 	buildMapleToolkit(executor, tenant, {
 		surface,
+		...(sessionAttributes === undefined ? undefined : { sessionAttributes }),
 		// `deny` means the model never sees the tool. That is a stronger guarantee than refusing the
 		// call afterwards, and it is free — an unoffered tool cannot be called.
 		include: (name) => evaluatePermission(ruleset, name) !== "deny",

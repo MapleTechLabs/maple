@@ -3,6 +3,7 @@ import { Suspense, type ReactNode } from "react"
 import { cn } from "@maple/ui/lib/utils"
 import { getChartById } from "@maple/ui/components/charts/registry"
 import { ChartSkeleton } from "@maple/ui/components/charts/_shared/chart-skeleton"
+import { ChartEmpty } from "@maple/ui/components/charts/_shared/chart-state"
 import { ChartTooltipSuppressionProvider } from "@maple/ui/components/plot"
 import type { ChartLegendMode, ChartTooltipMode } from "@maple/ui/components/charts/_shared/chart-types"
 import { ReadonlyWidgetShell } from "@/components/dashboard-builder/widgets/widget-shell"
@@ -118,6 +119,9 @@ export function MetricsGrid({ items, className, waiting, syncId, overlay, yAxisW
 									/>
 								) : item.isLoading ? (
 									<ChartSkeleton variant={entry.category} />
+								) : item.data.length === 0 ? (
+									// A chart handed no rows draws bare axes and says nothing.
+									<ChartEmpty hint="Try a wider time range">No data in this window</ChartEmpty>
 								) : (
 									<div className="relative h-full min-h-0 w-full">
 										<Suspense fallback={<ChartSkeleton variant={entry.category} />}>
