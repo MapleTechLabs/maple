@@ -1,4 +1,3 @@
-import { ChatConnectorId } from "@maple/primitives"
 import { Effect, Schema } from "effect"
 import { HttpClient, HttpClientRequest } from "effect/unstable/http"
 import {
@@ -10,15 +9,12 @@ import {
 	type ChatInstallStart,
 	type ChatWorkspaceSettings,
 } from "../../install"
-
-export const DISCORD_CONNECTOR_ID = Schema.decodeSync(ChatConnectorId)("discord")
+import { AUTHORIZE_URL, TOKEN_URL } from "./api"
+import { DISCORD_CONNECTOR_ID } from "./id"
 
 /** Config the host supplies; see this directory's README for the app setup. */
 export const DISCORD_CLIENT_ID = "DISCORD_CLIENT_ID"
 export const DISCORD_CLIENT_SECRET = "DISCORD_CLIENT_SECRET"
-
-const AUTHORIZE_URL = "https://discord.com/oauth2/authorize"
-const TOKEN_URL = "https://discord.com/api/v10/oauth2/token"
 
 /**
  * The bot permissions requested when the app is added to a guild, as Discord's

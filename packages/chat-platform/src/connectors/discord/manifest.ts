@@ -1,14 +1,13 @@
-import { Schema } from "effect"
-import { ChatConnectorId } from "@maple/primitives"
 import type { ChatConnectorManifest } from "../../install"
+import { DISCORD_CONNECTOR_ID } from "./id"
 
 /**
  * Pure data — imported by the dashboard through `@maple/chat-platform/manifests`,
  * which is why this module must stay free of anything that pulls the connector's
- * runtime (the install flow, its HTTP client, its config).
+ * runtime (the install flow, its HTTP client, its outbound REST calls).
  */
 export const discordManifest: ChatConnectorManifest = {
-	id: Schema.decodeSync(ChatConnectorId)("discord"),
+	id: DISCORD_CONNECTOR_ID,
 	name: "Discord",
 	description:
 		"Add the Maple bot to a Discord server and link that server to your Maple organization.",

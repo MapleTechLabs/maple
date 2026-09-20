@@ -20,7 +20,7 @@ const noNetwork = HttpClient.make(() => Effect.die("the test made a network call
 
 /** Canned token endpoint; anything else rejects. Records the form body it saw. */
 const tokenFetch = (respond: () => Response, bodies: Array<string> = []) =>
-	Layer.succeed(FetchHttpClient.Fetch, ((input: RequestInfo | URL, init?: RequestInit) => {
+	Layer.succeed(FetchHttpClient.Fetch, ((input: Parameters<typeof globalThis.fetch>[0], init?: RequestInit) => {
 		const url = String(input)
 		if (!url.startsWith(TOKEN_URL)) return Promise.reject(new Error(`unexpected fetch: ${url}`))
 		// Read the body through `Request` rather than off `init`: the client is

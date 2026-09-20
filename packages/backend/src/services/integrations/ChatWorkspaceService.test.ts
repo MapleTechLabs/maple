@@ -1,16 +1,16 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import { ConfigProvider, Effect, Layer, Option, Schema } from "effect"
+import { ConfigProvider, Duration, Effect, Layer, Option, Schema } from "effect"
 import { TestClock } from "effect/testing"
 import { FetchHttpClient } from "effect/unstable/http"
 import { ChatConnectorId, ChatWorkspaceId, OrgId, UserId } from "@maple/domain/http"
 import {
 	chatConnectorConfigNames,
-	connectors,
 	ChatConnectorNotConfigured,
 	ChatSettingsRejected,
 	type ChatConnector,
 	type ChatWorkspaceSettings,
 } from "@maple/chat-platform"
+import { connectors } from "@maple/chat-platform/connectors"
 import { Env } from "@maple/backend/platform/Env"
 import { OAuthStateRepository } from "@maple/backend/services/auth/OAuthStateRepository"
 import {
@@ -86,6 +86,13 @@ const testConnector: ChatConnector = {
 						}),
 					),
 	},
+	// The install half never carries a turn, so the transport dies rather than
+	// pretending: a test that reaches it is testing the wrong thing.
+	outbound: {
+		connectorId: TEST_CONNECTOR,
+		limits: { maxMessageChars: 1000, minEditInterval: Duration.millis(500) },
+		transport: Effect.die("the install flow reached the outbound transport"),
+	},
 }
 
 const makeConfig = (withConnectorConfig: boolean) =>
@@ -110,7 +117,7 @@ const makeConfig = (withConnectorConfig: boolean) =>
 
 const makeLayer = (
 	testDb: TestDb,
-	options?: { readonly configured?: boolean; readonly registry?: ReadonlyArray<ChatConnector> },
+	options?: { readonly configured?: boolean; readonly registry?: ReadonlyArray<ChatConnector<unknown>> },
 ) =>
 	Layer.effect(ChatWorkspaceService, ChatWorkspaceService.make).pipe(
 		Layer.provide(FetchHttpClient.layer),

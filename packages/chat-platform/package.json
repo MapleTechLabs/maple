@@ -13,6 +13,7 @@
 		"typecheck": "tsc --noEmit"
 	},
 	"dependencies": {
+		"@maple/domain": "workspace:*",
 		"@maple/primitives": "workspace:*",
 		"effect": "catalog:effect"
 	},

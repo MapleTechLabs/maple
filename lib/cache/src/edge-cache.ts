@@ -547,7 +547,7 @@ export class EdgeCacheService extends Context.Service<EdgeCacheService, EdgeCach
 		this,
 		Effect.gen(function* () {
 			const backend = yield* CacheBackend
-			const readTimeoutMs = yield* Config.number("EDGE_CACHE_READ_TIMEOUT_MS").pipe(
+			const readTimeoutMs = yield* Config.Number("EDGE_CACHE_READ_TIMEOUT_MS").pipe(
 				Config.withDefault(DEFAULT_EDGE_CACHE_READ_TIMEOUT_MS),
 			)
 			return EdgeCacheService.of(makeEdgeCacheService(backend, readTimeoutMs))

@@ -1,16 +1,38 @@
-import type { ChatConnectorId } from "@maple/primitives"
+/**
+ * What a chat platform has to provide: how it is installed, and how it carries a Maple agent turn.
+ *
+ * The whole package exists for one rule: everything that differs between one chat vendor and the
+ * next lives under `src/connectors/<id>/`, behind this structure. Nothing above a connector
+ * directory names a vendor — not an identifier, not a literal, not a test fixture — and adding a
+ * platform is a directory beside the others plus one line in `src/connectors/index.ts`. The
+ * isolation is checked, not trusted: `vendor-isolation.test.ts` reads the sources.
+ */
+import { ChatConnectorId } from "@maple/primitives"
+import { Schema } from "effect"
 import type { ChatConnectorInstall, ChatConnectorManifest } from "./install"
+import type { ChatOutbound } from "./outbound"
 
 /**
- * One chat platform, as the rest of Maple sees it.
+ * A connector's identity, lowercase alphanumeric with no separators.
  *
- * Everything that differs between platforms lives under
- * `src/connectors/<id>/` and reaches the rest of the codebase only through this
- * structure. Adding a platform is a directory plus a line in
- * `src/connectors/index.ts` — no migration, no route, no dashboard component.
+ * Defined once in `@maple/primitives`, because the stored column, the public contract and the
+ * dashboard decode the same id and none of them can depend on this package. Re-exported here so a
+ * connector reaches everything it implements through one module.
  */
-export interface ChatConnector {
+export { ChatConnectorId }
+
+/** Decode a connector's own id. A connector declares it at module scope, so a bad one fails the build. */
+export const chatConnectorId = Schema.decodeUnknownSync(ChatConnectorId)
+
+/**
+ * One platform, as one structured export.
+ *
+ * `R` is what the connector's outbound needs from the host Worker — an HTTP client, its own
+ * credential service. The host supplies those; the package never reads the environment.
+ */
+export interface ChatConnector<R = never> {
 	readonly id: ChatConnectorId
 	readonly manifest: ChatConnectorManifest
 	readonly install: ChatConnectorInstall
+	readonly outbound: ChatOutbound<R>
 }

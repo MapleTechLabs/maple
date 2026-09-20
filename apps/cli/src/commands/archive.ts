@@ -87,141 +87,141 @@ const prettyPath = (p: string): string => {
 }
 
 const dataDirFlag = Flag.optional(
-	Flag.string("data-dir").pipe(
+	Flag.String("data-dir").pipe(
 		Flag.withDescription("Embedded ClickHouse data directory (default: ~/.maple/data)"),
 	),
 )
 
 const archiveDirFlag = Flag.optional(
-	Flag.string("archive-dir").pipe(
+	Flag.String("archive-dir").pipe(
 		Flag.withDescription("Archive root directory for Parquet generations (default: ~/.maple/archive)"),
 	),
 )
 
 const scratchRootFlag = Flag.optional(
-	Flag.string("scratch-root").pipe(
+	Flag.String("scratch-root").pipe(
 		Flag.withDescription("Root for restored-checkpoint scratch instances (default: ~/.maple/scratch)"),
 	),
 )
 
 const checkpointIdFlag = Flag.optional(
-	Flag.string("checkpoint-id").pipe(
+	Flag.String("checkpoint-id").pipe(
 		Flag.withDescription("Archive from one immutable checkpoint ID instead of the selected current"),
 	),
 )
 
-const dryRunFlag = Flag.boolean("dry-run").pipe(
+const dryRunFlag = Flag.Boolean("dry-run").pipe(
 	Flag.withDescription("Report the exact planned actions without modifying any archive state"),
 	Flag.withDefault(false),
 )
 
-const applyFlag = Flag.boolean("apply").pipe(
+const applyFlag = Flag.Boolean("apply").pipe(
 	Flag.withDescription("Apply the destructive operation (omitting this flag is a non-mutating refusal)"),
 	Flag.withDefault(false),
 )
 
-const localPortFlag = Flag.integer("port").pipe(
+const localPortFlag = Flag.Int("port").pipe(
 	Flag.withDescription("Private Maple local-query port"),
 	Flag.withDefault(4318),
 )
 
-const sealingLagHoursFlag = Flag.integer("sealing-lag-hours").pipe(
+const sealingLagHoursFlag = Flag.Int("sealing-lag-hours").pipe(
 	Flag.withDescription("Hours after UTC midnight before a completed day may be retired"),
 	Flag.withDefault(24),
 )
 
-const keepFlag = Flag.integer("keep").pipe(
+const keepFlag = Flag.Int("keep").pipe(
 	Flag.withDescription(
 		"Newest superseded generations to retain per signal/range (default 1; 0 reclaims all superseded)",
 	),
 	Flag.withDefault(1),
 )
 
-const memoryBudgetFlag = Flag.integer("memory-budget").pipe(
+const memoryBudgetFlag = Flag.Int("memory-budget").pipe(
 	Flag.withDescription("Maximum peak RSS in bytes allowed for any calibration candidate"),
 	Flag.withDefault(512 * 1024 * 1024),
 )
 
-const timeBudgetFlag = Flag.integer("time-budget").pipe(
+const timeBudgetFlag = Flag.Int("time-budget").pipe(
 	Flag.withDescription("Maximum wall-clock milliseconds for the full calibration matrix"),
 	Flag.withDefault(60_000),
 )
 
-const sampleRowsFlag = Flag.integer("sample-rows").pipe(
+const sampleRowsFlag = Flag.Int("sample-rows").pipe(
 	Flag.withDescription("Rows to sample per calibration candidate"),
 	Flag.withDefault(10_000),
 )
 
 const writeConfigFlag = Flag.optional(
-	Flag.string("write-config").pipe(
+	Flag.String("write-config").pipe(
 		Flag.withDescription("Write the generated tuning configuration to this path"),
 	),
 )
 
 const configFlag = Flag.optional(
-	Flag.string("config").pipe(
+	Flag.String("config").pipe(
 		Flag.withDescription(
 			"Load tuning overrides from a versioned calibration config document (see: archive calibrate --write-config)",
 		),
 	),
 )
 
-const maxCandidateWallMsFlag = Flag.integer("max-candidate-wall-ms").pipe(
+const maxCandidateWallMsFlag = Flag.Int("max-candidate-wall-ms").pipe(
 	Flag.withDescription("Maximum wall-clock milliseconds for a single calibration candidate run"),
 	Flag.withDefault(30_000),
 )
 
-const minThroughputFlag = Flag.integer("min-throughput").pipe(
+const minThroughputFlag = Flag.Int("min-throughput").pipe(
 	Flag.withDescription("Minimum logical write throughput in bytes/sec required of a candidate"),
 	Flag.withDefault(0),
 )
 
-const maxTempDiskFlag = Flag.integer("max-temp-disk").pipe(
+const maxTempDiskFlag = Flag.Int("max-temp-disk").pipe(
 	Flag.withDescription("Maximum peak temporary disk (restored scratch + sample output) in bytes"),
 	Flag.withDefault(2 * 1024 * 1024 * 1024),
 )
 
-const freeSpaceReserveFlag = Flag.integer("free-space-reserve").pipe(
+const freeSpaceReserveFlag = Flag.Int("free-space-reserve").pipe(
 	Flag.withDescription("Minimum free-space reserve on the archive volume in bytes before calibrating"),
 	Flag.withDefault(512 * 1024 * 1024),
 )
 
-const safetyMarginFlag = Flag.integer("safety-margin-milli").pipe(
+const safetyMarginFlag = Flag.Int("safety-margin-milli").pipe(
 	Flag.withDescription(
 		"Safety margin in thousandths applied inside each ceiling (e.g. 1100 = 1.1x, reserving 10% headroom)",
 	),
 	Flag.withDefault(1100),
 )
 
-const writerThreadsFlag = Flag.integer("writer-threads").pipe(
+const writerThreadsFlag = Flag.Int("writer-threads").pipe(
 	Flag.withDescription("Parquet writer thread count for a calibration run"),
 	Flag.withDefault(1),
 )
 
-const rowGroupRowsFlag = Flag.integer("row-group-rows").pipe(
+const rowGroupRowsFlag = Flag.Int("row-group-rows").pipe(
 	Flag.withDescription("Parquet row-group row count for a calibration run"),
 	Flag.withDefault(10_000),
 )
 
-const maxShardRowsFlag = Flag.integer("max-shard-rows").pipe(
+const maxShardRowsFlag = Flag.Int("max-shard-rows").pipe(
 	Flag.withDescription("Maximum rows per shard for a calibration run"),
 	Flag.withDefault(500_000),
 )
 
-const maxShardBytesFlag = Flag.integer("max-shard-bytes").pipe(
+const maxShardBytesFlag = Flag.Int("max-shard-bytes").pipe(
 	Flag.withDescription("Maximum estimated bytes per shard for a calibration run"),
 	Flag.withDefault(256 * 1024 * 1024),
 )
 
-const rangeDateArgument = Argument.string("range-date").pipe(
+const rangeDateArgument = Argument.String("range-date").pipe(
 	Argument.withDescription("UTC day to seal as YYYY-MM-DD"),
 )
 
-const signalArgument = Argument.string("signal").pipe(
+const signalArgument = Argument.String("signal").pipe(
 	Argument.withDescription(`One of: ${ARCHIVE_SIGNALS.map((s) => s.name).join(", ")}`),
 )
 
-const outputFlag = Flag.choice("output", ["summary", "paths", "json"]).pipe(
+const outputFlag = Flag.Literals("output", ["summary", "paths", "json"]).pipe(
 	Flag.withDescription(
 		"Output format: summary (default), paths (machine-readable active Parquet paths), or json",
 	),
@@ -354,7 +354,7 @@ export const archiveCreate = Command.make("create", {
 )
 
 const signalFlag = Flag.optional(
-	Flag.string("signal").pipe(
+	Flag.String("signal").pipe(
 		Flag.withDescription(`One of: ${ARCHIVE_SIGNALS.map((s) => s.name).join(", ")}`),
 	),
 )
@@ -681,12 +681,12 @@ const formatBytes = (bytes: number): string => {
 }
 
 const pauseAtSessionPhaseFlag = Flag.optional(
-	Flag.string("pause-at-session-phase").pipe(
+	Flag.String("pause-at-session-phase").pipe(
 		Flag.withDescription("TEST ONLY: pause after durable-writing the parent session phase"),
 	),
 )
 const sessionMarkerDirFlag = Flag.optional(
-	Flag.string("session-marker-dir").pipe(
+	Flag.String("session-marker-dir").pipe(
 		Flag.withDescription("TEST ONLY: marker directory for parent-session pause"),
 	),
 )
@@ -1551,24 +1551,24 @@ const runBoundCalibrationMatrix = (
  * authoritative reconciler (no duplicate removal logic).
  */
 const operationIdFlag = Flag.optional(
-	Flag.string("operation-id").pipe(
+	Flag.String("operation-id").pipe(
 		Flag.withDescription("Calibration operation id (parent-generated); derives owned paths"),
 	),
 )
 const checkpointFingerprintFlag = Flag.optional(
-	Flag.string("checkpoint-fingerprint").pipe(
+	Flag.String("checkpoint-fingerprint").pipe(
 		Flag.withDescription("Exact parent-session checkpoint manifest fingerprint"),
 	),
 )
-const startRowFlag = Flag.integer("start-row").pipe(
+const startRowFlag = Flag.Int("start-row").pipe(
 	Flag.withDescription("Start row offset for the calibration window (0=training, sampleRows=held-out)"),
 	Flag.withDefault(0),
 )
-const maxTempDiskCalibFlag = Flag.integer("max-temp-disk").pipe(
+const maxTempDiskCalibFlag = Flag.Int("max-temp-disk").pipe(
 	Flag.withDescription("Maximum peak temporary disk in bytes (operator-supplied ceiling)"),
 	Flag.withDefault(2 * 1024 * 1024 * 1024),
 )
-const freeSpaceReserveCalibFlag = Flag.integer("free-space-reserve").pipe(
+const freeSpaceReserveCalibFlag = Flag.Int("free-space-reserve").pipe(
 	Flag.withDescription("Minimum free-space reserve on the archive volume in bytes"),
 	Flag.withDefault(512 * 1024 * 1024),
 )
@@ -1578,12 +1578,12 @@ const freeSpaceReserveCalibFlag = Flag.integer("free-space-reserve").pipe(
 // asserts the durable state exists, then kills the process group. This makes the
 // crash boundary deterministic and authoritative (C1).
 const pauseAtPhaseFlag = Flag.optional(
-	Flag.string("pause-at-phase").pipe(
+	Flag.String("pause-at-phase").pipe(
 		Flag.withDescription("TEST ONLY: pause (block) after durable-writing the record at this phase"),
 	),
 )
 const markerDirFlag = Flag.optional(
-	Flag.string("marker-dir").pipe(Flag.withDescription("TEST ONLY: directory for the pause marker file")),
+	Flag.String("marker-dir").pipe(Flag.withDescription("TEST ONLY: directory for the pause marker file")),
 )
 
 export const archiveCalibrateRun = Command.make("calibrate-run", {
@@ -1646,7 +1646,7 @@ export const archiveCalibrateRun = Command.make("calibrate-run", {
  * reconciler (releasing the pin and clearing the record).
  */
 const sessionActionFlag = Flag.optional(
-	Flag.string("action").pipe(
+	Flag.String("action").pipe(
 		Flag.withDescription("open: acquire the session pin + record; close: reconcile + release"),
 	),
 )

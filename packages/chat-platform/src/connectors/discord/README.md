@@ -3,19 +3,25 @@
 Everything Maple knows about Discord lives in this directory. The rest of the codebase reaches it
 through the `ChatConnector` contract in `../../connector.ts`.
 
-## Configuration
+## Secrets
 
-The host supplies these by name (they are declared in `install.ts` as `requiredConfig`; nothing
-outside this directory spells them out). They are documented here rather than in the repo's
-`.env.example`, which is shared ground where no platform should be named.
+Three, and they reach the connector two different ways. Both are documented here rather than in the
+repo's `.env.example`, which is shared ground where no platform should be named.
 
-| Name                    | Where it comes from                                              |
-| ----------------------- | ---------------------------------------------------------------- |
-| `DISCORD_CLIENT_ID`     | Discord developer portal → your application → OAuth2 → Client ID |
-| `DISCORD_CLIENT_SECRET` | Same page → Client Secret                                        |
+| Secret                  | Where it comes from                                              | How it arrives                       |
+| ----------------------- | ---------------------------------------------------------------- | ------------------------------------ |
+| `DISCORD_CLIENT_ID`     | Discord developer portal → your application → OAuth2 → Client ID | `install.requiredConfig`, by name    |
+| `DISCORD_CLIENT_SECRET` | Same page → Client Secret                                        | `install.requiredConfig`, by name    |
+| bot token               | Same application → Bot → Token                                   | `DiscordBotToken`, a host service    |
 
-Both unset is a supported state: the connector is reported as unavailable and the dashboard offers
-no connect button. Nothing fails to boot.
+The split is not an accident. The **install** half runs in the API worker, which resolves every
+registered connector's `requiredConfig` names into one map and passes it in — so a connector can be
+added without the worker's env catalog naming it. The **outbound** half runs in the bot worker and
+takes its credential as a service, because a connector that mints a credential per workspace
+resolves it from the target inside its own transport, which a name-keyed map cannot express.
+
+The two install names unset is a supported state: the connector is reported as unavailable, the
+dashboard offers no connect button, and nothing fails to boot.
 
 Application setup, once per Discord application:
 

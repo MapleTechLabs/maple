@@ -1,13 +1,15 @@
 import type { ChatConnector } from "./connector"
 
-export * from "./connector"
+export * from "./action-token"
 export * from "./config"
+export * from "./connector"
+export * from "./driver"
 export * from "./install"
-export { connectors } from "./connectors/index"
-export { chatConnectorManifests } from "./connectors/manifests"
+export * from "./outbound"
+export * from "./render"
 
 /** Whether a deployment supplied every config value this connector declared. */
-export const isConnectorConfigured = (
-	connector: ChatConnector,
+export const isConnectorConfigured = <R>(
+	connector: ChatConnector<R>,
 	config: ReadonlyMap<string, unknown>,
 ): boolean => connector.install.requiredConfig.every((name) => config.has(name))

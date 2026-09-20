@@ -117,13 +117,15 @@ export const ChatWorkspaceId = MapleUuidId("@maple/ChatWorkspaceId", "Chat Works
 export type ChatWorkspaceId = Schema.Schema.Type<typeof ChatWorkspaceId>
 
 /**
- * Identifies one chat-platform connector. Lowercase alphanumerics only: the id
- * appears in URL paths, in a stored column and as a directory name, and keeping
- * the alphabet that narrow means no escaping or separator convention has to be
- * agreed between them.
+ * Identifies one chat-platform connector. Lowercase alphanumerics, opening with
+ * a letter: the id appears in URL paths, in a stored column, as a directory name
+ * and inside composite keys — an install row, an action token, a span attribute.
+ * Keeping the alphabet that narrow means it can never contain a character one of
+ * those uses to join, and no escaping or separator convention has to be agreed
+ * between them.
  */
 export const ChatConnectorId = Schema.String.check(
-	Schema.isPattern(/^[a-z0-9]+$/),
+	Schema.isPattern(/^[a-z][a-z0-9]*$/),
 	Schema.isMaxLength(32),
 ).pipe(
 	Schema.brand("@maple/ChatConnectorId"),

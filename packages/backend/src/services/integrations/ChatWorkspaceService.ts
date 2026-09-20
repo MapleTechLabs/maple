@@ -13,12 +13,8 @@ import {
 	type OAuthStatePersistenceError,
 } from "@maple/domain/http"
 import { chatWorkspaces, type ChatWorkspaceRow } from "@maple/db"
-import {
-	connectors,
-	isConnectorConfigured,
-	type ChatConnector,
-	type ChatWorkspaceSettings,
-} from "@maple/chat-platform"
+import { isConnectorConfigured, type ChatConnector, type ChatWorkspaceSettings } from "@maple/chat-platform"
+import { connectors } from "@maple/chat-platform/connectors"
 import { and, asc, eq } from "drizzle-orm"
 import { Array as Arr, Clock, Context, Effect, Layer, Option, Schema } from "effect"
 import { FetchHttpClient, HttpClient } from "effect/unstable/http"
@@ -55,9 +51,9 @@ const CROSS_ORG_CONFLICT_MESSAGE =
  * test can hand the host half a fake connector and exercise the install flow
  * without a chat platform on the other end.
  */
-export class ChatConnectorRegistry extends Context.Reference<ReadonlyArray<ChatConnector>>(
+export class ChatConnectorRegistry extends Context.Reference<ReadonlyArray<ChatConnector<unknown>>>(
 	"@maple/api/services/ChatConnectorRegistry",
-	{ defaultValue: (): ReadonlyArray<ChatConnector> => connectors },
+	{ defaultValue: (): ReadonlyArray<ChatConnector<unknown>> => connectors },
 ) {}
 
 /** The row id is a UUID we mint, so the brand is a decode that cannot fail. */
@@ -85,7 +81,7 @@ export interface ChatWorkspaceSummary {
 
 /** One connector as the dashboard sees it: is it usable here, and what is linked. */
 export interface ChatConnectorStatus {
-	readonly connector: ChatConnector
+	readonly connector: ChatConnector<unknown>
 	readonly available: boolean
 	readonly workspaces: ReadonlyArray<ChatWorkspaceSummary>
 }
@@ -179,7 +175,7 @@ const make: Effect.Effect<
 	 * cleared text field means "unset", which every connector would otherwise
 	 * have to spell out as an empty-string case in its own schema.
 	 */
-	const validateSettings = (connector: ChatConnector, settings: ChatWorkspaceSettings) =>
+	const validateSettings = (connector: ChatConnector<unknown>, settings: ChatWorkspaceSettings) =>
 		connector.install
 			.decodeSettings(
 				Object.fromEntries(

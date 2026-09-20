@@ -1,9 +1,9 @@
 {
-	"include": ["src/**/*.ts"],
+	"include": ["**/*.ts"],
 	"compilerOptions": {
 		"target": "ES2022",
 		"module": "ESNext",
-		"lib": ["ES2022", "DOM", "DOM.Iterable"],
+		"lib": ["ES2022"],
 		"types": ["node"],
 		"moduleResolution": "bundler",
 		"allowImportingTsExtensions": true,

@@ -1,9 +1,14 @@
-import type { ChatConnector } from "../connector"
-import { discord } from "./discord/index"
-
 /**
- * The registry. Adding a platform is a directory beside this file plus its line
- * below — the only place outside a connector directory where a platform is named
- * (`manifests.ts`, the dashboard's half of the same registration, is the other).
+ * Every chat platform this build ships.
+ *
+ * The one file above a connector directory that is allowed to name a vendor, and the only edit a
+ * new platform needs outside its own directory — `manifests.ts`, the dashboard's half of the same
+ * registration, is the other. `vendor-isolation.test.ts` enforces the rest.
+ *
+ * Deliberately not annotated: the inferred element type unions every registered connector's
+ * requirements, which is exactly what a host Worker supplies — it provides all of them, and picks
+ * the one an incoming event belongs to by id.
  */
-export const connectors: ReadonlyArray<ChatConnector> = [discord]
+import { discord } from "./discord"
+
+export const connectors = [discord]

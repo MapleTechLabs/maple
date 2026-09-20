@@ -551,7 +551,10 @@ export class ChatSessionObject extends Cloudflare.DurableObject<ChatSessionObjec
 ) {}
 
 /** The activation, as the layer the host Worker provides. */
-// `<never>` pinned: the activation's requirements are all `DurableObjectServices`,
-// which `.make` already discharges, but inference otherwise widens them into the
-// layer's own requirements and they surface all the way up in `alchemy.run.ts`.
-export const ChatSessionLive = ChatSessionObject.make<never>(activateChatSession)
+// The activation's requirements are named rather than inferred: `.make` discharges
+// `DurableObjectServices` (both of these) through its own `Exclude`, while inference
+// would widen them into the layer's requirements and surface them all the way up in
+// `alchemy.run.ts`.
+export const ChatSessionLive = ChatSessionObject.make<
+	Cloudflare.DurableObjectState | Cloudflare.WorkerEnvironment
+>(activateChatSession)

@@ -127,6 +127,10 @@ function ServiceDetailPage() {
 function ServiceDetailContent() {
 	const { serviceName } = Route.useParams()
 	const search = Route.useSearch()
+	// Links minted before the services list labelled the empty environment carried
+	// `environments=[""]`, which rendered a blank switcher; read it as "all".
+	const selected = search.environments?.filter((env) => env !== "")
+	const environments = selected?.length ? selected : undefined
 	const navigate = useNavigate({ from: Route.fullPath })
 
 	const { startTime: effectiveStartTime, endTime: effectiveEndTime } = useEffectiveTimeRange(
@@ -249,8 +253,8 @@ function ServiceDetailContent() {
 									serviceName={serviceName}
 									startTime={effectiveStartTime}
 									endTime={effectiveEndTime}
-									environments={search.environments}
-									value={search.environments?.[0]}
+									environments={environments}
+									value={environments?.[0]}
 									onChange={handleEnvironmentChange}
 								/>
 								<div className="flex items-center gap-2">
@@ -282,7 +286,7 @@ function ServiceDetailContent() {
 								serviceName={serviceName}
 								effectiveStartTime={effectiveStartTime}
 								effectiveEndTime={effectiveEndTime}
-								environments={search.environments}
+								environments={environments}
 								onShowDependencies={handleShowDependencies}
 								onShowOperations={handleShowOperations}
 							/>
@@ -292,7 +296,7 @@ function ServiceDetailContent() {
 								serviceName={serviceName}
 								effectiveStartTime={effectiveStartTime}
 								effectiveEndTime={effectiveEndTime}
-								environments={search.environments}
+								environments={environments}
 								startTime={search.startTime}
 								endTime={search.endTime}
 								timePreset={search.timePreset}
@@ -303,7 +307,7 @@ function ServiceDetailContent() {
 								serviceName={serviceName}
 								effectiveStartTime={effectiveStartTime}
 								effectiveEndTime={effectiveEndTime}
-								environments={search.environments}
+								environments={environments}
 								startTime={search.startTime}
 								endTime={search.endTime}
 								timePreset={search.timePreset}
@@ -317,7 +321,7 @@ function ServiceDetailContent() {
 								timePreset={search.timePreset}
 								effectiveStartTime={effectiveStartTime}
 								effectiveEndTime={effectiveEndTime}
-								environments={search.environments}
+								environments={environments}
 							/>
 						)}
 					</DashboardLayout.Scroll>

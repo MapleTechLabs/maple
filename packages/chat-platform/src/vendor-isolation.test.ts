@@ -1,30 +1,30 @@
+/**
+ * The rule the package exists for, checked rather than trusted.
+ *
+ * Nothing outside a connector's own directory may name a chat vendor — not an identifier, not a
+ * string, not a comment, not a test fixture. The exceptions are the two registries, which have to
+ * name what they register. Tests outside a connector directory use a fake connector, `testchat`.
+ *
+ * A source scan rather than a convention because the drift this prevents is invisible in review:
+ * one platform's name in a shared type, a route or a column, and adding the next platform stops
+ * being a directory and a line.
+ */
 import { readdirSync, readFileSync, statSync } from "node:fs"
-import { join, relative, sep } from "node:path"
+import { basename, join, relative } from "node:path"
 import { fileURLToPath } from "node:url"
 import { describe, expect, it } from "vitest"
 
-/**
- * The rule this package exists to keep: everything that distinguishes one chat
- * platform from another lives in `src/connectors/<id>/`. A platform named
- * anywhere else — a column, a route, a component, a test fixture — is a seam
- * that the next connector would have to widen, so it fails here instead.
- *
- * The two registry files are exempt: naming the connectors is their whole job.
- * Tests outside a connector directory use a fake connector, `testchat`.
- */
+const repoRoot = fileURLToPath(new URL("../../..", import.meta.url))
 
-const REPO_ROOT = fileURLToPath(new URL("../../..", import.meta.url))
-
-/** Every vendor whose name must not leak. Extend as connectors are added. */
-const VENDORS = ["discord", "slack", "teams", "telegram", "whatsapp"]
+/** Trees that must stay vendor-neutral. A new surface that drives connectors is added here. */
+const GUARDED_ROOTS = ["packages/chat-platform/src"]
 
 /**
- * The vendor-neutral files this feature owns. A new generic file — a service,
- * a route, a component — belongs on this list; that is what makes the guard
- * cover it.
+ * The vendor-neutral files this feature owns elsewhere in the repo: the table, the public contract,
+ * the service that drives an install, both routes and the dashboard card. A new generic file
+ * belongs on this list; that is what makes the guard cover it.
  */
-const GUARDED_PATHS: ReadonlyArray<string> = [
-	"packages/chat-platform/src",
+const GUARDED_FILES = [
 	"packages/db/src/schema/chat-workspaces.ts",
 	"packages/domain/src/http/v2/integrations-chat.ts",
 	"packages/backend/src/services/integrations/ChatWorkspaceService.ts",
@@ -35,71 +35,85 @@ const GUARDED_PATHS: ReadonlyArray<string> = [
 ]
 
 /**
- * Files this feature only *touched*, which name a vendor for reasons that
- * predate it — the integrations catalog has carried a Slack card for a year.
- * They are still guarded against every OTHER vendor, which is what stops a
- * `connector === "…"` branch appearing in the generic chat code they now hold.
+ * Files this feature only *touched*, which name a vendor for reasons that predate it — the
+ * integrations catalog has carried a Slack card for a year. They stay guarded against every OTHER
+ * vendor, which is what stops a `connector === "…"` branch appearing in the generic chat code they
+ * now also hold.
  */
 const PARTIALLY_GUARDED: ReadonlyArray<{ readonly path: string; readonly allow: ReadonlyArray<string> }> = [
 	{ path: "apps/web/src/components/integrations/integration-catalog.tsx", allow: ["slack"] },
 	{ path: "apps/web/src/routes/integrations.tsx", allow: ["slack"] },
 ]
 
-/**
- * Files allowed to name a connector: the two registries, whose job it is, and
- * this guard, which holds the list of names to look for.
- */
-const EXEMPT_FILES: ReadonlyArray<string> = [
-	join("packages", "chat-platform", "src", "connectors", "index.ts"),
-	join("packages", "chat-platform", "src", "connectors", "manifests.ts"),
-	join("packages", "chat-platform", "src", "vendor-isolation.test.ts"),
-]
+const VENDORS = ["discord", "slack", "teams", "telegram", "whatsapp"]
 
-const CONNECTOR_DIR = join("packages", "chat-platform", "src", "connectors") + sep
+const SELF = fileURLToPath(import.meta.url)
 
-const isInsideConnector = (path: string): boolean => {
-	if (!path.startsWith(CONNECTOR_DIR)) return false
-	// `connectors/<id>/…` is a connector's own ground; `connectors/<file>` is not.
-	return path.slice(CONNECTOR_DIR.length).includes(sep)
+const sourcesUnder = (dir: string): Array<string> =>
+	readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+		const full = join(dir, entry.name)
+		// A directory whose parent is `connectors` IS a connector: everything in it is vendor code.
+		if (entry.isDirectory()) return basename(dir) === "connectors" ? [] : sourcesUnder(full)
+		return entry.name.endsWith(".ts") ? [full] : []
+	})
+
+/** The registries name what they register; nothing else on those lines does anything else. */
+const isRegistration = (line: string): boolean =>
+	line.startsWith("import ") ||
+	line.includes("export const connectors") ||
+	line.includes("export const chatConnectorManifests")
+
+const offendingLines = (
+	file: string,
+	allow: ReadonlyArray<string>,
+	exempt: (line: string) => boolean,
+): Array<string> => {
+	const offenders: Array<string> = []
+	readFileSync(file, "utf8")
+		.split("\n")
+		.forEach((line, index) => {
+			const lowered = line.toLowerCase()
+			if (!VENDORS.some((vendor) => !allow.includes(vendor) && lowered.includes(vendor))) return
+			if (exempt(line)) return
+			offenders.push(`${relative(repoRoot, file)}:${index + 1}: ${line.trim()}`)
+		})
+	return offenders
 }
 
-const collectFiles = (absolute: string): ReadonlyArray<string> => {
-	const stats = statSync(absolute, { throwIfNoEntry: false })
-	if (stats === undefined) return []
-	if (!stats.isDirectory()) return [absolute]
-	return readdirSync(absolute).flatMap((entry) => collectFiles(join(absolute, entry)))
-}
+const never = (): boolean => false
 
-const namedVendors = (absolute: string, allowed: ReadonlyArray<string>): ReadonlyArray<string> => {
-	const contents = readFileSync(absolute, "utf8").toLowerCase()
-	return VENDORS.filter((vendor) => !allowed.includes(vendor) && contents.includes(vendor))
-}
+describe("vendor isolation", () => {
+	for (const root of GUARDED_ROOTS) {
+		it(`keeps ${root} free of vendor names`, () => {
+			const registries = [
+				join(repoRoot, root, "connectors", "index.ts"),
+				join(repoRoot, root, "connectors", "manifests.ts"),
+			]
+			const offenders = sourcesUnder(join(repoRoot, root))
+				.filter((file) => file !== SELF)
+				.flatMap((file) =>
+					offendingLines(file, [], registries.includes(file) ? isRegistration : never),
+				)
 
-describe("chat platform vendor isolation", () => {
-	it("names no chat platform outside its own connector directory", () => {
-		const offenders: Array<string> = []
-		for (const guarded of GUARDED_PATHS) {
-			for (const absolute of collectFiles(join(REPO_ROOT, guarded))) {
-				const path = relative(REPO_ROOT, absolute)
-				if (isInsideConnector(path) || EXEMPT_FILES.includes(path)) continue
-				offenders.push(...namedVendors(absolute, []).map((vendor) => `${path}: ${vendor}`))
-			}
-		}
+			expect(offenders).toEqual([])
+		})
+	}
+
+	it("keeps the files this feature owns elsewhere free of vendor names", () => {
+		const offenders = GUARDED_FILES.flatMap((path) => offendingLines(join(repoRoot, path), [], never))
 		expect(offenders).toEqual([])
 	})
 
 	it("keeps the shared dashboard files free of every vendor they did not already carry", () => {
 		const offenders = PARTIALLY_GUARDED.flatMap((guarded) =>
-			namedVendors(join(REPO_ROOT, guarded.path), guarded.allow).map(
-				(vendor) => `${guarded.path}: ${vendor}`,
-			),
+			offendingLines(join(repoRoot, guarded.path), guarded.allow, never),
 		)
 		expect(offenders).toEqual([])
 	})
 
 	it("guards files that exist", () => {
-		const missing = [...GUARDED_PATHS, ...PARTIALLY_GUARDED.map((guarded) => guarded.path)].filter(
-			(guarded) => statSync(join(REPO_ROOT, guarded), { throwIfNoEntry: false }) === undefined,
+		const missing = [...GUARDED_FILES, ...PARTIALLY_GUARDED.map((guarded) => guarded.path)].filter(
+			(path) => statSync(join(repoRoot, path), { throwIfNoEntry: false }) === undefined,
 		)
 		expect(missing).toEqual([])
 	})

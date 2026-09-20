@@ -163,15 +163,15 @@ export interface EnvConfig {
 	readonly PLANETSCALE_OAUTH_SCOPES: string
 }
 
-const portConfig = Config.number("PORT").pipe(Config.withDefault(3472))
+const portConfig = Config.Number("PORT").pipe(Config.withDefault(3472))
 
 const envConfig = Config.all({
 	PORT: portConfig,
-	TINYBIRD_HOST: Config.string("TINYBIRD_HOST"),
-	TINYBIRD_TOKEN: Config.redacted("TINYBIRD_TOKEN"),
+	TINYBIRD_HOST: Config.String("TINYBIRD_HOST"),
+	TINYBIRD_TOKEN: Config.Redacted("TINYBIRD_TOKEN"),
 	TINYBIRD_SIGNING_KEY: optionalRedacted("TINYBIRD_SIGNING_KEY"),
 	TINYBIRD_WORKSPACE_ID: optionalString("TINYBIRD_WORKSPACE_ID"),
-	TINYBIRD_RAW_SQL_JWT_RPS_LIMIT: Config.option(Config.number("TINYBIRD_RAW_SQL_JWT_RPS_LIMIT")),
+	TINYBIRD_RAW_SQL_JWT_RPS_LIMIT: Config.option(Config.Number("TINYBIRD_RAW_SQL_JWT_RPS_LIMIT")),
 	CLICKHOUSE_URL: optionalString("CLICKHOUSE_URL"),
 	CLICKHOUSE_PROVIDER: stringWithDefault("CLICKHOUSE_PROVIDER", "tinybird"),
 	CLICKHOUSE_USER: stringWithDefault("CLICKHOUSE_USER", "default"),
@@ -181,8 +181,8 @@ const envConfig = Config.all({
 	MAPLE_AUTH_MODE: stringWithDefault("MAPLE_AUTH_MODE", "self_hosted"),
 	MAPLE_ROOT_PASSWORD: optionalRedacted("MAPLE_ROOT_PASSWORD"),
 	MAPLE_DEFAULT_ORG_ID: stringWithDefault("MAPLE_DEFAULT_ORG_ID", "default"),
-	MAPLE_INGEST_KEY_ENCRYPTION_KEY: Config.redacted("MAPLE_INGEST_KEY_ENCRYPTION_KEY"),
-	MAPLE_INGEST_KEY_LOOKUP_HMAC_KEY: Config.redacted("MAPLE_INGEST_KEY_LOOKUP_HMAC_KEY"),
+	MAPLE_INGEST_KEY_ENCRYPTION_KEY: Config.Redacted("MAPLE_INGEST_KEY_ENCRYPTION_KEY"),
+	MAPLE_INGEST_KEY_LOOKUP_HMAC_KEY: Config.Redacted("MAPLE_INGEST_KEY_LOOKUP_HMAC_KEY"),
 	MAPLE_SHARE_TOKEN_HMAC_KEY: optionalRedacted("MAPLE_SHARE_TOKEN_HMAC_KEY"),
 	MAPLE_INGEST_PUBLIC_URL: stringWithDefault("MAPLE_INGEST_PUBLIC_URL", "http://127.0.0.1:3474"),
 	MAPLE_APP_BASE_URL: stringWithDefault("MAPLE_APP_BASE_URL", "http://127.0.0.1:3471"),

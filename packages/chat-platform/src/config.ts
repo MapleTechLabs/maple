@@ -19,7 +19,7 @@ export const chatConnectorConfigNames: ReadonlyArray<string> = Arr.dedupe(
 
 export const chatConnectorConfig: Config.Config<ChatConnectorConfig> = Config.all(
 	chatConnectorConfigNames.map((name) =>
-		Config.option(Config.string(name)).pipe(
+		Config.option(Config.String(name)).pipe(
 			Config.map((value) =>
 				Option.flatMap(value, (raw) =>
 					raw.trim().length > 0
