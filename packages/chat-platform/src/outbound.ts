@@ -67,6 +67,8 @@ export interface ChatOutboundTransport {
  * implementation services in its requirements.
  */
 export interface ChatOutbound<R = never> {
+	/** Whose outbound this is — what a failure and a driver span name, without naming a vendor. */
+	readonly connectorId: ChatConnectorId
 	readonly limits: ChatOutboundLimits
 	readonly transport: Effect.Effect<ChatOutboundTransport, never, R>
 }

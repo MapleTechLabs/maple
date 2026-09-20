@@ -15,7 +15,7 @@
 import { makeChatTranscript } from "@maple/domain/chat-transcript"
 import type { ChatEvent, ChatTurnEndEvent } from "@maple/domain/chat-session"
 import { Clock, Effect, Fiber, Schedule, Semaphore, Stream } from "effect"
-import type { ChatMessageRef, ChatOutbound, ChatOutboundError, ChatTarget } from "./outbound"
+import type { ChatMessageRef, ChatOutbound, ChatTarget } from "./outbound"
 import {
 	renderChatMessage,
 	splitBlocks,
@@ -32,80 +32,93 @@ export interface ChatTurnDriverOptions<E, RE, RO> {
 	readonly context: ChatRenderContext
 }
 
-export const driveChatTurn = <E, RE, RO>(
+export const driveChatTurn = Effect.fn("ChatPlatform.driveChatTurn")(function* <E, RE, RO>(
 	options: ChatTurnDriverOptions<E, RE, RO>,
-): Effect.Effect<void, E | ChatOutboundError, RE | RO> =>
-	Effect.gen(function* () {
-		const { context, outbound, target } = options
-		const transport = yield* outbound.transport
-		const transcript = makeChatTranscript()
-		const posted: Array<ChatMessageRef> = []
-		// One flush at a time: the throttle fiber and the final flush would otherwise race, and the
-		// loser's edit would put a stale render back on a finished turn.
-		const gate = yield* Semaphore.make(1)
+) {
+	const { context, outbound, target } = options
+	yield* Effect.annotateCurrentSpan({
+		"chat.connector": outbound.connectorId,
+		"chat.session_id": context.sessionId,
+	})
 
-		/** The turn's assistant message. Null until `turn-start`, which is also what posts anything. */
-		let messageId: string | null = null
-		let ending: ChatNoticeBlock | null = null
-		let dirty = false
+	const transport = yield* outbound.transport
+	const transcript = makeChatTranscript()
+	const posted: Array<ChatMessageRef> = []
+	// One flush at a time: the throttle fiber and the final flush would otherwise race, and the
+	// loser's edit would put a stale render back on a finished turn.
+	const gate = yield* Semaphore.make(1)
 
-		const flush = gate.withPermit(
-			Effect.gen(function* () {
-				if (messageId === null) return
-				dirty = false
-				const message = transcript.messages.find((candidate) => candidate.id === messageId)
-				const blocks: Array<ChatBlock> =
-					message === undefined ? [] : [...renderChatMessage(message, context)]
-				if (ending !== null) blocks.push(ending)
-				if (blocks.length === 0) blocks.push(PENDING)
+	// Turn state, mutated by the stream fiber and read by the throttle fiber. Safe without a `Ref`
+	// because fibers interleave only at yield points within one isolate, and everything that reads
+	// the transcript does so under `gate`: `dirty` is cleared BEFORE the render, so an event that
+	// lands during a post or an edit marks the turn dirty again rather than being swallowed.
+	/** The turn's assistant message. Null until `turn-start`, which is also what posts anything. */
+	let messageId: string | null = null
+	let ending: ChatNoticeBlock | null = null
+	let dirty = false
 
-				const groups = splitBlocks(blocks, outbound.limits.maxMessageChars)
-				for (let index = 0; index < Math.max(groups.length, posted.length); index++) {
-					// A retraction can shrink a turn below a message it had already needed, so a surplus
-					// message is emptied rather than left holding text the turn no longer says.
-					const group = index < groups.length ? groups[index] : NO_BLOCKS
-					if (index < posted.length) yield* transport.edit(posted[index], group)
-					else posted.push(yield* transport.post(target, group))
-				}
-			}),
-		)
+	const flush = gate.withPermit(
+		Effect.gen(function* () {
+			// Before `turn-start` there is nothing to say — unless the turn ended without ever
+			// starting one, which is a failure the reader would otherwise never hear about.
+			if (messageId === null && ending === null) return
+			dirty = false
+			const message = transcript.messages.find((candidate) => candidate.id === messageId)
+			const blocks: Array<ChatBlock> =
+				message === undefined ? [] : [...renderChatMessage(message, context)]
+			if (ending !== null) blocks.push(ending)
+			if (blocks.length === 0) blocks.push(PENDING)
 
-		const onEvent = (event: ChatEvent) =>
-			Effect.gen(function* () {
-				const now = yield* Clock.currentTimeMillis
-				transcript.add(event, now)
-				// Sub-agent events carry a `task` ref and belong to a nested transcript; the turn they
-				// are nested in is the one being driven.
-				if (event.type !== "user-message" && event.task !== undefined) {
-					dirty = true
-					return
-				}
-				if (event.type === "turn-end") {
-					ending = turnEndNotice(event)
-					return
-				}
-				if (event.type === "turn-start" && messageId === null) {
-					messageId = event.messageId
-					// The placeholder, immediately: the platform should show the bot working before the
-					// first token lands, not after the first throttle interval.
-					yield* flush
-					return
-				}
-				dirty = true
-			})
+			const groups = splitBlocks(blocks, outbound.limits.maxMessageChars)
+			for (let index = 0; index < Math.max(groups.length, posted.length); index++) {
+				// A retraction can shrink a turn below a message it had already needed, so a surplus
+				// message is emptied rather than left holding text the turn no longer says.
+				const group = index < groups.length ? groups[index] : NO_BLOCKS
+				if (index < posted.length) yield* transport.edit(posted[index], group)
+				else posted.push(yield* transport.post(target, group))
+			}
+		}),
+	)
 
-		yield* Effect.forkChild(Effect.ignore(transport.typing(target)))
-		const throttled = yield* Effect.forkChild(
-			Effect.repeat(
-				Effect.suspend(() => (dirty ? flush : Effect.void)),
-				{ schedule: Schedule.spaced(outbound.limits.minEditInterval) },
-			),
-		)
+	const onEvent = Effect.fnUntraced(function* (event: ChatEvent) {
+		const now = yield* Clock.currentTimeMillis
+		transcript.add(event, now)
+		// Sub-agent events carry a `task` ref and belong to a nested transcript; the turn they are
+		// nested in is the one being driven.
+		if (event.type !== "user-message" && event.task !== undefined) {
+			dirty = true
+			return
+		}
+		if (event.type === "turn-end") {
+			ending = turnEndNotice(event)
+			return
+		}
+		if (event.type === "turn-start" && messageId === null) {
+			messageId = event.messageId
+			// The placeholder, immediately: the platform should show the bot working before the first
+			// token lands, not after the first throttle interval.
+			yield* flush
+			return
+		}
+		dirty = true
+	})
 
-		yield* Stream.runForEach(options.events.pipe(Stream.takeUntil(isTurnEnd)), onEvent)
-		yield* Fiber.interrupt(throttled)
-		yield* flush
-	}).pipe(Effect.withSpan("ChatPlatform.driveChatTurn"))
+	yield* Effect.forkChild(transport.typing(target).pipe(Effect.tapCause(Effect.logDebug), Effect.ignore))
+	const throttled = yield* Effect.forkChild(
+		Effect.repeat(
+			// A mid-turn edit that fails takes its fiber with it and nothing joins this one, so the
+			// cause is logged here or it is lost. The final flush still runs, and still reports.
+			Effect.suspend(() => (dirty ? flush : Effect.void)).pipe(Effect.tapCause(Effect.logWarning)),
+			{ schedule: Schedule.spaced(outbound.limits.minEditInterval) },
+		),
+	)
+
+	// `takeUntil` is inclusive, so `turn-end` itself reaches the fold and sets the closing notice
+	// before the stream completes.
+	yield* Stream.runForEach(options.events.pipe(Stream.takeUntil(isTurnEnd)), onEvent)
+	yield* Fiber.interrupt(throttled)
+	yield* flush
+})
 
 const NO_BLOCKS: ReadonlyArray<ChatBlock> = []
 

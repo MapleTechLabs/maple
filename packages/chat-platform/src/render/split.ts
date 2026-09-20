@@ -123,7 +123,9 @@ export const cutMarkdown = (markdown: string, maxChars: number): Array<string> =
 				flush()
 				continue
 			}
-			const room = budget() - length - (current.length === 0 ? 0 : 1)
+			// At least one character, always: a budget small enough to leave no room would otherwise
+			// slice from the tail and repeat the line instead of advancing through it.
+			const room = Math.max(budget() - length - (current.length === 0 ? 0 : 1), 1)
 			add(rest.slice(0, room))
 			rest = rest.slice(room)
 			flush()

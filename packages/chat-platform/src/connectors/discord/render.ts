@@ -44,6 +44,7 @@ export interface DiscordMessagePayload {
 export const MAX_CONTENT_CHARS = 2000
 export const MAX_EMBEDS = 10
 export const MAX_CUSTOM_ID_CHARS = 100
+const MAX_BUTTON_LABEL_CHARS = 80
 
 /** What one message's worth of blocks becomes. */
 export const renderDiscordMessage = (blocks: ReadonlyArray<ChatBlock>): DiscordMessagePayload => {
@@ -91,6 +92,10 @@ export const renderDiscordMessage = (blocks: ReadonlyArray<ChatBlock>): DiscordM
 			case "notice":
 				lines.push(block.tone === "error" ? `**${block.text}**` : `_${block.text}_`)
 				break
+			default:
+				// A block kind added to the neutral model but not to this dialect would otherwise
+				// render as nothing at all.
+				block satisfies never
 		}
 	}
 
@@ -160,5 +165,3 @@ const approvalRow = (token: string, toolName: string): DiscordActionRow | null =
 		],
 	}
 }
-
-const MAX_BUTTON_LABEL_CHARS = 80

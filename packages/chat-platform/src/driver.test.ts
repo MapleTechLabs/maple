@@ -15,6 +15,7 @@ import {
 } from "@maple/domain/chat-session"
 import { Duration, Effect, Fiber, Stream } from "effect"
 import { TestClock } from "effect/testing"
+import { chatConnectorId } from "./connector"
 import { driveChatTurn } from "./driver"
 import type { ChatMessageRef, ChatOutbound, ChatTarget } from "./outbound"
 import type { ChatBlock, ChatRenderContext } from "./render"
@@ -31,6 +32,9 @@ const target: ChatTarget = { conversationId: "conv_1" }
 
 const EDIT_INTERVAL = Duration.seconds(1)
 
+/** Nobody's platform: the driver must not be testable only against a real vendor's behaviour. */
+const TESTCHAT = chatConnectorId("testchat")
+
 interface Recorder {
 	readonly outbound: ChatOutbound
 	/** Every post and edit, in order, as `<verb> <messageId>` plus the blocks it carried. */
@@ -46,6 +50,7 @@ const recorder = (maxMessageChars = 500): Recorder => {
 		calls,
 		typing,
 		outbound: {
+			connectorId: TESTCHAT,
 			limits: { maxMessageChars, minEditInterval: EDIT_INTERVAL },
 			transport: Effect.sync(() => ({
 				post: (postTarget, blocks) =>
@@ -206,6 +211,30 @@ describe("driveChatTurn", () => {
 					token: "org_1:bot-42|call_9",
 				},
 				{ kind: "notice", tone: "error", text: "Failed: upstream said no" },
+			])
+		}),
+	)
+
+	it.effect("still says something when a turn fails before it ever started", () =>
+		Effect.gen(function* () {
+			const chat = recorder()
+			// The engine emits `turn-start` from the run itself, so a turn that dies while it is being
+			// built — a layer, a model, a credential — reaches the session as a `turn-end` alone.
+			yield* driveChatTurn({
+				events: timeline([
+					[
+						NOW,
+						event(1, { type: "turn-end", messageId: "a1", reason: "error", error: "no model" }),
+					],
+				]),
+				outbound: chat.outbound,
+				target,
+				context,
+			})
+
+			expect(chat.calls).toHaveLength(1)
+			expect(chat.calls[0].blocks).toEqual([
+				{ kind: "notice", tone: "error", text: "Failed: no model" },
 			])
 		}),
 	)
