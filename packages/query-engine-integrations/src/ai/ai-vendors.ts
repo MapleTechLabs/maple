@@ -141,11 +141,12 @@ const eveIntegration: AiIntegration = {
  * only the turn id needs lifting — `maple_ai.turn.id` is the conversation-level
  * grouping key inside a session, kept out of `gen_ai.conversation.id` on the
  * wire because the semconv key names the whole conversation, not one turn.
+ * It wins over a `gen_ai.conversation.id` on the same span for that reason: the
+ * agent engine stamps its thread id — the session — on the tool spans it opens.
  */
 const mapleIntegration: AiIntegration = {
 	id: "maple",
 	refine: (values: MutableAiGenAiValues, ctx: AiRefineContext) => {
-		if (values.conversationId !== undefined) return
 		const turnId = ctx.attributes[MAPLE_NATIVE_TURN_ID_ATTR]
 		if (turnId !== undefined && turnId !== "") values.conversationId = turnId
 	},

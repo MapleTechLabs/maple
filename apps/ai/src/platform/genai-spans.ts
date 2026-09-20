@@ -528,12 +528,23 @@ const annotateExecuteToolSpan = Effect.fnUntraced(function* (attributes: Readonl
 	for (const [key, value] of Object.entries(attributes)) span.value.attribute(key, value)
 })
 
-/** Record a tool call's description, arguments and result — or failure — on its `execute_tool` span. */
+/**
+ * Record a tool call's description, arguments and result — or failure — on its `execute_tool` span.
+ *
+ * `sessionAttributes` is the identity the model-call spans carry (`agentSessionSpanAttributes`). The
+ * engine stamps only its thread id on a tool span, so without it the session view has nothing that
+ * puts a tool call in the turn of the model call that asked for it.
+ */
 export const withToolCallContent = <A, E extends { readonly message: string }, R>(
 	handler: Effect.Effect<A, E, R>,
-	call: { readonly description: string; readonly params: unknown },
+	call: {
+		readonly description: string
+		readonly params: unknown
+		readonly sessionAttributes?: Readonly<Record<string, string>>
+	},
 ): Effect.Effect<A, E, R> =>
 	annotateExecuteToolSpan({
+		...call.sessionAttributes,
 		"gen_ai.tool.description": call.description,
 		"gen_ai.tool.call.arguments": toolCallJson(call.params),
 	}).pipe(

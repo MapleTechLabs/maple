@@ -15,7 +15,7 @@ import { ThreadId } from "@effect-agent/core/Identifiers"
 import { Effect, Layer, Schema, Stream } from "effect"
 import { Prompt, Toolkit } from "effect/unstable/ai"
 import type { McpToolExecutorApi } from "../mcp/dispatcher"
-import type { ResolvedModel } from "../platform/Llm"
+import { agentSessionSpanAttributes, type ResolvedModel } from "../platform/Llm"
 import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
 import { agentForSession, chatAgent, surfaceForTurn } from "./agents"
 import { rulesetForTurn } from "./permissions"
@@ -148,7 +148,13 @@ export const turnToolPolicy = (
 export const runChatTurn = (input: ChatRunInput) => {
 	const definition = agentForSession(input.sessionId)
 	const { ruleset, surface } = turnToolPolicy(input.sessionId, input.tenant)
-	const maple = buildChatToolkit(input.toolExecutor, input.tenant, ruleset, surface)
+	const maple = buildChatToolkit(
+		input.toolExecutor,
+		input.tenant,
+		ruleset,
+		surface,
+		agentSessionSpanAttributes(input.model.tags),
+	)
 	const completion = buildDiagnosisCompletion(
 		input.sessionId,
 		input.tenant,

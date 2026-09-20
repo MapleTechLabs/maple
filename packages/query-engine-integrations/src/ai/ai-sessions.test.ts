@@ -1372,7 +1372,7 @@ describe("aiSessionSummaryQuery", () => {
 		expect(sql).toContain("LIMIT 1001")
 		// The turn ids the refine hooks lift into the field are read alongside it.
 		expect(sql).toContain(
-			"coalesce(nullIf(SpanAttributes['gen_ai.conversation.id'], ''), nullIf(SpanAttributes['eve.turn.id'], ''), nullIf(SpanAttributes['maple_ai.turn.id'], ''), '')",
+			"coalesce(nullIf(SpanAttributes['maple_ai.turn.id'], ''), nullIf(SpanAttributes['gen_ai.conversation.id'], ''), nullIf(SpanAttributes['eve.turn.id'], ''), '')",
 		)
 	})
 
