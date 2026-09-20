@@ -64,6 +64,8 @@ export const driveChatTurn = Effect.fn("ChatPlatform.driveChatTurn")(function* <
 	// the transcript does so under `gate`: `dirty` is cleared BEFORE the render, so an event that
 	// lands during a post or an edit marks the turn dirty again rather than being swallowed.
 	let ending: ChatNoticeBlock | null = null
+	/** How the turn closed, for the span — the one place a failed turn is more than a line of copy. */
+	let endReason = "unfinished"
 	let dirty = false
 
 	const flush = gate.withPermit(
@@ -110,6 +112,7 @@ export const driveChatTurn = Effect.fn("ChatPlatform.driveChatTurn")(function* <
 		}
 		if (event.type === "turn-end" && event.messageId === messageId) {
 			ending = turnEndNotice(event)
+			endReason = event.reason
 			return
 		}
 		dirty = true
@@ -147,6 +150,7 @@ export const driveChatTurn = Effect.fn("ChatPlatform.driveChatTurn")(function* <
 	)
 	yield* Fiber.interrupt(throttled)
 	yield* flush
+	yield* Effect.annotateCurrentSpan({ "chat.turn.end_reason": endReason, "chat.messages": posted.length })
 	return yield* outcome
 })
 
