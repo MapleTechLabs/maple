@@ -205,7 +205,7 @@ export const buildChatToolkit = (
 	executor: McpToolExecutorApi,
 	tenant: TenantContext,
 	ruleset: PermissionRuleset,
-	surface: McpToolSurface = "chat",
+	surface: McpToolSurface,
 	sessionAttributes?: Readonly<Record<string, string>>,
 ) =>
 	buildMapleToolkit(executor, tenant, {

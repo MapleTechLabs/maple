@@ -148,8 +148,11 @@ export interface McpToolAuditInput {
 
 /**
  * One `mcp_tool.called` entry per tool invocation, whichever surface drove it.
- * Workflow passes and internal RPC run under Maple's own tenant, so they are
- * `system`; the public transport and the chat attribute through the tenant.
+ * Workflow passes, internal RPC and the chat-platform bot run under a machine
+ * tenant with no Maple user behind it, so they are `system`, labelled with the
+ * surface; the public transport and the in-app chat attribute through the
+ * tenant. Attributing the bot through its tenant would file every call under a
+ * user id that matches no user row, from the dashboard it did not come from.
  */
 export const recordMcpToolAudit = (input: McpToolAuditInput) =>
 	Effect.gen(function* () {
@@ -157,7 +160,7 @@ export const recordMcpToolAudit = (input: McpToolAuditInput) =>
 		const info = yield* CurrentAuditActor
 		const forensics = yield* currentRequestForensics
 		const attribution =
-			input.surface === "workflow" || input.surface === "rpc"
+			input.surface === "workflow" || input.surface === "rpc" || input.surface === "bot"
 				? { actor: { type: "system" as const, label: input.surface }, source: "system" as const }
 				: auditAttribution(input.tenant, info)
 		yield* audit.record({

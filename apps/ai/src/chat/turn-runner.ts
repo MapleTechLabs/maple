@@ -267,6 +267,10 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 	)
 
 	const tenant = toTenantContext(input.tenant)
+	// One answer for the model's tags and the turn span, the same one `turnToolPolicy` builds the
+	// toolkit from. `meterTurn` derives its own because it is called as a finalizer and separately
+	// exported.
+	const surface = agentForTurn(input.sessionId, tenant.userId).surface
 	const observability = makeTurnObservability()
 	// Hoisted out of the program: `submit_diagnosis` reads it mid-run — the tool is invoked mid-run
 	// so there is no later moment to hand it a total — and the metering finalizer reads it after the
@@ -327,7 +331,7 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 		const toolExecutor = yield* McpToolExecutor
 		const history = input.session.history()
 		const model = resolveTriageModel(input.env, {
-			surface: agentForTurn(input.sessionId, tenant.userId).surface,
+			surface,
 			orgId: tenant.orgId,
 			sessionId: input.sessionId,
 			turnId: input.messageId,
@@ -493,7 +497,7 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 				"maple.chat.message_id": input.messageId,
 				// Two values, so it groups. Without it "how many bot turns ran, and how many failed"
 				// is answerable only by substring-matching the session id.
-				"maple.chat.surface": agentForTurn(input.sessionId, tenant.userId).surface,
+				"maple.chat.surface": surface,
 			},
 		}),
 	)

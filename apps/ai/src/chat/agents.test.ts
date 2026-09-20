@@ -115,17 +115,19 @@ describe("the bot agent", () => {
 		// The session id is built by a Worker outside this app, so the actor is the signal it cannot
 		// forge. A mismatch must not hand an org-level actor the internal toolset — and must not
 		// hand it the in-app prompt either, which teaches a 420px panel and markdown tables.
-		const { policy, tools } = toolsFor(makeChatSessionId(orgId, "tab"), CHAT_BOT_USER_ID)
+		const session = makeChatSessionId(orgId, "tab")
+		const { policy, tools } = toolsFor(session, CHAT_BOT_USER_ID)
 		assert.equal(policy.surface, "bot")
-		assert.equal(agentForTurn(makeChatSessionId(orgId, "tab"), CHAT_BOT_USER_ID), AGENTS.bot)
+		assert.equal(agentForTurn(session, CHAT_BOT_USER_ID), AGENTS.bot)
 		assert.notProperty(tools, "sandbox_exec")
 	})
 
 	it("leaves an ordinary chat turn its own agent and internal tools", () => {
 		// The converse, so the guard above cannot pass by treating everyone as the bot.
-		const { policy, tools } = toolsFor(makeChatSessionId(orgId, "tab"), "user_1")
+		const session = makeChatSessionId(orgId, "tab")
+		const { policy, tools } = toolsFor(session, "user_1")
 		assert.equal(policy.surface, "chat")
-		assert.equal(agentForTurn(makeChatSessionId(orgId, "tab"), "user_1"), AGENTS.default)
+		assert.equal(agentForTurn(session, "user_1"), AGENTS.default)
 		assert.property(tools, "sandbox_exec")
 	})
 })

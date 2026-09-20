@@ -17,7 +17,7 @@ import { Prompt, Toolkit } from "effect/unstable/ai"
 import type { McpToolExecutorApi } from "../mcp/dispatcher"
 import { agentSessionSpanAttributes, type ResolvedModel } from "../platform/Llm"
 import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
-import { agentForTurn, chatAgent } from "./agents"
+import { type AgentDefinition, agentForTurn, chatAgent } from "./agents"
 import { rulesetForTurn } from "./permissions"
 import { toChatEvents, type ChatTurnEvent } from "./events"
 import {
@@ -122,9 +122,14 @@ export interface ChatRunOutcome {
 export const turnToolPolicy = (
 	sessionId: string,
 	tenant: TenantContext,
-): { readonly ruleset: PermissionRuleset; readonly surface: McpToolSurface } => {
+): {
+	readonly agent: AgentDefinition
+	readonly ruleset: PermissionRuleset
+	readonly surface: McpToolSurface
+} => {
 	const agent = agentForTurn(sessionId, tenant.userId)
 	return {
+		agent,
 		// Not `agent.permission`: an unattended pass is offered fewer tools than the same agent
 		// answering a person in the same session. See `rulesetForTurn`.
 		ruleset: rulesetForTurn(agent, isAutonomousInvestigationTurn(sessionId, tenant)),
@@ -140,8 +145,7 @@ export const turnToolPolicy = (
  * module never invents one.
  */
 export const runChatTurn = (input: ChatRunInput) => {
-	const definition = agentForTurn(input.sessionId, input.tenant.userId)
-	const { ruleset, surface } = turnToolPolicy(input.sessionId, input.tenant)
+	const { agent: definition, ruleset, surface } = turnToolPolicy(input.sessionId, input.tenant)
 	const maple = buildChatToolkit(
 		input.toolExecutor,
 		input.tenant,

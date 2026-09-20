@@ -33,7 +33,7 @@ const countingExecutor = () => {
 }
 
 const handlerFor = (executor: McpToolExecutorApi, name: string) => {
-	const built = buildMapleToolkit(executor, TENANT, {})
+	const built = buildMapleToolkit(executor, TENANT, { surface: "chat" })
 	const handler = built.handlers[name]
 	assert.isDefined(handler, `no handler for ${name}`)
 	return handler!
@@ -62,6 +62,7 @@ describe("buildMapleToolkit", () => {
 	it("returns ordinary tool failures to the model and propagates a gated one", () => {
 		const { executor } = countingExecutor()
 		const { toolkit } = buildMapleToolkit(executor, TENANT, {
+			surface: "chat",
 			include: (name) => name === "list_services" || name === "create_dashboard",
 			gate: (name) => name === "create_dashboard",
 		})
@@ -103,7 +104,8 @@ describe("buildMapleToolkit", () => {
 
 	it("records a gated tool's description on its span as the model saw it", async () => {
 		const { executor } = countingExecutor()
-		const handler = buildMapleToolkit(executor, TENANT, { gate: () => true }).handlers.list_services
+		const handler = buildMapleToolkit(executor, TENANT, { surface: "chat", gate: () => true }).handlers
+			.list_services
 		assert.isDefined(handler, "no handler for list_services")
 		const { spans, tracer } = makeRecordingTracer()
 
