@@ -82,16 +82,19 @@ const priorMatchDecision = (priors: ReadonlyArray<IncidentTriagePriorDiagnosis>)
 		},
 	})
 
-// One retry, because the provider is intermittently wrong rather than broken.
-// Measured against 16 production incidents: roughly one call in sixteen comes
-// back with a score distribution that misses `DecisionModel`'s 1e-6 sum check
-// (`Invalid output: probabilities that do not sum to 1`), and the same input
-// answers cleanly on the next attempt. Effect's check has no tolerance knob,
-// and a gate that gives up at the first rounding error stops gating.
+// One retry, and only of what the provider itself marks retryable. The case
+// this exists for: measured against 16 production incidents, roughly one call
+// in sixteen comes back with a score distribution that misses `DecisionModel`'s
+// 1e-6 sum check (`Invalid output: probabilities that do not sum to 1`), an
+// `InvalidOutputError` the contract calls retryable, and the same input answers
+// cleanly on the next attempt. A rejected key or a policy refusal is not.
 const decide = <Decisions extends Record<string, Decision.Any>>(
 	definition: Decision.Definition<typeof IncidentTriageRequest, Decisions>,
 	input: IncidentTriageRequest,
-) => DecisionModel.decide(definition, { input }).pipe(Effect.retry({ times: 1 }))
+) =>
+	DecisionModel.decide(definition, { input }).pipe(
+		Effect.retry({ times: 1, while: (error) => error.isRetryable }),
+	)
 
 /**
  * Ask the decision model about one incident.

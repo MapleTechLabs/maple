@@ -148,12 +148,18 @@ describe("evaluateIncidentGate", () => {
 		}
 	})
 
-	it("investigates noise the model is not sure about", () => {
-		const result = evaluateIncidentGate({
+	it("investigates noise the model is not sure about, and skips at the floor itself", () => {
+		const below = evaluateIncidentGate({
 			verdict: verdict({ dispositionConfidence: NOISE_CONFIDENCE_FLOOR - 0.01 }),
 			detectorSeverity: "low",
 		})
-		assert.strictEqual(result.kind, "investigate")
+		assert.strictEqual(below.kind, "investigate")
+		// A floor is inclusive: exactly at it is enough.
+		const at = evaluateIncidentGate({
+			verdict: verdict({ dispositionConfidence: NOISE_CONFIDENCE_FLOOR }),
+			detectorSeverity: "low",
+		})
+		assert.strictEqual(at.kind, "skip")
 	})
 
 	it("refuses to skip what the detector already called urgent", () => {
