@@ -17,6 +17,10 @@
  * the 26 production sites at the time it landed was a legitimate defect, so it
  * cleans nothing up — it exists so the next one has to argue for itself.
  *
+ * `no-raw-tool-layer` guards the tool-span seam: a handler map registered
+ * straight through `toolkit.toLayer` produces `execute_tool` spans with no
+ * arguments and no result, which is invisible until someone reads a session.
+ *
  * `no-record-string-any` exists as its own rule (rather than leaning on
  * `typescript/no-explicit-any`, which flags the inner `any` anyway) so the worst
  * offender — an open key set whose values are also unchecked — can sit at `error`
@@ -262,11 +266,41 @@ const noEffectDie = {
 	},
 }
 
+const NO_RAW_TOOL_LAYER_MESSAGE =
+	"Do not register agent tool handlers with `toolkit.toLayer` directly. effect-agent's `execute_tool` span is content-free, so a raw registration renders in Agent Sessions as a tool call with no arguments and no result — which is how `submit_diagnosis` shipped for months. Use `toolHandlersWithContent(toolkit, handlers)` from `apps/ai/src/platform/genai-spans.ts`, which returns both the wrapped handler map and its layer."
+
+/**
+ * `<toolkit>.toLayer(...)`, which is the Effect AI `Toolkit` registration seam.
+ *
+ * The name is distinctive enough to match on its own: the only `toLayer` in the
+ * repository is Toolkit's. `genai-spans.ts` owns the one permitted call and
+ * disables the rule on that line.
+ */
+const noRawToolLayer = {
+	meta: {
+		type: "problem",
+		docs: {
+			description: "Disallow registering tool handlers without their gen-AI span content.",
+		},
+		messages: { noRawToolLayer: NO_RAW_TOOL_LAYER_MESSAGE },
+	},
+	create(context) {
+		return {
+			MemberExpression(node) {
+				if (node.computed) return
+				if (node.property.type !== "Identifier" || node.property.name !== "toLayer") return
+				context.report({ node, messageId: "noRawToolLayer" })
+			},
+		}
+	},
+}
+
 export default {
 	meta: { name: "maple" },
 	rules: {
 		"no-effect-die": noEffectDie,
 		"no-ordie-compiled-query": noOrDieCompiledQuery,
+		"no-raw-tool-layer": noRawToolLayer,
 		"no-react-use-effect": noReactUseEffect,
 		"no-record-string-any": noRecordStringAny,
 		"no-try-catch": noTryCatch,
