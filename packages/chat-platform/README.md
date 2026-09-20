@@ -15,10 +15,12 @@ ChatEvent stream ──▶ makeChatTranscript ──▶ renderChatMessage ──
   activity, approval request, notice. Chart fences and `<<maple:…>>` annotations come out of the
   prose here, through `@maple/domain`'s parsers, so this surface and the web transcript cannot
   disagree about what counts as one.
-- `src/outbound.ts` — what a connector has to implement: a budget, an edit interval, `post`,
-  `edit`, `typing`.
-- `src/driver.ts` — one turn: placeholder, throttled edits, retraction, splitting, approvals, and
-  a short notice for a turn that did not simply finish.
+- `src/outbound.ts` — what a connector has to implement: its id, a budget, an edit interval,
+  `post`, `edit`, `typing`.
+- `src/driver.ts` — one turn, named by the message id `beginTurn` answered with: placeholder,
+  throttled edits, retraction, splitting, approvals, and a short notice for a turn that did not
+  simply finish. A stream from seq 0 replays whole earlier turns, which is why the turn is named
+  rather than discovered.
 - `src/connectors/<id>/` — one platform each.
 
 ## The rule
