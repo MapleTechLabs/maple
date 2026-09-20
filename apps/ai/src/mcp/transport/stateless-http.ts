@@ -206,7 +206,7 @@ export const layerStatelessMcpHttp = (options: {
 						return jsonRpcError(null, -32700, "Parse error")
 					}
 					const messages = decoded.value
-					if (messages.length > 1 && !options.protocol.transport.acceptsJsonRpcBatches) {
+					if (messages.length > 1 && !options.protocol.runtime.transport.jsonRpc.acceptsBatches) {
 						return HttpServerResponse.empty({ status: 400 })
 					}
 

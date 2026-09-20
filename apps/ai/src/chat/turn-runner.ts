@@ -242,7 +242,7 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 		{ InvestigationServicesLive },
 		{ layerPg },
 		{ mapleDbConnectionLayer },
-		{ layerLlm, resolveTriageModel },
+		{ layerDecisionModel, layerLlm, resolveTriageModel },
 		{ buildDiagnosisCompletion },
 		{ McpToolExecutor },
 	] = await Promise.all([
@@ -258,6 +258,7 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 	const runtime = ManagedRuntime.make(
 		InvestigationServicesLive.pipe(
 			Layer.provideMerge(layerLlm(input.env)),
+			Layer.provideMerge(layerDecisionModel(input.env)),
 			Layer.provideMerge(layerPg),
 			Layer.provideMerge(mapleDbConnectionLayer(input.env)),
 			Layer.provideMerge(workerEnvLayer(input.env)),

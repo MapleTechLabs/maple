@@ -364,13 +364,13 @@ const idleTimeout = (): AiError.AiError =>
  * it, as the stream ends, including when it fails.
  */
 export const instrumentLanguageModel = <R>(
-	make: Effect.Effect<LanguageModel.Service, never, R>,
+	make: Effect.Effect<LanguageModel.LanguageModel, never, R>,
 	telemetry: ModelCallTelemetry,
-): Effect.Effect<LanguageModel.Service, never, R> =>
+): Effect.Effect<LanguageModel.LanguageModel, never, R> =>
 	make.pipe(
 		Effect.map((service) => ({
 			...service,
-			streamText: ((options: Parameters<LanguageModel.Service["streamText"]>[0]) =>
+			streamText: ((options: Parameters<LanguageModel.LanguageModel["streamText"]>[0]) =>
 				Stream.unwrap(
 					Effect.clockWith((clock) =>
 						Effect.sync(() => {
@@ -401,7 +401,7 @@ export const instrumentLanguageModel = <R>(
 							)
 						}),
 					),
-				)) as LanguageModel.Service["streamText"],
+				)) as LanguageModel.LanguageModel["streamText"],
 		})),
 	)
 

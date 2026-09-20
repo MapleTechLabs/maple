@@ -17,6 +17,7 @@
 		"@effect-agent/sandbox": "0.1.0-beta.85",
 		"@effect/ai-openai-compat": "catalog:effect",
 		"@effect/ai-openrouter": "catalog:effect",
+		"@effect/ai-typesafe": "catalog:effect",
 		"@maple-dev/effect-sdk": "workspace:*",
 		"@maple/agent-sessions": "workspace:*",
 		"@maple/backend": "workspace:*",

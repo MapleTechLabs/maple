@@ -42,11 +42,11 @@ const positiveInt = (name: string, maximum: number) =>
 	Config.schema(Schema.Int.check(Schema.isBetween({ minimum: 1, maximum })), name)
 
 const envConfig = Config.all({
-	MAPLE_API_URL: Config.string("MAPLE_API_URL").pipe(Config.withDefault("http://127.0.0.1:3472")),
-	SD_INTERNAL_TOKEN: Config.redacted("SD_INTERNAL_TOKEN").pipe(
+	MAPLE_API_URL: Config.String("MAPLE_API_URL").pipe(Config.withDefault("http://127.0.0.1:3472")),
+	SD_INTERNAL_TOKEN: Config.Redacted("SD_INTERNAL_TOKEN").pipe(
 		Config.withDefault(Redacted.make("maple-sd-dev-token")),
 	),
-	MAPLE_INGEST_URL: Config.string("MAPLE_INGEST_URL").pipe(Config.withDefault("http://127.0.0.1:3474")),
+	MAPLE_INGEST_URL: Config.String("MAPLE_INGEST_URL").pipe(Config.withDefault("http://127.0.0.1:3474")),
 	SCRAPER_CONCURRENCY: positiveInt("SCRAPER_CONCURRENCY", 10_000).pipe(Config.withDefault(10)),
 	SCRAPER_RECONCILE_INTERVAL_SECONDS: positiveInt("SCRAPER_RECONCILE_INTERVAL_SECONDS", 24 * 60 * 60).pipe(
 		Config.withDefault(60),

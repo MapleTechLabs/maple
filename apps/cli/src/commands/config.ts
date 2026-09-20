@@ -9,7 +9,7 @@ import { MapleConfig } from "../core/config"
  * pin and restores auto-detect (stored token → remote, else probe local).
  */
 export const use = Command.make("use", {
-	mode: Argument.choice("mode", ["local", "remote", "auto"]).pipe(
+	mode: Argument.Literals("mode", ["local", "remote", "auto"]).pipe(
 		Argument.withDescription("Backend to pin: local, remote, or auto (clear the pin)"),
 	),
 }).pipe(
