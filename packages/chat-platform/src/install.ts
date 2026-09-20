@@ -1,4 +1,4 @@
-import { ChatConnectorId } from "@maple/primitives"
+import { ChatConnectorId } from "./connector"
 import { Effect, Redacted, Schema } from "effect"
 import type { HttpClient } from "effect/unstable/http"
 
