@@ -5,7 +5,7 @@ import type { AiSessionSpan } from "@maple/domain/http"
 import { Button } from "@maple/ui/components/ui/button"
 import { Spinner } from "@maple/ui/components/ui/spinner"
 import { CopyButton } from "@maple/ui/components/ui/copy-button"
-import { formatBytes, formatDuration, formatNumber } from "@maple/ui/lib/format"
+import { formatBytes, formatDuration } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 
 import {
@@ -31,8 +31,10 @@ import {
 	assembleTranscript,
 	callMetaLine,
 	callMetaParts,
+	formatCost,
 	prepareTranscript,
 	spanModel,
+	tokenFlowLabel,
 	type CaptureCoverage,
 	type SessionToolResults,
 	type SessionTurn,
@@ -399,6 +401,11 @@ function TurnChapter({
 				    time slice: that slice carries the app's own HTTP/DB spans too, and
 				    a count the page cannot account for is worse than no count. */}
 				<span className={cn(META, "shrink-0")}>
+					{/* The turn's whole usage, because the calls under it no longer
+					    print theirs — a reader who wants a single call's split opens
+					    the span. Absent where nothing in the turn reported any. */}
+					{row.usage.tokens.total > 0 && `${tokenFlowLabel(row.usage.tokens)} · `}
+					{row.usage.cost !== undefined && `${formatCost(row.usage.cost)} · `}
 					{turn.traceIds.length} trace{turn.traceIds.length === 1 ? "" : "s"} · {row.aiSpanCount}{" "}
 					agent spans · {formatDuration(turn.durationMs)}
 				</span>
@@ -644,7 +651,7 @@ function AssistantBlock({
 					<Glyph size={13} className={cn("shrink-0", tone)} />
 					<span className={cn(LABEL, tone)}>Assistant</span>
 					{row.failed && <span className={cn(LABEL, "text-destructive")}>· Failed</span>}
-					<span className={META}>{callMetaLine(row.span)}</span>
+					<span className={META}>{callMetaLine(row.span, { usage: false })}</span>
 				</button>
 				{row.span.genAi.errorType !== undefined && (
 					<Pill tone="error" className={WIRE_PILL}>
@@ -734,7 +741,7 @@ function PromptBlock({
 				<div className="flex items-center gap-2.5">
 					<PixelSparkleIcon size={13} className="shrink-0 text-chart-2" />
 					<span className={cn(LABEL, "text-chart-2")}>Prompt</span>
-					<span className={META}>{callMetaLine(row.span)}</span>
+					<span className={META}>{callMetaLine(row.span, { usage: false })}</span>
 					<span className="grow" />
 					<span className={cn(META, "shrink-0")}>{row.span.serviceName}</span>
 					<ViewSwitch
@@ -771,7 +778,6 @@ function ThinkingBlock({
 }: BlockProps & { row: Extract<TranscriptRow, { kind: "thinking" }> }) {
 	const open = disclosed(openRows, row.key, false)
 	const textKey = `${row.key}:text`
-	const reasoningTokens = row.span.genAi.usageReasoningOutputTokens
 
 	return (
 		<Row time={clockOf(row.startMs, timeZone)} depth={row.depth} rail="bg-chart-5" className="pt-3.5">
@@ -795,14 +801,6 @@ function ThinkingBlock({
 					<span className="shrink-0 text-muted-foreground text-xs">
 						{row.text === undefined ? "no reasoning text captured" : "reasoning"}
 					</span>
-				)}
-				{reasoningTokens !== undefined && reasoningTokens > 0 && (
-					<>
-						<span aria-hidden className="h-2.5 w-px shrink-0 bg-border" />
-						<span className={cn(META, "shrink-0")}>
-							{formatNumber(reasoningTokens)} reasoning tok
-						</span>
-					</>
 				)}
 				<span className="grow" />
 				<span className={cn(META, "shrink-0")}>model reasoning, not shown to the user</span>
@@ -1327,7 +1325,9 @@ function DividerBlock({
 		>
 			{progress?.phase === "failed" ? (
 				<>
-					<span className={cn(LABEL, "text-severity-warn")}>The rest of this session didn't load</span>
+					<span className={cn(LABEL, "text-severity-warn")}>
+						The rest of this session didn't load
+					</span>
 					<Button variant="outline" size="sm" onClick={progress.retry}>
 						Retry
 					</Button>
@@ -1336,7 +1336,9 @@ function DividerBlock({
 				<>
 					<div className="flex items-center gap-2">
 						<Spinner size={13} className="text-muted-foreground" aria-hidden />
-						<span className={cn(LABEL, "text-muted-foreground")}>Loading the rest of this session</span>
+						<span className={cn(LABEL, "text-muted-foreground")}>
+							Loading the rest of this session
+						</span>
 					</div>
 					<p className="text-center text-[13px] text-muted-foreground">
 						The agent's later turns are still arriving — this is not where the session ended.
@@ -1372,7 +1374,8 @@ function structureMeta(span: AiSessionSpan, category: string): string {
 	if (category === "agent") return `· trace ${span.traceId.slice(0, 8)}`
 	// The model already leads the label; the rest of the call's facts follow, so
 	// the parts are taken as parts rather than sliced back out of a joined line.
-	const parts = callMetaParts(span)
+	// Usage is the turn header's, the same as on a captured call.
+	const parts = callMetaParts(span, { usage: false })
 	const rest = spanModel(span) === undefined ? parts : parts.slice(1)
 	return rest.length === 0 ? "" : `· ${rest.join(" · ")}`
 }
