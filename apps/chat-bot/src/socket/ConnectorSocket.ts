@@ -15,9 +15,12 @@
  * costs — a chat platform that delivers events by webhook needs none of this,
  * which is why the ingress contract has two kinds.
  *
- * Everything the object decides lives in `./driver.ts`, where a fake connector
- * can drive it. What is left here is the socket, the alarm and the storage keys,
- * which is the part only workerd can run.
+ * What one step of a connector's protocol CAUSES lives in `./driver.ts`, where a
+ * fake connector drives it without workerd. What is left here is the socket, the
+ * alarm and the storage keys. The lifecycle this class owns on top of that —
+ * when to dial, when to back off, how long a fatal directive holds — is not
+ * covered by a test today; it needs a fake Durable Object state, which is worth
+ * building the first time one of these rules changes.
  *
  * All socket I/O happens inside this object: the socket is created here, its
  * handlers run here under the object's own `waitUntil`, and no promise crosses
@@ -103,6 +106,21 @@ const StepLayer = Layer.mergeAll(FetchHttpClient.layer, InboundHandler.layer)
 // BOUNDARY: a socket message's payload, narrowed here before it reaches a connector.
 const textFrame = (data: unknown): string | undefined => (typeof data === "string" ? data : undefined)
 
+/**
+ * The URL to dial, if it is one.
+ *
+ * A connector's connect URL is wire-influenced — a resumable session's host
+ * comes back from the platform — and `new WebSocket` THROWS on a URL it cannot
+ * parse. Thrown inside `blockConcurrencyWhile` that resets the object, and the
+ * alarm would bring it straight back to the same value, so the check is what
+ * turns a bad URL into one backed-off reconnect instead of a reset loop.
+ */
+const socketUrl = (url: string): string | undefined => {
+	if (!URL.canParse(url)) return undefined
+	const { protocol } = new URL(url)
+	return protocol === "wss:" || protocol === "ws:" ? url : undefined
+}
+
 interface ResolvedConnector {
 	readonly connector: ChatConnector
 	readonly ingress: SocketIngress
@@ -129,6 +147,22 @@ export class ConnectorSocket {
 	 */
 	private generation = 0
 	private connectedAt: number | undefined
+
+	/**
+	 * Steps run one at a time, in arrival order.
+	 *
+	 * A step reads the connector's state, transitions it and writes it back, with
+	 * `await`s in between — so two frames arriving together would both read the
+	 * same state and the second would overwrite the first's. On this protocol that
+	 * silently loses a sequence number or a session id. Chaining also keeps events
+	 * reaching the handler in the order the socket delivered them, which is the
+	 * order a conversation happened in.
+	 *
+	 * A promise chain rather than a shared `Deferred`: a Deferred resolved from
+	 * one request's I/O context and awaited from another is how this codebase has
+	 * broken workerd before.
+	 */
+	private steps: Promise<void> = Promise.resolve()
 
 	constructor(
 		private readonly ctx: ConnectorSocketState,
@@ -167,7 +201,11 @@ export class ConnectorSocket {
 		} else {
 			const heartbeatAt = await this.ctx.storage.get<number>(KEY.heartbeatAt)
 			if (heartbeatAt !== undefined && heartbeatAt <= now) {
-				await this.step(this.generation, (ingress, state, at) => ingress.heartbeat(state, at))
+				// Through the queue like any frame, so a heartbeat cannot interleave
+				// with the state a frame arriving at the same moment is rewriting.
+				await this.enqueue(this.generation, (ingress, state, at) =>
+					ingress.heartbeat(state, at),
+				)
 			}
 		}
 		await this.armAlarm(Date.now())
@@ -187,8 +225,16 @@ export class ConnectorSocket {
 		await this.ctx.blockConcurrencyWhile(async () => {
 			if (this.socket !== undefined) return
 			const state = await this.protocolState(resolved.ingress)
+			const url = socketUrl(resolved.ingress.connectUrl(state, resolved.config))
+			if (url === undefined) {
+				console.error(
+					`[chat-bot.socket] ${resolved.connector.id} asked for a connection to something that is not a WebSocket URL`,
+				)
+				await this.applyDirective({ _tag: "reconnect", closeCode: NORMAL_CLOSE }, Date.now())
+				return
+			}
 			const generation = ++this.generation
-			const socket = new WebSocket(resolved.ingress.connectUrl(state, resolved.config))
+			const socket = new WebSocket(url)
 			this.socket = socket
 			this.connectedAt = undefined
 			socket.addEventListener("open", () => {
@@ -217,10 +263,30 @@ export class ConnectorSocket {
 		})
 	}
 
-	/** Run a step on the object's own context, dropping it if the connection has moved on. */
+	/**
+	 * Queue a step on the object's own context, dropping it if the connection has
+	 * already moved on — checked again inside `step`, because the generation can
+	 * change while this one waits its turn.
+	 */
 	private dispatch(generation: number, run: RunStep): void {
 		if (generation !== this.generation) return
-		this.ctx.waitUntil(this.step(generation, run))
+		this.ctx.waitUntil(this.enqueue(generation, run))
+	}
+
+	/**
+	 * Put a step at the end of the queue and hand back when it has run.
+	 *
+	 * The `catch` is what keeps the queue alive: a rejected link would leave every
+	 * later step unrun, which is a connection that goes quiet rather than one that
+	 * reconnects.
+	 */
+	private enqueue(generation: number, run: RunStep): Promise<void> {
+		this.steps = this.steps
+			.then(() => this.step(generation, run))
+			.catch((cause: unknown) => {
+				console.error("[chat-bot.socket] step failed", cause)
+			})
+		return this.steps
 	}
 
 	private async step(generation: number, run: RunStep): Promise<void> {
@@ -232,7 +298,15 @@ export class ConnectorSocket {
 		const program = applyStep(
 			{
 				connectorId: resolved.connector.id,
-				sink: { send: (frame) => this.socket?.send(frame) },
+				// Guarded on the socket being open: workerd THROWS on a send to a
+				// closed one, and a throw here would abort the step before the
+				// state write below — losing the session to a race the protocol
+				// notices anyway, at its next unacknowledged heartbeat.
+				sink: {
+					send: (frame) => {
+						if (this.socket?.readyState === WebSocket.OPEN) this.socket.send(frame)
+					},
+				},
 				store: {
 					write: (next) => Effect.promise(() => this.ctx.storage.put(KEY.protocol, next)),
 				},
@@ -270,9 +344,14 @@ export class ConnectorSocket {
 			)
 			return
 		}
-		const previous = established ? 0 : ((await this.ctx.storage.get<number>(KEY.attempt)) ?? 0) + 1
-		await this.ctx.storage.put(KEY.attempt, previous)
-		await this.ctx.storage.put(KEY.reconnectAt, now + reconnectDelayMs(previous))
+		// Consecutive failures. A connection that stayed up past `ESTABLISHED_MS`
+		// clears the count, so a long-lived socket dropping once retries promptly
+		// rather than at whatever delay it reached months ago.
+		const failures = established ? 0 : ((await this.ctx.storage.get<number>(KEY.attempt)) ?? 0) + 1
+		await this.ctx.storage.put(KEY.attempt, failures)
+		// `failures - 1`, so the FIRST failure waits `RECONNECT_BASE_MS` — the
+		// delay is indexed from zero, the count from one.
+		await this.ctx.storage.put(KEY.reconnectAt, now + reconnectDelayMs(failures - 1))
 	}
 
 	/** The earliest thing the object is waiting for, never sooner than `MIN_ALARM_MS`. */

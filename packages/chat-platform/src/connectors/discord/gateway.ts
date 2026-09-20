@@ -15,7 +15,7 @@
  * IDENTIFY/RESUME handshake, the jittered first heartbeat, the zombie-connection
  * rule, `resume_gateway_url`, and the close-code table.
  */
-import { Schema } from "effect"
+import { Option, Schema } from "effect"
 import type { ConnectorConfig, SocketDirective, SocketIngressDefinition, SocketStep } from "../../ingress.ts"
 import { mapDispatch } from "./gateway-events.ts"
 import {
@@ -128,7 +128,7 @@ const onHello = (
 	config: ConnectorConfig,
 ): SocketStep<GatewayState> => {
 	const hello = decodeHello(payload)
-	if (hello._tag === "None") return { state, directive: reconnect }
+	if (Option.isNone(hello)) return { state, directive: reconnect }
 	const interval = hello.value.heartbeat_interval
 	const resuming = state.sessionId !== undefined
 	return {
@@ -141,7 +141,7 @@ const onHello = (
 /** READY: the session identity, and the bot's own user id, which is what makes a mention a mention. */
 const onReady = (state: GatewayState, payload: unknown): SocketStep<GatewayState> => {
 	const ready = decodeReady(payload)
-	if (ready._tag === "None") return { state }
+	if (Option.isNone(ready)) return { state }
 	return {
 		state: {
 			...state,
@@ -163,7 +163,7 @@ const onFrame = (
 	// A frame that does not parse is dropped with the state untouched. Closing a
 	// healthy connection over one unreadable frame costs a whole handshake and
 	// fixes nothing.
-	if (decoded._tag === "None") return { state }
+	if (Option.isNone(decoded)) return { state }
 	const { op, d, s, t } = decoded.value
 	// Every dispatch advances the sequence, including the ones nothing is done
 	// with: it is what a heartbeat and a RESUME both replay.

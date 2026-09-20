@@ -21,6 +21,16 @@ describe("resolving a connector's configuration", () => {
 			names: [TEST_TOKEN_KEY],
 		})
 	})
+
+	it("treats a binding that is not a string as absent", () => {
+		// A Worker env carries resources as well as configuration, and a name
+		// collision would otherwise hand a connector a namespace object.
+		for (const value of [42, true, {}, null]) {
+			expect(resolveConnectorConfig({ [TEST_TOKEN_KEY]: value }, testSocketConnector())).toEqual(
+				{ _tag: "missing", names: [TEST_TOKEN_KEY] },
+			)
+		}
+	})
 })
 
 describe("selecting the connectors that need a socket", () => {

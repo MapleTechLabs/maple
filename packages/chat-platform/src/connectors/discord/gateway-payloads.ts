@@ -54,17 +54,23 @@ export const INTERACTION_MESSAGE_COMPONENT = 3
 export const CALLBACK_DEFERRED_UPDATE_MESSAGE = 6
 
 /**
- * Close codes Discord documents as non-reconnectable.
+ * The close codes whose `Reconnect` column Discord marks `false`, and only
+ * those.
  *
- * Two groups, both of which must stop the loop rather than retry it. `4004`,
- * `4010`–`4014` are configuration: a bad token, a shard count the bot does not
- * use, an API version that no longer exists, an intent the application has not
- * been granted. `4001`–`4005` say this client sent something wrong; reconnecting
- * would send it again. Either way the answer is one reported failure, not an
- * endless loop against Discord's rate limiter.
+ * Every one of them is configuration rather than weather: a rejected token, a
+ * shard count this connector does not use, an API version that no longer
+ * exists, an intent the application has not been granted. Reconnecting cannot
+ * fix any of them, so the answer is one reported failure instead of a loop.
+ *
+ * The client-error codes `4001`, `4002`, `4003` and `4005` are deliberately NOT
+ * here, however much they read like bugs: Discord marks all four reconnectable,
+ * and `4003` explicitly covers a session it invalidated on its own side. Taking
+ * them as fatal would have put the bot down for hours over something the next
+ * connection fixes — the table in `topics/opcodes-and-status-codes` is the
+ * source, not the prose elsewhere that summarises it.
  */
 export const FATAL_CLOSE_CODES: ReadonlySet<number> = new Set([
-	4001, 4002, 4003, 4004, 4005, 4010, 4011, 4012, 4013, 4014,
+	4004, 4010, 4011, 4012, 4013, 4014,
 ])
 
 /**
@@ -87,9 +93,9 @@ export const RECONNECT_CLOSE_CODE = 4000
 /** The envelope every gateway frame arrives in. */
 export const GatewayFrame = Schema.Struct({
 	op: Schema.Number,
-	d: Schema.optional(Schema.Unknown),
-	s: Schema.optional(Schema.NullOr(Schema.Number)),
-	t: Schema.optional(Schema.NullOr(Schema.String)),
+	d: Schema.optionalKey(Schema.Unknown),
+	s: Schema.optionalKey(Schema.NullOr(Schema.Number)),
+	t: Schema.optionalKey(Schema.NullOr(Schema.String)),
 })
 export type GatewayFrame = Schema.Schema.Type<typeof GatewayFrame>
 
@@ -108,15 +114,15 @@ export const decodeReady = Schema.decodeUnknownOption(Ready)
 const User = Schema.Struct({
 	id: Schema.String,
 	username: Schema.String,
-	global_name: Schema.optional(Schema.NullOr(Schema.String)),
-	bot: Schema.optional(Schema.Boolean),
+	global_name: Schema.optionalKey(Schema.NullOr(Schema.String)),
+	bot: Schema.optionalKey(Schema.Boolean),
 })
 
 export const MessageCreate = Schema.Struct({
 	id: Schema.String,
 	channel_id: Schema.String,
 	/** Absent on a DM. This connector requests no DM intent, so a message without it is dropped. */
-	guild_id: Schema.optional(Schema.String),
+	guild_id: Schema.optionalKey(Schema.String),
 	author: User,
 	/**
 	 * Empty unless the message qualifies under one of the MESSAGE_CONTENT
@@ -124,9 +130,9 @@ export const MessageCreate = Schema.Struct({
 	 */
 	content: Schema.String,
 	mentions: Schema.Array(User),
-	member: Schema.optional(Schema.Struct({ nick: Schema.optional(Schema.NullOr(Schema.String)) })),
+	member: Schema.optionalKey(Schema.Struct({ nick: Schema.optionalKey(Schema.NullOr(Schema.String)) })),
 	/** Present when a webhook posted the message; `author.bot` is not always set for those. */
-	webhook_id: Schema.optional(Schema.String),
+	webhook_id: Schema.optionalKey(Schema.String),
 })
 export const decodeMessageCreate = Schema.decodeUnknownOption(MessageCreate)
 
@@ -134,26 +140,26 @@ export const InteractionCreate = Schema.Struct({
 	id: Schema.String,
 	token: Schema.String,
 	type: Schema.Number,
-	guild_id: Schema.optional(Schema.String),
-	channel_id: Schema.optional(Schema.String),
-	member: Schema.optional(
+	guild_id: Schema.optionalKey(Schema.String),
+	channel_id: Schema.optionalKey(Schema.String),
+	member: Schema.optionalKey(
 		Schema.Struct({
 			user: User,
-			nick: Schema.optional(Schema.NullOr(Schema.String)),
+			nick: Schema.optionalKey(Schema.NullOr(Schema.String)),
 			roles: Schema.Array(Schema.String),
 			/**
 			 * The member's effective permissions in this channel, as a decimal string —
 			 * permissions are serialized as strings from API v8 on because the bitfield
 			 * outgrew 53 bits.
 			 */
-			permissions: Schema.optional(Schema.String),
+			permissions: Schema.optionalKey(Schema.String),
 		}),
 	),
-	message: Schema.optional(Schema.Struct({ id: Schema.String })),
-	data: Schema.optional(
+	message: Schema.optionalKey(Schema.Struct({ id: Schema.String })),
+	data: Schema.optionalKey(
 		Schema.Struct({
-			custom_id: Schema.optional(Schema.String),
-			component_type: Schema.optional(Schema.Number),
+			custom_id: Schema.optionalKey(Schema.String),
+			component_type: Schema.optionalKey(Schema.Number),
 		}),
 	),
 })
@@ -166,7 +172,7 @@ export const GuildDelete = Schema.Struct({
 	 * bot was removed only when the field is ABSENT, so a missing key and `false`
 	 * are the removal and `true` is an outage to ride out.
 	 */
-	unavailable: Schema.optional(Schema.Boolean),
+	unavailable: Schema.optionalKey(Schema.Boolean),
 })
 export const decodeGuildDelete = Schema.decodeUnknownOption(GuildDelete)
 

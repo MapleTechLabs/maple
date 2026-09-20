@@ -22,22 +22,21 @@ export interface InboundHandlerApi {
 export class InboundHandler extends Context.Service<InboundHandler, InboundHandlerApi>()(
 	"@maple/chat-bot/InboundHandler",
 	{
+		// Annotated with the api rather than built through the class's own `of`:
+		// `make` is declared inside the class declaration, so naming the class
+		// here would be a circular reference.
 		make: Effect.succeed<InboundHandlerApi>({
-			handle: (event) =>
-				Effect.logInfo("Chat connector event").pipe(
-					Effect.annotateLogs({
-						"maple.chat.event": event.type,
-						"maple.chat.connector": event.connector,
-						"maple.chat.workspace_id": event.workspaceId,
-					}),
-					Effect.withSpan("chat_bot.inbound_event", {
-						attributes: {
-							"maple.chat.event": event.type,
-							"maple.chat.connector": event.connector,
-							"maple.chat.workspace_id": event.workspaceId,
-						},
-					}),
-				),
+			handle: (event) => {
+				const attributes = {
+					"maple.chat.event": event.type,
+					"maple.chat.connector": event.connector,
+					"maple.chat.workspace_id": event.workspaceId,
+				}
+				return Effect.logInfo("Chat connector event").pipe(
+					Effect.annotateLogs(attributes),
+					Effect.withSpan("chat_bot.inbound_event", { attributes }),
+				)
+			},
 		}),
 	},
 ) {

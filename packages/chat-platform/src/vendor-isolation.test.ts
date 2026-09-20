@@ -66,6 +66,15 @@ const offendingLines = (repoRelativePath: string): ReadonlyArray<string> => {
 }
 
 describe("vendor isolation", () => {
+	it("actually reads every root it claims to guard", () => {
+		// Without this the guard passes by reading nothing: a renamed or moved
+		// directory leaves `sourceFiles` returning an empty list, and a green test
+		// that enforces nothing is worse than no test.
+		for (const root of GUARDED_ROOTS) {
+			expect(sourceFiles(root).length, `${root} has no files`).toBeGreaterThan(0)
+		}
+	})
+
 	it("keeps every vendor name inside its own connector directory", () => {
 		const offenders = GUARDED_ROOTS.flatMap(sourceFiles)
 			.filter((path) => !isExempt(path))
@@ -78,8 +87,11 @@ describe("vendor isolation", () => {
 			if (isExempt(path)) return false
 			const segments = path.split(sep)
 			const index = segments.indexOf("connectors")
-			// `connectors/<id>` is the directory itself — its name IS the id.
-			const named = index === -1 ? segments : segments.slice(index + 2)
+			// A path that reaches here and still contains `connectors` is a file
+			// sitting directly in it — the connector directories are exempt above.
+			// Slicing past the directory name as well would skip that file's name
+			// entirely, which is how `connectors/<vendor>-helpers.ts` would sneak in.
+			const named = index === -1 ? segments : segments.slice(index + 1)
 			return named.some((segment) =>
 				VENDORS.some((vendor) => segment.toLowerCase().includes(vendor)),
 			)

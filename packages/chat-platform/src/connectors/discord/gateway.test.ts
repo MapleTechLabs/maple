@@ -177,6 +177,21 @@ describe("session lifecycle", () => {
 		expect(step.events ?? []).toEqual([])
 	})
 
+	it("ignores an opcode it does not act on, keeping the sequence it carried", () => {
+		const step = gatewayProtocol.onFrame(ready(), frame({ op: 8, s: 12 }), NOW, config)
+		expect(step.directive).toBeUndefined()
+		expect(step.send).toBeUndefined()
+		expect(step.state.sequence).toBe(12)
+	})
+
+	it("reconnects on a clean close too, rather than leaving the bot off", () => {
+		// 1000 is documented as non-reconnectable, but a bot that must stay up
+		// treats a server-sent clean close as transient — the backoff is the host's.
+		const step = gatewayProtocol.onClose(ready(), 1000, "")
+		expect(step.directive).toEqual({ _tag: "reconnect", closeCode: 4000 })
+		expect(step.state.sessionId).toBe("session-1")
+	})
+
 	it("drops a frame it cannot parse rather than closing a healthy connection", () => {
 		const before = ready()
 		const step = gatewayProtocol.onFrame(before, "not json", NOW, config)
@@ -188,12 +203,27 @@ describe("session lifecycle", () => {
 describe("close codes", () => {
 	it.each([
 		[4004, "a bad token"],
+		[4010, "an invalid shard"],
+		[4011, "sharding being required"],
+		[4012, "an invalid API version"],
 		[4013, "an invalid intent"],
 		[4014, "a disallowed intent"],
-		[4011, "sharding being required"],
 	])("stops on %i (%s) instead of looping", (code) => {
 		const step = gatewayProtocol.onClose(ready(), code, "")
 		expect(step.directive?._tag).toBe("stop")
+	})
+
+	it.each([
+		[4001, "an unknown opcode"],
+		[4002, "a decode error"],
+		[4003, "not being authenticated"],
+		[4005, "already being authenticated"],
+	])("reconnects and keeps the session on %i (%s), which Discord marks reconnectable", (code) => {
+		// These read like client bugs, and treating them as fatal would take the
+		// bot down for hours over something the next connection fixes.
+		const step = gatewayProtocol.onClose(ready(), code, "")
+		expect(step.directive).toEqual({ _tag: "reconnect", closeCode: 4000 })
+		expect(step.state.sessionId).toBe("session-1")
 	})
 
 	it("reconnects on an abnormal close and keeps the session", () => {
@@ -235,6 +265,39 @@ describe("messages", () => {
 				mentionsBot: true,
 			},
 		])
+	})
+
+	it("reads a payload carrying every field a real one does", () => {
+		// The schemas name a fraction of a message object. Nothing may reject a
+		// payload for the rest of it, which is the failure mode a hand-written
+		// fixture never reproduces.
+		const step = gatewayProtocol.onFrame(
+			ready(),
+			message({
+				author: user("4000000000000000004", {
+					avatar: null,
+					discriminator: "0",
+					public_flags: 0,
+					avatar_decoration_data: null,
+				}),
+				mentions: [user("900000000000000001", { bot: true, member: { roles: [] } })],
+				timestamp: "2026-09-20T09:00:00.000000+00:00",
+				edited_timestamp: null,
+				tts: false,
+				attachments: [],
+				embeds: [],
+				pinned: false,
+				mention_everyone: false,
+				mention_roles: [],
+				type: 0,
+				flags: 0,
+				nonce: "1000000000000000000",
+				referenced_message: null,
+			}),
+			NOW,
+			config,
+		)
+		expect(step.events?.[0]).toMatchObject({ mentionsBot: true })
 	})
 
 	it("prefers the server nickname as the display name", () => {

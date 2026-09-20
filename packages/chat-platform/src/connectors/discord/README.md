@@ -55,9 +55,13 @@ within Discord's 3-second window. The connector returns that call as data
 - **A zombie connection is one whose heartbeat was never acknowledged.** Discord's
   instruction is to close with a code other than `1000`/`1001` and resume, which
   is what the reconnect directive carries (`4000`).
-- **Fatal close codes stop the loop.** `4004` (bad token), `4013`/`4014`
-  (intents), `4010`–`4012`, and the `4001`–`4005` client-error codes are reported
-  once instead of retried; every other code reconnects with the host's backoff.
+- **Fatal close codes stop the loop.** Exactly the six Discord marks
+  non-reconnectable — `4004` (bad token), `4010`/`4011` (sharding), `4012` (API
+  version), `4013`/`4014` (intents) — are reported once instead of retried.
+  Everything else reconnects with the host's backoff, the client-error codes
+  `4001`/`4002`/`4003`/`4005` included: Discord marks those reconnectable, and
+  treating them as fatal would take the bot down over something the next
+  connection fixes.
 
 `gateway.test.ts` drives all of it from recorded frames. There is no live
 connection in any test.

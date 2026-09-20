@@ -281,6 +281,11 @@ export type ConnectorIngress = WebhookIngress | SocketIngress
 /** Wrap a typed protocol as the string-state ingress the host consumes. */
 export const socketIngress = <State>(definition: SocketIngressDefinition<State>): SocketIngress => {
 	const decode = Schema.decodeOption(definition.stateSchema)
+	// Asymmetric with `decode` on purpose. A state that will not DECODE is an
+	// older deploy's value and a state the host must survive; a state that will
+	// not ENCODE is one the connector just built out of its own schema, which is
+	// a bug, so it surfaces as a defect rather than being swallowed into a
+	// silently reset session.
 	const encode = Schema.encodeSync(definition.stateSchema)
 	const read = (state: string): State =>
 		Option.getOrElse(decode(state), () => definition.initialState)

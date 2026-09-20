@@ -106,17 +106,19 @@ export default ChatBot.make(
 		// One log line per connector that cannot run, once per isolate rather than
 		// once a minute.
 		const announced = yield* Ref.make(new Set<string>())
-		const announceSkip = (connector: ChatConnector, names: ReadonlyArray<string>) =>
-			Effect.gen(function* () {
-				if ((yield* Ref.get(announced)).has(connector.id)) return
-				yield* Ref.update(announced, (seen) => new Set(seen).add(connector.id))
-				yield* Effect.logInfo("Skipping chat connector with no configuration").pipe(
-					Effect.annotateLogs({
-						"maple.chat.connector": connector.id,
-						"maple.chat.missing_config": names.join(","),
-					}),
-				)
-			})
+		const announceSkip = Effect.fnUntraced(function* (
+			connector: ChatConnector,
+			names: ReadonlyArray<string>,
+		) {
+			if ((yield* Ref.get(announced)).has(connector.id)) return
+			yield* Ref.update(announced, (seen) => new Set(seen).add(connector.id))
+			yield* Effect.logInfo("Skipping chat connector with no configuration").pipe(
+				Effect.annotateLogs({
+					"maple.chat.connector": connector.id,
+					"maple.chat.missing_config": names.join(","),
+				}),
+			)
+		})
 
 		yield* Cloudflare.Workers.cron(CONNECT_CRON, () =>
 			Effect.forEach(

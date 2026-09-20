@@ -8,7 +8,6 @@
  * so the deploy graph stays out of the bundle.
  */
 import type { ChatConnector, ConnectorConfig } from "@maple/chat-platform"
-import { connectors } from "@maple/chat-platform/connectors"
 
 export type ConnectorConfigResult =
 	| { readonly _tag: "ready"; readonly config: ConnectorConfig }
@@ -41,6 +40,6 @@ export const resolveConnectorConfig = (
 
 /** The connectors whose events arrive over a long-lived socket rather than an HTTP request. */
 export const socketConnectors = (
-	registry: ReadonlyArray<ChatConnector> = connectors,
+	registry: ReadonlyArray<ChatConnector>,
 ): ReadonlyArray<ChatConnector> =>
 	registry.filter((connector) => connector.ingress.kind === "socket")
