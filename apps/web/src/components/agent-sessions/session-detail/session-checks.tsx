@@ -487,7 +487,7 @@ function Coverage({ coverage }: { coverage: SessionCoverage }) {
 							<TooltipTrigger
 								render={<span />}
 								className={cn(
-									"flex cursor-help items-baseline gap-1.5 underline decoration-dotted decoration-muted-foreground/40 underline-offset-[3px]",
+									"flex cursor-default items-baseline gap-1.5",
 									signal.state === "captured"
 										? "text-muted-foreground"
 										: "text-muted-foreground/60",
