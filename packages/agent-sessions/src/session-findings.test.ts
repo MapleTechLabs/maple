@@ -313,10 +313,10 @@ describe("buildSessionFindings", () => {
 						startMs: 5 * MINUTE + index * SECOND,
 						durationMs: 500,
 						toolName: "search",
-						genAi: {
-							conversationId: "t2",
-							...(args === undefined ? {} : { toolCallArguments: args(index) }),
-						},
+						genAi:
+							args === undefined
+								? { conversationId: "t2" }
+								: { conversationId: "t2", toolCallArguments: args(index) },
 					}),
 				),
 			])
