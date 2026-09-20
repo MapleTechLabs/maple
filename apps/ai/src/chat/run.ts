@@ -6,7 +6,7 @@
  * span. Nothing here decides *when* a tool is called — that is the engine's job now.
  */
 import { evaluatePermission, type PermissionRuleset } from "@maple/domain/permission"
-import { CHAT_BOT_USER_ID, type ChatMessage } from "@maple/domain/chat-session"
+import type { ChatMessage } from "@maple/domain/chat-session"
 import type { McpToolSurface } from "@maple/domain/mcp-manifest"
 import * as AgentRuntime from "@effect-agent/engine/AgentRuntime"
 import { ThreadHistory } from "@effect-agent/engine/ThreadHistory"
@@ -17,7 +17,7 @@ import { Prompt, Toolkit } from "effect/unstable/ai"
 import type { McpToolExecutorApi } from "../mcp/dispatcher"
 import type { ResolvedModel } from "../platform/Llm"
 import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
-import { agentForSession, chatAgent } from "./agents"
+import { agentForSession, chatAgent, surfaceForTurn } from "./agents"
 import { rulesetForTurn } from "./permissions"
 import { toChatEvents, type ChatTurnEvent } from "./events"
 import {
@@ -116,10 +116,8 @@ export interface ChatRunOutcome {
  * — `bot` is not an internal surface, so the agents-only tools, the repository sandbox among them,
  * are absent from its catalog rather than merely denied.
  *
- * Either signal alone makes a turn the bot's, and neither is redundant: the session's tab prefix is
- * what picks the bot agent, while the actor is what a transport Worker outside this app actually
- * controls. A mismatched pair must not hand an org-level actor the internal toolset, or an approval
- * gate nobody in a channel can answer.
+ * The surface comes from `surfaceForTurn`, which is also what the turn span, the model's tags and
+ * the meter read, so a turn cannot run on one surface and be filed under another.
  *
  * Its own function, and exported, because this is the read-only guarantee — it should be assertable
  * without standing up a run. `runChatTurn` is the only caller.
@@ -128,13 +126,15 @@ export const turnToolPolicy = (
 	sessionId: string,
 	tenant: TenantContext,
 ): { readonly ruleset: PermissionRuleset; readonly surface: McpToolSurface } => {
-	const definition = agentForSession(sessionId)
-	const bot = definition.surface === "bot" || tenant.userId === CHAT_BOT_USER_ID
+	const surface = surfaceForTurn(sessionId, tenant.userId)
 	return {
-		// Not `definition.permission`: an unattended pass is offered fewer tools than the same agent
-		// answering a person in the same session. See `rulesetForTurn`.
-		ruleset: rulesetForTurn(definition, bot || isAutonomousInvestigationTurn(sessionId, tenant)),
-		surface: bot ? "bot" : definition.surface,
+		// Not `agentForSession(...).permission`: an unattended pass is offered fewer tools than the
+		// same agent answering a person in the same session. See `rulesetForTurn`.
+		ruleset: rulesetForTurn(
+			agentForSession(sessionId),
+			surface === "bot" || isAutonomousInvestigationTurn(sessionId, tenant),
+		),
+		surface,
 	}
 }
 

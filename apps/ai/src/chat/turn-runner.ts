@@ -49,7 +49,7 @@ interface TurnObservability {
 }
 
 const makeTurnObservability = (): TurnObservability => ({})
-import { agentForSession, type ChatSurface } from "./agents"
+import { surfaceForTurn } from "./agents"
 import { runChatTurn, type ChatRunOutcome } from "./run"
 import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
@@ -117,16 +117,6 @@ const toTenantContext = (encoded: ChatTurnTenantEncoded): TenantContext => {
 }
 
 /**
- * Which surface a turn ran on: its agent's own, so the answer is total over `ChatMode` rather than
- * a default everything unrecognised falls into.
- *
- * The chat-platform bot shares this runner, the engine and the Durable Object with in-app chat, so
- * without this every reader would have to re-derive it from the session id and agree — and the
- * readers are the turn span, the LLM call's tags and the meter.
- */
-const turnSurface = (sessionId: string): ChatSurface => agentForSession(sessionId).surface
-
-/**
  * Metering is housekeeping, and it runs after the answer, on the way out of the turn.
  *
  * `endTurn` sits in the `finally` of `ChatSession.runTurn`, so whatever the metering finalizer
@@ -186,7 +176,7 @@ const renderToolValue = (value: unknown): string => {
  *
  * **Source and key follow the session.** An investigation session bills as `triage`, keyed
  * `<investigationId>:turn-<messageId>`; every other session keys on `<sessionId>:<messageId>` and
- * bills under its {@link turnSurface}. The `turn-` prefix is kept: the deleted fan-out billed
+ * bills under its `surfaceForTurn`. The `turn-` prefix is kept: the deleted fan-out billed
  * `<id>:<attempt>` under this same source, and rows under those keys are still in Autumn, so an
  * unprefixed turn id could still collide with an old attempt number and swallow a real charge.
  * Either way the key carries the turn, so a turn that somehow ran twice still meters once, and a
@@ -203,12 +193,12 @@ const renderToolValue = (value: unknown): string => {
  */
 export const meterTurn = (
 	input: Pick<RunChatSessionTurnInput, "sessionId" | "messageId" | "env">,
-	tenant: Pick<TenantContext, "orgId">,
+	tenant: Pick<TenantContext, "orgId" | "userId">,
 	usage: { readonly input: number; readonly output: number },
 ): Effect.Effect<void> => {
 	if (usage.input <= 0 && usage.output <= 0) return Effect.void
 	const billing = investigationBilling(input.sessionId, input.messageId) ?? {
-		source: turnSurface(input.sessionId),
+		source: surfaceForTurn(input.sessionId, tenant.userId),
 		idempotencyKey: `${input.sessionId}:${input.messageId}`,
 	}
 	// Bookkeeping must never fail a delivered answer. `trackTokenUsage` already swallows its own
@@ -337,7 +327,7 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 		const toolExecutor = yield* McpToolExecutor
 		const history = input.session.history()
 		const model = resolveTriageModel(input.env, {
-			surface: turnSurface(input.sessionId),
+			surface: surfaceForTurn(input.sessionId, tenant.userId),
 			orgId: tenant.orgId,
 			sessionId: input.sessionId,
 			turnId: input.messageId,
@@ -503,7 +493,7 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 				"maple.chat.message_id": input.messageId,
 				// Two values, so it groups. Without it "how many bot turns ran, and how many failed"
 				// is answerable only by substring-matching the session id.
-				"maple.chat.surface": turnSurface(input.sessionId),
+				"maple.chat.surface": surfaceForTurn(input.sessionId, tenant.userId),
 			},
 		}),
 	)

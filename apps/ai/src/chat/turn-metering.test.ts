@@ -6,11 +6,13 @@
  * cost — and a turn that failed before reaching the tool was billed nothing at all. Most of the
  * assertions here are about a charge that used to be silently deduplicated away.
  *
- * The rest are about the routing: `meterTurn` is the single meter on this path, so it has to
- * charge an investigation turn as `triage` and an attended chat turn as `chat`, and never both.
+ * The rest are about the routing: `meterTurn` is the single meter on this path, so it has to charge
+ * an investigation turn as `triage`, an attended chat turn as `chat` and a bot turn as `bot` — one
+ * of the three, never two. The source it picks must be the surface the turn actually ran on, which
+ * is why the bot cases go through the same `surfaceForTurn` the toolkit does.
  */
-import { botSessionId } from "@maple/domain/chat-session"
-import { OrgId } from "@maple/domain/primitives"
+import { botSessionId, CHAT_BOT_USER_ID } from "@maple/domain/chat-session"
+import { OrgId, UserId } from "@maple/domain/primitives"
 import { Effect, Schema } from "effect"
 import { afterEach, assert, beforeEach, describe, it } from "vitest"
 import { meterTurn } from "./turn-runner"
@@ -18,7 +20,11 @@ import { meterTurn } from "./turn-runner"
 const ORG = "org_test"
 const INVESTIGATION = "0199a4d1-9f3c-7c8e-b2a1-3f5e7d9c1b40"
 
-const tenant = { orgId: ORG }
+const orgId = Schema.decodeSync(OrgId)(ORG)
+const userId = Schema.decodeSync(UserId)
+
+/** An ordinary signed-in caller, unless a test names the bot actor instead. */
+const tenant = { orgId, userId: userId("user_1") }
 
 const env = { AUTUMN_SECRET_KEY: "sk_test" }
 
@@ -56,8 +62,8 @@ afterEach(() => {
 	globalThis.fetch = realFetch
 })
 
-const meter = (sessionId: string, messageId: string, input: number, output: number) =>
-	Effect.runPromise(meterTurn(turn(sessionId, messageId), tenant, { input, output }))
+const meter = (sessionId: string, messageId: string, input: number, output: number, as = tenant) =>
+	Effect.runPromise(meterTurn(turn(sessionId, messageId), as, { input, output }))
 
 const keysFor = (featureId: string) => tracked.filter((t) => t.featureId === featureId).map((t) => t.key)
 
@@ -139,11 +145,20 @@ describe("meterTurn", () => {
 		// Same features and the same org; the source is what separates the bot's spend from the
 		// in-app chat it shares this runner with. Built rather than spelled, so the tab format
 		// lives in one place.
-		const session = botSessionId(Schema.decodeSync(OrgId)(ORG), "discord", "994")
+		const session = botSessionId(orgId, "discord", "994")
 		await meter(session, "msg-1", 1000, 100)
 
 		assert.deepEqual(keysFor("ai_input_tokens"), [`${session}:msg-1:bot:input`])
 		assert.deepEqual(keysFor("ai_output_tokens"), [`${session}:msg-1:bot:output`])
+	})
+
+	it("charges the bot actor as `bot` even on a session that is not a bot one", async () => {
+		// The session id is built by a Worker outside this app, and `turnToolPolicy` already treats
+		// the actor alone as enough to run the turn read-only on the `bot` surface. The meter has to
+		// agree, or a turn runs as one surface and is billed as another.
+		await meter(`${ORG}:default`, "msg-1", 1000, 100, { orgId, userId: CHAT_BOT_USER_ID })
+
+		assert.deepEqual(keysFor("ai_input_tokens"), [`${ORG}:default:msg-1:bot:input`])
 	})
 
 	it("bills an investigation turn once, not once per source", async () => {

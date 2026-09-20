@@ -20,7 +20,7 @@ import { AgentPolicy } from "@effect-agent/core/AgentPolicy"
 import * as Output from "@effect-agent/engine/Output"
 import { Schema } from "effect"
 import type { Toolkit } from "effect/unstable/ai"
-import { chatModeFromSessionId, type ChatMode } from "@maple/domain/chat-session"
+import { CHAT_BOT_USER_ID, chatModeFromSessionId, type ChatMode } from "@maple/domain/chat-session"
 // The specific file, not the `./loop` barrel: the barrel re-exports `turn.ts`, which imports this
 // module back. `budgets.ts` depends on nothing but `effect`.
 import {
@@ -117,6 +117,20 @@ export const AGENTS: Readonly<Record<ChatMode, AgentDefinition>> = {
 /** Every `ChatMode` literal names an agent; the mode string *is* the agent name. */
 export const agentForSession = (sessionId: string): AgentDefinition =>
 	AGENTS[chatModeFromSessionId(sessionId)]
+
+/**
+ * The surface a turn runs on, which is not always its agent's.
+ *
+ * Either signal alone makes a turn the bot's, and neither is redundant: the session's tab prefix is
+ * what picks the bot agent, while the actor is what a transport Worker outside this app actually
+ * controls. A mismatched pair must not hand an org-level actor the internal toolset — and must not
+ * be filed under a different surface than the one it really ran on either, which is why every
+ * reader takes its answer from here rather than re-deriving one.
+ */
+export const surfaceForTurn = (sessionId: string, userId: string): ChatSurface => {
+	const agent = agentForSession(sessionId)
+	return agent.surface === "bot" || userId === CHAT_BOT_USER_ID ? "bot" : agent.surface
+}
 
 /** The system prompt for a turn: the agent's own persona. */
 export const buildSystemPrompt = (agent: AgentDefinition): string => agent.prompt
