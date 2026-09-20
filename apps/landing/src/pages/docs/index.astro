@@ -15,14 +15,16 @@ type Doc = (typeof allDocs)[number];
 const byOrder = (a: Doc, b: Doc) => a.data.order - b.data.order || a.data.title.localeCompare(b.data.title);
 const bySlug = (slug: string) => allDocs.find((d) => d.id === slug);
 
+// Each card carries the glyph of the surface it opens, matching the sidebar
+// and section strip (DocsCategoryIcon ids).
 const START_HERE = [
-    "getting-started/introduction",
-    INSTRUMENTATION_SLUG,
-    "local-mode",
-    "mcp",
-].flatMap((slug) => {
+    { slug: "getting-started/introduction", icon: "Getting Started" },
+    { slug: INSTRUMENTATION_SLUG, icon: "Instrumentation" },
+    { slug: "local-mode", icon: "Local Mode" },
+    { slug: "mcp", icon: "MCP" },
+].flatMap(({ slug, icon }) => {
     const doc = bySlug(slug);
-    return doc ? [doc] : [];
+    return doc ? [{ doc, icon }] : [];
 });
 
 // Every group except the two the page already covers above.
@@ -57,9 +59,25 @@ const topics = [...new Set(allDocs.map((d) => d.data.group))]
         <section class="mt-10" aria-labelledby="start-here">
             <h2 id="start-here" class="font-mono text-[10px] font-medium uppercase tracking-[0.18em] text-fg-muted">Start here</h2>
             <div class="hairline-grid mt-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
-                {START_HERE.map((doc) => (
-                    <a href={`/docs/${doc.id}`} class="cell block p-5 transition-colors hover:bg-bg-elevated">
-                        <span class="block text-[14px] font-medium text-fg">{doc.data.title}</span>
+                {START_HERE.map(({ doc, icon }) => (
+                    <a href={`/docs/${doc.id}`} class="cell group flex flex-col p-5 transition-colors hover:bg-bg-elevated">
+                        <span class="flex items-center justify-between">
+                            <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-border bg-bg-elevated text-primary transition-colors group-hover:border-primary/40" aria-hidden="true">
+                                <DocsCategoryIcon name={icon} class="h-4 w-4" />
+                            </span>
+                            <svg
+                                class="h-3.5 w-3.5 -translate-x-1 text-fg-muted opacity-0 transition-[opacity,transform] duration-200 group-hover:translate-x-0 group-hover:opacity-100 motion-reduce:transition-none"
+                                viewBox="0 0 24 24"
+                                fill="none"
+                                stroke="currentColor"
+                                stroke-width="2"
+                                stroke-linecap="square"
+                                aria-hidden="true"
+                            >
+                                <path d="M16.99 12H17" /><path d="M14.99 10H15" /><path d="M14.99 14H15" /><path d="M12.99 16H13" /><path d="M12.99 8H13" /><path d="M10.99 6H11" /><path d="M10.99 18H11" /><path d="M8.99 20H9" /><path d="M8.99 4H9" />
+                            </svg>
+                        </span>
+                        <span class="mt-4 block text-[14px] font-medium text-fg">{doc.data.title}</span>
                         <p class="mt-1.5 text-[13px] leading-relaxed text-fg-muted line-clamp-3">{doc.data.description}</p>
                     </a>
                 ))}
@@ -105,12 +123,16 @@ const topics = [...new Set(allDocs.map((d) => d.data.group))]
                         <h3 class="flex items-center gap-2 text-[14px] font-medium text-fg">
                             <DocsCategoryIcon name={group} class="h-3.5 w-3.5 shrink-0 text-primary/80" />
                             {group}
+                            <span class="ml-auto font-mono text-[10px] font-normal tabular-nums text-fg-muted/70" aria-label={`${docs.length} pages`}>
+                                {docs.length}
+                            </span>
                         </h3>
                         {blurb && <p class="mt-1.5 text-[13px] leading-relaxed text-fg-muted">{blurb}</p>}
                         <ul class="mt-3 space-y-1.5">
                             {docs.map((doc) => (
                                 <li>
-                                    <a href={`/docs/${doc.id}`} class="text-[13.5px] text-fg-muted transition-colors hover:text-fg">
+                                    <a href={`/docs/${doc.id}`} class="group/link inline-flex items-center gap-1.5 text-[13.5px] text-fg-muted transition-colors hover:text-fg">
+                                        <span class="h-px w-2 shrink-0 bg-border transition-colors group-hover/link:bg-primary" aria-hidden="true"></span>
                                         {doc.data.title}
                                     </a>
                                 </li>

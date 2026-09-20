@@ -18,11 +18,13 @@ interface Props {
     image?: string;
     /** Path of this page's markdown twin — see the same prop on Layout.astro. */
     mdHref?: string;
+    /** GitHub edit URL of the page's source; renders the "Edit this page" link. */
+    editHref?: string;
     /** Widen the column and drop the table-of-contents rail (index pages). */
     wide?: boolean;
 }
 
-const { title, description, headings, currentSlug, image = "/og-docs.png", mdHref, wide = false } = Astro.props;
+const { title, description, headings, currentSlug, image = "/og-docs.png", mdHref, editHref, wide = false } = Astro.props;
 const stars = await getGitHubStars();
 
 const pageTitle = currentSlug ? `${title} — Maple Docs` : "Maple Docs";
@@ -69,6 +71,12 @@ const hasToc = !wide && headings.some((h) => h.depth >= 2 && h.depth <= 3);
          the blog sets its prose. Mono is opted back in per element for code,
          eyebrows and labels. -->
     <body class="min-h-screen antialiased bg-bg text-fg font-display">
+        <a
+            href="#docs-main"
+            class="sr-only focus:not-sr-only focus:fixed focus:top-3 focus:left-3 focus:z-[60] focus:rounded-md focus:border focus:border-primary focus:bg-bg-elevated focus:px-3 focus:py-2 focus:text-[13px] focus:text-fg"
+        >
+            Skip to content
+        </a>
         <header class="fixed top-0 left-0 right-0 z-50 border-b border-border bg-bg/95 backdrop-blur-md">
             <div class="flex h-14 items-center gap-5 px-4 sm:px-6">
                 <a href="/" class="flex items-center gap-2 text-fg transition-colors hover:text-primary">
@@ -96,23 +104,50 @@ const hasToc = !wide && headings.some((h) => h.depth >= 2 && h.depth <= 3);
                 <DocsSidebar currentSlug={currentSlug} />
             </aside>
 
-            <main class:list={["min-w-0 flex-1 lg:ml-64", hasToc && "xl:mr-60"]}>
+            <main id="docs-main" class:list={["min-w-0 flex-1 lg:ml-64", hasToc && "xl:mr-60"]} tabindex="-1">
                 <div class:list={["mx-auto px-5 py-10 sm:px-8 md:py-12", wide ? "max-w-5xl" : "max-w-3xl"]}>
-                    <DocsMobileNav currentSlug={currentSlug} />
-                    {hasToc && (
-                        <details class="mb-8 rounded-lg border border-border xl:hidden">
-                            <summary class="flex cursor-pointer list-none items-center justify-between px-4 py-3 text-[13px] text-fg-muted transition-colors hover:text-fg [&::-webkit-details-marker]:hidden">
-                                <span>On this page</span>
-                                <svg class="h-3 w-3 shrink-0 transition-transform details-open:rotate-180" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5">
-                                    <path d="M3 5l3 3 3-3" />
-                                </svg>
-                            </summary>
-                            <div class="max-h-[60vh] overflow-y-auto border-t border-border px-4 pt-4 pb-4">
-                                <DocsTableOfContents headings={headings} spy={false} />
-                            </div>
-                        </details>
-                    )}
+                    {/* Below the rails the tree and the outline fold into disclosures; one
+                        stack so they share a gap instead of two full margins. */}
+                    <div class:list={["mb-8 flex flex-col gap-2.5", hasToc ? "xl:hidden" : "lg:hidden"]}>
+                        <DocsMobileNav currentSlug={currentSlug} />
+                        {hasToc && (
+                            <details class="rounded-lg border border-border xl:hidden">
+                                <summary class="flex cursor-pointer list-none items-center justify-between px-4 py-2.5 text-[13px] text-fg-muted transition-colors hover:text-fg [&::-webkit-details-marker]:hidden">
+                                    <span>On this page</span>
+                                    <svg class="h-3 w-3 shrink-0 transition-transform details-open:rotate-180" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5">
+                                        <path d="M3 5l3 3 3-3" />
+                                    </svg>
+                                </summary>
+                                <div class="max-h-[60vh] overflow-y-auto border-t border-border px-4 pt-4 pb-4">
+                                    <DocsTableOfContents headings={headings} spy={false} />
+                                </div>
+                            </details>
+                        )}
+                    </div>
                     <slot />
+                    {currentSlug && (
+                        <footer class="mt-12 flex flex-wrap items-center gap-x-5 gap-y-2 border-t border-border pt-5 text-[12.5px] text-fg-muted">
+                            {editHref && (
+                                <a href={editHref} class="inline-flex items-center gap-1.5 transition-colors hover:text-fg" rel="noopener">
+                                    <svg class="h-3.5 w-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square" aria-hidden="true">
+                                        <path d="M5 15H5.01" /><path d="M7 13H7.01" /><path d="M9 11H9.01" /><path d="M11 9H11.01" /><path d="M13 7H13.01" /><path d="M15 5H15.01" /><path d="M17 3H17.01" /><path d="M19 5H19.01" /><path d="M9 19H9.01" /><path d="M11 17H11.01" /><path d="M13 21H21" /><path d="M13 15H13.01" /><path d="M15 13H15.01" /><path d="M17 11H17.01" /><path d="M19 9H19.01" /><path d="M21 7H21.01" /><path d="M3 17V21H7" /><path d="M15 9H15.01" />
+                                    </svg>
+                                    Edit this page on GitHub
+                                </a>
+                            )}
+                            {mdHref && (
+                                <a href={mdHref} class="inline-flex items-center gap-1.5 transition-colors hover:text-fg">
+                                    <svg class="h-3.5 w-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square" aria-hidden="true">
+                                        <path d="M10 17H10.01" /><path d="M14 7L13.99 7" /><path d="M12 19H12.01" /><path d="M12 5L11.99 5" /><path d="M19 19H19.01" /><path d="M5 5L4.99 5" /><path d="M10 10H10.01" /><path d="M14 14L13.99 14" /><path d="M14 21H17" /><path d="M10 3L7 3" /><path d="M21 14L21 17" /><path d="M3 10L3 7" /><path d="M8 12L8 15" /><path d="M16 12L16 9" />
+                                    </svg>
+                                    View as Markdown
+                                </a>
+                            )}
+                            <a href="https://github.com/MapleTechLabs/maple/issues/new?labels=docs" class="ml-auto transition-colors hover:text-fg" rel="noopener">
+                                Report an issue
+                            </a>
+                        </footer>
+                    )}
                     {currentSlug && <DocsPrevNext currentSlug={currentSlug} />}
                 </div>
             </main>
