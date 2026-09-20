@@ -57,9 +57,17 @@ const decode = Schema.decodeUnknownOption(Schema.fromJsonString(ChartSpec))
  * wrong axis suffix, and losing the whole plot because the model typed `ms` for
  * `duration_ms` is not a trade worth making. An unrecognized unit falls through
  * to plain numbers, which is what the formatter does with it anyway.
+ *
+ * A fence's `percent` is the number as a reader says it — 92.86 is 92.86% — so
+ * it lands on the formatter's `percent_100`, not its 0–1 `percent`. Tools print
+ * rates to the model as `92.86%`, and a fraction contract had it charting the
+ * printed number 100x high. `fraction` is there for a model holding 0–1 values.
  */
 const UNIT_ALIASES = new Map<string, string>([
-	["%", "percent"],
+	["%", "percent_100"],
+	["fraction", "percent"],
+	["percent", "percent_100"],
+	["ratio", "percent"],
 	["count", "number"],
 	["ms", "duration_ms"],
 	["msec", "duration_ms"],
@@ -81,7 +89,6 @@ const KNOWN_UNITS = new Set([
 	"duration_s",
 	"duration_us",
 	"number",
-	"percent",
 	"percent_100",
 	"requests_per_sec",
 ])
@@ -91,23 +98,6 @@ export function normalizeUnit(unit: string | undefined): string {
 	const lower = unit.trim().toLowerCase()
 	if (KNOWN_UNITS.has(lower)) return lower
 	return UNIT_ALIASES.get(lower) ?? "number"
-}
-
-/**
- * The unit a spec plots under, checked against the numbers it carries.
- *
- * `percent` multiplies a 0–1 fraction by 100, but tools print error rates to the
- * model as `92.86%`, and a model that copies the printed number draws a 9286%
- * axis. A percent series peaking well above 1 is already on the 0–100 scale.
- */
-export function resolveUnit(spec: ChartSpec): string {
-	const unit = normalizeUnit(spec.unit)
-	if (unit !== "percent") return unit
-	const values =
-		spec.type === "ranked"
-			? spec.data.map((point) => point.value)
-			: spec.data.flatMap((point) => Object.values(point.series))
-	return values.some((value) => Math.abs(value) > 1.5) ? "percent_100" : unit
 }
 
 /**

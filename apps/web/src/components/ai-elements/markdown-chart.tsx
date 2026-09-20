@@ -2,7 +2,7 @@ import { lazy, Suspense, useMemo, type ReactNode } from "react"
 
 import { ChartSkeleton } from "@maple/ui/components/charts"
 
-import { parseChartSpec, resolveUnit, type ChartSpec } from "./chart-spec"
+import { normalizeUnit, parseChartSpec, type ChartSpec } from "./chart-spec"
 
 /**
  * The chart Streamdown renders for a ```chart fence in an assistant reply.
@@ -54,7 +54,7 @@ export function MarkdownChart({ code, isIncomplete }: MarkdownChartProps) {
 	return (
 		<ChartFrame title={spec.title ?? null}>
 			<Suspense fallback={<ChartSkeleton variant={skeletonVariant(spec)} className={PLOT_HEIGHT} />}>
-				<LazyChartPlot spec={spec} unit={resolveUnit(spec)} className={PLOT_HEIGHT} />
+				<LazyChartPlot spec={spec} unit={normalizeUnit(spec.unit)} className={PLOT_HEIGHT} />
 			</Suspense>
 		</ChartFrame>
 	)
