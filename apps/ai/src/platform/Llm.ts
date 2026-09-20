@@ -442,6 +442,8 @@ export const layerLlm = (env: LlmEnv): Layer.Layer<LlmClients> => {
 export const layerDecisionModel = (
 	env: LlmEnv,
 ): Layer.Layer<DecisionModel.DecisionModel, never, OpenRouterClient.OpenRouterClient> =>
-	OpenRouterDecisionModel.layer({
-		model: readString(env, "MAPLE_DECISION_MODEL") ?? DEFAULT_DECISION_MODEL,
-	})
+	OpenRouterDecisionModel.layer({ model: resolveDecisionModel(env) })
+
+/** The decision model this deploy asks, so a verdict can record what answered it. */
+export const resolveDecisionModel = (env: LlmEnv): string =>
+	readString(env, "MAPLE_DECISION_MODEL") ?? DEFAULT_DECISION_MODEL
