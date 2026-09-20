@@ -75,12 +75,12 @@ export const evaluateIncidentGate = (input: {
 	return { kind: "investigate", severity, classification: verdict }
 }
 
-const SEVERITY_RANK: Record<IssueSeverity, number> = {
+const SEVERITY_RANK = {
 	critical: 4,
 	high: 3,
 	medium: 2,
 	low: 1,
-}
+} satisfies Record<IssueSeverity, number>
 
 /** The higher of the two, with `null` losing to anything. */
 export const mostSevere = (

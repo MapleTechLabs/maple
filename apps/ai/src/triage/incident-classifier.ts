@@ -28,13 +28,14 @@ export const IncidentTriage = Decision.make({
 	decisions: {
 		disposition: Decision.classify({
 			instructions:
-				"An observability platform opened this incident. Decide what it deserves from an engineering team.",
+				"An observability platform opened this incident from a service's own telemetry. The message is the text that service emitted. Decide what the team that owns it should do.",
 			criteria: {
 				investigate:
-					"A real defect or regression worth an engineer's time: something broke, started failing, or got materially slower for users of the service.",
+					"A defect in the service itself: it crashed, corrupted or lost data, failed a write, returned a wrong answer, regressed, or hit a state it plainly did not anticipate. Something an engineer would change code to fix.",
 				monitor:
-					"Real but unremarkable: a single transient failure, a known flaky dependency, an expected retry or timeout, or something already understood and accepted.",
-				noise: "Not worth anyone's time: scanner and bot traffic, malformed requests from the public internet, client-side cancellations and disconnects, health checks, or deliberate test and synthetic traffic.",
+					"Real but already handled: a transient failure that retried or recovered, a known flaky dependency, or a condition the service detected and reported cleanly and would survive either way.",
+				noise:
+					"Nothing for the team to fix, however often it fires. The user's own environment (a port already in use, a file permission they must grant, a second copy already running, a stale working directory); input the service correctly rejected; corrupt, truncated or hostile payloads from the public internet; scanners, bots and health checks; client-side cancellations; deliberate test or synthetic traffic.",
 			},
 		}),
 		severity: Decision.rate({
@@ -62,7 +63,15 @@ export const classifyIncident = Effect.fn("classifyIncident")(function* (options
 	readonly request: IncidentTriageRequest
 	readonly model: string
 }) {
-	const { answers } = yield* DecisionModel.decide(IncidentTriage, { input: options.request })
+	// One retry, because the provider is intermittently wrong rather than broken.
+	// Measured against 16 production incidents: roughly one call in sixteen comes
+	// back with a score distribution that misses `DecisionModel`'s 1e-6 sum check
+	// (`Invalid output: probabilities that do not sum to 1`), and the same input
+	// answers cleanly on the next attempt. Effect's check has no tolerance knob,
+	// and a gate that gives up at the first rounding error stops gating.
+	const { answers } = yield* DecisionModel.decide(IncidentTriage, {
+		input: options.request,
+	}).pipe(Effect.retry({ times: 1 }))
 
 	// The chosen label's own probability mass, not the provider's optional
 	// `confidence`: the distribution is what the gate's threshold is written
