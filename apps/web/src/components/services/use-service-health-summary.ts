@@ -61,7 +61,7 @@ export function useServiceHealthSummary(input: GetServiceOverviewInput): Service
 		const anomalyCausesByRow = new Map<string, ServiceHealthCause[]>()
 		for (const row of anomalies.data.map(anomalyServiceCountFromV2)) {
 			if (!anomalyAffectsServiceHealth(row)) continue
-			const key = serviceHealthRowKey(row.serviceName, row.deploymentEnv)
+			const key = serviceHealthRowKey(row.serviceName, row.deploymentEnv || "unknown")
 			const causes = anomalyCausesByRow.get(key)
 			const cause: ServiceHealthCause = { severity: row.severity, label: "Anomaly" }
 			if (causes) causes.push(cause)
