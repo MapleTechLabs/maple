@@ -4,6 +4,7 @@
  * The tool and whether the run is an autonomous pass travel together: the turn runner closes a
  * pass out itself when `submitted()` stays false, and must never do that to a human follow-up.
  */
+import { CHAT_BOT_USER_ID } from "@maple/domain/chat-session"
 import { OrgId, UserId } from "@maple/domain/primitives"
 import { Effect, Schema } from "effect"
 import { assert, describe, it } from "vitest"
@@ -56,5 +57,15 @@ describe("buildDiagnosisCompletion", () => {
 
 		assert.isDefined(completion?.toolkit)
 		assert.isFalse(completion?.autonomous)
+	})
+
+	/**
+	 * This tool is merged into the run's toolkit *outside* the permission ruleset, so the bot's
+	 * `READ_ONLY_RULESET` does not withhold it — and it writes: a report row, and the
+	 * investigation's status. The bot answers into a channel anyone can post in, so it is refused
+	 * here by actor, the one signal a session id built elsewhere cannot forge.
+	 */
+	it("gives the chat-bot actor no diagnosis tool, even on an investigation session", () => {
+		assert.isUndefined(build(INVESTIGATION_SESSION, CHAT_BOT_USER_ID))
 	})
 })
