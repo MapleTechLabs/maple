@@ -72,8 +72,11 @@ export class IncidentClassifier extends Context.Service<IncidentClassifier, Inci
 			const authorization = internalServiceBearer(token.value)
 			// The binding routes by name rather than by host; the origin below is the
 			// formality `Request` insists on, and the fetch is the binding's own.
-			const fetchOverBinding: typeof globalThis.fetch = (input, init) =>
-				binding.fetch(new Request(input, init))
+			// Bun's `fetch` type carries `preconnect`; the binding has no such hop to warm.
+			const fetchOverBinding: typeof globalThis.fetch = Object.assign(
+				(input: RequestInfo | URL, init?: RequestInit) => binding.fetch(new Request(input, init)),
+				{ preconnect: () => Promise.resolve() },
+			)
 			const httpClient = yield* HttpClient.HttpClient
 			const client = yield* HttpApiClient.group(MapleAiApi, {
 				group: "triage",
