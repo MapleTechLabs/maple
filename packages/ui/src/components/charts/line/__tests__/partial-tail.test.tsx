@@ -1,5 +1,5 @@
 import { cleanup, render } from "@testing-library/react"
-import { afterEach, beforeAll, describe, expect, it, vi } from "vitest"
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest"
 
 import { QueryBuilderLineChart } from "../query-builder-line-chart"
 
@@ -7,7 +7,13 @@ import { QueryBuilderLineChart } from "../query-builder-line-chart"
 // observer to exist and a non-zero box to draw into; PlotFrame degrades to the
 // SVG renderer here (no Canvas 2D context), which is what makes the marks
 // inspectable as real paths.
+//
+// The clock is pinned mid-hour: the rows below are anchored to `Date.now()` and
+// the chart reads it again at render, so an hour rolling over between the two
+// closes the last bucket and nothing is dashed (CI hit this at 20:00:00).
 beforeAll(() => {
+	vi.useFakeTimers({ toFake: ["Date"] })
+	vi.setSystemTime(new Date("2026-09-21T12:30:00Z"))
 	vi.stubGlobal(
 		"ResizeObserver",
 		class {
@@ -30,6 +36,7 @@ beforeAll(() => {
 })
 
 afterEach(cleanup)
+afterAll(() => vi.useRealTimers())
 
 /**
  * The dashboard shape: hourly buckets anchored to wall-clock now, with NO
