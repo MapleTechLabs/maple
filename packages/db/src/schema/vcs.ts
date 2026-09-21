@@ -1,7 +1,11 @@
-import { boolean, index, pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core"
+import { boolean, index, integer, jsonb, pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core"
 import type { OrgId, UserId } from "@maple/domain/primitives"
 import type {
 	GitCommitSha,
+	PrReviewId,
+	PrReviewReport,
+	PrReviewSkipReason,
+	PrReviewStatus,
 	VcsAccountType,
 	VcsBranchId,
 	VcsCommitRowId,
@@ -82,6 +86,9 @@ export const vcsRepositories = pgTable(
 		syncStatus: text("sync_status").$type<VcsRepoSyncStatus>().notNull().default("pending"),
 		lastSyncedAt: timestamp("last_synced_at", { withTimezone: true, mode: "date" }),
 		lastSyncError: text("last_sync_error"),
+		// Opt-in: Maple reviews this repository's pull requests for observability
+		// gaps. User-owned, like `tracked_branch`; a reconcile never touches it.
+		prReviewEnabled: boolean("pr_review_enabled").notNull().default(false),
 		createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull(),
 		updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date" }).notNull(),
 	},
@@ -159,6 +166,53 @@ export const vcsRepositoryBranches = pgTable(
 	],
 )
 
+/**
+ * One observability review of one pull request at one head commit. Written by
+ * the review trigger on a `pull_request` webhook, updated by the `pr-review`
+ * agent's `submit_review` tool, and read by the settings page. A later push is
+ * a new row: GitHub's check run is per head SHA, and so is the review.
+ */
+export const prReviews = pgTable(
+	"pr_reviews",
+	{
+		id: text("id").$type<PrReviewId>().notNull().primaryKey(),
+		orgId: text("org_id").$type<OrgId>().notNull(),
+		repositoryId: text("repository_id").$type<VcsRepositoryId>().notNull(),
+		number: integer("number").notNull(),
+		headSha: text("head_sha").$type<GitCommitSha>().notNull(),
+		baseSha: text("base_sha").$type<GitCommitSha>(),
+		url: text("url").notNull(),
+		title: text("title"),
+		status: text("status").$type<PrReviewStatus>().notNull().default("queued"),
+		skipReason: text("skip_reason").$type<PrReviewSkipReason>(),
+		/** The `maple-chat` session (`<orgId>:pr-<id>`) the review ran on; null while queued. */
+		sessionId: text("session_id"),
+		/** Structured review; null until `submit_review` lands. */
+		reportJson: jsonb("report_json").$type<PrReviewReport>(),
+		checkRunUrl: text("check_run_url"),
+		reviewUrl: text("review_url"),
+		/** Set when the review was recorded but GitHub refused the post (a permission not yet granted). */
+		publishError: text("publish_error"),
+		error: text("error"),
+		model: text("model"),
+		inputTokens: integer("input_tokens"),
+		outputTokens: integer("output_tokens"),
+		startedAt: timestamp("started_at", { withTimezone: true, mode: "date" }),
+		finishedAt: timestamp("finished_at", { withTimezone: true, mode: "date" }),
+		createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull(),
+		updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date" }).notNull(),
+	},
+	(table) => [
+		// One review per (repo, PR, head): a webhook redelivery or a `synchronize`
+		// that carries the same head must not start a second run.
+		uniqueIndex("pr_reviews_repo_number_head_idx").on(table.repositoryId, table.number, table.headSha),
+		// The trigger's "is one already running for this PR" and the settings list.
+		index("pr_reviews_repo_number_idx").on(table.repositoryId, table.number),
+		// The daily quota count.
+		index("pr_reviews_org_created_idx").on(table.orgId, table.createdAt),
+	],
+)
+
 export type VcsInstallationRow = typeof vcsInstallations.$inferSelect
 export type VcsInstallationInsert = typeof vcsInstallations.$inferInsert
 export type VcsRepositoryRow = typeof vcsRepositories.$inferSelect
@@ -167,3 +221,5 @@ export type VcsCommitRow = typeof vcsCommits.$inferSelect
 export type VcsCommitInsert = typeof vcsCommits.$inferInsert
 export type VcsRepositoryBranchRow = typeof vcsRepositoryBranches.$inferSelect
 export type VcsRepositoryBranchInsert = typeof vcsRepositoryBranches.$inferInsert
+export type PrReviewRow = typeof prReviews.$inferSelect
+export type PrReviewInsert = typeof prReviews.$inferInsert

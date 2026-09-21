@@ -93,16 +93,19 @@ This is what closes the loop after a user installs your app, so Maple can record
 
 ## Step 5 — Set permissions
 
-Maple only **reads** commit, branch, and source-file data. It never writes to your repositories. Read-only source access lets Maple's investigation agent correlate observed failures with the exact deployed revision when telemetry includes repository and commit attributes.
+Maple **reads** commit, branch, and source-file data, and **writes** exactly two things: a check run and a comment-only review on a pull request, and only on repositories where a Maple admin has switched on the pull request observability review. It never pushes commits or changes repository settings. Read-only source access lets Maple's investigation agent correlate observed failures with the exact deployed revision when telemetry includes repository and commit attributes.
 
 1. Find **Permissions → Repository permissions**.
 2. Set the following, leaving every other permission at **No access**:
 
-| Repository permission | Access level                                                |
-| --------------------- | ----------------------------------------------------------- |
-| **Contents**          | **Read-only**                                               |
-| **Pull requests**     | **Read-only** (for the upcoming pull request feature)       |
-| **Metadata**          | **Read-only** (GitHub pre-selects this and it is mandatory) |
+| Repository permission | Access level                                                                                  |
+| --------------------- | --------------------------------------------------------------------------------------------- |
+| **Contents**          | **Read-only**                                                                                 |
+| **Pull requests**     | **Read and write** (reads the diff; posts the review as a comment, never an approval or block) |
+| **Checks**            | **Read and write** (posts the `Maple / observability` check run on the head commit)          |
+| **Metadata**          | **Read-only** (GitHub pre-selects this and it is mandatory)                                   |
+
+> **Upgrading an existing App?** Adding a permission to an App that is already installed makes GitHub ask every installation's admin to accept the new permissions. Until they do, Maple still records each review but cannot post it: the repository's row in **Integrations → GitHub** shows the last review with a publish error, and the fix is to accept the permission request on GitHub (Settings → Applications → the App → Review request).
 
 3. Leave **Organization permissions** and **Account permissions** entirely at **No access**.
 
@@ -118,7 +121,7 @@ Maple only **reads** commit, branch, and source-file data. It never writes to yo
 | **Create**              | Branch or tag created — detect newly created branches.                        |
 | **Delete**              | Branch or tag deleted — detect deleted branches.                              |
 | **Push**                | Live-sync new commits on tracked branches; reconcile force-pushes.            |
-| **Pull request**        | Sync pull requests (upcoming pull request feature).                           |
+| **Pull request**        | Link pull requests to error issues, and start the observability review on repositories that opted in. |
 | **Release**             | Sync releases.                                                                |
 | **Repository**          | Track repositories being created, renamed, deleted, or changing visibility.   |
 | **Meta**                | Notify Maple when the GitHub App itself is deleted.                           |

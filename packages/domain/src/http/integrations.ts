@@ -675,6 +675,8 @@ export class GithubRepoSummary extends Schema.Class<GithubRepoSummary>("GithubRe
 	trackedBranch: Schema.NullOr(Schema.String),
 	// All branches the repo knows about (names only) — the picker's options.
 	branches: Schema.Array(GithubBranchSummary),
+	/** Maple reviews this repository's pull requests for observability gaps. Off by default. */
+	prReviewEnabled: Schema.Boolean,
 }) {}
 
 /**
@@ -747,6 +749,18 @@ export class GithubSetTrackedBranchResponse extends Schema.Class<GithubSetTracke
 	trackedBranch: Schema.String,
 	// True when the change enqueued a historical backfill of the new branch.
 	backfillQueued: Schema.Boolean,
+}) {}
+
+export class GithubSetPrReviewRequest extends Schema.Class<GithubSetPrReviewRequest>(
+	"GithubSetPrReviewRequest",
+)({
+	enabled: Schema.Boolean,
+}) {}
+
+export class GithubSetPrReviewResponse extends Schema.Class<GithubSetPrReviewResponse>(
+	"GithubSetPrReviewResponse",
+)({
+	enabled: Schema.Boolean,
 }) {}
 
 /**
@@ -1086,6 +1100,18 @@ export class IntegrationsApiGroup extends HttpApiGroup.make("integrations")
 			},
 			payload: GithubSetTrackedBranchRequest,
 			success: GithubSetTrackedBranchResponse,
+			error: [IntegrationsForbiddenError, IntegrationsValidationError, IntegrationsPersistenceError],
+		}),
+	)
+	.add(
+		// Per-repository opt-in to the pull request observability review. Admin only,
+		// like every other write on the integration.
+		HttpApiEndpoint.put("githubSetPrReview", "/github/repositories/:repositoryId/pr-review", {
+			params: {
+				repositoryId: VcsRepositoryId,
+			},
+			payload: GithubSetPrReviewRequest,
+			success: GithubSetPrReviewResponse,
 			error: [IntegrationsForbiddenError, IntegrationsValidationError, IntegrationsPersistenceError],
 		}),
 	)

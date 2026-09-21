@@ -154,6 +154,8 @@ export class VcsRepo extends Schema.Class<VcsRepo>("VcsRepo")({
 	syncStatus: VcsRepoSyncStatus,
 	lastSyncedAt: Schema.NullOr(Schema.Number),
 	lastSyncError: Schema.NullOr(Schema.String),
+	/** Opt-in: Maple reviews this repository's pull requests for observability. */
+	prReviewEnabled: Schema.Boolean,
 	createdAt: Schema.Number,
 	updatedAt: Schema.Number,
 }) {}
@@ -220,6 +222,70 @@ export const PullRequestSummary = Schema.Struct({
 	mergeCommitSha: Schema.NullOr(Schema.String),
 })
 export type PullRequestSummary = Schema.Schema.Type<typeof PullRequestSummary>
+
+/** One file of a pull request's diff, as the provider reports it. */
+export const PullRequestFileStatus = Schema.Literals([
+	"added",
+	"modified",
+	"removed",
+	"renamed",
+	"copied",
+	"changed",
+	"unchanged",
+])
+export type PullRequestFileStatus = Schema.Schema.Type<typeof PullRequestFileStatus>
+
+export const PullRequestFile = Schema.Struct({
+	path: Schema.String,
+	previousPath: Schema.NullOr(Schema.String),
+	status: PullRequestFileStatus,
+	additions: Schema.Number,
+	deletions: Schema.Number,
+	/** The unified diff of this file; null when the provider withholds it (binary, or too large). */
+	patch: Schema.NullOr(Schema.String),
+})
+export type PullRequestFile = Schema.Schema.Type<typeof PullRequestFile>
+
+/** An inline review comment on the new side of the diff. */
+export const PullRequestReviewComment = Schema.Struct({
+	path: Schema.String,
+	line: Schema.Number,
+	body: Schema.String,
+})
+export type PullRequestReviewComment = Schema.Schema.Type<typeof PullRequestReviewComment>
+
+export const PullRequestCheckAnnotation = Schema.Struct({
+	path: Schema.String,
+	startLine: Schema.Number,
+	endLine: Schema.Number,
+	level: Schema.Literals(["notice", "warning", "failure"]),
+	title: Schema.String,
+	message: Schema.String,
+})
+export type PullRequestCheckAnnotation = Schema.Schema.Type<typeof PullRequestCheckAnnotation>
+
+/**
+ * What a provider posts back onto a pull request for one review: a check run on the head commit
+ * and, when there is something to say inline, one review carrying the comments.
+ */
+export const PullRequestReviewPublication = Schema.Struct({
+	number: Schema.Number,
+	headSha: GitCommitSha,
+	checkName: Schema.String,
+	title: Schema.String,
+	summary: Schema.String,
+	conclusion: Schema.Literals(["success", "neutral"]),
+	annotations: Schema.Array(PullRequestCheckAnnotation),
+	reviewBody: Schema.NullOr(Schema.String),
+	comments: Schema.Array(PullRequestReviewComment),
+})
+export type PullRequestReviewPublication = Schema.Schema.Type<typeof PullRequestReviewPublication>
+
+export const PullRequestReviewPublished = Schema.Struct({
+	checkRunUrl: Schema.NullOr(Schema.String),
+	reviewUrl: Schema.NullOr(Schema.String),
+})
+export type PullRequestReviewPublished = Schema.Schema.Type<typeof PullRequestReviewPublished>
 
 /** Normalized repository, returned by a provider and persisted by the repo. */
 export const RepoUpsertInput = Schema.Struct({
@@ -418,7 +484,7 @@ export const PullRequestEventJob = Schema.Struct({
 	// GitHub's `action`, narrowed to the ones that change a link's meaning.
 	// `closed` covers both "merged" and "closed without merging"; `merged`
 	// below is what distinguishes them.
-	action: Schema.Literals(["opened", "edited", "reopened", "closed", "synchronize"]),
+	action: Schema.Literals(["opened", "edited", "reopened", "closed", "synchronize", "ready_for_review"]),
 	url: Schema.String,
 	title: Schema.NullOr(Schema.String),
 	body: Schema.NullOr(Schema.String),
@@ -427,6 +493,15 @@ export const PullRequestEventJob = Schema.Struct({
 	mergeCommitSha: Schema.NullOr(Schema.String),
 	mergedAtMs: Schema.NullOr(Schema.Number),
 	deliveryId: Schema.optionalKey(Schema.String),
+	// The commits the review runs against. `optionalKey` so a job queued before
+	// these fields existed still decodes; the review trigger skips a job without a head.
+	headSha: Schema.optionalKey(GitCommitSha),
+	baseSha: Schema.optionalKey(GitCommitSha),
+	headRef: Schema.optionalKey(Schema.String),
+	baseRef: Schema.optionalKey(Schema.String),
+	draft: Schema.optionalKey(Schema.Boolean),
+	/** The head repository, which differs from `repoFullName` on a fork's pull request. */
+	headRepoFullName: Schema.optionalKey(Schema.NullOr(Schema.String)),
 })
 export type PullRequestEventJob = Schema.Schema.Type<typeof PullRequestEventJob>
 

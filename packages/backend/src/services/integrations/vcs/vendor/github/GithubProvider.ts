@@ -2,6 +2,7 @@ import {
 	type BranchUpsertInput,
 	type CommitUpsertInput,
 	GitCommitSha,
+	type PullRequestFile,
 	type PullRequestSummary,
 	type RepoUpsertInput,
 	type VcsInstallation,
@@ -29,6 +30,7 @@ import {
 	type GithubApiPullRequest,
 	GithubAppClient,
 	GithubAppError,
+	type GithubReviewInput,
 } from "./GithubAppClient"
 
 const PROVIDER: VcsProviderId = "github"
@@ -101,6 +103,24 @@ const PullRequestPayload = Schema.Struct({
 		merged: Schema.optionalKey(Schema.NullOr(Schema.Boolean)),
 		merge_commit_sha: Schema.optionalKey(Schema.NullOr(Schema.String)),
 		merged_at: Schema.optionalKey(Schema.NullOr(Schema.String)),
+		draft: Schema.optionalKey(Schema.NullOr(Schema.Boolean)),
+		// The review's inputs. Optional so a payload that omits them (or a fixture
+		// written before they were read) still maps to the issue-link job.
+		head: Schema.optionalKey(
+			Schema.Struct({
+				sha: Schema.optionalKey(Schema.String),
+				ref: Schema.optionalKey(Schema.String),
+				repo: Schema.optionalKey(
+					Schema.NullOr(Schema.Struct({ full_name: Schema.optionalKey(Schema.String) })),
+				),
+			}),
+		),
+		base: Schema.optionalKey(
+			Schema.Struct({
+				sha: Schema.optionalKey(Schema.String),
+				ref: Schema.optionalKey(Schema.String),
+			}),
+		),
 	}),
 	repository: Schema.Struct({
 		id: Schema.Number,
@@ -108,6 +128,8 @@ const PullRequestPayload = Schema.Struct({
 	}),
 	installation: Schema.Struct({ id: Schema.Number }),
 })
+
+const decodeGitShaOption = Schema.decodeUnknownOption(GitCommitSha)
 
 const decodePush = Schema.decodeUnknownEffect(PushPayload)
 const decodePullRequest = Schema.decodeUnknownEffect(PullRequestPayload)
@@ -531,7 +553,14 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 			// The guard narrows rather than asserts, so the job's `action` union is
 			// proved here instead of cast at the call site — GitHub sends `action` as
 			// an open string and a new value must skip, not slip through mistyped.
-			const PULL_REQUEST_ACTIONS = ["opened", "edited", "reopened", "closed", "synchronize"] as const
+			const PULL_REQUEST_ACTIONS = [
+				"opened",
+				"edited",
+				"reopened",
+				"closed",
+				"synchronize",
+				"ready_for_review",
+			] as const
 			type PullRequestAction = (typeof PULL_REQUEST_ACTIONS)[number]
 			const isPullRequestAction = (action: string): action is PullRequestAction =>
 				PULL_REQUEST_ACTIONS.some((candidate) => candidate === action)
@@ -556,6 +585,10 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 					}
 					const pr = payload.pull_request
 					const merged = pr.merged ?? false
+					// A malformed SHA is dropped, not rejected: the issue-link job does not
+					// need it, and the review trigger treats its absence as "nothing to review".
+					const headSha = Option.getOrUndefined(decodeGitShaOption(pr.head?.sha))
+					const baseSha = Option.getOrUndefined(decodeGitShaOption(pr.base?.sha))
 					const mergedAtMs = pr.merged_at ? finiteOrNull(Date.parse(pr.merged_at)) : null
 					yield* Effect.annotateCurrentSpan({
 						"vcs.webhook.outcome": "handled",
@@ -576,6 +609,14 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 						merged,
 						mergeCommitSha: pr.merge_commit_sha ?? null,
 						mergedAtMs,
+						...(headSha === undefined ? undefined : { headSha }),
+						...(baseSha === undefined ? undefined : { baseSha }),
+						...(pr.head?.ref === undefined ? undefined : { headRef: pr.head.ref }),
+						...(pr.base?.ref === undefined ? undefined : { baseRef: pr.base.ref }),
+						...(pr.draft === undefined || pr.draft === null ? undefined : { draft: pr.draft }),
+						...(pr.head === undefined
+							? undefined
+							: { headRepoFullName: pr.head.repo?.full_name ?? null }),
 					}
 					return [job]
 				})
@@ -835,6 +876,107 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 					),
 				)
 
+			const normalizeFileStatus = (status: string): PullRequestFile["status"] => {
+				switch (status) {
+					case "added":
+					case "modified":
+					case "removed":
+					case "renamed":
+					case "copied":
+					case "changed":
+					case "unchanged":
+						return status
+					default:
+						return "changed"
+				}
+			}
+
+			const fetchPullRequestFiles: VcsProviderClient["fetchPullRequestFiles"] = (
+				installation,
+				repo,
+				number,
+			) =>
+				client
+					.listPullRequestFiles(installation.externalInstallationId, repo.owner, repo.name, number)
+					.pipe(
+						Effect.map((files) =>
+							files.map(
+								(file): PullRequestFile => ({
+									path: file.filename,
+									previousPath: file.previous_filename ?? null,
+									status: normalizeFileStatus(file.status),
+									additions: file.additions,
+									deletions: file.deletions,
+									patch: file.patch ?? null,
+								}),
+							),
+						),
+						Effect.mapError(toVcsError),
+					)
+
+			// The check run first: it is what the PR's checks tab shows and it never
+			// fails on a bad line. The review carries the inline comments; if GitHub
+			// refuses one of them (a line outside the diff is a 422 for the whole
+			// review) the body is posted on its own rather than losing the review.
+			const publishPullRequestReview: VcsProviderClient["publishPullRequestReview"] = (
+				installation,
+				repo,
+				publication,
+			) =>
+				Effect.gen(function* () {
+					const checkRun = yield* client.createCheckRun(
+						installation.externalInstallationId,
+						repo.owner,
+						repo.name,
+						{
+							name: publication.checkName,
+							headSha: publication.headSha,
+							conclusion: publication.conclusion,
+							title: publication.title,
+							summary: publication.summary,
+							annotations: publication.annotations,
+						},
+					)
+					const wantsReview = publication.comments.length > 0 || publication.reviewBody !== null
+					if (!wantsReview) return { checkRunUrl: checkRun.html_url, reviewUrl: null }
+					const post = (comments: GithubReviewInput["comments"]) =>
+						client.createPullRequestReview(
+							installation.externalInstallationId,
+							repo.owner,
+							repo.name,
+							publication.number,
+							{
+								commitId: publication.headSha,
+								body: publication.reviewBody ?? "",
+								comments,
+							},
+						)
+					const review = yield* post(publication.comments).pipe(
+						Effect.catchTag("@maple/api/vcs/GithubAppError", (error) =>
+							error.status === 422 && publication.comments.length > 0
+								? Effect.annotateCurrentSpan(
+										"vcs.pull_request.review_comments_rejected",
+										true,
+									).pipe(
+										Effect.andThen(
+											post([]).pipe(
+												Effect.map((body) => ({
+													...body,
+													html_url: body.html_url ?? null,
+												})),
+											),
+										),
+									)
+								: Effect.fail(error),
+						),
+					)
+					yield* Effect.annotateCurrentSpan({
+						"vcs.pull_request.check_run_id": checkRun.id,
+						"vcs.pull_request.review_id": review.id,
+					})
+					return { checkRunUrl: checkRun.html_url, reviewUrl: review.html_url ?? null }
+				}).pipe(Effect.mapError(toVcsError))
+
 			const fetchCloneCredentials: VcsProviderClient["fetchCloneCredentials"] = (installation, repo) =>
 				client
 					.mintCloneCredentials(installation.externalInstallationId, repo.owner, repo.name)
@@ -849,6 +991,8 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 				fetchCommit,
 				fetchPullRequests,
 				fetchPullRequest,
+				fetchPullRequestFiles,
+				publishPullRequestReview,
 				searchCode,
 				fetchSourceFile,
 				resolveRef,

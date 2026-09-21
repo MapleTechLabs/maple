@@ -129,6 +129,10 @@ const NumericString = Schema.String.check(
 export const optionalNumberParam = (description: string) =>
 	Schema.optional(Schema.Union([Schema.Finite, NumericString])).annotate({ description })
 
+/** The required form: same acceptance of `"612"` as {@link optionalNumberParam}, no `undefined`. */
+export const requiredNumberParam = (description: string) =>
+	Schema.Union([Schema.Finite, NumericString]).annotate({ description })
+
 /**
  * The same, for a parameter whose values are bounded by a domain schema (the
  * request's own `RangeBound`/`CountBound`). Published as a raw number the bound

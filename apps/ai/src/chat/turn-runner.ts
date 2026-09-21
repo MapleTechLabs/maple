@@ -27,13 +27,15 @@ import { workerTelemetryConfig } from "@maple/infra/worker-telemetry"
 import { Cause, Effect, Layer, ManagedRuntime } from "effect"
 import type { ChatSession } from "./ChatSession"
 import type { ChatTurnEvent } from "./events"
-import { CLOSE_OUT_PROMPT } from "./prompts"
+import { CLOSE_OUT_PROMPT, PR_REVIEW_CLOSE_OUT_PROMPT } from "./prompts"
 import { makeProgressRecorder, parseToolInput } from "./progress"
 import {
 	investigationForSession,
-	isAutonomousInvestigationTurn,
+	isAutonomousTurn,
 	makeRunUsage,
+	prReviewForSession,
 	SUBMIT_DIAGNOSIS,
+	SUBMIT_REVIEW,
 } from "./tools"
 
 /**
@@ -133,6 +135,8 @@ const CHAT_TURN_FAILED = "Maple couldn't complete this response."
 const NO_DIAGNOSIS_MESSAGE = "Maple ended this investigation without a diagnosis."
 /** What the row records when the pass and its close-out both ended in prose or on an error. */
 const NO_DIAGNOSIS_ERROR = "no_diagnosis: the agent ended its pass without submitting a diagnosis; retry"
+const NO_REVIEW_MESSAGE = "Maple ended this review without a report."
+const NO_REVIEW_ERROR = "no_review: the agent ended its pass without submitting a review; retry"
 
 /** How much of one tool's output the close-out turn is shown. */
 const CLOSE_OUT_TOOL_OUTPUT_CHARS = 4_000
@@ -254,6 +258,7 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 		import("../mcp/dispatcher"),
 	])
 	const { InvestigationService } = await import("@maple/backend/services/errors/InvestigationService")
+	const { PrReviewService } = await import("@maple/backend/services/pr-review/PrReviewService")
 
 	const runtime = ManagedRuntime.make(
 		InvestigationServicesLive.pipe(
@@ -289,6 +294,7 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 		})
 
 	const investigationId = investigationForSession(input.sessionId)
+	const prReviewId = prReviewForSession(input.sessionId)
 
 	// Mirror the autonomous pass's tool calls onto the investigation row. Writes are chained so
 	// two heartbeats cannot land out of order, and so `drainProgress` has one promise to await
@@ -326,6 +332,7 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 
 	const program = Effect.gen(function* () {
 		const investigations = yield* InvestigationService
+		const reviews = yield* PrReviewService
 		const toolExecutor = yield* McpToolExecutor
 		const history = input.session.history()
 		const model = resolveTriageModel(input.env, {
@@ -342,7 +349,7 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 		const latest = spoken.at(-1)
 		const text = latest?.role === "user" ? latest.text : ""
 		const prior = latest?.role === "user" ? spoken.slice(0, -1) : spoken
-		const autonomous = isAutonomousInvestigationTurn(input.sessionId, tenant)
+		const autonomous = isAutonomousTurn(input.sessionId, tenant)
 		const holdsTurn = () => input.session.holdsTurn(input.messageId)
 		// An autonomous pass ends when the runner says so, not when a run does: a run that stopped
 		// in prose or died on a model error gets one close-out turn first, so its terminal is held
@@ -360,6 +367,7 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 				toolExecutor,
 				model,
 				submitDiagnosis: investigations.submitDiagnosis,
+				submitReview: reviews.submitReview,
 				...(turn.closeOut === true ? { closeOut: true } : undefined),
 				text: turn.text,
 				history: turn.history,
@@ -374,7 +382,8 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 						autonomous &&
 						event.type === "tool-call" &&
 						event.proposed !== true &&
-						event.name !== SUBMIT_DIAGNOSIS
+						event.name !== SUBMIT_DIAGNOSIS &&
+						event.name !== SUBMIT_REVIEW
 					) {
 						writeProgress(progress.step(event.name, parseToolInput(event.input), Date.now()))
 					}
@@ -397,7 +406,7 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 				Effect.catchCause((cause) =>
 					Cause.hasInterruptsOnly(cause)
 						? Effect.failCause(cause)
-						: Effect.logWarning("Investigation pass failed; closing it out").pipe(
+						: Effect.logWarning("Autonomous pass failed; closing it out").pipe(
 								Effect.annotateLogs({
 									sessionId: input.sessionId,
 									messageId: input.messageId,
@@ -405,7 +414,7 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 								}),
 								Effect.as<ChatRunOutcome>({
 									autonomous: true,
-									submittedDiagnosis: false,
+									submitted: false,
 									compactions: 0,
 								}),
 							),
@@ -421,19 +430,22 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 
 		const first = yield* recoverAutonomousFailure(run({ text, history: prior }))
 		observability.compactions = first.compactions
-		let submitted = first.submittedDiagnosis
+		let submitted = first.submitted
 		if (!submitted && holdsTurn()) {
 			held = undefined
 			const closeOut = yield* recoverAutonomousFailure(
 				run({
-					text: CLOSE_OUT_PROMPT,
+					text: prReviewId === undefined ? CLOSE_OUT_PROMPT : PR_REVIEW_CLOSE_OUT_PROMPT,
 					history: withToolTranscript(input.session.history()),
 					closeOut: true,
 				}),
 			)
 			observability.compactions = (observability.compactions ?? 0) + closeOut.compactions
-			submitted = closeOut.submittedDiagnosis
-			yield* Effect.annotateCurrentSpan("maple.investigation.closed_out", submitted)
+			submitted = closeOut.submitted
+			yield* Effect.annotateCurrentSpan(
+				prReviewId === undefined ? "maple.investigation.closed_out" : "maple.pr_review.closed_out",
+				submitted,
+			)
 		}
 
 		yield* drainProgress
@@ -449,6 +461,16 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 						),
 					)
 			}
+			if (!submitted && prReviewId !== undefined) {
+				observability.failureReason = "NoReview"
+				yield* reviews
+					.failReview(tenant.orgId, prReviewId, NO_REVIEW_ERROR)
+					.pipe(
+						Effect.catchCause((cause) =>
+							Effect.logError("Could not record the failed review", cause),
+						),
+					)
+			}
 			input.session.append(
 				submitted
 					? {
@@ -460,7 +482,7 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 							type: "turn-end",
 							messageId: input.messageId,
 							reason: "error",
-							error: NO_DIAGNOSIS_MESSAGE,
+							error: prReviewId === undefined ? NO_DIAGNOSIS_MESSAGE : NO_REVIEW_MESSAGE,
 						},
 			)
 			recordedTerminal = true

@@ -1,5 +1,8 @@
 import { Effect, Layer } from "effect"
-import { PullRequestEventSink } from "@maple/backend/services/integrations/vcs/PullRequestEventSink"
+import {
+	PullRequestEventSink,
+	type PullRequestEventHandler,
+} from "@maple/backend/services/integrations/vcs/PullRequestEventSink"
 import { IssueFixVerificationService } from "./IssueFixVerificationService"
 
 /**
@@ -12,8 +15,7 @@ import { IssueFixVerificationService } from "./IssueFixVerificationService"
  * did its VCS work must not be redelivered by GitHub because the issues side
  * had a bad minute; the failure is logged and the delivery stands.
  */
-export const PullRequestEventSinkLive = Layer.effect(
-	PullRequestEventSink,
+export const fixVerificationPullRequestHandler: PullRequestEventHandler<IssueFixVerificationService> =
 	Effect.gen(function* () {
 		const verification = yield* IssueFixVerificationService
 		return {
@@ -54,5 +56,6 @@ export const PullRequestEventSinkLive = Layer.effect(
 						),
 					),
 		}
-	}),
-)
+	})
+
+export const PullRequestEventSinkLive = Layer.effect(PullRequestEventSink, fixVerificationPullRequestHandler)

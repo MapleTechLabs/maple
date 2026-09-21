@@ -52,7 +52,13 @@ export const investigationIdFromChatSessionId = (sessionId: string): string | un
 	return tab.startsWith("inv-") ? tab.slice("inv-".length) : undefined
 }
 
-export const ChatMode = Schema.Literals(["default", "alert", "widget-fix", "investigate"])
+/** Recover the pull-request review id from a `pr-<id>` tab. `undefined` for other modes. */
+export const prReviewIdFromChatSessionId = (sessionId: string): string | undefined => {
+	const tab = tabIdFromChatSessionId(sessionId)
+	return tab.startsWith("pr-") ? tab.slice("pr-".length) : undefined
+}
+
+export const ChatMode = Schema.Literals(["default", "alert", "widget-fix", "investigate", "pr-review"])
 export type ChatMode = Schema.Schema.Type<typeof ChatMode>
 
 /** Mode is derived from the tab-id prefix, never sent by the client. */
@@ -61,6 +67,7 @@ export const chatModeFromSessionId = (sessionId: string): ChatMode => {
 	if (tab.startsWith("alert-")) return "alert"
 	if (tab.startsWith("widget-fix-")) return "widget-fix"
 	if (tab.startsWith("inv-")) return "investigate"
+	if (tab.startsWith("pr-")) return "pr-review"
 	return "default"
 }
 

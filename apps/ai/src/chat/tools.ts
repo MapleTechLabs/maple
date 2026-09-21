@@ -5,19 +5,25 @@
  * module's. Swapping the tool set — a read-only sub-agent, a mode with narrower reach — should not
  * touch control flow at all.
  */
-import { investigationIdFromChatSessionId } from "@maple/domain/chat-session"
+import { investigationIdFromChatSessionId, prReviewIdFromChatSessionId } from "@maple/domain/chat-session"
 import { evaluatePermission, type PermissionRuleset } from "@maple/domain/permission"
 import {
 	AiTriageSubmission,
 	InvestigationDataCorruptionError,
 	InvestigationNotFoundError,
 	InvestigationPersistenceError,
+	normalizePrReviewSubmission,
 	normalizeTriageSubmission,
+	PrReviewId,
+	PrReviewNotFoundError,
+	PrReviewPersistenceError,
+	PrReviewSubmission,
 	SubmitDiagnosisRequest,
+	SubmitPrReviewRequest,
 } from "@maple/domain/http"
 import { InvestigationId, UserId } from "@maple/domain/primitives"
 import type { RunBudgetHook, RunUsageDelta } from "@effect-agent/engine/RunOptions"
-import { Effect, Option, Schema } from "effect"
+import { Effect, type Layer, Option, Schema } from "effect"
 import { Tool, Toolkit } from "effect/unstable/ai"
 import type { McpToolExecutorApi } from "../mcp/dispatcher"
 import type { McpToolSurface } from "@maple/domain/mcp-manifest"
@@ -26,6 +32,7 @@ import { toolHandlersWithContent } from "../platform/genai-spans"
 import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
 
 const decodeInvestigationIdOption = Schema.decodeUnknownOption(InvestigationId)
+const decodePrReviewIdOption = Schema.decodeUnknownOption(PrReviewId)
 
 export type SubmitDiagnosis = (
 	orgId: TenantContext["orgId"],
@@ -46,6 +53,30 @@ export type SubmitDiagnosis = (
 const INTERNAL_SERVICE_USER_ID = Schema.decodeSync(UserId)("internal-service")
 
 export const SUBMIT_DIAGNOSIS = "submit_diagnosis"
+export const SUBMIT_REVIEW = "submit_review"
+
+export type SubmitReview = (
+	orgId: TenantContext["orgId"],
+	reviewId: PrReviewId,
+	request: SubmitPrReviewRequest,
+) => Effect.Effect<unknown, PrReviewPersistenceError | PrReviewNotFoundError>
+
+/**
+ * The tool a run answers through, and whether the run must answer through it.
+ *
+ * `submitted` is read by the turn runner after the run: a completion whose tool never landed is a
+ * pass the runner closes out itself, because the engine is never told the tool is required.
+ */
+export interface RunCompletion {
+	readonly tool: string
+	readonly toolkit: Toolkit.Any
+	readonly layer: Layer.Layer<never>
+	readonly autonomous: boolean
+	readonly submitted: () => boolean
+}
+
+/** A completion with its handlers exposed, which is what a test drives directly. */
+export type RunCompletionWithHandlers<H> = RunCompletion & { readonly handlers: H }
 
 /**
  * Token totals for the run so far.
@@ -114,6 +145,101 @@ export const investigationForSession = (sessionId: string): InvestigationId | un
 export const isAutonomousInvestigationTurn = (sessionId: string, tenant: TenantContext): boolean =>
 	investigationForSession(sessionId) !== undefined && tenant.userId === INTERNAL_SERVICE_USER_ID
 
+/** The pull request review a session belongs to, or `undefined` for any other conversation. */
+export const prReviewForSession = (sessionId: string): PrReviewId | undefined => {
+	const rawId = prReviewIdFromChatSessionId(sessionId)
+	if (!rawId) return undefined
+	return Option.getOrUndefined(decodePrReviewIdOption(rawId))
+}
+
+/** A review's own pass, claimed under the internal actor; it must end on `submit_review`. */
+export const isAutonomousReviewTurn = (sessionId: string, tenant: TenantContext): boolean =>
+	prReviewForSession(sessionId) !== undefined && tenant.userId === INTERNAL_SERVICE_USER_ID
+
+/** Any machine-started pass the runner closes out itself: an investigation's or a review's. */
+export const isAutonomousTurn = (sessionId: string, tenant: TenantContext): boolean =>
+	isAutonomousInvestigationTurn(sessionId, tenant) || isAutonomousReviewTurn(sessionId, tenant)
+
+/** `parameters` is the lenient {@link PrReviewSubmission}, for the reason `diagnosisTool`'s is. */
+export const reviewTool = Tool.make(SUBMIT_REVIEW, {
+	description:
+		"Record your observability review of THIS pull request. Call it exactly once, after you have " +
+		"read every hunk that adds code, with your verdict, coverage and line-anchored findings. It " +
+		"persists the review and posts it to the pull request. After calling it, stop.",
+	parameters: PrReviewSubmission,
+	success: Schema.String,
+	failure: MapleToolFailure,
+})
+
+/**
+ * The `submit_review` tool for a review session (`"<orgId>:pr-<id>"`), built like
+ * {@link buildDiagnosisCompletion}: the review id rides on the session, so the agent never chooses
+ * which pull request its report is posted to.
+ */
+export const buildReviewCompletion = (
+	sessionId: string,
+	tenant: TenantContext,
+	submitReview: SubmitReview,
+	usage: RunUsage,
+	modelName: string,
+	partial = false,
+	sessionAttributes?: Readonly<Record<string, string>>,
+) => {
+	const reviewId = prReviewForSession(sessionId)
+	if (reviewId === undefined) return undefined
+	const toolkit = Toolkit.make(reviewTool)
+	let submitted = false
+	const handlers = toolHandlersWithContent(
+		toolkit,
+		{
+			[SUBMIT_REVIEW]: (submission: PrReviewSubmission) =>
+				Effect.suspend(() => {
+					const { report, filled, droppedFindings } = normalizePrReviewSubmission(submission)
+					return submitReview(
+						tenant.orgId,
+						reviewId,
+						new SubmitPrReviewRequest({
+							report,
+							model: modelName,
+							inputTokens: usage.input,
+							outputTokens: usage.output,
+							...(partial ? { partial: true } : undefined),
+						}),
+					).pipe(
+						Effect.tap(() =>
+							Effect.annotateCurrentSpan({
+								"maple.pr_review.filled_fields": filled.join(","),
+								"maple.pr_review.filled_count": filled.length,
+								"maple.pr_review.dropped_findings": droppedFindings,
+								"maple.pr_review.findings": report.findings.length,
+								"maple.pr_review.verdict": report.verdict,
+							}),
+						),
+					)
+				}).pipe(
+					Effect.tap(() => Effect.sync(() => (submitted = true))),
+					Effect.as("Review recorded."),
+					Effect.catchCause((cause) =>
+						Effect.fail(
+							new MapleToolFailure({
+								message: `${SUBMIT_REVIEW} failed: ${summarizeToolFailure(cause)}`,
+							}),
+						),
+					),
+				),
+		},
+		sessionAttributes,
+	)
+	return {
+		tool: SUBMIT_REVIEW,
+		toolkit,
+		layer: handlers.layer,
+		handlers: handlers.handlers,
+		autonomous: isAutonomousReviewTurn(sessionId, tenant),
+		submitted: () => submitted,
+	} satisfies RunCompletionWithHandlers<typeof handlers.handlers>
+}
+
 /**
  * The `submit_diagnosis` tool for an investigate-mode session (`"<orgId>:inv-<id>"`).
  *
@@ -145,9 +271,9 @@ export const buildDiagnosisCompletion = (
 	if (investigationId === undefined) return undefined
 	const toolkit = Toolkit.make(diagnosisTool)
 	let submitted = false
-	return {
+	const handlers = toolHandlersWithContent(
 		toolkit,
-		...toolHandlersWithContent(toolkit, {
+		{
 			[SUBMIT_DIAGNOSIS]: (submission: AiTriageSubmission) =>
 				Effect.suspend(() => {
 					const { report, filled } = normalizeTriageSubmission(submission)
@@ -184,10 +310,17 @@ export const buildDiagnosisCompletion = (
 						),
 					),
 				),
-		}, sessionAttributes),
+		},
+		sessionAttributes,
+	)
+	return {
+		tool: SUBMIT_DIAGNOSIS,
+		toolkit,
+		layer: handlers.layer,
+		handlers: handlers.handlers,
 		autonomous: isAutonomousInvestigationTurn(sessionId, tenant),
 		submitted: () => submitted,
-	}
+	} satisfies RunCompletionWithHandlers<typeof handlers.handlers>
 }
 
 /**
