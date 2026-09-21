@@ -43,7 +43,7 @@ import * as Cloudflare from "alchemy/Cloudflare"
 import { Effect, Layer, Ref, Scope } from "effect"
 import { HttpRouter } from "effect/unstable/http"
 import { resolveConnectorConfig, socketConnectors, type IngressConnector } from "./config.ts"
-import { inboundHandlerLayer } from "./inbound.ts"
+import { InboundHandler } from "./inbound.ts"
 import { connectorConfigEnv } from "./resources/env.ts"
 import { connectorWebhookRouter } from "./routes/webhook.ts"
 import { ConnectorRelayLive, ConnectorRelayObject } from "./relay/ConnectorRelay.ts"
@@ -171,7 +171,7 @@ export default ChatBot.make(
 				const scope = yield* Scope.make()
 				return yield* HttpRouter.toHttpEffect(
 					connectorWebhookRouter(env).pipe(
-						Layer.provideMerge(inboundHandlerLayer(env)),
+						Layer.provideMerge(InboundHandler.layer(env)),
 						Layer.provideMerge(HttpRouter.layer),
 					),
 				).pipe(Scope.provide(scope))

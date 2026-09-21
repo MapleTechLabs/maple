@@ -9,12 +9,15 @@ import { describe, expect, it } from "@effect/vitest"
 import {
 	decodeChatEventPayload,
 	encodeChatEventPayload,
+	makeChatSessionId,
 	type ChatEvent,
 	type ChatEventInput,
 } from "@maple/domain/chat-session"
 import type { ChatSessionStub } from "@maple/domain/chat-session-stub"
 import { Effect, Stream } from "effect"
 import { chatTurnEvents, ChatSessionUnreachable } from "./events.ts"
+
+const SESSION_ID = makeChatSessionId("org_1", "bot-testchat-c1")
 
 const event = (seq: number, input: ChatEventInput): ChatEvent =>
 	decodeChatEventPayload(encodeChatEventPayload(input), seq)
@@ -67,7 +70,7 @@ describe("chatTurnEvents", () => {
 							event(3, { type: "turn-end", messageId: "a1", reason: "stop" }),
 						],
 					]),
-					"org_1:bot-testchat-c1",
+					SESSION_ID,
 					0,
 				).pipe(Stream.takeUntil((next) => next.type === "turn-end")),
 			)
@@ -89,7 +92,7 @@ describe("chatTurnEvents", () => {
 			}
 
 			const events = yield* Stream.runCollect(
-				chatTurnEvents(session, "org_1:bot-testchat-c1", 0).pipe(
+				chatTurnEvents(session, SESSION_ID, 0).pipe(
 					Stream.takeUntil((next) => next.type === "turn-end"),
 				),
 			)
@@ -105,9 +108,7 @@ describe("chatTurnEvents", () => {
 				subscribe: () => Promise.reject(new Error("no such object")),
 			}
 
-			const error = yield* Effect.flip(
-				Stream.runCollect(chatTurnEvents(session, "org_1:bot-testchat-c1", 0)),
-			)
+			const error = yield* Effect.flip(Stream.runCollect(chatTurnEvents(session, SESSION_ID, 0)))
 
 			expect(error).toBeInstanceOf(ChatSessionUnreachable)
 		}),

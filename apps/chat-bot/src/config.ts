@@ -51,5 +51,4 @@ export const resolveConnectorConfig = (
 /** The connectors whose events arrive over a long-lived socket rather than an HTTP request. */
 export const socketConnectors = (
 	registry: ReadonlyArray<IngressConnector>,
-): ReadonlyArray<IngressConnector> =>
-	registry.filter((connector) => connector.ingress.kind === "socket")
+): ReadonlyArray<IngressConnector> => registry.filter((connector) => connector.ingress.kind === "socket")

@@ -6,12 +6,7 @@
  * real vendor would be one more place a customer adding a connector has to read,
  * and the vendor-isolation guard would reject it anyway.
  */
-import type {
-	ConnectorConfig,
-	InboundEvent,
-	InboundMessage,
-	SocketStep,
-} from "@maple/chat-platform"
+import type { ConnectorConfig, InboundEvent, InboundMessage, SocketStep } from "@maple/chat-platform"
 import type { IngressConnector } from "./config.ts"
 import { ConnectorIngressError, chatConnectorId, socketIngress } from "@maple/chat-platform"
 import { Effect, Schema } from "effect"
@@ -56,7 +51,9 @@ export const testSocketConnector = (): IngressConnector => ({
 })
 
 export const testWebhookConnector = (
-	handle: (config: ConnectorConfig) => Effect.Effect<
+	handle: (
+		config: ConnectorConfig,
+	) => Effect.Effect<
 		{ response: HttpServerResponse.HttpServerResponse; events: ReadonlyArray<InboundEvent> },
 		ConnectorIngressError
 	> = () => Effect.succeed({ response: HttpServerResponse.text("ok"), events: [] }),

@@ -26,7 +26,14 @@ export interface InboundRelay {
 
 export class InboundHandler extends Context.Service<InboundHandler, InboundHandlerApi>()(
 	"@maple/chat-bot/InboundHandler",
-) {}
+) {
+	/** The handler this Worker runs: over the relay objects its own env binds. */
+	static readonly layer = (env: Record<string, unknown>): Layer.Layer<InboundHandler> =>
+		Layer.succeed(
+			InboundHandler,
+			InboundHandler.of(inboundHandler({ forEvent: (event) => connectorRelayStub(env, event) })),
+		)
+}
 
 /**
  * The handler over one way of reaching the relay.
@@ -60,7 +67,3 @@ export const inboundHandler = (relay: InboundRelay): InboundHandlerApi => ({
 		}).pipe(Effect.withSpan("chat_bot.inbound_event", { attributes }))
 	},
 })
-
-/** The handler this Worker runs: the relay objects its own env binds. */
-export const inboundHandlerLayer = (env: Record<string, unknown>): Layer.Layer<InboundHandler> =>
-	Layer.succeed(InboundHandler, inboundHandler({ forEvent: (event) => connectorRelayStub(env, event) }))

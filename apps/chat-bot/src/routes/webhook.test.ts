@@ -143,11 +143,7 @@ describe("the generic connector webhook route", () => {
 				events: [testMessage, second],
 			}),
 		)
-		const { received } = await call(
-			[connector],
-			configured,
-			post("/connectors/testhook/webhook"),
-		)
+		const { received } = await call([connector], configured, post("/connectors/testhook/webhook"))
 		expect(received.map((event) => (event.type === "message" ? event.messageId : ""))).toEqual([
 			"message-1",
 			"message-2",
@@ -157,7 +153,12 @@ describe("the generic connector webhook route", () => {
 	it("dispatches to the right connector when several are registered", async () => {
 		const other = { ...testWebhookConnector(), id: chatConnectorId("otherhook") }
 		const { response } = await call(
-			[other, testWebhookConnector(() => Effect.succeed({ response: HttpServerResponse.text("ok", { status: 202 }), events: [] }))],
+			[
+				other,
+				testWebhookConnector(() =>
+					Effect.succeed({ response: HttpServerResponse.text("ok", { status: 202 }), events: [] }),
+				),
+			],
 			configured,
 			post("/connectors/testhook/webhook"),
 		)

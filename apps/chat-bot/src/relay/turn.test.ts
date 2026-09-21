@@ -18,6 +18,7 @@ import type { ChatSessionStub } from "@maple/domain/chat-session-stub"
 import { ChatConnectorId, OrgId } from "@maple/domain/primitives"
 import {
 	chatConnectorId,
+	ChatOutboundError,
 	type ChatBlock,
 	type ChatChartRef,
 	type ChatMessageRef,
@@ -27,7 +28,7 @@ import {
 	type InboundMessage,
 	type InboundWorkspaceRemoved,
 } from "@maple/chat-platform"
-import { Duration, Effect, Option, Schema } from "effect"
+import { Context, Duration, Effect, Logger, Option, References, Schema } from "effect"
 import { relayInboundEvent, type RelayPorts } from "./turn.ts"
 
 const TESTCHAT = chatConnectorId("testchat")
@@ -392,6 +393,44 @@ describe("relaying a mention", () => {
 			expect(notices(blocksOf(platform.calls))).toEqual([
 				"Maple's agent can't be reached from here right now.",
 			])
+		}),
+	)
+
+	it.effect("keeps the conversation out of the log when the platform refuses the turn", () =>
+		Effect.gen(function* () {
+			const logs: Array<string> = []
+			const logger = Logger.make(({ fiber, message }) => {
+				logs.push(
+					JSON.stringify({ message, annotations: fiber.getRef(References.CurrentLogAnnotations) }),
+				)
+			})
+			const platform = chat()
+			// The failure carries the request it failed on — and that request's body is the answer
+			// being posted, or the thread title, which is the question that was asked.
+			const refusing: ChatOutbound = {
+				...platform.outbound,
+				transport: Effect.map(platform.outbound.transport, (transport) => ({
+					...transport,
+					conversation: () =>
+						Effect.fail(
+							new ChatOutboundError({
+								message: "the platform answered 403",
+								connectorId: TESTCHAT,
+								operation: "thread",
+								cause: { body: `{"name":"${mention.text}"}` },
+							}),
+						),
+				})),
+			}
+			const deployment = host(refusing, session([]).stub)
+
+			yield* relayInboundEvent(mention, deployment.ports).pipe(
+				Effect.provideContext(Context.make(Logger.CurrentLoggers, new Set([logger]))),
+			)
+
+			expect(logs.join("")).not.toContain(mention.text)
+			// The failure is still reported — by what it was, not by what it carried.
+			expect(logs.join("")).toContain("ChatOutboundError")
 		}),
 	)
 

@@ -16,6 +16,7 @@ import { workerTelemetryConfig } from "@maple/infra/worker-telemetry"
 import { workerEnvLayer } from "@maple/infra/worker-runtime"
 import { Effect, Layer, Option } from "effect"
 import { FetchHttpClient, HttpClient } from "effect/unstable/http"
+import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import { chatChartImageUrl } from "@maple/backend/services/chat/chat-chart"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { layerPg } from "@maple/backend/platform/DatabasePgLive"
@@ -44,6 +45,9 @@ const setting = (env: Record<string, unknown>, name: string): string | undefined
 }
 
 const APP_BASE_URL_FALLBACK = "https://app.maple.dev"
+
+const appBaseUrl = (env: Record<string, unknown>): string =>
+	setting(env, "MAPLE_APP_BASE_URL") ?? APP_BASE_URL_FALLBACK
 
 export interface RelayHost {
 	readonly env: Record<string, unknown>
@@ -77,7 +81,10 @@ const ports = (
 			// A database that cannot be reached is not a workspace that is not linked: say nothing
 			// rather than tell a linked workspace it is not connected to Maple.
 			Effect.catchCause((cause) =>
-				Effect.logError("Chat workspace could not be resolved", cause).pipe(Effect.as(Option.none())),
+				Effect.logError("Chat workspace could not be resolved").pipe(
+					Effect.annotateLogs({ "error.type": summarizeCause(cause) }),
+					Effect.as(Option.none()),
+				),
 			),
 		),
 	forgetWorkspace: (connectorId, workspaceId) =>
@@ -92,13 +99,17 @@ const ports = (
 						)
 					: Effect.void,
 			),
-			Effect.catchCause((cause) => Effect.logError("Chat workspace could not be unlinked", cause)),
+			Effect.catchCause((cause) =>
+				Effect.logError("Chat workspace could not be unlinked").pipe(
+					Effect.annotateLogs({ "error.type": summarizeCause(cause) }),
+				),
+			),
 		),
 	chatSession: (sessionId) => chatSessionStub(host.env, sessionId),
-	appBaseUrl: setting(host.env, "MAPLE_APP_BASE_URL") ?? APP_BASE_URL_FALLBACK,
+	appBaseUrl: appBaseUrl(host.env),
 	chartImageUrl: (orgId: OrgId, ref) =>
 		chatChartImageUrl({
-			appBaseUrl: setting(host.env, "MAPLE_APP_BASE_URL") ?? APP_BASE_URL_FALLBACK,
+			appBaseUrl: appBaseUrl(host.env),
 			hmacKey: setting(host.env, "MAPLE_SHARE_TOKEN_HMAC_KEY") ?? null,
 			orgId,
 			sessionId: ref.sessionId,

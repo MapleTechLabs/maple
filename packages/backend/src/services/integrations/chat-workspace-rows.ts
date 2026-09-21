@@ -29,8 +29,10 @@ const decodeStored = Schema.decodeUnknownEffect(
 	}),
 )
 
-const persistenceError = (error: DatabaseError | { readonly message: string }) =>
-	new IntegrationsPersistenceError({ message: error.message })
+const persistenceError = (error: DatabaseError) =>
+	new IntegrationsPersistenceError({ message: `${error._tag}: ${error.message}` })
+
+const unreadable = (message: string) => new IntegrationsPersistenceError({ message })
 
 /**
  * The org a workspace belongs to, or `None` when nothing has linked it.
@@ -62,9 +64,7 @@ export const resolveChatWorkspace = (
 		const row = rows[0]
 		if (row === undefined) return Option.none<ChatWorkspaceResolution>()
 		const stored = yield* decodeStored(row).pipe(
-			Effect.mapError((error) =>
-				persistenceError({ message: `Stored chat workspace is unreadable: ${error.message}` }),
-			),
+			Effect.mapError((error) => unreadable(`Stored chat workspace is unreadable: ${error.message}`)),
 		)
 		return Option.some({
 			orgId: stored.orgId,

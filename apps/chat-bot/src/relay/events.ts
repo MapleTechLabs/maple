@@ -8,7 +8,7 @@
  * is rendering ends; replayed events it has already folded are identified by `seq` and change
  * nothing.
  */
-import { decodeChatEvent, type ChatEvent } from "@maple/domain/chat-session"
+import { ChatSessionId, decodeChatEvent, type ChatEvent } from "@maple/domain/chat-session"
 import type { ChatSessionStub } from "@maple/domain/chat-session-stub"
 import { Effect, Schema, Stream } from "effect"
 
@@ -16,7 +16,7 @@ import { Effect, Schema, Stream } from "effect"
 export class ChatSessionUnreachable extends Schema.TaggedError<ChatSessionUnreachable>()(
 	"@maple/chat-bot/ChatSessionUnreachable",
 	{
-		sessionId: Schema.String,
+		sessionId: ChatSessionId,
 		message: Schema.String,
 		cause: Schema.optionalKey(Schema.Defect()),
 	},
@@ -44,24 +44,24 @@ const eventOfFrame = (frame: string): ReadonlyArray<ChatEvent> => {
 	return event === undefined ? [] : [event]
 }
 
-const unreachable = (sessionId: string, message: string) => (cause: unknown) =>
+export const sessionUnreachable = (sessionId: ChatSessionId, message: string) => (cause: unknown) =>
 	new ChatSessionUnreachable({ sessionId, message, cause })
 
 /** One connection's worth of events, from `cursor`. */
 const connection = (
 	stub: ChatSessionStub,
-	sessionId: string,
+	sessionId: ChatSessionId,
 	cursor: number,
 ): Stream.Stream<ChatEvent, ChatSessionUnreachable> =>
 	Stream.unwrap(
 		Effect.tryPromise({
 			try: () => stub.subscribe(cursor),
-			catch: unreachable(sessionId, "The chat session did not accept a subscription"),
+			catch: sessionUnreachable(sessionId, "The chat session did not accept a subscription"),
 		}).pipe(
 			Effect.map((body) =>
 				Stream.fromReadableStream({
 					evaluate: () => body,
-					onError: unreachable(sessionId, "The chat session's event stream failed"),
+					onError: sessionUnreachable(sessionId, "The chat session's event stream failed"),
 				}).pipe(
 					Stream.decodeText(),
 					// The buffer is the tail of a frame that spanned two chunks; whole frames go on.
@@ -80,7 +80,7 @@ const connection = (
 /** Every event from `cursor` on, across as many connections as the turn takes. */
 export const chatTurnEvents = (
 	stub: ChatSessionStub,
-	sessionId: string,
+	sessionId: ChatSessionId,
 	cursor: number,
 ): Stream.Stream<ChatEvent, ChatSessionUnreachable> => {
 	const fromCursor = (from: number): Stream.Stream<ChatEvent, ChatSessionUnreachable> => {

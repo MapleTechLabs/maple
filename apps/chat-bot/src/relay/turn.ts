@@ -22,11 +22,12 @@ import {
 	type InboundMessage,
 } from "@maple/chat-platform"
 import { wrapChatContext } from "@maple/domain/chat-preamble"
-import { connectorSessionId, connectorTurnTenant } from "@maple/domain/chat-session"
+import { connectorSessionId, connectorTurnTenant, type ChatSessionId } from "@maple/domain/chat-session"
 import type { ChatSessionStub } from "@maple/domain/chat-session-stub"
 import { ChatConnectorId, ExternalUserId, type OrgId } from "@maple/domain/primitives"
 import { Duration, Effect, Exit, Option, Schema } from "effect"
-import { chatTurnEvents } from "./events.ts"
+import { summarizeCause } from "@maple/backend/platform/describe-cause"
+import { chatTurnEvents, sessionUnreachable } from "./events.ts"
 
 /** The org behind a workspace, as the host Worker answers it. */
 export interface RelayWorkspace {
@@ -44,7 +45,7 @@ export interface RelayPorts<R = never> {
 	/** Drop the link for a workspace the bot was removed from. */
 	readonly forgetWorkspace: (connector: ChatConnectorId, workspaceId: string) => Effect.Effect<void>
 	/** The conversation's Durable Object, or `undefined` where this deployment has no agent bound. */
-	readonly chatSession: (sessionId: string) => ChatSessionStub | undefined
+	readonly chatSession: (sessionId: ChatSessionId) => ChatSessionStub | undefined
 	/** Base of the Maple web app, for the links a reply carries. */
 	readonly appBaseUrl: string
 	/** A signed image for one chart in a reply, or `null` when this deployment cannot sign one. */
@@ -143,25 +144,29 @@ const relayMessage = Effect.fn("chat_bot.relay_turn")(function* <R>(
 		return yield* say(transport, conversation.target, UNAVAILABLE_NOTICE)
 	}
 
-	const claimed = yield* Effect.tryPromise(() =>
-		session.beginTurn({
-			sessionId,
-			messageId: crypto.randomUUID(),
-			text: turnText(message),
-			tenant: connectorTurnTenant(orgId),
-			origin: {
-				kind: "connector",
-				connectorId: message.connector,
-				workspaceId: message.workspaceId,
-				externalUserId: author.value,
-				displayName: message.author.displayName,
-			},
-		}),
-	).pipe(Effect.exit)
+	const claimed = yield* Effect.tryPromise({
+		catch: sessionUnreachable(sessionId, "The chat session did not accept a turn"),
+		try: () =>
+			session.beginTurn({
+				sessionId,
+				messageId: crypto.randomUUID(),
+				text: turnText(message),
+				tenant: connectorTurnTenant(orgId),
+				origin: {
+					kind: "connector",
+					connectorId: message.connector,
+					workspaceId: message.workspaceId,
+					externalUserId: author.value,
+					displayName: message.author.displayName,
+				},
+			}),
+	}).pipe(Effect.exit)
 	// A session that cannot be reached at all, as opposed to one that answered. Silence is the wrong
 	// reply to either — somebody asked a question.
 	if (Exit.isFailure(claimed)) {
-		yield* Effect.logError("A chat turn could not be claimed", claimed.cause)
+		yield* Effect.logError("A chat turn could not be claimed").pipe(
+			Effect.annotateLogs({ "error.type": summarizeCause(claimed.cause) }),
+		)
 		yield* Effect.annotateCurrentSpan({ "maple.chat.relay": "unreachable" })
 		return yield* say(transport, conversation.target, UNAVAILABLE_NOTICE)
 	}
@@ -202,31 +207,42 @@ const acknowledgeAction = Effect.fnUntraced(function* <R>(action: InboundAction,
 })
 
 /**
+ * A switch rather than a chain of ternaries: an event kind added to the contract has to be answered
+ * here rather than quietly taking the last branch. The error channel is erased because every
+ * failure is caught below — nothing above this can do anything with one.
+ */
+const relayed = <R>(event: InboundEvent, ports: RelayPorts<R>): Effect.Effect<void, unknown, R> => {
+	switch (event.type) {
+		case "message":
+			return relayMessage(event, ports)
+		case "action":
+			return acknowledgeAction(event, ports)
+		case "workspace-removed":
+			// Unlink it and say nothing: there is nobody left in there to read a reply.
+			return ports.forgetWorkspace(event.connector, event.workspaceId)
+	}
+}
+
+/**
  * Everything one inbound event causes, with nothing left for the caller to handle.
  *
- * A failure here reaches no user and no retry — the platform has moved on — so it is logged
- * against the connector and the workspace, and never the conversation.
+ * A failure here reaches no user and no retry — the platform has moved on — so it is logged against
+ * the connector and the workspace, and never the conversation. The cause is SUMMARIZED rather than
+ * rendered: an outbound failure carries the HTTP request it failed on, whose body is the answer
+ * being posted and whose thread title is the question that was asked.
  */
 export const relayInboundEvent = <R>(
 	event: InboundEvent,
 	ports: RelayPorts<R>,
-): Effect.Effect<void, never, R> => {
-	const relayed =
-		event.type === "message"
-			? relayMessage(event, ports)
-			: event.type === "action"
-				? acknowledgeAction(event, ports)
-				: // The bot is out of the workspace: unlink it, and say nothing — there is nobody left
-					// in there to read a reply.
-					ports.forgetWorkspace(event.connector, event.workspaceId)
-	return relayed.pipe(
+): Effect.Effect<void, never, R> =>
+	relayed(event, ports).pipe(
 		Effect.catchCause((cause) =>
-			Effect.logError("Chat connector event could not be relayed", cause).pipe(
+			Effect.logError("Chat connector event could not be relayed").pipe(
 				Effect.annotateLogs({
 					"maple.chat.connector": event.connector,
 					"maple.chat.workspace_id": event.workspaceId,
+					"error.type": summarizeCause(cause),
 				}),
 			),
 		),
 	)
-}

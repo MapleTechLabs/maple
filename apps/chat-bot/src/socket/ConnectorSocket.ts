@@ -40,7 +40,7 @@ import * as Cloudflare from "alchemy/Cloudflare"
 import { Effect, Layer } from "effect"
 import { FetchHttpClient } from "effect/unstable/http"
 import { resolveConnectorConfig, type IngressConnector } from "../config.ts"
-import { inboundHandlerLayer } from "../inbound.ts"
+import { InboundHandler } from "../inbound.ts"
 import { applyStep, reconnectDelayMs } from "./driver.ts"
 
 /** What this object reads off its Durable Object state. */
@@ -102,7 +102,7 @@ const NORMAL_CLOSE = 1_000
 
 /** The services one step needs. Rebuilt per step, and both are a value each. */
 const stepLayer = (env: Record<string, unknown>) =>
-	Layer.mergeAll(FetchHttpClient.layer, inboundHandlerLayer(env))
+	Layer.mergeAll(FetchHttpClient.layer, InboundHandler.layer(env))
 
 /**
  * The frame, if it is one this host can carry.
