@@ -3,8 +3,9 @@ import { HttpTaggedError } from "./error-policy"
 
 /**
  * Who performed an audited action. `user` is a dashboard session, `api_key` a
- * v1/v2 public-API credential, `agent` a registered LLM agent acting over MCP,
- * and `system` Maple itself (crons, sweeps, lifecycle automation).
+ * v1/v2 public-API credential, `agent` a registered LLM agent acting over MCP
+ * or the agent answering for a linked chat platform, and `system` Maple itself
+ * (crons, sweeps, lifecycle automation, its own unattended passes).
  */
 export const AuditActorType = Schema.Literals(["user", "api_key", "agent", "system"]).annotate({
 	identifier: "@maple/AuditActorType",
@@ -12,8 +13,19 @@ export const AuditActorType = Schema.Literals(["user", "api_key", "agent", "syst
 })
 export type AuditActorType = Schema.Schema.Type<typeof AuditActorType>
 
-/** Which surface the audited request arrived through. */
-export const AuditLogSource = Schema.Literals(["dashboard", "api", "mcp", "system"]).annotate({
+/**
+ * Which surface the audited request arrived through. `chat_platform` is a chat
+ * platform Maple answers in: the person who asked holds an identity of that
+ * platform's, not a Maple one, so the entry names the connector's agent actor
+ * and carries the external identity as metadata.
+ */
+export const AuditLogSource = Schema.Literals([
+	"dashboard",
+	"api",
+	"mcp",
+	"chat_platform",
+	"system",
+]).annotate({
 	identifier: "@maple/AuditLogSource",
 	title: "Audit Log Source",
 })

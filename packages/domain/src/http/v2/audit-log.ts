@@ -13,13 +13,13 @@ export const AuditLogEntryPublicId = PublicId(PublicIdPrefixes.auditLogEntry, Au
 
 const actorTypeField = AuditActorType.annotate({
 	description:
-		"Who performed the action: `user` (a dashboard session), `api_key` (a public-API credential), `agent` (a registered LLM agent acting over MCP), or `system` (Maple automation).",
+		"Who performed the action: `user` (a dashboard session), `api_key` (a public-API credential), `agent` (a registered LLM agent acting over MCP, or the agent answering for a linked chat platform), or `system` (Maple automation).",
 	examples: ["user"],
 })
 
 const sourceField = AuditLogSource.annotate({
 	description:
-		"The surface the request arrived through: `dashboard`, `api` (the public v1/v2 API), `mcp`, or `system`.",
+		"The surface the request arrived through: `dashboard`, `api` (the public v1/v2 API), `mcp`, `chat_platform` (a chat platform Maple answers in — the entry's metadata carries the external identity that asked), or `system`.",
 	examples: ["dashboard"],
 })
 
@@ -242,6 +242,6 @@ export class V2AuditLogApiGroup extends HttpApiGroup.make("auditLog")
 		OpenApi.annotations({
 			title: "Audit Log",
 			description:
-				"The organization's append-only audit trail — allowed and denied actions performed through the dashboard, the public API, and MCP, attributed to the user, API key, or agent that performed them, with before/after diffs for updates. Reading it requires organization-administrator access (or the `audit_log:read` scope for API keys).",
+				"The organization's append-only audit trail — allowed and denied actions performed through the dashboard, the public API, MCP, and any linked chat platform, attributed to the user, API key, or agent that performed them, with before/after diffs for updates. Reading it requires organization-administrator access (or the `audit_log:read` scope for API keys).",
 		}),
 	) {}

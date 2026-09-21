@@ -2,6 +2,8 @@ import { Context, Effect } from "effect"
 import type { HttpServerRequest, HttpServerResponse } from "effect/unstable/http"
 import type { HttpApiEndpoint, HttpApiGroup } from "effect/unstable/httpapi"
 import { AuditedRead, type AuditLogSource } from "@maple/domain/http"
+import type { ChatTurnOrigin } from "@maple/domain/chat-session"
+import { chatConnectorAgentName } from "@maple/domain/system-agents"
 import type { ActorId, OrgId, UserId } from "@maple/domain/primitives"
 import type { McpToolSurface } from "@maple/domain/mcp-manifest"
 import type { AuditActorInfo } from "@maple/backend/services/auth/audit-actor"
@@ -40,11 +42,36 @@ export interface AuditAttribution {
 	readonly source: AuditLogSource
 }
 
+/** Bound on one forensic origin field — a platform id or a display name, not a payload. */
+const MAX_ORIGIN_FIELD_CHARS = 200
+
+const clip = (value: string): string =>
+	value.length > MAX_ORIGIN_FIELD_CHARS ? `${value.slice(0, MAX_ORIGIN_FIELD_CHARS)}…` : value
+
+/**
+ * Who was behind a chat-platform turn. The external identity answers the
+ * question an auditor asks of such an entry — which person, in which workspace
+ * — and it is forensic context, never an identity Maple resolves anything by.
+ */
+const originMetadata = (origin: ChatTurnOrigin | undefined) =>
+	origin?.kind === "connector"
+		? {
+				connector: clip(origin.connectorId),
+				workspace_id: clip(origin.workspaceId),
+				external_user_id: clip(origin.externalUserId),
+				display_name: clip(origin.displayName),
+			}
+		: undefined
+
 /**
  * Attribute an action performed under `tenant`. The credential and surface
  * come from the auth layer's `CurrentAuditActor` when one set it; an agent
  * tenant (pinned `actorId`) is recorded as the agent acting on the user's
  * behalf; nothing set means a dashboard session, never a guessed credential.
+ *
+ * An agent turn is attributed by its origin instead, because who acted is not
+ * something the surface it arrived on can answer: Maple's own unattended pass
+ * is `system`, and a chat-platform turn is the connector's agent actor.
  */
 /** The tenant facts attribution needs; both `TenantContext` and `TenantSchema` satisfy it. */
 export interface AuditTenant {
@@ -52,10 +79,27 @@ export interface AuditTenant {
 	readonly userId: UserId
 	readonly actorId?: ActorId | undefined
 	readonly mcpClientName?: string | undefined
+	readonly turnOrigin?: ChatTurnOrigin | undefined
 }
 
 export const auditAttribution = (tenant: AuditTenant, info: AuditActorInfo | undefined): AuditAttribution => {
-	if (info?.type === "system") return { actor: { type: "system" }, source: "system" }
+	const origin = tenant.turnOrigin
+	// Maple acting on its own, through an internal token or a pass nobody is reading.
+	if (info?.type === "system" || origin?.kind === "autonomous") {
+		return { actor: { type: "system" }, source: "system" }
+	}
+	// A person on a chat platform, holding that platform's identity and no Maple
+	// user: the connector's agent is the actor, and who asked is metadata.
+	if (origin?.kind === "connector") {
+		return {
+			actor: {
+				type: "agent",
+				...(tenant.actorId !== undefined ? { actorId: tenant.actorId } : undefined),
+				label: chatConnectorAgentName(origin.connectorId),
+			},
+			source: "chat_platform",
+		}
+	}
 	if (tenant.actorId !== undefined) {
 		return {
 			actor: {
@@ -148,27 +192,24 @@ export interface McpToolAuditInput {
 
 /**
  * One `mcp_tool.called` entry per tool invocation, whichever surface drove it.
- * Workflow passes and internal RPC run under Maple's own tenant, so they are
- * `system`; the public transport and the chat attribute through the tenant.
+ * The surface is a label on the entry; who performed the call is the tenant and
+ * the turn's origin, which is what {@link auditAttribution} reads.
  */
 export const recordMcpToolAudit = (input: McpToolAuditInput) =>
 	Effect.gen(function* () {
 		const audit = yield* AuditLogService
 		const info = yield* CurrentAuditActor
 		const forensics = yield* currentRequestForensics
-		const attribution =
-			input.surface === "workflow" || input.surface === "rpc"
-				? { actor: { type: "system" as const, label: input.surface }, source: "system" as const }
-				: auditAttribution(input.tenant, info)
 		yield* audit.record({
 			orgId: input.tenant.orgId,
-			...attribution,
+			...auditAttribution(input.tenant, info),
 			action: "mcp_tool.called",
 			metadata: {
 				tool: input.name,
 				surface: input.surface,
 				is_error: input.isError,
 				params: snapshot(input.input),
+				...originMetadata(input.tenant.turnOrigin),
 			},
 			...forensics,
 		})

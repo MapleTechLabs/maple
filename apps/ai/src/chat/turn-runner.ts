@@ -59,6 +59,8 @@ import { agentForSession } from "./agents"
 import { profileForTurn } from "./profiles"
 import { runChatTurn, type ChatRunOutcome } from "./run"
 import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
+import { chatConnectorAgentName } from "@maple/domain/system-agents"
+import { ErrorActorsService } from "@maple/backend/services/errors/ErrorActorsService"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import { trackTokenUsage } from "@maple/backend/services/billing/autumn-tracker"
 
@@ -113,17 +115,48 @@ export interface RunChatSessionTurnInput {
  * The Durable Object receives a plain, structured-cloneable object (RPC refuses class instances),
  * so the brands have to be re-established on this side before the value is used as a
  * `TenantContext`.
+ *
+ * The origin rides along because it is what the audit log attributes the turn's tool calls by —
+ * the tenant's user id answers that only for an app turn.
  */
-const toTenantContext = (encoded: ChatTurnTenantEncoded): TenantContext => {
+const toTenantContext = (encoded: ChatTurnTenantEncoded, origin: ChatTurnOrigin): TenantContext => {
 	const tenant = decodeChatTurnTenant(encoded)
 	return {
 		orgId: tenant.orgId,
 		userId: tenant.userId,
 		roles: [...tenant.roles],
 		authMode: tenant.authMode,
+		turnOrigin: origin,
 		...(!(tenant.actorId === undefined) ? { actorId: tenant.actorId } : undefined),
 	}
 }
+
+/**
+ * Pin a connector turn to the agent actor that answers for that connector, one `ensureAgentActor`
+ * per turn.
+ *
+ * Everything that asks "who did this" already prefers a pinned `actorId` — the audit log, an issue
+ * claim, a comment — and for a connector turn that is the honest answer: a person on a chat
+ * platform drove it, holding no Maple identity, so the connector acts and who asked is metadata.
+ * Without the pin those paths would fall back to the placeholder user id the tenant carries.
+ */
+export const withConnectorActor = (tenant: TenantContext, origin: ChatTurnOrigin) =>
+	origin.kind !== "connector"
+		? Effect.succeed(tenant)
+		: ErrorActorsService.pipe(
+				Effect.flatMap((actors) =>
+					actors.ensureAgentActor(tenant.orgId, chatConnectorAgentName(origin.connectorId)),
+				),
+				Effect.map((actor): TenantContext => ({ ...tenant, actorId: actor.id })),
+				// Attribution must not cost an answer: the entry still names the connector, from the
+				// origin it carries.
+				Effect.catch((error) =>
+					Effect.logWarning("Could not resolve the connector's agent actor").pipe(
+						Effect.annotateLogs({ connector: origin.connectorId, error: error.message }),
+						Effect.as(tenant),
+					),
+				),
+			)
 
 /**
  * Metering is housekeeping, and it runs after the answer, on the way out of the turn.
@@ -281,7 +314,7 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 		),
 	)
 
-	const tenant = toTenantContext(input.tenant)
+	const tenant = toTenantContext(input.tenant, origin)
 	// One answer for the model's tags and the turn span, the same one the toolkit is built from.
 	// `meterTurn` resolves its own because it runs as a finalizer and is separately exported.
 	const surface = profileForTurn(agentForSession(input.sessionId), origin).surface
@@ -343,6 +376,7 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 	const program = Effect.gen(function* () {
 		const investigations = yield* InvestigationService
 		const toolExecutor = yield* McpToolExecutor
+		const runTenant = yield* withConnectorActor(tenant, origin)
 		const history = input.session.history()
 		const model = resolveTriageModel(input.env, {
 			surface,
@@ -372,7 +406,7 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 			runChatTurn({
 				sessionId: input.sessionId,
 				messageId: input.messageId,
-				tenant,
+				tenant: runTenant,
 				origin,
 				toolExecutor,
 				model,
