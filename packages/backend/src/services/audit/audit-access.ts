@@ -89,7 +89,9 @@ export const auditAttribution = (tenant: AuditTenant, info: AuditActorInfo | und
 		return { actor: { type: "system" }, source: "system" }
 	}
 	// A person on a chat platform, holding that platform's identity and no Maple
-	// user: the connector's agent is the actor, and who asked is metadata.
+	// user: the connector's agent is the actor, and who asked is metadata. The
+	// label is set even when the actor row could not be resolved, so such an entry
+	// still says which connector it came from.
 	if (origin?.kind === "connector") {
 		return {
 			actor: {
@@ -259,6 +261,9 @@ export const recordRawSqlAudit = (input: RawSqlAuditInput) =>
 				end_time: input.endTime,
 				...(input.result._tag === "rows" ? { row_count: input.result.rowCount } : undefined),
 				...(input.result._tag === "failed" ? { error: input.result.error } : undefined),
+				// A statement read on someone's behalf is the entry an auditor asks about
+				// first, so it carries who asked rather than leaving that to its tool entry.
+				...originMetadata(input.tenant.turnOrigin),
 			},
 			...forensics,
 		})

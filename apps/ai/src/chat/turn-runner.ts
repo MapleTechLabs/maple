@@ -140,23 +140,31 @@ const toTenantContext = (encoded: ChatTurnTenantEncoded, origin: ChatTurnOrigin)
  * platform drove it, holding no Maple identity, so the connector acts and who asked is metadata.
  * Without the pin those paths would fall back to the placeholder user id the tenant carries.
  */
-export const withConnectorActor = (tenant: TenantContext, origin: ChatTurnOrigin) =>
-	origin.kind !== "connector"
-		? Effect.succeed(tenant)
-		: ErrorActorsService.pipe(
-				Effect.flatMap((actors) =>
-					actors.ensureAgentActor(tenant.orgId, chatConnectorAgentName(origin.connectorId)),
-				),
-				Effect.map((actor): TenantContext => ({ ...tenant, actorId: actor.id })),
-				// Attribution must not cost an answer: the entry still names the connector, from the
-				// origin it carries.
-				Effect.catch((error) =>
-					Effect.logWarning("Could not resolve the connector's agent actor").pipe(
-						Effect.annotateLogs({ connector: origin.connectorId, error: error.message }),
-						Effect.as(tenant),
-					),
-				),
-			)
+export const withConnectorActor = Effect.fn("chat.connectorActor")(function* (
+	tenant: TenantContext,
+	origin: ChatTurnOrigin,
+) {
+	if (origin.kind !== "connector") return tenant
+	const actors = yield* ErrorActorsService
+	const actor = yield* actors
+		.ensureAgentActor(tenant.orgId, chatConnectorAgentName(origin.connectorId))
+		.pipe(
+			// A lookup that failed or died must not cost an answer: the entry still names the
+			// connector, from the origin and the label it carries. Interrupts stay interrupts.
+			Effect.catchCause((cause) =>
+				Cause.hasInterruptsOnly(cause)
+					? Effect.interrupt
+					: Effect.logWarning("Could not resolve the connector's agent actor").pipe(
+							Effect.annotateLogs({
+								connector: origin.connectorId,
+								error: summarizeCause(cause),
+							}),
+							Effect.as(undefined),
+						),
+			),
+		)
+	return actor === undefined ? tenant : { ...tenant, actorId: actor.id }
+})
 
 /**
  * Metering is housekeeping, and it runs after the answer, on the way out of the turn.
