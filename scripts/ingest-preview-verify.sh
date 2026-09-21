@@ -17,7 +17,10 @@ region="${AWS_REGION:-us-east-1}"
 cluster="maple-ingest-pr-${PR_NUMBER}"
 # Each fleet is its own ECS service. EC2 is the default (`parseIngestFleets`);
 # only a job that set MAPLE_INGEST_FLEETS to Fargate alone runs the other one.
-if [[ "${MAPLE_INGEST_FLEETS:-}" == "fargate" ]]; then
+# Same parsing as the deploy: whitespace ignored, comma-separated membership.
+fleets=",${MAPLE_INGEST_FLEETS:-},"
+fleets="${fleets//[[:space:]]/}"
+if [[ "$fleets" == *",fargate,"* && "$fleets" != *",ec2,"* ]]; then
 	gateway_service="maple-ingest-pr-${PR_NUMBER}"
 else
 	gateway_service="maple-ingest-ec2-pr-${PR_NUMBER}"
