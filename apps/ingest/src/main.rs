@@ -1347,6 +1347,22 @@ static INGEST_BAD_REQUEST: FailureKind = FailureKind {
     retry_after_seconds: None,
 };
 
+/// A replay chunk whose body was never a gzip stream. The SDK validates the
+/// gzip magic before it posts, so this only ever comes from something else
+/// executing the beacon — crawlers rendering the page and tearing it down
+/// mid-flush account for ~10k a day. Its own `error_kind` keeps it out of
+/// `rejection_loses_data`: refusing it loses no telemetry, so the span stays
+/// `Ok` like every other caller-side rejection.
+static INGEST_REPLAY_BODY_NOT_GZIP: FailureKind = FailureKind {
+    tag: "@maple/ingest/ReplayBodyNotGzip",
+    code: "ingest_replay_body_not_gzip",
+    title: "Replay chunk is not a gzip stream",
+    recovery: "fix_request",
+    retryable: false,
+    error_kind: "malformed_body",
+    retry_after_seconds: None,
+};
+
 static INGEST_PLAN_LIMIT_REACHED: FailureKind = FailureKind {
     tag: "@maple/ingest/PlanLimitReached",
     code: "ingest_plan_limit_reached",
@@ -2982,10 +2998,30 @@ fn replay_gunzip_rejection(headers: &HeaderMap, body: &[u8], error: &std::io::Er
             truncate_chars(&content_type, CLIENT_IDENTITY_MAX_LEN),
         );
     }
-    ApiError::bad_request(format!("failed to gunzip replay chunk: {error}"))
+    let message = format!("failed to gunzip replay chunk: {error}");
+    if looks_like_gzip_member(body) {
+        ApiError::bad_request(message)
+    } else {
+        ApiError::tagged(StatusCode::BAD_REQUEST, &INGEST_REPLAY_BODY_NOT_GZIP, message)
+    }
 }
 
 const REPLAY_BODY_PREFIX_BYTES: usize = 16;
+
+/// A gzip member is a 10-byte header (`1f 8b`, compression method `08`, a
+/// flags byte with its three reserved high bits clear) plus an 8-byte trailer.
+/// A body shorter than that, or whose header says otherwise, was never a
+/// stream the SDK produced; a body that passes may still be a truncated real
+/// recording, which is a lost chunk and stays an `Error`.
+const GZIP_MEMBER_MIN_LEN: usize = 18;
+const GZIP_METHOD_DEFLATE: u8 = 0x08;
+const GZIP_RESERVED_FLAGS: u8 = 0xe0;
+
+fn looks_like_gzip_member(body: &[u8]) -> bool {
+    body.len() >= GZIP_MEMBER_MIN_LEN
+        && body.starts_with(&[0x1f, 0x8b, GZIP_METHOD_DEFLATE])
+        && body[3] & GZIP_RESERVED_FLAGS == 0
+}
 
 fn hex_prefix(body: &[u8], n: usize) -> String {
     const HEX: &[u8; 16] = b"0123456789abcdef";
@@ -6546,6 +6582,7 @@ mod tests {
         assert_eq!(otel_status_for_rejection(400, "enrich"), "Error");
         assert_eq!(otel_status_for_rejection(400, "decode"), "Error");
         assert_eq!(otel_status_for_rejection(400, "bad_request"), "Error");
+        assert_eq!(otel_status_for_rejection(400, "malformed_body"), "Ok"); // never a gzip stream
 
         assert!(rejection_loses_data("enrich"));
         assert!(rejection_loses_data("decode"));
@@ -8092,6 +8129,41 @@ mod tests {
                 .starts_with("failed to gunzip replay chunk: "),
             "message must keep the stable fingerprint prefix, got {:?}",
             rejection.message
+        );
+        // Never a gzip stream: a caller-side rejection, no telemetry lost.
+        assert_eq!(rejection.error_kind(), "malformed_body");
+        assert_eq!(
+            otel_status_for_rejection(rejection.status.as_u16(), rejection.error_kind()),
+            "Ok"
+        );
+
+        // The crawler signatures seen in production: a valid zero-MTIME header
+        // missing the `8b`, and a body that stops after the magic bytes.
+        // Plus a right-magic header with an unknown compression method, and one
+        // with a reserved flag bit set: neither is a stream deflate ever wrote.
+        for body in [
+            &b"\x1f\x08\x00\x00\x00\x00\x00\x00\x03\xec\xbd\x89\x28\x2b\x1c\x39\x00\x00\x00\x00"[..],
+            &b"\x1f\x8b\x08"[..],
+            &b"\x1f\x8b\x07\x00\x00\x00\x00\x00\x00\x03\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"[..],
+            &b"\x1f\x8b\x08\x80\x00\x00\x00\x00\x00\x03\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"[..],
+        ] {
+            let error = decompressed_len(body).expect_err("crawler body must be rejected");
+            let rejection = replay_gunzip_rejection(&HeaderMap::new(), body, &error);
+            assert_eq!(rejection.error_kind(), "malformed_body", "{:?}", body);
+        }
+
+        // A real stream cut short is a recording chunk we lost: still an `Error`.
+        use std::io::Write as _;
+        let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
+        encoder.write_all(&vec![b'x'; 4096]).unwrap();
+        let gzipped = encoder.finish().unwrap();
+        let truncated = &gzipped[..gzipped.len() / 2];
+        let error = decompressed_len(truncated).expect_err("truncated gzip must be rejected");
+        let rejection = replay_gunzip_rejection(&HeaderMap::new(), truncated, &error);
+        assert_eq!(rejection.error_kind(), "bad_request");
+        assert_eq!(
+            otel_status_for_rejection(rejection.status.as_u16(), rejection.error_kind()),
+            "Error"
         );
     }
 

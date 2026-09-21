@@ -698,10 +698,24 @@ const validateRestoredDatabaseInFreshProcess = (
 	return parsed
 }
 
+/**
+ * How far a manifest is held to the running build.
+ *
+ * `"build"`: the checkpoint must be restorable by this binary — same chDB and
+ * same schema fingerprint. `"registry"`: only the registry's own integrity
+ * counts (ids, paths, sizes, digests). A checkpoint an older build wrote is
+ * still a sound registry entry that can sit as `previous` and be retired; held
+ * to `"build"` it poisoned the store instead — every `maple checkpoint` after a
+ * schema bump re-validated it and refused, and the same gate marked restore
+ * unsafe, so the only exit was `maple start --reset`.
+ */
+export type ManifestCompatibility = "build" | "registry"
+
 export const parseCheckpointManifest = (
 	value: unknown,
 	expectedCheckpointId?: CheckpointId,
 	expectedSourceDataDir?: string,
+	compatibility: ManifestCompatibility = "build",
 ): CheckpointManifest => {
 	let manifest: CheckpointManifest
 	try {
@@ -727,6 +741,7 @@ export const parseCheckpointManifest = (
 	) {
 		throw new Error("checkpoint control-store path does not match its immutable ID")
 	}
+	if (compatibility === "registry") return manifest
 	if (manifest.chdbVersion !== CHDB_VERSION) {
 		throw new Error(
 			`checkpoint chDB version mismatch (checkpoint: ${manifest.chdbVersion}; build: ${CHDB_VERSION})`,
@@ -807,7 +822,9 @@ export const readCheckpointState = async (dataDir: string): Promise<CheckpointSt
 		)
 	}
 	await resolveCheckpoint(dataDir, state.current, state)
-	if (state.previous) await resolveCheckpoint(dataDir, state.previous, state)
+	// `previous` is only ever retired from here, never restored by this path, so
+	// one an older build wrote must not make the whole registry unreadable.
+	if (state.previous) await resolveCheckpoint(dataDir, state.previous, state, "registry")
 	return state
 }
 
@@ -850,6 +867,7 @@ export const checkpointAvailability = async (dataDir: string): Promise<Checkpoin
 const resolveCheckpointById = async (
 	dataDir: string,
 	checkpointId: CheckpointId,
+	compatibility: ManifestCompatibility = "build",
 ): Promise<ResolvedCheckpoint> => {
 	await assertCheckpointInfrastructureSafe(dataDir)
 	const snapshotDir = checkpointSnapshotDir(dataDir, checkpointId)
@@ -864,6 +882,7 @@ const resolveCheckpointById = async (
 		JSON.parse(await readFile(snapshotManifestPath(dataDir, checkpointId), "utf8")),
 		checkpointId,
 		dataDir,
+		compatibility,
 	)
 	const backupDir = snapshotBackupDir(dataDir, checkpointId)
 	await assertRealDirectory(backupDir, "checkpoint backup")
@@ -904,12 +923,13 @@ export const resolveCheckpoint = async (
 	dataDir: string,
 	selector: "current" | "previous" | CheckpointId = "current",
 	knownState?: CheckpointState,
+	compatibility: ManifestCompatibility = "build",
 ): Promise<ResolvedCheckpoint> => {
 	const state = knownState ?? (await readCheckpointState(dataDir))
 	const checkpointId =
 		selector === "current" ? state.current : selector === "previous" ? state.previous : selector
 	if (!checkpointId) throw new Error("no previous checkpoint is selected")
-	return resolveCheckpointById(dataDir, checkpointId)
+	return resolveCheckpointById(dataDir, checkpointId, compatibility)
 }
 
 const restoreResolvedInto = async (
@@ -1219,8 +1239,9 @@ export const reconcileCheckpointOperations = async (
 			if (!["backup-complete", "manifest-complete"].includes(operation.phase)) {
 				throw new Error(`checkpoint operation phase ${operation.phase} cannot publish its snapshot`)
 			}
-			if (operation.baseCurrent) await resolveCheckpointById(dataDir, operation.baseCurrent)
-			if (operation.basePrevious) await resolveCheckpointById(dataDir, operation.basePrevious)
+			if (operation.baseCurrent) await resolveCheckpointById(dataDir, operation.baseCurrent, "registry")
+			if (operation.basePrevious)
+				await resolveCheckpointById(dataDir, operation.basePrevious, "registry")
 			const manifestComplete: CheckpointOperation = {
 				...operation,
 				phase: "manifest-complete",
@@ -1500,7 +1521,7 @@ export const retireCheckpointIfEligible = async (
 		await assertRealDirectory(retirementRoot, "checkpoint retirement root")
 	}
 	if (!existsSync(retirement)) {
-		await resolveCheckpoint(dataDir, checkpointId, state)
+		await resolveCheckpoint(dataDir, checkpointId, state, "registry")
 		await ensurePrivateDirectory(retirement)
 		await durableJson(retirementIntent, {
 			formatVersion: 1,
@@ -1636,10 +1657,13 @@ const createCheckpointTraced = Effect.fn("CheckpointService.create")(function* (
 							"checkpoint state is missing while checkpoint data exists; refusing to infer selection",
 						)
 					}
+					// The registry has to be sound before it gains an entry, but neither
+					// existing checkpoint has to be restorable by this build: the new
+					// one supersedes `current`, and `previous` is about to be retired.
 					if (oldState) {
-						await resolveCheckpoint(options.dataDir, oldState.current, oldState)
+						await resolveCheckpoint(options.dataDir, oldState.current, oldState, "registry")
 						if (oldState.previous) {
-							await resolveCheckpoint(options.dataDir, oldState.previous, oldState)
+							await resolveCheckpoint(options.dataDir, oldState.previous, oldState, "registry")
 						}
 					}
 					for (const path of [

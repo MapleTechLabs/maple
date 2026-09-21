@@ -705,11 +705,14 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 						.getCommit(installation.externalInstallationId, repo.owner, repo.name, sha)
 						.pipe(
 							Effect.map((commit) => Option.some(normalizeFetchedCommit(commit, now))),
-							// A 404 means this repo doesn't contain the SHA (or access was lost) —
-							// for a SHA-only probe that's "look in the next repo", not a failure.
-							// Every other GitHub failure is mapped to the port's semantic errors.
+							// A 404 means this repo doesn't contain the SHA (or access was lost),
+							// and a 422 ("No commit found for SHA") is GitHub's answer for a
+							// well-formed SHA that names nothing — an unpushed or rewritten
+							// commit reported by a deploy. For a SHA-only probe both are "look
+							// in the next repo", not a failure. Every other GitHub failure is
+							// mapped to the port's semantic errors.
 							Effect.catchTag("@maple/api/vcs/GithubAppError", (error) =>
-								error.status === 404
+								error.status === 404 || error.status === 422
 									? Effect.succeed(Option.none<CommitUpsertInput>())
 									: Effect.fail(toVcsCommitError(error)),
 							),
