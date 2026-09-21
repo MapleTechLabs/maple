@@ -22,6 +22,7 @@ import {
 	isIntegrationId,
 	useIntegrationOverviews,
 	useIntegrationStatuses,
+	useIsIntegrationVisible,
 	type IntegrationId,
 } from "@/components/integrations/integration-catalog"
 import {
@@ -132,8 +133,13 @@ function IntegrationsPage() {
 	const search = Route.useSearch()
 	const navigate = useNavigate({ from: Route.fullPath })
 	const { visibleSections } = useVisibleSettingsSections()
+	const isVisible = useIsIntegrationVisible()
+	// An id the org isn't shown falls back to the hub, so a stale link lands on
+	// the catalog rather than a card the org has no tile for.
 	const integration =
-		search.integration && isIntegrationId(search.integration) ? search.integration : undefined
+		search.integration && isIntegrationId(search.integration) && isVisible(search.integration)
+			? search.integration
+			: undefined
 
 	// Surface the Slack OAuth callback result once, then strip the return params
 	// from the URL so a refresh doesn't re-toast. Narrowed here rather than in
