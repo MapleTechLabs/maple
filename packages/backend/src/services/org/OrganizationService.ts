@@ -39,6 +39,7 @@ import {
 	scrapeTargets,
 	slackWorkspaces,
 	vcsCommits,
+	prReviews,
 	vcsInstallations,
 	vcsRepositories,
 } from "@maple/db"
@@ -93,6 +94,7 @@ const ORG_SCOPED_TABLES = [
 	vcsInstallations,
 	vcsRepositories,
 	vcsCommits,
+	prReviews,
 	// Credentials that outlive the org unless they are purged here. `api_keys`
 	// alone was not enough: an MCP grant's refresh family re-mints its key
 	// hourly, so a deleted org's MCP client kept working for up to 30 days.
