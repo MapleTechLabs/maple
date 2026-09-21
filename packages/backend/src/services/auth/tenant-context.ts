@@ -1,3 +1,4 @@
+import type { ChatTurnOrigin } from "@maple/domain/chat-session"
 import type { ActorId, AuthMode, OrgId, RoleName, UserId } from "@maple/domain/http"
 
 export interface TenantContext {
@@ -21,4 +22,10 @@ export interface TenantContext {
 	 * activity timeline.
 	 */
 	mcpClientName?: string
+	/**
+	 * Who drove the agent turn this invocation belongs to, when it came from the chat engine.
+	 * Audit attribution is keyed on it — Maple's own unattended pass is `system`, a chat-platform
+	 * turn is the connector's agent — because the surface a call arrives on does not say who acted.
+	 */
+	turnOrigin?: ChatTurnOrigin
 }

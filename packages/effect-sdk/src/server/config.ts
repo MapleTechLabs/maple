@@ -13,13 +13,13 @@ import { trySyncOrUndefined } from "../shared/try-sync.js"
  * Maple-specific name still wins when set, to preserve existing setups.
  */
 export const endpoint = Effect.gen(function* () {
-	const maple = yield* Config.option(Config.string("MAPLE_ENDPOINT"))
+	const maple = yield* Config.option(Config.String("MAPLE_ENDPOINT"))
 	if (Option.isSome(maple)) return maple
-	return yield* Config.option(Config.string("OTEL_EXPORTER_OTLP_ENDPOINT"))
+	return yield* Config.option(Config.String("OTEL_EXPORTER_OTLP_ENDPOINT"))
 })
 
 /** Resolve the Maple ingest key from environment. */
-export const ingestKey = Config.option(Config.redacted("MAPLE_INGEST_KEY"))
+export const ingestKey = Config.option(Config.Redacted("MAPLE_INGEST_KEY"))
 
 /**
  * Resolve service version / commit SHA from platform-specific env vars.
@@ -28,11 +28,11 @@ export const ingestKey = Config.option(Config.redacted("MAPLE_INGEST_KEY"))
  *         > CF_PAGES_COMMIT_SHA > RENDER_GIT_COMMIT
  */
 export const serviceVersion = Config.option(
-	Config.string("COMMIT_SHA").pipe(
-		Config.orElse(() => Config.string("RAILWAY_GIT_COMMIT_SHA")),
-		Config.orElse(() => Config.string("VERCEL_GIT_COMMIT_SHA")),
-		Config.orElse(() => Config.string("CF_PAGES_COMMIT_SHA")),
-		Config.orElse(() => Config.string("RENDER_GIT_COMMIT")),
+	Config.String("COMMIT_SHA").pipe(
+		Config.orElse(() => Config.String("RAILWAY_GIT_COMMIT_SHA")),
+		Config.orElse(() => Config.String("VERCEL_GIT_COMMIT_SHA")),
+		Config.orElse(() => Config.String("CF_PAGES_COMMIT_SHA")),
+		Config.orElse(() => Config.String("RENDER_GIT_COMMIT")),
 	),
 )
 
@@ -42,14 +42,14 @@ export const serviceVersion = Config.option(
  * Priority: MAPLE_ENVIRONMENT > RAILWAY_ENVIRONMENT_NAME > DEPLOYMENT_ENV
  *         > "development"
  */
-export const environment = Config.string("MAPLE_ENVIRONMENT").pipe(
-	Config.orElse(() => Config.string("RAILWAY_ENVIRONMENT_NAME")),
-	Config.orElse(() => Config.string("DEPLOYMENT_ENV")),
+export const environment = Config.String("MAPLE_ENVIRONMENT").pipe(
+	Config.orElse(() => Config.String("RAILWAY_ENVIRONMENT_NAME")),
+	Config.orElse(() => Config.String("DEPLOYMENT_ENV")),
 	Config.withDefault("development"),
 )
 
 /** OTel-standard service name override. */
-export const otelServiceName = Config.option(Config.string("OTEL_SERVICE_NAME"))
+export const otelServiceName = Config.option(Config.String("OTEL_SERVICE_NAME"))
 
 /**
  * Resolve the canonical repository URL for `vcs.repository.url.full` from a
@@ -82,7 +82,7 @@ const REPOSITORY_URL_ENV_KEYS = [
 export const repositoryUrl = Effect.gen(function* () {
 	const values = new Map<string, string>()
 	yield* Effect.forEach(REPOSITORY_URL_ENV_KEYS, (key) =>
-		Config.option(Config.string(key)).pipe(
+		Config.option(Config.String(key)).pipe(
 			Effect.map((value) => {
 				if (Option.isSome(value)) values.set(key, value.value)
 			}),
@@ -117,7 +117,7 @@ export const parseOtelResourceAttributes = (input: string): Record<string, strin
 
 /** Resolve and parse `OTEL_RESOURCE_ATTRIBUTES`. */
 export const otelResourceAttributes = Effect.gen(function* () {
-	const raw = yield* Config.option(Config.string("OTEL_RESOURCE_ATTRIBUTES"))
+	const raw = yield* Config.option(Config.String("OTEL_RESOURCE_ATTRIBUTES"))
 	return Option.match(raw, {
 		onSome: (value) => parseOtelResourceAttributes(value),
 		onNone: () => ({}) as Record<string, string>,

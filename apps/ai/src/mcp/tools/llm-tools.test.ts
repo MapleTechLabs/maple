@@ -3,7 +3,7 @@
  *
  * The old turn loop stopped a model that reissued an identical tool batch until its turns ran out.
  * The engine has no equivalent — its `repeatedFailureLimit` counts consecutive tool *failures*,
- * which is a different thing — so the guard lives with the handlers, where refusing is a declared
+ * which is a different thing — so the guard lives with the handlers, where refusing is a returned
  * tool failure the model can read rather than an authorization denial that ends the turn.
  */
 import { OrgId, UserId } from "@maple/domain"
@@ -33,16 +33,79 @@ const countingExecutor = () => {
 }
 
 const handlerFor = (executor: McpToolExecutorApi, name: string) => {
-	const built = buildMapleToolkit(executor, TENANT, {})
+	const built = buildMapleToolkit(executor, TENANT, { surface: "chat" })
 	const handler = built.handlers[name]
 	assert.isDefined(handler, `no handler for ${name}`)
 	return handler!
 }
 
 describe("buildMapleToolkit", () => {
+	it("offers internal tools to the agents and to no other surface", () => {
+		const { executor } = countingExecutor()
+		const chat = buildMapleToolkit(executor, TENANT, { surface: "chat" }).handlers
+		const workflow = buildMapleToolkit(executor, TENANT, { surface: "workflow" }).handlers
+		const mcp = buildMapleToolkit(executor, TENANT, { surface: "mcp" }).handlers
+		assert.isDefined(chat.sandbox_exec)
+		assert.isDefined(workflow.sandbox_exec)
+		assert.isUndefined(mcp.sandbox_exec)
+		// A ruleset allowing everything does not widen a build past its audience.
+		assert.isUndefined(
+			buildMapleToolkit(executor, TENANT, { surface: "mcp", include: () => true }).handlers
+				.sandbox_exec,
+		)
+	})
+
+	/**
+	 * A tool error is the call's answer, not the run's end: `"return"` hands it to the model. Only a
+	 * gated tool propagates, because a proposal must be the turn's last word.
+	 */
+	it("returns ordinary tool failures to the model and propagates a gated one", () => {
+		const { executor } = countingExecutor()
+		const { toolkit } = buildMapleToolkit(executor, TENANT, {
+			surface: "chat",
+			include: (name) => name === "list_services" || name === "create_dashboard",
+			gate: (name) => name === "create_dashboard",
+		})
+
+		assert.equal(toolkit.tools.list_services?.failureMode, "return")
+		assert.equal(toolkit.tools.create_dashboard?.failureMode, "error")
+	})
+
+	it("fails a tool that reported an error with its message", async () => {
+		const executor: McpToolExecutorApi = {
+			execute: () =>
+				Effect.succeed({
+					isError: true,
+					content: [
+						{ type: "text" as const, text: "Tool failed: SQL rejected (MissingOrgFilter)" },
+					],
+				}),
+		}
+		const result = await Effect.runPromise(
+			Effect.result(handlerFor(executor, "run_sql")({ sql: "select 1" }, {} as never)),
+		)
+		assert.isTrue(Result.isFailure(result))
+		assert.equal(
+			Result.isFailure(result) ? result.failure.message : "",
+			"Tool failed: SQL rejected (MissingOrgFilter)",
+		)
+	})
+
+	it("fails a tool that died with a summary, never the cause", async () => {
+		const executor: McpToolExecutorApi = {
+			execute: () => Effect.die(new Error("connection reset")),
+		}
+		const result = await Effect.runPromise(
+			Effect.result(handlerFor(executor, "list_services")({ limit: 10 }, {} as never)),
+		)
+		assert.isTrue(Result.isFailure(result))
+		assert.include(Result.isFailure(result) ? result.failure.message : "", "Tool failed")
+	})
+
 	it("records a gated tool's description on its span as the model saw it", async () => {
 		const { executor } = countingExecutor()
-		const handler = buildMapleToolkit(executor, TENANT, { gate: () => true }).handlers.list_services
+		const handler = buildMapleToolkit(executor, TENANT, { surface: "chat", gate: () => true }).handlers
+			.list_services
 		assert.isDefined(handler, "no handler for list_services")
 		const { spans, tracer } = makeRecordingTracer()
 
@@ -66,7 +129,10 @@ describe("buildMapleToolkit", () => {
 			assert.isTrue(Result.isSuccess(result), `attempt ${attempt + 1} should have run`)
 		}
 
-		assert.isTrue(Result.isFailure(await call()))
+		// A returned failure: the model repeating itself is told, and the policy stops it if it persists.
+		const fourth = await call()
+		assert.isTrue(Result.isFailure(fourth))
+		assert.include(Result.isFailure(fourth) ? fourth.failure.message : "", "already been called")
 		assert.equal(dispatched(), 3, "the fourth call must not reach the executor")
 	})
 

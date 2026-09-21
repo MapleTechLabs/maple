@@ -8,7 +8,6 @@
 	},
 	"dependencies": {
 		"@maple/backend": "workspace:*",
-		"@maple/domain": "workspace:*",
 		"@maple/infra": "workspace:*",
 		"effect": "catalog:effect"
 	},

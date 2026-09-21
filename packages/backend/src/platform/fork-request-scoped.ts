@@ -1,38 +1,40 @@
 import { Effect, Option, Scope } from "effect"
+import { DrainRunOnInterrupt } from "./pg-connection-scope"
 
 /**
  * Fork background work so it cannot outlive the invocation that owns the
- * Postgres socket.
+ * Postgres connection.
  *
  * `Effect.forkDetach` is the wrong tool for anything that touches the database.
  * A detached fiber inherits the `PgConnectionScope` reference from the request
  * context but not the request's lifetime, so it can still be running when
- * `withPgConnectionScopeOf`'s `Effect.ensuring` closes the socket. The next
- * `execute` then finds no socket and dials a new one *after the request has
- * ended*, which a Worker cannot do — and because these call sites are
- * `Effect.ignore`d, the failure is silent.
+ * `withPgConnectionScopeOf`'s `Effect.ensuring` closes the pool, and its next
+ * `execute` is refused as `SCOPE_CLOSED` — silently, because these call sites
+ * are `Effect.ignore`d.
  *
- * HTTP routes always have a request `Scope` (HttpRouter provides one). Non-HTTP
- * callers — crons, queue consumers, workflows — do not, and there the calling
- * fiber IS the whole job, so it is a safe parent.
+ * HTTP routes always have a request `Scope` (HttpRouter provides one), and on
+ * the API worker it closes INSIDE `withPgConnectionScope`: the router that
+ * creates it is the program the connection scope wraps. Closing it interrupts
+ * the child, so forked work gets until the response and no longer. Non-HTTP
+ * callers — crons, queue consumers, workflows — have no request Scope, and
+ * there the calling fiber IS the whole job, so it is a safe parent.
  *
- * `startImmediately` is load-bearing. The request `Scope` is created by
- * `HttpEffect.toHandled` OUTSIDE the middleware stack, so it closes AFTER
- * `pgConnectionMiddleware` has already released the socket — it does not
- * bound the fork the way the paragraph above assumes. A fork that is merely
- * *scheduled* (the default) never runs before the parent has sent the response
- * and `PgConnectionScope.close()` has flipped the scope to `Closed`; the
- * child then wakes to a `SCOPE_CLOSED` refusal, which is exactly what
- * `ApiKeysService.touchLastUsed` produced on every `POST /mcp` whose handler
- * had no further async work. Starting the child synchronously lets it reach
- * its first DB call — and take the socket — while the scope is still `Open`;
- * `close()` then drains that in-flight statement (`sql.end()` waits) instead
- * of refusing it.
+ * Two things keep a quick DB call that was forked right before the response
+ * from being lost:
+ *
+ * - `startImmediately`: a merely scheduled fork would not run before the
+ *   handler returned, and would wake to an interruption.
+ * - `DrainRunOnInterrupt`: once the child is inside a `Database.execute`, the
+ *   interruption waits for that call. node-postgres checks a client out on a
+ *   later tick, so without this the statement is still queued when the
+ *   interruption lands and never runs. Work before the DB call (an HTTP probe,
+ *   a cache read) is still interrupted at the response.
  */
 export const forkRequestScoped = <A, E, R>(work: Effect.Effect<A, E, R>) =>
 	Effect.gen(function* () {
 		const scope = yield* Effect.serviceOption(Scope.Scope)
+		const draining = work.pipe(Effect.provideService(DrainRunOnInterrupt, true))
 		return Option.isSome(scope)
-			? yield* Effect.forkIn(work, scope.value, { startImmediately: true })
-			: yield* Effect.forkChild(work, { startImmediately: true })
+			? yield* Effect.forkIn(draining, scope.value, { startImmediately: true })
+			: yield* Effect.forkChild(draining, { startImmediately: true })
 	})

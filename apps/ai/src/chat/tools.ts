@@ -5,22 +5,24 @@
  * module's. Swapping the tool set — a read-only sub-agent, a mode with narrower reach — should not
  * touch control flow at all.
  */
-import { investigationIdFromChatSessionId } from "@maple/domain/chat-session"
+import { type ChatTurnOrigin, investigationIdFromChatSessionId } from "@maple/domain/chat-session"
 import { evaluatePermission, type PermissionRuleset } from "@maple/domain/permission"
 import {
-	AiTriageResult,
+	AiTriageSubmission,
 	InvestigationDataCorruptionError,
 	InvestigationNotFoundError,
 	InvestigationPersistenceError,
+	normalizeTriageSubmission,
 	SubmitDiagnosisRequest,
 } from "@maple/domain/http"
-import { InvestigationId, UserId } from "@maple/domain/primitives"
+import { InvestigationId } from "@maple/domain/primitives"
 import type { RunBudgetHook, RunUsageDelta } from "@effect-agent/engine/RunOptions"
 import { Effect, Option, Schema } from "effect"
 import { Tool, Toolkit } from "effect/unstable/ai"
 import type { McpToolExecutorApi } from "../mcp/dispatcher"
 import type { McpToolSurface } from "@maple/domain/mcp-manifest"
 import { buildMapleToolkit, MapleToolFailure, summarizeToolFailure } from "../mcp/tools/llm-tools"
+import { toolHandlersWithContent } from "../platform/genai-spans"
 import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
 
 const decodeInvestigationIdOption = Schema.decodeUnknownOption(InvestigationId)
@@ -33,15 +35,6 @@ export type SubmitDiagnosis = (
 	unknown,
 	InvestigationPersistenceError | InvestigationNotFoundError | InvestigationDataCorruptionError
 >
-
-/**
- * The user id every machine-started run runs as.
- *
- * An investigation's own autonomous pass is claimed under this actor; a human opening the same
- * session and asking a follow-up is not. That difference decides whether the diagnosis tool merely
- * exists or is the run's *answer*.
- */
-const INTERNAL_SERVICE_USER_ID = Schema.decodeSync(UserId)("internal-service")
 
 export const SUBMIT_DIAGNOSIS = "submit_diagnosis"
 
@@ -78,12 +71,20 @@ export const accumulateUsage = (usage: RunUsage): RunBudgetHook => ({
 		}),
 })
 
+/**
+ * `parameters` is the lenient {@link AiTriageSubmission}, not the stored `AiTriageResult`.
+ *
+ * The engine decodes a tool call's arguments before the handler runs, and a decode failure lands in
+ * the model stream's error channel, which ends the run. Against a strict report schema that made
+ * one missing key at the end of a full investigation throw the whole investigation away. The
+ * handler normalizes instead, and records what the model left out.
+ */
 export const diagnosisTool = Tool.make(SUBMIT_DIAGNOSIS, {
 	description:
 		"Record your structured diagnosis for THIS investigation. Call it exactly once, " +
 		"after you have gathered evidence, with your final assessment. It persists the report " +
 		"and renders it for the user. After calling it, stop unless the user asks a follow-up.",
-	parameters: AiTriageResult,
+	parameters: AiTriageSubmission,
 	success: Schema.String,
 	failure: MapleToolFailure,
 })
@@ -97,19 +98,23 @@ export const investigationForSession = (sessionId: string): InvestigationId | un
 }
 
 /**
- * Whether this turn is an investigation's own autonomous pass — claimed under the internal actor —
- * rather than a person asking a follow-up in the same session. The pass must end on
- * `submit_diagnosis`; the follow-up may answer in prose.
+ * Whether this turn is an investigation's own autonomous pass rather than a person asking a
+ * follow-up in the same session. The pass must end on `submit_diagnosis`; the follow-up may answer
+ * in prose.
+ *
+ * Both halves are stated, not inferred: the session says it is an investigation, the turn's origin
+ * says it is the unattended pass.
  */
-export const isAutonomousInvestigationTurn = (sessionId: string, tenant: TenantContext): boolean =>
-	investigationForSession(sessionId) !== undefined && tenant.userId === INTERNAL_SERVICE_USER_ID
+export const isAutonomousInvestigationTurn = (sessionId: string, origin: ChatTurnOrigin): boolean =>
+	investigationForSession(sessionId) !== undefined && origin.kind === "autonomous"
 
 /**
  * The `submit_diagnosis` tool for an investigate-mode session (`"<orgId>:inv-<id>"`).
  *
  * Its arguments ARE the structured report. Deliberately not approval-gated: it is the structured
  * output channel, not a user-facing mutation. The investigation id and org ride from the session id,
- * so the agent never chooses which investigation it writes.
+ * so the agent never chooses which investigation it writes. Being outside the ruleset is why the
+ * origin is consulted here directly rather than left to the gate.
  *
  * `submitDiagnosis` arrives as a callback rather than being resolved from `InvestigationService`
  * here: that service is itself what starts an investigation's autonomous run, so resolving it
@@ -123,42 +128,69 @@ export const isAutonomousInvestigationTurn = (sessionId: string, tenant: TenantC
 export const buildDiagnosisCompletion = (
 	sessionId: string,
 	tenant: TenantContext,
+	origin: ChatTurnOrigin,
 	submitDiagnosis: SubmitDiagnosis,
 	usage: RunUsage,
 	modelName: string,
+	/** This run is the close-out: whatever it files is a partial, and lands as `inconclusive`. */
+	partial = false,
+	/** The run's agent-session identity, stamped on the tool span like every other tool's. */
+	sessionAttributes?: Readonly<Record<string, string>>,
 ) => {
 	const investigationId = investigationForSession(sessionId)
 	if (investigationId === undefined) return undefined
+	// A connector never files a diagnosis. This tool rides *outside* the ruleset — it is the
+	// investigation's structured output channel, not a gated mutation — so nothing else withholds
+	// it, and it does write: a report row, and the investigation's status. An attended follow-up in
+	// the app may file one; a channel is not where a diagnosis gets settled.
+	if (origin.kind === "connector") return undefined
 	const toolkit = Toolkit.make(diagnosisTool)
 	let submitted = false
 	return {
 		toolkit,
-		layer: toolkit.toLayer({
-			[SUBMIT_DIAGNOSIS]: (report: AiTriageResult) =>
-				submitDiagnosis(
-					tenant.orgId,
-					investigationId,
-					new SubmitDiagnosisRequest({
-						report,
-						model: modelName,
-						inputTokens: usage.input,
-						outputTokens: usage.output,
-					}),
-				).pipe(
-					Effect.tap(() => Effect.sync(() => (submitted = true))),
-					Effect.as("Diagnosis recorded."),
-					// Named failures only. A rendered Effect cause carries stack frames and, inside a
-					// DatabaseError, connection details.
-					Effect.catchCause((cause) =>
-						Effect.fail(
-							new MapleToolFailure({
-								message: `${SUBMIT_DIAGNOSIS} failed: ${summarizeToolFailure(cause)}`,
+		...toolHandlersWithContent(
+			toolkit,
+			{
+				[SUBMIT_DIAGNOSIS]: (submission: AiTriageSubmission) =>
+					Effect.suspend(() => {
+						const { report, filled } = normalizeTriageSubmission(submission)
+						return submitDiagnosis(
+							tenant.orgId,
+							investigationId,
+							new SubmitDiagnosisRequest({
+								report,
+								model: modelName,
+								inputTokens: usage.input,
+								outputTokens: usage.output,
+								...(partial ? { partial: true } : undefined),
 							}),
+						).pipe(
+							Effect.tap(() =>
+								// What the model omitted is the signal that the prompt or the model is the
+								// problem; without it a filled-in report is indistinguishable from a written one.
+								Effect.annotateCurrentSpan({
+									"maple.diagnosis.filled_fields": filled.join(","),
+									"maple.diagnosis.filled_count": filled.length,
+								}),
+							),
+						)
+					}).pipe(
+						Effect.tap(() => Effect.sync(() => (submitted = true))),
+						Effect.as("Diagnosis recorded."),
+						// Named failures only. A rendered Effect cause carries stack frames and, inside a
+						// DatabaseError, connection details.
+						Effect.catchCause((cause) =>
+							Effect.fail(
+								new MapleToolFailure({
+									message: `${SUBMIT_DIAGNOSIS} failed: ${summarizeToolFailure(cause)}`,
+								}),
+							),
 						),
 					),
-				),
-		}),
-		autonomous: isAutonomousInvestigationTurn(sessionId, tenant),
+			},
+			sessionAttributes,
+		),
+		autonomous: isAutonomousInvestigationTurn(sessionId, origin),
 		submitted: () => submitted,
 	}
 }
@@ -174,10 +206,12 @@ export const buildChatToolkit = (
 	executor: McpToolExecutorApi,
 	tenant: TenantContext,
 	ruleset: PermissionRuleset,
-	surface: McpToolSurface = "chat",
+	surface: McpToolSurface,
+	sessionAttributes?: Readonly<Record<string, string>>,
 ) =>
 	buildMapleToolkit(executor, tenant, {
 		surface,
+		...(sessionAttributes === undefined ? undefined : { sessionAttributes }),
 		// `deny` means the model never sees the tool. That is a stronger guarantee than refusing the
 		// call afterwards, and it is free — an unoffered tool cannot be called.
 		include: (name) => evaluatePermission(ruleset, name) !== "deny",

@@ -13,6 +13,11 @@ const envDir = path.resolve(import.meta.dirname, "../..")
 export default defineConfig(({ mode }) => {
 	const env = loadEnv(mode, envDir, "")
 
+	// `bun dev` no longer reaches this: web is a `Cloudflare.Website.Vite` Worker,
+	// so alchemy runs vite itself and supplies these three from the stack's own
+	// URLs as `define`. It stays for a vite server started by hand next to a
+	// portless stack (`bun --filter=@maple/web dev`), which has no other way to
+	// learn its siblings' routes.
 	if (process.env.PORTLESS_URL) {
 		process.env.VITE_API_BASE_URL ??= siblingUrl("api")
 		process.env.VITE_INGEST_URL ??= siblingUrl("ingest")

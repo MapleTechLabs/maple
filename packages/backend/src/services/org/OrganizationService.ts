@@ -15,6 +15,7 @@ import {
 	alertRuleStates,
 	alertRules,
 	apiKeys,
+	chatWorkspaces,
 	cliDeviceAuthorizations,
 	cloudflareLogpushConnectors,
 	dashboards,
@@ -35,6 +36,7 @@ import {
 	orgClickHouseSettings,
 	orgIngestKeys,
 	planetscaleConnections,
+	planetscaleIssueReceipts,
 	scrapeTargets,
 	slackWorkspaces,
 	vcsCommits,
@@ -77,6 +79,9 @@ const ORG_SCOPED_TABLES = [
 	scrapeTargets,
 	oauthConnections,
 	oauthAuthStates,
+	// The binding that makes a chat workspace's members act as the org. Deleting
+	// the org must stop the bot answering there, and nothing else would.
+	chatWorkspaces,
 	// Holds an encrypted Slack bot token and the id of a full-access API key —
 	// there is no `orgs` table to cascade from, so this purge is what stops a
 	// deleted org's live credentials outliving it.
@@ -105,6 +110,9 @@ const ORG_SCOPED_TABLES = [
 	// Holds the encrypted per-connection webhook HMAC secret — standing
 	// authority to have inbound writes attributed to an org that is gone.
 	planetscaleConnections,
+	// Dedupe receipts for the org's error issues, which are purged above; with the
+	// connection gone no redelivery can arrive for them to catch.
+	planetscaleIssueReceipts,
 	// APNs update tokens for running Live Activities. `mobile_devices` is purged
 	// here already; leaving these behind keeps a live push channel open.
 	liveActivities,

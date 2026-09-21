@@ -60,15 +60,12 @@ jobs:
                   aws-role-arn: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
                   aws-region: ${{ env.AWS_REGION }}
 
-            # NOTE: prod schema migrations are applied OUT OF BAND (manually, via
-            # `bun run migrate:prod` → `ps:apply-schema main`, against the direct 5432
-            # port), NOT by this workflow — so a deploy never touches the prod database
-            # and needs no MAPLE_PG_URL/admin credential. The worker binds to the
-            # pre-configured Hyperdrive config for its instance (`MapleDb` in
-            # packages/infra). apply-schema installs default privileges granting
-            # PUBLIC before it migrates, so new and rebuilt tables are readable by
-            # every consumer — including the ingest gateway, which reaches Postgres
-            # through PSBouncer as a role that does NOT inherit `postgres`.
+            # Schema migrations run in this deploy (`Planetscale.PostgresBranch` in alchemy.run.ts),
+            # over PLANETSCALE_API_TOKEN_ID / PLANETSCALE_API_TOKEN / PLANETSCALE_ORGANIZATION
+            # from the instance's Infisical environment. The US Workers bind the
+            # dashboard-managed `maple-prd` Hyperdrive; the EU Workers bind the roles and
+            # configs the deploy declares on `maple-eu` (`MapleDb`). No database credential
+            # of its own either way.
 
             # alchemy's env-credential path (CI=true) otherwise discovers the account
             # with an STS GetCallerIdentity issued while its own AWSEnvironment is

@@ -6,17 +6,40 @@
  * cost — and a turn that failed before reaching the tool was billed nothing at all. Most of the
  * assertions here are about a charge that used to be silently deduplicated away.
  *
- * The rest are about the routing: `meterTurn` is the single meter on this path, so it has to
- * charge an investigation turn as `triage` and an attended chat turn as `chat`, and never both.
+ * The rest are about the routing: `meterTurn` is the single meter on this path, so it has to charge
+ * an investigation turn as `triage`, an attended chat turn as `chat` and a bot turn as `bot` — one
+ * of the three, never two. The source it picks must be the surface the turn actually ran on, which
+ * is why it resolves the same `profileForTurn` label the toolkit is built from.
  */
-import { Effect } from "effect"
+import {
+	type ChatTurnOrigin,
+	ChatConnectorId,
+	ChatConversationKey,
+	connectorSessionId,
+} from "@maple/domain/chat-session"
+import { ExternalUserId, OrgId } from "@maple/domain/primitives"
+import { Effect, Schema } from "effect"
 import { afterEach, assert, beforeEach, describe, it } from "vitest"
 import { meterTurn } from "./turn-runner"
 
 const ORG = "org_test"
 const INVESTIGATION = "0199a4d1-9f3c-7c8e-b2a1-3f5e7d9c1b40"
 
-const tenant = { orgId: ORG }
+const orgId = Schema.decodeSync(OrgId)(ORG)
+
+/** An ordinary signed-in caller. Who drives a turn is its origin, never its user id. */
+const tenant = { orgId }
+
+const connectorId = Schema.decodeSync(ChatConnectorId)("testchat")
+const conversationKey = Schema.decodeSync(ChatConversationKey)("c1")
+
+const CONNECTOR_ORIGIN: ChatTurnOrigin = {
+	kind: "connector",
+	connectorId,
+	workspaceId: "w1",
+	externalUserId: Schema.decodeSync(ExternalUserId)("u-1"),
+	displayName: "Ada",
+}
 
 const env = { AUTUMN_SECRET_KEY: "sk_test" }
 
@@ -54,8 +77,13 @@ afterEach(() => {
 	globalThis.fetch = realFetch
 })
 
-const meter = (sessionId: string, messageId: string, input: number, output: number) =>
-	Effect.runPromise(meterTurn(turn(sessionId, messageId), tenant, { input, output }))
+const meter = (
+	sessionId: string,
+	messageId: string,
+	input: number,
+	output: number,
+	origin: ChatTurnOrigin = { kind: "app" },
+) => Effect.runPromise(meterTurn(turn(sessionId, messageId), tenant, origin, { input, output }))
 
 const keysFor = (featureId: string) => tracked.filter((t) => t.featureId === featureId).map((t) => t.key)
 
@@ -131,6 +159,25 @@ describe("meterTurn", () => {
 
 		assert.deepEqual(keysFor("ai_input_tokens"), [`${ORG}:default:msg-1:chat:input`])
 		assert.deepEqual(keysFor("ai_output_tokens"), [`${ORG}:default:msg-1:chat:output`])
+	})
+
+	it("charges a connector turn as `bot`", async () => {
+		// Same features and the same org; the source is what separates a connector's spend from the
+		// in-app chat it shares this runner with. Built rather than spelled, so the tab format lives
+		// in one place.
+		const session = connectorSessionId(orgId, connectorId, conversationKey)
+		await meter(session, "msg-1", 1000, 100, CONNECTOR_ORIGIN)
+
+		assert.deepEqual(keysFor("ai_input_tokens"), [`${session}:msg-1:bot:input`])
+		assert.deepEqual(keysFor("ai_output_tokens"), [`${session}:msg-1:bot:output`])
+	})
+
+	it("charges by origin, not by session id", async () => {
+		// The source comes from the origin's profile — the same one the toolkit is built from —
+		// never from the session id.
+		await meter(`${ORG}:default`, "msg-1", 1000, 100, CONNECTOR_ORIGIN)
+
+		assert.deepEqual(keysFor("ai_input_tokens"), [`${ORG}:default:msg-1:bot:input`])
 	})
 
 	it("bills an investigation turn once, not once per source", async () => {

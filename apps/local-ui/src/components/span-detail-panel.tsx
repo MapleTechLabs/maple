@@ -25,6 +25,9 @@ import { ErrorSection } from "@maple/ui/components/error-section"
 import type { LocalLog } from "../lib/log-shape"
 import { LogDetailSheet } from "./log-detail-sheet"
 
+/** Matches the query limit in `useLocalSpanLogs`; a full page means "at least". */
+const LOG_LIMIT = 100
+
 interface SpanDetailPanelProps {
 	span: SpanNode
 	onClose: () => void
@@ -72,65 +75,75 @@ export function SpanDetailPanel({ span, onClose }: SpanDetailPanelProps) {
 						<span className="text-[10px] text-muted-foreground">{kindLabel}</span>
 					</div>
 				</div>
-				<Button variant="ghost" size="icon" onClick={onClose} className="shrink-0">
+				<Button
+					variant="ghost"
+					size="icon"
+					aria-label="Close span details"
+					onClick={onClose}
+					className="shrink-0"
+				>
 					<XmarkIcon size={16} />
 				</Button>
 			</div>
 
-			{/* Summary stats */}
-			<div className="flex shrink-0 items-center gap-4 border-b px-3 py-1.5 text-xs">
-				<div className="flex items-center gap-1.5">
-					<ClockIcon size={12} className="text-muted-foreground" />
-					<span className="font-mono">
-						<CopyableValue value={formatDuration(span.durationMs)}>
-							{formatDuration(span.durationMs)}
-						</CopyableValue>
-					</span>
-				</div>
-				{cacheInfo?.result ? (
-					<Badge
-						variant="outline"
-						className={cn("text-[10px] font-medium", cacheResultStyles[cacheInfo.result])}
-					>
-						{cacheInfo.result === "hit" ? "HIT" : "MISS"}
-					</Badge>
-				) : (
+			{/* Everything under the title scrolls as one, so a tall error card never squeezes the
+			    tab body into a scroll box of its own. */}
+			<ScrollArea className="min-h-0 flex-1">
+				{/* Summary stats */}
+				<div className="flex shrink-0 items-center gap-4 border-b px-3 py-1.5 text-xs">
+					<div className="flex items-center gap-1.5">
+						<ClockIcon size={12} className="text-muted-foreground" />
+						<span className="font-mono">
+							<CopyableValue value={formatDuration(span.durationMs)}>
+								{formatDuration(span.durationMs)}
+							</CopyableValue>
+						</span>
+					</div>
 					<Badge variant="outline" className={cn("text-[10px] font-medium", statusStyle)}>
 						{span.statusCode || "Unset"}
 					</Badge>
+					{cacheInfo?.result && (
+						<Badge
+							variant="outline"
+							className={cn("text-[10px] font-medium", cacheResultStyles[cacheInfo.result])}
+						>
+							{cacheInfo.result === "hit" ? "HIT" : "MISS"}
+						</Badge>
+					)}
+				</div>
+
+				{/* Error section */}
+				{span.statusCode === "Error" && span.statusMessage && (
+					<ErrorSection
+						message={span.statusMessage}
+						prompt={{
+							serviceName: span.serviceName,
+							operation: span.spanName,
+							attributes: detail.data?.spanAttributes ?? span.spanAttributes,
+						}}
+					/>
 				)}
-			</div>
 
-			{/* Error section */}
-			{span.statusCode === "Error" && span.statusMessage && (
-				<ErrorSection
-					message={span.statusMessage}
-					prompt={{
-						serviceName: span.serviceName,
-						operation: span.spanName,
-						attributes: detail.data?.spanAttributes ?? span.spanAttributes,
-					}}
-				/>
-			)}
+				{/* Tabs */}
+				<Tabs defaultValue="details">
+					<TabsList
+						variant="underline"
+						className="sticky top-0 z-10 w-full justify-start bg-background px-4 *:data-[slot=tabs-tab]:grow-0"
+					>
+						<TabsTrigger value="details">
+							<CircleInfoIcon size={14} /> Details
+						</TabsTrigger>
+						<TabsTrigger value="logs">
+							<CodeIcon size={14} /> Logs
+							{logCount !== null && logCount > 0 && (
+								<Badge variant="secondary" className="ml-1 px-1.5 py-0 text-[10px]">
+									{logCount >= LOG_LIMIT ? `${LOG_LIMIT}+` : logCount}
+								</Badge>
+							)}
+						</TabsTrigger>
+					</TabsList>
 
-			{/* Tabs */}
-			<Tabs defaultValue="details" className="flex min-h-0 flex-1 flex-col">
-				<TabsList variant="underline" className="shrink-0 px-4">
-					<TabsTrigger value="details">
-						<CircleInfoIcon size={14} /> Details
-					</TabsTrigger>
-					<TabsTrigger value="logs">
-						<CodeIcon size={14} /> Logs
-						{logCount !== null && logCount > 0 && (
-							<Badge variant="secondary" className="ml-1 px-1.5 py-0 text-[10px]">
-								{logCount}
-							</Badge>
-						)}
-					</TabsTrigger>
-				</TabsList>
-
-				<TabsContent value="details" className="mt-0 min-h-0 flex-1">
-					<ScrollArea className="h-full">
+					<TabsContent value="details" className="mt-0">
 						<div className="space-y-3 p-3">
 							<div className="space-y-1">
 								<h4 className="text-xs font-medium text-muted-foreground">Timing</h4>
@@ -140,14 +153,6 @@ export function SpanDetailPanel({ span, onClose }: SpanDetailPanelProps) {
 										<span className="font-mono">
 											<CopyableValue value={span.startTime}>
 												{span.startTime}
-											</CopyableValue>
-										</span>
-									</div>
-									<div className="flex justify-between">
-										<span className="text-muted-foreground">Duration</span>
-										<span className="font-mono">
-											<CopyableValue value={formatDuration(span.durationMs)}>
-												{formatDuration(span.durationMs)}
 											</CopyableValue>
 										</span>
 									</div>
@@ -197,6 +202,12 @@ export function SpanDetailPanel({ span, onClose }: SpanDetailPanelProps) {
 								</div>
 							) : (
 								<>
+									{detail.isError && (
+										<p className="rounded-md border border-dashed px-2 py-1.5 text-[11px] text-muted-foreground">
+											Couldn't load all attributes. Showing the ones loaded with the
+											trace.
+										</p>
+									)}
 									<AttributesSection
 										attributes={detail.data?.spanAttributes ?? span.spanAttributes ?? {}}
 										title="Span Attributes"
@@ -211,15 +222,13 @@ export function SpanDetailPanel({ span, onClose }: SpanDetailPanelProps) {
 								</>
 							)}
 						</div>
-					</ScrollArea>
-				</TabsContent>
+					</TabsContent>
 
-				<TabsContent value="logs" className="mt-0 min-h-0 flex-1">
-					<ScrollArea className="h-full">
+					<TabsContent value="logs" className="mt-0">
 						<SpanLogs logs={logs.data ?? []} isPending={logs.isPending} isError={logs.isError} />
-					</ScrollArea>
-				</TabsContent>
-			</Tabs>
+					</TabsContent>
+				</Tabs>
+			</ScrollArea>
 		</aside>
 	)
 }
@@ -266,7 +275,7 @@ function SpanLogs({
 					<button
 						key={`${log.timestamp}-${i}`}
 						type="button"
-						className="flex w-full cursor-pointer flex-col gap-1 p-2 text-left last:border-b-0 hover:bg-muted/30"
+						className="flex w-full cursor-pointer flex-col gap-1 p-2 text-left hover:bg-muted/30"
 						onClick={() => {
 							setSelectedLog(log)
 							setSheetOpen(true)

@@ -1,0 +1,112 @@
+{
+	"$schema": "https://json-schema.org/draft/2020-12/schema",
+	"$id": "urn:maple:eventing:schema:cloud-event:v1",
+	"$ref": "#/$defs/MapleCloudEvent",
+	"$defs": {
+		"MapleCloudEvent": {
+			"type": "object",
+			"properties": {
+				"specversion": {
+					"type": "string",
+					"enum": [
+						"1.0"
+					]
+				},
+				"id": {
+					"type": "string",
+					"minLength": 1,
+					"maxLength": 256,
+					"pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$"
+				},
+				"source": {
+					"type": "string",
+					"minLength": 1,
+					"maxLength": 256,
+					"pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$"
+				},
+				"type": {
+					"type": "string",
+					"minLength": 1,
+					"maxLength": 256,
+					"pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$"
+				},
+				"subject": {
+					"type": "string"
+				},
+				"time": {
+					"type": "string",
+					"pattern": "^(?:[0-9]{4}-(?:(?:01|03|05|07|08|10|12)-(?:0[1-9]|[12][0-9]|3[01])|(?:04|06|09|11)-(?:0[1-9]|[12][0-9]|30)|02-(?:0[1-9]|1[0-9]|2[0-8]))|(?:[0-9]{2}(?:0[48]|[2468][048]|[13579][26])|(?:[02468][048]|[13579][26])00)-02-29)T(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](?:\\.[0-9]{1,9})?(?:Z|[+-](?:[01][0-9]|2[0-3]):[0-5][0-9])$"
+				},
+				"datacontenttype": {
+					"type": "string",
+					"enum": [
+						"application/json"
+					]
+				},
+				"dataschema": {
+					"type": "string",
+					"minLength": 1,
+					"maxLength": 256,
+					"pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$"
+				},
+				"tenantid": {
+					"type": "string",
+					"minLength": 1,
+					"maxLength": 256,
+					"pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$"
+				},
+				"projectionid": {
+					"type": "string",
+					"minLength": 1,
+					"maxLength": 256,
+					"pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$"
+				},
+				"projectionrevision": {
+					"type": "integer",
+					"exclusiveMinimum": 0
+				},
+				"projectorid": {
+					"type": "string",
+					"minLength": 1,
+					"maxLength": 256,
+					"pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$"
+				},
+				"projectorversion": {
+					"type": "integer",
+					"exclusiveMinimum": 0
+				},
+				"sourceoccurrenceid": {
+					"type": "string",
+					"minLength": 1,
+					"maxLength": 256,
+					"pattern": "^\\S[\\s\\S]*\\S$|^\\S$|^$"
+				},
+				"identityquality": {
+					"type": "string",
+					"enum": [
+						"source",
+						"derived",
+						"none"
+					]
+				},
+				"data": {}
+			},
+			"required": [
+				"specversion",
+				"id",
+				"source",
+				"type",
+				"time",
+				"datacontenttype",
+				"dataschema",
+				"tenantid",
+				"projectionid",
+				"projectionrevision",
+				"projectorid",
+				"projectorversion",
+				"data"
+			],
+			"additionalProperties": false
+		}
+	}
+}

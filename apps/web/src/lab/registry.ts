@@ -84,6 +84,14 @@ export const LAB_ENTRIES: ReadonlyArray<LabEntry> = [
 		session: "none",
 	},
 	{
+		path: "/lab/verdict",
+		title: "Investigation verdict",
+		description:
+			"The verdict card and the run-progress feed in every state: diagnosed, headline-less, running, stalled, pre-first-step, inconclusive, failed.",
+		kind: "lab",
+		session: "none",
+	},
+	{
 		path: "/lab/flow",
 		title: "Trace flow",
 		description:

@@ -33,16 +33,21 @@ import {
 	type MapleDomains,
 	type MapleRegion,
 	type MapleStage,
+	mapleDbEnv,
 	resolveWorkerName,
 	resolveWorkerPlacement,
+	SandboxWorker,
+	stageDeploysSandbox,
 } from "@maple/infra/cloudflare"
 import {
 	appUrlsEnv,
 	authEnv,
+	githubAppSourceEnv,
 	ingestKeyCryptoEnv,
 	merge,
 	optionalPlain,
 	optionalSecret,
+	requireSecretEntry,
 	selfObservabilityEnv,
 	tinybirdEnv,
 } from "@maple/infra/env"
@@ -50,7 +55,7 @@ import { isolateContext } from "@maple/infra/worker-http"
 import { WorkerTelemetry } from "@maple/infra/worker-telemetry"
 import * as Cloudflare from "alchemy/Cloudflare"
 import * as AlchemyTelemetry from "alchemy/Telemetry"
-import { Effect, Layer } from "effect"
+import { Effect, Layer, Option } from "effect"
 import { ChatSessionLive, ChatSessionObject } from "./chat/ChatSession"
 import { MCP_ANTICIPATED_ERROR_IDENTIFIERS } from "./mcp/expected-failures"
 import { aiPorts, AiBindingLayers, bindAiClients } from "./worker/bindings"
@@ -61,10 +66,10 @@ import { AiObservabilityLive } from "./worker/observability"
  * The AI worker's resource bindings, split from the `Config`-sourced env so
  * `InferEnv` can derive `AiWorkerEnv` below.
  *
- * Empty until the surfaces land: the MCP tool rate limiter arrives with the
- * transport, the AI gateway and the sandbox binding with the tools that use
- * them, and the hosted class is yielded in the init rather than declared
- * here.
+ * Only the AI gateway: the MCP tool rate limiter is bound in the init, the
+ * hosted class is yielded there rather than declared here, and the sandbox
+ * Worker is a sibling this deploy creates, so `props` binds it from
+ * `SandboxWorker` where a `Worker.ref` could not see it.
  */
 const makeWorkerBindings = ({ stage }: { stage: MapleStage }) => ({
 	// Workers AI, for the models the agents call. The GATEWAY NAME is api's,
@@ -105,8 +110,21 @@ const configuredEnv = (stage: MapleStage, region: MapleRegion, domains: MapleDom
 		optionalPlain("MAPLE_TRIAGE_MODEL_OPENROUTER"),
 		optionalPlain("MAPLE_TRIAGE_MODEL_WORKERS_AI"),
 		optionalSecret("OPENROUTER_API_KEY"),
+		// The decision model (Jev) rides the same OpenRouter key, on OpenRouter's
+		// separate decisions endpoint. See `layerDecisionModel` in `@/platform/Llm`.
+		optionalPlain("MAPLE_DECISION_MODEL"),
 		// The chat agent authenticates to `/mcp` as an internal caller.
 		optionalSecret("INTERNAL_SERVICE_TOKEN"),
+		// The source and sandbox tools resolve a connected repository through the
+		// GitHub App, so its reader credentials live here as well as on api. They
+		// moved here with the tools (#861) but were left declared on api only,
+		// and every sandbox call failed with "GitHub App is not configured".
+		githubAppSourceEnv,
+		// This Worker's half of the sandbox service binding's auth. Declared only
+		// on the stages that deploy a sandbox Worker, and required there: without
+		// it the binding is present but every call is refused, which reads to the
+		// agent as "no sandbox in this deployment".
+		...(stageDeploysSandbox(stage) ? [requireSecretEntry("SANDBOX_INTERNAL_SERVICE_TOKEN")] : []),
 		// Dev-only escape hatch from per-org BYO rows (see apps/api/src/resources/env.ts).
 		optionalPlain("MAPLE_IGNORE_ORG_CLICKHOUSE"),
 	)
@@ -119,7 +137,11 @@ const configuredEnv = (stage: MapleStage, region: MapleRegion, domains: MapleDom
  */
 const props = Effect.gen(function* () {
 	if (globalThis.__ALCHEMY_RUNTIME__) return { main: import.meta.url }
-	const { stage, region, domains, workerDev, devEnv } = yield* MapleStack
+	const { stage, region, domains, workerDev, devEnv, db } = yield* MapleStack
+	// The agents' repository sandbox, reached only over this binding. Absent on
+	// the stages that do not deploy it, where `SandboxClient` reports the tools
+	// as unavailable rather than failing.
+	const sandbox = yield* Effect.serviceOption(SandboxWorker)
 	const env = yield* configuredEnv(stage, region, domains)
 	return {
 		main: import.meta.url,
@@ -137,7 +159,13 @@ const props = Effect.gen(function* () {
 		// that same graph.
 		build: { output: { strictExecutionOrder: false } },
 		// `devEnv` last, so `.env.local` cannot override the inter-app URLs.
-		env: { ...makeWorkerBindings({ stage }), ...env, ...devEnv },
+		env: {
+			...makeWorkerBindings({ stage }),
+			...mapleDbEnv(db, "ai"),
+			...(Option.isSome(sandbox) ? { SANDBOX: sandbox.value } : undefined),
+			...env,
+			...devEnv,
+		},
 	}
 })
 

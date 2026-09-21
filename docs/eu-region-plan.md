@@ -31,7 +31,7 @@ there is no per-org routing anywhere, because each instance knows exactly one re
 | --- | --- | --- |
 | Ingest gateway + OTel collector | ECS us-east-1 | ECS eu-central-1 |
 | Tinybird | `maple_us`, us-east-1 | `maple_eu`, AWS eu-central-1 |
-| Postgres | PlanetScale, US | PlanetScale, eu-central-1, own Hyperdrive config |
+| Postgres | PlanetScale `maple`, US, dashboard Hyperdrive configs | PlanetScale `maple-eu`, eu-central, roles and Hyperdrive configs declared by the deploy |
 | Electric | ECS us-east-1 | ECS eu-central-1, in the EU ingest VPC |
 | api / ai / alerting / electric-sync / web Workers | placement us-east-1 | placement eu-central-1 (best effort, see risks) |
 | `ChatSession` Durable Object | no jurisdiction | `jurisdiction: "eu"` |
@@ -66,9 +66,11 @@ across regions because there is no routing.
 2. **Three Tinybird tokens, three roles**: workspace admin token as `TINYBIRD_SIGNING_KEY`, a scoped
    runtime read token as `TINYBIRD_TOKEN`, an append-only token for the gateway. Sign a throwaway
    JWT to prove the signing key before trusting it (the 2026-09-04 incident).
-3. **PlanetScale**: a new database in eu-central-1, migrations applied by the same manual prod
-   procedure, PSBouncer for the gateway's key reads. A dashboard-managed Hyperdrive config per
-   Worker, bound by id like prd.
+3. **PlanetScale**: the `maple-eu` database in eu-central, empty. That is all: the deploy adopts
+   its `main` branch and applies the migrations, and declares on it the gateway's role, one role
+   per Worker consumer and a Hyperdrive config on each (`declareMapleDb` in `alchemy.run.ts`).
+   The same PlanetScale service token serves both instances; `prod-eu` carries it under the
+   same names.
 4. **AWS**: eu-central-1 in the existing account. ACM certificates for `ingest.eu.maple.dev` and
    `electric.eu.maple.dev`.
 5. **Cloudflare**: `replay-blobs-eu` with `jurisdiction: "eu"`. Regional Services would pin
@@ -99,8 +101,9 @@ Built on the `worktree-eu-region` branch; `docs/infra.md` § Regions is the refe
   applied where ids are minted: `chatSessionStub` reads the stack-derived `MAPLE_REGION`.
 - `MapleStack` carries `region`; every Worker module reads it from there. `appUrlsEnv` defaults
   to the deploy's own hostnames, so EU emails and share links point at the EU app.
-- `resolveHyperdriveRefId(stage, consumer, region)` throws for `eu` until the EU configs exist,
-  rather than binding nothing and 500ing every DB-backed route.
+- `resolveDatabaseMode(stage, region)` is `"declared"` for the EU prd: the Workers bind the
+  Hyperdrive configs the deploy created, from their props, so there are no dashboard ids to
+  paste and no way to deploy the instance with no `MAPLE_DB`. The US prd stays `"ref"`.
 - `MAPLE_INTERNAL_ORG_ID` comes from the environment already, so the EU value is an org created
   on the EU instance.
 
@@ -112,7 +115,7 @@ Built on the `worktree-eu-region` branch; `docs/infra.md` § Regions is the refe
   the `prod` / `prod-eu` Infisical environment and the AWS region; the composite action took an
   `aws-region` input for that, and the stack still refuses an `AWS_REGION` that disagrees.
 - Still to do before flipping `MAPLE_DEPLOY_EU`: the `production-eu` GitHub environment, the
-  `prod-eu` Infisical environment, and the Hyperdrive config ids in `resolveHyperdriveRefId`.
+  `prod-eu` Infisical environment, and the empty `maple-eu` database.
 - Tinybird schema deploys target `maple_us` and `maple_eu` (and GCP Frankfurt while it lives).
   `tinybird-cd.yml` is disabled, so this joins the manual checklist.
 - The EU ingest fleet and Electric come out of the existing factories unchanged.

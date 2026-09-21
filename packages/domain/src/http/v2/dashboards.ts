@@ -1161,7 +1161,7 @@ export class V2DashboardsApiGroup extends HttpApiGroup.make("dashboards")
 				identifier: "upsertDashboardWidgetShare",
 				summary: "Share a single widget",
 				description:
-					"Creates a share link scoped to one widget, or changes the mode of the one it already has. Independent of the dashboard's own share: revoking or re-scoping the board leaves widget links untouched. A `public` widget share may be embedded in an iframe.",
+					"Creates a share link scoped to one widget, or changes the mode of the one it already has. The link only resolves while the dashboard itself is shared, and never grants more than the dashboard's own mode: unsharing the board disables it, sharing the board again restores it. A `public` widget share on a `public` dashboard may be embedded in an iframe.",
 			}),
 		),
 	)

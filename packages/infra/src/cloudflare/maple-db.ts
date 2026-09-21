@@ -5,10 +5,14 @@
  *
  * - `"managed"` (dev stages): `ManagedMapleDb`, the alchemy-managed Hyperdrive
  *   below, bound through `Hyperdrive.Connect`.
- * - `"ref"` (prd): a dashboard-managed config, attached by id. Alchemy has
- *   no `env` form for a Hyperdrive it did not create; its own `ConnectBinding`
- *   attaches the same raw metadata with `host.bind`, so this does too. The
- *   origin and credentials live only in the Cloudflare dashboard.
+ * - `"ref"` (the US prd): a dashboard-managed config, attached by id. Alchemy
+ *   has no `env` form for a Hyperdrive it did not create; its own
+ *   `ConnectBinding` attaches the same raw metadata with `host.bind`, so this
+ *   does too. The origin and credentials live only in the Cloudflare dashboard.
+ * - `"declared"` (the EU prd): the root declares a role and a Hyperdrive config
+ *   per consumer on the instance's branch (`MapleDbResources`), and the
+ *   Worker's props bind its own through `mapleDbEnv` — a Hyperdrive the deploy
+ *   created has an `env` form. Nothing to do from the init.
  * - `"none"` (PR previews): no binding at all; the Worker still boots and
  *   DB-backed routes 500 while everything else works.
  *
@@ -22,6 +26,7 @@ import type * as Option from "effect/Option"
 import * as Redacted from "effect/Redacted"
 import * as Schema from "effect/Schema"
 import { requiredPlain } from "../env.ts"
+import type { MapleDbResources } from "./stack.ts"
 import {
 	type MapleDbConsumer,
 	parseMapleDeployment,
@@ -80,6 +85,17 @@ export const ManagedMapleDb = Cloudflare.Hyperdrive.Connection(
 )
 
 /**
+ * A Worker's env for prd's database: the branch name, so it uploads after the migrations
+ * (a config bound by id gives alchemy no ordering edge), and on a `"declared"` stage the
+ * consumer's Hyperdrive config as `MAPLE_DB`.
+ */
+export const mapleDbEnv = (db: MapleDbResources | undefined, consumer: MapleDbConsumer) =>
+	db && {
+		MAPLE_DB_BRANCH: db.schema.name,
+		...(db.hyperdrives && { [MAPLE_DB_BINDING]: db.hyperdrives[consumer] }),
+	}
+
+/**
  * Bind `MAPLE_DB` to the Worker this runs in, for the stage's flavor. Yield it
  * from the Worker's init (and from a Workflow's outer phase, which binds the
  * same name again — alchemy keys bindings by name). Plan-time only: in the
@@ -90,13 +106,13 @@ export const MapleDb = (consumer: MapleDbConsumer) =>
 	Effect.gen(function* () {
 		if (globalThis.__ALCHEMY_RUNTIME__) return
 		const { stage, region } = parseMapleDeployment(yield* Stage)
-		switch (resolveDatabaseMode(stage)) {
+		switch (resolveDatabaseMode(stage, region)) {
 			case "managed": {
 				yield* Cloudflare.Hyperdrive.Connect(ManagedMapleDb)
 				return
 			}
 			case "ref": {
-				const id = resolveHyperdriveRefId(stage, consumer, region)
+				const id = resolveHyperdriveRefId(stage, consumer)
 				if (id === undefined) return
 				const host = yield* Cloudflare.Worker
 				yield* host.bind(MAPLE_DB_BINDING, {
@@ -104,6 +120,8 @@ export const MapleDb = (consumer: MapleDbConsumer) =>
 				})
 				return
 			}
+			// Bound from the Worker's props (`mapleDbEnv`), or not at all.
+			case "declared":
 			case "none":
 				return
 		}

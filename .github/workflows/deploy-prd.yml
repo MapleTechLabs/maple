@@ -24,7 +24,10 @@ permissions:
 
 jobs:
     # Separate job because it needs an arm64 runner — see the workflow itself.
+    # Same gate as deploy-prd: a superseded CI run has nothing to deploy, so it
+    # should not spend an arm64 runner compiling a binary nobody will ship.
     ingest-binary:
+        if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
         uses: ./.github/workflows/build-ingest-binary.yml
 
     # On a workflow_run event `github.sha` is the default branch head, not the
@@ -58,16 +61,28 @@ jobs:
     # string of clean deploys for several commits, and why an Electric deploy
     # nobody had noticed was never running took an hour to spot. This job always
     # runs, so the run's conclusion says what actually happened.
+    #
+    # A *cancelled* CI run is not a broken main: CI cancels in-progress runs on
+    # `main` when a newer push lands, and the superseding commit's own run
+    # deploys both. Reporting that as "Fix main" made every back-to-back push
+    # look like a deploy failure.
     deployment-gate:
         needs: [deploy-prd, deploy-prd-eu]
         if: ${{ always() }}
         runs-on: ubuntu-latest
         steps:
             - name: Report whether the deploy ran
+              env:
+                  CI_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+                  HEAD_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
               run: |
                   result="${{ needs.deploy-prd.result }}"
+                  if [ "$result" = "skipped" ] && [ "$CI_CONCLUSION" = "cancelled" ]; then
+                      echo "::notice::Nothing to deploy: CI for $HEAD_SHA was cancelled, superseded by a newer push to main."
+                      exit 0
+                  fi
                   if [ "$result" = "skipped" ]; then
-                      echo "::error::Nothing was deployed: CI did not pass for ${{ github.event.workflow_run.head_sha || github.sha }}. Fix main, then re-run."
+                      echo "::error::Nothing was deployed: CI did not pass for $HEAD_SHA. Fix main, then re-run."
                       exit 1
                   fi
                   # A genuine deploy failure already fails its own job and reddens

@@ -6,7 +6,7 @@ import { Sheet, SheetDescription, SheetHeader, SheetPopup, SheetTitle } from "@m
 import { Tooltip, TooltipPopup, TooltipTrigger } from "@maple/ui/components/ui/tooltip"
 import { MapleMark } from "@maple/ui/components/icons/maple-mark"
 import { MaximizeIcon } from "@/components/icons"
-import { ensureStoredTab, useChatTabs } from "@/hooks/use-chat-tabs"
+import { ensureStoredTab, loadSheetTab, saveSheetTab, useChatTabs } from "@/hooks/use-chat-tabs"
 import { QUICK_CHAT_TAB_ID } from "./global-chat-constants"
 
 const GlobalChatContent = lazy(() =>
@@ -31,10 +31,12 @@ export function GlobalChatPanel({
 	onOpenChange: (open: boolean) => void
 }) {
 	const { createTab, renameTab } = useChatTabs(orgId)
-	const [tabId, setTabId] = useState(QUICK_CHAT_TAB_ID)
+	const [tabId, setTabId] = useState(() => loadSheetTab(orgId, QUICK_CHAT_TAB_ID))
 
 	const handleCreate = () => {
-		setTabId(createTab())
+		const id = createTab()
+		saveSheetTab(orgId, id)
+		setTabId(id)
 	}
 
 	return (

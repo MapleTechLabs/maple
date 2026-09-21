@@ -11,7 +11,7 @@ const { group, title } = Astro.props;
 const groupHref = group === "Instrumentation" ? `/docs/${INSTRUMENTATION_SLUG}` : null;
 ---
 
-<nav aria-label="Breadcrumb" class="flex items-center gap-1.5 text-[10px] text-fg-muted uppercase tracking-wider mb-4 min-w-0">
+<nav aria-label="Breadcrumb" class="mb-5 flex min-w-0 items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.14em] text-fg-muted">
     <a href="/docs" class="hover:text-fg transition-colors">Docs</a>
     <span class="text-border">/</span>
     {groupHref ? (
@@ -20,5 +20,5 @@ const groupHref = group === "Instrumentation" ? `/docs/${INSTRUMENTATION_SLUG}` 
         <span>{group}</span>
     )}
     <span class="text-border">/</span>
-    <span class="text-fg-muted/80 truncate normal-case tracking-normal text-xs">{title}</span>
+    <span class="truncate font-display text-[12.5px] normal-case tracking-normal text-fg-muted/80">{title}</span>
 </nav>

@@ -1,24 +1,58 @@
-// Single source of truth for docs navigation ordering + the header category bar.
-// The sidebar (DocsSidebar), the index page, prev/next, search and the header
-// category bar (DocsCategoryNav) all read from here so group order and icons
-// never drift apart. Pure data — client islands import it.
+// Single source of truth for docs navigation ordering. The sidebar
+// (DocsSidebar), the index page, prev/next and search all read from here so
+// section and group order never drift apart. Pure data — client islands import it.
 
-/** Doc groups in sidebar order. Every doc's `group` must appear here. */
-export const GROUP_ORDER = [
-	"Getting Started",
-	"Instrumentation",
-	"Concepts",
-	"Session Replay",
-	"Product Events",
-	"Agent Sessions",
-	"Infrastructure",
-	"Integrations",
-	"Alerting",
-	"Local Mode",
-	"Reference",
+/**
+ * The sidebar is split into sections so a reader sees one section's tree at a
+ * time: product surfaces, the "get data in" guides, the local binary, and the
+ * machine-facing references. Groups are listed in sidebar order; `icon` is a
+ * DocsCategoryIcon id, shared with the header strip.
+ */
+export const SECTIONS = [
+	{
+		id: "platform",
+		icon: "Dashboards",
+		label: "Platform",
+		blurb: "Concepts and every product surface.",
+		groups: [
+			"Getting Started",
+			"Concepts",
+			"Session Replay",
+			"Product Events",
+			"Agent Sessions",
+			"Dashboards",
+			"Alerting",
+			"Integrations",
+		],
+	},
+	{
+		id: "instrumentation",
+		icon: "Instrumentation",
+		label: "Instrumentation",
+		blurb: "Languages, frameworks, hosts and clusters.",
+		groups: ["Instrumentation", "Infrastructure"],
+	},
+	{
+		id: "local",
+		icon: "Local Mode",
+		label: "Local Mode",
+		blurb: "The whole product as one binary.",
+		groups: ["Local Mode"],
+	},
+	{
+		id: "reference",
+		icon: "Reference",
+		label: "Reference",
+		blurb: "REST API and the MCP server.",
+		groups: ["Reference"],
+	},
 ] as const
 
-export type DocGroup = (typeof GROUP_ORDER)[number]
+export type DocSection = (typeof SECTIONS)[number]
+export type DocGroup = DocSection["groups"][number]
+
+/** Doc groups in sidebar order (sections in order, groups within each). */
+export const GROUP_ORDER: readonly DocGroup[] = SECTIONS.flatMap((section) => section.groups)
 
 export const isDocGroup = (group: string): group is DocGroup => GROUP_ORDER.some((known) => known === group)
 
@@ -27,26 +61,12 @@ export const groupRank = (group: string): number => {
 	return i === -1 ? GROUP_ORDER.length : i
 }
 
+/** The section a group belongs to; unknown groups fall into the first one. */
+export const sectionForGroup = (group: string): DocSection =>
+	SECTIONS.find((section) => section.groups.some((known) => known === group)) ?? SECTIONS[0]
+
 /** Slug of the instrumentation overview — the "SDKs" entry point everywhere. */
 export const INSTRUMENTATION_SLUG = "instrumentation"
-
-/**
- * Left-to-right order of the header category bar. Each entry links to the
- * first page of its group; the group name doubles as the DocsCategoryIcon id.
- */
-export const HEADER_NAV: readonly DocGroup[] = [
-	"Getting Started",
-	"Instrumentation",
-	"Concepts",
-	"Session Replay",
-	"Product Events",
-	"Agent Sessions",
-	"Infrastructure",
-	"Integrations",
-	"Alerting",
-	"Local Mode",
-	"Reference",
-]
 
 /** One-line blurb per group for the docs index cards. */
 export const GROUP_BLURBS = {
@@ -56,6 +76,7 @@ export const GROUP_BLURBS = {
 	"Session Replay": "Record browser sessions and play them back next to their traces.",
 	"Product Events": "Track signups, checkouts and plan starts from the browser, a span, or any backend.",
 	"Agent Sessions": "Trace AI agents: every model call, tool call and turn, grouped into sessions.",
+	Dashboards: "Build dashboards on your telemetry and embed their charts in your own product.",
 	Infrastructure: "Stream host, container and cluster metrics next to your services.",
 	Integrations: "Pull metrics and context from the services around your app.",
 	Alerting: "Route alerts to Slack, PagerDuty, Discord, Telegram or a webhook.",

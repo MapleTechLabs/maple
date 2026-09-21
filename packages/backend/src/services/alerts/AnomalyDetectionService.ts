@@ -55,7 +55,7 @@ import {
 	Schema,
 } from "effect"
 import type { TenantContext } from "@maple/backend/services/auth/AuthService"
-import { maybeEnqueueTriage } from "@maple/backend/services/errors/ai-triage-enqueue"
+import { isTriageSkipReason, maybeEnqueueTriage } from "@maple/backend/services/errors/ai-triage-enqueue"
 import { WorkerEnvironment } from "@maple/infra/worker-runtime"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
@@ -1706,11 +1706,19 @@ const make: Effect.Effect<
 							},
 							workerEnv,
 						}).pipe(Effect.provideService(Database, database))
-						if (triage.enqueued) {
+						// A gate skip is recorded as `skipped`, not left at `none`: the
+						// incident was judged, and the hub should say so rather than
+						// read as one automation never reached.
+						const triageStatus = triage.enqueued
+							? "pending"
+							: isTriageSkipReason(triage.reason)
+								? "skipped"
+								: null
+						if (triageStatus !== null) {
 							yield* dbExecute((db) =>
 								db
 									.update(anomalyIncidents)
-									.set({ triageStatus: "pending", updatedAt: new Date(nowMs) })
+									.set({ triageStatus, updatedAt: new Date(nowMs) })
 									.where(
 										and(
 											eq(anomalyIncidents.orgId, orgId),

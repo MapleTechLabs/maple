@@ -1,5 +1,5 @@
 ---
 name: "Gymscore"
 href: "https://www.gymscore.ai"
-order: 3
+order: 5
 ---

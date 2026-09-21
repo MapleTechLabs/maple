@@ -27,6 +27,7 @@
 		"@maple/auth": "workspace:*",
 		"@maple/backend": "workspace:*",
 		"@maple/cache": "workspace:*",
+		"@maple/chat-platform": "workspace:*",
 		"@maple/db": "workspace:*",
 		"@maple/domain": "workspace:*",
 		"@maple/infra": "workspace:*",
@@ -35,13 +36,13 @@
 		"@maple/widgets": "workspace:*",
 		"@tinybirdco/sdk": "catalog:tinybird",
 		"alchemy": "catalog:alchemy",
-		"drizzle-orm": "^0.45.1",
+		"drizzle-orm": "1.0.0-rc.5-5935859",
 		"effect": "catalog:effect"
 	},
 	"devDependencies": {
 		"@cloudflare/workers-types": "catalog:alchemy",
 		"@effect/language-service": "catalog:effect",
-		"@electric-sql/pglite": "^0.5.2",
+		"@electric-sql/pglite": "^0.5.6",
 		"@types/node": "catalog:tooling",
 		"atmn": "^1.1.17",
 		"typescript": "catalog:tooling",

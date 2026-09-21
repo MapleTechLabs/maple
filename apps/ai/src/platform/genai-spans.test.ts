@@ -159,4 +159,19 @@ describe("withToolCallContent", () => {
 			assert.strictEqual(spans[0]?.attributes.size, 0)
 		}),
 	)
+
+	it.effect("files the tool span under the run's session and turn", () =>
+		Effect.gen(function* () {
+			const { spans, tracer } = makeRecordingTracer()
+
+			yield* withToolCallContent(Effect.succeed("done"), {
+				description: "a tool",
+				params: {},
+				sessionAttributes: { "maple_ai.session.id": "org_1:inv-abc", "maple_ai.turn.id": "msg_1" },
+			}).pipe(Effect.withSpan("execute_tool search_logs"), Effect.withTracer(tracer))
+
+			assert.strictEqual(spans[0]?.attributes.get("maple_ai.session.id"), "org_1:inv-abc")
+			assert.strictEqual(spans[0]?.attributes.get("maple_ai.turn.id"), "msg_1")
+		}),
+	)
 })

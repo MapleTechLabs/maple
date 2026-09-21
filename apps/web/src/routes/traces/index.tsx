@@ -20,7 +20,7 @@ import { PageRefreshProvider } from "@/components/time-range-picker/page-refresh
 import { TimeRangeHeaderControls } from "@/components/time-range-picker/time-range-header-controls"
 import { AutocompleteValuesProvider } from "@/hooks/use-autocomplete-values"
 import { ActiveFilterChips } from "@maple/ui/components/filters/active-filter-chips"
-import { traceFilterChips } from "@/lib/traces/trace-filter-chips"
+import { removeTraceFilterChips, traceFilterChips } from "@/lib/traces/trace-filter-chips"
 import { useGlobalNamespace } from "@/hooks/use-global-namespace"
 
 const ContainsMatchMode = Schema.optional(Schema.Literals(["contains"]))
@@ -122,24 +122,21 @@ function TracesPage() {
 				.filter(
 					(chip) =>
 						pinnedNamespace === null ||
-						(chip.param !== "namespaces" && chip.param !== "excludedNamespaces"),
+						(chip.id !== "namespaces" && chip.id !== "excludedNamespaces"),
 				)
 				.map((chip) => ({
-					id: chip.param,
+					id: chip.id,
 					label: chip.label,
 					values: chip.values,
 					negated: chip.negated,
-					onRemove: () => navigate({ search: (prev) => ({ ...prev, [chip.param]: undefined }) }),
+					onRemove: () => navigate({ search: (prev) => chip.remove(prev) }),
 				})),
 		[search, navigate, pinnedNamespace],
 	)
 
 	const clearFacetFilters = React.useCallback(() => {
 		navigate({
-			search: (prev) => ({
-				...prev,
-				...Object.fromEntries(traceFilterChips(prev).map((chip) => [chip.param, undefined])),
-			}),
+			search: (prev) => removeTraceFilterChips(prev, traceFilterChips(prev)),
 		})
 	}, [navigate])
 

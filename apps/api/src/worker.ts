@@ -15,9 +15,9 @@
  */
 import {
 	emailBinding,
+	mapleDbEnv,
 	MapleStack,
 	AiWorker,
-	SandboxWorker,
 	type MapleRegion,
 	type MapleStage,
 	resolveWorkerName,
@@ -27,7 +27,7 @@ import { isolateContext } from "@maple/infra/worker-http"
 import { WorkerTelemetry } from "@maple/infra/worker-telemetry"
 import * as Cloudflare from "alchemy/Cloudflare"
 import * as AlchemyTelemetry from "alchemy/Telemetry"
-import { Effect, Layer, Option } from "effect"
+import { Effect, Layer } from "effect"
 import { ApiObservabilityLive } from "./http/api-observability"
 import { apiConfiguredEnv } from "./resources/env"
 import { ApiBindingLayers, apiPorts, bindApiClients } from "./worker/bindings"
@@ -68,11 +68,7 @@ const makeWorkerBindings = ({ stage, region }: { stage: MapleStage; region: Mapl
  */
 const props = Effect.gen(function* () {
 	if (globalThis.__ALCHEMY_RUNTIME__) return { main: import.meta.url }
-	const { stage, region, domains, workerDev, devEnv } = yield* MapleStack
-	// The agents' repository sandbox, reached only over this binding. Absent on
-	// the stages that do not deploy it, where `SandboxClient` reports the tools
-	// as unavailable rather than failing.
-	const sandbox = yield* Effect.serviceOption(SandboxWorker)
+	const { stage, region, domains, workerDev, devEnv, db } = yield* MapleStack
 	// maple-ai, which serves `/mcp` and the chat surface. api keeps the hostname
 	// and forwards, so the public address and the OAuth identity do not move.
 	const ai = yield* AiWorker
@@ -106,7 +102,7 @@ const props = Effect.gen(function* () {
 		// `devEnv` last, so `.env.local` cannot override the inter-app URLs.
 		env: {
 			...makeWorkerBindings({ stage, region }),
-			...(Option.isSome(sandbox) ? { SANDBOX: sandbox.value } : undefined),
+			...mapleDbEnv(db, "api"),
 			AI_WORKER: ai,
 			...configuredEnv,
 			...devEnv,

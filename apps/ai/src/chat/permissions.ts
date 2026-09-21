@@ -29,8 +29,10 @@ export const DEFAULT_RULESET: PermissionRuleset = [
  * "get_*"` globs. A mutating tool added next month is denied by default under this ruleset instead
  * of slipping through whatever glob happened to match its name.
  *
- * Note what this also denies by omission: `task`. A sub-agent running under this ruleset physically
- * cannot spawn another one, because `buildChatTools` never offers it the tool.
+ * Denial is stronger than approval-gating and, for an unattended run, it is the only thing that
+ * works: a gated tool is still announced to the model with a real schema, so an autonomous pass
+ * spends a tool call discovering that nobody is there to approve it, and since 2026-09 a returned
+ * failure counts toward `repeatedFailureLimit`. An unoffered tool cannot be called at all.
  */
 export const READ_ONLY_RULESET: PermissionRuleset = [
 	new PermissionRule({ tool: "*", action: "deny" }),

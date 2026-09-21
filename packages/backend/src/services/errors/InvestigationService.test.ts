@@ -18,8 +18,6 @@ import {
 } from "@maple/domain/http"
 import { ErrorIssueId } from "@maple/domain/primitives"
 import { aiTriageSettings, errorIssues, errorIssueEvents, investigations } from "@maple/db"
-import type { MaplePgClient } from "@maple/db/client"
-import { createMaplePgliteClient } from "@maple/db/pglite"
 import { WorkerEnvironment } from "@maple/infra/worker-runtime"
 import { eq } from "drizzle-orm"
 import { Env } from "@maple/backend/platform/Env"
@@ -169,6 +167,25 @@ describe("InvestigationService", () => {
 			)
 			assert.strictEqual(rediagnosed.id, created.id)
 			assert.strictEqual(rediagnosed.status, "diagnosed")
+		}).pipe(Effect.provide(makeLayer())),
+	)
+
+	it.effect("files a close-out's partial report as inconclusive, at low confidence", () =>
+		Effect.gen(function* () {
+			const service = yield* InvestigationService
+			const created = yield* service.createInvestigation(ORG, null, freeformRequest("cut short"))
+
+			const partial = yield* service.submitDiagnosis(
+				ORG,
+				created.id,
+				new SubmitDiagnosisRequest({ report: sampleReport(), model: "test-model", partial: true }),
+			)
+			assert.strictEqual(partial.status, "inconclusive")
+			assert.strictEqual(partial.confidence, "low")
+			// The hub shows the incident's own severity; a partial assessed none.
+			assert.isNull(partial.severity)
+			assert.isNull(partial.diagnosedAt)
+			assert.strictEqual(partial.report?.suspectedCause, sampleReport().suspectedCause)
 		}).pipe(Effect.provide(makeLayer())),
 	)
 
@@ -502,15 +519,13 @@ describe("InvestigationService", () => {
 		"submit_diagnosis writes the issue-linked ai_triage event exactly once across re-diagnosis",
 		() => {
 			const harness = makeHarness()
-			const raw = createMaplePgliteClient(harness.testDb.pglite) as MaplePgClient
 			const issueId = asIssueId(randomUUID())
 			return Effect.gen(function* () {
 				const service = yield* InvestigationService
-				// Forcing the service (above) builds the DB layer + runs migrations on the
-				// shared PGlite, so the raw client can now seed the linked error issue.
+				const database = yield* Database
 				const now = new Date()
-				yield* Effect.promise(() =>
-					raw.insert(errorIssues).values({
+				yield* database.execute((db) =>
+					db.insert(errorIssues).values({
 						id: issueId,
 						orgId: ORG,
 						fingerprintHash: "98765432109876543210",
@@ -551,8 +566,8 @@ describe("InvestigationService", () => {
 					new SubmitDiagnosisRequest({ report: sampleReport() }),
 				)
 
-				const events = yield* Effect.promise(() =>
-					raw.select().from(errorIssueEvents).where(eq(errorIssueEvents.issueId, issueId)),
+				const events = yield* database.execute((db) =>
+					db.select().from(errorIssueEvents).where(eq(errorIssueEvents.issueId, issueId)),
 				)
 				const aiTriageEvents = events.filter((e) => e.type === "ai_triage")
 				assert.strictEqual(aiTriageEvents.length, 1)

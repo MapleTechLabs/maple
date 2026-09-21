@@ -152,11 +152,11 @@ export default function DocsSearch() {
 				type="button"
 				onClick={() => setPaletteOpen(true)}
 				aria-label="Search docs"
-				className="flex h-7 items-center gap-2 border border-border px-2 text-fg-muted text-xs transition-colors hover:border-fg-muted/50 hover:text-fg"
+				className="flex h-7 items-center gap-2 rounded-lg border border-border px-2 text-fg-muted text-xs transition-colors hover:border-fg-muted/40 hover:text-fg sm:w-56"
 			>
-				<MagnifierIcon className="size-3.5" />
+				<MagnifierIcon className="size-3.5 shrink-0" />
 				<span className="hidden sm:inline">Search docs</span>
-				<kbd className="hidden font-medium text-[10px] text-fg-muted/70 tracking-widest sm:inline">
+				<kbd className="ml-auto hidden font-mono font-medium text-[10px] text-fg-muted/70 tracking-widest sm:inline">
 					⌘K
 				</kbd>
 			</button>

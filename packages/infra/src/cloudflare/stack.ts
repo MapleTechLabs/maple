@@ -1,4 +1,5 @@
 import type * as Cloudflare from "alchemy/Cloudflare"
+import type * as Planetscale from "alchemy/Planetscale"
 import * as Context from "effect/Context"
 import * as Effect from "effect/Effect"
 import type { WorkerDev } from "@maple/alchemy-portless"
@@ -6,12 +7,22 @@ import type { DevApp } from "../dev-urls.ts"
 import { Stage } from "alchemy/Stage"
 import type { MapleRegion } from "../region.ts"
 import {
+	type MapleDbConsumer,
 	type MapleDeployment,
 	type MapleDomains,
 	type MapleStage,
 	parseMapleDeployment,
 	resolveWorkerName,
 } from "./stage.ts"
+
+/**
+ * prd's database: the branch whose deploy applies the migrations, and on a `"declared"`
+ * instance the Hyperdrive config each consumer binds as `MAPLE_DB`.
+ */
+export interface MapleDbResources {
+	readonly schema: Planetscale.PostgresBranch
+	readonly hyperdrives: Record<MapleDbConsumer, Cloudflare.Hyperdrive.Connection> | undefined
+}
 
 /**
  * Public origins of the apps the others point at, as plan-time strings:
@@ -37,6 +48,8 @@ export interface MapleStackContext {
 	 * so `.env.local` cannot override them; undefined on a deploy.
 	 */
 	readonly devEnv: Record<string, string> | undefined
+	/** prd's database resources; undefined on the other stages. */
+	readonly db: MapleDbResources | undefined
 }
 
 /**
@@ -56,9 +69,10 @@ export class MapleStack extends Context.Service<MapleStack, MapleStackContext>()
 export class ApiWorker extends Context.Service<ApiWorker, Cloudflare.Worker>()("@maple/infra/ApiWorker") {}
 
 /**
- * The deployed sandbox Worker, for the api's service binding to it. Provided by
- * the root right after yielding it, for the same reason as {@link ApiWorker}: a
- * `Worker.ref` reads stored state and cannot see a sibling this deploy creates.
+ * The deployed sandbox Worker, for maple-ai's service binding to it — the
+ * Worker whose agents run the sandbox tools. Provided by the root right after
+ * yielding it, for the same reason as {@link ApiWorker}: a `Worker.ref` reads
+ * stored state and cannot see a sibling this deploy creates.
  */
 export class SandboxWorker extends Context.Service<SandboxWorker, Cloudflare.Worker>()(
 	"@maple/infra/SandboxWorker",

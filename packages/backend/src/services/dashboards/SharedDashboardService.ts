@@ -173,7 +173,9 @@ export interface SharedDashboardServiceApi {
 	 *
 	 * Fails with `ShareNotFoundError` for unknown *and* revoked tokens alike —
 	 * the query itself filters `revoked_at is null`, so the two cases are the
-	 * same single indexed lookup and offer no timing or body distinction.
+	 * same single indexed lookup and offer no timing or body distinction. A
+	 * widget token whose board is not shared fails the same way, and one whose
+	 * board is `org`-only resolves as `org` whatever its own mode.
 	 */
 	readonly resolveByToken: (
 		token: string,
@@ -487,13 +489,24 @@ export class SharedDashboardService extends Context.Service<
 			// per dashboard — is satisfied when the insert lands.
 			const inserted = yield* database
 				.execute((db) =>
-					db.transaction(async (tx) => {
-						await tx
-							.update(dashboardShares)
-							.set({ revokedAt: msToDate(now), updatedAt: msToDate(now), updatedBy: userId })
-							.where(and(eq(dashboardShares.orgId, orgId), eq(dashboardShares.id, existing.id)))
-						return tx.insert(dashboardShares).values(values).returning(shareColumns)
-					}),
+					db.transaction((tx) =>
+						Effect.gen(function* () {
+							yield* tx
+								.update(dashboardShares)
+								.set({
+									revokedAt: msToDate(now),
+									updatedAt: msToDate(now),
+									updatedBy: userId,
+								})
+								.where(
+									and(
+										eq(dashboardShares.orgId, orgId),
+										eq(dashboardShares.id, existing.id),
+									),
+								)
+							return yield* tx.insert(dashboardShares).values(values).returning(shareColumns)
+						}),
+					),
 				)
 				.pipe(Effect.mapError(toPersistenceError))
 
@@ -551,6 +564,28 @@ export class SharedDashboardService extends Context.Service<
 			})
 		})
 
+		/**
+		 * The board's own live share mode, for capping a widget link.
+		 *
+		 * A chart link lives inside its board's sharing. Unsharing the board kills
+		 * every chart link on it, and sharing the board again brings them back with
+		 * the same tokens — the widget rows are never revoked, only out-ranked.
+		 * An `org` board caps a `public` chart link at `org`.
+		 *
+		 * Untraced: a second lookup on the viewer hot path, inside an already-traced
+		 * resolve. The effective mode is annotated on that parent span instead.
+		 */
+		const boardMode = Effect.fnUntraced(function* (orgId: OrgId, dashboardId: DashboardId) {
+			const [board] = yield* loadLive(orgId, { dashboardId, widgetId: null })
+			if (board === undefined) {
+				return yield* Effect.fail(new ShareNotFoundError({ message: SHARE_NOT_FOUND_MESSAGE }))
+			}
+			return board.mode
+		})
+
+		const capByBoard = (widgetMode: DashboardShareMode, board: DashboardShareMode) =>
+			board === "org" ? "org" : widgetMode
+
 		const resolveByToken = Effect.fn("SharedDashboardService.resolveByToken")(function* (token: string) {
 			const hmacKey = yield* requireHmacKey
 			const tokenHash = hashShareToken(token, hmacKey)
@@ -580,7 +615,12 @@ export class SharedDashboardService extends Context.Service<
 			// `token` is the one the caller presented — it hashed to this row, so it
 			// is by definition the stored one, and decrypting to prove that again
 			// would only add a cipher round to the viewer hot path.
-			return { share: toDashboardShare(row, token), orgId: row.orgId }
+			let mode = row.mode
+			if (row.widgetId !== null) {
+				mode = capByBoard(row.mode, yield* boardMode(row.orgId, row.dashboardId))
+				yield* Effect.annotateCurrentSpan("maple.share.mode", mode)
+			}
+			return { share: toDashboardShare({ ...row, mode }, token), orgId: row.orgId }
 		})
 
 		const resolvePublicById = Effect.fn("SharedDashboardService.resolvePublicById")(function* (
@@ -624,6 +664,12 @@ export class SharedDashboardService extends Context.Service<
 				orgId: row.orgId,
 				"maple.dashboard.id": row.dashboardId,
 			})
+
+			// A widget card is only public while its board is.
+			if (row.widgetId !== null && (yield* boardMode(row.orgId, row.dashboardId)) !== "public") {
+				yield* Effect.annotateCurrentSpan("maple.share.mode", "org")
+				return yield* Effect.fail(new ShareNotFoundError({ message: SHARE_NOT_FOUND_MESSAGE }))
+			}
 			return row
 		})
 

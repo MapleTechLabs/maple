@@ -915,9 +915,30 @@ export class IntegrationsPersistenceError extends HttpTaggedError<IntegrationsPe
 	},
 ) {}
 
+/**
+ * Named neither a connector nor a workspace Maple knows about — the id in the
+ * path does not resolve. One error for both because they answer the same way:
+ * the caller has to name something that exists.
+ */
+export class IntegrationsNotFoundError extends HttpTaggedError<IntegrationsNotFoundError>()(
+	"@maple/http/errors/IntegrationsNotFoundError",
+	{
+		message: Schema.String,
+	},
+	{
+		status: 404,
+		code: "integration_not_found",
+		title: "Integration not found",
+		retry: "never",
+		recovery: "fix_request",
+		exposure: "public_message",
+	},
+) {}
+
 export type IntegrationHttpError =
 	| IntegrationsForbiddenError
 	| IntegrationsConfigurationError
+	| IntegrationsNotFoundError
 	| IntegrationsNotConnectedError
 	| IntegrationsRevokedError
 	| IntegrationsValidationError

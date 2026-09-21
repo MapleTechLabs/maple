@@ -1,7 +1,16 @@
+import { Schema } from "effect"
 import { describe, expect, it } from "vitest"
+import { OrgId } from "./primitives"
 import {
+	ChatConnectorId,
+	ChatConversationKey,
 	ChatTurnTenant,
 	chatModeFromSessionId,
+	connectorSessionId,
+	connectorTurnTenant,
+	CONNECTOR_TENANT_USER_ID,
+	isConnectorSessionId,
+	originForTurn,
 	decodeChatTurnTenant,
 	encodeChatTurnTenant,
 	decodeChatEvent,
@@ -51,6 +60,11 @@ describe("chatSessionStub", () => {
 	})
 })
 
+const orgId = Schema.decodeSync(OrgId)
+/** A connector id, not a real one: the domain never learns which chat platform it answers in. */
+const connectorId = Schema.decodeSync(ChatConnectorId)("testchat")
+const conversationKey = Schema.decodeSync(ChatConversationKey)("c1")
+
 describe("chat session ids", () => {
 	it("round-trips org and tab", () => {
 		const id = makeChatSessionId("org_abc", "tab-1")
@@ -76,6 +90,33 @@ describe("chat session ids", () => {
 		expect(chatModeFromSessionId("o:alert-inc_1")).toBe("alert")
 		expect(chatModeFromSessionId("o:widget-fix-d1-w2")).toBe("widget-fix")
 		expect(chatModeFromSessionId("o:inv-123")).toBe("investigate")
+		// A connector thread is an ordinary chat conversation someone is answering in from
+		// elsewhere; what differs is the turn's origin, not the mode.
+		expect(chatModeFromSessionId("o:bot-testchat-c1")).toBe("default")
+	})
+
+	it("builds a connector conversation's session id, org and prefix intact", () => {
+		const id = connectorSessionId(orgId("org_abc"), connectorId, conversationKey)
+		expect(id).toBe("org_abc:bot-testchat-c1")
+		expect(isConnectorSessionId(id)).toBe(true)
+		expect(orgIdFromChatSessionId(id)).toBe("org_abc")
+		expect(isConnectorSessionId(makeChatSessionId("org_abc", "tab-1"))).toBe(false)
+	})
+
+	it("refuses an id or key that would blur the tab", () => {
+		// `-` is what the tab splits on, and nothing else escapes it — so both segments' charsets
+		// are what keeps `bot-<connectorId>-<conversationKey>` unambiguous.
+		const key = Schema.decodeUnknownSync(ChatConversationKey)
+		for (const bad of ["has-dash", "has space", "", "a".repeat(129)]) {
+			expect(() => key(bad), bad).toThrow()
+		}
+		expect(key("C123.g:4_x")).toBe("C123.g:4_x")
+
+		const id = Schema.decodeUnknownSync(ChatConnectorId)
+		for (const bad of ["two-words", "Upper", "9lead", "has_underscore", "", "a".repeat(33)]) {
+			expect(() => id(bad), bad).toThrow()
+		}
+		expect(id("testchat2")).toBe("testchat2")
 	})
 
 	it("recovers the investigation id only for investigate sessions", () => {
@@ -161,12 +202,6 @@ describe("chat event storage codec", () => {
 				reason: "Transport",
 				delayMs: 1_000,
 			},
-			{
-				type: "compaction",
-				messageId: "a1",
-				summary: "the user asked about checkout",
-				throughSeq: 12,
-			},
 			// Sub-agent events: the same members, tagged.
 			{
 				type: "turn-start",
@@ -221,5 +256,32 @@ describe("ChatTurnTenant", () => {
 		const decoded = decodeChatTurnTenant(structuredClone(encoded))
 		expect(decoded.orgId).toBe("org_1")
 		expect(decoded.authMode).toBe("self_hosted")
+	})
+
+	it("runs a connector turn as an org-level tenant, with no roles", () => {
+		const encoded = connectorTurnTenant(orgId("org_1"))
+
+		expect(encoded).toStrictEqual({
+			orgId: "org_1",
+			userId: CONNECTOR_TENANT_USER_ID,
+			roles: [],
+			authMode: "self_hosted",
+		})
+		// The prototype, not `structuredClone`: Node clones a class instance happily and only
+		// workerd raises `DataCloneError`, so the throw check above is the one that catches this
+		// and a green `structuredClone` here would prove nothing.
+		expect(Object.getPrototypeOf(encoded)).toBe(Object.prototype)
+	})
+})
+
+describe("originForTurn", () => {
+	it("defaults a missing origin to `app`, and the legacy pass tenant to `autonomous`", () => {
+		// Compatibility only, for callers that predate the field. An explicit origin always wins,
+		// which is what lets this go away.
+		const app = { orgId: "org_1", userId: "user_1", roles: [], authMode: "self_hosted" } as const
+		const pass = { ...app, userId: "internal-service" } as const
+		expect(originForTurn(undefined, app)).toStrictEqual({ kind: "app" })
+		expect(originForTurn(undefined, pass)).toStrictEqual({ kind: "autonomous" })
+		expect(originForTurn({ kind: "app" }, pass)).toStrictEqual({ kind: "app" })
 	})
 })

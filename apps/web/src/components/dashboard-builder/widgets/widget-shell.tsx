@@ -12,6 +12,7 @@ import {
 	ClockIcon,
 	CircleInfoIcon,
 	ExternalLinkIcon,
+	CodeIcon,
 } from "@/components/icons"
 
 import { Card, CardContent, CardHeader, CardTitle, CardAction } from "@maple/ui/components/ui/card"
@@ -70,10 +71,11 @@ export function WidgetShell({
 	const createAlert = ctx?.createAlert
 	const moveToSection = ctx?.moveToSection
 	const moveTargets = ctx?.moveTargets
+	const embed = ctx?.embed
 	const isEditable = mode === "edit"
-	// The menu is also shown in view mode when "Create alert" is available, so
-	// alerts can be spun off a chart without entering dashboard edit mode.
-	const showMenu = isEditable || createAlert != null
+	// The menu is also shown in view mode when "Create alert" or "Embed chart"
+	// is available, so neither needs dashboard edit mode.
+	const showMenu = isEditable || createAlert != null || embed != null
 	const [menuOpen, setMenuOpen] = useState(false)
 	const [legendItems, setLegendItems] = useState<readonly PlotLegendItem[]>([])
 	// One piece of state, two providers. The Recharts `ChartContainer` and the
@@ -93,14 +95,16 @@ export function WidgetShell({
 	// last 30 minutes.
 	const timeRangeOverride = useWidgetTimeRangeOverride()
 	const { effectiveTimezone } = useTimezonePreference()
-	const timeRangeLabel = timeRangeOverride ? widgetTimeRangeLabel(timeRangeOverride, effectiveTimezone) : null
+	const timeRangeLabel = timeRangeOverride
+		? widgetTimeRangeLabel(timeRangeOverride, effectiveTimezone)
+		: null
 
 	return (
 		// `@container/widget` is the size anchor for every widget body. Tiles are
 		// sized by the grid, not the viewport — the nav sidebar collapse swings the
 		// canvas ~208px and the grid drops to 6 or 1 columns on narrow screens — so
 		// internals gate on the card's own width, never on `md:`/`lg:`.
-		<Card className="@container/widget h-full flex flex-col">
+		<Card className="group/card @container/widget h-full flex flex-col">
 			<CardHeader className="py-2.5">
 				<div className="flex min-w-0 items-center gap-2">
 					{isEditable && (
@@ -241,7 +245,7 @@ export function WidgetShell({
 									</Button>
 								}
 							/>
-							<DropdownMenuContent align="end">
+							<DropdownMenuContent align="end" className="w-max">
 								{isEditable && configure && (
 									<DropdownMenuItem onClick={configure}>
 										<PencilIcon size={14} />
@@ -267,6 +271,27 @@ export function WidgetShell({
 										Create alert
 									</DropdownMenuItem>
 								)}
+								{embed &&
+									(embed.disabledReason ? (
+										// A disabled item swallows pointer events, so the tooltip
+										// hangs off a wrapper that still receives the hover.
+										<Tooltip>
+											<TooltipTrigger render={<div />}>
+												<DropdownMenuItem disabled>
+													<CodeIcon size={14} />
+													Embed chart
+												</DropdownMenuItem>
+											</TooltipTrigger>
+											<TooltipContent side="left">
+												{embed.disabledReason}
+											</TooltipContent>
+										</Tooltip>
+									) : (
+										<DropdownMenuItem onClick={embed.open}>
+											<CodeIcon size={14} />
+											Embed chart
+										</DropdownMenuItem>
+									))}
 								{isEditable && remove && (
 									<>
 										<DropdownMenuSeparator />

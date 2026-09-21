@@ -1,6 +1,5 @@
 ---
-// Nucleo Pixel glyphs for the docs category nav (header bar + sidebar group
-// headings). Converted from the licensed "Nucleo Pixel" set (24-grid): strokes
+// Nucleo Pixel glyphs for the docs groups (sidebar headings + index cards). Converted from the licensed "Nucleo Pixel" set (24-grid): strokes
 // remapped to currentColor, square caps + stroke-width 2 preserve the pixel look.
 interface Props {
 	name: string;
@@ -120,6 +119,15 @@ const base = {
 	</svg>
 )}
 
+{name === "Dashboards" && (
+	<svg class={className} {...base}>
+		<path d="M3 3H10V12H3V3Z" />
+		<path d="M14 3H21V8H14V3Z" />
+		<path d="M14 12H21V21H14V12Z" />
+		<path d="M3 16H10V21H3V16Z" />
+	</svg>
+)}
+
 {name === "Infrastructure" && (
 	<svg class={className} {...base}>
 		<path d="M17 6.5V6.49" />
@@ -176,6 +184,19 @@ const base = {
 		<path d="M7.01 16L7 16" />
 		<path d="M7.01 8L7 8" />
 		<path d="M9.01 10L9 10" />
+	</svg>
+)}
+
+{name === "MCP" && (
+	<svg class={className} {...base}>
+		<path d="M16 2V7" />
+		<path d="M8 2V7" />
+		<path d="M18 15.01V15" />
+		<path d="M6 15.01V15" />
+		<path d="M4 13V7H20V13" />
+		<path d="M10 21H14" />
+		<path d="M16 19V17" />
+		<path d="M8 19V17" />
 	</svg>
 )}
 

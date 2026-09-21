@@ -81,6 +81,36 @@ describe("buildSessionTurns", () => {
 		expect(turns.map((turn) => turn.anchorKind)).toEqual(["agent-root", "agent-root"])
 	})
 
+	it("keeps tool spans that name the session in their model calls' turn", () => {
+		// An agent engine stamps its thread id — the session — on `execute_tool`
+		// spans and no session id; the model calls carry the session and a turn id.
+		const turns = buildSessionTurns([
+			agentSpan({
+				spanId: "chat-1",
+				startMs: 0,
+				durationMs: 4 * SECOND,
+				sessionId: "sess-1",
+				genAi: { operationName: "chat", conversationId: "turn-1" },
+			}),
+			agentSpan({
+				spanId: "tool-1",
+				startMs: 4 * SECOND,
+				durationMs: 2 * SECOND,
+				genAi: { operationName: "execute_tool", toolName: "search_logs", conversationId: "sess-1" },
+			}),
+			agentSpan({
+				spanId: "chat-2",
+				startMs: 6 * SECOND,
+				durationMs: 4 * SECOND,
+				sessionId: "sess-1",
+				genAi: { operationName: "chat", conversationId: "turn-1" },
+			}),
+		])
+
+		expect(turns).toHaveLength(1)
+		expect(turns[0]!.spans.map((span) => span.spanId)).toEqual(["chat-1", "tool-1", "chat-2"])
+	})
+
 	it("does not partition on a conversation id the whole session shares", () => {
 		const turns = buildSessionTurns([
 			agentSpan({
@@ -292,6 +322,34 @@ describe("buildSessionTurns", () => {
 
 		expect(failedTurn!.failed).toBe(true)
 		expect(retriedTurn!.failed).toBe(false)
+	})
+
+	it("does not fail a turn on a rooting tool call the agent carried on from", () => {
+		// The run span above the calls carries no turn id, so every tool call
+		// roots its turn.
+		const [recovered] = buildSessionTurns([
+			toolSpan({
+				spanId: "grep",
+				parentSpanId: "run",
+				startMs: 0,
+				durationMs: SECOND,
+				statusCode: "Error",
+			}),
+			toolSpan({ spanId: "submit", parentSpanId: "run", startMs: 2 * SECOND, durationMs: SECOND }),
+		])
+		const [died] = buildSessionTurns([
+			toolSpan({ spanId: "read", parentSpanId: "run", startMs: 0, durationMs: SECOND }),
+			toolSpan({
+				spanId: "grep",
+				parentSpanId: "run",
+				startMs: 2 * SECOND,
+				durationMs: SECOND,
+				statusCode: "Error",
+			}),
+		])
+
+		expect(recovered!.failed).toBe(false)
+		expect(died!.failed).toBe(true)
 	})
 
 	it("does not fail a turn on the app's own errored span", () => {

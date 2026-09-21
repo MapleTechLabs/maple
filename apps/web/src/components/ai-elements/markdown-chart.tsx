@@ -1,8 +1,7 @@
 import { lazy, Suspense, useMemo, type ReactNode } from "react"
 
+import { normalizeUnit, parseChartSpec, type ChartSpec } from "@maple/domain/chat-chart-spec"
 import { ChartSkeleton } from "@maple/ui/components/charts"
-
-import { normalizeUnit, parseChartSpec, type ChartSpec } from "./chart-spec"
 
 /**
  * The chart Streamdown renders for a ```chart fence in an assistant reply.
@@ -14,7 +13,7 @@ import { normalizeUnit, parseChartSpec, type ChartSpec } from "./chart-spec"
  *
  * The plot itself is the query builder's — same series colours, same units,
  * same tooltip as the chart these numbers get on a dashboard. See
- * `chart-spec.ts` for what a fence has to hold to become one.
+ * `@maple/domain/chat-chart-spec` for what a fence has to hold to become one.
  */
 
 /** The charts pull in the plotting runtime, which a reply without one should not pay for. */

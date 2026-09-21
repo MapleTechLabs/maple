@@ -49,11 +49,18 @@ picker — a time picker is a question-2 tool.
 The existing list, kept: health-dot, name, throughput, error rate, p95,
 sorted worst-first. Time window picker (1h · 6h · 24h · 7d) lives here.
 
-**Service detail** gets: health headline, four stat tiles (throughput, error
-rate, p95, p99) each with a sparkline (`POST /v2/traces/timeseries`), open
-incidents scoped to this service, top error issues for this service, top
-operations by errors and by latency (`POST /v2/traces/breakdown` grouped by
-span name). No trace waterfall on the phone — link out to the web for that.
+**Service detail** leads with the verdict and the sentence that justifies it
+(`Degraded — p95 410ms is 3.4× its 7-day baseline of 120ms`), then one
+full-width chart with a Throughput · Errors · Latency switch. The big number
+is the *latest settled bucket* — what the service is doing now — with the
+window's peak and average as small print, because an average over a day is
+not the question anyone opens this screen with. Scrubbing the chart swaps the
+number for the bucket under the finger. Under it: window aggregates, open
+incidents scoped to this service, the busiest operations re-rankable by
+failures / p95 / volume, and this service's issues. Everything the screen
+paints from is one read, `GET /v2/services/{name}/overview`; alerts and
+issues land in a second pass. No trace waterfall on the phone — link out to
+the web for that.
 
 ### Alerts
 

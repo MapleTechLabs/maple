@@ -7,10 +7,12 @@ import {
 	resolveDatabaseMode,
 	resolveHyperdriveRefId,
 	resolveMapleDomains,
+	resolvePlanetscaleDatabase,
 	resolveStorageJurisdiction,
 	resolveWorkerName,
 	resolveWorkerPlacement,
 	stageDeploysSandbox,
+	stageMigratesDatabase,
 } from "./stage.ts"
 
 const stage = (name: string) => parseMapleStage(name)
@@ -142,13 +144,27 @@ describe("resolveHyperdriveRefId", () => {
 		expect(resolveHyperdriveRefId(stage("pr-123"), "api")).toBeUndefined()
 		expect(resolveHyperdriveRefId(stage("dev_makisuo"), "api")).toBeUndefined()
 	})
+})
 
-	it("refuses to deploy the EU instance without its own configs, rather than binding nothing", () => {
-		// `undefined` means "no database" and is what a PR preview gets; an EU prd
-		// that silently took that path would 500 every DB-backed route.
-		expect(() => resolveHyperdriveRefId({ kind: "prd" }, "api", "eu")).toThrow(
-			/No Hyperdrive config for the EU instance/,
-		)
-		expect(resolveHyperdriveRefId(stage("dev_makisuo"), "api", "eu")).toBeUndefined()
+describe("resolveDatabaseMode", () => {
+	it("binds the US prd's dashboard configs by id and declares the EU prd's from the deploy", () => {
+		expect(resolveDatabaseMode({ kind: "prd" })).toBe("ref")
+		expect(resolveDatabaseMode({ kind: "prd" }, "us")).toBe("ref")
+		expect(resolveDatabaseMode({ kind: "prd" }, "eu")).toBe("declared")
+		// Both prd modes adopt the branch and migrate it; neither of the others has one.
+		expect(stageMigratesDatabase("ref")).toBe(true)
+		expect(stageMigratesDatabase("declared")).toBe(true)
+		expect(stageMigratesDatabase("managed")).toBe(false)
+		expect(stageMigratesDatabase("none")).toBe(false)
+	})
+
+	it("keeps dev stages on the managed Hyperdrive in either region", () => {
+		expect(resolveDatabaseMode(stage("dev_makisuo"), "eu")).toBe("managed")
+	})
+
+	it("names each instance's PlanetScale database, us unsuffixed", () => {
+		expect(resolvePlanetscaleDatabase()).toBe("maple")
+		expect(resolvePlanetscaleDatabase("us")).toBe("maple")
+		expect(resolvePlanetscaleDatabase("eu")).toBe("maple-eu")
 	})
 })

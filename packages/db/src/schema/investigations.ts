@@ -5,6 +5,7 @@ import type {
 	AiTriageIncidentKind,
 	AiTriageResult,
 	InvestigationConfidence,
+	InvestigationProgress,
 	InvestigationSeededBy,
 	InvestigationStatus,
 	InvestigationSubject,
@@ -40,6 +41,11 @@ export const investigations = pgTable(
 		issueId: text("issue_id").$type<ErrorIssueId>(),
 		/** Structured diagnosis; null until the first `submit_diagnosis` lands. */
 		reportJson: jsonb("report_json").$type<AiTriageResult>(),
+		/**
+		 * The running pass's step tail; null until the first step, kept after the run ends. Written on
+		 * a heartbeat: REPLICA IDENTITY FULL ships the whole row, jsonb blobs included, per update.
+		 */
+		progressJson: jsonb("progress_json").$type<InvestigationProgress>(),
 		/** Denormalized from the report for cheap war-room list rendering. */
 		severity: text("severity").$type<IssueSeverity>(),
 		confidence: text("confidence").$type<InvestigationConfidence>(),

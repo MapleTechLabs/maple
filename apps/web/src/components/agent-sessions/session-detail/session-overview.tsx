@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from "react"
+import { useMemo, useRef, useState, type ReactNode, type Ref } from "react"
 
 import type { GetAiSessionSummaryResponse } from "@maple/domain/http"
 
@@ -10,21 +10,19 @@ import { formatSessionDuration } from "@maple/ui/lib/replay-format"
 import { cn } from "@maple/ui/lib/utils"
 
 import {
-	buildSessionFindings,
+	buildSessionChecks,
 	formatCost,
-	type FindingSeverity,
-	type SessionFinding,
 	type SessionSummary,
 	type SessionToolCall,
 	type SessionToolResults,
 	type SessionToolUsage,
 	type SessionTurn,
-	type SessionVerdict,
 } from "@maple/agent-sessions"
 import { buildSessionAxis, type SessionAxis } from "@/lib/agent-sessions/session-axis"
 import { TOKEN_BUCKETS } from "@/lib/agent-sessions/token-buckets"
 import { useDetectedModels } from "@/hooks/use-detected-models"
 import type { SessionLoadProgress } from "@/hooks/use-session-spans"
+import { SessionChecks } from "./session-checks"
 import { SessionLoadIndicator } from "./session-load-indicator"
 import { ModelLabel } from "../model-label"
 import type { SpanDetailTab } from "./span-expansion"
@@ -37,18 +35,14 @@ import {
 	type TimeBandKind,
 } from "./span-visuals"
 
-const SEVERITY_DOT = {
-	failure: "bg-destructive",
-	anomaly: "bg-severity-warn",
-} satisfies Record<FindingSeverity, string>
-
 /**
  * The triage view: did the session work, and if not, what exactly went wrong.
  *
- * The page leads with a verdict and a findings list rather than another way to
+ * The page leads with a verdict and a checklist rather than another way to
  * browse the turns — Traces, Flow and Transcript already do that three ways.
- * Every finding opens the span that is its evidence in the inspection overlay,
- * over this page rather than instead of it: reading a finding used to cost the
+ * Every check that found something says what happened and what to do, and its
+ * evidence rows open the span that proves it in the inspection overlay, over
+ * this page rather than instead of it: reading a finding used to cost the
  * reader the page. The facts — time bar, cost, tokens, tools — stay, each
  * figure appearing exactly once.
  */
@@ -88,13 +82,15 @@ export function SessionOverview({
 	/** The popover's "Open in Traces view": same span, sibling view. */
 	onOpenTraceView: () => void
 }) {
-	const report = useMemo(() => buildSessionFindings(turns, summary), [turns, summary])
+	const checks = useMemo(() => buildSessionChecks(turns, summary), [turns, summary])
 	const spansById = useMemo(
 		() => new Map(turns.flatMap((turn) => turn.spans).map((span) => [span.spanId, span])),
 		[turns],
 	)
 
 	const openSpan = (spanId: string) => onSelectSpan(selectedSpanId === spanId ? undefined : spanId)
+	const toolsRef = useRef<HTMLElement>(null)
+	const openTools = () => toolsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })
 
 	if (progress !== undefined && !progress.agentSpansComplete) {
 		return (
@@ -120,21 +116,9 @@ export function SessionOverview({
 				    question, so every boundary is the same hairline with the same
 				    air either side of it. */}
 				<div className="flex min-w-0 grow flex-col gap-6">
-					{/* A session that completed with findings has no verdict line: the
-					    findings below are the verdict, and a headline counting them
-					    only said it twice. Failed and clean sessions do carry one —
-					    there the line is the only place the outcome is stated. */}
-					{report.verdict.status !== "attention" && (
-						<>
-							<Verdict verdict={report.verdict} turns={turns} onOpenSpan={openSpan} />
-							<Separator />
-						</>
-					)}
-					<TimeComposition summary={summary} />
+					<SessionChecks report={checks} onOpenSpan={openSpan} onOpenTools={openTools} />
 					<Separator />
-					<Findings findings={report.findings} onOpenSpan={openSpan} />
-					<Separator />
-					<ToolUsage summary={summary} onOpenSpan={openSpan} />
+					<ToolUsage ref={toolsRef} summary={summary} onOpenSpan={openSpan} />
 				</div>
 				<Rail summary={summary} />
 			</div>
@@ -151,164 +135,16 @@ export function SessionOverview({
 	)
 }
 
-/* -------------------------------------------------------------------------- */
-/* Verdict                                                                    */
-/* -------------------------------------------------------------------------- */
-
 /** Open a span's payload in the inspection overlay; opening the one already
  *  open closes it. */
 type OpenSpan = (spanId: string) => void
-
-function Verdict({
-	verdict,
-	turns,
-	onOpenSpan,
-}: {
-	verdict: SessionVerdict
-	turns: readonly SessionTurn[]
-	onOpenSpan: OpenSpan
-}) {
-	const turnWord = turns[0]?.anchorKind === "trace" ? "segment" : "turn"
-	const turnsText = `${turns.length} ${turnWord}${turns.length === 1 ? "" : "s"}`
-
-	return (
-		<section className="flex flex-wrap items-start justify-between gap-x-6 gap-y-3">
-			<div className="flex min-w-0 flex-col gap-1.5">
-				{verdict.status === "failed" ? (
-					<>
-						<p className="flex min-w-0 flex-wrap items-baseline gap-x-2 font-semibold text-lg">
-							<VerdictDot className="bg-destructive" />
-							<span className="text-destructive">Failed</span>
-							{verdict.label !== undefined && (
-								<>
-									<span aria-hidden className="text-muted-foreground">
-										—
-									</span>
-									<span className="min-w-0 truncate font-mono text-[0.95em]">
-										{verdict.label}
-									</span>
-									<span>on the final {turnWord}</span>
-								</>
-							)}
-						</p>
-						<p className="pl-[1.375rem] text-muted-foreground text-sm">
-							The final {turnWord} did not close cleanly.
-						</p>
-					</>
-				) : (
-					<>
-						<p className="flex items-baseline gap-x-2 font-semibold text-lg">
-							<VerdictDot className="bg-severity-info" />
-							<span className="text-severity-info">Completed cleanly</span>
-						</p>
-						<p className="pl-[1.375rem] text-muted-foreground text-sm">
-							No errors, refusals, truncated replies, stalls, or repetition across {turnsText}.
-						</p>
-					</>
-				)}
-			</div>
-			{verdict.spanId !== undefined && (
-				<Button
-					variant="outline"
-					size="sm"
-					aria-haspopup="dialog"
-					onClick={() => onOpenSpan(verdict.spanId!)}
-				>
-					Open failing span
-					<ArrowRightIcon size={14} />
-				</Button>
-			)}
-		</section>
-	)
-}
-
-function VerdictDot({ className }: { className: string }) {
-	return <span aria-hidden className={cn("size-2.5 shrink-0 self-center rounded-full", className)} />
-}
-
-/* -------------------------------------------------------------------------- */
-/* Findings                                                                   */
-/* -------------------------------------------------------------------------- */
-
-function Findings({ findings, onOpenSpan }: { findings: readonly SessionFinding[]; onOpenSpan: OpenSpan }) {
-	return (
-		<section className="flex flex-col gap-3">
-			<div className="flex items-baseline justify-between gap-2">
-				<h3 className="font-semibold text-[11px] text-muted-foreground uppercase tracking-[0.09em]">
-					Findings
-				</h3>
-				{findings.length > 0 && (
-					<span
-						className={cn(
-							"font-mono text-xs tabular-nums",
-							findings.some((finding) => finding.severity === "failure")
-								? "text-destructive"
-								: "text-severity-warn",
-						)}
-					>
-						{findings.length}
-					</span>
-				)}
-			</div>
-
-			{findings.length === 0 ? (
-				<p className="border-border border-t py-5 text-muted-foreground text-sm">No findings.</p>
-			) : (
-				findings.map((finding) => (
-					<FindingRow key={finding.id} finding={finding} onOpenSpan={onOpenSpan} />
-				))
-			)}
-		</section>
-	)
-}
-
-function FindingRow({ finding, onOpenSpan }: { finding: SessionFinding; onOpenSpan: OpenSpan }) {
-	return (
-		<button
-			type="button"
-			aria-haspopup="dialog"
-			onClick={() => onOpenSpan(finding.spanId)}
-			className={cn(
-				"group flex w-full items-start gap-3 border-border border-t px-3 py-2.5 text-left hover:bg-accent/40",
-				finding.severity === "failure" &&
-					"border-l-2 border-l-destructive bg-destructive/[0.06] pl-2.5",
-			)}
-		>
-			<span
-				aria-hidden
-				className={cn("mt-[0.4rem] size-1.5 shrink-0 rounded-full", SEVERITY_DOT[finding.severity])}
-			/>
-			<span className="flex min-w-0 grow flex-col gap-0.5">
-				<span className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5">
-					<span
-						className={cn(
-							"min-w-0 truncate font-medium font-mono text-[13px]",
-							finding.severity === "failure" && "text-destructive",
-						)}
-					>
-						{finding.label}
-						{finding.count > 1 && ` ×${finding.count}`}
-					</span>
-					<span className="shrink-0 text-muted-foreground text-xs">{finding.turnText}</span>
-				</span>
-				{finding.detail !== undefined && (
-					<span className="text-muted-foreground text-xs leading-relaxed">{finding.detail}</span>
-				)}
-			</span>
-			<span className="mt-0.5 flex shrink-0 items-center gap-1 text-muted-foreground text-xs opacity-0 transition-opacity group-hover:opacity-100">
-				inspect
-				<ArrowRightIcon size={12} />
-			</span>
-		</button>
-	)
-}
 
 /* -------------------------------------------------------------------------- */
 /* Where the time went                                                        */
 /* -------------------------------------------------------------------------- */
 
 function TimeComposition({ summary }: { summary: SessionSummary }) {
-	const { segments, totalMs, peakParallel } = summary.agentTime
+	const { segments, totalMs } = summary.agentTime
 	// Agent time, not the clock: each band is the whole time that class of work
 	// ran, summed across every agent, so two subagents inferring at once are two
 	// seconds here per second of wall clock — the fan-out made visible rather
@@ -330,36 +166,19 @@ function TimeComposition({ summary }: { summary: SessionSummary }) {
 		.filter((band) => band.percent >= 0.5)
 
 	return (
-		<section className="flex flex-col gap-3">
-			<div className="flex flex-wrap items-baseline justify-between gap-x-5 gap-y-2">
-				<h3 className="font-semibold text-[11px] text-muted-foreground uppercase tracking-[0.09em]">
-					Where the time went
-				</h3>
-				{/* The two clocks the bands are read against, stated rather than left
-				    to be inferred from the bar — and the fan-out that makes them
-				    differ, which is the one number the bar itself cannot show. */}
-				<div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
-					<Clock
-						label="Agent time"
-						value={formatSessionDuration(totalMs)}
-						className="text-chart-ai-inference"
-					/>
-					<Clock label="Wall clock" value={formatSessionDuration(summary.wallClockMs)} />
-					{peakParallel > 1 && (
-						<span
-							className="flex items-baseline gap-1.5 rounded-sm bg-chart-ai-agent/12 px-1.5 py-0.5 text-chart-ai-agent"
-							title={`At its widest, ${peakParallel} model calls or tools were running at the same time.`}
-						>
-							<span className="font-mono font-semibold text-xs tabular-nums">
-								{peakParallel}×
-							</span>
-							<span className="text-[11px]">agents in parallel</span>
-						</span>
-					)}
-				</div>
+		<RailSection title="Where the time went">
+			{/* The two clocks the bands are read against, stated rather than left
+			    to be inferred from the bar. */}
+			<div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
+				<Clock
+					label="Agent time"
+					value={formatSessionDuration(totalMs)}
+					className="text-chart-ai-inference"
+				/>
+				<Clock label="Wall clock" value={formatSessionDuration(summary.wallClockMs)} />
 			</div>
 
-			<div className="flex h-4 w-full overflow-hidden rounded-sm bg-muted">
+			<div className="flex h-2 w-full gap-px overflow-hidden rounded-xs bg-muted">
 				{bands.map((band) => (
 					<div
 						key={band.kind}
@@ -369,25 +188,19 @@ function TimeComposition({ summary }: { summary: SessionSummary }) {
 				))}
 			</div>
 
-			<div className="flex flex-wrap gap-x-6 gap-y-2">
-				{legend.map((band) => {
-					const Icon = AGENT_TIME_ICON[band.kind]
-					return (
-						<span key={band.kind} className="flex items-center gap-2 text-[13px]">
-							<Icon
-								size={14}
-								aria-hidden
-								className={cn("shrink-0", AGENT_TIME_TEXT[band.kind])}
-							/>
-							<span>{AGENT_TIME_LABEL[band.kind]}</span>
-							<span className="font-mono text-muted-foreground text-xs tabular-nums">
-								{formatSessionDuration(band.ms)} · {formatPercent(band.percent / 100)}
-							</span>
+			{legend.map((band) => {
+				const Icon = AGENT_TIME_ICON[band.kind]
+				return (
+					<div key={band.kind} className="flex items-center gap-2.5">
+						<Icon size={13} aria-hidden className={cn("shrink-0", AGENT_TIME_TEXT[band.kind])} />
+						<span className="min-w-0 flex-1 truncate text-xs">{AGENT_TIME_LABEL[band.kind]}</span>
+						<span className="font-mono text-muted-foreground text-xs tabular-nums">
+							{formatSessionDuration(band.ms)} · {formatPercent(band.percent / 100)}
 						</span>
-					)
-				})}
-			</div>
-		</section>
+					</div>
+				)
+			})}
+		</RailSection>
 	)
 }
 
@@ -416,6 +229,7 @@ function Rail({ summary }: { summary: SessionSummary }) {
 
 	return (
 		<aside className="flex shrink-0 flex-col gap-6 @4xl:w-[21rem] @4xl:border-border @4xl:border-l @4xl:pl-8">
+			<TimeComposition summary={summary} />
 			<RailSection
 				title="Cost by model"
 				aside={
@@ -548,7 +362,16 @@ function Rail({ summary }: { summary: SessionSummary }) {
  * them puts every call on the session's own clock, so a row also says *when*. A
  * mark is a call: clicking it opens that span.
  */
-function ToolUsage({ summary, onOpenSpan }: { summary: SessionSummary; onOpenSpan: OpenSpan }) {
+function ToolUsage({
+	ref,
+	summary,
+	onOpenSpan,
+}: {
+	/** The scroll target of the checklist's "see the Tools section". */
+	ref: Ref<HTMLElement>
+	summary: SessionSummary
+	onOpenSpan: OpenSpan
+}) {
 	const [expanded, setExpanded] = useState<string | undefined>(undefined)
 	const axis = useMemo(
 		() => buildSessionAxis({ startMs: summary.startMs, endMs: summary.endMs, collapsedGaps: [] }),
@@ -558,7 +381,9 @@ function ToolUsage({ summary, onOpenSpan }: { summary: SessionSummary; onOpenSpa
 	const toggle = (key: string) => setExpanded((current) => (current === key ? undefined : key))
 
 	return (
-		<section className="flex flex-col gap-3">
+		// `scroll-mt`: the views' sticky control bar, which a plain scroll-to
+		// would otherwise park the header under.
+		<section ref={ref} className="flex scroll-mt-14 flex-col gap-3">
 			<ToolLedgerHeader summary={summary} />
 
 			{summary.tools.length === 0 ? (

@@ -3,7 +3,6 @@ import { randomUUID } from "node:crypto"
 import {
 	type AiTriageIncidentKind,
 	AiTriageResult,
-	type InvestigationConfidence,
 	InvestigationCreateRequest,
 	InvestigationDataCorruptionError,
 	InvestigationDocument,
@@ -14,6 +13,7 @@ import {
 	InvestigationSnapshotFact,
 	InvestigationSubjectSnapshot,
 	InvestigationsListResponse,
+	InvestigationProgress,
 	type InvestigationStatus,
 	InvestigationSubject,
 	type OrgId,
@@ -26,7 +26,11 @@ import { investigations, type InvestigationRow } from "@maple/db"
 import { WorkerEnvironment } from "@maple/infra/worker-runtime"
 import { and, desc, eq, isNull, lt, sql } from "drizzle-orm"
 import { Clock, Context, Effect, Layer, Option, Schema } from "effect"
-import { applyDiagnosisWrites, subjectTypeOf } from "@maple/backend/services/errors/apply-diagnosis"
+import {
+	applyDiagnosisWrites,
+	applyInconclusiveWrites,
+	subjectTypeOf,
+} from "@maple/backend/services/errors/apply-diagnosis"
 import { startInvestigationTurn } from "@maple/backend/services/errors/investigation-start"
 import {
 	STALE_MS,
@@ -117,6 +121,15 @@ export interface InvestigationServiceApi {
 		InvestigationDocument,
 		InvestigationPersistenceError | InvestigationNotFoundError | InvestigationDataCorruptionError
 	>
+	/**
+	 * Record what the running pass is doing. The caller owns accumulation and write rate (the table
+	 * replicates with REPLICA IDENTITY FULL). Only a row still `investigating` moves.
+	 */
+	readonly recordProgress: (
+		orgId: OrgId,
+		id: InvestigationId,
+		progress: InvestigationProgress,
+	) => Effect.Effect<void, InvestigationPersistenceError>
 	/**
 	 * Record that the autonomous pass ended without a diagnosis. Only a row still
 	 * `investigating` moves; a diagnosis that landed meanwhile is never overwritten.
@@ -210,6 +223,27 @@ export class InvestigationService extends Context.Service<InvestigationService, 
 					? Effect.succeed(null)
 					: decodeStoredField(row.id, "report", AiTriageResult, row.reportJson)
 
+			// Progress degrades to null rather than failing the document: unlike `report`, it is not
+			// part of what an investigation is, and losing it should not take the diagnosis down.
+			const parseProgress = (row: InvestigationRow) =>
+				row.progressJson == null
+					? Effect.succeed(null)
+					: decodeStoredField(row.id, "progress", InvestigationProgress, row.progressJson).pipe(
+							Effect.catchTag(
+								"@maple/http/investigations/InvestigationDataCorruptionError",
+								(error) =>
+									Effect.logWarning(
+										"Dropping an undecodable investigation progress record",
+									).pipe(
+										Effect.annotateLogs({
+											investigationId: row.id,
+											error: error.message,
+										}),
+										Effect.as(null),
+									),
+							),
+						)
+
 			const rowToDocument = Effect.fnUntraced(function* (row: InvestigationRow) {
 				const subject = yield* decodeStoredField(
 					row.id,
@@ -227,6 +261,7 @@ export class InvestigationService extends Context.Service<InvestigationService, 
 								row.snapshotJson,
 							)
 				const report = yield* parseReport(row)
+				const progress = yield* parseProgress(row)
 				return yield* Effect.try({
 					try: () =>
 						new InvestigationDocument({
@@ -235,6 +270,7 @@ export class InvestigationService extends Context.Service<InvestigationService, 
 							subject,
 							snapshot,
 							report,
+							progress,
 							model: row.model ?? null,
 							severity: row.severity ?? null,
 							confidence: row.confidence ?? null,
@@ -603,26 +639,41 @@ export class InvestigationService extends Context.Service<InvestigationService, 
 				}
 
 				const result = request.report
-				const confidence: InvestigationConfidence = result.confidence
+				const model = request.model ?? row.model ?? null
+				const inputTokens = request.inputTokens ?? row.inputTokens ?? null
+				const outputTokens = request.outputTokens ?? row.outputTokens ?? null
 
-				// Shared with the fan-out workflow's `persist` step so a diagnosis means
-				// the same thing whichever path produced it — same status transition, same
-				// severity application, same deterministically-keyed timeline event.
-				// `provideService(Database, database)`: the shared writer carries Database
-				// in R, while this service's API effects are R = never. `mapError` keeps
-				// this method's persistence-error channel — the writer stays neutral
-				// because the fan-out workflow maps it differently.
-				yield* applyDiagnosisWrites({
-					orgId,
-					investigationId: id,
-					report: result,
-					issueId: row.issueId ?? null,
-					subjectType: subjectTypeOf(row.subjectJson),
-					model: request.model ?? row.model ?? null,
-					inputTokens: request.inputTokens ?? row.inputTokens ?? null,
-					outputTokens: request.outputTokens ?? row.outputTokens ?? null,
-					nowMs,
-				}).pipe(Effect.mapError(makePersistenceError), Effect.provideService(Database, database))
+				// A close-out's report is a partial by construction: the pass ended without
+				// one, and what the close-out files is what it had. It lands as
+				// `inconclusive`, and never touches the linked issue.
+				// `provideService(Database, database)`: the shared writers carry Database
+				// in R, while this service's API effects are R = never.
+				const write =
+					request.partial === true
+						? applyInconclusiveWrites({
+								orgId,
+								investigationId: id,
+								report: result,
+								model,
+								inputTokens,
+								outputTokens,
+								nowMs,
+							})
+						: applyDiagnosisWrites({
+								orgId,
+								investigationId: id,
+								report: result,
+								issueId: row.issueId ?? null,
+								subjectType: subjectTypeOf(row.subjectJson),
+								model,
+								inputTokens,
+								outputTokens,
+								nowMs,
+							})
+				yield* write.pipe(
+					Effect.mapError(makePersistenceError),
+					Effect.provideService(Database, database),
+				)
 
 				// Deliberately does NOT meter. `request.inputTokens`/`outputTokens` are persisted onto
 				// the row above for display, but the charge is raised per *turn* in
@@ -636,6 +687,30 @@ export class InvestigationService extends Context.Service<InvestigationService, 
 
 				const updated = yield* loadRow(orgId, id)
 				return yield* documentFor(orgId, updated ?? row)
+			})
+
+			const recordProgress: InvestigationServiceApi["recordProgress"] = Effect.fn(
+				"InvestigationService.recordProgress",
+			)(function* (orgId, id, progress) {
+				yield* Effect.annotateCurrentSpan({
+					orgId,
+					"maple.investigation.id": id,
+					"maple.investigation.step_count": progress.stepCount,
+				})
+				// `updatedAt` is left alone: the hub sorts on it, and bumping it every heartbeat would
+				// walk a running row up the list under the reader. Liveness is `progress.updatedAt`.
+				yield* dbExecute((db) =>
+					db
+						.update(investigations)
+						.set({ progressJson: progress })
+						.where(
+							and(
+								eq(investigations.orgId, orgId),
+								eq(investigations.id, id),
+								eq(investigations.status, "investigating"),
+							),
+						),
+				)
 			})
 
 			const failInvestigation: InvestigationServiceApi["failInvestigation"] = Effect.fn(
@@ -665,6 +740,7 @@ export class InvestigationService extends Context.Service<InvestigationService, 
 				restartInvestigation,
 				updateStatus,
 				submitDiagnosis,
+				recordProgress,
 				failInvestigation,
 			} satisfies InvestigationServiceApi
 		}),

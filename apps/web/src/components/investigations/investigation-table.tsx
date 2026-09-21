@@ -102,7 +102,11 @@ function RowFinding({ finding }: { finding: ReturnType<typeof investigationFindi
 		return (
 			<span className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
 				<span aria-hidden className="size-1.5 shrink-0 animate-pulse rounded-full bg-primary" />
-				<span className="truncate">Gathering evidence</span>
+				{/* The finding carries the running pass's last step when it has one, so
+				    the row is not free to print a fixed string over the top of it. */}
+				<span className="truncate" title={finding.text}>
+					{finding.text}
+				</span>
 			</span>
 		)
 	}

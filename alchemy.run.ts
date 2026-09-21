@@ -14,6 +14,8 @@ import * as AWS from "alchemy/AWS"
 import * as Cloudflare from "alchemy/Cloudflare"
 import * as Command from "alchemy/Command"
 import * as Output from "alchemy/Output"
+import * as Planetscale from "alchemy/Planetscale"
+import * as RemovalPolicy from "alchemy/RemovalPolicy"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import { resolveAwsRegion, stageDeploysElectric, stageDeploysIngest } from "@maple/infra/aws"
@@ -24,12 +26,18 @@ import {
 	stageDeploysSandbox,
 	formatMapleDeployment,
 	ManagedMapleDb,
+	type MapleDbConsumer,
+	type MapleRegion,
 	MapleStack,
 	type MapleStackContext,
+	type MapleStage,
 	parseMapleDeployment,
 	regionHostsSharedApps,
 	resolveDatabaseMode,
 	resolveMapleDomains,
+	resolvePlanetscaleDatabase,
+	resolveWorkerName,
+	stageMigratesDatabase,
 } from "@maple/infra/cloudflare"
 import * as Acm from "@maple/infra/acm"
 import { optionalPlain, plainWithDefault } from "@maple/infra/env"
@@ -37,6 +45,7 @@ import * as Portless from "@maple/alchemy-portless"
 import { DEV_PROCESS_APPS, selectedDevApps, type DevApp } from "@maple/infra/dev-urls"
 import MapleAiLive, { MapleAi } from "./apps/ai/src/worker.ts"
 import Alerting from "./apps/alerting/src/worker.ts"
+import ChatBotLive, { ChatBot } from "./apps/chat-bot/src/worker.ts"
 import MapleApi from "./apps/api/src/worker.ts"
 import MapleSandbox from "./apps/sandbox/alchemy.run.ts"
 import { createMapleElectric } from "./apps/electric/alchemy.run.ts"
@@ -91,8 +100,45 @@ const devEnv = devApps
 			MAPLE_API_BASE_URL: Portless.routeUrl("api"),
 			MAPLE_APP_BASE_URL: Portless.routeUrl("web"),
 			MAPLE_ELECTRIC_SYNC_URL: Portless.routeUrl("electric-sync"),
+			MAPLE_INGEST_URL: Portless.routeUrl("ingest"),
 		}
 	: undefined
+
+/**
+ * prd's database: the instance's adopted `main` branch, whose deploy applies the migrations,
+ * and on the EU instance a role per consumer on it plus a Hyperdrive config on each role's
+ * direct origin (Hyperdrive pools; PSBouncer's 6432 is the fleet's). The US prd keeps its
+ * dashboard configs, bound by id.
+ */
+const declareMapleDb = (stage: MapleStage, region: MapleRegion) =>
+	Effect.gen(function* () {
+		const mode = resolveDatabaseMode(stage, region)
+		if (!stageMigratesDatabase(mode)) return undefined
+		const database = resolvePlanetscaleDatabase(region)
+		const schema = yield* Planetscale.PostgresBranch("maple-db-main", {
+			database,
+			name: "main",
+			migrations: "packages/db/drizzle",
+		}).pipe(RemovalPolicy.retain())
+		if (mode !== "declared") return { schema, hyperdrives: undefined }
+		const hyperdrive = (consumer: MapleDbConsumer) =>
+			Effect.gen(function* () {
+				const role = yield* Planetscale.PostgresRole(`db-${consumer}`, {
+					database,
+					branch: schema,
+					inheritedRoles: ["postgres"],
+				})
+				return yield* Cloudflare.Hyperdrive.Connection(`db-${consumer}`, {
+					name: resolveWorkerName(`db-${consumer}`, stage, region),
+					origin: role.origin,
+					// Read-after-write everywhere, as on the managed dev config.
+					caching: { disabled: true },
+				})
+			})
+		// api and ai share a config, alerting has its own: the split prd was measured into.
+		const api = yield* hyperdrive("api")
+		return { schema, hyperdrives: { api, ai: api, alerting: yield* hyperdrive("alerting") } }
+	})
 
 /**
  * What this deploy is, for the Worker classes (`yield* Alerting`, …) whose
@@ -111,13 +157,24 @@ const MapleStackLive = Layer.effect(
 			domains,
 			urls: {
 				api: devEnv?.MAPLE_API_BASE_URL ?? (yield* resolveUrl(domains.api, "MAPLE_API_BASE_URL")),
-				ingest: yield* resolveUrl(domains.ingest, "VITE_INGEST_URL", "https://ingest.maple.dev"),
+				// The dev branch matters here for the same reason it does above, and it
+				// was missing: on a dev stage this resolved to the PRODUCTION ingest
+				// host. It went unnoticed while web's dev bundle took its
+				// `VITE_INGEST_URL` from `vite.config.ts`'s `PORTLESS_URL` sibling
+				// lookup instead of from here. Now that web is a vite-source Worker
+				// whose props feed the bundle, this value IS what the browser SDK
+				// posts to, and a default of `ingest.maple.dev` would send local
+				// telemetry to production.
+				ingest:
+					devEnv?.MAPLE_INGEST_URL ??
+					(yield* resolveUrl(domains.ingest, "VITE_INGEST_URL", "https://ingest.maple.dev")),
 				electricSync:
 					devEnv?.MAPLE_ELECTRIC_SYNC_URL ??
 					(yield* resolveUrl(domains.sync, "MAPLE_ELECTRIC_SYNC_URL")),
 			},
 			workerDev,
 			devEnv,
+			db: yield* declareMapleDb(stage, region),
 		}
 		return context
 	}),
@@ -137,6 +194,19 @@ const createDevProcess = (app: DevApp, route: Portless.Route) =>
 			PORT: Output.map(Output.asOutput(route.port), String),
 			PORTLESS_URL: Portless.routeUrl(app),
 			MAPLE_API_URL: Portless.routeUrl("api"),
+			// The alchemy CLI sets NODE_ENV=production for its own renderer, and a
+			// `Command.Dev` child inherits it. A vite or astro dev server reads that
+			// variable for `import.meta.env.DEV`/`PROD` rather than taking it from
+			// `--mode`, so without this a child serves `MODE: "development"` next to
+			// `DEV: false, PROD: true`: every dev-only branch dead and every
+			// production branch live, on a dev server.
+			//
+			// Alchemy strips it for the vite servers IT spawns, and says why
+			// (`Cloudflare/Workers/ViteChild.ts`), but that spawner only runs for a
+			// Worker with a vite source. These apps are not that, so they need it
+			// said here. `env` is the only lever `Command.Dev` offers: undefined
+			// values are dropped rather than unset, and `extendEnv` is not a prop.
+			NODE_ENV: "development",
 		},
 	})
 
@@ -156,6 +226,8 @@ const providers =
 	Acm.providers().pipe(
 		Layer.provideMerge(Cloudflare.providers()),
 		Layer.provideMerge(AWS.providers()),
+		// Its credential lookup runs when the layer is built, and `bun dev` never yields the branch.
+		Layer.provideMerge(isDevServer ? Layer.empty : Planetscale.providers()),
 		Layer.provideMerge(Portless.providers()),
 	)
 
@@ -179,7 +251,7 @@ export default Alchemy.Stack(
 		state: process.env.ALCHEMY_LOCAL_STATE ? Alchemy.localState() : Cloudflare.state(),
 	},
 	Effect.gen(function* () {
-		const { stage, region, domains, urls } = yield* MapleStack
+		const { stage, region, domains, urls, db } = yield* MapleStack
 
 		// Geographic instance this deploy belongs to, from the stage string
 		// (`prd-eu`): the EU instance is this same stack against its own Tinybird
@@ -201,34 +273,45 @@ export default Alchemy.Stack(
 		// via a Cloudflare CNAME at the ALB, so the URL below stays a plain string
 		// and does not depend on the service resource; a PR preview gets no ingest
 		// domain, so its ALB answers plain HTTP on 80 at `ingest.serviceUrl`.
+		// The gateway's Postgres credential, inheriting `postgres` so it reads every table a
+		// migration creates. Changing it is a replace: alchemy creates the successor first and
+		// deletes this one after the fleet has rolled (its id is in the task env).
+		const ingestDbRole = db
+			? yield* Planetscale.PostgresRole("ingest-gateway", {
+					database: resolvePlanetscaleDatabase(region),
+					branch: db.schema,
+					inheritedRoles: ["postgres"],
+				})
+			: undefined
 		const ingest = stageDeploysIngest(stage)
-			? yield* createMapleIngest({ stage, domains, region })
+			? yield* createMapleIngest({ stage, domains, region, dbRole: ingestDbRole })
 			: undefined
 
 		// The application database. Each Worker binds `MAPLE_DB` from its own init
 		// (`MapleDb` in `@maple/infra/cloudflare`: the managed Hyperdrive on dev
-		// stages, a dashboard-managed config by id on prd, nothing on previews).
-		// The managed declaration is yielded here first so its `MAPLE_PG_URL` read
-		// happens outside any Worker init, where alchemy would bind it as a secret.
-		if (resolveDatabaseMode(stage) === "managed") yield* ManagedMapleDb
+		// stages, a dashboard-managed config by id on the US prd, nothing on
+		// previews) or from its props (the configs `declareMapleDb` made, on the EU
+		// prd). The managed declaration is yielded here first so its `MAPLE_PG_URL`
+		// read happens outside any Worker init, where alchemy would bind it as a secret.
+		if (resolveDatabaseMode(stage, region) === "managed") yield* ManagedMapleDb
 
 		// The agents' repository sandbox: it hosts Cloudflare's Sandbox Durable
-		// Object, and the api binds it as `SANDBOX`. Yielded first so the binding
+		// Object, and maple-ai binds it as `SANDBOX`. Yielded first so the binding
 		// sees a Worker this deploy created rather than stored state, and only on
 		// the stages that run it — see `stageDeploysSandbox`.
 		const sandbox = stageDeploysSandbox(stage) ? yield* MapleSandbox : undefined
 		// Every agent surface — the MCP server and its tools, the chat agent, the
-		// investigation fan-out. Yielded before api because api binds it, and a
+		// investigation pass. Yielded before api because api binds it, and a
 		// `Worker.ref` cannot see a sibling this deploy creates.
 		// The root IS the entry point, and the AI Worker hosts the chat Durable
 		// Object: yielding the Worker resolves the class, and its Live layer is what
 		// registers the class in the deployed bundle's exports.
 		// oxlint-disable-next-line effecttsgo/strict-effect-provide
-		const ai = yield* Effect.provide(MapleAi, MapleAiLive)
-		yield* serveWorker("ai", ai)
-		const api = yield* Effect.provideService(MapleApi, AiWorker, ai).pipe((withAi) =>
-			sandbox === undefined ? withAi : Effect.provideService(withAi, SandboxWorker, sandbox),
+		const ai = yield* Effect.provide(MapleAi, MapleAiLive).pipe((withLive) =>
+			sandbox === undefined ? withLive : Effect.provideService(withLive, SandboxWorker, sandbox),
 		)
+		yield* serveWorker("ai", ai)
+		const api = yield* Effect.provideService(MapleApi, AiWorker, ai)
 		yield* serveWorker("api", api)
 
 		// Self-hosted ElectricSQL on ECS Fargate (prd — dev stages use the
@@ -253,21 +336,37 @@ export default Alchemy.Stack(
 		const electricSync = yield* ElectricSync
 		yield* serveWorker("electric-sync", electricSync)
 
-		// See `isDevServer`: each of these three is gated on a production
-		// `Command.Build`, so including them would make `alchemy dev` build the
-		// whole frontend before serving anything. web's props bind the api
-		// Worker (its `API` service binding), handed over as `ApiWorker`.
-		const web = isDevServer ? undefined : yield* Effect.provideService(Web, ApiWorker, api)
+		// web is a `Cloudflare.Website.Vite` Worker, so alchemy owns its vite build
+		// AND its dev server: it is served here like any other Worker rather than
+		// spawned beside the stack, and `alchemy dev` runs vite rather than the
+		// production build. Its props bind the api Worker (its `API` service
+		// binding), handed over as `ApiWorker`.
+		const web = yield* Effect.provideService(Web, ApiWorker, api)
+		yield* serveWorker("web", web)
 
-		// The marketing site and the local-mode SPA are shared across instances
-		// and hold no customer data: one `maple.dev`, deployed by `us` alone.
+		// Still gated on a production `Command.Build`, so including them would make
+		// `alchemy dev` build the whole frontend before serving anything. Both run
+		// their own dev script under `Command.Dev` instead (`DEV_PROCESS_APPS`).
+		// The marketing site and the local-mode SPA are also shared across
+		// instances and hold no customer data: one `maple.dev`, deployed by `us` alone.
 		const sharedApps = !isDevServer && regionHostsSharedApps(region)
 		const landing = sharedApps ? yield* Landing : undefined
 
 		const localUi = sharedApps ? yield* LocalUi : undefined
 
-		const alerting = yield* Alerting
+		// Alerting binds maple-ai too: its ticks ask the incident classifier there
+		// before starting an investigation.
+		const alerting = yield* Effect.provideService(Alerting, AiWorker, ai)
 		yield* serveWorker("alerting", alerting)
+
+		// Chat-platform ingress: the connector registry's sockets and the generic
+		// webhook route, plus the `ConnectorSocket` Durable Object that holds one
+		// connection per socket connector. Like maple-ai, the Worker hosts a class,
+		// so its Live layer is what registers that class in the deployed bundle.
+		// It is inert on a stage with no connector credentials.
+		// oxlint-disable-next-line effecttsgo/strict-effect-provide
+		const chatBot = yield* Effect.provide(ChatBot, ChatBotLive)
+		yield* serveWorker("chat-bot", chatBot)
 
 		// Dev only: the vite/astro dev servers, `cargo run`, and the scraper, each
 		// handed its route's port. (A Worker binds its port in `precreate`, before
@@ -313,7 +412,7 @@ export default Alchemy.Stack(
 			// plan time with the URLs above. On a PR preview this is the ALB's
 			// plain-HTTP hostname: the preview has no ingest domain, so there is
 			// no certificate and no CNAME.
-			ingestServiceUrl: ingest
+			ingestServiceUrl: ingest?.serviceUrl
 				? Output.mapEffect((serviceUrl: string | undefined) =>
 						Effect.sync(() => {
 							appendStepOutputs([`ingest_url=${serviceUrl ?? ""}`])
@@ -321,6 +420,9 @@ export default Alchemy.Stack(
 						}),
 					)(ingest.serviceUrl)
 				: undefined,
+			// Both fleets' ALBs while the Fargate → EC2 cutover runs them side by side.
+			ingestFargateServiceUrl: ingest?.fargateServiceUrl,
+			ingestEc2ServiceUrl: ingest?.ec2ServiceUrl,
 			ingestCollectorEndpoint: ingest?.collectorEndpoint,
 			// Same manual-DNS story as ingest: CNAME `domains.electric` at this ALB
 			// (proxied), and add the ACM validation record once.
@@ -333,6 +435,7 @@ export default Alchemy.Stack(
 			landingWorker: landing?.workerName,
 			localUiWorker: localUi?.workerName,
 			alertingWorker: alerting.workerName,
+			chatBotWorker: chatBot.workerName,
 		}
 		// The stack IS the entry point: the one place `MapleStack` is provided.
 		// oxlint-disable-next-line effecttsgo/strict-effect-provide

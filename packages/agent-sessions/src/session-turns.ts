@@ -247,16 +247,26 @@ export function buildSessionTurns(spans: readonly AiSessionSpan[]): readonly Ses
 				spans: turnSpans,
 				// Only AI spans that root the turn count: a retried inference that
 				// errored and then succeeded is a retry, not a failed turn, and the
-				// app's own errored HTTP span is not the agent failing.
+				// app's own errored HTTP span is not the agent failing. A tool call
+				// roots the turn whenever the run span above it carries no turn id,
+				// and one the agent carried on from did not end the turn either.
 				failed: turnSpans.some(
 					(span) =>
 						span.isAiSpan &&
 						spanFailed(span) &&
-						(span.parentSpanId === "" || !spanIds.has(span.parentSpanId)),
+						(span.parentSpanId === "" || !spanIds.has(span.parentSpanId)) &&
+						!(classifyAiSpan(span) === "tool" && recoveredFrom(span, turnSpans)),
 				),
 				traceIds,
 			}
 		})
+}
+
+/** Whether the agent carried on after `failed`: an AI span of the same turn
+ *  started once it had ended, and succeeded. */
+function recoveredFrom(failed: AiSessionSpan, turnSpans: readonly AiSessionSpan[]): boolean {
+	const endMs = spanEndMs(failed)
+	return turnSpans.some((span) => span.isAiSpan && spanStartMs(span) >= endMs && !spanFailed(span))
 }
 
 /**
@@ -278,6 +288,7 @@ function conversationTurnResolver(
 	spans: readonly AiSessionSpan[],
 	anchors: readonly TurnAnchor[],
 ): (span: AiSessionSpan) => number | undefined {
+	const sessionIds = sessionIdsOf(spans)
 	const turnByConversation = new Map<string, number>()
 	anchors.forEach((anchor, turn) => {
 		if (anchor.conversationId !== undefined) turnByConversation.set(anchor.conversationId, turn)
@@ -293,11 +304,10 @@ function conversationTurnResolver(
 		// recursing forever — the same guard `findAnchors` makes when it walks up.
 		memo.set(span.spanId, undefined)
 
-		// The same exclusion `findAnchors` makes: six vendors derive the session id
-		// FROM the conversation id, and for them the id names the session, not a
-		// turn — so it must not claim the span for turn 1.
+		// The same exclusion `findAnchors` makes: an id that names the session is
+		// not a turn key — so it must not claim the span for turn 1.
 		const own = span.genAi.conversationId
-		let turn = own !== undefined && own !== span.sessionId ? turnByConversation.get(own) : undefined
+		let turn = own !== undefined && !sessionIds.has(own) ? turnByConversation.get(own) : undefined
 		if (turn === undefined) {
 			const parent = byId.get(span.parentSpanId)
 			if (parent !== undefined) turn = resolve(parent)
@@ -308,7 +318,25 @@ function conversationTurnResolver(
 	return resolve
 }
 
+/**
+ * Every session id the spans carry. A `gen_ai.conversation.id` equal to one of
+ * them names the session, not a turn.
+ *
+ * Compared against the whole set rather than the span's own `sessionId`, because
+ * the span carrying the conversation id is often not the one carrying the
+ * session: an agent engine's `execute_tool` spans take the thread id as their
+ * conversation id and no session stamp at all, while the model-call spans beside
+ * them carry the session. Read per span, the tool calls became a turn of their
+ * own and left every model call behind in another.
+ */
+function sessionIdsOf(spans: readonly AiSessionSpan[]): ReadonlySet<string> {
+	const ids = new Set<string>()
+	for (const span of spans) if (span.sessionId !== undefined) ids.add(span.sessionId)
+	return ids
+}
+
 function findAnchors(ordered: readonly AiSessionSpan[]): readonly TurnAnchor[] {
+	const sessionIds = sessionIdsOf(ordered)
 	const byConversation = new Map<string, AiSessionSpan>()
 	for (const span of ordered) {
 		const conversationId = span.genAi.conversationId
@@ -316,7 +344,7 @@ function findAnchors(ordered: readonly AiSessionSpan[]): readonly TurnAnchor[] {
 		// openai_agents_sdk, pydantic_ai) derive `maple_ai.session.id` FROM
 		// `gen_ai.conversation.id`, so for them the id names the session and
 		// repeats on every span — a partition of one, not a turn key.
-		if (conversationId === undefined || conversationId === span.sessionId) continue
+		if (conversationId === undefined || sessionIds.has(conversationId)) continue
 		if (!byConversation.has(conversationId)) byConversation.set(conversationId, span)
 	}
 	if (byConversation.size > 1) {

@@ -58,9 +58,12 @@ They moved together because both reach the same tool registry in-process — ext
 leaves the registry behind, which is why the first attempt was worth 1%.
 
 An investigation is **one agent turn**: the investigate agent gathers the evidence, tests the rival
-explanations itself and closes on `submit_diagnosis`. Do not reintroduce sub-agents, planners or
-validators; the 2026-09 fan-out lost the evidence at every handoff and most passes never reached a
-verdict.
+explanations itself and closes on `submit_diagnosis`. Do not split *this* pass across a planner,
+lanes or a validator again; the 2026-09 fan-out lost the evidence at every handoff and most passes
+never reached a verdict. The rule is about the investigation, not about delegation in general.
+Sub-agents remain a good fit where the parent does not need the child's working set back, a review
+agent fanning out over a diff being the obvious one, and the engine's `SubagentHost` plus the
+`Subagent*` events `events.ts` already maps are the seam for it.
 
 `api.maple.dev/mcp` is still the public address. `apps/api` forwards `/mcp`, `/api/chat/*` and
 `/internal/chat/*` over a service binding, ahead of building its route graph, which keeps the OAuth
@@ -156,21 +159,35 @@ Relational state (issues, alert rules, dashboards, org config, keys) is Drizzle/
 `packages/db/src/schema/`, on the PlanetScale `main` branch (prd — the only stage with a
 database), reached from Workers via the Hyperdrive binding `MAPLE_DB`.
 
+- Drizzle is Effect-native (`drizzle-orm/effect-postgres` over `@effect/sql-pg`, node-postgres
+  underneath): `Database.execute` takes an Effect callback, queries are `yield*`ed, and
+  `db.transaction` takes an Effect callback. Driver failures become `DatabaseError` at that
+  boundary; a `Schema.TaggedError` failed inside a transaction rolls it back and reaches the caller
+  as itself. Raw `db.execute(sql…)` returns the driver's result object — wrap it in `rawRows`.
 - App code keeps epoch-ms numbers and converts at the drizzle boundary — use `msToDate` /
   `dateToMs` from `packages/backend/src/platform/time.ts` rather than bare `new Date(ms)` /
-  `.getTime()`, including inside Promise-land helpers. Never read driver write-result shapes
-  — use `.returning()` + length. `count(*)` needs `::int` (bigint → string).
+  `.getTime()`. Never read driver write-result shapes — use `.returning()` + length. `count(*)`
+  needs `::int` (bigint → string).
 - Layers: `DatabasePgLive` (Workers) and `DatabasePgliteLive` (tests/local; `createTestDb()` in
   `packages/backend/src/platform/test-pglite.ts`).
-- One Postgres connection per invocation — request, cron tick, or Workflow run — created lazily and
+- One Postgres pool per invocation — request, cron tick, or Workflow run — created lazily and
   closed at the boundary, which is Cloudflare's documented Hyperdrive shape. The single primitive is
-  `makePgConnectionScope` in `packages/backend/src/platform/pg-connection-scope.ts`; `pgConnectionMiddleware`
-  installs it for HTTP, `withPgConnectionScope` for cron. Sockets are request-bound on Workers, so a
-  connection may be reused freely WITHIN an invocation but must never outlive it. `max` is 5
-  (a ceiling, not a reservation — capping it at 1 serialized cron ticks and cost 3–6x on p50) and the
-  dial is bounded so a stall lands as `error.type = CONNECT_TIMEOUT` instead of hanging.
-- Migrations: `bun run --cwd packages/db db:generate`; CI applies them against the branch's DIRECT
-  port 5432 (never a pooler) before `alchemy deploy`. PGlite applies them at layer build.
+  `makePgConnectionScope` in `packages/backend/src/platform/pg-connection-scope.ts`;
+  `withPgConnectionScope` installs it around each worker's request handler and cron tick. Sockets are
+  request-bound on Workers, so a connection may be reused freely WITHIN an invocation but must never
+  outlive it. `max` is 5 (a ceiling, not a reservation — capping it at 1 serialized cron ticks and cost
+  3–6x on p50). The 10s bound is on each client's DIAL, never the pool: pg-pool applies a pool-level
+  `connectionTimeoutMillis` to queue waits too. A stalled dial lands as `error.type = ConnectionError`
+  (a refused one carries the socket code, `ECONNREFUSED`). Fork DB work off a request only with
+  `forkRequestScoped`, which interrupts it at the response but lets a DB call already under way finish.
+- Migrations: `bun run --cwd packages/db db:generate`. **The prd deploy applies them**: the
+  PlanetScale `main` branch is an alchemy `Planetscale.PostgresBranch` in `alchemy.run.ts` with
+  `migrations` pointed at `packages/db/drizzle`; never run `drizzle-kit migrate` against prd. It
+  migrates as a temporary role dropped with `postgres` as successor, so every runtime role must
+  inherit `postgres` (`pg_has_role(rolname, 'postgres', 'usage')`) to read what it creates; the
+  ingest gateway's is a `Planetscale.PostgresRole` in the same file, as are the EU instance's Worker
+  roles and Hyperdrive configs (`declareMapleDb`; the US prd binds dashboard configs by id). PGlite
+  applies them at layer build.
 - **PR preview deploys are label-gated** (2026-08, cost — re-enabled by `fd00bcd412`). A PR gets a
   preview only while it carries the `preview` label; `deploy-pr-preview.yml` triggers on
   `opened, reopened, synchronize, labeled, unlabeled, closed` and tears the stack down the moment
@@ -232,9 +249,12 @@ database), reached from Workers via the Hyperdrive binding `MAPLE_DB`.
 
 ## Repository sandbox (agent code access)
 
-When an org has connected GitHub, every agent surface (chat, investigation lanes, public MCP)
-gets `sandbox_grep`, `sandbox_list_files`, `sandbox_read_file` and `sandbox_exec`
-(`apps/ai/src/mcp/tools/sandbox.ts`). They run against a **full git clone at an exact commit**
+When an org has connected GitHub, Maple's own agents (chat and the investigation pass) get
+`sandbox_grep`, `sandbox_list_files`, `sandbox_read_file` and `sandbox_exec`
+(`apps/ai/src/mcp/tools/sandbox.ts`). They are registered with `audience: "internal"`
+(`McpToolRegistrar`), so the public MCP transport neither lists nor executes them — a tool's
+audience is declared at registration, and `public` is the default only for tools that read
+telemetry. They run against a **full git clone at an exact commit**
 inside Cloudflare's Sandbox container, so history works (`git log`, `git blame`, `git show`).
 `git grep` and `git ls-files` back the search and listing tools, because the image ships git and
 not ripgrep — and its git is old enough to lack `git grep --max-count`, which is the kind of thing
@@ -277,7 +297,9 @@ that the unit tests could not see (a `mktemp -d` mode, a git flag this image pre
 adding `USER` and `LOGNAME` after `env -i`) was found by running the image.
 
 End to end needs a real deployment: `stageDeploysSandbox` is `prd` only, so `bun dev` binds no
-`SANDBOX` and the four tools report that no sandbox is available.
+`SANDBOX` and the four tools report that no sandbox is available. The binding, its
+`SANDBOX_INTERNAL_SERVICE_TOKEN` and the GitHub App reader secrets (`githubAppSourceEnv`) are
+declared on **maple-ai**, the Worker that runs the tools — api only keeps the install flow.
 
 The container is **not** in `apps/api` — Cloudflare's Sandbox is a Durable Object class the script
 must export, and an Effect-native Worker's generated entry exports only its own bridge classes. It
@@ -307,6 +329,7 @@ there is no Prometheus `/metrics` endpoint. At high QPS set `OTEL_TRACES_SAMPLER
 gets diagnosed, fixed and verified — read before touching `packages/backend/src/services/errors/`) ·
 `sampling-throughput.md` · `persistence.md` ·
 `ingest-wal-durability.md` (WAL segments, the S3 tier, and what survives a task dying) ·
+`backup-and-recovery.md` (system inventory, the PlanetScale restore drill, and the compliance evidence it feeds) ·
 `docker-container-monitoring.md` (Docker agent → `/infra/containers` lifecycle + its invariants) ·
 `service-map-architecture.md` (the map's tiers, its splice invariant, and what a new overlay costs) ·
 `warehouse-rollups.md` (MV/rollup tiering contract — read before adding a materialized view) ·

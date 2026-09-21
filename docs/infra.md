@@ -119,8 +119,13 @@ because the EU Workers are bound to none. Plan and rationale: `docs/eu-region-pl
   same variable names with that instance's values; `deploy-prd-instance.yml` picks the
   environment, the stage and the AWS region from one `region` input, and the stack refuses
   an `AWS_REGION` that disagrees with the stage. The EU deploy is opt-in through the
-  `MAPLE_DEPLOY_EU` repository variable until its Hyperdrive configs exist —
-  `resolveHyperdriveRefId` throws for `eu` rather than binding nothing.
+  `MAPLE_DEPLOY_EU` repository variable until its accounts exist.
+- **The EU database is declared, not pasted.** `resolveDatabaseMode` is `"declared"` for the
+  EU prd: the deploy adopts `maple-eu`'s `main` branch, declares a `Planetscale.PostgresRole`
+  per consumer on it and a `Cloudflare.Hyperdrive.Connection` on each role's direct origin
+  (`declareMapleDb`), and the Workers bind theirs from their props (`mapleDbEnv`). The US
+  prd stays `"ref"`, on the dashboard configs it was measured on; moving it is the same
+  switch plus new config ids for its Workers.
 - **AI features are off on the EU instance**: the model providers have no EU pin.
 
 ## Local dev: one `alchemy dev` stack
@@ -189,8 +194,8 @@ Gotchas worth knowing:
 
 - **The dev Hyperdrive origin must set `sslmode: "disable"`.** Alchemy defaults a local
   origin to `sslmode=prefer` (`Cloudflare/Hyperdrive/ConnectBinding.ts`), the driver then
-  attempts TLS against the docker Postgres, which has SSL off, and every DB call 503s with
-  `CONNECT_TIMEOUT` after the dial budget. See `ManagedMapleDb`.
+  attempts TLS against the docker Postgres, which has SSL off, and every DB call 503s after the
+  dial budget (`error.type = ConnectionError`; `CONNECT_TIMEOUT` under the old postgres.js driver). See `ManagedMapleDb`.
 - **`MAPLE_OTEL_INGEST_KEY` is optional on dev stages only** (`selfObservabilityEnv`). The
   local stack resolves the same env contract as a deploy, and no developer has a real
   ingest key; without the exemption the whole stack refuses to start over a key whose only
@@ -268,6 +273,31 @@ impl)` over the plain `ChatSession` class — the outer Effect resolves state an
   off the env), the namespace, the physical workflow (`<worker>-<class>-<hash>`, alchemy's
   `makeWorkflowName`) and the generated entry's class export. No reference-form bindings, no
   hand-written entry.
+- **The chat-bot Worker** (`chat-bot`): chat-platform ingress, and the one Worker in the
+  fleet with a **resident** Durable Object. `ConnectorSocket` (`src/socket/ConnectorSocket.ts`)
+  holds one outbound WebSocket per socket-ingress connector in `@maple/chat-platform`'s
+  registry, addressed by the connector's id. Hibernation covers only sockets the platform
+  hands an object (`state.acceptWebSocket`); a socket the object dials itself keeps the
+  object in memory for as long as it is open, so each socket connector costs one resident
+  object. That is what an @mention costs on a platform that delivers mentions no other way —
+  a platform that signs an HTTP webhook uses the same Worker's generic
+  `POST /connectors/:connectorId/webhook` route and no Durable Object at all.
+
+    A `* * * * *` cron is the start and recovery trigger: the Worker has no traffic of its
+    own, so nothing would ever make a first request, and after a deploy or an eviction the
+    next tick calls `ensureConnected` again. Between ticks the object's own alarm serves the
+    connector's heartbeat, the reconnect backoff and a one-minute watchdog. A connector's
+    fatal directive (a rejected credential, a permission the application was never granted)
+    holds it down for six hours rather than forever, so fixing the credential is all a
+    recovery needs.
+
+    It has **no public hostname**: the socket half dials out, and no webhook connector is
+    registered yet, so a custom domain would be DNS plus a certificate bought for a route
+    nothing calls. Under `bun dev` the portless route reaches the webhook path. The first
+    webhook connector is what should buy the hostname. The Worker is inert on a stage with no
+    connector credentials — every connector key is bound optional, and a connector without
+    its configuration is skipped with one log line.
+
 - **The sandbox Worker** (`sandbox`): the one Worker in the fleet whose own module is
   its bundle entry. It hosts Cloudflare's Sandbox Durable Object (`@cloudflare/sandbox`),
   which is a class the deployed script must export — and an Effect-native Worker cannot
@@ -277,8 +307,9 @@ impl)` over the plain `ChatSession` class — the outer Effect resolves state an
   not the only way to run this image — an alchemy `Cloudflare.DurableObject` in the api
   can front a `Cloudflare.Container` and talk to its port directly — but that means
   owning the container's control protocol instead of using the vendor client, so this
-  buys the client at the price of an app. It has no route and no hostname: the api reaches
-  it over a `SANDBOX` service binding, provided by the root as `SandboxWorker`, and every
+  buys the client at the price of an app. It has no route and no hostname: maple-ai, whose
+  agents run the sandbox tools, reaches it over a `SANDBOX` service binding, provided by the
+  root as `SandboxWorker`, and every
   request carries `SANDBOX_INTERNAL_SERVICE_TOKEN` — deliberately not the shared
   `INTERNAL_SERVICE_TOKEN`, which lets its holder act as any organization.
 
@@ -441,6 +472,15 @@ which was wrong by ~7x and had already been quoted back as fact in a code review
 the number as load-bearing. The workflow compiles inside `rust:1.94-bookworm` rather than
 on the runner because the runtime base is `debian:bookworm-slim` (glibc 2.36) while
 `ubuntu-24.04` ships 2.39 — a host-built binary dies with `version 'GLIBC_2.39' not found`.
+
+## Schema migrations run in the deploy
+
+The instance's PlanetScale `main` branch (`maple`, `maple-eu`) is a `Planetscale.PostgresBranch`
+yielded into `MapleStack` on prd (`db.schema`), with `migrations` at `packages/db/drizzle`. Alchemy
+orders resources only by the Outputs their props reference, and a Hyperdrive bound by id references
+nothing, so the api, ai and alerting Workers put the branch name in their env (`MAPLE_DB_BRANCH`,
+via `mapleDbEnv`) to upload after it. The ingest gateway's Postgres credential is a
+`Planetscale.PostgresRole` on the same branch; see `docs/persistence.md` for both.
 
 ## Hyperdrive: why api and alerting have separate configs
 

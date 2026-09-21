@@ -548,84 +548,107 @@ export class PlanetScaleConnectionService extends Context.Service<
 
 				const retiredTargets = yield* database
 					.execute((db) =>
-						db.transaction(async (tx) => {
-							const claimed = await tx
-								.update(scrapeTargets)
-								.set({ managedBy })
-								.where(
-									and(eq(scrapeTargets.orgId, orgId), eq(scrapeTargets.id, scrapeTargetId)),
-								)
-								.returning({ id: scrapeTargets.id })
-							if (claimed.length !== 1) {
-								throw new Error(
-									"Replacement PlanetScale scrape target disappeared before binding",
-								)
-							}
-
-							if (existing !== null) {
-								const rebound = await tx
-									.update(planetscaleConnections)
-									.set({
-										psOrganization: organization,
-										connectedByUserId,
-										scrapeTargetId,
-										detectedPermissionsJson: { ...permissions },
-										updatedAt: new Date(now),
-									})
-									.where(eq(planetscaleConnections.id, existing.id))
-									.returning({ id: planetscaleConnections.id })
-								if (rebound.length !== 1) {
-									throw new Error("PlanetScale connection disappeared before rebinding")
-								}
-
-								if (
-									existing.scrapeTargetId === null ||
-									existing.scrapeTargetId === scrapeTargetId
-								) {
-									return []
-								}
-
-								// Ownership is part of the predicate: a target transferred by a
-								// concurrent operation is never removed by this connection.
-								return tx
-									.delete(scrapeTargets)
+						db.transaction((tx) =>
+							Effect.gen(function* () {
+								const claimed = yield* tx
+									.update(scrapeTargets)
+									.set({ managedBy })
 									.where(
 										and(
 											eq(scrapeTargets.orgId, orgId),
-											eq(scrapeTargets.id, existing.scrapeTargetId),
-											eq(scrapeTargets.managedBy, managedBy),
+											eq(scrapeTargets.id, scrapeTargetId),
 										),
 									)
 									.returning({ id: scrapeTargets.id })
-							}
+								if (claimed.length !== 1) {
+									return yield* Effect.fail(
+										new IntegrationsPersistenceError({
+											message:
+												"Replacement PlanetScale scrape target disappeared before binding",
+										}),
+									)
+								}
 
-							if (encryptedWebhookSecret === null) {
-								throw new Error("Missing webhook secret for new PlanetScale connection")
-							}
-							const inserted = await tx
-								.insert(planetscaleConnections)
-								.values({
-									id: connectionId,
-									orgId,
-									psOrganization: organization,
-									connectedByUserId,
-									scrapeTargetId,
-									webhookSecretCiphertext: encryptedWebhookSecret.ciphertext,
-									webhookSecretIv: encryptedWebhookSecret.iv,
-									webhookSecretTag: encryptedWebhookSecret.tag,
-									detectedPermissionsJson: { ...permissions },
-									createdAt: new Date(now),
-									updatedAt: new Date(now),
-								})
-								.returning({ id: planetscaleConnections.id })
-							if (inserted.length !== 1) {
-								throw new Error("Failed to persist PlanetScale connection")
-							}
-							return []
-						}),
+								if (existing !== null) {
+									const rebound = yield* tx
+										.update(planetscaleConnections)
+										.set({
+											psOrganization: organization,
+											connectedByUserId,
+											scrapeTargetId,
+											detectedPermissionsJson: { ...permissions },
+											updatedAt: new Date(now),
+										})
+										.where(eq(planetscaleConnections.id, existing.id))
+										.returning({ id: planetscaleConnections.id })
+									if (rebound.length !== 1) {
+										return yield* Effect.fail(
+											new IntegrationsPersistenceError({
+												message:
+													"PlanetScale connection disappeared before rebinding",
+											}),
+										)
+									}
+
+									if (
+										existing.scrapeTargetId === null ||
+										existing.scrapeTargetId === scrapeTargetId
+									) {
+										return []
+									}
+
+									// Ownership is part of the predicate: a target transferred by a
+									// concurrent operation is never removed by this connection.
+									return yield* tx
+										.delete(scrapeTargets)
+										.where(
+											and(
+												eq(scrapeTargets.orgId, orgId),
+												eq(scrapeTargets.id, existing.scrapeTargetId),
+												eq(scrapeTargets.managedBy, managedBy),
+											),
+										)
+										.returning({ id: scrapeTargets.id })
+								}
+
+								if (encryptedWebhookSecret === null) {
+									return yield* Effect.fail(
+										new IntegrationsPersistenceError({
+											message: "Missing webhook secret for new PlanetScale connection",
+										}),
+									)
+								}
+								const inserted = yield* tx
+									.insert(planetscaleConnections)
+									.values({
+										id: connectionId,
+										orgId,
+										psOrganization: organization,
+										connectedByUserId,
+										scrapeTargetId,
+										webhookSecretCiphertext: encryptedWebhookSecret.ciphertext,
+										webhookSecretIv: encryptedWebhookSecret.iv,
+										webhookSecretTag: encryptedWebhookSecret.tag,
+										detectedPermissionsJson: { ...permissions },
+										createdAt: new Date(now),
+										updatedAt: new Date(now),
+									})
+									.returning({ id: planetscaleConnections.id })
+								if (inserted.length !== 1) {
+									return yield* Effect.fail(
+										new IntegrationsPersistenceError({
+											message: "Failed to persist PlanetScale connection",
+										}),
+									)
+								}
+								return []
+							}),
+						),
 					)
 					.pipe(
-						Effect.mapError(toPersistenceError),
+						Effect.catchTag("@maple/api/lib/DatabaseError", (error) =>
+							Effect.fail(toPersistenceError(error)),
+						),
 						Effect.tapError(() =>
 							createdTarget
 								? scrapeTargetsService.deleteManaged(orgId, scrapeTargetId).pipe(

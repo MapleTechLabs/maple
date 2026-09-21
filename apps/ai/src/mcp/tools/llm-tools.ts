@@ -16,9 +16,9 @@ import { Cause, Effect, Schema } from "effect"
 import { Tool, Toolkit } from "effect/unstable/ai"
 import type { McpToolExecutorApi } from "../dispatcher"
 import type { McpToolSurface } from "@maple/domain/mcp-manifest"
-import { mapleToolCatalog, toInputSchema } from "./registry"
+import { mapleToolCatalogFor, toInputSchema } from "./registry"
 import { truncateToolOutput } from "./tool-output"
-import { withToolCallContent } from "../../platform/genai-spans"
+import { toolHandlersWithContent } from "../../platform/genai-spans"
 import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
 
 /**
@@ -75,17 +75,23 @@ export interface BuildMapleToolsOptions {
 	 */
 	readonly gate?: (name: string) => boolean
 	/**
-	 * Telemetry attribution for every tool call these tools dispatch. Defaults to `"chat"`; workflow
-	 * agent passes pass `"workflow"` so the two are separable in traces despite sharing this builder.
+	 * Which audience this build may see, and the attribution on every tool call it dispatches.
+	 *
+	 * Required rather than defaulted to `"chat"`. Every surface used to be an internal one, so the
+	 * default cost nothing; now a caller that forgets it would be handed the agents-only tools —
+	 * `sandbox_exec` among them — by omission.
 	 */
-	readonly surface?: McpToolSurface
+	readonly surface: McpToolSurface
+	/** The agent-session identity of the run, stamped on every tool span — see `withToolCallContent`. */
+	readonly sessionAttributes?: Readonly<Record<string, string>>
 }
 
 /**
  * A tool's failure as the model sees it: one line of text, never a cause.
  *
- * Declared rather than thrown so the runtime records a tool failure the model can route around,
- * instead of the failure ending the run.
+ * Where it goes depends on the tool's `failureMode` (see `buildMapleToolkit`): an ordinary tool
+ * returns it to the model, which rewrites the call; a gated tool propagates it and ends the run,
+ * which is how a proposal becomes the turn's last word and reaches the approval card.
  */
 export class MapleToolFailure extends Schema.TaggedError<MapleToolFailure>()(
 	"@maple/api/mcp/MapleToolFailure",
@@ -103,7 +109,7 @@ const fail = (message: string) => Effect.fail(new MapleToolFailure({ message }))
  * it already has, and left alone it will spend every turn it owns doing that.
  *
  * It refuses rather than denying authorization, because the two end differently: a refusal is a
- * declared tool failure the model can read and route around, and a third consecutive one trips the
+ * returned tool failure the model can read and route around, and enough consecutive ones trip the
  * policy's own `repeatedFailureLimit`, which stops the run. A host authorization denial ends the
  * run outright, and a user watching a chat turn would see an error instead of an answer.
  */
@@ -122,9 +128,13 @@ const repeats = (dispatched: Map<string, number>, name: string, params: unknown)
 	return seen
 }
 
-/** The registry entries this build exposes, after the caller's `include` filter. */
+/**
+ * The registry entries this build exposes: what the surface may see at all, then
+ * the caller's `include` filter. The surface cut comes first so a ruleset that
+ * allows `*` cannot widen a build past its audience.
+ */
 const exposed = (options: BuildMapleToolsOptions) =>
-	mapleToolCatalog.filter((definition) => options.include?.(definition.name) ?? true)
+	mapleToolCatalogFor(options.surface).filter((definition) => options.include?.(definition.name) ?? true)
 
 /**
  * The Maple MCP registry as an Effect AI toolkit plus its handler layer.
@@ -136,7 +146,7 @@ const exposed = (options: BuildMapleToolsOptions) =>
 export const buildMapleToolkit = (
 	executor: McpToolExecutorApi,
 	tenant: TenantContext,
-	options: BuildMapleToolsOptions = {},
+	options: BuildMapleToolsOptions,
 ) => {
 	const definitions = exposed(options)
 	const tools = definitions.map((definition) => {
@@ -146,6 +156,8 @@ export const buildMapleToolkit = (
 			parameters: toInputSchema(definition.schema),
 			success: Schema.String,
 			failure: MapleToolFailure,
+			// A proposal must end the run; any other failure goes back to the model as the call's result.
+			failureMode: gated ? "error" : "return",
 		})
 	})
 	const toolkit = Toolkit.make(...tools)
@@ -156,15 +168,15 @@ export const buildMapleToolkit = (
 		definitions.map((definition) => {
 			const gated = options.gate?.(definition.name) ?? false
 			const dispatch = (params: unknown) =>
-				executor.execute(tenant, definition.name, params, options.surface ?? "chat").pipe(
+				executor.execute(tenant, definition.name, params, options.surface).pipe(
+					// A tool that dies (unknown tool, tenant error) fails like one that reported an error.
+					// Caught before the `flatMap`, so a reported error is not wrapped a second time.
+					Effect.catchCause((cause) => fail(`Tool failed: ${summarizeToolFailure(cause)}`)),
 					Effect.flatMap((result) =>
 						result.isError
 							? fail(toolResultText(result))
 							: Effect.succeed(toolResultText(result)),
 					),
-					// A tool that fails outright (unknown tool, tenant error) must not kill the run —
-					// hand the model the message and let it route around.
-					Effect.catchCause((cause) => fail(`Tool failed: ${summarizeToolFailure(cause)}`)),
 				)
 			const handle = (params: unknown) => {
 				if (gated) return fail(`${definition.name} requires user approval and was not executed.`)
@@ -176,21 +188,15 @@ export const buildMapleToolkit = (
 				}
 				return dispatch(params)
 			}
-			return [
-				definition.name,
-				(params: unknown) =>
-					withToolCallContent(
-						Effect.suspend(() => handle(params)),
-						{ description: describe(definition, gated), params },
-					),
-			]
+			return [definition.name, (params: unknown) => Effect.suspend(() => handle(params))]
 			// A dynamic tool's shape is known only at runtime, so the model's arguments arrive
 			// unparsed and the handler parses them.
 			// oxlint-disable-next-line anti-slop/no-unknown-parameters
 		}) as ReadonlyArray<readonly [string, (params: unknown) => Effect.Effect<string, MapleToolFailure>]>,
 	)
+	// Registered as one map, so a tool added to the catalogue cannot arrive without its span content.
 	// `handlers` is exposed alongside the layer because a caller that merges this toolkit with one
 	// of its own must build a single handler map: two partial layers would each be missing the
-	// other's tools.
-	return { toolkit, handlers, layer: toolkit.toLayer(handlers) }
+	// other's tools. It is the wrapped map for the same reason.
+	return { toolkit, ...toolHandlersWithContent(toolkit, handlers, options.sessionAttributes) }
 }

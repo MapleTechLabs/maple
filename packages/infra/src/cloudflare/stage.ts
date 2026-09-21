@@ -225,12 +225,16 @@ export function resolveMapleDomains(
 	}
 }
 
-export type MapleDatabaseMode = "ref" | "managed" | "none"
+export type MapleDatabaseMode = "ref" | "declared" | "managed" | "none"
 
 /**
  * How a stage reaches the application database.
  *
- * - `"ref"` — bind a dashboard-managed Hyperdrive config by ID (prd).
+ * - `"ref"` — bind a dashboard-managed Hyperdrive config by ID (the US prd).
+ * - `"declared"` — the deploy declares the database roles and their Hyperdrive
+ *   configs on the instance's branch, one per consumer, and the Workers bind
+ *   them from their props (the EU prd; `resolvePlanetscaleDatabase` names the
+ *   database). Both prd modes adopt the branch and apply the migrations.
  * - `"managed"` — alchemy creates a Hyperdrive whose origin is pushed from
  *   `MAPLE_PG_URL` (dev stages, against the docker-compose Postgres).
  * - `"none"` — no `MAPLE_DB` binding at all. `DatabasePgLive` then fails every
@@ -243,15 +247,28 @@ export type MapleDatabaseMode = "ref" | "managed" | "none"
  * and restore the PlanetScale/Electric steps in
  * `.github/workflows/deploy-pr-preview.yml` (the scripts are kept, dormant).
  */
-export function resolveDatabaseMode(stage: MapleStage): MapleDatabaseMode {
+export function resolveDatabaseMode(
+	stage: MapleStage,
+	region: MapleRegion = DEFAULT_MAPLE_REGION,
+): MapleDatabaseMode {
 	switch (stage.kind) {
 		case "prd":
-			return "ref"
+			return region === DEFAULT_MAPLE_REGION ? "ref" : "declared"
 		case "pr":
 			return "none"
 		case "dev":
 			return "managed"
 	}
+}
+
+/** Whether the deploy adopts the instance's PlanetScale branch and applies the migrations. */
+export function stageMigratesDatabase(mode: MapleDatabaseMode): boolean {
+	return mode === "ref" || mode === "declared"
+}
+
+/** The instance's PlanetScale database, created by hand and adopted by name; everything on it is declared. */
+export function resolvePlanetscaleDatabase(region: MapleRegion = DEFAULT_MAPLE_REGION): string {
+	return `maple${regionSuffix(region)}`
 }
 
 /**
@@ -274,27 +291,13 @@ export type MapleDbConsumer = "api" | "ai" | "alerting"
 
 /**
  * Dashboard-managed Hyperdrive configs, bound by ID; deploys never see the
- * database credentials. Stages returning undefined get an alchemy-managed
- * Hyperdrive from MAPLE_PG_URL or no database — `resolveDatabaseMode` decides.
- * Config IDs are not secrets.
+ * database credentials. The `"ref"` mode's half of `MapleDb`, so only the US
+ * prd answers; every other stage gets its config from the deploy (`"declared"`,
+ * `"managed"`) or none — `resolveDatabaseMode` decides. Config IDs are not secrets.
  */
-export function resolveHyperdriveRefId(
-	stage: MapleStage,
-	consumer: MapleDbConsumer,
-	region: MapleRegion = DEFAULT_MAPLE_REGION,
-): string | undefined {
+export function resolveHyperdriveRefId(stage: MapleStage, consumer: MapleDbConsumer): string | undefined {
 	switch (stage.kind) {
 		case "prd":
-			if (region === "eu") {
-				// Deliberately a defect and not `undefined`: undefined means "no
-				// database" (a PR preview), and an EU instance that silently deployed
-				// with no `MAPLE_DB` would 500 every DB-backed route in production.
-				// Create the configs against the EU PlanetScale database (one per
-				// consumer, like prd's) and put their ids here.
-				throw new Error(
-					`No Hyperdrive config for the EU instance yet (consumer "${consumer}"). Create maple-prd-eu / maple-alerting-prd-eu in the dashboard and add the ids to resolveHyperdriveRefId.`,
-				)
-			}
 			// Both target the PlanetScale `main` branch; their `origin_connection_limit`s
 			// SUM against its `max_connections`.
 			// TODO(ai-worker): `ai` shares `maple-prd` until a dedicated
