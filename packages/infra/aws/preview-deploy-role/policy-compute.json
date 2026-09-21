@@ -206,14 +206,7 @@
 		{
 			"Sid": "Route53PrivateZoneForCloudMapCollectorOptIn",
 			"Effect": "Allow",
-			"Action": [
-				"route53:CreateHostedZone",
-				"route53:DeleteHostedZone",
-				"route53:ChangeResourceRecordSets",
-				"route53:ListResourceRecordSets",
-				"route53:AssociateVPCWithHostedZone",
-				"route53:DisassociateVPCFromHostedZone"
-			],
+			"Action": ["route53:CreateHostedZone", "route53:DeleteHostedZone"],
 			"Resource": "*"
 		}
 	]

@@ -105,6 +105,23 @@ aws iam update-assume-role-policy --role-name maple-preview-deploy \
   --policy-document file://trust-policy.json
 ```
 
+## Residual risk: a preview can widen its own task role
+
+The stack needs `iam:CreatePolicy`, `iam:PutRolePolicy` and `iam:AttachRolePolicy` on
+`maple-*-pr-*` (the WAL bucket and task-protection policies, the secrets inline policy). IAM
+cannot condition on a policy's contents, so code running in the preview job could write a
+broad policy under a preview name, attach it to a preview task role, and run a task with it.
+The proper fix is a permissions boundary: require `iam:PermissionsBoundary` on
+`iam:CreateRole`, ship the boundary document here, and drop `iam:DeleteRolePermissionsBoundary`.
+That is not in place because alchemy's `ECS.Service` creates the task and execution roles
+itself (`createTaskRoleIfNotExists` in `node_modules/alchemy/src/AWS/ECS/Service.ts`) with no
+boundary input, so the condition would deny every preview deploy. Until alchemy accepts a
+boundary or explicit roles, the control is the one the workflow already documents: the
+`pr-preview` GitHub environment must require a reviewer before PR-controlled code gets these
+credentials. The role also holds no `sts:AssumeRole`, `iam:CreateUser`, `iam:CreateAccessKey`
+or `iam:UpdateAssumeRolePolicy` on non-preview roles, so the escalation stays inside
+resources named `maple-*-pr-*` unless a task is launched with the widened role.
+
 ## Expect a few AccessDenied rounds
 
 The action lists were taken from the alchemy modules a preview exercises
@@ -144,9 +161,13 @@ Known soft spots, in the order they are likely to bite:
 - The EC2 fleet statements (launch templates, Auto Scaling, `ec2:RunInstances`,
   `ec2:CreateTags` with `ec2:CreateAction: RunInstances`) are written for the EC2 NVMe ingest
   fleet (#937) ahead of it landing; the current Fargate stack never exercises them.
-- Cloud Map and Route 53 only run for a PR carrying `preview:collector`. The Route 53
-  statement is the widest one here (hosted zone ARNs carry ids, and Cloud Map creates the
-  zone on the caller's permissions); if the collector opt-in is never used, drop it.
+- Cloud Map and Route 53 only run for a PR carrying `preview:collector`. Cloud Map creates
+  and deletes the namespace's private hosted zone on the caller's permissions, so the role
+  gets `route53:CreateHostedZone` and `route53:DeleteHostedZone` on `*` (zone ARNs carry ids,
+  and Cloud Map does not tag the zone). Nothing that writes records is granted: instance
+  registration goes through the ECS and Cloud Map service-linked roles, and Route 53 refuses
+  to delete a zone that still holds records, so the reach is empty zones. If the collector
+  opt-in is never used, drop the statement.
 - Previews have no ingest domain, so nothing in ACM is granted. A preview that does get a
   domain (`resolveMapleDomains`) will need `acm:RequestCertificate` and friends.
 - The orphan sweep (`cleanup-preview-orphans.yml`) never touches AWS, so a preview whose
