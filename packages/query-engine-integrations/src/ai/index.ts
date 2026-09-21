@@ -26,6 +26,8 @@ export {
 	aiTraceTotalsQuery,
 	aiTraceWindowQuery,
 	idSearchPattern,
+	indexFailedSpanFromTuple,
+	MAX_FAILURES_PER_SESSION,
 	type AiSessionDistributionMeasure,
 	type AiSessionDistributionsOutput,
 	type AiSessionFacetType,
@@ -41,6 +43,7 @@ export {
 	type AiSessionSummaryOutput,
 	type AiSessionTotalsOutput,
 	type AiSessionWindowOutput,
+	type IndexFailedSpanTuple,
 } from "./ai-sessions"
 
 export {

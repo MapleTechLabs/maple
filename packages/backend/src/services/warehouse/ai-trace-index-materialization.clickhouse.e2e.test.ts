@@ -26,6 +26,7 @@ import {
 } from "@maple/domain/gen-ai"
 import { genAiErrorFingerprintText } from "@maple/domain/tinybird/gen-ai-columns"
 import * as Integrations from "@maple/query-engine-integrations"
+import { summarizeIndexFailures } from "@maple/agent-sessions"
 import type { AiSessionPageOpts } from "@maple/query-engine-integrations"
 import { normalizeSqlForClickHouseClient } from "@maple/query-engine/execution"
 import {
@@ -806,6 +807,32 @@ describe.skipIf(!clickhouseE2eEnabled)("ai_trace_index materialization", () => {
 		assert.strictEqual(sessionless!.errorAgentSpans, 1)
 		// The one failed span is a model call: a turn failure, not a tool's.
 		assert.deepStrictEqual([sessionless!.toolErrors, sessionless!.turnErrors], [0, 1])
+		// The failed span, shipped for the breakdown as the tuple's positions —
+		// a root span that failed, so the turn died on it: terminal.
+		assert.deepStrictEqual(sessionless!.failures, [
+			[
+				"span-agent-2",
+				"",
+				0,
+				1,
+				"",
+				"",
+				"vercel_ai_sdk",
+				"",
+				"",
+				"",
+				SESSIONLESS_TRACE,
+				BASE_MS + 60_123,
+			],
+		])
+		assert.strictEqual(sessionless!.terminalSpanId, "span-agent-2")
+		assert.deepStrictEqual(
+			summarizeIndexFailures(
+				sessionless!.failures.map(Integrations.indexFailedSpanFromTuple),
+				sessionless!.terminalSpanId,
+			),
+			[{ kind: "error", label: "error", count: 1, severity: "failure", terminal: true }],
+		)
 		// One span of 1ms: the extent is its own duration.
 		assert.strictEqual(sessionless!.agentDurationMs, 1)
 
@@ -834,6 +861,41 @@ describe.skipIf(!clickhouseE2eEnabled)("ai_trace_index materialization", () => {
 		// The failed tool span under an `Ok` turn: one tool error, and no turn
 		// error echoed off it. The failure lambda is raw SQL too.
 		assert.deepStrictEqual([session!.toolErrors, session!.turnErrors], [1, 0])
+		// The 0032 columns ride along, and the tool failed under an `Ok` turn
+		// span, so no turn root failed and nothing is terminal: a warning.
+		assert.deepStrictEqual(session!.failures, [
+			[
+				"span-tool-1",
+				"span-agent-1",
+				1,
+				0,
+				"TimeoutError",
+				"search_traces",
+				"eve",
+				"search timed out",
+				"",
+				"",
+				AGENT_TRACE,
+				BASE_MS + 2_000,
+			],
+		])
+		assert.strictEqual(session!.terminalSpanId, "")
+		assert.deepStrictEqual(
+			summarizeIndexFailures(
+				session!.failures.map(Integrations.indexFailedSpanFromTuple),
+				session!.terminalSpanId,
+			),
+			[
+				{
+					kind: "toolTimeout",
+					label: "tool_timeout · search_traces",
+					tool: "search_traces",
+					count: 1,
+					severity: "anomaly",
+					terminal: false,
+				},
+			],
+		)
 		// From the first turn span to the end of the second trace's turn span.
 		assert.strictEqual(session!.agentDurationMs, 30_001)
 	})

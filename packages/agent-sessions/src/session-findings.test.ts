@@ -297,8 +297,8 @@ describe("buildSessionFindings", () => {
 		expect(finding.severity).toBe("anomaly")
 	})
 
-	it("flags the same tool called eight times within one turn, and not seven", () => {
-		const callsOf = (count: number) =>
+	it("flags the same tool called eight times within one turn only while arguments are missing", () => {
+		const callsOf = (count: number, args?: (index: number) => Record<string, unknown>) =>
 			twoTurns([
 				agentSpan({
 					spanId: "a2",
@@ -313,16 +313,22 @@ describe("buildSessionFindings", () => {
 						startMs: 5 * MINUTE + index * SECOND,
 						durationMs: 500,
 						toolName: "search",
-						genAi: { conversationId: "t2" },
+						genAi:
+							args === undefined
+								? { conversationId: "t2" }
+								: { conversationId: "t2", toolCallArguments: args(index) },
 					}),
 				),
 			])
 
 		const flagged = report(callsOf(8)).findings.find((entry) => entry.label === "search")
-		expect(flagged?.detail).toBe("called 8× within one turn")
+		expect(flagged?.detail).toBe("called 8× within one turn; arguments were not captured")
 		expect(flagged?.spanId).toBe("loop-0")
 
 		expect(report(callsOf(7)).findings).toEqual([])
+
+		// Eight searches for eight different patterns is search, not repetition.
+		expect(report(callsOf(8, (index) => ({ pattern: `p${index}` }))).findings).toEqual([])
 	})
 
 	it("flags a stall inside a turn, never the pause between turns", () => {

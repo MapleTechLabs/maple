@@ -12,7 +12,7 @@
 // and a total is always the plain sum of the buckets.
 
 import { genAiUsageConvention } from "@maple/domain/gen-ai"
-import type { AiSessionSpan } from "@maple/domain/http"
+import type { AiSessionFailureKind, AiSessionSpan } from "@maple/domain/http"
 
 import { formatCurrency, formatDuration, formatNumber } from "@maple/domain/format"
 import {
@@ -20,6 +20,7 @@ import {
 	failureDetailText,
 	incompleteRunTool,
 	rawFailureText,
+	rawFailureTextOf,
 	stripFailurePrefixes,
 	toolNamedBySchemaError,
 } from "./failure-text"
@@ -153,17 +154,7 @@ export interface SessionToolUsage {
  * - `toolTimeout`: a tool's backend gave up.
  * - `incomplete`: the run ended without the completion the agent required.
  */
-export type SessionFailureKind =
-	| "error"
-	| "rateLimited"
-	| "contextExceeded"
-	| "refusal"
-	| "providerError"
-	| "invalidOutput"
-	| "toolArguments"
-	| "toolUnavailable"
-	| "toolTimeout"
-	| "incomplete"
+export type SessionFailureKind = AiSessionFailureKind
 
 export interface SessionFailureEvent {
 	readonly kind: SessionFailureKind
@@ -1045,7 +1036,7 @@ function dedupeByResponseId(events: readonly SessionFailureEvent[]): readonly Se
 }
 
 /** Whether the event's kind says what happened, or is one of the catch-alls. */
-function failureSpecificity(event: SessionFailureEvent): number {
+export function failureSpecificity(event: { readonly kind: SessionFailureKind }): number {
 	return event.kind === "error" || event.kind === "providerError" ? 0 : 1
 }
 
@@ -1067,21 +1058,54 @@ const TOOL_ARGUMENTS_PATTERN =
 const TOOL_UNAVAILABLE_PATTERN =
 	/not configured|not connected|not available|unavailable|not enabled|not installed|unauthori[sz]ed|forbidden|permission denied|access denied|no sandbox|integration/i
 
-function classifyFailure(span: AiSessionSpan): Omit<SessionFailureEvent, "span"> {
-	const signal = errorSignal(span)
+function classifyFailure(span: AiSessionSpan): SessionFailureClass {
+	return classifyFailureSignal({
+		errorType: span.genAi.errorType,
+		responseStatus: span.genAi.responseStatus,
+		statusMessage: span.statusMessage,
+		toolCallResult: span.genAi.toolCallResult,
+		tool: span.genAi.toolName ?? (classifyAiSpan(span) === "tool" ? span.spanName : undefined),
+		isLlmCall: isLlmCall(span),
+		vendorId: span.vendorId,
+	})
+}
+
+/** What a failure is, less the span that carried it. */
+export type SessionFailureClass = Omit<SessionFailureEvent, "span">
+
+/**
+ * What {@link classifyFailureSignal} reads off a failed span — the fields as a
+ * span carries them, or as an `ai_trace_index` row does since migration 0032,
+ * which is how the list names a session's failures without reading its spans.
+ */
+export interface FailureSignal {
+	readonly errorType: string | undefined
+	readonly responseStatus: string | undefined
+	readonly statusMessage: string
+	readonly toolCallResult: unknown
+	/** The tool the span is about — `gen_ai.tool.name`, else a tool span's name. */
+	readonly tool: string | undefined
+	readonly isLlmCall: boolean
+	readonly vendorId: string | undefined
+}
+
+export function classifyFailureSignal(span: FailureSignal): SessionFailureClass {
+	const signal = [span.errorType, span.responseStatus, span.statusMessage]
+		.filter((value): value is string => value !== undefined && value !== "")
+		.join(" ")
 	if (RATE_LIMIT_PATTERN.test(signal)) return { kind: "rateLimited", label: "rate_limit" }
 	if (CONTEXT_EXCEEDED_PATTERN.test(signal)) {
 		return { kind: "contextExceeded", label: "context_length_exceeded" }
 	}
 
-	const raw = (rawFailureText(span) ?? "").slice(0, CLASSIFIED_TEXT_CHARS)
+	const raw = (rawFailureTextOf(span) ?? "").slice(0, CLASSIFIED_TEXT_CHARS)
 	const text = stripFailurePrefixes(raw)
 	if (incompleteRunTool(text) !== undefined) return { kind: "incomplete", label: "incomplete" }
 
 	// `error.type` is the instrumentation's own word for it; the tool name is
 	// what separates one failing tool from another under a shared `tool_error`.
-	const name = span.genAi.errorType ?? "error"
-	const tool = span.genAi.toolName ?? (classifyAiSpan(span) === "tool" ? span.spanName : undefined)
+	const name = span.errorType ?? "error"
+	const tool = span.tool
 	if (tool !== undefined) {
 		// A parameter error names the tool whose schema was violated; a batch
 		// of calls can stamp a sibling's name on the span. `error.type` joins
@@ -1089,7 +1113,7 @@ function classifyFailure(span: AiSessionSpan): Omit<SessionFailureEvent, "span">
 		// has still said what happened. The schema wrapper is one of the
 		// prefixes stripping removes, so it is read off the raw text.
 		const named = toolNamedBySchemaError(raw) ?? tool
-		const words = `${span.genAi.errorType ?? ""} ${text}`
+		const words = `${span.errorType ?? ""} ${text}`
 		// The schema cue first: a rejected parameter named `timeout` is still
 		// the model's arguments.
 		if (TOOL_SCHEMA_PATTERN.test(raw))
@@ -1106,15 +1130,15 @@ function classifyFailure(span: AiSessionSpan): Omit<SessionFailureEvent, "span">
 		return { kind: "error", label: `${name} · ${named}`, tool: named }
 	}
 
-	if (span.genAi.errorType === "invalid_output" || describeSchemaFailure(text) !== undefined) {
+	if (span.errorType === "invalid_output" || describeSchemaFailure(text) !== undefined) {
 		return { kind: "invalidOutput", label: "invalid_output" }
 	}
 	// A model call that failed at the provider: Maple's own agents stamp
 	// `provider_error`; a gateway mirror's generation span stamps nothing and is
 	// known by where it came from. A more specific `error.type` keeps its name.
 	if (
-		span.genAi.errorType === "provider_error" ||
-		(span.genAi.errorType === undefined && span.vendorId === "openrouter" && isLlmCall(span))
+		span.errorType === "provider_error" ||
+		(span.errorType === undefined && span.vendorId === "openrouter" && span.isLlmCall)
 	) {
 		return { kind: "providerError", label: "provider_error" }
 	}

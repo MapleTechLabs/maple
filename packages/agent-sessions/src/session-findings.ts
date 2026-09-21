@@ -6,7 +6,7 @@
 // instrumentation's own vocabulary. Nothing is scored, sampled or modeled: a
 // finding the reader clicks through to must be exactly what the spans say.
 
-import type { AiSessionSpan } from "@maple/domain/http"
+import type { AiSessionFailureSeverity, AiSessionSpan } from "@maple/domain/http"
 
 import { formatNumber, formatSessionDuration } from "@maple/domain/format"
 import { canonicalJSON } from "@maple/query-engine"
@@ -29,7 +29,12 @@ import {
 	type SessionTurn,
 } from "./session-turns"
 
-/** Same tool this often within one turn reads as the agent going in circles. */
+/**
+ * Same tool this often within one turn reads as the agent going in circles —
+ * but only when the arguments were never captured, so identical calls cannot be
+ * told from a tool doing its job on a different input each time. Eight greps
+ * for eight different patterns is search, not repetition.
+ */
 const REPEATED_TOOL_MIN_CALLS = 8
 
 /**
@@ -67,7 +72,14 @@ const FAILURE_KINDS: ReadonlySet<SessionFailureKind> = new Set([
 /** Red or amber: whether the thing found ended the run or names a class that
  *  needs a fix regardless, or was survived. The checklist's failed/warning
  *  split reads the same field, so the two never disagree. */
-export type FindingSeverity = "failure" | "anomaly"
+export type FindingSeverity = AiSessionFailureSeverity
+
+/** The one severity rule, for the findings here and for the list's breakdown
+ *  off the index (`index-failures.ts`): red when the run died on it or its
+ *  kind is in {@link FAILURE_KINDS}, amber otherwise. */
+export function failureSeverity(kind: SessionFailureKind, terminal: boolean): FindingSeverity {
+	return terminal || FAILURE_KINDS.has(kind) ? "failure" : "anomaly"
+}
 
 /** Which detector produced the row: a failure kind, or one of the four
  *  session-shape detectors below. What the checklist groups rows on. */
@@ -199,7 +211,7 @@ function failureFindings(
 		return {
 			id: `failure:${label}`,
 			kind: group.kind,
-			severity: terminal || FAILURE_KINDS.has(group.kind) ? ("failure" as const) : ("anomaly" as const),
+			severity: failureSeverity(group.kind, terminal),
 			label,
 			tool: group.tool,
 			count: group.members.length,
@@ -372,7 +384,11 @@ function repetitionFindings(turns: readonly SessionTurn[]): SessionFinding[] {
 		for (const [name, toolCalls] of byTool) {
 			const run = runs.get(name) ?? []
 			const looped = run.length >= IDENTICAL_RUN_MIN_CALLS
-			if (toolCalls.length < REPEATED_TOOL_MIN_CALLS && !looped) continue
+			// Without captured arguments the only signal left is the count.
+			// `?? undefined`: a JSON `null` is a call that recorded nothing.
+			const blind = toolCalls.every((span) => (span.genAi.toolCallArguments ?? undefined) === undefined)
+			const hammered = blind && toolCalls.length >= REPEATED_TOOL_MIN_CALLS
+			if (!looped && !hammered) continue
 			// The row links where the loop began, else the tool's first call.
 			const first = looped ? run[0] : toolCalls[0]
 			findings.push({
@@ -388,7 +404,7 @@ function repetitionFindings(turns: readonly SessionTurn[]): SessionFinding[] {
 					? spanFailed(run[0])
 						? `retried ${run.length - 1}× unchanged after it failed`
 						: `called ${toolCalls.length}× within one turn, ${run.length} in a row with identical arguments`
-					: `called ${toolCalls.length}× within one turn`,
+					: `called ${toolCalls.length}× within one turn; arguments were not captured`,
 				spanId: first.spanId,
 				atMs: spanStartMs(first),
 			})
