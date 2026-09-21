@@ -1,6 +1,13 @@
-import { expect, it } from "vitest"
+import { describe, expect, it } from "vitest"
 
-import { normalizeUnit, parseChartSpec, rankedRows, timeseriesRows } from "./chat-chart-spec"
+import {
+	chartFences,
+	normalizeUnit,
+	parseChartSpec,
+	rankedRows,
+	staticChartUnit,
+	timeseriesRows,
+} from "./chat-chart-spec"
 
 const timeseries = JSON.stringify({
 	type: "line",
@@ -72,4 +79,56 @@ it("drops the timeseries rows a chart cannot plot and keeps the rest", () => {
 	)
 	if (spec?.type === "ranked" || spec == null) throw new Error("expected a timeseries spec")
 	expect(timeseriesRows(spec.data)).toEqual([{ bucket: "2026-09-11T10:00:00Z", "checkout-api": 142 }])
+})
+
+it("lands every unit on one the image renderer knows, scaling the values with it", () => {
+	expect(staticChartUnit("ms")).toEqual({ unit: "duration_ms", scale: 1 })
+	expect(staticChartUnit("s")).toEqual({ unit: "duration_ms", scale: 1000 })
+	expect(staticChartUnit("ns")).toEqual({ unit: "duration_ms", scale: 1 / 1_000_000 })
+	// A fence's `percent` is the number as a reader says it; only the 0–1
+	// aliases are scaled onto the renderer's 0–100 scale.
+	expect(staticChartUnit("%")).toEqual({ unit: "percent", scale: 1 })
+	expect(staticChartUnit("ratio")).toEqual({ unit: "percent", scale: 100 })
+	expect(staticChartUnit("bytes")).toEqual({ unit: "bytes", scale: 1 })
+	expect(staticChartUnit("furlongs")).toEqual({ unit: "number", scale: 1 })
+})
+
+describe("chartFences", () => {
+	it("returns the charts of a reply in the order they appear in it", () => {
+		const reply = [
+			"Latency climbed after the deploy.",
+			"```chart",
+			'{"type":"line","data":[]}',
+			"```",
+			"And the errors with it:",
+			"```chart",
+			'{"type":"ranked","data":[]}',
+			"```",
+		].join("\n")
+
+		expect(chartFences(reply)).toEqual(['{"type":"line","data":[]}', '{"type":"ranked","data":[]}'])
+	})
+
+	it("ignores fences that are not charts, and does not let them shift the index", () => {
+		const reply = ["```sql", "SELECT 1", "```", "```chart", '{"type":"bar"}', "```"].join("\n")
+
+		expect(chartFences(reply)).toEqual(['{"type":"bar"}'])
+	})
+
+	it("keeps a chart that holds a line of backticks of its own", () => {
+		const reply = ["````chart", '{"note":"```"}', "````"].join("\n")
+
+		expect(chartFences(reply)).toEqual(['{"note":"```"}'])
+	})
+
+	it("keeps an unclosed trailing chart, so the charts before it keep their positions", () => {
+		const reply = ["```chart", '{"type":"line","data":[]}', "```", "```chart", '{"type":"ar'].join("\n")
+
+		expect(chartFences(reply)).toHaveLength(2)
+		expect(parseChartSpec(chartFences(reply)[1] ?? "")).toBeNull()
+	})
+
+	it("finds nothing in a reply that is only prose", () => {
+		expect(chartFences("the p95 climbed to 388ms")).toEqual([])
+	})
 })

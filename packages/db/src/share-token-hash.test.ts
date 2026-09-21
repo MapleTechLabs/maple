@@ -3,11 +3,13 @@ import { Schema } from "effect"
 import { AlertRuleId, OrgId } from "@maple/domain/primitives"
 import {
 	alertChartId,
+	chatChartId,
 	generateShareToken,
 	hashShareToken,
 	shareOgId,
 	shareTokenSuffix,
 	verifyAlertChartId,
+	verifyChatChartId,
 	verifyShareOgId,
 } from "./share-token-hash"
 
@@ -93,58 +95,118 @@ const verified = {
 
 /**
  * Re-signs nothing: it swaps one claim inside an id and keeps the original
- * signature, which is exactly the forgery `verifyAlertChartId` must refuse.
- *
+ * signature, which is exactly the forgery verification must refuse.
  */
-const tamperAlertChartClaim = (id: string, index: number, value: unknown): string => {
-	// SAFETY: `alertChartId` always emits exactly `<payload>.<signature>`.
+const tamperClaim = (id: string, index: number, value: unknown): string => {
+	// SAFETY: both minters emit exactly `<payload>.<signature>`.
 	const [encoded, signature] = id.split(".") as [string, string]
-	// SAFETY: the payload is the array `encodeAlertChartClaims` just wrote.
+	// SAFETY: the payload is the array the encoder just wrote.
 	const claims = JSON.parse(Buffer.from(encoded, "base64url").toString("utf8")) as unknown[]
 	claims[index] = value
 	return `${Buffer.from(JSON.stringify(claims), "utf8").toString("base64url")}.${signature}`
 }
 
-describe("alertChartId", () => {
+const chatClaims = {
+	orgId: ORG_ID,
+	sessionId: `${ORG_ID}:tab-8f21`,
+	messageId: "01JB8QK0Q9R5W0C4V8ZD2M6X7T",
+	chartIndex: 1,
+}
+
+const verifiedChat = {
+	rawOrgId: ORG_ID as string,
+	rawSessionId: chatClaims.sessionId,
+	rawMessageId: chatClaims.messageId,
+	chartIndex: chatClaims.chartIndex,
+}
+
+/**
+ * The two signed chart ids, which differ in their payload and in nothing else
+ * that matters here: each is `<base64url claims>.<HMAC>` under its own
+ * domain-separation label, and every property below is a property of that
+ * construction rather than of either payload.
+ */
+const SIGNERS = [
+	{
+		name: "alertChartId",
+		mint: (key: string) => alertChartId(claims, key),
+		verify: verifyAlertChartId,
+		expected: verified,
+		/** A claim whose forgery is worth naming, and the position it sits at. */
+		forgeries: [
+			// The window is signed precisely so a holder of the URL cannot turn a
+			// one-hour chart into a one-year warehouse scan.
+			{ what: "a widened window", index: 3, value: 0 },
+			// The threshold is signed, so a delivered alert's picture cannot be
+			// re-pointed at a different line after the fact.
+			{ what: "a lowered threshold", index: 7, value: 0.1 },
+			{ what: "a rewritten title", index: 5, value: "Everything is fine" },
+		],
+	},
+	{
+		name: "chatChartId",
+		mint: (key: string) => chatChartId(chatClaims, key),
+		verify: verifyChatChartId,
+		expected: verifiedChat,
+		forgeries: [
+			{ what: "a swapped conversation", index: 1, value: "org_other:tab-8f21" },
+			{ what: "a swapped message", index: 2, value: "some-other-message" },
+			{ what: "a walked chart index", index: 3, value: 4 },
+		],
+	},
+] as const
+
+describe.each(SIGNERS)("$name", ({ mint, verify, expected, forgeries }) => {
 	it("round-trips the claims, with the ids left undecoded", () => {
 		// The signature proves we minted it; it does not decode an entity id, so
 		// they come back as `raw*` for the caller to parse at its boundary.
-		expect(verifyAlertChartId(alertChartId(claims, KEY), KEY)).toEqual(verified)
+		expect(verify(mint(KEY), KEY)).toEqual(expected)
 	})
 
+	it("is deterministic, so one notification keeps one image URL", () => {
+		expect(mint(KEY)).toBe(mint(KEY))
+	})
+
+	it("rejects an id minted under a different key", () => {
+		expect(verify(mint("other-key"), KEY)).toBeUndefined()
+	})
+
+	// A loop rather than `it.each`: the table is `as const`, so its rows arrive
+	// as a readonly tuple and `it.each` resolves to its spread-the-tuple overload.
+	for (const { what, index, value } of forgeries) {
+		it(`rejects ${what}`, () => {
+			expect(verify(tamperClaim(mint(KEY), index, value), KEY)).toBeUndefined()
+		})
+	}
+
+	it("rejects malformed ids without throwing", () => {
+		for (const bad of ["", ".", "nodot", ".onlysig", "a.b", "!!!.???"]) {
+			expect(verify(bad, KEY)).toBeUndefined()
+		}
+	})
+
+	it("does not accept a share OG id, and is not accepted as one", () => {
+		// Distinct domain-separation labels: a signature minted to render a
+		// dashboard preview must not render a chart, or the reverse.
+		expect(verify(shareOgId("share_1", KEY), KEY)).toBeUndefined()
+		expect(verifyShareOgId(mint(KEY), KEY)).toBeUndefined()
+	})
+})
+
+describe("the two chart ids, against each other", () => {
+	it("refuses the other's signature, so one cannot be replayed as the other", () => {
+		expect(verifyChatChartId(alertChartId(claims, KEY), KEY)).toBeUndefined()
+		expect(verifyAlertChartId(chatChartId(chatClaims, KEY), KEY)).toBeUndefined()
+	})
+})
+
+describe("alertChartId, on claims only it carries", () => {
 	it("round-trips an ungrouped rule's null group", () => {
 		const ungrouped = { ...claims, groupKey: null }
 		expect(verifyAlertChartId(alertChartId(ungrouped, KEY), KEY)).toEqual({
 			...verified,
 			groupKey: null,
 		})
-	})
-
-	it("is deterministic, so a redelivery renders the same image", () => {
-		expect(alertChartId(claims, KEY)).toBe(alertChartId(claims, KEY))
-	})
-
-	it("rejects an id minted under a different key", () => {
-		expect(verifyAlertChartId(alertChartId(claims, "other-key"), KEY)).toBeUndefined()
-	})
-
-	it("rejects a widened window, which is what stops an arbitrary-range scan", () => {
-		// The window is signed precisely so a holder of the URL cannot turn a
-		// one-hour chart into a one-year warehouse scan.
-		const forged = tamperAlertChartClaim(alertChartId(claims, KEY), 3, 0)
-		expect(verifyAlertChartId(forged, KEY)).toBeUndefined()
-	})
-
-	it("rejects a lowered threshold, so an image cannot be made to look worse", () => {
-		// The threshold is signed, so a delivered alert's picture cannot be
-		// re-pointed at a different line after the fact.
-		const forged = tamperAlertChartClaim(alertChartId(claims, KEY), 7, 0.1)
-		expect(verifyAlertChartId(forged, KEY)).toBeUndefined()
-	})
-
-	it("rejects a rewritten title, which is what stops the URL drawing arbitrary words", () => {
-		const forged = tamperAlertChartClaim(alertChartId(claims, KEY), 5, "Everything is fine")
-		expect(verifyAlertChartId(forged, KEY)).toBeUndefined()
 	})
 
 	it("rejects a swapped rule id", () => {
@@ -159,17 +221,15 @@ describe("alertChartId", () => {
 		const forged = `${id.split(".")[0]}.${other.split(".")[1]}`
 		expect(verifyAlertChartId(forged, KEY)).toBeUndefined()
 	})
+})
 
-	it("rejects malformed ids without throwing", () => {
-		for (const bad of ["", ".", "nodot", ".onlysig", "a.b", "!!!.???"]) {
-			expect(verifyAlertChartId(bad, KEY)).toBeUndefined()
+describe("chatChartId, on claims only it carries", () => {
+	it("refuses a signed index that is not a whole count", () => {
+		// Reached only for a payload this repo signed, and it is still decoded:
+		// the position is an array index, and -1 or 1.5 is not one.
+		for (const index of [-1, 1.5]) {
+			const id = chatChartId({ ...chatClaims, chartIndex: index }, KEY)
+			expect(verifyChatChartId(id, KEY)).toBeUndefined()
 		}
-	})
-
-	it("does not accept a share OG id, and vice versa", () => {
-		// Distinct domain-separation labels: a signature minted to render a
-		// dashboard preview must not render an alert chart.
-		expect(verifyAlertChartId(shareOgId("share_1", KEY), KEY)).toBeUndefined()
-		expect(verifyShareOgId(alertChartId(claims, KEY), KEY)).toBeUndefined()
 	})
 })
