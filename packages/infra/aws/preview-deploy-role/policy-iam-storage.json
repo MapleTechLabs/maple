@@ -1,0 +1,151 @@
+{
+	"Version": "2012-10-17",
+	"Statement": [
+		{
+			"Sid": "IamPreviewRolesPoliciesProfiles",
+			"Effect": "Allow",
+			"Action": [
+				"iam:CreateRole",
+				"iam:DeleteRole",
+				"iam:GetRole",
+				"iam:UpdateRole",
+				"iam:UpdateAssumeRolePolicy",
+				"iam:TagRole",
+				"iam:UntagRole",
+				"iam:ListRoleTags",
+				"iam:PutRolePolicy",
+				"iam:GetRolePolicy",
+				"iam:DeleteRolePolicy",
+				"iam:ListRolePolicies",
+				"iam:ListAttachedRolePolicies",
+				"iam:DetachRolePolicy",
+				"iam:PutRolePermissionsBoundary",
+				"iam:DeleteRolePermissionsBoundary",
+				"iam:CreatePolicy",
+				"iam:DeletePolicy",
+				"iam:GetPolicy",
+				"iam:GetPolicyVersion",
+				"iam:CreatePolicyVersion",
+				"iam:DeletePolicyVersion",
+				"iam:ListPolicyVersions",
+				"iam:SetDefaultPolicyVersion",
+				"iam:TagPolicy",
+				"iam:UntagPolicy",
+				"iam:ListPolicyTags",
+				"iam:CreateInstanceProfile",
+				"iam:DeleteInstanceProfile",
+				"iam:GetInstanceProfile",
+				"iam:AddRoleToInstanceProfile",
+				"iam:RemoveRoleFromInstanceProfile",
+				"iam:TagInstanceProfile",
+				"iam:UntagInstanceProfile",
+				"iam:ListInstanceProfileTags"
+			],
+			"Resource": [
+				"arn:aws:iam::465760687006:role/maple-*-pr-*",
+				"arn:aws:iam::465760687006:policy/maple-*-pr-*",
+				"arn:aws:iam::465760687006:instance-profile/maple-*-pr-*"
+			]
+		},
+		{
+			"Sid": "IamAttachOnlyPreviewOrEcsManagedPolicies",
+			"Effect": "Allow",
+			"Action": "iam:AttachRolePolicy",
+			"Resource": "arn:aws:iam::465760687006:role/maple-*-pr-*",
+			"Condition": {
+				"ArnLike": {
+					"iam:PolicyARN": [
+						"arn:aws:iam::465760687006:policy/maple-*-pr-*",
+						"arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy",
+						"arn:aws:iam::aws:policy/service-role/AmazonEC2ContainerServiceforEC2Role",
+						"arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
+					]
+				}
+			}
+		},
+		{
+			"Sid": "IamPassPreviewRolesToEcsAndEc2",
+			"Effect": "Allow",
+			"Action": "iam:PassRole",
+			"Resource": "arn:aws:iam::465760687006:role/maple-*-pr-*",
+			"Condition": {
+				"StringEquals": {
+					"iam:PassedToService": [
+						"ecs-tasks.amazonaws.com",
+						"ecs.amazonaws.com",
+						"ec2.amazonaws.com"
+					]
+				}
+			}
+		},
+		{
+			"Sid": "S3PreviewWalBuckets",
+			"Effect": "Allow",
+			"Action": [
+				"s3:CreateBucket",
+				"s3:DeleteBucket",
+				"s3:ListBucket",
+				"s3:ListBucketVersions",
+				"s3:ListBucketMultipartUploads",
+				"s3:AbortMultipartUpload",
+				"s3:DeleteObject",
+				"s3:DeleteObjectVersion",
+				"s3:GetBucketLocation",
+				"s3:GetBucketAcl",
+				"s3:PutBucketAcl",
+				"s3:GetBucketCORS",
+				"s3:PutBucketCORS",
+				"s3:GetBucketLogging",
+				"s3:PutBucketLogging",
+				"s3:GetBucketNotification",
+				"s3:PutBucketNotification",
+				"s3:GetBucketObjectLockConfiguration",
+				"s3:PutBucketObjectLockConfiguration",
+				"s3:GetBucketOwnershipControls",
+				"s3:PutBucketOwnershipControls",
+				"s3:GetBucketPolicy",
+				"s3:PutBucketPolicy",
+				"s3:DeleteBucketPolicy",
+				"s3:GetBucketPublicAccessBlock",
+				"s3:PutBucketPublicAccessBlock",
+				"s3:GetBucketRequestPayment",
+				"s3:PutBucketRequestPayment",
+				"s3:GetBucketTagging",
+				"s3:PutBucketTagging",
+				"s3:GetBucketVersioning",
+				"s3:PutBucketVersioning",
+				"s3:GetBucketWebsite",
+				"s3:PutBucketWebsite",
+				"s3:DeleteBucketWebsite",
+				"s3:GetAccelerateConfiguration",
+				"s3:PutAccelerateConfiguration",
+				"s3:GetEncryptionConfiguration",
+				"s3:PutEncryptionConfiguration",
+				"s3:GetIntelligentTieringConfiguration",
+				"s3:PutIntelligentTieringConfiguration",
+				"s3:GetLifecycleConfiguration",
+				"s3:PutLifecycleConfiguration",
+				"s3:GetReplicationConfiguration",
+				"s3:PutReplicationConfiguration"
+			],
+			"Resource": ["arn:aws:s3:::maple-*-pr-*", "arn:aws:s3:::maple-*-pr-*/*"]
+		},
+		{
+			"Sid": "SecretsManagerPreviewSecrets",
+			"Effect": "Allow",
+			"Action": [
+				"secretsmanager:CreateSecret",
+				"secretsmanager:DeleteSecret",
+				"secretsmanager:DescribeSecret",
+				"secretsmanager:UpdateSecret",
+				"secretsmanager:PutSecretValue",
+				"secretsmanager:TagResource",
+				"secretsmanager:UntagResource",
+				"secretsmanager:PutResourcePolicy",
+				"secretsmanager:GetResourcePolicy",
+				"secretsmanager:DeleteResourcePolicy"
+			],
+			"Resource": "arn:aws:secretsmanager:us-east-1:465760687006:secret:maple-*-pr-*"
+		}
+	]
+}

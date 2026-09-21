@@ -64,6 +64,8 @@ Two things a future change here needs to know:
       and yielded from every module that binds them (alchemy registers a resource by id; a
       second yield returns the first's).
     - `aws/stage.ts` — `MapleRegion`, AWS naming, task sizing, Cloud Map.
+    - `aws/preview-deploy-role/` (outside `src`): the IAM trust and permission policies for
+      `maple-preview-deploy`, the role PR previews deploy with, and how to apply them by hand.
     - `env.ts` — the deploy-time env primitives and the shared groups the workers spread.
     - `cloudflare/maple-db.ts` — `MAPLE_DB` in the stage's flavor (`MapleDb`, yielded from a
       Worker's init) and the runtime read of the binding (`readMapleDbBinding`).

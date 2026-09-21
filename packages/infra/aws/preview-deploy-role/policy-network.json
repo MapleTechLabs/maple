@@ -1,0 +1,218 @@
+{
+	"Version": "2012-10-17",
+	"Statement": [
+		{
+			"Sid": "Ec2CreateTaggedPreviewResources",
+			"Effect": "Allow",
+			"Action": [
+				"ec2:CreateVpc",
+				"ec2:CreateSubnet",
+				"ec2:CreateRouteTable",
+				"ec2:CreateInternetGateway",
+				"ec2:CreateVpcEndpoint",
+				"ec2:CreateSecurityGroup",
+				"ec2:CreateLaunchTemplate"
+			],
+			"Resource": [
+				"arn:aws:ec2:us-east-1:465760687006:vpc/*",
+				"arn:aws:ec2:us-east-1:465760687006:subnet/*",
+				"arn:aws:ec2:us-east-1:465760687006:route-table/*",
+				"arn:aws:ec2:us-east-1:465760687006:internet-gateway/*",
+				"arn:aws:ec2:us-east-1:465760687006:vpc-endpoint/*",
+				"arn:aws:ec2:us-east-1:465760687006:security-group/*",
+				"arn:aws:ec2:us-east-1:465760687006:launch-template/*"
+			],
+			"Condition": {
+				"StringLike": {
+					"aws:RequestTag/alchemy::stage": "pr-*"
+				}
+			}
+		},
+		{
+			"Sid": "Ec2TagOnCreate",
+			"Effect": "Allow",
+			"Action": "ec2:CreateTags",
+			"Resource": "arn:aws:ec2:us-east-1:465760687006:*/*",
+			"Condition": {
+				"StringEquals": {
+					"ec2:CreateAction": [
+						"CreateVpc",
+						"CreateSubnet",
+						"CreateRouteTable",
+						"CreateInternetGateway",
+						"CreateVpcEndpoint",
+						"CreateSecurityGroup",
+						"CreateLaunchTemplate",
+						"RunInstances"
+					]
+				},
+				"StringLike": {
+					"aws:RequestTag/alchemy::stage": "pr-*"
+				}
+			}
+		},
+		{
+			"Sid": "Ec2MutateTaggedPreviewResources",
+			"Effect": "Allow",
+			"Action": [
+				"ec2:CreateSubnet",
+				"ec2:CreateRouteTable",
+				"ec2:CreateVpcEndpoint",
+				"ec2:CreateSecurityGroup",
+				"ec2:CreateRoute",
+				"ec2:ReplaceRoute",
+				"ec2:DeleteRoute",
+				"ec2:AssociateRouteTable",
+				"ec2:DisassociateRouteTable",
+				"ec2:ReplaceRouteTableAssociation",
+				"ec2:AttachInternetGateway",
+				"ec2:DetachInternetGateway",
+				"ec2:ModifyVpcAttribute",
+				"ec2:ModifySubnetAttribute",
+				"ec2:ModifyVpcEndpoint",
+				"ec2:AuthorizeSecurityGroupIngress",
+				"ec2:AuthorizeSecurityGroupEgress",
+				"ec2:RevokeSecurityGroupIngress",
+				"ec2:RevokeSecurityGroupEgress",
+				"ec2:ModifySecurityGroupRules",
+				"ec2:CreateLaunchTemplateVersion",
+				"ec2:ModifyLaunchTemplate",
+				"ec2:RunInstances",
+				"ec2:CreateTags",
+				"ec2:DeleteTags",
+				"ec2:DeleteVpc",
+				"ec2:DeleteSubnet",
+				"ec2:DeleteRouteTable",
+				"ec2:DeleteInternetGateway",
+				"ec2:DeleteVpcEndpoints",
+				"ec2:DeleteSecurityGroup",
+				"ec2:DeleteLaunchTemplate"
+			],
+			"Resource": [
+				"arn:aws:ec2:us-east-1:465760687006:vpc/*",
+				"arn:aws:ec2:us-east-1:465760687006:subnet/*",
+				"arn:aws:ec2:us-east-1:465760687006:route-table/*",
+				"arn:aws:ec2:us-east-1:465760687006:internet-gateway/*",
+				"arn:aws:ec2:us-east-1:465760687006:vpc-endpoint/*",
+				"arn:aws:ec2:us-east-1:465760687006:security-group/*",
+				"arn:aws:ec2:us-east-1:465760687006:launch-template/*"
+			],
+			"Condition": {
+				"StringLike": {
+					"aws:ResourceTag/alchemy::stage": "pr-*"
+				}
+			}
+		},
+		{
+			"Sid": "Ec2UntaggedSubresources",
+			"Effect": "Allow",
+			"Action": [
+				"ec2:AuthorizeSecurityGroupIngress",
+				"ec2:AuthorizeSecurityGroupEgress",
+				"ec2:RevokeSecurityGroupIngress",
+				"ec2:RevokeSecurityGroupEgress",
+				"ec2:ModifySecurityGroupRules",
+				"ec2:CreateTags",
+				"ec2:DeleteTags"
+			],
+			"Resource": "arn:aws:ec2:us-east-1:465760687006:security-group-rule/*"
+		},
+		{
+			"Sid": "Ec2RunInstancesForPreviewFleet",
+			"Effect": "Allow",
+			"Action": "ec2:RunInstances",
+			"Resource": [
+				"arn:aws:ec2:us-east-1::image/ami-*",
+				"arn:aws:ec2:us-east-1:465760687006:instance/*",
+				"arn:aws:ec2:us-east-1:465760687006:volume/*",
+				"arn:aws:ec2:us-east-1:465760687006:network-interface/*"
+			]
+		},
+		{
+			"Sid": "AutoScalingCreatePreviewGroups",
+			"Effect": "Allow",
+			"Action": ["autoscaling:CreateAutoScalingGroup", "autoscaling:CreateOrUpdateTags"],
+			"Resource": "arn:aws:autoscaling:us-east-1:465760687006:autoScalingGroup:*:autoScalingGroupName/maple-*-pr-*",
+			"Condition": {
+				"StringLike": {
+					"aws:RequestTag/alchemy::stage": "pr-*"
+				}
+			}
+		},
+		{
+			"Sid": "AutoScalingMutatePreviewGroups",
+			"Effect": "Allow",
+			"Action": [
+				"autoscaling:UpdateAutoScalingGroup",
+				"autoscaling:DeleteAutoScalingGroup",
+				"autoscaling:CreateOrUpdateTags",
+				"autoscaling:DeleteTags",
+				"autoscaling:AttachLoadBalancerTargetGroups",
+				"autoscaling:DetachLoadBalancerTargetGroups",
+				"autoscaling:SetDesiredCapacity",
+				"autoscaling:SetInstanceProtection",
+				"autoscaling:TerminateInstanceInAutoScalingGroup"
+			],
+			"Resource": "arn:aws:autoscaling:us-east-1:465760687006:autoScalingGroup:*:autoScalingGroupName/maple-*-pr-*",
+			"Condition": {
+				"StringLike": {
+					"aws:ResourceTag/alchemy::stage": "pr-*"
+				}
+			}
+		},
+		{
+			"Sid": "ElbCreateTagged",
+			"Effect": "Allow",
+			"Action": [
+				"elasticloadbalancing:CreateLoadBalancer",
+				"elasticloadbalancing:CreateTargetGroup",
+				"elasticloadbalancing:CreateListener",
+				"elasticloadbalancing:CreateRule"
+			],
+			"Resource": "*",
+			"Condition": {
+				"StringEquals": {
+					"aws:RequestedRegion": "us-east-1"
+				},
+				"StringLike": {
+					"aws:RequestTag/alchemy::stage": "pr-*"
+				}
+			}
+		},
+		{
+			"Sid": "ElbMutateTagged",
+			"Effect": "Allow",
+			"Action": [
+				"elasticloadbalancing:CreateListener",
+				"elasticloadbalancing:CreateRule",
+				"elasticloadbalancing:ModifyLoadBalancerAttributes",
+				"elasticloadbalancing:SetSecurityGroups",
+				"elasticloadbalancing:SetSubnets",
+				"elasticloadbalancing:SetIpAddressType",
+				"elasticloadbalancing:ModifyTargetGroup",
+				"elasticloadbalancing:ModifyTargetGroupAttributes",
+				"elasticloadbalancing:ModifyListener",
+				"elasticloadbalancing:ModifyListenerAttributes",
+				"elasticloadbalancing:ModifyRule",
+				"elasticloadbalancing:SetRulePriorities",
+				"elasticloadbalancing:AddListenerCertificates",
+				"elasticloadbalancing:RemoveListenerCertificates",
+				"elasticloadbalancing:AddTags",
+				"elasticloadbalancing:RemoveTags",
+				"elasticloadbalancing:DeleteListener",
+				"elasticloadbalancing:DeleteRule",
+				"elasticloadbalancing:DeleteTargetGroup",
+				"elasticloadbalancing:DeleteLoadBalancer"
+			],
+			"Resource": "*",
+			"Condition": {
+				"StringEquals": {
+					"aws:RequestedRegion": "us-east-1"
+				},
+				"StringLike": {
+					"aws:ResourceTag/alchemy::stage": "pr-*"
+				}
+			}
+		}
+	]
+}
