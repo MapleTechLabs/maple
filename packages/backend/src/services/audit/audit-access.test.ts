@@ -129,7 +129,14 @@ describe("auditAttribution", () => {
 	it("attributes an agent tenant to the agent acting for the user", () => {
 		const actorId = Schema.decodeUnknownSync(Schema.String)("actor_1")
 		const attribution = auditAttribution(
-			{ orgId: ORG, userId: USER, actorId: actorId as never, mcpClientName: "claude-code" },
+			{
+				orgId: ORG,
+				userId: USER,
+				actorId: actorId as never,
+				mcpClientName: "claude-code",
+				// An app turn keeps the pinned agent: only the two agent origins redirect.
+				turnOrigin: { kind: "app" },
+			},
 			{ type: "api_key", source: "mcp" },
 		)
 		expect(attribution).toEqual({
@@ -195,6 +202,20 @@ describe("auditAttribution", () => {
 		})
 	})
 
+	it("names the connector even when its actor row could not be resolved", () => {
+		// What an outage writes: no `actorId` to filter on, but the label and the
+		// entry's metadata still say which connector answered.
+		expect(
+			auditAttribution(
+				{ orgId: ORG, userId: CONNECTOR_PLACEHOLDER_USER, turnOrigin: CONNECTOR_ORIGIN },
+				undefined,
+			),
+		).toEqual({
+			actor: { type: "agent", label: "chat-connector-testchat" },
+			source: "chat_platform",
+		})
+	})
+
 	it("leaves an app turn exactly as an unattributed dashboard session", () => {
 		expect(
 			auditAttribution({ orgId: ORG, userId: USER, turnOrigin: { kind: "app" } }, undefined),
@@ -221,7 +242,8 @@ describe("recordMcpToolAudit", () => {
 					roles: [],
 					authMode: "self_hosted",
 					actorId: CONNECTOR_ACTOR,
-					turnOrigin: CONNECTOR_ORIGIN,
+					// The display name is the platform's, so its length is not Maple's to trust.
+					turnOrigin: { ...CONNECTOR_ORIGIN, displayName: "Ada".padEnd(500, "!") },
 				},
 			})
 
@@ -237,8 +259,8 @@ describe("recordMcpToolAudit", () => {
 				connector: "testchat",
 				workspace_id: "w1",
 				external_user_id: "u-1",
-				display_name: "Ada",
 			})
+			expect(entry?.metadata?.["display_name"]).toBe(`${"Ada".padEnd(500, "!").slice(0, 200)}…`)
 		}).pipe(Effect.provide(AuditLogService.layerMemory)),
 	)
 
@@ -300,5 +322,42 @@ describe("recordRawSqlAudit", () => {
 			Effect.provideService(CurrentAuditActor, { type: "api_key", source: "mcp" }),
 			Effect.provide(AuditLogService.layerMemory),
 		),
+	)
+
+	// The statement that read customer data is the entry an auditor opens first, so
+	// it answers "on whose behalf" the same way the tool entry does.
+	it.effect("attributes a statement to the turn that ran it", () =>
+		Effect.gen(function* () {
+			const audit = yield* AuditLogService
+			const base = {
+				sql: "SELECT 1",
+				context: "mcp.run_sql",
+				startTime: "2026-08-29 09:00:00",
+				endTime: "2026-08-29 10:00:00",
+				result: { _tag: "rows", rowCount: 1 } as const,
+			}
+			yield* recordRawSqlAudit({
+				...base,
+				tenant: {
+					orgId: ORG,
+					userId: CONNECTOR_PLACEHOLDER_USER,
+					actorId: CONNECTOR_ACTOR,
+					turnOrigin: CONNECTOR_ORIGIN,
+				},
+			})
+			yield* TestClock.adjust("1 second")
+			yield* recordRawSqlAudit({
+				...base,
+				tenant: { orgId: ORG, userId: SERVICE_USER, turnOrigin: { kind: "autonomous" } },
+			})
+
+			const entries = yield* audit.list(ORG, { limit: 10, offset: 0 })
+			const [autonomous, connector] = entries
+			expect(autonomous?.actorType).toBe("system")
+			expect(autonomous?.source).toBe("system")
+			expect(connector?.actorId).toBe(CONNECTOR_ACTOR)
+			expect(connector?.source).toBe("chat_platform")
+			expect(connector?.metadata).toMatchObject({ connector: "testchat", display_name: "Ada" })
+		}).pipe(Effect.provide(AuditLogService.layerMemory)),
 	)
 })
