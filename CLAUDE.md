@@ -180,10 +180,11 @@ database), reached from Workers via the Hyperdrive binding `MAPLE_DB`.
   `connectionTimeoutMillis` to queue waits too. A stalled dial lands as `error.type = ConnectionError`
   (a refused one carries the socket code, `ECONNREFUSED`). Fork DB work off a request only with
   `forkRequestScoped`, which interrupts it at the response but lets a DB call already under way finish.
-- Migrations: `bun run --cwd packages/db db:generate`. Production is applied BY HAND before the
-  Worker deploy: `bun run --cwd packages/db ps:migrations-preflight main` (read-only; the v1
-  migrator refuses unmatched rows and replays unrecorded folders), then `bun run migrate:prod`
-  against the DIRECT port 5432 (never a pooler). PGlite applies them at layer build.
+- Migrations: `bun run --cwd packages/db db:generate`. **The prd deploy applies them**: the
+  PlanetScale `main` branch is an alchemy `Planetscale.PostgresBranch` in `alchemy.run.ts` with
+  `migrations` pointed at `packages/db/drizzle`; never run `drizzle-kit migrate` against prd. It
+  migrates as a temporary role, so a migration creating a table must `GRANT` it `TO PUBLIC` itself
+  (the ingest gateway reads only through PUBLIC). PGlite applies them at layer build.
 - **PR preview deploys are label-gated** (2026-08, cost — re-enabled by `fd00bcd412`). A PR gets a
   preview only while it carries the `preview` label; `deploy-pr-preview.yml` triggers on
   `opened, reopened, synchronize, labeled, unlabeled, closed` and tears the stack down the moment

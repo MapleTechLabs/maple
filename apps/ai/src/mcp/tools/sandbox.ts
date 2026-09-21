@@ -110,7 +110,9 @@ export function registerSandboxTools(server: McpToolRegistrar) {
 			glob: optionalStringParam(
 				"Only files matching this pathspec glob, e.g. `**/*.ts` or `src/**/*.go`",
 			),
-			ref: optionalStringParam("Branch, tag, or preferably the exact deployed commit SHA"),
+			ref: optionalStringParam(
+				"Branch, tag, or preferably the exact deployed commit SHA (the service's vcs.ref.head.revision). A service version such as 0.0.22 is not a git ref",
+			),
 			case_sensitive: optionalBooleanParam("Default true; false for a case-insensitive search"),
 			context_lines: optionalNumberParam("Lines of context around each match (max 5)"),
 		}),
@@ -213,7 +215,9 @@ export function registerSandboxTools(server: McpToolRegistrar) {
 		Schema.Struct({
 			repository: requiredStringParam("Connected repository in owner/name form"),
 			path: requiredStringParam("Repository-relative file path"),
-			ref: optionalStringParam("Branch, tag, or preferably the exact deployed commit SHA"),
+			ref: optionalStringParam(
+				"Branch, tag, or preferably the exact deployed commit SHA (the service's vcs.ref.head.revision). A service version such as 0.0.22 is not a git ref",
+			),
 			start_line: optionalNumberParam("First 1-based line to return (default 1)"),
 			end_line: optionalNumberParam(`Last 1-based line to return (max ${MAX_FILE_LINES} lines)`),
 		}),

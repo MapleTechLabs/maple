@@ -1,4 +1,5 @@
 import type * as Cloudflare from "alchemy/Cloudflare"
+import type * as Planetscale from "alchemy/Planetscale"
 import * as Context from "effect/Context"
 import * as Effect from "effect/Effect"
 import type { WorkerDev } from "@maple/alchemy-portless"
@@ -28,6 +29,8 @@ export interface MapleStackContext {
 	 * so `.env.local` cannot override them; undefined on a deploy.
 	 */
 	readonly devEnv: Record<string, string> | undefined
+	/** prd's PlanetScale branch, whose deploy applies the migrations; undefined on the other stages. */
+	readonly dbSchema: Planetscale.PostgresBranch | undefined
 }
 
 /**
