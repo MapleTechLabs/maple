@@ -10,7 +10,7 @@ import {
 	connectorTurnTenant,
 	CONNECTOR_TENANT_USER_ID,
 	isConnectorSessionId,
-	originForTurn,
+	originForTenant,
 	decodeChatTurnTenant,
 	encodeChatTurnTenant,
 	decodeChatEvent,
@@ -242,14 +242,11 @@ describe("ChatTurnTenant", () => {
 	})
 })
 
-describe("originForTurn", () => {
-	it("defaults a missing origin to `app`, and the legacy pass tenant to `autonomous`", () => {
-		// Compatibility only, for callers that predate the field. An explicit origin always wins,
-		// which is what lets this go away.
+describe("originForTenant", () => {
+	it("reads Maple's own service token as an unattended pass, and everyone else as the app", () => {
 		const app = { orgId: "org_1", userId: "user_1", roles: [], authMode: "self_hosted" } as const
 		const pass = { ...app, userId: "internal-service" } as const
-		expect(originForTurn(undefined, app)).toStrictEqual({ kind: "app" })
-		expect(originForTurn(undefined, pass)).toStrictEqual({ kind: "autonomous" })
-		expect(originForTurn({ kind: "app" }, pass)).toStrictEqual({ kind: "app" })
+		expect(originForTenant(app)).toStrictEqual({ kind: "app" })
+		expect(originForTenant(pass)).toStrictEqual({ kind: "autonomous" })
 	})
 })

@@ -71,6 +71,7 @@ describe("the ChatSession Durable Object on alchemy's form", () => {
 				messageId: "m1",
 				text: "why is checkout slow?",
 				tenant: TENANT,
+				origin: { kind: "app" },
 			})
 			assert.isDefined(begun)
 			assert.strictEqual(yield* rpc.running(), true)

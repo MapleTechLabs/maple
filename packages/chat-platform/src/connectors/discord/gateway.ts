@@ -173,8 +173,7 @@ const onFrame = (
 	const { op, d, s, t } = decoded.value
 	// Every dispatch advances the sequence, including the ones nothing is done
 	// with: it is what a heartbeat and a RESUME both replay.
-	const current: GatewayState =
-		s === undefined || s === null ? state : { ...state, sequence: s }
+	const current: GatewayState = s === undefined || s === null ? state : { ...state, sequence: s }
 
 	switch (op) {
 		case OP.hello:

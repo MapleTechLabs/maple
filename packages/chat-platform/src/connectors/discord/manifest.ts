@@ -9,8 +9,7 @@ import { DISCORD_CONNECTOR_ID } from "./id"
 export const discordManifest: ChatConnectorManifest = {
 	id: DISCORD_CONNECTOR_ID,
 	name: "Discord",
-	description:
-		"Add the Maple bot to a Discord server and link that server to your Maple organization.",
+	description: "Add the Maple bot to a Discord server and link that server to your Maple organization.",
 	icon: {
 		viewBox: "0 0 24 24",
 		paths: [

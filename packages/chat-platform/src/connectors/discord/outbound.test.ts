@@ -3,11 +3,14 @@
  * on demand: a 429, and a rejection that has to reach the driver as a typed failure.
  */
 import { describe, expect, it } from "@effect/vitest"
-import { Effect, Fiber, Layer, Redacted } from "effect"
+import { Effect, Fiber, Layer } from "effect"
 import { HttpClient, HttpClientResponse, type HttpClientRequest } from "effect/unstable/http"
 import { TestClock } from "effect/testing"
-import { ChatOutboundError } from "../../outbound"
-import { DiscordBotToken, discordOutbound } from "./outbound"
+import type { InboundMessage } from "../../ingress"
+import { ChatOutboundError, ConnectorCredentials } from "../../outbound"
+import { BOT_TOKEN_CONFIG } from "./api"
+import { DISCORD_CONNECTOR_ID } from "./id"
+import { discordOutbound } from "./outbound"
 
 interface Attempt {
 	readonly status: number
@@ -31,7 +34,7 @@ const stub = (attempts: ReadonlyArray<Attempt>) => {
 		seen,
 		layer: Layer.mergeAll(
 			Layer.succeed(HttpClient.HttpClient)(client),
-			Layer.succeed(DiscordBotToken)(Redacted.make("bot-token")),
+			Layer.succeed(ConnectorCredentials)(new Map([[BOT_TOKEN_CONFIG, "bot-token"]])),
 		),
 	}
 }
@@ -53,6 +56,17 @@ const sentThreadBody = (request: HttpClientRequest.HttpClientRequest): ThreadBod
 }
 
 const CREATED = '{"id":"m1","channel_id":"conv_1"}'
+
+const mention: InboundMessage = {
+	type: "message",
+	connector: DISCORD_CONNECTOR_ID,
+	workspaceId: "guild_1",
+	channelId: "conv_1",
+	messageId: "msg_3",
+	author: { id: "user_2", displayName: "Ada", isBot: false },
+	text: "why is checkout slow",
+	mentionsBot: true,
+}
 
 describe("discord transport", () => {
 	it.effect("authorizes as a bot and answers with the message it created", () => {
@@ -152,6 +166,34 @@ describe("discord transport", () => {
 			yield* transport.post({ ...target, threadId: "thread_7" }, [])
 
 			expect(http.seen[0].url).toBe("https://discord.com/api/v10/channels/thread_7/messages")
+		}).pipe(Effect.provide(http.layer))
+	})
+
+	it.effect("answers a mention in a thread of its own, keyed by the thread", () => {
+		const http = stub([{ status: 201, body: '{"id":"thread_7"}' }])
+		return Effect.gen(function* () {
+			const transport = yield* discordOutbound.transport
+			const conversation = yield* transport.conversation(mention)
+
+			expect(conversation).toEqual({
+				conversationKey: "thread_7",
+				target: { workspaceId: "guild_1", channelId: "thread_7" },
+			})
+		}).pipe(Effect.provide(http.layer))
+	})
+
+	it.effect("takes a channel that will not hold a thread as the conversation itself", () => {
+		// What a mention already inside a thread answers with, and what a channel the bot may not
+		// start threads in answers with. Either way the mention's own channel is the conversation.
+		const http = stub([{ status: 400, body: '{"message":"Cannot start a thread here"}' }])
+		return Effect.gen(function* () {
+			const transport = yield* discordOutbound.transport
+			const conversation = yield* transport.conversation(mention)
+
+			expect(conversation).toEqual({
+				conversationKey: "conv_1",
+				target: { workspaceId: "guild_1", channelId: "conv_1" },
+			})
 		}).pipe(Effect.provide(http.layer))
 	})
 

@@ -348,9 +348,9 @@ export class ChatSession {
 		readonly messageId: string
 		readonly text: string
 		readonly tenant: ChatTurnTenantEncoded
-		/** Optional only for deploy skew between Workers; `originForTurn` resolves a missing one. */
-		readonly origin?: ChatTurnOrigin
-	}): { cursor: number; messageId: string } | undefined {
+		/** Who is driving the turn, stated by whoever raised it. */
+		readonly origin: ChatTurnOrigin
+	}): { cursor: number; messageId: string; turnMessageId: string } | undefined {
 		if (this.isRunning()) return undefined
 		const cursor = this.cursor()
 		// The assistant's message needs an id of its OWN. Reusing the user's meant `history()` found
@@ -370,7 +370,7 @@ export class ChatSession {
 		// whatever request asked for it. `waitUntil` alone does not keep the object in memory — the
 		// heartbeat alarm does.
 		this.ctx.waitUntil(this.runTurn(input.sessionId, turnId, input.tenant, input.origin))
-		return { cursor, messageId: input.messageId }
+		return { cursor, messageId: input.messageId, turnMessageId: turnId }
 	}
 
 	/**
@@ -449,7 +449,7 @@ export class ChatSession {
 		sessionId: string,
 		messageId: string,
 		tenant: ChatTurnTenantEncoded,
-		origin: ChatTurnOrigin | undefined,
+		origin: ChatTurnOrigin,
 	): Promise<void> {
 		try {
 			const { runChatSessionTurn } = await import("./turn-runner")
@@ -459,7 +459,7 @@ export class ChatSession {
 				env: this.env,
 				messageId,
 				tenant,
-				...(origin === undefined ? undefined : { origin }),
+				origin,
 			})
 		} catch (cause) {
 			console.error("[chat.turn] Failed to start turn runner", cause)

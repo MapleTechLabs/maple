@@ -107,18 +107,13 @@ const issueRequest = Effect.fnUntraced(
  * is ingest volume spent observing a timer. The span that matters is the one
  * `InboundHandler` opens per event.
  */
-export const applyStep = Effect.fnUntraced(function* (
-	ports: SocketPorts,
-	step: SocketStep<string>,
-) {
+export const applyStep = Effect.fnUntraced(function* (ports: SocketPorts, step: SocketStep<string>) {
 	yield* Effect.forEach(step.send ?? [], (frame) => Effect.sync(() => ports.sink.send(frame)), {
 		discard: true,
 	})
-	yield* Effect.forEach(
-		step.requests ?? [],
-		(request) => issueRequest(ports.connectorId, request),
-		{ discard: true },
-	)
+	yield* Effect.forEach(step.requests ?? [], (request) => issueRequest(ports.connectorId, request), {
+		discard: true,
+	})
 	yield* ports.store.write(step.state)
 	const events = step.events ?? []
 	if (events.length === 0) return

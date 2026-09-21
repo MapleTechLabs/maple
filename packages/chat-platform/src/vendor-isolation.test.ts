@@ -30,6 +30,7 @@ const GUARDED_FILES = [
 	"packages/domain/src/http/v2/integrations-chat.ts",
 	"packages/backend/src/services/integrations/ChatWorkspaceService.ts",
 	"packages/backend/src/services/integrations/ChatWorkspaceService.test.ts",
+	"packages/backend/src/services/integrations/chat-workspace-rows.ts",
 	"apps/api/src/routes/v2/integrations-chat.http.ts",
 	"apps/api/src/routes/v1/chat-integration.http.ts",
 	"apps/web/src/components/integrations/chat-integration-card.tsx",

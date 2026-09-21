@@ -23,9 +23,7 @@ export const chatConnectorConfigKeys: ReadonlyArray<ConnectorConfigKey> = Arr.de
 	(left, right) => left.name === right.name,
 )
 
-export const chatConnectorConfigNames: ReadonlyArray<string> = chatConnectorConfigKeys.map(
-	(key) => key.name,
-)
+export const chatConnectorConfigNames: ReadonlyArray<string> = chatConnectorConfigKeys.map((key) => key.name)
 
 export const chatConnectorConfig: Config.Config<ChatConnectorConfig> = Config.all(
 	chatConnectorConfigNames.map((name) =>
