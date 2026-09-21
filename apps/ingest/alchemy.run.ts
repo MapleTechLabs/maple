@@ -756,6 +756,10 @@ export const createMapleIngest = ({ stage, domains, region }: CreateMapleIngestO
 			// grace period covers the startup Postgres probe, which exits the
 			// process on failure rather than serving degraded.
 			healthCheckGracePeriod: "60 seconds" as const,
+		// Old tasks stay scale-in protected while the WAL has backlog (up to 15
+		// minutes, `task_protection.rs`) and ECS will not stop them, so a healthy
+		// rollout can outlast alchemy's 10-minute default. It did on 2026-09-21.
+		deploymentStabilizationTimeout: "25 minutes" as const,
 
 			logging: { retention: "30 days" as const },
 
