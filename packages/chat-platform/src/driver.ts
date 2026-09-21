@@ -119,7 +119,12 @@ export const driveChatTurn = Effect.fn("ChatPlatform.driveChatTurn")(function* <
 	})
 
 	yield* Effect.forkChild(
-		transport.typing(target).pipe(Effect.tapCause(report("Typing could not be shown")), Effect.ignore),
+		// Best effort by nature, so the failure is a debug line and not even its tag: nothing acts on
+		// a missing typing indicator.
+		transport.typing(target).pipe(
+			Effect.tapCause(() => Effect.logDebug("Typing could not be shown")),
+			Effect.ignore,
+		),
 	)
 	// The placeholder, before a single event: the platform should show the bot working on it rather
 	// than saying nothing until the first token, or until the first throttle interval.
