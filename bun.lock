@@ -87,6 +87,7 @@
         "@maple/auth": "workspace:*",
         "@maple/backend": "workspace:*",
         "@maple/cache": "workspace:*",
+        "@maple/chat-platform": "workspace:*",
         "@maple/db": "workspace:*",
         "@maple/domain": "workspace:*",
         "@maple/infra": "workspace:*",
@@ -310,6 +311,7 @@
         "@fontsource-variable/geist-mono": "^5.2.8",
         "@maple-dev/effect-sdk": "workspace:*",
         "@maple/agent-sessions": "workspace:*",
+        "@maple/chat-platform": "workspace:*",
         "@maple/domain": "workspace:*",
         "@maple/effect-db": "workspace:*",
         "@maple/infra": "workspace:*",
@@ -618,6 +620,7 @@
         "@maple/alerting-core": "workspace:*",
         "@maple/auth": "workspace:*",
         "@maple/cache": "workspace:*",
+        "@maple/chat-platform": "workspace:*",
         "@maple/db": "workspace:*",
         "@maple/domain": "workspace:*",
         "@maple/email": "workspace:*",
@@ -681,6 +684,7 @@
       "name": "@maple/chat-platform",
       "dependencies": {
         "@maple/domain": "workspace:*",
+        "@maple/primitives": "workspace:*",
         "effect": "catalog:effect",
       },
       "devDependencies": {

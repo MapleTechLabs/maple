@@ -14,12 +14,23 @@ import {
 	SlackIcon,
 	WarpStreamIcon,
 } from "@/components/icons"
+import { Option, Schema } from "effect"
+import { ChatConnectorId } from "@maple/domain/primitives"
+import { chatConnectorManifests } from "@maple/chat-platform/manifests"
+import type { ChatConnectorManifest } from "@maple/chat-platform/manifests"
 import { PLANETSCALE_COLOR } from "@/components/infra/planetscale/metrics"
 import { formatRelativeTime } from "@maple/ui/lib/time-format"
 import { Result, useAtomValue } from "@/lib/effect-atom"
 import { retainedQuery } from "@/lib/services/common/atom-client"
 import { retainedQueryV2 } from "@/lib/services/common/v2-atom-client"
 import { scrapeTargetsListAtom } from "@/lib/services/atoms/scrape-target-atoms"
+
+/**
+ * A chat connector's catalog id. The connector half is data from
+ * `@maple/chat-platform/manifests`, so the catalog gains a chat platform
+ * without this file learning its name.
+ */
+export type ChatIntegrationId = `chat-${string}`
 
 export type IntegrationId =
 	| "cloudflare"
@@ -29,6 +40,43 @@ export type IntegrationId =
 	| "hazel"
 	| "github"
 	| "slack"
+	| ChatIntegrationId
+
+const decodeConnectorId = Schema.decodeUnknownOption(ChatConnectorId)
+
+export const chatIntegrationId = (connector: string): ChatIntegrationId => `chat-${connector}`
+
+/**
+ * The connector behind a chat catalog id, or `null` for every other entry.
+ * Decoded rather than sliced: the id arrives from a URL, and the branded value
+ * is what the API client's path parameter takes.
+ */
+export const chatConnectorOf = (id: IntegrationId): ChatConnectorId | null =>
+	id.startsWith("chat-") ? Option.getOrNull(decodeConnectorId(id.slice("chat-".length))) : null
+
+/** Renders a manifest's icon data — one `<svg>` for every chat connector. */
+export const chatConnectorIcon = (
+	icon: ChatConnectorManifest["icon"],
+): React.ComponentType<{ size?: number; className?: string }> =>
+	function ChatConnectorGlyph({ size = 24, className }) {
+		return (
+			<svg
+				xmlns="http://www.w3.org/2000/svg"
+				viewBox={icon.viewBox}
+				width={size}
+				height={size}
+				className={className}
+				fill="currentColor"
+				aria-hidden="true"
+			>
+				{icon.paths.map((path, index) => (
+					// Path data carries no id of its own, and the array is a module
+					// constant — the index is stable for the lifetime of the app.
+					<path key={index} d={path} />
+				))}
+			</svg>
+		)
+	}
 
 /**
  * Third-party brand accents for the icon-plate wash — no app token applies.
@@ -80,6 +128,18 @@ export interface CatalogEntry {
 	readonly iconClassName?: string
 	readonly docsUrl?: string
 }
+
+/**
+ * Chat connectors, straight from their manifests: name, description, mark and
+ * accent are the connector's own data, so this file lists none of them.
+ */
+const CHAT_ENTRIES: ReadonlyArray<CatalogEntry> = chatConnectorManifests.map((manifest) => ({
+	id: chatIntegrationId(manifest.id),
+	name: manifest.name,
+	description: manifest.description,
+	icon: chatConnectorIcon(manifest.icon),
+	accent: manifest.accent,
+}))
 
 const CATALOG: ReadonlyArray<CatalogEntry> = [
 	{
@@ -148,6 +208,7 @@ const CATALOG: ReadonlyArray<CatalogEntry> = [
 		accent: SLACK_ACCENT,
 		docsUrl: "https://maple.dev/docs/integrations/slack",
 	},
+	...CHAT_ENTRIES,
 ]
 
 /**
@@ -175,6 +236,8 @@ interface CardStatus {
 }
 
 const NOT_CONNECTED: CardStatus = { label: "Not connected", variant: "outline" }
+/** Shipped, but this deployment holds no credentials for it. */
+const NOT_CONFIGURED: CardStatus = { label: "Not configured", variant: "outline" }
 // Status query failed — distinct from "Not connected" so a fetch error doesn't
 // masquerade as a disconnected integration.
 const STATUS_UNAVAILABLE: CardStatus = { label: "Status unavailable", variant: "outline" }
@@ -209,6 +272,9 @@ export function useIntegrationStatuses(): Partial<Record<IntegrationId, CardStat
 		retainedQueryV2("slackIntegration", "status", {
 			reactivityKeys: ["slackIntegration"],
 		}),
+	)
+	const chatResult = useAtomValue(
+		retainedQueryV2("chatIntegration", "connectors", { reactivityKeys: ["chatIntegration"] }),
 	)
 
 	const cloudflare: CardStatus | null = Result.builder(cloudflareAccountResult)
@@ -285,6 +351,31 @@ export function useIntegrationStatuses(): Partial<Record<IntegrationId, CardStat
 		.onInitial(() => null)
 		.orElse(() => STATUS_UNAVAILABLE)
 
+	const chat = Object.fromEntries(
+		chatConnectorManifests.map((manifest) => [
+			chatIntegrationId(manifest.id),
+			Result.builder(chatResult)
+				.onSuccess((response): CardStatus => {
+					const connector = response.data.find((entry) => entry.id === manifest.id)
+					const workspaces = connector?.workspaces ?? []
+					if (workspaces.length === 0) {
+						// A deployment without the connector's credentials cannot link
+						// anything — say so rather than implying a connect that will fail.
+						return connector?.available === false ? NOT_CONFIGURED : NOT_CONNECTED
+					}
+					return {
+						label:
+							workspaces.length === 1
+								? (workspaces[0]?.name ?? "Connected")
+								: `${workspaces.length} workspaces`,
+						variant: "success",
+					}
+				})
+				.onInitial((): CardStatus | null => null)
+				.orElse(() => STATUS_UNAVAILABLE),
+		]),
+	)
+
 	return {
 		cloudflare,
 		prometheus: scrapeStatus("prometheus"),
@@ -294,6 +385,7 @@ export function useIntegrationStatuses(): Partial<Record<IntegrationId, CardStat
 		hazel,
 		github,
 		slack,
+		...chat,
 	}
 }
 
@@ -429,6 +521,9 @@ export function useIntegrationOverviews(): Record<IntegrationId, IntegrationOver
 		retainedQueryV2("slackIntegration", "status", {
 			reactivityKeys: ["slackIntegration"],
 		}),
+	)
+	const chatResult = useAtomValue(
+		retainedQueryV2("chatIntegration", "connectors", { reactivityKeys: ["chatIntegration"] }),
 	)
 
 	const cloudflare: IntegrationOverview = Result.builder(cloudflareResult)
@@ -614,6 +709,33 @@ export function useIntegrationOverviews(): Record<IntegrationId, IntegrationOver
 		.onInitial(() => null)
 		.orElse(() => UNAVAILABLE)
 
+	const chat = Object.fromEntries(
+		chatConnectorManifests.map((manifest) => [
+			chatIntegrationId(manifest.id),
+			Result.builder(chatResult)
+				.onSuccess((response): IntegrationOverview => {
+					const workspaces =
+						response.data.find((entry) => entry.id === manifest.id)?.workspaces ?? []
+					if (workspaces.length === 0) return CONNECT
+					return {
+						kind: "connected",
+						health: "healthy",
+						stateLabel: "Healthy",
+						context:
+							workspaces.length === 1
+								? (workspaces[0]?.name ?? null)
+								: plural(workspaces.length, "workspace"),
+						stat: "Agent ready",
+						// No sync loop — the bot is push-per-message.
+						lastSyncLabel: null,
+						issue: null,
+					}
+				})
+				.onInitial((): IntegrationOverview => null)
+				.orElse(() => UNAVAILABLE),
+		]),
+	)
+
 	return {
 		cloudflare,
 		prometheus: scrapeOverview("prometheus"),
@@ -623,6 +745,7 @@ export function useIntegrationOverviews(): Record<IntegrationId, IntegrationOver
 		hazel,
 		github,
 		slack,
+		...chat,
 	}
 }
 
