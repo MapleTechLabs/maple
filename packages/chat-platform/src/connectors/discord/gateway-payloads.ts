@@ -66,9 +66,7 @@ export const CALLBACK_DEFERRED_UPDATE_MESSAGE = 6
  * connection fixes — the table in `topics/opcodes-and-status-codes` is the
  * source, not the prose elsewhere that summarises it.
  */
-export const FATAL_CLOSE_CODES: ReadonlySet<number> = new Set([
-	4004, 4010, 4011, 4012, 4013, 4014,
-])
+export const FATAL_CLOSE_CODES: ReadonlySet<number> = new Set([4004, 4010, 4011, 4012, 4013, 4014])
 
 /**
  * Close codes that invalidate the session but not the connection attempt: the

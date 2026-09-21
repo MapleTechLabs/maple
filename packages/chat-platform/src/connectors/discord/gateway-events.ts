@@ -37,13 +37,7 @@ const NOTHING: DispatchResult = { events: [], requests: [] }
  * pattern somebody else chose.
  */
 const stripMention = (text: string, botUserId: string): string =>
-	text
-		.split(`<@${botUserId}>`)
-		.join(" ")
-		.split(`<@!${botUserId}>`)
-		.join(" ")
-		.replace(/\s+/gu, " ")
-		.trim()
+	text.split(`<@${botUserId}>`).join(" ").split(`<@!${botUserId}>`).join(" ").replace(/\s+/gu, " ").trim()
 
 /**
  * Whether the member may administer this workspace.
@@ -115,9 +109,7 @@ const messageCreate = (data: unknown, botUserId: string | undefined): DispatchRe
 				author: {
 					id: message.author.id,
 					displayName:
-						message.member?.nick ??
-						message.author.global_name ??
-						message.author.username,
+						message.member?.nick ?? message.author.global_name ?? message.author.username,
 					isBot: false,
 				},
 				text: stripMention(message.content, botUserId),
@@ -174,18 +166,16 @@ const guildDelete = (data: unknown): DispatchResult => {
 	const decoded = decodeGuildDelete(data)
 	if (Option.isNone(decoded) || decoded.value.unavailable === true) return NOTHING
 	return {
-		events: [{ type: "workspace-removed", connector: DISCORD_CONNECTOR_ID, workspaceId: decoded.value.id }],
+		events: [
+			{ type: "workspace-removed", connector: DISCORD_CONNECTOR_ID, workspaceId: decoded.value.id },
+		],
 		requests: [],
 	}
 }
 
 /** Map one dispatch by name. `READY` is handled in the state machine, which is what it changes. */
 // BOUNDARY: `data` is the decoded `d` of a gateway frame, typed at this edge.
-export const mapDispatch = (
-	name: string,
-	data: unknown,
-	botUserId: string | undefined,
-): DispatchResult => {
+export const mapDispatch = (name: string, data: unknown, botUserId: string | undefined): DispatchResult => {
 	switch (name) {
 		case "MESSAGE_CREATE":
 			return messageCreate(data, botUserId)

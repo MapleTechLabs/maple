@@ -14,7 +14,7 @@
  */
 import { makeChatTranscript } from "@maple/domain/chat-transcript"
 import type { ChatEvent, ChatTurnEndEvent } from "@maple/domain/chat-session"
-import { Clock, Effect, Fiber, Schedule, Semaphore, Stream } from "effect"
+import { Cause, Clock, Effect, Fiber, Schedule, Semaphore, Stream } from "effect"
 import type { ChatMessageRef, ChatOutbound, ChatTarget } from "./outbound"
 import {
 	renderChatMessage,
@@ -118,7 +118,14 @@ export const driveChatTurn = Effect.fn("ChatPlatform.driveChatTurn")(function* <
 		dirty = true
 	})
 
-	yield* Effect.forkChild(transport.typing(target).pipe(Effect.tapCause(Effect.logDebug), Effect.ignore))
+	yield* Effect.forkChild(
+		// Best effort by nature, so the failure is a debug line and not even its tag: nothing acts on
+		// a missing typing indicator.
+		transport.typing(target).pipe(
+			Effect.tapCause(() => Effect.logDebug("Typing could not be shown")),
+			Effect.ignore,
+		),
+	)
 	// The placeholder, before a single event: the platform should show the bot working on it rather
 	// than saying nothing until the first token, or until the first throttle interval.
 	yield* flush
@@ -126,7 +133,9 @@ export const driveChatTurn = Effect.fn("ChatPlatform.driveChatTurn")(function* <
 		Effect.repeat(
 			// A mid-turn edit that fails takes its fiber with it and nothing joins this one, so the
 			// cause is logged here or it is lost. The final flush still runs, and still reports.
-			Effect.suspend(() => (dirty ? flush : Effect.void)).pipe(Effect.tapCause(Effect.logWarning)),
+			Effect.suspend(() => (dirty ? flush : Effect.void)).pipe(
+				Effect.tapCause(report("A turn's message could not be updated")),
+			),
 			{ schedule: Schedule.spaced(outbound.limits.minEditInterval) },
 		),
 	)
@@ -153,6 +162,21 @@ export const driveChatTurn = Effect.fn("ChatPlatform.driveChatTurn")(function* <
 	yield* Effect.annotateCurrentSpan({ "chat.turn.end_reason": endReason, "chat.messages": posted.length })
 	return yield* outcome
 })
+
+/**
+ * What failed, never what it carried.
+ *
+ * An outbound failure holds the request it failed on, and that request's body is the turn being
+ * posted — so a rendered cause on this path writes a customer's conversation into a log line.
+ */
+const report = (message: string) => (cause: Cause.Cause<unknown>) =>
+	Effect.logWarning(message).pipe(
+		Effect.annotateLogs({
+			"error.type": Cause.prettyErrors(cause)
+				.map((error) => error.name)
+				.join(";"),
+		}),
+	)
 
 const NO_BLOCKS: ReadonlyArray<ChatBlock> = []
 

@@ -505,16 +505,16 @@ export const connectorTurnTenant = (orgId: OrgId): ChatTurnTenantEncoded =>
 	})
 
 /**
- * The origin for a caller that did not state one.
+ * The origin of a turn raised through Maple's own HTTP surface.
  *
- * Compatibility only: api, alerting and ai are separate Workers, so a caller that predates the
- * field keeps calling through a rollout, and the investigation pass must not silently become
- * attended. Removable once every caller sets an origin.
+ * That route authenticates a signed-in person and Maple's own service token alike, and the only
+ * thing that distinguishes them is the user id the auth layer stamped on the caller — so the read
+ * lives here rather than in the route, and an unattended pass cannot become attended by being
+ * restarted from a different place.
  */
-export const originForTurn = (
-	origin: ChatTurnOrigin | undefined,
-	tenant: ChatTurnTenantEncoded,
-): ChatTurnOrigin => origin ?? { kind: tenant.userId === "internal-service" ? "autonomous" : "app" }
+export const originForTenant = (tenant: ChatTurnTenantEncoded): ChatTurnOrigin => ({
+	kind: tenant.userId === "internal-service" ? "autonomous" : "app",
+})
 
 // Requests
 

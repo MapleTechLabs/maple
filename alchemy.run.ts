@@ -135,9 +135,10 @@ const declareMapleDb = (stage: MapleStage, region: MapleRegion) =>
 					caching: { disabled: true },
 				})
 			})
-		// api and ai share a config, alerting has its own: the split prd was measured into.
+		// alerting has its own config and the rest share api's: the split prd was measured into.
 		const api = yield* hyperdrive("api")
-		return { schema, hyperdrives: { api, ai: api, alerting: yield* hyperdrive("alerting") } }
+		const alerting = yield* hyperdrive("alerting")
+		return { schema, hyperdrives: { api, ai: api, "chat-bot": api, alerting } }
 	})
 
 /**
@@ -359,11 +360,13 @@ export default Alchemy.Stack(
 		const alerting = yield* Effect.provideService(Alerting, AiWorker, ai)
 		yield* serveWorker("alerting", alerting)
 
-		// Chat-platform ingress: the connector registry's sockets and the generic
-		// webhook route, plus the `ConnectorSocket` Durable Object that holds one
-		// connection per socket connector. Like maple-ai, the Worker hosts a class,
-		// so its Live layer is what registers that class in the deployed bundle.
-		// It is inert on a stage with no connector credentials.
+		// Chat-platform ingress and the turns it causes: the connector registry's
+		// sockets and the generic webhook route, the `ConnectorSocket` Durable
+		// Object that holds one connection per socket connector, and the
+		// `ConnectorRelay` object that carries one conversation's turn. Like
+		// maple-ai, the Worker hosts classes, so its Live layer is what registers
+		// them in the deployed bundle. It binds maple-ai's chat Durable Object by
+		// name, and is inert on a stage with no connector credentials.
 		// oxlint-disable-next-line effecttsgo/strict-effect-provide
 		const chatBot = yield* Effect.provide(ChatBot, ChatBotLive)
 		yield* serveWorker("chat-bot", chatBot)

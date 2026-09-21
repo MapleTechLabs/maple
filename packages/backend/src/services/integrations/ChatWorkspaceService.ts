@@ -22,6 +22,12 @@ import { Database, type DatabaseError } from "@maple/backend/platform/DatabaseLi
 import { Env } from "@maple/backend/platform/Env"
 import { dateToMs, msToDate } from "@maple/backend/platform/time"
 import { OAuthStateRepository } from "@maple/backend/services/auth/OAuthStateRepository"
+import {
+	resolveChatWorkspace,
+	type ChatWorkspaceResolution,
+} from "@maple/backend/services/integrations/chat-workspace-rows"
+
+export type { ChatWorkspaceResolution }
 
 /**
  * Linking chat workspaces to orgs, for every chat platform Maple ships.
@@ -84,13 +90,6 @@ export interface ChatConnectorStatus {
 	readonly connector: ChatConnector<unknown>
 	readonly available: boolean
 	readonly workspaces: ReadonlyArray<ChatWorkspaceSummary>
-}
-
-/** What the bot Worker needs to act on an inbound event. */
-export interface ChatWorkspaceResolution {
-	readonly orgId: OrgId
-	readonly workspaceId: ChatWorkspaceId
-	readonly settings: ChatWorkspaceSettings
 }
 
 export interface ChatWorkspaceServiceApi {
@@ -444,34 +443,10 @@ const make: Effect.Effect<
 		externalWorkspaceId: string,
 	) {
 		yield* Effect.annotateCurrentSpan({ "chat.connector": connectorId })
-		const rows = yield* database
-			.execute((db) =>
-				db
-					.select()
-					.from(chatWorkspaces)
-					.where(
-						and(
-							eq(chatWorkspaces.connector, connectorId),
-							eq(chatWorkspaces.externalWorkspaceId, externalWorkspaceId),
-						),
-					)
-					.limit(1),
-			)
-			.pipe(Effect.mapError(toPersistenceError))
-		const row = rows[0]
-		if (row === undefined) return Option.none<ChatWorkspaceResolution>()
-		const summary = yield* toSummary(row)
-		const orgId = yield* decodeOrgId(row.orgId).pipe(
-			Effect.mapError(
-				(error) =>
-					new IntegrationsPersistenceError({
-						message: `Stored chat workspace has an invalid orgId: ${error.message}`,
-					}),
-			),
-		)
+		const resolved = yield* resolveChatWorkspace(database, connectorId, externalWorkspaceId)
 		// The one cross-tenant lookup here — the resolved org belongs on the span.
-		yield* Effect.annotateCurrentSpan({ orgId })
-		return Option.some({ orgId, workspaceId: summary.id, settings: summary.settings })
+		if (Option.isSome(resolved)) yield* Effect.annotateCurrentSpan({ orgId: resolved.value.orgId })
+		return resolved
 	})
 
 	return ChatWorkspaceService.of({

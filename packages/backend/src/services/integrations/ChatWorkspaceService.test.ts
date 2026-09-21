@@ -21,6 +21,8 @@ import {
 	queryFirstRow,
 	type TestDb,
 } from "@maple/backend/platform/test-pglite"
+import { Database } from "@maple/backend/platform/DatabaseLive"
+import { forgetChatWorkspace, resolveChatWorkspace } from "./chat-workspace-rows"
 import { ChatConnectorRegistry, ChatWorkspaceService } from "./ChatWorkspaceService"
 
 /**
@@ -420,6 +422,23 @@ describe("ChatWorkspaceService", () => {
 				const missing = yield* chat.resolve(TEST_CONNECTOR, "workspace-unknown")
 				assert.isTrue(Option.isNone(missing))
 			}).pipe(Effect.provide(makeLayer(testDb)))
+		}),
+	)
+
+	it.effect("forgets a workspace the bot was removed from, by the platform's own id", () =>
+		Effect.gen(function* () {
+			const testDb = createTestDb(trackedDbs)
+			yield* insertWorkspace(testDb, "55555555-5555-4555-8555-555555555555", ORG, "workspace-5")
+			yield* Effect.gen(function* () {
+				const database = yield* Database
+				assert.isTrue(yield* forgetChatWorkspace(database, TEST_CONNECTOR, "workspace-5"))
+				assert.isTrue(
+					Option.isNone(yield* resolveChatWorkspace(database, TEST_CONNECTOR, "workspace-5")),
+				)
+				// A removal nobody linked is not a failure — the bot can be added and removed from a
+				// workspace that never reached Maple at all.
+				assert.isFalse(yield* forgetChatWorkspace(database, TEST_CONNECTOR, "workspace-5"))
+			}).pipe(Effect.provide(testDb.layer))
 		}),
 	)
 })

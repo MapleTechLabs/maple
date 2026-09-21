@@ -19,6 +19,7 @@ import { ChatConnectorId } from "@maple/domain/primitives"
 import { chatConnectorManifests } from "@maple/chat-platform/manifests"
 import type { ChatConnectorManifest } from "@maple/chat-platform/manifests"
 import { PLANETSCALE_COLOR } from "@/components/infra/planetscale/metrics"
+import { useChatConnectorGate } from "@/hooks/use-organization-feature-flags"
 import { formatRelativeTime } from "@maple/ui/lib/time-format"
 import { Result, useAtomValue } from "@/lib/effect-atom"
 import { retainedQuery } from "@/lib/services/common/atom-client"
@@ -229,6 +230,19 @@ export const catalogEntry = (id: IntegrationId): CatalogEntry => CATALOG.find((e
  */
 export const isIntegrationId = (value: string): value is IntegrationId =>
 	CATALOG.some((entry) => entry.id === value)
+
+/**
+ * Whether an entry belongs in this organization's catalog. Chat connectors roll
+ * out per org, so they are hidden until the org's flag says otherwise — and
+ * while Clerk is still answering, which keeps a tile from flashing in.
+ */
+export function useIsIntegrationVisible(): (id: IntegrationId) => boolean {
+	const chatConnectorGate = useChatConnectorGate()
+	return (id) => {
+		const connector = chatConnectorOf(id)
+		return connector === null || chatConnectorGate(connector)
+	}
+}
 
 interface CardStatus {
 	readonly label: string
@@ -957,18 +971,20 @@ function DiscoverMore({
 
 export function IntegrationCatalog({ onSelect }: { onSelect: (id: IntegrationId) => void }) {
 	const overviews = useIntegrationOverviews()
+	const isVisible = useIsIntegrationVisible()
+	const catalog = CATALOG.filter((entry) => isVisible(entry.id))
 
-	const connected = CATALOG.flatMap((entry) => {
+	const connected = catalog.flatMap((entry) => {
 		const overview = overviews[entry.id]
 		return overview !== null && (overview.kind === "connected" || overview.kind === "unavailable")
 			? [{ entry, overview }]
 			: []
 	})
-	const available = CATALOG.flatMap((entry) => {
+	const available = catalog.flatMap((entry) => {
 		const overview = overviews[entry.id]
 		return overview !== null && overview.kind === "available" ? [{ entry, overview }] : []
 	})
-	const loading = CATALOG.filter((entry) => overviews[entry.id] === null)
+	const loading = catalog.filter((entry) => overviews[entry.id] === null)
 
 	// Nothing connected yet, and nothing still resolving that could change that:
 	// lead with the three broadly useful integrations so the hub opens on a

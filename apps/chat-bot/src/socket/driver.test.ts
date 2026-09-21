@@ -68,7 +68,7 @@ describe("applying a connector's step", () => {
 	it("writes frames, acknowledges, persists, then publishes — in that order", async () => {
 		const target = recorder()
 		await run(target, {
-			state: "{\"seen\":1}",
+			state: '{"seen":1}',
 			send: ["first", "second"],
 			requests: [
 				{
@@ -84,7 +84,7 @@ describe("applying a connector's step", () => {
 			"send:first",
 			"send:second",
 			"request:https://platform.test/ack",
-			"store:{\"seen\":1}",
+			'store:{"seen":1}',
 			"event:message",
 		])
 	})
@@ -98,7 +98,7 @@ describe("applying a connector's step", () => {
 					method: "PATCH",
 					url: "https://platform.test/thing",
 					headers: new Map([["content-type", "application/json"]]),
-					body: "{\"type\":6}",
+					body: '{"type":6}',
 				},
 			],
 		})
@@ -128,8 +128,8 @@ describe("applying a connector's step", () => {
 
 	it("persists the state even when a step does nothing else", async () => {
 		const target = recorder()
-		await run(target, { state: "{\"seen\":9}" })
-		expect(target.trace).toEqual(["store:{\"seen\":9}"])
+		await run(target, { state: '{"seen":9}' })
+		expect(target.trace).toEqual(['store:{"seen":9}'])
 	})
 })
 

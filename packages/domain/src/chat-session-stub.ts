@@ -44,12 +44,23 @@ export interface ChatSessionStub {
 		readonly messageId: string
 		readonly text: string
 		readonly tenant: ChatTurnTenantEncoded
-		/**
-		 * Who is driving the turn. Optional only for deploy skew — api, alerting and ai are separate
-		 * Workers, so an older caller keeps calling through a rollout. See `originForTurn`.
-		 */
-		readonly origin?: ChatTurnOrigin
-	}) => Promise<{ cursor: number; messageId: string } | undefined>
+		/** Who is driving the turn, stated by whoever raised it. */
+		readonly origin: ChatTurnOrigin
+	}) => Promise<
+		| {
+				cursor: number
+				messageId: string
+				/**
+				 * The assistant message this turn writes, which is not the user message's id.
+				 *
+				 * Every event the turn emits carries it, so a caller that renders the turn itself — a
+				 * chat connector relaying it into a channel — needs it to tell this turn's events from
+				 * a replayed earlier one's. A caller that folds the whole transcript does not.
+				 */
+				turnMessageId: string
+		  }
+		| undefined
+	>
 	readonly holdsTurn: (messageId: string) => Promise<boolean>
 	readonly endTurn: (messageId: string) => Promise<void>
 	readonly abort: () => Promise<void>
