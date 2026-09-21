@@ -1,10 +1,10 @@
 import { Link } from "@tanstack/react-router"
+import type { InlineServiceData } from "@maple/domain/chat-annotations"
 import { cn } from "@maple/ui/lib/utils"
 import { formatErrorRate, formatNumber } from "@maple/ui/lib/format"
 import { LatencyValue } from "@maple/ui/components/latency-value"
 import { ServerIcon } from "@/components/icons"
 import { INLINE_CARD_ROW, InlineCardChevron, InlineMetric, inlineCardClass } from "./inline-card"
-import type { InlineServiceData } from "./types"
 
 /** Same thresholds the services list tones by: under 1% is noise, 5% is an outage. */
 function errorTone(rate: number): string {

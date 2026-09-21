@@ -24,8 +24,9 @@ type V2SchemaBoundaryError =
  *
  * `param` carries the full JSON path (`widgets[3].display.fill_nulls`), not
  * just its first segment, and the message names the enclosing widget when the
- * path points inside a `widgets[]` array — the envelope holds one error, so a
- * document with several bad fields reports the first and counts the rest.
+ * failure reports the offending value to resolve it from. The envelope holds one
+ * error, so a document with several bad fields reports the first and counts the
+ * rest.
  */
 const V2SchemaErrorTransformLive = HttpApiMiddleware.layerSchemaErrorTransform(
 	V2SchemaErrors,

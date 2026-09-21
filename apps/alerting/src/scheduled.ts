@@ -14,6 +14,7 @@ import { Env } from "@maple/backend/platform/Env"
 import { ErrorsService } from "@maple/backend/services/errors/ErrorsService"
 import { EscalationService } from "@maple/backend/services/alerts/EscalationService"
 import { FixVerificationTickService } from "@maple/backend/services/errors/FixVerificationTickService"
+import { IncidentClassifier } from "@maple/backend/services/errors/IncidentClassifier"
 import { layerPg } from "@maple/backend/platform/DatabasePgLive"
 import { PullRequestLookupLive } from "@maple/backend/services/errors/pull-request-lookup-live"
 import { PlanetScaleService } from "@maple/backend/services/integrations/PlanetScaleService"
@@ -43,6 +44,9 @@ export const buildLayer = (env: AlertingWorkerEnv) =>
 		FixVerificationTickService.layer,
 		EscalationService.layer,
 		ServiceMapRollupService.layer,
+		// Read by `maybeEnqueueTriage` when present; its absence means every
+		// incident opened here is investigated unclassified.
+		IncidentClassifier.layer,
 	).pipe(
 		Layer.provide(PullRequestLookupLive),
 		Layer.provide(Layer.mergeAll(Env.layer, layerPg, EdgeCacheServiceLive)),
@@ -123,6 +127,7 @@ const errorTick = makeTick(
 		issuesArchived: result.issuesArchived,
 		issuesDeleted: result.issuesDeleted,
 		retentionRan: result.retentionRan,
+		investigationsAbandoned: result.investigationsAbandoned,
 	}),
 )
 

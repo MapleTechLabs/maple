@@ -219,6 +219,83 @@ enum ServiceHealth {
 		return .healthy
 	}
 
+	/// The verdict with the sentence that justifies it, for a screen that leads
+	/// with one. Built from the same breaks as `init(service:)`, so the word and
+	/// the reason cannot disagree with the dot in the list.
+	struct Verdict {
+		let health: ServiceHealth
+		/// Why — "Error rate 9.1% is above the 5% line." Always a sentence, even
+		/// when healthy, so the headline never stands alone.
+		let reason: String
+
+		var title: String {
+			switch health {
+			case .healthy: "Healthy"
+			case .degraded: "Degraded"
+			case .unhealthy: "Unhealthy"
+			}
+		}
+	}
+
+	/// A break as a whole percent — "5%", never "5.0%": it is a line, not a
+	/// measurement, and the decimal reads as false precision.
+	private static func breakLabel(_ ratio: Double) -> String {
+		"\(Int((ratio * 100).rounded()))%"
+	}
+
+	static func verdict(for service: Service, window: TimeWindow) -> Verdict {
+		let health = ServiceHealth(service: service)
+		let byError: ServiceHealth =
+			if service.errorRate >= errorRateUnhealthy { .unhealthy }
+			else if service.errorRate >= errorRateDegraded { .degraded }
+			else { .healthy }
+		let baseline = LatencyBaseline(service: service)
+		let byLatency = latencyHealth(service.p95LatencyMs, spanCount: service.spanCount, baseline: baseline)
+
+		let errorClause: String? = {
+			switch byError {
+			case .unhealthy:
+				return "Error rate \(Format.errorRate(service.errorRate)) is above the \(breakLabel(errorRateUnhealthy)) line"
+			case .degraded:
+				return "Error rate \(Format.errorRate(service.errorRate)) is above the \(breakLabel(errorRateDegraded)) line"
+			case .healthy:
+				return nil
+			}
+		}()
+		let latencyClause: String? = {
+			guard byLatency != .healthy else { return nil }
+			let p95 = Format.latency(service.p95LatencyMs)
+			if let baseline, baseline.spanCount >= minBaselineSpans, baseline.p95LatencyMs > 0 {
+				let ratio = service.p95LatencyMs / baseline.p95LatencyMs
+				return "p95 \(p95) is \(String(format: "%.1f", ratio))× its 7-day baseline of \(Format.latency(baseline.p95LatencyMs))"
+			}
+			let line = byLatency == .unhealthy ? p95UnhealthyMs : p95DegradedMs
+			return "p95 \(p95) is above the \(Format.latency(line)) line"
+		}()
+
+		let reason: String
+		switch health {
+		case .healthy:
+			if service.spanCount < minCurrentSpans {
+				reason = "Too little traffic in \(window.phrase) to judge latency; errors are within range."
+			} else if let baseline, baseline.spanCount >= minBaselineSpans {
+				reason = "Errors within range and p95 within its 7-day baseline over \(window.phrase)."
+			} else {
+				reason = "Errors and latency within range over \(window.phrase)."
+			}
+		case .degraded, .unhealthy:
+			// The clause that decided the verdict leads; the other, if it also
+			// broke, follows as a second sentence.
+			let leading = byError.rank >= byLatency.rank ? errorClause : latencyClause
+			let trailing = byError.rank >= byLatency.rank ? latencyClause : errorClause
+			reason = [leading, trailing.map { "Also: \($0.prefix(1).lowercased() + $0.dropFirst())" }]
+				.compactMap { $0 }
+				.map { $0 + "." }
+				.joined(separator: " ")
+		}
+		return Verdict(health: health, reason: reason)
+	}
+
 	/// Higher is worse. Used to take the worst of two verdicts and to sort the
 	/// most-broken services to the top.
 	var rank: Int {
@@ -297,6 +374,40 @@ enum Tone {
 }
 
 // MARK: - Layout primitives
+
+/// A row of small pills, one selected — the in-card control for "which
+/// signal" and "which sort". Not a system segmented control: that draws its
+/// own material and type, and reads as someone else's app.
+struct SegmentChips<Option: Hashable>: View {
+	let options: [(Option, String)]
+	@Binding var selection: Option
+
+	var body: some View {
+		HStack(spacing: 4) {
+			ForEach(options, id: \.0) { option, label in
+				let selected = option == selection
+				Button {
+					guard !selected else { return }
+					selection = option
+				} label: {
+					Text(label)
+						.font(selected ? Typo.smallMedium : Typo.small)
+						.foregroundStyle(selected ? Token.foreground : Token.mutedForeground)
+						.padding(.horizontal, 10)
+						.frame(height: 26)
+						.background(
+							selected ? Token.muted : .clear,
+							in: .rect(cornerRadius: Token.Radius.md)
+						)
+						.contentShape(.rect)
+				}
+				.buttonStyle(.plain)
+				.accessibilityAddTraits(selected ? [.isSelected] : [])
+			}
+		}
+		.animation(.easeOut(duration: 0.15), value: selection)
+	}
+}
 
 /// A 1px (physical-pixel) rule. DESIGN.md bans borders of 2px or more; depth
 /// comes from tonal steps, not from weight or shadow.

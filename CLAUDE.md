@@ -58,9 +58,12 @@ They moved together because both reach the same tool registry in-process — ext
 leaves the registry behind, which is why the first attempt was worth 1%.
 
 An investigation is **one agent turn**: the investigate agent gathers the evidence, tests the rival
-explanations itself and closes on `submit_diagnosis`. Do not reintroduce sub-agents, planners or
-validators; the 2026-09 fan-out lost the evidence at every handoff and most passes never reached a
-verdict.
+explanations itself and closes on `submit_diagnosis`. Do not split *this* pass across a planner,
+lanes or a validator again; the 2026-09 fan-out lost the evidence at every handoff and most passes
+never reached a verdict. The rule is about the investigation, not about delegation in general.
+Sub-agents remain a good fit where the parent does not need the child's working set back, a review
+agent fanning out over a diff being the obvious one, and the engine's `SubagentHost` plus the
+`Subagent*` events `events.ts` already maps are the seam for it.
 
 `api.maple.dev/mcp` is still the public address. `apps/api` forwards `/mcp`, `/api/chat/*` and
 `/internal/chat/*` over a service binding, ahead of building its route graph, which keeps the OAuth

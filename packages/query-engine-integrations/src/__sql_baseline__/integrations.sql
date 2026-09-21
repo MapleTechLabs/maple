@@ -789,8 +789,8 @@ SELECT
 
 -- builder:ai-sessions:aiSessionSummaryQuery:default
 SELECT
-          if(coalesce(nullIf(SpanAttributes['gen_ai.conversation.id'], ''), nullIf(SpanAttributes['eve.turn.id'], ''), nullIf(SpanAttributes['maple_ai.turn.id'], ''), '') != '', coalesce(nullIf(SpanAttributes['gen_ai.conversation.id'], ''), nullIf(SpanAttributes['eve.turn.id'], ''), nullIf(SpanAttributes['maple_ai.turn.id'], ''), ''), TraceId) AS turnKey,
-          max(coalesce(nullIf(SpanAttributes['gen_ai.conversation.id'], ''), nullIf(SpanAttributes['eve.turn.id'], ''), nullIf(SpanAttributes['maple_ai.turn.id'], ''), '')) AS conversationId,
+          if(coalesce(nullIf(SpanAttributes['maple_ai.turn.id'], ''), nullIf(SpanAttributes['gen_ai.conversation.id'], ''), nullIf(SpanAttributes['eve.turn.id'], ''), '') != '', coalesce(nullIf(SpanAttributes['maple_ai.turn.id'], ''), nullIf(SpanAttributes['gen_ai.conversation.id'], ''), nullIf(SpanAttributes['eve.turn.id'], ''), ''), TraceId) AS turnKey,
+          max(coalesce(nullIf(SpanAttributes['maple_ai.turn.id'], ''), nullIf(SpanAttributes['gen_ai.conversation.id'], ''), nullIf(SpanAttributes['eve.turn.id'], ''), '')) AS conversationId,
           groupUniqArray(TraceId) AS traceIds,
           toString(min(Timestamp)) AS startTime,
           fromUnixTimestamp64Nano(max(toUnixTimestamp64Nano(Timestamp) + toInt64(Duration))) AS endTime,
@@ -922,8 +922,8 @@ SELECT
 
 -- builder:ai-sessions:aiTraceSummaryQuery:default
 SELECT
-          if(coalesce(nullIf(SpanAttributes['gen_ai.conversation.id'], ''), nullIf(SpanAttributes['eve.turn.id'], ''), nullIf(SpanAttributes['maple_ai.turn.id'], ''), '') != '', coalesce(nullIf(SpanAttributes['gen_ai.conversation.id'], ''), nullIf(SpanAttributes['eve.turn.id'], ''), nullIf(SpanAttributes['maple_ai.turn.id'], ''), ''), TraceId) AS turnKey,
-          max(coalesce(nullIf(SpanAttributes['gen_ai.conversation.id'], ''), nullIf(SpanAttributes['eve.turn.id'], ''), nullIf(SpanAttributes['maple_ai.turn.id'], ''), '')) AS conversationId,
+          if(coalesce(nullIf(SpanAttributes['maple_ai.turn.id'], ''), nullIf(SpanAttributes['gen_ai.conversation.id'], ''), nullIf(SpanAttributes['eve.turn.id'], ''), '') != '', coalesce(nullIf(SpanAttributes['maple_ai.turn.id'], ''), nullIf(SpanAttributes['gen_ai.conversation.id'], ''), nullIf(SpanAttributes['eve.turn.id'], ''), ''), TraceId) AS turnKey,
+          max(coalesce(nullIf(SpanAttributes['maple_ai.turn.id'], ''), nullIf(SpanAttributes['gen_ai.conversation.id'], ''), nullIf(SpanAttributes['eve.turn.id'], ''), '')) AS conversationId,
           groupUniqArray(TraceId) AS traceIds,
           toString(min(Timestamp)) AS startTime,
           fromUnixTimestamp64Nano(max(toUnixTimestamp64Nano(Timestamp) + toInt64(Duration))) AS endTime,

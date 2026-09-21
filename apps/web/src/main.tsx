@@ -7,7 +7,7 @@ import { ClerkAuthBridge } from "./lib/services/common/clerk-auth-bridge"
 import { purgeForeignClerkCookies } from "./lib/services/common/clerk-cookie-guard"
 import { isClerkAuthEnabled } from "./lib/services/common/auth-mode"
 import { isPublicPath } from "./lib/public-routes"
-import { clerkAppearance } from "./lib/clerk-appearance"
+import { clerkAppearance, clerkLocalization } from "./lib/clerk-appearance"
 import {
 	installSelfHostedAuthHeadersProvider,
 	resolveSelfHostedRouterAuth,
@@ -181,6 +181,8 @@ const app = isClerkAuthEnabled ? (
 		// challenge modal when the instance requires re-verification. Theming the provider is what
 		// keeps that modal from rendering in Clerk's default light theme mid-flow.
 		appearance={clerkAppearance}
+		// Only the sign-in / sign-up entry titles; see clerk-appearance.ts.
+		localization={clerkLocalization}
 	>
 		<ClerkAuthBridge />
 		<ClerkInnerApp />

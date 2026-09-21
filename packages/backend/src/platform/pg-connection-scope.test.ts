@@ -1,7 +1,14 @@
 import { assert, describe, it } from "@effect/vitest"
-import { createMaplePgPool, type MapleDb, type MaplePgPool, type MaplePgPoolOptions } from "@maple/db/client"
+import {
+	type MapleDb,
+	type MaplePgClient,
+	type MaplePgClientOptions,
+	makeMaplePgClient,
+} from "@maple/db/client"
 import { sql } from "drizzle-orm"
-import { Effect, Exit, Fiber, Option, References, Schema, Tracer } from "effect"
+import { Effect, Exit, Fiber, Option, References, Schema, Scope, Tracer } from "effect"
+import type * as Reactivity from "effect/unstable/reactivity/Reactivity"
+import type { SqlError } from "effect/unstable/sql/SqlError"
 import { createServer, type Socket } from "node:net"
 import { MapleDbConnection } from "./bindings"
 import {
@@ -15,42 +22,40 @@ import {
 	withPgConnectionScopeOf,
 } from "./pg-connection-scope"
 
+type OpenClient = Effect.Effect<MaplePgClient, SqlError, Scope.Scope | Reactivity.Reactivity>
+
 /**
- * A pool that never touches the network.
+ * A client that never touches the network.
  *
- * A real node-postgres pool, because the drizzle database is built over it —
- * constructing one connects to nothing (the pool dials on the first statement),
- * and these tests never issue one, so the port below is never reached.
+ * A real `@effect/sql-pg` client, because the drizzle database is built over it
+ * — opening one connects to nothing (the pool dials on the first statement),
+ * and these tests never issue one, so the port below is never reached. The
+ * finalizer counts the close the owning scope performs.
  */
-const fakePool = (onEnd: () => void): MaplePgPool => {
-	const pool = createMaplePgPool("postgres://maple:maple@127.0.0.1:1/never", { maxConnections: 1 })
-	const end = pool.end.bind(pool)
-	pool.end = () => {
-		onEnd()
-		return end()
-	}
-	return pool
-}
+const fakeClient = (onEnd: () => void): OpenClient =>
+	makeMaplePgClient("postgres://maple:maple@127.0.0.1:1/never", { maxConnections: 1 }).pipe(
+		Effect.tap(() => Effect.addFinalizer(() => Effect.sync(onEnd))),
+	)
 
 interface Recorder {
-	readonly openPool: (options: MaplePgPoolOptions) => MaplePgPool
+	readonly openClient: (options: MaplePgClientOptions) => OpenClient
 	readonly creations: () => number
 	readonly ends: () => number
-	readonly lastOptions: () => MaplePgPoolOptions | undefined
+	readonly lastOptions: () => MaplePgClientOptions | undefined
 }
 
 const recorder = (): Recorder => {
 	let creations = 0
 	let ends = 0
-	let lastOptions: MaplePgPoolOptions | undefined
+	let lastOptions: MaplePgClientOptions | undefined
 	return {
 		creations: () => creations,
 		ends: () => ends,
 		lastOptions: () => lastOptions,
-		openPool: (options) => {
+		openClient: (options) => {
 			creations += 1
 			lastOptions = options
-			return fakePool(() => {
+			return fakeClient(() => {
 				ends += 1
 			})
 		},
@@ -84,7 +89,7 @@ describe("PgConnectionScope", () => {
 		Effect.gen(function* () {
 			const rec = recorder()
 			const scope = makePgConnectionScope("postgres://unused", undefined, {
-				openPool: rec.openPool,
+				openClient: rec.openClient,
 			})
 
 			yield* scope.run(noop)
@@ -102,7 +107,7 @@ describe("PgConnectionScope", () => {
 		Effect.gen(function* () {
 			const rec = recorder()
 			const scope = makePgConnectionScope("postgres://unused", undefined, {
-				openPool: rec.openPool,
+				openClient: rec.openClient,
 			})
 
 			yield* scope.close
@@ -116,7 +121,7 @@ describe("PgConnectionScope", () => {
 		Effect.gen(function* () {
 			const rec = recorder()
 			const scope = makePgConnectionScope("postgres://unused", undefined, {
-				openPool: rec.openPool,
+				openClient: rec.openClient,
 			})
 			const clients: Array<MapleDb> = []
 			const capture = (db: MapleDb) => {
@@ -140,7 +145,7 @@ describe("PgConnectionScope", () => {
 			const rec = recorder()
 			const { spans, tracer } = makeRecordingTracer()
 			const scope = makePgConnectionScope("postgres://unused", undefined, {
-				openPool: rec.openPool,
+				openClient: rec.openClient,
 			})
 
 			yield* scope.run(noop).pipe(Effect.withTracer(tracer))
@@ -162,7 +167,7 @@ describe("PgConnectionScope", () => {
 			const scope = makePgConnectionScope(
 				"postgres://unused",
 				{ "db.namespace": "maple", "server.address": "cfg.hyperdrive.local" },
-				{ openPool: rec.openPool },
+				{ openClient: rec.openClient },
 			)
 
 			yield* scope.run(noop).pipe(Effect.withTracer(tracer))
@@ -179,7 +184,7 @@ describe("PgConnectionScope", () => {
 		Effect.gen(function* () {
 			const rec = recorder()
 			const scope = makePgConnectionScope("postgres://unused", undefined, {
-				openPool: rec.openPool,
+				openClient: rec.openClient,
 			})
 
 			// With no probe there is no separate connect phase: a connection problem
@@ -198,7 +203,7 @@ describe("PgConnectionScope", () => {
 		Effect.gen(function* () {
 			const rec = recorder()
 			const scope = makePgConnectionScope("postgres://unused", undefined, {
-				openPool: rec.openPool,
+				openClient: rec.openClient,
 			})
 
 			yield* scope.run(noop)
@@ -215,7 +220,7 @@ describe("PgConnectionScope", () => {
 		Effect.gen(function* () {
 			const rec = recorder()
 			const scope = makePgConnectionScope("postgres://unused", undefined, {
-				openPool: rec.openPool,
+				openClient: rec.openClient,
 			})
 
 			yield* scope.run(noop)
@@ -233,7 +238,7 @@ describe("PgConnectionScope", () => {
 		Effect.gen(function* () {
 			const rec = recorder()
 			const scope = makePgConnectionScope("postgres://unused", undefined, {
-				openPool: rec.openPool,
+				openClient: rec.openClient,
 			})
 
 			yield* scope.run(noop)
@@ -250,7 +255,7 @@ describe("PgConnectionScope", () => {
 			const rec = recorder()
 			const { spans, tracer } = makeRecordingTracer()
 			const scope = makePgConnectionScope("postgres://unused", undefined, {
-				openPool: rec.openPool,
+				openClient: rec.openClient,
 			})
 
 			yield* scope.run(noop)
@@ -278,7 +283,7 @@ describe("PgConnectionScope", () => {
 	it.effect("keeps the closed-scope failure discriminable behind the DatabaseError channel", () =>
 		Effect.gen(function* () {
 			const scope = makePgConnectionScope("postgres://unused", undefined, {
-				openPool: recorder().openPool,
+				openClient: recorder().openClient,
 			})
 
 			yield* scope.close
@@ -295,7 +300,7 @@ describe("PgConnectionScope", () => {
 		Effect.gen(function* () {
 			const rec = recorder()
 			const scope = makePgConnectionScope("postgres://unused", undefined, {
-				openPool: rec.openPool,
+				openClient: rec.openClient,
 			})
 
 			yield* scope.close
@@ -310,7 +315,7 @@ describe("PgConnectionScope", () => {
 		Effect.gen(function* () {
 			const rec = recorder()
 			const scope = makePgConnectionScope("postgres://unused", undefined, {
-				openPool: rec.openPool,
+				openClient: rec.openClient,
 			})
 
 			// Close transitions to Closed before releasing, so a caller racing the
@@ -339,7 +344,7 @@ describe("PgConnectionScope", () => {
 			for (let budget = 3; budget <= 48; budget++) {
 				const { spans, tracer } = makeRecordingTracer()
 				const scope = makePgConnectionScope("postgres://unused", undefined, {
-					openPool: recorder().openPool,
+					openClient: recorder().openClient,
 				})
 				const running = yield* Effect.forkChild(
 					scope
@@ -406,7 +411,7 @@ const failedDbSpan = (behaviour: "stall" | "hangup") =>
 		const { spans, tracer } = makeRecordingTracer()
 		const scope = makePgConnectionScope(server.url, undefined, {
 			// The production factory, with the dial bound shortened for the test.
-			openPool: (options) => createMaplePgPool(server.url, { ...options, connectTimeoutSeconds: 0.3 }),
+			openClient: (options) => makeMaplePgClient(server.url, { ...options, connectTimeoutSeconds: 0.3 }),
 		})
 		const exit = yield* Effect.exit(
 			withPgConnectionScopeOf(
@@ -467,7 +472,7 @@ describe("pgConnectionScopeFrom", () => {
 			const { spans, tracer } = makeRecordingTracer()
 			const rec = recorder()
 			// Build a real database the way the Workflow seams do, without dialing.
-			const owning = makePgConnectionScope("postgres://unused", undefined, { openPool: rec.openPool })
+			const owning = makePgConnectionScope("postgres://unused", undefined, { openClient: rec.openClient })
 			const owned = yield* owning.run((db) => Effect.succeed(db))
 			const scope = pgConnectionScopeFrom(owned)
 

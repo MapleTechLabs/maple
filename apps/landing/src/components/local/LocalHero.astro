@@ -22,7 +22,7 @@ const banner: Array<{ key?: string; value: string; tone?: "amber" | "green" | "d
 
 const stats = [
 	{ cap: "port", val: ":4318" },
-	{ cap: "store", val: "chDB" },
+	{ cap: "store", val: "embedded ClickHouse" },
 	{ cap: "signals", val: "traces · logs · metrics" },
 	{ cap: "deps", val: "none" },
 ];
@@ -30,8 +30,8 @@ const stats = [
 
 <section class="lh" aria-label="Maple Local quickstart">
 	<p class="lh__lead">
-		One Bun-compiled binary — OTLP ingest, an embedded ClickHouse, a query API, and the dashboard —
-		running on <span class="lh__hl">127.0.0.1</span>. No cloud, no Tinybird, no auth.
+		Two commands. Everything runs on <span class="lh__hl">127.0.0.1</span> and nothing leaves
+		your machine.
 	</p>
 
 	<div class="lh__frame live-frame">

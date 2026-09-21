@@ -43,6 +43,7 @@ const IOS_OPERATIONS: ReadonlyArray<string> = [
 	"listServices",
 	"listEnvironments",
 	"getService",
+	"getServiceOverview",
 	"queryTraceTimeseries",
 	"queryTraceBreakdown",
 	// Errors

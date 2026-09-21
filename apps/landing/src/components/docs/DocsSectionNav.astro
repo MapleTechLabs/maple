@@ -18,7 +18,7 @@ const sections = await getDocSections(currentSlug);
             href={s.href}
             aria-current={s.active ? "page" : undefined}
             class:list={[
-                "group relative flex items-center gap-2 whitespace-nowrap px-2.5 text-[13px] transition-colors",
+                "group relative flex items-center gap-2 whitespace-nowrap px-2.5 text-[13px] transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-primary",
                 s.active ? "font-medium text-fg" : "text-fg-muted hover:text-fg",
             ]}
         >

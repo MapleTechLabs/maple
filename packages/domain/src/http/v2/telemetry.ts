@@ -1027,6 +1027,142 @@ const ServiceList = ListOf(V2Service).annotate({
 	title: "Service list",
 })
 
+/**
+ * One bucket of a service's golden signals, as the phone charts them.
+ *
+ * Counts, not rates: the client divides `span_count` / `estimated_span_count`
+ * by the response's `bucket_seconds`, so the chart and the headline number
+ * provably carry the same unit (the same rule as `WidgetSummaryService.points`).
+ * Latencies are already milliseconds and `error_rate` is already a 0–1 ratio.
+ */
+export const V2ServiceOverviewPoint = Schema.Struct({
+	timestamp: Timestamp,
+	span_count: Schema.Number,
+	/** Sampling-corrected; equals `span_count` when nothing was sampled. */
+	estimated_span_count: Schema.Number,
+	error_rate: Schema.Number,
+	p50_latency_ms: Schema.Number,
+	p95_latency_ms: Schema.Number,
+	p99_latency_ms: Schema.Number,
+}).annotate({
+	identifier: "ServiceOverviewPoint",
+	title: "Service overview point",
+	description: "One time bucket of a service's throughput, error rate and latency percentiles.",
+})
+export type V2ServiceOverviewPoint = Schema.Schema.Type<typeof V2ServiceOverviewPoint>
+
+export const V2ServiceOperation = Schema.Struct({
+	name: Schema.String,
+	span_count: Schema.Number,
+	estimated_span_count: Schema.Number,
+	error_count: Schema.Number,
+	error_rate: Schema.Number,
+	p50_latency_ms: Schema.Number,
+	p95_latency_ms: Schema.Number,
+	p99_latency_ms: Schema.Number,
+}).annotate({
+	identifier: "ServiceOperation",
+	title: "Service operation",
+	description: "One span name inside a service, with its volume, errors and latency over the window.",
+})
+export type V2ServiceOperation = Schema.Schema.Type<typeof V2ServiceOperation>
+
+/** Operations returned by the overview: the busiest by estimated volume. */
+export const SERVICE_OVERVIEW_OPERATIONS_LIMIT = 25
+
+export const V2ServiceOverview = Schema.Struct({
+	object: Schema.Literal("service_overview"),
+	service: V2Service,
+	start_time: Timestamp,
+	end_time: Timestamp,
+	/**
+	 * Bucket length behind `points`. Null when the series could not be read,
+	 * which tells the client to render the summary without a chart instead of
+	 * guessing a unit.
+	 */
+	bucket_seconds: Schema.NullOr(PositiveInteger),
+	points: Schema.Array(V2ServiceOverviewPoint),
+	/**
+	 * The busiest `SERVICE_OVERVIEW_OPERATIONS_LIMIT` span names over the
+	 * window, by estimated volume. Empty when the read failed — the operations
+	 * are context next to the summary, not the summary itself.
+	 */
+	operations: Schema.Array(V2ServiceOperation),
+}).annotate({
+	identifier: "ServiceOverview",
+	title: "Service overview",
+	description:
+		"Everything a service detail screen paints from, in one response: the window summary, a per-bucket series of every golden signal, and the busiest operations.",
+	examples: [
+		wireExample({
+			object: "service_overview",
+			service: {
+				object: "service",
+				name: "api",
+				service_namespaces: ["checkout"],
+				deployment_environments: ["production"],
+				throughput: 12.5,
+				traced_throughput: 12.5,
+				span_count: 45_000,
+				error_count: 12,
+				error_rate: 0.00027,
+				p50_latency_ms: 18.4,
+				p95_latency_ms: 142.9,
+				p99_latency_ms: 890.1,
+				has_sampling: false,
+				sampling_weight: 1,
+				baseline_p95_latency_ms: 120,
+				baseline_span_count: 300_000,
+			},
+			start_time: "2026-07-15T12:00:00.000Z",
+			end_time: "2026-07-15T13:00:00.000Z",
+			bucket_seconds: 120,
+			points: [
+				{
+					timestamp: "2026-07-15T12:00:00.000Z",
+					span_count: 1500,
+					estimated_span_count: 1500,
+					error_rate: 0.0003,
+					p50_latency_ms: 18,
+					p95_latency_ms: 140,
+					p99_latency_ms: 870,
+				},
+			],
+			operations: [
+				{
+					name: "GET /checkout",
+					span_count: 20_000,
+					estimated_span_count: 20_000,
+					error_count: 8,
+					error_rate: 0.0004,
+					p50_latency_ms: 22,
+					p95_latency_ms: 180,
+					p99_latency_ms: 910,
+				},
+			],
+		}),
+	],
+})
+export type V2ServiceOverview = Schema.Schema.Type<typeof V2ServiceOverview>
+
+export const V2ServiceOverviewQuery = Schema.Struct({
+	...V2TelemetryWindowQuery.fields,
+	deployment_environment: Schema.optional(Schema.String),
+	/**
+	 * Bucket length for `points`. Defaults to whatever gives the window roughly
+	 * 40 buckets; a value the window cannot hold in 1,500 buckets is a 400.
+	 */
+	bucket_seconds: Schema.optional(PositiveInteger),
+}).annotate({ identifier: "ServiceOverviewQuery", title: "Service overview query" })
+
+const serviceOverviewErrors = [
+	...windowErrors,
+	V2TelemetryBucketCountTooLarge.schema,
+	V2TraceQueryInvalid.schema,
+	...V2QueryErrors,
+	V2ServiceNotFound.schema,
+] as const
+
 export class V2ServicesApiGroup extends HttpApiGroup.make("services")
 	.add(
 		HttpApiEndpoint.get("list", "/", {
@@ -1054,6 +1190,21 @@ export class V2ServicesApiGroup extends HttpApiGroup.make("services")
 				summary: "Retrieve a service",
 				description:
 					"Returns one service aggregated across environments and namespaces. Requires `services:read`.",
+			}),
+		),
+	)
+	.add(
+		HttpApiEndpoint.get("overview", "/:name/overview", {
+			params: { name: ServiceName },
+			query: V2ServiceOverviewQuery,
+			success: V2ServiceOverview,
+			error: serviceOverviewErrors,
+		}).annotateMerge(
+			OpenApi.annotations({
+				identifier: "getServiceOverview",
+				summary: "Retrieve a service overview",
+				description:
+					"Returns the service summary, a per-bucket series of throughput, error rate and latency percentiles, and its busiest operations — the reads behind a service detail screen, composed server-side in one round-trip. Requires `services:read`.",
 			}),
 		),
 	)

@@ -348,7 +348,7 @@ function BudgetExhaustedNotice({
 	canEditSettings,
 }: {
 	priorityPaused: boolean
-	dimension: "runs" | "passes" | "passes_reserved" | null
+	dimension: "runs" | "runs_reserved" | "passes" | "passes_reserved" | null
 	resumesAt: string | null
 	canEditSettings: boolean
 }) {
@@ -357,10 +357,13 @@ function BudgetExhaustedNotice({
 		resumes === null
 			? "."
 			: `; it resets ${resumes.toLocaleString(undefined, { timeStyle: "short", dateStyle: "medium" })}.`
-	// `runs` is checked before any pass arithmetic and has no reserve, so it stops
-	// every severity — naming the model budget here would point at the wrong number.
+	// The runs ceiling counts investigations and the passes ceiling counts model
+	// work; naming the wrong one sends the reader to raise a number that was never
+	// the constraint.
 	const spent =
-		dimension === "runs" ? "Today's investigation limit is reached" : "Today's model budget is spent"
+		dimension === "runs" || dimension === "runs_reserved"
+			? "Today's investigation limit is reached"
+			: "Today's model budget is spent"
 	return (
 		<div className="mb-4 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg border border-warning/30 bg-warning/10 px-3 py-2 text-sm">
 			<span className="font-medium text-foreground">

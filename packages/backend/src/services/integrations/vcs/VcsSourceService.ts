@@ -317,10 +317,18 @@ export class VcsSourceService extends Context.Service<VcsSourceService, VcsSourc
 					? Option.some(ref)
 					: yield* asUpstream(provider.resolveRef(installation, repoRef, ref))
 				if (Option.isNone(resolved)) {
+					// The message is the agent's only chance to recover: sandbox tool failures are
+					// returned to the model as the call's text, so a bare "no such ref" leaves it
+					// with nothing to try next. An agent reading a `service.version` of `0.0.14` and
+					// passing it here is the case that produced this, repeatedly, in prod.
 					return yield* new VcsSourceRefNotFoundError({
 						repository: repository.fullName,
 						ref,
-						message: `No ref '${ref}' exists in '${repository.fullName}'.`,
+						message:
+							`No ref '${ref}' exists in '${repository.fullName}'. ` +
+							`Pass a commit SHA or branch that the telemetry actually carries ` +
+							`(\`vcs.ref.head.revision\`), or omit the ref to use the repository's tracked branch. ` +
+							`A service version string is not a git ref.`,
 					})
 				}
 				const credentials = yield* asUpstream(provider.fetchCloneCredentials(installation, repoRef))

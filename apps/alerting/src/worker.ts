@@ -13,6 +13,7 @@
  * their own, and a failure outside a tick (the layer build) is logged below.
  */
 import {
+	AiWorker,
 	cachedRecoverable,
 	CLOUDFLARE_WORKER_PLACEMENT,
 	emailBinding,
@@ -111,6 +112,10 @@ const configuredEnv = (stage: MapleStage) =>
 const props = Effect.gen(function* () {
 	if (globalThis.__ALCHEMY_RUNTIME__) return { main: import.meta.url }
 	const { stage, workerDev, devEnv, dbSchema } = yield* MapleStack
+	// maple-ai, which answers the investigation gate's question (`IncidentClassifier`)
+	// before a tick spends a model pass on an incident. Handed over as `AiWorker`
+	// like api's binding, because a `Worker.ref` cannot see a sibling this deploy creates.
+	const ai = yield* AiWorker
 	const env = yield* configuredEnv(stage)
 	return {
 		main: import.meta.url,
@@ -124,6 +129,7 @@ const props = Effect.gen(function* () {
 		env: {
 			...makeWorkerBindings({ stage }),
 			...(dbSchema && { MAPLE_DB_BRANCH: dbSchema.name }),
+			AI_WORKER: ai,
 			...env,
 			...devEnv,
 		},

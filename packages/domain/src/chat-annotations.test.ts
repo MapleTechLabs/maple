@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 
-import { parseAnnotations } from "./parse-annotations"
+import { parseAnnotations } from "./chat-annotations"
 
 const service = (name: string) => `{"name":"${name}","throughputRpm":660,"errorRate":45.45,"p99Ms":14425}`
 

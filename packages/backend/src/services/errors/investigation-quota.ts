@@ -33,12 +33,22 @@ export const DEFAULT_MAX_RUNS_PER_DAY = 250
 export const DEFAULT_MAX_PASSES_PER_DAY = 1000
 
 /**
- * The share of the pass budget only `high` and `critical` may spend.
+ * The share of the daily budget only `high` and `critical` may spend.
  *
  * Reserved rather than rationed per-hour on purpose: a token bucket would also
  * stop the overnight sweep from taking everything, but it would delay a genuine
  * 03:00 incident storm just as happily. What actually needs protecting is not
  * evenness across the clock, it is that severity outranks arrival order.
+ *
+ * It applies to BOTH ceilings. It used to guard passes only, which made it dead
+ * code wherever an org configured a run ceiling at all: {@link
+ * evaluateInvestigationQuota} tests runs first, and a configured run ceiling is
+ * always the smaller of the two, so the reserve was never reached. Measured on
+ * the internal org 2026-09-17..19. `maxRunsPerDay` 100 against a 700-pass
+ * effective ceiling, every refusal `dimension: "runs"`, the whole day's budget
+ * spent between 00:00 and 05:00 UTC on `medium` anomalies, and nothing left for
+ * anything that opened while anyone was awake. Exactly the failure the paragraph
+ * above describes, in the one dimension it did not cover.
  */
 export const RESERVED_PASS_FRACTION = 0.3
 
@@ -103,7 +113,7 @@ export interface InvestigationQuotaLimits {
  * not important enough for what is left, and raising the ceiling would only move
  * the same triage decision later in the day.
  */
-export type InvestigationQuotaDimension = "runs" | "passes" | "passes_reserved"
+export type InvestigationQuotaDimension = "runs" | "runs_reserved" | "passes" | "passes_reserved"
 
 export type InvestigationQuotaVerdict =
 	| { readonly kind: "allowed" }
@@ -116,15 +126,15 @@ export type InvestigationQuotaVerdict =
 	  }
 
 /**
- * The pass ceiling this severity may spend up to.
+ * The ceiling this severity may spend up to, in whichever unit is passed in.
  *
  * An unknown severity is treated as ordinary rather than as priority: the
  * reserve is worth nothing if anything that forgot to classify itself can reach
  * it, and an incident with no severity is far more often noise than an outage.
  */
-export const effectivePassLimit = (passLimit: number, severity: IssueSeverity | null | undefined): number => {
-	if (severity != null && PRIORITY_SEVERITIES.has(severity)) return passLimit
-	return Math.floor(passLimit * (1 - RESERVED_PASS_FRACTION))
+export const effectiveLimit = (limit: number, severity: IssueSeverity | null | undefined): number => {
+	if (severity != null && PRIORITY_SEVERITIES.has(severity)) return limit
+	return Math.floor(limit * (1 - RESERVED_PASS_FRACTION))
 }
 
 /**
@@ -149,10 +159,16 @@ export const evaluateInvestigationQuota = (input: {
 	const runLimit = input.limits?.maxRunsPerDay ?? DEFAULT_MAX_RUNS_PER_DAY
 	const passLimit = input.limits?.maxPassesPerDay ?? DEFAULT_MAX_PASSES_PER_DAY
 	const retryableAtMs = startOfUtcDay(input.nowMs) + 24 * 60 * 60 * 1000
-	if (input.usage.runs >= runLimit) {
-		return { kind: "exceeded", dimension: "runs", limit: runLimit, retryableAtMs }
+	const allowedRuns = effectiveLimit(runLimit, input.severity)
+	if (input.usage.runs >= allowedRuns) {
+		return {
+			kind: "exceeded",
+			dimension: allowedRuns < runLimit ? "runs_reserved" : "runs",
+			limit: allowedRuns,
+			retryableAtMs,
+		}
 	}
-	const allowedPasses = effectivePassLimit(passLimit, input.severity)
+	const allowedPasses = effectiveLimit(passLimit, input.severity)
 	if (input.usage.passes + input.passCount > allowedPasses) {
 		// Report the ceiling that actually applied, not the configured one — a log
 		// line saying "limit 1000" when the start was judged against 700 sends the

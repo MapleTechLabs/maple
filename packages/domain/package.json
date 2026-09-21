@@ -40,9 +40,12 @@
 		"./generated/clickhouse-schema": "./src/generated/clickhouse-schema.ts",
 		"./where-clause": "./src/where-clause.ts",
 		"./http/warehouse-errors": "./src/http/warehouse-errors.ts",
+		"./chat-annotations": "./src/chat-annotations.ts",
+		"./chat-chart-spec": "./src/chat-chart-spec.ts",
 		"./chat-preamble": "./src/chat-preamble.ts",
 		"./chat-session": "./src/chat-session.ts",
-		"./chat-session-stub": "./src/chat-session-stub.ts"
+		"./chat-session-stub": "./src/chat-session-stub.ts",
+		"./chat-transcript": "./src/chat-transcript.ts"
 	},
 	"scripts": {
 		"gen:anticipated-errors": "bun scripts/gen-anticipated-errors.ts",

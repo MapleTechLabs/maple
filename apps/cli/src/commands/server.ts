@@ -182,12 +182,12 @@ const readPid = (fs: FileSystem, pidPath: string): Effect.Effect<Option.Option<n
 		Effect.orElseSucceed(() => Option.none<number>()),
 	)
 
-const port = Flag.integer("port").pipe(
+const port = Flag.Int("port").pipe(
 	Flag.withDescription("Port for OTLP/HTTP ingest, the query API, and the bundled UI"),
 	Flag.withDefault(4318),
 )
 
-const host = Flag.string("host").pipe(
+const host = Flag.String("host").pipe(
 	Flag.withDescription(
 		"Local server host (env: MAPLE_LOCAL_BIND_HOST; non-loopback start exposes unauthenticated ingest and queries)",
 	),
@@ -195,7 +195,7 @@ const host = Flag.string("host").pipe(
 )
 
 const advertiseHostFlag = Flag.optional(
-	Flag.string("advertise-host").pipe(
+	Flag.String("advertise-host").pipe(
 		Flag.withDescription(
 			"Hostname or address printed for clients and the bundled UI (env: MAPLE_LOCAL_ADVERTISE_HOST)",
 		),
@@ -203,13 +203,13 @@ const advertiseHostFlag = Flag.optional(
 )
 
 const dataDirFlag = Flag.optional(
-	Flag.string("data-dir").pipe(
+	Flag.String("data-dir").pipe(
 		Flag.withDescription("Embedded ClickHouse data directory (default: ~/.maple/data)"),
 	),
 )
 
 const chdbConfigFileFlag = Flag.optional(
-	Flag.string("chdb-config-file").pipe(
+	Flag.String("chdb-config-file").pipe(
 		Flag.withDescription(
 			"ClickHouse config file for embedded chDB (default: a generated backups-enabled config beside the data dir)",
 		),
@@ -217,20 +217,20 @@ const chdbConfigFileFlag = Flag.optional(
 )
 
 const minimumRawTelemetryRetentionDaysFlag = Flag.optional(
-	Flag.integer("minimum-raw-telemetry-retention-days").pipe(
+	Flag.Int("minimum-raw-telemetry-retention-days").pipe(
 		Flag.withDescription(
 			"Persist a monotonic raw-table retention floor (minimum 90 days; survives reset and restore)",
 		),
 	),
 )
 
-const backgroundFlag = Flag.boolean("background").pipe(
+const backgroundFlag = Flag.Boolean("background").pipe(
 	Flag.withAlias("d"),
 	Flag.withDescription("Run the server detached (logs to ~/.maple/maple.log); stop with `maple stop`"),
 	Flag.withDefault(false),
 )
 
-const resetFlag = Flag.boolean("reset").pipe(
+const resetFlag = Flag.Boolean("reset").pipe(
 	Flag.withDescription(
 		"Wipe live chDB data before starting while preserving checkpoints — use after an incompatible upgrade",
 	),
@@ -240,31 +240,31 @@ const resetFlag = Flag.boolean("reset").pipe(
 /** Default refresh cadence. A crash costs at most this much telemetry. */
 const CHECKPOINT_INTERVAL_DEFAULT = "30m"
 
-const checkpointIntervalFlag = Flag.string("checkpoint-interval").pipe(
+const checkpointIntervalFlag = Flag.String("checkpoint-interval").pipe(
 	Flag.withDescription(
 		"How often to refresh the store's restore point while running (e.g. 45s, 30m, 2h; `off` to disable)",
 	),
 	Flag.withDefault(CHECKPOINT_INTERVAL_DEFAULT),
 )
 
-const onDirtyStoreFlag = Flag.choice("on-dirty-store", ["wipe", "fail", "restore-checkpoint"]).pipe(
+const onDirtyStoreFlag = Flag.Literals("on-dirty-store", ["wipe", "fail", "restore-checkpoint"]).pipe(
 	Flag.withDescription("Recovery policy when the local chDB store was not cleanly closed"),
 	Flag.withDefault("fail" as const),
 )
 
-const yesFlag = Flag.boolean("yes").pipe(
+const yesFlag = Flag.Boolean("yes").pipe(
 	Flag.withAlias("y"),
 	Flag.withDescription("Skip the confirmation prompt"),
 	Flag.withDefault(false),
 )
 
 const checkpointIdFlag = Flag.optional(
-	Flag.string("checkpoint-id").pipe(
+	Flag.String("checkpoint-id").pipe(
 		Flag.withDescription("Restore one immutable checkpoint ID instead of the selected current"),
 	),
 )
 
-const offlineFlag = Flag.boolean("offline").pipe(
+const offlineFlag = Flag.Boolean("offline").pipe(
 	Flag.withDescription(
 		"Use the UI bundled in this binary (served from the configured bind host) instead of local.maple.dev",
 	),

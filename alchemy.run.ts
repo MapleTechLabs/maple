@@ -308,7 +308,9 @@ export default Alchemy.Stack(
 
 		const localUi = isDevServer ? undefined : yield* LocalUi
 
-		const alerting = yield* Alerting
+		// Alerting binds maple-ai too: its ticks ask the incident classifier there
+		// before starting an investigation.
+		const alerting = yield* Effect.provideService(Alerting, AiWorker, ai)
 		yield* serveWorker("alerting", alerting)
 
 		// Dev only: the vite/astro dev servers, `cargo run`, and the scraper, each
@@ -354,7 +356,7 @@ export default Alchemy.Stack(
 			// plan time with the URLs above. On a PR preview this is the ALB's
 			// plain-HTTP hostname: the preview has no ingest domain, so there is
 			// no certificate and no CNAME.
-			ingestServiceUrl: ingest
+			ingestServiceUrl: ingest?.serviceUrl
 				? Output.mapEffect((serviceUrl: string | undefined) =>
 						Effect.sync(() => {
 							appendStepOutputs([`ingest_url=${serviceUrl ?? ""}`])
@@ -362,6 +364,9 @@ export default Alchemy.Stack(
 						}),
 					)(ingest.serviceUrl)
 				: undefined,
+			// Both fleets' ALBs while the Fargate → EC2 cutover runs them side by side.
+			ingestFargateServiceUrl: ingest?.fargateServiceUrl,
+			ingestEc2ServiceUrl: ingest?.ec2ServiceUrl,
 			ingestCollectorEndpoint: ingest?.collectorEndpoint,
 			// Same manual-DNS story as ingest: CNAME `domains.electric` at this ALB
 			// (proxied), and add the ACM validation record once.

@@ -7,13 +7,13 @@ import { printResult } from "../lib/output"
 import { resolveRangeChecked } from "../core/time"
 import * as Ops from "../core/operations"
 
-const source = Flag.choice("source", ["traces", "metrics", "services"]).pipe(
+const source = Flag.Literals("source", ["traces", "metrics", "services"]).pipe(
 	Flag.withDescription("Attribute source"),
 	Flag.withDefault("traces" as const),
 )
 
 const scope = Flag.optional(
-	Flag.choice("scope", ["span", "resource"]).pipe(
+	Flag.Literals("scope", ["span", "resource"]).pipe(
 		Flag.withDescription("Attribute scope for traces (default: span)"),
 	),
 )
@@ -44,7 +44,7 @@ const keys = Command.make("keys", {
 )
 
 const values = Command.make("values", {
-	key: Argument.string("key").pipe(Argument.withDescription("Attribute key to list values for")),
+	key: Argument.String("key").pipe(Argument.withDescription("Attribute key to list values for")),
 	source,
 	scope,
 	service: f.service,

@@ -26,7 +26,13 @@ const documents = [
 
 let stale = false
 for (const entry of documents) {
-	const document = Schema.toJsonSchemaDocument(Schema.toType(entry.schema))
+	// `onExcessProperty: "error"` keeps `additionalProperties: false`, which these v1
+	// documents have always published. rc.116 made the emitted value follow this option
+	// and defaults it to the decoder's behaviour, which would silently open every
+	// published object to unmodeled keys.
+	const document = Schema.toJsonSchemaDocument(Schema.toType(entry.schema), {
+		onExcessProperty: "error",
+	})
 	const schemaDocument =
 		Object.keys(document.definitions).length === 0
 			? { $schema: "https://json-schema.org/draft/2020-12/schema", $id: entry.id, ...document.schema }

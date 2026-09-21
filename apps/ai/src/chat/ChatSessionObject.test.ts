@@ -75,7 +75,9 @@ describe("the ChatSession Durable Object on alchemy's form", () => {
 			assert.isDefined(begun)
 			assert.strictEqual(yield* rpc.running(), true)
 			// The turn was scheduled on the object's own context, not the caller's.
-			assert.strictEqual(state.pending.length, 1)
+			// Two pieces of object work: the turn and the heartbeat alarm that keeps the object alive.
+			assert.strictEqual(state.pending.length, 2)
+			assert.lengthOf(state.alarms, 1)
 			yield* rpc.abort()
 			assert.strictEqual(yield* rpc.running(), false)
 		}),

@@ -199,6 +199,8 @@ struct DetailSkeleton: View {
 	/// A headline block above the tiles, for screens that lead with one
 	/// (incident and anomaly detail).
 	var leadsWithHeadline = false
+	/// A full-width chart card under the headline (service detail).
+	var leadsWithChart = false
 
 	var body: some View {
 		VStack(alignment: .leading, spacing: 24) {
@@ -207,6 +209,25 @@ struct DetailSkeleton: View {
 					SkeletonBlock(width: 200, height: 20)
 					SkeletonBlock(width: 260, height: 10, emphasis: 0.6)
 				}
+				.padding(.horizontal, 16)
+			}
+
+			if leadsWithChart {
+				VStack(alignment: .leading, spacing: 12) {
+					HStack(spacing: 6) {
+						ForEach(0..<3, id: \.self) { _ in
+							SkeletonBlock(width: 72, height: 24, emphasis: 0.6, radius: 12)
+						}
+					}
+					SkeletonBlock(width: 96, height: 24)
+					SkeletonBlock(height: 160, emphasis: 0.4)
+				}
+				.padding(12)
+				.background(Token.card, in: .rect(cornerRadius: Token.Radius.lg))
+				.overlay(
+					RoundedRectangle(cornerRadius: Token.Radius.lg)
+						.stroke(Token.border, lineWidth: Token.hairline)
+				)
 				.padding(.horizontal, 16)
 			}
 

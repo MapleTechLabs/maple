@@ -10,6 +10,9 @@ import type { MapleRegion } from "@maple/infra/aws"
 import {
 	COLLECTOR_DNS_LABEL,
 	COLLECTOR_OTLP_HTTP_PORT,
+	INGEST_EC2_INSTANCE_TYPE,
+	INGEST_EC2_TASK_SIZE,
+	parseIngestFleets,
 	resolveAwsRegion,
 	resolveAwsResourceName,
 	resolveCollectorEndpoint,
@@ -91,6 +94,38 @@ const EPHEMERAL_STORAGE_GIB = 60
  */
 const WAL_SHARDS = 4
 
+/** Where the gateway keeps its WAL inside the container (the binary's default `INGEST_QUEUE_DIR`). */
+const WAL_CONTAINER_DIR = "/var/lib/maple-ingest/wal"
+
+/** The EC2 fleet's instance-store NVMe, mounted by `ec2UserData`. */
+const WAL_HOST_DIR = "/mnt/wal"
+
+/**
+ * Boot script for an EC2 gateway host (ECS-optimized AL2023). It mounts the
+ * NVMe instance store at WAL_HOST_DIR and only THEN joins the cluster, so a
+ * host whose disk did not come up never gets a task — rather than silently
+ * writing the WAL onto its root EBS volume through the bind mount.
+ *
+ * The instance store is wiped when the instance stops or is replaced (a
+ * reboot keeps it, hence the fstab entry). The S3 tier is what survives that:
+ * sealed segments ship as they seal, and a successor claims a dead owner's.
+ */
+const ec2UserData = (clusterName: string) => `#!/bin/bash
+set -euxo pipefail
+
+disk=$(ls /dev/disk/by-id/nvme-Amazon_EC2_NVMe_Instance_Storage_* | grep -v -- -part | head -n1)
+mkfs.xfs -f "$disk"
+mkdir -p ${WAL_HOST_DIR}
+echo "UUID=$(blkid -s UUID -o value "$disk") ${WAL_HOST_DIR} xfs noatime,nofail 0 2" >> /etc/fstab
+mount ${WAL_HOST_DIR}
+
+cat >> /etc/ecs/ecs.config <<'CONFIG'
+ECS_CLUSTER=${clusterName}
+ECS_ENABLE_TASK_IAM_ROLE_NETWORK_HOST=true
+ECS_CONTAINER_STOP_TIMEOUT=120s
+CONFIG
+`
+
 export interface CreateMapleIngestOptions {
 	stage: MapleStage
 	domains: MapleDomains
@@ -150,17 +185,14 @@ const replayBlobWriterCredentials = (stage: MapleStage) =>
 	})
 
 /**
- * The Rust OTLP gateway (`apps/ingest`) on ECS Fargate.
+ * The Rust OTLP gateway (`apps/ingest`) on ECS: a Fargate fleet, an EC2 fleet,
+ * or both during the cutover between them (`parseIngestFleets`).
  *
- * Migrated off Railway. Fargate rather than EC2 because below ~16 vCPU the
- * fractional-vCPU pricing beats EC2 on-demand and there is no ASG or AMI to
- * own; the two are capacity providers on the same cluster, so crossing that
- * threshold later is a config change, not a rearchitecture. (EC2 would also not
- * buy the per-task CPU/memory metrics it is sometimes reached for: the free
- * cluster-level ECS metrics are `CPUReservation`/`MemoryReservation`, which
- * describe how much of a fleet YOU own is claimed. Per-task usage needs
- * Container Insights on either launch type.) Tasks run on ARM64 — see
- * `runtimePlatform` below.
+ * The EC2 fleet is for what Fargate cannot give: the WAL on a local NVMe
+ * instance store (per-frame fsync in microseconds, not milliseconds), and hosts
+ * of our own to run a monitoring agent on for host- and container-level
+ * resource metrics. It costs an AMI to keep current and roughly twice the
+ * compute bill at today's size. Tasks run on ARM64 — see `runtimePlatform`.
  *
  * One fleet per `MapleRegion`. A second instance is this factory called again
  * with `region: "eu"` and that instance's own TINYBIRD_* / MAPLE_PG_URL — the
@@ -181,6 +213,7 @@ export const createMapleIngest = ({ stage, domains, region }: CreateMapleIngestO
 		const taskSize = resolveIngestTaskSize(stage)
 		const scaling = resolveIngestScaling(stage)
 		const name = (base: string) => resolveAwsResourceName(base, stage, region)
+		const fleets = parseIngestFleets((yield* optionalPlain("MAPLE_INGEST_FLEETS")).MAPLE_INGEST_FLEETS)
 
 		// Public subnets with public IPs on the tasks, and NO NAT gateway. NAT
 		// bills $0.045/GB PROCESSED on top of egress, and this service exists to
@@ -246,8 +279,129 @@ export const createMapleIngest = ({ stage, domains, region }: CreateMapleIngestO
 			],
 		})
 
+		// ── EC2 fleet capacity ──────────────────────────────────────────────
+		// Host networking, not awsvpc: an awsvpc task on EC2 cannot take a public
+		// IP, and without one it has no egress short of the NAT gateway this VPC
+		// deliberately does not have (see `network`). A host-mode task uses the
+		// instance's public IP instead, so the ALB targets instances rather than
+		// ENIs — which alchemy's Service only does with the `usesAwsvpc` patch in
+		// `patches/alchemy@*.patch`.
+		const ec2Capacity = fleets.ec2
+			? yield* Effect.gen(function* () {
+					const clusterName = name("ingest")
+
+					// The instance's only listener is the gateway's port, from the ALB.
+					// Unlike the Fargate task group this one guards a public IP, so the
+					// same rule is what keeps plaintext OTLP from reaching a host directly.
+					const instanceSecurityGroup = yield* AWS.EC2.SecurityGroup("ingest-ec2-sg", {
+						vpcId: network.vpcId,
+						groupName: name("ingest-ec2"),
+						description: "Maple OTLP ingest gateway hosts",
+						ingress: [
+							{
+								ipProtocol: "tcp",
+								fromPort: INGEST_PORT,
+								toPort: INGEST_PORT,
+								referencedGroupId: albSecurityGroup.groupId,
+								description: "ALB to gateway",
+							},
+						],
+					})
+
+					// What the ECS agent needs to register, pull from ECR and ship logs,
+					// plus Session Manager in place of SSH (no key pair, no port 22).
+					// The gateway itself gets the TASK role through the agent's
+					// credentials endpoint, not this one.
+					const instanceRole = yield* AWS.IAM.Role("ingest-ec2-instance-role", {
+						roleName: name("ingest-ec2-instance"),
+						assumeRolePolicyDocument: {
+							Version: "2012-10-17",
+							Statement: [
+								{
+									Effect: "Allow",
+									Principal: { Service: "ec2.amazonaws.com" },
+									Action: ["sts:AssumeRole"],
+								},
+							],
+						},
+						managedPolicyArns: [
+							"arn:aws:iam::aws:policy/service-role/AmazonEC2ContainerServiceforEC2Role",
+							"arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore",
+						],
+						tags: { Service: "maple-ingest", Region: region },
+					})
+					const instanceProfile = yield* AWS.IAM.InstanceProfile("ingest-ec2-instance-profile", {
+						instanceProfileName: name("ingest-ec2-instance"),
+						roleName: instanceRole.roleName,
+					})
+
+					// The newest ECS-optimized AL2023 arm64 image. A new AMI only reaches
+					// instances launched after it, and every deploy launches some: host
+					// networking puts a new task on a fresh instance (the old task holds
+					// the port), so patching rides the deploys.
+					const imageId = AWS.EC2.getAmi({
+						owners: ["amazon"],
+						name: ["al2023-ami-ecs-hvm-*-kernel-6.1-arm64"],
+						architecture: "arm64",
+					}).ImageId.as<string>()
+
+					const launchTemplate = yield* AWS.AutoScaling.LaunchTemplate(
+						"ingest-ec2-launch-template",
+						{
+							launchTemplateName: name("ingest-ec2"),
+							imageId,
+							instanceType: INGEST_EC2_INSTANCE_TYPE,
+							securityGroupIds: [instanceSecurityGroup.groupId],
+							instanceProfileName: instanceProfile.instanceProfileName,
+							associatePublicIpAddress: true,
+							userData: ec2UserData(clusterName),
+							tags: { Service: "maple-ingest", Region: region },
+						},
+					)
+
+					// ECS managed scaling owns the instance count (the patch keeps a
+					// redeploy from resetting it to `minSize`); the bounds leave room for
+					// a rolling deploy to double the fleet while old and new tasks
+					// overlap on separate hosts.
+					const maxTasks = scaling?.max ?? resolveIngestDesiredCount(stage)
+					const autoScalingGroup = yield* AWS.AutoScaling.AutoScalingGroup("ingest-ec2-asg", {
+						autoScalingGroupName: name("ingest-ec2"),
+						launchTemplate,
+						subnetIds: network.publicSubnetIds,
+						minSize: 0,
+						maxSize: maxTasks * 2,
+						healthCheckType: "EC2",
+						healthCheckGracePeriod: "2 minutes",
+						// ECS stamps this tag when the capacity provider adopts the group,
+						// and alchemy converges tags to the declared set on every deploy.
+						tags: { Service: "maple-ingest", Region: region, AmazonECSManaged: "" },
+					})
+
+					// Managed draining rather than termination protection: a scale-in
+					// drains the host's task first, and the task's SIGTERM path is what
+					// empties the WAL (shutdown drain, then the S3 tier for what is left).
+					const capacityProvider = yield* AWS.ECS.CapacityProvider("ingest-ec2-capacity", {
+						name: name("ingest-ec2"),
+						autoScalingGroupArn: autoScalingGroup.autoScalingGroupArn,
+						managedScaling: {
+							status: "ENABLED",
+							targetCapacity: 100,
+							minimumScalingStepSize: 1,
+							maximumScalingStepSize: 2,
+							instanceWarmupPeriod: 120,
+						},
+						managedTerminationProtection: "DISABLED",
+						managedDraining: "ENABLED",
+						tags: { Service: "maple-ingest", Region: region },
+					})
+
+					return { clusterName, instanceSecurityGroup, capacityProvider }
+				})
+			: undefined
+
 		const cluster = yield* AWS.ECS.Cluster("ingest-cluster", {
 			clusterName: name("ingest"),
+			...(ec2Capacity ? { capacityProviders: [ec2Capacity.capacityProvider.name] } : undefined),
 			tags: { Service: "maple-ingest", Region: region },
 		})
 
@@ -333,6 +487,18 @@ export const createMapleIngest = ({ stage, domains, region }: CreateMapleIngestO
 								referencedGroupId: taskSecurityGroup.groupId,
 								description: "Ingest gateway to collector",
 							},
+							// A host-mode gateway dials from its instance's group.
+							...(ec2Capacity
+								? [
+										{
+											ipProtocol: "tcp",
+											fromPort: COLLECTOR_OTLP_HTTP_PORT,
+											toPort: COLLECTOR_OTLP_HTTP_PORT,
+											referencedGroupId: ec2Capacity.instanceSecurityGroup.groupId,
+											description: "Ingest gateway hosts to collector",
+										},
+									]
+								: []),
 						],
 					})
 
@@ -527,9 +693,10 @@ export const createMapleIngest = ({ stage, domains, region }: CreateMapleIngestO
 			},
 		})
 
-		const service = yield* AWS.ECS.Service("ingest", {
+		// Everything the two fleets share: image, secrets, env, load balancer and
+		// health checks. Each fleet below adds only how its tasks are placed.
+		const gateway = {
 			cluster,
-			serviceName: name("ingest"),
 			taskRoleManagedPolicyArns: [taskProtectionPolicy.policyArn, walSegmentsPolicy.policyArn],
 
 			// Alchemy creates a private ECR repository and pushes under a content-hash
@@ -561,14 +728,7 @@ export const createMapleIngest = ({ stage, domains, region }: CreateMapleIngestO
 			// repos); a local `alchemy deploy` from an Apple Silicon machine is also
 			// native. An x86 machine would emulate the source build — slow, but
 			// correct.
-			runtimePlatform: { cpuArchitecture: "ARM64", operatingSystemFamily: "LINUX" },
-			cpu: taskSize.cpu,
-			memory: taskSize.memory,
-			ephemeralStorage: { sizeInGiB: EPHEMERAL_STORAGE_GIB },
-			// SIGTERM → SIGKILL window (Fargate caps it at 120s). The binary's
-			// shutdown drain (`INGEST_SHUTDOWN_DRAIN_SECS`, default 90) must finish
-			// inside it, after axum has drained in-flight requests.
-			container: { stopTimeout: 120 },
+			runtimePlatform: { cpuArchitecture: "ARM64", operatingSystemFamily: "LINUX" } as const,
 
 			desiredCount: resolveIngestDesiredCount(stage),
 			// prd autoscales on CPU between this count and a burst ceiling; alchemy
@@ -577,8 +737,6 @@ export const createMapleIngest = ({ stage, domains, region }: CreateMapleIngestO
 			...(scaling ? { scaling } : undefined),
 			vpcId: network.vpcId,
 			subnets: network.publicSubnetIds,
-			securityGroups: [albSecurityGroup.groupId, taskSecurityGroup.groupId],
-			assignPublicIp: true,
 
 			public: true,
 			// `port` is the CONTAINER port (what the target group forwards to); the
@@ -597,9 +755,13 @@ export const createMapleIngest = ({ stage, domains, region }: CreateMapleIngestO
 			// dead task but not a wedged export lane or a dead Postgres pool. The
 			// grace period covers the startup Postgres probe, which exits the
 			// process on failure rather than serving degraded.
-			healthCheckGracePeriod: "60 seconds",
+			healthCheckGracePeriod: "60 seconds" as const,
+		// Old tasks stay scale-in protected while the WAL has backlog (up to 15
+		// minutes, `task_protection.rs`) and ECS will not stop them, so a healthy
+		// rollout can outlast alchemy's 10-minute default. It did on 2026-09-21.
+		deploymentStabilizationTimeout: "25 minutes" as const,
 
-			logging: { retention: "30 days" },
+			logging: { retention: "30 days" as const },
 
 			secrets: {
 				TINYBIRD_TOKEN: tinybirdToken.secretArn,
@@ -712,10 +874,58 @@ export const createMapleIngest = ({ stage, domains, region }: CreateMapleIngestO
 			} satisfies Record<string, string>,
 
 			tags: { Service: "maple-ingest", Region: region },
-		})
+		}
+
+		// SIGTERM → SIGKILL window (Fargate caps it at 120s). The binary's shutdown
+		// drain (`INGEST_SHUTDOWN_DRAIN_SECS`, default 90) must finish inside it,
+		// after axum has drained in-flight requests.
+		const stopTimeout = 120
+
+		const fargateService = fleets.fargate
+			? yield* AWS.ECS.Service("ingest", {
+					...gateway,
+					serviceName: name("ingest"),
+					cpu: taskSize.cpu,
+					memory: taskSize.memory,
+					ephemeralStorage: { sizeInGiB: EPHEMERAL_STORAGE_GIB },
+					container: { stopTimeout },
+					securityGroups: [albSecurityGroup.groupId, taskSecurityGroup.groupId],
+					assignPublicIp: true,
+				})
+			: undefined
+
+		// One task per host, bound to the host's port and its NVMe. `securityGroups`
+		// reaches only the ALB here: a host-mode task has no ENI, so the instance's
+		// own group (`ingest-ec2-sg`) is what admits the ALB. A rolling deploy
+		// cannot start the new task beside the old one (the port is taken), so
+		// managed scaling brings up a fresh host for it and drains the old one.
+		const ec2Service = ec2Capacity
+			? yield* AWS.ECS.Service("ingest-ec2", {
+					...gateway,
+					serviceName: name("ingest-ec2"),
+					networkMode: "host",
+					requiresCompatibilities: ["EC2"],
+					capacityProviderStrategy: [
+						{ capacityProvider: ec2Capacity.capacityProvider.name, weight: 1 },
+					],
+					placementConstraints: [{ type: "distinctInstance" }],
+					cpu: INGEST_EC2_TASK_SIZE.cpu,
+					memory: INGEST_EC2_TASK_SIZE.memory,
+					volumes: [{ name: "wal", host: { sourcePath: WAL_HOST_DIR } }],
+					container: {
+						stopTimeout,
+						mountPoints: [{ sourceVolume: "wal", containerPath: WAL_CONTAINER_DIR }],
+					},
+					securityGroups: [albSecurityGroup.groupId],
+				})
+			: undefined
 
 		return {
-			serviceUrl: service.url,
+			// The fleet `domains.ingest` should point at: Fargate until it is
+			// removed, EC2 after. Both ALB hostnames are returned for the cutover.
+			serviceUrl: (fargateService ?? ec2Service)?.url,
+			fargateServiceUrl: fargateService?.url,
+			ec2ServiceUrl: ec2Service?.url,
 			// Shared with `apps/electric`, which runs in THIS VPC rather than one of
 			// its own. Two `AWS.EC2.Network`s in one stack fight over the internet
 			// gateway: under `--adopt` the second one's IGW resolves to this one's
