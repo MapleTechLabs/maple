@@ -180,6 +180,22 @@ const rowsForSql = (sql: string): ReadonlyArray<Record<string, unknown>> => {
 	if (sql.includes("AS environment")) {
 		return [{ environment: "production" }, { environment: "staging" }]
 	}
+	if (sql.includes("bSpanName") || sql.includes("service_operations_minutely")) {
+		return [
+			{
+				spanName: "GET /checkout",
+				spanCount: "8",
+				estimatedSpanCount: "16",
+				errorCount: "2",
+				estimatedErrorCount: "4",
+				errorRate: "0.25",
+				avgDurationMs: "20",
+				p50DurationMs: "12",
+				p95DurationMs: "38",
+				p99DurationMs: "49",
+			},
+		]
+	}
 	if (sql.includes("FROM service_overview_spans")) {
 		return [
 			{
@@ -232,6 +248,34 @@ const queryEngineStub = {
 						kind: "breakdown",
 						source: request.query.source,
 						data: [{ name: "api", value: 42 }],
+					},
+				}),
+			)
+		}
+		if (
+			request.query.kind === "timeseries" &&
+			"allMetrics" in request.query &&
+			request.query.allMetrics
+		) {
+			return Effect.succeed(
+				new QueryEngineExecuteResponse({
+					result: {
+						kind: "timeseries",
+						source: request.query.source,
+						data: [
+							{
+								bucket: "2026-07-15 12:00:00",
+								series: {
+									count: 10,
+									estimated_span_count: 20,
+									error_rate: 0.2,
+									p50_duration: 10,
+									p95_duration: 40,
+									p99_duration: 50,
+									apdex: 0.9,
+								},
+							},
+						],
 					},
 				}),
 			)
@@ -406,6 +450,52 @@ describe("v2 telemetry reads over HTTP", () => {
 		})
 		const service = await harness.request("GET", `/v2/services/api?${windowQuery}`, key.secret)
 		expect(service.status).toBe(200)
+
+		// One round-trip for the phone's service detail: the same summary row the
+		// retrieve returns, every golden signal per bucket, and the busiest
+		// operations — with the bucket the caller asked for echoed back.
+		const overview = await harness.request(
+			"GET",
+			`/v2/services/api/overview?${windowQuery}&bucket_seconds=120`,
+			key.secret,
+		)
+		expect(overview.status, JSON.stringify(overview.body)).toBe(200)
+		expect(overview.body).toMatchObject({
+			object: "service_overview",
+			service: { name: "api", span_count: 10, baseline_p95_latency_ms: 35 },
+			start_time: START,
+			end_time: END,
+			bucket_seconds: 120,
+		})
+		expect(overview.body.points).toEqual([
+			{
+				timestamp: START,
+				span_count: 10,
+				estimated_span_count: 20,
+				error_rate: 0.2,
+				p50_latency_ms: 10,
+				p95_latency_ms: 40,
+				p99_latency_ms: 50,
+			},
+		])
+		expect(overview.body.operations).toEqual([
+			{
+				name: "GET /checkout",
+				span_count: 8,
+				estimated_span_count: 16,
+				error_count: 2,
+				error_rate: 0.25,
+				p50_latency_ms: 12,
+				p95_latency_ms: 38,
+				p99_latency_ms: 49,
+			},
+		])
+		const tooManyBuckets = await harness.request(
+			"GET",
+			`/v2/services/api/overview?${windowQuery}&bucket_seconds=1`,
+			key.secret,
+		)
+		expect(tooManyBuckets.status).toBe(400)
 
 		const serviceMap = await harness.request("GET", `/v2/service_map?${windowQuery}`, key.secret)
 		expect(serviceMap.status).toBe(200)

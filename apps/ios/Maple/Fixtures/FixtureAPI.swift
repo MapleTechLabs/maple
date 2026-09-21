@@ -100,6 +100,62 @@ struct FixtureAPI: MapleAPI {
 		return service(seed, window: window)
 	}
 
+	func serviceOverview(_ request: ServiceOverviewRequest) async throws -> ServiceOverview {
+		try await pause()
+		guard let seed = Self.seeds.first(where: { $0.name == request.serviceName }) else {
+			throw MapleAPIError.decoding(NSError(domain: "fixtures", code: 404))
+		}
+		let bucket = TimeInterval(request.resolvedBucketSeconds)
+		let count = max(2, Int(request.window.end.timeIntervalSince(request.window.start) / bucket))
+		let incident = seed.name == "checkout-api" || seed.name == "search"
+		let points = (0..<count).map { index -> ServiceOverviewPoint in
+			let progress = Double(index) / Double(max(1, count - 1))
+			let ramp = incident ? max(0, (progress - 0.55) / 0.3) : 0
+			let wobble = sin(Double(index) * 0.9) * 0.08 + 1
+			let daily = 1 + 0.25 * sin(progress * .pi * 2 - .pi / 2)
+			let spans = seed.throughput * bucket * daily * (incident ? 1 - 0.3 * min(1, ramp) : wobble)
+			return ServiceOverviewPoint(
+				errorRate: incident ? min(0.11, 0.004 + 0.1 * min(1, ramp)) : seed.errorRate * wobble,
+				estimatedSpanCount: spans.rounded(),
+				p50LatencyMs: seed.p50 * wobble,
+				p95LatencyMs: seed.p95 * (incident ? 0.55 + 0.6 * min(1, ramp) : wobble),
+				p99LatencyMs: seed.p99 * (incident ? 0.6 + 0.7 * min(1, ramp) : wobble),
+				spanCount: spans.rounded(),
+				timestamp: ResolvedTimeWindow.format(request.window.start.addingTimeInterval(bucket * Double(index)))
+			)
+		}
+		let operations: [(String, Double, Double, Double)] = [
+			("POST /checkout/authorize", 0.34, 0.09, 2.4),
+			("GET /cart", 0.28, 0.004, 0.6),
+			("payments.authorize", 0.14, 0.11, 3.1),
+			("db.query SELECT carts", 0.12, 0.0002, 0.15),
+			("GET /cart/{id}/items", 0.07, 0.001, 0.5),
+			("cache.get", 0.05, 0, 0.02),
+		]
+		let windowSpans = seed.throughput * request.window.end.timeIntervalSince(request.window.start)
+		return ServiceOverview(
+			bucketSeconds: request.resolvedBucketSeconds,
+			endTime: request.window.endTime,
+			object: .serviceOverview,
+			operations: operations.map { name, share, errorRate, latencyScale in
+				let spans = (windowSpans * share).rounded()
+				return ServiceOperation(
+					errorCount: (spans * errorRate).rounded(),
+					errorRate: errorRate,
+					estimatedSpanCount: spans,
+					name: name,
+					p50LatencyMs: seed.p50 * latencyScale,
+					p95LatencyMs: seed.p95 * latencyScale,
+					p99LatencyMs: seed.p99 * latencyScale,
+					spanCount: spans
+				)
+			},
+			points: points,
+			service: service(seed, window: request.window),
+			startTime: request.window.startTime
+		)
+	}
+
 	// MARK: Issues
 
 	private var issues: [ErrorIssue] {

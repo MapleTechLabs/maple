@@ -9,12 +9,12 @@ import { MAPLE_VERSION } from "../version"
 // global `--version` flag (prints the binary version and exits), so a
 // command-level `--version` would be shadowed and never reach the handler.
 const tagFlag = Flag.optional(
-	Flag.string("tag").pipe(
+	Flag.String("tag").pipe(
 		Flag.withDescription("Install a specific release tag instead of the latest (e.g. v0.6.0)"),
 	),
 )
 
-const checkFlag = Flag.boolean("check").pipe(
+const checkFlag = Flag.Boolean("check").pipe(
 	Flag.withDescription("Only report whether a newer version is available; don't install"),
 	Flag.withDefault(false),
 )

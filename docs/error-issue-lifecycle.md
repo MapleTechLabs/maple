@@ -111,6 +111,29 @@ Off by default; an admin opts in per org (`ai_triage_settings`). When an inciden
 or regression — `maybeEnqueueTriage` starts an investigation, subject to a daily budget in runs and
 in model passes (`maxRunsPerDay`, `maxPassesPerDay`; one investigation is one pass).
 
+Three gates stand between an open incident and that pass, cheapest first, and every refusal lands
+on the `maybeStartInvestigation` span as `maple.investigation.start_result`:
+
+1. **The issue's own history** (`evaluateIssueGate`, no model). An issue past `triage`/`regressed`
+   is somebody's already; one diagnosed within the last week (a day for alerts and anomalies) is
+   answered already, unless the incident is a `regression`; a pass still under way answers for
+   this flare-up too. This is where the repeats die: an error incident auto-resolves after thirty
+   quiet minutes and the next occurrence opens a fresh one, so an issue firing on a retry cadence
+   opened 83 incidents in five days and was diagnosed, identically, on fifteen of them.
+2. **The decision model** (`IncidentClassifier` → maple-ai's `POST /internal/triage/classify`,
+   Jev over OpenRouter). It answers what the incident is (`investigate` / `monitor` / `noise`),
+   how bad, whether a customer noticed, and whether one of the service's recent diagnoses already
+   explains it. `evaluateIncidentGate` skips confident noise (`noise`) and confident matches
+   (`covered_by_prior`), never anything the detector called `high` or `critical`, and only ever
+   raises the severity the run is seeded with. A skipped noise incident labels its issue's
+   severity if nobody had, without escalating. No verdict — no binding, no token, a failed or
+   slow call — always reads as investigate; a broken classifier must not become a policy of
+   dropping incidents.
+3. **The daily budget**, judged by the severity the classifier settled on, so the reserve for
+   `high`/`critical` is reachable by an incident the detector left unclassified.
+
+A manual start (`force`) passes the first two; the quota still applies.
+
 The run is one turn of the investigate agent on the investigation's `ChatSession` Durable Object:
 it gathers the evidence, tests the rival explanations itself, and closes on `submit_diagnosis`. A
 pass that stops in prose or dies on a model error gets one close-out turn over its own tool
@@ -186,6 +209,7 @@ loop in verification without a human ever seeing it.
 | Transitions, leases, timeline events    | `packages/backend/src/services/errors/ErrorIssueWorkflowService.ts`   |
 | The errors tick (incidents, regression) | `packages/backend/src/services/errors/error-tick-persistence.ts`      |
 | Starting an investigation               | `packages/backend/src/services/errors/ai-triage-enqueue.ts`           |
+| The gates in front of it                | `investigation-gate.ts`, `IncidentClassifier.ts`, `apps/ai/src/triage/` |
 | The investigate agent and its close-out | `apps/ai/src/chat/turn-runner.ts`, `apps/ai/src/chat/prompts.ts`      |
 | Writing a diagnosis back                | `packages/backend/src/services/errors/apply-diagnosis.ts`             |
 | PR links and verification windows       | `packages/backend/src/services/errors/IssueFixVerificationService.ts` |

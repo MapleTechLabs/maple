@@ -40,6 +40,7 @@ import {
 	type SpanMessage,
 	type SpanMessagePart,
 } from "./span-detail"
+import { countTurnUsage, type SessionTurnUsage } from "./session-summary"
 
 /* -------------------------------------------------------------------------- */
 /* Rows                                                                       */
@@ -108,6 +109,9 @@ export type TranscriptRow =
 			/** AI spans the turn actually renders — deduped, app spans excluded. */
 			readonly aiSpanCount: number
 			readonly toolNames: readonly string[]
+			/** The turn's tokens and cost, summed here because the calls beneath it
+			 *  no longer print their own. */
+			readonly usage: SessionTurnUsage
 	  })
 	/** A turn the transcript has nothing to say about, holding its ordinal open. */
 	| (RowBase & { readonly kind: "empty-turn"; readonly turn: SessionTurn })
@@ -429,6 +433,7 @@ function buildTurn(
 		toolNames: distinct(
 			toolSpans.map((span) => span.genAi.toolName).filter((name): name is string => name !== undefined),
 		),
+		usage: countTurnUsage(turn, input.turns),
 	}
 
 	// `spanMessages` re-walks the captured JSON on every call and a turn asks for

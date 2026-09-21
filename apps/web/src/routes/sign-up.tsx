@@ -3,7 +3,7 @@ import { Navigate, createFileRoute } from "@tanstack/react-router"
 import { Schema } from "effect"
 import { validateInternalRedirect } from "@maple/ui/lib/sanitizers"
 import { isClerkAuthEnabled } from "@/lib/services/common/auth-mode"
-import { AuthLayout } from "@/components/layout/auth-layout"
+import { AccountLayout } from "@/components/layout/account-layout"
 import { clerkAuthCardAppearance } from "@/lib/clerk-appearance"
 
 const SignUpSearch = Schema.Struct({
@@ -26,8 +26,8 @@ function SignUpPage() {
 	}
 
 	return (
-		<AuthLayout>
+		<AccountLayout>
 			<SignUp appearance={clerkAuthCardAppearance} forceRedirectUrl={target ?? "/quick-start"} />
-		</AuthLayout>
+		</AccountLayout>
 	)
 }

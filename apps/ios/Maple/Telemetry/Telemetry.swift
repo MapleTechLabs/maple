@@ -126,6 +126,8 @@ enum Telemetry {
 		static let environmentChanged = "environment.changed"
 		static let screenRefreshed = "screen.refreshed"
 		static let issuesFiltered = "issues.filtered"
+		static let serviceSignalChanged = "service.signal.changed"
+		static let serviceOperationsSorted = "service.operations.sorted"
 		static let notificationsPrompted = "notifications.prompted"
 		static let pushOpened = "push.opened"
 		static let widgetOpened = "widget.opened"

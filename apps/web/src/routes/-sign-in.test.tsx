@@ -32,7 +32,7 @@ describe("SelfHostedSignInPage", () => {
 
 		render(<SignInRoute.SelfHostedSignInPage />)
 
-		fireEvent.change(screen.getByPlaceholderText("Root password"), {
+		fireEvent.change(screen.getByLabelText("Root password"), {
 			target: { value: "root-password" },
 		})
 		fireEvent.submit(screen.getByRole("button", { name: "Sign in" }).closest("form")!)
@@ -57,7 +57,7 @@ describe("SelfHostedSignInPage", () => {
 
 		render(<SignInRoute.SelfHostedSignInPage />)
 
-		fireEvent.change(screen.getByPlaceholderText("Root password"), {
+		fireEvent.change(screen.getByLabelText("Root password"), {
 			target: { value: "wrong-password" },
 		})
 		fireEvent.submit(screen.getByRole("button", { name: "Sign in" }).closest("form")!)

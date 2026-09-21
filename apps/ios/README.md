@@ -5,8 +5,13 @@ in the order the questions get asked — see [`PRODUCT.md`](PRODUCT.md):
 
 - **Home** — is anything wrong right now? Status headline, open alerts with
   the rule's own last hour, services needing attention, what's new in 24h.
-- **Services** — the list, and a detail with golden-signal sparklines, scoped
-  alerts, issues, and top failing/slowest operations.
+- **Services** — the list, and a detail that leads with a health verdict and
+  its reason, one full-width scrubbable chart per golden signal (throughput,
+  errors, latency percentiles), window aggregates, scoped alerts, the busiest
+  operations re-rankable by failures / p95 / volume, and issues. It paints from
+  one request, `GET /v2/services/{name}/overview`, which composes the summary,
+  an all-signal timeseries and the operations server-side; alerts and issues
+  arrive in a second pass.
 - **Alerts** — the triage hub: incidents (with a "why" detail: what the rule
   saw, what changed on the service, likely cause, timeline), error issues,
   anomalies.

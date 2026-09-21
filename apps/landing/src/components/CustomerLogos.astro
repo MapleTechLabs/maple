@@ -20,7 +20,7 @@ import HazelLogo from "./icons/HazelLogo.astro";
 import SakuraLogo from "./icons/SakuraLogo.astro";
 import GymscoreLogo from "./icons/GymscoreLogo.astro";
 import SuperwallLogo from "./icons/SuperwallLogo.astro";
-import HypenLogo from "./icons/HypenLogo.astro";
+import EffectLogomark from "./icons/EffectLogomark.astro";
 
 interface Props {
 	variant?: "section" | "rail";
@@ -35,7 +35,7 @@ const LOGOS: Record<string, typeof HazelLogo>  = {
 	sakura: SakuraLogo,
 	gymscore: GymscoreLogo,
 	superwall: SuperwallLogo,
-	hypen: HypenLogo,
+	effect: EffectLogomark,
 } satisfies Record<string, typeof HazelLogo>;
 
 const entries = (await getCollection("logos"))
@@ -64,7 +64,7 @@ const belt = [...oneCopy, ...oneCopy];
 				// alone is ambiguous at this size for the single-letter brands.
 				const inner = (
 					<>
-						<Logo class="logo-cell__mark h-5 w-auto" />
+						<Logo class="logo-cell__mark h-6 w-auto" />
 						<span class="font-display text-sm font-semibold tracking-[-0.01em]">{logo.name}</span>
 					</>
 				);
@@ -74,12 +74,12 @@ const belt = [...oneCopy, ...oneCopy];
 						target="_blank"
 						rel="noopener noreferrer"
 						aria-label={logo.name}
-						class="inline-flex items-center gap-2 text-fg-muted transition-colors hover:text-fg"
+						class="inline-flex items-center gap-3 text-fg-muted transition-colors hover:text-fg"
 					>
 						{inner}
 					</a>
 				) : (
-					<span class="inline-flex items-center gap-2 text-fg-muted">{inner}</span>
+					<span class="inline-flex items-center gap-3 text-fg-muted">{inner}</span>
 				);
 			})}
 		</div>

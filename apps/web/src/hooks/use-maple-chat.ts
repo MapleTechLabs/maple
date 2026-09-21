@@ -384,13 +384,10 @@ function settleToolCall(message: UIMessage, event: Extract<ChatEvent, { type: "t
 }
 
 /**
- * The sub-agent task an event belongs to, if any. `user-message` and `compaction` are the two
- * members that never carry one; every other event is task-scoped exactly when `task` is set.
+ * The sub-agent task an event belongs to, if any. `user-message` is the one member that never
+ * carries one; every other event is task-scoped exactly when `task` is set.
  */
-const taskOf = ChatEvent.matchOrElse(
-	{ "user-message": () => undefined, compaction: () => undefined },
-	(event) => event.task,
-)
+const taskOf = ChatEvent.matchOrElse({ "user-message": () => undefined }, (event) => event.task)
 
 /**
  * Fold one live `ChatEvent` into the transcript. `user-message` is a no-op: the
@@ -399,40 +396,31 @@ const taskOf = ChatEvent.matchOrElse(
  * message that's already there — either way there's nothing new to show.
  */
 function applyChatEvent(messages: UIMessage[], event: ChatEvent): UIMessage[] {
-	return ChatEvent.matchOrElse(
-		event,
-		{
-			"user-message": () => messages,
-			// Model-facing bookkeeping. Only the server's `toLlmMessages` reads a compaction; the
-			// transcript the user scrolls back through is deliberately left intact.
-			compaction: () => messages,
-		},
-		(event) => {
-			// A sub-agent's event belongs to the `task` part that started it, never to this transcript.
-			const task = event.task
-			if (task !== undefined) return applyTaskEvent(messages, event, task)
-			switch (event.type) {
-				case "turn-start":
-					return ensureAssistantMessage(messages, event.messageId)
-				case "text-delta": {
-					const withMessage = ensureAssistantMessage(messages, event.messageId)
-					return updateMessage(withMessage, event.messageId, (m) => appendTextDelta(m, event.text))
-				}
-				case "tool-call": {
-					const withMessage = ensureAssistantMessage(messages, event.messageId)
-					return updateMessage(withMessage, event.messageId, (m) => addToolCall(m, event))
-				}
-				case "tool-result":
-					return updateMessage(settleTaskResult(messages, event), event.messageId, (m) =>
-						settleToolCall(m, event),
-					)
-				case "turn-retry":
-					return updateMessage(messages, event.messageId, (m) => retractText(m, event.retractChars))
-				case "turn-end":
-					return updateMessage(messages, event.messageId, finalizeStreamingText)
+	return ChatEvent.matchOrElse(event, { "user-message": () => messages }, (event) => {
+		// A sub-agent's event belongs to the `task` part that started it, never to this transcript.
+		const task = event.task
+		if (task !== undefined) return applyTaskEvent(messages, event, task)
+		switch (event.type) {
+			case "turn-start":
+				return ensureAssistantMessage(messages, event.messageId)
+			case "text-delta": {
+				const withMessage = ensureAssistantMessage(messages, event.messageId)
+				return updateMessage(withMessage, event.messageId, (m) => appendTextDelta(m, event.text))
 			}
-		},
-	)
+			case "tool-call": {
+				const withMessage = ensureAssistantMessage(messages, event.messageId)
+				return updateMessage(withMessage, event.messageId, (m) => addToolCall(m, event))
+			}
+			case "tool-result":
+				return updateMessage(settleTaskResult(messages, event), event.messageId, (m) =>
+					settleToolCall(m, event),
+				)
+			case "turn-retry":
+				return updateMessage(messages, event.messageId, (m) => retractText(m, event.retractChars))
+			case "turn-end":
+				return updateMessage(messages, event.messageId, finalizeStreamingText)
+		}
+	})
 }
 
 /** Consecutive-failure budget for a dropped `events` stream before surfacing an error. */

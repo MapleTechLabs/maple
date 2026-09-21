@@ -1,7 +1,8 @@
-import { afterAll, assert, describe, it } from "@effect/vitest"
-import { createMaplePgPool } from "@maple/db/client"
+import { assert, describe, it } from "@effect/vitest"
+import { makeMaplePgClient } from "@maple/db/client"
 import { sql } from "drizzle-orm"
 import { Effect, Tracer } from "effect"
+import * as Reactivity from "effect/unstable/reactivity/Reactivity"
 import { forkRequestScoped } from "@maple/backend/platform/fork-request-scoped"
 import {
 	makePgConnectionScope,
@@ -14,7 +15,7 @@ import { rawRows } from "@maple/backend/platform/raw-rows"
 
 /**
  * These assertions are the reason this suite exists. The unit tests replace the
- * pool with a fake, so they can only prove the scope calls `openPool` once —
+ * client with a fake, so they can only prove the scope calls `openClient` once —
  * not that one real TCP connection serves the whole request. Here the proof
  * comes from the server: a separate admin connection counts backends in
  * `pg_stat_activity`.
@@ -46,27 +47,36 @@ const dbSpans = (spans: ReadonlyArray<Tracer.NativeSpan>) =>
 
 /**
  * `describe.skipIf` still evaluates the body, so the setup below needs a URL it
- * can parse even when the suite is skipped. Constructing a node-postgres pool
- * dials nothing, so the placeholder never reaches the network.
+ * can parse even when the suite is skipped. Nothing below dials until a test
+ * runs, so the placeholder never reaches the network.
  */
 const PLACEHOLDER_URL = "postgres://skipped:skipped@127.0.0.1:1/skipped"
 
 describe.skipIf(PG_URL === undefined)("PgConnectionScope against a real Postgres", () => {
 	const url = PG_URL ?? PLACEHOLDER_URL
 	const { admin: adminUrl, database } = adminUrlFor(url)
-	const adminPool = createMaplePgPool(adminUrl, { maxConnections: 1, connectTimeoutSeconds: 10 })
-
-	afterAll(async () => {
-		await adminPool.end().catch(() => undefined)
-	})
-
-	/** Backends currently open against the test database, excluding the admin's own. */
+	/**
+	 * Backends currently open against the test database, excluding the admin's own.
+	 *
+	 * One admin connection per count, opened and closed around the query: it
+	 * targets the `postgres` database, so it is never one of the backends being
+	 * counted, and holding it open across the suite would be a second long-lived
+	 * connection to reason about in a suite about connection lifetime.
+	 */
 	const backends = async (): Promise<number> => {
-		const result = await adminPool.query<{ n: number }>(
-			"select count(*)::int as n from pg_stat_activity where datname = $1",
-			[database],
+		const rows = await Effect.runPromise(
+			Effect.scoped(
+				Effect.flatMap(
+					makeMaplePgClient(adminUrl, { maxConnections: 1, connectTimeoutSeconds: 10 }),
+					(client) =>
+						client.unsafe<{ n: number }>(
+							"select count(*)::int as n from pg_stat_activity where datname = $1",
+							[database],
+						),
+				),
+			).pipe(Effect.provide(Reactivity.layer)),
 		)
-		return result.rows[0]?.n ?? 0
+		return rows[0]?.n ?? 0
 	}
 
 	/**
@@ -242,14 +252,13 @@ describe.skipIf(PG_URL === undefined)("PgConnectionScope against a real Postgres
 	})
 
 	it("lets a statement wait for a busy pool longer than the dial bound", async () => {
-		// pg-pool applies a POOL-level `connectionTimeoutMillis` to waiting for a free
-		// client too, so with the bound there a fan-out wider than the pool failed as
+		// A pool-level connect bound would fail a fan-out wider than the pool as
 		// "timeout exceeded when trying to connect" against a healthy server. The
-		// bound lives on each client's dial instead; the queue waits.
+		// driver bounds each connection's dial instead; the queue waits.
 		const dialBoundSeconds = 0.3
 		const scope = makePgConnectionScope(url, undefined, {
-			openPool: (options) =>
-				createMaplePgPool(url, {
+			openClient: (options) =>
+				makeMaplePgClient(url, {
 					...options,
 					maxConnections: 1,
 					connectTimeoutSeconds: dialBoundSeconds,
@@ -395,15 +404,15 @@ describe.skipIf(PG_URL === undefined)("PgConnectionScope against a real Postgres
 		// unreachable origin should cost one connection attempt's worth of outbound
 		// slot, not N.
 		//
-		// Real pools, counted: `openPool` wraps the production constructor rather
+		// Real clients, counted: `openClient` wraps the production constructor rather
 		// than replacing it, so this measures the same code path the unit test fakes.
 		let creations = 0
 		const scope = makePgConnectionScope("postgres://maple:maple@127.0.0.1:1/never", undefined, {
 			// The seam forwards the production options rather than inventing its own,
-			// so this measures the same pool the request path builds.
-			openPool: (options) => {
+			// so this measures the same client the request path builds.
+			openClient: (options) => {
 				creations += 1
-				return createMaplePgPool("postgres://maple:maple@127.0.0.1:1/never", options)
+				return makeMaplePgClient("postgres://maple:maple@127.0.0.1:1/never", options)
 			},
 		})
 

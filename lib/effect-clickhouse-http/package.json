@@ -21,6 +21,6 @@
 		"vitest": "catalog:"
 	},
 	"peerDependencies": {
-		"effect": ">=4.0.0-rc.112 <5"
+		"effect": ">=4.0.0-rc.116 <5"
 	}
 }

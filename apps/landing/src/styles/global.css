@@ -865,7 +865,9 @@
 .logo-cell {
 	display: inline-flex;
 	align-items: center;
-	gap: 14px;
+	/* 16px = half the 32px mark height: the clear space Effect's brand
+	   guidelines require around their logomark, applied to every cell. */
+	gap: 16px;
 	padding: 0 clamp(30px, 4.5vw, 60px);
 	white-space: nowrap;
 	color: var(--muted-foreground);
@@ -1272,6 +1274,45 @@
 .docs-content .code-copy:hover {
 	color: var(--primary);
 	border-color: color-mix(in oklab, var(--primary) 50%, var(--border));
+}
+
+/* Shiki stamps the fence's language on the block. Show it where the copy
+   button will appear, and hand that corner over on hover so the two never
+   sit side by side. Touch devices keep the button visible, so they skip the label. */
+.docs-content
+	pre[data-language]:not(
+		[data-language="plaintext"],
+		[data-language="text"],
+		[data-language="txt"]
+	)::before {
+	content: attr(data-language);
+	position: absolute;
+	top: 0.5rem;
+	right: 0.5rem;
+	padding: 3px 8px;
+	border: 1px solid transparent;
+	border-radius: 5px;
+	font-family: var(--font-mono, ui-monospace, monospace);
+	font-size: 10px;
+	line-height: normal;
+	letter-spacing: 0.08em;
+	text-transform: uppercase;
+	color: color-mix(in oklab, var(--muted-foreground) 70%, transparent);
+	background: color-mix(in oklab, var(--bg-elevated) 85%, var(--background));
+	pointer-events: none;
+	transition: opacity 150ms ease;
+}
+
+.docs-content pre:hover::before,
+.docs-content pre:focus-within::before,
+.docs-content pre:has(.code-copy.is-done)::before {
+	opacity: 0;
+}
+
+@media (hover: none) {
+	.docs-content pre[data-language]::before {
+		display: none;
+	}
 }
 
 .docs-content .code-copy.is-done {

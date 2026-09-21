@@ -43,6 +43,7 @@ import { CH, parseWarehouseDateTime, formatWarehouseDateTime } from "@maple/quer
 import { Cause, Clock, Context, Effect, Layer, Option, Ref, Schema } from "effect"
 import type { TenantContext } from "@maple/backend/services/auth/AuthService"
 import { maybeEnqueueTriage } from "@maple/backend/services/errors/ai-triage-enqueue"
+import { STALE_MS, sweepAbandonedInvestigations } from "@maple/backend/services/errors/investigation-stale"
 import {
 	isErrorTickClaimLost,
 	persistErrorTickWindow,
@@ -210,6 +211,8 @@ export interface ErrorsServiceApi {
 			readonly issuesDeleted: number
 			readonly leasesExpired: number
 			readonly retentionRan: boolean
+			/** Runs whose agent pass never came back, failed by this tick. Normally zero. */
+			readonly investigationsAbandoned: number
 		},
 		ErrorPersistenceError
 	>
@@ -1593,10 +1596,21 @@ const make: Effect.Effect<
 		// rescheduled with backoff and a future tick retries it.
 		yield* processNotificationOutbox()
 
+		// One statement for every org, outside the per-org loop: an abandoned run is
+		// rare and the matching set is almost always empty, so paying a round-trip per
+		// org to discover that would cost more than the sweep saves.
+		const investigationsAbandoned = yield* dbExecute((db) => sweepAbandonedInvestigations(db, nowMs))
+		if (investigationsAbandoned > 0) {
+			yield* Effect.logWarning("Failed investigations whose agent pass never returned").pipe(
+				Effect.annotateLogs({ count: investigationsAbandoned, budgetMs: STALE_MS }),
+			)
+		}
+
 		yield* Effect.annotateCurrentSpan({
 			orgsKnown: knownOrgs.size,
 			orgsScanned: scanOrgs.length,
 			orgFailures: yield* Ref.get(orgFailures),
+			"maple.investigation.abandoned": investigationsAbandoned,
 			...totals,
 		})
 
@@ -1604,6 +1618,7 @@ const make: Effect.Effect<
 			orgsProcessed: scanOrgs.length,
 			...totals,
 			retentionRan,
+			investigationsAbandoned,
 		}
 	})
 

@@ -1,12 +1,20 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import { Clock, ConfigProvider, Effect, Layer, Schema } from "effect"
-import { OrgId } from "@maple/domain/http"
-import { aiTriageSettings, investigations } from "@maple/db"
-import { eq } from "drizzle-orm"
+import {
+	AiTriageResult,
+	ErrorIssueId,
+	IncidentTriagePriorMatch,
+	type IncidentTriageRequest,
+	IncidentTriageVerdict,
+	OrgId,
+} from "@maple/domain/http"
+import { aiTriageSettings, errorIssueEvents, errorIssues, investigations } from "@maple/db"
+import { and, eq } from "drizzle-orm"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { Env } from "@maple/backend/platform/Env"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
 import { maybeEnqueueTriage } from "./ai-triage-enqueue"
+import { IncidentClassifier } from "./IncidentClassifier"
 
 const createdDbs: TestDb[] = []
 
@@ -36,6 +44,11 @@ const makeLayer = () => {
 const asOrgId = Schema.decodeUnknownSync(OrgId)
 const ORG = asOrgId("org_enqueue_test")
 
+/**
+ * Three runs, not two: the runs ceiling carries the severity reserve, so an
+ * unclassified start is judged against `floor(3 * 0.7) = 2`. A ceiling of two
+ * would leave one ordinary slot and read like an off-by-one here.
+ */
 const enableSettings = Effect.gen(function* () {
 	const database = yield* Database
 	const nowMs = yield* Clock.currentTimeMillis
@@ -43,7 +56,7 @@ const enableSettings = Effect.gen(function* () {
 		db.insert(aiTriageSettings).values({
 			orgId: ORG,
 			enabled: true,
-			maxRunsPerDay: 2,
+			maxRunsPerDay: 3,
 			updatedAt: new Date(nowMs),
 		}),
 	)
@@ -118,6 +131,77 @@ const criticalInput = (workerEnv: Record<string, unknown> | undefined, incidentI
 	context: { kind: "error", severity: "critical", serviceName: "checkout-api" },
 	workerEnv,
 })
+
+const asIssueId = Schema.decodeUnknownSync(ErrorIssueId)
+
+const seedIssue = (issueId: ErrorIssueId, overrides: Partial<typeof errorIssues.$inferInsert> = {}) =>
+	Effect.gen(function* () {
+		const database = yield* Database
+		const now = yield* Clock.currentTimeMillis
+		yield* database.execute((db) =>
+			db.insert(errorIssues).values({
+				id: issueId,
+				orgId: ORG,
+				fingerprintHash: `fp-${issueId}`,
+				serviceName: "maple-cli",
+				exceptionType: "@maple/cli/CheckpointCreateError",
+				exceptionMessage: "checkpoint schema mismatch",
+				topFrame: "checkpoints.ts:735",
+				firstSeenAt: new Date(now),
+				lastSeenAt: new Date(now),
+				createdAt: new Date(now),
+				updatedAt: new Date(now),
+				...overrides,
+			}),
+		)
+	})
+
+/** An error incident under an issue, with the context the errors tick passes. */
+const issueInput = (
+	incidentId: string,
+	issueId: ErrorIssueId,
+	workerEnv: Record<string, unknown> | undefined,
+	overrides: Record<string, unknown> = {},
+) => ({
+	orgId: ORG,
+	incidentKind: "error" as const,
+	incidentId,
+	issueId,
+	context: {
+		kind: "error",
+		reason: "first_seen",
+		serviceName: "maple-cli",
+		exceptionType: "@maple/cli/CheckpointCreateError",
+		exceptionMessage: "checkpoint schema mismatch",
+		...overrides,
+	},
+	workerEnv,
+})
+
+const noiseVerdict = (overrides?: Partial<IncidentTriageVerdict>) =>
+	new IncidentTriageVerdict({
+		disposition: "noise",
+		dispositionConfidence: 0.92,
+		severity: "low",
+		severityConfidence: 0.85,
+		userImpact: 0.05,
+		matchedPrior: null,
+		model: "~typesafe/jev-latest",
+		...overrides,
+	})
+
+/** A classifier that answers from a queue and keeps what it was asked. */
+const fakeClassifier = (answers: ReadonlyArray<IncidentTriageVerdict | null>) => {
+	const queue = [...answers]
+	const requests: Array<IncidentTriageRequest> = []
+	const layer = Layer.succeed(IncidentClassifier, {
+		classify: (request) => {
+			requests.push(request)
+			return Effect.succeed(queue.shift() ?? null)
+		},
+	})
+	return { requests, layer }
+}
 
 describe("maybeEnqueueTriage", () => {
 	it.effect("starts a critical automatic incident as one agent turn", () =>
@@ -199,7 +283,8 @@ describe("maybeEnqueueTriage", () => {
 			const chat = fakeChatSession()
 			const start = (id: string) => maybeEnqueueTriage(baseInput(id, chat.env))
 
-			// `maxRunsPerDay` is 2 here, so the runs ceiling is what bites.
+			// `maxRunsPerDay` is 3 here and these starts carry no severity, so the
+			// ordinary slice of the runs ceiling is what bites, at two.
 			assert.isTrue((yield* start("incident-1")).enqueued)
 			assert.isTrue((yield* start("incident-2")).enqueued)
 			assert.deepStrictEqual(yield* start("incident-3"), {
@@ -336,6 +421,229 @@ describe("maybeEnqueueTriage", () => {
 				enqueued: false,
 				reason: "daily_cap",
 			})
+		}).pipe(Effect.provide(makeLayer())),
+	)
+
+	it.effect("skips a flare-up of an issue somebody already owns", () =>
+		Effect.gen(function* () {
+			yield* enableAutomation
+			const chat = fakeChatSession()
+			const issueId = asIssueId("00000000-0000-4000-8000-000000000001")
+			// Prod, Aug 2026: an issue in review with a PR attached kept receiving
+			// fresh diagnoses on every flare-up.
+			yield* seedIssue(issueId, { workflowState: "in_review" })
+
+			const result = yield* maybeEnqueueTriage(issueInput("incident-1", issueId, chat.env))
+			assert.deepStrictEqual(result, { enqueued: false, reason: "issue_handled" })
+			assert.lengthOf(chat.turns, 0)
+
+			const database = yield* Database
+			const rows = yield* database.execute((db) =>
+				db.select().from(investigations).where(eq(investigations.orgId, ORG)),
+			)
+			assert.lengthOf(rows, 0)
+		}).pipe(Effect.provide(makeLayer())),
+	)
+
+	it.effect("does not re-diagnose an issue diagnosed this week, until it regresses", () =>
+		Effect.gen(function* () {
+			yield* enableAutomation
+			const chat = fakeChatSession()
+			const database = yield* Database
+			const nowMs = yield* Clock.currentTimeMillis
+			const issueId = asIssueId("00000000-0000-4000-8000-000000000002")
+			yield* seedIssue(issueId)
+
+			const first = yield* maybeEnqueueTriage(issueInput("incident-1", issueId, chat.env))
+			assert.isTrue(first.enqueued)
+			yield* database.execute((db) =>
+				db
+					.update(investigations)
+					.set({ status: "diagnosed", diagnosedAt: new Date(nowMs), updatedAt: new Date(nowMs) })
+					.where(eq(investigations.orgId, ORG)),
+			)
+
+			// The next incident under the same issue, half an hour later on the same
+			// retry cadence: the diagnosis on file still answers for it.
+			const second = yield* maybeEnqueueTriage(issueInput("incident-2", issueId, chat.env))
+			assert.deepStrictEqual(second, {
+				enqueued: false,
+				reason: "recently_diagnosed",
+				priorInvestigationId: first.investigationId,
+			})
+
+			// A regression is the one thing that makes that diagnosis stale on purpose.
+			const regressed = yield* maybeEnqueueTriage(
+				issueInput("incident-3", issueId, chat.env, { reason: "regression" }),
+			)
+			assert.isTrue(regressed.enqueued)
+			assert.lengthOf(chat.turns, 2)
+		}).pipe(Effect.provide(makeLayer())),
+	)
+
+	it.effect("skips confident noise, labels the untriaged issue, and starts nothing", () =>
+		Effect.gen(function* () {
+			yield* enableAutomation
+			const chat = fakeChatSession()
+			const classifier = fakeClassifier([noiseVerdict()])
+			const database = yield* Database
+			const issueId = asIssueId("00000000-0000-4000-8000-000000000003")
+			yield* seedIssue(issueId)
+
+			const result = yield* maybeEnqueueTriage(
+				issueInput("incident-1", issueId, chat.env, {
+					exceptionMessage: "maple is already running (PID 1)",
+					occurrenceCount: 1_661_421,
+				}),
+			).pipe(Effect.provide(classifier.layer))
+			assert.deepStrictEqual(result, { enqueued: false, reason: "noise" })
+			assert.lengthOf(chat.turns, 0)
+
+			// The classifier was shown what the snapshot knows, reason included.
+			assert.lengthOf(classifier.requests, 1)
+			assert.deepInclude(classifier.requests[0], {
+				serviceName: "maple-cli",
+				reason: "first_seen",
+				exceptionMessage: "maple is already running (PID 1)",
+				occurrenceCount: 1_661_421,
+			})
+
+			const rows = yield* database.execute((db) =>
+				db.select().from(investigations).where(eq(investigations.orgId, ORG)),
+			)
+			assert.lengthOf(rows, 0)
+
+			// The one write a skip makes: the untriaged issue takes the model's severity,
+			// on the timeline, without an escalation.
+			const issue = yield* database.execute((db) =>
+				db.select().from(errorIssues).where(eq(errorIssues.id, issueId)),
+			)
+			assert.strictEqual(issue[0]?.severity, "low")
+			assert.strictEqual(issue[0]?.severitySource, "ai")
+			const events = yield* database.execute((db) =>
+				db
+					.select()
+					.from(errorIssueEvents)
+					.where(
+						and(
+							eq(errorIssueEvents.issueId, issueId),
+							eq(errorIssueEvents.type, "severity_change"),
+						),
+					),
+			)
+			assert.lengthOf(events, 1)
+		}).pipe(Effect.provide(makeLayer())),
+	)
+
+	it.effect("leaves a severity a person set alone when it skips", () =>
+		Effect.gen(function* () {
+			yield* enableAutomation
+			const chat = fakeChatSession()
+			const classifier = fakeClassifier([noiseVerdict()])
+			const database = yield* Database
+			const issueId = asIssueId("00000000-0000-4000-8000-000000000004")
+			yield* seedIssue(issueId, { severity: "high", severitySource: "manual" })
+
+			const result = yield* maybeEnqueueTriage(issueInput("incident-1", issueId, chat.env)).pipe(
+				Effect.provide(classifier.layer),
+			)
+			assert.strictEqual(result.reason, "noise")
+			const issue = yield* database.execute((db) =>
+				db.select().from(errorIssues).where(eq(errorIssues.id, issueId)),
+			)
+			assert.strictEqual(issue[0]?.severity, "high")
+			assert.strictEqual(issue[0]?.severitySource, "manual")
+		}).pipe(Effect.provide(makeLayer())),
+	)
+
+	it.effect("offers the service's recent diagnoses and defers to the one the model matches", () =>
+		Effect.gen(function* () {
+			yield* enableAutomation
+			const chat = fakeChatSession()
+			const database = yield* Database
+			const nowMs = yield* Clock.currentTimeMillis
+			const known = asIssueId("00000000-0000-4000-8000-000000000005")
+			const lookalike = asIssueId("00000000-0000-4000-8000-000000000006")
+			yield* seedIssue(known)
+			yield* seedIssue(lookalike, { fingerprintHash: "fp-other-store" })
+
+			// A diagnosed run on the first issue, with the headline the classifier is shown.
+			const first = yield* maybeEnqueueTriage(issueInput("incident-1", known, chat.env))
+			assert.isTrue(first.enqueued)
+			yield* database.execute((db) =>
+				db
+					.update(investigations)
+					.set({
+						status: "diagnosed",
+						diagnosedAt: new Date(nowMs),
+						reportJson: new AiTriageResult({
+							headline: "CLI 0.0.22 refuses checkpoints on stores written under schema v11",
+							summary: "Deterministic schema mismatch on end-user stores.",
+							suspectedCause: "The checkpoint manifest predates the bundled schema.",
+							severityAssessment: "high",
+							affectedScope: "A handful of end-user machines.",
+							evidence: [],
+							suggestedActions: [],
+							confidence: "high",
+						}),
+					})
+					.where(eq(investigations.orgId, ORG)),
+			)
+
+			// The same defect under another fingerprint. The model recognises it.
+			const classifier = fakeClassifier([
+				noiseVerdict({
+					disposition: "investigate",
+					dispositionConfidence: 0.8,
+					severity: "high",
+					matchedPrior: new IncidentTriagePriorMatch({
+						investigationId: first.investigationId!,
+						probability: 0.94,
+					}),
+				}),
+			])
+			const result = yield* maybeEnqueueTriage(issueInput("incident-2", lookalike, chat.env)).pipe(
+				Effect.provide(classifier.layer),
+			)
+			assert.deepStrictEqual(result, {
+				enqueued: false,
+				reason: "covered_by_prior",
+				priorInvestigationId: first.investigationId,
+			})
+			assert.lengthOf(chat.turns, 1)
+
+			const offered = classifier.requests[0]?.priorDiagnoses ?? []
+			assert.lengthOf(offered, 1)
+			assert.strictEqual(offered[0]?.investigationId, first.investigationId)
+			assert.strictEqual(offered[0]?.exceptionType, "@maple/cli/CheckpointCreateError")
+			assert.match(offered[0]?.headline ?? "", /schema v11/)
+		}).pipe(Effect.provide(makeLayer())),
+	)
+
+	it.effect("seeds the run with the model's severity and judges the quota by it", () =>
+		Effect.gen(function* () {
+			yield* enableWithLimits(50, 4)
+			const chat = fakeChatSession()
+			const database = yield* Database
+			const ordinary = (id: string) => maybeEnqueueTriage(baseInput(id, chat.env))
+			assert.isTrue((yield* ordinary("incident-1")).enqueued)
+			assert.isTrue((yield* ordinary("incident-2")).enqueued)
+			assert.strictEqual((yield* ordinary("incident-3")).reason, "daily_cap")
+
+			// Unclassified by the detector, critical to the model: the reserve is its to spend.
+			const classifier = fakeClassifier([
+				noiseVerdict({
+					disposition: "investigate",
+					dispositionConfidence: 0.9,
+					severity: "critical",
+				}),
+			])
+			const raised = yield* ordinary("incident-4").pipe(Effect.provide(classifier.layer))
+			assert.isTrue(raised.enqueued)
+			const row = yield* database.execute((db) =>
+				db.select().from(investigations).where(eq(investigations.incidentId, "incident-4")),
+			)
+			assert.strictEqual(row[0]?.snapshotJson?.severity, "critical")
 		}).pipe(Effect.provide(makeLayer())),
 	)
 })

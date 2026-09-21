@@ -158,11 +158,11 @@ const saveCredential = (apiUrl: string, token: string, session: Session, managed
 
 const loginFlags = {
 	apiUrl: Flag.optional(
-		Flag.string("api-url").pipe(
+		Flag.String("api-url").pipe(
 			Flag.withDescription("Maple API base URL (default: https://api.maple.dev)"),
 		),
 	),
-	withToken: Flag.boolean("with-token").pipe(
+	withToken: Flag.Boolean("with-token").pipe(
 		Flag.withDescription("Read an existing API token from standard input instead of opening a browser"),
 		Flag.withDefault(false),
 	),

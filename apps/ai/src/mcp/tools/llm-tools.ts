@@ -18,7 +18,7 @@ import type { McpToolExecutorApi } from "../dispatcher"
 import type { McpToolSurface } from "@maple/domain/mcp-manifest"
 import { mapleToolCatalogFor, toInputSchema } from "./registry"
 import { truncateToolOutput } from "./tool-output"
-import { withToolCallContent } from "../../platform/genai-spans"
+import { toolHandlersWithContent } from "../../platform/genai-spans"
 import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
 
 /**
@@ -79,6 +79,8 @@ export interface BuildMapleToolsOptions {
 	 * agent passes pass `"workflow"` so the two are separable in traces despite sharing this builder.
 	 */
 	readonly surface?: McpToolSurface
+	/** The agent-session identity of the run, stamped on every tool span — see `withToolCallContent`. */
+	readonly sessionAttributes?: Readonly<Record<string, string>>
 }
 
 /**
@@ -185,21 +187,15 @@ export const buildMapleToolkit = (
 				}
 				return dispatch(params)
 			}
-			return [
-				definition.name,
-				(params: unknown) =>
-					withToolCallContent(
-						Effect.suspend(() => handle(params)),
-						{ description: describe(definition, gated), params },
-					),
-			]
+			return [definition.name, (params: unknown) => Effect.suspend(() => handle(params))]
 			// A dynamic tool's shape is known only at runtime, so the model's arguments arrive
 			// unparsed and the handler parses them.
 			// oxlint-disable-next-line anti-slop/no-unknown-parameters
 		}) as ReadonlyArray<readonly [string, (params: unknown) => Effect.Effect<string, MapleToolFailure>]>,
 	)
+	// Registered as one map, so a tool added to the catalogue cannot arrive without its span content.
 	// `handlers` is exposed alongside the layer because a caller that merges this toolkit with one
 	// of its own must build a single handler map: two partial layers would each be missing the
-	// other's tools.
-	return { toolkit, handlers, layer: toolkit.toLayer(handlers) }
+	// other's tools. It is the wrapped map for the same reason.
+	return { toolkit, ...toolHandlersWithContent(toolkit, handlers, options.sessionAttributes) }
 }

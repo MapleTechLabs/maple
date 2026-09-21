@@ -25,6 +25,7 @@ import type * as LanguageModel from "effect/unstable/ai/LanguageModel"
 import type * as Prompt from "effect/unstable/ai/Prompt"
 import * as Telemetry from "effect/unstable/ai/Telemetry"
 import * as Tool from "effect/unstable/ai/Tool"
+import type * as Toolkit from "effect/unstable/ai/Toolkit"
 
 /**
  * Per-attribute size budgets, in JSON characters.
@@ -364,13 +365,13 @@ const idleTimeout = (): AiError.AiError =>
  * it, as the stream ends, including when it fails.
  */
 export const instrumentLanguageModel = <R>(
-	make: Effect.Effect<LanguageModel.Service, never, R>,
+	make: Effect.Effect<LanguageModel.LanguageModel, never, R>,
 	telemetry: ModelCallTelemetry,
-): Effect.Effect<LanguageModel.Service, never, R> =>
+): Effect.Effect<LanguageModel.LanguageModel, never, R> =>
 	make.pipe(
 		Effect.map((service) => ({
 			...service,
-			streamText: ((options: Parameters<LanguageModel.Service["streamText"]>[0]) =>
+			streamText: ((options: Parameters<LanguageModel.LanguageModel["streamText"]>[0]) =>
 				Stream.unwrap(
 					Effect.clockWith((clock) =>
 						Effect.sync(() => {
@@ -401,7 +402,7 @@ export const instrumentLanguageModel = <R>(
 							)
 						}),
 					),
-				)) as LanguageModel.Service["streamText"],
+				)) as LanguageModel.LanguageModel["streamText"],
 		})),
 	)
 
@@ -528,18 +529,85 @@ const annotateExecuteToolSpan = Effect.fnUntraced(function* (attributes: Readonl
 	for (const [key, value] of Object.entries(attributes)) span.value.attribute(key, value)
 })
 
-/** Record a tool call's description, arguments and result — or failure — on its `execute_tool` span. */
-export const withToolCallContent = <A, E extends { readonly message: string }, R>(
+/**
+ * A failure as the span should read it: the message a tool failure carries, or the value itself.
+ *
+ * Unconstrained because this runs over every handler a toolkit registers, and a handler may also
+ * fail with the engine's own `AiError` — which carries a message too, and a value that does not is
+ * still better rendered than dropped.
+ */
+const failureText = (error: unknown): string =>
+	Predicate.hasProperty(error, "message") && Predicate.isString(error.message)
+		? error.message
+		: String(error)
+
+/**
+ * Record a tool call's description, arguments and result — or failure — on its `execute_tool` span.
+ *
+ * `sessionAttributes` is the identity the model-call spans carry (`agentSessionSpanAttributes`). The
+ * engine stamps only its thread id on a tool span, so without it the session view has nothing that
+ * puts a tool call in the turn of the model call that asked for it.
+ */
+export const withToolCallContent = <A, E, R>(
 	handler: Effect.Effect<A, E, R>,
-	call: { readonly description: string; readonly params: unknown },
+	call: {
+		readonly description?: string | undefined
+		readonly params: unknown
+		readonly sessionAttributes?: Readonly<Record<string, string>>
+	},
 ): Effect.Effect<A, E, R> =>
 	annotateExecuteToolSpan({
-		"gen_ai.tool.description": call.description,
+		...call.sessionAttributes,
+		...(call.description === undefined || call.description === ""
+			? undefined
+			: { "gen_ai.tool.description": call.description }),
 		"gen_ai.tool.call.arguments": toolCallJson(call.params),
 	}).pipe(
 		Effect.andThen(handler),
 		Effect.tap((result) => annotateExecuteToolSpan({ "gen_ai.tool.call.result": toolCallJson(result) })),
 		Effect.tapError((error) =>
-			annotateExecuteToolSpan({ "gen_ai.tool.call.result": toolCallJson(error.message) }),
+			annotateExecuteToolSpan({ "gen_ai.tool.call.result": toolCallJson(failureText(error)) }),
 		),
 	)
+
+/**
+ * A toolkit's handler map and its layer, with every handler recording its own call content.
+ *
+ * The one seam Maple has for this: effect-agent's `execute_tool` span is content-free, so a handler
+ * registered straight through `toolkit.toLayer` produces a tool call Agent Sessions renders with no
+ * arguments and no result. `submit_diagnosis` — whose arguments ARE the diagnosis report — shipped
+ * that way. Wrapping is a whole-map operation rather than something each handler remembers, the
+ * layer is built here rather than by the caller so there is no unwrapped map to register, and
+ * `maple/no-raw-tool-layer` keeps `toLayer` out of every other module.
+ *
+ * The description comes off the toolkit rather than the caller, so the span records what the model
+ * was actually given.
+ */
+export const toolHandlersWithContent = <
+	Tools extends Record<string, Tool.Any>,
+	Handlers extends Toolkit.HandlersFrom<Tools>,
+>(
+	toolkit: Toolkit.Toolkit<Tools>,
+	handlers: Handlers,
+	sessionAttributes?: Readonly<Record<string, string>>,
+) => {
+	const entries = Object.entries(handlers) as ReadonlyArray<
+		readonly [string, (params: never, context: never) => Effect.Effect<unknown, unknown, unknown>]
+	>
+	const described = Object.fromEntries(
+		entries.map(([name, handler]) => [
+			name,
+			(params: never, context: never) =>
+				withToolCallContent(
+					Effect.suspend(() => handler(params, context)),
+					{
+						description: toolkit.tools[name]?.description,
+						params,
+						...(sessionAttributes === undefined ? undefined : { sessionAttributes }),
+					},
+				),
+		]),
+	) as Handlers
+	// oxlint-disable-next-line maple/no-raw-tool-layer -- the one place that may: the map is wrapped
+	return { handlers: described, layer: toolkit.toLayer(described) }
+}

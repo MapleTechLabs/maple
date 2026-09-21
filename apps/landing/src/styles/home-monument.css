@@ -367,6 +367,10 @@ html:not([lang="en"]) .monument-hero h1 {
 	.monument-proof .logo-cell__mark {
 		height: 28px;
 	}
+	/* Clear space tracks the mark: half of 28px, not the 12px below. */
+	.monument-proof .gap-3 {
+		gap: 14px;
+	}
 	.monument-proof .text-sm {
 		font-size: 17px;
 	}

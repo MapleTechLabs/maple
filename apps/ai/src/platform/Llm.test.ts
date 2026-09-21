@@ -11,11 +11,19 @@
  * keeps the run to a single request with no backoff; the resulting failure is expected and ignored.
  */
 import { Effect, Layer, Schema, Stream } from "effect"
-import { LanguageModel, Tool, Toolkit } from "effect/unstable/ai"
+import { Decision, DecisionModel, LanguageModel, Tool, Toolkit } from "effect/unstable/ai"
 import { FetchHttpClient } from "effect/unstable/http"
-import { describe, it } from "@effect/vitest"
+import { assert, describe, it } from "@effect/vitest"
 import { expect } from "vitest"
-import { layerLlm, resolveTriageModel, type LlmCallTags, type LlmEnv, type ResolvedModel } from "./Llm"
+import {
+	DEFAULT_DECISION_MODEL,
+	layerDecisionModel,
+	layerLlm,
+	resolveTriageModel,
+	type LlmCallTags,
+	type LlmEnv,
+	type ResolvedModel,
+} from "./Llm"
 
 interface CapturedRequest {
 	readonly url: string
@@ -546,4 +554,86 @@ describe("streamed completion — a stream that ends without a usage block", () 
 			expect(parts.filter((part) => part.type === "finish")).toHaveLength(1)
 		}),
 	)
+})
+
+/**
+ * The decision model's own transport check.
+ *
+ * Jev is served from a different endpoint than chat completions, and the only honest way to check
+ * that the model id, the questions and the OpenRouter credential all reach it is to watch what
+ * leaves.
+ */
+describe("layerDecisionModel — Jev over OpenRouter", () => {
+	const ticket = Decision.make({
+		input: Schema.Struct({ message: Schema.String }),
+		decisions: {
+			department: Decision.classify({
+				instructions: "Which team owns this ticket",
+				criteria: { billing: "Charges and refunds", technical: "Bugs and outages" },
+			}),
+		},
+	})
+
+	const captureDecision = (env: LlmEnv): Effect.Effect<CapturedRequest> =>
+		Effect.gen(function* () {
+			let captured: CapturedRequest | undefined
+
+			const fakeFetch: typeof globalThis.fetch = async (input, init) => {
+				const headers: Record<string, string> = {}
+				new Headers(init?.headers).forEach((value, key) => {
+					headers[key.toLowerCase()] = value
+				})
+				const bodyText = await new Response(init?.body ?? "{}").text()
+				captured = {
+					url: String(input),
+					headers,
+					body: JSON.parse(bodyText) as Record<string, unknown>,
+				}
+				return new Response(JSON.stringify({ error: "captured" }), { status: 400 })
+			}
+
+			yield* DecisionModel.decide(ticket, { input: { message: "refund me" } }).pipe(
+				Effect.ignore,
+				Effect.provide(Layer.provide(layerDecisionModel(env), layerLlm(env))),
+				Effect.provideService(FetchHttpClient.Fetch, fakeFetch),
+			)
+
+			if (captured === undefined) return yield* Effect.die("no request reached the transport")
+			return captured
+		})
+
+	it.live("posts the configured model and the decision's questions to the decisions endpoint", () =>
+		Effect.gen(function* () {
+			const captured = yield* captureDecision(openRouterEnv)
+
+			// Not `/v1/decisions`: the alpha endpoint sits beside the versioned API, not under it.
+			assert.strictEqual(captured.url, "https://openrouter.ai/api/alpha/decisions")
+			assert.strictEqual(captured.headers.authorization, "Bearer test-key")
+			assert.strictEqual(captured.body.model, DEFAULT_DECISION_MODEL)
+			assert.deepStrictEqual(captured.body.questions, {
+				department: {
+					type: "choice",
+					instructions: "Which team owns this ticket",
+					criteria: { billing: "Charges and refunds", technical: "Bugs and outages" },
+				},
+			})
+		}))
+
+	it.live("carries the same app attribution as a model call", () =>
+		Effect.gen(function* () {
+			const captured = yield* captureDecision(openRouterEnv)
+
+			assert.strictEqual(captured.headers["http-referer"], "https://maple.dev")
+			assert.strictEqual(captured.headers["x-title"], "Maple")
+		}))
+
+	it.live("takes the model id from the environment", () =>
+		Effect.gen(function* () {
+			const captured = yield* captureDecision({
+				...openRouterEnv,
+				MAPLE_DECISION_MODEL: "typesafe/jev-1.13",
+			})
+
+			assert.strictEqual(captured.body.model, "typesafe/jev-1.13")
+		}))
 })

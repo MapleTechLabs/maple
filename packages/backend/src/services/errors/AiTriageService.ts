@@ -64,8 +64,8 @@ export class AiTriageService extends Context.Service<AiTriageService, AiTriageSe
 			 * Pause state is asked of the same verdict the enqueue path uses, twice:
 			 * once as an ordinary incident and once as a critical. One probe cannot
 			 * answer both questions — with a reserve configured, a medium-severity
-			 * probe reports `passes_reserved` whether the reserve is untouched or long
-			 * gone, so it can never say whether criticals are still starting.
+			 * probe reports `*_reserved` whether the reserve is untouched or long gone,
+			 * so it can never say whether criticals are still starting.
 			 */
 			const settingsToDocument = (
 				row: AiTriageSettingsRow | undefined,
@@ -82,9 +82,9 @@ export class AiTriageService extends Context.Service<AiTriageService, AiTriageSe
 					})
 				const ordinary = probe("medium")
 				const priority = probe("critical")
-				// The runs ceiling is checked before any pass arithmetic and has no
-				// reserve, so it refuses both — reporting it as a pass problem would
-				// send the reader to raise a number that was never the constraint.
+				// The ordinary probe is what the banner speaks for: it is refused first,
+				// and its dimension names the ceiling to raise. Reporting the priority
+				// probe's would send the reader to a number that was never the constraint.
 				const paused = ordinary.kind === "exceeded" ? ordinary : null
 				return new AiTriageSettingsDocument({
 					enabled: row?.enabled ?? false,
