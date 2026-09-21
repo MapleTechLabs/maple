@@ -79,6 +79,14 @@ describe("normalizePrReviewSubmission", () => {
 		)
 	})
 
+	it("forces gaps when the model calls a warned diff instrumented", () => {
+		const { report } = normalizePrReviewSubmission({
+			verdict: "instrumented",
+			findings: [{ path: "src/a.ts", line: 1, severity: "warn", title: "gap" }],
+		})
+		assert.equal(report.verdict, "gaps")
+	})
+
 	it("falls back to warn for a severity outside the audit's three", () => {
 		const { report } = normalizePrReviewSubmission({
 			findings: [{ path: "src/a.ts", line: 1, severity: "medium", title: "x" }],

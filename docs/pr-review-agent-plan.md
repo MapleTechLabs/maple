@@ -13,9 +13,10 @@ service reports at all, whether the operations in the changed file already have 
 production, and whether an attribute key the diff introduces already exists under another spelling.
 A finding is grounded in the org's telemetry, not only in the diff.
 
-## What exists today
+## Baseline before phase 1
 
-The GitHub side is most of the way there.
+What the repository looked like when this plan was written, kept as the record of what phase 1
+had to add. "What phase 1 shipped" at the end is the current state.
 
 - The GitHub App already subscribes to `pull_request` and holds `Pull requests: read`
   ([`docs/github-app-setup.md`](github-app-setup.md), steps 5 and 6). The signed webhook lands in
@@ -64,11 +65,12 @@ The GitHub side is most of the way there.
    - inserts a `pr_reviews` row `(org_id, repository_id, number, head_sha, base_sha, status)`;
    - on `synchronize` with a turn in flight for the same PR, aborts it first (the abort route
      exists) so the review is always of the latest head;
-   - starts the turn: `chatSessionStub(env, "<orgId>:pr-<repositoryId>-<number>").beginTurn(...)`
-     with the internal-service tenant, exactly like `startInvestigationTurn`.
+   - starts the turn: `chatSessionStub(env, "<orgId>:pr-<reviewId>").beginTurn(...)` with the
+     internal-service tenant, exactly like `startInvestigationTurn`.
 
-   One session per PR, one turn per head SHA. The session keeps the earlier reviews in history,
-   which is what lets a follow-up push say "the span you added on line 40 closes finding 2".
+   One session per review, one review per head SHA. A session per pull request that kept the
+   earlier reviews in history was considered and set aside for phase 1: the dedupe across pushes
+   is done from stored fingerprints (phase 2), which keeps each session's transcript bounded.
 
 ### Enablement and settings
 

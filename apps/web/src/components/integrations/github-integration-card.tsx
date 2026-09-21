@@ -760,6 +760,7 @@ function PrReviewToggle({
 			<span className="hidden sm:inline">Review PRs</span>
 			<Switch
 				id={id}
+				aria-label={`Review pull requests on ${repo.fullName}`}
 				checked={enabled}
 				disabled={busy}
 				onCheckedChange={(next) => {

@@ -303,6 +303,31 @@ describe("PrReviewService.onPullRequestEvent", () => {
 		}).pipe(Effect.provide(layerFor(testDb, { withWorkerEnv: false })))
 	})
 
+	it.effect("retries a failed row on redelivery instead of calling it a duplicate", () => {
+		const testDb = createTestDb(trackedDbs)
+		const begun: Array<Begun> = []
+		// No worker env: the first delivery records `failed` with a retryable error.
+		const firstDelivery = Effect.gen(function* () {
+			yield* seed(true)
+			const reviews = yield* PrReviewService
+			const first = yield* reviews.onPullRequestEvent(orgId, job())
+			assert.equal(first.outcome, "failed")
+			assert.equal(Option.getOrThrow(yield* reviews.getReview(orgId, first.reviewId!)).status, "failed")
+		}).pipe(Effect.provide(layerFor(testDb, { withWorkerEnv: false })))
+		// The same head again, now with an agent: the failed row is reclaimed and started.
+		const redelivery = Effect.gen(function* () {
+			const reviews = yield* PrReviewService
+			const again = yield* reviews.onPullRequestEvent(orgId, job())
+			assert.equal(again.outcome, "started")
+			const row = Option.getOrThrow(yield* reviews.getReview(orgId, again.reviewId!))
+			assert.equal(row.status, "running")
+			assert.isNull(row.error)
+			assert.equal(begun.length, 1)
+			assert.equal(begun[0]!.sessionId, `${orgId}:pr-${again.reviewId}`)
+		}).pipe(Effect.provide(layerFor(testDb, { begun })))
+		return firstDelivery.pipe(Effect.andThen(redelivery))
+	})
+
 	it.effect("stops at the daily ceiling", () => {
 		const testDb = createTestDb(trackedDbs)
 		return Effect.gen(function* () {
@@ -363,6 +388,45 @@ describe("PrReviewService.submitReview", () => {
 			assert.isNotNull(stored.reviewUrl)
 			assert.isNull(stored.publishError)
 			assert.equal(stored.report?.findings.length, 1)
+		}).pipe(Effect.provide(layerFor(testDb, { published })))
+	})
+
+	it.effect("drops a submission for a review that was superseded while it ran", () => {
+		const testDb = createTestDb(trackedDbs)
+		const published: Array<PullRequestReviewPublication> = []
+		return Effect.gen(function* () {
+			yield* seed(true)
+			const reviews = yield* PrReviewService
+			const first = yield* reviews.onPullRequestEvent(orgId, job())
+			yield* reviews.onPullRequestEvent(orgId, job({ action: "synchronize", headSha: HEAD_2 }))
+			// Review A's completion call lands after head B superseded it.
+			yield* reviews.submitReview(
+				orgId,
+				first.reviewId!,
+				new SubmitPrReviewRequest({
+					report: report([
+						{
+							path: "a.ts",
+							line: 1,
+							checkId: "SPAN-03",
+							severity: "warn",
+							title: "stale",
+							body: "b",
+						},
+					]),
+				}),
+			)
+			assert.equal(published.length, 0)
+			const stored = Option.getOrThrow(yield* reviews.getReview(orgId, first.reviewId!))
+			assert.equal(stored.status, "skipped")
+			assert.equal(stored.skipReason, "superseded")
+			assert.isNull(stored.report)
+			// And a late failure does not overwrite it either.
+			yield* reviews.failReview(orgId, first.reviewId!, "no_review")
+			assert.equal(
+				Option.getOrThrow(yield* reviews.getReview(orgId, first.reviewId!)).status,
+				"skipped",
+			)
 		}).pipe(Effect.provide(layerFor(testDb, { published })))
 	})
 
@@ -436,5 +500,36 @@ describe("buildPublication", () => {
 		assert.include(summary, "| POST /orders | entrypoint | no | no withSpan |")
 		assert.include(summary, "`SPAN-03`")
 		assert.include(summary, "ended early")
+	})
+
+	it("escapes a backslash before a pipe so a cell cannot break the table", () => {
+		const summary = renderCheckSummary(
+			new PrReviewReport({
+				verdict: "instrumented",
+				summary: "",
+				coverage: [{ unit: "a\\|b", kind: "k", instrumented: true, evidence: "e" }],
+				findings: [],
+			}),
+			false,
+		)
+		assert.include(summary, "| a\\\\\\|b | k | yes | e |")
+	})
+
+	it("stays under GitHub's summary limit however long the report is", () => {
+		const summary = renderCheckSummary(
+			report(
+				Array.from({ length: 50 }, (_, i) => ({
+					path: `src/file-${i}.ts`,
+					line: 1,
+					checkId: "SPAN-02",
+					severity: "warn" as const,
+					title: "x".repeat(200),
+					body: "y".repeat(4_000),
+				})),
+			),
+			false,
+		)
+		assert.isAtMost(summary.length, 65_535)
+		assert.include(summary, "cut at GitHub's limit")
 	})
 })

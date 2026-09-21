@@ -27,6 +27,7 @@ import {
 	PrReviewPersistenceError,
 	type PrReviewReport,
 	type PrReviewSkipReason,
+	type PrReviewStatus,
 	type PullRequestCheckAnnotation,
 	type PullRequestEventJob,
 	type PullRequestReviewComment,
@@ -80,6 +81,9 @@ const REVIEWABLE_ACTIONS: ReadonlySet<PullRequestEventJob["action"]> = new Set([
 	"synchronize",
 	"ready_for_review",
 ])
+
+/** The states a review's own turn may still move: anything else is settled or superseded. */
+const ACTIVE_STATUSES: ReadonlyArray<PrReviewStatus> = ["queued", "running"]
 
 /** Automation authors whose pull requests are dependency bumps, not features. */
 const BOT_AUTHOR = /\[bot\]$|^(dependabot|renovate|github-actions)/i
@@ -258,10 +262,17 @@ export const renderCheckSummary = (report: PrReviewReport, partial: boolean): st
 		lines.push("")
 	}
 	lines.push("Reviewed by Maple. Check ids refer to Maple's instrumentation audit.")
-	return lines.join("\n")
+	const summary = lines.join("\n")
+	return summary.length > CHECK_SUMMARY_MAX_CHARS
+		? `${summary.slice(0, CHECK_SUMMARY_MAX_CHARS)}\n\n_Summary cut at GitHub's limit; the full review is stored in Maple._`
+		: summary
 }
 
-const escapeCell = (value: string) => value.replace(/\|/g, "\\|").replace(/\n/g, " ")
+// Backslashes first, so an escaped pipe cannot be un-escaped by a backslash the value carried.
+const escapeCell = (value: string) => value.replace(/\\/g, "\\\\").replace(/\|/g, "\\|").replace(/\n/g, " ")
+
+/** GitHub caps a check run's `output.summary` at 65,535 characters. */
+const CHECK_SUMMARY_MAX_CHARS = 65_000
 
 // A plain fence, never a ```suggestion block: GitHub applies those with one click, and a
 // reviewer's sketch of a span is a starting point, not a commit.
@@ -336,9 +347,10 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 				},
 			)
 
-			const update = (
+			const updateWhere = (
 				orgId: OrgId,
 				reviewId: PrReviewId,
+				fromStatuses: ReadonlyArray<PrReviewStatus> | undefined,
 				values: Partial<typeof prReviews.$inferInsert>,
 			) =>
 				database
@@ -346,13 +358,27 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 						db
 							.update(prReviews)
 							.set(values)
-							.where(and(eq(prReviews.orgId, orgId), eq(prReviews.id, reviewId)))
+							.where(
+								and(
+									eq(prReviews.orgId, orgId),
+									eq(prReviews.id, reviewId),
+									...(fromStatuses === undefined
+										? []
+										: [inArray(prReviews.status, [...fromStatuses])]),
+								),
+							)
 							.returning({ id: prReviews.id }),
 					)
 					.pipe(
 						Effect.mapError(toPersistence),
 						Effect.map((rows) => rows.length > 0),
 					)
+
+			const update = (
+				orgId: OrgId,
+				reviewId: PrReviewId,
+				values: Partial<typeof prReviews.$inferInsert>,
+			) => updateWhere(orgId, reviewId, undefined, values)
 
 			const startedToday = (orgId: OrgId, nowMs: number) =>
 				database
@@ -432,6 +458,136 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 				skipReason: reason,
 			})
 
+			/**
+			 * A failed row for this head, reclaimed for another attempt.
+			 *
+			 * The unique index means a redelivery of a head that failed to start (or whose turn died)
+			 * conflicts with the failed row, and the row's own error message promises a retry. The
+			 * conditional update is the claim: two deliveries racing here reclaim it once.
+			 */
+			const reclaimFailed = Effect.fn("PrReviewService.reclaimFailed")(function* (
+				orgId: OrgId,
+				repositoryId: VcsRepositoryId,
+				number: number,
+				headSha: GitCommitSha,
+				nowMs: number,
+			) {
+				const rows = yield* database
+					.execute((db) =>
+						db
+							.update(prReviews)
+							.set({
+								status: "queued",
+								error: null,
+								startedAt: null,
+								finishedAt: null,
+								updatedAt: msToDate(nowMs),
+							})
+							.where(
+								and(
+									eq(prReviews.orgId, orgId),
+									eq(prReviews.repositoryId, repositoryId),
+									eq(prReviews.number, number),
+									eq(prReviews.headSha, headSha),
+									eq(prReviews.status, "failed"),
+								),
+							)
+							.returning({ id: prReviews.id }),
+					)
+					.pipe(Effect.mapError(toPersistence))
+				return rows[0]?.id
+			})
+
+			/**
+			 * The rest of a trigger once a row is ours: claim the session's turn and record how it went.
+			 * One path for a fresh row and a reclaimed one.
+			 */
+			const start = Effect.fn("PrReviewService.start")(function* (input: {
+				readonly orgId: OrgId
+				readonly reviewId: PrReviewId
+				readonly repo: VcsRepo
+				readonly job: PullRequestEventJob
+				readonly headSha: GitCommitSha
+				readonly superseded: number
+				readonly nowMs: number
+			}) {
+				const { orgId, reviewId, repo, job, headSha, superseded, nowMs } = input
+				const sessionId = prReviewSessionId(orgId, reviewId)
+				const annotate = (outcome: string, extra?: Record<string, string | number | boolean>) =>
+					Effect.annotateCurrentSpan({
+						orgId,
+						"maple.pr_review.id": reviewId,
+						"maple.pr_review.outcome": outcome,
+						...extra,
+					})
+
+				const stub = workerEnv === undefined ? undefined : chatSessionStub(workerEnv, sessionId)
+				if (stub === undefined) {
+					yield* update(orgId, reviewId, {
+						status: "failed",
+						error: AGENT_UNAVAILABLE_ERROR,
+						finishedAt: msToDate(nowMs),
+						updatedAt: msToDate(nowMs),
+					})
+					yield* annotate("failed", { "maple.pr_review.skip_reason": "agent_unavailable" })
+					return { reviewId, outcome: "failed" as const, skipReason: "agent_unavailable" as const }
+				}
+
+				const text = buildReviewKickoff({
+					repository: repo.fullName,
+					number: job.number,
+					url: job.url,
+					title: job.title,
+					authorLogin: job.authorLogin,
+					headRef: job.headRef,
+					baseRef: job.baseRef,
+					headSha,
+					baseSha: job.baseSha,
+					fork:
+						job.headRepoFullName !== undefined &&
+						job.headRepoFullName !== null &&
+						job.headRepoFullName.toLowerCase() !== repo.fullName.toLowerCase(),
+					body: job.body,
+				})
+				const claimed = yield* Effect.exit(
+					Effect.tryPromise(() =>
+						stub.beginTurn({
+							sessionId,
+							messageId: randomUUID(),
+							text,
+							tenant: encodeChatTurnTenant({
+								orgId,
+								userId: internalServiceUserId,
+								roles: [],
+								authMode: "self_hosted",
+							}),
+						}),
+					),
+				)
+				if (Exit.isFailure(claimed) || claimed.value === undefined) {
+					if (Exit.isFailure(claimed)) {
+						yield* Effect.logWarning("Pull request review turn could not be started").pipe(
+							Effect.annotateLogs({ orgId, reviewId, error: summarizeCause(claimed.cause) }),
+						)
+					}
+					yield* update(orgId, reviewId, {
+						status: "failed",
+						error: START_FAILED_ERROR,
+						finishedAt: msToDate(nowMs),
+						updatedAt: msToDate(nowMs),
+					})
+					yield* annotate("failed")
+					return { reviewId, outcome: "failed" as const }
+				}
+				yield* update(orgId, reviewId, {
+					status: "running",
+					startedAt: msToDate(nowMs),
+					updatedAt: msToDate(nowMs),
+				})
+				yield* annotate("started", { "maple.pr_review.superseded": superseded })
+				return { reviewId, outcome: "started" as const }
+			})
+
 			const trigger = Effect.fn("PrReviewService.onPullRequestEvent")(function* (
 				orgId: OrgId,
 				job: PullRequestEventJob,
@@ -484,7 +640,6 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 				const superseded = yield* supersede(orgId, repo.id, job.number, headSha, nowMs)
 
 				const reviewId = newReviewId()
-				const sessionId = prReviewSessionId(orgId, reviewId)
 				// `onConflictDoNothing` on the (repo, number, head) index: a redelivery of the same
 				// head is a duplicate, and so is a `synchronize` that carries the head we already have.
 				const inserted = yield* database
@@ -501,7 +656,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 								url: job.url,
 								title: job.title,
 								status: "queued",
-								sessionId,
+								sessionId: prReviewSessionId(orgId, reviewId),
 								createdAt: msToDate(nowMs),
 								updatedAt: msToDate(nowMs),
 							})
@@ -511,82 +666,18 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 							.returning({ id: prReviews.id }),
 					)
 					.pipe(Effect.mapError(toPersistence))
-				if (inserted.length === 0) {
+				if (inserted.length > 0) {
+					return yield* start({ orgId, reviewId, repo, job, headSha, superseded, nowMs })
+				}
+				// A row already exists for this head. A failed one is retried in place, which is what
+				// its own error message promises; anything else is a genuine duplicate.
+				const reclaimed = yield* reclaimFailed(orgId, repo.id, job.number, headSha, nowMs)
+				if (reclaimed === undefined) {
 					yield* annotate("skipped", { "maple.pr_review.skip_reason": "duplicate" })
 					return skip("duplicate")
 				}
-
-				const stub = workerEnv === undefined ? undefined : chatSessionStub(workerEnv, sessionId)
-				if (stub === undefined) {
-					yield* update(orgId, reviewId, {
-						status: "failed",
-						error: AGENT_UNAVAILABLE_ERROR,
-						finishedAt: msToDate(nowMs),
-						updatedAt: msToDate(nowMs),
-					})
-					yield* annotate("failed", {
-						"maple.pr_review.id": reviewId,
-						"maple.pr_review.skip_reason": "agent_unavailable",
-					})
-					return { reviewId, outcome: "failed" as const, skipReason: "agent_unavailable" as const }
-				}
-
-				const text = buildReviewKickoff({
-					repository: repo.fullName,
-					number: job.number,
-					url: job.url,
-					title: job.title,
-					authorLogin: job.authorLogin,
-					headRef: job.headRef,
-					baseRef: job.baseRef,
-					headSha,
-					baseSha: job.baseSha,
-					fork:
-						job.headRepoFullName !== undefined &&
-						job.headRepoFullName !== null &&
-						job.headRepoFullName.toLowerCase() !== repo.fullName.toLowerCase(),
-					body: job.body,
-				})
-				const claimed = yield* Effect.exit(
-					Effect.tryPromise(() =>
-						stub.beginTurn({
-							sessionId,
-							messageId: randomUUID(),
-							text,
-							tenant: encodeChatTurnTenant({
-								orgId,
-								userId: internalServiceUserId,
-								roles: [],
-								authMode: "self_hosted",
-							}),
-						}),
-					),
-				)
-				if (Exit.isFailure(claimed) || claimed.value === undefined) {
-					if (Exit.isFailure(claimed)) {
-						yield* Effect.logWarning("Pull request review turn could not be started").pipe(
-							Effect.annotateLogs({ orgId, reviewId, error: summarizeCause(claimed.cause) }),
-						)
-					}
-					yield* update(orgId, reviewId, {
-						status: "failed",
-						error: START_FAILED_ERROR,
-						finishedAt: msToDate(nowMs),
-						updatedAt: msToDate(nowMs),
-					})
-					yield* annotate("failed", { "maple.pr_review.id": reviewId })
-					return { reviewId, outcome: "failed" as const }
-				}
-				yield* update(orgId, reviewId, {
-					status: "running",
-					startedAt: msToDate(nowMs),
-					updatedAt: msToDate(nowMs),
-				})
-				yield* annotate("started", {
-					"maple.pr_review.id": reviewId,
-					"maple.pr_review.superseded": superseded,
-				})
-				return { reviewId, outcome: "started" as const }
+				yield* annotate("retrying", { "maple.pr_review.id": reclaimed })
+				return yield* start({ orgId, reviewId: reclaimed, repo, job, headSha, superseded, nowMs })
 			})
 
 			const onPullRequestEvent: PrReviewServiceApi["onPullRequestEvent"] = (orgId, job) =>
@@ -622,7 +713,9 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 					"maple.pr_review.coverage": report.coverage.length,
 					"maple.pr_review.partial": request.partial === true,
 				})
-				const stored = yield* update(orgId, reviewId, {
+				// From an active state only. A review superseded while its completion call was in
+				// flight stays `skipped`, and its stale findings never reach the pull request.
+				const stored = yield* updateWhere(orgId, reviewId, ACTIVE_STATUSES, {
 					status: "completed",
 					reportJson: report,
 					model: request.model ?? null,
@@ -631,7 +724,16 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 					finishedAt: msToDate(nowMs),
 					updatedAt: msToDate(nowMs),
 				})
-				if (!stored) return yield* new PrReviewNotFoundError({ message: "No such review", reviewId })
+				if (!stored) {
+					yield* Effect.annotateCurrentSpan({
+						"maple.pr_review.published": false,
+						"maple.pr_review.stale_submission": review.status,
+					})
+					yield* Effect.logInfo(
+						"[PrReview] submission for a review that is no longer active was dropped",
+					).pipe(Effect.annotateLogs({ orgId, reviewId, status: review.status }))
+					return
+				}
 
 				const repository = yield* repositories
 					.getRepositoryById(orgId, review.repositoryId)
@@ -703,7 +805,8 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 				function* (orgId, reviewId, error) {
 					const nowMs = yield* Clock.currentTimeMillis
 					yield* Effect.annotateCurrentSpan({ orgId, "maple.pr_review.id": reviewId })
-					yield* update(orgId, reviewId, {
+					// A superseded review's turn ending late must not overwrite `skipped`.
+					yield* updateWhere(orgId, reviewId, ACTIVE_STATUSES, {
 						status: "failed",
 						error,
 						finishedAt: msToDate(nowMs),

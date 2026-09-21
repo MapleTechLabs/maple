@@ -154,8 +154,8 @@ export interface NormalizedPrReviewSubmission {
  * A submission as a stored report.
  *
  * A finding without a path or a positive line cannot be placed on the diff and is dropped rather
- * than invented; the count is what the span records. A verdict the model did not give is derived:
- * critical or warn findings mean `gaps`, otherwise `instrumented`.
+ * than invented; the count is what the span records. Critical or warn findings force `gaps`; a
+ * verdict the model gave survives only when nothing retained contradicts it.
  */
 export const normalizePrReviewSubmission = (submission: PrReviewSubmission): NormalizedPrReviewSubmission => {
 	const filled = Object.keys(submission).filter(
@@ -200,12 +200,11 @@ export const normalizePrReviewSubmission = (submission: PrReviewSubmission): Nor
 		)
 		if (coverage.length >= MAX_COVERAGE) break
 	}
+	// A retained warn or critical finding is a gap whatever the model called the verdict; the
+	// check run's conclusion and its inline comments must never disagree.
 	const hasGaps = findings.some((finding) => finding.severity !== "info")
-	const verdict: PrReviewVerdict = isVerdict(submission.verdict)
-		? submission.verdict
-		: hasGaps
-			? "gaps"
-			: "instrumented"
+	const submittedVerdict = isVerdict(submission.verdict) ? submission.verdict : undefined
+	const verdict: PrReviewVerdict = hasGaps ? "gaps" : (submittedVerdict ?? "instrumented")
 	return {
 		report: new PrReviewReport({
 			verdict,
