@@ -5,7 +5,11 @@
  * module's. Swapping the tool set — a read-only sub-agent, a mode with narrower reach — should not
  * touch control flow at all.
  */
-import { investigationIdFromChatSessionId, prReviewIdFromChatSessionId } from "@maple/domain/chat-session"
+import {
+	type ChatTurnOrigin,
+	investigationIdFromChatSessionId,
+	prReviewIdFromChatSessionId,
+} from "@maple/domain/chat-session"
 import { evaluatePermission, type PermissionRuleset } from "@maple/domain/permission"
 import {
 	AiTriageSubmission,
@@ -21,7 +25,7 @@ import {
 	SubmitDiagnosisRequest,
 	SubmitPrReviewRequest,
 } from "@maple/domain/http"
-import { InvestigationId, UserId } from "@maple/domain/primitives"
+import { InvestigationId } from "@maple/domain/primitives"
 import type { RunBudgetHook, RunUsageDelta } from "@effect-agent/engine/RunOptions"
 import { Effect, type Layer, Option, Schema } from "effect"
 import { Tool, Toolkit } from "effect/unstable/ai"
@@ -42,15 +46,6 @@ export type SubmitDiagnosis = (
 	unknown,
 	InvestigationPersistenceError | InvestigationNotFoundError | InvestigationDataCorruptionError
 >
-
-/**
- * The user id every machine-started run runs as.
- *
- * An investigation's own autonomous pass is claimed under this actor; a human opening the same
- * session and asking a follow-up is not. That difference decides whether the diagnosis tool merely
- * exists or is the run's *answer*.
- */
-const INTERNAL_SERVICE_USER_ID = Schema.decodeSync(UserId)("internal-service")
 
 export const SUBMIT_DIAGNOSIS = "submit_diagnosis"
 export const SUBMIT_REVIEW = "submit_review"
@@ -74,9 +69,6 @@ export interface RunCompletion {
 	readonly autonomous: boolean
 	readonly submitted: () => boolean
 }
-
-/** A completion with its handlers exposed, which is what a test drives directly. */
-export type RunCompletionWithHandlers<H> = RunCompletion & { readonly handlers: H }
 
 /**
  * Token totals for the run so far.
@@ -138,12 +130,15 @@ export const investigationForSession = (sessionId: string): InvestigationId | un
 }
 
 /**
- * Whether this turn is an investigation's own autonomous pass — claimed under the internal actor —
- * rather than a person asking a follow-up in the same session. The pass must end on
- * `submit_diagnosis`; the follow-up may answer in prose.
+ * Whether this turn is an investigation's own autonomous pass rather than a person asking a
+ * follow-up in the same session. The pass must end on `submit_diagnosis`; the follow-up may answer
+ * in prose.
+ *
+ * Both halves are stated, not inferred: the session says it is an investigation, the turn's origin
+ * says it is the unattended pass.
  */
-export const isAutonomousInvestigationTurn = (sessionId: string, tenant: TenantContext): boolean =>
-	investigationForSession(sessionId) !== undefined && tenant.userId === INTERNAL_SERVICE_USER_ID
+export const isAutonomousInvestigationTurn = (sessionId: string, origin: ChatTurnOrigin): boolean =>
+	investigationForSession(sessionId) !== undefined && origin.kind === "autonomous"
 
 /** The pull request review a session belongs to, or `undefined` for any other conversation. */
 export const prReviewForSession = (sessionId: string): PrReviewId | undefined => {
@@ -152,13 +147,13 @@ export const prReviewForSession = (sessionId: string): PrReviewId | undefined =>
 	return Option.getOrUndefined(decodePrReviewIdOption(rawId))
 }
 
-/** A review's own pass, claimed under the internal actor; it must end on `submit_review`. */
-export const isAutonomousReviewTurn = (sessionId: string, tenant: TenantContext): boolean =>
-	prReviewForSession(sessionId) !== undefined && tenant.userId === INTERNAL_SERVICE_USER_ID
+/** A review's own unattended pass; it must end on `submit_review`. */
+export const isAutonomousReviewTurn = (sessionId: string, origin: ChatTurnOrigin): boolean =>
+	prReviewForSession(sessionId) !== undefined && origin.kind === "autonomous"
 
 /** Any machine-started pass the runner closes out itself: an investigation's or a review's. */
-export const isAutonomousTurn = (sessionId: string, tenant: TenantContext): boolean =>
-	isAutonomousInvestigationTurn(sessionId, tenant) || isAutonomousReviewTurn(sessionId, tenant)
+export const isAutonomousTurn = (sessionId: string, origin: ChatTurnOrigin): boolean =>
+	isAutonomousInvestigationTurn(sessionId, origin) || isAutonomousReviewTurn(sessionId, origin)
 
 /** `parameters` is the lenient {@link PrReviewSubmission}, for the reason `diagnosisTool`'s is. */
 export const reviewTool = Tool.make(SUBMIT_REVIEW, {
@@ -174,11 +169,13 @@ export const reviewTool = Tool.make(SUBMIT_REVIEW, {
 /**
  * The `submit_review` tool for a review session (`"<orgId>:pr-<id>"`), built like
  * {@link buildDiagnosisCompletion}: the review id rides on the session, so the agent never chooses
- * which pull request its report is posted to.
+ * which pull request its report is posted to. A connector never files one, for the same reason it
+ * never files a diagnosis.
  */
 export const buildReviewCompletion = (
 	sessionId: string,
 	tenant: TenantContext,
+	origin: ChatTurnOrigin,
 	submitReview: SubmitReview,
 	usage: RunUsage,
 	modelName: string,
@@ -187,57 +184,56 @@ export const buildReviewCompletion = (
 ) => {
 	const reviewId = prReviewForSession(sessionId)
 	if (reviewId === undefined) return undefined
+	if (origin.kind === "connector") return undefined
 	const toolkit = Toolkit.make(reviewTool)
 	let submitted = false
-	const handlers = toolHandlersWithContent(
-		toolkit,
-		{
-			[SUBMIT_REVIEW]: (submission: PrReviewSubmission) =>
-				Effect.suspend(() => {
-					const { report, filled, droppedFindings } = normalizePrReviewSubmission(submission)
-					return submitReview(
-						tenant.orgId,
-						reviewId,
-						new SubmitPrReviewRequest({
-							report,
-							model: modelName,
-							inputTokens: usage.input,
-							outputTokens: usage.output,
-							...(partial ? { partial: true } : undefined),
-						}),
-					).pipe(
-						Effect.tap(() =>
-							Effect.annotateCurrentSpan({
-								"maple.pr_review.filled_fields": filled.join(","),
-								"maple.pr_review.filled_count": filled.length,
-								"maple.pr_review.dropped_findings": droppedFindings,
-								"maple.pr_review.findings": report.findings.length,
-								"maple.pr_review.verdict": report.verdict,
-							}),
-						),
-					)
-				}).pipe(
-					Effect.tap(() => Effect.sync(() => (submitted = true))),
-					Effect.as("Review recorded."),
-					Effect.catchCause((cause) =>
-						Effect.fail(
-							new MapleToolFailure({
-								message: `${SUBMIT_REVIEW} failed: ${summarizeToolFailure(cause)}`,
-							}),
-						),
-					),
-				),
-		},
-		sessionAttributes,
-	)
 	return {
 		tool: SUBMIT_REVIEW,
 		toolkit,
-		layer: handlers.layer,
-		handlers: handlers.handlers,
-		autonomous: isAutonomousReviewTurn(sessionId, tenant),
+		...toolHandlersWithContent(
+			toolkit,
+			{
+				[SUBMIT_REVIEW]: (submission: PrReviewSubmission) =>
+					Effect.suspend(() => {
+						const { report, filled, droppedFindings } = normalizePrReviewSubmission(submission)
+						return submitReview(
+							tenant.orgId,
+							reviewId,
+							new SubmitPrReviewRequest({
+								report,
+								model: modelName,
+								inputTokens: usage.input,
+								outputTokens: usage.output,
+								...(partial ? { partial: true } : undefined),
+							}),
+						).pipe(
+							Effect.tap(() =>
+								Effect.annotateCurrentSpan({
+									"maple.pr_review.filled_fields": filled.join(","),
+									"maple.pr_review.filled_count": filled.length,
+									"maple.pr_review.dropped_findings": droppedFindings,
+									"maple.pr_review.findings": report.findings.length,
+									"maple.pr_review.verdict": report.verdict,
+								}),
+							),
+						)
+					}).pipe(
+						Effect.tap(() => Effect.sync(() => (submitted = true))),
+						Effect.as("Review recorded."),
+						Effect.catchCause((cause) =>
+							Effect.fail(
+								new MapleToolFailure({
+									message: `${SUBMIT_REVIEW} failed: ${summarizeToolFailure(cause)}`,
+								}),
+							),
+						),
+					),
+			},
+			sessionAttributes,
+		),
+		autonomous: isAutonomousReviewTurn(sessionId, origin),
 		submitted: () => submitted,
-	} satisfies RunCompletionWithHandlers<typeof handlers.handlers>
+	} satisfies RunCompletion & { readonly handlers: unknown }
 }
 
 /**
@@ -245,7 +241,8 @@ export const buildReviewCompletion = (
  *
  * Its arguments ARE the structured report. Deliberately not approval-gated: it is the structured
  * output channel, not a user-facing mutation. The investigation id and org ride from the session id,
- * so the agent never chooses which investigation it writes.
+ * so the agent never chooses which investigation it writes. Being outside the ruleset is why the
+ * origin is consulted here directly rather than left to the gate.
  *
  * `submitDiagnosis` arrives as a callback rather than being resolved from `InvestigationService`
  * here: that service is itself what starts an investigation's autonomous run, so resolving it
@@ -259,6 +256,7 @@ export const buildReviewCompletion = (
 export const buildDiagnosisCompletion = (
 	sessionId: string,
 	tenant: TenantContext,
+	origin: ChatTurnOrigin,
 	submitDiagnosis: SubmitDiagnosis,
 	usage: RunUsage,
 	modelName: string,
@@ -269,58 +267,61 @@ export const buildDiagnosisCompletion = (
 ) => {
 	const investigationId = investigationForSession(sessionId)
 	if (investigationId === undefined) return undefined
+	// A connector never files a diagnosis. This tool rides *outside* the ruleset — it is the
+	// investigation's structured output channel, not a gated mutation — so nothing else withholds
+	// it, and it does write: a report row, and the investigation's status. An attended follow-up in
+	// the app may file one; a channel is not where a diagnosis gets settled.
+	if (origin.kind === "connector") return undefined
 	const toolkit = Toolkit.make(diagnosisTool)
 	let submitted = false
-	const handlers = toolHandlersWithContent(
-		toolkit,
-		{
-			[SUBMIT_DIAGNOSIS]: (submission: AiTriageSubmission) =>
-				Effect.suspend(() => {
-					const { report, filled } = normalizeTriageSubmission(submission)
-					return submitDiagnosis(
-						tenant.orgId,
-						investigationId,
-						new SubmitDiagnosisRequest({
-							report,
-							model: modelName,
-							inputTokens: usage.input,
-							outputTokens: usage.output,
-							...(partial ? { partial: true } : undefined),
-						}),
-					).pipe(
-						Effect.tap(() =>
-							// What the model omitted is the signal that the prompt or the model is the
-							// problem; without it a filled-in report is indistinguishable from a written one.
-							Effect.annotateCurrentSpan({
-								"maple.diagnosis.filled_fields": filled.join(","),
-								"maple.diagnosis.filled_count": filled.length,
-							}),
-						),
-					)
-				}).pipe(
-					Effect.tap(() => Effect.sync(() => (submitted = true))),
-					Effect.as("Diagnosis recorded."),
-					// Named failures only. A rendered Effect cause carries stack frames and, inside a
-					// DatabaseError, connection details.
-					Effect.catchCause((cause) =>
-						Effect.fail(
-							new MapleToolFailure({
-								message: `${SUBMIT_DIAGNOSIS} failed: ${summarizeToolFailure(cause)}`,
-							}),
-						),
-					),
-				),
-		},
-		sessionAttributes,
-	)
 	return {
 		tool: SUBMIT_DIAGNOSIS,
 		toolkit,
-		layer: handlers.layer,
-		handlers: handlers.handlers,
-		autonomous: isAutonomousInvestigationTurn(sessionId, tenant),
+		...toolHandlersWithContent(
+			toolkit,
+			{
+				[SUBMIT_DIAGNOSIS]: (submission: AiTriageSubmission) =>
+					Effect.suspend(() => {
+						const { report, filled } = normalizeTriageSubmission(submission)
+						return submitDiagnosis(
+							tenant.orgId,
+							investigationId,
+							new SubmitDiagnosisRequest({
+								report,
+								model: modelName,
+								inputTokens: usage.input,
+								outputTokens: usage.output,
+								...(partial ? { partial: true } : undefined),
+							}),
+						).pipe(
+							Effect.tap(() =>
+								// What the model omitted is the signal that the prompt or the model is the
+								// problem; without it a filled-in report is indistinguishable from a written one.
+								Effect.annotateCurrentSpan({
+									"maple.diagnosis.filled_fields": filled.join(","),
+									"maple.diagnosis.filled_count": filled.length,
+								}),
+							),
+						)
+					}).pipe(
+						Effect.tap(() => Effect.sync(() => (submitted = true))),
+						Effect.as("Diagnosis recorded."),
+						// Named failures only. A rendered Effect cause carries stack frames and, inside a
+						// DatabaseError, connection details.
+						Effect.catchCause((cause) =>
+							Effect.fail(
+								new MapleToolFailure({
+									message: `${SUBMIT_DIAGNOSIS} failed: ${summarizeToolFailure(cause)}`,
+								}),
+							),
+						),
+					),
+			},
+			sessionAttributes,
+		),
+		autonomous: isAutonomousInvestigationTurn(sessionId, origin),
 		submitted: () => submitted,
-	} satisfies RunCompletionWithHandlers<typeof handlers.handlers>
+	} satisfies RunCompletion & { readonly handlers: unknown }
 }
 
 /**
@@ -334,7 +335,7 @@ export const buildChatToolkit = (
 	executor: McpToolExecutorApi,
 	tenant: TenantContext,
 	ruleset: PermissionRuleset,
-	surface: McpToolSurface = "chat",
+	surface: McpToolSurface,
 	sessionAttributes?: Readonly<Record<string, string>>,
 ) =>
 	buildMapleToolkit(executor, tenant, {

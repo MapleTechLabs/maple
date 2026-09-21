@@ -8,7 +8,8 @@ import { evaluatePermission } from "@maple/domain/permission"
 import { MUTATING_TOOL_NAMES } from "../mcp/tools/mutating"
 import { mapleToolCatalog } from "../mcp/tools/registry"
 import { AGENTS } from "./agents"
-import { PR_REVIEW_RULESET, prReviewToolNames, READ_ONLY_RULESET, rulesetForTurn } from "./permissions"
+import { PR_REVIEW_RULESET, prReviewToolNames, READ_ONLY_RULESET } from "./permissions"
+import { profileForTurn } from "./profiles"
 
 describe("PR_REVIEW_RULESET", () => {
 	const registered = new Set(mapleToolCatalog.map((definition) => definition.name))
@@ -33,14 +34,17 @@ describe("PR_REVIEW_RULESET", () => {
 	})
 })
 
-describe("rulesetForTurn", () => {
+describe("profileForTurn for the reviewer", () => {
 	it("gives the review agent its own ruleset for the unattended pass only", () => {
-		const agent = AGENTS["pr-review"]!
-		assert.strictEqual(rulesetForTurn(agent, true), PR_REVIEW_RULESET)
-		assert.strictEqual(rulesetForTurn(agent, false), agent.permission)
+		const agent = AGENTS["pr-review"]
+		assert.strictEqual(profileForTurn(agent, { kind: "autonomous" }).ruleset, PR_REVIEW_RULESET)
+		assert.strictEqual(profileForTurn(agent, { kind: "app" }).ruleset, agent.permission)
 	})
 
 	it("keeps the investigation's unattended pass read-only", () => {
-		assert.strictEqual(rulesetForTurn(AGENTS.investigate!, true), READ_ONLY_RULESET)
+		assert.strictEqual(
+			profileForTurn(AGENTS.investigate, { kind: "autonomous" }).ruleset,
+			READ_ONLY_RULESET,
+		)
 	})
 })

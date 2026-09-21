@@ -6,7 +6,7 @@
  * span. Nothing here decides *when* a tool is called — that is the engine's job now.
  */
 import { evaluatePermission } from "@maple/domain/permission"
-import type { ChatMessage } from "@maple/domain/chat-session"
+import type { ChatMessage, ChatTurnOrigin } from "@maple/domain/chat-session"
 import * as AgentRuntime from "@effect-agent/engine/AgentRuntime"
 import { ThreadHistory } from "@effect-agent/engine/ThreadHistory"
 import { IdGenerator } from "@effect-agent/core/IdGenerator"
@@ -17,14 +17,13 @@ import type { McpToolExecutorApi } from "../mcp/dispatcher"
 import { agentSessionSpanAttributes, type ResolvedModel } from "../platform/Llm"
 import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
 import { agentForSession, chatAgent } from "./agents"
-import { rulesetForTurn } from "./permissions"
+import { profileForTurn } from "./profiles"
 import { toChatEvents, type ChatTurnEvent } from "./events"
 import {
 	accumulateUsage,
 	buildChatToolkit,
 	buildDiagnosisCompletion,
 	buildReviewCompletion,
-	isAutonomousTurn,
 	type RunCompletion,
 	type RunUsage,
 	type SubmitDiagnosis,
@@ -79,6 +78,8 @@ export interface ChatRunInput {
 	readonly sessionId: string
 	readonly messageId: string
 	readonly tenant: TenantContext
+	/** Who is driving this turn. Decides surface, ruleset, persona and labels — see `./profiles`. */
+	readonly origin: ChatTurnOrigin
 	readonly toolExecutor: McpToolExecutorApi
 	readonly model: ResolvedModel
 	readonly submitDiagnosis: SubmitDiagnosis
@@ -119,15 +120,13 @@ export interface ChatRunOutcome {
  * module never invents one.
  */
 export const runChatTurn = (input: ChatRunInput) => {
-	const definition = agentForSession(input.sessionId)
-	// Not `definition.permission`: an unattended pass is offered fewer tools than the same agent
-	// answering a person in the same session. See `rulesetForTurn`.
-	const ruleset = rulesetForTurn(definition, isAutonomousTurn(input.sessionId, input.tenant))
+	const agent = agentForSession(input.sessionId)
+	const profile = profileForTurn(agent, input.origin)
 	const maple = buildChatToolkit(
 		input.toolExecutor,
 		input.tenant,
-		ruleset,
-		"chat",
+		profile.ruleset,
+		profile.surface,
 		agentSessionSpanAttributes(input.model.tags),
 	)
 	// One completion per session kind. The session id decides which, so a review session can never
@@ -136,6 +135,7 @@ export const runChatTurn = (input: ChatRunInput) => {
 		buildDiagnosisCompletion(
 			input.sessionId,
 			input.tenant,
+			input.origin,
 			input.submitDiagnosis,
 			input.usage,
 			input.model.name,
@@ -147,6 +147,7 @@ export const runChatTurn = (input: ChatRunInput) => {
 			: buildReviewCompletion(
 					input.sessionId,
 					input.tenant,
+					input.origin,
 					input.submitReview,
 					input.usage,
 					input.model.name,
@@ -158,7 +159,7 @@ export const runChatTurn = (input: ChatRunInput) => {
 	const handlers = Layer.mergeAll(maple.layer, ...(completion === undefined ? [] : [completion.layer]))
 
 	// Declared but never *required*: see `buildDiagnosisCompletion`. A call still settles the run.
-	const agent = chatAgent(definition, toolkit, input.model, {
+	const run = chatAgent({ ...agent, prompt: profile.prompt }, toolkit, input.model, {
 		...(completion === undefined
 			? undefined
 			: { completion: { tool: completion.tool, required: false } }),
@@ -166,11 +167,11 @@ export const runChatTurn = (input: ChatRunInput) => {
 
 	// A gated tool is announced exactly like any other and refuses when dispatched, so only the
 	// ruleset knows the call is a proposal.
-	const isProposed = (name: string) => evaluatePermission(ruleset, name) === "ask"
+	const isProposed = (name: string) => evaluatePermission(profile.ruleset, name) === "ask"
 
 	let compactions = 0
 
-	return AgentRuntime.stream(agent, input.text, {
+	return AgentRuntime.stream(run, input.text, {
 		threadId: decodeThreadId(input.sessionId),
 		history: Prompt.make(promptFromHistory(input.history)),
 		// Not a budget: the ceilings live in the agent's policy. This is the only place the engine

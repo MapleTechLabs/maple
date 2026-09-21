@@ -576,6 +576,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 							sessionId,
 							messageId: randomUUID(),
 							text,
+							origin: { kind: "autonomous" },
 							tenant: encodeChatTurnTenant({
 								orgId,
 								userId: internalServiceUserId,

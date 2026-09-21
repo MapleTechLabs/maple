@@ -134,7 +134,7 @@ const configuredEnv = (stage: MapleStage) =>
  */
 const props = Effect.gen(function* () {
 	if (globalThis.__ALCHEMY_RUNTIME__) return { main: import.meta.url }
-	const { stage, workerDev, devEnv } = yield* MapleStack
+	const { stage, workerDev, devEnv, dbSchema } = yield* MapleStack
 	// The agents' repository sandbox, reached only over this binding. Absent on
 	// the stages that do not deploy it, where `SandboxClient` reports the tools
 	// as unavailable rather than failing.
@@ -158,6 +158,7 @@ const props = Effect.gen(function* () {
 		// `devEnv` last, so `.env.local` cannot override the inter-app URLs.
 		env: {
 			...makeWorkerBindings({ stage }),
+			...(dbSchema && { MAPLE_DB_BRANCH: dbSchema.name }),
 			...(Option.isSome(sandbox) ? { SANDBOX: sandbox.value } : undefined),
 			...env,
 			...devEnv,

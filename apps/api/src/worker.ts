@@ -66,7 +66,7 @@ const makeWorkerBindings = ({ stage }: { stage: MapleStage }) => ({
  */
 const props = Effect.gen(function* () {
 	if (globalThis.__ALCHEMY_RUNTIME__) return { main: import.meta.url }
-	const { stage, domains, workerDev, devEnv } = yield* MapleStack
+	const { stage, domains, workerDev, devEnv, dbSchema } = yield* MapleStack
 	// maple-ai, which serves `/mcp` and the chat surface. api keeps the hostname
 	// and forwards, so the public address and the OAuth identity do not move.
 	const ai = yield* AiWorker
@@ -100,6 +100,7 @@ const props = Effect.gen(function* () {
 		// `devEnv` last, so `.env.local` cannot override the inter-app URLs.
 		env: {
 			...makeWorkerBindings({ stage }),
+			...(dbSchema && { MAPLE_DB_BRANCH: dbSchema.name }),
 			AI_WORKER: ai,
 			...configuredEnv,
 			...devEnv,
