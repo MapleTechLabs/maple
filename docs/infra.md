@@ -435,8 +435,9 @@ on the runner because the runtime base is `debian:bookworm-slim` (glibc 2.36) wh
 The PlanetScale `main` branch is a `Planetscale.PostgresBranch` yielded into `MapleStack` on prd
 (`dbSchema`), with `migrations` at `packages/db/drizzle`. Alchemy orders resources only by the
 Outputs their props reference, and a Hyperdrive bound by id references nothing, so the api, ai and
-alerting Workers put `dbSchema.name` in their env (`MAPLE_DB_BRANCH`) to upload after it. Details in
-`docs/persistence.md`.
+alerting Workers put `dbSchema.name` in their env (`MAPLE_DB_BRANCH`) to upload after it. The ingest
+gateway's Postgres credential is a `Planetscale.PostgresRole` on the same branch; see
+`docs/persistence.md` for both.
 
 ## Hyperdrive: why api and alerting have separate configs
 
