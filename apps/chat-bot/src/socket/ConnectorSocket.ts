@@ -28,13 +28,19 @@
  * resolved from another request's I/O context is how this codebase has broken
  * workerd before.
  */
-import type { ChatConnectorId, ConnectorConfig, SocketDirective, SocketIngress, SocketStep } from "@maple/chat-platform"
+import type {
+	ChatConnectorId,
+	ConnectorConfig,
+	SocketDirective,
+	SocketIngress,
+	SocketStep,
+} from "@maple/chat-platform"
 import { connectors } from "@maple/chat-platform/connectors"
 import * as Cloudflare from "alchemy/Cloudflare"
 import { Effect, Layer } from "effect"
 import { FetchHttpClient } from "effect/unstable/http"
 import { resolveConnectorConfig, type IngressConnector } from "../config.ts"
-import { InboundHandler } from "../inbound.ts"
+import { inboundHandlerLayer } from "../inbound.ts"
 import { applyStep, reconnectDelayMs } from "./driver.ts"
 
 /** What this object reads off its Durable Object state. */
@@ -95,7 +101,8 @@ const STOP_RETRY_MS = 6 * 60 * 60 * 1_000
 const NORMAL_CLOSE = 1_000
 
 /** The services one step needs. Rebuilt per step, and both are a value each. */
-const StepLayer = Layer.mergeAll(FetchHttpClient.layer, InboundHandler.layer)
+const stepLayer = (env: Record<string, unknown>) =>
+	Layer.mergeAll(FetchHttpClient.layer, inboundHandlerLayer(env))
 
 /**
  * The frame, if it is one this host can carry.
@@ -208,9 +215,7 @@ export class ConnectorSocket {
 			if (heartbeatAt !== undefined && heartbeatAt <= now) {
 				// Through the queue like any frame, so a heartbeat cannot interleave
 				// with the state a frame arriving at the same moment is rewriting.
-				await this.enqueue(this.generation, (ingress, state, at) =>
-					ingress.heartbeat(state, at),
-				)
+				await this.enqueue(this.generation, (ingress, state, at) => ingress.heartbeat(state, at))
 			}
 		}
 		await this.armAlarm(Date.now())
@@ -322,7 +327,7 @@ export class ConnectorSocket {
 		// nothing above it is running an Effect, so the layer is composed and
 		// provided here or nowhere.
 		// oxlint-disable-next-line effecttsgo/strict-effect-provide
-		await Effect.runPromise(program.pipe(Effect.provide(StepLayer))).catch((cause: unknown) => {
+		await Effect.runPromise(program.pipe(Effect.provide(stepLayer(this.env)))).catch((cause: unknown) => {
 			console.error("[chat-bot.socket] step failed", cause)
 		})
 		if (step.heartbeatAt !== undefined) {
@@ -344,9 +349,7 @@ export class ConnectorSocket {
 		if (directive._tag === "stop") {
 			await this.ctx.storage.put(KEY.stoppedUntil, now + STOP_RETRY_MS)
 			const connectorId = await this.ctx.storage.get<string>(KEY.connectorId)
-			console.error(
-				`[chat-bot.socket] ${connectorId ?? "connector"} stopped: ${directive.reason}`,
-			)
+			console.error(`[chat-bot.socket] ${connectorId ?? "connector"} stopped: ${directive.reason}`)
 			return
 		}
 		// Consecutive failures. A connection that stayed up past `ESTABLISHED_MS`
@@ -364,9 +367,7 @@ export class ConnectorSocket {
 		const pending = [
 			now + WATCHDOG_MS,
 			await this.ctx.storage.get<number>(KEY.heartbeatAt),
-			this.socket === undefined
-				? await this.ctx.storage.get<number>(KEY.reconnectAt)
-				: undefined,
+			this.socket === undefined ? await this.ctx.storage.get<number>(KEY.reconnectAt) : undefined,
 		].filter((at): at is number => at !== undefined)
 		await this.ctx.storage.setAlarm(Math.max(Math.min(...pending), now + MIN_ALARM_MS))
 	}
@@ -410,8 +411,7 @@ export const activateConnectorSocket = Effect.map(
 		Effect.sync(() => {
 			const socket = new ConnectorSocket(state.raw, env)
 			return {
-				ensureConnected: (connectorId) =>
-					Effect.promise(() => socket.ensureConnected(connectorId)),
+				ensureConnected: (connectorId) => Effect.promise(() => socket.ensureConnected(connectorId)),
 				alarm: () => Effect.promise(() => socket.alarm()),
 			} satisfies ConnectorSocketApi
 		}),

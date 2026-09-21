@@ -18,10 +18,14 @@
  * thread's id — which is why the target's channel is resolved through {@link channelOf} rather
  * than read directly.
  */
-import { Context, Duration, Effect, Option, Redacted, Schema } from "effect"
+import { ChatConversationKey } from "@maple/primitives"
+import { Duration, Effect, Option, Redacted, Schema } from "effect"
 import { HttpClient, HttpClientRequest, type HttpClientResponse } from "effect/unstable/http"
+import type { ConnectorConfig, InboundMessage } from "../../ingress"
 import {
 	ChatOutboundError,
+	ConnectorCredentials,
+	type ChatConversation,
 	type ChatMessageRef,
 	type ChatOutbound,
 	type ChatOutboundOperation,
@@ -29,19 +33,20 @@ import {
 	type ChatThreadRequest,
 } from "../../outbound"
 import type { ChatBlock } from "../../render/blocks"
-import { API_BASE, API_HOST } from "./api"
+import { API_BASE, API_HOST, BOT_TOKEN_CONFIG } from "./api"
 import { DISCORD_CONNECTOR_ID } from "./id"
 import { renderDiscordMessage } from "./render"
 
 /**
- * The credential the host Worker holds for this connector.
+ * The bot token out of the configuration the host resolved.
  *
- * The host reads it from `BOT_TOKEN_CONFIG` (`./api.ts`), which is also what the gateway half
- * declares in its `requiredConfig` — one secret, one name.
+ * `BOT_TOKEN_CONFIG` (`./api.ts`) is also what the gateway half declares in its `requiredConfig`,
+ * so one secret under one name serves both halves — and the host, which skips a connector whose
+ * declared configuration is missing, is what makes the fallback here unreachable rather than a
+ * silent unauthenticated mode.
  */
-export class DiscordBotToken extends Context.Service<DiscordBotToken, Redacted.Redacted<string>>()(
-	"@maple/chat-platform/connectors/discord/BotToken",
-) {}
+const botToken = (config: ConnectorConfig): Redacted.Redacted<string> =>
+	Redacted.make(config.get(BOT_TOKEN_CONFIG) ?? "")
 
 /**
  * 2000 is Discord's hard limit on `content`; the neutral cut is held to less so a connector's own
@@ -103,6 +108,9 @@ const THREAD_ARCHIVE_MINUTES = 1440
 /** The thread when the turn is in one, the channel otherwise — on Discord both are channel ids. */
 const channelOf = (target: ChatTarget): string => target.threadId ?? target.channelId
 
+/** Every id Discord mints is a snowflake, which the key's charset covers. */
+const conversationKey = Schema.decodeSync(ChatConversationKey)
+
 /** Seconds, fractional. Anything outside the window falls through to the header and the default. */
 const RETRY_AFTER_SECONDS = Schema.Finite.pipe(
 	Schema.check(Schema.isBetween({ minimum: 0, maximum: MAX_RETRY_AFTER_SECONDS })),
@@ -122,12 +130,12 @@ class DiscordRateLimited extends Schema.TaggedError<DiscordRateLimited>()(
 	{ wait: Schema.Duration },
 ) {}
 
-export const discordOutbound: ChatOutbound<HttpClient.HttpClient | DiscordBotToken> = {
+export const discordOutbound: ChatOutbound<HttpClient.HttpClient | ConnectorCredentials> = {
 	connectorId: DISCORD_CONNECTOR_ID,
 	limits: { maxMessageChars: MAX_MESSAGE_CHARS, minEditInterval: MIN_EDIT_INTERVAL },
 	transport: Effect.gen(function* () {
 		const client = yield* HttpClient.HttpClient
-		const token = yield* DiscordBotToken
+		const token = botToken(yield* ConnectorCredentials)
 
 		/**
 		 * One HTTP attempt, as one client span.
@@ -196,6 +204,28 @@ export const discordOutbound: ChatOutbound<HttpClient.HttpClient | DiscordBotTok
 		const body = (blocks: ReadonlyArray<ChatBlock>) =>
 			HttpClientRequest.bodyJsonUnsafe(renderDiscordMessage(blocks))
 
+		const openThread = Effect.fn("Discord.openThread")(function* (request: ChatThreadRequest) {
+			const response = yield* send(
+				"thread",
+				"/channels/{channel_id}/messages/{message_id}/threads",
+				HttpClientRequest.post(
+					`${API_BASE}/channels/${request.channelId}/messages/${request.anchorMessageId}/threads`,
+				).pipe(
+					HttpClientRequest.bodyJsonUnsafe({
+						name: threadName(request.title),
+						auto_archive_duration: THREAD_ARCHIVE_MINUTES,
+					}),
+				),
+			)
+			const json = yield* response.json.pipe(
+				Effect.mapError((cause) => failed("thread", "Discord's reply could not be read", { cause })),
+			)
+			const thread = yield* Schema.decodeUnknownEffect(CreatedThread)(json).pipe(
+				Effect.mapError((cause) => failed("thread", "Discord answered with no thread id", { cause })),
+			)
+			return thread.id
+		})
+
 		return {
 			post: Effect.fn("Discord.post")(function* (target: ChatTarget, blocks: ReadonlyArray<ChatBlock>) {
 				const response = yield* send(
@@ -236,31 +266,34 @@ export const discordOutbound: ChatOutbound<HttpClient.HttpClient | DiscordBotTok
 					HttpClientRequest.post(`${API_BASE}/channels/${channelOf(target)}/typing`),
 				).pipe(Effect.asVoid),
 
-			openThread: Effect.fn("Discord.openThread")(function* (request: ChatThreadRequest) {
-				const response = yield* send(
-					"thread",
-					"/channels/{channel_id}/messages/{message_id}/threads",
-					HttpClientRequest.post(
-						`${API_BASE}/channels/${request.channelId}/messages/${request.anchorMessageId}/threads`,
-					).pipe(
-						HttpClientRequest.bodyJsonUnsafe({
-							name: threadName(request.title),
-							auto_archive_duration: THREAD_ARCHIVE_MINUTES,
+			openThread,
+
+			/**
+			 * A mention is answered in a thread of its own, so a channel keeps reading as a channel.
+			 *
+			 * The thread IS the conversation, and on Discord a thread is a channel — so its id is both
+			 * the key and every later call's address, and a follow-up mention inside it arrives with
+			 * that same id as its `channel_id` and lands on the same session.
+			 *
+			 * Discord will not start a thread from a message that is already in one, and answers the
+			 * same way in a channel where the bot may not start them at all. Both mean the same thing
+			 * here: the mention's own channel is the conversation.
+			 */
+			conversation: (message: InboundMessage) =>
+				openThread({
+					workspaceId: message.workspaceId,
+					channelId: message.channelId,
+					anchorMessageId: message.messageId,
+					title: message.text,
+				}).pipe(
+					Effect.orElseSucceed(() => message.channelId),
+					Effect.map(
+						(channelId): ChatConversation => ({
+							conversationKey: conversationKey(channelId),
+							target: { workspaceId: message.workspaceId, channelId },
 						}),
 					),
-				)
-				const json = yield* response.json.pipe(
-					Effect.mapError((cause) =>
-						failed("thread", "Discord's reply could not be read", { cause }),
-					),
-				)
-				const thread = yield* Schema.decodeUnknownEffect(CreatedThread)(json).pipe(
-					Effect.mapError((cause) =>
-						failed("thread", "Discord answered with no thread id", { cause }),
-					),
-				)
-				return thread.id
-			}),
+				),
 		}
 	}),
 }

@@ -25,7 +25,6 @@ import {
 	type ChatTurnOrigin,
 	type ChatTurnTenantEncoded,
 	decodeChatTurnTenant,
-	originForTurn,
 } from "@maple/domain/chat-session"
 import type { InvestigationProgress } from "@maple/domain/http"
 import { workerEnvLayer } from "@maple/infra/worker-runtime"
@@ -103,8 +102,8 @@ export interface RunChatSessionTurnInput {
 	readonly env: Record<string, unknown>
 	readonly messageId: string
 	readonly tenant: ChatTurnTenantEncoded
-	/** Absent only from a caller that predates the field; see `originForTurn`. */
-	readonly origin?: ChatTurnOrigin
+	/** Who is driving the turn, stated by whoever raised it. */
+	readonly origin: ChatTurnOrigin
 }
 
 /**
@@ -249,7 +248,7 @@ const investigationBilling = (
  * client reads, so a turn that dies without one is indistinguishable from a turn that hung.
  */
 export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promise<void> => {
-	const origin = originForTurn(input.origin, input.tenant)
+	const origin = input.origin
 
 	const [
 		{ InvestigationServicesLive },

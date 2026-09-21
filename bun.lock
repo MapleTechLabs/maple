@@ -113,7 +113,10 @@
     "apps/chat-bot": {
       "name": "@maple/chat-bot",
       "dependencies": {
+        "@maple-dev/effect-sdk": "workspace:*",
+        "@maple/backend": "workspace:*",
         "@maple/chat-platform": "workspace:*",
+        "@maple/domain": "workspace:*",
         "@maple/infra": "workspace:*",
         "alchemy": "catalog:alchemy",
         "effect": "catalog:effect",

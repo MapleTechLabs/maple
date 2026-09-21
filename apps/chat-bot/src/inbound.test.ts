@@ -1,16 +1,20 @@
 /**
- * The one rule in this Worker that is absolute: a customer's conversation never
- * reaches a log line or a span.
+ * The one rule in this Worker that is absolute: a customer's conversation never reaches a log line
+ * or a span.
  *
- * It is stated in `inbound.ts` and enforced by nothing else. The failure mode is
- * a quiet one-line edit — somebody adds the text to a log to debug a turn and it
- * ships — so the test reads the ACTUAL recorded telemetry and looks for the
- * message, rather than asserting a list of allowed keys that the same edit would
- * simply extend.
+ * It is stated in `inbound.ts` and enforced by nothing else. The failure mode is a quiet one-line
+ * edit — somebody adds the text to a log to debug a turn and it ships — so the test reads the
+ * ACTUAL recorded telemetry and looks for the message, rather than asserting a list of allowed
+ * keys that the same edit would simply extend.
+ *
+ * The handler's other job is covered here too, because it is one line and the whole feature hangs
+ * off it: an addressed message reaches the conversation's relay, and an unaddressed one does not.
  */
-import { Context, Effect, Layer, Logger, References, Tracer } from "effect"
+import type { InboundEvent } from "@maple/chat-platform"
+import { Context, Effect, Logger, References, Tracer } from "effect"
 import { describe, expect, it } from "vitest"
-import { InboundHandler } from "./inbound.ts"
+import { inboundHandler } from "./inbound.ts"
+import type { ConnectorRelayStub } from "./relay/stub.ts"
 import { testMessage } from "./test-support.ts"
 
 interface Recorded {
@@ -44,13 +48,21 @@ const record = (): { recorded: Recorded; context: Context.Context<never> } => {
 	}
 }
 
-const handleAndRecord = async (): Promise<Recorded & { everything: string }> => {
+const handleAndRecord = async (
+	event: InboundEvent = testMessage,
+): Promise<Recorded & { everything: string; delivered: Array<InboundEvent> }> => {
 	const { recorded, context } = record()
+	const delivered: Array<InboundEvent> = []
+	const relay: ConnectorRelayStub = {
+		deliver: (inbound) => {
+			delivered.push(inbound)
+			return Promise.resolve()
+		},
+	}
 	await Effect.runPromise(
-		Effect.flatMap(InboundHandler, (handler) => handler.handle(testMessage)).pipe(
-			Effect.provide(InboundHandler.layer),
-			Effect.provideContext(context),
-		),
+		inboundHandler({ forEvent: () => relay })
+			.handle(event)
+			.pipe(Effect.provideContext(context)),
 	)
 	const everything = JSON.stringify({
 		logs: recorded.logs,
@@ -59,7 +71,7 @@ const handleAndRecord = async (): Promise<Recorded & { everything: string }> => 
 			attributes: Object.fromEntries(span.attributes),
 		})),
 	})
-	return { ...recorded, everything }
+	return { ...recorded, everything, delivered }
 }
 
 describe("recording an inbound event", () => {
@@ -80,5 +92,19 @@ describe("recording an inbound event", () => {
 			"maple.chat.event": "message",
 			"maple.chat.workspace_id": testMessage.workspaceId,
 		})
+	})
+})
+
+describe("handing an inbound event on", () => {
+	it("delivers a message that addressed the bot to the conversation's relay", async () => {
+		const { delivered } = await handleAndRecord()
+		expect(delivered).toEqual([testMessage])
+	})
+
+	it("relays nothing for a message the bot was not addressed in", async () => {
+		// A connector reports what it can see in a conversation the bot is in; only a mention is a
+		// turn, and starting one per message would answer every conversation in the channel.
+		const { delivered } = await handleAndRecord({ ...testMessage, mentionsBot: false })
+		expect(delivered).toEqual([])
 	})
 })

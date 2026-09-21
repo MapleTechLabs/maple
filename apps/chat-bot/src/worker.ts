@@ -17,9 +17,10 @@
  *     ticks.
  *   - **Webhooks.** `POST /connectors/:connectorId/webhook`, dispatched by id.
  *
- * It ships dark: events are normalized and handed to `InboundHandler`, which
- * records them. Wiring that seam to an agent turn is a later change, and it
- * touches nothing else here.
+ * A normalized event reaches `InboundHandler`, which records it and hands it to
+ * the conversation's own `ConnectorRelay` object — where the turn is claimed on
+ * the agent's chat session and the answer is streamed back. The ingress half
+ * never waits for any of that.
  *
  * **No public hostname.** The socket half dials out and needs none, and no
  * webhook connector is registered yet — so a custom domain would be DNS, a
@@ -31,19 +32,21 @@ import { connectors } from "@maple/chat-platform/connectors"
 import {
 	cachedRecoverable,
 	CLOUDFLARE_WORKER_PLACEMENT,
+	MapleDb,
 	MapleStack,
 	type MapleStage,
 	resolveWorkerName,
 } from "@maple/infra/cloudflare"
-import { merge, selfObservabilityEnv } from "@maple/infra/env"
+import { merge, optionalSecret, plainWithDefault, selfObservabilityEnv } from "@maple/infra/env"
 import { WorkerTelemetry } from "@maple/infra/worker-telemetry"
 import * as Cloudflare from "alchemy/Cloudflare"
 import { Effect, Layer, Ref, Scope } from "effect"
 import { HttpRouter } from "effect/unstable/http"
 import { resolveConnectorConfig, socketConnectors, type IngressConnector } from "./config.ts"
-import { InboundHandler } from "./inbound.ts"
+import { inboundHandlerLayer } from "./inbound.ts"
 import { connectorConfigEnv } from "./resources/env.ts"
 import { connectorWebhookRouter } from "./routes/webhook.ts"
+import { ConnectorRelayLive, ConnectorRelayObject } from "./relay/ConnectorRelay.ts"
 import { ConnectorSocketLive, ConnectorSocketObject } from "./socket/ConnectorSocket.ts"
 
 /**
@@ -53,7 +56,16 @@ import { ConnectorSocketLive, ConnectorSocketObject } from "./socket/ConnectorSo
  * values: a stage without a platform's credentials deploys and runs, and that
  * connector is skipped.
  */
-const configuredEnv = (stage: MapleStage) => merge(selfObservabilityEnv(stage), connectorConfigEnv)
+const configuredEnv = (stage: MapleStage) =>
+	merge(
+		selfObservabilityEnv(stage),
+		connectorConfigEnv,
+		// Where a relayed answer's links point, and what signs the image of a chart the agent drew.
+		// The key is optional here where the API requires it: without one a reply carries its charts
+		// as text, which is what `chatChartImageUrl` answers `null` for.
+		plainWithDefault("MAPLE_APP_BASE_URL", "https://app.maple.dev"),
+		optionalSecret("MAPLE_SHARE_TOKEN_HMAC_KEY"),
+	)
 
 /**
  * Alchemy evaluates a Worker's props wherever the class is yielded — the
@@ -75,7 +87,16 @@ const props = Effect.gen(function* () {
 		// See the module comment: nothing calls in from the public internet yet.
 		workersDev: false,
 		// `devEnv` last, so `.env.local` cannot override the inter-app URLs.
-		env: { ...env, ...devEnv },
+		env: {
+			// Cross-script reference to the chat Durable Object the AI Worker hosts: a mention
+			// becomes a turn on it, and `chatSessionStub` reads it off `env` under the class name.
+			ChatSession: Cloudflare.DurableObject("ChatSession", {
+				className: "ChatSession",
+				scriptName: resolveWorkerName("ai", stage),
+			}),
+			...env,
+			...devEnv,
+		},
 	}
 })
 
@@ -90,9 +111,11 @@ const props = Effect.gen(function* () {
  */
 const CONNECT_CRON = "* * * * *"
 
-export class ChatBot extends Cloudflare.Worker<ChatBot, Cloudflare.WorkerShape, ConnectorSocketObject>()(
-	"chat-bot",
-) {}
+export class ChatBot extends Cloudflare.Worker<
+	ChatBot,
+	Cloudflare.WorkerShape,
+	ConnectorSocketObject | ConnectorRelayObject
+>()("chat-bot") {}
 
 export default ChatBot.make(
 	props,
@@ -100,6 +123,12 @@ export default ChatBot.make(
 		// Yielding the class is what binds it, registers it at plan time and
 		// exports it from the generated entry.
 		const sockets = yield* ConnectorSocketObject
+		// Bound but never called from here: the socket object reaches a conversation's relay off its
+		// own env, and this is what puts the namespace there and the class in the entry's exports.
+		yield* ConnectorRelayObject
+		// `MAPLE_DB` in the stage's flavor. One row per mention — the workspace this event's
+		// conversation belongs to — so it shares the api's Hyperdrive config rather than taking one.
+		yield* MapleDb("chat-bot")
 		const env = yield* Cloudflare.WorkerEnvironment
 
 		// One log line per connector that cannot run, once per isolate rather than
@@ -142,7 +171,7 @@ export default ChatBot.make(
 				const scope = yield* Scope.make()
 				return yield* HttpRouter.toHttpEffect(
 					connectorWebhookRouter(env).pipe(
-						Layer.provideMerge(InboundHandler.layer),
+						Layer.provideMerge(inboundHandlerLayer(env)),
 						Layer.provideMerge(HttpRouter.layer),
 					),
 				).pipe(Scope.provide(scope))
@@ -157,10 +186,12 @@ export default ChatBot.make(
 		// oxlint-disable-next-line effecttsgo/strict-effect-provide
 		Effect.provide(
 			Layer.mergeAll(
-				// The host Worker's layer also provides the Durable Object's
-				// implementation; yielding the class above is what forces this to run,
-				// so the class reaches the generated entry's exports.
+				// The host Worker's layer also provides the Durable Objects'
+				// implementations; yielding the classes above is what forces this to run,
+				// so they reach the generated entry's exports.
 				ConnectorSocketLive,
+				ConnectorRelayLive,
+				Cloudflare.Hyperdrive.ConnectBinding,
 				Cloudflare.Workers.CronEventSourceLive,
 				WorkerTelemetry({ serviceName: "maple-chat-bot" }),
 			),

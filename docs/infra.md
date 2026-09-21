@@ -248,12 +248,31 @@ impl)` over the plain `ChatSession` class — the outer Effect resolves state an
     holds it down for six hours rather than forever, so fixing the credential is all a
     recovery needs.
 
+    A second Durable Object, `ConnectorRelay` (`src/relay/ConnectorRelay.ts`), carries the
+    turn a mention causes: one object per conversation, addressed by connector, workspace and
+    channel, which resolves the org, claims a turn on maple-ai's `ChatSession` and streams the
+    answer back into the conversation under its own `waitUntil` (an alarm every 30s keeps it
+    resident while it does, for the same reason the chat session arms one). It is a separate
+    object because the socket is a single one for the whole deployment: running turns there
+    would either block the next frame behind a model run or pile every concurrent turn in the
+    system into the object that holds the connection. It keeps no storage — an object evicted
+    mid-turn leaves the conversation holding the last thing the answer had said, and the
+    session ends the turn on its own heartbeat.
+
+    So the Worker binds, beyond its connector secrets: `ChatSession` cross-script on
+    maple-ai, `MAPLE_DB` (the api's Hyperdrive config — one row per mention, read inside a
+    connection scope that closes before the turn streams), `MAPLE_APP_BASE_URL` for the links
+    a reply carries, and an optional `MAPLE_SHARE_TOKEN_HMAC_KEY`, without which a chart in a
+    reply is relayed as text rather than as a picture. On a stage with no application
+    database (PR previews) the lookup fails, is logged, and the mention goes unanswered
+    rather than being told the workspace is unlinked.
+
     It has **no public hostname**: the socket half dials out, and no webhook connector is
     registered yet, so a custom domain would be DNS plus a certificate bought for a route
-    nothing calls. Under `bun dev` the portless route reaches the webhook path. The first
-    webhook connector is what should buy the hostname. The Worker is inert on a stage with no
-    connector credentials — every connector key is bound optional, and a connector without
-    its configuration is skipped with one log line.
+    nothing calls. Under `bun dev chat-bot` the portless route reaches the webhook path. The
+    Worker is inert on a stage with no connector credentials — every connector key is bound
+    optional, and a connector without its configuration is skipped with one log line, so no
+    socket is opened and no turn is ever relayed.
 
 - **The sandbox Worker** (`sandbox`): the one Worker in the fleet whose own module is
   its bundle entry. It hosts Cloudflare's Sandbox Durable Object (`@cloudflare/sandbox`),
