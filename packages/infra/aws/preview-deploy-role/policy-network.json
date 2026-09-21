@@ -118,12 +118,22 @@
 			"Resource": "arn:aws:ec2:us-east-1:465760687006:security-group-rule/*"
 		},
 		{
-			"Sid": "Ec2RunInstancesForPreviewFleet",
+			"Sid": "Ec2RunInstancesPreviewFleetInstances",
+			"Effect": "Allow",
+			"Action": "ec2:RunInstances",
+			"Resource": "arn:aws:ec2:us-east-1:465760687006:instance/*",
+			"Condition": {
+				"StringLike": {
+					"ec2:InstanceType": ["c7gd.*", "c7g.*", "t4g.*"]
+				}
+			}
+		},
+		{
+			"Sid": "Ec2RunInstancesPreviewFleetSupportingResources",
 			"Effect": "Allow",
 			"Action": "ec2:RunInstances",
 			"Resource": [
 				"arn:aws:ec2:us-east-1::image/ami-*",
-				"arn:aws:ec2:us-east-1:465760687006:instance/*",
 				"arn:aws:ec2:us-east-1:465760687006:volume/*",
 				"arn:aws:ec2:us-east-1:465760687006:network-interface/*"
 			]

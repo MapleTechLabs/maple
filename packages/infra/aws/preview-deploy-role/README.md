@@ -119,8 +119,10 @@ boundary input, so the condition would deny every preview deploy. Until alchemy 
 boundary or explicit roles, the control is the one the workflow already documents: the
 `pr-preview` GitHub environment must require a reviewer before PR-controlled code gets these
 credentials. The role also holds no `sts:AssumeRole`, `iam:CreateUser`, `iam:CreateAccessKey`
-or `iam:UpdateAssumeRolePolicy` on non-preview roles, so the escalation stays inside
-resources named `maple-*-pr-*` unless a task is launched with the widened role.
+and no `iam:UpdateAssumeRolePolicy`, `iam:PutRolePermissionsBoundary` or
+`iam:DeleteRolePermissionsBoundary` at all (the ingest stack never calls them; a preview role's
+trust policy is fixed at `iam:CreateRole`), so the escalation stays inside resources named
+`maple-*-pr-*` unless a task is launched with the widened role.
 
 ## Expect a few AccessDenied rounds
 
@@ -162,12 +164,19 @@ Known soft spots, in the order they are likely to bite:
   `ec2:CreateTags` with `ec2:CreateAction: RunInstances`) are written for the EC2 NVMe ingest
   fleet (#937) ahead of it landing; the current Fargate stack never exercises them.
 - Cloud Map and Route 53 only run for a PR carrying `preview:collector`. Cloud Map creates
-  and deletes the namespace's private hosted zone on the caller's permissions, so the role
-  gets `route53:CreateHostedZone` and `route53:DeleteHostedZone` on `*` (zone ARNs carry ids,
-  and Cloud Map does not tag the zone). Nothing that writes records is granted: instance
-  registration goes through the ECS and Cloud Map service-linked roles, and Route 53 refuses
-  to delete a zone that still holds records, so the reach is empty zones. If the collector
-  opt-in is never used, drop the statement.
+  the namespace's private hosted zone on the caller's permissions, so the role gets
+  `route53:CreateHostedZone` (it accepts no resource ARN). `route53:DeleteHostedZone` is
+  deliberately NOT granted: the zone's id does not exist until the preview does, so the only
+  grant possible up front is on every zone in the account. A collector preview's teardown
+  therefore fails at `DeleteNamespace`. Read the zone id with
+  `aws servicediscovery get-namespace --id <ns-id> --query Namespace.Properties.DnsProperties.HostedZoneId`,
+  delete the namespace by hand with the prod credentials, and rerun the teardown. Nothing that
+  writes records is granted: instance registration goes through the ECS and Cloud Map
+  service-linked roles.
+- `ec2:RunInstances` on the instance resource requires a Graviton instance type
+  (`c7gd.*`, `c7g.*`, `t4g.*`). Auto Scaling validates the caller's launch permission when the
+  group is created; the launch itself runs under the Auto Scaling service-linked role. Widen the
+  list only alongside a fleet change that needs it.
 - Previews have no ingest domain, so nothing in ACM is granted. A preview that does get a
   domain (`resolveMapleDomains`) will need `acm:RequestCertificate` and friends.
 - The orphan sweep (`cleanup-preview-orphans.yml`) never touches AWS, so a preview whose
