@@ -111,7 +111,7 @@ export type McpToolSurface =
 	 * internal one: see `INTERNAL_SURFACES` in `apps/ai/src/mcp/tools/types.ts`.
 	 */
 	| "bot"
-	/** Agent workflow passes (`workflows/agent-pass.ts`). */
+	/** Retired agent workflow passes. Kept so already-audited rows stay readable. */
 	| "workflow"
 	/** Retired worker-to-worker internal RPC. Kept so already-audited rows stay readable. */
 	| "rpc"

@@ -62,6 +62,15 @@ describe("resolveActor", () => {
 		}).pipe(Effect.provide(makeLayer())),
 	)
 
+	// The connector namespace is an identity: a client that could register inside it
+	// would author entries indistinguishable from a chat platform's own agent.
+	it.effect("refuses a client naming itself inside the connector namespace", () =>
+		Effect.gen(function* () {
+			const resolved = yield* resolveActor(tenantWith({ mcpClientName: "chat-connector-testchat" }))
+			assert.isFalse(resolved.isAgent)
+		}).pipe(Effect.provide(makeLayer())),
+	)
+
 	it.effect("falls back to the user actor when no client name is negotiated", () =>
 		Effect.gen(function* () {
 			const resolved = yield* resolveActor(tenantWith())
