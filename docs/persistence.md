@@ -94,11 +94,11 @@ alerting Workers carry its name in their env so they upload after it. Bookkeepin
 `__alchemy_migrations`; `drizzle.__drizzle_migrations` was copied in once and is frozen, so never run
 `drizzle-kit migrate` against prd. The deploy migrates as a temporary role that is dropped with
 `postgres` as its successor, so the tables it creates end up owned by `postgres` with no other grants.
-Every runtime role must therefore be a member of `postgres`: mint credentials with
-`--inherited-roles postgres`, and this must return no rows:
+Every runtime role must therefore inherit `postgres` (`USAGE`, not mere membership, which only
+grants `SET ROLE`): mint credentials with `--inherited-roles postgres`, and this must return no rows:
 
 ```sql
-SELECT rolname FROM pg_roles WHERE rolcanlogin AND NOT pg_has_role(rolname, 'postgres', 'member')
+SELECT rolname FROM pg_roles WHERE rolcanlogin AND NOT pg_has_role(rolname, 'postgres', 'usage')
 ```
 
 The deploy reads `PLANETSCALE_API_TOKEN_ID` / `PLANETSCALE_API_TOKEN` /
