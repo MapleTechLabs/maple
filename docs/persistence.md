@@ -92,31 +92,17 @@ The prd deploy applies migrations: `alchemy.run.ts` declares the PlanetScale `ma
 `Planetscale.PostgresBranch` with `migrations` pointed at `packages/db/drizzle`, and the api, ai and
 alerting Workers carry its name in their env so they upload after it. Bookkeeping is alchemy's
 `__alchemy_migrations`; `drizzle.__drizzle_migrations` was copied in once and is frozen, so never run
-`drizzle-kit migrate` against prd. The deploy migrates as a temporary role, not `postgres`, so the
-branch's default privileges do not cover the tables it creates: a migration that creates one grants
-it `TO PUBLIC` itself. The deploy reads `PLANETSCALE_API_TOKEN_ID` / `PLANETSCALE_API_TOKEN` /
-`PLANETSCALE_ORGANIZATION` from Infisical prod; `bun dev` leaves the PlanetScale provider out.
+`drizzle-kit migrate` against prd. The deploy migrates as a temporary role that is dropped with
+`postgres` as its successor, so the tables it creates end up owned by `postgres` with no other grants.
+Every runtime role must therefore be a member of `postgres`: mint credentials with
+`--inherited-roles postgres`, and this must return no rows:
 
-The first v1 migrate on a database migrated by drizzle 0.x upgrades `drizzle.__drizzle_migrations`
-in place (adds `name` and `applied_at`), matching every existing row to a local folder by
-`created_at` truncated to the second, then by hash, and **refusing the whole run if any row matches
-nothing**. A row like that is a migration that was applied and later renumbered or re-timestamped,
-or one applied from a branch that never merged. Check before migrating. The report prints a
-DELETE for a superseded row and an UPDATE for a renumbered row whose SQL is byte-identical; a row
-whose SQL changed after it ran gets a `git diff` instead, because relabelling it would record
-statements this database never saw as applied.
-
-The report also lists every local migration no row matches, because the v1 migrator applies all
-of them where the 0.x migrator only applied those newer than the newest recorded timestamp. A
-migration whose DDL reached the schema without a row (a `db:push`, a run that died after its
-transaction committed) used to be skipped silently and now fails on the objects that already
-exist. Compare each pending folder's first statement with the schema; record the ones already
-applied with the INSERT the report prints rather than replaying them:
-
-```bash
-bun run --cwd packages/db db:migrate:preflight              # DATABASE_URL, defaults to the docker Postgres
-bun run --cwd packages/db ps:migrations-preflight main      # a PlanetScale branch, read-only
+```sql
+SELECT rolname FROM pg_roles WHERE rolcanlogin AND NOT pg_has_role(rolname, 'postgres', 'member')
 ```
+
+The deploy reads `PLANETSCALE_API_TOKEN_ID` / `PLANETSCALE_API_TOKEN` /
+`PLANETSCALE_ORGANIZATION` from Infisical prod; `bun dev` leaves the PlanetScale provider out.
 
 PGlite applies the same bundled migrations while its layer is built. The test harness caches a
 fresh migrated PGlite snapshot and restores it per test, so integration tests exercise the
