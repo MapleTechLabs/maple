@@ -218,7 +218,7 @@ export default Alchemy.Stack(
 		state: process.env.ALCHEMY_LOCAL_STATE ? Alchemy.localState() : Cloudflare.state(),
 	},
 	Effect.gen(function* () {
-		const { stage, domains, urls } = yield* MapleStack
+		const { stage, domains, urls, dbSchema } = yield* MapleStack
 
 		// Geographic instance this deploy belongs to. `us` today; an EU instance is
 		// the same stack deployed with MAPLE_REGION=eu against that instance's own
@@ -242,8 +242,18 @@ export default Alchemy.Stack(
 		// via a Cloudflare CNAME at the ALB, so the URL below stays a plain string
 		// and does not depend on the service resource; a PR preview gets no ingest
 		// domain, so its ALB answers plain HTTP on 80 at `ingest.serviceUrl`.
+		// The gateway's Postgres credential, inheriting `postgres` so it reads every table a
+		// migration creates. Changing it is a replace: alchemy creates the successor first and
+		// deletes this one after the fleet has rolled (its id is in the task env).
+		const ingestDbRole = dbSchema
+			? yield* Planetscale.PostgresRole("ingest-gateway", {
+					database: "maple",
+					branch: dbSchema,
+					inheritedRoles: ["postgres"],
+				})
+			: undefined
 		const ingest = stageDeploysIngest(stage)
-			? yield* createMapleIngest({ stage, domains, region })
+			? yield* createMapleIngest({ stage, domains, region, dbRole: ingestDbRole })
 			: undefined
 
 		// The application database. Each Worker binds `MAPLE_DB` from its own init

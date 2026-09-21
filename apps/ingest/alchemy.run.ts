@@ -4,6 +4,7 @@ import { resolve } from "node:path"
 import * as AWS from "alchemy/AWS"
 import * as Cloudflare from "alchemy/Cloudflare"
 import * as Output from "alchemy/Output"
+import type * as Planetscale from "alchemy/Planetscale"
 import * as Effect from "effect/Effect"
 import * as Redacted from "effect/Redacted"
 import type { MapleRegion } from "@maple/infra/aws"
@@ -131,6 +132,8 @@ export interface CreateMapleIngestOptions {
 	domains: MapleDomains
 	/** Geographic instance. Every AWS resource here is scoped to it. */
 	region: MapleRegion
+	/** prd's gateway role; a stage without a database branch reads `MAPLE_INGEST_PG_URL` instead. */
+	dbRole?: Planetscale.PostgresRole
 }
 
 /** R2 renders an API token as S3 credentials: key id = token id, secret = SHA-256 of its value. */
@@ -207,7 +210,7 @@ const replayBlobWriterCredentials = (stage: MapleStage) =>
  * has no load balancer: an internal ALB would bill the same bytes again for a
  * single private consumer, and Cloud Map costs a private hosted zone.
  */
-export const createMapleIngest = ({ stage, domains, region }: CreateMapleIngestOptions) =>
+export const createMapleIngest = ({ stage, domains, region, dbRole }: CreateMapleIngestOptions) =>
 	Effect.gen(function* () {
 		const replayBlobs = yield* replayBlobWriterCredentials(stage)
 		const taskSize = resolveIngestTaskSize(stage)
@@ -432,7 +435,9 @@ export const createMapleIngest = ({ stage, domains, region }: CreateMapleIngestO
 		// deploy workflows use for DDL; the gateway must reach Postgres through
 		// PSBouncer (6432) as a role that only reads ingest keys. Sharing the name
 		// would silently hand every task the migration admin's credentials.
-		const pgUrl = yield* secret("maple-pg-url", yield* requiredPlain("MAPLE_INGEST_PG_URL"))
+		const pgUrl = dbRole
+			? yield* secretFrom("maple-pg-url", dbRole.connectionUrlPooled)
+			: yield* secret("maple-pg-url", yield* requiredPlain("MAPLE_INGEST_PG_URL"))
 		const keyEncryptionKey = yield* secret(
 			"ingest-key-encryption-key",
 			yield* requiredPlain("MAPLE_INGEST_KEY_ENCRYPTION_KEY"),
@@ -782,6 +787,9 @@ export const createMapleIngest = ({ stage, domains, region }: CreateMapleIngestO
 				MAPLE_ENVIRONMENT: resolveDeploymentEnvironment(stage),
 				TINYBIRD_HOST: yield* requiredPlain("TINYBIRD_HOST"),
 				INGEST_KEY_STORE_BACKEND: "postgres",
+				// A replaced role changes this, so the task definition changes and the
+				// fleet rolls onto the updated secret before alchemy deletes the old role.
+				...(dbRole && { MAPLE_PG_ROLE_ID: dbRole.id }),
 
 				// Trust `Cf-IPCountry` on inbound requests, which is what gates
 				// `derive_country` in `apps/ingest/src/main.rs` and therefore whether
@@ -869,9 +877,10 @@ export const createMapleIngest = ({ stage, domains, region }: CreateMapleIngestO
 				...(yield* optionalPlain("COMMIT_SHA", (yield* optionalPlain("GITHUB_SHA")).GITHUB_SHA)),
 				// `satisfies` rather than a bare literal: alchemy types `env` as
 				// `Record<string, any>`, which is what let a spread `Config` object
-				// through unnoticed. Pinning the literal to string values makes that
-				// mistake a type error instead of a silently dropped variable.
-			} satisfies Record<string, string>,
+				// through unnoticed. Pinning the literal to string values (or an
+				// Output of one) makes that mistake a type error instead of a
+				// silently dropped variable.
+			} satisfies Record<string, string | Output.Output<string>>,
 
 			tags: { Service: "maple-ingest", Region: region },
 		}

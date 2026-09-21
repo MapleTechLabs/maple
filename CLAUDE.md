@@ -184,8 +184,8 @@ database), reached from Workers via the Hyperdrive binding `MAPLE_DB`.
   PlanetScale `main` branch is an alchemy `Planetscale.PostgresBranch` in `alchemy.run.ts` with
   `migrations` pointed at `packages/db/drizzle`; never run `drizzle-kit migrate` against prd. It
   migrates as a temporary role dropped with `postgres` as successor, so every runtime role must
-  inherit `postgres` (`pg_has_role(rolname, 'postgres', 'usage')`) to read what it creates. PGlite
-  applies them at layer build.
+  inherit `postgres` (`pg_has_role(rolname, 'postgres', 'usage')`) to read what it creates; the
+  ingest gateway's is a `Planetscale.PostgresRole` in the same file. PGlite applies them at layer build.
 - **PR preview deploys are label-gated** (2026-08, cost — re-enabled by `fd00bcd412`). A PR gets a
   preview only while it carries the `preview` label; `deploy-pr-preview.yml` triggers on
   `opened, reopened, synchronize, labeled, unlabeled, closed` and tears the stack down the moment

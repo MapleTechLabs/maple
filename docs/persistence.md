@@ -104,6 +104,12 @@ credential may appear):
 SELECT rolname FROM pg_roles WHERE rolname LIKE 'pscale\_api\_%' AND NOT pg_has_role(rolname, 'postgres', 'usage')
 ```
 
+The ingest gateway's credential is declared rather than minted: `Planetscale.PostgresRole` in
+`alchemy.run.ts` inherits `postgres`, its pooled 6432 URL is the fleet's `maple-pg-url` secret, and
+its id sits in the task env so a replaced role rolls the fleet onto the new secret before alchemy
+deletes the old role. `MAPLE_INGEST_PG_URL` in Infisical remains only for stages that deploy a fleet
+without a database branch (PR previews).
+
 The deploy reads `PLANETSCALE_API_TOKEN_ID` / `PLANETSCALE_API_TOKEN` /
 `PLANETSCALE_ORGANIZATION` from Infisical prod; `bun dev` leaves the PlanetScale provider out.
 
