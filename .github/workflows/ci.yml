@@ -612,6 +612,8 @@ jobs:
               env:
                   KEEP_ROOT: "1"
                   TMPDIR: ${{ runner.temp }}/maple-native-checkpoint
+                  # Probes induce failures on purpose; keep them out of the prod errors hub.
+                  MAPLE_TELEMETRY: off
               run: |
                   mkdir -p "$TMPDIR"
                   apps/cli/test/native-checkpoint-smoke.sh "$GITHUB_WORKSPACE/dist"
@@ -625,6 +627,7 @@ jobs:
               env:
                   KEEP_ROOT: "1"
                   TMPDIR: ${{ runner.temp }}/maple-native-cp-refresh
+                  MAPLE_TELEMETRY: off
               run: |
                   mkdir -p "$TMPDIR"
                   apps/cli/test/native-checkpoint-refresh-probe.sh "$GITHUB_WORKSPACE/dist"
@@ -634,6 +637,7 @@ jobs:
               env:
                   KEEP_ROOT: "1"
                   TMPDIR: ${{ runner.temp }}/maple-native-migration
+                  MAPLE_TELEMETRY: off
               run: |
                   mkdir -p "$TMPDIR"
                   apps/cli/test/native-local-store-migration.sh "$GITHUB_WORKSPACE/dist"
@@ -745,6 +749,8 @@ jobs:
               env:
                   KEEP_ROOT: ${{ matrix.keep_root }}
                   TMPDIR: ${{ runner.temp }}/${{ matrix.tmp }}
+                  # Probes induce failures on purpose; keep them out of the prod errors hub.
+                  MAPLE_TELEMETRY: off
               run: |
                   mkdir -p "$TMPDIR"
                   apps/cli/test/${{ matrix.script }} "$GITHUB_WORKSPACE/dist"

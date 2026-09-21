@@ -110,14 +110,17 @@ const writeSnapshot = (
 	dataDir: string,
 	checkpointId: CheckpointId,
 	operationId = newCheckpointOperationId(),
+	overrides: Record<string, unknown> = {},
 ): void => {
 	const snapshot = checkpointSnapshotDir(dataDir, checkpointId)
 	mkdirSync(join(snapshot, "backup"), { recursive: true })
 	writeFileSync(join(snapshot, "backup", "data.bin"), "backup")
-	const value = manifest(checkpointId, operationId, dataDir)
-	value.backupBytes = 6
+	const value = { ...manifest(checkpointId, operationId, dataDir), backupBytes: 6, ...overrides }
 	writeFileSync(join(snapshot, "manifest.json"), `${JSON.stringify(value)}\n`)
 }
+
+// A manifest an older build wrote: structurally sound, not restorable here.
+const OLDER_BUILD_SCHEMA = { schemaFingerprint: "5642766fc2dced4f" }
 
 const writeState = (
 	dataDir: string,
@@ -399,6 +402,42 @@ describe("checkpoint state resolution", () => {
 		})
 	})
 
+	it("keeps the registry readable when an older build wrote its previous checkpoint", async () => {
+		await withDataDir(async (dataDir) => {
+			const current = newCheckpointId()
+			const stale = newCheckpointId()
+			writeSnapshot(dataDir, current)
+			writeSnapshot(dataDir, stale, undefined, OLDER_BUILD_SCHEMA)
+			writeState(dataDir, current, stale)
+
+			// The registry, and restore of `current`, both still work.
+			strictEqual((await readCheckpointState(dataDir)).previous, stale)
+			deepStrictEqual(await checkpointAvailability(dataDir), { available: true, checkpointId: current })
+			// Restoring the stale one itself is still refused by the build gate.
+			await rejects(resolveCheckpoint(dataDir, "previous"), /checkpoint schema mismatch/)
+			strictEqual(
+				(await resolveCheckpoint(dataDir, "previous", undefined, "registry")).checkpointId,
+				stale,
+			)
+		})
+	})
+
+	it("reports a current checkpoint from an older build as unusable, not as absent", async () => {
+		await withDataDir(async (dataDir) => {
+			const stale = newCheckpointId()
+			writeSnapshot(dataDir, stale, undefined, OLDER_BUILD_SCHEMA)
+			writeState(dataDir, stale)
+			const availability = await checkpointAvailability(dataDir)
+			strictEqual(availability.available, false)
+			match(
+				availability.available === false && availability.reason === "unusable"
+					? availability.detail
+					: "",
+				/checkpoint schema mismatch/,
+			)
+		})
+	})
+
 	it("fails closed for missing/malformed state, incomplete snapshots, and legacy aliases", async () => {
 		await withDataDir(async (dataDir) => {
 			await rejects(readCheckpointState(dataDir), /state not found/)
@@ -629,6 +668,25 @@ describe("checkpoint reconciliation and retention", () => {
 				ok(existsSync(checkpointSnapshotDir(dataDir, previous)), boundary)
 			})
 		}
+	})
+
+	it("retires a checkpoint an older build wrote instead of refusing every later checkpoint", async () => {
+		await withDataDir(async (dataDir) => {
+			const current = newCheckpointId()
+			const previous = newCheckpointId()
+			const stale = newCheckpointId()
+			writeSnapshot(dataDir, current)
+			writeSnapshot(dataDir, previous, undefined, OLDER_BUILD_SCHEMA)
+			writeSnapshot(dataDir, stale, undefined, OLDER_BUILD_SCHEMA)
+			writeState(dataDir, current, previous)
+			const state = await readCheckpointState(dataDir)
+
+			const retirement = await retireCheckpointIfEligible(dataDir, stale, state)
+
+			ok(!existsSync(checkpointSnapshotDir(dataDir, stale)))
+			ok(retirement !== null && existsSync(join(retirement, "complete.json")))
+			ok(existsSync(checkpointSnapshotDir(dataDir, previous)))
+		})
 	})
 
 	it("converges after every retirement cleanup and completed-operation boundary", async () => {

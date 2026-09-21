@@ -1,7 +1,7 @@
 import { assert, describe, it } from "@effect/vitest"
 import { generateKeyPairSync } from "node:crypto"
-import { ConfigProvider, Effect, Layer, Option } from "effect"
-import type { VcsInstallation } from "@maple/domain/http"
+import { ConfigProvider, Effect, Exit, Layer, Option, Schema } from "effect"
+import { GitCommitSha, type VcsInstallation } from "@maple/domain/http"
 import { Env } from "@maple/backend/platform/Env"
 import { GithubAppClient } from "@maple/backend/services/integrations/vcs/vendor/github/GithubAppClient"
 import {
@@ -162,6 +162,38 @@ describe("GithubProvider pull requests", () => {
 				const provider = yield* GithubProvider
 				const pr = yield* provider.fetchPullRequest(INSTALLATION, REPO, 99_999)
 				assert.isTrue(Option.isNone(pr))
+			}).pipe(Effect.provide(layer))
+		}),
+	)
+})
+
+describe("GithubProvider commits", () => {
+	const sha = Schema.decodeUnknownSync(GitCommitSha)("b".repeat(40))
+
+	it.effect("answers none for a SHA GitHub has never seen", () =>
+		// GitHub's 422 for a well-formed SHA that names nothing: a deploy reported
+		// an unpushed or rewritten commit. Same "look elsewhere" as a 404, not an
+		// integration failure to surface.
+		Effect.gen(function* () {
+			const layer = providerLayer([
+				tokenResponse(),
+				jsonResponse({ message: `No commit found for SHA: ${sha}` }, 422),
+			])
+			yield* Effect.gen(function* () {
+				const provider = yield* GithubProvider
+				const commit = yield* provider.fetchCommit(INSTALLATION, REPO, sha)
+				assert.isTrue(Option.isNone(commit))
+			}).pipe(Effect.provide(layer))
+		}),
+	)
+
+	it.effect("still fails on a GitHub error that is not about the SHA", () =>
+		Effect.gen(function* () {
+			const layer = providerLayer([tokenResponse(), jsonResponse({ message: "Bad credentials" }, 401)])
+			yield* Effect.gen(function* () {
+				const provider = yield* GithubProvider
+				const exit = yield* Effect.exit(provider.fetchCommit(INSTALLATION, REPO, sha))
+				assert.isTrue(Exit.isFailure(exit))
 			}).pipe(Effect.provide(layer))
 		}),
 	)
