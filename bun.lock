@@ -109,6 +109,22 @@
         "wrangler": "^4.118.0",
       },
     },
+    "apps/chat-bot": {
+      "name": "@maple/chat-bot",
+      "dependencies": {
+        "@maple/chat-platform": "workspace:*",
+        "@maple/infra": "workspace:*",
+        "alchemy": "catalog:alchemy",
+        "effect": "catalog:effect",
+      },
+      "devDependencies": {
+        "@cloudflare/workers-types": "catalog:alchemy",
+        "@effect/language-service": "catalog:effect",
+        "@types/node": "catalog:tooling",
+        "typescript": "catalog:tooling",
+        "vitest": "catalog:",
+      },
+    },
     "apps/cli": {
       "name": "@maple/cli",
       "bin": {
@@ -1557,6 +1573,8 @@
     "@maple/browser-session": ["@maple/browser-session@workspace:packages/browser-session"],
 
     "@maple/cache": ["@maple/cache@workspace:lib/cache"],
+
+    "@maple/chat-bot": ["@maple/chat-bot@workspace:apps/chat-bot"],
 
     "@maple/chat-platform": ["@maple/chat-platform@workspace:packages/chat-platform"],
 

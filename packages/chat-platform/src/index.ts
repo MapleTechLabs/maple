@@ -1,5 +1,6 @@
 export * from "./action-token"
 export * from "./connector"
 export * from "./driver"
+export * from "./ingress"
 export * from "./outbound"
 export * from "./render"

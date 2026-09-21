@@ -8,6 +8,7 @@
  * isolation is checked, not trusted: `vendor-isolation.test.ts` reads the sources.
  */
 import { Schema } from "effect"
+import type { ConnectorIngress } from "./ingress"
 import type { ChatOutbound } from "./outbound"
 
 /**
@@ -31,8 +32,13 @@ export const chatConnectorId = Schema.decodeUnknownSync(ChatConnectorId)
  *
  * `R` is what the connector's outbound needs from the host Worker — an HTTP client, its own
  * credential service. The host supplies those; the package never reads the environment.
+ *
+ * `ingress` carries no `R` of its own and never will: a webhook connector is handed the request
+ * and answers, and a socket connector is a pure state machine the host drives. Both are described
+ * in `./ingress.ts`.
  */
 export interface ChatConnector<R = never> {
 	readonly id: ChatConnectorId
 	readonly outbound: ChatOutbound<R>
+	readonly ingress: ConnectorIngress
 }

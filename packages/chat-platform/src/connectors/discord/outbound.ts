@@ -29,16 +29,19 @@ import {
 	type ChatThreadRequest,
 } from "../../outbound"
 import type { ChatBlock } from "../../render/blocks"
+import { API_BASE, API_HOST } from "./api"
 import { DISCORD_CONNECTOR_ID } from "./id"
 import { renderDiscordMessage } from "./render"
 
-/** The credential the host Worker holds for this connector. */
+/**
+ * The credential the host Worker holds for this connector.
+ *
+ * The host reads it from `BOT_TOKEN_CONFIG` (`./api.ts`), which is also what the gateway half
+ * declares in its `requiredConfig` — one secret, one name.
+ */
 export class DiscordBotToken extends Context.Service<DiscordBotToken, Redacted.Redacted<string>>()(
 	"@maple/chat-platform/connectors/discord/BotToken",
 ) {}
-
-const API_BASE = "https://discord.com/api/v10"
-const API_HOST = "discord.com"
 
 /**
  * 2000 is Discord's hard limit on `content`; the neutral cut is held to less so a connector's own

@@ -230,6 +230,31 @@ impl)` over the plain `ChatSession` class — the outer Effect resolves state an
   off the env), the namespace, the physical workflow (`<worker>-<class>-<hash>`, alchemy's
   `makeWorkflowName`) and the generated entry's class export. No reference-form bindings, no
   hand-written entry.
+- **The chat-bot Worker** (`chat-bot`): chat-platform ingress, and the one Worker in the
+  fleet with a **resident** Durable Object. `ConnectorSocket` (`src/socket/ConnectorSocket.ts`)
+  holds one outbound WebSocket per socket-ingress connector in `@maple/chat-platform`'s
+  registry, addressed by the connector's id. Hibernation covers only sockets the platform
+  hands an object (`state.acceptWebSocket`); a socket the object dials itself keeps the
+  object in memory for as long as it is open, so each socket connector costs one resident
+  object. That is what an @mention costs on a platform that delivers mentions no other way —
+  a platform that signs an HTTP webhook uses the same Worker's generic
+  `POST /connectors/:connectorId/webhook` route and no Durable Object at all.
+
+    A `* * * * *` cron is the start and recovery trigger: the Worker has no traffic of its
+    own, so nothing would ever make a first request, and after a deploy or an eviction the
+    next tick calls `ensureConnected` again. Between ticks the object's own alarm serves the
+    connector's heartbeat, the reconnect backoff and a one-minute watchdog. A connector's
+    fatal directive (a rejected credential, a permission the application was never granted)
+    holds it down for six hours rather than forever, so fixing the credential is all a
+    recovery needs.
+
+    It has **no public hostname**: the socket half dials out, and no webhook connector is
+    registered yet, so a custom domain would be DNS plus a certificate bought for a route
+    nothing calls. Under `bun dev` the portless route reaches the webhook path. The first
+    webhook connector is what should buy the hostname. The Worker is inert on a stage with no
+    connector credentials — every connector key is bound optional, and a connector without
+    its configuration is skipped with one log line.
+
 - **The sandbox Worker** (`sandbox`): the one Worker in the fleet whose own module is
   its bundle entry. It hosts Cloudflare's Sandbox Durable Object (`@cloudflare/sandbox`),
   which is a class the deployed script must export — and an Effect-native Worker cannot
