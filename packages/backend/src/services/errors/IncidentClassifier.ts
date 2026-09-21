@@ -15,8 +15,8 @@ import {
 	internalServiceBearer,
 } from "@maple/domain/http"
 import { WorkerEnvironment } from "@maple/infra/worker-runtime"
+import * as Cloudflare from "alchemy/Cloudflare"
 import { Cause, Context, Duration, Effect, Layer, Option, Redacted } from "effect"
-import { FetchHttpClient, HttpClient } from "effect/unstable/http"
 import { HttpApiClient } from "effect/unstable/httpapi"
 import { Env } from "@maple/backend/platform/Env"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
@@ -30,13 +30,12 @@ export const AI_WORKER_BINDING = "AI_WORKER"
  */
 export const CLASSIFY_TIMEOUT = Duration.seconds(10)
 
-/** The service binding as the client uses it: a Worker-to-Worker `fetch`. */
-interface ServiceBinding {
-	readonly fetch: (request: Request) => Promise<Response>
-}
-
-const isServiceBinding = (value: unknown): value is ServiceBinding =>
-	typeof value === "object" && value !== null && typeof (value as ServiceBinding).fetch === "function"
+/**
+ * The service binding off `env`, narrowed rather than cast. Only `fetch` is
+ * checked, because that is all the client calls.
+ */
+const isServiceBinding = (value: unknown): value is Fetcher =>
+	typeof value === "object" && value !== null && typeof (value as { fetch?: unknown }).fetch === "function"
 
 export interface IncidentClassifierApi {
 	/**
@@ -71,13 +70,8 @@ export class IncidentClassifier extends Context.Service<IncidentClassifier, Inci
 
 			const authorization = internalServiceBearer(token.value)
 			// The binding routes by name rather than by host; the origin below is the
-			// formality `Request` insists on, and the fetch is the binding's own.
-			// Bun's `fetch` type carries `preconnect`; the binding has no such hop to warm.
-			const fetchOverBinding: typeof globalThis.fetch = Object.assign(
-				(input: RequestInfo | URL, init?: RequestInit) => binding.fetch(new Request(input, init)),
-				{ preconnect: () => Promise.resolve() },
-			)
-			const httpClient = yield* HttpClient.HttpClient
+			// formality `Request` insists on, and the transport is the binding's own.
+			const httpClient = Cloudflare.toHttpClient(Cloudflare.fromCloudflareFetcher(binding))
 			const client = yield* HttpApiClient.group(MapleAiApi, {
 				group: "triage",
 				httpClient,
@@ -88,7 +82,6 @@ export class IncidentClassifier extends Context.Service<IncidentClassifier, Inci
 				function* (request) {
 					return yield* client.classify({ headers: { authorization }, payload: request }).pipe(
 						Effect.map((verdict): IncidentTriageVerdict | null => verdict),
-						Effect.provideService(FetchHttpClient.Fetch, fetchOverBinding),
 						Effect.catchCause((cause) =>
 							Cause.hasInterruptsOnly(cause)
 								? Effect.interrupt
@@ -110,6 +103,5 @@ export class IncidentClassifier extends Context.Service<IncidentClassifier, Inci
 		}),
 	},
 ) {
-	/** The fetch-backed client the calls run on; the binding supplies the fetch itself. */
-	static readonly layer = Layer.effect(this, this.make).pipe(Layer.provide(FetchHttpClient.layer))
+	static readonly layer = Layer.effect(this, this.make)
 }
