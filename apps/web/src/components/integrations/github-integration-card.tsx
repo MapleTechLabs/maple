@@ -757,7 +757,7 @@ function PrReviewToggle({
 			className="flex shrink-0 items-center gap-2 text-xs text-muted-foreground"
 			title="Post an observability review on every pull request opened against this repository"
 		>
-			<span className="hidden sm:inline">Review PRs</span>
+			<span>Review PRs</span>
 			<Switch
 				id={id}
 				aria-label={`Review pull requests on ${repo.fullName}`}
