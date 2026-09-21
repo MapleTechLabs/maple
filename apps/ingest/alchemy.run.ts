@@ -136,6 +136,17 @@ export interface CreateMapleIngestOptions {
 	dbRole?: Planetscale.PostgresRole
 }
 
+/**
+ * alchemy renders a role's URL with `sslmode=verify-full`, which tokio-postgres 0.7
+ * (the gateway's client) rejects as an invalid connection string: it knows only
+ * disable/prefer/require. Its rustls connector verifies chain and hostname under
+ * `require` regardless, so nothing is lost by asking for that instead.
+ */
+const gatewayPgUrl = (url: Output.Output<Redacted.Redacted<string>>) =>
+	Output.map(url, (value) =>
+		Redacted.make(Redacted.value(value).replace("sslmode=verify-full", "sslmode=require")),
+	)
+
 /** R2 renders an API token as S3 credentials: key id = token id, secret = SHA-256 of its value. */
 const deriveSecretAccessKey = (value: Output.Output<Redacted.Redacted<string>>) =>
 	Output.map(value, (token) =>
@@ -436,7 +447,7 @@ export const createMapleIngest = ({ stage, domains, region, dbRole }: CreateMapl
 		// PSBouncer (6432) as a role that only reads ingest keys. Sharing the name
 		// would silently hand every task the migration admin's credentials.
 		const pgUrl = dbRole
-			? yield* secretFrom("maple-pg-url", dbRole.connectionUrlPooled)
+			? yield* secretFrom("maple-pg-url", gatewayPgUrl(dbRole.connectionUrlPooled))
 			: yield* secret("maple-pg-url", yield* requiredPlain("MAPLE_INGEST_PG_URL"))
 		const keyEncryptionKey = yield* secret(
 			"ingest-key-encryption-key",
