@@ -55,7 +55,9 @@ answer from Maple.
 3. **Link the server to a Maple organization.** In Maple: Settings → Integrations → Discord →
    Connect, which runs the install flow and writes the `chat_workspaces` row. Until that row
    exists, a mention is answered once with a note saying the workspace is not connected — that is
-   the resolution failing, not the bot.
+   the resolution failing, not the bot. Then **list the channels it may answer in** (below): a
+   linked server with no channels listed stays silent everywhere, which is the commonest reason a
+   correctly installed bot says nothing.
 4. **Mention it.** `@Maple why is checkout slow?` in a channel. The bot opens a thread on that
    message and edits one message in it as the answer streams. A follow-up mention inside the thread
    continues the same conversation; a mention in another channel starts a different one. A mention
@@ -92,9 +94,29 @@ channel or moderation power.
 
 ### Settings
 
-`approver_role_id` only: the role whose holders may approve the writes Maple proposes. It is a plain
-text field in V1 — a role picker needs a Discord API call with the bot token, which is a follow-up.
-Left empty, approval falls back to whoever can manage the server.
+`allowed_channel_ids` and `approver_role_id`. Both are plain text fields in V1 — a channel or role
+picker needs a Discord API call with the bot token, which is a follow-up.
+
+`approver_role_id` is the role whose holders may approve the writes Maple proposes. Left empty,
+approval falls back to whoever can manage the server.
+
+`allowed_channel_ids` is the channel allowlist, and it is not Discord's — the key and the rule are
+core, because an install is server-wide on every platform worth connecting. **Empty means nowhere**:
+a linked server whose list is blank gets no answers at all, so a fresh install is silent until
+somebody says where the bot belongs. A mention outside the list is ignored without a reply.
+
+To fill it in: **Discord Settings → Advanced → Developer Mode**, then right-click a channel →
+**Copy Channel ID**, and paste the ids separated by commas. A thread counts as the channel it was
+started in, so the threads Maple opens for its own answers need no entry.
+
+#### A boundary Discord itself enforces
+
+The allowlist is Maple's own rule, and it is one setting away from being changed. An admin who wants
+the bot unable to read a channel at all should say so in Discord: **channel → Edit Channel →
+Permissions → the Maple bot's role → View Channel: deny**. The gateway then never delivers those
+messages, which is a stronger statement than a list Maple checks after the fact — and the two
+compose, so use the permission for the channels that must never be read and the list for where the
+bot should actually speak.
 
 ## What ingress delivers
 

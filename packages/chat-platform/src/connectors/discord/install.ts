@@ -9,6 +9,7 @@ import {
 	type ChatInstallStart,
 	type ChatWorkspaceSettings,
 } from "../../install"
+import { ALLOWED_CHANNELS_SETTING } from "../../settings"
 import { AUTHORIZE_URL, CLIENT_ID_CONFIG, CLIENT_SECRET_CONFIG, TOKEN_URL } from "./api"
 import { DISCORD_CONNECTOR_ID } from "./id"
 
@@ -56,11 +57,26 @@ const TokenResponse = Schema.Struct({
 const decodeTokenResponse = Schema.decodeUnknownEffect(TokenResponse)
 
 /**
- * The one setting Discord carries in V1 — see this directory's README. Decoded
- * with `onExcessProperty: "error"` so a key this connector does not define is
- * reported rather than silently dropped on the way into the settings column.
+ * The channel list as the settings form carries it: snowflakes separated by
+ * commas, spaces or newlines. Checked here rather than left to the allowlist,
+ * where an id that is not one would simply never match — a channel name or a
+ * `#mention` pasted into the field is a 400 instead of a bot that has quietly
+ * gone silent.
  */
-const DiscordSettings = Schema.Struct({ approver_role_id: Schema.optionalKey(Snowflake) })
+const SnowflakeList = Schema.String.check(Schema.isPattern(/^[\s,]*\d{17,20}(?:[\s,]+\d{17,20})*[\s,]*$/))
+
+/**
+ * The two settings Discord carries in V1 — see this directory's README. The
+ * channel allowlist is core (its key and its meaning are the same on every
+ * platform); its VALUE is checked here, because a channel id's shape is not.
+ * Decoded with `onExcessProperty: "error"` so a key this connector does not
+ * define is reported rather than silently dropped on the way into the settings
+ * column.
+ */
+const DiscordSettings = Schema.Struct({
+	[ALLOWED_CHANNELS_SETTING]: Schema.optionalKey(SnowflakeList),
+	approver_role_id: Schema.optionalKey(Snowflake),
+})
 const decodeDiscordSettings = Schema.decodeUnknownEffect(DiscordSettings, {
 	onExcessProperty: "error",
 })
@@ -160,15 +176,18 @@ const decodeSettings = (
 				new ChatSettingsRejected({
 					connector: DISCORD_CONNECTOR_ID,
 					message:
-						"Discord accepts one setting, approver_role_id, and its value must be a Discord role ID (17–20 digits)",
+						"Discord accepts allowed_channel_ids (channel IDs separated by commas) and approver_role_id (one role ID); every Discord ID is 17–20 digits",
 				}),
 		),
-		Effect.map(
-			(settings): ChatWorkspaceSettings =>
-				settings.approver_role_id === undefined
-					? {}
-					: { approver_role_id: settings.approver_role_id },
-		),
+		// A setting the admin left out stays out, rather than being stored as an empty
+		// string the next reader has to treat as absent anyway.
+		Effect.map((settings): ChatWorkspaceSettings => {
+			const stored: Record<string, string> = {}
+			const channels = settings[ALLOWED_CHANNELS_SETTING]
+			if (channels !== undefined) stored[ALLOWED_CHANNELS_SETTING] = channels
+			if (settings.approver_role_id !== undefined) stored.approver_role_id = settings.approver_role_id
+			return stored
+		}),
 	)
 
 export const discordInstall: ChatConnectorInstall = {

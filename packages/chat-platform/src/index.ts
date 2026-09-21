@@ -8,6 +8,7 @@ export * from "./ingress"
 export * from "./install"
 export * from "./outbound"
 export * from "./render"
+export * from "./settings"
 
 /** Whether a deployment supplied every config value this connector's INSTALL half declared. */
 export const isConnectorConfigured = <R>(

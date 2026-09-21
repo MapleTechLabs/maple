@@ -1,4 +1,5 @@
 import type { ChatConnectorManifest } from "../../install"
+import { ALLOWED_CHANNELS_SETTING } from "../../settings"
 import { DISCORD_CONNECTOR_ID } from "./id"
 
 /**
@@ -18,6 +19,12 @@ export const discordManifest: ChatConnectorManifest = {
 	},
 	accent: "#5865F2",
 	settingsFields: [
+		{
+			key: ALLOWED_CHANNELS_SETTING,
+			label: "Channel IDs the bot answers in",
+			help: "Separated by commas. Maple stays silent in every other channel, including ones it can see, and answers nowhere while this is empty. Turn on Discord's Settings → Advanced → Developer Mode, then right-click a channel → Copy Channel ID. A thread counts as the channel it was started in.",
+			kind: "text",
+		},
 		{
 			key: "approver_role_id",
 			label: "Approver role ID",

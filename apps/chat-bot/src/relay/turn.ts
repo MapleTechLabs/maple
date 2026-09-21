@@ -13,10 +13,12 @@
  */
 import {
 	driveChatTurn,
+	isChannelAllowed,
 	type ChatChartRef,
 	type ChatOutbound,
 	type ChatOutboundTransport,
 	type ChatTarget,
+	type ChatWorkspaceSettings,
 	type InboundAction,
 	type InboundEvent,
 	type InboundMessage,
@@ -29,9 +31,10 @@ import { Duration, Effect, Exit, Option, Schema } from "effect"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import { chatTurnEvents, sessionUnreachable } from "./events.ts"
 
-/** The org behind a workspace, as the host Worker answers it. */
+/** The org behind a workspace, as the host Worker answers it, with what its admin configured. */
 export interface RelayWorkspace {
 	readonly orgId: OrgId
+	readonly settings: ChatWorkspaceSettings
 }
 
 /**
@@ -112,6 +115,26 @@ const turnText = (message: InboundMessage): string =>
 		message.text,
 	)
 
+/**
+ * Whether this mention is in one of the channels the workspace listed.
+ *
+ * A thread counts as the channel it was started in, and only the connector can say which channel
+ * that is — so the parent is resolved after the message's own channel has failed to match, which
+ * is never the case for a mention in a listed channel.
+ */
+const channelAllowed = (
+	transport: ChatOutboundTransport,
+	settings: ChatWorkspaceSettings,
+	message: InboundMessage,
+): Effect.Effect<boolean> => {
+	if (isChannelAllowed(settings, message.channelId)) return Effect.succeed(true)
+	if (transport.parentChannel === undefined) return Effect.succeed(false)
+	return Effect.map(
+		transport.parentChannel(message),
+		(parent) => parent !== undefined && isChannelAllowed(settings, parent),
+	)
+}
+
 const notice = (text: string) => [{ kind: "notice" as const, tone: "info" as const, text }]
 
 /** Say one short thing, and let a platform that refuses it be a log line rather than a failure. */
@@ -147,7 +170,14 @@ const relayMessage = Effect.fn("chat_bot.relay_turn")(function* <R>(
 		if (yield* ports.announceUnlinked) yield* say(transport, replyTarget(message), UNLINKED_NOTICE)
 		return
 	}
-	const { orgId } = workspace.value.value
+	const { orgId, settings } = workspace.value.value
+
+	// The bot is active only where an admin added it, and an empty list is nowhere. A mention
+	// anywhere else is ignored in silence: a refusal posted into a channel the bot was never meant
+	// to be in is the same noise the list exists to prevent.
+	if (!(yield* channelAllowed(transport, settings, message))) {
+		return yield* Effect.annotateCurrentSpan({ "maple.chat.relay": "channel_not_allowed" })
+	}
 
 	const conversation = yield* transport.conversation(message)
 	const sessionId = connectorSessionId(orgId, message.connector, conversation.conversationKey)

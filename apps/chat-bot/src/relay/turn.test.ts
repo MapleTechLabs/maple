@@ -17,6 +17,7 @@ import {
 import type { ChatSessionStub } from "@maple/domain/chat-session-stub"
 import { ChatConnectorId, OrgId } from "@maple/domain/primitives"
 import {
+	ALLOWED_CHANNELS_SETTING,
 	chatConnectorId,
 	ChatOutboundError,
 	type ChatBlock,
@@ -35,6 +36,8 @@ const TESTCHAT = chatConnectorId("testchat")
 const ORG = Schema.decodeSync(OrgId)("org_1")
 const WORKSPACE = "workspace-1"
 const CHANNEL = "channel-1"
+/** What an admin listed: the bot is active in this one channel and nowhere else. */
+const SETTINGS = { [ALLOWED_CHANNELS_SETTING]: CHANNEL }
 /** What the fake connector opens for a mention — a thread, as a real one would. */
 const CONVERSATION = "conversation1"
 const SESSION_ID = `${ORG}:bot-${TESTCHAT}-${CONVERSATION}`
@@ -59,7 +62,8 @@ interface Chat {
 	readonly threads: Array<string>
 }
 
-const chat = (): Chat => {
+/** `parent` is what the platform answers for the mention's channel — a thread's parent, or none. */
+const chat = (parent?: string): Chat => {
 	const calls: Chat["calls"] = []
 	const threads: Array<string> = []
 	let posted = 0
@@ -79,6 +83,7 @@ const chat = (): Chat => {
 				edit: (ref, blocks) => Effect.sync(() => void calls.push({ verb: "edit", ref, blocks })),
 				typing: () => Effect.void,
 				openThread: (request) => Effect.succeed(request.anchorMessageId),
+				parentChannel: () => Effect.succeed(parent),
 				conversation: (message) =>
 					Effect.sync(() => {
 						threads.push(message.messageId)
@@ -182,6 +187,8 @@ const host = (
 		readonly announceUnlinked?: boolean
 		/** The database could not answer, which is not the same as nobody having linked it. */
 		readonly lookupFails?: boolean
+		/** What the workspace's admin configured; by default, the channel the mention is in. */
+		readonly settings?: Record<string, string>
 	},
 ): Host => {
 	const forgotten: Array<string> = []
@@ -196,7 +203,11 @@ const host = (
 					? Effect.fail(
 							new WorkspaceLookupFailed({ connector, message: "the database said nothing" }),
 						)
-					: Effect.succeed(options?.linked === false ? Option.none() : Option.some({ orgId: ORG })),
+					: Effect.succeed(
+							options?.linked === false
+								? Option.none()
+								: Option.some({ orgId: ORG, settings: options?.settings ?? SETTINGS }),
+						),
 			forgetWorkspace: (_connector: ChatConnectorId, workspaceId: string) =>
 				Effect.sync(() => void forgotten.push(workspaceId)),
 			chatSession: () => stub,
@@ -349,6 +360,56 @@ describe("relaying a mention", () => {
 			expect(notices(blocksOf(platform.calls))).toEqual([
 				"Still working on the previous message here — ask again once that answer lands.",
 			])
+		}),
+	)
+
+	it.effect("ignores a mention in a channel the workspace did not list", () =>
+		Effect.gen(function* () {
+			const platform = chat()
+			const agent = session([])
+			const deployment = host(platform.outbound, agent.stub, {
+				settings: { [ALLOWED_CHANNELS_SETTING]: "channel-2" },
+			})
+
+			yield* relayInboundEvent(mention, deployment.ports)
+
+			// In silence: a refusal posted into a channel the bot was never added to is the noise the
+			// list exists to prevent.
+			expect(platform.calls).toEqual([])
+			expect(platform.threads).toEqual([])
+			expect(agent.turns).toEqual([])
+		}),
+	)
+
+	it.effect("answers nowhere at all until an admin lists a channel", () =>
+		Effect.gen(function* () {
+			const platform = chat()
+			const agent = session([])
+			const deployment = host(platform.outbound, agent.stub, { settings: {} })
+
+			yield* relayInboundEvent(mention, deployment.ports)
+
+			expect(platform.calls).toEqual([])
+			expect(agent.turns).toEqual([])
+		}),
+	)
+
+	it.effect("answers in a thread of a listed channel, which is not itself listed", () =>
+		Effect.gen(function* () {
+			// A thread the bot opened for an earlier mention: its own id is nothing an admin could
+			// have listed, and the channel it hangs off is.
+			const platform = chat(CHANNEL)
+			const agent = session([
+				[
+					event(1, { type: "turn-start", messageId: "a1" }),
+					event(2, { type: "turn-end", messageId: "a1", reason: "stop" }),
+				],
+			])
+			const deployment = host(platform.outbound, agent.stub)
+
+			yield* relayInboundEvent({ ...mention, channelId: "thread-9" }, deployment.ports)
+
+			expect(agent.turns).toHaveLength(1)
 		}),
 	)
 

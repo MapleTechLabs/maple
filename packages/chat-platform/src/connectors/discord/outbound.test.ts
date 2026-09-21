@@ -68,6 +68,19 @@ const mention: InboundMessage = {
 	mentionsBot: true,
 }
 
+/**
+ * The parent lookup, through the optional contract member it is implemented as. A build where this
+ * connector stopped implementing it would otherwise skip the check rather than fail it.
+ */
+const parentChannelOf = (message: InboundMessage) =>
+	discordOutbound.transport.pipe(
+		Effect.flatMap((transport) =>
+			transport.parentChannel === undefined
+				? Effect.die("the transport no longer resolves a parent channel")
+				: transport.parentChannel(message),
+		),
+	)
+
 describe("discord transport", () => {
 	it.effect("authorizes as a bot and answers with the message it created", () => {
 		const http = stub([{ status: 200, body: CREATED }])
@@ -194,6 +207,29 @@ describe("discord transport", () => {
 				conversationKey: "conv_1",
 				target: { workspaceId: "guild_1", channelId: "conv_1" },
 			})
+		}).pipe(Effect.provide(http.layer))
+	})
+
+	it.effect("asks which channel a thread was started in, so a channel list covers its threads", () => {
+		const http = stub([{ status: 200, body: '{"id":"conv_1","parent_id":"channel_4"}' }])
+		return Effect.gen(function* () {
+			const parent = yield* parentChannelOf(mention)
+
+			expect(parent).toBe("channel_4")
+			expect(http.seen[0].url).toBe("https://discord.com/api/v10/channels/conv_1")
+		}).pipe(Effect.provide(http.layer))
+	})
+
+	it.effect("answers with no parent for a channel that has none, and for one it cannot read", () => {
+		const http = stub([{ status: 200, body: '{"id":"conv_1","parent_id":null}' }])
+		return Effect.gen(function* () {
+			expect(yield* parentChannelOf(mention)).toBeUndefined()
+
+			// A parent Discord will not name is not one to check a channel list against — the caller
+			// falls back to the channel the message was in, which is what a top-level mention has.
+			const refused = stub([{ status: 403, body: '{"message":"Missing Access"}' }])
+			const denied = yield* parentChannelOf(mention).pipe(Effect.provide(refused.layer))
+			expect(denied).toBeUndefined()
 		}).pipe(Effect.provide(http.layer))
 	})
 

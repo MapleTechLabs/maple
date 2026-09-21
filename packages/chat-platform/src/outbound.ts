@@ -120,6 +120,17 @@ export interface ChatOutboundTransport {
 	 * because the answer decides where every later call goes.
 	 */
 	readonly conversation: (message: InboundMessage) => Effect.Effect<ChatConversation, ChatOutboundError>
+	/**
+	 * The channel a message's conversation ultimately belongs to — a thread's parent, where the
+	 * platform models a thread as a channel of its own and its events cannot name that parent.
+	 *
+	 * Here because the answer is what a workspace's channel list is checked against, and only the
+	 * connector can give it: on one platform it rides the event, on the next it takes a call. Absent
+	 * where nothing needs resolving, and `undefined` for a channel that has no parent, so a caller
+	 * falls back to the message's own channel either way. It does not fail — a parent that cannot be
+	 * read is not one to check a list against, and the attempt has already recorded itself.
+	 */
+	readonly parentChannel?: (message: InboundMessage) => Effect.Effect<string | undefined>
 }
 
 /**

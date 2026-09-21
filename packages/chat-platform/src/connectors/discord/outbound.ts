@@ -86,6 +86,12 @@ const CreatedMessage = Schema.Struct({
 /** A started thread is a channel, and its id is what every later call addresses. */
 const CreatedThread = Schema.Struct({ id: Schema.String })
 
+/**
+ * The one field of a channel object this connector reads: for a thread, the text channel it was
+ * started in; `null` for a channel that hangs off nothing.
+ */
+const ChannelParent = Schema.Struct({ parent_id: Schema.optionalKey(Schema.NullOr(Schema.String)) })
+
 /** 1–100 characters, per the Start Thread documentation. */
 const MAX_THREAD_NAME_CHARS = 100
 
@@ -305,6 +311,29 @@ export const discordOutbound: ChatOutbound<HttpClient.HttpClient | ConnectorCred
 						}),
 					),
 				),
+
+			/**
+			 * The channel a thread was started in, so a workspace's channel list covers the threads
+			 * Maple opens in those channels without an admin listing ids that did not exist yet.
+			 *
+			 * It costs a call because `MESSAGE_CREATE` cannot answer it: its extra fields are
+			 * `guild_id`, `member`, `mentions` and `channel_type`, and none of them is the parent.
+			 * `GET /channels/{id}` is the smallest thing that is, one request for a mention arriving
+			 * somewhere the list does not already name — never for one in a listed channel.
+			 */
+			parentChannel: Effect.fn("Discord.parentChannel")(
+				function* (message: InboundMessage) {
+					const response = yield* send(
+						"thread",
+						"/channels/{channel_id}",
+						HttpClientRequest.get(`${API_BASE}/channels/${message.channelId}`),
+					)
+					const json = yield* response.json
+					const channel = yield* Schema.decodeUnknownEffect(ChannelParent)(json)
+					return channel.parent_id ?? undefined
+				},
+				Effect.orElseSucceed(() => undefined),
+			),
 		}
 	}),
 }

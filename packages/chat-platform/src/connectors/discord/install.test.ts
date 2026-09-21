@@ -200,6 +200,30 @@ describe("discord settings", () => {
 		}),
 	)
 
+	it.effect("accepts a list of channel ids, however it was separated", () =>
+		Effect.gen(function* () {
+			assert.deepStrictEqual(
+				yield* discord.install.decodeSettings({
+					allowed_channel_ids: "123456789012345678, 234567890123456789\n345678901234567890",
+				}),
+				{ allowed_channel_ids: "123456789012345678, 234567890123456789\n345678901234567890" },
+			)
+		}),
+	)
+
+	it.effect("rejects a channel list holding anything that is not a channel id", () =>
+		Effect.gen(function* () {
+			// A channel NAME is what an admin reaches for first, and left unchecked it would store
+			// cleanly and then match nothing — a bot that has silently gone quiet.
+			for (const value of ["#alerts", "123456789012345678, #alerts", "1234567890123456"]) {
+				const failure = yield* discord.install
+					.decodeSettings({ allowed_channel_ids: value })
+					.pipe(Effect.flip)
+				assert.strictEqual(failure._tag, "@maple/chat-platform/ChatSettingsRejected")
+			}
+		}),
+	)
+
 	it.effect("rejects a key the connector does not define", () =>
 		Effect.gen(function* () {
 			const failure = yield* discord.install
