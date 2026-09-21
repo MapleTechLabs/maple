@@ -12,6 +12,7 @@
  * ingress is working, and a log line is the easiest place in the system to leak one.
  */
 import type { InboundEvent } from "@maple/chat-platform"
+import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import { Context, Effect, Layer } from "effect"
 import { connectorRelayStub, type ConnectorRelayStub } from "./relay/stub.ts"
 
@@ -58,9 +59,11 @@ export const inboundHandler = (relay: InboundRelay): InboundHandlerApi => ({
 				)
 			}
 			yield* Effect.tryPromise(() => stub.deliver(event)).pipe(
+				// The cause is summarized, never rendered: everything this Worker fails on carries the
+				// conversation somewhere inside it.
 				Effect.catchCause((cause) =>
-					Effect.logError("Chat connector event could not be delivered", cause).pipe(
-						Effect.annotateLogs(attributes),
+					Effect.logError("Chat connector event could not be delivered").pipe(
+						Effect.annotateLogs({ ...attributes, "error.type": summarizeCause(cause) }),
 					),
 				),
 			)
