@@ -14,7 +14,8 @@ import {
 	type ChatEventInput,
 } from "@maple/domain/chat-session"
 import type { ChatSessionStub } from "@maple/domain/chat-session-stub"
-import { Effect, Stream } from "effect"
+import { Effect, Fiber, Stream } from "effect"
+import { TestClock } from "effect/testing"
 import { chatTurnEvents, ChatSessionUnreachable } from "./events.ts"
 
 const SESSION_ID = makeChatSessionId("org_1", "bot-testchat-c1")
@@ -98,6 +99,53 @@ describe("chatTurnEvents", () => {
 			)
 
 			expect(events.map((next) => next.seq)).toEqual([2])
+		}),
+	)
+
+	it.effect("reconnects after a connection that dropped part-way through", () =>
+		Effect.gen(function* () {
+			const ending = event(3, { type: "turn-end", messageId: "a1", reason: "stop" })
+			let opened = 0
+			const cursors: Array<number> = []
+			const session: ChatSessionStub = {
+				...stub([[]]),
+				subscribe: (cursor) => {
+					cursors.push(cursor)
+					return Promise.resolve(
+						opened++ === 0
+							? // The session went away mid-stream: one event, then a read error.
+								new ReadableStream<Uint8Array>({
+									start(controller) {
+										controller.enqueue(
+											new TextEncoder().encode(
+												`id: 2\ndata: ${JSON.stringify(event(2, { type: "turn-start", messageId: "a1" }))}\n\n`,
+											),
+										)
+										controller.error(new Error("the connection dropped"))
+									},
+								})
+							: sse([ending]),
+					)
+				},
+			}
+
+			const collecting = yield* Effect.forkChild(
+				Stream.runCollect(
+					chatTurnEvents(session, SESSION_ID, 0).pipe(
+						Stream.takeUntil((next) => next.type === "turn-end"),
+					),
+				),
+			)
+			// A connection that carried nothing is reopened a second later rather than immediately.
+			yield* TestClock.adjust("2 seconds")
+			const events = yield* Fiber.join(collecting)
+
+			// The turn was still running, so the answer continues on the next connection rather than
+			// ending on a dropped socket.
+			expect(events.map((next) => next.seq)).toEqual([3])
+			// Nothing is lost: an event the dropped connection never finished delivering did not move
+			// the cursor, so the connection that follows asks for it again.
+			expect(cursors).toEqual([0, 0])
 		}),
 	)
 

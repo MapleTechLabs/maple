@@ -29,7 +29,7 @@ import {
 	type InboundWorkspaceRemoved,
 } from "@maple/chat-platform"
 import { Context, Duration, Effect, Logger, Option, References, Schema, Tracer } from "effect"
-import { relayInboundEvent, type RelayPorts } from "./turn.ts"
+import { relayInboundEvent, WorkspaceLookupFailed, type RelayPorts } from "./turn.ts"
 
 const TESTCHAT = chatConnectorId("testchat")
 const ORG = Schema.decodeSync(OrgId)("org_1")
@@ -177,7 +177,12 @@ interface Host {
 const host = (
 	outbound: ChatOutbound,
 	stub: ChatSessionStub | undefined,
-	options?: { readonly linked?: boolean; readonly announceUnlinked?: boolean },
+	options?: {
+		readonly linked?: boolean
+		readonly announceUnlinked?: boolean
+		/** The database could not answer, which is not the same as nobody having linked it. */
+		readonly lookupFails?: boolean
+	},
 ): Host => {
 	const forgotten: Array<string> = []
 	const charts: Array<{ orgId: OrgId; ref: ChatChartRef }> = []
@@ -186,8 +191,12 @@ const host = (
 		charts,
 		ports: {
 			outbound,
-			resolveWorkspace: () =>
-				Effect.succeed(options?.linked === false ? Option.none() : Option.some({ orgId: ORG })),
+			resolveWorkspace: (connector) =>
+				options?.lookupFails === true
+					? Effect.fail(
+							new WorkspaceLookupFailed({ connector, message: "the database said nothing" }),
+						)
+					: Effect.succeed(options?.linked === false ? Option.none() : Option.some({ orgId: ORG })),
 			forgetWorkspace: (_connector: ChatConnectorId, workspaceId: string) =>
 				Effect.sync(() => void forgotten.push(workspaceId)),
 			chatSession: () => stub,
@@ -376,6 +385,21 @@ describe("relaying a mention", () => {
 			yield* relayInboundEvent(mention, deployment.ports)
 
 			expect(platform.calls).toEqual([])
+		}),
+	)
+
+	it.effect("answers nothing at all when the workspace could not be looked up", () =>
+		Effect.gen(function* () {
+			const platform = chat()
+			const agent = session([])
+			const deployment = host(platform.outbound, agent.stub, { lookupFails: true })
+
+			yield* relayInboundEvent(mention, deployment.ports)
+
+			// Saying "this workspace isn't connected" to one that IS connected sends an admin to make
+			// a link that already exists.
+			expect(platform.calls).toEqual([])
+			expect(agent.turns).toEqual([])
 		}),
 	)
 

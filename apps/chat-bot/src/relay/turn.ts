@@ -34,14 +34,25 @@ export interface RelayWorkspace {
 	readonly orgId: OrgId
 }
 
+/**
+ * The database could not say whether this workspace is linked.
+ *
+ * Distinct from `None` on purpose, and the distinction is the whole point: telling a workspace that
+ * IS linked that it is not sends an admin to make a link that already exists.
+ */
+export class WorkspaceLookupFailed extends Schema.TaggedError<WorkspaceLookupFailed>()(
+	"@maple/chat-bot/WorkspaceLookupFailed",
+	{ connector: ChatConnectorId, message: Schema.String },
+) {}
+
 export interface RelayPorts<R = never> {
 	/** The connector's outbound half — how a turn is shown on the platform it was asked on. */
 	readonly outbound: ChatOutbound<R>
-	/** The org that linked this workspace, or `None` when nobody has. */
+	/** The org that linked this workspace, `None` when nobody has, and a failure when it cannot be read. */
 	readonly resolveWorkspace: (
 		connector: ChatConnectorId,
 		workspaceId: string,
-	) => Effect.Effect<Option.Option<RelayWorkspace>>
+	) => Effect.Effect<Option.Option<RelayWorkspace>, WorkspaceLookupFailed>
 	/** Drop the link for a workspace the bot was removed from. */
 	readonly forgetWorkspace: (connector: ChatConnectorId, workspaceId: string) => Effect.Effect<void>
 	/** The conversation's Durable Object, or `undefined` where this deployment has no agent bound. */
@@ -125,13 +136,18 @@ const relayMessage = Effect.fn("chat_bot.relay_turn")(function* <R>(
 	// An author the platform cannot name is nobody to attribute a turn to.
 	if (Option.isNone(author)) return yield* Effect.annotateCurrentSpan({ "maple.chat.relay": "no_author" })
 
-	const workspace = yield* ports.resolveWorkspace(message.connector, message.workspaceId)
-	if (Option.isNone(workspace)) {
+	const workspace = yield* Effect.exit(ports.resolveWorkspace(message.connector, message.workspaceId))
+	// A lookup that failed says nothing about whether this workspace is linked, so the mention goes
+	// unanswered rather than answered wrongly. The port has already logged why.
+	if (Exit.isFailure(workspace)) {
+		return yield* Effect.annotateCurrentSpan({ "maple.chat.relay": "unavailable" })
+	}
+	if (Option.isNone(workspace.value)) {
 		yield* Effect.annotateCurrentSpan({ "maple.chat.relay": "unlinked" })
 		if (yield* ports.announceUnlinked) yield* say(transport, replyTarget(message), UNLINKED_NOTICE)
 		return
 	}
-	const { orgId } = workspace.value
+	const { orgId } = workspace.value.value
 
 	const conversation = yield* transport.conversation(message)
 	const sessionId = connectorSessionId(orgId, message.connector, conversation.conversationKey)

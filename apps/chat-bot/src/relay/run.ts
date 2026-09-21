@@ -27,7 +27,7 @@ import {
 	resolveChatWorkspace,
 } from "@maple/backend/services/integrations/chat-workspace-rows"
 import { resolveConnectorConfig } from "../config.ts"
-import { relayInboundEvent, type RelayPorts } from "./turn.ts"
+import { relayInboundEvent, WorkspaceLookupFailed, type RelayPorts } from "./turn.ts"
 
 /**
  * This Worker's own SDK instance, at module scope so its buffers are the isolate's.
@@ -78,12 +78,19 @@ const ports = (
 			host.env,
 			Effect.flatMap(Database, (database) => resolveChatWorkspace(database, connectorId, workspaceId)),
 		).pipe(
-			// A database that cannot be reached is not a workspace that is not linked: say nothing
-			// rather than tell a linked workspace it is not connected to Maple.
+			// Logged here, where the cause is, and re-raised as the relay's own failure: what the
+			// relay must not do is mistake a database it could not read for a workspace nobody linked.
 			Effect.catchCause((cause) =>
 				Effect.logError("Chat workspace could not be resolved").pipe(
 					Effect.annotateLogs({ "error.type": summarizeCause(cause) }),
-					Effect.as(Option.none()),
+					Effect.andThen(
+						Effect.fail(
+							new WorkspaceLookupFailed({
+								connector: connectorId,
+								message: "The chat workspace could not be read",
+							}),
+						),
+					),
 				),
 			),
 		),
