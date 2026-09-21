@@ -95,10 +95,13 @@ alerting Workers carry its name in their env so they upload after it. Bookkeepin
 `drizzle-kit migrate` against prd. The deploy migrates as a temporary role that is dropped with
 `postgres` as its successor, so the tables it creates end up owned by `postgres` with no other grants.
 Every runtime role must therefore inherit `postgres` (`USAGE`, not mere membership, which only
-grants `SET ROLE`): mint credentials with `--inherited-roles postgres`, and this must return no rows:
+grants `SET ROLE`). Inheritance is fixed when PlanetScale creates the role and `GRANT postgres` is
+refused, so a role without it is replaced: mint the new one with `--inherited-roles postgres`, rotate
+the consumer's URL, then delete the old role. This must list no runtime credential (a personal dev
+credential may appear):
 
 ```sql
-SELECT rolname FROM pg_roles WHERE rolcanlogin AND NOT pg_has_role(rolname, 'postgres', 'usage')
+SELECT rolname FROM pg_roles WHERE rolname LIKE 'pscale\_api\_%' AND NOT pg_has_role(rolname, 'postgres', 'usage')
 ```
 
 The deploy reads `PLANETSCALE_API_TOKEN_ID` / `PLANETSCALE_API_TOKEN` /
