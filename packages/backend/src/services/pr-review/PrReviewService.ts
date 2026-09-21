@@ -262,17 +262,38 @@ export const renderCheckSummary = (report: PrReviewReport, partial: boolean): st
 		lines.push("")
 	}
 	lines.push("Reviewed by Maple. Check ids refer to Maple's instrumentation audit.")
-	const summary = lines.join("\n")
-	return summary.length > CHECK_SUMMARY_MAX_CHARS
-		? `${summary.slice(0, CHECK_SUMMARY_MAX_CHARS)}\n\n_Summary cut at GitHub's limit; the full review is stored in Maple._`
-		: summary
+	return clampSummary(lines.join("\n"))
+}
+
+const SUMMARY_CUT_NOTICE = "\n\n_Summary cut at GitHub's limit; the full review is stored in Maple._"
+
+/**
+ * The summary within GitHub's byte budget, notice included.
+ *
+ * The limit is 65,535 UTF-8 bytes, not characters: a report written in a two-byte script would
+ * pass a character count and be refused with a 422, which loses the review post as well since the
+ * check run is created first. Cut on a code point boundary so a surrogate pair is never split.
+ */
+export const clampSummary = (summary: string): string => {
+	const encoder = new TextEncoder()
+	if (encoder.encode(summary).byteLength <= CHECK_SUMMARY_MAX_BYTES) return summary
+	const budget = CHECK_SUMMARY_MAX_BYTES - encoder.encode(SUMMARY_CUT_NOTICE).byteLength
+	let kept = ""
+	let bytes = 0
+	for (const char of summary) {
+		const size = encoder.encode(char).byteLength
+		if (bytes + size > budget) break
+		kept += char
+		bytes += size
+	}
+	return `${kept}${SUMMARY_CUT_NOTICE}`
 }
 
 // Backslashes first, so an escaped pipe cannot be un-escaped by a backslash the value carried.
 const escapeCell = (value: string) => value.replace(/\\/g, "\\\\").replace(/\|/g, "\\|").replace(/\n/g, " ")
 
-/** GitHub caps a check run's `output.summary` at 65,535 characters. */
-const CHECK_SUMMARY_MAX_CHARS = 65_000
+/** GitHub caps a check run's `output.summary` at 65,535 bytes; a little headroom under it. */
+const CHECK_SUMMARY_MAX_BYTES = 65_000
 
 // A plain fence, never a ```suggestion block: GitHub applies those with one click, and a
 // reviewer's sketch of a span is a starting point, not a commit.

@@ -32,6 +32,7 @@ import {
 import { VcsRepository } from "@maple/backend/services/integrations/vcs/VcsRepository"
 import {
 	buildPublication,
+	clampSummary,
 	PR_REVIEW_CHECK_NAME,
 	PR_REVIEW_DAILY_CEILING,
 	PrReviewService,
@@ -529,7 +530,21 @@ describe("buildPublication", () => {
 			),
 			false,
 		)
-		assert.isAtMost(summary.length, 65_535)
+		assert.isAtMost(new TextEncoder().encode(summary).byteLength, 65_535)
 		assert.include(summary, "cut at GitHub's limit")
+	})
+
+	it("budgets the summary in bytes, so multi-byte text is cut where GitHub would refuse it", () => {
+		// 40,000 three-byte characters: fine by character count, twice the limit in bytes.
+		const summary = clampSummary("観".repeat(40_000))
+		const bytes = new TextEncoder().encode(summary).byteLength
+		assert.isAtMost(bytes, 65_535)
+		assert.isAbove(bytes, 60_000)
+		assert.include(summary, "cut at GitHub's limit")
+		// Never a split surrogate pair.
+		assert.isFalse(summary.includes("\uFFFD"))
+		const astral = clampSummary("😀".repeat(30_000))
+		assert.isTrue(astral.startsWith("😀"))
+		assert.isAtMost(new TextEncoder().encode(astral).byteLength, 65_535)
 	})
 })
