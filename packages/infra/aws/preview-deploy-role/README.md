@@ -176,7 +176,11 @@ Known soft spots, in the order they are likely to bite:
 - `ec2:RunInstances` on the instance resource requires a Graviton instance type
   (`c7gd.*`, `c7g.*`, `t4g.*`). Auto Scaling validates the caller's launch permission when the
   group is created; the launch itself runs under the Auto Scaling service-linked role. Widen the
-  list only alongside a fleet change that needs it.
+  list only alongside a fleet change that needs it. There is no `aws:RequestTag` condition on
+  the instance: alchemy's launch template tags only the template, and the group's tags do not
+  propagate at launch, so the condition would fail that validation. A direct launch is still
+  fenced, because `RunInstances` also evaluates the subnet, security group and launch template,
+  and those are allowed only under `alchemy::stage=pr-*`.
 - Previews have no ingest domain, so nothing in ACM is granted. A preview that does get a
   domain (`resolveMapleDomains`) will need `acm:RequestCertificate` and friends.
 - The orphan sweep (`cleanup-preview-orphans.yml`) never touches AWS, so a preview whose
