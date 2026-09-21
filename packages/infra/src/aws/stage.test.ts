@@ -129,14 +129,14 @@ describe("resolveIngestScaling", () => {
 })
 
 describe("parseIngestFleets", () => {
-	it("is Fargate only when unset", () => {
-		expect(parseIngestFleets(undefined)).toEqual({ fargate: true, ec2: false })
-		expect(parseIngestFleets("")).toEqual({ fargate: true, ec2: false })
+	it("is EC2 only when unset", () => {
+		expect(parseIngestFleets(undefined)).toEqual({ fargate: false, ec2: true })
+		expect(parseIngestFleets("")).toEqual({ fargate: false, ec2: true })
 	})
 
-	it("runs both fleets during the cutover", () => {
+	it("can bring Fargate back beside EC2, or alone", () => {
 		expect(parseIngestFleets("fargate, ec2")).toEqual({ fargate: true, ec2: true })
-		expect(parseIngestFleets("ec2")).toEqual({ fargate: false, ec2: true })
+		expect(parseIngestFleets("fargate")).toEqual({ fargate: true, ec2: false })
 	})
 
 	it("rejects a fleet it does not know rather than deploying neither", () => {

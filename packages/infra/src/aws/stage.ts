@@ -155,8 +155,8 @@ export function resolveIngestTaskSize(stage: MapleStage): IngestTaskSize {
 
 /**
  * Which fleets run the gateway. Both can run at once, each behind its own ALB,
- * which is how the Fargate → EC2 cutover works: bring EC2 up beside Fargate,
- * flip the proxied `ingest` CNAME, then drop Fargate.
+ * which is how a fleet cutover works: bring the new one up beside the old,
+ * flip the proxied `ingest` CNAME, then drop the old one.
  */
 export interface IngestFleets {
 	fargate: boolean
@@ -165,14 +165,15 @@ export interface IngestFleets {
 
 /**
  * Parses `MAPLE_INGEST_FLEETS` (`fargate`, `ec2`, or `fargate,ec2`). Unset is
- * Fargate only, the state before the cutover.
+ * EC2 only, where prd has run since the 2026-09-21 cutover; the variable is
+ * only set to bring Fargate back beside it.
  */
 export function parseIngestFleets(value: string | undefined): IngestFleets {
 	const requested = (value ?? "")
 		.split(",")
 		.map((fleet) => fleet.trim())
 		.filter((fleet) => fleet !== "")
-	if (requested.length === 0) return { fargate: true, ec2: false }
+	if (requested.length === 0) return { fargate: false, ec2: true }
 	const unknown = requested.filter((fleet) => fleet !== "fargate" && fleet !== "ec2")
 	if (unknown.length > 0) {
 		throw new Error(
