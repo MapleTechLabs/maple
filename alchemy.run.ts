@@ -295,7 +295,9 @@ export default Alchemy.Stack(
 
 		const localUi = isDevServer ? undefined : yield* LocalUi
 
-		const alerting = yield* Alerting
+		// Alerting binds maple-ai too: its ticks ask the incident classifier there
+		// before starting an investigation.
+		const alerting = yield* Effect.provideService(Alerting, AiWorker, ai)
 		yield* serveWorker("alerting", alerting)
 
 		// Dev only: the vite/astro dev servers, `cargo run`, and the scraper, each

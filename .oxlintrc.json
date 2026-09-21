@@ -37,6 +37,7 @@
 		],
 		"maple/no-effect-die": "error",
 		"maple/no-ordie-compiled-query": "error",
+		"maple/no-raw-tool-layer": "error",
 		"maple/no-react-use-effect": "warn",
 		"maple/no-record-string-any": "error",
 		"maple/no-try-catch": "error",

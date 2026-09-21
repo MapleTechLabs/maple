@@ -12,7 +12,7 @@ import { AlertDestination } from "../src/AlertDestination"
 export const acceptsOutputs = (url: Output<string>, secret: Output<string>) =>
 	AlertDestination("hook", {
 		type: "webhook",
-		name: Config.string("HOOK_NAME"),
+		name: Config.String("HOOK_NAME"),
 		url,
 		signing_secret: secret,
 	})

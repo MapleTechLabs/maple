@@ -7,7 +7,7 @@
 const nodes = [
 	{ label: "OTLP exporter", sub: "your app / SDK" },
 	{ label: "POST /v1/*", sub: "ingest · :4318" },
-	{ label: "chDB store", sub: "~/.maple/data" },
+	{ label: "embedded ClickHouse", sub: "~/.maple/data" },
 	{ label: "POST /local/query", sub: "query API" },
 	{ label: "dashboard · CLI", sub: "read your data" },
 ];
@@ -25,8 +25,8 @@ const nodes = [
 		))}
 	</ol>
 	<figcaption class="lf__cap">
-		One process owns the chDB connection; short-lived CLI commands read it over the same
-		<code>/local/query</code> HTTP contract the dashboard uses.
+		One process owns the store; short-lived CLI commands and the dashboard read it over the same
+		<code>/local/query</code> HTTP contract.
 	</figcaption>
 </figure>
 

@@ -18,21 +18,35 @@ const flat = groups.filter((g) => section && sectionForGroup(g.group).id === sec
 const i = flat.findIndex((d) => d.id === currentSlug);
 const prev = i > 0 ? flat[i - 1] : null;
 const next = i >= 0 && i < flat.length - 1 ? flat[i + 1] : null;
+
+const cardClass =
+    "group flex items-center gap-3 rounded-lg border border-border p-4 transition-colors hover:border-fg-muted/40 hover:bg-bg-elevated focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary";
+const chevronClass = "h-4 w-4 shrink-0 text-fg-muted transition-[color,transform] duration-200 group-hover:text-primary motion-reduce:transition-none";
 ---
 
-<nav class="mt-14 grid grid-cols-1 gap-3 border-t border-border pt-8 sm:grid-cols-2" aria-label="Page navigation">
+<nav class="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-2" aria-label="Page navigation">
     {prev ? (
-        <a href={`/docs/${prev.id}`} class="group rounded-lg border border-border p-4 hover:bg-bg-elevated transition-colors">
-            <span class="block font-mono text-[10px] uppercase tracking-[0.14em] text-fg-muted">Previous</span>
-            <span class="mt-1.5 block text-[14px] font-medium text-fg">{prev.data.title}</span>
-            <span class="mt-0.5 block text-[12px] text-fg-muted">{prev.data.group}</span>
+        <a href={`/docs/${prev.id}`} class={cardClass} rel="prev">
+            <svg class:list={[chevronClass, "group-hover:-translate-x-0.5"]} viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square" aria-hidden="true">
+                <path d="M7.01 12H7" /><path d="M9.01 10H9" /><path d="M9.01 14H9" /><path d="M11.01 16H11" /><path d="M11.01 8H11" /><path d="M13.01 6H13" /><path d="M13.01 18H13" /><path d="M15.01 20H15" /><path d="M15.01 4H15" />
+            </svg>
+            <span class="min-w-0">
+                <span class="block font-mono text-[10px] uppercase tracking-[0.14em] text-fg-muted">Previous</span>
+                <span class="mt-1 block truncate text-[14px] font-medium text-fg">{prev.data.title}</span>
+                <span class="mt-0.5 block text-[12px] text-fg-muted">{prev.data.group}</span>
+            </span>
         </a>
     ) : <div />}
     {next ? (
-        <a href={`/docs/${next.id}`} class="group rounded-lg border border-border p-4 hover:bg-bg-elevated transition-colors sm:text-right">
-            <span class="block font-mono text-[10px] uppercase tracking-[0.14em] text-fg-muted">Next</span>
-            <span class="mt-1.5 block text-[14px] font-medium text-fg">{next.data.title}</span>
-            <span class="mt-0.5 block text-[12px] text-fg-muted">{next.data.group}</span>
+        <a href={`/docs/${next.id}`} class:list={[cardClass, "sm:flex-row-reverse sm:text-right"]} rel="next">
+            <svg class:list={[chevronClass, "group-hover:translate-x-0.5"]} viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square" aria-hidden="true">
+                <path d="M16.99 12H17" /><path d="M14.99 10H15" /><path d="M14.99 14H15" /><path d="M12.99 16H13" /><path d="M12.99 8H13" /><path d="M10.99 6H11" /><path d="M10.99 18H11" /><path d="M8.99 20H9" /><path d="M8.99 4H9" />
+            </svg>
+            <span class="min-w-0 flex-1">
+                <span class="block font-mono text-[10px] uppercase tracking-[0.14em] text-fg-muted">Next</span>
+                <span class="mt-1 block truncate text-[14px] font-medium text-fg">{next.data.title}</span>
+                <span class="mt-0.5 block text-[12px] text-fg-muted">{next.data.group}</span>
+            </span>
         </a>
     ) : <div />}
 </nav>

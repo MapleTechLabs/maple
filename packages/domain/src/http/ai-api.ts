@@ -1,5 +1,6 @@
 import { HttpApi, OpenApi } from "effect/unstable/httpapi"
 import { ChatApiGroup } from "./chat"
+import { IncidentTriageApiGroup } from "./incident-triage"
 import { V1SchemaErrors, V1UnexpectedErrors } from "./v1-boundary"
 
 /**
@@ -22,6 +23,8 @@ import { V1SchemaErrors, V1UnexpectedErrors } from "./v1-boundary"
  */
 export class MapleAiApi extends HttpApi.make("MapleAiApi")
 	.add(ChatApiGroup)
+	// Worker-to-Worker only: alerting asks before an incident earns an investigation.
+	.add(IncidentTriageApiGroup)
 	.middleware(V1SchemaErrors)
 	.middleware(V1UnexpectedErrors)
 	.annotateMerge(

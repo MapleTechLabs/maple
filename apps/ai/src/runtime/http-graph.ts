@@ -11,6 +11,9 @@ import { EdgeCacheServiceLive } from "@maple/backend/platform/CacheBackendLive"
  *   - `/internal/chat/apply` — a typed `HttpApi` group, because re-running an
  *     approval-gated mutation is an ordinary request/response with a schema
  *     worth pinning.
+ *   - `/internal/triage/classify` — the decision model behind the investigation
+ *     gate, typed for the same reason. Reached only over a service binding: api
+ *     does not forward it, and the callers are the Workers that open incidents.
  *
  * The api still owns the hostname. It forwards all three here over a service
  * binding, which is what keeps `/mcp`'s OAuth issuer and RFC 8707 resource
@@ -18,11 +21,14 @@ import { EdgeCacheServiceLive } from "@maple/backend/platform/CacheBackendLive"
  * MCP client.
  */
 import { MapleAiApi } from "@maple/domain/http"
-import { Layer } from "effect"
+import { WorkerEnvironment } from "@maple/infra/worker-runtime"
+import { Effect, Layer } from "effect"
 import { HttpRouter } from "effect/unstable/http"
 import { HttpApiBuilder } from "effect/unstable/httpapi"
 import { McpLive } from "../mcp/app"
 import { HttpChatLive } from "../routes/internal/chat.http"
+import { HttpTriageLive } from "../routes/internal/triage.http"
+import { layerDecisionModel, layerLlm } from "../platform/Llm"
 import { ChatSessionsRouter } from "../routes/v1/chat-sessions.http"
 import { HealthRouter } from "../routes/health"
 import { API_CORS_OPTIONS } from "@maple/backend/http/api-cors"
@@ -66,8 +72,18 @@ const rawRoutes = <Routes extends Layer.Any>(
 
 const RawRoutes = rawRoutes(Layer.mergeAll(HealthRouter, ChatSessionsRouter, McpLive))
 
+/**
+ * The decision model the triage route asks, built once per isolate from the
+ * Worker env — the same layers the investigation turn builds per turn in
+ * `turn-runner.ts`, on the same OpenRouter key.
+ */
+const DecisionModelLive = Layer.unwrap(
+	Effect.map(WorkerEnvironment, (env) => layerDecisionModel(env).pipe(Layer.provide(layerLlm(env)))),
+)
+
 const AiInternalRoutes = HttpApiBuilder.layer(MapleAiApi).pipe(
 	Layer.provide(HttpChatLive),
+	Layer.provide(HttpTriageLive.pipe(Layer.provide(DecisionModelLive))),
 	Layer.provide(V1ErrorBoundaryLive),
 )
 

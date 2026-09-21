@@ -6,7 +6,10 @@ import { Schema } from "effect"
  * (e.g. URL has `?param="[\"val\"]"` which JSON-parses to the string `["val"]`).
  */
 const MutableStringArray = Schema.mutable(Schema.Array(Schema.String))
-const StringArrayFromJsonString = Schema.mutable(Schema.fromJsonString(Schema.Array(Schema.String)))
+// `mutable` goes INSIDE the JSON decoding: effect rc.116 refuses to make a
+// schema that carries an encoding mutable, and the array is what has to be
+// mutable for TanStack Router's search params anyway.
+const StringArrayFromJsonString = Schema.fromJsonString(Schema.mutable(Schema.Array(Schema.String)))
 
 export const BooleanFromStringParam = Schema.fromJsonString(Schema.Boolean)
 

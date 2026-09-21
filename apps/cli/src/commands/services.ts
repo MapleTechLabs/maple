@@ -28,7 +28,7 @@ export const services = Command.make("services", {
 )
 
 export const diagnose = Command.make("diagnose", {
-	serviceName: Argument.string("service-name").pipe(Argument.withDescription("Service to diagnose")),
+	serviceName: Argument.String("service-name").pipe(Argument.withDescription("Service to diagnose")),
 	since: f.since,
 	start: f.start,
 	end: f.end,
@@ -49,8 +49,8 @@ export const diagnose = Command.make("diagnose", {
 )
 
 export const topOps = Command.make("top-ops", {
-	serviceName: Argument.string("service-name").pipe(Argument.withDescription("Service to inspect")),
-	metric: Flag.choice("metric", [
+	serviceName: Argument.String("service-name").pipe(Argument.withDescription("Service to inspect")),
+	metric: Flag.Literals("metric", [
 		"count",
 		"avg_duration",
 		"p50_duration",

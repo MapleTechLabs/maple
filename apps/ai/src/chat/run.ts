@@ -133,6 +133,7 @@ export const runChatTurn = (input: ChatRunInput) => {
 		input.usage,
 		input.model.name,
 		input.closeOut === true,
+		agentSessionSpanAttributes(input.model.tags),
 	)
 
 	const toolkit = Toolkit.merge(maple.toolkit, ...(completion === undefined ? [] : [completion.toolkit]))

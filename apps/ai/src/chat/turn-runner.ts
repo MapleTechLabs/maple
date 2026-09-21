@@ -255,7 +255,7 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 		{ InvestigationServicesLive },
 		{ layerPg },
 		{ mapleDbConnectionLayer },
-		{ layerLlm, resolveTriageModel },
+		{ layerDecisionModel, layerLlm, resolveTriageModel },
 		{ buildDiagnosisCompletion },
 		{ McpToolExecutor },
 	] = await Promise.all([
@@ -270,6 +270,9 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 
 	const runtime = ManagedRuntime.make(
 		InvestigationServicesLive.pipe(
+			// Decisions before the clients: `layerLlm` is what answers the OpenRouter
+			// client the decision model runs on.
+			Layer.provideMerge(layerDecisionModel(input.env)),
 			Layer.provideMerge(layerLlm(input.env)),
 			Layer.provideMerge(layerPg),
 			Layer.provideMerge(mapleDbConnectionLayer(input.env)),

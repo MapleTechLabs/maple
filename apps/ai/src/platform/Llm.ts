@@ -11,9 +11,10 @@
  * `/chat/completions`, which is what lets one shim serve the binding path.
  */
 import { OpenAiClient, OpenAiLanguageModel } from "@effect/ai-openai-compat"
-import { OpenRouterClient, OpenRouterLanguageModel } from "@effect/ai-openrouter"
+import { OpenRouterClient, OpenRouterDecisionModel, OpenRouterLanguageModel } from "@effect/ai-openrouter"
 import { MAPLE_NATIVE_SESSION_ID_ATTR, MAPLE_NATIVE_TURN_ID_ATTR } from "@maple/domain/gen-ai"
 import { Effect, Layer, Option, Redacted, Schema } from "effect"
+import type * as DecisionModel from "effect/unstable/ai/DecisionModel"
 import * as LanguageModel from "effect/unstable/ai/LanguageModel"
 import * as AiModel from "effect/unstable/ai/Model"
 import { FetchHttpClient, HttpBody, HttpClient, HttpClientRequest } from "effect/unstable/http"
@@ -22,6 +23,18 @@ import { layerWorkersAi } from "./WorkersAiHttpClient"
 
 /** Default triage/chat model on OpenRouter — the provider agents run on by default. */
 export const DEFAULT_OPENROUTER_MODEL = "z-ai/glm-5.3-flash:nitro"
+
+/**
+ * Default decision model: TypeSafe's Jev, reached through OpenRouter.
+ *
+ * A decision model answers a bounded question — pick one of these labels, rate this, how likely is
+ * that — and returns the whole distribution. It is not a language model and does not replace one:
+ * it is what a gate should ask when the answer is a choice rather than prose.
+ *
+ * The `~` alias tracks the latest Jev; `typesafe/jev-1.13` pins one, through
+ * `MAPLE_DECISION_MODEL`, if a gate ever needs a fixed judge.
+ */
+export const DEFAULT_DECISION_MODEL = "~typesafe/jev-latest"
 
 /**
  * OpenRouter app attribution. `HTTP-Referer` is the header that actually creates the app page — a
@@ -101,6 +114,8 @@ export interface LlmEnv extends Record<string, unknown> {
 	/** `low` | `medium` | `high` | `off`. See {@link ReasoningEffort}. */
 	readonly MAPLE_TRIAGE_REASONING_EFFORT?: string
 	readonly OPENROUTER_API_KEY?: string
+	/** Decision model id, overriding {@link DEFAULT_DECISION_MODEL}. */
+	readonly MAPLE_DECISION_MODEL?: string
 }
 
 /**
@@ -265,7 +280,7 @@ export const agentSessionSpanAttributes = (
  */
 const instrumentedModel = <R>(
 	name: string,
-	make: Effect.Effect<LanguageModel.Service, never, R>,
+	make: Effect.Effect<LanguageModel.LanguageModel, never, R>,
 	telemetry: ModelCallTelemetry,
 ): Layer.Layer<ModelServices, never, R> =>
 	AiModel.make(
@@ -416,3 +431,20 @@ export const layerLlm = (env: LlmEnv): Layer.Layer<LlmClients> => {
 		}).pipe(Layer.provide(http)),
 	)
 }
+
+/**
+ * The decision model, over the same OpenRouter client as everything else.
+ *
+ * OpenRouter serves Jev from a separate endpoint (`/alpha/decisions`, not chat completions), which
+ * is why this is its own layer rather than another entry in {@link resolveTriageModel}. It is not
+ * its own provider though: one key, one set of app-attribution headers, and decision spend lands in
+ * the same account as model spend. `layerLlm` answers the client it requires.
+ */
+export const layerDecisionModel = (
+	env: LlmEnv,
+): Layer.Layer<DecisionModel.DecisionModel, never, OpenRouterClient.OpenRouterClient> =>
+	OpenRouterDecisionModel.layer({ model: resolveDecisionModel(env) })
+
+/** The decision model this deploy asks, so a verdict can record what answered it. */
+export const resolveDecisionModel = (env: LlmEnv): string =>
+	readString(env, "MAPLE_DECISION_MODEL") ?? DEFAULT_DECISION_MODEL

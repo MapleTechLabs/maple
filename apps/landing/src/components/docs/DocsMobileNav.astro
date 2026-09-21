@@ -14,9 +14,14 @@ const allDocs = await getCollection("docs", ({ data }) => !data.draft);
 const currentDoc = allDocs.find((d) => d.id === currentSlug);
 ---
 
-<details class="mb-8 rounded-lg border border-border lg:hidden">
-    <summary class="flex items-center justify-between px-4 py-3 cursor-pointer text-[13px] text-fg-muted hover:text-fg transition-colors list-none [&::-webkit-details-marker]:hidden">
-        <span class="truncate">Browse the docs</span>
+<details class="rounded-lg border border-border lg:hidden">
+    <summary class="flex items-center justify-between px-4 py-2.5 cursor-pointer text-[13px] text-fg-muted hover:text-fg transition-colors list-none [&::-webkit-details-marker]:hidden">
+        <span class="flex min-w-0 items-baseline gap-2">
+            <span class="shrink-0">Browse the docs</span>
+            {currentDoc && (
+                <span class="truncate text-fg-muted/60" aria-hidden="true">· {currentDoc.data.navLabel ?? currentDoc.data.title}</span>
+            )}
+        </span>
         <svg class="w-3 h-3 shrink-0 transition-transform details-open:rotate-180" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5">
             <path d="M3 5l3 3 3-3" />
         </svg>

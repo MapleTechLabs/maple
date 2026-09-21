@@ -30,7 +30,7 @@ export const errors = Command.make("errors", {
 )
 
 export const error = Command.make("error", {
-	fingerprintHash: Argument.string("fingerprint-hash").pipe(
+	fingerprintHash: Argument.String("fingerprint-hash").pipe(
 		Argument.withDescription("Error fingerprint hash (from the `errors` command)"),
 	),
 	since: f.since,

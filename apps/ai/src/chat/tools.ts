@@ -22,6 +22,7 @@ import { Tool, Toolkit } from "effect/unstable/ai"
 import type { McpToolExecutorApi } from "../mcp/dispatcher"
 import type { McpToolSurface } from "@maple/domain/mcp-manifest"
 import { buildMapleToolkit, MapleToolFailure, summarizeToolFailure } from "../mcp/tools/llm-tools"
+import { toolHandlersWithContent } from "../platform/genai-spans"
 import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
 
 const decodeInvestigationIdOption = Schema.decodeUnknownOption(InvestigationId)
@@ -133,6 +134,8 @@ export const buildDiagnosisCompletion = (
 	modelName: string,
 	/** This run is the close-out: whatever it files is a partial, and lands as `inconclusive`. */
 	partial = false,
+	/** The run's agent-session identity, stamped on the tool span like every other tool's. */
+	sessionAttributes?: Readonly<Record<string, string>>,
 ) => {
 	const investigationId = investigationForSession(sessionId)
 	if (investigationId === undefined) return undefined
@@ -145,44 +148,48 @@ export const buildDiagnosisCompletion = (
 	let submitted = false
 	return {
 		toolkit,
-		layer: toolkit.toLayer({
-			[SUBMIT_DIAGNOSIS]: (submission: AiTriageSubmission) =>
-				Effect.suspend(() => {
-					const { report, filled } = normalizeTriageSubmission(submission)
-					return submitDiagnosis(
-						tenant.orgId,
-						investigationId,
-						new SubmitDiagnosisRequest({
-							report,
-							model: modelName,
-							inputTokens: usage.input,
-							outputTokens: usage.output,
-							...(partial ? { partial: true } : undefined),
-						}),
-					).pipe(
-						Effect.tap(() =>
-							// What the model omitted is the signal that the prompt or the model is the
-							// problem; without it a filled-in report is indistinguishable from a written one.
-							Effect.annotateCurrentSpan({
-								"maple.diagnosis.filled_fields": filled.join(","),
-								"maple.diagnosis.filled_count": filled.length,
+		...toolHandlersWithContent(
+			toolkit,
+			{
+				[SUBMIT_DIAGNOSIS]: (submission: AiTriageSubmission) =>
+					Effect.suspend(() => {
+						const { report, filled } = normalizeTriageSubmission(submission)
+						return submitDiagnosis(
+							tenant.orgId,
+							investigationId,
+							new SubmitDiagnosisRequest({
+								report,
+								model: modelName,
+								inputTokens: usage.input,
+								outputTokens: usage.output,
+								...(partial ? { partial: true } : undefined),
 							}),
-						),
-					)
-				}).pipe(
-					Effect.tap(() => Effect.sync(() => (submitted = true))),
-					Effect.as("Diagnosis recorded."),
-					// Named failures only. A rendered Effect cause carries stack frames and, inside a
-					// DatabaseError, connection details.
-					Effect.catchCause((cause) =>
-						Effect.fail(
-							new MapleToolFailure({
-								message: `${SUBMIT_DIAGNOSIS} failed: ${summarizeToolFailure(cause)}`,
-							}),
+						).pipe(
+							Effect.tap(() =>
+								// What the model omitted is the signal that the prompt or the model is the
+								// problem; without it a filled-in report is indistinguishable from a written one.
+								Effect.annotateCurrentSpan({
+									"maple.diagnosis.filled_fields": filled.join(","),
+									"maple.diagnosis.filled_count": filled.length,
+								}),
+							),
+						)
+					}).pipe(
+						Effect.tap(() => Effect.sync(() => (submitted = true))),
+						Effect.as("Diagnosis recorded."),
+						// Named failures only. A rendered Effect cause carries stack frames and, inside a
+						// DatabaseError, connection details.
+						Effect.catchCause((cause) =>
+							Effect.fail(
+								new MapleToolFailure({
+									message: `${SUBMIT_DIAGNOSIS} failed: ${summarizeToolFailure(cause)}`,
+								}),
+							),
 						),
 					),
-				),
-		}),
+			},
+			sessionAttributes,
+		),
 		autonomous: isAutonomousInvestigationTurn(sessionId, origin),
 		submitted: () => submitted,
 	}

@@ -264,3 +264,68 @@ export const applyTriageSeverity = (
 
 		return { applied: true, actorId }
 	})
+
+export interface ApplyClassifierSeverityInput {
+	readonly orgId: OrgId
+	readonly issueId: ErrorIssueId
+	/** The incident the verdict was about; keys the timeline event so a retried tick writes it once. */
+	readonly incidentId: string
+	readonly severity: IssueSeverity
+	/** The model's probability for the severity it chose. */
+	readonly confidence: number
+	readonly timestamp: number
+}
+
+/** The three-step confidence the timeline already renders, from a probability. */
+const confidenceLabel = (probability: number): AiTriageResult["confidence"] =>
+	probability >= 0.8 ? "high" : probability >= 0.5 ? "medium" : "low"
+
+/**
+ * A severity the classifier set on an incident that was NOT investigated.
+ *
+ * Only an untriaged issue takes it, and it never escalates. The point of a skip
+ * is that nobody needs to look, so nothing on this path may page anyone; and
+ * an issue the detector, a report or a person already ranked keeps its ranking
+ * — the classifier read a summary, they read the signal.
+ */
+export const applyClassifierSeverity = (
+	db: TriageSeverityDb,
+	input: ApplyClassifierSeverityInput,
+): Effect.Effect<{ readonly applied: boolean }, EffectDrizzleQueryError | TriageActorMissingError> =>
+	Effect.gen(function* () {
+		const updated = yield* db
+			.update(errorIssues)
+			.set({ severity: input.severity, severitySource: "ai", updatedAt: new Date(input.timestamp) })
+			.where(
+				and(
+					eq(errorIssues.orgId, input.orgId),
+					eq(errorIssues.id, input.issueId),
+					isNull(errorIssues.severity),
+				),
+			)
+			.returning({ id: errorIssues.id })
+		if (updated.length === 0) return { applied: false }
+
+		const actorId = yield* ensureTriageAgentActor(db, input.orgId, input.timestamp)
+		yield* db
+			.insert(errorIssueEvents)
+			.values({
+				id: decodeEventId(deterministicUuid(`classifier-severity:${input.incidentId}`)),
+				orgId: input.orgId,
+				issueId: input.issueId,
+				actorId,
+				type: "severity_change",
+				fromState: null,
+				toState: null,
+				payloadJson: {
+					from: null,
+					to: input.severity,
+					source: "ai",
+					runId: input.incidentId,
+					confidence: confidenceLabel(input.confidence),
+				},
+				createdAt: new Date(input.timestamp),
+			})
+			.onConflictDoNothing()
+		return { applied: true }
+	})
