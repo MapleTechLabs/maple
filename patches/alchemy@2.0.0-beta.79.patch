@@ -1,0 +1,139 @@
+diff --git a/lib/AWS/AutoScaling/AutoScalingGroup.js b/lib/AWS/AutoScaling/AutoScalingGroup.js
+index f9255948..827bb867 100644
+--- a/lib/AWS/AutoScaling/AutoScalingGroup.js
++++ b/lib/AWS/AutoScaling/AutoScalingGroup.js
+@@ -246,7 +246,17 @@ export const AutoScalingGroupProvider = () => Provider.effect(AutoScalingGroup,
+                     TerminationPolicies: news.terminationPolicies,
+                     Tags: toTags(autoScalingGroupName, desiredTags),
+                 })
+-                    .pipe(Effect.catch((error) => error?._tag === "AlreadyExistsFault"
++                    .pipe(
++                // maple patch: a just-created instance profile takes a few seconds to
++                // reach EC2, and the launch template is rejected until it does.
++                Effect.retry({
++                    while: (error) => error?._tag === "ValidationError" &&
++                        /Invalid IAM Instance Profile/i.test(String(error?.message ?? error)),
++                    schedule: Schedule.max([
++                        Schedule.recurs(10),
++                        Schedule.exponential("1 second"),
++                    ]),
++                }), Effect.catch((error) => error?._tag === "AlreadyExistsFault"
+                     ? Effect.void
+                     : Effect.fail(error)));
+                 existing = yield* describeGroup(autoScalingGroupName).pipe(Effect.filterOrFail(Boolean, () => new Error(`Auto Scaling Group '${autoScalingGroupName}' was not readable after create`)), Effect.retry({
+@@ -265,7 +275,9 @@ export const AutoScalingGroupProvider = () => Provider.effect(AutoScalingGroup,
+                 AutoScalingGroupName: autoScalingGroupName,
+                 MinSize: news.minSize,
+                 MaxSize: news.maxSize,
+-                DesiredCapacity: news.desiredCapacity ?? news.minSize,
++                // maple patch: an unset desiredCapacity leaves the live value alone, so a
++            // redeploy does not undo ECS managed scaling.
++            DesiredCapacity: news.desiredCapacity,
+                 LaunchTemplate: launchTemplate,
+                 VPCZoneIdentifier: news.subnetIds.join(","),
+                 HealthCheckType: healthCheckType,
+diff --git a/lib/AWS/ECS/Service.js b/lib/AWS/ECS/Service.js
+index 66192e6f..800c8a5d 100644
+--- a/lib/AWS/ECS/Service.js
++++ b/lib/AWS/ECS/Service.js
+@@ -675,6 +675,8 @@ const transformServiceProps = (id, props) => Effect.gen(function* () {
+         return next;
+     }).pipe(Namespace.push(id));
+ });
++/** maple patch: whether the service's tasks get their own ENI. */
++const usesAwsvpc = (props) => (props?.networkMode ?? "awsvpc") === "awsvpc";
+ const composeManagedIngress = (id, props, lbProp) => Effect.gen(function* () {
+     const config = lbProp === true
+         ? {}
+@@ -978,7 +980,7 @@ const composeManagedIngress = (id, props, lbProp) => Effect.gen(function* () {
+             vpcId: network.vpcId,
+             port: spec.port,
+             protocol: spec.protocol,
+-            targetType: "ip",
++            targetType: usesAwsvpc(props) ? "ip" : "instance",
+             healthCheckPath: isNetworkTg
+                 ? wantsHttpCheck
+                     ? (health?.path ?? "/")
+@@ -1837,7 +1839,9 @@ export const ServiceProvider = () => Provider.effect(Service, Effect.gen(functio
+         platformVersion: news.platformVersion,
+         deploymentConfiguration: news.deploymentConfiguration,
+         healthCheckGracePeriodSeconds: toWireSeconds(news.healthCheckGracePeriod),
+-        networkConfiguration: networkConfigurationOf(network, securityGroups),
++        networkConfiguration: usesAwsvpc(news)
++            ? networkConfigurationOf(network, securityGroups)
++            : undefined,
+         capacityProviderStrategy: news.capacityProviderStrategy,
+         placementConstraints: news.placementConstraints,
+         placementStrategy: news.placementStrategy,
+diff --git a/src/AWS/AutoScaling/AutoScalingGroup.ts b/src/AWS/AutoScaling/AutoScalingGroup.ts
+index 5b40c650..2eb9162d 100644
+--- a/src/AWS/AutoScaling/AutoScalingGroup.ts
++++ b/src/AWS/AutoScaling/AutoScalingGroup.ts
+@@ -470,6 +470,17 @@ export const AutoScalingGroupProvider = () =>
+                 Tags: toTags(autoScalingGroupName, desiredTags),
+               } as any)
+               .pipe(
++                // maple patch: a just-created instance profile takes a few seconds to
++                // reach EC2, and the launch template is rejected until it does.
++                Effect.retry({
++                  while: (error: any) =>
++                    error?._tag === "ValidationError" &&
++                    /Invalid IAM Instance Profile/i.test(String(error?.message ?? error)),
++                  schedule: Schedule.max([
++                    Schedule.recurs(10),
++                    Schedule.exponential("1 second"),
++                  ]),
++                }),
+                 Effect.catch((error: any) =>
+                   error?._tag === "AlreadyExistsFault"
+                     ? Effect.void
+@@ -503,7 +514,9 @@ export const AutoScalingGroupProvider = () =>
+             AutoScalingGroupName: autoScalingGroupName,
+             MinSize: news.minSize,
+             MaxSize: news.maxSize,
+-            DesiredCapacity: news.desiredCapacity ?? news.minSize,
++            // maple patch: an unset desiredCapacity leaves the live value alone, so a
++            // redeploy does not undo ECS managed scaling.
++            DesiredCapacity: news.desiredCapacity,
+             LaunchTemplate: launchTemplate,
+             VPCZoneIdentifier: (news.subnetIds as string[]).join(","),
+             HealthCheckType: healthCheckType,
+diff --git a/src/AWS/ECS/Service.ts b/src/AWS/ECS/Service.ts
+index 47a9aadb..86ba487e 100644
+--- a/src/AWS/ECS/Service.ts
++++ b/src/AWS/ECS/Service.ts
+@@ -1658,6 +1658,11 @@ const transformServiceProps = (
+     }).pipe(Namespace.push(id));
+   });
+ 
++/** maple patch: whether the service's tasks get their own ENI. */
++const usesAwsvpc = (props: unknown) =>
++  ((props as { networkMode?: string } | undefined)?.networkMode ?? "awsvpc") ===
++  "awsvpc";
++
+ const composeManagedIngress = (
+   id: string,
+   props: ServiceProps,
+@@ -2071,7 +2076,9 @@ const composeManagedIngress = (
+           vpcId: network.vpcId as string,
+           port: spec.port as number,
+           protocol: spec.protocol,
+-          targetType: "ip",
++          // host/bridge tasks have no ENI of their own; the ALB reaches them
++          // through the container instance (maple patch).
++          targetType: usesAwsvpc(props) ? "ip" : "instance",
+           healthCheckPath: isNetworkTg
+             ? wantsHttpCheck
+               ? (health?.path ?? "/")
+@@ -3241,7 +3248,10 @@ export const ServiceProvider = () =>
+         healthCheckGracePeriodSeconds: toWireSeconds(
+           news.healthCheckGracePeriod,
+         ),
+-        networkConfiguration: networkConfigurationOf(network, securityGroups),
++        // ECS rejects an awsvpcConfiguration for host/bridge tasks (maple patch).
++        networkConfiguration: usesAwsvpc(news)
++          ? networkConfigurationOf(network, securityGroups)
++          : undefined,
+         capacityProviderStrategy: news.capacityProviderStrategy,
+         placementConstraints: news.placementConstraints,
+         placementStrategy: news.placementStrategy,

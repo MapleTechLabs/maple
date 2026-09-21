@@ -15,7 +15,16 @@
  * turn lifecycle. `apps/api/src/chat/events.ts` is the only place the two are mapped.
  */
 import { Option, Schema } from "effect"
-import { ActorId, AuthMode, OrgId, RoleName, UserId } from "./primitives"
+import {
+	ActorId,
+	AuthMode,
+	ChatConnectorId,
+	ChatConversationKey,
+	ExternalUserId,
+	OrgId,
+	RoleName,
+	UserId,
+} from "./primitives"
 
 // Session addressing
 
@@ -52,6 +61,14 @@ export const investigationIdFromChatSessionId = (sessionId: string): string | un
 	return tab.startsWith("inv-") ? tab.slice("inv-".length) : undefined
 }
 
+/**
+ * What a conversation *is* — its persona and its budget.
+ *
+ * Deliberately not who drives a turn: that is {@link ChatTurnOrigin}, and fusing the two would
+ * mean a new mode, a new agent record and a new prompt every time a conversation became reachable
+ * from somewhere new. A connector-driven thread is an ordinary chat-mode conversation that a
+ * connector is answering in, and it stays free to be anchored on an alert later.
+ */
 export const ChatMode = Schema.Literals(["default", "alert", "widget-fix", "investigate"])
 export type ChatMode = Schema.Schema.Type<typeof ChatMode>
 
@@ -63,6 +80,28 @@ export const chatModeFromSessionId = (sessionId: string): ChatMode => {
 	if (tab.startsWith("inv-")) return "investigate"
 	return "default"
 }
+
+const CONNECTOR_TAB_PREFIX = "bot-"
+
+/** Whether this session's transcript belongs to a connector thread rather than the Maple app. */
+export const isConnectorSessionId = (sessionId: string): boolean =>
+	tabIdFromChatSessionId(sessionId).startsWith(CONNECTOR_TAB_PREFIX)
+
+// Owned by `./primitives` so the engine and the connector packages cannot drift apart.
+export { ChatConnectorId, ChatConversationKey } from "./primitives"
+
+/**
+ * The session a connector conversation lives in.
+ *
+ * The connector supplies `conversationKey`, because only it knows what makes a conversation
+ * unique on its platform — a thread, a channel, a channel and thread together. Its charset
+ * excludes `-`, and a connector id cannot contain one either, so the tab splits unambiguously.
+ */
+export const connectorSessionId = (
+	orgId: OrgId,
+	connectorId: ChatConnectorId,
+	conversationKey: ChatConversationKey,
+): ChatSessionId => makeChatSessionId(orgId, `${CONNECTOR_TAB_PREFIX}${connectorId}-${conversationKey}`)
 
 // Durable transcript
 
@@ -402,6 +441,80 @@ export type ChatTurnTenantEncoded = (typeof ChatTurnTenant)["Encoded"]
 
 export const encodeChatTurnTenant = Schema.encodeSync(ChatTurnTenant)
 export const decodeChatTurnTenant = Schema.decodeSync(ChatTurnTenant)
+
+/**
+ * Who drives this turn, stated rather than inferred.
+ *
+ * The second axis of a turn, beside {@link ChatMode}: the mode says what the conversation is, the
+ * origin says who is pushing it forward. They are independent — a person can follow up inside an
+ * investigation, and a connector answers in what is otherwise an ordinary chat conversation — and
+ * every behaviour that used to be recovered from a sentinel user id hangs off this instead. A
+ * sentinel is an identity being asked a question it cannot answer: `internal-service` is a claim
+ * about *how* the turn was raised, wearing the shape of *who* raised it.
+ *
+ * Set server-side by whoever calls `beginTurn`, which is reachable only from Maple's own Workers.
+ * A `Struct` union, not a `Class` one, for the same structured-clone reason as
+ * {@link ChatTurnTenant}.
+ */
+export const ChatTurnOrigin = Schema.Union([
+	/** A signed-in person in the Maple app. */
+	Schema.Struct({ kind: Schema.Literal("app") }),
+	/** An investigation's own unattended pass, which has no reader at all. */
+	Schema.Struct({ kind: Schema.Literal("autonomous") }),
+	/**
+	 * Someone addressing Maple from a chat platform. The identity is the platform's, not Maple's:
+	 * there is no user row behind `externalUserId`, and `displayName` is what that platform shows.
+	 * The engine reads only `kind`; the rest is what the audit model will attribute a turn by.
+	 */
+	Schema.Struct({
+		kind: Schema.Literal("connector"),
+		connectorId: ChatConnectorId,
+		workspaceId: Schema.String,
+		externalUserId: ExternalUserId,
+		displayName: Schema.String,
+	}),
+])
+/**
+ * Plain data on both sides, so it crosses the Durable Object boundary as itself — every field is
+ * a string, so unlike {@link ChatTurnTenant} there is nothing to rebuild on arrival.
+ */
+export type ChatTurnOrigin = (typeof ChatTurnOrigin)["Encoded"]
+
+/**
+ * The user id a connector turn's tenant carries.
+ *
+ * `TenantContext` requires one and no Maple user stands behind a connector turn, so this is a
+ * placeholder to satisfy that type — **nothing branches on it**. Every behavioural question is
+ * answered by {@link ChatTurnOrigin}.
+ */
+export const CONNECTOR_TENANT_USER_ID = Schema.decodeSync(UserId)("chat-connector")
+
+/**
+ * The turn identity a connector Worker hands `beginTurn`, already encoded for the DO hop.
+ *
+ * No roles: a connector turn proposes mutations rather than performing them, so the only reader of
+ * roles — the authorization check inside a mutating tool — is reached by the apply path, under
+ * whoever approved the proposal, not by the turn that wrote it.
+ */
+export const connectorTurnTenant = (orgId: OrgId): ChatTurnTenantEncoded =>
+	encodeChatTurnTenant({
+		orgId,
+		userId: CONNECTOR_TENANT_USER_ID,
+		roles: [],
+		authMode: "self_hosted",
+	})
+
+/**
+ * The origin for a caller that did not state one.
+ *
+ * Compatibility only: api, alerting and ai are separate Workers, so a caller that predates the
+ * field keeps calling through a rollout, and the investigation pass must not silently become
+ * attended. Removable once every caller sets an origin.
+ */
+export const originForTurn = (
+	origin: ChatTurnOrigin | undefined,
+	tenant: ChatTurnTenantEncoded,
+): ChatTurnOrigin => origin ?? { kind: tenant.userId === "internal-service" ? "autonomous" : "app" }
 
 // Requests
 

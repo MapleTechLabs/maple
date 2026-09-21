@@ -82,6 +82,7 @@ describe("runChatTurn input", () => {
 				sessionId: "org_test:tab-1",
 				messageId: "msg-1",
 				tenant: TENANT,
+				origin: { kind: "app" },
 				toolExecutor: noTools,
 				model,
 				submitDiagnosis: () => Effect.die("no investigation in a default session"),

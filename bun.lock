@@ -4,6 +4,9 @@
   "workspaces": {
     "": {
       "name": "maple",
+      "dependencies": {
+        "pg": "^8.23.0",
+      },
       "devDependencies": {
         "@cloudflare/workers-types": "catalog:alchemy",
         "@effect/platform-node": "4.0.0-rc.116",
@@ -84,6 +87,7 @@
         "@maple/auth": "workspace:*",
         "@maple/backend": "workspace:*",
         "@maple/cache": "workspace:*",
+        "@maple/chat-platform": "workspace:*",
         "@maple/db": "workspace:*",
         "@maple/domain": "workspace:*",
         "@maple/infra": "workspace:*",
@@ -104,6 +108,22 @@
         "typescript": "catalog:tooling",
         "vitest": "catalog:",
         "wrangler": "^4.118.0",
+      },
+    },
+    "apps/chat-bot": {
+      "name": "@maple/chat-bot",
+      "dependencies": {
+        "@maple/chat-platform": "workspace:*",
+        "@maple/infra": "workspace:*",
+        "alchemy": "catalog:alchemy",
+        "effect": "catalog:effect",
+      },
+      "devDependencies": {
+        "@cloudflare/workers-types": "catalog:alchemy",
+        "@effect/language-service": "catalog:effect",
+        "@types/node": "catalog:tooling",
+        "typescript": "catalog:tooling",
+        "vitest": "catalog:",
       },
     },
     "apps/cli": {
@@ -291,6 +311,7 @@
         "@fontsource-variable/geist-mono": "^5.2.8",
         "@maple-dev/effect-sdk": "workspace:*",
         "@maple/agent-sessions": "workspace:*",
+        "@maple/chat-platform": "workspace:*",
         "@maple/domain": "workspace:*",
         "@maple/effect-db": "workspace:*",
         "@maple/infra": "workspace:*",
@@ -599,6 +620,7 @@
         "@maple/alerting-core": "workspace:*",
         "@maple/auth": "workspace:*",
         "@maple/cache": "workspace:*",
+        "@maple/chat-platform": "workspace:*",
         "@maple/db": "workspace:*",
         "@maple/domain": "workspace:*",
         "@maple/email": "workspace:*",
@@ -662,6 +684,7 @@
       "name": "@maple/chat-platform",
       "dependencies": {
         "@maple/domain": "workspace:*",
+        "@maple/primitives": "workspace:*",
         "effect": "catalog:effect",
       },
       "devDependencies": {
@@ -906,6 +929,7 @@
     },
   },
   "patchedDependencies": {
+    "alchemy@2.0.0-beta.79": "patches/alchemy@2.0.0-beta.79.patch",
     "effect@4.0.0-rc.116": "patches/effect@4.0.0-rc.116.patch",
     "@maple-dev/effect-clickhouse@0.1.0": "patches/@maple-dev%2Feffect-clickhouse@0.1.0.patch",
     "@effect/ai-openrouter@4.0.0-rc.116": "patches/@effect%2Fai-openrouter@4.0.0-rc.116.patch",
@@ -1553,6 +1577,8 @@
     "@maple/browser-session": ["@maple/browser-session@workspace:packages/browser-session"],
 
     "@maple/cache": ["@maple/cache@workspace:lib/cache"],
+
+    "@maple/chat-bot": ["@maple/chat-bot@workspace:apps/chat-bot"],
 
     "@maple/chat-platform": ["@maple/chat-platform@workspace:packages/chat-platform"],
 

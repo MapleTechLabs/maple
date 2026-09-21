@@ -12,12 +12,14 @@ import { GithubIntegrationCard } from "@/components/integrations/github-integrat
 import { HazelIntegrationCard } from "@/components/integrations/hazel-integration-card"
 import { PlanetScaleIntegrationCard } from "@/components/integrations/planetscale-integration-card"
 import { GoogleAnalyticsIntegrationCard } from "@/components/integrations/google-analytics-integration-card"
+import { ChatIntegrationCard } from "@/components/integrations/chat-integration-card"
 import { SlackIntegrationCard } from "@/components/integrations/slack-integration-card"
 import {
 	IntegrationCatalog,
 	IntegrationIconPlate,
 	IntegrationsSummary,
 	catalogEntry,
+	chatConnectorOf,
 	isIntegrationId,
 	useIntegrationOverviews,
 	useIntegrationStatuses,
@@ -47,6 +49,12 @@ const IntegrationsSearch = Schema.Struct({
 	slack: Schema.optional(Schema.String),
 	slack_message: Schema.optional(Schema.String),
 	slack_team: Schema.optional(Schema.String),
+	// Return params set by the chat install callback. `chat_reason` is a closed
+	// set of codes rather than a message — the callback deliberately sends no
+	// provider-authored text for this page to render.
+	chat: Schema.optional(Schema.String),
+	chat_reason: Schema.optional(Schema.String),
+	chat_workspace: Schema.optional(Schema.String),
 })
 
 /**
@@ -88,6 +96,24 @@ const SLACK_ERROR_COPY = new Map<string, string>([
 ])
 
 const GENERIC_SLACK_ERROR = "Slack connection failed. Try installing again."
+
+/**
+ * Curated copy per `chat_reason` code. `failed` — which the callback emits for
+ * an upstream, persistence or malformed-callback failure — deliberately has no
+ * entry: there is nothing specific to say, so it takes the generic line, as does
+ * any code a newer API emits than this bundle knows.
+ */
+const CHAT_ERROR_COPY = new Map<string, string>([
+	["state", "The install link expired. Start the install again."],
+	["conflict", "That workspace is already linked to a different Maple organization."],
+	["unconfigured", "This chat connector isn't configured in Maple. Contact support."],
+	["unknown", "Unknown chat connector."],
+])
+
+const GENERIC_CHAT_ERROR = "Couldn't link the chat workspace. Try again."
+
+const chatErrorMessage = (raw: string | undefined): string =>
+	(raw ? CHAT_ERROR_COPY.get(raw.trim()) : undefined) ?? GENERIC_CHAT_ERROR
 
 /** Longest attacker-controlled string we'll surface (workspace names in a toast). */
 const MAX_UNTRUSTED_LABEL = 64
@@ -139,6 +165,26 @@ function IntegrationsPage() {
 		navigate({ search: { integration: "slack" }, replace: true })
 	}, [slackReturn, slackMessage, slackTeam, navigate])
 
+	// Same one-shot handling for a chat connector's callback return.
+	const chatReturn = search.chat === "connected" || search.chat === "error" ? search.chat : undefined
+	const chatReason = search.chat_reason
+	const chatWorkspace = search.chat_workspace
+	const chatCard = search.integration
+	useEffect(() => {
+		if (!chatReturn) return
+		if (chatReturn === "connected") {
+			toastManager.add({
+				id: "chat-oauth",
+				// Workspace names come from the chat platform — untrusted, so clamped.
+				title: chatWorkspace ? `Connected ${clampLabel(chatWorkspace)}` : "Chat workspace connected",
+				type: "success",
+			})
+		} else {
+			toastManager.add({ id: "chat-oauth", title: chatErrorMessage(chatReason), type: "error" })
+		}
+		navigate({ search: chatCard ? { integration: chatCard } : {}, replace: true })
+	}, [chatReturn, chatReason, chatWorkspace, chatCard, navigate])
+
 	// The hub shares the settings shell: same sidebar, "Integrations" highlighted.
 	const settingsSidebar = (
 		<SettingsNav
@@ -177,6 +223,7 @@ function IntegrationsPage() {
 	}
 
 	const entry = catalogEntry(integration)
+	const chatConnector = chatConnectorOf(integration)
 
 	return (
 		<IntegrationConnectProvider integration={integration}>
@@ -217,7 +264,9 @@ function IntegrationsPage() {
 										</AlertDescription>
 									</Alert>
 								)}
-								{integration === "cloudflare" ? (
+								{chatConnector !== null ? (
+									<ChatIntegrationCard connector={chatConnector} />
+								) : integration === "cloudflare" ? (
 									<CloudflareAccountCard />
 								) : integration === "hazel" ? (
 									<HazelIntegrationCard />

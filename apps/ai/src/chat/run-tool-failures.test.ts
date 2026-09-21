@@ -71,6 +71,7 @@ const run = (model: ResolvedModel, executor: McpToolExecutorApi) => {
 		sessionId: "org_test:tab-1",
 		messageId: "msg-1",
 		tenant: TENANT,
+		origin: { kind: "app" },
 		toolExecutor: executor,
 		model,
 		submitDiagnosis: () => Effect.die("no investigation in a default session"),

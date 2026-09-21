@@ -59,15 +59,10 @@ jobs:
                   infisical-project-slug: ${{ vars.INFISICAL_PROJECT_SLUG }}
                   aws-role-arn: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
 
-            # NOTE: prod schema migrations are applied OUT OF BAND (manually, via
-            # `bun run migrate:prod` → `ps:apply-schema main`, against the direct 5432
-            # port), NOT by this workflow — so a deploy never touches the prod database
-            # and needs no MAPLE_PG_URL/admin credential. The worker binds to the
-            # pre-configured `maple-prd` Hyperdrive (`MapleDb` in packages/infra).
-            # apply-schema installs default privileges granting PUBLIC before it
-            # migrates, so new and rebuilt tables are readable by every consumer —
-            # including the ingest gateway, which reaches Postgres through PSBouncer as
-            # a role that does NOT inherit `postgres`.
+            # Schema migrations run in this deploy (`Planetscale.PostgresBranch` in alchemy.run.ts),
+            # over PLANETSCALE_API_TOKEN_ID / PLANETSCALE_API_TOKEN / PLANETSCALE_ORGANIZATION
+            # from Infisical. The Workers still bind the dashboard-managed `maple-prd`
+            # Hyperdrive (`MapleDb`); the deploy needs no database credential of its own.
 
             # alchemy's env-credential path (CI=true) otherwise discovers the account
             # with an STS GetCallerIdentity issued while its own AWSEnvironment is

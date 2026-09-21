@@ -5,6 +5,7 @@ import {
 	type ChatEventInput,
 	type ChatMessage,
 } from "@maple/domain/chat-session"
+import { chartFences, parseChartSpec } from "@maple/domain/chat-chart-spec"
 import { makeChatTranscript } from "@maple/domain/chat-transcript"
 import { assert, describe, expect, it } from "vitest"
 import type { ChatRenderContext } from "./blocks"
@@ -171,5 +172,55 @@ describe("summarizeToolInput", () => {
 
 	it("skips arguments that were not given", () => {
 		expect(summarizeToolInput({ service: "checkout", env: null })).toBe("service: checkout")
+	})
+})
+
+/**
+ * The index a relayed chart's URL carries has to be the index the image
+ * endpoint resolves it by, or a reader gets the wrong plot under the right
+ * words. The two used to count differently.
+ */
+describe("chart index, against the endpoint that resolves it", () => {
+	const imageUrls = (body: string): ReadonlyArray<string> =>
+		renderChatMessage(text(body), {
+			...context,
+			chartImageUrl: (ref) => `${ref.chartIndex}`,
+		}).flatMap((block) => (block.kind === "chart" && block.imageUrl !== null ? [block.imageUrl] : []))
+
+	it("agrees with chartFences across a malformed fence and a fence that is not a chart", () => {
+		const body = [
+			"Latency climbed.",
+			"```chart",
+			"{ not json",
+			"```",
+			"Here is the query:",
+			"```sql",
+			"SELECT 1",
+			"```",
+			"And the shape of it:",
+			"```chart",
+			CHART,
+			"```",
+		].join("\n")
+
+		// Two chart fences; the first does not parse, so only the second renders —
+		// and it must still be numbered 1, the position `chartFences` gives it.
+		expect(chartFences(body)).toHaveLength(2)
+		expect(imageUrls(body)).toEqual(["1"])
+		expect(parseChartSpec(chartFences(body)[1] ?? "")).not.toBeNull()
+	})
+
+	it("agrees when every fence is a chart", () => {
+		const body = ["```chart", CHART, "```", "text", "```chart", CHART, "```"].join("\n")
+
+		expect(imageUrls(body)).toEqual(["0", "1"])
+		expect(chartFences(body)).toHaveLength(2)
+	})
+
+	it("keeps a non-chart fence in the prose rather than eating it", () => {
+		const blocks = renderChatMessage(text("```sql\nSELECT 1\n```"), context)
+
+		expect(blocks).toHaveLength(1)
+		expect(blocks[0]).toMatchObject({ kind: "prose", markdown: "```sql\nSELECT 1\n```" })
 	})
 })

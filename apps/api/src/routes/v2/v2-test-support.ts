@@ -23,6 +23,7 @@ import { GoogleAnalyticsOAuthService } from "@maple/backend/services/auth/Google
 import { GoogleAnalyticsService } from "@maple/backend/services/integrations/GoogleAnalyticsService"
 import { PlanetScaleService } from "@maple/backend/services/integrations/PlanetScaleService"
 import { ScrapeTargetsService } from "@maple/backend/services/integrations/ScrapeTargetsService"
+import { ChatWorkspaceService } from "@maple/backend/services/integrations/ChatWorkspaceService"
 import { SlackIntegrationService } from "@maple/backend/services/integrations/SlackIntegrationService"
 import { OnboardingChecklistService } from "@maple/backend/services/org/OnboardingChecklistService"
 import { SetupAuditService } from "@maple/backend/services/org/SetupAuditService"
@@ -38,6 +39,7 @@ import { HttpV2ApiKeysLive } from "./api-keys.http"
 import { HttpV2AttributeMappingsLive } from "./attribute-mappings.http"
 import { HttpV2DashboardsLive } from "./dashboards.http"
 import { HttpV2IngestKeysLive } from "./ingest-keys.http"
+import { HttpV2ChatIntegrationsLive } from "./integrations-chat.http"
 import {
 	HttpV2GoogleAnalyticsIntegrationsLive,
 	HttpV2PlanetScaleIntegrationsLive,
@@ -92,6 +94,21 @@ export const OnboardingChecklistServiceStubLayer = Layer.succeed(OnboardingCheck
 	claim: () => Effect.die("onboarding checklist is not exercised by this harness"),
 })
 
+const die = () => Effect.die(new Error("This service is not available in this test harness"))
+
+/** Inert ChatWorkspaceService — see the chat group's entry in the bundle below. */
+const ChatWorkspaceServiceStubLayer = Layer.succeed(
+	ChatWorkspaceService,
+	ChatWorkspaceService.of({
+		list: die,
+		beginInstall: die,
+		completeInstall: die,
+		updateSettings: die,
+		uninstall: die,
+		resolve: die,
+	}),
+)
+
 /**
  * Every v2 group except the onboarding checklist, which its own route test
  * supplies with a recording service. Everything else builds on the full
@@ -100,6 +117,10 @@ export const OnboardingChecklistServiceStubLayer = Layer.succeed(OnboardingCheck
 export const V2GroupLayersExceptOnboardingChecklist = Layer.mergeAll(
 	HttpV2ApiKeysLive,
 	HttpV2SlackIntegrationsLive,
+	// Inert service, provided here rather than by every harness: nothing else in
+	// the v2 suite calls the chat endpoints, and a group left unimplemented would
+	// stop the whole API layer from building.
+	HttpV2ChatIntegrationsLive.pipe(Layer.provide(ChatWorkspaceServiceStubLayer)),
 	HttpV2PlanetScaleIntegrationsLive,
 	HttpV2GoogleAnalyticsIntegrationsLive,
 	HttpV2DashboardsLive,
@@ -173,8 +194,6 @@ export const AllV2GroupLayersLive = Layer.mergeAll(
 export const ApiV2RateLimiterAllowAllLayer = Layer.succeed(ApiV2RateLimiter, {
 	check: () => Effect.succeed("allowed" as const),
 })
-
-const die = () => Effect.die(new Error("This service is not available in this test harness"))
 
 /** Synchronous stub for non-Effect-returning service methods (e.g. `asExecutor`). */
 const dieSync = (): never => {

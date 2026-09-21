@@ -75,10 +75,13 @@ export interface BuildMapleToolsOptions {
 	 */
 	readonly gate?: (name: string) => boolean
 	/**
-	 * Telemetry attribution for every tool call these tools dispatch. Defaults to `"chat"`; workflow
-	 * agent passes pass `"workflow"` so the two are separable in traces despite sharing this builder.
+	 * Which audience this build may see, and the attribution on every tool call it dispatches.
+	 *
+	 * Required rather than defaulted to `"chat"`. Every surface used to be an internal one, so the
+	 * default cost nothing; now a caller that forgets it would be handed the agents-only tools —
+	 * `sandbox_exec` among them — by omission.
 	 */
-	readonly surface?: McpToolSurface
+	readonly surface: McpToolSurface
 	/** The agent-session identity of the run, stamped on every tool span — see `withToolCallContent`. */
 	readonly sessionAttributes?: Readonly<Record<string, string>>
 }
@@ -131,9 +134,7 @@ const repeats = (dispatched: Map<string, number>, name: string, params: unknown)
  * allows `*` cannot widen a build past its audience.
  */
 const exposed = (options: BuildMapleToolsOptions) =>
-	mapleToolCatalogFor(options.surface ?? "chat").filter(
-		(definition) => options.include?.(definition.name) ?? true,
-	)
+	mapleToolCatalogFor(options.surface).filter((definition) => options.include?.(definition.name) ?? true)
 
 /**
  * The Maple MCP registry as an Effect AI toolkit plus its handler layer.
@@ -145,7 +146,7 @@ const exposed = (options: BuildMapleToolsOptions) =>
 export const buildMapleToolkit = (
 	executor: McpToolExecutorApi,
 	tenant: TenantContext,
-	options: BuildMapleToolsOptions = {},
+	options: BuildMapleToolsOptions,
 ) => {
 	const definitions = exposed(options)
 	const tools = definitions.map((definition) => {
@@ -167,7 +168,7 @@ export const buildMapleToolkit = (
 		definitions.map((definition) => {
 			const gated = options.gate?.(definition.name) ?? false
 			const dispatch = (params: unknown) =>
-				executor.execute(tenant, definition.name, params, options.surface ?? "chat").pipe(
+				executor.execute(tenant, definition.name, params, options.surface).pipe(
 					// A tool that dies (unknown tool, tenant error) fails like one that reported an error.
 					// Caught before the `flatMap`, so a reported error is not wrapped a second time.
 					Effect.catchCause((cause) => fail(`Tool failed: ${summarizeToolFailure(cause)}`)),

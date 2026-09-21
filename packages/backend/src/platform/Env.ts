@@ -3,6 +3,7 @@
 // is no caller that could answer a missing or malformed env var differently, and
 // a worker that boots with one is worse than one that refuses to boot. Each is a
 // tagged `EnvValidationError` so the crash names the variable.
+import { chatConnectorConfig, type ChatConnectorConfig } from "@maple/chat-platform"
 import { optionalRedacted, optionalString, stringWithDefault } from "@maple/infra/config-helpers"
 import { Config, Context, Effect, Layer, Option, Redacted, Schema } from "effect"
 
@@ -89,6 +90,13 @@ export interface EnvConfig {
 	readonly HAZEL_OAUTH_CLIENT_ID: Option.Option<string>
 	readonly HAZEL_OAUTH_CLIENT_SECRET: Option.Option<Redacted.Redacted<string>>
 	readonly HAZEL_OAUTH_SCOPES: string
+	/**
+	 * Resolved config for every chat connector the registry ships, keyed by the
+	 * name the connector declared. The catalog stays platform-neutral on purpose:
+	 * the names live in the connector directory, and a connector whose values are
+	 * absent is simply reported as unavailable.
+	 */
+	readonly CHAT_CONNECTOR_CONFIG: ChatConnectorConfig
 	readonly SLACK_CLIENT_ID: Option.Option<string>
 	readonly SLACK_CLIENT_SECRET: Option.Option<Redacted.Redacted<string>>
 	/**
@@ -226,6 +234,7 @@ const envConfig = Config.all({
 		"HAZEL_OAUTH_SCOPES",
 		"openid email profile organizations:read channels:read channel-webhooks:write",
 	),
+	CHAT_CONNECTOR_CONFIG: chatConnectorConfig,
 	SLACK_CLIENT_ID: optionalString("SLACK_CLIENT_ID"),
 	SLACK_CLIENT_SECRET: optionalRedacted("SLACK_CLIENT_SECRET"),
 	SLACK_INTERNAL_SERVICE_TOKEN: optionalRedacted("SLACK_INTERNAL_SERVICE_TOKEN"),

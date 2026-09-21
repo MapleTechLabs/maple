@@ -14,6 +14,8 @@ import * as AWS from "alchemy/AWS"
 import * as Cloudflare from "alchemy/Cloudflare"
 import * as Command from "alchemy/Command"
 import * as Output from "alchemy/Output"
+import * as Planetscale from "alchemy/Planetscale"
+import * as RemovalPolicy from "alchemy/RemovalPolicy"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import {
@@ -41,6 +43,7 @@ import * as Portless from "@maple/alchemy-portless"
 import { DEV_PROCESS_APPS, selectedDevApps, type DevApp } from "@maple/infra/dev-urls"
 import MapleAiLive, { MapleAi } from "./apps/ai/src/worker.ts"
 import Alerting from "./apps/alerting/src/worker.ts"
+import ChatBotLive, { ChatBot } from "./apps/chat-bot/src/worker.ts"
 import MapleApi from "./apps/api/src/worker.ts"
 import MapleSandbox from "./apps/sandbox/alchemy.run.ts"
 import { createMapleElectric } from "./apps/electric/alchemy.run.ts"
@@ -130,6 +133,16 @@ const MapleStackLive = Layer.effect(
 			},
 			workerDev,
 			devEnv,
+			// prd's database: the PlanetScale `main` branch, adopted, whose deploy applies the drizzle
+			// migrations. The Workers that bind it put its name in their env so they upload after it.
+			dbSchema:
+				resolveDatabaseMode(stage) === "ref"
+					? yield* Planetscale.PostgresBranch("maple-db-main", {
+							database: "maple",
+							name: "main",
+							migrations: "packages/db/drizzle",
+						}).pipe(RemovalPolicy.retain())
+					: undefined,
 		}
 		return context
 	}),
@@ -181,6 +194,8 @@ const providers =
 	Acm.providers().pipe(
 		Layer.provideMerge(Cloudflare.providers()),
 		Layer.provideMerge(AWS.providers()),
+		// Its credential lookup runs when the layer is built, and `bun dev` never yields the branch.
+		Layer.provideMerge(isDevServer ? Layer.empty : Planetscale.providers()),
 		Layer.provideMerge(Portless.providers()),
 	)
 
@@ -300,6 +315,15 @@ export default Alchemy.Stack(
 		const alerting = yield* Effect.provideService(Alerting, AiWorker, ai)
 		yield* serveWorker("alerting", alerting)
 
+		// Chat-platform ingress: the connector registry's sockets and the generic
+		// webhook route, plus the `ConnectorSocket` Durable Object that holds one
+		// connection per socket connector. Like maple-ai, the Worker hosts a class,
+		// so its Live layer is what registers that class in the deployed bundle.
+		// It is inert on a stage with no connector credentials.
+		// oxlint-disable-next-line effecttsgo/strict-effect-provide
+		const chatBot = yield* Effect.provide(ChatBot, ChatBotLive)
+		yield* serveWorker("chat-bot", chatBot)
+
 		// Dev only: the vite/astro dev servers, `cargo run`, and the scraper, each
 		// handed its route's port. (A Worker binds its port in `precreate`, before
 		// Outputs resolve, so a Worker's route follows the Worker instead.)
@@ -343,7 +367,7 @@ export default Alchemy.Stack(
 			// plan time with the URLs above. On a PR preview this is the ALB's
 			// plain-HTTP hostname: the preview has no ingest domain, so there is
 			// no certificate and no CNAME.
-			ingestServiceUrl: ingest
+			ingestServiceUrl: ingest?.serviceUrl
 				? Output.mapEffect((serviceUrl: string | undefined) =>
 						Effect.sync(() => {
 							appendStepOutputs([`ingest_url=${serviceUrl ?? ""}`])
@@ -351,6 +375,9 @@ export default Alchemy.Stack(
 						}),
 					)(ingest.serviceUrl)
 				: undefined,
+			// Both fleets' ALBs while the Fargate → EC2 cutover runs them side by side.
+			ingestFargateServiceUrl: ingest?.fargateServiceUrl,
+			ingestEc2ServiceUrl: ingest?.ec2ServiceUrl,
 			ingestCollectorEndpoint: ingest?.collectorEndpoint,
 			// Same manual-DNS story as ingest: CNAME `domains.electric` at this ALB
 			// (proxied), and add the ACM validation record once.
@@ -363,6 +390,7 @@ export default Alchemy.Stack(
 			landingWorker: landing?.workerName,
 			localUiWorker: localUi?.workerName,
 			alertingWorker: alerting.workerName,
+			chatBotWorker: chatBot.workerName,
 		}
 		// The stack IS the entry point: the one place `MapleStack` is provided.
 		// oxlint-disable-next-line effecttsgo/strict-effect-provide

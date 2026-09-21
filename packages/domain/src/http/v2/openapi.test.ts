@@ -94,6 +94,7 @@ describe("MapleApiV2 OpenAPI", () => {
 			"DELETE /v2/dashboards/{id}",
 			"DELETE /v2/dashboards/{id}/share",
 			"DELETE /v2/dashboards/{id}/widgets/{widget_id}/share",
+			"DELETE /v2/integrations/chat_workspaces/{id}",
 			"DELETE /v2/integrations/google_analytics",
 			"DELETE /v2/integrations/planetscale",
 			"DELETE /v2/integrations/slack",
@@ -136,6 +137,7 @@ describe("MapleApiV2 OpenAPI", () => {
 			"GET /v2/instrumentation/audit",
 			"GET /v2/instrumentation/recommendations",
 			"GET /v2/instrumentation/signals",
+			"GET /v2/integrations/chat_connectors",
 			"GET /v2/integrations/google_analytics",
 			"GET /v2/integrations/planetscale",
 			"GET /v2/integrations/planetscale/databases",
@@ -169,6 +171,7 @@ describe("MapleApiV2 OpenAPI", () => {
 			"PATCH /v2/anomalies/settings",
 			"PATCH /v2/attribute_mappings/{id}",
 			"PATCH /v2/dashboards/{id}",
+			"PATCH /v2/integrations/chat_workspaces/{id}",
 			"PATCH /v2/integrations/google_analytics/properties/{property_id}",
 			"PATCH /v2/scrape_targets/{id}",
 			"POST /v2/alerts/destinations",
@@ -192,6 +195,7 @@ describe("MapleApiV2 OpenAPI", () => {
 			"POST /v2/ingest_keys/public/roll",
 			"POST /v2/instrumentation/recommendations/{id}/dismiss",
 			"POST /v2/instrumentation/recommendations/{id}/reopen",
+			"POST /v2/integrations/chat_connectors/{connector}/install",
 			"POST /v2/integrations/google_analytics/connect",
 			"POST /v2/integrations/google_analytics/prime",
 			"POST /v2/integrations/planetscale/connect",
@@ -214,6 +218,7 @@ describe("MapleApiV2 OpenAPI", () => {
 			"POST /v2/session_replays/for_trace",
 			"POST /v2/session_replays/search",
 			"POST /v2/share/alert-chart",
+			"POST /v2/share/chat-chart",
 			"POST /v2/share/og-card",
 			"POST /v2/share/og-meta",
 			"POST /v2/share/resolve",
@@ -271,6 +276,7 @@ describe("MapleApiV2 OpenAPI", () => {
 		"resolveShareOgMeta",
 		"resolveShareOgCard",
 		"resolveAlertChart",
+		"resolveChatChart",
 	])
 
 	/**

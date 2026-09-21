@@ -10,9 +10,13 @@
  * evaluated stage by stage while the failures lived in between. The agent that gathers the
  * evidence is the agent that acts on it.
  *
- * `ChatMode` and `chatModeFromSessionId` are deliberately untouched — they are on the wire and the
- * web client derives from them. Every mode names an agent, by construction; `agents.test.ts` fails
- * if one is ever added without one.
+ * An agent is what a conversation IS, never who is driving it. Who is driving a turn is its
+ * `ChatTurnOrigin`, and `./profiles.ts` is the one place that reads it — so a surface becoming
+ * reachable from somewhere new costs a profile branch rather than a mode, a record and a prompt.
+ *
+ * `ChatMode` and `chatModeFromSessionId` stay in the domain package because the session id is on
+ * the wire and the mode is derived from it server-side. Every mode names an agent, by
+ * construction; `agents.test.ts` fails if one is ever added without one.
  */
 import * as Agent from "@effect-agent/core/Agent"
 import { AgentPolicy } from "@effect-agent/core/AgentPolicy"
@@ -47,7 +51,11 @@ export interface AgentDefinition {
 	readonly budget: AgentBudget
 }
 
-export const AGENTS: Readonly<Record<string, AgentDefinition>> = {
+/**
+ * Keyed by `ChatMode`, not by `string`: a new mode is then a compile error here rather than an
+ * `undefined` discovered mid-turn, and `agentForSession` needs no non-null assertion.
+ */
+export const AGENTS: Readonly<Record<ChatMode, AgentDefinition>> = {
 	default: {
 		name: "default",
 		description: "General Maple assistant.",
@@ -73,20 +81,16 @@ export const AGENTS: Readonly<Record<string, AgentDefinition>> = {
 		name: "investigate",
 		description: "Runs an autonomous investigation.",
 		prompt: INVESTIGATE_SYSTEM_PROMPT,
-		// The ruleset a *turn* runs under is narrowed further when the turn is the autonomous pass;
-		// see `rulesetForTurn` in `./permissions`. This is what an attended follow-up in the same
-		// session gets.
+		// What an attended follow-up in the same session gets. The unattended pass is narrowed
+		// further by its origin — see `profileForTurn` in `./profiles`.
 		permission: DEFAULT_RULESET,
 		budget: INVESTIGATION_BUDGET,
 	},
-} as const satisfies Readonly<Record<string, AgentDefinition>>
+} as const satisfies Readonly<Record<ChatMode, AgentDefinition>>
 
 /** Every `ChatMode` literal names an agent; the mode string *is* the agent name. */
-export const agentForSession = (sessionId: string): AgentDefinition => {
-	const mode: ChatMode = chatModeFromSessionId(sessionId)
-	// Non-null by construction, and pinned by `agents.test.ts` rather than by hope.
-	return AGENTS[mode]!
-}
+export const agentForSession = (sessionId: string): AgentDefinition =>
+	AGENTS[chatModeFromSessionId(sessionId)]
 
 /** The system prompt for a turn: the agent's own persona. */
 export const buildSystemPrompt = (agent: AgentDefinition): string => agent.prompt

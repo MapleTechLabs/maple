@@ -2,9 +2,10 @@ import { describe, expect, it } from "vitest"
 import {
 	downsample,
 	formatValue,
+	MAX_PLOT_SERIES,
 	niceTicks,
 	PLOT_HEIGHT,
-	renderPlotSvg,
+	renderChartSvg,
 	sparkline,
 	type ChartPoint,
 } from "./static-chart"
@@ -65,30 +66,32 @@ describe("downsample", () => {
 	})
 })
 
-describe("renderPlotSvg", () => {
+describe("renderChartSvg, as an alert draws it: one series and a threshold", () => {
+	const one = (values: ReadonlyArray<number>) => [
+		{ name: "checkout-api error rate", points: series(values) },
+	]
 	const spec = {
-		title: "checkout-api error rate",
 		kind: "area",
 		unit: "percent",
-		points: series([0.8, 1.2, 2.4, 3.9]),
+		series: one([0.8, 1.2, 2.4, 3.9]),
 		threshold: 2,
 		breachSide: "above",
 	} as const
 
 	it("draws no text, because usvg renders none", () => {
-		expect(renderPlotSvg(spec).svg).not.toContain("<text")
+		expect(renderChartSvg(spec).svg).not.toContain("<text")
 	})
 
 	it("returns the labels the caller has to draw instead", () => {
-		const render = renderPlotSvg(spec)
-		expect(render.title).toBe("checkout-api error rate")
-		expect(render.latest).toBe("3.9%")
+		const render = renderChartSvg(spec)
+		expect(render.legend[0]?.name).toBe("checkout-api error rate")
+		expect(render.legend[0]?.latest).toBe("3.9%")
 		expect(render.threshold?.text).toBe("2%")
 		expect(render.end).toContain("UTC")
 	})
 
 	it("places the threshold label on the rule it labels", () => {
-		const render = renderPlotSvg(spec)
+		const render = renderChartSvg(spec)
 		const fraction = render.threshold?.yFraction ?? -1
 		expect(fraction).toBeGreaterThan(0)
 		expect(fraction).toBeLessThan(1)
@@ -97,19 +100,19 @@ describe("renderPlotSvg", () => {
 	it("keeps the threshold on the canvas when every observed value is below it", () => {
 		// The rule that matters most is the one nothing has reached yet; drawing
 		// it off the top edge is how a chart lies about how close a breach is.
-		const render = renderPlotSvg({ ...spec, points: series([0.1, 0.2, 0.15]), threshold: 90 })
+		const render = renderChartSvg({ ...spec, series: one([0.1, 0.2, 0.15]), threshold: 90 })
 		const fraction = render.threshold?.yFraction ?? -1
 		expect(fraction).toBeGreaterThanOrEqual(0)
 		expect(fraction).toBeLessThanOrEqual(1)
 	})
 
 	it("shades the breaching side, and only when a side is meaningful", () => {
-		expect(renderPlotSvg(spec).svg).toContain('fill-opacity="0.06"')
-		expect(renderPlotSvg({ ...spec, breachSide: "none" }).svg).not.toContain('fill-opacity="0.06"')
+		expect(renderChartSvg(spec).svg).toContain('fill-opacity="0.06"')
+		expect(renderChartSvg({ ...spec, breachSide: "none" }).svg).not.toContain('fill-opacity="0.06"')
 	})
 
 	it("omits the rule entirely when the spec has no threshold", () => {
-		const render = renderPlotSvg({ ...spec, threshold: null })
+		const render = renderChartSvg({ ...spec, threshold: null })
 		expect(render.threshold).toBeNull()
 		expect(render.svg).not.toContain("stroke-dasharray")
 	})
@@ -120,13 +123,101 @@ describe("renderPlotSvg", () => {
 			[at(30), 1],
 			[at(15), 2],
 		]
-		const render = renderPlotSvg({ ...spec, kind: "line", points: shuffled })
-		expect(render.latest).toBe("3%")
+		const render = renderChartSvg({ ...spec, kind: "line", series: [{ name: "n", points: shuffled }] })
+		expect(render.legend[0]?.latest).toBe("3%")
 		expect(render.svg).toContain(`viewBox="0 0 720 ${PLOT_HEIGHT}"`)
 	})
 
 	it("refuses an empty series instead of shipping an empty card", () => {
-		expect(() => renderPlotSvg({ ...spec, points: [] })).toThrow(/at least one/)
+		expect(() => renderChartSvg({ ...spec, series: one([]) })).toThrow(/at least one/)
+	})
+})
+
+describe("renderChartSvg, as a reply draws it: several series and no threshold", () => {
+	const named = (name: string, values: ReadonlyArray<number>) => ({ name, points: series(values) })
+
+	it("draws one line per series, each in its own colour, and no text", () => {
+		const render = renderChartSvg({
+			kind: "line",
+			unit: "duration_ms",
+			series: [named("checkout-api", [120, 180, 240]), named("cart-api", [90, 95, 88])],
+		})
+
+		expect(render.svg).not.toContain("<text")
+		expect(new Set(render.legend.map((entry) => entry.color)).size).toBe(2)
+		expect(render.legend.map((entry) => entry.name)).toEqual(["checkout-api", "cart-api"])
+	})
+
+	it("labels each series with its latest value, which is the y axis it does not draw", () => {
+		const render = renderChartSvg({
+			kind: "line",
+			unit: "duration_ms",
+			series: [named("checkout-api", [120, 1500])],
+		})
+
+		expect(render.legend[0]?.latest).toBe("1.5 s")
+	})
+
+	it("orders the legend by peak, so the biggest series is named first", () => {
+		const render = renderChartSvg({
+			kind: "area",
+			unit: "number",
+			series: [named("small", [1, 2]), named("large", [900, 950])],
+		})
+
+		expect(render.legend.map((entry) => entry.name)).toEqual(["large", "small"])
+	})
+
+	it("draws at most five series and says how many it left out", () => {
+		const render = renderChartSvg({
+			kind: "line",
+			unit: "number",
+			series: Array.from({ length: 8 }, (_, i) => named(`svc-${i}`, [i + 1, i + 2])),
+		})
+
+		expect(render.legend).toHaveLength(MAX_PLOT_SERIES)
+		expect(render.hidden).toBe(3)
+		// The ones kept are the largest, which is what makes hiding the rest safe.
+		expect(render.legend.map((entry) => entry.name)).not.toContain("svc-0")
+	})
+
+	it("fades overlapping area fills, so one series cannot paint over the rest", () => {
+		const one = renderChartSvg({ kind: "area", unit: "number", series: [named("a", [1, 2])] })
+		const two = renderChartSvg({
+			kind: "area",
+			unit: "number",
+			series: [named("a", [1, 2]), named("b", [3, 4])],
+		})
+
+		expect(one.svg).toContain('stop-opacity="0.8"')
+		expect(two.svg).not.toContain('stop-opacity="0.8"')
+		// One gradient per series, or the second area would fill with the first's.
+		expect(two.svg).toContain('id="areaFill0"')
+		expect(two.svg).toContain('id="areaFill1"')
+	})
+
+	it("stands grouped bars side by side inside a bucket rather than over each other", () => {
+		const two = renderChartSvg({
+			kind: "bar",
+			unit: "number",
+			series: [named("a", [1, 2]), named("b", [3, 4])],
+		})
+		const starts = [...two.svg.matchAll(/<path d="M ([\d.]+) /g)].map((match) => match[1])
+
+		expect(new Set(starts).size).toBe(starts.length)
+	})
+
+	it("drops a series with no points, and refuses a spec where none has any", () => {
+		const render = renderChartSvg({
+			kind: "line",
+			unit: "number",
+			series: [named("live", [1, 2]), { name: "empty", points: [] }],
+		})
+		expect(render.legend.map((entry) => entry.name)).toEqual(["live"])
+
+		expect(() =>
+			renderChartSvg({ kind: "line", unit: "number", series: [{ name: "empty", points: [] }] }),
+		).toThrow(/at least one/)
 	})
 })
 
