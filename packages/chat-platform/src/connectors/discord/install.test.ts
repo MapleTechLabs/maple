@@ -2,15 +2,15 @@ import { assert, describe, it } from "@effect/vitest"
 import { Effect, Layer, Redacted } from "effect"
 import { FetchHttpClient, HttpClient } from "effect/unstable/http"
 import { discord } from "./index"
-import { DISCORD_CLIENT_ID, DISCORD_CLIENT_SECRET, discordAuthorizeUrl } from "./install"
+import { CLIENT_ID_CONFIG, CLIENT_SECRET_CONFIG, TOKEN_URL } from "./api"
+import { discordAuthorizeUrl } from "./install"
 
 const config = new Map([
-	[DISCORD_CLIENT_ID, Redacted.make("client-1")],
-	[DISCORD_CLIENT_SECRET, Redacted.make("secret-1")],
+	[CLIENT_ID_CONFIG, Redacted.make("client-1")],
+	[CLIENT_SECRET_CONFIG, Redacted.make("secret-1")],
 ])
 
 const REDIRECT_URI = "https://api.maple.test/oauth/chat/discord/callback"
-const TOKEN_URL = "https://discord.com/api/v10/oauth2/token"
 
 /**
  * A client that dies if anything reaches it. The callback cases that use it are
@@ -165,7 +165,7 @@ describe("discord callback", () => {
 		Effect.gen(function* () {
 			const failure = yield* discord.install
 				.complete({
-					config: new Map([[DISCORD_CLIENT_ID, Redacted.make("client-1")]]),
+					config: new Map([[CLIENT_ID_CONFIG, Redacted.make("client-1")]]),
 					params: new URLSearchParams({ code: "auth-code" }),
 					redirectUri: REDIRECT_URI,
 				})

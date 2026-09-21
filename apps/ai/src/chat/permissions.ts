@@ -42,17 +42,3 @@ export const READ_ONLY_RULESET: PermissionRuleset = [
 		.sort()
 		.map((tool) => new PermissionRule({ tool, action: "allow" })),
 ]
-
-/**
- * The ruleset one *turn* runs under, which is not always its agent's.
- *
- * An investigation session has two kinds of turn in it. The autonomous pass runs unattended and
- * cannot obtain an approval, so the nineteen mutating tools are dead weight to it: nineteen
- * schemas on every model call, and a wasted call plus a repeated-failure slot if it tries one. The
- * follow-up conversation in the same session is a person asking Maple to act, and that is exactly
- * when the approval gate is the point.
- *
- * `READ_ONLY_RULESET` has existed and been tested since the gate was written; nothing used it.
- */
-export const rulesetForTurn = (agent: { readonly permission: PermissionRuleset }, autonomous: boolean) =>
-	autonomous ? READ_ONLY_RULESET : agent.permission

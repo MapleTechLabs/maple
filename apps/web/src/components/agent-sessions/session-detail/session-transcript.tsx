@@ -5,7 +5,7 @@ import type { AiSessionSpan } from "@maple/domain/http"
 import { Button } from "@maple/ui/components/ui/button"
 import { Spinner } from "@maple/ui/components/ui/spinner"
 import { CopyButton } from "@maple/ui/components/ui/copy-button"
-import { formatBytes, formatDuration, formatNumber } from "@maple/ui/lib/format"
+import { formatBytes, formatDuration } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 
 import {
@@ -30,8 +30,10 @@ import {
 	assembleTranscript,
 	callMetaLine,
 	callMetaParts,
+	formatCost,
 	prepareTranscript,
 	spanModel,
+	tokenFlowLabel,
 	type CaptureCoverage,
 	type SessionToolResults,
 	type SessionTurn,
@@ -71,6 +73,11 @@ const INDENT = "flex w-6 shrink-0 justify-center"
 /** Past this the prose column is narrower than the gutters framing it, and a
  *  deeper lane says nothing the lane header did not. Matches the waterfall. */
 const MAX_INDENT_DEPTH = 6
+/** The whole transcript, centred on the page: the clock gutter (88), two lanes
+ *  of nesting (48), the body's own left padding (16) and the prose column (900)
+ *  — what a typical row actually wants. Without it the column pins to the left
+ *  edge and a wide window is all empty space to its right. */
+const COLUMN = "mx-auto w-full max-w-[1052px]"
 
 /** Starting guesses only — `measureElement` replaces each on mount. */
 const ROW_ESTIMATE = {
@@ -216,7 +223,7 @@ export function SessionTranscript({
 		// The padding sits OUTSIDE the measured element: the virtualizer positions
 		// rows against this list's own top edge, and padding on it would offset
 		// every row by its height.
-		<div className="pt-2">
+		<div className={cn(COLUMN, "pt-2")}>
 			<div ref={listRef}>
 				{/* The virtualizer writes each row's offset — `start` less the margin,
 				    back in this list's own coordinates — and this container's height
@@ -441,6 +448,11 @@ function TurnChapter({
 					</>
 				)}
 				<span className={cn(META, "shrink-0")}>
+					{/* The turn's whole usage, because the calls under it no longer
+					    print theirs — a reader who wants a single call's split opens
+					    the span. Absent where nothing in the turn reported any. */}
+					{row.usage.tokens.total > 0 && `${tokenFlowLabel(row.usage.tokens)} · `}
+					{row.usage.cost !== undefined && `${formatCost(row.usage.cost)} · `}
 					{clockOf(turn.startMs, timeZone)} · {formatDuration(turn.durationMs)}
 				</span>
 				{!collapsed && <span aria-hidden className="h-px grow bg-border/60" />}
@@ -643,13 +655,12 @@ function AssistantBlock({
 	selected,
 	onSelectSpan,
 }: BlockProps & { row: Extract<TranscriptRow, { kind: "assistant" }> }) {
-	// The model leads: in a session with several it is who is speaking. The
-	// call's accounting follows for the reader who points at the row.
+	// The model leads: in a session with several it is who is speaking. What the
+	// call cost is the turn header's — repeating it on every call in a turn said
+	// the same two figures twenty times — so the row keeps only how it ran, for
+	// the reader who points at it.
 	const model = spanModel(row.span)
-	const facts = callMetaParts(row.span).slice(model === undefined ? 0 : 1)
-	// What the call cost stays on the row; how it ended is for the reader who asks.
-	const usage = facts.filter((fact) => !isTimingFact(fact))
-	const timing = facts.filter(isTimingFact)
+	const timing = callMetaParts(row.span, { usage: false }).slice(model === undefined ? 0 : 1)
 	// The failure payload some providers put in the status message — often a
 	// whole JSON error envelope, so it gets the same JSON treatment as a tool
 	// payload. Empty where the call succeeded, and the hook is cheap on "".
@@ -700,7 +711,6 @@ function AssistantBlock({
 					{!continued && model !== undefined && (
 						<span className={cn(META, "shrink-0")}>{model}</span>
 					)}
-					<span className={cn(META, "shrink-0")}>{usage.join(" · ")}</span>
 					<span className={cn(META, !selected && ON_HOVER)}>{timing.join(" · ")}</span>
 				</button>
 				{row.text !== undefined && (
@@ -792,7 +802,7 @@ function PromptBlock({
 					<span className={SPEAKER}>Prompt</span>
 					<span className={CLOCK}>{clockOf(row.startMs, timeZone)}</span>
 					<span className={cn(META, ON_HOVER)}>
-						{callMetaLine(row.span)} · {row.span.serviceName}
+						{callMetaLine(row.span, { usage: false })} · {row.span.serviceName}
 					</span>
 					<span className="grow" />
 					<ViewSwitch
@@ -830,7 +840,6 @@ function ThinkingBlock({
 }: BlockProps & { row: Extract<TranscriptRow, { kind: "thinking" }> }) {
 	const open = disclosed(openRows, row.key, false)
 	const textKey = `${row.key}:text`
-	const reasoningTokens = row.span.genAi.usageReasoningOutputTokens
 
 	return (
 		<Row depth={row.depth} className="pt-2">
@@ -854,14 +863,6 @@ function ThinkingBlock({
 					<span className="shrink-0 text-muted-foreground text-xs">
 						{row.redacted ? "redacted by the provider" : "no reasoning text captured"}
 					</span>
-				)}
-				{reasoningTokens !== undefined && reasoningTokens > 0 && (
-					<>
-						<span aria-hidden className="h-2.5 w-px shrink-0 bg-border" />
-						<span className={cn(META, "shrink-0")}>
-							{formatNumber(reasoningTokens)} reasoning tok
-						</span>
-					</>
 				)}
 			</button>
 			{open && row.text !== undefined && (
@@ -887,8 +888,6 @@ function ToolBlock({
 	showPayloads,
 	openRows,
 	onToggleRow,
-	selected,
-	onSelectSpan,
 }: BlockProps & { row: Extract<TranscriptRow, { kind: "tool" }> }) {
 	const payloadsKey = `${row.key}:payloads`
 	const open = disclosed(openRows, payloadsKey, showPayloads)
@@ -904,53 +903,47 @@ function ToolBlock({
 						: open
 							? "border-border bg-card"
 							: "border-transparent bg-muted/30 hover:bg-muted/50",
-					selected && "ring-1 ring-primary",
 				)}
 			>
-				<div className="flex h-8 items-center gap-2 px-2.5">
-					<button
-						type="button"
-						onClick={() => onSelectSpan(selected ? undefined : row.span.spanId)}
-						aria-pressed={selected}
-						title={clockOf(row.startMs, timeZone)}
-						className="flex min-w-0 grow cursor-pointer items-center gap-2 text-left"
+				{/* The whole header opens the pair — the chevron is where the eye goes
+				    for it, but a reader aiming at the tool's name means the same thing. */}
+				<button
+					type="button"
+					onClick={() => onToggleRow(payloadsKey)}
+					aria-expanded={open}
+					title={clockOf(row.startMs, timeZone)}
+					className="group flex h-8 w-full min-w-0 cursor-pointer items-center gap-2 px-2.5 text-left"
+				>
+					<GearIcon size={12} className={cn("shrink-0", tone)} />
+					<span
+						className="min-w-0 truncate font-medium font-mono text-foreground text-xs"
+						title={row.toolName ?? row.span.spanName}
 					>
-						<GearIcon size={12} className={cn("shrink-0", tone)} />
-						<span
-							className="min-w-0 truncate font-medium font-mono text-foreground text-xs"
-							title={row.toolName ?? row.span.spanName}
-						>
-							{row.toolName ?? row.span.spanName}
-						</span>
-						{!row.fromMessageOnly && (
-							<span className={cn(META, "shrink-0")}>
-								{formatDuration(row.span.durationMs)}
-							</span>
-						)}
-						{row.failed && row.span.genAi.errorType !== undefined && (
-							<span className="shrink-0 font-mono text-[11px] text-destructive">
-								{row.span.genAi.errorType}
-							</span>
-						)}
-						{/* Sizes in gutter order while the pair is shut, so the reader knows
-						    what opening it costs before they pay for it. */}
-						{!open && <ToolIoSummary args={row.args} result={row.result} />}
-					</button>
-					{!row.failed && row.callId !== undefined && (
-						<span className={cn(META, "shrink-0", ON_HOVER)}>{row.callId}</span>
+						{row.toolName ?? row.span.spanName}
+					</span>
+					{!row.fromMessageOnly && (
+						<span className={cn(META, "shrink-0")}>{formatDuration(row.span.durationMs)}</span>
 					)}
-					{/* The one control that opens the pair, in the header where the reader
-					    already is — not a footer they have to scroll the payloads to reach. */}
-					<button
-						type="button"
-						onClick={() => onToggleRow(payloadsKey)}
-						aria-expanded={open}
-						aria-label={open ? "Collapse payloads" : "Expand payloads"}
-						className="-mr-1 shrink-0 cursor-pointer p-1 text-muted-foreground hover:text-foreground"
-					>
-						{open ? <ChevronDownIcon size={12} /> : <ChevronRightIcon size={12} />}
-					</button>
-				</div>
+					{row.failed && row.span.genAi.errorType !== undefined && (
+						<span className="shrink-0 font-mono text-[11px] text-destructive">
+							{row.span.genAi.errorType}
+						</span>
+					)}
+					{/* Sizes in gutter order while the pair is shut, so the reader knows
+					    what opening it costs before they pay for it. */}
+					{!open && <ToolIoSummary args={row.args} result={row.result} />}
+					<span className="ml-auto flex shrink-0 items-center gap-2">
+						{!row.failed && row.callId !== undefined && (
+							<span className={cn(META, "shrink-0", ON_HOVER)}>{row.callId}</span>
+						)}
+						<span
+							aria-hidden
+							className="-mr-1 p-1 text-muted-foreground group-hover:text-foreground"
+						>
+							{open ? <ChevronDownIcon size={12} /> : <ChevronRightIcon size={12} />}
+						</span>
+					</span>
+				</button>
 
 				{open && (
 					<ToolIo
@@ -1285,8 +1278,8 @@ function StructureRow({
 					>
 						{row.label}
 					</span>
-					<span className={cn(META, "shrink-0")}>{meta.cost}</span>
-					<span className={cn(META, !selected && ON_HOVER)}>{meta.timing}</span>
+					<span className={cn(META, "shrink-0")}>{meta.shown}</span>
+					<span className={cn(META, !selected && ON_HOVER)}>{meta.onHover}</span>
 					<span className="grow" />
 					<span className={cn(META, "shrink-0")}>
 						<span className={ON_HOVER}>{clockOf(row.startMs, timeZone)} · </span>
@@ -1418,25 +1411,21 @@ function InlineNote({ children, className }: { children: ReactNode; className?: 
 	)
 }
 
-/** How a call ended, as opposed to what it cost — the half of its accounting
- *  that waits for the reader to point at the row. */
-function isTimingFact(fact: string): boolean {
-	return fact.startsWith("ttft ") || fact.startsWith("stop ")
-}
-
 /** The structure row's second half: what the span reports about itself, with
- *  the absences named rather than left blank. */
-function structureMeta(span: AiSessionSpan, category: string): { cost: string; timing: string } {
-	if (category === "tool") return { cost: `${span.serviceName} · payloads not captured`, timing: "" }
-	if (category === "agent") return { cost: `trace ${span.traceId.slice(0, 8)}`, timing: "" }
+ *  the absences named rather than left blank. `onHover` is the half that waits
+ *  for the reader to point at the row. */
+function structureMeta(span: AiSessionSpan, category: string): { shown: string; onHover: string } {
+	if (category === "tool") {
+		return { shown: `${span.serviceName} · payloads not captured`, onHover: "" }
+	}
+	if (category === "agent") return { shown: `trace ${span.traceId.slice(0, 8)}`, onHover: "" }
 	// The model already leads the label; the rest of the call's facts follow, so
 	// the parts are taken as parts rather than sliced back out of a joined line.
-	const parts = callMetaParts(span)
+	// What the call cost is the turn header's, the same as on a captured call,
+	// which leaves this row nothing but how it ran.
+	const parts = callMetaParts(span, { usage: false })
 	const rest = spanModel(span) === undefined ? parts : parts.slice(1)
-	return {
-		cost: rest.filter((fact) => !isTimingFact(fact)).join(" · "),
-		timing: rest.filter(isTimingFact).join(" · "),
-	}
+	return { shown: "", onHover: rest.join(" · ") }
 }
 
 /** `14:21:58` in the reader's chosen timezone. */

@@ -33,7 +33,12 @@ import { API_BASE, API_HOST } from "./api"
 import { DISCORD_CONNECTOR_ID } from "./id"
 import { renderDiscordMessage } from "./render"
 
-/** The credential the host Worker holds for this connector. */
+/**
+ * The credential the host Worker holds for this connector.
+ *
+ * The host reads it from `BOT_TOKEN_CONFIG` (`./api.ts`), which is also what the gateway half
+ * declares in its `requiredConfig` — one secret, one name.
+ */
 export class DiscordBotToken extends Context.Service<DiscordBotToken, Redacted.Redacted<string>>()(
 	"@maple/chat-platform/connectors/discord/BotToken",
 ) {}

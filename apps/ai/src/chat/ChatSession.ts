@@ -41,6 +41,7 @@ import {
 	type ChatEvent,
 	type ChatEventInput,
 	type ChatMessage,
+	type ChatTurnOrigin,
 	type ChatTurnTenantEncoded,
 } from "@maple/domain/chat-session"
 import { type ChatSessionStub } from "@maple/domain/chat-session-stub"
@@ -347,6 +348,8 @@ export class ChatSession {
 		readonly messageId: string
 		readonly text: string
 		readonly tenant: ChatTurnTenantEncoded
+		/** Optional only for deploy skew between Workers; `originForTurn` resolves a missing one. */
+		readonly origin?: ChatTurnOrigin
 	}): { cursor: number; messageId: string } | undefined {
 		if (this.isRunning()) return undefined
 		const cursor = this.cursor()
@@ -366,7 +369,7 @@ export class ChatSession {
 		// `waitUntil` on the DO's own context: the turn is now this object's work, and it outlives
 		// whatever request asked for it. `waitUntil` alone does not keep the object in memory — the
 		// heartbeat alarm does.
-		this.ctx.waitUntil(this.runTurn(input.sessionId, turnId, input.tenant))
+		this.ctx.waitUntil(this.runTurn(input.sessionId, turnId, input.tenant, input.origin))
 		return { cursor, messageId: input.messageId }
 	}
 
@@ -446,10 +449,18 @@ export class ChatSession {
 		sessionId: string,
 		messageId: string,
 		tenant: ChatTurnTenantEncoded,
+		origin: ChatTurnOrigin | undefined,
 	): Promise<void> {
 		try {
 			const { runChatSessionTurn } = await import("./turn-runner")
-			await runChatSessionTurn({ session: this, sessionId, env: this.env, messageId, tenant })
+			await runChatSessionTurn({
+				session: this,
+				sessionId,
+				env: this.env,
+				messageId,
+				tenant,
+				...(origin === undefined ? undefined : { origin }),
+			})
 		} catch (cause) {
 			console.error("[chat.turn] Failed to start turn runner", cause)
 			if (this.holdsTurn(messageId)) {

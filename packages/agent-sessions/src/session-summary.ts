@@ -677,16 +677,38 @@ function isSessionLevelReporter(span: AiSessionSpan, turns: readonly SessionTurn
  * read as absent rather than as a wrong number when it was not.
  */
 export function countTurnTokens(turn: SessionTurn, turns: readonly SessionTurn[]): SessionTokenTotals {
+	return countTurnUsage(turn, turns).tokens
+}
+
+/** One turn's tokens next to what it cost, counted by the same rule. */
+export interface SessionTurnUsage {
+	readonly tokens: SessionTokenTotals
+	/** Reported cost, or absent when nothing in the turn reported one — "not
+	 *  measured", never "free". */
+	readonly cost: number | undefined
+}
+
+/**
+ * A turn's usage: the tokens `countTurnTokens` returns, and the cost the same
+ * spans reported. The transcript prints this on the chapter header instead of
+ * on every call beneath it, so the two have to be counted together.
+ */
+export function countTurnUsage(turn: SessionTurn, turns: readonly SessionTurn[]): SessionTurnUsage {
 	const byId = new Map(turn.spans.map((span) => [span.spanId, span]))
-	const { bySpan } = countableUsageSpans(turn.spans, byId)
+	const { bySpan, costs } = countableUsageSpans(turn.spans, byId)
 	// Walked over the deduplicated map rather than `turn.spans`: the session-level
 	// test needs the span, and a page-overlapping read can repeat a row.
-	return sumTokens(
-		[...byId.values()].flatMap((span) => {
-			const tokens = bySpan.get(span.spanId)
-			return tokens === undefined || isSessionLevelReporter(span, turns) ? [] : [tokens]
-		}),
-	)
+	const counted = [...byId.values()].filter((span) => !isSessionLevelReporter(span, turns))
+	const reported = counted.flatMap((span) => costs.get(span.spanId) ?? [])
+	return {
+		tokens: sumTokens(
+			counted.flatMap((span) => {
+				const tokens = bySpan.get(span.spanId)
+				return tokens === undefined ? [] : [tokens]
+			}),
+		),
+		cost: reported.length > 0 ? reported.reduce((sum, value) => sum + value, 0) : undefined,
+	}
 }
 
 /** Which of the three reporting shapes the session's instrumentation used. */
@@ -1135,6 +1157,19 @@ export function formatCost(usd: number): string {
 	return usd > 0 && usd < 0.01 ? "<$0.01" : formatCurrency(usd, "usd")
 }
 
+/** `6.4K → 512 tok`: the prompt half of a usage figure against the completion
+ *  half, shared by a call's meta line and the turn header that sums them. */
+export function tokenFlowLabel(buckets: SessionTokenTotals): string {
+	const completion = buckets.output + buckets.reasoning
+	return `${formatNumber(buckets.total - completion)} → ${formatNumber(completion)} tok`
+}
+
+export interface CallMetaOptions {
+	/** `false` drops tokens and cost — the transcript prints those once per
+	 *  turn rather than on every call inside it. */
+	readonly usage?: boolean
+}
+
 /**
  * One model call's facts, in reading order: `claude-opus-5`, `6.4K → 512 tok`,
  * `$0.11`, `ttft 780ms`, `stop tool_use`. Every part is omitted where the span
@@ -1144,17 +1179,14 @@ export function formatCost(usd: number): string {
  * Returned as parts rather than as one string so a caller that wants a subset
  * can take one, instead of slicing the joined line back apart.
  */
-export function callMetaParts(span: AiSessionSpan): readonly string[] {
+export function callMetaParts(span: AiSessionSpan, options?: CallMetaOptions): readonly string[] {
 	const parts: string[] = []
 	const model = spanModel(span)
 	if (model !== undefined) parts.push(model)
 
-	const buckets = spanTokenBuckets(span)
-	if (buckets !== undefined && buckets.total > 0) {
-		const completion = buckets.output + buckets.reasoning
-		parts.push(`${formatNumber(buckets.total - completion)} → ${formatNumber(completion)} tok`)
-	}
-	const cost = span.genAi.usageCost
+	const buckets = options?.usage === false ? undefined : spanTokenBuckets(span)
+	if (buckets !== undefined && buckets.total > 0) parts.push(tokenFlowLabel(buckets))
+	const cost = options?.usage === false ? undefined : span.genAi.usageCost
 	if (cost !== undefined) parts.push(formatCost(cost))
 	const ttftMs = spanTtftMs(span)
 	if (ttftMs !== undefined) parts.push(`ttft ${formatDuration(ttftMs)}`)
@@ -1163,8 +1195,8 @@ export function callMetaParts(span: AiSessionSpan): readonly string[] {
 	return parts
 }
 
-export function callMetaLine(span: AiSessionSpan): string {
-	return callMetaParts(span).join(" · ")
+export function callMetaLine(span: AiSessionSpan, options?: CallMetaOptions): string {
+	return callMetaParts(span, options).join(" · ")
 }
 
 /* -------------------------------------------------------------------------- */

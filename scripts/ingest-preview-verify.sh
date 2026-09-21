@@ -15,7 +15,16 @@ set -euo pipefail
 : "${PR_NUMBER:?PR_NUMBER is required}"
 region="${AWS_REGION:-us-east-1}"
 cluster="maple-ingest-pr-${PR_NUMBER}"
-gateway_service="maple-ingest-pr-${PR_NUMBER}"
+# Each fleet is its own ECS service. EC2 is the default (`parseIngestFleets`);
+# only a job that set MAPLE_INGEST_FLEETS to Fargate alone runs the other one.
+# Same parsing as the deploy: whitespace ignored, comma-separated membership.
+fleets=",${MAPLE_INGEST_FLEETS:-},"
+fleets="${fleets//[[:space:]]/}"
+if [[ "$fleets" == *",fargate,"* && "$fleets" != *",ec2,"* ]]; then
+	gateway_service="maple-ingest-pr-${PR_NUMBER}"
+else
+	gateway_service="maple-ingest-ec2-pr-${PR_NUMBER}"
+fi
 collector_service="maple-otel-collector-pr-${PR_NUMBER}"
 namespace="maple-ingest-pr-${PR_NUMBER}.internal"
 failures=0

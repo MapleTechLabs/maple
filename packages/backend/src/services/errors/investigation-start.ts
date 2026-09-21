@@ -99,6 +99,7 @@ export const startInvestigationTurn: (
 					roles: [],
 					authMode: "self_hosted",
 				}),
+				origin: { kind: "autonomous" },
 			}),
 		),
 	)

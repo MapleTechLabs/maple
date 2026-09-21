@@ -7,6 +7,7 @@ import {
 	chatConnectorConfigNames,
 	ChatConnectorNotConfigured,
 	ChatSettingsRejected,
+	socketIngress,
 	type ChatConnector,
 	type ChatWorkspaceSettings,
 } from "@maple/chat-platform"
@@ -45,6 +46,11 @@ const CONFIG_NAME = chatConnectorConfigNames[0] ?? "CHAT_CONNECTOR_CONFIG_MISSIN
 /** Mirror of the service's (unexported) state TTL — 10 minutes. */
 const STATE_TTL_MS = 10 * 60_000
 
+/** No frame ever reaches the fake connector's socket half — see its `ingress` below. */
+const unreachableStep = (): never => {
+	throw new Error("the install flow drove the ingress state machine")
+}
+
 /**
  * A connector with no platform behind it: `complete` reads the workspace out of
  * the callback the test wrote, which is exactly what a real connector does with
@@ -61,7 +67,7 @@ const testConnector: ChatConnector = {
 		settingsFields: [{ key: "approver", label: "Approver", help: "Who may approve.", kind: "text" }],
 	},
 	install: {
-		requiredConfig: [CONFIG_NAME],
+		requiredConfig: [{ name: CONFIG_NAME, secret: true }],
 		authorizeUrl: ({ config, state, redirectUri }) =>
 			config.has(CONFIG_NAME)
 				? Effect.succeed(`https://chat.test/authorize?state=${state}&redirect_uri=${redirectUri}`)
@@ -86,13 +92,24 @@ const testConnector: ChatConnector = {
 						}),
 					),
 	},
-	// The install half never carries a turn, so the transport dies rather than
-	// pretending: a test that reaches it is testing the wrong thing.
+	// The install half neither receives events nor carries a turn, so both of the
+	// other halves die rather than pretending: a test that reaches one of them is
+	// testing the wrong thing.
 	outbound: {
 		connectorId: TEST_CONNECTOR,
 		limits: { maxMessageChars: 1000, minEditInterval: Duration.millis(500) },
 		transport: Effect.die("the install flow reached the outbound transport"),
 	},
+	ingress: socketIngress({
+		requiredConfig: [],
+		stateSchema: Schema.String,
+		initialState: "",
+		connectUrl: () => "wss://chat.test/gateway",
+		onOpen: unreachableStep,
+		onFrame: unreachableStep,
+		onClose: unreachableStep,
+		heartbeat: unreachableStep,
+	}),
 }
 
 const makeConfig = (withConnectorConfig: boolean) =>

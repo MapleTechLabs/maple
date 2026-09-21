@@ -9,12 +9,8 @@ import {
 	type ChatInstallStart,
 	type ChatWorkspaceSettings,
 } from "../../install"
-import { AUTHORIZE_URL, TOKEN_URL } from "./api"
+import { AUTHORIZE_URL, CLIENT_ID_CONFIG, CLIENT_SECRET_CONFIG, TOKEN_URL } from "./api"
 import { DISCORD_CONNECTOR_ID } from "./id"
-
-/** Config the host supplies; see this directory's README for the app setup. */
-export const DISCORD_CLIENT_ID = "DISCORD_CLIENT_ID"
-export const DISCORD_CLIENT_SECRET = "DISCORD_CLIENT_SECRET"
 
 /**
  * The bot permissions requested when the app is added to a guild, as Discord's
@@ -94,7 +90,7 @@ export const discordAuthorizeUrl = (
 }
 
 const authorizeUrl = (input: ChatInstallStart) =>
-	Effect.map(requireConfig(input.config, DISCORD_CONNECTOR_ID, DISCORD_CLIENT_ID), (clientId) =>
+	Effect.map(requireConfig(input.config, DISCORD_CONNECTOR_ID, CLIENT_ID_CONFIG), (clientId) =>
 		discordAuthorizeUrl(clientId, { state: input.state, redirectUri: input.redirectUri }),
 	)
 
@@ -119,8 +115,8 @@ const complete = Effect.fnUntraced(function* (input: ChatInstallCallback) {
 	if (code === null) {
 		return yield* Effect.fail(installFailed("Discord's callback carried no authorization code"))
 	}
-	const clientId = yield* requireConfig(input.config, DISCORD_CONNECTOR_ID, DISCORD_CLIENT_ID)
-	const clientSecret = yield* requireConfig(input.config, DISCORD_CONNECTOR_ID, DISCORD_CLIENT_SECRET)
+	const clientId = yield* requireConfig(input.config, DISCORD_CONNECTOR_ID, CLIENT_ID_CONFIG)
+	const clientSecret = yield* requireConfig(input.config, DISCORD_CONNECTOR_ID, CLIENT_SECRET_CONFIG)
 
 	const httpClient = yield* HttpClient.HttpClient
 	const request = HttpClientRequest.post(TOKEN_URL, { headers: { accept: "application/json" } }).pipe(
@@ -176,7 +172,11 @@ const decodeSettings = (
 	)
 
 export const discordInstall: ChatConnectorInstall = {
-	requiredConfig: [DISCORD_CLIENT_ID, DISCORD_CLIENT_SECRET],
+	// The client id is public — it rides the authorize URL the browser opens.
+	requiredConfig: [
+		{ name: CLIENT_ID_CONFIG, secret: false },
+		{ name: CLIENT_SECRET_CONFIG, secret: true },
+	],
 	authorizeUrl,
 	complete,
 	decodeSettings,

@@ -1,6 +1,7 @@
 import { ChatConnectorId } from "./connector"
 import { Effect, Redacted, Schema } from "effect"
 import type { HttpClient } from "effect/unstable/http"
+import type { ConnectorConfigKey } from "./ingress"
 
 /**
  * The install half of the {@link ChatConnector} contract: everything needed to
@@ -19,6 +20,10 @@ import type { HttpClient } from "effect/unstable/http"
  * {@link ChatConnectorInstall.requiredConfig}, keyed by that name. A connector
  * never reads the environment itself — the host owns which secret store the
  * values came from, and a name the deployment has not set is simply absent.
+ *
+ * Redacted where the ingress half's `ConnectorConfig` holds plain strings: an
+ * install exchanges an OAuth client secret against a provider that answers with
+ * failures, and a redacted value cannot be carried into one by accident.
  */
 export type ChatConnectorConfig = ReadonlyMap<string, Redacted.Redacted<string>>
 
@@ -110,11 +115,17 @@ export interface ChatInstallResult {
 
 export interface ChatConnectorInstall {
 	/**
-	 * Config names the host must supply for this connector to be installable.
-	 * The names may well be platform-specific — they are declared here, inside
-	 * the connector, and the host reads them generically.
+	 * Config the host must supply for this connector to be installable, in the
+	 * same terms the ingress half declares its own: the names may well be
+	 * platform-specific — they are declared here, inside the connector — and the
+	 * host reads them generically, binding each as a secret or a plain variable
+	 * according to its `secret` flag.
+	 *
+	 * A different Worker resolves these than resolves the ingress half's, because
+	 * installing and carrying a turn are different deployables. One element type
+	 * so neither host has to learn a second way to ask.
 	 */
-	readonly requiredConfig: ReadonlyArray<string>
+	readonly requiredConfig: ReadonlyArray<ConnectorConfigKey>
 	/** Where to send the browser to begin the install. */
 	readonly authorizeUrl: (input: ChatInstallStart) => Effect.Effect<string, ChatConnectorNotConfigured>
 	/**

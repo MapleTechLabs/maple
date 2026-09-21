@@ -321,3 +321,20 @@ export const ChatConnectorId = Schema.String.check(
 	Schema.annotate({ identifier: "@maple/ChatConnectorId", title: "Chat Connector ID" }),
 )
 export type ChatConnectorId = Schema.Schema.Type<typeof ChatConnectorId>
+
+/**
+ * What a connector calls one conversation — a thread, a channel, or both joined however it likes.
+ *
+ * Only the connector knows what makes a conversation unique on its platform, so the value is its
+ * own. The charset is what a session tab id can carry unambiguously: no `-`, since that is what
+ * the tab splits on, and bounded because the session id names a Durable Object.
+ */
+export const ChatConversationKey = Schema.String.check(
+	Schema.isMinLength(1),
+	Schema.isMaxLength(128),
+	Schema.isPattern(/^[A-Za-z0-9_.:]+$/),
+).pipe(
+	Schema.brand("@maple/ChatConversationKey"),
+	Schema.annotate({ identifier: "@maple/ChatConversationKey", title: "Chat Conversation Key" }),
+)
+export type ChatConversationKey = Schema.Schema.Type<typeof ChatConversationKey>

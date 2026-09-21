@@ -57,7 +57,8 @@ const OPENROUTER_APP_TITLE = "Maple"
  * be filed under different sessions.
  */
 export interface LlmCallTags {
-	readonly surface: "chat"
+	/** `bot` is the chat-platform bot, which shares the engine and the Durable Object with `chat`. */
+	readonly surface: "chat" | "bot"
 	readonly orgId: string
 	/** Groups one conversation or investigation. OpenRouter caps this at 256 characters. */
 	readonly sessionId?: string
@@ -442,6 +443,8 @@ export const layerLlm = (env: LlmEnv): Layer.Layer<LlmClients> => {
 export const layerDecisionModel = (
 	env: LlmEnv,
 ): Layer.Layer<DecisionModel.DecisionModel, never, OpenRouterClient.OpenRouterClient> =>
-	OpenRouterDecisionModel.layer({
-		model: readString(env, "MAPLE_DECISION_MODEL") ?? DEFAULT_DECISION_MODEL,
-	})
+	OpenRouterDecisionModel.layer({ model: resolveDecisionModel(env) })
+
+/** The decision model this deploy asks, so a verdict can record what answered it. */
+export const resolveDecisionModel = (env: LlmEnv): string =>
+	readString(env, "MAPLE_DECISION_MODEL") ?? DEFAULT_DECISION_MODEL

@@ -27,7 +27,9 @@ import {
 	ChatSendRequest,
 	ChatSendResponse,
 	encodeChatTurnTenant,
+	isConnectorSessionId,
 	orgIdFromChatSessionId,
+	originForTurn,
 	type ChatTurnTenantEncoded,
 } from "@maple/domain/chat-session"
 import { chatSessionStub, type ChatSessionStub } from "@maple/domain/chat-session-stub"
@@ -177,6 +179,12 @@ export const ChatSessionsRouter = HttpRouter.use((router) =>
 				const resolved = yield* resolveSession(request)
 				if (!resolved.ok) return resolved.failure
 				const { sessionId, tenant, stub } = resolved.session
+				// A connector thread is driven only by its connector. History and events stay
+				// readable — this is the one verb that would otherwise let any member of the org
+				// post into a channel conversation, metered as the connector with nobody listening.
+				if (isConnectorSessionId(sessionId)) {
+					return problem("This conversation is driven by its chat connector", 403)
+				}
 
 				const body = yield* request.text.pipe(Effect.orElseSucceed(() => ""))
 				const parsed = yield* decodeSendRequest(body).pipe(Effect.option)
@@ -185,6 +193,10 @@ export const ChatSessionsRouter = HttpRouter.use((router) =>
 				}
 
 				const messageId = crypto.randomUUID()
+				// Not `{ kind: "app" }` outright: this route also authenticates Maple's own service
+				// token, and the only thing distinguishing that caller is the user id the auth layer
+				// stamps on it. `originForTurn` owns that read, so it stays in one place.
+				const turnTenant = toChatTurnTenant(tenant)
 				// `beginTurn` claims the slot, records the user message AND starts the turn, all
 				// inside the Durable Object. This request answers in milliseconds and deliberately
 				// does not run the turn: anything forked off it here would be cancelled as soon as
@@ -194,7 +206,8 @@ export const ChatSessionsRouter = HttpRouter.use((router) =>
 						sessionId,
 						messageId,
 						text: parsed.value.text,
-						tenant: toChatTurnTenant(tenant),
+						tenant: turnTenant,
+						origin: originForTurn(undefined, turnTenant),
 					}),
 				).pipe(Effect.option)
 

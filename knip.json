@@ -6,7 +6,9 @@
 	"workspaces": {
 		".": {
 			"entry": ["alchemy.run.ts", "scripts/**/*.ts", "scripts/oxlint-plugins/*.mjs"],
-			"ignoreBinaries": ["tb", "pscale"]
+			"ignoreBinaries": ["tb", "pscale"],
+			// alchemy's optional peer, dynamic-imported when the deploy applies migrations.
+			"ignoreDependencies": ["pg"]
 		},
 		"apps/web": {
 			// `src/worker-entry.ts` is the deployed Worker entry, named by the vite
@@ -45,6 +47,9 @@
 			"entry": ["src/worker.ts"]
 		},
 		"apps/alerting": {
+			"entry": ["src/worker.ts"]
+		},
+		"apps/chat-bot": {
 			"entry": ["src/worker.ts"]
 		},
 		"apps/electric-sync": {

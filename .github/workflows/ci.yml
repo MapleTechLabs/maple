@@ -204,7 +204,10 @@ jobs:
                     # so the Alchemy-entrypoints typecheck resolves each graph through
                     # that app's node_modules.
                     - shard: quality
-                      install-filters: "@maple/api @maple/ai @maple/electric-sync @maple/alerting @maple/sandbox @maple/web @maple/landing @maple/local-ui"
+                      install-filters: >-
+                          @maple/api @maple/ai @maple/chat-bot @maple/electric-sync
+                          @maple/alerting @maple/sandbox @maple/web @maple/landing
+                          @maple/local-ui
                     - shard: effect-lint
                       install-filters: ""
                     - shard: build-web
@@ -220,7 +223,8 @@ jobs:
                       install-filters: "@maple/web"
                     - shard: typecheck-rest
                       install-filters: >-
-                          @maple/ai @maple/alerting @maple/cli @maple/clickhouse-builder-docs
+                          @maple/ai @maple/alerting @maple/chat-bot @maple/cli
+                          @maple/clickhouse-builder-docs
                           @maple/electric-sync @maple/landing @maple/local-ui
                           @maple/sandbox @maple/scraper ./lib/* ./examples/*
                     - shard: typecheck-packages
@@ -239,7 +243,8 @@ jobs:
                       install-filters: ""
                     - shard: test-rest
                       install-filters: >-
-                          @maple/ai @maple/alerting @maple/cli @maple/electric-sync @maple/landing
+                          @maple/ai @maple/alerting @maple/chat-bot @maple/cli
+                          @maple/electric-sync @maple/landing
                           @maple/local-ui @maple/sandbox @maple/scraper ./lib/*
         steps:
             - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
@@ -612,6 +617,8 @@ jobs:
               env:
                   KEEP_ROOT: "1"
                   TMPDIR: ${{ runner.temp }}/maple-native-checkpoint
+                  # Probes induce failures on purpose; keep them out of the prod errors hub.
+                  MAPLE_TELEMETRY: off
               run: |
                   mkdir -p "$TMPDIR"
                   apps/cli/test/native-checkpoint-smoke.sh "$GITHUB_WORKSPACE/dist"
@@ -625,6 +632,7 @@ jobs:
               env:
                   KEEP_ROOT: "1"
                   TMPDIR: ${{ runner.temp }}/maple-native-cp-refresh
+                  MAPLE_TELEMETRY: off
               run: |
                   mkdir -p "$TMPDIR"
                   apps/cli/test/native-checkpoint-refresh-probe.sh "$GITHUB_WORKSPACE/dist"
@@ -634,6 +642,7 @@ jobs:
               env:
                   KEEP_ROOT: "1"
                   TMPDIR: ${{ runner.temp }}/maple-native-migration
+                  MAPLE_TELEMETRY: off
               run: |
                   mkdir -p "$TMPDIR"
                   apps/cli/test/native-local-store-migration.sh "$GITHUB_WORKSPACE/dist"
@@ -745,6 +754,8 @@ jobs:
               env:
                   KEEP_ROOT: ${{ matrix.keep_root }}
                   TMPDIR: ${{ runner.temp }}/${{ matrix.tmp }}
+                  # Probes induce failures on purpose; keep them out of the prod errors hub.
+                  MAPLE_TELEMETRY: off
               run: |
                   mkdir -p "$TMPDIR"
                   apps/cli/test/${{ matrix.script }} "$GITHUB_WORKSPACE/dist"
