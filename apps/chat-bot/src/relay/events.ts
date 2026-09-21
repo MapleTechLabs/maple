@@ -10,7 +10,7 @@
  */
 import { ChatSessionId, decodeChatEvent, type ChatEvent } from "@maple/domain/chat-session"
 import type { ChatSessionStub } from "@maple/domain/chat-session-stub"
-import { Effect, Schema, Stream } from "effect"
+import { Duration, Effect, Schema, Stream } from "effect"
 
 /** The session's Durable Object could not be reached, or dropped the subscription mid-turn. */
 export class ChatSessionUnreachable extends Schema.TaggedError<ChatSessionUnreachable>()(
@@ -77,6 +77,15 @@ const connection = (
 		),
 	)
 
+/**
+ * How long to wait before reopening a connection that carried nothing.
+ *
+ * The session ends a connection after its idle window, which is seconds of silence, and reopening
+ * that one immediately is right. A connection that closes having said nothing at all is a session
+ * with nothing to say yet, and reopening THAT immediately is a loop.
+ */
+const EMPTY_RECONNECT_DELAY = Duration.seconds(1)
+
 /** Every event from `cursor` on, across as many connections as the turn takes. */
 export const chatTurnEvents = (
 	stub: ChatSessionStub,
@@ -91,7 +100,16 @@ export const chatTurnEvents = (
 					last = event.seq
 				}),
 			),
-			Stream.concat(Stream.suspend(() => fromCursor(last))),
+			Stream.concat(
+				Stream.suspend(() =>
+					Stream.unwrap(
+						Effect.as(
+							last === from ? Effect.sleep(EMPTY_RECONNECT_DELAY) : Effect.void,
+							fromCursor(last),
+						),
+					),
+				),
+			),
 		)
 	}
 	return fromCursor(cursor)

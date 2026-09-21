@@ -28,7 +28,7 @@ import {
 	type InboundMessage,
 	type InboundWorkspaceRemoved,
 } from "@maple/chat-platform"
-import { Context, Duration, Effect, Logger, Option, References, Schema } from "effect"
+import { Context, Duration, Effect, Logger, Option, References, Schema, Tracer } from "effect"
 import { relayInboundEvent, type RelayPorts } from "./turn.ts"
 
 const TESTCHAT = chatConnectorId("testchat")
@@ -396,13 +396,21 @@ describe("relaying a mention", () => {
 		}),
 	)
 
-	it.effect("keeps the conversation out of the log when the platform refuses the turn", () =>
+	it.effect("keeps the conversation out of the telemetry when the platform refuses the turn", () =>
 		Effect.gen(function* () {
 			const logs: Array<string> = []
+			const spans: Array<Tracer.NativeSpan> = []
 			const logger = Logger.make(({ fiber, message }) => {
 				logs.push(
 					JSON.stringify({ message, annotations: fiber.getRef(References.CurrentLogAnnotations) }),
 				)
+			})
+			const tracer = Tracer.make({
+				span(options) {
+					const span = new Tracer.NativeSpan(options)
+					spans.push(span)
+					return span
+				},
 			})
 			const platform = chat()
 			// The failure carries the request it failed on — and that request's body is the answer
@@ -425,10 +433,25 @@ describe("relaying a mention", () => {
 			const deployment = host(refusing, session([]).stub)
 
 			yield* relayInboundEvent(mention, deployment.ports).pipe(
-				Effect.provideContext(Context.make(Logger.CurrentLoggers, new Set([logger]))),
+				Effect.provideContext(
+					Context.make(Logger.CurrentLoggers, new Set([logger])).pipe(
+						Context.add(Tracer.Tracer, tracer),
+					),
+				),
 			)
 
-			expect(logs.join("")).not.toContain(mention.text)
+			const everything = JSON.stringify({
+				logs,
+				spans: spans.map((span) => ({
+					name: span.name,
+					attributes: Object.fromEntries(span.attributes),
+					// A failed span records the failure as an event, which is the other place a cause
+					// would be rendered.
+					events: span.events,
+				})),
+			})
+			expect(everything).not.toContain(mention.text)
+			expect(everything).not.toContain(mention.author.displayName)
 			// The failure is still reported — by what it was, not by what it carried.
 			expect(logs.join("")).toContain("ChatOutboundError")
 		}),

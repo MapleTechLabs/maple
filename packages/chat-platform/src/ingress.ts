@@ -293,8 +293,7 @@ export const socketIngress = <State>(definition: SocketIngressDefinition<State>)
 	// a bug, so it surfaces as a defect rather than being swallowed into a
 	// silently reset session.
 	const encode = Schema.encodeSync(definition.stateSchema)
-	const read = (state: string): State =>
-		Option.getOrElse(decode(state), () => definition.initialState)
+	const read = (state: string): State => Option.getOrElse(decode(state), () => definition.initialState)
 	const lift = (step: SocketStep<State>): SocketStep<string> => ({
 		...step,
 		state: encode(step.state),

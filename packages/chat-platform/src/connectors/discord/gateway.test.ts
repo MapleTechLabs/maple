@@ -147,23 +147,13 @@ describe("session lifecycle", () => {
 	})
 
 	it("keeps the session on a resumable Invalid Session", () => {
-		const step = gatewayProtocol.onFrame(
-			ready(),
-			frame({ op: OP.invalidSession, d: true }),
-			NOW,
-			config,
-		)
+		const step = gatewayProtocol.onFrame(ready(), frame({ op: OP.invalidSession, d: true }), NOW, config)
 		expect(step.directive).toEqual({ _tag: "reconnect", closeCode: 4000 })
 		expect(step.state.sessionId).toBe("session-1")
 	})
 
 	it("forgets the session on a non-resumable Invalid Session, so the next connect identifies", () => {
-		const step = gatewayProtocol.onFrame(
-			ready(),
-			frame({ op: OP.invalidSession, d: false }),
-			NOW,
-			config,
-		)
+		const step = gatewayProtocol.onFrame(ready(), frame({ op: OP.invalidSession, d: false }), NOW, config)
 		expect(step.state.sessionId).toBeUndefined()
 		expect(step.state.sequence).toBeUndefined()
 		expect(gatewayProtocol.connectUrl(step.state, config)).toBe(
@@ -301,12 +291,7 @@ describe("messages", () => {
 	})
 
 	it("prefers the server nickname as the display name", () => {
-		const step = gatewayProtocol.onFrame(
-			ready(),
-			message({ member: { nick: "Ada L." } }),
-			NOW,
-			config,
-		)
+		const step = gatewayProtocol.onFrame(ready(), message({ member: { nick: "Ada L." } }), NOW, config)
 		expect(step.events?.[0]).toMatchObject({ author: { displayName: "Ada L." } })
 	})
 
@@ -346,12 +331,7 @@ describe("messages", () => {
 	})
 
 	it("ignores messages before READY, when a mention cannot be recognised", () => {
-		const step = gatewayProtocol.onFrame(
-			ready({ botUserId: undefined }),
-			message(),
-			NOW,
-			config,
-		)
+		const step = gatewayProtocol.onFrame(ready({ botUserId: undefined }), message(), NOW, config)
 		expect(step.events ?? []).toEqual([])
 	})
 })
@@ -493,7 +473,7 @@ describe("state the host persists", () => {
 	})
 
 	it("falls back to a fresh state when the stored value no longer decodes", () => {
-		const step = ingress.onOpen("{\"awaitingAck\":\"yes\"}", NOW)
+		const step = ingress.onOpen('{"awaitingAck":"yes"}', NOW)
 		expect(sent(step.state)).toMatchObject({ awaitingAck: false })
 	})
 })

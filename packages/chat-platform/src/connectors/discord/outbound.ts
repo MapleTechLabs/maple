@@ -108,8 +108,12 @@ const THREAD_ARCHIVE_MINUTES = 1440
 /** The thread when the turn is in one, the channel otherwise — on Discord both are channel ids. */
 const channelOf = (target: ChatTarget): string => target.threadId ?? target.channelId
 
-/** Every id Discord mints is a snowflake, which the key's charset covers. */
-const conversationKey = Schema.decodeSync(ChatConversationKey)
+/**
+ * Every id Discord mints is a snowflake, which the key's charset covers — but the id came off the
+ * wire, so it is decoded rather than branded, and an id that is not one fails the turn instead of
+ * escaping the transport as a defect.
+ */
+const decodeConversationKey = Schema.decodeUnknownOption(ChatConversationKey)
 
 /** Seconds, fractional. Anything outside the window falls through to the header and the default. */
 const RETRY_AFTER_SECONDS = Schema.Finite.pipe(
@@ -287,10 +291,17 @@ export const discordOutbound: ChatOutbound<HttpClient.HttpClient | ConnectorCred
 					title: message.text,
 				}).pipe(
 					Effect.orElseSucceed(() => message.channelId),
-					Effect.map(
-						(channelId): ChatConversation => ({
-							conversationKey: conversationKey(channelId),
-							target: { workspaceId: message.workspaceId, channelId },
+					Effect.flatMap((channelId) =>
+						Option.match(decodeConversationKey(channelId), {
+							onNone: () =>
+								Effect.fail(
+									failed("thread", "Discord named a conversation Maple cannot address"),
+								),
+							onSome: (conversationKey): Effect.Effect<ChatConversation> =>
+								Effect.succeed({
+									conversationKey,
+									target: { workspaceId: message.workspaceId, channelId },
+								}),
 						}),
 					),
 				),
@@ -301,7 +312,7 @@ export const discordOutbound: ChatOutbound<HttpClient.HttpClient | ConnectorCred
 const failed = (
 	operation: ChatOutboundOperation,
 	message: string,
-	extra: { readonly status?: number; readonly cause?: unknown },
+	extra: { readonly status?: number; readonly cause?: unknown } = {},
 ) => new ChatOutboundError({ message, connectorId: DISCORD_CONNECTOR_ID, operation, ...extra })
 
 /**

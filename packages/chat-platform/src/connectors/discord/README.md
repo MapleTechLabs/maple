@@ -10,11 +10,11 @@ One Discord application, created at <https://discord.com/developers/applications
 documented here rather than in the repo's `.env.example`, which is shared ground where no platform
 should be named; every name is declared once, in `api.ts`.
 
-| Secret                        | Where it comes from                   | How it reaches the connector                                 |
-| ----------------------------- | ------------------------------------- | ------------------------------------------------------------ |
-| `MAPLE_DISCORD_BOT_TOKEN`     | Bot tab → Token                       | `ingress.requiredConfig`, by name; `ConnectorCredentials`    |
-| `MAPLE_DISCORD_CLIENT_ID`     | OAuth2 tab → Client ID (not a secret) | `install.requiredConfig`, by name                            |
-| `MAPLE_DISCORD_CLIENT_SECRET` | OAuth2 tab → Client Secret            | `install.requiredConfig`, by name                            |
+| Secret                        | Where it comes from                   | How it reaches the connector                              |
+| ----------------------------- | ------------------------------------- | --------------------------------------------------------- |
+| `MAPLE_DISCORD_BOT_TOKEN`     | Bot tab → Token                       | `ingress.requiredConfig`, by name; `ConnectorCredentials` |
+| `MAPLE_DISCORD_CLIENT_ID`     | OAuth2 tab → Client ID (not a secret) | `install.requiredConfig`, by name                         |
+| `MAPLE_DISCORD_CLIENT_SECRET` | OAuth2 tab → Client Secret            | `install.requiredConfig`, by name                         |
 
 A half whose names are unset is skipped rather than fatal: the dashboard reports the connector as
 unavailable and offers no connect button, the ingress half logs one line, and the rest of each
