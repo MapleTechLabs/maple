@@ -193,7 +193,8 @@ const providers =
 	Acm.providers().pipe(
 		Layer.provideMerge(Cloudflare.providers()),
 		Layer.provideMerge(AWS.providers()),
-		Layer.provideMerge(Planetscale.providers()),
+		// Its credential lookup runs when the layer is built, and `bun dev` never yields the branch.
+		Layer.provideMerge(isDevServer ? Layer.empty : Planetscale.providers()),
 		Layer.provideMerge(Portless.providers()),
 	)
 

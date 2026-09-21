@@ -94,9 +94,8 @@ alerting Workers carry its name in their env so they upload after it. Bookkeepin
 `__alchemy_migrations`; `drizzle.__drizzle_migrations` was copied in once and is frozen, so never run
 `drizzle-kit migrate` against prd. The deploy migrates as a temporary role, not `postgres`, so the
 branch's default privileges do not cover the tables it creates: a migration that creates one grants
-it `TO PUBLIC` itself. The stack registers `Planetscale.providers()`, so `alchemy` commands need
-PlanetScale in the alchemy profile or `PLANETSCALE_API_TOKEN_ID` / `PLANETSCALE_API_TOKEN` /
-`PLANETSCALE_ORGANIZATION` in the environment.
+it `TO PUBLIC` itself. The deploy reads `PLANETSCALE_API_TOKEN_ID` / `PLANETSCALE_API_TOKEN` /
+`PLANETSCALE_ORGANIZATION` from Infisical prod; `bun dev` leaves the PlanetScale provider out.
 
 The first v1 migrate on a database migrated by drizzle 0.x upgrades `drizzle.__drizzle_migrations`
 in place (adds `name` and `applied_at`), matching every existing row to a local folder by
