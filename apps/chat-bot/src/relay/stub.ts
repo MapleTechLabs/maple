@@ -29,7 +29,7 @@ const isRelayNamespace = (value: unknown): value is ConnectorRelayNamespace =>
  * A name rather than a session id, because the org is not known until the workspace has been
  * resolved — and resolving it is the relay's own first step, off the socket.
  */
-export const connectorRelayName = (event: InboundEvent): string =>
+const connectorRelayName = (event: InboundEvent): string =>
 	event.type === "workspace-removed"
 		? `${event.connector}:${event.workspaceId}`
 		: `${event.connector}:${event.workspaceId}:${event.channelId}`

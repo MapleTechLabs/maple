@@ -8,7 +8,7 @@
  * those cannot happen. Nothing in this file knows which platform it is answering on.
  *
  * The side effects arrive as ports rather than services so the whole path is drivable without a
- * database, a Durable Object or a chat platform: `relay.test.ts` runs it end to end against a fake
+ * database, a Durable Object or a chat platform: `turn.test.ts` runs it end to end against a fake
  * connector.
  */
 import {
@@ -20,7 +20,6 @@ import {
 	type InboundAction,
 	type InboundEvent,
 	type InboundMessage,
-	type InboundWorkspaceRemoved,
 } from "@maple/chat-platform"
 import { wrapChatContext } from "@maple/domain/chat-preamble"
 import { connectorSessionId, connectorTurnTenant } from "@maple/domain/chat-session"
@@ -202,13 +201,6 @@ const acknowledgeAction = Effect.fnUntraced(function* <R>(action: InboundAction,
 	yield* say(transport, replyTarget(action), APPROVAL_NOTICE)
 })
 
-const forgetWorkspace = Effect.fnUntraced(function* <R>(
-	event: InboundWorkspaceRemoved,
-	ports: RelayPorts<R>,
-) {
-	yield* ports.forgetWorkspace(event.connector, event.workspaceId)
-})
-
 /**
  * Everything one inbound event causes, with nothing left for the caller to handle.
  *
@@ -224,7 +216,9 @@ export const relayInboundEvent = <R>(
 			? relayMessage(event, ports)
 			: event.type === "action"
 				? acknowledgeAction(event, ports)
-				: forgetWorkspace(event, ports)
+				: // The bot is out of the workspace: unlink it, and say nothing — there is nobody left
+					// in there to read a reply.
+					ports.forgetWorkspace(event.connector, event.workspaceId)
 	return relayed.pipe(
 		Effect.catchCause((cause) =>
 			Effect.logError("Chat connector event could not be relayed", cause).pipe(
