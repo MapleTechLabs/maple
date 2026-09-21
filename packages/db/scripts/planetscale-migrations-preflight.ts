@@ -1,6 +1,6 @@
 /**
- * `migrations-preflight.ts` against a PlanetScale branch, over the same
- * ephemeral credential `ps:apply-schema` uses. Read-only.
+ * `migrations-preflight.ts` against a PlanetScale branch, over an ephemeral
+ * credential. Read-only.
  *
  *   bun run --cwd packages/db ps:migrations-preflight main
  */

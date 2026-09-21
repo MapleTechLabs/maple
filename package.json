@@ -21,7 +21,6 @@
 		"bench:queries": "bun apps/api/scripts/bench-queries.ts",
 		"ch:test": "CLICKHOUSE_E2E=1 CLICKHOUSE_E2E_URL=http://127.0.0.1:8123 bun run --cwd apps/api test scripts/query-bench/catalog.clickhouse.e2e.test.ts && CLICKHOUSE_E2E=1 CLICKHOUSE_E2E_URL=http://127.0.0.1:8123 bun run --cwd packages/backend test src/services/warehouse/WarehouseQueryService.clickhouse.e2e.test.ts src/services/warehouse/web-analytics-parity.clickhouse.e2e.test.ts",
 		"db:migrate:local": "DATABASE_URL=postgres://maple:maple@localhost:5499/maple bun run --cwd packages/db db:migrate",
-		"migrate:prod": "bun run --cwd packages/db ps:apply-schema main",
 		"backup:restore-test": "bun run --cwd packages/db db:restore-test",
 		"format": "oxfmt",
 		"format:check": "oxfmt --check",
@@ -49,7 +48,9 @@
 		"knip:fix": "bun run --cwd apps/landing sync:i18n && knip --fix --allow-remove-files",
 		"typecheck": "turbo typecheck && tsc -p tsconfig.alchemy.json"
 	},
-	"dependencies": {},
+	"dependencies": {
+		"pg": "^8.23.0"
+	},
 	"devDependencies": {
 		"@cloudflare/workers-types": "catalog:alchemy",
 		"@effect/platform-node": "4.0.0-rc.116",

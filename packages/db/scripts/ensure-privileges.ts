@@ -9,8 +9,8 @@
  *
  *   DATABASE_URL="$MAPLE_PG_URL" bun packages/db/scripts/ensure-privileges.ts
  *
- * `ps:apply-schema` calls `ensureRuntimePrivileges` directly, so the prod path
- * needs no separate invocation.
+ * The deploy migrates as a temporary role these defaults never key to: a
+ * migration that creates a table must GRANT it to PUBLIC itself.
  *
  * ── Why PUBLIC, and why no runtime-role name ──────────────────────────────
  * Prod has four `pscale_api_*` login roles. Three are members of `postgres`
@@ -141,7 +141,7 @@ export const ensureRuntimePrivileges = async (connectionUrl: string): Promise<vo
 	}
 }
 
-// CLI entry (skipped when imported by ps:apply-schema).
+// CLI entry (skipped when imported).
 if (import.meta.main) {
 	const url = process.env.DATABASE_URL?.trim()
 	if (!url) {

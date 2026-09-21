@@ -405,6 +405,14 @@ the number as load-bearing. The workflow compiles inside `rust:1.94-bookworm` ra
 on the runner because the runtime base is `debian:bookworm-slim` (glibc 2.36) while
 `ubuntu-24.04` ships 2.39 — a host-built binary dies with `version 'GLIBC_2.39' not found`.
 
+## Schema migrations run in the deploy
+
+The PlanetScale `main` branch is a `Planetscale.PostgresBranch` yielded into `MapleStack` on prd
+(`dbSchema`), with `migrations` at `packages/db/drizzle`. Alchemy orders resources only by the
+Outputs their props reference, and a Hyperdrive bound by id references nothing, so the api, ai and
+alerting Workers put `dbSchema.name` in their env (`MAPLE_DB_BRANCH`) to upload after it. Details in
+`docs/persistence.md`.
+
 ## Hyperdrive: why api and alerting have separate configs
 
 Measured over 6h on prd: `alerting` issued 60,688 Postgres queries/hour against the api's
