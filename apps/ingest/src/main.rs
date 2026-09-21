@@ -3008,14 +3008,19 @@ fn replay_gunzip_rejection(headers: &HeaderMap, body: &[u8], error: &std::io::Er
 
 const REPLAY_BODY_PREFIX_BYTES: usize = 16;
 
-/// A gzip member is a 10-byte header opening with `1f 8b` plus an 8-byte
-/// trailer. A body shorter than that, or with a different prefix, was never a
+/// A gzip member is a 10-byte header (`1f 8b`, compression method `08`, a
+/// flags byte with its three reserved high bits clear) plus an 8-byte trailer.
+/// A body shorter than that, or whose header says otherwise, was never a
 /// stream the SDK produced; a body that passes may still be a truncated real
 /// recording, which is a lost chunk and stays an `Error`.
 const GZIP_MEMBER_MIN_LEN: usize = 18;
+const GZIP_METHOD_DEFLATE: u8 = 0x08;
+const GZIP_RESERVED_FLAGS: u8 = 0xe0;
 
 fn looks_like_gzip_member(body: &[u8]) -> bool {
-    body.len() >= GZIP_MEMBER_MIN_LEN && body.starts_with(&[0x1f, 0x8b])
+    body.len() >= GZIP_MEMBER_MIN_LEN
+        && body.starts_with(&[0x1f, 0x8b, GZIP_METHOD_DEFLATE])
+        && body[3] & GZIP_RESERVED_FLAGS == 0
 }
 
 fn hex_prefix(body: &[u8], n: usize) -> String {
@@ -8134,7 +8139,14 @@ mod tests {
 
         // The crawler signatures seen in production: a valid zero-MTIME header
         // missing the `8b`, and a body that stops after the magic bytes.
-        for body in [&b"\x1f\x08\x00\x00\x00\x00\x00\x00\x03\xec\xbd\x89\x28\x2b\x1c\x39\x00\x00\x00\x00"[..], &b"\x1f\x8b\x08"[..]] {
+        // Plus a right-magic header with an unknown compression method, and one
+        // with a reserved flag bit set: neither is a stream deflate ever wrote.
+        for body in [
+            &b"\x1f\x08\x00\x00\x00\x00\x00\x00\x03\xec\xbd\x89\x28\x2b\x1c\x39\x00\x00\x00\x00"[..],
+            &b"\x1f\x8b\x08"[..],
+            &b"\x1f\x8b\x07\x00\x00\x00\x00\x00\x00\x03\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"[..],
+            &b"\x1f\x8b\x08\x80\x00\x00\x00\x00\x00\x03\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"[..],
+        ] {
             let error = decompressed_len(body).expect_err("crawler body must be rejected");
             let rejection = replay_gunzip_rejection(&HeaderMap::new(), body, &error);
             assert_eq!(rejection.error_kind(), "malformed_body", "{:?}", body);
