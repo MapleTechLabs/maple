@@ -44,7 +44,7 @@ import { PR_REVIEW_CLOSE_OUT_PROMPT } from "@/chat/prompts"
 import { runChatTurn } from "@/chat/run"
 import { makeRunUsage } from "@/chat/tools"
 import type { McpToolExecutorApi } from "@/mcp/dispatcher"
-import { annotatePatch, renderChangedFiles, renderFileDiff } from "@/mcp/tools/pull-request"
+import { annotatePatch, renderChangedFiles, renderFileDiffs } from "@/mcp/tools/pull-request"
 import type { McpToolResult } from "@/mcp/tools/types"
 import { layerLlm, resolveTriageModel, type ResolvedModel } from "@/platform/Llm"
 
@@ -338,6 +338,7 @@ const LocalToolParams = Schema.Struct({
 	end_line: Schema.optionalKey(NumberLike),
 	command: Schema.optionalKey(Schema.String),
 	args: Schema.optionalKey(Schema.Array(Schema.String)),
+	paths: Schema.optionalKey(Schema.Array(Schema.String)),
 })
 type LocalToolParams = typeof LocalToolParams.Type
 const decodeParams = Schema.decodeUnknownOption(LocalToolParams)
@@ -501,7 +502,10 @@ const makeExecutor = (input: {
 					: failure(`Only pull request #${input.number} is available in this run.`)
 			case "pr_file_diff":
 				return num(params.number) === input.number
-					? renderFileDiff(input.files, str(params.path) ?? "")
+					? renderFileDiffs(input.files, [
+							...(params.paths ?? []),
+							...(str(params.path) === undefined ? [] : [str(params.path) ?? ""]),
+						])
 					: failure(`Only pull request #${input.number} is available in this run.`)
 			case "list_source_repositories":
 				return text([
@@ -797,7 +801,12 @@ export const reviewLocally = async (
 	await Effect.runPromise(pass({ text: kickoff, history: [] }))
 
 	let closedOut = false
-	if (submitted === undefined && !endReason.startsWith("run failed")) {
+	// As production does: a pass that failed still gets its close-out, unless the provider itself
+	// is what failed, where another call would fail the same way.
+	const providerFailed = /out of credits|overloaded|Rate limit|InsufficientPermissions|\b40[123]\b/i.test(
+		endReason,
+	)
+	if (submitted === undefined && !providerFailed) {
 		closedOut = true
 		console.log("\n\nNo review submitted; running the close-out pass…")
 		const evidence = tools.map(

@@ -3,7 +3,13 @@
  * anchors a comment on, so they have to be the new side's, hunk by hunk.
  */
 import { assert, describe, it } from "vitest"
-import { annotatePatch, classifyChangedFile, renderChangedFiles, reviewCallBudget } from "./pull-request"
+import {
+	annotatePatch,
+	classifyChangedFile,
+	renderChangedFiles,
+	renderFileDiffs,
+	reviewCallBudget,
+} from "./pull-request"
 
 describe("annotatePatch", () => {
 	it("numbers additions and context on the new side and leaves deletions unnumbered", () => {
@@ -102,5 +108,44 @@ describe("renderChangedFiles", () => {
 		assert.equal(reviewCallBudget(0), 6)
 		assert.equal(reviewCallBudget(3), 10)
 		assert.equal(reviewCallBudget(100), 40)
+	})
+})
+
+describe("renderFileDiffs", () => {
+	const file = (path: string, size = 10) => ({
+		path,
+		previousPath: null,
+		status: "modified" as const,
+		additions: size,
+		deletions: 0,
+		patch: ["@@ -1,0 +1," + size + " @@", ...Array.from({ length: size }, (_, i) => `+line ${i}`)].join(
+			"\n",
+		),
+	})
+
+	it("returns several files in one answer", () => {
+		const text = renderFileDiffs([file("a.ts"), file("b.ts")], ["a.ts", "b.ts"]).content[0]?.text ?? ""
+		assert.include(text, "## a.ts")
+		assert.include(text, "## b.ts")
+		assert.notInclude(text, "Not included")
+	})
+
+	it("names what did not fit instead of cutting a diff in half", () => {
+		const paths = ["a.ts", "b.ts", "c.ts", "d.ts"]
+		const text =
+			renderFileDiffs(
+				paths.map((path) => file(path, 3_000)),
+				paths,
+			).content[0]?.text ?? ""
+		assert.include(text, "## a.ts")
+		assert.include(text, "Not included")
+		assert.match(text, /request them in one more call: .*d\.ts/)
+		assert.isAtMost(text.length, 90_000)
+	})
+
+	it("reports a path the pull request does not change, and keeps going", () => {
+		const text = renderFileDiffs([file("a.ts")], ["nope.ts", "a.ts"]).content[0]?.text ?? ""
+		assert.include(text, "'nope.ts' is not a file this pull request changes")
+		assert.include(text, "## a.ts")
 	})
 })

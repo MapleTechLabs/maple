@@ -203,6 +203,45 @@ export const renderFileDiff = (files: ReadonlyArray<PullRequestFile>, path: stri
 	])
 }
 
+/** How much diff one call returns; past it, the remaining paths are named for another call. */
+const MAX_BATCH_CHARS = 60_000
+const MAX_BATCH_PATHS = 20
+
+/**
+ * Several files' diffs in one answer. Every call re-sends the whole conversation, so reading a
+ * large pull request one file per call is what made its review cost grow with the square of its
+ * size; batching is the fix, bounded so one answer stays readable.
+ */
+export const renderFileDiffs = (
+	files: ReadonlyArray<PullRequestFile>,
+	paths: ReadonlyArray<string>,
+): McpToolResult => {
+	const parts: Array<string> = []
+	const deferred: Array<string> = []
+	let chars = 0
+	for (const path of paths.slice(0, MAX_BATCH_PATHS)) {
+		const rendered = renderFileDiff(files, path)
+			.content.map((part) => part.text)
+			.join("\n")
+		if (parts.length > 0 && chars + rendered.length > MAX_BATCH_CHARS) {
+			deferred.push(path)
+			continue
+		}
+		parts.push(rendered)
+		chars += rendered.length
+	}
+	deferred.push(...paths.slice(MAX_BATCH_PATHS))
+	return text([
+		parts.join("\n\n"),
+		...(deferred.length === 0
+			? []
+			: [
+					"",
+					`Not included, to keep this answer readable; request them in one more call: ${deferred.join(", ")}`,
+				]),
+	])
+}
+
 const invalidNumber = (number: number) => !Number.isInteger(number) || number < 1
 
 export function registerPullRequestTools(server: McpToolRegistrar) {
@@ -227,27 +266,31 @@ export function registerPullRequestTools(server: McpToolRegistrar) {
 
 	server.tool(
 		"pr_file_diff",
-		"The unified diff of one file in a pull request, with the NEW-side line number on every added or context line. Those numbers are the only lines a review finding may cite. Deletions carry no number. Read every source file that adds code before submitting a review.",
+		"The unified diffs of changed files in a pull request, with the NEW-side line number on every added or context line. Those numbers are the only lines a review finding may cite. Deletions carry no number. Pass several files at once in `paths`: every call re-sends the conversation, so batching is far cheaper than one file per call.",
 		Schema.Struct({
 			repository: requiredStringParam("Connected repository in owner/name form"),
 			number: requiredNumberParam("The pull request number"),
-			path: requiredStringParam(
-				"Repository-relative path of one changed file, as pr_changed_files listed it",
-			),
+			paths: Schema.optional(Schema.Array(Schema.String)).annotate({
+				description: `Repository-relative paths of changed files, as pr_changed_files listed them (up to ${MAX_BATCH_PATHS})`,
+			}),
+			path: optionalStringParam("One changed file, when reading a single diff"),
 			previous_path: optionalStringParam(
 				"Unused; accepted so a renamed file's old path is not mistaken for an error",
 			),
 		}),
-		Effect.fn("McpTool.prFileDiff")(function* ({ repository, number, path }) {
+		Effect.fn("McpTool.prFileDiff")(function* ({ repository, number, path, paths }) {
 			if (invalidNumber(number)) return validationError("number must be a positive integer")
-			const wanted = path.trim()
-			if (!wanted || unsafePath(wanted)) return validationError("path must be repository-relative")
+			const wanted = [...(paths ?? []), ...(path === undefined ? [] : [path])]
+				.map((candidate) => candidate.trim())
+				.filter((candidate) => candidate !== "")
+			if (wanted.length === 0) return validationError("pass the files to read in paths")
+			if (wanted.some(unsafePath)) return validationError("paths must be repository-relative")
 			const tenant = yield* CurrentMcpTenant
 			const source = yield* VcsSourceService
 			const files = yield* source
 				.listPullRequestFiles(tenant.orgId, repository.trim(), number)
 				.pipe(Effect.mapError(toSourceError("pr_file_diff")))
-			return renderFileDiff(files, wanted)
+			return renderFileDiffs(files, wanted)
 		}),
 		INTERNAL,
 	)

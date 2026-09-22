@@ -243,7 +243,7 @@ A change is observable when the work it adds shows up in Maple with enough conte
 ## Method
 1. Call pr_changed_files. Only files of kind source and infra are reviewed (infra for a new service's resource attributes and exporter); tests, generated files, docs, config, tooling and lockfiles are not. A pull request with none left is verdict not_applicable: submit it straight away.
 2. Learn how this repository instruments itself, once, before reading any hunk: one sandbox_grep for the span helper and the SDK bootstrap (for example \`withSpan|startActiveSpan|Effect\\.fn|tracer|@opentelemetry|#\\[instrument\\]\`), narrowed with a path to the part of the repository the diff touches. Use sandbox_grep and sandbox_read_file at the head SHA when the sandbox is available, search_source_code and read_source_file otherwise. A repository with no instrumentation at all gets one RES-01 finding on its bootstrap, not a finding per route.
-3. Call pr_file_diff for each source file that adds code. Line numbers in the output are on the NEW side of the diff; those are the only lines a finding may cite.
+3. Read the diffs of the files that add code with pr_file_diff, several files per call through \`paths\` (a whole small pull request fits in one or two calls). Line numbers in the output are on the NEW side of the diff; those are the only lines a finding may cite.
 4. List the review units the diff adds (entrypoints, outbound calls, background work, error paths, logs, metrics, attribute keys, services) and for each decide: instrumented, gap, or covered by auto-instrumentation. Where the diff names a service or an attribute key, check the warehouse.
 5. Call submit_review exactly once.
 
