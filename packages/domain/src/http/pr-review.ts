@@ -42,6 +42,8 @@ export const PrReviewSkipReason = Schema.Literals([
 	"duplicate",
 	"superseded",
 	"agent_unavailable",
+	/** The organization is not flagged into the staged rollout (`prreview` in Clerk metadata). */
+	"not_rolled_out",
 ]).annotate({ identifier: "@maple/PrReviewSkipReason", title: "Pull Request Review Skip Reason" })
 export type PrReviewSkipReason = Schema.Schema.Type<typeof PrReviewSkipReason>
 

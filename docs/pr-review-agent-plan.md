@@ -248,6 +248,33 @@ from webhook to check run.
 3. Fork PRs in v1 on the API path only, or wait for the clone-script change.
 4. Model for the reviewer, decided from the spike.
 
+## Staged rollout
+
+Merging this feature turns it on for no one. It is gated per organization by the `prreview` rollout
+flag, in the same Clerk public metadata as the other rollout flags. To flag an organization, set
+this in the Clerk dashboard under the organization's public metadata:
+
+```json
+{ "prreview": true }
+```
+
+Only the literal boolean `true` counts; a missing key, `false` or the string `"true"` all read as
+off. The flag is enforced in three places:
+
+- **The switch.** Integrations → GitHub shows "Review PRs" on a repository only for a flagged
+  organization.
+- **The endpoint.** `PUT /api/integrations/github/repositories/:id/pr-review` refuses to turn
+  reviews on for an unflagged organization, so the switch cannot be bypassed by calling the API.
+  Turning reviews off is always allowed.
+- **The trigger.** `PrReviewService` skips a pull request with `skip_reason = not_rolled_out` for an
+  unflagged organization, so removing the flag stops reviews even on repositories switched on
+  earlier.
+
+The flag contract lives in `@maple/domain/organization-feature-flags` and is decoded on the server
+by `OrganizationFeatureFlagsService`, which calls Clerk once per check. Self-hosted builds have no
+Clerk and get every rollout on, as the web app already did. A managed build that cannot reach
+Clerk treats every rollout as off for that call.
+
 ## Iterating locally
 
 The reviewer runs on this machine against any real pull request, without the stack, a GitHub App

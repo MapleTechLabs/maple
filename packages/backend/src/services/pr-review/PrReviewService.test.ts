@@ -29,6 +29,8 @@ import {
 	VcsProviderRegistry,
 	type VcsProviderRegistryApi,
 } from "@maple/backend/services/integrations/vcs/VcsProviderRegistry"
+import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
+import { ENABLED_ORGANIZATION_FEATURE_FLAGS } from "@maple/domain/organization-feature-flags"
 import { VcsRepository } from "@maple/backend/services/integrations/vcs/VcsRepository"
 import {
 	buildPublication,
@@ -82,6 +84,7 @@ const layerFor = (
 		readonly publishFails?: boolean
 		readonly busy?: boolean
 		readonly withWorkerEnv?: boolean
+		readonly rolledOut?: boolean
 	} = {},
 ) => {
 	// Only the one write is reached; every read dies so a test that strays says so loudly.
@@ -132,7 +135,18 @@ const layerFor = (
 				})
 	const repo = testRepoLayer(testDb)
 	return Layer.effect(PrReviewService, PrReviewService.make).pipe(
-		Layer.provideMerge(Layer.mergeAll(repo, registry, testDb.layer, workerEnv)),
+		Layer.provideMerge(
+			Layer.mergeAll(
+				repo,
+				registry,
+				testDb.layer,
+				workerEnv,
+				OrganizationFeatureFlagsService.fixed({
+					...ENABLED_ORGANIZATION_FEATURE_FLAGS,
+					prReview: options.rolledOut ?? true,
+				}),
+			),
+		),
 	)
 }
 
@@ -224,6 +238,19 @@ describe("PrReviewService.onPullRequestEvent", () => {
 			assert.equal(Option.getOrThrow(stored).status, "running")
 			assert.equal(Option.getOrThrow(stored).headSha, HEAD)
 		}).pipe(Effect.provide(layerFor(testDb, { begun })))
+	})
+
+	it.effect("does nothing for an organization outside the staged rollout, even with the switch on", () => {
+		const testDb = createTestDb(trackedDbs)
+		const begun: Array<Begun> = []
+		return Effect.gen(function* () {
+			yield* seed(true)
+			const reviews = yield* PrReviewService
+			const outcome = yield* reviews.onPullRequestEvent(orgId, job())
+			assert.equal(outcome.outcome, "skipped")
+			assert.equal(outcome.skipReason, "not_rolled_out")
+			assert.equal(begun.length, 0)
+		}).pipe(Effect.provide(layerFor(testDb, { begun, rolledOut: false })))
 	})
 
 	it.effect("does nothing for a repository that has not opted in", () => {

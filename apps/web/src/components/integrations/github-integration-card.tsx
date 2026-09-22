@@ -39,6 +39,7 @@ import {
 } from "@/components/icons"
 import { Result, useAtomRefresh, useAtomSet, useAtomValue } from "@/lib/effect-atom"
 import { useIntervalRefresh } from "@/hooks/use-interval-refresh"
+import { useOrganizationFeatureFlags } from "@/hooks/use-organization-feature-flags"
 import { MapleApiAtomClient, retainedQuery } from "@/lib/services/common/atom-client"
 import { GITHUB_ACCENT, IntegrationIconPlate } from "./integration-catalog"
 import { useIntegrationConnect, type IntegrationConnect } from "./integration-connect"
@@ -682,6 +683,7 @@ function RepoRow({
 	onSetTrackedBranch: (branch: string) => Promise<void>
 	onSetPrReview: (enabled: boolean) => Promise<void>
 }) {
+	const prReviewRolledOut = useOrganizationFeatureFlags().flags.prReview
 	const presentation = SYNC_PRESENTATION[repo.syncStatus]
 	const StatusIcon = presentation.Icon
 
@@ -724,7 +726,8 @@ function RepoRow({
 					) : null}
 				</div>
 			</div>
-			<PrReviewToggle repo={repo} onChange={onSetPrReview} />
+			{/* Staged per organization: the switch appears only once the org carries the `prreview` flag. */}
+			{prReviewRolledOut ? <PrReviewToggle repo={repo} onChange={onSetPrReview} /> : null}
 			<BranchSelector repo={repo} onSelect={onSetTrackedBranch} />
 		</li>
 	)

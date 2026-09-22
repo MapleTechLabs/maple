@@ -50,6 +50,7 @@ import { Clock, Context, Effect, Exit, Layer, Option, Result, Schema } from "eff
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import { dateToMs, msToDate } from "@maple/backend/platform/time"
+import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
 import { VcsProviderRegistry } from "@maple/backend/services/integrations/vcs/VcsProviderRegistry"
 import { VcsRepository } from "@maple/backend/services/integrations/vcs/VcsRepository"
 
@@ -427,6 +428,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 			const database = yield* Database
 			const repositories = yield* VcsRepository
 			const providers = yield* VcsProviderRegistry
+			const featureFlags = yield* OrganizationFeatureFlagsService
 			// Present inside a Worker, absent in tests; without it a trigger records `agent_unavailable`.
 			const workerEnv = Option.getOrUndefined(yield* Effect.serviceOption(WorkerEnvironment))
 
@@ -713,6 +715,13 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 					return skip("disabled")
 				}
 				const repo: VcsRepo = repository.value
+				// Staged rollout, checked on the server so a repository enabled before the flag was
+				// withdrawn still stops. After the repository check: that one is a database read,
+				// this one a call to the identity provider.
+				if (!(yield* featureFlags.flags(orgId)).prReview) {
+					yield* annotate("skipped", { "maple.pr_review.skip_reason": "not_rolled_out" })
+					return skip("not_rolled_out")
+				}
 				if (job.draft === true) {
 					yield* annotate("skipped", { "maple.pr_review.skip_reason": "draft" })
 					return skip("draft")
@@ -923,6 +932,12 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 	},
 ) {
 	static readonly layer = Layer.effect(this, this.make).pipe(
-		Layer.provide(Layer.mergeAll(VcsRepository.layer, VcsProviderRegistry.layer)),
+		Layer.provide(
+			Layer.mergeAll(
+				VcsRepository.layer,
+				VcsProviderRegistry.layer,
+				OrganizationFeatureFlagsService.layer,
+			),
+		),
 	)
 }
