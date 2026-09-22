@@ -76,7 +76,20 @@ describe("groupEndpoints", () => {
 		expect(groups[1]?.endpoints).toHaveLength(2)
 	})
 
-	it("sorts groups by combined traffic and leaves by their own", () => {
+	it("ranks a group by its leading endpoint, not by the sum of its members", () => {
+		const groups = groupEndpoints([
+			endpoint("POST", "/v2/webhooks/stripe", 300),
+			endpoint("POST", "/v2/webhooks/github", 300),
+			endpoint("POST", "/v2/webhooks/linear", 300),
+			endpoint("POST", "/query", 500),
+			endpoint("GET", "/v2/subs/{id}", 100),
+			endpoint("GET", "/v2/subs/{id}/checkout", 400),
+		])
+		expect(stems(groups)).toEqual(["ungrouped", "/v2/subs/{id}", "/v2/webhooks"])
+		expect(groups[0]?.totals.estimatedSpanCount).toBe(500)
+	})
+
+	it("sorts groups by their busiest endpoint and leaves by their own", () => {
 		const groups = groupEndpoints([
 			endpoint("POST", "/v2/webhooks/stripe", 900),
 			endpoint("POST", "/v2/webhooks/github", 900),

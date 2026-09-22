@@ -244,31 +244,21 @@ const leafMetric = (endpoint: ServiceEndpoint, sort: Exclude<EndpointSort, "path
 	}
 }
 
-const groupMetric = (group: EndpointGroup, sort: Exclude<EndpointSort, "path">): number => {
-	switch (sort) {
-		case "traffic":
-			return group.totals.estimatedSpanCount
-		case "errorRate":
-			return group.totals.errorRate
-		case "p50":
-			return group.totals.p50DurationMs
-		case "p95":
-			return group.totals.p95DurationMs
-		case "p99":
-			return group.totals.p99DurationMs
-	}
-}
-
 const byPath = (a: ServiceEndpoint, b: ServiceEndpoint) =>
 	a.route.localeCompare(b.route) || a.method.localeCompare(b.method)
 
 /**
  * Partition endpoints into stem groups, headerless singletons for the endpoints
- * no stem claimed, and the collapsed unrouted and probe buckets. Groups order by
- * their totals under the same key as their leaves — sorting by error rate puts
- * the worst group first and the worst endpoint first inside it. The collapsed
- * buckets stay pinned to the end whatever the sort; they are not endpoints
- * competing for the top of the list.
+ * no stem claimed, and the collapsed unrouted and probe buckets.
+ *
+ * Groups take their place from their leading endpoint, not from a total: after
+ * the leaves are sorted, a group ranks where its first row would rank on its
+ * own. Read top to bottom, the first row of every block is then monotone under
+ * the active column — sorting by traffic never puts five small endpoints above
+ * one busy one because their sum happens to be larger, and sorting by errors
+ * puts the worst endpoint on the page first whether or not it has siblings.
+ * The collapsed buckets stay pinned to the end whatever the sort; they are not
+ * endpoints competing for the top of the list.
  */
 export function groupEndpoints(
 	endpoints: readonly ServiceEndpoint[],
@@ -311,10 +301,14 @@ export function groupEndpoints(
 	for (const group of groups) group.endpoints.sort(leafSort)
 
 	const groupPath = (group: EndpointGroup) => group.stem || (group.endpoints[0]?.route ?? "")
+	const leading = (group: EndpointGroup) => {
+		const [first] = group.endpoints
+		return first === undefined || sort === "path" ? 0 : leafMetric(first, sort)
+	}
 	groups.sort(
 		sort === "path"
 			? (a, b) => sign * groupPath(a).localeCompare(groupPath(b))
-			: (a, b) => sign * (groupMetric(a, sort) - groupMetric(b, sort)),
+			: (a, b) => sign * (leading(a) - leading(b)),
 	)
 
 	if (unrouted.length > 0) {
