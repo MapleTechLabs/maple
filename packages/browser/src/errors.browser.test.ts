@@ -72,13 +72,25 @@ describe("setupErrorCapture", () => {
 
 		stop()
 		exporter.reset()
-		window.dispatchEvent(
-			Object.assign(new Event("unhandledrejection"), {
-				reason: new Error("after teardown"),
-				promise: Promise.resolve(),
-			}),
-		)
-		assert.strictEqual(exporter.getFinishedSpans().length, 0)
+		// This rejection is intentional: a temporary host handler owns it after
+		// SDK teardown so the browser runner does not report it as a test error.
+		const afterTeardown = new PromiseRejectionEvent("unhandledrejection", {
+			reason: new Error("after teardown"),
+			promise: Promise.resolve(),
+			cancelable: true,
+		})
+		const handleExpectedRejection = (event: PromiseRejectionEvent) => {
+			assert.strictEqual(event, afterTeardown)
+			event.preventDefault()
+		}
+		window.addEventListener("unhandledrejection", handleExpectedRejection)
+		try {
+			window.dispatchEvent(afterTeardown)
+			assert.isTrue(afterTeardown.defaultPrevented)
+			assert.strictEqual(exporter.getFinishedSpans().length, 0)
+		} finally {
+			window.removeEventListener("unhandledrejection", handleExpectedRejection)
+		}
 	})
 
 	it("drops an opaque cross-origin script error", () => {
