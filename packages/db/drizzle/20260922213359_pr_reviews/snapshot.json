@@ -1,7 +1,7 @@
 {
   "version": "8",
   "dialect": "postgres",
-  "id": "7583031c-277e-4693-8f28-a15fafa64e3a",
+  "id": "748c853f-b2df-4c9c-aaf8-544531b4c99f",
   "prevIds": [
     "04f3891a-2e9e-42af-91bf-3cedd2117d2a"
   ],
@@ -10646,6 +10646,19 @@
       "table": "pr_reviews"
     },
     {
+      "type": "integer",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "score",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "pr_reviews"
+    },
+    {
       "type": "text",
       "typeSchema": null,
       "notNull": false,
@@ -10654,6 +10667,19 @@
       "generated": null,
       "identity": null,
       "name": "check_run_url",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "pr_reviews"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "comment_url",
       "entityType": "columns",
       "schema": "public",
       "table": "pr_reviews"

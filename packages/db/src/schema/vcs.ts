@@ -189,7 +189,9 @@ export const prReviews = pgTable(
 		sessionId: text("session_id"),
 		/** Structured review; null until `submit_review` lands. */
 		reportJson: jsonb("report_json").$type<PrReviewReport>(),
+		score: integer("score"),
 		checkRunUrl: text("check_run_url"),
+		commentUrl: text("comment_url"),
 		reviewUrl: text("review_url"),
 		/** Set when the review was recorded but GitHub refused the post (a permission not yet granted). */
 		publishError: text("publish_error"),

@@ -1,7 +1,7 @@
 import { assert, describe, it } from "@effect/vitest"
 import { generateKeyPairSync } from "node:crypto"
 import { ConfigProvider, Effect, Exit, Layer, Option, Schema } from "effect"
-import { GitCommitSha, type VcsInstallation } from "@maple/domain/http"
+import { GitCommitSha, type PullRequestReviewPublication, type VcsInstallation } from "@maple/domain/http"
 import { Env } from "@maple/backend/platform/Env"
 import { GithubAppClient } from "@maple/backend/services/integrations/vcs/vendor/github/GithubAppClient"
 import {
@@ -197,4 +197,120 @@ describe("GithubProvider commits", () => {
 			}).pipe(Effect.provide(layer))
 		}),
 	)
+})
+
+describe("GithubProvider publishing a review", () => {
+	const HEAD = Schema.decodeUnknownSync(GitCommitSha)("c".repeat(40))
+	const MARKER = "<!-- maple-pr-review -->"
+	const publication = (
+		comments: PullRequestReviewPublication["comments"] = [],
+	): PullRequestReviewPublication => ({
+		number: 612,
+		headSha: HEAD,
+		checkName: "Maple / observability",
+		title: "100/100 · Observability looks complete",
+		summary: "summary",
+		conclusion: "success",
+		annotations: [],
+		summaryComment: { marker: MARKER, body: `${MARKER}\n## Maple observability review: 100/100` },
+		reviewBody: comments.length === 0 ? null : "notes",
+		comments,
+	})
+	const checkRun = () => jsonResponse({ id: 1, html_url: "https://github.com/octo/shop/runs/1" }, 201)
+	const written = (id: number) =>
+		jsonResponse({ id, html_url: `https://github.com/octo/shop/pull/612#issuecomment-${id}` }, 201)
+
+	it.effect("writes the summary comment even when there is nothing to say inline", () => {
+		const requests: Array<string> = []
+		const layer = providerLayer([tokenResponse(), checkRun(), jsonResponse([]), written(5)], requests)
+		return Effect.gen(function* () {
+			const provider = yield* GithubProvider
+			const published = yield* provider.publishPullRequestReview(INSTALLATION, REPO, publication())
+			assert.equal(published.commentUrl, "https://github.com/octo/shop/pull/612#issuecomment-5")
+			assert.isNull(published.reviewUrl)
+			assert.isTrue(requests.at(-1)?.endsWith("/repos/octo/shop/issues/612/comments"))
+			// No review at all: the comment carries the result.
+			assert.isFalse(requests.some((url) => url.includes("/reviews")))
+		}).pipe(Effect.provide(layer))
+	})
+
+	it.effect("edits its own comment in place on a later push", () => {
+		const requests: Array<string> = []
+		const layer = providerLayer(
+			[
+				tokenResponse(),
+				checkRun(),
+				jsonResponse([
+					{ id: 3, html_url: "x", body: "looks good to me", performed_via_github_app: null },
+					{
+						id: 77,
+						html_url: "y",
+						body: `${MARKER}\nold`,
+						performed_via_github_app: { id: 123456 },
+					},
+				]),
+				written(77),
+			],
+			requests,
+		)
+		return Effect.gen(function* () {
+			const provider = yield* GithubProvider
+			const published = yield* provider.publishPullRequestReview(INSTALLATION, REPO, publication())
+			assert.equal(published.commentUrl, "https://github.com/octo/shop/pull/612#issuecomment-77")
+			assert.isTrue(requests.at(-1)?.endsWith("/repos/octo/shop/issues/comments/77"))
+		}).pipe(Effect.provide(layer))
+	})
+
+	it.effect("leaves a person's comment that quotes the marker alone", () => {
+		const requests: Array<string> = []
+		const layer = providerLayer(
+			[
+				tokenResponse(),
+				checkRun(),
+				jsonResponse([
+					{
+						id: 9,
+						html_url: "z",
+						body: `why does it say ${MARKER}?`,
+						performed_via_github_app: null,
+					},
+				]),
+				written(10),
+			],
+			requests,
+		)
+		return Effect.gen(function* () {
+			const provider = yield* GithubProvider
+			yield* provider.publishPullRequestReview(INSTALLATION, REPO, publication())
+			assert.isTrue(requests.at(-1)?.endsWith("/repos/octo/shop/issues/612/comments"))
+			assert.isFalse(requests.some((url) => url.includes("/issues/comments/9")))
+		}).pipe(Effect.provide(layer))
+	})
+
+	it.effect("posts the inline notes as a review after the comment", () => {
+		const requests: Array<string> = []
+		const layer = providerLayer(
+			[
+				tokenResponse(),
+				checkRun(),
+				jsonResponse([]),
+				written(5),
+				jsonResponse({
+					id: 8,
+					html_url: "https://github.com/octo/shop/pull/612#pullrequestreview-8",
+				}),
+			],
+			requests,
+		)
+		return Effect.gen(function* () {
+			const provider = yield* GithubProvider
+			const published = yield* provider.publishPullRequestReview(
+				INSTALLATION,
+				REPO,
+				publication([{ path: "a.ts", line: 3, body: "add a span" }]),
+			)
+			assert.equal(published.reviewUrl, "https://github.com/octo/shop/pull/612#pullrequestreview-8")
+			assert.isTrue(requests.at(-1)?.endsWith("/repos/octo/shop/pulls/612/reviews"))
+		}).pipe(Effect.provide(layer))
+	})
 })

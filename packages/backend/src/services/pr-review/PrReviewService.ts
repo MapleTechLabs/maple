@@ -22,12 +22,15 @@ import {
 	type OrgId,
 	PrReview,
 	type PrReviewFinding,
+	type PrReviewGrade,
 	PrReviewId,
 	PrReviewNotFoundError,
 	PrReviewPersistenceError,
 	type PrReviewReport,
 	type PrReviewSkipReason,
 	type PrReviewStatus,
+	PR_REVIEW_SCORE_PENALTY,
+	scorePrReview,
 	type PullRequestCheckAnnotation,
 	type PullRequestEventJob,
 	type PullRequestReviewComment,
@@ -143,7 +146,9 @@ const rowToReview = (row: PrReviewRow): PrReview =>
 		skipReason: row.skipReason ?? null,
 		sessionId: row.sessionId ?? null,
 		report: row.reportJson ?? null,
+		score: row.score ?? null,
 		checkRunUrl: row.checkRunUrl ?? null,
+		commentUrl: row.commentUrl ?? null,
 		reviewUrl: row.reviewUrl ?? null,
 		publishError: row.publishError ?? null,
 		error: row.error ?? null,
@@ -232,38 +237,103 @@ const verdictTitle = (report: PrReviewReport): string => {
 	}
 }
 
+/** The hidden line the summary comment is found by, so a later review edits it in place. */
+export const PR_REVIEW_COMMENT_MARKER = "<!-- maple-pr-review -->"
+
+const SEVERITY_LABEL = {
+	critical: "Critical",
+	warn: "Warning",
+	info: "Note",
+} as const satisfies Record<PrReviewFinding["severity"], string>
+
+const gradeLabel = (grade: PrReviewGrade): string => grade.charAt(0).toUpperCase() + grade.slice(1)
+
+const escapeCell = (value: string) => value.replace(/\\/g, "\\\\").replace(/\|/g, "\\|").replace(/\n/g, " ")
+
+export interface ReviewMarkdownInput {
+	readonly report: PrReviewReport
+	readonly partial: boolean
+	readonly headSha: GitCommitSha
+	/** The repository's web URL, for line links; GitHub Enterprise included. */
+	readonly repositoryUrl: string
+}
+
 /**
- * The check run's summary, as GitHub renders it: the verdict, the coverage table, and every
- * finding with its check id so the reader can look it up in Maple's docs.
+ * The review as markdown: score, verdict, summary, findings linked to the exact lines, and what
+ * was reviewed. One renderer for the check run and the pull request comment, so the two never
+ * disagree; the comment adds a heading, since a check run already shows its title.
  */
-export const renderCheckSummary = (report: PrReviewReport, partial: boolean): string => {
+export const renderReviewMarkdown = (input: ReviewMarkdownInput & { readonly heading: boolean }): string => {
+	const { report } = input
+	const { score, grade } = scorePrReview(report)
+	const counts = (severity: PrReviewFinding["severity"]) =>
+		report.findings.filter((finding) => finding.severity === severity).length
+	const lineUrl = (finding: PrReviewFinding) =>
+		`${input.repositoryUrl.replace(/\/+$/, "")}/blob/${input.headSha}/${finding.path
+			.split("/")
+			.map(encodeURIComponent)
+			.join("/")}#L${finding.line}${finding.endLine === undefined ? "" : `-L${finding.endLine}`}`
+	const observable = report.coverage.filter((unit) => unit.instrumented).length
+
 	const lines: Array<string> = []
-	if (partial) lines.push("_This review ended early; what follows is what it established._", "")
+	if (input.heading) lines.push(`## Maple observability review: ${score}/100`, "")
+	lines.push(
+		`**${gradeLabel(grade)}** · ${verdictTitle(report)} · reviewed \`${input.headSha.slice(0, 7)}\``,
+		"",
+		"| Score | Critical | Warnings | Notes | Changes observable |",
+		"| --- | --- | --- | --- | --- |",
+		`| ${score}/100 | ${counts("critical")} | ${counts("warn")} | ${counts("info")} | ${observable} of ${report.coverage.length} |`,
+		"",
+	)
+	if (input.partial) lines.push("_This review ended early; what follows is what it established._", "")
 	if (report.summary) lines.push(report.summary, "")
+	if (report.findings.length > 0) {
+		lines.push("### Findings", "", "| Severity | Check | Where | Finding |", "| --- | --- | --- | --- |")
+		for (const finding of report.findings) {
+			const where = `${finding.path}:${finding.line}${finding.endLine === undefined ? "" : `-${finding.endLine}`}`
+			lines.push(
+				`| ${SEVERITY_LABEL[finding.severity]} | \`${finding.checkId}\` | [\`${escapeCell(where)}\`](${lineUrl(finding)}) | ${escapeCell(finding.title)} |`,
+			)
+		}
+		lines.push("")
+		const detailed = report.findings.filter((finding) => finding.body || finding.suggestion)
+		if (detailed.length > 0) {
+			lines.push("<details><summary>What to change</summary>", "")
+			for (const finding of detailed) {
+				lines.push(`**${finding.title}** (\`${finding.path}:${finding.line}\`)`, "")
+				if (finding.body) lines.push(finding.body, "")
+				if (finding.suggestion) lines.push("```", finding.suggestion, "```", "")
+			}
+			lines.push("</details>", "")
+		}
+	}
 	if (report.coverage.length > 0) {
-		lines.push("| Change | Kind | Observable | Evidence |", "| --- | --- | --- | --- |")
+		lines.push(
+			"<details><summary>What was reviewed</summary>",
+			"",
+			"| Change | Kind | Observable | Evidence |",
+			"| --- | --- | --- | --- |",
+		)
 		for (const unit of report.coverage) {
 			lines.push(
 				`| ${escapeCell(unit.unit)} | ${escapeCell(unit.kind)} | ${unit.instrumented ? "yes" : "no"} | ${escapeCell(unit.evidence)} |`,
 			)
 		}
-		lines.push("")
+		lines.push("", "</details>", "")
 	}
-	if (report.findings.length > 0) {
-		lines.push("### Findings", "")
-		for (const finding of report.findings) {
-			const where =
-				finding.endLine === undefined ? `${finding.line}` : `${finding.line}-${finding.endLine}`
-			lines.push(
-				`- **${finding.title}** (\`${finding.checkId}\`, ${finding.severity}) at \`${finding.path}:${where}\``,
-			)
-			if (finding.body) lines.push(`  ${finding.body.replace(/\n/g, "\n  ")}`)
-		}
-		lines.push("")
-	}
-	lines.push("Reviewed by Maple. Check ids refer to Maple's instrumentation audit.")
+	lines.push(
+		`<sub>Score: 100, minus ${PR_REVIEW_SCORE_PENALTY.critical} per critical finding, ${PR_REVIEW_SCORE_PENALTY.warn} per warning and ${PR_REVIEW_SCORE_PENALTY.info} per note. Check ids refer to Maple's instrumentation audit. Updated on every push.</sub>`,
+	)
 	return clampSummary(lines.join("\n"))
 }
+
+/** The check run's summary: the review without a heading, since the check shows its own title. */
+export const renderCheckSummary = (input: ReviewMarkdownInput): string =>
+	renderReviewMarkdown({ ...input, heading: false })
+
+/** The pull request comment: the marker line, then the review with its heading. */
+export const renderSummaryComment = (input: ReviewMarkdownInput): string =>
+	clampSummary(`${PR_REVIEW_COMMENT_MARKER}\n${renderReviewMarkdown({ ...input, heading: true })}`)
 
 const SUMMARY_CUT_NOTICE = "\n\n_Summary cut at GitHub's limit; the full review is stored in Maple._"
 
@@ -289,10 +359,7 @@ export const clampSummary = (summary: string): string => {
 	return `${kept}${SUMMARY_CUT_NOTICE}`
 }
 
-// Backslashes first, so an escaped pipe cannot be un-escaped by a backslash the value carried.
-const escapeCell = (value: string) => value.replace(/\\/g, "\\\\").replace(/\|/g, "\\|").replace(/\n/g, " ")
-
-/** GitHub caps a check run's `output.summary` at 65,535 bytes; a little headroom under it. */
+/** GitHub caps a check run's `output.summary`, and a comment body, at 65,535; a little headroom under it. */
 const CHECK_SUMMARY_MAX_BYTES = 65_000
 
 // A plain fence, never a ```suggestion block: GitHub applies those with one click, and a
@@ -304,16 +371,19 @@ const renderComment = (finding: PrReviewFinding): string => {
 }
 
 /**
- * What the review posts. Inline comments only for findings at or above `warn`, and only where
- * the finding names a line; the check run carries every finding as an annotation.
+ * What the review posts: a check run with every finding as an annotation, one summary comment
+ * that is always written (and edited in place on later pushes), and inline comments for findings
+ * at or above `warn`.
  */
 export const buildPublication = (input: {
 	readonly number: number
 	readonly headSha: GitCommitSha
 	readonly report: PrReviewReport
 	readonly partial: boolean
+	readonly repositoryUrl: string
 }): PullRequestReviewPublication => {
 	const { report } = input
+	const { score } = scorePrReview(report)
 	const annotations: Array<PullRequestCheckAnnotation> = report.findings.map((finding) => ({
 		path: finding.path,
 		startLine: finding.line,
@@ -325,20 +395,27 @@ export const buildPublication = (input: {
 	const comments: Array<PullRequestReviewComment> = report.findings
 		.filter((finding) => finding.severity !== "info")
 		.map((finding) => ({ path: finding.path, line: finding.line, body: renderComment(finding) }))
-	const reviewBody =
-		comments.length === 0
-			? null
-			: `Maple found ${comments.length} observability ${comments.length === 1 ? "gap" : "gaps"} in this pull request. ${report.summary}`.trim()
+	const markdown = {
+		report,
+		partial: input.partial,
+		headSha: input.headSha,
+		repositoryUrl: input.repositoryUrl,
+	}
 	return {
 		number: input.number,
 		headSha: input.headSha,
 		checkName: PR_REVIEW_CHECK_NAME,
-		title: verdictTitle(report),
-		summary: renderCheckSummary(report, input.partial),
+		title: `${score}/100 · ${verdictTitle(report)}`,
+		summary: renderCheckSummary(markdown),
 		// Never `failure`: the review informs, it does not block a merge.
 		conclusion: report.verdict === "gaps" ? "neutral" : "success",
 		annotations,
-		reviewBody,
+		summaryComment: { marker: PR_REVIEW_COMMENT_MARKER, body: renderSummaryComment(markdown) },
+		// The summary lives in the comment; the review only carries the inline notes.
+		reviewBody:
+			comments.length === 0
+				? null
+				: `${comments.length} inline ${comments.length === 1 ? "note" : "notes"} from Maple's observability review. The score and summary are in the review comment above.`,
 		comments,
 	}
 }
@@ -731,6 +808,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 					orgId,
 					"maple.pr_review.id": reviewId,
 					"maple.pr_review.verdict": report.verdict,
+					"maple.pr_review.score": scorePrReview(report).score,
 					"maple.pr_review.findings": report.findings.length,
 					"maple.pr_review.coverage": report.coverage.length,
 					"maple.pr_review.partial": request.partial === true,
@@ -740,6 +818,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 				const stored = yield* updateWhere(orgId, reviewId, ACTIVE_STATUSES, {
 					status: "completed",
 					reportJson: report,
+					score: scorePrReview(report).score,
 					model: request.model ?? null,
 					inputTokens: request.inputTokens ?? null,
 					outputTokens: request.outputTokens ?? null,
@@ -779,6 +858,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 					return
 				}
 				const publication = buildPublication({
+					repositoryUrl: repo.htmlUrl,
 					number: review.number,
 					headSha: review.headSha,
 					report,
@@ -817,6 +897,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 				yield* Effect.annotateCurrentSpan({ "maple.pr_review.published": true })
 				yield* update(orgId, reviewId, {
 					checkRunUrl: published.success.checkRunUrl,
+					commentUrl: published.success.commentUrl,
 					reviewUrl: published.success.reviewUrl,
 					publishError: null,
 					updatedAt: msToDate(nowMs),

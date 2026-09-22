@@ -154,8 +154,9 @@ export interface NormalizedPrReviewSubmission {
  * A submission as a stored report.
  *
  * A finding without a path or a positive line cannot be placed on the diff and is dropped rather
- * than invented; the count is what the span records. Critical or warn findings force `gaps`; a
- * verdict the model gave survives only when nothing retained contradicts it.
+ * than invented; the count is what the span records. The verdict is `gaps` exactly when a warn or
+ * critical finding is retained; otherwise the model's `not_applicable` survives and anything else
+ * reads as `instrumented`.
  */
 export const normalizePrReviewSubmission = (submission: PrReviewSubmission): NormalizedPrReviewSubmission => {
 	const filled = Object.keys(submission).filter(
@@ -204,7 +205,13 @@ export const normalizePrReviewSubmission = (submission: PrReviewSubmission): Nor
 	// check run's conclusion and its inline comments must never disagree.
 	const hasGaps = findings.some((finding) => finding.severity !== "info")
 	const submittedVerdict = isVerdict(submission.verdict) ? submission.verdict : undefined
-	const verdict: PrReviewVerdict = hasGaps ? "gaps" : (submittedVerdict ?? "instrumented")
+	// And the reverse: `gaps` with nothing above a note is not a gap, and read as one the check
+	// title said "0 observability gaps to close".
+	const verdict: PrReviewVerdict = hasGaps
+		? "gaps"
+		: submittedVerdict === undefined || submittedVerdict === "gaps"
+			? "instrumented"
+			: submittedVerdict
 	return {
 		report: new PrReviewReport({
 			verdict,
@@ -215,6 +222,31 @@ export const normalizePrReviewSubmission = (submission: PrReviewSubmission): Nor
 		filled,
 		droppedFindings: rawFindings.length - findings.length,
 	}
+}
+
+/** What each finding costs the score, by severity. Stated in the PR comment's footer. */
+export const PR_REVIEW_SCORE_PENALTY = { critical: 25, warn: 10, info: 2 } as const
+
+export type PrReviewGrade = "excellent" | "good" | "needs work" | "poor"
+
+/**
+ * The review's score out of 100, computed from the findings rather than asked of the model.
+ *
+ * A model-given number drifts run to run and cannot be explained to the author; this one is 100
+ * minus a fixed penalty per finding, so two reviews of the same gaps score the same and the comment
+ * can say exactly why.
+ */
+export const scorePrReview = (
+	report: PrReviewReport,
+): { readonly score: number; readonly grade: PrReviewGrade } => {
+	const penalty = report.findings.reduce(
+		(sum, finding) => sum + PR_REVIEW_SCORE_PENALTY[finding.severity],
+		0,
+	)
+	const score = Math.max(0, 100 - penalty)
+	const grade: PrReviewGrade =
+		score >= 90 ? "excellent" : score >= 75 ? "good" : score >= 50 ? "needs work" : "poor"
+	return { score, grade }
 }
 
 /** What the `submit_review` handler hands the service once it has normalized the submission. */
@@ -241,7 +273,11 @@ export class PrReview extends Schema.Class<PrReview>("PrReview")({
 	skipReason: Schema.NullOr(PrReviewSkipReason),
 	sessionId: Schema.NullOr(Schema.String),
 	report: Schema.NullOr(PrReviewReport),
+	/** Out of 100; null until a report is stored. See {@link scorePrReview}. */
+	score: Schema.NullOr(Schema.Number),
 	checkRunUrl: Schema.NullOr(Schema.String),
+	/** The sticky summary comment on the pull request, edited in place on every later review. */
+	commentUrl: Schema.NullOr(Schema.String),
 	reviewUrl: Schema.NullOr(Schema.String),
 	publishError: Schema.NullOr(Schema.String),
 	error: Schema.NullOr(Schema.String),

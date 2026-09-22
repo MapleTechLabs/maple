@@ -276,6 +276,11 @@ export const PullRequestReviewPublication = Schema.Struct({
 	summary: Schema.String,
 	conclusion: Schema.Literals(["success", "neutral"]),
 	annotations: Schema.Array(PullRequestCheckAnnotation),
+	/**
+	 * The one summary comment the review keeps on the pull request. `marker` is a hidden line the
+	 * provider finds it by, so a later review edits it in place instead of adding another.
+	 */
+	summaryComment: Schema.Struct({ marker: Schema.String, body: Schema.String }),
 	reviewBody: Schema.NullOr(Schema.String),
 	comments: Schema.Array(PullRequestReviewComment),
 })
@@ -283,6 +288,7 @@ export type PullRequestReviewPublication = Schema.Schema.Type<typeof PullRequest
 
 export const PullRequestReviewPublished = Schema.Struct({
 	checkRunUrl: Schema.NullOr(Schema.String),
+	commentUrl: Schema.NullOr(Schema.String),
 	reviewUrl: Schema.NullOr(Schema.String),
 })
 export type PullRequestReviewPublished = Schema.Schema.Type<typeof PullRequestReviewPublished>

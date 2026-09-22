@@ -34,9 +34,11 @@ import {
 	buildPublication,
 	clampSummary,
 	PR_REVIEW_CHECK_NAME,
+	PR_REVIEW_COMMENT_MARKER,
 	PR_REVIEW_DAILY_CEILING,
 	PrReviewService,
 	renderCheckSummary,
+	renderSummaryComment,
 } from "./PrReviewService"
 
 const trackedDbs: TestDb[] = []
@@ -48,6 +50,7 @@ const HEAD_2 = sha("2222222222222222222222222222222222222222")
 const BASE = sha("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
 
 const orgId = asOrgId("org_review")
+const REPO_URL = "https://github.com/octo/repo"
 const UNKNOWN_REVIEW = Schema.decodeSync(PrReviewId)("00000000-0000-0000-0000-000000000000")
 
 interface Begun {
@@ -107,6 +110,7 @@ const layerFor = (
 					)
 				: Effect.succeed({
 						checkRunUrl: "https://github.com/octo/repo/runs/1",
+						commentUrl: "https://github.com/octo/repo/pull/612#issuecomment-1",
 						reviewUrl:
 							publication.comments.length > 0
 								? "https://github.com/octo/repo/pull/612#pullrequestreview-1"
@@ -386,6 +390,10 @@ describe("PrReviewService.submitReview", () => {
 			const stored = Option.getOrThrow(yield* reviews.getReview(orgId, started.reviewId!))
 			assert.equal(stored.status, "completed")
 			assert.equal(stored.checkRunUrl, "https://github.com/octo/repo/runs/1")
+			assert.equal(stored.commentUrl, "https://github.com/octo/repo/pull/612#issuecomment-1")
+			assert.equal(stored.score, 90)
+			assert.equal(publication.summaryComment.marker, PR_REVIEW_COMMENT_MARKER)
+			assert.include(publication.summaryComment.body, "90/100")
 			assert.isNotNull(stored.reviewUrl)
 			assert.isNull(stored.publishError)
 			assert.equal(stored.report?.findings.length, 1)
@@ -471,6 +479,7 @@ describe("buildPublication", () => {
 			number: 1,
 			headSha: HEAD,
 			partial: false,
+			repositoryUrl: REPO_URL,
 			report: report([
 				{ path: "a.ts", line: 1, checkId: "SPAN-03", severity: "warn", title: "gap", body: "b" },
 				{ path: "a.ts", line: 9, checkId: "MET-02", severity: "info", title: "nicety", body: "b" },
@@ -481,44 +490,82 @@ describe("buildPublication", () => {
 		assert.equal(publication.annotations[0]!.level, "warning")
 		assert.equal(publication.annotations[1]!.level, "notice")
 		assert.equal(publication.conclusion, "neutral")
-		assert.include(publication.reviewBody ?? "", "1 observability gap")
+		assert.include(publication.reviewBody ?? "", "1 inline note")
+		// 100 - 10 (warn) - 2 (note)
+		assert.equal(publication.title, "88/100 · 1 observability gap to close")
 	})
 
-	it("is a success with no review when nothing is wrong", () => {
-		const publication = buildPublication({ number: 1, headSha: HEAD, partial: false, report: report([]) })
+	it("always writes the summary comment, even with nothing to say inline", () => {
+		const publication = buildPublication({
+			number: 1,
+			headSha: HEAD,
+			partial: false,
+			repositoryUrl: REPO_URL,
+			report: report([]),
+		})
 		assert.equal(publication.conclusion, "success")
 		assert.isNull(publication.reviewBody)
 		assert.equal(publication.comments.length, 0)
+		assert.isTrue(publication.summaryComment.body.startsWith(PR_REVIEW_COMMENT_MARKER))
+		assert.include(publication.summaryComment.body, "## Maple observability review: 100/100")
+		assert.include(publication.summaryComment.body, "**Excellent**")
+	})
+
+	it("links each finding to its line at the reviewed commit", () => {
+		const comment = renderSummaryComment({
+			report: report([
+				{
+					path: "src/a b.ts",
+					line: 4,
+					endLine: 6,
+					checkId: "SPAN-03",
+					severity: "critical",
+					title: "gap",
+					body: "fix it",
+				},
+			]),
+			partial: false,
+			headSha: HEAD,
+			repositoryUrl: `${REPO_URL}/`,
+		})
+		assert.include(comment, `(${REPO_URL}/blob/${HEAD}/src/a%20b.ts#L4-L6)`)
+		assert.include(comment, "| 75/100 | 1 | 0 | 0 | 0 of 1 |")
+		assert.include(comment, "<summary>What to change</summary>")
+		assert.include(comment, "minus 25 per critical finding")
 	})
 
 	it("renders the coverage table and the check ids into the summary", () => {
-		const summary = renderCheckSummary(
-			report([
+		const summary = renderCheckSummary({
+			report: report([
 				{ path: "a.ts", line: 1, checkId: "SPAN-03", severity: "warn", title: "gap", body: "b" },
 			]),
-			true,
-		)
+			partial: true,
+			headSha: HEAD,
+			repositoryUrl: REPO_URL,
+		})
 		assert.include(summary, "| POST /orders | entrypoint | no | no withSpan |")
 		assert.include(summary, "`SPAN-03`")
 		assert.include(summary, "ended early")
 	})
 
 	it("escapes a backslash before a pipe so a cell cannot break the table", () => {
-		const summary = renderCheckSummary(
-			new PrReviewReport({
+		const summary = renderCheckSummary({
+			report: new PrReviewReport({
 				verdict: "instrumented",
 				summary: "",
 				coverage: [{ unit: "a\\|b", kind: "k", instrumented: true, evidence: "e" }],
 				findings: [],
 			}),
-			false,
-		)
+			partial: false,
+			headSha: HEAD,
+			repositoryUrl: REPO_URL,
+		})
 		assert.include(summary, "| a\\\\\\|b | k | yes | e |")
 	})
 
 	it("stays under GitHub's summary limit however long the report is", () => {
-		const summary = renderCheckSummary(
-			report(
+		const summary = renderCheckSummary({
+			report: report(
 				Array.from({ length: 50 }, (_, i) => ({
 					path: `src/file-${i}.ts`,
 					line: 1,
@@ -528,8 +575,10 @@ describe("buildPublication", () => {
 					body: "y".repeat(4_000),
 				})),
 			),
-			false,
-		)
+			partial: false,
+			headSha: HEAD,
+			repositoryUrl: REPO_URL,
+		})
 		assert.isAtMost(new TextEncoder().encode(summary).byteLength, 65_535)
 		assert.include(summary, "cut at GitHub's limit")
 	})

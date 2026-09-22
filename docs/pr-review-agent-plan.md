@@ -275,6 +275,23 @@ Each run writes `apps/ai/scripts/.pr-review-runs/<owner>__<repo>__<n>__<time>/`:
 - `transcript.md`: every tool call with its input and full output, and the model's prose.
 - `report.json`: the normalized report, the publication, tokens and duration, for diffing two runs.
 
+`--range base..head --repo-dir <clone>` reviews a local branch instead of a pull request, which
+is how gap fixtures are built without opening a pull request anywhere: commit code with known
+gaps on a throwaway branch and check each one comes back as a finding. `--post` writes the
+summary comment to the real pull request with your own `gh` login, to see it rendered on GitHub.
+
+Cost baseline from the first iteration (2026-09-22, `z-ai/glm-5.3-flash:nitro`):
+
+| Change                               | Before                      | After                                  |
+| ------------------------------------ | --------------------------- | -------------------------------------- |
+| #962 (7 files, spans)                | 388k input tokens, 25 calls | 48k, 9 calls, correct `100/100`        |
+| #977 (3 files, web)                  | 374k input tokens, 23 calls | 52k, 5 calls, correct `100/100`        |
+| Gap fixture (1 file, 4 planted gaps) |                             | 42k, 5 calls, all four found, `60/100` |
+
+What moved it: `pr_changed_files` states a call budget (`reviewCallBudget`), the prompt reads the
+repository's conventions before the diffs and verifies only what a finding depends on, and
+`tooling` files are not reviewed.
+
 `--prompt-file` replaces the system prompt for that run (`promptOverride` on `ChatRunInput`), so a
 prompt change can be compared against the committed one before it is edited in.
 
@@ -297,10 +314,19 @@ The full path (webhook → trigger → Durable Object → GitHub post) is covere
   `permissions.test.ts`), `PR_REVIEW_SYSTEM_PROMPT`, the `submit_review` completion tool with the
   lenient `PrReviewSubmission` and `normalizePrReviewSubmission`, and the two internal tools
   `pr_changed_files` and `pr_file_diff` over the provider's pull request files endpoint.
-- **Publishing.** `GithubAppClient.createCheckRun` and `createPullRequestReview` behind
-  `VcsProviderClient.publishPullRequestReview`. One check run named `Maple / observability` per head
-  SHA, conclusion `neutral` for gaps and `success` otherwise, plus a `COMMENT` review carrying inline
-  comments for findings above `info`. A refused post lands in `pr_reviews.publish_error`.
+- **Publishing.** `GithubAppClient.createCheckRun`, `upsertIssueComment` and
+  `createPullRequestReview` behind `VcsProviderClient.publishPullRequestReview`. Every review posts,
+  in order: a check run named `Maple / observability` on the head SHA (title `<score>/100 · <verdict>`,
+  conclusion `neutral` for gaps and `success` otherwise); one summary comment on the pull request,
+  always, found again by the hidden `<!-- maple-pr-review -->` line and edited in place on later
+  pushes; and, only when there are findings above `info`, a `COMMENT` review carrying them inline.
+  The comment and the check share one renderer (`renderReviewMarkdown`): score, grade, verdict,
+  a counts table, the summary, findings linked to their lines at the head SHA, what to change, and
+  the coverage table. A refused post lands in `pr_reviews.publish_error`.
+- **Score.** `scorePrReview` in `packages/domain/src/http/pr-review.ts`: 100, minus 25 per critical
+  finding, 10 per warning and 2 per note, floored at 0, graded excellent (90+), good (75+), needs
+  work (50+) or poor. Computed from the findings rather than asked of the model, so the same gaps
+  always score the same; stored in `pr_reviews.score` and explained in the comment's footer.
 - **Settings.** `PUT /api/integrations/github/repositories/:id/pr-review` and a "Review PRs" switch
   per repository in Integrations → GitHub. `docs/github-app-setup.md` asks for
   `Pull requests: Read and write` and `Checks: Read and write`.

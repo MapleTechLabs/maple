@@ -917,10 +917,10 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 						Effect.mapError(toVcsError),
 					)
 
-			// The check run first: it is what the PR's checks tab shows and it never
-			// fails on a bad line. The review carries the inline comments; if GitHub
-			// refuses one of them (a line outside the diff is a 422 for the whole
-			// review) the body is posted on its own rather than losing the review.
+			// The check run first: it is what the PR's checks tab shows and it never fails on a bad
+			// line. Then the summary comment, always, edited in place on later pushes. Then the
+			// inline notes; if GitHub refuses one of them (a line outside the diff is a 422 for the
+			// whole review) the review is posted without them rather than lost.
 			const publishPullRequestReview: VcsProviderClient["publishPullRequestReview"] = (
 				installation,
 				repo,
@@ -940,8 +940,22 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 							annotations: publication.annotations,
 						},
 					)
-					const wantsReview = publication.comments.length > 0 || publication.reviewBody !== null
-					if (!wantsReview) return { checkRunUrl: checkRun.html_url, reviewUrl: null }
+					const comment = yield* client.upsertIssueComment(
+						installation.externalInstallationId,
+						repo.owner,
+						repo.name,
+						publication.number,
+						publication.summaryComment.marker,
+						publication.summaryComment.body,
+					)
+					yield* Effect.annotateCurrentSpan({
+						"vcs.pull_request.check_run_id": checkRun.id,
+						"vcs.pull_request.comment_id": comment.id,
+					})
+					const published = { checkRunUrl: checkRun.html_url, commentUrl: comment.html_url }
+					if (publication.comments.length === 0 && publication.reviewBody === null) {
+						return { ...published, reviewUrl: null }
+					}
 					const post = (comments: GithubReviewInput["comments"]) =>
 						client.createPullRequestReview(
 							installation.externalInstallationId,
@@ -960,24 +974,12 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 								? Effect.annotateCurrentSpan(
 										"vcs.pull_request.review_comments_rejected",
 										true,
-									).pipe(
-										Effect.andThen(
-											post([]).pipe(
-												Effect.map((body) => ({
-													...body,
-													html_url: body.html_url ?? null,
-												})),
-											),
-										),
-									)
+									).pipe(Effect.andThen(post([])))
 								: Effect.fail(error),
 						),
 					)
-					yield* Effect.annotateCurrentSpan({
-						"vcs.pull_request.check_run_id": checkRun.id,
-						"vcs.pull_request.review_id": review.id,
-					})
-					return { checkRunUrl: checkRun.html_url, reviewUrl: review.html_url ?? null }
+					yield* Effect.annotateCurrentSpan("vcs.pull_request.review_id", review.id)
+					return { ...published, reviewUrl: review.html_url ?? null }
 				}).pipe(Effect.mapError(toVcsError))
 
 			const fetchCloneCredentials: VcsProviderClient["fetchCloneCredentials"] = (installation, repo) =>

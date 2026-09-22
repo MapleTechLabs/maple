@@ -3,7 +3,7 @@
  * anchors a comment on, so they have to be the new side's, hunk by hunk.
  */
 import { assert, describe, it } from "vitest"
-import { annotatePatch, classifyChangedFile } from "./pull-request"
+import { annotatePatch, classifyChangedFile, renderChangedFiles, reviewCallBudget } from "./pull-request"
 
 describe("annotatePatch", () => {
 	it("numbers additions and context on the new side and leaves deletions unnumbered", () => {
@@ -60,11 +60,47 @@ describe("classifyChangedFile", () => {
 		assert.equal(classifyChangedFile("README.md"), "docs")
 	})
 
+	it("keeps developer tooling out of the review", () => {
+		assert.equal(classifyChangedFile("apps/ai/scripts/pr-review-local.ts"), "tooling")
+		assert.equal(classifyChangedFile("scripts/oxlint-plugins/maple.mjs"), "tooling")
+		assert.equal(classifyChangedFile("apps/web/vite.config.ts"), "tooling")
+		assert.equal(classifyChangedFile("apps/ai/src/chat/prompts.ts"), "source")
+	})
+
 	it("tells infra and config from source", () => {
 		assert.equal(classifyChangedFile(".github/workflows/deploy.yml"), "infra")
 		assert.equal(classifyChangedFile("apps/api/alchemy.run.ts"), "infra")
 		assert.equal(classifyChangedFile("apps/api/package.json"), "config")
 		assert.equal(classifyChangedFile("apps/api/src/routes/orders.ts"), "source")
 		assert.equal(classifyChangedFile("apps/ingest/src/main.rs"), "source")
+	})
+})
+
+describe("renderChangedFiles", () => {
+	const file = (path: string) => ({
+		path,
+		previousPath: null,
+		status: "modified" as const,
+		additions: 3,
+		deletions: 1,
+		patch: "@@ -1 +1 @@\n+x",
+	})
+
+	it("states a call budget from the files that are actually reviewed", () => {
+		const result = renderChangedFiles("octo/shop", 7, [
+			file("src/orders.ts"),
+			file("src/orders.test.ts"),
+			file("docs/orders.md"),
+			file("infra/alchemy.run.ts"),
+		])
+		const text = result.content[0]?.text ?? ""
+		assert.include(text, "Files to review: 2.")
+		assert.include(text, `${reviewCallBudget(2)} tool calls`)
+	})
+
+	it("keeps the budget between a floor and a ceiling", () => {
+		assert.equal(reviewCallBudget(0), 6)
+		assert.equal(reviewCallBudget(3), 10)
+		assert.equal(reviewCallBudget(100), 40)
 	})
 })

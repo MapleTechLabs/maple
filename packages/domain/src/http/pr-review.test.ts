@@ -5,7 +5,7 @@
  * incident that made it so), which moves every guarantee a reader relies on into this function.
  */
 import { assert, describe, it } from "vitest"
-import { normalizePrReviewSubmission } from "./pr-review"
+import { normalizePrReviewSubmission, scorePrReview } from "./pr-review"
 
 describe("normalizePrReviewSubmission", () => {
 	it("keeps a finding that names a file and a new-side line", () => {
@@ -87,6 +87,14 @@ describe("normalizePrReviewSubmission", () => {
 		assert.equal(report.verdict, "gaps")
 	})
 
+	it("does not call notes alone a gap", () => {
+		const { report } = normalizePrReviewSubmission({
+			verdict: "gaps",
+			findings: [{ path: "src/a.ts", line: 1, severity: "info", title: "nicety" }],
+		})
+		assert.equal(report.verdict, "instrumented")
+	})
+
 	it("falls back to warn for a severity outside the audit's three", () => {
 		const { report } = normalizePrReviewSubmission({
 			findings: [{ path: "src/a.ts", line: 1, severity: "medium", title: "x" }],
@@ -121,5 +129,34 @@ describe("normalizePrReviewSubmission", () => {
 		assert.equal(report.coverage.length, 1)
 		assert.equal(report.coverage[0]!.unit, "POST /orders")
 		assert.equal(report.coverage[0]!.instrumented, true)
+	})
+})
+
+describe("scorePrReview", () => {
+	const withFindings = (severities: ReadonlyArray<string>) =>
+		normalizePrReviewSubmission({
+			findings: severities.map((severity, line) => ({
+				path: "a.ts",
+				line: line + 1,
+				severity,
+				title: "x",
+			})),
+		}).report
+
+	it("is 100 with nothing found", () => {
+		assert.deepEqual(scorePrReview(withFindings([])), { score: 100, grade: "excellent" })
+	})
+
+	it("takes a fixed penalty per finding, by severity", () => {
+		assert.equal(scorePrReview(withFindings(["critical"])).score, 75)
+		assert.equal(scorePrReview(withFindings(["warn", "warn"])).score, 80)
+		assert.equal(scorePrReview(withFindings(["info"])).score, 98)
+	})
+
+	it("grades the score and never goes below zero", () => {
+		assert.equal(scorePrReview(withFindings(["warn"])).grade, "excellent")
+		assert.equal(scorePrReview(withFindings(["critical"])).grade, "good")
+		assert.equal(scorePrReview(withFindings(["critical", "critical"])).grade, "needs work")
+		assert.deepEqual(scorePrReview(withFindings(Array(6).fill("critical"))), { score: 0, grade: "poor" })
 	})
 })

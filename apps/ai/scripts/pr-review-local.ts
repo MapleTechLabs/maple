@@ -21,7 +21,7 @@
  */
 import { spawnSync } from "node:child_process"
 import { randomUUID } from "node:crypto"
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { homedir } from "node:os"
 import { dirname, join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
@@ -60,11 +60,15 @@ interface Args {
 	readonly model: string | undefined
 	readonly promptFile: string | undefined
 	readonly out: string
+	/** Write the summary comment to the pull request with the caller's own `gh` login. */
+	readonly post: boolean
+	/** Review a local `base..head` range instead of a pull request; nothing is fetched from GitHub. */
+	readonly range: string | undefined
 }
 
 const usage = () => {
 	console.error(
-		"usage: review:local <owner/repo> <number> | <pull request url> [--repo-dir p] [--model id] [--prompt-file p] [--out dir]",
+		"usage: review:local <owner/repo> <number> | <pull request url> [--repo-dir p] [--model id] [--prompt-file p] [--out dir] [--post] | <owner/repo> --range base..head --repo-dir p",
 	)
 	process.exit(2)
 }
@@ -74,7 +78,9 @@ const parseArgs = (argv: ReadonlyArray<string>): Args => {
 	const positional: Array<string> = []
 	for (let i = 0; i < argv.length; i++) {
 		const arg = argv[i] ?? ""
-		if (arg.startsWith("--")) {
+		if (arg === "--post") {
+			flags.set("post", "true")
+		} else if (arg.startsWith("--")) {
 			const value = argv[i + 1]
 			if (value === undefined) usage()
 			flags.set(arg.slice(2), value ?? "")
@@ -83,8 +89,13 @@ const parseArgs = (argv: ReadonlyArray<string>): Args => {
 	}
 	const fromUrl = /github\.com\/([^/]+)\/([^/]+)\/pull\/(\d+)/.exec(positional[0] ?? "")
 	const [owner, repo] = fromUrl ? [fromUrl[1], fromUrl[2]] : (positional[0] ?? "").split("/")
-	const number = Number(fromUrl ? fromUrl[3] : positional[1])
+	const range = flags.get("range")
+	const number = range === undefined ? Number(fromUrl ? fromUrl[3] : positional[1]) : 1
 	if (!owner || !repo || !Number.isInteger(number) || number < 1) usage()
+	if (range !== undefined && (!flags.has("repo-dir") || !/^[^\s.][^\s]*\.\.[^\s.][^\s]*$/.test(range))) {
+		console.error("--range takes base..head and needs --repo-dir, the clone the range lives in")
+		process.exit(2)
+	}
 	return {
 		owner: owner ?? "",
 		repo: repo ?? "",
@@ -93,6 +104,8 @@ const parseArgs = (argv: ReadonlyArray<string>): Args => {
 		model: flags.get("model"),
 		promptFile: flags.get("prompt-file"),
 		out: resolve(flags.get("out") ?? join(SCRIPT_DIR, ".pr-review-runs")),
+		post: flags.get("post") === "true",
+		range,
 	}
 }
 
@@ -172,6 +185,80 @@ const fetchPullRequest = (args: Args) => {
 		patch: file.patch ?? null,
 	}))
 	return { pr, files }
+}
+
+// A local range standing in for a pull request
+
+/** git's one-letter `--name-status` code as the provider's file status. */
+const fileStatus = (code: string): PullRequestFile["status"] => {
+	switch (code) {
+		case "A":
+			return "added"
+		case "M":
+			return "modified"
+		case "D":
+			return "removed"
+		default:
+			return "changed"
+	}
+}
+
+/**
+ * A `base..head` range of a local clone, shaped like the pull request GitHub would have shown:
+ * the merge base as the base, one entry per changed file, and each file's hunks as its patch.
+ * For building review fixtures without opening a pull request anywhere.
+ */
+const readRange = (args: Args, dir: string) => {
+	const [baseRef = "", headRef = ""] = (args.range ?? "").split("..")
+	const head = must(["git", "rev-parse", "--verify", `${headRef}^{commit}`], dir).trim()
+	const base = must(["git", "merge-base", baseRef, head], dir).trim()
+	const sha = (value: string) => orExit(Schema.decodeUnknownOption(GitCommitSha)(value), "commit")
+	const subject = must(["git", "log", "-1", "--format=%s", head], dir).trim()
+	const body = must(["git", "log", "-1", "--format=%b", head], dir).trim()
+	const author = must(["git", "log", "-1", "--format=%an", head], dir).trim()
+	const statuses = new Map(
+		must(["git", "diff", "--no-renames", "--name-status", base, head], dir)
+			.split("\n")
+			.filter(Boolean)
+			.map((line) => {
+				const [status = "", path = ""] = line.split("\t")
+				return [path, fileStatus(status.charAt(0))] as const
+			}),
+	)
+	const files: ReadonlyArray<PullRequestFile> = must(
+		["git", "diff", "--no-renames", "--numstat", base, head],
+		dir,
+	)
+		.split("\n")
+		.filter(Boolean)
+		.map((line) => {
+			const [added = "", deleted = "", path = ""] = line.split("\t")
+			const binary = added === "-"
+			const raw = binary
+				? ""
+				: must(["git", "diff", "--no-renames", "-U3", base, head, "--", path], dir)
+			const hunks = raw.indexOf("\n@@")
+			return {
+				path,
+				previousPath: null,
+				status: statuses.get(path) ?? "changed",
+				additions: binary ? 0 : Number(added),
+				deletions: binary ? 0 : Number(deleted),
+				patch: binary || hunks < 0 ? null : raw.slice(hunks + 1).replace(/\n$/, ""),
+			}
+		})
+	return {
+		pr: {
+			number: args.number,
+			title: subject,
+			body,
+			html_url: `local range ${args.range}`,
+			user: { login: author },
+			head: { sha: sha(head), ref: headRef, repo: null },
+			base: { sha: sha(base), ref: baseRef },
+		},
+		files,
+	}
 }
 
 // A local clone standing in for the sandbox
@@ -309,8 +396,20 @@ const makeExecutor = (input: {
 	readonly files: ReadonlyArray<PullRequestFile>
 	readonly dir: string
 	readonly headSha: string
-}): McpToolExecutorApi => {
+}): { readonly executor: McpToolExecutorApi; readonly cleanup: () => void } => {
 	const git = (args: ReadonlyArray<string>) => run(["git", ...args], input.dir)
+	// `sandbox_exec` runs where production runs it: inside a checkout of the commit, so a bare
+	// `git log` or `git grep` sees the pull request's head rather than whatever the local clone has
+	// checked out. One detached worktree per commit, made on first use, removed by `cleanup`.
+	const worktrees = new Map<string, string>()
+	const worktreeAt = (sha: string): string => {
+		const known = worktrees.get(sha)
+		if (known !== undefined) return known
+		const path = join(homedir(), ".cache", "maple-pr-review", "worktrees", sha)
+		if (!existsSync(path)) must(["git", "worktree", "add", "--detach", "--quiet", path, sha], input.dir)
+		worktrees.set(sha, path)
+		return path
+	}
 	const refOf = (params: LocalToolParams): string | McpToolResult => {
 		const ref = str(params.ref)
 		if (ref === undefined) return input.headSha
@@ -455,7 +554,9 @@ const makeExecutor = (input: {
 						`The local runner only executes read-only git (${[...READ_ONLY_GIT].join(", ")}).`,
 					)
 				}
-				const result = git(args)
+				const ref = refOf(params)
+				if (typeof ref !== "string") return ref
+				const result = run(["git", ...args], worktreeAt(ref))
 				return text([
 					`Exit: ${result.code ?? -1}`,
 					"```",
@@ -468,7 +569,7 @@ const makeExecutor = (input: {
 				return failure(`${name} is not available in the local runner.`)
 		}
 	}
-	return {
+	const executor: McpToolExecutorApi = {
 		execute: (_tenant, name, raw) =>
 			Effect.sync(() =>
 				dispatch(
@@ -477,6 +578,58 @@ const makeExecutor = (input: {
 				),
 			),
 	}
+	const cleanup = () => {
+		for (const path of worktrees.values()) run(["git", "worktree", "remove", "--force", path], input.dir)
+	}
+	return { executor, cleanup }
+}
+
+// Posting, as the caller
+
+const GhComment = Schema.Struct({
+	id: Schema.Number,
+	html_url: Schema.String,
+	body: Schema.optionalKey(Schema.NullOr(Schema.String)),
+	user: Schema.NullOr(Schema.Struct({ login: Schema.String })),
+})
+const decodeCommentPagesJson = Schema.decodeUnknownOption(
+	Schema.fromJsonString(Schema.Array(Schema.Array(GhComment))),
+)
+const decodeCommentJson = Schema.decodeUnknownOption(Schema.fromJsonString(GhComment))
+
+/**
+ * The same sticky comment the App would write, written with the caller's `gh` login so the
+ * rendering can be checked on GitHub. Only a comment the caller wrote is edited.
+ */
+const postSummaryComment = (
+	args: Args,
+	comment: { readonly marker: string; readonly body: string },
+): string => {
+	const me = must(["gh", "api", "user", "--jq", ".login"]).trim()
+	const slug = `repos/${args.owner}/${args.repo}`
+	const pages = orExit(
+		decodeCommentPagesJson(
+			must([
+				"gh",
+				"api",
+				"--paginate",
+				"--slurp",
+				`${slug}/issues/${args.number}/comments?per_page=100`,
+			]),
+		),
+		"comments",
+	)
+	const existing = pages.flat().find((c) => (c.body ?? "").includes(comment.marker) && c.user?.login === me)
+	mkdirSync(args.out, { recursive: true })
+	const bodyFile = join(args.out, `.comment-${randomUUID()}.json`)
+	writeFileSync(bodyFile, JSON.stringify({ body: comment.body }))
+	const written = must(
+		existing === undefined
+			? ["gh", "api", "-X", "POST", `${slug}/issues/${args.number}/comments`, "--input", bodyFile]
+			: ["gh", "api", "-X", "PATCH", `${slug}/issues/comments/${existing.id}`, "--input", bodyFile],
+	)
+	rmSync(bodyFile, { force: true })
+	return orExit(decodeCommentJson(written), "comment").html_url
 }
 
 // Reporting
@@ -522,9 +675,11 @@ export const reviewLocally = async (
 	const repository = `${args.owner}/${args.repo}`
 
 	console.log(`Fetching ${repository}#${args.number}…`)
-	const { pr, files } = fetchPullRequest(args)
-	const clone = resolveClone(args)
-	ensureCommits(clone.dir, clone.remote, args.number, [pr.head.sha, pr.base.sha])
+	const clone =
+		args.range === undefined ? resolveClone(args) : { dir: args.repoDir ?? "", remote: "origin" }
+	const { pr, files } = args.range === undefined ? fetchPullRequest(args) : readRange(args, clone.dir)
+	if (args.range === undefined)
+		ensureCommits(clone.dir, clone.remote, args.number, [pr.head.sha, pr.base.sha])
 
 	const orgId = Schema.decodeSync(OrgId)("org_local_review")
 	const sessionId = `${orgId}:pr-${randomUUID()}`
@@ -551,7 +706,7 @@ export const reviewLocally = async (
 		fork: pr.head.repo !== null && pr.head.repo.full_name.toLowerCase() !== repository.toLowerCase(),
 		body: pr.body,
 	})
-	const executor = makeExecutor({
+	const { executor, cleanup: removeWorktrees } = makeExecutor({
 		repository,
 		number: args.number,
 		files,
@@ -676,6 +831,8 @@ export const reviewLocally = async (
 		)
 	}
 
+	removeWorktrees()
+
 	// Output
 	const durationMs = Date.now() - started
 	const stamp = new Date(started).toISOString().replace(/[:.]/g, "-")
@@ -743,6 +900,7 @@ export const reviewLocally = async (
 
 	const report = submitted.report
 	const publication = buildPublication({
+		repositoryUrl: `https://github.com/${repository}`,
 		number: args.number,
 		headSha: pr.head.sha,
 		report,
@@ -766,7 +924,13 @@ export const reviewLocally = async (
 
 	const review = [
 		...header,
-		`## Check run: ${publication.title} (${publication.conclusion})`,
+		"# The pull request comment",
+		"",
+		publication.summaryComment.body.replace(publication.summaryComment.marker, "").trim(),
+		"",
+		"---",
+		"",
+		`# Check run: ${publication.title} (${publication.conclusion})`,
 		"",
 		publication.summary,
 		"",
@@ -819,8 +983,12 @@ export const reviewLocally = async (
 		),
 	)
 
+	if (args.post && args.range === undefined) {
+		const url = postSummaryComment(args, publication.summaryComment)
+		console.log(`\nPosted the summary comment: ${url}`)
+	}
 	console.log(
-		`\n\n${report.verdict} · ${report.findings.length} findings${offDiff.length > 0 ? ` (${offDiff.length} off the diff)` : ""} · ${tools.length} tool calls · ${Math.round(durationMs / 1000)} s`,
+		`\n\n${publication.title.split(" · ")[0]} · ${report.verdict} · ${report.findings.length} findings${offDiff.length > 0 ? ` (${offDiff.length} off the diff)` : ""} · ${tools.length} tool calls · ${Math.round(durationMs / 1000)} s`,
 	)
 	console.log(`Review:     ${join(dir, "review.md")}`)
 	console.log(`Transcript: ${join(dir, "transcript.md")}`)

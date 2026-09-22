@@ -39,7 +39,15 @@ const text = (lines: ReadonlyArray<string>): McpToolResult => ({
 	content: [{ type: "text", text: lines.join("\n") }],
 })
 
-export type ChangedFileKind = "source" | "test" | "generated" | "docs" | "config" | "infra" | "lockfile"
+export type ChangedFileKind =
+	| "source"
+	| "test"
+	| "generated"
+	| "docs"
+	| "config"
+	| "infra"
+	| "tooling"
+	| "lockfile"
 
 const TEST_PATH =
 	/(^|\/)(__tests__|__mocks__|__evals__|tests?|spec|fixtures?)\/|\.(test|spec|e2e)\.[cm]?[jt]sx?$|_test\.(go|rs|py|rb)$|Tests?\.(swift|kt|java|cs)$/
@@ -47,6 +55,9 @@ const GENERATED_PATH =
 	/\.gen\.|\.generated\.|(^|\/)generated\/|(^|\/)__generated__\/|\.pb\.(go|ts|js)$|_pb2\.py$|\.g\.(cs|dart)$|(^|\/)dist\/|(^|\/)build\//
 const LOCKFILE =
 	/(^|\/)(bun\.lock|bun\.lockb|package-lock\.json|pnpm-lock\.yaml|yarn\.lock|Cargo\.lock|poetry\.lock|uv\.lock|Gemfile\.lock|go\.sum|composer\.lock|Package\.resolved)$/
+/** Build and developer tooling: never runs in production, so there is nothing to observe. */
+const TOOLING_PATH =
+	/(^|\/)(scripts|tools|\.husky|\.vscode|\.claude)\/|(^|\/)[^/]*(oxlint|eslint)-plugins?\/|\.config\.[cm]?[jt]s$|(^|\/)(Makefile|justfile|Taskfile\.ya?ml|mise\.toml)$/
 const DOCS_PATH = /\.(md|mdx|rst|txt|adoc)$|(^|\/)docs?\//
 const INFRA_PATH =
 	/(^|\/)(\.github|\.gitlab|infra|terraform|k8s|kubernetes|helm|deploy)\/|\.tf$|(^|\/)(Dockerfile|docker-compose[^/]*\.ya?ml|alchemy\.run\.ts|wrangler\.(toml|jsonc?)|sst\.config\.ts|fly\.toml|Procfile)$/
@@ -64,6 +75,7 @@ export const classifyChangedFile = (path: string): ChangedFileKind => {
 	if (GENERATED_PATH.test(path)) return "generated"
 	if (TEST_PATH.test(path)) return "test"
 	if (DOCS_PATH.test(path)) return "docs"
+	if (TOOLING_PATH.test(path)) return "tooling"
 	if (INFRA_PATH.test(path)) return "infra"
 	if (CONFIG_PATH.test(path)) return "config"
 	return "source"
@@ -119,6 +131,17 @@ const describeFile = (file: PullRequestFile): string => {
 	return `- ${file.path}${rename} · ${file.status} · +${file.additions}/-${file.deletions} · ${kind}${patch}`
 }
 
+/** Kinds a review reads: source for the code, infra for a new service's resource attributes. */
+const REVIEWED_KINDS: ReadonlySet<ChangedFileKind> = new Set(["source", "infra"])
+
+/**
+ * Tool calls a review of this many files should need: a diff and a lookup per file, plus the file
+ * list, one convention search and the submission. Stated to the agent in the file list, because a
+ * number it is handed binds far better than a rule of thumb in the system prompt.
+ */
+export const reviewCallBudget = (reviewedFiles: number): number =>
+	Math.min(40, Math.max(6, 2 * reviewedFiles + 4))
+
 /** What `pr_changed_files` answers for one pull request's files. Shared with the local runner. */
 export const renderChangedFiles = (
 	repository: string,
@@ -131,6 +154,7 @@ export const renderChangedFiles = (
 		counts.set(kind, (counts.get(kind) ?? 0) + 1)
 	}
 	const summary = [...counts.entries()].map(([kind, total]) => `${kind} ${total}`).join(", ")
+	const reviewed = files.filter((file) => REVIEWED_KINDS.has(classifyChangedFile(file.path))).length
 	const listed = files.slice(0, MAX_LISTED_FILES)
 	return text([
 		`## Pull request #${number} of ${repository}: ${files.length} changed ${files.length === 1 ? "file" : "files"}`,
@@ -141,7 +165,8 @@ export const renderChangedFiles = (
 			? [`…and ${files.length - listed.length} more; review the source files listed above first.`]
 			: []),
 		"",
-		"Tests, generated files, docs, config and lockfiles are not reviewed. A file marked `no patch` is binary or too large for the provider to inline; read it with read_source_file at the head SHA if it matters.",
+		`Files to review: ${reviewed}. Budget for this whole review, this call and submit_review included: ${reviewCallBudget(reviewed)} tool calls.`,
+		"Only source and infra files are reviewed; tests, generated files, docs, config, tooling and lockfiles are not. A file marked `no patch` is binary or too large for the provider to inline; read it with read_source_file at the head SHA if it matters.",
 	])
 }
 
@@ -183,7 +208,7 @@ const invalidNumber = (number: number) => !Number.isInteger(number) || number < 
 export function registerPullRequestTools(server: McpToolRegistrar) {
 	server.tool(
 		"pr_changed_files",
-		"List every file one pull request changes, with additions, deletions and a coarse kind (source, test, generated, docs, config, infra, lockfile). Call it first when reviewing a pull request; review only the source files that add code, then read each with pr_file_diff. The repository must be the one named in the review's first message.",
+		"List every file one pull request changes, with additions, deletions and a coarse kind (source, test, generated, docs, config, infra, tooling, lockfile). Call it first when reviewing a pull request; review only the source files that add code, then read each with pr_file_diff. The repository must be the one named in the review's first message.",
 		Schema.Struct({
 			repository: requiredStringParam("Connected repository in owner/name form"),
 			number: requiredNumberParam("The pull request number"),
