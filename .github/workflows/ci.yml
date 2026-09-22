@@ -35,7 +35,6 @@ jobs:
             clickhouse: ${{ steps.filter.outputs.clickhouse == 'true' }}
             postgres: ${{ steps.filter.outputs.postgres == 'true' }}
             slack: ${{ steps.filter.outputs.slack == 'true' }}
-            playwright: ${{ steps.playwright.outputs.version }}
         steps:
             - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
 
@@ -165,15 +164,6 @@ jobs:
               run: |
                   python3 -m unittest discover -s .github/scripts -p 'test_plan_tests.py'
                   echo "matrix=$(python3 .github/scripts/plan-tests.py)" >> "$GITHUB_OUTPUT"
-
-            # Web perf picks its container image before any of its steps run, so the
-            # locked version has to come from here rather than from node_modules.
-            - name: Resolve locked Playwright version
-              id: playwright
-              run: |
-                  version="$(grep -oE '"@playwright/test@[0-9.]+"' bun.lock | head -1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')"
-                  test -n "$version"
-                  echo "version=$version" >> "$GITHUB_OUTPUT"
 
             # Shell linting lives here rather than in its own job: it needs only the
             # checkout this job already has — no bun, no mise, no install — so a
@@ -795,21 +785,6 @@ jobs:
         if: ${{ needs.changes.outputs.web == 'true' }}
         runs-on: ubuntu-latest
         timeout-minutes: 12
-        # webkit runs in Playwright's image, which ships its system libraries:
-        # `install-deps` pulled 100+ apt packages here in ~81s, the pull takes ~35s.
-        # firefox's 40 packages install in about the time the pull takes, so it and
-        # chromium stay on the runner. An empty image runs the job on the runner;
-        # uid 1001 is the runner user that owns the mounted workspace.
-        container:
-            image: >-
-                ${{ matrix.browser == 'webkit'
-                && format('mcr.microsoft.com/playwright:v{0}-noble', needs.changes.outputs.playwright)
-                || '' }}
-            options: --user 1001
-        # Container steps otherwise default to sh, which has no here-strings.
-        defaults:
-            run:
-                shell: bash
         # One Playwright worker per machine (playwright.config.ts) so concurrent
         # browsers cannot distort frame timings. service-map (~125s of tests) is split
         # across two machines and the two non-Chromium smokes get one each; the short
@@ -879,7 +854,6 @@ jobs:
             # Browser binaries are version-pinned, so key on the resolved
             # @playwright/test version rather than the caret range in package.json.
             - name: Resolve Playwright version
-              if: ${{ matrix.browser != 'webkit' }}
               id: playwright
               working-directory: apps/web
               run: |
@@ -887,7 +861,6 @@ jobs:
                   echo "version=$version" >> "$GITHUB_OUTPUT"
 
             - name: Cache Playwright browsers
-              if: ${{ matrix.browser != 'webkit' }}
               id: playwright-cache
               uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
               with:
@@ -898,19 +871,33 @@ jobs:
                       playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}
 
             - name: Install Playwright browser
-              if: ${{ matrix.browser != 'webkit' && steps.playwright-cache.outputs.cache-hit != 'true' }}
+              if: steps.playwright-cache.outputs.cache-hit != 'true'
               env:
                   PW_BROWSER: ${{ matrix.browser }}
               run: bunx playwright install "$PW_BROWSER"
               working-directory: apps/web
 
-            # Chromium skips this: the runner image already carries every library it
-            # links, and the step resolved to nine CJK/Thai/Cyrillic font packages that
-            # change no pixel we measure, at 12-205s off the apt mirror. If chromium
-            # ever fails to launch here, the runner image dropped a library.
+            # Deliberately NOT folded into `install --with-deps`: system libs go to
+            # apt paths that ~/.cache/ms-playwright does not cover, so on a cache hit
+            # the combined form would skip them and webkit would fail to launch.
+            #
+            # Skipped for chromium, where it installed nothing we need and cost more
+            # than the tests. On ubuntu-latest the runner image already carries every
+            # shared library chromium links, so `install-deps chromium` resolved to
+            # exactly nine font packages -- fonts-{wqy-zenhei,ipafont-gothic,unifont,
+            # tlwg-loma-otf,freefont-ttf} and xfonts-* -- i.e. CJK, Cyrillic and Thai
+            # glyph coverage. The bench pages render latin service names only, so those
+            # fonts change no pixel we measure, yet the 21 MB pull off the Azure mirror
+            # ran 12s on a good day and 205s on a bad one, against a 55s test body.
+            # firefox (40 packages) and webkit (100+) do pull real libraries -- keep it.
+            #
+            # If chromium ever fails to launch here, the runner image dropped a library:
+            # re-enable this for chromium rather than debugging the browser.
             - name: Install Playwright system deps
-              if: ${{ matrix.browser == 'firefox' }}
-              run: bunx playwright install-deps firefox
+              if: ${{ matrix.browser != 'chromium' }}
+              env:
+                  PW_BROWSER: ${{ matrix.browser }}
+              run: bunx playwright install-deps "$PW_BROWSER"
               working-directory: apps/web
 
             - name: Run perf shard
