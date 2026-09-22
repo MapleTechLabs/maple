@@ -927,19 +927,39 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 				publication,
 			) =>
 				Effect.gen(function* () {
-					const checkRun = yield* client.createCheckRun(
-						installation.externalInstallationId,
-						repo.owner,
-						repo.name,
-						{
+					// Optional: an installation that has not granted `checks: write` (an App registered
+					// before reviews existed, or a permission update not yet accepted) answers 403. The
+					// summary comment only needs `pull_requests: write`, so the review still lands.
+					const checkRun = yield* client
+						.createCheckRun(installation.externalInstallationId, repo.owner, repo.name, {
 							name: publication.checkName,
 							headSha: publication.headSha,
 							conclusion: publication.conclusion,
 							title: publication.title,
 							summary: publication.summary,
 							annotations: publication.annotations,
-						},
-					)
+						})
+						.pipe(
+							Effect.map((run): { id: number | null; html_url: string | null } => ({
+								id: run.id,
+								html_url: run.html_url,
+							})),
+							Effect.catchTag("@maple/api/vcs/GithubAppError", (error) =>
+								error.status === 403
+									? Effect.annotateCurrentSpan(
+											"vcs.pull_request.check_run_skipped",
+											"no_checks_permission",
+										).pipe(
+											Effect.andThen(
+												Effect.logWarning(
+													"[GitHub] installation has not granted checks: write; posting the review without a check run",
+												),
+											),
+											Effect.as({ id: null, html_url: null }),
+										)
+									: Effect.fail(error),
+							),
+						)
 					const comment = yield* client.upsertIssueComment(
 						installation.externalInstallationId,
 						repo.owner,
@@ -949,7 +969,7 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 						publication.summaryComment.body,
 					)
 					yield* Effect.annotateCurrentSpan({
-						"vcs.pull_request.check_run_id": checkRun.id,
+						"vcs.pull_request.check_run_id": checkRun.id ?? "none",
 						"vcs.pull_request.comment_id": comment.id,
 					})
 					const published = { checkRunUrl: checkRun.html_url, commentUrl: comment.html_url }

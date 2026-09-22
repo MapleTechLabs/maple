@@ -234,6 +234,25 @@ describe("GithubProvider publishing a review", () => {
 		}).pipe(Effect.provide(layer))
 	})
 
+	it.effect("still posts the comment when the installation cannot write check runs", () => {
+		const requests: Array<string> = []
+		const layer = providerLayer(
+			[
+				tokenResponse(),
+				jsonResponse({ message: "Resource not accessible by integration" }, 403),
+				jsonResponse([]),
+				written(6),
+			],
+			requests,
+		)
+		return Effect.gen(function* () {
+			const provider = yield* GithubProvider
+			const published = yield* provider.publishPullRequestReview(INSTALLATION, REPO, publication())
+			assert.isNull(published.checkRunUrl)
+			assert.equal(published.commentUrl, "https://github.com/octo/shop/pull/612#issuecomment-6")
+		}).pipe(Effect.provide(layer))
+	})
+
 	it.effect("edits its own comment in place on a later push", () => {
 		const requests: Array<string> = []
 		const layer = providerLayer(
