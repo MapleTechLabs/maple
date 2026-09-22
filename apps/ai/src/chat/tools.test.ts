@@ -4,12 +4,20 @@
  * The tool and whether the run is an autonomous pass travel together: the turn runner closes a
  * pass out itself when `submitted()` stays false, and must never do that to a human follow-up.
  */
-import type { ChatTurnOrigin } from "@maple/domain/chat-session"
+import { type ChatTurnOrigin, prReviewSessionId } from "@maple/domain/chat-session"
 import { MAPLE_NATIVE_SESSION_ID_ATTR } from "@maple/domain/gen-ai"
 import { ChatConnectorId, ExternalUserId, OrgId, UserId } from "@maple/domain/primitives"
 import { Effect, Schema } from "effect"
 import { assert, describe, it } from "vitest"
-import { buildDiagnosisCompletion, makeRunUsage, SUBMIT_DIAGNOSIS, type SubmitDiagnosis } from "./tools"
+import {
+	buildDiagnosisCompletion,
+	buildReviewCompletion,
+	makeRunUsage,
+	SUBMIT_DIAGNOSIS,
+	SUBMIT_REVIEW,
+	type SubmitDiagnosis,
+	type SubmitReview,
+} from "./tools"
 import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
 import { makeRecordingTracer } from "@maple/backend/testing/recording-tracer"
 
@@ -121,5 +129,29 @@ describe("buildDiagnosisCompletion", () => {
 		assert.include(String(attributes?.get("gen_ai.tool.description")), "structured diagnosis")
 		// The same session identity every other tool span carries, so the call files under its turn.
 		assert.equal(attributes?.get(MAPLE_NATIVE_SESSION_ID_ATTR), "session-1")
+	})
+})
+
+describe("buildReviewCompletion", () => {
+	const REVIEW_SESSION = prReviewSessionId(orgId, "7f1d3c2e-9a4b-4c8d-8e2f-1a2b3c4d5e6f")
+	const submitReview: SubmitReview = () => Effect.succeed(undefined)
+	const buildReview = (sessionId: string, origin: ChatTurnOrigin) =>
+		buildReviewCompletion(sessionId, tenantFor(human), origin, submitReview, makeRunUsage(), MODEL_NAME)
+
+	it("gives the review's unattended pass the review tool", () => {
+		assert.equal(buildReview(REVIEW_SESSION, { kind: "autonomous" })?.tool, SUBMIT_REVIEW)
+	})
+
+	/**
+	 * A follow-up in the review's tab would file a second report onto a settled row, which is
+	 * dropped while the tool reports success.
+	 */
+	it("gives a person's follow-up in the review session no review tool", () => {
+		assert.isUndefined(buildReview(REVIEW_SESSION, { kind: "app" }))
+		assert.isUndefined(buildReview(REVIEW_SESSION, CONNECTOR_ORIGIN))
+	})
+
+	it("gives a session that is not a review no review tool", () => {
+		assert.isUndefined(buildReview(INVESTIGATION_SESSION, { kind: "autonomous" }))
 	})
 })

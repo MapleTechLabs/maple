@@ -29,8 +29,9 @@ export const PrReviewStatus = Schema.Literals([
 export type PrReviewStatus = Schema.Schema.Type<typeof PrReviewStatus>
 
 /**
- * Why a delivery produced no review. Recorded on the row so the settings page can say "your last
- * three pull requests were drafts" instead of looking broken.
+ * Why a delivery produced no review. Reported on the trigger's span and outcome; only `superseded`
+ * is stored, since the other skips happen before a row exists. `not_rolled_out` is an organization
+ * without the `prreview` rollout flag.
  */
 export const PrReviewSkipReason = Schema.Literals([
 	"disabled",
@@ -42,7 +43,6 @@ export const PrReviewSkipReason = Schema.Literals([
 	"duplicate",
 	"superseded",
 	"agent_unavailable",
-	/** The organization is not flagged into the staged rollout (`prreview` in Clerk metadata). */
 	"not_rolled_out",
 ]).annotate({ identifier: "@maple/PrReviewSkipReason", title: "Pull Request Review Skip Reason" })
 export type PrReviewSkipReason = Schema.Schema.Type<typeof PrReviewSkipReason>
@@ -142,34 +142,40 @@ const MAX_FINDINGS = 50
 const MAX_COVERAGE = 50
 const MAX_TEXT = 4_000
 
+/** The `maple-audit` check id grammar: a family and a number, or the REN-DUAL-style suffixes. */
+const AUDIT_CHECK_ID = /^(RES|STAT|SPAN|MAP|REN|LOG|MET|NAME|PII|LLM)-(\d{1,2}|[A-Z]+)$/
+
 const clip = (value: string, max = MAX_TEXT) => (value.length > max ? `${value.slice(0, max)}…` : value)
 
 export interface NormalizedPrReviewSubmission {
 	readonly report: PrReviewReport
 	/** Top-level keys the model supplied, for the span. */
 	readonly filled: ReadonlyArray<string>
-	/** Findings dropped because they could not be anchored to a line, for the span. */
+	/** Findings dropped for no anchor line or no audit check id, for the span. */
 	readonly droppedFindings: number
 }
 
 /**
  * A submission as a stored report.
  *
- * A finding without a path or a positive line cannot be placed on the diff and is dropped rather
- * than invented; the count is what the span records. The verdict is `gaps` exactly when a warn or
+ * A finding without a path, a positive line, or a check id from the audit is dropped rather than
+ * invented; the count is what the span records. The verdict is `gaps` exactly when a warn or
  * critical finding is retained; otherwise the model's `not_applicable` survives and anything else
  * reads as `instrumented`.
  */
 export const normalizePrReviewSubmission = (submission: PrReviewSubmission): NormalizedPrReviewSubmission => {
-	const filled = Object.keys(submission).filter(
-		(key) => submission[key as keyof PrReviewSubmission] !== undefined,
-	)
+	const filled = Object.entries(submission)
+		.filter(([, value]) => value !== undefined)
+		.map(([key]) => key)
 	const rawFindings = submission.findings ?? []
 	const findings: Array<PrReviewFinding> = []
 	for (const raw of rawFindings) {
 		const path = raw.path?.trim()
 		const line = raw.line
 		if (!path || line === undefined || !Number.isFinite(line) || line < 1) continue
+		// An id the audit does not have would be posted onto the pull request as if it did.
+		const checkId = raw.checkId?.trim().toUpperCase()
+		if (checkId === undefined || !AUDIT_CHECK_ID.test(checkId)) continue
 		const startLine = Math.floor(line)
 		const endLine =
 			raw.endLine !== undefined && Number.isFinite(raw.endLine) && Math.floor(raw.endLine) > startLine
@@ -180,7 +186,7 @@ export const normalizePrReviewSubmission = (submission: PrReviewSubmission): Nor
 				path,
 				line: startLine,
 				...(endLine === undefined ? undefined : { endLine }),
-				checkId: (raw.checkId?.trim() || "SPAN-02").toUpperCase(),
+				checkId,
 				severity: isSeverity(raw.severity) ? raw.severity : "warn",
 				title: clip(raw.title?.trim() || "Observability gap", 200),
 				body: clip(raw.body?.trim() || ""),
@@ -246,8 +252,11 @@ export const scorePrReview = (
 		0,
 	)
 	const score = Math.max(0, 100 - penalty)
+	// A real gap is never "excellent", whatever the arithmetic says: the headline must agree
+	// with the verdict beside it.
+	const hasGaps = report.findings.some((finding) => finding.severity !== "info")
 	const grade: PrReviewGrade =
-		score >= 90 ? "excellent" : score >= 75 ? "good" : score >= 50 ? "needs work" : "poor"
+		score >= 90 && !hasGaps ? "excellent" : score >= 75 ? "good" : score >= 50 ? "needs work" : "poor"
 	return { score, grade }
 }
 
@@ -296,7 +305,7 @@ export class PrReview extends Schema.Class<PrReview>("PrReview")({
 
 export class PrReviewPersistenceError extends HttpTaggedError<PrReviewPersistenceError>()(
 	"@maple/http/pr-review/PrReviewPersistenceError",
-	{ message: Schema.String, cause: Schema.optionalKey(Schema.String) },
+	{ message: Schema.String },
 	{
 		status: 503,
 		code: "pr_reviews_unavailable",

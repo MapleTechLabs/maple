@@ -39,10 +39,10 @@ describe("normalizePrReviewSubmission", () => {
 	it("drops a finding it cannot anchor to a line rather than inventing one", () => {
 		const { report, droppedFindings } = normalizePrReviewSubmission({
 			findings: [
-				{ path: "src/a.ts", title: "no line" },
+				{ path: "src/a.ts", checkId: "SPAN-01", title: "no line" },
 				{ line: 3, title: "no path" },
-				{ path: "src/a.ts", line: 0, title: "line zero" },
-				{ path: "src/a.ts", line: 7, title: "kept" },
+				{ path: "src/a.ts", checkId: "SPAN-01", line: 0, title: "line zero" },
+				{ path: "src/a.ts", checkId: "SPAN-01", line: 7, title: "kept" },
 			],
 		})
 		assert.equal(droppedFindings, 3)
@@ -52,13 +52,28 @@ describe("normalizePrReviewSubmission", () => {
 		)
 	})
 
+	it("drops a finding whose check id the audit does not have", () => {
+		const { report, droppedFindings } = normalizePrReviewSubmission({
+			findings: [
+				{ path: "src/a.ts", line: 1, title: "no id" },
+				{ path: "src/a.ts", line: 2, checkId: "OBS-7", title: "made up" },
+				{ path: "src/a.ts", line: 3, checkId: "ren-dual", title: "kept" },
+			],
+		})
+		assert.equal(droppedFindings, 2)
+		assert.deepEqual(
+			report.findings.map((finding) => finding.checkId),
+			["REN-DUAL"],
+		)
+	})
+
 	it("derives the verdict from the findings when the model gave none", () => {
 		const gaps = normalizePrReviewSubmission({
-			findings: [{ path: "src/a.ts", line: 1, severity: "warn", title: "gap" }],
+			findings: [{ path: "src/a.ts", checkId: "SPAN-01", line: 1, severity: "warn", title: "gap" }],
 		})
 		assert.equal(gaps.report.verdict, "gaps")
 		const infoOnly = normalizePrReviewSubmission({
-			findings: [{ path: "src/a.ts", line: 1, severity: "info", title: "nicety" }],
+			findings: [{ path: "src/a.ts", checkId: "SPAN-01", line: 1, severity: "info", title: "nicety" }],
 		})
 		assert.equal(infoOnly.report.verdict, "instrumented")
 		const nothing = normalizePrReviewSubmission({})
@@ -73,7 +88,9 @@ describe("normalizePrReviewSubmission", () => {
 		assert.equal(
 			normalizePrReviewSubmission({
 				verdict: "looks fine",
-				findings: [{ path: "src/a.ts", line: 1, severity: "critical", title: "x" }],
+				findings: [
+					{ path: "src/a.ts", checkId: "SPAN-01", line: 1, severity: "critical", title: "x" },
+				],
 			}).report.verdict,
 			"gaps",
 		)
@@ -82,7 +99,7 @@ describe("normalizePrReviewSubmission", () => {
 	it("forces gaps when the model calls a warned diff instrumented", () => {
 		const { report } = normalizePrReviewSubmission({
 			verdict: "instrumented",
-			findings: [{ path: "src/a.ts", line: 1, severity: "warn", title: "gap" }],
+			findings: [{ path: "src/a.ts", checkId: "SPAN-01", line: 1, severity: "warn", title: "gap" }],
 		})
 		assert.equal(report.verdict, "gaps")
 	})
@@ -90,21 +107,21 @@ describe("normalizePrReviewSubmission", () => {
 	it("does not call notes alone a gap", () => {
 		const { report } = normalizePrReviewSubmission({
 			verdict: "gaps",
-			findings: [{ path: "src/a.ts", line: 1, severity: "info", title: "nicety" }],
+			findings: [{ path: "src/a.ts", checkId: "SPAN-01", line: 1, severity: "info", title: "nicety" }],
 		})
 		assert.equal(report.verdict, "instrumented")
 	})
 
 	it("falls back to warn for a severity outside the audit's three", () => {
 		const { report } = normalizePrReviewSubmission({
-			findings: [{ path: "src/a.ts", line: 1, severity: "medium", title: "x" }],
+			findings: [{ path: "src/a.ts", checkId: "SPAN-01", line: 1, severity: "medium", title: "x" }],
 		})
 		assert.equal(report.findings[0]!.severity, "warn")
 	})
 
 	it("ignores an end line at or before the start line", () => {
 		const { report } = normalizePrReviewSubmission({
-			findings: [{ path: "src/a.ts", line: 10, endLine: 10, title: "same" }],
+			findings: [{ path: "src/a.ts", checkId: "SPAN-01", line: 10, endLine: 10, title: "same" }],
 		})
 		assert.equal(report.findings[0]!.endLine, undefined)
 	})
@@ -138,6 +155,7 @@ describe("scorePrReview", () => {
 			findings: severities.map((severity, line) => ({
 				path: "a.ts",
 				line: line + 1,
+				checkId: "SPAN-01",
 				severity,
 				title: "x",
 			})),
@@ -154,7 +172,9 @@ describe("scorePrReview", () => {
 	})
 
 	it("grades the score and never goes below zero", () => {
-		assert.equal(scorePrReview(withFindings(["warn"])).grade, "excellent")
+		assert.equal(scorePrReview(withFindings(["info"])).grade, "excellent")
+		// 90 is the arithmetic, but a warn is a gap and a gap is never excellent.
+		assert.equal(scorePrReview(withFindings(["warn"])).grade, "good")
 		assert.equal(scorePrReview(withFindings(["critical"])).grade, "good")
 		assert.equal(scorePrReview(withFindings(["critical", "critical"])).grade, "needs work")
 		assert.deepEqual(scorePrReview(withFindings(Array(6).fill("critical"))), { score: 0, grade: "poor" })

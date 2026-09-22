@@ -1,252 +1,147 @@
-# Observability review of pull requests (plan)
-
-Status: phase 1 built on 2026-09-21 (branch `feat/pr-observability-review`), behind the per-repository
-flag. Phases 2 and 3 are open. See "What phase 1 shipped" at the end for the exact seams.
+# Observability review of pull requests
 
 Maple reviews a customer's pull requests for observability: when a PR adds a route, a job, an
 outbound call or a new service, the review says whether that code will show up in traces, logs and
-metrics, and posts the gaps back on the PR. It is opt-in per repository and runs as one turn of an
-effect-agent agent on the same machinery the investigation pass uses.
+metrics, scores it, and posts the result on the PR. It is opt-in per repository, staged per
+organization, and runs as one turn of an effect-agent agent on the machinery the investigation pass
+uses.
 
 What makes it different from a lint rule is the warehouse. The reviewer can ask whether the touched
 service reports at all, whether the operations in the changed file already have spans in
 production, and whether an attribute key the diff introduces already exists under another spelling.
-A finding is grounded in the org's telemetry, not only in the diff.
 
-## Baseline before phase 1
-
-What the repository looked like when this plan was written, kept as the record of what phase 1
-had to add. "What phase 1 shipped" at the end is the current state.
-
-- The GitHub App already subscribes to `pull_request` and holds `Pull requests: read`
-  ([`docs/github-app-setup.md`](github-app-setup.md), steps 5 and 6). The signed webhook lands in
-  `GithubProvider.webhookToJobs` → `PullRequestEventJob` → `VcsSyncQueue` → `VcsSyncService` →
-  the `PullRequestEventSink` port, bound today to `IssueFixVerificationService`
-  (`apps/api/src/vcs-sync-runtime.ts`).
-- The job carries number, action, title, body, author and merge SHA. It does **not** carry the
-  head or base SHA, and `ready_for_review` is not in `PULL_REQUEST_ACTIONS`.
-- `GithubAppClient` is strictly read-only plus clone credentials. Nothing posts comments, reviews
-  or check runs; `VcsProviderClient` has no write method.
-- The repo sandbox clones **a SHA** (`VcsSourceService.resolveCheckout` → `cloneScript`), full
-  history, no egress, prd only. A PR head SHA from the same repository works with zero changes.
-  A fork's head commit does not exist in the base repository, so the clone fails for fork PRs.
-- `vcs_repositories.tracked_branch` is the only user-owned per-repo setting, edited through
-  `githubSetTrackedBranch`. There is no generic org feature-flag table.
-- The agent machinery: `ChatMode` is derived from the session-id tab prefix
-  (`packages/domain/src/chat-session.ts`), `AGENTS` in `apps/ai/src/chat/agents.ts` maps a mode to
-  prompt, ruleset and `AgentBudget`, `rulesetForTurn` picks `READ_ONLY_RULESET` for unattended
-  passes, and a terminal completion tool (`submit_diagnosis`, `buildDiagnosisCompletion`) captures
-  the typed result with a lenient schema normalised in the handler. An unattended turn is started
-  by a Durable Object RPC, `chatSessionStub(env, sessionId).beginTurn(...)`
-  (`packages/backend/src/services/errors/investigation-start.ts`).
-- Nothing spawns a sub-agent today. `@effect-agent/capabilities` (the declarative `Subagent`
-  tool) is not a dependency of `apps/ai`; the `Subagent*` event mapping in `events.ts` and the
-  task cards were kept as the seam.
-- The rubric already exists as prose: `skills/maple-audit/checks.md` (RES, STAT, SPAN, MAP, REN,
-  LOG, MET, NAME, PII, LLM families with stable ids) and the `audit_setup` /
-  `get_instrumentation_recommendations` tools that mirror it against live data.
-
-## Design
+## How it works
 
 ### Trigger
 
-1. Extend `PullRequestEventJob` with `headSha`, `baseSha`, `headRef`, `baseRef`, `draft`,
-   `headRepoFullName` (fork detection) and add `ready_for_review` to the accepted actions.
-   `IssueFixVerificationService` ignores the new action.
-2. Add a second consumer of the sink. `PullRequestEventSink` stays one port; its live layer in
-   `vcs-sync-runtime.ts` becomes a composition that calls fix verification and the new
-   `PullRequestReviewTrigger` in sequence, each catching its own failures so one cannot starve the
-   other.
-3. `PullRequestReviewTrigger` (packages/backend, runs on api's queue consumer):
-    - loads the `vcs_repositories` row, returns early unless `pr_review_enabled`;
-    - skips drafts, bot authors (dependabot, renovate, GitHub Actions) and actions other than
-      `opened`, `reopened`, `synchronize`, `ready_for_review`;
-    - checks the org quota (same shape as the investigation `maxRunsPerDay`, plus a plan gate);
-    - inserts a `pr_reviews` row `(org_id, repository_id, number, head_sha, base_sha, status)`;
-    - on `synchronize` with a turn in flight for the same PR, aborts it first (the abort route
-      exists) so the review is always of the latest head;
-    - starts the turn: `chatSessionStub(env, "<orgId>:pr-<reviewId>").beginTurn(...)` with the
-      internal-service tenant, exactly like `startInvestigationTurn`.
+The `pull_request` webhook lands in `GithubProvider.mapPullRequest`, which fills `headSha`,
+`baseSha`, `headRef`, `baseRef`, `draft` and `headRepoFullName` on `PullRequestEventJob` (all
+optional, so jobs queued before the change still decode) and accepts `ready_for_review`. The job
+goes through `VcsSyncQueue` to `VcsSyncService` and the `PullRequestEventSink` port, whose live
+binding in `apps/api/src/vcs-sync-runtime.ts` is `pullRequestEventSinkFanout`: fix verification and
+the review trigger both run on every delivery, each isolated so one cannot starve the other.
 
-    One session per review, one review per head SHA. A session per pull request that kept the
-    earlier reviews in history was considered and set aside for phase 1: the dedupe across pushes
-    is done from stored fingerprints (phase 2), which keeps each session's transcript bounded.
+`PrReviewService.onPullRequestEvent` (`packages/backend/src/services/pr-review/`) then decides,
+in order, skipping with the reason in brackets:
 
-### Enablement and settings
+- the action is `opened`, `reopened`, `synchronize` or `ready_for_review` (`action`);
+- the repository has `pr_review_enabled` (`disabled`);
+- the organization carries the `prreview` rollout flag, see "Staged rollout" (`not_rolled_out`);
+- the PR is not a draft (`draft`) and the job carries a head SHA (`no_head_sha`);
+- the author is not a bot: a `[bot]` suffix, dependabot, renovate or GitHub Actions
+  (`bot_author`);
+- the organization has started fewer than `PR_REVIEW_DAILY_CEILING` (60) reviews today, counting
+  every row started today whatever its status (`quota`);
+- the head SHA has no live review yet (`duplicate`); a failed one is reclaimed for another attempt.
 
-- `vcs_repositories.pr_review_enabled boolean not null default false`, later
-  `pr_review_config_json` (severity threshold, path excludes, check-only vs inline comments).
-- `PUT /github/repositories/:repositoryId/pr-review` beside `githubSetTrackedBranch`, same
-  handler file and `VcsRepository` write path.
-- Integrations → GitHub repo list: a toggle per repository, with the re-authorisation notice
-  described under GitHub permissions below.
+A review that passes inserts a `pr_reviews` row and starts one turn on the session
+`<orgId>:pr-<reviewId>` through `chatSessionStub(...).beginTurn`, exactly like
+`startInvestigationTurn`. One session per review, one review per head SHA. A new head aborts the
+review still running for the same PR and marks it `superseded`; a submission that arrives for a
+superseded row is dropped.
 
 ### The agent (`apps/ai`)
 
-- `ChatMode` gains `"pr-review"` with tab prefix `pr-`; `agents.test.ts` forces the `AGENTS`
-  entry.
-- `PR_REVIEW_BUDGET` in `budgets.ts`, starting point 60 tool calls, 8 minutes, 800k tokens, 48k
-  completion reserve. Tune from the spike numbers.
-- `REVIEW_RULESET` in `permissions.ts`: deny `*`, then allow the two new PR tools, the four
-  sandbox tools, `read_source_file` / `search_source_code`, and the read-only telemetry tools the
-  rubric needs: `list_services`, `get_service_top_operations`, `explore_attributes`,
-  `search_traces`, `service_map`, `audit_setup`, `get_instrumentation_recommendations`,
-  `link_pull_request`. No mutating tool is reachable; `submit_review` is the only side effect and
-  it is the completion tool.
-- Two new internal tools, registered with `audience: "internal"`:
-    - `pr_changed_files`: the file list with additions, deletions and a coarse kind
-      (source, test, generated, docs, config, infra), from `GET /repos/{o}/{r}/pulls/{n}/files`.
-      Using the API rather than the sandbox means it works locally, on previews, and for fork PRs.
-    - `pr_file_diff(path)`: the unified diff of one file, from the same endpoint's `patch`, with
-      new-side line numbers annotated so a finding can cite a line GitHub will accept. Falls back to
-      `git diff <base>...<head> -- <path>` in the sandbox when the API truncates the patch.
-      The sandbox stays the tool for context: what the surrounding module already instruments, how
-      the repo initialises its SDK, `git log` on the file.
-- `submit_review` completion tool, built like `buildDiagnosisCompletion`. `PrReviewSubmission` in
-  `packages/domain/src/http/` with every field optional and a `normalizePrReviewSubmission`,
-  because the strict schema is what killed 7 of 15 finished investigation turns on 2026-09-19.
-  Shape:
+- **Mode.** `pr-review` is a `ChatMode` with tab prefix `pr-`. Its `AGENTS` entry carries
+  `PR_REVIEW_SYSTEM_PROMPT`, `PR_REVIEW_BUDGET` (60 tool calls, 8 minutes, 800k tokens, 48k
+  completion reserve) and `autonomousPermission: PR_REVIEW_RULESET`, which `profileForTurn` uses
+  for the unattended pass only.
+- **Tools.** `PR_REVIEW_RULESET` denies everything and allows the names in `PR_REVIEW_TOOLS`:
+  `pr_changed_files`, `pr_file_diff`, the four `sandbox_*` tools, `list_source_repositories`,
+  `search_source_code`, `read_source_file`, and the read-only telemetry tools `list_services`,
+  `get_service_top_operations`, `explore_attributes`, `search_traces`, `service_map`,
+  `list_metrics`, `audit_setup` and `get_instrumentation_recommendations`. `permissions.test.ts`
+  pins that every name is registered and none mutates.
+- **Diff tools.** `pr_changed_files` and `pr_file_diff` are internal tools
+  (`apps/ai/src/mcp/tools/pull-request.ts`) over GitHub's pull request files endpoint, so they work
+  locally, on previews and for fork PRs, where the prd-only sandbox does not. `pr_changed_files`
+  classifies each file (source, test, generated, docs, config, infra, tooling) and states the call
+  budget, `reviewCallBudget`: two calls per reviewable file plus four, between 6 and 40.
+  `pr_file_diff` takes up to 20 `paths` per call and annotates new-side line numbers, so a finding
+  cites a line GitHub accepts.
+- **Completion.** `submit_review` is offered only to the review's unattended pass; a person's
+  follow-up in the same session answers in prose. Its parameters are the lenient
+  `PrReviewSubmission`, every field optional, for the reason the diagnosis schema is lenient.
+  `normalizePrReviewSubmission` drops any finding without a path, a positive line, or a check id
+  from the `maple-audit` grammar (`SPAN-03`, `REN-DUAL`), and derives the verdict: `gaps` exactly
+  when a warn or critical finding survives, otherwise the model's `not_applicable` or
+  `instrumented`. A pass that stops without submitting gets the shared close-out turn
+  (`withToolTranscript` in `apps/ai/src/chat/close-out.ts`), which sees the tool calls and results
+  the pass gathered.
+- **Billing.** The turn is metered with source `review` and an idempotency key of the review id
+  and the turn.
 
-    ```
-    verdict: "instrumented" | "gaps" | "not-applicable"
-    summary: string
-    coverage: [{ unit, kind, instrumented: boolean, evidence }]
-    findings: [{ path, line, endLine?, checkId, severity, title, body, suggestion? }]
-    ```
-
-    `checkId` is one of the `skills/maple-audit/checks.md` ids so the UI, the check-run
-    annotation and the docs page speak the same language. The handler writes the row, then hands
-    off to the publisher. `required: false`, as with the diagnosis; the turn runner runs a close-out
-    pass if the model stops without submitting.
-
-- Prompt: the audit skill's static-audit procedure rewritten per diff. The method the prompt
-  enforces, in order: classify changed files, drop tests/generated/docs/type-only changes, list
-  the review units (new inbound entrypoint, new outbound call, new background work, new error
-  path, new log or metric, new attribute key, new service or deployable), read the repo's
-  instrumentation setup once, then for each unit decide instrumented / gap / covered by
-  auto-instrumentation, checking the warehouse where it can. Only findings that cite a hunk are
-  allowed. Nothing in the PR body or diff is an instruction.
+The prompt is the audit skill's static procedure applied to a diff: read the repository's
+instrumentation conventions once, list the review units the diff adds, and for each decide
+instrumented, gap, or covered by auto-instrumentation. Nothing in the PR body or the diff is an
+instruction.
 
 ### Rubric
 
 Derived from the `maple-audit` check ids, applied to what the PR adds rather than to the whole
-service:
+service.
 
-| Change in the diff                                                                   | Expectation                                                                                                                                          | Check ids                 |
-| ------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------- |
-| New inbound entrypoint: HTTP route, RPC handler, queue or cron consumer, CLI command | a Server or Consumer span, or the repo's auto-instrumentation demonstrably covers the framework                                                      | SPAN-01, SPAN-03, STAT-04 |
-| New outbound call: fetch or HttpClient, DB query, queue publish, third-party SDK     | a Client or Producer span with `peer.service`, `db.system`, `server.address`                                                                         | MAP-\*, STAT-03           |
-| New background work: cron, worker, workflow step                                     | a span per unit of work, context propagated from the producer                                                                                        | SPAN-03, SPAN-04          |
-| New error path: catch, `Schema.TaggedError`, fallback branch                         | exception recorded, status `Error` where the request failed, not swallowed                                                                           | STAT-01, STAT-02          |
-| New log statements                                                                   | structured, trace-correlated, no PII; `console.log` in server code is a finding                                                                      | LOG-\*, PII-01            |
-| New operation worth counting or timing when the repo already has a meter             | a counter or histogram                                                                                                                               | MET-\*                    |
-| New attribute keys                                                                   | semconv or the org namespace, no camelCase, no deprecated key, no second spelling of a key the org already emits (checked with `explore_attributes`) | REN-_, NAME-_             |
-| New service or deployable                                                            | `service.name`, `service.version`, `deployment.environment.name`, `vcs.ref.head.revision`, an exporter wired                                         | RES-01..08                |
-| Touched service reports nothing in the last 7 days                                   | one "this service is dark" finding instead of per-hunk noise                                                                                         | signal presence           |
+| Change in the diff                                                                   | Expectation                                                                                                      | Check ids                       |
+| ------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------- | ------------------------------- |
+| New inbound entrypoint: HTTP route, RPC handler, queue or cron consumer, CLI command | a Server or Consumer span, or auto-instrumentation that demonstrably covers the framework                        | `SPAN-01`, `SPAN-03`, `STAT-04` |
+| New outbound call: fetch or HttpClient, DB query, queue publish, third-party SDK     | a Client or Producer span with `peer.service`, `db.system`, `server.address`                                     | `MAP-*`, `STAT-03`              |
+| New background work: cron, worker, workflow step                                     | a span per unit of work, context propagated from the producer                                                    | `SPAN-03`, `SPAN-04`            |
+| New error path: catch, `Schema.TaggedError`, fallback branch                         | exception recorded, status `Error` where the request failed, not swallowed                                       | `STAT-01`, `STAT-02`            |
+| New log statements                                                                   | structured, trace-correlated, no PII; `console.log` in server code is a finding                                  | `LOG-*`, `PII-01`               |
+| New operation worth counting or timing where the repo already has a meter            | a counter or histogram                                                                                           | `MET-*`                         |
+| New attribute keys                                                                   | semconv or the org namespace, no camelCase, no deprecated key, no second spelling of a key the org already emits | `REN-*`, `NAME-*`               |
+| New service or deployable                                                            | `service.name`, `service.version`, `deployment.environment.name`, `vcs.ref.head.revision`, an exporter wired     | `RES-01`..`RES-08`              |
 
-Severity follows the audit skill. `gaps` verdicts only on findings at or above the repository's
-threshold (default: high).
+### Score
 
-### Fan-out
-
-The parent stays one agent turn. For PRs above a size threshold (start at 15 non-test source
-files or 6 review units) the parent delegates each review unit to a child through
-`@effect-agent/capabilities` `Subagent.make`: child input is the unit description plus its
-file list, child tool allowance around 12 calls, `projectResult` returns findings for that unit,
-`SubagentPolicy.maxConcurrency` 3. The parent merges, dedupes, does the warehouse cross-checks
-and submits. This is the delegation shape CLAUDE.md blesses: the parent never needs the child's
-working set back. Ship the single-agent version first; add fan-out when the spike shows large PRs
-exhausting the budget.
-
-Prerequisite: `@effect-agent/capabilities` at the same version as `core`/`engine`
-(0.1.0-beta.85). The store only has beta.74 today; confirm it is published at beta.85 before
-relying on it.
+`scorePrReview` in `packages/domain/src/http/pr-review.ts`: 100, minus 25 per critical finding, 10
+per warning and 2 per note, floored at 0. Graded excellent (90 or more, and no gap), good (75+),
+needs work (50+) or poor. A single warning scores 90 but grades good, so the headline never calls a
+gap excellent. The score is computed from the findings rather than asked of the model, so the same
+gaps always score the same, and it is stored in `pr_reviews.score`.
 
 ### Publishing to GitHub
 
-- Permission bump on the App: `Pull requests: Read & write` and `Checks: Read & write`. A
-  permission change to an existing App requires every installation to accept it; until then the
-  App's token cannot post and GitHub returns 403. `GithubConnectService.getStatus` should
-  surface "re-authorise on GitHub" and the toggle should stay disabled for that installation.
-  `github-app-setup.md` steps 5 and 6 change.
-- New write methods on `GithubAppClient` behind a new `PullRequestWriter` capability on
-  `VcsProviderClient` (GitHub only for now): `createCheckRun`, `updateCheckRun`,
-  `createPullRequestReview`, `listPullRequestFiles`.
-- Output, per head SHA:
-    1. A check run `maple / observability` with the summary, the coverage table and up to 50
-       annotations. Conclusion `neutral` for gaps, `success` for instrumented, never `failure` in
-       v1. A "required check" mode is a later per-repo setting.
-    2. One PR review with `event: COMMENT` carrying inline comments for findings at or above the
-       threshold, `side: RIGHT`, line from `pr_file_diff`. Findings are fingerprinted
-       `(path, checkId, hunk hash)` and stored in `pr_reviews.findings_json`; a later push posts only
-       new fingerprints and notes which earlier ones the push closed.
-- The publisher receives the PR identity from the `pr_reviews` row bound at trigger time, never
-  from tool arguments, so a prompt injection in the diff cannot redirect where the review is
-  posted. Review bodies are model text going onto a customer's GitHub: strip HTML, bound length,
-  no raw links outside github.com and the org's Maple URLs.
-- `githubAppSourceEnv` is already bound on maple-ai, so the completion tool handler can publish
-  from the AI worker without a hop back through api.
+`PrReviewService.submitReview` stores the report, then calls
+`VcsProviderClient.publishPullRequestReview`, which posts, in order:
 
-### Persistence and product surface
+1. **A check run** named `Maple / observability` on the head SHA, titled `<score>/100 · <verdict>`,
+   concluding `neutral` for gaps and `success` otherwise, never `failure`. An installation that
+   has not granted `checks: write` answers 403, and the review is posted without the check run. A
+   rate-limited 403, which carries a retry time, fails the publish instead.
+2. **One summary comment**, always, found again by its hidden `<!-- maple-pr-review -->` line and
+   authored by the App, and edited in place on later pushes. It carries the score, grade, verdict,
+   counts, summary, findings linked to their lines at the head SHA, what to change, and the
+   coverage table. The comment and the check summary share `renderReviewMarkdown`.
+3. **A `COMMENT` review** with the findings above `info` inline, only when there are any. GitHub
+   refuses the whole review with a 422 when one line is outside the diff; the inline notes are then
+   dropped, since the summary comment already carries every finding.
 
-- `pr_reviews` in `packages/db/src/schema/vcs.ts`: id, org_id, repository_id, number, head_sha,
-  base_sha, status (`queued | running | completed | failed | skipped`), skip_reason, session_id,
-  verdict, summary, findings_json, coverage_json, check_run_id, review_id, cost_microusd,
-  started_at, finished_at. Abandoned-row sweep next to `sweepAbandonedInvestigations`.
-- Later: an Electric shape and a reviews list on the repository page in Integrations → GitHub,
-  linking the PR, the check run and the session transcript (the session is an ordinary chat
-  session, so Agent Sessions already shows it).
+The publisher takes the PR identity from the `pr_reviews` row bound at trigger time, never from
+tool arguments, so text in a diff cannot redirect where the review is posted. A refused post lands
+in `pr_reviews.publish_error` and is not retried into the run.
+
+### Persistence and settings
+
+`pr_reviews` (`packages/db/src/schema/vcs.ts`, migration `20260922213359_pr_reviews`, which also
+adds `vcs_repositories.pr_review_enabled`) holds the PR identity (`repository_id`, `number`,
+`head_sha`, `base_sha`, `url`, `title`), `status` (`queued`, `running`, `completed`, `failed`,
+`skipped`) with `skip_reason`, `session_id`, `report_json`, `score`, the three published URLs,
+`publish_error`, `error`, `model`, token counts and timestamps. The prd deploy applies the
+migration. The table is registered with `OrganizationService`, so an organization purge removes it.
+
+`PUT /api/integrations/github/repositories/:id/pr-review` sets `pr_review_enabled`, and
+Integrations → GitHub shows a "Review PRs" switch per repository.
 
 ### Observability of the reviewer
 
-Spans land on `maple-chat` like the investigation turn. Add `maple.pr_review.repository`,
-`.number`, `.head_sha`, `.verdict`, `.findings`, `.posted` on `chat.turn`; `meterTurn` already
-bills the run. A dashboard in the internal org: reviews per day, verdict split, p50 cost, time
-from webhook to check run.
-
-## Limits and risks
-
-- **Sandbox is prd only.** Local and preview runs use the API diff tools and
-  `read_source_file`; the sandbox path can only be exercised in production. Dogfood on
-  `MapleTechLabs/maple` first.
-- **Fork PRs** get the API path only; deep context (git log, the module around the hunk) needs
-  `git fetch origin refs/pull/N/head` added to `cloneScript`, a small change to `apps/sandbox`.
-- **`CAP_SYS_ADMIN`** on Cloudflare's runtime is still unverified for the no-egress wrapper; if
-  it is missing every sandbox tool call is refused and the review degrades to the API path.
-- **Model.** The investigation default (`z-ai/glm-5.3-flash:nitro`) is cheap; code review
-  quality may want a stronger model. Make it a per-agent choice in `Llm.ts` and measure on the
-  spike set before deciding.
-- **Noise** is the failure mode that gets the toggle switched off. The hunk-citation rule, the
-  severity threshold, the fingerprint dedupe and `neutral` conclusions all exist to keep the
-  reviewer quiet unless it has something.
-- **Permission bump** interrupts every existing installation with a re-authorisation prompt.
-  Ship the bump with the feature, not before it, and only once the setting exists to explain why.
-
-## Phases
-
-0. **Spike, 1 to 2 days.** Hand-run the investigate agent with a draft review prompt against
-   ten historical Maple PRs (pick ones that added routes or clients without spans and ones that
-   were fully instrumented). Record findings quality, tokens and wall time. This sets the
-   budget, the model and the size threshold for fan-out.
-1. **Plumbing, ships behind the per-repo flag, internal org only.** Job SHAs and
-   `ready_for_review`; `pr_review_enabled` column, endpoint and toggle; `pr_reviews` table;
-   trigger service; `pr-review` mode, budget, ruleset, prompt; `pr_changed_files` /
-   `pr_file_diff`; `submit_review` and its lenient schema; check-run publisher; App permission
-   bump and the re-authorise notice; docs update.
-2. **Quality.** Warehouse-grounded checks (signal presence, attribute spelling, operation
-   coverage), inline review comments with fingerprint dedupe, abandoned-run sweep, quotas and
-   plan gate, fork support in the clone script, fan-out for large PRs.
-3. **Product.** Reviews list, per-repo config (threshold, path excludes, check-only), required
-   check mode, a landing docs page.
-
-## Decisions needed
-
-1. Accept the GitHub App permission bump and the re-authorisation it forces on every install?
-   The alternative is a second App for reviews, which doubles the install flow.
-2. Verdict policy: comment-only with a neutral check (proposed), or allow a failing check from
-   day one.
-3. Fork PRs in v1 on the API path only, or wait for the clone-script change.
-4. Model for the reviewer, decided from the spike.
+The trigger (`PrReviewService.onPullRequestEvent`) and `submitReview` spans carry
+`maple.pr_review.id`, `.outcome`, `.skip_reason`, `.started_today`, `.superseded`, `.verdict`,
+`.score`, `.findings`, `.coverage`, `.partial`, `.published` and `.stale_submission`, and the sink
+handler records `.trigger`. The `submit_review` tool span adds `.filled_fields`, `.filled_count`
+and `.dropped_findings`, and the turn records `.closed_out` when the runner had to close it out. The publish span carries `vcs.pull_request.check_run_id`, `.comment_id`,
+`.review_id`, `.check_run_skipped` and `.review_comments_rejected`. The turn itself is an ordinary
+chat session, so Agent Sessions shows its transcript.
 
 ## Staged rollout
 
@@ -263,17 +158,21 @@ off. The flag is enforced in three places:
 
 - **The switch.** Integrations → GitHub shows "Review PRs" on a repository only for a flagged
   organization.
-- **The endpoint.** `PUT /api/integrations/github/repositories/:id/pr-review` refuses to turn
-  reviews on for an unflagged organization, so the switch cannot be bypassed by calling the API.
-  Turning reviews off is always allowed.
-- **The trigger.** `PrReviewService` skips a pull request with `skip_reason = not_rolled_out` for an
-  unflagged organization, so removing the flag stops reviews even on repositories switched on
-  earlier.
+- **The endpoint.** The `pr-review` endpoint refuses to turn reviews on for an unflagged
+  organization, so the switch cannot be bypassed by calling the API. Turning reviews off is always
+  allowed.
+- **The trigger.** `PrReviewService` skips a pull request with `not_rolled_out` for an unflagged
+  organization, so removing the flag stops reviews even on repositories switched on earlier.
 
 The flag contract lives in `@maple/domain/organization-feature-flags` and is decoded on the server
-by `OrganizationFeatureFlagsService`, which calls Clerk once per check. Self-hosted builds have no
-Clerk and get every rollout on, as the web app already did. A managed build that cannot reach
-Clerk treats every rollout as off for that call.
+by `OrganizationFeatureFlagsService`, which reuses an organization's flags for 60 seconds per
+isolate, so withdrawing a flag takes effect within a minute. Self-hosted builds have no Clerk and
+get every rollout on, as the web app already did. A managed build that cannot reach Clerk treats
+every rollout as off for that call.
+
+Maple's hosted App (`MapleLabsApp`) currently grants `checks: read`. Until it is raised to read and
+write and each installation accepts the change, reviews post the summary comment and the inline
+review without the check run.
 
 ## Iterating locally
 
@@ -282,7 +181,7 @@ installation, or a webhook:
 
 ```bash
 bun run --cwd apps/ai review:local MapleTechLabs/maple 976
-bun run --cwd apps/ai review:local https://github.com/octo/shop/pull/12 --model thinkingmachines/inkling:free
+bun run --cwd apps/ai review:local https://github.com/octo/shop/pull/12 --model nvidia/nemotron-3-ultra-550b-a55b:free
 bun run --cwd apps/ai review:local MapleTechLabs/maple 976 --prompt-file /tmp/prompt.md
 ```
 
@@ -319,46 +218,23 @@ What moved it: `pr_changed_files` states a call budget (`reviewCallBudget`), the
 repository's conventions before the diffs and verifies only what a finding depends on, and
 `tooling` files are not reviewed.
 
-`--prompt-file` replaces the system prompt for that run (`promptOverride` on `ChatRunInput`), so a
-prompt change can be compared against the committed one before it is edited in.
+`--prompt-file` replaces the system prompt for that run (an `agent` override on `ChatRunInput`), so
+a prompt change can be compared against the committed one before it is edited in.
 
 The full path (webhook → trigger → Durable Object → GitHub post) is covered by
 `PrReviewService.test.ts` and needs a deployed stage with the App installed to run live.
 
-## What phase 1 shipped
+## Limits and what is next
 
-- **Webhook.** `PullRequestEventJob` carries `headSha`, `baseSha`, `headRef`, `baseRef`, `draft` and
-  `headRepoFullName`, all optional so queued jobs from before the change still decode, and
-  `ready_for_review` is an accepted action. `GithubProvider.mapPullRequest` fills them.
-- **Fan-out.** `pullRequestEventSinkFanout` in `PullRequestEventSink.ts` runs the fix-verification
-  handler and the review trigger on every delivery, each isolated. Wired in
-  `apps/api/src/vcs-sync-runtime.ts`.
-- **Trigger and rows.** `PrReviewService` (`packages/backend/src/services/pr-review/`) owns the
-  `pr_reviews` table (migration `20260921100708_pr_reviews`, which also adds
-  `vcs_repositories.pr_review_enabled`): opt-in check, draft and bot skips, a daily ceiling of 60,
-  duplicate and superseded handling, and the turn start on `<orgId>:pr-<reviewId>`.
-- **Agent.** `pr-review` chat mode, `PR_REVIEW_BUDGET`, `PR_REVIEW_RULESET` (an allowlist pinned by
-  `permissions.test.ts`), `PR_REVIEW_SYSTEM_PROMPT`, the `submit_review` completion tool with the
-  lenient `PrReviewSubmission` and `normalizePrReviewSubmission`, and the two internal tools
-  `pr_changed_files` and `pr_file_diff` over the provider's pull request files endpoint.
-- **Publishing.** `GithubAppClient.createCheckRun`, `upsertIssueComment` and
-  `createPullRequestReview` behind `VcsProviderClient.publishPullRequestReview`. Every review posts,
-  in order: a check run named `Maple / observability` on the head SHA (title `<score>/100 · <verdict>`,
-  conclusion `neutral` for gaps and `success` otherwise); one summary comment on the pull request,
-  always, found again by the hidden `<!-- maple-pr-review -->` line and edited in place on later
-  pushes; and, only when there are findings above `info`, a `COMMENT` review carrying them inline.
-  The comment and the check share one renderer (`renderReviewMarkdown`): score, grade, verdict,
-  a counts table, the summary, findings linked to their lines at the head SHA, what to change, and
-  the coverage table. A refused post lands in `pr_reviews.publish_error`.
-- **Score.** `scorePrReview` in `packages/domain/src/http/pr-review.ts`: 100, minus 25 per critical
-  finding, 10 per warning and 2 per note, floored at 0, graded excellent (90+), good (75+), needs
-  work (50+) or poor. Computed from the findings rather than asked of the model, so the same gaps
-  always score the same; stored in `pr_reviews.score` and explained in the comment's footer.
-- **Settings.** `PUT /api/integrations/github/repositories/:id/pr-review` and a "Review PRs" switch
-  per repository in Integrations → GitHub. `docs/github-app-setup.md` asks for
-  `Pull requests: Read and write` and `Checks: Read and write`.
-
-Not yet done, in the order it should happen: apply the migration to prod by hand
-(`bun run migrate:prod` after the preflight); bump the App's permissions and accept them on the
-internal installation; enable the flag on the internal repository and read the first reviews on
-`maple-chat` spans (`maple.pr_review.*`); then phase 2.
+- **Sandbox is prd only.** Local and preview runs use the API diff tools and `read_source_file`.
+  Fork PRs get the API path only; deep context needs `git fetch origin refs/pull/N/head` in
+  `cloneScript`.
+- **The diff tools trust their arguments.** `pr_changed_files` and `pr_file_diff` take the PR
+  number from the model rather than from the session, so a pass could read another PR of the same
+  connected repository. Publishing is not affected, since it reads the row.
+- **Warehouse-grounded checks** (signal presence, attribute spelling, operation coverage) are
+  prompt prose today; local runs cannot exercise them.
+- **Open work:** fingerprint dedupe of findings across pushes, an abandoned-row sweep next to
+  `sweepAbandonedInvestigations`, fan-out for large PRs through `@effect-agent/capabilities`
+  `Subagent` once it is published at the engine's version, a reviews list, and per-repository
+  config (path excludes, check-only, a required-check mode).

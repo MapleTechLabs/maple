@@ -90,7 +90,7 @@ describe("MCP dispatcher", () => {
 			"sandbox_exec",
 		]
 
-		it("keeps the sandbox tools internal", () => {
+		it("keeps the sandbox and pull request tools internal", () => {
 			const internal = mapleToolCatalog.filter((d) => d.audience === "internal").map((d) => d.name)
 			expect(internal.sort()).toEqual([...INTERNAL_TOOLS].sort())
 		})

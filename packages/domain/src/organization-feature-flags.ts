@@ -43,7 +43,7 @@ export type OrganizationFeatureFlags = Schema.Schema.Type<typeof OrganizationFea
 
 const decodeOrganizationFeatureFlags = Schema.decodeUnknownOption(OrganizationFeatureFlags)
 
-/** Every rollout off — the value for malformed metadata, and for the pre-load window. */
+/** Every rollout off: the value for malformed metadata, and for the pre-load window. */
 export const DISABLED_ORGANIZATION_FEATURE_FLAGS: OrganizationFeatureFlags = {
 	aiAutoTriage: false,
 	releases: false,

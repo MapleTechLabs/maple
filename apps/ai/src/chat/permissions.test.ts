@@ -8,20 +8,20 @@ import { evaluatePermission } from "@maple/domain/permission"
 import { MUTATING_TOOL_NAMES } from "../mcp/tools/mutating"
 import { mapleToolCatalog } from "../mcp/tools/registry"
 import { AGENTS } from "./agents"
-import { PR_REVIEW_RULESET, prReviewToolNames, READ_ONLY_RULESET } from "./permissions"
+import { PR_REVIEW_RULESET, PR_REVIEW_TOOLS, READ_ONLY_RULESET } from "./permissions"
 import { profileForTurn } from "./profiles"
 
 describe("PR_REVIEW_RULESET", () => {
 	const registered = new Set(mapleToolCatalog.map((definition) => definition.name))
 
 	it("names only registered tools", () => {
-		for (const name of prReviewToolNames()) {
+		for (const name of PR_REVIEW_TOOLS) {
 			assert.isTrue(registered.has(name), `${name} is not a registered tool`)
 		}
 	})
 
 	it("names no mutating tool", () => {
-		for (const name of prReviewToolNames()) {
+		for (const name of PR_REVIEW_TOOLS) {
 			assert.isFalse(MUTATING_TOOL_NAMES.has(name), `${name} is mutating`)
 		}
 	})

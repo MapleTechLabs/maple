@@ -52,7 +52,7 @@ export const READ_ONLY_RULESET: PermissionRuleset = [
  * spelling. Nothing that writes, and nothing that reads alerts, dashboards or issues: a review has
  * no use for them and every unused schema is prompt the model pays for on each call.
  */
-const PR_REVIEW_TOOLS: ReadonlyArray<string> = [
+export const PR_REVIEW_TOOLS: ReadonlyArray<string> = [
 	"pr_changed_files",
 	"pr_file_diff",
 	"sandbox_grep",
@@ -76,6 +76,3 @@ export const PR_REVIEW_RULESET: PermissionRuleset = [
 	new PermissionRule({ tool: "*", action: "deny" }),
 	...[...PR_REVIEW_TOOLS].sort().map((tool) => new PermissionRule({ tool, action: "allow" })),
 ]
-
-/** Every name the review ruleset allows must be a registered, non-mutating tool; pinned by test. */
-export const prReviewToolNames = (): ReadonlyArray<string> => PR_REVIEW_TOOLS

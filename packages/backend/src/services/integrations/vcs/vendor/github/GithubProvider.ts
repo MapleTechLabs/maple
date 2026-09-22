@@ -919,8 +919,8 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 
 			// The check run first: it is what the PR's checks tab shows and it never fails on a bad
 			// line. Then the summary comment, always, edited in place on later pushes. Then the
-			// inline notes; if GitHub refuses one of them (a line outside the diff is a 422 for the
-			// whole review) the review is posted without them rather than lost.
+			// inline notes, which are dropped if GitHub refuses them: the comment already carries
+			// every finding.
 			const publishPullRequestReview: VcsProviderClient["publishPullRequestReview"] = (
 				installation,
 				repo,
@@ -945,7 +945,8 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 								html_url: run.html_url,
 							})),
 							Effect.catchTag("@maple/api/vcs/GithubAppError", (error) =>
-								error.status === 403
+								// A secondary rate limit is also a 403, but carries a retry time.
+								error.status === 403 && error.retryAfterSeconds === undefined
 									? Effect.annotateCurrentSpan(
 											"vcs.pull_request.check_run_skipped",
 											"no_checks_permission",
@@ -988,18 +989,22 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 								comments,
 							},
 						)
+					// A line outside the diff is a 422 for the whole review. The summary comment already
+					// carries every finding, so the inline notes are dropped rather than re-posted empty.
 					const review = yield* post(publication.comments).pipe(
+						Effect.map((posted) => Option.some(posted)),
 						Effect.catchTag("@maple/api/vcs/GithubAppError", (error) =>
-							error.status === 422 && publication.comments.length > 0
+							error.status === 422
 								? Effect.annotateCurrentSpan(
 										"vcs.pull_request.review_comments_rejected",
 										true,
-									).pipe(Effect.andThen(post([])))
+									).pipe(Effect.as(Option.none()))
 								: Effect.fail(error),
 						),
 					)
-					yield* Effect.annotateCurrentSpan("vcs.pull_request.review_id", review.id)
-					return { ...published, reviewUrl: review.html_url ?? null }
+					if (Option.isNone(review)) return { ...published, reviewUrl: null }
+					yield* Effect.annotateCurrentSpan("vcs.pull_request.review_id", review.value.id)
+					return { ...published, reviewUrl: review.value.html_url ?? null }
 				}).pipe(Effect.mapError(toVcsError))
 
 			const fetchCloneCredentials: VcsProviderClient["fetchCloneCredentials"] = (installation, repo) =>

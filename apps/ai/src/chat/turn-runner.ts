@@ -32,6 +32,7 @@ import { workerTelemetryConfig } from "@maple/infra/worker-telemetry"
 import { Cause, Effect, Layer, ManagedRuntime } from "effect"
 import type { ChatSession } from "./ChatSession"
 import type { ChatTurnEvent } from "./events"
+import { withToolTranscript } from "./close-out"
 import { CLOSE_OUT_PROMPT, PR_REVIEW_CLOSE_OUT_PROMPT } from "./prompts"
 import { makeProgressRecorder, parseToolInput } from "./progress"
 import {
@@ -40,7 +41,6 @@ import {
 	makeRunUsage,
 	prReviewForSession,
 	SUBMIT_DIAGNOSIS,
-	SUBMIT_REVIEW,
 } from "./tools"
 
 /**
@@ -188,34 +188,6 @@ const NO_DIAGNOSIS_ERROR = "no_diagnosis: the agent ended its pass without submi
 const NO_REVIEW_MESSAGE = "Maple ended this review without a report."
 const NO_REVIEW_ERROR = "no_review: the agent ended its pass without submitting a review; retry"
 
-/** How much of one tool's output the close-out turn is shown. */
-const CLOSE_OUT_TOOL_OUTPUT_CHARS = 4_000
-
-/**
- * The transcript as the close-out sees it: the same messages, with each assistant message's tool
- * calls and results rendered into its text. `promptFromHistory` replays prose only, and a pass
- * that gathered evidence through tools and wrote nothing would otherwise close out blind.
- */
-const withToolTranscript = (history: ReadonlyArray<ChatMessage>): ReadonlyArray<ChatMessage> =>
-	history.map((message) => {
-		if (message.role !== "assistant" || message.toolCalls.length === 0) return message
-		const calls = message.toolCalls.map((call) => {
-			const output = call.output === undefined ? "(no result)" : renderToolValue(call.output)
-			return `[${call.name} ${renderToolValue(call.input)}]\n${output}`
-		})
-		return new ChatMessage({
-			...message,
-			text: [message.text, "Evidence gathered so far:", ...calls]
-				.filter((part) => part !== "")
-				.join("\n\n"),
-		})
-	})
-
-const renderToolValue = (value: unknown): string => {
-	const text = typeof value === "string" ? value : JSON.stringify(value)
-	return text.length > CLOSE_OUT_TOOL_OUTPUT_CHARS ? `${text.slice(0, CLOSE_OUT_TOOL_OUTPUT_CHARS)}…` : text
-}
-
 /**
  * Meter what this turn spent into the org's AI usage, alongside the Slack agent.
  *
@@ -251,10 +223,11 @@ export const meterTurn = (
 	usage: { readonly input: number; readonly output: number },
 ): Effect.Effect<void> => {
 	if (usage.input <= 0 && usage.output <= 0) return Effect.void
-	const billing = investigationBilling(input.sessionId, input.messageId) ?? {
-		source: profileForTurn(agentForSession(input.sessionId), origin).surface,
-		idempotencyKey: `${input.sessionId}:${input.messageId}`,
-	}
+	const billing = investigationBilling(input.sessionId, input.messageId) ??
+		reviewBilling(input.sessionId, input.messageId) ?? {
+			source: profileForTurn(agentForSession(input.sessionId), origin).surface,
+			idempotencyKey: `${input.sessionId}:${input.messageId}`,
+		}
 	// Bookkeeping must never fail a delivered answer. `trackTokenUsage` already swallows its own
 	// transport errors; the `catch` covers the rest so this can be an infallible Effect.
 	return Effect.promise(() =>
@@ -285,6 +258,16 @@ const investigationBilling = (
 	return { source: "triage", idempotencyKey: `${investigationId}:turn-${messageId}` }
 }
 
+/** A pull request review's turn bills as `review`, keyed on the review, like an investigation's. */
+const reviewBilling = (
+	sessionId: string,
+	messageId: string,
+): { readonly source: "review"; readonly idempotencyKey: string } | undefined => {
+	const reviewId = prReviewForSession(sessionId)
+	if (reviewId === undefined) return undefined
+	return { source: "review", idempotencyKey: `${reviewId}:turn-${messageId}` }
+}
+
 /**
  * Drive one turn to completion.
  *
@@ -300,14 +283,12 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 		{ layerPg },
 		{ mapleDbConnectionLayer },
 		{ layerDecisionModel, layerLlm, resolveTriageModel },
-		{ buildDiagnosisCompletion },
 		{ McpToolExecutor },
 	] = await Promise.all([
 		import("../runtime/mcp-service-graph"),
 		import("@maple/backend/platform/DatabasePgLive"),
 		import("@maple/backend/platform/pg-connection-source"),
 		import("../platform/Llm"),
-		import("./tools"),
 		import("../mcp/dispatcher"),
 	])
 	const { InvestigationService } = await import("@maple/backend/services/errors/InvestigationService")
@@ -440,8 +421,7 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 						autonomous &&
 						event.type === "tool-call" &&
 						event.proposed !== true &&
-						event.name !== SUBMIT_DIAGNOSIS &&
-						event.name !== SUBMIT_REVIEW
+						event.name !== SUBMIT_DIAGNOSIS
 					) {
 						writeProgress(progress.step(event.name, parseToolInput(event.input), Date.now()))
 					}

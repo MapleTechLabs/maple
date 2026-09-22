@@ -1,8 +1,5 @@
-import { Effect, Layer } from "effect"
-import {
-	PullRequestEventSink,
-	type PullRequestEventHandler,
-} from "@maple/backend/services/integrations/vcs/PullRequestEventSink"
+import { Effect } from "effect"
+import type { PullRequestEventHandler } from "@maple/backend/services/integrations/vcs/PullRequestEventSink"
 import { IssueFixVerificationService } from "./IssueFixVerificationService"
 
 /**
@@ -57,5 +54,3 @@ export const fixVerificationPullRequestHandler: PullRequestEventHandler<IssueFix
 					),
 		}
 	})
-
-export const PullRequestEventSinkLive = Layer.effect(PullRequestEventSink, fixVerificationPullRequestHandler)

@@ -219,7 +219,6 @@ export function GithubIntegrationCard() {
 					: `Pull request reviews off for ${repo.fullName}`,
 				type: "success",
 			})
-			refreshStatus()
 		} else {
 			toastManager.add({ title: "Failed to change pull request reviews", type: "error" })
 			throw new Error("Failed to change pull request reviews")
@@ -765,8 +764,11 @@ function PrReviewToggle({
 				id={id}
 				aria-label={`Review pull requests on ${repo.fullName}`}
 				checked={enabled}
-				disabled={busy}
+				aria-busy={busy}
 				onCheckedChange={(next) => {
+					// Ignored while a change is in flight, rather than disabling the switch, which
+					// would drop keyboard focus mid-toggle.
+					if (busy) return
 					const previous = enabled
 					setEnabled(next)
 					setBusy(true)

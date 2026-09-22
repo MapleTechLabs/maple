@@ -253,6 +253,29 @@ describe("GithubProvider publishing a review", () => {
 		}).pipe(Effect.provide(layer))
 	})
 
+	it.effect("does not mistake a rate-limited 403 for a missing permission", () => {
+		const requests: Array<string> = []
+		const layer = providerLayer(
+			[
+				tokenResponse(),
+				new Response(JSON.stringify({ message: "You have exceeded a secondary rate limit" }), {
+					status: 403,
+					headers: { "content-type": "application/json", "retry-after": "3600" },
+				}),
+			],
+			requests,
+		)
+		return Effect.gen(function* () {
+			const provider = yield* GithubProvider
+			const exit = yield* Effect.exit(
+				provider.publishPullRequestReview(INSTALLATION, REPO, publication()),
+			)
+			assert.isTrue(Exit.isFailure(exit))
+			// Nothing after the check run: a rate limit fails the publish so it is retried whole.
+			assert.isFalse(requests.some((url) => url.includes("/comments")))
+		}).pipe(Effect.provide(layer))
+	})
+
 	it.effect("edits its own comment in place on a later push", () => {
 		const requests: Array<string> = []
 		const layer = providerLayer(
@@ -303,6 +326,32 @@ describe("GithubProvider publishing a review", () => {
 			yield* provider.publishPullRequestReview(INSTALLATION, REPO, publication())
 			assert.isTrue(requests.at(-1)?.endsWith("/repos/octo/shop/issues/612/comments"))
 			assert.isFalse(requests.some((url) => url.includes("/issues/comments/9")))
+		}).pipe(Effect.provide(layer))
+	})
+
+	it.effect("drops the inline notes when GitHub refuses a line, keeping the comment", () => {
+		const requests: Array<string> = []
+		const layer = providerLayer(
+			[
+				tokenResponse(),
+				checkRun(),
+				jsonResponse([]),
+				written(5),
+				jsonResponse({ message: "Line could not be resolved" }, 422),
+			],
+			requests,
+		)
+		return Effect.gen(function* () {
+			const provider = yield* GithubProvider
+			const published = yield* provider.publishPullRequestReview(
+				INSTALLATION,
+				REPO,
+				publication([{ path: "a.ts", line: 999, body: "add a span" }]),
+			)
+			assert.equal(published.commentUrl, "https://github.com/octo/shop/pull/612#issuecomment-5")
+			assert.isNull(published.reviewUrl)
+			// One review attempt only: an empty re-post would be noise under the summary comment.
+			assert.equal(requests.filter((url) => url.endsWith("/pulls/612/reviews")).length, 1)
 		}).pipe(Effect.provide(layer))
 	})
 

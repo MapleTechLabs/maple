@@ -25,7 +25,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node
 import { homedir } from "node:os"
 import { dirname, join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
-import { ChatMessage } from "@maple/domain/chat-session"
+import { ChatMessage, ChatToolCall } from "@maple/domain/chat-session"
 import {
 	GitCommitSha,
 	OrgId,
@@ -39,7 +39,8 @@ import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
 import { Effect, Option, References, Schema } from "effect"
 import { AGENTS } from "@/chat/agents"
 import type { ChatTurnEvent } from "@/chat/events"
-import { prReviewToolNames } from "@/chat/permissions"
+import { withToolTranscript } from "@/chat/close-out"
+import { PR_REVIEW_TOOLS } from "@/chat/permissions"
 import { PR_REVIEW_CLOSE_OUT_PROMPT } from "@/chat/prompts"
 import { runChatTurn } from "@/chat/run"
 import { makeRunUsage } from "@/chat/tools"
@@ -380,16 +381,31 @@ const READ_ONLY_GIT = new Set([
 	"shortlog",
 ])
 
-const TELEMETRY_TOOLS = new Set([
-	"list_services",
-	"get_service_top_operations",
-	"explore_attributes",
-	"search_traces",
-	"service_map",
-	"list_metrics",
-	"audit_setup",
-	"get_instrumentation_recommendations",
+/** Tools this runner answers from the checkout; the rest of the review allowlist reads telemetry. */
+const SOURCE_TOOLS = new Set([
+	"pr_changed_files",
+	"pr_file_diff",
+	"sandbox_grep",
+	"sandbox_list_files",
+	"sandbox_read_file",
+	"sandbox_exec",
+	"list_source_repositories",
+	"search_source_code",
+	"read_source_file",
 ])
+
+const TELEMETRY_TOOLS = new Set(PR_REVIEW_TOOLS.filter((name) => !SOURCE_TOOLS.has(name)))
+
+/**
+ * Flags that make a read-only git subcommand read or write outside the object store: host files
+ * (`--no-index`, `--contents`), external programs (`--ext-diff`, `--textconv`, a pager), or an
+ * output file.
+ */
+const UNSAFE_GIT_ARG =
+	/^(--no-index|--contents|--ext-diff|--textconv|--open-files-in-pager|-O|--output|--exec|--upload-pack)/
+
+const unsafeGitArg = (arg: string): boolean =>
+	UNSAFE_GIT_ARG.test(arg) || arg.startsWith("/") || arg.startsWith("~") || arg.split(/[/:]/).includes("..")
 
 const makeExecutor = (input: {
 	readonly repository: string
@@ -549,11 +565,7 @@ const makeExecutor = (input: {
 			case "sandbox_exec": {
 				const command = str(params.command)
 				const args = params.args ?? []
-				if (
-					command !== "git" ||
-					!READ_ONLY_GIT.has(args[0] ?? "") ||
-					args.some((arg) => arg.startsWith("--output") || arg === "-c")
-				) {
+				if (command !== "git" || !READ_ONLY_GIT.has(args[0] ?? "") || args.some(unsafeGitArg)) {
 					return failure(
 						`The local runner only executes read-only git (${[...READ_ONLY_GIT].join(", ")}).`,
 					)
@@ -639,6 +651,7 @@ const postSummaryComment = (
 // Reporting
 
 interface ToolRecord {
+	readonly id: string
 	readonly name: string
 	readonly input: unknown
 	output?: string
@@ -734,7 +747,7 @@ export const reviewLocally = async (
 				process.stdout.write(`\x1b[2m${event.text}\x1b[0m`)
 				return
 			case "tool-call": {
-				const record: ToolRecord = { name: event.name, input: event.input }
+				const record: ToolRecord = { id: event.callId, name: event.name, input: event.input }
 				tools.push(record)
 				byCall.set(event.callId, record)
 				process.stdout.write(`\n→ ${event.name} ${JSON.stringify(event.input).slice(0, 160)}\n`)
@@ -775,7 +788,9 @@ export const reviewLocally = async (
 					submitted = request
 				}),
 			...(turn.closeOut === true ? { closeOut: true } : undefined),
-			...(promptOverride === undefined ? undefined : { promptOverride }),
+			...(promptOverride === undefined
+				? undefined
+				: { agent: { ...AGENTS["pr-review"], prompt: promptOverride } }),
 			text: turn.text,
 			history: turn.history,
 			usage,
@@ -796,7 +811,7 @@ export const reviewLocally = async (
 		)
 
 	console.log(
-		`Reviewing with ${model.name} (budget: ${AGENTS["pr-review"].budget.maxToolCalls} calls, tools: ${prReviewToolNames().length})\n`,
+		`Reviewing with ${model.name} (budget: ${AGENTS["pr-review"].budget.maxToolCalls} calls, tools: ${PR_REVIEW_TOOLS.length})\n`,
 	)
 	await Effect.runPromise(pass({ text: kickoff, history: [] }))
 
@@ -809,16 +824,12 @@ export const reviewLocally = async (
 	if (submitted === undefined && !providerFailed) {
 		closedOut = true
 		console.log("\n\nNo review submitted; running the close-out pass…")
-		const evidence = tools.map(
-			(tool) =>
-				`[${tool.name} ${JSON.stringify(tool.input)}]\n${(tool.output ?? "(no result)").slice(0, 4_000)}`,
-		)
 		const now = Date.now()
 		await Effect.runPromise(
 			pass({
 				text: PR_REVIEW_CLOSE_OUT_PROMPT,
 				closeOut: true,
-				history: [
+				history: withToolTranscript([
 					new ChatMessage({
 						id: "kickoff",
 						role: "user",
@@ -830,12 +841,21 @@ export const reviewLocally = async (
 					new ChatMessage({
 						id: "pass",
 						role: "assistant",
-						text: [prose, "Evidence gathered so far:", ...evidence].filter(Boolean).join("\n\n"),
-						toolCalls: [],
+						text: prose,
+						toolCalls: tools.map(
+							(tool) =>
+								new ChatToolCall({
+									id: tool.id,
+									name: tool.name,
+									input: tool.input,
+									...(tool.output === undefined ? undefined : { output: tool.output }),
+									...(tool.isError === undefined ? undefined : { isError: tool.isError }),
+								}),
+						),
 						createdAt: now,
 						startSeq: 2,
 					}),
-				],
+				]),
 			}),
 		)
 	}

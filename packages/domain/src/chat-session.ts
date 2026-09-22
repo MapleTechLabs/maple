@@ -61,6 +61,9 @@ export const investigationIdFromChatSessionId = (sessionId: string): string | un
 	return tab.startsWith("inv-") ? tab.slice("inv-".length) : undefined
 }
 
+/** The chat session a pull request review runs on: `<orgId>:pr-<reviewId>`. */
+export const prReviewSessionId = (orgId: string, reviewId: string): string => `${orgId}:pr-${reviewId}`
+
 /** Recover the pull-request review id from a `pr-<id>` tab. `undefined` for other modes. */
 export const prReviewIdFromChatSessionId = (sessionId: string): string | undefined => {
 	const tab = tabIdFromChatSessionId(sessionId)

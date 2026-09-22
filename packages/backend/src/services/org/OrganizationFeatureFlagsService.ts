@@ -17,9 +17,15 @@ import {
 	organizationFeatureFlagsFrom,
 } from "@maple/domain/organization-feature-flags"
 import type { OrgId } from "@maple/domain/http"
-import { Context, Effect, Layer, Option, Redacted } from "effect"
+import { Clock, Context, Effect, Layer, Option, Redacted } from "effect"
 import { Env } from "@maple/backend/platform/Env"
 import { clerkRequest } from "@maple/backend/services/auth/clerk-request"
+
+/**
+ * How long one organization's flags are reused within an isolate. Short enough that withdrawing a
+ * flag takes effect within a minute; long enough that a burst of pushes is one Clerk call.
+ */
+const FLAGS_TTL_MS = 60_000
 
 export interface OrganizationFeatureFlagsServiceApi {
 	/** Never fails: an unreadable organization is an organization with every rollout off. */
@@ -38,11 +44,9 @@ export class OrganizationFeatureFlagsService extends Context.Service<
 			onSome: (secretKey) => createClerkClient({ secretKey: Redacted.value(secretKey) }),
 		})
 
-		const flags: OrganizationFeatureFlagsServiceApi["flags"] = Effect.fn(
-			"OrganizationFeatureFlagsService.flags",
-		)(function* (orgId) {
-			yield* Effect.annotateCurrentSpan({ orgId })
-			if (!clerkMode) return ENABLED_ORGANIZATION_FEATURE_FLAGS
+		const cache = new Map<OrgId, { readonly flags: OrganizationFeatureFlags; readonly atMs: number }>()
+
+		const read = Effect.fn("OrganizationFeatureFlagsService.read")(function* (orgId: OrgId) {
 			if (clerk === undefined) {
 				yield* Effect.annotateCurrentSpan("maple.feature_flags.source", "no_clerk_secret")
 				return DISABLED_ORGANIZATION_FEATURE_FLAGS
@@ -60,6 +64,22 @@ export class OrganizationFeatureFlagsService extends Context.Service<
 					),
 				),
 			)
+		})
+
+		const flags: OrganizationFeatureFlagsServiceApi["flags"] = Effect.fn(
+			"OrganizationFeatureFlagsService.flags",
+		)(function* (orgId) {
+			yield* Effect.annotateCurrentSpan({ orgId })
+			if (!clerkMode) return ENABLED_ORGANIZATION_FEATURE_FLAGS
+			const nowMs = yield* Clock.currentTimeMillis
+			const cached = cache.get(orgId)
+			if (cached !== undefined && nowMs - cached.atMs < FLAGS_TTL_MS) {
+				yield* Effect.annotateCurrentSpan("maple.feature_flags.source", "cache")
+				return cached.flags
+			}
+			const fresh = yield* read(orgId)
+			cache.set(orgId, { flags: fresh, atMs: nowMs })
+			return fresh
 		})
 
 		return { flags } satisfies OrganizationFeatureFlagsServiceApi

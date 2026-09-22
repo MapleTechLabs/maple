@@ -18,7 +18,6 @@
 import { randomUUID } from "node:crypto"
 import {
 	type GitCommitSha,
-	IntegrationsUpstreamError,
 	type OrgId,
 	PrReview,
 	type PrReviewFinding,
@@ -40,7 +39,7 @@ import {
 	type VcsRepositoryId,
 } from "@maple/domain/http"
 import { wrapChatContext } from "@maple/domain/chat-preamble"
-import { encodeChatTurnTenant } from "@maple/domain/chat-session"
+import { encodeChatTurnTenant, prReviewSessionId } from "@maple/domain/chat-session"
 import { chatSessionStub } from "@maple/domain/chat-session-stub"
 import { UserId } from "@maple/domain/primitives"
 import { prReviews, type PrReviewRow } from "@maple/db"
@@ -56,9 +55,6 @@ import { VcsRepository } from "@maple/backend/services/integrations/vcs/VcsRepos
 
 /** The identity the review's turn runs as; the same actor the investigation pass uses. */
 const internalServiceUserId = Schema.decodeSync(UserId)("internal-service")
-
-/** The chat session one review's transcript lives in. */
-export const prReviewSessionId = (orgId: OrgId, reviewId: PrReviewId): string => `${orgId}:pr-${reviewId}`
 
 /** The name the check run carries on the pull request's checks tab. */
 export const PR_REVIEW_CHECK_NAME = "Maple / observability"
@@ -325,12 +321,12 @@ export const renderReviewMarkdown = (input: ReviewMarkdownInput & { readonly hea
 	lines.push(
 		`<sub>Score: 100, minus ${PR_REVIEW_SCORE_PENALTY.critical} per critical finding, ${PR_REVIEW_SCORE_PENALTY.warn} per warning and ${PR_REVIEW_SCORE_PENALTY.info} per note. Check ids refer to Maple's instrumentation audit. Updated on every push.</sub>`,
 	)
-	return clampSummary(lines.join("\n"))
+	return lines.join("\n")
 }
 
 /** The check run's summary: the review without a heading, since the check shows its own title. */
 export const renderCheckSummary = (input: ReviewMarkdownInput): string =>
-	renderReviewMarkdown({ ...input, heading: false })
+	clampSummary(renderReviewMarkdown({ ...input, heading: false }))
 
 /** The pull request comment: the marker line, then the review with its heading. */
 export const renderSummaryComment = (input: ReviewMarkdownInput): string =>
@@ -489,8 +485,9 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 							.where(
 								and(
 									eq(prReviews.orgId, orgId),
+									// Every row is a started attempt, superseded ones included: a branch pushing
+									// faster than reviews finish is the case the ceiling exists for.
 									gte(prReviews.createdAt, msToDate(utcDayStart(nowMs))),
-									inArray(prReviews.status, ["queued", "running", "completed", "failed"]),
 								),
 							),
 					)
@@ -623,7 +620,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 
 				const stub = workerEnv === undefined ? undefined : chatSessionStub(workerEnv, sessionId)
 				if (stub === undefined) {
-					yield* update(orgId, reviewId, {
+					yield* updateWhere(orgId, reviewId, ACTIVE_STATUSES, {
 						status: "failed",
 						error: AGENT_UNAVAILABLE_ERROR,
 						finishedAt: msToDate(nowMs),
@@ -671,7 +668,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 							Effect.annotateLogs({ orgId, reviewId, error: summarizeCause(claimed.cause) }),
 						)
 					}
-					yield* update(orgId, reviewId, {
+					yield* updateWhere(orgId, reviewId, ACTIVE_STATUSES, {
 						status: "failed",
 						error: START_FAILED_ERROR,
 						finishedAt: msToDate(nowMs),
@@ -680,7 +677,9 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 					yield* annotate("failed")
 					return { reviewId, outcome: "failed" as const }
 				}
-				yield* update(orgId, reviewId, {
+				// Only from `queued`: the turn runs asynchronously and may already have finished (or
+				// been superseded) by the time `beginTurn` returns.
+				yield* updateWhere(orgId, reviewId, ["queued"], {
 					status: "running",
 					startedAt: msToDate(nowMs),
 					updatedAt: msToDate(nowMs),
@@ -822,6 +821,16 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 					"maple.pr_review.coverage": report.coverage.length,
 					"maple.pr_review.partial": request.partial === true,
 				})
+				// Resolved before the row completes: a transient read failure here must leave the
+				// review active, so a retried submission can still publish.
+				const repository = yield* repositories
+					.getRepositoryById(orgId, review.repositoryId)
+					.pipe(Effect.mapError(toPersistence))
+				const installation = Option.isNone(repository)
+					? Option.none()
+					: yield* repositories
+							.getInstallationById(orgId, repository.value.installationId)
+							.pipe(Effect.mapError(toPersistence))
 				// From an active state only. A review superseded while its completion call was in
 				// flight stays `skipped`, and its stale findings never reach the pull request.
 				const stored = yield* updateWhere(orgId, reviewId, ACTIVE_STATUSES, {
@@ -833,6 +842,11 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 					outputTokens: request.outputTokens ?? null,
 					finishedAt: msToDate(nowMs),
 					updatedAt: msToDate(nowMs),
+					...(Option.isNone(repository)
+						? { publishError: "repository is no longer connected" }
+						: Option.isNone(installation)
+							? { publishError: "installation is no longer connected" }
+							: undefined),
 				})
 				if (!stored) {
 					yield* Effect.annotateCurrentSpan({
@@ -844,28 +858,8 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 					).pipe(Effect.annotateLogs({ orgId, reviewId, status: review.status }))
 					return
 				}
-
-				const repository = yield* repositories
-					.getRepositoryById(orgId, review.repositoryId)
-					.pipe(Effect.mapError(toPersistence))
-				if (Option.isNone(repository)) {
-					yield* update(orgId, reviewId, {
-						publishError: "repository is no longer connected",
-						updatedAt: msToDate(nowMs),
-					})
-					return
-				}
+				if (Option.isNone(repository) || Option.isNone(installation)) return
 				const repo = repository.value
-				const installation = yield* repositories
-					.getInstallationById(orgId, repo.installationId)
-					.pipe(Effect.mapError(toPersistence))
-				if (Option.isNone(installation)) {
-					yield* update(orgId, reviewId, {
-						publishError: "installation is no longer connected",
-						updatedAt: msToDate(nowMs),
-					})
-					return
-				}
 				const publication = buildPublication({
 					repositoryUrl: repo.htmlUrl,
 					number: review.number,
@@ -874,19 +868,12 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 					partial: request.partial === true,
 				})
 				const published = yield* providers.resolve(repo.provider).pipe(
-					Effect.mapError((error) => new IntegrationsUpstreamError({ message: error.message })),
 					Effect.flatMap((provider) =>
-						provider
-							.publishPullRequestReview(
-								installation.value,
-								{ externalRepoId: repo.externalRepoId, owner: repo.owner, name: repo.name },
-								publication,
-							)
-							.pipe(
-								Effect.mapError(
-									(error) => new IntegrationsUpstreamError({ message: error.message }),
-								),
-							),
+						provider.publishPullRequestReview(
+							installation.value,
+							{ externalRepoId: repo.externalRepoId, owner: repo.owner, name: repo.name },
+							publication,
+						),
 					),
 					Effect.result,
 				)

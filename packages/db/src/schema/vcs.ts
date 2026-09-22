@@ -185,7 +185,7 @@ export const prReviews = pgTable(
 		title: text("title"),
 		status: text("status").$type<PrReviewStatus>().notNull().default("queued"),
 		skipReason: text("skip_reason").$type<PrReviewSkipReason>(),
-		/** The `maple-chat` session (`<orgId>:pr-<id>`) the review ran on; null while queued. */
+		/** The `maple-chat` session (`<orgId>:pr-<id>`), written at insert; read to abort a superseded turn. */
 		sessionId: text("session_id"),
 		/** Structured review; null until `submit_review` lands. */
 		reportJson: jsonb("report_json").$type<PrReviewReport>(),

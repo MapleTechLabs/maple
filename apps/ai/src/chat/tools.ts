@@ -66,6 +66,8 @@ export interface RunCompletion {
 	readonly tool: string
 	readonly toolkit: Toolkit.Any
 	readonly layer: Layer.Layer<never>
+	/** The raw handlers, which tests drive directly. */
+	readonly handlers: unknown
 	readonly autonomous: boolean
 	readonly submitted: () => boolean
 }
@@ -184,7 +186,9 @@ export const buildReviewCompletion = (
 ) => {
 	const reviewId = prReviewForSession(sessionId)
 	if (reviewId === undefined) return undefined
-	if (origin.kind === "connector") return undefined
+	// Only the unattended pass files a review. A follow-up in the session answers in prose: the
+	// row is already settled, and a second submission would be dropped while reporting success.
+	if (origin.kind !== "autonomous") return undefined
 	const toolkit = Toolkit.make(reviewTool)
 	let submitted = false
 	return {
@@ -233,7 +237,7 @@ export const buildReviewCompletion = (
 		),
 		autonomous: isAutonomousReviewTurn(sessionId, origin),
 		submitted: () => submitted,
-	} satisfies RunCompletion & { readonly handlers: unknown }
+	} satisfies RunCompletion
 }
 
 /**
@@ -321,7 +325,7 @@ export const buildDiagnosisCompletion = (
 		),
 		autonomous: isAutonomousInvestigationTurn(sessionId, origin),
 		submitted: () => submitted,
-	} satisfies RunCompletion & { readonly handlers: unknown }
+	} satisfies RunCompletion
 }
 
 /**

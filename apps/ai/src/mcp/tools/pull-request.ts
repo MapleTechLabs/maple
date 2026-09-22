@@ -274,9 +274,6 @@ export function registerPullRequestTools(server: McpToolRegistrar) {
 				description: `Repository-relative paths of changed files, as pr_changed_files listed them (up to ${MAX_BATCH_PATHS})`,
 			}),
 			path: optionalStringParam("One changed file, when reading a single diff"),
-			previous_path: optionalStringParam(
-				"Unused; accepted so a renamed file's old path is not mistaken for an error",
-			),
 		}),
 		Effect.fn("McpTool.prFileDiff")(function* ({ repository, number, path, paths }) {
 			if (invalidNumber(number)) return validationError("number must be a positive integer")

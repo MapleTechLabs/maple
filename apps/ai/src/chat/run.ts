@@ -16,7 +16,7 @@ import { Prompt, Toolkit } from "effect/unstable/ai"
 import type { McpToolExecutorApi } from "../mcp/dispatcher"
 import { agentSessionSpanAttributes, type ResolvedModel } from "../platform/Llm"
 import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
-import { agentForSession, chatAgent } from "./agents"
+import { type AgentDefinition, agentForSession, chatAgent } from "./agents"
 import { profileForTurn } from "./profiles"
 import { toChatEvents, type ChatTurnEvent } from "./events"
 import {
@@ -87,8 +87,8 @@ export interface ChatRunInput {
 	readonly submitReview?: SubmitReview
 	/** This run is an autonomous pass's close-out: a report it files is a partial. */
 	readonly closeOut?: boolean
-	/** Replaces the agent's system prompt for this run. For the local review runner's prompt experiments. */
-	readonly promptOverride?: string
+	/** The agent to run as; defaults to the session's. The local review runner passes a variant. */
+	readonly agent?: AgentDefinition
 	/** The message the user just sent, which is this run's input. */
 	readonly text: string
 	readonly history: ReadonlyArray<ChatMessage>
@@ -122,7 +122,7 @@ export interface ChatRunOutcome {
  * module never invents one.
  */
 export const runChatTurn = (input: ChatRunInput) => {
-	const agent = agentForSession(input.sessionId)
+	const agent = input.agent ?? agentForSession(input.sessionId)
 	const profile = profileForTurn(agent, input.origin)
 	const maple = buildChatToolkit(
 		input.toolExecutor,
@@ -161,16 +161,11 @@ export const runChatTurn = (input: ChatRunInput) => {
 	const handlers = Layer.mergeAll(maple.layer, ...(completion === undefined ? [] : [completion.layer]))
 
 	// Declared but never *required*: see `buildDiagnosisCompletion`. A call still settles the run.
-	const run = chatAgent(
-		{ ...agent, prompt: input.promptOverride ?? profile.prompt },
-		toolkit,
-		input.model,
-		{
-			...(completion === undefined
-				? undefined
-				: { completion: { tool: completion.tool, required: false } }),
-		},
-	)
+	const run = chatAgent({ ...agent, prompt: profile.prompt }, toolkit, input.model, {
+		...(completion === undefined
+			? undefined
+			: { completion: { tool: completion.tool, required: false } }),
+	})
 
 	// A gated tool is announced exactly like any other and refuses when dispatched, so only the
 	// ruleset knows the call is a proposal.
