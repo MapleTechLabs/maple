@@ -530,8 +530,18 @@ export const connectorApprovalTenant = (orgId: OrgId): ChatTurnTenantEncoded =>
 /** Which connector, and who on it — the member of {@link ChatTurnOrigin} an approval carries. */
 export type ChatConnectorOrigin = Extract<ChatTurnOrigin, { readonly kind: "connector" }>
 
-/** What a click on an approval control asks for. */
-export type ChatProposalDecision = "approve" | "deny"
+/**
+ * What a click on an approval control asks for.
+ *
+ * Through a schema because the decision is read back off an untrusted control id: the members are
+ * derived from one declaration, so a third one cannot be added to the type while the parser that
+ * matches them silently keeps looking for two.
+ */
+export const ChatProposalDecision = Schema.Literals(["approve", "deny"])
+export type ChatProposalDecision = Schema.Schema.Type<typeof ChatProposalDecision>
+
+/** Every decision there is, for a caller that has to match a wire value against them. */
+export const CHAT_PROPOSAL_DECISIONS = ChatProposalDecision.literals
 
 /** Everything the session needs to settle a proposal: which call, which way, and who said so. */
 export interface ChatProposalSettlement {

@@ -1,6 +1,7 @@
 import { assert, describe, it } from "@effect/vitest"
 import { Effect, Layer, Redacted } from "effect"
 import { FetchHttpClient, HttpClient } from "effect/unstable/http"
+import { APPROVER_ROLE_SETTING } from "../../install"
 import { discord } from "./index"
 import { CLIENT_ID_CONFIG, CLIENT_SECRET_CONFIG, TOKEN_URL } from "./api"
 import { discordAuthorizeUrl } from "./install"
@@ -186,6 +187,22 @@ describe("discord settings", () => {
 				{ approver_role_id: "123456789012345678" },
 			)
 			assert.deepStrictEqual(yield* discord.install.decodeSettings({}), {})
+		}),
+	)
+
+	it.effect("names its approver role under the key the vendor-neutral host reads", () =>
+		Effect.gen(function* () {
+			// The host authorizes a click against `settings[APPROVER_ROLE_SETTING]` without knowing
+			// which platform it came from, so a connector that validated some other key would store a
+			// role nothing ever checks — and every approval would silently fall back to "workspace
+			// admin". Nothing else makes the two halves agree.
+			const stored = yield* discord.install.decodeSettings({
+				[APPROVER_ROLE_SETTING]: "123456789012345678",
+			})
+			assert.strictEqual(stored[APPROVER_ROLE_SETTING], "123456789012345678")
+			assert.isTrue(
+				discord.manifest.settingsFields.some((field) => field.key === APPROVER_ROLE_SETTING),
+			)
 		}),
 	)
 

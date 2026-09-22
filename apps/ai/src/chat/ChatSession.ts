@@ -40,7 +40,6 @@ import {
 	encodeChatEventPayload,
 	type ChatEvent,
 	type ChatEventInput,
-	type ChatConnectorOrigin,
 	type ChatMessage,
 	type ChatProposalOutcome,
 	type ChatProposalSettlement,
@@ -49,6 +48,7 @@ import {
 } from "@maple/domain/chat-session"
 import { type ChatSessionStub } from "@maple/domain/chat-session-stub"
 import { makeChatTranscript } from "@maple/domain/chat-transcript"
+import type { AppliedProposal, ApplyChatProposalInput } from "./apply-proposal"
 
 /** What the class reads off its Durable Object state: SQLite, the alarm, and the object's own `waitUntil`. */
 interface ChatSessionState {
@@ -144,16 +144,11 @@ const PROPOSAL_FAILED = "Maple couldn't apply this change. Check whether it went
  * the MCP service graph, which must not be reachable from a class the worker entry exports
  * (Cloudflare error 10021). The Worker's own applier reaches it behind a dynamic import and is the
  * default; a test of the settling supplies its own rather than building that graph.
+ *
+ * The signature is the applier's own, through a type-only import — erased at compile time, so it
+ * costs nothing at module scope; the ban is on the VALUE import below.
  */
-export interface ProposalApplier {
-	(input: {
-		readonly env: Record<string, unknown>
-		readonly sessionId: string
-		readonly approver: ChatConnectorOrigin
-		readonly tool: string
-		readonly input: unknown
-	}): Promise<{ readonly output: string; readonly isError: boolean }>
-}
+export type ProposalApplier = (input: ApplyChatProposalInput) => Promise<AppliedProposal>
 
 const applyThroughWorker: ProposalApplier = async (input) => {
 	const { applyChatProposal } = await import("./apply-proposal")
@@ -492,7 +487,7 @@ export class ChatSession {
 	private async applyProposal(
 		settlement: ChatProposalSettlement,
 		proposal: Proposal,
-	): Promise<{ readonly output: string; readonly isError: boolean }> {
+	): Promise<AppliedProposal> {
 		try {
 			return await this.applier({
 				env: this.env,

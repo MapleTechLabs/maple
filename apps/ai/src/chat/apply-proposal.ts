@@ -22,10 +22,12 @@ import {
 } from "@maple/domain/chat-session"
 import { OrgId } from "@maple/domain/primitives"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
+import { withPgConnectionScope } from "@maple/backend/platform/pg-connection-scope"
 import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
+import { ErrorActorsService } from "@maple/backend/services/errors/ErrorActorsService"
 import { workerEnvLayer } from "@maple/infra/worker-runtime"
 import { workerTelemetryConfig } from "@maple/infra/worker-telemetry"
-import { Effect, Layer, ManagedRuntime, Option, Schema } from "effect"
+import { Cause, Effect, Layer, ManagedRuntime, Option, Schema } from "effect"
 import { MCP_ANTICIPATED_ERROR_IDENTIFIERS } from "../mcp/expected-failures"
 import { MUTATING_TOOL_NAMES } from "../mcp/tools/mutating"
 import { withConnectorActor } from "./turn-actor"
@@ -56,14 +58,24 @@ export interface AppliedProposal {
 
 const failure = (output: string): AppliedProposal => ({ output, isError: true })
 
+/**
+ * What to say when the tool may or may not have run.
+ *
+ * A cause can be raised after `execute` has already changed something, so the copy for one must
+ * not claim the change did not happen — the same hedge the session's own fallback makes.
+ */
+const UNCERTAIN = "Maple couldn't confirm the change went through — check it in Maple."
+
 const decodeOrgId = Schema.decodeUnknownOption(OrgId)
 
 /**
  * Apply one approved proposal and answer with what to record.
  *
- * Every failure comes back as an error result rather than a rejected promise: the caller has to
- * settle the proposal either way, and "the tool refused" and "the tool could not be reached" read
- * the same to somebody in a channel.
+ * A failure inside the program comes back as an error result rather than a rejected promise: the
+ * caller has to settle the proposal either way, and "the tool refused" and "the tool could not be
+ * reached" read the same to somebody in a channel. Two things still reject — an interrupt, which
+ * must stay one, and a layer that dies while the runtime is being built — and the caller settles
+ * those with its own copy.
  */
 export const applyChatProposal = async (input: ApplyChatProposalInput): Promise<AppliedProposal> => {
 	// The org comes from the session's own name, never from the caller — the same rule every other
@@ -73,22 +85,26 @@ export const applyChatProposal = async (input: ApplyChatProposalInput): Promise<
 	const orgId = org.value
 
 	// Defense in depth, exactly as the web apply path does it: only an approval-gated mutation is
-	// applicable here, whatever the log happens to hold.
+	// applicable here, whatever the log happens to hold. `connectorApprovalTenant` below grants
+	// `org:admin`, so this is the last thing between an entry in a session's own log and an
+	// org-admin execution — which is why it answers here, ahead of a runtime whose layers can die
+	// on a misconfigured environment, rather than from inside one.
 	if (!MUTATING_TOOL_NAMES.has(input.tool)) {
 		return failure(`"${input.tool}" is not a change Maple applies from an approval.`)
 	}
 
-	const [{ McpServicesLive }, { layerPg }, { mapleDbConnectionLayer }, { McpToolExecutor }, actors] =
+	// `ErrorActorsService` is deliberately absent: `./turn-actor` already puts it in this module's
+	// static graph, so deferring it would only re-resolve a module that is loaded anyway.
+	const [{ McpServicesLive }, { layerPg }, { mapleDbConnectionLayer }, { McpToolExecutor }] =
 		await Promise.all([
 			import("../runtime/mcp-service-graph"),
 			import("@maple/backend/platform/DatabasePgLive"),
 			import("@maple/backend/platform/pg-connection-source"),
 			import("../mcp/dispatcher"),
-			import("@maple/backend/services/errors/ErrorActorsService"),
 		])
 
 	const runtime = ManagedRuntime.make(
-		Layer.mergeAll(McpServicesLive, actors.ErrorActorsService.layer).pipe(
+		Layer.mergeAll(McpServicesLive, ErrorActorsService.layer).pipe(
 			Layer.provideMerge(layerPg),
 			Layer.provideMerge(mapleDbConnectionLayer(input.env)),
 			Layer.provideMerge(workerEnvLayer(input.env)),
@@ -117,27 +133,20 @@ export const applyChatProposal = async (input: ApplyChatProposalInput): Promise<
 		const acting = yield* withConnectorActor(tenant, input.approver)
 		const result = yield* executor.execute(acting, input.tool, input.input, "bot")
 		const content = result.content.map((entry) => entry.text).join("\n")
+		const refused = result.isError === true
+		yield* Effect.annotateCurrentSpan("maple.chat.apply", refused ? "refused" : "applied")
 		return {
-			output:
-				result.isError === true
-					? `Approved by ${input.approver.displayName}, but it did not go through.\n${content}`
-					: `Approved by ${input.approver.displayName}.\n${content}`,
-			isError: result.isError === true,
+			output: refused
+				? `Approved by ${input.approver.displayName}, but it did not go through.\n${content}`
+				: `Approved by ${input.approver.displayName}.\n${content}`,
+			isError: refused,
 		}
 	}).pipe(
-		Effect.catchCause((cause) =>
-			Effect.logError("A chat approval could not be applied").pipe(
-				Effect.annotateLogs({
-					orgId,
-					tool: input.tool,
-					connector: input.approver.connectorId,
-					error: summarizeCause(cause),
-				}),
-				Effect.as(
-					failure(`Approved by ${input.approver.displayName}, but Maple could not apply it.`),
-				),
-			),
-		),
+		// One Postgres pool for the whole apply — the actor lookup, the tool and its audit entry are
+		// three `execute` calls, and without a scope each one dials its own.
+		withPgConnectionScope,
+		// The span is INSIDE the catch, so an apply that blew up closes as a failed span rather than
+		// as a clean one wrapping a recovered value. Same order `turn-runner` uses.
 		Effect.withSpan("chat.apply_proposal", {
 			attributes: {
 				orgId,
@@ -146,6 +155,24 @@ export const applyChatProposal = async (input: ApplyChatProposalInput): Promise<
 				"maple.chat.connector": input.approver.connectorId,
 			},
 		}),
+		Effect.catchCause((cause) =>
+			// Interrupts stay interrupts, as everywhere else that swallows a cause here. Letting one
+			// out is what the caller needs: it settles the proposal with copy that does NOT claim the
+			// change was attempted and lost, because an interrupt mid-execute may have mutated.
+			Cause.hasInterruptsOnly(cause)
+				? Effect.interrupt
+				: Effect.logError("A chat approval could not be applied").pipe(
+						Effect.annotateLogs({
+							orgId,
+							"maple.mcp.tool": input.tool,
+							"maple.chat.connector": input.approver.connectorId,
+							"error.type": summarizeCause(cause),
+						}),
+						// Hedged rather than assertive: the cause may have been raised after the tool
+						// already changed something, so this must not say the change did not happen.
+						Effect.as(failure(`Approved by ${input.approver.displayName}. ${UNCERTAIN}`)),
+					),
+		),
 	)
 
 	try {

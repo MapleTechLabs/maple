@@ -88,14 +88,17 @@ const chat = (): Chat => {
 				edit: (ref, blocks) => Effect.sync(() => void calls.push({ verb: "edit", ref, blocks })),
 				typing: () => Effect.void,
 				openThread: (request) => Effect.succeed(request.anchorMessageId),
-				conversation: (message) =>
+				conversation: (event) =>
 					Effect.sync(() => {
-						threads.push(message.messageId)
+						// A mention opens a thread; a click already happened inside one, so its own
+						// channel IS the conversation — which is what scopes an approval.
+						const channelId = event.type === "action" ? event.channelId : CONVERSATION
+						if (event.type === "message") threads.push(event.messageId)
 						return {
 							conversationKey: Schema.decodeSync(
 								Schema.String.pipe(Schema.brand("@maple/ChatConversationKey")),
-							)(CONVERSATION),
-							target: { workspaceId: message.workspaceId, channelId: CONVERSATION },
+							)(channelId),
+							target: { workspaceId: event.workspaceId, channelId },
 						}
 					}),
 			})),
@@ -571,6 +574,28 @@ const decidedTranscript = (output: string, isError?: boolean): ReadonlyArray<Cha
 
 const approvals = (blocks: ReadonlyArray<ChatBlock>) => blocks.filter((block) => block.kind === "approval")
 
+/**
+ * Why a click was refused, off the span.
+ *
+ * Every silent refusal looks the same from the outside — no settlement, no message — so asserting
+ * absence alone would keep a test green after the guard it covers stopped being the reason.
+ */
+const refusalReason = (effect: Effect.Effect<void>) =>
+	Effect.gen(function* () {
+		const spans: Array<Tracer.NativeSpan> = []
+		const tracer = Tracer.make({
+			span(options) {
+				const span = new Tracer.NativeSpan(options)
+				spans.push(span)
+				return span
+			},
+		})
+		yield* effect.pipe(Effect.provideContext(Context.make(Tracer.Tracer, tracer)))
+		return spans
+			.flatMap((span) => [span.attributes.get("maple.chat.approval")])
+			.find((value) => value !== undefined)
+	})
+
 describe("settling an approval somebody clicked", () => {
 	it.effect("applies the proposal and puts the outcome on the message that carried the buttons", () =>
 		Effect.gen(function* () {
@@ -693,23 +718,156 @@ describe("settling an approval somebody clicked", () => {
 			const agent = session([])
 			const deployment = host(platform.outbound, agent.stub)
 
-			yield* relayInboundEvent(
-				click({
-					actionToken: chatActionControlId(
-						"approve",
-						encodeChatActionToken(
-							Schema.decodeSync(ChatSessionId)(`org_other:bot-${TESTCHAT}-${CONVERSATION}`),
-							CALL_ID,
+			const reason = yield* refusalReason(
+				relayInboundEvent(
+					click({
+						actionToken: chatActionControlId(
+							"approve",
+							encodeChatActionToken(
+								Schema.decodeSync(ChatSessionId)(`org_other:bot-${TESTCHAT}-${CONVERSATION}`),
+								CALL_ID,
+							),
 						),
-					),
-				}),
-				deployment.ports,
+					}),
+					deployment.ports,
+				),
 			)
 
 			// The workspace's own org is the only one its members may change, however the control got
-			// into the channel.
+			// into the channel. Asserted by REASON: every silent refusal looks the same otherwise, so
+			// this would stay green if the control simply stopped decoding.
+			expect(reason).toBe("foreign_session")
 			expect(agent.settlements).toEqual([])
 			expect(platform.calls).toEqual([])
+		}),
+	)
+
+	it.effect("refuses a control naming another conversation in the approver's own org", () =>
+		Effect.gen(function* () {
+			const platform = chat()
+			const agent = session([])
+			const deployment = host(platform.outbound, agent.stub)
+
+			// The same org, so the org check passes — and a control is forgeable by design. Without
+			// the conversation check an approver in one channel could settle a proposal raised in a
+			// channel they cannot read, and the settling edit would render that answer into theirs.
+			const reason = yield* refusalReason(
+				relayInboundEvent(
+					click({
+						actionToken: chatActionControlId(
+							"approve",
+							encodeChatActionToken(
+								Schema.decodeSync(ChatSessionId)(`${ORG}:bot-${TESTCHAT}-otherchannel`),
+								CALL_ID,
+							),
+						),
+					}),
+					deployment.ports,
+				),
+			)
+
+			expect(reason).toBe("foreign_session")
+			expect(agent.settlements).toEqual([])
+			expect(platform.calls).toEqual([])
+		}),
+	)
+
+	it.effect("refuses a clicker the platform cannot name", () =>
+		Effect.gen(function* () {
+			const platform = chat()
+			const agent = session([])
+			const deployment = host(platform.outbound, agent.stub)
+
+			// The external id is the only forensic link between the change and the human, so an actor
+			// that does not decode is nobody to attribute an approval to.
+			const reason = yield* refusalReason(
+				relayInboundEvent(
+					click({ actor: { id: "", displayName: "Ada", roleIds: [], isWorkspaceAdmin: true } }),
+					deployment.ports,
+				),
+			)
+
+			expect(reason).toBe("no_approver")
+			expect(agent.settlements).toEqual([])
+			expect(platform.calls).toEqual([])
+		}),
+	)
+
+	it.effect("settles nothing for a workspace that is unlinked, or that could not be read", () =>
+		Effect.gen(function* () {
+			for (const options of [{ linked: false }, { lookupFails: true }]) {
+				const platform = chat()
+				const agent = session([])
+				const deployment = host(platform.outbound, agent.stub, options)
+
+				const reason = yield* refusalReason(relayInboundEvent(click(), deployment.ports))
+
+				// Neither has an approver role to check or an org to change anything in, and the
+				// unlinked notice belongs to a mention rather than to a button nobody should have.
+				expect(reason).toBe("unavailable")
+				expect(agent.settlements).toEqual([])
+				expect(platform.calls).toEqual([])
+			}
+		}),
+	)
+
+	it.effect("keeps the conversation out of the telemetry when the settled edit is refused", () =>
+		Effect.gen(function* () {
+			const logs: Array<string> = []
+			const spans: Array<Tracer.NativeSpan> = []
+			const logger = Logger.make(({ fiber, message }) => {
+				logs.push(
+					JSON.stringify({ message, annotations: fiber.getRef(References.CurrentLogAnnotations) }),
+				)
+			})
+			const tracer = Tracer.make({
+				span(options) {
+					const span = new Tracer.NativeSpan(options)
+					spans.push(span)
+					return span
+				},
+			})
+			const platform = chat()
+			const agent = session([], { transcript: decidedTranscript("Approved by Ada.\nDone.") })
+			// The failure carries the request it failed on, whose body is the transcript being edited
+			// back into the channel.
+			const refusing: ChatOutbound = {
+				...platform.outbound,
+				transport: Effect.map(platform.outbound.transport, (transport) => ({
+					...transport,
+					edit: () =>
+						Effect.fail(
+							new ChatOutboundError({
+								message: "the platform answered 403",
+								connectorId: TESTCHAT,
+								operation: "edit",
+								cause: { body: "I can set that up." },
+							}),
+						),
+				})),
+			}
+			const deployment = host(refusing, agent.stub)
+
+			yield* relayInboundEvent(click(), deployment.ports).pipe(
+				Effect.provideContext(
+					Context.make(Logger.CurrentLoggers, new Set([logger])).pipe(
+						Context.add(Tracer.Tracer, tracer),
+					),
+				),
+			)
+
+			const everything = JSON.stringify({
+				logs,
+				spans: spans.map((span) => ({
+					name: span.name,
+					attributes: Object.fromEntries(span.attributes),
+					events: span.events,
+				})),
+			})
+			expect(everything).not.toContain("I can set that up.")
+			// The approver's name is the platform's, not Maple's, and it belongs in the channel and
+			// the transcript — never in a log line.
+			expect(everything).not.toContain("Ada")
 		}),
 	)
 

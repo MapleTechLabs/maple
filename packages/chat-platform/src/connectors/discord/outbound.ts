@@ -21,7 +21,7 @@
 import { ChatConversationKey } from "@maple/primitives"
 import { Duration, Effect, Option, Redacted, Schema } from "effect"
 import { HttpClient, HttpClientRequest, type HttpClientResponse } from "effect/unstable/http"
-import type { ConnectorConfig, InboundMessage } from "../../ingress"
+import type { ConnectorConfig, InboundAction, InboundMessage } from "../../ingress"
 import {
 	ChatOutboundError,
 	ConnectorCredentials,
@@ -282,15 +282,22 @@ export const discordOutbound: ChatOutbound<HttpClient.HttpClient | ConnectorCred
 			 * Discord will not start a thread from a message that is already in one, and answers the
 			 * same way in a channel where the bot may not start them at all. Both mean the same thing
 			 * here: the mention's own channel is the conversation.
+			 *
+			 * A CLICK opens nothing: the interaction already happened inside a conversation, and
+			 * Discord's own `channel_id` for it is that conversation's id. Read from the interaction
+			 * rather than from the control's payload, which is what lets the host refuse a control
+			 * naming a conversation other than the one it was clicked in.
 			 */
-			conversation: (message: InboundMessage) =>
-				openThread({
-					workspaceId: message.workspaceId,
-					channelId: message.channelId,
-					anchorMessageId: message.messageId,
-					title: message.text,
-				}).pipe(
-					Effect.orElseSucceed(() => message.channelId),
+			conversation: (event: InboundMessage | InboundAction) =>
+				(event.type === "action"
+					? Effect.succeed(event.channelId)
+					: openThread({
+							workspaceId: event.workspaceId,
+							channelId: event.channelId,
+							anchorMessageId: event.messageId,
+							title: event.text,
+						}).pipe(Effect.orElseSucceed(() => event.channelId))
+				).pipe(
 					Effect.flatMap((channelId) =>
 						Option.match(decodeConversationKey(channelId), {
 							onNone: () =>
@@ -300,7 +307,7 @@ export const discordOutbound: ChatOutbound<HttpClient.HttpClient | ConnectorCred
 							onSome: (conversationKey): Effect.Effect<ChatConversation> =>
 								Effect.succeed({
 									conversationKey,
-									target: { workspaceId: message.workspaceId, channelId },
+									target: { workspaceId: event.workspaceId, channelId },
 								}),
 						}),
 					),

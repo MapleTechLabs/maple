@@ -9,8 +9,9 @@ import type { ChatTurnOrigin } from "@maple/domain/chat-session"
 import { chatConnectorAgentName } from "@maple/domain/system-agents"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
+import type { ActorDocument } from "@maple/domain/http"
 import { ErrorActorsService } from "@maple/backend/services/errors/ErrorActorsService"
-import { Cause, Effect } from "effect"
+import { Cause, Effect, Option } from "effect"
 
 /**
  * Pin a connector turn to the agent actor that answers for that connector, one `ensureAgentActor`
@@ -30,6 +31,7 @@ export const withConnectorActor = Effect.fn("chat.connectorActor")(function* (
 	const actor = yield* actors
 		.ensureAgentActor(tenant.orgId, chatConnectorAgentName(origin.connectorId))
 		.pipe(
+			Effect.asSome,
 			// A lookup that failed or died must not cost an answer: the entry still names the
 			// connector, from the origin and the label it carries. Interrupts stay interrupts.
 			Effect.catchCause((cause) =>
@@ -40,9 +42,12 @@ export const withConnectorActor = Effect.fn("chat.connectorActor")(function* (
 								connector: origin.connectorId,
 								error: summarizeCause(cause),
 							}),
-							Effect.as(undefined),
+							Effect.as(Option.none<ActorDocument>()),
 						),
 			),
 		)
-	return actor === undefined ? tenant : { ...tenant, actorId: actor.id }
+	return Option.match(actor, {
+		onNone: () => tenant,
+		onSome: (resolved) => ({ ...tenant, actorId: resolved.id }),
+	})
 })

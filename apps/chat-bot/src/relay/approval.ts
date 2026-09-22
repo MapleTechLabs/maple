@@ -17,6 +17,7 @@ import {
 	type InboundActor,
 } from "@maple/chat-platform"
 import type { ChatMessage } from "@maple/domain/chat-session"
+import { Option } from "effect"
 
 /**
  * Whether this person may decide this workspace's proposals.
@@ -51,7 +52,11 @@ export const settledMessageBlocks = (
 	const holdsProposal = (group: ReadonlyArray<ChatBlock>) =>
 		group.some(
 			(block) =>
-				block.kind === "approval" && decodeChatActionToken(block.token)?.toolCallId === toolCallId,
+				block.kind === "approval" &&
+				Option.exists(
+					decodeChatActionToken(block.token),
+					(action) => action.toolCallId === toolCallId,
+				),
 		)
 	return groups.find(holdsProposal) ?? groups[groups.length - 1] ?? []
 }

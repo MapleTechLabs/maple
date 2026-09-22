@@ -12,6 +12,7 @@
  * connector.
  */
 import {
+	chatActionDecision,
 	decodeChatActionControlId,
 	driveChatTurn,
 	type ChatActionRequest,
@@ -28,7 +29,6 @@ import { wrapChatContext } from "@maple/domain/chat-preamble"
 import {
 	connectorSessionId,
 	connectorTurnTenant,
-	orgIdFromChatSessionId,
 	type ChatMessage,
 	type ChatSessionId,
 } from "@maple/domain/chat-session"
@@ -244,12 +244,19 @@ const settleAction = Effect.fn("chat_bot.settle_approval")(function* <R>(
 	ports: RelayPorts<R>,
 ) {
 	yield* Effect.annotateCurrentSpan({ "maple.chat.connector": action.connector })
-	const request = decodeChatActionControlId(action.actionToken)
-	// A platform hands back whatever was on the control that was clicked, which includes controls
-	// Maple never rendered. Not ours is not an error.
-	if (request === undefined) {
-		return yield* Effect.annotateCurrentSpan({ "maple.chat.approval": "not_a_control" })
+	const control = decodeChatActionControlId(action.actionToken)
+	if (Option.isNone(control)) {
+		// A platform hands back whatever was on the control that was clicked, which includes controls
+		// Maple never rendered — not ours is not an error. One that names a decision and then does
+		// not decode IS ours, forged or corrupted, and is worth saying so.
+		const ours = Option.isSome(chatActionDecision(action.actionToken))
+		yield* Effect.annotateCurrentSpan({
+			"maple.chat.approval": ours ? "unreadable_control" : "not_a_control",
+		})
+		if (ours) yield* Effect.logWarning("A chat approval control could not be read")
+		return
 	}
+	const request = control.value
 
 	const transport = yield* ports.outbound.transport
 	const approver = decodeExternalUserId(action.actor.id)
@@ -265,9 +272,15 @@ const settleAction = Effect.fn("chat_bot.settle_approval")(function* <R>(
 	}
 	const { orgId, settings } = workspace.value.value
 
-	// The control names its own session, and a session id names an org. A control minted in one
-	// org's conversation must not be settleable by another org's workspace, however it got there.
-	if (orgIdFromChatSessionId(request.sessionId) !== orgId) {
+	// The control names its own session, and the session it is allowed to name is THIS conversation's
+	// — rebuilt from the org that owns the workspace and the conversation the connector says the
+	// click landed in, neither of which came off the control.
+	//
+	// The org alone is not enough. A control is forgeable by design (see `action-token.ts`), so an
+	// approver in one channel could otherwise settle a proposal raised in a channel they cannot
+	// read, and the settling edit would then render that conversation's answer into theirs.
+	const conversation = yield* transport.conversation(action)
+	if (request.sessionId !== connectorSessionId(orgId, action.connector, conversation.conversationKey)) {
 		return yield* Effect.annotateCurrentSpan({ "maple.chat.approval": "foreign_session" })
 	}
 
@@ -308,13 +321,21 @@ const settleAction = Effect.fn("chat_bot.settle_approval")(function* <R>(
 	}
 	yield* Effect.annotateCurrentSpan({ "maple.chat.approval": outcome.value })
 
-	// Somebody got there first. The message already shows what was decided, so a second click
-	// changes nothing — including what it says.
-	if (outcome.value === "settled") return
-	if (outcome.value === "unknown") {
-		return yield* say(transport, replyTarget(action), PROPOSAL_GONE_NOTICE)
+	// A switch rather than a chain of ternaries, for the reason `relayed` below is one: an outcome
+	// added to the contract has to be answered here rather than quietly taking the last branch,
+	// which for this one would mean editing the message after a decision that never happened.
+	switch (outcome.value) {
+		case "settled":
+			// Somebody got there first. The message already shows what was decided, so a second click
+			// changes nothing — including what it says.
+			return
+		case "unknown":
+			return yield* say(transport, replyTarget(action), PROPOSAL_GONE_NOTICE)
+		case "decided":
+			return yield* showDecision(action, request, orgId, session, ports)
+		default:
+			return outcome.value satisfies never
 	}
-	yield* showDecision(action, request, orgId, session, ports)
 })
 
 /**
@@ -323,14 +344,25 @@ const settleAction = Effect.fn("chat_bot.settle_approval")(function* <R>(
  * Re-read rather than reported: the session's log is what the decision produced, and rendering it
  * the way the turn itself is rendered is what keeps one description of an approval in the codebase.
  */
-const showDecision = Effect.fnUntraced(function* <R>(
+const showDecision = Effect.fn("chat_bot.show_decision")(function* <R>(
 	action: InboundAction,
 	request: ChatActionRequest,
 	orgId: OrgId,
 	session: ChatSessionStub,
 	ports: RelayPorts<R>,
 ) {
-	const history = yield* Effect.tryPromise(() => session.history()).pipe(
+	// A transcript that cannot be read leaves the decision applied and the message unchanged, which
+	// is confusing enough to be worth a line: the alternative is a silent degradation that looks
+	// exactly like the platform refusing the edit.
+	const history = yield* Effect.tryPromise({
+		catch: sessionUnreachable(request.sessionId, "The chat session did not answer with its history"),
+		try: () => session.history(),
+	}).pipe(
+		Effect.tapError((error) =>
+			Effect.logWarning("A settled approval could not be re-read").pipe(
+				Effect.annotateLogs({ "error.type": error._tag }),
+			),
+		),
 		Effect.orElseSucceed((): ReadonlyArray<ChatMessage> => []),
 	)
 	const message = messageWithToolCall(history, request.toolCallId)
