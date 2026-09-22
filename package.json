@@ -78,7 +78,9 @@
 	"packageManager": "bun@1.4.0",
 	"catalog": {
 		"vite": "^8.0.16",
-		"vitest": "^5.0.1"
+		"vitest": "^5.0.1",
+		"@vitest/browser-playwright": "^5.0.1",
+		"playwright": "^1.62.1"
 	},
 	"catalogs": {
 		"alchemy": {
