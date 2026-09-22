@@ -58,19 +58,19 @@ had to add. "What phase 1 shipped" at the end is the current state.
    `PullRequestReviewTrigger` in sequence, each catching its own failures so one cannot starve the
    other.
 3. `PullRequestReviewTrigger` (packages/backend, runs on api's queue consumer):
-   - loads the `vcs_repositories` row, returns early unless `pr_review_enabled`;
-   - skips drafts, bot authors (dependabot, renovate, GitHub Actions) and actions other than
-     `opened`, `reopened`, `synchronize`, `ready_for_review`;
-   - checks the org quota (same shape as the investigation `maxRunsPerDay`, plus a plan gate);
-   - inserts a `pr_reviews` row `(org_id, repository_id, number, head_sha, base_sha, status)`;
-   - on `synchronize` with a turn in flight for the same PR, aborts it first (the abort route
-     exists) so the review is always of the latest head;
-   - starts the turn: `chatSessionStub(env, "<orgId>:pr-<reviewId>").beginTurn(...)` with the
-     internal-service tenant, exactly like `startInvestigationTurn`.
+    - loads the `vcs_repositories` row, returns early unless `pr_review_enabled`;
+    - skips drafts, bot authors (dependabot, renovate, GitHub Actions) and actions other than
+      `opened`, `reopened`, `synchronize`, `ready_for_review`;
+    - checks the org quota (same shape as the investigation `maxRunsPerDay`, plus a plan gate);
+    - inserts a `pr_reviews` row `(org_id, repository_id, number, head_sha, base_sha, status)`;
+    - on `synchronize` with a turn in flight for the same PR, aborts it first (the abort route
+      exists) so the review is always of the latest head;
+    - starts the turn: `chatSessionStub(env, "<orgId>:pr-<reviewId>").beginTurn(...)` with the
+      internal-service tenant, exactly like `startInvestigationTurn`.
 
-   One session per review, one review per head SHA. A session per pull request that kept the
-   earlier reviews in history was considered and set aside for phase 1: the dedupe across pushes
-   is done from stored fingerprints (phase 2), which keeps each session's transcript bounded.
+    One session per review, one review per head SHA. A session per pull request that kept the
+    earlier reviews in history was considered and set aside for phase 1: the dedupe across pushes
+    is done from stored fingerprints (phase 2), which keeps each session's transcript bounded.
 
 ### Enablement and settings
 
@@ -94,30 +94,31 @@ had to add. "What phase 1 shipped" at the end is the current state.
   `link_pull_request`. No mutating tool is reachable; `submit_review` is the only side effect and
   it is the completion tool.
 - Two new internal tools, registered with `audience: "internal"`:
-  - `pr_changed_files`: the file list with additions, deletions and a coarse kind
-    (source, test, generated, docs, config, infra), from `GET /repos/{o}/{r}/pulls/{n}/files`.
-    Using the API rather than the sandbox means it works locally, on previews, and for fork PRs.
-  - `pr_file_diff(path)`: the unified diff of one file, from the same endpoint's `patch`, with
-    new-side line numbers annotated so a finding can cite a line GitHub will accept. Falls back to
-    `git diff <base>...<head> -- <path>` in the sandbox when the API truncates the patch.
-  The sandbox stays the tool for context: what the surrounding module already instruments, how
-  the repo initialises its SDK, `git log` on the file.
+    - `pr_changed_files`: the file list with additions, deletions and a coarse kind
+      (source, test, generated, docs, config, infra), from `GET /repos/{o}/{r}/pulls/{n}/files`.
+      Using the API rather than the sandbox means it works locally, on previews, and for fork PRs.
+    - `pr_file_diff(path)`: the unified diff of one file, from the same endpoint's `patch`, with
+      new-side line numbers annotated so a finding can cite a line GitHub will accept. Falls back to
+      `git diff <base>...<head> -- <path>` in the sandbox when the API truncates the patch.
+      The sandbox stays the tool for context: what the surrounding module already instruments, how
+      the repo initialises its SDK, `git log` on the file.
 - `submit_review` completion tool, built like `buildDiagnosisCompletion`. `PrReviewSubmission` in
   `packages/domain/src/http/` with every field optional and a `normalizePrReviewSubmission`,
   because the strict schema is what killed 7 of 15 finished investigation turns on 2026-09-19.
   Shape:
 
-  ```
-  verdict: "instrumented" | "gaps" | "not-applicable"
-  summary: string
-  coverage: [{ unit, kind, instrumented: boolean, evidence }]
-  findings: [{ path, line, endLine?, checkId, severity, title, body, suggestion? }]
-  ```
+    ```
+    verdict: "instrumented" | "gaps" | "not-applicable"
+    summary: string
+    coverage: [{ unit, kind, instrumented: boolean, evidence }]
+    findings: [{ path, line, endLine?, checkId, severity, title, body, suggestion? }]
+    ```
 
-  `checkId` is one of the `skills/maple-audit/checks.md` ids so the UI, the check-run
-  annotation and the docs page speak the same language. The handler writes the row, then hands
-  off to the publisher. `required: false`, as with the diagnosis; the turn runner runs a close-out
-  pass if the model stops without submitting.
+    `checkId` is one of the `skills/maple-audit/checks.md` ids so the UI, the check-run
+    annotation and the docs page speak the same language. The handler writes the row, then hands
+    off to the publisher. `required: false`, as with the diagnosis; the turn runner runs a close-out
+    pass if the model stops without submitting.
+
 - Prompt: the audit skill's static-audit procedure rewritten per diff. The method the prompt
   enforces, in order: classify changed files, drop tests/generated/docs/type-only changes, list
   the review units (new inbound entrypoint, new outbound call, new background work, new error
@@ -131,17 +132,17 @@ had to add. "What phase 1 shipped" at the end is the current state.
 Derived from the `maple-audit` check ids, applied to what the PR adds rather than to the whole
 service:
 
-| Change in the diff | Expectation | Check ids |
-| --- | --- | --- |
-| New inbound entrypoint: HTTP route, RPC handler, queue or cron consumer, CLI command | a Server or Consumer span, or the repo's auto-instrumentation demonstrably covers the framework | SPAN-01, SPAN-03, STAT-04 |
-| New outbound call: fetch or HttpClient, DB query, queue publish, third-party SDK | a Client or Producer span with `peer.service`, `db.system`, `server.address` | MAP-*, STAT-03 |
-| New background work: cron, worker, workflow step | a span per unit of work, context propagated from the producer | SPAN-03, SPAN-04 |
-| New error path: catch, `Schema.TaggedError`, fallback branch | exception recorded, status `Error` where the request failed, not swallowed | STAT-01, STAT-02 |
-| New log statements | structured, trace-correlated, no PII; `console.log` in server code is a finding | LOG-*, PII-01 |
-| New operation worth counting or timing when the repo already has a meter | a counter or histogram | MET-* |
-| New attribute keys | semconv or the org namespace, no camelCase, no deprecated key, no second spelling of a key the org already emits (checked with `explore_attributes`) | REN-*, NAME-* |
-| New service or deployable | `service.name`, `service.version`, `deployment.environment.name`, `vcs.ref.head.revision`, an exporter wired | RES-01..08 |
-| Touched service reports nothing in the last 7 days | one "this service is dark" finding instead of per-hunk noise | signal presence |
+| Change in the diff                                                                   | Expectation                                                                                                                                          | Check ids                 |
+| ------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------- |
+| New inbound entrypoint: HTTP route, RPC handler, queue or cron consumer, CLI command | a Server or Consumer span, or the repo's auto-instrumentation demonstrably covers the framework                                                      | SPAN-01, SPAN-03, STAT-04 |
+| New outbound call: fetch or HttpClient, DB query, queue publish, third-party SDK     | a Client or Producer span with `peer.service`, `db.system`, `server.address`                                                                         | MAP-\*, STAT-03           |
+| New background work: cron, worker, workflow step                                     | a span per unit of work, context propagated from the producer                                                                                        | SPAN-03, SPAN-04          |
+| New error path: catch, `Schema.TaggedError`, fallback branch                         | exception recorded, status `Error` where the request failed, not swallowed                                                                           | STAT-01, STAT-02          |
+| New log statements                                                                   | structured, trace-correlated, no PII; `console.log` in server code is a finding                                                                      | LOG-\*, PII-01            |
+| New operation worth counting or timing when the repo already has a meter             | a counter or histogram                                                                                                                               | MET-\*                    |
+| New attribute keys                                                                   | semconv or the org namespace, no camelCase, no deprecated key, no second spelling of a key the org already emits (checked with `explore_attributes`) | REN-_, NAME-_             |
+| New service or deployable                                                            | `service.name`, `service.version`, `deployment.environment.name`, `vcs.ref.head.revision`, an exporter wired                                         | RES-01..08                |
+| Touched service reports nothing in the last 7 days                                   | one "this service is dark" finding instead of per-hunk noise                                                                                         | signal presence           |
 
 Severity follows the audit skill. `gaps` verdicts only on findings at or above the repository's
 threshold (default: high).
@@ -172,13 +173,13 @@ relying on it.
   `VcsProviderClient` (GitHub only for now): `createCheckRun`, `updateCheckRun`,
   `createPullRequestReview`, `listPullRequestFiles`.
 - Output, per head SHA:
-  1. A check run `maple / observability` with the summary, the coverage table and up to 50
-     annotations. Conclusion `neutral` for gaps, `success` for instrumented, never `failure` in
-     v1. A "required check" mode is a later per-repo setting.
-  2. One PR review with `event: COMMENT` carrying inline comments for findings at or above the
-     threshold, `side: RIGHT`, line from `pr_file_diff`. Findings are fingerprinted
-     `(path, checkId, hunk hash)` and stored in `pr_reviews.findings_json`; a later push posts only
-     new fingerprints and notes which earlier ones the push closed.
+    1. A check run `maple / observability` with the summary, the coverage table and up to 50
+       annotations. Conclusion `neutral` for gaps, `success` for instrumented, never `failure` in
+       v1. A "required check" mode is a later per-repo setting.
+    2. One PR review with `event: COMMENT` carrying inline comments for findings at or above the
+       threshold, `side: RIGHT`, line from `pr_file_diff`. Findings are fingerprinted
+       `(path, checkId, hunk hash)` and stored in `pr_reviews.findings_json`; a later push posts only
+       new fingerprints and notes which earlier ones the push closed.
 - The publisher receives the PR identity from the `pr_reviews` row bound at trigger time, never
   from tool arguments, so a prompt injection in the diff cannot redirect where the review is
   posted. Review bodies are model text going onto a customer's GitHub: strip HTML, bound length,
@@ -246,6 +247,39 @@ from webhook to check run.
    day one.
 3. Fork PRs in v1 on the API path only, or wait for the clone-script change.
 4. Model for the reviewer, decided from the spike.
+
+## Iterating locally
+
+The reviewer runs on this machine against any real pull request, without the stack, a GitHub App
+installation, or a webhook:
+
+```bash
+bun run --cwd apps/ai review:local MapleTechLabs/maple 976
+bun run --cwd apps/ai review:local https://github.com/octo/shop/pull/12 --model thinkingmachines/inkling:free
+bun run --cwd apps/ai review:local MapleTechLabs/maple 976 --prompt-file /tmp/prompt.md
+```
+
+It needs `gh` logged in and `OPENROUTER_API_KEY` in the root `.env.local`. The agent record,
+engine loop, model, `submit_review` normalization and `buildPublication` are the production ones,
+and the two diff tools print exactly what production prints. The source tools read a local clone
+at the head commit through git (`--repo-dir`, else this checkout when it is the same repository,
+else a cached clone under `~/.cache/maple-pr-review`). `sandbox_exec` runs read-only git only. The
+telemetry tools answer that no warehouse is attached, so warehouse-grounded checks are not
+exercised by a local run. Nothing is posted to GitHub.
+
+Each run writes `apps/ai/scripts/.pr-review-runs/<owner>__<repo>__<n>__<time>/`:
+
+- `review.md`: the check run and review body as GitHub would render them, and every finding with
+  its diff context. A finding whose line is not on the new side of the diff is marked **off the
+  diff**, because GitHub would refuse it as an inline comment.
+- `transcript.md`: every tool call with its input and full output, and the model's prose.
+- `report.json`: the normalized report, the publication, tokens and duration, for diffing two runs.
+
+`--prompt-file` replaces the system prompt for that run (`promptOverride` on `ChatRunInput`), so a
+prompt change can be compared against the committed one before it is edited in.
+
+The full path (webhook → trigger → Durable Object → GitHub post) is covered by
+`PrReviewService.test.ts` and needs a deployed stage with the App installed to run live.
 
 ## What phase 1 shipped
 

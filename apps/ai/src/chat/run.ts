@@ -87,6 +87,8 @@ export interface ChatRunInput {
 	readonly submitReview?: SubmitReview
 	/** This run is an autonomous pass's close-out: a report it files is a partial. */
 	readonly closeOut?: boolean
+	/** Replaces the agent's system prompt for this run. For the local review runner's prompt experiments. */
+	readonly promptOverride?: string
 	/** The message the user just sent, which is this run's input. */
 	readonly text: string
 	readonly history: ReadonlyArray<ChatMessage>
@@ -159,11 +161,16 @@ export const runChatTurn = (input: ChatRunInput) => {
 	const handlers = Layer.mergeAll(maple.layer, ...(completion === undefined ? [] : [completion.layer]))
 
 	// Declared but never *required*: see `buildDiagnosisCompletion`. A call still settles the run.
-	const run = chatAgent({ ...agent, prompt: profile.prompt }, toolkit, input.model, {
-		...(completion === undefined
-			? undefined
-			: { completion: { tool: completion.tool, required: false } }),
-	})
+	const run = chatAgent(
+		{ ...agent, prompt: input.promptOverride ?? profile.prompt },
+		toolkit,
+		input.model,
+		{
+			...(completion === undefined
+				? undefined
+				: { completion: { tool: completion.tool, required: false } }),
+		},
+	)
 
 	// A gated tool is announced exactly like any other and refuses when dispatched, so only the
 	// ruleset knows the call is a proposal.

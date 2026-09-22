@@ -119,6 +119,67 @@ const describeFile = (file: PullRequestFile): string => {
 	return `- ${file.path}${rename} · ${file.status} · +${file.additions}/-${file.deletions} · ${kind}${patch}`
 }
 
+/** What `pr_changed_files` answers for one pull request's files. Shared with the local runner. */
+export const renderChangedFiles = (
+	repository: string,
+	number: number,
+	files: ReadonlyArray<PullRequestFile>,
+): McpToolResult => {
+	const counts = new Map<ChangedFileKind, number>()
+	for (const file of files) {
+		const kind = classifyChangedFile(file.path)
+		counts.set(kind, (counts.get(kind) ?? 0) + 1)
+	}
+	const summary = [...counts.entries()].map(([kind, total]) => `${kind} ${total}`).join(", ")
+	const listed = files.slice(0, MAX_LISTED_FILES)
+	return text([
+		`## Pull request #${number} of ${repository}: ${files.length} changed ${files.length === 1 ? "file" : "files"}`,
+		summary.length === 0 ? "No files." : `By kind: ${summary}.`,
+		"",
+		...listed.map(describeFile),
+		...(files.length > listed.length
+			? [`…and ${files.length - listed.length} more; review the source files listed above first.`]
+			: []),
+		"",
+		"Tests, generated files, docs, config and lockfiles are not reviewed. A file marked `no patch` is binary or too large for the provider to inline; read it with read_source_file at the head SHA if it matters.",
+	])
+}
+
+/** What `pr_file_diff` answers for one path of a pull request. Shared with the local runner. */
+export const renderFileDiff = (files: ReadonlyArray<PullRequestFile>, path: string): McpToolResult => {
+	const wanted = path.trim()
+	if (!wanted || unsafePath(wanted)) return validationError("path must be repository-relative")
+	const file = files.find((candidate) => candidate.path === wanted || candidate.previousPath === wanted)
+	if (file === undefined) {
+		return validationError(
+			`'${wanted}' is not a file this pull request changes. Call pr_changed_files for the list.`,
+		)
+	}
+	const header = `## ${file.path} · ${file.status} · +${file.additions}/-${file.deletions}`
+	if (file.patch === null) {
+		return text([
+			header,
+			"",
+			"The provider gave no patch for this file: it is binary, or too large to inline. Read it with read_source_file at the pull request's head SHA if it is source.",
+		])
+	}
+	const { lines, truncated } = annotatePatch(file.patch)
+	return text([
+		header,
+		"Format: `<new-side line> <+ added | - removed | (blank) context> <code>`. Cite the new-side line.",
+		"```",
+		...lines,
+		"```",
+		...(truncated
+			? [
+					`Diff cut at ${MAX_DIFF_LINES} lines; read the rest of the file with sandbox_read_file or read_source_file at the head SHA.`,
+				]
+			: []),
+	])
+}
+
+const invalidNumber = (number: number) => !Number.isInteger(number) || number < 1
+
 export function registerPullRequestTools(server: McpToolRegistrar) {
 	server.tool(
 		"pr_changed_files",
@@ -128,33 +189,13 @@ export function registerPullRequestTools(server: McpToolRegistrar) {
 			number: requiredNumberParam("The pull request number"),
 		}),
 		Effect.fn("McpTool.prChangedFiles")(function* ({ repository, number }) {
-			if (!Number.isInteger(number) || number < 1)
-				return validationError("number must be a positive integer")
+			if (invalidNumber(number)) return validationError("number must be a positive integer")
 			const tenant = yield* CurrentMcpTenant
 			const source = yield* VcsSourceService
 			const files = yield* source
 				.listPullRequestFiles(tenant.orgId, repository.trim(), number)
 				.pipe(Effect.mapError(toSourceError("pr_changed_files")))
-			const counts = new Map<ChangedFileKind, number>()
-			for (const file of files) {
-				const kind = classifyChangedFile(file.path)
-				counts.set(kind, (counts.get(kind) ?? 0) + 1)
-			}
-			const summary = [...counts.entries()].map(([kind, total]) => `${kind} ${total}`).join(", ")
-			const listed = files.slice(0, MAX_LISTED_FILES)
-			return text([
-				`## Pull request #${number} of ${repository}: ${files.length} changed ${files.length === 1 ? "file" : "files"}`,
-				summary.length === 0 ? "No files." : `By kind: ${summary}.`,
-				"",
-				...listed.map(describeFile),
-				...(files.length > listed.length
-					? [
-							`…and ${files.length - listed.length} more; review the source files listed above first.`,
-						]
-					: []),
-				"",
-				"Tests, generated files, docs, config and lockfiles are not reviewed. A file marked `no patch` is binary or too large for the provider to inline; read it with read_source_file at the head SHA if it matters.",
-			])
+			return renderChangedFiles(repository, number, files)
 		}),
 		INTERNAL,
 	)
@@ -173,8 +214,7 @@ export function registerPullRequestTools(server: McpToolRegistrar) {
 			),
 		}),
 		Effect.fn("McpTool.prFileDiff")(function* ({ repository, number, path }) {
-			if (!Number.isInteger(number) || number < 1)
-				return validationError("number must be a positive integer")
+			if (invalidNumber(number)) return validationError("number must be a positive integer")
 			const wanted = path.trim()
 			if (!wanted || unsafePath(wanted)) return validationError("path must be repository-relative")
 			const tenant = yield* CurrentMcpTenant
@@ -182,35 +222,7 @@ export function registerPullRequestTools(server: McpToolRegistrar) {
 			const files = yield* source
 				.listPullRequestFiles(tenant.orgId, repository.trim(), number)
 				.pipe(Effect.mapError(toSourceError("pr_file_diff")))
-			const file = files.find(
-				(candidate) => candidate.path === wanted || candidate.previousPath === wanted,
-			)
-			if (file === undefined) {
-				return validationError(
-					`'${wanted}' is not a file this pull request changes. Call pr_changed_files for the list.`,
-				)
-			}
-			const header = `## ${file.path} · ${file.status} · +${file.additions}/-${file.deletions}`
-			if (file.patch === null) {
-				return text([
-					header,
-					"",
-					"The provider gave no patch for this file: it is binary, or too large to inline. Read it with read_source_file at the pull request's head SHA if it is source.",
-				])
-			}
-			const { lines, truncated } = annotatePatch(file.patch)
-			return text([
-				header,
-				"Format: `<new-side line> <+ added | - removed | (blank) context> <code>`. Cite the new-side line.",
-				"```",
-				...lines,
-				"```",
-				...(truncated
-					? [
-							`Diff cut at ${MAX_DIFF_LINES} lines; read the rest of the file with sandbox_read_file or read_source_file at the head SHA.`,
-						]
-					: []),
-			])
+			return renderFileDiff(files, wanted)
 		}),
 		INTERNAL,
 	)
