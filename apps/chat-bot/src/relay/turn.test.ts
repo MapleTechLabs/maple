@@ -9,21 +9,30 @@
  */
 import { describe, expect, it } from "@effect/vitest"
 import {
+	ChatSessionId,
 	decodeChatEventPayload,
 	encodeChatEventPayload,
 	type ChatEvent,
 	type ChatEventInput,
+	type ChatMessage,
+	type ChatProposalOutcome,
+	type ChatProposalSettlement,
 } from "@maple/domain/chat-session"
+import { makeChatTranscript } from "@maple/domain/chat-transcript"
 import type { ChatSessionStub } from "@maple/domain/chat-session-stub"
 import { ChatConnectorId, OrgId } from "@maple/domain/primitives"
 import {
+	APPROVER_ROLE_SETTING,
+	chatActionControlId,
 	chatConnectorId,
 	ChatOutboundError,
+	encodeChatActionToken,
 	type ChatBlock,
 	type ChatChartRef,
 	type ChatMessageRef,
 	type ChatOutbound,
 	type ChatTarget,
+	type ChatWorkspaceSettings,
 	type InboundAction,
 	type InboundMessage,
 	type InboundWorkspaceRemoved,
@@ -123,33 +132,46 @@ interface Session {
 	readonly stub: ChatSessionStub
 	readonly turns: Array<BeginTurnInput>
 	readonly cursors: Array<number>
+	/** Every decision handed to the session, as the relay sent it. */
+	readonly settlements: Array<ChatProposalSettlement>
 }
 
 /**
  * A session that answers with one scripted connection per subscription.
  *
  * `busy` is what the Durable Object answers when a turn is already in flight: the claim, not an
- * error.
+ * error. `settles` and `transcript` are the approval half — what the object answered a decision
+ * with, and what its log holds once it has.
  */
 const session = (
 	connections: ReadonlyArray<ReadonlyArray<ChatEvent>>,
-	options?: { readonly busy?: boolean },
+	options?: {
+		readonly busy?: boolean
+		readonly settles?: ChatProposalOutcome
+		readonly transcript?: ReadonlyArray<ChatMessage>
+	},
 ): Session => {
 	const turns: Array<BeginTurnInput> = []
 	const cursors: Array<number> = []
+	const settlements: Array<ChatProposalSettlement> = []
 	let opened = 0
 	return {
 		turns,
 		cursors,
+		settlements,
 		stub: {
 			cursor: () => Promise.resolve(0),
 			running: () => Promise.resolve(false),
-			history: () => Promise.resolve([]),
+			history: () => Promise.resolve(options?.transcript ?? []),
 			since: () => Promise.resolve([]),
 			append: () => Promise.resolve(0),
 			holdsTurn: () => Promise.resolve(false),
 			endTurn: () => Promise.resolve(),
 			abort: () => Promise.resolve(),
+			settleProposal: (input) => {
+				settlements.push(input)
+				return Promise.resolve(options?.settles ?? "decided")
+			},
 			beginTurn: (input) => {
 				turns.push(input)
 				return Promise.resolve(
@@ -182,6 +204,8 @@ const host = (
 		readonly announceUnlinked?: boolean
 		/** The database could not answer, which is not the same as nobody having linked it. */
 		readonly lookupFails?: boolean
+		/** What the org configured for this workspace — today, who may approve a proposed write. */
+		readonly settings?: ChatWorkspaceSettings
 	},
 ): Host => {
 	const forgotten: Array<string> = []
@@ -196,7 +220,11 @@ const host = (
 					? Effect.fail(
 							new WorkspaceLookupFailed({ connector, message: "the database said nothing" }),
 						)
-					: Effect.succeed(options?.linked === false ? Option.none() : Option.some({ orgId: ORG })),
+					: Effect.succeed(
+							options?.linked === false
+								? Option.none()
+								: Option.some({ orgId: ORG, settings: options?.settings ?? {} }),
+						),
 			forgetWorkspace: (_connector: ChatConnectorId, workspaceId: string) =>
 				Effect.sync(() => void forgotten.push(workspaceId)),
 			chatSession: () => stub,
@@ -495,30 +523,244 @@ describe("relaying a mention", () => {
 	)
 })
 
-describe("relaying everything else a connector reports", () => {
-	const approval: InboundAction = {
-		type: "action",
-		connector: TESTCHAT,
-		workspaceId: WORKSPACE,
-		channelId: CHANNEL,
-		messageId: "message-2",
-		actionToken: `${SESSION_ID}|call_9`,
-		actor: { id: "author-1", displayName: "Ada", roleIds: [], isWorkspaceAdmin: true },
-	}
+// ── Approvals ────────────────────────────────────────────────────────────────
 
-	it.effect("answers an approval that Maple cannot act on one yet", () =>
+const APPROVER_ROLE = "role-approvers"
+const CALL_ID = "call_9"
+const CONTROL = chatActionControlId(
+	"approve",
+	encodeChatActionToken(Schema.decodeSync(ChatSessionId)(SESSION_ID), CALL_ID),
+)
+
+const click = (overrides: Partial<InboundAction> = {}): InboundAction => ({
+	type: "action",
+	connector: TESTCHAT,
+	workspaceId: WORKSPACE,
+	channelId: CONVERSATION,
+	messageId: "message-2",
+	actionToken: CONTROL,
+	actor: { id: "author-1", displayName: "Ada", roleIds: [], isWorkspaceAdmin: true },
+	...overrides,
+})
+
+/** The transcript a decided proposal leaves behind: the call, now carrying its result. */
+const decidedTranscript = (output: string, isError?: boolean): ReadonlyArray<ChatMessage> => {
+	const transcript = makeChatTranscript()
+	const inputs: ReadonlyArray<ChatEventInput> = [
+		{ type: "turn-start", messageId: "a1" },
+		{ type: "text-delta", messageId: "a1", text: "I can set that up." },
+		{
+			type: "tool-call",
+			messageId: "a1",
+			callId: CALL_ID,
+			name: "create_alert_rule",
+			input: { name: "checkout p95" },
+			proposed: true,
+		},
+		{
+			type: "tool-result",
+			messageId: "a1",
+			callId: CALL_ID,
+			output,
+			...(isError === true ? { isError: true } : undefined),
+		},
+	]
+	inputs.forEach((input, index) => transcript.add(event(index + 1, input), 0))
+	return transcript.messages
+}
+
+const approvals = (blocks: ReadonlyArray<ChatBlock>) => blocks.filter((block) => block.kind === "approval")
+
+describe("settling an approval somebody clicked", () => {
+	it.effect("applies the proposal and puts the outcome on the message that carried the buttons", () =>
 		Effect.gen(function* () {
 			const platform = chat()
-			const deployment = host(platform.outbound, session([]).stub)
+			const agent = session([], {
+				transcript: decidedTranscript("Approved by Ada.\nCreated alert rule ar_1."),
+			})
+			const deployment = host(platform.outbound, agent.stub, {
+				settings: { [APPROVER_ROLE_SETTING]: APPROVER_ROLE },
+			})
 
-			yield* relayInboundEvent(approval, deployment.ports)
+			yield* relayInboundEvent(
+				click({
+					actor: {
+						id: "author-1",
+						displayName: "Ada",
+						roleIds: [APPROVER_ROLE],
+						isWorkspaceAdmin: false,
+					},
+				}),
+				deployment.ports,
+			)
 
-			expect(notices(blocksOf(platform.calls))).toEqual([
-				"Approving a change from chat isn't available yet — open the conversation in Maple to apply it.",
+			// Only ids and a decision cross to the session: which tool, and with what, is the
+			// transcript's to say.
+			expect(agent.settlements).toEqual([
+				{
+					sessionId: SESSION_ID,
+					toolCallId: CALL_ID,
+					decision: "approve",
+					approver: {
+						kind: "connector",
+						connectorId: TESTCHAT,
+						workspaceId: WORKSPACE,
+						externalUserId: "author-1",
+						displayName: "Ada",
+					},
+				},
+			])
+
+			// The message the controls were on is edited in place, keeping what the turn said above
+			// them and replacing the proposal with what came of it.
+			const edit = platform.calls.at(-1)
+			expect(edit?.verb).toBe("edit")
+			expect(edit?.ref.messageId).toBe("message-2")
+			expect(prose(edit?.blocks ?? [])).toBe("I can set that up.")
+			expect(approvals(edit?.blocks ?? [])).toEqual([
+				{
+					kind: "approval",
+					toolName: "create_alert_rule",
+					summary: "name: checkout p95",
+					token: `${SESSION_ID}|${CALL_ID}`,
+					outcome: { approved: true, text: "Approved by Ada.\nCreated alert rule ar_1." },
+				},
 			])
 		}),
 	)
 
+	it.effect("shows a denial the same way, as a proposal that was decided against", () =>
+		Effect.gen(function* () {
+			const platform = chat()
+			const agent = session([], {
+				transcript: decidedTranscript("Declined by Ada. The tool did not run.", true),
+			})
+			const deployment = host(platform.outbound, agent.stub)
+
+			yield* relayInboundEvent(
+				click({
+					actionToken: chatActionControlId(
+						"deny",
+						encodeChatActionToken(Schema.decodeSync(ChatSessionId)(SESSION_ID), CALL_ID),
+					),
+				}),
+				deployment.ports,
+			)
+
+			expect(agent.settlements[0]?.decision).toBe("deny")
+			expect(approvals(platform.calls.at(-1)?.blocks ?? [])[0]).toMatchObject({
+				outcome: { approved: false, text: "Declined by Ada. The tool did not run." },
+			})
+		}),
+	)
+
+	it.effect("refuses somebody who does not hold the configured approver role", () =>
+		Effect.gen(function* () {
+			const platform = chat()
+			const agent = session([])
+			const deployment = host(platform.outbound, agent.stub, {
+				settings: { [APPROVER_ROLE_SETTING]: APPROVER_ROLE },
+			})
+
+			// A workspace administrator, which is exactly the fallback a configured role replaces.
+			yield* relayInboundEvent(click(), deployment.ports)
+
+			expect(agent.settlements).toEqual([])
+			expect(notices(blocksOf(platform.calls))).toEqual([
+				"You're not set up to approve Maple's changes in this workspace — ask someone who is.",
+			])
+			expect(platform.calls[0]?.verb).toBe("post")
+		}),
+	)
+
+	it.effect("does nothing at all for a control Maple did not render", () =>
+		Effect.gen(function* () {
+			const platform = chat()
+			const agent = session([])
+			const deployment = host(platform.outbound, agent.stub)
+
+			// Some platforms deliver every component click in a channel, not only Maple's.
+			yield* relayInboundEvent(click({ actionToken: "some-other-app:thing" }), deployment.ports)
+
+			expect(agent.settlements).toEqual([])
+			expect(platform.calls).toEqual([])
+		}),
+	)
+
+	it.effect("refuses a control naming a conversation in another organization", () =>
+		Effect.gen(function* () {
+			const platform = chat()
+			const agent = session([])
+			const deployment = host(platform.outbound, agent.stub)
+
+			yield* relayInboundEvent(
+				click({
+					actionToken: chatActionControlId(
+						"approve",
+						encodeChatActionToken(
+							Schema.decodeSync(ChatSessionId)(`org_other:bot-${TESTCHAT}-${CONVERSATION}`),
+							CALL_ID,
+						),
+					),
+				}),
+				deployment.ports,
+			)
+
+			// The workspace's own org is the only one its members may change, however the control got
+			// into the channel.
+			expect(agent.settlements).toEqual([])
+			expect(platform.calls).toEqual([])
+		}),
+	)
+
+	it.effect("leaves the message alone on a second click, and says nothing", () =>
+		Effect.gen(function* () {
+			const platform = chat()
+			const agent = session([], { settles: "settled" })
+			const deployment = host(platform.outbound, agent.stub)
+
+			yield* relayInboundEvent(click(), deployment.ports)
+
+			// The message already shows what was decided; repeating it would be the bot arguing with
+			// itself in a channel.
+			expect(agent.settlements).toHaveLength(1)
+			expect(platform.calls).toEqual([])
+		}),
+	)
+
+	it.effect("says so when the control outlived the proposal it pointed at", () =>
+		Effect.gen(function* () {
+			const platform = chat()
+			const agent = session([], { settles: "unknown" })
+			const deployment = host(platform.outbound, agent.stub)
+
+			yield* relayInboundEvent(click(), deployment.ports)
+
+			expect(notices(blocksOf(platform.calls))).toEqual([
+				"That change isn't waiting for a decision any more.",
+			])
+		}),
+	)
+
+	it.effect("answers a click it could not deliver rather than going silent", () =>
+		Effect.gen(function* () {
+			const platform = chat()
+			const agent = session([])
+			const deployment = host(platform.outbound, {
+				...agent.stub,
+				settleProposal: () => Promise.reject(new Error("no such object")),
+			})
+
+			yield* relayInboundEvent(click(), deployment.ports)
+
+			expect(notices(blocksOf(platform.calls))).toEqual([
+				"Maple's agent can't be reached from here right now.",
+			])
+		}),
+	)
+})
+
+describe("relaying everything else a connector reports", () => {
 	it.effect("unlinks a workspace the bot was removed from", () =>
 		Effect.gen(function* () {
 			const platform = chat()

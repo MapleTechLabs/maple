@@ -61,9 +61,14 @@ answer from Maple.
    continues the same conversation; a mention in another channel starts a different one. A mention
    while an answer is still being written is told so, and is not queued.
 
-Two limits worth knowing before reporting a bug: a write the agent proposes is rendered as an
-approval card that **cannot be approved yet** (clicking it answers that approvals are not available
-yet), and the bot only ever answers messages it was mentioned in.
+5. **Decide what it proposes.** A write the agent wants to make is rendered as an approval card
+   with two buttons. Only a holder of the server's configured approver role may press one — with
+   none configured, whoever can manage the server — and anybody else is told so and nothing runs.
+   The card is then edited in place with what came of it, and the buttons go, because Discord
+   leaves a component clickable forever.
+
+One limit worth knowing before reporting a bug: the bot only ever answers messages it was mentioned
+in.
 
 ## Install flow
 

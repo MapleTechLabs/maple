@@ -1,6 +1,11 @@
 import { makeChatSessionId } from "@maple/domain/chat-session"
 import { describe, expect, it } from "vitest"
-import { decodeChatActionToken, encodeChatActionToken } from "./action-token"
+import {
+	chatActionControlId,
+	decodeChatActionControlId,
+	decodeChatActionToken,
+	encodeChatActionToken,
+} from "./action-token"
 
 const sessionId = makeChatSessionId("org_2abcdefghijklmnopqrstuvwxy", "bot-0f8a1c2d")
 
@@ -46,5 +51,35 @@ describe("chat action token", () => {
 		const awkward = makeChatSessionId("org_1", "bot|42")
 		const token = encodeChatActionToken(awkward, "call_1")
 		expect(decodeChatActionToken(token)).toEqual({ sessionId: awkward, toolCallId: "call_1" })
+	})
+})
+
+describe("chat action control id", () => {
+	const token = encodeChatActionToken(sessionId, "call_01JQ8ZC4M7X2")
+
+	it("round-trips the decision alongside the call it stands for", () => {
+		for (const decision of ["approve", "deny"] as const) {
+			expect(decodeChatActionControlId(chatActionControlId(decision, token))).toEqual({
+				decision,
+				sessionId,
+				toolCallId: "call_01JQ8ZC4M7X2",
+			})
+		}
+	})
+
+	it("reads the decision off the front, not off a session id full of colons", () => {
+		// A session id is `<orgId>:<tabId>` and a provider's call id may hold anything, so the split
+		// has to be anchored at the decision rather than at the first separator.
+		const control = chatActionControlId("approve", encodeChatActionToken(sessionId, "a:b:c"))
+		expect(decodeChatActionControlId(control)?.toolCallId).toBe("a:b:c")
+	})
+
+	it("refuses a control Maple did not render", () => {
+		// A platform hands back whatever was on the clicked control, including other apps' — and a
+		// forged one naming no decision must not be read as the permissive half of the pair.
+		expect(decodeChatActionControlId(token)).toBeUndefined()
+		expect(decodeChatActionControlId(`maybe:${token}`)).toBeUndefined()
+		expect(decodeChatActionControlId("approve:orgless|call_1")).toBeUndefined()
+		expect(decodeChatActionControlId("approve:")).toBeUndefined()
 	})
 })

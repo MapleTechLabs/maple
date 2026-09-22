@@ -19,7 +19,13 @@ import {
 import { delegatedAgentOf, type ChatMessage, type ChatToolCall } from "@maple/domain/chat-session"
 import { formatDuration, formatNumber } from "@maple/domain/format"
 import { encodeChatActionToken } from "../action-token"
-import type { ChatBlock, ChatEntityBlock, ChatRenderContext, ChatToolActivity } from "./blocks"
+import {
+	MAX_APPROVAL_OUTCOME_CHARS,
+	type ChatBlock,
+	type ChatEntityBlock,
+	type ChatRenderContext,
+	type ChatToolActivity,
+} from "./blocks"
 
 export const renderChatMessage = (
 	message: ChatMessage,
@@ -75,6 +81,11 @@ export const renderChatMessage = (
 			toolName: call.name,
 			summary: summarizeToolInput(call.input),
 			token: encodeChatActionToken(context.sessionId, call.id),
+			// `output` is optional on the wire, so its PRESENCE is what settles a proposal: a decision
+			// that produced no text is still a decision, and reading the value would call it open.
+			outcome: !("output" in call)
+				? null
+				: { approved: call.isError !== true, text: outcomeText(call.output) },
 		})
 	}
 
@@ -191,6 +202,12 @@ const toolActivity = (call: ChatToolCall): ChatToolActivity => {
 		status: !("output" in call) ? "running" : call.isError === true ? "failed" : "done",
 		detail: null,
 	}
+}
+
+/** What a settled proposal says happened. A tool's output is text, but the wire type is not. */
+const outcomeText = (output: unknown): string => {
+	const text = typeof output === "string" ? output : (JSON.stringify(output) ?? "")
+	return truncate(text, MAX_APPROVAL_OUTCOME_CHARS)
 }
 
 /** How many arguments an approval line shows before it stops being readable. */

@@ -2,11 +2,15 @@
  * The handle an approval button carries, and the only thing a connector has to round-trip.
  *
  * A platform gives a button a small string and hands it back when someone clicks — 100 characters
- * on the tightest of them — so the token is the pair that identifies the pending call and nothing
- * else: which session, which tool call. Who is allowed to click is decided by the connector's own
- * authorization when the click arrives, never by what the button carries.
+ * on the tightest of them — so a control carries the decision it stands for plus the pair that
+ * identifies the pending call, and nothing else: which session, which tool call.
+ *
+ * Who is allowed to click is NOT in here and is not the connector's call either. Ingress reports
+ * the clicker's roles and whether they administer the workspace as plain data
+ * (`InboundActor`), and the vendor-neutral host decides against the workspace's configured
+ * approver role. A forged control can therefore name any call it likes; it cannot name a verdict.
  */
-import { ChatSessionId, orgIdFromChatSessionId } from "@maple/domain/chat-session"
+import { ChatSessionId, orgIdFromChatSessionId, type ChatProposalDecision } from "@maple/domain/chat-session"
 import { Option, Schema } from "effect"
 
 export const ChatActionToken = Schema.String.pipe(Schema.brand("@maple/ChatActionToken"))
@@ -60,4 +64,39 @@ export const decodeChatActionToken = (token: string): ChatAction | undefined => 
 	// does, a button's string must fail here rather than become a branded id later code trusts.
 	const sessionId = decodeSessionId(rawSessionId)
 	return Option.isNone(sessionId) ? undefined : { sessionId: sessionId.value, toolCallId }
+}
+
+/**
+ * The whole string one control carries: the decision it stands for, then the token.
+ *
+ * Here rather than inside a connector because both ends have to agree on it — a connector mints
+ * the control and hands its string back verbatim, and the host reads the decision off it. A
+ * connector that wrote its own prefix would be a second spelling of the same convention, and the
+ * host has no way to tell a mis-spelled one from a forged one.
+ *
+ * The decision goes FIRST so the split is unambiguous: a session id contains `:` and a tool call
+ * id may, while `approve` and `deny` contain neither.
+ */
+const DECISION_SEPARATOR = ":"
+
+export const chatActionControlId = (decision: ChatProposalDecision, token: ChatActionToken): string =>
+	`${decision}${DECISION_SEPARATOR}${token}`
+
+export interface ChatActionRequest extends ChatAction {
+	readonly decision: ChatProposalDecision
+}
+
+const DECISIONS: ReadonlyArray<ChatProposalDecision> = ["approve", "deny"]
+
+/**
+ * Read a control's string back, or `undefined` for anything that is not one of Maple's.
+ *
+ * A platform hands back whatever was on the control that was clicked, which on some of them
+ * includes controls Maple never rendered — so "not ours" is an ordinary answer here, not a failure.
+ */
+export const decodeChatActionControlId = (raw: string): ChatActionRequest | undefined => {
+	const decision = DECISIONS.find((candidate) => raw.startsWith(`${candidate}${DECISION_SEPARATOR}`))
+	if (decision === undefined) return undefined
+	const action = decodeChatActionToken(raw.slice(decision.length + DECISION_SEPARATOR.length))
+	return action === undefined ? undefined : { ...action, decision }
 }

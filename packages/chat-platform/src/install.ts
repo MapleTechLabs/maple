@@ -36,6 +36,17 @@ export interface ChatWorkspaceSettings {
 	readonly [key: string]: string
 }
 
+/**
+ * The one settings key the vendor-neutral half reads: the platform role whose holders may approve
+ * the writes Maple proposes.
+ *
+ * Declared here because two sides have to agree on it — a connector's settings schema defines and
+ * validates it in whatever its platform calls a role, and the host authorizes a click against it
+ * without knowing which platform the click came from. A connector that leaves it unset falls back
+ * to whoever the platform says may manage the workspace.
+ */
+export const APPROVER_ROLE_SETTING = "approver_role_id"
+
 /** The connector's config is not set on this deployment, so it cannot install. */
 export class ChatConnectorNotConfigured extends Schema.TaggedError<ChatConnectorNotConfigured>()(
 	"@maple/chat-platform/ChatConnectorNotConfigured",

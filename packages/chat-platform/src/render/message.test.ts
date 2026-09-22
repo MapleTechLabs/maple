@@ -159,6 +159,77 @@ describe("renderChatMessage", () => {
 				toolName: "create_alert_rule",
 				summary: "name: checkout p95 · threshold: 1200",
 				token: "org_1:bot-42|call_9",
+				outcome: null,
+			},
+		])
+	})
+
+	it("keeps a decided proposal in its place, now carrying what came of it", () => {
+		// Not moved into the activity line and not dropped: the reader coming back to the thread
+		// needs to see what was asked for as well as what happened, and the settling edit addresses
+		// the message this block is in.
+		const blocks = renderChatMessage(
+			turn([
+				{ type: "turn-start", messageId: "a1" },
+				{
+					type: "tool-call",
+					messageId: "a1",
+					callId: "call_9",
+					name: "create_alert_rule",
+					input: { name: "checkout p95" },
+					proposed: true,
+				},
+				{
+					type: "tool-result",
+					messageId: "a1",
+					callId: "call_9",
+					output: "Approved by Ada.\nCreated alert rule.",
+				},
+			]),
+			context,
+		)
+
+		expect(blocks).toEqual([
+			{
+				kind: "approval",
+				toolName: "create_alert_rule",
+				summary: "name: checkout p95",
+				token: "org_1:bot-42|call_9",
+				outcome: { approved: true, text: "Approved by Ada.\nCreated alert rule." },
+			},
+		])
+	})
+
+	it("reads a declined proposal as decided, not as failed activity", () => {
+		const blocks = renderChatMessage(
+			turn([
+				{ type: "turn-start", messageId: "a1" },
+				{
+					type: "tool-call",
+					messageId: "a1",
+					callId: "call_9",
+					name: "delete_alert_rule",
+					input: { id: "ar_1" },
+					proposed: true,
+				},
+				{
+					type: "tool-result",
+					messageId: "a1",
+					callId: "call_9",
+					output: "Declined by Ada. The tool did not run.",
+					isError: true,
+				},
+			]),
+			context,
+		)
+
+		expect(blocks).toEqual([
+			{
+				kind: "approval",
+				toolName: "delete_alert_rule",
+				summary: "id: ar_1",
+				token: "org_1:bot-42|call_9",
+				outcome: { approved: false, text: "Declined by Ada. The tool did not run." },
 			},
 		])
 	})

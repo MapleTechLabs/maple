@@ -58,8 +58,7 @@ import { agentForSession } from "./agents"
 import { profileForTurn } from "./profiles"
 import { runChatTurn, type ChatRunOutcome } from "./run"
 import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
-import { chatConnectorAgentName } from "@maple/domain/system-agents"
-import { ErrorActorsService } from "@maple/backend/services/errors/ErrorActorsService"
+import { withConnectorActor } from "./turn-actor"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import { trackTokenUsage } from "@maple/backend/services/billing/autumn-tracker"
 
@@ -129,41 +128,6 @@ const toTenantContext = (encoded: ChatTurnTenantEncoded, origin: ChatTurnOrigin)
 		...(!(tenant.actorId === undefined) ? { actorId: tenant.actorId } : undefined),
 	}
 }
-
-/**
- * Pin a connector turn to the agent actor that answers for that connector, one `ensureAgentActor`
- * per turn.
- *
- * Everything that asks "who did this" already prefers a pinned `actorId` — the audit log, an issue
- * claim, a comment — and for a connector turn that is the honest answer: a person on a chat
- * platform drove it, holding no Maple identity, so the connector acts and who asked is metadata.
- * Without the pin those paths would fall back to the placeholder user id the tenant carries.
- */
-export const withConnectorActor = Effect.fn("chat.connectorActor")(function* (
-	tenant: TenantContext,
-	origin: ChatTurnOrigin,
-) {
-	if (origin.kind !== "connector") return tenant
-	const actors = yield* ErrorActorsService
-	const actor = yield* actors
-		.ensureAgentActor(tenant.orgId, chatConnectorAgentName(origin.connectorId))
-		.pipe(
-			// A lookup that failed or died must not cost an answer: the entry still names the
-			// connector, from the origin and the label it carries. Interrupts stay interrupts.
-			Effect.catchCause((cause) =>
-				Cause.hasInterruptsOnly(cause)
-					? Effect.interrupt
-					: Effect.logWarning("Could not resolve the connector's agent actor").pipe(
-							Effect.annotateLogs({
-								connector: origin.connectorId,
-								error: summarizeCause(cause),
-							}),
-							Effect.as(undefined),
-						),
-			),
-		)
-	return actor === undefined ? tenant : { ...tenant, actorId: actor.id }
-})
 
 /**
  * Metering is housekeeping, and it runs after the answer, on the way out of the turn.

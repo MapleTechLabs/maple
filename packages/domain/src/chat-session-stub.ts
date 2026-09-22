@@ -14,6 +14,8 @@ import type {
 	ChatEvent,
 	ChatEventInput,
 	ChatMessage,
+	ChatProposalOutcome,
+	ChatProposalSettlement,
 	ChatTurnOrigin,
 	ChatTurnTenantEncoded,
 } from "./chat-session"
@@ -61,6 +63,18 @@ export interface ChatSessionStub {
 		  }
 		| undefined
 	>
+	/**
+	 * Apply or decline a mutation the agent proposed, and record the outcome as that call's
+	 * `tool-result`.
+	 *
+	 * By reference: the caller names the call, and the session reads the tool's name and arguments
+	 * out of its own log. A caller that could name them would be a second way to run a mutating
+	 * tool, reachable by anyone who can reach this object.
+	 *
+	 * The object is the single writer, so the second click on the same control is answered
+	 * `"settled"` rather than racing the first one's execution.
+	 */
+	readonly settleProposal: (input: ChatProposalSettlement) => Promise<ChatProposalOutcome>
 	readonly holdsTurn: (messageId: string) => Promise<boolean>
 	readonly endTurn: (messageId: string) => Promise<void>
 	readonly abort: () => Promise<void>

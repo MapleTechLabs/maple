@@ -218,6 +218,7 @@ describe("driveChatTurn", () => {
 					toolName: "create_alert_rule",
 					summary: "name: checkout p95",
 					token: "org_1:bot-42|call_9",
+					outcome: null,
 				},
 				{ kind: "notice", tone: "error", text: "Failed: upstream said no" },
 			])

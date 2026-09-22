@@ -9,7 +9,7 @@
  * renders the rest of the message as code on every platform that has fences at all, so a fence
  * that spans a cut is closed at the end of one message and reopened at the top of the next.
  */
-import type { ChatBlock } from "./blocks"
+import { MAX_APPROVAL_OUTCOME_CHARS, type ChatBlock } from "./blocks"
 
 export const splitBlocks = (
 	blocks: ReadonlyArray<ChatBlock>,
@@ -70,7 +70,12 @@ const blockWeight = (block: ChatBlock): number => {
 				0,
 			)
 		case "approval":
-			return block.toolName.length + block.summary.length + block.token.length
+			// Charged for an outcome it may not have yet, so that deciding a proposal cannot move its
+			// block into a different message from the one whose controls were clicked — which is the
+			// message the settling edit addresses.
+			return (
+				block.toolName.length + block.summary.length + block.token.length + MAX_APPROVAL_OUTCOME_CHARS
+			)
 		case "notice":
 			return block.text.length
 	}

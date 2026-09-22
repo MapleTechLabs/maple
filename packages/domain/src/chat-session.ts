@@ -504,6 +504,53 @@ export const connectorTurnTenant = (orgId: OrgId): ChatTurnTenantEncoded =>
 		authMode: "self_hosted",
 	})
 
+const ORG_ADMIN_ROLE = Schema.decodeSync(RoleName)("org:admin")
+
+/**
+ * The identity an APPROVED proposal runs under — the same connector tenant, now holding the role
+ * the mutating tools check.
+ *
+ * The role is granted on the strength of a check that has already happened: the host Worker
+ * resolved the workspace, read its configured approver role, and matched it against the roles the
+ * platform reported for the person who clicked. A proposal reaching the session unapproved never
+ * reaches this function, and the session is addressable only from Maple's own Workers.
+ *
+ * Deliberately beside {@link connectorTurnTenant} rather than built at the call site: the two are
+ * one rule read together — a connector turn PROPOSES with no roles, and only an approval carries
+ * any.
+ */
+export const connectorApprovalTenant = (orgId: OrgId): ChatTurnTenantEncoded =>
+	encodeChatTurnTenant({
+		orgId,
+		userId: CONNECTOR_TENANT_USER_ID,
+		roles: [ORG_ADMIN_ROLE],
+		authMode: "self_hosted",
+	})
+
+/** Which connector, and who on it — the member of {@link ChatTurnOrigin} an approval carries. */
+export type ChatConnectorOrigin = Extract<ChatTurnOrigin, { readonly kind: "connector" }>
+
+/** What a click on an approval control asks for. */
+export type ChatProposalDecision = "approve" | "deny"
+
+/** Everything the session needs to settle a proposal: which call, which way, and who said so. */
+export interface ChatProposalSettlement {
+	/** `"<orgId>:<tabId>"`. A Durable Object cannot recover its own name, exactly as for `beginTurn`. */
+	readonly sessionId: string
+	readonly toolCallId: string
+	readonly decision: ChatProposalDecision
+	readonly approver: ChatConnectorOrigin
+}
+
+/**
+ * What settling answered.
+ *
+ * A bare string because that is all the caller can act on: it re-reads the transcript for what the
+ * decision actually produced. `"settled"` is the second click on the same control — someone else
+ * got there first, or the same person clicked twice — and is a no-op by design.
+ */
+export type ChatProposalOutcome = "unknown" | "settled" | "decided"
+
 /**
  * The origin of a turn raised through Maple's own HTTP surface.
  *

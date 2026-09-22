@@ -7,6 +7,7 @@ import {
 	ChatTurnTenant,
 	chatModeFromSessionId,
 	connectorSessionId,
+	connectorApprovalTenant,
 	connectorTurnTenant,
 	CONNECTOR_TENANT_USER_ID,
 	isConnectorSessionId,
@@ -238,6 +239,21 @@ describe("ChatTurnTenant", () => {
 		// The prototype, not `structuredClone`: Node clones a class instance happily and only
 		// workerd raises `DataCloneError`, so the throw check above is the one that catches this
 		// and a green `structuredClone` here would prove nothing.
+		expect(Object.getPrototypeOf(encoded)).toBe(Object.prototype)
+	})
+
+	it("gives an approved proposal the one role the mutating tools check, and nothing more", () => {
+		// The difference between the two is the whole approval gate: a connector turn PROPOSES with
+		// no roles, and only a decision the host authorized carries any.
+		const encoded = connectorApprovalTenant(orgId("org_1"))
+
+		expect(encoded).toStrictEqual({
+			orgId: "org_1",
+			userId: CONNECTOR_TENANT_USER_ID,
+			roles: ["org:admin"],
+			authMode: "self_hosted",
+		})
+		expect(connectorTurnTenant(orgId("org_1")).roles).toStrictEqual([])
 		expect(Object.getPrototypeOf(encoded)).toBe(Object.prototype)
 	})
 })
