@@ -28,12 +28,14 @@ const ALLOWED_PACKAGES = ["effect", "@maple/primitives"]
  * Modules in this package the subpath may pull at runtime, as a rule rather than a list — a
  * connector directory may not be named here any more than anywhere else above one.
  *
- * Two shared modules, and from each registered connector its id and its manifest. A connector's
- * install flow, gateway or transport reaching this graph fails, which is the point.
+ * Three shared modules — the contract's id, the registry, and the core settings a card renders a
+ * field for — and from each registered connector its id and its manifest. A connector's install
+ * flow, gateway or transport reaching this graph fails, which is the point.
  */
+const SHARED_MODULES = ["connector.ts", "connectors/manifests.ts", "settings.ts"]
 const CONNECTOR_MODULE = /^connectors\/[^/]+\/(id|manifest)\.ts$/
 const isAllowedModule = (module: string): boolean =>
-	module === "connector.ts" || module === "connectors/manifests.ts" || CONNECTOR_MODULE.test(module)
+	SHARED_MODULES.includes(module) || CONNECTOR_MODULE.test(module)
 
 const VALUE_IMPORT = /^\s*import\s+(type\s+)?[^"']*from\s+["']([^"']+)["']/gm
 

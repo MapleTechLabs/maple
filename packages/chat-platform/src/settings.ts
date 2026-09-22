@@ -24,7 +24,7 @@ export const ALLOWED_CHANNELS_SETTING = "allowed_channel_ids"
  * Commas, spaces and newlines all separate: the field is a text box, and an admin pasting a column
  * of ids means the same thing as one typing them inline.
  */
-export const allowedChannelIds = (settings: ChatWorkspaceSettings): ReadonlyArray<string> =>
+const listedChannelIds = (settings: ChatWorkspaceSettings): ReadonlyArray<string> =>
 	(settings[ALLOWED_CHANNELS_SETTING] ?? "").split(/[\s,]+/u).filter((id) => id.length > 0)
 
 /**
@@ -38,4 +38,4 @@ export const allowedChannelIds = (settings: ChatWorkspaceSettings): ReadonlyArra
  * only a connector knows whether its platform models a thread as a channel of its own.
  */
 export const isChannelAllowed = (settings: ChatWorkspaceSettings, channelId: string): boolean =>
-	allowedChannelIds(settings).includes(channelId)
+	listedChannelIds(settings).includes(channelId)

@@ -87,10 +87,20 @@ const CreatedMessage = Schema.Struct({
 const CreatedThread = Schema.Struct({ id: Schema.String })
 
 /**
- * The one field of a channel object this connector reads: for a thread, the text channel it was
- * started in; `null` for a channel that hangs off nothing.
+ * A channel, as far as "which channel is this conversation in" needs it.
+ *
+ * `parent_id` alone is NOT the answer: on a thread it is the text channel the thread was started
+ * in, but on an ordinary guild channel it is the CATEGORY that channel is filed under. A category
+ * is nothing anybody is addressed in, and taking one as a parent would let a category id pasted
+ * into a workspace's channel list quietly cover every channel beneath it. So the type decides.
  */
-const ChannelParent = Schema.Struct({ parent_id: Schema.optionalKey(Schema.NullOr(Schema.String)) })
+const Channel = Schema.Struct({
+	type: Schema.Number,
+	parent_id: Schema.optionalKey(Schema.NullOr(Schema.String)),
+})
+
+/** Announcement, public and private threads — the three channel types that hang off a channel. */
+const THREAD_CHANNEL_TYPES: ReadonlySet<number> = new Set([10, 11, 12])
 
 /** 1–100 characters, per the Start Thread documentation. */
 const MAX_THREAD_NAME_CHARS = 100
@@ -318,22 +328,30 @@ export const discordOutbound: ChatOutbound<HttpClient.HttpClient | ConnectorCred
 			 *
 			 * It costs a call because `MESSAGE_CREATE` cannot answer it: its extra fields are
 			 * `guild_id`, `member`, `mentions` and `channel_type`, and none of them is the parent.
-			 * `GET /channels/{id}` is the smallest thing that is, one request for a mention arriving
+			 * `GET /channels/{id}` is the smallest thing that is, one request for an event arriving
 			 * somewhere the list does not already name — never for one in a listed channel.
+			 *
+			 * A channel that is not a thread answers `undefined` rather than its category: see
+			 * {@link Channel}.
 			 */
-			parentChannel: Effect.fn("Discord.parentChannel")(
-				function* (message: InboundMessage) {
-					const response = yield* send(
-						"thread",
-						"/channels/{channel_id}",
-						HttpClientRequest.get(`${API_BASE}/channels/${message.channelId}`),
-					)
-					const json = yield* response.json
-					const channel = yield* Schema.decodeUnknownEffect(ChannelParent)(json)
-					return channel.parent_id ?? undefined
-				},
-				Effect.orElseSucceed(() => undefined),
-			),
+			parentChannel: Effect.fn("Discord.parentChannel")(function* (target: ChatTarget) {
+				const response = yield* send(
+					"channel",
+					"/channels/{channel_id}",
+					HttpClientRequest.get(`${API_BASE}/channels/${target.channelId}`),
+				)
+				const json = yield* response.json.pipe(
+					Effect.mapError((cause) =>
+						failed("channel", "Discord's reply could not be read", { cause }),
+					),
+				)
+				const channel = yield* Schema.decodeUnknownEffect(Channel)(json).pipe(
+					Effect.mapError((cause) =>
+						failed("channel", "Discord answered with a channel Maple cannot read", { cause }),
+					),
+				)
+				return THREAD_CHANNEL_TYPES.has(channel.type) ? (channel.parent_id ?? undefined) : undefined
+			}),
 		}
 	}),
 }

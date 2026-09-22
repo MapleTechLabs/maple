@@ -6,7 +6,7 @@
  * workspace that is linked but not configured is silent rather than listening everywhere.
  */
 import { describe, expect, it } from "vitest"
-import { allowedChannelIds, ALLOWED_CHANNELS_SETTING, isChannelAllowed } from "./settings"
+import { ALLOWED_CHANNELS_SETTING, isChannelAllowed } from "./settings"
 
 const listing = (value: string) => ({ [ALLOWED_CHANNELS_SETTING]: value })
 
@@ -28,7 +28,10 @@ describe("the channels a bot answers in", () => {
 
 	it("reads the ids however an admin separated them", () => {
 		// One pasted column, one typed line, and the trailing comma somebody leaves behind.
-		expect(allowedChannelIds(listing("channel-1\nchannel-2\n"))).toEqual(["channel-1", "channel-2"])
-		expect(allowedChannelIds(listing("channel-1 , channel-2,"))).toEqual(["channel-1", "channel-2"])
+		for (const value of ["channel-1\nchannel-2\n", "channel-1 , channel-2,"]) {
+			expect(isChannelAllowed(listing(value), "channel-1")).toBe(true)
+			expect(isChannelAllowed(listing(value), "channel-2")).toBe(true)
+			expect(isChannelAllowed(listing(value), "")).toBe(false)
+		}
 	})
 })

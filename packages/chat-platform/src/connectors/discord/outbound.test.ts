@@ -68,18 +68,8 @@ const mention: InboundMessage = {
 	mentionsBot: true,
 }
 
-/**
- * The parent lookup, through the optional contract member it is implemented as. A build where this
- * connector stopped implementing it would otherwise skip the check rather than fail it.
- */
-const parentChannelOf = (message: InboundMessage) =>
-	discordOutbound.transport.pipe(
-		Effect.flatMap((transport) =>
-			transport.parentChannel === undefined
-				? Effect.die("the transport no longer resolves a parent channel")
-				: transport.parentChannel(message),
-		),
-	)
+const parentChannelOf = () =>
+	discordOutbound.transport.pipe(Effect.flatMap((transport) => transport.parentChannel(target)))
 
 describe("discord transport", () => {
 	it.effect("authorizes as a bot and answers with the message it created", () => {
@@ -211,25 +201,34 @@ describe("discord transport", () => {
 	})
 
 	it.effect("asks which channel a thread was started in, so a channel list covers its threads", () => {
-		const http = stub([{ status: 200, body: '{"id":"conv_1","parent_id":"channel_4"}' }])
+		// Type 11: a public thread, whose `parent_id` is the text channel it was started in.
+		const http = stub([{ status: 200, body: '{"id":"conv_1","type":11,"parent_id":"channel_4"}' }])
 		return Effect.gen(function* () {
-			const parent = yield* parentChannelOf(mention)
+			const parent = yield* parentChannelOf()
 
 			expect(parent).toBe("channel_4")
 			expect(http.seen[0].url).toBe("https://discord.com/api/v10/channels/conv_1")
 		}).pipe(Effect.provide(http.layer))
 	})
 
-	it.effect("answers with no parent for a channel that has none, and for one it cannot read", () => {
-		const http = stub([{ status: 200, body: '{"id":"conv_1","parent_id":null}' }])
+	it.effect("never takes an ordinary channel's category as its parent", () => {
+		// Type 0 with a `parent_id`: a text channel filed under a category. Reading that as a parent
+		// would let one category id in a workspace's channel list cover every channel beneath it.
+		const http = stub([{ status: 200, body: '{"id":"conv_1","type":0,"parent_id":"category_2"}' }])
 		return Effect.gen(function* () {
-			expect(yield* parentChannelOf(mention)).toBeUndefined()
+			expect(yield* parentChannelOf()).toBeUndefined()
+		}).pipe(Effect.provide(http.layer))
+	})
 
-			// A parent Discord will not name is not one to check a channel list against — the caller
-			// falls back to the channel the message was in, which is what a top-level mention has.
-			const refused = stub([{ status: 403, body: '{"message":"Missing Access"}' }])
-			const denied = yield* parentChannelOf(mention).pipe(Effect.provide(refused.layer))
-			expect(denied).toBeUndefined()
+	it.effect("reports a channel it could not read rather than answering that it has no parent", () => {
+		// The two are different answers: one says "check this channel itself", the other says Discord
+		// did not say — and a caller that read them the same way would answer in a channel on a 403.
+		const http = stub([{ status: 403, body: '{"message":"Missing Access"}' }])
+		return Effect.gen(function* () {
+			const failure = yield* Effect.flip(parentChannelOf())
+
+			expect(failure.operation).toBe("channel")
+			expect(failure.status).toBe(403)
 		}).pipe(Effect.provide(http.layer))
 	})
 

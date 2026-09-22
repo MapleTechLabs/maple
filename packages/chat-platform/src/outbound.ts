@@ -121,16 +121,17 @@ export interface ChatOutboundTransport {
 	 */
 	readonly conversation: (message: InboundMessage) => Effect.Effect<ChatConversation, ChatOutboundError>
 	/**
-	 * The channel a message's conversation ultimately belongs to — a thread's parent, where the
-	 * platform models a thread as a channel of its own and its events cannot name that parent.
+	 * The channel a conversation ultimately belongs to — a thread's parent, where the platform
+	 * models a thread as a channel of its own and its events cannot name that parent.
 	 *
 	 * Here because the answer is what a workspace's channel list is checked against, and only the
-	 * connector can give it: on one platform it rides the event, on the next it takes a call. Absent
-	 * where nothing needs resolving, and `undefined` for a channel that has no parent, so a caller
-	 * falls back to the message's own channel either way. It does not fail — a parent that cannot be
-	 * read is not one to check a list against, and the attempt has already recorded itself.
+	 * connector can give it: on one platform it rides the event, on the next it takes a call, and on
+	 * a platform whose threads are not channels there is nothing to resolve and the answer is
+	 * `Effect.succeed(undefined)`. `undefined` means "nothing above this channel", so the caller
+	 * checks the channel itself; a FAILURE means the platform could not say, which is not the same
+	 * answer and must not be read as one.
 	 */
-	readonly parentChannel?: (message: InboundMessage) => Effect.Effect<string | undefined>
+	readonly parentChannel: (target: ChatTarget) => Effect.Effect<string | undefined, ChatOutboundError>
 }
 
 /**
@@ -152,7 +153,7 @@ export class ChatOutboundError extends Schema.TaggedError<ChatOutboundError>()(
 	{
 		message: Schema.String,
 		connectorId: ChatConnectorId,
-		operation: Schema.Literals(["post", "edit", "typing", "thread"]),
+		operation: Schema.Literals(["post", "edit", "typing", "thread", "channel"]),
 		/** The platform's HTTP status, where the failure had one. */
 		status: Schema.optionalKey(Schema.Finite),
 		cause: Schema.optionalKey(Schema.Defect()),

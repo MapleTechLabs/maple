@@ -62,7 +62,7 @@ interface Chat {
 	readonly threads: Array<string>
 }
 
-/** `parent` is what the platform answers for the mention's channel — a thread's parent, or none. */
+/** `parent` is what the platform answers for the event's channel — a thread's parent, or none. */
 const chat = (parent?: string): Chat => {
 	const calls: Chat["calls"] = []
 	const threads: Array<string> = []
@@ -394,6 +394,34 @@ describe("relaying a mention", () => {
 		}),
 	)
 
+	it.effect("stays quiet when the platform could not say which channel a mention is in", () =>
+		Effect.gen(function* () {
+			const platform = chat()
+			const agent = session([])
+			// Failing closed: a lookup that did not come back is not a channel anybody listed.
+			const unreachable: ChatOutbound = {
+				...platform.outbound,
+				transport: Effect.map(platform.outbound.transport, (transport) => ({
+					...transport,
+					parentChannel: () =>
+						Effect.fail(
+							new ChatOutboundError({
+								message: "the platform answered 403",
+								connectorId: TESTCHAT,
+								operation: "channel",
+							}),
+						),
+				})),
+			}
+			const deployment = host(unreachable, agent.stub)
+
+			yield* relayInboundEvent({ ...mention, channelId: "thread-9" }, deployment.ports)
+
+			expect(platform.calls).toEqual([])
+			expect(agent.turns).toEqual([])
+		}),
+	)
+
 	it.effect("answers in a thread of a listed channel, which is not itself listed", () =>
 		Effect.gen(function* () {
 			// A thread the bot opened for an earlier mention: its own id is nothing an admin could
@@ -577,6 +605,19 @@ describe("relaying everything else a connector reports", () => {
 			expect(notices(blocksOf(platform.calls))).toEqual([
 				"Approving a change from chat isn't available yet — open the conversation in Maple to apply it.",
 			])
+		}),
+	)
+
+	it.effect("says nothing about an approval clicked in a channel the workspace did not list", () =>
+		Effect.gen(function* () {
+			// A control outlives the list that was in force when it was rendered, and answering it
+			// would have the bot speaking where the workspace has since said it should not.
+			const platform = chat()
+			const deployment = host(platform.outbound, session([]).stub, { settings: {} })
+
+			yield* relayInboundEvent(approval, deployment.ports)
+
+			expect(platform.calls).toEqual([])
 		}),
 	)
 

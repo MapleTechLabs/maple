@@ -109,6 +109,10 @@ To fill it in: **Discord Settings → Advanced → Developer Mode**, then right-
 **Copy Channel ID**, and paste the ids separated by commas. A thread counts as the channel it was
 started in, so the threads Maple opens for its own answers need no entry.
 
+**Channels only.** A category ID matches nothing and does not cover the channels filed under it —
+list each channel. (A channel's `parent_id` is its category, which is why `parentChannel` reads the
+channel's `type` and answers only for the three thread types.)
+
 #### A boundary Discord itself enforces
 
 The allowlist is Maple's own rule, and it is one setting away from being changed. An admin who wants

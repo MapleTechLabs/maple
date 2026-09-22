@@ -115,23 +115,41 @@ const turnText = (message: InboundMessage): string =>
 		message.text,
 	)
 
+/** Whether the bot may speak here, and when it may not, which of the two reasons it was. */
+type ChannelVerdict = "allowed" | "channel_not_allowed" | "channel_unresolved"
+
 /**
- * Whether this mention is in one of the channels the workspace listed.
+ * Whether this event arrived in one of the channels the workspace listed.
  *
  * A thread counts as the channel it was started in, and only the connector can say which channel
- * that is — so the parent is resolved after the message's own channel has failed to match, which
- * is never the case for a mention in a listed channel.
+ * that is — so the parent is resolved after the event's own channel has failed to match, which is
+ * never the case for one in a listed channel.
+ *
+ * A platform that could not answer is not taken as a match, and is not recorded as one either: an
+ * admin who left a channel out and a lookup that did not come back look identical from the
+ * channel's side, and only one of them is somebody's decision.
  */
-const channelAllowed = (
+const channelVerdict = (
 	transport: ChatOutboundTransport,
 	settings: ChatWorkspaceSettings,
-	message: InboundMessage,
-): Effect.Effect<boolean> => {
-	if (isChannelAllowed(settings, message.channelId)) return Effect.succeed(true)
-	if (transport.parentChannel === undefined) return Effect.succeed(false)
-	return Effect.map(
-		transport.parentChannel(message),
-		(parent) => parent !== undefined && isChannelAllowed(settings, parent),
+	target: ChatTarget,
+): Effect.Effect<ChannelVerdict> => {
+	if (isChannelAllowed(settings, target.channelId)) return Effect.succeed("allowed")
+	return transport.parentChannel(target).pipe(
+		Effect.map(
+			(parent): ChannelVerdict =>
+				parent !== undefined && isChannelAllowed(settings, parent)
+					? "allowed"
+					: "channel_not_allowed",
+		),
+		Effect.catchCause((cause) =>
+			Effect.as(
+				Effect.logWarning("The channel a chat event arrived in could not be resolved").pipe(
+					Effect.annotateLogs({ "error.type": summarizeCause(cause) }),
+				),
+				"channel_unresolved" as const,
+			),
+		),
 	)
 }
 
@@ -171,17 +189,17 @@ const relayMessage = Effect.fn("chat_bot.relay_turn")(function* <R>(
 		return
 	}
 	const { orgId, settings } = workspace.value.value
+	yield* Effect.annotateCurrentSpan({ orgId })
 
 	// The bot is active only where an admin added it, and an empty list is nowhere. A mention
 	// anywhere else is ignored in silence: a refusal posted into a channel the bot was never meant
 	// to be in is the same noise the list exists to prevent.
-	if (!(yield* channelAllowed(transport, settings, message))) {
-		return yield* Effect.annotateCurrentSpan({ "maple.chat.relay": "channel_not_allowed" })
-	}
+	const verdict = yield* channelVerdict(transport, settings, replyTarget(message))
+	if (verdict !== "allowed") return yield* Effect.annotateCurrentSpan({ "maple.chat.relay": verdict })
 
 	const conversation = yield* transport.conversation(message)
 	const sessionId = connectorSessionId(orgId, message.connector, conversation.conversationKey)
-	yield* Effect.annotateCurrentSpan({ orgId, "maple.chat.session_id": sessionId })
+	yield* Effect.annotateCurrentSpan({ "maple.chat.session_id": sessionId })
 
 	const session = ports.chatSession(sessionId)
 	if (session === undefined) {
@@ -249,6 +267,13 @@ const relayMessage = Effect.fn("chat_bot.relay_turn")(function* <R>(
  */
 const acknowledgeAction = Effect.fnUntraced(function* <R>(action: InboundAction, ports: RelayPorts<R>) {
 	const transport = yield* ports.outbound.transport
+	// The same gate a mention passes, because the bot speaking at all is what the channel list
+	// governs: a control can outlive the list that was in force when it was rendered, and a
+	// workspace that cannot be read is not one to speak for.
+	const workspace = yield* Effect.exit(ports.resolveWorkspace(action.connector, action.workspaceId))
+	if (Exit.isFailure(workspace) || Option.isNone(workspace.value)) return
+	const verdict = yield* channelVerdict(transport, workspace.value.value.settings, replyTarget(action))
+	if (verdict !== "allowed") return
 	yield* say(transport, replyTarget(action), APPROVAL_NOTICE)
 })
 
