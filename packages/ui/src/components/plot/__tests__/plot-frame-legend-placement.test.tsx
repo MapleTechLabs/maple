@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import { defineChart, lineY } from "@tanstack/charts"
 import { scaleLinear } from "@tanstack/charts-scales/linear"
 import { cleanup, render } from "@testing-library/react"

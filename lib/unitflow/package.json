@@ -28,7 +28,7 @@
 		"@effect/vitest": "catalog:effect",
 		"@types/react": "catalog:react",
 		"typescript": "catalog:tooling",
-		"vitest": "^4.1.9"
+		"vitest": "catalog:"
 	},
 	"peerDependencies": {
 		"react": "^19.0.0"

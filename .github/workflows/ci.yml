@@ -28,6 +28,7 @@ jobs:
         timeout-minutes: 5
         outputs:
             ts: ${{ steps.filter.outputs.ts == 'true' }}
+            tests: ${{ steps.tests.outputs.matrix }}
             cli: ${{ steps.filter.outputs.cli == 'true' }}
             archive: ${{ steps.filter.outputs.archive == 'true' }}
             web: ${{ steps.filter.outputs.web == 'true' }}
@@ -49,6 +50,7 @@ jobs:
                         - '.oxlintrc*.json'
                         - 'mise.toml'
                         - '.github/workflows/ci.yml'
+                        - '.github/scripts/*tests*'
                         - '.github/actions/**'
                       ts:
                         - *base
@@ -157,6 +159,12 @@ jobs:
                         # so apps/api has to re-trigger this job. Do not narrow.
                         - 'apps/api/**'
 
+            - name: Plan test lanes and verify scaling
+              id: tests
+              run: |
+                  python3 -m unittest discover -s .github/scripts -p 'test_plan_tests.py'
+                  echo "matrix=$(python3 .github/scripts/plan-tests.py)" >> "$GITHUB_OUTPUT"
+
             # Shell linting lives here rather than in its own job: it needs only the
             # checkout this job already has — no bun, no mise, no install — so a
             # dedicated runner was ~90% setup for ~4s of work. shellcheck is
@@ -188,12 +196,8 @@ jobs:
         name: TypeScript (${{ matrix.shard }})
         needs: changes
         if: ${{ needs.changes.outputs.ts == 'true' }}
-        # A cold run used to put 63 build/typecheck/test tasks on one 2-vCPU runner.
-        # TypeScript 7's compiler and Vitest both create their own workers, so Turbo's
-        # old concurrency=10 caused severe CPU contention: API tests stretched to 410s,
-        # web tests to 265s, and the job to 9-11 minutes. Keep each compiler or test
-        # process on a quiet runner instead. API/web test files are sharded because they
-        # are the only suites large enough to remain on the cold-run critical path.
+        # Builds and typechecks retain independent caches. Tests have their own
+        # automatically sized matrix below so workspace moves cannot strand them.
         runs-on: ubuntu-latest
         timeout-minutes: 12
         strategy:
@@ -229,23 +233,8 @@ jobs:
                           @maple/sandbox @maple/scraper ./lib/* ./examples/*
                     - shard: typecheck-packages
                       install-filters: "./packages/*"
-                    - shard: test-api-1
-                      install-filters: "@maple/api"
-                    - shard: test-api-2
-                      install-filters: "@maple/api"
-                    - shard: test-web-1
-                      install-filters: "@maple/web"
-                    - shard: test-web-2
-                      install-filters: "@maple/web"
-                    - shard: test-packages
-                      # Knip shares this lane and resolves config files from every
-                      # workspace, so this is the one shard that needs a full install.
+                    - shard: knip
                       install-filters: ""
-                    - shard: test-rest
-                      install-filters: >-
-                          @maple/ai @maple/alerting @maple/chat-bot @maple/cli
-                          @maple/electric-sync @maple/landing
-                          @maple/local-ui @maple/sandbox @maple/scraper ./lib/*
         steps:
             - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
 
@@ -374,38 +363,37 @@ jobs:
               if: ${{ matrix.shard == 'typecheck-packages' }}
               run: bun turbo typecheck --filter='./packages/*' --concurrency=2
 
-            # Vitest's shard argument is part of Turbo's task hash, so each half is
-            # independently cached and no test file is lost between the two runners.
-            - name: Test API (shard 1/2)
-              if: ${{ matrix.shard == 'test-api-1' }}
-              run: bun turbo test --filter=@maple/api --concurrency=2 -- --shard=1/2
-
-            - name: Test API (shard 2/2)
-              if: ${{ matrix.shard == 'test-api-2' }}
-              run: bun turbo test --filter=@maple/api --concurrency=2 -- --shard=2/2
-
-            - name: Test web (shard 1/2)
-              if: ${{ matrix.shard == 'test-web-1' }}
-              run: bun turbo test --filter=@maple/web --concurrency=2 -- --shard=1/2
-
-            - name: Test web (shard 2/2)
-              if: ${{ matrix.shard == 'test-web-2' }}
-              run: bun turbo test --filter=@maple/web --concurrency=2 -- --shard=2/2
-
-            - name: Test packages
-              if: ${{ matrix.shard == 'test-packages' }}
-              run: bun turbo test --filter='./packages/*' --concurrency=2
-
             - name: Find unused files and dependencies
-              if: ${{ matrix.shard == 'test-packages' }}
+              if: ${{ matrix.shard == 'knip' }}
               run: bun knip
 
-            - name: Test remaining apps and libraries
-              if: ${{ matrix.shard == 'test-rest' }}
-              run: >-
-                  bun turbo test --filter='./apps/*' --filter='./lib/*'
-                  --filter='!@maple/api' --filter='!@maple/web'
-                  --filter='!@maple/ingest' --concurrency=2
+    tests:
+        name: Tests (${{ matrix.name }})
+        needs: changes
+        if: ${{ needs.changes.outputs.ts == 'true' }}
+        runs-on: ubuntu-latest
+        timeout-minutes: 8
+        strategy:
+            fail-fast: false
+            matrix: ${{ fromJSON(needs.changes.outputs.tests) }}
+        steps:
+            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
+            - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+            - uses: ./.github/actions/bun-install
+              with:
+                  filters: ${{ join(matrix.filters, ' ') }}
+            - name: Restore turbo cache
+              uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+              with:
+                  path: .turbo/cache
+                  key: turbo-tests-v1-${{ runner.os }}-${{ matrix.name }}-${{ github.sha }}
+                  restore-keys: |
+                      turbo-tests-v1-${{ runner.os }}-${{ matrix.name }}-
+            - name: Run bounded test lane
+              timeout-minutes: 5
+              env:
+                  TEST_LANE: ${{ toJSON(matrix) }}
+              run: python3 .github/scripts/run-tests.py
 
     slack-agent:
         name: Slack agent
@@ -909,6 +897,7 @@ jobs:
         needs:
             - changes
             - typescript
+            - tests
             - slack-agent
             - postgres-connection-e2e
             - clickhouse-schema-e2e

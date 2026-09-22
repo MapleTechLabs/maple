@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 // TEST-SEAM: Node's own experimental `localStorage` global shadows jsdom's and is
 // undefined without `--localstorage-file`, so the store is stubbed in memory.
 import { act, cleanup, renderHook } from "@testing-library/react"

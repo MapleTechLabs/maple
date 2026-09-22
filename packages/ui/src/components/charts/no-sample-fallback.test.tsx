@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 /**
  * A live chart never invents data.
  *

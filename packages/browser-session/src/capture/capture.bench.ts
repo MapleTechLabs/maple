@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { bench, describe } from "vitest"
+import { test } from "vitest"
 import { approximateSize } from "../platform/approximate-size"
 import type { SessionEvent } from "../events/events-sink"
 import { installConsoleCapture } from "../replay/capture/console"
@@ -37,119 +37,61 @@ import { installInteractionCapture } from "./interactions"
  * gets expensive, at ~800 ns.
  */
 
-const noopEmit = (_ev: SessionEvent): void => {}
+const noopEmit = (_event: SessionEvent): void => {}
+const args = [
+	"user action failed",
+	{ userId: "u_1", org: "acme", attempt: 3, nested: { a: 1, b: [1, 2, 3] } },
+	new Error("boom"),
+]
 
-describe("console capture", () => {
-	const args: unknown[] = [
-		"user action failed",
-		{ userId: "u_1", org: "acme", attempt: 3, nested: { a: 1, b: [1, 2, 3] } },
-		new Error("boom"),
-	]
-
-	// The real `console.log` is stubbed to a no-op for the whole suite. Both arms
-	// then perform the same underlying write, so the delta between them is our
-	// wrapper and nothing else — and the bench run does not spew the sample
-	// payload thousands of times into the reporter.
-	const realLog = console.log
-	const stub = (): void => {
+for (const capture of [false, true]) {
+	test(`console.log, capture ${capture ? "installed" : "absent"}`, async ({ bench }) => {
+		const realLog = console.log
 		console.log = () => {}
-	}
-	const unstub = (): void => {
-		console.log = realLog
-	}
-
-	let uninstall: (() => void) | undefined
-
-	bench(
-		"console.log, capture absent",
-		() => {
-			console.log(...args)
-		},
-		{ setup: stub, teardown: unstub },
-	)
-
-	bench(
-		"console.log, capture installed",
-		() => {
-			console.log(...args)
-		},
-		{
-			// Installed once, outside the measured body: an app pays the patch cost
-			// at init, not per call.
-			setup: () => {
-				stub()
-				uninstall = installConsoleCapture(noopEmit)
-			},
-			teardown: () => {
-				uninstall?.()
-				uninstall = undefined
-				unstub()
-			},
-		},
-	)
-
-	// The distilled event is serialized once to format the message, again by
-	// `approximateSize` for flush accounting, and a third time at flush. This
-	// isolates the second one, which is the pass that could be dropped.
-	bench("approximateSize of a console event", () => {
-		approximateSize({
-			type: "console",
-			level: "log",
-			message: 'user action failed {"userId":"u_1","org":"acme"} Error: boom',
-		})
+		const uninstall = capture ? installConsoleCapture(noopEmit) : undefined
+		try {
+			await bench("console.log", () => console.log(...args)).run()
+		} finally {
+			uninstall?.()
+			console.log = realLog
+		}
 	})
-})
-
-describe("interaction capture", () => {
-	const button = document.createElement("button")
-	button.id = "save"
-	button.className = "btn btn-primary"
-	button.textContent = "Save changes"
-	document.body.appendChild(button)
-
-	let uninstall: (() => void) | undefined
-
-	bench("click, capture absent", () => {
-		button.click()
+	test(`click, capture ${capture ? "installed" : "absent"}`, async ({ bench }) => {
+		const button = document.createElement("button")
+		button.id = "save"
+		button.className = "btn btn-primary"
+		button.textContent = "Save changes"
+		document.body.appendChild(button)
+		const uninstall = capture ? installInteractionCapture(noopEmit, false) : undefined
+		try {
+			await bench("click", () => button.click()).run()
+		} finally {
+			uninstall?.()
+			button.remove()
+		}
 	})
+}
 
-	bench(
-		"click, capture installed",
-		() => {
-			button.click()
-		},
-		{
-			setup: () => {
-				uninstall = installInteractionCapture(noopEmit, false)
-			},
-			teardown: () => {
-				uninstall?.()
-				uninstall = undefined
-			},
-		},
-	)
-})
-
-describe("approximateSize by payload shape", () => {
-	const small: SessionEvent = { type: "click", targetSelector: "button#save" }
-	const network: SessionEvent = {
+const payloads = {
+	"console event": {
+		type: "console",
+		level: "log",
+		message: 'user action failed {"userId":"u_1","org":"acme"} Error: boom',
+	},
+	"small click event": { type: "click", targetSelector: "button#save" },
+	"network event": {
 		type: "network",
 		net: { method: "POST", url: "https://api.example.com/v1/orders", status: 201, durationMs: 143 },
-	}
-	const large: SessionEvent = {
+	},
+	"error with a long stack": {
 		type: "error",
 		level: "error",
 		message: "Unhandled rejection",
 		errorStack: "Error: boom\n".repeat(120),
-	}
-
-	bench("small click event", () => {
-		approximateSize(small)
+	},
+} satisfies Record<string, SessionEvent>
+for (const [name, payload] of Object.entries(payloads)) {
+	test(`approximateSize: ${name}`, async ({ bench }) => {
+		await bench(name, () => approximateSize(payload)).run()
 	})
-	bench("network event", () => {
-		approximateSize(network)
-	})
-	bench("error with a long stack", () => {
-		approximateSize(large)
-	})
-})
+}
