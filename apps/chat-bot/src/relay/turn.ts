@@ -271,6 +271,9 @@ const settleAction = Effect.fn("chat_bot.settle_approval")(function* <R>(
 		return yield* Effect.annotateCurrentSpan({ "maple.chat.approval": "unavailable" })
 	}
 	const { orgId, settings } = workspace.value.value
+	// Not before here: the org is the workspace's, never the control's, and an approval nobody can
+	// attribute to an org is not answerable to an auditor.
+	yield* Effect.annotateCurrentSpan({ orgId })
 
 	// The control names its own session, and the session it is allowed to name is THIS conversation's
 	// — rebuilt from the org that owns the workspace and the conversation the connector says the
