@@ -4,7 +4,7 @@ on:
     push:
         branches: [main]
     pull_request:
-        branches: [main]
+        # Stacked PRs target another feature branch and need the same checks.
 
 concurrency:
     group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
@@ -382,6 +382,24 @@ jobs:
             - uses: ./.github/actions/bun-install
               with:
                   filters: ${{ join(matrix.filters, ' ') }}
+            - name: Read Playwright version
+              if: matrix.browser-workspace != ''
+              id: test-playwright
+              working-directory: ${{ matrix.browser-workspace }}
+              run: echo "version=$(bun -e 'console.log(require("playwright/package.json").version)')" >> "$GITHUB_OUTPUT"
+            - name: Cache Chromium
+              if: matrix.browser-workspace != ''
+              id: test-browser-cache
+              uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+              with:
+                  path: ~/.cache/ms-playwright
+                  key: playwright-${{ runner.os }}-${{ steps.test-playwright.outputs.version }}-chromium
+            # As in the performance job, ubuntu-latest supplies Chromium's shared
+            # libraries. Install the pinned browser; don't repeat apt on every lane.
+            - name: Install Chromium
+              if: matrix.browser-workspace != '' && steps.test-browser-cache.outputs.cache-hit != 'true'
+              working-directory: ${{ matrix.browser-workspace }}
+              run: bun run playwright install chromium
             - name: Restore turbo cache
               uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
               with:

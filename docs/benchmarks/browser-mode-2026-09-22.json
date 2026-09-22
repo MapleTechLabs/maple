@@ -1,0 +1,183 @@
+{
+	"date": "2026-09-22",
+	"baseline_commit": "ba1c54414a391f1b98425ac284972dfb09685b31",
+	"platform": "macOS arm64",
+	"node": "24.18.0",
+	"bun": "1.4.2",
+	"vitest": "5.0.1",
+	"playwright": "1.62.1",
+	"workers": 2,
+	"notes": [
+		"Same machine, sequential runs, installation/build/browser-download excluded.",
+		"Median of three runs per setup; warmed transform caches.",
+		"VITE_MAPLE_AUTH_MODE=self_hosted in both checkouts.",
+		"All original test title/ancestor/status outcomes preserved; UI adds one native canvas test.",
+		"These are local suite measurements, not GitHub end-to-end CI measurements."
+	],
+	"summary": {
+		"ui": {
+			"jsdom": 12.463,
+			"browser": 6.489,
+			"reduction_percent": 47.9,
+			"removed_outcomes": 0,
+			"added_outcomes": 1
+		},
+		"web": {
+			"jsdom": 60.489,
+			"browser": 37.7,
+			"reduction_percent": 37.7,
+			"removed_outcomes": 0,
+			"added_outcomes": 0
+		}
+	},
+	"runs": [
+		{
+			"suite": "ui",
+			"runner": "jsdom",
+			"run": 1,
+			"seconds": 13.422,
+			"exit": 0,
+			"passed": 674,
+			"failed": 0,
+			"report_sha256": "758b0840872fc5b43de6751f2ff7cd34f9a6fd31db341b079d42e01bd80b091e"
+		},
+		{
+			"suite": "ui",
+			"runner": "jsdom",
+			"run": 2,
+			"seconds": 12.461,
+			"exit": 0,
+			"passed": 674,
+			"failed": 0,
+			"report_sha256": "61cf8289ab01aa88ea2c6b92884dd493d79244945e75011adc3d0b62b445af62"
+		},
+		{
+			"suite": "ui",
+			"runner": "jsdom",
+			"run": 3,
+			"seconds": 12.463,
+			"exit": 0,
+			"passed": 674,
+			"failed": 0,
+			"report_sha256": "1f0748a7e1c1d0517791e8c9af8e84b02b48b0b96bab2add7f053a54073ace48"
+		},
+		{
+			"suite": "ui",
+			"runner": "browser",
+			"run": 1,
+			"seconds": 6.405,
+			"exit": 0,
+			"passed": 675,
+			"failed": 0,
+			"report_sha256": "cb7174893106bf0279366d6071a57ae23b07e67732a07ee28a814ec9b13d7364"
+		},
+		{
+			"suite": "ui",
+			"runner": "browser",
+			"run": 2,
+			"seconds": 6.489,
+			"exit": 0,
+			"passed": 675,
+			"failed": 0,
+			"report_sha256": "03157a19dadb5494a95426a285300de5d32ee468e19bdbf00faaf7bb94aca495"
+		},
+		{
+			"suite": "ui",
+			"runner": "browser",
+			"run": 3,
+			"seconds": 6.489,
+			"exit": 0,
+			"passed": 675,
+			"failed": 0,
+			"report_sha256": "eb953a36dc6005488c42edb91a137c8a3a55bef2c20ffd94b2d0193b51dc4ed3"
+		},
+		{
+			"suite": "web",
+			"runner": "jsdom",
+			"run": 1,
+			"seconds": 61.708,
+			"exit": 0,
+			"passed": 2499,
+			"failed": 0,
+			"report_sha256": "b22311bf6c29d90cc9e646f309aa417ac693112d3c4f69877c5ca790318966ea"
+		},
+		{
+			"suite": "web",
+			"runner": "jsdom",
+			"run": 2,
+			"seconds": 60.489,
+			"exit": 0,
+			"passed": 2499,
+			"failed": 0,
+			"report_sha256": "53bb4de0e7c2e601aeb1d82c8145641b29a88d706a5716cabacedde8126012b5"
+		},
+		{
+			"suite": "web",
+			"runner": "jsdom",
+			"run": 3,
+			"seconds": 60.145,
+			"exit": 0,
+			"passed": 2499,
+			"failed": 0,
+			"report_sha256": "bafcd4a00333bc2a262dd777cfdd6a758c1ddc9cb1ab3d4547d3f0a1c4d4cb29"
+		},
+		{
+			"suite": "web",
+			"runner": "browser",
+			"run": 1,
+			"seconds": 38.121,
+			"exit": 0,
+			"passed": 2499,
+			"failed": 0,
+			"report_sha256": "ceeb2e20c5f4d4c7ebb7d889dfbe9320bff586223fe2402d60b413077d21df26"
+		},
+		{
+			"suite": "web",
+			"runner": "browser",
+			"run": 2,
+			"seconds": 37.63,
+			"exit": 0,
+			"passed": 2499,
+			"failed": 0,
+			"report_sha256": "48438d213e37ba9539869a1f1d8140d53534e82342db171f24092f8cb7aa2b20"
+		},
+		{
+			"suite": "web",
+			"runner": "browser",
+			"run": 3,
+			"seconds": 37.7,
+			"exit": 0,
+			"passed": 2499,
+			"failed": 0,
+			"report_sha256": "49411b72b9673427646571bc267e989c25294fbdb86dee03899f400c1633699a"
+		}
+	],
+	"fivefold_ui": {
+		"suite": "ui",
+		"copies": 5,
+		"workers": 2,
+		"node": "v24.18.0",
+		"bun": "1.4.2",
+		"vitest": "5.0.1",
+		"runs": [
+			{
+				"run": 1,
+				"seconds": 34.881,
+				"exit": 0,
+				"passed": 3375,
+				"failed": 0,
+				"pending": 0
+			}
+		]
+	},
+	"validation": {
+		"ui_tests": 675,
+		"web_tests": 2499,
+		"browser_sdk_tests": 19,
+		"browser_session_tests": 170,
+		"local_ui_tests": 11,
+		"capture_benchmarks": 8,
+		"typechecks": "all five workspaces passed",
+		"react_doctor_score": 100
+	}
+}

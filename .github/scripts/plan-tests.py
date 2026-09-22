@@ -45,7 +45,14 @@ def discover(root=ROOT):
             for f in files
         )
         suites.append(
-            {"name": package["name"], "files": count, "vitest": "vitest run" in script}
+            {
+                "name": package["name"],
+                "files": count,
+                "vitest": "vitest run" in script,
+                "browser-workspace": directory
+                if "@vitest/browser-playwright" in package.get("devDependencies", {})
+                else "",
+            }
         )
     return suites
 
@@ -97,6 +104,18 @@ def plan(suites):
         group["filters"].append(name)
         group["estimated-seconds"] += weight
     lanes.extend(groups)
+    browser_workspaces = {
+        suite["name"]: suite.get("browser-workspace", "") for suite in suites
+    }
+    for lane in lanes:
+        lane["browser-workspace"] = next(
+            (
+                browser_workspaces[name]
+                for name in lane["filters"]
+                if browser_workspaces[name]
+            ),
+            "",
+        )
     if len(lanes) > 256:
         raise ValueError(
             "Test matrix exceeds GitHub's 256-job limit; revise the runner budget"

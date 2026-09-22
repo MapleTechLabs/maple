@@ -44,17 +44,27 @@ def main():
                 delete=False,
             ) as file:
                 config = Path(file.name)
+                base_config = (
+                    "vitest.config.ts"
+                    if (directory / "vitest.config.ts").exists()
+                    else "vite.config.ts"
+                )
                 file.write(
-                    'import { defineConfig, mergeConfig } from "vitest/config"\n'
-                    'import base from "./vitest.config.ts"\n'
-                    "export default mergeConfig(base, defineConfig({ test: { projects: "
-                    + json.dumps(
-                        [
-                            {"extends": True, "test": {"name": f"replica-{i + 1}"}}
-                            for i in range(args.copies)
-                        ]
-                    )
-                    + " } }))\n"
+                    'import { defineConfig } from "vitest/config"\n'
+                    f'import base from "./{base_config}"\n'
+                    "export default defineConfig(async (env) => {\n"
+                    ' const resolved = typeof base === "function" ? await base(env) : await base\n'
+                    " const projects = resolved.test?.projects ?? [{ test: {} }]\n"
+                    f" const replicas = Array.from({{ length: {args.copies} }}, (_, i) => projects.map(project => {{\n"
+                    '  if (typeof project !== "object" || project === null || !("test" in project)) throw new Error("Benchmark expects inline test projects")\n'
+                    "  return { ...project, extends: true, test: { ...project.test,\n"
+                    '   name: `replica-${i + 1}-${project.test?.name ?? "suite"}`,\n'
+                    "   ...(project.test?.browser ? { browser: { ...project.test.browser,\n"
+                    "    instances: project.test.browser.instances?.map(instance => ({ ...instance,\n"
+                    "     name: `replica-${i + 1}-${project.test.name}-${instance.browser}` })) } } : {}) } }\n"
+                    " })).flat()\n"
+                    " return { ...resolved, test: { ...resolved.test, projects: replicas } }\n"
+                    "})\n"
                 )
         for index in range(args.runs):
             report = output / f"run-{index + 1}.json"

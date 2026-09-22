@@ -73,6 +73,31 @@ class TestPlan(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "256"):
             planner.plan([{"name": "huge", "files": 100000, "vitest": True}])
 
+    def test_browser_install_is_selected_for_every_affected_lane(self):
+        suites = [
+            {"name": "node", "files": 200, "vitest": True},
+            {
+                "name": "ui",
+                "files": 200,
+                "vitest": True,
+                "browser-workspace": "packages/ui",
+            },
+            {
+                "name": "tiny-browser",
+                "files": 2,
+                "vitest": True,
+                "browser-workspace": "packages/browser",
+            },
+            {"name": "tiny-node", "files": 2, "vitest": True},
+        ]
+        for lane in planner.plan(suites)["include"]:
+            expected = (
+                "packages/ui"
+                if "ui" in lane["filters"]
+                else ("packages/browser" if "tiny-browser" in lane["filters"] else "")
+            )
+            self.assertEqual(lane["browser-workspace"], expected)
+
 
 class TestRunner(unittest.TestCase):
     def run_lane(self, args, returncode=0, elapsed=10):

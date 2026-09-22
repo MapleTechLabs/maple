@@ -148,3 +148,52 @@ The upgraded runner also passed the fivefold backend workload: 9,050 passed,
 890 existing skips, zero failures, in 281.60 seconds with two workers on macOS.
 This run did not enable Node compile caching; the earlier Vitest 4 fivefold run
 did, so the elapsed times are not a controlled comparison of Vitest versions.
+
+## Native browser tests
+
+DOM tests now run in headless Chromium through `@vitest/browser-playwright`.
+The five affected workspaces are web, local-ui, UI, browser, and browser-session.
+Use `*.browser.test.ts` / `*.browser.test.tsx` for DOM tests; ordinary
+`*.test.ts` files remain in Node. Each workspace's original `test` command runs
+both projects, and native Vitest sharding distributes their files together.
+There are no remaining jsdom dependencies or environment directives.
+
+After installing dependencies, install Chromium once:
+
+```sh
+bun run --cwd packages/ui playwright install chromium
+bun run --cwd packages/ui test
+bun run --cwd apps/web test
+```
+
+The CI planner detects the browser provider dependency and installs/caches the
+pinned Chromium only on lanes containing a browser workspace. The existing
+240-second lane budget remains in force. The Ubuntu runner's system libraries
+already support Chromium, as in the existing browser performance job.
+
+Tests retain their behavioral assertions. ESM mocks expose complete exports;
+Clerk fixtures update a hoisted state instead of relying on module reloading.
+The filesystem docs-link check runs in Node. Sign-in tests cancel native
+navigation through the Navigation API, and mocked router links prevent their
+default navigation, keeping the test iframe alive. The shared jsdom API shims
+have been deleted.
+
+SVG geometry tests explicitly exercise the canvas-unavailable fallback, with
+fixed measurements and controlled observer delivery. A separate test loads the
+real stylesheet and verifies painted canvas pixels and resizing through the
+native ResizeObserver. The session-capture benchmarks also run in Chromium.
+
+Sequential measurements on the same macOS machine, Vitest 5.0.1 and two workers:
+
+| Suite | jsdom median | Chromium median | Reduction |
+| ----- | -----------: | --------------: | --------: |
+| UI    |       12.46s |           6.49s |     47.9% |
+| Web   |       60.49s |          37.70s |     37.7% |
+
+Each median uses three successful runs. All original tests passed; UI adds one
+native-rendering test. Five copies of the entire mixed Node/browser UI suite
+passed 3,375 tests in 34.88s, still with two workers. The benchmark runner now
+replicates both projects, with unique browser instance names.
+[Measurements and validation](benchmarks/browser-mode-2026-09-22.json) record
+individual timings, report hashes, counts and versions. Install/build/download
+time is excluded; these numbers do not claim GitHub end-to-end latency.
