@@ -176,8 +176,17 @@ const fetchPullRequest = (args: Args) => {
 
 // A local clone standing in for the sandbox
 
-const remoteMatches = (url: string, owner: string, repo: string) =>
-	new RegExp(`github\\.com[:/]${owner}/${repo}(\\.git)?$`, "i").test(url.trim())
+const GITHUB_REMOTE = /github\.com[:/]([^/\s]+)\/([^/\s]+?)(?:\.git)?$/
+
+/** Parsed with a fixed pattern and compared as strings, so no argument ever becomes regex. */
+const remoteMatches = (url: string, owner: string, repo: string) => {
+	const match = GITHUB_REMOTE.exec(url.trim())
+	return (
+		match !== null &&
+		match[1]?.toLowerCase() === owner.toLowerCase() &&
+		match[2]?.toLowerCase() === repo.toLowerCase()
+	)
+}
 
 /** The clone to read from, and the remote in it that is the pull request's repository. */
 const resolveClone = (args: Args): { readonly dir: string; readonly remote: string } => {
