@@ -98,12 +98,12 @@ Maple **reads** commit, branch, and source-file data, and **writes** three thing
 1. Find **Permissions → Repository permissions**.
 2. Set the following, leaving every other permission at **No access**:
 
-| Repository permission | Access level                                                                                   |
-| --------------------- | ---------------------------------------------------------------------------------------------- |
-| **Contents**          | **Read-only**                                                                                  |
-| **Pull requests**     | **Read and write** (reads the diff; posts the review as a comment, never an approval or block) |
-| **Checks**            | **Read and write** (posts the `Maple / observability` check run on the head commit)            |
-| **Metadata**          | **Read-only** (GitHub pre-selects this and it is mandatory)                                    |
+| Repository permission | Access level                                                                                                                            |
+| --------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| **Contents**          | **Read-only**                                                                                                                           |
+| **Pull requests**     | **Read and write** (reads the diff; posts the review as a comment, never an approval or block)                                          |
+| **Checks**            | **Read and write** (posts the `Maple / observability` check run on the head commit; without it the review is still posted as a comment) |
+| **Metadata**          | **Read-only** (GitHub pre-selects this and it is mandatory)                                                                             |
 
 > **Upgrading an existing App?** Adding a permission to an App that is already installed makes GitHub ask every installation's admin to accept the new permissions. Until they do, Maple still records each review but cannot post it: the review's row keeps a publish error and nothing appears on the pull request. The fix is to accept the permission request on GitHub (Settings → Applications → the App → Review request).
 
