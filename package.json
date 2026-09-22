@@ -78,7 +78,7 @@
 	"packageManager": "bun@1.4.0",
 	"catalog": {
 		"vite": "^8.0.16",
-		"vitest": "^4.1.9"
+		"vitest": "^5.0.1"
 	},
 	"catalogs": {
 		"alchemy": {

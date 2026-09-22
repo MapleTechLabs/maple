@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 /**
  * The point of `ChartPlotArea` is that a chart's loading, empty and error
  * branches cannot reserve a different box than the plot they stand in for.
