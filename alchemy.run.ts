@@ -325,9 +325,26 @@ export default Alchemy.Stack(
 		// in the ingest fleet's network (see `createMapleElectric`), so a stage
 		// without ingest has no VPC to put it in. Every stage that deploys Electric
 		// deploys ingest, so this never silently drops it.
+		// Electric's credential: the REPLICATION attribute, which PlanetScale issues only
+		// alongside `postgres`. Replaced create-first, and its id is in the task env.
+		const electricDbRole =
+			db && stageDeploysElectric(stage)
+				? yield* Planetscale.PostgresRole("electric", {
+						database: resolvePlanetscaleDatabase(region),
+						branch: db.schema,
+						inheritedRoles: ["postgres"],
+						withReplication: true,
+					})
+				: undefined
 		const electric =
-			ingest && stageDeploysElectric(stage)
-				? yield* createMapleElectric({ stage, domains, region, network: ingest.network })
+			ingest && electricDbRole
+				? yield* createMapleElectric({
+						stage,
+						domains,
+						region,
+						network: ingest.network,
+						dbRole: electricDbRole,
+					})
 				: undefined
 
 		// Standalone ElectricSQL shape-proxy worker (DB-free); its public origin is

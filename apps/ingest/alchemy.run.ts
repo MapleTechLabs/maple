@@ -14,6 +14,7 @@ import {
 	INGEST_EC2_INSTANCE_TYPE,
 	INGEST_EC2_TASK_SIZE,
 	parseIngestFleets,
+	pgUrlRequireSsl,
 	resolveAwsRegion,
 	resolveAwsResourceName,
 	resolveCollectorEndpoint,
@@ -446,7 +447,7 @@ export const createMapleIngest = ({ stage, domains, region, dbRole }: CreateMapl
 		// PSBouncer (6432) as a role that only reads ingest keys. Sharing the name
 		// would silently hand every task the migration admin's credentials.
 		const pgUrl = dbRole
-			? yield* secretFrom("maple-pg-url", dbRole.connectionUrlPooled)
+			? yield* secretFrom("maple-pg-url", pgUrlRequireSsl(dbRole.connectionUrlPooled))
 			: yield* secret("maple-pg-url", yield* requiredPlain("MAPLE_INGEST_PG_URL"))
 		const keyEncryptionKey = yield* secret(
 			"ingest-key-encryption-key",
@@ -771,10 +772,10 @@ export const createMapleIngest = ({ stage, domains, region, dbRole }: CreateMapl
 			// grace period covers the startup Postgres probe, which exits the
 			// process on failure rather than serving degraded.
 			healthCheckGracePeriod: "60 seconds" as const,
-		// Old tasks stay scale-in protected while the WAL has backlog (up to 15
-		// minutes, `task_protection.rs`) and ECS will not stop them, so a healthy
-		// rollout can outlast alchemy's 10-minute default. It did on 2026-09-21.
-		deploymentStabilizationTimeout: "25 minutes" as const,
+			// Old tasks stay scale-in protected while the WAL has backlog (up to 15
+			// minutes, `task_protection.rs`) and ECS will not stop them, so a healthy
+			// rollout can outlast alchemy's 10-minute default. It did on 2026-09-21.
+			deploymentStabilizationTimeout: "25 minutes" as const,
 
 			logging: { retention: "30 days" as const },
 

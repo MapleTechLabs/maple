@@ -67,8 +67,9 @@ across regions because there is no routing.
    runtime read token as `TINYBIRD_TOKEN`, an append-only token for the gateway. Sign a throwaway
    JWT to prove the signing key before trusting it (the 2026-09-04 incident).
 3. **PlanetScale**: the `maple-eu` database in eu-central, empty. That is all: the deploy adopts
-   its `main` branch and applies the migrations, and declares on it the gateway's role, one role
-   per Worker consumer and a Hyperdrive config on each (`declareMapleDb` in `alchemy.run.ts`).
+   its `main` branch and applies the migrations, and declares on it the gateway's role, Electric's
+   replication role, one role per Worker consumer and a Hyperdrive config on each
+   (`declareMapleDb` in `alchemy.run.ts`).
    The same PlanetScale service token serves both instances; `prod-eu` carries it under the
    same names.
 4. **AWS**: eu-central-1 in the existing account. ACM certificates for `ingest.eu.maple.dev` and

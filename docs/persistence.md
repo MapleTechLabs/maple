@@ -111,6 +111,12 @@ its id sits in the task env so a replaced role rolls the fleet onto the new secr
 deletes the old role. `MAPLE_INGEST_PG_URL` in Infisical remains only for stages that deploy a fleet
 without a database branch (PR previews).
 
+Electric's is declared too, on both instances: `Planetscale.PostgresRole("electric", { withReplication:
+true })`, whose direct 5432 URL is the task's `DATABASE_URL` (`docs/electric-sync.md`). `withReplication`
+rides Maple's alchemy patch until [alchemy-run/alchemy#1777](https://github.com/alchemy-run/alchemy/pull/1777)
+ships; alchemy renders every role URL with `sslmode=verify-full`, which neither ECS client accepts, so
+`pgUrlRequireSsl` in `@maple/infra/aws` rewrites it for both.
+
 The EU instance's Worker credentials are declared the same way: `declareMapleDb` in `alchemy.run.ts`
 mints one role per consumer on `maple-eu` and a Hyperdrive config on each role's direct origin, and
 the Workers bind them from their props. No dashboard config and no hand-minted role exist there

@@ -185,9 +185,10 @@ database), reached from Workers via the Hyperdrive binding `MAPLE_DB`.
   `migrations` pointed at `packages/db/drizzle`; never run `drizzle-kit migrate` against prd. It
   migrates as a temporary role dropped with `postgres` as successor, so every runtime role must
   inherit `postgres` (`pg_has_role(rolname, 'postgres', 'usage')`) to read what it creates; the
-  ingest gateway's is a `Planetscale.PostgresRole` in the same file, as are the EU instance's Worker
-  roles and Hyperdrive configs (`declareMapleDb`; the US prd binds dashboard configs by id). PGlite
-  applies them at layer build.
+  ingest gateway's and Electric's (`withReplication`, via Maple's alchemy patch until alchemy-run/alchemy#1777
+  ships) are `Planetscale.PostgresRole`s in the same file, as are the EU instance's Worker roles and
+  Hyperdrive configs (`declareMapleDb`; the US prd binds dashboard configs by id). PGlite applies
+  them at layer build.
 - **PR preview deploys are label-gated** (2026-08, cost — re-enabled by `fd00bcd412`). A PR gets a
   preview only while it carries the `preview` label; `deploy-pr-preview.yml` triggers on
   `opened, reopened, synchronize, labeled, unlabeled, closed` and tears the stack down the moment

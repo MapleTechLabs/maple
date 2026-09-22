@@ -1,0 +1,109 @@
+{
+	"date": "2026-09-22",
+	"baseline_commit": "f75d503b885fb09be00a3ccd5571054dadd732f4",
+	"candidate": "working tree; see accompanying change",
+	"linux_environment": {
+		"image": "node:24.18.0-bookworm-slim",
+		"architecture": "aarch64",
+		"cpu_limit": 2,
+		"memory_limit_gib": 6,
+		"workers": 2,
+		"bun": "1.4.0",
+		"vitest": "4.1.10",
+		"pglite": "0.5.8",
+		"build_and_install_excluded": true,
+		"node_compile_cache": false
+	},
+	"linux": {
+		"backend": {
+			"baseline": {
+				"passed": 1808,
+				"pending": 178,
+				"failed": 0,
+				"failed_suites": 0,
+				"wall_seconds": 214.61,
+				"user_cpu_seconds": 401.28,
+				"max_child_rss_kib": 2044152
+			},
+			"candidate": {
+				"passed": 1810,
+				"pending": 178,
+				"failed": 0,
+				"failed_suites": 0,
+				"wall_seconds": 153.83,
+				"user_cpu_seconds": 285.1,
+				"max_child_rss_kib": 2069224
+			},
+			"all_original_outcomes_preserved": true,
+			"additional_tests": 2
+		},
+		"ui": {
+			"baseline": {
+				"passed": 674,
+				"pending": 0,
+				"failed": 0,
+				"failed_suites": 0,
+				"wall_seconds": 23.38,
+				"user_cpu_seconds": 42.37,
+				"max_child_rss_kib": 402856
+			},
+			"candidate": {
+				"passed": 674,
+				"pending": 0,
+				"failed": 0,
+				"failed_suites": 0,
+				"wall_seconds": 16.8,
+				"user_cpu_seconds": 30.52,
+				"max_child_rss_kib": 449656
+			},
+			"all_original_outcomes_preserved": true,
+			"additional_tests": 0
+		}
+	},
+	"fivefold": {
+		"environment": "macOS arm64, Node 24.18.0, Bun 1.4.2, two workers, five isolated Vitest projects",
+		"node_compile_cache": "enabled in both runs; not enabled by shipped configuration",
+		"baseline": "tar restore with snapshot cache; includes two new isolation/cache tests",
+		"candidate": "indexed filesystem restore; same tests and flags",
+		"before": {
+			"passed": 9050,
+			"pending": 890,
+			"failed": 0,
+			"failed_suites": 0,
+			"vitest_seconds": 433.257
+		},
+		"after": {
+			"passed": 9050,
+			"pending": 890,
+			"failed": 0,
+			"failed_suites": 0,
+			"vitest_seconds": 323.987
+		},
+		"identical_outcome_fingerprint": "e809dcf07118622cfd1e1e5f0b0be6d38ad7ce613ef7c170759187a3c79e0433"
+	},
+	"database_boot_microbenchmark": {
+		"environment": "same Linux container",
+		"samples_per_variant": 29,
+		"first_warmup_sample_excluded": true,
+		"tar_mean_ms": 117.699,
+		"indexed_mean_ms": 63.473,
+		"files": 1375,
+		"directories": 27
+	},
+	"other_validation": {
+		"api": {
+			"passed": 441,
+			"pending": 391,
+			"failed": 0,
+			"failed_suites": 0,
+			"vitest_seconds": 40.427
+		},
+		"ai": {
+			"passed": 679,
+			"pending": 0,
+			"failed": 0,
+			"failed_suites": 0,
+			"vitest_seconds": 21.939
+		}
+	}
+}
