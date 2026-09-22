@@ -10,7 +10,12 @@
  * disagree about what counts as a chart or a card.
  */
 import { parseAnnotations, type AnnotationSegment } from "@maple/domain/chat-annotations"
-import { normalizeUnit, parseChartSpec, type ChartSpec } from "@maple/domain/chat-chart-spec"
+import {
+	normalizeUnit,
+	parseChartSpec,
+	splitChartFences,
+	type ChartSpec,
+} from "@maple/domain/chat-chart-spec"
 import { delegatedAgentOf, type ChatMessage, type ChatToolCall } from "@maple/domain/chat-session"
 import { formatDuration, formatNumber } from "@maple/domain/format"
 import { encodeChatActionToken } from "../action-token"
@@ -25,6 +30,13 @@ export const renderChatMessage = (
 
 	for (const part of splitChartFences(message.text)) {
 		if (part.kind === "chart") {
+			// Counted before it is judged. The image endpoint numbers the fences it
+			// finds, not the ones that turned out to be charts, so skipping the index
+			// of a malformed one here would put every later chart under the wrong plot.
+			const index = chartIndex++
+			// A fence still arriving is held back entirely, so a half-written chart shows
+			// as nothing until the next edit rather than as JSON.
+			if (!part.closed) continue
 			const spec = parseChartSpec(part.value)
 			// Model output that is not a chart after all stays visible as the fence it was, so a bad
 			// payload is debuggable rather than silently missing — the same call web makes.
@@ -32,7 +44,6 @@ export const renderChatMessage = (
 				pushProse(blocks, `${CHART_FENCE}\n${part.value}\n${FENCE}`)
 				continue
 			}
-			const index = chartIndex++
 			blocks.push({
 				kind: "chart",
 				spec,
@@ -76,49 +87,6 @@ const FENCE = "```"
 const pushProse = (blocks: Array<ChatBlock>, markdown: string): void => {
 	const trimmed = markdown.trim()
 	if (trimmed.length > 0) blocks.push({ kind: "prose", markdown: trimmed })
-}
-
-interface TextPart {
-	readonly kind: "text" | "chart"
-	readonly value: string
-}
-
-/**
- * Cut the ```chart fences out of a reply, keeping the order of what is left.
- *
- * Fences are numbered in order of appearance from zero, and that rule is shared, not local:
- * whatever renders a chart's image counts the same fences the same way, or a turn with two charts
- * shows each of them the other's plot.
- *
- * Line-based rather than a regular expression over the whole text: a fence is a line construct,
- * and the streaming case — an opener whose body has not finished arriving — has to be recognised
- * by "no closing line yet" rather than by a match that simply fails. Such a fence is held back
- * entirely, so a half-written chart shows as nothing until the next edit rather than as JSON.
- */
-const splitChartFences = (text: string): Array<TextPart> => {
-	const parts: Array<TextPart> = []
-	let prose: Array<string> = []
-	let chart: Array<string> | null = null
-
-	for (const line of text.split("\n")) {
-		if (chart === null) {
-			if (line.trim() === CHART_FENCE) {
-				parts.push({ kind: "text", value: prose.join("\n") })
-				prose = []
-				chart = []
-			} else prose.push(line)
-			continue
-		}
-		if (line.trim() === FENCE) {
-			parts.push({ kind: "chart", value: chart.join("\n") })
-			chart = null
-			continue
-		}
-		chart.push(line)
-	}
-
-	if (chart === null) parts.push({ kind: "text", value: prose.join("\n") })
-	return parts
 }
 
 /** What the plot would have shown, for a platform that has no image of it. */

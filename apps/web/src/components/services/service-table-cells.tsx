@@ -62,9 +62,10 @@ interface SortableHeadProps {
 	active: boolean
 	dir: SortDir
 	onClick: () => void
+	className?: string
 }
 
-export function SortableHead({ label, align = "left", active, dir, onClick }: SortableHeadProps) {
+export function SortableHead({ label, align = "left", active, dir, onClick, className }: SortableHeadProps) {
 	const Icon = active ? (dir === "desc" ? ChevronDownIcon : ChevronUpIcon) : ChevronExpandYIcon
 	return (
 		<TableHead
@@ -73,6 +74,7 @@ export function SortableHead({ label, align = "left", active, dir, onClick }: So
 				"h-8 cursor-pointer select-none text-[10px] uppercase tracking-wider font-medium transition-colors",
 				active ? "text-foreground" : "text-muted-foreground/70 hover:text-foreground",
 				align === "right" && "text-right",
+				className,
 			)}
 		>
 			<span className={cn("inline-flex items-center gap-1", align === "right" && "justify-end w-full")}>

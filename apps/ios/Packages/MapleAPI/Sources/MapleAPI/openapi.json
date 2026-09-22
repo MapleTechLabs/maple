@@ -7701,6 +7701,10 @@
       "name": "Slack Integration"
     },
     {
+      "description": "Link a chat workspace to your organization through a configured connector, and manage or remove the links that already exist.",
+      "name": "Chat Integrations"
+    },
+    {
       "description": "Connect PlanetScale to your organization and manage what Maple collects from it: connection status, organization binding, the metrics service token that enables branch-metrics scraping, the database inventory, webhook setup, query insights, and the lifecycle event timeline.",
       "name": "PlanetScale Integration"
     },
@@ -7713,7 +7717,7 @@
       "name": "Attribute Mappings"
     },
     {
-      "description": "The organization's append-only audit trail — allowed and denied actions performed through the dashboard, the public API, and MCP, attributed to the user, API key, or agent that performed them, with before/after diffs for updates. Reading it requires organization-administrator access (or the `audit_log:read` scope for API keys).",
+      "description": "The organization's append-only audit trail — allowed and denied actions performed through the dashboard, the public API, MCP, and any linked chat platform, attributed to the user, API key, or agent that performed them, with before/after diffs for updates. Reading it requires organization-administrator access (or the `audit_log:read` scope for API keys).",
       "name": "Audit Log"
     },
     {

@@ -27,6 +27,7 @@
 		"@maple/auth": "workspace:*",
 		"@maple/backend": "workspace:*",
 		"@maple/cache": "workspace:*",
+		"@maple/chat-platform": "workspace:*",
 		"@maple/db": "workspace:*",
 		"@maple/domain": "workspace:*",
 		"@maple/infra": "workspace:*",

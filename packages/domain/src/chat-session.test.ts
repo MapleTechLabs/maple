@@ -10,7 +10,7 @@ import {
 	connectorTurnTenant,
 	CONNECTOR_TENANT_USER_ID,
 	isConnectorSessionId,
-	originForTurn,
+	originForTenant,
 	decodeChatTurnTenant,
 	encodeChatTurnTenant,
 	decodeChatEvent,
@@ -27,6 +27,38 @@ import {
 	ChatTurnRetryEvent,
 	type ChatEventInput,
 } from "./chat-session"
+import { type ChatSessionNamespace, type ChatSessionStub, chatSessionStub } from "./chat-session-stub"
+
+describe("chatSessionStub", () => {
+	const stub = {} as ChatSessionStub
+	const namespace = (label: string, seen: string[]): ChatSessionNamespace => ({
+		idFromName: (name) => `${label}:${name}`,
+		get: (id) => {
+			seen.push(String(id))
+			return stub
+		},
+		jurisdiction: (jurisdiction) => namespace(`${label}/${jurisdiction}`, seen),
+	})
+
+	it("addresses the object through the eu jurisdiction on the EU instance", () => {
+		const seen: string[] = []
+		expect(chatSessionStub({ ChatSession: namespace("ns", seen), MAPLE_REGION: "eu" }, "org_a:t")).toBe(
+			stub,
+		)
+		expect(seen).toEqual(["ns/eu:org_a:t"])
+	})
+
+	it("leaves the us instance, and an env with no region, on the plain namespace", () => {
+		const seen: string[] = []
+		chatSessionStub({ ChatSession: namespace("ns", seen), MAPLE_REGION: "us" }, "org_a:t")
+		chatSessionStub({ ChatSession: namespace("ns", seen) }, "org_a:t")
+		expect(seen).toEqual(["ns:org_a:t", "ns:org_a:t"])
+	})
+
+	it("is undefined without the binding", () => {
+		expect(chatSessionStub({ MAPLE_REGION: "eu" }, "org_a:t")).toBeUndefined()
+	})
+})
 
 const orgId = Schema.decodeSync(OrgId)
 /** A connector id, not a real one: the domain never learns which chat platform it answers in. */
@@ -242,14 +274,11 @@ describe("ChatTurnTenant", () => {
 	})
 })
 
-describe("originForTurn", () => {
-	it("defaults a missing origin to `app`, and the legacy pass tenant to `autonomous`", () => {
-		// Compatibility only, for callers that predate the field. An explicit origin always wins,
-		// which is what lets this go away.
+describe("originForTenant", () => {
+	it("reads Maple's own service token as an unattended pass, and everyone else as the app", () => {
 		const app = { orgId: "org_1", userId: "user_1", roles: [], authMode: "self_hosted" } as const
 		const pass = { ...app, userId: "internal-service" } as const
-		expect(originForTurn(undefined, app)).toStrictEqual({ kind: "app" })
-		expect(originForTurn(undefined, pass)).toStrictEqual({ kind: "autonomous" })
-		expect(originForTurn({ kind: "app" }, pass)).toStrictEqual({ kind: "app" })
+		expect(originForTenant(app)).toStrictEqual({ kind: "app" })
+		expect(originForTenant(pass)).toStrictEqual({ kind: "autonomous" })
 	})
 })

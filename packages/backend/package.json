@@ -28,6 +28,7 @@
 		"@maple/alerting-core": "workspace:*",
 		"@maple/auth": "workspace:*",
 		"@maple/cache": "workspace:*",
+		"@maple/chat-platform": "workspace:*",
 		"@maple/db": "workspace:*",
 		"@maple/domain": "workspace:*",
 		"@maple/email": "workspace:*",

@@ -33,12 +33,15 @@ export interface EndpointGroup {
 	totals: {
 		estimatedSpanCount: number
 		errorRate: number
-		/** Worst p99 in the group — p99s do not average. */
+		/** Worst percentiles in the group — percentiles do not average. */
+		p50DurationMs: number
+		p95DurationMs: number
 		p99DurationMs: number
 	}
 }
 
-export type EndpointSort = "traffic" | "path"
+export type EndpointSort = "traffic" | "path" | "errorRate" | "p50" | "p95" | "p99"
+export type EndpointSortDir = "asc" | "desc"
 
 const segments = (route: string): string[] => route.split("/").filter((part) => part.length > 0)
 
@@ -173,6 +176,8 @@ function totalsFor(endpoints: readonly ServiceEndpoint[]): EndpointGroup["totals
 	return {
 		estimatedSpanCount,
 		errorRate: estimatedSpanCount > 0 ? estimatedErrorCount / estimatedSpanCount : 0,
+		p50DurationMs: endpoints.reduce((worst, e) => Math.max(worst, e.p50DurationMs), 0),
+		p95DurationMs: endpoints.reduce((worst, e) => Math.max(worst, e.p95DurationMs), 0),
 		p99DurationMs: endpoints.reduce((worst, e) => Math.max(worst, e.p99DurationMs), 0),
 	}
 }
@@ -189,6 +194,7 @@ function collect(node: TrieNode, path: string[], groups: EndpointGroup[], loose:
 	}
 
 	// Too small to earn a header — a group of one costs a row and saves nothing.
+	// It still becomes a group below, just a headerless one.
 	if (node.count < 2) {
 		loose.push(...subtreeEndpoints(node))
 		return
@@ -223,19 +229,41 @@ function collect(node: TrieNode, path: string[], groups: EndpointGroup[], loose:
 	emit()
 }
 
-const byTraffic = (a: ServiceEndpoint, b: ServiceEndpoint) => b.estimatedSpanCount - a.estimatedSpanCount
+const leafMetric = (endpoint: ServiceEndpoint, sort: Exclude<EndpointSort, "path">): number => {
+	switch (sort) {
+		case "traffic":
+			return endpoint.estimatedSpanCount
+		case "errorRate":
+			return endpoint.errorRate
+		case "p50":
+			return endpoint.p50DurationMs
+		case "p95":
+			return endpoint.p95DurationMs
+		case "p99":
+			return endpoint.p99DurationMs
+	}
+}
+
 const byPath = (a: ServiceEndpoint, b: ServiceEndpoint) =>
 	a.route.localeCompare(b.route) || a.method.localeCompare(b.method)
 
 /**
- * Partition endpoints into stem groups, an ungrouped run, and the collapsed
- * unrouted bucket. Groups sort by combined traffic and leaves by their own, so
- * the busiest single endpoint is not necessarily first on the page — the header
- * sort toggle is the escape hatch for when that is the thing you wanted.
+ * Partition endpoints into stem groups, headerless singletons for the endpoints
+ * no stem claimed, and the collapsed unrouted and probe buckets.
+ *
+ * Groups take their place from their leading endpoint, not from a total: after
+ * the leaves are sorted, a group ranks where its first row would rank on its
+ * own. Read top to bottom, the first row of every block is then monotone under
+ * the active column — sorting by traffic never puts five small endpoints above
+ * one busy one because their sum happens to be larger, and sorting by errors
+ * puts the worst endpoint on the page first whether or not it has siblings.
+ * The collapsed buckets stay pinned to the end whatever the sort; they are not
+ * endpoints competing for the top of the list.
  */
 export function groupEndpoints(
 	endpoints: readonly ServiceEndpoint[],
 	sort: EndpointSort = "traffic",
+	dir: EndpointSortDir = sort === "path" ? "asc" : "desc",
 ): EndpointGroup[] {
 	const probes: ServiceEndpoint[] = []
 	const unrouted: ServiceEndpoint[] = []
@@ -257,23 +285,32 @@ export function groupEndpoints(
 	// Endpoints whose route is "/" land on the root itself.
 	loose.push(...root.terminal)
 
-	const leafSort = sort === "path" ? byPath : byTraffic
+	// A loose endpoint is a group of one without a header. It competes with the
+	// stem groups on its own numbers, so sorting by traffic puts a 40 req/s
+	// `POST /query` above a 27 req/s dashboards group instead of below every
+	// group on the page.
+	for (const endpoint of loose) {
+		groups.push({ kind: "ungrouped", stem: "", endpoints: [endpoint], totals: totalsFor([endpoint]) })
+	}
+
+	const sign = dir === "asc" ? 1 : -1
+	const leafSort =
+		sort === "path"
+			? (a: ServiceEndpoint, b: ServiceEndpoint) => sign * byPath(a, b)
+			: (a: ServiceEndpoint, b: ServiceEndpoint) => sign * (leafMetric(a, sort) - leafMetric(b, sort))
 	for (const group of groups) group.endpoints.sort(leafSort)
 
+	const groupPath = (group: EndpointGroup) => group.stem || (group.endpoints[0]?.route ?? "")
+	const leading = (group: EndpointGroup) => {
+		const [first] = group.endpoints
+		return first === undefined || sort === "path" ? 0 : leafMetric(first, sort)
+	}
 	groups.sort(
 		sort === "path"
-			? (a, b) => a.stem.localeCompare(b.stem)
-			: (a, b) => b.totals.estimatedSpanCount - a.totals.estimatedSpanCount,
+			? (a, b) => sign * groupPath(a).localeCompare(groupPath(b))
+			: (a, b) => sign * (leading(a) - leading(b)),
 	)
 
-	if (loose.length > 0) {
-		groups.push({
-			kind: "ungrouped",
-			stem: "",
-			endpoints: loose.sort(leafSort),
-			totals: totalsFor(loose),
-		})
-	}
 	if (unrouted.length > 0) {
 		groups.push({
 			kind: "unrouted",
@@ -303,12 +340,18 @@ export interface LeafLabel {
 /**
  * Split a route into the muted remainder and the segment that actually
  * distinguishes it from its siblings. An endpoint that IS the stem has no
- * remainder and reads as "(index)".
+ * remainder and reads as "(index)". Without a stem the route is printed whole:
+ * the head is its parent path and the tail its last segment, so the root
+ * route stays "/" rather than an index of nothing.
  */
 export function leafLabel(route: string, stem: string): LeafLabel {
-	const remainder = stem.length > 0 && route.startsWith(stem) ? route.slice(stem.length) : route
-	if (remainder === "" || remainder === "/") return { head: "", tail: "(index)" }
+	const grouped = stem.length > 0 && route.startsWith(stem)
+	const remainder = grouped ? route.slice(stem.length) : route
+	if (remainder === "" || remainder === "/") {
+		return grouped ? { head: "", tail: "(index)" } : { head: "", tail: "/" }
+	}
 	const lastSlash = remainder.lastIndexOf("/")
 	if (lastSlash <= 0) return { head: "", tail: remainder }
-	return { head: `…${remainder.slice(0, lastSlash)}`, tail: remainder.slice(lastSlash) }
+	const head = remainder.slice(0, lastSlash)
+	return { head: grouped ? `…${head}` : head, tail: remainder.slice(lastSlash) }
 }

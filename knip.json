@@ -49,6 +49,9 @@
 		"apps/alerting": {
 			"entry": ["src/worker.ts"]
 		},
+		"apps/chat-bot": {
+			"entry": ["src/worker.ts"]
+		},
 		"apps/electric-sync": {
 			"entry": ["src/worker.ts"]
 		},

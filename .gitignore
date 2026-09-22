@@ -73,3 +73,6 @@ apps/ios/build/
 
 # backup restore drill reports (packages/db/scripts/restore-test.ts)
 .restore-test/
+
+# Vitest Browser Mode failure screenshots and traces
+.vitest/

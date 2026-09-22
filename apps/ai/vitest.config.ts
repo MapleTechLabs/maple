@@ -10,9 +10,8 @@ export default defineConfig({
 	test: {
 		environment: "node",
 		include: ["src/**/*.test.ts"],
-		// Threads over forked processes, for the reason apps/api's config records:
-		// process startup and the per-worker module registry dominate otherwise.
-		pool: "threads",
+		// Forked processes, for the memory reason apps/api's config records.
+		pool: "forks",
 		// Backend and worker tests share the same migrated PGlite snapshot.
 		globalSetup: ["../../packages/backend/test/global-setup.ts"],
 		// Same headroom as apps/api, and for the same reasons: PGlite-per-test, real

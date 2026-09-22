@@ -22,12 +22,7 @@
  * `Command.Build`'s env did through `vite.config.ts`'s `define`. Non-prefixed
  * keys stay ordinary Worker bindings.
  */
-import {
-	ApiWorker,
-	CLOUDFLARE_WORKER_PLACEMENT,
-	MapleStack,
-	resolveWorkerName,
-} from "@maple/infra/cloudflare"
+import { ApiWorker, MapleStack, resolveWorkerName, resolveWorkerPlacement } from "@maple/infra/cloudflare"
 import { plainFrom } from "@maple/infra/env"
 import * as Cloudflare from "alchemy/Cloudflare"
 import { Effect } from "effect"
@@ -36,10 +31,10 @@ import { Effect } from "effect"
 const rootDir = new URL("..", import.meta.url).pathname
 
 const props = Effect.gen(function* () {
-	const { stage, domains, urls } = yield* MapleStack
+	const { stage, region, domains, urls } = yield* MapleStack
 	const api = yield* ApiWorker
 	return {
-		name: resolveWorkerName("web", stage),
+		name: resolveWorkerName("web", stage, region),
 		rootDir,
 		// The deployed entry. A vite source owns the Worker entry, so the Effect
 		// implementation this class used to take as a third argument moved into
@@ -58,7 +53,7 @@ const props = Effect.gen(function* () {
 			include: ["**/*", "../../packages/*/src/**", "../../lib/*/src/**"],
 			lockfile: true,
 		},
-		placement: CLOUDFLARE_WORKER_PLACEMENT,
+		placement: resolveWorkerPlacement(region),
 		workersDev: true,
 		domain: domains.web,
 		env: {

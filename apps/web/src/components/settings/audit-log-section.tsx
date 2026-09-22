@@ -1,4 +1,4 @@
-import type { AuditActorType, AuditOutcome } from "@maple/domain/http"
+import type { AuditActorType, AuditLogSource, AuditOutcome } from "@maple/domain/http"
 import {
 	encodePublicId,
 	PublicIdPrefixes,
@@ -38,6 +38,9 @@ const OUTCOME_FILTERS: ReadonlyArray<{ value: OutcomeFilter; label: string }> = 
 	{ value: "allowed", label: "Allowed" },
 	{ value: "denied", label: "Denied" },
 ]
+
+/** Sources read as they are stored, bar the underscore in a two-word one (`chat_platform`). */
+const sourceLabel = (source: AuditLogSource): string => source.replace("_", " ")
 
 const ACTOR_BADGES: Record<
 	AuditActorType,
@@ -519,7 +522,7 @@ function AuditLogRow({ entry }: { entry: V2AuditLogEntry }) {
 					<ResourceCell entry={entry} />
 				</div>
 				<span className={cn(COL.source, "text-muted-foreground truncate text-xs")}>
-					{entry.source}
+					{sourceLabel(entry.source)}
 					{entry.origin_country !== null && (
 						<span className="text-muted-foreground/60"> · {entry.origin_country}</span>
 					)}
@@ -664,7 +667,7 @@ function AuditLogDetail({ entry }: { entry: V2AuditLogEntry }) {
 					</span>
 				</DetailField>
 				<DetailField label="Source">
-					<span>{entry.source}</span>
+					<span>{sourceLabel(entry.source)}</span>
 					{(entry.origin_ip !== null || entry.origin_country !== null) && (
 						<span className="text-muted-foreground">
 							{" · "}

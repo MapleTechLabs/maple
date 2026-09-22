@@ -44,12 +44,23 @@ export interface ChatSessionStub {
 		readonly messageId: string
 		readonly text: string
 		readonly tenant: ChatTurnTenantEncoded
-		/**
-		 * Who is driving the turn. Optional only for deploy skew — api, alerting and ai are separate
-		 * Workers, so an older caller keeps calling through a rollout. See `originForTurn`.
-		 */
-		readonly origin?: ChatTurnOrigin
-	}) => Promise<{ cursor: number; messageId: string } | undefined>
+		/** Who is driving the turn, stated by whoever raised it. */
+		readonly origin: ChatTurnOrigin
+	}) => Promise<
+		| {
+				cursor: number
+				messageId: string
+				/**
+				 * The assistant message this turn writes, which is not the user message's id.
+				 *
+				 * Every event the turn emits carries it, so a caller that renders the turn itself — a
+				 * chat connector relaying it into a channel — needs it to tell this turn's events from
+				 * a replayed earlier one's. A caller that folds the whole transcript does not.
+				 */
+				turnMessageId: string
+		  }
+		| undefined
+	>
 	readonly holdsTurn: (messageId: string) => Promise<boolean>
 	readonly endTurn: (messageId: string) => Promise<void>
 	readonly abort: () => Promise<void>
@@ -58,6 +69,8 @@ export interface ChatSessionStub {
 export interface ChatSessionNamespace {
 	readonly idFromName: (name: string) => unknown
 	readonly get: (id: unknown) => ChatSessionStub
+	/** A namespace restricted to one jurisdiction; ids minted through it are stored only there. */
+	readonly jurisdiction?: (jurisdiction: "eu") => ChatSessionNamespace
 }
 
 export const isChatSessionNamespace = (value: unknown): value is ChatSessionNamespace =>
@@ -66,12 +79,23 @@ export const isChatSessionNamespace = (value: unknown): value is ChatSessionName
 	typeof (value as { get?: unknown }).get === "function" &&
 	typeof (value as { idFromName?: unknown }).idFromName === "function"
 
-/** Resolve the `ChatSession` binding (the Durable Object's alchemy name) off a worker env record, or `undefined` if it is missing. */
+/**
+ * Resolve the `ChatSession` binding (the Durable Object's alchemy name) off a worker env record,
+ * or `undefined` if it is missing.
+ *
+ * On the EU instance (`MAPLE_REGION=eu`, a value the stack derives and the environment cannot
+ * override) the object is addressed through the namespace's `eu` jurisdiction, so the session's
+ * transcript — spans, logs and the agent's reasoning over them — is stored only in EU data
+ * centres. Jurisdiction is a property of the id, so it has to be applied here, where ids are
+ * minted, and not on the binding.
+ */
 export const chatSessionStub = (
 	env: Record<string, unknown>,
 	sessionId: string,
 ): ChatSessionStub | undefined => {
-	const namespace = env.ChatSession
-	if (!isChatSessionNamespace(namespace)) return undefined
+	const bound = env.ChatSession
+	if (!isChatSessionNamespace(bound)) return undefined
+	const namespace =
+		env.MAPLE_REGION === "eu" && bound.jurisdiction !== undefined ? bound.jurisdiction("eu") : bound
 	return namespace.get(namespace.idFromName(sessionId))
 }

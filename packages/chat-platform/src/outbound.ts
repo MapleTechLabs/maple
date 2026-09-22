@@ -7,10 +7,24 @@
  * is NOT in this contract — the transport takes blocks and renders them in its own dialect, so a
  * markdown flavour, an embed, a button and a mention syntax never leave the connector's directory.
  */
+import type { ChatConversationKey } from "@maple/primitives"
 import type { Duration, Effect } from "effect"
-import { Schema } from "effect"
+import { Context, Schema } from "effect"
 import { ChatConnectorId } from "./connector"
+import type { ConnectorConfig, InboundMessage } from "./ingress"
 import type { ChatBlock } from "./render/blocks"
+
+/**
+ * The configuration the host resolved for the connector it is driving.
+ *
+ * A transport needs its platform's credential, and the host may not know what any of them is
+ * called — so it resolves the names the connector declared (`requiredConfig`) and supplies the map
+ * under this one service. Two host-provided services then cover every connector's outbound half:
+ * this and an HTTP client.
+ */
+export class ConnectorCredentials extends Context.Service<ConnectorCredentials, ConnectorConfig>()(
+	"@maple/chat-platform/ConnectorCredentials",
+) {}
 
 /**
  * Where a turn is posted. Every id is an opaque string the connector minted or was handed.
@@ -32,6 +46,18 @@ export interface ChatTarget {
 export interface ChatMessageRef {
 	readonly target: ChatTarget
 	readonly messageId: string
+}
+
+/**
+ * Which conversation an inbound message belongs to, and where its answer goes.
+ *
+ * The key is what Maple's session id is built from, so a platform decides for itself what makes a
+ * conversation one conversation — and is the only thing that could: a thread, a channel, or a
+ * thread it has to open first are all the same question asked of different APIs.
+ */
+export interface ChatConversation {
+	readonly conversationKey: ChatConversationKey
+	readonly target: ChatTarget
 }
 
 /** What a thread is opened around, and what it is called. */
@@ -86,6 +112,14 @@ export interface ChatOutboundTransport {
 	 * WHEN to open one is the caller's decision, not the driver's.
 	 */
 	readonly openThread: (request: ChatThreadRequest) => Effect.Effect<string, ChatOutboundError>
+	/**
+	 * Which conversation this message belongs to, opening a thread for it where the platform has
+	 * them and the mention was not already in one.
+	 *
+	 * On the transport rather than beside the normalized event because answering can take I/O, and
+	 * because the answer decides where every later call goes.
+	 */
+	readonly conversation: (message: InboundMessage) => Effect.Effect<ChatConversation, ChatOutboundError>
 }
 
 /**

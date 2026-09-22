@@ -15,6 +15,7 @@ import {
 	alertRuleStates,
 	alertRules,
 	apiKeys,
+	chatWorkspaces,
 	cliDeviceAuthorizations,
 	cloudflareLogpushConnectors,
 	dashboards,
@@ -79,6 +80,9 @@ const ORG_SCOPED_TABLES = [
 	scrapeTargets,
 	oauthConnections,
 	oauthAuthStates,
+	// The binding that makes a chat workspace's members act as the org. Deleting
+	// the org must stop the bot answering there, and nothing else would.
+	chatWorkspaces,
 	// Holds an encrypted Slack bot token and the id of a full-access API key —
 	// there is no `orgs` table to cascade from, so this purge is what stops a
 	// deleted org's live credentials outliving it.

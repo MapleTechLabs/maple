@@ -1,5 +1,5 @@
-import { alertChartIdFromPath, ogIdFromPath, shareTokenFromPath } from "./og/share-links"
-import { renderAlertChartImage } from "./og/alert-chart"
+import { ogIdFromPath, shareTokenFromPath } from "./og/share-links"
+import { chartRequestFromPath, renderChartImage } from "./og/chart-image"
 import { fetchShareOgMeta, renderShareOgImage, shareOgMetaRewriter } from "./og/share-preview"
 import { apiTarget, type ApiTarget, type WebWorkerEnv } from "./worker-env"
 
@@ -89,14 +89,14 @@ export const handleRequest = async (request: Request, env: WebWorkerEnv): Promis
 			: renderShareOgImage(api, ogId, env.ASSETS)
 	}
 
-	// Also ahead of the assets lookup, and for the same reason: `/alerts/…` is
-	// a real SPA route, so the shell would answer this path with HTML in an
-	// `<img>` slot rather than a 404 anyone could diagnose.
-	const chartId = alertChartIdFromPath(url.pathname)
-	if (chartId !== undefined) {
+	// Also ahead of the assets lookup, and for the same reason: `/alerts/…` and
+	// `/chat/…` are real SPA routes, so the shell would answer these paths with
+	// HTML in an `<img>` slot rather than a 404 anyone could diagnose.
+	const chart = chartRequestFromPath(url.pathname)
+	if (chart !== undefined) {
 		return api === undefined
 			? new Response(null, { status: 404 })
-			: renderAlertChartImage(api, chartId, env.ASSETS)
+			: renderChartImage(api, chart, env.ASSETS)
 	}
 
 	const assetResponse = await env.ASSETS.fetch(request)

@@ -31,7 +31,18 @@ export const RESERVED_AGENT_NAMES: ReadonlySet<string> = new Set([
 	RESOLUTION_AGENT_NAME,
 ])
 
-export const isReservedAgentName = (name: string): boolean => RESERVED_AGENT_NAMES.has(name)
+/**
+ * The agent actor a chat-connector turn acts as — one per org and connector, since a turn
+ * answered in an external channel has no Maple user behind it. A prefix rather than a fixed
+ * name, so the whole namespace is reserved however many connectors an org links.
+ */
+export const CHAT_CONNECTOR_AGENT_PREFIX = "chat-connector-"
+
+export const chatConnectorAgentName = (connectorId: string): string =>
+	`${CHAT_CONNECTOR_AGENT_PREFIX}${connectorId}`
+
+export const isReservedAgentName = (name: string): boolean =>
+	RESERVED_AGENT_NAMES.has(name) || name.startsWith(CHAT_CONNECTOR_AGENT_PREFIX)
 
 const INTERNAL_AGENT_LABELS = new Map<string, string>([
 	[SYSTEM_ERRORS_AGENT_NAME, "Maple Errors"],
