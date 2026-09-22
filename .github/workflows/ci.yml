@@ -795,17 +795,21 @@ jobs:
         if: ${{ needs.changes.outputs.web == 'true' }}
         runs-on: ubuntu-latest
         timeout-minutes: 12
-        # firefox and webkit run in Playwright's image, which ships their system
-        # libraries: `install-deps` pulled 40 and 100+ apt packages here, 36s and 81s.
-        # Chromium needs none of them, so it stays on the runner and skips the pull.
-        # An empty image runs the job on the runner itself. uid 1001 is the runner
-        # user that owns the mounted workspace, and Firefox refuses to start as root.
+        # webkit runs in Playwright's image, which ships its system libraries:
+        # `install-deps` pulled 100+ apt packages here in ~81s, the pull takes ~35s.
+        # firefox's 40 packages install in about the time the pull takes, so it and
+        # chromium stay on the runner. An empty image runs the job on the runner;
+        # uid 1001 is the runner user that owns the mounted workspace.
         container:
             image: >-
-                ${{ matrix.browser != 'chromium'
+                ${{ matrix.browser == 'webkit'
                 && format('mcr.microsoft.com/playwright:v{0}-noble', needs.changes.outputs.playwright)
                 || '' }}
             options: --user 1001
+        # Container steps otherwise default to sh, which has no here-strings.
+        defaults:
+            run:
+                shell: bash
         # One Playwright worker per machine (playwright.config.ts) so concurrent
         # browsers cannot distort frame timings. service-map (~125s of tests) is split
         # across two machines and the two non-Chromium smokes get one each; the short
@@ -875,7 +879,7 @@ jobs:
             # Browser binaries are version-pinned, so key on the resolved
             # @playwright/test version rather than the caret range in package.json.
             - name: Resolve Playwright version
-              if: ${{ matrix.browser == 'chromium' }}
+              if: ${{ matrix.browser != 'webkit' }}
               id: playwright
               working-directory: apps/web
               run: |
@@ -883,7 +887,7 @@ jobs:
                   echo "version=$version" >> "$GITHUB_OUTPUT"
 
             - name: Cache Playwright browsers
-              if: ${{ matrix.browser == 'chromium' }}
+              if: ${{ matrix.browser != 'webkit' }}
               id: playwright-cache
               uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
               with:
@@ -894,16 +898,21 @@ jobs:
                       playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}
 
             - name: Install Playwright browser
-              if: ${{ matrix.browser == 'chromium' && steps.playwright-cache.outputs.cache-hit != 'true' }}
+              if: ${{ matrix.browser != 'webkit' && steps.playwright-cache.outputs.cache-hit != 'true' }}
               env:
                   PW_BROWSER: ${{ matrix.browser }}
               run: bunx playwright install "$PW_BROWSER"
               working-directory: apps/web
 
-            # Chromium skips `install-deps`: the runner image already carries every
-            # library it links, and the step resolved to nine CJK/Thai/Cyrillic font
-            # packages that change no pixel we measure, at 12-205s off the apt mirror.
-            # If chromium ever fails to launch here, the runner image dropped a library.
+            # Chromium skips this: the runner image already carries every library it
+            # links, and the step resolved to nine CJK/Thai/Cyrillic font packages that
+            # change no pixel we measure, at 12-205s off the apt mirror. If chromium
+            # ever fails to launch here, the runner image dropped a library.
+            - name: Install Playwright system deps
+              if: ${{ matrix.browser == 'firefox' }}
+              run: bunx playwright install-deps firefox
+              working-directory: apps/web
+
             - name: Run perf shard
               env:
                   PW_PROJECTS: ${{ matrix.projects }}
