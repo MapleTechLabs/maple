@@ -76,8 +76,9 @@ esac
 
 URL="https://github.com/chdb-io/chdb-core/releases/download/$LIBCHDB_VERSION/$ASSET"
 TMP="$(mktemp -d)"
-# Release downloads 500 intermittently; every CI archive leg fetches this.
-curl -fsSL --retry 5 --retry-delay 5 --retry-all-errors "$URL" -o "$TMP/libchdb.tar.gz"
+# Release downloads 500 intermittently; plain --retry covers 5xx and timeouts
+# without retrying a permanent 404.
+curl -fsSL --retry 5 --retry-delay 5 "$URL" -o "$TMP/libchdb.tar.gz"
 
 # Verify BEFORE extracting: release assets are mutable even for a fixed tag,
 # so this authenticates the download rather than whatever happened to arrive.
