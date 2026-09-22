@@ -69,6 +69,18 @@ class TestPlan(unittest.TestCase):
         self.assert_coverage(suites, planner.plan(suites))
         self.assertEqual(planner.plan(suites), planner.plan(list(reversed(suites))))
 
+    def test_bun_suites_share_a_lane_without_vitest_flags(self):
+        suites = [
+            {"name": "bun-a", "files": 10, "vitest": False},
+            {"name": "bun-b", "files": 1, "vitest": False},
+            {"name": "vitest-a", "files": 1, "vitest": True},
+        ]
+        lanes = planner.plan(suites)["include"]
+        self.assert_coverage(suites, {"include": lanes})
+        bun = [lane for lane in lanes if "bun-a" in lane["filters"]]
+        self.assertEqual(bun[0]["filters"], ["bun-a", "bun-b"])
+        self.assertEqual(bun[0]["args"], [])
+
     def test_matrix_limit_is_explicit(self):
         with self.assertRaisesRegex(ValueError, "256"):
             planner.plan([{"name": "huge", "files": 100000, "vitest": True}])

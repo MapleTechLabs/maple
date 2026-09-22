@@ -8,11 +8,24 @@ import subprocess
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-# Seconds/file estimates from CI run 35671651855. Backend includes PGlite boot;
-# web has many cheap pure tests. Unknown suites get the conservative default.
-SECONDS_PER_FILE = {"@maple/backend": 3, "@maple/web": 0.8}
-TARGET_SECONDS = 100
-STARTUP_SECONDS = 5
+# Vitest seconds/file at two workers, measured on CI run 35725366619 (Duration
+# lines, excluding dependency builds). Unknown suites get the conservative default.
+SECONDS_PER_FILE = {
+    "@maple/api": 2.3,
+    "@maple/backend": 1.6,
+    "@maple/ai": 1.1,
+    "@maple/web": 0.55,
+    "@maple/query-engine": 0.45,
+    "@maple/ui": 0.45,
+    "@maple/domain": 0.4,
+}
+DEFAULT_SECONDS_PER_FILE = 1
+# Every job pays ~30s of checkout/mise/install plus Turbo dependency builds before
+# a test runs, and the org runs ~16 jobs at once, so the matrix queued in waves.
+# Fewer, fuller lanes beat many short ones on both wall clock and runner minutes.
+TARGET_SECONDS = 140
+# Per Vitest invocation: Vite startup and Turbo overhead, paid once per suite.
+STARTUP_SECONDS = 4
 
 
 def discover(root=ROOT):
@@ -57,20 +70,36 @@ def discover(root=ROOT):
     return suites
 
 
+def pack(suites, prefix, args):
+    groups = []
+    for name, weight in sorted(suites, key=lambda item: (-item[1], item[0])):
+        group = next(
+            (g for g in groups if g["estimated-seconds"] + weight <= TARGET_SECONDS),
+            None,
+        )
+        if group is None:
+            group = {
+                "name": f"{prefix}-{len(groups) + 1}",
+                "filters": [],
+                "args": list(args),
+                "estimated-seconds": 0,
+            }
+            groups.append(group)
+        group["filters"].append(name)
+        group["estimated-seconds"] += weight
+    return groups
+
+
 def plan(suites):
-    lanes, small = [], []
+    lanes, small, bun = [], [], []
     for suite in sorted(suites, key=lambda s: s["name"]):
         name = suite["name"]
-        weight = max(1, suite["files"]) * SECONDS_PER_FILE.get(name, 1.5)
+        weight = max(1, suite["files"]) * SECONDS_PER_FILE.get(
+            name, DEFAULT_SECONDS_PER_FILE
+        )
         if not suite["vitest"]:
-            lanes.append(
-                {
-                    "name": name,
-                    "filters": [name],
-                    "args": [],
-                    "estimated-seconds": weight + STARTUP_SECONDS,
-                }
-            )
+            # Bun suites share lanes with each other, never with Vitest flags.
+            bun.append((name, weight + STARTUP_SECONDS))
             continue
         shards = math.ceil(weight / (TARGET_SECONDS - STARTUP_SECONDS))
         if shards == 1:
@@ -85,25 +114,10 @@ def plan(suites):
                         "estimated-seconds": weight / shards + STARTUP_SECONDS,
                     }
                 )
-    # First-fit decreasing packs small suites without ever running two Vitests
-    # on the same runner at once (Turbo concurrency=1).
-    groups = []
-    for name, weight in sorted(small, key=lambda item: (-item[1], item[0])):
-        group = next(
-            (g for g in groups if g["estimated-seconds"] + weight <= TARGET_SECONDS),
-            None,
-        )
-        if group is None:
-            group = {
-                "name": f"small-{len(groups) + 1}",
-                "filters": [],
-                "args": ["--maxWorkers=2"],
-                "estimated-seconds": 0,
-            }
-            groups.append(group)
-        group["filters"].append(name)
-        group["estimated-seconds"] += weight
-    lanes.extend(groups)
+    # First-fit decreasing packs small suites without ever running two test
+    # runners on the same machine at once (Turbo concurrency=1).
+    lanes.extend(pack(small, "small", ["--maxWorkers=2"]))
+    lanes.extend(pack(bun, "bun", []))
     browser_workspaces = {
         suite["name"]: suite.get("browser-workspace", "") for suite in suites
     }

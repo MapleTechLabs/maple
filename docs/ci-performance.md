@@ -8,14 +8,19 @@ when services moved out of API, leaving the longest suite unsharded.
 
 `.github/scripts/plan-tests.py` now discovers workspace test scripts from the
 root workspace patterns and tracked manifests. It sizes Vitest shards against
-a 100s estimated test budget and packs small suites into lanes with the same
-budget. Backend uses a measured, conservative 3s/file estimate, web 0.8s/file,
-and other suites 1.5s/file, plus startup overhead. File counts deliberately
+a 140s estimated test budget and packs small suites into lanes with the same
+budget. Per-file rates for the large suites are measured from CI run
+35725366619 (backend 1.6s, api 2.3s, web 0.55s, …); unknown suites get a
+conservative 1s/file, plus a per-suite startup cost. File counts deliberately
 include all tracked test/spec files: this can overestimate a suite, but never
 filters the tests actually executed. Each lane invokes the original package
 scripts through Turbo; Vitest owns discovery and shard assignment.
 
-The current inventory produces 21 test lanes, including five backend shards.
+The current inventory produces 9 test lanes, including two backend shards.
+It used to produce 21 at a 100s budget: each job pays ~30s of setup and the
+org runs ~16 jobs at once, so the short lanes queued the run in waves (the last
+test lane of run 35725366619 started 234s in). Fewer, fuller lanes cut both the
+wall clock and the runner minutes.
 A synthetic fivefold increase in files produces 82 lanes with the same Vitest
 work budget. The planner tests run in change detection and verify complete,
 nonduplicated workspace ownership, contiguous shard coverage, bounded estimates,
@@ -39,8 +44,8 @@ cannot predict. Investigate a budget failure using the Vitest file timings:
 fix unnecessary real waits/repeated setup, split an oversized file, or update
 the measured per-file estimate. Do not simply increase the runtime budget.
 
-Bun-native CLI and otel-helper tests retain their own unsharded lanes and original
-arguments; Rust and the standalone Slack agent retain their dedicated workflows.
+Bun-native CLI and otel-helper tests share unsharded lanes with each other, never
+with Vitest flags, and keep their original arguments; Rust and the standalone Slack agent retain their dedicated workflows.
 The runtime budget still applies to the Bun lanes. If those suites grow beyond it,
 they need runner-specific splitting rather than Vitest flags.
 
