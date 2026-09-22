@@ -10,30 +10,17 @@ vi.mock("../ui/toast", () => ({ toastManager: { add: vi.fn() } }))
 const PAST_OPEN_DELAY = 500
 const PAST_CLOSE_DELAY = 1_000
 
-class NoopObserver {
-	observe() {}
-	unobserve() {}
-	disconnect() {}
-}
-
-/** Base UI's positioner mounts floating-ui's `autoUpdate`; jsdom has neither observer. */
-function stubLayoutGlobals() {
-	vi.stubGlobal("ResizeObserver", NoopObserver)
-	vi.stubGlobal("IntersectionObserver", NoopObserver)
-	vi.stubGlobal("matchMedia", (query: string) => ({
-		matches: true,
-		media: query,
-		onchange: null,
-		addListener: () => {},
-		removeListener: () => {},
-		addEventListener: () => {},
-		removeEventListener: () => {},
-		dispatchEvent: () => false,
-	}))
-}
-
 function openCards(): NodeListOf<Element> {
 	return document.querySelectorAll('[data-slot="hover-card-content"]')
+}
+
+/**
+ * Chromium runs some of Base UI's popup work (positioning, animation completion)
+ * on its own clock, outside `act` and the fake timers. Poll the DOM in real time
+ * rather than read it once; a card that is genuinely stranded still fails.
+ */
+async function expectOpenCards(count: number) {
+	await expect.poll(() => openCards().length).toBe(count)
 }
 
 /** The chip itself, by accessible name — the open card contains buttons too. */
@@ -67,7 +54,6 @@ let writeText: ReturnType<typeof vi.fn>
 
 beforeEach(() => {
 	vi.useFakeTimers()
-	stubLayoutGlobals()
 	writeText = vi.fn().mockResolvedValue(undefined)
 	Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } })
 })
@@ -75,7 +61,6 @@ beforeEach(() => {
 afterEach(() => {
 	cleanup()
 	vi.useRealTimers()
-	vi.unstubAllGlobals()
 	vi.restoreAllMocks()
 })
 
@@ -97,7 +82,7 @@ describe("LogAttributeChip", () => {
 
 		await hoverIn(before)
 
-		expect(openCards().length).toBe(1)
+		await expectOpenCards(1)
 		expect(chipTrigger("http.method=GET")).toBe(before)
 	})
 
@@ -106,10 +91,10 @@ describe("LogAttributeChip", () => {
 		const button = chipTrigger("http.method=GET")
 
 		await hoverIn(button)
-		expect(openCards().length).toBe(1)
+		await expectOpenCards(1)
 
 		await hoverOut(button)
-		expect(openCards().length).toBe(0)
+		await expectOpenCards(0)
 	})
 
 	// The reported bug in miniature: sweeping a row used to strand one card per
@@ -125,33 +110,34 @@ describe("LogAttributeChip", () => {
 		const second = chipTrigger("http.status_code=503")
 
 		await hoverIn(first)
-		expect(openCards().length).toBe(1)
+		await expectOpenCards(1)
 
 		await hoverOut(first)
-		await hoverIn(second)
+		await expectOpenCards(0)
 
-		expect(openCards().length).toBe(1)
+		await hoverIn(second)
+		await expectOpenCards(1)
 		expect(document.body.textContent).toContain("503")
 	})
 
 	// A log row is keyed by its virtual index and a chip by its attribute name, so
 	// scrolling swaps a different log's value into the very same chip instance
 	// rather than remounting it. Open state must not survive that. This one is an
-	// invariant guard rather than a repro: jsdom lets a synthesized `pointerleave`
-	// land on a node the cursor never entered, which is precisely what a real
-	// browser refuses to do, so it passes against the old code too.
+	// invariant guard rather than a repro: `fireEvent` lets a synthesized
+	// `pointerleave` land on a node the cursor never entered, which is precisely
+	// what real pointer input refuses to do, so it passes against the old code too.
 	it("does not keep a card open when the virtualizer recycles it onto another log", async () => {
 		const { rerender } = render(<LogAttributeChip attrKey="http.method" value="GET" tone="info" />)
 
 		await hoverIn(chipTrigger("http.method=GET"))
-		expect(openCards().length).toBe(1)
+		await expectOpenCards(1)
 
 		await hoverOut(chipTrigger("http.method=GET"))
 		await act(async () => {
 			rerender(<LogAttributeChip attrKey="http.method" value="POST" tone="info" />)
 		})
 
-		expect(openCards().length).toBe(0)
+		await expectOpenCards(0)
 		expect(chipTrigger("http.method=POST")).toBeDefined()
 	})
 
