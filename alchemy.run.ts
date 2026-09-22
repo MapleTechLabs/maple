@@ -121,9 +121,10 @@ const declareMapleDb = (stage: MapleStage, region: MapleRegion) =>
 			migrations: "packages/db/drizzle",
 		}).pipe(RemovalPolicy.retain())
 		if (mode !== "declared") return { schema, hyperdrives: undefined }
+		// Distinct ids on purpose: alchemy keys state by id alone, across resource types.
 		const hyperdrive = (consumer: MapleDbConsumer) =>
 			Effect.gen(function* () {
-				const role = yield* Planetscale.PostgresRole(`db-${consumer}`, {
+				const role = yield* Planetscale.PostgresRole(`db-${consumer}-role`, {
 					database,
 					branch: schema,
 					inheritedRoles: ["postgres"],
@@ -327,9 +328,12 @@ export default Alchemy.Stack(
 		// deploys ingest, so this never silently drops it.
 		// Electric's credential: the REPLICATION attribute, which PlanetScale issues only
 		// alongside `postgres`. Replaced create-first, and its id is in the task env.
+		// NOT `"electric"`: that is the ECS service's logical id inside `createMapleElectric`,
+		// and alchemy keys state by id alone — the first deploy that shared it replaced the
+		// production service with this role and drained it (2026-09-22).
 		const electricDbRole =
 			db && stageDeploysElectric(stage)
-				? yield* Planetscale.PostgresRole("electric", {
+				? yield* Planetscale.PostgresRole("electric-db-role", {
 						database: resolvePlanetscaleDatabase(region),
 						branch: db.schema,
 						inheritedRoles: ["postgres"],
