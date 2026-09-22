@@ -11,7 +11,7 @@
  * environment must not override.
  */
 import { chatConnectorConfigKeys } from "@maple/chat-platform"
-import type { MapleDomains, MapleStage } from "@maple/infra/cloudflare"
+import type { MapleDomains, MapleRegion, MapleStage } from "@maple/infra/cloudflare"
 import {
 	apnsEnv,
 	appUrlsEnv,
@@ -30,7 +30,7 @@ import {
 	tinybirdEnv,
 } from "@maple/infra/env"
 
-export const apiConfiguredEnv = (stage: MapleStage, domains: MapleDomains) =>
+export const apiConfiguredEnv = (stage: MapleStage, region: MapleRegion, domains: MapleDomains) =>
 	merge(
 		tinybirdEnv,
 		// ClickHouse (BYO warehouse); `tinybird` unless an org config overrides it.
@@ -47,7 +47,7 @@ export const apiConfiguredEnv = (stage: MapleStage, domains: MapleDomains) =>
 		authEnv,
 		ingestKeyCryptoEnv,
 		requireSecretEntry("MAPLE_SHARE_TOKEN_HMAC_KEY"),
-		appUrlsEnv,
+		appUrlsEnv(domains),
 		// The worker's own canonical origin — everything it publishes about itself
 		// (MCP `server.json`, the discovery index) is built from this rather than
 		// from client-controlled forwarded headers. Stages with a real domain
@@ -71,7 +71,7 @@ export const apiConfiguredEnv = (stage: MapleStage, domains: MapleDomains) =>
 		plainWithDefault("QE_BUCKET_CACHE_READ_CONCURRENCY", "6"),
 		plainWithDefault("EDGE_CACHE_READ_TIMEOUT_MS", "40"),
 		// MAPLE_ENDPOINT / MAPLE_ENVIRONMENT / COMMIT_SHA / MAPLE_INGEST_KEY.
-		selfObservabilityEnv(stage),
+		selfObservabilityEnv(stage, region),
 		// Svix signing secrets for the public webhook receivers (`/webhooks/clerk`,
 		// `/webhooks/autumn`); each route answers 503 until its secret is set.
 		optionalSecret("CLERK_WEBHOOK_SECRET"),

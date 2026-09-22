@@ -1,9 +1,16 @@
 import { resolve } from "node:path"
 import * as AWS from "alchemy/AWS"
+import type * as Output from "alchemy/Output"
+import type * as Planetscale from "alchemy/Planetscale"
 import * as Effect from "effect/Effect"
 import * as Redacted from "effect/Redacted"
 import type { MapleRegion } from "@maple/infra/aws"
-import { resolveAwsRegion, resolveAwsResourceName, resolveElectricTaskSize } from "@maple/infra/aws"
+import {
+	pgUrlRequireSsl,
+	resolveAwsRegion,
+	resolveAwsResourceName,
+	resolveElectricTaskSize,
+} from "@maple/infra/aws"
 import { issueCertificateViaCloudflare } from "@maple/infra/acm"
 import type { MapleDomains, MapleStage } from "@maple/infra/cloudflare"
 import { requiredPlain } from "@maple/infra/env"
@@ -27,6 +34,8 @@ export interface CreateMapleElectricOptions {
 	 * shared rather than a second `AWS.EC2.Network`.
 	 */
 	network: Pick<AWS.EC2.Network, "vpcId" | "publicSubnetIds">
+	/** The replication role on the instance's branch (`withReplication`), minted by the root. */
+	dbRole: Planetscale.PostgresRole
 }
 
 /**
@@ -41,7 +50,13 @@ export interface CreateMapleElectricOptions {
  *
  * See `docs/electric-sync.md` for the runbook and the cutover.
  */
-export const createMapleElectric = ({ stage, domains, region, network }: CreateMapleElectricOptions) =>
+export const createMapleElectric = ({
+	stage,
+	domains,
+	region,
+	network,
+	dbRole,
+}: CreateMapleElectricOptions) =>
 	Effect.gen(function* () {
 		const taskSize = resolveElectricTaskSize(stage)
 		const name = (base: string) => resolveAwsResourceName(base, stage, region)
@@ -110,13 +125,18 @@ export const createMapleElectric = ({ stage, domains, region, network }: CreateM
 				secretString: Redacted.make(value),
 				tags: { Service: "maple-electric", Region: region },
 			})
+		const secretFrom = (id: string, value: Output.Output<Redacted.Redacted<string>>) =>
+			AWS.SecretsManager.Secret(id, {
+				name: `${name("electric")}/${id}`,
+				secretString: value,
+				tags: { Service: "maple-electric", Region: region },
+			})
 
 		// The DIRECT connection (5432), never PSBouncer or Hyperdrive — logical
-		// replication cannot run through a transaction pooler. The role must carry
-		// the REPLICATION *attribute*, which Postgres never grants through role
-		// membership; Electric's database validation rejects one that lacks it with
-		// a message that does not say so.
-		const databaseUrl = yield* secret("database-url", yield* requiredPlain("MAPLE_PG_ELECTRIC_URL"))
+		// replication cannot run through a transaction pooler. The role carries the
+		// REPLICATION *attribute*, which Postgres never grants through membership;
+		// Electric's database validation rejects one without it, and does not say so.
+		const databaseUrl = yield* secretFrom("database-url", pgUrlRequireSsl(dbRole.connectionUrl))
 		// The same value the electric-sync Worker holds — one secret, both ends of
 		// the hop. Rotating it means redeploying this first, then the worker.
 		const apiSecret = yield* secret("api-secret", yield* requiredPlain("ELECTRIC_SECRET"))
@@ -203,6 +223,9 @@ export const createMapleElectric = ({ stage, domains, region, network }: CreateM
 
 			env: {
 				ELECTRIC_PORT: String(ELECTRIC_PORT),
+				// A replaced role changes this, so the task definition changes and the
+				// singleton restarts on the new secret before alchemy deletes the old role.
+				MAPLE_PG_ROLE_ID: dbRole.id,
 				// The publication is owned by a Drizzle migration: PlanetScale cannot
 				// reassign table ownership, so Electric can never be the owner it would
 				// need to be to manage publishing itself. Prod parity with local docker.
@@ -217,7 +240,7 @@ export const createMapleElectric = ({ stage, domains, region, network }: CreateM
 				// the alternatives are worse: alchemy's only volume sugar is EFS, the
 				// networked filesystem Electric's guidance warns against, and an
 				// EBS-backed task pins the service to one AZ.
-			} satisfies Record<string, string>,
+			} satisfies Record<string, string | Output.Output<string>>,
 
 			tags: { Service: "maple-electric", Region: region },
 		})

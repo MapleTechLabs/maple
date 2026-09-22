@@ -27,6 +27,38 @@ import {
 	ChatTurnRetryEvent,
 	type ChatEventInput,
 } from "./chat-session"
+import { type ChatSessionNamespace, type ChatSessionStub, chatSessionStub } from "./chat-session-stub"
+
+describe("chatSessionStub", () => {
+	const stub = {} as ChatSessionStub
+	const namespace = (label: string, seen: string[]): ChatSessionNamespace => ({
+		idFromName: (name) => `${label}:${name}`,
+		get: (id) => {
+			seen.push(String(id))
+			return stub
+		},
+		jurisdiction: (jurisdiction) => namespace(`${label}/${jurisdiction}`, seen),
+	})
+
+	it("addresses the object through the eu jurisdiction on the EU instance", () => {
+		const seen: string[] = []
+		expect(chatSessionStub({ ChatSession: namespace("ns", seen), MAPLE_REGION: "eu" }, "org_a:t")).toBe(
+			stub,
+		)
+		expect(seen).toEqual(["ns/eu:org_a:t"])
+	})
+
+	it("leaves the us instance, and an env with no region, on the plain namespace", () => {
+		const seen: string[] = []
+		chatSessionStub({ ChatSession: namespace("ns", seen), MAPLE_REGION: "us" }, "org_a:t")
+		chatSessionStub({ ChatSession: namespace("ns", seen) }, "org_a:t")
+		expect(seen).toEqual(["ns:org_a:t", "ns:org_a:t"])
+	})
+
+	it("is undefined without the binding", () => {
+		expect(chatSessionStub({ MAPLE_REGION: "eu" }, "org_a:t")).toBeUndefined()
+	})
+})
 
 const orgId = Schema.decodeSync(OrgId)
 /** A connector id, not a real one: the domain never learns which chat platform it answers in. */

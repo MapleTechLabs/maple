@@ -175,14 +175,15 @@ like local docker does.
 1. **PlanetScale cluster params:** `wal_level=logical`, `max_replication_slots>=10`,
    `max_wal_senders>=10`, `max_slot_wal_keep_size>=4096`, `sync_replication_slots=on`,
    `hot_standby_feedback=on`. Already set for Cloud; unchanged.
-2. **Dedicated role** with the `REPLICATION` _attribute_ — never inherited through
-   role membership, and Electric's database validation rejects a role without it
-   with a message that does not say so — plus `SELECT` on the synced tables.
-   Avoid the ephemeral pscale migration roles.
-3. **Env:** `MAPLE_PG_ELECTRIC_URL` (that role, DIRECT port 5432 — logical
-   replication cannot run through PSBouncer or Hyperdrive) and `ELECTRIC_SECRET`.
-   Both reach the task through Secrets Manager, never the task definition's
-   plaintext `env`.
+2. **The role is declared:** `Planetscale.PostgresRole("electric", { withReplication: true,
+   inheritedRoles: ["postgres"] })` in `alchemy.run.ts`. The `REPLICATION` _attribute_ is never
+   inherited through role membership, Electric's database validation rejects a role without it
+   with a message that does not say so, and PlanetScale issues it only alongside `postgres`.
+   Its DIRECT 5432 URL (logical replication cannot run through PSBouncer or Hyperdrive), rewritten
+   to `sslmode=require` because Electric refuses `verify-full`, is the task's `DATABASE_URL`.
+3. **Env:** `ELECTRIC_SECRET`. Both secrets reach the task through Secrets Manager, never the
+   task definition's plaintext `env`; the role id sits in `env` so a replaced role restarts the
+   singleton on the new secret before alchemy deletes the old one.
 4. **Migrate,** then `alchemy deploy`. No new migration is needed — the service
    reads the publication `0009`/`0011`/`0014`/`0037` already maintain.
 5. **DNS.** The stack publishes the ACM validation CNAME into the `maple.dev`
