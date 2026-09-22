@@ -149,9 +149,14 @@ EU-hosted provider endpoint in the `prod-eu` environment plus the flag.
 - Token rotation runbook: two instances, each with Worker secret bindings plus an ECS secret.
 - A weekly comparison of `GET /v0/datasources` across the two workspaces catches a missed deploy;
   the local-schema gate only catches datasource edits.
-- The EU instance reports its own telemetry to its own internal org, so operating it means
-  looking in two places. A US-side read-only view of EU operational metrics would cross the
-  boundary with Maple's data, not the customer's; acceptable, but decide it explicitly.
+- Decided 2026-09-22, for now: the EU Workers report their own telemetry to the **US** internal
+  org (`prod-eu` carries the US `MAPLE_ENDPOINT` and ingest keys), stamped `maple.region=eu` by
+  `selfObservabilityEnv` so the two instances' `maple-api`s stay apart there; the "Prod revision
+  skew" rule has to group by it before the first EU deploy. This crosses the boundary with Maple's
+  operational data (org ids, compiled SQL, error text), not the customer's telemetry; the DPA has
+  to say so, or the three values move to an EU internal org. The ingest gateway's own telemetry
+  cannot follow: it goes through the EU collector into `maple_eu`, tagged with whatever
+  `MAPLE_INTERNAL_ORG_ID` says, so it is only readable once an EU internal org exists.
 
 ## Risks
 

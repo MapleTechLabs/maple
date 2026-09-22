@@ -220,6 +220,10 @@ export const selfObservabilityEnv = (
 		// addressed (`chatSessionStub`), which is the one place the runtime has to
 		// know: the EU instance keeps its objects in the `eu` jurisdiction.
 		derived("MAPLE_REGION", region),
+		// Stamped on every span and log as a resource attribute (the SDK reads the OTel
+		// variable off the Worker env). Both instances report to the US internal org
+		// for now, and this is what tells their `maple-api`s apart there.
+		derived("OTEL_RESOURCE_ATTRIBUTES", `maple.region=${region}`),
 		// GITHUB_SHA is read as its own key and re-labelled, rather than passed to
 		// `optionalPlain`'s `fallback` — a `process.env.GITHUB_SHA` read there would
 		// bypass the ConfigProvider and so miss `.env` / `--env-file`.

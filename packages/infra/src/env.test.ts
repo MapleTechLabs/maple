@@ -150,6 +150,16 @@ describe("selfObservabilityEnv", () => {
 		expect(run(selfObservabilityEnv({ kind: "prd" }, "eu"), env).MAPLE_REGION).toBe("eu")
 	})
 
+	it("stamps the region on the Workers' telemetry resource, whatever the provider says", () => {
+		const env = { ...base, OTEL_RESOURCE_ATTRIBUTES: "maple.region=mars" }
+		expect(run(selfObservabilityEnv({ kind: "prd" }), env).OTEL_RESOURCE_ATTRIBUTES).toBe(
+			"maple.region=us",
+		)
+		expect(run(selfObservabilityEnv({ kind: "prd" }, "eu"), env).OTEL_RESOURCE_ATTRIBUTES).toBe(
+			"maple.region=eu",
+		)
+	})
+
 	it("derives MAPLE_ENVIRONMENT from the stage and refuses a provider override", () => {
 		const env = { ...base, MAPLE_ENVIRONMENT: "production" }
 		expect(run(selfObservabilityEnv({ kind: "pr", prNumber: 42 }), env).MAPLE_ENVIRONMENT).toBe("pr-42")
@@ -318,6 +328,7 @@ describe("parity with the pre-refactor per-worker expressions", () => {
 					...oldOptionalPlain(env, "MAPLE_ENDPOINT"),
 					MAPLE_ENVIRONMENT: "production",
 					MAPLE_REGION: "us",
+					OTEL_RESOURCE_ATTRIBUTES: "maple.region=us",
 					...oldOptionalPlain(env, "COMMIT_SHA", env.GITHUB_SHA?.trim()),
 				}
 				expect(unwrap(run(selfObservabilityEnv({ kind: "prd" }), env))).toEqual(unwrap(old))
