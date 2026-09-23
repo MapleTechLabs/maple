@@ -49,6 +49,7 @@ import {
 	PrReviewService,
 	renderCheckSummary,
 	renderSummaryComment,
+	withReviewStatus,
 } from "./PrReviewService"
 import { FindingEmbedder, type FindingEmbedderApi, PrReviewEmbeddingError } from "./FindingEmbedder"
 
@@ -99,10 +100,13 @@ const layerFor = (
 		/** Present: pushes are debounced through this queue, which records what it was sent. */
 		readonly queued?: Array<{ readonly job: VcsSyncJob; readonly delaySeconds: number | undefined }>
 		readonly embedder?: FindingEmbedderApi
+		/** Every body the summary comment was given, status notices and finished reviews alike. */
+		readonly comments?: Array<string>
 	} = {},
 ) => {
 	// Only the one write is reached; every read dies so a test that strays says so loudly.
 	const unused = () => Effect.die("not used by the review service")
+	let comment: string | undefined
 	const provider: VcsProviderClient = {
 		id: "github",
 		webhookToJobs: unused,
@@ -129,8 +133,21 @@ const layerFor = (
 		resolveRef: unused,
 		fetchCloneCredentials: unused,
 		fetchSourceFile: unused,
+		writePullRequestSummaryComment: (_installation, _repo, input) =>
+			Effect.sync(() => {
+				const next = input.body(comment)
+				if (next !== undefined) {
+					comment = next
+					options.comments?.push(next)
+				}
+				return { url: "https://github.com/octo/repo/pull/612#issuecomment-1" }
+			}),
 		publishPullRequestReview: (_installation, _repo, publication) => {
 			options.published?.push(publication)
+			if (!options.publishFails) {
+				comment = publication.summaryComment.body
+				options.comments?.push(comment)
+			}
 			return options.publishFails
 				? Effect.fail(
 						new VcsRepoUnavailableError({
@@ -279,6 +296,34 @@ describe("PrReviewService.onPullRequestEvent", () => {
 			assert.equal(Option.getOrThrow(stored).status, "running")
 			assert.equal(Option.getOrThrow(stored).headSha, HEAD)
 		}).pipe(Effect.provide(layerFor(testDb, { begun })))
+	})
+
+	it.effect("says on the pull request that it is reviewing before the turn starts", () => {
+		const testDb = createTestDb(trackedDbs)
+		const comments: Array<string> = []
+		return Effect.gen(function* () {
+			yield* seed(true)
+			const reviews = yield* PrReviewService
+			yield* reviews.onPullRequestEvent(orgId, job())
+			assert.equal(comments.length, 1)
+			assert.isTrue(comments[0]!.startsWith(PR_REVIEW_COMMENT_MARKER))
+			assert.include(comments[0]!, "Maple is reviewing this pull request")
+			assert.include(comments[0]!, HEAD.slice(0, 7))
+		}).pipe(Effect.provide(layerFor(testDb, { comments })))
+	})
+
+	it.effect("says so when the turn ends without a review", () => {
+		const testDb = createTestDb(trackedDbs)
+		const comments: Array<string> = []
+		return Effect.gen(function* () {
+			yield* seed(true)
+			const reviews = yield* PrReviewService
+			const outcome = yield* reviews.onPullRequestEvent(orgId, job())
+			yield* reviews.failReview(orgId, outcome.reviewId!, "no review")
+			assert.equal(comments.length, 2)
+			assert.include(comments[1]!, "could not finish")
+			assert.notInclude(comments[1]!, "is reviewing")
+		}).pipe(Effect.provide(layerFor(testDb, { comments })))
 	})
 
 	it.effect("does nothing for an organization outside the staged rollout, even with the switch on", () => {
@@ -933,6 +978,27 @@ describe("PrReviewService.submitReview feedback filter", () => {
 			assert.equal(published[0]!.comments.length, 1)
 			assert.equal((yield* storedEmbeddings).length, 3)
 		}).pipe(Effect.provide(layerFor(testDb, { published })))
+	})
+})
+
+describe("withReviewStatus", () => {
+	it("keeps the previous review under the notice and swaps only the notice", () => {
+		const previous = `${PR_REVIEW_COMMENT_MARKER}\n## Maple review: 90/100\n\nOne warning.`
+		const reviewing = withReviewStatus(previous, { kind: "reviewing", headSha: HEAD_2 })
+		assert.include(reviewing, "reviewing the new changes")
+		assert.include(reviewing, "## Maple review: 90/100")
+		assert.equal(reviewing?.split(PR_REVIEW_COMMENT_MARKER).length, 2)
+		const failed = withReviewStatus(reviewing, { kind: "failed", headSha: HEAD_2 })
+		assert.include(failed, "could not finish")
+		assert.notInclude(failed, "reviewing the new changes")
+		assert.include(failed, "## Maple review: 90/100")
+	})
+
+	it("leaves a finished summary or another head's notice alone when a review fails late", () => {
+		const finished = `${PR_REVIEW_COMMENT_MARKER}\n## Maple review: 90/100`
+		assert.isUndefined(withReviewStatus(finished, { kind: "failed", headSha: HEAD }))
+		const newer = withReviewStatus(finished, { kind: "reviewing", headSha: HEAD_2 })
+		assert.isUndefined(withReviewStatus(newer, { kind: "failed", headSha: HEAD }))
 	})
 })
 

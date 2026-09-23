@@ -375,6 +375,30 @@ export interface VcsProviderClient {
 		| VcsRateLimitedError
 	>
 
+	/**
+	 * Write the review's summary comment, found by `marker` and edited in place, from the body
+	 * already there. How a review says it has started before it has anything else to say.
+	 * The read and the write are two requests, so the body function should only replace what it
+	 * recognises (see `withReviewStatus`).
+	 */
+	readonly writePullRequestSummaryComment: (
+		installation: VcsInstallation,
+		repo: VcsRepositoryRef,
+		input: {
+			readonly number: number
+			readonly marker: string
+			/** `undefined` leaves the comment as it is. */
+			readonly body: (existing: string | undefined) => string | undefined
+		},
+	) => Effect.Effect<
+		{ readonly url: string | null },
+		| VcsProviderError
+		| VcsInstallationGoneError
+		| VcsRepoUnavailableError
+		| VcsRepositoryBlockedError
+		| VcsRateLimitedError
+	>
+
 	/** Search source within one repository visible to this installation. */
 	readonly searchCode: (
 		installation: VcsInstallation,

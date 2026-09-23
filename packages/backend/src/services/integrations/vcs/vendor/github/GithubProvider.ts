@@ -1324,11 +1324,11 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 					)
 					yield* Effect.annotateCurrentSpan({
 						"vcs.pull_request.check_run_id": checkRun.id ?? "none",
-						"vcs.pull_request.comment_id": comment.id,
+						"vcs.pull_request.comment_id": comment?.id ?? "none",
 					})
 					const published = {
 						checkRunUrl: checkRun.html_url,
-						commentUrl: comment.html_url,
+						commentUrl: comment?.html_url ?? null,
 						inlineComments: [] as ReadonlyArray<{ key: string; commentId: string }>,
 					}
 					if (publication.comments.length === 0 && publication.reviewBody === null) {
@@ -1422,6 +1422,32 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 					}),
 				)
 
+			const writePullRequestSummaryComment: VcsProviderClient["writePullRequestSummaryComment"] = (
+				installation,
+				repo,
+				input,
+			) =>
+				client
+					.upsertIssueComment(
+						installation.externalInstallationId,
+						repo.owner,
+						repo.name,
+						input.number,
+						input.marker,
+						input.body,
+					)
+					.pipe(
+						Effect.map((comment) => ({ url: comment?.html_url ?? null })),
+						Effect.mapError(toVcsError),
+						Effect.withSpan("GithubProvider.writePullRequestSummaryComment", {
+							attributes: {
+								"vcs.owner.name": repo.owner,
+								"vcs.repository.name": repo.name,
+								"vcs.pull_request.number": input.number,
+							},
+						}),
+					)
+
 			const fetchCloneCredentials: VcsProviderClient["fetchCloneCredentials"] = (installation, repo) =>
 				client
 					.mintCloneCredentials(installation.externalInstallationId, repo.owner, repo.name)
@@ -1447,6 +1473,7 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 				fetchCommenterPermission,
 				commitFiles,
 				publishPullRequestReview,
+				writePullRequestSummaryComment,
 				searchCode,
 				fetchSourceFile,
 				resolveRef,
