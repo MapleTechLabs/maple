@@ -32,6 +32,7 @@ import { connectorConversationRelayName, connectorRelayByName } from "./stub.ts"
 /** What this object reads off its Durable Object state. */
 interface ConnectorRelayState {
 	readonly storage: {
+		getAlarm(): Promise<number | null>
 		setAlarm(scheduledTime: number): Promise<void>
 		get<A>(key: string): Promise<A | undefined>
 		put(key: string, value: boolean | RelayTurnCheckpoint): Promise<void>
@@ -196,8 +197,19 @@ export class ConnectorRelay {
 			: connectorRelayByName(this.env, name)?.remember(conversation.conversationKey))
 	}
 
+	/**
+	 * An alarm already pending is kept rather than pushed back: events arriving under 30s apart
+	 * would otherwise postpone the alarm, and the resume it carries, for as long as they keep coming.
+	 */
 	private armKeepAlive(): void {
-		this.ctx.waitUntil(this.ctx.storage.setAlarm(Date.now() + KEEP_ALIVE_MS).catch(() => undefined))
+		this.ctx.waitUntil(
+			this.ctx.storage
+				.getAlarm()
+				.then((pending) =>
+					pending === null ? this.ctx.storage.setAlarm(Date.now() + KEEP_ALIVE_MS) : undefined,
+				)
+				.catch(() => undefined),
+		)
 	}
 
 	/**

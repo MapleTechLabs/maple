@@ -63,12 +63,16 @@ const objectState = () => {
 	const stored = new Map<string, unknown>()
 	const pending: Array<Promise<unknown>> = []
 	const alarms: Array<number> = []
+	/** When the alarm is due; `null` once it has fired, which the tests do by calling `alarm()`. */
+	const scheduled = { at: null as number | null }
 	return {
 		stored,
 		pending,
 		alarms,
+		scheduled,
 		waitUntil: (promise: Promise<unknown>) => void pending.push(promise),
 		storage: {
+			getAlarm: () => Promise.resolve(scheduled.at),
 			setAlarm: (at: number) => {
 				alarms.push(at)
 				return Promise.resolve()
@@ -243,11 +247,24 @@ describe("waking after an eviction", () => {
 		state.stored.set(TURN_KEY, checkpoint(3))
 		await new ConnectorRelay(state, {}, run.load).alarm()
 
+		await Promise.all(state.pending)
 		// Kept resident while it works, like any turn this object relays.
 		expect(state.alarms).toHaveLength(1)
-		await Promise.all(state.pending)
 		expect(run.resumed).toEqual([checkpoint(3)])
 		expect([...state.stored]).toEqual([])
+	})
+
+	it("does not push back an alarm that is already due, however busy the conversation", async () => {
+		// Events under 30s apart would otherwise postpone the alarm — and any resume — indefinitely.
+		const state = objectState()
+		state.scheduled.at = 1
+		const relay = new ConnectorRelay(state, {}, heavy(() => Promise.resolve()).load)
+
+		await relay.deliver(message)
+		await relay.deliver(message)
+		await Promise.all(state.pending)
+
+		expect(state.alarms).toEqual([])
 	})
 
 	it("drops a turn checkpoint it can no longer read", async () => {
