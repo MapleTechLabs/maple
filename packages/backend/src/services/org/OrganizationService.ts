@@ -398,17 +398,28 @@ export class OrganizationService extends Context.Service<OrganizationService, Or
 					})
 				}
 				// Clerk merges public metadata by key, so rollout flags stay as they are.
-				yield* clerkRequest("Clerk.organizations.updateOrganizationMetadata", { orgId }, () =>
-					clerk.value.organizations.updateOrganizationMetadata(orgId, {
-						publicMetadata: organizationRegionMetadata(region),
-					}),
+				const written = yield* clerkRequest(
+					"Clerk.organizations.updateOrganizationMetadata",
+					{ orgId },
+					() =>
+						clerk.value.organizations.updateOrganizationMetadata(orgId, {
+							publicMetadata: organizationRegionMetadata(region),
+						}),
 				).pipe(Effect.mapError((error) => toProviderError(error.cause)))
 				// Clerk has no conditional write, so two admins choosing at once both succeed and the
 				// later write wins. Answering with a fresh read rather than the request sends both to
-				// the region that stuck in all but a same-instant race.
+				// the region that stuck in all but a same-instant race. The write already landed, so a
+				// failed read falls back to what the write returned rather than failing the request.
 				const stored = yield* clerkRequest("Clerk.organizations.getOrganization", { orgId }, () =>
 					clerk.value.organizations.getOrganization({ organizationId: orgId }),
-				).pipe(Effect.mapError((error) => toProviderError(error.cause)))
+				).pipe(
+					Effect.catch((error) =>
+						Effect.logWarning("Region read-back failed; answering with the write's result").pipe(
+							Effect.annotateLogs({ orgId, error: error.message }),
+							Effect.as(written),
+						),
+					),
+				)
 				return new ChooseOrganizationRegionResponse({
 					region: organizationHomeRegion(stored.publicMetadata),
 				})
