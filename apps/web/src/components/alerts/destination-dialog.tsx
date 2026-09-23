@@ -1,4 +1,4 @@
-import { ChatWorkspaceId, HazelStartConnectRequest, type AlertDestinationType } from "@maple/domain/http"
+import { HazelStartConnectRequest, type AlertDestinationType } from "@maple/domain/http"
 import {
 	type DestinationFormState,
 	defaultDestinationForm,
@@ -34,8 +34,8 @@ import { displayError, publicError } from "@/lib/error-messages"
 import { disabledResultAtom } from "@/lib/services/atoms/disabled-result-atom"
 import { Result, useAtomRefresh, useAtomSet, useAtomValue } from "@/lib/effect-atom"
 import type { HazelChannelsListResponse } from "@maple/domain/http"
-import type { V2SlackChannelList, V2TelegramChat } from "@maple/domain/http/v2"
-import { Exit, Option, Schema } from "effect"
+import type { V2ChatDestinationList, V2SlackChannelList, V2TelegramChat } from "@maple/domain/http/v2"
+import { Exit, Option } from "effect"
 import { Link } from "@tanstack/react-router"
 import { useEffect, useMemo, useState } from "react"
 import { Button } from "@maple/ui/components/ui/button"
@@ -97,8 +97,6 @@ const isValidPagerDutyKey = (key: string): boolean => /^[A-Za-z0-9]{32}$/.test(k
  */
 const isValidTelegramToken = (token: string): boolean => /^\d{5,}:[A-Za-z0-9_-]{30,}$/.test(token.trim())
 
-const asChatWorkspaceId = Schema.decodeUnknownSync(ChatWorkspaceId)
-
 const TELEGRAM_CHAT_TYPE_LABELS = {
 	private: "Direct message",
 	group: "Group",
@@ -137,7 +135,7 @@ function isFormReady(form: DestinationFormState, isEditing: boolean): boolean {
 			return form.memberUserIds.length > 0 && form.memberUserIds.length <= MAX_EMAIL_MEMBER_RECIPIENTS
 		case "chat":
 			// Editing keeps the stored channel when left untouched; creating requires a pick.
-			return form.chatWorkspaceId.length > 0 && (isEditing || form.chatChannelId.length > 0)
+			return form.chatWorkspaceId !== null && (isEditing || form.chatChannelId.length > 0)
 		default:
 			return true
 	}
@@ -981,29 +979,37 @@ function ChatDestinationFields({
 	isEditing: boolean
 }) {
 	const connectorName = chatDestinationProvider(form.chatConnector).label
-	const workspaceId = asChatWorkspaceId(form.chatWorkspaceId)
-	const channelsAtom = retainedQueryV2("chatIntegration", "destinations", {
-		params: { id: workspaceId },
-		reactivityKeys: ["chatIntegration", `chatDestinations:${workspaceId}`],
-	})
+	const workspaceId = form.chatWorkspaceId
+	// No workspace (a stored destination that predates the field) is nothing to list: the shared
+	// disabled atom, never a request with an empty id.
+	const channelsAtom =
+		workspaceId === null
+			? disabledResultAtom<V2ChatDestinationList>()
+			: retainedQueryV2("chatIntegration", "destinations", {
+					params: { id: workspaceId },
+					reactivityKeys: ["chatIntegration"],
+				})
 	const channelsResult = useAtomValue(channelsAtom)
-	const refreshChannels = useAtomRefresh(channelsAtom)
-	const channels = useMemo(
-		() =>
-			Result.builder(channelsResult)
-				.onSuccess((response) =>
-					response.destinations.map((destination) => ({
-						id: destination.id,
-						name: destination.name,
-						is_private: destination.private,
-						// Whatever the connector lists is somewhere it can post.
-						is_member: true,
-					})),
-				)
-				.orElse(() => []),
-		[channelsResult],
-	)
-	const channelsLoading = channelsResult.waiting
+	const refreshChannelsAtom = useAtomRefresh(channelsAtom)
+	// Refreshing the shared disabled atom would poke every disabled reader in the app.
+	const refreshChannels = workspaceId === null ? () => {} : refreshChannelsAtom
+	// A failed refetch keeps the last list, as the other channel pickers do: emptying the picker
+	// mid-selection would silently drop the channel being picked.
+	const channels = useMemo(() => {
+		const response = Result.isSuccess(channelsResult)
+			? channelsResult.value
+			: Result.isFailure(channelsResult)
+				? Option.getOrNull(Option.map(channelsResult.previousSuccess, (previous) => previous.value))
+				: null
+		return (response?.destinations ?? []).map((destination) => ({
+			id: destination.id,
+			name: destination.name,
+			is_private: destination.private,
+			// Whatever the connector lists is somewhere it can post.
+			is_member: true,
+		}))
+	}, [channelsResult])
+	const channelsLoading = workspaceId !== null && channelsResult.waiting
 
 	const [channelQuery, setChannelQuery] = useState("")
 	const selectedChannel = channels.find((channel) => channel.id === form.chatChannelId)
@@ -1015,6 +1021,17 @@ function ChatDestinationFields({
 	const visibleChannelIds = useMemo(() => visibleChannels.map((channel) => channel.id), [visibleChannels])
 
 	const failure = Result.isFailure(channelsResult) ? displayError(channelsResult.cause) : null
+
+	if (workspaceId === null) {
+		return (
+			<div className="space-y-2 rounded-md border border-dashed border-border/60 p-3">
+				<p className="text-xs text-muted-foreground">
+					This destination&apos;s chat workspace isn&apos;t available. Create a new destination from
+					a linked workspace instead.
+				</p>
+			</div>
+		)
+	}
 	// The one failure with a fix the reader can make: a grant that predates channel access.
 	const needsReinstall = failure?.code === "integration_not_connected"
 

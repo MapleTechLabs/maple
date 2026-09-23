@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest"
-import { AlertDeliveryEventId, AlertDestinationId, AlertIncidentId, AlertRuleId } from "@maple/domain/http"
+import { Schema } from "effect"
+import {
+	AlertDeliveryEventId,
+	AlertDestinationId,
+	AlertIncidentId,
+	AlertRuleId,
+	ChatWorkspaceId,
+} from "@maple/domain/http"
 import {
 	buildDestinationCreateParamsV2,
 	buildDestinationUpdateParamsV2,
@@ -245,9 +252,9 @@ describe("telegram destination params", () => {
 })
 
 describe("chat destination params", () => {
-	const WORKSPACE = "11111111-1111-4111-8111-111111111111"
+	const WORKSPACE = Schema.decodeUnknownSync(ChatWorkspaceId)("11111111-1111-4111-8111-111111111111")
 
-	it("names the linked workspace and the picked channel, never the connector", () => {
+	it("names the linked workspace and the picked channel, never the connector or a name", () => {
 		const params = buildDestinationCreateParamsV2({
 			...defaultDestinationForm("chat"),
 			name: " Incidents ",
@@ -262,7 +269,6 @@ describe("chat destination params", () => {
 			enabled: true,
 			workspace_id: WORKSPACE,
 			channel_id: "channel-1",
-			channel_name: "incidents",
 		})
 	})
 
