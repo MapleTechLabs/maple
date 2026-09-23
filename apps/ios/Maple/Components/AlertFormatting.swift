@@ -168,6 +168,8 @@ extension AlertDestinationType {
 		case .discord: "Discord"
 		case .telegram: "Telegram"
 		case .email: "Email"
+		// The connector behind a chat destination is not on the incident wire.
+		case .chat: "Chat"
 		}
 	}
 }
