@@ -9,8 +9,8 @@ migration: there is nothing to move. The two have separate applications, separat
 separate credentials, so the cutover is "stop pointing at one, start pointing at the other", and the
 rollback is the same sentence backwards.
 
-**Deleting `apps/slack-agent` is not part of the connector's own change.** It is step 6 here, after
-step 5 has held.
+**Deleting `apps/slack-agent` is not part of the connector's own change.** It is step 7 here, after
+step 6 has held.
 
 ## Why they can run side by side
 
@@ -23,7 +23,7 @@ step 5 has held.
 | Credentials | its own | `chat_workspaces.credentials_*`, sealed per workspace |
 
 Nothing is shared, so both can be installed in the same workspace at the same time. They will both
-answer a mention — which is the point of step 3, and the reason step 4 is short.
+answer a mention — which is the point of step 3, and the reason the cutover itself is one switch.
 
 Note the third, unrelated thing also called Slack here: the alert-delivery integration
 (`slack_workspaces`, `SlackIntegrationService`) is a fourth application again, is not part of this
@@ -64,21 +64,27 @@ cutover, and keeps running throughout.
       `workspace-removed`);
     - **no token anywhere**: grep the deploy's logs and spans for `xoxb-` and find nothing.
 
-4. **Turn the old app's event subscriptions OFF.** In the OLD application's configuration, disable
+4. **Install and verify the connector in EVERY workspace the old app is in**, not just the one from
+   step 3. Step 5 is app-wide and cannot be done per workspace, so a workspace still on the old
+   agent when it runs simply loses its bot. `chat_workspaces` is the list of what has been linked;
+   the old application's own install list is what it has to be checked against.
+
+5. **Turn the old app's event subscriptions OFF.** In the OLD application's configuration, disable
    Event Subscriptions — do not point the request URL at something that fails. Slack retries a
    delivery its endpoint rejects and **disables an app's subscriptions after enough of them**, so
    an intentionally broken URL ends in the same place as switching them off, except that it gets
    there by itself, at a time nobody chose, and re-entering the URL afterwards does not bring
    delivery back until an operator re-enables the subscriptions by hand.
 
-   The Railway agent keeps running and keeps its own configuration; it simply stops being sent
-   anything.
+   This is **app-wide**: Slack applies a subscription change across every team the app is installed
+   in, which is why step 4 comes first. The Railway agent keeps running and keeps its own
+   configuration; it simply stops being sent anything, everywhere, at once.
 
-5. **Let it sit.** A week of real use is enough to find what a checklist does not. If the connector
+6. **Let it sit.** A week of real use is enough to find what a checklist does not. If the connector
    has to be backed out, re-enable the old app's event subscriptions — the old agent has been
    running untouched the whole time, and its request URL never moved.
 
-6. **Retire the old agent**, in this order: uninstall the old application from every workspace, stop
+7. **Retire the old agent**, in this order: uninstall the old application from every workspace, stop
    the Railway service, then delete `apps/slack-agent` and its deploy configuration in a change of
    its own.
 
@@ -88,6 +94,7 @@ cutover, and keeps running throughout.
 | --- | --- |
 | 2 | Nothing is live; remove the secrets or leave them, the connector is skipped without them. |
 | 3 | Uninstall the new app from the workspace; its `chat_workspaces` row goes with it. |
-| 4 | Re-enable the old app's event subscriptions. |
-| 5 | Same. |
-| 6 | The old agent is gone — from here, forward only. |
+| 4 | Same, for each workspace. The old app is still serving all of them. |
+| 5 | Re-enable the old app's event subscriptions — app-wide, so every workspace comes back together. |
+| 6 | Same. |
+| 7 | The old agent is gone — from here, forward only. |
