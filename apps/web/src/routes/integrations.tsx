@@ -55,6 +55,10 @@ const IntegrationsSearch = Schema.Struct({
 	chat: Schema.optional(Schema.String),
 	chat_reason: Schema.optional(Schema.String),
 	chat_workspace: Schema.optional(Schema.String),
+	// Return params set by the per-member account-link callback, which shares
+	// `chat_reason` with the install half above.
+	chat_identity: Schema.optional(Schema.String),
+	chat_identity_name: Schema.optional(Schema.String),
 })
 
 /**
@@ -114,6 +118,22 @@ const GENERIC_CHAT_ERROR = "Couldn't link the chat workspace. Try again."
 
 const chatErrorMessage = (raw: string | undefined): string =>
 	(raw ? CHAT_ERROR_COPY.get(raw.trim()) : undefined) ?? GENERIC_CHAT_ERROR
+
+/**
+ * The same codes again, worded for one person's own account rather than the org's workspace.
+ * `conflict` has no entry because the account link cannot produce one — re-linking moves the
+ * binding rather than colliding with it.
+ */
+const CHAT_IDENTITY_ERROR_COPY = new Map<string, string>([
+	["state", "The link expired. Start the account link again."],
+	["unconfigured", "This chat connector isn't configured in Maple. Contact support."],
+	["unknown", "Unknown chat connector."],
+])
+
+const GENERIC_CHAT_IDENTITY_ERROR = "Couldn't link your chat account. Try again."
+
+const chatIdentityErrorMessage = (raw: string | undefined): string =>
+	(raw ? CHAT_IDENTITY_ERROR_COPY.get(raw.trim()) : undefined) ?? GENERIC_CHAT_IDENTITY_ERROR
 
 /** Longest attacker-controlled string we'll surface (workspace names in a toast). */
 const MAX_UNTRUSTED_LABEL = 64
@@ -189,6 +209,32 @@ function IntegrationsPage() {
 		}
 		navigate({ search: chatCard ? { integration: chatCard } : {}, replace: true })
 	}, [chatReturn, chatReason, chatWorkspace, chatCard, navigate])
+
+	// And again for the per-member account link, which the callback reports under
+	// its own param so the two outcomes never read as one another.
+	const chatIdentityReturn =
+		search.chat_identity === "linked" || search.chat_identity === "error"
+			? search.chat_identity
+			: undefined
+	const chatIdentityName = search.chat_identity_name
+	useEffect(() => {
+		if (!chatIdentityReturn) return
+		if (chatIdentityReturn === "linked") {
+			toastManager.add({
+				id: "chat-identity-oauth",
+				// Display names come from the chat platform — untrusted, so clamped.
+				title: chatIdentityName ? `Linked as ${clampLabel(chatIdentityName)}` : "Chat account linked",
+				type: "success",
+			})
+		} else {
+			toastManager.add({
+				id: "chat-identity-oauth",
+				title: chatIdentityErrorMessage(chatReason),
+				type: "error",
+			})
+		}
+		navigate({ search: chatCard ? { integration: chatCard } : {}, replace: true })
+	}, [chatIdentityReturn, chatIdentityName, chatReason, chatCard, navigate])
 
 	// The hub shares the settings shell: same sidebar, "Integrations" highlighted.
 	const settingsSidebar = (

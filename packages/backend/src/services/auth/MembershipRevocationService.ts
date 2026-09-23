@@ -2,6 +2,7 @@ import { EdgeCacheService } from "@maple/cache"
 import {
 	alertDestinations,
 	apiKeys,
+	chatIdentities,
 	cliDeviceAuthorizations,
 	mcpOAuthAuthorizations,
 	mobileDevices,
@@ -52,6 +53,7 @@ export interface MembershipRevocationSummary {
 	readonly mcpAuthorizationsDeleted: number
 	readonly emailDestinationsUpdated: number
 	readonly mobileDevicesDeleted: number
+	readonly chatIdentitiesDeleted: number
 }
 
 export interface MembershipDemotionSummary {
@@ -277,12 +279,26 @@ const make = Effect.gen(function* () {
 							),
 						)
 						.returning({ id: mobileDevices.id })
+					// A chat identity is standing authority to approve a change AS this user: the bot
+					// reads the row on every button click and runs the tool under whatever roles the
+					// user holds. Membership ending has to end that too, or the next click from their
+					// chat account still acts for a member who is gone.
+					const identitiesDeleted = yield* tx
+						.delete(chatIdentities)
+						.where(
+							and(
+								...(orgId === null ? [] : [eq(chatIdentities.orgId, orgId)]),
+								eq(chatIdentities.userId, userId),
+							),
+						)
+						.returning({ id: chatIdentities.id })
 					return {
 						apiKeysRevoked: revokedKeys.length,
 						mcpFamiliesRevoked,
 						cliAuthorizationsDeleted: cliDeleted.length,
 						mcpAuthorizationsDeleted: mcpAuthDeleted.length,
 						mobileDevicesDeleted: devicesDeleted.length,
+						chatIdentitiesDeleted: identitiesDeleted.length,
 					}
 				}),
 			),
@@ -298,6 +314,7 @@ const make = Effect.gen(function* () {
 			"maple.membership.mcp_authorizations_deleted": summary.mcpAuthorizationsDeleted,
 			"maple.membership.email_destinations_updated": summary.emailDestinationsUpdated,
 			"maple.membership.mobile_devices_deleted": summary.mobileDevicesDeleted,
+			"maple.membership.chat_identities_deleted": summary.chatIdentitiesDeleted,
 		})
 		return summary
 	})

@@ -18,6 +18,7 @@ import type {
 } from "@maple/backend/services/integrations/ChatWorkspaceService"
 import {
 	chatCallbackPath,
+	chatIdentityCallbackPath,
 	ChatWorkspaceService,
 } from "@maple/backend/services/integrations/ChatWorkspaceService"
 import { isTrustedCallbackOrigin, resolveRequestOrigin } from "./integrations.http"
@@ -38,6 +39,20 @@ const toConnector = (status: ChatConnectorStatus): V2ChatConnector => ({
 	name: status.connector.manifest.name,
 	available: status.available,
 	workspaces: Arr.map(status.workspaces, toWorkspace),
+	supports_identity: status.supportsIdentity,
+	// Spread rather than an explicit `undefined`: the field is an optional key,
+	// so "not linked" is an absent key on the wire rather than a null.
+	...(status.identity === undefined
+		? undefined
+		: {
+				identity: {
+					external_user_id: status.identity.externalUserId,
+					...(status.identity.displayName === null
+						? undefined
+						: { display_name: status.identity.displayName }),
+					created_at: isoTimestamp(status.identity.createdAtMs),
+				},
+			}),
 })
 
 export const HttpV2ChatIntegrationsLive = HttpApiBuilder.group(MapleApiV2, "chatIntegration", (handlers) =>
@@ -53,7 +68,9 @@ export const HttpV2ChatIntegrationsLive = HttpApiBuilder.group(MapleApiV2, "chat
 				.handle("connectors", () =>
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
-						const statuses = yield* chat.list(tenant.orgId)
+						// The caller's own account link comes back with the list: the card
+						// renders the org's install and the member's link together.
+						const statuses = yield* chat.list(tenant.orgId, tenant.userId)
 						return {
 							object: "chat_connector_list" as const,
 							data: Arr.map(statuses, toConnector),
@@ -92,6 +109,56 @@ export const HttpV2ChatIntegrationsLive = HttpApiBuilder.group(MapleApiV2, "chat
 							metadata: { connector: params.connector },
 						})
 						return { object: "chat_connector.install" as const, url: result.url }
+					}),
+				)
+				// No admin gate on either identity handler: they link and unlink the
+				// caller's OWN chat account, which grants nothing beyond the roles that
+				// caller already holds.
+				.handle("startChatIdentityLink", ({ params }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						const req = yield* HttpServerRequest.HttpServerRequest
+						const origin = resolveRequestOrigin(req)
+						// Same reasoning as the install: the origin is read from a header a
+						// client can set, and it is persisted as the state's redirect URI and
+						// replayed in the token exchange.
+						if (!isTrustedCallbackOrigin(origin, env.MAPLE_APP_BASE_URL)) {
+							yield* Effect.logError("Rejected chat account link: untrusted callback origin", {
+								origin,
+							})
+							return yield* Effect.fail(
+								V2CallbackHostUnavailable.make(
+									"Chat account links are not available from this host",
+								),
+							)
+						}
+						const result = yield* chat.beginLink(
+							tenant.orgId,
+							tenant.userId,
+							params.connector,
+							`${origin}${chatIdentityCallbackPath(params.connector)}`,
+						)
+						yield* recordHttpAudit("chat_integration.identity_linked", {
+							metadata: { connector: params.connector },
+						})
+						return { object: "chat_connector.identity_link" as const, url: result.url }
+					}),
+				)
+				.handle("deleteChatIdentity", ({ params }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						const result = yield* chat.unlink(tenant.orgId, tenant.userId, params.connector)
+						// Only a real removal is audited — unlinking when nothing was linked
+						// is a no-op, and an entry for it would claim authority was revoked.
+						if (result.unlinked) {
+							yield* recordHttpAudit("chat_integration.identity_unlinked", {
+								metadata: { connector: params.connector },
+							})
+						}
+						return {
+							object: "chat_connector.identity" as const,
+							deleted: result.unlinked,
+						}
 					}),
 				)
 				.handle("updateWorkspace", ({ params, payload }) =>

@@ -56,19 +56,6 @@ const TokenResponse = Schema.Struct({
 const decodeTokenResponse = Schema.decodeUnknownEffect(TokenResponse)
 
 /**
- * Discord defines no workspace settings. Who may approve a change is no longer a per-server
- * setting — it is whether the person clicking has linked their Discord account to a Maple user,
- * which the `identity` half below is what enables.
- *
- * The struct stays rather than the decode being dropped: `onExcessProperty: "error"` is what
- * reports a key this connector does not define instead of silently writing it into the column.
- */
-const DiscordSettings = Schema.Struct({})
-const decodeDiscordSettings = Schema.decodeUnknownEffect(DiscordSettings, {
-	onExcessProperty: "error",
-})
-
-/**
  * The install URL. `state` is the host's single-use nonce; `response_type=code`
  * plus `redirect_uri` is what makes Discord run the full authorization-code
  * grant, whose token response names the guild.
@@ -157,16 +144,20 @@ const complete = Effect.fnUntraced(function* (input: ChatInstallCallback) {
 const decodeSettings = (
 	input: ChatWorkspaceSettings,
 ): Effect.Effect<ChatWorkspaceSettings, ChatSettingsRejected> =>
-	decodeDiscordSettings(input).pipe(
-		Effect.mapError(
-			() =>
+	// Discord defines no workspace settings: who may approve a change is not a per-server setting
+	// any more, it is whether the person clicking linked their Discord account to a Maple user.
+	//
+	// Checked explicitly rather than through an empty schema with `onExcessProperty: "error"` — a
+	// struct with no declared keys has nothing to call excess, so that decode accepts everything
+	// and a key this connector does not define would land in the settings column unread.
+	Object.keys(input).length === 0
+		? Effect.succeed({})
+		: Effect.fail(
 				new ChatSettingsRejected({
 					connector: DISCORD_CONNECTOR_ID,
 					message: "Discord has no settings to configure",
 				}),
-		),
-		Effect.as({}),
-	)
+			)
 
 export const discordInstall: ChatConnectorInstall = {
 	// The client id is public — it rides the authorize URL the browser opens.

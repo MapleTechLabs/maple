@@ -1,6 +1,7 @@
 import { useState } from "react"
 import { Exit, Option } from "effect"
 import type { ChatConnectorId, ChatWorkspaceId } from "@maple/domain/primitives"
+import type { V2ChatConnector } from "@maple/domain/http/v2"
 
 import {
 	AlertDialog,
@@ -126,6 +127,82 @@ function WorkspaceSettings({
 					Save settings
 				</Button>
 			</div>
+		</div>
+	)
+}
+
+/**
+ * The caller's own chat account, linked to their own Maple user.
+ *
+ * Deliberately ungated: this binds the account of whoever is looking, under the roles they
+ * already hold, so an admin role would gate nothing. Only connectors whose platform can say who
+ * acted render it at all.
+ */
+function ChatIdentityRow({
+	connector,
+	platform,
+	identity,
+}: {
+	connector: ChatConnectorId
+	platform: string
+	identity: V2ChatConnector["identity"]
+}) {
+	const startLink = useAtomSet(MapleApiV2AtomClient.mutation("chatIntegration", "startChatIdentityLink"), {
+		mode: "promiseExit",
+	})
+	const unlink = useAtomSet(MapleApiV2AtomClient.mutation("chatIntegration", "deleteChatIdentity"), {
+		mode: "promiseExit",
+	})
+	const [busy, setBusy] = useState(false)
+
+	async function handleLink() {
+		setBusy(true)
+		const result = await startLink({ params: { connector }, reactivityKeys: REACTIVITY_KEYS })
+		if (Exit.isSuccess(result)) {
+			// Full-page redirect to the platform's consent screen, as the install does.
+			window.location.href = result.value.url
+			return
+		}
+		setBusy(false)
+		toastManager.add({
+			title: getExitErrorMessage(result, "Failed to start the account link"),
+			type: "error",
+		})
+	}
+
+	async function handleUnlink() {
+		setBusy(true)
+		const result = await unlink({ params: { connector }, reactivityKeys: REACTIVITY_KEYS })
+		setBusy(false)
+		toastManager.add(
+			Exit.isSuccess(result)
+				? { title: "Account unlinked", type: "success" }
+				: {
+						title: getExitErrorMessage(result, "Failed to unlink the account"),
+						type: "error",
+					},
+		)
+	}
+
+	return (
+		<div className="flex items-center justify-between gap-3 rounded-lg border border-border/60 bg-card px-4 py-3">
+			<div className="flex min-w-0 flex-col gap-0.5">
+				<span className="text-xs font-medium">Your {platform} account</span>
+				<span className="truncate text-[11px] text-muted-foreground">
+					{identity === undefined
+						? `Link it so Maple knows it's you acting from ${platform}.`
+						: `Linked as ${identity.display_name ?? identity.external_user_id}`}
+				</span>
+			</div>
+			<Button
+				size="sm"
+				variant="outline"
+				onClick={identity === undefined ? handleLink : handleUnlink}
+				disabled={busy}
+			>
+				{busy ? <LoaderIcon size={14} className="animate-spin" /> : null}
+				{identity === undefined ? "Link your account" : "Unlink"}
+			</Button>
 		</div>
 	)
 }
@@ -312,6 +389,9 @@ export function ChatIntegrationCard({ connector }: { connector: ChatConnectorId 
 					</div>
 				</div>
 			))}
+			{status?.supports_identity === true ? (
+				<ChatIdentityRow connector={connector} platform={platform} identity={status.identity} />
+			) : null}
 			<div>
 				<Button size="sm" variant="outline" onClick={handleInstall} disabled={connectDisabled}>
 					{busy === "install" ? <LoaderIcon size={14} className="animate-spin" /> : null}
@@ -329,8 +409,8 @@ export function ChatIntegrationCard({ connector }: { connector: ChatConnectorId 
 					<AlertDialogHeader>
 						<AlertDialogTitle>Disconnect workspace</AlertDialogTitle>
 						<AlertDialogDescription>
-							This workspace is unlinked from your organization immediately. Removing the bot from
-							the workspace itself is done in {manifest.name}.
+							This workspace is unlinked from your organization immediately. Removing the bot
+							from the workspace itself is done in {manifest.name}.
 						</AlertDialogDescription>
 					</AlertDialogHeader>
 					<AlertDialogFooter>

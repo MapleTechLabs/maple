@@ -4,6 +4,7 @@ CREATE TABLE "chat_identities" (
 	"connector" text NOT NULL,
 	"external_user_id" text NOT NULL,
 	"user_id" text NOT NULL,
+	"display_name" text,
 	"created_at" timestamp with time zone NOT NULL
 );
 --> statement-breakpoint

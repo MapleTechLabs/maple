@@ -1,7 +1,7 @@
 {
   "version": "8",
   "dialect": "postgres",
-  "id": "7812d1b6-55d5-4ee3-a5ef-2ef9ffa96c71",
+  "id": "a2dc06ff-89df-428b-a733-14e8b8ff1ff2",
   "prevIds": [
     "1aaa79bb-66b1-4bb4-9b89-cb3a7f141663"
   ],
@@ -2877,6 +2877,19 @@
       "generated": null,
       "identity": null,
       "name": "user_id",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "chat_identities"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "display_name",
       "entityType": "columns",
       "schema": "public",
       "table": "chat_identities"

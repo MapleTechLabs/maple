@@ -96,7 +96,7 @@ class ApproverNotPermitted extends Schema.TaggedError<ApproverNotPermitted>()(
  *   - **nobody** — the connector cannot prove who clicked, so the org-level connector identity
  *     acts and carries `org:admin`, granted at apply time only.
  */
-const resolveTenant = Effect.fnUntraced(function* (orgId: OrgId, input: ApplyChatProposalInput) {
+export const resolveTenant = Effect.fnUntraced(function* (orgId: OrgId, input: ApplyChatProposalInput) {
 	if (input.actingUserId === undefined) {
 		const proposed = decodeChatTurnTenant(connectorApprovalTenant(orgId))
 		const tenant: TenantContext = {

@@ -61,11 +61,16 @@ answer from Maple.
    continues the same conversation; a mention in another channel starts a different one. A mention
    while an answer is still being written is told so, and is not queued.
 
-5. **Decide what it proposes.** A write the agent wants to make is rendered as an approval card
-   with two buttons. Only a holder of the server's configured approver role may press one — with
-   none configured, whoever can manage the server — and anybody else is told so and nothing runs.
-   The card is then edited in place with what came of it, and the buttons go, because Discord
-   leaves a component clickable forever.
+5. **Link your Discord account.** In Maple: Settings → Integrations → Discord → Link your account.
+   That runs a second, much smaller OAuth authorization asking for `identify` and nothing else, and
+   records which Discord account belongs to which Maple user. Any org member can do it for
+   themselves; nobody can do it for anybody else.
+6. **Decide what it proposes.** A write the agent wants to make is rendered as an approval card
+   with two buttons. Only somebody who has linked may press one, and the change then runs **as
+   their Maple user**, under whatever roles they hold in the org at that moment — so a tool that
+   needs an admin refuses a member, exactly as it would in the app. Anybody who has not linked is
+   told where to. The card is then edited in place with what came of it, and the buttons go,
+   because Discord leaves a component clickable forever.
 
 One limit worth knowing before reporting a bug: the bot only ever answers messages it was mentioned
 in.
@@ -97,9 +102,26 @@ channel or moderation power.
 
 ### Settings
 
-`approver_role_id` only: the role whose holders may approve the writes Maple proposes. It is a plain
-text field in V1 — a role picker needs a Discord API call with the bot token, which is a follow-up.
-Left empty, approval falls back to whoever can manage the server.
+None. Who may approve a change is not a property of the server — it is whether the person clicking
+has linked their Discord account to a Maple user, which is the `identity` half below.
+
+### Linking an account
+
+A second authorization over the same OAuth application, asking for **`identify` only**: it returns
+the account's id without its email and grants nothing else. No `bot`, no `guilds`, no permissions —
+linking adds nothing to any server.
+
+The access token is used for exactly one request, `GET /users/@me`, and then dropped. Nothing is
+stored but the account id and the Maple user it belongs to, because Maple never acts on Discord as
+the person; it acts as the bot, and the link only answers "who pressed this button".
+
+Two rules the flow rests on:
+
+- **the account id comes from the token exchange**, never from a callback query parameter — the
+  parameters belong to whoever opened the URL, and this id is what a later click is matched against;
+- **the Maple user comes from the state row**, which records who started the link, not from the
+  session cookie on the callback — the callback is a top-level redirect back from Discord, and
+  binding on the cookie would let a link be finished by whoever happened to be signed in.
 
 ## What ingress delivers
 

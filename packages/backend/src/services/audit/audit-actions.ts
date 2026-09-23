@@ -39,10 +39,16 @@ export const AuditResources = {
 	 * Chat workspaces linked to the org. `install_started` is the admin action
 	 * Maple sees; the platform's callback completes the link. `metadata` names
 	 * the connector — the platform is a value here, never part of the action.
+	 *
+	 * `identity_*` are the per-member half: one person binding their own chat
+	 * account to their Maple user, which is standing authority to act as them from
+	 * the chat platform. `identity_linked` records the member starting it, the
+	 * platform's callback completes it, and neither carries a resource id — the
+	 * subject of both is the actor.
 	 */
 	chat_integration: {
 		prefix: PublicIdPrefixes.chatWorkspace,
-		verbs: ["install_started", "settings_updated", "uninstalled"],
+		verbs: ["install_started", "settings_updated", "uninstalled", "identity_linked", "identity_unlinked"],
 	},
 	dashboard_share: { prefix: PublicIdPrefixes.dashboardShare, verbs: ["created", "rotated", "deleted"] },
 	/** Verbs mirror the issue event types — `recordEvent` audits every one it attributes. */

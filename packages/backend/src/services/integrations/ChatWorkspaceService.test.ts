@@ -34,9 +34,12 @@ import { ChatConnectorRegistry, ChatWorkspaceService } from "./ChatWorkspaceServ
 const ORG = Schema.decodeSync(OrgId)("org_chat_1")
 const OTHER_ORG = Schema.decodeSync(OrgId)("org_chat_2")
 const USER = Schema.decodeSync(UserId)("user_chat_1")
+const OTHER_USER = Schema.decodeSync(UserId)("user_chat_2")
 const TEST_CONNECTOR = Schema.decodeSync(ChatConnectorId)("testchat")
+const IDENTITY_CONNECTOR = Schema.decodeSync(ChatConnectorId)("testchatid")
 const UNREGISTERED = Schema.decodeSync(ChatConnectorId)("nosuchchat")
 const CALLBACK = "https://api.localhost/oauth/chat/testchat/callback"
+const IDENTITY_CALLBACK = "https://api.localhost/oauth/chat/testchatid/identity/callback"
 
 /**
  * The fake connector declares a config name the HOST already resolves: the
@@ -114,6 +117,28 @@ const testConnector: ChatConnector = {
 	}),
 }
 
+/**
+ * The same fake connector plus the identity half, for a platform that CAN say who clicked.
+ *
+ * `complete` reads the account out of the callback the test wrote, standing in for the id a real
+ * connector reads back from the platform with the grant. The tests below write a second, rival
+ * user id into the same callback — the point being that nothing there reaches the stored row.
+ */
+const identityConnector: ChatConnector = {
+	...testConnector,
+	id: IDENTITY_CONNECTOR,
+	manifest: { ...testConnector.manifest, id: IDENTITY_CONNECTOR },
+	identity: {
+		authorizeUrl: ({ state, redirectUri }) =>
+			Effect.succeed(`https://chat.test/identity?state=${state}&redirect_uri=${redirectUri}`),
+		complete: ({ params }) =>
+			Effect.succeed({
+				externalUserId: params.get("account") ?? "account-default",
+				displayName: params.get("display") ?? undefined,
+			}),
+	},
+}
+
 const makeConfig = (withConnectorConfig: boolean) =>
 	ConfigProvider.layer(
 		ConfigProvider.fromUnknown({
@@ -163,6 +188,10 @@ const stateFrom = (url: string): string => new URL(url).searchParams.get("state"
 
 const callback = (state: string, workspace: string, name?: string) =>
 	new URLSearchParams({ state, workspace, ...(name === undefined ? undefined : { name }) })
+
+/** A link callback, plus whatever else a test wants to see ignored. */
+const identityCallback = (state: string, account: string, extra?: Record<string, string>) =>
+	new URLSearchParams({ state, account, ...extra })
 
 const trackedDbs: TestDb[] = []
 afterEach(() => cleanupTestDbs(trackedDbs))
@@ -422,6 +451,155 @@ describe("ChatWorkspaceService", () => {
 				const missing = yield* chat.resolve(TEST_CONNECTOR, "workspace-unknown")
 				assert.isTrue(Option.isNone(missing))
 			}).pipe(Effect.provide(makeLayer(testDb)))
+		}),
+	)
+
+	it.effect("refuses an account link for a connector that cannot say who clicked", () =>
+		Effect.gen(function* () {
+			const testDb = createTestDb(trackedDbs)
+			yield* Effect.gen(function* () {
+				const chat = yield* ChatWorkspaceService
+				const failure = yield* chat
+					.beginLink(ORG, USER, TEST_CONNECTOR, IDENTITY_CALLBACK)
+					.pipe(Effect.flip)
+				assert.strictEqual(failure._tag, "@maple/http/errors/IntegrationsNotFoundError")
+				// And the card is told as much rather than being left to guess.
+				const statuses = yield* chat.list(ORG, USER)
+				assert.isFalse(statuses[0]?.supportsIdentity)
+			}).pipe(Effect.provide(makeLayer(testDb)))
+		}),
+	)
+
+	it.effect("mints a link state under the identity namespace, not the install's", () =>
+		Effect.gen(function* () {
+			const testDb = createTestDb(trackedDbs)
+			yield* Effect.gen(function* () {
+				const chat = yield* ChatWorkspaceService
+				const { url } = yield* chat.beginLink(ORG, USER, IDENTITY_CONNECTOR, IDENTITY_CALLBACK)
+				const states = yield* OAuthStateRepository
+				const stored = yield* states.findByState(stateFrom(url))
+				assert.strictEqual(
+					Option.getOrUndefined(stored)?.provider,
+					`chat_identity:${IDENTITY_CONNECTOR}`,
+				)
+				assert.strictEqual(Option.getOrUndefined(stored)?.initiatedByUserId, USER)
+			}).pipe(Effect.provide(makeLayer(testDb, { registry: [identityConnector] })))
+		}),
+	)
+
+	it.effect("binds the chat account to the user who STARTED the link, not the callback", () =>
+		Effect.gen(function* () {
+			const testDb = createTestDb(trackedDbs)
+			yield* Effect.gen(function* () {
+				const chat = yield* ChatWorkspaceService
+				const { url } = yield* chat.beginLink(ORG, USER, IDENTITY_CONNECTOR, IDENTITY_CALLBACK)
+				const linked = yield* chat.completeLink(
+					IDENTITY_CONNECTOR,
+					// A rival Maple user named in the callback, which is exactly the thing
+					// that must not be read: the state row is the only authority here.
+					identityCallback(stateFrom(url), "account-1", {
+						display: "ada",
+						user_id: OTHER_USER,
+						org_id: OTHER_ORG,
+					}),
+				)
+				assert.strictEqual(linked.orgId, ORG)
+				assert.strictEqual(linked.displayName, "ada")
+
+				const mine = yield* chat.list(ORG, USER)
+				assert.isTrue(mine[0]?.supportsIdentity)
+				assert.strictEqual(mine[0]?.identity?.externalUserId, "account-1")
+				assert.strictEqual(mine[0]?.identity?.userId, USER)
+				// The user the callback named holds nothing.
+				const theirs = yield* chat.list(ORG, OTHER_USER)
+				assert.isUndefined(theirs[0]?.identity)
+				// And a list nobody is asking on behalf of reports no link at all.
+				const anonymous = yield* chat.list(ORG)
+				assert.isUndefined(anonymous[0]?.identity)
+			}).pipe(Effect.provide(makeLayer(testDb, { registry: [identityConnector] })))
+		}),
+	)
+
+	it.effect("keeps the install and link state namespaces from redeeming each other", () =>
+		Effect.gen(function* () {
+			const testDb = createTestDb(trackedDbs)
+			yield* Effect.gen(function* () {
+				const chat = yield* ChatWorkspaceService
+				const install = yield* chat.beginInstall(ORG, USER, IDENTITY_CONNECTOR, CALLBACK)
+				const asLink = yield* chat
+					.completeLink(IDENTITY_CONNECTOR, identityCallback(stateFrom(install.url), "account-2"))
+					.pipe(Effect.flip)
+				assert.strictEqual(asLink._tag, "@maple/http/errors/IntegrationsValidationError")
+
+				const link = yield* chat.beginLink(ORG, USER, IDENTITY_CONNECTOR, IDENTITY_CALLBACK)
+				const asInstall = yield* chat
+					.completeInstall(IDENTITY_CONNECTOR, callback(stateFrom(link.url), "workspace-11"))
+					.pipe(Effect.flip)
+				assert.strictEqual(asInstall._tag, "@maple/http/errors/IntegrationsValidationError")
+
+				const statuses = yield* chat.list(ORG, USER)
+				assert.isUndefined(statuses[0]?.identity)
+				assert.deepStrictEqual(statuses[0]?.workspaces, [])
+			}).pipe(Effect.provide(makeLayer(testDb, { registry: [identityConnector] })))
+		}),
+	)
+
+	it.effect("refuses a link state that has expired", () =>
+		Effect.gen(function* () {
+			const testDb = createTestDb(trackedDbs)
+			yield* Effect.gen(function* () {
+				const chat = yield* ChatWorkspaceService
+				const { url } = yield* chat.beginLink(ORG, USER, IDENTITY_CONNECTOR, IDENTITY_CALLBACK)
+				yield* TestClock.adjust(STATE_TTL_MS + 1)
+				const expired = yield* chat
+					.completeLink(IDENTITY_CONNECTOR, identityCallback(stateFrom(url), "account-3"))
+					.pipe(Effect.flip)
+				assert.strictEqual(expired._tag, "@maple/http/errors/IntegrationsValidationError")
+				const statuses = yield* chat.list(ORG, USER)
+				assert.isUndefined(statuses[0]?.identity)
+			}).pipe(Effect.provide(makeLayer(testDb, { registry: [identityConnector] })))
+		}),
+	)
+
+	it.effect("moves a chat account when somebody links it from another Maple user", () =>
+		Effect.gen(function* () {
+			const testDb = createTestDb(trackedDbs)
+			yield* Effect.gen(function* () {
+				const chat = yield* ChatWorkspaceService
+				const first = yield* chat.beginLink(ORG, USER, IDENTITY_CONNECTOR, IDENTITY_CALLBACK)
+				yield* chat.completeLink(
+					IDENTITY_CONNECTOR,
+					identityCallback(stateFrom(first.url), "account-4"),
+				)
+				const second = yield* chat.beginLink(ORG, OTHER_USER, IDENTITY_CONNECTOR, IDENTITY_CALLBACK)
+				yield* chat.completeLink(
+					IDENTITY_CONNECTOR,
+					identityCallback(stateFrom(second.url), "account-4"),
+				)
+				// One account speaks for one Maple user: the binding moved rather than doubled.
+				const moved = yield* chat.list(ORG, OTHER_USER)
+				assert.strictEqual(moved[0]?.identity?.externalUserId, "account-4")
+				const previous = yield* chat.list(ORG, USER)
+				assert.isUndefined(previous[0]?.identity)
+			}).pipe(Effect.provide(makeLayer(testDb, { registry: [identityConnector] })))
+		}),
+	)
+
+	it.effect("unlinks the caller's own account, and says when there was none", () =>
+		Effect.gen(function* () {
+			const testDb = createTestDb(trackedDbs)
+			yield* Effect.gen(function* () {
+				const chat = yield* ChatWorkspaceService
+				const { url } = yield* chat.beginLink(ORG, USER, IDENTITY_CONNECTOR, IDENTITY_CALLBACK)
+				yield* chat.completeLink(IDENTITY_CONNECTOR, identityCallback(stateFrom(url), "account-5"))
+				assert.isTrue((yield* chat.unlink(ORG, USER, IDENTITY_CONNECTOR)).unlinked)
+				const statuses = yield* chat.list(ORG, USER)
+				assert.isUndefined(statuses[0]?.identity)
+				// Unlinking nothing is an answer, not a failure.
+				assert.isFalse((yield* chat.unlink(ORG, USER, IDENTITY_CONNECTOR)).unlinked)
+				const unregistered = yield* chat.unlink(ORG, USER, UNREGISTERED).pipe(Effect.flip)
+				assert.strictEqual(unregistered._tag, "@maple/http/errors/IntegrationsNotFoundError")
+			}).pipe(Effect.provide(makeLayer(testDb, { registry: [identityConnector] })))
 		}),
 	)
 

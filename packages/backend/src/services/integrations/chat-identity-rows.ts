@@ -24,6 +24,8 @@ export interface ChatIdentityLink {
 	readonly id: ChatIdentityId
 	readonly userId: UserId
 	readonly externalUserId: string
+	/** What the platform showed when the link was made. Display only. */
+	readonly displayName: string | null
 	readonly createdAtMs: number
 }
 
@@ -36,13 +38,20 @@ const persistenceError = (error: DatabaseError) =>
 
 const unreadable = (message: string) => new IntegrationsPersistenceError({ message })
 
-const readRow = (row: { id: string; userId: string; externalUserId: string; createdAt: Date }) =>
+const readRow = (row: {
+	id: string
+	userId: string
+	externalUserId: string
+	displayName: string | null
+	createdAt: Date
+}) =>
 	decodeStored(row).pipe(
 		Effect.map(
 			(stored): ChatIdentityLink => ({
 				id: stored.id,
 				userId: stored.userId,
 				externalUserId: stored.externalUserId,
+				displayName: row.displayName,
 				createdAtMs: row.createdAt.getTime(),
 			}),
 		),
@@ -119,6 +128,7 @@ export const linkChatIdentity = (
 		readonly connectorId: ChatConnectorId
 		readonly externalUserId: string
 		readonly userId: UserId
+		readonly displayName?: string | undefined
 		readonly nowMs: number
 	},
 ): Effect.Effect<ChatIdentityLink, IntegrationsPersistenceError> =>
@@ -133,6 +143,7 @@ export const linkChatIdentity = (
 						connector: input.connectorId,
 						externalUserId: input.externalUserId,
 						userId: input.userId,
+						displayName: input.displayName ?? null,
 						createdAt: msToDate(input.nowMs),
 					})
 					.onConflictDoUpdate({
@@ -141,7 +152,11 @@ export const linkChatIdentity = (
 							chatIdentities.connector,
 							chatIdentities.externalUserId,
 						],
-						set: { userId: input.userId, createdAt: msToDate(input.nowMs) },
+						set: {
+							userId: input.userId,
+							displayName: input.displayName ?? null,
+							createdAt: msToDate(input.nowMs),
+						},
 					})
 					.returning(),
 			)

@@ -17,8 +17,6 @@ import { index, pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-cor
 //   - no `linked_by` / audit columns. `user_id` IS who linked it — the flow only ever binds the
 //     caller's own account — and the audit log records what the link went on to do.
 //   - no `updated_at`. A link is created or deleted, never edited; re-linking replaces the row.
-//   - no `display_name`. What the platform shows changes without telling us, and every reader
-//     already has the fresh one off the click that arrived.
 //   - no expiry. A link lasts until the person unlinks it or leaves the org, which
 //     `MembershipRevocationService` handles.
 //
@@ -37,6 +35,15 @@ export const chatIdentities = pgTable(
 		externalUserId: text("external_user_id").notNull(),
 		/** The Maple user a change approved from that account runs as. */
 		userId: text("user_id").$type<UserId>().notNull(),
+		/**
+		 * What the platform showed for the account when it was linked. Display only — nothing is
+		 * ever resolved by it, and it is nullable because a platform need not report one.
+		 *
+		 * Stored rather than read fresh because the only reader that HAS a fresh one is the bot,
+		 * which already knows who clicked; the settings card has nothing but this row, and
+		 * "Linked as 1122334455667788990" is not an answer.
+		 */
+		displayName: text("display_name"),
 		createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull(),
 	},
 	(table) => [
