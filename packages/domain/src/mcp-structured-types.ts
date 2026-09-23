@@ -321,6 +321,25 @@ export interface ListAlertRulesData {
 	total: number
 }
 
+export interface AlertDestinationRow {
+	id: string
+	name: string
+	type: string
+	enabled: boolean
+	summary: string
+	channelLabel: string | null
+	lastTestedAt: string | null
+	lastTestError: string | null
+	disabledReason: string | null
+	createdAt: string
+	updatedAt: string
+}
+
+export interface ListAlertDestinationsData {
+	destinations: AlertDestinationRow[]
+	total: number
+}
+
 export interface CreateAlertRuleData {
 	rule: AlertRuleRow
 }
@@ -972,6 +991,7 @@ export type StructuredToolOutput =
 	| { tool: "query_data"; data: QueryDataData }
 	| { tool: "service_map"; data: ServiceMapData }
 	| { tool: "list_alert_rules"; data: ListAlertRulesData }
+	| { tool: "list_alert_destinations"; data: ListAlertDestinationsData }
 	| { tool: "list_alert_incidents"; data: ListAlertIncidentsData }
 	| { tool: "list_alert_checks"; data: ListAlertChecksData }
 	| { tool: "create_alert_rule"; data: CreateAlertRuleData }

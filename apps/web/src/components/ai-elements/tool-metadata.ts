@@ -105,6 +105,7 @@ const toolLabels: Record<string, string> = {
 	replace_dashboard_widgets: "Replace Widgets",
 	// alerts & incidents
 	list_alert_rules: "List Alert Rules",
+	list_alert_destinations: "List Alert Destinations",
 	get_alert_rule: "Get Alert Rule",
 	create_alert_rule: "Create Alert Rule",
 	update_alert_rule: "Update Alert Rule",
@@ -168,6 +169,7 @@ const toolIcons: Record<string, IconComponent> = {
 	reorder_dashboard_widgets: SlidersIcon,
 	replace_dashboard_widgets: GridIcon,
 	list_alert_rules: BellIcon,
+	list_alert_destinations: BellIcon,
 	get_alert_rule: BellIcon,
 	create_alert_rule: BellIcon,
 	update_alert_rule: BellIcon,
