@@ -25,7 +25,8 @@ const ReviewFilesParameters = Schema.Struct({
 	repository: Schema.String.annotate({
 		description: "The repository in owner/name form, as the kickoff names it",
 	}),
-	number: Schema.Number.annotate({ description: "The pull request number" }),
+	// A quoted number is still a number: a decode failure here would end the parent's run.
+	number: Schema.Union([Schema.Number, Schema.String]).annotate({ description: "The pull request number" }),
 	headSha: Schema.String.annotate({ description: "The head SHA the review is at" }),
 	paths: Schema.Array(Schema.String)
 		.check(Schema.isMinLength(1), Schema.isMaxLength(MAX_GROUP_FILES))

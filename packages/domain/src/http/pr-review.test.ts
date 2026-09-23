@@ -241,3 +241,19 @@ describe("mentions", () => {
 		assert.equal(parseReplyCommand("@maple fixture question").command, "ask")
 	})
 })
+
+describe("lenient numbers and booleans", () => {
+	it("reads quoted lines and booleans instead of failing the run", () => {
+		const { report } = normalizePrReviewSubmission({
+			findings: [{ path: "a.ts", line: "12", endLine: "14", title: "x" }],
+			coverage: [{ unit: "GET /x", instrumented: "true" }],
+		})
+		assert.equal(report.findings[0]!.line, 12)
+		assert.equal(report.findings[0]!.endLine, 14)
+		assert.isTrue(report.coverage[0]!.instrumented)
+		assert.lengthOf(
+			normalizePrReviewSubmission({ findings: [{ path: "a.ts", line: "x" }] }).report.findings,
+			0,
+		)
+	})
+})

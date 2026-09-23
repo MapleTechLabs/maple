@@ -157,10 +157,14 @@ export class PrReviewReport extends Schema.Class<PrReviewReport>("PrReviewReport
  * hunk and wrote most of a report must not be thrown away over one absent key. The handler
  * normalizes and records what it dropped.
  */
+/** Models quote numbers and booleans (`"12"`, `"true"`); a strict decode here ends the run. */
+const LenientNumber = Schema.Union([Schema.Number, Schema.String])
+const LenientBoolean = Schema.Union([Schema.Boolean, Schema.String])
+
 export const PrReviewFindingSubmission = Schema.Struct({
 	path: Schema.optionalKey(Schema.String),
-	line: Schema.optionalKey(Schema.Number),
-	endLine: Schema.optionalKey(Schema.Number),
+	line: Schema.optionalKey(LenientNumber),
+	endLine: Schema.optionalKey(LenientNumber),
 	category: Schema.optionalKey(Schema.Union([PrReviewCategory, Schema.String])),
 	checkId: Schema.optionalKey(Schema.String),
 	severity: Schema.optionalKey(Schema.Union([PrReviewSeverity, Schema.String])),
@@ -174,7 +178,7 @@ export type PrReviewFindingSubmission = Schema.Schema.Type<typeof PrReviewFindin
 export const PrReviewCoverageSubmission = Schema.Struct({
 	unit: Schema.optionalKey(Schema.String),
 	kind: Schema.optionalKey(Schema.String),
-	instrumented: Schema.optionalKey(Schema.Boolean),
+	instrumented: Schema.optionalKey(LenientBoolean),
 	evidence: Schema.optionalKey(Schema.String),
 })
 
@@ -199,6 +203,14 @@ const MAX_TEXT = 4_000
 
 /** The `maple-audit` check id grammar: a family and a number, or the REN-DUAL-style suffixes. */
 const AUDIT_CHECK_ID = /^(RES|STAT|SPAN|MAP|REN|LOG|MET|NAME|PII|LLM)-(\d{1,2}|[A-Z]+)$/
+
+const toNumber = (value: number | string | undefined): number | undefined => {
+	const n = typeof value === "string" ? Number(value.trim()) : value
+	return n === undefined || !Number.isFinite(n) ? undefined : n
+}
+
+const toBoolean = (value: boolean | string | undefined): boolean =>
+	typeof value === "string" ? value.trim().toLowerCase() === "true" : value === true
 
 const clip = (value: string, max = MAX_TEXT) => (value.length > max ? `${value.slice(0, max)}…` : value)
 
@@ -229,8 +241,9 @@ export const normalizePrReviewSubmission = (submission: PrReviewSubmission): Nor
 	const findings: Array<PrReviewFinding> = []
 	for (const raw of rawFindings) {
 		const path = raw.path?.trim()
-		const line = raw.line
-		if (!path || line === undefined || !Number.isFinite(line) || line < 1) continue
+		const line = toNumber(raw.line)
+		const rawEndLine = toNumber(raw.endLine)
+		if (!path || line === undefined || line < 1) continue
 		// An id the audit does not have would be posted onto the pull request as if it did.
 		const rawCheckId = raw.checkId?.trim().toUpperCase()
 		const checkId = rawCheckId !== undefined && AUDIT_CHECK_ID.test(rawCheckId) ? rawCheckId : undefined
@@ -242,8 +255,8 @@ export const normalizePrReviewSubmission = (submission: PrReviewSubmission): Nor
 		if (category === "observability" && checkId === undefined) continue
 		const startLine = Math.floor(line)
 		const endLine =
-			raw.endLine !== undefined && Number.isFinite(raw.endLine) && Math.floor(raw.endLine) > startLine
-				? Math.floor(raw.endLine)
+			rawEndLine !== undefined && Math.floor(rawEndLine) > startLine
+				? Math.floor(rawEndLine)
 				: undefined
 		findings.push(
 			new PrReviewFinding({
@@ -272,7 +285,7 @@ export const normalizePrReviewSubmission = (submission: PrReviewSubmission): Nor
 			new PrReviewCoverageUnit({
 				unit: clip(unit, 200),
 				kind: clip(raw.kind?.trim() || "other", 60),
-				instrumented: raw.instrumented ?? false,
+				instrumented: toBoolean(raw.instrumented),
 				evidence: clip(raw.evidence?.trim() || ""),
 			}),
 		)
