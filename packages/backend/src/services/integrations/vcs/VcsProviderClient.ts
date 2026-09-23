@@ -3,6 +3,9 @@ import type {
 	BranchUpsertInput,
 	CommitUpsertInput,
 	GitCommitSha,
+	PullRequestFile,
+	PullRequestReviewPublication,
+	PullRequestReviewPublished,
 	PullRequestSummary,
 	RepoUpsertInput,
 	VcsCommitFetch,
@@ -168,6 +171,40 @@ export interface VcsProviderClient {
 		number: number,
 	) => Effect.Effect<
 		Option.Option<PullRequestSummary>,
+		| VcsProviderError
+		| VcsInstallationGoneError
+		| VcsRepoUnavailableError
+		| VcsRepositoryBlockedError
+		| VcsRateLimitedError
+	>
+
+	/** Every file of one pull request's diff, with the provider's unified patch where it gives one. */
+	readonly fetchPullRequestFiles: (
+		installation: VcsInstallation,
+		repo: VcsRepositoryRef,
+		number: number,
+	) => Effect.Effect<
+		ReadonlyArray<PullRequestFile>,
+		| VcsProviderError
+		| VcsInstallationGoneError
+		| VcsRepoUnavailableError
+		| VcsRepositoryBlockedError
+		| VcsRateLimitedError
+	>
+
+	/**
+	 * Post one review's outcome onto the pull request: a check run on the head
+	 * commit, and a comment-only review when there is anything to say inline.
+	 * The only write on this port. Needs the App's `checks: write` and
+	 * `pull_requests: write`; an installation that has not accepted them fails
+	 * repository-scoped, which the review records rather than retries.
+	 */
+	readonly publishPullRequestReview: (
+		installation: VcsInstallation,
+		repo: VcsRepositoryRef,
+		publication: PullRequestReviewPublication,
+	) => Effect.Effect<
+		PullRequestReviewPublished,
 		| VcsProviderError
 		| VcsInstallationGoneError
 		| VcsRepoUnavailableError

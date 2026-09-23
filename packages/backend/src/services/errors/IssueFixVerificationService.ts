@@ -108,7 +108,7 @@ export interface PullRequestEventInput {
 	readonly externalRepoId: string
 	readonly repoFullName: string
 	readonly number: number
-	readonly action: "opened" | "edited" | "reopened" | "closed" | "synchronize"
+	readonly action: "opened" | "edited" | "reopened" | "closed" | "synchronize" | "ready_for_review"
 	readonly url: string
 	readonly title: string | null
 	readonly body: string | null

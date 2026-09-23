@@ -329,6 +329,36 @@ describe("GithubProvider.webhookToJobs", () => {
 		}).pipe(Effect.provide(providerLayer())),
 	)
 
+	it.effect("carries the head and base commits the review runs against", () =>
+		Effect.gen(function* () {
+			const provider = yield* GithubProvider
+			const body = pullRequestBody({
+				action: "ready_for_review",
+				pull_request: {
+					merged: false,
+					merged_at: null,
+					draft: false,
+					head: { sha: SHA.toUpperCase(), ref: "feat/x", repo: { full_name: "fork/repo" } },
+					base: { sha: "not a sha", ref: "main" },
+				},
+			})
+			const jobs = yield* provider.webhookToJobs({
+				headers: { "x-github-event": "pull_request", "x-hub-signature-256": sign(body) },
+				rawBody: body,
+			})
+			const job = jobs[0]!
+			if (job.kind !== "pull-request-event") return assert.fail("expected a pull-request job")
+			assert.strictEqual(job.action, "ready_for_review")
+			// Normalized to lowercase by the brand; a malformed base is dropped, not fatal.
+			assert.strictEqual(job.headSha, SHA)
+			assert.strictEqual(job.baseSha, undefined)
+			assert.strictEqual(job.headRef, "feat/x")
+			assert.strictEqual(job.baseRef, "main")
+			assert.strictEqual(job.draft, false)
+			assert.strictEqual(job.headRepoFullName, "fork/repo")
+		}).pipe(Effect.provide(providerLayer())),
+	)
+
 	it.effect("derives a push commit's avatar against its own host (GitHub Enterprise)", () =>
 		Effect.gen(function* () {
 			const provider = yield* GithubProvider

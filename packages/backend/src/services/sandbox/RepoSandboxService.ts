@@ -228,6 +228,9 @@ export class RepoSandboxService extends Context.Service<RepoSandboxService, Repo
 						// so per-file capping is not available; the output bound and the
 						// tool's own line cap are what keep a result readable.
 						"-I",
+						// Extended regex: models write `a|b` and `\(`, which basic regex reads as
+						// a literal bar and an unbalanced group.
+						"--extended-regexp",
 						...(options.caseSensitive === false ? ["--ignore-case"] : []),
 						...(options.contextLines ? ["--context", String(options.contextLines)] : []),
 						"-e",

@@ -62,6 +62,7 @@ import { registerGetAgentToolErrorTool } from "./get-agent-tool-error"
 import { registerServiceMapTool } from "./service-map"
 import { registerSourceCodeTools } from "./source-code"
 import { registerSandboxTools } from "./sandbox"
+import { registerPullRequestTools } from "./pull-request"
 import {
 	audienceAdmits,
 	type McpToolAudience,
@@ -257,6 +258,7 @@ const collectMapleToolDefinitions = (): ReadonlyArray<MapleToolDefinition> => {
 	registerAuditSetupTool(registrar)
 	registerSourceCodeTools(registrar)
 	registerSandboxTools(registrar)
+	registerPullRequestTools(registrar)
 	registerListErrorIssuesTool(registrar)
 	registerTransitionErrorIssueTool(registrar)
 	registerSetIssueSeverityTool(registrar)
