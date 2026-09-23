@@ -13,23 +13,19 @@
  *
  * **It is read small,** which is a budget rather than a veto. A chat client
  * renders an image block at roughly half this width, so the question an axis
- * has to answer is how many labels fit. Four of the widest label the formatter
- * emits ("510.3 KiB", 9 characters of 12px Geist Mono at {@link MONO_CHAR} ≈
- * 66px) take 264px of the plot's 696px along the bottom, and four 15px rows sit
- * 85px apart up a {@link AXIS_WIDTH}px gutter. It fits with room to spare; what
- * does not is the five-plus labels a dashboard draws at full size, so
- * `renderChartSvg` thins them to four.
- *
- * Earlier this file said an axis was ruled out. It was, and a chart of a 0.031%
- * error rate then had one number on it — the header value — with nothing to
- * read it against, which is what sent this back for a second look.
+ * has to answer is how many labels fit. Along the bottom, four times at their
+ * longest ("9/22 10:00", 10 characters at Geist Mono's {@link MONO_CHAR}px
+ * advance ≈ 73px) take 292px of the 696px the ticks span. Up the side, four
+ * 15px rows sit 85px apart in a {@link AXIS_WIDTH}px gutter. Both fit with room
+ * to spare; what does not is the five-plus labels a dashboard draws at full
+ * size, so `renderChartSvg` thins them to four.
  *
  * One card serves both sources. An alert chart is a chart with a single series
  * and a threshold, so it takes the single-series layout — the one value in the
- * header, where a legend of one would only repeat the title — and the threshold
- * chip below the time axis. Neither is a branch on "is this an alert", and both
- * cards carry the same axis: a threshold rule is easier to read against a
- * labelled grid, not harder.
+ * header, where a legend of one would only repeat the title — and its limit on
+ * the value scale, level with the rule. Neither is a branch on "is this an
+ * alert", and both cards carry the same axis: a threshold rule is easier to
+ * read against a labelled grid, not harder.
  */
 import { container, image, text, type Node } from "@takumi-rs/helpers"
 import {
@@ -53,11 +49,13 @@ const CARD_PADDING = 16
 /**
  * The y axis' gutter, and the gap between it and the plot.
  *
- * Nine characters at {@link MONO_CHAR}, which is the widest label
- * {@link formatValue} emits — nice ticks in bytes reach "510.3 KiB" and
- * nothing goes past it.
+ * Nine characters at {@link MONO_CHAR}, which covers the labels a chart
+ * actually draws — "510.3 KiB", "390.6 KiB", "1.2 min". It is a reservation
+ * rather than a limit: the labels are anchored to the gutter's right edge and a
+ * longer one grows left into the card's own padding, so the deepest the
+ * formatter goes ("0.000001 ms", ≈ 80px) still draws in full.
  */
-const AXIS_WIDTH = 66
+export const AXIS_WIDTH = 66
 const AXIS_GAP = 8
 export const CHART_CARD_WIDTH = AXIS_WIDTH + AXIS_GAP + PLOT_WIDTH + CARD_PADDING * 2
 const ROW_WIDTH = CHART_CARD_WIDTH - CARD_PADDING * 2
@@ -215,42 +213,62 @@ const plotY = (fraction: number): number => PLOT_PAD + fraction * (PLOT_HEIGHT -
 const plotX = (fraction: number): number => PLOT_PAD + fraction * (PLOT_WIDTH - PLOT_PAD * 2)
 
 /**
+ * Far enough apart to be two labels rather than one smudge — a type row, so a
+ * tick within that of the threshold gives way to it.
+ */
+const AXIS_MIN_SEPARATION = SMALL_ROW
+
+/**
  * The value scale, in a gutter beside the plot.
  *
  * Absolutely positioned rather than distributed, because the fractions come
  * from the scales the marks were drawn with: a label sits on its grid line
  * because it was told where the line is, not because the ticks happened to be
  * evenly spaced.
+ *
+ * Anchored by its right edge with no width of its own, so a label longer than
+ * the gutter grows left into the card's padding instead of being clipped by
+ * `lineClamp`. The longest the formatter can produce is "0.000001 ms" — 11
+ * characters, about 80px — against {@link AXIS_WIDTH} plus the padding.
  */
-const yAxisGutter = (labels: ReadonlyArray<PlotLabel>): Node =>
-	container({
+export const yAxisGutter = (labels: ReadonlyArray<PlotLabel>, limit: PlotLabel | null): Node => {
+	const clear = (tick: PlotLabel): boolean =>
+		limit === null ||
+		Math.abs(plotY(tick.yFraction) - plotY(limit.yFraction)) >= AXIS_MIN_SEPARATION
+	const drawn = [
+		...labels.filter(clear).map((tick) => ({ tick, color: COLOR.muted })),
+		// The limit is a value on this scale, so it belongs on the scale, at the
+		// height of the rule the plot drew for it. In the rule's own colour, since
+		// a red number level with a red dashed line needs no further caption.
+		...(limit === null ? [] : [{ tick: limit, color: COLOR.danger }]),
+	]
+	return container({
 		style: { display: "flex", position: "relative", width: AXIS_WIDTH, height: PLOT_HEIGHT },
-		children: labels.map((tick) =>
+		children: drawn.map(({ tick, color }) =>
 			container({
 				style: {
 					display: "flex",
 					position: "absolute",
-					left: 0,
+					right: 0,
 					top: plotY(tick.yFraction) - SMALL_ROW / 2,
-					width: AXIS_WIDTH,
-					flexDirection: "row",
-					justifyContent: "flex-end",
 				},
-				children: [label(tick.text, 12, COLOR.muted)],
+				children: [label(tick.text, 12, color)],
 			}),
 		),
 	})
+}
 
 /**
  * The time scale, under the plot.
  *
- * Each label is centred on its tick and then pulled back inside the plot's
- * edges, so the ends read as the ends of the range rather than hanging off the
- * card. The width is predicted from {@link MONO_CHAR}; being a pixel out moves
- * a label a pixel, which is why an estimate is enough here and would not be in
- * the gutter.
+ * Each label is centred on its tick and then held inside the image's own
+ * edges, so the ends of the range do not hang off it. A time label is short —
+ * "9/22 10:00" at its longest, about 73px of the 696px the ticks span — so the
+ * four of them never compete for room. The width is predicted from
+ * {@link MONO_CHAR}; being a pixel out moves a label a pixel, which is why an
+ * estimate is enough here and an anchored edge is used in the gutter instead.
  */
-const xAxisRow = (labels: ReadonlyArray<TimeLabel>): Node =>
+export const xAxisRow = (labels: ReadonlyArray<TimeLabel>): Node =>
 	container({
 		style: { display: "flex", position: "relative", width: PLOT_WIDTH, height: SMALL_ROW },
 		children: labels.map((tick) => {
@@ -301,8 +319,8 @@ export const chartCard = (title: string, spec: ChartSpec): ChartCard => {
 	const entries = solo === undefined ? plot.legend.map(legendChip) : []
 	const rows = solo === undefined ? legendRows(entries) : 0
 
-	// Padding, the title, the plot, the time axis, and a row each for a legend
-	// and a threshold when the chart has one.
+	// Padding, the title, the plot, the time axis, and a legend when there is
+	// one. A threshold costs no row: it is drawn on the value scale.
 	const height =
 		CARD_PADDING * 2 +
 		TITLE_ROW +
@@ -310,8 +328,7 @@ export const chartCard = (title: string, spec: ChartSpec): ChartCard => {
 		PLOT_HEIGHT +
 		GAP +
 		SMALL_ROW +
-		(solo === undefined ? GAP + SMALL_ROW * rows + LEGEND_ROW_GAP * (rows - 1) : 0) +
-		(plot.threshold === null ? 0 : GAP + SMALL_ROW)
+		(solo === undefined ? GAP + SMALL_ROW * rows + LEGEND_ROW_GAP * (rows - 1) : 0)
 
 	const node = container({
 		style: {
@@ -339,7 +356,7 @@ export const chartCard = (title: string, spec: ChartSpec): ChartCard => {
 			container({
 				style: { display: "flex", width: ROW_WIDTH, flexDirection: "row", gap: AXIS_GAP },
 				children: [
-					yAxisGutter(plot.yAxis),
+					yAxisGutter(plot.yAxis, plot.threshold),
 					container({
 						style: { display: "flex", width: PLOT_WIDTH, flexDirection: "column", gap: GAP },
 						children: [
@@ -365,12 +382,6 @@ export const chartCard = (title: string, spec: ChartSpec): ChartCard => {
 						}),
 					]
 				: []),
-			// Dashes stand in for the rule's own dash pattern, since a legend swatch
-			// would cost a nested flex row for two pixels of ink. Its own row rather
-			// than the time axis' middle, which the interior ticks now occupy.
-			...(plot.threshold === null
-				? []
-				: [label(`- - threshold ${plot.threshold.text}`, 12, COLOR.danger)]),
 		],
 	})
 

@@ -176,45 +176,55 @@ export const PLOT_PAD = 12
 
 // ── formatting ──────────────────────────────────────────────────────────────
 
+/** Decimals a label may grow to before the number stops being the point of it. */
+const MAX_DIGITS = 6
+
 const round = (n: number, digits = 1): string => {
 	const abs = Math.abs(n)
-	// `toFixed` rounds anything under half a place to a flat zero, which is how
-	// an axis of small values became a column of "0" and a 0.031% error rate a
-	// header reading "0". Below that floor, decimals are added until the first
+	// `toFixed` rounds anything at or under half a place away, which is how a
+	// 0.031% rate became a header reading "0" and a 0.005% threshold a chip
+	// reading "0.01%". Below that floor, decimals are added until the first
 	// significant digit shows, capped so a denormal cannot mint a 300-character
 	// label.
-	if (abs !== 0 && abs < 0.5 / 10 ** digits) {
-		return String(Number(n.toFixed(Math.min(6, Math.ceil(-Math.log10(abs)) + 1))))
+	if (abs !== 0 && abs <= 0.5 / 10 ** digits) {
+		return String(Number(n.toFixed(Math.min(MAX_DIGITS, Math.ceil(-Math.log10(abs)) + 1))))
 	}
 	const s = n.toFixed(digits)
 	return s.endsWith(".0") ? s.slice(0, -2) : s
 }
 
-/** Formats a value for labels, unit-aware. */
-export function formatValue(value: number, unit: ChartUnit): string {
+/**
+ * Formats a value for labels, unit-aware.
+ *
+ * `digits` overrides the decimal count this would pick from the value's own
+ * magnitude, for a caller formatting a set of values that have to read as one
+ * scale — see {@link axisDigits}. It is the count *after* the unit switch, so
+ * it means the same thing whether a duration comes out in ms or in minutes.
+ */
+export function formatValue(value: number, unit: ChartUnit, digits?: number): string {
 	switch (unit) {
 		case "percent":
 			// Zero takes the coarse precision so a `0%` baseline reads beside `2%`
 			// and `4%` rather than as `0.00%` under them.
-			return `${round(value, value !== 0 && Math.abs(value) < 1 ? 2 : 1)}%`
+			return `${round(value, digits ?? (value !== 0 && Math.abs(value) < 1 ? 2 : 1))}%`
 		case "duration_ms":
-			if (Math.abs(value) >= 60_000) return `${round(value / 60_000)} min`
-			if (Math.abs(value) >= 1000) return `${round(value / 1000)} s`
-			return `${round(value)} ms`
+			if (Math.abs(value) >= 60_000) return `${round(value / 60_000, digits)} min`
+			if (Math.abs(value) >= 1000) return `${round(value / 1000, digits)} s`
+			return `${round(value, digits)} ms`
 		case "bytes": {
 			const abs = Math.abs(value)
-			if (abs >= 1024 ** 3) return `${round(value / 1024 ** 3)} GiB`
-			if (abs >= 1024 ** 2) return `${round(value / 1024 ** 2)} MiB`
-			if (abs >= 1024) return `${round(value / 1024)} KiB`
-			return `${round(value)} B`
+			if (abs >= 1024 ** 3) return `${round(value / 1024 ** 3, digits)} GiB`
+			if (abs >= 1024 ** 2) return `${round(value / 1024 ** 2, digits)} MiB`
+			if (abs >= 1024) return `${round(value / 1024, digits)} KiB`
+			return `${round(value, digits)} B`
 		}
 		case "requests_per_sec":
-			return `${formatValue(value, "number")}/s`
+			return `${formatValue(value, "number", digits)}/s`
 		case "number": {
 			const abs = Math.abs(value)
-			if (abs >= 1_000_000) return `${round(value / 1_000_000)}M`
-			if (abs >= 1000) return `${round(value / 1000)}k`
-			return round(value, abs < 10 && !Number.isInteger(value) ? 1 : 0)
+			if (abs >= 1_000_000) return `${round(value / 1_000_000, digits)}M`
+			if (abs >= 1000) return `${round(value / 1000, digits)}k`
+			return round(value, digits ?? (abs < 10 && !Number.isInteger(value) ? 1 : 0))
 		}
 	}
 }
@@ -257,6 +267,26 @@ export function niceTicks(min: number, max: number, count = 4): number[] {
  */
 const AXIS_LABELS = 4
 
+/**
+ * The decimal count every label on one axis shares: the fewest that keep its
+ * ticks apart.
+ *
+ * Precision per value is the wrong rule here, because it is read off each
+ * value's own magnitude and an axis can be finer than that. A domain topping
+ * out at 0.012% has ticks 0.005 apart and printed `0% | 0.01% | 0.01% |
+ * 0.01%` — three labels naming different lines with the same number, which is
+ * worse than no axis. Counting digits off the step would be the direct rule
+ * and does not survive the unit switch (2000 ms is "2 s"), so the labels
+ * themselves are the test: widen until they differ.
+ */
+const axisDigits = (ticks: ReadonlyArray<number>, unit: ChartUnit): number => {
+	for (let digits = 0; digits < MAX_DIGITS; digits += 1) {
+		const labels = ticks.map((tick) => formatValue(tick, unit, digits))
+		if (new Set(labels).size === labels.length) return digits
+	}
+	return MAX_DIGITS
+}
+
 /** The grid ticks that get a label: every one, thinned to {@link AXIS_LABELS}. */
 const labelledTicks = (ticks: ReadonlyArray<number>): ReadonlyArray<number> => {
 	const stride = Math.max(1, Math.ceil((ticks.length - 1) / (AXIS_LABELS - 1)))
@@ -289,8 +319,12 @@ const timeAxis = (tMin: number, tMax: number, tRange: number): ReadonlyArray<Tim
 		if (i === count - 1) labels[labels.length - 1] = { text, xFraction }
 	}
 	const last = labels.at(-1)
-	// The zone is named once, on the label that ends the range.
-	if (last !== undefined) labels[labels.length - 1] = { ...last, text: `${last.text} UTC` }
+	if (last === undefined) return labels
+	// The zone is named once, on the label that ends the range. A lone label
+	// names no end — there is one time on the chart — so it sits at the left,
+	// where the first label always does, whether it got there by collapse or by
+	// the series holding a single instant.
+	labels[labels.length - 1] = { text: `${last.text} UTC`, xFraction: labels.length === 1 ? 0 : last.xFraction }
 	return labels
 }
 
@@ -565,6 +599,18 @@ export function renderChartSvg(spec: ChartSpec): ChartRender {
 
 	parts.push("</svg>")
 
+	// Read off the scales the marks were drawn with rather than recomputed, so a
+	// label cannot land anywhere but on the line it names, and formatted at one
+	// precision so no two of them can read alike.
+	const ticks = labelledTicks(scales.ticks)
+	const digits = axisDigits(ticks, spec.unit)
+	const yAxis = ticks
+		.map((tick) => ({
+			text: formatValue(tick, spec.unit, digits),
+			yFraction: (scales.y(tick) - PLOT_PAD) / scales.plotH,
+		}))
+		.reverse()
+
 	return {
 		svg: parts.join("\n"),
 		legend: drawn.map((series) => ({
@@ -580,14 +626,7 @@ export function renderChartSvg(spec: ChartSpec): ChartRender {
 						text: formatValue(threshold, spec.unit),
 						yFraction: (scales.y(threshold) - PLOT_PAD) / scales.plotH,
 					},
-		// Read off the scales the marks were drawn with rather than recomputed,
-		// so a label cannot land anywhere but on the line it names.
-		yAxis: labelledTicks(scales.ticks)
-			.map((tick) => ({
-				text: formatValue(tick, spec.unit),
-				yFraction: (scales.y(tick) - PLOT_PAD) / scales.plotH,
-			}))
-			.reverse(),
+		yAxis,
 		xAxis: timeAxis(tMin, tMax, tRange),
 	}
 }

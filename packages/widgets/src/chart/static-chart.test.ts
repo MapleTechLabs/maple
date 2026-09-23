@@ -108,6 +108,36 @@ describe("the axes, which the caller draws and this only places", () => {
 		expect(yAxis.at(-1)?.text).toBe("0 ms")
 	})
 
+	/**
+	 * Precision used to be read off each value's own magnitude, so an axis
+	 * finer than that magnitude printed one number on several lines — a domain
+	 * topping out at 0.012% read `0% | 0.01% | 0.01% | 0.01%`. Two ticks that
+	 * read alike are worse than no axis, so the sweep is over the whole range
+	 * of magnitudes a fence can carry rather than the two that were reported.
+	 */
+	it("never prints one number on two lines, at any magnitude, in any unit", () => {
+		const units = ["percent", "number", "duration_ms", "bytes", "requests_per_sec"] as const
+		for (const unit of units) {
+			for (let exponent = -6; exponent <= 6; exponent += 1) {
+				for (const mantissa of [1, 2.5, 5.103, 7]) {
+					const max = mantissa * 10 ** exponent
+					const { yAxis } = renderChartSvg({
+						kind: "line",
+						unit,
+						series: [{ name: "s", points: [[at(1), 0] as ChartPoint, [at(0), max]] }],
+					})
+					const texts = yAxis.map((tick) => tick.text)
+					expect(new Set(texts).size, `${unit} to ${max}: ${texts.join(" | ")}`).toBe(texts.length)
+					// Distinct is not enough on its own: the labels also have to run
+					// the way the axis does, largest at the top.
+					expect(yAxis.map((tick) => tick.yFraction)).toEqual(
+						[...yAxis.map((tick) => tick.yFraction)].sort((a, b) => a - b),
+					)
+				}
+			}
+		}
+	})
+
 	it("thins the grid rather than labelling all of it", () => {
 		// Read at about half size, five labels are a texture and four are a scale.
 		const { yAxis, svg } = renderChartSvg(spec)
