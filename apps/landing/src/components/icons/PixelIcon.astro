@@ -1,0 +1,51 @@
+---
+/**
+ * Nucleo "Pixel Essential" glyphs (set 8, 24-grid) used as scan markers on the
+ * EU hosting surfaces. Strokes remapped to currentColor; square caps and
+ * stroke-width 2 keep the pixel look, like DocsCategoryIcon and PixelStar.
+ */
+const PATHS = {
+	// earth: icon 1213
+	"earth": ["M18 11L22 11", "M16 17L16 18", "M10 16.01L10 16", "M14 15.01L14 15", "M16 13.01L16 13", "M12 8.00999L12 7.99999", "M10 10.01L10 9.99999", "M8 6L10 6", "M8 12L7 12", "M5 14L2 14", "M18 4L17.99 4", "M20 6L19.99 6", "M18 20.01L18 20", "M20 18.01L20 18", "M6 20.01L6 20", "M4 18.01L4 18", "M4 6.01001L4 6.00001", "M6 4.01001L6 4.00001", "M16 22L8 22", "M16 2L8 2", "M22 8L22 16", "M2 8L2 16"],
+	// location: icon 1209
+	"location": ["M12 10V16", "M10 2H14", "M10 10H14", "M16 4L16 8", "M8 4L8 8", "M22 17.01L22 17", "M2 17.01L2 17", "M4 19.01L4 19", "M4 15.01L4 15", "M20 15.01L20 15", "M20 19.01L20 19", "M6 21H18", "M6 14H8", "M16 14H18"],
+	// layers: icon 1164
+	"layers": ["M13 21L11 21", "M16 19L15 19", "M9 19L8 19", "M19 17L18 17", "M6 17L5 17", "M22 15L21 15", "M13 15L11 15", "M3 15L2 15", "M16 13L15 13", "M9 13L8 13", "M19 11L18 11", "M6 11L5 11", "M22 9L21 9", "M3 9L2 9", "M19 7L18 7", "M6 7L5 7", "M16 5L15 5", "M9 5L8 5", "M13 3L11 3"],
+	// tag: icon 1196
+	"tag": ["M7.5 7.5L7.5 7.49", "M16 20.01V20", "M11 20.01V20", "M9 18.01V18", "M7 16.01V16", "M5 14.01V14", "M18 18.01V18", "M20 16.01V16", "M20 11.01V11", "M18 9.01V9", "M16 7.01V7", "M14 5.01V5", "M22 14V13", "M14 22H13", "M3 12V3H12"],
+	// lock: icon 1219
+	"lock": ["M16 4V10", "M12 15V16", "M5 21H19", "M3 12V19", "M21 12V19", "M8 10V4", "M5 10H19", "M10 2H14"],
+	// user: icon 1240
+	"user": ["M5 16H6", "M18 16H19", "M8 14H16", "M3 18V21H21V18", "M10.5 3H13.5", "M10.5 10H13.5", "M15.5 5L15.5 8", "M8.5 5L8.5 8"],
+	// paper-plane: icon 1104
+	"paper-plane": ["M18 3L21 3L21 6", "M19 8L19 11", "M16 5L13 5", "M11 7L8 7", "M9 13L5 13", "M6 9L3 9L3 11", "M17 13L17 16", "M11 15L11 19", "M15 18L15 21H13"],
+	// credit-card: icon 1251
+	"credit-card": ["M7 15H8", "M22 9H2", "M2 18V6", "M22 18V6", "M4 4H20", "M4 20H20"],
+	// globe: icon 1253
+	"globe": ["M21 11H3", "M15 19L15 15L19 15", "M21.01 21H21", "M23.01 23H23", "M21 17H23V19", "M17 21V23H19", "M9 2L15 2", "M9 20L11 20", "M3 14V8", "M21 11V8", "M7.01001 4L7.00001 4", "M7.01001 18L7.00001 18", "M17.01 4L17 4", "M19.01 6L19 6", "M5.01001 6L5.00001 6", "M10.01 6L10 6", "M14.01 6L14 6", "M10.01 16L10 16", "M12.01 4L12 4", "M5.01001 16L5.00001 16", "M8 8V14", "M16 8V10"],
+	// dashboard: icon 1271
+	"dashboard": ["M6 8H6.01", "M10 8H10.01", "M4 4H20", "M4 20H20", "M2 6V18", "M22 6V18", "M8.00001 14H8.01001", "M10 12H10.01", "M12 14H12.01", "M14 16H14.01", "M16 14H16.01", "M18 12H18.01", "M6.00001 16H6.01001"],
+} as const;
+
+export type PixelIconName = keyof typeof PATHS;
+
+interface Props {
+	name: PixelIconName;
+	class?: string;
+}
+
+const { name, class: className = "size-4" } = Astro.props;
+---
+
+<svg
+	class={className}
+	viewBox="0 0 24 24"
+	fill="none"
+	stroke="currentColor"
+	stroke-width="2"
+	stroke-linecap="square"
+	xmlns="http://www.w3.org/2000/svg"
+	aria-hidden="true"
+>
+	{PATHS[name].map((d) => <path d={d} />)}
+</svg>
