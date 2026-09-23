@@ -96,6 +96,7 @@ export const ANTICIPATED_ERROR_IDENTIFIER_LIST: ReadonlyArray<string> = [
 	"@maple/http/investigations/InvestigationNotFoundError",
 	"@maple/http/investigations/InvestigationQuotaError",
 	"@maple/http/investigations/InvestigationValidationError",
+	"@maple/http/pr-review/PrReviewNotFoundError",
 	"@maple/http/v1/V1RequestValidationError",
 	"@maple/http/v2/CursorInvalidError",
 	"@maple/http/v2/CursorSortMismatchError",

@@ -42,3 +42,37 @@ export const READ_ONLY_RULESET: PermissionRuleset = [
 		.sort()
 		.map((tool) => new PermissionRule({ tool, action: "allow" })),
 ]
+
+/**
+ * What the pull request reviewer may call, by name.
+ *
+ * The diff tools, the sandbox and source tools for context, and the read-only telemetry tools the
+ * rubric needs: whether the touched service reports at all, which operations it already has spans
+ * for, and whether an attribute key the diff introduces exists in the org's data under another
+ * spelling. Nothing that writes, and nothing that reads alerts, dashboards or issues: a review has
+ * no use for them and every unused schema is prompt the model pays for on each call.
+ */
+export const PR_REVIEW_TOOLS: ReadonlyArray<string> = [
+	"pr_changed_files",
+	"pr_file_diff",
+	"sandbox_grep",
+	"sandbox_list_files",
+	"sandbox_read_file",
+	"sandbox_exec",
+	"list_source_repositories",
+	"search_source_code",
+	"read_source_file",
+	"list_services",
+	"get_service_top_operations",
+	"explore_attributes",
+	"search_traces",
+	"service_map",
+	"list_metrics",
+	"audit_setup",
+	"get_instrumentation_recommendations",
+]
+
+export const PR_REVIEW_RULESET: PermissionRuleset = [
+	new PermissionRule({ tool: "*", action: "deny" }),
+	...[...PR_REVIEW_TOOLS].sort().map((tool) => new PermissionRule({ tool, action: "allow" })),
+]
