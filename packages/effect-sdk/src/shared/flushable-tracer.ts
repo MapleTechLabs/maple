@@ -44,6 +44,16 @@ export interface SpanBuffer {
 	readonly size: () => number
 }
 
+/**
+ * Spans held between flushes. Past this the OLDEST span goes, not the newest: a span ends after its
+ * children, so the newest spans are the ones that close a unit of work — the request or turn root
+ * that carries its outcome — and a buffer that refused them kept 10,000 leaves and lost the root.
+ * Seen on 2026-09-17: investigation turns past the cap exported without their `chat.turn` span.
+ *
+ * The same rule governs `restore`: a batch put back after a failed POST is older than what
+ * arrived meanwhile, so at the cap it is what gets trimmed. A collector that stays down for a
+ * signal's cooldown therefore loses whole earlier traces rather than every trace's root.
+ */
 const MAX_BUFFER = 10_000
 
 export interface SpanBufferOptions {
@@ -101,7 +111,7 @@ export const makeSpanBuffer = (options: SpanBufferOptions = {}): SpanBuffer => {
 		if (!span.sampled) return
 		if (dropSpan !== undefined && dropSpan(span.name)) return
 		if (isIgnoredSpan(span)) return
-		if (buffer.length >= MAX_BUFFER) return
+		if (buffer.length >= MAX_BUFFER) buffer.shift()
 		buffer.push(makeOtlpSpan(span, anticipatedErrorIdentifiers))
 	}
 
@@ -143,7 +153,7 @@ export const makeSpanBuffer = (options: SpanBufferOptions = {}): SpanBuffer => {
 		},
 		restore: (items) => {
 			if (disabled || items.length === 0) return
-			buffer = [...items, ...buffer].slice(0, MAX_BUFFER)
+			buffer = [...items, ...buffer].slice(-MAX_BUFFER)
 		},
 		setDisabled: (value) => {
 			disabled = value

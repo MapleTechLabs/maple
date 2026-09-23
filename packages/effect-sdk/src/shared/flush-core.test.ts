@@ -105,6 +105,59 @@ describe("runFlush", () => {
 		}),
 	)
 
+	it.live("`force` posts through a signal's cooldown and still re-arms it on failure", () =>
+		Effect.gen(function* () {
+			vi.useFakeTimers()
+			vi.setSystemTime(new Date("2026-01-01T00:00:00Z"))
+			const spans = makeSpanBuffer()
+			const logs = makeLogBuffer()
+			const metrics = makeMetricBuffer()
+			const tracesState: SignalState = { disabledUntil: 0 }
+			const logsState: SignalState = { disabledUntil: 0 }
+			const metricsState: SignalState = { disabledUntil: 0 }
+			let attempts = 0
+			let failTraces = true
+			const transport: FlushTransport = {
+				post: async (url) => {
+					if (!url.endsWith("/v1/traces")) return
+					attempts += 1
+					if (failTraces) throw new Error("collector unavailable")
+				},
+			}
+			const flush = (force?: boolean) =>
+				runFlush({
+					resolved,
+					spans,
+					logs,
+					metrics,
+					tracesState,
+					logsState,
+					metricsState,
+					transport,
+					logPrefix: "[test]",
+					onNoOp: () => undefined,
+					force,
+				})
+
+			yield* recordSpan(spans, "first")
+			yield* Effect.promise(() => flush())
+			expect(attempts).toBe(1)
+			// Inside the cooldown a plain flush is skipped, a forced one is attempted.
+			yield* Effect.promise(() => flush())
+			expect(attempts).toBe(1)
+			yield* Effect.promise(() => flush(true))
+			expect(attempts).toBe(2)
+			expect(spans.size()).toBe(1)
+			// The forced failure re-armed the cooldown for the next plain flush.
+			yield* Effect.promise(() => flush())
+			expect(attempts).toBe(2)
+			failTraces = false
+			yield* Effect.promise(() => flush(true))
+			expect(attempts).toBe(3)
+			expect(spans.size()).toBe(0)
+		}),
+	)
+
 	vitestIt("serializes overlapping flush calls", async () => {
 		let active = 0
 		let peak = 0

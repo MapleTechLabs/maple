@@ -80,8 +80,8 @@ export interface MapleFlushableConfig {
 	/**
 	 * Background auto-flush cadence in milliseconds. Default `5000`. Set to `0`
 	 * or `false` to disable and flush purely on demand (note: the in-memory
-	 * buffer caps at 10k items and drops new spans past that, so a long-running
-	 * process that never flushes will lose data).
+	 * buffer caps at 10k items and evicts the oldest past that, so a long-running
+	 * process that never flushes will lose its earliest data).
 	 */
 	readonly autoFlushInterval?: number | false | undefined
 }

@@ -292,15 +292,31 @@ describe("makeSpanBuffer rendered 5xx responses", () => {
 })
 
 describe("makeSpanBuffer restore", () => {
-	it.effect("keeps older failed telemetry and discards newest overflow", () =>
+	const record = (buffer: ReturnType<typeof makeSpanBuffer>, name: string) =>
+		Effect.void.pipe(Effect.withSpan(name), Effect.provide(buffer.tracerLayer))
+
+	it.effect("puts failed telemetry back ahead of what arrived since", () =>
 		Effect.gen(function* () {
 			const buffer = makeSpanBuffer()
-			yield* runSpan(buffer, Effect.succeed("old"))
-			const [oldest] = buffer.drain()
-			yield* Effect.succeed(undefined).pipe(
-				Effect.withSpan("newest"),
-				Effect.provide(buffer.tracerLayer),
+			yield* record(buffer, "failed")
+			const failed = buffer.drain()
+			yield* record(buffer, "since 1")
+			yield* record(buffer, "since 2")
+
+			buffer.restore(failed)
+			assert.deepStrictEqual(
+				buffer.drain().map((span) => span.name),
+				["failed", "since 1", "since 2"],
 			)
+		}),
+	)
+
+	it.effect("trims the oldest when the restored batch overflows the cap", () =>
+		Effect.gen(function* () {
+			const buffer = makeSpanBuffer()
+			yield* record(buffer, "oldest")
+			const [oldest] = buffer.drain()
+			yield* record(buffer, "newest")
 			const [newest] = buffer.drain()
 			assert.isDefined(oldest)
 			assert.isDefined(newest)
@@ -308,8 +324,7 @@ describe("makeSpanBuffer restore", () => {
 			buffer.restore([oldest!, ...Array.from({ length: 10_000 }, () => newest!)])
 			const restored = buffer.drain()
 			assert.strictEqual(restored.length, 10_000)
-			assert.strictEqual(restored[0]?.name, "http.server GET")
-			assert.strictEqual(restored.at(-1)?.name, "newest")
+			assert.isUndefined(restored.find((span) => span.name === "oldest"))
 		}),
 	)
 })
@@ -369,4 +384,22 @@ describe("makeSpanBuffer captureException", () => {
 		buffer.captureException(new Error("boom"))
 		assert.strictEqual(buffer.size(), 0)
 	})
+})
+
+describe("makeSpanBuffer capacity", () => {
+	it.effect("keeps the newest spans when full, so the root that ends last survives", () =>
+		Effect.gen(function* () {
+			const buffer = makeSpanBuffer()
+			yield* Effect.forEach(
+				Array.from({ length: 10_000 }, (_, index) => index),
+				(index) => Effect.void.pipe(Effect.withSpan(`leaf ${index}`)),
+				{ discard: true },
+			).pipe(Effect.withSpan("chat.turn"), Effect.provide(buffer.tracerLayer))
+
+			const spans = buffer.drain()
+			assert.strictEqual(spans.length, 10_000)
+			assert.strictEqual(spans.at(-1)?.name, "chat.turn")
+			assert.isUndefined(spans.find((span) => span.name === "leaf 0"))
+		}),
+	)
 })
