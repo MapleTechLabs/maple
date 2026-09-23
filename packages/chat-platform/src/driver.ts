@@ -38,6 +38,10 @@ export interface ChatTurnDriverOptions<E, RE, RO> {
 	readonly outbound: ChatOutbound<RO>
 	readonly target: ChatTarget
 	readonly context: ChatRenderContext
+	/** Messages an earlier run posted for this turn: edited in place, and no placeholder. */
+	readonly posted?: ReadonlyArray<ChatMessageRef>
+	/** Told every message posted so far, each time one is added — what `posted` comes from. */
+	readonly onPosted?: (messages: ReadonlyArray<ChatMessageRef>) => Effect.Effect<void>
 }
 
 export const driveChatTurn = Effect.fn("ChatPlatform.driveChatTurn")(function* <E, RE, RO>(
@@ -52,7 +56,8 @@ export const driveChatTurn = Effect.fn("ChatPlatform.driveChatTurn")(function* <
 
 	const transport = yield* outbound.transport
 	const transcript = makeChatTranscript()
-	const posted: Array<ChatMessageRef> = []
+	const posted: Array<ChatMessageRef> = [...(options.posted ?? [])]
+	const resumed = posted.length > 0
 	/** What each posted message currently holds, so an unchanged one is not edited again. */
 	const sent: Array<string> = []
 	// One flush at a time: the throttle fiber and the final flush would otherwise race, and the
@@ -77,6 +82,8 @@ export const driveChatTurn = Effect.fn("ChatPlatform.driveChatTurn")(function* <
 
 	const flush = gate.withPermit(
 		Effect.gen(function* () {
+			// Messages an earlier run posted already say more than a render of no events would.
+			if (resumed && transcript.seq === 0) return
 			dirty = false
 			const message = transcript.messages.find((candidate) => candidate.id === messageId)
 			const blocks: Array<ChatBlock> =
@@ -99,6 +106,8 @@ export const driveChatTurn = Effect.fn("ChatPlatform.driveChatTurn")(function* <
 				if (index >= posted.length) {
 					posted.push(yield* transport.post(target, group))
 					sent.push(rendered)
+					// At least once: a run lost between the post and this report posts it again later.
+					if (options.onPosted !== undefined) yield* options.onPosted([...posted])
 					continue
 				}
 				// Only what changed. A turn cut into three messages would otherwise spend three edits
@@ -131,7 +140,7 @@ export const driveChatTurn = Effect.fn("ChatPlatform.driveChatTurn")(function* <
 	yield* Effect.forkChild(
 		// Best effort by nature, so the failure is a debug line and not even its tag: nothing acts on
 		// a missing typing indicator.
-		transport.typing(target).pipe(
+		(resumed ? Effect.void : transport.typing(target)).pipe(
 			Effect.tapCause(() => Effect.logDebug("Typing could not be shown")),
 			Effect.ignore,
 		),

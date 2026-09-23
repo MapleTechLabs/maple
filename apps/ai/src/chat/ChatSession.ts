@@ -36,6 +36,7 @@
 import * as Cloudflare from "alchemy/Cloudflare"
 import { Effect } from "effect"
 import {
+	decidedBy,
 	decodeChatEventPayload,
 	encodeChatEventPayload,
 	type ChatEvent,
@@ -425,14 +426,14 @@ export class ChatSession {
 	 *
 	 * By reference: the caller names the call, and the tool's name and arguments come out of this
 	 * object's own log. Accepting them from the caller would make this a second way to run a
-	 * mutating tool, and the caller is a Worker relaying a click off a chat platform.
+	 * mutating tool. It is the only way: the web app's apply route and the chat-platform relay both
+	 * land here.
 	 *
-	 * The caller is also who authorized the click: it resolved the workspace, checked that the
-	 * control named THIS conversation, and decided whose authority the change runs under —
-	 * `actingUserId` when the connector could name the clicker and they had linked, the org-level
-	 * connector identity when it could not. Reaching this object at all requires the Durable
-	 * Object binding, which only Maple's own Workers hold, and that is the same trust `beginTurn`
-	 * already runs on.
+	 * The caller is also who authorized the click and decided whose authority the change runs
+	 * under — the signed-in user's own tenant from the web route, or, from a connector, the linked
+	 * `actingUserId` or the org-level connector identity. Reaching this object at all requires the
+	 * Durable Object binding, which only Maple's own Workers hold, and that is the same trust
+	 * `beginTurn` already runs on.
 	 */
 	async settleProposal(input: ChatProposalSettlement): Promise<ChatProposalOutcome> {
 		const proposal = this.findProposal(input.toolCallId)
@@ -445,7 +446,7 @@ export class ChatSession {
 			const result =
 				input.decision === "deny"
 					? {
-							output: `Declined by ${input.approver.displayName}. The tool did not run.`,
+							output: `Declined ${decidedBy(input.approver)}. The tool did not run.`,
 							isError: true,
 						}
 					: await this.applyProposal(input, proposal)
@@ -493,12 +494,8 @@ export class ChatSession {
 	): Promise<AppliedProposal> {
 		try {
 			return await this.applier({
+				...settlement,
 				env: this.env,
-				sessionId: settlement.sessionId,
-				approver: settlement.approver,
-				...(settlement.actingUserId === undefined
-					? undefined
-					: { actingUserId: settlement.actingUserId }),
 				tool: proposal.name,
 				input: proposal.input,
 			})

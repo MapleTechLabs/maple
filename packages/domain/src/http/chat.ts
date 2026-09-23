@@ -1,70 +1,61 @@
 import { HttpApiEndpoint, HttpApiGroup } from "effect/unstable/httpapi"
-import { Schema } from "effect"
+import { Effect, Schema } from "effect"
+import { ChatProposalDecision } from "../chat-session"
 import { SessionAuthorization } from "./current-tenant"
 
 /**
- * Apply an approval-gated AI chat proposal.
+ * Decide an approval-gated AI chat proposal as the signed-in user.
  *
  * The agent's turn *stops* on a mutating tool and records a `tool-call` with `proposed: true` and
- * no result — nothing fabricates an outcome. This endpoint is where the mutation actually happens,
- * on the user's click, authenticated as the user: it re-runs the named MCP tool under the caller's
- * org, reusing the exact tool implementation so each mutation has one source of truth.
+ * no result. This endpoint settles it by reference, through the same `ChatSession.settleProposal`
+ * a chat-platform approval takes: the session reads the tool and its arguments out of its own
+ * log, and records the outcome as that call's `tool-result` — which resolves the card on every
+ * device and tells the model's next turn what happened.
  *
- * `sessionId` and `toolCallId` close the loop. Without them the applied result never reached the
- * transcript: the proposal stayed output-less forever, and the model's next turn was never told
- * the mutation happened — the precise failure the interrupt design exists to avoid.
+ * Anything else a client sends is ignored, including the `tool`/`input`/`messageId` of a tab
+ * loaded before the request went by reference.
  */
 export class ChatApplyRequest extends Schema.Class<ChatApplyRequest>("ChatApplyRequest")({
-	/** MCP tool base name, e.g. `update_dashboard_widget`. */
-	tool: Schema.String,
-	/** The proposed tool input (validated against the tool's own schema server-side). */
-	input: Schema.Unknown,
-	/** The conversation this proposal came from, so the outcome can be recorded against it. */
-	sessionId: Schema.optionalKey(Schema.String),
-	/** The assistant message that issued the proposal — the result attaches to it. */
-	messageId: Schema.optionalKey(Schema.String),
-	/** The proposed call's id, so the outcome settles that call rather than appearing loose. */
-	toolCallId: Schema.optionalKey(Schema.String),
+	/** The conversation the proposal came from; it has to be the caller's org. */
+	sessionId: Schema.String,
+	/** The proposed call's id. */
+	toolCallId: Schema.String,
+	/** Absent from a tab loaded before denials were recorded, which only ever approved. */
+	decision: ChatProposalDecision.pipe(Schema.withDecodingDefaultKey(Effect.succeed("approve" as const))),
 }) {}
 
 export class ChatApplyResponse extends Schema.Class<ChatApplyResponse>("ChatApplyResponse")({
-	/** Human-readable result text from the tool (joined content). */
+	/** What the conversation recorded as the call's result. */
 	content: Schema.String,
-	/** True when the tool ran but reported a domain-level error (e.g. validation). */
+	/** True when the proposal was declined, or the tool ran and reported a domain-level error. */
 	isError: Schema.optionalKey(Schema.Boolean),
 }) {}
 
+/** The conversation is not the caller's, or holds no proposal with this id. */
 export class ChatToolNotFoundError extends Schema.TaggedError<ChatToolNotFoundError>()(
 	"@maple/http/errors/ChatToolNotFoundError",
 	{
-		tool: Schema.String,
+		toolCallId: Schema.String,
 		message: Schema.String,
 	},
 	{ httpApiStatus: 404 },
 ) {}
 
+/** Somebody already decided this proposal. */
 export class ChatToolNotApplicableError extends Schema.TaggedError<ChatToolNotApplicableError>()(
 	"@maple/http/errors/ChatToolNotApplicableError",
 	{
-		tool: Schema.String,
+		toolCallId: Schema.String,
 		message: Schema.String,
 	},
 	{ httpApiStatus: 400 },
 ) {}
 
-export class ChatToolInvalidInputError extends Schema.TaggedError<ChatToolInvalidInputError>()(
-	"@maple/http/errors/ChatToolInvalidInputError",
-	{
-		tool: Schema.String,
-		message: Schema.String,
-	},
-	{ httpApiStatus: 400 },
-) {}
-
+/** The session could not be reached, or did not answer; the tool may still have run. */
 export class ChatToolExecutionError extends Schema.TaggedError<ChatToolExecutionError>()(
 	"@maple/http/errors/ChatToolExecutionError",
 	{
-		tool: Schema.String,
+		toolCallId: Schema.String,
 		message: Schema.String,
 	},
 	{ httpApiStatus: 500 },
@@ -75,12 +66,7 @@ export class ChatApiGroup extends HttpApiGroup.make("chat")
 		HttpApiEndpoint.post("apply", "/apply", {
 			payload: ChatApplyRequest,
 			success: ChatApplyResponse,
-			error: [
-				ChatToolNotFoundError,
-				ChatToolNotApplicableError,
-				ChatToolInvalidInputError,
-				ChatToolExecutionError,
-			],
+			error: [ChatToolNotFoundError, ChatToolNotApplicableError, ChatToolExecutionError],
 		}),
 	)
 	.prefix("/internal/chat")

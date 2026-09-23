@@ -3,7 +3,12 @@
 // is no caller that could answer a missing or malformed env var differently, and
 // a worker that boots with one is worse than one that refuses to boot. Each is a
 // tagged `EnvValidationError` so the crash names the variable.
-import { chatConnectorConfig, type ChatConnectorConfig } from "@maple/chat-platform"
+import {
+	chatConnectorConfig,
+	chatConnectorOutboundConfig,
+	type ChatConnectorConfig,
+	type ConnectorConfig,
+} from "@maple/chat-platform"
 import { optionalRedacted, optionalString, stringWithDefault } from "@maple/infra/config-helpers"
 import { Config, Context, Effect, Layer, Option, Redacted, Schema } from "effect"
 import { type MapleRegion, parseMapleRegion } from "@maple/domain/organization-regions"
@@ -100,6 +105,12 @@ export interface EnvConfig {
 	 * absent is simply reported as unavailable.
 	 */
 	readonly CHAT_CONNECTOR_CONFIG: ChatConnectorConfig
+	/**
+	 * The deployment-wide config every chat connector's OUTBOUND half declared, for posting an
+	 * alert and listing where one can go. Same neutrality as the install map; absent names are
+	 * left out, and the platform's refusal reports the gap.
+	 */
+	readonly CHAT_CONNECTOR_OUTBOUND_CONFIG: ConnectorConfig
 	readonly SLACK_CLIENT_ID: Option.Option<string>
 	readonly SLACK_CLIENT_SECRET: Option.Option<Redacted.Redacted<string>>
 	/**
@@ -215,6 +226,7 @@ const envConfig = Config.all({
 		"openid email profile organizations:read channels:read channel-webhooks:write",
 	),
 	CHAT_CONNECTOR_CONFIG: chatConnectorConfig,
+	CHAT_CONNECTOR_OUTBOUND_CONFIG: chatConnectorOutboundConfig,
 	SLACK_CLIENT_ID: optionalString("SLACK_CLIENT_ID"),
 	SLACK_CLIENT_SECRET: optionalRedacted("SLACK_CLIENT_SECRET"),
 	SANDBOX_INTERNAL_SERVICE_TOKEN: optionalRedacted("SANDBOX_INTERNAL_SERVICE_TOKEN"),

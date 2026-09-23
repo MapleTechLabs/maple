@@ -270,7 +270,77 @@ describe("discord transport", () => {
 			const error = yield* Effect.flip(transport.edit({ target, messageId: "m1" }, []))
 
 			expect(error).toBeInstanceOf(ChatOutboundError)
-			expect(error).toMatchObject({ connectorId: "discord", operation: "edit", status: 403 })
+			expect(error).toMatchObject({
+				connectorId: "discord",
+				operation: "edit",
+				status: 403,
+				reason: "auth",
+			})
+		}).pipe(Effect.provide(http.layer))
+	})
+
+	it.effect("names a token it will not honour, and gives an outage no reason", () => {
+		const http = stub([
+			{ status: 401, body: '{"message":"401: Unauthorized"}' },
+			{ status: 502, body: "bad gateway" },
+		])
+		return Effect.gen(function* () {
+			const transport = yield* discordOutbound.transport
+			expect(yield* Effect.flip(transport.post(target, []))).toMatchObject({
+				reason: "auth",
+				status: 401,
+			})
+			const outage = yield* Effect.flip(transport.post(target, []))
+			expect(outage.status).toBe(502)
+			expect("reason" in outage).toBe(false)
+		}).pipe(Effect.provide(http.layer))
+	})
+
+	it.effect("encodes a channel id before it reaches the path", () => {
+		const http = stub([{ status: 200, body: CREATED }])
+		return Effect.gen(function* () {
+			const transport = yield* discordOutbound.transport
+			yield* transport.post({ workspaceId: "guild_1", channelId: "../guilds/guild_2" }, [])
+			expect(http.seen[0].url).toBe(
+				"https://discord.com/api/v10/channels/..%2Fguilds%2Fguild_2/messages",
+			)
+		}).pipe(Effect.provide(http.layer))
+	})
+
+	it.effect("names a channel that is gone and a message it would not take", () => {
+		const http = stub([
+			{ status: 404, body: '{"message":"Unknown Channel"}' },
+			{ status: 400, body: '{"message":"Invalid Form Body"}' },
+		])
+		return Effect.gen(function* () {
+			const transport = yield* discordOutbound.transport
+			expect(yield* Effect.flip(transport.post(target, []))).toMatchObject({ reason: "not_found" })
+			expect(yield* Effect.flip(transport.post(target, []))).toMatchObject({ reason: "rejected" })
+		}).pipe(Effect.provide(http.layer))
+	})
+
+	it.effect("lists a guild's text and announcement channels in the order Discord shows them", () => {
+		const http = stub([
+			{
+				status: 200,
+				body: JSON.stringify([
+					{ id: "c_voice", type: 2, name: "standup", position: 0 },
+					{ id: "c_news", type: 5, name: "announcements", position: 2 },
+					{ id: "c_category", type: 4, name: "Engineering", position: 0 },
+					{ id: "c_general", type: 0, name: "general", position: 1 },
+				]),
+			},
+		])
+		return Effect.gen(function* () {
+			const transport = yield* discordOutbound.transport
+			const channels = yield* transport.destinations("guild_1")
+
+			expect(channels).toEqual([
+				{ id: "c_general", name: "general", private: false },
+				{ id: "c_news", name: "announcements", private: false },
+			])
+			expect(http.seen[0].url).toBe("https://discord.com/api/v10/guilds/guild_1/channels")
+			expect(http.seen[0].headers["authorization"]).toBe("Bot bot-token")
 		}).pipe(Effect.provide(http.layer))
 	})
 })

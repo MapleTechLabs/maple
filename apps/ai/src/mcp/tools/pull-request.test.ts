@@ -6,9 +6,12 @@ import { assert, describe, it } from "vitest"
 import {
 	annotatePatch,
 	classifyChangedFile,
+	pathsInDiffAnswer,
 	renderChangedFiles,
 	renderFileDiffs,
+	renderPullRequestContext,
 	reviewCallBudget,
+	reviewablePathsInListing,
 } from "./pull-request"
 
 describe("annotatePatch", () => {
@@ -100,14 +103,14 @@ describe("renderChangedFiles", () => {
 			file("infra/alchemy.run.ts"),
 		])
 		const text = result.content[0]?.text ?? ""
-		assert.include(text, "Files to review: 2.")
-		assert.include(text, `${reviewCallBudget(2)} tool calls`)
+		assert.include(text, "Files to review: 3.")
+		assert.include(text, `${reviewCallBudget(3)} tool calls`)
 	})
 
 	it("keeps the budget between a floor and a ceiling", () => {
-		assert.equal(reviewCallBudget(0), 6)
-		assert.equal(reviewCallBudget(3), 10)
-		assert.equal(reviewCallBudget(100), 40)
+		assert.equal(reviewCallBudget(0), 8)
+		assert.equal(reviewCallBudget(3), 15)
+		assert.equal(reviewCallBudget(100), 60)
 	})
 })
 
@@ -147,5 +150,71 @@ describe("renderFileDiffs", () => {
 		const text = renderFileDiffs([file("a.ts")], ["nope.ts", "a.ts"]).content[0]?.text ?? ""
 		assert.include(text, "'nope.ts' is not a file this pull request changes")
 		assert.include(text, "## a.ts")
+	})
+})
+
+describe("renderPullRequestContext", () => {
+	it("lists failing checks first and clips long comments", () => {
+		const result = renderPullRequestContext(7, {
+			commits: [{ sha: "abcdef1234567890", message: "feat: add orders\n\nbody" }],
+			comments: [{ author: "octo", path: "src/a.ts", line: 3, body: "x".repeat(1_000) }],
+			checks: [
+				{ name: "lint", status: "completed", conclusion: "success", title: null },
+				{ name: "typecheck", status: "completed", conclusion: "failure", title: "2 errors" },
+			],
+		})
+		const text = result.content[0]?.text ?? ""
+		assert.include(text, "- abcdef1 feat: add orders")
+		assert.include(text, "- @octo on src/a.ts:3: ")
+		assert.notInclude(text, "x".repeat(500))
+		assert.isBelow(text.indexOf("typecheck: failure · 2 errors"), text.indexOf("lint: success"))
+	})
+})
+
+/** Coverage reads these answers back, so the parsers are tested against the renderers themselves. */
+describe("reading the answers back", () => {
+	const file = (path: string, overrides: Partial<{ previousPath: string; patch: null }> = {}) => ({
+		path,
+		previousPath: overrides.previousPath ?? null,
+		status: "modified" as const,
+		additions: 2,
+		deletions: 1,
+		patch: overrides.patch === null ? null : "@@ -1 +1,2 @@\n+x\n+y",
+	})
+
+	it("finds the reviewed files that have a patch in a pr_changed_files answer", () => {
+		const answer = renderChangedFiles("octo/shop", 7, [
+			file("src/orders.ts"),
+			file("src/orders.test.ts"),
+			file("src/moved.ts", { previousPath: "src/old.ts" }),
+			file("infra/alchemy.run.ts"),
+			file("package.json"),
+			file("docs/orders.md"),
+			file("bun.lock"),
+			file("assets/logo.ts", { patch: null }),
+		]).content[0]!.text
+		assert.deepEqual(reviewablePathsInListing(answer), [
+			"src/orders.ts",
+			"src/orders.test.ts",
+			"src/moved.ts",
+			"infra/alchemy.run.ts",
+			"package.json",
+		])
+	})
+
+	it("finds only the files whose diff a pr_file_diff answer showed", () => {
+		const big = {
+			...file("src/big.ts"),
+			patch: `@@ -1,0 +1,1400 @@\n${`+${"x".repeat(60)}\n`.repeat(1400)}`,
+		}
+		const answer = renderFileDiffs(
+			[file("src/a.ts"), big, file("src/c.ts")],
+			["src/a.ts", "src/missing.ts", "src/big.ts", "src/c.ts"],
+		).content[0]!.text
+		assert.include(answer, "Not included")
+		const shown = pathsInDiffAnswer(answer)
+		// The unknown path shows nothing, and the deferred one is named without its diff.
+		assert.deepEqual(shown, ["src/a.ts", "src/c.ts"])
+		assert.include(answer, "request them in one more call: src/big.ts")
 	})
 })

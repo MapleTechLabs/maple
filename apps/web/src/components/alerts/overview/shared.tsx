@@ -111,7 +111,14 @@ export function NotifyChannels({
 			<TooltipTrigger render={<span className="inline-flex cursor-default items-center gap-1.5" />}>
 				<span className="flex items-center gap-1">
 					{shown.map((d) => (
-						<ProviderLogo key={d.id} type={d.type} size={28} bare className="flex items-center" />
+						<ProviderLogo
+							key={d.id}
+							type={d.type}
+							chatConnector={d.chatConnector}
+							size={28}
+							bare
+							className="flex items-center"
+						/>
 					))}
 				</span>
 				{extra > 0 && <span className="text-muted-foreground text-xs tabular-nums">+{extra}</span>}

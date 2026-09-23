@@ -48,6 +48,7 @@ import {
 	type ConversationNotRecorded,
 } from "./conversation.ts"
 import { chatTurnEvents, sessionUnreachable } from "./events.ts"
+import type { RelayTurnCheckpoint } from "./settle.ts"
 
 /** The org behind a workspace, and who the person acting is in Maple, when one was asked about. */
 export interface RelayWorkspace {
@@ -121,6 +122,8 @@ export interface RelayPorts<R = never> {
 	 * it cannot even answer in — so the host answers this from what it last said here.
 	 */
 	readonly announceUnlinked: Effect.Effect<boolean>
+	/** Checkpoint the turn's posted messages, for settling it after an eviction (`./settle.ts`). */
+	readonly recordTurn: (checkpoint: RelayTurnCheckpoint) => Effect.Effect<void>
 }
 
 /**
@@ -339,6 +342,15 @@ const relayMessage = Effect.fn("chat_bot.relay_turn")(function* <R>(
 	}
 
 	yield* Effect.annotateCurrentSpan({ "maple.chat.relay": "started" })
+	const checkpoint: RelayTurnCheckpoint = {
+		connector: message.connector,
+		sessionId,
+		turnMessageId: claimed.value.turnMessageId,
+		cursor: claimed.value.cursor,
+		target: conversation.target,
+		messages: [],
+		recordedAt: now,
+	}
 	yield* driveChatTurn({
 		// From the cursor the claim answered with, so the turn's own first event is the first one
 		// this sees.
@@ -351,6 +363,7 @@ const relayMessage = Effect.fn("chat_bot.relay_turn")(function* <R>(
 			sessionId,
 			chartImageUrl: (ref) => ports.chartImageUrl(orgId, ref),
 		},
+		onPosted: (messages) => ports.recordTurn({ ...checkpoint, messages }),
 	}).pipe(Effect.timeout(RELAY_TIMEOUT))
 })
 
@@ -590,9 +603,17 @@ export const relayWithWorkspace = <R>(
 	lookup: Effect.Effect<Option.Option<ResolvedWorkspace>, WorkspaceLookupFailed>,
 	ports: (resolveWorkspace: RelayPorts<R>["resolveWorkspace"]) => RelayPorts<R>,
 ): Effect.Effect<void, never, Exclude<R, ConnectorCredentials>> =>
+	withWorkspace(config, lookup, ports, (relayPorts) => relayInboundEvent(event, relayPorts))
+
+/** Run `body` against ports whose workspace and credential share the one memoized read. */
+export const withWorkspace = <A, R>(
+	config: ConnectorConfig,
+	lookup: Effect.Effect<Option.Option<ResolvedWorkspace>, WorkspaceLookupFailed>,
+	ports: (resolveWorkspace: RelayPorts<R>["resolveWorkspace"]) => RelayPorts<R>,
+	body: (ports: RelayPorts<R>) => Effect.Effect<A, never, R>,
+): Effect.Effect<A, never, Exclude<R, ConnectorCredentials>> =>
 	Effect.flatMap(Effect.cached(lookup), (read) =>
-		relayInboundEvent(
-			event,
+		body(
 			ports(() =>
 				Effect.map(
 					read,

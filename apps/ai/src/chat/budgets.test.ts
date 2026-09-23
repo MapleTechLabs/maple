@@ -14,6 +14,7 @@ import {
 	INVESTIGATION_BUDGET,
 	liveContextLimit,
 	MAX_LIVE_CONTEXT_TOKENS,
+	PR_REPLY_BUDGET,
 	PR_REVIEW_BUDGET,
 	type AgentBudget,
 } from "./budgets"
@@ -67,7 +68,7 @@ describe("agent budgets", () => {
 		const margin = 5 * 60 * 1000
 		expect(ms(CHAT_BUDGET) + margin).toBeLessThanOrEqual(TURN_STALE_MS)
 		// An unattended pass that ends without its report gets a close-out run under the same budget.
-		for (const budget of [INVESTIGATION_BUDGET, PR_REVIEW_BUDGET]) {
+		for (const budget of [INVESTIGATION_BUDGET, PR_REVIEW_BUDGET, PR_REPLY_BUDGET]) {
 			expect(2 * ms(budget) + margin).toBeLessThanOrEqual(TURN_STALE_MS)
 		}
 	})

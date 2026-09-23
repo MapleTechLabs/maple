@@ -2,7 +2,7 @@
  * The rulesets Maple's chat agents run under.
  *
  * `MUTATING_TOOL_NAMES` stays exactly where it is and keeps its shape: it seeds `DEFAULT_RULESET`
- * here, and it remains the allowlist floor for `POST /internal/chat/apply`. The equivalence is pinned
+ * here, and it remains the allowlist floor for applying an approval. The equivalence is pinned
  * by a test in `apps/api/src/mcp/tools/mutating.test.ts` so day-one behaviour cannot drift by
  * accident.
  */
@@ -53,6 +53,7 @@ export const READ_ONLY_RULESET: PermissionRuleset = [
  */
 export const PR_REVIEW_TOOLS: ReadonlyArray<string> = [
 	"pr_changed_files",
+	"pr_context",
 	"pr_file_diff",
 	"sandbox_grep",
 	"sandbox_list_files",
@@ -69,6 +70,12 @@ export const PR_REVIEW_TOOLS: ReadonlyArray<string> = [
 	"list_metrics",
 	"audit_setup",
 	"get_instrumentation_recommendations",
+]
+
+/** A reply reads what a review reads; its only writes are its own completion tools. */
+export const PR_REPLY_RULESET: PermissionRuleset = [
+	new PermissionRule({ tool: "*", action: "deny" }),
+	...[...PR_REVIEW_TOOLS].sort().map((tool) => new PermissionRule({ tool, action: "allow" })),
 ]
 
 export const PR_REVIEW_RULESET: PermissionRuleset = [

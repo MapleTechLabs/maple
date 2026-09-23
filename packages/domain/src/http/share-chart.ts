@@ -91,22 +91,6 @@ export class ChartTimeseries extends Schema.Class<ChartTimeseries>("ChartTimeser
 	/** Drawn as a dashed rule. `null` on a chart that is not about a limit. */
 	threshold: Schema.NullOr(Schema.Finite),
 	breachSide: ChartBreachSide,
-	/**
-	 * The single series again, flat — **for one release, and only on
-	 * `/v2/share/alert-chart`.**
-	 *
-	 * api and web are separate Workers that can serve different commits at
-	 * once: alchemy isolates per-resource failures, and on 2026-09-07 prod ran
-	 * a six-hour-old api behind a current web because one upload was rejected
-	 * and its siblings shipped. Alert chart images are live in notifications
-	 * already delivered, so a window where they 500 is a window a customer
-	 * sees. Emitting the old field alongside the new one is what makes the
-	 * change safe in *both* deploy orders rather than one.
-	 *
-	 * Delete once a deploy has put both Workers past this commit: nothing in
-	 * this repo reads it, and `renderChartImage` only falls back to it.
-	 */
-	points: Schema.optionalKey(Schema.Array(ChartPoint)),
 }) {}
 
 /** A ranking: categories, not a time axis, and no alert counterpart. */

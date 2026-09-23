@@ -18,6 +18,7 @@ import {
 	RoleName,
 	type AlertDestinationCreateRequest,
 	type AlertDestinationUpdateRequest,
+	type ChatWorkspaceId as ChatWorkspaceIdType,
 	type OrgId,
 	type UserId,
 } from "@maple/domain/http"
@@ -39,6 +40,7 @@ import {
 	type OrgMembersServiceApi,
 } from "@maple/backend/services/org/OrgMembersService"
 import { SlackBotTokenResolver } from "@maple/backend/services/integrations/slack-bot-token"
+import { ChatAlertPoster, type ChatChannelChoice } from "./ChatAlertPoster"
 import { PAGERDUTY_ROUTING_KEY_PATTERN, verifyPagerDutyRoutingKey } from "./delivery/transports/pagerduty"
 import {
 	fetchTelegramChats,
@@ -130,8 +132,23 @@ const TELEGRAM_MALFORMED_TOKEN_MESSAGE =
 /** A chat id is not a secret, but it is also not a name — label it as what it is. */
 const telegramSummary = (chatId: string) => `Chat ${chatId.trim()}`
 
+/**
+ * The workspace's name is the summary, and the connector rides in the public config so the
+ * dashboard draws the right mark without a second read. The workspace id is not a secret either,
+ * and an edit lists the same workspace's channels from it.
+ */
+const chatPublicConfig = (
+	workspaceId: ChatWorkspaceIdType,
+	channel: ChatChannelChoice,
+): DestinationPublicConfig => ({
+	summary: channel.workspaceName,
+	channelLabel: `#${channel.channelName}`,
+	chatConnector: channel.connector,
+	chatWorkspaceId: workspaceId,
+})
+
 const buildPublicConfig = (
-	request: Exclude<AlertDestinationCreateRequest, { readonly type: "email" }>,
+	request: Exclude<AlertDestinationCreateRequest, { readonly type: "email" | "chat" }>,
 ): DestinationPublicConfig =>
 	Match.value(request).pipe(
 		Match.discriminatorsExhaustive("type")({
@@ -160,7 +177,7 @@ const buildPublicConfig = (
 	)
 
 const buildSecretConfig = (
-	request: Exclude<AlertDestinationCreateRequest, { readonly type: "hazel-oauth" | "email" }>,
+	request: Exclude<AlertDestinationCreateRequest, { readonly type: "hazel-oauth" | "email" | "chat" }>,
 ): DestinationSecretConfig =>
 	Match.value(request).pipe(
 		Match.discriminatorsExhaustive("type")({
@@ -211,6 +228,12 @@ const destinationDocumentFromRow = (
 		summary: publicConfig.summary,
 		channelLabel: publicConfig.channelLabel,
 		memberUserIds: publicConfig.memberUserIds != null ? [...publicConfig.memberUserIds] : null,
+		...(publicConfig.chatConnector === undefined
+			? undefined
+			: { chatConnector: publicConfig.chatConnector }),
+		...(publicConfig.chatWorkspaceId === undefined
+			? undefined
+			: { chatWorkspaceId: publicConfig.chatWorkspaceId }),
 		lastTestedAt:
 			row.lastTestedAt == null ? null : decodeIsoDateTimeStringSync(row.lastTestedAt.toISOString()),
 		lastTestError: row.lastTestError,
@@ -319,6 +342,7 @@ export class AlertDestinationsService extends Context.Service<
 		const email = yield* EmailService
 		const orgMembers = yield* OrgMembersService
 		const slackBotToken = yield* SlackBotTokenResolver
+		const chatAlertPoster = yield* ChatAlertPoster
 		const encryptionKey = yield* parseAlertDestinationEncryptionKey(
 			Redacted.value(env.MAPLE_INGEST_KEY_ENCRYPTION_KEY),
 		)
@@ -328,6 +352,7 @@ export class AlertDestinationsService extends Context.Service<
 			runtime,
 			email,
 			resolveSlackBotToken: slackBotToken.resolve,
+			postChatAlert: chatAlertPoster.post,
 		})
 
 		const dbExecute = makeDbExecute(database, "AlertDestinationsService", makePersistenceError)
@@ -486,6 +511,18 @@ export class AlertDestinationsService extends Context.Service<
 				const members = yield* resolveEmailMembers(orgId, request.memberUserIds)
 				publicConfig = emailPublicConfig(members)
 				secretConfig = emailSecretConfig(members)
+			} else if (request.type === "chat") {
+				// The workspace must be the org's, the channel one its connector lists, and the
+				// connector and channel name are read from those — never taken from the request.
+				const channelId = request.channelId.trim()
+				const channel = yield* chatAlertPoster.findChannel(orgId, request.workspaceId, channelId)
+				publicConfig = chatPublicConfig(request.workspaceId, channel)
+				secretConfig = {
+					type: "chat",
+					workspaceId: request.workspaceId,
+					channelId,
+					channelName: channel.channelName,
+				}
 			} else {
 				publicConfig = buildPublicConfig(request)
 				secretConfig =
@@ -724,6 +761,41 @@ export class AlertDestinationsService extends Context.Service<
 							} satisfies DestinationSecretConfig,
 						})
 					},
+					chat: (r) =>
+						Effect.gen(function* () {
+							const previous = hydrated.secretConfig
+							if (previous.type !== "chat") {
+								return yield* new AlertDestinationStoredConfigInvalidError({
+									message: "Stored destination secret is not a chat destination",
+									destinationId,
+									component: "secret_config",
+									cause: previous.type,
+								})
+							}
+							// The workspace is fixed at creation; only the channel moves, and a moved
+							// channel is checked against the workspace exactly as a new one is.
+							const channelId = normalizeOptionalString(r.channelId)
+							if (channelId === null || channelId === previous.channelId) {
+								return {
+									nextPublicConfig: hydrated.publicConfig,
+									nextSecretConfig: previous satisfies DestinationSecretConfig,
+								}
+							}
+							const channel = yield* chatAlertPoster.findChannel(
+								orgId,
+								previous.workspaceId,
+								channelId,
+							)
+							return {
+								nextPublicConfig: chatPublicConfig(previous.workspaceId, channel),
+								nextSecretConfig: {
+									type: "chat" as const,
+									workspaceId: previous.workspaceId,
+									channelId,
+									channelName: channel.channelName,
+								} satisfies DestinationSecretConfig,
+							}
+						}),
 					email: (r) =>
 						Effect.gen(function* () {
 							const supplied =
@@ -956,7 +1028,7 @@ export class AlertDestinationsService extends Context.Service<
 	}),
 }) {
 	static readonly layer = Layer.effect(this, this.make).pipe(
-		Layer.provide(SlackBotTokenResolver.layer),
+		Layer.provide(Layer.mergeAll(SlackBotTokenResolver.layer, ChatAlertPoster.layer)),
 		Layer.provide(Layer.mergeAll(EmailService.layer, HazelOAuthService.layer, OrgMembersService.layer)),
 	)
 }

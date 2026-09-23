@@ -5,11 +5,15 @@ import {
 	MAX_EMAIL_MEMBER_RECIPIENTS,
 } from "@/lib/alerts/form-utils"
 import {
+	chatDestinationProvider,
 	DESTINATION_TYPES,
+	destinationProvider,
 	PROVIDERS,
 	ProviderLogo,
 	type DestinationProvider,
 } from "@/components/alerts/destination-provider"
+import { chatIntegrationId } from "@/components/integrations/integration-catalog"
+import { useChatConnectorGate } from "@/hooks/use-organization-feature-flags"
 import {
 	ArrowRightIcon,
 	ArrowRotateClockwiseIcon,
@@ -30,7 +34,7 @@ import { displayError, publicError } from "@/lib/error-messages"
 import { disabledResultAtom } from "@/lib/services/atoms/disabled-result-atom"
 import { Result, useAtomRefresh, useAtomSet, useAtomValue } from "@/lib/effect-atom"
 import type { HazelChannelsListResponse } from "@maple/domain/http"
-import type { V2SlackChannelList, V2TelegramChat } from "@maple/domain/http/v2"
+import type { V2ChatDestinationList, V2SlackChannelList, V2TelegramChat } from "@maple/domain/http/v2"
 import { Exit, Option } from "effect"
 import { Link } from "@tanstack/react-router"
 import { useEffect, useMemo, useState } from "react"
@@ -129,6 +133,9 @@ function isFormReady(form: DestinationFormState, isEditing: boolean): boolean {
 			// The current selection is prefilled when editing, so a member is
 			// always required.
 			return form.memberUserIds.length > 0 && form.memberUserIds.length <= MAX_EMAIL_MEMBER_RECIPIENTS
+		case "chat":
+			// Editing keeps the stored channel when left untouched; creating requires a pick.
+			return form.chatWorkspaceId !== null && (isEditing || form.chatChannelId.length > 0)
 		default:
 			return true
 	}
@@ -136,14 +143,19 @@ function isFormReady(form: DestinationFormState, isEditing: boolean): boolean {
 
 function ProviderTile({
 	type,
+	chatConnector,
+	label,
 	selected,
 	onSelect,
 }: {
 	type: AlertDestinationType
+	chatConnector?: string
+	/** In place of the provider's own label — a chat tile names its workspace. */
+	label?: string
 	selected: boolean
 	onSelect: () => void
 }) {
-	const provider = PROVIDERS[type]
+	const provider = destinationProvider({ type, chatConnector })
 	return (
 		<button
 			type="button"
@@ -169,8 +181,8 @@ function ProviderTile({
 				}}
 			/>
 			<div className="relative flex w-full items-center gap-2.5">
-				<ProviderLogo type={type} size={32} />
-				<span className="text-sm font-semibold">{provider.label}</span>
+				<ProviderLogo type={type} chatConnector={chatConnector} size={32} />
+				<span className="truncate text-sm font-semibold">{label ?? provider.label}</span>
 			</div>
 			<p className="relative text-[11px] leading-snug text-muted-foreground">{provider.description}</p>
 		</button>
@@ -908,6 +920,263 @@ function SlackBotFields({
 	)
 }
 
+/**
+ * One tile per linked chat workspace, for every connector this org has staged on. The workspace
+ * is the choice — a connector with nothing linked offers nothing to post to — so these stand in
+ * for a single `chat` tile. Nothing renders until the list answers, and nothing when it fails:
+ * the rest of the picker stays usable either way.
+ */
+function ChatWorkspaceTiles({
+	form,
+	onFormChange,
+}: {
+	form: DestinationFormState
+	onFormChange: (updater: (current: DestinationFormState) => DestinationFormState) => void
+}) {
+	const gate = useChatConnectorGate()
+	const connectorsResult = useAtomValue(
+		retainedQueryV2("chatIntegration", "connectors", { reactivityKeys: ["chatIntegration"] }),
+	)
+	const workspaces = Result.builder(connectorsResult)
+		.onSuccess((response) =>
+			response.data
+				.filter((connector) => gate(connector.id))
+				.flatMap((connector) =>
+					connector.workspaces.map((workspace) => ({ connector: connector.id, workspace })),
+				),
+		)
+		.orElse(() => [])
+
+	return workspaces.map(({ connector, workspace }) => (
+		<ProviderTile
+			key={workspace.id}
+			type="chat"
+			chatConnector={connector}
+			label={workspace.name}
+			selected={form.type === "chat" && form.chatWorkspaceId === workspace.id}
+			onSelect={() =>
+				onFormChange(() => ({
+					...defaultDestinationForm("chat"),
+					chatWorkspaceId: workspace.id,
+					chatConnector: connector,
+				}))
+			}
+		/>
+	))
+}
+
+/**
+ * The channel a `chat` destination posts to, picked from what the workspace's connector says the
+ * bot can post in. The same ranked, capped search as the other channel pickers.
+ */
+function ChatDestinationFields({
+	form,
+	onFormChange,
+	isEditing,
+}: {
+	form: DestinationFormState
+	onFormChange: (updater: (current: DestinationFormState) => DestinationFormState) => void
+	isEditing: boolean
+}) {
+	const connectorName = chatDestinationProvider(form.chatConnector).label
+	const workspaceId = form.chatWorkspaceId
+	// No workspace (a stored destination that predates the field) is nothing to list: the shared
+	// disabled atom, never a request with an empty id.
+	const channelsAtom =
+		workspaceId === null
+			? disabledResultAtom<V2ChatDestinationList>()
+			: retainedQueryV2("chatIntegration", "destinations", {
+					params: { id: workspaceId },
+					reactivityKeys: ["chatIntegration"],
+				})
+	const channelsResult = useAtomValue(channelsAtom)
+	const refreshChannelsAtom = useAtomRefresh(channelsAtom)
+	// Refreshing the shared disabled atom would poke every disabled reader in the app.
+	const refreshChannels = workspaceId === null ? () => {} : refreshChannelsAtom
+	// A failed refetch keeps the last list, as the other channel pickers do: emptying the picker
+	// mid-selection would silently drop the channel being picked.
+	const channels = useMemo(() => {
+		const response = Result.isSuccess(channelsResult)
+			? channelsResult.value
+			: Result.isFailure(channelsResult)
+				? Option.getOrNull(Option.map(channelsResult.previousSuccess, (previous) => previous.value))
+				: null
+		return (response?.destinations ?? []).map((destination) => ({
+			id: destination.id,
+			name: destination.name,
+			is_private: destination.private,
+			// Whatever the connector lists is somewhere it can post.
+			is_member: true,
+		}))
+	}, [channelsResult])
+	const channelsLoading = workspaceId !== null && channelsResult.waiting
+
+	const [channelQuery, setChannelQuery] = useState("")
+	const selectedChannel = channels.find((channel) => channel.id === form.chatChannelId)
+	const searchQuery = resolveSearchQuery(channelQuery, selectedChannel)
+	const { visible: visibleChannels, truncated } = useMemo(
+		() => channelPickerView(channels, searchQuery, form.chatChannelId || null),
+		[channels, searchQuery, form.chatChannelId],
+	)
+	const visibleChannelIds = useMemo(() => visibleChannels.map((channel) => channel.id), [visibleChannels])
+
+	const failure = Result.isFailure(channelsResult) ? displayError(channelsResult.cause) : null
+
+	if (workspaceId === null) {
+		return (
+			<div className="space-y-2 rounded-md border border-dashed border-border/60 p-3">
+				<p className="text-xs text-muted-foreground">
+					This destination&apos;s chat workspace isn&apos;t available. Create a new destination from
+					a linked workspace instead.
+				</p>
+			</div>
+		)
+	}
+	// The one failure with a fix the reader can make: a grant that predates channel access.
+	const needsReinstall = failure?.code === "integration_not_connected"
+
+	const storedChannelName =
+		isEditing && form.chatChannelId.length === 0 && form.chatChannelName.length > 0
+			? form.chatChannelName
+			: null
+
+	const label = (id: string): string => {
+		const channel = channels.find((candidate) => candidate.id === id)
+		return channel === undefined ? `#${form.chatChannelName || id}` : channelLabel(channel)
+	}
+
+	return (
+		<div className="space-y-1.5">
+			<div className="flex items-center justify-between gap-2">
+				<Label htmlFor="destination-chat-channel" className="text-xs">
+					Channel
+				</Label>
+				<div className="flex min-w-0 items-center gap-1.5">
+					{storedChannelName ? (
+						<span className="truncate text-[11px] text-muted-foreground">
+							Currently{" "}
+							<span className="font-medium text-foreground">#{storedChannelName}</span>
+						</span>
+					) : null}
+					<Button
+						type="button"
+						size="xs"
+						variant="ghost"
+						className="-my-1 h-6 gap-1 px-1.5 text-[11px] text-muted-foreground"
+						onClick={refreshChannels}
+						disabled={channelsLoading}
+						title={`Re-fetch the channel list from ${connectorName}`}
+					>
+						<ArrowRotateClockwiseIcon
+							size={12}
+							className={cn(channelsLoading && "animate-spin")}
+						/>
+						{channelsLoading ? "Refreshing…" : "Refresh"}
+					</Button>
+				</div>
+			</div>
+			<Combobox
+				value={form.chatChannelId || null}
+				items={visibleChannelIds}
+				filter={null}
+				onInputValueChange={(value) => setChannelQuery(value)}
+				itemToStringLabel={(value: string) => label(value)}
+				onValueChange={(value) => {
+					if (value == null) return
+					const channel = channels.find((candidate) => candidate.id === value)
+					onFormChange((current) => ({
+						...current,
+						chatChannelId: value,
+						chatChannelName: channel?.name ?? current.chatChannelName,
+					}))
+				}}
+			>
+				<ComboboxInput
+					id="destination-chat-channel"
+					placeholder={channelsLoading ? "Loading channels…" : "Search channels…"}
+					showClear
+					className="w-full"
+					startAddon={<MagnifierIcon />}
+				/>
+				<ComboboxContent>
+					<ComboboxEmpty>
+						{channelsLoading
+							? "Loading channels…"
+							: channels.length === 0
+								? "No channels loaded yet."
+								: "No matching channels."}
+					</ComboboxEmpty>
+					<ComboboxList>
+						{visibleChannels.map((channel) => (
+							<ComboboxItem key={channel.id} value={channel.id}>
+								<span className="flex items-center gap-2">
+									<span className="truncate">#{channel.name}</span>
+									{channel.is_private ? (
+										<span className="text-[11px] text-muted-foreground">private</span>
+									) : null}
+								</span>
+							</ComboboxItem>
+						))}
+					</ComboboxList>
+					{truncated ? (
+						<ComboboxStatus>
+							{searchQuery.trim().length > 0
+								? `Showing the closest ${CHANNEL_RESULT_LIMIT} matches — keep typing to narrow.`
+								: `Showing ${CHANNEL_RESULT_LIMIT} of ${channels.length} channels — type to narrow.`}
+						</ComboboxStatus>
+					) : null}
+				</ComboboxContent>
+			</Combobox>
+			{needsReinstall ? (
+				<div className="flex flex-wrap items-center gap-2">
+					<p className="text-[11px] text-destructive">{failure?.message}</p>
+					<Button
+						type="button"
+						size="xs"
+						variant="outline"
+						render={
+							<Link
+								to="/integrations"
+								search={{ integration: chatIntegrationId(form.chatConnector) }}
+								target="_blank"
+								rel="noreferrer"
+							/>
+						}
+					>
+						Open {connectorName} integration
+						<ArrowRightIcon size={12} />
+					</Button>
+				</div>
+			) : failure !== null ? (
+				<div className="flex items-center gap-2">
+					<p className="text-[11px] text-destructive">
+						{failure.type === "permission_error"
+							? "Listing a workspace's channels is limited to org admins."
+							: `Couldn't load ${connectorName} channels.`}
+					</p>
+					{failure.type === "permission_error" ? null : (
+						<Button type="button" size="xs" variant="ghost" onClick={refreshChannels}>
+							Retry
+						</Button>
+					)}
+				</div>
+			) : channels.length === 0 && !channelsLoading ? (
+				<p className="text-[11px] text-muted-foreground">
+					No channels returned. Make sure the Maple bot can see at least one channel, then hit
+					Refresh.
+				</p>
+			) : null}
+			<p className="flex items-start gap-1.5 text-[11px] text-muted-foreground">
+				<CircleInfoIcon size={12} className="mt-0.5 shrink-0" />
+				<span>
+					Private channels are listed once the Maple bot has been added to them. Use Send test after
+					saving to check it can post.
+				</span>
+			</p>
+		</div>
+	)
+}
+
 function FieldHelper({ provider }: { provider: DestinationProvider }) {
 	if (!provider.docsUrl) return null
 	return (
@@ -1024,14 +1293,19 @@ export function DestinationDialog({
 	saving,
 	onSave,
 }: DestinationDialogProps) {
-	const provider = PROVIDERS[form.type]
+	// The connector's name and mark for a `chat` destination; the save button keeps the generic
+	// provider's colours, whose ink is measured against its own accent.
+	const provider = destinationProvider({ type: form.type, chatConnector: form.chatConnector })
+	const buttonProvider = PROVIDERS[form.type]
 
 	return (
 		<Dialog open={open} onOpenChange={onOpenChange}>
 			<DialogContent className="sm:max-w-xl">
 				<DialogHeader>
 					<DialogTitle className="flex items-center gap-2.5">
-						{isEditing ? <ProviderLogo type={form.type} size={28} /> : null}
+						{isEditing ? (
+							<ProviderLogo type={form.type} chatConnector={form.chatConnector} size={28} />
+						) : null}
 						{isEditing ? `Edit ${provider.label} destination` : "Add destination"}
 					</DialogTitle>
 					<DialogDescription>
@@ -1057,6 +1331,7 @@ export function DestinationDialog({
 										onSelect={() => onFormChange(() => defaultDestinationForm(type))}
 									/>
 								))}
+								<ChatWorkspaceTiles form={form} onFormChange={onFormChange} />
 							</div>
 						</div>
 					)}
@@ -1281,6 +1556,14 @@ export function DestinationDialog({
 									</p>
 								))}
 
+							{form.type === "chat" && (
+								<ChatDestinationFields
+									form={form}
+									onFormChange={onFormChange}
+									isEditing={isEditing}
+								/>
+							)}
+
 							{form.type === "hazel-oauth" && (
 								<HazelOAuthFields
 									form={form}
@@ -1323,9 +1606,9 @@ export function DestinationDialog({
 						style={{
 							// `accentOn` is the ink the provider has measured against its own
 							// accent — never assume a brand color is dark enough for white.
-							background: provider.accent,
-							borderColor: provider.accent,
-							color: provider.accentOn,
+							background: buttonProvider.accent,
+							borderColor: buttonProvider.accent,
+							color: buttonProvider.accentOn,
 						}}
 					>
 						{saving ? <LoaderIcon size={14} className="animate-spin" /> : null}

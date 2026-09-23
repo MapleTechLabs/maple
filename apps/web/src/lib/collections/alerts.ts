@@ -13,6 +13,8 @@ import {
 	AlertRuleId,
 	AlertSeverity,
 	AlertSignalType,
+	ChatConnectorId,
+	ChatWorkspaceId,
 	ErrorIssueId,
 	IsoDateTimeString,
 	QueryBuilderQueryDraftSchema,
@@ -319,6 +321,8 @@ const AlertDestinationPublicConfig = Schema.Struct({
 	summary: Schema.String,
 	channelLabel: Schema.NullOr(Schema.String),
 	memberUserIds: Schema.optionalKey(Schema.Array(Schema.String)),
+	chatConnector: Schema.optionalKey(ChatConnectorId),
+	chatWorkspaceId: Schema.optionalKey(ChatWorkspaceId),
 })
 const decodeDestinationPublicConfig = Schema.decodeUnknownOption(AlertDestinationPublicConfig)
 
@@ -344,6 +348,12 @@ export const rowToAlertDestinationDocument = (row: AlertDestinationRow): AlertDe
 		summary: publicConfig.summary,
 		channelLabel: publicConfig.channelLabel,
 		memberUserIds: publicConfig.memberUserIds != null ? [...publicConfig.memberUserIds] : null,
+		...(publicConfig.chatConnector === undefined
+			? undefined
+			: { chatConnector: publicConfig.chatConnector }),
+		...(publicConfig.chatWorkspaceId === undefined
+			? undefined
+			: { chatWorkspaceId: publicConfig.chatWorkspaceId }),
 		lastTestedAt: row.last_tested_at != null ? decodeIso(row.last_tested_at) : null,
 		lastTestError: row.last_test_error,
 		createdAt: decodeIso(row.created_at),

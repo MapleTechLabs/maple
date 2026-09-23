@@ -141,6 +141,7 @@ describe("runChatTurn tool failures", () => {
 				type: "tool-call",
 				messageId: "msg-1",
 				callId: "call-1",
+				label: "Creating a dashboard",
 				name: "create_dashboard",
 				input: { name: "Checkout" },
 				proposed: true,
