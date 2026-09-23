@@ -66,7 +66,12 @@ across regions because there is no routing.
 2. **Three Tinybird tokens, three roles**: workspace admin token as `TINYBIRD_SIGNING_KEY`, a scoped
    runtime read token as `TINYBIRD_TOKEN`, an append-only token for the gateway. Sign a throwaway
    JWT to prove the signing key before trusting it (the 2026-09-04 incident).
-3. **PlanetScale**: the `maple-eu` database in eu-central, empty. That is all: the deploy adopts
+3. **PlanetScale**: the `maple-eu` database in eu-central, empty, on a cluster size whose
+   `max_connections` seats the instance: Electric's default pool (20) plus its replication
+   connection, the two declared Hyperdrive configs (`originConnectionLimit: 8` each, raise with
+   the cluster), the gateway through PSBouncer and a few admin slots, so 50 or more. The size
+   first chosen gave 25 and Electric crash-looped on `too_many_connections`. That is all: the
+   deploy adopts
    its `main` branch and applies the migrations, and declares on it the gateway's role, Electric's
    replication role, one role per Worker consumer and a Hyperdrive config on each
    (`declareMapleDb` in `alchemy.run.ts`).
