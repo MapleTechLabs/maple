@@ -305,3 +305,14 @@ export function stageDeploysElectric(stage: MapleStage): boolean {
 export function resolveElectricTaskSize(stage: MapleStage): IngestTaskSize {
 	return stage.kind === "prd" ? { cpu: 512, memory: 1024 } : { cpu: 256, memory: 512 }
 }
+
+/**
+ * `ELECTRIC_DB_POOL_SIZE` per instance, or `undefined` for Electric's default of 20.
+ *
+ * Electric opens this many pooled connections plus a replication and a lock connection.
+ * The EU cluster runs at `max_connections=25`, shared with two Hyperdrive configs capped
+ * at 8 each, so its pool is 4 (1 admin, 3 snapshot). Drop this once the cluster is raised.
+ */
+export function resolveElectricDbPoolSize(region: MapleRegion): number | undefined {
+	return region === "eu" ? 4 : undefined
+}

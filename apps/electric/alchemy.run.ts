@@ -9,6 +9,7 @@ import {
 	pgUrlRequireSsl,
 	resolveAwsRegion,
 	resolveAwsResourceName,
+	resolveElectricDbPoolSize,
 	resolveElectricTaskSize,
 } from "@maple/infra/aws"
 import { issueCertificateViaCloudflare } from "@maple/infra/acm"
@@ -59,6 +60,7 @@ export const createMapleElectric = ({
 }: CreateMapleElectricOptions) =>
 	Effect.gen(function* () {
 		const taskSize = resolveElectricTaskSize(stage)
+		const dbPoolSize = resolveElectricDbPoolSize(region)
 		const name = (base: string) => resolveAwsResourceName(base, stage, region)
 
 		// Ids are `electric-lb-sg` / `electric-task-sg`, NOT `electric-alb-sg` /
@@ -234,6 +236,7 @@ export const createMapleElectric = ({
 				// resolves to `electric_publication_default` — the publication those
 				// migrations already own and keep correct.
 				ELECTRIC_MANUAL_TABLE_PUBLISHING: "true",
+				...(dbPoolSize === undefined ? {} : { ELECTRIC_DB_POOL_SIZE: String(dbPoolSize) }),
 				// ELECTRIC_STORAGE_DIR is left at the image's default, on task-local
 				// storage that dies with the task. Losing it costs a re-snapshot of
 				// eight small tables plus a `must-refetch` for connected clients, and
