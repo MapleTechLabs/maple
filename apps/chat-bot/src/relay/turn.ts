@@ -225,10 +225,14 @@ const relayMessage = Effect.fn("chat_bot.relay_turn")(function* <R>(
 		Effect.orElseSucceed(() => []),
 	)
 	const seenUpTo = transcript[transcript.length - 1]?.createdAt ?? 0
+	// The follow-up window is measured from the last thing the BOT said, which is not always the
+	// last thing in the transcript: a turn evicted after its question was recorded leaves the
+	// conversation with an unanswered message in it rather than a recent answer.
+	const repliedAt = transcript.reduce((at, entry) => (entry.role === "assistant" ? entry.createdAt : at), 0)
 	const now = yield* Clock.currentTimeMillis
 
 	// The half of the follow-up rule that needed the session: it has spoken here, and recently.
-	if (!message.mentionsBot && !conversationStillLive(seenUpTo, now)) {
+	if (!message.mentionsBot && !conversationStillLive(repliedAt, now)) {
 		return yield* Effect.annotateCurrentSpan({ "maple.chat.relay": "not_addressed" })
 	}
 

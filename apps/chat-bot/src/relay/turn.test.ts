@@ -693,6 +693,32 @@ describe("relaying a message that mentioned nobody", () => {
 		}),
 	)
 
+	it.effect("measures the day from the bot's last answer, not the last thing recorded", () =>
+		Effect.gen(function* () {
+			// A turn evicted after its question was recorded leaves a question as the newest entry.
+			// The conversation has an unanswered message in it, which is not a recent answer.
+			const stale: ReadonlyArray<ChatMessage> = [
+				...spokeAt(FOLLOW_UP_WINDOW_MS + 1),
+				{
+					id: "u2",
+					role: "user",
+					text: "still there?",
+					toolCalls: [],
+					createdAt: NOW - 60_000,
+					startSeq: 3,
+				},
+			]
+			const platform = chat()
+			const agent = session([silentTurn], { transcript: stale })
+			const deployment = host(platform.outbound, agent.stub, { opened: [CONVERSATION] })
+
+			yield* TestClock.setTime(NOW)
+			yield* relayInboundEvent(followUp, deployment.ports)
+
+			expect(agent.turns).toEqual([])
+		}),
+	)
+
 	it.effect("leaves a conversation the bot did not open completely alone", () =>
 		Effect.gen(function* () {
 			const platform = chat()

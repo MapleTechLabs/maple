@@ -133,9 +133,9 @@ export const couldAnswerUnaddressed = (message: InboundMessage, ownsConversation
 	ownsConversation && !message.author.isBot && message.text.trim() !== ""
 
 /**
- * The other half, asked once the conversation's session has been read: it has actually held a
- * turn, and held one recently enough that this message is part of the same exchange rather than a
- * remark in a thread that went quiet days ago.
+ * The other half, asked once the conversation's session has been read: the bot has actually
+ * answered here, and answered recently enough that this message is part of the same exchange
+ * rather than a remark in a thread that went quiet days ago.
  */
-export const conversationStillLive = (lastTurnAt: number, now: number): boolean =>
-	lastTurnAt > 0 && now - lastTurnAt <= FOLLOW_UP_WINDOW_MS
+export const conversationStillLive = (lastReplyAt: number, now: number): boolean =>
+	lastReplyAt > 0 && now - lastReplyAt <= FOLLOW_UP_WINDOW_MS
