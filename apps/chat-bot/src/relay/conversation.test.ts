@@ -115,8 +115,8 @@ describe("the context a turn carries", () => {
 	})
 
 	it("drops a message the platform gave it no text for", () => {
-		// Every message a deployment without the privileged content intent can read about but not
-		// read: a blank line in the context says only that somebody spoke.
+		// An embed, an attachment, a message whose text the platform withheld: a blank line in the
+		// context says only that somebody spoke.
 		const text = context([said("Bo", "", 30), said("Ada", "still slow", 60)])
 
 		expect(text).toContain("Ada: still slow")

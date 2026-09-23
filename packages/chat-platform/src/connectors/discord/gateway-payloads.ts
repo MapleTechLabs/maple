@@ -8,7 +8,6 @@
  * Verified against the Gateway and Gateway Events references (API v10).
  */
 import { Schema } from "effect"
-import { MESSAGE_CONTENT_CONFIG } from "./api.ts"
 
 /** `wss://gateway.discord.gg/?v=10&encoding=json` — JSON, uncompressed, single shard. */
 export const GATEWAY_QUERY = "?v=10&encoding=json"
@@ -27,36 +26,28 @@ export const OP = {
 } as const
 
 /**
- * `GUILDS | GUILD_MESSAGES` (`1 << 0 | 1 << 9`).
+ * `MESSAGE_CONTENT` (`1 << 15`), which is privileged and **required**.
  *
- * `GUILDS` is what delivers `GUILD_DELETE`, which is how the bot learns it was
- * removed from a server. `GUILD_MESSAGES` delivers `MESSAGE_CREATE`, in threads
- * as well as in channels.
- *
- * `INTERACTION_CREATE` is not gated by any intent, so approval buttons work on
- * this set too.
- */
-export const INTENTS = (1 << 0) | (1 << 9)
-
-/**
- * `MESSAGE_CONTENT` (`1 << 15`), added only when the deployment asks for it.
- *
- * It is privileged, and the documented exceptions cover the mention-only
- * product exactly: content reaches the app for messages it sent, DMs with it,
- * and **messages in which it is mentioned**. Everything else — a follow-up in a
- * thread Maple opened, the messages around a mention that give it context —
- * arrives with `content` empty, over the gateway AND over the REST API.
- *
- * So it is off by default and turned on by setting {@link MESSAGE_CONTENT_CONFIG}
- * on a deployment whose Discord application has the intent enabled in the
- * developer portal. Identifying with an intent the application has not been
- * granted is close code 4014, which is fatal — see this directory's README.
+ * Without it `content` arrives empty over the gateway AND over the REST API for
+ * everything except messages the app sent, DMs with it, and messages in which
+ * it is mentioned — which leaves out both halves of what the bot reads: the
+ * conversation around a mention, and a follow-up in a thread it opened. The
+ * application must have it enabled in the developer portal; identifying without
+ * that grant is close code 4014, which is fatal. See this directory's README.
  */
 export const MESSAGE_CONTENT_INTENT = 1 << 15
 
-/** The identify intents for this deployment. */
-export const gatewayIntents = (messageContent: boolean): number =>
-	messageContent ? INTENTS | MESSAGE_CONTENT_INTENT : INTENTS
+/**
+ * `GUILDS | GUILD_MESSAGES | MESSAGE_CONTENT` (`1 << 0 | 1 << 9 | 1 << 15`).
+ *
+ * `GUILDS` is what delivers `GUILD_DELETE`, which is how the bot learns it was
+ * removed from a server. `GUILD_MESSAGES` delivers `MESSAGE_CREATE`, in threads
+ * as well as in channels. `MESSAGE_CONTENT` is what puts anything in them.
+ *
+ * `INTERACTION_CREATE` is not gated by any intent, so approval buttons work
+ * whatever is in this set.
+ */
+export const INTENTS = (1 << 0) | (1 << 9) | MESSAGE_CONTENT_INTENT
 
 /** Interaction types (`type` on an `INTERACTION_CREATE`). Only the component click matters here. */
 export const INTERACTION_MESSAGE_COMPONENT = 3
@@ -87,13 +78,12 @@ export const FATAL_CLOSE_CODES: ReadonlySet<number> = new Set([4004, 4010, 4011,
  *
  * 4014 is the one worth spelling out: it is what Discord answers when the
  * identify asks for a privileged intent the application has not been granted,
- * and it is the failure mode of {@link MESSAGE_CONTENT_CONFIG} being set on a
- * deployment whose application does not have the intent enabled.
+ * which for this connector means exactly one thing and has exactly one fix.
  */
 export const FATAL_CLOSE_HINTS: ReadonlyMap<number, string> = new Map([
 	[
 		4014,
-		`a privileged intent this application has not been granted — enable Message Content in the Bot tab, or unset ${MESSAGE_CONTENT_CONFIG}`,
+		"enable Message Content Intent for this application in the Discord developer portal (Bot → Privileged Gateway Intents)",
 	],
 ])
 
@@ -153,9 +143,9 @@ export const MessageCreate = Schema.Struct({
 	guild_id: Schema.optionalKey(Schema.String),
 	author: User,
 	/**
-	 * Empty unless the application holds the MESSAGE_CONTENT intent or the
-	 * message qualifies under one of its exceptions — for this bot, unless it
-	 * was mentioned.
+	 * Empty on a message that carries no text of its own — an embed, an
+	 * attachment, a system notice — and on every message at all if the
+	 * application has lost the MESSAGE_CONTENT grant.
 	 */
 	content: Schema.String,
 	mentions: Schema.Array(User),

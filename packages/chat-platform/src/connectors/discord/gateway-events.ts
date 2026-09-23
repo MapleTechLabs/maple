@@ -85,11 +85,11 @@ const acknowledgeInteraction = (id: string, token: string): ConnectorRequest => 
  * each other. What is left is reported with `mentionsBot` set either way, and
  * the host decides whether a message that addressed nobody is still a turn.
  *
- * The last filter is the privileged intent showing through: without
- * `MESSAGE_CONTENT` every message that does not mention the bot arrives with
- * `content` empty, and there is no turn to start from nothing. Dropping those
- * here is what keeps a deployment that has not enabled the intent from paying a
- * host round trip for every message in every channel the bot can see.
+ * The last filter is for a message with no text of its own — an embed, an
+ * attachment, a system notice, and every message at all if the application ever
+ * loses its message-content grant. There is no turn to start from nothing, and
+ * dropping those here is one fewer host round trip per message in every channel
+ * the bot can see.
  */
 // BOUNDARY: `data` is the decoded `d` of a gateway frame, typed at this edge.
 const messageCreate = (data: unknown, botUserId: string | undefined): DispatchResult => {
