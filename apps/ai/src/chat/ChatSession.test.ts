@@ -8,7 +8,7 @@
  */
 import { assert, beforeEach, describe, it } from "vitest"
 import { encodeChatTurnTenant, type ChatTurnOrigin, type ChatTurnTenant } from "@maple/domain/chat-session"
-import { ChatSession } from "./ChatSession"
+import { ChatSession, TURN_STALE_MS } from "./ChatSession"
 import { installSchedulerWait, makeFakeDurableObjectState } from "../../test/chat/fake-do-state"
 
 installSchedulerWait()
@@ -384,7 +384,10 @@ describe("ChatSession turn mutex", () => {
 
 		// Simulate the turn vanishing (isolate eviction, a defect, a deploy mid-stream) by ageing
 		// its claim past the staleness ceiling.
-		state.storage.sql.exec("UPDATE session SET running_since = ? WHERE id = 1", clock - 16 * 60 * 1000)
+		state.storage.sql.exec(
+			"UPDATE session SET running_since = ? WHERE id = 1",
+			clock - TURN_STALE_MS - 60 * 1000,
+		)
 
 		assert.isFalse(session.running(), "a stale claim is not running")
 		const reclaimed = session.beginTurn({
