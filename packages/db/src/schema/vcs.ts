@@ -1,4 +1,14 @@
-import { boolean, index, integer, jsonb, pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core"
+import {
+	boolean,
+	index,
+	integer,
+	jsonb,
+	pgTable,
+	real,
+	text,
+	timestamp,
+	uniqueIndex,
+} from "drizzle-orm/pg-core"
 import type { OrgId, UserId } from "@maple/domain/primitives"
 import type {
 	GitCommitSha,
@@ -263,6 +273,26 @@ export const prReviewFindings = pgTable(
 )
 
 /**
+ * The embedding of a stored finding's text, so a later review can ask whether a new finding looks
+ * like the ones this team upvoted or fixed, or the ones it downvoted or dismissed. Kept apart from
+ * `pr_review_findings` so the lifecycle reads never carry the vector. `model` names the embedding
+ * model: vectors from two models are never compared.
+ */
+export const prReviewFindingEmbeddings = pgTable(
+	"pr_review_finding_embeddings",
+	{
+		/** The `pr_review_findings` row; no FK, like the rest of this file. */
+		findingId: text("finding_id").notNull().primaryKey(),
+		orgId: text("org_id").$type<OrgId>().notNull(),
+		repositoryId: text("repository_id").$type<VcsRepositoryId>().notNull(),
+		model: text("model").notNull(),
+		embedding: real("embedding").array().notNull(),
+		createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull(),
+	},
+	(table) => [index("pr_review_finding_embeddings_org_model_idx").on(table.orgId, table.model)],
+)
+
+/**
  * One answer to a pull request comment that mentioned Maple. The comment it answers, and where the
  * answer is posted, are bound here when the webhook lands; the agent never chooses either.
  */
@@ -323,5 +353,6 @@ export type VcsRepositoryBranchInsert = typeof vcsRepositoryBranches.$inferInser
 export type PrReviewRow = typeof prReviews.$inferSelect
 export type PrReviewInsert = typeof prReviews.$inferInsert
 export type PrReviewFindingRow = typeof prReviewFindings.$inferSelect
+export type PrReviewFindingEmbeddingRow = typeof prReviewFindingEmbeddings.$inferSelect
 export type PrReviewReplyRow = typeof prReviewReplies.$inferSelect
 export type PrReviewEditRow = typeof prReviewEdits.$inferSelect
