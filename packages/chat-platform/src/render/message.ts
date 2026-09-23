@@ -194,26 +194,12 @@ const joinDetail = (parts: ReadonlyArray<string | null>): string | null => {
 }
 
 /**
- * Where the prose worth showing starts.
- *
- * A turn's text is cut into segments by its tool calls' `textOffset`s, and every segment before
- * the last call is the model talking its way towards an answer. Web re-interleaves all of it,
- * which is what a transcript is for; a channel shows one segment, because the rest reads as a
- * colleague thinking out loud between other people's messages.
- *
- * Calls are read in the order they were made, never sorted by offset: a `turn-retry` can leave a
- * retracted attempt's call holding an offset past the end of the text it took back, and the answer
- * belongs after the call the model actually made last rather than after that stale one. `slice`
- * clamps, so such an offset simply cuts nothing. A call recorded before offsets existed defaults
- * to the end of the text, as web does, so an old prose-then-calls turn still renders whole.
- */
-/**
  * The text from the cut on, with a blank line wherever a tool call interrupted the model.
  *
  * Usually one segment, because the cut lands on the last call. Two paths can leave a boundary
- * inside the range anyway: the fallback below, when the final segment is empty, and a retry's
- * stale offset, which can sit after a later call's. Model text carries no separator of its own, so
- * concatenating across a boundary runs two sentences together — "…at 40%.Two failure signatures."
+ * inside the range anyway: {@link answerOffset}'s fallback, when the final segment is empty, and a
+ * retry's stale offset, which can sit after a later call's. Model text carries no separator of its
+ * own, so concatenating across a boundary runs two sentences together — "…at 40%.Two signatures."
  */
 const visibleText = (text: string, calls: ReadonlyArray<ChatToolCall>, start: number): string => {
 	const bounds = [...new Set(calls.map((call) => call.textOffset ?? text.length))]
@@ -228,6 +214,20 @@ const visibleText = (text: string, calls: ReadonlyArray<ChatToolCall>, start: nu
 	return segments.filter((segment) => segment.length > 0).join("\n\n")
 }
 
+/**
+ * Where the prose worth showing starts.
+ *
+ * A turn's text is cut into segments by its tool calls' `textOffset`s, and every segment before
+ * the last call is the model talking its way towards an answer. Web re-interleaves all of it,
+ * which is what a transcript is for; a channel shows one segment, because the rest reads as a
+ * colleague thinking out loud between other people's messages.
+ *
+ * Calls are read in the order they were made, never sorted by offset: a `turn-retry` can leave a
+ * retracted attempt's call holding an offset past the end of the text it took back, and the answer
+ * belongs after the call the model actually made last rather than after that stale one. `slice`
+ * clamps, so such an offset simply cuts nothing. A call recorded before offsets existed defaults
+ * to the end of the text, as web does, so an old prose-then-calls turn still renders whole.
+ */
 const answerOffset = (text: string, calls: ReadonlyArray<ChatToolCall>, running: boolean): number => {
 	const offsets = calls.map((call) => call.textOffset ?? text.length)
 	// Still running: the segment after the last call so far, which may yet be the answer. The next
