@@ -13,6 +13,7 @@ import {
 	GithubDeleteRepositoryResponse,
 	GithubDisconnectResponse,
 	GithubIntegrationStatus,
+	GithubSetPrReviewResponse,
 	GithubSetTrackedBranchResponse,
 	GithubStartConnectResponse,
 	HazelChannelsListResponse,
@@ -560,6 +561,18 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleApi, "integrations
 							payload.trackedBranch,
 						)
 						return new GithubSetTrackedBranchResponse(result)
+					}),
+				)
+				.handle("githubSetPrReview", ({ params, payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						yield* requireAdmin(tenant.roles)
+						const result = yield* github.setPrReviewEnabled(
+							tenant.orgId,
+							params.repositoryId,
+							payload.enabled,
+						)
+						return new GithubSetPrReviewResponse(result)
 					}),
 				)
 				// No admin gate — any org member may resolve commit SHAs for hover cards.

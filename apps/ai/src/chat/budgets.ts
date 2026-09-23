@@ -81,6 +81,21 @@ export const INVESTIGATION_BUDGET: AgentBudget = {
 	completionReserveTokens: 64_000,
 }
 
+/**
+ * An unattended pull request review: read every hunk that adds code, check the warehouse where the
+ * diff names a service or an attribute, file one report through `submit_review`.
+ *
+ * Smaller than an investigation because the diff bounds the work: the reviewer reads files it was
+ * handed rather than searching telemetry for a cause. Sized before any review has run in prod, so
+ * these are ceilings to tune from the internal org's first reviews, not measurements.
+ */
+export const PR_REVIEW_BUDGET: AgentBudget = {
+	maxToolCalls: 60,
+	maxDuration: "8 minutes",
+	tokenBudget: 800_000,
+	completionReserveTokens: 48_000,
+}
+
 /** An attended chat turn: someone is watching it, so the ceilings are what a person will wait for. */
 export const CHAT_BUDGET: AgentBudget = {
 	maxToolCalls: 40,

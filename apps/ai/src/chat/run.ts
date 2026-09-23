@@ -16,16 +16,18 @@ import { Prompt, Toolkit } from "effect/unstable/ai"
 import type { McpToolExecutorApi } from "../mcp/dispatcher"
 import { agentSessionSpanAttributes, type ResolvedModel } from "../platform/Llm"
 import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
-import { agentForSession, chatAgent } from "./agents"
+import { type AgentDefinition, agentForSession, chatAgent } from "./agents"
 import { profileForTurn } from "./profiles"
 import { toChatEvents, type ChatTurnEvent } from "./events"
 import {
 	accumulateUsage,
 	buildChatToolkit,
 	buildDiagnosisCompletion,
-	SUBMIT_DIAGNOSIS,
+	buildReviewCompletion,
+	type RunCompletion,
 	type RunUsage,
 	type SubmitDiagnosis,
+	type SubmitReview,
 } from "./tools"
 
 /**
@@ -81,8 +83,12 @@ export interface ChatRunInput {
 	readonly toolExecutor: McpToolExecutorApi
 	readonly model: ResolvedModel
 	readonly submitDiagnosis: SubmitDiagnosis
+	/** Absent outside a review session's runtime; a `pr-` session without it runs with no completion. */
+	readonly submitReview?: SubmitReview
 	/** This run is an autonomous pass's close-out: a report it files is a partial. */
 	readonly closeOut?: boolean
+	/** The agent to run as; defaults to the session's. The local review runner passes a variant. */
+	readonly agent?: AgentDefinition
 	/** The message the user just sent, which is this run's input. */
 	readonly text: string
 	readonly history: ReadonlyArray<ChatMessage>
@@ -94,10 +100,10 @@ export interface ChatRunInput {
 }
 
 export interface ChatRunOutcome {
-	/** This run was an investigation's own autonomous pass. */
+	/** This run was a machine-started pass: an investigation's or a review's. */
 	readonly autonomous: boolean
-	/** `submit_diagnosis` landed a report during this run. */
-	readonly submittedDiagnosis: boolean
+	/** The run's completion tool (`submit_diagnosis`, `submit_review`) landed a report. */
+	readonly submitted: boolean
 	/**
 	 * How many times the engine compacted this run's context.
 	 *
@@ -116,7 +122,7 @@ export interface ChatRunOutcome {
  * module never invents one.
  */
 export const runChatTurn = (input: ChatRunInput) => {
-	const agent = agentForSession(input.sessionId)
+	const agent = input.agent ?? agentForSession(input.sessionId)
 	const profile = profileForTurn(agent, input.origin)
 	const maple = buildChatToolkit(
 		input.toolExecutor,
@@ -125,16 +131,31 @@ export const runChatTurn = (input: ChatRunInput) => {
 		profile.surface,
 		agentSessionSpanAttributes(input.model.tags),
 	)
-	const completion = buildDiagnosisCompletion(
-		input.sessionId,
-		input.tenant,
-		input.origin,
-		input.submitDiagnosis,
-		input.usage,
-		input.model.name,
-		input.closeOut === true,
-		agentSessionSpanAttributes(input.model.tags),
-	)
+	// One completion per session kind. The session id decides which, so a review session can never
+	// be handed the diagnosis tool or the other way round.
+	const completion: RunCompletion | undefined =
+		buildDiagnosisCompletion(
+			input.sessionId,
+			input.tenant,
+			input.origin,
+			input.submitDiagnosis,
+			input.usage,
+			input.model.name,
+			input.closeOut === true,
+			agentSessionSpanAttributes(input.model.tags),
+		) ??
+		(input.submitReview === undefined
+			? undefined
+			: buildReviewCompletion(
+					input.sessionId,
+					input.tenant,
+					input.origin,
+					input.submitReview,
+					input.usage,
+					input.model.name,
+					input.closeOut === true,
+					agentSessionSpanAttributes(input.model.tags),
+				))
 
 	const toolkit = Toolkit.merge(maple.toolkit, ...(completion === undefined ? [] : [completion.toolkit]))
 	const handlers = Layer.mergeAll(maple.layer, ...(completion === undefined ? [] : [completion.layer]))
@@ -143,7 +164,7 @@ export const runChatTurn = (input: ChatRunInput) => {
 	const run = chatAgent({ ...agent, prompt: profile.prompt }, toolkit, input.model, {
 		...(completion === undefined
 			? undefined
-			: { completion: { tool: SUBMIT_DIAGNOSIS, required: false } }),
+			: { completion: { tool: completion.tool, required: false } }),
 	})
 
 	// A gated tool is announced exactly like any other and refuses when dispatched, so only the
@@ -174,7 +195,7 @@ export const runChatTurn = (input: ChatRunInput) => {
 		Effect.map(
 			(): ChatRunOutcome => ({
 				autonomous: completion?.autonomous ?? false,
-				submittedDiagnosis: completion?.submitted() ?? false,
+				submitted: completion?.submitted() ?? false,
 				compactions,
 			}),
 		),
