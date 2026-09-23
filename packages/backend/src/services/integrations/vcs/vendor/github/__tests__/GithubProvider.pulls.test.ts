@@ -221,7 +221,9 @@ describe("GithubProvider publishing a review", () => {
 		reviewBody: comments.length === 0 ? null : "notes",
 		comments,
 	})
-	const checkRun = () => jsonResponse({ id: 1, html_url: "https://github.com/octo/shop/runs/1" }, 201)
+	const noRunningCheck = () => jsonResponse({ check_runs: [] })
+	const checkRun = () =>
+		jsonResponse({ id: 1, status: "completed", html_url: "https://github.com/octo/shop/runs/1" }, 201)
 	const files = (patches: Record<string, string | undefined>) =>
 		jsonResponse(
 			Object.entries(patches).map(([filename, patch]) => ({
@@ -237,7 +239,10 @@ describe("GithubProvider publishing a review", () => {
 
 	it.effect("writes the summary comment even when there is nothing to say inline", () => {
 		const requests: Array<string> = []
-		const layer = providerLayer([tokenResponse(), checkRun(), jsonResponse([]), written(5)], requests)
+		const layer = providerLayer(
+			[tokenResponse(), noRunningCheck(), checkRun(), jsonResponse([]), written(5)],
+			requests,
+		)
 		return Effect.gen(function* () {
 			const provider = yield* GithubProvider
 			const published = yield* provider.publishPullRequestReview(INSTALLATION, REPO, publication())
@@ -246,6 +251,47 @@ describe("GithubProvider publishing a review", () => {
 			assert.isTrue(requests.at(-1)?.endsWith("/repos/octo/shop/issues/612/comments"))
 			// No review at all: the comment carries the result.
 			assert.isFalse(requests.some((url) => url.includes("/reviews")))
+		}).pipe(Effect.provide(layer))
+	})
+
+	it.effect("opens the check run as running, then completes that same run with the result", () => {
+		const requests: Array<string> = []
+		const bodies: Array<string> = []
+		const running = { id: 7, status: "in_progress", html_url: "https://github.com/octo/shop/runs/7" }
+		const layer = providerLayer(
+			[
+				tokenResponse(),
+				noRunningCheck(),
+				jsonResponse(running, 201),
+				jsonResponse({ check_runs: [running] }),
+				jsonResponse({ ...running, status: "completed" }),
+				jsonResponse([]),
+				written(5),
+			],
+			requests,
+			bodies,
+		)
+		return Effect.gen(function* () {
+			const provider = yield* GithubProvider
+			const started = yield* provider.writePullRequestCheck(INSTALLATION, REPO, {
+				name: "Maple / observability",
+				headSha: "abc123",
+				state: { status: "in_progress" },
+				title: "Reviewing",
+				summary: "Maple is reviewing `abc123`.",
+			})
+			assert.equal(started.url, "https://github.com/octo/shop/runs/7")
+			assert.include(requests[1]!, "/commits/abc123/check-runs?check_name=Maple%20%2F%20observability")
+			assert.isTrue(requests[2]!.endsWith("/repos/octo/shop/check-runs"))
+			assert.include(bodies[2]!, `"status":"in_progress"`)
+			assert.notInclude(bodies[2]!, "conclusion")
+
+			const published = yield* provider.publishPullRequestReview(INSTALLATION, REPO, publication())
+			assert.equal(published.checkRunUrl, "https://github.com/octo/shop/runs/7")
+			// The running one is moved on, not duplicated.
+			assert.isTrue(requests[4]!.endsWith("/repos/octo/shop/check-runs/7"))
+			assert.include(bodies[4]!, `"conclusion":"success"`)
+			assert.notInclude(bodies[4]!, "head_sha")
 		}).pipe(Effect.provide(layer))
 	})
 
@@ -296,6 +342,7 @@ describe("GithubProvider publishing a review", () => {
 		const layer = providerLayer(
 			[
 				tokenResponse(),
+				noRunningCheck(),
 				checkRun(),
 				jsonResponse([
 					{ id: 3, html_url: "x", body: "looks good to me", performed_via_github_app: null },
@@ -323,6 +370,7 @@ describe("GithubProvider publishing a review", () => {
 		const layer = providerLayer(
 			[
 				tokenResponse(),
+				noRunningCheck(),
 				checkRun(),
 				jsonResponse([
 					{
@@ -349,6 +397,7 @@ describe("GithubProvider publishing a review", () => {
 		const layer = providerLayer(
 			[
 				tokenResponse(),
+				noRunningCheck(),
 				checkRun(),
 				jsonResponse([]),
 				written(5),
@@ -376,6 +425,7 @@ describe("GithubProvider publishing a review", () => {
 		const layer = providerLayer(
 			[
 				tokenResponse(),
+				noRunningCheck(),
 				checkRun(),
 				jsonResponse([]),
 				written(5),
@@ -407,6 +457,7 @@ describe("GithubProvider publishing a review", () => {
 		const layer = providerLayer(
 			[
 				tokenResponse(),
+				noRunningCheck(),
 				checkRun(),
 				jsonResponse([]),
 				written(5),

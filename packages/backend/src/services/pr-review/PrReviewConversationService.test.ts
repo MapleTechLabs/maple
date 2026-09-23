@@ -118,6 +118,7 @@ const layerFor = (
 			}),
 		publishPullRequestReview: unused,
 		writePullRequestSummaryComment: unused,
+		writePullRequestCheck: unused,
 		searchCode: unused,
 		resolveRef: unused,
 		fetchCloneCredentials: unused,

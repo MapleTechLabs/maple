@@ -1284,10 +1284,10 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 					// before reviews existed, or a permission update not yet accepted) answers 403. The
 					// summary comment only needs `pull_requests: write`, so the review still lands.
 					const checkRun = yield* client
-						.createCheckRun(installation.externalInstallationId, repo.owner, repo.name, {
+						.upsertCheckRun(installation.externalInstallationId, repo.owner, repo.name, {
 							name: publication.checkName,
 							headSha: publication.headSha,
-							conclusion: publication.conclusion,
+							state: { status: "completed", conclusion: publication.conclusion },
 							title: publication.title,
 							summary: publication.summary,
 							annotations: publication.annotations,
@@ -1448,6 +1448,28 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 						}),
 					)
 
+			const writePullRequestCheck: VcsProviderClient["writePullRequestCheck"] = (
+				installation,
+				repo,
+				input,
+			) =>
+				client
+					.upsertCheckRun(installation.externalInstallationId, repo.owner, repo.name, {
+						...input,
+						annotations: [],
+					})
+					.pipe(
+						Effect.map((run) => ({ url: run.html_url })),
+						Effect.mapError(toVcsError),
+						Effect.withSpan("GithubProvider.writePullRequestCheck", {
+							attributes: {
+								"vcs.owner.name": repo.owner,
+								"vcs.repository.name": repo.name,
+								"vcs.check_run.status": input.state.status,
+							},
+						}),
+					)
+
 			const fetchCloneCredentials: VcsProviderClient["fetchCloneCredentials"] = (installation, repo) =>
 				client
 					.mintCloneCredentials(installation.externalInstallationId, repo.owner, repo.name)
@@ -1474,6 +1496,7 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 				commitFiles,
 				publishPullRequestReview,
 				writePullRequestSummaryComment,
+				writePullRequestCheck,
 				searchCode,
 				fetchSourceFile,
 				resolveRef,

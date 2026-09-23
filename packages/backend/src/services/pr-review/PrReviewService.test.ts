@@ -102,6 +102,8 @@ const layerFor = (
 		readonly embedder?: FindingEmbedderApi
 		/** Every body the summary comment was given, status notices and finished reviews alike. */
 		readonly comments?: Array<string>
+		/** Every check run state written before a result, as `<sha7>:<status or conclusion>`. */
+		readonly checks?: Array<string>
 	} = {},
 ) => {
 	// Only the one write is reached; every read dies so a test that strays says so loudly.
@@ -141,6 +143,13 @@ const layerFor = (
 					options.comments?.push(next)
 				}
 				return { url: "https://github.com/octo/repo/pull/612#issuecomment-1" }
+			}),
+		writePullRequestCheck: (_installation, _repo, input) =>
+			Effect.sync(() => {
+				options.checks?.push(
+					`${input.headSha.slice(0, 7)}:${input.state.status === "completed" ? input.state.conclusion : input.state.status}`,
+				)
+				return { url: "https://github.com/octo/repo/runs/1" }
 			}),
 		publishPullRequestReview: (_installation, _repo, publication) => {
 			options.published?.push(publication)
@@ -312,6 +321,19 @@ describe("PrReviewService.onPullRequestEvent", () => {
 		}).pipe(Effect.provide(layerFor(testDb, { comments })))
 	})
 
+	it.effect("shows the review as a running check on the head, and a neutral one when it fails", () => {
+		const testDb = createTestDb(trackedDbs)
+		const checks: Array<string> = []
+		return Effect.gen(function* () {
+			yield* seed(true)
+			const reviews = yield* PrReviewService
+			const outcome = yield* reviews.onPullRequestEvent(orgId, job())
+			assert.deepEqual(checks, [`${HEAD.slice(0, 7)}:in_progress`])
+			yield* reviews.failReview(orgId, outcome.reviewId!, "no review")
+			assert.deepEqual(checks, [`${HEAD.slice(0, 7)}:in_progress`, `${HEAD.slice(0, 7)}:neutral`])
+		}).pipe(Effect.provide(layerFor(testDb, { checks })))
+	})
+
 	it.effect("says so when the turn ends without a review", () => {
 		const testDb = createTestDb(trackedDbs)
 		const comments: Array<string> = []
@@ -391,6 +413,7 @@ describe("PrReviewService.onPullRequestEvent", () => {
 		const testDb = createTestDb(trackedDbs)
 		const begun: Array<Begun> = []
 		const aborted: Array<string> = []
+		const checks: Array<string> = []
 		return Effect.gen(function* () {
 			yield* seed(true)
 			const reviews = yield* PrReviewService
@@ -405,7 +428,13 @@ describe("PrReviewService.onPullRequestEvent", () => {
 			assert.equal(Option.getOrThrow(superseded).status, "skipped")
 			assert.equal(Option.getOrThrow(superseded).skipReason, "superseded")
 			assert.equal(begun.length, 2)
-		}).pipe(Effect.provide(layerFor(testDb, { begun, aborted })))
+			// The replaced head's check stops showing as running; the new head's starts.
+			assert.deepEqual(checks, [
+				`${HEAD.slice(0, 7)}:in_progress`,
+				`${HEAD.slice(0, 7)}:skipped`,
+				`${HEAD_2.slice(0, 7)}:in_progress`,
+			])
+		}).pipe(Effect.provide(layerFor(testDb, { begun, aborted, checks })))
 	})
 
 	it.effect("records a review the agent could not start rather than losing it", () => {
