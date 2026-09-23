@@ -49,14 +49,18 @@ export const chatIdentities = pgTable(
 	(table) => [
 		// One chat account speaks for at most one Maple user per org — the constraint the whole
 		// feature rests on, and what makes the bot's `(org, connector, external id)` lookup
-		// unambiguous. Re-linking replaces the row rather than adding a second.
+		// unambiguous. Re-linking takes the account over from whoever held it.
 		uniqueIndex("chat_identities_org_connector_external_idx").on(
 			table.orgId,
 			table.connector,
 			table.externalUserId,
 		),
-		// Every row a user holds in an org, for unlinking on revocation and for showing the caller
-		// their own links.
+		// And at most one account per person per connector, which is the other direction of the
+		// same rule. Without it somebody who re-linked after losing an account would leave the old
+		// one able to approve as them — standing authority they cannot see, since the card and the
+		// API both show a single link.
+		uniqueIndex("chat_identities_org_connector_user_idx").on(table.orgId, table.connector, table.userId),
+		// Every row a user holds in an org, for unlinking the lot when they leave it.
 		index("chat_identities_org_user_idx").on(table.orgId, table.userId),
 	],
 )

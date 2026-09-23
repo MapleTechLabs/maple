@@ -90,7 +90,7 @@ export const resolveChatIdentity = (
 		return row === undefined ? Option.none() : Option.some(yield* readRow(row))
 	})
 
-/** Every link this user holds for this connector in this org — at most one, and usually none. */
+/** Every link this user holds in this org, across connectors — at most one per connector. */
 export const listChatIdentities = (
 	database: DatabaseApi,
 	orgId: OrgId,
@@ -114,11 +114,18 @@ export const listChatIdentities = (
 	})
 
 /**
- * Bind a chat account to a Maple user, replacing whatever it was bound to before.
+ * Bind a chat account to a Maple user, replacing every binding either of them had.
  *
- * Re-linking is an upsert rather than a second row: the unique index says one chat account speaks
- * for at most one user per org, and somebody who links again from a different Maple account means
- * to move the binding, not to hold two.
+ * Both directions are replacements, and both matter:
+ *
+ *   - the person keeps ONE account per connector. Somebody who re-links after losing an account
+ *     would otherwise leave the old one still approving as them — authority they cannot see,
+ *     because the card and the API both show a single link.
+ *   - the account speaks for ONE person per org. Linking an account somebody else had linked
+ *     moves it rather than duplicating it.
+ *
+ * In one transaction because the delete and the insert are two halves of one replacement: between
+ * them the person holds no link at all, and a click landing there must not find a stale row.
  */
 export const linkChatIdentity = (
 	database: DatabaseApi,
@@ -135,30 +142,46 @@ export const linkChatIdentity = (
 	Effect.gen(function* () {
 		const rows = yield* database
 			.execute((db) =>
-				db
-					.insert(chatIdentities)
-					.values({
-						id: input.id,
-						orgId: input.orgId,
-						connector: input.connectorId,
-						externalUserId: input.externalUserId,
-						userId: input.userId,
-						displayName: input.displayName ?? null,
-						createdAt: msToDate(input.nowMs),
-					})
-					.onConflictDoUpdate({
-						target: [
-							chatIdentities.orgId,
-							chatIdentities.connector,
-							chatIdentities.externalUserId,
-						],
-						set: {
-							userId: input.userId,
-							displayName: input.displayName ?? null,
-							createdAt: msToDate(input.nowMs),
-						},
-					})
-					.returning(),
+				db.transaction((tx) =>
+					Effect.gen(function* () {
+						// Their previous account on this connector, if any. Deleted rather than left
+						// beside the new one — see above.
+						yield* tx
+							.delete(chatIdentities)
+							.where(
+								and(
+									eq(chatIdentities.orgId, input.orgId),
+									eq(chatIdentities.connector, input.connectorId),
+									eq(chatIdentities.userId, input.userId),
+								),
+							)
+						return yield* tx
+							.insert(chatIdentities)
+							.values({
+								id: input.id,
+								orgId: input.orgId,
+								connector: input.connectorId,
+								externalUserId: input.externalUserId,
+								userId: input.userId,
+								displayName: input.displayName ?? null,
+								createdAt: msToDate(input.nowMs),
+							})
+							// The same account, previously linked to somebody else: take it over.
+							.onConflictDoUpdate({
+								target: [
+									chatIdentities.orgId,
+									chatIdentities.connector,
+									chatIdentities.externalUserId,
+								],
+								set: {
+									userId: input.userId,
+									displayName: input.displayName ?? null,
+									createdAt: msToDate(input.nowMs),
+								},
+							})
+							.returning()
+					}),
+				),
 			)
 			.pipe(Effect.mapError(persistenceError))
 		const row = rows[0]

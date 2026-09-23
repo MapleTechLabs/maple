@@ -9,4 +9,5 @@ CREATE TABLE "chat_identities" (
 );
 --> statement-breakpoint
 CREATE UNIQUE INDEX "chat_identities_org_connector_external_idx" ON "chat_identities" ("org_id","connector","external_user_id");--> statement-breakpoint
+CREATE UNIQUE INDEX "chat_identities_org_connector_user_idx" ON "chat_identities" ("org_id","connector","user_id");--> statement-breakpoint
 CREATE INDEX "chat_identities_org_user_idx" ON "chat_identities" ("org_id","user_id");

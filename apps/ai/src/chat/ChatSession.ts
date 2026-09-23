@@ -426,10 +426,12 @@ export class ChatSession {
 	 * object's own log. Accepting them from the caller would make this a second way to run a
 	 * mutating tool, and the caller is a Worker relaying a click off a chat platform.
 	 *
-	 * The caller is also who authorized the click — it resolved the workspace, read its configured
-	 * approver role and matched it against what the platform reported. Reaching this object at all
-	 * requires the Durable Object binding, which only Maple's own Workers hold, and that is the
-	 * same trust `beginTurn` already runs on.
+	 * The caller is also who authorized the click: it resolved the workspace, checked that the
+	 * control named THIS conversation, and decided whose authority the change runs under —
+	 * `actingUserId` when the connector could name the clicker and they had linked, the org-level
+	 * connector identity when it could not. Reaching this object at all requires the Durable
+	 * Object binding, which only Maple's own Workers hold, and that is the same trust `beginTurn`
+	 * already runs on.
 	 */
 	async settleProposal(input: ChatProposalSettlement): Promise<ChatProposalOutcome> {
 		const proposal = this.findProposal(input.toolCallId)

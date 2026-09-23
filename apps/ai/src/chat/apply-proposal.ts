@@ -8,10 +8,11 @@
  *
  * It is the connector's counterpart to `POST /internal/chat/apply`, which the web client uses, and
  * it does the same three things in the same order — refuse a tool that is not approval-gated, run
- * it under a resolved tenant, and hand back what it said. What differs is everything to do with
- * identity: the web caller is a signed-in person whose own roles the tool checks, while here the
- * person holds no Maple identity at all, so the connector's agent actor performs the change and
- * who approved it rides along as forensic context on the audit entry.
+ * it under a resolved tenant, and hand back what it said. What differs is identity, and there are
+ * two cases (see `resolveTenant`): somebody who linked their chat account acts AS their Maple
+ * user, under the roles they hold in the org, exactly as the web caller does; where the platform
+ * cannot say who clicked, the connector's agent actor performs the change instead. Either way the
+ * chat account that clicked rides along as forensic context on the audit entry.
  */
 import * as MapleCloudflareSDK from "@maple-dev/effect-sdk/cloudflare"
 import {

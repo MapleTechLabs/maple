@@ -116,7 +116,12 @@ describe("whose authority an approval runs under", () => {
 			// The link outlived the membership. Falling back to the org-level identity here would
 			// hand `org:admin` to somebody who was removed.
 			const failure = yield* resolveTenant(ORG, proposal(ADA)).pipe(
-				Effect.provide(Layer.mergeAll(memberships(() => Effect.succeed(Option.none())), noActors)),
+				Effect.provide(
+					Layer.mergeAll(
+						memberships(() => Effect.succeed(Option.none())),
+						noActors,
+					),
+				),
 				Effect.flip,
 			)
 
@@ -131,7 +136,9 @@ describe("whose authority an approval runs under", () => {
 					Layer.mergeAll(
 						memberships(() =>
 							Effect.fail(
-								new AuthorizationUnavailableError({ message: "the directory was unreachable" }),
+								new AuthorizationUnavailableError({
+									message: "the directory was unreachable",
+								}),
 							),
 						),
 						noActors,

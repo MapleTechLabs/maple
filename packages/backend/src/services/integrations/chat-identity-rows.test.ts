@@ -116,14 +116,18 @@ describe("linking", () => {
 		),
 	)
 
-	it.effect("keeps one person's two chat accounts apart", () =>
+	it.effect("replaces the account a person had linked, rather than leaving both live", () =>
 		withDb(
 			Effect.gen(function* () {
 				yield* link(ORG, ADA, "account-a")
 				yield* link(ORG, ADA, "account-b")
 
+				// The old account would otherwise keep approving as them, and neither the card nor
+				// the API shows more than one link — authority they could not see to remove.
 				const database = yield* Database
-				assert.lengthOf(yield* listChatIdentities(database, ORG, ADA), 2)
+				assert.lengthOf(yield* listChatIdentities(database, ORG, ADA), 1)
+				assert.isTrue(Option.isNone(yield* resolve(ORG, "account-a")))
+				assert.strictEqual(Option.getOrUndefined(yield* resolve(ORG, "account-b"))?.userId, ADA)
 			}),
 		),
 	)
@@ -149,6 +153,7 @@ describe("unlinking", () => {
 			Effect.gen(function* () {
 				yield* link(ORG, ADA, "account-a")
 				yield* link(ORG, BEN, "account-c")
+				// The same account in a different org is a different binding entirely.
 				yield* link(OTHER_ORG, ADA, "account-a")
 				const database = yield* Database
 
