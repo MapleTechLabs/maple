@@ -149,6 +149,9 @@ const identityConnector: ChatConnector = {
 /** A workspace whose platform no longer honours the bot's grant. */
 const REVOKED_WORKSPACE = "workspace-revoked"
 
+/** A workspace the bot was removed from. */
+const KICKED_WORKSPACE = "workspace-kicked"
+
 /**
  * The fake connector with an outbound half that can answer where alerts may go: it lists one
  * channel per workspace, named after the platform's own workspace id so a test can see which one
@@ -163,20 +166,38 @@ const listingTransport: ChatOutboundTransport = {
 	conversation: unreachable,
 	history: unreachable,
 	destinations: (workspaceId) =>
-		workspaceId === REVOKED_WORKSPACE
+		workspaceId === KICKED_WORKSPACE
 			? Effect.fail(
 					new ChatOutboundError({
-						message: "Test Chat refused the call: missing_scope",
+						message: "Test Chat answered 404",
 						connectorId: TEST_CONNECTOR,
 						operation: "destinations",
-						reason: "auth",
+						reason: "not_found",
 					}),
 				)
-			: Effect.succeed([{ id: `${workspaceId}-alerts`, name: "alerts", private: false }]),
+			: workspaceId === REVOKED_WORKSPACE
+				? Effect.fail(
+						new ChatOutboundError({
+							message: "Test Chat refused the call: missing_scope",
+							connectorId: TEST_CONNECTOR,
+							operation: "destinations",
+							reason: "auth",
+						}),
+					)
+				: Effect.succeed([{ id: `${workspaceId}-alerts`, name: "alerts", private: false }]),
 }
 const listingConnector: ChatConnector = {
 	...testConnector,
 	outbound: { ...testConnector.outbound, transport: Effect.succeed(listingTransport) },
+}
+
+/** The same connector, needing a deployment-wide credential no test config sets. */
+const unconfiguredListingConnector: ChatConnector = {
+	...listingConnector,
+	outbound: {
+		...listingConnector.outbound,
+		requiredConfig: [{ name: "MAPLE_TESTCHAT_UNSET_OUTBOUND_KEY", secret: true }],
+	},
 }
 
 const makeConfig = (withConnectorConfig: boolean) =>
@@ -322,6 +343,41 @@ describe("ChatWorkspaceService", () => {
 				assert.strictEqual(failure._tag, "@maple/http/errors/IntegrationsNotConnectedError")
 				assert.include(failure.message, "Reinstall Test Chat")
 			}).pipe(Effect.provide(makeLayer(testDb, { registry: [listingConnector] })))
+		}),
+	)
+
+	it.effect("asks for a reinstall when the bot was removed from the workspace", () =>
+		Effect.gen(function* () {
+			const testDb = createTestDb(trackedDbs)
+			const id = yield* insertWorkspace(
+				testDb,
+				"44444444-4444-4444-8444-444444444444",
+				ORG,
+				KICKED_WORKSPACE,
+			)
+			yield* Effect.gen(function* () {
+				const chat = yield* ChatWorkspaceService
+				const failure = yield* chat.listDestinations(ORG, id).pipe(Effect.flip)
+				assert.strictEqual(failure._tag, "@maple/http/errors/IntegrationsNotConnectedError")
+				assert.include(failure.message, "no longer in this workspace")
+			}).pipe(Effect.provide(makeLayer(testDb, { registry: [listingConnector] })))
+		}),
+	)
+
+	it.effect("reports a deployment without the connector's outbound config, before any request", () =>
+		Effect.gen(function* () {
+			const testDb = createTestDb(trackedDbs)
+			const id = yield* insertWorkspace(
+				testDb,
+				"55555555-5555-4555-8555-555555555555",
+				ORG,
+				"workspace-1",
+			)
+			yield* Effect.gen(function* () {
+				const chat = yield* ChatWorkspaceService
+				const failure = yield* chat.listDestinations(ORG, id).pipe(Effect.flip)
+				assert.strictEqual(failure._tag, "@maple/http/errors/IntegrationsConfigurationError")
+			}).pipe(Effect.provide(makeLayer(testDb, { registry: [unconfiguredListingConnector] })))
 		}),
 	)
 

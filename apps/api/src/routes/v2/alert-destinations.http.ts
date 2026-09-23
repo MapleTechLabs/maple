@@ -117,7 +117,6 @@ const toCreateRequest = (params: V2AlertDestinationCreateParams) => {
 				name: params.name,
 				workspaceId: params.workspace_id,
 				channelId: params.channel_id,
-				channelName: params.channel_name,
 				...(params.enabled !== undefined ? { enabled: params.enabled } : undefined),
 			})
 	}
@@ -207,7 +206,6 @@ const toUpdateRequest = (params: V2AlertDestinationUpdateParams): AlertDestinati
 				type: "chat",
 				...shared,
 				...(params.channel_id !== undefined ? { channelId: params.channel_id } : undefined),
-				...(params.channel_name !== undefined ? { channelName: params.channel_name } : undefined),
 			}
 	}
 }

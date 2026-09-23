@@ -10,9 +10,11 @@ import {
 	type ChatTarget,
 } from "@maple/chat-platform"
 import { ChatWorkspaceId, OrgId } from "@maple/domain/http"
-import { ConfigProvider, Duration, Effect, Layer, Schema } from "effect"
+import { ConfigProvider, Duration, Effect, Fiber, Layer, Schema } from "effect"
+import { TestClock } from "effect/testing"
 import { cleanupTestDbs, createTestDb, executeSql, type TestDb } from "@maple/backend/platform/test-pglite"
 import { Env } from "@maple/backend/platform/Env"
+import { Database, DatabaseError } from "@maple/backend/platform/DatabaseLive"
 import { sealChatWorkspaceCredentials } from "@maple/backend/services/integrations/chat-workspace-credentials"
 import {
 	ChatConnectorRegistry,
@@ -43,7 +45,8 @@ interface Posted {
 
 const unreachable = () => Effect.die("the alert reached another transport method")
 
-const makeConnector = (posted: Array<Posted>): RegisteredChatConnector => ({
+/** `hang` is a platform that never answers the post. */
+const makeConnector = (posted: Array<Posted>, hang = false): RegisteredChatConnector => ({
 	id: TESTCHAT,
 	manifest: {
 		id: TESTCHAT,
@@ -62,30 +65,36 @@ const makeConnector = (posted: Array<Posted>): RegisteredChatConnector => ({
 	outbound: {
 		connectorId: TESTCHAT,
 		limits: { maxMessageChars: 1000, minEditInterval: Duration.millis(500) },
-		requiredConfig: [],
+		requiredConfig: [{ name: OUTBOUND_KEY, secret: true }],
 		transport: Effect.gen(function* () {
 			const config = yield* ConnectorCredentials
 			return {
 				post: (target, blocks) =>
-					target.workspaceId === "workspace-revoked"
-						? Effect.fail(
-								new ChatOutboundError({
-									message: "Test Chat refused the call: token_revoked",
-									connectorId: TESTCHAT,
-									operation: "post",
-									reason: "auth",
+					hang
+						? Effect.never
+						: target.workspaceId === "workspace-revoked"
+							? Effect.fail(
+									new ChatOutboundError({
+										message: "Test Chat refused the call: token_revoked",
+										connectorId: TESTCHAT,
+										operation: "post",
+										reason: "auth",
+									}),
+								)
+							: Effect.sync(() => {
+									posted.push({ target, blocks, config })
+									return { target, messageId: "message-1" }
 								}),
-							)
-						: Effect.sync(() => {
-								posted.push({ target, blocks, config })
-								return { target, messageId: "message-1" }
-							}),
 				edit: unreachable,
 				typing: unreachable,
 				openThread: unreachable,
 				conversation: unreachable,
 				history: unreachable,
-				destinations: unreachable,
+				destinations: () =>
+					Effect.succeed([
+						{ id: "channel-1", name: "incidents", private: false },
+						{ id: "channel-2", name: "oncall", private: true },
+					]),
 			}
 		}),
 	},
@@ -101,27 +110,32 @@ const makeConnector = (posted: Array<Posted>): RegisteredChatConnector => ({
 	}),
 })
 
-const config = ConfigProvider.layer(
-	ConfigProvider.fromUnknown({
-		PORT: "3472",
-		TINYBIRD_HOST: "https://api.tinybird.co",
-		TINYBIRD_TOKEN: "test-token",
-		MAPLE_AUTH_MODE: "self_hosted",
-		MAPLE_ROOT_PASSWORD: "test-root-password",
-		MAPLE_DEFAULT_ORG_ID: "default",
-		MAPLE_INGEST_KEY_ENCRYPTION_KEY: KEY.toString("base64"),
-		MAPLE_INGEST_KEY_LOOKUP_HMAC_KEY: "maple-test-lookup-secret",
-		MAPLE_APP_BASE_URL: "https://web.localhost",
-		[OUTBOUND_KEY]: "deployment-wide-value",
-	}),
-)
+const config = (withOutboundConfig = true) =>
+	ConfigProvider.layer(
+		ConfigProvider.fromUnknown({
+			PORT: "3472",
+			TINYBIRD_HOST: "https://api.tinybird.co",
+			TINYBIRD_TOKEN: "test-token",
+			MAPLE_AUTH_MODE: "self_hosted",
+			MAPLE_ROOT_PASSWORD: "test-root-password",
+			MAPLE_DEFAULT_ORG_ID: "default",
+			MAPLE_INGEST_KEY_ENCRYPTION_KEY: KEY.toString("base64"),
+			MAPLE_INGEST_KEY_LOOKUP_HMAC_KEY: "maple-test-lookup-secret",
+			MAPLE_APP_BASE_URL: "https://web.localhost",
+			...(withOutboundConfig ? { [OUTBOUND_KEY]: "deployment-wide-value" } : undefined),
+		}),
+	)
 
-const makeLayer = (testDb: TestDb, posted: Array<Posted>) =>
+const makeLayer = (
+	testDb: TestDb | Layer.Layer<Database>,
+	posted: Array<Posted>,
+	options: { readonly outboundConfig?: boolean; readonly hang?: boolean } = {},
+) =>
 	ChatAlertPoster.layer.pipe(
-		Layer.provide(Layer.succeed(ChatConnectorRegistry, [makeConnector(posted)])),
-		Layer.provide(testDb.layer),
+		Layer.provide(Layer.succeed(ChatConnectorRegistry, [makeConnector(posted, options.hang)])),
+		Layer.provide("layer" in testDb ? testDb.layer : testDb),
 		Layer.provide(Env.layer),
-		Layer.provide(config),
+		Layer.provide(config(options.outboundConfig)),
 	)
 
 /** Link a workspace with a sealed credential, as a completed install leaves it. */
@@ -149,7 +163,103 @@ const blocks: ReadonlyArray<ChatBlock> = [{ kind: "prose", markdown: "**Checkout
 const trackedDbs: TestDb[] = []
 afterEach(() => cleanupTestDbs(trackedDbs))
 
+const post = (orgId = ORG, workspaceId = WORKSPACE) =>
+	Effect.gen(function* () {
+		const poster = yield* ChatAlertPoster
+		return yield* poster.post({ orgId, workspaceId, channelId: "channel-1", blocks })
+	})
+
 describe("ChatAlertPoster", () => {
+	it.effect("keeps a failed workspace lookup retryable", () => {
+		const failing = Layer.succeed(Database, {
+			execute: () => Effect.fail(new DatabaseError({ message: "connection reset", cause: null })),
+		})
+		return Effect.gen(function* () {
+			const failure = yield* post().pipe(Effect.flip)
+			assert.strictEqual(failure._tag, "@maple/http/errors/AlertDeliveryError")
+			assert.isTrue(failure.error.retryable)
+		}).pipe(Effect.provide(makeLayer(failing, [])))
+	})
+
+	it.effect("keeps a deployment's missing connector config retryable, and posts nothing", () =>
+		Effect.gen(function* () {
+			const testDb = createTestDb(trackedDbs)
+			const posted: Array<Posted> = []
+			yield* linkWorkspace(testDb, WORKSPACE, "workspace-1")
+			yield* Effect.gen(function* () {
+				const failure = yield* post().pipe(Effect.flip)
+				// Retryable, so no org's destination is disabled for this deployment's gap.
+				assert.strictEqual(failure._tag, "@maple/http/errors/AlertDeliveryError")
+				assert.isTrue(failure.error.retryable)
+				assert.lengthOf(posted, 0)
+			}).pipe(Effect.provide(makeLayer(testDb, posted, { outboundConfig: false })))
+		}),
+	)
+
+	it.effect("times a platform that never answers out, retryably", () =>
+		Effect.gen(function* () {
+			const testDb = createTestDb(trackedDbs)
+			yield* linkWorkspace(testDb, WORKSPACE, "workspace-1")
+			yield* Effect.gen(function* () {
+				const fiber = yield* Effect.forkChild(post().pipe(Effect.flip))
+				yield* TestClock.adjust("15 seconds")
+				const failure = yield* Fiber.join(fiber)
+				assert.strictEqual(failure._tag, "@maple/http/errors/AlertDeliveryError")
+				assert.include(failure.message, "timed out")
+			}).pipe(Effect.provide(makeLayer(testDb, [], { hang: true })))
+		}),
+	)
+
+	it.effect("reports a credential that will not open as needing a reinstall", () =>
+		Effect.gen(function* () {
+			const testDb = createTestDb(trackedDbs)
+			yield* linkWorkspace(testDb, WORKSPACE, "workspace-1")
+			// Moved onto another workspace id: the envelope's AAD no longer matches its row.
+			yield* Effect.promise(() =>
+				executeSql(testDb, "update chat_workspaces set external_workspace_id = 'workspace-moved'"),
+			)
+			yield* Effect.gen(function* () {
+				const failure = yield* post().pipe(Effect.flip)
+				assert.strictEqual(failure._tag, "@maple/http/errors/AlertDeliveryAuthError")
+				assert.include(failure.message, "reinstall")
+			}).pipe(Effect.provide(makeLayer(testDb, [])))
+		}),
+	)
+
+	it.effect("finds only a channel the org's workspace lists, and names it from the listing", () =>
+		Effect.gen(function* () {
+			const testDb = createTestDb(trackedDbs)
+			yield* linkWorkspace(testDb, WORKSPACE, "workspace-1")
+			yield* Effect.gen(function* () {
+				const poster = yield* ChatAlertPoster
+				assert.deepStrictEqual(yield* poster.findChannel(ORG, WORKSPACE, "channel-2"), {
+					connector: TESTCHAT,
+					workspaceName: "Acme",
+					channelName: "oncall",
+				})
+				// A channel from somewhere else — the case a shared bot token would otherwise post to.
+				const foreign = yield* poster.findChannel(ORG, WORKSPACE, "their-channel").pipe(Effect.flip)
+				assert.strictEqual(foreign._tag, "@maple/http/errors/AlertValidationError")
+				const otherOrg = yield* poster
+					.findChannel(OTHER_ORG, WORKSPACE, "channel-1")
+					.pipe(Effect.flip)
+				assert.strictEqual(otherOrg._tag, "@maple/http/errors/AlertValidationError")
+			}).pipe(Effect.provide(makeLayer(testDb, [])))
+		}),
+	)
+
+	it.effect("refuses to confirm a channel on a deployment without the connector's config", () =>
+		Effect.gen(function* () {
+			const testDb = createTestDb(trackedDbs)
+			yield* linkWorkspace(testDb, WORKSPACE, "workspace-1")
+			yield* Effect.gen(function* () {
+				const poster = yield* ChatAlertPoster
+				const failure = yield* poster.findChannel(ORG, WORKSPACE, "channel-1").pipe(Effect.flip)
+				assert.include(failure.message, "not configured")
+			}).pipe(Effect.provide(makeLayer(testDb, [], { outboundConfig: false })))
+		}),
+	)
+
 	it.effect("posts through the workspace's connector, with its own credential", () =>
 		Effect.gen(function* () {
 			const testDb = createTestDb(trackedDbs)

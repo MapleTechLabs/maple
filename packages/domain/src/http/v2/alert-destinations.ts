@@ -264,12 +264,8 @@ const V2ChatDestinationCreateParams = Schema.Struct({
 	}),
 	channel_id: NonEmptyString.annotate({
 		description:
-			"The chat platform's id for the channel, as the workspace's destinations listing returns it.",
+			"The chat platform's id for the channel, as the workspace's destinations listing returns it. A channel the listing does not include is rejected; the name is read from the listing.",
 		examples: ["123456789012345678"],
-	}),
-	channel_name: NonEmptyString.annotate({
-		description: "Display name of the channel, e.g. `incidents`.",
-		examples: ["incidents"],
 	}),
 	enabled: enabledField,
 }).annotate({ identifier: "AlertDestinationCreateChat", title: "Chat connector destination" })
@@ -361,7 +357,6 @@ export const V2AlertDestinationUpdateParams = Schema.Union([
 		type: Schema.Literal("chat"),
 		name: optionalNameField,
 		channel_id: OptionalNonEmptyString,
-		channel_name: OptionalNonEmptyString,
 		enabled: Schema.optionalKey(Schema.Boolean),
 	}).annotate({ identifier: "AlertDestinationUpdateChat", title: "Chat connector destination update" }),
 ]).annotate({

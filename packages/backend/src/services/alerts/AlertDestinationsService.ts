@@ -15,16 +15,14 @@ import {
 	AlertRuleDocument,
 	AlertRuleStoredConfigInvalidError,
 	AlertValidationError,
-	ChatConnectorId,
-	ChatWorkspaceId,
 	RoleName,
 	type AlertDestinationCreateRequest,
 	type AlertDestinationUpdateRequest,
-	type ChatAlertDestinationConfig,
+	type ChatWorkspaceId as ChatWorkspaceIdType,
 	type OrgId,
 	type UserId,
 } from "@maple/domain/http"
-import { alertDestinations, alertRules, chatWorkspaces, type AlertDestinationRow } from "@maple/db"
+import { alertDestinations, alertRules, type AlertDestinationRow } from "@maple/db"
 import { and, desc, eq, sql } from "drizzle-orm"
 import { Context, Effect, Layer, Match, Option, Redacted, Schema } from "effect"
 import { encryptAes256Gcm, type EncryptedValue } from "@maple/backend/platform/Crypto"
@@ -42,7 +40,7 @@ import {
 	type OrgMembersServiceApi,
 } from "@maple/backend/services/org/OrgMembersService"
 import { SlackBotTokenResolver } from "@maple/backend/services/integrations/slack-bot-token"
-import { ChatAlertPoster } from "./ChatAlertPoster"
+import { ChatAlertPoster, type ChatChannelChoice } from "./ChatAlertPoster"
 import { PAGERDUTY_ROUTING_KEY_PATTERN, verifyPagerDutyRoutingKey } from "./delivery/transports/pagerduty"
 import {
 	fetchTelegramChats,
@@ -64,8 +62,6 @@ const decodeAlertDestinationTypeSync = Schema.decodeUnknownSync(AlertDestination
 const decodeAlertRuleIdSync = Schema.decodeUnknownSync(AlertRuleDocument.fields.id)
 const decodeIsoDateTimeStringSync = Schema.decodeUnknownSync(AlertDestinationDocument.fields.createdAt)
 const decodeRoleNameSync = Schema.decodeUnknownSync(RoleName)
-const decodeChatConnectorIdSync = Schema.decodeUnknownSync(ChatConnectorId)
-const decodeChatWorkspaceIdSync = Schema.decodeUnknownSync(ChatWorkspaceId)
 
 const adminRoles = [decodeRoleNameSync("root"), decodeRoleNameSync("org:admin")]
 
@@ -142,13 +138,13 @@ const telegramSummary = (chatId: string) => `Chat ${chatId.trim()}`
  * and an edit lists the same workspace's channels from it.
  */
 const chatPublicConfig = (
-	workspace: { readonly name: string; readonly connector: string },
-	request: Pick<ChatAlertDestinationConfig, "workspaceId" | "channelName">,
+	workspaceId: ChatWorkspaceIdType,
+	channel: ChatChannelChoice,
 ): DestinationPublicConfig => ({
-	summary: workspace.name,
-	channelLabel: `#${request.channelName.trim()}`,
-	chatConnector: workspace.connector,
-	chatWorkspaceId: request.workspaceId,
+	summary: channel.workspaceName,
+	channelLabel: `#${channel.channelName}`,
+	chatConnector: channel.connector,
+	chatWorkspaceId: workspaceId,
 })
 
 const buildPublicConfig = (
@@ -234,10 +230,10 @@ const destinationDocumentFromRow = (
 		memberUserIds: publicConfig.memberUserIds != null ? [...publicConfig.memberUserIds] : null,
 		...(publicConfig.chatConnector === undefined
 			? undefined
-			: { chatConnector: decodeChatConnectorIdSync(publicConfig.chatConnector) }),
+			: { chatConnector: publicConfig.chatConnector }),
 		...(publicConfig.chatWorkspaceId === undefined
 			? undefined
-			: { chatWorkspaceId: decodeChatWorkspaceIdSync(publicConfig.chatWorkspaceId) }),
+			: { chatWorkspaceId: publicConfig.chatWorkspaceId }),
 		lastTestedAt:
 			row.lastTestedAt == null ? null : decodeIsoDateTimeStringSync(row.lastTestedAt.toISOString()),
 		lastTestError: row.lastTestError,
@@ -393,27 +389,6 @@ export class AlertDestinationsService extends Context.Service<
 			)
 		})
 
-		/**
-		 * The org's own workspace, or a validation failure: the id comes from the client, and a
-		 * workspace another org linked must read exactly like one that does not exist.
-		 */
-		const requireChatWorkspace = Effect.fn("AlertsService.requireChatWorkspace")(function* (
-			orgId: OrgId,
-			workspaceId: ChatWorkspaceId,
-		) {
-			const rows = yield* dbExecute((db) =>
-				db
-					.select({ name: chatWorkspaces.name, connector: chatWorkspaces.connector })
-					.from(chatWorkspaces)
-					.where(and(eq(chatWorkspaces.orgId, orgId), eq(chatWorkspaces.id, workspaceId)))
-					.limit(1),
-			)
-			if (rows[0]) return rows[0]
-			return yield* Effect.fail(
-				makeValidationError("That chat workspace is not linked to this organization"),
-			)
-		})
-
 		const resolveEmailMembers = (orgId: OrgId, memberUserIds: ReadonlyArray<UserId>) =>
 			orgMembers
 				.resolveMembers(orgId, memberUserIds)
@@ -537,14 +512,16 @@ export class AlertDestinationsService extends Context.Service<
 				publicConfig = emailPublicConfig(members)
 				secretConfig = emailSecretConfig(members)
 			} else if (request.type === "chat") {
-				// The connector is the workspace's own, read here — never taken from the request.
-				const workspace = yield* requireChatWorkspace(orgId, request.workspaceId)
-				publicConfig = chatPublicConfig(workspace, request)
+				// The workspace must be the org's, the channel one its connector lists, and the
+				// connector and channel name are read from those — never taken from the request.
+				const channelId = request.channelId.trim()
+				const channel = yield* chatAlertPoster.findChannel(orgId, request.workspaceId, channelId)
+				publicConfig = chatPublicConfig(request.workspaceId, channel)
 				secretConfig = {
 					type: "chat",
 					workspaceId: request.workspaceId,
-					channelId: request.channelId.trim(),
-					channelName: request.channelName.trim(),
+					channelId,
+					channelName: channel.channelName,
 				}
 			} else {
 				publicConfig = buildPublicConfig(request)
@@ -784,26 +761,41 @@ export class AlertDestinationsService extends Context.Service<
 							} satisfies DestinationSecretConfig,
 						})
 					},
-					chat: (r) => {
-						// The workspace is fixed at creation; only the channel moves.
-						const previous = hydrated.secretConfig.type === "chat" ? hydrated.secretConfig : null
-						const channelName = normalizeOptionalString(r.channelName)
-						return Effect.succeed({
-							nextPublicConfig: {
-								...hydrated.publicConfig,
-								channelLabel:
-									channelName != null
-										? `#${channelName}`
-										: hydrated.publicConfig.channelLabel,
-							} satisfies DestinationPublicConfig,
-							nextSecretConfig: {
-								type: "chat" as const,
-								workspaceId: previous!.workspaceId,
-								channelId: normalizeOptionalString(r.channelId) ?? previous!.channelId,
-								channelName: channelName ?? previous!.channelName,
-							} satisfies DestinationSecretConfig,
-						})
-					},
+					chat: (r) =>
+						Effect.gen(function* () {
+							const previous = hydrated.secretConfig
+							if (previous.type !== "chat") {
+								return yield* new AlertDestinationStoredConfigInvalidError({
+									message: "Stored destination secret is not a chat destination",
+									destinationId,
+									component: "secret_config",
+									cause: previous.type,
+								})
+							}
+							// The workspace is fixed at creation; only the channel moves, and a moved
+							// channel is checked against the workspace exactly as a new one is.
+							const channelId = normalizeOptionalString(r.channelId)
+							if (channelId === null || channelId === previous.channelId) {
+								return {
+									nextPublicConfig: hydrated.publicConfig,
+									nextSecretConfig: previous satisfies DestinationSecretConfig,
+								}
+							}
+							const channel = yield* chatAlertPoster.findChannel(
+								orgId,
+								previous.workspaceId,
+								channelId,
+							)
+							return {
+								nextPublicConfig: chatPublicConfig(previous.workspaceId, channel),
+								nextSecretConfig: {
+									type: "chat" as const,
+									workspaceId: previous.workspaceId,
+									channelId,
+									channelName: channel.channelName,
+								} satisfies DestinationSecretConfig,
+							}
+						}),
 					email: (r) =>
 						Effect.gen(function* () {
 							const supplied =

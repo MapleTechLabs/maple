@@ -243,7 +243,8 @@ export class TelegramAlertDestinationConfig extends Schema.Class<TelegramAlertDe
 
 /**
  * A channel in a chat workspace linked through a chat connector. Which connector posts it is read
- * from the workspace row, never taken from the request — the workspace must belong to the org.
+ * from the workspace row, never taken from the request — the workspace must belong to the org, and
+ * the channel must be one the workspace's connector lists; its name is read from that listing.
  */
 export class ChatAlertDestinationConfig extends Schema.Class<ChatAlertDestinationConfig>(
 	"ChatAlertDestinationConfig",
@@ -252,7 +253,6 @@ export class ChatAlertDestinationConfig extends Schema.Class<ChatAlertDestinatio
 	name: ChannelLabel,
 	workspaceId: ChatWorkspaceId,
 	channelId: NonEmptyString,
-	channelName: NonEmptyString,
 	enabled: Schema.optionalKey(Schema.Boolean),
 }) {}
 
@@ -358,7 +358,6 @@ export class UpdateChatAlertDestinationConfig extends Schema.Class<UpdateChatAle
 )({
 	name: OptionalNonEmptyString,
 	channelId: OptionalNonEmptyString,
-	channelName: OptionalNonEmptyString,
 	enabled: Schema.optionalKey(Schema.Boolean),
 }) {}
 

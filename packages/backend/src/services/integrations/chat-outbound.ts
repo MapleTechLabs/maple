@@ -17,9 +17,9 @@ import {
 	type ConnectorConfig,
 } from "@maple/chat-platform"
 import { connectors } from "@maple/chat-platform/connectors"
-import { IntegrationsPersistenceError, type ChatWorkspaceId, type OrgId } from "@maple/domain/http"
+import { ChatWorkspaceId, type OrgId } from "@maple/domain/http"
 import { and, eq } from "drizzle-orm"
-import { Array as Arr, Context, Effect, Option } from "effect"
+import { Array as Arr, Context, Effect, Option, Schema } from "effect"
 import { HttpClient } from "effect/unstable/http"
 import type { DatabaseApi } from "@maple/backend/platform/DatabaseLive"
 import {
@@ -38,6 +38,15 @@ export type RegisteredChatConnector = ChatConnector<HttpClient.HttpClient | Conn
 export class ChatConnectorRegistry extends Context.Reference<ReadonlyArray<RegisteredChatConnector>>(
 	"@maple/api/services/ChatConnectorRegistry",
 	{ defaultValue: (): ReadonlyArray<RegisteredChatConnector> => connectors },
+) {}
+
+/**
+ * The workspace's stored credential will not open — a rotated key, or an envelope that no longer
+ * matches its row. Nothing retries its way past this: only a reinstall writes a new one.
+ */
+export class ChatWorkspaceCredentialsUnreadable extends Schema.TaggedError<ChatWorkspaceCredentialsUnreadable>()(
+	"@maple/backend/ChatWorkspaceCredentialsUnreadable",
+	{ message: Schema.String, workspaceId: ChatWorkspaceId },
 ) {}
 
 /** A workspace the org linked, with the connector that owns it and its own credential opened. */
@@ -60,19 +69,13 @@ export const loadOwnedChatWorkspace = Effect.fn("loadOwnedChatWorkspace")(functi
 	workspaceId: ChatWorkspaceId,
 	encryptionKey: Buffer,
 ) {
-	const rows = yield* database
-		.execute((db) =>
-			db
-				.select()
-				.from(chatWorkspaces)
-				.where(and(eq(chatWorkspaces.id, workspaceId), eq(chatWorkspaces.orgId, orgId)))
-				.limit(1),
-		)
-		.pipe(
-			Effect.mapError(
-				(error) => new IntegrationsPersistenceError({ message: `${error._tag}: ${error.message}` }),
-			),
-		)
+	const rows = yield* database.execute((db) =>
+		db
+			.select()
+			.from(chatWorkspaces)
+			.where(and(eq(chatWorkspaces.id, workspaceId), eq(chatWorkspaces.orgId, orgId)))
+			.limit(1),
+	)
 	const row = rows[0]
 	if (row === undefined) return Option.none<OwnedChatWorkspace>()
 	const connector = Arr.findFirst(registry, (candidate) => candidate.id === row.connector)
@@ -88,8 +91,9 @@ export const loadOwnedChatWorkspace = Effect.fn("loadOwnedChatWorkspace")(functi
 					{ orgId, connector: connector.value.id, externalWorkspaceId: row.externalWorkspaceId },
 					// The message never carries the cause: everything below it is key material.
 					(message) =>
-						new IntegrationsPersistenceError({
+						new ChatWorkspaceCredentialsUnreadable({
 							message: `Stored chat workspace credential is unreadable: ${message}`,
+							workspaceId,
 						}),
 				)
 	return Option.some<OwnedChatWorkspace>({
@@ -99,6 +103,19 @@ export const loadOwnedChatWorkspace = Effect.fn("loadOwnedChatWorkspace")(functi
 		credentials,
 	})
 })
+
+/**
+ * The deployment-wide config names the workspace's connector declared and this host does not
+ * have. Checked before a transport is built: a connector posting without its credential would
+ * earn a refusal that reads as the org's grant being revoked, when it is this deployment's gap.
+ */
+export const missingOutboundConfig = (
+	workspace: OwnedChatWorkspace,
+	outboundConfig: ConnectorConfig,
+): ReadonlyArray<string> =>
+	workspace.connector.outbound.requiredConfig
+		.filter((key) => !outboundConfig.has(key.name))
+		.map((key) => key.name)
 
 /**
  * The workspace's outbound transport, with the deployment's outbound config and the workspace's

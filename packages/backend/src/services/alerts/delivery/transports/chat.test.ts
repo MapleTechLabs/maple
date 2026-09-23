@@ -5,6 +5,7 @@ import { assert, describe, it } from "@effect/vitest"
 import { Effect, Schema } from "effect"
 import { chatDeliveryFailure } from "../../ChatAlertPoster"
 import type { DispatchContext } from "../context"
+import { dispatchDelivery } from "../dispatch"
 import type { ChatAlertPost, EffectTransportDeps, RenderInput, SecretConfigOf } from "../Transport"
 import { buildChatAlertBlocks, chatTransport } from "./chat"
 
@@ -153,6 +154,30 @@ describe("chat transport", () => {
 	})
 })
 
+describe("chat through dispatchDelivery", () => {
+	it.effect("reaches the chat transport from the destination's secret config, fetching nothing", () => {
+		const posts: Array<ChatAlertPost> = []
+		const fetchFn: typeof fetch = async () => {
+			throw new Error("a chat destination made an HTTP request of its own")
+		}
+		return Effect.gen(function* () {
+			const result = yield* dispatchDelivery(context, "{}", fetchFn, 5_000, LINK, CHAT, {
+				sendEmail: () => Effect.die("the chat transport sent an email"),
+				resolveSlackBotToken: () =>
+					Effect.die("the chat transport resolved another integration's token"),
+				postChatAlert: (post) =>
+					Effect.sync(() => {
+						posts.push(post)
+						return { connectorName: "Test Chat", messageId: "message-1" }
+					}),
+			})
+			assert.strictEqual(result.providerMessage, "Delivered to Test Chat #incidents")
+			assert.strictEqual(posts[0]?.workspaceId, WORKSPACE)
+			assert.include(markdownOf(posts[0]?.blocks ?? []), "**Checkout error rate**")
+		})
+	})
+})
+
 describe("chat delivery failures", () => {
 	it("follows what the platform said was wrong", () => {
 		assert.strictEqual(
@@ -180,5 +205,13 @@ describe("chat delivery failures", () => {
 		const unexplained = chatDeliveryFailure(outboundError({}))
 		assert.strictEqual(unexplained._tag, "@maple/http/errors/AlertDeliveryError")
 		assert.strictEqual(unexplained.destinationType, "chat")
+		// The connector's own failure rides along on every branch.
+		for (const failure of [
+			chatDeliveryFailure(outboundError({ reason: "auth" })),
+			chatDeliveryFailure(outboundError({ status: 403 })),
+			unexplained,
+		]) {
+			assert.instanceOf(failure.cause, ChatOutboundError)
+		}
 	})
 })

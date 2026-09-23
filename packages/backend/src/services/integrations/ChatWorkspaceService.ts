@@ -44,6 +44,7 @@ import {
 	ChatConnectorRegistry,
 	chatOutboundTransport,
 	loadOwnedChatWorkspace,
+	missingOutboundConfig,
 } from "@maple/backend/services/integrations/chat-outbound"
 
 export { ChatConnectorRegistry }
@@ -718,25 +719,53 @@ const make: Effect.Effect<
 	) {
 		yield* Effect.annotateCurrentSpan({ orgId })
 		const key = yield* credentialKey
-		const workspace = yield* loadOwnedChatWorkspace(database, registry, orgId, workspaceId, key)
+		const workspace = yield* loadOwnedChatWorkspace(database, registry, orgId, workspaceId, key).pipe(
+			Effect.catchTags({
+				"@maple/api/lib/DatabaseError": (error) => Effect.fail(toPersistenceError(error)),
+				"@maple/backend/ChatWorkspaceCredentialsUnreadable": () =>
+					Effect.fail(
+						new IntegrationsNotConnectedError({
+							message:
+								"This workspace's stored credential is unreadable. Reinstall the app from Integrations to relink it.",
+						}),
+					),
+			}),
+		)
 		if (Option.isNone(workspace)) return yield* Effect.fail(notFound("No chat workspace with this id"))
+		const name = workspace.value.connector.manifest.name
+		const missing = missingOutboundConfig(workspace.value, env.CHAT_CONNECTOR_OUTBOUND_CONFIG)
+		if (missing.length > 0) {
+			return yield* Effect.fail(
+				new IntegrationsConfigurationError({
+					message: `${name} is not configured on this deployment (${missing.join(", ")})`,
+				}),
+			)
+		}
 		const transport = yield* chatOutboundTransport(
 			workspace.value,
 			env.CHAT_CONNECTOR_OUTBOUND_CONFIG,
 			httpClient,
 		)
 		return yield* transport.destinations(workspace.value.externalWorkspaceId).pipe(
-			Effect.mapError((error) =>
-				error.reason === "auth"
-					? new IntegrationsNotConnectedError({
-							message: `Maple can't read this workspace's channels. Reinstall ${workspace.value.connector.manifest.name} from Integrations to grant channel access.`,
+			Effect.mapError((error) => {
+				switch (error.reason) {
+					case "auth":
+						return new IntegrationsNotConnectedError({
+							message: `Maple can't read this workspace's channels. Reinstall ${name} from Integrations to grant channel access.`,
 						})
-					: new IntegrationsUpstreamError({
+					case "not_found":
+						return new IntegrationsNotConnectedError({
+							message: `The Maple bot is no longer in this workspace. Reinstall ${name} from Integrations to add it back.`,
+						})
+					case "rejected":
+					case undefined:
+						return new IntegrationsUpstreamError({
 							message: error.message,
 							...(error.status === undefined ? undefined : { status: error.status }),
 							cause: error,
-						}),
-			),
+						})
+				}
+			}),
 		)
 	})
 

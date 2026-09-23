@@ -1,5 +1,5 @@
 import type { AlertDestinationRow } from "@maple/db"
-import { ChatWorkspaceId } from "@maple/domain/http"
+import { ChatConnectorId, ChatWorkspaceId } from "@maple/domain/http"
 import { Effect, Schema } from "effect"
 import { decryptAes256Gcm } from "@maple/backend/platform/Crypto"
 
@@ -19,8 +19,8 @@ export const DestinationPublicConfigSchema = Schema.Struct({
 	hazelChannelName: Schema.optionalKey(Schema.String),
 	memberUserIds: Schema.optionalKey(Schema.Array(Schema.String)),
 	/** `chat` only: which connector draws the row, and the workspace an edit lists channels from. */
-	chatConnector: Schema.optionalKey(Schema.String),
-	chatWorkspaceId: Schema.optionalKey(Schema.String),
+	chatConnector: Schema.optionalKey(ChatConnectorId),
+	chatWorkspaceId: Schema.optionalKey(ChatWorkspaceId),
 })
 
 const DestinationSecretConfigSchema = Schema.Union([
