@@ -1387,7 +1387,12 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 								})
 							return entry.mode
 						}
-						if (entry.type !== "tree") return "100644"
+						// A symlink or submodule in the middle of the path would be written through, or replaced.
+						if (entry.type !== "tree")
+							return yield* new GithubAppError({
+								message: `${path} passes through ${parts.slice(0, i + 1).join("/")}, which is not a directory (mode ${entry.mode}); it is not edited`,
+								scope: "repository",
+							})
 						sha = entry.sha
 					}
 					return "100644"
