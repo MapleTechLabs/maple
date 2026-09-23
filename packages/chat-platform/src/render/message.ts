@@ -263,11 +263,14 @@ const answerOffset = (text: string, calls: ReadonlyArray<ChatToolCall>, running:
 	return 0
 }
 
+/** The phrase the session recorded, or the tool's name in words for a call that has none. */
+const toolLabel = (call: ChatToolCall): string => call.label ?? `Using ${call.name.replaceAll("_", " ")}`
+
 const toolActivity = (call: ChatToolCall): ChatToolActivity => {
 	const agent = delegatedAgentOf(call.name)
 	if (call.task !== undefined) {
 		return {
-			name: agent ?? call.name,
+			label: agent === undefined ? toolLabel(call) : `Delegating to ${agent}`,
 			status:
 				call.task.status === "running"
 					? "running"
@@ -280,7 +283,7 @@ const toolActivity = (call: ChatToolCall): ChatToolActivity => {
 	return {
 		// `output` is optional on the wire, so its PRESENCE is what settles a call — a tool that
 		// answered with nothing has an output, and reading the value would call it still running.
-		name: call.name,
+		label: toolLabel(call),
 		status: !("output" in call) ? "running" : call.isError === true ? "failed" : "done",
 		detail: null,
 	}

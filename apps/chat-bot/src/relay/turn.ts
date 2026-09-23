@@ -12,8 +12,10 @@
  * connector.
  */
 import {
+	ConnectorCredentials,
 	decodeChatActionControlId,
 	driveChatTurn,
+	WORKSPACE_CREDENTIALS,
 	type ChatActionRequest,
 	type ChatChartRef,
 	type ChatConversation,
@@ -21,6 +23,7 @@ import {
 	type ChatOutbound,
 	type ChatOutboundTransport,
 	type ChatTarget,
+	type ConnectorConfig,
 	type InboundAction,
 	type InboundEvent,
 	type InboundMessage,
@@ -45,7 +48,7 @@ import {
 	type ConversationNotRecorded,
 } from "./conversation.ts"
 import { chatTurnEvents, sessionUnreachable } from "./events.ts"
-import type { RelayTurnCheckpoint } from "./resume.ts"
+import type { RelayTurnCheckpoint } from "./settle.ts"
 
 /** The org behind a workspace, and who the person acting is in Maple, when one was asked about. */
 export interface RelayWorkspace {
@@ -119,10 +122,7 @@ export interface RelayPorts<R = never> {
 	 * it cannot even answer in — so the host answers this from what it last said here.
 	 */
 	readonly announceUnlinked: Effect.Effect<boolean>
-	/**
-	 * Keep what a later activation needs to go on rendering this turn if this one is evicted — see
-	 * `./resume.ts`. Best effort: a checkpoint that is not written costs the resume, never the turn.
-	 */
+	/** Checkpoint the turn's posted messages, for settling it after an eviction (`./settle.ts`). */
 	readonly recordTurn: (checkpoint: RelayTurnCheckpoint) => Effect.Effect<void>
 }
 
@@ -131,9 +131,9 @@ export interface RelayPorts<R = never> {
  *
  * The session ends a turn of its own accord — the run finishes, or its heartbeat fails a turn
  * whose object was evicted — so this is the bound on everything that could keep the stream open
- * without one, and it matches the session's own staleness ceiling.
+ * without one, and it matches the session's own staleness ceiling (`TURN_STALE_MS`).
  */
-const RELAY_TIMEOUT = Duration.minutes(15)
+const RELAY_TIMEOUT = Duration.minutes(25)
 
 const UNLINKED_NOTICE =
 	"This workspace isn't connected to a Maple organization yet — an admin can link it under Integrations in Maple."
@@ -349,8 +349,7 @@ const relayMessage = Effect.fn("chat_bot.relay_turn")(function* <R>(
 		cursor: claimed.value.cursor,
 		target: conversation.target,
 		messages: [],
-		deadline: now + Duration.toMillis(RELAY_TIMEOUT),
-		resumes: 0,
+		recordedAt: now,
 	}
 	yield* driveChatTurn({
 		// From the cursor the claim answered with, so the turn's own first event is the first one
@@ -581,6 +580,56 @@ export const relayInboundEvent = <R>(
 					"maple.chat.workspace_id": event.workspaceId,
 					"error.type": summarizeCause(cause),
 				}),
+			),
+		),
+	)
+
+/** What the one workspace read answers: the relay's half, and the transport's credential. */
+export interface ResolvedWorkspace {
+	readonly relay: RelayWorkspace
+	readonly credentials: string | undefined
+}
+
+/**
+ * {@link relayInboundEvent}, with the workspace row read at most once — and only when asked for.
+ *
+ * The relay's `resolveWorkspace` and the transport's `ConnectorCredentials` share one memoized
+ * read, so a message the gates turn away opens no connection and decrypts nothing, and one that
+ * proceeds costs exactly one of each.
+ */
+export const relayWithWorkspace = <R>(
+	event: InboundEvent,
+	config: ConnectorConfig,
+	lookup: Effect.Effect<Option.Option<ResolvedWorkspace>, WorkspaceLookupFailed>,
+	ports: (resolveWorkspace: RelayPorts<R>["resolveWorkspace"]) => RelayPorts<R>,
+): Effect.Effect<void, never, Exclude<R, ConnectorCredentials>> =>
+	withWorkspace(config, lookup, ports, (relayPorts) => relayInboundEvent(event, relayPorts))
+
+/** Run `body` against ports whose workspace and credential share the one memoized read. */
+export const withWorkspace = <A, R>(
+	config: ConnectorConfig,
+	lookup: Effect.Effect<Option.Option<ResolvedWorkspace>, WorkspaceLookupFailed>,
+	ports: (resolveWorkspace: RelayPorts<R>["resolveWorkspace"]) => RelayPorts<R>,
+	body: (ports: RelayPorts<R>) => Effect.Effect<A, never, R>,
+): Effect.Effect<A, never, Exclude<R, ConnectorCredentials>> =>
+	Effect.flatMap(Effect.cached(lookup), (read) =>
+		body(
+			ports(() =>
+				Effect.map(
+					read,
+					Option.map((found) => found.relay),
+				),
+			),
+		).pipe(
+			Effect.provideService(
+				ConnectorCredentials,
+				// A read that failed posts with the deployment's config alone; the relay has already
+				// refused to answer on it.
+				Effect.map(Effect.orElseSucceed(read, Option.none), (found) =>
+					Option.isNone(found) || found.value.credentials === undefined
+						? config
+						: new Map(config).set(WORKSPACE_CREDENTIALS, found.value.credentials),
+				),
 			),
 		),
 	)

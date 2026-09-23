@@ -104,5 +104,6 @@ export function registerTransitionErrorIssueTool(server: McpToolRegistrar) {
 				}),
 			}
 		}),
+		{ phrases: ["Updating an issue's status"] },
 	)
 }

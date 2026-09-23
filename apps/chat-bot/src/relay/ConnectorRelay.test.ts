@@ -14,27 +14,32 @@ import { ChatConversationKey } from "@maple/domain/chat-session"
 import { Effect, Option, Schema } from "effect"
 import { describe, expect, it } from "vitest"
 import { ConnectorRelay, type ConnectorRelayRuntime } from "./ConnectorRelay.ts"
-import { decodeRelayTurnCheckpoint, type RelayTurnCheckpoint } from "./resume.ts"
+import { decodeRelayTurnCheckpoint, type RelayTurnCheckpoint, type SettleOutcome } from "./settle.ts"
 import type { RelayHost } from "./run.ts"
 
 /**
- * The real heavy half, with every resume it is asked for recorded — and, given `event`, a stand-in
- * for the turn a delivered event runs.
+ * The real heavy half, with every settle it is asked for recorded — and, given them, stand-ins for
+ * the turn a delivered event runs and for what a settle answers.
  */
-const heavy = (event?: (host: RelayHost) => Promise<void>) => {
-	const resumed: Array<unknown> = []
+const heavy = (stand?: {
+	readonly event?: (host: RelayHost) => Promise<void>
+	readonly settle?: SettleOutcome
+}) => {
+	const settled: Array<unknown> = []
 	const load = async (): Promise<ConnectorRelayRuntime> => {
 		const actual = await import("./run.ts")
 		return {
 			runInboundEvent: (host, inbound) =>
-				event === undefined ? actual.runInboundEvent(host, inbound) : event(host),
-			resumeInboundTurn: (host, stored) => {
-				resumed.push(stored)
-				return actual.resumeInboundTurn(host, stored)
+				stand?.event === undefined ? actual.runInboundEvent(host, inbound) : stand.event(host),
+			settleInboundTurn: (host, stored) => {
+				settled.push(stored)
+				return stand?.settle === undefined
+					? actual.settleInboundTurn(host, stored)
+					: Promise.resolve(stand.settle)
 			},
 		}
 	}
-	return { resumed, load }
+	return { settled, load }
 }
 
 const TESTCHAT = chatConnectorId("testchat")
@@ -185,8 +190,8 @@ describe("remembering the conversations the bot opened", () => {
 		}).pipe(Effect.runPromise))
 })
 
-/** A turn's checkpoint as the relay writes it. `resumes: 3` is one no resume will act on. */
-const checkpoint = (resumes = 0): RelayTurnCheckpoint =>
+/** A turn's checkpoint as the relay writes it. */
+const checkpoint = (): RelayTurnCheckpoint =>
 	Option.getOrThrow(
 		decodeRelayTurnCheckpoint({
 			connector: TESTCHAT,
@@ -195,8 +200,7 @@ const checkpoint = (resumes = 0): RelayTurnCheckpoint =>
 			cursor: 0,
 			target: { workspaceId: "workspace-1", channelId: "thread_7" },
 			messages: [{ target: { workspaceId: "workspace-1", channelId: "thread_7" }, messageId: "m1" }],
-			deadline: Number.MAX_SAFE_INTEGER,
-			resumes,
+			recordedAt: 0,
 		}),
 	)
 const TURN_KEY = "turn:org_1:bot-testchat-thread_7:a1"
@@ -222,10 +226,12 @@ describe("waking after an eviction", () => {
 		const recorded = new Promise<void>((resolve) => {
 			recordedTurn = resolve
 		})
-		const run = heavy(async (host) => {
-			await Effect.runPromise(host.recordTurn(checkpoint()))
-			recordedTurn()
-			await finished
+		const run = heavy({
+			event: async (host) => {
+				await Effect.runPromise(host.recordTurn(checkpoint()))
+				recordedTurn()
+				await finished
+			},
 		})
 		const relay = new ConnectorRelay(state, {}, run.load)
 
@@ -237,28 +243,44 @@ describe("waking after an eviction", () => {
 
 		finish()
 		await Promise.all(state.pending)
-		expect(run.resumed).toEqual([])
+		expect(run.settled).toEqual([])
 		expect([...state.stored]).toEqual([])
 	})
 
-	it("resumes a turn it finds recorded, and clears it once the resume is over", async () => {
+	it("settles a turn it finds recorded, and clears it once settled", async () => {
 		const state = objectState()
-		const run = heavy()
-		state.stored.set(TURN_KEY, checkpoint(3))
+		const run = heavy({ settle: "done" })
+		state.stored.set(TURN_KEY, checkpoint())
 		await new ConnectorRelay(state, {}, run.load).alarm()
 
 		await Promise.all(state.pending)
 		// Kept resident while it works, like any turn this object relays.
 		expect(state.alarms).toHaveLength(1)
-		expect(run.resumed).toEqual([checkpoint(3)])
+		expect(run.settled).toEqual([checkpoint()])
 		expect([...state.stored]).toEqual([])
 	})
 
+	it("keeps a turn the session is still running, and comes back for it", async () => {
+		const state = objectState()
+		const run = heavy({ settle: "pending" })
+		state.stored.set(TURN_KEY, checkpoint())
+		const relay = new ConnectorRelay(state, {}, run.load)
+
+		await relay.alarm()
+		await Promise.all(state.pending)
+		await relay.alarm()
+		await Promise.all(state.pending)
+
+		expect(run.settled).toEqual([checkpoint(), checkpoint()])
+		expect([...state.stored.keys()]).toEqual([TURN_KEY])
+		expect(state.alarms).toHaveLength(2)
+	})
+
 	it("does not push back an alarm that is already due, however busy the conversation", async () => {
-		// Events under 30s apart would otherwise postpone the alarm — and any resume — indefinitely.
+		// Events under 30s apart would otherwise postpone the alarm — and any settle — indefinitely.
 		const state = objectState()
 		state.scheduled.at = 1
-		const relay = new ConnectorRelay(state, {}, heavy(() => Promise.resolve()).load)
+		const relay = new ConnectorRelay(state, {}, heavy({ event: () => Promise.resolve() }).load)
 
 		await relay.deliver(message)
 		await relay.deliver(message)

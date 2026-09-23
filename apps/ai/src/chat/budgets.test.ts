@@ -7,8 +7,17 @@
  */
 import { describe, expect, it } from "vitest"
 import { AgentPolicy } from "@effect-agent/core/AgentPolicy"
+import * as Duration from "effect/Duration"
 import { AGENTS, agentPolicyFor } from "./agents"
-import { CHAT_BUDGET, INVESTIGATION_BUDGET, liveContextLimit, MAX_LIVE_CONTEXT_TOKENS } from "./budgets"
+import {
+	CHAT_BUDGET,
+	INVESTIGATION_BUDGET,
+	liveContextLimit,
+	MAX_LIVE_CONTEXT_TOKENS,
+	PR_REVIEW_BUDGET,
+	type AgentBudget,
+} from "./budgets"
+import { TURN_STALE_MS } from "./ChatSession"
 
 /** The window `z-ai/glm-5.3-flash:nitro` reports, which is what made this a bug. */
 const GLM_CONTEXT = 1_000_000
@@ -45,10 +54,22 @@ describe("liveContextLimit", () => {
 })
 
 describe("agent budgets", () => {
-	/** An attended reply used to inherit the investigation's ten-minute, hundred-call rail. */
-	it("gives a chat turn a smaller budget than an investigation", () => {
-		expect(CHAT_BUDGET.maxToolCalls).toBeLessThan(INVESTIGATION_BUDGET.maxToolCalls)
-		expect(CHAT_BUDGET.tokenBudget).toBeLessThan(INVESTIGATION_BUDGET.tokenBudget)
+	/** A chat turn hit the old 600k-token rail at 23 tool calls: the step cap must bind first. */
+	it("lets a chat turn reach its step cap at a full live context", () => {
+		expect(CHAT_BUDGET.tokenBudget).toBeGreaterThanOrEqual(
+			CHAT_BUDGET.maxToolCalls * MAX_LIVE_CONTEXT_TOKENS,
+		)
+	})
+
+	/** Past `TURN_STALE_MS` the session abandons the turn, so every turn's own deadline comes first. */
+	it("stops every turn before the stale-claim watchdog would", () => {
+		const ms = (budget: AgentBudget) => Duration.toMillis(budget.maxDuration)
+		const margin = 5 * 60 * 1000
+		expect(ms(CHAT_BUDGET) + margin).toBeLessThanOrEqual(TURN_STALE_MS)
+		// An unattended pass that ends without its report gets a close-out run under the same budget.
+		for (const budget of [INVESTIGATION_BUDGET, PR_REVIEW_BUDGET]) {
+			expect(2 * ms(budget) + margin).toBeLessThanOrEqual(TURN_STALE_MS)
+		}
 	})
 
 	/** p95 turn was 1.16M tokens: the budget is meant to catch the tail, not ordinary work. */

@@ -7,13 +7,7 @@
  * the database, and none of it belongs on the path Cloudflare evaluates when it validates the
  * uploaded script.
  */
-import {
-	ConnectorCredentials,
-	WORKSPACE_CREDENTIALS,
-	type ChatConnector,
-	type ConnectorConfig,
-	type InboundEvent,
-} from "@maple/chat-platform"
+import type { ChatConnector, ConnectorCredentials, InboundEvent } from "@maple/chat-platform"
 import { connectors } from "@maple/chat-platform/connectors"
 import * as MapleCloudflareSDK from "@maple-dev/effect-sdk/cloudflare"
 import { chatSessionStub } from "@maple/domain/chat-session-stub"
@@ -36,8 +30,14 @@ import {
 	resolveChatWorkspace,
 } from "@maple/backend/services/integrations/chat-workspace-rows"
 import { resolveConnectorConfig } from "../config.ts"
-import { decodeRelayTurnCheckpoint, resumeRelayedTurn } from "./resume.ts"
-import { relayInboundEvent, WorkspaceLookupFailed, type RelayPorts, type RelayWorkspace } from "./turn.ts"
+import { decodeRelayTurnCheckpoint, settleRelayedTurn, type SettleOutcome } from "./settle.ts"
+import {
+	relayWithWorkspace,
+	withWorkspace,
+	WorkspaceLookupFailed,
+	type RelayPorts,
+	type ResolvedWorkspace,
+} from "./turn.ts"
 
 /**
  * This Worker's own SDK instance, at module scope so its buffers are the isolate's.
@@ -99,7 +99,7 @@ export interface RelayHost {
 	/** The relay object's own record of the conversations the bot opened — see `ConnectorRelay`. */
 	readonly ownsConversation: RelayPorts["ownsConversation"]
 	readonly rememberConversation: RelayPorts["rememberConversation"]
-	/** The relay object's checkpoint of the turn it is rendering — see `./resume.ts`. */
+	/** The relay object's checkpoint of the turn it is rendering — see `./settle.ts`. */
 	readonly recordTurn: RelayPorts["recordTurn"]
 }
 
@@ -189,46 +189,14 @@ const lookupWorkspace = (
 		).pipe(lookupFailed(connectorId, "The chat workspace could not be read")),
 	)
 
-/** What the one lookup answers: the relay's half, and the transport's. */
-interface ResolvedWorkspace {
-	readonly relay: RelayWorkspace
-	readonly credentials: string | undefined
-}
-
-/**
- * The config the connector's transport is built from: what the deployment set, plus this
- * workspace's own credential where it stored one.
- */
-const connectorCredentials = (
-	config: ConnectorConfig,
-	resolved: Option.Option<ResolvedWorkspace>,
-): ConnectorConfig => {
-	if (Option.isNone(resolved) || resolved.value.credentials === undefined) return config
-	return new Map(config).set(WORKSPACE_CREDENTIALS, resolved.value.credentials)
-}
-
 const ports = (
 	host: RelayHost,
 	connector: ChatConnector<HttpClient.HttpClient | ConnectorCredentials>,
-	lookup: (
-		connectorId: ChatConnectorId,
-		workspaceId: string,
-		externalUserId: string | undefined,
-	) => Effect.Effect<Option.Option<ResolvedWorkspace>, WorkspaceLookupFailed>,
+	resolveWorkspace: RelayPorts["resolveWorkspace"],
 ): RelayPorts<HttpClient.HttpClient | ConnectorCredentials> => ({
 	outbound: connector.outbound,
 	supportsIdentity: connector.identity !== undefined,
-	/**
-	 * The workspace, and — when a caller names a chat account — the Maple user it is linked to, in
-	 * ONE connection.
-	 *
-	 * Sequential rather than parallel because the second question needs the first one's answer: a
-	 * link is per org, and the org is what the workspace names.
-	 */
-	resolveWorkspace: (connectorId, workspaceId, externalUserId) =>
-		Effect.map(lookup(connectorId, workspaceId, externalUserId), (found) =>
-			Option.map(found, (workspace) => workspace.relay),
-		),
+	resolveWorkspace,
 	forgetWorkspace: (connectorId, workspaceId) =>
 		withDatabase(
 			host.env,
@@ -277,77 +245,65 @@ export const runInboundEvent = async (host: RelayHost, event: InboundEvent): Pro
 	const config = resolveConnectorConfig(host.env, connector)
 	if (config._tag === "missing") return
 
-	// One read for the whole event, memoized: the relay asks which org this is, and the transport is
-	// built from the credential the same row carries. `Effect.cached` is what keeps that one
-	// Postgres connection rather than two, without hoisting the read ahead of the relay's own
-	// decision about whether this message is a turn at all.
 	await Effect.runPromise(
-		Effect.gen(function* () {
-			const lookup = yield* Effect.cached(
-				lookupWorkspace(
-					host,
-					connector,
-					event.connector,
-					event.workspaceId,
-					// Only a click names a person; a message is answered for the workspace.
-					event.type === "action" ? event.actor.id : undefined,
-				),
-			)
-			const resolved = yield* Effect.orElseSucceed(lookup, () => Option.none<ResolvedWorkspace>())
-			yield* relayInboundEvent(
-				event,
-				ports(host, connector, () => lookup),
-			).pipe(Effect.provideService(ConnectorCredentials, connectorCredentials(config.config, resolved)))
-		}).pipe(
-			// oxlint-disable-next-line effecttsgo/strict-effect-provide
-			Effect.provide(Layer.mergeAll(FetchHttpClient.layer, workerEnvLayer(host.env), telemetry.layer)),
-			// On the fiber rather than in a `finally`: the flush is what exports this event's spans,
-			// so it belongs to the same interruption and failure handling they do.
-			Effect.ensuring(Effect.promise(() => telemetry.flush(host.env).catch(() => undefined))),
-		),
+		relayWithWorkspace(
+			event,
+			config.config,
+			lookupWorkspace(
+				host,
+				connector,
+				event.connector,
+				event.workspaceId,
+				// Only a click names a person; a message is answered for the workspace.
+				event.type === "action" ? event.actor.id : undefined,
+			),
+			(resolveWorkspace) => ports(host, connector, resolveWorkspace),
+		).pipe(inRuntime(host.env)),
 	)
 }
 
+/** This Worker's runtime for an event's or a settle's Effect, and the flush that exports its spans. */
+const inRuntime =
+	(env: Record<string, unknown>) =>
+	<A>(program: Effect.Effect<A, never, HttpClient.HttpClient>) =>
+		program.pipe(
+			// oxlint-disable-next-line effecttsgo/strict-effect-provide
+			Effect.provide(Layer.mergeAll(FetchHttpClient.layer, workerEnvLayer(env), telemetry.layer)),
+			// On the fiber rather than in a `finally`: the flush is what exports this event's spans,
+			// so it belongs to the same interruption and failure handling they do.
+			Effect.ensuring(Effect.promise(() => telemetry.flush(env).catch(() => undefined))),
+		)
+
 /**
- * Go on rendering a turn an evicted activation of this object was relaying, from its checkpoint.
- *
- * The same connector, config and workspace lookup a new event gets, so the transport posts with the
- * same credential. A resume answers no event, so the conversation ports only a new message asks are
- * never reached; they answer as a conversation nobody recorded would.
+ * Settle a turn an evicted activation was relaying, through the same connector, config and lazy
+ * workspace read a new event gets. The conversation ports only a new message asks are inert.
  */
-export const resumeInboundTurn = (host: Pick<RelayHost, "env" | "recordTurn">, stored: unknown) => {
+export const settleInboundTurn = async (
+	host: Pick<RelayHost, "env" | "recordTurn">,
+	stored: unknown,
+): Promise<SettleOutcome> => {
+	const checkpoint = decodeRelayTurnCheckpoint(stored)
+	const connector = Option.isNone(checkpoint)
+		? undefined
+		: connectors.find((candidate) => candidate.id === checkpoint.value.connector)
+	const config = connector === undefined ? undefined : resolveConnectorConfig(host.env, connector)
+	if (Option.isNone(checkpoint) || connector === undefined || config?._tag !== "ready") {
+		console.warn("[chat-bot.relay] a turn checkpoint this build cannot settle was dropped")
+		return "done"
+	}
 	const relayHost: RelayHost = {
 		...host,
 		announceUnlinked: Effect.succeed(false),
 		ownsConversation: () => Effect.succeed(false),
 		rememberConversation: () => Effect.void,
 	}
+	const { target } = checkpoint.value
 	return Effect.runPromise(
-		Effect.gen(function* () {
-			const checkpoint = decodeRelayTurnCheckpoint(stored)
-			if (Option.isNone(checkpoint)) {
-				return yield* Effect.logWarning("A turn checkpoint this build cannot read was dropped")
-			}
-			const { connector: connectorId, target } = checkpoint.value
-			const connector = connectors.find((candidate) => candidate.id === connectorId)
-			const config = connector === undefined ? undefined : resolveConnectorConfig(host.env, connector)
-			if (connector === undefined || config === undefined || config._tag === "missing") {
-				return yield* Effect.logWarning(
-					"A turn's connector is no longer configured; not resumed",
-				).pipe(Effect.annotateLogs({ "maple.chat.connector": connectorId }))
-			}
-			const lookup = yield* Effect.cached(
-				lookupWorkspace(relayHost, connector, connectorId, target.workspaceId, undefined),
-			)
-			const resolved = yield* Effect.orElseSucceed(lookup, () => Option.none<ResolvedWorkspace>())
-			yield* resumeRelayedTurn(
-				checkpoint.value,
-				ports(relayHost, connector, () => lookup),
-			).pipe(Effect.provideService(ConnectorCredentials, connectorCredentials(config.config, resolved)))
-		}).pipe(
-			// oxlint-disable-next-line effecttsgo/strict-effect-provide
-			Effect.provide(Layer.mergeAll(FetchHttpClient.layer, workerEnvLayer(host.env), telemetry.layer)),
-			Effect.ensuring(Effect.promise(() => telemetry.flush(host.env).catch(() => undefined))),
-		),
+		withWorkspace(
+			config.config,
+			lookupWorkspace(relayHost, connector, checkpoint.value.connector, target.workspaceId, undefined),
+			(resolveWorkspace) => ports(relayHost, connector, resolveWorkspace),
+			(settlePorts) => settleRelayedTurn(checkpoint.value, settlePorts),
+		).pipe(inRuntime(host.env)),
 	)
 }

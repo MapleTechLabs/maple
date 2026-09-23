@@ -2,9 +2,9 @@
  * A relayed turn that outlives the object relaying it.
  *
  * Eviction here is what it is on the platform: the relaying fiber is dropped mid-turn and nothing
- * of it survives except what it wrote to storage. The resume then has to land on exactly what the
- * uninterrupted run would have left — the same messages, saying the same thing — without posting a
- * second copy of the answer into the conversation.
+ * of it survives except what it wrote to storage. Once the session has ended the turn, the settle
+ * has to land on exactly what the uninterrupted run would have left — the same messages, saying the
+ * same thing — without posting a second copy of the answer into the conversation.
  */
 import { describe, expect, it } from "@effect/vitest"
 import {
@@ -35,7 +35,7 @@ import {
 	Tracer,
 } from "effect"
 import { TestClock } from "effect/testing"
-import { decodeRelayTurnCheckpoint, resumeRelayedTurn, type RelayTurnCheckpoint } from "./resume.ts"
+import { decodeRelayTurnCheckpoint, settleRelayedTurn, type RelayTurnCheckpoint } from "./settle.ts"
 import { relayInboundEvent, type RelayPorts } from "./turn.ts"
 
 const TESTCHAT = chatConnectorId("testchat")
@@ -121,19 +121,29 @@ const platform = (prefix = "m"): Platform => {
 const finalText = (calls: Platform["calls"]): Map<string, ReadonlyArray<ChatBlock>> =>
 	new Map(calls.map((call) => [call.ref.messageId, call.blocks]))
 
-/** A session whose every subscription is answered by `subscribe`. */
-const session = (subscribe: ChatSessionStub["subscribe"]): ChatSessionStub => ({
+/**
+ * A session that has run (or is running) `turn`: `open` keeps its subscription up, as a live turn
+ * does, and `running` is what it answers a settle with.
+ */
+const session = (options?: {
+	readonly open?: boolean
+	readonly running?: boolean
+	readonly gone?: boolean
+}): ChatSessionStub => ({
 	cursor: () => Promise.resolve(0),
-	running: () => Promise.resolve(true),
+	running: () =>
+		options?.gone === true
+			? Promise.reject(new Error(ANSWER))
+			: Promise.resolve(options?.running ?? false),
 	history: () => Promise.resolve([]),
-	since: () => Promise.resolve([]),
+	since: (cursor) => Promise.resolve(turn.filter((next) => next.seq > cursor)),
 	append: () => Promise.resolve(0),
 	holdsTurn: () => Promise.resolve(false),
 	endTurn: () => Promise.resolve(),
 	abort: () => Promise.resolve(),
 	settleProposal: () => Promise.resolve("unknown"),
 	beginTurn: (input) => Promise.resolve({ cursor: 0, messageId: input.messageId, turnMessageId: "a1" }),
-	subscribe,
+	subscribe: () => Promise.resolve(options?.open === true ? sse(turn.slice(0, 3), true) : sse(turn)),
 })
 
 /** The relay object's storage, reduced to the one key a turn's checkpoint lives under. */
@@ -169,10 +179,7 @@ const readBack = (stored: ReturnType<typeof storage>): RelayTurnCheckpoint =>
 	Option.getOrThrow(decodeRelayTurnCheckpoint(stored.checkpoint))
 
 /** A checkpoint as an earlier activation left it, holding `messages`. */
-const checkpointOf = (
-	messages: ReadonlyArray<string>,
-	overrides?: { readonly deadline?: number; readonly resumes?: number },
-): RelayTurnCheckpoint =>
+const checkpointOf = (messages: ReadonlyArray<string>, recordedAt = 0): RelayTurnCheckpoint =>
 	readBack({
 		checkpoint: {
 			connector: TESTCHAT,
@@ -181,8 +188,7 @@ const checkpointOf = (
 			cursor: 0,
 			target,
 			messages: messages.map((messageId) => ({ target, messageId })),
-			deadline: overrides?.deadline ?? Number.MAX_SAFE_INTEGER,
-			resumes: overrides?.resumes ?? 0,
+			recordedAt,
 		},
 		writes: 0,
 	})
@@ -190,43 +196,14 @@ const checkpointOf = (
 /** The uninterrupted run: what each message should end up saying, in order. */
 const uninterrupted = Effect.gen(function* () {
 	const whole = platform()
-	yield* relayInboundEvent(
-		mention,
-		ports(
-			whole.outbound,
-			session(() => Promise.resolve(sse(turn))),
-			storage(),
-		),
-	)
+	yield* relayInboundEvent(mention, ports(whole.outbound, session(), storage()))
 	const posts = whole.calls.filter((call) => call.verb === "post").map((call) => call.ref.messageId)
 	const settled = finalText(whole.calls)
 	return { posts, settled: posts.map((messageId) => settled.get(messageId)) }
 })
 
-const recording = () => {
-	const logs: Array<string> = []
-	const spans: Array<Tracer.NativeSpan> = []
-	const logger = Logger.make(({ fiber, message }) => {
-		logs.push(JSON.stringify({ message, annotations: fiber.getRef(References.CurrentLogAnnotations) }))
-	})
-	const tracer = Tracer.make({
-		span(options) {
-			const span = new Tracer.NativeSpan(options)
-			spans.push(span)
-			return span
-		},
-	})
-	return {
-		logs,
-		spans,
-		context: Context.make(Logger.CurrentLoggers, new Set([logger])).pipe(
-			Context.add(Tracer.Tracer, tracer),
-		),
-	}
-}
-
-describe("resuming a relayed turn", () => {
-	it.effect("finishes an evicted turn in the messages it had already posted", () =>
+describe("settling a relayed turn", () => {
+	it.effect("lands the final answer in the messages an evicted relay had posted", () =>
 		Effect.gen(function* () {
 			const whole = yield* uninterrupted
 
@@ -238,115 +215,96 @@ describe("resuming a relayed turn", () => {
 			const fiber = yield* Effect.forkChild(
 				relayInboundEvent(
 					mention,
-					ports(
-						evicted.outbound,
-						session(() => Promise.resolve(sse(turn.slice(0, 3), true))),
-						stored,
-						(checkpoint) =>
-							checkpoint.messages.length > 1
-								? Deferred.succeed(spread, undefined)
-								: Effect.void,
+					ports(evicted.outbound, session({ open: true }), stored, (checkpoint) =>
+						checkpoint.messages.length > 1 ? Deferred.succeed(spread, undefined) : Effect.void,
 					),
 				),
 			)
 			while (!(yield* Deferred.isDone(spread))) yield* TestClock.adjust("10 millis")
 			yield* Fiber.interrupt(fiber)
-			const posted = evicted.calls.filter((call) => call.verb === "post").map((call) => call.ref)
 			const before = evicted.calls.length
-
 			const checkpoint = readBack(stored)
-			expect(checkpoint.messages).toEqual(posted)
-			yield* resumeRelayedTurn(
+			expect(checkpoint.messages).toEqual(
+				evicted.calls.filter((call) => call.verb === "post").map((call) => call.ref),
+			)
+
+			// While the session is still running the turn, a tick leaves everything alone.
+			const early = yield* settleRelayedTurn(
 				checkpoint,
-				ports(
-					evicted.outbound,
-					session(() => Promise.resolve(sse(turn))),
-					stored,
-				),
+				ports(evicted.outbound, session({ running: true }), stored),
 			)
+			expect(early).toBe("pending")
+			expect(evicted.calls).toHaveLength(before)
 
-			expect(evicted.calls.slice(before).map((call) => call.verb)).not.toContain("post")
-			const settled = finalText(evicted.calls)
-			expect(readBack(stored).messages.map((ref) => settled.get(ref.messageId))).toEqual(whole.settled)
-			// The attempt is spent before the work, so a resume that is itself evicted counts.
-			expect(readBack(stored).resumes).toBe(1)
+			// Once it has ended: one render, into the same messages, and nothing posted twice.
+			const late = yield* settleRelayedTurn(checkpoint, ports(evicted.outbound, session(), stored))
+			expect(late).toBe("done")
+			const settled = evicted.calls.slice(before)
+			expect(settled.map((call) => call.verb)).not.toContain("post")
+			expect(settled).toHaveLength(checkpoint.messages.length)
+			const last = finalText(evicted.calls)
+			expect(checkpoint.messages.map((ref) => last.get(ref.messageId))).toEqual(whole.settled)
 		}),
 	)
 
-	it.effect("settles a turn that ended while nobody was relaying it, in one render", () =>
+	it.effect("posts the part of the answer an evicted relay never reached", () =>
 		Effect.gen(function* () {
 			const whole = yield* uninterrupted
-			const chat = platform()
-			const stored = storage()
-
-			yield* resumeRelayedTurn(
-				checkpointOf(whole.posts),
-				ports(
-					chat.outbound,
-					session(() => Promise.resolve(sse(turn))),
-					stored,
-				),
-			)
-
-			// One edit per message, nothing posted, and the checkpoint written once — for the attempt.
-			expect(chat.calls.map((call) => `${call.verb} ${call.ref.messageId}`)).toEqual(
-				whole.posts.map((messageId) => `edit ${messageId}`),
-			)
-			expect(chat.calls.map((call) => call.blocks)).toEqual(whole.settled)
-			expect(stored.writes).toBe(1)
-			expect(readBack(stored).resumes).toBe(1)
-		}),
-	)
-
-	it.effect("posts only the messages the turn outgrew its checkpoint by", () =>
-		Effect.gen(function* () {
-			const whole = yield* uninterrupted
-			expect(whole.posts.length).toBeGreaterThan(1)
-			// Evicted after the first message was posted: the rest of the answer was never shown.
 			const chat = platform("r")
 			const stored = storage()
 
-			yield* resumeRelayedTurn(
+			yield* settleRelayedTurn(
 				checkpointOf(whole.posts.slice(0, 1)),
-				ports(
-					chat.outbound,
-					session(() => Promise.resolve(sse(turn))),
-					stored,
-				),
+				ports(chat.outbound, session(), stored),
 			)
 
 			const posted = chat.calls.filter((call) => call.verb === "post").map((call) => call.ref.messageId)
 			expect(posted).toHaveLength(whole.posts.length - 1)
-			const resumed = readBack(stored)
-			expect(resumed.resumes).toBe(1)
-			expect(resumed.messages.map((ref) => ref.messageId)).toEqual([whole.posts[0], ...posted])
-			const settled = finalText(chat.calls)
-			expect(resumed.messages.map((ref) => settled.get(ref.messageId))).toEqual(whole.settled)
+			// Recorded as it goes, so a settle that is itself evicted does not post it again.
+			const messages = readBack(stored).messages.map((ref) => ref.messageId)
+			expect(messages).toEqual([whole.posts[0], ...posted])
+			const last = finalText(chat.calls)
+			expect(messages.map((messageId) => last.get(messageId))).toEqual(whole.settled)
 		}),
 	)
 
-	it.effect("leaves the messages alone and logs once when the session is gone", () =>
+	it.effect("drops a turn whose session is gone, and says so once without the conversation", () =>
 		Effect.gen(function* () {
-			const recorded = recording()
+			const logs: Array<string> = []
+			const spans: Array<Tracer.NativeSpan> = []
+			const logger = Logger.make(({ fiber, message }) => {
+				logs.push(
+					JSON.stringify({ message, annotations: fiber.getRef(References.CurrentLogAnnotations) }),
+				)
+			})
+			const tracer = Tracer.make({
+				span(options) {
+					const span = new Tracer.NativeSpan(options)
+					spans.push(span)
+					return span
+				},
+			})
 			const chat = platform()
 
-			yield* resumeRelayedTurn(
+			const outcome = yield* settleRelayedTurn(
 				checkpointOf(["m1"]),
-				ports(
-					chat.outbound,
-					session(() => Promise.reject(new Error(ANSWER))),
-					storage(),
+				ports(chat.outbound, session({ gone: true }), storage()),
+			).pipe(
+				Effect.provideContext(
+					Context.make(Logger.CurrentLoggers, new Set([logger])).pipe(
+						Context.add(Tracer.Tracer, tracer),
+					),
 				),
-			).pipe(Effect.provideContext(recorded.context))
+			)
 
-			expect(recorded.logs).toHaveLength(1)
-			expect(recorded.logs[0]).toContain("A relayed turn could not be resumed")
-			// Nothing replayed, so nothing the reader already sees is overwritten.
+			expect(outcome).toBe("done")
 			expect(chat.calls).toEqual([])
+			expect(logs).toHaveLength(1)
+			expect(logs[0]).toContain("A relayed turn could not be settled")
 			// oxlint-disable-next-line effecttsgo/prefer-schema-over-json
 			const everything = JSON.stringify({
-				logs: recorded.logs,
-				spans: recorded.spans.map((span) => ({
+				logs,
+				spans: spans.map((span) => ({
 					attributes: Object.fromEntries(span.attributes),
 					events: span.events,
 				})),
@@ -355,50 +313,18 @@ describe("resuming a relayed turn", () => {
 		}),
 	)
 
-	it.effect("stops at the turn's deadline, and says so once", () =>
-		Effect.gen(function* () {
-			const recorded = recording()
-			const chat = platform()
-			const fiber = yield* Effect.forkChild(
-				resumeRelayedTurn(
-					checkpointOf(["m1"], { deadline: Duration.toMillis(Duration.minutes(1)) }),
-					ports(
-						chat.outbound,
-						// A turn the session never ends: the stream stays open.
-						session(() => Promise.resolve(sse(turn.slice(0, 3), true))),
-						storage(),
-					),
-				).pipe(Effect.provideContext(recorded.context)),
-			)
-
-			yield* TestClock.adjust("2 minutes")
-			yield* Fiber.join(fiber)
-
-			expect(recorded.logs).toHaveLength(1)
-			expect(recorded.logs[0]).toContain("A relayed turn could not be resumed")
-			expect(recorded.logs[0]).toContain("TimeoutError")
-		}),
-	)
-
-	it.effect("gives up on a turn that has used its attempts, or its time", () =>
+	it.effect("drops a checkpoint older than any turn the session would still be running", () =>
 		Effect.gen(function* () {
 			const chat = platform()
-			const stored = storage()
-			const subscribed: Array<number> = []
-			const stub = session((cursor) => {
-				subscribed.push(cursor)
-				return Promise.resolve(sse(turn))
-			})
+			yield* TestClock.adjust("31 minutes")
 
-			yield* resumeRelayedTurn(checkpointOf(["m1"], { resumes: 3 }), ports(chat.outbound, stub, stored))
-			yield* resumeRelayedTurn(
-				checkpointOf(["m1"], { deadline: 0 }),
-				ports(chat.outbound, stub, stored),
+			const outcome = yield* settleRelayedTurn(
+				checkpointOf(["m1"]),
+				ports(chat.outbound, session({ running: true }), storage()),
 			)
 
+			expect(outcome).toBe("done")
 			expect(chat.calls).toEqual([])
-			expect(subscribed).toEqual([])
-			expect(stored.writes).toBe(0)
 		}),
 	)
 

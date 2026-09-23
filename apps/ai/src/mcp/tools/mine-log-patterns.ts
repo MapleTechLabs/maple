@@ -123,6 +123,7 @@ export function registerMineLogPatternsTool(server: McpToolRegistrar) {
 				}),
 			}
 		}),
+		{ phrases: ["Grouping log patterns", "Finding common log patterns"] },
 	)
 }
 

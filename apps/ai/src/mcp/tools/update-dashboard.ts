@@ -181,5 +181,6 @@ export function registerUpdateDashboardTool(server: McpToolRegistrar) {
 				}),
 			}
 		}),
+		{ phrases: ["Updating a dashboard"] },
 	)
 }

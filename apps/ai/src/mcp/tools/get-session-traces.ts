@@ -142,5 +142,6 @@ export function registerGetSessionTracesTool(server: McpToolRegistrar) {
 				}),
 			}
 		}),
+		{ phrases: ["Loading session traces"] },
 	)
 }

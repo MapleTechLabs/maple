@@ -25,14 +25,14 @@ describe("renderDiscordMessage", () => {
 				detail: "p95 1.20s",
 				url: "https://app.maple.dev/services/checkout",
 			},
-			{ kind: "activity", tools: [{ name: "find_errors", status: "running", detail: null }] },
+			{ kind: "activity", tools: [{ label: "Looking for errors", status: "running", detail: null }] },
 		])
 
 		expect(payload.content).toBe(
 			[
 				"Checkout is slow.",
 				"> **Service** [checkout](https://app.maple.dev/services/checkout)\n> p95 1.20s",
-				"Tools: `find_errors`…",
+				"Looking for errors…",
 			].join("\n\n"),
 		)
 		// Nothing the model writes may notify a server.

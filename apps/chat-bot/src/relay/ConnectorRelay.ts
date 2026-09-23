@@ -16,17 +16,16 @@
  * codebase has broken workerd before.
  *
  * It holds two things between events: which conversations the bot opened itself, which is what
- * lets a message in one of them be answered without mentioning the bot, and a checkpoint of each
- * turn it is relaying — the platform messages posted so far and where the turn's events start.
- * Everything else is somebody else's durable state: the transcript and the claim on a running turn
- * are the chat session's. An object evicted mid-turn loses only the fiber rendering it, and the
- * keep-alive alarm that wakes the fresh one finds the checkpoint and resumes it (`./resume.ts`).
+ * lets a message in one of them be answered without mentioning the bot, and a checkpoint of the
+ * messages each relayed turn has posted, so a turn whose object was evicted still gets its final
+ * answer (`./settle.ts`). Everything else — the transcript, the claim on a running turn — is the
+ * chat session's.
  */
 import type { ChatConversation, InboundEvent } from "@maple/chat-platform"
 import * as Cloudflare from "alchemy/Cloudflare"
 import { Effect } from "effect"
 import { ConversationNotRecorded } from "./conversation.ts"
-import type { RelayTurnCheckpoint } from "./resume.ts"
+import type { RelayTurnCheckpoint } from "./settle.ts"
 import { connectorConversationRelayName, connectorRelayByName } from "./stub.ts"
 
 /** What this object reads off its Durable Object state. */
@@ -51,11 +50,7 @@ interface ConnectorRelayState {
  */
 const openedKey = (conversationKey: string): string => `opened:${conversationKey}`
 
-/**
- * Where a relayed turn's checkpoint lives, one per turn: a channel whose threads are conversations
- * of their own can be relaying several at once, and a resume still settling one turn must not
- * clear the checkpoint of the next turn its session began.
- */
+/** One checkpoint per turn: a channel whose threads are conversations can relay several at once. */
 const TURN_PREFIX = "turn:"
 const turnKey = (checkpoint: RelayTurnCheckpoint): string =>
 	`${TURN_PREFIX}${checkpoint.sessionId}:${checkpoint.turnMessageId}`
@@ -86,11 +81,8 @@ export interface ConnectorRelayPorts {
  */
 const KEEP_ALIVE_MS = 30 * 1000
 
-/**
- * The heavy half an event and a resume run in, loaded on first use — see `run` below. Named so a
- * test can stand in for it.
- */
-export type ConnectorRelayRuntime = Pick<typeof import("./run.ts"), "runInboundEvent" | "resumeInboundTurn">
+/** The heavy half, loaded on first use (see `run`); a parameter so a test can stand in for it. */
+export type ConnectorRelayRuntime = Pick<typeof import("./run.ts"), "runInboundEvent" | "settleInboundTurn">
 
 const loadRuntime = (): Promise<ConnectorRelayRuntime> => import("./run.ts")
 
@@ -100,7 +92,7 @@ const UNLINKED_NOTICE_INTERVAL_MS = 60 * 60 * 1000
 export class ConnectorRelay {
 	/** How many events this activation is still working on. Zero means the alarm may stop. */
 	private live = 0
-	/** The checkpoints a fiber of THIS activation is relaying. One in storage but not here is orphaned. */
+	/** Checkpoints this activation is relaying; one in storage but not here is an evicted turn's. */
 	private readonly relaying = new Set<string>()
 	private unlinkedNoticeAt: number | undefined
 
@@ -124,11 +116,8 @@ export class ConnectorRelay {
 	}
 
 	/**
-	 * The keep-alive, and the resume: a fresh activation after an eviction or a deploy has no fiber
-	 * for the turns the last one recorded, and the alarm that last one armed is what wakes it.
-	 *
-	 * A store that cannot be listed resumes nothing this time; the alarm it would have re-armed is
-	 * then the next event's to arm.
+	 * The keep-alive, and the settle of turns an evicted activation left behind. It keeps firing while
+	 * any checkpoint is left, which is how a turn the session is still running gets settled later.
 	 */
 	async alarm(): Promise<void> {
 		const recorded = await this.ctx.storage
@@ -138,9 +127,9 @@ export class ConnectorRelay {
 			if (this.relaying.has(key)) continue
 			this.live += 1
 			this.relaying.add(key)
-			this.ctx.waitUntil(this.resume(key, checkpoint))
+			this.ctx.waitUntil(this.settle(key, checkpoint))
 		}
-		if (this.live > 0) this.armKeepAlive()
+		if (this.live > 0 || recorded.size > 0) this.armKeepAlive()
 	}
 
 	/**
@@ -197,10 +186,7 @@ export class ConnectorRelay {
 			: connectorRelayByName(this.env, name)?.remember(conversation.conversationKey))
 	}
 
-	/**
-	 * An alarm already pending is kept rather than pushed back: events arriving under 30s apart
-	 * would otherwise postpone the alarm, and the resume it carries, for as long as they keep coming.
-	 */
+	/** A pending alarm is kept, not pushed back: a busy conversation would postpone it forever. */
 	private armKeepAlive(): void {
 		this.ctx.waitUntil(
 			this.ctx.storage
@@ -236,46 +222,34 @@ export class ConnectorRelay {
 		}
 	}
 
-	/**
-	 * Pick up a turn an earlier activation was relaying. Cleared however it ends — finished,
-	 * expired, unreadable or failed — because the only outcome worth another try is this
-	 * activation being evicted too, and then nothing here runs.
-	 */
-	private async resume(key: string, checkpoint: unknown): Promise<void> {
+	/** Kept only while the session is still running the turn; cleared however else it ends. */
+	private async settle(key: string, checkpoint: unknown): Promise<void> {
+		let outcome = "done"
 		try {
-			const { resumeInboundTurn } = await this.runtime()
-			await resumeInboundTurn(
+			const { settleInboundTurn } = await this.runtime()
+			outcome = await settleInboundTurn(
 				{ env: this.env, recordTurn: (next) => this.recordTurn(next) },
 				checkpoint,
 			)
 		} catch (cause) {
-			console.error("[chat-bot.relay] resume failed", cause)
+			console.error("[chat-bot.relay] settle failed", cause)
 		} finally {
-			await this.forgetTurn(key)
+			if (outcome === "done") await this.forgetTurn(key)
+			else this.relaying.delete(key)
 			this.live -= 1
 		}
 	}
 
-	/**
-	 * Marked as this activation's before the write, so an alarm landing while it is in flight does
-	 * not take a live turn for an orphan.
-	 */
+	/** Marked before the write, so an alarm meanwhile does not take a live turn for an evicted one. */
 	private recordTurn(checkpoint: RelayTurnCheckpoint): Effect.Effect<void> {
 		const key = turnKey(checkpoint)
-		return Effect.suspend(() => {
+		return Effect.promise(() => {
 			this.relaying.add(key)
-			return Effect.tryPromise(() => this.ctx.storage.put(key, checkpoint))
-		}).pipe(
-			Effect.tapError(() =>
-				Effect.logWarning("A relayed turn's checkpoint could not be written").pipe(
-					Effect.annotateLogs({ "maple.chat.session_id": checkpoint.sessionId }),
-				),
-			),
-			Effect.ignore,
-		)
+			return this.ctx.storage.put(key, checkpoint).catch(() => undefined)
+		})
 	}
 
-	/** Deleted before it is released, for the same reason it is marked before it is written. */
+	/** Deleted before it is released, for the same reason. */
 	private async forgetTurn(key: string): Promise<void> {
 		await this.ctx.storage.delete(key).catch(() => undefined)
 		this.relaying.delete(key)
