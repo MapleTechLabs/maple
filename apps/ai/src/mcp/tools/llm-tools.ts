@@ -193,7 +193,7 @@ export const buildMapleToolkit = (
 							: Effect.succeed(toolResultText(result)),
 					),
 				)
-			const handle = (params: unknown) => {
+			const handle = (params: unknown): Effect.Effect<string, typeof ToolFailure.Type> => {
 				if (gated) {
 					return Effect.fail(
 						new ApprovalRequired({
