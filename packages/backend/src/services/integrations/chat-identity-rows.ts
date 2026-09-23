@@ -190,26 +190,3 @@ export const unlinkChatIdentity = (
 			.pipe(Effect.mapError(persistenceError))
 		return deleted.length > 0
 	})
-
-/**
- * Drop every link a user holds in an org, for when they leave it.
- *
- * A link is standing authority to approve a change as that user; membership ending must end it,
- * or the next click from their chat account would still act as a member who is gone.
- */
-export const forgetChatIdentitiesForMember = (
-	database: DatabaseApi,
-	orgId: OrgId,
-	userId: UserId,
-): Effect.Effect<number, IntegrationsPersistenceError> =>
-	Effect.gen(function* () {
-		const deleted = yield* database
-			.execute((db) =>
-				db
-					.delete(chatIdentities)
-					.where(and(eq(chatIdentities.orgId, orgId), eq(chatIdentities.userId, userId)))
-					.returning({ id: chatIdentities.id }),
-			)
-			.pipe(Effect.mapError(persistenceError))
-		return deleted.length
-	})

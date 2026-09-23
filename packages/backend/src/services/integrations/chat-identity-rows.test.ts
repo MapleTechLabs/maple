@@ -12,7 +12,6 @@ import { ChatConnectorId, ChatIdentityId, OrgId, UserId } from "@maple/domain/ht
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
 import {
-	forgetChatIdentitiesForMember,
 	linkChatIdentity,
 	listChatIdentities,
 	resolveChatIdentity,
@@ -145,18 +144,16 @@ describe("unlinking", () => {
 		),
 	)
 
-	it.effect("takes every link a member held when they leave the org", () =>
+	it.effect("leaves another member's link, and the same person's link in another org, alone", () =>
 		withDb(
 			Effect.gen(function* () {
 				yield* link(ORG, ADA, "account-a")
-				yield* link(ORG, ADA, "account-b")
 				yield* link(ORG, BEN, "account-c")
 				yield* link(OTHER_ORG, ADA, "account-a")
 				const database = yield* Database
 
-				assert.strictEqual(yield* forgetChatIdentitiesForMember(database, ORG, ADA), 2)
+				yield* unlinkChatIdentity(database, ORG, TESTCHAT, ADA)
 
-				// Theirs in this org are gone; somebody else's and their own elsewhere are not.
 				assert.isTrue(Option.isNone(yield* resolve(ORG, "account-a")))
 				assert.isTrue(Option.isSome(yield* resolve(ORG, "account-c")))
 				assert.isTrue(Option.isSome(yield* resolve(OTHER_ORG, "account-a")))

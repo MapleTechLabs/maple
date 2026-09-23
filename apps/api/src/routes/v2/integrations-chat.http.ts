@@ -138,7 +138,7 @@ export const HttpV2ChatIntegrationsLive = HttpApiBuilder.group(MapleApiV2, "chat
 							params.connector,
 							`${origin}${chatIdentityCallbackPath(params.connector)}`,
 						)
-						yield* recordHttpAudit("chat_integration.identity_linked", {
+						yield* recordHttpAudit("chat_integration.identity_link_started", {
 							metadata: { connector: params.connector },
 						})
 						return { object: "chat_connector.identity_link" as const, url: result.url }
