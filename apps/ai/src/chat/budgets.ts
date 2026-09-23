@@ -88,10 +88,19 @@ export const INVESTIGATION_BUDGET: AgentBudget = {
  * these are ceilings to tune from the internal org's first reviews, not measurements.
  */
 export const PR_REVIEW_BUDGET: AgentBudget = {
-	maxToolCalls: 60,
-	maxDuration: "8 minutes",
+	maxToolCalls: 80,
+	// Twice this plus the margin must stay under `TURN_STALE_MS`: a pass and its close-out.
+	maxDuration: "10 minutes",
 	tokenBudget: 800_000,
 	completionReserveTokens: 48_000,
+}
+
+/** An answer on a pull request: narrower than a review, with room to read and to stage a fix. */
+export const PR_REPLY_BUDGET: AgentBudget = {
+	maxToolCalls: 40,
+	maxDuration: "6 minutes",
+	tokenBudget: 600_000,
+	completionReserveTokens: 32_000,
 }
 
 /**

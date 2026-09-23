@@ -3,6 +3,7 @@ import {
 	type BranchEventJob,
 	type InstallationSyncJob,
 	isInstallationProcessable,
+	type PullRequestCommentJob,
 	type PullRequestEventJob,
 	type PushJob,
 	type SyncCommitsJob,
@@ -21,7 +22,7 @@ import {
 } from "@maple/domain/http"
 import { Clock, Effect, Context, Layer, Option, Schema, Match } from "effect"
 import type { VcsProviderClient } from "./VcsProviderClient"
-import { PullRequestEventSink } from "./PullRequestEventSink"
+import { PullRequestCommentSink, PullRequestEventSink } from "./PullRequestEventSink"
 import { VcsProviderRegistry } from "./VcsProviderRegistry"
 import { VcsRepository } from "./VcsRepository"
 import { VcsSyncQueue } from "./VcsSyncQueue"
@@ -72,6 +73,7 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 			const registry = yield* VcsProviderRegistry
 			const queue = yield* VcsSyncQueue
 			const sink = yield* PullRequestEventSink
+			const commentSink = Option.getOrUndefined(yield* Effect.serviceOption(PullRequestCommentSink))
 
 			// The repo's single tracked branch, with the default-branch fallback for a
 			// row whose `trackedBranch` was never set (legacy) — the one place the
@@ -832,6 +834,20 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 				yield* sink.onPullRequestEvent(installation.orgId, job)
 			})
 
+			const handlePullRequestComment = Effect.fn("VcsSyncService.handlePullRequestComment")(function* (
+				installation: VcsInstallation,
+				job: PullRequestCommentJob,
+			) {
+				yield* Effect.annotateCurrentSpan({
+					"vcs.repository.external_id": job.externalRepoId,
+					"vcs.pull_request.number": job.number,
+					"vcs.pull_request.comment_surface": job.surface,
+					"vcs.pull_request.comment_forwarded": commentSink !== undefined,
+				})
+				if (commentSink !== undefined)
+					yield* commentSink.onPullRequestComment(installation.orgId, job)
+			})
+
 			const processMessage = Effect.fn("VcsSyncService.processMessage")(function* (raw: unknown) {
 				const jobOpt = yield* decodeJob(raw).pipe(
 					Effect.map(Option.some),
@@ -911,6 +927,9 @@ export class VcsSyncService extends Context.Service<VcsSyncService, VcsSyncServi
 					),
 					Match.discriminator("kind")("pull-request-event", (job) =>
 						handlePullRequestEvent(installation, job),
+					),
+					Match.discriminator("kind")("pull-request-comment", (job) =>
+						handlePullRequestComment(installation, job),
 					),
 					Match.exhaustive,
 				)

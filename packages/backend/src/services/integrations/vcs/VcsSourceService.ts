@@ -5,6 +5,7 @@ import {
 	IntegrationsUpstreamError,
 	isInstallationProcessable,
 	type OrgId,
+	type PullRequestContext,
 	type PullRequestFile,
 	type PullRequestReviewPublication,
 	type PullRequestReviewPublished,
@@ -97,6 +98,12 @@ export interface VcsSourceServiceApi {
 		repository: string,
 		number: number,
 	) => Effect.Effect<ReadonlyArray<PullRequestFile>, VcsRepositoryScopedError>
+	/** Commits, existing discussion and head checks of one pull request. */
+	readonly getPullRequestContext: (
+		orgId: OrgId,
+		repository: string,
+		number: number,
+	) => Effect.Effect<PullRequestContext, VcsRepositoryScopedError>
 	/** Post a review's outcome onto its pull request. The only write this service makes. */
 	readonly publishPullRequestReview: (
 		orgId: OrgId,
@@ -278,6 +285,29 @@ export class VcsSourceService extends Context.Service<VcsSourceService, VcsSourc
 				return files
 			})
 
+			const getPullRequestContext: VcsSourceServiceApi["getPullRequestContext"] = Effect.fn(
+				"VcsSourceService.getPullRequestContext",
+			)(function* (orgId, repositoryName, number) {
+				yield* Effect.annotateCurrentSpan({
+					orgId,
+					"vcs.repository.full_name": repositoryName,
+					"vcs.pull_request.number": number,
+				})
+				const { installation, repository } = yield* resolveRepository(orgId, repositoryName)
+				const provider = yield* asUpstream(providers.resolve(repository.provider))
+				return yield* asUpstream(
+					provider.fetchPullRequestContext(
+						installation,
+						{
+							externalRepoId: repository.externalRepoId,
+							owner: repository.owner,
+							name: repository.name,
+						},
+						number,
+					),
+				)
+			})
+
 			const publishPullRequestReview: VcsSourceServiceApi["publishPullRequestReview"] = Effect.fn(
 				"VcsSourceService.publishPullRequestReview",
 			)(function* (orgId, repositoryName, publication) {
@@ -411,6 +441,7 @@ export class VcsSourceService extends Context.Service<VcsSourceService, VcsSourc
 				listPullRequests,
 				fetchPullRequest,
 				listPullRequestFiles,
+				getPullRequestContext,
 				publishPullRequestReview,
 				searchCode,
 				readFile,

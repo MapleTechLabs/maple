@@ -10,6 +10,8 @@ import {
 	GitCommitSha,
 	type PullRequestEventJob,
 	type PullRequestReviewPublication,
+	type PullRequestReviewThread,
+	type VcsSyncJob,
 	PrReviewId,
 	PrReviewReport,
 	SubmitPrReviewRequest,
@@ -32,12 +34,14 @@ import {
 import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
 import { ENABLED_ORGANIZATION_FEATURE_FLAGS } from "@maple/domain/organization-feature-flags"
 import { VcsRepository } from "@maple/backend/services/integrations/vcs/VcsRepository"
+import { VcsSyncQueue } from "@maple/backend/services/integrations/vcs/VcsSyncQueue"
 import {
 	buildPublication,
 	clampSummary,
 	PR_REVIEW_CHECK_NAME,
 	PR_REVIEW_COMMENT_MARKER,
 	PR_REVIEW_DAILY_CEILING,
+	PR_REVIEW_PUSH_DEBOUNCE_SECONDS,
 	PrReviewService,
 	renderCheckSummary,
 	renderSummaryComment,
@@ -85,6 +89,10 @@ const layerFor = (
 		readonly busy?: boolean
 		readonly withWorkerEnv?: boolean
 		readonly rolledOut?: boolean
+		readonly threads?: ReadonlyArray<PullRequestReviewThread>
+		readonly resolvedThreads?: Array<string>
+		/** Present: pushes are debounced through this queue, which records what it was sent. */
+		readonly queued?: Array<{ readonly job: VcsSyncJob; readonly delaySeconds: number | undefined }>
 	} = {},
 ) => {
 	// Only the one write is reached; every read dies so a test that strays says so loudly.
@@ -99,6 +107,18 @@ const layerFor = (
 		fetchPullRequests: unused,
 		fetchPullRequest: unused,
 		fetchPullRequestFiles: unused,
+		fetchPullRequestContext: unused,
+		fetchReviewThreads: () => Effect.succeed(options.threads ?? []),
+		resolveReviewThread: (_installation, _repo, input) =>
+			Effect.sync(() => {
+				options.resolvedThreads?.push(`${input.threadId}:${input.reply}`)
+			}),
+		fetchChangedPaths: () => Effect.succeed(["b.ts", "c.ts"]),
+		fetchPullRequestHead: unused,
+		postPullRequestReply: unused,
+		reactToComment: unused,
+		fetchCommenterPermission: unused,
+		commitFiles: unused,
 		searchCode: unused,
 		resolveRef: unused,
 		fetchCloneCredentials: unused,
@@ -118,6 +138,9 @@ const layerFor = (
 							publication.comments.length > 0
 								? "https://github.com/octo/repo/pull/612#pullrequestreview-1"
 								: null,
+						inlineComments: publication.comments.flatMap((comment, i) =>
+							comment.key === undefined ? [] : [{ key: comment.key, commentId: `c-${i}` }],
+						),
 					})
 		},
 	}
@@ -141,6 +164,15 @@ const layerFor = (
 				registry,
 				testDb.layer,
 				workerEnv,
+				options.queued === undefined
+					? Layer.empty
+					: Layer.succeed(VcsSyncQueue, {
+							send: (job, sendOptions) =>
+								Effect.sync(() => {
+									options.queued?.push({ job, delaySeconds: sendOptions?.delaySeconds })
+								}),
+							sendBatch: () => Effect.void,
+						}),
 				OrganizationFeatureFlagsService.fixed({
 					...ENABLED_ORGANIZATION_FEATURE_FLAGS,
 					prReview: options.rolledOut ?? true,
@@ -209,7 +241,7 @@ const job = (overrides: Partial<PullRequestEventJob> = {}): PullRequestEventJob 
 
 const report = (findings: PrReviewReport["findings"]) =>
 	new PrReviewReport({
-		verdict: findings.some((finding) => finding.severity !== "info") ? "gaps" : "instrumented",
+		verdict: findings.some((finding) => finding.severity !== "info") ? "issues" : "clean",
 		summary: "Adds one route.",
 		coverage: [
 			{ unit: "POST /orders", kind: "entrypoint", instrumented: false, evidence: "no withSpan" },
@@ -360,6 +392,37 @@ describe("PrReviewService.onPullRequestEvent", () => {
 		return firstDelivery.pipe(Effect.andThen(redelivery))
 	})
 
+	it.effect("debounces pushes: only the last head of a burst is reviewed", () => {
+		const testDb = createTestDb(trackedDbs)
+		const begun: Array<Begun> = []
+		const queued: Array<{ readonly job: VcsSyncJob; readonly delaySeconds: number | undefined }> = []
+		return Effect.gen(function* () {
+			yield* seed(true)
+			const reviews = yield* PrReviewService
+			const first = yield* reviews.onPullRequestEvent(orgId, job({ action: "synchronize" }))
+			const second = yield* reviews.onPullRequestEvent(
+				orgId,
+				job({ action: "synchronize", headSha: HEAD_2 }),
+			)
+			assert.equal(first.outcome, "deferred")
+			assert.equal(second.outcome, "deferred")
+			assert.equal(begun.length, 0)
+			assert.deepEqual(
+				queued.map((entry) => entry.delaySeconds),
+				[PR_REVIEW_PUSH_DEBOUNCE_SECONDS, PR_REVIEW_PUSH_DEBOUNCE_SECONDS],
+			)
+			// The delayed copies arrive: the first head was superseded, the second starts.
+			const [late, latest] = queued.map((entry) => entry.job)
+			assert(late?.kind === "pull-request-event" && latest?.kind === "pull-request-event")
+			assert.equal((yield* reviews.onPullRequestEvent(orgId, late)).skipReason, "superseded")
+			const started = yield* reviews.onPullRequestEvent(orgId, latest)
+			assert.equal(started.outcome, "started")
+			assert.equal(started.reviewId, second.reviewId)
+			assert.equal(begun.length, 1)
+			assert.include(begun[0]!.text, HEAD_2)
+		}).pipe(Effect.provide(layerFor(testDb, { begun, queued })))
+	})
+
 	it.effect("stops at the daily ceiling", () => {
 		const testDb = createTestDb(trackedDbs)
 		return Effect.gen(function* () {
@@ -394,6 +457,7 @@ describe("PrReviewService.submitReview", () => {
 						{
 							path: "src/routes/orders.ts",
 							line: 12,
+							category: "observability",
 							checkId: "SPAN-03",
 							severity: "warn",
 							title: "POST /orders has no server span",
@@ -427,6 +491,82 @@ describe("PrReviewService.submitReview", () => {
 		}).pipe(Effect.provide(layerFor(testDb, { published })))
 	})
 
+	it.effect("follows findings across pushes: resolves fixed ones, never reposts open ones", () => {
+		const testDb = createTestDb(trackedDbs)
+		const published: Array<PullRequestReviewPublication> = []
+		const begun: Array<Begun> = []
+		const resolvedThreads: Array<string> = []
+		const threads: ReadonlyArray<PullRequestReviewThread> = [
+			{
+				id: "T1",
+				isResolved: false,
+				comments: [
+					{ commentId: "c-0", author: "maple[bot]", body: "F1", thumbsUp: 2, thumbsDown: 0 },
+				],
+			},
+		]
+		const finding = (path: string, line: number, title: string) => ({
+			path,
+			line,
+			category: "correctness" as const,
+			severity: "warn" as const,
+			title,
+			body: "b",
+		})
+		return Effect.gen(function* () {
+			yield* seed(true)
+			const reviews = yield* PrReviewService
+			const first = yield* reviews.onPullRequestEvent(orgId, job())
+			yield* reviews.submitReview(
+				orgId,
+				first.reviewId!,
+				new SubmitPrReviewRequest({
+					report: report([
+						finding("a.ts", 10, "off by one"),
+						finding("b.ts", 20, "unchecked null"),
+					]),
+				}),
+			)
+			assert.deepEqual(
+				published[0]!.comments.map((comment) => comment.body.slice(0, 8)),
+				["**F1 · o", "**F2 · u"],
+			)
+
+			const second = yield* reviews.onPullRequestEvent(
+				orgId,
+				job({ action: "synchronize", headSha: HEAD_2 }),
+			)
+			const kickoff = begun.at(-1)!.text
+			assert.include(kickoff, "reviewed before, at 1111111")
+			assert.include(kickoff, "b.ts, c.ts")
+			assert.include(kickoff, "- F1 · a.ts:10 · correctness · warn · off by one")
+
+			yield* reviews.submitReview(
+				orgId,
+				second.reviewId!,
+				new SubmitPrReviewRequest({
+					resolved: ["F1"],
+					report: report([finding("b.ts", 21, "null again"), finding("c.ts", 3, "leaked handle")]),
+				}),
+			)
+			const publication = published[1]!
+			// F2 is still open, so its repeat is not posted; the new finding continues at F3.
+			assert.deepEqual(
+				publication.comments.map((comment) => comment.path),
+				["c.ts"],
+			)
+			assert.include(publication.summaryComment.body, "### Still open from earlier reviews")
+			assert.include(publication.summaryComment.body, "~~F1 · off by one~~")
+			assert.equal(publication.title, "80/100 · 2 issues to address")
+			assert.deepEqual(resolvedThreads, ["T1:Fixed in `2222222`."])
+			const stored = Option.getOrThrow(yield* reviews.getReview(orgId, second.reviewId!))
+			assert.deepEqual(
+				stored.report?.findings.map((f) => f.handle),
+				["F3"],
+			)
+		}).pipe(Effect.provide(layerFor(testDb, { published, begun, threads, resolvedThreads })))
+	})
+
 	it.effect("drops a submission for a review that was superseded while it ran", () => {
 		const testDb = createTestDb(trackedDbs)
 		const published: Array<PullRequestReviewPublication> = []
@@ -444,6 +584,7 @@ describe("PrReviewService.submitReview", () => {
 						{
 							path: "a.ts",
 							line: 1,
+							category: "observability",
 							checkId: "SPAN-03",
 							severity: "warn",
 							title: "stale",
@@ -508,8 +649,24 @@ describe("buildPublication", () => {
 			partial: false,
 			repositoryUrl: REPO_URL,
 			report: report([
-				{ path: "a.ts", line: 1, checkId: "SPAN-03", severity: "warn", title: "gap", body: "b" },
-				{ path: "a.ts", line: 9, checkId: "MET-02", severity: "info", title: "nicety", body: "b" },
+				{
+					path: "a.ts",
+					line: 1,
+					category: "observability",
+					checkId: "SPAN-03",
+					severity: "warn",
+					title: "gap",
+					body: "b",
+				},
+				{
+					path: "a.ts",
+					line: 9,
+					category: "observability",
+					checkId: "MET-02",
+					severity: "info",
+					title: "nicety",
+					body: "b",
+				},
 			]),
 		})
 		assert.equal(publication.annotations.length, 2)
@@ -519,7 +676,7 @@ describe("buildPublication", () => {
 		assert.equal(publication.conclusion, "neutral")
 		assert.include(publication.reviewBody ?? "", "1 inline note")
 		// 100 - 10 (warn) - 2 (note)
-		assert.equal(publication.title, "88/100 · 1 observability gap to close")
+		assert.equal(publication.title, "88/100 · 1 issue to address")
 	})
 
 	it("always writes the summary comment, even with nothing to say inline", () => {
@@ -534,7 +691,7 @@ describe("buildPublication", () => {
 		assert.isNull(publication.reviewBody)
 		assert.equal(publication.comments.length, 0)
 		assert.isTrue(publication.summaryComment.body.startsWith(PR_REVIEW_COMMENT_MARKER))
-		assert.include(publication.summaryComment.body, "## Maple observability review: 100/100")
+		assert.include(publication.summaryComment.body, "## Maple review: 100/100")
 		assert.include(publication.summaryComment.body, "**Excellent**")
 	})
 
@@ -545,6 +702,7 @@ describe("buildPublication", () => {
 					path: "src/a b.ts",
 					line: 4,
 					endLine: 6,
+					category: "observability",
 					checkId: "SPAN-03",
 					severity: "critical",
 					title: "gap",
@@ -564,21 +722,56 @@ describe("buildPublication", () => {
 	it("renders the coverage table and the check ids into the summary", () => {
 		const summary = renderCheckSummary({
 			report: report([
-				{ path: "a.ts", line: 1, checkId: "SPAN-03", severity: "warn", title: "gap", body: "b" },
+				{
+					path: "a.ts",
+					line: 1,
+					category: "observability",
+					checkId: "SPAN-03",
+					severity: "warn",
+					title: "gap",
+					body: "b",
+				},
 			]),
 			partial: true,
 			headSha: HEAD,
 			repositoryUrl: REPO_URL,
 		})
 		assert.include(summary, "| POST /orders | entrypoint | no | no withSpan |")
-		assert.include(summary, "`SPAN-03`")
+		assert.include(summary, "| observability · SPAN-03 |")
 		assert.include(summary, "ended early")
+	})
+
+	it("posts a replacement as a one-click suggestion over the lines it replaces", () => {
+		const publication = buildPublication({
+			number: 1,
+			headSha: HEAD,
+			partial: false,
+			repositoryUrl: REPO_URL,
+			report: report([
+				{
+					path: "a.ts",
+					line: 3,
+					endLine: 4,
+					category: "correctness",
+					severity: "warn",
+					title: "off by one",
+					body: "The loop skips the last item.",
+					replacement: "for (let i = 0; i <= n; i++) {\n\tvisit(i)",
+				},
+			]),
+		})
+		const comment = publication.comments[0]!
+		assert.equal(comment.startLine, 3)
+		assert.equal(comment.line, 4)
+		assert.include(comment.body, "```suggestion\nfor (let i = 0; i <= n; i++) {\n\tvisit(i)\n```")
+		assert.include(comment.body, "correctness · warn")
+		assert.notInclude(publication.summaryComment.body, "instrumentation audit")
 	})
 
 	it("escapes a backslash before a pipe so a cell cannot break the table", () => {
 		const summary = renderCheckSummary({
 			report: new PrReviewReport({
-				verdict: "instrumented",
+				verdict: "clean",
 				summary: "",
 				coverage: [{ unit: "a\\|b", kind: "k", instrumented: true, evidence: "e" }],
 				findings: [],
@@ -596,6 +789,7 @@ describe("buildPublication", () => {
 				Array.from({ length: 50 }, (_, i) => ({
 					path: `src/file-${i}.ts`,
 					line: 1,
+					category: "observability" as const,
 					checkId: "SPAN-02",
 					severity: "warn" as const,
 					title: "x".repeat(200),

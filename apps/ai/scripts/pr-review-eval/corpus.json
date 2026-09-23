@@ -1,0 +1,129 @@
+{
+	"cases": [
+		{
+			"id": "pr972-fix5ee46a4",
+			"number": 972,
+			"bug": "The gateway's Postgres URL carries sslmode=verify-full, which its tokio-postgres client refuses to parse; the ECS tasks crash-loop.",
+			"fix": {
+				"sha": "5ee46a4fae17f50136da169f0b77330faccb9873",
+				"subject": "fix(infra): hand the ingest gateway a Postgres URL its client can parse (#979)"
+			},
+			"locations": [
+				{
+					"path": "apps/ingest/alchemy.run.ts",
+					"lines": [
+						439,
+						439
+					]
+				}
+			]
+		},
+		{
+			"id": "pr685-fixf390ae8",
+			"number": 685,
+			"bug": "S3 PUTs are sent without Content-Length, so S3 answers 411 and the WAL heartbeat never lands.",
+			"fix": {
+				"sha": "f390ae85ff69e8d53895cd1026ea467bc9b42c38",
+				"subject": "fix(ingest): send Content-Length on S3 PUTs so the WAL heartbeat lands (#936)"
+			},
+			"locations": [
+				{
+					"path": "apps/ingest/src/aws.rs",
+					"lines": [
+						445,
+						448
+					]
+				}
+			]
+		},
+		{
+			"id": "pr853-fix9612a51",
+			"number": 853,
+			"bug": "submit_diagnosis is registered straight through toolkit.toLayer, so its execute_tool span never gets the tool-call content every other tool records.",
+			"fix": {
+				"sha": "9612a51693128679c8aef2609697457dc2f3815c",
+				"subject": "fix(agent-sessions): record submit_diagnosis's arguments on its tool span (#962)"
+			},
+			"locations": [
+				{
+					"path": "apps/api/src/platform/genai-spans.ts",
+					"lines": [
+						478,
+						478
+					]
+				},
+				{
+					"path": "apps/api/src/platform/genai-spans.ts",
+					"lines": [
+						483,
+						483
+					]
+				},
+				{
+					"path": "apps/api/src/platform/genai-spans.ts",
+					"lines": [
+						489,
+						489
+					]
+				}
+			]
+		},
+		{
+			"id": "pr740-fix520f7a5",
+			"number": 740,
+			"bug": "The turn split compares gen_ai.conversation.id only against the span's own session id, so tool calls become a turn of their own.",
+			"fix": {
+				"sha": "520f7a557d37d62bfe72a913da4fd34a68f76143",
+				"subject": "fix(agent-sessions): keep tool calls in the turn of the model call that asked for them (#947)"
+			},
+			"locations": [
+				{
+					"path": "packages/query-engine-integrations/src/ai/ai-sessions.ts",
+					"lines": [
+						1372,
+						1372
+					]
+				},
+				{
+					"path": "packages/query-engine-integrations/src/ai/ai-sessions.ts",
+					"lines": [
+						1374,
+						1374
+					]
+				}
+			]
+		},
+		{
+			"id": "pr660-fix0cce5e3",
+			"number": 660,
+			"bug": "Attribute filters apply with no chip on screen, and advanced-filter keys that are not named fields or attr./resource.-prefixed are silently dropped.",
+			"fix": {
+				"sha": "0cce5e30d6adc86eec397b6f6d6c33beec3b6493",
+				"subject": "fix(web): show attribute filters on /traces and accept bare attribute keys (#910)"
+			},
+			"locations": [
+				{
+					"path": "apps/web/src/routes/traces/index.tsx",
+					"lines": [
+						115,
+						115
+					]
+				},
+				{
+					"path": "apps/web/src/routes/traces/index.tsx",
+					"lines": [
+						118,
+						118
+					]
+				},
+				{
+					"path": "apps/web/src/routes/traces/index.tsx",
+					"lines": [
+						122,
+						122
+					]
+				}
+			]
+		}
+	]
+}
