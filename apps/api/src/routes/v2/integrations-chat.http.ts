@@ -92,9 +92,14 @@ export const HttpV2ChatIntegrationsLive = HttpApiBuilder.group(MapleApiV2, "chat
 				.handle("connectors", () =>
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
-						// The caller's own account link comes back with the list: the card
-						// renders the org's install and the member's link together.
-						const statuses = yield* chat.list(tenant.orgId, tenant.userId)
+						// "Your own link" only means something for a person. Under an API key
+						// `tenant.userId` is the human who CREATED the key, so asking for the link
+						// would answer with THEIR chat account — an identity the key's holder has no
+						// business reading. A non-person gets the org's installs and nothing personal.
+						const person = yield* Effect.as(requirePerson, true).pipe(
+							Effect.orElseSucceed(() => false),
+						)
+						const statuses = yield* chat.list(tenant.orgId, person ? tenant.userId : undefined)
 						return {
 							object: "chat_connector_list" as const,
 							data: Arr.map(statuses, toConnector),

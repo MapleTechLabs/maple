@@ -218,13 +218,7 @@ const host = (
 		ports: {
 			outbound,
 			supportsIdentity: options?.supportsIdentity ?? false,
-			resolveWorkspace: (connector) =>
-				options?.lookupFails === true
-					? Effect.fail(
-							new WorkspaceLookupFailed({ connector, message: "the database said nothing" }),
-						)
-					: Effect.succeed(options?.linked === false ? Option.none() : Option.some({ orgId: ORG })),
-			resolveApprover: (connector) =>
+			resolveWorkspace: (connector, _workspaceId, externalUserId) =>
 				options?.lookupFails === true
 					? Effect.fail(
 							new WorkspaceLookupFailed({ connector, message: "the database said nothing" }),
@@ -234,7 +228,9 @@ const host = (
 								? Option.none()
 								: Option.some({
 										orgId: ORG,
-										...(options?.linkedUserId === undefined
+										// Only a caller that named an account gets an answer about one.
+										...(externalUserId === undefined ||
+										options?.linkedUserId === undefined
 											? undefined
 											: { linkedUserId: options.linkedUserId }),
 									}),
@@ -553,7 +549,7 @@ const click = (overrides: Partial<InboundAction> = {}): InboundAction => ({
 	channelId: CONVERSATION,
 	messageId: "message-2",
 	actionToken: CONTROL,
-	actor: { id: "author-1", displayName: "Ada", roleIds: [], isWorkspaceAdmin: true },
+	actor: { id: "author-1", displayName: "Ada" },
 	...overrides,
 })
 
@@ -620,10 +616,8 @@ describe("settling an approval somebody clicked", () => {
 			})
 
 			yield* relayInboundEvent(
-				// No platform role and no platform admin: the link is the whole authorization.
-				click({
-					actor: { id: "author-1", displayName: "Ada", roleIds: [], isWorkspaceAdmin: false },
-				}),
+				// The link is the whole authorization; the platform reports no powers at all.
+				click(),
 				deployment.ports,
 			)
 
@@ -817,10 +811,7 @@ describe("settling an approval somebody clicked", () => {
 			// The external id is the only forensic link between the change and the human, so an actor
 			// that does not decode is nobody to attribute an approval to.
 			const reason = yield* refusalReason(
-				relayInboundEvent(
-					click({ actor: { id: "", displayName: "Ada", roleIds: [], isWorkspaceAdmin: true } }),
-					deployment.ports,
-				),
+				relayInboundEvent(click({ actor: { id: "", displayName: "Ada" } }), deployment.ports),
 			)
 
 			expect(reason).toBe("no_approver")

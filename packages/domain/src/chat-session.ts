@@ -518,18 +518,11 @@ const ORG_ADMIN_ROLE = Schema.decodeSync(RoleName)("org:admin")
 
 /**
  * The identity an approved proposal runs under **on a connector that cannot say who clicked**.
+ * See `ChatConnector.identity` for the three-case approval policy this is half of.
  *
- * There is no person to be here: the platform gives Maple no way to prove which account pressed
- * the button, so the org-level connector identity acts and everyone who can see the conversation
- * can decide. The role is granted at apply time only — the turn that WROTE the proposal carried
- * none, which is what makes the approval gate mean anything.
- *
- * A connector that implements the identity half never reaches this: its approvals run as the Maple
- * user the clicker linked to, under that user's own roles, and nothing is granted to them at all.
- *
- * Deliberately beside {@link connectorTurnTenant} rather than built at the call site: the two are
- * one rule read together — a connector turn PROPOSES with no roles, and only an approval carries
- * any.
+ * The role is granted at apply time only — the turn that WROTE the proposal carried none, which is
+ * what makes the approval gate mean anything. Deliberately beside {@link connectorTurnTenant}:
+ * the two are one rule read together.
  */
 export const connectorApprovalTenant = (orgId: OrgId): ChatTurnTenantEncoded =>
 	encodeChatTurnTenant({

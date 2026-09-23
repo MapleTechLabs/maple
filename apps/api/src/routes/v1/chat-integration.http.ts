@@ -1,5 +1,13 @@
 import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/unstable/http"
-import { ChatConnectorId } from "@maple/domain/http"
+import {
+	ChatConnectorId,
+	type IntegrationsConfigurationError,
+	type IntegrationsForbiddenError,
+	type IntegrationsNotFoundError,
+	type IntegrationsPersistenceError,
+	type IntegrationsUpstreamError,
+	type IntegrationsValidationError,
+} from "@maple/domain/http"
 import { Effect, Option, Schema } from "effect"
 import { Env } from "@maple/backend/platform/Env"
 import { ChatWorkspaceService } from "@maple/backend/services/integrations/ChatWorkspaceService"
@@ -31,6 +39,15 @@ const decodeConnectorParam = Schema.decodeUnknownOption(ChatConnectorId)
  */
 type ChatCallbackReason = "state" | "conflict" | "unconfigured" | "unknown" | "failed"
 
+/** Everything either completer can fail with — the tags `callback` maps to a reason code. */
+type ChatCallbackError =
+	| IntegrationsValidationError
+	| IntegrationsForbiddenError
+	| IntegrationsNotFoundError
+	| IntegrationsConfigurationError
+	| IntegrationsUpstreamError
+	| IntegrationsPersistenceError
+
 /** Where the browser lands afterwards: the connector's card, plus the outcome. */
 const buildAppRedirect = (appBaseUrl: string, params: Record<string, string>): string => {
 	const base = appBaseUrl.replace(/\/$/, "")
@@ -48,111 +65,89 @@ export const ChatCallbackRouter = HttpRouter.use((router) =>
 		const redirect = (params: Record<string, string>) =>
 			HttpServerResponse.redirect(buildAppRedirect(env.MAPLE_APP_BASE_URL, params))
 
-		const failed = (connector: string, reason: ChatCallbackReason) =>
-			redirect({ integration: cardId(connector), chat: "error", chat_reason: reason })
-
-		/** The identity half's outcome, under its own param and the same reason codes. */
-		const identityFailed = (connector: string, reason: ChatCallbackReason) =>
-			redirect({ integration: cardId(connector), chat_identity: "error", chat_reason: reason })
-
 		const requestUrl = (req: HttpServerRequest.HttpServerRequest) =>
 			Option.liftThrowable(() => new URL(req.url, "http://localhost"))()
 
-		const handle = Effect.fn("ChatOAuth.callback")(function* (req: HttpServerRequest.HttpServerRequest) {
-			const routeParams = yield* HttpRouter.params
-			const connectorOption = decodeConnectorParam(routeParams.connector)
-			if (Option.isNone(connectorOption)) {
-				return redirect({ chat: "error", chat_reason: "unknown" satisfies ChatCallbackReason })
-			}
-			const connector = connectorOption.value
-			const urlOption = requestUrl(req)
-			if (Option.isNone(urlOption)) {
-				return failed(connector, "failed")
-			}
-
-			// The whole query string goes to the connector: which parameters carry
-			// the authorization is the connector's business, not this route's.
-			return yield* chat.completeInstall(connector, urlOption.value.searchParams).pipe(
-				Effect.tapError((error) =>
-					Effect.logError("Chat install callback failed", {
-						connector,
-						tag: error._tag,
-						message: error.message,
-					}),
-				),
-				Effect.map((result) =>
+		/**
+		 * Both callbacks, which differ only in what completes them and what they say afterwards.
+		 *
+		 * The outcome rides under its own query parameter — `chat` for the workspace install,
+		 * `chat_identity` for a member's own account — and every failure maps to the same closed
+		 * set of reason codes, because a backend- or provider-authored string echoed inside an
+		 * authenticated page is a phishing surface.
+		 */
+		const callback = <A>(options: {
+			readonly span: string
+			readonly outcome: string
+			readonly log: string
+			readonly complete: (
+				connector: ChatConnectorId,
+				params: URLSearchParams,
+			) => Effect.Effect<A, ChatCallbackError>
+			readonly params: (result: A) => Record<string, string>
+		}) =>
+			Effect.fn(options.span)(function* (req: HttpServerRequest.HttpServerRequest) {
+				const failed = (connector: string, reason: ChatCallbackReason) =>
 					redirect({
-						integration: cardId(connector),
-						chat: "connected",
-						chat_workspace: result.name,
+						...(connector === "" ? undefined : { integration: cardId(connector) }),
+						[options.outcome]: "error",
+						chat_reason: reason,
+					})
+
+				const routeParams = yield* HttpRouter.params
+				const connectorOption = decodeConnectorParam(routeParams.connector)
+				if (Option.isNone(connectorOption)) return failed("", "unknown")
+				const connector = connectorOption.value
+				const urlOption = requestUrl(req)
+				if (Option.isNone(urlOption)) return failed(connector, "failed")
+
+				// The whole query string goes to the connector: which parameters carry the
+				// authorization is the connector's business, not this route's.
+				return yield* options.complete(connector, urlOption.value.searchParams).pipe(
+					Effect.tapError((error) =>
+						Effect.logError(options.log, { connector, tag: error._tag, message: error.message }),
+					),
+					Effect.map((result) =>
+						redirect({ integration: cardId(connector), ...options.params(result) }),
+					),
+					Effect.catchTags({
+						"@maple/http/errors/IntegrationsValidationError": () =>
+							Effect.succeed(failed(connector, "state")),
+						"@maple/http/errors/IntegrationsForbiddenError": () =>
+							Effect.succeed(failed(connector, "conflict")),
+						"@maple/http/errors/IntegrationsNotFoundError": () =>
+							Effect.succeed(failed(connector, "unknown")),
+						"@maple/http/errors/IntegrationsConfigurationError": () =>
+							Effect.succeed(failed(connector, "unconfigured")),
+						"@maple/http/errors/IntegrationsUpstreamError": () =>
+							Effect.succeed(failed(connector, "failed")),
+						"@maple/http/errors/IntegrationsPersistenceError": () =>
+							Effect.succeed(failed(connector, "failed")),
 					}),
-				),
-				Effect.catchTags({
-					"@maple/http/errors/IntegrationsValidationError": () =>
-						Effect.succeed(failed(connector, "state")),
-					"@maple/http/errors/IntegrationsForbiddenError": () =>
-						Effect.succeed(failed(connector, "conflict")),
-					"@maple/http/errors/IntegrationsNotFoundError": () =>
-						Effect.succeed(failed(connector, "unknown")),
-					"@maple/http/errors/IntegrationsConfigurationError": () =>
-						Effect.succeed(failed(connector, "unconfigured")),
-					"@maple/http/errors/IntegrationsUpstreamError": () =>
-						Effect.succeed(failed(connector, "failed")),
-					"@maple/http/errors/IntegrationsPersistenceError": () =>
-						Effect.succeed(failed(connector, "failed")),
-				}),
-			)
+				)
+			})
+
+		const handle = callback({
+			span: "ChatOAuth.callback",
+			outcome: "chat",
+			log: "Chat install callback failed",
+			complete: (connector, params) => chat.completeInstall(connector, params),
+			params: (result) => ({ chat: "connected", chat_workspace: result.name }),
 		})
 
-		const handleIdentity = Effect.fn("ChatOAuth.identityCallback")(function* (
-			req: HttpServerRequest.HttpServerRequest,
-		) {
-			const routeParams = yield* HttpRouter.params
-			const connectorOption = decodeConnectorParam(routeParams.connector)
-			if (Option.isNone(connectorOption)) {
-				return redirect({
-					chat_identity: "error",
-					chat_reason: "unknown" satisfies ChatCallbackReason,
-				})
-			}
-			const connector = connectorOption.value
-			const urlOption = requestUrl(req)
-			if (Option.isNone(urlOption)) {
-				return identityFailed(connector, "failed")
-			}
-
-			return yield* chat.completeLink(connector, urlOption.value.searchParams).pipe(
-				Effect.tapError((error) =>
-					Effect.logError("Chat account link callback failed", {
-						connector,
-						tag: error._tag,
-						message: error.message,
-					}),
-				),
-				Effect.map((result) =>
-					redirect({
-						integration: cardId(connector),
-						chat_identity: "linked",
-						// The platform's own display string, and only when it reported one.
-						// Untrusted, like the workspace name — the page clamps it.
-						...(result.displayName === undefined
-							? undefined
-							: { chat_identity_name: result.displayName }),
-					}),
-				),
-				Effect.catchTags({
-					"@maple/http/errors/IntegrationsValidationError": () =>
-						Effect.succeed(identityFailed(connector, "state")),
-					"@maple/http/errors/IntegrationsNotFoundError": () =>
-						Effect.succeed(identityFailed(connector, "unknown")),
-					"@maple/http/errors/IntegrationsConfigurationError": () =>
-						Effect.succeed(identityFailed(connector, "unconfigured")),
-					"@maple/http/errors/IntegrationsUpstreamError": () =>
-						Effect.succeed(identityFailed(connector, "failed")),
-					"@maple/http/errors/IntegrationsPersistenceError": () =>
-						Effect.succeed(identityFailed(connector, "failed")),
-				}),
-			)
+		const handleIdentity = callback({
+			span: "ChatOAuth.identityCallback",
+			outcome: "chat_identity",
+			log: "Chat account link callback failed",
+			complete: (connector, params) => chat.completeLink(connector, params),
+			params: (result) => ({
+				chat_identity: "linked",
+				// The platform's own display string, and only when it reported one. Untrusted,
+				// like the workspace name — the page clamps it.
+				...(result.displayName === undefined
+					? undefined
+					: { chat_identity_name: result.displayName }),
+			}),
 		})
 
 		yield* router.add("GET", CHAT_CALLBACK_PATH, handle)

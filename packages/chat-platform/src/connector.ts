@@ -45,10 +45,19 @@ export interface ChatConnector<R = never> {
 	/**
 	 * How one person proves which account on this platform is theirs, where the platform can say.
 	 *
-	 * Optional, and its absence is a policy rather than a gap: a connector without it cannot tell
-	 * Maple who clicked a button, so everyone who can see the conversation may approve what the
-	 * agent proposes. A connector WITH it gets the stronger rule — only somebody who linked may
-	 * approve, and the change runs as the Maple user they linked to.
+	 * **This is where the approval policy is written down.** Its absence is a policy rather than a
+	 * gap, and the three cases are:
+	 *
+	 *   - **no `identity`** — the connector cannot tell Maple who clicked, so anyone who can see
+	 *     the conversation may approve, and the change runs as the org-level connector identity
+	 *     (`connectorApprovalTenant`), which carries `org:admin` because there is no person whose
+	 *     roles could be read. The weaker rule, and deliberate: the alternative is a bot that can
+	 *     propose changes and never apply them.
+	 *   - **`identity`, linked** — the change runs as the Maple user that person linked to, under
+	 *     the roles they hold in the org at approval time. Nothing is granted: a tool that needs an
+	 *     admin refuses a member exactly as it would in the app.
+	 *   - **`identity`, not linked** — refused. On a platform where identity was available,
+	 *     "nobody linked" must never quietly become "anyone in the channel may approve".
 	 */
 	readonly identity?: ChatConnectorIdentity
 }

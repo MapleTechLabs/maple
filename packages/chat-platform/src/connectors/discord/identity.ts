@@ -14,7 +14,8 @@ import { Effect, Schema } from "effect"
 import { HttpClient, HttpClientRequest } from "effect/unstable/http"
 import { ChatIdentityFailed, type ChatConnectorIdentity } from "../../identity"
 import { requireConfig, type ChatInstallCallback, type ChatInstallStart } from "../../install"
-import { API_BASE, AUTHORIZE_URL, CLIENT_ID_CONFIG, CLIENT_SECRET_CONFIG, TOKEN_URL } from "./api"
+import { API_BASE, AUTHORIZE_URL, CLIENT_ID_CONFIG } from "./api"
+import { exchangeCode } from "./exchange"
 import { DISCORD_CONNECTOR_ID } from "./id"
 
 /**
@@ -67,44 +68,12 @@ const authorizeUrl = (input: ChatInstallStart) =>
  * against.
  */
 const complete = Effect.fnUntraced(function* (input: ChatInstallCallback) {
-	const denied = input.params.get("error")
-	if (denied !== null) {
-		return yield* Effect.fail(identityFailed(`Discord rejected the authorization: ${denied}`))
-	}
-	const code = input.params.get("code")
-	if (code === null) {
-		return yield* Effect.fail(identityFailed("Discord's callback carried no authorization code"))
-	}
-	const clientId = yield* requireConfig(input.config, DISCORD_CONNECTOR_ID, CLIENT_ID_CONFIG)
-	const clientSecret = yield* requireConfig(input.config, DISCORD_CONNECTOR_ID, CLIENT_SECRET_CONFIG)
-	const httpClient = yield* HttpClient.HttpClient
-
-	const tokenResponse = yield* httpClient
-		.execute(
-			HttpClientRequest.post(TOKEN_URL, { headers: { accept: "application/json" } }).pipe(
-				// Same form-encoded grant the install half runs, over the same OAuth application.
-				HttpClientRequest.bodyUrlParams({
-					client_id: clientId,
-					client_secret: clientSecret,
-					grant_type: "authorization_code",
-					code,
-					redirect_uri: input.redirectUri,
-				}),
-			),
-		)
-		.pipe(Effect.mapError((error) => identityFailed(`Discord token exchange failed: ${error.message}`)))
-	if (tokenResponse.status < 200 || tokenResponse.status >= 300) {
-		return yield* Effect.fail(
-			identityFailed(`Discord token exchange failed with HTTP ${tokenResponse.status}`),
-		)
-	}
-	const tokenJson = yield* tokenResponse.json.pipe(
-		Effect.mapError(() => identityFailed("Discord returned a non-JSON token response")),
-	)
+	const tokenJson = yield* exchangeCode(input, identityFailed)
 	const token = yield* decodeAccessToken(tokenJson).pipe(
 		Effect.mapError(() => identityFailed("Discord returned an unexpected token response")),
 	)
 
+	const httpClient = yield* HttpClient.HttpClient
 	const userResponse = yield* httpClient
 		.execute(
 			HttpClientRequest.get(`${API_BASE}/users/@me`, {

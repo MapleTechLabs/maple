@@ -8,11 +8,8 @@
  *
  * It is the connector's counterpart to `POST /internal/chat/apply`, which the web client uses, and
  * it does the same three things in the same order — refuse a tool that is not approval-gated, run
- * it under a resolved tenant, and hand back what it said. What differs is identity, and there are
- * two cases (see `resolveTenant`): somebody who linked their chat account acts AS their Maple
- * user, under the roles they hold in the org, exactly as the web caller does; where the platform
- * cannot say who clicked, the connector's agent actor performs the change instead. Either way the
- * chat account that clicked rides along as forensic context on the audit entry.
+ * it under a resolved tenant, and hand back what it said. What differs is identity: See `ChatConnector.identity` for the three-case approval policy this is half of.
+ * Either way the chat account that clicked rides along as forensic context on the audit entry.
  */
 import * as MapleCloudflareSDK from "@maple-dev/effect-sdk/cloudflare"
 import {
@@ -91,18 +88,12 @@ class ApproverNotPermitted extends Schema.TaggedError<ApproverNotPermitted>()(
 ) {}
 
 /**
- * Who the change runs as.
+ * Who the change runs as — which the host decided before the session was ever reached. See `ChatConnector.identity` for the three-case approval policy this is half of.
  *
- * Two shapes, and which one applies was decided by the host before the session was ever reached:
- *
- *   - **a linked user** — the tenant is that user with the roles they hold in the org at
- *     approval time, read from the membership directory rather than frozen at link time. That
- *     read is cached (a per-isolate memo, then a shared tier), so a demotion lands within the
- *     cache's revocation window rather than instantly; the membership webhook closes it from the
- *     other side. Nothing is granted here: the four admin-gated tools check these roles
- *     themselves and refuse, which surfaces as the proposal's own outcome.
- *   - **nobody** — the connector cannot prove who clicked, so the org-level connector identity
- *     acts and carries `org:admin`, granted at apply time only.
+ * The linked user's roles come from the membership directory at approval time, not frozen at link
+ * time. That read is cached (a per-isolate memo, then a shared tier), so a demotion lands within
+ * the cache's revocation window rather than instantly; the membership webhook closes it from the
+ * other side.
  */
 export const resolveTenant = Effect.fnUntraced(function* (orgId: OrgId, input: ApplyChatProposalInput) {
 	if (input.actingUserId === undefined) {

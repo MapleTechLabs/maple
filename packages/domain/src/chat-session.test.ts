@@ -274,19 +274,11 @@ describe("ChatTurnTenant", () => {
 		expect(Object.getPrototypeOf(encoded)).toBe(Object.prototype)
 	})
 
-	it("gives an approved proposal the one role the mutating tools check, and nothing more", () => {
-		// The difference between the two is the whole approval gate: a connector turn PROPOSES with
-		// no roles, and only a decision the host authorized carries any.
-		const encoded = connectorApprovalTenant(orgId("org_1"))
-
-		expect(encoded).toStrictEqual({
-			orgId: "org_1",
-			userId: CONNECTOR_TENANT_USER_ID,
-			roles: ["org:admin"],
-			authMode: "self_hosted",
-		})
+	it("carries exactly one role more than the turn that proposed the change", () => {
+		// The difference between the two IS the approval gate. What that role then permits is
+		// `apply-tenant.test.ts`'s to pin, where the tenant is actually built.
 		expect(connectorTurnTenant(orgId("org_1")).roles).toStrictEqual([])
-		expect(Object.getPrototypeOf(encoded)).toBe(Object.prototype)
+		expect(connectorApprovalTenant(orgId("org_1")).roles).toStrictEqual(["org:admin"])
 	})
 })
 

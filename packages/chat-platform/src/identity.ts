@@ -1,11 +1,7 @@
 /**
  * Linking one person's chat account to one Maple user.
  *
- * Optional, and the optionality is the contract: a platform that cannot prove who clicked a button
- * simply does not implement this, and Maple falls back to treating everyone who can see the
- * conversation as able to approve. A platform that CAN prove it gets the stronger rule — only a
- * linked person may approve, and the change runs as the Maple user they linked to, under that
- * user's own roles.
+ * Optional, and the optionality is the contract: See `ChatConnector.identity` for the three-case approval policy this is half of.
  *
  * Deliberately the same authorization-code flow the install half runs, over the same OAuth
  * application and the same `requiredConfig`: one app, one client id, one secret. The only

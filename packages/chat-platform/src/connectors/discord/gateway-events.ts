@@ -10,13 +10,11 @@ import { Option } from "effect"
 import type { ConnectorRequest, InboundEvent } from "../../ingress.ts"
 import { API_BASE } from "./api.ts"
 import {
-	ADMINISTRATOR,
 	CALLBACK_DEFERRED_UPDATE_MESSAGE,
 	decodeGuildDelete,
 	decodeInteractionCreate,
 	decodeMessageCreate,
 	INTERACTION_MESSAGE_COMPONENT,
-	MANAGE_GUILD,
 } from "./gateway-payloads.ts"
 import { DISCORD_CONNECTOR_ID } from "./id.ts"
 
@@ -38,21 +36,6 @@ const NOTHING: DispatchResult = { events: [], requests: [] }
  */
 const stripMention = (text: string, botUserId: string): string =>
 	text.split(`<@${botUserId}>`).join(" ").split(`<@!${botUserId}>`).join(" ").replace(/\s+/gu, " ").trim()
-
-/**
- * Whether the member may administer this workspace.
- *
- * `permissions` on an interaction is the member's EFFECTIVE permission set in
- * that channel, already resolved against roles and overwrites, so reading two
- * bits off it is the whole check. It is a decimal string wider than a JS number,
- * hence `BigInt` — and a value that is not decimal digits is treated as "no",
- * because a permission check that guesses should guess closed.
- */
-const isWorkspaceAdmin = (permissions: string | undefined): boolean => {
-	if (permissions === undefined || !/^\d+$/u.test(permissions)) return false
-	const bits = BigInt(permissions)
-	return (bits & MANAGE_GUILD) !== 0n || (bits & ADMINISTRATOR) !== 0n
-}
 
 /**
  * Acknowledge a component click.
@@ -151,8 +134,6 @@ const interactionCreate = (data: unknown): DispatchResult => {
 				actor: {
 					id: member.user.id,
 					displayName: member.nick ?? member.user.global_name ?? member.user.username,
-					roleIds: member.roles,
-					isWorkspaceAdmin: isWorkspaceAdmin(member.permissions),
 				},
 			},
 		],

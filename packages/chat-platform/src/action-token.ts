@@ -6,9 +6,9 @@
  * identifies the pending call, and nothing else: which session, which tool call.
  *
  * Who is allowed to click is NOT in here and is not the connector's call either. Ingress reports
- * the clicker's roles and whether they administer the workspace as plain data
- * (`InboundActor`), and the vendor-neutral host decides against the workspace's configured
- * approver role. A forged control can therefore name any call it likes; it cannot name a verdict.
+ * only who clicked (`InboundActor`), and the vendor-neutral host decides from that — see
+ * `ChatConnector.identity`. A forged control can therefore name any call it likes; it cannot name
+ * a verdict.
  */
 import {
 	CHAT_PROPOSAL_DECISIONS,

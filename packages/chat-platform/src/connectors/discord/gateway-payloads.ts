@@ -138,16 +138,11 @@ export const InteractionCreate = Schema.Struct({
 	guild_id: Schema.optionalKey(Schema.String),
 	channel_id: Schema.optionalKey(Schema.String),
 	member: Schema.optionalKey(
+		// Who clicked, and nothing about what they may do: Maple decides that from whether they
+		// linked this account, never from what Discord says they can do in the server.
 		Schema.Struct({
 			user: User,
 			nick: Schema.optionalKey(Schema.NullOr(Schema.String)),
-			roles: Schema.Array(Schema.String),
-			/**
-			 * The member's effective permissions in this channel, as a decimal string —
-			 * permissions are serialized as strings from API v8 on because the bitfield
-			 * outgrew 53 bits.
-			 */
-			permissions: Schema.optionalKey(Schema.String),
 		}),
 	),
 	message: Schema.optionalKey(Schema.Struct({ id: Schema.String })),
@@ -170,7 +165,3 @@ export const GuildDelete = Schema.Struct({
 	unavailable: Schema.optionalKey(Schema.Boolean),
 })
 export const decodeGuildDelete = Schema.decodeUnknownOption(GuildDelete)
-
-/** `MANAGE_GUILD` (`1 << 5`) and `ADMINISTRATOR` (`1 << 3`), the two that make someone an admin here. */
-export const MANAGE_GUILD = 1n << 5n
-export const ADMINISTRATOR = 1n << 3n

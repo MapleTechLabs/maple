@@ -12,7 +12,6 @@
  * connector.
  */
 import {
-	chatActionDecision,
 	decodeChatActionControlId,
 	driveChatTurn,
 	type ChatActionRequest,
@@ -35,27 +34,17 @@ import type { ChatSessionStub } from "@maple/domain/chat-session-stub"
 import { ChatConnectorId, ExternalUserId, type OrgId, type UserId } from "@maple/domain/primitives"
 import { Duration, Effect, Exit, Option, Schema } from "effect"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
-import {
-	approvalPolicy,
-	linkNotice,
-	messageWithToolCall,
-	PROPOSAL_GONE_NOTICE,
-	settledMessageBlocks,
-} from "./approval.ts"
+import { settledMessageBlocks } from "./approval.ts"
 import { chatTurnEvents, sessionUnreachable } from "./events.ts"
 
-/** The org behind a workspace, as the host Worker answers it. */
+/** The org behind a workspace, and who the person acting is in Maple, when one was asked about. */
 export interface RelayWorkspace {
 	readonly orgId: OrgId
-}
-
-/** The org behind a workspace, plus who the person clicking is in Maple, if they are anybody. */
-export interface RelayApprover extends RelayWorkspace {
 	/**
-	 * The Maple user this chat account is linked to in that org.
+	 * The Maple user the `externalUserId` that was asked about is linked to in that org.
 	 *
 	 * Absent means nobody has linked it — which is a refusal on a connector that can prove who
-	 * clicked, and irrelevant on one that cannot.
+	 * clicked, and irrelevant on one that cannot (and on a mention, which never asks).
 	 */
 	readonly linkedUserId?: UserId
 }
@@ -74,20 +63,19 @@ export class WorkspaceLookupFailed extends Schema.TaggedError<WorkspaceLookupFai
 export interface RelayPorts<R = never> {
 	/** The connector's outbound half — how a turn is shown on the platform it was asked on. */
 	readonly outbound: ChatOutbound<R>
-	/** The org that linked this workspace, `None` when nobody has, and a failure when it cannot be read. */
+	/**
+	 * The org that linked this workspace, `None` when nobody has, and a failure when it cannot be
+	 * read.
+	 *
+	 * `externalUserId` asks a second question in the same database connection: which Maple user
+	 * that chat account is linked to. A mention omits it; an approval passes it, and the host skips
+	 * the query anyway when the connector has no `identity` half to link with.
+	 */
 	readonly resolveWorkspace: (
 		connector: ChatConnectorId,
 		workspaceId: string,
+		externalUserId?: string,
 	) => Effect.Effect<Option.Option<RelayWorkspace>, WorkspaceLookupFailed>
-	/**
-	 * The same resolve a click needs, plus the clicker's Maple user — one database connection for
-	 * both, because an approval asks both questions and a click is one round trip's worth of work.
-	 */
-	readonly resolveApprover: (
-		connector: ChatConnectorId,
-		workspaceId: string,
-		externalUserId: string,
-	) => Effect.Effect<Option.Option<RelayApprover>, WorkspaceLookupFailed>
 	/**
 	 * Whether this connector can prove who clicked a button.
 	 *
@@ -127,6 +115,13 @@ const UNLINKED_NOTICE =
 const BUSY_NOTICE = "Still working on the previous message here — ask again once that answer lands."
 
 const UNAVAILABLE_NOTICE = "Maple's agent can't be reached from here right now."
+
+/** The control outlived what it pointed at: a wiped conversation, or a build that changed the log. */
+const PROPOSAL_GONE_NOTICE = "That change isn't waiting for a decision any more."
+
+/** Where somebody goes to link their account — Maple's own page, which is where a session is. */
+const LINK_NOTICE = (appBaseUrl: string) =>
+	`Link your chat account to Maple before approving changes: ${appBaseUrl}/integrations`
 
 const decodeExternalUserId = Schema.decodeUnknownOption(ExternalUserId)
 
@@ -269,16 +264,10 @@ const settleAction = Effect.fn("chat_bot.settle_approval")(function* <R>(
 ) {
 	yield* Effect.annotateCurrentSpan({ "maple.chat.connector": action.connector })
 	const control = decodeChatActionControlId(action.actionToken)
+	// A platform hands back whatever was on the control that was clicked, which includes controls
+	// Maple never rendered. Not ours is not an error.
 	if (Option.isNone(control)) {
-		// A platform hands back whatever was on the control that was clicked, which includes controls
-		// Maple never rendered — not ours is not an error. One that names a decision and then does
-		// not decode IS ours, forged or corrupted, and is worth saying so.
-		const ours = Option.isSome(chatActionDecision(action.actionToken))
-		yield* Effect.annotateCurrentSpan({
-			"maple.chat.approval": ours ? "unreadable_control" : "not_a_control",
-		})
-		if (ours) yield* Effect.logWarning("A chat approval control could not be read")
-		return
+		return yield* Effect.annotateCurrentSpan({ "maple.chat.approval": "not_a_control" })
 	}
 	const request = control.value
 
@@ -289,7 +278,7 @@ const settleAction = Effect.fn("chat_bot.settle_approval")(function* <R>(
 	}
 
 	const workspace = yield* Effect.exit(
-		ports.resolveApprover(action.connector, action.workspaceId, approver.value),
+		ports.resolveWorkspace(action.connector, action.workspaceId, approver.value),
 	)
 	// Unreadable, or unlinked: either way there is no org to make a change in. The port logged why.
 	if (Exit.isFailure(workspace) || Option.isNone(workspace.value)) {
@@ -312,15 +301,15 @@ const settleAction = Effect.fn("chat_bot.settle_approval")(function* <R>(
 		return yield* Effect.annotateCurrentSpan({ "maple.chat.approval": "foreign_session" })
 	}
 
-	// Who this click runs as. A connector that cannot prove who clicked gets the org-level identity
-	// and lets anyone in the conversation decide; one that can requires a link, and then the change
-	// runs as the Maple user behind it rather than as Maple itself.
-	const policy = approvalPolicy(ports.supportsIdentity, linkedUserId)
-	if (policy._tag === "unlinked") {
+	// See `ChatConnector.identity` for the policy: a connector that can name the clicker requires a
+	// link, and one that cannot lets anyone in the conversation decide.
+	if (ports.supportsIdentity && linkedUserId === undefined) {
 		yield* Effect.annotateCurrentSpan({ "maple.chat.approval": "unlinked" })
-		return yield* say(transport, replyTarget(action), linkNotice(ports.appBaseUrl))
+		return yield* say(transport, replyTarget(action), LINK_NOTICE(ports.appBaseUrl))
 	}
-	yield* Effect.annotateCurrentSpan({ "maple.chat.approval.as": policy._tag })
+	yield* Effect.annotateCurrentSpan({
+		"maple.chat.approval.as": linkedUserId === undefined ? "connector" : "user",
+	})
 
 	const session = ports.chatSession(request.sessionId)
 	if (session === undefined) {
@@ -345,7 +334,7 @@ const settleAction = Effect.fn("chat_bot.settle_approval")(function* <R>(
 				},
 				// Only ever the user the HOST resolved from its own database, never anything the
 				// click carried: this is what the change runs as.
-				...(policy._tag === "user" ? { actingUserId: policy.userId } : undefined),
+				...(linkedUserId === undefined ? undefined : { actingUserId: linkedUserId }),
 			}),
 	}).pipe(Effect.exit)
 	if (Exit.isFailure(outcome)) {
@@ -368,7 +357,9 @@ const settleAction = Effect.fn("chat_bot.settle_approval")(function* <R>(
 		case "unknown":
 			return yield* say(transport, replyTarget(action), PROPOSAL_GONE_NOTICE)
 		case "decided":
-			return yield* showDecision(action, request, orgId, session, ports)
+			// A transcript that could not be re-read has already been logged; the decision stands
+			// either way, so the reader sees an unchanged message rather than a second failure.
+			return yield* showDecision(action, request, orgId, session, ports).pipe(Effect.ignore)
 		default:
 			return outcome.value satisfies never
 	}
@@ -399,9 +390,11 @@ const showDecision = Effect.fn("chat_bot.show_decision")(function* <R>(
 				Effect.annotateLogs({ "error.type": error._tag }),
 			),
 		),
-		Effect.orElseSucceed((): ReadonlyArray<ChatMessage> => []),
 	)
-	const message = messageWithToolCall(history, request.toolCallId)
+	// The session just settled this call, so its message is there.
+	const message = history.find((candidate) =>
+		candidate.toolCalls.some((call) => call.id === request.toolCallId),
+	)
 	if (message === undefined) return
 	const transport = yield* ports.outbound.transport
 	const blocks = settledMessageBlocks(

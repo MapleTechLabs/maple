@@ -9,16 +9,8 @@ import { index, pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-cor
 // The binding is per org, not global: the same person on the same platform may belong to two
 // Maple orgs as two different users, and a row minted for one must never speak for the other.
 //
-// Deliberately absent, and what it would take to add each back:
-//
-//   - no tokens. The authorization proves control of the chat account at that moment and is
-//     discarded; Maple never acts on the platform as the person. Storing one would mean a refresh
-//     loop, an encryption key and a revocation story, for a capability nothing wants.
-//   - no `linked_by` / audit columns. `user_id` IS who linked it — the flow only ever binds the
-//     caller's own account — and the audit log records what the link went on to do.
-//   - no `updated_at`. A link is created or deleted, never edited; re-linking replaces the row.
-//   - no expiry. A link lasts until the person unlinks it or leaves the org, which
-//     `MembershipRevocationService` handles.
+// No tokens: the authorization proves control of the chat account at that moment and is
+// discarded. Maple never acts on the platform as the person, only as the bot.
 //
 // `org_id` and `user_id` carry no foreign key: orgs and users live in Clerk, not Postgres. Org
 // deletion is handled by the explicit `ORG_SCOPED_TABLES` purge list in

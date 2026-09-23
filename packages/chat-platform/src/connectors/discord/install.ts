@@ -9,7 +9,8 @@ import {
 	type ChatInstallStart,
 	type ChatWorkspaceSettings,
 } from "../../install"
-import { AUTHORIZE_URL, CLIENT_ID_CONFIG, CLIENT_SECRET_CONFIG, TOKEN_URL } from "./api"
+import { AUTHORIZE_URL, CLIENT_ID_CONFIG, CLIENT_SECRET_CONFIG } from "./api"
+import { exchangeCode } from "./exchange"
 import { DISCORD_CONNECTOR_ID } from "./id"
 
 /**
@@ -97,38 +98,7 @@ const installFailed = (message: string) => new ChatInstallFailed({ connector: DI
  * code is proof that a manager of *that* guild approved this install.
  */
 const complete = Effect.fnUntraced(function* (input: ChatInstallCallback) {
-	const denied = input.params.get("error")
-	if (denied !== null) {
-		return yield* Effect.fail(installFailed(`Discord rejected the authorization: ${denied}`))
-	}
-	const code = input.params.get("code")
-	if (code === null) {
-		return yield* Effect.fail(installFailed("Discord's callback carried no authorization code"))
-	}
-	const clientId = yield* requireConfig(input.config, DISCORD_CONNECTOR_ID, CLIENT_ID_CONFIG)
-	const clientSecret = yield* requireConfig(input.config, DISCORD_CONNECTOR_ID, CLIENT_SECRET_CONFIG)
-
-	const httpClient = yield* HttpClient.HttpClient
-	const request = HttpClientRequest.post(TOKEN_URL, { headers: { accept: "application/json" } }).pipe(
-		// Discord's token endpoint accepts client credentials in the form body or
-		// as HTTP Basic, and only `application/x-www-form-urlencoded` bodies.
-		HttpClientRequest.bodyUrlParams({
-			client_id: clientId,
-			client_secret: clientSecret,
-			grant_type: "authorization_code",
-			code,
-			redirect_uri: input.redirectUri,
-		}),
-	)
-	const response = yield* httpClient
-		.execute(request)
-		.pipe(Effect.mapError((error) => installFailed(`Discord token exchange failed: ${error.message}`)))
-	if (response.status < 200 || response.status >= 300) {
-		return yield* Effect.fail(installFailed(`Discord token exchange failed with HTTP ${response.status}`))
-	}
-	const json = yield* response.json.pipe(
-		Effect.mapError(() => installFailed("Discord returned a non-JSON token response")),
-	)
+	const json = yield* exchangeCode(input, installFailed)
 	const decoded = yield* decodeTokenResponse(json).pipe(
 		Effect.mapError(() => installFailed("Discord returned an unexpected token response")),
 	)

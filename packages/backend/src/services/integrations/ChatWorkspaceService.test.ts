@@ -561,48 +561,6 @@ describe("ChatWorkspaceService", () => {
 		}),
 	)
 
-	it.effect("moves a chat account when somebody links it from another Maple user", () =>
-		Effect.gen(function* () {
-			const testDb = createTestDb(trackedDbs)
-			yield* Effect.gen(function* () {
-				const chat = yield* ChatWorkspaceService
-				const first = yield* chat.beginLink(ORG, USER, IDENTITY_CONNECTOR, IDENTITY_CALLBACK)
-				yield* chat.completeLink(
-					IDENTITY_CONNECTOR,
-					identityCallback(stateFrom(first.url), "account-4"),
-				)
-				const second = yield* chat.beginLink(ORG, OTHER_USER, IDENTITY_CONNECTOR, IDENTITY_CALLBACK)
-				yield* chat.completeLink(
-					IDENTITY_CONNECTOR,
-					identityCallback(stateFrom(second.url), "account-4"),
-				)
-				// One account speaks for one Maple user: the binding moved rather than doubled.
-				const moved = yield* chat.list(ORG, OTHER_USER)
-				assert.strictEqual(moved[0]?.identity?.externalUserId, "account-4")
-				const previous = yield* chat.list(ORG, USER)
-				assert.isUndefined(previous[0]?.identity)
-			}).pipe(Effect.provide(makeLayer(testDb, { registry: [identityConnector] })))
-		}),
-	)
-
-	it.effect("unlinks the caller's own account, and says when there was none", () =>
-		Effect.gen(function* () {
-			const testDb = createTestDb(trackedDbs)
-			yield* Effect.gen(function* () {
-				const chat = yield* ChatWorkspaceService
-				const { url } = yield* chat.beginLink(ORG, USER, IDENTITY_CONNECTOR, IDENTITY_CALLBACK)
-				yield* chat.completeLink(IDENTITY_CONNECTOR, identityCallback(stateFrom(url), "account-5"))
-				assert.isTrue((yield* chat.unlink(ORG, USER, IDENTITY_CONNECTOR)).unlinked)
-				const statuses = yield* chat.list(ORG, USER)
-				assert.isUndefined(statuses[0]?.identity)
-				// Unlinking nothing is an answer, not a failure.
-				assert.isFalse((yield* chat.unlink(ORG, USER, IDENTITY_CONNECTOR)).unlinked)
-				const unregistered = yield* chat.unlink(ORG, USER, UNREGISTERED).pipe(Effect.flip)
-				assert.strictEqual(unregistered._tag, "@maple/http/errors/IntegrationsNotFoundError")
-			}).pipe(Effect.provide(makeLayer(testDb, { registry: [identityConnector] })))
-		}),
-	)
-
 	it.effect("forgets a workspace the bot was removed from, by the platform's own id", () =>
 		Effect.gen(function* () {
 			const testDb = createTestDb(trackedDbs)

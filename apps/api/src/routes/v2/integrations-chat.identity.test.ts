@@ -39,6 +39,17 @@ describe("who may link a chat account", () => {
 		}),
 	)
 
+	it.effect("is what the connector list consults before returning the caller's own link", () =>
+		Effect.gen(function* () {
+			// `tenant.userId` under an API key is the human who created it, so answering "your link"
+			// would hand the key's holder that person's chat account. The list omits it instead.
+			const asPerson = yield* asActor({ type: "user", source: "dashboard" })
+			const asKey = yield* asActor({ type: "api_key", source: "api", label: "ci-deploy" })
+			assert.isTrue(asPerson._tag === "Success")
+			assert.isTrue(asKey._tag === "Failure")
+		}),
+	)
+
 	it.effect("denies by default when the credential cannot be identified", () =>
 		Effect.gen(function* () {
 			// `undefined` means the request skipped the standard auth middlewares; a credential this

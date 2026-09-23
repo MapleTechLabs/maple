@@ -346,16 +346,11 @@ describe("component clicks", () => {
 			channel_id: "2000000000000000002",
 			message: { id: "1000000000000000001" },
 			data: { custom_id: "approval:abc123", component_type: 2 },
-			member: {
-				user: user("4000000000000000004", { global_name: "Ada" }),
-				roles: ["7000000000000000007"],
-				// MANAGE_GUILD (1 << 5).
-				permissions: "32",
-			},
+			member: { user: user("4000000000000000004", { global_name: "Ada" }) },
 			...overrides,
 		})
 
-	it("maps a click to an action event carrying the roles and the admin verdict", () => {
+	it("maps a click to an action event naming who clicked, and nothing about their powers", () => {
 		const step = gatewayProtocol.onFrame(ready(), interaction(), NOW, config)
 		expect(step.events).toEqual([
 			{
@@ -365,12 +360,9 @@ describe("component clicks", () => {
 				channelId: "2000000000000000002",
 				messageId: "1000000000000000001",
 				actionToken: "approval:abc123",
-				actor: {
-					id: "4000000000000000004",
-					displayName: "Ada",
-					roleIds: ["7000000000000000007"],
-					isWorkspaceAdmin: true,
-				},
+				// An identity only: whether they may approve is whether they linked this account
+				// to a Maple user, which Discord cannot answer and is never asked.
+				actor: { id: "4000000000000000004", displayName: "Ada" },
 			},
 		])
 	})
@@ -385,44 +377,6 @@ describe("component clicks", () => {
 				body: JSON.stringify({ type: 6 }),
 			},
 		])
-	})
-
-	it("reads ADMINISTRATOR as admin too, from a permission set wider than a JS number", () => {
-		const step = gatewayProtocol.onFrame(
-			ready(),
-			interaction({
-				member: {
-					user: user("4000000000000000004"),
-					roles: [],
-					permissions: "1125899906842623",
-				},
-			}),
-			NOW,
-			config,
-		)
-		expect(step.events?.[0]).toMatchObject({ actor: { isWorkspaceAdmin: true } })
-	})
-
-	it("answers no for a member with neither bit, and for an unreadable permission set", () => {
-		const plain = gatewayProtocol.onFrame(
-			ready(),
-			interaction({
-				member: { user: user("4000000000000000004"), roles: [], permissions: "2048" },
-			}),
-			NOW,
-			config,
-		)
-		expect(plain.events?.[0]).toMatchObject({ actor: { isWorkspaceAdmin: false } })
-
-		const unreadable = gatewayProtocol.onFrame(
-			ready(),
-			interaction({
-				member: { user: user("4000000000000000004"), roles: [], permissions: "0x20" },
-			}),
-			NOW,
-			config,
-		)
-		expect(unreadable.events?.[0]).toMatchObject({ actor: { isWorkspaceAdmin: false } })
 	})
 
 	it("ignores an interaction that is not a component click", () => {

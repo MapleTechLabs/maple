@@ -37,7 +37,7 @@ const connectorField = ChatConnectorId.annotate({
 const settingsField = Schema.Record(Schema.String, Schema.String).annotate({
 	description:
 		"Connector-defined settings for this workspace. Keys are the connector's own setting keys; values are always strings. Omitted keys are unset.",
-	examples: [{ approver_role_id: "123456789012345678" }],
+	examples: [{ default_channel_id: "123456789012345678" }],
 })
 
 const chatWorkspaceExample = {
@@ -46,7 +46,7 @@ const chatWorkspaceExample = {
 	connector: "chatapp",
 	external_workspace_id: "123456789012345678",
 	name: "Acme Engineering",
-	settings: { approver_role_id: "987654321098765432" },
+	settings: { default_channel_id: "987654321098765432" },
 	created_at: "2026-09-01T12:00:00.000Z",
 } as const
 
@@ -254,7 +254,7 @@ export const V2ChatWorkspaceUpdateParams = Schema.Struct({
 	title: "Chat workspace update parameters",
 	description:
 		"Request body for updating a linked workspace's settings. The record replaces the stored settings wholesale, so send every key you want to keep; a blank value unsets its key.",
-	examples: [wireExample({ settings: { approver_role_id: "987654321098765432" } })],
+	examples: [wireExample({ settings: { default_channel_id: "987654321098765432" } })],
 })
 export type V2ChatWorkspaceUpdateParams = Schema.Schema.Type<typeof V2ChatWorkspaceUpdateParams>
 

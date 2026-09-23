@@ -96,21 +96,6 @@ describe("whose authority an approval runs under", () => {
 		}),
 	)
 
-	it.effect("passes an admin's admin role through unchanged", () =>
-		Effect.gen(function* () {
-			const tenant = yield* resolveTenant(ORG, proposal(ADA)).pipe(
-				Effect.provide(
-					Layer.mergeAll(
-						memberships(() => Effect.succeed(Option.some({ orgId: ORG, role: ADMIN }))),
-						noActors,
-					),
-				),
-			)
-
-			assert.deepStrictEqual(tenant.roles, [ADMIN])
-		}),
-	)
-
 	it.effect("refuses a linked user who is no longer in the organization", () =>
 		Effect.gen(function* () {
 			// The link outlived the membership. Falling back to the org-level identity here would

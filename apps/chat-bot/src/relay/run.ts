@@ -29,7 +29,7 @@ import {
 	resolveChatWorkspace,
 } from "@maple/backend/services/integrations/chat-workspace-rows"
 import { resolveConnectorConfig } from "../config.ts"
-import { relayInboundEvent, WorkspaceLookupFailed, type RelayApprover, type RelayPorts } from "./turn.ts"
+import { relayInboundEvent, WorkspaceLookupFailed, type RelayPorts, type RelayWorkspace } from "./turn.ts"
 
 /**
  * This Worker's own SDK instance, at module scope so its buffers are the isolate's.
@@ -100,34 +100,37 @@ const ports = (
 	outbound: connector.outbound,
 	supportsIdentity: connector.identity !== undefined,
 	/**
-	 * The workspace and the clicker's Maple user, in ONE connection.
+	 * The workspace, and — when a caller names a chat account — the Maple user it is linked to, in
+	 * ONE connection.
 	 *
 	 * Sequential rather than parallel because the second question needs the first one's answer: a
 	 * link is per org, and the org is what the workspace names.
 	 */
-	resolveApprover: (connectorId, workspaceId, externalUserId) =>
+	resolveWorkspace: (connectorId, workspaceId, externalUserId) =>
 		withDatabase(
 			host.env,
 			Effect.gen(function* () {
 				const database = yield* Database
 				const workspace = yield* resolveChatWorkspace(database, connectorId, workspaceId)
-				if (Option.isNone(workspace)) return Option.none<RelayApprover>()
+				// Nothing to link with, or nobody asked: one query.
+				if (
+					Option.isNone(workspace) ||
+					externalUserId === undefined ||
+					connector.identity === undefined
+				) {
+					return Option.map(workspace, (found) => ({ orgId: found.orgId }))
+				}
 				const identity = yield* resolveChatIdentity(
 					database,
 					workspace.value.orgId,
 					connectorId,
 					externalUserId,
 				)
-				return Option.some<RelayApprover>({
+				return Option.some<RelayWorkspace>({
 					orgId: workspace.value.orgId,
 					...(Option.isNone(identity) ? undefined : { linkedUserId: identity.value.userId }),
 				})
 			}),
-		).pipe(lookupFailed(connectorId, "The chat workspace could not be read")),
-	resolveWorkspace: (connectorId, workspaceId) =>
-		withDatabase(
-			host.env,
-			Effect.flatMap(Database, (database) => resolveChatWorkspace(database, connectorId, workspaceId)),
 		).pipe(lookupFailed(connectorId, "The chat workspace could not be read")),
 	forgetWorkspace: (connectorId, workspaceId) =>
 		withDatabase(
