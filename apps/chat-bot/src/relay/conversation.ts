@@ -51,7 +51,13 @@ const contextLines = (recent: ReadonlyArray<ChatHistoryMessage>, seenUpTo: numbe
 	const lines: Array<string> = []
 	let budget = CONTEXT_MAX_CHARS
 	for (const message of recent.slice(0, CONTEXT_MESSAGE_LIMIT)) {
-		if (message.at <= seenUpTo || message.text.trim() === "") continue
+		// A bot's message, in a conversation the session has already spoken in, is the session's own
+		// answer coming back around: the transcript dates an assistant message from when the turn
+		// STARTED, so a long answer lands on the platform after its own watermark and would
+		// otherwise be read twice. Before the first turn there is no transcript to duplicate, and
+		// what a bot said there — an alert, a deploy — is often the whole question.
+		if (message.at <= seenUpTo || (seenUpTo > 0 && message.isBot)) continue
+		if (message.text.trim() === "") continue
 		const rendered = line(message)
 		if (rendered.length > budget) break
 		budget -= rendered.length
@@ -97,34 +103,27 @@ export const chatTurnText = (message: InboundMessage, context: ConversationConte
 	return wrapChatContext(lines.join("\n"), message.text)
 }
 
-export interface FollowUp {
-	readonly message: InboundMessage
-	/** Whether the bot opened this conversation itself, as the host recorded when it did. */
-	readonly ownsConversation: boolean
-	/** The instant the conversation's chat session last recorded; `0` when it holds nothing. */
-	readonly lastTurnAt: number
-	readonly now: number
-}
-
 /**
  * Whether a message that mentioned nobody is nevertheless addressed to the bot.
  *
- * Four conditions, and the first is the one that keeps a bot out of a team's conversations: it
- * answers unaddressed messages ONLY in a conversation that exists because it opened one. A channel
- * it was invited to, and a thread somebody else started and mentioned it in once, both stay
- * mention-only however recently it spoke there.
+ * One rule in two halves, split by what it costs to ask. Everything here is the free half: the
+ * conversation is one the bot OPENED — which is what keeps it out of a team's conversations, since
+ * a channel it was invited to and a thread somebody else started and mentioned it in once both
+ * stay mention-only however recently it spoke there — a human wrote the message, and there is
+ * something in it to answer. In a server where the bot can read everything, almost every message
+ * stops here, before a database connection or a Durable Object call has been spent on it.
  *
- * The rest are bounds on that: the session has actually held a turn, it held one recently enough
- * that this message is plausibly part of the same exchange, and a human wrote it — two bots left
- * alone in a thread would otherwise answer each other until one of them ran out of budget.
- *
- * Deliberately no model call. A relevance classifier would let the bot answer in more places, and
- * it is the next thing to add if this proves too narrow; a classifier that decides whether to
- * speak at all is also a per-message cost and a new way to be wrong, which is not what V1 buys.
+ * Deliberately no model call, in either half. A relevance classifier would let the bot answer in
+ * more places, and it is the next thing to add if this proves too narrow; a classifier that
+ * decides whether to speak at all is also a per-message cost and a new way to be wrong.
  */
-export const isFollowUpTurn = (followUp: FollowUp): boolean =>
-	followUp.ownsConversation &&
-	followUp.lastTurnAt > 0 &&
-	followUp.now - followUp.lastTurnAt <= FOLLOW_UP_WINDOW_MS &&
-	!followUp.message.author.isBot &&
-	followUp.message.text.trim() !== ""
+export const couldAnswerUnaddressed = (message: InboundMessage, ownsConversation: boolean): boolean =>
+	ownsConversation && !message.author.isBot && message.text.trim() !== ""
+
+/**
+ * The other half, asked once the conversation's session has been read: it has actually held a
+ * turn, and held one recently enough that this message is part of the same exchange rather than a
+ * remark in a thread that went quiet days ago.
+ */
+export const conversationStillLive = (lastTurnAt: number, now: number): boolean =>
+	lastTurnAt > 0 && now - lastTurnAt <= FOLLOW_UP_WINDOW_MS

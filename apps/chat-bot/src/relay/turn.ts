@@ -33,7 +33,12 @@ import type { ChatSessionStub } from "@maple/domain/chat-session-stub"
 import { ChatConnectorId, ExternalUserId, type OrgId } from "@maple/domain/primitives"
 import { Clock, Duration, Effect, Exit, Option, Schema } from "effect"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
-import { chatTurnText, CONTEXT_MESSAGE_LIMIT, isFollowUpTurn } from "./conversation.ts"
+import {
+	chatTurnText,
+	conversationStillLive,
+	couldAnswerUnaddressed,
+	CONTEXT_MESSAGE_LIMIT,
+} from "./conversation.ts"
 import { chatTurnEvents, sessionUnreachable } from "./events.ts"
 
 /** The org behind a workspace, as the host Worker answers it. */
@@ -149,6 +154,27 @@ const relayMessage = Effect.fn("chat_bot.relay_turn")(function* <R>(
 	const tell = (target: ChatTarget, text: string) =>
 		message.mentionsBot ? say(transport, target, text) : Effect.void
 
+	/**
+	 * A message that addressed nobody is asked the free question first.
+	 *
+	 * Whether the bot owns this conversation is a read of this object's own storage, where
+	 * everything below is a database connection and a Durable Object call — and on a deployment
+	 * that can see every message in every channel, almost all of them stop here. Resolving the
+	 * conversation to ask it costs nothing either: a connector opens nothing for an unaddressed
+	 * message, by contract, so this is the same answer the turn would get later.
+	 */
+	const owned = message.mentionsBot ? undefined : yield* transport.conversation(message)
+	if (owned !== undefined) {
+		const ownsConversation = yield* ports.ownsConversation(owned.conversationKey)
+		// Recorded whichever way the gate goes: "the bot does not own this conversation" and "it
+		// does, but the window closed" are the same outcome and different problems, and the second
+		// is the one that would move `FOLLOW_UP_WINDOW_MS`.
+		yield* Effect.annotateCurrentSpan({ "maple.chat.owns_conversation": ownsConversation })
+		if (!couldAnswerUnaddressed(message, ownsConversation)) {
+			return yield* Effect.annotateCurrentSpan({ "maple.chat.relay": "not_addressed" })
+		}
+	}
+
 	const workspace = yield* Effect.exit(ports.resolveWorkspace(message.connector, message.workspaceId))
 	// A lookup that failed says nothing about whether this workspace is linked, so the mention goes
 	// unanswered rather than answered wrongly. The port has already logged why.
@@ -166,9 +192,12 @@ const relayMessage = Effect.fn("chat_bot.relay_turn")(function* <R>(
 	}
 	const { orgId } = workspace.value.value
 
-	const conversation = yield* transport.conversation(message)
+	// Resolved after the workspace, for a mention: opening a thread in a server nobody has linked
+	// would leave an empty one behind every time.
+	const conversation = owned ?? (yield* transport.conversation(message))
 	// Recorded before anything is said in it, so a turn that then fails still leaves a conversation
-	// the bot will go on answering in.
+	// the bot will go on answering in. The port swallows its own failure: this is bookkeeping for
+	// the messages after this one, and it must not cost this one its answer.
 	if (conversation.opened) yield* ports.rememberConversation(conversation)
 	const sessionId = connectorSessionId(orgId, message.connector, conversation.conversationKey)
 	yield* Effect.annotateCurrentSpan({ orgId, "maple.chat.session_id": sessionId })
@@ -198,15 +227,9 @@ const relayMessage = Effect.fn("chat_bot.relay_turn")(function* <R>(
 	const seenUpTo = transcript[transcript.length - 1]?.createdAt ?? 0
 	const now = yield* Clock.currentTimeMillis
 
-	if (!message.mentionsBot) {
-		const ownsConversation = yield* ports.ownsConversation(conversation.conversationKey)
-		// Recorded whichever way the gate goes: "the bot does not own this conversation" and "it does,
-		// but the window closed" are the same outcome and different problems, and the second is the
-		// one that would move `FOLLOW_UP_WINDOW_MS`.
-		yield* Effect.annotateCurrentSpan({ "maple.chat.owns_conversation": ownsConversation })
-		if (!isFollowUpTurn({ message, ownsConversation, lastTurnAt: seenUpTo, now })) {
-			return yield* Effect.annotateCurrentSpan({ "maple.chat.relay": "not_addressed" })
-		}
+	// The half of the follow-up rule that needed the session: it has spoken here, and recently.
+	if (!message.mentionsBot && !conversationStillLive(seenUpTo, now)) {
+		return yield* Effect.annotateCurrentSpan({ "maple.chat.relay": "not_addressed" })
 	}
 
 	// Best effort: a conversation whose history the bot may not read is one it answers with less

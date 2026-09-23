@@ -206,6 +206,8 @@ interface Host {
 	readonly opened: Set<string>
 	/** How many times the host was asked whether to announce an unlinked workspace. */
 	readonly announced: { count: number }
+	/** How many workspace lookups the events caused — one database connection each. */
+	readonly lookups: { count: number }
 }
 
 const host = (
@@ -224,19 +226,31 @@ const host = (
 	const charts: Array<{ orgId: OrgId; ref: ChatChartRef }> = []
 	const opened = new Set<string>(options?.opened ?? [])
 	const announced = { count: 0 }
+	const lookups = { count: 0 }
 	return {
 		forgotten,
 		charts,
 		opened,
 		announced,
+		lookups,
 		ports: {
 			outbound,
+			// Counted: this is a database connection per event, and a message the bot will not answer
+			// must not open one.
 			resolveWorkspace: (connector) =>
-				options?.lookupFails === true
-					? Effect.fail(
-							new WorkspaceLookupFailed({ connector, message: "the database said nothing" }),
-						)
-					: Effect.succeed(options?.linked === false ? Option.none() : Option.some({ orgId: ORG })),
+				Effect.suspend(() => {
+					lookups.count += 1
+					return options?.lookupFails === true
+						? Effect.fail(
+								new WorkspaceLookupFailed({
+									connector,
+									message: "the database said nothing",
+								}),
+							)
+						: Effect.succeed(
+								options?.linked === false ? Option.none() : Option.some({ orgId: ORG }),
+							)
+				}),
 			forgetWorkspace: (_connector: ChatConnectorId, workspaceId: string) =>
 				Effect.sync(() => void forgotten.push(workspaceId)),
 			chatSession: () => stub,
@@ -658,6 +672,10 @@ describe("relaying a message that mentioned nobody", () => {
 			// Not even a notice. Nobody asked it anything, so nothing appears in the conversation.
 			expect(platform.calls).toEqual([])
 			expect(platform.historyCalls).toEqual([])
+			// And it stopped on a read of this object's own storage: no database connection, no call
+			// to the session. On a deployment that sees every message, this is the path most of them
+			// take.
+			expect(deployment.lookups.count).toBe(0)
 		}),
 	)
 

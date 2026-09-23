@@ -5,7 +5,12 @@
 import type { ChatHistoryMessage, InboundMessage } from "@maple/chat-platform"
 import { stripChatContext } from "@maple/domain/chat-preamble"
 import { describe, expect, it } from "vitest"
-import { chatTurnText, FOLLOW_UP_WINDOW_MS, isFollowUpTurn } from "./conversation.ts"
+import {
+	chatTurnText,
+	conversationStillLive,
+	couldAnswerUnaddressed,
+	FOLLOW_UP_WINDOW_MS,
+} from "./conversation.ts"
 
 const NOW = Date.parse("2026-09-23T12:00:00.000Z")
 
@@ -58,6 +63,19 @@ describe("the context a turn carries", () => {
 		expect(text).toContain("Bo: and now?")
 		expect(text).not.toContain("Bo: why is checkout slow?")
 		expect(text.match(/why is checkout slow\?/gu)).toHaveLength(1)
+	})
+
+	it("leaves the bot's own answer out once the session has spoken here", () => {
+		// The transcript dates an assistant message from when the TURN STARTED, so an answer that
+		// took thirty seconds to write lands on the platform after its own watermark — and would be
+		// read once from the transcript and once from the conversation around it.
+		const text = context(
+			[said("Bo", "and the payments call?", 10), said("Maple", "Checkout is slow.", 30, true)],
+			NOW - 60_000,
+		)
+
+		expect(text).toContain("Bo: and the payments call?")
+		expect(text).not.toContain("Maple (bot)")
 	})
 
 	it("says nothing about the conversation when nothing is left to say about it", () => {
@@ -116,38 +134,34 @@ describe("the context a turn carries", () => {
 
 describe("answering a message that mentioned nobody", () => {
 	const unaddressed = { ...message, mentionsBot: false }
-	const followUp = {
-		message: unaddressed,
-		ownsConversation: true,
-		lastTurnAt: NOW - 60_000,
-		now: NOW,
-	}
 
-	it("answers in a conversation the bot opened and spoke in recently", () => {
-		expect(isFollowUpTurn(followUp)).toBe(true)
+	it("answers in a conversation the bot opened, whose session spoke recently", () => {
+		expect(couldAnswerUnaddressed(unaddressed, true)).toBe(true)
+		expect(conversationStillLive(NOW - 60_000, NOW)).toBe(true)
 	})
 
 	it("stays out of a conversation the bot did not open", () => {
 		// A channel it was invited to, and a thread somebody else started and mentioned it in once.
-		// Both stay mention-only however recently it spoke in them.
-		expect(isFollowUpTurn({ ...followUp, ownsConversation: false })).toBe(false)
-	})
-
-	it("stays out of a conversation whose session has never held a turn", () => {
-		expect(isFollowUpTurn({ ...followUp, lastTurnAt: 0 })).toBe(false)
-	})
-
-	it("stops answering once the conversation has gone quiet for a day", () => {
-		expect(isFollowUpTurn({ ...followUp, lastTurnAt: NOW - FOLLOW_UP_WINDOW_MS })).toBe(true)
-		expect(isFollowUpTurn({ ...followUp, lastTurnAt: NOW - FOLLOW_UP_WINDOW_MS - 1 })).toBe(false)
+		// Both stay mention-only however recently it spoke in them — and this is the half asked
+		// first, before a database connection or a session read has been spent on the message.
+		expect(couldAnswerUnaddressed(unaddressed, false)).toBe(false)
 	})
 
 	it("never answers another bot, which is how two of them talk until the budget runs out", () => {
 		const bot = { ...unaddressed, author: { ...unaddressed.author, isBot: true } }
-		expect(isFollowUpTurn({ ...followUp, message: bot })).toBe(false)
+		expect(couldAnswerUnaddressed(bot, true)).toBe(false)
 	})
 
 	it("never answers a message with nothing in it", () => {
-		expect(isFollowUpTurn({ ...followUp, message: { ...unaddressed, text: "  " } })).toBe(false)
+		expect(couldAnswerUnaddressed({ ...unaddressed, text: "  " }, true)).toBe(false)
+	})
+
+	it("stays out of a conversation whose session has never held a turn", () => {
+		expect(conversationStillLive(0, NOW)).toBe(false)
+	})
+
+	it("stops answering once the conversation has gone quiet for a day", () => {
+		expect(conversationStillLive(NOW - FOLLOW_UP_WINDOW_MS, NOW)).toBe(true)
+		expect(conversationStillLive(NOW - FOLLOW_UP_WINDOW_MS - 1, NOW)).toBe(false)
 	})
 })
