@@ -70,6 +70,13 @@ oauth_config:
             - mpim:history
 ```
 
+**One application per production instance.** Slack allows a single Events request URL per app, and
+the US and EU instances are different Workers on different hostnames — so the EU instance needs its
+own Slack app with `chat.eu.maple.dev` and `api.eu.maple.dev` substituted throughout the manifest
+above. They are separate applications with separate credentials, which is also what keeps an EU
+workspace's events off a US Worker. A dev stage has no public hostname at all; point a scratch app
+at the portless URL, or use a tunnel.
+
 Three things in there are load-bearing:
 
 - **one request URL for both surfaces.** Slack takes an Events URL and an Interactivity URL
@@ -115,9 +122,18 @@ deployment-wide credential the outbound half could use. The token is what the in
 this directory. It is JSON rather than the bare token so a second value later is one more key here
 rather than a migration and a re-install of every workspace.
 
-The token's **format is deliberately not validated**: an app with token rotation enabled answers
-`xoxe.xoxb-…` rather than `xoxb-…`, and the shapes it can take are Slack's to change. A wrong token
-fails the first post with Slack's own error, which reports better than a pattern could.
+The token's **format is deliberately not validated**: the shapes it can take are Slack's to change,
+and a wrong token fails the first post with Slack's own error, which reports better than a pattern
+could.
+
+**Token rotation must stay OFF on the app.** With it on, Slack issues a short-lived `xoxe.xoxb-…`
+access token plus a refresh token, and expects the app to exchange the one for the other before it
+expires. This connector stores only the access token and implements no refresh, so a rotation-enabled
+install would work until the first expiry and then stop posting — with nothing in the failure saying
+why beyond Slack's `token_expired`. Supporting it is a real feature (a second stored value, a
+refresh ahead of every use, and a write back to the row from the bot Worker, which today only reads
+it), not a missing branch. Nothing validates the format, so nothing here will catch the mistake:
+leaving rotation off is the operator's to get right.
 
 The host seals it with AES-256-GCM into `chat_workspaces.credentials_{ciphertext,iv,tag}`, with the
 AAD bound to `(org_id, connector, external_workspace_id)`, and hands it back to the outbound half in

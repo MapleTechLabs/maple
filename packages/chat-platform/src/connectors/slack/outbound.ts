@@ -261,7 +261,10 @@ export const slackOutbound: ChatOutbound<HttpClient.HttpClient | ConnectorCreden
 			> =>
 				attempt(bearer, operation, method, url, payload).pipe(
 					Effect.catchTag("@maple/chat-platform/connectors/slack/RateLimited", (limited) =>
-						count >= MAX_RATE_LIMIT_ATTEMPTS
+						// A read of the conversation is CONTEXT, and the turn has not started yet —
+						// waiting a rate limit out here delays the answer to buy background the model
+						// can do without. An answer is worth waiting for; the history behind it is not.
+						count >= MAX_RATE_LIMIT_ATTEMPTS || operation === "history"
 							? Effect.fail(
 									failed(operation, "Slack kept rate limiting this message", {
 										status: 429,
@@ -317,6 +320,14 @@ export const slackOutbound: ChatOutbound<HttpClient.HttpClient | ConnectorCreden
 			 * first and `conversations.replies` answers oldest first, and the contract wants one
 			 * order. Sorting what came back costs nothing at these sizes and cannot be got wrong by a
 			 * method Slack changes the default of.
+			 *
+			 * Sorting cannot recover what was never sent, though, and that is why a THREAD is asked
+			 * for a full page rather than for `limit`: it answers from the OLDEST end, so a thread
+			 * with more replies than the bound would otherwise hand back the start of the
+			 * conversation and call it the newest. Asking for the ceiling and cutting here reads the
+			 * right end of any thread up to that many replies — past which the oldest are dropped,
+			 * which is the bound doing its job rather than the paging failing. A channel needs none
+			 * of this: it answers from the newest end already.
 			 */
 			history: Effect.fn("Slack.history")(function* (
 				target: ChatTarget,
@@ -330,7 +341,7 @@ export const slackOutbound: ChatOutbound<HttpClient.HttpClient | ConnectorCreden
 					thread === undefined ? CHANNEL_HISTORY_URL : THREAD_REPLIES_URL,
 					{
 						channel: target.channelId,
-						limit,
+						limit: thread === undefined ? limit : MAX_HISTORY_LIMIT,
 						latest: options.before,
 						inclusive: false,
 						...(thread === undefined ? undefined : { ts: thread }),

@@ -176,9 +176,12 @@ const approvalActions = (token: string, toolName: string): SlackActions | null =
  * a rejected message — and with it the whole turn.
  */
 const chartBlocks = (block: Extract<ChatBlock, { kind: "chart" }>): ReadonlyArray<SlackBlock> => {
+	// Both branches escape. A chart's title and summary are built from model-authored chart JSON,
+	// so an unescaped one is the same hole as an unescaped paragraph: `<!channel>` in a summary
+	// would page the workspace.
 	const heading =
 		block.title === null
-			? block.summary
+			? escapeMrkdwn(block.summary)
 			: `*${escapeMrkdwn(block.title)}* — ${escapeMrkdwn(block.summary)}`
 	if (block.imageUrl === null || block.imageUrl.length > MAX_IMAGE_URL_CHARS) {
 		return [section(heading)]

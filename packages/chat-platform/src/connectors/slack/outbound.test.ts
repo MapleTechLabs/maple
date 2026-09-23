@@ -292,7 +292,8 @@ describe("slack transport", () => {
 			expect(http.seen[0]?.url).toContain("conversations.replies")
 			expect(sentBody(http.seen[0]!)).toEqual({
 				channel: "C1",
-				limit: 10,
+				// A full page, not the caller's 10 — see the thread-paging case below.
+				limit: 200,
 				latest: "1700000000.000400",
 				inclusive: false,
 				// The thread is addressed by its parent's `ts`.
@@ -323,6 +324,62 @@ describe("slack transport", () => {
 			const transport = yield* slackOutbound.transport
 			yield* transport.history(target, { limit: 100_000, before: "1700000000.000400" })
 			expect(sentBody(http.seen[0]!)).toMatchObject({ limit: 200 })
+		}).pipe(Effect.provide(http.layer))
+	})
+
+	it.effect("asks a thread for a full page, because it answers from the oldest end", () => {
+		const http = stub([
+			{
+				status: 200,
+				body: JSON.stringify({
+					ok: true,
+					// Oldest first, which is how `conversations.replies` answers. Asking it for two
+					// would have returned these two and called them the newest in the thread.
+					messages: [
+						{ ts: "1700000000.000100", user: "U1", text: "oldest" },
+						{ ts: "1700000001.000100", user: "U2", text: "older" },
+						{ ts: "1700000002.000100", user: "U3", text: "newer" },
+						{ ts: "1700000003.000100", user: "U4", text: "newest" },
+					],
+				}),
+			},
+		])
+		return Effect.gen(function* () {
+			const transport = yield* slackOutbound.transport
+			const history = yield* transport.history(target, { limit: 2, before: "1700000004.000000" })
+
+			// The bound still cuts to two — at the right end.
+			expect(history.map((message) => message.text)).toEqual(["newest", "newer"])
+			expect(sentBody(http.seen[0]!)).toMatchObject({ limit: 200 })
+		}).pipe(Effect.provide(http.layer))
+	})
+
+	it.effect("asks a channel only for what was wanted, since it answers newest first", () => {
+		const http = stub([{ status: 200, body: '{"ok":true,"messages":[]}' }])
+		return Effect.gen(function* () {
+			const transport = yield* slackOutbound.transport
+			yield* transport.history(
+				{ workspaceId: "T1", channelId: "C1" },
+				{
+					limit: 5,
+					before: "1700000000.000400",
+				},
+			)
+			expect(sentBody(http.seen[0]!)).toMatchObject({ limit: 5 })
+		}).pipe(Effect.provide(http.layer))
+	})
+
+	it.effect("gives up on a rate-limited history read instead of delaying the turn", () => {
+		const http = stub([{ status: 429, body: "{}", headers: { "retry-after": "30" } }])
+		return Effect.gen(function* () {
+			const transport = yield* slackOutbound.transport
+			// No `TestClock.adjust`: if this retried it would never finish here, which is the point —
+			// the context is not worth making somebody wait half a minute for their answer.
+			const failure = yield* transport
+				.history(target, { limit: 10, before: "1700000000.000400" })
+				.pipe(Effect.flip)
+			expect(failure.operation).toBe("history")
+			expect(http.seen).toHaveLength(1)
 		}).pipe(Effect.provide(http.layer))
 	})
 

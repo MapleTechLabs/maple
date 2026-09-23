@@ -80,6 +80,23 @@ describe("charts", () => {
 		expect(payload.blocks[0]?.type).toBe("section")
 	})
 
+	it("escapes a titleless chart's summary, which is model-authored like any other", () => {
+		const payload = renderSlackMessage([
+			{
+				kind: "chart",
+				spec: { type: "line" } as never,
+				unit: "ms",
+				title: null,
+				summary: "p99 for <!channel> & <@U0123>",
+				imageUrl: null,
+			},
+		])
+		const block = payload.blocks[0]
+		expect(block?.type === "section" && block.text.text).toBe(
+			"p99 for &lt;!channel&gt; &amp; &lt;@U0123&gt;",
+		)
+	})
+
 	it("drops an over-long image URL rather than sending a message Slack rejects", () => {
 		const payload = renderSlackMessage([
 			chart(`https://app.maple.dev/${"x".repeat(MAX_IMAGE_URL_CHARS)}`),

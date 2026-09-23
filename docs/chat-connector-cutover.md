@@ -64,13 +64,19 @@ cutover, and keeps running throughout.
       `workspace-removed`);
     - **no token anywhere**: grep the deploy's logs and spans for `xoxb-` and find nothing.
 
-4. **Point the old app's event URL at nothing.** In the OLD application's configuration, clear or
-   invalidate the Events request URL. That stops the Railway agent answering without touching
-   anything it runs, and it is one field to put back if step 5 goes badly.
+4. **Turn the old app's event subscriptions OFF.** In the OLD application's configuration, disable
+   Event Subscriptions — do not point the request URL at something that fails. Slack retries a
+   delivery its endpoint rejects and **disables an app's subscriptions after enough of them**, so
+   an intentionally broken URL ends in the same place as switching them off, except that it gets
+   there by itself, at a time nobody chose, and re-entering the URL afterwards does not bring
+   delivery back until an operator re-enables the subscriptions by hand.
+
+   The Railway agent keeps running and keeps its own configuration; it simply stops being sent
+   anything.
 
 5. **Let it sit.** A week of real use is enough to find what a checklist does not. If the connector
-   has to be backed out, restore the old app's request URL — the old agent has been running
-   untouched the whole time.
+   has to be backed out, re-enable the old app's event subscriptions — the old agent has been
+   running untouched the whole time, and its request URL never moved.
 
 6. **Retire the old agent**, in this order: uninstall the old application from every workspace, stop
    the Railway service, then delete `apps/slack-agent` and its deploy configuration in a change of
@@ -82,6 +88,6 @@ cutover, and keeps running throughout.
 | --- | --- |
 | 2 | Nothing is live; remove the secrets or leave them, the connector is skipped without them. |
 | 3 | Uninstall the new app from the workspace; its `chat_workspaces` row goes with it. |
-| 4 | Restore the old app's request URL. |
+| 4 | Re-enable the old app's event subscriptions. |
 | 5 | Same. |
 | 6 | The old agent is gone — from here, forward only. |
