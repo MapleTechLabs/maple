@@ -25,13 +25,16 @@ import {
 import { Clock, Context, Effect, Layer, Match, Option, Redacted, Schema } from "effect"
 import { Env } from "@maple/backend/platform/Env"
 import type {
+	PullRequestDelta,
 	VcsProviderClient,
 	VcsWebhookRequest,
 } from "@maple/backend/services/integrations/vcs/VcsProviderClient"
 import { QUEUE_MESSAGE_LIMIT_BYTES } from "@maple/backend/services/integrations/vcs/VcsSyncQueue"
 import { anchorComments } from "@maple/backend/services/integrations/vcs/diff-anchors"
+import { type FileChange, rangeDiffPaths } from "@maple/backend/services/integrations/vcs/range-diff"
 import {
 	type GithubApiCommit,
+	type GithubApiComparison as GithubComparison,
 	type GithubApiPullRequest,
 	GithubAppClient,
 	GithubAppError,
@@ -1098,15 +1101,51 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 						Effect.mapError(toVcsError),
 					)
 
-			const fetchChangedPaths: VcsProviderClient["fetchChangedPaths"] = (
-				installation,
-				repo,
-				base,
-				head,
-			) =>
-				client
-					.compareFiles(installation.externalInstallationId, repo.owner, repo.name, base, head)
-					.pipe(Effect.mapError(toVcsError))
+			const fetchChangesSince: VcsProviderClient["fetchChangesSince"] = (installation, repo, input) => {
+				const compare = (base: string, head: string) =>
+					client.compareCommits(
+						installation.externalInstallationId,
+						repo.owner,
+						repo.name,
+						base,
+						head,
+					)
+				const changes = (comparison: GithubComparison): ReadonlyArray<FileChange> =>
+					(comparison.files ?? []).map((file) => ({
+						path: file.filename,
+						status: file.status,
+						previousPath: file.previous_filename,
+						patch: file.patch,
+					}))
+				return compare(input.previousHead, input.head).pipe(
+					Effect.flatMap((forward): Effect.Effect<PullRequestDelta, GithubAppError> => {
+						// The earlier head is an ancestor: the three-dot diff is exactly what the push added.
+						if (forward.status === "ahead" || forward.status === "identical")
+							return Effect.succeed({
+								rewritten: false,
+								paths: forward.truncated
+									? undefined
+									: (forward.files ?? []).map((file) => file.filename),
+							})
+						// Rewritten history: the forward diff would carry everything the new base moved.
+						// Diff each head against the base and keep the files whose change differs.
+						const base = input.base
+						if (base === undefined) return Effect.succeed({ rewritten: true, paths: undefined })
+						return Effect.all([compare(base, input.previousHead), compare(base, input.head)], {
+							concurrency: 2,
+						}).pipe(
+							Effect.map(([before, after]) => ({
+								rewritten: true,
+								paths:
+									before.truncated || after.truncated
+										? undefined
+										: rangeDiffPaths(changes(before), changes(after)),
+							})),
+						)
+					}),
+					Effect.mapError(toVcsError),
+				)
+			}
 
 			const fetchPullRequestHead: VcsProviderClient["fetchPullRequestHead"] = (
 				installation,
@@ -1401,7 +1440,7 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 				fetchPullRequestContext,
 				fetchReviewThreads,
 				resolveReviewThread,
-				fetchChangedPaths,
+				fetchChangesSince,
 				fetchPullRequestHead,
 				postPullRequestReply,
 				reactToComment,

@@ -26,6 +26,8 @@ export class GithubAppError extends Schema.TaggedError<GithubAppError>()("@maple
 const GITHUB_API_VERSION = "2022-11-28"
 const USER_AGENT = "maple-vcs-integration"
 const PER_PAGE = 100
+// GitHub's cap on the files one comparison lists.
+const MAX_COMPARE_FILES = 300
 // Paginate effectively to the end (up to 100k items) while still bounding a
 // pathological loop. Hitting this cap is logged — truncation is never silent.
 const MAX_PAGES = 1000
@@ -253,9 +255,22 @@ const GithubApiReviewCommentList = Schema.Array(
 		original_line: Schema.optionalKey(Schema.NullOr(Schema.Number)),
 	}),
 )
+// `status` says how the two commits relate: `ahead` or `identical` when base is an ancestor of
+// head, `behind` or `diverged` otherwise (a force-push or a rebase).
 const GithubApiComparison = Schema.Struct({
-	files: Schema.optionalKey(Schema.Array(Schema.Struct({ filename: Schema.String }))),
+	status: Schema.Literals(["ahead", "behind", "diverged", "identical"]),
+	files: Schema.optionalKey(
+		Schema.Array(
+			Schema.Struct({
+				filename: Schema.String,
+				previous_filename: Schema.optionalKey(Schema.String),
+				status: Schema.String,
+				patch: Schema.optionalKey(Schema.String),
+			}),
+		),
+	),
 })
+export type GithubApiComparison = Schema.Schema.Type<typeof GithubApiComparison>
 const GithubGraphqlErrors = Schema.optionalKey(
 	Schema.NullOr(Schema.Array(Schema.Struct({ message: Schema.String }))),
 )
@@ -1433,8 +1448,12 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 				return { sha: commit.sha, htmlUrl: commit.html_url ?? null }
 			})
 
-			/** Paths that differ between two commits: what a push changed since the last review. */
-			const compareFiles = Effect.fn("GithubAppClient.compareFiles")(function* (
+			/**
+			 * A three-dot comparison: the files `head` changed since its merge base with `base`, and how
+			 * the two commits relate. GitHub lists at most 300 files, on the first page only, so
+			 * `truncated` says the list may be partial.
+			 */
+			const compareCommits = Effect.fn("GithubAppClient.compareCommits")(function* (
 				externalInstallationId: string,
 				owner: string,
 				repo: string,
@@ -1454,7 +1473,8 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 						(cause) => new GithubAppError({ message: "Unexpected comparison payload", cause }),
 					),
 				)
-				return (decoded.files ?? []).map((file) => file.filename)
+				const files = decoded.files ?? []
+				return { status: decoded.status, files, truncated: files.length >= MAX_COMPARE_FILES }
 			})
 
 			// Needs `checks: write` on the App. A 403 here is the installation not
@@ -1795,7 +1815,7 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 				resolveReviewThread,
 				listReviewComments,
 				replyToReviewComment,
-				compareFiles,
+				compareCommits,
 				getPullRequestHead,
 				createIssueComment,
 				addCommentReaction,

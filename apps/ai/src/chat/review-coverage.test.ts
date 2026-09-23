@@ -43,13 +43,21 @@ describe("makeReviewCoverage", () => {
 	})
 
 	it("owes a later push only the files its kickoff says changed", () => {
-		const followUp = renderFollowUp({ previousSha: "abcdef1234", changedPaths: ["src/b.ts"], open: [] })
+		const followUp = renderFollowUp({
+			previousSha: "abcdef1234",
+			changes: { paths: ["src/b.ts"], rewritten: false },
+			open: [],
+		})
 		const coverage = makeReviewCoverage(["Review pull request #7.", ...followUp].join("\n"))
 		coverage.observe("pr_changed_files", listing)
 		assert.deepEqual(coverage.unread(), ["src/b.ts"])
 
 		const nothing = makeReviewCoverage(
-			renderFollowUp({ previousSha: "abcdef1234", changedPaths: [], open: [] }).join("\n"),
+			renderFollowUp({
+				previousSha: "abcdef1234",
+				changes: { paths: [], rewritten: false },
+				open: [],
+			}).join("\n"),
 		)
 		nothing.observe("pr_changed_files", listing)
 		assert.deepEqual(nothing.unread(), [])

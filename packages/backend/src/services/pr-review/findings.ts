@@ -11,6 +11,7 @@ import type {
 	PrReviewSeverity,
 	PullRequestReviewThread,
 } from "@maple/domain/http"
+import type { PullRequestDelta } from "@maple/backend/services/integrations/vcs/VcsProviderClient"
 
 /** A stored finding, as the review flow reads it. */
 export interface TrackedFinding {
@@ -25,8 +26,11 @@ export interface TrackedFinding {
 	readonly commentId: string | null
 }
 
-/** Lines a finding may drift between pushes and still be the same issue. */
+/** Lines a finding may drift between pushes and still be a restatement of the same issue. */
 const SAME_ISSUE_LINES = 3
+
+/** Share of title words two findings must have in common to read as one issue restated. */
+const SAME_TITLE_OVERLAP = 0.6
 
 /**
  * A reply that tells the reviewer to drop a finding. A question ("is this intended?") or a
@@ -71,15 +75,37 @@ export const threadForFinding = (
 		? undefined
 		: threads.find((thread) => thread.comments[0]?.commentId === finding.commentId)
 
-/** Whether a new finding restates one already tracked: same file, lens, and nearly the same line. */
+const titleWords = (title: string): ReadonlySet<string> =>
+	new Set(
+		title
+			.toLowerCase()
+			.split(/[^a-z0-9_]+/)
+			.filter((word) => word.length > 2),
+	)
+
+/** Jaccard overlap of the two titles' words, so a reworded title still matches and a new bug does not. */
+const similarTitles = (a: string, b: string) => {
+	const left = titleWords(a)
+	const right = titleWords(b)
+	if (left.size === 0 || right.size === 0) return a.trim().toLowerCase() === b.trim().toLowerCase()
+	const shared = [...left].filter((word) => right.has(word)).length
+	return shared / (left.size + right.size - shared) >= SAME_TITLE_OVERLAP
+}
+
+/**
+ * Whether a new finding is a near-exact restatement of one already tracked: same file, lens and
+ * nearly the same line, and a title saying the same thing. Anything looser is left to the reviewer,
+ * which judges each earlier finding at the new head: a different bug next to an old one is new.
+ */
 const restates = (finding: PrReviewFinding, tracked: TrackedFinding) =>
 	finding.path === tracked.path &&
 	finding.category === tracked.category &&
-	Math.abs(finding.line - tracked.line) <= SAME_ISSUE_LINES
+	Math.abs(finding.line - tracked.line) <= SAME_ISSUE_LINES &&
+	similarTitles(finding.title, tracked.title)
 
 /**
- * New findings minus those that repeat a finding still open or already dismissed, so a push never
- * posts the same comment twice and a dismissed finding stays quiet.
+ * New findings minus near-exact restatements of a finding still open or already dismissed, a
+ * backstop so a push never posts the same comment twice and a dismissed finding stays quiet.
  */
 export const withoutRepeats = (
 	findings: ReadonlyArray<PrReviewFinding>,
@@ -108,31 +134,48 @@ export const resolvedByHandle = (
 	return open.filter((finding) => wanted.has(finding.handle))
 }
 
-const NOTHING_CHANGED =
-	"No file changed since then (a rebase or an empty commit): check the open findings and submit."
+const NOTHING_CHANGED = "No file's change differs since then: check the open findings and submit."
 const CHANGED_SINCE = "Files changed since then; review these, the rest was already reviewed: "
 const MAX_LISTED_CHANGES = 60
+const REWRITTEN =
+	"The branch was rebased or force-pushed since then, so each file's change was compared against its own base; the base branch's own changes are not listed."
+
+/**
+ * What the kickoff says changed since the last reviewed head. The scope line keeps the exact
+ * `NOTHING_CHANGED` / `CHANGED_SINCE` shape, because {@link followUpScope} parses it back.
+ */
+const renderChanges = (changes: PullRequestDelta | undefined): ReadonlyArray<string> => {
+	if (changes === undefined || changes.paths === undefined)
+		return [
+			changes?.rewritten === true
+				? "The branch was rebased or force-pushed since then and the change could not be compared file by file: review the whole diff."
+				: "Which files changed since then could not be read: review the whole diff.",
+		]
+	const { paths } = changes
+	const scope =
+		paths.length === 0
+			? NOTHING_CHANGED
+			: `${CHANGED_SINCE}${paths.slice(0, MAX_LISTED_CHANGES).join(", ")}${paths.length > MAX_LISTED_CHANGES ? `, and ${paths.length - MAX_LISTED_CHANGES} more` : ""}.`
+	return changes.rewritten ? [REWRITTEN, scope] : [scope]
+}
 
 /** The kickoff section for a later push: what changed since, and what is still open. */
 export const renderFollowUp = (input: {
 	readonly previousSha: string
-	readonly changedPaths: ReadonlyArray<string> | undefined
+	readonly changes: PullRequestDelta | undefined
 	readonly open: ReadonlyArray<TrackedFinding>
 }): ReadonlyArray<string> => {
-	const lines = [`This pull request was reviewed before, at ${input.previousSha.slice(0, 7)}.`]
-	if (input.changedPaths !== undefined) {
-		lines.push(
-			input.changedPaths.length === 0
-				? NOTHING_CHANGED
-				: `${CHANGED_SINCE}${input.changedPaths.slice(0, MAX_LISTED_CHANGES).join(", ")}${input.changedPaths.length > MAX_LISTED_CHANGES ? `, and ${input.changedPaths.length - MAX_LISTED_CHANGES} more` : ""}.`,
-		)
-	}
+	const lines = [
+		`This pull request was reviewed before, at ${input.previousSha.slice(0, 7)}.`,
+		...renderChanges(input.changes),
+	]
 	if (input.open.length === 0) {
 		lines.push("No finding from earlier reviews is still open.")
 		return lines
 	}
 	lines.push(
-		"Findings from earlier reviews that are still open. For each, read its lines at this head; list the handles this head fixes in `resolved`. Never file a new finding for one of these.",
+		"Findings from earlier reviews that are still open. Judge each one at this head: read the code it describes, following it if it moved, and decide whether the defect is gone. Lines being modified is not enough; list a handle in `resolved` only when the code you read no longer has the problem, and leave it open when unsure.",
+		"Never file a new finding that restates one of these, even where its code moved to other lines. A different defect near one of them is a new finding; file it.",
 		...input.open.map(
 			(finding) =>
 				`- ${finding.handle} · ${finding.path}:${finding.line} · ${finding.category} · ${finding.severity} · ${finding.title}`,

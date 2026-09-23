@@ -33,6 +33,14 @@ import type {
 // never imports the vcs_* tables. The registry is the only place a provider id
 // is wired to an implementation.
 
+/** What changed on a pull request since an earlier reviewed head. */
+export interface PullRequestDelta {
+	/** Paths whose change differs, or undefined when it cannot be told and everything needs a look. */
+	readonly paths: ReadonlyArray<string> | undefined
+	/** The earlier head is no longer in the branch's history: a rebase or a force-push. */
+	readonly rewritten: boolean
+}
+
 export interface VcsWebhookRequest {
 	readonly headers: Record<string, string | undefined>
 	readonly rawBody: string
@@ -228,14 +236,22 @@ export interface VcsProviderClient {
 		| VcsRateLimitedError
 	>
 
-	/** Paths that differ between two commits of one repository. */
-	readonly fetchChangedPaths: (
+	/**
+	 * What a pull request changed between an earlier head and this one. Safe across a rebase or
+	 * force-push: when the earlier head is no longer an ancestor, each head's diff against the base
+	 * is compared file by file, so the base branch's own changes are never reported.
+	 */
+	readonly fetchChangesSince: (
 		installation: VcsInstallation,
 		repo: VcsRepositoryRef,
-		base: string,
-		head: string,
+		input: {
+			readonly previousHead: string
+			readonly head: string
+			/** The pull request's current base; without it a rewritten history cannot be compared. */
+			readonly base: string | undefined
+		},
 	) => Effect.Effect<
-		ReadonlyArray<string>,
+		PullRequestDelta,
 		| VcsProviderError
 		| VcsInstallationGoneError
 		| VcsRepoUnavailableError
