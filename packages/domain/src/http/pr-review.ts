@@ -375,6 +375,68 @@ export class PrReview extends Schema.Class<PrReview>("PrReview")({
 	updatedAt: Schema.Number,
 }) {}
 
+/** One answer to a pull request comment that mentioned Maple; the id is its session's tab suffix. */
+export const PrReviewReplyId = Schema.String.check(Schema.isUUID()).pipe(
+	Schema.brand("@maple/PrReviewReplyId"),
+	Schema.annotate({ identifier: "@maple/PrReviewReplyId", title: "Pull Request Reply ID" }),
+)
+export type PrReviewReplyId = Schema.Schema.Type<typeof PrReviewReplyId>
+
+/**
+ * What a mention asks for. `review` re-reviews the head now, `fix` lets the reply commit the edits
+ * it stages to the pull request's branch, `ask` is everything else: a question answered in prose.
+ */
+export const PrReviewReplyCommand = Schema.Literals(["ask", "review", "fix"]).annotate({
+	identifier: "@maple/PrReviewReplyCommand",
+	title: "Pull Request Reply Command",
+})
+export type PrReviewReplyCommand = Schema.Schema.Type<typeof PrReviewReplyCommand>
+
+export const PrReviewReplyStatus = Schema.Literals(["queued", "running", "completed", "failed", "skipped"])
+export type PrReviewReplyStatus = Schema.Schema.Type<typeof PrReviewReplyStatus>
+
+/**
+ * How a comment addresses the reviewer: `@maple`, or the hosted App's own login. Not `@maple-dev`
+ * or `@maplefoo`, and not inside an email address or a path.
+ */
+const MENTION = /(^|[^\w@./-])@maple(?:labsapp)?(?![\w-])/i
+
+/** Whether a comment mentions the reviewer at all. */
+export const mentionsReviewer = (body: string): boolean => MENTION.test(body)
+
+/**
+ * The command a mention carries: the first word after it, `review` or `fix`, else a question.
+ * `text` is the comment with the mention removed, what the reply agent is asked.
+ */
+export const parseReplyCommand = (
+	body: string,
+): { readonly command: PrReviewReplyCommand; readonly text: string } => {
+	const match = MENTION.exec(body)
+	if (match === null) return { command: "ask", text: body.trim() }
+	const after = body.slice(match.index + match[0].length)
+	const word = /^\s*([a-z]+)\b/i.exec(after)?.[1]?.toLowerCase()
+	const command: PrReviewReplyCommand = word === "review" ? "review" : word === "fix" ? "fix" : "ask"
+	const text = `${body.slice(0, match.index + (match[1]?.length ?? 0))}${after}`.trim()
+	return { command, text }
+}
+
+/** What `submit_reply` accepts: the answer, in GitHub markdown. Lenient like `submit_review`. */
+export const PrReviewReplySubmission = Schema.Struct({
+	body: Schema.optionalKey(Schema.String),
+})
+export type PrReviewReplySubmission = Schema.Schema.Type<typeof PrReviewReplySubmission>
+
+/**
+ * One exact edit `propose_edit` stages: `oldText` must occur exactly once in `path` at the pull
+ * request's head, and becomes `newText`. An empty `oldText` creates the file.
+ */
+export const PrReviewEditSubmission = Schema.Struct({
+	path: Schema.String,
+	oldText: Schema.String,
+	newText: Schema.String,
+})
+export type PrReviewEditSubmission = Schema.Schema.Type<typeof PrReviewEditSubmission>
+
 // Errors
 
 export class PrReviewPersistenceError extends HttpTaggedError<PrReviewPersistenceError>()(
@@ -387,6 +449,20 @@ export class PrReviewPersistenceError extends HttpTaggedError<PrReviewPersistenc
 		message: "Pull request reviews are temporarily unavailable. Retry in a few seconds.",
 		retry: "backoff",
 		recovery: "retry",
+		exposure: "redacted",
+	},
+) {}
+
+export class PrReviewReplyNotFoundError extends HttpTaggedError<PrReviewReplyNotFoundError>()(
+	"@maple/http/pr-review/PrReviewReplyNotFoundError",
+	{ message: Schema.String, replyId: PrReviewReplyId },
+	{
+		status: 404,
+		code: "pr_review_reply_not_found",
+		title: "Pull request reply not found",
+		message: "No pull request reply exists with that id.",
+		retry: "never",
+		recovery: "none",
 		exposure: "redacted",
 	},
 ) {}

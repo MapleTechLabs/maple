@@ -4,7 +4,9 @@ import {
 	GitCommitSha,
 	type PullRequestContext,
 	type PullRequestFile,
+	type PullRequestHead,
 	type PullRequestReviewThread,
+	mentionsReviewer,
 	type PullRequestSummary,
 	type RepoUpsertInput,
 	type VcsInstallation,
@@ -130,7 +132,51 @@ const PullRequestPayload = Schema.Struct({
 	installation: Schema.Struct({ id: Schema.Number }),
 })
 
+const CommentUser = Schema.Struct({ login: Schema.String, type: Schema.optionalKey(Schema.String) })
+
+// `issue_comment`: a comment in a pull request's (or an issue's) conversation. Only the fields a
+// reply needs; `issue.pull_request` is what says the issue is a pull request.
+const IssueCommentPayload = Schema.Struct({
+	action: Schema.String,
+	issue: Schema.Struct({
+		number: Schema.Number,
+		html_url: Schema.String,
+		pull_request: Schema.optionalKey(
+			Schema.NullOr(Schema.Struct({ url: Schema.optionalKey(Schema.String) })),
+		),
+	}),
+	comment: Schema.Struct({
+		id: Schema.Number,
+		body: Schema.optionalKey(Schema.NullOr(Schema.String)),
+		html_url: Schema.String,
+		user: Schema.NullOr(CommentUser),
+		author_association: Schema.optionalKey(Schema.String),
+	}),
+	repository: Schema.Struct({ id: Schema.Number, full_name: Schema.String }),
+	installation: Schema.Struct({ id: Schema.Number }),
+})
+
+// `pull_request_review_comment`: a comment on a line of the diff, possibly a reply in a thread.
+const ReviewCommentPayload = Schema.Struct({
+	action: Schema.String,
+	pull_request: Schema.Struct({ number: Schema.Number }),
+	comment: Schema.Struct({
+		id: Schema.Number,
+		in_reply_to_id: Schema.optionalKey(Schema.NullOr(Schema.Number)),
+		body: Schema.optionalKey(Schema.NullOr(Schema.String)),
+		html_url: Schema.String,
+		path: Schema.optionalKey(Schema.String),
+		line: Schema.optionalKey(Schema.NullOr(Schema.Number)),
+		user: Schema.NullOr(CommentUser),
+		author_association: Schema.optionalKey(Schema.String),
+	}),
+	repository: Schema.Struct({ id: Schema.Number, full_name: Schema.String }),
+	installation: Schema.Struct({ id: Schema.Number }),
+})
+
 const decodeGitShaOption = Schema.decodeUnknownOption(GitCommitSha)
+const decodeIssueComment = Schema.decodeUnknownEffect(IssueCommentPayload)
+const decodeReviewComment = Schema.decodeUnknownEffect(ReviewCommentPayload)
 
 const decodePush = Schema.decodeUnknownEffect(PushPayload)
 const decodePullRequest = Schema.decodeUnknownEffect(PullRequestPayload)
@@ -622,6 +668,82 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 					return [job]
 				})
 
+			// A comment becomes a job only when it is new, on a pull request, written by a person, and
+			// addressed to the reviewer; everything else is filtered here so the queue never carries it.
+			const commentSkip = (reason: string) =>
+				Effect.annotateCurrentSpan({
+					"vcs.webhook.outcome": "skipped",
+					"vcs.webhook.skip_reason": reason,
+				}).pipe(Effect.as<ReadonlyArray<VcsSyncJob>>([]))
+
+			const mapIssueComment = (raw: unknown) =>
+				Effect.gen(function* () {
+					const payload = yield* parsePayload("issue_comment", decodeIssueComment(raw))
+					const body = payload.comment.body ?? ""
+					if (payload.action !== "created") return yield* commentSkip("comment_action")
+					if (payload.issue.pull_request === undefined || payload.issue.pull_request === null)
+						return yield* commentSkip("issue_comment_not_pull_request")
+					if (payload.comment.user === null || payload.comment.user.type === "Bot")
+						return yield* commentSkip("comment_by_bot")
+					if (!mentionsReviewer(body)) return yield* commentSkip("comment_no_mention")
+					yield* Effect.annotateCurrentSpan({
+						"vcs.webhook.outcome": "handled",
+						"vcs.pull_request.number": payload.issue.number,
+					})
+					const job: VcsSyncJob = {
+						kind: "pull-request-comment",
+						provider: PROVIDER,
+						externalInstallationId: String(payload.installation.id),
+						externalRepoId: String(payload.repository.id),
+						repoFullName: payload.repository.full_name,
+						number: payload.issue.number,
+						commentId: String(payload.comment.id),
+						surface: "conversation",
+						authorLogin: payload.comment.user.login,
+						authorAssociation: payload.comment.author_association ?? "NONE",
+						body,
+						url: payload.comment.html_url,
+					}
+					return [job]
+				})
+
+			const mapReviewComment = (raw: unknown) =>
+				Effect.gen(function* () {
+					const payload = yield* parsePayload(
+						"pull_request_review_comment",
+						decodeReviewComment(raw),
+					)
+					const body = payload.comment.body ?? ""
+					if (payload.action !== "created") return yield* commentSkip("comment_action")
+					if (payload.comment.user === null || payload.comment.user.type === "Bot")
+						return yield* commentSkip("comment_by_bot")
+					if (!mentionsReviewer(body)) return yield* commentSkip("comment_no_mention")
+					yield* Effect.annotateCurrentSpan({
+						"vcs.webhook.outcome": "handled",
+						"vcs.pull_request.number": payload.pull_request.number,
+					})
+					const job: VcsSyncJob = {
+						kind: "pull-request-comment",
+						provider: PROVIDER,
+						externalInstallationId: String(payload.installation.id),
+						externalRepoId: String(payload.repository.id),
+						repoFullName: payload.repository.full_name,
+						number: payload.pull_request.number,
+						commentId: String(payload.comment.id),
+						surface: "review_thread",
+						threadRootId: String(payload.comment.in_reply_to_id ?? payload.comment.id),
+						authorLogin: payload.comment.user.login,
+						authorAssociation: payload.comment.author_association ?? "NONE",
+						body,
+						url: payload.comment.html_url,
+						...(payload.comment.path === undefined ? undefined : { path: payload.comment.path }),
+						...(payload.comment.line === undefined || payload.comment.line === null
+							? undefined
+							: { line: payload.comment.line }),
+					}
+					return [job]
+				})
+
 			// Dispatch a verified, parsed event to its mapper. Annotations (outcome /
 			// skip_reason / identifiers) are made by each mapper onto the surrounding
 			// `webhookToJobs` span.
@@ -629,6 +751,8 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 				Match.value(event).pipe(
 					Match.when("push", () => mapPush(parsed, now)),
 					Match.when("pull_request", () => mapPullRequest(parsed)),
+					Match.when("issue_comment", () => mapIssueComment(parsed)),
+					Match.when("pull_request_review_comment", () => mapReviewComment(parsed)),
 					Match.when("installation", () => mapInstallation(parsed)),
 					Match.when("installation_repositories", () => mapInstallationRepositories(parsed)),
 					Match.when("create", () => mapRefEvent("created")(parsed)),
@@ -974,6 +1098,98 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 					.compareFiles(installation.externalInstallationId, repo.owner, repo.name, base, head)
 					.pipe(Effect.mapError(toVcsError))
 
+			const fetchPullRequestHead: VcsProviderClient["fetchPullRequestHead"] = (
+				installation,
+				repo,
+				number,
+			) =>
+				client
+					.getPullRequestHead(installation.externalInstallationId, repo.owner, repo.name, number)
+					.pipe(
+						Effect.flatMap((pr) => {
+							const headSha = decodeGitShaOption(pr.head.sha)
+							const baseSha = decodeGitShaOption(pr.base.sha)
+							return Option.isNone(headSha) || Option.isNone(baseSha)
+								? Effect.fail(
+										new GithubAppError({
+											message: "Pull request carries a malformed commit sha",
+										}),
+									)
+								: Effect.succeed<PullRequestHead>({
+										number: pr.number,
+										title: pr.title,
+										url: pr.html_url,
+										body: pr.body ?? null,
+										authorLogin: pr.user?.login ?? null,
+										state: pr.state,
+										draft: pr.draft ?? false,
+										headSha: headSha.value,
+										headRef: pr.head.ref,
+										baseSha: baseSha.value,
+										baseRef: pr.base.ref,
+										headRepoFullName: pr.head.repo?.full_name ?? null,
+									})
+						}),
+						Effect.mapError(toVcsError),
+					)
+
+			const postPullRequestReply: VcsProviderClient["postPullRequestReply"] = (
+				installation,
+				repo,
+				input,
+			) =>
+				(input.threadRootId === undefined
+					? client.createIssueComment(
+							installation.externalInstallationId,
+							repo.owner,
+							repo.name,
+							input.number,
+							input.body,
+						)
+					: client.replyToReviewComment(
+							installation.externalInstallationId,
+							repo.owner,
+							repo.name,
+							input.number,
+							input.threadRootId,
+							input.body,
+						)
+				).pipe(
+					Effect.map((comment) => ({ url: comment.html_url })),
+					Effect.mapError(toVcsError),
+				)
+
+			const reactToComment: VcsProviderClient["reactToComment"] = (installation, repo, input) =>
+				client
+					.addCommentReaction(
+						installation.externalInstallationId,
+						repo.owner,
+						repo.name,
+						input.surface,
+						input.commentId,
+						input.content,
+					)
+					.pipe(Effect.mapError(toVcsError))
+
+			const fetchCommenterPermission: VcsProviderClient["fetchCommenterPermission"] = (
+				installation,
+				repo,
+				login,
+			) =>
+				client
+					.getCollaboratorPermission(
+						installation.externalInstallationId,
+						repo.owner,
+						repo.name,
+						login,
+					)
+					.pipe(Effect.mapError(toVcsError))
+
+			const commitFiles: VcsProviderClient["commitFiles"] = (installation, repo, input) =>
+				client
+					.commitFiles(installation.externalInstallationId, repo.owner, repo.name, input)
+					.pipe(Effect.mapError(toVcsError))
+
 			const fetchPullRequestContext: VcsProviderClient["fetchPullRequestContext"] = (
 				installation,
 				repo,
@@ -1148,6 +1364,11 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 				fetchReviewThreads,
 				resolveReviewThread,
 				fetchChangedPaths,
+				fetchPullRequestHead,
+				postPullRequestReply,
+				reactToComment,
+				fetchCommenterPermission,
+				commitFiles,
 				publishPullRequestReview,
 				searchCode,
 				fetchSourceFile,

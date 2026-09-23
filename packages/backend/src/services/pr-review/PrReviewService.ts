@@ -135,6 +135,11 @@ export interface PrReviewServiceApi {
 		reviewId: PrReviewId,
 		request: SubmitPrReviewRequest,
 	) => Effect.Effect<void, PrReviewPersistenceError | PrReviewNotFoundError>
+	/**
+	 * Review a head now, as someone asked with `@maple review`: no debounce, drafts included, and a
+	 * head that was already reviewed is reviewed again. Never fails, like the webhook entry.
+	 */
+	readonly reviewNow: (orgId: OrgId, job: PullRequestEventJob) => Effect.Effect<PrReviewTriggerOutcome>
 	/** The turn ended without a report. */
 	readonly failReview: (
 		orgId: OrgId,
@@ -825,6 +830,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 				number: number,
 				headSha: GitCommitSha,
 				nowMs: number,
+				statuses: ReadonlyArray<PrReviewStatus> = ["failed"],
 			) {
 				const rows = yield* database
 					.execute((db) =>
@@ -843,7 +849,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 									eq(prReviews.repositoryId, repositoryId),
 									eq(prReviews.number, number),
 									eq(prReviews.headSha, headSha),
-									eq(prReviews.status, "failed"),
+									inArray(prReviews.status, [...statuses]),
 								),
 							)
 							.returning({ id: prReviews.id }),
@@ -961,6 +967,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 			const trigger = Effect.fn("PrReviewService.onPullRequestEvent")(function* (
 				orgId: OrgId,
 				job: PullRequestEventJob,
+				requested = false,
 			) {
 				const annotate = (outcome: string, extra?: Record<string, string | number | boolean>) =>
 					Effect.annotateCurrentSpan({
@@ -994,7 +1001,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 				const config = yield* repositories
 					.getPrReviewConfig(orgId, repo.id)
 					.pipe(Effect.mapError(toPersistence))
-				if (job.draft === true && config.reviewDrafts !== true) {
+				if (job.draft === true && config.reviewDrafts !== true && !requested) {
 					yield* annotate("skipped", { "maple.pr_review.skip_reason": "draft" })
 					return skip("draft")
 				}
@@ -1082,7 +1089,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 					)
 					.pipe(Effect.mapError(toPersistence))
 				if (inserted.length > 0) {
-					if (job.action === "synchronize" && syncQueue !== undefined) {
+					if (job.action === "synchronize" && syncQueue !== undefined && !requested) {
 						const deferred = yield* syncQueue
 							.send(
 								{ ...job, deferredReview: true },
@@ -1101,7 +1108,15 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 				}
 				// A row already exists for this head. A failed one is retried in place, which is what
 				// its own error message promises; anything else is a genuine duplicate.
-				const reclaimed = yield* reclaimFailed(orgId, repo.id, job.number, headSha, nowMs)
+				// Asked for by name, a head already reviewed is reviewed again.
+				const reclaimed = yield* reclaimFailed(
+					orgId,
+					repo.id,
+					job.number,
+					headSha,
+					nowMs,
+					requested ? ["failed", "completed", "skipped"] : ["failed"],
+				)
 				if (reclaimed === undefined) {
 					yield* annotate("skipped", { "maple.pr_review.skip_reason": "duplicate" })
 					return skip("duplicate")
@@ -1129,6 +1144,16 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 								number: job.number,
 								cause: summarizeCause(cause),
 							}),
+							Effect.as<PrReviewTriggerOutcome>({ reviewId: null, outcome: "failed" }),
+						),
+					),
+				)
+
+			const reviewNow: PrReviewServiceApi["reviewNow"] = (orgId, job) =>
+				trigger(orgId, job, true).pipe(
+					Effect.catchCause((cause) =>
+						Effect.logError("[PrReview] requested review could not be started").pipe(
+							Effect.annotateLogs({ orgId, number: job.number, cause: summarizeCause(cause) }),
 							Effect.as<PrReviewTriggerOutcome>({ reviewId: null, outcome: "failed" }),
 						),
 					),
@@ -1377,7 +1402,13 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 				},
 			)
 
-			return { onPullRequestEvent, getReview, submitReview, failReview } satisfies PrReviewServiceApi
+			return {
+				onPullRequestEvent,
+				reviewNow,
+				getReview,
+				submitReview,
+				failReview,
+			} satisfies PrReviewServiceApi
 		}),
 	},
 ) {

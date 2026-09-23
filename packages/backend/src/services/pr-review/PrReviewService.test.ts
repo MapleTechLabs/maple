@@ -114,6 +114,11 @@ const layerFor = (
 				options.resolvedThreads?.push(`${input.threadId}:${input.reply}`)
 			}),
 		fetchChangedPaths: () => Effect.succeed(["b.ts", "c.ts"]),
+		fetchPullRequestHead: unused,
+		postPullRequestReply: unused,
+		reactToComment: unused,
+		fetchCommenterPermission: unused,
+		commitFiles: unused,
 		searchCode: unused,
 		resolveRef: unused,
 		fetchCloneCredentials: unused,

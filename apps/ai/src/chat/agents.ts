@@ -30,6 +30,7 @@ import {
 	type AgentBudget,
 	CHAT_BUDGET,
 	INVESTIGATION_BUDGET,
+	PR_REPLY_BUDGET,
 	PR_REVIEW_BUDGET,
 	liveContextLimit,
 	REPEATED_TOOL_CALLS,
@@ -37,8 +38,13 @@ import {
 } from "./budgets"
 import type { PermissionRuleset } from "@maple/domain/permission"
 import type { ResolvedModel } from "../platform/Llm"
-import { DEFAULT_RULESET, PR_REVIEW_RULESET } from "./permissions"
-import { INVESTIGATE_SYSTEM_PROMPT, PR_REVIEW_SYSTEM_PROMPT, SYSTEM_PROMPT } from "./prompts"
+import { DEFAULT_RULESET, PR_REPLY_RULESET, PR_REVIEW_RULESET } from "./permissions"
+import {
+	INVESTIGATE_SYSTEM_PROMPT,
+	PR_REPLY_SYSTEM_PROMPT,
+	PR_REVIEW_SYSTEM_PROMPT,
+	SYSTEM_PROMPT,
+} from "./prompts"
 
 export interface AgentDefinition {
 	readonly name: string
@@ -101,6 +107,14 @@ export const AGENTS: Readonly<Record<ChatMode, AgentDefinition>> = {
 		// nothing else: every unoffered schema is prompt it does not pay for on each call.
 		autonomousPermission: PR_REVIEW_RULESET,
 		budget: PR_REVIEW_BUDGET,
+	},
+	"pr-reply": {
+		name: "pr-reply",
+		description: "Answers a mention on a pull request, and makes a fix when asked.",
+		prompt: PR_REPLY_SYSTEM_PROMPT,
+		permission: DEFAULT_RULESET,
+		autonomousPermission: PR_REPLY_RULESET,
+		budget: PR_REPLY_BUDGET,
 	},
 } as const satisfies Readonly<Record<ChatMode, AgentDefinition>>
 

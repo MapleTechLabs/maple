@@ -5,7 +5,7 @@
  * incident that made it so), which moves every guarantee a reader relies on into this function.
  */
 import { assert, describe, it } from "vitest"
-import { normalizePrReviewSubmission, scorePrReview } from "./pr-review"
+import { mentionsReviewer, normalizePrReviewSubmission, parseReplyCommand, scorePrReview } from "./pr-review"
 
 describe("normalizePrReviewSubmission", () => {
 	it("keeps a finding that names a file and a new-side line", () => {
@@ -219,5 +219,25 @@ describe("scorePrReview", () => {
 		assert.equal(scorePrReview(withFindings(["critical"])).grade, "good")
 		assert.equal(scorePrReview(withFindings(["critical", "critical"])).grade, "needs work")
 		assert.deepEqual(scorePrReview(withFindings(Array(6).fill("critical"))), { score: 0, grade: "poor" })
+	})
+})
+
+describe("mentions", () => {
+	it("recognises @maple and the App's login, not look-alikes", () => {
+		assert.isTrue(mentionsReviewer("@maple why?"))
+		assert.isTrue(mentionsReviewer("thanks @MapleLabsApp."))
+		assert.isFalse(mentionsReviewer("@maple-dev please"))
+		assert.isFalse(mentionsReviewer("@maplefoo"))
+		assert.isFalse(mentionsReviewer("mail me at x@maple.dev"))
+	})
+
+	it("reads the command from the first word after the mention", () => {
+		assert.deepEqual(parseReplyCommand("@maple review"), { command: "review", text: "review" })
+		assert.equal(parseReplyCommand("hey @maple fix the null check").command, "fix")
+		assert.deepEqual(parseReplyCommand("@maple why a lock here?"), {
+			command: "ask",
+			text: "why a lock here?",
+		})
+		assert.equal(parseReplyCommand("@maple fixture question").command, "ask")
 	})
 })

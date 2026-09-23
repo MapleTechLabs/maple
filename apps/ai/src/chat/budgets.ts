@@ -96,6 +96,14 @@ export const PR_REVIEW_BUDGET: AgentBudget = {
 	completionReserveTokens: 48_000,
 }
 
+/** An answer on a pull request: narrower than a review, with room to read and to stage a fix. */
+export const PR_REPLY_BUDGET: AgentBudget = {
+	maxToolCalls: 40,
+	maxDuration: "6 minutes",
+	tokenBudget: 600_000,
+	completionReserveTokens: 32_000,
+}
+
 /** An attended chat turn: someone is watching it, so the ceilings are what a person will wait for. */
 export const CHAT_BUDGET: AgentBudget = {
 	maxToolCalls: 40,

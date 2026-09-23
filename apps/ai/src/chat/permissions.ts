@@ -73,6 +73,12 @@ export const PR_REVIEW_TOOLS: ReadonlyArray<string> = [
 	"get_instrumentation_recommendations",
 ]
 
+/** A reply reads what a review reads; its only writes are its own completion tools. */
+export const PR_REPLY_RULESET: PermissionRuleset = [
+	new PermissionRule({ tool: "*", action: "deny" }),
+	...[...PR_REVIEW_TOOLS].sort().map((tool) => new PermissionRule({ tool, action: "allow" })),
+]
+
 export const PR_REVIEW_RULESET: PermissionRuleset = [
 	new PermissionRule({ tool: "*", action: "deny" }),
 	...[...PR_REVIEW_TOOLS].sort().map((tool) => new PermissionRule({ tool, action: "allow" })),

@@ -8,6 +8,7 @@
 import {
 	type ChatTurnOrigin,
 	investigationIdFromChatSessionId,
+	prReplyIdFromChatSessionId,
 	prReviewIdFromChatSessionId,
 } from "@maple/domain/chat-session"
 import { evaluatePermission, type PermissionRuleset } from "@maple/domain/permission"
@@ -20,14 +21,18 @@ import {
 	normalizeTriageSubmission,
 	PrReviewId,
 	PrReviewNotFoundError,
+	PrReviewEditSubmission,
 	PrReviewPersistenceError,
+	PrReviewReplyId,
+	type PrReviewReplyNotFoundError,
+	PrReviewReplySubmission,
 	PrReviewSubmission,
 	SubmitDiagnosisRequest,
 	SubmitPrReviewRequest,
 } from "@maple/domain/http"
 import { InvestigationId } from "@maple/domain/primitives"
 import type { RunBudgetHook, RunUsageDelta } from "@effect-agent/engine/RunOptions"
-import { Effect, type Layer, Option, Schema } from "effect"
+import { type Cause, Effect, type Layer, Option, Schema } from "effect"
 import { Tool, Toolkit } from "effect/unstable/ai"
 import type { McpToolExecutorApi } from "../mcp/dispatcher"
 import type { McpToolSurface } from "@maple/domain/mcp-manifest"
@@ -37,6 +42,7 @@ import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
 
 const decodeInvestigationIdOption = Schema.decodeUnknownOption(InvestigationId)
 const decodePrReviewIdOption = Schema.decodeUnknownOption(PrReviewId)
+const decodePrReviewReplyIdOption = Schema.decodeUnknownOption(PrReviewReplyId)
 
 export type SubmitDiagnosis = (
 	orgId: TenantContext["orgId"],
@@ -49,6 +55,21 @@ export type SubmitDiagnosis = (
 
 export const SUBMIT_DIAGNOSIS = "submit_diagnosis"
 export const SUBMIT_REVIEW = "submit_review"
+
+export const SUBMIT_REPLY = "submit_reply"
+export const PROPOSE_EDIT = "propose_edit"
+
+export type SubmitReply = (
+	orgId: TenantContext["orgId"],
+	replyId: PrReviewReplyId,
+	body: string,
+) => Effect.Effect<string, PrReviewPersistenceError | PrReviewReplyNotFoundError>
+
+export type StageEdit = (
+	orgId: TenantContext["orgId"],
+	replyId: PrReviewReplyId,
+	edit: PrReviewEditSubmission,
+) => Effect.Effect<string, PrReviewPersistenceError | PrReviewReplyNotFoundError>
 
 export type SubmitReview = (
 	orgId: TenantContext["orgId"],
@@ -153,9 +174,85 @@ export const prReviewForSession = (sessionId: string): PrReviewId | undefined =>
 export const isAutonomousReviewTurn = (sessionId: string, origin: ChatTurnOrigin): boolean =>
 	prReviewForSession(sessionId) !== undefined && origin.kind === "autonomous"
 
-/** Any machine-started pass the runner closes out itself: an investigation's or a review's. */
+/** The pull request reply a session answers, or `undefined` for any other conversation. */
+export const prReplyForSession = (sessionId: string): PrReviewReplyId | undefined => {
+	const rawId = prReplyIdFromChatSessionId(sessionId)
+	if (!rawId) return undefined
+	return Option.getOrUndefined(decodePrReviewReplyIdOption(rawId))
+}
+
+/** A reply's own unattended pass; it must end on `submit_reply`. */
+export const isAutonomousReplyTurn = (sessionId: string, origin: ChatTurnOrigin): boolean =>
+	prReplyForSession(sessionId) !== undefined && origin.kind === "autonomous"
+
+/** Any machine-started pass the runner closes out itself: an investigation's, a review's, a reply's. */
 export const isAutonomousTurn = (sessionId: string, origin: ChatTurnOrigin): boolean =>
-	isAutonomousInvestigationTurn(sessionId, origin) || isAutonomousReviewTurn(sessionId, origin)
+	isAutonomousInvestigationTurn(sessionId, origin) ||
+	isAutonomousReviewTurn(sessionId, origin) ||
+	isAutonomousReplyTurn(sessionId, origin)
+
+export const replyTool = Tool.make(SUBMIT_REPLY, {
+	description:
+		"Post your answer on the pull request, in GitHub markdown, where the person asked. Call it " +
+		"exactly once, after you have read what the answer depends on. For a fix, call it after " +
+		"propose_edit: the staged edits are committed first and the result is added to your answer. " +
+		"After calling it, stop.",
+	parameters: PrReviewReplySubmission,
+	success: Schema.String,
+	failure: MapleToolFailure,
+})
+
+export const proposeEditTool = Tool.make(PROPOSE_EDIT, {
+	description:
+		"Stage one exact edit for a fix someone asked for with `@maple fix`. `oldText` is copied " +
+		"verbatim from the file at the pull request's head and must occur there exactly once; it " +
+		"becomes `newText`. An empty `oldText` creates a new file. Edits apply in order and are " +
+		"committed together when you call submit_reply. The answer says whether it was staged.",
+	parameters: PrReviewEditSubmission,
+	success: Schema.String,
+	failure: MapleToolFailure,
+})
+
+/**
+ * `submit_reply` and `propose_edit` for a reply session (`"<orgId>:prr-<id>"`). The reply id rides
+ * on the session, so the agent never chooses which thread it answers or which branch it commits to.
+ */
+export const buildReplyCompletion = (
+	sessionId: string,
+	tenant: TenantContext,
+	origin: ChatTurnOrigin,
+	submitReply: SubmitReply,
+	stageEdit: StageEdit,
+	sessionAttributes?: Readonly<Record<string, string>>,
+) => {
+	const replyId = prReplyForSession(sessionId)
+	if (replyId === undefined || origin.kind !== "autonomous") return undefined
+	const toolkit = Toolkit.make(replyTool, proposeEditTool)
+	let submitted = false
+	const asToolFailure = (tool: string) => (cause: Cause.Cause<unknown>) =>
+		Effect.fail(new MapleToolFailure({ message: `${tool} failed: ${summarizeToolFailure(cause)}` }))
+	return {
+		tool: SUBMIT_REPLY,
+		toolkit,
+		...toolHandlersWithContent(
+			toolkit,
+			{
+				[SUBMIT_REPLY]: (submission: PrReviewReplySubmission) =>
+					submitReply(tenant.orgId, replyId, submission.body ?? "").pipe(
+						Effect.tap(() => Effect.sync(() => (submitted = true))),
+						Effect.catchCause(asToolFailure(SUBMIT_REPLY)),
+					),
+				[PROPOSE_EDIT]: (edit: PrReviewEditSubmission) =>
+					stageEdit(tenant.orgId, replyId, edit).pipe(
+						Effect.catchCause(asToolFailure(PROPOSE_EDIT)),
+					),
+			},
+			sessionAttributes,
+		),
+		autonomous: isAutonomousReplyTurn(sessionId, origin),
+		submitted: () => submitted,
+	} satisfies RunCompletion
+}
 
 /** `parameters` is the lenient {@link PrReviewSubmission}, for the reason `diagnosisTool`'s is. */
 export const reviewTool = Tool.make(SUBMIT_REVIEW, {

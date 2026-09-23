@@ -6,6 +6,9 @@ import type {
 	PrReviewFindingStatus,
 	PrReviewId,
 	PrReviewReport,
+	PrReviewReplyCommand,
+	PrReviewReplyId,
+	PrReviewReplyStatus,
 	PrReviewRepositoryConfig,
 	PrReviewSeverity,
 	PrReviewSkipReason,
@@ -256,6 +259,56 @@ export const prReviewFindings = pgTable(
 	],
 )
 
+/**
+ * One answer to a pull request comment that mentioned Maple. The comment it answers, and where the
+ * answer is posted, are bound here when the webhook lands; the agent never chooses either.
+ */
+export const prReviewReplies = pgTable(
+	"pr_review_replies",
+	{
+		id: text("id").$type<PrReviewReplyId>().notNull().primaryKey(),
+		orgId: text("org_id").$type<OrgId>().notNull(),
+		repositoryId: text("repository_id").$type<VcsRepositoryId>().notNull(),
+		number: integer("number").notNull(),
+		/** The comment that mentioned Maple; unique per repository so a redelivery answers once. */
+		commentId: text("comment_id").notNull(),
+		surface: text("surface").$type<"conversation" | "review_thread">().notNull(),
+		threadRootId: text("thread_root_id"),
+		authorLogin: text("author_login").notNull(),
+		command: text("command").$type<PrReviewReplyCommand>().notNull(),
+		/** The head the answer (and a fix commit) is based on. */
+		headSha: text("head_sha").$type<GitCommitSha>(),
+		status: text("status").$type<PrReviewReplyStatus>().notNull().default("queued"),
+		sessionId: text("session_id"),
+		replyUrl: text("reply_url"),
+		/** The commit a `fix` pushed to the pull request's branch. */
+		commitSha: text("commit_sha"),
+		error: text("error"),
+		createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull(),
+		updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date" }).notNull(),
+	},
+	(table) => [
+		uniqueIndex("pr_review_replies_repo_comment_idx").on(table.repositoryId, table.commentId),
+		index("pr_review_replies_org_created_idx").on(table.orgId, table.createdAt),
+	],
+)
+
+/** An exact edit a `fix` reply staged; committed together once the reply is submitted. */
+export const prReviewEdits = pgTable(
+	"pr_review_edits",
+	{
+		id: text("id").notNull().primaryKey(),
+		orgId: text("org_id").$type<OrgId>().notNull(),
+		replyId: text("reply_id").$type<PrReviewReplyId>().notNull(),
+		seq: integer("seq").notNull(),
+		path: text("path").notNull(),
+		oldText: text("old_text").notNull(),
+		newText: text("new_text").notNull(),
+		createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull(),
+	},
+	(table) => [uniqueIndex("pr_review_edits_reply_seq_idx").on(table.replyId, table.seq)],
+)
+
 export type VcsInstallationRow = typeof vcsInstallations.$inferSelect
 export type VcsInstallationInsert = typeof vcsInstallations.$inferInsert
 export type VcsRepositoryRow = typeof vcsRepositories.$inferSelect
@@ -267,3 +320,5 @@ export type VcsRepositoryBranchInsert = typeof vcsRepositoryBranches.$inferInser
 export type PrReviewRow = typeof prReviews.$inferSelect
 export type PrReviewInsert = typeof prReviews.$inferInsert
 export type PrReviewFindingRow = typeof prReviewFindings.$inferSelect
+export type PrReviewReplyRow = typeof prReviewReplies.$inferSelect
+export type PrReviewEditRow = typeof prReviewEdits.$inferSelect

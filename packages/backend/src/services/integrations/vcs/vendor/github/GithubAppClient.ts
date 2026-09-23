@@ -215,6 +215,31 @@ const GithubApiCheckRunList = Schema.Struct({
 		}),
 	),
 })
+const GithubApiPullRequestHead = Schema.Struct({
+	number: Schema.Number,
+	title: Schema.String,
+	html_url: Schema.String,
+	body: Schema.optionalKey(Schema.NullOr(Schema.String)),
+	user: Schema.NullOr(GithubApiUser),
+	state: Schema.String,
+	draft: Schema.optionalKey(Schema.NullOr(Schema.Boolean)),
+	head: Schema.Struct({
+		sha: Schema.String,
+		ref: Schema.String,
+		repo: Schema.NullOr(Schema.Struct({ full_name: Schema.String })),
+	}),
+	base: Schema.Struct({ sha: Schema.String, ref: Schema.String }),
+})
+export type GithubApiPullRequestHead = Schema.Schema.Type<typeof GithubApiPullRequestHead>
+const GithubApiCreatedComment = Schema.Struct({ id: Schema.Number, html_url: Schema.String })
+const GithubApiCollaboratorPermission = Schema.Struct({ permission: Schema.String })
+const GithubApiGitCommit = Schema.Struct({
+	sha: Schema.String,
+	html_url: Schema.optionalKey(Schema.String),
+	tree: Schema.Struct({ sha: Schema.String }),
+})
+const GithubApiGitTree = Schema.Struct({ sha: Schema.String })
+
 const GithubApiReviewCommentList = Schema.Array(
 	Schema.Struct({
 		id: Schema.Number,
@@ -367,6 +392,10 @@ const decodePullRequestCommits = Schema.decodeUnknownEffect(GithubApiPullRequest
 const decodeDiscussionComments = Schema.decodeUnknownEffect(GithubApiDiscussionCommentList)
 const decodeCheckRunList = Schema.decodeUnknownEffect(GithubApiCheckRunList)
 const decodeReviewCommentList = Schema.decodeUnknownEffect(GithubApiReviewCommentList)
+const decodePullRequestHead = Schema.decodeUnknownEffect(GithubApiPullRequestHead)
+const decodeCreatedComment = Schema.decodeUnknownEffect(GithubApiCreatedComment)
+const decodeCollaboratorPermission = Schema.decodeUnknownEffect(GithubApiCollaboratorPermission)
+const decodeGitCommit = Schema.decodeUnknownEffect(GithubApiGitCommit)
 const decodeComparison = Schema.decodeUnknownEffect(GithubApiComparison)
 const decodeReviewThreads = Schema.decodeUnknownEffect(GithubReviewThreadsResponse)
 const decodeMutation = Schema.decodeUnknownEffect(GithubMutationResponse)
@@ -1155,6 +1184,189 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 					"Reply to review comment",
 				)
 				if (!response.ok) return yield* failure(response, "Reply to review comment", "repository")
+				return yield* decodeCreatedComment(
+					yield* parseJson(response, "Reply to review comment"),
+				).pipe(
+					Effect.mapError(
+						(cause) => new GithubAppError({ message: "Unexpected reply payload", cause }),
+					),
+				)
+			})
+
+			const repoBase = (config: ResolvedAppConfig, owner: string, repo: string) =>
+				`${config.apiBaseUrl}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`
+
+			/** POST or PATCH a JSON body and decode the answer, failing repository-scoped. */
+			const sendJson = <A>(
+				externalInstallationId: string,
+				method: "POST" | "PATCH",
+				url: (config: ResolvedAppConfig) => string,
+				body: unknown,
+				context: string,
+				schema: Schema.Decoder<A>,
+			) =>
+				Effect.gen(function* () {
+					const config = yield* resolveConfig
+					const token = yield* mintInstallationToken(externalInstallationId)
+					const response = yield* authedSend(method, token, url(config), body, context)
+					if (!response.ok) return yield* failure(response, context, "repository")
+					return yield* Schema.decodeUnknownEffect(schema)(
+						yield* parseJson(response, context),
+					).pipe(
+						Effect.mapError(
+							(cause) =>
+								new GithubAppError({ message: `Unexpected ${context} payload`, cause }),
+						),
+					)
+				})
+
+			const getPullRequestHead = Effect.fn("GithubAppClient.getPullRequestHead")(function* (
+				externalInstallationId: string,
+				owner: string,
+				repo: string,
+				number: number,
+			) {
+				const config = yield* resolveConfig
+				const token = yield* mintInstallationToken(externalInstallationId)
+				const response = yield* authedGet(
+					config,
+					token,
+					`${repoBase(config, owner, repo)}/pulls/${number}`,
+				)
+				if (!response.ok) return yield* failure(response, "Get pull request", "repository")
+				return yield* decodePullRequestHead(yield* parseJson(response, "Get pull request")).pipe(
+					Effect.mapError(
+						(cause) => new GithubAppError({ message: "Unexpected pull request payload", cause }),
+					),
+				)
+			})
+
+			const createIssueComment = Effect.fn("GithubAppClient.createIssueComment")(
+				(externalInstallationId: string, owner: string, repo: string, number: number, body: string) =>
+					sendJson(
+						externalInstallationId,
+						"POST",
+						(config) => `${repoBase(config, owner, repo)}/issues/${number}/comments`,
+						{ body },
+						"Create comment",
+						GithubApiCreatedComment,
+					),
+			)
+
+			/** A reaction on a comment; `review_thread` comments live under pulls, the rest under issues. */
+			const addCommentReaction = Effect.fn("GithubAppClient.addCommentReaction")(function* (
+				externalInstallationId: string,
+				owner: string,
+				repo: string,
+				surface: "conversation" | "review_thread",
+				commentId: string,
+				content: "eyes" | "+1" | "confused",
+			) {
+				const config = yield* resolveConfig
+				const token = yield* mintInstallationToken(externalInstallationId)
+				const kind = surface === "review_thread" ? "pulls" : "issues"
+				const response = yield* authedSend(
+					"POST",
+					token,
+					`${repoBase(config, owner, repo)}/${kind}/comments/${encodeURIComponent(commentId)}/reactions`,
+					{ content },
+					"Add reaction",
+				)
+				if (!response.ok) return yield* failure(response, "Add reaction", "repository")
+			})
+
+			/** `admin`, `maintain`, `write`, `triage`, `read` or `none`. */
+			const getCollaboratorPermission = Effect.fn("GithubAppClient.getCollaboratorPermission")(
+				function* (externalInstallationId: string, owner: string, repo: string, login: string) {
+					const config = yield* resolveConfig
+					const token = yield* mintInstallationToken(externalInstallationId)
+					const response = yield* authedGet(
+						config,
+						token,
+						`${repoBase(config, owner, repo)}/collaborators/${encodeURIComponent(login)}/permission`,
+					)
+					// A 404 is a user who is not a collaborator at all.
+					if (response.status === 404) return "none"
+					if (!response.ok)
+						return yield* failure(response, "Get collaborator permission", "repository")
+					const decoded = yield* decodeCollaboratorPermission(
+						yield* parseJson(response, "Get collaborator permission"),
+					).pipe(
+						Effect.mapError(
+							(cause) =>
+								new GithubAppError({ message: "Unexpected permission payload", cause }),
+						),
+					)
+					return decoded.permission
+				},
+			)
+
+			/**
+			 * One commit on top of `parentSha` that writes `files`, then a fast-forward of `branch` to it.
+			 * Needs `contents: write`. The ref update is never forced: a branch that moved since the
+			 * parent was read answers 422, and the caller says so instead of overwriting someone's push.
+			 */
+			const commitFiles = Effect.fn("GithubAppClient.commitFiles")(function* (
+				externalInstallationId: string,
+				owner: string,
+				repo: string,
+				input: {
+					readonly branch: string
+					readonly parentSha: string
+					readonly message: string
+					readonly files: ReadonlyArray<{ readonly path: string; readonly content: string }>
+				},
+			) {
+				const config = yield* resolveConfig
+				const token = yield* mintInstallationToken(externalInstallationId)
+				const base = repoBase(config, owner, repo)
+				const parentResponse = yield* authedGet(
+					config,
+					token,
+					`${base}/git/commits/${input.parentSha}`,
+				)
+				if (!parentResponse.ok)
+					return yield* failure(parentResponse, "Read parent commit", "repository")
+				const parent = yield* decodeGitCommit(
+					yield* parseJson(parentResponse, "Read parent commit"),
+				).pipe(
+					Effect.mapError(
+						(cause) => new GithubAppError({ message: "Unexpected commit payload", cause }),
+					),
+				)
+				const tree = yield* sendJson(
+					externalInstallationId,
+					"POST",
+					() => `${base}/git/trees`,
+					{
+						base_tree: parent.tree.sha,
+						tree: input.files.map((file) => ({
+							path: file.path,
+							mode: "100644",
+							type: "blob",
+							content: file.content,
+						})),
+					},
+					"Create tree",
+					GithubApiGitTree,
+				)
+				const commit = yield* sendJson(
+					externalInstallationId,
+					"POST",
+					() => `${base}/git/commits`,
+					{ message: input.message, tree: tree.sha, parents: [input.parentSha] },
+					"Create commit",
+					GithubApiGitCommit,
+				)
+				const refResponse = yield* authedSend(
+					"PATCH",
+					token,
+					`${base}/git/refs/heads/${input.branch.split("/").map(encodeURIComponent).join("/")}`,
+					{ sha: commit.sha, force: false },
+					"Update branch",
+				)
+				if (!refResponse.ok) return yield* failure(refResponse, "Update branch", "repository")
+				return { sha: commit.sha, htmlUrl: commit.html_url ?? null }
 			})
 
 			/** Paths that differ between two commits: what a push changed since the last review. */
@@ -1520,6 +1732,11 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 				listReviewComments,
 				replyToReviewComment,
 				compareFiles,
+				getPullRequestHead,
+				createIssueComment,
+				addCommentReaction,
+				getCollaboratorPermission,
+				commitFiles,
 				createCheckRun,
 				createPullRequestReview,
 				upsertIssueComment,

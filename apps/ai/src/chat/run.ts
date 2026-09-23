@@ -23,10 +23,13 @@ import {
 	accumulateUsage,
 	buildChatToolkit,
 	buildDiagnosisCompletion,
+	buildReplyCompletion,
 	buildReviewCompletion,
 	type RunCompletion,
 	type RunUsage,
 	type SubmitDiagnosis,
+	type StageEdit,
+	type SubmitReply,
 	type SubmitReview,
 } from "./tools"
 
@@ -85,6 +88,9 @@ export interface ChatRunInput {
 	readonly submitDiagnosis: SubmitDiagnosis
 	/** Absent outside a review session's runtime; a `pr-` session without it runs with no completion. */
 	readonly submitReview?: SubmitReview
+	/** Absent outside a runtime that answers pull request comments. */
+	readonly submitReply?: SubmitReply
+	readonly stageEdit?: StageEdit
 	/** This run is an autonomous pass's close-out: a report it files is a partial. */
 	readonly closeOut?: boolean
 	/** The agent to run as; defaults to the session's. The local review runner passes a variant. */
@@ -154,6 +160,16 @@ export const runChatTurn = (input: ChatRunInput) => {
 					input.usage,
 					input.model.name,
 					input.closeOut === true,
+					agentSessionSpanAttributes(input.model.tags),
+				)) ??
+		(input.submitReply === undefined || input.stageEdit === undefined
+			? undefined
+			: buildReplyCompletion(
+					input.sessionId,
+					input.tenant,
+					input.origin,
+					input.submitReply,
+					input.stageEdit,
 					agentSessionSpanAttributes(input.model.tags),
 				))
 

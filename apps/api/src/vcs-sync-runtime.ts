@@ -18,6 +18,7 @@ import { fixVerificationPullRequestHandler } from "@maple/backend/services/error
 import { pullRequestEventSinkFanout } from "@maple/backend/services/integrations/vcs/PullRequestEventSink"
 import { PrReviewService } from "@maple/backend/services/pr-review/PrReviewService"
 import { prReviewPullRequestHandler } from "@maple/backend/services/pr-review/pull-request-review-handler"
+import { prReviewCommentSinkLive } from "@maple/backend/services/pr-review/pull-request-comment-handler"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import type { QueueBatch } from "@maple/backend/platform/queue-batch"
 
@@ -48,6 +49,8 @@ const PullRequestEventSinkLive = pullRequestEventSinkFanout<IssueFixVerification
 
 export const VcsSyncLive = VcsSyncService.layer.pipe(
 	Layer.provide(PullRequestEventSinkLive),
+	// `@maple` mentions on pull requests; the review debounce's queue is not needed to answer.
+	Layer.provide(prReviewCommentSinkLive),
 	Layer.provide(Layer.mergeAll(EventBaseLive, EdgeCacheServiceLive)),
 )
 

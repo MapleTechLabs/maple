@@ -562,6 +562,50 @@ export const PullRequestEventJob = Schema.Struct({
 })
 export type PullRequestEventJob = Schema.Schema.Type<typeof PullRequestEventJob>
 
+/**
+ * A comment on a pull request that mentions Maple: in the conversation, or on a review thread.
+ * Mapped only for `created` comments that mention the reviewer, so the queue never carries chatter.
+ */
+export const PullRequestCommentJob = Schema.Struct({
+	kind: Schema.Literal("pull-request-comment"),
+	provider: VcsProviderId,
+	externalInstallationId: Schema.String,
+	externalRepoId: Schema.String,
+	repoFullName: Schema.String,
+	number: Schema.Number,
+	commentId: Schema.String,
+	surface: Schema.Literals(["conversation", "review_thread"]),
+	/** The thread's first comment, which a reply is posted under. Review threads only. */
+	threadRootId: Schema.optionalKey(Schema.String),
+	authorLogin: Schema.String,
+	/** GitHub's `author_association`: OWNER, MEMBER, COLLABORATOR, CONTRIBUTOR, NONE, ... */
+	authorAssociation: Schema.String,
+	body: Schema.String,
+	url: Schema.String,
+	path: Schema.optionalKey(Schema.String),
+	line: Schema.optionalKey(Schema.Number),
+	deliveryId: Schema.optionalKey(Schema.String),
+})
+export type PullRequestCommentJob = Schema.Schema.Type<typeof PullRequestCommentJob>
+
+/** A pull request's head as the reviewer needs it to answer, and to commit a fix. */
+export const PullRequestHead = Schema.Struct({
+	number: Schema.Number,
+	title: Schema.String,
+	url: Schema.String,
+	body: Schema.NullOr(Schema.String),
+	authorLogin: Schema.NullOr(Schema.String),
+	state: Schema.String,
+	draft: Schema.Boolean,
+	headSha: GitCommitSha,
+	headRef: Schema.String,
+	baseSha: GitCommitSha,
+	baseRef: Schema.String,
+	/** Null when the head repository was deleted. */
+	headRepoFullName: Schema.NullOr(Schema.String),
+})
+export type PullRequestHead = Schema.Schema.Type<typeof PullRequestHead>
+
 export const VcsSyncJob = Schema.Union([
 	InstallationSyncJob,
 	SyncCommitsJob,
@@ -569,6 +613,7 @@ export const VcsSyncJob = Schema.Union([
 	SyncBranchesJob,
 	BranchEventJob,
 	PullRequestEventJob,
+	PullRequestCommentJob,
 ])
 export type VcsSyncJob = Schema.Schema.Type<typeof VcsSyncJob>
 
