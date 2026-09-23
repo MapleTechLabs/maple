@@ -7,18 +7,29 @@
  * that reads one row per mention. The service calls these same functions, so there is one query
  * per question rather than two.
  */
+import { Buffer } from "node:buffer"
 import { chatWorkspaces } from "@maple/db"
 import type { ChatWorkspaceSettings } from "@maple/chat-platform"
 import { ChatConnectorId, ChatWorkspaceId, IntegrationsPersistenceError, OrgId } from "@maple/domain/http"
 import { and, eq } from "drizzle-orm"
 import { Effect, Option, Schema } from "effect"
 import type { DatabaseApi, DatabaseError } from "@maple/backend/platform/DatabaseLive"
+import {
+	openChatWorkspaceCredentials,
+	storedCredentials,
+} from "@maple/backend/services/integrations/chat-workspace-credentials"
 
 /** What the bot Worker needs to act on an inbound event. */
 export interface ChatWorkspaceResolution {
 	readonly orgId: OrgId
 	readonly workspaceId: ChatWorkspaceId
 	readonly settings: ChatWorkspaceSettings
+	/**
+	 * The connector's own per-workspace secret, decrypted, or `undefined` for a connector that
+	 * stored none. The host puts it in `ConnectorCredentials` under `WORKSPACE_CREDENTIALS`; it is
+	 * the connector's encoding and nothing here reads it.
+	 */
+	readonly credentials: string | undefined
 }
 
 const decodeStored = Schema.decodeUnknownEffect(
@@ -41,37 +52,67 @@ const unreadable = (message: string) => new IntegrationsPersistenceError({ messa
  * the table, and an unreadable row is this function's failure rather than a bad org id reaching a
  * session id.
  */
-export const resolveChatWorkspace = (
+export const resolveChatWorkspace = Effect.fn("resolveChatWorkspace")(function* (
 	database: DatabaseApi,
 	connectorId: ChatConnectorId,
 	externalWorkspaceId: string,
-): Effect.Effect<Option.Option<ChatWorkspaceResolution>, IntegrationsPersistenceError> =>
-	Effect.gen(function* () {
-		const rows = yield* database
-			.execute((db) =>
-				db
-					.select()
-					.from(chatWorkspaces)
-					.where(
-						and(
-							eq(chatWorkspaces.connector, connectorId),
-							eq(chatWorkspaces.externalWorkspaceId, externalWorkspaceId),
-						),
-					)
-					.limit(1),
-			)
-			.pipe(Effect.mapError(persistenceError))
-		const row = rows[0]
-		if (row === undefined) return Option.none<ChatWorkspaceResolution>()
-		const stored = yield* decodeStored(row).pipe(
-			Effect.mapError((error) => unreadable(`Stored chat workspace is unreadable: ${error.message}`)),
+	/**
+	 * The key the credential envelope was sealed with, or `null` on a deployment that has none.
+	 * A row that carries a credential no key can open fails the resolution rather than resolving to
+	 * a workspace whose connector then cannot post — the second is a bot that answers nothing and
+	 * says why nowhere. No default: both callers hold a key or know they do not, and a forgotten
+	 * argument would read every credential row as unopenable.
+	 */
+	encryptionKey: Buffer | null,
+) {
+	yield* Effect.annotateCurrentSpan({ "chat.connector": connectorId })
+	const rows = yield* database
+		.execute((db) =>
+			db
+				.select()
+				.from(chatWorkspaces)
+				.where(
+					and(
+						eq(chatWorkspaces.connector, connectorId),
+						eq(chatWorkspaces.externalWorkspaceId, externalWorkspaceId),
+					),
+				)
+				.limit(1),
 		)
+		.pipe(Effect.mapError(persistenceError))
+	const row = rows[0]
+	if (row === undefined) return Option.none<ChatWorkspaceResolution>()
+	const stored = yield* decodeStored(row).pipe(
+		Effect.mapError((error) => unreadable(`Stored chat workspace is unreadable: ${error.message}`)),
+	)
+	const sealed = storedCredentials(row)
+	if (sealed === null) {
 		return Option.some({
 			orgId: stored.orgId,
 			workspaceId: stored.id,
 			settings: stored.settings,
+			credentials: undefined,
 		})
+	}
+	if (encryptionKey === null) {
+		return yield* Effect.fail(
+			unreadable("This chat workspace stores a credential and this deployment has no key for it"),
+		)
+	}
+	const credentials = yield* openChatWorkspaceCredentials(
+		sealed,
+		encryptionKey,
+		{ orgId: stored.orgId, connector: connectorId, externalWorkspaceId },
+		// The message never carries the cause: everything below it is key material and ciphertext.
+		(message) => unreadable(`Stored chat workspace credential is unreadable: ${message}`),
+	)
+	return Option.some({
+		orgId: stored.orgId,
+		workspaceId: stored.id,
+		settings: stored.settings,
+		credentials,
 	})
+})
 
 /**
  * Drop the link for a workspace the bot was removed from, and answer whether there was one.

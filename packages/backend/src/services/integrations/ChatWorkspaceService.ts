@@ -17,10 +17,12 @@ import { chatWorkspaces, type ChatWorkspaceRow } from "@maple/db"
 import { isConnectorConfigured, type ChatConnector, type ChatWorkspaceSettings } from "@maple/chat-platform"
 import { connectors } from "@maple/chat-platform/connectors"
 import { and, asc, eq } from "drizzle-orm"
-import { Array as Arr, Clock, Context, Effect, Layer, Option, Schema } from "effect"
+import { Array as Arr, Clock, Context, Effect, Layer, Option, Redacted, Schema } from "effect"
 import { FetchHttpClient, HttpClient } from "effect/unstable/http"
+import { parseBase64Aes256GcmKey } from "@maple/backend/platform/Crypto"
 import { Database, type DatabaseError } from "@maple/backend/platform/DatabaseLive"
 import { Env } from "@maple/backend/platform/Env"
+import { sealChatWorkspaceCredentials } from "@maple/backend/services/integrations/chat-workspace-credentials"
 import { dateToMs, msToDate } from "@maple/backend/platform/time"
 import { OAuthStateRepository } from "@maple/backend/services/auth/OAuthStateRepository"
 import {
@@ -219,6 +221,20 @@ const make: Effect.Effect<
 
 	const config = env.CHAT_CONNECTOR_CONFIG
 
+	/**
+	 * The key the per-workspace credential envelope is sealed and opened with.
+	 *
+	 * Read lazily rather than at layer build: only a connector whose install mints a credential
+	 * needs it, and a deployment without one must still list, link and unlink everything else.
+	 */
+	const credentialKey = parseBase64Aes256GcmKey(
+		Redacted.value(env.MAPLE_INGEST_KEY_ENCRYPTION_KEY),
+		(message) =>
+			new IntegrationsConfigurationError({
+				message: `Chat workspace credentials cannot be stored on this deployment: ${message}`,
+			}),
+	)
+
 	const toPersistenceError = (error: DatabaseError | OAuthStatePersistenceError) =>
 		new IntegrationsPersistenceError({ message: `${error._tag}: ${error.message}` })
 
@@ -405,6 +421,34 @@ const make: Effect.Effect<
 				}),
 			)
 
+		// A connector that minted a per-workspace secret hands it over as one opaque string; it is
+		// sealed here and never read above the connector that wrote it. A re-install replaces it,
+		// because the platform issued a new one and the old one is what was just revoked.
+		const credentials = installed.credentials
+		const sealed =
+			credentials === undefined
+				? null
+				: yield* Effect.flatMap(credentialKey, (key) =>
+						sealChatWorkspaceCredentials(
+							credentials,
+							key,
+							{
+								orgId,
+								connector: connectorId,
+								externalWorkspaceId: installed.externalWorkspaceId,
+							},
+							(message) =>
+								new IntegrationsPersistenceError({
+									message: `The chat workspace credential could not be stored: ${message}`,
+								}),
+						),
+					)
+		const credentialColumns = {
+			credentialsCiphertext: sealed?.ciphertext ?? null,
+			credentialsIv: sealed?.iv ?? null,
+			credentialsTag: sealed?.tag ?? null,
+		}
+
 		const inserted = yield* database
 			.execute((db) =>
 				db
@@ -416,15 +460,16 @@ const make: Effect.Effect<
 						externalWorkspaceId: installed.externalWorkspaceId,
 						name: installed.name,
 						settings: {},
+						...credentialColumns,
 						createdAt: msToDate(now),
 					})
 					.onConflictDoUpdate({
 						target: [chatWorkspaces.connector, chatWorkspaces.externalWorkspaceId],
-						// A re-install refreshes the org's own row (the name may have
-						// changed) and keeps its settings. Another org's row is left alone:
+						// A re-install refreshes the org's own row (the name and the credential may
+						// both have changed) and keeps its settings. Another org's row is left alone:
 						// the update is skipped, and zero returned rows is the conflict.
 						setWhere: eq(chatWorkspaces.orgId, orgId),
-						set: { name: installed.name },
+						set: { name: installed.name, ...credentialColumns },
 					})
 					.returning({ id: chatWorkspaces.id }),
 			)
@@ -657,7 +702,18 @@ const make: Effect.Effect<
 		externalWorkspaceId: string,
 	) {
 		yield* Effect.annotateCurrentSpan({ "chat.connector": connectorId })
-		const resolved = yield* resolveChatWorkspace(database, connectorId, externalWorkspaceId)
+		// A deployment with no usable key resolves the workspace without its credential rather than
+		// failing the lookup: everything that does not need one keeps working, and the connector
+		// that does reports it cannot post.
+		const key = yield* credentialKey.pipe(
+			Effect.tapError((error) =>
+				Effect.logError("Chat workspace credential key is unusable").pipe(
+					Effect.annotateLogs({ "error.type": error._tag, "error.message": error.message }),
+				),
+			),
+			Effect.orElseSucceed(() => null),
+		)
+		const resolved = yield* resolveChatWorkspace(database, connectorId, externalWorkspaceId, key)
 		// The one cross-tenant lookup here — the resolved org belongs on the span.
 		if (Option.isSome(resolved)) yield* Effect.annotateCurrentSpan({ orgId: resolved.value.orgId })
 		return resolved

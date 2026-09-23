@@ -22,11 +22,11 @@
  * the agent's chat session and the answer is streamed back. The ingress half
  * never waits for any of that.
  *
- * **No public hostname.** The socket half dials out and needs none, and no
- * webhook connector is registered yet — so a custom domain would be DNS, a
- * certificate and a `MapleDomains` entry bought for a route nothing calls. Under
- * `bun dev` the portless route reaches it; the first webhook connector is what
- * should buy the hostname.
+ * **One public hostname, on production instances only** (`domains.chat`). A webhook connector's
+ * platform is configured with a request URL inside the vendor's own application, and that URL has
+ * to keep working across deploys — which is what buys the custom domain the socket half never
+ * needed. A dev stage reaches the same route through portless, and a PR preview gets no hostname:
+ * a connector there would have no credentials and no database to resolve a workspace in.
  */
 import { connectors } from "@maple/chat-platform/connectors"
 import {
@@ -68,6 +68,10 @@ const configuredEnv = (stage: MapleStage, region: MapleRegion, domains: MapleDom
 		// reply carries its charts as text, which is what `chatChartImageUrl` answers `null` for.
 		plainWithDefault("MAPLE_APP_BASE_URL", `https://${domains.web ?? "app.maple.dev"}`),
 		optionalSecret("MAPLE_SHARE_TOKEN_HMAC_KEY"),
+		// Opens the credential a connector's install sealed against a workspace row. Optional, and
+		// only a connector that stores one needs it: without the key such a workspace fails its
+		// lookup, and every other connector runs normally.
+		optionalSecret("MAPLE_INGEST_KEY_ENCRYPTION_KEY"),
 	)
 
 /**
@@ -87,8 +91,11 @@ const props = Effect.gen(function* () {
 		placement: resolveWorkerPlacement(region),
 		// Under `bun dev`: a sticky port the app's route follows.
 		dev: workerDev("chat-bot"),
-		// See the module comment: nothing calls in from the public internet yet.
+		// A webhook connector's platform calls this hostname; see the module comment. A custom
+		// domain rather than a route, so DNS and the edge certificate come with it, and rather than
+		// `workers.dev`, whose URL carries the account subdomain and moves with the account.
 		workersDev: false,
+		domain: domains.chat,
 		// `devEnv` last, so `.env.local` cannot override the inter-app URLs.
 		env: {
 			// Cross-script reference to the chat Durable Object the AI Worker hosts: a mention

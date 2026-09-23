@@ -109,6 +109,16 @@ export const InboundAction = Schema.Struct({
 	connector: ChatConnectorId,
 	workspaceId: Schema.String,
 	channelId: Schema.String,
+	/**
+	 * The sub-conversation the click landed in, where the platform models one separately from the
+	 * channel — the same coordinate {@link InboundMessage} carries, and absent for the same reason:
+	 * on a platform where a thread IS a channel, `channelId` already addresses it.
+	 *
+	 * It is what `transport.conversation` names an action's conversation from, and that name is
+	 * what scopes the approval — so a platform that has threads must report it, or a click would
+	 * resolve to a different conversation than the proposal it is answering.
+	 */
+	threadId: Schema.optionalKey(Schema.String),
 	/** The message carrying the control, so the reply can update it in place. */
 	messageId: Schema.String,
 	/**

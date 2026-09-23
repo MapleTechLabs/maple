@@ -7,7 +7,13 @@
  * the database, and none of it belongs on the path Cloudflare evaluates when it validates the
  * uploaded script.
  */
-import { ConnectorCredentials, type ChatConnector, type InboundEvent } from "@maple/chat-platform"
+import {
+	ConnectorCredentials,
+	WORKSPACE_CREDENTIALS,
+	type ChatConnector,
+	type ConnectorConfig,
+	type InboundEvent,
+} from "@maple/chat-platform"
 import { connectors } from "@maple/chat-platform/connectors"
 import * as MapleCloudflareSDK from "@maple-dev/effect-sdk/cloudflare"
 import { chatSessionStub } from "@maple/domain/chat-session-stub"
@@ -15,9 +21,10 @@ import type { ChatConnectorId, OrgId } from "@maple/domain/primitives"
 import type { IntegrationsPersistenceError } from "@maple/domain/http"
 import { workerTelemetryConfig } from "@maple/infra/worker-telemetry"
 import { workerEnvLayer } from "@maple/infra/worker-runtime"
-import { Cause, Effect, Layer, Option } from "effect"
+import { Cause, Effect, Layer, Option, Schema } from "effect"
 import { FetchHttpClient, HttpClient } from "effect/unstable/http"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
+import { parseBase64Aes256GcmKey } from "@maple/backend/platform/Crypto"
 import { chatChartImageUrl } from "@maple/backend/services/chat/chat-chart"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { layerPg } from "@maple/backend/platform/DatabasePgLive"
@@ -50,6 +57,39 @@ const APP_BASE_URL_FALLBACK = "https://app.maple.dev"
 
 const appBaseUrl = (env: Record<string, unknown>): string =>
 	setting(env, "MAPLE_APP_BASE_URL") ?? APP_BASE_URL_FALLBACK
+
+/** `MAPLE_INGEST_KEY_ENCRYPTION_KEY` is set on this deployment but is not a usable key. */
+class CredentialKeyUnusable extends Schema.TaggedError<CredentialKeyUnusable>()(
+	"@maple/chat-bot/CredentialKeyUnusable",
+	{ message: Schema.String },
+) {}
+
+/**
+ * The key a connector's per-workspace credential was sealed with, or `null` where this deployment
+ * binds none.
+ *
+ * Optional because most of this Worker does not need it: a connector whose credential is one
+ * deployment-wide secret stores nothing to open, and a stage without the key runs those normally.
+ * A workspace that DID store one then fails its lookup rather than resolving without its token —
+ * see `chat-workspace-rows.ts`.
+ */
+const credentialKey = (env: Record<string, unknown>): Effect.Effect<Buffer | null> =>
+	parseBase64Aes256GcmKey(
+		setting(env, "MAPLE_INGEST_KEY_ENCRYPTION_KEY") ?? "",
+		(message) => new CredentialKeyUnusable({ message }),
+	).pipe(
+		// Absent is the ordinary case on a stage running no connector that stores a credential, so
+		// it is not an error — but a key that IS set and unusable is a deployment mistake that
+		// would otherwise surface only as an unreadable workspace on every mention, reason nowhere.
+		Effect.tapError((error) =>
+			setting(env, "MAPLE_INGEST_KEY_ENCRYPTION_KEY") === undefined
+				? Effect.void
+				: Effect.logError("Chat workspace credential key is unusable").pipe(
+						Effect.annotateLogs({ "error.type": error._tag, "error.message": error.message }),
+					),
+		),
+		Effect.orElseSucceed(() => null),
+	)
 
 export interface RelayHost {
 	readonly env: Record<string, unknown>
@@ -96,9 +136,82 @@ const lookupFailed =
 			),
 		)
 
+/**
+ * The workspace this event belongs to: which org, which Maple user the clicker linked, and the
+ * credential the connector posts with — in ONE connection.
+ *
+ * Sequential rather than parallel because the second question needs the first one's answer: a link
+ * is per org, and the org is what the workspace names.
+ *
+ * The credential rides along because it comes out of the same row, and reading that row twice —
+ * once to answer the relay and once to build the transport — would be two Postgres connections for
+ * one mention.
+ */
+const lookupWorkspace = (
+	host: RelayHost,
+	connector: ChatConnector<HttpClient.HttpClient | ConnectorCredentials>,
+	connectorId: ChatConnectorId,
+	workspaceId: string,
+	externalUserId: string | undefined,
+) =>
+	Effect.flatMap(credentialKey(host.env), (key) =>
+		withDatabase(
+			host.env,
+			Effect.gen(function* () {
+				const database = yield* Database
+				const workspace = yield* resolveChatWorkspace(database, connectorId, workspaceId, key)
+				if (Option.isNone(workspace)) return Option.none<ResolvedWorkspace>()
+				const credentials = workspace.value.credentials
+				// Nothing to link with, or nobody asked: one query.
+				if (externalUserId === undefined || connector.identity === undefined) {
+					return Option.some<ResolvedWorkspace>({
+						relay: { orgId: workspace.value.orgId },
+						credentials,
+					})
+				}
+				const identity = yield* resolveChatIdentity(
+					database,
+					workspace.value.orgId,
+					connectorId,
+					externalUserId,
+				)
+				return Option.some<ResolvedWorkspace>({
+					relay: {
+						orgId: workspace.value.orgId,
+						...(Option.isNone(identity) ? undefined : { linkedUserId: identity.value.userId }),
+					},
+					credentials,
+				})
+			}),
+		).pipe(lookupFailed(connectorId, "The chat workspace could not be read")),
+	)
+
+/** What the one lookup answers: the relay's half, and the transport's. */
+interface ResolvedWorkspace {
+	readonly relay: RelayWorkspace
+	readonly credentials: string | undefined
+}
+
+/**
+ * The config the connector's transport is built from: what the deployment set, plus this
+ * workspace's own credential where it stored one.
+ */
+const connectorCredentials = (
+	config: ConnectorConfig,
+	resolved: Option.Option<ResolvedWorkspace>,
+): ConnectorConfig => {
+	if (Option.isNone(resolved) || resolved.value.credentials === undefined) return config
+	return new Map(config).set(WORKSPACE_CREDENTIALS, resolved.value.credentials)
+}
+
 const ports = (
 	host: RelayHost,
 	connector: ChatConnector<HttpClient.HttpClient | ConnectorCredentials>,
+	lookup: (
+		connectorId: ChatConnectorId,
+		workspaceId: string,
+		externalUserId: string | undefined,
+	) => Effect.Effect<Option.Option<ResolvedWorkspace>, WorkspaceLookupFailed>,
 ): RelayPorts<HttpClient.HttpClient | ConnectorCredentials> => ({
 	outbound: connector.outbound,
 	supportsIdentity: connector.identity !== undefined,
@@ -110,31 +223,9 @@ const ports = (
 	 * link is per org, and the org is what the workspace names.
 	 */
 	resolveWorkspace: (connectorId, workspaceId, externalUserId) =>
-		withDatabase(
-			host.env,
-			Effect.gen(function* () {
-				const database = yield* Database
-				const workspace = yield* resolveChatWorkspace(database, connectorId, workspaceId)
-				// Nothing to link with, or nobody asked: one query.
-				if (
-					Option.isNone(workspace) ||
-					externalUserId === undefined ||
-					connector.identity === undefined
-				) {
-					return Option.map(workspace, (found) => ({ orgId: found.orgId }))
-				}
-				const identity = yield* resolveChatIdentity(
-					database,
-					workspace.value.orgId,
-					connectorId,
-					externalUserId,
-				)
-				return Option.some<RelayWorkspace>({
-					orgId: workspace.value.orgId,
-					...(Option.isNone(identity) ? undefined : { linkedUserId: identity.value.userId }),
-				})
-			}),
-		).pipe(lookupFailed(connectorId, "The chat workspace could not be read")),
+		Effect.map(lookup(connectorId, workspaceId, externalUserId), (found) =>
+			Option.map(found, (workspace) => workspace.relay),
+		),
 	forgetWorkspace: (connectorId, workspaceId) =>
 		withDatabase(
 			host.env,
@@ -182,21 +273,33 @@ export const runInboundEvent = async (host: RelayHost, event: InboundEvent): Pro
 	const config = resolveConnectorConfig(host.env, connector)
 	if (config._tag === "missing") return
 
-	try {
-		await Effect.runPromise(
-			relayInboundEvent(event, ports(host, connector)).pipe(
-				// oxlint-disable-next-line effecttsgo/strict-effect-provide
-				Effect.provide(
-					Layer.mergeAll(
-						FetchHttpClient.layer,
-						Layer.succeed(ConnectorCredentials)(config.config),
-						workerEnvLayer(host.env),
-						telemetry.layer,
-					),
+	// One read for the whole event, memoized: the relay asks which org this is, and the transport is
+	// built from the credential the same row carries. `Effect.cached` is what keeps that one
+	// Postgres connection rather than two, without hoisting the read ahead of the relay's own
+	// decision about whether this message is a turn at all.
+	await Effect.runPromise(
+		Effect.gen(function* () {
+			const lookup = yield* Effect.cached(
+				lookupWorkspace(
+					host,
+					connector,
+					event.connector,
+					event.workspaceId,
+					// Only a click names a person; a message is answered for the workspace.
+					event.type === "action" ? event.actor.id : undefined,
 				),
-			),
-		)
-	} finally {
-		await telemetry.flush(host.env).catch(() => undefined)
-	}
+			)
+			const resolved = yield* Effect.orElseSucceed(lookup, () => Option.none<ResolvedWorkspace>())
+			yield* relayInboundEvent(
+				event,
+				ports(host, connector, () => lookup),
+			).pipe(Effect.provideService(ConnectorCredentials, connectorCredentials(config.config, resolved)))
+		}).pipe(
+			// oxlint-disable-next-line effecttsgo/strict-effect-provide
+			Effect.provide(Layer.mergeAll(FetchHttpClient.layer, workerEnvLayer(host.env), telemetry.layer)),
+			// On the fiber rather than in a `finally`: the flush is what exports this event's spans,
+			// so it belongs to the same interruption and failure handling they do.
+			Effect.ensuring(Effect.promise(() => telemetry.flush(host.env).catch(() => undefined))),
+		),
+	)
 }

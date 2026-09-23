@@ -27,6 +27,21 @@ export class ConnectorCredentials extends Context.Service<ConnectorCredentials, 
 ) {}
 
 /**
+ * The entry under which the host puts the conversation's OWN stored credential into
+ * {@link ConnectorCredentials}, when the connector's install minted one
+ * (`ChatInstallResult.credentials`).
+ *
+ * A reserved name in the same map rather than a second service, because the map is already the one
+ * thing the host resolves and the transport reads — and because the alternative, a per-workspace
+ * service, would make every connector that does not need one declare it anyway. The name is not a
+ * variable any deployment sets, so it cannot collide with a connector's declared config.
+ *
+ * Absent for a connector whose install returns no credential, and absent for a conversation in a
+ * workspace nothing has linked. A transport that needs one must treat both as "cannot post".
+ */
+export const WORKSPACE_CREDENTIALS = "maple.chat.workspace_credentials"
+
+/**
  * Where a turn is posted. Every id is an opaque string the connector minted or was handed.
  *
  * `workspaceId` rides on every call because it is what a connector with per-install credentials
