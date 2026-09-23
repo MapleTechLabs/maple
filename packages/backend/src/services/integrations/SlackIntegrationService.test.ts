@@ -123,22 +123,17 @@ const databaseInjectingBeforeTransaction = (testDb: TestDb, inject: () => Promis
 			let injected = false
 			return Database.of({
 				execute: (fn) =>
-					real.execute((db) =>
-						fn(
-							new Proxy(db, {
-								get: (target, prop, receiver) => {
-									if (prop !== "transaction" || injected)
-										return Reflect.get(target, prop, receiver)
-									injected = true
-									const transaction: typeof target.transaction = (...args) =>
-										Effect.promise(inject).pipe(
-											Effect.andThen(Effect.suspend(() => target.transaction(...args))),
-										)
-									return transaction
-								},
-							}),
-						),
-					),
+					real.execute((db) => {
+						if (injected) return fn(db)
+						const transaction: typeof db.transaction = (...args) => {
+							injected = true
+							return Effect.promise(inject).pipe(
+								Effect.andThen(Effect.suspend(() => db.transaction(...args))),
+							)
+						}
+						// Everything but `transaction` resolves through the prototype to `db`.
+						return fn(Object.assign(Object.create(db), { transaction }))
+					}),
 			})
 		}),
 	).pipe(Layer.provide(testDb.layer))
