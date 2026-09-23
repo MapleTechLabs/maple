@@ -307,8 +307,9 @@ impl)` over the plain `ChatSession` class — the outer Effect resolves state an
     at and the refs of the platform messages posted for it — never what they say. An object
     evicted or redeployed mid-turn loses only the fiber rendering it, and the answer is not
     streamed any further: the keep-alive alarm wakes the fresh activation, which finds a
-    checkpoint no fiber of its own holds, leaves it while the session reports the turn still
-    running, and once it has ended renders the final answer into the same messages in one pass
+    checkpoint no fiber of its own holds, leaves it until the turn's own `turn-end` is in the
+    session's log (or the session runs nothing), then renders the final answer into the same
+    messages in one pass
     (the ordinary driver: surplus messages emptied, a missing tail posted), then clears it. A
     checkpoint older than the session's own staleness ceiling plus a margin, one this build
     cannot decode, or one whose session cannot be reached is dropped. It costs one small
