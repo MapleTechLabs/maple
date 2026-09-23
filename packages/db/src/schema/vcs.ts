@@ -250,6 +250,9 @@ export const prReviewFindings = pgTable(
 		commentId: text("comment_id"),
 		/** The head that fixed it. */
 		resolvedSha: text("resolved_sha").$type<GitCommitSha>(),
+		/** 👍 / 👎 on the inline comment when last read: the author's verdict, for precision. */
+		reactionsUp: integer("reactions_up").notNull().default(0),
+		reactionsDown: integer("reactions_down").notNull().default(0),
 		createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull(),
 		updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date" }).notNull(),
 	},

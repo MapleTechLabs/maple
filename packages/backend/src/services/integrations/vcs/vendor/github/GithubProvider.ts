@@ -1055,12 +1055,21 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 								(thread): PullRequestReviewThread => ({
 									id: thread.id,
 									isResolved: thread.isResolved,
-									comments: thread.comments.nodes.map((comment) => ({
-										commentId:
-											comment.databaseId === null ? null : String(comment.databaseId),
-										author: comment.author?.login ?? "(deleted user)",
-										body: comment.body,
-									})),
+									comments: thread.comments.nodes.map((comment) => {
+										const count = (content: string) =>
+											comment.reactionGroups?.find((group) => group.content === content)
+												?.reactors.totalCount ?? 0
+										return {
+											commentId:
+												comment.databaseId === null
+													? null
+													: String(comment.databaseId),
+											author: comment.author?.login ?? "(deleted user)",
+											body: comment.body,
+											thumbsUp: count("THUMBS_UP"),
+											thumbsDown: count("THUMBS_DOWN"),
+										}
+									}),
 								}),
 							),
 						),

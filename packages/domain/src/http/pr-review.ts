@@ -137,6 +137,8 @@ export class PrReviewRepositoryConfig extends Schema.Class<PrReviewRepositoryCon
 	/** The lowest severity posted inline; the summary always carries every finding. */
 	minInlineSeverity: Schema.optionalKey(PrReviewSeverity),
 	reviewDrafts: Schema.optionalKey(Schema.Boolean),
+	/** Reviews this repository may start per UTC day; the organization's ceiling still applies. */
+	dailyLimit: Schema.optionalKey(Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 500 }))),
 }) {}
 
 /** The stored review: the shape a reader can rely on. */
@@ -342,6 +344,25 @@ export class SubmitPrReviewRequest extends Schema.Class<SubmitPrReviewRequest>("
 	partial: Schema.optionalKey(Schema.Boolean),
 	/** Handles of earlier findings this head fixes. */
 	resolved: Schema.optionalKey(Schema.Array(Schema.String)),
+}) {}
+
+/** One review in a repository's list: enough to scan outcomes without loading the report. */
+export class PrReviewListItem extends Schema.Class<PrReviewListItem>("PrReviewListItem")({
+	id: PrReviewId,
+	number: Schema.Number,
+	title: Schema.NullOr(Schema.String),
+	url: Schema.String,
+	headSha: GitCommitSha,
+	status: PrReviewStatus,
+	skipReason: Schema.NullOr(PrReviewSkipReason),
+	verdict: Schema.NullOr(PrReviewVerdict),
+	score: Schema.NullOr(Schema.Number),
+	findings: Schema.Number,
+	commentUrl: Schema.NullOr(Schema.String),
+	publishError: Schema.NullOr(Schema.String),
+	error: Schema.NullOr(Schema.String),
+	createdAt: Schema.Number,
+	finishedAt: Schema.NullOr(Schema.Number),
 }) {}
 
 /** A review row as the dashboard reads it. */

@@ -6,6 +6,8 @@ import {
 	IntegrationsValidationError,
 	isInstallationProcessable,
 	type OrgId,
+	type PrReviewListItem,
+	PrReviewRepositoryConfig,
 	type UserId,
 	type VcsAccountType,
 	type VcsInstallationId,
@@ -138,6 +140,22 @@ export interface GithubConnectServiceApi {
 		enabled: boolean,
 	) => Effect.Effect<
 		{ readonly enabled: boolean },
+		IntegrationsPersistenceError | IntegrationsValidationError
+	>
+	readonly getPrReviewConfig: (
+		orgId: OrgId,
+		repositoryId: VcsRepositoryId,
+	) => Effect.Effect<PrReviewRepositoryConfig, IntegrationsPersistenceError | IntegrationsValidationError>
+	readonly setPrReviewConfig: (
+		orgId: OrgId,
+		repositoryId: VcsRepositoryId,
+		config: PrReviewRepositoryConfig,
+	) => Effect.Effect<PrReviewRepositoryConfig, IntegrationsPersistenceError | IntegrationsValidationError>
+	readonly listPrReviews: (
+		orgId: OrgId,
+		repositoryId: VcsRepositoryId,
+	) => Effect.Effect<
+		ReadonlyArray<PrReviewListItem>,
 		IntegrationsPersistenceError | IntegrationsValidationError
 	>
 }
@@ -717,6 +735,68 @@ export class GithubConnectService extends Context.Service<GithubConnectService, 
 				return { enabled }
 			})
 
+			const requireRepository = (orgId: OrgId, repositoryId: VcsRepositoryId) =>
+				asPersistence(repo.getRepositoryById(orgId, repositoryId)).pipe(
+					Effect.flatMap((existing) =>
+						Option.isNone(existing)
+							? Effect.fail(
+									new IntegrationsValidationError({ message: "Repository not found" }),
+								)
+							: Effect.succeed(existing.value),
+					),
+				)
+
+			const getPrReviewConfig = Effect.fn("GithubConnectService.getPrReviewConfig")(function* (
+				orgId: OrgId,
+				repositoryId: VcsRepositoryId,
+			) {
+				yield* requireRepository(orgId, repositoryId)
+				return yield* asPersistence(repo.getPrReviewConfig(orgId, repositoryId))
+			})
+
+			// Trimmed and de-duplicated on the way in, so the kickoff and the enforcement read the same list.
+			const setPrReviewConfig = Effect.fn("GithubConnectService.setPrReviewConfig")(function* (
+				orgId: OrgId,
+				repositoryId: VcsRepositoryId,
+				config: PrReviewRepositoryConfig,
+			) {
+				yield* requireRepository(orgId, repositoryId)
+				const ignorePaths = [
+					...new Set((config.ignorePaths ?? []).map((p) => p.trim()).filter((p) => p !== "")),
+				]
+				if (ignorePaths.length > 50)
+					return yield* new IntegrationsValidationError({ message: "At most 50 ignored paths." })
+				const instructions = config.instructions?.trim()
+				const cleaned = new PrReviewRepositoryConfig({
+					...(instructions ? { instructions } : undefined),
+					...(ignorePaths.length > 0 ? { ignorePaths } : undefined),
+					...(config.categories === undefined ? undefined : { categories: config.categories }),
+					...(config.minInlineSeverity === undefined
+						? undefined
+						: { minInlineSeverity: config.minInlineSeverity }),
+					...(config.reviewDrafts === undefined
+						? undefined
+						: { reviewDrafts: config.reviewDrafts }),
+					...(config.dailyLimit === undefined ? undefined : { dailyLimit: config.dailyLimit }),
+				})
+				yield* asPersistence(repo.setPrReviewConfig(orgId, repositoryId, cleaned))
+				yield* Effect.annotateCurrentSpan({
+					orgId,
+					"vcs.repository.id": repositoryId,
+					"vcs.pr_review.ignore_paths": ignorePaths.length,
+					"vcs.pr_review.has_instructions": instructions !== undefined && instructions !== "",
+				})
+				return cleaned
+			})
+
+			const listPrReviews = Effect.fn("GithubConnectService.listPrReviews")(function* (
+				orgId: OrgId,
+				repositoryId: VcsRepositoryId,
+			) {
+				yield* requireRepository(orgId, repositoryId)
+				return yield* asPersistence(repo.listPrReviews(orgId, repositoryId, 50))
+			})
+
 			return {
 				startConnect,
 				completeConnect,
@@ -725,6 +805,9 @@ export class GithubConnectService extends Context.Service<GithubConnectService, 
 				deleteRepository,
 				setTrackedBranch,
 				setPrReviewEnabled,
+				getPrReviewConfig,
+				setPrReviewConfig,
+				listPrReviews,
 			} satisfies GithubConnectServiceApi
 		}),
 	},

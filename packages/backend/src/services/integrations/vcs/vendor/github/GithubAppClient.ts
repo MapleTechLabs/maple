@@ -275,6 +275,18 @@ const GithubReviewThreadsResponse = Schema.Struct({
 															Schema.Struct({ login: Schema.String }),
 														),
 														body: Schema.String,
+														reactionGroups: Schema.optionalKey(
+															Schema.NullOr(
+																Schema.Array(
+																	Schema.Struct({
+																		content: Schema.String,
+																		reactors: Schema.Struct({
+																			totalCount: Schema.Number,
+																		}),
+																	}),
+																),
+															),
+														),
 													}),
 												),
 											}),
@@ -404,7 +416,12 @@ const REVIEW_THREADS_QUERY = `query($owner: String!, $name: String!, $number: In
   repository(owner: $owner, name: $name) {
     pullRequest(number: $number) {
       reviewThreads(first: 100) {
-        nodes { id isResolved comments(first: 20) { nodes { databaseId author { login } body } } }
+        nodes {
+          id isResolved
+          comments(first: 20) {
+            nodes { databaseId author { login } body reactionGroups { content reactors { totalCount } } }
+          }
+        }
       }
     }
   }

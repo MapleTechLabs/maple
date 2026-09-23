@@ -26,7 +26,9 @@ const tracked = (overrides: Partial<TrackedFinding> = {}): TrackedFinding => ({
 const thread = (overrides: Partial<PullRequestReviewThread> = {}): PullRequestReviewThread => ({
 	id: "T1",
 	isResolved: false,
-	comments: [{ commentId: "100", author: "maple[bot]", body: "**F1 · off by one**" }],
+	comments: [
+		{ commentId: "100", author: "maple[bot]", body: "**F1 · off by one**", thumbsUp: 0, thumbsDown: 0 },
+	],
 	...overrides,
 })
 
@@ -38,15 +40,21 @@ describe("dismissedFindings", () => {
 	it("dismisses a finding someone answered won't fix, but not on the bot's own reply", () => {
 		const replied = thread({
 			comments: [
-				{ commentId: "100", author: "maple[bot]", body: "finding" },
-				{ commentId: "101", author: "octo", body: "Won't fix, this is intended." },
+				{ commentId: "100", author: "maple[bot]", body: "finding", thumbsUp: 0, thumbsDown: 0 },
+				{
+					commentId: "101",
+					author: "octo",
+					body: "Won't fix, this is intended.",
+					thumbsUp: 0,
+					thumbsDown: 0,
+				},
 			],
 		})
 		assert.lengthOf(dismissedFindings([tracked()], [replied]), 1)
 		const botReply = thread({
 			comments: [
-				{ commentId: "100", author: "maple[bot]", body: "finding" },
-				{ commentId: "101", author: "maple[bot]", body: "not an issue" },
+				{ commentId: "100", author: "maple[bot]", body: "finding", thumbsUp: 0, thumbsDown: 0 },
+				{ commentId: "101", author: "maple[bot]", body: "not an issue", thumbsUp: 0, thumbsDown: 0 },
 			],
 		})
 		assert.lengthOf(dismissedFindings([tracked()], [botReply]), 0)

@@ -675,6 +675,59 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 			})
 
 			/**
+			 * Read the pull request's threads once and record what people did with the findings: the
+			 * 👍 / 👎 on each inline comment, and the open ones a person dismissed. Answers the
+			 * findings still open afterwards. A failed read changes nothing.
+			 */
+			const syncThreads = Effect.fn("PrReviewService.syncThreads")(function* (
+				orgId: OrgId,
+				repo: VcsRepo,
+				number: number,
+				tracked: ReadonlyArray<TrackedFinding>,
+				nowMs: number,
+			) {
+				const open = tracked.filter((finding) => finding.status === "open")
+				const commented = tracked.filter((finding) => finding.commentId !== null)
+				const upstream = yield* providerFor(orgId, repo)
+				if (commented.length === 0 || Option.isNone(upstream)) return open
+				const { provider, installation, ref } = upstream.value
+				const threads = yield* provider
+					.fetchReviewThreads(installation, ref, number)
+					.pipe(Effect.orElseSucceed(() => []))
+				let up = 0
+				let down = 0
+				yield* Effect.forEach(
+					commented,
+					(finding) => {
+						const first = threadForFinding(finding, threads)?.comments[0]
+						if (first === undefined) return Effect.void
+						up += first.thumbsUp
+						down += first.thumbsDown
+						return database
+							.execute((db) =>
+								db
+									.update(prReviewFindings)
+									.set({ reactionsUp: first.thumbsUp, reactionsDown: first.thumbsDown })
+									.where(eq(prReviewFindings.id, finding.id)),
+							)
+							.pipe(Effect.mapError(toPersistence))
+					},
+					{ discard: true },
+				)
+				const dismissed = dismissedFindings(open, threads)
+				yield* setFindingStatus(
+					dismissed.map((finding) => finding.id),
+					{ status: "dismissed", updatedAt: msToDate(nowMs) },
+				)
+				yield* Effect.annotateCurrentSpan({
+					"maple.pr_review.dismissed": dismissed.length,
+					"maple.pr_review.reactions_up": up,
+					"maple.pr_review.reactions_down": down,
+				})
+				return open.filter((finding) => !dismissed.includes(finding))
+			})
+
+			/**
 			 * What a later push's kickoff says: the last reviewed head, what changed since, and the
 			 * findings still open. Threads a person resolved or answered "won't fix" are marked
 			 * dismissed first, so the reviewer never re-raises them. Provider reads that fail degrade
@@ -707,23 +760,11 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 				const previousSha = previous[0]?.headSha
 				if (previousSha === undefined) return undefined
 				const tracked = yield* loadTracked(orgId, repo.id, number)
-				let open = tracked.filter((finding) => finding.status === "open")
+				const open = yield* syncThreads(orgId, repo, number, tracked, nowMs)
 				const upstream = yield* providerFor(orgId, repo)
 				let changedPaths: ReadonlyArray<string> | undefined
 				if (Option.isSome(upstream)) {
 					const { provider, installation, ref } = upstream.value
-					if (open.some((finding) => finding.commentId !== null)) {
-						const threads = yield* provider
-							.fetchReviewThreads(installation, ref, number)
-							.pipe(Effect.orElseSucceed(() => []))
-						const dismissed = dismissedFindings(open, threads)
-						yield* setFindingStatus(
-							dismissed.map((finding) => finding.id),
-							{ status: "dismissed", updatedAt: msToDate(nowMs) },
-						)
-						open = open.filter((finding) => !dismissed.includes(finding))
-						yield* Effect.annotateCurrentSpan("maple.pr_review.dismissed", dismissed.length)
-					}
 					changedPaths = yield* provider
 						.fetchChangedPaths(installation, ref, previousSha, headSha)
 						.pipe(
@@ -979,6 +1020,20 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 						...extra,
 					})
 
+				if (job.action === "closed") {
+					// The last look at the pull request's findings: what the author made of them.
+					const closedRepo = yield* repositories
+						.resolveRepository(orgId, job.provider, job.externalRepoId)
+						.pipe(Effect.mapError(toPersistence))
+					if (Option.isSome(closedRepo)) {
+						const nowMs = yield* Clock.currentTimeMillis
+						const tracked = yield* loadTracked(orgId, closedRepo.value.id, job.number)
+						if (tracked.length > 0) {
+							yield* syncThreads(orgId, closedRepo.value, job.number, tracked, nowMs)
+							yield* annotate("synced", { "maple.pr_review.merged": job.merged })
+						}
+					}
+				}
 				if (!REVIEWABLE_ACTIONS.has(job.action)) {
 					yield* annotate("skipped", { "maple.pr_review.skip_reason": "action" })
 					return skip("action")
@@ -1057,6 +1112,28 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 						"maple.pr_review.started_today": started,
 					})
 					return skip("quota")
+				}
+				if (config.dailyLimit !== undefined) {
+					const repoToday = yield* database
+						.execute((db) =>
+							db
+								.select({ total: count() })
+								.from(prReviews)
+								.where(
+									and(
+										eq(prReviews.repositoryId, repo.id),
+										gte(prReviews.createdAt, msToDate(utcDayStart(nowMs))),
+									),
+								),
+						)
+						.pipe(Effect.mapError(toPersistence))
+					if (Number(repoToday[0]?.total ?? 0) >= config.dailyLimit) {
+						yield* annotate("skipped", {
+							"maple.pr_review.skip_reason": "quota",
+							"maple.pr_review.repository_limit": config.dailyLimit,
+						})
+						return skip("quota")
+					}
 				}
 
 				const superseded = yield* supersede(orgId, repo.id, job.number, headSha, nowMs)

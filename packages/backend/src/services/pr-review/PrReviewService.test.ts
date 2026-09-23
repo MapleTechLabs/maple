@@ -500,7 +500,9 @@ describe("PrReviewService.submitReview", () => {
 			{
 				id: "T1",
 				isResolved: false,
-				comments: [{ commentId: "c-0", author: "maple[bot]", body: "F1" }],
+				comments: [
+					{ commentId: "c-0", author: "maple[bot]", body: "F1", thumbsUp: 2, thumbsDown: 0 },
+				],
 			},
 		]
 		const finding = (path: string, line: number, title: string) => ({

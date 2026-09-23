@@ -292,6 +292,9 @@ export const PullRequestReviewThread = Schema.Struct({
 			commentId: Schema.NullOr(Schema.String),
 			author: Schema.String,
 			body: Schema.String,
+			/** 👍 and 👎 on the comment: the author's verdict on a finding, read as precision. */
+			thumbsUp: Schema.Number,
+			thumbsDown: Schema.Number,
 		}),
 	),
 })

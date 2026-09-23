@@ -3,6 +3,7 @@ import { Schema } from "effect"
 import { ExternalUserId, ScrapeTargetId, UserId } from "../primitives"
 import { Authorization } from "./current-tenant"
 import { HttpTaggedError } from "./error-policy"
+import { PrReviewListItem, PrReviewRepositoryConfig } from "./pr-review"
 import {
 	GitCommitSha,
 	PullRequestSummary,
@@ -763,6 +764,24 @@ export class GithubSetPrReviewResponse extends Schema.Class<GithubSetPrReviewRes
 	enabled: Schema.Boolean,
 }) {}
 
+export class GithubPrReviewConfigRequest extends Schema.Class<GithubPrReviewConfigRequest>(
+	"GithubPrReviewConfigRequest",
+)({
+	config: PrReviewRepositoryConfig,
+}) {}
+
+export class GithubPrReviewConfigResponse extends Schema.Class<GithubPrReviewConfigResponse>(
+	"GithubPrReviewConfigResponse",
+)({
+	config: PrReviewRepositoryConfig,
+}) {}
+
+export class GithubPrReviewsResponse extends Schema.Class<GithubPrReviewsResponse>("GithubPrReviewsResponse")(
+	{
+		reviews: Schema.Array(PrReviewListItem),
+	},
+) {}
+
 /**
  * A single resolved commit, for the dashboard's commit-SHA hover card. Provider-
  * neutral: any connected VCS provider resolves into this same shape. `resolved`
@@ -1133,6 +1152,46 @@ export class IntegrationsApiGroup extends HttpApiGroup.make("integrations")
 			},
 			payload: GithubSetPrReviewRequest,
 			success: GithubSetPrReviewResponse,
+			error: [IntegrationsForbiddenError, IntegrationsValidationError, IntegrationsPersistenceError],
+		}),
+	)
+	.add(
+		// A repository's review settings. Read by any member, written by admins.
+		HttpApiEndpoint.get(
+			"githubGetPrReviewConfig",
+			"/github/repositories/:repositoryId/pr-review/config",
+			{
+				params: { repositoryId: VcsRepositoryId },
+				success: GithubPrReviewConfigResponse,
+				error: [
+					IntegrationsForbiddenError,
+					IntegrationsValidationError,
+					IntegrationsPersistenceError,
+				],
+			},
+		),
+	)
+	.add(
+		HttpApiEndpoint.put(
+			"githubSetPrReviewConfig",
+			"/github/repositories/:repositoryId/pr-review/config",
+			{
+				params: { repositoryId: VcsRepositoryId },
+				payload: GithubPrReviewConfigRequest,
+				success: GithubPrReviewConfigResponse,
+				error: [
+					IntegrationsForbiddenError,
+					IntegrationsValidationError,
+					IntegrationsPersistenceError,
+				],
+			},
+		),
+	)
+	.add(
+		// The repository's most recent reviews, newest first.
+		HttpApiEndpoint.get("githubListPrReviews", "/github/repositories/:repositoryId/pr-reviews", {
+			params: { repositoryId: VcsRepositoryId },
+			success: GithubPrReviewsResponse,
 			error: [IntegrationsForbiddenError, IntegrationsValidationError, IntegrationsPersistenceError],
 		}),
 	)
