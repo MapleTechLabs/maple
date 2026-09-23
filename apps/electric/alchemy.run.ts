@@ -169,6 +169,29 @@ export const createMapleElectric = ({
 					})
 				: undefined
 
+		const baseEnv = {
+			ELECTRIC_PORT: String(ELECTRIC_PORT),
+			// A replaced role changes this, so the task definition changes and the
+			// singleton restarts on the new secret before alchemy deletes the old role.
+			MAPLE_PG_ROLE_ID: dbRole.id,
+			// The publication is owned by a Drizzle migration: PlanetScale cannot
+			// reassign table ownership, so Electric can never be the owner it would
+			// need to be to manage publishing itself. Prod parity with local docker.
+			//
+			// ELECTRIC_REPLICATION_STREAM_ID is left at Electric's `default`, which
+			// resolves to `electric_publication_default` — the publication those
+			// migrations already own and keep correct.
+			ELECTRIC_MANUAL_TABLE_PUBLISHING: "true",
+			// ELECTRIC_STORAGE_DIR is left at the image's default, on task-local
+			// storage that dies with the task. Losing it costs a re-snapshot of
+			// eight small tables plus a `must-refetch` for connected clients, and
+			// the alternatives are worse: alchemy's only volume sugar is EFS, the
+			// networked filesystem Electric's guidance warns against, and an
+			// EBS-backed task pins the service to one AZ.
+		} satisfies Record<string, string | Output.Output<string>>
+		const env =
+			dbPoolSize === undefined ? baseEnv : { ...baseEnv, ELECTRIC_DB_POOL_SIZE: String(dbPoolSize) }
+
 		const service = yield* AWS.ECS.Service("electric", {
 			cluster,
 			serviceName: name("electric"),
@@ -223,27 +246,7 @@ export const createMapleElectric = ({
 				ELECTRIC_SECRET: apiSecret.secretArn,
 			},
 
-			env: {
-				ELECTRIC_PORT: String(ELECTRIC_PORT),
-				// A replaced role changes this, so the task definition changes and the
-				// singleton restarts on the new secret before alchemy deletes the old role.
-				MAPLE_PG_ROLE_ID: dbRole.id,
-				// The publication is owned by a Drizzle migration: PlanetScale cannot
-				// reassign table ownership, so Electric can never be the owner it would
-				// need to be to manage publishing itself. Prod parity with local docker.
-				//
-				// ELECTRIC_REPLICATION_STREAM_ID is left at Electric's `default`, which
-				// resolves to `electric_publication_default` — the publication those
-				// migrations already own and keep correct.
-				ELECTRIC_MANUAL_TABLE_PUBLISHING: "true",
-				...(dbPoolSize === undefined ? {} : { ELECTRIC_DB_POOL_SIZE: String(dbPoolSize) }),
-				// ELECTRIC_STORAGE_DIR is left at the image's default, on task-local
-				// storage that dies with the task. Losing it costs a re-snapshot of
-				// eight small tables plus a `must-refetch` for connected clients, and
-				// the alternatives are worse: alchemy's only volume sugar is EFS, the
-				// networked filesystem Electric's guidance warns against, and an
-				// EBS-backed task pins the service to one AZ.
-			} satisfies Record<string, string | Output.Output<string>>,
+			env,
 
 			tags: { Service: "maple-electric", Region: region },
 		})
