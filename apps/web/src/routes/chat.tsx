@@ -1,6 +1,7 @@
-import { createFileRoute } from "@tanstack/react-router"
+import { createFileRoute, redirect } from "@tanstack/react-router"
 import { Schema } from "effect"
 import { ChatPage } from "@/components/chat/chat-page"
+import { aiChatEnabled } from "@/lib/region"
 import { decodeAlertContextFromSearchParam } from "@/components/chat/alert-context"
 import {
 	alertContextToInvestigation,
@@ -29,6 +30,9 @@ const ChatSearch = Schema.Struct({
 export const Route = createFileRoute("/chat")({
 	component: ChatRoute,
 	validateSearch: Schema.toStandardSchemaV1(ChatSearch),
+	beforeLoad: () => {
+		if (!aiChatEnabled) throw redirect({ to: "/" })
+	},
 })
 
 function ChatRoute() {

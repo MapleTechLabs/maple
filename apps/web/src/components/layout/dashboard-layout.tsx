@@ -17,6 +17,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@maple/ui/components/ui
 import { Kbd } from "@maple/ui/components/ui/kbd"
 import { ChatBubbleSparkleIcon, LayoutLeftIcon, LayoutRightIcon } from "@/components/icons"
 import { openGlobalChat } from "@/components/chat/global-chat-sheet"
+import { aiChatEnabled } from "@/lib/region"
 import { ConnectButton } from "@/components/header/connect-button"
 import { OnboardingChecklistButton } from "@/components/header/onboarding-checklist-button"
 import { QuotaBanner } from "@/components/billing/quota-banner"
@@ -112,23 +113,25 @@ function Breadcrumbs({ items, children }: { items: BreadcrumbEntry[]; children?:
 				</BreadcrumbList>
 			</Breadcrumb>
 			<div className="ml-auto flex shrink-0 items-center gap-2">
-				<Tooltip>
-					<TooltipTrigger
-						render={
-							<Button
-								variant="outline"
-								size="icon-sm"
-								aria-label="Open AI chat"
-								onClick={openGlobalChat}
-							/>
-						}
-					>
-						<ChatBubbleSparkleIcon size={16} />
-					</TooltipTrigger>
-					<TooltipContent className="flex items-center gap-1.5">
-						Ask Maple AI <Kbd>C</Kbd>
-					</TooltipContent>
-				</Tooltip>
+				{aiChatEnabled && (
+					<Tooltip>
+						<TooltipTrigger
+							render={
+								<Button
+									variant="outline"
+									size="icon-sm"
+									aria-label="Open AI chat"
+									onClick={openGlobalChat}
+								/>
+							}
+						>
+							<ChatBubbleSparkleIcon size={16} />
+						</TooltipTrigger>
+						<TooltipContent className="flex items-center gap-1.5">
+							Ask Maple AI <Kbd>C</Kbd>
+						</TooltipContent>
+					</Tooltip>
+				)}
 				<OnboardingChecklistButton />
 				<ConnectButton />
 				{/* Self-gating: renders only when the sidebar has collapsed to a sheet *and* a
