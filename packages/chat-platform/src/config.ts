@@ -49,7 +49,7 @@ export const chatConnectorOutboundConfigKeys: ReadonlyArray<ConnectorConfigKey> 
 /**
  * The outbound keys resolved into the plain map a transport reads from `ConnectorCredentials`.
  *
- * Plain rather than `Redacted`, because that is the shape the transport contract takes; the map
+ * Plain rather than `Redacted`, because that is what the transport contract takes; the map
  * never leaves the host that hands it to a connector.
  */
 export const chatConnectorOutboundConfig: Config.Config<ConnectorConfig> = Config.all(

@@ -131,7 +131,7 @@ const linkWorkspace = (testDb: TestDb, id: ChatWorkspaceId, externalWorkspaceId:
 			"a-workspaces-own-token",
 			KEY,
 			{ orgId: ORG, connector: TESTCHAT, externalWorkspaceId },
-			(message) => new Error(message),
+			(message) => message,
 		).pipe(Effect.orDie)
 		yield* Effect.promise(() =>
 			executeSql(

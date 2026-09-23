@@ -419,7 +419,9 @@ export const slackOutbound: ChatOutbound<HttpClient.HttpClient | ConnectorCreden
 						"conversations.list",
 						HttpClientRequest.get(`${CONVERSATIONS_LIST_URL}?${params.toString()}`),
 					)
-					for (const channel of Arr.getSomes(Arr.map(result.channels ?? [], (raw) => decodeChannel(raw)))) {
+					for (const channel of Arr.getSomes(
+						Arr.map(result.channels ?? [], (raw) => decodeChannel(raw)),
+					)) {
 						channels.push({
 							id: channel.id,
 							name: channel.name ?? channel.id,
