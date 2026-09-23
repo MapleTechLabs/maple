@@ -119,6 +119,9 @@ export type MobileDeviceId = Schema.Schema.Type<typeof MobileDeviceId>
 export const ChatWorkspaceId = MapleUuidId("@maple/ChatWorkspaceId", "Chat Workspace ID")
 export type ChatWorkspaceId = Schema.Schema.Type<typeof ChatWorkspaceId>
 
+export const ChatIdentityId = MapleUuidId("@maple/ChatIdentityId", "Chat Identity ID")
+export type ChatIdentityId = Schema.Schema.Type<typeof ChatIdentityId>
+
 export const ErrorIssueId = MapleUuidId("@maple/ErrorIssueId", "Error Issue ID")
 export type ErrorIssueId = Schema.Schema.Type<typeof ErrorIssueId>
 

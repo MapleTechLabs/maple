@@ -24,6 +24,9 @@ import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@maple/ui/components/ui/empty"
 import { AlertWarningIcon, UploadIcon, UserIcon } from "@/components/icons"
 import { OrgAvatar } from "@/components/dashboard/org-switcher-menu"
+import { RegionBadge } from "@/components/region/region-badge"
+import { organizationHomeRegion } from "@maple/domain/organization-regions"
+import { MAPLE_REGION_LABELS } from "@/lib/region"
 import { MapleApiAtomClient } from "@/lib/services/common/atom-client"
 
 const MAX_LOGO_BYTES = 10 * 1024 * 1024 // 10 MB
@@ -291,6 +294,7 @@ export function OrganizationSection() {
 								{isSavingName ? "Saving..." : "Save"}
 							</Button>
 						</div>
+						<DataRegionRow metadata={organization.publicMetadata} />
 					</div>
 				</CardContent>
 			</Card>
@@ -361,6 +365,23 @@ export function OrganizationSection() {
 					</AlertDialogFooter>
 				</AlertDialogContent>
 			</AlertDialog>
+		</div>
+	)
+}
+
+function DataRegionRow({ metadata }: { metadata: unknown }) {
+	const region = organizationHomeRegion(metadata)
+	return (
+		<div className="space-y-1.5">
+			<Label>Data region</Label>
+			<div className="flex items-center gap-2 text-sm">
+				<RegionBadge region={region} />
+				<span>{MAPLE_REGION_LABELS[region].name}</span>
+			</div>
+			<p className="text-xs text-muted-foreground">
+				Chosen when the organization was created. All of its telemetry is stored and processed in this
+				region.
+			</p>
 		</div>
 	)
 }

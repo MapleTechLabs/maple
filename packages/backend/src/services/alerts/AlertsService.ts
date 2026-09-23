@@ -112,6 +112,7 @@ import { chartImageUrl, chartWindow, loadChartSeries } from "./alert-chart-serie
 import { systemTenant } from "./system-tenant"
 import type { AlertChecksRow } from "@maple/domain/tinybird"
 import { SlackBotTokenResolver } from "@maple/backend/services/integrations/slack-bot-token"
+import { ChatAlertPoster } from "./ChatAlertPoster"
 
 import { MobilePushService, type ResolvedAfterHold } from "@maple/backend/services/push/MobilePushService"
 import { AlertRuntime } from "./AlertRuntime"
@@ -404,6 +405,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 			const email = yield* EmailService
 			const orgChSettings = yield* OrgClickHouseSettingsService
 			const slackBotToken = yield* SlackBotTokenResolver
+			const chatAlertPoster = yield* ChatAlertPoster
 			const mobilePush = yield* MobilePushService
 			const encryptionKey = yield* parseAlertDestinationEncryptionKey(
 				Redacted.value(env.MAPLE_INGEST_KEY_ENCRYPTION_KEY),
@@ -414,6 +416,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				runtime,
 				email,
 				resolveSlackBotToken: slackBotToken.resolve,
+				postChatAlert: chatAlertPoster.post,
 			})
 			const {
 				hydrateDestination,
@@ -3517,6 +3520,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 		Layer.provide(
 			Layer.mergeAll(
 				SlackBotTokenResolver.layer,
+				ChatAlertPoster.layer,
 				MobilePushService.layer,
 				OrgClickHouseSettingsService.layer,
 				WarehouseQueryService.layer,

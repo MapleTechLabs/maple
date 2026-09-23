@@ -48,8 +48,13 @@ const makeStub = (turns: Array<BeginTurnInput>): ChatSessionStub => ({
 	append: () => Promise.resolve(0),
 	beginTurn: (input) => {
 		turns.push(input)
-		return Promise.resolve({ cursor: turns.length, messageId: input.messageId })
+		return Promise.resolve({
+			cursor: turns.length,
+			messageId: input.messageId,
+			turnMessageId: `turn-${turns.length}`,
+		})
 	},
+	settleProposal: () => Promise.resolve("unknown"),
 	holdsTurn: () => Promise.resolve(false),
 	endTurn: () => Promise.resolve(),
 	abort: () => Promise.resolve(),

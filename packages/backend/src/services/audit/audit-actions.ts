@@ -39,10 +39,22 @@ export const AuditResources = {
 	 * Chat workspaces linked to the org. `install_started` is the admin action
 	 * Maple sees; the platform's callback completes the link. `metadata` names
 	 * the connector — the platform is a value here, never part of the action.
+	 *
+	 * `identity_*` are the per-member half: one person binding their own chat
+	 * account to their Maple user, which is standing authority to act as them from
+	 * the chat platform. `identity_link_started` records the member starting it, the
+	 * platform's callback completes it, and neither carries a resource id — the
+	 * subject of both is the actor.
 	 */
 	chat_integration: {
 		prefix: PublicIdPrefixes.chatWorkspace,
-		verbs: ["install_started", "settings_updated", "uninstalled"],
+		verbs: [
+			"install_started",
+			"settings_updated",
+			"uninstalled",
+			"identity_link_started",
+			"identity_unlinked",
+		],
 	},
 	dashboard_share: { prefix: PublicIdPrefixes.dashboardShare, verbs: ["created", "rotated", "deleted"] },
 	/** Verbs mirror the issue event types — `recordEvent` audits every one it attributes. */
@@ -82,7 +94,7 @@ export const AuditResources = {
 	 * The org itself. No prefix: every row already carries `org_id`, and a
 	 * deleted org has no public ID left to resolve.
 	 */
-	organization: { verbs: ["deleted"] },
+	organization: { verbs: ["deleted", "region_chosen"] },
 	scrape_target: { prefix: PublicIdPrefixes.scrapeTarget, verbs: ["created", "updated", "deleted"] },
 	/**
 	 * Reads of recorded browser sessions — the surface most likely to carry

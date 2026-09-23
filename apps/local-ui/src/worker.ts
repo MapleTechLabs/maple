@@ -13,9 +13,9 @@
  */
 import {
 	assetWorkerObservability,
-	CLOUDFLARE_WORKER_PLACEMENT,
 	MapleStack,
 	resolveWorkerName,
+	resolveWorkerPlacement,
 	WorkersObservabilityDestinations,
 } from "@maple/infra/cloudflare"
 import * as Cloudflare from "alchemy/Cloudflare"
@@ -36,7 +36,7 @@ interface AssetsBinding {
  */
 const props = Effect.gen(function* () {
 	if (globalThis.__ALCHEMY_RUNTIME__) return { main: import.meta.url }
-	const { stage, domains } = yield* MapleStack
+	const { stage, region, domains } = yield* MapleStack
 	const destinations = yield* WorkersObservabilityDestinations
 	// A plain `vite build` to a flat `dist/`, the same tree the binary embeds.
 	const build = yield* Command.Build("local-ui-build", {
@@ -46,9 +46,9 @@ const props = Effect.gen(function* () {
 	})
 	return {
 		main: import.meta.url,
-		name: resolveWorkerName("local-ui", stage),
+		name: resolveWorkerName("local-ui", stage, region),
 		assets: { directory: build.outdir, hash: Output.map(build.hash, (h) => h.output ?? "") },
-		placement: CLOUDFLARE_WORKER_PLACEMENT,
+		placement: resolveWorkerPlacement(region),
 		observability: assetWorkerObservability(destinations),
 		workersDev: true,
 		domain: domains.local,

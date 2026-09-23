@@ -20,7 +20,10 @@ const noNetwork = HttpClient.make(() => Effect.die("the test made a network call
 
 /** Canned token endpoint; anything else rejects. Records the form body it saw. */
 const tokenFetch = (respond: () => Response, bodies: Array<string> = []) =>
-	Layer.succeed(FetchHttpClient.Fetch, ((input: Parameters<typeof globalThis.fetch>[0], init?: RequestInit) => {
+	Layer.succeed(FetchHttpClient.Fetch, ((
+		input: Parameters<typeof globalThis.fetch>[0],
+		init?: RequestInit,
+	) => {
 		const url = String(input)
 		if (!url.startsWith(TOKEN_URL)) return Promise.reject(new Error(`unexpected fetch: ${url}`))
 		// Read the body through `Request` rather than off `init`: the client is
@@ -176,24 +179,12 @@ describe("discord callback", () => {
 })
 
 describe("discord settings", () => {
-	it.effect("accepts a role id and drops an empty one", () =>
+	it.effect("has none to configure", () =>
 		Effect.gen(function* () {
-			assert.deepStrictEqual(
-				yield* discord.install.decodeSettings({ approver_role_id: "123456789012345678" }),
-				{ approver_role_id: "123456789012345678" },
-			)
+			// Who may approve a change is not a per-server setting any more: it is whether the person
+			// clicking linked their Discord account to a Maple user.
 			assert.deepStrictEqual(yield* discord.install.decodeSettings({}), {})
-		}),
-	)
-
-	it.effect("rejects anything that is not a role id", () =>
-		Effect.gen(function* () {
-			for (const value of ["@moderators", "1234567890123456", "123456789012345678901"]) {
-				const failure = yield* discord.install
-					.decodeSettings({ approver_role_id: value })
-					.pipe(Effect.flip)
-				assert.strictEqual(failure._tag, "@maple/chat-platform/ChatSettingsRejected")
-			}
+			assert.deepStrictEqual(discord.manifest.settingsFields, [])
 		}),
 	)
 

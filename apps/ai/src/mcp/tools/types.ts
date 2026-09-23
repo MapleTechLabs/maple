@@ -62,6 +62,12 @@ export type McpToolAudience = "public" | "internal"
 export interface McpToolOptions {
 	/** Defaults to `public`. */
 	readonly audience?: McpToolAudience
+	/**
+	 * What a call is doing, in words a chat channel reads while it runs: `Running a query`, never
+	 * `run_sql`. Several where one tool is called repeatedly in a turn, so the status line does not
+	 * read as stuck; each one says only what the tool does, never why or what it found.
+	 */
+	readonly phrases: readonly [string, ...Array<string>]
 }
 
 /**
@@ -87,7 +93,7 @@ export interface McpToolRegistrar {
 		description: string,
 		schema: TSchema,
 		handler: (params: TSchema["Type"]) => Effect.Effect<McpToolResult, McpToolError, R>,
-		options?: McpToolOptions,
+		options: McpToolOptions,
 	): void
 }
 
@@ -139,6 +145,10 @@ const NumericString = Schema.String.check(
 
 export const optionalNumberParam = (description: string) =>
 	Schema.optional(Schema.Union([Schema.Finite, NumericString])).annotate({ description })
+
+/** The required form: same acceptance of `"612"` as {@link optionalNumberParam}, no `undefined`. */
+export const requiredNumberParam = (description: string) =>
+	Schema.Union([Schema.Finite, NumericString]).annotate({ description })
 
 /**
  * The same, for a parameter whose values are bounded by a domain schema (the

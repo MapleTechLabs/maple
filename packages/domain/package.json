@@ -44,6 +44,8 @@
 		"./chat-chart-spec": "./src/chat-chart-spec.ts",
 		"./chat-preamble": "./src/chat-preamble.ts",
 		"./chat-session": "./src/chat-session.ts",
+		"./organization-feature-flags": "./src/organization-feature-flags.ts",
+		"./organization-regions": "./src/organization-regions.ts",
 		"./chat-session-stub": "./src/chat-session-stub.ts",
 		"./chat-transcript": "./src/chat-transcript.ts"
 	},

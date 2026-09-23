@@ -178,5 +178,6 @@ export function registerSearchTracesTool(server: McpToolRegistrar) {
 				}),
 			}
 		}),
+		{ phrases: ["Searching traces", "Looking through traces"] },
 	)
 }

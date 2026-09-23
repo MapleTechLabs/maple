@@ -58,6 +58,8 @@ const stars = await getGitHubStars();
                     <li><a href={`${l("/")}#features`} class="text-fg-muted text-xs hover:text-foreground transition-colors">{m.footer_features()}</a></li>
                     <li><a href={`${l("/")}#how-it-works`} class="text-fg-muted text-xs hover:text-foreground transition-colors">{m.footer_how_it_works()}</a></li>
                     <li><a href={l("/pricing")} class="text-fg-muted text-xs hover:text-foreground transition-colors">{m.footer_pricing()}</a></li>
+                    <!-- English-only, like /about: bare href, not l(). -->
+                    <li><a href="/eu" class="text-fg-muted text-xs hover:text-foreground transition-colors">{m.footer_eu_hosting()}</a></li>
                     <li><a href={l("/opentelemetry")} class="text-fg-muted text-xs hover:text-foreground transition-colors">{m.footer_opentelemetry()}</a></li>
                     <li><a href={l("/roadmap")} class="text-fg-muted text-xs hover:text-foreground transition-colors">{m.footer_roadmap()}</a></li>
                     <li><a href={l("/local")} class="text-fg-muted text-xs hover:text-foreground transition-colors">{m.nav_local()}</a></li>

@@ -14,18 +14,29 @@ import { ThreadId } from "@effect-agent/core/Identifiers"
 import { Effect, Layer, Schema, Stream } from "effect"
 import { Prompt, Toolkit } from "effect/unstable/ai"
 import type { McpToolExecutorApi } from "../mcp/dispatcher"
+import { ApprovalRequired } from "../mcp/tools/llm-tools"
+import { mapleToolPhrase } from "../mcp/tools/registry"
 import { agentSessionSpanAttributes, type ResolvedModel } from "../platform/Llm"
 import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
-import { agentForSession, chatAgent } from "./agents"
+import { type AgentDefinition, agentForSession, chatAgent } from "./agents"
 import { profileForTurn } from "./profiles"
-import { toChatEvents, type ChatTurnEvent } from "./events"
+import { makeTextSanitizer, toChatEvents, type ChatTurnEvent } from "./events"
+import { makeReviewCoverage } from "./review-coverage"
+import { buildReviewFanout } from "./review-fanout"
 import {
 	accumulateUsage,
 	buildChatToolkit,
 	buildDiagnosisCompletion,
-	SUBMIT_DIAGNOSIS,
+	buildReplyCompletion,
+	buildReviewCompletion,
+	isAutonomousReviewTurn,
+	type RunCompletion,
+	SUBMIT_REVIEW,
 	type RunUsage,
 	type SubmitDiagnosis,
+	type StageEdit,
+	type SubmitReply,
+	type SubmitReview,
 } from "./tools"
 
 /**
@@ -81,8 +92,15 @@ export interface ChatRunInput {
 	readonly toolExecutor: McpToolExecutorApi
 	readonly model: ResolvedModel
 	readonly submitDiagnosis: SubmitDiagnosis
+	/** Absent outside a review session's runtime; a `pr-` session without it runs with no completion. */
+	readonly submitReview?: SubmitReview
+	/** Absent outside a runtime that answers pull request comments. */
+	readonly submitReply?: SubmitReply
+	readonly stageEdit?: StageEdit
 	/** This run is an autonomous pass's close-out: a report it files is a partial. */
 	readonly closeOut?: boolean
+	/** The agent to run as; defaults to the session's. The local review runner passes a variant. */
+	readonly agent?: AgentDefinition
 	/** The message the user just sent, which is this run's input. */
 	readonly text: string
 	readonly history: ReadonlyArray<ChatMessage>
@@ -94,10 +112,10 @@ export interface ChatRunInput {
 }
 
 export interface ChatRunOutcome {
-	/** This run was an investigation's own autonomous pass. */
+	/** This run was a machine-started pass: an investigation's or a review's. */
 	readonly autonomous: boolean
-	/** `submit_diagnosis` landed a report during this run. */
-	readonly submittedDiagnosis: boolean
+	/** The run's completion tool (`submit_diagnosis`, `submit_review`) landed a report. */
+	readonly submitted: boolean
 	/**
 	 * How many times the engine compacted this run's context.
 	 *
@@ -116,34 +134,83 @@ export interface ChatRunOutcome {
  * module never invents one.
  */
 export const runChatTurn = (input: ChatRunInput) => {
-	const agent = agentForSession(input.sessionId)
+	const agent = input.agent ?? agentForSession(input.sessionId)
 	const profile = profileForTurn(agent, input.origin)
+	// Per run, and fed by the Maple handlers the review_files children share, so a group a child
+	// read counts as read.
+	const coverage = isAutonomousReviewTurn(input.sessionId, input.origin)
+		? makeReviewCoverage(input.text)
+		: undefined
 	const maple = buildChatToolkit(
 		input.toolExecutor,
 		input.tenant,
 		profile.ruleset,
 		profile.surface,
 		agentSessionSpanAttributes(input.model.tags),
+		coverage?.observe,
 	)
-	const completion = buildDiagnosisCompletion(
-		input.sessionId,
-		input.tenant,
-		input.origin,
-		input.submitDiagnosis,
-		input.usage,
-		input.model.name,
-		input.closeOut === true,
-		agentSessionSpanAttributes(input.model.tags),
-	)
+	// One completion per session kind. The session id decides which, so a review session can never
+	// be handed the diagnosis tool or the other way round.
+	const completion: RunCompletion | undefined =
+		buildDiagnosisCompletion(
+			input.sessionId,
+			input.tenant,
+			input.origin,
+			input.submitDiagnosis,
+			input.usage,
+			input.model.name,
+			input.closeOut === true,
+			agentSessionSpanAttributes(input.model.tags),
+		) ??
+		(input.submitReview === undefined
+			? undefined
+			: buildReviewCompletion(
+					input.sessionId,
+					input.tenant,
+					input.origin,
+					input.submitReview,
+					input.usage,
+					input.model.name,
+					input.closeOut === true,
+					agentSessionSpanAttributes(input.model.tags),
+					coverage,
+				)) ??
+		(input.submitReply === undefined || input.stageEdit === undefined
+			? undefined
+			: buildReplyCompletion(
+					input.sessionId,
+					input.tenant,
+					input.origin,
+					input.submitReply,
+					input.stageEdit,
+					agentSessionSpanAttributes(input.model.tags),
+				))
 
-	const toolkit = Toolkit.merge(maple.toolkit, ...(completion === undefined ? [] : [completion.toolkit]))
-	const handlers = Layer.mergeAll(maple.layer, ...(completion === undefined ? [] : [completion.layer]))
+	// A review's own pass may hand groups of a large pull request's files to child reviewers.
+	const fanout =
+		completion?.tool === SUBMIT_REVIEW && completion.autonomous
+			? buildReviewFanout(maple.toolkit, input.model)
+			: undefined
+
+	const toolkit = Toolkit.merge(
+		maple.toolkit,
+		...(completion === undefined ? [] : [completion.toolkit]),
+		...(fanout === undefined ? [] : [fanout.toolkit]),
+	)
+	const handlers = Layer.mergeAll(
+		maple.layer,
+		...(completion === undefined ? [] : [completion.layer]),
+		// The children run the parent's own tool handlers, so those are provided into the fan-out.
+		...(fanout === undefined
+			? []
+			: [fanout.layer.pipe(Layer.provide(Layer.mergeAll(maple.layer, IdGenerator.layer)))]),
+	)
 
 	// Declared but never *required*: see `buildDiagnosisCompletion`. A call still settles the run.
 	const run = chatAgent({ ...agent, prompt: profile.prompt }, toolkit, input.model, {
 		...(completion === undefined
 			? undefined
-			: { completion: { tool: SUBMIT_DIAGNOSIS, required: false } }),
+			: { completion: { tool: completion.tool, required: false } }),
 	})
 
 	// A gated tool is announced exactly like any other and refuses when dispatched, so only the
@@ -151,6 +218,8 @@ export const runChatTurn = (input: ChatRunInput) => {
 	const isProposed = (name: string) => evaluatePermission(profile.ruleset, name) === "ask"
 
 	let compactions = 0
+	// One per turn: a hidden block straddles deltas, so the state that finds it has to as well.
+	const sanitizer = makeTextSanitizer()
 
 	return AgentRuntime.stream(run, input.text, {
 		threadId: decodeThreadId(input.sessionId),
@@ -166,15 +235,38 @@ export const runChatTurn = (input: ChatRunInput) => {
 		Stream.runForEach((event) =>
 			Effect.sync(() => {
 				if (event._tag === "CompactionPerformed") compactions += 1
-				for (const chat of toChatEvents(event, { messageId: input.messageId, isProposed })) {
+				for (const chat of toChatEvents(event, {
+					messageId: input.messageId,
+					isProposed,
+					labelOf: mapleToolPhrase,
+					sanitizer,
+				})) {
 					input.append(chat)
 				}
+			}),
+		),
+		// The gate's refusal is how a run stops on a proposal: the turn finished, it did not fail.
+		Effect.catchIf(
+			(error) => error instanceof ApprovalRequired,
+			() => Effect.void,
+		),
+		// Once per turn, the tag alone: a model that wrote a tool call as prose answered with
+		// nothing, and how often that happens is a question about the run's ending, not this turn.
+		// `ensuring`, not `tap`, because a run that leaked and then failed is the interesting one.
+		Effect.ensuring(
+			Effect.suspend(() => {
+				const leaked = sanitizer.leaked()
+				return leaked === undefined
+					? Effect.void
+					: Effect.logWarning("Model wrote a tool call as text").pipe(
+							Effect.annotateLogs({ leakedTag: leaked }),
+						)
 			}),
 		),
 		Effect.map(
 			(): ChatRunOutcome => ({
 				autonomous: completion?.autonomous ?? false,
-				submittedDiagnosis: completion?.submitted() ?? false,
+				submitted: completion?.submitted() ?? false,
 				compactions,
 			}),
 		),

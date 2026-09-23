@@ -98,11 +98,11 @@ const capLines = (
 export function registerSandboxTools(server: McpToolRegistrar) {
 	server.tool(
 		"sandbox_grep",
-		`Search a connected repository's checkout with git grep (POSIX regex, case-sensitive by default, tracked files only). Faster and more precise than search_source_code: it searches the exact commit, supports regular expressions, pathspec globs and context lines, and is not rate limited. ${SANDBOX_NOTE}`,
+		`Search a connected repository's checkout with git grep (POSIX extended regex, case-sensitive by default, tracked files only). Faster and more precise than search_source_code: it searches the exact commit, supports regular expressions, pathspec globs and context lines, and is not rate limited. ${SANDBOX_NOTE}`,
 		Schema.Struct({
 			repository: requiredStringParam("Connected repository in owner/name form"),
 			pattern: requiredStringParam(
-				"POSIX basic-regex pattern (git grep syntax); exact exception text, symbol names, routes, span names",
+				"POSIX extended regex (`a|b` alternates, escape `(` `.` `[` to match them literally); exact exception text, symbol names, routes, span names",
 			),
 			path: optionalStringParam(
 				"Repository-relative directory or file to search (default: whole repository)",
@@ -166,7 +166,7 @@ export function registerSandboxTools(server: McpToolRegistrar) {
 					: []),
 			])
 		}),
-		INTERNAL,
+		{ ...INTERNAL, phrases: ["Searching the repository", "Grepping the code"] },
 	)
 
 	server.tool(
@@ -206,7 +206,7 @@ export function registerSandboxTools(server: McpToolRegistrar) {
 					: []),
 			])
 		}),
-		INTERNAL,
+		{ ...INTERNAL, phrases: ["Listing files"] },
 	)
 
 	server.tool(
@@ -264,7 +264,7 @@ export function registerSandboxTools(server: McpToolRegistrar) {
 				"```",
 			])
 		}),
-		INTERNAL,
+		{ ...INTERNAL, phrases: ["Reading a file"] },
 	)
 
 	server.tool(
@@ -331,6 +331,6 @@ export function registerSandboxTools(server: McpToolRegistrar) {
 					: []),
 			])
 		}),
-		INTERNAL,
+		{ ...INTERNAL, phrases: ["Running a command"] },
 	)
 }

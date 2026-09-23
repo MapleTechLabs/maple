@@ -105,37 +105,63 @@ no upstream `ELECTRIC_URL`. Two causes:
 2. The docker `electric` service isn't running on `:3473`. `bun db:up` starts it now;
    confirm with `docker compose ps` (expect `maple-electric-1`).
 
-**Shapes 404 / Electric can't find the publication** — the shape stream errors even
-though the worker is configured. The `0009_electric_publication` migration wraps its
-`CREATE PUBLICATION` in a `DO $$ … EXCEPTION WHEN OTHERS THEN RAISE NOTICE … END $$`
-guard (so the PGlite test path doesn't abort on `CREATE PUBLICATION`, which PGlite
-can't run). The downside: on real Postgres a genuine failure inside that block is
-**silently swallowed** as a NOTICE and drizzle still records 0009 as applied — so
-`bun db:migrate:local` will **not** re-run it. Verify and self-heal:
+**Shapes 404 / `Database table public.<t> is missing from the publication`** (or
+`does not have its replica identity set to FULL`). The early publication migrations
+(`0009`, `0011`, `0014`, `0037`) wrap their DDL in `DO $$ … EXCEPTION WHEN OTHERS THEN
+RAISE NOTICE … END $$`, so on real Postgres a failure inside one is swallowed and drizzle
+or alchemy still records it as applied. The case that actually happened: on the fresh
+EU database the publication existed, empty, before the first migration ran. `0009`'s
+`CREATE PUBLICATION` raised `duplicate_object`, and that handler rolls back the entire
+block, `REPLICA IDENTITY FULL` included. The later migrations then `ADD`ed their own
+tables, so only `dashboards`, `alert_rules`, `alert_rule_states` and `alert_incidents`
+were missing.
+
+`electric_publication_reconcile` closes this for every new database: it runs after all
+of them, unguarded, and converges the publication on `SYNCED_TABLES` (creates it if
+absent, sets FULL, adds what is missing, drops and resets anything extra). It is a no-op
+on a database that is already correct. A database that ran it and then drifted by hand
+needs the check below.
 
 ```bash
-docker exec maple-postgres-1 psql -U maple -d maple -c "SELECT pubname FROM pg_publication;"
+docker exec maple-postgres-1 psql -U maple -d maple -c "
+  WITH synced(name) AS (VALUES ('dashboards'),('alert_rules'),('alert_rule_states'),
+    ('alert_incidents'),('alert_destinations'),('api_keys'),('investigations'))
+  SELECT coalesce(s.name, p.tablename) AS table, c.relreplident, p.tablename IS NOT NULL AS published,
+         s.name IS NOT NULL AS expected
+  FROM synced s
+  FULL JOIN (SELECT tablename FROM pg_publication_tables
+             WHERE pubname = 'electric_publication_default') p ON p.tablename = s.name
+  LEFT JOIN pg_class c ON c.oid = to_regclass('public.' || quote_ident(coalesce(s.name, p.tablename)));"
 ```
 
-If `electric_publication_default` is absent, apply the publication + `REPLICA IDENTITY
-FULL` directly (this is the body of `0009`; drizzle won't re-run it for you):
-
-Note this is the **current** membership (0009 + 0011 + 0014 minus the tables 0022
-pruned), not the literal body of `0009` — recreating it from 0009 alone would
-re-publish the four dead tables.
+Every row should show `f`, `published = t` and `expected = t`. A missing synced table shows
+`published = f`; an extra member shows `expected = f`.
+To self-heal, apply the current membership (`SYNCED_TABLES` in
+`packages/db/src/migrations.test.ts`), every statement idempotent:
 
 ```bash
 docker exec -i maple-postgres-1 psql -U maple -d maple <<'SQL'
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_publication WHERE pubname = 'electric_publication_default') THEN
+    CREATE PUBLICATION electric_publication_default;
+  END IF;
+END $$;
 ALTER TABLE "dashboards"         REPLICA IDENTITY FULL;
 ALTER TABLE "alert_rules"        REPLICA IDENTITY FULL;
 ALTER TABLE "alert_rule_states"  REPLICA IDENTITY FULL;
 ALTER TABLE "alert_incidents"    REPLICA IDENTITY FULL;
 ALTER TABLE "alert_destinations" REPLICA IDENTITY FULL;
 ALTER TABLE "api_keys"           REPLICA IDENTITY FULL;
-CREATE PUBLICATION electric_publication_default FOR TABLE
-  "dashboards","alert_rules","alert_rule_states","alert_incidents","alert_destinations","api_keys";
+ALTER TABLE "investigations"     REPLICA IDENTITY FULL;
+ALTER PUBLICATION electric_publication_default SET TABLE
+  "dashboards","alert_rules","alert_rule_states","alert_incidents",
+  "alert_destinations","api_keys","investigations";
 SQL
 ```
+
+On PlanetScale run the same SQL through `pscale shell <database> main` (as done for
+`maple-eu` on 2026-09-23). `SET TABLE` replaces the membership in one statement; a table
+it removes keeps FULL until you reset it with `REPLICA IDENTITY DEFAULT`.
 
 **Nothing syncs but no error** — check `VITE_ELECTRIC_SYNC_URL` points at the
 running `electric-sync` worker and that the docker `electric` service is up. It's
@@ -175,16 +201,18 @@ like local docker does.
 1. **PlanetScale cluster params:** `wal_level=logical`, `max_replication_slots>=10`,
    `max_wal_senders>=10`, `max_slot_wal_keep_size>=4096`, `sync_replication_slots=on`,
    `hot_standby_feedback=on`. Already set for Cloud; unchanged.
-2. **Dedicated role** with the `REPLICATION` _attribute_ — never inherited through
-   role membership, and Electric's database validation rejects a role without it
-   with a message that does not say so — plus `SELECT` on the synced tables.
-   Avoid the ephemeral pscale migration roles.
-3. **Env:** `MAPLE_PG_ELECTRIC_URL` (that role, DIRECT port 5432 — logical
-   replication cannot run through PSBouncer or Hyperdrive) and `ELECTRIC_SECRET`.
-   Both reach the task through Secrets Manager, never the task definition's
-   plaintext `env`.
-4. **Migrate,** then `alchemy deploy`. No new migration is needed — the service
-   reads the publication `0009`/`0011`/`0014`/`0037` already maintain.
+2. **The role is declared:** `Planetscale.PostgresRole("electric", { withReplication: true,
+inheritedRoles: ["postgres"] })` in `alchemy.run.ts`. The `REPLICATION` _attribute_ is never
+   inherited through role membership, Electric's database validation rejects a role without it
+   with a message that does not say so, and PlanetScale issues it only alongside `postgres`.
+   Its DIRECT 5432 URL (logical replication cannot run through PSBouncer or Hyperdrive), rewritten
+   to `sslmode=require` because Electric refuses `verify-full`, is the task's `DATABASE_URL`.
+3. **Env:** `ELECTRIC_SECRET`. Both secrets reach the task through Secrets Manager, never the
+   task definition's plaintext `env`; the role id sits in `env` so a replaced role restarts the
+   singleton on the new secret before alchemy deletes the old one.
+4. **Migrate,** then `alchemy deploy`. No new migration is needed: the service
+   reads the publication the migrations maintain, and `electric_publication_reconcile`
+   makes a fresh database's membership exact even if the publication already exists.
 5. **DNS.** The stack publishes the ACM validation CNAME into the `maple.dev`
    zone and waits for the certificate to reach `ISSUED` before attaching the 443
    listener (`@maple/infra/acm`), so the first deploy needs no second pass. The
@@ -259,11 +287,13 @@ green (and the worker 503s) until the token lands in Infisical.
 
 ## Adding a synced table later
 
-1. New Drizzle migration: `ALTER PUBLICATION electric_publication_default ADD TABLE "<t>";`
-   plus `ALTER TABLE "<t>" REPLICA IDENTITY FULL;`. Prefer an explicit
-   `pg_publication_tables` existence check for idempotency (as in `0022`) over
-   `0009`'s `DO $$ … EXCEPTION WHEN OTHERS … END $$` guard — that guard swallows
-   real failures while drizzle still records the migration as applied.
+1. New Drizzle migration (`db:generate --custom`) that adds the table with
+   `ALTER TABLE "<t>" REPLICA IDENTITY FULL` and `ALTER PUBLICATION
+electric_publication_default ADD TABLE "<t>"`, each behind a catalog check
+   (`pg_class.relreplident`, `pg_publication_tables`) as in
+   `electric_publication_reconcile`. **No `EXCEPTION` handler.** PGlite (0.5+) runs
+   `CREATE/ALTER PUBLICATION` and `pg_publication_tables`, so the guard the early
+   migrations carry protects nothing, and it is exactly what hid the EU failure.
 2. Add the shape to the whitelist in `apps/electric-sync/src/routes/shape.http.ts`.
 3. Add a collection under `apps/web/src/lib/collections/` via
    `createEffectCollection` (model on `dashboards.ts` for a write vertical, or

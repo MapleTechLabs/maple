@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest"
 
 import {
 	chartFences,
+	hasOpenFence,
 	normalizeUnit,
 	parseChartSpec,
 	rankedRows,
@@ -130,5 +131,18 @@ describe("chartFences", () => {
 
 	it("finds nothing in a reply that is only prose", () => {
 		expect(chartFences("the p95 climbed to 388ms")).toEqual([])
+	})
+})
+
+describe("hasOpenFence", () => {
+	it("agrees with the scan a caller would otherwise re-derive", () => {
+		expect(hasOpenFence("plain prose")).toBe(false)
+		expect(hasOpenFence(["```chart", '{"type":"bar"}'].join("\n"))).toBe(true)
+		expect(hasOpenFence(["```chart", '{"type":"bar"}', "```"].join("\n"))).toBe(false)
+		// A run of backticks inside a longer fence is payload, not the fence closing.
+		expect(hasOpenFence(["````chart", '{"note":"```"}'].join("\n"))).toBe(true)
+		expect(hasOpenFence(["````chart", '{"note":"```"}', "````"].join("\n"))).toBe(false)
+		// Backticks mid-line open nothing: a fence is a line construct.
+		expect(hasOpenFence("write ``` to open a fence")).toBe(false)
 	})
 })

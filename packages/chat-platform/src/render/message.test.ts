@@ -96,29 +96,42 @@ describe("renderChatMessage", () => {
 		})
 	})
 
-	it("reports the tools of a turn as one status line, settled by the presence of an output", () => {
-		const blocks = renderChatMessage(
-			turn([
-				{ type: "turn-start", messageId: "a1" },
-				{ type: "tool-call", messageId: "a1", callId: "c1", name: "find_errors", input: {} },
-				{ type: "tool-result", messageId: "a1", callId: "c1", output: null },
-				{ type: "tool-call", messageId: "a1", callId: "c2", name: "search_traces", input: {} },
-			]),
-			context,
-		)
+	it("reports a running turn as the latest tool call alone", () => {
+		const working = turn([
+			{ type: "turn-start", messageId: "a1" },
+			{ type: "tool-call", messageId: "a1", callId: "c1", name: "find_errors", input: {} },
+			{ type: "tool-result", messageId: "a1", callId: "c1", output: null },
+			{
+				type: "tool-call",
+				messageId: "a1",
+				callId: "c2",
+				name: "search_traces",
+				label: "Searching traces",
+				input: {},
+			},
+		])
 
-		expect(blocks).toEqual([
+		expect(renderChatMessage(working, context, true)).toEqual([
+			{ kind: "activity", tools: [{ label: "Searching traces", status: "running", detail: null }] },
+		])
+		// Finished, the reader has the answer in front of them and no use for the route to it.
+		expect(renderChatMessage(working, context)).toEqual([])
+	})
+
+	it("puts a call the session recorded no phrase for in words rather than as an id", () => {
+		const working = turn([
+			{ type: "turn-start", messageId: "a1" },
+			{ type: "tool-call", messageId: "a1", callId: "c1", name: "submit_diagnosis", input: {} },
+		])
+		expect(renderChatMessage(working, context, true)).toEqual([
 			{
 				kind: "activity",
-				tools: [
-					{ name: "find_errors", status: "done", detail: null },
-					{ name: "search_traces", status: "running", detail: null },
-				],
+				tools: [{ label: "Using submit diagnosis", status: "running", detail: null }],
 			},
 		])
 	})
 
-	it("names a sub-agent by the agent it delegates to, and counts its steps", () => {
+	it("names a sub-agent by the agent it delegates to on the same status line", () => {
 		const blocks = renderChatMessage(
 			turn([
 				{ type: "turn-start", messageId: "a1" },
@@ -130,11 +143,191 @@ describe("renderChatMessage", () => {
 				},
 			]),
 			context,
+			true,
 		)
 
 		expect(blocks).toEqual([
-			{ kind: "activity", tools: [{ name: "reviewer", status: "running", detail: "1 step" }] },
+			{
+				kind: "activity",
+				tools: [{ label: "Delegating to reviewer", status: "running", detail: "1 step" }],
+			},
 		])
+	})
+
+	it("keeps the answer and drops the narration the model wrote between its calls", () => {
+		const investigating = turn([
+			{ type: "turn-start", messageId: "a1" },
+			{ type: "text-delta", messageId: "a1", text: "Let me look at the errors first." },
+			{ type: "tool-call", messageId: "a1", callId: "c1", name: "find_errors", input: {} },
+			{ type: "tool-result", messageId: "a1", callId: "c1", output: null },
+			{ type: "text-delta", messageId: "a1", text: "Now I'll check the traces." },
+			{
+				type: "tool-call",
+				messageId: "a1",
+				callId: "c2",
+				name: "search_traces",
+				label: "Searching traces",
+				input: {},
+			},
+			{ type: "tool-result", messageId: "a1", callId: "c2", output: null },
+			{ type: "text-delta", messageId: "a1", text: "checkout is timing out on the database." },
+		])
+
+		expect(renderChatMessage(investigating, context)).toEqual([
+			{ kind: "prose", markdown: "checkout is timing out on the database." },
+		])
+		// Mid-turn the same segment is shown, because it may be the answer — under the status line,
+		// which is what it is an answer to.
+		expect(renderChatMessage(investigating, context, true)).toEqual([
+			{ kind: "activity", tools: [{ label: "Searching traces", status: "done", detail: null }] },
+			{ kind: "prose", markdown: "checkout is timing out on the database." },
+		])
+	})
+
+	it("keeps the prose that explains a proposal, which nothing ran to supersede", () => {
+		const proposing = turn([
+			{ type: "turn-start", messageId: "a1" },
+			{ type: "text-delta", messageId: "a1", text: "Checking." },
+			{ type: "tool-call", messageId: "a1", callId: "c1", name: "find_errors", input: {} },
+			{ type: "tool-result", messageId: "a1", callId: "c1", output: null },
+			{ type: "text-delta", messageId: "a1", text: "I'll alert on the checkout p95." },
+			{
+				type: "tool-call",
+				messageId: "a1",
+				callId: "call_9",
+				name: "create_alert_rule",
+				input: { name: "checkout p95" },
+				proposed: true,
+			},
+		])
+
+		const blocks = renderChatMessage(proposing, context)
+		// The words that explain what is being approved, not the ones before the search.
+		expect(blocks[0]).toEqual({ kind: "prose", markdown: "I'll alert on the checkout p95." })
+		expect(blocks[1]).toMatchObject({ kind: "approval", toolName: "create_alert_rule" })
+		// The same words while the turn is still open, so settling does not move them.
+		expect(renderChatMessage(proposing, context, true)).toContainEqual(blocks[0])
+	})
+
+	it("falls back to the last thing a turn said when it stopped without answering", () => {
+		const blocks = renderChatMessage(
+			turn([
+				{ type: "turn-start", messageId: "a1" },
+				{ type: "text-delta", messageId: "a1", text: "Checking the errors." },
+				{ type: "tool-call", messageId: "a1", callId: "c1", name: "find_errors", input: {} },
+				{ type: "tool-result", messageId: "a1", callId: "c1", output: null },
+			]),
+			context,
+		)
+
+		// Better than a bare failure notice: it says how far the turn got.
+		expect(blocks).toEqual([{ kind: "prose", markdown: "Checking the errors." }])
+	})
+
+	it("puts a call recorded before offsets existed at the end of the text, as web does", () => {
+		// `textOffset` is optional on the wire, and a conversation older than it renders
+		// prose-then-calls everywhere else. Defaulting it to 0 here would have declared the
+		// narration before a real call to be the answer.
+		const mixed: ChatMessage = {
+			id: "a1",
+			role: "assistant",
+			text: "Narration first. The answer.",
+			toolCalls: [
+				{ id: "c1", name: "find_errors", input: {}, output: null, textOffset: 16 },
+				{ id: "c2", name: "search_traces", input: {}, output: null },
+			],
+			createdAt: 0,
+			startSeq: 1,
+		}
+
+		expect(renderChatMessage(mixed, context)).toEqual([{ kind: "prose", markdown: "The answer." }])
+	})
+
+	it("puts a blank line where a call interrupted the model, never running two segments together", () => {
+		// Offsets are not sorted, so a stale one can sit before a later call's and leave a boundary
+		// inside what is shown. Model text carries no separator of its own.
+		const interrupted: ChatMessage = {
+			id: "a1",
+			role: "assistant",
+			text: "Errors are up on checkout.The pool is saturated.",
+			toolCalls: [
+				{ id: "c1", name: "find_errors", input: {}, output: null, textOffset: 26 },
+				{ id: "c2", name: "search_traces", input: {}, output: null, textOffset: 0 },
+			],
+			createdAt: 0,
+			startSeq: 1,
+		}
+
+		expect(renderChatMessage(interrupted, context)).toEqual([
+			{ kind: "prose", markdown: "Errors are up on checkout.\n\nThe pool is saturated." },
+		])
+	})
+
+	it("does not break a chart fence a boundary happens to land inside", () => {
+		// The blank line would stop the fence parsing and put its payload in the channel as JSON.
+		const body = `Latency climbed.\n\`\`\`chart\n${CHART}\n\`\`\`\ncheckout is the worst of them.`
+		const split: ChatMessage = {
+			id: "a1",
+			role: "assistant",
+			text: body,
+			toolCalls: [
+				{ id: "c1", name: "query_data", input: {}, output: null, textOffset: body.indexOf(CHART) },
+				{ id: "c2", name: "find_errors", input: {}, output: null, textOffset: 0 },
+			],
+			createdAt: 0,
+			startSeq: 1,
+		}
+
+		expect(renderChatMessage(split, context).map((block) => block.kind)).toEqual([
+			"prose",
+			"chart",
+			"prose",
+		])
+	})
+
+	it("does not cut the answer at an offset a retry left behind", () => {
+		const retried = turn([
+			{ type: "turn-start", messageId: "a1" },
+			{ type: "text-delta", messageId: "a1", text: "Checking the errors." },
+			{ type: "tool-call", messageId: "a1", callId: "c1", name: "find_errors", input: {} },
+			{ type: "tool-result", messageId: "a1", callId: "c1", output: null },
+			{ type: "text-delta", messageId: "a1", text: " Half an ans" },
+			// The attempt is taken back past where c1 was recorded, and the retry answers afresh.
+			{
+				type: "turn-retry",
+				messageId: "a1",
+				attempt: 2,
+				retractChars: 32,
+				reason: "overloaded",
+				delayMs: 0,
+			},
+			{ type: "text-delta", messageId: "a1", text: "checkout is down." },
+		])
+
+		// c1's offset is past the end of what the turn now says, so it cuts nothing.
+		expect(renderChatMessage(retried, context)).toEqual([
+			{ kind: "prose", markdown: "checkout is down." },
+		])
+	})
+
+	it("numbers a chart by its place in the whole turn, not in the answer left of it", () => {
+		const blocks = renderChatMessage(
+			turn([
+				{ type: "turn-start", messageId: "a1" },
+				{ type: "text-delta", messageId: "a1", text: `First look:\n\`\`\`chart\n${CHART}\n\`\`\`` },
+				{ type: "tool-call", messageId: "a1", callId: "c1", name: "query_data", input: {} },
+				{ type: "tool-result", messageId: "a1", callId: "c1", output: null },
+				{
+					type: "text-delta",
+					messageId: "a1",
+					text: `\nAnd after the deploy:\n\`\`\`chart\n${CHART}\n\`\`\``,
+				},
+			]),
+			{ ...context, chartImageUrl: (ref) => `${ref.chartIndex}` },
+		)
+
+		// Whatever renders the image counts both fences, so the surviving one is still the second.
+		expect(blocks[1]).toMatchObject({ kind: "chart", imageUrl: "1" })
 	})
 
 	it("renders a proposed call as an approval carrying the session and the call", () => {
@@ -159,6 +352,77 @@ describe("renderChatMessage", () => {
 				toolName: "create_alert_rule",
 				summary: "name: checkout p95 · threshold: 1200",
 				token: "org_1:bot-42|call_9",
+				outcome: null,
+			},
+		])
+	})
+
+	it("keeps a decided proposal in its place, now carrying what came of it", () => {
+		// Not moved into the activity line and not dropped: the reader coming back to the thread
+		// needs to see what was asked for as well as what happened, and the settling edit addresses
+		// the message this block is in.
+		const blocks = renderChatMessage(
+			turn([
+				{ type: "turn-start", messageId: "a1" },
+				{
+					type: "tool-call",
+					messageId: "a1",
+					callId: "call_9",
+					name: "create_alert_rule",
+					input: { name: "checkout p95" },
+					proposed: true,
+				},
+				{
+					type: "tool-result",
+					messageId: "a1",
+					callId: "call_9",
+					output: "Approved by Ada.\nCreated alert rule.",
+				},
+			]),
+			context,
+		)
+
+		expect(blocks).toEqual([
+			{
+				kind: "approval",
+				toolName: "create_alert_rule",
+				summary: "name: checkout p95",
+				token: "org_1:bot-42|call_9",
+				outcome: { approved: true, text: "Approved by Ada.\nCreated alert rule." },
+			},
+		])
+	})
+
+	it("reads a declined proposal as decided, not as failed activity", () => {
+		const blocks = renderChatMessage(
+			turn([
+				{ type: "turn-start", messageId: "a1" },
+				{
+					type: "tool-call",
+					messageId: "a1",
+					callId: "call_9",
+					name: "delete_alert_rule",
+					input: { id: "ar_1" },
+					proposed: true,
+				},
+				{
+					type: "tool-result",
+					messageId: "a1",
+					callId: "call_9",
+					output: "Declined by Ada. The tool did not run.",
+					isError: true,
+				},
+			]),
+			context,
+		)
+
+		expect(blocks).toEqual([
+			{
+				kind: "approval",
+				toolName: "delete_alert_rule",
+				summary: "id: ar_1",
+				token: "org_1:bot-42|call_9",
+				outcome: { approved: false, text: "Declined by Ada. The tool did not run." },
 			},
 		])
 	})

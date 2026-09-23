@@ -37,15 +37,13 @@ export const REPEATED_TOOL_CALLS = 5
 /**
  * What one kind of turn may spend.
  *
- * Per agent, because the two kinds of turn are not the same work and used to share one budget: a
- * one-line chat reply was given the autonomous investigation's 100-call, ten-minute rail, so a
- * conversation could hold a person waiting for ten minutes over a question that wanted two tool
- * calls.
+ * Per agent, because the kinds of turn are not the same work: an unattended pass needs rails that
+ * force it to conclude, while an attended chat turn has a person who can stop it.
  */
 export interface AgentBudget {
 	/** Hard cap on tool calls, and on assistant turns, so a turn can never be stopped for thinking more often than it called a tool. */
 	readonly maxToolCalls: number
-	/** Wall clock. Held well under `ChatSession`'s 15-minute `TURN_STALE_MS` so the deadline that stops a turn is the turn's own. */
+	/** Wall clock. Held under `ChatSession`'s `TURN_STALE_MS` so the deadline that stops a turn is the turn's own. */
 	readonly maxDuration: Duration.Input
 	/**
 	 * Total tokens, input plus output, the run may consume.
@@ -81,11 +79,41 @@ export const INVESTIGATION_BUDGET: AgentBudget = {
 	completionReserveTokens: 64_000,
 }
 
-/** An attended chat turn: someone is watching it, so the ceilings are what a person will wait for. */
-export const CHAT_BUDGET: AgentBudget = {
+/**
+ * An unattended pull request review: read every hunk that adds code, check the warehouse where the
+ * diff names a service or an attribute, file one report through `submit_review`.
+ *
+ * Smaller than an investigation because the diff bounds the work: the reviewer reads files it was
+ * handed rather than searching telemetry for a cause. Sized before any review has run in prod, so
+ * these are ceilings to tune from the internal org's first reviews, not measurements.
+ */
+export const PR_REVIEW_BUDGET: AgentBudget = {
+	maxToolCalls: 80,
+	// Twice this plus the margin must stay under `TURN_STALE_MS`: a pass and its close-out.
+	maxDuration: "10 minutes",
+	tokenBudget: 800_000,
+	completionReserveTokens: 48_000,
+}
+
+/** An answer on a pull request: narrower than a review, with room to read and to stage a fix. */
+export const PR_REPLY_BUDGET: AgentBudget = {
 	maxToolCalls: 40,
-	maxDuration: "5 minutes",
+	maxDuration: "6 minutes",
 	tokenBudget: 600_000,
+	completionReserveTokens: 32_000,
+}
+
+/**
+ * An attended chat turn, in the app or through a chat connector.
+ *
+ * Generous on purpose: a real investigation in chat hit the old 40-call, 600k-token rail around
+ * its 23rd tool call. Someone is watching and can stop it, so the step cap binds rather than
+ * tokens: `tokenBudget` clears `maxToolCalls` calls at a full `MAX_LIVE_CONTEXT_TOKENS` prompt.
+ */
+export const CHAT_BUDGET: AgentBudget = {
+	maxToolCalls: 120,
+	maxDuration: "15 minutes",
+	tokenBudget: 16_000_000,
 	completionReserveTokens: 32_000,
 }
 

@@ -61,6 +61,24 @@ export const investigationIdFromChatSessionId = (sessionId: string): string | un
 	return tab.startsWith("inv-") ? tab.slice("inv-".length) : undefined
 }
 
+/** The chat session a pull request review runs on: `<orgId>:pr-<reviewId>`. */
+export const prReviewSessionId = (orgId: string, reviewId: string): string => `${orgId}:pr-${reviewId}`
+
+/** Recover the pull-request review id from a `pr-<id>` tab. `undefined` for other modes. */
+export const prReviewIdFromChatSessionId = (sessionId: string): string | undefined => {
+	const tab = tabIdFromChatSessionId(sessionId)
+	return tab.startsWith("pr-") ? tab.slice("pr-".length) : undefined
+}
+
+/** The chat session a reply to a pull request comment runs on: `<orgId>:prr-<replyId>`. */
+export const prReplySessionId = (orgId: string, replyId: string): string => `${orgId}:prr-${replyId}`
+
+/** Recover the reply id from a `prr-<id>` tab. `undefined` for other modes. */
+export const prReplyIdFromChatSessionId = (sessionId: string): string | undefined => {
+	const tab = tabIdFromChatSessionId(sessionId)
+	return tab.startsWith("prr-") ? tab.slice("prr-".length) : undefined
+}
+
 /**
  * What a conversation *is* — its persona and its budget.
  *
@@ -69,7 +87,14 @@ export const investigationIdFromChatSessionId = (sessionId: string): string | un
  * from somewhere new. A connector-driven thread is an ordinary chat-mode conversation that a
  * connector is answering in, and it stays free to be anchored on an alert later.
  */
-export const ChatMode = Schema.Literals(["default", "alert", "widget-fix", "investigate"])
+export const ChatMode = Schema.Literals([
+	"default",
+	"alert",
+	"widget-fix",
+	"investigate",
+	"pr-review",
+	"pr-reply",
+])
 export type ChatMode = Schema.Schema.Type<typeof ChatMode>
 
 /** Mode is derived from the tab-id prefix, never sent by the client. */
@@ -78,6 +103,8 @@ export const chatModeFromSessionId = (sessionId: string): ChatMode => {
 	if (tab.startsWith("alert-")) return "alert"
 	if (tab.startsWith("widget-fix-")) return "widget-fix"
 	if (tab.startsWith("inv-")) return "investigate"
+	if (tab.startsWith("prr-")) return "pr-reply"
+	if (tab.startsWith("pr-")) return "pr-review"
 	return "default"
 }
 
@@ -145,6 +172,8 @@ export class ChatTaskState extends Schema.Class<ChatTaskState>("@maple/ChatTaskS
 export class ChatToolCall extends Schema.Class<ChatToolCall>("@maple/ChatToolCall")({
 	id: Schema.String,
 	name: Schema.String,
+	/** The phrase its `tool-call` event carried, when it carried one. */
+	label: Schema.optionalKey(Schema.String),
 	input: Schema.Unknown,
 	/** Present once the tool settled. */
 	output: Schema.optionalKey(Schema.Unknown),
@@ -262,6 +291,8 @@ const eventFields = {
 		input: Schema.Unknown,
 		/** Approval-gated mutation: the tool did not run, this is a proposal. */
 		proposed: Schema.optionalKey(Schema.Boolean),
+		/** What the call is doing, for a reader (`Running a query`); absent for a tool with no phrase. */
+		label: Schema.optionalKey(Schema.String),
 		...task,
 	},
 	"tool-result": {
@@ -504,17 +535,78 @@ export const connectorTurnTenant = (orgId: OrgId): ChatTurnTenantEncoded =>
 		authMode: "self_hosted",
 	})
 
+const ORG_ADMIN_ROLE = Schema.decodeSync(RoleName)("org:admin")
+
 /**
- * The origin for a caller that did not state one.
+ * The identity an approved proposal runs under **on a connector that cannot say who clicked**.
+ * See `ChatConnector.identity` for the three-case approval policy this is half of.
  *
- * Compatibility only: api, alerting and ai are separate Workers, so a caller that predates the
- * field keeps calling through a rollout, and the investigation pass must not silently become
- * attended. Removable once every caller sets an origin.
+ * The role is granted at apply time only — the turn that WROTE the proposal carried none, which is
+ * what makes the approval gate mean anything. Deliberately beside {@link connectorTurnTenant}:
+ * the two are one rule read together.
  */
-export const originForTurn = (
-	origin: ChatTurnOrigin | undefined,
-	tenant: ChatTurnTenantEncoded,
-): ChatTurnOrigin => origin ?? { kind: tenant.userId === "internal-service" ? "autonomous" : "app" }
+export const connectorApprovalTenant = (orgId: OrgId): ChatTurnTenantEncoded =>
+	encodeChatTurnTenant({
+		orgId,
+		userId: CONNECTOR_TENANT_USER_ID,
+		roles: [ORG_ADMIN_ROLE],
+		authMode: "self_hosted",
+	})
+
+/** Which connector, and who on it — the member of {@link ChatTurnOrigin} an approval carries. */
+export type ChatConnectorOrigin = Extract<ChatTurnOrigin, { readonly kind: "connector" }>
+
+/**
+ * What a click on an approval control asks for.
+ *
+ * Through a schema because the decision is read back off an untrusted control id: the members are
+ * derived from one declaration, so a third one cannot be added to the type while the parser that
+ * matches them silently keeps looking for two.
+ */
+export const ChatProposalDecision = Schema.Literals(["approve", "deny"])
+export type ChatProposalDecision = Schema.Schema.Type<typeof ChatProposalDecision>
+
+/** Every decision there is, for a caller that has to match a wire value against them. */
+export const CHAT_PROPOSAL_DECISIONS = ChatProposalDecision.literals
+
+/** Everything the session needs to settle a proposal: which call, which way, and who said so. */
+export interface ChatProposalSettlement {
+	/** `"<orgId>:<tabId>"`. A Durable Object cannot recover its own name, exactly as for `beginTurn`. */
+	readonly sessionId: string
+	readonly toolCallId: string
+	readonly decision: ChatProposalDecision
+	readonly approver: ChatConnectorOrigin
+	/**
+	 * The Maple user the approver's chat account is linked to, resolved by the host from its own
+	 * database — never from anything the click carried.
+	 *
+	 * Present means the change runs as that user, under the roles they hold in the org at that
+	 * moment. Absent means the connector cannot prove who clicked, and the org-level connector
+	 * identity acts instead ({@link connectorApprovalTenant}).
+	 */
+	readonly actingUserId?: UserId
+}
+
+/**
+ * What settling answered.
+ *
+ * A bare string because that is all the caller can act on: it re-reads the transcript for what the
+ * decision actually produced. `"settled"` is the second click on the same control — someone else
+ * got there first, or the same person clicked twice — and is a no-op by design.
+ */
+export type ChatProposalOutcome = "unknown" | "settled" | "decided"
+
+/**
+ * The origin of a turn raised through Maple's own HTTP surface.
+ *
+ * That route authenticates a signed-in person and Maple's own service token alike, and the only
+ * thing that distinguishes them is the user id the auth layer stamped on the caller — so the read
+ * lives here rather than in the route, and an unattended pass cannot become attended by being
+ * restarted from a different place.
+ */
+export const originForTenant = (tenant: ChatTurnTenantEncoded): ChatTurnOrigin => ({
+	kind: tenant.userId === "internal-service" ? "autonomous" : "app",
+})
 
 // Requests
 

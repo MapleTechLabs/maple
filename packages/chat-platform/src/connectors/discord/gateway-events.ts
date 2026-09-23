@@ -10,13 +10,11 @@ import { Option } from "effect"
 import type { ConnectorRequest, InboundEvent } from "../../ingress.ts"
 import { API_BASE } from "./api.ts"
 import {
-	ADMINISTRATOR,
 	CALLBACK_DEFERRED_UPDATE_MESSAGE,
 	decodeGuildDelete,
 	decodeInteractionCreate,
 	decodeMessageCreate,
 	INTERACTION_MESSAGE_COMPONENT,
-	MANAGE_GUILD,
 } from "./gateway-payloads.ts"
 import { DISCORD_CONNECTOR_ID } from "./id.ts"
 
@@ -37,28 +35,7 @@ const NOTHING: DispatchResult = { events: [], requests: [] }
  * pattern somebody else chose.
  */
 const stripMention = (text: string, botUserId: string): string =>
-	text
-		.split(`<@${botUserId}>`)
-		.join(" ")
-		.split(`<@!${botUserId}>`)
-		.join(" ")
-		.replace(/\s+/gu, " ")
-		.trim()
-
-/**
- * Whether the member may administer this workspace.
- *
- * `permissions` on an interaction is the member's EFFECTIVE permission set in
- * that channel, already resolved against roles and overwrites, so reading two
- * bits off it is the whole check. It is a decimal string wider than a JS number,
- * hence `BigInt` — and a value that is not decimal digits is treated as "no",
- * because a permission check that guesses should guess closed.
- */
-const isWorkspaceAdmin = (permissions: string | undefined): boolean => {
-	if (permissions === undefined || !/^\d+$/u.test(permissions)) return false
-	const bits = BigInt(permissions)
-	return (bits & MANAGE_GUILD) !== 0n || (bits & ADMINISTRATOR) !== 0n
-}
+	text.split(`<@${botUserId}>`).join(" ").split(`<@!${botUserId}>`).join(" ").replace(/\s+/gu, " ").trim()
 
 /**
  * Acknowledge a component click.
@@ -82,14 +59,20 @@ const acknowledgeInteraction = (id: string, token: string): ConnectorRequest => 
 })
 
 /**
- * A message addressed to the bot.
+ * A message the bot can see, whether or not it was addressed to it.
  *
- * Three filters, in the order that makes each one cheap. A message outside a
+ * Four filters, in the order that makes each one cheap. A message outside a
  * guild is not this connector's business (it asks for no DM intent, so this only
  * fires on payloads that arrive anyway). A bot or webhook author is dropped
  * before anything else so two Maple deployments in one server cannot talk to
- * each other. And without a mention there is nothing to answer — with no
- * `MESSAGE_CONTENT` intent, `content` would be empty for those anyway.
+ * each other. What is left is reported with `mentionsBot` set either way, and
+ * the host decides whether a message that addressed nobody is still a turn.
+ *
+ * The last filter is for a message with no text of its own — an embed, an
+ * attachment, a system notice, and every message at all if the application ever
+ * loses its message-content grant. There is no turn to start from nothing, and
+ * dropping those here is one fewer host round trip per message in every channel
+ * the bot can see.
  */
 // BOUNDARY: `data` is the decoded `d` of a gateway frame, typed at this edge.
 const messageCreate = (data: unknown, botUserId: string | undefined): DispatchResult => {
@@ -99,7 +82,8 @@ const messageCreate = (data: unknown, botUserId: string | undefined): DispatchRe
 	const message = decoded.value
 	if (message.guild_id === undefined) return NOTHING
 	if (message.author.bot === true || message.webhook_id !== undefined) return NOTHING
-	if (!message.mentions.some((user) => user.id === botUserId)) return NOTHING
+	const mentionsBot = message.mentions.some((user) => user.id === botUserId)
+	if (!mentionsBot && message.content.trim() === "") return NOTHING
 	return {
 		events: [
 			{
@@ -115,13 +99,11 @@ const messageCreate = (data: unknown, botUserId: string | undefined): DispatchRe
 				author: {
 					id: message.author.id,
 					displayName:
-						message.member?.nick ??
-						message.author.global_name ??
-						message.author.username,
+						message.member?.nick ?? message.author.global_name ?? message.author.username,
 					isBot: false,
 				},
 				text: stripMention(message.content, botUserId),
-				mentionsBot: true,
+				mentionsBot,
 			},
 		],
 		requests: [],
@@ -159,8 +141,6 @@ const interactionCreate = (data: unknown): DispatchResult => {
 				actor: {
 					id: member.user.id,
 					displayName: member.nick ?? member.user.global_name ?? member.user.username,
-					roleIds: member.roles,
-					isWorkspaceAdmin: isWorkspaceAdmin(member.permissions),
 				},
 			},
 		],
@@ -174,18 +154,16 @@ const guildDelete = (data: unknown): DispatchResult => {
 	const decoded = decodeGuildDelete(data)
 	if (Option.isNone(decoded) || decoded.value.unavailable === true) return NOTHING
 	return {
-		events: [{ type: "workspace-removed", connector: DISCORD_CONNECTOR_ID, workspaceId: decoded.value.id }],
+		events: [
+			{ type: "workspace-removed", connector: DISCORD_CONNECTOR_ID, workspaceId: decoded.value.id },
+		],
 		requests: [],
 	}
 }
 
 /** Map one dispatch by name. `READY` is handled in the state machine, which is what it changes. */
 // BOUNDARY: `data` is the decoded `d` of a gateway frame, typed at this edge.
-export const mapDispatch = (
-	name: string,
-	data: unknown,
-	botUserId: string | undefined,
-): DispatchResult => {
+export const mapDispatch = (name: string, data: unknown, botUserId: string | undefined): DispatchResult => {
 	switch (name) {
 		case "MESSAGE_CREATE":
 			return messageCreate(data, botUserId)

@@ -160,5 +160,6 @@ export function registerListMetricsTool(server: McpToolRegistrar) {
 				}),
 			}
 		}),
+		{ phrases: ["Listing metrics", "Looking up metrics"] },
 	)
 }

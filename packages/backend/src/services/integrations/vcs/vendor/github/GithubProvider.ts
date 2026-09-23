@@ -2,6 +2,11 @@ import {
 	type BranchUpsertInput,
 	type CommitUpsertInput,
 	GitCommitSha,
+	type PullRequestContext,
+	type PullRequestFile,
+	type PullRequestHead,
+	type PullRequestReviewThread,
+	mentionsReviewer,
 	type PullRequestSummary,
 	type RepoUpsertInput,
 	type VcsInstallation,
@@ -20,12 +25,16 @@ import {
 import { Clock, Context, Effect, Layer, Match, Option, Redacted, Schema } from "effect"
 import { Env } from "@maple/backend/platform/Env"
 import type {
+	PullRequestDelta,
 	VcsProviderClient,
 	VcsWebhookRequest,
 } from "@maple/backend/services/integrations/vcs/VcsProviderClient"
 import { QUEUE_MESSAGE_LIMIT_BYTES } from "@maple/backend/services/integrations/vcs/VcsSyncQueue"
+import { anchorComments } from "@maple/backend/services/integrations/vcs/diff-anchors"
+import { type FileChange, rangeDiffPaths } from "@maple/backend/services/integrations/vcs/range-diff"
 import {
 	type GithubApiCommit,
+	type GithubApiComparison as GithubComparison,
 	type GithubApiPullRequest,
 	GithubAppClient,
 	GithubAppError,
@@ -101,6 +110,24 @@ const PullRequestPayload = Schema.Struct({
 		merged: Schema.optionalKey(Schema.NullOr(Schema.Boolean)),
 		merge_commit_sha: Schema.optionalKey(Schema.NullOr(Schema.String)),
 		merged_at: Schema.optionalKey(Schema.NullOr(Schema.String)),
+		draft: Schema.optionalKey(Schema.NullOr(Schema.Boolean)),
+		// The review's inputs. Optional so a payload that omits them (or a fixture
+		// written before they were read) still maps to the issue-link job.
+		head: Schema.optionalKey(
+			Schema.Struct({
+				sha: Schema.optionalKey(Schema.String),
+				ref: Schema.optionalKey(Schema.String),
+				repo: Schema.optionalKey(
+					Schema.NullOr(Schema.Struct({ full_name: Schema.optionalKey(Schema.String) })),
+				),
+			}),
+		),
+		base: Schema.optionalKey(
+			Schema.Struct({
+				sha: Schema.optionalKey(Schema.String),
+				ref: Schema.optionalKey(Schema.String),
+			}),
+		),
 	}),
 	repository: Schema.Struct({
 		id: Schema.Number,
@@ -108,6 +135,52 @@ const PullRequestPayload = Schema.Struct({
 	}),
 	installation: Schema.Struct({ id: Schema.Number }),
 })
+
+const CommentUser = Schema.Struct({ login: Schema.String, type: Schema.optionalKey(Schema.String) })
+
+// `issue_comment`: a comment in a pull request's (or an issue's) conversation. Only the fields a
+// reply needs; `issue.pull_request` is what says the issue is a pull request.
+const IssueCommentPayload = Schema.Struct({
+	action: Schema.String,
+	issue: Schema.Struct({
+		number: Schema.Number,
+		html_url: Schema.String,
+		pull_request: Schema.optionalKey(
+			Schema.NullOr(Schema.Struct({ url: Schema.optionalKey(Schema.String) })),
+		),
+	}),
+	comment: Schema.Struct({
+		id: Schema.Number,
+		body: Schema.optionalKey(Schema.NullOr(Schema.String)),
+		html_url: Schema.String,
+		user: Schema.NullOr(CommentUser),
+		author_association: Schema.optionalKey(Schema.String),
+	}),
+	repository: Schema.Struct({ id: Schema.Number, full_name: Schema.String }),
+	installation: Schema.Struct({ id: Schema.Number }),
+})
+
+// `pull_request_review_comment`: a comment on a line of the diff, possibly a reply in a thread.
+const ReviewCommentPayload = Schema.Struct({
+	action: Schema.String,
+	pull_request: Schema.Struct({ number: Schema.Number }),
+	comment: Schema.Struct({
+		id: Schema.Number,
+		in_reply_to_id: Schema.optionalKey(Schema.NullOr(Schema.Number)),
+		body: Schema.optionalKey(Schema.NullOr(Schema.String)),
+		html_url: Schema.String,
+		path: Schema.optionalKey(Schema.String),
+		line: Schema.optionalKey(Schema.NullOr(Schema.Number)),
+		user: Schema.NullOr(CommentUser),
+		author_association: Schema.optionalKey(Schema.String),
+	}),
+	repository: Schema.Struct({ id: Schema.Number, full_name: Schema.String }),
+	installation: Schema.Struct({ id: Schema.Number }),
+})
+
+const decodeGitShaOption = Schema.decodeUnknownOption(GitCommitSha)
+const decodeIssueComment = Schema.decodeUnknownEffect(IssueCommentPayload)
+const decodeReviewComment = Schema.decodeUnknownEffect(ReviewCommentPayload)
 
 const decodePush = Schema.decodeUnknownEffect(PushPayload)
 const decodePullRequest = Schema.decodeUnknownEffect(PullRequestPayload)
@@ -531,7 +604,14 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 			// The guard narrows rather than asserts, so the job's `action` union is
 			// proved here instead of cast at the call site — GitHub sends `action` as
 			// an open string and a new value must skip, not slip through mistyped.
-			const PULL_REQUEST_ACTIONS = ["opened", "edited", "reopened", "closed", "synchronize"] as const
+			const PULL_REQUEST_ACTIONS = [
+				"opened",
+				"edited",
+				"reopened",
+				"closed",
+				"synchronize",
+				"ready_for_review",
+			] as const
 			type PullRequestAction = (typeof PULL_REQUEST_ACTIONS)[number]
 			const isPullRequestAction = (action: string): action is PullRequestAction =>
 				PULL_REQUEST_ACTIONS.some((candidate) => candidate === action)
@@ -556,6 +636,10 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 					}
 					const pr = payload.pull_request
 					const merged = pr.merged ?? false
+					// A malformed SHA is dropped, not rejected: the issue-link job does not
+					// need it, and the review trigger treats its absence as "nothing to review".
+					const headSha = Option.getOrUndefined(decodeGitShaOption(pr.head?.sha))
+					const baseSha = Option.getOrUndefined(decodeGitShaOption(pr.base?.sha))
 					const mergedAtMs = pr.merged_at ? finiteOrNull(Date.parse(pr.merged_at)) : null
 					yield* Effect.annotateCurrentSpan({
 						"vcs.webhook.outcome": "handled",
@@ -576,6 +660,90 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 						merged,
 						mergeCommitSha: pr.merge_commit_sha ?? null,
 						mergedAtMs,
+						...(headSha === undefined ? undefined : { headSha }),
+						...(baseSha === undefined ? undefined : { baseSha }),
+						...(pr.head?.ref === undefined ? undefined : { headRef: pr.head.ref }),
+						...(pr.base?.ref === undefined ? undefined : { baseRef: pr.base.ref }),
+						...(pr.draft === undefined || pr.draft === null ? undefined : { draft: pr.draft }),
+						...(pr.head === undefined
+							? undefined
+							: { headRepoFullName: pr.head.repo?.full_name ?? null }),
+					}
+					return [job]
+				})
+
+			// A comment becomes a job only when it is new, on a pull request, written by a person, and
+			// addressed to the reviewer; everything else is filtered here so the queue never carries it.
+			const commentSkip = (reason: string) =>
+				Effect.annotateCurrentSpan({
+					"vcs.webhook.outcome": "skipped",
+					"vcs.webhook.skip_reason": reason,
+				}).pipe(Effect.as<ReadonlyArray<VcsSyncJob>>([]))
+
+			const mapIssueComment = (raw: unknown) =>
+				Effect.gen(function* () {
+					const payload = yield* parsePayload("issue_comment", decodeIssueComment(raw))
+					const body = payload.comment.body ?? ""
+					if (payload.action !== "created") return yield* commentSkip("comment_action")
+					if (payload.issue.pull_request === undefined || payload.issue.pull_request === null)
+						return yield* commentSkip("issue_comment_not_pull_request")
+					if (payload.comment.user === null || payload.comment.user.type === "Bot")
+						return yield* commentSkip("comment_by_bot")
+					if (!mentionsReviewer(body)) return yield* commentSkip("comment_no_mention")
+					yield* Effect.annotateCurrentSpan({
+						"vcs.webhook.outcome": "handled",
+						"vcs.pull_request.number": payload.issue.number,
+					})
+					const job: VcsSyncJob = {
+						kind: "pull-request-comment",
+						provider: PROVIDER,
+						externalInstallationId: String(payload.installation.id),
+						externalRepoId: String(payload.repository.id),
+						repoFullName: payload.repository.full_name,
+						number: payload.issue.number,
+						commentId: String(payload.comment.id),
+						surface: "conversation",
+						authorLogin: payload.comment.user.login,
+						authorAssociation: payload.comment.author_association ?? "NONE",
+						body,
+						url: payload.comment.html_url,
+					}
+					return [job]
+				})
+
+			const mapReviewComment = (raw: unknown) =>
+				Effect.gen(function* () {
+					const payload = yield* parsePayload(
+						"pull_request_review_comment",
+						decodeReviewComment(raw),
+					)
+					const body = payload.comment.body ?? ""
+					if (payload.action !== "created") return yield* commentSkip("comment_action")
+					if (payload.comment.user === null || payload.comment.user.type === "Bot")
+						return yield* commentSkip("comment_by_bot")
+					if (!mentionsReviewer(body)) return yield* commentSkip("comment_no_mention")
+					yield* Effect.annotateCurrentSpan({
+						"vcs.webhook.outcome": "handled",
+						"vcs.pull_request.number": payload.pull_request.number,
+					})
+					const job: VcsSyncJob = {
+						kind: "pull-request-comment",
+						provider: PROVIDER,
+						externalInstallationId: String(payload.installation.id),
+						externalRepoId: String(payload.repository.id),
+						repoFullName: payload.repository.full_name,
+						number: payload.pull_request.number,
+						commentId: String(payload.comment.id),
+						surface: "review_thread",
+						threadRootId: String(payload.comment.in_reply_to_id ?? payload.comment.id),
+						authorLogin: payload.comment.user.login,
+						authorAssociation: payload.comment.author_association ?? "NONE",
+						body,
+						url: payload.comment.html_url,
+						...(payload.comment.path === undefined ? undefined : { path: payload.comment.path }),
+						...(payload.comment.line === undefined || payload.comment.line === null
+							? undefined
+							: { line: payload.comment.line }),
 					}
 					return [job]
 				})
@@ -587,6 +755,8 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 				Match.value(event).pipe(
 					Match.when("push", () => mapPush(parsed, now)),
 					Match.when("pull_request", () => mapPullRequest(parsed)),
+					Match.when("issue_comment", () => mapIssueComment(parsed)),
+					Match.when("pull_request_review_comment", () => mapReviewComment(parsed)),
 					Match.when("installation", () => mapInstallation(parsed)),
 					Match.when("installation_repositories", () => mapInstallationRepositories(parsed)),
 					Match.when("create", () => mapRefEvent("created")(parsed)),
@@ -838,6 +1008,420 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 					),
 				)
 
+			const normalizeFileStatus = (status: string): PullRequestFile["status"] => {
+				switch (status) {
+					case "added":
+					case "modified":
+					case "removed":
+					case "renamed":
+					case "copied":
+					case "changed":
+					case "unchanged":
+						return status
+					default:
+						return "changed"
+				}
+			}
+
+			const fetchPullRequestFiles: VcsProviderClient["fetchPullRequestFiles"] = (
+				installation,
+				repo,
+				number,
+			) =>
+				client
+					.listPullRequestFiles(installation.externalInstallationId, repo.owner, repo.name, number)
+					.pipe(
+						Effect.map((files) =>
+							files.map(
+								(file): PullRequestFile => ({
+									path: file.filename,
+									previousPath: file.previous_filename ?? null,
+									status: normalizeFileStatus(file.status),
+									additions: file.additions,
+									deletions: file.deletions,
+									patch: file.patch ?? null,
+								}),
+							),
+						),
+						Effect.mapError(toVcsError),
+					)
+
+			const fetchReviewThreads: VcsProviderClient["fetchReviewThreads"] = (
+				installation,
+				repo,
+				number,
+			) =>
+				client
+					.listReviewThreads(installation.externalInstallationId, repo.owner, repo.name, number)
+					.pipe(
+						Effect.map((threads) =>
+							threads.map(
+								(thread): PullRequestReviewThread => ({
+									id: thread.id,
+									isResolved: thread.isResolved,
+									comments: thread.comments.nodes.map((comment) => {
+										const count = (content: string) =>
+											comment.reactionGroups?.find((group) => group.content === content)
+												?.reactors.totalCount ?? 0
+										return {
+											commentId:
+												comment.databaseId === null
+													? null
+													: String(comment.databaseId),
+											author: comment.author?.login ?? "(deleted user)",
+											body: comment.body,
+											thumbsUp: count("THUMBS_UP"),
+											thumbsDown: count("THUMBS_DOWN"),
+										}
+									}),
+								}),
+							),
+						),
+						Effect.mapError(toVcsError),
+					)
+
+			const resolveReviewThread: VcsProviderClient["resolveReviewThread"] = (
+				installation,
+				repo,
+				input,
+			) =>
+				client
+					.replyToReviewComment(
+						installation.externalInstallationId,
+						repo.owner,
+						repo.name,
+						input.number,
+						input.commentId,
+						input.reply,
+					)
+					.pipe(
+						Effect.andThen(
+							client.resolveReviewThread(installation.externalInstallationId, input.threadId),
+						),
+						Effect.mapError(toVcsError),
+					)
+
+			const fetchChangesSince: VcsProviderClient["fetchChangesSince"] = (installation, repo, input) => {
+				const compare = (base: string, head: string) =>
+					client.compareCommits(
+						installation.externalInstallationId,
+						repo.owner,
+						repo.name,
+						base,
+						head,
+					)
+				const changes = (comparison: GithubComparison): ReadonlyArray<FileChange> =>
+					(comparison.files ?? []).map((file) => ({
+						path: file.filename,
+						status: file.status,
+						previousPath: file.previous_filename,
+						patch: file.patch,
+					}))
+				return compare(input.previousHead, input.head).pipe(
+					Effect.flatMap((forward): Effect.Effect<PullRequestDelta, GithubAppError> => {
+						// The earlier head is an ancestor: the three-dot diff is exactly what the push added.
+						if (forward.status === "ahead" || forward.status === "identical")
+							return Effect.succeed({
+								rewritten: false,
+								paths: forward.truncated
+									? undefined
+									: (forward.files ?? []).map((file) => file.filename),
+							})
+						// Rewritten history: the forward diff would carry everything the new base moved.
+						// Diff each head against the base and keep the files whose change differs.
+						const base = input.base
+						if (base === undefined) return Effect.succeed({ rewritten: true, paths: undefined })
+						return Effect.all([compare(base, input.previousHead), compare(base, input.head)], {
+							concurrency: 2,
+						}).pipe(
+							Effect.map(([before, after]) => ({
+								rewritten: true,
+								paths:
+									before.truncated || after.truncated
+										? undefined
+										: rangeDiffPaths(changes(before), changes(after)),
+							})),
+						)
+					}),
+					Effect.mapError(toVcsError),
+				)
+			}
+
+			const fetchPullRequestHead: VcsProviderClient["fetchPullRequestHead"] = (
+				installation,
+				repo,
+				number,
+			) =>
+				client
+					.getPullRequestHead(installation.externalInstallationId, repo.owner, repo.name, number)
+					.pipe(
+						Effect.flatMap((pr) => {
+							const headSha = decodeGitShaOption(pr.head.sha)
+							const baseSha = decodeGitShaOption(pr.base.sha)
+							return Option.isNone(headSha) || Option.isNone(baseSha)
+								? Effect.fail(
+										new GithubAppError({
+											message: "Pull request carries a malformed commit sha",
+										}),
+									)
+								: Effect.succeed<PullRequestHead>({
+										number: pr.number,
+										title: pr.title,
+										url: pr.html_url,
+										body: pr.body ?? null,
+										authorLogin: pr.user?.login ?? null,
+										state: pr.state,
+										draft: pr.draft ?? false,
+										headSha: headSha.value,
+										headRef: pr.head.ref,
+										baseSha: baseSha.value,
+										baseRef: pr.base.ref,
+										headRepoFullName: pr.head.repo?.full_name ?? null,
+									})
+						}),
+						Effect.mapError(toVcsError),
+					)
+
+			const postPullRequestReply: VcsProviderClient["postPullRequestReply"] = (
+				installation,
+				repo,
+				input,
+			) =>
+				(input.threadRootId === undefined
+					? client.createIssueComment(
+							installation.externalInstallationId,
+							repo.owner,
+							repo.name,
+							input.number,
+							input.body,
+						)
+					: client.replyToReviewComment(
+							installation.externalInstallationId,
+							repo.owner,
+							repo.name,
+							input.number,
+							input.threadRootId,
+							input.body,
+						)
+				).pipe(
+					Effect.map((comment) => ({ url: comment.html_url })),
+					Effect.mapError(toVcsError),
+				)
+
+			const reactToComment: VcsProviderClient["reactToComment"] = (installation, repo, input) =>
+				client
+					.addCommentReaction(
+						installation.externalInstallationId,
+						repo.owner,
+						repo.name,
+						input.surface,
+						input.commentId,
+						input.content,
+					)
+					.pipe(Effect.mapError(toVcsError))
+
+			const fetchCommenterPermission: VcsProviderClient["fetchCommenterPermission"] = (
+				installation,
+				repo,
+				login,
+			) =>
+				client
+					.getCollaboratorPermission(
+						installation.externalInstallationId,
+						repo.owner,
+						repo.name,
+						login,
+					)
+					.pipe(Effect.mapError(toVcsError))
+
+			const commitFiles: VcsProviderClient["commitFiles"] = (installation, repo, input) =>
+				client
+					.commitFiles(installation.externalInstallationId, repo.owner, repo.name, input)
+					.pipe(Effect.mapError(toVcsError))
+
+			const fetchPullRequestContext: VcsProviderClient["fetchPullRequestContext"] = (
+				installation,
+				repo,
+				number,
+			) =>
+				client
+					.getPullRequestContext(installation.externalInstallationId, repo.owner, repo.name, number)
+					.pipe(
+						Effect.map(
+							(raw): PullRequestContext => ({
+								commits: raw.commits.map((commit) => ({
+									sha: commit.sha,
+									message: commit.commit.message,
+								})),
+								comments: raw.comments.map((comment) => ({
+									author: comment.user?.login ?? "(deleted user)",
+									path: comment.path ?? null,
+									line: comment.line ?? null,
+									body: comment.body ?? "",
+								})),
+								checks: raw.checks.map((check) => ({
+									name: check.name,
+									status: check.status,
+									conclusion: check.conclusion,
+									title: check.output?.title ?? null,
+								})),
+							}),
+						),
+						Effect.mapError(toVcsError),
+					)
+
+			// The check run first: it is what the PR's checks tab shows and it never fails on a bad
+			// line. Then the summary comment, always, edited in place on later pushes. Then the
+			// inline notes, which are dropped if GitHub refuses them: the comment already carries
+			// every finding.
+			const publishPullRequestReview: VcsProviderClient["publishPullRequestReview"] = (
+				installation,
+				repo,
+				publication,
+			) =>
+				Effect.gen(function* () {
+					// Optional: an installation that has not granted `checks: write` (an App registered
+					// before reviews existed, or a permission update not yet accepted) answers 403. The
+					// summary comment only needs `pull_requests: write`, so the review still lands.
+					const checkRun = yield* client
+						.createCheckRun(installation.externalInstallationId, repo.owner, repo.name, {
+							name: publication.checkName,
+							headSha: publication.headSha,
+							conclusion: publication.conclusion,
+							title: publication.title,
+							summary: publication.summary,
+							annotations: publication.annotations,
+						})
+						.pipe(
+							Effect.map((run): { id: number | null; html_url: string | null } => ({
+								id: run.id,
+								html_url: run.html_url,
+							})),
+							Effect.catchTag("@maple/api/vcs/GithubAppError", (error) =>
+								// A secondary rate limit is also a 403, but carries a retry time.
+								error.status === 403 && error.retryAfterSeconds === undefined
+									? Effect.annotateCurrentSpan(
+											"vcs.pull_request.check_run_skipped",
+											"no_checks_permission",
+										).pipe(
+											Effect.andThen(
+												Effect.logWarning(
+													"[GitHub] installation has not granted checks: write; posting the review without a check run",
+												),
+											),
+											Effect.as({ id: null, html_url: null }),
+										)
+									: Effect.fail(error),
+							),
+						)
+					const comment = yield* client.upsertIssueComment(
+						installation.externalInstallationId,
+						repo.owner,
+						repo.name,
+						publication.number,
+						publication.summaryComment.marker,
+						publication.summaryComment.body,
+					)
+					yield* Effect.annotateCurrentSpan({
+						"vcs.pull_request.check_run_id": checkRun.id ?? "none",
+						"vcs.pull_request.comment_id": comment.id,
+					})
+					const published = {
+						checkRunUrl: checkRun.html_url,
+						commentUrl: comment.html_url,
+						inlineComments: [] as ReadonlyArray<{ key: string; commentId: string }>,
+					}
+					if (publication.comments.length === 0 && publication.reviewBody === null) {
+						return { ...published, reviewUrl: null }
+					}
+					// A line outside the diff is a 422 for the whole review, so each comment is checked
+					// against the diff first and only the ones it cannot carry are dropped; the summary
+					// comment still has them. A failed read of the diff leaves the comments as they are.
+					const patches = yield* client
+						.listPullRequestFiles(
+							installation.externalInstallationId,
+							repo.owner,
+							repo.name,
+							publication.number,
+						)
+						.pipe(
+							Effect.map(
+								(files): ReadonlyMap<string, string | undefined> =>
+									new Map(files.map((file) => [file.filename, file.patch])),
+							),
+							Effect.option,
+						)
+					const { anchored: comments, dropped } = Option.isSome(patches)
+						? anchorComments(publication.comments, patches.value)
+						: { anchored: publication.comments, dropped: [] }
+					yield* Effect.annotateCurrentSpan(
+						"vcs.pull_request.review_comments_unanchored",
+						dropped.length,
+					)
+					if (comments.length === 0) return { ...published, reviewUrl: null }
+					const body =
+						dropped.length === 0
+							? (publication.reviewBody ?? "")
+							: `${publication.reviewBody ?? ""}\n\n${dropped.length} ${dropped.length === 1 ? "finding sits" : "findings sit"} outside this diff and ${dropped.length === 1 ? "is" : "are"} only in the summary comment.`.trim()
+					// Anything the check could not see (a head that moved since) still falls back whole.
+					const review = yield* client
+						.createPullRequestReview(
+							installation.externalInstallationId,
+							repo.owner,
+							repo.name,
+							publication.number,
+							{
+								commitId: publication.headSha,
+								body,
+								comments,
+							},
+						)
+						.pipe(
+							Effect.map((posted) => Option.some(posted)),
+							Effect.catchTag("@maple/api/vcs/GithubAppError", (error) =>
+								error.status === 422
+									? Effect.annotateCurrentSpan(
+											"vcs.pull_request.review_comments_rejected",
+											true,
+										).pipe(Effect.as(Option.none()))
+									: Effect.fail(error),
+							),
+						)
+					if (Option.isNone(review)) return { ...published, reviewUrl: null }
+					yield* Effect.annotateCurrentSpan("vcs.pull_request.review_id", review.value.id)
+					// GitHub lists a review's comments in the order they were submitted; pair them back
+					// to their keys by position, checking the path so a mismatch pairs nothing.
+					const listed = yield* client
+						.listReviewComments(
+							installation.externalInstallationId,
+							repo.owner,
+							repo.name,
+							publication.number,
+							review.value.id,
+						)
+						.pipe(Effect.orElseSucceed(() => []))
+					const inlineComments = comments.flatMap((submitted, index) => {
+						const posted = listed[index]
+						return submitted.key !== undefined &&
+							posted !== undefined &&
+							posted.path === submitted.path
+							? [{ key: submitted.key, commentId: String(posted.id) }]
+							: []
+					})
+					return { ...published, inlineComments, reviewUrl: review.value.html_url ?? null }
+				}).pipe(
+					Effect.mapError(toVcsError),
+					// One span over the three posts, so each step's outcome lands on the publish itself.
+					Effect.withSpan("GithubProvider.publishPullRequestReview", {
+						attributes: {
+							"vcs.owner.name": repo.owner,
+							"vcs.repository.name": repo.name,
+							"vcs.pull_request.number": publication.number,
+							"vcs.pull_request.review_comments": publication.comments.length,
+						},
+					}),
+				)
+
 			const fetchCloneCredentials: VcsProviderClient["fetchCloneCredentials"] = (installation, repo) =>
 				client
 					.mintCloneCredentials(installation.externalInstallationId, repo.owner, repo.name)
@@ -852,6 +1436,17 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 				fetchCommit,
 				fetchPullRequests,
 				fetchPullRequest,
+				fetchPullRequestFiles,
+				fetchPullRequestContext,
+				fetchReviewThreads,
+				resolveReviewThread,
+				fetchChangesSince,
+				fetchPullRequestHead,
+				postPullRequestReply,
+				reactToComment,
+				fetchCommenterPermission,
+				commitFiles,
+				publishPullRequestReview,
 				searchCode,
 				fetchSourceFile,
 				resolveRef,

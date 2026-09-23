@@ -9,7 +9,8 @@ import {
 	type ChatInstallStart,
 	type ChatWorkspaceSettings,
 } from "../../install"
-import { AUTHORIZE_URL, CLIENT_ID_CONFIG, CLIENT_SECRET_CONFIG, TOKEN_URL } from "./api"
+import { AUTHORIZE_URL, CLIENT_ID_CONFIG, CLIENT_SECRET_CONFIG } from "./api"
+import { exchangeCode } from "./exchange"
 import { DISCORD_CONNECTOR_ID } from "./id"
 
 /**
@@ -38,9 +39,9 @@ const BOT_PERMISSIONS = "309237730368"
 const BOT_SCOPE = "bot"
 
 /**
- * Discord snowflake: an unsigned 64-bit id as a decimal string. Guild and role
- * ids both use it, and keeping the check here means a hand-typed role id is a
- * 400 rather than a value the gateway silently never matches.
+ * Discord snowflake: an unsigned 64-bit id as a decimal string. Every id Discord
+ * mints is one, and checking it here means a value that is not an id fails where
+ * it is diagnosable rather than one the API silently never matches.
  */
 const Snowflake = Schema.String.check(Schema.isPattern(/^\d{17,20}$/))
 
@@ -54,16 +55,6 @@ const TokenResponse = Schema.Struct({
 	guild: Schema.optionalKey(Schema.Struct({ id: Snowflake, name: Schema.optionalKey(Schema.String) })),
 })
 const decodeTokenResponse = Schema.decodeUnknownEffect(TokenResponse)
-
-/**
- * The one setting Discord carries in V1 — see this directory's README. Decoded
- * with `onExcessProperty: "error"` so a key this connector does not define is
- * reported rather than silently dropped on the way into the settings column.
- */
-const DiscordSettings = Schema.Struct({ approver_role_id: Schema.optionalKey(Snowflake) })
-const decodeDiscordSettings = Schema.decodeUnknownEffect(DiscordSettings, {
-	onExcessProperty: "error",
-})
 
 /**
  * The install URL. `state` is the host's single-use nonce; `response_type=code`
@@ -107,38 +98,7 @@ const installFailed = (message: string) => new ChatInstallFailed({ connector: DI
  * code is proof that a manager of *that* guild approved this install.
  */
 const complete = Effect.fnUntraced(function* (input: ChatInstallCallback) {
-	const denied = input.params.get("error")
-	if (denied !== null) {
-		return yield* Effect.fail(installFailed(`Discord rejected the authorization: ${denied}`))
-	}
-	const code = input.params.get("code")
-	if (code === null) {
-		return yield* Effect.fail(installFailed("Discord's callback carried no authorization code"))
-	}
-	const clientId = yield* requireConfig(input.config, DISCORD_CONNECTOR_ID, CLIENT_ID_CONFIG)
-	const clientSecret = yield* requireConfig(input.config, DISCORD_CONNECTOR_ID, CLIENT_SECRET_CONFIG)
-
-	const httpClient = yield* HttpClient.HttpClient
-	const request = HttpClientRequest.post(TOKEN_URL, { headers: { accept: "application/json" } }).pipe(
-		// Discord's token endpoint accepts client credentials in the form body or
-		// as HTTP Basic, and only `application/x-www-form-urlencoded` bodies.
-		HttpClientRequest.bodyUrlParams({
-			client_id: clientId,
-			client_secret: clientSecret,
-			grant_type: "authorization_code",
-			code,
-			redirect_uri: input.redirectUri,
-		}),
-	)
-	const response = yield* httpClient
-		.execute(request)
-		.pipe(Effect.mapError((error) => installFailed(`Discord token exchange failed: ${error.message}`)))
-	if (response.status < 200 || response.status >= 300) {
-		return yield* Effect.fail(installFailed(`Discord token exchange failed with HTTP ${response.status}`))
-	}
-	const json = yield* response.json.pipe(
-		Effect.mapError(() => installFailed("Discord returned a non-JSON token response")),
-	)
+	const json = yield* exchangeCode(input, installFailed)
 	const decoded = yield* decodeTokenResponse(json).pipe(
 		Effect.mapError(() => installFailed("Discord returned an unexpected token response")),
 	)
@@ -154,22 +114,20 @@ const complete = Effect.fnUntraced(function* (input: ChatInstallCallback) {
 const decodeSettings = (
 	input: ChatWorkspaceSettings,
 ): Effect.Effect<ChatWorkspaceSettings, ChatSettingsRejected> =>
-	decodeDiscordSettings(input).pipe(
-		Effect.mapError(
-			() =>
+	// Discord defines no workspace settings: who may approve a change is not a per-server setting
+	// any more, it is whether the person clicking linked their Discord account to a Maple user.
+	//
+	// Checked explicitly rather than through an empty schema with `onExcessProperty: "error"` — a
+	// struct with no declared keys has nothing to call excess, so that decode accepts everything
+	// and a key this connector does not define would land in the settings column unread.
+	Object.keys(input).length === 0
+		? Effect.succeed({})
+		: Effect.fail(
 				new ChatSettingsRejected({
 					connector: DISCORD_CONNECTOR_ID,
-					message:
-						"Discord accepts one setting, approver_role_id, and its value must be a Discord role ID (17–20 digits)",
+					message: "Discord has no settings to configure",
 				}),
-		),
-		Effect.map(
-			(settings): ChatWorkspaceSettings =>
-				settings.approver_role_id === undefined
-					? {}
-					: { approver_role_id: settings.approver_role_id },
-		),
-	)
+			)
 
 export const discordInstall: ChatConnectorInstall = {
 	// The client id is public — it rides the authorize URL the browser opens.

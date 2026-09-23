@@ -180,7 +180,10 @@ export function registerListAgentSessionsTool(server: McpToolRegistrar) {
 					rows,
 				),
 				...(sessions.length === limit
-					? [``, `The page is full; more sessions may match — call again with offset=${offset + sessions.length}.`]
+					? [
+							``,
+							`The page is full; more sessions may match — call again with offset=${offset + sessions.length}.`,
+						]
 					: []),
 				formatNextSteps(
 					sessions.slice(0, 3).map(
@@ -195,5 +198,6 @@ export function registerListAgentSessionsTool(server: McpToolRegistrar) {
 
 			return { content: [{ type: "text" as const, text: lines.join("\n") }] }
 		}),
+		{ phrases: ["Listing agent sessions"] },
 	)
 }

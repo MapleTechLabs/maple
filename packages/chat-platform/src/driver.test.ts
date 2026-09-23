@@ -52,6 +52,7 @@ const recorder = (maxMessageChars = 500): Recorder => {
 		outbound: {
 			connectorId: TESTCHAT,
 			limits: { maxMessageChars, minEditInterval: EDIT_INTERVAL },
+			requiredConfig: [],
 			transport: Effect.sync(() => ({
 				post: (postTarget, blocks) =>
 					Effect.sync(() => {
@@ -63,6 +64,11 @@ const recorder = (maxMessageChars = 500): Recorder => {
 				typing: (typingTarget) => Effect.sync(() => void typing.push(typingTarget.channelId)),
 				// A platform where a thread is just replies to a message opens one without any I/O.
 				openThread: (request) => Effect.succeed(request.anchorMessageId),
+				// Neither is the driver's concern: by the time a turn is being rendered, the conversation
+				// it belongs to has been decided and the model has already been given it.
+				conversation: () => Effect.die("the driver asked which conversation this is"),
+				history: () => Effect.die("the driver asked what was said earlier"),
+				destinations: () => Effect.die("the driver asked where alerts can go"),
 			})),
 		},
 	}
@@ -83,6 +89,10 @@ const prose = (blocks: ReadonlyArray<ChatBlock>): string =>
 		.filter((block) => block.kind === "prose")
 		.map((block) => block.markdown)
 		.join("\n")
+
+/** Whatever the status line names, if a message is carrying one at all. */
+const working = (blocks: ReadonlyArray<ChatBlock>): ReadonlyArray<string> =>
+	blocks.flatMap((block) => (block.kind === "activity" ? block.tools.map((tool) => tool.label) : []))
 
 describe("driveChatTurn", () => {
 	it.effect("posts a placeholder, coalesces deltas into throttled edits, and flushes at the end", () =>
@@ -120,6 +130,189 @@ describe("driveChatTurn", () => {
 			expect(prose(chat.calls[1].blocks)).toBe("Checking")
 			expect(prose(chat.calls[2].blocks)).toBe("Checking it.")
 			expect(chat.typing).toEqual(["chan_1"])
+		}),
+	)
+
+	it.effect("shows the tool it is on while it works, and only the answer once it has", () =>
+		Effect.gen(function* () {
+			const chat = recorder()
+			const fiber = yield* Effect.forkChild(
+				driveChatTurn({
+					events: timeline([
+						[NOW, event(1, { type: "turn-start", messageId: "a1" })],
+						[
+							NOW,
+							event(2, {
+								type: "text-delta",
+								messageId: "a1",
+								text: "Let me look at the errors first.",
+							}),
+						],
+						[
+							NOW,
+							event(3, {
+								type: "tool-call",
+								messageId: "a1",
+								callId: "c1",
+								name: "find_errors",
+								label: "Finding errors",
+								input: {},
+							}),
+						],
+						[
+							Duration.millis(1500),
+							event(4, { type: "tool-result", messageId: "a1", callId: "c1", output: null }),
+						],
+						[
+							NOW,
+							event(5, {
+								type: "text-delta",
+								messageId: "a1",
+								text: " Now I'll check the traces.",
+							}),
+						],
+						[
+							NOW,
+							event(6, {
+								type: "tool-call",
+								messageId: "a1",
+								callId: "c2",
+								name: "search_traces",
+								label: "Searching traces",
+								input: {},
+							}),
+						],
+						[
+							Duration.millis(1500),
+							event(7, { type: "tool-result", messageId: "a1", callId: "c2", output: null }),
+						],
+						[
+							NOW,
+							event(8, {
+								type: "text-delta",
+								messageId: "a1",
+								text: " checkout times out on the database.",
+							}),
+						],
+						[
+							Duration.millis(1500),
+							event(9, { type: "turn-end", messageId: "a1", reason: "stop" }),
+						],
+					]),
+					messageId: "a1",
+					outbound: chat.outbound,
+					target,
+					context,
+				}),
+			)
+
+			yield* TestClock.adjust("6 seconds")
+			yield* Fiber.join(fiber)
+
+			// The first thing the reader sees after the placeholder: the tool, and none of the
+			// narration the model wrote on its way into it.
+			expect(chat.calls.find((call) => working(call.blocks).length > 0)?.blocks).toEqual([
+				{ kind: "activity", tools: [{ label: "Finding errors", status: "running", detail: null }] },
+			])
+			const lines = chat.calls.map((call) => working(call.blocks))
+			// One tool at a time, never the list of everything the turn touched on its way here.
+			for (const line of lines) expect(line.length).toBeLessThanOrEqual(1)
+			// The two calls, in the order the turn made them. Repeats are a call whose status
+			// changed under the same name, which is one line either way.
+			expect(lines.flat().filter((label, index, all) => label !== all[index - 1])).toEqual([
+				"Finding errors",
+				"Searching traces",
+			])
+			// The words the model wrote to itself between its calls never reach the channel.
+			for (const call of chat.calls) expect(prose(call.blocks)).not.toMatch(/Let me|Now I'll/)
+			// The finished message is the answer and nothing else.
+			expect(chat.calls[chat.calls.length - 1].blocks).toEqual([
+				{ kind: "prose", markdown: "checkout times out on the database." },
+			])
+		}),
+	)
+
+	it.effect("says a turn that stopped without a word finished, not that it is still working", () =>
+		Effect.gen(function* () {
+			const chat = recorder()
+			// A model that runs a tool and then stops: the turn ends on `stop` with no prose to show
+			// for it, and the placeholder would otherwise be the channel's last word on the matter.
+			yield* driveChatTurn({
+				events: timeline([
+					[NOW, event(1, { type: "turn-start", messageId: "a1" })],
+					[
+						NOW,
+						event(2, {
+							type: "tool-call",
+							messageId: "a1",
+							callId: "c1",
+							name: "find_errors",
+							label: "Finding errors",
+							input: {},
+						}),
+					],
+					[NOW, event(3, { type: "tool-result", messageId: "a1", callId: "c1", output: null })],
+					[NOW, event(4, { type: "turn-end", messageId: "a1", reason: "stop" })],
+				]),
+				messageId: "a1",
+				outbound: chat.outbound,
+				target,
+				context,
+			})
+
+			expect(chat.calls[chat.calls.length - 1].blocks).toEqual([
+				{ kind: "notice", tone: "info", text: "Finished without a reply." },
+			])
+		}),
+	)
+
+	it.effect("names a sub-agent by the agent it delegates to on the status line", () =>
+		Effect.gen(function* () {
+			const chat = recorder()
+			const fiber = yield* Effect.forkChild(
+				driveChatTurn({
+					events: timeline([
+						[NOW, event(1, { type: "turn-start", messageId: "a1" })],
+						[
+							NOW,
+							event(2, {
+								type: "tool-call",
+								messageId: "a1",
+								callId: "t1",
+								name: "task_reviewer",
+								input: {},
+							}),
+						],
+						[
+							NOW,
+							event(3, {
+								type: "turn-start",
+								messageId: "s1",
+								task: { id: "t1", agent: "reviewer", parentMessageId: "a1" },
+							}),
+						],
+						[
+							Duration.millis(1500),
+							event(4, { type: "turn-end", messageId: "a1", reason: "stop" }),
+						],
+					]),
+					messageId: "a1",
+					outbound: chat.outbound,
+					target,
+					context,
+				}),
+			)
+
+			yield* TestClock.adjust("3 seconds")
+			yield* Fiber.join(fiber)
+
+			// The delegation is a line on the same status block, named for the agent it runs.
+			expect(chat.calls.find((call) => working(call.blocks).length > 0)?.blocks).toEqual([
+				{
+					kind: "activity",
+					tools: [{ label: "Delegating to reviewer", status: "running", detail: "1 step" }],
+				},
+			])
 		}),
 	)
 
@@ -215,8 +408,47 @@ describe("driveChatTurn", () => {
 					toolName: "create_alert_rule",
 					summary: "name: checkout p95",
 					token: "org_1:bot-42|call_9",
+					outcome: null,
 				},
 				{ kind: "notice", tone: "error", text: "Failed: upstream said no" },
+			])
+		}),
+	)
+
+	it.effect("leaves the controls live on a turn that stopped on a proposal", () =>
+		Effect.gen(function* () {
+			const chat = recorder()
+			// What `ChatSession` records for a gated call: the proposal, then a turn that finished.
+			yield* driveChatTurn({
+				events: timeline([
+					[NOW, event(1, { type: "turn-start", messageId: "a1" })],
+					[
+						NOW,
+						event(2, {
+							type: "tool-call",
+							messageId: "a1",
+							callId: "call_9",
+							name: "create_dashboard",
+							input: { name: "Checkout" },
+							proposed: true,
+						}),
+					],
+					[NOW, event(3, { type: "turn-end", messageId: "a1", reason: "stop" })],
+				]),
+				messageId: "a1",
+				outbound: chat.outbound,
+				target,
+				context,
+			})
+
+			expect(chat.calls[chat.calls.length - 1].blocks).toEqual([
+				{
+					kind: "approval",
+					toolName: "create_dashboard",
+					summary: "name: Checkout",
+					token: "org_1:bot-42|call_9",
+					outcome: null,
+				},
 			])
 		}),
 	)

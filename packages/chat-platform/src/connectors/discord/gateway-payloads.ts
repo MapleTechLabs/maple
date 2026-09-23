@@ -26,23 +26,28 @@ export const OP = {
 } as const
 
 /**
- * `GUILDS | GUILD_MESSAGES` (`1 << 0 | 1 << 9`).
+ * `MESSAGE_CONTENT` (`1 << 15`), which is privileged and **required**.
+ *
+ * Without it `content` arrives empty over the gateway AND over the REST API for
+ * everything except messages the app sent, DMs with it, and messages in which
+ * it is mentioned — which leaves out both halves of what the bot reads: the
+ * conversation around a mention, and a follow-up in a thread it opened. The
+ * application must have it enabled in the developer portal; identifying without
+ * that grant is close code 4014, which is fatal. See this directory's README.
+ */
+export const MESSAGE_CONTENT_INTENT = 1 << 15
+
+/**
+ * `GUILDS | GUILD_MESSAGES | MESSAGE_CONTENT` (`1 << 0 | 1 << 9 | 1 << 15`).
  *
  * `GUILDS` is what delivers `GUILD_DELETE`, which is how the bot learns it was
- * removed from a server. `GUILD_MESSAGES` delivers `MESSAGE_CREATE`.
+ * removed from a server. `GUILD_MESSAGES` delivers `MESSAGE_CREATE`, in threads
+ * as well as in channels. `MESSAGE_CONTENT` is what puts anything in them.
  *
- * `MESSAGE_CONTENT` (`1 << 15`) is deliberately NOT requested. It is privileged,
- * and the documented exceptions cover exactly the V1 product: content is
- * delivered without it for messages the app sends, DMs with the app, and
- * **messages in which the app is mentioned**. Mention-only is therefore not a
- * limitation worked around — it is the reason the bot needs no privileged
- * intent at all. Anything that wants to read messages the bot was not addressed
- * in has to ask Discord for the intent first.
- *
- * `INTERACTION_CREATE` is not gated by any intent, so approval buttons work on
- * this set too.
+ * `INTERACTION_CREATE` is not gated by any intent, so approval buttons work
+ * whatever is in this set.
  */
-export const INTENTS = (1 << 0) | (1 << 9)
+export const INTENTS = (1 << 0) | (1 << 9) | MESSAGE_CONTENT_INTENT
 
 /** Interaction types (`type` on an `INTERACTION_CREATE`). Only the component click matters here. */
 export const INTERACTION_MESSAGE_COMPONENT = 3
@@ -66,8 +71,20 @@ export const CALLBACK_DEFERRED_UPDATE_MESSAGE = 6
  * connection fixes — the table in `topics/opcodes-and-status-codes` is the
  * source, not the prose elsewhere that summarises it.
  */
-export const FATAL_CLOSE_CODES: ReadonlySet<number> = new Set([
-	4004, 4010, 4011, 4012, 4013, 4014,
+export const FATAL_CLOSE_CODES: ReadonlySet<number> = new Set([4004, 4010, 4011, 4012, 4013, 4014])
+
+/**
+ * What a fatal code actually means, for the one line an operator reads.
+ *
+ * 4014 is the one worth spelling out: it is what Discord answers when the
+ * identify asks for a privileged intent the application has not been granted,
+ * which for this connector means exactly one thing and has exactly one fix.
+ */
+export const FATAL_CLOSE_HINTS: ReadonlyMap<number, string> = new Map([
+	[
+		4014,
+		"enable Message Content Intent for this application in the Discord developer portal (Bot → Privileged Gateway Intents)",
+	],
 ])
 
 /**
@@ -108,7 +125,11 @@ export const Ready = Schema.Struct({
 })
 export const decodeReady = Schema.decodeUnknownOption(Ready)
 
-const User = Schema.Struct({
+/**
+ * Who wrote something, as far as this connector reads it. Exported because the REST half reads the
+ * same Discord user out of a message it fetched, and two models of one wire object drift.
+ */
+export const User = Schema.Struct({
 	id: Schema.String,
 	username: Schema.String,
 	global_name: Schema.optionalKey(Schema.NullOr(Schema.String)),
@@ -122,8 +143,9 @@ export const MessageCreate = Schema.Struct({
 	guild_id: Schema.optionalKey(Schema.String),
 	author: User,
 	/**
-	 * Empty unless the message qualifies under one of the MESSAGE_CONTENT
-	 * exceptions — for this bot, unless it was mentioned.
+	 * Empty on a message that carries no text of its own — an embed, an
+	 * attachment, a system notice — and on every message at all if the
+	 * application has lost the MESSAGE_CONTENT grant.
 	 */
 	content: Schema.String,
 	mentions: Schema.Array(User),
@@ -140,16 +162,11 @@ export const InteractionCreate = Schema.Struct({
 	guild_id: Schema.optionalKey(Schema.String),
 	channel_id: Schema.optionalKey(Schema.String),
 	member: Schema.optionalKey(
+		// Who clicked, and nothing about what they may do: Maple decides that from whether they
+		// linked this account, never from what Discord says they can do in the server.
 		Schema.Struct({
 			user: User,
 			nick: Schema.optionalKey(Schema.NullOr(Schema.String)),
-			roles: Schema.Array(Schema.String),
-			/**
-			 * The member's effective permissions in this channel, as a decimal string —
-			 * permissions are serialized as strings from API v8 on because the bitfield
-			 * outgrew 53 bits.
-			 */
-			permissions: Schema.optionalKey(Schema.String),
 		}),
 	),
 	message: Schema.optionalKey(Schema.Struct({ id: Schema.String })),
@@ -172,7 +189,3 @@ export const GuildDelete = Schema.Struct({
 	unavailable: Schema.optionalKey(Schema.Boolean),
 })
 export const decodeGuildDelete = Schema.decodeUnknownOption(GuildDelete)
-
-/** `MANAGE_GUILD` (`1 << 5`) and `ADMINISTRATOR` (`1 << 3`), the two that make someone an admin here. */
-export const MANAGE_GUILD = 1n << 5n
-export const ADMINISTRATOR = 1n << 3n

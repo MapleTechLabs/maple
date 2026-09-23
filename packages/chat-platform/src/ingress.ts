@@ -57,25 +57,27 @@ export type ConnectorConfig = ReadonlyMap<string, string>
 // Normalized inbound events
 
 /**
- * Who took an action, with the raw material for deciding whether they were
- * allowed to.
+ * Who took an action, as the platform names them.
  *
- * Authorization stays DATA here on purpose. Which role may approve an agent's
- * proposed mutation is a Maple decision held against the workspace's configured
- * approver role, so this carries the membership facts and none of the verdict —
- * every platform can answer "which groups is this person in" and "are they an
- * administrator of this workspace", and none of them knows what Maple does with
- * the answer.
+ * An identity and nothing else: no roles, no "is an administrator". Whether
+ * this person may approve is not a fact the platform holds — it is whether they
+ * linked this account to a Maple user, which only Maple can answer, and `id` is
+ * what that lookup is keyed on.
  */
 export const InboundActor = Schema.Struct({
 	id: Schema.String,
 	displayName: Schema.String,
-	roleIds: Schema.Array(Schema.String),
-	isWorkspaceAdmin: Schema.Boolean,
 })
 export type InboundActor = Schema.Schema.Type<typeof InboundActor>
 
-/** A message a human addressed to the bot. */
+/**
+ * A message a human wrote where the bot can see it.
+ *
+ * Not necessarily one addressed to it: a connector also reports the messages it can read that
+ * mention nobody, because in a conversation the bot opened the next message is still part of the
+ * exchange. `mentionsBot` is the whole difference, and what the host does with a `false` is a host
+ * decision — see `apps/chat-bot/src/relay/conversation.ts`.
+ */
 export const InboundMessage = Schema.Struct({
 	type: Schema.Literal("message"),
 	connector: ChatConnectorId,
@@ -107,6 +109,16 @@ export const InboundAction = Schema.Struct({
 	connector: ChatConnectorId,
 	workspaceId: Schema.String,
 	channelId: Schema.String,
+	/**
+	 * The sub-conversation the click landed in, where the platform models one separately from the
+	 * channel — the same coordinate {@link InboundMessage} carries, and absent for the same reason:
+	 * on a platform where a thread IS a channel, `channelId` already addresses it.
+	 *
+	 * It is what `transport.conversation` names an action's conversation from, and that name is
+	 * what scopes the approval — so a platform that has threads must report it, or a click would
+	 * resolve to a different conversation than the proposal it is answering.
+	 */
+	threadId: Schema.optionalKey(Schema.String),
 	/** The message carrying the control, so the reply can update it in place. */
 	messageId: Schema.String,
 	/**
@@ -293,8 +305,7 @@ export const socketIngress = <State>(definition: SocketIngressDefinition<State>)
 	// a bug, so it surfaces as a defect rather than being swallowed into a
 	// silently reset session.
 	const encode = Schema.encodeSync(definition.stateSchema)
-	const read = (state: string): State =>
-		Option.getOrElse(decode(state), () => definition.initialState)
+	const read = (state: string): State => Option.getOrElse(decode(state), () => definition.initialState)
 	const lift = (step: SocketStep<State>): SocketStep<string> => ({
 		...step,
 		state: encode(step.state),

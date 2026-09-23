@@ -8,6 +8,7 @@
  * characters, a message carries at most 10 embeds, an action row at most 5 buttons, and a button's
  * `custom_id` is 1–100 characters.
  */
+import { chatActionControlId, type ChatActionToken } from "../../action-token"
 import type { ChatBlock, ChatToolActivity } from "../../render/blocks"
 
 /** https://discord.com/developers — Create/Edit Message JSON params, API v10. */
@@ -95,12 +96,17 @@ export const renderDiscordMessage = (blocks: ReadonlyArray<ChatBlock>): DiscordM
 				break
 			}
 			case "activity":
-				if (block.tools.length > 0) lines.push(`Tools: ${block.tools.map(toolLabel).join(" · ")}`)
+				if (block.tools.length > 0) lines.push(block.tools.map(toolLabel).join(" · "))
 				break
 			case "approval": {
-				lines.push(
-					`**Approve \`${block.toolName}\`?**${block.summary === "" ? "" : `\n${block.summary}`}`,
-				)
+				const detail = block.summary === "" ? "" : `\n${block.summary}`
+				if (block.outcome !== null) {
+					// A decided proposal keeps its line and loses its buttons: Discord leaves a
+					// component clickable forever, and the click would only be answered "settled".
+					lines.push(`**\`${block.toolName}\`**${detail}\n${block.outcome.text}`)
+					break
+				}
+				lines.push(`**Approve \`${block.toolName}\`?**${detail}`)
 				// Each approval is one action row, and a message carries at most five of them — a sixth
 				// would be rejected along with the whole turn.
 				const row = rows.length < MAX_ACTION_ROWS ? approvalRow(block.token, block.toolName) : null
@@ -145,29 +151,25 @@ const ENTITY_LABELS = {
 	log: "Log",
 } as const
 
-/**
- * Tool names carry underscores, which Discord reads as italics, so a name is always in backticks
- * rather than the surrounding line being styled.
- */
+/** The status line: the phrase, then whether the call is still going or failed. */
 const toolLabel = (tool: ChatToolActivity): string => {
 	const detail = tool.detail === null ? "" : ` (${tool.detail})`
 	const status = tool.status === "running" ? "…" : tool.status === "failed" ? " (failed)" : ""
-	return `\`${tool.name}\`${detail}${status}`
+	return `${tool.label}${detail}${status}`
 }
 
-export const APPROVE_ACTION = "approve"
-export const DENY_ACTION = "deny"
-
 /**
- * The two buttons, carrying the driver's action token through Discord's `custom_id`.
+ * The two buttons, carrying the driver's action control id through Discord's `custom_id`.
  *
- * A tool call id is assigned by the model provider, so the token's length is not ours to bound: a
- * pair that would not fit is dropped rather than sent, because Discord rejects the whole message
- * over one oversized `custom_id`.
+ * The id itself is Maple's, not Discord's — the host reads the decision back off it, so the format
+ * is `chatActionControlId`'s and this connector only holds it to its own length limit. A tool call
+ * id is assigned by the model provider, so that length is not ours to bound: a pair that would not
+ * fit is dropped rather than sent, because Discord rejects the whole message over one oversized
+ * `custom_id`.
  */
-const approvalRow = (token: string, toolName: string): DiscordActionRow | null => {
-	const approve = `${APPROVE_ACTION}:${token}`
-	const deny = `${DENY_ACTION}:${token}`
+const approvalRow = (token: ChatActionToken, toolName: string): DiscordActionRow | null => {
+	const approve = chatActionControlId("approve", token)
+	const deny = chatActionControlId("deny", token)
 	if (approve.length > MAX_CUSTOM_ID_CHARS || deny.length > MAX_CUSTOM_ID_CHARS) return null
 	return {
 		type: 1,

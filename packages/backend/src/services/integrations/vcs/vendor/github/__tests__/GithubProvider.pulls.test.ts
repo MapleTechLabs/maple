@@ -1,7 +1,7 @@
 import { assert, describe, it } from "@effect/vitest"
 import { generateKeyPairSync } from "node:crypto"
 import { ConfigProvider, Effect, Exit, Layer, Option, Schema } from "effect"
-import { GitCommitSha, type VcsInstallation } from "@maple/domain/http"
+import { GitCommitSha, type PullRequestReviewPublication, type VcsInstallation } from "@maple/domain/http"
 import { Env } from "@maple/backend/platform/Env"
 import { GithubAppClient } from "@maple/backend/services/integrations/vcs/vendor/github/GithubAppClient"
 import {
@@ -58,11 +58,16 @@ const apiPullRequest = (overrides: Record<string, unknown> = {}) => ({
 	...overrides,
 })
 
-const providerLayer = (responses: ReadonlyArray<Response>, requests: Array<string> = []) => {
+const providerLayer = (
+	responses: ReadonlyArray<Response>,
+	requests: Array<string> = [],
+	bodies: Array<string> = [],
+) => {
 	let next = 0
 	const http = Layer.succeed(GithubHttp, {
-		fetch: async (url) => {
+		fetch: async (url, init) => {
 			requests.push(url)
+			bodies.push(typeof init?.body === "string" ? init.body : "")
 			return responses[next++]!
 		},
 	} satisfies GithubHttpApi)
@@ -197,4 +202,348 @@ describe("GithubProvider commits", () => {
 			}).pipe(Effect.provide(layer))
 		}),
 	)
+})
+
+describe("GithubProvider publishing a review", () => {
+	const HEAD = Schema.decodeUnknownSync(GitCommitSha)("c".repeat(40))
+	const MARKER = "<!-- maple-pr-review -->"
+	const publication = (
+		comments: PullRequestReviewPublication["comments"] = [],
+	): PullRequestReviewPublication => ({
+		number: 612,
+		headSha: HEAD,
+		checkName: "Maple / observability",
+		title: "100/100 · Observability looks complete",
+		summary: "summary",
+		conclusion: "success",
+		annotations: [],
+		summaryComment: { marker: MARKER, body: `${MARKER}\n## Maple observability review: 100/100` },
+		reviewBody: comments.length === 0 ? null : "notes",
+		comments,
+	})
+	const checkRun = () => jsonResponse({ id: 1, html_url: "https://github.com/octo/shop/runs/1" }, 201)
+	const files = (patches: Record<string, string | undefined>) =>
+		jsonResponse(
+			Object.entries(patches).map(([filename, patch]) => ({
+				filename,
+				status: "modified",
+				additions: 1,
+				deletions: 1,
+				...(patch === undefined ? undefined : { patch }),
+			})),
+		)
+	const written = (id: number) =>
+		jsonResponse({ id, html_url: `https://github.com/octo/shop/pull/612#issuecomment-${id}` }, 201)
+
+	it.effect("writes the summary comment even when there is nothing to say inline", () => {
+		const requests: Array<string> = []
+		const layer = providerLayer([tokenResponse(), checkRun(), jsonResponse([]), written(5)], requests)
+		return Effect.gen(function* () {
+			const provider = yield* GithubProvider
+			const published = yield* provider.publishPullRequestReview(INSTALLATION, REPO, publication())
+			assert.equal(published.commentUrl, "https://github.com/octo/shop/pull/612#issuecomment-5")
+			assert.isNull(published.reviewUrl)
+			assert.isTrue(requests.at(-1)?.endsWith("/repos/octo/shop/issues/612/comments"))
+			// No review at all: the comment carries the result.
+			assert.isFalse(requests.some((url) => url.includes("/reviews")))
+		}).pipe(Effect.provide(layer))
+	})
+
+	it.effect("still posts the comment when the installation cannot write check runs", () => {
+		const requests: Array<string> = []
+		const layer = providerLayer(
+			[
+				tokenResponse(),
+				jsonResponse({ message: "Resource not accessible by integration" }, 403),
+				jsonResponse([]),
+				written(6),
+			],
+			requests,
+		)
+		return Effect.gen(function* () {
+			const provider = yield* GithubProvider
+			const published = yield* provider.publishPullRequestReview(INSTALLATION, REPO, publication())
+			assert.isNull(published.checkRunUrl)
+			assert.equal(published.commentUrl, "https://github.com/octo/shop/pull/612#issuecomment-6")
+		}).pipe(Effect.provide(layer))
+	})
+
+	it.effect("does not mistake a rate-limited 403 for a missing permission", () => {
+		const requests: Array<string> = []
+		const layer = providerLayer(
+			[
+				tokenResponse(),
+				new Response(JSON.stringify({ message: "You have exceeded a secondary rate limit" }), {
+					status: 403,
+					headers: { "content-type": "application/json", "retry-after": "3600" },
+				}),
+			],
+			requests,
+		)
+		return Effect.gen(function* () {
+			const provider = yield* GithubProvider
+			const exit = yield* Effect.exit(
+				provider.publishPullRequestReview(INSTALLATION, REPO, publication()),
+			)
+			assert.isTrue(Exit.isFailure(exit))
+			// Nothing after the check run: a rate limit fails the publish so it is retried whole.
+			assert.isFalse(requests.some((url) => url.includes("/comments")))
+		}).pipe(Effect.provide(layer))
+	})
+
+	it.effect("edits its own comment in place on a later push", () => {
+		const requests: Array<string> = []
+		const layer = providerLayer(
+			[
+				tokenResponse(),
+				checkRun(),
+				jsonResponse([
+					{ id: 3, html_url: "x", body: "looks good to me", performed_via_github_app: null },
+					{
+						id: 77,
+						html_url: "y",
+						body: `${MARKER}\nold`,
+						performed_via_github_app: { id: 123456 },
+					},
+				]),
+				written(77),
+			],
+			requests,
+		)
+		return Effect.gen(function* () {
+			const provider = yield* GithubProvider
+			const published = yield* provider.publishPullRequestReview(INSTALLATION, REPO, publication())
+			assert.equal(published.commentUrl, "https://github.com/octo/shop/pull/612#issuecomment-77")
+			assert.isTrue(requests.at(-1)?.endsWith("/repos/octo/shop/issues/comments/77"))
+		}).pipe(Effect.provide(layer))
+	})
+
+	it.effect("leaves a person's comment that quotes the marker alone", () => {
+		const requests: Array<string> = []
+		const layer = providerLayer(
+			[
+				tokenResponse(),
+				checkRun(),
+				jsonResponse([
+					{
+						id: 9,
+						html_url: "z",
+						body: `why does it say ${MARKER}?`,
+						performed_via_github_app: null,
+					},
+				]),
+				written(10),
+			],
+			requests,
+		)
+		return Effect.gen(function* () {
+			const provider = yield* GithubProvider
+			yield* provider.publishPullRequestReview(INSTALLATION, REPO, publication())
+			assert.isTrue(requests.at(-1)?.endsWith("/repos/octo/shop/issues/612/comments"))
+			assert.isFalse(requests.some((url) => url.includes("/issues/comments/9")))
+		}).pipe(Effect.provide(layer))
+	})
+
+	it.effect("drops the inline notes when GitHub refuses a line, keeping the comment", () => {
+		const requests: Array<string> = []
+		const layer = providerLayer(
+			[
+				tokenResponse(),
+				checkRun(),
+				jsonResponse([]),
+				written(5),
+				files({ "a.ts": "@@ -999,1 +999,1 @@\n-old\n+new" }),
+				jsonResponse({ message: "Line could not be resolved" }, 422),
+			],
+			requests,
+		)
+		return Effect.gen(function* () {
+			const provider = yield* GithubProvider
+			const published = yield* provider.publishPullRequestReview(
+				INSTALLATION,
+				REPO,
+				publication([{ path: "a.ts", line: 999, body: "add a span" }]),
+			)
+			assert.equal(published.commentUrl, "https://github.com/octo/shop/pull/612#issuecomment-5")
+			assert.isNull(published.reviewUrl)
+			// One review attempt only: an empty re-post would be noise under the summary comment.
+			assert.equal(requests.filter((url) => url.endsWith("/pulls/612/reviews")).length, 1)
+		}).pipe(Effect.provide(layer))
+	})
+
+	it.effect("posts the inline notes as a review after the comment", () => {
+		const requests: Array<string> = []
+		const layer = providerLayer(
+			[
+				tokenResponse(),
+				checkRun(),
+				jsonResponse([]),
+				written(5),
+				files({ "a.ts": "@@ -1,2 +1,3 @@\n one\n+two\n three" }),
+				jsonResponse({
+					id: 8,
+					html_url: "https://github.com/octo/shop/pull/612#pullrequestreview-8",
+				}),
+				jsonResponse([{ id: 81, path: "a.ts", line: 3 }]),
+			],
+			requests,
+		)
+		return Effect.gen(function* () {
+			const provider = yield* GithubProvider
+			const published = yield* provider.publishPullRequestReview(
+				INSTALLATION,
+				REPO,
+				publication([{ path: "a.ts", line: 3, body: "add a span", key: "finding-1" }]),
+			)
+			assert.equal(published.reviewUrl, "https://github.com/octo/shop/pull/612#pullrequestreview-8")
+			assert.isTrue(requests.at(-2)?.endsWith("/repos/octo/shop/pulls/612/reviews"))
+			// The posted comment's id comes back under the key it was submitted with.
+			assert.deepEqual(published.inlineComments, [{ key: "finding-1", commentId: "81" }])
+		}).pipe(Effect.provide(layer))
+	})
+	it.effect("drops only the comments outside the diff and says so in the review", () => {
+		const requests: Array<string> = []
+		const bodies: Array<string> = []
+		const layer = providerLayer(
+			[
+				tokenResponse(),
+				checkRun(),
+				jsonResponse([]),
+				written(5),
+				files({ "a.ts": "@@ -1,2 +1,3 @@\n one\n+two\n three", "logo.png": undefined }),
+				jsonResponse({
+					id: 8,
+					html_url: "https://github.com/octo/shop/pull/612#pullrequestreview-8",
+				}),
+				jsonResponse([{ id: 81, path: "a.ts", line: 2 }]),
+			],
+			requests,
+			bodies,
+		)
+		return Effect.gen(function* () {
+			const provider = yield* GithubProvider
+			const published = yield* provider.publishPullRequestReview(
+				INSTALLATION,
+				REPO,
+				publication([
+					{ path: "a.ts", line: 40, body: "outside", key: "finding-0" },
+					{ path: "a.ts", line: 2, body: "inside", key: "finding-1" },
+					{ path: "logo.png", line: 1, body: "binary", key: "finding-2" },
+				]),
+			)
+			assert.deepEqual(published.inlineComments, [{ key: "finding-1", commentId: "81" }])
+			const review = JSON.parse(bodies.at(-2) ?? "{}")
+			assert.lengthOf(review.comments, 1)
+			assert.include(review.body, "2 findings sit outside this diff")
+		}).pipe(Effect.provide(layer))
+	})
+})
+
+describe("GithubProvider changes since an earlier review", () => {
+	const OLD = "1".repeat(40)
+	const NEW = "2".repeat(40)
+	const BASE = "3".repeat(40)
+	const comparison = (status: string, files: ReadonlyArray<Record<string, unknown>>) =>
+		jsonResponse({ status, files })
+	const changed = (filename: string, patch: string) => ({ filename, status: "modified", patch })
+	// The two base comparisons run concurrently, so answer by URL rather than by call order.
+	const routedLayer = (routes: Record<string, Response>, requests: Array<string>) =>
+		Layer.effect(GithubProvider, GithubProvider.make).pipe(
+			Layer.provide(
+				Layer.effect(GithubAppClient, GithubAppClient.make).pipe(
+					Layer.provide(
+						Layer.succeed(GithubHttp, {
+							fetch: async (url) => {
+								requests.push(url)
+								if (url.endsWith("/access_tokens")) return tokenResponse()
+								const range = new URL(url).pathname.split("/compare/")[1] ?? ""
+								return routes[range] ?? jsonResponse({ message: "Not Found" }, 404)
+							},
+						} satisfies GithubHttpApi),
+					),
+					Layer.provide(env),
+				),
+			),
+			Layer.provide(env),
+		)
+
+	it.effect("uses the forward comparison when the earlier head is an ancestor", () => {
+		const requests: Array<string> = []
+		const layer = providerLayer(
+			[tokenResponse(), comparison("ahead", [changed("src/a.ts", "@@ -1 +1 @@\n-x\n+y")])],
+			requests,
+		)
+		return Effect.gen(function* () {
+			const provider = yield* GithubProvider
+			const delta = yield* provider.fetchChangesSince(INSTALLATION, REPO, {
+				previousHead: OLD,
+				head: NEW,
+				base: BASE,
+			})
+			assert.deepStrictEqual(delta, { rewritten: false, paths: ["src/a.ts"] })
+			assert.include(requests[1]!, `/compare/${OLD}...${NEW}`)
+			assert.lengthOf(requests, 2)
+		}).pipe(Effect.provide(layer))
+	})
+
+	it.effect("after a rebase, reports only files whose own change differs, not the base's", () => {
+		const requests: Array<string> = []
+		const layer = routedLayer(
+			{
+				// The forward diff carries everything the new base moved.
+				[`${OLD}...${NEW}`]: comparison("diverged", [
+					changed("src/a.ts", "@@ -1 +1 @@\n-x\n+y"),
+					changed("base/moved.ts", "@@ -1 +1 @@\n-m\n+n"),
+				]),
+				[`${BASE}...${OLD}`]: comparison("ahead", [
+					changed("src/a.ts", "@@ -10,2 +10,2 @@\n-x\n+y"),
+					changed("src/b.ts", "@@ -1 +1 @@\n-p\n+q"),
+				]),
+				[`${BASE}...${NEW}`]: comparison("ahead", [
+					changed("src/a.ts", "@@ -30,2 +30,2 @@\n-x\n+y"),
+					changed("src/b.ts", "@@ -1 +1 @@\n-p\n+Q"),
+				]),
+			},
+			requests,
+		)
+		return Effect.gen(function* () {
+			const provider = yield* GithubProvider
+			const delta = yield* provider.fetchChangesSince(INSTALLATION, REPO, {
+				previousHead: OLD,
+				head: NEW,
+				base: BASE,
+			})
+			assert.deepStrictEqual(delta, { rewritten: true, paths: ["src/b.ts"] })
+			const compares = requests.filter((url) => url.includes("/compare/"))
+			assert.deepStrictEqual(
+				compares.map((url) => new URL(url).pathname.split("/compare/")[1]).sort(),
+				[`${BASE}...${NEW}`, `${BASE}...${OLD}`, `${OLD}...${NEW}`].sort(),
+			)
+		}).pipe(Effect.provide(layer))
+	})
+
+	it.effect("asks for everything when a rewritten history has no base, or a list is cut off", () => {
+		const full = Array.from({ length: 300 }, (_, i) => changed(`f${i}.ts`, "@@ -1 +1 @@\n-a\n+b"))
+		return Effect.gen(function* () {
+			const noBase = yield* Effect.gen(function* () {
+				const provider = yield* GithubProvider
+				return yield* provider.fetchChangesSince(INSTALLATION, REPO, {
+					previousHead: OLD,
+					head: NEW,
+					base: undefined,
+				})
+			}).pipe(Effect.provide(providerLayer([tokenResponse(), comparison("behind", [])])))
+			assert.deepStrictEqual(noBase, { rewritten: true, paths: undefined })
+
+			const cutOff = yield* Effect.gen(function* () {
+				const provider = yield* GithubProvider
+				return yield* provider.fetchChangesSince(INSTALLATION, REPO, {
+					previousHead: OLD,
+					head: NEW,
+					base: BASE,
+				})
+			}).pipe(Effect.provide(providerLayer([tokenResponse(), comparison("ahead", full)])))
+			assert.deepStrictEqual(cutOff, { rewritten: false, paths: undefined })
+		})
+	})
 })

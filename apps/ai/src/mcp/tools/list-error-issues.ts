@@ -310,5 +310,6 @@ export function registerListErrorIssuesTool(server: McpToolRegistrar) {
 				}),
 			}
 		}),
+		{ phrases: ["Listing error issues", "Checking open issues"] },
 	)
 }

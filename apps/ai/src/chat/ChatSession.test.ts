@@ -7,8 +7,8 @@
  * headline one on the first run.
  */
 import { assert, beforeEach, describe, it } from "vitest"
-import { encodeChatTurnTenant, type ChatTurnTenant } from "@maple/domain/chat-session"
-import { ChatSession } from "./ChatSession"
+import { encodeChatTurnTenant, type ChatTurnOrigin, type ChatTurnTenant } from "@maple/domain/chat-session"
+import { ChatSession, TURN_STALE_MS } from "./ChatSession"
 import { installSchedulerWait, makeFakeDurableObjectState } from "../../test/chat/fake-do-state"
 
 installSchedulerWait()
@@ -21,6 +21,8 @@ const TENANT = encodeChatTurnTenant({
 	roles: [],
 	authMode: "self_hosted",
 })
+
+const APP: ChatTurnOrigin = { kind: "app" }
 
 /**
  * A session whose turn never starts.
@@ -255,12 +257,14 @@ describe("ChatSession turn mutex", () => {
 			messageId: "m1",
 			text: "one",
 			tenant: TENANT,
+			origin: APP,
 		})
 		const second = session.beginTurn({
 			sessionId: "org_test:tab",
 			messageId: "m2",
 			text: "two",
 			tenant: TENANT,
+			origin: APP,
 		})
 
 		assert.isDefined(first)
@@ -276,6 +280,7 @@ describe("ChatSession turn mutex", () => {
 			messageId: "u1",
 			text: "Say PONG",
 			tenant: TENANT,
+			origin: APP,
 		})
 		// Simulate what the turn emits, using the id the session actually handed it.
 		assert.isFalse(session.holdsTurn("u1"), "the user's message id must not own the turn")
@@ -306,6 +311,7 @@ describe("ChatSession turn mutex", () => {
 			messageId: "m1",
 			text: "hello",
 			tenant: TENANT,
+			origin: APP,
 		})
 
 		// The client tails from this cursor; if it pointed *after* the user message the send's own
@@ -316,7 +322,13 @@ describe("ChatSession turn mutex", () => {
 
 	it("abort ends the turn against the message that actually holds it", () => {
 		const { session, turnId } = makeSession()
-		session.beginTurn({ sessionId: "org_test:tab", messageId: "m1", text: "hi", tenant: TENANT })
+		session.beginTurn({
+			sessionId: "org_test:tab",
+			messageId: "m1",
+			text: "hi",
+			tenant: TENANT,
+			origin: APP,
+		})
 		const turn = turnId()
 
 		session.abort()
@@ -332,10 +344,22 @@ describe("ChatSession turn mutex", () => {
 
 	it("a straggler cannot release a newer turn's claim", () => {
 		const { session, turnId } = makeSession()
-		session.beginTurn({ sessionId: "org_test:tab", messageId: "m1", text: "one", tenant: TENANT })
+		session.beginTurn({
+			sessionId: "org_test:tab",
+			messageId: "m1",
+			text: "one",
+			tenant: TENANT,
+			origin: APP,
+		})
 		const first = turnId()!
 		session.abort()
-		session.beginTurn({ sessionId: "org_test:tab", messageId: "m2", text: "two", tenant: TENANT })
+		session.beginTurn({
+			sessionId: "org_test:tab",
+			messageId: "m2",
+			text: "two",
+			tenant: TENANT,
+			origin: APP,
+		})
 		const second = turnId()!
 
 		// The aborted turn keeps draining and eventually calls `endTurn` for its own message.
@@ -349,12 +373,21 @@ describe("ChatSession turn mutex", () => {
 
 	it("expires an abandoned claim instead of wedging the conversation forever", () => {
 		const { session, state, turnId } = makeSession()
-		session.beginTurn({ sessionId: "org_test:tab", messageId: "m1", text: "hi", tenant: TENANT })
+		session.beginTurn({
+			sessionId: "org_test:tab",
+			messageId: "m1",
+			text: "hi",
+			tenant: TENANT,
+			origin: APP,
+		})
 		const turn = turnId()
 
 		// Simulate the turn vanishing (isolate eviction, a defect, a deploy mid-stream) by ageing
 		// its claim past the staleness ceiling.
-		state.storage.sql.exec("UPDATE session SET running_since = ? WHERE id = 1", clock - 16 * 60 * 1000)
+		state.storage.sql.exec(
+			"UPDATE session SET running_since = ? WHERE id = 1",
+			clock - TURN_STALE_MS - 60 * 1000,
+		)
 
 		assert.isFalse(session.running(), "a stale claim is not running")
 		const reclaimed = session.beginTurn({
@@ -362,6 +395,7 @@ describe("ChatSession turn mutex", () => {
 			messageId: "m2",
 			text: "retry",
 			tenant: TENANT,
+			origin: APP,
 		})
 		assert.isDefined(reclaimed, "the conversation recovers on its own")
 
@@ -380,7 +414,13 @@ describe("ChatSession turn heartbeat", () => {
 	 */
 	it("arms the alarm when a turn starts, and re-arms it while that turn runs", () => {
 		const { session, state } = makeSession()
-		session.beginTurn({ sessionId: "org_test:tab", messageId: "u1", text: "hi", tenant: TENANT })
+		session.beginTurn({
+			sessionId: "org_test:tab",
+			messageId: "u1",
+			text: "hi",
+			tenant: TENANT,
+			origin: APP,
+		})
 		assert.lengthOf(state.alarms, 1)
 
 		session.alarm()
@@ -390,7 +430,13 @@ describe("ChatSession turn heartbeat", () => {
 
 	it("stops re-arming once no turn holds the slot", () => {
 		const { session, state, turnId } = makeSession()
-		session.beginTurn({ sessionId: "org_test:tab", messageId: "u1", text: "hi", tenant: TENANT })
+		session.beginTurn({
+			sessionId: "org_test:tab",
+			messageId: "u1",
+			text: "hi",
+			tenant: TENANT,
+			origin: APP,
+		})
 		session.endTurn(turnId()!)
 
 		session.alarm()
@@ -400,7 +446,13 @@ describe("ChatSession turn heartbeat", () => {
 	/** A fresh activation holds the claim but not the fiber: the object was evicted mid-turn. */
 	it("releases a slot whose turn did not survive an eviction", () => {
 		const { session, state, turnId } = makeSession()
-		session.beginTurn({ sessionId: "org_test:tab", messageId: "u1", text: "hi", tenant: TENANT })
+		session.beginTurn({
+			sessionId: "org_test:tab",
+			messageId: "u1",
+			text: "hi",
+			tenant: TENANT,
+			origin: APP,
+		})
 		const orphaned = turnId()!
 
 		const revived = new ChatSession(state, {})

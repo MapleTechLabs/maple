@@ -145,7 +145,7 @@ jobs:
             #
             # To restore per-PR databases: flip that resolver back to "managed" for
             # `pr` and re-add the steps this comment replaced (PlanetScale CLI setup,
-            # `planetscale-pr-branch.ts up`, `db:ensure-privileges`, `db:migrate`,
+            # `planetscale-pr-branch.ts up`, `db:migrate`,
             # `db:normalize-preview`, `electric-pr-branch.ts up`, and the matching
             # `planetscale-pr-branch.ts down` teardown). Every script is still in the
             # repo, dormant.

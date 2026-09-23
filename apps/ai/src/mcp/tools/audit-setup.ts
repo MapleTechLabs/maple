@@ -153,6 +153,7 @@ export function registerAuditSetupTool(server: McpToolRegistrar) {
 				}),
 			}
 		}),
+		{ phrases: ["Auditing the setup", "Checking the telemetry setup"] },
 	)
 }
 

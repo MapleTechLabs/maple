@@ -14,7 +14,7 @@
  */
 import { makeChatTranscript } from "@maple/domain/chat-transcript"
 import type { ChatEvent, ChatTurnEndEvent } from "@maple/domain/chat-session"
-import { Clock, Effect, Fiber, Schedule, Semaphore, Stream } from "effect"
+import { Cause, Clock, Effect, Fiber, Schedule, Semaphore, Stream } from "effect"
 import type { ChatMessageRef, ChatOutbound, ChatTarget } from "./outbound"
 import {
 	renderChatMessage,
@@ -67,15 +67,25 @@ export const driveChatTurn = Effect.fn("ChatPlatform.driveChatTurn")(function* <
 	/** How the turn closed, for the span — the one place a failed turn is more than a line of copy. */
 	let endReason = "unfinished"
 	let dirty = false
+	/**
+	 * What the render is of: a turn in progress, or the message it settles as.
+	 *
+	 * The exception to the note above — it is cleared by this fiber once the throttle fiber has
+	 * been interrupted, so no flush can read it half way through a turn it has not finished.
+	 */
+	let running = true
 
 	const flush = gate.withPermit(
 		Effect.gen(function* () {
 			dirty = false
 			const message = transcript.messages.find((candidate) => candidate.id === messageId)
 			const blocks: Array<ChatBlock> =
-				message === undefined ? [] : [...renderChatMessage(message, context)]
+				message === undefined ? [] : [...renderChatMessage(message, context, running)]
 			if (ending !== null) blocks.push(ending)
-			if (blocks.length === 0) blocks.push(PENDING)
+			// A finished turn must never be left under the placeholder: a model that stops after a
+			// tool call without a closing word renders as nothing at all, and "Working on it…" would
+			// then be the last thing the channel ever says about it.
+			if (blocks.length === 0) blocks.push(running ? PENDING : NOTHING_SAID)
 
 			const groups = splitBlocks(blocks, outbound.limits.maxMessageChars)
 			for (let index = 0; index < Math.max(groups.length, posted.length); index++) {
@@ -118,7 +128,14 @@ export const driveChatTurn = Effect.fn("ChatPlatform.driveChatTurn")(function* <
 		dirty = true
 	})
 
-	yield* Effect.forkChild(transport.typing(target).pipe(Effect.tapCause(Effect.logDebug), Effect.ignore))
+	yield* Effect.forkChild(
+		// Best effort by nature, so the failure is a debug line and not even its tag: nothing acts on
+		// a missing typing indicator.
+		transport.typing(target).pipe(
+			Effect.tapCause(() => Effect.logDebug("Typing could not be shown")),
+			Effect.ignore,
+		),
+	)
 	// The placeholder, before a single event: the platform should show the bot working on it rather
 	// than saying nothing until the first token, or until the first throttle interval.
 	yield* flush
@@ -126,7 +143,9 @@ export const driveChatTurn = Effect.fn("ChatPlatform.driveChatTurn")(function* <
 		Effect.repeat(
 			// A mid-turn edit that fails takes its fiber with it and nothing joins this one, so the
 			// cause is logged here or it is lost. The final flush still runs, and still reports.
-			Effect.suspend(() => (dirty ? flush : Effect.void)).pipe(Effect.tapCause(Effect.logWarning)),
+			Effect.suspend(() => (dirty ? flush : Effect.void)).pipe(
+				Effect.tapCause(report("A turn's message could not be updated")),
+			),
 			{ schedule: Schedule.spaced(outbound.limits.minEditInterval) },
 		),
 	)
@@ -149,14 +168,40 @@ export const driveChatTurn = Effect.fn("ChatPlatform.driveChatTurn")(function* <
 		Effect.exit,
 	)
 	yield* Fiber.interrupt(throttled)
+	// Whatever ended the turn, the last render is the finished message: the answer, and none of the
+	// working. Set here rather than on `turn-end`, so a stream that died — and never reaches one —
+	// settles the same way.
+	running = false
 	yield* flush
 	yield* Effect.annotateCurrentSpan({ "chat.turn.end_reason": endReason, "chat.messages": posted.length })
 	return yield* outcome
 })
 
+/**
+ * What failed, never what it carried.
+ *
+ * An outbound failure holds the request it failed on, and that request's body is the turn being
+ * posted — so a rendered cause on this path writes a customer's conversation into a log line.
+ */
+const report = (message: string) => (cause: Cause.Cause<unknown>) =>
+	Effect.logWarning(message).pipe(
+		Effect.annotateLogs({
+			"error.type": Cause.prettyErrors(cause)
+				.map((error) => error.name)
+				.join(";"),
+		}),
+	)
+
 const NO_BLOCKS: ReadonlyArray<ChatBlock> = []
 
 const PENDING: ChatNoticeBlock = { kind: "notice", tone: "pending", text: "Working on it…" }
+
+/** A turn that ran to its end and wrote nothing to show for it. Rare, and never silent. */
+const NOTHING_SAID: ChatNoticeBlock = {
+	kind: "notice",
+	tone: "info",
+	text: "Finished without a reply.",
+}
 
 const DISCONNECTED: ChatNoticeBlock = {
 	kind: "notice",

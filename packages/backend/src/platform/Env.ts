@@ -3,9 +3,15 @@
 // is no caller that could answer a missing or malformed env var differently, and
 // a worker that boots with one is worse than one that refuses to boot. Each is a
 // tagged `EnvValidationError` so the crash names the variable.
-import { chatConnectorConfig, type ChatConnectorConfig } from "@maple/chat-platform"
+import {
+	chatConnectorConfig,
+	chatConnectorOutboundConfig,
+	type ChatConnectorConfig,
+	type ConnectorConfig,
+} from "@maple/chat-platform"
 import { optionalRedacted, optionalString, stringWithDefault } from "@maple/infra/config-helpers"
 import { Config, Context, Effect, Layer, Option, Redacted, Schema } from "effect"
+import { type MapleRegion, parseMapleRegion } from "@maple/domain/organization-regions"
 
 /** Fatal misconfiguration discovered at startup — surfaces as a tagged defect in the Cause. */
 class EnvValidationError extends Schema.TaggedError<EnvValidationError>()(
@@ -51,6 +57,8 @@ export interface EnvConfig {
 	readonly MAPLE_API_BASE_URL: string
 	/** Deployment environment (`production`, `pr-<n>`, `development`) — set by alchemy from the stage. */
 	readonly MAPLE_ENVIRONMENT: string
+	/** The regional instance this worker belongs to, derived by the stack from the stage (`prd-eu` → `eu`). */
+	readonly MAPLE_REGION: MapleRegion
 	/** Escape hatch: allow real email sends outside production (e.g. a deliberate test run on a dev stage). */
 	readonly MAPLE_EMAIL_ALLOW_NONPROD: string
 	/** Route every org to the managed warehouse; honoured only in development. */
@@ -97,18 +105,17 @@ export interface EnvConfig {
 	 * absent is simply reported as unavailable.
 	 */
 	readonly CHAT_CONNECTOR_CONFIG: ChatConnectorConfig
+	/**
+	 * The deployment-wide config every chat connector's OUTBOUND half declared, for posting an
+	 * alert and listing where one can go. Same neutrality as the install map; absent names are
+	 * left out, and the platform's refusal reports the gap.
+	 */
+	readonly CHAT_CONNECTOR_OUTBOUND_CONFIG: ConnectorConfig
 	readonly SLACK_CLIENT_ID: Option.Option<string>
 	readonly SLACK_CLIENT_SECRET: Option.Option<Redacted.Redacted<string>>
 	/**
-	 * Dedicated bearer secret for the internal Slack-bot resolve endpoint, kept
-	 * distinct from the MCP-internal `INTERNAL_SERVICE_TOKEN` — there is no
-	 * fallback to it, since that token must not unlock every org's bot token.
-	 * The endpoint answers 401 while this is unset.
-	 */
-	readonly SLACK_INTERNAL_SERVICE_TOKEN: Option.Option<Redacted.Redacted<string>>
-	/**
 	 * Dedicated bearer secret for the repository sandbox Worker, kept distinct
-	 * from `INTERNAL_SERVICE_TOKEN` for the same reason as the Slack one above:
+	 * from `INTERNAL_SERVICE_TOKEN`:
 	 * that token lets its holder act as any organization, and this one reaches a
 	 * deployment whose job is running model-chosen commands. There is no fallback
 	 * — the sandbox tools report themselves unavailable while it is unset.
@@ -205,6 +212,7 @@ const envConfig = Config.all({
 	MAPLE_APP_BASE_URL: stringWithDefault("MAPLE_APP_BASE_URL", "http://127.0.0.1:3471"),
 	MAPLE_API_BASE_URL: stringWithDefault("MAPLE_API_BASE_URL", "http://127.0.0.1:3472"),
 	MAPLE_ENVIRONMENT: stringWithDefault("MAPLE_ENVIRONMENT", "development"),
+	MAPLE_REGION: stringWithDefault("MAPLE_REGION", "us").pipe(Config.map(parseMapleRegion)),
 	MAPLE_EMAIL_ALLOW_NONPROD: stringWithDefault("MAPLE_EMAIL_ALLOW_NONPROD", "false"),
 	MAPLE_IGNORE_ORG_CLICKHOUSE: stringWithDefault("MAPLE_IGNORE_ORG_CLICKHOUSE", "false"),
 	CLERK_SECRET_KEY: optionalRedacted("CLERK_SECRET_KEY"),
@@ -235,9 +243,9 @@ const envConfig = Config.all({
 		"openid email profile organizations:read channels:read channel-webhooks:write",
 	),
 	CHAT_CONNECTOR_CONFIG: chatConnectorConfig,
+	CHAT_CONNECTOR_OUTBOUND_CONFIG: chatConnectorOutboundConfig,
 	SLACK_CLIENT_ID: optionalString("SLACK_CLIENT_ID"),
 	SLACK_CLIENT_SECRET: optionalRedacted("SLACK_CLIENT_SECRET"),
-	SLACK_INTERNAL_SERVICE_TOKEN: optionalRedacted("SLACK_INTERNAL_SERVICE_TOKEN"),
 	SANDBOX_INTERNAL_SERVICE_TOKEN: optionalRedacted("SANDBOX_INTERNAL_SERVICE_TOKEN"),
 	APNS_TEAM_ID: optionalString("APNS_TEAM_ID"),
 	APNS_KEY_ID: optionalString("APNS_KEY_ID"),

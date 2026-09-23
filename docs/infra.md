@@ -57,8 +57,11 @@ Two things a future change here needs to know:
   `apps/api/src/resources/replay-blobs.ts`.
 - `packages/infra` — stage/region/domain/naming logic, the shared deploy-time env groups,
   and the few resources several Worker modules bind.
-    - `cloudflare/stage.ts` — `MapleStage`, domains, worker names, Hyperdrive resolution.
-      Pure functions, unit-tested, no cloud calls.
+    - `region.ts` — `MapleRegion` (`us` | `eu`), the one axis both clouds key on; see
+      "Regions" below.
+    - `cloudflare/stage.ts` — `MapleStage`, `parseMapleDeployment` (stage + region off the
+      alchemy stage string), domains, worker names, placement, storage jurisdiction,
+      Hyperdrive resolution. Pure functions, unit-tested, no cloud calls.
     - `cloudflare/stack.ts` — `MapleStack`, what the root stack tells the Worker classes.
     - `cloudflare/observability.ts` — the Workers Observability destinations, declared once
       and yielded from every module that binds them (alchemy registers a resource by id; a
@@ -84,6 +87,46 @@ half does not. `Config` also reports every missing key in one pass instead of th
 the first, and keeps the failure in the typed error channel. `packages/alchemy-maple`'s
 `MapleEnvironment` is the same pattern inside a provider; the runtime worker env schemas
 use `@maple/infra/config-helpers`, which `env.ts` builds on.
+
+## Regions: one stack, one instance per deploy
+
+A geographic instance is the whole stack — every Worker, the ingest fleet, Electric, the
+replay bucket, the chat Durable Object — deployed against that instance's own Tinybird
+workspace, application database and secrets. There is no per-org routing anywhere: an org's
+region is the instance it was created on, and an EU hostname cannot reach a US resource
+because the EU Workers are bound to none. Plan and rationale: `docs/eu-region-plan.md`.
+
+- **The alchemy stage string carries the region**: `prd` is the US instance, `prd-eu` the EU
+  one (`dev_makisuo-eu` a dev stage of it; PR previews are US-only). Alchemy keys its state
+  by stage, so the two instances never plan against each other's resources, and nothing has
+  to set a second variable in lockstep. `parseMapleDeployment` is the one parser;
+  `MapleStack` carries `region` to every Worker module.
+- **`us` is unsuffixed** everywhere — Worker names, AWS names, hostnames — so adding `eu`
+  renamed nothing: `maple-api` / `maple-api-eu`, `app.maple.dev` / `app.eu.maple.dev`,
+  `maple-ingest` / `maple-ingest-eu`. `regionSuffix` in `region.ts` is the single rule.
+- **Placement is a hint, jurisdiction is a pin.** `resolveWorkerPlacement` steers each
+  instance's Workers beside its own database (us-east-1 / eu-central-1), best effort.
+  `resolveStorageJurisdiction` puts the EU instance's R2 bucket and its Durable Objects in
+  Cloudflare's `eu` jurisdiction, which is a hard storage guarantee on every plan. The DO
+  jurisdiction is a property of the object id, so it is applied where ids are minted
+  (`chatSessionStub`, reading the stack-derived `MAPLE_REGION`), not on the binding.
+  Regional Services, the contractual execution guarantee, is an Enterprise add-on the
+  account does not carry; the residency claim says so.
+- **Shared apps stay on `us`**: the marketing site and the local-mode SPA hold no customer
+  data and there is one `maple.dev`, so `regionHostsSharedApps` keeps them off the EU
+  deploy.
+- **Secrets** come from a per-instance Infisical environment (`prod`, `prod-eu`) holding the
+  same variable names with that instance's values; `deploy-prd-instance.yml` picks the
+  environment, the stage and the AWS region from one `region` input, and the stack refuses
+  an `AWS_REGION` that disagrees with the stage. The EU deploy is opt-in through the
+  `MAPLE_DEPLOY_EU` repository variable until its accounts exist.
+- **The EU database is declared, not pasted.** `resolveDatabaseMode` is `"declared"` for the
+  EU prd: the deploy adopts `maple-eu`'s `main` branch, declares a `Planetscale.PostgresRole`
+  per consumer on it and a `Cloudflare.Hyperdrive.Connection` on each role's direct origin
+  (`declareMapleDb`), and the Workers bind theirs from their props (`mapleDbEnv`). The US
+  prd stays `"ref"`, on the dashboard configs it was measured on; moving it is the same
+  switch plus new config ids for its Workers.
+- **AI features are off on the EU instance**: the model providers have no EU pin.
 
 ## Local dev: one `alchemy dev` stack
 
@@ -248,12 +291,44 @@ impl)` over the plain `ChatSession` class — the outer Effect resolves state an
     holds it down for six hours rather than forever, so fixing the credential is all a
     recovery needs.
 
-    It has **no public hostname**: the socket half dials out, and no webhook connector is
-    registered yet, so a custom domain would be DNS plus a certificate bought for a route
-    nothing calls. Under `bun dev` the portless route reaches the webhook path. The first
-    webhook connector is what should buy the hostname. The Worker is inert on a stage with no
-    connector credentials — every connector key is bound optional, and a connector without
-    its configuration is skipped with one log line.
+    A second Durable Object, `ConnectorRelay` (`src/relay/ConnectorRelay.ts`), carries the
+    turn a mention causes: one object per conversation, addressed by connector, workspace and
+    channel, which resolves the org, claims a turn on maple-ai's `ChatSession` and streams the
+    answer back into the conversation under its own `waitUntil` (an alarm every 30s keeps it
+    resident while it does, for the same reason the chat session arms one). It is a separate
+    object because the socket is a single one for the whole deployment: running turns there
+    would either block the next frame behind a model run or pile every concurrent turn in the
+    system into the object that holds the connection. It keeps one thing in storage and only
+    one: which conversations the bot opened itself, which is what lets a message that
+    mentioned nobody still be answered there (`src/relay/conversation.ts` holds the whole
+    rule — the conversation is the bot's own, its session has held a turn inside the last
+    day, a human wrote the message, and it has text). Nothing else is persisted: an object
+    evicted mid-turn leaves the conversation holding the last thing the answer had said, and
+    the session ends the turn on its own heartbeat.
+
+    So the Worker binds, beyond its connector secrets: `ChatSession` cross-script on
+    maple-ai, `MAPLE_DB` (the api's Hyperdrive config — one row per mention, read inside a
+    connection scope that closes before the turn streams), `MAPLE_APP_BASE_URL` for the links
+    a reply carries, and an optional `MAPLE_SHARE_TOKEN_HMAC_KEY`, without which a chart in a
+    reply is relayed as text rather than as a picture. On a stage with no application
+    database (PR previews) the lookup fails, is logged, and the mention goes unanswered
+    rather than being told the workspace is unlinked.
+
+    It takes **one public hostname on production instances** (`domains.chat` —
+    `chat.maple.dev`, `chat.eu.maple.dev`): a webhook connector's platform is configured with a
+    request URL inside the vendor's own application, and that URL has to keep working across
+    deploys, which is what buys the custom domain the socket half never needed. A dev stage
+    reaches the same route through portless and a PR preview gets none — a connector there would
+    have neither credentials nor a database to resolve a workspace in. The Worker is inert on a
+    stage with no connector credentials: every connector key is bound optional, and a connector
+    without its configuration is skipped with one log line, so no socket is opened, the webhook
+    route answers 503, and no turn is ever relayed.
+
+    A connector whose install mints a credential per workspace (rather than using one
+    deployment-wide secret) has it sealed into `chat_workspaces.credentials_{ciphertext,iv,tag}`,
+    AAD-bound to `(org_id, connector, external_workspace_id)`. That is why chat-bot also binds
+    `MAPLE_INGEST_KEY_ENCRYPTION_KEY`, optionally: without it such a workspace fails its lookup
+    and the mention goes unanswered, while every other connector runs normally.
 
 - **The sandbox Worker** (`sandbox`): the one Worker in the fleet whose own module is
   its bundle entry. It hosts Cloudflare's Sandbox Durable Object (`@cloudflare/sandbox`),
@@ -432,11 +507,12 @@ on the runner because the runtime base is `debian:bookworm-slim` (glibc 2.36) wh
 
 ## Schema migrations run in the deploy
 
-The PlanetScale `main` branch is a `Planetscale.PostgresBranch` yielded into `MapleStack` on prd
-(`dbSchema`), with `migrations` at `packages/db/drizzle`. Alchemy orders resources only by the
-Outputs their props reference, and a Hyperdrive bound by id references nothing, so the api, ai and
-alerting Workers put `dbSchema.name` in their env (`MAPLE_DB_BRANCH`) to upload after it. Details in
-`docs/persistence.md`.
+The instance's PlanetScale `main` branch (`maple`, `maple-eu`) is a `Planetscale.PostgresBranch`
+yielded into `MapleStack` on prd (`db.schema`), with `migrations` at `packages/db/drizzle`. Alchemy
+orders resources only by the Outputs their props reference, and a Hyperdrive bound by id references
+nothing, so the api, ai and alerting Workers put the branch name in their env (`MAPLE_DB_BRANCH`,
+via `mapleDbEnv`) to upload after it. The ingest gateway's Postgres credential is a
+`Planetscale.PostgresRole` on the same branch; see `docs/persistence.md` for both.
 
 ## Hyperdrive: why api and alerting have separate configs
 

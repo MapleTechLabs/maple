@@ -1,6 +1,7 @@
 import { assert, describe, expect, it } from "@effect/vitest"
 import { Context, Effect, Schema, Tracer } from "effect"
 import type { McpToolNotFoundError } from "@maple/domain/mcp-tool-contract"
+import { ActorId } from "@maple/domain/primitives"
 import { McpToolExecutor, listMcpTools } from "./dispatcher"
 import { MCP_ANTICIPATED_ERROR_IDENTIFIERS } from "./expected-failures"
 import { mapleToolCatalog, mapleToolCatalogFor, toInputSchema } from "./tools/registry"
@@ -13,6 +14,20 @@ const TENANT: TenantContext = {
 	userId: "user_test" as TenantContext["userId"],
 	roles: [],
 	authMode: "self_hosted",
+}
+
+/** A turn answered in an external channel: no Maple user, an agent actor, and who asked. */
+const CONNECTOR_TENANT: TenantContext = {
+	...TENANT,
+	userId: "chat-connector" as TenantContext["userId"],
+	actorId: Schema.decodeUnknownSync(ActorId)("00000000-0000-4000-8000-00000000c0de"),
+	turnOrigin: {
+		kind: "connector",
+		connectorId: "testchat",
+		workspaceId: "w1",
+		externalUserId: "u-1",
+		displayName: "Ada",
+	},
 }
 
 // These cases stop at registry lookup/schema decoding, before a tool service is read.
@@ -66,9 +81,17 @@ describe("MCP dispatcher", () => {
 	describe("tool audience", () => {
 		// The sandbox tools execute code inside a container holding the org's source.
 		// They are for Maple's own agents; a third-party MCP client never sees them.
-		const INTERNAL_TOOLS = ["sandbox_grep", "sandbox_list_files", "sandbox_read_file", "sandbox_exec"]
+		const INTERNAL_TOOLS = [
+			"pr_changed_files",
+			"pr_context",
+			"pr_file_diff",
+			"sandbox_grep",
+			"sandbox_list_files",
+			"sandbox_read_file",
+			"sandbox_exec",
+		]
 
-		it("keeps the sandbox tools internal", () => {
+		it("keeps the sandbox and pull request tools internal", () => {
 			const internal = mapleToolCatalog.filter((d) => d.audience === "internal").map((d) => d.name)
 			expect(internal.sort()).toEqual([...INTERNAL_TOOLS].sort())
 		})
@@ -233,6 +256,34 @@ describe("MCP dispatcher", () => {
 			)
 			expect(MCP_ANTICIPATED_ERROR_IDENTIFIERS).not.toContain("@maple/mcp/errors/McpQueryError")
 		})
+
+		// A connector turn runs under a tenant whose user id is a placeholder: the
+		// entry names the connector's agent actor and the identity that asked,
+		// which the executor can only know from the origin the tenant carries.
+		it.effect("files a connector turn's tool call as the connector's agent", () =>
+			Effect.gen(function* () {
+				const audit = makeMemoryAuditLog()
+				const executor = yield* McpToolExecutor.make.pipe(
+					Effect.provide(
+						Context.make(AuditLogService, audit) as Context.Context<McpToolRuntimeRequirements>,
+					),
+				)
+
+				yield* executor.execute(CONNECTOR_TENANT, "inspect_trace", {}, "bot")
+
+				const [entry] = yield* audit.list(TENANT.orgId, { limit: 10, offset: 0 })
+				assert.isDefined(entry)
+				expect(entry.actorType).toBe("agent")
+				expect(entry.userId).toBeNull()
+				expect(entry.source).toBe("chat_platform")
+				expect(entry.metadata).toMatchObject({
+					tool: "inspect_trace",
+					surface: "bot",
+					connector: "testchat",
+					external_user_id: "u-1",
+				})
+			}),
+		)
 
 		it.effect("records result.isError as false for a call that succeeds", () =>
 			Effect.gen(function* () {

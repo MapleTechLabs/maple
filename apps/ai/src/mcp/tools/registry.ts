@@ -62,10 +62,12 @@ import { registerGetAgentToolErrorTool } from "./get-agent-tool-error"
 import { registerServiceMapTool } from "./service-map"
 import { registerSourceCodeTools } from "./source-code"
 import { registerSandboxTools } from "./sandbox"
+import { registerPullRequestTools } from "./pull-request"
 import {
 	audienceAdmits,
 	type McpToolAudience,
 	type McpToolError,
+	type McpToolOptions,
 	type McpToolRegistrar,
 	type McpToolResult,
 } from "./types"
@@ -78,6 +80,7 @@ interface MapleToolDefinition {
 	readonly description: string
 	readonly schema: Schema.Codec<unknown, unknown, never, unknown>
 	readonly audience: McpToolAudience
+	readonly phrases: McpToolOptions["phrases"]
 	readonly handler: (params: unknown) => Effect.Effect<McpToolResult, McpToolError, McpToolRequirements>
 }
 
@@ -86,6 +89,7 @@ export interface MapleToolCatalogEntry {
 	readonly description: string
 	readonly schema: Schema.Codec<unknown, unknown, never, unknown>
 	readonly audience: McpToolAudience
+	readonly phrases: McpToolOptions["phrases"]
 }
 
 class McpDecodeError extends Schema.TaggedError<McpDecodeError>()("@maple/mcp/decode-error", {
@@ -201,7 +205,8 @@ const collectMapleToolDefinitions = (): ReadonlyArray<MapleToolDefinition> => {
 			name,
 			description,
 			schema,
-			audience: options?.audience ?? "public",
+			audience: options.audience ?? "public",
+			phrases: options.phrases,
 			handler: (params) => handler(params as typeof schema.Type),
 		})
 	}
@@ -257,6 +262,7 @@ const collectMapleToolDefinitions = (): ReadonlyArray<MapleToolDefinition> => {
 	registerAuditSetupTool(registrar)
 	registerSourceCodeTools(registrar)
 	registerSandboxTools(registrar)
+	registerPullRequestTools(registrar)
 	registerListErrorIssuesTool(registrar)
 	registerTransitionErrorIssueTool(registrar)
 	registerSetIssueSeverityTool(registrar)
@@ -277,8 +283,20 @@ const mapleToolDefinitions = collectMapleToolDefinitions()
 
 /** Handler-free registry view for schemas, permissions, MCP discovery, and tests. */
 export const mapleToolCatalog: ReadonlyArray<MapleToolCatalogEntry> = mapleToolDefinitions.map(
-	({ name, description, schema, audience }) => ({ name, description, schema, audience }),
+	({ name, description, schema, audience, phrases }) => ({ name, description, schema, audience, phrases }),
 )
+
+const phrasesByName = new Map(mapleToolDefinitions.map(({ name, phrases }) => [name, phrases]))
+
+/**
+ * One of a tool's {@link McpToolOptions.phrases}, at random, or undefined for a name outside the
+ * registry. Picked once, when the call is declared: the event log keeps it, so every re-render of
+ * the same call shows the same words.
+ */
+export const mapleToolPhrase = (name: string): string | undefined => {
+	const phrases = phrasesByName.get(name)
+	return phrases?.[Math.floor(Math.random() * phrases.length)]
+}
 
 /** The catalog as one surface sees it. What a surface cannot see, it cannot call either. */
 export const mapleToolCatalogFor = (surface: McpToolSurface): ReadonlyArray<MapleToolCatalogEntry> =>

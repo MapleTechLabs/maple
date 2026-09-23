@@ -5,8 +5,8 @@ import { index, pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-cor
 // Slack workspace installations. One row per Slack team (workspace) that has
 // installed the Maple Slack app via OAuth. A row binds a Slack `teamId` to a
 // Maple org and stores, encrypted, both the Slack bot token (used to post
-// messages / list channels) and a minted Maple API key secret (handed to the
-// Railway-hosted bot so it can call Maple's MCP server on the org's behalf).
+// messages / list channels) and a minted Maple API key secret (once handed to
+// the retired standalone Slack agent; still minted and revoked with the install).
 //
 // Unlike normal API keys — which are stored hash-only — the bot needs the raw
 // `maple_ak_…` secret at runtime, so we keep it encrypted (AES-256-GCM, same

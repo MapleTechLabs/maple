@@ -1,7 +1,28 @@
-import { boolean, index, pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core"
+import {
+	boolean,
+	index,
+	integer,
+	jsonb,
+	pgTable,
+	real,
+	text,
+	timestamp,
+	uniqueIndex,
+} from "drizzle-orm/pg-core"
 import type { OrgId, UserId } from "@maple/domain/primitives"
 import type {
 	GitCommitSha,
+	PrReviewCategory,
+	PrReviewFindingStatus,
+	PrReviewId,
+	PrReviewReport,
+	PrReviewReplyCommand,
+	PrReviewReplyId,
+	PrReviewReplyStatus,
+	PrReviewRepositoryConfig,
+	PrReviewSeverity,
+	PrReviewSkipReason,
+	PrReviewStatus,
 	VcsAccountType,
 	VcsBranchId,
 	VcsCommitRowId,
@@ -82,6 +103,11 @@ export const vcsRepositories = pgTable(
 		syncStatus: text("sync_status").$type<VcsRepoSyncStatus>().notNull().default("pending"),
 		lastSyncedAt: timestamp("last_synced_at", { withTimezone: true, mode: "date" }),
 		lastSyncError: text("last_sync_error"),
+		// Opt-in: Maple reviews this repository's pull requests for observability
+		// gaps. User-owned, like `tracked_branch`; a reconcile never touches it.
+		prReviewEnabled: boolean("pr_review_enabled").notNull().default(false),
+		/** Review settings for this repository; null reviews with the defaults. */
+		prReviewConfig: jsonb("pr_review_config").$type<PrReviewRepositoryConfig>(),
 		createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull(),
 		updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date" }).notNull(),
 	},
@@ -159,6 +185,163 @@ export const vcsRepositoryBranches = pgTable(
 	],
 )
 
+/**
+ * One observability review of one pull request at one head commit. Written by
+ * the review trigger on a `pull_request` webhook, updated by the `pr-review`
+ * agent's `submit_review` tool, and read by the settings page. A later push is
+ * a new row: GitHub's check run is per head SHA, and so is the review.
+ */
+export const prReviews = pgTable(
+	"pr_reviews",
+	{
+		id: text("id").$type<PrReviewId>().notNull().primaryKey(),
+		orgId: text("org_id").$type<OrgId>().notNull(),
+		repositoryId: text("repository_id").$type<VcsRepositoryId>().notNull(),
+		number: integer("number").notNull(),
+		headSha: text("head_sha").$type<GitCommitSha>().notNull(),
+		baseSha: text("base_sha").$type<GitCommitSha>(),
+		url: text("url").notNull(),
+		title: text("title"),
+		status: text("status").$type<PrReviewStatus>().notNull().default("queued"),
+		skipReason: text("skip_reason").$type<PrReviewSkipReason>(),
+		/** The `maple-chat` session (`<orgId>:pr-<id>`), written at insert; read to abort a superseded turn. */
+		sessionId: text("session_id"),
+		/** Structured review; null until `submit_review` lands. */
+		reportJson: jsonb("report_json").$type<PrReviewReport>(),
+		score: integer("score"),
+		checkRunUrl: text("check_run_url"),
+		commentUrl: text("comment_url"),
+		reviewUrl: text("review_url"),
+		/** Set when the review was recorded but GitHub refused the post (a permission not yet granted). */
+		publishError: text("publish_error"),
+		error: text("error"),
+		model: text("model"),
+		inputTokens: integer("input_tokens"),
+		outputTokens: integer("output_tokens"),
+		startedAt: timestamp("started_at", { withTimezone: true, mode: "date" }),
+		finishedAt: timestamp("finished_at", { withTimezone: true, mode: "date" }),
+		createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull(),
+		updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date" }).notNull(),
+	},
+	(table) => [
+		// One review per (repo, PR, head): a webhook redelivery or a `synchronize`
+		// that carries the same head must not start a second run.
+		uniqueIndex("pr_reviews_repo_number_head_idx").on(table.repositoryId, table.number, table.headSha),
+		// The trigger's "is one already running for this PR" and the settings list.
+		index("pr_reviews_repo_number_idx").on(table.repositoryId, table.number),
+		// The daily quota count.
+		index("pr_reviews_org_created_idx").on(table.orgId, table.createdAt),
+	],
+)
+
+/**
+ * One finding a review posted, followed across later pushes of the same pull request so it is
+ * never posted twice, is resolved on GitHub when a head fixes it, and stays quiet once a person
+ * dismissed it.
+ */
+export const prReviewFindings = pgTable(
+	"pr_review_findings",
+	{
+		id: text("id").notNull().primaryKey(),
+		orgId: text("org_id").$type<OrgId>().notNull(),
+		repositoryId: text("repository_id").$type<VcsRepositoryId>().notNull(),
+		number: integer("number").notNull(),
+		/** The review that first posted it. */
+		reviewId: text("review_id").$type<PrReviewId>().notNull(),
+		/** The short handle the reviewer is shown (`F3`), unique per pull request. */
+		handle: text("handle").notNull(),
+		path: text("path").notNull(),
+		line: integer("line").notNull(),
+		category: text("category").$type<PrReviewCategory>().notNull(),
+		severity: text("severity").$type<PrReviewSeverity>().notNull(),
+		title: text("title").notNull(),
+		status: text("status").$type<PrReviewFindingStatus>().notNull().default("open"),
+		/** The inline review comment's id, when the finding was posted inline. */
+		commentId: text("comment_id"),
+		/** The head that fixed it. */
+		resolvedSha: text("resolved_sha").$type<GitCommitSha>(),
+		/** 👍 / 👎 on the inline comment when last read: the author's verdict, for precision. */
+		reactionsUp: integer("reactions_up").notNull().default(0),
+		reactionsDown: integer("reactions_down").notNull().default(0),
+		createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull(),
+		updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date" }).notNull(),
+	},
+	(table) => [
+		uniqueIndex("pr_review_findings_pr_handle_idx").on(table.repositoryId, table.number, table.handle),
+		index("pr_review_findings_org_idx").on(table.orgId),
+	],
+)
+
+/**
+ * The embedding of a stored finding's text, so a later review can ask whether a new finding looks
+ * like the ones this team upvoted or fixed, or the ones it downvoted or dismissed. Kept apart from
+ * `pr_review_findings` so the lifecycle reads never carry the vector. `model` names the embedding
+ * model: vectors from two models are never compared.
+ */
+export const prReviewFindingEmbeddings = pgTable(
+	"pr_review_finding_embeddings",
+	{
+		/** The `pr_review_findings` row; no FK, like the rest of this file. */
+		findingId: text("finding_id").notNull().primaryKey(),
+		orgId: text("org_id").$type<OrgId>().notNull(),
+		repositoryId: text("repository_id").$type<VcsRepositoryId>().notNull(),
+		model: text("model").notNull(),
+		embedding: real("embedding").array().notNull(),
+		createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull(),
+	},
+	(table) => [index("pr_review_finding_embeddings_org_model_idx").on(table.orgId, table.model)],
+)
+
+/**
+ * One answer to a pull request comment that mentioned Maple. The comment it answers, and where the
+ * answer is posted, are bound here when the webhook lands; the agent never chooses either.
+ */
+export const prReviewReplies = pgTable(
+	"pr_review_replies",
+	{
+		id: text("id").$type<PrReviewReplyId>().notNull().primaryKey(),
+		orgId: text("org_id").$type<OrgId>().notNull(),
+		repositoryId: text("repository_id").$type<VcsRepositoryId>().notNull(),
+		number: integer("number").notNull(),
+		/** The comment that mentioned Maple; unique per repository so a redelivery answers once. */
+		commentId: text("comment_id").notNull(),
+		surface: text("surface").$type<"conversation" | "review_thread">().notNull(),
+		threadRootId: text("thread_root_id"),
+		authorLogin: text("author_login").notNull(),
+		command: text("command").$type<PrReviewReplyCommand>().notNull(),
+		/** The head the answer (and a fix commit) is based on. */
+		headSha: text("head_sha").$type<GitCommitSha>(),
+		status: text("status").$type<PrReviewReplyStatus>().notNull().default("queued"),
+		sessionId: text("session_id"),
+		replyUrl: text("reply_url"),
+		/** The commit a `fix` pushed to the pull request's branch. */
+		commitSha: text("commit_sha"),
+		error: text("error"),
+		createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull(),
+		updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date" }).notNull(),
+	},
+	(table) => [
+		uniqueIndex("pr_review_replies_repo_comment_idx").on(table.repositoryId, table.commentId),
+		index("pr_review_replies_org_created_idx").on(table.orgId, table.createdAt),
+	],
+)
+
+/** An exact edit a `fix` reply staged; committed together once the reply is submitted. */
+export const prReviewEdits = pgTable(
+	"pr_review_edits",
+	{
+		id: text("id").notNull().primaryKey(),
+		orgId: text("org_id").$type<OrgId>().notNull(),
+		replyId: text("reply_id").$type<PrReviewReplyId>().notNull(),
+		seq: integer("seq").notNull(),
+		path: text("path").notNull(),
+		oldText: text("old_text").notNull(),
+		newText: text("new_text").notNull(),
+		createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull(),
+	},
+	(table) => [uniqueIndex("pr_review_edits_reply_seq_idx").on(table.replyId, table.seq)],
+)
+
 export type VcsInstallationRow = typeof vcsInstallations.$inferSelect
 export type VcsInstallationInsert = typeof vcsInstallations.$inferInsert
 export type VcsRepositoryRow = typeof vcsRepositories.$inferSelect
@@ -167,3 +350,9 @@ export type VcsCommitRow = typeof vcsCommits.$inferSelect
 export type VcsCommitInsert = typeof vcsCommits.$inferInsert
 export type VcsRepositoryBranchRow = typeof vcsRepositoryBranches.$inferSelect
 export type VcsRepositoryBranchInsert = typeof vcsRepositoryBranches.$inferInsert
+export type PrReviewRow = typeof prReviews.$inferSelect
+export type PrReviewInsert = typeof prReviews.$inferInsert
+export type PrReviewFindingRow = typeof prReviewFindings.$inferSelect
+export type PrReviewFindingEmbeddingRow = typeof prReviewFindingEmbeddings.$inferSelect
+export type PrReviewReplyRow = typeof prReviewReplies.$inferSelect
+export type PrReviewEditRow = typeof prReviewEdits.$inferSelect

@@ -1,6 +1,6 @@
 /**
  * Fire-and-forget Autumn usage tracking for every AI surface Maple bills:
- * autonomous triage, the Slack agent, an attended chat turn, and the
+ * autonomous triage, an attended chat turn, and the
  * chat-platform bot. All of them meter the same two features — the source
  * names the surface inside the idempotency key. Small
  * imperative module rather than a service, because every caller reaches it from
@@ -29,7 +29,7 @@ export interface TrackTokenUsageOptions {
 	readonly inputTokens: number
 	readonly outputTokens: number
 	readonly idempotencyKey: string
-	readonly source: "triage" | "slack" | "chat" | "bot"
+	readonly source: "triage" | "review" | "slack" | "chat" | "bot"
 }
 
 interface TrackEvent {

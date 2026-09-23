@@ -50,6 +50,13 @@ export const GET: APIRoute = ({ site }) => {
 		...both("Pricing", "/pricing"),
 		"",
 
+		"## Data regions",
+		"",
+		"Maple Cloud runs in the United States and the European Union (Frankfurt). An organization picks its region at creation; its telemetry is stored and processed there. Same price in both.",
+		"",
+		...both("EU hosting", "/eu"),
+		"",
+
 		"## Changelog",
 		"",
 		`Maple product updates, month by month. The index enumerates every release. ${CONVENTION("changelog")}`,

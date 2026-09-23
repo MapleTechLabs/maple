@@ -10,7 +10,6 @@ import {
 	OrgId,
 	UserId,
 	type OAuthStatePersistenceError,
-	type SlackBotResolution,
 } from "@maple/domain/http"
 import { slackWorkspaces, type SlackWorkspaceRow } from "@maple/db"
 import { EdgeCacheService } from "@maple/cache"
@@ -136,7 +135,7 @@ const SLACK_BOT_SCOPE_LIST = [
 	"im:read",
 	"im:write",
 	// Instant "received" ack: the agent reacts :eyes: to messages it will
-	// work on (apps/slack-agent agent/lib/ack-reaction.ts).
+	// work on.
 	"reactions:write",
 	"users:read",
 ] as const
@@ -327,17 +326,6 @@ export interface SlackIntegrationServiceApi {
 		SlackChannelList,
 		IntegrationsNotConnectedError | IntegrationsUpstreamError | IntegrationsPersistenceError
 	>
-	readonly resolveForBot: (
-		teamId: string,
-	) => Effect.Effect<SlackBotResolution, IntegrationsNotConnectedError | IntegrationsPersistenceError>
-	/**
-	 * The org bound to an active Slack team, without touching the row's encrypted
-	 * secrets — for internal callers that need attribution only (the bot's AI
-	 * usage reports), never credentials.
-	 */
-	readonly orgIdForTeam: (
-		teamId: string,
-	) => Effect.Effect<OrgId, IntegrationsNotConnectedError | IntegrationsPersistenceError>
 	/**
 	 * Revoke a workspace binding by Slack team id without calling Slack's
 	 * `auth.revoke` — for the two cases where Slack has already told us (or we've
@@ -634,9 +622,7 @@ const make: Effect.Effect<
 
 		// An in-place re-auth: the same org re-runs the OAuth install over its own
 		// still-active binding — the flow for granting newly required scopes. The
-		// existing API key is KEPT rather than rotated: the Slack agent caches the
-		// resolved key with no invalidation hook, so a rotation here would break
-		// its MCP calls until the cache expires. Reuse requires the key to still be
+		// existing API key is KEPT rather than rotated. Reuse requires the key to still be
 		// live (an out-of-band revoke falls back to minting a fresh one), and the
 		// stored ciphertext stays valid as-is because its AAD is (org, team, column)
 		// and both are unchanged on this path.
@@ -1194,81 +1180,6 @@ const make: Effect.Effect<
 		return cached.value
 	})
 
-	const resolveForBot = Effect.fn("SlackIntegrationService.resolveForBot")(function* (teamId: string) {
-		yield* Effect.annotateCurrentSpan({ teamId })
-		const rowOption: Option.Option<SlackWorkspaceRow> = yield* database
-			.execute((db) =>
-				db
-					.select()
-					.from(slackWorkspaces)
-					.where(and(eq(slackWorkspaces.teamId, teamId), isNull(slackWorkspaces.revokedAt)))
-					.limit(1),
-			)
-			.pipe(
-				Effect.mapError(toPersistenceError),
-				Effect.map((rows) => Option.fromNullishOr(rows[0])),
-			)
-		if (Option.isNone(rowOption)) {
-			return yield* Effect.fail(
-				new IntegrationsNotConnectedError({
-					message: "No active Slack installation for this team",
-				}),
-			)
-		}
-		const row = rowOption.value
-		const botToken = yield* decryptRowSecret(row, "bot_token")
-		const mapleApiKey = yield* decryptRowSecret(row, "api_key_secret")
-		const orgId = yield* decodeOrgId(row.orgId).pipe(
-			Effect.mapError(
-				(error) =>
-					new IntegrationsPersistenceError({
-						message: `Stored Slack workspace has an invalid orgId: ${error.message}`,
-					}),
-			),
-		)
-		// The one cross-tenant lookup in this service — the resolved org belongs on
-		// the span, not just the team it was resolved from.
-		yield* Effect.annotateCurrentSpan({ orgId })
-		return {
-			orgId,
-			teamId: row.teamId,
-			teamName: row.teamName,
-			botToken,
-			mapleApiKey,
-		} satisfies SlackBotResolution
-	})
-
-	const orgIdForTeam = Effect.fn("SlackIntegrationService.orgIdForTeam")(function* (teamId: string) {
-		yield* Effect.annotateCurrentSpan({ teamId })
-		const rows = yield* database
-			.execute((db) =>
-				db
-					.select({ orgId: slackWorkspaces.orgId })
-					.from(slackWorkspaces)
-					.where(and(eq(slackWorkspaces.teamId, teamId), isNull(slackWorkspaces.revokedAt)))
-					.limit(1),
-			)
-			.pipe(Effect.mapError(toPersistenceError))
-		const row = rows[0]
-		if (row === undefined) {
-			return yield* Effect.fail(
-				new IntegrationsNotConnectedError({
-					message: "No active Slack installation for this team",
-				}),
-			)
-		}
-		const orgId = yield* decodeOrgId(row.orgId).pipe(
-			Effect.mapError(
-				(error) =>
-					new IntegrationsPersistenceError({
-						message: `Stored Slack workspace has an invalid orgId: ${error.message}`,
-					}),
-			),
-		)
-		yield* Effect.annotateCurrentSpan({ orgId })
-		return orgId
-	})
-
 	const revokeByTeamId = Effect.fn("SlackIntegrationService.revokeByTeamId")(function* (
 		teamId: string,
 		reason: SlackRevocationReason,
@@ -1409,8 +1320,6 @@ const make: Effect.Effect<
 		getStatus,
 		uninstall,
 		listChannels,
-		resolveForBot,
-		orgIdForTeam,
 		revokeByTeamId,
 		reconcileWorkspaces,
 	})

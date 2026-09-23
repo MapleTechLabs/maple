@@ -1,5 +1,6 @@
 /// <reference types="vitest/config" />
 import path from "node:path"
+import { playwright } from "@vitest/browser-playwright"
 import { defineConfig, loadEnv } from "vite"
 import { devtools } from "@tanstack/devtools-vite"
 import tanstackRouter from "@tanstack/router-plugin/vite"
@@ -49,6 +50,8 @@ export default defineConfig(({ mode }) => {
 		"VITE_API_BASE_URL",
 		"VITE_INGEST_URL",
 		"VITE_ELECTRIC_SYNC_URL",
+		"VITE_MAPLE_REGION",
+		"VITE_MAPLE_REGION_APP_URLS",
 		"VITE_MAPLE_AUTH_MODE",
 		"VITE_CLERK_PUBLISHABLE_KEY",
 		"VITE_MAPLE_INGEST_KEY",
@@ -73,12 +76,34 @@ export default defineConfig(({ mode }) => {
 	}
 
 	return {
+		optimizeDeps: { include: ["react-dom/client", "web-vitals"] },
 		envDir,
 		// Keep the Playwright perf suite (perf/*.perf.spec.ts) out of the Vitest
 		// run — it's executed separately via `bun run test:perf`.
 		test: {
-			include: ["src/**/*.test.{ts,tsx}"],
-			setupFiles: ["./src/test-setup.ts"],
+			projects: [
+				{
+					test: {
+						name: "node",
+						server: { deps: { inline: ["@effect/vitest"] } },
+						environment: "node",
+						include: ["src/**/*.test.{ts,tsx}"],
+						exclude: ["src/**/*.browser.test.{ts,tsx}"],
+					},
+				},
+				{
+					test: {
+						name: "browser",
+						include: ["src/**/*.browser.test.{ts,tsx}"],
+						browser: {
+							enabled: true,
+							headless: true,
+							provider: playwright(),
+							instances: [{ browser: "chromium" }],
+						},
+					},
+				},
+			],
 		},
 		resolve: {
 			tsconfigPaths: true,

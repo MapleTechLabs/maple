@@ -71,14 +71,15 @@ export interface ChatConnectorSettingsField {
 }
 
 /**
- * Monochrome mark as pure data — a viewBox and the paths to fill with
- * `currentColor`. Data rather than a component so the dashboard can render every
- * connector's icon from one element, and rather than raw SVG markup so nothing
- * injects a document fragment.
+ * A mark as pure data — a viewBox and its paths. A path without a `fill` takes
+ * `currentColor`; a multicolor mark gives each path its brand fill, and the
+ * dashboard can still render it monochrome by ignoring them. Data rather than a
+ * component so the dashboard can render every connector's icon from one element,
+ * and rather than raw SVG markup so nothing injects a document fragment.
  */
 export interface ChatConnectorIcon {
 	readonly viewBox: string
-	readonly paths: ReadonlyArray<string>
+	readonly paths: ReadonlyArray<{ readonly d: string; readonly fill?: string }>
 }
 
 /** Everything the dashboard needs to present a connector. Pure data, no runtime. */
@@ -111,6 +112,18 @@ export interface ChatInstallCallback {
 export interface ChatInstallResult {
 	readonly externalWorkspaceId: string
 	readonly name: string
+	/**
+	 * A secret the install minted for THIS workspace, in whatever the connector
+	 * wants to read back — one token, or its own JSON. Absent where a connector
+	 * authenticates with one deployment-wide credential the host already resolves
+	 * from its environment.
+	 *
+	 * Opaque above the connector: the host encrypts it, stores it beside the row,
+	 * and hands it back to the same connector's outbound half under
+	 * {@link WORKSPACE_CREDENTIALS}. Nothing between the two reads it, so a
+	 * platform whose install returns three values needs no column for each.
+	 */
+	readonly credentials?: string | undefined
 }
 
 export interface ChatConnectorInstall {

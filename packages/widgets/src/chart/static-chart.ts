@@ -23,13 +23,6 @@
  * are Workers: `apps/api` needs {@link sparkline} for message text and
  * `apps/web` needs {@link renderChartSvg} for the image. `@maple/ui` peer-depends
  * on react, react-dom and tailwind, and no Worker in this repo imports it.
- *
- * A near-identical renderer lives at `apps/slack-agent/agent/lib/chart.ts`.
- * That app is deliberately outside the workspace (`"!apps/slack-agent"` in the
- * root `workspaces`) and so cannot import this; it also rasterises with
- * `@resvg/resvg-js`, which *does* carry fonts, so it keeps drawing its own
- * text and does not want this module's split. Treat the two as siblings, not
- * as a copy to keep in sync.
  */
 
 export type ChartKind = "line" | "area" | "bar"
@@ -51,6 +44,12 @@ export type BreachSide = "above" | "below" | "none"
 export interface PlotLabel {
 	readonly text: string
 	readonly yFraction: number
+}
+
+/** The same, along the time axis: a fraction of the plot width from the left. */
+export interface TimeLabel {
+	readonly text: string
+	readonly xFraction: number
 }
 
 /** One named line/area/bar. A chart carries one or several. */
@@ -93,7 +92,7 @@ export interface ChartSpec {
 export interface LegendEntry {
 	readonly name: string
 	readonly color: string
-	/** Latest value, formatted. Stands in for the y axis this plot does not draw. */
+	/** Latest value, formatted — where the series ended, which the axis cannot say. */
 	readonly latest: string
 }
 
@@ -106,9 +105,10 @@ export interface ChartRender {
 	readonly hidden: number
 	/** Threshold rule label, `null` when the spec carries no threshold. */
 	readonly threshold: PlotLabel | null
-	/** Range ends, UTC. */
-	readonly start: string
-	readonly end: string
+	/** Value labels on the grid lines the plot drew, largest first. */
+	readonly yAxis: ReadonlyArray<PlotLabel>
+	/** Time labels across the range, earliest first. The last one names the zone. */
+	readonly xAxis: ReadonlyArray<TimeLabel>
 }
 
 // Maple dark-theme tokens, oklch → hex (usvg has no oklch parser). Sources are
@@ -162,41 +162,62 @@ export const unitColor = (unit: ChartUnit): string => SERIES_COLORS[unit]
 export const PLOT_WIDTH = 720
 export const PLOT_HEIGHT = 280
 
-// No PAD_LEFT for y-tick labels: this chart has none. The threshold rule
-// carries the only value worth reading off an axis, and it is labelled
-// directly. A small inset keeps the marks off the card's stroke.
-const PAD = 12
+// No PAD_LEFT for the axis: its labels are type, so they are the caller's
+// nodes in the caller's gutter, and the marks keep the whole box. A small inset
+// keeps them off the card's stroke.
+export const PLOT_PAD = 12
 
 // ── formatting ──────────────────────────────────────────────────────────────
 
+/** Decimals a label may grow to before the number stops being the point of it. */
+const MAX_DIGITS = 6
+
 const round = (n: number, digits = 1): string => {
+	const abs = Math.abs(n)
+	// `toFixed` rounds anything at or under half a place away, which is how a
+	// 0.031% rate became a header reading "0" and a 0.005% threshold a chip
+	// reading "0.01%". Below that floor, decimals are added until the first
+	// significant digit shows, capped so a denormal cannot mint a 300-character
+	// label.
+	if (abs !== 0 && abs <= 0.5 / 10 ** digits) {
+		return String(Number(n.toFixed(Math.min(MAX_DIGITS, Math.ceil(-Math.log10(abs)) + 1))))
+	}
 	const s = n.toFixed(digits)
 	return s.endsWith(".0") ? s.slice(0, -2) : s
 }
 
-/** Formats a value for labels, unit-aware. */
-export function formatValue(value: number, unit: ChartUnit): string {
+/**
+ * Formats a value for labels, unit-aware.
+ *
+ * `digits` overrides the decimal count this would pick from the value's own
+ * magnitude, for a caller formatting a set of values that have to read as one
+ * scale — see {@link axisDigits}. It is the count *after* the unit switch, so
+ * it means the same thing whether a duration comes out in ms or in minutes.
+ */
+export function formatValue(value: number, unit: ChartUnit, digits?: number): string {
 	switch (unit) {
 		case "percent":
-			return `${round(value, Math.abs(value) < 1 ? 2 : 1)}%`
+			// Zero takes the coarse precision so a `0%` baseline reads beside `2%`
+			// and `4%` rather than as `0.00%` under them.
+			return `${round(value, digits ?? (value !== 0 && Math.abs(value) < 1 ? 2 : 1))}%`
 		case "duration_ms":
-			if (Math.abs(value) >= 60_000) return `${round(value / 60_000)} min`
-			if (Math.abs(value) >= 1000) return `${round(value / 1000)} s`
-			return `${round(value)} ms`
+			if (Math.abs(value) >= 60_000) return `${round(value / 60_000, digits)} min`
+			if (Math.abs(value) >= 1000) return `${round(value / 1000, digits)} s`
+			return `${round(value, digits)} ms`
 		case "bytes": {
 			const abs = Math.abs(value)
-			if (abs >= 1024 ** 3) return `${round(value / 1024 ** 3)} GiB`
-			if (abs >= 1024 ** 2) return `${round(value / 1024 ** 2)} MiB`
-			if (abs >= 1024) return `${round(value / 1024)} KiB`
-			return `${round(value)} B`
+			if (abs >= 1024 ** 3) return `${round(value / 1024 ** 3, digits)} GiB`
+			if (abs >= 1024 ** 2) return `${round(value / 1024 ** 2, digits)} MiB`
+			if (abs >= 1024) return `${round(value / 1024, digits)} KiB`
+			return `${round(value, digits)} B`
 		}
 		case "requests_per_sec":
-			return `${formatValue(value, "number")}/s`
+			return `${formatValue(value, "number", digits)}/s`
 		case "number": {
 			const abs = Math.abs(value)
-			if (abs >= 1_000_000) return `${round(value / 1_000_000)}M`
-			if (abs >= 1000) return `${round(value / 1000)}k`
-			return round(value, abs < 10 && !Number.isInteger(value) ? 1 : 0)
+			if (abs >= 1_000_000) return `${round(value / 1_000_000, digits)}M`
+			if (abs >= 1000) return `${round(value / 1000, digits)}k`
+			return round(value, digits ?? (abs < 10 && !Number.isInteger(value) ? 1 : 0))
 		}
 	}
 }
@@ -226,6 +247,78 @@ export function niceTicks(min: number, max: number, count = 4): number[] {
 		ticks.push(Math.abs(t) < step * 1e-9 ? 0 : t)
 	}
 	return ticks
+}
+
+/**
+ * Labels on an axis, at most this many.
+ *
+ * The plot is 696×256 and a chat client renders it at about half that, so
+ * density is the whole question. Four labels of the widest thing the formatter
+ * emits ("510.3 KiB", 9 characters of 7.3px Geist Mono ≈ 66px) occupy 264px of
+ * 696px across the bottom, and four rows 15px tall sit 85px apart up the side.
+ * Five would still fit and read as a texture; three or four read as a scale.
+ */
+const AXIS_LABELS = 4
+
+/**
+ * The decimal count every label on one axis shares: the fewest that keep its
+ * ticks apart.
+ *
+ * Precision per value is the wrong rule here, because it is read off each
+ * value's own magnitude and an axis can be finer than that. A domain topping
+ * out at 0.012% has ticks 0.005 apart and printed `0% | 0.01% | 0.01% |
+ * 0.01%` — three labels naming different lines with the same number, which is
+ * worse than no axis. Counting digits off the step would be the direct rule
+ * and does not survive the unit switch (2000 ms is "2 s"), so the labels
+ * themselves are the test: widen until they differ.
+ */
+const axisDigits = (ticks: ReadonlyArray<number>, unit: ChartUnit): number => {
+	for (let digits = 0; digits < MAX_DIGITS; digits += 1) {
+		const labels = ticks.map((tick) => formatValue(tick, unit, digits))
+		if (new Set(labels).size === labels.length) return digits
+	}
+	return MAX_DIGITS
+}
+
+/** The grid ticks that get a label: every one, thinned to {@link AXIS_LABELS}. */
+const labelledTicks = (ticks: ReadonlyArray<number>): ReadonlyArray<number> => {
+	const stride = Math.max(1, Math.ceil((ticks.length - 1) / (AXIS_LABELS - 1)))
+	const kept = ticks.filter((_, index) => index % stride === 0)
+	const top = ticks.at(-1)
+	// The top of the domain is the one tick a reader needs most; the stride only
+	// lands on it when it divides evenly.
+	return top === undefined || kept.at(-1) === top ? kept : [...kept, top]
+}
+
+/**
+ * Times across the range, evenly spaced.
+ *
+ * A short span formats several of them identically — four copies of `10:00`
+ * say less than one does — so a repeat is dropped rather than drawn. The
+ * surviving labels keep their true positions, so a gap in them is a gap.
+ */
+const timeAxis = (tMin: number, tMax: number, tRange: number): ReadonlyArray<TimeLabel> => {
+	const count = tMax === tMin ? 1 : AXIS_LABELS
+	const labels: Array<TimeLabel> = []
+	for (let i = 0; i < count; i += 1) {
+		const xFraction = count === 1 ? 0 : i / (count - 1)
+		const text = formatTimestamp(tMin + xFraction * (tMax - tMin), tRange)
+		if (labels.at(-1)?.text !== text) {
+			labels.push({ text, xFraction })
+			continue
+		}
+		// A repeat slides right rather than being dropped where it stands, so the
+		// label that ends the axis is always the one at the end of the range.
+		if (i === count - 1) labels[labels.length - 1] = { text, xFraction }
+	}
+	const last = labels.at(-1)
+	if (last === undefined) return labels
+	// The zone is named once, on the label that ends the range. A lone label
+	// names no end — there is one time on the chart — so it sits at the left,
+	// where the first label always does, whether it got there by collapse or by
+	// the series holding a single instant.
+	labels[labels.length - 1] = { text: `${last.text} UTC`, xFraction: labels.length === 1 ? 0 : last.xFraction }
+	return labels
 }
 
 /**
@@ -282,11 +375,11 @@ const plotScales = (domain: ReadonlyArray<number>, tMin: number, tRange: number)
 	// `niceTicks` always returns at least a `[min, max]` pair.
 	const yMin = ticks[0] ?? 0
 	const yMax = ticks.at(-1) ?? yMin
-	const plotW = PLOT_WIDTH - PAD * 2
-	const plotH = PLOT_HEIGHT - PAD * 2
+	const plotW = PLOT_WIDTH - PLOT_PAD * 2
+	const plotH = PLOT_HEIGHT - PLOT_PAD * 2
 	return {
-		x: (t) => PAD + ((t - tMin) / tRange) * plotW,
-		y: (v) => PAD + plotH - ((v - yMin) / Math.max(1e-9, yMax - yMin)) * plotH,
+		x: (t) => PLOT_PAD + ((t - tMin) / tRange) * plotW,
+		y: (v) => PLOT_PAD + plotH - ((v - yMin) / Math.max(1e-9, yMax - yMin)) * plotH,
 		ticks,
 		yMin,
 		plotW,
@@ -311,13 +404,14 @@ const areaGradient = (id: string, color: string, top = 0.8, bottom = 0.1): strin
 
 /**
  * Recessive gridlines (border at 50%, matching the web's stroke-border/50; the
- * baseline gets the full border). No labels — see PAD.
+ * baseline gets the full border). Their labels are the caller's nodes; this
+ * draws the lines they sit on and reports them as `yAxis`.
  */
 const gridLines = (scales: PlotScales): ReadonlyArray<string> =>
 	scales.ticks.map((tick) => {
 		const ty = scales.y(tick)
 		const isBaseline = tick === scales.yMin
-		return `<line x1="${PAD}" y1="${ty}" x2="${PLOT_WIDTH - PAD}" y2="${ty}" stroke="${COLORS.border}"${isBaseline ? "" : ' stroke-opacity="0.5"'} stroke-width="1"/>`
+		return `<line x1="${PLOT_PAD}" y1="${ty}" x2="${PLOT_WIDTH - PLOT_PAD}" y2="${ty}" stroke="${COLORS.border}"${isBaseline ? "" : ' stroke-opacity="0.5"'} stroke-width="1"/>`
 	})
 
 /**
@@ -342,7 +436,7 @@ const barMarks = (
 	const barW = Math.max(1, Math.min(band - 2, 40))
 	const baseline = scales.y(scales.yMin)
 	return bars.map(({ slot: index, value }) => {
-		const bx = PAD + slot * index + band * (placement.band + 0.5) - barW / 2
+		const bx = PLOT_PAD + slot * index + band * (placement.band + 0.5) - barW / 2
 		const by = scales.y(Math.max(value, scales.yMin))
 		const bh = Math.max(1, baseline - by)
 		const r = Math.min(4, barW / 2, bh)
@@ -460,12 +554,12 @@ export function renderChartSvg(spec: ChartSpec): ChartRender {
 	// before it reads a single number.
 	if (threshold !== null && breachSide !== "none") {
 		const ty = scales.y(threshold)
-		const bandTop = breachSide === "above" ? PAD : ty
+		const bandTop = breachSide === "above" ? PLOT_PAD : ty
 		const bandHeight =
-			breachSide === "above" ? Math.max(0, ty - PAD) : Math.max(0, PAD + scales.plotH - ty)
+			breachSide === "above" ? Math.max(0, ty - PLOT_PAD) : Math.max(0, PLOT_PAD + scales.plotH - ty)
 		if (bandHeight > 0) {
 			parts.push(
-				`<rect x="${PAD}" y="${bandTop.toFixed(1)}" width="${scales.plotW}" height="${bandHeight.toFixed(1)}" fill="${COLORS.danger}" fill-opacity="0.06"/>`,
+				`<rect x="${PLOT_PAD}" y="${bandTop.toFixed(1)}" width="${scales.plotW}" height="${bandHeight.toFixed(1)}" fill="${COLORS.danger}" fill-opacity="0.06"/>`,
 			)
 		}
 	}
@@ -492,11 +586,23 @@ export function renderChartSvg(spec: ChartSpec): ChartRender {
 	if (threshold !== null) {
 		const ty = scales.y(threshold)
 		parts.push(
-			`<line x1="${PAD}" y1="${ty.toFixed(1)}" x2="${PLOT_WIDTH - PAD}" y2="${ty.toFixed(1)}" stroke="${COLORS.danger}" stroke-width="1.5" stroke-dasharray="6 4"/>`,
+			`<line x1="${PLOT_PAD}" y1="${ty.toFixed(1)}" x2="${PLOT_WIDTH - PLOT_PAD}" y2="${ty.toFixed(1)}" stroke="${COLORS.danger}" stroke-width="1.5" stroke-dasharray="6 4"/>`,
 		)
 	}
 
 	parts.push("</svg>")
+
+	// Read off the scales the marks were drawn with rather than recomputed, so a
+	// label cannot land anywhere but on the line it names, and formatted at one
+	// precision so no two of them can read alike.
+	const ticks = labelledTicks(scales.ticks)
+	const digits = axisDigits(ticks, spec.unit)
+	const yAxis = ticks
+		.map((tick) => ({
+			text: formatValue(tick, spec.unit, digits),
+			yFraction: (scales.y(tick) - PLOT_PAD) / scales.plotH,
+		}))
+		.reverse()
 
 	return {
 		svg: parts.join("\n"),
@@ -511,10 +617,10 @@ export function renderChartSvg(spec: ChartSpec): ChartRender {
 				? null
 				: {
 						text: formatValue(threshold, spec.unit),
-						yFraction: (scales.y(threshold) - PAD) / scales.plotH,
+						yFraction: (scales.y(threshold) - PLOT_PAD) / scales.plotH,
 					},
-		start: formatTimestamp(tMin, tRange),
-		end: `${formatTimestamp(tMax, tRange)} UTC`,
+		yAxis,
+		xAxis: timeAxis(tMin, tMax, tRange),
 	}
 }
 

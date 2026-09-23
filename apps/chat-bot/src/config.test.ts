@@ -26,9 +26,10 @@ describe("resolving a connector's configuration", () => {
 		// A Worker env carries resources as well as configuration, and a name
 		// collision would otherwise hand a connector a namespace object.
 		for (const value of [42, true, {}, null]) {
-			expect(resolveConnectorConfig({ [TEST_TOKEN_KEY]: value }, testSocketConnector())).toEqual(
-				{ _tag: "missing", names: [TEST_TOKEN_KEY] },
-			)
+			expect(resolveConnectorConfig({ [TEST_TOKEN_KEY]: value }, testSocketConnector())).toEqual({
+				_tag: "missing",
+				names: [TEST_TOKEN_KEY],
+			})
 		}
 	})
 })

@@ -36,6 +36,7 @@ export function registerSourceCodeTools(server: McpToolRegistrar) {
 			]
 			return { content: [{ type: "text" as const, text: lines.join("\n") }] }
 		}),
+		{ phrases: ["Listing repositories"] },
 	)
 
 	server.tool(
@@ -80,6 +81,7 @@ export function registerSourceCodeTools(server: McpToolRegistrar) {
 			}
 			return { content: [{ type: "text" as const, text: lines.join("\n") }] }
 		}),
+		{ phrases: ["Searching the code", "Searching source code"] },
 	)
 
 	server.tool(
@@ -132,5 +134,6 @@ export function registerSourceCodeTools(server: McpToolRegistrar) {
 				],
 			}
 		}),
+		{ phrases: ["Reading a source file", "Reading the code"] },
 	)
 }

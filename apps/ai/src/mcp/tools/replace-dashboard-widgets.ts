@@ -207,5 +207,6 @@ export function registerReplaceDashboardWidgetsTool(server: McpToolRegistrar) {
 				}),
 			}
 		}),
+		{ phrases: ["Replacing widgets"] },
 	)
 }

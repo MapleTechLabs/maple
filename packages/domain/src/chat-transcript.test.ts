@@ -57,4 +57,41 @@ describe("makeChatTranscript", () => {
 		assert.equal(transcript.messages[1]?.text, "once more")
 		assert.equal(transcript.seq, 4)
 	})
+
+	it("keeps a proposal open over the gate's refusal an older log recorded as its result", () => {
+		const transcript = makeChatTranscript()
+		const refusal = "create_dashboard requires user approval and was not executed."
+		transcript.add(event(1, { type: "turn-start", messageId: "a1" }), 10)
+		transcript.add(
+			event(2, {
+				type: "tool-call",
+				messageId: "a1",
+				callId: "c1",
+				name: "create_dashboard",
+				input: {},
+				proposed: true,
+			}),
+			10,
+		)
+		transcript.add(
+			event(3, { type: "tool-result", messageId: "a1", callId: "c1", output: refusal, isError: true }),
+			10,
+		)
+		assert.notProperty(transcript.messages[0]?.toolCalls[0], "output")
+
+		transcript.add(
+			event(4, {
+				type: "tool-result",
+				messageId: "a1",
+				callId: "c1",
+				output: "Declined by Ada.",
+				isError: true,
+			}),
+			10,
+		)
+		assert.deepInclude(transcript.messages[0]?.toolCalls[0], {
+			output: "Declined by Ada.",
+			isError: true,
+		})
+	})
 })

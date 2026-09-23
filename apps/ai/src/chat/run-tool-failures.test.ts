@@ -3,7 +3,7 @@
  *
  * The handler tests pin each tool's `failureMode`; this pins what the engine does with it. A rejected
  * query must reach the model as a failed result it can rewrite, and a gated proposal must still end
- * the run.
+ * the run — as a finished turn with the proposal open.
  */
 import { OrgId, UserId } from "@maple/domain"
 import { Effect, Exit, Layer, Schema, Stream } from "effect"
@@ -122,16 +122,32 @@ describe("runChatTurn tool failures", () => {
 		assert.deepEqual(events.at(-1), { type: "turn-end", messageId: "msg-1", reason: "stop" })
 	})
 
-	it("still ends the run on a gated proposal", async () => {
+	it("ends the run on a gated proposal, leaving it open", async () => {
 		const { model, prompts } = scriptedModel([
 			callTool("create_dashboard", { name: "Checkout" }),
 			answer("should never be asked"),
 		])
-		const { effect } = run(model, rejectingExecutor)
+		const { effect, events } = run(model, rejectingExecutor)
 
 		const exit = await Effect.runPromiseExit(effect)
 
-		assert.isTrue(Exit.isFailure(exit))
+		assert.isTrue(Exit.isSuccess(exit), `run failed: ${String(exit)}`)
 		assert.lengthOf(prompts, 1, "a proposal is the turn's last word")
+		// Open until someone decides it: the gate's refusal is not its result, and the turn that
+		// stopped on it finished rather than failed.
+		assert.deepEqual(events, [
+			{ type: "turn-start", messageId: "msg-1" },
+			{
+				type: "tool-call",
+				messageId: "msg-1",
+				callId: "call-1",
+				label: "Creating a dashboard",
+				name: "create_dashboard",
+				input: { name: "Checkout" },
+				proposed: true,
+				label: "Creating a dashboard",
+			},
+			{ type: "turn-end", messageId: "msg-1", reason: "stop" },
+		])
 	})
 })

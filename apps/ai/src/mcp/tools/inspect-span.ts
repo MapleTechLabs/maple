@@ -9,7 +9,10 @@ import { createDualContent } from "../lib/structured-output"
 import { hasAiSignal, renderAiSpan } from "../lib/render-ai-span"
 import { spanDetail } from "@maple/query-engine/observability"
 import { AI_SESSION_SPANS_MAX_SPANS, GetAiSessionSpansRequest, TraceIdHex } from "@maple/domain/http"
-import { readAiSessionSpans, resolveAiSessionWindow } from "@maple/backend/services/ai-sessions/ai-session-reads"
+import {
+	readAiSessionSpans,
+	resolveAiSessionWindow,
+} from "@maple/backend/services/ai-sessions/ai-session-reads"
 import { padSessionWindow } from "@maple/agent-sessions"
 
 /** What to do about a trace whose spans no read can carry. */
@@ -152,6 +155,7 @@ export function registerInspectSpanTool(server: McpToolRegistrar) {
 				}),
 			}
 		}),
+		{ phrases: ["Inspecting a span", "Reading span details"] },
 	)
 }
 

@@ -41,11 +41,14 @@ import {
 	type ChatEvent,
 	type ChatEventInput,
 	type ChatMessage,
+	type ChatProposalOutcome,
+	type ChatProposalSettlement,
 	type ChatTurnOrigin,
 	type ChatTurnTenantEncoded,
 } from "@maple/domain/chat-session"
 import { type ChatSessionStub } from "@maple/domain/chat-session-stub"
 import { makeChatTranscript } from "@maple/domain/chat-transcript"
+import type { AppliedProposal, ApplyChatProposalInput } from "./apply-proposal"
 
 /** What the class reads off its Durable Object state: SQLite, the alarm, and the object's own `waitUntil`. */
 interface ChatSessionState {
@@ -115,10 +118,11 @@ const RETRY_HINT = "retry: 1000\n\n"
  *
  * Without this, any way of losing the turn — isolate eviction, an unhandled defect, a deploy
  * mid-stream — leaves `running = 1` forever: `beginTurn` returns `undefined`, the route 409s every
- * message, and the conversation is wedged with no recovery but a manual abort. 15 minutes matches
- * the `diagnosis_timeout` ceiling the triage path already uses.
+ * message, and the conversation is wedged with no recovery but a manual abort. It must outlast the
+ * longest legitimate turn — an autonomous pass plus its close-out, each up to its budget's
+ * `maxDuration` — or it abandons a turn that is still running (`budgets.test.ts` checks this).
  */
-const TURN_STALE_MS = 15 * 60 * 1000
+export const TURN_STALE_MS = 25 * 60 * 1000
 const CHAT_TURN_FAILED = "Maple couldn't complete this response."
 
 /**
@@ -130,6 +134,37 @@ const CHAT_TURN_FAILED = "Maple couldn't complete this response."
  * evicted about two minutes in, mid-run (seen 2026-09-15). The alarm is the event that prevents it.
  */
 const TURN_HEARTBEAT_MS = 30 * 1000
+
+/** What the copy says when applying an approved mutation fell over rather than failing in-band. */
+const PROPOSAL_FAILED = "Maple couldn't apply this change. Check whether it went through in Maple."
+
+/**
+ * How a session runs a mutation somebody approved.
+ *
+ * A port rather than a call, for the reason the whole module has: what actually runs the tool is
+ * the MCP service graph, which must not be reachable from a class the worker entry exports
+ * (Cloudflare error 10021). The Worker's own applier reaches it behind a dynamic import and is the
+ * default; a test of the settling supplies its own rather than building that graph.
+ *
+ * The signature is the applier's own, through a type-only import — erased at compile time, so it
+ * costs nothing at module scope; the ban is on the VALUE import below.
+ */
+export type ProposalApplier = (input: ApplyChatProposalInput) => Promise<AppliedProposal>
+
+const applyThroughWorker: ProposalApplier = async (input) => {
+	const { applyChatProposal } = await import("./apply-proposal")
+	return applyChatProposal(input)
+}
+
+/** A proposed tool call, as the log holds it. */
+interface Proposal {
+	/** The assistant message that issued it — the id a `tool-result` has to be appended under. */
+	readonly messageId: string
+	readonly name: string
+	readonly input: unknown
+	/** Whether somebody has already decided it. */
+	readonly settled: boolean
+}
 
 export class ChatSession {
 	private readonly sql: SqlStorage
@@ -151,9 +186,20 @@ export class ChatSession {
 	 */
 	private liveTurn: string | undefined
 
+	/**
+	 * Proposals this activation is part-way through settling.
+	 *
+	 * The durable check — does the call already have a result — answers every click after the first
+	 * one has finished. This answers the one that arrives while the tool is still running, which is
+	 * the window a double click actually lands in. An eviction between the two clicks loses the set
+	 * and costs at most a tool run the reader asked for twice.
+	 */
+	private readonly settling = new Set<string>()
+
 	constructor(
 		private readonly ctx: ChatSessionState,
 		private readonly env: Record<string, unknown>,
+		private readonly applier: ProposalApplier = applyThroughWorker,
 	) {
 		this.sql = ctx.storage.sql
 		this.sql.exec(SCHEMA)
@@ -348,9 +394,9 @@ export class ChatSession {
 		readonly messageId: string
 		readonly text: string
 		readonly tenant: ChatTurnTenantEncoded
-		/** Optional only for deploy skew between Workers; `originForTurn` resolves a missing one. */
-		readonly origin?: ChatTurnOrigin
-	}): { cursor: number; messageId: string } | undefined {
+		/** Who is driving the turn, stated by whoever raised it. */
+		readonly origin: ChatTurnOrigin
+	}): { cursor: number; messageId: string; turnMessageId: string } | undefined {
 		if (this.isRunning()) return undefined
 		const cursor = this.cursor()
 		// The assistant's message needs an id of its OWN. Reusing the user's meant `history()` found
@@ -370,7 +416,96 @@ export class ChatSession {
 		// whatever request asked for it. `waitUntil` alone does not keep the object in memory — the
 		// heartbeat alarm does.
 		this.ctx.waitUntil(this.runTurn(input.sessionId, turnId, input.tenant, input.origin))
-		return { cursor, messageId: input.messageId }
+		return { cursor, messageId: input.messageId, turnMessageId: turnId }
+	}
+
+	/**
+	 * Apply or decline a mutation the agent proposed, and record the outcome as that call's
+	 * `tool-result`.
+	 *
+	 * By reference: the caller names the call, and the tool's name and arguments come out of this
+	 * object's own log. Accepting them from the caller would make this a second way to run a
+	 * mutating tool, and the caller is a Worker relaying a click off a chat platform.
+	 *
+	 * The caller is also who authorized the click: it resolved the workspace, checked that the
+	 * control named THIS conversation, and decided whose authority the change runs under —
+	 * `actingUserId` when the connector could name the clicker and they had linked, the org-level
+	 * connector identity when it could not. Reaching this object at all requires the Durable
+	 * Object binding, which only Maple's own Workers hold, and that is the same trust `beginTurn`
+	 * already runs on.
+	 */
+	async settleProposal(input: ChatProposalSettlement): Promise<ChatProposalOutcome> {
+		const proposal = this.findProposal(input.toolCallId)
+		if (proposal === undefined) return "unknown"
+		// Two clicks on one control: the durable half catches the second once the first has written
+		// its result, and the in-memory half catches it while the first is still running the tool.
+		if (proposal.settled || this.settling.has(input.toolCallId)) return "settled"
+		this.settling.add(input.toolCallId)
+		try {
+			const result =
+				input.decision === "deny"
+					? {
+							output: `Declined by ${input.approver.displayName}. The tool did not run.`,
+							isError: true,
+						}
+					: await this.applyProposal(input, proposal)
+			this.append({
+				type: "tool-result",
+				// The assistant message that issued the proposal: the transcript fold opens a message
+				// by id and only then finds the call in it, so anything else leaves the proposal open.
+				messageId: proposal.messageId,
+				callId: input.toolCallId,
+				output: result.output,
+				...(result.isError ? { isError: true } : undefined),
+			})
+			return "decided"
+		} finally {
+			this.settling.delete(input.toolCallId)
+		}
+	}
+
+	/** The open proposal with this call id, whether it is still open, and what it asked for. */
+	private findProposal(toolCallId: string): Proposal | undefined {
+		for (const message of this.history()) {
+			for (const call of message.toolCalls) {
+				if (call.id !== toolCallId || call.proposed !== true) continue
+				return {
+					messageId: message.id,
+					name: call.name,
+					input: call.input,
+					settled: "output" in call,
+				}
+			}
+		}
+		return undefined
+	}
+
+	/**
+	 * Run the proposed tool.
+	 *
+	 * A failure becomes an error result rather than being re-raised: the proposal is settled either
+	 * way, because leaving live controls on a mutation that may or may not have run is the worse of
+	 * the two — the reader is told it failed and can act in Maple.
+	 */
+	private async applyProposal(
+		settlement: ChatProposalSettlement,
+		proposal: Proposal,
+	): Promise<AppliedProposal> {
+		try {
+			return await this.applier({
+				env: this.env,
+				sessionId: settlement.sessionId,
+				approver: settlement.approver,
+				...(settlement.actingUserId === undefined
+					? undefined
+					: { actingUserId: settlement.actingUserId }),
+				tool: proposal.name,
+				input: proposal.input,
+			})
+		} catch (cause) {
+			console.error("[chat.approval] Failed to apply a proposal", cause)
+			return { output: PROPOSAL_FAILED, isError: true }
+		}
 	}
 
 	/**
@@ -449,7 +584,7 @@ export class ChatSession {
 		sessionId: string,
 		messageId: string,
 		tenant: ChatTurnTenantEncoded,
-		origin: ChatTurnOrigin | undefined,
+		origin: ChatTurnOrigin,
 	): Promise<void> {
 		try {
 			const { runChatSessionTurn } = await import("./turn-runner")
@@ -459,7 +594,7 @@ export class ChatSession {
 				env: this.env,
 				messageId,
 				tenant,
-				...(origin === undefined ? undefined : { origin }),
+				origin,
 			})
 		} catch (cause) {
 			console.error("[chat.turn] Failed to start turn runner", cause)
@@ -522,6 +657,7 @@ export const chatSessionRpc = (session: ChatSession) =>
 		subscribe: (cursor) => Effect.sync(() => session.subscribe(cursor)),
 		append: (event) => Effect.sync(() => session.append(event)),
 		beginTurn: (input) => Effect.sync(() => session.beginTurn(input)),
+		settleProposal: (input) => Effect.promise(() => session.settleProposal(input)),
 		holdsTurn: (messageId) => Effect.sync(() => session.holdsTurn(messageId)),
 		endTurn: (messageId) => Effect.sync(() => session.endTurn(messageId)),
 		abort: () => Effect.sync(() => session.abort()),
