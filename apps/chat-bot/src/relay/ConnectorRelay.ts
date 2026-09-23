@@ -85,6 +85,14 @@ export interface ConnectorRelayPorts {
  */
 const KEEP_ALIVE_MS = 30 * 1000
 
+/**
+ * The heavy half an event and a resume run in, loaded on first use — see `run` below. Named so a
+ * test can stand in for it.
+ */
+export type ConnectorRelayRuntime = Pick<typeof import("./run.ts"), "runInboundEvent" | "resumeInboundTurn">
+
+const loadRuntime = (): Promise<ConnectorRelayRuntime> => import("./run.ts")
+
 /** How long a workspace that nobody has linked goes unmentioned in this conversation. */
 const UNLINKED_NOTICE_INTERVAL_MS = 60 * 60 * 1000
 
@@ -98,6 +106,7 @@ export class ConnectorRelay {
 	constructor(
 		private readonly ctx: ConnectorRelayState,
 		private readonly env: Record<string, unknown>,
+		private readonly runtime: () => Promise<ConnectorRelayRuntime> = loadRuntime,
 	) {}
 
 	/**
@@ -205,7 +214,7 @@ export class ConnectorRelay {
 				return this.recordTurn(checkpoint)
 			})
 		try {
-			const { runInboundEvent } = await import("./run.ts")
+			const { runInboundEvent } = await this.runtime()
 			await runInboundEvent({ env: this.env, ...this.relayPorts(event), recordTurn }, event)
 		} catch (cause) {
 			console.error("[chat-bot.relay] event failed", cause)
@@ -222,7 +231,7 @@ export class ConnectorRelay {
 	 */
 	private async resume(key: string, checkpoint: unknown): Promise<void> {
 		try {
-			const { resumeInboundTurn } = await import("./run.ts")
+			const { resumeInboundTurn } = await this.runtime()
 			await resumeInboundTurn(
 				{ env: this.env, recordTurn: (next) => this.recordTurn(next) },
 				checkpoint,
@@ -245,7 +254,11 @@ export class ConnectorRelay {
 			this.relaying.add(key)
 			return Effect.tryPromise(() => this.ctx.storage.put(key, checkpoint))
 		}).pipe(
-			Effect.tapError(() => Effect.logWarning("A relayed turn's checkpoint could not be written")),
+			Effect.tapError(() =>
+				Effect.logWarning("A relayed turn's checkpoint could not be written").pipe(
+					Effect.annotateLogs({ "maple.chat.session_id": checkpoint.sessionId }),
+				),
+			),
 			Effect.ignore,
 		)
 	}

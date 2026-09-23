@@ -11,10 +11,31 @@
 import type { ChatConversation, InboundMessage } from "@maple/chat-platform"
 import { chatConnectorId } from "@maple/chat-platform"
 import { ChatConversationKey } from "@maple/domain/chat-session"
-import { Effect, Schema } from "effect"
+import { Effect, Option, Schema } from "effect"
 import { describe, expect, it } from "vitest"
-import { ConnectorRelay } from "./ConnectorRelay.ts"
-import type { RelayTurnCheckpoint } from "./resume.ts"
+import { ConnectorRelay, type ConnectorRelayRuntime } from "./ConnectorRelay.ts"
+import { decodeRelayTurnCheckpoint, type RelayTurnCheckpoint } from "./resume.ts"
+import type { RelayHost } from "./run.ts"
+
+/**
+ * The real heavy half, with every resume it is asked for recorded — and, given `event`, a stand-in
+ * for the turn a delivered event runs.
+ */
+const heavy = (event?: (host: RelayHost) => Promise<void>) => {
+	const resumed: Array<unknown> = []
+	const load = async (): Promise<ConnectorRelayRuntime> => {
+		const actual = await import("./run.ts")
+		return {
+			runInboundEvent: (host, inbound) =>
+				event === undefined ? actual.runInboundEvent(host, inbound) : event(host),
+			resumeInboundTurn: (host, stored) => {
+				resumed.push(stored)
+				return actual.resumeInboundTurn(host, stored)
+			},
+		}
+	}
+	return { resumed, load }
+}
 
 const TESTCHAT = chatConnectorId("testchat")
 const conversationKey = Schema.decodeSync(ChatConversationKey)
@@ -160,6 +181,22 @@ describe("remembering the conversations the bot opened", () => {
 		}).pipe(Effect.runPromise))
 })
 
+/** A turn's checkpoint as the relay writes it. `resumes: 3` is one no resume will act on. */
+const checkpoint = (resumes = 0): RelayTurnCheckpoint =>
+	Option.getOrThrow(
+		decodeRelayTurnCheckpoint({
+			connector: TESTCHAT,
+			sessionId: "org_1:bot-testchat-thread_7",
+			turnMessageId: "a1",
+			cursor: 0,
+			target: { workspaceId: "workspace-1", channelId: "thread_7" },
+			messages: [{ target: { workspaceId: "workspace-1", channelId: "thread_7" }, messageId: "m1" }],
+			deadline: Number.MAX_SAFE_INTEGER,
+			resumes,
+		}),
+	)
+const TURN_KEY = "turn:org_1:bot-testchat-thread_7:a1"
+
 describe("waking after an eviction", () => {
 	it("does nothing on an alarm with no turn recorded", async () => {
 		const state = objectState()
@@ -171,14 +208,54 @@ describe("waking after an eviction", () => {
 		expect([...state.stored]).toEqual([["opened:thread_7", true]])
 	})
 
-	it("picks up a turn it finds recorded, and clears it once the resume is over", async () => {
-		// Unreadable here — a checkpoint an older build wrote — which is dropped rather than thrown on.
+	it("leaves a turn this activation is still relaying to it, and clears it when the turn ends", async () => {
 		const state = objectState()
-		state.stored.set("turn:org_1:bot-testchat-thread_7", { sessionId: "org_1:bot-testchat-thread_7" })
-		await new ConnectorRelay(state, {}).alarm()
+		let finish = () => {}
+		const finished = new Promise<void>((resolve) => {
+			finish = resolve
+		})
+		let recordedTurn = () => {}
+		const recorded = new Promise<void>((resolve) => {
+			recordedTurn = resolve
+		})
+		const run = heavy(async (host) => {
+			await Effect.runPromise(host.recordTurn(checkpoint()))
+			recordedTurn()
+			await finished
+		})
+		const relay = new ConnectorRelay(state, {}, run.load)
+
+		await relay.deliver(message)
+		await recorded
+		expect([...state.stored.keys()]).toEqual([TURN_KEY])
+		// The keep-alive lands mid-turn: the checkpoint is this activation's own, not an orphan.
+		await relay.alarm()
+
+		finish()
+		await Promise.all(state.pending)
+		expect(run.resumed).toEqual([])
+		expect([...state.stored]).toEqual([])
+	})
+
+	it("resumes a turn it finds recorded, and clears it once the resume is over", async () => {
+		const state = objectState()
+		const run = heavy()
+		state.stored.set(TURN_KEY, checkpoint(3))
+		await new ConnectorRelay(state, {}, run.load).alarm()
 
 		// Kept resident while it works, like any turn this object relays.
 		expect(state.alarms).toHaveLength(1)
+		await Promise.all(state.pending)
+		expect(run.resumed).toEqual([checkpoint(3)])
+		expect([...state.stored]).toEqual([])
+	})
+
+	it("drops a turn checkpoint it can no longer read", async () => {
+		// One an older build wrote: dropped rather than thrown on.
+		const state = objectState()
+		state.stored.set(TURN_KEY, { sessionId: "org_1:bot-testchat-thread_7" })
+		await new ConnectorRelay(state, {}).alarm()
+
 		await Promise.all(state.pending)
 		expect([...state.stored]).toEqual([])
 	})

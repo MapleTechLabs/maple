@@ -9,7 +9,8 @@
  * transcript the lost fiber had.
  *
  * A resume therefore edits the messages the checkpoint names and posts only what the turn has
- * outgrown them by — never a second copy of the answer.
+ * outgrown them by. The one exception is a message posted and lost before its checkpoint was
+ * written, which is posted again (see `driveChatTurn`'s `onPosted`).
  */
 import { driveChatTurn } from "@maple/chat-platform"
 import { ChatSessionId } from "@maple/domain/chat-session"
@@ -93,8 +94,9 @@ const resume = Effect.fn("chat_bot.resume_turn")(function* <R>(
 
 	yield* Effect.annotateCurrentSpan({ orgId, "maple.chat.resume": "started" })
 	// A turn that ended while nobody was relaying it replays straight through its `turn-end`, which
-	// makes this one settling render; a session that is gone fails the subscription, and the driver
-	// settles the messages on the disconnected notice before failing.
+	// makes this one settling render. A session that is gone fails the subscription before anything
+	// replays, and the messages are left as they were. The timeout interrupts the driver, exactly as
+	// the relay's own does, so a turn that outlives its deadline gets no settling render.
 	yield* driveChatTurn({
 		events: chatTurnEvents(session, checkpoint.sessionId, checkpoint.cursor),
 		messageId: checkpoint.turnMessageId,

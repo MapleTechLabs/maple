@@ -91,6 +91,9 @@ export const driveChatTurn = Effect.fn("ChatPlatform.driveChatTurn")(function* <
 
 	const flush = gate.withPermit(
 		Effect.gen(function* () {
+			// A resume that has replayed nothing — the session gone before a single event — would only
+			// overwrite what the posted messages already say with less.
+			if (resumed && transcript.seq === 0) return
 			dirty = false
 			const message = transcript.messages.find((candidate) => candidate.id === messageId)
 			const blocks: Array<ChatBlock> =
@@ -113,6 +116,8 @@ export const driveChatTurn = Effect.fn("ChatPlatform.driveChatTurn")(function* <
 				if (index >= posted.length) {
 					posted.push(yield* transport.post(target, group))
 					sent.push(rendered)
+					// At least once, not exactly: a run lost between the post and this report resumes
+					// without the message, and posts that part of the turn again.
 					if (options.onPosted !== undefined) yield* options.onPosted([...posted])
 					continue
 				}

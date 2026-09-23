@@ -330,9 +330,12 @@ export const resumeInboundTurn = (host: Pick<RelayHost, "env" | "recordTurn">, s
 			}
 			const { connector: connectorId, target } = checkpoint.value
 			const connector = connectors.find((candidate) => candidate.id === connectorId)
-			if (connector === undefined) return
-			const config = resolveConnectorConfig(host.env, connector)
-			if (config._tag === "missing") return
+			const config = connector === undefined ? undefined : resolveConnectorConfig(host.env, connector)
+			if (connector === undefined || config === undefined || config._tag === "missing") {
+				return yield* Effect.logWarning(
+					"A turn's connector is no longer configured; not resumed",
+				).pipe(Effect.annotateLogs({ "maple.chat.connector": connectorId }))
+			}
 			const lookup = yield* Effect.cached(
 				lookupWorkspace(relayHost, connector, connectorId, target.workspaceId, undefined),
 			)
