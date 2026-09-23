@@ -350,12 +350,14 @@ const settleAction = Effect.fn("chat_bot.settle_approval")(function* <R>(
 	// added to the contract has to be answered here rather than quietly taking the last branch,
 	// which for this one would mean editing the message after a decision that never happened.
 	switch (outcome.value) {
-		case "settled":
-			// Somebody got there first. The message already shows what was decided, so a second click
-			// changes nothing — including what it says.
-			return
 		case "unknown":
 			return yield* say(transport, replyTarget(action), PROPOSAL_GONE_NOTICE)
+		// Somebody got there first, or this click is the one that decided it. Both re-render from
+		// the transcript, which is idempotent and costs nothing but a read — and it is what lets a
+		// second click REPAIR a message whose first update failed, rather than leaving controls
+		// that look live on a proposal that is long settled. Nothing re-runs: `settleProposal`
+		// already refused to.
+		case "settled":
 		case "decided":
 			// A transcript that could not be re-read has already been logged; the decision stands
 			// either way, so the reader sees an unchanged message rather than a second failure.

@@ -898,18 +898,26 @@ describe("settling an approval somebody clicked", () => {
 		}),
 	)
 
-	it.effect("leaves the message alone on a second click, and says nothing", () =>
+	it.effect("runs nothing on a second click, and repairs the message instead", () =>
 		Effect.gen(function* () {
 			const platform = chat()
-			const agent = session([], { settles: "settled" })
+			const agent = session([], {
+				settles: "settled",
+				transcript: decidedTranscript("Approved by Ada.\nDone."),
+			})
 			const deployment = host(platform.outbound, agent.stub)
 
 			yield* relayInboundEvent(click(), deployment.ports)
 
-			// The message already shows what was decided; repeating it would be the bot arguing with
-			// itself in a channel.
+			// The session refused to settle it twice, so nothing re-ran — but the re-render still
+			// happens, which is what fixes a message whose first update never landed.
 			expect(agent.settlements).toHaveLength(1)
-			expect(platform.calls).toEqual([])
+			expect(platform.calls.map((call) => call.verb)).toEqual(["edit"])
+			expect(approvals(platform.calls.at(-1)?.blocks ?? [])[0]).toMatchObject({
+				outcome: { approved: true },
+			})
+			// And it says nothing out loud: a second click is not worth a message of its own.
+			expect(platform.calls.every((call) => call.verb === "edit")).toBe(true)
 		}),
 	)
 
