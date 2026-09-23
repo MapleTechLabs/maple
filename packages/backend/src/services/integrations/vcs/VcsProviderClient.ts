@@ -3,6 +3,7 @@ import type {
 	BranchUpsertInput,
 	CommitUpsertInput,
 	GitCommitSha,
+	PullRequestContext,
 	PullRequestFile,
 	PullRequestReviewPublication,
 	PullRequestReviewPublished,
@@ -185,6 +186,20 @@ export interface VcsProviderClient {
 		number: number,
 	) => Effect.Effect<
 		ReadonlyArray<PullRequestFile>,
+		| VcsProviderError
+		| VcsInstallationGoneError
+		| VcsRepoUnavailableError
+		| VcsRepositoryBlockedError
+		| VcsRateLimitedError
+	>
+
+	/** Commits, existing discussion and head checks of one pull request, for the reviewer. */
+	readonly fetchPullRequestContext: (
+		installation: VcsInstallation,
+		repo: VcsRepositoryRef,
+		number: number,
+	) => Effect.Effect<
+		PullRequestContext,
 		| VcsProviderError
 		| VcsInstallationGoneError
 		| VcsRepoUnavailableError

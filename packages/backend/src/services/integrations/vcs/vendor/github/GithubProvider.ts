@@ -2,6 +2,7 @@ import {
 	type BranchUpsertInput,
 	type CommitUpsertInput,
 	GitCommitSha,
+	type PullRequestContext,
 	type PullRequestFile,
 	type PullRequestSummary,
 	type RepoUpsertInput,
@@ -916,6 +917,37 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 						Effect.mapError(toVcsError),
 					)
 
+			const fetchPullRequestContext: VcsProviderClient["fetchPullRequestContext"] = (
+				installation,
+				repo,
+				number,
+			) =>
+				client
+					.getPullRequestContext(installation.externalInstallationId, repo.owner, repo.name, number)
+					.pipe(
+						Effect.map(
+							(raw): PullRequestContext => ({
+								commits: raw.commits.map((commit) => ({
+									sha: commit.sha,
+									message: commit.commit.message,
+								})),
+								comments: raw.comments.map((comment) => ({
+									author: comment.user?.login ?? "(deleted user)",
+									path: comment.path ?? null,
+									line: comment.line ?? null,
+									body: comment.body ?? "",
+								})),
+								checks: raw.checks.map((check) => ({
+									name: check.name,
+									status: check.status,
+									conclusion: check.conclusion,
+									title: check.output?.title ?? null,
+								})),
+							}),
+						),
+						Effect.mapError(toVcsError),
+					)
+
 			// The check run first: it is what the PR's checks tab shows and it never fails on a bad
 			// line. Then the summary comment, always, edited in place on later pushes. Then the
 			// inline notes, which are dropped if GitHub refuses them: the comment already carries
@@ -1032,6 +1064,7 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 				fetchPullRequests,
 				fetchPullRequest,
 				fetchPullRequestFiles,
+				fetchPullRequestContext,
 				publishPullRequestReview,
 				searchCode,
 				fetchSourceFile,

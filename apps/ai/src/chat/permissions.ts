@@ -54,6 +54,7 @@ export const READ_ONLY_RULESET: PermissionRuleset = [
  */
 export const PR_REVIEW_TOOLS: ReadonlyArray<string> = [
 	"pr_changed_files",
+	"pr_context",
 	"pr_file_diff",
 	"sandbox_grep",
 	"sandbox_list_files",

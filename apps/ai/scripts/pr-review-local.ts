@@ -29,6 +29,7 @@ import { ChatMessage, ChatToolCall } from "@maple/domain/chat-session"
 import {
 	GitCommitSha,
 	OrgId,
+	type PullRequestContext,
 	type PullRequestFile,
 	PullRequestFileStatus,
 	type SubmitPrReviewRequest,
@@ -45,7 +46,12 @@ import { PR_REVIEW_CLOSE_OUT_PROMPT } from "@/chat/prompts"
 import { runChatTurn } from "@/chat/run"
 import { makeRunUsage } from "@/chat/tools"
 import type { McpToolExecutorApi } from "@/mcp/dispatcher"
-import { annotatePatch, renderChangedFiles, renderFileDiffs } from "@/mcp/tools/pull-request"
+import {
+	annotatePatch,
+	renderChangedFiles,
+	renderFileDiffs,
+	renderPullRequestContext,
+} from "@/mcp/tools/pull-request"
 import type { McpToolResult } from "@/mcp/tools/types"
 import { layerLlm, resolveTriageModel, type ResolvedModel } from "@/platform/Llm"
 
@@ -158,6 +164,28 @@ const GhFile = Schema.Struct({
 	patch: Schema.optionalKey(Schema.String),
 })
 const GhFilePages = Schema.Array(Schema.Array(GhFile))
+
+const GhContextCommits = Schema.Array(
+	Schema.Struct({ sha: Schema.String, commit: Schema.Struct({ message: Schema.String }) }),
+)
+const GhContextComments = Schema.Array(
+	Schema.Struct({
+		user: Schema.NullOr(Schema.Struct({ login: Schema.String })),
+		body: Schema.optionalKey(Schema.NullOr(Schema.String)),
+		path: Schema.optionalKey(Schema.String),
+		line: Schema.optionalKey(Schema.NullOr(Schema.Number)),
+	}),
+)
+const GhContextChecks = Schema.Struct({
+	check_runs: Schema.Array(
+		Schema.Struct({
+			name: Schema.String,
+			status: Schema.String,
+			conclusion: Schema.NullOr(Schema.String),
+			output: Schema.optionalKey(Schema.Struct({ title: Schema.NullOr(Schema.String) })),
+		}),
+	),
+})
 
 const decodePullRequestJson = Schema.decodeUnknownOption(Schema.fromJsonString(GhPullRequest))
 const decodeFilePagesJson = Schema.decodeUnknownOption(Schema.fromJsonString(GhFilePages))
@@ -384,6 +412,7 @@ const READ_ONLY_GIT = new Set([
 /** Tools this runner answers from the checkout; the rest of the review allowlist reads telemetry. */
 const SOURCE_TOOLS = new Set([
 	"pr_changed_files",
+	"pr_context",
 	"pr_file_diff",
 	"sandbox_grep",
 	"sandbox_list_files",
@@ -407,10 +436,53 @@ const UNSAFE_GIT_ARG =
 const unsafeGitArg = (arg: string): boolean =>
 	UNSAFE_GIT_ARG.test(arg) || arg.startsWith("/") || arg.startsWith("~") || arg.split(/[/:]/).includes("..")
 
+/** The same answer `pr_context` gives in production, read with the caller's own `gh` login. */
+const fetchPullRequestContext = (args: Args): PullRequestContext => {
+	const slug = `repos/${args.owner}/${args.repo}`
+	const json = (path: string): unknown => JSON.parse(must(["gh", "api", path]))
+	const commits = Schema.decodeUnknownSync(GhContextCommits)(
+		json(`${slug}/pulls/${args.number}/commits?per_page=100`),
+	)
+	const comments = [
+		...Schema.decodeUnknownSync(GhContextComments)(
+			json(`${slug}/pulls/${args.number}/comments?per_page=100&sort=created&direction=desc`),
+		),
+		...Schema.decodeUnknownSync(GhContextComments)(
+			json(`${slug}/issues/${args.number}/comments?per_page=100`),
+		),
+	]
+	const head = commits.at(-1)?.sha
+	const checks =
+		head === undefined
+			? []
+			: Schema.decodeUnknownSync(GhContextChecks)(
+					json(`${slug}/commits/${head}/check-runs?per_page=100`),
+				).check_runs
+	return {
+		commits: commits.map((commit) => ({ sha: commit.sha, message: commit.commit.message })),
+		// Maple's own summary comment is left out, as the production tool leaves out the App's.
+		comments: comments
+			.filter((comment) => !(comment.body ?? "").includes("<!-- maple-pr-review -->"))
+			.map((comment) => ({
+				author: comment.user?.login ?? "(deleted user)",
+				path: comment.path ?? null,
+				line: comment.line ?? null,
+				body: comment.body ?? "",
+			})),
+		checks: checks.map((check) => ({
+			name: check.name,
+			status: check.status,
+			conclusion: check.conclusion,
+			title: check.output?.title ?? null,
+		})),
+	}
+}
+
 const makeExecutor = (input: {
 	readonly repository: string
 	readonly number: number
 	readonly files: ReadonlyArray<PullRequestFile>
+	readonly context: PullRequestContext | undefined
 	readonly dir: string
 	readonly headSha: string
 }): { readonly executor: McpToolExecutorApi; readonly cleanup: () => void } => {
@@ -516,6 +588,12 @@ const makeExecutor = (input: {
 				return num(params.number) === input.number
 					? renderChangedFiles(input.repository, input.number, input.files)
 					: failure(`Only pull request #${input.number} is available in this run.`)
+			case "pr_context":
+				return num(params.number) !== input.number
+					? failure(`Only pull request #${input.number} is available in this run.`)
+					: input.context === undefined
+						? text(["A local range run has no pull request, so there is no context to read."])
+						: renderPullRequestContext(input.number, input.context)
 			case "pr_file_diff":
 				return num(params.number) === input.number
 					? renderFileDiffs(input.files, [
@@ -727,6 +805,7 @@ export const reviewLocally = async (
 		repository,
 		number: args.number,
 		files,
+		context: args.range === undefined ? fetchPullRequestContext(args) : undefined,
 		dir: clone.dir,
 		headSha: pr.head.sha,
 	})

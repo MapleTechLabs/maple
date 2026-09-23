@@ -246,6 +246,31 @@ export const PullRequestFile = Schema.Struct({
 })
 export type PullRequestFile = Schema.Schema.Type<typeof PullRequestFile>
 
+/**
+ * What a reviewer reads around a pull request's diff: its commits, what people and other bots
+ * already said on it (the reviewer's own comments excluded), and the checks on its head commit.
+ */
+export const PullRequestContext = Schema.Struct({
+	commits: Schema.Array(Schema.Struct({ sha: Schema.String, message: Schema.String })),
+	comments: Schema.Array(
+		Schema.Struct({
+			author: Schema.String,
+			path: Schema.NullOr(Schema.String),
+			line: Schema.NullOr(Schema.Number),
+			body: Schema.String,
+		}),
+	),
+	checks: Schema.Array(
+		Schema.Struct({
+			name: Schema.String,
+			status: Schema.String,
+			conclusion: Schema.NullOr(Schema.String),
+			title: Schema.NullOr(Schema.String),
+		}),
+	),
+})
+export type PullRequestContext = Schema.Schema.Type<typeof PullRequestContext>
+
 /** An inline review comment on the new side of the diff; `startLine` makes it span a range. */
 export const PullRequestReviewComment = Schema.Struct({
 	path: Schema.String,

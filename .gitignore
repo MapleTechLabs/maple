@@ -34,6 +34,7 @@ todos.json
 apps/api/.data/
 apps/api/scripts/.bench/
 apps/ai/scripts/.pr-review-runs/
+apps/ai/scripts/.pr-review-evals/
 
 .alchemy
 # eve agent build/model-catalog cache

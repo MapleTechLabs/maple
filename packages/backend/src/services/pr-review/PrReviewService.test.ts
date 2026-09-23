@@ -99,6 +99,7 @@ const layerFor = (
 		fetchPullRequests: unused,
 		fetchPullRequest: unused,
 		fetchPullRequestFiles: unused,
+		fetchPullRequestContext: unused,
 		searchCode: unused,
 		resolveRef: unused,
 		fetchCloneCredentials: unused,

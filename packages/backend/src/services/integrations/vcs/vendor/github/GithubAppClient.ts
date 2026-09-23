@@ -193,6 +193,30 @@ const GithubApiPullRequestFileSchema = Schema.Struct({
 export type GithubApiPullRequestFile = Schema.Schema.Type<typeof GithubApiPullRequestFileSchema>
 const GithubApiPullRequestFileList = Schema.Array(GithubApiPullRequestFileSchema)
 
+const GithubApiPullRequestCommitList = Schema.Array(
+	Schema.Struct({ sha: Schema.String, commit: Schema.Struct({ message: Schema.String }) }),
+)
+const GithubApiDiscussionCommentList = Schema.Array(
+	Schema.Struct({
+		user: Schema.NullOr(GithubApiUser),
+		body: Schema.optionalKey(Schema.NullOr(Schema.String)),
+		path: Schema.optionalKey(Schema.String),
+		line: Schema.optionalKey(Schema.NullOr(Schema.Number)),
+		performed_via_github_app: Schema.optionalKey(Schema.NullOr(Schema.Struct({ id: Schema.Number }))),
+	}),
+)
+const GithubApiCheckRunList = Schema.Struct({
+	check_runs: Schema.Array(
+		Schema.Struct({
+			name: Schema.String,
+			status: Schema.String,
+			conclusion: Schema.NullOr(Schema.String),
+			output: Schema.optionalKey(Schema.Struct({ title: Schema.NullOr(Schema.String) })),
+		}),
+	),
+})
+export type GithubApiDiscussionComment = Schema.Schema.Type<typeof GithubApiDiscussionCommentList>[number]
+
 const GithubApiCheckRunSchema = Schema.Struct({
 	id: Schema.Number,
 	html_url: Schema.NullOr(Schema.String),
@@ -282,6 +306,9 @@ const decodePullRequestList = Schema.decodeUnknownEffect(GithubApiPullRequestLis
 const decodePullRequest = Schema.decodeUnknownEffect(GithubApiPullRequestSchema)
 const decodePullRequestFiles = Schema.decodeUnknownEffect(GithubApiPullRequestFileList)
 const decodeCheckRun = Schema.decodeUnknownEffect(GithubApiCheckRunSchema)
+const decodePullRequestCommits = Schema.decodeUnknownEffect(GithubApiPullRequestCommitList)
+const decodeDiscussionComments = Schema.decodeUnknownEffect(GithubApiDiscussionCommentList)
+const decodeCheckRunList = Schema.decodeUnknownEffect(GithubApiCheckRunList)
 const decodeReview = Schema.decodeUnknownEffect(GithubApiReviewSchema)
 const decodeIssueComment = Schema.decodeUnknownEffect(GithubApiIssueCommentSchema)
 const decodeIssueCommentList = Schema.decodeUnknownEffect(GithubApiIssueCommentList)
@@ -873,6 +900,67 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 				return files
 			})
 
+			// One page of each: the reviewer wants the recent story, not the archive. Checks come
+			// from the last commit, which is the head. The App's own comments are left out, so the
+			// reviewer is never told to avoid repeating itself by its own summary.
+			const getPullRequestContext = Effect.fn("GithubAppClient.getPullRequestContext")(function* (
+				externalInstallationId: string,
+				owner: string,
+				repo: string,
+				number: number,
+			) {
+				const config = yield* resolveConfig
+				const token = yield* mintInstallationToken(externalInstallationId)
+				const base = `${config.apiBaseUrl}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`
+				const getJson = Effect.fnUntraced(function* (url: string, context: string) {
+					const response = yield* authedGet(config, token, url)
+					if (!response.ok) return yield* failure(response, context, "repository")
+					return yield* parseJson(response, context)
+				})
+				const unexpected = (what: string) => (cause: unknown) =>
+					new GithubAppError({ message: `Unexpected ${what} payload`, cause })
+				const commits = yield* decodePullRequestCommits(
+					yield* getJson(
+						`${base}/pulls/${number}/commits?per_page=${PER_PAGE}`,
+						"List pull request commits",
+					),
+				).pipe(Effect.mapError(unexpected("pull request commits")))
+				const [inline, conversation] = yield* Effect.all(
+					[
+						getJson(
+							`${base}/pulls/${number}/comments?per_page=${PER_PAGE}&sort=created&direction=desc`,
+							"List review comments",
+						),
+						getJson(
+							`${base}/issues/${number}/comments?per_page=${PER_PAGE}`,
+							"List pull request comments",
+						),
+					],
+					{ concurrency: 2 },
+				)
+				const notOwn = (comment: GithubApiDiscussionComment) =>
+					String(comment.performed_via_github_app?.id ?? "") !== config.appId
+				const comments = [
+					...(yield* decodeDiscussionComments(inline).pipe(
+						Effect.mapError(unexpected("review comments")),
+					)),
+					...(yield* decodeDiscussionComments(conversation).pipe(
+						Effect.mapError(unexpected("comments")),
+					)),
+				].filter(notOwn)
+				const head = commits.at(-1)?.sha
+				const checks =
+					head === undefined
+						? []
+						: (yield* decodeCheckRunList(
+								yield* getJson(
+									`${base}/commits/${head}/check-runs?per_page=${PER_PAGE}`,
+									"List check runs",
+								),
+							).pipe(Effect.mapError(unexpected("check runs")))).check_runs
+				return { commits, comments, checks }
+			})
+
 			// Needs `checks: write` on the App. A 403 here is the installation not
 			// having accepted that permission yet; the provider maps it to a
 			// repository-scoped failure the review records as `publish_error`.
@@ -1206,6 +1294,7 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 				listPullRequests,
 				getPullRequest,
 				listPullRequestFiles,
+				getPullRequestContext,
 				createCheckRun,
 				createPullRequestReview,
 				upsertIssueComment,

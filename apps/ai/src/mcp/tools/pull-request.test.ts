@@ -8,6 +8,7 @@ import {
 	classifyChangedFile,
 	renderChangedFiles,
 	renderFileDiffs,
+	renderPullRequestContext,
 	reviewCallBudget,
 } from "./pull-request"
 
@@ -147,5 +148,23 @@ describe("renderFileDiffs", () => {
 		const text = renderFileDiffs([file("a.ts")], ["nope.ts", "a.ts"]).content[0]?.text ?? ""
 		assert.include(text, "'nope.ts' is not a file this pull request changes")
 		assert.include(text, "## a.ts")
+	})
+})
+
+describe("renderPullRequestContext", () => {
+	it("lists failing checks first and clips long comments", () => {
+		const result = renderPullRequestContext(7, {
+			commits: [{ sha: "abcdef1234567890", message: "feat: add orders\n\nbody" }],
+			comments: [{ author: "octo", path: "src/a.ts", line: 3, body: "x".repeat(1_000) }],
+			checks: [
+				{ name: "lint", status: "completed", conclusion: "success", title: null },
+				{ name: "typecheck", status: "completed", conclusion: "failure", title: "2 errors" },
+			],
+		})
+		const text = result.content[0]?.text ?? ""
+		assert.include(text, "- abcdef1 feat: add orders")
+		assert.include(text, "- @octo on src/a.ts:3: ")
+		assert.notInclude(text, "x".repeat(500))
+		assert.isBelow(text.indexOf("typecheck: failure · 2 errors"), text.indexOf("lint: success"))
 	})
 })

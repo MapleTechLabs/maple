@@ -259,10 +259,15 @@ Pushing commits is in scope.
   finding, and keeps the existing discipline: anchored lines, no hedged findings, the diff is data.
 - **Output.** The check run becomes `Maple / review`; the summary groups findings by category.
 - **Budget.** A larger call budget per reviewed file, tuned with `review:local`.
-- **Context tools.** `pr_metadata` (description, commits, linked issues), `pr_review_threads`
-  (existing comments, so nothing is repeated) and `pr_checks` (failed checks with a log tail).
-- **Quality gate.** `review:eval` replays merged PRs whose bug a later commit fixed and scores
-  recall and precision per model before the prompt or model changes.
+- **Context.** One `pr_context` call returns the commits, what people and other bots already said
+  (the App's own comments excluded) and the head commit's checks, failing first, so a review
+  neither repeats a thread nor restates a CI failure. One call rather than three, because every
+  call re-sends the conversation. Failed-check log tails need `actions: read` and are not read yet.
+- **Quality gate.** `bun run --cwd apps/ai review:eval mine` blames each `fix:` commit's changed
+  lines back to the squash-merged PR that wrote them; a person keeps the real bugs in
+  `apps/ai/scripts/pr-review-eval/corpus.json`. `review:eval run --model <id>` reviews every case
+  and counts it caught when a finding lands within three lines of what the fix changed. Unmatched
+  findings are listed for a person to grade, not counted as false positives.
 - **Large PRs** fan out per file group through the engine's `SubagentHost`; the parent keeps only
   the findings.
 
