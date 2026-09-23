@@ -102,8 +102,6 @@ across regions because there is no routing.
         - Cloudflare OAuth: `https://api.eu.maple.dev/api/integrations/cloudflare/callback`
         - PlanetScale OAuth: `https://api.eu.maple.dev/api/integrations/planetscale/callback`
         - Hazel OAuth: `https://api.eu.maple.dev/api/integrations/hazel/callback`
-        - Discord (not configured on `prod-eu` yet):
-          `https://api.eu.maple.dev/oauth/chat/discord/callback`
     - **One URL per app** (registered on the app, not sent per request). These need an EU app:
         - **GitHub App.** Register "Maple EU" per `docs/github-app-setup.md` with webhook
           `https://api.eu.maple.dev/api/integrations/github/webhook` and callback
@@ -116,6 +114,12 @@ across regions because there is no routing.
           keeps alert delivery and nothing else; redirect
           `https://api.eu.maple.dev/oauth/slack/callback`, new `SLACK_CLIENT_ID`/`SECRET` in
           `prod-eu`.
+        - **Discord** (not configured on `prod-eu` yet). The install is the bot invite, and a bot
+          token opens a Gateway session that receives every mention, so a shared application would
+          have both instances answer. Create an EU application, register
+          `https://api.eu.maple.dev/oauth/chat/discord/callback` on it, and set its
+          `MAPLE_DISCORD_CLIENT_ID`, `MAPLE_DISCORD_CLIENT_SECRET` and `MAPLE_DISCORD_BOT_TOKEN`
+          in `prod-eu` together.
     - **Scraper.** `apps/scraper` is one Railway service polling the US API's target list, so EU
       Prometheus and PlanetScale metrics targets are never scraped. Deploy a second service in an
       EU Railway region with `MAPLE_API_URL=https://api.eu.maple.dev`,

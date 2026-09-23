@@ -1,6 +1,6 @@
 import { MapleApiV2, v2RouteNotFoundBody } from "@maple/domain/http/v2"
 import { mapleMcpServerManifest } from "@maple/domain/mcp-manifest"
-import { Effect } from "effect"
+import { Context, Effect, identity, Option } from "effect"
 import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/unstable/http"
 import { OpenApi } from "effect/unstable/httpapi"
 import { Env } from "@maple/backend/platform/Env"
@@ -38,12 +38,23 @@ const untrustedRequestOrigin = (request: HttpServerRequest.HttpServerRequest) =>
 	return host ? `${proto}://${host}` : ""
 }
 
+const baseSpecTransform = Option.getOrElse(
+	Context.getOption(MapleApiV2.annotations, OpenApi.Transform),
+	() => identity,
+)
+
 /**
- * The v2 API as this instance publishes it: `servers` names the configured origin, so the EU
- * instance's document and `/v2/docs` send requests to `api.eu.maple.dev`, not the US default.
+ * The v2 API as this instance publishes it: `servers` and `externalDocs` name the configured
+ * origin, so the EU instance's document and `/v2/docs` point at `api.eu.maple.dev`, not the US.
  */
 export const instanceApiV2 = (origin: string) =>
-	MapleApiV2.annotate(OpenApi.Servers, [{ url: origin, description: "Production" }])
+	MapleApiV2.annotate(OpenApi.Servers, [{ url: origin, description: "Production" }]).annotate(
+		OpenApi.Transform,
+		(spec) => ({
+			...baseSpecTransform(spec),
+			externalDocs: { url: `${origin}/v2/docs`, description: "Interactive Maple API reference" },
+		}),
+	)
 
 let openApiDocument: string | undefined
 const openApiJson = (origin: string) =>
