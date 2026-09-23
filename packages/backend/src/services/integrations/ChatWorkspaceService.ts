@@ -5,6 +5,7 @@ import {
 	ChatWorkspaceId,
 	IntegrationsConfigurationError,
 	IntegrationsForbiddenError,
+	IntegrationsNotConnectedError,
 	IntegrationsNotFoundError,
 	IntegrationsPersistenceError,
 	IntegrationsUpstreamError,
@@ -14,8 +15,12 @@ import {
 	type OAuthStatePersistenceError,
 } from "@maple/domain/http"
 import { chatWorkspaces, type ChatWorkspaceRow } from "@maple/db"
-import { isConnectorConfigured, type ChatConnector, type ChatWorkspaceSettings } from "@maple/chat-platform"
-import { connectors } from "@maple/chat-platform/connectors"
+import {
+	isConnectorConfigured,
+	type ChatConnector,
+	type ChatDestination,
+	type ChatWorkspaceSettings,
+} from "@maple/chat-platform"
 import { and, asc, eq } from "drizzle-orm"
 import { Array as Arr, Clock, Context, Effect, Layer, Option, Redacted, Schema } from "effect"
 import { FetchHttpClient, HttpClient } from "effect/unstable/http"
@@ -35,7 +40,13 @@ import {
 	resolveChatWorkspace,
 	type ChatWorkspaceResolution,
 } from "@maple/backend/services/integrations/chat-workspace-rows"
+import {
+	ChatConnectorRegistry,
+	chatOutboundTransport,
+	loadOwnedChatWorkspace,
+} from "@maple/backend/services/integrations/chat-outbound"
 
+export { ChatConnectorRegistry }
 export type { ChatIdentityLink, ChatWorkspaceResolution }
 
 /**
@@ -72,17 +83,6 @@ export const chatIdentityCallbackPath = (connector: ChatConnectorId): string =>
 
 const CROSS_ORG_CONFLICT_MESSAGE =
 	"This chat workspace is already linked to a different Maple organization. Unlink it there first."
-
-/**
- * The connectors this service resolves ids against. A reference rather than a
- * direct import of the registry: production gets the real one by default, and a
- * test can hand the host half a fake connector and exercise the install flow
- * without a chat platform on the other end.
- */
-export class ChatConnectorRegistry extends Context.Reference<ReadonlyArray<ChatConnector<unknown>>>(
-	"@maple/api/services/ChatConnectorRegistry",
-	{ defaultValue: (): ReadonlyArray<ChatConnector<unknown>> => connectors },
-) {}
 
 /** The row id is a UUID we mint, so the brand is a decode that cannot fail. */
 const newWorkspaceId = () => Schema.decodeSync(ChatWorkspaceId)(randomUUID())
@@ -196,6 +196,21 @@ export interface ChatWorkspaceServiceApi {
 		orgId: OrgId,
 		workspaceId: ChatWorkspaceId,
 	) => Effect.Effect<void, IntegrationsNotFoundError | IntegrationsPersistenceError>
+	/**
+	 * The channels in one of the org's workspaces an alert can be posted to, read live from the
+	 * platform. A grant the platform refuses is `NotConnected`: only reinstalling fixes it.
+	 */
+	readonly listDestinations: (
+		orgId: OrgId,
+		workspaceId: ChatWorkspaceId,
+	) => Effect.Effect<
+		ReadonlyArray<ChatDestination>,
+		| IntegrationsNotFoundError
+		| IntegrationsNotConnectedError
+		| IntegrationsUpstreamError
+		| IntegrationsConfigurationError
+		| IntegrationsPersistenceError
+	>
 	/**
 	 * The org behind an inbound chat event. Called by the Worker that runs the
 	 * bot, which reaches the same Postgres through its own Hyperdrive binding —
@@ -697,6 +712,34 @@ const make: Effect.Effect<
 		yield* Effect.logInfo("Chat workspace unlinked", { orgId, connector: row.connector })
 	})
 
+	const listDestinations = Effect.fn("ChatWorkspaceService.listDestinations")(function* (
+		orgId: OrgId,
+		workspaceId: ChatWorkspaceId,
+	) {
+		yield* Effect.annotateCurrentSpan({ orgId })
+		const key = yield* credentialKey
+		const workspace = yield* loadOwnedChatWorkspace(database, registry, orgId, workspaceId, key)
+		if (Option.isNone(workspace)) return yield* Effect.fail(notFound("No chat workspace with this id"))
+		const transport = yield* chatOutboundTransport(
+			workspace.value,
+			env.CHAT_CONNECTOR_OUTBOUND_CONFIG,
+			httpClient,
+		)
+		return yield* transport.destinations(workspace.value.externalWorkspaceId).pipe(
+			Effect.mapError((error) =>
+				error.reason === "auth"
+					? new IntegrationsNotConnectedError({
+							message: `Maple can't read this workspace's channels. Reinstall ${workspace.value.connector.manifest.name} from Integrations to grant channel access.`,
+						})
+					: new IntegrationsUpstreamError({
+							message: error.message,
+							...(error.status === undefined ? undefined : { status: error.status }),
+							cause: error,
+						}),
+			),
+		)
+	})
+
 	const resolve = Effect.fn("ChatWorkspaceService.resolve")(function* (
 		connectorId: ChatConnectorId,
 		externalWorkspaceId: string,
@@ -728,6 +771,7 @@ const make: Effect.Effect<
 		unlink,
 		updateSettings,
 		uninstall,
+		listDestinations,
 		resolve,
 	})
 })

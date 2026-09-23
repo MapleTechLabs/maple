@@ -21,6 +21,10 @@ import { dispatchDelivery, type DispatchDeps } from "./delivery/dispatch"
  * says so. Normalizing those is a later, explicit stage.
  */
 
+/** Chat posts must not happen for these destinations. */
+const failingChatPost = () =>
+	Effect.fail(new AlertDeliveryError({ message: "unexpected postChatAlert", destinationType: "chat" }))
+
 const DESTINATION_ID = Schema.decodeUnknownSync(AlertDestinationId)("7c6b5a49-3821-4e0f-9d8c-7b6a59483726")
 
 const SENT_AT_MS = Date.parse("2026-06-02T00:00:00.000Z")
@@ -73,6 +77,7 @@ const contextFor = (secretConfig: DispatchContext["secretConfig"]): DispatchCont
 
 /** Neither dep may be invoked by these four providers. */
 const noDeps: DispatchDeps = {
+	postChatAlert: failingChatPost,
 	sendEmail: () =>
 		Effect.fail(new AlertDeliveryError({ message: "unexpected sendEmail", destinationType: "email" })),
 	resolveSlackBotToken: () =>

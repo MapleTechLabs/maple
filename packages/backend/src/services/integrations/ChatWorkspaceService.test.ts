@@ -6,9 +6,11 @@ import { ChatConnectorId, ChatWorkspaceId, OrgId, UserId } from "@maple/domain/h
 import {
 	chatConnectorConfigNames,
 	ChatConnectorNotConfigured,
+	ChatOutboundError,
 	ChatSettingsRejected,
 	socketIngress,
 	type ChatConnector,
+	type ChatOutboundTransport,
 	type ChatWorkspaceSettings,
 } from "@maple/chat-platform"
 import { connectors } from "@maple/chat-platform/connectors"
@@ -23,6 +25,7 @@ import {
 } from "@maple/backend/platform/test-pglite"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { forgetChatWorkspace, resolveChatWorkspace } from "./chat-workspace-rows"
+import type { RegisteredChatConnector } from "./chat-outbound"
 import { ChatConnectorRegistry, ChatWorkspaceService } from "./ChatWorkspaceService"
 
 /**
@@ -143,6 +146,39 @@ const identityConnector: ChatConnector = {
 	},
 }
 
+/** A workspace whose platform no longer honours the bot's grant. */
+const REVOKED_WORKSPACE = "workspace-revoked"
+
+/**
+ * The fake connector with an outbound half that can answer where alerts may go: it lists one
+ * channel per workspace, named after the platform's own workspace id so a test can see which one
+ * it was asked about, and refuses the grant for {@link REVOKED_WORKSPACE}.
+ */
+const unreachable = () => Effect.die("the destination listing reached another transport method")
+const listingTransport: ChatOutboundTransport = {
+	post: unreachable,
+	edit: unreachable,
+	typing: unreachable,
+	openThread: unreachable,
+	conversation: unreachable,
+	history: unreachable,
+	destinations: (workspaceId) =>
+		workspaceId === REVOKED_WORKSPACE
+			? Effect.fail(
+					new ChatOutboundError({
+						message: "Test Chat refused the call: missing_scope",
+						connectorId: TEST_CONNECTOR,
+						operation: "destinations",
+						reason: "auth",
+					}),
+				)
+			: Effect.succeed([{ id: `${workspaceId}-alerts`, name: "alerts", private: false }]),
+}
+const listingConnector: ChatConnector = {
+	...testConnector,
+	outbound: { ...testConnector.outbound, transport: Effect.succeed(listingTransport) },
+}
+
 const makeConfig = (withConnectorConfig: boolean) =>
 	ConfigProvider.layer(
 		ConfigProvider.fromUnknown({
@@ -165,7 +201,7 @@ const makeConfig = (withConnectorConfig: boolean) =>
 
 const makeLayer = (
 	testDb: TestDb,
-	options?: { readonly configured?: boolean; readonly registry?: ReadonlyArray<ChatConnector<unknown>> },
+	options?: { readonly configured?: boolean; readonly registry?: ReadonlyArray<RegisteredChatConnector> },
 ) =>
 	Layer.effect(ChatWorkspaceService, ChatWorkspaceService.make).pipe(
 		Layer.provide(FetchHttpClient.layer),
@@ -246,6 +282,46 @@ describe("ChatWorkspaceService", () => {
 				const statuses = yield* chat.list(ORG)
 				assert.isTrue(statuses.every((status) => !status.available))
 			}).pipe(Effect.provide(makeLayer(testDb, { configured: false })))
+		}),
+	)
+
+	it.effect("lists where an alert can go in the org's own workspace", () =>
+		Effect.gen(function* () {
+			const testDb = createTestDb(trackedDbs)
+			const id = yield* insertWorkspace(
+				testDb,
+				"11111111-1111-4111-8111-111111111111",
+				ORG,
+				"workspace-1",
+			)
+			yield* Effect.gen(function* () {
+				const chat = yield* ChatWorkspaceService
+				// The platform is asked about ITS workspace id, not Maple's row id.
+				assert.deepStrictEqual(yield* chat.listDestinations(ORG, id), [
+					{ id: "workspace-1-alerts", name: "alerts", private: false },
+				])
+				// Another org holding the id learns nothing about the workspace.
+				const failure = yield* chat.listDestinations(OTHER_ORG, id).pipe(Effect.flip)
+				assert.strictEqual(failure._tag, "@maple/http/errors/IntegrationsNotFoundError")
+			}).pipe(Effect.provide(makeLayer(testDb, { registry: [listingConnector] })))
+		}),
+	)
+
+	it.effect("asks for a reinstall when the platform refuses the bot's grant", () =>
+		Effect.gen(function* () {
+			const testDb = createTestDb(trackedDbs)
+			const id = yield* insertWorkspace(
+				testDb,
+				"22222222-2222-4222-8222-222222222222",
+				ORG,
+				REVOKED_WORKSPACE,
+			)
+			yield* Effect.gen(function* () {
+				const chat = yield* ChatWorkspaceService
+				const failure = yield* chat.listDestinations(ORG, id).pipe(Effect.flip)
+				assert.strictEqual(failure._tag, "@maple/http/errors/IntegrationsNotConnectedError")
+				assert.include(failure.message, "Reinstall Test Chat")
+			}).pipe(Effect.provide(makeLayer(testDb, { registry: [listingConnector] })))
 		}),
 	)
 

@@ -31,6 +31,12 @@ const GUARDED_FILES = [
 	"packages/backend/src/services/integrations/ChatWorkspaceService.ts",
 	"packages/backend/src/services/integrations/ChatWorkspaceService.test.ts",
 	"packages/backend/src/services/integrations/chat-workspace-rows.ts",
+	"packages/backend/src/services/integrations/chat-outbound.ts",
+	// Alert delivery through a connector: the transport, the host half that posts, and their tests.
+	"packages/backend/src/services/alerts/delivery/transports/chat.ts",
+	"packages/backend/src/services/alerts/delivery/transports/chat.test.ts",
+	"packages/backend/src/services/alerts/ChatAlertPoster.ts",
+	"packages/backend/src/services/alerts/ChatAlertPoster.test.ts",
 	// The user-linking half: one table, its queries, and the revocation that ends a link.
 	"packages/db/src/schema/chat-identities.ts",
 	"packages/backend/src/services/integrations/chat-identity-rows.ts",

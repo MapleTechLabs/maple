@@ -4,6 +4,7 @@ import { MobileDevicesService } from "@maple/backend/services/push/MobileDevices
 import { ApnsClient } from "@maple/backend/platform/Apns"
 import { MobilePushService } from "@maple/backend/services/push/MobilePushService"
 import { SlackBotTokenResolver } from "@maple/backend/services/integrations/slack-bot-token"
+import { ChatAlertPoster } from "./ChatAlertPoster"
 // SAFETY-FILE: JSON in this test is emitted by the fixture or unit under test before its fields are asserted.
 // BOUNDARY: Test doubles preserve opaque values so the consuming boundary can be exercised.
 import { afterEach, assert, describe, it } from "@effect/vitest"
@@ -16,6 +17,7 @@ import {
 	AlertRecipientSelectionError,
 	type AlertDestinationId,
 	AlertRulePreviewRequest,
+	ChatWorkspaceId,
 	AlertRuleUpsertRequest,
 	OrgId,
 	WarehouseQueryError,
@@ -272,7 +274,7 @@ const makeLayer = (
 		Layer.provide(Layer.mergeAll(envLive, databaseLive, edgeCacheLive)),
 	)
 	const alertDestinationsLive = Layer.effect(AlertDestinationsService, AlertDestinationsService.make).pipe(
-		Layer.provide(SlackBotTokenResolver.layer),
+		Layer.provide(Layer.mergeAll(SlackBotTokenResolver.layer, ChatAlertPoster.layer)),
 		Layer.provide(
 			Layer.mergeAll(envLive, databaseLive, runtimeLive, hazelOAuthLive, emailLive, orgMembersLive),
 		),
@@ -285,7 +287,7 @@ const makeLayer = (
 	)
 
 	const alertsLive = Layer.effect(AlertsService, AlertsService.make).pipe(
-		Layer.provide(SlackBotTokenResolver.layer),
+		Layer.provide(Layer.mergeAll(SlackBotTokenResolver.layer, ChatAlertPoster.layer)),
 		Layer.provide(
 			Layer.effect(MobilePushService, MobilePushService.make).pipe(
 				Layer.provide(
@@ -2454,6 +2456,62 @@ describe("AlertsService", () => {
 					fetch: fetchImpl,
 				}),
 			),
+		)
+	})
+
+	it.effect("routes a chat destination through the org's own linked workspace only", () => {
+		const testDb = createTestDb(trackedDbs)
+		const workspaceId = Schema.decodeUnknownSync(ChatWorkspaceId)("33333333-3333-4333-8333-333333333333")
+		const orgId = asOrgId("org_chat_dest")
+		const request = {
+			type: "chat" as const,
+			name: "Incidents",
+			workspaceId,
+			channelId: "channel-1",
+			channelName: "incidents",
+		}
+		return Effect.gen(function* () {
+			yield* Effect.promise(() =>
+				executeSql(
+					testDb,
+					`insert into chat_workspaces (id, org_id, connector, external_workspace_id, name, settings, created_at)
+					 values ($1, $2, 'testchat', 'workspace-1', 'Acme Engineering', '{}'::jsonb, now())`,
+					[workspaceId, orgId],
+				),
+			)
+			const alerts = yield* AlertsService
+			const destination = yield* alerts.createDestination(
+				orgId,
+				asUserId("user_chat"),
+				adminRoles,
+				request,
+			)
+			// The connector is the workspace's own, never the request's.
+			assert.strictEqual(destination.chatConnector, "testchat")
+			assert.strictEqual(destination.chatWorkspaceId, workspaceId)
+			assert.strictEqual(destination.summary, "Acme Engineering")
+			assert.strictEqual(destination.channelLabel, "#incidents")
+
+			const moved = yield* alerts.updateDestination(
+				orgId,
+				asUserId("user_chat"),
+				adminRoles,
+				destination.id,
+				{
+					type: "chat",
+					channelId: "channel-2",
+					channelName: "oncall",
+				},
+			)
+			assert.strictEqual(moved.channelLabel, "#oncall")
+			assert.strictEqual(moved.chatWorkspaceId, workspaceId)
+
+			const failure = yield* alerts
+				.createDestination(asOrgId("org_chat_other"), asUserId("user_other"), adminRoles, request)
+				.pipe(Effect.flip)
+			assert.instanceOf(failure, AlertValidationError)
+		}).pipe(
+			Effect.provide(makeLayer(testDb, makeWarehouseStub({ tracesAggregateRows: emptyWarehouseRows }))),
 		)
 	})
 

@@ -422,6 +422,7 @@ export class V2ChatIntegrationsApiGroup extends HttpApiGroup.make("chatIntegrati
 				chatNotFound,
 				chatNotConnected,
 				chatUpstream,
+				chatConfiguration,
 				chatPersistence,
 			],
 		}).annotateMerge(
