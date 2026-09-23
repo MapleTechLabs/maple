@@ -36,6 +36,7 @@ import {
 	resolveChatWorkspace,
 } from "@maple/backend/services/integrations/chat-workspace-rows"
 import { resolveConnectorConfig } from "../config.ts"
+import { decodeRelayTurnCheckpoint, resumeRelayedTurn } from "./resume.ts"
 import { relayInboundEvent, WorkspaceLookupFailed, type RelayPorts, type RelayWorkspace } from "./turn.ts"
 
 /**
@@ -98,6 +99,8 @@ export interface RelayHost {
 	/** The relay object's own record of the conversations the bot opened — see `ConnectorRelay`. */
 	readonly ownsConversation: RelayPorts["ownsConversation"]
 	readonly rememberConversation: RelayPorts["rememberConversation"]
+	/** The relay object's checkpoint of the turn it is rendering — see `./resume.ts`. */
+	readonly recordTurn: RelayPorts["recordTurn"]
 }
 
 /**
@@ -258,6 +261,7 @@ const ports = (
 	announceUnlinked: host.announceUnlinked,
 	ownsConversation: host.ownsConversation,
 	rememberConversation: host.rememberConversation,
+	recordTurn: host.recordTurn,
 })
 
 /**
@@ -299,6 +303,47 @@ export const runInboundEvent = async (host: RelayHost, event: InboundEvent): Pro
 			Effect.provide(Layer.mergeAll(FetchHttpClient.layer, workerEnvLayer(host.env), telemetry.layer)),
 			// On the fiber rather than in a `finally`: the flush is what exports this event's spans,
 			// so it belongs to the same interruption and failure handling they do.
+			Effect.ensuring(Effect.promise(() => telemetry.flush(host.env).catch(() => undefined))),
+		),
+	)
+}
+
+/**
+ * Go on rendering a turn an evicted activation of this object was relaying, from its checkpoint.
+ *
+ * The same connector, config and workspace lookup a new event gets, so the transport posts with the
+ * same credential. A resume answers no event, so the conversation ports only a new message asks are
+ * never reached; they answer as a conversation nobody recorded would.
+ */
+export const resumeInboundTurn = (host: Pick<RelayHost, "env" | "recordTurn">, stored: unknown) => {
+	const relayHost: RelayHost = {
+		...host,
+		announceUnlinked: Effect.succeed(false),
+		ownsConversation: () => Effect.succeed(false),
+		rememberConversation: () => Effect.void,
+	}
+	return Effect.runPromise(
+		Effect.gen(function* () {
+			const checkpoint = decodeRelayTurnCheckpoint(stored)
+			if (Option.isNone(checkpoint)) {
+				return yield* Effect.logWarning("A turn checkpoint this build cannot read was dropped")
+			}
+			const { connector: connectorId, target } = checkpoint.value
+			const connector = connectors.find((candidate) => candidate.id === connectorId)
+			if (connector === undefined) return
+			const config = resolveConnectorConfig(host.env, connector)
+			if (config._tag === "missing") return
+			const lookup = yield* Effect.cached(
+				lookupWorkspace(relayHost, connector, connectorId, target.workspaceId, undefined),
+			)
+			const resolved = yield* Effect.orElseSucceed(lookup, () => Option.none<ResolvedWorkspace>())
+			yield* resumeRelayedTurn(
+				checkpoint.value,
+				ports(relayHost, connector, () => lookup),
+			).pipe(Effect.provideService(ConnectorCredentials, connectorCredentials(config.config, resolved)))
+		}).pipe(
+			// oxlint-disable-next-line effecttsgo/strict-effect-provide
+			Effect.provide(Layer.mergeAll(FetchHttpClient.layer, workerEnvLayer(host.env), telemetry.layer)),
 			Effect.ensuring(Effect.promise(() => telemetry.flush(host.env).catch(() => undefined))),
 		),
 	)

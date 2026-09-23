@@ -38,6 +38,16 @@ export interface ChatTurnDriverOptions<E, RE, RO> {
 	readonly outbound: ChatOutbound<RO>
 	readonly target: ChatTarget
 	readonly context: ChatRenderContext
+	/**
+	 * Messages an earlier run already posted for this turn, in order. They are edited in place
+	 * rather than posted again, and the placeholder is skipped: they already say more than it would.
+	 */
+	readonly posted?: ReadonlyArray<ChatMessageRef>
+	/**
+	 * Told every message posted so far, each time one is added — what `posted` resumes from. It
+	 * never sees what they say.
+	 */
+	readonly onPosted?: (messages: ReadonlyArray<ChatMessageRef>) => Effect.Effect<void>
 }
 
 export const driveChatTurn = Effect.fn("ChatPlatform.driveChatTurn")(function* <E, RE, RO>(
@@ -52,8 +62,12 @@ export const driveChatTurn = Effect.fn("ChatPlatform.driveChatTurn")(function* <
 
 	const transport = yield* outbound.transport
 	const transcript = makeChatTranscript()
-	const posted: Array<ChatMessageRef> = []
-	/** What each posted message currently holds, so an unchanged one is not edited again. */
+	const posted: Array<ChatMessageRef> = [...(options.posted ?? [])]
+	const resumed = posted.length > 0
+	/**
+	 * What each posted message currently holds, so an unchanged one is not edited again. Empty on a
+	 * resume, so its first render rewrites every message once.
+	 */
 	const sent: Array<string> = []
 	// One flush at a time: the throttle fiber and the final flush would otherwise race, and the
 	// loser's edit would put a stale render back on a finished turn.
@@ -99,6 +113,7 @@ export const driveChatTurn = Effect.fn("ChatPlatform.driveChatTurn")(function* <
 				if (index >= posted.length) {
 					posted.push(yield* transport.post(target, group))
 					sent.push(rendered)
+					if (options.onPosted !== undefined) yield* options.onPosted([...posted])
 					continue
 				}
 				// Only what changed. A turn cut into three messages would otherwise spend three edits
@@ -128,17 +143,19 @@ export const driveChatTurn = Effect.fn("ChatPlatform.driveChatTurn")(function* <
 		dirty = true
 	})
 
-	yield* Effect.forkChild(
-		// Best effort by nature, so the failure is a debug line and not even its tag: nothing acts on
-		// a missing typing indicator.
-		transport.typing(target).pipe(
-			Effect.tapCause(() => Effect.logDebug("Typing could not be shown")),
-			Effect.ignore,
-		),
-	)
-	// The placeholder, before a single event: the platform should show the bot working on it rather
-	// than saying nothing until the first token, or until the first throttle interval.
-	yield* flush
+	if (!resumed) {
+		yield* Effect.forkChild(
+			// Best effort by nature, so the failure is a debug line and not even its tag: nothing acts
+			// on a missing typing indicator.
+			transport.typing(target).pipe(
+				Effect.tapCause(() => Effect.logDebug("Typing could not be shown")),
+				Effect.ignore,
+			),
+		)
+		// The placeholder, before a single event: the platform should show the bot working on it
+		// rather than saying nothing until the first token, or until the first throttle interval.
+		yield* flush
+	}
 	const throttled = yield* Effect.forkChild(
 		Effect.repeat(
 			// A mid-turn edit that fails takes its fiber with it and nothing joins this one, so the

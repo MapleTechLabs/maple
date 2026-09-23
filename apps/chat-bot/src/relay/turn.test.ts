@@ -313,6 +313,7 @@ const host = (
 							}),
 						)
 					: Effect.sync(() => void opened.add(conversation.conversationKey)),
+			recordTurn: () => Effect.void,
 		},
 	}
 }

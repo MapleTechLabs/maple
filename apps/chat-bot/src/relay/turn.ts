@@ -45,6 +45,7 @@ import {
 	type ConversationNotRecorded,
 } from "./conversation.ts"
 import { chatTurnEvents, sessionUnreachable } from "./events.ts"
+import type { RelayTurnCheckpoint } from "./resume.ts"
 
 /** The org behind a workspace, and who the person acting is in Maple, when one was asked about. */
 export interface RelayWorkspace {
@@ -118,6 +119,11 @@ export interface RelayPorts<R = never> {
 	 * it cannot even answer in — so the host answers this from what it last said here.
 	 */
 	readonly announceUnlinked: Effect.Effect<boolean>
+	/**
+	 * Keep what a later activation needs to go on rendering this turn if this one is evicted — see
+	 * `./resume.ts`. Best effort: a checkpoint that is not written costs the resume, never the turn.
+	 */
+	readonly recordTurn: (checkpoint: RelayTurnCheckpoint) => Effect.Effect<void>
 }
 
 /**
@@ -336,6 +342,16 @@ const relayMessage = Effect.fn("chat_bot.relay_turn")(function* <R>(
 	}
 
 	yield* Effect.annotateCurrentSpan({ "maple.chat.relay": "started" })
+	const checkpoint: RelayTurnCheckpoint = {
+		connector: message.connector,
+		sessionId,
+		turnMessageId: claimed.value.turnMessageId,
+		cursor: claimed.value.cursor,
+		target: conversation.target,
+		messages: [],
+		deadline: now + Duration.toMillis(RELAY_TIMEOUT),
+		resumes: 0,
+	}
 	yield* driveChatTurn({
 		// From the cursor the claim answered with, so the turn's own first event is the first one
 		// this sees.
@@ -348,6 +364,7 @@ const relayMessage = Effect.fn("chat_bot.relay_turn")(function* <R>(
 			sessionId,
 			chartImageUrl: (ref) => ports.chartImageUrl(orgId, ref),
 		},
+		onPosted: (messages) => ports.recordTurn({ ...checkpoint, messages }),
 	}).pipe(Effect.timeout(RELAY_TIMEOUT))
 })
 

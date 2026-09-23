@@ -28,7 +28,8 @@ ChatEvent stream ──▶ makeChatTranscript ──▶ renderChatMessage ──
 - `src/driver.ts` — one turn, named by the assistant message id `beginTurn` answered with: placeholder,
   throttled edits, retraction, splitting, approvals, and a short notice for a turn that did not
   simply finish. A stream from seq 0 replays whole earlier turns, which is why the turn is named
-  rather than discovered.
+  rather than discovered. `onPosted` reports the messages it has posted and `posted` hands them back,
+  so a host that lost the fiber mid-turn can replay the events and go on editing the same messages.
 - `src/connectors/<id>/` — one platform each.
 
 ## When the bot speaks

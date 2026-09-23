@@ -500,6 +500,50 @@ describe("driveChatTurn", () => {
 		}),
 	)
 
+	it.effect("reports each message it posts, and a resume edits them rather than posting again", () =>
+		Effect.gen(function* () {
+			const events = [
+				event(1, { type: "turn-start", messageId: "a1" }),
+				event(2, { type: "text-delta", messageId: "a1", text: "line\n".repeat(30) }),
+				event(3, { type: "turn-end", messageId: "a1", reason: "stop" }),
+			]
+			const first = recorder(80)
+			const reported: Array<ReadonlyArray<string>> = []
+			yield* driveChatTurn({
+				events: Stream.fromIterable(events),
+				messageId: "a1",
+				outbound: first.outbound,
+				target,
+				context,
+				onPosted: (messages) =>
+					Effect.sync(() => void reported.push(messages.map((ref) => ref.messageId))),
+			})
+			// Every post, as the growing list a checkpoint is written from.
+			const posts = first.calls.filter((call) => call.verb === "post").map((call) => call.ref.messageId)
+			expect(posts.length).toBeGreaterThan(1)
+			expect(reported).toEqual(posts.map((_, index) => posts.slice(0, index + 1)))
+
+			const again = recorder(80)
+			yield* driveChatTurn({
+				events: Stream.fromIterable(events),
+				messageId: "a1",
+				outbound: again.outbound,
+				target,
+				context,
+				posted: posts.map((messageId) => ({ target, messageId })),
+			})
+			// No placeholder, no typing, no second copy: one rewrite of each message it was handed.
+			expect(again.typing).toEqual([])
+			expect(again.calls.map((call) => `${call.verb} ${call.ref.messageId}`)).toEqual(
+				posts.map((messageId) => `edit ${messageId}`),
+			)
+			const settled = new Map(first.calls.map((call) => [call.ref.messageId, call.blocks]))
+			expect(again.calls.map((call) => call.blocks)).toEqual(
+				posts.map((messageId) => settled.get(messageId)),
+			)
+		}),
+	)
+
 	it.effect("empties a message a retraction shrank the turn past", () =>
 		Effect.gen(function* () {
 			const chat = recorder(80)

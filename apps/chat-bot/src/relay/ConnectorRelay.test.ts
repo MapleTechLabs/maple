@@ -14,6 +14,7 @@ import { ChatConversationKey } from "@maple/domain/chat-session"
 import { Effect, Schema } from "effect"
 import { describe, expect, it } from "vitest"
 import { ConnectorRelay } from "./ConnectorRelay.ts"
+import type { RelayTurnCheckpoint } from "./resume.ts"
 
 const TESTCHAT = chatConnectorId("testchat")
 const conversationKey = Schema.decodeSync(ChatConversationKey)
@@ -39,16 +40,26 @@ const conversation = (channelId: string, key = channelId): ChatConversation => (
 /** One object's storage, and the alarm it arms — enough of the platform to drive the class. */
 const objectState = () => {
 	const stored = new Map<string, unknown>()
+	const pending: Array<Promise<unknown>> = []
+	const alarms: Array<number> = []
 	return {
 		stored,
-		waitUntil: () => undefined,
+		pending,
+		alarms,
+		waitUntil: (promise: Promise<unknown>) => void pending.push(promise),
 		storage: {
-			setAlarm: () => Promise.resolve(),
+			setAlarm: (at: number) => {
+				alarms.push(at)
+				return Promise.resolve()
+			},
 			get: <A>(key: string) => Promise.resolve(stored.get(key) as A | undefined),
-			put: (key: string, value: boolean) => {
+			put: (key: string, value: boolean | RelayTurnCheckpoint) => {
 				stored.set(key, value)
 				return Promise.resolve()
 			},
+			delete: (key: string) => Promise.resolve(stored.delete(key)),
+			list: ({ prefix }: { prefix: string }) =>
+				Promise.resolve(new Map([...stored].filter(([key]) => key.startsWith(prefix)))),
 		},
 	}
 }
@@ -147,4 +158,28 @@ describe("remembering the conversations the bot opened", () => {
 
 			expect(yield* ports.ownsConversation(conversationKey("thread_7"))).toBe(false)
 		}).pipe(Effect.runPromise))
+})
+
+describe("waking after an eviction", () => {
+	it("does nothing on an alarm with no turn recorded", async () => {
+		const state = objectState()
+		state.stored.set("opened:thread_7", true)
+		await new ConnectorRelay(state, {}).alarm()
+
+		expect(state.pending).toEqual([])
+		expect(state.alarms).toEqual([])
+		expect([...state.stored]).toEqual([["opened:thread_7", true]])
+	})
+
+	it("picks up a turn it finds recorded, and clears it once the resume is over", async () => {
+		// Unreadable here — a checkpoint an older build wrote — which is dropped rather than thrown on.
+		const state = objectState()
+		state.stored.set("turn:org_1:bot-testchat-thread_7", { sessionId: "org_1:bot-testchat-thread_7" })
+		await new ConnectorRelay(state, {}).alarm()
+
+		// Kept resident while it works, like any turn this object relays.
+		expect(state.alarms).toHaveLength(1)
+		await Promise.all(state.pending)
+		expect([...state.stored]).toEqual([])
+	})
 })
