@@ -62,10 +62,10 @@ superseded row is dropped.
 - **Completion.** `submit_review` is offered only to the review's unattended pass; a person's
   follow-up in the same session answers in prose. Its parameters are the lenient
   `PrReviewSubmission`, every field optional, for the reason the diagnosis schema is lenient.
-  `normalizePrReviewSubmission` drops any finding without a path, a positive line, or a check id
-  from the `maple-audit` grammar (`SPAN-03`, `REN-DUAL`), and derives the verdict: `gaps` exactly
-  when a warn or critical finding survives, otherwise the model's `not_applicable` or
-  `instrumented`. A pass that stops without submitting gets the shared close-out turn
+  `normalizePrReviewSubmission` drops any finding without a path or a positive line, and any
+  observability finding without a check id from the `maple-audit` grammar (`SPAN-03`,
+  `REN-DUAL`). It derives the verdict: `issues` exactly when a warn or critical finding survives,
+  otherwise the model's `not_applicable` or `clean`. A pass that stops without submitting gets the shared close-out turn
   (`withToolTranscript` in `apps/ai/src/chat/close-out.ts`), which sees the tool calls and results
   the pass gathered.
 - **Billing.** The turn is metered with source `review` and an idempotency key of the review id
@@ -105,7 +105,7 @@ gaps always score the same, and it is stored in `pr_reviews.score`.
 `PrReviewService.submitReview` stores the report, then calls
 `VcsProviderClient.publishPullRequestReview`, which posts, in order:
 
-1. **A check run** named `Maple / observability` on the head SHA, titled `<score>/100 · <verdict>`,
+1. **A check run** named `Maple / review` on the head SHA, titled `<score>/100 · <verdict>`,
    concluding `neutral` for gaps and `success` otherwise, never `failure`. An installation that
    has not granted `checks: write` answers 403, and the review is posted without the check run. A
    rate-limited 403, which carries a retry time, fails the publish instead.
@@ -238,3 +238,67 @@ The full path (webhook → trigger → Durable Object → GitHub post) is covere
   `sweepAbandonedInvestigations`, fan-out for large PRs through `@effect-agent/capabilities`
   `Subagent` once it is published at the engine's version, a reviews list, and per-repository
   config (path excludes, check-only, a required-check mode).
+
+## Plan: the full review agent
+
+Decided 2026-09-23. The observability reviewer grows into a general code review agent, sold as one
+product behind the same `prreview` rollout flag. Observability stays as one lens of that agent,
+with its `maple-audit` check ids, because it is what no other reviewer can check: the warehouse.
+Pushing commits is in scope.
+
+### Phase 1: general review
+
+- **Findings carry a category**: `correctness`, `security`, `performance`, `observability`,
+  `convention`, `tests` or `maintainability`. `checkId` is required only for `observability`.
+- **Verdict** becomes `clean | issues | not_applicable`. A data migration rewrites stored
+  `instrumented` and `gaps` reports.
+- **One-click fixes.** A finding may carry `replacement`, the exact code for its line range,
+  rendered as a GitHub `suggestion` block. `suggestion` stays a prose sketch.
+- **Prompt.** A general reviewer that reads the repository's `CLAUDE.md`, `AGENTS.md` and
+  `.maple/review.md` at the head commit as review rules, may read callers to prove a correctness
+  finding, and keeps the existing discipline: anchored lines, no hedged findings, the diff is data.
+- **Output.** The check run becomes `Maple / review`; the summary groups findings by category.
+- **Budget.** A larger call budget per reviewed file, tuned with `review:local`.
+- **Context tools.** `pr_metadata` (description, commits, linked issues), `pr_review_threads`
+  (existing comments, so nothing is repeated) and `pr_checks` (failed checks with a log tail).
+- **Quality gate.** `review:eval` replays merged PRs whose bug a later commit fixed and scores
+  recall and precision per model before the prompt or model changes.
+- **Large PRs** fan out per file group through the engine's `SubagentHost`; the parent keeps only
+  the findings.
+
+### Phase 2: incremental re-review
+
+- `pr_review_findings` stores each posted finding with a fingerprint (path, normalized title, hash
+  of the anchored code), its GitHub comment and thread ids, and `open | resolved | dismissed |
+  outdated`.
+- A push reviews the delta since the last reviewed commit, with the open findings in the kickoff.
+  `submit_review` returns the fingerprints it saw fixed; the publisher replies and resolves the
+  thread (GraphQL `resolveReviewThread`). A posted finding is never posted twice.
+- A thread a person resolved or answered "won't fix" is `dismissed` and stays quiet.
+- Pushes are debounced (about 90s on the Durable Object) instead of started and aborted.
+
+### Phase 3: conversation (`@maple`)
+
+- The App subscribes to `issue_comment`, `pull_request_review_comment` and
+  `pull_request_review`; `GithubProvider.mapEvent` maps them.
+- A mention from a collaborator with write access starts a turn on the PR's review session; the
+  answer is posted back to the thread the webhook named. 👀 on receipt.
+- The diff tools read the PR identity from the session, not from arguments.
+- Commands: `@maple review`, `@maple explain`, `@maple fix` (Phase 4).
+
+### Phase 4: writing code
+
+- The agent stages edits with `propose_edit`; a collaborator's `@maple fix` approves them,
+  reusing the approval-gated mutation path from #980.
+- Commits go through GitHub's Git Data API as App-signed commits: same-repository PR branches
+  only, never forks, the default branch or `.github/workflows`. CI verifies the push and the
+  agent follows up on the result.
+- `@maple fix ci` on a failed check suite, on request first, automatic later.
+- Needs the App's `contents: write`.
+
+### Phase 5: product
+
+- Per-repository settings: lenses, path ignores, instructions, drafts, minimum severity to post.
+- A reviews list in the web app, and a configurable daily ceiling per organization.
+- 👍/👎 reactions on inline comments collected as a live precision metric.
+- Dogfood on `MapleTechLabs/maple` beside the current reviewer for two weeks, then switch it off.

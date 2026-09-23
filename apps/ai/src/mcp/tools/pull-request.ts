@@ -131,16 +131,16 @@ const describeFile = (file: PullRequestFile): string => {
 	return `- ${file.path}${rename} · ${file.status} · +${file.additions}/-${file.deletions} · ${kind}${patch}`
 }
 
-/** Kinds a review reads: source for the code, infra for a new service's resource attributes. */
-const REVIEWED_KINDS: ReadonlySet<ChangedFileKind> = new Set(["source", "infra"])
+/** Kinds a review reads: code, deploy and runtime config, and tests for the tests lens. */
+const REVIEWED_KINDS: ReadonlySet<ChangedFileKind> = new Set(["source", "infra", "config", "test"])
 
 /**
- * Tool calls a review of this many files should need: a diff and a lookup per file, plus the file
- * list, one convention search and the submission. Stated to the agent in the file list, because a
+ * Tool calls a review of this many files should need: a diff and two lookups per file, plus the
+ * file list, the repository's rules, one convention search and the submission. Stated to the agent in the file list, because a
  * number it is handed binds far better than a rule of thumb in the system prompt.
  */
 export const reviewCallBudget = (reviewedFiles: number): number =>
-	Math.min(40, Math.max(6, 2 * reviewedFiles + 4))
+	Math.min(60, Math.max(8, 3 * reviewedFiles + 6))
 
 /** What `pr_changed_files` answers for one pull request's files. Shared with the local runner. */
 export const renderChangedFiles = (
@@ -166,7 +166,7 @@ export const renderChangedFiles = (
 			: []),
 		"",
 		`Files to review: ${reviewed}. Budget for this whole review, this call and submit_review included: ${reviewCallBudget(reviewed)} tool calls.`,
-		"Only source and infra files are reviewed; tests, generated files, docs, config, tooling and lockfiles are not. A file marked `no patch` is binary or too large for the provider to inline; read it with read_source_file at the head SHA if it matters.",
+		"Source, infra, config and test files are reviewed; generated files, docs, tooling and lockfiles are not. A file marked `no patch` is binary or too large for the provider to inline; read it with read_source_file at the head SHA if it matters.",
 	])
 }
 

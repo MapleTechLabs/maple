@@ -235,7 +235,12 @@ export interface GithubCheckRunInput {
 export interface GithubReviewInput {
 	readonly commitId: string
 	readonly body: string
-	readonly comments: ReadonlyArray<{ readonly path: string; readonly line: number; readonly body: string }>
+	readonly comments: ReadonlyArray<{
+		readonly path: string
+		readonly line: number
+		readonly startLine?: number
+		readonly body: string
+	}>
 }
 
 const GithubCodeSearchResponseSchema = Schema.Struct({
@@ -938,6 +943,9 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 							path: comment.path,
 							line: comment.line,
 							side: "RIGHT",
+							...(comment.startLine === undefined
+								? undefined
+								: { start_line: comment.startLine, start_side: "RIGHT" }),
 							body: comment.body,
 						})),
 					},

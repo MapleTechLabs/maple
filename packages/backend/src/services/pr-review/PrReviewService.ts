@@ -57,7 +57,7 @@ import { VcsRepository } from "@maple/backend/services/integrations/vcs/VcsRepos
 const internalServiceUserId = Schema.decodeSync(UserId)("internal-service")
 
 /** The name the check run carries on the pull request's checks tab. */
-export const PR_REVIEW_CHECK_NAME = "Maple / observability"
+export const PR_REVIEW_CHECK_NAME = "Maple / review"
 
 /**
  * Reviews an organization may start per UTC day, across its repositories.
@@ -193,7 +193,7 @@ export const buildReviewKickoff = (input: {
 				? `${body.slice(0, KICKOFF_BODY_CHARS)}…`
 				: body
 	const lines = [
-		`Review pull request #${input.number} of ${input.repository} for observability.`,
+		`Review pull request #${input.number} of ${input.repository}.`,
 		"",
 		`- URL: ${input.url}`,
 		`- Title: ${input.title ?? "(untitled)"}`,
@@ -223,14 +223,14 @@ const severityLevel = (severity: PrReviewFinding["severity"]): PullRequestCheckA
 
 const verdictTitle = (report: PrReviewReport): string => {
 	switch (report.verdict) {
-		case "instrumented":
-			return "Observability looks complete"
-		case "gaps": {
-			const gaps = report.findings.filter((finding) => finding.severity !== "info").length
-			return `${gaps} observability ${gaps === 1 ? "gap" : "gaps"} to close`
+		case "clean":
+			return "No issues found"
+		case "issues": {
+			const issues = report.findings.filter((finding) => finding.severity !== "info").length
+			return `${issues} ${issues === 1 ? "issue" : "issues"} to address`
 		}
 		case "not_applicable":
-			return "Nothing observable changed"
+			return "Nothing to review"
 	}
 }
 
@@ -242,6 +242,10 @@ const SEVERITY_LABEL = {
 	warn: "Warning",
 	info: "Note",
 } as const satisfies Record<PrReviewFinding["severity"], string>
+
+/** `observability · SPAN-03`, or the bare category for every other lens. */
+const categoryLabel = (finding: PrReviewFinding): string =>
+	finding.checkId === undefined ? finding.category : `${finding.category} · ${finding.checkId}`
 
 const gradeLabel = (grade: PrReviewGrade): string => grade.charAt(0).toUpperCase() + grade.slice(1)
 
@@ -273,33 +277,42 @@ export const renderReviewMarkdown = (input: ReviewMarkdownInput & { readonly hea
 	const observable = report.coverage.filter((unit) => unit.instrumented).length
 
 	const lines: Array<string> = []
-	if (input.heading) lines.push(`## Maple observability review: ${score}/100`, "")
+	const hasCoverage = report.coverage.length > 0
+	if (input.heading) lines.push(`## Maple review: ${score}/100`, "")
 	lines.push(
 		`**${gradeLabel(grade)}** · ${verdictTitle(report)} · reviewed \`${input.headSha.slice(0, 7)}\``,
 		"",
-		"| Score | Critical | Warnings | Notes | Changes observable |",
-		"| --- | --- | --- | --- | --- |",
-		`| ${score}/100 | ${counts("critical")} | ${counts("warn")} | ${counts("info")} | ${observable} of ${report.coverage.length} |`,
+		`| Score | Critical | Warnings | Notes |${hasCoverage ? " Changes observable |" : ""}`,
+		`| --- | --- | --- | --- |${hasCoverage ? " --- |" : ""}`,
+		`| ${score}/100 | ${counts("critical")} | ${counts("warn")} | ${counts("info")} |${hasCoverage ? ` ${observable} of ${report.coverage.length} |` : ""}`,
 		"",
 	)
 	if (input.partial) lines.push("_This review ended early; what follows is what it established._", "")
 	if (report.summary) lines.push(report.summary, "")
 	if (report.findings.length > 0) {
-		lines.push("### Findings", "", "| Severity | Check | Where | Finding |", "| --- | --- | --- | --- |")
+		lines.push(
+			"### Findings",
+			"",
+			"| Severity | Category | Where | Finding |",
+			"| --- | --- | --- | --- |",
+		)
 		for (const finding of report.findings) {
 			const where = `${finding.path}:${finding.line}${finding.endLine === undefined ? "" : `-${finding.endLine}`}`
 			lines.push(
-				`| ${SEVERITY_LABEL[finding.severity]} | \`${finding.checkId}\` | [\`${escapeCell(where)}\`](${lineUrl(finding)}) | ${escapeCell(finding.title)} |`,
+				`| ${SEVERITY_LABEL[finding.severity]} | ${categoryLabel(finding)} | [\`${escapeCell(where)}\`](${lineUrl(finding)}) | ${escapeCell(finding.title)} |`,
 			)
 		}
 		lines.push("")
-		const detailed = report.findings.filter((finding) => finding.body || finding.suggestion)
+		const detailed = report.findings.filter(
+			(finding) => finding.body || finding.suggestion || finding.replacement,
+		)
 		if (detailed.length > 0) {
 			lines.push("<details><summary>What to change</summary>", "")
 			for (const finding of detailed) {
 				lines.push(`**${finding.title}** (\`${finding.path}:${finding.line}\`)`, "")
 				if (finding.body) lines.push(finding.body, "")
 				if (finding.suggestion) lines.push("```", finding.suggestion, "```", "")
+				if (finding.replacement !== undefined) lines.push("```", finding.replacement, "```", "")
 			}
 			lines.push("</details>", "")
 		}
@@ -318,8 +331,11 @@ export const renderReviewMarkdown = (input: ReviewMarkdownInput & { readonly hea
 		}
 		lines.push("", "</details>", "")
 	}
+	const auditNote = report.findings.some((finding) => finding.checkId !== undefined)
+		? " Check ids refer to Maple's instrumentation audit."
+		: ""
 	lines.push(
-		`<sub>Score: 100, minus ${PR_REVIEW_SCORE_PENALTY.critical} per critical finding, ${PR_REVIEW_SCORE_PENALTY.warn} per warning and ${PR_REVIEW_SCORE_PENALTY.info} per note. Check ids refer to Maple's instrumentation audit. Updated on every push.</sub>`,
+		`<sub>Score: 100, minus ${PR_REVIEW_SCORE_PENALTY.critical} per critical finding, ${PR_REVIEW_SCORE_PENALTY.warn} per warning and ${PR_REVIEW_SCORE_PENALTY.info} per note.${auditNote} Updated on every push.</sub>`,
 	)
 	return lines.join("\n")
 }
@@ -359,13 +375,20 @@ export const clampSummary = (summary: string): string => {
 /** GitHub caps a check run's `output.summary`, and a comment body, at 65,535; a little headroom under it. */
 const CHECK_SUMMARY_MAX_BYTES = 65_000
 
-// A plain fence, never a ```suggestion block: GitHub applies those with one click, and a
-// reviewer's sketch of a span is a starting point, not a commit.
+// `suggestion` is a sketch in a plain fence; only `replacement`, exact code for the commented
+// range, becomes a ```suggestion block GitHub applies with one click.
 const renderComment = (finding: PrReviewFinding): string => {
-	const lines = [`**${finding.title}** · \`${finding.checkId}\` · ${finding.severity}`, "", finding.body]
+	const lines = [`**${finding.title}** · ${categoryLabel(finding)} · ${finding.severity}`, "", finding.body]
 	if (finding.suggestion) lines.push("", "```", finding.suggestion, "```")
+	if (finding.replacement !== undefined) lines.push("", "```suggestion", finding.replacement, "```")
 	return lines.join("\n")
 }
+
+/** A finding with a replacement comments on its whole range, the lines the suggestion replaces. */
+const inlineComment = (finding: PrReviewFinding): PullRequestReviewComment =>
+	finding.replacement !== undefined && finding.endLine !== undefined
+		? { path: finding.path, startLine: finding.line, line: finding.endLine, body: renderComment(finding) }
+		: { path: finding.path, line: finding.line, body: renderComment(finding) }
 
 /**
  * What the review posts: a check run with every finding as an annotation, one summary comment
@@ -386,12 +409,12 @@ export const buildPublication = (input: {
 		startLine: finding.line,
 		endLine: finding.endLine ?? finding.line,
 		level: severityLevel(finding.severity),
-		title: `${finding.checkId}: ${finding.title}`.slice(0, 255),
+		title: `${categoryLabel(finding)}: ${finding.title}`.slice(0, 255),
 		message: finding.body || finding.title,
 	}))
 	const comments: Array<PullRequestReviewComment> = report.findings
 		.filter((finding) => finding.severity !== "info")
-		.map((finding) => ({ path: finding.path, line: finding.line, body: renderComment(finding) }))
+		.map(inlineComment)
 	const markdown = {
 		report,
 		partial: input.partial,
@@ -405,14 +428,14 @@ export const buildPublication = (input: {
 		title: `${score}/100 · ${verdictTitle(report)}`,
 		summary: renderCheckSummary(markdown),
 		// Never `failure`: the review informs, it does not block a merge.
-		conclusion: report.verdict === "gaps" ? "neutral" : "success",
+		conclusion: report.verdict === "issues" ? "neutral" : "success",
 		annotations,
 		summaryComment: { marker: PR_REVIEW_COMMENT_MARKER, body: renderSummaryComment(markdown) },
 		// The summary lives in the comment; the review only carries the inline notes.
 		reviewBody:
 			comments.length === 0
 				? null
-				: `${comments.length} inline ${comments.length === 1 ? "note" : "notes"} from Maple's observability review. The score and summary are in the review comment above.`,
+				: `${comments.length} inline ${comments.length === 1 ? "note" : "notes"} from Maple's review. The score and summary are in the review comment above.`,
 		comments,
 	}
 }

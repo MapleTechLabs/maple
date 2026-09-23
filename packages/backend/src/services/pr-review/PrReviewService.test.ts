@@ -209,7 +209,7 @@ const job = (overrides: Partial<PullRequestEventJob> = {}): PullRequestEventJob 
 
 const report = (findings: PrReviewReport["findings"]) =>
 	new PrReviewReport({
-		verdict: findings.some((finding) => finding.severity !== "info") ? "gaps" : "instrumented",
+		verdict: findings.some((finding) => finding.severity !== "info") ? "issues" : "clean",
 		summary: "Adds one route.",
 		coverage: [
 			{ unit: "POST /orders", kind: "entrypoint", instrumented: false, evidence: "no withSpan" },
@@ -394,6 +394,7 @@ describe("PrReviewService.submitReview", () => {
 						{
 							path: "src/routes/orders.ts",
 							line: 12,
+							category: "observability",
 							checkId: "SPAN-03",
 							severity: "warn",
 							title: "POST /orders has no server span",
@@ -444,6 +445,7 @@ describe("PrReviewService.submitReview", () => {
 						{
 							path: "a.ts",
 							line: 1,
+							category: "observability",
 							checkId: "SPAN-03",
 							severity: "warn",
 							title: "stale",
@@ -508,8 +510,24 @@ describe("buildPublication", () => {
 			partial: false,
 			repositoryUrl: REPO_URL,
 			report: report([
-				{ path: "a.ts", line: 1, checkId: "SPAN-03", severity: "warn", title: "gap", body: "b" },
-				{ path: "a.ts", line: 9, checkId: "MET-02", severity: "info", title: "nicety", body: "b" },
+				{
+					path: "a.ts",
+					line: 1,
+					category: "observability",
+					checkId: "SPAN-03",
+					severity: "warn",
+					title: "gap",
+					body: "b",
+				},
+				{
+					path: "a.ts",
+					line: 9,
+					category: "observability",
+					checkId: "MET-02",
+					severity: "info",
+					title: "nicety",
+					body: "b",
+				},
 			]),
 		})
 		assert.equal(publication.annotations.length, 2)
@@ -519,7 +537,7 @@ describe("buildPublication", () => {
 		assert.equal(publication.conclusion, "neutral")
 		assert.include(publication.reviewBody ?? "", "1 inline note")
 		// 100 - 10 (warn) - 2 (note)
-		assert.equal(publication.title, "88/100 · 1 observability gap to close")
+		assert.equal(publication.title, "88/100 · 1 issue to address")
 	})
 
 	it("always writes the summary comment, even with nothing to say inline", () => {
@@ -534,7 +552,7 @@ describe("buildPublication", () => {
 		assert.isNull(publication.reviewBody)
 		assert.equal(publication.comments.length, 0)
 		assert.isTrue(publication.summaryComment.body.startsWith(PR_REVIEW_COMMENT_MARKER))
-		assert.include(publication.summaryComment.body, "## Maple observability review: 100/100")
+		assert.include(publication.summaryComment.body, "## Maple review: 100/100")
 		assert.include(publication.summaryComment.body, "**Excellent**")
 	})
 
@@ -545,6 +563,7 @@ describe("buildPublication", () => {
 					path: "src/a b.ts",
 					line: 4,
 					endLine: 6,
+					category: "observability",
 					checkId: "SPAN-03",
 					severity: "critical",
 					title: "gap",
@@ -564,21 +583,56 @@ describe("buildPublication", () => {
 	it("renders the coverage table and the check ids into the summary", () => {
 		const summary = renderCheckSummary({
 			report: report([
-				{ path: "a.ts", line: 1, checkId: "SPAN-03", severity: "warn", title: "gap", body: "b" },
+				{
+					path: "a.ts",
+					line: 1,
+					category: "observability",
+					checkId: "SPAN-03",
+					severity: "warn",
+					title: "gap",
+					body: "b",
+				},
 			]),
 			partial: true,
 			headSha: HEAD,
 			repositoryUrl: REPO_URL,
 		})
 		assert.include(summary, "| POST /orders | entrypoint | no | no withSpan |")
-		assert.include(summary, "`SPAN-03`")
+		assert.include(summary, "| observability · SPAN-03 |")
 		assert.include(summary, "ended early")
+	})
+
+	it("posts a replacement as a one-click suggestion over the lines it replaces", () => {
+		const publication = buildPublication({
+			number: 1,
+			headSha: HEAD,
+			partial: false,
+			repositoryUrl: REPO_URL,
+			report: report([
+				{
+					path: "a.ts",
+					line: 3,
+					endLine: 4,
+					category: "correctness",
+					severity: "warn",
+					title: "off by one",
+					body: "The loop skips the last item.",
+					replacement: "for (let i = 0; i <= n; i++) {\n\tvisit(i)",
+				},
+			]),
+		})
+		const comment = publication.comments[0]!
+		assert.equal(comment.startLine, 3)
+		assert.equal(comment.line, 4)
+		assert.include(comment.body, "```suggestion\nfor (let i = 0; i <= n; i++) {\n\tvisit(i)\n```")
+		assert.include(comment.body, "correctness · warn")
+		assert.notInclude(publication.summaryComment.body, "instrumentation audit")
 	})
 
 	it("escapes a backslash before a pipe so a cell cannot break the table", () => {
 		const summary = renderCheckSummary({
 			report: new PrReviewReport({
-				verdict: "instrumented",
+				verdict: "clean",
 				summary: "",
 				coverage: [{ unit: "a\\|b", kind: "k", instrumented: true, evidence: "e" }],
 				findings: [],
@@ -596,6 +650,7 @@ describe("buildPublication", () => {
 				Array.from({ length: 50 }, (_, i) => ({
 					path: `src/file-${i}.ts`,
 					line: 1,
+					category: "observability" as const,
 					checkId: "SPAN-02",
 					severity: "warn" as const,
 					title: "x".repeat(200),

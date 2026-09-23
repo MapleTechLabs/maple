@@ -100,14 +100,14 @@ describe("renderChangedFiles", () => {
 			file("infra/alchemy.run.ts"),
 		])
 		const text = result.content[0]?.text ?? ""
-		assert.include(text, "Files to review: 2.")
-		assert.include(text, `${reviewCallBudget(2)} tool calls`)
+		assert.include(text, "Files to review: 3.")
+		assert.include(text, `${reviewCallBudget(3)} tool calls`)
 	})
 
 	it("keeps the budget between a floor and a ceiling", () => {
-		assert.equal(reviewCallBudget(0), 6)
-		assert.equal(reviewCallBudget(3), 10)
-		assert.equal(reviewCallBudget(100), 40)
+		assert.equal(reviewCallBudget(0), 8)
+		assert.equal(reviewCallBudget(3), 15)
+		assert.equal(reviewCallBudget(100), 60)
 	})
 })
 

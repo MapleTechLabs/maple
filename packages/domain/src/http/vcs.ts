@@ -246,10 +246,11 @@ export const PullRequestFile = Schema.Struct({
 })
 export type PullRequestFile = Schema.Schema.Type<typeof PullRequestFile>
 
-/** An inline review comment on the new side of the diff. */
+/** An inline review comment on the new side of the diff; `startLine` makes it span a range. */
 export const PullRequestReviewComment = Schema.Struct({
 	path: Schema.String,
 	line: Schema.Number,
+	startLine: Schema.optionalKey(Schema.Number),
 	body: Schema.String,
 })
 export type PullRequestReviewComment = Schema.Schema.Type<typeof PullRequestReviewComment>

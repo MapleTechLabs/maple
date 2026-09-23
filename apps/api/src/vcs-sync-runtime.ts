@@ -33,7 +33,7 @@ import type { QueueBatch } from "@maple/backend/platform/queue-batch"
 export const vcsSyncTelemetry = eventTelemetry({ serviceName: "maple-vcs-sync" })
 
 // One delivery, two readers: the issue link / verification window, and the
-// observability review trigger. Each is isolated in the fan-out so a defect in
+// review trigger. Each is isolated in the fan-out so a defect in
 // one never costs the other the event.
 const PullRequestEventSinkLive = pullRequestEventSinkFanout<IssueFixVerificationService | PrReviewService>([
 	{ name: "fix-verification", handler: fixVerificationPullRequestHandler },

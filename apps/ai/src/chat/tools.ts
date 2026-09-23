@@ -160,8 +160,8 @@ export const isAutonomousTurn = (sessionId: string, origin: ChatTurnOrigin): boo
 /** `parameters` is the lenient {@link PrReviewSubmission}, for the reason `diagnosisTool`'s is. */
 export const reviewTool = Tool.make(SUBMIT_REVIEW, {
 	description:
-		"Record your observability review of THIS pull request. Call it exactly once, after you have " +
-		"read every hunk that adds code, with your verdict, coverage and line-anchored findings. It " +
+		"Record your review of THIS pull request. Call it exactly once, after you have " +
+		"read every hunk you review, with your verdict, coverage and line-anchored findings. It " +
 		"persists the review and posts it to the pull request. After calling it, stop.",
 	parameters: PrReviewSubmission,
 	success: Schema.String,

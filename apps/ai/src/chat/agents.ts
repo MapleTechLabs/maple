@@ -94,7 +94,7 @@ export const AGENTS: Readonly<Record<ChatMode, AgentDefinition>> = {
 	},
 	"pr-review": {
 		name: "pr-review",
-		description: "Reviews a pull request for observability gaps.",
+		description: "Reviews a pull request: correctness, security, performance and observability.",
 		prompt: PR_REVIEW_SYSTEM_PROMPT,
 		permission: DEFAULT_RULESET,
 		// The pass sees the diff, the code, and the read-only telemetry tools its rubric needs, and

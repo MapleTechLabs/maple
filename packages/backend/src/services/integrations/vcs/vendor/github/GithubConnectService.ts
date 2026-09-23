@@ -128,7 +128,7 @@ export interface GithubConnectServiceApi {
 		IntegrationsPersistenceError | IntegrationsValidationError
 	>
 	/**
-	 * Turn the pull request observability review on or off for one repository.
+	 * Turn the pull request review on or off for one repository.
 	 * Rejected for a repository the provider has removed: there is nothing to
 	 * review and no permission to post with.
 	 */

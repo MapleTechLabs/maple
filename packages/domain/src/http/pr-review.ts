@@ -4,7 +4,7 @@ import { HttpTaggedError } from "./error-policy"
 import { GitCommitSha, VcsRepositoryId } from "./vcs"
 
 /**
- * An observability review of one pull request at one head commit.
+ * A code review of one pull request at one head commit; observability is one of its lenses.
  *
  * The reviewer is one turn of the `pr-review` agent on a chat session named after the review, so
  * the id doubles as the session's tab suffix (`<orgId>:pr-<id>`). A later push to the same pull
@@ -47,7 +47,7 @@ export const PrReviewSkipReason = Schema.Literals([
 ]).annotate({ identifier: "@maple/PrReviewSkipReason", title: "Pull Request Review Skip Reason" })
 export type PrReviewSkipReason = Schema.Schema.Type<typeof PrReviewSkipReason>
 
-export const PrReviewVerdict = Schema.Literals(["instrumented", "gaps", "not_applicable"]).annotate({
+export const PrReviewVerdict = Schema.Literals(["clean", "issues", "not_applicable"]).annotate({
 	identifier: "@maple/PrReviewVerdict",
 	title: "Pull Request Review Verdict",
 })
@@ -60,22 +60,39 @@ export const PrReviewSeverity = Schema.Literals(["critical", "warn", "info"]).an
 })
 export type PrReviewSeverity = Schema.Schema.Type<typeof PrReviewSeverity>
 
+export const PrReviewCategory = Schema.Literals([
+	"correctness",
+	"security",
+	"performance",
+	"observability",
+	"convention",
+	"tests",
+	"maintainability",
+]).annotate({
+	identifier: "@maple/PrReviewCategory",
+	title: "Pull Request Review Category",
+})
+export type PrReviewCategory = Schema.Schema.Type<typeof PrReviewCategory>
+
 /**
- * One gap, anchored to a line of the pull request's diff.
+ * One issue, anchored to a line of the pull request's diff.
  *
  * `line` is on the new side of the diff, because that is the only line GitHub will accept for an
- * inline comment or a check annotation. `checkId` is a `maple-audit` id (`SPAN-03`, `MAP-01`) so the
- * check run, the settings page and the docs say the same thing about the same gap.
+ * inline comment or a check annotation. `checkId` is a `maple-audit` id (`SPAN-03`, `MAP-01`) and
+ * only an observability finding carries one. `suggestion` is a prose sketch; `replacement` is the
+ * exact code for `line`..`endLine`, posted as a GitHub suggestion the author applies in one click.
  */
 export class PrReviewFinding extends Schema.Class<PrReviewFinding>("PrReviewFinding")({
 	path: Schema.String,
 	line: Schema.Number,
 	endLine: Schema.optionalKey(Schema.Number),
-	checkId: Schema.String,
+	category: PrReviewCategory,
+	checkId: Schema.optionalKey(Schema.String),
 	severity: PrReviewSeverity,
 	title: Schema.String,
 	body: Schema.String,
 	suggestion: Schema.optionalKey(Schema.String),
+	replacement: Schema.optionalKey(Schema.String),
 }) {}
 
 /**
@@ -111,11 +128,13 @@ export const PrReviewFindingSubmission = Schema.Struct({
 	path: Schema.optionalKey(Schema.String),
 	line: Schema.optionalKey(Schema.Number),
 	endLine: Schema.optionalKey(Schema.Number),
+	category: Schema.optionalKey(Schema.Union([PrReviewCategory, Schema.String])),
 	checkId: Schema.optionalKey(Schema.String),
 	severity: Schema.optionalKey(Schema.Union([PrReviewSeverity, Schema.String])),
 	title: Schema.optionalKey(Schema.String),
 	body: Schema.optionalKey(Schema.String),
 	suggestion: Schema.optionalKey(Schema.String),
+	replacement: Schema.optionalKey(Schema.String),
 })
 export type PrReviewFindingSubmission = Schema.Schema.Type<typeof PrReviewFindingSubmission>
 
@@ -136,6 +155,7 @@ export type PrReviewSubmission = Schema.Schema.Type<typeof PrReviewSubmission>
 
 const isVerdict = Schema.is(PrReviewVerdict)
 const isSeverity = Schema.is(PrReviewSeverity)
+const isCategory = Schema.is(PrReviewCategory)
 
 /** A finding the review can post: it names a file and a line, and says what is wrong. */
 const MAX_FINDINGS = 50
@@ -151,17 +171,18 @@ export interface NormalizedPrReviewSubmission {
 	readonly report: PrReviewReport
 	/** Top-level keys the model supplied, for the span. */
 	readonly filled: ReadonlyArray<string>
-	/** Findings dropped for no anchor line or no audit check id, for the span. */
+	/** Findings dropped for no anchor line, or an observability finding with no audit check id. */
 	readonly droppedFindings: number
 }
 
 /**
  * A submission as a stored report.
  *
- * A finding without a path, a positive line, or a check id from the audit is dropped rather than
- * invented; the count is what the span records. The verdict is `gaps` exactly when a warn or
- * critical finding is retained; otherwise the model's `not_applicable` survives and anything else
- * reads as `instrumented`.
+ * A finding without a path or a positive line is dropped rather than invented, and so is an
+ * observability finding without a check id from the audit; the count is what the span records.
+ * An unknown category reads as observability when the finding carries an audit id, correctness
+ * otherwise. The verdict is `issues` exactly when a warn or critical finding is retained;
+ * otherwise the model's `not_applicable` survives and anything else reads as `clean`.
  */
 export const normalizePrReviewSubmission = (submission: PrReviewSubmission): NormalizedPrReviewSubmission => {
 	const filled = Object.entries(submission)
@@ -174,8 +195,14 @@ export const normalizePrReviewSubmission = (submission: PrReviewSubmission): Nor
 		const line = raw.line
 		if (!path || line === undefined || !Number.isFinite(line) || line < 1) continue
 		// An id the audit does not have would be posted onto the pull request as if it did.
-		const checkId = raw.checkId?.trim().toUpperCase()
-		if (checkId === undefined || !AUDIT_CHECK_ID.test(checkId)) continue
+		const rawCheckId = raw.checkId?.trim().toUpperCase()
+		const checkId = rawCheckId !== undefined && AUDIT_CHECK_ID.test(rawCheckId) ? rawCheckId : undefined
+		const category = isCategory(raw.category)
+			? raw.category
+			: checkId === undefined
+				? "correctness"
+				: "observability"
+		if (category === "observability" && checkId === undefined) continue
 		const startLine = Math.floor(line)
 		const endLine =
 			raw.endLine !== undefined && Number.isFinite(raw.endLine) && Math.floor(raw.endLine) > startLine
@@ -186,11 +213,16 @@ export const normalizePrReviewSubmission = (submission: PrReviewSubmission): Nor
 				path,
 				line: startLine,
 				...(endLine === undefined ? undefined : { endLine }),
-				checkId,
+				category,
+				...(category === "observability" && checkId !== undefined ? { checkId } : undefined),
 				severity: isSeverity(raw.severity) ? raw.severity : "warn",
-				title: clip(raw.title?.trim() || "Observability gap", 200),
+				title: clip(raw.title?.trim() || "Review finding", 200),
 				body: clip(raw.body?.trim() || ""),
 				...(raw.suggestion?.trim() ? { suggestion: clip(raw.suggestion.trim()) } : undefined),
+				// Indentation is part of the code a suggestion commits, so only trailing newlines go.
+				...(raw.replacement !== undefined && raw.replacement.length <= MAX_TEXT
+					? { replacement: raw.replacement.replace(/\n+$/, "") }
+					: undefined),
 			}),
 		)
 		if (findings.length >= MAX_FINDINGS) break
@@ -209,16 +241,14 @@ export const normalizePrReviewSubmission = (submission: PrReviewSubmission): Nor
 		)
 		if (coverage.length >= MAX_COVERAGE) break
 	}
-	// A retained warn or critical finding is a gap whatever the model called the verdict; the
-	// check run's conclusion and its inline comments must never disagree.
-	const hasGaps = findings.some((finding) => finding.severity !== "info")
+	// A retained warn or critical finding is an issue whatever the model called the verdict; the
+	// check run's conclusion and its inline comments must never disagree. The reverse holds too.
+	const hasIssues = findings.some((finding) => finding.severity !== "info")
 	const submittedVerdict = isVerdict(submission.verdict) ? submission.verdict : undefined
-	// And the reverse: `gaps` with nothing above a note is not a gap, and read as one the check
-	// title said "0 observability gaps to close".
-	const verdict: PrReviewVerdict = hasGaps
-		? "gaps"
-		: submittedVerdict === undefined || submittedVerdict === "gaps"
-			? "instrumented"
+	const verdict: PrReviewVerdict = hasIssues
+		? "issues"
+		: submittedVerdict === undefined || submittedVerdict === "issues"
+			? "clean"
 			: submittedVerdict
 	return {
 		report: new PrReviewReport({
@@ -252,11 +282,11 @@ export const scorePrReview = (
 		0,
 	)
 	const score = Math.max(0, 100 - penalty)
-	// A real gap is never "excellent", whatever the arithmetic says: the headline must agree
+	// A real issue is never "excellent", whatever the arithmetic says: the headline must agree
 	// with the verdict beside it.
-	const hasGaps = report.findings.some((finding) => finding.severity !== "info")
+	const hasIssues = report.findings.some((finding) => finding.severity !== "info")
 	const grade: PrReviewGrade =
-		score >= 90 && !hasGaps ? "excellent" : score >= 75 ? "good" : score >= 50 ? "needs work" : "poor"
+		score >= 90 && !hasIssues ? "excellent" : score >= 75 ? "good" : score >= 50 ? "needs work" : "poor"
 	return { score, grade }
 }
 

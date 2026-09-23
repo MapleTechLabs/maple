@@ -1125,7 +1125,7 @@ export class IntegrationsApiGroup extends HttpApiGroup.make("integrations")
 		}),
 	)
 	.add(
-		// Per-repository opt-in to the pull request observability review. Admin only,
+		// Per-repository opt-in to the pull request review. Admin only,
 		// like every other write on the integration.
 		HttpApiEndpoint.put("githubSetPrReview", "/github/repositories/:repositoryId/pr-review", {
 			params: {

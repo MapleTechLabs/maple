@@ -90,8 +90,8 @@ export const INVESTIGATION_BUDGET: AgentBudget = {
  * these are ceilings to tune from the internal org's first reviews, not measurements.
  */
 export const PR_REVIEW_BUDGET: AgentBudget = {
-	maxToolCalls: 60,
-	maxDuration: "8 minutes",
+	maxToolCalls: 80,
+	maxDuration: "12 minutes",
 	tokenBudget: 800_000,
 	completionReserveTokens: 48_000,
 }
