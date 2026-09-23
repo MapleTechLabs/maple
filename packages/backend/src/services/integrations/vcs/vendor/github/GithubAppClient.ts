@@ -1575,13 +1575,14 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 				repo: string,
 				number: number,
 				marker: string,
-				// A function writes from the comment already there, so a status line keeps what it sits on.
-				body: string | ((existing: string | undefined) => string),
+				// A function writes from the comment already there, so a status line keeps what it sits on;
+				// `undefined` from it leaves the comment alone, and the result is whatever is there.
+				body: string | ((existing: string | undefined) => string | undefined),
 			) {
 				const config = yield* resolveConfig
 				const token = yield* mintInstallationToken(externalInstallationId)
 				const base = `${config.apiBaseUrl}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`
-				let existing: { readonly id: number; readonly body?: string | null } | undefined
+				let existing: typeof GithubApiIssueCommentSchema.Type | undefined
 				for (let page = 1; page <= MAX_COMMENT_PAGES && existing === undefined; page++) {
 					const response = yield* authedGet(
 						config,
@@ -1606,6 +1607,7 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 				}
 				yield* Effect.annotateCurrentSpan("vcs.pull_request.comment_updated", existing !== undefined)
 				const text = typeof body === "string" ? body : body(existing?.body ?? undefined)
+				if (text === undefined) return existing
 				const response =
 					existing === undefined
 						? yield* authedSend(

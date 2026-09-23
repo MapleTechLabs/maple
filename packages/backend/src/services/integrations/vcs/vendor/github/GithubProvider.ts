@@ -1324,11 +1324,11 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 					)
 					yield* Effect.annotateCurrentSpan({
 						"vcs.pull_request.check_run_id": checkRun.id ?? "none",
-						"vcs.pull_request.comment_id": comment.id,
+						"vcs.pull_request.comment_id": comment?.id ?? "none",
 					})
 					const published = {
 						checkRunUrl: checkRun.html_url,
-						commentUrl: comment.html_url,
+						commentUrl: comment?.html_url ?? null,
 						inlineComments: [] as ReadonlyArray<{ key: string; commentId: string }>,
 					}
 					if (publication.comments.length === 0 && publication.reviewBody === null) {
@@ -1437,7 +1437,7 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 						input.body,
 					)
 					.pipe(
-						Effect.map((comment) => ({ url: comment.html_url })),
+						Effect.map((comment) => ({ url: comment?.html_url ?? null })),
 						Effect.mapError(toVcsError),
 						Effect.withSpan("GithubProvider.writePullRequestSummaryComment", {
 							attributes: {

@@ -315,8 +315,10 @@ const verdictTitle = (report: PrReviewReport, carried: CarriedFindings): string 
 /** The hidden line the summary comment is found by, so a later review edits it in place. */
 export const PR_REVIEW_COMMENT_MARKER = "<!-- maple-pr-review -->"
 
-const STATUS_OPEN = "<!-- maple-pr-review:status -->"
+/** Opens a notice and names the head it is about: `<!-- maple-pr-review:status reviewing <sha> -->`. */
+const STATUS_OPEN = "<!-- maple-pr-review:status"
 const STATUS_CLOSE = "<!-- /maple-pr-review:status -->"
+const STATUS_BLOCK = new RegExp(`${STATUS_OPEN}[^>]*-->[\\s\\S]*?${STATUS_CLOSE}`)
 
 /** What the summary comment says while no finished review has replaced it. */
 export type PrReviewStatusNotice =
@@ -327,12 +329,21 @@ export type PrReviewStatusNotice =
  * The summary comment with a status notice on top, the way a review announces itself before it
  * has findings. An earlier review's summary stays underneath until the new one replaces the whole
  * comment; only the previous notice is swapped out.
+ *
+ * `undefined` leaves the comment alone: a failure only replaces its own head's "reviewing"
+ * notice, so a late one cannot overwrite a finished summary or a newer head's notice.
  */
-export const withReviewStatus = (existing: string | undefined, notice: PrReviewStatusNotice): string => {
-	const previous = (existing ?? "")
-		.replace(PR_REVIEW_COMMENT_MARKER, "")
-		.replace(new RegExp(`${STATUS_OPEN}[\\s\\S]*?${STATUS_CLOSE}`), "")
-		.trim()
+export const withReviewStatus = (
+	existing: string | undefined,
+	notice: PrReviewStatusNotice,
+): string | undefined => {
+	if (
+		notice.kind === "failed" &&
+		!(existing ?? "").includes(`${STATUS_OPEN} reviewing ${notice.headSha} -->`)
+	) {
+		return undefined
+	}
+	const previous = (existing ?? "").replace(PR_REVIEW_COMMENT_MARKER, "").replace(STATUS_BLOCK, "").trim()
 	const sha = `\`${notice.headSha.slice(0, 7)}\``
 	const lines =
 		notice.kind === "reviewing"
@@ -349,7 +360,7 @@ export const withReviewStatus = (existing: string | undefined, notice: PrReviewS
 	return clampSummary(
 		[
 			PR_REVIEW_COMMENT_MARKER,
-			STATUS_OPEN,
+			`${STATUS_OPEN} ${notice.kind} ${notice.headSha} -->`,
 			...lines,
 			STATUS_CLOSE,
 			...(previous === "" ? [] : ["", previous]),
@@ -1212,13 +1223,14 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 							Effect.annotateLogs({ orgId, reviewId, error: summarizeCause(claimed.cause) }),
 						)
 					}
-					yield* updateWhere(orgId, reviewId, ACTIVE_STATUSES, {
+					const failed = yield* updateWhere(orgId, reviewId, ACTIVE_STATUSES, {
 						status: "failed",
 						error: START_FAILED_ERROR,
 						finishedAt: msToDate(nowMs),
 						updatedAt: msToDate(nowMs),
 					})
-					yield* postReviewStatus(orgId, repo, job.number, { kind: "failed", headSha })
+					// Not ours to report when the turn already finished or a newer head took over.
+					if (failed) yield* postReviewStatus(orgId, repo, job.number, { kind: "failed", headSha })
 					yield* annotate("failed")
 					return { reviewId, outcome: "failed" as const }
 				}

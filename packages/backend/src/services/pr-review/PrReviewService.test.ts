@@ -135,8 +135,11 @@ const layerFor = (
 		fetchSourceFile: unused,
 		writePullRequestSummaryComment: (_installation, _repo, input) =>
 			Effect.sync(() => {
-				comment = input.body(comment)
-				options.comments?.push(comment)
+				const next = input.body(comment)
+				if (next !== undefined) {
+					comment = next
+					options.comments?.push(next)
+				}
 				return { url: "https://github.com/octo/repo/pull/612#issuecomment-1" }
 			}),
 		publishPullRequestReview: (_installation, _repo, publication) => {
@@ -984,11 +987,18 @@ describe("withReviewStatus", () => {
 		const reviewing = withReviewStatus(previous, { kind: "reviewing", headSha: HEAD_2 })
 		assert.include(reviewing, "reviewing the new changes")
 		assert.include(reviewing, "## Maple review: 90/100")
-		assert.equal(reviewing.split(PR_REVIEW_COMMENT_MARKER).length, 2)
+		assert.equal(reviewing?.split(PR_REVIEW_COMMENT_MARKER).length, 2)
 		const failed = withReviewStatus(reviewing, { kind: "failed", headSha: HEAD_2 })
 		assert.include(failed, "could not finish")
 		assert.notInclude(failed, "reviewing the new changes")
 		assert.include(failed, "## Maple review: 90/100")
+	})
+
+	it("leaves a finished summary or another head's notice alone when a review fails late", () => {
+		const finished = `${PR_REVIEW_COMMENT_MARKER}\n## Maple review: 90/100`
+		assert.isUndefined(withReviewStatus(finished, { kind: "failed", headSha: HEAD }))
+		const newer = withReviewStatus(finished, { kind: "reviewing", headSha: HEAD_2 })
+		assert.isUndefined(withReviewStatus(newer, { kind: "failed", headSha: HEAD }))
 	})
 })
 
