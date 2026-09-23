@@ -157,38 +157,38 @@ export class PrReviewReport extends Schema.Class<PrReviewReport>("PrReviewReport
  * hunk and wrote most of a report must not be thrown away over one absent key. The handler
  * normalizes and records what it dropped.
  */
-/** Models quote numbers and booleans (`"12"`, `"true"`); a strict decode here ends the run. */
+/** Models quote numbers and booleans (`"12"`, `"true"`) and send `null` for a field they skip; a strict decode here ends the run. */
 const LenientNumber = Schema.Union([Schema.Number, Schema.String])
 const LenientBoolean = Schema.Union([Schema.Boolean, Schema.String])
 
 export const PrReviewFindingSubmission = Schema.Struct({
-	path: Schema.optionalKey(Schema.String),
-	line: Schema.optionalKey(LenientNumber),
-	endLine: Schema.optionalKey(LenientNumber),
-	category: Schema.optionalKey(Schema.Union([PrReviewCategory, Schema.String])),
-	checkId: Schema.optionalKey(Schema.String),
-	severity: Schema.optionalKey(Schema.Union([PrReviewSeverity, Schema.String])),
-	title: Schema.optionalKey(Schema.String),
-	body: Schema.optionalKey(Schema.String),
-	suggestion: Schema.optionalKey(Schema.String),
-	replacement: Schema.optionalKey(Schema.String),
+	path: Schema.optionalKey(Schema.NullOr(Schema.String)),
+	line: Schema.optionalKey(Schema.NullOr(LenientNumber)),
+	endLine: Schema.optionalKey(Schema.NullOr(LenientNumber)),
+	category: Schema.optionalKey(Schema.NullOr(Schema.Union([PrReviewCategory, Schema.String]))),
+	checkId: Schema.optionalKey(Schema.NullOr(Schema.String)),
+	severity: Schema.optionalKey(Schema.NullOr(Schema.Union([PrReviewSeverity, Schema.String]))),
+	title: Schema.optionalKey(Schema.NullOr(Schema.String)),
+	body: Schema.optionalKey(Schema.NullOr(Schema.String)),
+	suggestion: Schema.optionalKey(Schema.NullOr(Schema.String)),
+	replacement: Schema.optionalKey(Schema.NullOr(Schema.String)),
 })
 export type PrReviewFindingSubmission = Schema.Schema.Type<typeof PrReviewFindingSubmission>
 
 export const PrReviewCoverageSubmission = Schema.Struct({
-	unit: Schema.optionalKey(Schema.String),
-	kind: Schema.optionalKey(Schema.String),
-	instrumented: Schema.optionalKey(LenientBoolean),
-	evidence: Schema.optionalKey(Schema.String),
+	unit: Schema.optionalKey(Schema.NullOr(Schema.String)),
+	kind: Schema.optionalKey(Schema.NullOr(Schema.String)),
+	instrumented: Schema.optionalKey(Schema.NullOr(LenientBoolean)),
+	evidence: Schema.optionalKey(Schema.NullOr(Schema.String)),
 })
 
 export const PrReviewSubmission = Schema.Struct({
 	/** Handles of earlier open findings this head fixes, as the kickoff listed them. */
-	resolved: Schema.optionalKey(Schema.Array(Schema.String)),
-	verdict: Schema.optionalKey(Schema.Union([PrReviewVerdict, Schema.String])),
-	summary: Schema.optionalKey(Schema.String),
-	coverage: Schema.optionalKey(Schema.Array(PrReviewCoverageSubmission)),
-	findings: Schema.optionalKey(Schema.Array(PrReviewFindingSubmission)),
+	resolved: Schema.optionalKey(Schema.NullOr(Schema.Array(Schema.String))),
+	verdict: Schema.optionalKey(Schema.NullOr(Schema.Union([PrReviewVerdict, Schema.String]))),
+	summary: Schema.optionalKey(Schema.NullOr(Schema.String)),
+	coverage: Schema.optionalKey(Schema.NullOr(Schema.Array(PrReviewCoverageSubmission))),
+	findings: Schema.optionalKey(Schema.NullOr(Schema.Array(PrReviewFindingSubmission))),
 })
 export type PrReviewSubmission = Schema.Schema.Type<typeof PrReviewSubmission>
 
@@ -204,12 +204,12 @@ const MAX_TEXT = 4_000
 /** The `maple-audit` check id grammar: a family and a number, or the REN-DUAL-style suffixes. */
 const AUDIT_CHECK_ID = /^(RES|STAT|SPAN|MAP|REN|LOG|MET|NAME|PII|LLM)-(\d{1,2}|[A-Z]+)$/
 
-const toNumber = (value: number | string | undefined): number | undefined => {
+const toNumber = (value: number | string | null | undefined): number | undefined => {
 	const n = typeof value === "string" ? Number(value.trim()) : value
-	return n === undefined || !Number.isFinite(n) ? undefined : n
+	return n === undefined || n === null || !Number.isFinite(n) ? undefined : n
 }
 
-const toBoolean = (value: boolean | string | undefined): boolean =>
+const toBoolean = (value: boolean | string | null | undefined): boolean =>
 	typeof value === "string" ? value.trim().toLowerCase() === "true" : value === true
 
 const clip = (value: string, max = MAX_TEXT) => (value.length > max ? `${value.slice(0, max)}…` : value)
@@ -270,7 +270,7 @@ export const normalizePrReviewSubmission = (submission: PrReviewSubmission): Nor
 				body: clip(raw.body?.trim() || ""),
 				...(raw.suggestion?.trim() ? { suggestion: clip(raw.suggestion.trim()) } : undefined),
 				// Indentation is part of the code a suggestion commits, so only trailing newlines go.
-				...(raw.replacement !== undefined && raw.replacement.length <= MAX_TEXT
+				...(typeof raw.replacement === "string" && raw.replacement.length <= MAX_TEXT
 					? { replacement: raw.replacement.replace(/\n+$/, "") }
 					: undefined),
 			}),
