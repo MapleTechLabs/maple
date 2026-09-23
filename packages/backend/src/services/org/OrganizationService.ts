@@ -56,6 +56,7 @@ import {
 	vcsCommits,
 	prReviews,
 	prReviewFindings,
+	prReviewFindingEmbeddings,
 	prReviewReplies,
 	prReviewEdits,
 	vcsInstallations,
@@ -122,6 +123,7 @@ const ORG_SCOPED_TABLES = [
 	vcsCommits,
 	prReviews,
 	prReviewFindings,
+	prReviewFindingEmbeddings,
 	prReviewReplies,
 	prReviewEdits,
 	// Credentials that outlive the org unless they are purged here. `api_keys`

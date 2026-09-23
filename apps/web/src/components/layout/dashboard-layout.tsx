@@ -77,7 +77,7 @@ function Root({ children }: { children: React.ReactNode }) {
  */
 function Breadcrumbs({ items, children }: { items: BreadcrumbEntry[]; children?: React.ReactNode }) {
 	return (
-		<header className="flex h-16 shrink-0 items-center gap-2 border-b px-4">
+		<header data-slot="app-topbar" className="flex h-16 shrink-0 items-center gap-2 border-b px-4">
 			<SidebarTrigger className="-ml-1" />
 			<Separator orientation="vertical" className="mr-2 h-4" />
 			{/* The header is a fixed `h-16`, so a wrapping trail does not grow it — it spills out

@@ -15,7 +15,8 @@ import type { ChatConnectorOrigin } from "@maple/domain/chat-session"
 import { ChatSession, type ProposalApplier } from "./ChatSession"
 import { makeFakeDurableObjectState } from "../../test/chat/fake-do-state"
 
-const applied: Array<Parameters<ProposalApplier>[0]> = []
+/** Everything the applier was handed — the settlement as it arrived, plus what the log supplied. */
+const applied: Array<unknown> = []
 let apply: () => Promise<{ output: string; isError: boolean }> = () =>
 	Promise.resolve({ output: "Created alert rule ar_1.", isError: false })
 
@@ -78,6 +79,8 @@ describe("settling a proposal", () => {
 			tool: "create_alert_rule",
 			input: { name: "checkout p95", threshold: 1200 },
 			sessionId: SESSION_ID,
+			toolCallId: "call_9",
+			decision: "approve",
 			approver: ADA,
 		})
 		const call = settledCall(session)
@@ -96,6 +99,51 @@ describe("settling a proposal", () => {
 		// change that went through quietly.
 		assert.equal(call?.isError, true)
 		assert.include(String(call?.output), "Declined by Ada")
+	})
+
+	it("hands an app approver's own tenant to the applier, and names the app in a denial", async () => {
+		const session = withProposal(makeSession())
+		const tenant = {
+			orgId: "org_1",
+			userId: "user_ada",
+			roles: ["org:member"],
+			authMode: "clerk" as const,
+		}
+		const byApp = (decision: "approve" | "deny") =>
+			session.settleProposal({
+				sessionId: SESSION_ID,
+				toolCallId: "call_9",
+				decision,
+				approver: { kind: "app" },
+				tenant,
+			})
+
+		assert.equal(await byApp("deny"), "decided")
+		assert.deepEqual(applied, [])
+		assert.equal(settledCall(session)?.output, "Declined in Maple. The tool did not run.")
+		// One settle semantics: the second click is refused whoever made the first.
+		assert.equal(await byApp("approve"), "settled")
+
+		const next = withProposal(makeSession(), "call_10")
+		await next.settleProposal({
+			sessionId: SESSION_ID,
+			toolCallId: "call_10",
+			decision: "approve",
+			approver: { kind: "app" },
+			tenant,
+		})
+		assert.deepEqual(applied, [
+			{
+				env: {},
+				tool: "create_alert_rule",
+				input: { name: "checkout p95", threshold: 1200 },
+				sessionId: SESSION_ID,
+				toolCallId: "call_10",
+				decision: "approve",
+				approver: { kind: "app" },
+				tenant,
+			},
+		])
 	})
 
 	it("refuses a call the transcript does not hold as an open proposal", async () => {

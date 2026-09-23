@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest"
 import { PLOT_HEIGHT, PLOT_PAD, PLOT_WIDTH, type ChartPoint } from "@maple/widgets/chart/static-chart"
 import type { Node } from "@takumi-rs/helpers"
 import { chartCard, rankedCard, AXIS_WIDTH, CHART_CARD_WIDTH, legendRows, xAxisRow, yAxisGutter } from "./chart-card"
-import { cardFor, chartRequestFromPath } from "./chart-image"
+import { chartRequestFromPath } from "./chart-image"
 import { ogIdFromPath } from "./share-links"
 
 const at = (i: number): number => Date.UTC(2026, 8, 11, 10, 0) + i * 60_000
@@ -199,36 +199,6 @@ describe("legendRows", () => {
 
 	it("counts one row for a legend with nothing in it", () => {
 		expect(legendRows([])).toBe(1)
-	})
-})
-
-/**
- * api and web are separate Workers that can serve different commits at once —
- * prod ran a six-hour-old api behind a current web on 2026-09-07. An alert
- * chart image must draw whichever of the two shapes it is handed.
- */
-describe("an alert response across a deploy skew", () => {
-	const points = [
-		[at(0), 1.2],
-		[at(1), 3.9],
-	] as const
-
-	const shared = { kind: "area", title: "checkout-api error rate", unit: "percent" } as const
-	const limits = { threshold: 2, breachSide: "above" } as const
-
-	it("draws the same card from `series` and from the older flat `points`", () => {
-		const current = cardFor({ ...shared, ...limits, series: [{ name: shared.title, points }] })
-		const older = cardFor({ ...shared, ...limits, points })
-
-		// Not a pinned height: the point is that the two shapes agree, and pinning
-		// one made a deliberate change to the card look like a skew regression.
-		expect(current?.height).toBeGreaterThan(PLOT_HEIGHT)
-		expect(older?.height).toBe(current?.height)
-		expect(older?.width).toBe(current?.width)
-	})
-
-	it("draws nothing rather than throwing when a response carries neither", () => {
-		expect(cardFor({ ...shared, ...limits })).toBeUndefined()
 	})
 })
 

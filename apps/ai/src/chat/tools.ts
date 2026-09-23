@@ -445,7 +445,7 @@ export const buildDiagnosisCompletion = (
  * All Maple tools, with mutating ones gated.
  *
  * A gated tool still carries a real handler (rather than being omitted) so the schema the model sees
- * is identical to the ungated case — but it refuses, and `POST /internal/chat/apply` remains the
+ * is identical to the ungated case — but it refuses, and `ChatSession.settleProposal` remains the
  * only path that actually mutates.
  */
 export const buildChatToolkit = (

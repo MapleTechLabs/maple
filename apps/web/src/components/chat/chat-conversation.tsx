@@ -34,8 +34,7 @@ import { Suggestions, Suggestion } from "@/components/ai-elements/suggestion"
 import { DotLoader } from "@/components/ai-elements/dot-loader"
 import { Button } from "@maple/ui/components/ui/button"
 import { trackProduct } from "@/lib/analytics"
-import { makeChatApplyPayload } from "./chat-apply-payload"
-import type { AiTriageResult } from "@maple/domain/http"
+import { ChatApplyRequest, type AiTriageResult } from "@maple/domain/http"
 import { TurnFailureNotice } from "./turn-failure-notice"
 import { ChatEmptyState } from "./chat-empty-state"
 
@@ -168,8 +167,9 @@ export function ChatConversation({
 	} = useMapleChat({ tabId, context })
 	const diagnosisMessageId = useMemo(() => findDiagnosisMessageId(messages), [messages])
 
-	// Apply an approved proposal via Maple's authenticated API (propose-then-apply).
-	const applyProposal = useAtomSet(MapleAiAtomClient.mutation("chat", "apply"), {
+	// Decide a proposal by reference: the session runs it and records the outcome in the transcript,
+	// so the card resolves on every device and the model's next turn knows what happened.
+	const decideProposal = useAtomSet(MapleAiAtomClient.mutation("chat", "apply"), {
 		mode: "promiseExit",
 	})
 	const [resolvedApprovals, setResolvedApprovals] = useState<Map<string, "applied" | "denied">>(
@@ -185,16 +185,21 @@ export function ChatConversation({
 		})
 	}, [])
 	const handleDeny = useCallback(
-		(toolCallId: string) => resolveApproval(toolCallId, "denied"),
-		[resolveApproval],
+		async (toolCallId: string) => {
+			if (!sessionId) return
+			const exit = await decideProposal({
+				payload: new ChatApplyRequest({ sessionId, toolCallId, decision: "deny" }),
+			})
+			if (Exit.isSuccess(exit)) resolveApproval(toolCallId, "denied")
+			else toastManager.add({ title: "Couldn't deny this change", type: "error" })
+		},
+		[decideProposal, sessionId, resolveApproval],
 	)
 	const handleApprove = useCallback(
-		async (messageId: string, toolCallId: string, tool: string, input: unknown) => {
-			// `sessionId` + `messageId` + `toolCallId` are what let the server settle the proposal in the
-			// durable transcript, so the card resolves on every device and the model's next turn knows
-			// the mutation happened.
-			const exit = await applyProposal({
-				payload: makeChatApplyPayload(tool, input, { sessionId, messageId, toolCallId }),
+		async (toolCallId: string, tool: string) => {
+			if (!sessionId) return
+			const exit = await decideProposal({
+				payload: new ChatApplyRequest({ sessionId, toolCallId, decision: "approve" }),
 			})
 			if (Exit.isSuccess(exit)) {
 				if (exit.value.isError) {
@@ -207,7 +212,7 @@ export function ChatConversation({
 				toastManager.add({ title: `Failed to apply ${tool}`, type: "error" })
 			}
 		},
-		[applyProposal, sessionId, resolveApproval],
+		[decideProposal, sessionId, resolveApproval],
 	)
 
 	useEffect(() => {

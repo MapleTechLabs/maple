@@ -318,6 +318,7 @@ const host = (
 							}),
 						)
 					: Effect.sync(() => void opened.add(conversation.conversationKey)),
+			recordTurn: () => Effect.void,
 		},
 	}
 }
@@ -1046,7 +1047,7 @@ describe("settling an approval somebody clicked", () => {
 
 			yield* relayInboundEvent(click(), deployment.ports)
 
-			expect(agent.settlements[0]?.actingUserId).toBe(ADA)
+			expect(agent.settlements[0]).toHaveProperty("actingUserId", ADA)
 		}),
 	)
 

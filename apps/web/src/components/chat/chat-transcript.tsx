@@ -142,7 +142,7 @@ function renderToolNodes(buf: readonly ToolPart[], keyHint: string): ReactNode {
 interface RenderPartsOptions {
 	message: UIMessage
 	resolvedApprovals: Map<string, "applied" | "denied">
-	onApprove: (messageId: string, toolCallId: string, tool: string, input: unknown) => void
+	onApprove: (toolCallId: string, tool: string) => void
 	onDeny: (toolCallId: string) => void
 }
 
@@ -215,7 +215,7 @@ function renderMessageParts({
 					toolName={toolName}
 					input={tp.input}
 					resolved={resolvedApprovals.get(tp.toolCallId)}
-					onApprove={() => onApprove(message.id, tp.toolCallId, toolName, tp.input)}
+					onApprove={() => onApprove(tp.toolCallId, toolName)}
 					onDeny={() => onDeny(tp.toolCallId)}
 				/>,
 			)
@@ -250,7 +250,7 @@ export interface ChatTranscriptProps {
 	messages: readonly UIMessage[]
 	isLoading: boolean
 	resolvedApprovals: Map<string, "applied" | "denied">
-	onApprove: (messageId: string, toolCallId: string, tool: string, input: unknown) => void
+	onApprove: (toolCallId: string, tool: string) => void
 	onDeny: (toolCallId: string) => void
 	fallbackDiagnosis: AiTriageResult | null
 	diagnosisMessageId?: string
@@ -290,7 +290,7 @@ interface TranscriptMessageRowProps {
 	message: UIMessage
 	showThinking: boolean
 	resolvedApprovals: Map<string, "applied" | "denied">
-	onApprove: (messageId: string, toolCallId: string, tool: string, input: unknown) => void
+	onApprove: (toolCallId: string, tool: string) => void
 	onDeny: (toolCallId: string) => void
 	permalink: string | undefined
 }
