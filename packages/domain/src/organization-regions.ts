@@ -40,6 +40,18 @@ export function organizationRegionsFrom(metadata: unknown): readonly [MapleRegio
 	return first === undefined ? [DEFAULT_MAPLE_REGION] : [first, ...rest]
 }
 
+/**
+ * Whether the organization's region was ever chosen. False for an organization that only has the
+ * US default: one created before regions existed, or auto-created at sign-up and still onboarding.
+ */
+export function organizationRegionChosen(metadata: unknown): boolean {
+	const raw =
+		typeof metadata === "object" && metadata !== null && "regions" in metadata
+			? metadata.regions
+			: undefined
+	return Array.isArray(raw) && raw.some((value) => Option.isSome(decodeRegion(value)))
+}
+
 /** The region an organization lives in: the first of its regions. */
 export function organizationHomeRegion(metadata: unknown): MapleRegion {
 	return organizationRegionsFrom(metadata)[0]

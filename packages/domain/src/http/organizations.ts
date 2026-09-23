@@ -58,11 +58,49 @@ export class OrganizationProviderError extends HttpTaggedError<OrganizationProvi
 	},
 ) {}
 
+/** The organization's region was already chosen, or it has held a plan, so it can no longer move. */
+export class OrganizationRegionLockedError extends HttpTaggedError<OrganizationRegionLockedError>()(
+	"@maple/http/errors/OrganizationRegionLockedError",
+	{
+		message: Schema.String,
+	},
+	{
+		status: 409,
+		code: "organization_region_locked",
+		title: "Data region already set",
+		message: "This organization's data region can no longer be changed.",
+		retry: "never",
+		recovery: "contact_support",
+		exposure: "public_message",
+	},
+) {}
+
+export class ChooseOrganizationRegionRequest extends Schema.Class<ChooseOrganizationRegionRequest>(
+	"ChooseOrganizationRegionRequest",
+)({
+	region: MapleRegion,
+}) {}
+
+export class ChooseOrganizationRegionResponse extends Schema.Class<ChooseOrganizationRegionResponse>(
+	"ChooseOrganizationRegionResponse",
+)({
+	region: MapleRegion,
+}) {}
+
 export class OrganizationsApiGroup extends HttpApiGroup.make("organizations")
 	.add(
 		HttpApiEndpoint.delete("delete", "/", {
 			success: DeleteOrganizationResponse,
 			error: [OrganizationForbiddenError, OrganizationPersistenceError, OrganizationProviderError],
+		}),
+	)
+	.add(
+		// Onboarding's region step, for an organization created without one. Once only, and never
+		// after the organization has held a plan: by then it has data where it is.
+		HttpApiEndpoint.put("chooseRegion", "/region", {
+			payload: ChooseOrganizationRegionRequest,
+			success: ChooseOrganizationRegionResponse,
+			error: [OrganizationForbiddenError, OrganizationRegionLockedError, OrganizationProviderError],
 		}),
 	)
 	.prefix("/api/organizations")

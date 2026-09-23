@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest"
 import {
 	organizationHomeRegion,
+	organizationRegionChosen,
 	organizationRegionsFrom,
 	organizationServedIn,
 	parseMapleRegion,
@@ -42,5 +43,15 @@ describe("parseMapleRegion", () => {
 		expect(parseMapleRegion(undefined)).toBe("us")
 		expect(parseMapleRegion("")).toBe("us")
 		expect(parseMapleRegion("ap")).toBe("us")
+	})
+})
+
+describe("organizationRegionChosen", () => {
+	it("is true only for an explicit, known region", () => {
+		expect(organizationRegionChosen(undefined)).toBe(false)
+		expect(organizationRegionChosen({ regions: [] })).toBe(false)
+		expect(organizationRegionChosen({ regions: ["mars"] })).toBe(false)
+		expect(organizationRegionChosen({ regions: ["us"] })).toBe(true)
+		expect(organizationRegionChosen({ regions: ["eu"] })).toBe(true)
 	})
 })

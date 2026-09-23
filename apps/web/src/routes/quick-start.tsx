@@ -12,6 +12,10 @@ import { BootSplash } from "@/components/boot-splash"
 import { OnboardingLayout } from "@/components/onboarding/onboarding-layout"
 import { StepRole } from "@/components/onboarding/step-role"
 import { StepPlan } from "@/components/onboarding/step-plan"
+import { StepRegion } from "@/components/onboarding/step-region"
+import { useOrganizationRegion } from "@/hooks/use-organization-region"
+import { hasMultipleRegions } from "@/lib/region"
+import { isClerkAuthEnabled } from "@/lib/services/common/auth-mode"
 
 import { useQuickStart, type StepId } from "@/hooks/use-quick-start"
 import { hasSelectedPlan, resolvePlanAccess } from "@/lib/billing/plan-gating"
@@ -49,8 +53,19 @@ function QuickStartPage() {
 	const onboardingComplete =
 		STEP_IDS.filter((step) => step !== "plan").every(isStepComplete) && planSelected
 
-	const currentStepNumber = STEP_IDS.indexOf(activeStep as StepId) + 1
-	const stepLabel = `Step ${currentStepNumber} of ${STEP_IDS.length}`
+	// Asked first, and only where there is a choice: an organization Clerk created at sign-up has
+	// no region yet. It is read from the organization, not saved here, because choosing the other
+	// region continues onboarding on that region's dashboard.
+	const orgRegion = useOrganizationRegion()
+	const needsRegion = isClerkAuthEnabled && hasMultipleRegions && orgRegion.isLoaded && !orgRegion.chosen
+	// Counted for the rest of the visit once shown, so the step total does not shrink under the user.
+	const [regionStepShown, setRegionStepShown] = useState(false)
+	if (needsRegion && !regionStepShown) setRegionStepShown(true)
+	const regionOffset = regionStepShown ? 1 : 0
+	const totalSteps = STEP_IDS.length + regionOffset
+
+	const currentStepNumber = needsRegion ? 1 : STEP_IDS.indexOf(activeStep as StepId) + 1 + regionOffset
+	const stepLabel = `Step ${currentStepNumber} of ${totalSteps}`
 
 	// Track the previous step index for slide direction by adjusting state
 	// during render — the documented React pattern for previous-render values.
@@ -72,9 +87,15 @@ function QuickStartPage() {
 	}
 
 	return (
-		<OnboardingLayout currentStep={currentStepNumber} totalSteps={STEP_IDS.length} stepLabel={stepLabel}>
+		<OnboardingLayout currentStep={currentStepNumber} totalSteps={totalSteps} stepLabel={stepLabel}>
 			<AnimatePresence mode="wait" custom={direction} initial={false}>
-				{activeStep === "role" && (
+				{needsRegion && (
+					<MotionStep key="region" direction={direction}>
+						<StepRegion />
+					</MotionStep>
+				)}
+
+				{!needsRegion && activeStep === "role" && (
 					<MotionStep key="role" direction={direction}>
 						<StepRole
 							value={qualifyAnswers.role}
@@ -87,7 +108,7 @@ function QuickStartPage() {
 					</MotionStep>
 				)}
 
-				{activeStep === "intent" && (
+				{!needsRegion && activeStep === "intent" && (
 					<MotionStep key="intent" direction={direction}>
 						<StepIntent
 							value={qualifyAnswers.intents}
@@ -97,7 +118,7 @@ function QuickStartPage() {
 						/>
 					</MotionStep>
 				)}
-				{activeStep === "team" && (
+				{!needsRegion && activeStep === "team" && (
 					<MotionStep key="team" direction={direction}>
 						<StepTeamConnected
 							onContinue={() => completeStep("team")}
@@ -106,7 +127,7 @@ function QuickStartPage() {
 					</MotionStep>
 				)}
 
-				{activeStep === "plan" && (
+				{!needsRegion && activeStep === "plan" && (
 					<MotionStep key="plan" direction={direction}>
 						<StepPlan onBack={() => setActiveStep("team")} />
 					</MotionStep>

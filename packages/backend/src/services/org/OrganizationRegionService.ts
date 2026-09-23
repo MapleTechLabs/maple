@@ -15,12 +15,13 @@ import {
 	MAPLE_REGION_LABELS,
 	organizationHomeRegion,
 	organizationRegionsFrom,
+	organizationServedIn,
 } from "@maple/domain/organization-regions"
 import { Clock, Context, Effect, Layer, Option, Redacted } from "effect"
 import { Env } from "@maple/backend/platform/Env"
 import { clerkRequest } from "@maple/backend/services/auth/clerk-request"
 
-/** Regions are set when an organization is created and never change, so a minute is generous. */
+/** A region is set once, at creation or in onboarding, so a minute of reuse is safe. */
 const REGIONS_TTL_MS = 60_000
 
 export interface OrganizationRegionServiceApi {
@@ -58,7 +59,11 @@ export class OrganizationRegionService extends Context.Service<
 				clerk.organizations.getOrganization({ organizationId: orgId }),
 			).pipe(
 				Effect.map((organization) => {
-					cache.set(orgId, { metadata: organization.publicMetadata, atMs: nowMs })
+					// Only a yes is cached. An organization whose region was just chosen in onboarding
+					// arrives here straight away, and a cached no would refuse it for a minute.
+					if (organizationServedIn(organization.publicMetadata, region)) {
+						cache.set(orgId, { metadata: organization.publicMetadata, atMs: nowMs })
+					}
 					return Option.some<unknown>(organization.publicMetadata)
 				}),
 				Effect.catch((error) =>
