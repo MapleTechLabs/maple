@@ -1,24 +1,24 @@
 /**
- * Running a mutation somebody approved from a chat platform, inside the `ChatSession` Durable
- * Object.
+ * Running a mutation somebody approved, inside the `ChatSession` Durable Object.
  *
  * The heavy half of `ChatSession.settleProposal`, reached through a dynamic import for the same
  * reason `turn-runner` is: it builds the MCP service graph, which is hundreds of Schema ASTs at
  * module scope on a class the worker entry exports (Cloudflare error 10021).
  *
- * It is the connector's counterpart to `POST /internal/chat/apply`, which the web client uses, and
- * it does the same three things in the same order — refuse a tool that is not approval-gated, run
- * it under a resolved tenant, and hand back what it said. What differs is identity: See `ChatConnector.identity` for the three-case approval policy this is half of.
- * Either way the chat account that clicked rides along as forensic context on the audit entry.
+ * The one way an approved mutation runs, whether the click came from the web app
+ * (`POST /internal/chat/apply`) or a chat platform: refuse a tool that is not approval-gated, run it
+ * under a resolved tenant, and hand back what it said. See `ChatConnector.identity` for the
+ * connector half of the approval policy; a connector approver's chat account rides along as
+ * forensic context on the audit entry.
  */
 import * as MapleCloudflareSDK from "@maple-dev/effect-sdk/cloudflare"
 import {
 	connectorApprovalTenant,
-	decodeChatTurnTenant,
+	decidedBy,
 	orgIdFromChatSessionId,
-	type ChatConnectorOrigin,
+	type ChatProposalApproval,
 } from "@maple/domain/chat-session"
-import { OrgId, type UserId } from "@maple/domain/primitives"
+import { OrgId } from "@maple/domain/primitives"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import { withPgConnectionScope } from "@maple/backend/platform/pg-connection-scope"
 import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
@@ -28,7 +28,7 @@ import { workerTelemetryConfig } from "@maple/infra/worker-telemetry"
 import { Cause, Effect, Layer, ManagedRuntime, Option, Schema } from "effect"
 import { MCP_ANTICIPATED_ERROR_IDENTIFIERS } from "../mcp/expected-failures"
 import { MUTATING_TOOL_NAMES } from "../mcp/tools/mutating"
-import { withConnectorActor } from "./turn-actor"
+import { toTenantContext, withConnectorActor } from "./turn-actor"
 
 /** Its own instance, at module scope, so an approval exports its spans from the isolate it ran in. */
 const telemetry = MapleCloudflareSDK.make(
@@ -38,16 +38,10 @@ const telemetry = MapleCloudflareSDK.make(
 	}),
 )
 
-export interface ApplyChatProposalInput {
+export type ApplyChatProposalInput = ChatProposalApproval & {
 	readonly env: Record<string, unknown>
 	/** `"<orgId>:<tabId>"` — the org the change is made in. */
 	readonly sessionId: string
-	readonly approver: ChatConnectorOrigin
-	/**
-	 * The Maple user the approver linked their chat account to, where the connector can prove who
-	 * clicked. The change then runs as that user, under the roles they hold in the org right now.
-	 */
-	readonly actingUserId?: UserId
 	/** The tool and arguments the session read out of its own log, never off the wire. */
 	readonly tool: string
 	readonly input: unknown
@@ -88,7 +82,8 @@ class ApproverNotPermitted extends Schema.TaggedError<ApproverNotPermitted>()(
 ) {}
 
 /**
- * Who the change runs as — which the host decided before the session was ever reached. See `ChatConnector.identity` for the three-case approval policy this is half of.
+ * Who the change runs as — which the caller decided before the session was ever reached. A person
+ * in the app acts as themselves; see `ChatConnector.identity` for the connector cases.
  *
  * The linked user's roles come from the membership directory at approval time, not frozen at link
  * time. That read is cached (a per-isolate memo, then a shared tier), so a demotion lands within
@@ -96,17 +91,15 @@ class ApproverNotPermitted extends Schema.TaggedError<ApproverNotPermitted>()(
  * other side.
  */
 export const resolveTenant = Effect.fnUntraced(function* (orgId: OrgId, input: ApplyChatProposalInput) {
+	// The route authenticated them and resolved their roles; the audit entry names them.
+	if ("tenant" in input) {
+		yield* Effect.annotateCurrentSpan("maple.chat.apply.as", "app")
+		return toTenantContext(input.tenant, input.approver)
+	}
 	if (input.actingUserId === undefined) {
-		const proposed = decodeChatTurnTenant(connectorApprovalTenant(orgId))
-		const tenant: TenantContext = {
-			orgId: proposed.orgId,
-			userId: proposed.userId,
-			roles: [...proposed.roles],
-			authMode: proposed.authMode,
-			// What attributes the audit entry: the actor is the connector's agent, and the
-			// approver's platform identity is the forensic context an auditor asks for.
-			turnOrigin: input.approver,
-		}
+		// What attributes the audit entry: the actor is the connector's agent, and the approver's
+		// platform identity is the forensic context an auditor asks for.
+		const tenant = toTenantContext(connectorApprovalTenant(orgId), input.approver)
 		yield* Effect.annotateCurrentSpan("maple.chat.apply.as", "connector")
 		// The same pinned agent actor a connector TURN runs as, so the change and the conversation
 		// that proposed it are attributed to one identity.
@@ -158,11 +151,11 @@ export const applyChatProposal = async (input: ApplyChatProposalInput): Promise<
 	if (Option.isNone(org)) return failure("This conversation does not name an organization.")
 	const orgId = org.value
 
-	// Defense in depth, exactly as the web apply path does it: only an approval-gated mutation is
-	// applicable here, whatever the log happens to hold. `connectorApprovalTenant` below grants
-	// `org:admin`, so this is the last thing between an entry in a session's own log and an
-	// org-admin execution — which is why it answers here, ahead of a runtime whose layers can die
-	// on a misconfigured environment, rather than from inside one.
+	// Defense in depth: only an approval-gated mutation is applicable here, whatever the log happens
+	// to hold. `connectorApprovalTenant` below grants `org:admin`, so this is the last thing between
+	// an entry in a session's own log and an org-admin execution — which is why it answers here,
+	// ahead of a runtime whose layers can die on a misconfigured environment, rather than from
+	// inside one.
 	if (!MUTATING_TOOL_NAMES.has(input.tool)) {
 		return failure(`"${input.tool}" is not a change Maple applies from an approval.`)
 	}
@@ -186,17 +179,22 @@ export const applyChatProposal = async (input: ApplyChatProposalInput): Promise<
 		),
 	)
 
+	const { approver } = input
+	const by = decidedBy(approver)
+	const connector = approver.kind === "connector" ? { "maple.chat.connector": approver.connectorId } : {}
+
 	const program = Effect.gen(function* () {
 		const executor = yield* McpToolExecutor
 		const tenant = yield* resolveTenant(orgId, input)
-		const result = yield* executor.execute(tenant, input.tool, input.input, "bot")
+		const surface = approver.kind === "app" ? "chat" : "bot"
+		const result = yield* executor.execute(tenant, input.tool, input.input, surface)
 		const content = result.content.map((entry) => entry.text).join("\n")
 		const refused = result.isError === true
 		yield* Effect.annotateCurrentSpan("maple.chat.apply", refused ? "refused" : "applied")
 		return {
 			output: refused
-				? `Approved by ${input.approver.displayName}, but it did not go through.\n${content}`
-				: `Approved by ${input.approver.displayName}.\n${content}`,
+				? `Approved ${by}, but it did not go through.\n${content}`
+				: `Approved ${by}.\n${content}`,
 			isError: refused,
 		}
 	}).pipe(
@@ -210,7 +208,7 @@ export const applyChatProposal = async (input: ApplyChatProposalInput): Promise<
 				orgId,
 				"maple.chat.session": input.sessionId,
 				"maple.mcp.tool": input.tool,
-				"maple.chat.connector": input.approver.connectorId,
+				...connector,
 			},
 		}),
 		// The tool never ran on this one, so the hedged copy below would be wrong twice over — and
@@ -230,12 +228,12 @@ export const applyChatProposal = async (input: ApplyChatProposalInput): Promise<
 						Effect.annotateLogs({
 							orgId,
 							"maple.mcp.tool": input.tool,
-							"maple.chat.connector": input.approver.connectorId,
+							...connector,
 							"error.type": summarizeCause(cause),
 						}),
 						// Hedged rather than assertive: the cause may have been raised after the tool
 						// already changed something, so this must not say the change did not happen.
-						Effect.as(failure(`Approved by ${input.approver.displayName}. ${UNCERTAIN}`)),
+						Effect.as(failure(`Approved ${by}. ${UNCERTAIN}`)),
 					),
 		),
 	)

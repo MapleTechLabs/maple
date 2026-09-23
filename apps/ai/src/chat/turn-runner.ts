@@ -20,12 +20,7 @@
  */
 import * as MapleCloudflareSDK from "@maple-dev/effect-sdk/cloudflare"
 import { MCP_ANTICIPATED_ERROR_IDENTIFIERS } from "../mcp/expected-failures"
-import {
-	ChatMessage,
-	type ChatTurnOrigin,
-	type ChatTurnTenantEncoded,
-	decodeChatTurnTenant,
-} from "@maple/domain/chat-session"
+import { ChatMessage, type ChatTurnOrigin, type ChatTurnTenantEncoded } from "@maple/domain/chat-session"
 import type { InvestigationProgress } from "@maple/domain/http"
 import { workerEnvLayer } from "@maple/infra/worker-runtime"
 import { workerTelemetryConfig } from "@maple/infra/worker-telemetry"
@@ -60,7 +55,7 @@ import { agentForSession } from "./agents"
 import { profileForTurn } from "./profiles"
 import { runChatTurn, type ChatRunOutcome } from "./run"
 import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
-import { withConnectorActor } from "./turn-actor"
+import { toTenantContext, withConnectorActor } from "./turn-actor"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import { trackTokenUsage } from "@maple/backend/services/billing/autumn-tracker"
 
@@ -107,28 +102,6 @@ export interface RunChatSessionTurnInput {
 	readonly tenant: ChatTurnTenantEncoded
 	/** Who is driving the turn, stated by whoever raised it. */
 	readonly origin: ChatTurnOrigin
-}
-
-/**
- * Decode the wire projection back into the `apps/api` tenant type.
- *
- * The Durable Object receives a plain, structured-cloneable object (RPC refuses class instances),
- * so the brands have to be re-established on this side before the value is used as a
- * `TenantContext`.
- *
- * The origin rides along because it is what the audit log attributes the turn's tool calls by —
- * the tenant's user id answers that only for an app turn.
- */
-const toTenantContext = (encoded: ChatTurnTenantEncoded, origin: ChatTurnOrigin): TenantContext => {
-	const tenant = decodeChatTurnTenant(encoded)
-	return {
-		orgId: tenant.orgId,
-		userId: tenant.userId,
-		roles: [...tenant.roles],
-		authMode: tenant.authMode,
-		turnOrigin: origin,
-		...(!(tenant.actorId === undefined) ? { actorId: tenant.actorId } : undefined),
-	}
 }
 
 /**

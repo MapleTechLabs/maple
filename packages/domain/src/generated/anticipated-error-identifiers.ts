@@ -27,7 +27,6 @@ export const ANTICIPATED_ERROR_IDENTIFIER_LIST: ReadonlyArray<string> = [
 	"@maple/http/errors/BillingProfileUnavailableError",
 	"@maple/http/errors/BillingRateLimitedError",
 	"@maple/http/errors/BillingRequestError",
-	"@maple/http/errors/ChatToolInvalidInputError",
 	"@maple/http/errors/ChatToolNotApplicableError",
 	"@maple/http/errors/ChatToolNotFoundError",
 	"@maple/http/errors/CliDeviceConflictError",

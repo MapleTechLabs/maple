@@ -548,22 +548,37 @@ export type ChatProposalDecision = Schema.Schema.Type<typeof ChatProposalDecisio
 /** Every decision there is, for a caller that has to match a wire value against them. */
 export const CHAT_PROPOSAL_DECISIONS = ChatProposalDecision.literals
 
+/** Who decided a proposal, and whose authority an approval runs under. */
+export type ChatProposalApproval =
+	| {
+			/** A signed-in person in the Maple app. */
+			readonly approver: Extract<ChatTurnOrigin, { readonly kind: "app" }>
+			/** Who the route authenticated, with the roles they hold: the change runs as them. */
+			readonly tenant: ChatTurnTenantEncoded
+	  }
+	| {
+			readonly approver: ChatConnectorOrigin
+			/**
+			 * The Maple user the approver's chat account is linked to, resolved by the host from its own
+			 * database — never from anything the click carried.
+			 *
+			 * Present means the change runs as that user, under the roles they hold in the org at that
+			 * moment. Absent means the connector cannot prove who clicked, and the org-level connector
+			 * identity acts instead ({@link connectorApprovalTenant}).
+			 */
+			readonly actingUserId?: UserId
+	  }
+
+/** How a recorded decision names who made it. */
+export const decidedBy = (approver: ChatProposalApproval["approver"]): string =>
+	approver.kind === "app" ? "in Maple" : `by ${approver.displayName}`
+
 /** Everything the session needs to settle a proposal: which call, which way, and who said so. */
-export interface ChatProposalSettlement {
+export type ChatProposalSettlement = ChatProposalApproval & {
 	/** `"<orgId>:<tabId>"`. A Durable Object cannot recover its own name, exactly as for `beginTurn`. */
 	readonly sessionId: string
 	readonly toolCallId: string
 	readonly decision: ChatProposalDecision
-	readonly approver: ChatConnectorOrigin
-	/**
-	 * The Maple user the approver's chat account is linked to, resolved by the host from its own
-	 * database — never from anything the click carried.
-	 *
-	 * Present means the change runs as that user, under the roles they hold in the org at that
-	 * moment. Absent means the connector cannot prove who clicked, and the org-level connector
-	 * identity acts instead ({@link connectorApprovalTenant}).
-	 */
-	readonly actingUserId?: UserId
 }
 
 /**
