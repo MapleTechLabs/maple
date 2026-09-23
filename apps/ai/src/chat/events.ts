@@ -74,6 +74,11 @@ const heldTail = (text: string): number => {
 export interface TextSanitizer {
 	/** One delta's text, with any hidden block removed. */
 	readonly strip: (text: string) => string
+	/**
+	 * Whatever was still held when the turn ended, which is a tag that never arrived and so was
+	 * only ever prose. Empty inside a block, where the text is markup the reader must not see.
+	 */
+	readonly flush: () => string
 	/** The opening tag of the first tool call this turn wrote as text, if it wrote one. */
 	readonly leaked: () => string | undefined
 }
@@ -94,6 +99,11 @@ export const makeTextSanitizer = (): TextSanitizer => {
 	let previous = ""
 	return {
 		leaked: () => leaked,
+		flush: () => {
+			const held = closing === undefined ? buffer : ""
+			buffer = ""
+			return held
+		},
 		strip: (text) => {
 			buffer += text
 			let out = ""
@@ -192,6 +202,17 @@ const childEvent = (
 	{ ...body, messageId: event.toolCallId, task: childTask(event, context) } as ChatTurnEvent,
 ]
 
+/**
+ * The turn's last text, ahead of the event that ends it.
+ *
+ * What the sanitizer held back was a tag that never arrived, so it is prose after all and belongs
+ * in the reply rather than lost to a turn that happened to end on a `<`.
+ */
+const flushed = (context: AdapterContext): ReadonlyArray<ChatTurnEvent> => {
+	const text = context.sanitizer.flush()
+	return text === "" ? [] : [tagged(context, { type: "text-delta", messageId: context.messageId, text })]
+}
+
 /** Stamp an event with the ref that routes it into a parent's task card. */
 const tagged = <E extends ChatTurnEvent>(context: AdapterContext, event: E): E =>
 	context.task === undefined ? event : { ...event, task: context.task }
@@ -258,6 +279,7 @@ export const toChatEvents = (
 			]
 		case "RunCompleted":
 			return [
+				...flushed(context),
 				tagged(context, {
 					type: "turn-end",
 					messageId: context.messageId,
@@ -266,6 +288,7 @@ export const toChatEvents = (
 			]
 		case "RunFailed":
 			return [
+				...flushed(context),
 				tagged(context, {
 					type: "turn-end",
 					messageId: context.messageId,
@@ -274,7 +297,10 @@ export const toChatEvents = (
 				}),
 			]
 		case "RunInterrupted":
-			return [tagged(context, { type: "turn-end", messageId: context.messageId, reason: "aborted" })]
+			return [
+				...flushed(context),
+				tagged(context, { type: "turn-end", messageId: context.messageId, reason: "aborted" }),
+			]
 		// Observable in traces, with no word on the wire.
 		case "SubagentStarted":
 			return childEvent(event, context, { type: "turn-start" })

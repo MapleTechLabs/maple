@@ -16,6 +16,7 @@
 import { parseAnnotations, type AnnotationSegment } from "@maple/domain/chat-annotations"
 import {
 	chartFences,
+	hasOpenFence,
 	normalizeUnit,
 	parseChartSpec,
 	splitChartFences,
@@ -215,7 +216,7 @@ const visibleText = (text: string, calls: ReadonlyArray<ChatToolCall>, start: nu
 	for (const at of [...bounds, text.length]) {
 		segment += text.slice(from, at)
 		from = at
-		if ((segment.split(FENCE).length - 1) % 2 !== 0) continue
+		if (hasOpenFence(segment)) continue
 		segments.push(segment.trim())
 		segment = ""
 	}

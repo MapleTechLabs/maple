@@ -42,6 +42,17 @@ describe("toChatEvents", () => {
 		assert.deepEqual(toChatEvents(event("TextDelta", { text: "" }), base), [])
 	})
 
+	it("delivers the tail a tag never claimed before the turn ends", () => {
+		const ending: AdapterContext = { messageId: "msg-1", sanitizer: makeTextSanitizer() }
+		assert.deepEqual(toChatEvents(event("TextDelta", { text: "latency <" }), ending), [
+			{ type: "text-delta", messageId: "msg-1", text: "latency " },
+		])
+		assert.deepEqual(toChatEvents(event("RunCompleted", { finishReason: "stop" }), ending), [
+			{ type: "text-delta", messageId: "msg-1", text: "<" },
+			{ type: "turn-end", messageId: "msg-1", reason: "stop" },
+		])
+	})
+
 	it("announces a declared call with its arguments", () => {
 		assert.deepEqual(
 			toChatEvents(
@@ -262,6 +273,18 @@ describe("makeTextSanitizer", () => {
 
 		assert.equal(text, "I never write `<tool_call>` in a reply. Here is why.")
 		assert.equal(leaked, undefined)
+	})
+
+	it("releases a held tail at the end of the turn, because the tag never came", () => {
+		const sanitizer = makeTextSanitizer()
+		assert.equal(sanitizer.strip("errors under 1%, latency <"), "errors under 1%, latency ")
+		assert.equal(sanitizer.flush(), "<")
+	})
+
+	it("flushes nothing out of a block the turn ended inside", () => {
+		const sanitizer = makeTextSanitizer()
+		sanitizer.strip("The answer. <tool_call>search_err")
+		assert.equal(sanitizer.flush(), "")
 	})
 
 	it("cannot splice two halves of a tag together across a block it removed", () => {
