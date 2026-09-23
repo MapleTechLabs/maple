@@ -64,6 +64,7 @@
       "name": "@maple/alerting",
       "dependencies": {
         "@maple/backend": "workspace:*",
+        "@maple/chat-platform": "workspace:*",
         "@maple/infra": "workspace:*",
         "effect": "catalog:effect",
       },

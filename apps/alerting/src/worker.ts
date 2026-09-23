@@ -39,6 +39,7 @@ import {
 	tinybirdEnv,
 } from "@maple/infra/env"
 import { WorkerTelemetry } from "@maple/infra/worker-telemetry"
+import { chatConnectorOutboundConfigKeys } from "@maple/chat-platform"
 import * as Cloudflare from "alchemy/Cloudflare"
 import { Cause, Effect, Layer, Ref } from "effect"
 import { HttpServerResponse } from "effect/unstable/http"
@@ -104,6 +105,12 @@ const configuredEnv = (stage: MapleStage, region: MapleRegion, domains: MapleDom
 		apnsEnv,
 		cloudflareOAuthEnv,
 		planetScaleOAuthEnv,
+		// `chat` destinations post through a chat connector, which reads the outbound
+		// config it declared; the workspace's own credential is opened with the
+		// ingest-key encryption key above.
+		...chatConnectorOutboundConfigKeys.map((key) =>
+			key.secret ? optionalSecret(key.name) : optionalPlain(key.name),
+		),
 	)
 
 /**
