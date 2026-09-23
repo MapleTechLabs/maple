@@ -34,9 +34,13 @@ Worker runs.
 3. **Bot tab → Requires OAuth2 Code Grant: ON.** An install can then only complete through the code
    exchange the install half performs.
 4. **OAuth2 tab → Redirects.** Add `https://api.maple.dev/oauth/chat/discord/callback`, and the
-   equivalent origin for any other stage.
+   equivalent origin for any other stage that shares this application.
 5. **Installation tab → Scopes `bot` + `applications.commands`, permissions "Send Messages", "Read
    Message History", "Create Public Threads".**
+
+**One application per instance.** Two instances opening a Gateway session with one bot token both
+receive every mention and both answer, so the EU instance runs its own application: its redirect is
+`https://api.eu.maple.dev/oauth/chat/discord/callback`, and all three secrets above come from it.
 
 Nothing else is needed: the Gateway connection is outbound, so there is no public URL to register
 and no request signature to verify.
