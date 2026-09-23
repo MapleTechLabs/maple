@@ -27,22 +27,15 @@ import { encodeChatActionToken } from "../action-token"
 import type { ChatBlock, ChatEntityBlock, ChatRenderContext, ChatToolActivity } from "./blocks"
 
 /**
- * How much of a turn is being shown.
- *
- * Omitting it renders the finished message, so every cold re-render — a settling edit, a
- * `history()` replay — gets the finished rendering without having to know it wanted one.
+ * @param running The turn is still going, so a status line stands in for the answer it has not
+ * reached. Default false renders the finished message, which is what every cold re-render — a
+ * settling edit, a `history()` replay — wants without having to say so.
  */
-export interface ChatRenderOptions {
-	/** The turn is still going: a status line stands in for the answer it has not reached. */
-	readonly running?: boolean
-}
-
 export const renderChatMessage = (
 	message: ChatMessage,
 	context: ChatRenderContext,
-	options?: ChatRenderOptions,
+	running = false,
 ): ReadonlyArray<ChatBlock> => {
-	const running = options?.running === true
 	const blocks: Array<ChatBlock> = []
 
 	// The calls that ran. A proposed one has not, so it neither reports progress nor cuts the prose
@@ -57,8 +50,9 @@ export const renderChatMessage = (
 
 	const start = answerOffset(message.text, calls, running)
 	// Whatever renders a chart's image numbers every fence in the WHOLE message, so prose dropped
-	// ahead of the answer still counts towards the index of a chart inside it.
-	let chartIndex = start === 0 ? 0 : chartFences(message.text.slice(0, start)).length
+	// ahead of the answer still counts towards the index of a chart inside it. A fence left open
+	// across the cut is counted by this scan too, exactly as the whole-message scan counts it.
+	let chartIndex = chartFences(message.text.slice(0, start)).length
 
 	for (const part of splitChartFences(message.text.slice(start))) {
 		if (part.kind === "chart") {
@@ -207,22 +201,22 @@ const joinDetail = (parts: ReadonlyArray<string | null>): string | null => {
  * which is what a transcript is for; a channel shows one segment, because the rest reads as a
  * colleague thinking out loud between other people's messages.
  *
- * The offsets are sorted rather than read off the end: a `turn-retry` can leave an earlier call
- * holding a larger offset than a later one, and they are clamped for the same reason. A call
- * recorded before offsets existed cuts nothing, so an old turn still renders whole.
+ * Calls are read in the order they were made, never sorted by offset: a `turn-retry` can leave a
+ * retracted attempt's call holding an offset past the end of the text it took back, and the answer
+ * belongs after the call the model actually made last rather than after that stale one. `slice`
+ * clamps, so such an offset simply cuts nothing. A call recorded before offsets existed defaults
+ * to the end of the text, as web does, so an old prose-then-calls turn still renders whole.
  */
 const answerOffset = (text: string, calls: ReadonlyArray<ChatToolCall>, running: boolean): number => {
-	const bounds = calls
-		.map((call) => Math.min(call.textOffset ?? 0, text.length))
-		.sort((left, right) => left - right)
+	const offsets = calls.map((call) => call.textOffset ?? text.length)
 	// Still running: the segment after the last call so far, which may yet be the answer. The next
 	// call is what turns it into narration, and re-rendering is what retracts it.
-	if (running) return bounds[bounds.length - 1] ?? 0
+	if (running) return offsets[offsets.length - 1] ?? 0
 	// Finished: the last segment that says anything. Normally that is the one after the final call,
 	// but a turn that stopped without answering has nothing there, and the closest it came to an
 	// answer is the segment before.
-	for (let index = bounds.length - 1; index >= 0; index--) {
-		if (text.slice(bounds[index]).trim().length > 0) return bounds[index]
+	for (let index = offsets.length - 1; index >= 0; index--) {
+		if (text.slice(offsets[index]).trim().length > 0) return offsets[index]
 	}
 	return 0
 }

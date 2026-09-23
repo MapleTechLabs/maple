@@ -104,7 +104,7 @@ describe("renderChatMessage", () => {
 			{ type: "tool-call", messageId: "a1", callId: "c2", name: "search_traces", input: {} },
 		])
 
-		expect(renderChatMessage(working, context, { running: true })).toEqual([
+		expect(renderChatMessage(working, context, true)).toEqual([
 			{ kind: "activity", tools: [{ name: "search_traces", status: "running", detail: null }] },
 		])
 		// Finished, the reader has the answer in front of them and no use for the route to it.
@@ -123,7 +123,7 @@ describe("renderChatMessage", () => {
 				},
 			]),
 			context,
-			{ running: true },
+			true,
 		)
 
 		expect(blocks).toEqual([
@@ -148,7 +148,7 @@ describe("renderChatMessage", () => {
 		])
 		// Mid-turn the same segment is shown, because it may be the answer — under the status line,
 		// which is what it is an answer to.
-		expect(renderChatMessage(investigating, context, { running: true })).toEqual([
+		expect(renderChatMessage(investigating, context, true)).toEqual([
 			{ kind: "activity", tools: [{ name: "search_traces", status: "done", detail: null }] },
 			{ kind: "prose", markdown: "checkout is timing out on the database." },
 		])
@@ -176,7 +176,7 @@ describe("renderChatMessage", () => {
 		expect(blocks[0]).toEqual({ kind: "prose", markdown: "I'll alert on the checkout p95." })
 		expect(blocks[1]).toMatchObject({ kind: "approval", toolName: "create_alert_rule" })
 		// The same words while the turn is still open, so settling does not move them.
-		expect(renderChatMessage(proposing, context, { running: true })).toContainEqual(blocks[0])
+		expect(renderChatMessage(proposing, context, true)).toContainEqual(blocks[0])
 	})
 
 	it("falls back to the last thing a turn said when it stopped without answering", () => {
@@ -192,6 +192,50 @@ describe("renderChatMessage", () => {
 
 		// Better than a bare failure notice: it says how far the turn got.
 		expect(blocks).toEqual([{ kind: "prose", markdown: "Checking the errors." }])
+	})
+
+	it("puts a call recorded before offsets existed at the end of the text, as web does", () => {
+		// `textOffset` is optional on the wire, and a conversation older than it renders
+		// prose-then-calls everywhere else. Defaulting it to 0 here would have declared the
+		// narration before a real call to be the answer.
+		const mixed: ChatMessage = {
+			id: "a1",
+			role: "assistant",
+			text: "Narration first. The answer.",
+			toolCalls: [
+				{ id: "c1", name: "find_errors", input: {}, output: null, textOffset: 16 },
+				{ id: "c2", name: "search_traces", input: {}, output: null },
+			],
+			createdAt: 0,
+			startSeq: 1,
+		}
+
+		expect(renderChatMessage(mixed, context)).toEqual([{ kind: "prose", markdown: "The answer." }])
+	})
+
+	it("does not cut the answer at an offset a retry left behind", () => {
+		const retried = turn([
+			{ type: "turn-start", messageId: "a1" },
+			{ type: "text-delta", messageId: "a1", text: "Checking the errors." },
+			{ type: "tool-call", messageId: "a1", callId: "c1", name: "find_errors", input: {} },
+			{ type: "tool-result", messageId: "a1", callId: "c1", output: null },
+			{ type: "text-delta", messageId: "a1", text: " Half an ans" },
+			// The attempt is taken back past where c1 was recorded, and the retry answers afresh.
+			{
+				type: "turn-retry",
+				messageId: "a1",
+				attempt: 2,
+				retractChars: 32,
+				reason: "overloaded",
+				delayMs: 0,
+			},
+			{ type: "text-delta", messageId: "a1", text: "checkout is down." },
+		])
+
+		// c1's offset is past the end of what the turn now says, so it cuts nothing.
+		expect(renderChatMessage(retried, context)).toEqual([
+			{ kind: "prose", markdown: "checkout is down." },
+		])
 	})
 
 	it("numbers a chart by its place in the whole turn, not in the answer left of it", () => {

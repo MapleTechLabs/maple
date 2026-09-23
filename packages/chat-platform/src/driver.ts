@@ -67,7 +67,12 @@ export const driveChatTurn = Effect.fn("ChatPlatform.driveChatTurn")(function* <
 	/** How the turn closed, for the span — the one place a failed turn is more than a line of copy. */
 	let endReason = "unfinished"
 	let dirty = false
-	/** What the render is of: a turn in progress, or the message it settles as. */
+	/**
+	 * What the render is of: a turn in progress, or the message it settles as.
+	 *
+	 * The exception to the note above — it is cleared by this fiber once the throttle fiber has
+	 * been interrupted, so no flush can read it half way through a turn it has not finished.
+	 */
 	let running = true
 
 	const flush = gate.withPermit(
@@ -75,9 +80,12 @@ export const driveChatTurn = Effect.fn("ChatPlatform.driveChatTurn")(function* <
 			dirty = false
 			const message = transcript.messages.find((candidate) => candidate.id === messageId)
 			const blocks: Array<ChatBlock> =
-				message === undefined ? [] : [...renderChatMessage(message, context, { running })]
+				message === undefined ? [] : [...renderChatMessage(message, context, running)]
 			if (ending !== null) blocks.push(ending)
-			if (blocks.length === 0) blocks.push(PENDING)
+			// A finished turn must never be left under the placeholder: a model that stops after a
+			// tool call without a closing word renders as nothing at all, and "Working on it…" would
+			// then be the last thing the channel ever says about it.
+			if (blocks.length === 0) blocks.push(running ? PENDING : NOTHING_SAID)
 
 			const groups = splitBlocks(blocks, outbound.limits.maxMessageChars)
 			for (let index = 0; index < Math.max(groups.length, posted.length); index++) {
@@ -187,6 +195,13 @@ const report = (message: string) => (cause: Cause.Cause<unknown>) =>
 const NO_BLOCKS: ReadonlyArray<ChatBlock> = []
 
 const PENDING: ChatNoticeBlock = { kind: "notice", tone: "pending", text: "Working on it…" }
+
+/** A turn that ran to its end and wrote nothing to show for it. Rare, and never silent. */
+const NOTHING_SAID: ChatNoticeBlock = {
+	kind: "notice",
+	tone: "info",
+	text: "Finished without a reply.",
+}
 
 const DISCONNECTED: ChatNoticeBlock = {
 	kind: "notice",

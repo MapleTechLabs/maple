@@ -204,11 +204,20 @@ describe("driveChatTurn", () => {
 			yield* TestClock.adjust("6 seconds")
 			yield* Fiber.join(fiber)
 
+			// The first thing the reader sees after the placeholder: the tool, and none of the
+			// narration the model wrote on its way into it.
+			expect(chat.calls.find((call) => working(call.blocks).length > 0)?.blocks).toEqual([
+				{ kind: "activity", tools: [{ name: "find_errors", status: "running", detail: null }] },
+			])
 			const lines = chat.calls.map((call) => working(call.blocks))
 			// One tool at a time, never the list of everything the turn touched on its way here.
 			for (const line of lines) expect(line.length).toBeLessThanOrEqual(1)
-			expect(lines.flat()).toContain("find_errors")
-			expect(lines.flat()).toContain("search_traces")
+			// The two calls, in the order the turn made them. Repeats are a call whose status
+			// changed under the same name, which is one line either way.
+			expect(lines.flat().filter((name, index, all) => name !== all[index - 1])).toEqual([
+				"find_errors",
+				"search_traces",
+			])
 			// The words the model wrote to itself between its calls never reach the channel.
 			for (const call of chat.calls) expect(prose(call.blocks)).not.toMatch(/Let me|Now I'll/)
 			// The finished message is the answer and nothing else.
@@ -218,7 +227,40 @@ describe("driveChatTurn", () => {
 		}),
 	)
 
-	it.effect("reports a sub-agent on the same status line, not as a card of its own", () =>
+	it.effect("says a turn that stopped without a word finished, not that it is still working", () =>
+		Effect.gen(function* () {
+			const chat = recorder()
+			// A model that runs a tool and then stops: the turn ends on `stop` with no prose to show
+			// for it, and the placeholder would otherwise be the channel's last word on the matter.
+			yield* driveChatTurn({
+				events: timeline([
+					[NOW, event(1, { type: "turn-start", messageId: "a1" })],
+					[
+						NOW,
+						event(2, {
+							type: "tool-call",
+							messageId: "a1",
+							callId: "c1",
+							name: "find_errors",
+							input: {},
+						}),
+					],
+					[NOW, event(3, { type: "tool-result", messageId: "a1", callId: "c1", output: null })],
+					[NOW, event(4, { type: "turn-end", messageId: "a1", reason: "stop" })],
+				]),
+				messageId: "a1",
+				outbound: chat.outbound,
+				target,
+				context,
+			})
+
+			expect(chat.calls[chat.calls.length - 1].blocks).toEqual([
+				{ kind: "notice", tone: "info", text: "Finished without a reply." },
+			])
+		}),
+	)
+
+	it.effect("names a sub-agent by the agent it delegates to on the status line", () =>
 		Effect.gen(function* () {
 			const chat = recorder()
 			const fiber = yield* Effect.forkChild(
@@ -258,7 +300,10 @@ describe("driveChatTurn", () => {
 			yield* TestClock.adjust("3 seconds")
 			yield* Fiber.join(fiber)
 
-			expect(chat.calls.map((call) => working(call.blocks))).toContainEqual(["reviewer"])
+			// The delegation is a line on the same status block, named for the agent it runs.
+			expect(chat.calls.find((call) => working(call.blocks).length > 0)?.blocks).toEqual([
+				{ kind: "activity", tools: [{ name: "reviewer", status: "running", detail: "1 step" }] },
+			])
 		}),
 	)
 
