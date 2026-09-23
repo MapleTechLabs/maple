@@ -298,9 +298,13 @@ impl)` over the plain `ChatSession` class — the outer Effect resolves state an
     resident while it does, for the same reason the chat session arms one). It is a separate
     object because the socket is a single one for the whole deployment: running turns there
     would either block the next frame behind a model run or pile every concurrent turn in the
-    system into the object that holds the connection. It keeps no storage — an object evicted
-    mid-turn leaves the conversation holding the last thing the answer had said, and the
-    session ends the turn on its own heartbeat.
+    system into the object that holds the connection. It keeps one thing in storage and only
+    one: which conversations the bot opened itself, which is what lets a message that
+    mentioned nobody still be answered there (`src/relay/conversation.ts` holds the whole
+    rule — the conversation is the bot's own, its session has held a turn inside the last
+    day, a human wrote the message, and it has text). Nothing else is persisted: an object
+    evicted mid-turn leaves the conversation holding the last thing the answer had said, and
+    the session ends the turn on its own heartbeat.
 
     So the Worker binds, beyond its connector secrets: `ChatSession` cross-script on
     maple-ai, `MAPLE_DB` (the api's Hyperdrive config — one row per mention, read inside a

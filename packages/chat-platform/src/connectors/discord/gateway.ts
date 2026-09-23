@@ -17,16 +17,17 @@
  */
 import { Option, Schema } from "effect"
 import type { ConnectorConfig, SocketDirective, SocketIngressDefinition, SocketStep } from "../../ingress.ts"
-import { BOT_TOKEN_CONFIG } from "./api.ts"
+import { BOT_TOKEN_CONFIG, MESSAGE_CONTENT_CONFIG } from "./api.ts"
 import { mapDispatch } from "./gateway-events.ts"
 import {
 	decodeGatewayFrame,
 	decodeHello,
 	decodeReady,
 	FATAL_CLOSE_CODES,
+	FATAL_CLOSE_HINTS,
 	GATEWAY_QUERY,
 	GATEWAY_URL,
-	INTENTS,
+	gatewayIntents,
 	OP,
 	RECONNECT_CLOSE_CODE,
 	SESSION_RESET_CLOSE_CODES,
@@ -80,10 +81,22 @@ const frame = (op: number, d: unknown): string => JSON.stringify({ op, d })
 
 const heartbeatFrame = (state: GatewayState): string => frame(OP.heartbeat, state.sequence ?? null)
 
+/**
+ * Whether the deployment asked for the privileged message-content intent.
+ *
+ * Two spellings and nothing else: an environment variable set to anything a
+ * reader would not call "on" leaves the intent off, because the cost of reading
+ * one as `true` is a gateway Discord closes with 4014.
+ */
+const wantsMessageContent = (config: ConnectorConfig): boolean => {
+	const value = config.get(MESSAGE_CONTENT_CONFIG)?.toLowerCase()
+	return value === "1" || value === "true"
+}
+
 const identifyFrame = (config: ConnectorConfig): string =>
 	frame(OP.identify, {
 		token: config.get(BOT_TOKEN) ?? "",
-		intents: INTENTS,
+		intents: gatewayIntents(wantsMessageContent(config)),
 		properties: { os: "linux", browser: "maple", device: "maple" },
 	})
 
@@ -218,11 +231,14 @@ const onFrame = (
  */
 const onClose = (state: GatewayState, code: number, reason: string): SocketStep<GatewayState> => {
 	if (FATAL_CLOSE_CODES.has(code)) {
+		const hint = FATAL_CLOSE_HINTS.get(code)
 		return {
 			state,
 			directive: {
 				_tag: "stop",
-				reason: `Discord closed the gateway with ${code}${reason === "" ? "" : `: ${reason}`}`,
+				reason: `Discord closed the gateway with ${code}${hint === undefined ? "" : ` (${hint})`}${
+					reason === "" ? "" : `: ${reason}`
+				}`,
 			},
 		}
 	}
@@ -252,7 +268,11 @@ const heartbeat = (state: GatewayState, now: number): SocketStep<GatewayState> =
 }
 
 export const gatewayProtocol: SocketIngressDefinition<GatewayState> = {
-	requiredConfig: [{ name: BOT_TOKEN, secret: true }],
+	requiredConfig: [
+		{ name: BOT_TOKEN, secret: true },
+		// A switch, not a credential: absent leaves the bot mention-only rather than stopping it.
+		{ name: MESSAGE_CONTENT_CONFIG, secret: false, optional: true },
+	],
 	stateSchema: Schema.fromJsonString(GatewayState),
 	initialState,
 	connectUrl,

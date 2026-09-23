@@ -67,6 +67,9 @@ export interface RelayHost {
 	readonly env: Record<string, unknown>
 	/** Whether this conversation has already been told that its workspace is not linked. */
 	readonly announceUnlinked: Effect.Effect<boolean>
+	/** The relay object's own record of the conversations the bot opened — see `ConnectorRelay`. */
+	readonly ownsConversation: RelayPorts["ownsConversation"]
+	readonly rememberConversation: RelayPorts["rememberConversation"]
 }
 
 /**
@@ -210,6 +213,8 @@ const ports = (
 			chartIndex: ref.chartIndex,
 		}),
 	announceUnlinked: host.announceUnlinked,
+	ownsConversation: host.ownsConversation,
+	rememberConversation: host.rememberConversation,
 })
 
 /**

@@ -46,6 +46,14 @@ import { ChatConnectorId } from "./connector.ts"
 export interface ConnectorConfigKey {
 	readonly name: string
 	readonly secret: boolean
+	/**
+	 * A value the connector runs without.
+	 *
+	 * The host skips a connector whose configuration is incomplete, which is what makes a missing
+	 * credential a connector that does not start rather than one that fails every event. A switch
+	 * is not a credential: absent means off, and the connector still runs.
+	 */
+	readonly optional?: boolean
 }
 
 /**
@@ -75,7 +83,14 @@ export const InboundActor = Schema.Struct({
 })
 export type InboundActor = Schema.Schema.Type<typeof InboundActor>
 
-/** A message a human addressed to the bot. */
+/**
+ * A message a human wrote where the bot can see it.
+ *
+ * Not necessarily one addressed to it: a connector also reports the messages it can read that
+ * mention nobody, because in a conversation the bot opened the next message is still part of the
+ * exchange. `mentionsBot` is the whole difference, and what the host does with a `false` is a host
+ * decision — see `apps/chat-bot/src/relay/conversation.ts`.
+ */
 export const InboundMessage = Schema.Struct({
 	type: Schema.Literal("message"),
 	connector: ChatConnectorId,
