@@ -39,6 +39,10 @@ export function euFaqs(): FaqItem[] {
 			answer: "No. One Maple login works in both regions. The organization switcher labels each organization US or EU and opens it in its own dashboard.",
 		},
 		{
+			question: "Is Maple SOC 2 or ISO 27001 certified?",
+			answer: "Not yet. SOC 2 and ISO 27001 certification are in progress.",
+		},
+		{
 			question: "Can I keep the data inside my own network instead?",
 			answer: "Yes. Maple's source is on GitHub under FSL-1.1, and you can run the whole platform on your own infrastructure in whichever region you like.",
 		},
