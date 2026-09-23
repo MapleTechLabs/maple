@@ -16,6 +16,8 @@ import {
 	driveChatTurn,
 	type ChatActionRequest,
 	type ChatChartRef,
+	type ChatConversation,
+	type ChatHistoryMessage,
 	type ChatOutbound,
 	type ChatOutboundTransport,
 	type ChatTarget,
@@ -23,18 +25,25 @@ import {
 	type InboundEvent,
 	type InboundMessage,
 } from "@maple/chat-platform"
-import { wrapChatContext } from "@maple/domain/chat-preamble"
 import {
 	connectorSessionId,
 	connectorTurnTenant,
+	type ChatConversationKey,
 	type ChatMessage,
 	type ChatSessionId,
 } from "@maple/domain/chat-session"
 import type { ChatSessionStub } from "@maple/domain/chat-session-stub"
 import { ChatConnectorId, ExternalUserId, type OrgId, type UserId } from "@maple/domain/primitives"
-import { Duration, Effect, Exit, Option, Schema } from "effect"
+import { Clock, Duration, Effect, Exit, Option, Schema } from "effect"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import { settledMessageBlocks } from "./approval.ts"
+import {
+	chatTurnText,
+	conversationStillLive,
+	couldAnswerUnaddressed,
+	CONTEXT_MESSAGE_LIMIT,
+	type ConversationNotRecorded,
+} from "./conversation.ts"
 import { chatTurnEvents, sessionUnreachable } from "./events.ts"
 
 /** The org behind a workspace, and who the person acting is in Maple, when one was asked about. */
@@ -92,6 +101,17 @@ export interface RelayPorts<R = never> {
 	/** A signed image for one chart in a reply, or `null` when this deployment cannot sign one. */
 	readonly chartImageUrl: (orgId: OrgId, ref: ChatChartRef) => string | null
 	/**
+	 * Whether the bot opened this conversation itself.
+	 *
+	 * What makes an unaddressed message answerable — see `./conversation.ts`. The host remembers it
+	 * per conversation; a conversation nobody has recorded answers `false`, which is mention-only.
+	 */
+	readonly ownsConversation: (conversationKey: ChatConversationKey) => Effect.Effect<boolean>
+	/** Record that the bot opened this conversation, before it says anything in it. */
+	readonly rememberConversation: (
+		conversation: ChatConversation,
+	) => Effect.Effect<void, ConversationNotRecorded>
+	/**
 	 * Whether to say anything about a workspace nobody has linked.
 	 *
 	 * Once a conversation has been told, repeating it on every mention is a bot flooding a channel
@@ -133,19 +153,6 @@ const replyTarget = (message: InboundMessage | InboundAction): ChatTarget => ({
 	threadId: "threadId" in message ? message.threadId : undefined,
 })
 
-/**
- * The turn's text: who is speaking, then what they said.
- *
- * Fenced as machine-written context, because it is — several people share a conversation, the
- * model needs to know which of them it is answering, and the sentence is not something anybody
- * typed.
- */
-const turnText = (message: InboundMessage): string =>
-	wrapChatContext(
-		`${message.author.displayName} is asking, in a chat conversation other people can read.`,
-		message.text,
-	)
-
 const notice = (text: string) => [{ kind: "notice" as const, tone: "info" as const, text }]
 
 /** Say one short thing, and let a platform that refuses it be a log line rather than a failure. */
@@ -164,11 +171,42 @@ const relayMessage = Effect.fn("chat_bot.relay_turn")(function* <R>(
 	message: InboundMessage,
 	ports: RelayPorts<R>,
 ) {
-	yield* Effect.annotateCurrentSpan({ "maple.chat.connector": message.connector })
+	yield* Effect.annotateCurrentSpan({
+		"maple.chat.connector": message.connector,
+		"maple.chat.mentioned": message.mentionsBot,
+	})
 	const transport = yield* ports.outbound.transport
 	const author = decodeExternalUserId(message.author.id)
 	// An author the platform cannot name is nobody to attribute a turn to.
 	if (Option.isNone(author)) return yield* Effect.annotateCurrentSpan({ "maple.chat.relay": "no_author" })
+
+	/**
+	 * Notices go to the person who asked, and nobody asked here: a message that did not mention the
+	 * bot and is not answered leaves no trace in the conversation at all.
+	 */
+	const tell = (target: ChatTarget, text: string) =>
+		message.mentionsBot ? say(transport, target, text) : Effect.void
+
+	/**
+	 * A message that addressed nobody is asked the free question first.
+	 *
+	 * Whether the bot owns this conversation is a read of this object's own storage, where
+	 * everything below is a database connection and a Durable Object call — and on a deployment
+	 * that can see every message in every channel, almost all of them stop here. Resolving the
+	 * conversation to ask it costs nothing either: a connector opens nothing for an unaddressed
+	 * message, by contract, so this is the same answer the turn would get later.
+	 */
+	const owned = message.mentionsBot ? undefined : yield* transport.conversation(message)
+	if (owned !== undefined) {
+		const ownsConversation = yield* ports.ownsConversation(owned.conversationKey)
+		// Recorded whichever way the gate goes: "the bot does not own this conversation" and "it
+		// does, but the window closed" are the same outcome and different problems, and the second
+		// is the one that would move `FOLLOW_UP_WINDOW_MS`.
+		yield* Effect.annotateCurrentSpan({ "maple.chat.owns_conversation": ownsConversation })
+		if (!couldAnswerUnaddressed(message, ownsConversation)) {
+			return yield* Effect.annotateCurrentSpan({ "maple.chat.relay": "not_addressed" })
+		}
+	}
 
 	const workspace = yield* Effect.exit(ports.resolveWorkspace(message.connector, message.workspaceId))
 	// A lookup that failed says nothing about whether this workspace is linked, so the mention goes
@@ -178,12 +216,35 @@ const relayMessage = Effect.fn("chat_bot.relay_turn")(function* <R>(
 	}
 	if (Option.isNone(workspace.value)) {
 		yield* Effect.annotateCurrentSpan({ "maple.chat.relay": "unlinked" })
-		if (yield* ports.announceUnlinked) yield* say(transport, replyTarget(message), UNLINKED_NOTICE)
+		// Asked before the notice is claimed, not after: an unaddressed message that says nothing
+		// must not spend the one notice this conversation gets an hour.
+		if (message.mentionsBot && (yield* ports.announceUnlinked)) {
+			yield* say(transport, replyTarget(message), UNLINKED_NOTICE)
+		}
 		return
 	}
 	const { orgId } = workspace.value.value
 
-	const conversation = yield* transport.conversation(message)
+	// Resolved after the workspace, for a mention: opening a thread in a server nobody has linked
+	// would leave an empty one behind every time.
+	const conversation = owned ?? (yield* transport.conversation(message))
+	// Recorded before anything is said in it, so a turn that then fails still leaves a conversation
+	// the bot will go on answering in. A write that does not land costs the messages after this one
+	// rather than this one's answer — and it is the only reason the bot would go on answering
+	// mentions here and nothing else, so it is logged rather than dropped.
+	if (conversation.opened) {
+		yield* ports.rememberConversation(conversation).pipe(
+			Effect.tapError((error) =>
+				Effect.logWarning("Conversation not recorded as the bot's own").pipe(
+					Effect.annotateLogs({
+						"error.type": error._tag,
+						"maple.chat.conversation_key": conversation.conversationKey,
+					}),
+				),
+			),
+			Effect.ignore,
+		)
+	}
 	const sessionId = connectorSessionId(orgId, message.connector, conversation.conversationKey)
 	yield* Effect.annotateCurrentSpan({ orgId, "maple.chat.session_id": sessionId })
 
@@ -191,8 +252,55 @@ const relayMessage = Effect.fn("chat_bot.relay_turn")(function* <R>(
 	if (session === undefined) {
 		yield* Effect.logError("No chat session binding on this deployment")
 		yield* Effect.annotateCurrentSpan({ "maple.chat.relay": "no_binding" })
-		return yield* say(transport, conversation.target, UNAVAILABLE_NOTICE)
+		return yield* tell(conversation.target, UNAVAILABLE_NOTICE)
 	}
+
+	// What the conversation's session already holds, which is both what decides an unaddressed
+	// message and what the context block must not repeat. A session that cannot be read answers
+	// neither: `0` leaves the whole context in and takes no follow-up. It degrades the turn twice
+	// over, so it is logged rather than swallowed.
+	const transcript = yield* Effect.tryPromise({
+		catch: sessionUnreachable(sessionId, "The chat session's transcript could not be read"),
+		try: () => session.history(),
+	}).pipe(
+		Effect.tapError((error) =>
+			Effect.logWarning("Chat session transcript could not be read").pipe(
+				Effect.annotateLogs({ "error.type": error._tag }),
+			),
+		),
+		Effect.orElseSucceed(() => []),
+	)
+	const seenUpTo = transcript[transcript.length - 1]?.createdAt ?? 0
+	// The follow-up window is measured from the last thing the BOT said, which is not always the
+	// last thing in the transcript: a turn evicted after its question was recorded leaves the
+	// conversation with an unanswered message in it rather than a recent answer.
+	const repliedAt = transcript.reduce((at, entry) => (entry.role === "assistant" ? entry.createdAt : at), 0)
+	const now = yield* Clock.currentTimeMillis
+
+	// The half of the follow-up rule that needed the session: it has spoken here, and recently.
+	if (!message.mentionsBot && !conversationStillLive(repliedAt, now)) {
+		return yield* Effect.annotateCurrentSpan({ "maple.chat.relay": "not_addressed" })
+	}
+
+	// Best effort: a conversation whose history the bot may not read is one it answers with less
+	// context, not one it refuses to answer in.
+	const recent = yield* transport
+		.history(replyTarget(message), { limit: CONTEXT_MESSAGE_LIMIT, before: message.messageId })
+		.pipe(
+			Effect.tapError((error) =>
+				// The status and the reason, not just the operation: a permission the bot was never
+				// granted and a one-off 5xx otherwise produce identical lines, and the first means
+				// every turn from here on answers with no context at all.
+				Effect.logWarning("Chat conversation history could not be read").pipe(
+					Effect.annotateLogs({
+						"error.type": error.operation,
+						"error.message": error.message,
+						"http.response.status_code": error.status ?? 0,
+					}),
+				),
+			),
+			Effect.orElseSucceed((): ReadonlyArray<ChatHistoryMessage> => []),
+		)
 
 	const claimed = yield* Effect.tryPromise({
 		catch: sessionUnreachable(sessionId, "The chat session did not accept a turn"),
@@ -200,7 +308,7 @@ const relayMessage = Effect.fn("chat_bot.relay_turn")(function* <R>(
 			session.beginTurn({
 				sessionId,
 				messageId: crypto.randomUUID(),
-				text: turnText(message),
+				text: chatTurnText(message, { now, recent, seenUpTo }),
 				tenant: connectorTurnTenant(orgId),
 				origin: {
 					kind: "connector",
@@ -218,13 +326,13 @@ const relayMessage = Effect.fn("chat_bot.relay_turn")(function* <R>(
 			Effect.annotateLogs({ "error.type": summarizeCause(claimed.cause) }),
 		)
 		yield* Effect.annotateCurrentSpan({ "maple.chat.relay": "unreachable" })
-		return yield* say(transport, conversation.target, UNAVAILABLE_NOTICE)
+		return yield* tell(conversation.target, UNAVAILABLE_NOTICE)
 	}
 	// A turn is already running in this conversation. Nothing is queued: the reader asked while the
 	// answer to their last question was still being written, and the thread already shows it.
 	if (claimed.value === undefined) {
 		yield* Effect.annotateCurrentSpan({ "maple.chat.relay": "busy" })
-		return yield* say(transport, conversation.target, BUSY_NOTICE)
+		return yield* tell(conversation.target, BUSY_NOTICE)
 	}
 
 	yield* Effect.annotateCurrentSpan({ "maple.chat.relay": "started" })

@@ -1,12 +1,23 @@
 import { createClerkClient } from "@clerk/backend"
 import {
+	ChooseOrganizationRegionResponse,
+	CreateOrganizationResponse,
 	DeleteOrganizationResponse,
 	OrganizationForbiddenError,
 	OrganizationPersistenceError,
 	OrganizationProviderError,
+	OrganizationRegionLockedError,
 	OrgId,
 	RoleName,
+	type UserId,
 } from "@maple/domain/http"
+import {
+	type MapleRegion,
+	organizationHomeRegion,
+	organizationRegionChosen,
+	organizationRegionMetadata,
+	organizationRegionOpen,
+} from "@maple/domain/organization-regions"
 import {
 	actors,
 	alertDeliveryEvents,
@@ -46,10 +57,12 @@ import {
 	vcsRepositories,
 } from "@maple/db"
 import { eq } from "drizzle-orm"
-import { Context, Effect, Layer, Option, Redacted, Schema } from "effect"
+import { Clock, Context, Effect, Layer, Option, Redacted, Schema } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { Env } from "@maple/backend/platform/Env"
 import { clerkRequest } from "@maple/backend/services/auth/clerk-request"
+import { AutumnClient } from "@maple/backend/services/billing/autumn-http"
+import { responseHasPlanHistory } from "@maple/backend/services/billing/autumn-client"
 
 const ROOT_ROLE = Schema.decodeSync(RoleName)("root")
 const ORG_ADMIN_ROLE = Schema.decodeSync(RoleName)("org:admin")
@@ -195,6 +208,21 @@ export interface OrganizationInfo {
 }
 
 export interface OrganizationServiceApi {
+	/** Creates a Clerk organization owned by `userId`, living in `region` from the start. */
+	readonly create: (
+		userId: UserId,
+		name: string,
+		region: MapleRegion,
+	) => Effect.Effect<CreateOrganizationResponse, OrganizationProviderError>
+	/** Sets the region of an organization created without one, while it is still onboarding. */
+	readonly chooseRegion: (
+		orgId: OrgId,
+		roles: ReadonlyArray<RoleName>,
+		region: MapleRegion,
+	) => Effect.Effect<
+		ChooseOrganizationRegionResponse,
+		OrganizationForbiddenError | OrganizationRegionLockedError | OrganizationProviderError
+	>
 	readonly retrieve: (orgId: OrgId) => Effect.Effect<OrganizationInfo, OrganizationProviderError>
 	readonly delete: (
 		orgId: OrgId,
@@ -212,13 +240,16 @@ export class OrganizationService extends Context.Service<OrganizationService, Or
 			const database = yield* Database
 			const env = yield* Env
 
+			const autumn = yield* AutumnClient
+
 			const requireAdmin = Effect.fn("OrganizationService.requireAdmin")(function* (
 				roles: ReadonlyArray<RoleName>,
+				action: string,
 			) {
 				if (isOrgAdmin(roles)) return
 				return yield* Effect.fail(
 					new OrganizationForbiddenError({
-						message: "Only org admins can delete the organization",
+						message: `Only org admins can ${action}`,
 					}),
 				)
 			})
@@ -293,25 +324,132 @@ export class OrganizationService extends Context.Service<OrganizationService, Or
 				} satisfies OrganizationInfo
 			})
 
+			const create = Effect.fn("OrganizationService.create")(function* (
+				userId: UserId,
+				name: string,
+				region: MapleRegion,
+			) {
+				yield* Effect.annotateCurrentSpan({ userId, "maple.org_region": region })
+				const clerk = clerkClient()
+				if (Option.isNone(clerk)) {
+					return yield* new OrganizationProviderError({
+						message: "Organizations can only be created in Clerk auth mode",
+					})
+				}
+				const org = yield* clerkRequest("Clerk.organizations.createOrganization", { userId }, () =>
+					clerk.value.organizations.createOrganization({
+						name,
+						createdBy: userId,
+						publicMetadata: organizationRegionMetadata(region),
+					}),
+				).pipe(Effect.mapError((error) => toProviderError(error.cause)))
+				const orgId = yield* Schema.decodeUnknownEffect(OrgId)(org.id).pipe(
+					Effect.mapError(
+						() =>
+							new OrganizationProviderError({
+								message: "Clerk returned an invalid organization id",
+							}),
+					),
+				)
+				yield* Effect.annotateCurrentSpan("orgId", orgId)
+				return new CreateOrganizationResponse({ orgId, region })
+			})
+
+			const chooseRegion = Effect.fn("OrganizationService.chooseRegion")(function* (
+				orgId: OrgId,
+				roles: ReadonlyArray<RoleName>,
+				region: MapleRegion,
+			) {
+				yield* Effect.annotateCurrentSpan({ orgId, "maple.org_region": region })
+				yield* requireAdmin(roles, "choose the data region")
+				const clerk = clerkClient()
+				if (Option.isNone(clerk)) {
+					return yield* new OrganizationProviderError({
+						message: "Data regions can only be chosen in Clerk auth mode",
+					})
+				}
+				const org = yield* clerkRequest("Clerk.organizations.getOrganization", { orgId }, () =>
+					clerk.value.organizations.getOrganization({ organizationId: orgId }),
+				).pipe(Effect.mapError((error) => toProviderError(error.cause)))
+				if (organizationRegionChosen(org.publicMetadata)) {
+					// Choosing the region it already has is a no-op, so a retried request succeeds.
+					if (organizationHomeRegion(org.publicMetadata) === region) {
+						return new ChooseOrganizationRegionResponse({ region })
+					}
+					return yield* new OrganizationRegionLockedError({
+						message: "This organization's data region has already been chosen.",
+					})
+				}
+				// An organization that predates regions has data on US already, plan or not.
+				if (
+					!organizationRegionOpen(org.publicMetadata, org.createdAt, yield* Clock.currentTimeMillis)
+				) {
+					return yield* new OrganizationRegionLockedError({
+						message: "Only a new organization can choose its data region.",
+					})
+				}
+				const customer = yield* autumn
+					.getOrCreateCustomer(orgId, { expand: [] })
+					.pipe(Effect.mapError((error) => toProviderError(error)))
+				if (customer.statusCode !== 200) {
+					return yield* new OrganizationProviderError({
+						message: `Billing returned HTTP ${customer.statusCode}; cannot confirm the organization is new`,
+					})
+				}
+				if (responseHasPlanHistory(customer.response)) {
+					return yield* new OrganizationRegionLockedError({
+						message: "An organization that has held a plan keeps its data region.",
+					})
+				}
+				// Clerk merges public metadata by key, so rollout flags stay as they are.
+				const written = yield* clerkRequest(
+					"Clerk.organizations.updateOrganizationMetadata",
+					{ orgId },
+					() =>
+						clerk.value.organizations.updateOrganizationMetadata(orgId, {
+							publicMetadata: organizationRegionMetadata(region),
+						}),
+				).pipe(Effect.mapError((error) => toProviderError(error.cause)))
+				// Clerk has no conditional write, so two admins choosing at once both succeed and the
+				// later write wins. Answering with a fresh read rather than the request sends both to
+				// the region that stuck in all but a same-instant race. The write already landed, so a
+				// failed read falls back to what the write returned rather than failing the request.
+				const stored = yield* clerkRequest("Clerk.organizations.getOrganization", { orgId }, () =>
+					clerk.value.organizations.getOrganization({ organizationId: orgId }),
+				).pipe(
+					Effect.catch((error) =>
+						Effect.logWarning("Region read-back failed; answering with the write's result").pipe(
+							Effect.annotateLogs({ orgId, error: error.message }),
+							Effect.as(written),
+						),
+					),
+				)
+				return new ChooseOrganizationRegionResponse({
+					region: organizationHomeRegion(stored.publicMetadata),
+				})
+			})
+
 			const deleteOrganization = Effect.fn("OrganizationService.delete")(function* (
 				orgId: OrgId,
 				roles: ReadonlyArray<RoleName>,
 			) {
 				yield* Effect.annotateCurrentSpan("orgId", orgId)
-				yield* requireAdmin(roles)
+				yield* requireAdmin(roles, "delete the organization")
 				yield* purgeOrgScopedRows(orgId)
 				yield* deleteClerkOrganization(orgId)
 				return new DeleteOrganizationResponse({ deleted: true })
 			})
 
 			return {
+				create,
+				chooseRegion,
 				retrieve,
 				delete: deleteOrganization,
 			} satisfies OrganizationServiceApi
 		}),
 	},
 ) {
-	static readonly layer = Layer.effect(this, this.make)
+	static readonly layer = Layer.effect(this, this.make).pipe(Layer.provide(AutumnClient.layer))
 
 	static readonly retrieve = (orgId: OrgId) => this.use((service) => service.retrieve(orgId))
 

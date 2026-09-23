@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest"
 import type { ConnectorConfig } from "../../ingress.ts"
 import { socketIngress } from "../../ingress.ts"
 import { BOT_TOKEN, gatewayProtocol, type GatewayState } from "./gateway.ts"
-import { INTENTS, OP } from "./gateway-payloads.ts"
+import { INTENTS, MESSAGE_CONTENT_INTENT, OP } from "./gateway-payloads.ts"
 
 const config: ConnectorConfig = new Map([[BOT_TOKEN, "bot-token"]])
 const NOW = 1_700_000_000_000
@@ -43,7 +43,7 @@ describe("the handshake", () => {
 		expect(step.heartbeatAt).toBeGreaterThan(NOW)
 	})
 
-	it("identifies on HELLO when there is no session, with the non-privileged intents", () => {
+	it("identifies on HELLO when there is no session, asking for message content", () => {
 		const step = gatewayProtocol.onFrame(
 			state(),
 			frame({ op: OP.hello, d: { heartbeat_interval: 41_250 } }),
@@ -53,8 +53,11 @@ describe("the handshake", () => {
 		const identify = sent(step.send?.[0])
 		expect(identify.op).toBe(OP.identify)
 		expect(identify.d).toMatchObject({ token: "bot-token", intents: INTENTS })
-		// GUILDS | GUILD_MESSAGES, and deliberately not MESSAGE_CONTENT (1 << 15).
-		expect(INTENTS & (1 << 15)).toBe(0)
+		// The privileged intent is required, not optional: without it every message the bot was not
+		// mentioned in arrives empty and it can neither read a conversation nor answer a follow-up.
+		expect(INTENTS & MESSAGE_CONTENT_INTENT).toBe(MESSAGE_CONTENT_INTENT)
+		// And the two it has always had, which deliver GUILD_DELETE and MESSAGE_CREATE.
+		expect(INTENTS & ((1 << 0) | (1 << 9))).toBe((1 << 0) | (1 << 9))
 		expect(step.state.heartbeatIntervalMs).toBe(41_250)
 		// The first heartbeat is jittered inside the interval, as Discord asks.
 		expect(step.heartbeatAt).toBe(NOW + 20_625)
@@ -201,6 +204,25 @@ describe("close codes", () => {
 	])("stops on %i (%s) instead of looping", (code) => {
 		const step = gatewayProtocol.onClose(ready(), code, "")
 		expect(step.directive?._tag).toBe("stop")
+		// And only the intent code names the intent: 4004 is a bad token, and sending an operator to
+		// the Bot tab over it is a wasted hour.
+		if (code !== 4014) {
+			expect(step.directive).toMatchObject({
+				reason: expect.not.stringContaining("Message Content Intent"),
+			})
+		}
+	})
+
+	it("sends an operator to the portal on 4014, the one fatal code they can fix", () => {
+		// The connector asks for exactly one privileged intent, so a disallowed one has exactly one
+		// cause and one fix, and the line an operator reads should be that fix.
+		const step = gatewayProtocol.onClose(ready(), 4014, "Disallowed intent(s).")
+		expect(step.directive).toEqual({
+			_tag: "stop",
+			reason: expect.stringContaining("Message Content Intent"),
+		})
+		// And the session is kept rather than reconnected with: the loop stops here.
+		expect(step.state).toEqual(ready())
 	})
 
 	it.each([
@@ -295,10 +317,40 @@ describe("messages", () => {
 		expect(step.events?.[0]).toMatchObject({ author: { displayName: "Ada L." } })
 	})
 
-	it("ignores a message that does not mention the bot", () => {
+	it("reports a message that mentions nobody, and says so", () => {
+		// What a follow-up in a thread Maple opened looks like. Whether it is a TURN is the host's
+		// decision, made against the conversation's session; the connector only reports it.
 		const step = gatewayProtocol.onFrame(
 			ready(),
-			message({ content: "morning", mentions: [] }),
+			message({ content: "and the payments call?", mentions: [] }),
+			NOW,
+			config,
+		)
+		expect(step.events?.[0]).toMatchObject({ text: "and the payments call?", mentionsBot: false })
+	})
+
+	it("drops an unaddressed message with no text in it", () => {
+		// An embed, an attachment, a system notice — and every message at all if the application
+		// ever loses the content grant. There is no turn to start from nothing, and dropping it here
+		// is one fewer host round trip per message.
+		const step = gatewayProtocol.onFrame(ready(), message({ content: "", mentions: [] }), NOW, config)
+		expect(step.events ?? []).toEqual([])
+	})
+
+	it("still reports a mention whose text is only the mention itself", () => {
+		const step = gatewayProtocol.onFrame(
+			ready(),
+			message({ content: "<@900000000000000001>" }),
+			NOW,
+			config,
+		)
+		expect(step.events?.[0]).toMatchObject({ text: "", mentionsBot: true })
+	})
+
+	it("ignores another bot even when it mentioned nobody", () => {
+		const step = gatewayProtocol.onFrame(
+			ready(),
+			message({ author: user("4000000000000000004", { bot: true }), content: "beep", mentions: [] }),
 			NOW,
 			config,
 		)

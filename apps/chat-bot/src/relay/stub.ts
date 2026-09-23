@@ -9,6 +9,11 @@ import type { InboundEvent } from "@maple/chat-platform"
 
 export interface ConnectorRelayStub {
 	readonly deliver: (event: InboundEvent) => Promise<void>
+	/**
+	 * Record that the bot opened this conversation, on the object that will handle its later
+	 * messages — which is not the one handling the message that opened it.
+	 */
+	readonly remember: (conversationKey: string) => Promise<void>
 }
 
 interface ConnectorRelayNamespace {
@@ -34,12 +39,30 @@ const connectorRelayName = (event: InboundEvent): string =>
 		? `${event.connector}:${event.workspaceId}`
 		: `${event.connector}:${event.workspaceId}:${event.channelId}`
 
+/**
+ * The object that will handle a conversation's later messages.
+ *
+ * The same name the events themselves resolve to, built from where a reply goes rather than from
+ * where the question was asked — which is the whole point: a conversation the bot OPENS is not the
+ * one the message that opened it belongs to.
+ */
+export const connectorConversationRelayName = (
+	connector: string,
+	target: { readonly workspaceId: string; readonly channelId: string },
+): string => `${connector}:${target.workspaceId}:${target.channelId}`
+
+/** The relay under one name, or `undefined` where the binding is missing. */
+export const connectorRelayByName = (
+	env: Record<string, unknown>,
+	name: string,
+): ConnectorRelayStub | undefined => {
+	const namespace = env.ConnectorRelay
+	if (!isRelayNamespace(namespace)) return undefined
+	return namespace.get(namespace.idFromName(name))
+}
+
 /** The relay for this event, or `undefined` where the binding is missing. */
 export const connectorRelayStub = (
 	env: Record<string, unknown>,
 	event: InboundEvent,
-): ConnectorRelayStub | undefined => {
-	const namespace = env.ConnectorRelay
-	if (!isRelayNamespace(namespace)) return undefined
-	return namespace.get(namespace.idFromName(connectorRelayName(event)))
-}
+): ConnectorRelayStub | undefined => connectorRelayByName(env, connectorRelayName(event))

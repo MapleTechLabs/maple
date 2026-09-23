@@ -41,5 +41,6 @@ export async function pricingFaq(): Promise<FaqItem[]> {
 		{ question: m.faq_trial_q(), answer: m.faq_trial_a() },
 		{ question: m.faq_otel_q(), answer: m.faq_otel_a() },
 		{ question: m.faq_selfhost_q(), answer: m.faq_selfhost_a() },
+		{ question: m.faq_region_q(), answer: m.faq_region_a() },
 	]
 }

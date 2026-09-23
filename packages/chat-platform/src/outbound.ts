@@ -58,6 +58,34 @@ export interface ChatMessageRef {
 export interface ChatConversation {
 	readonly conversationKey: ChatConversationKey
 	readonly target: ChatTarget
+	/**
+	 * Whether the connector OPENED this conversation for the message, rather than answering in one
+	 * that was already there.
+	 *
+	 * It is the difference between a space that exists because somebody asked Maple something and a
+	 * channel a team was already using, and the host records it: only in a conversation of the
+	 * bot's own is a message that never mentioned the bot still addressed to it.
+	 */
+	readonly opened: boolean
+}
+
+/**
+ * One earlier message in a conversation, as far as the model needs to read it.
+ *
+ * No author id: the platform's own identifier has no use in a block of text a model reads, and the
+ * contract does not carry an undecoded wire id that a later reader might brand.
+ */
+export interface ChatHistoryMessage {
+	readonly displayName: string
+	/** Maple's own earlier answers included — the model is told which lines are its. */
+	readonly isBot: boolean
+	/**
+	 * Empty where the platform withholds content from the app. A message with nothing to read is
+	 * left out of the context rather than rendered as a blank line.
+	 */
+	readonly text: string
+	/** When it was sent, epoch ms. */
+	readonly at: number
 }
 
 /** What a thread is opened around, and what it is called. */
@@ -128,6 +156,21 @@ export interface ChatOutboundTransport {
 	readonly conversation: (
 		event: InboundMessage | InboundAction,
 	) => Effect.Effect<ChatConversation, ChatOutboundError>
+	/**
+	 * The messages written in this conversation before `before`, NEWEST FIRST.
+	 *
+	 * Newest first because the bound cuts the oldest: a conversation is read backwards from the
+	 * message being answered, and every platform's own history API answers that way for the same
+	 * reason. `limit` is a ceiling, not a demand — a conversation with less in it answers with less.
+	 *
+	 * What the host does with it is give the model the conversation it was mentioned in. A platform
+	 * that will not hand over message content answers with empty `text`, which is a message the
+	 * context leaves out rather than a failure.
+	 */
+	readonly history: (
+		target: ChatTarget,
+		options: { readonly limit: number; readonly before: string },
+	) => Effect.Effect<ReadonlyArray<ChatHistoryMessage>, ChatOutboundError>
 }
 
 /**
@@ -149,7 +192,7 @@ export class ChatOutboundError extends Schema.TaggedError<ChatOutboundError>()(
 	{
 		message: Schema.String,
 		connectorId: ChatConnectorId,
-		operation: Schema.Literals(["post", "edit", "typing", "thread"]),
+		operation: Schema.Literals(["post", "edit", "typing", "thread", "history"]),
 		/** The platform's HTTP status, where the failure had one. */
 		status: Schema.optionalKey(Schema.Finite),
 		cause: Schema.optionalKey(Schema.Defect()),

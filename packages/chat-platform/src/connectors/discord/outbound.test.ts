@@ -178,6 +178,8 @@ describe("discord transport", () => {
 			expect(conversation).toEqual({
 				conversationKey: "thread_7",
 				target: { workspaceId: "guild_1", channelId: "thread_7" },
+				// The bot's own: what lets a later message in it be answered without a mention.
+				opened: true,
 			})
 		}).pipe(Effect.provide(http.layer))
 	})
@@ -193,7 +195,71 @@ describe("discord transport", () => {
 			expect(conversation).toEqual({
 				conversationKey: "conv_1",
 				target: { workspaceId: "guild_1", channelId: "conv_1" },
+				// NOT the bot's own. A channel it merely answers in never takes unaddressed messages,
+				// which is the whole risk of this fallback.
+				opened: false,
 			})
+		}).pipe(Effect.provide(http.layer))
+	})
+
+	it.effect("opens nothing for a message that mentioned nobody, and makes no request", () => {
+		const http = stub([{ status: 500, body: "{}" }])
+		return Effect.gen(function* () {
+			const transport = yield* discordOutbound.transport
+			const conversation = yield* transport.conversation({ ...mention, mentionsBot: false })
+
+			expect(conversation).toEqual({
+				conversationKey: "conv_1",
+				target: { workspaceId: "guild_1", channelId: "conv_1" },
+				opened: false,
+			})
+			expect(http.seen).toEqual([])
+		}).pipe(Effect.provide(http.layer))
+	})
+
+	it.effect("reads the conversation's recent messages, newest first and bounded", () => {
+		const page = JSON.stringify([
+			{
+				author: { id: "bot_1", username: "maple", bot: true },
+				content: "Checkout is slow because of the payments call.",
+				timestamp: "2026-09-23T12:00:20.000Z",
+			},
+			{
+				author: { id: "user_2", username: "ada", global_name: "Ada" },
+				member: { nick: "Ada L" },
+				content: "why is checkout slow",
+				timestamp: "2026-09-23T12:00:10.000Z",
+			},
+			// Undated, so it cannot be placed in the conversation at all.
+			{ author: { id: "user_3", username: "bo" }, content: "hm", timestamp: "not a date" },
+			// And one this connector cannot read at all — a message type Discord added, a field that
+			// started arriving as something else. It costs itself, not the page around it.
+			{ author: { id: 4 }, content: null },
+		])
+		const http = stub([{ status: 200, body: page }])
+		return Effect.gen(function* () {
+			const transport = yield* discordOutbound.transport
+			const recent = yield* transport.history(target, { limit: 500, before: "msg_3" })
+
+			expect(recent).toEqual([
+				{
+					displayName: "maple",
+					isBot: true,
+					text: "Checkout is slow because of the payments call.",
+					at: Date.parse("2026-09-23T12:00:20.000Z"),
+				},
+				{
+					// The server nickname wins over the global name, as it does everywhere else here.
+					displayName: "Ada L",
+					isBot: false,
+					text: "why is checkout slow",
+					at: Date.parse("2026-09-23T12:00:10.000Z"),
+				},
+			])
+			// Discord's own ceiling, whatever the caller asked for.
+			expect(http.seen[0].url).toBe(
+				"https://discord.com/api/v10/channels/conv_1/messages?limit=100&before=msg_3",
+			)
 		}).pipe(Effect.provide(http.layer))
 	})
 

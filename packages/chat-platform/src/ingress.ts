@@ -70,7 +70,14 @@ export const InboundActor = Schema.Struct({
 })
 export type InboundActor = Schema.Schema.Type<typeof InboundActor>
 
-/** A message a human addressed to the bot. */
+/**
+ * A message a human wrote where the bot can see it.
+ *
+ * Not necessarily one addressed to it: a connector also reports the messages it can read that
+ * mention nobody, because in a conversation the bot opened the next message is still part of the
+ * exchange. `mentionsBot` is the whole difference, and what the host does with a `false` is a host
+ * decision — see `apps/chat-bot/src/relay/conversation.ts`.
+ */
 export const InboundMessage = Schema.Struct({
 	type: Schema.Literal("message"),
 	connector: ChatConnectorId,

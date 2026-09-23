@@ -7,6 +7,7 @@ import {
 	resolveAwsResourceName,
 	resolveCollectorEndpoint,
 	resolveCollectorTaskSize,
+	resolveElectricDbPoolSize,
 	resolveIngestCidrBlock,
 	resolveIngestDesiredCount,
 	resolveIngestNamespaceName,
@@ -141,5 +142,12 @@ describe("parseIngestFleets", () => {
 
 	it("rejects a fleet it does not know rather than deploying neither", () => {
 		expect(() => parseIngestFleets("ec2,metal")).toThrow(/metal/)
+	})
+})
+
+describe("resolveElectricDbPoolSize", () => {
+	it("fits eu into its 25-connection cluster and leaves us on Electric's default", () => {
+		expect(resolveElectricDbPoolSize("eu")).toBe(4)
+		expect(resolveElectricDbPoolSize("us")).toBeUndefined()
 	})
 })

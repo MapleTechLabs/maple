@@ -13,6 +13,8 @@
 import { buttonVariants } from "@maple/ui/components/ui/button";
 import * as m from "../paraglide/messages.js";
 import { HeroCta } from "./HeroCta";
+import PixelIcon from "./icons/PixelIcon.astro";
+import RegionChip from "./RegionChip.astro";
 import { getOffer, money, rateBlock, rateLabel, volume, type Allotment } from "../lib/pricing-offer";
 
 const offer = await getOffer();
@@ -90,6 +92,17 @@ const RETENTION_DAYS = 30;
 					</li>
 				))
 			}
+			{/* Residency is the fourth thing EU buyers scan for; /eu is English-only, so a bare href. */}
+			<li>
+				<a href="/eu" class="inline-flex items-center gap-2 underline decoration-border underline-offset-4 transition-colors hover:decoration-primary">
+					<PixelIcon name="earth" class="h-3.5 w-3.5 shrink-0 text-primary" />
+					{m.pricing_region_claim()}
+					<span class="inline-flex gap-1 no-underline">
+						<RegionChip region="us" />
+						<RegionChip region="eu" />
+					</span>
+				</a>
+			</li>
 		</ul>
 
 		<div class="mt-8 flex flex-wrap items-center gap-3">

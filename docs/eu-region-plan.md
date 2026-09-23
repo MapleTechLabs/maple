@@ -41,12 +41,18 @@ there is no per-org routing anywhere, because each instance knows exactly one re
 | AI features | OpenRouter, Workers AI | off |
 | Maple self-telemetry | US internal org | EU internal org, in `maple_eu` |
 | Repository sandbox (`apps/sandbox`) | prd Worker, US | per instance, EU Worker |
-| Landing, billing, GitHub app | shared | shared, no customer data |
+| Landing, billing | shared | shared, no customer data |
+| GitHub App, Slack app | US apps | EU apps of their own, see Phase 0 step 8 |
+| OAuth clients (Cloudflare, PlanetScale, Hazel) | US redirect URIs | same clients, EU redirect URIs added |
+| Scraper (Railway) | US service | EU service of its own |
 
-The landing site stays one site. Billing metadata and the GitHub app installation are not
-customer telemetry. The sandbox clones the customer's repository, so it deploys per instance from
-day one: `stageDeploysSandbox` already gates it to prd, and the EU deploy is prd with
-`MAPLE_REGION=eu`, so the only work is the region-suffixed name. Cloudflare's Sandbox container
+The landing site stays one site. Billing metadata is not customer telemetry. The GitHub App was
+first listed here as shared, which does not work: an App has one webhook URL and one post-install
+callback, both on `api.maple.dev`, so an EU install lands on the US API (whose database has no
+connect session for it) and EU repositories' push and pull request events are delivered to the US.
+
+The sandbox clones the customer's repository, so it deploys per instance from day one:
+`stageDeploysSandbox` already gates it to prd, and the EU deploy is prd with `MAPLE_REGION=eu`, so the only work is the region-suffixed name. Cloudflare's Sandbox container
 has no jurisdiction setting, so it sits under the same best-effort placement as the Workers.
 
 ## Why `app.eu.maple.dev` and not a shared app
@@ -88,6 +94,39 @@ across regions because there is no routing.
 7. **Clerk**: one instance. Add `app.eu.maple.dev` as a satellite domain of the production
    instance. Staff names and emails stay in the US; the DPA lists Clerk as a US subprocessor for
    account data only.
+8. **Integrations.** Every callback Maple builds comes from the API's own origin, so the EU
+   instance already asks providers to return to `api.eu.maple.dev`. What differs is what each
+   provider has registered, plus one service that only the US runs:
+    - **Per-request redirect URI** (the client sends it, the provider checks it against an
+      allowlist). The US client is reusable; add the EU URL to its allowlist:
+        - Cloudflare OAuth: `https://api.eu.maple.dev/api/integrations/cloudflare/callback`
+        - PlanetScale OAuth: `https://api.eu.maple.dev/api/integrations/planetscale/callback`
+        - Hazel OAuth: `https://api.eu.maple.dev/api/integrations/hazel/callback`
+    - **One URL per app** (registered on the app, not sent per request). These need an EU app:
+        - **GitHub App.** Register "Maple EU" per `docs/github-app-setup.md` with webhook
+          `https://api.eu.maple.dev/api/integrations/github/webhook` and callback
+          `https://api.eu.maple.dev/api/integrations/github/callback`, then replace all six
+          `GITHUB_APP_*` values in `prod-eu`. A repository can then be installed on both Apps, one
+          per instance, which is the point.
+        - **Slack app.** Redirect URLs alone would allow a shared app, but its Events URL goes to
+          the one `slack-agent`, which resolves workspaces against the US API and answers an EU
+          workspace with "not connected". An EU app with no event subscription (AI is off there)
+          keeps alert delivery and nothing else; redirect
+          `https://api.eu.maple.dev/oauth/slack/callback`, new `SLACK_CLIENT_ID`/`SECRET` in
+          `prod-eu`.
+        - **Discord** (not configured on `prod-eu` yet). The install is the bot invite, and a bot
+          token opens a Gateway session that receives every mention, so a shared application would
+          have both instances answer. Create an EU application, register
+          `https://api.eu.maple.dev/oauth/chat/discord/callback` on it, and set its
+          `MAPLE_DISCORD_CLIENT_ID`, `MAPLE_DISCORD_CLIENT_SECRET` and `MAPLE_DISCORD_BOT_TOKEN`
+          in `prod-eu` together.
+    - **Scraper.** `apps/scraper` is one Railway service polling the US API's target list, so EU
+      Prometheus and PlanetScale metrics targets are never scraped. Deploy a second service in an
+      EU Railway region with `MAPLE_API_URL=https://api.eu.maple.dev`,
+      `MAPLE_INGEST_URL=https://ingest.eu.maple.dev` and `prod-eu`'s `SD_INTERNAL_TOKEN`.
+
+    Until the EU GitHub and Slack apps exist, remove their keys from `prod-eu`: connecting then fails
+    up front with "not configured" instead of sending the user through a flow that cannot finish.
 
 ## Phase 1. The stack honours the region on Cloudflare (built)
 

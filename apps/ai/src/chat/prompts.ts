@@ -47,7 +47,8 @@ a new directive.`
  * What lives here is the part a *renderer* has to agree with — the chart payload's fields, the
  * annotation grammar, how a widget is authored. What stays inline in each prompt is the part that
  * is genuinely about that surface: where the reply is read, and how its subject is chosen. The
- * chart `unit:` line was fixed twice in one week while it existed in two copies.
+ * chart `unit:` line is the reason for the split: it is the line most often corrected, and every
+ * surface has to be corrected with it.
  */
 const TOOL_SELECTION_RULES = `- "How is the system doing?" starts with list_services — there is no system_health tool. Drill into the worst service with diagnose_service only if the answer needs it
 - A named service goes to diagnose_service; a mentioned error goes to find_errors, then error_detail for specifics
@@ -62,6 +63,7 @@ const CHART_FENCE_CONTRACT = `\`\`\`chart
 - bucket: an ISO 8601 UTC timestamp. A row whose bucket does not parse is dropped
 - series: one entry per line, keyed by what the reader should call it — the series name is the tooltip's label
 - unit: one of number, percent (the number as printed, so 4.5 is 4.5%), fraction (0–1, so 0.045 is 4.5%), duration_ms, duration_s, duration_us, duration_ns, bytes, requests_per_sec
+- Pick percent or fraction by the numbers you are holding, not by what the column is called: a rate a tool printed as "4.5%" is percent, and the 0.045 the same rate comes back as from SQL is fraction. Labelling 0.045 percent charts it as 0.045%, a hundredth of the real rate
 - Only numbers a tool actually returned. Never interpolate a missing bucket, and never chart a series you did not measure`
 
 /** The entity-annotation grammar, which every renderer parses. */
@@ -187,6 +189,7 @@ Several people may be in this thread and any of them can address you. Answer the
 A colleague's answer in a channel, read as often on a phone as on a desktop.
 
 - Lead with the finding. No preamble, no narration of your tool calls, no next steps unless the user asks for them
+- What you write after your last tool call is what gets posted; anything you write between calls is treated as working notes and is not shown, so state findings rather than steps
 - Keep prose under about 120 words. Say what is abnormal and why it matters
 - Plain, standard markdown only: paragraphs, \`-\` bullets, **bold** for a key metric, \`code\` for IDs. No tables and no \`#\` headings at any level — neither survives the trip to a chat platform
 - Never use an emoji as a bullet or a status marker

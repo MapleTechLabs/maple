@@ -1,0 +1,261 @@
+---
+/**
+ * /eu: Maple Cloud's EU region.
+ *
+ * Every claim here has to survive a reader who opens the DPA next. It names the
+ * city, says what is chosen once, and lists what the two regions still share.
+ * Competitors that print "your data never leaves the EU" and then admit transfers
+ * in their privacy policy are the pattern this page avoids.
+ *
+ * English-only, like /about: the facts are the same in every locale and the
+ * searches that land here are in English.
+ */
+import Layout from "../layouts/Layout.astro";
+import Nav from "../components/Nav.astro";
+import SeoHead from "../components/SeoHead.astro";
+import FAQ from "../components/FAQ.astro";
+import Footer from "../components/Footer.astro";
+import PixelIcon from "../components/icons/PixelIcon.astro";
+import RegionChip from "../components/RegionChip.astro";
+import { APP_SIGN_UP_URL } from "../lib/app-urls";
+import { getOffer, money } from "../lib/pricing-offer";
+import { EU_APP_URL, EU_INGEST_URL, US_APP_URL, US_INGEST_URL, euFaqs } from "../lib/eu-region";
+
+const offer = await getOffer();
+const price = money(offer.price);
+
+const pageTitle = "EU hosting | Maple observability in Frankfurt";
+const pageDescription =
+	"Run Maple Cloud in the European Union. Traces, logs, metrics and session replays are stored and processed in Frankfurt, Germany, at the same price as the US region.";
+
+const facts = [
+	{
+		label: "Where",
+		icon: "location" as const,
+		title: "Frankfurt, Germany",
+		body: "Ingest, storage, queries and alerting for an EU organization run in the EU region, on infrastructure in Frankfurt.",
+	},
+	{
+		label: "How",
+		icon: "layers" as const,
+		title: "A separate instance",
+		body: "The EU region has its own database, its own warehouse, its own ingest endpoint and its own dashboard. It is not a view onto the US region.",
+	},
+	{
+		label: "Price",
+		icon: "tag" as const,
+		title: "Same plan, same rates",
+		body: `${price}/month with the same included volume and the same per-GB rate as the US region. There is no EU surcharge.`,
+	},
+	{
+		label: "When",
+		icon: "lock" as const,
+		title: "Chosen once",
+		body: "The region is set when your organization is created and stays with it. Pick it before you send any data.",
+	},
+];
+
+const shared = [
+	{
+		title: "Your login",
+		icon: "user" as const,
+		body: "One Maple account signs in to both regions. Organizations in the EU open in the EU dashboard.",
+	},
+	{
+		title: "Billing",
+		icon: "credit-card" as const,
+		body: "Plans and invoices run through one billing system. It holds your plan and usage totals, not telemetry.",
+	},
+	{
+		title: "This website and the docs",
+		icon: "globe" as const,
+		body: "maple.dev is one site for everyone. It never sees the data you send to Maple.",
+	},
+];
+
+const steps = [
+	{
+		title: "Sign up",
+		icon: "user" as const,
+		body: "Create an account the same way as everyone else. The first onboarding step asks where your data should live.",
+	},
+	{
+		title: "Choose European Union",
+		icon: "earth" as const,
+		body: "Onboarding moves to the EU dashboard and continues there. The choice is stored on the organization.",
+	},
+	{
+		title: "Send to the EU endpoint",
+		icon: "paper-plane" as const,
+		body: "Point your OpenTelemetry exporters at the EU ingest endpoint with an ingest key from the EU dashboard.",
+	},
+];
+
+const exporter = [
+	`export OTEL_EXPORTER_OTLP_ENDPOINT="${EU_INGEST_URL}"`,
+	`export OTEL_EXPORTER_OTLP_HEADERS="Authorization=Bearer YOUR_INGEST_KEY"`,
+].join("\n");
+
+const host = (url: string) => url.replace("https://", "");
+
+const regionRows = [
+	{ label: "Dashboard", icon: "dashboard" as const, us: host(US_APP_URL), eu: host(EU_APP_URL), mono: true },
+	{ label: "Ingest", icon: "paper-plane" as const, us: host(US_INGEST_URL), eu: host(EU_INGEST_URL), mono: true },
+	{ label: "Location", icon: "location" as const, us: "United States", eu: "Frankfurt, Germany", mono: false },
+	{ label: "Price", icon: "tag" as const, us: `${price}/month`, eu: `${price}/month`, mono: false },
+];
+
+const faqs = euFaqs();
+---
+
+<Layout title={pageTitle} description={pageDescription} alternates={["en"]} mdHref="/eu.md">
+	<SeoHead title={pageTitle} description={pageDescription} type="SoftwareApplication" />
+
+	<Nav />
+
+	<main id="main-content">
+		<section>
+			<div class="mx-auto max-w-6xl px-6 pt-24 pb-20 md:pt-32 md:pb-28">
+				<p class="flex items-center gap-2.5 text-[10px] font-medium uppercase tracking-[0.18em] text-fg-muted">
+					<PixelIcon name="earth" class="size-3.5 text-primary" />EU hosting
+				</p>
+				<h1
+					class="mt-6 max-w-[18ch] text-balance font-display text-4xl font-semibold leading-[1.04] tracking-[-0.025em] text-fg sm:text-5xl md:text-6xl"
+				>
+					Maple Cloud, hosted in the EU.
+				</h1>
+				<p class="mt-6 max-w-[58ch] text-base leading-relaxed text-fg-muted">
+					Choose the European Union region when you create your organization. Your traces, logs, metrics
+					and session replays are stored and processed in Frankfurt, Germany. Same plan, same price.
+				</p>
+				<div class="mt-8 flex flex-wrap items-center gap-3">
+					<a
+						href={APP_SIGN_UP_URL}
+						data-track="cta_click"
+						data-track-location="eu_hero"
+						class="inline-flex h-10 items-center justify-center rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+					>
+						Start in the EU
+					</a>
+					<a
+						href="/docs/instrumentation#data-regions"
+						class="inline-flex h-10 items-center justify-center rounded-lg border border-border px-4 text-sm font-medium text-fg transition-colors hover:bg-bg-elevated"
+					>
+						Read the docs
+					</a>
+				</div>
+
+				<dl class="mt-16 grid gap-px overflow-hidden rounded-xl border border-border bg-border sm:grid-cols-2 lg:grid-cols-4">
+					{
+						facts.map((fact) => (
+							<div class="flex flex-col gap-2 bg-bg p-6">
+								<dt class="flex items-center gap-2 text-[10px] uppercase tracking-[0.18em] text-fg-muted">
+									<PixelIcon name={fact.icon} class="size-4 text-primary" />
+									{fact.label}
+								</dt>
+								<dd class="text-sm font-medium text-fg">{fact.title}</dd>
+								<dd class="text-[13px] leading-relaxed text-fg-muted">{fact.body}</dd>
+							</div>
+						))
+					}
+				</dl>
+			</div>
+		</section>
+
+		<section class="border-t border-border">
+			<div class="mx-auto max-w-6xl px-6 py-24 md:py-32">
+				<div class="grid items-start gap-12 lg:grid-cols-[minmax(0,1fr)_minmax(0,480px)] lg:gap-16">
+					<div>
+						<p class="text-[10px] font-medium uppercase tracking-[0.18em] text-fg-muted">Getting started</p>
+						<h2 class="mt-4 font-display text-3xl font-medium leading-[1.06] tracking-[-0.02em] text-fg md:text-4xl">
+							Three steps to an EU organization
+						</h2>
+						<ol class="mt-10 divide-y divide-border border-y border-border">
+							{
+								steps.map((step) => (
+									<li class="grid grid-cols-[2.5rem_1fr] items-start gap-3 py-5">
+										<span class="flex size-9 items-center justify-center rounded-lg border border-border bg-bg-elevated text-primary">
+											<PixelIcon name={step.icon} class="size-4" />
+										</span>
+										<div>
+											<p class="text-sm font-medium text-fg">{step.title}</p>
+											<p class="mt-1 text-[13px] leading-relaxed text-fg-muted">{step.body}</p>
+										</div>
+									</li>
+								))
+							}
+						</ol>
+					</div>
+
+					<div class="overflow-hidden rounded-xl border border-border bg-bg-elevated">
+						<div class="overflow-x-auto">
+						<table class="w-full min-w-[26rem] border-collapse text-left text-[13px]">
+							<thead>
+								<tr class="border-b border-border">
+									<th class="px-5 py-3 font-normal"><span class="sr-only">Region detail</span></th>
+									<th class="px-3 py-3 font-normal"><span class="flex items-center gap-2 text-xs text-fg-muted"><RegionChip region="us" />United States</span></th>
+									<th class="px-3 py-3 font-normal"><span class="flex items-center gap-2 text-xs text-fg"><RegionChip region="eu" active />European Union</span></th>
+								</tr>
+							</thead>
+							<tbody class="divide-y divide-border">
+								{
+									regionRows.map((row) => (
+										<tr>
+											<th scope="row" class="px-5 py-3 font-normal">
+												<span class="flex items-center gap-2 text-xs text-fg-muted">
+													<PixelIcon name={row.icon} class="size-3.5" />
+													{row.label}
+												</span>
+											</th>
+											<td class:list={["px-3 py-3 text-fg-muted", row.mono && "font-mono text-xs"]}>{row.us}</td>
+											<td class:list={["px-3 py-3 text-fg", row.mono && "font-mono text-xs"]}>{row.eu}</td>
+										</tr>
+									))
+								}
+							</tbody>
+						</table>
+						</div>
+						<pre class="m-0 overflow-x-auto whitespace-pre border-t border-border px-5 py-4 font-mono text-xs leading-[1.7] text-fg"><code>{exporter}</code></pre>
+					</div>
+				</div>
+			</div>
+		</section>
+
+		<section class="border-t border-border">
+			<div class="mx-auto max-w-6xl px-6 py-24 md:py-32">
+				<div class="mb-12 max-w-2xl">
+					<p class="text-[10px] font-medium uppercase tracking-[0.18em] text-fg-muted">What is shared</p>
+					<h2 class="mt-4 font-display text-3xl font-medium leading-[1.06] tracking-[-0.02em] text-fg md:text-4xl">
+						What the two regions have in common
+					</h2>
+					<p class="mt-5 text-base leading-relaxed text-fg-muted">
+						Your telemetry is stored in the region you chose. A few things around it are run once for both
+						regions, and none of them hold the data you send.
+					</p>
+				</div>
+				<ul class="grid gap-px overflow-hidden rounded-xl border border-border bg-border md:grid-cols-3" role="list">
+					{
+						shared.map((item) => (
+							<li class="bg-bg p-6">
+								<span class="flex items-center gap-2 text-sm font-medium text-fg">
+									<PixelIcon name={item.icon} class="size-4 text-primary" />
+									{item.title}
+								</span>
+								<span class="mt-2 block text-[13px] leading-relaxed text-fg-muted">{item.body}</span>
+							</li>
+						))
+					}
+				</ul>
+				<p class="mt-8 max-w-2xl text-sm leading-relaxed text-fg-muted">
+					Need the data inside your own network instead? Maple's source is on GitHub and
+					<a href="https://github.com/MapleTechLabs/maple" target="_blank" rel="noopener noreferrer" class="text-fg underline underline-offset-4 transition-colors hover:text-primary">runs on your own infrastructure</a>.
+				</p>
+			</div>
+		</section>
+
+		<FAQ items={faqs} />
+	</main>
+
+	<Footer />
+</Layout>
+

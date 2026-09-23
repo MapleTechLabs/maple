@@ -9,6 +9,7 @@ import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
 import { recordApiDenial } from "@maple/backend/services/auth/audit-denial"
 import { withAuditedRead } from "@maple/backend/services/audit/audit-access"
 import { Env } from "@maple/backend/platform/Env"
+import { OrganizationRegionService } from "@maple/backend/services/org/OrganizationRegionService"
 
 const decodeRoleNameSync = Schema.decodeUnknownSync(RoleName)
 const apiKeyDefaultRoles = [decodeRoleNameSync("root")] as const
@@ -27,6 +28,7 @@ export const ApiAuthorizationLayer = Layer.effect(
 		const env = yield* Env
 		const apiKeys = yield* ApiKeysService
 		const audit = yield* AuditLogService
+		const regions = yield* OrganizationRegionService
 		const resolveTenant = makeResolveTenant(env)
 
 		return CurrentTenant.Authorization.of({
@@ -105,6 +107,8 @@ export const ApiAuthorizationLayer = Layer.effect(
 
 					const tenant = yield* resolveTenant(request.headers)
 					yield* annotateAuthSpan("session", { orgId: tenant.orgId, userId: tenant.userId })
+					// API keys are minted per instance; only a session can name an org from elsewhere.
+					yield* regions.ensureServedHere(tenant.orgId)
 					return yield* httpEffect.pipe(
 						Effect.provideService(CurrentTenant.Context, new CurrentTenant.TenantSchema(tenant)),
 						Effect.provideService(CurrentAuditActor, { type: "user", source: "dashboard" }),
