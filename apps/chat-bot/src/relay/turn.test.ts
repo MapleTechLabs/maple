@@ -31,6 +31,8 @@ import {
 	type InboundWorkspaceRemoved,
 } from "@maple/chat-platform"
 import { Context, Duration, Effect, Logger, Option, References, Schema, Tracer } from "effect"
+import { TestClock } from "effect/testing"
+import { FOLLOW_UP_WINDOW_MS } from "./conversation.ts"
 import { relayInboundEvent, WorkspaceLookupFailed, type RelayPorts } from "./turn.ts"
 
 const TESTCHAT = chatConnectorId("testchat")
@@ -610,17 +612,27 @@ describe("relaying a message that mentioned nobody", () => {
 		mentionsBot: false,
 	}
 
-	/** A session that answered a minute ago, which is what makes the conversation live. */
-	const answered: ReadonlyArray<ChatMessage> = [
+	/**
+	 * When these turns are taken. The relay reads the clock through `Clock`, so the transcript's
+	 * instants and "now" have to come from the same one — against the wall clock a stale
+	 * conversation reads as a future one and every window check passes for the wrong reason.
+	 */
+	const NOW = Date.parse("2026-09-23T12:00:00.000Z")
+
+	/** A session whose last turn was `ago` milliseconds before NOW. */
+	const spokeAt = (ago: number): ReadonlyArray<ChatMessage> => [
 		{
 			id: "a1",
 			role: "assistant",
 			text: "Checkout is slow.",
 			toolCalls: [],
-			createdAt: Date.now() - 60_000,
+			createdAt: NOW - ago,
 			startSeq: 2,
 		},
 	]
+
+	/** A minute ago, which is what makes the conversation live. */
+	const answered = spokeAt(60_000)
 
 	it.effect("answers it in a conversation the bot opened and spoke in recently", () =>
 		Effect.gen(function* () {
@@ -628,10 +640,14 @@ describe("relaying a message that mentioned nobody", () => {
 			const agent = session([silentTurn], { transcript: answered })
 			const deployment = host(platform.outbound, agent.stub, { opened: [CONVERSATION] })
 
+			yield* TestClock.setTime(NOW)
 			yield* relayInboundEvent(followUp, deployment.ports)
 
 			expect(agent.turns).toHaveLength(1)
 			expect(agent.turns[0]?.text).toContain("and the payments call?")
+			// The turn read the clock the test set, which is what makes the window assertions mean
+			// anything: against the wall clock they would pass whatever the transcript said.
+			expect(agent.turns[0]?.text).toContain("The time is 2026-09-23T12:00:00Z.")
 			// Nothing was opened for it: an unaddressed message continues a conversation, never starts
 			// one.
 			expect(platform.threads).toEqual([])
@@ -649,6 +665,7 @@ describe("relaying a message that mentioned nobody", () => {
 			const agent = session([silentTurn], { transcript: answered })
 			const deployment = host(platform.outbound, agent.stub, { opened: [CONVERSATION] })
 
+			yield* TestClock.setTime(NOW)
 			yield* relayInboundEvent(followUp, deployment.ports)
 
 			const text = agent.turns[0]?.text ?? ""
@@ -660,12 +677,29 @@ describe("relaying a message that mentioned nobody", () => {
 		}),
 	)
 
+	it.effect("stops answering a conversation that has been quiet for over a day", () =>
+		Effect.gen(function* () {
+			const platform = chat()
+			const agent = session([silentTurn], { transcript: spokeAt(FOLLOW_UP_WINDOW_MS + 1) })
+			const deployment = host(platform.outbound, agent.stub, { opened: [CONVERSATION] })
+
+			yield* TestClock.setTime(NOW)
+			yield* relayInboundEvent(followUp, deployment.ports)
+
+			expect(agent.turns).toEqual([])
+			expect(platform.calls).toEqual([])
+			// It reached the session, which is the half of the rule this one is about.
+			expect(deployment.lookups.count).toBe(1)
+		}),
+	)
+
 	it.effect("leaves a conversation the bot did not open completely alone", () =>
 		Effect.gen(function* () {
 			const platform = chat()
 			const agent = session([silentTurn], { transcript: answered })
 			const deployment = host(platform.outbound, agent.stub)
 
+			yield* TestClock.setTime(NOW)
 			yield* relayInboundEvent(followUp, deployment.ports)
 
 			expect(agent.turns).toEqual([])
@@ -691,6 +725,7 @@ describe("relaying a message that mentioned nobody", () => {
 			}
 			const deployment = host(platform.outbound, unreadable, { opened: [CONVERSATION] })
 
+			yield* TestClock.setTime(NOW)
 			yield* relayInboundEvent(followUp, deployment.ports)
 
 			expect(agent.turns).toEqual([])
@@ -720,6 +755,7 @@ describe("relaying a message that mentioned nobody", () => {
 				},
 			)
 
+			yield* TestClock.setTime(NOW)
 			yield* relayInboundEvent(followUp, unlinked.ports)
 			yield* relayInboundEvent(followUp, busy.ports)
 

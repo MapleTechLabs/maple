@@ -27,10 +27,10 @@ Worker runs.
    connector never touches `process.env`.
 2. **Bot tab → Privileged Gateway Intents → Message Content: ON. This one is required** — the
    connector always identifies with `GUILDS | GUILD_MESSAGES | MESSAGE_CONTENT`, and a gateway that
-   asks for an intent the application has not been granted is closed with 4014. Under 100 servers
-   it is a toggle; above that Discord requires verification and approval for the intent. Leave the
-   other two (Presence, Server Members) off — this connector asks for neither. What the intent buys
-   and what flipping it costs are below.
+   asks for an intent the application has not been granted is closed with 4014. Below 10,000 users
+   who can see the app it is a toggle; above that Discord reviews it. Leave the other two (Presence,
+   Server Members) off — this connector asks for neither. What the intent buys and what flipping it
+   costs are below.
 3. **Bot tab → Requires OAuth2 Code Grant: ON.** An install can then only complete through the code
    exchange the install half performs.
 4. **OAuth2 tab → Redirects.** Add `https://api.maple.dev/oauth/chat/discord/callback`, and the
@@ -79,10 +79,11 @@ go with it:
 - **answering a follow-up that did not mention the bot** in a thread Maple opened. Without the
   intent the connector never sees those messages at all.
 
-**Enabling it:** Bot tab → Privileged Gateway Intents → Message Content. Under 100 servers this is
-a toggle you own; above that Discord requires verification and approval for the intent, so apply
-before you grow into it. Once granted it stays granted — this is a one-time setup step, not
-something a deployment carries.
+**Enabling it:** Bot tab → Privileged Gateway Intents → Message Content. While fewer than **10,000
+users can see the app** across the servers it is in, this is a toggle you own; past that Discord
+reviews the app for continued access, and **asks you to reapply once a year** — so the grant is a
+standing thing to keep, not a box ticked once. It is still the application's setting rather than a
+deployment's: nothing in the env turns this on or off.
 
 **Flipping it costs about a minute of bot.** Discord closes every open gateway connection when the
 application's intents change, and identifying without the grant is close code **4014**, which this
