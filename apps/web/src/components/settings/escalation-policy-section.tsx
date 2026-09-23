@@ -28,9 +28,8 @@ import {
 	AlertMultiSegmentedSelect,
 	type AlertSegmentedOption,
 } from "@/components/alerts/alert-segmented-select"
-import { ProviderLogo } from "@/components/alerts/destination-provider"
+import { destinationProvider, ProviderLogo } from "@/components/alerts/destination-provider"
 import { SeverityBadge, SEVERITY_ORDER } from "@/components/errors/severity-badge"
-import { destinationTypeLabels } from "@/lib/alerts/form-utils"
 
 const CONFIDENCE_ANY = "any" as const
 
@@ -174,12 +173,14 @@ export function EscalationPolicySection({ isAdmin }: { isAdmin: boolean }) {
 						}
 						const destinationOptions = response.destinations.map((d) => ({
 							value: d.id,
-							icon: <ProviderLogo type={d.type} size={24} bare />,
+							icon: (
+								<ProviderLogo type={d.type} chatConnector={d.chatConnector} size={24} bare />
+							),
 							label: (
 								<span className="flex items-center gap-2">
 									<span className="font-medium">{d.name}</span>
 									<span className="text-muted-foreground text-xs">
-										{destinationTypeLabels[d.type]}
+										{destinationProvider(d).label}
 									</span>
 								</span>
 							),

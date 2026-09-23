@@ -244,6 +244,39 @@ describe("telegram destination params", () => {
 	})
 })
 
+describe("chat destination params", () => {
+	const WORKSPACE = "11111111-1111-4111-8111-111111111111"
+
+	it("names the linked workspace and the picked channel, never the connector", () => {
+		const params = buildDestinationCreateParamsV2({
+			...defaultDestinationForm("chat"),
+			name: " Incidents ",
+			chatWorkspaceId: WORKSPACE,
+			chatConnector: "testchat",
+			chatChannelId: "channel-1",
+			chatChannelName: "incidents",
+		})
+		expect(params).toEqual({
+			type: "chat",
+			name: "Incidents",
+			enabled: true,
+			workspace_id: WORKSPACE,
+			channel_id: "channel-1",
+			channel_name: "incidents",
+		})
+	})
+
+	it("keeps the stored channel on update until another is picked", () => {
+		const params = buildDestinationUpdateParamsV2({
+			...defaultDestinationForm("chat"),
+			name: "Renamed",
+			chatWorkspaceId: WORKSPACE,
+			chatChannelName: "incidents",
+		})
+		expect(params).toEqual({ type: "chat", enabled: true, name: "Renamed" })
+	})
+})
+
 describe("raw SQL alert query validation", () => {
 	it("recognizes explicit value aliases and value columns", () => {
 		expect(rawSqlHasValueColumn("SELECT count() AS value FROM traces WHERE $__orgFilter")).toBe(true)

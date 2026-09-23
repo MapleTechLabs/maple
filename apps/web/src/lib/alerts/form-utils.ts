@@ -10,6 +10,7 @@ import {
 	AlertRulePreviewPoint,
 	AlertRulePreviewResponse,
 	AlertRulePreviewSeries,
+	ChatWorkspaceId,
 	HazelChannelId,
 	HazelOrganizationId,
 	IsoDateTimeString,
@@ -43,6 +44,7 @@ import {
 import { formatErrorRate, formatLatency, formatNumber } from "@maple/ui/lib/format"
 
 const asHazelOrganizationId = Schema.decodeUnknownSync(HazelOrganizationId)
+const asChatWorkspaceId = Schema.decodeUnknownSync(ChatWorkspaceId)
 const asHazelChannelId = Schema.decodeUnknownSync(HazelChannelId)
 const asUserId = Schema.decodeUnknownSync(UserId)
 
@@ -435,6 +437,14 @@ export type DestinationFormState = {
 	hazelChannelName: string
 	/** Selected workspace-member recipients (email type only). */
 	memberUserIds: string[]
+	/**
+	 * Chat connector destination: the linked workspace (fixed once created), the
+	 * connector that owns it (for its mark), and the channel picked from it.
+	 */
+	chatWorkspaceId: string
+	chatConnector: string
+	chatChannelId: string
+	chatChannelName: string
 }
 
 export const MAX_EMAIL_MEMBER_RECIPIENTS = 10
@@ -459,6 +469,10 @@ export function defaultDestinationForm(type: AlertDestinationType = "slack-bot")
 		hazelChannelId: "",
 		hazelChannelName: "",
 		memberUserIds: [],
+		chatWorkspaceId: "",
+		chatConnector: "",
+		chatChannelId: "",
+		chatChannelName: "",
 	}
 }
 
@@ -486,6 +500,12 @@ export function destinationToFormState(destination: AlertDestinationDocument): D
 		hazelChannelId: "",
 		hazelChannelName: "",
 		memberUserIds: destination.memberUserIds != null ? [...destination.memberUserIds] : [],
+		// Like slack-bot: the stored channel's id isn't returned, its `#name` is.
+		chatWorkspaceId: destination.chatWorkspaceId ?? "",
+		chatConnector: destination.chatConnector ?? "",
+		chatChannelId: "",
+		chatChannelName:
+			destination.type === "chat" ? (destination.channelLabel?.replace(/^#/, "") ?? "") : "",
 	}
 }
 
@@ -554,6 +574,15 @@ export function buildDestinationCreateParamsV2(form: DestinationFormState): V2Al
 				name: form.name.trim(),
 				enabled: form.enabled,
 				member_user_ids: form.memberUserIds.map((userId) => asUserId(userId)),
+			}
+		case "chat":
+			return {
+				type: "chat",
+				name: form.name.trim(),
+				enabled: form.enabled,
+				workspace_id: asChatWorkspaceId(form.chatWorkspaceId),
+				channel_id: form.chatChannelId.trim(),
+				channel_name: form.chatChannelName.trim(),
 			}
 	}
 }
@@ -649,6 +678,18 @@ export function buildDestinationUpdateParamsV2(form: DestinationFormState): V2Al
 						}
 					: undefined),
 			}
+		case "chat": {
+			// Editing keeps the stored channel until a new one is picked.
+			const channelId = form.chatChannelId.trim()
+			return {
+				type: "chat",
+				enabled: form.enabled,
+				...(name ? { name } : undefined),
+				...(channelId
+					? { channel_id: channelId, channel_name: form.chatChannelName.trim() }
+					: undefined),
+			}
+		}
 	}
 }
 
