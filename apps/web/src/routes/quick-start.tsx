@@ -42,8 +42,14 @@ function QuickStartPage() {
 	// no region yet. It is read from the organization, not saved here, because choosing the other
 	// region continues onboarding on that region's dashboard.
 	const orgRegion = useOrganizationRegion()
-	const regionUnknown = isClerkAuthEnabled && hasMultipleRegions && !orgRegion.isLoaded
-	const needsRegion = isClerkAuthEnabled && hasMultipleRegions && orgRegion.isLoaded && orgRegion.open
+	const regionUnknown = isClerkAuthEnabled && !orgRegion.isLoaded
+	// Also asked where this dashboard does not serve the organization even if it knows no other
+	// region: the root sends such an organization here, and skipping the step would bounce it back.
+	const needsRegion =
+		isClerkAuthEnabled &&
+		orgRegion.isLoaded &&
+		orgRegion.open &&
+		(hasMultipleRegions || !orgRegion.servedHere)
 
 	// Billing is asked only once the region is settled: on the EU dashboard an organization without
 	// one still reads as US, and this instance refuses its requests until it chooses.
