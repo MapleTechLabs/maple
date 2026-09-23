@@ -153,7 +153,7 @@ const NO_REVIEW_MESSAGE = "Maple ended this review without a report."
 const NO_REVIEW_ERROR = "no_review: the agent ended its pass without submitting a review; retry"
 
 /**
- * Meter what this turn spent into the org's AI usage, alongside the Slack agent.
+ * Meter what this turn spent into the org's AI usage.
  *
  * **One meter per turn, and this is it.** Two things used to bill the same tokens from different
  * angles: `submit_diagnosis` billed the running total it reports to `InvestigationService`, keyed

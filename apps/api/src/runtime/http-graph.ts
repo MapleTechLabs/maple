@@ -31,7 +31,7 @@ import { HttpSessionReplaysInternalLive } from "@/routes/internal/session-replay
 import { ScraperInternalRouter } from "@/routes/v1/scraper-internal.http"
 import { HttpSessionReplaysLive } from "@/routes/v1/session-replay.http"
 import { ChatCallbackRouter } from "@/routes/v1/chat-integration.http"
-import { SlackCallbackRouter, SlackInternalRouter } from "@/routes/v1/slack-integration.http"
+import { SlackCallbackRouter } from "@/routes/v1/slack-integration.http"
 import { VcsWebhookRouter } from "@/routes/v1/vcs-webhook.http"
 import { AutumnWebhookRouter } from "@/routes/webhooks/autumn.http"
 import { ClerkWebhookRouter } from "@/routes/webhooks/clerk.http"
@@ -210,7 +210,6 @@ const RawRoutes = rawRoutes(
 		IntegrationsCallbackRouter,
 		SlackCallbackRouter,
 		ChatCallbackRouter,
-		SlackInternalRouter,
 		OAuthDiscoveryRouter,
 		PlanetScaleWebhookRouter,
 		ScraperInternalRouter,

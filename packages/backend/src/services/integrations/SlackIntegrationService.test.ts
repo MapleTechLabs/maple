@@ -371,7 +371,7 @@ describe("SlackIntegrationService", () => {
 		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
 
-	it.effect("getStatus + resolveForBot read back an installed workspace", () => {
+	it.effect("getStatus reads back an installed workspace", () => {
 		const testDb = createTestDb(trackedDbs)
 		return Effect.gen(function* () {
 			yield* Effect.promise(() =>
@@ -390,20 +390,6 @@ describe("SlackIntegrationService", () => {
 			assert.strictEqual(status.installed, true)
 			assert.strictEqual(status.teamId, "T0123")
 			assert.strictEqual(status.teamName, "Acme")
-
-			const resolution = yield* slack.resolveForBot("T0123")
-			assert.strictEqual(resolution.orgId, "org_a")
-			assert.strictEqual(resolution.botToken, "xoxb-secret-token")
-			assert.strictEqual(resolution.mapleApiKey, "maple_ak_secret")
-		}).pipe(Effect.provide(makeLayer(testDb)))
-	})
-
-	it.effect("resolveForBot fails for an unknown team", () => {
-		const testDb = createTestDb(trackedDbs)
-		return Effect.gen(function* () {
-			const slack = yield* SlackIntegrationService
-			const error = yield* Effect.flip(slack.resolveForBot("T-unknown"))
-			assert.strictEqual(error._tag, "@maple/http/errors/IntegrationsNotConnectedError")
 		}).pipe(Effect.provide(makeLayer(testDb)))
 	})
 
@@ -433,9 +419,6 @@ describe("SlackIntegrationService", () => {
 
 				const status = yield* slack.getStatus(asOrgId("org_b"))
 				assert.strictEqual(status.installed, false)
-				// resolveForBot skips revoked rows too
-				const error = yield* Effect.flip(slack.resolveForBot("T0999"))
-				assert.strictEqual(error._tag, "@maple/http/errors/IntegrationsNotConnectedError")
 
 				// Slack confirmed the revoke, so both secrets are dropped — a revoked row
 				// must not keep decryptable credentials.
@@ -695,11 +678,12 @@ describe("SlackIntegrationService", () => {
 					WHERE id = 'sw_swap'`,
 				),
 			)
-			const slack = yield* SlackIntegrationService
-			const error = yield* Effect.flip(slack.resolveForBot("T-SWAP"))
-			assert.strictEqual(error._tag, "@maple/http/errors/IntegrationsPersistenceError")
+			const database = yield* Database
+			const error = yield* Effect.flip(
+				resolveSlackBotTokenForDispatch(database, ENCRYPTION_KEY, "org_swap"),
+			)
 			assert.include(error.message, "decrypt")
-		}).pipe(Effect.provide(makeLayer(testDb)))
+		}).pipe(Effect.provide(databaseLayer(testDb)))
 	})
 
 	it.effect("resolveSlackBotTokenForDispatch fails when no active install exists", () => {
@@ -759,9 +743,6 @@ describe("SlackIntegrationService", () => {
 			const database = yield* Database
 			const token = yield* resolveSlackBotTokenForDispatch(database, ENCRYPTION_KEY, "org_a")
 			assert.strictEqual(token, "xoxb-T2")
-
-			const t1Resolve = yield* Effect.flip(slack.resolveForBot("T1"))
-			assert.strictEqual(t1Resolve._tag, "@maple/http/errors/IntegrationsNotConnectedError")
 
 			// The first workspace's minted API key was revoked.
 			const keyRow = yield* Effect.promise(() =>
@@ -824,7 +805,6 @@ describe("SlackIntegrationService", () => {
 				const start1 = yield* slack.startInstall(asOrgId("org_re"), asUserId("user_re"), "https://cb")
 				const first = yield* slack.completeInstall("code_1", stateFromInstallUrl(start1.url))
 				assert.strictEqual(first.updated, false)
-				const before = yield* slack.resolveForBot("T-RE")
 				const firstRow = yield* Effect.promise(() =>
 					queryFirstRow<{ id: string; api_key_id: string; scope: string }>(
 						testDb,
@@ -849,8 +829,8 @@ describe("SlackIntegrationService", () => {
 						"SELECT id, api_key_id, scope, revoked_at FROM slack_workspaces WHERE team_id = 'T-RE'",
 					),
 				)
-				// Same row, same API key — the Slack agent's cached credentials stay
-				// valid through the re-auth (no downtime); only the grant is refreshed.
+				// Same row, same API key — the re-auth keeps the installation's
+				// credentials valid (no downtime); only the grant is refreshed.
 				assert.strictEqual(secondRow?.id, firstRow?.id)
 				assert.strictEqual(secondRow?.api_key_id, firstRow?.api_key_id)
 				assert.strictEqual(secondRow?.scope, "chat:write,reactions:write")
@@ -864,28 +844,30 @@ describe("SlackIntegrationService", () => {
 					),
 				)
 				assert.strictEqual(keyRow?.revoked, false)
-				// And the resolvable plaintext key is byte-for-byte the one from before.
-				const after = yield* slack.resolveForBot("T-RE")
-				assert.strictEqual(after.mapleApiKey, before.mapleApiKey)
-				assert.strictEqual(after.botToken, "xoxb-T-RE")
+				const database = yield* Database
+				const token = yield* resolveSlackBotTokenForDispatch(database, ENCRYPTION_KEY, "org_re")
+				assert.strictEqual(token, "xoxb-T-RE")
 
 				const status = yield* slack.getStatus(asOrgId("org_re"))
 				assert.strictEqual(status.installed, true)
 			}).pipe(
 				Effect.provide(
-					withFetch(
-						testDb,
-						slackApiFetch(OAUTH_URL, (_url, call) =>
-							jsonResponse({
-								ok: true,
-								access_token: "xoxb-T-RE",
-								token_type: "bot",
-								// The re-approval is what grants the newly required scope.
-								scope: call === 0 ? "chat:write" : "chat:write,reactions:write",
-								bot_user_id: "U0BOT",
-								team: { id: "T-RE", name: "ReAuth" },
-							}),
+					Layer.mergeAll(
+						withFetch(
+							testDb,
+							slackApiFetch(OAUTH_URL, (_url, call) =>
+								jsonResponse({
+									ok: true,
+									access_token: "xoxb-T-RE",
+									token_type: "bot",
+									// The re-approval is what grants the newly required scope.
+									scope: call === 0 ? "chat:write" : "chat:write,reactions:write",
+									bot_user_id: "U0BOT",
+									team: { id: "T-RE", name: "ReAuth" },
+								}),
+							),
 						),
+						testDb.layer,
 					),
 				),
 			)

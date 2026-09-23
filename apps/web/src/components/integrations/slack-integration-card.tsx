@@ -128,9 +128,9 @@ function LoadingState() {
 /**
  * First-class Slack connection card: install the Maple Slack app via OAuth (a
  * full-page redirect to Slack's consent screen; on approval Slack redirects back
- * to `/integrations?slack=connected`). Once installed, the bot answers Maple
- * questions in Slack and alert rules can post to channels via a `slack-bot`
- * destination. Install/uninstall are org-admin only — the backend also enforces
+ * to `/integrations?slack=connected`). Once installed, alert rules can post to
+ * channels via a `slack-bot` destination. Asking Maple from Slack is the chat
+ * connector's job (`chat-integration-card.tsx`), a separate Slack app. Install/uninstall are org-admin only — the backend also enforces
  * this, so a non-admin only ever sees a disabled affordance.
  */
 export function SlackIntegrationCard() {
@@ -233,8 +233,8 @@ export function SlackIntegrationCard() {
 				<IntegrationEmptyFeatures>
 					<IntegrationEmptyFeature
 						label="Ask Maple"
-						title="Query and act from Slack"
-						description="Mention the bot to query services, traces, and errors, or create dashboards and other resources."
+						title="A separate chat app"
+						description="To ask Maple questions from Slack, connect the Slack chat integration instead."
 					/>
 					<IntegrationEmptyFeature
 						label="Alert delivery"
@@ -308,8 +308,7 @@ export function SlackIntegrationCard() {
 							</span>
 						</div>
 						<p className="mt-1 text-xs text-muted-foreground">
-							The Maple bot answers questions, creates dashboards and other resources on
-							request, and delivers alerts to channels. Create a Slack (bot) destination on an
+							The Maple bot delivers alerts to channels. Create a Slack (bot) destination on an
 							alert rule to route notifications.
 						</p>
 					</div>

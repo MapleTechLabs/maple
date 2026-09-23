@@ -52,7 +52,6 @@ class TestPlan(unittest.TestCase):
         suites = planner.discover()
         self.assertIn("@maple/backend", [s["name"] for s in suites])
         self.assertNotIn("@maple/ingest", [s["name"] for s in suites])
-        self.assertNotIn("@maple/slack-agent", [s["name"] for s in suites])
         current = planner.plan(suites)
         grown = [{**s, "files": s["files"] * 5} for s in suites]
         future = planner.plan(grown)

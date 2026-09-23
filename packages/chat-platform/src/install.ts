@@ -71,14 +71,15 @@ export interface ChatConnectorSettingsField {
 }
 
 /**
- * Monochrome mark as pure data — a viewBox and the paths to fill with
- * `currentColor`. Data rather than a component so the dashboard can render every
- * connector's icon from one element, and rather than raw SVG markup so nothing
- * injects a document fragment.
+ * A mark as pure data — a viewBox and its paths. A path without a `fill` takes
+ * `currentColor`; a multicolor mark (Slack) gives each path its brand fill, and the
+ * dashboard can still render it monochrome by ignoring them. Data rather than a
+ * component so the dashboard can render every connector's icon from one element,
+ * and rather than raw SVG markup so nothing injects a document fragment.
  */
 export interface ChatConnectorIcon {
 	readonly viewBox: string
-	readonly paths: ReadonlyArray<string>
+	readonly paths: ReadonlyArray<{ readonly d: string; readonly fill?: string }>
 }
 
 /** Everything the dashboard needs to present a connector. Pure data, no runtime. */
