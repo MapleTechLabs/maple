@@ -1,0 +1,100 @@
+name: CodeQL
+
+# Replaces GitHub's default code-scanning setup, which cannot be path-filtered:
+# it ran the Swift analysis on a macOS runner (~10x Linux billing, 20-30 min)
+# for every PR, including the large majority that never touch apps/ios. Swift
+# now runs only when Swift could have changed, plus on the weekly schedule; the
+# other languages are cheap and keep running on every PR.
+#
+# Categories match default setup's (`/language:<lang>`), so alert history
+# carries over. Default setup must stay disabled (repo Settings → Code security)
+# or GitHub rejects this workflow's uploads.
+on:
+    push:
+        branches: [main]
+    pull_request:
+        branches: [main]
+    schedule:
+        - cron: "17 4 * * 1"
+    workflow_dispatch:
+
+concurrency:
+    group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+    cancel-in-progress: true
+
+permissions:
+    contents: read
+
+jobs:
+    changes:
+        name: Detect changes
+        runs-on: ubuntu-latest
+        timeout-minutes: 5
+        outputs:
+            swift: ${{ steps.filter.outputs.swift == 'true' }}
+        steps:
+            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
+
+            - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+              id: filter
+              with:
+                  filters: |
+                      swift:
+                        - 'apps/ios/**'
+                        - '.github/workflows/codeql.yml'
+
+    analyze:
+        name: Analyze (${{ matrix.language }})
+        runs-on: ubuntu-latest
+        timeout-minutes: 30
+        permissions:
+            security-events: write
+            contents: read
+            actions: read
+        strategy:
+            fail-fast: false
+            matrix:
+                include:
+                    - language: actions
+                      build-mode: none
+                    - language: go
+                      build-mode: autobuild
+                    - language: javascript-typescript
+                      build-mode: none
+                    - language: python
+                      build-mode: none
+                    - language: rust
+                      build-mode: none
+        steps:
+            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
+
+            - uses: github/codeql-action/init@d8073367669608af8fbcc5f63dd0a0d52bb90cff # v4
+              with:
+                  languages: ${{ matrix.language }}
+                  build-mode: ${{ matrix.build-mode }}
+
+            - uses: github/codeql-action/analyze@d8073367669608af8fbcc5f63dd0a0d52bb90cff # v4
+              with:
+                  category: /language:${{ matrix.language }}
+
+    swift:
+        name: Analyze (swift)
+        needs: changes
+        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || needs.changes.outputs.swift == 'true'
+        runs-on: macos-latest
+        timeout-minutes: 60
+        permissions:
+            security-events: write
+            contents: read
+            actions: read
+        steps:
+            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
+
+            - uses: github/codeql-action/init@d8073367669608af8fbcc5f63dd0a0d52bb90cff # v4
+              with:
+                  languages: swift
+                  build-mode: autobuild
+
+            - uses: github/codeql-action/analyze@d8073367669608af8fbcc5f63dd0a0d52bb90cff # v4
+              with:
+                  category: /language:swift

@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest"
-import { AlertDeliveryEventId, AlertDestinationId, AlertIncidentId, AlertRuleId } from "@maple/domain/http"
+import { Schema } from "effect"
+import {
+	AlertDeliveryEventId,
+	AlertDestinationId,
+	AlertIncidentId,
+	AlertRuleId,
+	ChatWorkspaceId,
+} from "@maple/domain/http"
 import {
 	buildDestinationCreateParamsV2,
 	buildDestinationUpdateParamsV2,
@@ -241,6 +248,38 @@ describe("telegram destination params", () => {
 			name: "Renamed",
 			chat_id: "-1001234567890",
 		})
+	})
+})
+
+describe("chat destination params", () => {
+	const WORKSPACE = Schema.decodeUnknownSync(ChatWorkspaceId)("11111111-1111-4111-8111-111111111111")
+
+	it("names the linked workspace and the picked channel, never the connector or a name", () => {
+		const params = buildDestinationCreateParamsV2({
+			...defaultDestinationForm("chat"),
+			name: " Incidents ",
+			chatWorkspaceId: WORKSPACE,
+			chatConnector: "testchat",
+			chatChannelId: "channel-1",
+			chatChannelName: "incidents",
+		})
+		expect(params).toEqual({
+			type: "chat",
+			name: "Incidents",
+			enabled: true,
+			workspace_id: WORKSPACE,
+			channel_id: "channel-1",
+		})
+	})
+
+	it("keeps the stored channel on update until another is picked", () => {
+		const params = buildDestinationUpdateParamsV2({
+			...defaultDestinationForm("chat"),
+			name: "Renamed",
+			chatWorkspaceId: WORKSPACE,
+			chatChannelName: "incidents",
+		})
+		expect(params).toEqual({ type: "chat", enabled: true, name: "Renamed" })
 	})
 })
 

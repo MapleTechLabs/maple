@@ -1,5 +1,5 @@
 import type { AlertDestinationDocument } from "@maple/domain/http"
-import { PROVIDERS, ProviderLogo } from "@/components/alerts/destination-provider"
+import { destinationProvider, ProviderLogo } from "@/components/alerts/destination-provider"
 import {
 	AlertWarningIcon,
 	CheckIcon,
@@ -42,7 +42,7 @@ export function DestinationCard({
 	onEdit,
 	onDelete,
 }: DestinationCardProps) {
-	const provider = PROVIDERS[destination.type]
+	const provider = destinationProvider(destination)
 
 	return (
 		<Card
@@ -55,7 +55,11 @@ export function DestinationCard({
 						!destination.enabled && "opacity-60",
 					)}
 				>
-					<ProviderLogo type={destination.type} size={44} />
+					<ProviderLogo
+						type={destination.type}
+						chatConnector={destination.chatConnector}
+						size={44}
+					/>
 
 					<div className="min-w-0 space-y-1.5">
 						<div className="flex flex-wrap items-center gap-2">

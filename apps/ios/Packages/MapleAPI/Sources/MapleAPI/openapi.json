@@ -3309,7 +3309,8 @@
           "hazel-oauth",
           "discord",
           "telegram",
-          "email"
+          "email",
+          "chat"
         ],
         "title": "Alert Destination Type",
         "type": "string"

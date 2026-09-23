@@ -25,6 +25,10 @@ import { resolveSignalDisplay } from "./alert-signal-display"
 import { renderTemplate } from "./alert-templating/renderer"
 import { DEFAULT_BODY_TEMPLATE, DEFAULT_TITLE_TEMPLATE } from "./alert-templating/defaultTemplates"
 
+/** Chat posts must not happen for these destinations. */
+const failingChatPost = () =>
+	Effect.fail(new AlertDeliveryError({ message: "unexpected postChatAlert", destinationType: "chat" }))
+
 const baseContext: TemplateRenderContext = {
 	ruleId: "rule_1" as TemplateRenderContext["ruleId"],
 	ruleName: "Checkout error rate",
@@ -70,6 +74,7 @@ const failingSlackToken = () =>
 
 /** Dispatch deps for non-email destinations — email sends must not happen. */
 const noEmailDeps: DispatchDeps = {
+	postChatAlert: failingChatPost,
 	sendEmail: () =>
 		Effect.fail(new AlertDeliveryError({ message: "unexpected sendEmail", destinationType: "email" })),
 	resolveSlackBotToken: failingSlackToken,
@@ -456,6 +461,7 @@ describe("dispatchDelivery", () => {
 	}
 
 	const slackTokenDeps = (token = "xoxb-test-token"): DispatchDeps => ({
+		postChatAlert: failingChatPost,
 		sendEmail: () =>
 			Effect.fail(
 				new AlertDeliveryError({ message: "unexpected sendEmail", destinationType: "email" }),
@@ -751,6 +757,7 @@ describe("dispatchDelivery", () => {
 				throw new Error("fetch must not be called when token resolution fails")
 			}
 			const deps: DispatchDeps = {
+				postChatAlert: failingChatPost,
 				sendEmail: () =>
 					Effect.fail(
 						new AlertDeliveryError({ message: "unexpected sendEmail", destinationType: "email" }),
@@ -793,6 +800,7 @@ describe("dispatchDelivery", () => {
 		Effect.gen(function* () {
 			const sent: Array<{ to: string; subject: string; html: string }> = []
 			const deps: DispatchDeps = {
+				postChatAlert: failingChatPost,
 				sendEmail: (to, subject, html) =>
 					Effect.sync(() => {
 						sent.push({ to, subject, html })
@@ -825,6 +833,7 @@ describe("dispatchDelivery", () => {
 	it.effect("email: surfaces a send failure as an email delivery error", () =>
 		Effect.gen(function* () {
 			const deps: DispatchDeps = {
+				postChatAlert: failingChatPost,
 				sendEmail: () =>
 					Effect.fail(
 						new AlertDeliveryError({
@@ -849,6 +858,7 @@ describe("dispatchDelivery", () => {
 		Effect.gen(function* () {
 			const sent: string[] = []
 			const deps: DispatchDeps = {
+				postChatAlert: failingChatPost,
 				sendEmail: (to) =>
 					to === "oncall@acme.test"
 						? Effect.fail(
@@ -875,6 +885,7 @@ describe("dispatchDelivery", () => {
 	it.effect("email: fails with the first member error when every member fails", () =>
 		Effect.gen(function* () {
 			const deps: DispatchDeps = {
+				postChatAlert: failingChatPost,
 				sendEmail: () =>
 					Effect.fail(
 						new AlertDeliveryError({

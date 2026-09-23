@@ -5,12 +5,12 @@
  * incident that made it so), which moves every guarantee a reader relies on into this function.
  */
 import { assert, describe, it } from "vitest"
-import { normalizePrReviewSubmission, scorePrReview } from "./pr-review"
+import { mentionsReviewer, normalizePrReviewSubmission, parseReplyCommand, scorePrReview } from "./pr-review"
 
 describe("normalizePrReviewSubmission", () => {
 	it("keeps a finding that names a file and a new-side line", () => {
 		const { report, droppedFindings } = normalizePrReviewSubmission({
-			verdict: "gaps",
+			verdict: "issues",
 			summary: "Adds a route with no span.",
 			findings: [
 				{
@@ -25,7 +25,7 @@ describe("normalizePrReviewSubmission", () => {
 			],
 		})
 		assert.equal(droppedFindings, 0)
-		assert.equal(report.verdict, "gaps")
+		assert.equal(report.verdict, "issues")
 		assert.equal(report.findings.length, 1)
 		const finding = report.findings[0]!
 		assert.equal(finding.path, "src/routes/orders.ts")
@@ -33,6 +33,7 @@ describe("normalizePrReviewSubmission", () => {
 		assert.equal(finding.endLine, 48)
 		// Check ids are audit ids, and the audit spells them upper case.
 		assert.equal(finding.checkId, "SPAN-03")
+		assert.equal(finding.category, "observability")
 		assert.equal(finding.severity, "warn")
 	})
 
@@ -52,11 +53,11 @@ describe("normalizePrReviewSubmission", () => {
 		)
 	})
 
-	it("drops a finding whose check id the audit does not have", () => {
+	it("drops an observability finding whose check id the audit does not have", () => {
 		const { report, droppedFindings } = normalizePrReviewSubmission({
 			findings: [
-				{ path: "src/a.ts", line: 1, title: "no id" },
-				{ path: "src/a.ts", line: 2, checkId: "OBS-7", title: "made up" },
+				{ path: "src/a.ts", line: 1, category: "observability", title: "no id" },
+				{ path: "src/a.ts", line: 2, category: "observability", checkId: "OBS-7", title: "made up" },
 				{ path: "src/a.ts", line: 3, checkId: "ren-dual", title: "kept" },
 			],
 		})
@@ -67,17 +68,57 @@ describe("normalizePrReviewSubmission", () => {
 		)
 	})
 
+	it("keeps a finding outside observability without a check id, and strips a stray one", () => {
+		const { report, droppedFindings } = normalizePrReviewSubmission({
+			findings: [
+				{
+					path: "src/a.ts",
+					line: 1,
+					category: "security",
+					checkId: "SPAN-01",
+					title: "tenant check",
+				},
+				{ path: "src/a.ts", line: 2, title: "off by one" },
+				{ path: "src/a.ts", line: 3, category: "style", title: "unknown category" },
+			],
+		})
+		assert.equal(droppedFindings, 0)
+		assert.deepEqual(
+			report.findings.map((finding) => [finding.category, finding.checkId]),
+			[
+				["security", undefined],
+				["correctness", undefined],
+				["correctness", undefined],
+			],
+		)
+	})
+
+	it("keeps a replacement's indentation and drops its trailing newlines", () => {
+		const { report } = normalizePrReviewSubmission({
+			findings: [
+				{
+					path: "src/a.ts",
+					line: 4,
+					endLine: 5,
+					title: "x",
+					replacement: "\tif (a) {\n\t\treturn b\n\n",
+				},
+			],
+		})
+		assert.equal(report.findings[0]!.replacement, "\tif (a) {\n\t\treturn b")
+	})
+
 	it("derives the verdict from the findings when the model gave none", () => {
 		const gaps = normalizePrReviewSubmission({
 			findings: [{ path: "src/a.ts", checkId: "SPAN-01", line: 1, severity: "warn", title: "gap" }],
 		})
-		assert.equal(gaps.report.verdict, "gaps")
+		assert.equal(gaps.report.verdict, "issues")
 		const infoOnly = normalizePrReviewSubmission({
 			findings: [{ path: "src/a.ts", checkId: "SPAN-01", line: 1, severity: "info", title: "nicety" }],
 		})
-		assert.equal(infoOnly.report.verdict, "instrumented")
+		assert.equal(infoOnly.report.verdict, "clean")
 		const nothing = normalizePrReviewSubmission({})
-		assert.equal(nothing.report.verdict, "instrumented")
+		assert.equal(nothing.report.verdict, "clean")
 	})
 
 	it("keeps a verdict the model did give, and ignores one it made up", () => {
@@ -92,24 +133,24 @@ describe("normalizePrReviewSubmission", () => {
 					{ path: "src/a.ts", checkId: "SPAN-01", line: 1, severity: "critical", title: "x" },
 				],
 			}).report.verdict,
-			"gaps",
+			"issues",
 		)
 	})
 
-	it("forces gaps when the model calls a warned diff instrumented", () => {
+	it("forces issues when the model calls a warned diff clean", () => {
 		const { report } = normalizePrReviewSubmission({
-			verdict: "instrumented",
+			verdict: "clean",
 			findings: [{ path: "src/a.ts", checkId: "SPAN-01", line: 1, severity: "warn", title: "gap" }],
 		})
-		assert.equal(report.verdict, "gaps")
+		assert.equal(report.verdict, "issues")
 	})
 
-	it("does not call notes alone a gap", () => {
+	it("does not call notes alone an issue", () => {
 		const { report } = normalizePrReviewSubmission({
-			verdict: "gaps",
+			verdict: "issues",
 			findings: [{ path: "src/a.ts", checkId: "SPAN-01", line: 1, severity: "info", title: "nicety" }],
 		})
-		assert.equal(report.verdict, "instrumented")
+		assert.equal(report.verdict, "clean")
 	})
 
 	it("falls back to warn for a severity outside the audit's three", () => {
@@ -178,5 +219,43 @@ describe("scorePrReview", () => {
 		assert.equal(scorePrReview(withFindings(["critical"])).grade, "good")
 		assert.equal(scorePrReview(withFindings(["critical", "critical"])).grade, "needs work")
 		assert.deepEqual(scorePrReview(withFindings(Array(6).fill("critical"))), { score: 0, grade: "poor" })
+	})
+})
+
+describe("mentions", () => {
+	it("recognises @maple and the App's login, not look-alikes", () => {
+		assert.isTrue(mentionsReviewer("@maple why?"))
+		assert.isTrue(mentionsReviewer("thanks @MapleLabsApp."))
+		assert.isFalse(mentionsReviewer("@maple-dev please"))
+		assert.isFalse(mentionsReviewer("@maplefoo"))
+		assert.isFalse(mentionsReviewer("mail me at x@maple.dev"))
+		// A quote-reply or a code sample is not a new request.
+		assert.isFalse(mentionsReviewer("> @maple fix the null check\n\nthanks"))
+		assert.isFalse(mentionsReviewer("```\n@maple fix\n```"))
+	})
+
+	it("reads the command from the first word after the mention", () => {
+		assert.deepEqual(parseReplyCommand("@maple review"), { command: "review", text: "@maple review" })
+		assert.equal(parseReplyCommand("hey @maple fix the null check").command, "fix")
+		assert.equal(parseReplyCommand("@maple why a lock here?").command, "ask")
+		// A quoted fix request answered with a question is a question.
+		assert.equal(parseReplyCommand("> @maple fix it\n\n@maple why?").command, "ask")
+		assert.equal(parseReplyCommand("@maple fixture question").command, "ask")
+	})
+})
+
+describe("lenient numbers and booleans", () => {
+	it("reads quoted lines and booleans instead of failing the run", () => {
+		const { report } = normalizePrReviewSubmission({
+			findings: [{ path: "a.ts", line: "12", endLine: "14", title: "x" }],
+			coverage: [{ unit: "GET /x", instrumented: "true" }],
+		})
+		assert.equal(report.findings[0]!.line, 12)
+		assert.equal(report.findings[0]!.endLine, 14)
+		assert.isTrue(report.coverage[0]!.instrumented)
+		assert.lengthOf(
+			normalizePrReviewSubmission({ findings: [{ path: "a.ts", line: "x" }] }).report.findings,
+			0,
+		)
 	})
 })

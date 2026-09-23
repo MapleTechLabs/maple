@@ -133,7 +133,7 @@ type SummaryLineContext = Pick<
  * in the title, because `comparatorBreachPhrase` embeds `<`/`>` comparators
  * that HTML mode would otherwise read as tags.
  */
-const buildSummaryLine = (context: SummaryLineContext, em: (value: string) => string): string => {
+export const buildSummaryLine = (context: SummaryLineContext, em: (value: string) => string): string => {
 	const signal = formatSignalLabel(context)
 	const observed = formatSignalMetric(context.value, signalDisplayOf(context))
 	const window = formatWindow(context.windowMinutes)

@@ -10,13 +10,19 @@ import {
 	GitCommitSha,
 	type PullRequestEventJob,
 	type PullRequestReviewPublication,
+	type PullRequestReviewThread,
+	type VcsSyncJob,
 	PrReviewId,
 	PrReviewReport,
+	PrReviewRepositoryConfig,
 	SubmitPrReviewRequest,
 	VcsRepoUnavailableError,
+	VcsRepositoryId,
 } from "@maple/domain/http"
+import { prReviewFindingEmbeddings, prReviewFindings } from "@maple/db"
 import { WorkerEnvironment } from "@maple/infra/worker-runtime"
 import { Effect, Layer, Option, Schema } from "effect"
+import { Database } from "@maple/backend/platform/DatabaseLive"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
 import {
 	asOrgId,
@@ -32,16 +38,19 @@ import {
 import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
 import { ENABLED_ORGANIZATION_FEATURE_FLAGS } from "@maple/domain/organization-feature-flags"
 import { VcsRepository } from "@maple/backend/services/integrations/vcs/VcsRepository"
+import { VcsSyncQueue } from "@maple/backend/services/integrations/vcs/VcsSyncQueue"
 import {
 	buildPublication,
 	clampSummary,
 	PR_REVIEW_CHECK_NAME,
 	PR_REVIEW_COMMENT_MARKER,
 	PR_REVIEW_DAILY_CEILING,
+	PR_REVIEW_PUSH_DEBOUNCE_SECONDS,
 	PrReviewService,
 	renderCheckSummary,
 	renderSummaryComment,
 } from "./PrReviewService"
+import { FindingEmbedder, type FindingEmbedderApi, PrReviewEmbeddingError } from "./FindingEmbedder"
 
 const trackedDbs: TestDb[] = []
 afterEach(() => cleanupTestDbs(trackedDbs))
@@ -85,6 +94,11 @@ const layerFor = (
 		readonly busy?: boolean
 		readonly withWorkerEnv?: boolean
 		readonly rolledOut?: boolean
+		readonly threads?: ReadonlyArray<PullRequestReviewThread>
+		readonly resolvedThreads?: Array<string>
+		/** Present: pushes are debounced through this queue, which records what it was sent. */
+		readonly queued?: Array<{ readonly job: VcsSyncJob; readonly delaySeconds: number | undefined }>
+		readonly embedder?: FindingEmbedderApi
 	} = {},
 ) => {
 	// Only the one write is reached; every read dies so a test that strays says so loudly.
@@ -99,6 +113,18 @@ const layerFor = (
 		fetchPullRequests: unused,
 		fetchPullRequest: unused,
 		fetchPullRequestFiles: unused,
+		fetchPullRequestContext: unused,
+		fetchReviewThreads: () => Effect.succeed(options.threads ?? []),
+		resolveReviewThread: (_installation, _repo, input) =>
+			Effect.sync(() => {
+				options.resolvedThreads?.push(`${input.threadId}:${input.reply}`)
+			}),
+		fetchChangedPaths: () => Effect.succeed(["b.ts", "c.ts"]),
+		fetchPullRequestHead: unused,
+		postPullRequestReply: unused,
+		reactToComment: unused,
+		fetchCommenterPermission: unused,
+		commitFiles: unused,
 		searchCode: unused,
 		resolveRef: unused,
 		fetchCloneCredentials: unused,
@@ -118,6 +144,9 @@ const layerFor = (
 							publication.comments.length > 0
 								? "https://github.com/octo/repo/pull/612#pullrequestreview-1"
 								: null,
+						inlineComments: publication.comments.flatMap((comment, i) =>
+							comment.key === undefined ? [] : [{ key: comment.key, commentId: `c-${i}` }],
+						),
 					})
 		},
 	}
@@ -141,6 +170,18 @@ const layerFor = (
 				registry,
 				testDb.layer,
 				workerEnv,
+				options.queued === undefined
+					? Layer.empty
+					: Layer.succeed(VcsSyncQueue, {
+							send: (job, sendOptions) =>
+								Effect.sync(() => {
+									options.queued?.push({ job, delaySeconds: sendOptions?.delaySeconds })
+								}),
+							sendBatch: () => Effect.void,
+						}),
+				options.embedder === undefined
+					? Layer.empty
+					: Layer.succeed(FindingEmbedder, options.embedder),
 				OrganizationFeatureFlagsService.fixed({
 					...ENABLED_ORGANIZATION_FEATURE_FLAGS,
 					prReview: options.rolledOut ?? true,
@@ -209,7 +250,7 @@ const job = (overrides: Partial<PullRequestEventJob> = {}): PullRequestEventJob 
 
 const report = (findings: PrReviewReport["findings"]) =>
 	new PrReviewReport({
-		verdict: findings.some((finding) => finding.severity !== "info") ? "gaps" : "instrumented",
+		verdict: findings.some((finding) => finding.severity !== "info") ? "issues" : "clean",
 		summary: "Adds one route.",
 		coverage: [
 			{ unit: "POST /orders", kind: "entrypoint", instrumented: false, evidence: "no withSpan" },
@@ -360,6 +401,37 @@ describe("PrReviewService.onPullRequestEvent", () => {
 		return firstDelivery.pipe(Effect.andThen(redelivery))
 	})
 
+	it.effect("debounces pushes: only the last head of a burst is reviewed", () => {
+		const testDb = createTestDb(trackedDbs)
+		const begun: Array<Begun> = []
+		const queued: Array<{ readonly job: VcsSyncJob; readonly delaySeconds: number | undefined }> = []
+		return Effect.gen(function* () {
+			yield* seed(true)
+			const reviews = yield* PrReviewService
+			const first = yield* reviews.onPullRequestEvent(orgId, job({ action: "synchronize" }))
+			const second = yield* reviews.onPullRequestEvent(
+				orgId,
+				job({ action: "synchronize", headSha: HEAD_2 }),
+			)
+			assert.equal(first.outcome, "deferred")
+			assert.equal(second.outcome, "deferred")
+			assert.equal(begun.length, 0)
+			assert.deepEqual(
+				queued.map((entry) => entry.delaySeconds),
+				[PR_REVIEW_PUSH_DEBOUNCE_SECONDS, PR_REVIEW_PUSH_DEBOUNCE_SECONDS],
+			)
+			// The delayed copies arrive: the first head was superseded, the second starts.
+			const [late, latest] = queued.map((entry) => entry.job)
+			assert(late?.kind === "pull-request-event" && latest?.kind === "pull-request-event")
+			assert.equal((yield* reviews.onPullRequestEvent(orgId, late)).skipReason, "superseded")
+			const started = yield* reviews.onPullRequestEvent(orgId, latest)
+			assert.equal(started.outcome, "started")
+			assert.equal(started.reviewId, second.reviewId)
+			assert.equal(begun.length, 1)
+			assert.include(begun[0]!.text, HEAD_2)
+		}).pipe(Effect.provide(layerFor(testDb, { begun, queued })))
+	})
+
 	it.effect("stops at the daily ceiling", () => {
 		const testDb = createTestDb(trackedDbs)
 		return Effect.gen(function* () {
@@ -394,6 +466,7 @@ describe("PrReviewService.submitReview", () => {
 						{
 							path: "src/routes/orders.ts",
 							line: 12,
+							category: "observability",
 							checkId: "SPAN-03",
 							severity: "warn",
 							title: "POST /orders has no server span",
@@ -427,6 +500,82 @@ describe("PrReviewService.submitReview", () => {
 		}).pipe(Effect.provide(layerFor(testDb, { published })))
 	})
 
+	it.effect("follows findings across pushes: resolves fixed ones, never reposts open ones", () => {
+		const testDb = createTestDb(trackedDbs)
+		const published: Array<PullRequestReviewPublication> = []
+		const begun: Array<Begun> = []
+		const resolvedThreads: Array<string> = []
+		const threads: ReadonlyArray<PullRequestReviewThread> = [
+			{
+				id: "T1",
+				isResolved: false,
+				comments: [
+					{ commentId: "c-0", author: "maple[bot]", body: "F1", thumbsUp: 2, thumbsDown: 0 },
+				],
+			},
+		]
+		const finding = (path: string, line: number, title: string) => ({
+			path,
+			line,
+			category: "correctness" as const,
+			severity: "warn" as const,
+			title,
+			body: "b",
+		})
+		return Effect.gen(function* () {
+			yield* seed(true)
+			const reviews = yield* PrReviewService
+			const first = yield* reviews.onPullRequestEvent(orgId, job())
+			yield* reviews.submitReview(
+				orgId,
+				first.reviewId!,
+				new SubmitPrReviewRequest({
+					report: report([
+						finding("a.ts", 10, "off by one"),
+						finding("b.ts", 20, "unchecked null"),
+					]),
+				}),
+			)
+			assert.deepEqual(
+				published[0]!.comments.map((comment) => comment.body.slice(0, 8)),
+				["**F1 · o", "**F2 · u"],
+			)
+
+			const second = yield* reviews.onPullRequestEvent(
+				orgId,
+				job({ action: "synchronize", headSha: HEAD_2 }),
+			)
+			const kickoff = begun.at(-1)!.text
+			assert.include(kickoff, "reviewed before, at 1111111")
+			assert.include(kickoff, "b.ts, c.ts")
+			assert.include(kickoff, "- F1 · a.ts:10 · correctness · warn · off by one")
+
+			yield* reviews.submitReview(
+				orgId,
+				second.reviewId!,
+				new SubmitPrReviewRequest({
+					resolved: ["F1"],
+					report: report([finding("b.ts", 21, "null again"), finding("c.ts", 3, "leaked handle")]),
+				}),
+			)
+			const publication = published[1]!
+			// F2 is still open, so its repeat is not posted; the new finding continues at F3.
+			assert.deepEqual(
+				publication.comments.map((comment) => comment.path),
+				["c.ts"],
+			)
+			assert.include(publication.summaryComment.body, "### Still open from earlier reviews")
+			assert.include(publication.summaryComment.body, "~~F1 · off by one~~")
+			assert.equal(publication.title, "80/100 · 2 issues to address")
+			assert.deepEqual(resolvedThreads, ["T1:Fixed in `2222222`."])
+			const stored = Option.getOrThrow(yield* reviews.getReview(orgId, second.reviewId!))
+			assert.deepEqual(
+				stored.report?.findings.map((f) => f.handle),
+				["F3"],
+			)
+		}).pipe(Effect.provide(layerFor(testDb, { published, begun, threads, resolvedThreads })))
+	})
+
 	it.effect("drops a submission for a review that was superseded while it ran", () => {
 		const testDb = createTestDb(trackedDbs)
 		const published: Array<PullRequestReviewPublication> = []
@@ -444,6 +593,7 @@ describe("PrReviewService.submitReview", () => {
 						{
 							path: "a.ts",
 							line: 1,
+							category: "observability",
 							checkId: "SPAN-03",
 							severity: "warn",
 							title: "stale",
@@ -500,6 +650,289 @@ describe("PrReviewService.submitReview", () => {
 	})
 })
 
+const EMBEDDING_MODEL = "test-embedder"
+const NOISE = [1, 0, 0]
+const OTHER = [0, 1, 0]
+
+/** Anything mentioning "noisy" lands on one direction, everything else on another. */
+const fakeEmbedder = (calls: Array<ReadonlyArray<string>> = []): FindingEmbedderApi => ({
+	model: EMBEDDING_MODEL,
+	embed: (inputs) =>
+		Effect.sync(() => {
+			calls.push(inputs)
+			return inputs.map((text) => (text.includes("noisy") ? NOISE : OTHER))
+		}),
+})
+
+/** Earlier findings the team voted on, stored with their vectors the way `submitReview` stores them. */
+const seedVotes = (
+	repositoryId: VcsRepositoryId,
+	votes: ReadonlyArray<{
+		readonly status: "open" | "resolved" | "dismissed"
+		readonly up?: number
+		readonly down?: number
+		readonly embedding?: ReadonlyArray<number>
+		readonly model?: string
+	}>,
+) =>
+	Effect.gen(function* () {
+		const database = yield* Database
+		const now = new Date(0)
+		const rows = votes.map((vote, i) => ({ vote, id: `vote-${repositoryId}-${i}` }))
+		yield* database.execute((db) =>
+			db.insert(prReviewFindings).values(
+				rows.map(({ vote, id }, i) => ({
+					id,
+					orgId,
+					repositoryId,
+					number: 1,
+					reviewId: UNKNOWN_REVIEW,
+					handle: `F${i + 1}`,
+					path: "old.ts",
+					line: 1,
+					category: "convention" as const,
+					severity: "info" as const,
+					title: "noisy log line",
+					status: vote.status,
+					reactionsUp: vote.up ?? 0,
+					reactionsDown: vote.down ?? 0,
+					createdAt: now,
+					updatedAt: now,
+				})),
+			),
+		)
+		yield* database.execute((db) =>
+			db.insert(prReviewFindingEmbeddings).values(
+				rows.map(({ vote, id }) => ({
+					findingId: id,
+					orgId,
+					repositoryId,
+					model: vote.model ?? EMBEDDING_MODEL,
+					embedding: [...(vote.embedding ?? NOISE)],
+					createdAt: now,
+				})),
+			),
+		)
+	})
+
+const storedEmbeddings = Effect.gen(function* () {
+	const database = yield* Database
+	return yield* database.execute((db) => db.select().from(prReviewFindingEmbeddings))
+})
+
+const ELSEWHERE = Schema.decodeSync(VcsRepositoryId)("99999999-9999-4999-8999-999999999999")
+
+const noisyConvention = {
+	path: "src/log.ts",
+	line: 4,
+	category: "convention" as const,
+	severity: "warn" as const,
+	title: "noisy debug log",
+	body: "Drop the log line.",
+}
+
+describe("PrReviewService.submitReview feedback filter", () => {
+	it.effect("suppresses a finding like three the team downvoted or dismissed, never a security one", () => {
+		const testDb = createTestDb(trackedDbs)
+		const published: Array<PullRequestReviewPublication> = []
+		return Effect.gen(function* () {
+			const repositoryId = yield* seed(true)
+			yield* seedVotes(repositoryId, [
+				{ status: "open", down: 1 },
+				{ status: "resolved", up: 0, down: 2 },
+				{ status: "dismissed", up: 1 },
+				// Untouched: says nothing either way.
+				{ status: "open" },
+			])
+			const reviews = yield* PrReviewService
+			const started = yield* reviews.onPullRequestEvent(orgId, job())
+			yield* reviews.submitReview(
+				orgId,
+				started.reviewId!,
+				new SubmitPrReviewRequest({
+					report: report([
+						noisyConvention,
+						{ ...noisyConvention, line: 9, category: "security", title: "noisy token log" },
+						{ ...noisyConvention, line: 20, severity: "critical", title: "noisy crash" },
+						{ ...noisyConvention, line: 30, category: "correctness", title: "off by one" },
+					]),
+				}),
+			)
+			assert.deepEqual(
+				published[0]!.comments.map((comment) => comment.line),
+				[9, 20, 30],
+			)
+			const stored = Option.getOrThrow(yield* reviews.getReview(orgId, started.reviewId!))
+			assert.deepEqual(
+				stored.report?.findings.map((finding) => [finding.handle, finding.title]),
+				[
+					["F1", "noisy token log"],
+					["F2", "noisy crash"],
+					["F3", "off by one"],
+				],
+			)
+			// The posted findings are embedded for later reviews; the suppressed one is not stored.
+			const embeddings = yield* storedEmbeddings
+			assert.equal(embeddings.length, 4 + 3)
+			assert.deepEqual(
+				embeddings.filter((row) => !row.findingId.startsWith("vote-")).map((row) => row.embedding),
+				[NOISE, NOISE, OTHER],
+			)
+		}).pipe(Effect.provide(layerFor(testDb, { published, embedder: fakeEmbedder() })))
+	})
+
+	it.effect("posts it when as many similar findings were upvoted or fixed", () => {
+		const testDb = createTestDb(trackedDbs)
+		const published: Array<PullRequestReviewPublication> = []
+		return Effect.gen(function* () {
+			const repositoryId = yield* seed(true)
+			yield* seedVotes(repositoryId, [
+				{ status: "dismissed" },
+				{ status: "dismissed" },
+				{ status: "dismissed" },
+				{ status: "open", up: 2 },
+				{ status: "resolved" },
+				{ status: "resolved", up: 1 },
+			])
+			const reviews = yield* PrReviewService
+			const started = yield* reviews.onPullRequestEvent(orgId, job())
+			yield* reviews.submitReview(
+				orgId,
+				started.reviewId!,
+				new SubmitPrReviewRequest({ report: report([noisyConvention]) }),
+			)
+			assert.equal(published[0]!.comments.length, 1)
+		}).pipe(Effect.provide(layerFor(testDb, { published, embedder: fakeEmbedder() })))
+	})
+
+	it.effect("reads only this repository's votes when scoped to it, and none when off", () => {
+		const testDb = createTestDb(trackedDbs)
+		const published: Array<PullRequestReviewPublication> = []
+		return Effect.gen(function* () {
+			const repositoryId = yield* seed(true)
+			yield* seedVotes(ELSEWHERE, [
+				{ status: "dismissed" },
+				{ status: "dismissed" },
+				{ status: "dismissed" },
+			])
+			const repo = yield* VcsRepository
+			const reviews = yield* PrReviewService
+
+			yield* repo.setPrReviewConfig(
+				orgId,
+				repositoryId,
+				new PrReviewRepositoryConfig({ feedbackScope: "repository" }),
+			)
+			const scoped = yield* reviews.onPullRequestEvent(orgId, job())
+			yield* reviews.submitReview(
+				orgId,
+				scoped.reviewId!,
+				new SubmitPrReviewRequest({ report: report([noisyConvention]) }),
+			)
+			assert.equal(published[0]!.comments.length, 1)
+
+			yield* repo.setPrReviewConfig(orgId, repositoryId, new PrReviewRepositoryConfig({}))
+			const orgWide = yield* reviews.onPullRequestEvent(orgId, job({ number: 613, headSha: HEAD_2 }))
+			yield* reviews.submitReview(
+				orgId,
+				orgWide.reviewId!,
+				new SubmitPrReviewRequest({ report: report([noisyConvention]) }),
+			)
+			assert.equal(published[1]!.comments.length, 0)
+
+			yield* repo.setPrReviewConfig(
+				orgId,
+				repositoryId,
+				new PrReviewRepositoryConfig({ feedbackScope: "off" }),
+			)
+			const off = yield* reviews.onPullRequestEvent(
+				orgId,
+				job({ number: 614, headSha: sha("3333333333333333333333333333333333333333") }),
+			)
+			yield* reviews.submitReview(
+				orgId,
+				off.reviewId!,
+				new SubmitPrReviewRequest({ report: report([noisyConvention]) }),
+			)
+			assert.equal(published[2]!.comments.length, 1)
+		}).pipe(Effect.provide(layerFor(testDb, { published, embedder: fakeEmbedder() })))
+	})
+
+	it.effect("never compares vectors from another embedding model", () => {
+		const testDb = createTestDb(trackedDbs)
+		const published: Array<PullRequestReviewPublication> = []
+		return Effect.gen(function* () {
+			const repositoryId = yield* seed(true)
+			yield* seedVotes(
+				repositoryId,
+				Array.from({ length: 3 }, () => ({
+					status: "dismissed" as const,
+					model: "retired-embedder",
+				})),
+			)
+			const reviews = yield* PrReviewService
+			const started = yield* reviews.onPullRequestEvent(orgId, job())
+			yield* reviews.submitReview(
+				orgId,
+				started.reviewId!,
+				new SubmitPrReviewRequest({ report: report([noisyConvention]) }),
+			)
+			assert.equal(published[0]!.comments.length, 1)
+		}).pipe(Effect.provide(layerFor(testDb, { published, embedder: fakeEmbedder() })))
+	})
+
+	it.effect("posts every finding when the embedder fails, and stores no vectors", () => {
+		const testDb = createTestDb(trackedDbs)
+		const published: Array<PullRequestReviewPublication> = []
+		const failing: FindingEmbedderApi = {
+			model: EMBEDDING_MODEL,
+			embed: () =>
+				Effect.fail(
+					new PrReviewEmbeddingError({ message: "402 out of credits", model: EMBEDDING_MODEL }),
+				),
+		}
+		return Effect.gen(function* () {
+			const repositoryId = yield* seed(true)
+			yield* seedVotes(repositoryId, [
+				{ status: "dismissed" },
+				{ status: "dismissed" },
+				{ status: "dismissed" },
+			])
+			const reviews = yield* PrReviewService
+			const started = yield* reviews.onPullRequestEvent(orgId, job())
+			yield* reviews.submitReview(
+				orgId,
+				started.reviewId!,
+				new SubmitPrReviewRequest({ report: report([noisyConvention]) }),
+			)
+			assert.equal(published[0]!.comments.length, 1)
+			assert.equal((yield* storedEmbeddings).length, 3)
+		}).pipe(Effect.provide(layerFor(testDb, { published, embedder: failing })))
+	})
+
+	it.effect("does not embed at all without an embedder", () => {
+		const testDb = createTestDb(trackedDbs)
+		const published: Array<PullRequestReviewPublication> = []
+		return Effect.gen(function* () {
+			const repositoryId = yield* seed(true)
+			yield* seedVotes(repositoryId, [
+				{ status: "dismissed" },
+				{ status: "dismissed" },
+				{ status: "dismissed" },
+			])
+			const reviews = yield* PrReviewService
+			const started = yield* reviews.onPullRequestEvent(orgId, job())
+			yield* reviews.submitReview(
+				orgId,
+				started.reviewId!,
+				new SubmitPrReviewRequest({ report: report([noisyConvention]) }),
+			)
+			assert.equal(published[0]!.comments.length, 1)
+			assert.equal((yield* storedEmbeddings).length, 3)
+		}).pipe(Effect.provide(layerFor(testDb, { published })))
+	})
+})
+
 describe("buildPublication", () => {
 	it("posts every finding as an annotation but comments only above info", () => {
 		const publication = buildPublication({
@@ -508,8 +941,24 @@ describe("buildPublication", () => {
 			partial: false,
 			repositoryUrl: REPO_URL,
 			report: report([
-				{ path: "a.ts", line: 1, checkId: "SPAN-03", severity: "warn", title: "gap", body: "b" },
-				{ path: "a.ts", line: 9, checkId: "MET-02", severity: "info", title: "nicety", body: "b" },
+				{
+					path: "a.ts",
+					line: 1,
+					category: "observability",
+					checkId: "SPAN-03",
+					severity: "warn",
+					title: "gap",
+					body: "b",
+				},
+				{
+					path: "a.ts",
+					line: 9,
+					category: "observability",
+					checkId: "MET-02",
+					severity: "info",
+					title: "nicety",
+					body: "b",
+				},
 			]),
 		})
 		assert.equal(publication.annotations.length, 2)
@@ -519,7 +968,7 @@ describe("buildPublication", () => {
 		assert.equal(publication.conclusion, "neutral")
 		assert.include(publication.reviewBody ?? "", "1 inline note")
 		// 100 - 10 (warn) - 2 (note)
-		assert.equal(publication.title, "88/100 · 1 observability gap to close")
+		assert.equal(publication.title, "88/100 · 1 issue to address")
 	})
 
 	it("always writes the summary comment, even with nothing to say inline", () => {
@@ -534,7 +983,7 @@ describe("buildPublication", () => {
 		assert.isNull(publication.reviewBody)
 		assert.equal(publication.comments.length, 0)
 		assert.isTrue(publication.summaryComment.body.startsWith(PR_REVIEW_COMMENT_MARKER))
-		assert.include(publication.summaryComment.body, "## Maple observability review: 100/100")
+		assert.include(publication.summaryComment.body, "## Maple review: 100/100")
 		assert.include(publication.summaryComment.body, "**Excellent**")
 	})
 
@@ -545,6 +994,7 @@ describe("buildPublication", () => {
 					path: "src/a b.ts",
 					line: 4,
 					endLine: 6,
+					category: "observability",
 					checkId: "SPAN-03",
 					severity: "critical",
 					title: "gap",
@@ -564,21 +1014,56 @@ describe("buildPublication", () => {
 	it("renders the coverage table and the check ids into the summary", () => {
 		const summary = renderCheckSummary({
 			report: report([
-				{ path: "a.ts", line: 1, checkId: "SPAN-03", severity: "warn", title: "gap", body: "b" },
+				{
+					path: "a.ts",
+					line: 1,
+					category: "observability",
+					checkId: "SPAN-03",
+					severity: "warn",
+					title: "gap",
+					body: "b",
+				},
 			]),
 			partial: true,
 			headSha: HEAD,
 			repositoryUrl: REPO_URL,
 		})
 		assert.include(summary, "| POST /orders | entrypoint | no | no withSpan |")
-		assert.include(summary, "`SPAN-03`")
+		assert.include(summary, "| observability · SPAN-03 |")
 		assert.include(summary, "ended early")
+	})
+
+	it("posts a replacement as a one-click suggestion over the lines it replaces", () => {
+		const publication = buildPublication({
+			number: 1,
+			headSha: HEAD,
+			partial: false,
+			repositoryUrl: REPO_URL,
+			report: report([
+				{
+					path: "a.ts",
+					line: 3,
+					endLine: 4,
+					category: "correctness",
+					severity: "warn",
+					title: "off by one",
+					body: "The loop skips the last item.",
+					replacement: "for (let i = 0; i <= n; i++) {\n\tvisit(i)",
+				},
+			]),
+		})
+		const comment = publication.comments[0]!
+		assert.equal(comment.startLine, 3)
+		assert.equal(comment.line, 4)
+		assert.include(comment.body, "```suggestion\nfor (let i = 0; i <= n; i++) {\n\tvisit(i)\n```")
+		assert.include(comment.body, "correctness · warn")
+		assert.notInclude(publication.summaryComment.body, "instrumentation audit")
 	})
 
 	it("escapes a backslash before a pipe so a cell cannot break the table", () => {
 		const summary = renderCheckSummary({
 			report: new PrReviewReport({
-				verdict: "instrumented",
+				verdict: "clean",
 				summary: "",
 				coverage: [{ unit: "a\\|b", kind: "k", instrumented: true, evidence: "e" }],
 				findings: [],
@@ -596,6 +1081,7 @@ describe("buildPublication", () => {
 				Array.from({ length: 50 }, (_, i) => ({
 					path: `src/file-${i}.ts`,
 					line: 1,
+					category: "observability" as const,
 					checkId: "SPAN-02",
 					severity: "warn" as const,
 					title: "x".repeat(200),

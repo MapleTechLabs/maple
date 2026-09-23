@@ -14,6 +14,8 @@ import {
 	GithubDisconnectResponse,
 	GithubIntegrationStatus,
 	GithubSetPrReviewResponse,
+	GithubPrReviewConfigResponse,
+	GithubPrReviewsResponse,
 	GithubSetTrackedBranchResponse,
 	GithubStartConnectResponse,
 	HazelChannelsListResponse,
@@ -573,6 +575,33 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleApi, "integrations
 							payload.enabled,
 						)
 						return new GithubSetPrReviewResponse(result)
+					}),
+				)
+				// Any member may read a repository's review settings and history; only admins change them.
+				.handle("githubGetPrReviewConfig", ({ params }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						const config = yield* github.getPrReviewConfig(tenant.orgId, params.repositoryId)
+						return new GithubPrReviewConfigResponse({ config })
+					}),
+				)
+				.handle("githubSetPrReviewConfig", ({ params, payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						yield* requireAdmin(tenant.roles)
+						const config = yield* github.setPrReviewConfig(
+							tenant.orgId,
+							params.repositoryId,
+							payload.config,
+						)
+						return new GithubPrReviewConfigResponse({ config })
+					}),
+				)
+				.handle("githubListPrReviews", ({ params }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						const reviews = yield* github.listPrReviews(tenant.orgId, params.repositoryId)
+						return new GithubPrReviewsResponse({ reviews })
 					}),
 				)
 				// No admin gate — any org member may resolve commit SHAs for hover cards.

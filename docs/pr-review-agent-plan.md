@@ -62,10 +62,10 @@ superseded row is dropped.
 - **Completion.** `submit_review` is offered only to the review's unattended pass; a person's
   follow-up in the same session answers in prose. Its parameters are the lenient
   `PrReviewSubmission`, every field optional, for the reason the diagnosis schema is lenient.
-  `normalizePrReviewSubmission` drops any finding without a path, a positive line, or a check id
-  from the `maple-audit` grammar (`SPAN-03`, `REN-DUAL`), and derives the verdict: `gaps` exactly
-  when a warn or critical finding survives, otherwise the model's `not_applicable` or
-  `instrumented`. A pass that stops without submitting gets the shared close-out turn
+  `normalizePrReviewSubmission` drops any finding without a path or a positive line, and any
+  observability finding without a check id from the `maple-audit` grammar (`SPAN-03`,
+  `REN-DUAL`). It derives the verdict: `issues` exactly when a warn or critical finding survives,
+  otherwise the model's `not_applicable` or `clean`. A pass that stops without submitting gets the shared close-out turn
   (`withToolTranscript` in `apps/ai/src/chat/close-out.ts`), which sees the tool calls and results
   the pass gathered.
 - **Billing.** The turn is metered with source `review` and an idempotency key of the review id
@@ -105,7 +105,7 @@ gaps always score the same, and it is stored in `pr_reviews.score`.
 `PrReviewService.submitReview` stores the report, then calls
 `VcsProviderClient.publishPullRequestReview`, which posts, in order:
 
-1. **A check run** named `Maple / observability` on the head SHA, titled `<score>/100 · <verdict>`,
+1. **A check run** named `Maple / review` on the head SHA, titled `<score>/100 · <verdict>`,
    concluding `neutral` for gaps and `success` otherwise, never `failure`. An installation that
    has not granted `checks: write` answers 403, and the review is posted without the check run. A
    rate-limited 403, which carries a retry time, fails the publish instead.
@@ -238,3 +238,102 @@ The full path (webhook → trigger → Durable Object → GitHub post) is covere
   `sweepAbandonedInvestigations`, fan-out for large PRs through `@effect-agent/capabilities`
   `Subagent` once it is published at the engine's version, a reviews list, and per-repository
   config (path excludes, check-only, a required-check mode).
+
+## The full review agent
+
+Built 2026-09-23 (PR #1001). The observability reviewer became a general code review agent, sold as
+one product behind the same `prreview` rollout flag. Observability is one lens of it, with its
+`maple-audit` check ids, because it is what no other reviewer can check: the warehouse.
+
+### General review
+
+- **Findings carry a category**: `correctness`, `security`, `performance`, `observability`,
+  `convention`, `tests` or `maintainability`. `checkId` is required only for `observability`.
+- **Verdict** is `clean | issues | not_applicable`. Migration `pr_review_general_verdicts`
+  rewrote stored reports.
+- **One-click fixes.** A finding may carry `replacement`, the exact code for its line range, posted
+  as a GitHub `suggestion` block on a multi-line review comment.
+- **Prompt.** Reads the repository's `CLAUDE.md`, `AGENTS.md` and `.maple/review.md` at the head as
+  rules, may read a caller to confirm a bug, never reports what CI already reports.
+- **Context.** One `pr_context` call: commits, what people and other bots already said (the App's
+  own comments excluded), and the head's checks, failing first.
+- **Large pull requests.** Past 12 reviewable files the pass calls `review_files` per group of
+  related files, in parallel. Each group runs a child `pr-review-worker` agent through
+  `@effect-agent/capabilities` `Subagent`: the parent's own read-only toolkit (the grant is exactly
+  those tools, depth one), 16 calls and 4 minutes each, at most 8 children and 4 at a time, reserved
+  from the parent's budget. The child answers findings one per line; the parent verifies and files.
+- **Quality gate.** `bun run --cwd apps/ai review:eval mine` blames each `fix:` commit's changed
+  lines back to the squash-merged PR that wrote them; a person keeps the real bugs in
+  `apps/ai/scripts/pr-review-eval/corpus.json`. `review:eval run --model <id>` reviews every case and
+  counts it caught when a finding lands within three lines of what the fix changed.
+
+### Across pushes
+
+- `pr_review_findings` stores every posted finding with a pull request-wide handle (`F1`, `F2`), its
+  inline comment id, `open | resolved | dismissed`, and the 👍 / 👎 on its comment.
+- A later push's kickoff names the last reviewed head, the files changed since, and the open
+  findings. `submit_review` returns the handles this head fixes; the service replies "Fixed in
+  `sha`" and resolves the thread (GraphQL `resolveReviewThread`).
+- A new finding within three lines of an open or dismissed one in the same category is not posted
+  again. A thread a person resolved, or answered "won't fix", dismisses its finding.
+- The summary carries "Still open from earlier reviews" and "Fixed since the last review", and the
+  score counts every finding still open.
+- A `synchronize` is debounced: the row is queued at once, so an older head is still superseded,
+  and its start is re-enqueued 90 s later; the delayed copy starts only a row no later push replaced.
+- When a pull request closes, its threads are read once more for reactions and dismissals.
+  `maple.pr_review.reactions_up` / `reactions_down` on the span are the live precision signal.
+
+### Learning from feedback
+
+- Every stored finding's `category: title` and body are embedded (`FindingEmbedder`, wired in
+  `apps/ai/src/platform/Llm.ts`, OpenRouter `/embeddings`, `openai/text-embedding-3-small` unless
+  `MAPLE_EMBEDDING_MODEL` says otherwise) into `pr_review_finding_embeddings`, keyed by finding and
+  stamped with the model. Vectors from different models are never compared.
+- A stored finding is negative when dismissed or when 👎 outnumber 👍; positive when 👍 outnumber
+  👎 or a later head fixed it; otherwise it does not vote.
+- In `submit_review`, after ignored paths, lenses and repeats, each new finding is compared with the
+  2,000 newest voting findings: cosine ≥ 0.5 to at least three negatives and fewer than three
+  positives suppresses it. It is neither stored nor posted, and `maple.pr_review.suppressed` counts
+  it. Security and critical findings are never suppressed. The 0.5 bar was measured on the default
+  model (same kind of comment 0.52 to 0.68, different kinds at most 0.44); re-measure on a new one.
+- The pool is the organization by default; `feedbackScope` in the repository settings narrows it
+  to the repository or turns the filter off (vectors are still stored, so turning it back on has
+  history). No embedder, or an embedding or read failure, posts every finding.
+
+### Conversation (`@maple`)
+
+- `issue_comment` and `pull_request_review_comment` webhooks become `pull-request-comment` jobs only
+  when a person mentions `@maple` (or the App's login) on a pull request.
+- Answered for OWNER, MEMBER and COLLABORATOR, 100 answers per organization per day, once per
+  comment (`pr_review_replies`). 👀 on receipt.
+- Each answer is one turn of the `pr-reply` agent on `<orgId>:prr-<id>` with the review's tools,
+  finishing on `submit_reply`. The thread it answers is bound on the row, never chosen by the model.
+- `@maple review` reviews the head now: no debounce, drafts included, even a head already reviewed.
+
+### Fixes (`@maple fix`)
+
+- The reply agent stages exact `oldText` → `newText` edits with `propose_edit`. On submit they are
+  applied to the files at the head and committed through the Git Data API as one commit that
+  fast-forwards the pull request's branch. Never forced.
+- Only for commenters with write, maintain or admin; only on the same repository's branch (never a
+  fork or the default branch); never `.github/workflows` or `.git`; at most 40 edits. A branch that
+  moved, or an edit that no longer applies, is reported instead of committed.
+
+### Settings
+
+- `GET`/`PUT /api/integrations/github/repositories/:id/pr-review/config`: instructions, ignored
+  paths, lenses, inline threshold, drafts and a per-repository daily limit. Stated in the kickoff
+  and enforced on submit. `GET .../pr-reviews` lists the 50 newest reviews.
+- Integrations → GitHub shows the settings and the review history beside each repository's switch.
+
+### What the GitHub App needs
+
+Permissions: `Pull requests: Read and write`, `Checks: Read and write`, `Contents: Read and write`
+(for `@maple fix`; everything else works without it). Events: `Pull request`, `Issue comment`,
+`Pull request review comment`. Each installation accepts new permissions once.
+
+### Open
+
+- Failed-check log tails in `pr_context` need `actions: read`.
+- Fork pull requests use the API diff path only; the sandbox cannot fetch `refs/pull/N/head` yet.
+- The eval corpus has five cases; widen it with `review:eval mine` before comparing models.

@@ -61,10 +61,13 @@ oauth_config:
         bot:
             - app_mentions:read
             - chat:write
+            - chat:write.public
             - channels:history
             - groups:history
             - im:history
             - mpim:history
+            - channels:read
+            - groups:read
 ```
 
 **One application per production instance.** Slack allows a single Events request URL per app, and
@@ -84,6 +87,11 @@ Three things in there are load-bearing:
   resolved from any event's `team_id`. `install.ts` refuses one by name rather than failing later.
 - **the four `message.*` events.** A mention arrives as `app_mention`; a follow-up in the thread it
   opened arrives only as a `message`, and only if the matching history scope is granted.
+
+`chat:write.public`, `channels:read` and `groups:read` are for alert delivery: listing the channels
+an alert can go to, and posting to a public one the bot was never invited to. A workspace linked
+before they were added keeps answering mentions, but must reinstall the app to route alerts — the
+listing answers `missing_scope` until it does.
 
 The scopes deliberately **do not** include `users:read` — see "Who may approve" below — or
 `reactions:write`: nothing reacts, the answer in the thread is the acknowledgement.

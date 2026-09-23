@@ -23,10 +23,9 @@ export const TOKEN_URL = `${API_BASE}/oauth2/token`
 /**
  * The one name for this connector's bot token, declared once.
  *
- * The gateway half names it in `requiredConfig`, so the host resolves it generically from its env
- * and hands the value to the pure state machine. The outbound half receives the same secret as the
- * `DiscordBotToken` service, because an Effect transport can take a service where a pure function
- * cannot — two mechanisms, deliberately, but one secret under one name.
+ * The gateway and outbound halves both name it in `requiredConfig`, so each host resolves it
+ * generically from its env: the gateway gets it as config handed to the pure state machine, the
+ * outbound transport reads it from `ConnectorCredentials`. One secret under one name.
  */
 export const BOT_TOKEN_CONFIG = "MAPLE_DISCORD_BOT_TOKEN"
 
