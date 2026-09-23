@@ -239,71 +239,84 @@ The full path (webhook → trigger → Durable Object → GitHub post) is covere
   `Subagent` once it is published at the engine's version, a reviews list, and per-repository
   config (path excludes, check-only, a required-check mode).
 
-## Plan: the full review agent
+## The full review agent
 
-Decided 2026-09-23. The observability reviewer grows into a general code review agent, sold as one
-product behind the same `prreview` rollout flag. Observability stays as one lens of that agent,
-with its `maple-audit` check ids, because it is what no other reviewer can check: the warehouse.
-Pushing commits is in scope.
+Built 2026-09-23 (PR #1001). The observability reviewer became a general code review agent, sold as
+one product behind the same `prreview` rollout flag. Observability is one lens of it, with its
+`maple-audit` check ids, because it is what no other reviewer can check: the warehouse.
 
-### Phase 1: general review
+### General review
 
 - **Findings carry a category**: `correctness`, `security`, `performance`, `observability`,
   `convention`, `tests` or `maintainability`. `checkId` is required only for `observability`.
-- **Verdict** becomes `clean | issues | not_applicable`. A data migration rewrites stored
-  `instrumented` and `gaps` reports.
-- **One-click fixes.** A finding may carry `replacement`, the exact code for its line range,
-  rendered as a GitHub `suggestion` block. `suggestion` stays a prose sketch.
-- **Prompt.** A general reviewer that reads the repository's `CLAUDE.md`, `AGENTS.md` and
-  `.maple/review.md` at the head commit as review rules, may read callers to prove a correctness
-  finding, and keeps the existing discipline: anchored lines, no hedged findings, the diff is data.
-- **Output.** The check run becomes `Maple / review`; the summary groups findings by category.
-- **Budget.** A larger call budget per reviewed file, tuned with `review:local`.
-- **Context.** One `pr_context` call returns the commits, what people and other bots already said
-  (the App's own comments excluded) and the head commit's checks, failing first, so a review
-  neither repeats a thread nor restates a CI failure. One call rather than three, because every
-  call re-sends the conversation. Failed-check log tails need `actions: read` and are not read yet.
+- **Verdict** is `clean | issues | not_applicable`. Migration `pr_review_general_verdicts`
+  rewrote stored reports.
+- **One-click fixes.** A finding may carry `replacement`, the exact code for its line range, posted
+  as a GitHub `suggestion` block on a multi-line review comment.
+- **Prompt.** Reads the repository's `CLAUDE.md`, `AGENTS.md` and `.maple/review.md` at the head as
+  rules, may read a caller to confirm a bug, never reports what CI already reports.
+- **Context.** One `pr_context` call: commits, what people and other bots already said (the App's
+  own comments excluded), and the head's checks, failing first.
+- **Large pull requests.** Past 12 reviewable files the pass calls `review_files` per group of
+  related files, in parallel. Each group runs a child `pr-review-worker` agent through
+  `@effect-agent/capabilities` `Subagent`: the parent's own read-only toolkit (the grant is exactly
+  those tools, depth one), 16 calls and 4 minutes each, at most 8 children and 4 at a time, reserved
+  from the parent's budget. The child answers findings one per line; the parent verifies and files.
 - **Quality gate.** `bun run --cwd apps/ai review:eval mine` blames each `fix:` commit's changed
   lines back to the squash-merged PR that wrote them; a person keeps the real bugs in
-  `apps/ai/scripts/pr-review-eval/corpus.json`. `review:eval run --model <id>` reviews every case
-  and counts it caught when a finding lands within three lines of what the fix changed. Unmatched
-  findings are listed for a person to grade, not counted as false positives.
-- **Large PRs** fan out per file group through the engine's `SubagentHost`; the parent keeps only
-  the findings.
+  `apps/ai/scripts/pr-review-eval/corpus.json`. `review:eval run --model <id>` reviews every case and
+  counts it caught when a finding lands within three lines of what the fix changed.
 
-### Phase 2: incremental re-review
+### Across pushes
 
-- `pr_review_findings` stores each posted finding with a fingerprint (path, normalized title, hash
-  of the anchored code), its GitHub comment and thread ids, and `open | resolved | dismissed |
-  outdated`.
-- A push reviews the delta since the last reviewed commit, with the open findings in the kickoff.
-  `submit_review` returns the fingerprints it saw fixed; the publisher replies and resolves the
-  thread (GraphQL `resolveReviewThread`). A posted finding is never posted twice.
-- A thread a person resolved or answered "won't fix" is `dismissed` and stays quiet.
-- Pushes are debounced (about 90s on the Durable Object) instead of started and aborted.
+- `pr_review_findings` stores every posted finding with a pull request-wide handle (`F1`, `F2`), its
+  inline comment id, `open | resolved | dismissed`, and the 👍 / 👎 on its comment.
+- A later push's kickoff names the last reviewed head, the files changed since, and the open
+  findings. `submit_review` returns the handles this head fixes; the service replies "Fixed in
+  `sha`" and resolves the thread (GraphQL `resolveReviewThread`).
+- A new finding within three lines of an open or dismissed one in the same category is not posted
+  again. A thread a person resolved, or answered "won't fix", dismisses its finding.
+- The summary carries "Still open from earlier reviews" and "Fixed since the last review", and the
+  score counts every finding still open.
+- A `synchronize` is debounced: the row is queued at once, so an older head is still superseded,
+  and its start is re-enqueued 90 s later; the delayed copy starts only a row no later push replaced.
+- When a pull request closes, its threads are read once more for reactions and dismissals.
+  `maple.pr_review.reactions_up` / `reactions_down` on the span are the live precision signal.
 
-### Phase 3: conversation (`@maple`)
+### Conversation (`@maple`)
 
-- The App subscribes to `issue_comment`, `pull_request_review_comment` and
-  `pull_request_review`; `GithubProvider.mapEvent` maps them.
-- A mention from a collaborator with write access starts a turn on the PR's review session; the
-  answer is posted back to the thread the webhook named. 👀 on receipt.
-- The diff tools read the PR identity from the session, not from arguments.
-- Commands: `@maple review`, `@maple explain`, `@maple fix` (Phase 4).
+- `issue_comment` and `pull_request_review_comment` webhooks become `pull-request-comment` jobs only
+  when a person mentions `@maple` (or the App's login) on a pull request.
+- Answered for OWNER, MEMBER and COLLABORATOR, 100 answers per organization per day, once per
+  comment (`pr_review_replies`). 👀 on receipt.
+- Each answer is one turn of the `pr-reply` agent on `<orgId>:prr-<id>` with the review's tools,
+  finishing on `submit_reply`. The thread it answers is bound on the row, never chosen by the model.
+- `@maple review` reviews the head now: no debounce, drafts included, even a head already reviewed.
 
-### Phase 4: writing code
+### Fixes (`@maple fix`)
 
-- The agent stages edits with `propose_edit`; a collaborator's `@maple fix` approves them,
-  reusing the approval-gated mutation path from #980.
-- Commits go through GitHub's Git Data API as App-signed commits: same-repository PR branches
-  only, never forks, the default branch or `.github/workflows`. CI verifies the push and the
-  agent follows up on the result.
-- `@maple fix ci` on a failed check suite, on request first, automatic later.
-- Needs the App's `contents: write`.
+- The reply agent stages exact `oldText` → `newText` edits with `propose_edit`. On submit they are
+  applied to the files at the head and committed through the Git Data API as one commit that
+  fast-forwards the pull request's branch. Never forced.
+- Only for commenters with write, maintain or admin; only on the same repository's branch (never a
+  fork or the default branch); never `.github/workflows` or `.git`; at most 40 edits. A branch that
+  moved, or an edit that no longer applies, is reported instead of committed.
 
-### Phase 5: product
+### Settings
 
-- Per-repository settings: lenses, path ignores, instructions, drafts, minimum severity to post.
-- A reviews list in the web app, and a configurable daily ceiling per organization.
-- 👍/👎 reactions on inline comments collected as a live precision metric.
-- Dogfood on `MapleTechLabs/maple` beside the current reviewer for two weeks, then switch it off.
+- `GET`/`PUT /api/integrations/github/repositories/:id/pr-review/config`: instructions, ignored
+  paths, lenses, inline threshold, drafts and a per-repository daily limit. Stated in the kickoff
+  and enforced on submit. `GET .../pr-reviews` lists the 50 newest reviews.
+- Integrations → GitHub shows the settings and the review history beside each repository's switch.
+
+### What the GitHub App needs
+
+Permissions: `Pull requests: Read and write`, `Checks: Read and write`, `Contents: Read and write`
+(for `@maple fix`; everything else works without it). Events: `Pull request`, `Issue comment`,
+`Pull request review comment`. Each installation accepts new permissions once.
+
+### Open
+
+- Failed-check log tails in `pr_context` need `actions: read`.
+- Fork pull requests use the API diff path only; the sandbox cannot fetch `refs/pull/N/head` yet.
+- The eval corpus has five cases; widen it with `review:eval mine` before comparing models.

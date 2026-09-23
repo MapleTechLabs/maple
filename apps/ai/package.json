@@ -14,6 +14,7 @@
 		"typecheck": "tsc --noEmit"
 	},
 	"dependencies": {
+		"@effect-agent/capabilities": "0.1.0-beta.85",
 		"@effect-agent/core": "0.1.0-beta.85",
 		"@effect-agent/engine": "0.1.0-beta.85",
 		"@effect-agent/sandbox": "0.1.0-beta.85",

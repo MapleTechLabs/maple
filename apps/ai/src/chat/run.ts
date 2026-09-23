@@ -19,6 +19,7 @@ import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
 import { type AgentDefinition, agentForSession, chatAgent } from "./agents"
 import { profileForTurn } from "./profiles"
 import { makeTextSanitizer, toChatEvents, type ChatTurnEvent } from "./events"
+import { buildReviewFanout } from "./review-fanout"
 import {
 	accumulateUsage,
 	buildChatToolkit,
@@ -26,6 +27,7 @@ import {
 	buildReplyCompletion,
 	buildReviewCompletion,
 	type RunCompletion,
+	SUBMIT_REVIEW,
 	type RunUsage,
 	type SubmitDiagnosis,
 	type StageEdit,
@@ -173,8 +175,25 @@ export const runChatTurn = (input: ChatRunInput) => {
 					agentSessionSpanAttributes(input.model.tags),
 				))
 
-	const toolkit = Toolkit.merge(maple.toolkit, ...(completion === undefined ? [] : [completion.toolkit]))
-	const handlers = Layer.mergeAll(maple.layer, ...(completion === undefined ? [] : [completion.layer]))
+	// A review's own pass may hand groups of a large pull request's files to child reviewers.
+	const fanout =
+		completion?.tool === SUBMIT_REVIEW && completion.autonomous
+			? buildReviewFanout(maple.toolkit, input.model)
+			: undefined
+
+	const toolkit = Toolkit.merge(
+		maple.toolkit,
+		...(completion === undefined ? [] : [completion.toolkit]),
+		...(fanout === undefined ? [] : [fanout.toolkit]),
+	)
+	const handlers = Layer.mergeAll(
+		maple.layer,
+		...(completion === undefined ? [] : [completion.layer]),
+		// The children run the parent's own tool handlers, so those are provided into the fan-out.
+		...(fanout === undefined
+			? []
+			: [fanout.layer.pipe(Layer.provide(Layer.mergeAll(maple.layer, IdGenerator.layer)))]),
+	)
 
 	// Declared but never *required*: see `buildDiagnosisCompletion`. A call still settles the run.
 	const run = chatAgent({ ...agent, prompt: profile.prompt }, toolkit, input.model, {
