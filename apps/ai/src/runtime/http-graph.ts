@@ -38,6 +38,7 @@ import { AuthService } from "@maple/backend/services/auth/AuthService"
 import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
 import { McpToolRateLimiter } from "@maple/backend/services/auth/McpToolRateLimiter"
 import { SessionAuthorizationLayer } from "@maple/backend/services/auth/SessionAuthorizationLayer"
+import { OrganizationRegionService } from "@maple/backend/services/org/OrganizationRegionService"
 import { V1ErrorBoundaryLive } from "@maple/backend/http/error-boundary"
 import type { AiPortsLayer } from "../worker/bindings"
 
@@ -108,6 +109,7 @@ export const AiAuthLive = Layer.mergeAll(SessionAuthorizationLayer).pipe(
 	Layer.provideMerge(AuthService.layer),
 	Layer.provideMerge(McpToolRateLimiter.layer),
 	Layer.provideMerge(ApiKeysService.layer),
+	Layer.provideMerge(OrganizationRegionService.layer),
 	// Denied attempts and audited reads are recorded from inside the auth layers.
 	Layer.provideMerge(AuditLogService.layer.pipe(Layer.provide(Env.layer))),
 	Layer.provideMerge(Layer.mergeAll(Env.layer, EdgeCacheServiceLive)),

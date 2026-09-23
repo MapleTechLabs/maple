@@ -632,6 +632,64 @@ const applyRequestedOrg = Effect.fnUntraced(function* (
 	return { ...tenant, orgId: membership.value.orgId, roles: [membership.value.role] }
 })
 
+/** The verified Clerk token behind a request, with its user present. */
+const authenticateClerkUser = Effect.fnUntraced(function* (
+	headers: HeaderRecord,
+	env: Pick<AuthEnv, "CLERK_JWT_KEY">,
+	authenticateClerkRequest: ClerkAuthenticateRequest,
+	acceptsToken: string | string[],
+) {
+	const requestState = yield* Effect.tryPromise({
+		try: () =>
+			authenticateClerkRequest(toRequest(headers), {
+				acceptsToken,
+				jwtKey: getOptionalSecret(env.CLERK_JWT_KEY),
+			}),
+		catch: (error) =>
+			unauthorized(
+				`Clerk authentication failed: ${error instanceof Error ? error.message : String(error)}`,
+			),
+	})
+
+	if (!requestState.isAuthenticated) {
+		return yield* unauthorized(requestState.message ?? "Invalid Clerk session token")
+	}
+
+	const auth = requestState.toAuth()
+	if (!auth) {
+		return yield* unauthorized("Invalid Clerk session token")
+	}
+
+	if (!auth.isAuthenticated) {
+		return yield* unauthorized("Invalid Clerk token")
+	}
+
+	if (!auth.userId) {
+		return yield* unauthorized("Missing user in Clerk session token")
+	}
+
+	return { ...auth, userId: auth.userId }
+})
+
+/**
+ * The signed-in Clerk user behind a session, with or without an active organization. For the
+ * few requests that act before an organization exists, such as creating one; everything
+ * organization-scoped goes through {@link makeResolveTenant}.
+ */
+export const makeResolveClerkUser = (
+	env: AuthEnv,
+	authenticateClerkRequest = makeClerkAuthenticateRequest(env),
+) =>
+	Effect.fn("AuthService.resolveClerkUser")(function* (
+		headers: HeaderRecord,
+	): Effect.fn.Return<UserId, UnauthorizedError> {
+		if (getAuthMode(env.MAPLE_AUTH_MODE) !== "clerk" || !authenticateClerkRequest) {
+			return yield* unauthorized("A Clerk session is required")
+		}
+		const auth = yield* authenticateClerkUser(headers, env, authenticateClerkRequest, "session_token")
+		return yield* decodeUserId(auth.userId, "Invalid user in Clerk session token")
+	})
+
 export const makeResolveTenant = (
 	env: AuthEnv,
 	authenticateClerkRequest = makeClerkAuthenticateRequest(env),
@@ -658,34 +716,7 @@ export const makeResolveTenant = (
 				return yield* unauthorized("CLERK_SECRET_KEY is required when MAPLE_AUTH_MODE=clerk")
 			}
 
-			const requestState = yield* Effect.tryPromise({
-				try: () =>
-					authenticateClerkRequest(toRequest(headers), {
-						acceptsToken,
-						jwtKey: getOptionalSecret(env.CLERK_JWT_KEY),
-					}),
-				catch: (error) =>
-					unauthorized(
-						`Clerk authentication failed: ${error instanceof Error ? error.message : String(error)}`,
-					),
-			})
-
-			if (!requestState.isAuthenticated) {
-				return yield* unauthorized(requestState.message ?? "Invalid Clerk session token")
-			}
-
-			const auth = requestState.toAuth()
-			if (!auth) {
-				return yield* unauthorized("Invalid Clerk session token")
-			}
-
-			if (!auth.isAuthenticated) {
-				return yield* unauthorized("Invalid Clerk token")
-			}
-
-			if (!auth.userId) {
-				return yield* unauthorized("Missing user in Clerk session token")
-			}
+			const auth = yield* authenticateClerkUser(headers, env, authenticateClerkRequest, acceptsToken)
 
 			const orgIdOverride = getOptionalString(env.MAPLE_ORG_ID_OVERRIDE)
 			const userId = yield* decodeUserId(auth.userId, "Invalid user in Clerk session token")

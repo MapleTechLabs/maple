@@ -20,6 +20,7 @@ import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
 import { recordApiDenial } from "@maple/backend/services/auth/audit-denial"
 import { withAuditedRead } from "@maple/backend/services/audit/audit-access"
 import { Env } from "@maple/backend/platform/Env"
+import { OrganizationRegionService } from "@maple/backend/services/org/OrganizationRegionService"
 import {
 	API_V2_RATE_LIMIT_PERIOD_SECONDS,
 	API_V2_RATE_LIMIT_REQUESTS,
@@ -80,6 +81,8 @@ export const ApiAuthorizationV2Layer = Layer.effect(
 		// directory. Absent, the header is *rejected* rather than ignored — a
 		// runtime that forgot to wire it serves 403s, never another org's data.
 		const membership = yield* Effect.serviceOption(OrgMembershipService)
+		// Optional for the same reason; absent, every organization is served here.
+		const regions = yield* Effect.serviceOption(OrganizationRegionService)
 		const resolveTenant = makeResolveTenant(
 			env,
 			undefined,
@@ -227,6 +230,11 @@ export const ApiAuthorizationV2Layer = Layer.effect(
 						),
 					)
 					yield* annotateAuthSpan("session", { orgId: tenant.orgId, userId: tenant.userId })
+					if (Option.isSome(regions)) {
+						yield* regions.value
+							.ensureServedHere(tenant.orgId)
+							.pipe(Effect.mapError((error) => V2OrganizationAccessDenied.make(error.message)))
+					}
 					return yield* httpEffect.pipe(
 						Effect.provideService(CurrentTenant.Context, new CurrentTenant.TenantSchema(tenant)),
 						Effect.provideService(CurrentAuditActor, { type: "user", source: "dashboard" }),
