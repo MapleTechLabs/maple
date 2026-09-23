@@ -30,7 +30,6 @@ import {
 	type GithubApiPullRequest,
 	GithubAppClient,
 	GithubAppError,
-	type GithubReviewInput,
 } from "./GithubAppClient"
 
 const PROVIDER: VcsProviderId = "github"
@@ -977,8 +976,10 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 					if (publication.comments.length === 0 && publication.reviewBody === null) {
 						return { ...published, reviewUrl: null }
 					}
-					const post = (comments: GithubReviewInput["comments"]) =>
-						client.createPullRequestReview(
+					// A line outside the diff is a 422 for the whole review. The summary comment already
+					// carries every finding, so the inline notes are dropped rather than re-posted empty.
+					const review = yield* client
+						.createPullRequestReview(
 							installation.externalInstallationId,
 							repo.owner,
 							repo.name,
@@ -986,26 +987,35 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 							{
 								commitId: publication.headSha,
 								body: publication.reviewBody ?? "",
-								comments,
+								comments: publication.comments,
 							},
 						)
-					// A line outside the diff is a 422 for the whole review. The summary comment already
-					// carries every finding, so the inline notes are dropped rather than re-posted empty.
-					const review = yield* post(publication.comments).pipe(
-						Effect.map((posted) => Option.some(posted)),
-						Effect.catchTag("@maple/api/vcs/GithubAppError", (error) =>
-							error.status === 422
-								? Effect.annotateCurrentSpan(
-										"vcs.pull_request.review_comments_rejected",
-										true,
-									).pipe(Effect.as(Option.none()))
-								: Effect.fail(error),
-						),
-					)
+						.pipe(
+							Effect.map((posted) => Option.some(posted)),
+							Effect.catchTag("@maple/api/vcs/GithubAppError", (error) =>
+								error.status === 422
+									? Effect.annotateCurrentSpan(
+											"vcs.pull_request.review_comments_rejected",
+											true,
+										).pipe(Effect.as(Option.none()))
+									: Effect.fail(error),
+							),
+						)
 					if (Option.isNone(review)) return { ...published, reviewUrl: null }
 					yield* Effect.annotateCurrentSpan("vcs.pull_request.review_id", review.value.id)
 					return { ...published, reviewUrl: review.value.html_url ?? null }
-				}).pipe(Effect.mapError(toVcsError))
+				}).pipe(
+					Effect.mapError(toVcsError),
+					// One span over the three posts, so each step's outcome lands on the publish itself.
+					Effect.withSpan("GithubProvider.publishPullRequestReview", {
+						attributes: {
+							"vcs.owner.name": repo.owner,
+							"vcs.repository.name": repo.name,
+							"vcs.pull_request.number": publication.number,
+							"vcs.pull_request.review_comments": publication.comments.length,
+						},
+					}),
+				)
 
 			const fetchCloneCredentials: VcsProviderClient["fetchCloneCredentials"] = (installation, repo) =>
 				client
