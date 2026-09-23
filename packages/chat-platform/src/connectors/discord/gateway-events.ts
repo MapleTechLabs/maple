@@ -76,14 +76,20 @@ const acknowledgeInteraction = (id: string, token: string): ConnectorRequest => 
 })
 
 /**
- * A message addressed to the bot.
+ * A message the bot can see, whether or not it was addressed to it.
  *
- * Three filters, in the order that makes each one cheap. A message outside a
+ * Four filters, in the order that makes each one cheap. A message outside a
  * guild is not this connector's business (it asks for no DM intent, so this only
  * fires on payloads that arrive anyway). A bot or webhook author is dropped
  * before anything else so two Maple deployments in one server cannot talk to
- * each other. And without a mention there is nothing to answer — with no
- * `MESSAGE_CONTENT` intent, `content` would be empty for those anyway.
+ * each other. What is left is reported with `mentionsBot` set either way, and
+ * the host decides whether a message that addressed nobody is still a turn.
+ *
+ * The last filter is the privileged intent showing through: without
+ * `MESSAGE_CONTENT` every message that does not mention the bot arrives with
+ * `content` empty, and there is no turn to start from nothing. Dropping those
+ * here is what keeps a deployment that has not enabled the intent from paying a
+ * host round trip for every message in every channel the bot can see.
  */
 // BOUNDARY: `data` is the decoded `d` of a gateway frame, typed at this edge.
 const messageCreate = (data: unknown, botUserId: string | undefined): DispatchResult => {
@@ -93,7 +99,8 @@ const messageCreate = (data: unknown, botUserId: string | undefined): DispatchRe
 	const message = decoded.value
 	if (message.guild_id === undefined) return NOTHING
 	if (message.author.bot === true || message.webhook_id !== undefined) return NOTHING
-	if (!message.mentions.some((user) => user.id === botUserId)) return NOTHING
+	const mentionsBot = message.mentions.some((user) => user.id === botUserId)
+	if (!mentionsBot && message.content.trim() === "") return NOTHING
 	return {
 		events: [
 			{
@@ -113,7 +120,7 @@ const messageCreate = (data: unknown, botUserId: string | undefined): DispatchRe
 					isBot: false,
 				},
 				text: stripMention(message.content, botUserId),
-				mentionsBot: true,
+				mentionsBot,
 			},
 		],
 		requests: [],

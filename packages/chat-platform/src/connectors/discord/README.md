@@ -10,11 +10,12 @@ One Discord application, created at <https://discord.com/developers/applications
 documented here rather than in the repo's `.env.example`, which is shared ground where no platform
 should be named; every name is declared once, in `api.ts`.
 
-| Secret                        | Where it comes from                   | How it reaches the connector                              |
-| ----------------------------- | ------------------------------------- | --------------------------------------------------------- |
-| `MAPLE_DISCORD_BOT_TOKEN`     | Bot tab → Token                       | `ingress.requiredConfig`, by name; `ConnectorCredentials` |
-| `MAPLE_DISCORD_CLIENT_ID`     | OAuth2 tab → Client ID (not a secret) | `install.requiredConfig`, by name                         |
-| `MAPLE_DISCORD_CLIENT_SECRET` | OAuth2 tab → Client Secret            | `install.requiredConfig`, by name                         |
+| Secret                                 | Where it comes from                   | How it reaches the connector                              |
+| -------------------------------------- | ------------------------------------- | --------------------------------------------------------- |
+| `MAPLE_DISCORD_BOT_TOKEN`              | Bot tab → Token                       | `ingress.requiredConfig`, by name; `ConnectorCredentials` |
+| `MAPLE_DISCORD_MESSAGE_CONTENT_INTENT` | Not a secret — `1`/`true` to opt in   | `ingress.requiredConfig`, optional (see below)            |
+| `MAPLE_DISCORD_CLIENT_ID`              | OAuth2 tab → Client ID (not a secret) | `install.requiredConfig`, by name                         |
+| `MAPLE_DISCORD_CLIENT_SECRET`          | OAuth2 tab → Client Secret            | `install.requiredConfig`, by name                         |
 
 A half whose names are unset is skipped rather than fatal: the dashboard reports the connector as
 unavailable and offers no connect button, the ingress half logs one line, and the rest of each
@@ -25,12 +26,10 @@ Worker runs.
    names it in `requiredConfig` so the host resolves it generically, and hands the resolved map to
    the outbound half as `ConnectorCredentials` — one secret, one name, read by both halves, and the
    connector never touches `process.env`.
-2. **Bot tab → Privileged Gateway Intents: leave all three OFF.** This connector identifies with
-   `GUILDS | GUILD_MESSAGES` only. Discord delivers message content without the privileged
-   `MESSAGE_CONTENT` intent for messages in which the app is mentioned, which is exactly — and only
-   — what V1 answers. Enabling `MESSAGE_CONTENT` would change nothing about what this code does, so
-   do not enable it to make something work; change the intents in `gateway-payloads.ts`
-   deliberately instead.
+2. **Bot tab → Privileged Gateway Intents: leave all three OFF**, unless you want the two features
+   in "Message Content" below. This connector identifies with `GUILDS | GUILD_MESSAGES` by default.
+   Discord delivers message content without the privileged `MESSAGE_CONTENT` intent for messages in
+   which the app is mentioned, which is what a mention-only bot needs and nothing more.
 3. **Bot tab → Requires OAuth2 Code Grant: ON.** An install can then only complete through the code
    exchange the install half performs.
 4. **OAuth2 tab → Redirects.** Add `https://api.maple.dev/oauth/chat/discord/callback`, and the
@@ -59,11 +58,41 @@ answer from Maple.
 4. **Mention it.** `@Maple why is checkout slow?` in a channel. The bot opens a thread on that
    message and edits one message in it as the answer streams. A follow-up mention inside the thread
    continues the same conversation; a mention in another channel starts a different one. A mention
-   while an answer is still being written is told so, and is not queued.
+   while an answer is still being written is told so, and is not queued. With Message Content on
+   (below), a follow-up inside that thread needs no mention at all.
 
-Two limits worth knowing before reporting a bug: a write the agent proposes is rendered as an
-approval card that **cannot be approved yet** (clicking it answers that approvals are not available
-yet), and the bot only ever answers messages it was mentioned in.
+One limit worth knowing before reporting a bug: a write the agent proposes is rendered as an
+approval card that **cannot be approved yet** — clicking it answers that approvals are not
+available yet.
+
+## Message Content (privileged, opt-in)
+
+Two things need the `MESSAGE_CONTENT` intent, because without it Discord gives the app empty
+`content` for every message it was not mentioned in — over the gateway **and over the REST API**:
+
+- **the conversation the model is shown.** A mention is answered with the messages written around
+  it, so "and the payments call?" means something. Without the intent that context is a list of
+  timestamps with nothing in it, so those messages are dropped and the model sees only the mention.
+- **answering a follow-up that did not mention the bot** in a thread Maple opened. Without the
+  intent the connector never reports those messages at all.
+
+Everything else — a mention, an approval click, being removed from a server — works without it.
+
+To turn it on, in this order:
+
+1. **Bot tab → Privileged Gateway Intents → Message Content: ON.** Under 100 servers this is a
+   toggle; above it Discord requires verification and approval for the intent.
+2. Set `MAPLE_DISCORD_MESSAGE_CONTENT_INTENT=1` on the `chat-bot` deployment.
+
+The order matters. Identifying with an intent the application has not been granted closes the
+gateway with **4014**, which this connector treats as fatal — the socket stops rather than
+reconnecting into a loop, and the line it logs names this variable. Unset it (or grant the intent)
+and the next start recovers; nothing is lost but the time in between.
+
+A bot that can read every message in every channel it can see is also a bot whose host pays a
+Durable Object round trip for each one. `apps/chat-bot` drops what cannot be a turn before that —
+another bot's message, and a message with no text — and the rest is decided by the conversation's
+own session (`relay/conversation.ts`).
 
 ## Install flow
 

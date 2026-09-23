@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest"
 import type { ConnectorConfig } from "../../ingress.ts"
 import { socketIngress } from "../../ingress.ts"
+import { MESSAGE_CONTENT_CONFIG } from "./api.ts"
 import { BOT_TOKEN, gatewayProtocol, type GatewayState } from "./gateway.ts"
-import { INTENTS, OP } from "./gateway-payloads.ts"
+import { INTENTS, MESSAGE_CONTENT_INTENT, OP } from "./gateway-payloads.ts"
 
 const config: ConnectorConfig = new Map([[BOT_TOKEN, "bot-token"]])
 const NOW = 1_700_000_000_000
@@ -58,6 +59,31 @@ describe("the handshake", () => {
 		expect(step.state.heartbeatIntervalMs).toBe(41_250)
 		// The first heartbeat is jittered inside the interval, as Discord asks.
 		expect(step.heartbeatAt).toBe(NOW + 20_625)
+	})
+
+	it.each([
+		["1", true],
+		["true", true],
+		["TRUE", true],
+		["0", false],
+		["yes", false],
+		["", false],
+	])("asks for the privileged content intent only when the deployment says %j", (value, wanted) => {
+		const step = gatewayProtocol.onFrame(
+			state(),
+			frame({ op: OP.hello, d: { heartbeat_interval: 41_250 } }),
+			NOW,
+			new Map([
+				[BOT_TOKEN, "bot-token"],
+				[MESSAGE_CONTENT_CONFIG, value],
+			]),
+		)
+		const identify = sent(step.send?.[0])
+		// Asking for an intent the application has not been granted is a 4014, which is fatal — so
+		// anything a reader would not call "on" leaves it off.
+		expect((identify.d as { intents: number }).intents & MESSAGE_CONTENT_INTENT).toBe(
+			wanted ? MESSAGE_CONTENT_INTENT : 0,
+		)
 	})
 
 	it("resumes on HELLO when a session is held", () => {
@@ -203,6 +229,18 @@ describe("close codes", () => {
 		expect(step.directive?._tag).toBe("stop")
 	})
 
+	it("names the privileged intent on 4014, which is what the message-content switch fails as", () => {
+		// The one fatal code an operator can cause from the deployment side, so the line they read
+		// has to say which switch to move.
+		const step = gatewayProtocol.onClose(ready(), 4014, "Disallowed intent(s).")
+		expect(step.directive).toEqual({
+			_tag: "stop",
+			reason: expect.stringContaining(MESSAGE_CONTENT_CONFIG),
+		})
+		// And the session is kept rather than reconnected with: the loop stops here.
+		expect(step.state).toEqual(ready())
+	})
+
 	it.each([
 		[4001, "an unknown opcode"],
 		[4002, "a decode error"],
@@ -295,10 +333,39 @@ describe("messages", () => {
 		expect(step.events?.[0]).toMatchObject({ author: { displayName: "Ada L." } })
 	})
 
-	it("ignores a message that does not mention the bot", () => {
+	it("reports a message that mentions nobody, and says so", () => {
+		// What a follow-up in a thread Maple opened looks like. Whether it is a TURN is the host's
+		// decision, made against the conversation's session; the connector only reports it.
 		const step = gatewayProtocol.onFrame(
 			ready(),
-			message({ content: "morning", mentions: [] }),
+			message({ content: "and the payments call?", mentions: [] }),
+			NOW,
+			config,
+		)
+		expect(step.events?.[0]).toMatchObject({ text: "and the payments call?", mentionsBot: false })
+	})
+
+	it("drops an unaddressed message whose content the intent withheld", () => {
+		// Without MESSAGE_CONTENT this is every message the bot was not mentioned in. There is no
+		// turn to start from nothing, and dropping it here is one fewer host round trip per message.
+		const step = gatewayProtocol.onFrame(ready(), message({ content: "", mentions: [] }), NOW, config)
+		expect(step.events ?? []).toEqual([])
+	})
+
+	it("still reports a mention whose text is only the mention itself", () => {
+		const step = gatewayProtocol.onFrame(
+			ready(),
+			message({ content: "<@900000000000000001>" }),
+			NOW,
+			config,
+		)
+		expect(step.events?.[0]).toMatchObject({ text: "", mentionsBot: true })
+	})
+
+	it("ignores another bot even when it mentioned nobody", () => {
+		const step = gatewayProtocol.onFrame(
+			ready(),
+			message({ author: user("4000000000000000004", { bot: true }), content: "beep", mentions: [] }),
 			NOW,
 			config,
 		)

@@ -13,6 +13,7 @@ import {
 	encodeChatEventPayload,
 	type ChatEvent,
 	type ChatEventInput,
+	type ChatMessage,
 } from "@maple/domain/chat-session"
 import type { ChatSessionStub } from "@maple/domain/chat-session-stub"
 import { ChatConnectorId, OrgId } from "@maple/domain/primitives"
@@ -21,6 +22,7 @@ import {
 	ChatOutboundError,
 	type ChatBlock,
 	type ChatChartRef,
+	type ChatHistoryMessage,
 	type ChatMessageRef,
 	type ChatOutbound,
 	type ChatTarget,
@@ -57,15 +59,20 @@ interface Chat {
 	/** Every post and edit, in order. */
 	readonly calls: Array<{ verb: "post" | "edit"; ref: ChatMessageRef; blocks: ReadonlyArray<ChatBlock> }>
 	readonly threads: Array<string>
+	/** What the relay asked for the model's context, if it asked at all. */
+	readonly historyCalls: Array<{ channelId: string; limit: number; before: string }>
 }
 
-const chat = (): Chat => {
+/** `earlier` is what this platform says was written in the conversation before the message. */
+const chat = (earlier: ReadonlyArray<ChatHistoryMessage> = []): Chat => {
 	const calls: Chat["calls"] = []
 	const threads: Array<string> = []
+	const historyCalls: Chat["historyCalls"] = []
 	let posted = 0
 	return {
 		calls,
 		threads,
+		historyCalls,
 		outbound: {
 			connectorId: TESTCHAT,
 			limits: { maxMessageChars: 2000, minEditInterval: Duration.millis(10) },
@@ -81,13 +88,21 @@ const chat = (): Chat => {
 				openThread: (request) => Effect.succeed(request.anchorMessageId),
 				conversation: (message) =>
 					Effect.sync(() => {
-						threads.push(message.messageId)
+						// Only a mention opens a thread here, exactly as a real connector does: a message
+						// that addressed nobody can continue a conversation but never start one.
+						if (message.mentionsBot) threads.push(message.messageId)
 						return {
 							conversationKey: Schema.decodeSync(
 								Schema.String.pipe(Schema.brand("@maple/ChatConversationKey")),
 							)(CONVERSATION),
 							target: { workspaceId: message.workspaceId, channelId: CONVERSATION },
+							opened: message.mentionsBot,
 						}
+					}),
+				history: (historyTarget, options) =>
+					Effect.sync(() => {
+						historyCalls.push({ channelId: historyTarget.channelId, ...options })
+						return earlier
 					}),
 			})),
 		},
@@ -117,6 +132,12 @@ const sse = (events: ReadonlyArray<ChatEvent>): ReadableStream<Uint8Array> => {
 	})
 }
 
+/** A turn that opens and closes with nothing said in it, for cases that are about the claim. */
+const silentTurn: ReadonlyArray<ChatEvent> = [
+	event(1, { type: "turn-start", messageId: "a1" }),
+	event(2, { type: "turn-end", messageId: "a1", reason: "stop" }),
+]
+
 type BeginTurnInput = Parameters<ChatSessionStub["beginTurn"]>[0]
 
 interface Session {
@@ -133,7 +154,11 @@ interface Session {
  */
 const session = (
 	connections: ReadonlyArray<ReadonlyArray<ChatEvent>>,
-	options?: { readonly busy?: boolean },
+	options?: {
+		readonly busy?: boolean
+		/** What the session's transcript already holds, as `history()` answers it. */
+		readonly transcript?: ReadonlyArray<ChatMessage>
+	},
 ): Session => {
 	const turns: Array<BeginTurnInput> = []
 	const cursors: Array<number> = []
@@ -144,7 +169,7 @@ const session = (
 		stub: {
 			cursor: () => Promise.resolve(0),
 			running: () => Promise.resolve(false),
-			history: () => Promise.resolve([]),
+			history: () => Promise.resolve(options?.transcript ?? []),
 			since: () => Promise.resolve([]),
 			append: () => Promise.resolve(0),
 			holdsTurn: () => Promise.resolve(false),
@@ -172,6 +197,8 @@ interface Host {
 	readonly ports: RelayPorts
 	readonly forgotten: Array<string>
 	readonly charts: Array<{ orgId: OrgId; ref: ChatChartRef }>
+	/** The conversations the host has been told the bot opened — the relay object's one durable fact. */
+	readonly opened: Set<string>
 }
 
 const host = (
@@ -182,13 +209,17 @@ const host = (
 		readonly announceUnlinked?: boolean
 		/** The database could not answer, which is not the same as nobody having linked it. */
 		readonly lookupFails?: boolean
+		/** A conversation the bot opened on some earlier event, as the relay object would remember it. */
+		readonly opened?: ReadonlyArray<string>
 	},
 ): Host => {
 	const forgotten: Array<string> = []
 	const charts: Array<{ orgId: OrgId; ref: ChatChartRef }> = []
+	const opened = new Set<string>(options?.opened ?? [])
 	return {
 		forgotten,
 		charts,
+		opened,
 		ports: {
 			outbound,
 			resolveWorkspace: (connector) =>
@@ -206,6 +237,9 @@ const host = (
 				return `https://app.maple.dev/chat/chart/${ref.chartIndex}.png`
 			},
 			announceUnlinked: Effect.succeed(options?.announceUnlinked ?? true),
+			ownsConversation: (conversationKey) => Effect.sync(() => opened.has(conversationKey)),
+			rememberConversation: (conversation) =>
+				Effect.sync(() => void opened.add(conversation.conversationKey)),
 		},
 	}
 }
@@ -491,6 +525,113 @@ describe("relaying a mention", () => {
 			expect(notices(blocksOf(platform.calls))).toEqual([
 				"Maple's agent can't be reached from here right now.",
 			])
+		}),
+	)
+
+	it.effect("gives the model what the conversation was already saying, and remembers it opened one", () =>
+		Effect.gen(function* () {
+			const platform = chat([
+				{ authorId: "u2", displayName: "Bo", isBot: false, text: "checkout again", at: 1000 },
+			])
+			const agent = session([silentTurn])
+			const deployment = host(platform.outbound, agent.stub)
+
+			yield* relayInboundEvent(mention, deployment.ports)
+
+			// Read where the mention was written, and only what came before it: the conversation the
+			// answer goes in is a thread that did not exist a moment ago.
+			expect(platform.historyCalls).toEqual([
+				{ channelId: CHANNEL, limit: 20, before: mention.messageId },
+			])
+			expect(agent.turns[0]?.text).toContain("Bo: checkout again")
+			// And the conversation is now the bot's own, which is what lets the next message in it be
+			// answered without a mention.
+			expect([...deployment.opened]).toEqual([CONVERSATION])
+		}),
+	)
+})
+
+describe("relaying a message that mentioned nobody", () => {
+	const followUp: InboundMessage = {
+		...mention,
+		messageId: "message-2",
+		// Where a platform gives a thread its own address, a follow-up in one arrives addressed to the
+		// conversation itself rather than to the channel around it.
+		channelId: CONVERSATION,
+		text: "and the payments call?",
+		mentionsBot: false,
+	}
+
+	/** A session that answered a minute ago, which is what makes the conversation live. */
+	const answered: ReadonlyArray<ChatMessage> = [
+		{
+			id: "a1",
+			role: "assistant",
+			text: "Checkout is slow.",
+			toolCalls: [],
+			createdAt: Date.now() - 60_000,
+			startSeq: 2,
+		},
+	]
+
+	it.effect("answers it in a conversation the bot opened and spoke in recently", () =>
+		Effect.gen(function* () {
+			const platform = chat()
+			const agent = session([silentTurn], { transcript: answered })
+			const deployment = host(platform.outbound, agent.stub, { opened: [CONVERSATION] })
+
+			yield* relayInboundEvent(followUp, deployment.ports)
+
+			expect(agent.turns).toHaveLength(1)
+			expect(agent.turns[0]?.text).toContain("and the payments call?")
+			// Nothing was opened for it: an unaddressed message continues a conversation, never starts
+			// one.
+			expect(platform.threads).toEqual([])
+		}),
+	)
+
+	it.effect("leaves a conversation the bot did not open completely alone", () =>
+		Effect.gen(function* () {
+			const platform = chat()
+			const agent = session([silentTurn], { transcript: answered })
+			const deployment = host(platform.outbound, agent.stub)
+
+			yield* relayInboundEvent(followUp, deployment.ports)
+
+			expect(agent.turns).toEqual([])
+			// Not even a notice. Nobody asked it anything, so nothing appears in the conversation.
+			expect(platform.calls).toEqual([])
+			expect(platform.historyCalls).toEqual([])
+		}),
+	)
+
+	it.effect("says nothing when there is nothing to say back", () =>
+		Effect.gen(function* () {
+			// Every notice a mention would get — the workspace nobody linked, the session that is
+			// busy or unreachable — is a bot talking to a conversation that did not address it.
+			const unlinkedChat = chat()
+			const busyChat = chat()
+			const unlinked = host(
+				unlinkedChat.outbound,
+				session([silentTurn], { transcript: answered }).stub,
+				{
+					linked: false,
+					opened: [CONVERSATION],
+				},
+			)
+			const busy = host(
+				busyChat.outbound,
+				session([silentTurn], { busy: true, transcript: answered }).stub,
+				{
+					opened: [CONVERSATION],
+				},
+			)
+
+			yield* relayInboundEvent(followUp, unlinked.ports)
+			yield* relayInboundEvent(followUp, busy.ports)
+
+			expect(unlinkedChat.calls).toEqual([])
+			expect(busyChat.calls).toEqual([])
 		}),
 	)
 })

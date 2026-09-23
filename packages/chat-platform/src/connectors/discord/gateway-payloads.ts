@@ -8,6 +8,7 @@
  * Verified against the Gateway and Gateway Events references (API v10).
  */
 import { Schema } from "effect"
+import { MESSAGE_CONTENT_CONFIG } from "./api.ts"
 
 /** `wss://gateway.discord.gg/?v=10&encoding=json` — JSON, uncompressed, single shard. */
 export const GATEWAY_QUERY = "?v=10&encoding=json"
@@ -29,20 +30,33 @@ export const OP = {
  * `GUILDS | GUILD_MESSAGES` (`1 << 0 | 1 << 9`).
  *
  * `GUILDS` is what delivers `GUILD_DELETE`, which is how the bot learns it was
- * removed from a server. `GUILD_MESSAGES` delivers `MESSAGE_CREATE`.
- *
- * `MESSAGE_CONTENT` (`1 << 15`) is deliberately NOT requested. It is privileged,
- * and the documented exceptions cover exactly the V1 product: content is
- * delivered without it for messages the app sends, DMs with the app, and
- * **messages in which the app is mentioned**. Mention-only is therefore not a
- * limitation worked around — it is the reason the bot needs no privileged
- * intent at all. Anything that wants to read messages the bot was not addressed
- * in has to ask Discord for the intent first.
+ * removed from a server. `GUILD_MESSAGES` delivers `MESSAGE_CREATE`, in threads
+ * as well as in channels.
  *
  * `INTERACTION_CREATE` is not gated by any intent, so approval buttons work on
  * this set too.
  */
 export const INTENTS = (1 << 0) | (1 << 9)
+
+/**
+ * `MESSAGE_CONTENT` (`1 << 15`), added only when the deployment asks for it.
+ *
+ * It is privileged, and the documented exceptions cover the mention-only
+ * product exactly: content reaches the app for messages it sent, DMs with it,
+ * and **messages in which it is mentioned**. Everything else — a follow-up in a
+ * thread Maple opened, the messages around a mention that give it context —
+ * arrives with `content` empty, over the gateway AND over the REST API.
+ *
+ * So it is off by default and turned on by setting {@link MESSAGE_CONTENT_CONFIG}
+ * on a deployment whose Discord application has the intent enabled in the
+ * developer portal. Identifying with an intent the application has not been
+ * granted is close code 4014, which is fatal — see this directory's README.
+ */
+export const MESSAGE_CONTENT_INTENT = 1 << 15
+
+/** The identify intents for this deployment. */
+export const gatewayIntents = (messageContent: boolean): number =>
+	messageContent ? INTENTS | MESSAGE_CONTENT_INTENT : INTENTS
 
 /** Interaction types (`type` on an `INTERACTION_CREATE`). Only the component click matters here. */
 export const INTERACTION_MESSAGE_COMPONENT = 3
@@ -67,6 +81,21 @@ export const CALLBACK_DEFERRED_UPDATE_MESSAGE = 6
  * source, not the prose elsewhere that summarises it.
  */
 export const FATAL_CLOSE_CODES: ReadonlySet<number> = new Set([4004, 4010, 4011, 4012, 4013, 4014])
+
+/**
+ * What a fatal code actually means, for the one line an operator reads.
+ *
+ * 4014 is the one worth spelling out: it is what Discord answers when the
+ * identify asks for a privileged intent the application has not been granted,
+ * and it is the failure mode of {@link MESSAGE_CONTENT_CONFIG} being set on a
+ * deployment whose application does not have the intent enabled.
+ */
+export const FATAL_CLOSE_HINTS: ReadonlyMap<number, string> = new Map([
+	[
+		4014,
+		`a privileged intent this application has not been granted — enable Message Content in the Bot tab, or unset ${MESSAGE_CONTENT_CONFIG}`,
+	],
+])
 
 /**
  * Close codes that invalidate the session but not the connection attempt: the
@@ -120,8 +149,9 @@ export const MessageCreate = Schema.Struct({
 	guild_id: Schema.optionalKey(Schema.String),
 	author: User,
 	/**
-	 * Empty unless the message qualifies under one of the MESSAGE_CONTENT
-	 * exceptions — for this bot, unless it was mentioned.
+	 * Empty unless the application holds the MESSAGE_CONTENT intent or the
+	 * message qualifies under one of its exceptions — for this bot, unless it
+	 * was mentioned.
 	 */
 	content: Schema.String,
 	mentions: Schema.Array(User),

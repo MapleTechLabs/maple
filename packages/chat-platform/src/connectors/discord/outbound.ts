@@ -86,6 +86,32 @@ const CreatedMessage = Schema.Struct({
 /** A started thread is a channel, and its id is what every later call addresses. */
 const CreatedThread = Schema.Struct({ id: Schema.String })
 
+/**
+ * One earlier message, as `GET /channels/{id}/messages` answers it.
+ *
+ * `content` is empty for every message the application is not allowed to read — without the
+ * privileged `MESSAGE_CONTENT` intent that is everything it was not mentioned in, over REST as
+ * well as over the gateway. `timestamp` is ISO-8601, and a value that will not parse leaves the
+ * message out rather than dating it to 1970.
+ */
+const HistoryMessage = Schema.Struct({
+	author: Schema.Struct({
+		id: Schema.String,
+		username: Schema.String,
+		global_name: Schema.optionalKey(Schema.NullOr(Schema.String)),
+		bot: Schema.optionalKey(Schema.Boolean),
+	}),
+	member: Schema.optionalKey(Schema.Struct({ nick: Schema.optionalKey(Schema.NullOr(Schema.String)) })),
+	content: Schema.String,
+	timestamp: Schema.String,
+	webhook_id: Schema.optionalKey(Schema.String),
+})
+
+const HistoryPage = Schema.Array(HistoryMessage)
+
+/** Discord's own ceiling on one page of history. */
+const MAX_HISTORY_LIMIT = 100
+
 /** 1–100 characters, per the Start Thread documentation. */
 const MAX_THREAD_NAME_CHARS = 100
 
@@ -273,6 +299,52 @@ export const discordOutbound: ChatOutbound<HttpClient.HttpClient | ConnectorCred
 			openThread,
 
 			/**
+			 * What was said in this channel before a message, newest first.
+			 *
+			 * Discord answers newest-first already, which is the order the contract asks for and the
+			 * order a bound should cut in. A message whose timestamp will not parse is dropped: it
+			 * cannot be placed in the conversation, and the host uses the instant to decide what the
+			 * session has already seen.
+			 */
+			history: Effect.fn("Discord.history")(function* (
+				target: ChatTarget,
+				options: { readonly limit: number; readonly before: string },
+			) {
+				const limit = Math.min(options.limit, MAX_HISTORY_LIMIT)
+				const response = yield* send(
+					"history",
+					"/channels/{channel_id}/messages",
+					HttpClientRequest.get(
+						`${API_BASE}/channels/${channelOf(target)}/messages?limit=${limit}&before=${encodeURIComponent(options.before)}`,
+					),
+				)
+				const json = yield* response.json.pipe(
+					Effect.mapError((cause) =>
+						failed("history", "Discord's reply could not be read", { cause }),
+					),
+				)
+				const page = yield* Schema.decodeUnknownEffect(HistoryPage)(json).pipe(
+					Effect.mapError((cause) =>
+						failed("history", "Discord answered with no messages", { cause }),
+					),
+				)
+				return page.flatMap((message) => {
+					const at = Date.parse(message.timestamp)
+					if (Number.isNaN(at)) return []
+					return [
+						{
+							authorId: message.author.id,
+							displayName:
+								message.member?.nick ?? message.author.global_name ?? message.author.username,
+							isBot: message.author.bot === true || message.webhook_id !== undefined,
+							text: message.content,
+							at,
+						},
+					]
+				})
+			}),
+
+			/**
 			 * A mention is answered in a thread of its own, so a channel keeps reading as a channel.
 			 *
 			 * The thread IS the conversation, and on Discord a thread is a channel — so its id is both
@@ -282,16 +354,25 @@ export const discordOutbound: ChatOutbound<HttpClient.HttpClient | ConnectorCred
 			 * Discord will not start a thread from a message that is already in one, and answers the
 			 * same way in a channel where the bot may not start them at all. Both mean the same thing
 			 * here: the mention's own channel is the conversation.
+			 *
+			 * A message that mentioned nobody opens nothing and costs no request. It can only ever
+			 * continue a conversation that already exists — whether it does is the host's decision,
+			 * made against the conversation this answers with.
 			 */
 			conversation: (message: InboundMessage) =>
-				openThread({
-					workspaceId: message.workspaceId,
-					channelId: message.channelId,
-					anchorMessageId: message.messageId,
-					title: message.text,
-				}).pipe(
-					Effect.orElseSucceed(() => message.channelId),
-					Effect.flatMap((channelId) =>
+				(message.mentionsBot
+					? openThread({
+							workspaceId: message.workspaceId,
+							channelId: message.channelId,
+							anchorMessageId: message.messageId,
+							title: message.text,
+						}).pipe(
+							Effect.map((channelId) => ({ channelId, opened: true })),
+							Effect.orElseSucceed(() => ({ channelId: message.channelId, opened: false })),
+						)
+					: Effect.succeed({ channelId: message.channelId, opened: false })
+				).pipe(
+					Effect.flatMap(({ channelId, opened }) =>
 						Option.match(decodeConversationKey(channelId), {
 							onNone: () =>
 								Effect.fail(
@@ -301,6 +382,7 @@ export const discordOutbound: ChatOutbound<HttpClient.HttpClient | ConnectorCred
 								Effect.succeed({
 									conversationKey,
 									target: { workspaceId: message.workspaceId, channelId },
+									opened,
 								}),
 						}),
 					),

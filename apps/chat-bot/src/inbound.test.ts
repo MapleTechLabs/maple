@@ -58,6 +58,7 @@ const handleAndRecord = async (
 			delivered.push(inbound)
 			return Promise.resolve()
 		},
+		remember: () => Promise.resolve(),
 	}
 	await Effect.runPromise(
 		inboundHandler({ forEvent: () => relay })
@@ -101,10 +102,26 @@ describe("handing an inbound event on", () => {
 		expect(delivered).toEqual([testMessage])
 	})
 
-	it("relays nothing for a message the bot was not addressed in", async () => {
-		// A connector reports what it can see in a conversation the bot is in; only a mention is a
-		// turn, and starting one per message would answer every conversation in the channel.
-		const { delivered } = await handleAndRecord({ ...testMessage, mentionsBot: false })
-		expect(delivered).toEqual([])
+	it("hands on a message that addressed nobody, for the relay to judge", async () => {
+		// Whether it is a turn depends on the conversation's session — whether the bot opened the
+		// conversation and how recently it spoke — and none of that is knowable here.
+		const unaddressed = { ...testMessage, mentionsBot: false }
+		const { delivered } = await handleAndRecord(unaddressed)
+		expect(delivered).toEqual([unaddressed])
+	})
+
+	it("drops an unaddressed message that could not be a turn, without a round trip", async () => {
+		// The two the relay could only reject: another bot, and a message whose text the platform
+		// withheld. Deciding them here is free; deciding them later costs a Durable Object call per
+		// message in every channel the bot can see.
+		const fromBot = await handleAndRecord({
+			...testMessage,
+			mentionsBot: false,
+			author: { ...testMessage.author, isBot: true },
+		})
+		const withoutText = await handleAndRecord({ ...testMessage, mentionsBot: false, text: "  " })
+
+		expect(fromBot.delivered).toEqual([])
+		expect(withoutText.delivered).toEqual([])
 	})
 })

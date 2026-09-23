@@ -31,6 +31,17 @@ export const TOKEN_URL = `${API_BASE}/oauth2/token`
 export const BOT_TOKEN_CONFIG = "MAPLE_DISCORD_BOT_TOKEN"
 
 /**
+ * The switch for the privileged `MESSAGE_CONTENT` intent — the one config value here that is not a
+ * secret and not required.
+ *
+ * Off unless the deployment sets it to `1` or `true`, because identifying with a privileged intent
+ * the Discord application has not been granted closes the gateway with 4014, which is fatal: a
+ * deployment that turned it on by accident would have no bot at all. What it buys, and what has to
+ * be switched on in the developer portal first, is in this directory's README.
+ */
+export const MESSAGE_CONTENT_CONFIG = "MAPLE_DISCORD_MESSAGE_CONTENT_INTENT"
+
+/**
  * The application's OAuth2 credentials, named in the install half's `requiredConfig`.
  *
  * A different worker resolves these than resolves the bot token: installing is the API's job and
