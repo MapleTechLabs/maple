@@ -55,6 +55,20 @@ describe("refusing an approved proposal before it runs", () => {
 		assert.include(result.output, "is not a change Maple applies from an approval")
 	})
 
+	it("refuses an app approver whose tenant is another org's", async () => {
+		const result = await applyChatProposal({
+			env: {},
+			sessionId: "org_1:tab-1",
+			approver: { kind: "app" },
+			tenant: { orgId: "org_2", userId: "user_ada", roles: ["org:admin"], authMode: "clerk" },
+			tool: "create_alert_rule",
+			input: {},
+		})
+
+		assert.isTrue(result.isError)
+		assert.include(result.output, "another organization")
+	})
+
 	it("refuses a conversation whose id names no organization", async () => {
 		const result = await apply({ sessionId: "no-org-here" })
 

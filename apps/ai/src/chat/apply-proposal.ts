@@ -150,6 +150,10 @@ export const applyChatProposal = async (input: ApplyChatProposalInput): Promise<
 	const org = decodeOrgId(orgIdFromChatSessionId(input.sessionId))
 	if (Option.isNone(org)) return failure("This conversation does not name an organization.")
 	const orgId = org.value
+	// The route checks this too; a caller's tenant never acts in another org's conversation.
+	if ("tenant" in input && input.tenant.orgId !== orgId) {
+		return failure("This conversation belongs to another organization.")
+	}
 
 	// Defense in depth: only an approval-gated mutation is applicable here, whatever the log happens
 	// to hold. `connectorApprovalTenant` below grants `org:admin`, so this is the last thing between
