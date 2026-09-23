@@ -136,9 +136,32 @@ export const ApiResult = Schema.Struct({
 	error: Schema.optionalKey(Schema.String),
 	channel: Schema.optionalKey(Schema.String),
 	ts: Schema.optionalKey(Schema.String),
+	/**
+	 * A history page, left `Unknown` on purpose: each message is decoded on its own so one Maple
+	 * cannot read costs that message rather than the conversation around it.
+	 */
+	messages: Schema.optionalKey(Schema.Array(Schema.Unknown)),
 })
 
 export const decodeApiResult = Schema.decodeUnknownEffect(ApiResult)
+
+/**
+ * One earlier message, as `conversations.history` and `conversations.replies` answer it.
+ *
+ * `text` is optional because a message can carry only blocks, files or attachments; the contract
+ * says an empty one is left out of the context rather than rendered as a blank line. `username` is
+ * what a bot-posted message carries instead of a `user`.
+ */
+const HistoryMessage = Schema.Struct({
+	ts: Schema.String,
+	text: Schema.optionalKey(Schema.String),
+	user: Schema.optionalKey(Schema.String),
+	username: Schema.optionalKey(Schema.String),
+	bot_id: Schema.optionalKey(Schema.String),
+	subtype: Schema.optionalKey(Schema.String),
+})
+
+export const decodeHistoryMessage = Schema.decodeUnknownOption(HistoryMessage)
 
 /** The bot's own user id for this delivery, where Slack named it. */
 export const botUserIdOf = (callback: SlackEventCallback): Option.Option<string> =>

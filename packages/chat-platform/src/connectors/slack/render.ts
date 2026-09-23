@@ -76,6 +76,23 @@ export interface SlackMessageRequest extends SlackMessagePayload {
 	readonly ts?: string
 }
 
+/**
+ * One read of a conversation: `conversations.history` for a channel, `conversations.replies` for a
+ * thread, which is the same arguments plus the parent message's `ts`.
+ */
+export interface SlackHistoryRequest {
+	readonly channel: string
+	readonly limit: number
+	/** The end of the range. With `inclusive: false` this is "everything before this message". */
+	readonly latest: string
+	readonly inclusive: false
+	/** The thread's parent, for `conversations.replies` only. */
+	readonly ts?: string
+}
+
+/** Everything the transport sends. Both are JSON bodies to a Web API method. */
+export type SlackApiRequest = SlackMessageRequest | SlackHistoryRequest
+
 export const MAX_BLOCKS = 50
 export const MAX_SECTION_CHARS = 3000
 export const MAX_BUTTON_TEXT_CHARS = 75

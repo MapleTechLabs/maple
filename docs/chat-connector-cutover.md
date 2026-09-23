@@ -48,9 +48,10 @@ cutover, and keeps running throughout.
     - **a top-level mention** in a public channel is answered in a thread on that message;
     - **a mention inside an existing thread** is answered in that same thread — and lands on the
       same session as the first question, not a new one;
-    - **a reply in the bot's thread without a mention** reaches the Worker (look for
-      `chat_bot.inbound_event` with `maple.chat.event = message`; it is dropped after that until the
-      thread-context work lands);
+    - **a reply in the bot's thread without a mention** is answered, and the answer shows the bot
+      read the messages above it — the thread is one the bot opened, which is what makes an
+      un-addressed message in it still a turn;
+    - **an un-addressed message in a channel the bot was merely invited to** is NOT answered;
     - **an approval card** renders with both buttons, and pressing one produces
       `maple.chat.event = action` — whatever the approval flow then does with it;
     - **a private channel, a DM and a group DM** each behave like the public channel;

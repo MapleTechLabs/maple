@@ -22,6 +22,12 @@ export const POST_MESSAGE_URL = `${API_BASE}/chat.postMessage`
 
 export const UPDATE_MESSAGE_URL = `${API_BASE}/chat.update`
 
+/** What a channel holds. Answers newest first, which is the order the history contract asks for. */
+export const CHANNEL_HISTORY_URL = `${API_BASE}/conversations.history`
+
+/** What a thread holds. Addressed by the PARENT message's `ts`, which is the thread's own id. */
+export const THREAD_REPLIES_URL = `${API_BASE}/conversations.replies`
+
 /**
  * The application's OAuth credentials, named in the install half's `requiredConfig`.
  *

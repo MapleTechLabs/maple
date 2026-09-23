@@ -100,9 +100,12 @@ slow?`. It answers in a thread on that message and edits one message there as th
    A reply in that thread continues the same conversation; a mention in another channel starts a
    different one.
 
-Two limits worth knowing before reporting a bug: an un-mentioned thread reply is delivered but
-currently dropped by the host (it is what the thread-context work turns on), and a write the agent
-proposes renders as an approval card that **cannot be approved yet**.
+5. **Reply in that thread without mentioning the bot.** The thread is one the bot opened, so it
+   answers anyway — and it reads the messages above the reply for context. In a channel it was
+   merely invited to, an un-addressed message is not a turn.
+
+One limit worth knowing before reporting a bug: a write the agent proposes renders as an approval
+card that **cannot be approved yet**.
 
 ## The bot token
 
@@ -203,6 +206,22 @@ The only way to learn otherwise is a `users.info` call, which needs the `users:r
 change every installed workspace has to re-approve, and one extra API call on every button press.
 That is a trade worth making when there is a policy to enforce, and not before.
 
+## Reading the conversation back
+
+`transport.history` is `conversations.replies` for a thread — addressed by its parent's `ts`, which
+is the thread's own id — and `conversations.history` for a channel. Both take `latest` with
+`inclusive: false`, which is "everything before this message", and both need the matching history
+scope; without it Slack answers `not_in_channel` and the turn goes on without the context.
+
+The page is **sorted here rather than trusted**: `conversations.history` answers newest first and
+`conversations.replies` answers oldest first, and the contract wants one order. The sort is over the
+`ts` and not over the epoch-ms the contract carries — a `ts` has microsecond precision, so two
+messages sent in the same second round to the same millisecond, and ordering by the rounded value
+would put them in whatever order the page happened to arrive in.
+
+One message that will not decode is dropped on its own rather than failing the read: a page is
+context, and losing the conversation around one unreadable line is the worse trade.
+
 ## Which conversation an answer belongs to
 
 `transport.conversation` answers it, and performs no I/O. A Slack thread is not an object — it is
@@ -210,6 +229,12 @@ every message carrying the anchor's `ts` as its `thread_ts` — so a top-level m
 becomes the thread, and a mention already in one keeps that thread. The conversation key is
 `channel:thread_ts`, which fits `ChatConversationKey`'s charset. `openThread` returns the anchor's
 id and calls nothing.
+
+`opened` is **true for a top-level mention** and false everywhere else. A Slack thread begins with
+the reply that first carries the parent's `ts`, so answering a top-level mention is what creates the
+thread — it is a space that exists because somebody asked Maple something, which is what lets the
+host treat a later un-addressed message in it as still addressed to the bot. A mention already
+inside a thread, and every un-addressed follow-up, opens nothing. Neither costs a request.
 
 ## Protocol notes worth keeping
 
@@ -238,6 +263,7 @@ confirm, and the cutover doc's smoke checklist is where they get confirmed:
 - whether `app_mention` carries `thread_ts` when the bot is mentioned inside a thread (the mapping
   handles both, so the consequence is only which value names the conversation);
 - that `authorizations[]` names the bot user on every delivery this connector reads;
-- that an un-mentioned thread reply arrives with the history scopes above and no others;
+- that an un-mentioned thread reply arrives with the history scopes above and no others, and that
+  `conversations.replies` / `conversations.history` answer for the channel types the bot is in;
 - the display name shown for an author: Slack's message events carry only a user id, so V1 uses the
   id. A readable name needs `users:read`, on the same terms as the approval facts.
