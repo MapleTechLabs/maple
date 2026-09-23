@@ -27,21 +27,21 @@ there is no per-org routing anywhere, because each instance knows exactly one re
 
 ## What "never leaves the EU" touches
 
-| System | Today | EU instance |
-| --- | --- | --- |
-| Ingest gateway + OTel collector | ECS us-east-1 | ECS eu-central-1 |
-| Tinybird | `maple_us`, us-east-1 | `maple_eu`, AWS eu-central-1 |
-| Postgres | PlanetScale `maple`, US, dashboard Hyperdrive configs | PlanetScale `maple-eu`, eu-central, roles and Hyperdrive configs declared by the deploy |
-| Electric | ECS us-east-1 | ECS eu-central-1, in the EU ingest VPC |
-| api / ai / alerting / electric-sync / web Workers | placement us-east-1 | placement eu-central-1 (best effort, see risks) |
-| `ChatSession` Durable Object | no jurisdiction | `jurisdiction: "eu"` |
-| Replay blobs | R2, non-jurisdictional | R2, `jurisdiction: "eu"` |
-| Queues, Workflows | no jurisdiction control | see risks |
-| Clerk | one US instance | same instance, `app.eu.maple.dev` as a satellite domain |
-| AI features | OpenRouter, Workers AI | off |
-| Maple self-telemetry | US internal org | EU internal org, in `maple_eu` |
-| Repository sandbox (`apps/sandbox`) | prd Worker, US | per instance, EU Worker |
-| Landing, billing, GitHub app | shared | shared, no customer data |
+| System                                            | Today                                                 | EU instance                                                                             |
+| ------------------------------------------------- | ----------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| Ingest gateway + OTel collector                   | ECS us-east-1                                         | ECS eu-central-1                                                                        |
+| Tinybird                                          | `maple_us`, us-east-1                                 | `maple_eu`, AWS eu-central-1                                                            |
+| Postgres                                          | PlanetScale `maple`, US, dashboard Hyperdrive configs | PlanetScale `maple-eu`, eu-central, roles and Hyperdrive configs declared by the deploy |
+| Electric                                          | ECS us-east-1                                         | ECS eu-central-1, in the EU ingest VPC                                                  |
+| api / ai / alerting / electric-sync / web Workers | placement us-east-1                                   | placement eu-central-1 (best effort, see risks)                                         |
+| `ChatSession` Durable Object                      | no jurisdiction                                       | `jurisdiction: "eu"`                                                                    |
+| Replay blobs                                      | R2, non-jurisdictional                                | R2, `jurisdiction: "eu"`                                                                |
+| Queues, Workflows                                 | no jurisdiction control                               | see risks                                                                               |
+| Clerk                                             | one US instance                                       | same instance, `app.eu.maple.dev` as a satellite domain                                 |
+| AI features                                       | OpenRouter, Workers AI                                | off                                                                                     |
+| Maple self-telemetry                              | US internal org                                       | EU internal org, in `maple_eu`                                                          |
+| Repository sandbox (`apps/sandbox`)               | prd Worker, US                                        | per instance, EU Worker                                                                 |
+| Landing, billing, GitHub app                      | shared                                                | shared, no customer data                                                                |
 
 The landing site stays one site. Billing metadata and the GitHub app installation are not
 customer telemetry. The sandbox clones the customer's repository, so it deploys per instance from
@@ -66,10 +66,12 @@ across regions because there is no routing.
 2. **Three Tinybird tokens, three roles**: workspace admin token as `TINYBIRD_SIGNING_KEY`, a scoped
    runtime read token as `TINYBIRD_TOKEN`, an append-only token for the gateway. Sign a throwaway
    JWT to prove the signing key before trusting it (the 2026-09-04 incident).
-3. **PlanetScale**: the `maple-eu` database in eu-central, empty. Its cluster size sets
-   `max_connections` (25 on the size first chosen), which is why the declared Hyperdrive configs
-   carry `originConnectionLimit: 8` and Electric's query pool rides PSBouncer; raise those with the
-   cluster. That is all: the deploy adopts
+3. **PlanetScale**: the `maple-eu` database in eu-central, empty, on a cluster size whose
+   `max_connections` seats the instance: Electric's default pool (20) plus its replication
+   connection, the two declared Hyperdrive configs (`originConnectionLimit: 8` each, raise with
+   the cluster), the gateway through PSBouncer and a few admin slots, so 50 or more. The size
+   first chosen gave 25 and Electric crash-looped on `too_many_connections`. That is all: the
+   deploy adopts
    its `main` branch and applies the migrations, and declares on it the gateway's role, Electric's
    replication role, one role per Worker consumer and a Hyperdrive config on each
    (`declareMapleDb` in `alchemy.run.ts`).

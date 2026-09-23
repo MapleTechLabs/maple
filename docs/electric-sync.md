@@ -180,9 +180,7 @@ like local docker does.
    inherited through role membership, Electric's database validation rejects a role without it
    with a message that does not say so, and PlanetScale issues it only alongside `postgres`.
    Its DIRECT 5432 URL (logical replication cannot run through PSBouncer or Hyperdrive), rewritten
-   to `sslmode=require` because Electric refuses `verify-full`, is the task's `DATABASE_URL`; the
-   shape-query pool (`ELECTRIC_DB_POOL_SIZE=4`) goes through PSBouncer as
-   `ELECTRIC_POOLED_DATABASE_URL`, so only replication holds a direct slot.
+   to `sslmode=require` because Electric refuses `verify-full`, is the task's `DATABASE_URL`.
 3. **Env:** `ELECTRIC_SECRET`. Both secrets reach the task through Secrets Manager, never the
    task definition's plaintext `env`; the role id sits in `env` so a replaced role restarts the
    singleton on the new secret before alchemy deletes the old one.

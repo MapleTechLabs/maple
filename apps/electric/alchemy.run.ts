@@ -137,12 +137,6 @@ export const createMapleElectric = ({
 		// REPLICATION *attribute*, which Postgres never grants through membership;
 		// Electric's database validation rejects one without it, and does not say so.
 		const databaseUrl = yield* secretFrom("database-url", pgUrlRequireSsl(dbRole.connectionUrl))
-		// The shape-query pool goes through PSBouncer instead: only replication needs the direct
-		// port, and a small cluster (the EU one has max_connections=25) cannot seat the pool.
-		const pooledDatabaseUrl = yield* secretFrom(
-			"pooled-database-url",
-			pgUrlRequireSsl(dbRole.connectionUrlPooled),
-		)
 		// The same value the electric-sync Worker holds — one secret, both ends of
 		// the hop. Rotating it means redeploying this first, then the worker.
 		const apiSecret = yield* secret("api-secret", yield* requiredPlain("ELECTRIC_SECRET"))
@@ -224,14 +218,11 @@ export const createMapleElectric = ({
 
 			secrets: {
 				DATABASE_URL: databaseUrl.secretArn,
-				ELECTRIC_POOLED_DATABASE_URL: pooledDatabaseUrl.secretArn,
 				ELECTRIC_SECRET: apiSecret.secretArn,
 			},
 
 			env: {
 				ELECTRIC_PORT: String(ELECTRIC_PORT),
-				// Eight small tables; the default of 20 was more than the EU cluster's whole budget.
-				ELECTRIC_DB_POOL_SIZE: "4",
 				// A replaced role changes this, so the task definition changes and the
 				// singleton restarts on the new secret before alchemy deletes the old role.
 				MAPLE_PG_ROLE_ID: dbRole.id,
