@@ -407,6 +407,44 @@ describe("driveChatTurn", () => {
 		}),
 	)
 
+	it.effect("leaves the controls live on a turn that stopped on a proposal", () =>
+		Effect.gen(function* () {
+			const chat = recorder()
+			// What `ChatSession` records for a gated call: the proposal, then a turn that finished.
+			yield* driveChatTurn({
+				events: timeline([
+					[NOW, event(1, { type: "turn-start", messageId: "a1" })],
+					[
+						NOW,
+						event(2, {
+							type: "tool-call",
+							messageId: "a1",
+							callId: "call_9",
+							name: "create_dashboard",
+							input: { name: "Checkout" },
+							proposed: true,
+						}),
+					],
+					[NOW, event(3, { type: "turn-end", messageId: "a1", reason: "stop" })],
+				]),
+				messageId: "a1",
+				outbound: chat.outbound,
+				target,
+				context,
+			})
+
+			expect(chat.calls[chat.calls.length - 1].blocks).toEqual([
+				{
+					kind: "approval",
+					toolName: "create_dashboard",
+					summary: "name: Checkout",
+					token: "org_1:bot-42|call_9",
+					outcome: null,
+				},
+			])
+		}),
+	)
+
 	it.effect("still says something when a turn fails before it ever started", () =>
 		Effect.gen(function* () {
 			const chat = recorder()
