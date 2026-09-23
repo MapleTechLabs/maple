@@ -1,7 +1,8 @@
 import { Effect, Metric } from "effect"
-import { onCLS, onINP, onLCP, type Metric as WebVitalMetric } from "web-vitals"
+import { onCLS, onINP, onLCP } from "web-vitals/attribution"
 
 import { isLabPath } from "@/lab/registry"
+import { vitalAttribution, type VitalWithAttribution } from "./perf-attribution"
 import { mapleRuntime } from "./registry"
 
 /**
@@ -69,11 +70,14 @@ const maxBlockingMetric = Metric.histogram("web.performance.max_blocking_ms", {
 })
 const heapUsedMetric = Metric.gauge("web.performance.js_heap_used_bytes")
 
-function reportVital(metric: WebVitalMetric): void {
+function reportVital(metric: VitalWithAttribution): void {
 	const valueMetric = metric.name === "CLS" ? clsMetric : metric.name === "INP" ? inpMetric : lcpMetric
+	// The region is a bounded set, so it is safe as a metric attribute; the selector
+	// and timing breakdown stay on the log row.
+	const { region, attributes } = vitalAttribution(metric)
 	mapleRuntime.runFork(
 		Effect.all([
-			Metric.update(valueMetric, metric.value),
+			Metric.update(Metric.withAttributes(valueMetric, { "maple.vital.region": region }), metric.value),
 			Metric.update(vitalRatings, `${metric.name.toLowerCase()}:${metric.rating}`),
 		]),
 	)
@@ -83,6 +87,7 @@ function reportVital(metric: WebVitalMetric): void {
 		"maple.vital.rating": metric.rating,
 		"maple.vital.navigation_type": metric.navigationType,
 		"maple.route.path": window.location.pathname,
+		...attributes,
 	})
 }
 
