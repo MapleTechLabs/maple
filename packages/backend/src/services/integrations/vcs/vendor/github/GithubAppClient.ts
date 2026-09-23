@@ -214,6 +214,7 @@ const GithubApiCheckRunList = Schema.Struct({
 			status: Schema.String,
 			conclusion: Schema.NullOr(Schema.String),
 			output: Schema.optionalKey(Schema.Struct({ title: Schema.NullOr(Schema.String) })),
+			app: Schema.optionalKey(Schema.NullOr(Schema.Struct({ id: Schema.Number }))),
 		}),
 	),
 })
@@ -333,8 +334,10 @@ export type GithubApiDiscussionComment = Schema.Schema.Type<typeof GithubApiDisc
 
 const GithubApiCheckRunSchema = Schema.Struct({
 	id: Schema.Number,
+	status: Schema.String,
 	html_url: Schema.NullOr(Schema.String),
 })
+const GithubApiOwnCheckRunList = Schema.Struct({ check_runs: Schema.Array(GithubApiCheckRunSchema) })
 const GithubApiIssueCommentSchema = Schema.Struct({
 	id: Schema.Number,
 	html_url: Schema.String,
@@ -357,7 +360,10 @@ export const CHECK_RUN_ANNOTATION_LIMIT = 50
 export interface GithubCheckRunInput {
 	readonly name: string
 	readonly headSha: string
-	readonly conclusion: "success" | "neutral"
+	/** `in_progress` while the review runs; the same run is then completed with its result. */
+	readonly state:
+		| { readonly status: "in_progress" }
+		| { readonly status: "completed"; readonly conclusion: "success" | "neutral" | "skipped" }
 	readonly title: string
 	readonly summary: string
 	readonly annotations: ReadonlyArray<{
@@ -420,6 +426,7 @@ const decodePullRequestList = Schema.decodeUnknownEffect(GithubApiPullRequestLis
 const decodePullRequest = Schema.decodeUnknownEffect(GithubApiPullRequestSchema)
 const decodePullRequestFiles = Schema.decodeUnknownEffect(GithubApiPullRequestFileList)
 const decodeCheckRun = Schema.decodeUnknownEffect(GithubApiCheckRunSchema)
+const decodeOwnCheckRunList = Schema.decodeUnknownEffect(GithubApiOwnCheckRunList)
 const decodePullRequestCommits = Schema.decodeUnknownEffect(GithubApiPullRequestCommitList)
 const decodeDiscussionComments = Schema.decodeUnknownEffect(GithubApiDiscussionCommentList)
 const decodeCheckRunList = Schema.decodeUnknownEffect(GithubApiCheckRunList)
@@ -1102,7 +1109,10 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 						`${base}/commits/${head}/check-runs?per_page=${PER_PAGE}`,
 						"List check runs",
 					),
-				).pipe(Effect.mapError(unexpected("check runs")))).check_runs
+				).pipe(Effect.mapError(unexpected("check runs")))).check_runs.filter(
+					// The review's own check run is still in progress while it reads this.
+					(check) => String(check.app?.id ?? "") !== config.appId,
+				)
 				return { commits, comments, checks }
 			})
 
@@ -1480,7 +1490,9 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 			// Needs `checks: write` on the App. A 403 here is the installation not
 			// having accepted that permission yet; the provider maps it to a
 			// repository-scoped failure the review records as `publish_error`.
-			const createCheckRun = Effect.fn("GithubAppClient.createCheckRun")(function* (
+			// The App's own unfinished run of this name on the head is moved on rather than
+			// duplicated, so a review shows as running in CI and then completes in place.
+			const upsertCheckRun = Effect.fn("GithubAppClient.upsertCheckRun")(function* (
 				externalInstallationId: string,
 				owner: string,
 				repo: string,
@@ -1488,34 +1500,59 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 			) {
 				const config = yield* resolveConfig
 				const token = yield* mintInstallationToken(externalInstallationId)
-				const response = yield* authedSend(
-					"POST",
+				const base = `${config.apiBaseUrl}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`
+				const listed = yield* authedGet(
+					config,
 					token,
-					`${config.apiBaseUrl}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/check-runs`,
-					{
-						name: input.name,
-						head_sha: input.headSha,
-						status: "completed",
-						conclusion: input.conclusion,
-						output: {
-							title: input.title,
-							summary: input.summary,
-							annotations: input.annotations
-								.slice(0, CHECK_RUN_ANNOTATION_LIMIT)
-								.map((annotation) => ({
-									path: annotation.path,
-									start_line: annotation.startLine,
-									end_line: annotation.endLine,
-									annotation_level: annotation.level,
-									title: annotation.title,
-									message: annotation.message,
-								})),
-						},
-					},
-					"Create check run",
+					`${base}/commits/${encodeURIComponent(input.headSha)}/check-runs?check_name=${encodeURIComponent(input.name)}&app_id=${encodeURIComponent(config.appId)}&filter=latest`,
 				)
-				if (!response.ok) return yield* failure(response, "Create check run", "repository")
-				const json = yield* parseJson(response, "Create check run")
+				if (!listed.ok) return yield* failure(listed, "List check runs", "repository")
+				const running = (yield* decodeOwnCheckRunList(
+					yield* parseJson(listed, "List check runs"),
+				).pipe(
+					Effect.mapError(
+						(cause) =>
+							new GithubAppError({ message: "Unexpected check run list payload", cause }),
+					),
+				)).check_runs.find((run) => run.status !== "completed")
+				yield* Effect.annotateCurrentSpan({
+					"vcs.check_run.status": input.state.status,
+					"vcs.check_run.updated": running !== undefined,
+				})
+				const output = {
+					title: input.title,
+					summary: input.summary,
+					annotations: input.annotations.slice(0, CHECK_RUN_ANNOTATION_LIMIT).map((annotation) => ({
+						path: annotation.path,
+						start_line: annotation.startLine,
+						end_line: annotation.endLine,
+						annotation_level: annotation.level,
+						title: annotation.title,
+						message: annotation.message,
+					})),
+				}
+				const state =
+					input.state.status === "completed"
+						? { status: "completed", conclusion: input.state.conclusion }
+						: { status: "in_progress" }
+				const response =
+					running === undefined
+						? yield* authedSend(
+								"POST",
+								token,
+								`${base}/check-runs`,
+								{ name: input.name, head_sha: input.headSha, ...state, output },
+								"Create check run",
+							)
+						: yield* authedSend(
+								"PATCH",
+								token,
+								`${base}/check-runs/${running.id}`,
+								{ ...state, output },
+								"Update check run",
+							)
+				if (!response.ok) return yield* failure(response, "Write check run", "repository")
+				const json = yield* parseJson(response, "Write check run")
 				return yield* decodeCheckRun(json).pipe(
 					Effect.mapError(
 						(cause) => new GithubAppError({ message: "Unexpected check run payload", cause }),
@@ -1825,7 +1862,7 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 				addCommentReaction,
 				getCollaboratorPermission,
 				commitFiles,
-				createCheckRun,
+				upsertCheckRun,
 				createPullRequestReview,
 				upsertIssueComment,
 				searchCode,
