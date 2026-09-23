@@ -59,6 +59,7 @@ import { Database } from "@maple/backend/platform/DatabaseLive"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import { dateToMs, msToDate } from "@maple/backend/platform/time"
 import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
+import type { PullRequestDelta } from "@maple/backend/services/integrations/vcs/VcsProviderClient"
 import { VcsProviderRegistry } from "@maple/backend/services/integrations/vcs/VcsProviderRegistry"
 import { VcsRepository } from "@maple/backend/services/integrations/vcs/VcsRepository"
 import { VcsSyncQueue } from "@maple/backend/services/integrations/vcs/VcsSyncQueue"
@@ -867,6 +868,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 				repo: VcsRepo,
 				number: number,
 				headSha: GitCommitSha,
+				baseSha: GitCommitSha | undefined,
 				nowMs: number,
 			) {
 				const previous = yield* database
@@ -891,21 +893,26 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 				const tracked = yield* loadTracked(orgId, repo.id, number)
 				const open = yield* syncThreads(orgId, repo, number, tracked, nowMs)
 				const upstream = yield* providerFor(orgId, repo)
-				let changedPaths: ReadonlyArray<string> | undefined
+				let changes: PullRequestDelta | undefined
 				if (Option.isSome(upstream)) {
 					const { provider, installation, ref } = upstream.value
-					changedPaths = yield* provider
-						.fetchChangedPaths(installation, ref, previousSha, headSha)
+					changes = yield* provider
+						.fetchChangesSince(installation, ref, {
+							previousHead: previousSha,
+							head: headSha,
+							base: baseSha,
+						})
 						.pipe(
-							Effect.map((paths): ReadonlyArray<string> | undefined => paths),
+							Effect.map((delta): PullRequestDelta | undefined => delta),
 							Effect.orElseSucceed(() => undefined),
 						)
 				}
 				yield* Effect.annotateCurrentSpan({
 					"maple.pr_review.carried_open": open.length,
-					"maple.pr_review.changed_since": changedPaths?.length ?? -1,
+					"maple.pr_review.changed_since": changes?.paths?.length ?? -1,
+					"maple.pr_review.history_rewritten": changes?.rewritten ?? false,
 				})
-				return renderFollowUp({ previousSha, changedPaths, open })
+				return renderFollowUp({ previousSha, changes, open })
 			})
 
 			const startedToday = (orgId: OrgId, nowMs: number) =>
@@ -1069,7 +1076,14 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 					return { reviewId, outcome: "failed" as const, skipReason: "agent_unavailable" as const }
 				}
 
-				const followUp = yield* followUpFor(orgId, repo, job.number, headSha, nowMs).pipe(
+				const followUp = yield* followUpFor(
+					orgId,
+					repo,
+					job.number,
+					headSha,
+					job.baseSha,
+					nowMs,
+				).pipe(
 					Effect.catchCause((cause) =>
 						Effect.logWarning(
 							"[PrReview] could not read earlier findings; reviewing from scratch",

@@ -92,7 +92,7 @@ const layerFor = (
 		fetchPullRequestContext: unused,
 		fetchReviewThreads: () => Effect.succeed([]),
 		resolveReviewThread: unused,
-		fetchChangedPaths: unused,
+		fetchChangesSince: unused,
 		fetchPullRequestHead: () => Effect.succeed(options.pr ?? head()),
 		postPullRequestReply: (_installation, _repo, input) =>
 			Effect.sync(() => {

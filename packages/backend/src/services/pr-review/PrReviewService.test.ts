@@ -119,7 +119,7 @@ const layerFor = (
 			Effect.sync(() => {
 				options.resolvedThreads?.push(`${input.threadId}:${input.reply}`)
 			}),
-		fetchChangedPaths: () => Effect.succeed(["b.ts", "c.ts"]),
+		fetchChangesSince: () => Effect.succeed({ paths: ["b.ts", "c.ts"], rewritten: false }),
 		fetchPullRequestHead: unused,
 		postPullRequestReply: unused,
 		reactToComment: unused,
@@ -555,11 +555,14 @@ describe("PrReviewService.submitReview", () => {
 				second.reviewId!,
 				new SubmitPrReviewRequest({
 					resolved: ["F1"],
-					report: report([finding("b.ts", 21, "null again"), finding("c.ts", 3, "leaked handle")]),
+					report: report([
+						finding("b.ts", 21, "Unchecked null"),
+						finding("c.ts", 3, "leaked handle"),
+					]),
 				}),
 			)
 			const publication = published[1]!
-			// F2 is still open, so its repeat is not posted; the new finding continues at F3.
+			// F2 is still open, so its restatement is not posted; the new finding continues at F3.
 			assert.deepEqual(
 				publication.comments.map((comment) => comment.path),
 				["c.ts"],

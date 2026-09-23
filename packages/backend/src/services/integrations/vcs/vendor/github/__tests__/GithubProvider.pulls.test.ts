@@ -438,3 +438,112 @@ describe("GithubProvider publishing a review", () => {
 		}).pipe(Effect.provide(layer))
 	})
 })
+
+describe("GithubProvider changes since an earlier review", () => {
+	const OLD = "1".repeat(40)
+	const NEW = "2".repeat(40)
+	const BASE = "3".repeat(40)
+	const comparison = (status: string, files: ReadonlyArray<Record<string, unknown>>) =>
+		jsonResponse({ status, files })
+	const changed = (filename: string, patch: string) => ({ filename, status: "modified", patch })
+	// The two base comparisons run concurrently, so answer by URL rather than by call order.
+	const routedLayer = (routes: Record<string, Response>, requests: Array<string>) =>
+		Layer.effect(GithubProvider, GithubProvider.make).pipe(
+			Layer.provide(
+				Layer.effect(GithubAppClient, GithubAppClient.make).pipe(
+					Layer.provide(
+						Layer.succeed(GithubHttp, {
+							fetch: async (url) => {
+								requests.push(url)
+								if (url.endsWith("/access_tokens")) return tokenResponse()
+								const range = new URL(url).pathname.split("/compare/")[1] ?? ""
+								return routes[range] ?? jsonResponse({ message: "Not Found" }, 404)
+							},
+						} satisfies GithubHttpApi),
+					),
+					Layer.provide(env),
+				),
+			),
+			Layer.provide(env),
+		)
+
+	it.effect("uses the forward comparison when the earlier head is an ancestor", () => {
+		const requests: Array<string> = []
+		const layer = providerLayer(
+			[tokenResponse(), comparison("ahead", [changed("src/a.ts", "@@ -1 +1 @@\n-x\n+y")])],
+			requests,
+		)
+		return Effect.gen(function* () {
+			const provider = yield* GithubProvider
+			const delta = yield* provider.fetchChangesSince(INSTALLATION, REPO, {
+				previousHead: OLD,
+				head: NEW,
+				base: BASE,
+			})
+			assert.deepStrictEqual(delta, { rewritten: false, paths: ["src/a.ts"] })
+			assert.include(requests[1]!, `/compare/${OLD}...${NEW}`)
+			assert.lengthOf(requests, 2)
+		}).pipe(Effect.provide(layer))
+	})
+
+	it.effect("after a rebase, reports only files whose own change differs, not the base's", () => {
+		const requests: Array<string> = []
+		const layer = routedLayer(
+			{
+				// The forward diff carries everything the new base moved.
+				[`${OLD}...${NEW}`]: comparison("diverged", [
+					changed("src/a.ts", "@@ -1 +1 @@\n-x\n+y"),
+					changed("base/moved.ts", "@@ -1 +1 @@\n-m\n+n"),
+				]),
+				[`${BASE}...${OLD}`]: comparison("ahead", [
+					changed("src/a.ts", "@@ -10,2 +10,2 @@\n-x\n+y"),
+					changed("src/b.ts", "@@ -1 +1 @@\n-p\n+q"),
+				]),
+				[`${BASE}...${NEW}`]: comparison("ahead", [
+					changed("src/a.ts", "@@ -30,2 +30,2 @@\n-x\n+y"),
+					changed("src/b.ts", "@@ -1 +1 @@\n-p\n+Q"),
+				]),
+			},
+			requests,
+		)
+		return Effect.gen(function* () {
+			const provider = yield* GithubProvider
+			const delta = yield* provider.fetchChangesSince(INSTALLATION, REPO, {
+				previousHead: OLD,
+				head: NEW,
+				base: BASE,
+			})
+			assert.deepStrictEqual(delta, { rewritten: true, paths: ["src/b.ts"] })
+			const compares = requests.filter((url) => url.includes("/compare/"))
+			assert.deepStrictEqual(
+				compares.map((url) => new URL(url).pathname.split("/compare/")[1]).sort(),
+				[`${BASE}...${NEW}`, `${BASE}...${OLD}`, `${OLD}...${NEW}`].sort(),
+			)
+		}).pipe(Effect.provide(layer))
+	})
+
+	it.effect("asks for everything when a rewritten history has no base, or a list is cut off", () => {
+		const full = Array.from({ length: 300 }, (_, i) => changed(`f${i}.ts`, "@@ -1 +1 @@\n-a\n+b"))
+		return Effect.gen(function* () {
+			const noBase = yield* Effect.gen(function* () {
+				const provider = yield* GithubProvider
+				return yield* provider.fetchChangesSince(INSTALLATION, REPO, {
+					previousHead: OLD,
+					head: NEW,
+					base: undefined,
+				})
+			}).pipe(Effect.provide(providerLayer([tokenResponse(), comparison("behind", [])])))
+			assert.deepStrictEqual(noBase, { rewritten: true, paths: undefined })
+
+			const cutOff = yield* Effect.gen(function* () {
+				const provider = yield* GithubProvider
+				return yield* provider.fetchChangesSince(INSTALLATION, REPO, {
+					previousHead: OLD,
+					head: NEW,
+					base: BASE,
+				})
+			}).pipe(Effect.provide(providerLayer([tokenResponse(), comparison("ahead", full)])))
+			assert.deepStrictEqual(cutOff, { rewritten: false, paths: undefined })
+		})
+	})
+})

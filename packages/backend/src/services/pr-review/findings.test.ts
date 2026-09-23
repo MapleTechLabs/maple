@@ -84,19 +84,45 @@ describe("dismissedFindings", () => {
 })
 
 describe("withoutRepeats", () => {
-	const finding = (line: number, category: PrReviewFinding["category"] = "correctness") =>
-		new PrReviewFinding({ path: "src/a.ts", line, category, severity: "warn", title: "x", body: "" })
+	const finding = (
+		line: number,
+		title = "Off by one",
+		category: PrReviewFinding["category"] = "correctness",
+	) => new PrReviewFinding({ path: "src/a.ts", line, category, severity: "warn", title, body: "" })
 
-	it("drops a new finding within three lines of an open or dismissed one in the same lens", () => {
+	it("drops a near-exact restatement of an open or dismissed finding", () => {
 		const { fresh, repeated } = withoutRepeats(
-			[finding(12), finding(40), finding(11, "security")],
-			[tracked(), tracked({ id: "row-2", handle: "F2", line: 41, status: "dismissed" })],
+			[
+				finding(12, "Off-by-one"),
+				finding(40, "leaked file handle"),
+				finding(11, "off by one", "security"),
+			],
+			[
+				tracked(),
+				tracked({
+					id: "row-2",
+					handle: "F2",
+					line: 41,
+					title: "Leaked file handle",
+					status: "dismissed",
+				}),
+			],
 		)
 		assert.equal(repeated, 2)
 		assert.deepEqual(
 			fresh.map((f) => [f.line, f.category]),
 			[[11, "security"]],
 		)
+	})
+
+	it("keeps a different bug next to an open finding", () => {
+		const { fresh, repeated } = withoutRepeats([finding(11, "Unchecked null customer id")], [tracked()])
+		assert.equal(repeated, 0)
+		assert.lengthOf(fresh, 1)
+	})
+
+	it("leaves a restatement whose code moved to the reviewer's judgement", () => {
+		assert.lengthOf(withoutRepeats([finding(30)], [tracked()]).fresh, 1)
 	})
 
 	it("lets a resolved finding's spot be raised again", () => {
@@ -130,28 +156,53 @@ describe("pathIgnored", () => {
 })
 
 describe("renderFollowUp", () => {
-	it("names the changed files and the open handles", () => {
+	it("names the changed files and the open handles, and asks for a judgement per finding", () => {
 		const text = renderFollowUp({
 			previousSha: "abcdef1234",
-			changedPaths: ["src/a.ts"],
+			changes: { paths: ["src/a.ts"], rewritten: false },
 			open: [tracked()],
 		}).join("\n")
 		assert.include(text, "reviewed before, at abcdef1")
-		assert.include(text, "src/a.ts")
+		assert.include(text, "the rest was already reviewed: src/a.ts.")
+		assert.include(text, "Lines being modified is not enough")
+		assert.include(text, "leave it open when unsure")
 		assert.include(text, "- F1 · src/a.ts:10 · correctness · warn · off by one")
+	})
+
+	it("says a rebase was compared file by file", () => {
+		const text = renderFollowUp({
+			previousSha: "abcdef1234",
+			changes: { paths: ["src/b.ts"], rewritten: true },
+			open: [],
+		}).join("\n")
+		assert.include(text, "rebased or force-pushed")
+		assert.include(text, "the rest was already reviewed: src/b.ts.")
+	})
+
+	it("asks for the whole diff when the change could not be compared", () => {
+		for (const changes of [undefined, { paths: undefined, rewritten: true }]) {
+			const text = renderFollowUp({ previousSha: "abcdef1234", changes, open: [] }).join("\n")
+			assert.include(text, "review the whole diff")
+		}
 	})
 })
 
 describe("followUpScope", () => {
-	const kickoff = (changedPaths: ReadonlyArray<string> | undefined) =>
+	const kickoff = (paths: ReadonlyArray<string> | undefined, rewritten = false) =>
 		[
 			"Review pull request #7 of octo/shop.",
 			"",
-			...renderFollowUp({ previousSha: "abcdef1234", changedPaths, open: [] }),
+			...renderFollowUp({ previousSha: "abcdef1234", changes: { paths, rewritten }, open: [] }),
 		].join("\n")
 
 	it("reads back the files renderFollowUp names", () => {
 		assert.deepEqual(followUpScope(kickoff(["src/a.ts", "src/b.ts"])), ["src/a.ts", "src/b.ts"])
+	})
+
+	it("reads back the files a rebase-safe comparison names", () => {
+		assert.deepEqual(followUpScope(kickoff(["src/a.ts"], true)), ["src/a.ts"])
+		assert.deepEqual(followUpScope(kickoff([], true)), [])
+		assert.isUndefined(followUpScope(kickoff(undefined, true)))
 	})
 
 	it("reads back the listed files when the list is cut", () => {
