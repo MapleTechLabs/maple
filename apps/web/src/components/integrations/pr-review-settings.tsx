@@ -224,12 +224,15 @@ function ConfigForm({ repo, config }: { repo: GithubRepoSummary; config: PrRevie
 	const [saved, setSaved] = useState(() => stateFromConfig(config))
 	const [saving, setSaving] = useState(false)
 	const [error, setError] = useState<string | null>(null)
-	// A refetched config replaces the form; adjusted during render, not in an effect.
+	// What was last sent, so a refetch landing after the save keeps any edit made since.
+	const [submitted, setSubmitted] = useState<FormState | null>(null)
+	// A refetched config replaces the form unless it was edited after Save; adjusted during render.
 	const [seenConfig, setSeenConfig] = useState(config)
 	if (seenConfig !== config) {
 		setSeenConfig(config)
-		setState(stateFromConfig(config))
 		setSaved(stateFromConfig(config))
+		if (submitted === null || sameState(state, submitted)) setState(stateFromConfig(config))
+		setSubmitted(null)
 	}
 
 	const problem = validate(state)
@@ -243,6 +246,7 @@ function ConfigForm({ repo, config }: { repo: GithubRepoSummary; config: PrRevie
 
 	async function handleSave() {
 		setSaving(true)
+		setSubmitted(state)
 		setError(null)
 		const result = await saveConfig({
 			params: { repositoryId: repo.id },

@@ -237,7 +237,8 @@ const runEval = async (argv: ReadonlyArray<string>) => {
 		results.push({
 			id: evalCase.id,
 			submitted: true,
-			caught: hits.length > 0,
+			// A finding on the fixed lines, not proof it names the bug: read `hits`.
+			located: hits.length > 0,
 			hits: hits.map((f) => `${f.path}:${f.line} ${f.severity}/${f.category ?? "?"} ${f.title}`),
 			findings: findings.length,
 			unmatched: findings.length - hits.length,
@@ -249,20 +250,20 @@ const runEval = async (argv: ReadonlyArray<string>) => {
 	}
 
 	const submitted = results.filter((r) => r.submitted)
-	const caught = submitted.filter((r) => r.caught).length
+	const located = submitted.filter((r) => r.located).length
 	const sum = (key: string) => submitted.reduce((total, r) => total + (Number(r[key]) || 0), 0)
 	const summary = [
 		`# review:eval ${label}`,
 		"",
 		`Model: ${model ?? "(default)"} · prompt: ${opts.get("prompt-file") ?? "(committed)"}`,
 		"",
-		`**Located ${caught} of ${cases.length}** (a finding on the fixed lines; read the hits to confirm it names the bug) (${submitted.length} submitted) · ${sum("findings")} findings, ${sum("unmatched")} unmatched · ${sum("calls")} calls · ${sum("inputTokens")} input tokens · ${sum("seconds")} s`,
+		`**Located ${located} of ${cases.length}** (a finding on the fixed lines; read the hits to confirm it names the bug) (${submitted.length} submitted) · ${sum("findings")} findings, ${sum("unmatched")} unmatched · ${sum("calls")} calls · ${sum("inputTokens")} input tokens · ${sum("seconds")} s`,
 		"",
 		"| Case | Located | Findings | Unmatched | Calls | Seconds |",
 		"| --- | --- | --- | --- | --- | --- |",
 		...results.map((r) =>
 			r.submitted
-				? `| ${r.id} | ${r.caught ? "yes" : "no"} | ${r.findings} | ${r.unmatched} | ${r.calls} | ${r.seconds} |`
+				? `| ${r.id} | ${r.located ? "yes" : "no"} | ${r.findings} | ${r.unmatched} | ${r.calls} | ${r.seconds} |`
 				: `| ${r.id} | no review submitted | | | | |`,
 		),
 	].join("\n")

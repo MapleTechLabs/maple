@@ -92,7 +92,8 @@ export const buildReviewFanout = <Tools extends Record<string, Tool.Any>>(
 		failure: Schema.String,
 		failureMode: "return",
 		prepareInput: (parameters) =>
-			!/^[1-9]\d*$/.test(String(parameters.number).trim())
+			!/^[1-9]\d*$/.test(String(parameters.number).trim()) ||
+			!Number.isSafeInteger(Number(String(parameters.number).trim()))
 				? Effect.fail(`number must be the pull request number; got ${String(parameters.number)}.`)
 				: parameters.paths.length === 0 || parameters.paths.length > MAX_GROUP_FILES
 					? Effect.fail(

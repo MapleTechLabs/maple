@@ -883,6 +883,8 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 								// A reclaimed skipped or completed row must not carry its old outcome forward.
 								skipReason: null,
 								publishError: null,
+								reportJson: null,
+								score: null,
 								startedAt: null,
 								finishedAt: null,
 								updatedAt: msToDate(nowMs),
