@@ -2468,14 +2468,17 @@ describe("AlertsService", () => {
 		const userId = asUserId("user_chat")
 		// The workspace's listing, as the real poster reads it from the connector: a channel not in
 		// it — say one in another org's guild, reachable with a shared bot token — is refused.
-		const listed: Record<string, string> = { "channel-1": "incidents", "channel-2": "oncall" }
+		const listed = new Map([
+			["channel-1", "incidents"],
+			["channel-2", "oncall"],
+		])
 		const lookups: Array<string> = []
 		const poster = Layer.succeed(ChatAlertPoster, {
 			post: () => Effect.die("no alert is posted here"),
 			findChannel: (_orgId, _workspaceId, channelId) =>
 				Effect.suspend(() => {
 					lookups.push(channelId)
-					const channelName = listed[channelId]
+					const channelName = listed.get(channelId)
 					return channelName === undefined
 						? Effect.fail(new AlertValidationError({ message: "not listed", details: [] }))
 						: Effect.succeed({
