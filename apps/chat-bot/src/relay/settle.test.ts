@@ -92,6 +92,7 @@ const platform = (prefix = "m"): Platform => {
 		calls,
 		outbound: {
 			connectorId: TESTCHAT,
+			requiredConfig: [],
 			limits: { maxMessageChars: 80, minEditInterval: Duration.millis(10) },
 			transport: Effect.sync(() => ({
 				post: (postTarget, blocks) =>
@@ -112,6 +113,7 @@ const platform = (prefix = "m"): Platform => {
 						opened: false,
 					}),
 				history: () => Effect.succeed([]),
+				destinations: () => Effect.die("a settle asked where alerts can go"),
 			})),
 		},
 	}
