@@ -28,9 +28,13 @@ export interface TrackedFinding {
 /** Lines a finding may drift between pushes and still be the same issue. */
 const SAME_ISSUE_LINES = 3
 
-/** A reply that tells the reviewer to drop a finding. */
+/**
+ * A reply that tells the reviewer to drop a finding. A question ("is this intended?") or a
+ * negation ("this is not by design") asks for an answer, so it never dismisses.
+ */
 const DISMISSAL =
-	/\b(won'?t fix|wontfix|not an issue|false positive|by design|intended|as intended|ignore this)\b/i
+	/(?<!\bnot\s)\b(won'?t fix|wontfix|not an issue|false positive|by design|as intended|intended behaviou?r|ignore this)\b/i
+const dismisses = (body: string) => !body.includes("?") && DISMISSAL.test(body)
 
 /**
  * Open findings a person has dismissed since the last review: their thread was resolved while the
@@ -53,7 +57,7 @@ export const dismissedFindings = (
 		const poster = thread.comments[0]?.author
 		return (
 			thread.isResolved ||
-			thread.comments.slice(1).some((reply) => reply.author !== poster && DISMISSAL.test(reply.body))
+			thread.comments.slice(1).some((reply) => reply.author !== poster && dismisses(reply.body))
 		)
 	})
 }

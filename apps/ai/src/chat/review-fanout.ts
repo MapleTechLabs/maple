@@ -28,11 +28,11 @@ const ReviewFilesParameters = Schema.Struct({
 	// A quoted number is still a number: a decode failure here would end the parent's run.
 	number: Schema.Union([Schema.Number, Schema.String]).annotate({ description: "The pull request number" }),
 	headSha: Schema.String.annotate({ description: "The head SHA the review is at" }),
-	paths: Schema.Array(Schema.String)
-		.check(Schema.isMinLength(1), Schema.isMaxLength(MAX_GROUP_FILES))
-		.annotate({
-			description: `Changed files for this child to review, 1 to ${MAX_GROUP_FILES}, related ones together`,
-		}),
+	// Bounded in `prepareInput`, not here: a decode failure would end the parent's run, while a
+	// returned failure only asks it to split the group.
+	paths: Schema.Array(Schema.String).annotate({
+		description: `Changed files for this child to review, 1 to ${MAX_GROUP_FILES}, related ones together`,
+	}),
 	focus: Schema.optional(Schema.String).annotate({
 		description:
 			"Anything the child should look for in particular, such as a rule from the repository's CLAUDE.md",
@@ -92,15 +92,19 @@ export const buildReviewFanout = <Tools extends Record<string, Tool.Any>>(
 		failure: Schema.String,
 		failureMode: "return",
 		prepareInput: (parameters) =>
-			Effect.succeed(
-				[
-					`Pull request #${parameters.number} of ${parameters.repository}, head ${parameters.headSha}.`,
-					`Review these files: ${parameters.paths.join(", ")}.`,
-					...(parameters.focus === undefined
-						? []
-						: [`Look in particular for: ${parameters.focus}`]),
-				].join("\n"),
-			),
+			parameters.paths.length === 0 || parameters.paths.length > MAX_GROUP_FILES
+				? Effect.fail(
+						`review_files takes 1 to ${MAX_GROUP_FILES} paths per group; got ${parameters.paths.length}. Split the group and call it again.`,
+					)
+				: Effect.succeed(
+						[
+							`Pull request #${parameters.number} of ${parameters.repository}, head ${parameters.headSha}.`,
+							`Review these files: ${parameters.paths.join(", ")}.`,
+							...(parameters.focus === undefined
+								? []
+								: [`Look in particular for: ${parameters.focus}`]),
+						].join("\n"),
+					),
 		projectResult: (output, context) =>
 			Effect.succeed({
 				findings: output.length > MAX_RESULT_CHARS ? `${output.slice(0, MAX_RESULT_CHARS)}…` : output,

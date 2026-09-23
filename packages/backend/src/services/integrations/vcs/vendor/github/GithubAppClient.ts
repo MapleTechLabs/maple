@@ -239,6 +239,11 @@ const GithubApiGitCommit = Schema.Struct({
 	tree: Schema.Struct({ sha: Schema.String }),
 })
 const GithubApiGitTree = Schema.Struct({ sha: Schema.String })
+const GithubApiGitTreeListing = Schema.Struct({
+	tree: Schema.Array(
+		Schema.Struct({ path: Schema.String, mode: Schema.String, type: Schema.String, sha: Schema.String }),
+	),
+})
 
 const GithubApiReviewCommentList = Schema.Array(
 	Schema.Struct({
@@ -408,6 +413,7 @@ const decodePullRequestHead = Schema.decodeUnknownEffect(GithubApiPullRequestHea
 const decodeCreatedComment = Schema.decodeUnknownEffect(GithubApiCreatedComment)
 const decodeCollaboratorPermission = Schema.decodeUnknownEffect(GithubApiCollaboratorPermission)
 const decodeGitCommit = Schema.decodeUnknownEffect(GithubApiGitCommit)
+const decodeGitTreeListing = Schema.decodeUnknownEffect(GithubApiGitTreeListing)
 const decodeComparison = Schema.decodeUnknownEffect(GithubApiComparison)
 const decodeReviewThreads = Schema.decodeUnknownEffect(GithubReviewThreadsResponse)
 const decodeMutation = Schema.decodeUnknownEffect(GithubMutationResponse)
@@ -1025,7 +1031,7 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 			})
 
 			// One page of each: the reviewer wants the recent story, not the archive. Checks come
-			// from the last commit, which is the head. The App's own comments are left out, so the
+			// from the pull request's head. The App's own comments are left out, so the
 			// reviewer is never told to avoid repeating itself by its own summary.
 			const getPullRequestContext = Effect.fn("GithubAppClient.getPullRequestContext")(function* (
 				externalInstallationId: string,
@@ -1072,16 +1078,16 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 						Effect.mapError(unexpected("comments")),
 					)),
 				].filter(notOwn)
-				const head = commits.at(-1)?.sha
-				const checks =
-					head === undefined
-						? []
-						: (yield* decodeCheckRunList(
-								yield* getJson(
-									`${base}/commits/${head}/check-runs?per_page=${PER_PAGE}`,
-									"List check runs",
-								),
-							).pipe(Effect.mapError(unexpected("check runs")))).check_runs
+				// The commits list is oldest first and one page long; the head is the pull request's own.
+				const head = (yield* decodePullRequestHead(
+					yield* getJson(`${base}/pulls/${number}`, "Get pull request"),
+				).pipe(Effect.mapError(unexpected("pull request")))).head.sha
+				const checks = (yield* decodeCheckRunList(
+					yield* getJson(
+						`${base}/commits/${head}/check-runs?per_page=${PER_PAGE}`,
+						"List check runs",
+					),
+				).pipe(Effect.mapError(unexpected("check runs")))).check_runs
 				return { commits, comments, checks }
 			})
 
@@ -1351,15 +1357,51 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 						(cause) => new GithubAppError({ message: "Unexpected commit payload", cause }),
 					),
 				)
+				// An edited file keeps its mode (an executable stays executable); only a new file is
+				// 100644. Walked one directory at a time, since a recursive listing truncates.
+				const trees = new Map<string, Schema.Schema.Type<typeof GithubApiGitTreeListing>["tree"]>()
+				const listTree = Effect.fnUntraced(function* (sha: string) {
+					const cached = trees.get(sha)
+					if (cached !== undefined) return cached
+					const response = yield* authedGet(config, token, `${base}/git/trees/${sha}`)
+					if (!response.ok) return yield* failure(response, "Read tree", "repository")
+					const listing = yield* decodeGitTreeListing(yield* parseJson(response, "Read tree")).pipe(
+						Effect.mapError(
+							(cause) => new GithubAppError({ message: "Unexpected tree payload", cause }),
+						),
+					)
+					trees.set(sha, listing.tree)
+					return listing.tree
+				})
+				const modeOf = Effect.fnUntraced(function* (path: string) {
+					const parts = path.split("/")
+					let sha: string = parent.tree.sha
+					for (const [i, part] of parts.entries()) {
+						const entry = (yield* listTree(sha)).find((candidate) => candidate.path === part)
+						if (entry === undefined) return "100644"
+						if (i === parts.length - 1) {
+							if (entry.mode !== "100644" && entry.mode !== "100755")
+								return yield* new GithubAppError({
+									message: `${path} is not a regular file (mode ${entry.mode}); it is not edited`,
+									scope: "repository",
+								})
+							return entry.mode
+						}
+						if (entry.type !== "tree") return "100644"
+						sha = entry.sha
+					}
+					return "100644"
+				})
+				const modes = yield* Effect.forEach(input.files, (file) => modeOf(file.path))
 				const tree = yield* sendJson(
 					externalInstallationId,
 					"POST",
 					() => `${base}/git/trees`,
 					{
 						base_tree: parent.tree.sha,
-						tree: input.files.map((file) => ({
+						tree: input.files.map((file, i) => ({
 							path: file.path,
-							mode: "100644",
+							mode: modes[i] ?? "100644",
 							type: "blob",
 							content: file.content,
 						})),

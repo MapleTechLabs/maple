@@ -1195,6 +1195,31 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 					requested ? ["failed", "completed", "skipped"] : ["failed"],
 				)
 				if (reclaimed === undefined) {
+					// Asked for while this head's review is queued (the push debounce) or running: that
+					// review is the one asked for, so it is not a failure.
+					if (requested) {
+						const active = yield* database
+							.execute((db) =>
+								db
+									.select({ id: prReviews.id })
+									.from(prReviews)
+									.where(
+										and(
+											eq(prReviews.orgId, orgId),
+											eq(prReviews.repositoryId, repo.id),
+											eq(prReviews.number, job.number),
+											eq(prReviews.headSha, headSha),
+											inArray(prReviews.status, [...ACTIVE_STATUSES]),
+										),
+									)
+									.limit(1),
+							)
+							.pipe(Effect.mapError(toPersistence))
+						if (active[0] !== undefined) {
+							yield* annotate("started", { "maple.pr_review.id": active[0].id })
+							return { reviewId: active[0].id, outcome: "started" as const }
+						}
+					}
 					yield* annotate("skipped", { "maple.pr_review.skip_reason": "duplicate" })
 					return skip("duplicate")
 				}

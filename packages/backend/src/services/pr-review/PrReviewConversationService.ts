@@ -668,13 +668,16 @@ export class PrReviewConversationService extends Context.Service<
 			for (const edit of edits) byPath.set(edit.path, [...(byPath.get(edit.path) ?? []), edit])
 			const files: Array<{ path: string; content: string }> = []
 			for (const [path, pathEdits] of byPath) {
+				// Only a 404 (`Option.none`) is a missing file; a failed read must never look like one.
 				const current = yield* provider
 					.fetchSourceFile(installation, ref, path, row.headSha)
-					.pipe(Effect.option)
-				const original =
-					Option.isSome(current) && Option.isSome(current.value)
-						? current.value.value.content
-						: undefined
+					.pipe(Effect.result)
+				if (Result.isFailure(current))
+					return {
+						note: `I did not push the fix: I could not read \`${path}\` at the head. Mention me with \`fix\` again to retry.`,
+						commitSha: null,
+					}
+				const original = Option.isSome(current.success) ? current.success.value.content : undefined
 				const applied = applyEdits(original, pathEdits)
 				if ("error" in applied)
 					return {

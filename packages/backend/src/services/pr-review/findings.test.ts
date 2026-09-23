@@ -37,6 +37,22 @@ describe("dismissedFindings", () => {
 		assert.lengthOf(dismissedFindings([tracked()], [thread({ isResolved: true })]), 1)
 	})
 
+	it("never dismisses on a question or a negation", () => {
+		for (const body of [
+			"Is this intended?",
+			"Why is this not an issue here?",
+			"This is not by design, fix it.",
+		]) {
+			const replied = thread({
+				comments: [
+					{ commentId: "100", author: "maple[bot]", body: "finding", thumbsUp: 0, thumbsDown: 0 },
+					{ commentId: "101", author: "alice", body, thumbsUp: 0, thumbsDown: 0 },
+				],
+			})
+			assert.lengthOf(dismissedFindings([tracked()], [replied]), 0, body)
+		}
+	})
+
 	it("dismisses a finding someone answered won't fix, but not on the bot's own reply", () => {
 		const replied = thread({
 			comments: [
