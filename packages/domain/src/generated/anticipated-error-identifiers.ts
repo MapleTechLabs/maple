@@ -65,6 +65,7 @@ export const ANTICIPATED_ERROR_IDENTIFIER_LIST: ReadonlyArray<string> = [
 	"@maple/http/errors/OrgClickHouseSettingsValidationError",
 	"@maple/http/errors/OrganizationAccessDeniedError",
 	"@maple/http/errors/OrganizationForbiddenError",
+	"@maple/http/errors/OrganizationWrongRegionError",
 	"@maple/http/errors/QueryEngineValidationError",
 	"@maple/http/errors/RawSqlValidationError",
 	"@maple/http/errors/RecommendationIssueNotFoundError",
