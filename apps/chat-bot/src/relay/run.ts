@@ -288,8 +288,12 @@ export const settleInboundTurn = async (
 		: connectors.find((candidate) => candidate.id === checkpoint.value.connector)
 	const config = connector === undefined ? undefined : resolveConnectorConfig(host.env, connector)
 	if (Option.isNone(checkpoint) || connector === undefined || config?._tag !== "ready") {
-		console.warn("[chat-bot.relay] a turn checkpoint this build cannot settle was dropped")
-		return "done"
+		return Effect.runPromise(
+			Effect.logWarning("A turn checkpoint this build cannot settle was dropped").pipe(
+				Effect.as<SettleOutcome>("done"),
+				inRuntime(host.env),
+			),
+		)
 	}
 	const relayHost: RelayHost = {
 		...host,
