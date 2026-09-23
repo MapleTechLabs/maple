@@ -27,6 +27,7 @@ import { registerInspectSpanTool } from "./inspect-span"
 import { registerListAlertChecksTool } from "./list-alert-checks"
 import { registerListAlertIncidentsTool } from "./list-alert-incidents"
 import { registerListAlertRulesTool } from "./list-alert-rules"
+import { registerListAlertDestinationsTool } from "./list-alert-destinations"
 import { registerClaimErrorIssueTool } from "./claim-error-issue"
 import { registerCommentOnErrorIssueTool } from "./comment-on-error-issue"
 import { registerListErrorIncidentsTool } from "./list-error-incidents"
@@ -235,6 +236,7 @@ const collectMapleToolDefinitions = (): ReadonlyArray<MapleToolDefinition> => {
 	registerRunSqlTool(registrar)
 	registerServiceMapTool(registrar)
 	registerListAlertRulesTool(registrar)
+	registerListAlertDestinationsTool(registrar)
 	registerGetAlertRuleTool(registrar)
 	registerListAlertIncidentsTool(registrar)
 	registerListAlertChecksTool(registrar)

@@ -141,7 +141,7 @@ export function registerUpdateAlertRuleTool(server: McpToolRegistrar) {
 	server.tool(
 		"update_alert_rule",
 		"Update an existing alert rule. Only provide the fields you want to change — every other field keeps its current value. " +
-			"Use list_alert_rules to find rule IDs and destination IDs, or get_alert_rule to inspect the current config first.",
+			"Use list_alert_rules to find rule IDs and list_alert_destinations for destination IDs, or get_alert_rule to inspect the current config first.",
 		Schema.Struct({
 			rule_id: requiredStringParam("Alert rule ID to update (use list_alert_rules to find IDs)"),
 			name: optionalStringParam("New rule name"),
@@ -158,7 +158,7 @@ export function registerUpdateAlertRuleTool(server: McpToolRegistrar) {
 			),
 			enabled: optionalBooleanParam("Whether the rule is enabled"),
 			destination_ids: optionalStringParam(
-				"Comma-separated destination IDs to notify (replaces the current destinations; use list_alert_rules to find IDs)",
+				"Comma-separated destination IDs to notify (replaces the current destinations; use list_alert_destinations to find IDs)",
 			),
 			signal_type: optionalStringParam(
 				"Signal type: error_rate, p95_latency, p99_latency, apdex, throughput, builder_query, raw_query. Use builder_query with a metrics draft for custom metrics.",

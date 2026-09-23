@@ -244,11 +244,11 @@ export function registerCreateAlertRuleTool(server: McpToolRegistrar) {
 		// The template names live on the `template` parameter, with their thresholds;
 		// repeating them here cost tokens twice for one fact.
 		"Create an alert rule — from a `template` for common cases, or template='custom' for full control. " +
-			"Use list_alert_rules to find destination_ids.",
+			"Use list_alert_destinations to find destination_ids.",
 		Schema.Struct({
 			name: requiredStringParam("Rule name"),
 			destination_ids: requiredStringParam(
-				"Comma-separated destination IDs to notify (use list_alert_rules to find IDs)",
+				"Comma-separated destination IDs to notify (use list_alert_destinations to find IDs)",
 			),
 			template: optionalStringParam(
 				"Template to auto-fill signal_type, comparator, and threshold. " +

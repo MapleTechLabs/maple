@@ -50,7 +50,7 @@ The tool set mirrors the [Maple API](/docs/api) and the dashboard. Broadly:
 - **Agent sessions** (AI/LLM agent traces) — `list_agent_sessions`, `get_agent_session`; `inspect_span` decodes an AI span's gen_ai attributes, captured messages and tool calls
 - **Agent tool health** — `get_agent_tools_overview` (select a `tool` for its failure groups) and `get_agent_tool_error`: which tools your agents call, how often they fail, and the arguments and results of the calls that failed
 - **Dashboards** — `list_dashboards`, `get_dashboard`, `create_dashboard`, `add_dashboard_widget`, `update_dashboard_widget`, `inspect_chart_data`, `describe_dashboard_schema`
-- **Alerting** — `list_alert_rules`, `get_alert_rule`, `create_alert_rule`, `update_alert_rule`, `delete_alert_rule`, `list_alert_incidents`, `list_alert_checks`
+- **Alerting** — `list_alert_rules`, `list_alert_destinations`, `get_alert_rule`, `create_alert_rule`, `update_alert_rule`, `delete_alert_rule`, `list_alert_incidents`, `list_alert_checks`
 - **Setup** — `audit_setup`, `get_instrumentation_recommendations`, `register_agent`
 
 The server also ships prompts for common investigations (incident triage, latency analysis, debugging errors) and an `instructions` resource that explains Maple's data model to the model. Call `tools/list` for the authoritative, always-current list — the exact set evolves with the product.
