@@ -27,21 +27,21 @@ there is no per-org routing anywhere, because each instance knows exactly one re
 
 ## What "never leaves the EU" touches
 
-| System                                            | Today                                                 | EU instance                                                                             |
-| ------------------------------------------------- | ----------------------------------------------------- | --------------------------------------------------------------------------------------- |
-| Ingest gateway + OTel collector                   | ECS us-east-1                                         | ECS eu-central-1                                                                        |
-| Tinybird                                          | `maple_us`, us-east-1                                 | `maple_eu`, AWS eu-central-1                                                            |
-| Postgres                                          | PlanetScale `maple`, US, dashboard Hyperdrive configs | PlanetScale `maple-eu`, eu-central, roles and Hyperdrive configs declared by the deploy |
-| Electric                                          | ECS us-east-1                                         | ECS eu-central-1, in the EU ingest VPC                                                  |
-| api / ai / alerting / electric-sync / web Workers | placement us-east-1                                   | placement eu-central-1 (best effort, see risks)                                         |
-| `ChatSession` Durable Object                      | no jurisdiction                                       | `jurisdiction: "eu"`                                                                    |
-| Replay blobs                                      | R2, non-jurisdictional                                | R2, `jurisdiction: "eu"`                                                                |
-| Queues, Workflows                                 | no jurisdiction control                               | see risks                                                                               |
-| Clerk                                             | one US instance                                       | same instance, `app.eu.maple.dev` as a satellite domain                                 |
-| AI features                                       | OpenRouter, Workers AI                                | off                                                                                     |
-| Maple self-telemetry                              | US internal org                                       | EU internal org, in `maple_eu`                                                          |
-| Repository sandbox (`apps/sandbox`)               | prd Worker, US                                        | per instance, EU Worker                                                                 |
-| Landing, billing, GitHub app                      | shared                                                | shared, no customer data                                                                |
+| System | Today | EU instance |
+| --- | --- | --- |
+| Ingest gateway + OTel collector | ECS us-east-1 | ECS eu-central-1 |
+| Tinybird | `maple_us`, us-east-1 | `maple_eu`, AWS eu-central-1 |
+| Postgres | PlanetScale `maple`, US, dashboard Hyperdrive configs | PlanetScale `maple-eu`, eu-central, roles and Hyperdrive configs declared by the deploy |
+| Electric | ECS us-east-1 | ECS eu-central-1, in the EU ingest VPC |
+| api / ai / alerting / electric-sync / web Workers | placement us-east-1 | placement eu-central-1 (best effort, see risks) |
+| `ChatSession` Durable Object | no jurisdiction | `jurisdiction: "eu"` |
+| Replay blobs | R2, non-jurisdictional | R2, `jurisdiction: "eu"` |
+| Queues, Workflows | no jurisdiction control | see risks |
+| Clerk | one US instance | same instance, `app.eu.maple.dev` as a satellite domain |
+| AI features | OpenRouter, Workers AI | off |
+| Maple self-telemetry | US internal org | EU internal org, in `maple_eu` |
+| Repository sandbox (`apps/sandbox`) | prd Worker, US | per instance, EU Worker |
+| Landing, billing, GitHub app | shared | shared, no customer data |
 
 The landing site stays one site. Billing metadata and the GitHub app installation are not
 customer telemetry. The sandbox clones the customer's repository, so it deploys per instance from
