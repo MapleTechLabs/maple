@@ -5,6 +5,7 @@ import {
 	MAX_PLOT_SERIES,
 	niceTicks,
 	PLOT_HEIGHT,
+	PLOT_PAD,
 	renderChartSvg,
 	sparkline,
 	type ChartPoint,
@@ -25,6 +26,20 @@ describe("formatValue", () => {
 	it("keeps two decimals on sub-1% rates, where the difference is the alert", () => {
 		expect(formatValue(0.42, "percent")).toBe("0.42%")
 		expect(formatValue(4.2, "percent")).toBe("4.2%")
+	})
+
+	it("gives a zero baseline the same precision as the ticks above it", () => {
+		expect(formatValue(0, "percent")).toBe("0%")
+	})
+
+	// The whole point of an axis is the magnitude, and rounding to a place the
+	// value does not reach reports it as nothing at all.
+	it("never rounds a non-zero value down to a flat zero", () => {
+		expect(formatValue(0.031, "number")).toBe("0.031")
+		expect(formatValue(0.02, "number")).toBe("0.02")
+		expect(formatValue(0.0031, "percent")).toBe("0.0031%")
+		expect(formatValue(0.4, "duration_ms")).toBe("0.4 ms")
+		expect(formatValue(0.04, "duration_ms")).toBe("0.04 ms")
 	})
 })
 
@@ -66,6 +81,59 @@ describe("downsample", () => {
 	})
 })
 
+describe("the axes, which the caller draws and this only places", () => {
+	const spec = {
+		kind: "line",
+		unit: "duration_ms",
+		series: [{ name: "checkout-api", points: series([120, 240, 360, 410]) }],
+	} as const
+
+	it("puts every value label on a grid line the plot drew", () => {
+		const render = renderChartSvg(spec)
+		// The grid is `<line>`s at the tick heights; a label that is not on one of
+		// them is a label pointing at nothing.
+		const gridY = new Set(
+			[...render.svg.matchAll(/<line x1="12" y1="([\d.]+)"/g)].map((match) => match[1]),
+		)
+		for (const tick of render.yAxis) {
+			const y = PLOT_PAD + tick.yFraction * (PLOT_HEIGHT - PLOT_PAD * 2)
+			expect(gridY).toContain(String(y))
+		}
+	})
+
+	it("reads top-down, and spans the drawn domain", () => {
+		const { yAxis } = renderChartSvg(spec)
+		expect(yAxis.length).toBeGreaterThanOrEqual(3)
+		expect(yAxis.at(0)?.yFraction).toBe(0)
+		expect(yAxis.at(-1)?.text).toBe("0 ms")
+	})
+
+	it("thins the grid rather than labelling all of it", () => {
+		// Read at about half size, five labels are a texture and four are a scale.
+		const { yAxis, svg } = renderChartSvg(spec)
+		expect(yAxis.length).toBeLessThanOrEqual(4)
+		expect(svg.match(/<line x1="12"/g)?.length).toBeGreaterThanOrEqual(yAxis.length)
+	})
+
+	it("walks the time axis from the range's start to its end", () => {
+		const { xAxis } = renderChartSvg(spec)
+		expect(xAxis.at(0)?.xFraction).toBe(0)
+		expect(xAxis.at(-1)?.xFraction).toBe(1)
+		// The zone is said once, at the end, not on every label.
+		expect(xAxis.filter((tick) => tick.text.includes("UTC"))).toHaveLength(1)
+	})
+
+	it("says a single time once rather than four times", () => {
+		// Every tick formats identically when the whole range is one minute, and
+		// four copies of "14:32" say less than one does.
+		const render = renderChartSvg({
+			...spec,
+			series: [{ name: "checkout-api", points: [[at(0), 1] as ChartPoint, [at(0) + 900, 2]] }],
+		})
+		expect(render.xAxis).toHaveLength(1)
+	})
+})
+
 describe("renderChartSvg, as an alert draws it: one series and a threshold", () => {
 	const one = (values: ReadonlyArray<number>) => [
 		{ name: "checkout-api error rate", points: series(values) },
@@ -87,7 +155,7 @@ describe("renderChartSvg, as an alert draws it: one series and a threshold", () 
 		expect(render.legend[0]?.name).toBe("checkout-api error rate")
 		expect(render.legend[0]?.latest).toBe("3.9%")
 		expect(render.threshold?.text).toBe("2%")
-		expect(render.end).toContain("UTC")
+		expect(render.xAxis.at(-1)?.text).toContain("UTC")
 	})
 
 	it("places the threshold label on the rule it labels", () => {

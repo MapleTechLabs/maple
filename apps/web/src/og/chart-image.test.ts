@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { PLOT_HEIGHT, type ChartPoint } from "@maple/widgets/chart/static-chart"
+import { PLOT_HEIGHT, PLOT_WIDTH, type ChartPoint } from "@maple/widgets/chart/static-chart"
 import { chartCard, rankedCard, CHART_CARD_WIDTH, legendRows } from "./chart-card"
 import { cardFor, chartRequestFromPath } from "./chart-image"
 import { ogIdFromPath } from "./share-links"
@@ -71,10 +71,21 @@ describe("chartCard", () => {
 		expect(card.height).toBeGreaterThan(PLOT_HEIGHT)
 	})
 
-	it("draws no legend row for one series, so an alert card keeps its old height", () => {
-		// 368: plot, padding, a title row, a footer row and two gaps. The height
-		// the alert card had when it was its own builder.
-		expect(chartCard("checkout-api error rate", alert).height).toBe(368)
+	it("draws no legend row for one series, so a solo chart keeps its old height", () => {
+		// 368: padding, a title row, the plot, the time axis and two gaps — the
+		// height the alert card had when the time axis was a start/end footer.
+		const { threshold: _threshold, breachSide: _breachSide, ...solo } = alert
+		expect(chartCard("checkout-api error rate", solo).height).toBe(368)
+	})
+
+	it("gives the threshold a row of its own, since the time axis took the footer", () => {
+		// The chip used to sit between the range ends. Interior time ticks occupy
+		// that space now, so an alert card is one row taller than a reply's.
+		expect(chartCard("checkout-api error rate", alert).height).toBe(393)
+	})
+
+	it("reserves a gutter for the value axis beside the plot", () => {
+		expect(CHART_CARD_WIDTH).toBeGreaterThan(PLOT_WIDTH)
 	})
 
 	it("grows for a legend, and again when that legend wraps", () => {
@@ -134,7 +145,9 @@ describe("an alert response across a deploy skew", () => {
 		const current = cardFor({ ...shared, ...limits, series: [{ name: shared.title, points }] })
 		const older = cardFor({ ...shared, ...limits, points })
 
-		expect(current?.height).toBe(368)
+		// Not a pinned height: the point is that the two shapes agree, and pinning
+		// one made a deliberate change to the card look like a skew regression.
+		expect(current?.height).toBeGreaterThan(PLOT_HEIGHT)
 		expect(older?.height).toBe(current?.height)
 		expect(older?.width).toBe(current?.width)
 	})

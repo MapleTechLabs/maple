@@ -277,17 +277,32 @@ export function formatThroughput(value: number, suffix: string): string {
 }
 
 /**
+ * A percentage at one decimal — but never rounded down to a flat `0.0%`.
+ *
+ * `toFixed(1)` turns everything under 0.05 into zero, so a chart of a
+ * sub-0.05% rate came out as a column of `0.0%` ticks with a `0.0%` readout
+ * over it: the axis said the series was flat zero when it was not. Below that
+ * floor the decimals grow until the first significant digit shows. At or above
+ * it — and at exactly zero — the output is what it always was.
+ */
+const percentText = (pct: number): string => {
+	const abs = Math.abs(pct)
+	if (abs === 0 || !(abs < 0.05)) return `${pct.toFixed(1)}%`
+	return `${Number(pct.toFixed(Math.min(6, Math.ceil(-Math.log10(abs)) + 1)))}%`
+}
+
+/**
  * Format a numeric value according to a unit type.
  * Used by chart Y-axis ticks, tooltips, and stat widgets.
  */
 export const formatValueByUnit: (num: number, unit?: string) => string = (num, unit) =>
 	pipe(
 		Match.value(unit),
-		Match.when("percent", () => `${(num * 100).toFixed(1)}%`),
+		Match.when("percent", () => percentText(num * 100)),
 		// For sources that already report 0–100 (PlanetScale's `*_util_percentages`, NATS varz
 		// `cpu`, most Prometheus exporters). Without this they had to borrow `percent` and render
 		// 100× high, or drop the `%` entirely by falling back to `number`.
-		Match.when("percent_100", () => `${num.toFixed(1)}%`),
+		Match.when("percent_100", () => percentText(num)),
 		Match.when("duration_ms", () => formatDuration(num)),
 		Match.when("duration_us", () => formatDuration(num / 1000)),
 		Match.when("duration_s", () => formatDuration(num * 1000)),

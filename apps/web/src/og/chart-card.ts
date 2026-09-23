@@ -11,33 +11,55 @@
  * takumi nodes, around the plot rather than inside it. This is not a stylistic
  * split; an SVG with `<text>` in it silently loses the text.
  *
- * **It is read small.** A chat client renders an image block at roughly half
- * this width, and on a phone less. That rules out an axis: four tick labels
- * become four smudges. What survives is the shape of the lines, the threshold
- * rule, and a handful of pieces of type.
+ * **It is read small,** which is a budget rather than a veto. A chat client
+ * renders an image block at roughly half this width, so the question an axis
+ * has to answer is how many labels fit. Four of the widest label the formatter
+ * emits ("510.3 KiB", 9 characters of 12px Geist Mono at {@link MONO_CHAR} ≈
+ * 66px) take 264px of the plot's 696px along the bottom, and four 15px rows sit
+ * 85px apart up a {@link AXIS_WIDTH}px gutter. It fits with room to spare; what
+ * does not is the five-plus labels a dashboard draws at full size, so
+ * `renderChartSvg` thins them to four.
+ *
+ * Earlier this file said an axis was ruled out. It was, and a chart of a 0.031%
+ * error rate then had one number on it — the header value — with nothing to
+ * read it against, which is what sent this back for a second look.
  *
  * One card serves both sources. An alert chart is a chart with a single series
  * and a threshold, so it takes the single-series layout — the one value in the
  * header, where a legend of one would only repeat the title — and the threshold
- * chip in the footer. Neither is a branch on "is this an alert".
+ * chip below the time axis. Neither is a branch on "is this an alert", and both
+ * cards carry the same axis: a threshold rule is easier to read against a
+ * labelled grid, not harder.
  */
 import { container, image, text, type Node } from "@takumi-rs/helpers"
 import {
 	formatValue,
 	PLOT_HEIGHT,
+	PLOT_PAD,
 	PLOT_WIDTH,
 	renderChartSvg,
 	unitColor,
 	type ChartSpec,
 	type ChartUnit,
 	type LegendEntry,
+	type PlotLabel,
+	type TimeLabel,
 } from "@maple/widgets/chart/static-chart"
 
 /** Registered by `render.ts`; the chart cards are monospace throughout. */
 const MONO_FONT = "Geist Mono"
 
 const CARD_PADDING = 16
-export const CHART_CARD_WIDTH = PLOT_WIDTH + CARD_PADDING * 2
+/**
+ * The y axis' gutter, and the gap between it and the plot.
+ *
+ * Nine characters at {@link MONO_CHAR}, which is the widest label
+ * {@link formatValue} emits — nice ticks in bytes reach "510.3 KiB" and
+ * nothing goes past it.
+ */
+const AXIS_WIDTH = 66
+const AXIS_GAP = 8
+export const CHART_CARD_WIDTH = AXIS_WIDTH + AXIS_GAP + PLOT_WIDTH + CARD_PADDING * 2
 const ROW_WIDTH = CHART_CARD_WIDTH - CARD_PADDING * 2
 
 const GAP = 10
@@ -128,12 +150,13 @@ const LEGEND_ROW_GAP = 4
 /** The chip and the gap after it, which every entry pays before its text. */
 const LEGEND_CHIP = 16
 /**
- * One character of Geist Mono at the legend's 12px, rounded up.
+ * One character of Geist Mono at the small type's 12px, rounded up.
  *
- * takumi lays the legend out; this only has to predict how many rows that will
- * take, and erring wide costs an unused row of card rather than a clipped one.
+ * takumi lays the text out; this only has to predict how wide it will come out
+ * — how many rows the legend wraps onto, and where an axis label's centre
+ * falls. Erring wide costs an unused row of card rather than a clipped one.
  */
-const LEGEND_CHAR = 7.3
+const MONO_CHAR = 7.3
 /**
  * The longest entry drawn. Past this a service name is not being read anyway,
  * and an uncapped one could push the legend to any number of rows.
@@ -158,7 +181,7 @@ export const legendRows = (entries: ReadonlyArray<LegendChip>): number => {
 	let rows = 1
 	let used = 0
 	for (const entry of entries) {
-		const width = LEGEND_CHIP + entry.text.length * LEGEND_CHAR
+		const width = LEGEND_CHIP + entry.text.length * MONO_CHAR
 		const extended = used === 0 ? width : used + LEGEND_COLUMN_GAP + width
 		if (extended > ROW_WIDTH) {
 			rows += 1
@@ -183,6 +206,66 @@ const legendEntry = (entry: LegendChip): Node =>
 			container({ style: { width: 10, height: 10, backgroundColor: entry.color, borderRadius: 2 } }),
 			label(entry.text, 12, COLOR.ink),
 		],
+	})
+
+// ── axes ────────────────────────────────────────────────────────────────────
+
+/** Where a plot fraction lands inside the rasterised image, in card pixels. */
+const plotY = (fraction: number): number => PLOT_PAD + fraction * (PLOT_HEIGHT - PLOT_PAD * 2)
+const plotX = (fraction: number): number => PLOT_PAD + fraction * (PLOT_WIDTH - PLOT_PAD * 2)
+
+/**
+ * The value scale, in a gutter beside the plot.
+ *
+ * Absolutely positioned rather than distributed, because the fractions come
+ * from the scales the marks were drawn with: a label sits on its grid line
+ * because it was told where the line is, not because the ticks happened to be
+ * evenly spaced.
+ */
+const yAxisGutter = (labels: ReadonlyArray<PlotLabel>): Node =>
+	container({
+		style: { display: "flex", position: "relative", width: AXIS_WIDTH, height: PLOT_HEIGHT },
+		children: labels.map((tick) =>
+			container({
+				style: {
+					display: "flex",
+					position: "absolute",
+					left: 0,
+					top: plotY(tick.yFraction) - SMALL_ROW / 2,
+					width: AXIS_WIDTH,
+					flexDirection: "row",
+					justifyContent: "flex-end",
+				},
+				children: [label(tick.text, 12, COLOR.muted)],
+			}),
+		),
+	})
+
+/**
+ * The time scale, under the plot.
+ *
+ * Each label is centred on its tick and then pulled back inside the plot's
+ * edges, so the ends read as the ends of the range rather than hanging off the
+ * card. The width is predicted from {@link MONO_CHAR}; being a pixel out moves
+ * a label a pixel, which is why an estimate is enough here and would not be in
+ * the gutter.
+ */
+const xAxisRow = (labels: ReadonlyArray<TimeLabel>): Node =>
+	container({
+		style: { display: "flex", position: "relative", width: PLOT_WIDTH, height: SMALL_ROW },
+		children: labels.map((tick) => {
+			const width = tick.text.length * MONO_CHAR
+			const centred = plotX(tick.xFraction) - width / 2
+			return container({
+				style: {
+					display: "flex",
+					position: "absolute",
+					top: 0,
+					left: Math.max(0, Math.min(PLOT_WIDTH - width, centred)),
+				},
+				children: [label(tick.text, 12, COLOR.muted)],
+			})
+		}),
 	})
 
 // ── cards ───────────────────────────────────────────────────────────────────
@@ -218,13 +301,17 @@ export const chartCard = (title: string, spec: ChartSpec): ChartCard => {
 	const entries = solo === undefined ? plot.legend.map(legendChip) : []
 	const rows = solo === undefined ? legendRows(entries) : 0
 
+	// Padding, the title, the plot, the time axis, and a row each for a legend
+	// and a threshold when the chart has one.
 	const height =
-		PLOT_HEIGHT +
 		CARD_PADDING * 2 +
 		TITLE_ROW +
+		GAP +
+		PLOT_HEIGHT +
+		GAP +
 		SMALL_ROW +
-		GAP * 2 +
-		(solo === undefined ? SMALL_ROW * rows + LEGEND_ROW_GAP * (rows - 1) + GAP : 0)
+		(solo === undefined ? GAP + SMALL_ROW * rows + LEGEND_ROW_GAP * (rows - 1) : 0) +
+		(plot.threshold === null ? 0 : GAP + SMALL_ROW)
 
 	const node = container({
 		style: {
@@ -247,7 +334,21 @@ export const chartCard = (title: string, spec: ChartSpec): ChartCard => {
 						// at a re-notification is actually checking.
 						label(solo.latest, 17, COLOR.ink, 600),
 			]),
-			image({ src: svgDataUri(plot.svg), width: PLOT_WIDTH, height: PLOT_HEIGHT }),
+			// The plot and its time axis share a column, so the axis inherits the
+			// plot's left edge instead of being told about the gutter twice.
+			container({
+				style: { display: "flex", width: ROW_WIDTH, flexDirection: "row", gap: AXIS_GAP },
+				children: [
+					yAxisGutter(plot.yAxis),
+					container({
+						style: { display: "flex", width: PLOT_WIDTH, flexDirection: "column", gap: GAP },
+						children: [
+							image({ src: svgDataUri(plot.svg), width: PLOT_WIDTH, height: PLOT_HEIGHT }),
+							xAxisRow(plot.xAxis),
+						],
+					}),
+				],
+			}),
 			...(solo === undefined
 				? [
 						container({
@@ -264,18 +365,12 @@ export const chartCard = (title: string, spec: ChartSpec): ChartCard => {
 						}),
 					]
 				: []),
-			spread([
-				label(plot.start, 12, COLOR.muted),
-				// Dashes stand in for the rule's own dash pattern, since a legend
-				// swatch would cost a nested flex row for two pixels of ink. Empty on
-				// a chart with no limit, which keeps the ends at the ends.
-				label(
-					plot.threshold === null ? "" : `- - threshold ${plot.threshold.text}`,
-					12,
-					COLOR.danger,
-				),
-				label(plot.end, 12, COLOR.muted),
-			]),
+			// Dashes stand in for the rule's own dash pattern, since a legend swatch
+			// would cost a nested flex row for two pixels of ink. Its own row rather
+			// than the time axis' middle, which the interior ticks now occupy.
+			...(plot.threshold === null
+				? []
+				: [label(`- - threshold ${plot.threshold.text}`, 12, COLOR.danger)]),
 		],
 	})
 
