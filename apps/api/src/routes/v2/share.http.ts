@@ -537,8 +537,6 @@ export const HttpV2SharePublicLive = HttpApiBuilder.group(MapleApiV2, "sharePubl
 						series: [{ name: claims.title, points }],
 						threshold: claims.threshold,
 						breachSide: claims.breachSide,
-						// Alongside, for one release — see `ChartTimeseries.points`.
-						points,
 					})
 				}),
 			)
