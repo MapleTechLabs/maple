@@ -102,6 +102,7 @@ const ChatWorkspaceServiceStubLayer = Layer.succeed(
 		unlink: die,
 		updateSettings: die,
 		uninstall: die,
+		listDestinations: die,
 		resolve: die,
 	}),
 )
