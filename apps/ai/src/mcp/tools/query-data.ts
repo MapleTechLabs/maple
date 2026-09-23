@@ -548,5 +548,6 @@ export function registerQueryDataTool(server: McpToolRegistrar) {
 				queryContext,
 			)
 		}),
+		{ phrases: ["Querying telemetry", "Running a query", "Pulling the numbers"] },
 	)
 }

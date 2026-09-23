@@ -169,5 +169,6 @@ export function registerGetAlertRuleTool(server: McpToolRegistrar) {
 				}),
 			}
 		}),
+		{ phrases: ["Reading an alert rule"] },
 	)
 }

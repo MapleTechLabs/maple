@@ -81,5 +81,6 @@ export function registerClaimErrorIssueTool(server: McpToolRegistrar) {
 				}),
 			}
 		}),
+		{ phrases: ["Claiming an issue"] },
 	)
 }

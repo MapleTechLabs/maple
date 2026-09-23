@@ -198,5 +198,6 @@ export function registerListAgentSessionsTool(server: McpToolRegistrar) {
 
 			return { content: [{ type: "text" as const, text: lines.join("\n") }] }
 		}),
+		{ phrases: ["Listing agent sessions"] },
 	)
 }

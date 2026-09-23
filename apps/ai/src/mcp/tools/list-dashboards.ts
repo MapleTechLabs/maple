@@ -92,5 +92,6 @@ export function registerListDashboardsTool(server: McpToolRegistrar) {
 				}),
 			}
 		}),
+		{ phrases: ["Listing dashboards"] },
 	)
 }

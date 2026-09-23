@@ -181,14 +181,14 @@ describe("the rest of the vocabulary", () => {
 			{
 				kind: "activity",
 				tools: [
-					{ name: "search_traces", status: "done", detail: null },
-					{ name: "run_sql", status: "running", detail: null },
+					{ label: "Searching traces", status: "done", detail: null },
+					{ label: "Running a query", status: "running", detail: null },
 				],
 			},
 		])
 		expect(payload.blocks[0]).toEqual({
 			type: "context",
-			elements: [{ type: "mrkdwn", text: "Tools: `search_traces` · `run_sql`…" }],
+			elements: [{ type: "mrkdwn", text: "Searching traces · Running a query…" }],
 		})
 	})
 

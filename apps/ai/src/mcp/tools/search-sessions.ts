@@ -209,5 +209,6 @@ export function registerSearchSessionsTool(server: McpToolRegistrar) {
 				}),
 			}
 		}),
+		{ phrases: ["Searching sessions"] },
 	)
 }

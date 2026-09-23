@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import { Effect, Exit, Schema } from "effect"
-import { mapleToolCatalog, toInputSchema } from "./registry"
+import { mapleToolCatalog, mapleToolPhrase, toInputSchema } from "./registry"
 import { optionalNumberParam } from "./types"
 
 const jsonOf = (schema: unknown): string => JSON.stringify(schema)
@@ -134,5 +134,15 @@ describe("optionalNumberParam", () => {
 	// Absence still means absence — the leniency is about encoding, not presence.
 	it("leaves an omitted parameter omitted", () => {
 		expect(Effect.runSync(Schema.decodeUnknownEffect(schema)({}))).toEqual({})
+	})
+})
+
+describe("mapleToolPhrase", () => {
+	it("picks each tool's phrase from its own list", () => {
+		for (const { name, phrases } of mapleToolCatalog) expect(phrases).toContain(mapleToolPhrase(name))
+	})
+
+	it("has nothing to say for a tool outside the registry", () => {
+		expect(mapleToolPhrase("submit_diagnosis")).toBeUndefined()
 	})
 })

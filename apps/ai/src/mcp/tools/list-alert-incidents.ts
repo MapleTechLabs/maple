@@ -135,5 +135,6 @@ export function registerListAlertIncidentsTool(server: McpToolRegistrar) {
 				}),
 			}
 		}),
+		{ phrases: ["Listing alert incidents", "Checking recent alerts"] },
 	)
 }

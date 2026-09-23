@@ -169,5 +169,6 @@ export function registerUpdateErrorNotificationPolicyTool(server: McpToolRegistr
 				}),
 			}
 		}),
+		{ phrases: ["Updating the notification policy"] },
 	)
 }

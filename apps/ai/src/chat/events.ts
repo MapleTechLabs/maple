@@ -30,6 +30,8 @@ export interface AdapterContext {
 	 * carries no parameters, and the card needs the arguments the declaration already delivered.
 	 */
 	readonly isProposed?: (toolName: string) => boolean
+	/** What a declared call is doing, for a reader; undefined for a tool that has no phrase. */
+	readonly labelOf?: (toolName: string) => string | undefined
 	/** One {@link makeTextSanitizer} per run: the state it keeps spans deltas. */
 	readonly sanitizer: TextSanitizer
 }
@@ -227,6 +229,8 @@ const tagged = <E extends ChatTurnEvent>(context: AdapterContext, event: E): E =
 const completedReason = (finishReason: string): "stop" | "max-steps" =>
 	finishReason === "budget-exhausted" ? "max-steps" : "stop"
 
+const optionalLabel = (label: string | undefined) => (label === undefined ? undefined : { label })
+
 /**
  * One engine event as zero or more chat events.
  *
@@ -257,6 +261,7 @@ export const toChatEvents = (
 					name: event.toolName,
 					input: event.parameters,
 					...(context.isProposed?.(event.toolName) === true ? { proposed: true } : undefined),
+					...optionalLabel(context.labelOf?.(event.toolName)),
 				}),
 			]
 		case "ToolCallSucceeded":

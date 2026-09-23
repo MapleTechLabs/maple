@@ -122,5 +122,6 @@ export function registerFindErrorsTool(server: McpToolRegistrar) {
 				}),
 			}
 		}),
+		{ phrases: ["Looking for errors", "Finding errors"] },
 	)
 }

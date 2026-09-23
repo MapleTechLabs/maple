@@ -135,5 +135,6 @@ export function registerSearchLogsTool(server: McpToolRegistrar) {
 				}),
 			}
 		}),
+		{ phrases: ["Searching logs", "Reading through logs"] },
 	)
 }

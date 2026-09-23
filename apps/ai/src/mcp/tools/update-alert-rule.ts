@@ -278,5 +278,6 @@ export function registerUpdateAlertRuleTool(server: McpToolRegistrar) {
 				}),
 			}
 		}),
+		{ phrases: ["Updating an alert rule"] },
 	)
 }

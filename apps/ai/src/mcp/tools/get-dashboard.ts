@@ -85,5 +85,6 @@ export function registerGetDashboardTool(server: McpToolRegistrar) {
 				}),
 			}
 		}),
+		{ phrases: ["Opening a dashboard", "Loading a dashboard"] },
 	)
 }

@@ -210,5 +210,6 @@ export function registerRunSqlTool(server: McpToolRegistrar) {
 				}),
 			}
 		}),
+		{ phrases: ["Running a query", "Running SQL", "Querying the warehouse"] },
 	)
 }
