@@ -1316,7 +1316,11 @@ describe("reading the workspace row", () => {
 	 * The event relayed the way `run.ts` relays it: one counted read (the database connection and
 	 * the decrypt), behind a connector that posts with the credential that read carries.
 	 */
-	const relay = (event: InboundEvent, stub: ChatSessionStub, opened?: ReadonlyArray<string>) =>
+	const relay = (
+		event: InboundEvent,
+		stub: ChatSessionStub,
+		options?: { readonly opened?: ReadonlyArray<string>; readonly linked?: boolean },
+	) =>
 		Effect.gen(function* () {
 			const platform = chat()
 			const reads = { count: 0 }
@@ -1343,10 +1347,12 @@ describe("reading the workspace row", () => {
 				new Map(),
 				Effect.sync(() => {
 					reads.count += 1
-					return Option.some({ relay: { orgId: ORG }, credentials: "sealed" })
+					return options?.linked === false
+						? Option.none()
+						: Option.some({ relay: { orgId: ORG }, credentials: "sealed" })
 				}),
 				(resolveWorkspace) => ({
-					...host(platform.outbound, stub, { opened }).ports,
+					...host(platform.outbound, stub, { opened: options?.opened ?? [] }).ports,
 					outbound,
 					resolveWorkspace,
 				}),
@@ -1365,7 +1371,7 @@ describe("reading the workspace row", () => {
 		Effect.gen(function* () {
 			yield* TestClock.setTime(NOW)
 			const agent = session([silentTurn], { transcript: answered })
-			const result = yield* relay(followUp, agent.stub, [CONVERSATION])
+			const result = yield* relay(followUp, agent.stub, { opened: [CONVERSATION] })
 			expect(agent.turns).toHaveLength(1)
 			expect(result.reads).toBe(1)
 		}),
@@ -1377,6 +1383,13 @@ describe("reading the workspace row", () => {
 			expect(result.reads).toBe(1)
 			expect(result.postedWith.length).toBeGreaterThan(0)
 			expect(new Set(result.postedWith)).toEqual(new Set(["sealed"]))
+		}),
+	)
+
+	it.effect("posts with the deployment's config alone for a workspace nobody linked", () =>
+		Effect.gen(function* () {
+			const result = yield* relay(mention, session([silentTurn]).stub, { linked: false })
+			expect(result).toEqual({ reads: 1, postedWith: [undefined] })
 		}),
 	)
 

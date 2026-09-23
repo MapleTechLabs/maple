@@ -7,7 +7,7 @@
  * the database, and none of it belongs on the path Cloudflare evaluates when it validates the
  * uploaded script.
  */
-import { ConnectorCredentials, type ChatConnector, type InboundEvent } from "@maple/chat-platform"
+import type { ChatConnector, ConnectorCredentials, InboundEvent } from "@maple/chat-platform"
 import { connectors } from "@maple/chat-platform/connectors"
 import * as MapleCloudflareSDK from "@maple-dev/effect-sdk/cloudflare"
 import { chatSessionStub } from "@maple/domain/chat-session-stub"
