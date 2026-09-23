@@ -478,7 +478,7 @@ describe("ChatWorkspaceService", () => {
 				const database = yield* Database
 				assert.isTrue(yield* forgetChatWorkspace(database, TEST_CONNECTOR, "workspace-5"))
 				assert.isTrue(
-					Option.isNone(yield* resolveChatWorkspace(database, TEST_CONNECTOR, "workspace-5")),
+					Option.isNone(yield* resolveChatWorkspace(database, TEST_CONNECTOR, "workspace-5", null)),
 				)
 				// A removal nobody linked is not a failure — the bot can be added and removed from a
 				// workspace that never reached Maple at all.

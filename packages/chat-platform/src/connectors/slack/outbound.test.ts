@@ -18,10 +18,7 @@ interface Attempt {
 	readonly headers?: Record<string, string>
 }
 
-const CREDENTIALS = encodeSlackCredentials({
-	bot_token: "xoxb-a-workspaces-own-token",
-	bot_user_id: "U0KRQLJ9H",
-})
+const CREDENTIALS = encodeSlackCredentials({ bot_token: "xoxb-a-workspaces-own-token" })
 
 /** `null` credentials is a workspace nobody linked — deliberately not `undefined`, which a default
  * parameter would fill back in. */
@@ -122,6 +119,78 @@ describe("slack transport", () => {
 				.pipe(Effect.flip)
 			expect(failure.message).toContain("not connected to Maple")
 			expect(http.seen).toHaveLength(0)
+		}).pipe(Effect.provide(http.layer))
+	})
+
+	it.effect("waits out a rate limit Slack reported with a 200, in either spelling", () => {
+		const http = stub([
+			{ status: 200, body: '{"ok":false,"error":"rate_limited"}' },
+			{ status: 200, body: '{"ok":false,"error":"ratelimited"}' },
+			{ status: 200, body: POSTED },
+		])
+		return Effect.gen(function* () {
+			const transport = yield* slackOutbound.transport
+			const running = yield* Effect.forkChild(
+				transport.post(target, [{ kind: "prose", markdown: "x" }]),
+			)
+			// No `Retry-After` on a 200, so each attempt waits the default second.
+			yield* TestClock.adjust("2 seconds")
+			expect(yield* Fiber.join(running)).toMatchObject({ messageId: "1700000000.000200" })
+			expect(http.seen).toHaveLength(3)
+		}).pipe(Effect.provide(http.layer))
+	})
+
+	it.effect("clamps a rate limit that asks for longer than a turn can wait", () => {
+		const http = stub([
+			{ status: 429, body: "{}", headers: { "retry-after": "600" } },
+			{ status: 200, body: POSTED },
+		])
+		return Effect.gen(function* () {
+			const transport = yield* slackOutbound.transport
+			const running = yield* Effect.forkChild(
+				transport.post(target, [{ kind: "prose", markdown: "x" }]),
+			)
+			// Ten minutes asked for, thirty seconds honoured.
+			yield* TestClock.adjust("30 seconds")
+			expect(yield* Fiber.join(running)).toMatchObject({ messageId: "1700000000.000200" })
+		}).pipe(Effect.provide(http.layer))
+	})
+
+	it.effect("falls back to a default wait when Retry-After is not a number", () => {
+		const http = stub([
+			{ status: 429, body: "{}", headers: { "retry-after": "soon" } },
+			{ status: 200, body: POSTED },
+		])
+		return Effect.gen(function* () {
+			const transport = yield* slackOutbound.transport
+			const running = yield* Effect.forkChild(
+				transport.post(target, [{ kind: "prose", markdown: "x" }]),
+			)
+			yield* TestClock.adjust("1 second")
+			expect(yield* Fiber.join(running)).toMatchObject({ messageId: "1700000000.000200" })
+		}).pipe(Effect.provide(http.layer))
+	})
+
+	it.effect("reports an HTTP failure and an unreadable reply as this operation's failure", () => {
+		const http = stub([{ status: 500, body: "upstream is unwell" }])
+		return Effect.gen(function* () {
+			const transport = yield* slackOutbound.transport
+			const failure = yield* transport
+				.post(target, [{ kind: "prose", markdown: "x" }])
+				.pipe(Effect.flip)
+			expect(failure.status).toBe(500)
+			expect(failure.operation).toBe("post")
+		}).pipe(Effect.provide(http.layer))
+	})
+
+	it.effect("fails the post when Slack answers ok with no timestamp to edit later", () => {
+		const http = stub([{ status: 200, body: '{"ok":true,"channel":"C1"}' }])
+		return Effect.gen(function* () {
+			const transport = yield* slackOutbound.transport
+			const failure = yield* transport
+				.post(target, [{ kind: "prose", markdown: "x" }])
+				.pipe(Effect.flip)
+			expect(failure.message).toContain("no message timestamp")
 		}).pipe(Effect.provide(http.layer))
 	})
 

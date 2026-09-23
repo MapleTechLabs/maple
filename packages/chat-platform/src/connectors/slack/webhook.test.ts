@@ -10,6 +10,9 @@ import { describe, expect, it } from "@effect/vitest"
 import { Effect } from "effect"
 import { HttpServerRequest } from "effect/unstable/http"
 import { MAX_TIMESTAMP_SKEW_SECONDS, SIGNING_SECRET_CONFIG } from "./api"
+
+/** The one thing a refused caller is ever told. */
+const REJECTED = "Slack could not be verified as the sender of this request"
 import { slackIngress } from "./webhook"
 
 const SECRET = "8f742231b10e8888abcd99yyyzzz85a5"
@@ -99,7 +102,7 @@ describe("slack webhook ingress", () => {
 		Effect.gen(function* () {
 			const error = yield* call(mention, { signature: `v0=${"0".repeat(64)}` }).pipe(Effect.flip)
 			expect(error._tag).toBe("@maple/chat-platform/ConnectorIngressError")
-			expect(error.message).toContain("signature mismatch")
+			expect(error.message).toBe(REJECTED)
 		}),
 	)
 
@@ -107,7 +110,36 @@ describe("slack webhook ingress", () => {
 		Effect.gen(function* () {
 			const stale = String(MAX_TIMESTAMP_SKEW_SECONDS + 60)
 			const error = yield* call(mention, { timestamp: stale }).pipe(Effect.flip)
-			expect(error.message).toContain("stale timestamp")
+			expect(error.message).toBe(REJECTED)
+		}),
+	)
+
+	it.effect("tells a refused caller nothing about which check refused it", () =>
+		Effect.gen(function* () {
+			// The host returns this message as the 400 body. Naming the failing check tells an
+			// attacker which one to fix; the reason goes on the span instead.
+			const reasons = ["signature", "timestamp", "mismatch", "malformed", "stale", "missing"]
+			for (const options of [
+				{ signature: `v0=${"0".repeat(64)}` },
+				{ signature: "not-a-signature" },
+				{ timestamp: String(MAX_TIMESTAMP_SKEW_SECONDS + 60) },
+				{ timestamp: "not-a-timestamp" },
+			]) {
+				const error = yield* call(mention, options).pipe(Effect.flip)
+				expect(error.message).toBe(REJECTED)
+				for (const reason of reasons) expect(error.message.toLowerCase()).not.toContain(reason)
+			}
+		}),
+	)
+
+	it.effect("does not echo the challenge of an UNSIGNED handshake", () =>
+		Effect.gen(function* () {
+			// The one branch that puts request content in the response. If verification ran after
+			// parsing, this would answer 200 with the challenge and Slack would accept any URL.
+			const body = JSON.stringify({ type: "url_verification", challenge: "abc123", token: "t" })
+			const error = yield* call(body, { signature: `v0=${"0".repeat(64)}` }).pipe(Effect.flip)
+			expect(error._tag).toBe("@maple/chat-platform/ConnectorIngressError")
+			expect(error.message).not.toContain("abc123")
 		}),
 	)
 

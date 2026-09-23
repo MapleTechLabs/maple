@@ -20,7 +20,7 @@ import { chatSessionStub } from "@maple/domain/chat-session-stub"
 import type { ChatConnectorId, OrgId } from "@maple/domain/primitives"
 import { workerTelemetryConfig } from "@maple/infra/worker-telemetry"
 import { workerEnvLayer } from "@maple/infra/worker-runtime"
-import { Effect, Exit, Layer, Option } from "effect"
+import { Effect, Exit, Layer, Option, Schema } from "effect"
 import { FetchHttpClient, HttpClient } from "effect/unstable/http"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import { parseBase64Aes256GcmKey } from "@maple/backend/platform/Crypto"
@@ -57,6 +57,12 @@ const APP_BASE_URL_FALLBACK = "https://app.maple.dev"
 const appBaseUrl = (env: Record<string, unknown>): string =>
 	setting(env, "MAPLE_APP_BASE_URL") ?? APP_BASE_URL_FALLBACK
 
+/** `MAPLE_INGEST_KEY_ENCRYPTION_KEY` is set on this deployment but is not a usable key. */
+class CredentialKeyUnusable extends Schema.TaggedError<CredentialKeyUnusable>()(
+	"@maple/chat-bot/CredentialKeyUnusable",
+	{ message: Schema.String },
+) {}
+
 export interface RelayHost {
 	readonly env: Record<string, unknown>
 	/** Whether this conversation has already been told that its workspace is not linked. */
@@ -86,9 +92,21 @@ const withDatabase = <A, E>(env: Record<string, unknown>, program: Effect.Effect
  * see `chat-workspace-rows.ts`.
  */
 const credentialKey = (env: Record<string, unknown>): Effect.Effect<Buffer | null> =>
-	Effect.orElseSucceed(
-		parseBase64Aes256GcmKey(setting(env, "MAPLE_INGEST_KEY_ENCRYPTION_KEY") ?? "", (message) => message),
-		() => null,
+	parseBase64Aes256GcmKey(
+		setting(env, "MAPLE_INGEST_KEY_ENCRYPTION_KEY") ?? "",
+		(message) => new CredentialKeyUnusable({ message }),
+	).pipe(
+		// Absent is the ordinary case on a stage running no connector that stores a credential, so
+		// it is not an error — but a key that IS set and unusable is a deployment mistake that
+		// would otherwise surface only as an unreadable workspace on every mention, reason nowhere.
+		Effect.tapError((error) =>
+			setting(env, "MAPLE_INGEST_KEY_ENCRYPTION_KEY") === undefined
+				? Effect.void
+				: Effect.logError("Chat workspace credential key is unusable").pipe(
+						Effect.annotateLogs({ "error.type": error._tag, "error.message": error.message }),
+					),
+		),
+		Effect.orElseSucceed(() => null),
 	)
 
 /**
@@ -98,20 +116,29 @@ const credentialKey = (env: Record<string, unknown>): Effect.Effect<Buffer | nul
  * this is, and the transport is built from the credential the same row carries — and reading it
  * twice would be two Postgres connections for one mention.
  */
-const lookupWorkspace = (host: RelayHost, connectorId: ChatConnectorId, workspaceId: string) =>
-	Effect.flatMap(credentialKey(host.env), (key) =>
-		withDatabase(
-			host.env,
-			Effect.flatMap(Database, (database) =>
-				resolveChatWorkspace(database, connectorId, workspaceId, key),
-			),
-		),
+const lookupWorkspace = Effect.fn("chat_bot.lookup_workspace")(function* (
+	host: RelayHost,
+	connectorId: ChatConnectorId,
+	workspaceId: string,
+) {
+	yield* Effect.annotateCurrentSpan({
+		"maple.chat.connector": connectorId,
+		"maple.chat.workspace_id": workspaceId,
+	})
+	const key = yield* credentialKey(host.env)
+	return yield* withDatabase(
+		host.env,
+		Effect.flatMap(Database, (database) => resolveChatWorkspace(database, connectorId, workspaceId, key)),
 	).pipe(
 		// Logged here, where the cause is, and re-raised as the relay's own failure: what the
 		// relay must not do is mistake a database it could not read for a workspace nobody linked.
 		Effect.catchCause((cause) =>
 			Effect.logError("Chat workspace could not be resolved").pipe(
-				Effect.annotateLogs({ "error.type": summarizeCause(cause) }),
+				Effect.annotateLogs({
+					"error.type": summarizeCause(cause),
+					"maple.chat.connector": connectorId,
+					"maple.chat.workspace_id": workspaceId,
+				}),
 				Effect.andThen(
 					Effect.fail(
 						new WorkspaceLookupFailed({
@@ -123,6 +150,7 @@ const lookupWorkspace = (host: RelayHost, connectorId: ChatConnectorId, workspac
 			),
 		),
 	)
+})
 
 /** What the lookup answered, replayable as the port's own effect — an `Exit` IS one. */
 type WorkspaceLookup = Exit.Exit<Option.Option<ChatWorkspaceResolution>, WorkspaceLookupFailed>
@@ -143,6 +171,10 @@ const ports = (
 	resolved: WorkspaceLookup,
 ): RelayPorts<HttpClient.HttpClient | ConnectorCredentials> => ({
 	outbound: connector.outbound,
+	// The arguments are ignored because the lookup already ran, against THIS event's own connector
+	// and workspace — the relay asks the same question the credential resolution asked, and asking
+	// it twice is a second Postgres connection for one mention. There is exactly one caller
+	// (`relay/turn.ts`), and it passes the event's own ids.
 	resolveWorkspace: () => resolved,
 	forgetWorkspace: (connectorId, workspaceId) =>
 		withDatabase(
@@ -158,7 +190,11 @@ const ports = (
 			),
 			Effect.catchCause((cause) =>
 				Effect.logError("Chat workspace could not be unlinked").pipe(
-					Effect.annotateLogs({ "error.type": summarizeCause(cause) }),
+					Effect.annotateLogs({
+						"error.type": summarizeCause(cause),
+						"maple.chat.connector": connectorId,
+						"maple.chat.workspace_id": workspaceId,
+					}),
 				),
 			),
 		),
@@ -189,26 +225,25 @@ export const runInboundEvent = async (host: RelayHost, event: InboundEvent): Pro
 	const config = resolveConnectorConfig(host.env, connector)
 	if (config._tag === "missing") return
 
-	try {
-		await Effect.runPromise(
-			Effect.gen(function* () {
-				// Before the relay, because the credential the connector posts with comes out of the
-				// same row the relay is about to ask for the org of.
-				const resolved = yield* Effect.exit(lookupWorkspace(host, connector.id, event.workspaceId))
-				yield* relayInboundEvent(event, ports(host, connector, resolved)).pipe(
-					Effect.provideService(
-						ConnectorCredentials,
-						connectorCredentials(config.config, resolved),
-					),
-				)
-			}).pipe(
-				// oxlint-disable-next-line effecttsgo/strict-effect-provide
-				Effect.provide(
-					Layer.mergeAll(FetchHttpClient.layer, workerEnvLayer(host.env), telemetry.layer),
-				),
-			),
-		)
-	} finally {
-		await telemetry.flush(host.env).catch(() => undefined)
-	}
+	await Effect.runPromise(
+		Effect.gen(function* () {
+			// Before the relay, because the credential the connector posts with comes out of the
+			// same row the relay is about to ask for the org of. A workspace the bot was removed
+			// from is the one event needing neither — it unlinks the row rather than answering in
+			// it — so it is not looked up at all.
+			const resolved =
+				event.type === "workspace-removed"
+					? Exit.succeed(Option.none<ChatWorkspaceResolution>())
+					: yield* Effect.exit(lookupWorkspace(host, connector.id, event.workspaceId))
+			yield* relayInboundEvent(event, ports(host, connector, resolved)).pipe(
+				Effect.provideService(ConnectorCredentials, connectorCredentials(config.config, resolved)),
+			)
+		}).pipe(
+			// oxlint-disable-next-line effecttsgo/strict-effect-provide
+			Effect.provide(Layer.mergeAll(FetchHttpClient.layer, workerEnvLayer(host.env), telemetry.layer)),
+			// On the fiber rather than in a `finally`: the flush is what exports this event's spans,
+			// so it belongs to the same interruption and failure handling they do.
+			Effect.ensuring(Effect.promise(() => telemetry.flush(host.env).catch(() => undefined))),
+		),
+	)
 }

@@ -119,6 +119,7 @@ export const slackOutbound: ChatOutbound<HttpClient.HttpClient | ConnectorCreden
 		 * three deep under the first one.
 		 */
 		const attempt = Effect.fn("Slack.request", { kind: "client" })(function* (
+			bearer: Redacted.Redacted<string>,
 			operation: ChatOutboundOperation,
 			method: string,
 			url: string,
@@ -130,16 +131,11 @@ export const slackOutbound: ChatOutbound<HttpClient.HttpClient | ConnectorCreden
 				"server.address": API_HOST,
 				"url.template": `/api/${method}`,
 			})
-			if (Option.isNone(token)) {
-				// The workspace has no stored token: nobody linked it, or the envelope could not be
-				// opened. Either way there is nothing to post with, and posting is not attempted.
-				return yield* failed(operation, "This Slack workspace is not connected to Maple")
-			}
 			const response = yield* client
 				.execute(
 					HttpClientRequest.post(url, {
 						headers: {
-							authorization: `Bearer ${Redacted.value(token.value)}`,
+							authorization: `Bearer ${Redacted.value(bearer)}`,
 							"content-type": "application/json; charset=utf-8",
 						},
 					}).pipe(HttpClientRequest.bodyJsonUnsafe(payload)),
@@ -185,11 +181,19 @@ export const slackOutbound: ChatOutbound<HttpClient.HttpClient | ConnectorCreden
 			method: string,
 			url: string,
 			payload: SlackMessageRequest,
-		) => {
+		): Effect.Effect<{ readonly ts?: string | undefined }, ChatOutboundError> => {
+			// Checked BEFORE the client span is opened. The workspace having no stored token is a
+			// Maple-side state — nobody linked it, or the envelope could not be opened — and
+			// recording it inside a `Slack.request` span would put a failed edge on the service map
+			// for a call that was never made.
+			if (Option.isNone(token)) {
+				return Effect.fail(failed(operation, "This Slack workspace is not connected to Maple"))
+			}
+			const bearer = token.value
 			const tryOnce = (
 				count: number,
 			): Effect.Effect<{ readonly ts?: string | undefined }, ChatOutboundError> =>
-				attempt(operation, method, url, payload).pipe(
+				attempt(bearer, operation, method, url, payload).pipe(
 					Effect.catchTag("@maple/chat-platform/connectors/slack/RateLimited", (limited) =>
 						count >= MAX_RATE_LIMIT_ATTEMPTS
 							? Effect.fail(

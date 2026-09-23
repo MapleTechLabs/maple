@@ -10,7 +10,7 @@ import {
 	type ChatInstallStart,
 	type ChatWorkspaceSettings,
 } from "../../install"
-import { AUTHORIZE_URL, BOT_SCOPES, CLIENT_ID_CONFIG, CLIENT_SECRET_CONFIG, TOKEN_URL } from "./api"
+import { API_HOST, AUTHORIZE_URL, BOT_SCOPES, CLIENT_ID_CONFIG, CLIENT_SECRET_CONFIG, TOKEN_URL } from "./api"
 import { encodeSlackCredentials } from "./credentials"
 import { SLACK_CONNECTOR_ID } from "./id"
 import { decodeTokenResponse } from "./payloads"
@@ -54,6 +54,51 @@ const installFailed = (message: string) => new ChatInstallFailed({ connector: SL
  * event the bot then receives. Supporting it is a real feature (an org id as the workspace
  * identity, and an `authorizations` entry to resolve each event's team), not a missing branch.
  */
+const exchangeCode = Effect.fn("Slack.request", { kind: "client" })(function* (input: {
+	readonly clientId: string
+	readonly clientSecret: string
+	readonly code: string
+	readonly redirectUri: string
+}) {
+	yield* Effect.annotateCurrentSpan({
+		"peer.service": "slack",
+		"http.request.method": "POST",
+		"server.address": API_HOST,
+		"url.template": "/api/oauth.v2.access",
+	})
+	const httpClient = yield* HttpClient.HttpClient
+	const request = HttpClientRequest.post(TOKEN_URL, { headers: { accept: "application/json" } }).pipe(
+		// Slack's token endpoint takes the client credentials in the form body and reads only
+		// `application/x-www-form-urlencoded`. The body is never annotated on this span.
+		HttpClientRequest.bodyUrlParams({
+			client_id: input.clientId,
+			client_secret: input.clientSecret,
+			code: input.code,
+			redirect_uri: input.redirectUri,
+		}),
+	)
+	const response = yield* httpClient
+		.execute(request)
+		.pipe(Effect.mapError((error) => installFailed(`Slack token exchange failed: ${error.message}`)))
+	yield* Effect.annotateCurrentSpan({ "http.response.status_code": response.status })
+	if (response.status < 200 || response.status >= 300) {
+		return yield* Effect.fail(installFailed(`Slack token exchange failed with HTTP ${response.status}`))
+	}
+	const json = yield* response.json.pipe(
+		Effect.mapError(() => installFailed("Slack returned a non-JSON token response")),
+	)
+	const decoded = yield* decodeTokenResponse(json).pipe(
+		Effect.mapError(() => installFailed("Slack returned an unexpected token response")),
+	)
+	// Slack reports a refused exchange as HTTP 200 with `ok: false`, so the status said nothing.
+	if (!decoded.ok) {
+		const error = decoded.error ?? "unknown"
+		yield* Effect.annotateCurrentSpan({ "error.type": error })
+		return yield* Effect.fail(installFailed(`Slack refused the token exchange: ${error}`))
+	}
+	return decoded
+})
+
 const complete = Effect.fnUntraced(function* (input: ChatInstallCallback) {
 	const denied = input.params.get("error")
 	if (denied !== null) {
@@ -66,35 +111,7 @@ const complete = Effect.fnUntraced(function* (input: ChatInstallCallback) {
 	const clientId = yield* requireConfig(input.config, SLACK_CONNECTOR_ID, CLIENT_ID_CONFIG)
 	const clientSecret = yield* requireConfig(input.config, SLACK_CONNECTOR_ID, CLIENT_SECRET_CONFIG)
 
-	const httpClient = yield* HttpClient.HttpClient
-	const request = HttpClientRequest.post(TOKEN_URL, { headers: { accept: "application/json" } }).pipe(
-		// Slack's token endpoint takes the client credentials in the form body and reads only
-		// `application/x-www-form-urlencoded`.
-		HttpClientRequest.bodyUrlParams({
-			client_id: clientId,
-			client_secret: clientSecret,
-			code,
-			redirect_uri: input.redirectUri,
-		}),
-	)
-	const response = yield* httpClient
-		.execute(request)
-		.pipe(Effect.mapError((error) => installFailed(`Slack token exchange failed: ${error.message}`)))
-	if (response.status < 200 || response.status >= 300) {
-		return yield* Effect.fail(installFailed(`Slack token exchange failed with HTTP ${response.status}`))
-	}
-	const json = yield* response.json.pipe(
-		Effect.mapError(() => installFailed("Slack returned a non-JSON token response")),
-	)
-	const decoded = yield* decodeTokenResponse(json).pipe(
-		Effect.mapError(() => installFailed("Slack returned an unexpected token response")),
-	)
-	// Slack reports a refused exchange as HTTP 200 with `ok: false`, so the status said nothing.
-	if (!decoded.ok) {
-		return yield* Effect.fail(
-			installFailed(`Slack refused the token exchange: ${decoded.error ?? "unknown"}`),
-		)
-	}
+	const decoded = yield* exchangeCode({ clientId, clientSecret, code, redirectUri: input.redirectUri })
 	if (decoded.is_enterprise_install === true) {
 		return yield* Effect.fail(
 			installFailed(
@@ -102,19 +119,17 @@ const complete = Effect.fnUntraced(function* (input: ChatInstallCallback) {
 			),
 		)
 	}
-	const team = decoded.team ?? null
-	const teamId = team?.id
+	const teamId = decoded.team?.id
 	const botToken = decoded.access_token
-	const botUserId = decoded.bot_user_id
-	if (teamId === undefined || botToken === undefined || botUserId === undefined) {
-		return yield* Effect.fail(installFailed("Slack's token response named no workspace and bot user"))
+	if (teamId === undefined || botToken === undefined) {
+		return yield* Effect.fail(installFailed("Slack's token response named no workspace and bot token"))
 	}
 	return {
 		externalWorkspaceId: teamId,
-		name: team?.name ?? teamId,
+		name: decoded.team?.name ?? teamId,
 		// The workspace's own token. The host seals it; only this connector's outbound half reads it
 		// back, and it is never anywhere else — not on a span, not in a log, not in an error.
-		credentials: encodeSlackCredentials({ bot_token: botToken, bot_user_id: botUserId }),
+		credentials: encodeSlackCredentials({ bot_token: botToken }),
 	} satisfies ChatInstallResult
 })
 

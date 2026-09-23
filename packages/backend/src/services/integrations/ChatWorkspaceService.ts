@@ -347,12 +347,13 @@ const make: Effect.Effect<
 		// A connector that minted a per-workspace secret hands it over as one opaque string; it is
 		// sealed here and never read above the connector that wrote it. A re-install replaces it,
 		// because the platform issued a new one and the old one is what was just revoked.
+		const credentials = installed.credentials
 		const sealed =
-			installed.credentials === undefined
+			credentials === undefined
 				? null
 				: yield* Effect.flatMap(credentialKey, (key) =>
 						sealChatWorkspaceCredentials(
-							installed.credentials ?? "",
+							credentials,
 							key,
 							{
 								orgId,
@@ -490,7 +491,14 @@ const make: Effect.Effect<
 		// A deployment with no usable key resolves the workspace without its credential rather than
 		// failing the lookup: everything that does not need one keeps working, and the connector
 		// that does reports it cannot post.
-		const key = yield* Effect.orElseSucceed(credentialKey, () => null)
+		const key = yield* credentialKey.pipe(
+			Effect.tapError((error) =>
+				Effect.logError("Chat workspace credential key is unusable").pipe(
+					Effect.annotateLogs({ "error.type": error._tag, "error.message": error.message }),
+				),
+			),
+			Effect.orElseSucceed(() => null),
+		)
 		const resolved = yield* resolveChatWorkspace(database, connectorId, externalWorkspaceId, key)
 		// The one cross-tenant lookup here — the resolved org belongs on the span.
 		if (Option.isSome(resolved)) yield* Effect.annotateCurrentSpan({ orgId: resolved.value.orgId })

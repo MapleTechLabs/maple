@@ -6,26 +6,24 @@
  * (`ChatInstallResult.credentials`). What crosses that boundary is this JSON, and nothing between
  * the two halves reads it: to the host it is an opaque string.
  *
- * It is JSON rather than the bare token because a token is not the whole credential. `bot_user_id`
- * is what the outbound half would need to address the bot, and keeping the pair together means the
- * day a second value is needed it is one more key here rather than one more column in a shared
- * table.
+ * It is JSON rather than the bare token so that the day a second value is needed it is one more key
+ * here — read by the same connector that wrote it — rather than a migration of a shared table and
+ * a re-install of every workspace. One key is in it today.
  */
 import { Option, Schema } from "effect"
 
 /**
- * Bot tokens are `xoxb-…`; an enterprise-wide install would be `xoxe-…`, which this connector
- * refuses at install time (see `install.ts`). The prefix is checked so a value that is not a bot
- * token cannot be stored and then fail every post with an unhelpful Slack error.
+ * The token's FORMAT is deliberately not checked.
+ *
+ * It arrives from Slack's own token response, and the shapes it can take are Slack's to change:
+ * an app with token rotation enabled answers `xoxe.xoxb-…` rather than `xoxb-…`. A pattern here
+ * would turn a setting on Slack's side into a rejected install — and worse, into a THROWN one,
+ * since this is the encode side and the value would already have passed the install's own checks.
+ * The token is opaque to everything but the `Authorization` header; a wrong one fails the first
+ * post with Slack's own error, which is a better report than a regex could write.
  */
-const BotToken = Schema.String.check(Schema.isPattern(/^xoxb-/))
-
-/** `U…` for a person, `B…` for the app's own bot record; the app's bot USER id is a `U`. */
-const SlackUserId = Schema.String.check(Schema.isPattern(/^[UW][A-Z0-9]+$/))
-
 export const SlackCredentials = Schema.Struct({
-	bot_token: BotToken,
-	bot_user_id: SlackUserId,
+	bot_token: Schema.String,
 })
 export type SlackCredentials = Schema.Schema.Type<typeof SlackCredentials>
 

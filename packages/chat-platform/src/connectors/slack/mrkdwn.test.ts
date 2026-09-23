@@ -58,12 +58,45 @@ describe("links", () => {
 	it("treats an image the same as a link — a real chart arrives as an image block", () => {
 		expect(toMrkdwn("![plot](https://maple.dev/p.png)")).toBe("<https://maple.dev/p.png|plot>")
 	})
+
+	it("refuses to build a link out of anything that is not a web address", () => {
+		// `<…>` is broadcast syntax as well as link syntax, and a link's target is model-authored —
+		// so this is the one hole the document-wide escape cannot close. It has to close itself.
+		expect(toMrkdwn("[urgent](!channel)")).toBe("[urgent](!channel)")
+		expect(toMrkdwn("[hi](!here)")).toBe("[hi](!here)")
+		expect(toMrkdwn("[team](!subteam^S123)")).toBe("[team](!subteam^S123)")
+		expect(toMrkdwn("[them](@U01234ABC)")).toBe("[them](@U01234ABC)")
+		expect(toMrkdwn("[nope](javascript:alert(1))")).toContain("[nope]")
+		// A real address still becomes a link.
+		expect(toMrkdwn("[ok](https://maple.dev)")).toBe("<https://maple.dev|ok>")
+		expect(toMrkdwn("[mail](mailto:a@maple.dev)")).toBe("<mailto:a@maple.dev|mail>")
+	})
 })
 
 describe("what mrkdwn does not have", () => {
 	it("renders a heading as a bold line", () => {
 		expect(toMrkdwn("## What I found")).toBe("*What I found*")
 		expect(toMrkdwn("### Deeper\ntext")).toBe("*Deeper*\ntext")
+	})
+
+	it("does not let emphasis inside a heading close the heading early", () => {
+		// mrkdwn has no nested bold: the inner markers would end the heading's own `*…*` and leave
+		// the rest of the line reading as source.
+		expect(toMrkdwn("## A *heading* with **bold**")).toBe("*A _heading_ with bold*")
+		expect(toMrkdwn("## [link](https://maple.dev) in a heading")).toBe(
+			"*<https://maple.dev|link> in a heading*",
+		)
+	})
+
+	it("keeps a blockquote, which mrkdwn does have", () => {
+		// The document-wide escape flattens every `>`; the marker at the head of a line is the one
+		// that has to come back.
+		expect(toMrkdwn("> quoted")).toBe("> quoted")
+		expect(toMrkdwn("> **strong** point")).toBe("> *strong* point")
+		expect(toMrkdwn("  > indented")).toBe("  > indented")
+		// Still inert anywhere else on the line, which is what stops a quoted broadcast.
+		expect(toMrkdwn("a > b")).toBe("a &gt; b")
+		expect(toMrkdwn("the log said <!channel>")).toBe("the log said &lt;!channel&gt;")
 	})
 
 	it("fences a table so its columns still line up", () => {

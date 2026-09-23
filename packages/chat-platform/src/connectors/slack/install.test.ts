@@ -51,7 +51,6 @@ const INSTALLED = {
 	access_token: "xoxb-a-workspaces-own-token",
 	token_type: "bot",
 	scope: BOT_SCOPES.join(","),
-	bot_user_id: "U0KRQLJ9H",
 	app_id: "A0KRD7HC3",
 	team: { id: "T9TK3CUKW", name: "Maple" },
 	authed_user: { id: "U1234" },
@@ -123,8 +122,11 @@ describe("slack install callback", () => {
 			const credentials = decodeSlackCredentials(installed.credentials)
 			assert.deepStrictEqual(
 				Option.match(credentials, { onNone: () => null, onSome: (value) => value }),
-				{ bot_token: INSTALLED.access_token, bot_user_id: "U0KRQLJ9H" },
+				{ bot_token: INSTALLED.access_token },
 			)
+			// The stored format itself, not just the round trip: a change here is a change every
+			// already-installed workspace has to survive, and a round-trip test cannot see one.
+			assert.strictEqual(installed.credentials, `{"bot_token":"${INSTALLED.access_token}"}`)
 		}),
 	)
 
@@ -180,14 +182,52 @@ describe("slack install callback", () => {
 		}),
 	)
 
-	it.effect("refuses a token response that names no bot user", () =>
+	it.effect("refuses a token response that names no bot token", () =>
 		Effect.gen(function* () {
-			const { bot_user_id: _dropped, ...withoutBot } = INSTALLED
+			const { access_token: _dropped, ...withoutToken } = INSTALLED
 			const failure = yield* completeWith(
 				new URLSearchParams({ code: "abc" }),
-				tokenFetch(() => jsonResponse(withoutBot)),
+				tokenFetch(() => jsonResponse(withoutToken)),
 			).pipe(Effect.flip)
-			assert.include(failure.message, "named no workspace and bot user")
+			assert.include(failure.message, "named no workspace and bot token")
+		}),
+	)
+
+	it.effect("takes a token in a shape it does not recognize rather than throwing on it", () =>
+		Effect.gen(function* () {
+			// An app with token rotation enabled answers `xoxe.xoxb-…`. The token's format is
+			// Slack's to change, and a pattern here would turn that into a failed install.
+			const rotating = { ...INSTALLED, access_token: "xoxe.xoxb-rotating" }
+			const installed = yield* completeWith(
+				new URLSearchParams({ code: "abc" }),
+				tokenFetch(() => jsonResponse(rotating)),
+			)
+			assert.strictEqual(installed.credentials, '{"bot_token":"xoxe.xoxb-rotating"}')
+		}),
+	)
+
+	it.effect("names the workspace by its id when Slack sent no name", () =>
+		Effect.gen(function* () {
+			const installed = yield* completeWith(
+				new URLSearchParams({ code: "abc" }),
+				tokenFetch(() => jsonResponse({ ...INSTALLED, team: { id: "T9TK3CUKW" } })),
+			)
+			assert.strictEqual(installed.name, "T9TK3CUKW")
+		}),
+	)
+
+	it.effect("reports a non-2xx and a non-JSON token response as install failures", () =>
+		Effect.gen(function* () {
+			const status = yield* completeWith(
+				new URLSearchParams({ code: "abc" }),
+				tokenFetch(() => jsonResponse({ ok: false }, 503)),
+			).pipe(Effect.flip)
+			assert.include(status.message, "HTTP 503")
+			const body = yield* completeWith(
+				new URLSearchParams({ code: "abc" }),
+				tokenFetch(() => new Response("<html>nope</html>", { status: 200 })),
+			).pipe(Effect.flip)
+			assert.include(body.message, "non-JSON")
 		}),
 	)
 })

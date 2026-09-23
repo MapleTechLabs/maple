@@ -54,8 +54,11 @@ cutover, and keeps running throughout.
     - **an approval card** renders with both buttons, and pressing one produces
       `maple.chat.event = action` — whatever the approval flow then does with it;
     - **a private channel, a DM and a group DM** each behave like the public channel;
-    - **formatting**: a turn with bold, a link, a bullet list, a table and a code block is readable
-      — the table arrives as a fenced block, and nothing renders as raw markdown;
+    - **formatting**: a turn with bold, italics, a link, a bullet list, a blockquote, a table and a
+      code block is readable — the table arrives as a fenced block, and nothing renders as raw
+      markdown;
+    - **nothing pages the workspace**: ask the bot to repeat `<!channel>` and `[urgent](!channel)`
+      back, and confirm neither notifies anybody;
     - **removing the app** from the workspace unlinks its row (`app_uninstalled` →
       `workspace-removed`);
     - **no token anywhere**: grep the deploy's logs and spans for `xoxb-` and find nothing.

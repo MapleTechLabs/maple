@@ -130,7 +130,10 @@ export const eventCallbackToInbound = (callback: SlackEventCallback): ReadonlyAr
  * factless actor may do. The README says what adding the scope would buy.
  */
 export const blockActionsToInbound = (payload: SlackBlockActions): ReadonlyArray<InboundEvent> => {
-	const workspaceId = payload.team?.id ?? payload.user.team_id
+	// The workspace is the TEAM the interaction happened in, never `user.team_id`: in a Slack
+	// Connect shared channel the clicker can belong to another workspace entirely, and resolving
+	// by their team would answer in one org's name for another org's conversation.
+	const workspaceId = payload.team?.id
 	const channelId = payload.channel?.id ?? payload.container?.channel_id
 	const messageId = payload.container?.message_ts ?? payload.message?.ts
 	const actionToken = payload.actions.find((action) => action.value !== undefined)?.value

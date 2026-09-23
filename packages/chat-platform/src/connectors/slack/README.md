@@ -16,11 +16,11 @@ One Slack app, created at <https://api.slack.com/apps> (from the manifest below)
 documented here rather than in the repo's `.env.example`, which is shared ground where no platform
 should be named; every name is declared once, in `api.ts`.
 
-| Secret                         | Where it comes from                        | How it reaches the connector      |
-| ------------------------------ | ------------------------------------------ | --------------------------------- |
-| `MAPLE_SLACK_CLIENT_ID`        | Basic Information → Client ID (not secret) | `install.requiredConfig`, by name |
-| `MAPLE_SLACK_CLIENT_SECRET`    | Basic Information → Client Secret          | `install.requiredConfig`, by name |
-| `MAPLE_SLACK_SIGNING_SECRET`   | Basic Information → Signing Secret         | `ingress.requiredConfig`, by name |
+| Secret                       | Where it comes from                        | How it reaches the connector      |
+| ---------------------------- | ------------------------------------------ | --------------------------------- |
+| `MAPLE_SLACK_CLIENT_ID`      | Basic Information → Client ID (not secret) | `install.requiredConfig`, by name |
+| `MAPLE_SLACK_CLIENT_SECRET`  | Basic Information → Client Secret          | `install.requiredConfig`, by name |
+| `MAPLE_SLACK_SIGNING_SECRET` | Basic Information → Signing Secret         | `ingress.requiredConfig`, by name |
 
 The client id and secret go on **api**; the signing secret goes on **chat-bot**. A half whose names
 are unset is skipped rather than fatal: the dashboard reports the connector as unavailable and
@@ -96,7 +96,7 @@ The scopes deliberately **do not** include `users:read` — see "Who may approve
    Connect, which runs the install flow and writes the `chat_workspaces` row (Slack's own consent
    screen adds the bot at the same time). The card is behind the org's `slack_bot` rollout flag.
 4. **Invite the bot to a channel** (`/invite @Maple`) and **mention it**: `@Maple why is checkout
-   slow?`. It answers in a thread on that message and edits one message there as the answer streams.
+slow?`. It answers in a thread on that message and edits one message there as the answer streams.
    A reply in that thread continues the same conversation; a mention in another channel starts a
    different one.
 
@@ -108,8 +108,13 @@ proposes renders as an approval card that **cannot be approved yet**.
 
 Slack mints one bot token per installed workspace, so unlike the other connector there is no
 deployment-wide credential the outbound half could use. The token is what the install returns as
-`ChatInstallResult.credentials` — a small JSON blob (`credentials.ts`) carrying the token and the
-bot user id, opaque to everything above this directory.
+`ChatInstallResult.credentials` — a small JSON blob (`credentials.ts`), opaque to everything above
+this directory. It is JSON rather than the bare token so a second value later is one more key here
+rather than a migration and a re-install of every workspace.
+
+The token's **format is deliberately not validated**: an app with token rotation enabled answers
+`xoxe.xoxb-…` rather than `xoxb-…`, and the shapes it can take are Slack's to change. A wrong token
+fails the first post with Slack's own error, which reports better than a pattern could.
 
 The host seals it with AES-256-GCM into `chat_workspaces.credentials_{ciphertext,iv,tag}`, with the
 AAD bound to `(org_id, connector, external_workspace_id)`, and hands it back to the outbound half in
@@ -145,14 +150,16 @@ reports no roles — a field here would ask an admin to configure something noth
 
 ## What ingress delivers
 
-| Slack                                              | Maple                                |
-| -------------------------------------------------- | ------------------------------------ |
-| `app_mention`                                       | `message` (`mentionsBot: true`)      |
-| `message.*` with a `thread_ts`                      | `message` (`mentionsBot: false`)     |
-| `block_actions` carrying a button value             | `action`                             |
-| `app_uninstalled`, `tokens_revoked`                 | `workspace-removed`                  |
+| Slack                                   | Maple                            |
+| --------------------------------------- | -------------------------------- |
+| `app_mention`                           | `message` (`mentionsBot: true`)  |
+| `message.*` with a `thread_ts`          | `message` (`mentionsBot: false`) |
+| `block_actions` carrying a button value | `action`                         |
+| `app_uninstalled`, `tokens_revoked`     | `workspace-removed`              |
 
-`workspaceId` is always the envelope's `team_id`. Bot-authored messages and every `subtype` are
+`workspaceId` is always the envelope's `team_id` — and for a button press, the interaction's own
+`team.id`, never the clicker's `user.team_id`: in a Slack Connect shared channel the clicker can
+belong to a different workspace, and a different Maple org. Bot-authored messages and every `subtype` are
 dropped before anything else, so two Maple deployments in one workspace cannot talk to each other.
 A mention inside a subscribed channel arrives as BOTH an `app_mention` and a `message`; the
 `message` copy is dropped, or one question would start a turn and then be fed into it.
@@ -167,8 +174,18 @@ it, rather than a follow-up being dropped on a guess.
 `X-Slack-Signature` is `v0=` plus HMAC-SHA256 over `v0:{X-Slack-Request-Timestamp}:{raw body}`,
 keyed with the signing secret. `signature.ts` checks the timestamp first (five minutes either way,
 Slack's documented window — a captured body stays correctly signed forever, and only its age says
-otherwise), then compares in constant time. Every rejection answers the same way; which check
-refused the request goes on the span, not in the response.
+otherwise), then compares in constant time.
+
+Every rejection answers with the **same constant message**, which the host returns as the 400 body:
+naming the check that refused the request tells an attacker which one to fix. The reason goes on
+the span instead (`maple.chat.reject_reason`), where it is a six-value enum an operator can break
+rejections down by. Drops are annotated the same way (`maple.chat.dropped`) — an acknowledged
+redelivery and a handled mention are otherwise the same 200 on the same span.
+
+Within the five-minute window there is **no replay protection**. A captured signed body can be
+delivered again, and today that costs at most a duplicate turn. Before button presses actually
+apply anything, an approval needs to be deduplicated against durable storage — the ingress cannot
+do it, being a pure function the host may run in any isolate.
 
 **Retries are acknowledged and dropped.** Slack redelivers an event it believes was not
 acknowledged, marking it with `X-Slack-Retry-Num`. This handler answers inside its own request, so a

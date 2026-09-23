@@ -112,7 +112,6 @@ export const TokenResponse = Schema.Struct({
 	ok: Schema.Boolean,
 	error: Schema.optionalKey(Schema.String),
 	access_token: Schema.optionalKey(Schema.String),
-	bot_user_id: Schema.optionalKey(Schema.String),
 	is_enterprise_install: Schema.optionalKey(Schema.Boolean),
 	team: Schema.optionalKey(
 		Schema.NullOr(

@@ -30,13 +30,21 @@ import { decodeBlockActions, decodeEventRequest } from "./payloads"
 import { verifySlackSignature } from "./signature"
 
 /**
- * Everything Slack is told, and it is always the same.
+ * Everything Slack is told when a request is accepted, and it is always the same.
  *
- * Slack does not read a body except on the URL-verification handshake, and telling a caller which
- * of the checks below refused it is telling an attacker which one to fix. The reason goes on the
- * span instead, where the host puts it.
+ * Slack reads no body except on the URL-verification handshake.
  */
 const accepted = HttpServerResponse.empty({ status: 200 })
+
+/**
+ * What a refused request is told, and it is always the same too.
+ *
+ * Telling a caller WHICH check refused it is telling an attacker which one to fix — and the host
+ * returns this message as the 400 body. The reason is put on the span instead (the route's own
+ * `chat_bot.connector_webhook` span, which is current here), where it is a six-value enum an
+ * operator can break rejections down by.
+ */
+const REJECTED_MESSAGE = "Slack could not be verified as the sender of this request"
 
 const rejected = (reason: string, cause?: unknown) =>
 	new ConnectorIngressError({
@@ -45,8 +53,17 @@ const rejected = (reason: string, cause?: unknown) =>
 		...(cause === undefined ? undefined : { cause }),
 	})
 
-/** Nothing happened, and Slack is told it went fine — which is what stops the retry. */
-const nothing: WebhookIngressResult = { response: accepted, events: [] }
+/**
+ * Nothing happened, and Slack is told it went fine — which is what stops the retry.
+ *
+ * Annotated rather than silent: an acknowledged-and-dropped request and a handled mention are the
+ * same 200 on the same span, and the difference is the whole dedup and filtering policy.
+ */
+const dropped = (reason: string): Effect.Effect<WebhookIngressResult> =>
+	Effect.as(Effect.annotateCurrentSpan({ "maple.chat.dropped": reason }), {
+		response: accepted,
+		events: [],
+	})
 
 const result = (events: ReadonlyArray<InboundEvent>): WebhookIngressResult => ({
 	response: accepted,
@@ -103,31 +120,38 @@ const handle = Effect.fnUntraced(function* (
 		now,
 	})
 	if (verdict._tag === "rejected") {
-		return yield* Effect.fail(rejected(`Slack request rejected: ${verdict.reason}`))
+		yield* Effect.annotateCurrentSpan({ "maple.chat.reject_reason": verdict.reason })
+		return yield* Effect.fail(rejected(REJECTED_MESSAGE))
 	}
 
 	if (isFormEncoded(request)) {
 		const payload = interactivityPayload(body)
-		if (payload === undefined) return nothing
-		return Option.match(decodeBlockActions(payload), {
+		if (payload === undefined) return yield* dropped("no interactivity payload")
+		return yield* Option.match(decodeBlockActions(payload), {
 			// A modal submission, a shortcut, a view close — all arrive here and none of them is
 			// something Maple rendered. Acknowledged so Slack stops asking.
-			onNone: () => nothing,
-			onSome: (actions) => result(blockActionsToInbound(actions)),
+			onNone: () => dropped("not a block action"),
+			onSome: (actions) => Effect.succeed(result(blockActionsToInbound(actions))),
 		})
 	}
 
-	return Option.match(decodeEventRequest(body), {
+	return yield* Option.match(decodeEventRequest(body), {
 		// A body that is not JSON, and a body that is JSON but not one of the two payloads this
 		// connector reads, are the same thing here: signed, and nothing to do about it.
-		onNone: () => nothing,
+		onNone: () => dropped("unreadable event"),
 		onSome: (request_) => {
 			if (request_.type === "url_verification") {
 				// Answered inline, and the one case with a body: Slack accepts the bare challenge as
-				// text, which is the narrowest of the three forms it documents.
-				return { response: HttpServerResponse.text(request_.challenge), events: [] }
+				// text, which is the narrowest of the three forms it documents. It is reached only
+				// past the signature check above — an unsigned request never sees this line.
+				return Effect.succeed({
+					response: HttpServerResponse.text(request_.challenge),
+					events: [],
+				})
 			}
-			return isRetry(request) ? nothing : result(eventCallbackToInbound(request_))
+			return isRetry(request)
+				? dropped("redelivery")
+				: Effect.succeed(result(eventCallbackToInbound(request_)))
 		},
 	})
 })

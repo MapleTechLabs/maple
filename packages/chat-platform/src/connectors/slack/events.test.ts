@@ -236,6 +236,27 @@ describe("slack button presses", () => {
 		const { channel: _dropped, ...withoutChannel } = payload()
 		expect(mapAction(withoutChannel)[0]).toMatchObject({ channelId: "C0LAN2Q65" })
 	})
+
+	it("drops a press that names no team, rather than reading the clicker's own", () => {
+		// In a Slack Connect shared channel `user.team_id` is the clicker's OWN workspace, which
+		// can be a different org entirely — resolving by it would apply an approval in the wrong
+		// organization's name.
+		const { team: _dropped, ...withoutTeam } = payload()
+		expect(mapAction(withoutTeam)).toEqual([])
+		expect(
+			mapAction({ ...withoutTeam, user: { id: "U1", name: "ada", team_id: "T_SOMEONE_ELSE" } }),
+		).toEqual([])
+	})
+
+	it("reads the actor's name, then their username, then their bare id", () => {
+		const { name: _dropped, ...withoutName } = payload().user
+		expect(mapAction({ ...payload(), user: withoutName })[0]).toMatchObject({
+			actor: { displayName: "ada" },
+		})
+		expect(mapAction({ ...payload(), user: { id: "U061F7AUR" } })[0]).toMatchObject({
+			actor: { displayName: "U061F7AUR" },
+		})
+	})
 })
 
 describe("stripping the bot's mention", () => {
