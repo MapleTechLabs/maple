@@ -403,7 +403,15 @@ export class OrganizationService extends Context.Service<OrganizationService, Or
 						publicMetadata: organizationRegionMetadata(region),
 					}),
 				).pipe(Effect.mapError((error) => toProviderError(error.cause)))
-				return new ChooseOrganizationRegionResponse({ region })
+				// Clerk has no conditional write, so two admins choosing at once both succeed and the
+				// later write wins. Answering with a fresh read rather than the request sends both to
+				// the region that stuck in all but a same-instant race.
+				const stored = yield* clerkRequest("Clerk.organizations.getOrganization", { orgId }, () =>
+					clerk.value.organizations.getOrganization({ organizationId: orgId }),
+				).pipe(Effect.mapError((error) => toProviderError(error.cause)))
+				return new ChooseOrganizationRegionResponse({
+					region: organizationHomeRegion(stored.publicMetadata),
+				})
 			})
 
 			const deleteOrganization = Effect.fn("OrganizationService.delete")(function* (

@@ -65,7 +65,9 @@ export function StepRegion() {
 			setIsSaving(false)
 			return
 		}
-		const url = region === currentRegion ? undefined : regionAppUrl(region)
+		// The region the server stored, which is the requested one unless another admin chose first.
+		const stored = result.value.region
+		const url = stored === currentRegion ? undefined : regionAppUrl(stored)
 		if (url !== undefined) {
 			window.location.assign(`${url}/quick-start`)
 			return

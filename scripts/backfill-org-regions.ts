@@ -1,5 +1,5 @@
 /**
- * `bun scripts/backfill-org-regions.ts [--apply]`: stamp every organization that has no data
+ * `bun scripts/backfill-org-regions.ts [--apply --confirm-eu-marked]`: stamp every organization that has no data
  * region with `regions: ["us"]`.
  *
  * Run once against the production Clerk instance before the region step ships. Organizations
@@ -21,6 +21,14 @@ if (!secretKey) {
 	process.exit(2)
 }
 const apply = process.argv.includes("--apply")
+// Nothing on an organization says which instance created it, so an EU organization that was not
+// marked first would be stamped US here and could no longer choose. The flag makes that step explicit.
+if (apply && !process.argv.includes("--confirm-eu-marked")) {
+	console.error(
+		'--apply also needs --confirm-eu-marked: set regions: ["eu"] on every organization created on the EU dashboard first.',
+	)
+	process.exit(2)
+}
 
 // The REST API directly, as `dev-signin.ts` does: `@clerk/backend` is not a root dependency.
 const clerkFetch = async (path: string, init?: RequestInit) => {
