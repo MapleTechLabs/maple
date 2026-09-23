@@ -129,9 +129,11 @@ export const chatOutboundTransport = (
 	workspace.connector.outbound.transport.pipe(
 		Effect.provideService(
 			ConnectorCredentials,
-			workspace.credentials === undefined
-				? outboundConfig
-				: new Map(outboundConfig).set(WORKSPACE_CREDENTIALS, workspace.credentials),
+			Effect.succeed(
+				workspace.credentials === undefined
+					? outboundConfig
+					: new Map(outboundConfig).set(WORKSPACE_CREDENTIALS, workspace.credentials),
+			),
 		),
 		Effect.provideService(HttpClient.HttpClient, httpClient),
 	)

@@ -131,5 +131,6 @@ export function registerServiceMapTool(server: McpToolRegistrar) {
 				}),
 			}
 		}),
+		{ phrases: ["Loading the service map", "Mapping service dependencies"] },
 	)
 }

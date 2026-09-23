@@ -40,7 +40,7 @@ const stub = (attempts: ReadonlyArray<Attempt>, credentials: string | null = CRE
 		seen,
 		layer: Layer.mergeAll(
 			Layer.succeed(HttpClient.HttpClient)(client),
-			Layer.succeed(ConnectorCredentials)(config),
+			Layer.succeed(ConnectorCredentials)(Effect.succeed(config)),
 		),
 	}
 }

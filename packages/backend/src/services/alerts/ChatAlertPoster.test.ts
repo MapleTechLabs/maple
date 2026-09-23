@@ -67,7 +67,7 @@ const makeConnector = (posted: Array<Posted>, hang = false): RegisteredChatConne
 		limits: { maxMessageChars: 1000, minEditInterval: Duration.millis(500) },
 		requiredConfig: [{ name: OUTBOUND_KEY, secret: true }],
 		transport: Effect.gen(function* () {
-			const config = yield* ConnectorCredentials
+			const config = yield* yield* ConnectorCredentials
 			return {
 				post: (target, blocks) =>
 					hang

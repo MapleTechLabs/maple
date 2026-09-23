@@ -291,5 +291,6 @@ export function registerQueryFunnelTool(server: McpToolRegistrar) {
 			}
 			return { content: createDualContent(lines.join("\n"), { tool: TOOL, data }) }
 		}),
+		{ phrases: ["Computing a funnel", "Querying a funnel"] },
 	)
 }

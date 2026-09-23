@@ -183,5 +183,6 @@ export function registerErrorDetailTool(server: McpToolRegistrar) {
 				}),
 			}
 		}),
+		{ phrases: ["Reading error details", "Looking into an error"] },
 	)
 }

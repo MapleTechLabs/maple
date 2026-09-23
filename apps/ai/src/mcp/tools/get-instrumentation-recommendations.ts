@@ -251,5 +251,6 @@ export function registerGetInstrumentationRecommendationsTool(server: McpToolReg
 				}),
 			}
 		}),
+		{ phrases: ["Checking instrumentation"] },
 	)
 }

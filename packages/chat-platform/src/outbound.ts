@@ -21,10 +21,15 @@ import type { ChatBlock } from "./render/blocks"
  * called — so it resolves the names the connector declared (`requiredConfig`) and supplies the map
  * under this one service. Two host-provided services then cover every connector's outbound half:
  * this and an HTTP client.
+ *
+ * An Effect rather than the map, run when a transport is about to call its platform: answering it
+ * can cost the host a database read and a decrypt, and most inbound events are never answered. The
+ * host memoizes it per event, so running it on every call is free.
  */
-export class ConnectorCredentials extends Context.Service<ConnectorCredentials, ConnectorConfig>()(
-	"@maple/chat-platform/ConnectorCredentials",
-) {}
+export class ConnectorCredentials extends Context.Service<
+	ConnectorCredentials,
+	Effect.Effect<ConnectorConfig>
+>()("@maple/chat-platform/ConnectorCredentials") {}
 
 /**
  * The entry under which the host puts the conversation's OWN stored credential into

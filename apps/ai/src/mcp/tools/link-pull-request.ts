@@ -72,5 +72,6 @@ export function registerLinkPullRequestTool(server: McpToolRegistrar) {
 				}),
 			}
 		}),
+		{ phrases: ["Linking a pull request"] },
 	)
 }

@@ -101,14 +101,34 @@ describe("renderChatMessage", () => {
 			{ type: "turn-start", messageId: "a1" },
 			{ type: "tool-call", messageId: "a1", callId: "c1", name: "find_errors", input: {} },
 			{ type: "tool-result", messageId: "a1", callId: "c1", output: null },
-			{ type: "tool-call", messageId: "a1", callId: "c2", name: "search_traces", input: {} },
+			{
+				type: "tool-call",
+				messageId: "a1",
+				callId: "c2",
+				name: "search_traces",
+				label: "Searching traces",
+				input: {},
+			},
 		])
 
 		expect(renderChatMessage(working, context, true)).toEqual([
-			{ kind: "activity", tools: [{ name: "search_traces", status: "running", detail: null }] },
+			{ kind: "activity", tools: [{ label: "Searching traces", status: "running", detail: null }] },
 		])
 		// Finished, the reader has the answer in front of them and no use for the route to it.
 		expect(renderChatMessage(working, context)).toEqual([])
+	})
+
+	it("puts a call the session recorded no phrase for in words rather than as an id", () => {
+		const working = turn([
+			{ type: "turn-start", messageId: "a1" },
+			{ type: "tool-call", messageId: "a1", callId: "c1", name: "submit_diagnosis", input: {} },
+		])
+		expect(renderChatMessage(working, context, true)).toEqual([
+			{
+				kind: "activity",
+				tools: [{ label: "Using submit diagnosis", status: "running", detail: null }],
+			},
+		])
 	})
 
 	it("names a sub-agent by the agent it delegates to on the same status line", () => {
@@ -127,7 +147,10 @@ describe("renderChatMessage", () => {
 		)
 
 		expect(blocks).toEqual([
-			{ kind: "activity", tools: [{ name: "reviewer", status: "running", detail: "1 step" }] },
+			{
+				kind: "activity",
+				tools: [{ label: "Delegating to reviewer", status: "running", detail: "1 step" }],
+			},
 		])
 	})
 
@@ -138,7 +161,14 @@ describe("renderChatMessage", () => {
 			{ type: "tool-call", messageId: "a1", callId: "c1", name: "find_errors", input: {} },
 			{ type: "tool-result", messageId: "a1", callId: "c1", output: null },
 			{ type: "text-delta", messageId: "a1", text: "Now I'll check the traces." },
-			{ type: "tool-call", messageId: "a1", callId: "c2", name: "search_traces", input: {} },
+			{
+				type: "tool-call",
+				messageId: "a1",
+				callId: "c2",
+				name: "search_traces",
+				label: "Searching traces",
+				input: {},
+			},
 			{ type: "tool-result", messageId: "a1", callId: "c2", output: null },
 			{ type: "text-delta", messageId: "a1", text: "checkout is timing out on the database." },
 		])
@@ -149,7 +179,7 @@ describe("renderChatMessage", () => {
 		// Mid-turn the same segment is shown, because it may be the answer — under the status line,
 		// which is what it is an answer to.
 		expect(renderChatMessage(investigating, context, true)).toEqual([
-			{ kind: "activity", tools: [{ name: "search_traces", status: "done", detail: null }] },
+			{ kind: "activity", tools: [{ label: "Searching traces", status: "done", detail: null }] },
 			{ kind: "prose", markdown: "checkout is timing out on the database." },
 		])
 	})

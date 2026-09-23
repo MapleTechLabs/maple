@@ -34,7 +34,7 @@ const stub = (attempts: ReadonlyArray<Attempt>) => {
 		seen,
 		layer: Layer.mergeAll(
 			Layer.succeed(HttpClient.HttpClient)(client),
-			Layer.succeed(ConnectorCredentials)(new Map([[BOT_TOKEN_CONFIG, "bot-token"]])),
+			Layer.succeed(ConnectorCredentials)(Effect.succeed(new Map([[BOT_TOKEN_CONFIG, "bot-token"]]))),
 		),
 	}
 }

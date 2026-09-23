@@ -218,9 +218,12 @@ export const slackOutbound: ChatOutbound<HttpClient.HttpClient | ConnectorCreden
 	requiredConfig: [],
 	transport: Effect.gen(function* () {
 		const client = yield* HttpClient.HttpClient
-		const config: ConnectorConfig = yield* ConnectorCredentials
-		const credentials = decodeSlackCredentials(config.get(WORKSPACE_CREDENTIALS))
-		const token = Option.map(credentials, (value) => Redacted.make(value.bot_token))
+		// Per call, not here: acquiring the transport must not cost the host its credential read.
+		const token = Effect.map(yield* ConnectorCredentials, (config: ConnectorConfig) =>
+			Option.map(decodeSlackCredentials(config.get(WORKSPACE_CREDENTIALS)), (value) =>
+				Redacted.make(value.bot_token),
+			),
+		)
 
 		/**
 		 * One Web API call, as one client span.
@@ -287,36 +290,37 @@ export const slackOutbound: ChatOutbound<HttpClient.HttpClient | ConnectorCreden
 			operation: ChatOutboundOperation,
 			method: string,
 			request: HttpClientRequest.HttpClientRequest,
-		): Effect.Effect<SlackApiResult, ChatOutboundError> => {
-			// Checked BEFORE the client span is opened. The workspace having no stored token is a
-			// Maple-side state — nobody linked it, or the envelope could not be opened — and
-			// recording it inside a `Slack.request` span would put a failed edge on the service map
-			// for a call that was never made.
-			if (Option.isNone(token)) {
-				return Effect.fail(failed(operation, "This Slack workspace is not connected to Maple"))
-			}
-			const bearer = token.value
-			const tryOnce = (count: number): Effect.Effect<SlackApiResult, ChatOutboundError> =>
-				attempt(bearer, operation, method, request).pipe(
-					Effect.catchTag("@maple/chat-platform/connectors/slack/RateLimited", (limited) =>
-						// A read of the conversation is CONTEXT, and the turn has not started yet —
-						// waiting a rate limit out here delays the answer to buy background the model
-						// can do without. An answer is worth waiting for; the history behind it is not.
-						// A channel listing has somebody waiting on a picker, who is better told to
-						// try again than left staring at a spinner for half a minute.
-						count >= MAX_RATE_LIMIT_ATTEMPTS ||
-						operation === "history" ||
-						operation === "destinations"
-							? Effect.fail(
-									failed(operation, "Slack kept rate limiting this message", {
-										status: 429,
-									}),
-								)
-							: Effect.sleep(limited.wait).pipe(Effect.andThen(tryOnce(count + 1))),
-					),
-				)
-			return tryOnce(1)
-		}
+		): Effect.Effect<SlackApiResult, ChatOutboundError> =>
+			Effect.flatMap(token, (token) => {
+				// Checked BEFORE the client span is opened. The workspace having no stored token is a
+				// Maple-side state — nobody linked it, or the envelope could not be opened — and
+				// recording it inside a `Slack.request` span would put a failed edge on the service
+				// map for a call that was never made.
+				if (Option.isNone(token)) {
+					return Effect.fail(failed(operation, "This Slack workspace is not connected to Maple"))
+				}
+				const bearer = token.value
+				const tryOnce = (count: number): Effect.Effect<SlackApiResult, ChatOutboundError> =>
+					attempt(bearer, operation, method, request).pipe(
+						Effect.catchTag("@maple/chat-platform/connectors/slack/RateLimited", (limited) =>
+							// A read of the conversation is CONTEXT, and the turn has not started yet —
+							// waiting a rate limit out here delays the answer to buy background the model
+							// can do without. An answer is worth waiting for; the history behind it is not.
+							// A channel listing has somebody waiting on a picker, who is better told to
+							// try again than left staring at a spinner for half a minute.
+							count >= MAX_RATE_LIMIT_ATTEMPTS ||
+							operation === "history" ||
+							operation === "destinations"
+								? Effect.fail(
+										failed(operation, "Slack kept rate limiting this message", {
+											status: 429,
+										}),
+									)
+								: Effect.sleep(limited.wait).pipe(Effect.andThen(tryOnce(count + 1))),
+						),
+					)
+				return tryOnce(1)
+			})
 
 		/** `thread_ts` is left out entirely when there is no thread; Slack rejects an empty one. */
 		const body = (

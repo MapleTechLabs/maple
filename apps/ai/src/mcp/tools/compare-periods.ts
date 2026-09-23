@@ -292,5 +292,6 @@ export function registerComparePeriodsTool(server: McpToolRegistrar) {
 				}),
 			}
 		}),
+		{ phrases: ["Comparing time periods", "Comparing against an earlier period"] },
 	)
 }

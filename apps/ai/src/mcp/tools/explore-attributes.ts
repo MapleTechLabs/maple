@@ -215,5 +215,6 @@ export function registerExploreAttributesTool(server: McpToolRegistrar) {
 				}),
 			}
 		}),
+		{ phrases: ["Exploring attributes", "Looking up attribute values"] },
 	)
 }

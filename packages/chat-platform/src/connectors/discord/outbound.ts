@@ -211,7 +211,8 @@ export const discordOutbound: ChatOutbound<HttpClient.HttpClient | ConnectorCred
 	requiredConfig: [{ name: BOT_TOKEN_CONFIG, secret: true }],
 	transport: Effect.gen(function* () {
 		const client = yield* HttpClient.HttpClient
-		const token = botToken(yield* ConnectorCredentials)
+		// Per call, not here: acquiring the transport must not cost the host its credential read.
+		const token = Effect.map(yield* ConnectorCredentials, botToken)
 
 		/**
 		 * One HTTP attempt, as one client span.
@@ -221,6 +222,7 @@ export const discordOutbound: ChatOutbound<HttpClient.HttpClient | ConnectorCred
 		 * nesting three deep under the first one.
 		 */
 		const attempt = Effect.fn("Discord.request", { kind: "client" })(function* (
+			bearer: Redacted.Redacted<string>,
 			operation: ChatOutboundOperation,
 			route: string,
 			request: HttpClientRequest.HttpClientRequest,
@@ -235,7 +237,7 @@ export const discordOutbound: ChatOutbound<HttpClient.HttpClient | ConnectorCred
 			})
 			const response = yield* client
 				.execute(
-					HttpClientRequest.setHeader(request, "authorization", `Bot ${Redacted.value(token)}`),
+					HttpClientRequest.setHeader(request, "authorization", `Bot ${Redacted.value(bearer)}`),
 				)
 				.pipe(
 					// The reason matters: an encode or invalid-url failure is Maple's own bug, and
@@ -261,23 +263,24 @@ export const discordOutbound: ChatOutbound<HttpClient.HttpClient | ConnectorCred
 			operation: ChatOutboundOperation,
 			route: string,
 			request: HttpClientRequest.HttpClientRequest,
-		): Effect.Effect<HttpClientResponse.HttpClientResponse, ChatOutboundError> => {
-			const tryOnce = (
-				count: number,
-			): Effect.Effect<HttpClientResponse.HttpClientResponse, ChatOutboundError> =>
-				attempt(operation, route, request).pipe(
-					Effect.catchTag("@maple/chat-platform/connectors/discord/RateLimited", (limited) =>
-						count >= MAX_RATE_LIMIT_ATTEMPTS
-							? Effect.fail(
-									failed(operation, "Discord kept rate limiting this message", {
-										status: 429,
-									}),
-								)
-							: Effect.sleep(limited.wait).pipe(Effect.andThen(tryOnce(count + 1))),
-					),
-				)
-			return tryOnce(1)
-		}
+		): Effect.Effect<HttpClientResponse.HttpClientResponse, ChatOutboundError> =>
+			Effect.flatMap(token, (bearer) => {
+				const tryOnce = (
+					count: number,
+				): Effect.Effect<HttpClientResponse.HttpClientResponse, ChatOutboundError> =>
+					attempt(bearer, operation, route, request).pipe(
+						Effect.catchTag("@maple/chat-platform/connectors/discord/RateLimited", (limited) =>
+							count >= MAX_RATE_LIMIT_ATTEMPTS
+								? Effect.fail(
+										failed(operation, "Discord kept rate limiting this message", {
+											status: 429,
+										}),
+									)
+								: Effect.sleep(limited.wait).pipe(Effect.andThen(tryOnce(count + 1))),
+						),
+					)
+				return tryOnce(1)
+			})
 
 		const body = (blocks: ReadonlyArray<ChatBlock>) =>
 			HttpClientRequest.bodyJsonUnsafe(renderDiscordMessage(blocks))

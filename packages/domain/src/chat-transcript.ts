@@ -149,6 +149,7 @@ const foldInto = (drafts: Drafts, event: ChatEvent, createdAt: number): void => 
 				// actually unfolded — the client re-interleaves from it on a cold load.
 				textOffset: message.text.length,
 				...(event.proposed === true ? { proposed: true } : undefined),
+				...(event.label === undefined ? undefined : { label: event.label }),
 			} as ChatToolCall)
 			break
 		}

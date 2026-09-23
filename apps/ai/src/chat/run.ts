@@ -15,6 +15,7 @@ import { Effect, Layer, Schema, Stream } from "effect"
 import { Prompt, Toolkit } from "effect/unstable/ai"
 import type { McpToolExecutorApi } from "../mcp/dispatcher"
 import { ApprovalRequired } from "../mcp/tools/llm-tools"
+import { mapleToolPhrase } from "../mcp/tools/registry"
 import { agentSessionSpanAttributes, type ResolvedModel } from "../platform/Llm"
 import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
 import { type AgentDefinition, agentForSession, chatAgent } from "./agents"
@@ -193,6 +194,7 @@ export const runChatTurn = (input: ChatRunInput) => {
 				for (const chat of toChatEvents(event, {
 					messageId: input.messageId,
 					isProposed,
+					labelOf: mapleToolPhrase,
 					sanitizer,
 				})) {
 					input.append(chat)

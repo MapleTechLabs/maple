@@ -266,5 +266,6 @@ export function registerGetAgentToolErrorTool(server: McpToolRegistrar) {
 
 			return { content: [{ type: "text" as const, text: lines.join("\n") }] }
 		}),
+		{ phrases: ["Inspecting an agent tool error"] },
 	)
 }

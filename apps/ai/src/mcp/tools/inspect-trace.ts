@@ -130,5 +130,6 @@ export function registerInspectTraceTool(server: McpToolRegistrar) {
 				}),
 			}
 		}),
+		{ phrases: ["Inspecting a trace", "Opening a trace"] },
 	)
 }
