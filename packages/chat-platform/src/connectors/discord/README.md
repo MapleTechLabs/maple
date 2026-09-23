@@ -25,12 +25,12 @@ Worker runs.
    names it in `requiredConfig` so the host resolves it generically, and hands the resolved map to
    the outbound half as `ConnectorCredentials` — one secret, one name, read by both halves, and the
    connector never touches `process.env`.
-2. **Bot tab → Privileged Gateway Intents: leave all three OFF.** This connector identifies with
-   `GUILDS | GUILD_MESSAGES` only. Discord delivers message content without the privileged
-   `MESSAGE_CONTENT` intent for messages in which the app is mentioned, which is exactly — and only
-   — what V1 answers. Enabling `MESSAGE_CONTENT` would change nothing about what this code does, so
-   do not enable it to make something work; change the intents in `gateway-payloads.ts`
-   deliberately instead.
+2. **Bot tab → Privileged Gateway Intents → Message Content: ON. This one is required** — the
+   connector always identifies with `GUILDS | GUILD_MESSAGES | MESSAGE_CONTENT`, and a gateway that
+   asks for an intent the application has not been granted is closed with 4014. Below 10,000 users
+   who can see the app it is a toggle; above that Discord reviews it. Leave the other two (Presence,
+   Server Members) off — this connector asks for neither. What the intent buys and what flipping it
+   costs are below.
 3. **Bot tab → Requires OAuth2 Code Grant: ON.** An install can then only complete through the code
    exchange the install half performs.
 4. **OAuth2 tab → Redirects.** Add `https://api.maple.dev/oauth/chat/discord/callback`, and the
@@ -63,11 +63,42 @@ answer from Maple.
 4. **Mention it.** `@Maple why is checkout slow?` in a channel. The bot opens a thread on that
    message and edits one message in it as the answer streams. A follow-up mention inside the thread
    continues the same conversation; a mention in another channel starts a different one. A mention
-   while an answer is still being written is told so, and is not queued.
+   while an answer is still being written is told so, and is not queued. A follow-up inside that
+   thread needs no mention at all.
 
-Two limits worth knowing before reporting a bug: a write the agent proposes is rendered as an
-approval card that **cannot be approved yet** (clicking it answers that approvals are not available
-yet), and the bot only ever answers messages it was mentioned in.
+One limit worth knowing before reporting a bug: a write the agent proposes is rendered as an
+approval card that **cannot be approved yet** — clicking it answers that approvals are not
+available yet.
+
+## Message Content (privileged, required)
+
+The connector identifies with `MESSAGE_CONTENT` on every connection. It is not optional and there
+is no switch: without it Discord gives the app empty `content` for every message it was not
+mentioned in — over the gateway **and over the REST API** — and both halves of what the bot reads
+go with it:
+
+- **the conversation the model is shown.** A mention is answered with the messages written around
+  it, so "and the payments call?" means something. Without the intent that context is a list of
+  timestamps with nothing in it, and the model sees only the mention.
+- **answering a follow-up that did not mention the bot** in a thread Maple opened. Without the
+  intent the connector never sees those messages at all.
+
+**Enabling it:** Bot tab → Privileged Gateway Intents → Message Content. While fewer than **10,000
+users can see the app** across the servers it is in, this is a toggle you own; past that Discord
+reviews the app for continued access, and **asks you to reapply once a year** — so the grant is a
+standing thing to keep, not a box ticked once. It is still the application's setting rather than a
+deployment's: nothing in the env turns this on or off.
+
+**Flipping it costs about a minute of bot.** Discord closes every open gateway connection when the
+application's intents change, and identifying without the grant is close code **4014**, which this
+connector treats as fatal: the socket stops rather than reconnecting into a loop, and the line it
+logs says to enable Message Content in the portal. The cron tick brings the socket back on its own
+once the grant is in place — mentions during that window are missed, nothing else is.
+
+A bot that can read every message in every channel it can see is also a bot whose host pays a
+Durable Object round trip for each one. `apps/chat-bot` drops what cannot be a turn before that —
+another bot's message, and a message with no text — and the rest is decided by the conversation's
+own session (`relay/conversation.ts`).
 
 ## Install flow
 

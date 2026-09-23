@@ -13,6 +13,7 @@ import {
 	encodeChatEventPayload,
 	type ChatEvent,
 	type ChatEventInput,
+	type ChatMessage,
 } from "@maple/domain/chat-session"
 import type { ChatSessionStub } from "@maple/domain/chat-session-stub"
 import { ChatConnectorId, OrgId } from "@maple/domain/primitives"
@@ -21,6 +22,7 @@ import {
 	ChatOutboundError,
 	type ChatBlock,
 	type ChatChartRef,
+	type ChatHistoryMessage,
 	type ChatMessageRef,
 	type ChatOutbound,
 	type ChatTarget,
@@ -29,6 +31,8 @@ import {
 	type InboundWorkspaceRemoved,
 } from "@maple/chat-platform"
 import { Context, Duration, Effect, Logger, Option, References, Schema, Tracer } from "effect"
+import { TestClock } from "effect/testing"
+import { ConversationNotRecorded, FOLLOW_UP_WINDOW_MS } from "./conversation.ts"
 import { relayInboundEvent, WorkspaceLookupFailed, type RelayPorts } from "./turn.ts"
 
 const TESTCHAT = chatConnectorId("testchat")
@@ -57,15 +61,23 @@ interface Chat {
 	/** Every post and edit, in order. */
 	readonly calls: Array<{ verb: "post" | "edit"; ref: ChatMessageRef; blocks: ReadonlyArray<ChatBlock> }>
 	readonly threads: Array<string>
+	/** What the relay asked for the model's context, if it asked at all. */
+	readonly historyCalls: Array<{ channelId: string; limit: number; before: string }>
 }
 
-const chat = (): Chat => {
+/**
+ * `earlier` is what this platform says was written in the conversation before the message — or a
+ * failure, for a bot that may not read the history it is answering in.
+ */
+const chat = (earlier: ReadonlyArray<ChatHistoryMessage> | ChatOutboundError = []): Chat => {
 	const calls: Chat["calls"] = []
 	const threads: Array<string> = []
+	const historyCalls: Chat["historyCalls"] = []
 	let posted = 0
 	return {
 		calls,
 		threads,
+		historyCalls,
 		outbound: {
 			connectorId: TESTCHAT,
 			limits: { maxMessageChars: 2000, minEditInterval: Duration.millis(10) },
@@ -81,13 +93,23 @@ const chat = (): Chat => {
 				openThread: (request) => Effect.succeed(request.anchorMessageId),
 				conversation: (message) =>
 					Effect.sync(() => {
-						threads.push(message.messageId)
+						// Only a mention opens a thread here, exactly as a real connector does: a message
+						// that addressed nobody can continue a conversation but never start one.
+						if (message.mentionsBot) threads.push(message.messageId)
 						return {
 							conversationKey: Schema.decodeSync(
 								Schema.String.pipe(Schema.brand("@maple/ChatConversationKey")),
 							)(CONVERSATION),
 							target: { workspaceId: message.workspaceId, channelId: CONVERSATION },
+							opened: message.mentionsBot,
 						}
+					}),
+				history: (historyTarget, options) =>
+					Effect.suspend(() => {
+						historyCalls.push({ channelId: historyTarget.channelId, ...options })
+						return earlier instanceof ChatOutboundError
+							? Effect.fail(earlier)
+							: Effect.succeed(earlier)
 					}),
 			})),
 		},
@@ -117,6 +139,12 @@ const sse = (events: ReadonlyArray<ChatEvent>): ReadableStream<Uint8Array> => {
 	})
 }
 
+/** A turn that opens and closes with nothing said in it, for cases that are about the claim. */
+const silentTurn: ReadonlyArray<ChatEvent> = [
+	event(1, { type: "turn-start", messageId: "a1" }),
+	event(2, { type: "turn-end", messageId: "a1", reason: "stop" }),
+]
+
 type BeginTurnInput = Parameters<ChatSessionStub["beginTurn"]>[0]
 
 interface Session {
@@ -133,7 +161,11 @@ interface Session {
  */
 const session = (
 	connections: ReadonlyArray<ReadonlyArray<ChatEvent>>,
-	options?: { readonly busy?: boolean },
+	options?: {
+		readonly busy?: boolean
+		/** What the session's transcript already holds, as `history()` answers it. */
+		readonly transcript?: ReadonlyArray<ChatMessage>
+	},
 ): Session => {
 	const turns: Array<BeginTurnInput> = []
 	const cursors: Array<number> = []
@@ -144,7 +176,7 @@ const session = (
 		stub: {
 			cursor: () => Promise.resolve(0),
 			running: () => Promise.resolve(false),
-			history: () => Promise.resolve([]),
+			history: () => Promise.resolve(options?.transcript ?? []),
 			since: () => Promise.resolve([]),
 			append: () => Promise.resolve(0),
 			holdsTurn: () => Promise.resolve(false),
@@ -172,6 +204,12 @@ interface Host {
 	readonly ports: RelayPorts
 	readonly forgotten: Array<string>
 	readonly charts: Array<{ orgId: OrgId; ref: ChatChartRef }>
+	/** The conversations the host has been told the bot opened — the relay object's one durable fact. */
+	readonly opened: Set<string>
+	/** How many times the host was asked whether to announce an unlinked workspace. */
+	readonly announced: { count: number }
+	/** How many workspace lookups the events caused — one database connection each. */
+	readonly lookups: { count: number }
 }
 
 const host = (
@@ -182,21 +220,41 @@ const host = (
 		readonly announceUnlinked?: boolean
 		/** The database could not answer, which is not the same as nobody having linked it. */
 		readonly lookupFails?: boolean
+		/** A conversation the bot opened on some earlier event, as the relay object would remember it. */
+		readonly opened?: ReadonlyArray<string>
+		/** The relay object could not record the conversation the bot just opened. */
+		readonly rememberFails?: boolean
 	},
 ): Host => {
 	const forgotten: Array<string> = []
 	const charts: Array<{ orgId: OrgId; ref: ChatChartRef }> = []
+	const opened = new Set<string>(options?.opened ?? [])
+	const announced = { count: 0 }
+	const lookups = { count: 0 }
 	return {
 		forgotten,
 		charts,
+		opened,
+		announced,
+		lookups,
 		ports: {
 			outbound,
+			// Counted: this is a database connection per event, and a message the bot will not answer
+			// must not open one.
 			resolveWorkspace: (connector) =>
-				options?.lookupFails === true
-					? Effect.fail(
-							new WorkspaceLookupFailed({ connector, message: "the database said nothing" }),
-						)
-					: Effect.succeed(options?.linked === false ? Option.none() : Option.some({ orgId: ORG })),
+				Effect.suspend(() => {
+					lookups.count += 1
+					return options?.lookupFails === true
+						? Effect.fail(
+								new WorkspaceLookupFailed({
+									connector,
+									message: "the database said nothing",
+								}),
+							)
+						: Effect.succeed(
+								options?.linked === false ? Option.none() : Option.some({ orgId: ORG }),
+							)
+				}),
 			forgetWorkspace: (_connector: ChatConnectorId, workspaceId: string) =>
 				Effect.sync(() => void forgotten.push(workspaceId)),
 			chatSession: () => stub,
@@ -205,7 +263,23 @@ const host = (
 				charts.push({ orgId, ref })
 				return `https://app.maple.dev/chat/chart/${ref.chartIndex}.png`
 			},
-			announceUnlinked: Effect.succeed(options?.announceUnlinked ?? true),
+			// Counted, not just answered: the real host spends a notice by being asked, so asking at
+			// all in a conversation nothing will be said in is the bug.
+			announceUnlinked: Effect.sync(() => {
+				announced.count += 1
+				return options?.announceUnlinked ?? true
+			}),
+			ownsConversation: (conversationKey) => Effect.sync(() => opened.has(conversationKey)),
+			rememberConversation: (conversation) =>
+				options?.rememberFails === true
+					? Effect.fail(
+							new ConversationNotRecorded({
+								conversationKey: conversation.conversationKey,
+								message: "the object did not answer",
+								cause: new Error("storage unavailable"),
+							}),
+						)
+					: Effect.sync(() => void opened.add(conversation.conversationKey)),
 		},
 	}
 }
@@ -491,6 +565,254 @@ describe("relaying a mention", () => {
 			expect(notices(blocksOf(platform.calls))).toEqual([
 				"Maple's agent can't be reached from here right now.",
 			])
+		}),
+	)
+
+	it.effect("gives the model what the conversation was already saying, and remembers it opened one", () =>
+		Effect.gen(function* () {
+			const platform = chat([{ displayName: "Bo", isBot: false, text: "checkout again", at: 1000 }])
+			const agent = session([silentTurn])
+			const deployment = host(platform.outbound, agent.stub)
+
+			yield* relayInboundEvent(mention, deployment.ports)
+
+			// Read where the mention was written, and only what came before it: the conversation the
+			// answer goes in is a thread that did not exist a moment ago.
+			expect(platform.historyCalls).toEqual([
+				{ channelId: CHANNEL, limit: 20, before: mention.messageId },
+			])
+			expect(agent.turns[0]?.text).toContain("Bo: checkout again")
+			// And the conversation is now the bot's own, which is what lets the next message in it be
+			// answered without a mention.
+			expect([...deployment.opened]).toEqual([CONVERSATION])
+		}),
+	)
+
+	it.effect("answers the question even when it could not record the conversation it opened", () =>
+		Effect.gen(function* () {
+			// The cost is the follow-ups after this answer, and the answer is somebody's question.
+			const platform = chat()
+			const agent = session([silentTurn])
+			const deployment = host(platform.outbound, agent.stub, { rememberFails: true })
+
+			yield* relayInboundEvent(mention, deployment.ports)
+
+			expect(agent.turns).toHaveLength(1)
+			expect([...deployment.opened]).toEqual([])
+		}),
+	)
+
+	it.effect("answers with less context rather than refusing when the history cannot be read", () =>
+		Effect.gen(function* () {
+			// A bot without permission to read the channel it was mentioned in, or a platform having a
+			// bad minute. Either way somebody asked a question.
+			const platform = chat(
+				new ChatOutboundError({
+					message: "the platform refused",
+					connectorId: TESTCHAT,
+					operation: "history",
+					status: 403,
+				}),
+			)
+			const agent = session([silentTurn])
+			const deployment = host(platform.outbound, agent.stub)
+
+			yield* relayInboundEvent(mention, deployment.ports)
+
+			expect(agent.turns).toHaveLength(1)
+			expect(agent.turns[0]?.text).toContain("why is checkout slow?")
+		}),
+	)
+})
+
+describe("relaying a message that mentioned nobody", () => {
+	const followUp: InboundMessage = {
+		...mention,
+		messageId: "message-2",
+		// Where a platform gives a thread its own address, a follow-up in one arrives addressed to the
+		// conversation itself rather than to the channel around it.
+		channelId: CONVERSATION,
+		text: "and the payments call?",
+		mentionsBot: false,
+	}
+
+	/**
+	 * When these turns are taken. The relay reads the clock through `Clock`, so the transcript's
+	 * instants and "now" have to come from the same one — against the wall clock a stale
+	 * conversation reads as a future one and every window check passes for the wrong reason.
+	 */
+	const NOW = Date.parse("2026-09-23T12:00:00.000Z")
+
+	/** A session whose last turn was `ago` milliseconds before NOW. */
+	const spokeAt = (ago: number): ReadonlyArray<ChatMessage> => [
+		{
+			id: "a1",
+			role: "assistant",
+			text: "Checkout is slow.",
+			toolCalls: [],
+			createdAt: NOW - ago,
+			startSeq: 2,
+		},
+	]
+
+	/** A minute ago, which is what makes the conversation live. */
+	const answered = spokeAt(60_000)
+
+	it.effect("answers it in a conversation the bot opened and spoke in recently", () =>
+		Effect.gen(function* () {
+			const platform = chat()
+			const agent = session([silentTurn], { transcript: answered })
+			const deployment = host(platform.outbound, agent.stub, { opened: [CONVERSATION] })
+
+			yield* TestClock.setTime(NOW)
+			yield* relayInboundEvent(followUp, deployment.ports)
+
+			expect(agent.turns).toHaveLength(1)
+			expect(agent.turns[0]?.text).toContain("and the payments call?")
+			// The turn read the clock the test set, which is what makes the window assertions mean
+			// anything: against the wall clock they would pass whatever the transcript said.
+			expect(agent.turns[0]?.text).toContain("The time is 2026-09-23T12:00:00Z.")
+			// Nothing was opened for it: an unaddressed message continues a conversation, never starts
+			// one.
+			expect(platform.threads).toEqual([])
+		}),
+	)
+
+	it.effect("gives the model only what its own transcript does not already hold", () =>
+		Effect.gen(function* () {
+			const answeredAt = answered[0]?.createdAt ?? 0
+			const platform = chat([
+				{ displayName: "Ada", isBot: false, text: "and the payments call?", at: answeredAt + 1000 },
+				{ displayName: "Maple", isBot: true, text: "Checkout is slow.", at: answeredAt },
+				{ displayName: "Ada", isBot: false, text: "why is checkout slow?", at: answeredAt - 1000 },
+			])
+			const agent = session([silentTurn], { transcript: answered })
+			const deployment = host(platform.outbound, agent.stub, { opened: [CONVERSATION] })
+
+			yield* TestClock.setTime(NOW)
+			yield* relayInboundEvent(followUp, deployment.ports)
+
+			const text = agent.turns[0]?.text ?? ""
+			// What was said after the bot's own last answer, and nothing from before it: the session
+			// replays that exchange into the same context window.
+			expect(text).toContain("Ada: and the payments call?")
+			expect(text).not.toContain("Maple (bot): Checkout is slow.")
+			expect(text).not.toContain("Ada: why is checkout slow?")
+		}),
+	)
+
+	it.effect("stops answering a conversation that has been quiet for over a day", () =>
+		Effect.gen(function* () {
+			const platform = chat()
+			const agent = session([silentTurn], { transcript: spokeAt(FOLLOW_UP_WINDOW_MS + 1) })
+			const deployment = host(platform.outbound, agent.stub, { opened: [CONVERSATION] })
+
+			yield* TestClock.setTime(NOW)
+			yield* relayInboundEvent(followUp, deployment.ports)
+
+			expect(agent.turns).toEqual([])
+			expect(platform.calls).toEqual([])
+			// It reached the session, which is the half of the rule this one is about.
+			expect(deployment.lookups.count).toBe(1)
+		}),
+	)
+
+	it.effect("measures the day from the bot's last answer, not the last thing recorded", () =>
+		Effect.gen(function* () {
+			// A turn evicted after its question was recorded leaves a question as the newest entry.
+			// The conversation has an unanswered message in it, which is not a recent answer.
+			const stale: ReadonlyArray<ChatMessage> = [
+				...spokeAt(FOLLOW_UP_WINDOW_MS + 1),
+				{
+					id: "u2",
+					role: "user",
+					text: "still there?",
+					toolCalls: [],
+					createdAt: NOW - 60_000,
+					startSeq: 3,
+				},
+			]
+			const platform = chat()
+			const agent = session([silentTurn], { transcript: stale })
+			const deployment = host(platform.outbound, agent.stub, { opened: [CONVERSATION] })
+
+			yield* TestClock.setTime(NOW)
+			yield* relayInboundEvent(followUp, deployment.ports)
+
+			expect(agent.turns).toEqual([])
+		}),
+	)
+
+	it.effect("leaves a conversation the bot did not open completely alone", () =>
+		Effect.gen(function* () {
+			const platform = chat()
+			const agent = session([silentTurn], { transcript: answered })
+			const deployment = host(platform.outbound, agent.stub)
+
+			yield* TestClock.setTime(NOW)
+			yield* relayInboundEvent(followUp, deployment.ports)
+
+			expect(agent.turns).toEqual([])
+			// Not even a notice. Nobody asked it anything, so nothing appears in the conversation.
+			expect(platform.calls).toEqual([])
+			expect(platform.historyCalls).toEqual([])
+			// And it stopped on a read of this object's own storage: no database connection, no call
+			// to the session. On a deployment that sees every message, this is the path most of them
+			// take.
+			expect(deployment.lookups.count).toBe(0)
+		}),
+	)
+
+	it.effect("stays mention-only when the session's own transcript cannot be read", () =>
+		Effect.gen(function* () {
+			// The transcript is what says the bot has spoken here and when. Unreadable is not "never
+			// spoken", but it is the only safe reading of it: the alternative is answering on a guess.
+			const platform = chat()
+			const agent = session([silentTurn], { transcript: answered })
+			const unreadable: ChatSessionStub = {
+				...agent.stub,
+				history: () => Promise.reject(new Error("the object was evicted")),
+			}
+			const deployment = host(platform.outbound, unreadable, { opened: [CONVERSATION] })
+
+			yield* TestClock.setTime(NOW)
+			yield* relayInboundEvent(followUp, deployment.ports)
+
+			expect(agent.turns).toEqual([])
+			expect(platform.calls).toEqual([])
+		}),
+	)
+
+	it.effect("says nothing when there is nothing to say back", () =>
+		Effect.gen(function* () {
+			// Every notice a mention would get — the workspace nobody linked, the session that is
+			// busy or unreachable — is a bot talking to a conversation that did not address it.
+			const unlinkedChat = chat()
+			const busyChat = chat()
+			const unlinked = host(
+				unlinkedChat.outbound,
+				session([silentTurn], { transcript: answered }).stub,
+				{
+					linked: false,
+					opened: [CONVERSATION],
+				},
+			)
+			const busy = host(
+				busyChat.outbound,
+				session([silentTurn], { busy: true, transcript: answered }).stub,
+				{
+					opened: [CONVERSATION],
+				},
+			)
+
+			yield* TestClock.setTime(NOW)
+			yield* relayInboundEvent(followUp, unlinked.ports)
+			yield* relayInboundEvent(followUp, busy.ports)
+
+			expect(unlinkedChat.calls).toEqual([])
+			expect(busyChat.calls).toEqual([])
+			// And the unlinked notice is still unspent, so the next real mention here gets it.
+			expect(unlinked.announced.count).toBe(0)
 		}),
 	)
 })

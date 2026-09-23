@@ -24,6 +24,7 @@ import {
 	decodeHello,
 	decodeReady,
 	FATAL_CLOSE_CODES,
+	FATAL_CLOSE_HINTS,
 	GATEWAY_QUERY,
 	GATEWAY_URL,
 	INTENTS,
@@ -218,11 +219,14 @@ const onFrame = (
  */
 const onClose = (state: GatewayState, code: number, reason: string): SocketStep<GatewayState> => {
 	if (FATAL_CLOSE_CODES.has(code)) {
+		const hint = FATAL_CLOSE_HINTS.get(code)
 		return {
 			state,
 			directive: {
 				_tag: "stop",
-				reason: `Discord closed the gateway with ${code}${reason === "" ? "" : `: ${reason}`}`,
+				reason: `Discord closed the gateway with ${code}${hint === undefined ? "" : ` (${hint})`}${
+					reason === "" ? "" : `: ${reason}`
+				}`,
 			},
 		}
 	}

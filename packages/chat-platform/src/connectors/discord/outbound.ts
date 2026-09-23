@@ -19,13 +19,14 @@
  * than read directly.
  */
 import { ChatConversationKey } from "@maple/primitives"
-import { Duration, Effect, Option, Redacted, Schema } from "effect"
+import { Array as Arr, Duration, Effect, Option, Redacted, Schema } from "effect"
 import { HttpClient, HttpClientRequest, type HttpClientResponse } from "effect/unstable/http"
 import type { ConnectorConfig, InboundMessage } from "../../ingress"
 import {
 	ChatOutboundError,
 	ConnectorCredentials,
 	type ChatConversation,
+	type ChatHistoryMessage,
 	type ChatMessageRef,
 	type ChatOutbound,
 	type ChatOutboundOperation,
@@ -34,6 +35,7 @@ import {
 } from "../../outbound"
 import type { ChatBlock } from "../../render/blocks"
 import { API_BASE, API_HOST, BOT_TOKEN_CONFIG } from "./api"
+import { User } from "./gateway-payloads"
 import { DISCORD_CONNECTOR_ID } from "./id"
 import { renderDiscordMessage } from "./render"
 
@@ -85,6 +87,47 @@ const CreatedMessage = Schema.Struct({
 
 /** A started thread is a channel, and its id is what every later call addresses. */
 const CreatedThread = Schema.Struct({ id: Schema.String })
+
+/**
+ * One earlier message, as `GET /channels/{id}/messages` answers it.
+ *
+ * `content` is empty for a message that carries no text of its own, and for every message the
+ * application is not allowed to read — the message-content grant governs this REST reply exactly
+ * as it governs the gateway. The user shape is the gateway half's, so the two readings of a
+ * Discord message object cannot drift apart.
+ */
+const HistoryMessage = Schema.Struct({
+	author: User,
+	member: Schema.optionalKey(Schema.Struct({ nick: Schema.optionalKey(Schema.NullOr(Schema.String)) })),
+	content: Schema.String,
+	/** ISO-8601. A value that will not parse leaves the message out rather than dating it to 1970. */
+	timestamp: Schema.String,
+	webhook_id: Schema.optionalKey(Schema.String),
+})
+
+const decodeHistoryMessage = Schema.decodeUnknownOption(HistoryMessage)
+
+/**
+ * One earlier message as the contract carries it, or nothing at all.
+ *
+ * Per message rather than per page, and deliberately: a page is CONTEXT, and one message this
+ * connector cannot read — a type Discord added, a field that started arriving `null` — is not worth
+ * losing the conversation around it for. The gateway half drops an unreadable payload the same way.
+ */
+const historyMessage = (raw: unknown): Option.Option<ChatHistoryMessage> =>
+	Option.flatMap(decodeHistoryMessage(raw), (message) => {
+		const at = Date.parse(message.timestamp)
+		if (Number.isNaN(at)) return Option.none()
+		return Option.some({
+			displayName: message.member?.nick ?? message.author.global_name ?? message.author.username,
+			isBot: message.author.bot === true || message.webhook_id !== undefined,
+			text: message.content,
+			at,
+		})
+	})
+
+/** Discord's own ceiling on one page of history. */
+const MAX_HISTORY_LIMIT = 100
 
 /** 1–100 characters, per the Start Thread documentation. */
 const MAX_THREAD_NAME_CHARS = 100
@@ -273,6 +316,42 @@ export const discordOutbound: ChatOutbound<HttpClient.HttpClient | ConnectorCred
 			openThread,
 
 			/**
+			 * What was said in this channel before a message, newest first.
+			 *
+			 * Discord answers newest-first already, which is the order the contract asks for and the
+			 * order a bound should cut in. The page is read message by message, so one Maple cannot
+			 * make sense of costs that message rather than the whole conversation around it.
+			 */
+			history: Effect.fn("Discord.history")(function* (
+				target: ChatTarget,
+				options: { readonly limit: number; readonly before: string },
+			) {
+				const limit = Math.min(options.limit, MAX_HISTORY_LIMIT)
+				const response = yield* send(
+					"history",
+					"/channels/{channel_id}/messages",
+					HttpClientRequest.get(
+						`${API_BASE}/channels/${channelOf(target)}/messages?limit=${limit}&before=${encodeURIComponent(options.before)}`,
+					),
+				)
+				const json = yield* response.json.pipe(
+					Effect.mapError((cause) =>
+						failed("history", "Discord's reply could not be read", { cause }),
+					),
+				)
+				const page = yield* Schema.decodeUnknownEffect(Schema.Array(Schema.Unknown))(json).pipe(
+					// No `cause` on this one. What failed to decode is a page of other people's
+					// messages, and a parse issue carries the values that did not fit — nothing reads
+					// this failure but its operation, and a customer's conversation does not belong in
+					// an error value one `Cause.pretty` away from a log line.
+					Effect.mapError(() =>
+						failed("history", "Discord did not answer with a list of messages"),
+					),
+				)
+				return Arr.getSomes(Arr.map(page, historyMessage))
+			}),
+
+			/**
 			 * A mention is answered in a thread of its own, so a channel keeps reading as a channel.
 			 *
 			 * The thread IS the conversation, and on Discord a thread is a channel — so its id is both
@@ -282,16 +361,37 @@ export const discordOutbound: ChatOutbound<HttpClient.HttpClient | ConnectorCred
 			 * Discord will not start a thread from a message that is already in one, and answers the
 			 * same way in a channel where the bot may not start them at all. Both mean the same thing
 			 * here: the mention's own channel is the conversation.
+			 *
+			 * A message that mentioned nobody opens nothing and costs no request. It can only ever
+			 * continue a conversation that already exists — whether it does is the host's decision,
+			 * made against the conversation this answers with.
 			 */
 			conversation: (message: InboundMessage) =>
-				openThread({
-					workspaceId: message.workspaceId,
-					channelId: message.channelId,
-					anchorMessageId: message.messageId,
-					title: message.text,
-				}).pipe(
-					Effect.orElseSucceed(() => message.channelId),
-					Effect.flatMap((channelId) =>
+				(message.mentionsBot
+					? openThread({
+							workspaceId: message.workspaceId,
+							channelId: message.channelId,
+							anchorMessageId: message.messageId,
+							title: message.text,
+						}).pipe(
+							Effect.map((channelId) => ({ channelId, opened: true })),
+							// Logged, because the refusal now decides more than where to post: a channel
+							// the bot merely answers in is not one it will answer unaddressed messages
+							// in, and a 429 or a 5xx lands in the same branch as the two expected
+							// refusals without saying so.
+							Effect.tapError((error) =>
+								Effect.logWarning("No thread was opened for this mention").pipe(
+									Effect.annotateLogs({
+										"error.message": error.message,
+										"http.response.status_code": error.status ?? 0,
+									}),
+								),
+							),
+							Effect.orElseSucceed(() => ({ channelId: message.channelId, opened: false })),
+						)
+					: Effect.succeed({ channelId: message.channelId, opened: false })
+				).pipe(
+					Effect.flatMap(({ channelId, opened }) =>
 						Option.match(decodeConversationKey(channelId), {
 							onNone: () =>
 								Effect.fail(
@@ -301,6 +401,7 @@ export const discordOutbound: ChatOutbound<HttpClient.HttpClient | ConnectorCred
 								Effect.succeed({
 									conversationKey,
 									target: { workspaceId: message.workspaceId, channelId },
+									opened,
 								}),
 						}),
 					),

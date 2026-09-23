@@ -16,9 +16,10 @@ ChatEvent stream ──▶ makeChatTranscript ──▶ renderChatMessage ──
   prose here, through `@maple/domain`'s parsers, so this surface and the web transcript cannot
   disagree about what counts as one.
 - `src/outbound.ts` — what a connector has to implement: its id, a budget, an edit interval,
-  `post`, `edit`, `typing`, `openThread`, and `conversation` — which conversation an inbound
-  message belongs to and where its answer goes, since only the platform knows whether that is a
-  thread, a channel, or a thread it has to open first. Every call addresses a target
+  `post`, `edit`, `typing`, `openThread`, `history` (what was said in a conversation before a
+  message, newest first, which is what the model is given as context) and `conversation` — which
+  conversation an inbound message belongs to and where its answer goes, since only the platform
+  knows whether that is a thread, a channel, or a thread it has to open first. Every call addresses a target
   (`{ workspaceId, channelId, threadId? }`), so a connector with per-install credentials resolves
   its token from `workspaceId` inside its own transport — the contract carries the address, never
   the secret. The credential itself arrives as `ConnectorCredentials`, the configuration the host
@@ -29,6 +30,23 @@ ChatEvent stream ──▶ makeChatTranscript ──▶ renderChatMessage ──
   simply finish. A stream from seq 0 replays whole earlier turns, which is why the turn is named
   rather than discovered.
 - `src/connectors/<id>/` — one platform each.
+
+## When the bot speaks
+
+A mention is always a turn. A message that mentioned nobody is one only in a conversation the bot
+**opened itself** — and then only while its session has held a turn, the last one was inside a day,
+a human wrote the message, and the message has text. `apps/chat-bot/src/relay/conversation.ts` is
+the whole rule, and the relay object remembers which conversations those are (`ChatConversation.opened`,
+answered by the connector when it opens one).
+
+So a channel the bot was invited to, and a thread somebody else started and mentioned it in once,
+both stay mention-only however recently it spoke there. There is deliberately no model call
+deciding whether a message is relevant: it would let the bot speak in more places, and it is the
+next thing to add if this proves too narrow.
+
+A connector that cannot see message content — several platforms gate it behind a privileged
+permission — simply never reports unaddressed messages, and the feature is off for it with nothing
+else to configure.
 
 ## The rule
 

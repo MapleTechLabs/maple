@@ -63,9 +63,10 @@ const recorder = (maxMessageChars = 500): Recorder => {
 				typing: (typingTarget) => Effect.sync(() => void typing.push(typingTarget.channelId)),
 				// A platform where a thread is just replies to a message opens one without any I/O.
 				openThread: (request) => Effect.succeed(request.anchorMessageId),
-				// Not the driver's concern: by the time a turn is being rendered, the conversation it
-				// belongs to has been decided.
+				// Neither is the driver's concern: by the time a turn is being rendered, the conversation
+				// it belongs to has been decided and the model has already been given it.
 				conversation: () => Effect.die("the driver asked which conversation this is"),
+				history: () => Effect.die("the driver asked what was said earlier"),
 			})),
 		},
 	}

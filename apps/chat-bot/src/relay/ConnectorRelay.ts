@@ -15,22 +15,53 @@
  * that delivered the event — a shared one resumed from another request's I/O context is how this
  * codebase has broken workerd before.
  *
- * Deliberately storage-free. The object holds nothing between events: the conversation's durable
- * state is the chat session's, the claim on a running turn is the chat session's too, and an
- * object evicted mid-turn leaves a message holding the last thing the turn had said — the session
- * ends the turn on its own heartbeat either way. Resuming the rendering would mean persisting
- * every message the driver posted, which is a feature to add when an eviction is seen, not before.
+ * It holds one thing between events, and only one: which conversations the bot opened itself,
+ * which is what lets a message in one of them be answered without mentioning the bot. Everything
+ * else is somebody else's durable state — the transcript is the chat session's, the claim on a
+ * running turn is the chat session's too, and an object evicted mid-turn leaves a message holding
+ * the last thing the turn had said, which the session's own heartbeat then ends. Resuming the
+ * rendering would mean persisting every message the driver posted, which is a feature to add when
+ * an eviction is seen, not before.
  */
-import type { InboundEvent } from "@maple/chat-platform"
+import type { ChatConversation, InboundEvent } from "@maple/chat-platform"
 import * as Cloudflare from "alchemy/Cloudflare"
 import { Effect } from "effect"
+import { ConversationNotRecorded } from "./conversation.ts"
+import { connectorConversationRelayName, connectorRelayByName } from "./stub.ts"
 
 /** What this object reads off its Durable Object state. */
 interface ConnectorRelayState {
 	readonly storage: {
 		setAlarm(scheduledTime: number): Promise<void>
+		get<A>(key: string): Promise<A | undefined>
+		put(key: string, value: boolean): Promise<void>
 	}
 	waitUntil(promise: Promise<unknown>): void
+}
+
+/**
+ * Where the one durable fact lives, under the conversation it is about.
+ *
+ * Keyed rather than a bare flag because an object is addressed by CHANNEL: a platform that models
+ * a thread as a coordinate inside a channel puts every one of that channel's threads on this
+ * object, and a flag would make the first thread the bot opened speak for all of them.
+ */
+const openedKey = (conversationKey: string): string => `opened:${conversationKey}`
+
+/**
+ * The half of a turn's ports that the relay OBJECT answers, rather than the database or the
+ * platform.
+ *
+ * Declared here, structurally, rather than imported from `./turn.ts`: that module reaches the
+ * connector registry and the database, and this file is evaluated when Cloudflare validates the
+ * uploaded script. `run.ts` is where the two halves meet.
+ */
+export interface ConnectorRelayPorts {
+	readonly announceUnlinked: Effect.Effect<boolean>
+	readonly ownsConversation: (conversationKey: string) => Effect.Effect<boolean>
+	readonly rememberConversation: (
+		conversation: ChatConversation,
+	) => Effect.Effect<void, ConversationNotRecorded>
 }
 
 /**
@@ -73,6 +104,60 @@ export class ConnectorRelay {
 		if (this.live > 0) this.armKeepAlive()
 	}
 
+	/**
+	 * What this object gives the turn it is running: the three answers only the object can give.
+	 *
+	 * Named and public so it can be driven without the heavy half — everything the turn itself
+	 * needs is behind a dynamic import, and these are the part of it this class owns.
+	 */
+	relayPorts(event: InboundEvent): ConnectorRelayPorts {
+		return {
+			announceUnlinked: Effect.sync(() => this.takeUnlinkedNotice()),
+			ownsConversation: (conversationKey) => Effect.promise(() => this.opened(conversationKey)),
+			rememberConversation: (conversation) =>
+				Effect.tryPromise({
+					catch: (cause) =>
+						new ConversationNotRecorded({
+							conversationKey: conversation.conversationKey,
+							message: "The conversation's relay object did not record that the bot opened it",
+							cause,
+						}),
+					try: () => this.rememberOpened(event, conversation),
+				}),
+		}
+	}
+
+	/** Called on the conversation's own object, by whichever object opened it. */
+	async remember(conversationKey: string): Promise<void> {
+		await this.ctx.storage.put(openedKey(conversationKey), true)
+	}
+
+	/** A store that cannot be read answers "not ours", which is mention-only — never a failed event. */
+	private async opened(conversationKey: string): Promise<boolean> {
+		const marker = await this.ctx.storage.get<boolean>(openedKey(conversationKey)).catch(() => undefined)
+		return marker === true
+	}
+
+	/**
+	 * Record a conversation the bot just opened, wherever it belongs.
+	 *
+	 * A conversation the platform gave its own address — a thread that is a channel — is another
+	 * object's, and is reached by RPC. One that lives inside the channel this event arrived in is
+	 * this object's own, and writing it here rather than through a stub is not an optimization: a
+	 * Durable Object calling itself is how a request deadlocks behind its own input gate.
+	 *
+	 * A write that fails reaches the turn as `ConversationNotRecorded` rather than being reported
+	 * here: it costs the follow-ups AFTER this answer and must never cost the answer, and the turn
+	 * is where a log carries the org, the session and the span it belongs to.
+	 */
+	private async rememberOpened(event: InboundEvent, conversation: ChatConversation): Promise<void> {
+		const here = "channelId" in event ? event.channelId : undefined
+		const name = connectorConversationRelayName(event.connector, conversation.target)
+		await (here === conversation.target.channelId
+			? this.remember(conversation.conversationKey)
+			: connectorRelayByName(this.env, name)?.remember(conversation.conversationKey))
+	}
+
 	private armKeepAlive(): void {
 		this.ctx.waitUntil(this.ctx.storage.setAlarm(Date.now() + KEEP_ALIVE_MS).catch(() => undefined))
 	}
@@ -85,10 +170,7 @@ export class ConnectorRelay {
 	private async run(event: InboundEvent): Promise<void> {
 		try {
 			const { runInboundEvent } = await import("./run.ts")
-			await runInboundEvent(
-				{ env: this.env, announceUnlinked: Effect.sync(() => this.takeUnlinkedNotice()) },
-				event,
-			)
+			await runInboundEvent({ env: this.env, ...this.relayPorts(event) }, event)
 		} catch (cause) {
 			console.error("[chat-bot.relay] event failed", cause)
 		} finally {
@@ -119,6 +201,7 @@ export class ConnectorRelay {
 export interface ConnectorRelayApi {
 	readonly deliver: (event: InboundEvent) => Effect.Effect<void>
 	readonly alarm: () => Effect.Effect<void>
+	readonly remember: (conversationKey: string) => Effect.Effect<void>
 }
 
 /**
@@ -134,6 +217,7 @@ export const activateConnectorRelay = Effect.map(
 			return {
 				deliver: (event) => Effect.promise(() => relay.deliver(event)),
 				alarm: () => Effect.promise(() => relay.alarm()),
+				remember: (conversationKey) => Effect.promise(() => relay.remember(conversationKey)),
 			} satisfies ConnectorRelayApi
 		}),
 )

@@ -11,7 +11,7 @@
  * **Never the message text.** It is a customer's conversation, it is not needed to tell whether
  * ingress is working, and a log line is the easiest place in the system to leak one.
  */
-import type { InboundEvent } from "@maple/chat-platform"
+import type { InboundEvent, InboundMessage } from "@maple/chat-platform"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import { Context, Effect, Layer } from "effect"
 import { connectorRelayStub, type ConnectorRelayStub } from "./relay/stub.ts"
@@ -37,10 +37,20 @@ export class InboundHandler extends Context.Service<InboundHandler, InboundHandl
 }
 
 /**
- * The handler over one way of reaching the relay.
+ * Whether a message is worth a hop to the conversation's relay.
  *
- * A message that addressed nobody is dropped here rather than in the relay: a connector reports
- * what it can see in a conversation the bot is in, and only the mentions are a turn.
+ * A connector reports what it can see, which on a busy platform is far more than the bot was
+ * addressed in. Whether an unaddressed message is a TURN is the relay's decision and needs the
+ * conversation's session to make (`relay/conversation.ts`); what is decided here is only what
+ * cannot possibly be one — a message from another bot, and a message whose text the platform
+ * withheld — because deciding those costs nothing and deciding them later costs a round trip per
+ * message in every channel the bot can see.
+ */
+const worthRelaying = (message: InboundMessage): boolean =>
+	message.mentionsBot || (!message.author.isBot && message.text.trim() !== "")
+
+/**
+ * The handler over one way of reaching the relay.
  */
 export const inboundHandler = (relay: InboundRelay): InboundHandlerApi => ({
 	handle: (event) => {
@@ -51,7 +61,7 @@ export const inboundHandler = (relay: InboundRelay): InboundHandlerApi => ({
 		}
 		return Effect.gen(function* () {
 			yield* Effect.logInfo("Chat connector event").pipe(Effect.annotateLogs(attributes))
-			if (event.type === "message" && !event.mentionsBot) return
+			if (event.type === "message" && !worthRelaying(event)) return
 			const stub = relay.forEvent(event)
 			if (stub === undefined) {
 				return yield* Effect.logError("No relay binding on this deployment").pipe(
