@@ -119,5 +119,6 @@ export function registerListAlertRulesTool(server: McpToolRegistrar) {
 				}),
 			}
 		}),
+		{ phrases: ["Listing alert rules", "Checking alert rules"] },
 	)
 }

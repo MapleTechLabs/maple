@@ -582,5 +582,6 @@ export function registerCreateDashboardTool(server: McpToolRegistrar) {
 				}),
 			}
 		}),
+		{ phrases: ["Creating a dashboard"] },
 	)
 }

@@ -47,7 +47,8 @@ export interface ChatEntityBlock {
 }
 
 export interface ChatToolActivity {
-	readonly name: string
+	/** What the call is doing, as a phrase (`Running a query`) — never the tool's raw name. */
+	readonly label: string
 	readonly status: "running" | "done" | "failed"
 	/** A sub-agent's progress, for a `task_*` call. */
 	readonly detail: string | null

@@ -66,7 +66,7 @@ const blockWeight = (block: ChatBlock): number => {
 			return block.label.length + (block.detail?.length ?? 0) + (block.url?.length ?? 0)
 		case "activity":
 			return block.tools.reduce(
-				(total, tool) => total + tool.name.length + (tool.detail?.length ?? 0),
+				(total, tool) => total + tool.label.length + (tool.detail?.length ?? 0),
 				0,
 			)
 		case "approval":

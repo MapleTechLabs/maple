@@ -180,5 +180,6 @@ export function registerReorderDashboardWidgetsTool(server: McpToolRegistrar) {
 				}),
 			}
 		}),
+		{ phrases: ["Reordering widgets"] },
 	)
 }

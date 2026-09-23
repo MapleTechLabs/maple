@@ -92,5 +92,6 @@ export function registerProposeFixTool(server: McpToolRegistrar) {
 				}),
 			}
 		}),
+		{ phrases: ["Drafting a fix"] },
 	)
 }

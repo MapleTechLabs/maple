@@ -131,5 +131,6 @@ export function registerGetServiceTopOperationsTool(server: McpToolRegistrar) {
 				}),
 			}
 		}),
+		{ phrases: ["Finding top operations", "Ranking a service's operations"] },
 	)
 }

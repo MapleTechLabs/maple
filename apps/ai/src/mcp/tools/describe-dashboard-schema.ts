@@ -39,5 +39,6 @@ export function registerDescribeDashboardSchemaTool(server: McpToolRegistrar) {
 
 			return { content: [{ type: "text" as const, text: renderDashboardSchemaIndex() }] }
 		}),
+		{ phrases: ["Reading the dashboard schema"] },
 	)
 }

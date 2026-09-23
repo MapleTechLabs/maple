@@ -115,5 +115,6 @@ export function registerDiagnoseServiceTool(server: McpToolRegistrar) {
 				}),
 			}
 		}),
+		{ phrases: ["Diagnosing a service", "Checking a service's health"] },
 	)
 }
