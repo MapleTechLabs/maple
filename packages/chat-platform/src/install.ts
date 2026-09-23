@@ -72,7 +72,7 @@ export interface ChatConnectorSettingsField {
 
 /**
  * A mark as pure data — a viewBox and its paths. A path without a `fill` takes
- * `currentColor`; a multicolor mark (Slack) gives each path its brand fill, and the
+ * `currentColor`; a multicolor mark gives each path its brand fill, and the
  * dashboard can still render it monochrome by ignoring them. Data rather than a
  * component so the dashboard can render every connector's icon from one element,
  * and rather than raw SVG markup so nothing injects a document fragment.
