@@ -12,9 +12,10 @@ import { connectors } from "@maple/chat-platform/connectors"
 import * as MapleCloudflareSDK from "@maple-dev/effect-sdk/cloudflare"
 import { chatSessionStub } from "@maple/domain/chat-session-stub"
 import type { ChatConnectorId, OrgId } from "@maple/domain/primitives"
+import type { IntegrationsPersistenceError } from "@maple/domain/http"
 import { workerTelemetryConfig } from "@maple/infra/worker-telemetry"
 import { workerEnvLayer } from "@maple/infra/worker-runtime"
-import { Effect, Layer, Option } from "effect"
+import { Cause, Effect, Layer, Option } from "effect"
 import { FetchHttpClient, HttpClient } from "effect/unstable/http"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import { chatChartImageUrl } from "@maple/backend/services/chat/chat-chart"
@@ -75,15 +76,20 @@ const withDatabase = <A, E>(env: Record<string, unknown>, program: Effect.Effect
  */
 const lookupFailed =
 	(connectorId: ChatConnectorId, message: string) =>
-	<A>(effect: Effect.Effect<A, unknown, never>) =>
+	<A>(effect: Effect.Effect<A, IntegrationsPersistenceError>) =>
 		effect.pipe(
 			Effect.catchCause((cause) =>
-				Effect.logError("Chat workspace could not be resolved").pipe(
-					Effect.annotateLogs({ "error.type": summarizeCause(cause) }),
-					Effect.andThen(
-						Effect.fail(new WorkspaceLookupFailed({ connector: connectorId, message })),
-					),
-				),
+				// Interrupts stay interrupts: a relay cut short mid-lookup has nobody to answer, and
+				// reporting "the workspace could not be read" into the channel would be a lie told by
+				// a fiber that should already have stopped.
+				Cause.hasInterruptsOnly(cause)
+					? Effect.interrupt
+					: Effect.logError("Chat workspace could not be resolved").pipe(
+							Effect.annotateLogs({ "error.type": summarizeCause(cause) }),
+							Effect.andThen(
+								Effect.fail(new WorkspaceLookupFailed({ connector: connectorId, message })),
+							),
+						),
 			),
 		)
 
@@ -122,23 +128,7 @@ const ports = (
 		withDatabase(
 			host.env,
 			Effect.flatMap(Database, (database) => resolveChatWorkspace(database, connectorId, workspaceId)),
-		).pipe(
-			// Logged here, where the cause is, and re-raised as the relay's own failure: what the
-			// relay must not do is mistake a database it could not read for a workspace nobody linked.
-			Effect.catchCause((cause) =>
-				Effect.logError("Chat workspace could not be resolved").pipe(
-					Effect.annotateLogs({ "error.type": summarizeCause(cause) }),
-					Effect.andThen(
-						Effect.fail(
-							new WorkspaceLookupFailed({
-								connector: connectorId,
-								message: "The chat workspace could not be read",
-							}),
-						),
-					),
-				),
-			),
-		),
+		).pipe(lookupFailed(connectorId, "The chat workspace could not be read")),
 	forgetWorkspace: (connectorId, workspaceId) =>
 		withDatabase(
 			host.env,

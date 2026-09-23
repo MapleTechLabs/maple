@@ -81,7 +81,12 @@ const decodeOrgId = Schema.decodeUnknownOption(OrgId)
  */
 class ApproverNotPermitted extends Schema.TaggedError<ApproverNotPermitted>()(
 	"@maple/ai/ApproverNotPermitted",
-	{ message: Schema.String },
+	{
+		message: Schema.String,
+		/** Which of the two it was — they read the same to the clicker and not to an operator. */
+		reason: Schema.Literals(["not_a_member", "unavailable"]),
+		cause: Schema.optionalKey(Schema.Defect()),
+	},
 ) {}
 
 /**
@@ -89,10 +94,12 @@ class ApproverNotPermitted extends Schema.TaggedError<ApproverNotPermitted>()(
  *
  * Two shapes, and which one applies was decided by the host before the session was ever reached:
  *
- *   - **a linked user** — the tenant is that user with the roles they hold in the org RIGHT NOW,
- *     read live rather than frozen at link time, so leaving the org or losing admin takes effect
- *     on the next click. Nothing is granted here: a tool that needs an admin checks these roles
- *     itself and refuses, which surfaces as the proposal's own outcome.
+ *   - **a linked user** — the tenant is that user with the roles they hold in the org at
+ *     approval time, read from the membership directory rather than frozen at link time. That
+ *     read is cached (a per-isolate memo, then a shared tier), so a demotion lands within the
+ *     cache's revocation window rather than instantly; the membership webhook closes it from the
+ *     other side. Nothing is granted here: the four admin-gated tools check these roles
+ *     themselves and refuse, which surfaces as the proposal's own outcome.
  *   - **nobody** — the connector cannot prove who clicked, so the org-level connector identity
  *     acts and carries `org:admin`, granted at apply time only.
  */
@@ -117,14 +124,17 @@ export const resolveTenant = Effect.fnUntraced(function* (orgId: OrgId, input: A
 	const memberships = yield* OrgMembershipService
 	const membership = yield* memberships.verify(input.actingUserId, orgId).pipe(
 		Effect.mapError(
-			() =>
+			(cause) =>
 				new ApproverNotPermitted({
+					reason: "unavailable",
 					message: "Maple could not check whether you are still a member of this organization.",
+					cause,
 				}),
 		),
 	)
 	if (Option.isNone(membership)) {
 		return yield* new ApproverNotPermitted({
+			reason: "not_a_member",
 			message: "The Maple account this chat account is linked to is no longer in this organization.",
 		})
 	}
@@ -211,6 +221,13 @@ export const applyChatProposal = async (input: ApplyChatProposalInput): Promise<
 				"maple.chat.connector": input.approver.connectorId,
 			},
 		}),
+		// The tool never ran on this one, so the hedged copy below would be wrong twice over — and
+		// its own message is the only thing that tells the clicker what to do about it.
+		Effect.catchTag("@maple/ai/ApproverNotPermitted", (refusal) =>
+			Effect.annotateCurrentSpan("maple.chat.apply", `refused_${refusal.reason}`).pipe(
+				Effect.as(failure(refusal.message)),
+			),
+		),
 		Effect.catchCause((cause) =>
 			// Interrupts stay interrupts, as everywhere else that swallows a cause here. Letting one
 			// out is what the caller needs: it settles the proposal with copy that does NOT claim the

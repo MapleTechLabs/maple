@@ -1,5 +1,6 @@
 import { HttpServerRequest } from "effect/unstable/http"
 import { HttpApiBuilder } from "effect/unstable/httpapi"
+import { CurrentAuditActor } from "@maple/backend/services/auth/audit-actor"
 import { CurrentTenant } from "@maple/domain/http"
 import type { V2ChatConnector, V2ChatWorkspace } from "@maple/domain/http/v2"
 import {
@@ -54,6 +55,29 @@ const toConnector = (status: ChatConnectorStatus): V2ChatConnector => ({
 				},
 			}),
 })
+
+/**
+ * Linking a chat account is a PERSONAL action, so it takes a personal credential.
+ *
+ * `tenant.userId` is only "whoever is calling" under a signed-in session. Under an API key it is
+ * the human who *created* the key (`ApiKeysService.resolveByKey` reads `created_by`), so without
+ * this a key scoped to `integrations:write` could bind an attacker's chat account to that human —
+ * and every later approval from it would run with their roles, through the Durable Object where
+ * the key's scopes are never consulted. Revoking the key would not undo it either; only leaving
+ * the org clears a link.
+ *
+ * Deny by default: `undefined` means the request skipped the standard auth middlewares, and a
+ * credential this route cannot identify is not a person.
+ */
+export const requirePerson = Effect.flatMap(CurrentAuditActor, (info) =>
+	info?.type === "user"
+		? Effect.void
+		: Effect.fail(
+				V2InsufficientPermissions.make(
+					"Linking a chat account is a personal action — sign in to Maple to link one.",
+				),
+			),
+)
 
 export const HttpV2ChatIntegrationsLive = HttpApiBuilder.group(MapleApiV2, "chatIntegration", (handlers) =>
 	Effect.gen(function* () {
@@ -111,12 +135,13 @@ export const HttpV2ChatIntegrationsLive = HttpApiBuilder.group(MapleApiV2, "chat
 						return { object: "chat_connector.install" as const, url: result.url }
 					}),
 				)
-				// No admin gate on either identity handler: they link and unlink the
-				// caller's OWN chat account, which grants nothing beyond the roles that
-				// caller already holds.
+				// No ADMIN gate on either identity handler: they link and unlink the caller's own
+				// chat account, and a link grants nothing beyond the roles that person already
+				// holds. What both DO require is that the caller is a person — see `requirePerson`.
 				.handle("startChatIdentityLink", ({ params }) =>
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
+						yield* requirePerson
 						const req = yield* HttpServerRequest.HttpServerRequest
 						const origin = resolveRequestOrigin(req)
 						// Same reasoning as the install: the origin is read from a header a
@@ -147,6 +172,7 @@ export const HttpV2ChatIntegrationsLive = HttpApiBuilder.group(MapleApiV2, "chat
 				.handle("deleteChatIdentity", ({ params }) =>
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
+						yield* requirePerson
 						const result = yield* chat.unlink(tenant.orgId, tenant.userId, params.connector)
 						// Only a real removal is audited — unlinking when nothing was linked
 						// is a no-op, and an entry for it would claim authority was revoked.

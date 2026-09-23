@@ -319,13 +319,21 @@ export class V2ChatIntegrationsApiGroup extends HttpApiGroup.make("chatIntegrati
 		HttpApiEndpoint.post("startChatIdentityLink", "/chat_connectors/:connector/identity/link", {
 			params: { connector: ChatConnectorId },
 			success: V2ChatIdentityLinkResponse,
-			error: [V2CallbackHostUnavailable.schema, chatNotFound, chatConfiguration, chatPersistence],
+			error: [
+				// Not about a role — about the credential. Linking is a personal action, so an API
+				// key is refused here however broadly it is scoped.
+				V2InsufficientPermissions.schema,
+				V2CallbackHostUnavailable.schema,
+				chatNotFound,
+				chatConfiguration,
+				chatPersistence,
+			],
 		}).annotateMerge(
 			OpenApi.annotations({
 				identifier: "startChatIdentityLink",
 				summary: "Begin linking your chat account",
 				description:
-					"Returns the chat platform's authorization URL to redirect the user to. On approval Maple binds that chat account to the Maple user who started the link, so an action taken from the chat platform runs as them, under their own roles. This links your own account only, so any member may call it; no admin role is required. Requires the `integrations:write` scope. A connector whose platform cannot say who acted has nothing to link, and is a 404.",
+					"Returns the chat platform's authorization URL to redirect the user to. On approval Maple binds that chat account to the Maple user who started the link, so an action taken from the chat platform runs as them, under their own roles. This links your own account only, so any member may call it; no admin role is required. It must be called with a signed-in session rather than an API key, because a key belongs to the person who created it and linking on their behalf would bind an account to an identity that did not ask for it. Requires the `integrations:write` scope. A connector whose platform cannot say who acted has nothing to link, and is a 404.",
 			}),
 		),
 	)
@@ -333,13 +341,13 @@ export class V2ChatIntegrationsApiGroup extends HttpApiGroup.make("chatIntegrati
 		HttpApiEndpoint.delete("deleteChatIdentity", "/chat_connectors/:connector/identity", {
 			params: { connector: ChatConnectorId },
 			success: V2ChatIdentityDeleteResponse,
-			error: [chatNotFound, chatPersistence],
+			error: [V2InsufficientPermissions.schema, chatNotFound, chatPersistence],
 		}).annotateMerge(
 			OpenApi.annotations({
 				identifier: "deleteChatIdentity",
 				summary: "Unlink your chat account",
 				description:
-					"Removes the link between your chat account and your Maple user on this connector. Your organization's workspaces stay linked; only your own account is forgotten, and nothing you do on the chat platform is attributed to you afterwards. Unlinking when you hold no link is not an error. Requires the `integrations:write` scope.",
+					"Removes the link between your chat account and your Maple user on this connector. Your organization's workspaces stay linked; only your own account is forgotten, and nothing you do on the chat platform is attributed to you afterwards. Unlinking when you hold no link is not an error. Like linking, it must be called with a signed-in session rather than an API key. Requires the `integrations:write` scope.",
 			}),
 		),
 	)

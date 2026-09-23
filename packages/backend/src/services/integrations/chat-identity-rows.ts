@@ -17,7 +17,7 @@ import {
 import { and, eq } from "drizzle-orm"
 import { Effect, Option, Schema } from "effect"
 import type { DatabaseApi, DatabaseError } from "@maple/backend/platform/DatabaseLive"
-import { msToDate } from "@maple/backend/platform/time"
+import { dateToMs, msToDate } from "@maple/backend/platform/time"
 
 /** One person's chat account, and the Maple user it speaks for. */
 export interface ChatIdentityLink {
@@ -52,7 +52,7 @@ const readRow = (row: {
 				userId: stored.userId,
 				externalUserId: stored.externalUserId,
 				displayName: row.displayName,
-				createdAtMs: row.createdAt.getTime(),
+				createdAtMs: dateToMs(row.createdAt),
 			}),
 		),
 		Effect.mapError((error) => unreadable(`Stored chat identity is unreadable: ${error.message}`)),

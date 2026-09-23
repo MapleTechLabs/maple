@@ -96,6 +96,7 @@ const newChatIdentityId = () => Schema.decodeSync(ChatIdentityId)(randomUUID())
 const decodeStoredSettings = Schema.decodeUnknownEffect(Schema.Record(Schema.String, Schema.String))
 
 const decodeOrgId = Schema.decodeUnknownEffect(OrgId)
+const decodeUserId = Schema.decodeUnknownEffect(UserId)
 const decodeChatWorkspaceId = Schema.decodeUnknownEffect(ChatWorkspaceId)
 const decodeConnectorId = Schema.decodeUnknownEffect(ChatConnectorId)
 
@@ -541,19 +542,30 @@ const make: Effect.Effect<
 			}),
 		)
 
+		// Decoded, not trusted: the column is a `$type<UserId>()` cast over whatever is in the
+		// table, and this value becomes the tenant a mutating tool runs under.
+		const initiatedBy = yield* decodeUserId(row.initiatedByUserId).pipe(
+			Effect.mapError(
+				(error) =>
+					new IntegrationsPersistenceError({
+						message: `Stored link state has an invalid userId: ${error.message}`,
+					}),
+			),
+		)
+
 		yield* linkChatIdentity(database, {
 			id: newChatIdentityId(),
 			orgId,
 			connectorId,
 			externalUserId: account.externalUserId,
-			userId: row.initiatedByUserId,
+			userId: initiatedBy,
 			...(account.displayName === undefined ? undefined : { displayName: account.displayName }),
 			nowMs: now,
 		})
 		yield* Effect.logInfo("Chat account linked", {
 			orgId,
 			connector: connectorId,
-			userId: row.initiatedByUserId,
+			userId: initiatedBy,
 		})
 		return { orgId, displayName: account.displayName }
 	})
