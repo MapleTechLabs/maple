@@ -29,6 +29,7 @@ import type {
 	VcsWebhookRequest,
 } from "@maple/backend/services/integrations/vcs/VcsProviderClient"
 import { QUEUE_MESSAGE_LIMIT_BYTES } from "@maple/backend/services/integrations/vcs/VcsSyncQueue"
+import { anchorComments } from "@maple/backend/services/integrations/vcs/diff-anchors"
 import {
 	type GithubApiCommit,
 	type GithubApiPullRequest,
@@ -1294,8 +1295,36 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 					if (publication.comments.length === 0 && publication.reviewBody === null) {
 						return { ...published, reviewUrl: null }
 					}
-					// A line outside the diff is a 422 for the whole review. The summary comment already
-					// carries every finding, so the inline notes are dropped rather than re-posted empty.
+					// A line outside the diff is a 422 for the whole review, so each comment is checked
+					// against the diff first and only the ones it cannot carry are dropped; the summary
+					// comment still has them. A failed read of the diff leaves the comments as they are.
+					const patches = yield* client
+						.listPullRequestFiles(
+							installation.externalInstallationId,
+							repo.owner,
+							repo.name,
+							publication.number,
+						)
+						.pipe(
+							Effect.map(
+								(files): ReadonlyMap<string, string | undefined> =>
+									new Map(files.map((file) => [file.filename, file.patch])),
+							),
+							Effect.option,
+						)
+					const { anchored: comments, dropped } = Option.isSome(patches)
+						? anchorComments(publication.comments, patches.value)
+						: { anchored: publication.comments, dropped: [] }
+					yield* Effect.annotateCurrentSpan(
+						"vcs.pull_request.review_comments_unanchored",
+						dropped.length,
+					)
+					if (comments.length === 0) return { ...published, reviewUrl: null }
+					const body =
+						dropped.length === 0
+							? (publication.reviewBody ?? "")
+							: `${publication.reviewBody ?? ""}\n\n${dropped.length} ${dropped.length === 1 ? "finding sits" : "findings sit"} outside this diff and ${dropped.length === 1 ? "is" : "are"} only in the summary comment.`.trim()
+					// Anything the check could not see (a head that moved since) still falls back whole.
 					const review = yield* client
 						.createPullRequestReview(
 							installation.externalInstallationId,
@@ -1304,8 +1333,8 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 							publication.number,
 							{
 								commitId: publication.headSha,
-								body: publication.reviewBody ?? "",
-								comments: publication.comments,
+								body,
+								comments,
 							},
 						)
 						.pipe(
@@ -1332,7 +1361,7 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 							review.value.id,
 						)
 						.pipe(Effect.orElseSucceed(() => []))
-					const inlineComments = publication.comments.flatMap((submitted, index) => {
+					const inlineComments = comments.flatMap((submitted, index) => {
 						const posted = listed[index]
 						return submitted.key !== undefined &&
 							posted !== undefined &&
