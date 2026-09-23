@@ -33,8 +33,11 @@ Worker runs.
    deliberately instead.
 3. **Bot tab → Requires OAuth2 Code Grant: ON.** An install can then only complete through the code
    exchange the install half performs.
-4. **OAuth2 tab → Redirects.** Add `https://api.maple.dev/oauth/chat/discord/callback`, and the
-   equivalent origin for any other stage.
+4. **OAuth2 tab → Redirects.** Add `https://api.maple.dev/oauth/chat/discord/callback`, the EU
+   instance's `https://api.eu.maple.dev/oauth/chat/discord/callback`, and the equivalent origin for
+   any other stage. The redirect list is shared, but the bot token is not: two instances opening a
+   Gateway session with one token both receive every mention, so an EU instance needs its own
+   Discord application before it gets `MAPLE_DISCORD_BOT_TOKEN`.
 5. **Installation tab → Scopes `bot` + `applications.commands`, permissions "Send Messages", "Read
    Message History", "Create Public Threads".**
 

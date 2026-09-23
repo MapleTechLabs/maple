@@ -1,6 +1,6 @@
 import { MapleApi, MapleInternalApi } from "@maple/domain/http"
 import { MapleApiV2 } from "@maple/domain/http/v2"
-import { Layer } from "effect"
+import { Effect, Layer } from "effect"
 import { HttpRouter, HttpServerResponse } from "effect/unstable/http"
 import { HttpApiBuilder, HttpApiScalar } from "effect/unstable/httpapi"
 import { API_CORS_OPTIONS } from "@maple/backend/http/api-cors"
@@ -14,7 +14,7 @@ import { HttpBillingPublicLive } from "@/routes/v1/billing-public.http"
 import { HttpV2SharePublicLive } from "@/routes/v2/share.http"
 import { V1ErrorBoundaryLive } from "@maple/backend/http/error-boundary"
 import { HttpDemoLive } from "@/routes/internal/demo.http"
-import { DiscoveryRouter, NotFoundRouter } from "@/routes/discovery.http"
+import { DiscoveryRouter, instanceApiV2, NotFoundRouter } from "@/routes/discovery.http"
 import { HttpDigestLive } from "@/routes/internal/digest.http"
 import { HttpErrorsLive } from "@/routes/v1/errors.http"
 import { HttpIntegrationsLive, IntegrationsCallbackRouter } from "@/routes/v1/integrations.http"
@@ -96,9 +96,14 @@ const DocsRoute = HttpApiScalar.layerCdn(MapleApi, {
 })
 
 // Public v2 API reference (only v2 groups — the internal v1 surface stays on /docs).
-const DocsV2Route = HttpApiScalar.layerCdn(MapleApiV2, {
-	path: "/v2/docs",
-})
+const DocsV2Route = Layer.unwrap(
+	Effect.gen(function* () {
+		const env = yield* Env
+		return HttpApiScalar.layerCdn(instanceApiV2(env.MAPLE_API_BASE_URL.replace(/\/+$/, "")), {
+			path: "/v2/docs",
+		})
+	}),
+)
 
 const ApiRoutes = HttpApiBuilder.layer(MapleApi).pipe(
 	Layer.provide(HttpAuthPublicLive),
