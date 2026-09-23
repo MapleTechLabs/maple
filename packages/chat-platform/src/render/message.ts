@@ -54,7 +54,7 @@ export const renderChatMessage = (
 	// across the cut is counted by this scan too, exactly as the whole-message scan counts it.
 	let chartIndex = chartFences(message.text.slice(0, start)).length
 
-	for (const part of splitChartFences(message.text.slice(start))) {
+	for (const part of splitChartFences(visibleText(message.text, calls, start))) {
 		if (part.kind === "chart") {
 			// Counted before it is judged. The image endpoint numbers the fences it
 			// finds, not the ones that turned out to be charts, so skipping the index
@@ -207,6 +207,27 @@ const joinDetail = (parts: ReadonlyArray<string | null>): string | null => {
  * clamps, so such an offset simply cuts nothing. A call recorded before offsets existed defaults
  * to the end of the text, as web does, so an old prose-then-calls turn still renders whole.
  */
+/**
+ * The text from the cut on, with a blank line wherever a tool call interrupted the model.
+ *
+ * Usually one segment, because the cut lands on the last call. Two paths can leave a boundary
+ * inside the range anyway: the fallback below, when the final segment is empty, and a retry's
+ * stale offset, which can sit after a later call's. Model text carries no separator of its own, so
+ * concatenating across a boundary runs two sentences together — "…at 40%.Two failure signatures."
+ */
+const visibleText = (text: string, calls: ReadonlyArray<ChatToolCall>, start: number): string => {
+	const bounds = [...new Set(calls.map((call) => call.textOffset ?? text.length))]
+		.filter((at) => at > start && at < text.length)
+		.sort((left, right) => left - right)
+	const segments: Array<string> = []
+	let from = start
+	for (const at of [...bounds, text.length]) {
+		segments.push(text.slice(from, at).trim())
+		from = at
+	}
+	return segments.filter((segment) => segment.length > 0).join("\n\n")
+}
+
 const answerOffset = (text: string, calls: ReadonlyArray<ChatToolCall>, running: boolean): number => {
 	const offsets = calls.map((call) => call.textOffset ?? text.length)
 	// Still running: the segment after the last call so far, which may yet be the answer. The next

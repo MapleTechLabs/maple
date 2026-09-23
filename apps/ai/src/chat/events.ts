@@ -29,6 +29,102 @@ export interface AdapterContext {
 	 * carries no parameters, and the card needs the arguments the declaration already delivered.
 	 */
 	readonly isProposed?: (toolName: string) => boolean
+	/** One {@link makeTextSanitizer} per run: the state it keeps spans deltas. */
+	readonly sanitizer: TextSanitizer
+}
+
+/**
+ * Markup a model writes into `content` that is not for the reader.
+ *
+ * Two kinds, both seen in production. Thinking, when a model writes it inline as a tag instead of
+ * on the reasoning channel `ReasoningDelta` already drops. And an unparsed tool call: denied tools
+ * at the end of its budget, a model can emit its native tool-call markup as prose, and the provider
+ * passes it through as text. Nothing downstream strips either — web happens to hide unknown tags
+ * through its markdown sanitizer, a chat platform prints them verbatim.
+ *
+ * `leak` marks the tool-call ones, which are reported once per turn: a turn that answers with
+ * markup is a turn that never answered, and the rate is what says whether that needs fixing
+ * upstream rather than here.
+ */
+const HIDDEN_BLOCKS: ReadonlyArray<{
+	readonly open: string
+	readonly close: string
+	readonly leak: boolean
+}> = [
+	{ open: "<think>", close: "</think>", leak: false },
+	{ open: "<thinking>", close: "</thinking>", leak: false },
+	{ open: "◁think▷", close: "◁/think▷", leak: false },
+	{ open: "<|begin_of_thought|>", close: "<|end_of_thought|>", leak: false },
+	{ open: "<tool_call>", close: "</tool_call>", leak: true },
+	{ open: "<function_call>", close: "</function_call>", leak: true },
+	{ open: "<|tool_call_begin|>", close: "<|tool_call_end|>", leak: true },
+]
+
+const LONGEST_OPEN = Math.max(...HIDDEN_BLOCKS.map(({ open }) => open.length))
+
+/** How much of the tail could still grow into an opener, and so must not be emitted yet. */
+const heldTail = (text: string): number => {
+	for (let size = Math.min(LONGEST_OPEN - 1, text.length); size > 0; size--) {
+		const tail = text.slice(-size)
+		if (HIDDEN_BLOCKS.some(({ open }) => open.startsWith(tail))) return size
+	}
+	return 0
+}
+
+export interface TextSanitizer {
+	/** One delta's text, with any hidden block removed. */
+	readonly strip: (text: string) => string
+	/** The opening tag of the first tool call this turn wrote as text, if it wrote one. */
+	readonly leaked: () => string | undefined
+}
+
+/**
+ * A sanitizer for one turn.
+ *
+ * Stateful because a tag arrives split across deltas as readily as whole: text that could still
+ * grow into an opener is held back until the next delta settles it. That costs at most the tail of
+ * the final delta, so a turn ending on a bare `<` loses it — cheaper than the alternative, which
+ * is half a tag reaching a channel because the other half had not arrived.
+ */
+export const makeTextSanitizer = (): TextSanitizer => {
+	let buffer = ""
+	let closing: (typeof HIDDEN_BLOCKS)[number] | undefined
+	let leaked: string | undefined
+	return {
+		leaked: () => leaked,
+		strip: (text) => {
+			buffer += text
+			let out = ""
+			for (;;) {
+				if (closing !== undefined) {
+					const end = buffer.indexOf(closing.close)
+					// Nothing inside a block is emitted; keep only what could still close it. A block
+					// the turn never closes takes the rest of the turn's text with it, which is what
+					// an unparsed tool call at the end of a reply deserves.
+					if (end === -1) {
+						buffer = buffer.slice(Math.max(0, buffer.length - closing.close.length + 1))
+						return out
+					}
+					buffer = buffer.slice(end + closing.close.length)
+					closing = undefined
+					continue
+				}
+				const opened = HIDDEN_BLOCKS.map((block) => ({ at: buffer.indexOf(block.open), block }))
+					.filter(({ at }) => at !== -1)
+					.sort((left, right) => left.at - right.at)[0]
+				if (opened === undefined) {
+					const held = heldTail(buffer)
+					out += buffer.slice(0, buffer.length - held)
+					buffer = buffer.slice(buffer.length - held)
+					return out
+				}
+				out += buffer.slice(0, opened.at)
+				buffer = buffer.slice(opened.at + opened.block.open.length)
+				closing = opened.block
+				if (opened.block.leak) leaked ??= opened.block.open
+			}
+		},
+	}
 }
 
 /**
@@ -97,11 +193,14 @@ export const toChatEvents = (
 	switch (event._tag) {
 		case "RunStarted":
 			return [tagged(context, { type: "turn-start", messageId: context.messageId })]
-		case "TextDelta":
+		case "TextDelta": {
 			// Some providers stream an empty delta per reasoning token; a run wrote two thousand of
-			// them into the session log in a minute, and the log is what every reconnect replays.
-			if (event.text === "") return []
-			return [tagged(context, { type: "text-delta", messageId: context.messageId, text: event.text })]
+			// them into the session log in a minute, and the log is what every reconnect replays. A
+			// delta that was nothing but hidden markup empties the same way.
+			const text = context.sanitizer.strip(event.text)
+			if (text === "") return []
+			return [tagged(context, { type: "text-delta", messageId: context.messageId, text })]
+		}
 		case "ToolCallDeclared":
 			return [
 				tagged(context, {

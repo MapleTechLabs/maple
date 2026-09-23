@@ -18,7 +18,7 @@ import { agentSessionSpanAttributes, type ResolvedModel } from "../platform/Llm"
 import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
 import { type AgentDefinition, agentForSession, chatAgent } from "./agents"
 import { profileForTurn } from "./profiles"
-import { toChatEvents, type ChatTurnEvent } from "./events"
+import { makeTextSanitizer, toChatEvents, type ChatTurnEvent } from "./events"
 import {
 	accumulateUsage,
 	buildChatToolkit,
@@ -172,6 +172,8 @@ export const runChatTurn = (input: ChatRunInput) => {
 	const isProposed = (name: string) => evaluatePermission(profile.ruleset, name) === "ask"
 
 	let compactions = 0
+	// One per turn: a hidden block straddles deltas, so the state that finds it has to as well.
+	const sanitizer = makeTextSanitizer()
 
 	return AgentRuntime.stream(run, input.text, {
 		threadId: decodeThreadId(input.sessionId),
@@ -187,11 +189,25 @@ export const runChatTurn = (input: ChatRunInput) => {
 		Stream.runForEach((event) =>
 			Effect.sync(() => {
 				if (event._tag === "CompactionPerformed") compactions += 1
-				for (const chat of toChatEvents(event, { messageId: input.messageId, isProposed })) {
+				for (const chat of toChatEvents(event, {
+					messageId: input.messageId,
+					isProposed,
+					sanitizer,
+				})) {
 					input.append(chat)
 				}
 			}),
 		),
+		// Once per turn, the tag alone: a model that wrote a tool call as prose answered with
+		// nothing, and how often that happens is a question about the run's ending, not this turn.
+		Effect.tap(() => {
+			const leaked = sanitizer.leaked()
+			return leaked === undefined
+				? Effect.void
+				: Effect.logWarning("Model wrote a tool call as text").pipe(
+						Effect.annotateLogs({ "chat.leaked_tag": leaked }),
+					)
+		}),
 		Effect.map(
 			(): ChatRunOutcome => ({
 				autonomous: completion?.autonomous ?? false,

@@ -7,7 +7,7 @@
  * the browser and the iOS app both see.
  */
 import { assert, describe, it } from "vitest"
-import { toChatEvents, type AdapterContext } from "./events"
+import { makeTextSanitizer, toChatEvents, type AdapterContext } from "./events"
 
 /**
  * Engine events are structural here on purpose.
@@ -18,7 +18,7 @@ import { toChatEvents, type AdapterContext } from "./events"
 const event = (tag: string, fields: Record<string, unknown> = {}): never =>
 	({ _tag: tag, ...fields }) as never
 
-const base: AdapterContext = { messageId: "msg-1" }
+const base: AdapterContext = { messageId: "msg-1", sanitizer: makeTextSanitizer() }
 
 describe("toChatEvents", () => {
 	it("opens the assistant message on RunStarted", () => {
@@ -198,5 +198,64 @@ describe("toChatEvents", () => {
 		]) {
 			assert.deepEqual(toChatEvents(event(tag), base), [], `${tag} must not reach the transcript`)
 		}
+	})
+})
+
+/**
+ * Markup the model wrote into `content`, which a channel would print verbatim.
+ *
+ * Every case arrives in chunks, because that is how a delta stream delivers one: a tag split
+ * across two deltas is what a per-delta regex gets wrong, and the reason this keeps state at all.
+ */
+describe("makeTextSanitizer", () => {
+	const stripped = (chunks: ReadonlyArray<string>) => {
+		const sanitizer = makeTextSanitizer()
+		const text = chunks.map(sanitizer.strip).join("")
+		return { text, leaked: sanitizer.leaked() }
+	}
+
+	it("passes ordinary prose through, chunk for chunk", () => {
+		assert.equal(stripped(["check", "out is ", "timing out."]).text, "checkout is timing out.")
+	})
+
+	it("drops an inline thinking block whose tag arrives split across deltas", () => {
+		assert.equal(stripped(["Before <th", "ink>hid", "den</thi", "nk> after"]).text, "Before  after")
+	})
+
+	it("drops every thinking spelling a model might reach for", () => {
+		for (const [open, close] of [
+			["<think>", "</think>"],
+			["<thinking>", "</thinking>"],
+			["◁think▷", "◁/think▷"],
+			["<|begin_of_thought|>", "<|end_of_thought|>"],
+		]) {
+			assert.equal(stripped([`A${open}h`, `idden${close}B`]).text, "AB", open)
+		}
+	})
+
+	it("drops a tool call written as text and names the tag once", () => {
+		const call = "<tool_call>search_errors<arg_key>service</arg_key></tool_call>"
+		const { text, leaked } = stripped(["Errors are up.", call.slice(0, 9), call.slice(9)])
+
+		assert.equal(text, "Errors are up.")
+		assert.equal(leaked, "<tool_call>")
+	})
+
+	it("takes the rest of the turn with a block the model never closes", () => {
+		const { text, leaked } = stripped(["The answer. <tool_call>search", "_errors<arg_key>svc"])
+
+		assert.equal(text, "The answer. ")
+		assert.equal(leaked, "<tool_call>")
+	})
+
+	it("reports nothing for a turn that only ever wrote prose", () => {
+		assert.equal(stripped(["1 < 2 and 2 > 1"]).leaked, undefined)
+	})
+
+	it("holds back a tail that could still become a tag, and releases it when it cannot", () => {
+		const sanitizer = makeTextSanitizer()
+		// `<t` could still grow into `<think>` or `<tool_call>`, so it waits for the next delta.
+		assert.equal(sanitizer.strip("a < b and c <t"), "a < b and c ")
+		assert.equal(sanitizer.strip("ables"), "<tables")
 	})
 })

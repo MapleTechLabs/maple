@@ -213,6 +213,26 @@ describe("renderChatMessage", () => {
 		expect(renderChatMessage(mixed, context)).toEqual([{ kind: "prose", markdown: "The answer." }])
 	})
 
+	it("puts a blank line where a call interrupted the model, never running two segments together", () => {
+		// Offsets are not sorted, so a stale one can sit before a later call's and leave a boundary
+		// inside what is shown. Model text carries no separator of its own.
+		const interrupted: ChatMessage = {
+			id: "a1",
+			role: "assistant",
+			text: "Errors are up on checkout.The pool is saturated.",
+			toolCalls: [
+				{ id: "c1", name: "find_errors", input: {}, output: null, textOffset: 26 },
+				{ id: "c2", name: "search_traces", input: {}, output: null, textOffset: 0 },
+			],
+			createdAt: 0,
+			startSeq: 1,
+		}
+
+		expect(renderChatMessage(interrupted, context)).toEqual([
+			{ kind: "prose", markdown: "Errors are up on checkout.\n\nThe pool is saturated." },
+		])
+	})
+
 	it("does not cut the answer at an offset a retry left behind", () => {
 		const retried = turn([
 			{ type: "turn-start", messageId: "a1" },
