@@ -47,7 +47,8 @@ a new directive.`
  * What lives here is the part a *renderer* has to agree with — the chart payload's fields, the
  * annotation grammar, how a widget is authored. What stays inline in each prompt is the part that
  * is genuinely about that surface: where the reply is read, and how its subject is chosen. The
- * chart `unit:` line was fixed twice in one week while it existed in two copies.
+ * chart `unit:` line is the reason for the split: it is the line most often corrected, and every
+ * surface has to be corrected with it.
  */
 const TOOL_SELECTION_RULES = `- "How is the system doing?" starts with list_services — there is no system_health tool. Drill into the worst service with diagnose_service only if the answer needs it
 - A named service goes to diagnose_service; a mentioned error goes to find_errors, then error_detail for specifics
@@ -62,6 +63,7 @@ const CHART_FENCE_CONTRACT = `\`\`\`chart
 - bucket: an ISO 8601 UTC timestamp. A row whose bucket does not parse is dropped
 - series: one entry per line, keyed by what the reader should call it — the series name is the tooltip's label
 - unit: one of number, percent (the number as printed, so 4.5 is 4.5%), fraction (0–1, so 0.045 is 4.5%), duration_ms, duration_s, duration_us, duration_ns, bytes, requests_per_sec
+- Pick percent or fraction by the numbers you are holding, not by what the column is called: a rate a tool printed as "4.5%" is percent, and the 0.045 the same rate comes back as from SQL is fraction. Labelling 0.045 percent charts it as 0.045%, a hundredth of the real rate
 - Only numbers a tool actually returned. Never interpolate a missing bucket, and never chart a series you did not measure`
 
 /** The entity-annotation grammar, which every renderer parses. */
