@@ -134,6 +134,10 @@ const declareMapleDb = (stage: MapleStage, region: MapleRegion) =>
 					origin: role.origin,
 					// Read-after-write everywhere, as on the managed dev config.
 					caching: { disabled: true },
+					// Hyperdrive defaults to ~100 origin connections per config; the EU
+					// cluster has max_connections=25, shared with Electric and the gateway.
+					// Raise with the cluster size.
+					originConnectionLimit: 8,
 				})
 			})
 		// alerting has its own config and the rest share api's: the split prd was measured into.

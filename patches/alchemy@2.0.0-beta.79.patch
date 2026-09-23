@@ -260,3 +260,35 @@ index 108799a..6904358 100644
      successor: context.successor,
      organization: context.organization,
      database: context.database,
+diff --git a/lib/AWS/ECS/CapacityProvider.js b/lib/AWS/ECS/CapacityProvider.js
+index c274c91..51984f5 100644
+--- a/lib/AWS/ECS/CapacityProvider.js
++++ b/lib/AWS/ECS/CapacityProvider.js
+@@ -91,7 +91,7 @@ export const CapacityProviderProvider = () => Provider.effect(CapacityProvider,
+         read: Effect.fn(function* ({ id, olds, output }) {
+             const name = output?.name ?? (yield* toName(id, olds ?? {}));
+             const found = yield* describe(name);
+-            if (!found?.name || !found.capacityProviderArn) {
++            if (!found?.name || !found.capacityProviderArn || found.status === "INACTIVE") {
+                 return undefined;
+             }
+             const internalTags = yield* createInternalTags(id);
+diff --git a/src/AWS/ECS/CapacityProvider.ts b/src/AWS/ECS/CapacityProvider.ts
+index c1e65c2..c78d9c2 100644
+--- a/src/AWS/ECS/CapacityProvider.ts
++++ b/src/AWS/ECS/CapacityProvider.ts
+@@ -188,7 +188,13 @@ export const CapacityProviderProvider = () =>
+         read: Effect.fn(function* ({ id, olds, output }) {
+           const name = output?.name ?? (yield* toName(id, olds ?? {}));
+           const found = yield* describe(name);
+-          if (!found?.name || !found.capacityProviderArn) {
++          // A deleted provider stays describable as INACTIVE for a while; it
++          // cannot be updated, so it is not a provider we own.
++          if (
++            !found?.name ||
++            !found.capacityProviderArn ||
++            found.status === "INACTIVE"
++          ) {
+             return undefined;
+           }
+           const internalTags = yield* createInternalTags(id);
