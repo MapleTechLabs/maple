@@ -1,21 +1,31 @@
 import { readFileSync } from "node:fs"
+import { deserialize } from "node:v8"
 import { PGlite } from "@electric-sql/pglite"
 import { Effect, Layer } from "effect"
-import { snapshotPath } from "../../test/pglite-snapshot"
+import { inject } from "vitest"
+
+import { FixtureMemoryFS, type PgliteFixture } from "../../test/pglite-fixture"
 import { Database } from "./DatabaseLive"
 import { makeDatabaseFromInstance } from "./DatabasePgliteLive"
+
+declare module "vitest" {
+	interface ProvidedContext {
+		pgliteSnapshot: string
+	}
+}
 
 // The post-migration data directory, read once per worker process and shared by
 // every instance it creates. The vitest globalSetup guarantees it exists before
 // any worker starts; a missing file means this module was loaded outside the
 // suite's own config, which is a wiring bug rather than something to paper over.
-const SNAPSHOT = new Blob([readFileSync(snapshotPath)])
+// SAFETY: globalSetup serializes this exact internal type into the engine/version-keyed fixture.
+const SNAPSHOT = deserialize(readFileSync(inject("pgliteSnapshot"))) as PgliteFixture
 
 /**
  * Per-test embedded Postgres. Each call creates a fresh in-memory PGlite
  * instance restored from the pre-migrated snapshot, so the schema is already
- * there and no migration runs per test — see test/pglite-snapshot.ts for why
- * (initdb inside WASM, not the migration, was 85% of the 429ms boot). The same
+ * there and no migration or tar parsing runs per test. FixtureMemoryFS copies
+ * each file into a new filesystem; no live database is reused. The same
  * instance backs the raw-SQL helpers below — PGlite is single-connection, so
  * there is no second connection to the DB.
  */
@@ -70,7 +80,7 @@ const withDateParamGuard = <T extends object>(client: T): T =>
 	})
 
 export const createTestDb = (track?: TestDb[]): TestDb => {
-	const pglite = new PGlite({ loadDataDir: SNAPSHOT })
+	const pglite = new PGlite({ fs: new FixtureMemoryFS(SNAPSHOT) })
 	// Building the layer twice over the same DB is legitimate (tests that provide
 	// makeLayer twice to simulate concurrent service instances). Restoring the
 	// snapshot is the constructor's job and happens once, so both builds just wait

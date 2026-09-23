@@ -30,7 +30,7 @@
 		"lint:fix": "oxlint -c .oxlintrc.effect.json --fix alchemy.run.ts scripts apps packages lib examples",
 		"alchemy:build-deps": "turbo build --filter=@maple-dev/effect-sdk --filter=@maple-dev/alchemy --filter=@maple-dev/browser",
 		"alchemy:deploy": "bun run alchemy:build-deps && alchemy deploy --yes",
-		"alchemy:deploy:prd": "bun run alchemy:build-deps && alchemy deploy --yes --adopt --stage prd",
+		"alchemy:deploy:prd": "bun run alchemy:build-deps && alchemy deploy --yes --adopt --stage ${MAPLE_STAGE:-prd}",
 		"alchemy:deploy:pr": "bun run alchemy:build-deps && alchemy deploy --yes --adopt --stage pr-${PR_NUMBER}",
 		"alchemy:destroy": "bun run alchemy:build-deps && alchemy destroy --yes",
 		"alchemy:destroy:pr": "bun run alchemy:build-deps && alchemy destroy --yes --stage pr-${PR_NUMBER}",
@@ -78,7 +78,9 @@
 	"packageManager": "bun@1.4.0",
 	"catalog": {
 		"vite": "^8.0.16",
-		"vitest": "^4.1.9"
+		"vitest": "^5.0.1",
+		"@vitest/browser-playwright": "^5.0.1",
+		"playwright": "^1.62.1"
 	},
 	"catalogs": {
 		"alchemy": {

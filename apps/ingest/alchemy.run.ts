@@ -14,6 +14,7 @@ import {
 	INGEST_EC2_INSTANCE_TYPE,
 	INGEST_EC2_TASK_SIZE,
 	parseIngestFleets,
+	pgUrlRequireSsl,
 	resolveAwsRegion,
 	resolveAwsResourceName,
 	resolveCollectorEndpoint,
@@ -29,7 +30,11 @@ import {
 import { ReplayBlobs } from "../api/src/resources/replay-blobs.ts"
 import { issueCertificateViaCloudflare } from "@maple/infra/acm"
 import type { MapleDomains, MapleStage } from "@maple/infra/cloudflare"
-import { resolveDeploymentEnvironment, resolveWorkerName } from "@maple/infra/cloudflare"
+import {
+	resolveDeploymentEnvironment,
+	resolveStorageJurisdiction,
+	resolveWorkerName,
+} from "@maple/infra/cloudflare"
 // Only the primitives. The grouped helpers in that module return Worker-binding
 // shapes (Redacted secrets inline); these values feed ECS `env:` and Secrets
 // Manager ARNs instead, so the gateway composes them itself.
@@ -149,12 +154,15 @@ const deriveSecretAccessKey = (value: Output.Output<Redacted.Redacted<string>>) 
  * (`stageEnablesReplayBlobs`) — the bucket stays bound on the api side either
  * way, so anything already written keeps playing back.
  */
-const replayBlobWriterCredentials = (stage: MapleStage) =>
+const replayBlobWriterCredentials = (stage: MapleStage, region: MapleRegion) =>
 	Effect.gen(function* () {
 		if (!stageEnablesReplayBlobs(stage)) return undefined
 		// Yielded so the token is ordered behind the bucket.
 		yield* ReplayBlobs
-		const bucketName = resolveWorkerName("replay-blobs", stage)
+		const bucketName = resolveWorkerName("replay-blobs", stage, region)
+		// A jurisdictional bucket lives under its own S3 endpoint and its own
+		// token resource segment; `default` is the non-jurisdictional US bucket.
+		const jurisdiction = resolveStorageJurisdiction(region) ?? "default"
 
 		// Plan-time: it keys the policy map and the endpoint, neither of which
 		// can take a lazy value.
@@ -171,15 +179,18 @@ const replayBlobWriterCredentials = (stage: MapleStage) =>
 					permissionGroups: ["Workers R2 Storage Bucket Item Write"],
 					// `<account>_<jurisdiction>_<bucket>`, `default` = non-jurisdictional.
 					resources: {
-						[`com.cloudflare.edge.r2.bucket.${accountId}_default_${bucketName}`]: "*",
+						[`com.cloudflare.edge.r2.bucket.${accountId}_${jurisdiction}_${bucketName}`]: "*",
 					},
 				},
 			],
 		})
 
 		return {
-			/** Account-scoped S3 endpoint. A plan-time string — the account id is env-supplied. */
-			endpoint: `https://${accountId}.r2.cloudflarestorage.com`,
+			/** Account-scoped S3 endpoint, jurisdiction-qualified for a pinned bucket. A plan-time string — the account id is env-supplied. */
+			endpoint:
+				jurisdiction === "default"
+					? `https://${accountId}.r2.cloudflarestorage.com`
+					: `https://${accountId}.${jurisdiction}.r2.cloudflarestorage.com`,
 			bucket: bucketName,
 			/** The API token's id. Only known after the token exists, hence an Output. */
 			accessKeyId: Output.asOutput(token.tokenId),
@@ -212,7 +223,7 @@ const replayBlobWriterCredentials = (stage: MapleStage) =>
  */
 export const createMapleIngest = ({ stage, domains, region, dbRole }: CreateMapleIngestOptions) =>
 	Effect.gen(function* () {
-		const replayBlobs = yield* replayBlobWriterCredentials(stage)
+		const replayBlobs = yield* replayBlobWriterCredentials(stage, region)
 		const taskSize = resolveIngestTaskSize(stage)
 		const scaling = resolveIngestScaling(stage)
 		const name = (base: string) => resolveAwsResourceName(base, stage, region)
@@ -436,7 +447,7 @@ export const createMapleIngest = ({ stage, domains, region, dbRole }: CreateMapl
 		// PSBouncer (6432) as a role that only reads ingest keys. Sharing the name
 		// would silently hand every task the migration admin's credentials.
 		const pgUrl = dbRole
-			? yield* secretFrom("maple-pg-url", dbRole.connectionUrlPooled)
+			? yield* secretFrom("maple-pg-url", pgUrlRequireSsl(dbRole.connectionUrlPooled))
 			: yield* secret("maple-pg-url", yield* requiredPlain("MAPLE_INGEST_PG_URL"))
 		const keyEncryptionKey = yield* secret(
 			"ingest-key-encryption-key",
@@ -761,10 +772,10 @@ export const createMapleIngest = ({ stage, domains, region, dbRole }: CreateMapl
 			// grace period covers the startup Postgres probe, which exits the
 			// process on failure rather than serving degraded.
 			healthCheckGracePeriod: "60 seconds" as const,
-		// Old tasks stay scale-in protected while the WAL has backlog (up to 15
-		// minutes, `task_protection.rs`) and ECS will not stop them, so a healthy
-		// rollout can outlast alchemy's 10-minute default. It did on 2026-09-21.
-		deploymentStabilizationTimeout: "25 minutes" as const,
+			// Old tasks stay scale-in protected while the WAL has backlog (up to 15
+			// minutes, `task_protection.rs`) and ECS will not stop them, so a healthy
+			// rollout can outlast alchemy's 10-minute default. It did on 2026-09-21.
+			deploymentStabilizationTimeout: "25 minutes" as const,
 
 			logging: { retention: "30 days" as const },
 

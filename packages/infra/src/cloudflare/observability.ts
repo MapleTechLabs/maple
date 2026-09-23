@@ -3,18 +3,30 @@ import * as RemovalPolicy from "alchemy/RemovalPolicy"
 import * as Effect from "effect/Effect"
 import { plainWithDefault, requiredPlain } from "../env.ts"
 import { MapleStack } from "./stack.ts"
+import { regionHostsSharedApps } from "./stage.ts"
+
+/**
+ * The production destinations' slugs, which Cloudflare derives from their
+ * names. A stage that does not own the destinations references these.
+ */
+const PRD_LOGS_DESTINATION = "maple-workers-logs"
+const PRD_TRACES_DESTINATION = "maple-workers-traces"
 
 /**
  * Workers Observability destinations for the asset Workers' platform logs and
- * traces (`landing`, `local-ui`): OTLP into Maple's own ingest. Account-wide,
- * so they exist in production only and are `retain`ed — the other stages fall
- * back to the `maple` destination slug until production has deployed them.
- * Yielded from each Worker module that references them; alchemy registers a
- * resource by id, so the second yield returns the first's.
+ * traces (`landing`, `local-ui`, the sandbox): OTLP into Maple's own ingest.
+ * Account-wide, so exactly one deploy owns them: the `us` prd, like the other
+ * shared apps (`regionHostsSharedApps`), `retain`ed. Every other stage, the
+ * EU prd included, references the slugs above instead — owning them twice
+ * would have two stacks reconciling one destination, and the deploy token
+ * cannot even list destinations to adopt them (Cloudflare answers
+ * "Authentication error" to that call, which is what failed the first
+ * `prd-eu` deploy). Yielded from each Worker module that references them;
+ * alchemy registers a resource by id, so the second yield returns the first's.
  */
 export const WorkersObservabilityDestinations = Effect.gen(function* () {
-	const { stage } = yield* MapleStack
-	if (stage.kind !== "prd") {
+	const { stage, region } = yield* MapleStack
+	if (stage.kind !== "prd" || !regionHostsSharedApps(region)) {
 		return { logsDestination: undefined, tracesDestination: undefined }
 	}
 
@@ -55,10 +67,10 @@ export const assetWorkerObservability = ({
 	logs: {
 		enabled: true,
 		invocationLogs: true,
-		destinations: [logsDestination?.slug ?? "maple"],
+		destinations: [logsDestination?.slug ?? PRD_LOGS_DESTINATION],
 	},
 	traces: {
 		enabled: false,
-		destinations: [tracesDestination?.slug ?? "maple"],
+		destinations: [tracesDestination?.slug ?? PRD_TRACES_DESTINATION],
 	},
 })

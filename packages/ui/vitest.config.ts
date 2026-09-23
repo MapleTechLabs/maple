@@ -1,12 +1,33 @@
+import tailwindcss from "@tailwindcss/vite"
+import { playwright } from "@vitest/browser-playwright"
 import { defineConfig } from "vitest/config"
 
-// The package is mostly pure logic, but hooks and components live here too and
-// their behavior tests used to be exiled to apps/web for want of a renderer.
-// jsdom is the default environment so a `.test.tsx` next to a component just
-// works; the pure-logic suites don't care either way.
 export default defineConfig({
+	plugins: [tailwindcss()],
+	resolve: { dedupe: ["react", "react-dom"] },
 	test: {
-		environment: "jsdom",
-		include: ["src/**/*.test.{ts,tsx}"],
+		projects: [
+			{
+				test: {
+					name: "node",
+					server: { deps: { inline: ["@effect/vitest"] } },
+					environment: "node",
+					include: ["src/**/*.test.{ts,tsx}"],
+					exclude: ["src/**/*.browser.test.{ts,tsx}"],
+				},
+			},
+			{
+				test: {
+					name: "browser",
+					include: ["src/**/*.browser.test.{ts,tsx}"],
+					browser: {
+						enabled: true,
+						headless: true,
+						provider: playwright(),
+						instances: [{ browser: "chromium" }],
+					},
+				},
+			},
+		],
 	},
 })

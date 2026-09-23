@@ -31,11 +31,14 @@
 import { connectors } from "@maple/chat-platform/connectors"
 import {
 	cachedRecoverable,
-	CLOUDFLARE_WORKER_PLACEMENT,
 	MapleDb,
+	mapleDbEnv,
 	MapleStack,
+	type MapleDomains,
+	type MapleRegion,
 	type MapleStage,
 	resolveWorkerName,
+	resolveWorkerPlacement,
 } from "@maple/infra/cloudflare"
 import { merge, optionalSecret, plainWithDefault, selfObservabilityEnv } from "@maple/infra/env"
 import { WorkerTelemetry } from "@maple/infra/worker-telemetry"
@@ -56,14 +59,14 @@ import { ConnectorSocketLive, ConnectorSocketObject } from "./socket/ConnectorSo
  * values: a stage without a platform's credentials deploys and runs, and that
  * connector is skipped.
  */
-const configuredEnv = (stage: MapleStage) =>
+const configuredEnv = (stage: MapleStage, region: MapleRegion, domains: MapleDomains) =>
 	merge(
-		selfObservabilityEnv(stage),
+		selfObservabilityEnv(stage, region),
 		connectorConfigEnv,
-		// Where a relayed answer's links point, and what signs the image of a chart the agent drew.
-		// The key is optional here where the API requires it: without one a reply carries its charts
-		// as text, which is what `chatChartImageUrl` answers `null` for.
-		plainWithDefault("MAPLE_APP_BASE_URL", "https://app.maple.dev"),
+		// Where a relayed answer's links point (this instance's app), and what signs the image of a
+		// chart the agent drew. The key is optional here where the API requires it: without one a
+		// reply carries its charts as text, which is what `chatChartImageUrl` answers `null` for.
+		plainWithDefault("MAPLE_APP_BASE_URL", `https://${domains.web ?? "app.maple.dev"}`),
 		optionalSecret("MAPLE_SHARE_TOKEN_HMAC_KEY"),
 	)
 
@@ -75,13 +78,13 @@ const configuredEnv = (stage: MapleStage) =>
  */
 const props = Effect.gen(function* () {
 	if (globalThis.__ALCHEMY_RUNTIME__) return { main: import.meta.url }
-	const { stage, workerDev, devEnv } = yield* MapleStack
-	const env = yield* configuredEnv(stage)
+	const { stage, region, domains, workerDev, devEnv, db } = yield* MapleStack
+	const env = yield* configuredEnv(stage, region, domains)
 	return {
 		main: import.meta.url,
-		name: resolveWorkerName("chat-bot", stage),
+		name: resolveWorkerName("chat-bot", stage, region),
 		compatibility: { date: "2026-04-08", flags: ["nodejs_compat"] },
-		placement: CLOUDFLARE_WORKER_PLACEMENT,
+		placement: resolveWorkerPlacement(region),
 		// Under `bun dev`: a sticky port the app's route follows.
 		dev: workerDev("chat-bot"),
 		// See the module comment: nothing calls in from the public internet yet.
@@ -92,8 +95,9 @@ const props = Effect.gen(function* () {
 			// becomes a turn on it, and `chatSessionStub` reads it off `env` under the class name.
 			ChatSession: Cloudflare.DurableObject("ChatSession", {
 				className: "ChatSession",
-				scriptName: resolveWorkerName("ai", stage),
+				scriptName: resolveWorkerName("ai", stage, region),
 			}),
+			...mapleDbEnv(db, "chat-bot"),
 			...env,
 			...devEnv,
 		},

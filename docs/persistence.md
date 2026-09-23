@@ -88,8 +88,9 @@ bun run --cwd packages/db db:studio
 
 ## Deployment and tests
 
-The prd deploy applies migrations: `alchemy.run.ts` declares the PlanetScale `main` branch as
-`Planetscale.PostgresBranch` with `migrations` pointed at `packages/db/drizzle`, and the api, ai and
+The prd deploy applies migrations: `alchemy.run.ts` declares the instance's PlanetScale `main` branch
+(`maple` on `prd`, `maple-eu` on `prd-eu`) as `Planetscale.PostgresBranch` with `migrations` pointed
+at `packages/db/drizzle`, and the api, ai and
 alerting Workers carry its name in their env so they upload after it. Bookkeeping is alchemy's
 `__alchemy_migrations`; `drizzle.__drizzle_migrations` was copied in once and is frozen, so never run
 `drizzle-kit migrate` against prd. The deploy migrates as a temporary role that is dropped with
@@ -109,6 +110,17 @@ The ingest gateway's credential is declared rather than minted: `Planetscale.Pos
 its id sits in the task env so a replaced role rolls the fleet onto the new secret before alchemy
 deletes the old role. `MAPLE_INGEST_PG_URL` in Infisical remains only for stages that deploy a fleet
 without a database branch (PR previews).
+
+Electric's is declared too, on both instances: `Planetscale.PostgresRole("electric", { withReplication:
+true })`, whose direct 5432 URL is the task's `DATABASE_URL` (`docs/electric-sync.md`). `withReplication`
+rides Maple's alchemy patch until [alchemy-run/alchemy#1777](https://github.com/alchemy-run/alchemy/pull/1777)
+ships; alchemy renders every role URL with `sslmode=verify-full`, which neither ECS client accepts, so
+`pgUrlRequireSsl` in `@maple/infra/aws` rewrites it for both.
+
+The EU instance's Worker credentials are declared the same way: `declareMapleDb` in `alchemy.run.ts`
+mints one role per consumer on `maple-eu` and a Hyperdrive config on each role's direct origin, and
+the Workers bind them from their props. No dashboard config and no hand-minted role exist there
+(`resolveDatabaseMode` is `"declared"`); the US prd keeps its dashboard-managed configs, bound by id.
 
 The deploy reads `PLANETSCALE_API_TOKEN_ID` / `PLANETSCALE_API_TOKEN` /
 `PLANETSCALE_ORGANIZATION` from Infisical prod; `bun dev` leaves the PlanetScale provider out.

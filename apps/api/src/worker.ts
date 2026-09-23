@@ -14,12 +14,14 @@
  * from those yields.
  */
 import {
-	CLOUDFLARE_WORKER_PLACEMENT,
 	emailBinding,
+	mapleDbEnv,
 	MapleStack,
 	AiWorker,
+	type MapleRegion,
 	type MapleStage,
 	resolveWorkerName,
+	resolveWorkerPlacement,
 } from "@maple/infra/cloudflare"
 import { isolateContext } from "@maple/infra/worker-http"
 import { WorkerTelemetry } from "@maple/infra/worker-telemetry"
@@ -40,7 +42,7 @@ import ClickHouseSchemaApplyWorkflow from "./workflows/ClickHouseSchemaApplyWork
  * is bound by stage — alchemy's capabilities have no "on some stages" form —
  * or read by name by code the Worker does not own (the LLM shim's `AI`).
  */
-const makeWorkerBindings = ({ stage }: { stage: MapleStage }) => ({
+const makeWorkerBindings = ({ stage, region }: { stage: MapleStage; region: MapleRegion }) => ({
 	// Workers AI (`env.AI`) behind an AI Gateway, driving the AI-triage agent.
 	// NOTE: the deploy token needs the account-level "AI Gateway: Edit" permission
 	// for this resource. Deployed stages only: the gateway has no local emulation,
@@ -54,7 +56,7 @@ const makeWorkerBindings = ({ stage }: { stage: MapleStage }) => ({
 	// that needs no such ordering.
 	ChatSession: Cloudflare.DurableObject("ChatSession", {
 		className: "ChatSession",
-		scriptName: resolveWorkerName("ai", stage),
+		scriptName: resolveWorkerName("ai", stage, region),
 	}),
 })
 
@@ -66,18 +68,18 @@ const makeWorkerBindings = ({ stage }: { stage: MapleStage }) => ({
  */
 const props = Effect.gen(function* () {
 	if (globalThis.__ALCHEMY_RUNTIME__) return { main: import.meta.url }
-	const { stage, domains, workerDev, devEnv, dbSchema } = yield* MapleStack
+	const { stage, region, domains, workerDev, devEnv, db } = yield* MapleStack
 	// maple-ai, which serves `/mcp` and the chat surface. api keeps the hostname
 	// and forwards, so the public address and the OAuth identity do not move.
 	const ai = yield* AiWorker
 	// Resolved before any resource is created, so a misconfigured deploy fails
 	// with the full list of missing vars rather than part-way through applying.
-	const configuredEnv = yield* apiConfiguredEnv(stage, domains)
+	const configuredEnv = yield* apiConfiguredEnv(stage, region, domains)
 	return {
 		main: import.meta.url,
-		name: resolveWorkerName("api", stage),
+		name: resolveWorkerName("api", stage, region),
 		compatibility: { date: "2026-04-08", flags: ["nodejs_compat"] },
-		placement: CLOUDFLARE_WORKER_PLACEMENT,
+		placement: resolveWorkerPlacement(region),
 		// Under `bun dev`: a sticky port the app's route follows.
 		dev: workerDev("api"),
 		workersDev: true,
@@ -99,8 +101,8 @@ const props = Effect.gen(function* () {
 		domain: domains.api,
 		// `devEnv` last, so `.env.local` cannot override the inter-app URLs.
 		env: {
-			...makeWorkerBindings({ stage }),
-			...(dbSchema && { MAPLE_DB_BRANCH: dbSchema.name }),
+			...makeWorkerBindings({ stage, region }),
+			...mapleDbEnv(db, "api"),
 			AI_WORKER: ai,
 			...configuredEnv,
 			...devEnv,

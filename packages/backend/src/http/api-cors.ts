@@ -14,7 +14,7 @@ export const API_CORS_OPTIONS = {
 	// Every browser call carries an Authorization header, so every one is
 	// preflighted. Without this the response has no Access-Control-Max-Age and
 	// Chrome falls back to a 5s preflight cache — and since the worker is pinned
-	// to us-east-1 (CLOUDFLARE_WORKER_PLACEMENT), each expiry costs a full extra
+	// to one region (resolveWorkerPlacement), each expiry costs a full extra
 	// ~165ms round trip from Europe BEFORE the real request is sent. Those
 	// preflights are invisible in our own traces because the tracer is disabled
 	// for OPTIONS. Browsers clamp this value themselves (Chrome 2h, Firefox 24h).
