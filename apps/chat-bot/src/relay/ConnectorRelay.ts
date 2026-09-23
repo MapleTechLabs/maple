@@ -48,6 +48,20 @@ interface ConnectorRelayState {
 const openedKey = (conversationKey: string): string => `opened:${conversationKey}`
 
 /**
+ * The half of a turn's ports that the relay OBJECT answers, rather than the database or the
+ * platform.
+ *
+ * Declared here, structurally, rather than imported from `./turn.ts`: that module reaches the
+ * connector registry and the database, and this file is evaluated when Cloudflare validates the
+ * uploaded script. `run.ts` is where the two halves meet.
+ */
+export interface ConnectorRelayPorts {
+	readonly announceUnlinked: Effect.Effect<boolean>
+	readonly ownsConversation: (conversationKey: string) => Effect.Effect<boolean>
+	readonly rememberConversation: (conversation: ChatConversation) => Effect.Effect<void>
+}
+
+/**
  * How often a relaying object re-arms its alarm.
  *
  * An outbound fetch never keeps a Durable Object alive and an object with no incoming event is
@@ -87,13 +101,30 @@ export class ConnectorRelay {
 		if (this.live > 0) this.armKeepAlive()
 	}
 
+	/**
+	 * What this object gives the turn it is running: the three answers only the object can give.
+	 *
+	 * Named and public so it can be driven without the heavy half — everything the turn itself
+	 * needs is behind a dynamic import, and these are the part of it this class owns.
+	 */
+	relayPorts(event: InboundEvent): ConnectorRelayPorts {
+		return {
+			announceUnlinked: Effect.sync(() => this.takeUnlinkedNotice()),
+			ownsConversation: (conversationKey) => Effect.promise(() => this.opened(conversationKey)),
+			rememberConversation: (conversation) =>
+				Effect.promise(() => this.rememberOpened(event, conversation)),
+		}
+	}
+
 	/** Called on the conversation's own object, by whichever object opened it. */
 	async remember(conversationKey: string): Promise<void> {
 		await this.ctx.storage.put(openedKey(conversationKey), true)
 	}
 
+	/** A store that cannot be read answers "not ours", which is mention-only — never a failed event. */
 	private async opened(conversationKey: string): Promise<boolean> {
-		return (await this.ctx.storage.get<boolean>(openedKey(conversationKey))) === true
+		const marker = await this.ctx.storage.get<boolean>(openedKey(conversationKey)).catch(() => undefined)
+		return marker === true
 	}
 
 	/**
@@ -103,12 +134,22 @@ export class ConnectorRelay {
 	 * object's, and is reached by RPC. One that lives inside the channel this event arrived in is
 	 * this object's own, and writing it here rather than through a stub is not an optimization: a
 	 * Durable Object calling itself is how a request deadlocks behind its own input gate.
+	 *
+	 * It is bookkeeping and it is caught here, because the turn this rides on is somebody's
+	 * question: a cross-object call that fails costs the follow-ups AFTER this answer, and must
+	 * never cost the answer — which is what an uncaught rejection in a `waitUntil`ed turn would do,
+	 * in a thread the bot has already opened.
 	 */
 	private async rememberOpened(event: InboundEvent, conversation: ChatConversation): Promise<void> {
 		const here = "channelId" in event ? event.channelId : undefined
-		if (here === conversation.target.channelId) return this.remember(conversation.conversationKey)
 		const name = connectorConversationRelayName(event.connector, conversation.target)
-		await connectorRelayByName(this.env, name)?.remember(conversation.conversationKey)
+		const write =
+			here === conversation.target.channelId
+				? this.remember(conversation.conversationKey)
+				: connectorRelayByName(this.env, name)?.remember(conversation.conversationKey)
+		await write?.catch((cause) => {
+			console.error("[chat-bot.relay] conversation not recorded as the bot's own", cause)
+		})
 	}
 
 	private armKeepAlive(): void {
@@ -123,16 +164,7 @@ export class ConnectorRelay {
 	private async run(event: InboundEvent): Promise<void> {
 		try {
 			const { runInboundEvent } = await import("./run.ts")
-			await runInboundEvent(
-				{
-					env: this.env,
-					announceUnlinked: Effect.sync(() => this.takeUnlinkedNotice()),
-					ownsConversation: (conversationKey) => Effect.promise(() => this.opened(conversationKey)),
-					rememberConversation: (conversation) =>
-						Effect.promise(() => this.rememberOpened(event, conversation)),
-				},
-				event,
-			)
+			await runInboundEvent({ env: this.env, ...this.relayPorts(event) }, event)
 		} catch (cause) {
 			console.error("[chat-bot.relay] event failed", cause)
 		} finally {

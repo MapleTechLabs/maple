@@ -21,7 +21,6 @@ const message: InboundMessage = {
 }
 
 const said = (displayName: string, text: string, secondsAgo: number, isBot = false): ChatHistoryMessage => ({
-	authorId: `id-${displayName}`,
 	displayName,
 	isBot,
 	text,
@@ -83,6 +82,18 @@ describe("the context a turn carries", () => {
 
 		expect(text).toContain("\n2026-09-23T11:59:59Z Bo: 0xxx")
 		expect(text.length).toBeLessThan(5000)
+	})
+
+	it("stops at the budget rather than skipping past one long message", () => {
+		// The cut is a cut, not a filter: what is kept is a contiguous run back from the newest
+		// message, so the model reads a conversation and not an edited one.
+		const text = context([
+			...Array.from({ length: 10 }, (_, index) => said("Bo", `${index}`.padEnd(400, "x"), index + 1)),
+			said("Ada", "short enough to fit", 20),
+		])
+
+		expect(text).toContain("Bo: 0xxx")
+		expect(text).not.toContain("Ada: short enough to fit")
 	})
 
 	it("drops a message the platform gave it no text for", () => {

@@ -69,9 +69,13 @@ export interface ChatConversation {
 	readonly opened: boolean
 }
 
-/** One earlier message in a conversation, as far as the model needs to read it. */
+/**
+ * One earlier message in a conversation, as far as the model needs to read it.
+ *
+ * No author id: the platform's own identifier has no use in a block of text a model reads, and the
+ * contract does not carry an undecoded wire id that a later reader might brand.
+ */
 export interface ChatHistoryMessage {
-	readonly authorId: string
 	readonly displayName: string
 	/** Maple's own earlier answers included — the model is told which lines are its. */
 	readonly isBot: boolean

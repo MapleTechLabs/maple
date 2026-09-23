@@ -232,6 +232,9 @@ describe("discord transport", () => {
 			},
 			// Undated, so it cannot be placed in the conversation at all.
 			{ author: { id: "user_3", username: "bo" }, content: "hm", timestamp: "not a date" },
+			// And one this connector cannot read at all — a message type Discord added, a field that
+			// started arriving as something else. It costs itself, not the page around it.
+			{ author: { id: 4 }, content: null },
 		])
 		const http = stub([{ status: 200, body: page }])
 		return Effect.gen(function* () {
@@ -240,14 +243,12 @@ describe("discord transport", () => {
 
 			expect(recent).toEqual([
 				{
-					authorId: "bot_1",
 					displayName: "maple",
 					isBot: true,
 					text: "Checkout is slow because of the payments call.",
 					at: Date.parse("2026-09-23T12:00:20.000Z"),
 				},
 				{
-					authorId: "user_2",
 					// The server nickname wins over the global name, as it does everywhere else here.
 					displayName: "Ada L",
 					isBot: false,

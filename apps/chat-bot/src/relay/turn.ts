@@ -31,7 +31,7 @@ import {
 } from "@maple/domain/chat-session"
 import type { ChatSessionStub } from "@maple/domain/chat-session-stub"
 import { ChatConnectorId, ExternalUserId, type OrgId } from "@maple/domain/primitives"
-import { Duration, Effect, Exit, Option, Schema } from "effect"
+import { Clock, Duration, Effect, Exit, Option, Schema } from "effect"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import { chatTurnText, CONTEXT_MESSAGE_LIMIT, isFollowUpTurn } from "./conversation.ts"
 import { chatTurnEvents, sessionUnreachable } from "./events.ts"
@@ -157,7 +157,11 @@ const relayMessage = Effect.fn("chat_bot.relay_turn")(function* <R>(
 	}
 	if (Option.isNone(workspace.value)) {
 		yield* Effect.annotateCurrentSpan({ "maple.chat.relay": "unlinked" })
-		if (yield* ports.announceUnlinked) yield* tell(replyTarget(message), UNLINKED_NOTICE)
+		// Asked before the notice is claimed, not after: an unaddressed message that says nothing
+		// must not spend the one notice this conversation gets an hour.
+		if (message.mentionsBot && (yield* ports.announceUnlinked)) {
+			yield* say(transport, replyTarget(message), UNLINKED_NOTICE)
+		}
 		return
 	}
 	const { orgId } = workspace.value.value
@@ -178,13 +182,28 @@ const relayMessage = Effect.fn("chat_bot.relay_turn")(function* <R>(
 
 	// What the conversation's session already holds, which is both what decides an unaddressed
 	// message and what the context block must not repeat. A session that cannot be read answers
-	// neither: `0` leaves the whole context in and takes no follow-up.
-	const transcript = yield* Effect.tryPromise(() => session.history()).pipe(Effect.orElseSucceed(() => []))
+	// neither: `0` leaves the whole context in and takes no follow-up. It degrades the turn twice
+	// over, so it is logged rather than swallowed.
+	const transcript = yield* Effect.tryPromise({
+		catch: sessionUnreachable(sessionId, "The chat session's transcript could not be read"),
+		try: () => session.history(),
+	}).pipe(
+		Effect.tapError((error) =>
+			Effect.logWarning("Chat session transcript could not be read").pipe(
+				Effect.annotateLogs({ "error.type": error._tag }),
+			),
+		),
+		Effect.orElseSucceed(() => []),
+	)
 	const seenUpTo = transcript[transcript.length - 1]?.createdAt ?? 0
-	const now = Date.now()
+	const now = yield* Clock.currentTimeMillis
 
 	if (!message.mentionsBot) {
 		const ownsConversation = yield* ports.ownsConversation(conversation.conversationKey)
+		// Recorded whichever way the gate goes: "the bot does not own this conversation" and "it does,
+		// but the window closed" are the same outcome and different problems, and the second is the
+		// one that would move `FOLLOW_UP_WINDOW_MS`.
+		yield* Effect.annotateCurrentSpan({ "maple.chat.owns_conversation": ownsConversation })
 		if (!isFollowUpTurn({ message, ownsConversation, lastTurnAt: seenUpTo, now })) {
 			return yield* Effect.annotateCurrentSpan({ "maple.chat.relay": "not_addressed" })
 		}
@@ -196,8 +215,15 @@ const relayMessage = Effect.fn("chat_bot.relay_turn")(function* <R>(
 		.history(replyTarget(message), { limit: CONTEXT_MESSAGE_LIMIT, before: message.messageId })
 		.pipe(
 			Effect.tapError((error) =>
+				// The status and the reason, not just the operation: a permission the bot was never
+				// granted and a one-off 5xx otherwise produce identical lines, and the first means
+				// every turn from here on answers with no context at all.
 				Effect.logWarning("Chat conversation history could not be read").pipe(
-					Effect.annotateLogs({ "error.type": error.operation }),
+					Effect.annotateLogs({
+						"error.type": error.operation,
+						"error.message": error.message,
+						"http.response.status_code": error.status ?? 0,
+					}),
 				),
 			),
 			Effect.orElseSucceed((): ReadonlyArray<ChatHistoryMessage> => []),

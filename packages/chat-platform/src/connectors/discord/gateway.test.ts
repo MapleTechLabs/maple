@@ -79,11 +79,12 @@ describe("the handshake", () => {
 			]),
 		)
 		const identify = sent(step.send?.[0])
-		// Asking for an intent the application has not been granted is a 4014, which is fatal — so
-		// anything a reader would not call "on" leaves it off.
-		expect((identify.d as { intents: number }).intents & MESSAGE_CONTENT_INTENT).toBe(
-			wanted ? MESSAGE_CONTENT_INTENT : 0,
-		)
+		// The whole value, not the new bit: asking for an intent the application has not been granted
+		// is a 4014 and fatal, and dropping GUILDS or GUILD_MESSAGES to get it would leave a bot that
+		// connects and never hears a message.
+		expect(identify.d).toMatchObject({
+			intents: wanted ? INTENTS | MESSAGE_CONTENT_INTENT : INTENTS,
+		})
 	})
 
 	it("resumes on HELLO when a session is held", () => {
@@ -227,6 +228,13 @@ describe("close codes", () => {
 	])("stops on %i (%s) instead of looping", (code) => {
 		const step = gatewayProtocol.onClose(ready(), code, "")
 		expect(step.directive?._tag).toBe("stop")
+		// And only the intent code names the intent switch: 4004 is a bad token and sending an
+		// operator to the Bot tab over it is a wasted hour.
+		if (code !== 4014) {
+			expect(step.directive).toMatchObject({
+				reason: expect.not.stringContaining(MESSAGE_CONTENT_CONFIG),
+			})
+		}
 	})
 
 	it("names the privileged intent on 4014, which is what the message-content switch fails as", () => {

@@ -135,7 +135,11 @@ export const Ready = Schema.Struct({
 })
 export const decodeReady = Schema.decodeUnknownOption(Ready)
 
-const User = Schema.Struct({
+/**
+ * Who wrote something, as far as this connector reads it. Exported because the REST half reads the
+ * same Discord user out of a message it fetched, and two models of one wire object drift.
+ */
+export const User = Schema.Struct({
 	id: Schema.String,
 	username: Schema.String,
 	global_name: Schema.optionalKey(Schema.NullOr(Schema.String)),
