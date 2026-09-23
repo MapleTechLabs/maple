@@ -11,10 +11,11 @@ import { ConnectorCredentials, type ChatConnector, type InboundEvent } from "@ma
 import { connectors } from "@maple/chat-platform/connectors"
 import * as MapleCloudflareSDK from "@maple-dev/effect-sdk/cloudflare"
 import { chatSessionStub } from "@maple/domain/chat-session-stub"
-import type { OrgId } from "@maple/domain/primitives"
+import type { ChatConnectorId, OrgId } from "@maple/domain/primitives"
+import type { IntegrationsPersistenceError } from "@maple/domain/http"
 import { workerTelemetryConfig } from "@maple/infra/worker-telemetry"
 import { workerEnvLayer } from "@maple/infra/worker-runtime"
-import { Effect, Layer, Option } from "effect"
+import { Cause, Effect, Layer, Option } from "effect"
 import { FetchHttpClient, HttpClient } from "effect/unstable/http"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import { chatChartImageUrl } from "@maple/backend/services/chat/chat-chart"
@@ -22,12 +23,13 @@ import { Database } from "@maple/backend/platform/DatabaseLive"
 import { layerPg } from "@maple/backend/platform/DatabasePgLive"
 import { mapleDbConnectionLayer } from "@maple/backend/platform/pg-connection-source"
 import { withPgConnectionScope } from "@maple/backend/platform/pg-connection-scope"
+import { resolveChatIdentity } from "@maple/backend/services/integrations/chat-identity-rows"
 import {
 	forgetChatWorkspace,
 	resolveChatWorkspace,
 } from "@maple/backend/services/integrations/chat-workspace-rows"
 import { resolveConnectorConfig } from "../config.ts"
-import { relayInboundEvent, WorkspaceLookupFailed, type RelayPorts } from "./turn.ts"
+import { relayInboundEvent, WorkspaceLookupFailed, type RelayPorts, type RelayWorkspace } from "./turn.ts"
 
 /**
  * This Worker's own SDK instance, at module scope so its buffers are the isolate's.
@@ -71,32 +73,68 @@ const withDatabase = <A, E>(env: Record<string, unknown>, program: Effect.Effect
 		Effect.provide(Layer.provideMerge(layerPg, mapleDbConnectionLayer(env))),
 	)
 
+/**
+ * Logged where the cause is, and re-raised as the relay's own failure: what the relay must not do
+ * is mistake a database it could not read for a workspace nobody linked.
+ */
+const lookupFailed =
+	(connectorId: ChatConnectorId, message: string) =>
+	<A>(effect: Effect.Effect<A, IntegrationsPersistenceError>) =>
+		effect.pipe(
+			Effect.catchCause((cause) =>
+				// Interrupts stay interrupts: a relay cut short mid-lookup has nobody to answer, and
+				// reporting "the workspace could not be read" into the channel would be a lie told by
+				// a fiber that should already have stopped.
+				Cause.hasInterruptsOnly(cause)
+					? Effect.interrupt
+					: Effect.logError("Chat workspace could not be resolved").pipe(
+							Effect.annotateLogs({ "error.type": summarizeCause(cause) }),
+							Effect.andThen(
+								Effect.fail(new WorkspaceLookupFailed({ connector: connectorId, message })),
+							),
+						),
+			),
+		)
+
 const ports = (
 	host: RelayHost,
 	connector: ChatConnector<HttpClient.HttpClient | ConnectorCredentials>,
 ): RelayPorts<HttpClient.HttpClient | ConnectorCredentials> => ({
 	outbound: connector.outbound,
-	resolveWorkspace: (connectorId, workspaceId) =>
+	supportsIdentity: connector.identity !== undefined,
+	/**
+	 * The workspace, and — when a caller names a chat account — the Maple user it is linked to, in
+	 * ONE connection.
+	 *
+	 * Sequential rather than parallel because the second question needs the first one's answer: a
+	 * link is per org, and the org is what the workspace names.
+	 */
+	resolveWorkspace: (connectorId, workspaceId, externalUserId) =>
 		withDatabase(
 			host.env,
-			Effect.flatMap(Database, (database) => resolveChatWorkspace(database, connectorId, workspaceId)),
-		).pipe(
-			// Logged here, where the cause is, and re-raised as the relay's own failure: what the
-			// relay must not do is mistake a database it could not read for a workspace nobody linked.
-			Effect.catchCause((cause) =>
-				Effect.logError("Chat workspace could not be resolved").pipe(
-					Effect.annotateLogs({ "error.type": summarizeCause(cause) }),
-					Effect.andThen(
-						Effect.fail(
-							new WorkspaceLookupFailed({
-								connector: connectorId,
-								message: "The chat workspace could not be read",
-							}),
-						),
-					),
-				),
-			),
-		),
+			Effect.gen(function* () {
+				const database = yield* Database
+				const workspace = yield* resolveChatWorkspace(database, connectorId, workspaceId)
+				// Nothing to link with, or nobody asked: one query.
+				if (
+					Option.isNone(workspace) ||
+					externalUserId === undefined ||
+					connector.identity === undefined
+				) {
+					return Option.map(workspace, (found) => ({ orgId: found.orgId }))
+				}
+				const identity = yield* resolveChatIdentity(
+					database,
+					workspace.value.orgId,
+					connectorId,
+					externalUserId,
+				)
+				return Option.some<RelayWorkspace>({
+					orgId: workspace.value.orgId,
+					...(Option.isNone(identity) ? undefined : { linkedUserId: identity.value.userId }),
+				})
+			}),
+		).pipe(lookupFailed(connectorId, "The chat workspace could not be read")),
 	forgetWorkspace: (connectorId, workspaceId) =>
 		withDatabase(
 			host.env,

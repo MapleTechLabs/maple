@@ -3,6 +3,7 @@ import type { ChatConnector } from "../../connector"
 import { socketIngress } from "../../ingress"
 import type { ConnectorCredentials } from "../../outbound"
 import { gatewayProtocol } from "./gateway"
+import { discordIdentity } from "./identity"
 import { DISCORD_CONNECTOR_ID } from "./id"
 import { discordInstall } from "./install"
 import { discordManifest } from "./manifest"
@@ -20,6 +21,7 @@ export const discord: ChatConnector<HttpClient.HttpClient | ConnectorCredentials
 	id: DISCORD_CONNECTOR_ID,
 	manifest: discordManifest,
 	install: discordInstall,
+	identity: discordIdentity,
 	outbound: discordOutbound,
 	ingress: socketIngress(gatewayProtocol),
 }

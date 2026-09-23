@@ -21,7 +21,7 @@
 import { ChatConversationKey } from "@maple/primitives"
 import { Array as Arr, Duration, Effect, Option, Redacted, Schema } from "effect"
 import { HttpClient, HttpClientRequest, type HttpClientResponse } from "effect/unstable/http"
-import type { ConnectorConfig, InboundMessage } from "../../ingress"
+import type { ConnectorConfig, InboundAction, InboundMessage } from "../../ingress"
 import {
 	ChatOutboundError,
 	ConnectorCredentials,
@@ -362,17 +362,23 @@ export const discordOutbound: ChatOutbound<HttpClient.HttpClient | ConnectorCred
 			 * same way in a channel where the bot may not start them at all. Both mean the same thing
 			 * here: the mention's own channel is the conversation.
 			 *
-			 * A message that mentioned nobody opens nothing and costs no request. It can only ever
-			 * continue a conversation that already exists — whether it does is the host's decision,
-			 * made against the conversation this answers with.
+			 * A CLICK opens nothing: the interaction already happened inside a conversation, and
+			 * Discord's own `channel_id` for it is that conversation's id. Read from the interaction
+			 * rather than from the control's payload, which is what lets the host refuse a control
+			 * naming a conversation other than the one it was clicked in.
+			 *
+			 * A message that mentioned nobody opens nothing either, and costs no request. It can only
+			 * ever continue a conversation that already exists — whether it does is the host's
+			 * decision, made against the conversation this answers with.
 			 */
-			conversation: (message: InboundMessage) =>
-				(message.mentionsBot
-					? openThread({
-							workspaceId: message.workspaceId,
-							channelId: message.channelId,
-							anchorMessageId: message.messageId,
-							title: message.text,
+			conversation: (event: InboundMessage | InboundAction) =>
+				(event.type === "action" || !event.mentionsBot
+					? Effect.succeed({ channelId: event.channelId, opened: false })
+					: openThread({
+							workspaceId: event.workspaceId,
+							channelId: event.channelId,
+							anchorMessageId: event.messageId,
+							title: event.text,
 						}).pipe(
 							Effect.map((channelId) => ({ channelId, opened: true })),
 							// Logged, because the refusal now decides more than where to post: a channel
@@ -387,9 +393,8 @@ export const discordOutbound: ChatOutbound<HttpClient.HttpClient | ConnectorCred
 									}),
 								),
 							),
-							Effect.orElseSucceed(() => ({ channelId: message.channelId, opened: false })),
+							Effect.orElseSucceed(() => ({ channelId: event.channelId, opened: false })),
 						)
-					: Effect.succeed({ channelId: message.channelId, opened: false })
 				).pipe(
 					Effect.flatMap(({ channelId, opened }) =>
 						Option.match(decodeConversationKey(channelId), {
@@ -400,7 +405,7 @@ export const discordOutbound: ChatOutbound<HttpClient.HttpClient | ConnectorCred
 							onSome: (conversationKey): Effect.Effect<ChatConversation> =>
 								Effect.succeed({
 									conversationKey,
-									target: { workspaceId: message.workspaceId, channelId },
+									target: { workspaceId: event.workspaceId, channelId },
 									opened,
 								}),
 						}),

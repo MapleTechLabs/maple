@@ -617,7 +617,8 @@ describe("layerDecisionModel — Jev over OpenRouter", () => {
 					criteria: { billing: "Charges and refunds", technical: "Bugs and outages" },
 				},
 			})
-		}))
+		}),
+	)
 
 	it.live("carries the same app attribution as a model call", () =>
 		Effect.gen(function* () {
@@ -625,7 +626,8 @@ describe("layerDecisionModel — Jev over OpenRouter", () => {
 
 			assert.strictEqual(captured.headers["http-referer"], "https://maple.dev")
 			assert.strictEqual(captured.headers["x-title"], "Maple")
-		}))
+		}),
+	)
 
 	it.live("takes the model id from the environment", () =>
 		Effect.gen(function* () {
@@ -635,5 +637,6 @@ describe("layerDecisionModel — Jev over OpenRouter", () => {
 			})
 
 			assert.strictEqual(captured.body.model, "typesafe/jev-1.13")
-		}))
+		}),
+	)
 })

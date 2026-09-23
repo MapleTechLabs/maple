@@ -13,7 +13,7 @@ import { ActorId, OrgId, UserId } from "@maple/domain/primitives"
 import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
 import { ErrorActorsService } from "@maple/backend/services/errors/ErrorActorsService"
-import { withConnectorActor } from "./turn-runner"
+import { withConnectorActor } from "./turn-actor"
 
 const ORG = Schema.decodeUnknownSync(OrgId)("org_turn_actor_test")
 const PLACEHOLDER_USER = Schema.decodeUnknownSync(UserId)("chat-connector")

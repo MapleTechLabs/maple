@@ -119,6 +119,16 @@ const seedMobileDevice = (db: TestDb, id: string, org: OrgId, user: UserId) =>
 		),
 	)
 
+/** One linked chat account, which is standing authority to approve changes as that user. */
+const seedChatIdentity = (db: TestDb, id: string, org: OrgId, user: UserId) =>
+	Effect.promise(() =>
+		db.pglite.query(
+			`insert into chat_identities (id, org_id, connector, external_user_id, user_id, created_at)
+			 values ($1, $2, 'testchat', $1, $3, now())`,
+			[id, org, user],
+		),
+	)
+
 const issueMcpGrant = Effect.fnUntraced(function* (
 	oauth: McpOAuthService,
 	user: UserId,
@@ -187,6 +197,7 @@ describe("MembershipRevocationService", () => {
 			const cliToken = yield* cli.poll(started.deviceCode)
 			yield* seedMobileDevice(db, "dev_leaver", orgId, userId)
 			yield* seedEmailDestination(db, "dest_shared", orgId, [userId, stayerId])
+			yield* seedChatIdentity(db, "cid_leaver", orgId, userId)
 
 			expect(Option.isSome(yield* apiKeys.resolveByKey(grant.tokens.access_token))).toBe(true)
 
@@ -198,6 +209,8 @@ describe("MembershipRevocationService", () => {
 			expect(summary.cliAuthorizationsDeleted).toBe(1)
 			expect(summary.mobileDevicesDeleted).toBe(1)
 			expect(summary.emailDestinationsUpdated).toBe(1)
+			// A linked chat account can approve changes AS this user; leaving the org ends that.
+			expect(summary.chatIdentitiesDeleted).toBe(1)
 
 			// Both credentials are dead, and the MCP grant cannot be refreshed back.
 			expect(Option.isNone(yield* apiKeys.resolveByKey(grant.tokens.access_token))).toBe(true)

@@ -55,6 +55,10 @@ const IntegrationsSearch = Schema.Struct({
 	chat: Schema.optional(Schema.String),
 	chat_reason: Schema.optional(Schema.String),
 	chat_workspace: Schema.optional(Schema.String),
+	// Return params set by the per-member account-link callback, which shares
+	// `chat_reason` with the install half above.
+	chat_identity: Schema.optional(Schema.String),
+	chat_identity_name: Schema.optional(Schema.String),
 })
 
 /**
@@ -98,22 +102,37 @@ const SLACK_ERROR_COPY = new Map<string, string>([
 const GENERIC_SLACK_ERROR = "Slack connection failed. Try installing again."
 
 /**
- * Curated copy per `chat_reason` code. `failed` — which the callback emits for
- * an upstream, persistence or malformed-callback failure — deliberately has no
- * entry: there is nothing specific to say, so it takes the generic line, as does
- * any code a newer API emits than this bundle knows.
+ * Curated copy per `chat_reason` code, for each of the two outcomes the callback reports.
+ *
+ * `failed` — which the callback emits for an upstream, persistence or malformed-callback failure
+ * — deliberately has no entry: there is nothing specific to say, so it takes the generic line, as
+ * does any code a newer API emits than this bundle knows. `conflict` has no entry on the account
+ * side because linking cannot produce one; re-linking moves the binding rather than colliding.
  */
-const CHAT_ERROR_COPY = new Map<string, string>([
-	["state", "The install link expired. Start the install again."],
-	["conflict", "That workspace is already linked to a different Maple organization."],
-	["unconfigured", "This chat connector isn't configured in Maple. Contact support."],
-	["unknown", "Unknown chat connector."],
-])
+const CHAT_ERROR_COPY = {
+	workspace: {
+		generic: "Couldn't link the chat workspace. Try again.",
+		reasons: new Map<string, string>([
+			["state", "The install link expired. Start the install again."],
+			["conflict", "That workspace is already linked to a different Maple organization."],
+			["unconfigured", "This chat connector isn't configured in Maple. Contact support."],
+			["unknown", "Unknown chat connector."],
+		]),
+	},
+	identity: {
+		generic: "Couldn't link your chat account. Try again.",
+		reasons: new Map<string, string>([
+			["state", "The link expired. Start the account link again."],
+			["unconfigured", "This chat connector isn't configured in Maple. Contact support."],
+			["unknown", "Unknown chat connector."],
+		]),
+	},
+} as const
 
-const GENERIC_CHAT_ERROR = "Couldn't link the chat workspace. Try again."
-
-const chatErrorMessage = (raw: string | undefined): string =>
-	(raw ? CHAT_ERROR_COPY.get(raw.trim()) : undefined) ?? GENERIC_CHAT_ERROR
+const chatErrorMessage = (kind: keyof typeof CHAT_ERROR_COPY, raw: string | undefined): string => {
+	const copy = CHAT_ERROR_COPY[kind]
+	return (raw ? copy.reasons.get(raw.trim()) : undefined) ?? copy.generic
+}
 
 /** Longest attacker-controlled string we'll surface (workspace names in a toast). */
 const MAX_UNTRUSTED_LABEL = 64
@@ -171,24 +190,37 @@ function IntegrationsPage() {
 	}, [slackReturn, slackMessage, slackTeam, navigate])
 
 	// Same one-shot handling for a chat connector's callback return.
-	const chatReturn = search.chat === "connected" || search.chat === "error" ? search.chat : undefined
+	// Two outcomes under two params, so a workspace install and one member's account link never
+	// read as one another; everything after the first line treats them alike.
+	const chatKind =
+		search.chat === "connected" || search.chat === "error"
+			? ("workspace" as const)
+			: search.chat_identity === "linked" || search.chat_identity === "error"
+				? ("identity" as const)
+				: undefined
+	const chatOk = search.chat === "connected" || search.chat_identity === "linked"
 	const chatReason = search.chat_reason
-	const chatWorkspace = search.chat_workspace
+	const chatName = search.chat_workspace ?? search.chat_identity_name
 	const chatCard = search.integration
 	useEffect(() => {
-		if (!chatReturn) return
-		if (chatReturn === "connected") {
-			toastManager.add({
-				id: "chat-oauth",
-				// Workspace names come from the chat platform — untrusted, so clamped.
-				title: chatWorkspace ? `Connected ${clampLabel(chatWorkspace)}` : "Chat workspace connected",
-				type: "success",
-			})
-		} else {
-			toastManager.add({ id: "chat-oauth", title: chatErrorMessage(chatReason), type: "error" })
-		}
+		if (chatKind === undefined) return
+		// Names come from the chat platform — untrusted, so clamped.
+		const name = chatName ? clampLabel(chatName) : undefined
+		const connected =
+			chatKind === "workspace"
+				? (name ?? "").length > 0
+					? `Connected ${name}`
+					: "Chat workspace connected"
+				: (name ?? "").length > 0
+					? `Linked as ${name}`
+					: "Chat account linked"
+		toastManager.add({
+			id: "chat-oauth",
+			title: chatOk ? connected : chatErrorMessage(chatKind, chatReason),
+			type: chatOk ? "success" : "error",
+		})
 		navigate({ search: chatCard ? { integration: chatCard } : {}, replace: true })
-	}, [chatReturn, chatReason, chatWorkspace, chatCard, navigate])
+	}, [chatKind, chatOk, chatReason, chatName, chatCard, navigate])
 
 	// The hub shares the settings shell: same sidebar, "Integrations" highlighted.
 	const settingsSidebar = (

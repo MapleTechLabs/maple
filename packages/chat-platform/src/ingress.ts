@@ -57,21 +57,16 @@ export type ConnectorConfig = ReadonlyMap<string, string>
 // Normalized inbound events
 
 /**
- * Who took an action, with the raw material for deciding whether they were
- * allowed to.
+ * Who took an action, as the platform names them.
  *
- * Authorization stays DATA here on purpose. Which role may approve an agent's
- * proposed mutation is a Maple decision held against the workspace's configured
- * approver role, so this carries the membership facts and none of the verdict —
- * every platform can answer "which groups is this person in" and "are they an
- * administrator of this workspace", and none of them knows what Maple does with
- * the answer.
+ * An identity and nothing else: no roles, no "is an administrator". Whether
+ * this person may approve is not a fact the platform holds — it is whether they
+ * linked this account to a Maple user, which only Maple can answer, and `id` is
+ * what that lookup is keyed on.
  */
 export const InboundActor = Schema.Struct({
 	id: Schema.String,
 	displayName: Schema.String,
-	roleIds: Schema.Array(Schema.String),
-	isWorkspaceAdmin: Schema.Boolean,
 })
 export type InboundActor = Schema.Schema.Type<typeof InboundActor>
 

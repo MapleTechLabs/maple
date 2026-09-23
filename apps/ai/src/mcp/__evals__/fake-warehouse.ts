@@ -39,30 +39,32 @@ export const installFakeWarehouse = (
 	__testables.setClientFactory(() =>
 		Effect.succeed({
 			sql: (statement) =>
-				Effect.suspend((): Effect.Effect<
-					{ data: ReadonlyArray<Record<string, unknown>> },
-					WarehouseDriverError | WarehouseResponseLimitError
-				> => {
-					const sql = statement.text
-					if (failWhen?.(sql) === true) {
-						return Effect.fail(
-							new WarehouseResponseLimitError({
-								kind: "bytes",
-								message: "response exceeded the byte limit",
-							}),
-						)
-					}
-					const rule = rules.find((r) => r.match(sql))
-					if (!rule) {
-						return Effect.fail(
-							new WarehouseDriverError({
-								reason: "unknown",
-								message: `[eval fake warehouse] no fixture matched SQL:\n${sql.slice(0, 600)}`,
-							}),
-						)
-					}
-					return Effect.succeed({ data: rule.rows as ReadonlyArray<Record<string, unknown>> })
-				}),
+				Effect.suspend(
+					(): Effect.Effect<
+						{ data: ReadonlyArray<Record<string, unknown>> },
+						WarehouseDriverError | WarehouseResponseLimitError
+					> => {
+						const sql = statement.text
+						if (failWhen?.(sql) === true) {
+							return Effect.fail(
+								new WarehouseResponseLimitError({
+									kind: "bytes",
+									message: "response exceeded the byte limit",
+								}),
+							)
+						}
+						const rule = rules.find((r) => r.match(sql))
+						if (!rule) {
+							return Effect.fail(
+								new WarehouseDriverError({
+									reason: "unknown",
+									message: `[eval fake warehouse] no fixture matched SQL:\n${sql.slice(0, 600)}`,
+								}),
+							)
+						}
+						return Effect.succeed({ data: rule.rows as ReadonlyArray<Record<string, unknown>> })
+					},
+				),
 			insert: () => Effect.void,
 		}),
 	)

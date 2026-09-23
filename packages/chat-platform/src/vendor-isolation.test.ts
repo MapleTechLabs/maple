@@ -31,6 +31,10 @@ const GUARDED_FILES = [
 	"packages/backend/src/services/integrations/ChatWorkspaceService.ts",
 	"packages/backend/src/services/integrations/ChatWorkspaceService.test.ts",
 	"packages/backend/src/services/integrations/chat-workspace-rows.ts",
+	// The user-linking half: one table, its queries, and the revocation that ends a link.
+	"packages/db/src/schema/chat-identities.ts",
+	"packages/backend/src/services/integrations/chat-identity-rows.ts",
+	"packages/backend/src/services/auth/MembershipRevocationService.ts",
 	"apps/api/src/routes/v2/integrations-chat.http.ts",
 	"apps/api/src/routes/v1/chat-integration.http.ts",
 	"apps/web/src/components/integrations/chat-integration-card.tsx",

@@ -216,6 +216,15 @@ describe("auditAttribution", () => {
 		})
 	})
 
+	it("names the PERSON when a connector approval ran as the user they linked to", () => {
+		// The connector's agent answers for a turn nobody can be named for. An approval on a
+		// connector that CAN name them runs as their Maple user, so the entry has to say so — the
+		// change was made by a person exercising their own roles, not by Maple acting for an org.
+		expect(
+			auditAttribution({ orgId: ORG, userId: USER, turnOrigin: CONNECTOR_ORIGIN }, undefined),
+		).toEqual({ actor: { type: "user", userId: USER }, source: "dashboard" })
+	})
+
 	it("leaves an app turn exactly as an unattributed dashboard session", () => {
 		expect(
 			auditAttribution({ orgId: ORG, userId: USER, turnOrigin: { kind: "app" } }, undefined),

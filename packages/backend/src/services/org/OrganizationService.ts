@@ -26,6 +26,7 @@ import {
 	alertRuleStates,
 	alertRules,
 	apiKeys,
+	chatIdentities,
 	chatWorkspaces,
 	cliDeviceAuthorizations,
 	cloudflareLogpushConnectors,
@@ -96,6 +97,9 @@ const ORG_SCOPED_TABLES = [
 	// The binding that makes a chat workspace's members act as the org. Deleting
 	// the org must stop the bot answering there, and nothing else would.
 	chatWorkspaces,
+	// Each row lets one chat account approve changes as one Maple user. Deleting the org must
+	// end that standing authority, not leave it pointed at an org that is gone.
+	chatIdentities,
 	// Holds an encrypted Slack bot token and the id of a full-access API key —
 	// there is no `orgs` table to cascade from, so this purge is what stops a
 	// deleted org's live credentials outliving it.
