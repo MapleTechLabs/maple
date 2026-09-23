@@ -132,6 +132,19 @@ describe("the axes, which the caller draws and this only places", () => {
 		})
 		expect(render.xAxis).toHaveLength(1)
 	})
+
+	it("keeps the last label on the range's end even when a tick repeats", () => {
+		// Two ticks land in one minute and two in the next. Dropping the repeat
+		// where it stands would leave the axis ending two thirds of the way
+		// across, under a label that claims to be the end of the range.
+		const start = at(0)
+		const render = renderChartSvg({
+			...spec,
+			series: [{ name: "checkout-api", points: [[start, 1] as ChartPoint, [start + 100_000, 2]] }],
+		})
+		expect(render.xAxis.at(-1)?.xFraction).toBe(1)
+		expect(new Set(render.xAxis.map((tick) => tick.text)).size).toBe(render.xAxis.length)
+	})
 })
 
 describe("renderChartSvg, as an alert draws it: one series and a threshold", () => {

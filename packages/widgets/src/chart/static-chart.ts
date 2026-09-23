@@ -280,7 +280,13 @@ const timeAxis = (tMin: number, tMax: number, tRange: number): ReadonlyArray<Tim
 	for (let i = 0; i < count; i += 1) {
 		const xFraction = count === 1 ? 0 : i / (count - 1)
 		const text = formatTimestamp(tMin + xFraction * (tMax - tMin), tRange)
-		if (labels.at(-1)?.text !== text) labels.push({ text, xFraction })
+		if (labels.at(-1)?.text !== text) {
+			labels.push({ text, xFraction })
+			continue
+		}
+		// A repeat slides right rather than being dropped where it stands, so the
+		// label that ends the axis is always the one at the end of the range.
+		if (i === count - 1) labels[labels.length - 1] = { text, xFraction }
 	}
 	const last = labels.at(-1)
 	// The zone is named once, on the label that ends the range.
