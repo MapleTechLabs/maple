@@ -200,18 +200,27 @@ const joinDetail = (parts: ReadonlyArray<string | null>): string | null => {
  * inside the range anyway: {@link answerOffset}'s fallback, when the final segment is empty, and a
  * retry's stale offset, which can sit after a later call's. Model text carries no separator of its
  * own, so concatenating across a boundary runs two sentences together — "…at 40%.Two signatures."
+ *
+ * A boundary inside an unclosed fence is not a place to break: splitting one would stop it parsing
+ * and put a chart's payload in the channel as prose, under an index that no longer matches the
+ * whole-message numbering the image endpoint uses.
  */
 const visibleText = (text: string, calls: ReadonlyArray<ChatToolCall>, start: number): string => {
 	const bounds = [...new Set(calls.map((call) => call.textOffset ?? text.length))]
 		.filter((at) => at > start && at < text.length)
 		.sort((left, right) => left - right)
 	const segments: Array<string> = []
+	let segment = ""
 	let from = start
 	for (const at of [...bounds, text.length]) {
-		segments.push(text.slice(from, at).trim())
+		segment += text.slice(from, at)
 		from = at
+		if ((segment.split(FENCE).length - 1) % 2 !== 0) continue
+		segments.push(segment.trim())
+		segment = ""
 	}
-	return segments.filter((segment) => segment.length > 0).join("\n\n")
+	segments.push(segment.trim())
+	return segments.filter((piece) => piece.length > 0).join("\n\n")
 }
 
 /**

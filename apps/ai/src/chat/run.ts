@@ -200,14 +200,17 @@ export const runChatTurn = (input: ChatRunInput) => {
 		),
 		// Once per turn, the tag alone: a model that wrote a tool call as prose answered with
 		// nothing, and how often that happens is a question about the run's ending, not this turn.
-		Effect.tap(() => {
-			const leaked = sanitizer.leaked()
-			return leaked === undefined
-				? Effect.void
-				: Effect.logWarning("Model wrote a tool call as text").pipe(
-						Effect.annotateLogs({ "chat.leaked_tag": leaked }),
-					)
-		}),
+		// `ensuring`, not `tap`, because a run that leaked and then failed is the interesting one.
+		Effect.ensuring(
+			Effect.suspend(() => {
+				const leaked = sanitizer.leaked()
+				return leaked === undefined
+					? Effect.void
+					: Effect.logWarning("Model wrote a tool call as text").pipe(
+							Effect.annotateLogs({ leakedTag: leaked }),
+						)
+			}),
+		),
 		Effect.map(
 			(): ChatRunOutcome => ({
 				autonomous: completion?.autonomous ?? false,

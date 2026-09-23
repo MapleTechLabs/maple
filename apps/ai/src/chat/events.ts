@@ -90,11 +90,20 @@ export const makeTextSanitizer = (): TextSanitizer => {
 	let buffer = ""
 	let closing: (typeof HIDDEN_BLOCKS)[number] | undefined
 	let leaked: string | undefined
+	// The last character emitted, so a tag quoted across a delta boundary still reads as quoted.
+	let previous = ""
 	return {
 		leaked: () => leaked,
 		strip: (text) => {
 			buffer += text
 			let out = ""
+			// Where to resume looking: past any opener the model merely quoted.
+			let from = 0
+			const emit = (value: string) => {
+				if (value === "") return
+				out += value
+				previous = value.slice(-1)
+			}
 			for (;;) {
 				if (closing !== undefined) {
 					const end = buffer.indexOf(closing.close)
@@ -107,19 +116,35 @@ export const makeTextSanitizer = (): TextSanitizer => {
 					}
 					buffer = buffer.slice(end + closing.close.length)
 					closing = undefined
+					from = 0
 					continue
 				}
-				const opened = HIDDEN_BLOCKS.map((block) => ({ at: buffer.indexOf(block.open), block }))
+				const opened = HIDDEN_BLOCKS.map((block) => ({
+					at: buffer.indexOf(block.open, from),
+					block,
+				}))
 					.filter(({ at }) => at !== -1)
 					.sort((left, right) => left.at - right.at)[0]
 				if (opened === undefined) {
 					const held = heldTail(buffer)
-					out += buffer.slice(0, buffer.length - held)
+					emit(buffer.slice(0, buffer.length - held))
 					buffer = buffer.slice(buffer.length - held)
 					return out
 				}
-				out += buffer.slice(0, opened.at)
+				// A tag in a code span is the model talking ABOUT markup, which is prose — and the
+				// style rules invite exactly that. Swallowing the rest of a reply over it would
+				// turn a mention into the very silence this guards against.
+				if ((opened.at === 0 ? previous : buffer[opened.at - 1]) === "`") {
+					from = opened.at + opened.block.open.length
+					continue
+				}
+				// The text before the block keeps its own held tail rather than being flushed
+				// whole, so cutting out what sits between two halves of a tag cannot splice them
+				// into a complete one on the way out.
+				const before = buffer.slice(0, opened.at)
+				emit(before.slice(0, before.length - heldTail(before)))
 				buffer = buffer.slice(opened.at + opened.block.open.length)
+				from = 0
 				closing = opened.block
 				if (opened.block.leak) leaked ??= opened.block.open
 			}

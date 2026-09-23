@@ -233,6 +233,28 @@ describe("renderChatMessage", () => {
 		])
 	})
 
+	it("does not break a chart fence a boundary happens to land inside", () => {
+		// The blank line would stop the fence parsing and put its payload in the channel as JSON.
+		const body = `Latency climbed.\n\`\`\`chart\n${CHART}\n\`\`\`\ncheckout is the worst of them.`
+		const split: ChatMessage = {
+			id: "a1",
+			role: "assistant",
+			text: body,
+			toolCalls: [
+				{ id: "c1", name: "query_data", input: {}, output: null, textOffset: body.indexOf(CHART) },
+				{ id: "c2", name: "find_errors", input: {}, output: null, textOffset: 0 },
+			],
+			createdAt: 0,
+			startSeq: 1,
+		}
+
+		expect(renderChatMessage(split, context).map((block) => block.kind)).toEqual([
+			"prose",
+			"chart",
+			"prose",
+		])
+	})
+
 	it("does not cut the answer at an offset a retry left behind", () => {
 		const retried = turn([
 			{ type: "turn-start", messageId: "a1" },

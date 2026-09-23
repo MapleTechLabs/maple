@@ -18,6 +18,11 @@ import { makeTextSanitizer, toChatEvents, type AdapterContext } from "./events"
 const event = (tag: string, fields: Record<string, unknown> = {}): never =>
 	({ _tag: tag, ...fields }) as never
 
+/**
+ * One sanitizer across these cases, which is safe only because every one of them writes prose that
+ * passes straight through and leaves it empty. A case that ends mid-tag belongs in the sanitizer's
+ * own describe below, with a sanitizer of its own.
+ */
 const base: AdapterContext = { messageId: "msg-1", sanitizer: makeTextSanitizer() }
 
 describe("toChatEvents", () => {
@@ -250,6 +255,18 @@ describe("makeTextSanitizer", () => {
 
 	it("reports nothing for a turn that only ever wrote prose", () => {
 		assert.equal(stripped(["1 < 2 and 2 > 1"]).leaked, undefined)
+	})
+
+	it("keeps a tag the model quoted, rather than eating the reply that explains it", () => {
+		const { text, leaked } = stripped(["I never write `<tool", "_call>` in a reply. Here is why."])
+
+		assert.equal(text, "I never write `<tool_call>` in a reply. Here is why.")
+		assert.equal(leaked, undefined)
+	})
+
+	it("cannot splice two halves of a tag together across a block it removed", () => {
+		// The halves on either side of the removed block would read as `<think>` concatenated.
+		assert.equal(stripped(["a<th<tool_call>x</tool_call>ink> b"]).text, "aink> b")
 	})
 
 	it("holds back a tail that could still become a tag, and releases it when it cannot", () => {
