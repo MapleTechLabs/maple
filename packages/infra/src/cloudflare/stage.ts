@@ -32,6 +32,18 @@ export interface MapleDomains {
 	electric?: string
 	/** Auto-updating local-mode dashboard SPA (the `maple` binary points users here by default). */
 	local?: string
+	/**
+	 * The chat-bot Worker (`apps/chat-bot`).
+	 *
+	 * It exists for exactly one reason: a chat platform that delivers its events as signed HTTP
+	 * requests needs a URL to deliver them TO, and that URL is configured once inside a vendor's
+	 * app and re-approved by every workspace when it changes. So it is a stable custom domain
+	 * rather than a `workers.dev` URL, which carries the Cloudflare account subdomain.
+	 *
+	 * Only production instances get one. A dev stage reaches the same route through portless, and
+	 * a PR preview has no chat app of its own to point at it.
+	 */
+	chat?: string
 }
 
 /**
@@ -86,6 +98,7 @@ const PRD_DOMAINS: MapleDomains = {
 	electric: "electric.maple.dev",
 	landing: "maple.dev",
 	local: "local.maple.dev",
+	chat: "chat.maple.dev",
 }
 
 /**
@@ -100,6 +113,7 @@ const PRD_DOMAINS_EU: MapleDomains = {
 	ingest: "ingest.eu.maple.dev",
 	sync: "sync.eu.maple.dev",
 	electric: "electric.eu.maple.dev",
+	chat: "chat.eu.maple.dev",
 }
 
 export function parseMapleStage(stage: string): MapleStage {

@@ -111,6 +111,18 @@ export interface ChatInstallCallback {
 export interface ChatInstallResult {
 	readonly externalWorkspaceId: string
 	readonly name: string
+	/**
+	 * A secret the install minted for THIS workspace, in whatever the connector
+	 * wants to read back — one token, or its own JSON. Absent where a connector
+	 * authenticates with one deployment-wide credential the host already resolves
+	 * from its environment.
+	 *
+	 * Opaque above the connector: the host encrypts it, stores it beside the row,
+	 * and hands it back to the same connector's outbound half under
+	 * {@link WORKSPACE_CREDENTIALS}. Nothing between the two reads it, so a
+	 * platform whose install returns three values needs no column for each.
+	 */
+	readonly credentials?: string | undefined
 }
 
 export interface ChatConnectorInstall {

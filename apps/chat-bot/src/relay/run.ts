@@ -7,16 +7,23 @@
  * the database, and none of it belongs on the path Cloudflare evaluates when it validates the
  * uploaded script.
  */
-import { ConnectorCredentials, type ChatConnector, type InboundEvent } from "@maple/chat-platform"
+import {
+	ConnectorCredentials,
+	WORKSPACE_CREDENTIALS,
+	type ChatConnector,
+	type ConnectorConfig,
+	type InboundEvent,
+} from "@maple/chat-platform"
 import { connectors } from "@maple/chat-platform/connectors"
 import * as MapleCloudflareSDK from "@maple-dev/effect-sdk/cloudflare"
 import { chatSessionStub } from "@maple/domain/chat-session-stub"
-import type { OrgId } from "@maple/domain/primitives"
+import type { ChatConnectorId, OrgId } from "@maple/domain/primitives"
 import { workerTelemetryConfig } from "@maple/infra/worker-telemetry"
 import { workerEnvLayer } from "@maple/infra/worker-runtime"
-import { Effect, Layer, Option } from "effect"
+import { Effect, Exit, Layer, Option } from "effect"
 import { FetchHttpClient, HttpClient } from "effect/unstable/http"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
+import { parseBase64Aes256GcmKey } from "@maple/backend/platform/Crypto"
 import { chatChartImageUrl } from "@maple/backend/services/chat/chat-chart"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { layerPg } from "@maple/backend/platform/DatabasePgLive"
@@ -25,6 +32,7 @@ import { withPgConnectionScope } from "@maple/backend/platform/pg-connection-sco
 import {
 	forgetChatWorkspace,
 	resolveChatWorkspace,
+	type ChatWorkspaceResolution,
 } from "@maple/backend/services/integrations/chat-workspace-rows"
 import { resolveConnectorConfig } from "../config.ts"
 import { relayInboundEvent, WorkspaceLookupFailed, type RelayPorts } from "./turn.ts"
@@ -68,32 +76,74 @@ const withDatabase = <A, E>(env: Record<string, unknown>, program: Effect.Effect
 		Effect.provide(Layer.provideMerge(layerPg, mapleDbConnectionLayer(env))),
 	)
 
-const ports = (
-	host: RelayHost,
-	connector: ChatConnector<HttpClient.HttpClient | ConnectorCredentials>,
-): RelayPorts<HttpClient.HttpClient | ConnectorCredentials> => ({
-	outbound: connector.outbound,
-	resolveWorkspace: (connectorId, workspaceId) =>
+/**
+ * The key a connector's per-workspace credential was sealed with, or `null` where this deployment
+ * binds none.
+ *
+ * Optional because most of this Worker does not need it: a connector whose credential is one
+ * deployment-wide secret stores nothing to open, and a stage without the key runs those normally.
+ * A workspace that DID store one then fails its lookup rather than resolving without its token —
+ * see `chat-workspace-rows.ts`.
+ */
+const credentialKey = (env: Record<string, unknown>): Effect.Effect<Buffer | null> =>
+	Effect.orElseSucceed(
+		parseBase64Aes256GcmKey(setting(env, "MAPLE_INGEST_KEY_ENCRYPTION_KEY") ?? "", (message) => message),
+		() => null,
+	)
+
+/**
+ * The one row this event needs, read once.
+ *
+ * Hoisted out of the relay's port because its answer is needed twice — the relay asks which org
+ * this is, and the transport is built from the credential the same row carries — and reading it
+ * twice would be two Postgres connections for one mention.
+ */
+const lookupWorkspace = (host: RelayHost, connectorId: ChatConnectorId, workspaceId: string) =>
+	Effect.flatMap(credentialKey(host.env), (key) =>
 		withDatabase(
 			host.env,
-			Effect.flatMap(Database, (database) => resolveChatWorkspace(database, connectorId, workspaceId)),
-		).pipe(
-			// Logged here, where the cause is, and re-raised as the relay's own failure: what the
-			// relay must not do is mistake a database it could not read for a workspace nobody linked.
-			Effect.catchCause((cause) =>
-				Effect.logError("Chat workspace could not be resolved").pipe(
-					Effect.annotateLogs({ "error.type": summarizeCause(cause) }),
-					Effect.andThen(
-						Effect.fail(
-							new WorkspaceLookupFailed({
-								connector: connectorId,
-								message: "The chat workspace could not be read",
-							}),
-						),
+			Effect.flatMap(Database, (database) =>
+				resolveChatWorkspace(database, connectorId, workspaceId, key),
+			),
+		),
+	).pipe(
+		// Logged here, where the cause is, and re-raised as the relay's own failure: what the
+		// relay must not do is mistake a database it could not read for a workspace nobody linked.
+		Effect.catchCause((cause) =>
+			Effect.logError("Chat workspace could not be resolved").pipe(
+				Effect.annotateLogs({ "error.type": summarizeCause(cause) }),
+				Effect.andThen(
+					Effect.fail(
+						new WorkspaceLookupFailed({
+							connector: connectorId,
+							message: "The chat workspace could not be read",
+						}),
 					),
 				),
 			),
 		),
+	)
+
+/** What the lookup answered, replayable as the port's own effect — an `Exit` IS one. */
+type WorkspaceLookup = Exit.Exit<Option.Option<ChatWorkspaceResolution>, WorkspaceLookupFailed>
+
+/**
+ * The config the connector's transport is built from: what the deployment set, plus this
+ * workspace's own credential where it stored one.
+ */
+const connectorCredentials = (config: ConnectorConfig, resolved: WorkspaceLookup): ConnectorConfig => {
+	if (Exit.isFailure(resolved) || Option.isNone(resolved.value)) return config
+	const credentials = resolved.value.value.credentials
+	return credentials === undefined ? config : new Map(config).set(WORKSPACE_CREDENTIALS, credentials)
+}
+
+const ports = (
+	host: RelayHost,
+	connector: ChatConnector<HttpClient.HttpClient | ConnectorCredentials>,
+	resolved: WorkspaceLookup,
+): RelayPorts<HttpClient.HttpClient | ConnectorCredentials> => ({
+	outbound: connector.outbound,
+	resolveWorkspace: () => resolved,
 	forgetWorkspace: (connectorId, workspaceId) =>
 		withDatabase(
 			host.env,
@@ -141,15 +191,20 @@ export const runInboundEvent = async (host: RelayHost, event: InboundEvent): Pro
 
 	try {
 		await Effect.runPromise(
-			relayInboundEvent(event, ports(host, connector)).pipe(
+			Effect.gen(function* () {
+				// Before the relay, because the credential the connector posts with comes out of the
+				// same row the relay is about to ask for the org of.
+				const resolved = yield* Effect.exit(lookupWorkspace(host, connector.id, event.workspaceId))
+				yield* relayInboundEvent(event, ports(host, connector, resolved)).pipe(
+					Effect.provideService(
+						ConnectorCredentials,
+						connectorCredentials(config.config, resolved),
+					),
+				)
+			}).pipe(
 				// oxlint-disable-next-line effecttsgo/strict-effect-provide
 				Effect.provide(
-					Layer.mergeAll(
-						FetchHttpClient.layer,
-						Layer.succeed(ConnectorCredentials)(config.config),
-						workerEnvLayer(host.env),
-						telemetry.layer,
-					),
+					Layer.mergeAll(FetchHttpClient.layer, workerEnvLayer(host.env), telemetry.layer),
 				),
 			),
 		)

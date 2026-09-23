@@ -13,12 +13,22 @@ import { ChatConnectorId, ChatWorkspaceId, IntegrationsPersistenceError, OrgId }
 import { and, eq } from "drizzle-orm"
 import { Effect, Option, Schema } from "effect"
 import type { DatabaseApi, DatabaseError } from "@maple/backend/platform/DatabaseLive"
+import {
+	openChatWorkspaceCredentials,
+	storedCredentials,
+} from "@maple/backend/services/integrations/chat-workspace-credentials"
 
 /** What the bot Worker needs to act on an inbound event. */
 export interface ChatWorkspaceResolution {
 	readonly orgId: OrgId
 	readonly workspaceId: ChatWorkspaceId
 	readonly settings: ChatWorkspaceSettings
+	/**
+	 * The connector's own per-workspace secret, decrypted, or `undefined` for a connector that
+	 * stored none. The host puts it in `ConnectorCredentials` under `WORKSPACE_CREDENTIALS`; it is
+	 * the connector's encoding and nothing here reads it.
+	 */
+	readonly credentials: string | undefined
 }
 
 const decodeStored = Schema.decodeUnknownEffect(
@@ -45,6 +55,13 @@ export const resolveChatWorkspace = (
 	database: DatabaseApi,
 	connectorId: ChatConnectorId,
 	externalWorkspaceId: string,
+	/**
+	 * The key the credential envelope was sealed with, or `null` on a deployment that has none.
+	 * A row that carries a credential no key can open fails the resolution rather than resolving to
+	 * a workspace whose connector then cannot post — the second is a bot that answers nothing and
+	 * says why nowhere.
+	 */
+	encryptionKey: Buffer | null = null,
 ): Effect.Effect<Option.Option<ChatWorkspaceResolution>, IntegrationsPersistenceError> =>
 	Effect.gen(function* () {
 		const rows = yield* database
@@ -66,10 +83,32 @@ export const resolveChatWorkspace = (
 		const stored = yield* decodeStored(row).pipe(
 			Effect.mapError((error) => unreadable(`Stored chat workspace is unreadable: ${error.message}`)),
 		)
+		const sealed = storedCredentials(row)
+		if (sealed === null) {
+			return Option.some({
+				orgId: stored.orgId,
+				workspaceId: stored.id,
+				settings: stored.settings,
+				credentials: undefined,
+			})
+		}
+		if (encryptionKey === null) {
+			return yield* Effect.fail(
+				unreadable("This chat workspace stores a credential and this deployment has no key for it"),
+			)
+		}
+		const credentials = yield* openChatWorkspaceCredentials(
+			sealed,
+			encryptionKey,
+			{ orgId: stored.orgId, connector: connectorId, externalWorkspaceId },
+			// The message never carries the cause: everything below it is key material and ciphertext.
+			(message) => unreadable(`Stored chat workspace credential is unreadable: ${message}`),
+		)
 		return Option.some({
 			orgId: stored.orgId,
 			workspaceId: stored.id,
 			settings: stored.settings,
+			credentials,
 		})
 	})
 

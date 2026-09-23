@@ -8,11 +8,6 @@ import { index, jsonb, pgTable, text, timestamp, uniqueIndex } from "drizzle-orm
 //
 // Deliberately absent, and what it would take to add each back:
 //
-//   - no credential columns. The connectors Maple ships authenticate with one
-//     global bot credential the host supplies, so there is nothing per-workspace
-//     to keep. A connector that mints a per-workspace token adds an encrypted
-//     column then, following the encrypted-secret pattern the other workspace
-//     integration in `packages/backend/src/services/integrations/` uses.
 //   - no `revoked_at` / `revoked_reason`. Unlinking deletes the row; nothing
 //     reads the history, and a deleted row cannot resolve a bot event.
 //   - no `installed_by_user_id`. Nothing reads it — the install is already
@@ -40,6 +35,16 @@ export const chatWorkspaces = pgTable(
 		name: text("name").notNull(),
 		/** Connector-defined settings, validated by the connector's own schema. */
 		settings: jsonb("settings").$type<Record<string, string>>().notNull(),
+		// The secret the connector's own install minted for THIS workspace, as one
+		// AES-256-GCM envelope over a string only that connector reads back. Null
+		// for a connector that authenticates with one deployment-wide credential —
+		// which is why this is three nullable columns rather than a second table.
+		// The AAD binds the envelope to `(org_id, connector, external_workspace_id)`
+		// (`chat-workspace-credentials.ts`), so a row's ciphertext cannot be moved
+		// onto another org's row by anyone holding only database write access.
+		credentialsCiphertext: text("credentials_ciphertext"),
+		credentialsIv: text("credentials_iv"),
+		credentialsTag: text("credentials_tag"),
 		createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull(),
 	},
 	(table) => [

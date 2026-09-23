@@ -87,6 +87,7 @@ describe("resolveMapleDomains", () => {
 			ingest: "ingest.eu.maple.dev",
 			sync: "sync.eu.maple.dev",
 			electric: "electric.eu.maple.dev",
+			chat: "chat.eu.maple.dev",
 		})
 		expect(eu.landing).toBeUndefined()
 		expect(eu.local).toBeUndefined()
@@ -97,6 +98,13 @@ describe("resolveMapleDomains", () => {
 	it("keeps the us production hostnames exactly as they were", () => {
 		expect(resolveMapleDomains(stage("prd"))).toEqual(resolveMapleDomains(stage("prd"), "us"))
 		expect(resolveMapleDomains(stage("prd")).web).toBe("app.maple.dev")
+		// A webhook connector's request URL is configured inside a chat platform's own app, so it
+		// has to be a hostname that does not change with a deploy.
+		expect(resolveMapleDomains(stage("prd")).chat).toBe("chat.maple.dev")
+	})
+
+	it("gives a PR preview no chat hostname", () => {
+		expect(resolveMapleDomains(stage("pr-12")).chat).toBeUndefined()
 	})
 
 	it("has no eu hostnames for a PR preview", () => {

@@ -83,6 +83,9 @@ const testConnector: ChatConnector = {
 			Effect.succeed({
 				externalWorkspaceId: params.get("workspace") ?? "workspace-default",
 				name: params.get("name") ?? "Test workspace",
+				// A connector whose platform mints a per-workspace secret returns it here as one
+				// opaque string; one that does not returns nothing, and both must work.
+				...(params.has("credentials") ? { credentials: params.get("credentials") ?? "" } : undefined),
 			}),
 		decodeSettings: (input: ChatWorkspaceSettings) =>
 			input.approver === undefined || /^[a-z]+$/.test(input.approver)
@@ -421,6 +424,48 @@ describe("ChatWorkspaceService", () => {
 				assert.strictEqual(Option.getOrUndefined(resolved)?.orgId, ORG)
 				const missing = yield* chat.resolve(TEST_CONNECTOR, "workspace-unknown")
 				assert.isTrue(Option.isNone(missing))
+			}).pipe(Effect.provide(makeLayer(testDb)))
+		}),
+	)
+
+	it.effect("stores a connector's per-workspace credential sealed, and hands it back decrypted", () =>
+		Effect.gen(function* () {
+			const testDb = createTestDb(trackedDbs)
+			yield* Effect.gen(function* () {
+				const chat = yield* ChatWorkspaceService
+				const { url } = yield* chat.beginInstall(ORG, USER, TEST_CONNECTOR, CALLBACK)
+				const params = callback(stateFrom(url), "workspace-cred", "Acme")
+				params.set("credentials", '{"token":"a-workspaces-own-token"}')
+				yield* chat.completeInstall(TEST_CONNECTOR, params)
+
+				const resolved = yield* chat.resolve(TEST_CONNECTOR, "workspace-cred")
+				assert.strictEqual(
+					Option.getOrUndefined(resolved)?.credentials,
+					'{"token":"a-workspaces-own-token"}',
+				)
+				// Sealed at rest: the column holds no plaintext for anyone reading the table.
+				const row = yield* Effect.promise(() =>
+					queryFirstRow<{ credentials_ciphertext: string | null }>(
+						testDb,
+						"select credentials_ciphertext from chat_workspaces where external_workspace_id = 'workspace-cred'",
+					),
+				)
+				assert.isString(row?.credentials_ciphertext)
+				assert.notInclude(row?.credentials_ciphertext ?? "", "token")
+			}).pipe(Effect.provide(makeLayer(testDb)))
+		}),
+	)
+
+	it.effect("resolves a connector that stores no credential with none", () =>
+		Effect.gen(function* () {
+			const testDb = createTestDb(trackedDbs)
+			yield* Effect.gen(function* () {
+				const chat = yield* ChatWorkspaceService
+				const { url } = yield* chat.beginInstall(ORG, USER, TEST_CONNECTOR, CALLBACK)
+				yield* chat.completeInstall(TEST_CONNECTOR, callback(stateFrom(url), "workspace-plain"))
+				const resolved = yield* chat.resolve(TEST_CONNECTOR, "workspace-plain")
+				assert.isTrue(Option.isSome(resolved))
+				assert.isUndefined(Option.getOrUndefined(resolved)?.credentials)
 			}).pipe(Effect.provide(makeLayer(testDb)))
 		}),
 	)
