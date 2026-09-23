@@ -229,15 +229,17 @@ describe("mentions", () => {
 		assert.isFalse(mentionsReviewer("@maple-dev please"))
 		assert.isFalse(mentionsReviewer("@maplefoo"))
 		assert.isFalse(mentionsReviewer("mail me at x@maple.dev"))
+		// A quote-reply or a code sample is not a new request.
+		assert.isFalse(mentionsReviewer("> @maple fix the null check\n\nthanks"))
+		assert.isFalse(mentionsReviewer("```\n@maple fix\n```"))
 	})
 
 	it("reads the command from the first word after the mention", () => {
-		assert.deepEqual(parseReplyCommand("@maple review"), { command: "review", text: "review" })
+		assert.deepEqual(parseReplyCommand("@maple review"), { command: "review", text: "@maple review" })
 		assert.equal(parseReplyCommand("hey @maple fix the null check").command, "fix")
-		assert.deepEqual(parseReplyCommand("@maple why a lock here?"), {
-			command: "ask",
-			text: "why a lock here?",
-		})
+		assert.equal(parseReplyCommand("@maple why a lock here?").command, "ask")
+		// A quoted fix request answered with a question is a question.
+		assert.equal(parseReplyCommand("> @maple fix it\n\n@maple why?").command, "ask")
 		assert.equal(parseReplyCommand("@maple fixture question").command, "ask")
 	})
 })

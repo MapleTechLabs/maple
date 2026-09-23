@@ -945,7 +945,7 @@ export class VcsRepository extends Context.Service<VcsRepository>()("@maple/api/
 						.limit(limit),
 				)
 				.pipe(Effect.mapError(toPersistenceError))
-			return rows.map((row) =>
+			return yield* decodeAll("pr_reviews", rows, (row) =>
 				decodePrReviewListItem({
 					id: row.id,
 					number: row.number,
@@ -956,7 +956,7 @@ export class VcsRepository extends Context.Service<VcsRepository>()("@maple/api/
 					skipReason: row.skipReason ?? null,
 					verdict: row.reportJson?.verdict ?? null,
 					score: row.score ?? null,
-					findings: row.reportJson?.findings.length ?? 0,
+					findings: row.reportJson?.findings?.length ?? 0,
 					commentUrl: row.commentUrl ?? null,
 					publishError: row.publishError ?? null,
 					error: row.error ?? null,

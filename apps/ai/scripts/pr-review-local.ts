@@ -437,27 +437,21 @@ const unsafeGitArg = (arg: string): boolean =>
 	UNSAFE_GIT_ARG.test(arg) || arg.startsWith("/") || arg.startsWith("~") || arg.split(/[/:]/).includes("..")
 
 /** The same answer `pr_context` gives in production, read with the caller's own `gh` login. */
-const fetchPullRequestContext = (args: Args): PullRequestContext => {
+const fetchPullRequestContext = (args: Args, headSha: string): PullRequestContext => {
 	const slug = `repos/${args.owner}/${args.repo}`
-	const json = (path: string): unknown => JSON.parse(must(["gh", "api", path]))
-	const commits = Schema.decodeUnknownSync(GhContextCommits)(
-		json(`${slug}/pulls/${args.number}/commits?per_page=100`),
-	)
+	// Decoded at the boundary, one schema per read.
+	const read = <A>(schema: Schema.Decoder<A>, path: string): A =>
+		Schema.decodeUnknownSync(schema)(JSON.parse(must(["gh", "api", path])))
+	const commits = read(GhContextCommits, `${slug}/pulls/${args.number}/commits?per_page=100`)
 	const comments = [
-		...Schema.decodeUnknownSync(GhContextComments)(
-			json(`${slug}/pulls/${args.number}/comments?per_page=100&sort=created&direction=desc`),
+		...read(
+			GhContextComments,
+			`${slug}/pulls/${args.number}/comments?per_page=100&sort=created&direction=desc`,
 		),
-		...Schema.decodeUnknownSync(GhContextComments)(
-			json(`${slug}/issues/${args.number}/comments?per_page=100`),
-		),
+		...read(GhContextComments, `${slug}/issues/${args.number}/comments?per_page=100`),
 	]
-	const head = commits.at(-1)?.sha
-	const checks =
-		head === undefined
-			? []
-			: Schema.decodeUnknownSync(GhContextChecks)(
-					json(`${slug}/commits/${head}/check-runs?per_page=100`),
-				).check_runs
+	// The pull request's own head: the first page of commits stops at 100.
+	const checks = read(GhContextChecks, `${slug}/commits/${headSha}/check-runs?per_page=100`).check_runs
 	return {
 		commits: commits.map((commit) => ({ sha: commit.sha, message: commit.commit.message })),
 		// Maple's own summary comment is left out, as the production tool leaves out the App's.
@@ -805,7 +799,7 @@ export const reviewLocally = async (
 		repository,
 		number: args.number,
 		files,
-		context: args.range === undefined ? fetchPullRequestContext(args) : undefined,
+		context: args.range === undefined ? fetchPullRequestContext(args, pr.head.sha) : undefined,
 		dir: clone.dir,
 		headSha: pr.head.sha,
 	})

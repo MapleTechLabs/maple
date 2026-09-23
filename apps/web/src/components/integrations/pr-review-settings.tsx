@@ -257,8 +257,9 @@ function ConfigForm({ repo, config }: { repo: GithubRepoSummary; config: PrRevie
 		setError(errorMessage(result, "Failed to save review settings."))
 	}
 
+	// Frozen while saving: a refetch after the save would replace any edit made in the meantime.
 	return (
-		<div className="flex flex-col gap-5">
+		<fieldset disabled={saving} className="m-0 flex min-w-0 flex-col gap-5 border-0 p-0">
 			<div className="flex flex-col gap-1.5">
 				<Label htmlFor={`${id}-instructions`}>Instructions</Label>
 				<Textarea
@@ -401,7 +402,7 @@ function ConfigForm({ repo, config }: { repo: GithubRepoSummary; config: PrRevie
 					Save
 				</Button>
 			</div>
-		</div>
+		</fieldset>
 	)
 }
 
@@ -417,7 +418,8 @@ function ReviewsSection({ repo }: { repo: GithubRepoSummary }) {
 			response.reviews.some((review) => review.status === "queued" || review.status === "running"),
 		)
 		.orElse(() => false)
-	useIntervalRefresh(refresh, { intervalMs: REVIEWS_POLL_MS, enabled: active })
+	// A failed poll keeps retrying while the section is open, rather than stopping on the error.
+	useIntervalRefresh(refresh, { intervalMs: REVIEWS_POLL_MS, enabled: active || Result.isFailure(result) })
 
 	return Result.builder(result)
 		.onInitial(() => (

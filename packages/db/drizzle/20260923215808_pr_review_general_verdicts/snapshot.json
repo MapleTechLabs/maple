@@ -1,10 +1,10 @@
 {
+  "id": "92d030ba-fb28-43d2-9d5b-5bad4fa5cf48",
+  "prevIds": [
+    "2e5167bc-9197-4ee7-8368-9bd1bba3f894"
+  ],
   "version": "8",
   "dialect": "postgres",
-  "id": "b751f064-2fa1-4599-b30a-77dd7ffc8517",
-  "prevIds": [
-    "79279261-96c3-4c3e-a09a-0cd6f643df5f"
-  ],
   "ddl": [
     {
       "isRlsEnabled": false,
@@ -345,12 +345,6 @@
     {
       "isRlsEnabled": false,
       "name": "slack_workspaces",
-      "entityType": "tables",
-      "schema": "public"
-    },
-    {
-      "isRlsEnabled": false,
-      "name": "pr_review_findings",
       "entityType": "tables",
       "schema": "public"
     },
@@ -2993,6 +2987,45 @@
       "generated": null,
       "identity": null,
       "name": "settings",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "chat_workspaces"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "credentials_ciphertext",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "chat_workspaces"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "credentials_iv",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "chat_workspaces"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "credentials_tag",
       "entityType": "columns",
       "schema": "public",
       "table": "chat_workspaces"
@@ -10700,214 +10733,6 @@
       "name": "id",
       "entityType": "columns",
       "schema": "public",
-      "table": "pr_review_findings"
-    },
-    {
-      "type": "text",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
-      "name": "org_id",
-      "entityType": "columns",
-      "schema": "public",
-      "table": "pr_review_findings"
-    },
-    {
-      "type": "text",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
-      "name": "repository_id",
-      "entityType": "columns",
-      "schema": "public",
-      "table": "pr_review_findings"
-    },
-    {
-      "type": "integer",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
-      "name": "number",
-      "entityType": "columns",
-      "schema": "public",
-      "table": "pr_review_findings"
-    },
-    {
-      "type": "text",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
-      "name": "review_id",
-      "entityType": "columns",
-      "schema": "public",
-      "table": "pr_review_findings"
-    },
-    {
-      "type": "text",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
-      "name": "handle",
-      "entityType": "columns",
-      "schema": "public",
-      "table": "pr_review_findings"
-    },
-    {
-      "type": "text",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
-      "name": "path",
-      "entityType": "columns",
-      "schema": "public",
-      "table": "pr_review_findings"
-    },
-    {
-      "type": "integer",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
-      "name": "line",
-      "entityType": "columns",
-      "schema": "public",
-      "table": "pr_review_findings"
-    },
-    {
-      "type": "text",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
-      "name": "category",
-      "entityType": "columns",
-      "schema": "public",
-      "table": "pr_review_findings"
-    },
-    {
-      "type": "text",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
-      "name": "severity",
-      "entityType": "columns",
-      "schema": "public",
-      "table": "pr_review_findings"
-    },
-    {
-      "type": "text",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
-      "name": "title",
-      "entityType": "columns",
-      "schema": "public",
-      "table": "pr_review_findings"
-    },
-    {
-      "type": "text",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": "'open'",
-      "generated": null,
-      "identity": null,
-      "name": "status",
-      "entityType": "columns",
-      "schema": "public",
-      "table": "pr_review_findings"
-    },
-    {
-      "type": "text",
-      "typeSchema": null,
-      "notNull": false,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
-      "name": "comment_id",
-      "entityType": "columns",
-      "schema": "public",
-      "table": "pr_review_findings"
-    },
-    {
-      "type": "text",
-      "typeSchema": null,
-      "notNull": false,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
-      "name": "resolved_sha",
-      "entityType": "columns",
-      "schema": "public",
-      "table": "pr_review_findings"
-    },
-    {
-      "type": "timestamp with time zone",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
-      "name": "created_at",
-      "entityType": "columns",
-      "schema": "public",
-      "table": "pr_review_findings"
-    },
-    {
-      "type": "timestamp with time zone",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
-      "name": "updated_at",
-      "entityType": "columns",
-      "schema": "public",
-      "table": "pr_review_findings"
-    },
-    {
-      "type": "text",
-      "typeSchema": null,
-      "notNull": true,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
-      "name": "id",
-      "entityType": "columns",
-      "schema": "public",
       "table": "pr_reviews"
     },
     {
@@ -11816,19 +11641,6 @@
       "generated": null,
       "identity": null,
       "name": "pr_review_enabled",
-      "entityType": "columns",
-      "schema": "public",
-      "table": "vcs_repositories"
-    },
-    {
-      "type": "jsonb",
-      "typeSchema": null,
-      "notNull": false,
-      "dimensions": 0,
-      "default": null,
-      "generated": null,
-      "identity": null,
-      "name": "pr_review_config",
       "entityType": "columns",
       "schema": "public",
       "table": "vcs_repositories"
@@ -15242,62 +15054,6 @@
           "opclass": null
         },
         {
-          "value": "handle",
-          "isExpression": false,
-          "asc": true,
-          "nullsFirst": false,
-          "opclass": null
-        }
-      ],
-      "isUnique": true,
-      "where": null,
-      "with": "",
-      "method": "btree",
-      "concurrently": false,
-      "name": "pr_review_findings_pr_handle_idx",
-      "entityType": "indexes",
-      "schema": "public",
-      "table": "pr_review_findings"
-    },
-    {
-      "nameExplicit": true,
-      "columns": [
-        {
-          "value": "org_id",
-          "isExpression": false,
-          "asc": true,
-          "nullsFirst": false,
-          "opclass": null
-        }
-      ],
-      "isUnique": false,
-      "where": null,
-      "with": "",
-      "method": "btree",
-      "concurrently": false,
-      "name": "pr_review_findings_org_idx",
-      "entityType": "indexes",
-      "schema": "public",
-      "table": "pr_review_findings"
-    },
-    {
-      "nameExplicit": true,
-      "columns": [
-        {
-          "value": "repository_id",
-          "isExpression": false,
-          "asc": true,
-          "nullsFirst": false,
-          "opclass": null
-        },
-        {
-          "value": "number",
-          "isExpression": false,
-          "asc": true,
-          "nullsFirst": false,
-          "opclass": null
-        },
-        {
           "value": "head_sha",
           "isExpression": false,
           "asc": true,
@@ -16215,16 +15971,6 @@
       "name": "slack_workspaces_pkey",
       "schema": "public",
       "table": "slack_workspaces",
-      "entityType": "pks"
-    },
-    {
-      "columns": [
-        "id"
-      ],
-      "nameExplicit": false,
-      "name": "pr_review_findings_pkey",
-      "schema": "public",
-      "table": "pr_review_findings",
       "entityType": "pks"
     },
     {

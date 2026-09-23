@@ -1,9 +1,9 @@
 {
   "version": "8",
   "dialect": "postgres",
-  "id": "05d251de-07e9-4a7b-a052-4bd38ec08a35",
+  "id": "dcc08525-e32f-4dab-ac8c-f21076f62f9f",
   "prevIds": [
-    "6189b845-fcf0-42cf-9014-a20c3fe9dfbb"
+    "92d030ba-fb28-43d2-9d5b-5bad4fa5cf48"
   ],
   "ddl": [
     {
@@ -3005,6 +3005,45 @@
       "generated": null,
       "identity": null,
       "name": "settings",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "chat_workspaces"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "credentials_ciphertext",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "chat_workspaces"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "credentials_iv",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "chat_workspaces"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "credentials_tag",
       "entityType": "columns",
       "schema": "public",
       "table": "chat_workspaces"

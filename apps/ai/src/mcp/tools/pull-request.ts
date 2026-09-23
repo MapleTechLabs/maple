@@ -327,7 +327,7 @@ export function registerPullRequestTools(server: McpToolRegistrar) {
 				.pipe(Effect.mapError(toSourceError("pr_context")))
 			return renderPullRequestContext(number, context)
 		}),
-		INTERNAL,
+		{ ...INTERNAL, phrases: ["Reading the pull request"] },
 	)
 
 	server.tool(

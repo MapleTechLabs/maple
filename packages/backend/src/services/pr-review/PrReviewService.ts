@@ -880,6 +880,9 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 							.set({
 								status: "queued",
 								error: null,
+								// A reclaimed skipped or completed row must not carry its old outcome forward.
+								skipReason: null,
+								publishError: null,
 								startedAt: null,
 								finishedAt: null,
 								updatedAt: msToDate(nowMs),

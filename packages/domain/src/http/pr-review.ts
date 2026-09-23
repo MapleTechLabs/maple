@@ -435,23 +435,31 @@ export type PrReviewReplyStatus = Schema.Schema.Type<typeof PrReviewReplyStatus>
  */
 const MENTION = /(^|[^\w@./-])@maple(?:labsapp)?(?![\w-])/i
 
-/** Whether a comment mentions the reviewer at all. */
-export const mentionsReviewer = (body: string): boolean => MENTION.test(body)
+/** The comment without quoted lines or fenced code: a quote-reply of `@maple fix` is not a new request. */
+const addressedText = (body: string): string =>
+	body
+		.replace(/```[\s\S]*?```/g, "")
+		.split("\n")
+		.filter((line) => !/^\s*>/.test(line))
+		.join("\n")
+
+/** Whether a comment mentions the reviewer at all, outside quotes and code. */
+export const mentionsReviewer = (body: string): boolean => MENTION.test(addressedText(body))
 
 /**
  * The command a mention carries: the first word after it, `review` or `fix`, else a question.
- * `text` is the comment with the mention removed, what the reply agent is asked.
+ * Read outside quotes and code; `text` is the whole comment, quotes included, for the reply agent.
  */
 export const parseReplyCommand = (
 	body: string,
 ): { readonly command: PrReviewReplyCommand; readonly text: string } => {
-	const match = MENTION.exec(body)
-	if (match === null) return { command: "ask", text: body.trim() }
-	const after = body.slice(match.index + match[0].length)
-	const word = /^\s*([a-z]+)\b/i.exec(after)?.[1]?.toLowerCase()
-	const command: PrReviewReplyCommand = word === "review" ? "review" : word === "fix" ? "fix" : "ask"
-	const text = `${body.slice(0, match.index + (match[1]?.length ?? 0))}${after}`.trim()
-	return { command, text }
+	const cleaned = addressedText(body)
+	const match = MENTION.exec(cleaned)
+	const word =
+		match === null ? undefined : /^\s*([a-z]+)\b/i.exec(cleaned.slice(match.index + match[0].length))?.[1]
+	const command: PrReviewReplyCommand =
+		word?.toLowerCase() === "review" ? "review" : word?.toLowerCase() === "fix" ? "fix" : "ask"
+	return { command, text: body.trim() }
 }
 
 /** What `submit_reply` accepts: the answer, in GitHub markdown. Lenient like `submit_review`. */

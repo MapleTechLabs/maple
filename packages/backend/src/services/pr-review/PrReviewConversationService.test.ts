@@ -242,7 +242,7 @@ describe("PrReviewConversationService", () => {
 			assert.equal(outcome.outcome, "started")
 			assert.deepEqual(recorded.reactions, ["901:eyes"])
 			assert.include(recorded.begun[0]!, "@octocat mentioned you on pull request #612")
-			assert.include(recorded.begun[0]!, "> why does this need a lock?")
+			assert.include(recorded.begun[0]!, "> @maple why does this need a lock?")
 			yield* conversations.submitReply(
 				orgId,
 				outcome.replyId!,

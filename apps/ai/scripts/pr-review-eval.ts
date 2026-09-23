@@ -7,7 +7,8 @@
  * `mine` walks `fix:` commits, blames the lines each one changed back to the squash-merged pull
  * request that wrote them, and prints candidates. A person keeps the real bugs in
  * `pr-review-eval/corpus.json`. `run` reviews every corpus pull request with `review:local` and
- * counts a case caught when a finding lands on a line the fix later changed. Unmatched findings are
+ * counts a case located when a finding lands on a line the fix later changed; whether that finding
+ * names the bug is for a person to read in `hits`. Unmatched findings are
  * not false positives by definition; read them in each run's `review.md`.
  */
 import { spawnSync } from "node:child_process"
@@ -58,12 +59,27 @@ const flags = (argv: ReadonlyArray<string>): Map<string, string> => {
 	const out = new Map<string, string>()
 	for (let i = 0; i < argv.length; i++) {
 		const arg = argv[i] ?? ""
-		if (arg.startsWith("--")) {
-			out.set(arg.slice(2), argv[i + 1] ?? "")
-			i++
+		if (!arg.startsWith("--")) continue
+		const value = argv[i + 1]
+		// A flag without an operand is an error, never a reason to swallow the next flag.
+		if (value === undefined || value.startsWith("--")) {
+			console.error(`${arg} needs a value`)
+			process.exit(2)
 		}
+		out.set(arg.slice(2), value)
+		i++
 	}
 	return out
+}
+
+const positiveInt = (raw: string | undefined, fallback: number, name: string): number => {
+	if (raw === undefined) return fallback
+	const n = Number(raw)
+	if (!Number.isInteger(n) || n < 1) {
+		console.error(`--${name} must be a positive integer; got ${raw}`)
+		process.exit(2)
+	}
+	return n
 }
 
 // Mining
@@ -81,12 +97,14 @@ const changedOldRanges = (sha: string): Array<Location> => {
 		if (hunk === null || path === undefined) continue
 		const start = Number(hunk[1])
 		const count = hunk[2] === undefined ? 1 : Number(hunk[2])
-		if (count === 0) continue
+		// An insertion-only hunk (a guard, a missing header) removed nothing; the line it follows is
+		// what the buggy code left out, so that line is what gets blamed.
+		if (count === 0 && start === 0) continue
 		const kind = classifyChangedFile(path)
 		// A snapshot or a dependency patch changes with the bug's fix but never contained the bug.
 		if (path.includes("__sql_baseline__") || path.endsWith(".patch")) continue
 		if (kind === "source" || kind === "infra" || kind === "config")
-			ranges.push({ path, lines: [start, start + count - 1] })
+			ranges.push({ path, lines: count === 0 ? [start, start] : [start, start + count - 1] })
 	}
 	return ranges
 }
@@ -140,7 +158,7 @@ const mine = (argv: ReadonlyArray<string>) => {
 	const opts = flags(argv)
 	const ref = opts.get("ref") ?? "origin/main"
 	const since = opts.get("since") ?? "2026-08-01"
-	const limit = Number(opts.get("limit") ?? "40")
+	const limit = positiveInt(opts.get("limit"), 40, "limit")
 	const subjects = new Map<string, string>()
 	const subjectOf = (sha: string) => {
 		const known = subjects.get(sha)
@@ -238,9 +256,9 @@ const runEval = async (argv: ReadonlyArray<string>) => {
 		"",
 		`Model: ${model ?? "(default)"} · prompt: ${opts.get("prompt-file") ?? "(committed)"}`,
 		"",
-		`**Caught ${caught} of ${cases.length}** (${submitted.length} submitted) · ${sum("findings")} findings, ${sum("unmatched")} unmatched · ${sum("calls")} calls · ${sum("inputTokens")} input tokens · ${sum("seconds")} s`,
+		`**Located ${caught} of ${cases.length}** (a finding on the fixed lines; read the hits to confirm it names the bug) (${submitted.length} submitted) · ${sum("findings")} findings, ${sum("unmatched")} unmatched · ${sum("calls")} calls · ${sum("inputTokens")} input tokens · ${sum("seconds")} s`,
 		"",
-		"| Case | Caught | Findings | Unmatched | Calls | Seconds |",
+		"| Case | Located | Findings | Unmatched | Calls | Seconds |",
 		"| --- | --- | --- | --- | --- | --- |",
 		...results.map((r) =>
 			r.submitted
