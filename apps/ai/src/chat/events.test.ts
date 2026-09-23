@@ -98,6 +98,20 @@ describe("toChatEvents", () => {
 		assert.notProperty(call, "proposed")
 	})
 
+	it("carries the tool's phrase, and leaves it off for a tool without one", () => {
+		const labelOf = (name: string) => (name === "run_sql" ? "Running a query" : undefined)
+		const [labelled] = toChatEvents(
+			event("ToolCallDeclared", { toolCallId: "c", toolName: "run_sql", parameters: {} }),
+			{ ...base, labelOf },
+		)
+		assert.deepInclude(labelled, { label: "Running a query" })
+		const [bare] = toChatEvents(
+			event("ToolCallDeclared", { toolCallId: "c", toolName: "submit_diagnosis", parameters: {} }),
+			{ ...base, labelOf },
+		)
+		assert.notProperty(bare, "label")
+	})
+
 	it("distinguishes a failed tool result from a successful one", () => {
 		assert.deepEqual(
 			toChatEvents(event("ToolCallSucceeded", { toolCallId: "c", result: "rows" }), base),

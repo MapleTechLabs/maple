@@ -135,5 +135,6 @@ export function registerListProductEventsTool(server: McpToolRegistrar) {
 			const data: ListProductEventsData = { timeRange: { start: st, end: et }, events }
 			return { content: createDualContent(lines.join("\n"), { tool: TOOL, data }) }
 		}),
+		{ phrases: ["Listing product events"] },
 	)
 }

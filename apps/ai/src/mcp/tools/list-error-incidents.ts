@@ -102,5 +102,6 @@ export function registerListErrorIncidentsTool(server: McpToolRegistrar) {
 				}),
 			}
 		}),
+		{ phrases: ["Listing error incidents"] },
 	)
 }

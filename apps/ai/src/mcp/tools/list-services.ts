@@ -83,5 +83,6 @@ export function registerListServicesTool(server: McpToolRegistrar) {
 				}),
 			}
 		}),
+		{ phrases: ["Listing services", "Checking which services are reporting"] },
 	)
 }

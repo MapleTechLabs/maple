@@ -76,5 +76,6 @@ export function registerCommentOnErrorIssueTool(server: McpToolRegistrar) {
 				}),
 			}
 		}),
+		{ phrases: ["Commenting on an issue"] },
 	)
 }

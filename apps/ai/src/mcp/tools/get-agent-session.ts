@@ -265,5 +265,6 @@ export function registerGetAgentSessionTool(server: McpToolRegistrar) {
 			Effect.catchTags(warehouseReadToMcpHandlers("get_agent_session")),
 			catchSessionTooLarge(WHOLE_SESSION_TOO_LARGE),
 		),
+		{ phrases: ["Opening an agent session"] },
 	)
 }

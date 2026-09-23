@@ -87,5 +87,6 @@ export function registerSetIssueSeverityTool(server: McpToolRegistrar) {
 				}),
 			}
 		}),
+		{ phrases: ["Setting issue severity"] },
 	)
 }

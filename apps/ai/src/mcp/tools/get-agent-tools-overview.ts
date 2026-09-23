@@ -323,5 +323,6 @@ export function registerGetAgentToolsOverviewTool(server: McpToolRegistrar) {
 
 			return { content: [{ type: "text" as const, text: lines.join("\n") }] }
 		}),
+		{ phrases: ["Checking agent tool usage"] },
 	)
 }

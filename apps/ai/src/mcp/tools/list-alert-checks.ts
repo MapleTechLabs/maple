@@ -171,5 +171,6 @@ export function registerListAlertChecksTool(server: McpToolRegistrar) {
 				}),
 			}
 		}),
+		{ phrases: ["Reading alert check history"] },
 	)
 }

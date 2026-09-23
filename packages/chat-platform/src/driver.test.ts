@@ -90,7 +90,7 @@ const prose = (blocks: ReadonlyArray<ChatBlock>): string =>
 
 /** Whatever the status line names, if a message is carrying one at all. */
 const working = (blocks: ReadonlyArray<ChatBlock>): ReadonlyArray<string> =>
-	blocks.flatMap((block) => (block.kind === "activity" ? block.tools.map((tool) => tool.name) : []))
+	blocks.flatMap((block) => (block.kind === "activity" ? block.tools.map((tool) => tool.label) : []))
 
 describe("driveChatTurn", () => {
 	it.effect("posts a placeholder, coalesces deltas into throttled edits, and flushes at the end", () =>
@@ -153,6 +153,7 @@ describe("driveChatTurn", () => {
 								messageId: "a1",
 								callId: "c1",
 								name: "find_errors",
+								label: "Finding errors",
 								input: {},
 							}),
 						],
@@ -175,6 +176,7 @@ describe("driveChatTurn", () => {
 								messageId: "a1",
 								callId: "c2",
 								name: "search_traces",
+								label: "Searching traces",
 								input: {},
 							}),
 						],
@@ -208,16 +210,16 @@ describe("driveChatTurn", () => {
 			// The first thing the reader sees after the placeholder: the tool, and none of the
 			// narration the model wrote on its way into it.
 			expect(chat.calls.find((call) => working(call.blocks).length > 0)?.blocks).toEqual([
-				{ kind: "activity", tools: [{ name: "find_errors", status: "running", detail: null }] },
+				{ kind: "activity", tools: [{ label: "Finding errors", status: "running", detail: null }] },
 			])
 			const lines = chat.calls.map((call) => working(call.blocks))
 			// One tool at a time, never the list of everything the turn touched on its way here.
 			for (const line of lines) expect(line.length).toBeLessThanOrEqual(1)
 			// The two calls, in the order the turn made them. Repeats are a call whose status
 			// changed under the same name, which is one line either way.
-			expect(lines.flat().filter((name, index, all) => name !== all[index - 1])).toEqual([
-				"find_errors",
-				"search_traces",
+			expect(lines.flat().filter((label, index, all) => label !== all[index - 1])).toEqual([
+				"Finding errors",
+				"Searching traces",
 			])
 			// The words the model wrote to itself between its calls never reach the channel.
 			for (const call of chat.calls) expect(prose(call.blocks)).not.toMatch(/Let me|Now I'll/)
@@ -243,6 +245,7 @@ describe("driveChatTurn", () => {
 							messageId: "a1",
 							callId: "c1",
 							name: "find_errors",
+							label: "Finding errors",
 							input: {},
 						}),
 					],
@@ -303,7 +306,10 @@ describe("driveChatTurn", () => {
 
 			// The delegation is a line on the same status block, named for the agent it runs.
 			expect(chat.calls.find((call) => working(call.blocks).length > 0)?.blocks).toEqual([
-				{ kind: "activity", tools: [{ name: "reviewer", status: "running", detail: "1 step" }] },
+				{
+					kind: "activity",
+					tools: [{ label: "Delegating to reviewer", status: "running", detail: "1 step" }],
+				},
 			])
 		}),
 	)

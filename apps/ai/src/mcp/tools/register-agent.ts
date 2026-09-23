@@ -91,5 +91,6 @@ export function registerRegisterAgentTool(server: McpToolRegistrar) {
 				}),
 			}
 		}),
+		{ phrases: ["Registering an agent"] },
 	)
 }

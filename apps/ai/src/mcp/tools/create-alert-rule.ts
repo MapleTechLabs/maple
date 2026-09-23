@@ -379,5 +379,6 @@ export function registerCreateAlertRuleTool(server: McpToolRegistrar) {
 				}),
 			}
 		}),
+		{ phrases: ["Creating an alert rule"] },
 	)
 }

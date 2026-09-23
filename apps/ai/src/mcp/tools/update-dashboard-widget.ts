@@ -157,5 +157,6 @@ export function registerUpdateDashboardWidgetTool(server: McpToolRegistrar) {
 				}),
 			}
 		}),
+		{ phrases: ["Updating a widget"] },
 	)
 }

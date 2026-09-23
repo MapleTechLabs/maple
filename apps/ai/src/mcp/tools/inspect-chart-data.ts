@@ -343,5 +343,6 @@ export function registerInspectChartDataTool(server: McpToolRegistrar) {
 				}),
 			}
 		}),
+		{ phrases: ["Inspecting chart data"] },
 	)
 }

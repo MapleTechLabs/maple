@@ -166,7 +166,7 @@ export function registerSandboxTools(server: McpToolRegistrar) {
 					: []),
 			])
 		}),
-		INTERNAL,
+		{ ...INTERNAL, phrases: ["Searching the repository", "Grepping the code"] },
 	)
 
 	server.tool(
@@ -206,7 +206,7 @@ export function registerSandboxTools(server: McpToolRegistrar) {
 					: []),
 			])
 		}),
-		INTERNAL,
+		{ ...INTERNAL, phrases: ["Listing files"] },
 	)
 
 	server.tool(
@@ -264,7 +264,7 @@ export function registerSandboxTools(server: McpToolRegistrar) {
 				"```",
 			])
 		}),
-		INTERNAL,
+		{ ...INTERNAL, phrases: ["Reading a file"] },
 	)
 
 	server.tool(
@@ -331,6 +331,6 @@ export function registerSandboxTools(server: McpToolRegistrar) {
 					: []),
 			])
 		}),
-		INTERNAL,
+		{ ...INTERNAL, phrases: ["Running a command"] },
 	)
 }

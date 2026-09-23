@@ -84,5 +84,6 @@ export function registerDeleteAlertRuleTool(server: McpToolRegistrar) {
 				}),
 			}
 		}),
+		{ phrases: ["Deleting an alert rule"] },
 	)
 }
