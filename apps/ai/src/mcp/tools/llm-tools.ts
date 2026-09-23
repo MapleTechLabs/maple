@@ -84,6 +84,8 @@ export interface BuildMapleToolsOptions {
 	readonly surface: McpToolSurface
 	/** The agent-session identity of the run, stamped on every tool span — see `withToolCallContent`. */
 	readonly sessionAttributes?: Readonly<Record<string, string>>
+	/** Sees every successful answer this build dispatches; a review pass tracks what it read here. */
+	readonly onAnswer?: (tool: string, answer: string) => void
 }
 
 /**
@@ -192,6 +194,7 @@ export const buildMapleToolkit = (
 							? fail(toolResultText(result))
 							: Effect.succeed(toolResultText(result)),
 					),
+					Effect.tap((answer) => Effect.sync(() => options.onAnswer?.(definition.name, answer))),
 				)
 			const handle = (params: unknown): Effect.Effect<string, typeof ToolFailure.Type> => {
 				if (gated) {

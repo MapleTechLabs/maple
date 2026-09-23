@@ -15,7 +15,9 @@
  * `blocks` and `thread_ts`, `chat.update` takes `channel`, `ts`, `text` and `blocks`, most failures
  * arrive as HTTP 200 with `ok: false`, and a rate limit is a 429 with `Retry-After` in whole
  * seconds. There is no typing indicator for a bot token on the Web API at all — the RTM method
- * that had one is deprecated and not available here.
+ * that had one is deprecated and not available here. `conversations.list` takes its arguments as
+ * a query string (it accepts no JSON body), pages with `response_metadata.next_cursor`, and allows
+ * up to 1000 per page.
  */
 import { ChatConversationKey } from "@maple/primitives"
 import { Array as Arr, Duration, Effect, Option, Order, Redacted, Schema } from "effect"
@@ -26,6 +28,8 @@ import {
 	ConnectorCredentials,
 	WORKSPACE_CREDENTIALS,
 	type ChatConversation,
+	type ChatDestination,
+	type ChatOutboundFailureReason,
 	type ChatHistoryMessage,
 	type ChatMessageRef,
 	type ChatOutbound,
@@ -37,13 +41,14 @@ import type { ChatBlock } from "../../render/blocks"
 import {
 	API_HOST,
 	CHANNEL_HISTORY_URL,
+	CONVERSATIONS_LIST_URL,
 	POST_MESSAGE_URL,
 	THREAD_REPLIES_URL,
 	UPDATE_MESSAGE_URL,
 } from "./api"
 import { decodeSlackCredentials } from "./credentials"
 import { SLACK_CONNECTOR_ID } from "./id"
-import { decodeApiResult, decodeHistoryMessage } from "./payloads"
+import { decodeApiResult, decodeChannel, decodeHistoryMessage, type SlackApiResult } from "./payloads"
 import { renderSlackMessage, type SlackApiRequest, type SlackMessageRequest } from "./render"
 
 /**
@@ -129,6 +134,46 @@ const historyEntry = (raw: unknown): Option.Option<HistoryEntry> =>
 		})),
 	)
 
+/** One page of `conversations.list` at Slack's own maximum. */
+const CHANNELS_PER_PAGE = 1000
+
+/**
+ * How many pages a listing walks before it stops. Five thousand channels is past any workspace a
+ * person picks from by scrolling, and the method is Tier 2 — a longer walk is a rate limit.
+ */
+const MAX_CHANNEL_PAGES = 5
+
+/**
+ * The `ok: false` codes that say something a caller can act on, by what they mean.
+ *
+ * `missing_scope` is an AUTH failure on purpose: a workspace installed before a scope was added
+ * holds a token without it, and only reinstalling the app grants it.
+ */
+const FAILURE_REASONS: ReadonlyMap<string, ChatOutboundFailureReason> = new Map([
+	...[
+		"invalid_auth",
+		"not_authed",
+		"account_inactive",
+		"token_revoked",
+		"token_expired",
+		"missing_scope",
+		"no_permission",
+		"not_allowed_token_type",
+		"team_access_not_granted",
+		"ekm_access_denied",
+	].map((code) => [code, "auth"] as const),
+	...["channel_not_found", "not_in_channel", "is_archived"].map((code) => [code, "not_found"] as const),
+	...[
+		"invalid_blocks",
+		"invalid_blocks_format",
+		"msg_too_long",
+		"no_text",
+		"too_many_attachments",
+		"invalid_arguments",
+		"restricted_action",
+	].map((code) => [code, "rejected"] as const),
+])
+
 /** Slack's two spellings for the same thing, both of which it documents. */
 const RATE_LIMIT_ERRORS: ReadonlySet<string> = new Set(["ratelimited", "rate_limited"])
 
@@ -159,14 +204,26 @@ class SlackRateLimited extends Schema.TaggedError<SlackRateLimited>()(
 	{ wait: Schema.Duration },
 ) {}
 
+/** A Web API call with a JSON body — every method this connector calls except the listing. */
+const jsonRequest = (url: string, payload: SlackApiRequest) =>
+	HttpClientRequest.post(url, {
+		headers: { "content-type": "application/json; charset=utf-8" },
+	}).pipe(HttpClientRequest.bodyJsonUnsafe(payload))
+
 export const slackOutbound: ChatOutbound<HttpClient.HttpClient | ConnectorCredentials> = {
 	connectorId: SLACK_CONNECTOR_ID,
 	limits: { maxMessageChars: MAX_MESSAGE_CHARS, minEditInterval: MIN_EDIT_INTERVAL },
+	// The bot token is per workspace and arrives under `WORKSPACE_CREDENTIALS`; nothing is
+	// deployment-wide.
+	requiredConfig: [],
 	transport: Effect.gen(function* () {
 		const client = yield* HttpClient.HttpClient
-		const config: ConnectorConfig = yield* ConnectorCredentials
-		const credentials = decodeSlackCredentials(config.get(WORKSPACE_CREDENTIALS))
-		const token = Option.map(credentials, (value) => Redacted.make(value.bot_token))
+		// Per call, not here: acquiring the transport must not cost the host its credential read.
+		const token = Effect.map(yield* ConnectorCredentials, (config: ConnectorConfig) =>
+			Option.map(decodeSlackCredentials(config.get(WORKSPACE_CREDENTIALS)), (value) =>
+				Redacted.make(value.bot_token),
+			),
+		)
 
 		/**
 		 * One Web API call, as one client span.
@@ -179,23 +236,17 @@ export const slackOutbound: ChatOutbound<HttpClient.HttpClient | ConnectorCreden
 			bearer: Redacted.Redacted<string>,
 			operation: ChatOutboundOperation,
 			method: string,
-			url: string,
-			payload: SlackApiRequest,
+			request: HttpClientRequest.HttpClientRequest,
 		) {
 			yield* Effect.annotateCurrentSpan({
 				"peer.service": "slack",
-				"http.request.method": "POST",
+				"http.request.method": request.method,
 				"server.address": API_HOST,
 				"url.template": `/api/${method}`,
 			})
 			const response = yield* client
 				.execute(
-					HttpClientRequest.post(url, {
-						headers: {
-							authorization: `Bearer ${Redacted.value(bearer)}`,
-							"content-type": "application/json; charset=utf-8",
-						},
-					}).pipe(HttpClientRequest.bodyJsonUnsafe(payload)),
+					HttpClientRequest.setHeader(request, "authorization", `Bearer ${Redacted.value(bearer)}`),
 				)
 				.pipe(
 					// The reason matters: an encode or invalid-url failure is Maple's own bug, and
@@ -226,8 +277,10 @@ export const slackOutbound: ChatOutbound<HttpClient.HttpClient | ConnectorCreden
 				if (RATE_LIMIT_ERRORS.has(error)) {
 					return yield* new SlackRateLimited({ wait: retryAfter(response) })
 				}
+				const reason = FAILURE_REASONS.get(error)
 				return yield* failed(operation, `Slack refused the call: ${error}`, {
 					status: response.status,
+					...(reason === undefined ? undefined : { reason }),
 				})
 			}
 			return result
@@ -236,45 +289,38 @@ export const slackOutbound: ChatOutbound<HttpClient.HttpClient | ConnectorCreden
 		const send = (
 			operation: ChatOutboundOperation,
 			method: string,
-			url: string,
-			payload: SlackApiRequest,
-		): Effect.Effect<
-			{ readonly ts?: string | undefined; readonly messages?: ReadonlyArray<unknown> | undefined },
-			ChatOutboundError
-		> => {
-			// Checked BEFORE the client span is opened. The workspace having no stored token is a
-			// Maple-side state — nobody linked it, or the envelope could not be opened — and
-			// recording it inside a `Slack.request` span would put a failed edge on the service map
-			// for a call that was never made.
-			if (Option.isNone(token)) {
-				return Effect.fail(failed(operation, "This Slack workspace is not connected to Maple"))
-			}
-			const bearer = token.value
-			const tryOnce = (
-				count: number,
-			): Effect.Effect<
-				{
-					readonly ts?: string | undefined
-					readonly messages?: ReadonlyArray<unknown> | undefined
-				},
-				ChatOutboundError
-			> =>
-				attempt(bearer, operation, method, url, payload).pipe(
-					Effect.catchTag("@maple/chat-platform/connectors/slack/RateLimited", (limited) =>
-						// A read of the conversation is CONTEXT, and the turn has not started yet —
-						// waiting a rate limit out here delays the answer to buy background the model
-						// can do without. An answer is worth waiting for; the history behind it is not.
-						count >= MAX_RATE_LIMIT_ATTEMPTS || operation === "history"
-							? Effect.fail(
-									failed(operation, "Slack kept rate limiting this message", {
-										status: 429,
-									}),
-								)
-							: Effect.sleep(limited.wait).pipe(Effect.andThen(tryOnce(count + 1))),
-					),
-				)
-			return tryOnce(1)
-		}
+			request: HttpClientRequest.HttpClientRequest,
+		): Effect.Effect<SlackApiResult, ChatOutboundError> =>
+			Effect.flatMap(token, (token) => {
+				// Checked BEFORE the client span is opened. The workspace having no stored token is a
+				// Maple-side state — nobody linked it, or the envelope could not be opened — and
+				// recording it inside a `Slack.request` span would put a failed edge on the service
+				// map for a call that was never made.
+				if (Option.isNone(token)) {
+					return Effect.fail(failed(operation, "This Slack workspace is not connected to Maple"))
+				}
+				const bearer = token.value
+				const tryOnce = (count: number): Effect.Effect<SlackApiResult, ChatOutboundError> =>
+					attempt(bearer, operation, method, request).pipe(
+						Effect.catchTag("@maple/chat-platform/connectors/slack/RateLimited", (limited) =>
+							// A read of the conversation is CONTEXT, and the turn has not started yet —
+							// waiting a rate limit out here delays the answer to buy background the model
+							// can do without. An answer is worth waiting for; the history behind it is not.
+							// A channel listing has somebody waiting on a picker, who is better told to
+							// try again than left staring at a spinner for half a minute.
+							count >= MAX_RATE_LIMIT_ATTEMPTS ||
+							operation === "history" ||
+							operation === "destinations"
+								? Effect.fail(
+										failed(operation, "Slack kept rate limiting this message", {
+											status: 429,
+										}),
+									)
+								: Effect.sleep(limited.wait).pipe(Effect.andThen(tryOnce(count + 1))),
+						),
+					)
+				return tryOnce(1)
+			})
 
 		/** `thread_ts` is left out entirely when there is no thread; Slack rejects an empty one. */
 		const body = (
@@ -292,8 +338,7 @@ export const slackOutbound: ChatOutbound<HttpClient.HttpClient | ConnectorCreden
 				const result = yield* send(
 					"post",
 					"chat.postMessage",
-					POST_MESSAGE_URL,
-					body(target.channelId, blocks, target.threadId),
+					jsonRequest(POST_MESSAGE_URL, body(target.channelId, blocks, target.threadId)),
 				)
 				if (result.ts === undefined) {
 					return yield* failed("post", "Slack answered with no message timestamp")
@@ -303,10 +348,14 @@ export const slackOutbound: ChatOutbound<HttpClient.HttpClient | ConnectorCreden
 
 			edit: (ref: ChatMessageRef, blocks: ReadonlyArray<ChatBlock>) =>
 				// `chat.update` addresses the message by its own `ts`; a thread is not named again.
-				send("edit", "chat.update", UPDATE_MESSAGE_URL, {
-					...body(ref.target.channelId, blocks),
-					ts: ref.messageId,
-				}).pipe(Effect.asVoid),
+				send(
+					"edit",
+					"chat.update",
+					jsonRequest(UPDATE_MESSAGE_URL, {
+						...body(ref.target.channelId, blocks),
+						ts: ref.messageId,
+					}),
+				).pipe(Effect.asVoid),
 
 			/**
 			 * What was said in this conversation before a message, newest first.
@@ -338,17 +387,61 @@ export const slackOutbound: ChatOutbound<HttpClient.HttpClient | ConnectorCreden
 				const result = yield* send(
 					"history",
 					thread === undefined ? "conversations.history" : "conversations.replies",
-					thread === undefined ? CHANNEL_HISTORY_URL : THREAD_REPLIES_URL,
-					{
+					jsonRequest(thread === undefined ? CHANNEL_HISTORY_URL : THREAD_REPLIES_URL, {
 						channel: target.channelId,
 						limit: thread === undefined ? limit : MAX_HISTORY_LIMIT,
 						latest: options.before,
 						inclusive: false,
 						...(thread === undefined ? undefined : { ts: thread }),
-					},
+					}),
 				)
 				const page = Arr.getSomes(Arr.map(result.messages ?? [], historyEntry))
 				return Arr.map(Arr.take(Arr.sort(page, newestFirst), limit), (entry) => entry.message)
+			}),
+
+			/**
+			 * The workspace's unarchived public and private channels, by name.
+			 *
+			 * Private channels are listed only where the bot is a member — Slack's own rule for a bot
+			 * token — which is exactly the set it can post to. Public channels are listed whether or
+			 * not it has joined, because `chat:write.public` lets it post to them uninvited.
+			 *
+			 * The walk stops at {@link MAX_CHANNEL_PAGES}; a longer workspace lists a prefix.
+			 */
+			destinations: Effect.fn("Slack.destinations")(function* (_workspaceId: string) {
+				const channels: Array<ChatDestination> = []
+				let cursor: string | undefined
+				let pages = 0
+				for (; pages < MAX_CHANNEL_PAGES; pages++) {
+					const params = new URLSearchParams({
+						types: "public_channel,private_channel",
+						exclude_archived: "true",
+						limit: String(CHANNELS_PER_PAGE),
+					})
+					if (cursor !== undefined) params.set("cursor", cursor)
+					const result = yield* send(
+						"destinations",
+						"conversations.list",
+						HttpClientRequest.get(`${CONVERSATIONS_LIST_URL}?${params.toString()}`),
+					)
+					for (const channel of Arr.getSomes(
+						Arr.map(result.channels ?? [], (raw) => decodeChannel(raw)),
+					)) {
+						channels.push({
+							id: channel.id,
+							name: channel.name ?? channel.id,
+							private: channel.is_private === true,
+						})
+					}
+					cursor = result.response_metadata?.next_cursor
+					if (cursor === undefined || cursor === "") break
+				}
+				// A cursor still in hand after the last page is a workspace listed only in part.
+				yield* Effect.annotateCurrentSpan({
+					"chat.destinations.pages": Math.min(pages + 1, MAX_CHANNEL_PAGES),
+					"chat.destinations.truncated": cursor !== undefined && cursor !== "",
+				})
+				return Arr.sort(channels, byName)
 			}),
 
 			/**
@@ -413,10 +506,16 @@ export const slackOutbound: ChatOutbound<HttpClient.HttpClient | ConnectorCreden
  */
 const newestFirst = Order.mapInput(Order.flip(Order.Number), (entry: HistoryEntry) => entry.seconds)
 
+const byName = Order.mapInput(Order.String, (channel: ChatDestination) => channel.name)
+
 const failed = (
 	operation: ChatOutboundOperation,
 	message: string,
-	extra: { readonly status?: number; readonly cause?: unknown } = {},
+	extra: {
+		readonly status?: number
+		readonly reason?: ChatOutboundFailureReason
+		readonly cause?: unknown
+	} = {},
 ) => new ChatOutboundError({ message, connectorId: SLACK_CONNECTOR_ID, operation, ...extra })
 
 /**

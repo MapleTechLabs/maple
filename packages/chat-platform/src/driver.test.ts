@@ -52,6 +52,7 @@ const recorder = (maxMessageChars = 500): Recorder => {
 		outbound: {
 			connectorId: TESTCHAT,
 			limits: { maxMessageChars, minEditInterval: EDIT_INTERVAL },
+			requiredConfig: [],
 			transport: Effect.sync(() => ({
 				post: (postTarget, blocks) =>
 					Effect.sync(() => {
@@ -67,6 +68,7 @@ const recorder = (maxMessageChars = 500): Recorder => {
 				// it belongs to has been decided and the model has already been given it.
 				conversation: () => Effect.die("the driver asked which conversation this is"),
 				history: () => Effect.die("the driver asked what was said earlier"),
+				destinations: () => Effect.die("the driver asked where alerts can go"),
 			})),
 		},
 	}

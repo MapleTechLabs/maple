@@ -71,6 +71,25 @@ describe("buildMapleToolkit", () => {
 		assert.equal(toolkit.tools.create_dashboard?.failureMode, "error")
 	})
 
+	it("hands every successful answer to onAnswer and never a failed one", async () => {
+		const seen: Array<string> = []
+		const executor: McpToolExecutorApi = {
+			execute: (_tenant, name) =>
+				Effect.succeed(
+					name === "run_sql"
+						? { isError: true, content: [{ type: "text" as const, text: "rejected" }] }
+						: { content: [{ type: "text" as const, text: `${name} ran` }] },
+				),
+		}
+		const { handlers } = buildMapleToolkit(executor, TENANT, {
+			surface: "chat",
+			onAnswer: (tool, answer) => seen.push(`${tool}: ${answer}`),
+		})
+		await Effect.runPromise(handlers.list_services!({}, {} as never))
+		await Effect.runPromise(Effect.result(handlers.run_sql!({ sql: "select 1" }, {} as never)))
+		assert.deepEqual(seen, ["list_services: list_services ran"])
+	})
+
 	it("fails a tool that reported an error with its message", async () => {
 		const executor: McpToolExecutorApi = {
 			execute: () =>

@@ -4,6 +4,7 @@ import { MobileDevicesService } from "@maple/backend/services/push/MobileDevices
 import { ApnsClient } from "@maple/backend/platform/Apns"
 import { MobilePushService } from "@maple/backend/services/push/MobilePushService"
 import { SlackBotTokenResolver } from "@maple/backend/services/integrations/slack-bot-token"
+import { ChatAlertPoster } from "./ChatAlertPoster"
 // SAFETY-FILE: JSON in this test is emitted by the fixture or unit under test before its fields are asserted.
 // BOUNDARY: Test doubles preserve opaque values so the consuming boundary can be exercised.
 import { afterEach, assert, describe, it } from "@effect/vitest"
@@ -16,6 +17,8 @@ import {
 	AlertRecipientSelectionError,
 	type AlertDestinationId,
 	AlertRulePreviewRequest,
+	ChatConnectorId,
+	ChatWorkspaceId,
 	AlertRuleUpsertRequest,
 	OrgId,
 	WarehouseQueryError,
@@ -245,6 +248,7 @@ const makeLayer = (
 	warehouseStub: WarehouseQueryServiceApi,
 	runtimeOverrides?: Partial<AlertRuntimeApi>,
 	emailStub?: (typeof EmailService)["Service"],
+	chatAlertPoster: Layer.Layer<ChatAlertPoster, never, Database | Env> = ChatAlertPoster.layer,
 ) => {
 	const configLive = makeConfig()
 	const envLive = Env.layer.pipe(Layer.provide(configLive))
@@ -272,7 +276,7 @@ const makeLayer = (
 		Layer.provide(Layer.mergeAll(envLive, databaseLive, edgeCacheLive)),
 	)
 	const alertDestinationsLive = Layer.effect(AlertDestinationsService, AlertDestinationsService.make).pipe(
-		Layer.provide(SlackBotTokenResolver.layer),
+		Layer.provide(Layer.mergeAll(SlackBotTokenResolver.layer, chatAlertPoster)),
 		Layer.provide(
 			Layer.mergeAll(envLive, databaseLive, runtimeLive, hazelOAuthLive, emailLive, orgMembersLive),
 		),
@@ -285,7 +289,7 @@ const makeLayer = (
 	)
 
 	const alertsLive = Layer.effect(AlertsService, AlertsService.make).pipe(
-		Layer.provide(SlackBotTokenResolver.layer),
+		Layer.provide(Layer.mergeAll(SlackBotTokenResolver.layer, chatAlertPoster)),
 		Layer.provide(
 			Layer.effect(MobilePushService, MobilePushService.make).pipe(
 				Layer.provide(
@@ -2453,6 +2457,83 @@ describe("AlertsService", () => {
 				makeLayer(testDb, makeWarehouseStub({ tracesAggregateRows: emptyWarehouseRows }), {
 					fetch: fetchImpl,
 				}),
+			),
+		)
+	})
+
+	it.effect("names only a channel the workspace lists, on create and on a channel change", () => {
+		const testDb = createTestDb(trackedDbs)
+		const workspaceId = Schema.decodeUnknownSync(ChatWorkspaceId)("33333333-3333-4333-8333-333333333333")
+		const orgId = asOrgId("org_chat_dest")
+		const userId = asUserId("user_chat")
+		// The workspace's listing, as the real poster reads it from the connector: a channel not in
+		// it — say one in another org's guild, reachable with a shared bot token — is refused.
+		const listed = new Map([
+			["channel-1", "incidents"],
+			["channel-2", "oncall"],
+		])
+		const lookups: Array<string> = []
+		const poster = Layer.succeed(ChatAlertPoster, {
+			post: () => Effect.die("no alert is posted here"),
+			findChannel: (_orgId, _workspaceId, channelId) =>
+				Effect.suspend(() => {
+					lookups.push(channelId)
+					const channelName = listed.get(channelId)
+					return channelName === undefined
+						? Effect.fail(new AlertValidationError({ message: "not listed", details: [] }))
+						: Effect.succeed({
+								connector: Schema.decodeUnknownSync(ChatConnectorId)("testchat"),
+								workspaceName: "Acme Engineering",
+								channelName,
+							})
+				}),
+		})
+		const request = { type: "chat" as const, name: "Incidents", workspaceId, channelId: "channel-1" }
+		return Effect.gen(function* () {
+			const alerts = yield* AlertsService
+			const foreign = yield* alerts
+				.createDestination(orgId, userId, adminRoles, { ...request, channelId: "their-channel" })
+				.pipe(Effect.flip)
+			assert.instanceOf(foreign, AlertValidationError)
+
+			const destination = yield* alerts.createDestination(orgId, userId, adminRoles, request)
+			// Connector and channel name come from the lookup, never the request.
+			assert.strictEqual(destination.chatConnector, "testchat")
+			assert.strictEqual(destination.chatWorkspaceId, workspaceId)
+			assert.strictEqual(destination.summary, "Acme Engineering")
+			assert.strictEqual(destination.channelLabel, "#incidents")
+
+			const refused = yield* alerts
+				.updateDestination(orgId, userId, adminRoles, destination.id, {
+					type: "chat",
+					channelId: "their-channel",
+				})
+				.pipe(Effect.flip)
+			assert.instanceOf(refused, AlertValidationError)
+
+			const renamed = yield* alerts.updateDestination(orgId, userId, adminRoles, destination.id, {
+				type: "chat",
+				name: "Renamed",
+			})
+			assert.strictEqual(renamed.channelLabel, "#incidents")
+
+			const moved = yield* alerts.updateDestination(orgId, userId, adminRoles, destination.id, {
+				type: "chat",
+				channelId: "channel-2",
+			})
+			assert.strictEqual(moved.channelLabel, "#oncall")
+			assert.strictEqual(moved.chatWorkspaceId, workspaceId)
+			// A rename checks nothing; every channel that would be stored was checked.
+			assert.deepStrictEqual(lookups, ["their-channel", "channel-1", "their-channel", "channel-2"])
+		}).pipe(
+			Effect.provide(
+				makeLayer(
+					testDb,
+					makeWarehouseStub({ tracesAggregateRows: emptyWarehouseRows }),
+					undefined,
+					undefined,
+					poster,
+				),
 			),
 		)
 	})

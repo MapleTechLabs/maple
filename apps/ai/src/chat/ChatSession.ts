@@ -119,10 +119,11 @@ const RETRY_HINT = "retry: 1000\n\n"
  *
  * Without this, any way of losing the turn — isolate eviction, an unhandled defect, a deploy
  * mid-stream — leaves `running = 1` forever: `beginTurn` returns `undefined`, the route 409s every
- * message, and the conversation is wedged with no recovery but a manual abort. 15 minutes matches
- * the `diagnosis_timeout` ceiling the triage path already uses.
+ * message, and the conversation is wedged with no recovery but a manual abort. It must outlast the
+ * longest legitimate turn — an autonomous pass plus its close-out, each up to its budget's
+ * `maxDuration` — or it abandons a turn that is still running (`budgets.test.ts` checks this).
  */
-const TURN_STALE_MS = 15 * 60 * 1000
+export const TURN_STALE_MS = 25 * 60 * 1000
 const CHAT_TURN_FAILED = "Maple couldn't complete this response."
 
 /**

@@ -1,7 +1,20 @@
 import type { AlertDestinationType } from "@maple/domain/http"
 import { useState, type ReactNode } from "react"
-import { CodeIcon, DiscordIcon, EnvelopeIcon, HazelIcon, SlackIcon, TelegramIcon } from "@/components/icons"
-import { SLACK_ACCENT, SLACK_ACCENT_ON_LIGHT } from "@/components/integrations/integration-catalog"
+import { chatConnectorManifests } from "@maple/chat-platform/manifests"
+import {
+	ChatBubbleIcon,
+	CodeIcon,
+	DiscordIcon,
+	EnvelopeIcon,
+	HazelIcon,
+	SlackIcon,
+	TelegramIcon,
+} from "@/components/icons"
+import {
+	chatConnectorIcon,
+	SLACK_ACCENT,
+	SLACK_ACCENT_ON_LIGHT,
+} from "@/components/integrations/integration-catalog"
 import { cn } from "@maple/ui/lib/utils"
 
 const BRANDFETCH_CLIENT_ID = "1id0IQ-4i8Z46-n-DfQ"
@@ -178,8 +191,49 @@ export const PROVIDERS: Record<AlertDestinationType, DestinationProvider> = {
 		accentOn: INK_ON_BRIGHT_ACCENT,
 		fallbackIcon: ({ size = 22, className }) => <EnvelopeIcon size={size} className={className} />,
 	},
+	chat: {
+		type: "chat",
+		label: "Chat",
+		description: "Post alerts to a channel in a chat workspace linked to Maple.",
+		// Maple's own ink rather than any one platform's: the tile and the save button
+		// stand for every chat connector, and the connector's own mark is drawn by
+		// `ProviderLogo` from its manifest.
+		accent: "light-dark(#3F3A33, #D8D2C8)",
+		accentBg: "color-mix(in srgb, currentColor 10%, transparent)",
+		// #FFFFFF on #3F3A33 is 11.3:1; #1E1B17 on #D8D2C8 is 11.4:1.
+		accentOn: `light-dark(${INK_ON_DARK_ACCENT}, ${INK_ON_BRIGHT_ACCENT})`,
+		fallbackIcon: ({ size = 22, className }) => <ChatBubbleIcon size={size} className={className} />,
+	},
 } satisfies Record<AlertDestinationType, DestinationProvider>
 
+/**
+ * A `chat` destination drawn as its connector: the manifest's name, accent and mark. Everything
+ * else — the save button's ink included — stays the generic chat provider's, because a manifest
+ * accent carries no measured ink to paint over it. Built once, so the mark keeps its identity.
+ */
+const CHAT_PROVIDERS: ReadonlyMap<string, DestinationProvider> = new Map(
+	chatConnectorManifests.map((manifest) => {
+		const Icon = chatConnectorIcon(manifest.icon)
+		return [
+			manifest.id,
+			{
+				...PROVIDERS.chat,
+				label: manifest.name,
+				accent: manifest.accent,
+				accentBg: `color-mix(in srgb, ${manifest.accent} 18%, transparent)`,
+				fallbackIcon: ({ size = 22, className }) => <Icon size={size} className={className} />,
+			},
+		]
+	}),
+)
+
+export const chatDestinationProvider = (connectorId: string | undefined): DestinationProvider =>
+	(connectorId === undefined ? undefined : CHAT_PROVIDERS.get(connectorId)) ?? PROVIDERS.chat
+
+/**
+ * The provider tiles, one per type. `chat` is not among them: it is offered once per linked chat
+ * workspace instead, since which workspace is the whole choice.
+ */
 export const DESTINATION_TYPES: ReadonlyArray<AlertDestinationType> = [
 	"slack-bot",
 	"discord",
@@ -192,6 +246,8 @@ export const DESTINATION_TYPES: ReadonlyArray<AlertDestinationType> = [
 
 interface ProviderLogoProps {
 	type: AlertDestinationType
+	/** For a `chat` destination, the connector whose mark to draw. */
+	chatConnector?: string | undefined
 	size?: number
 	/** outer tile class — controls the surrounding chip frame */
 	className?: string
@@ -199,8 +255,17 @@ interface ProviderLogoProps {
 	bare?: boolean
 }
 
-export function ProviderLogo({ type, size = 40, className, bare }: ProviderLogoProps) {
-	const provider = PROVIDERS[type]
+/** A destination's provider — its connector's, for a `chat` destination. */
+export const destinationProvider = (destination: {
+	readonly type: AlertDestinationType
+	readonly chatConnector?: string | undefined
+}): DestinationProvider =>
+	destination.type === "chat"
+		? chatDestinationProvider(destination.chatConnector)
+		: PROVIDERS[destination.type]
+
+export function ProviderLogo({ type, chatConnector, size = 40, className, bare }: ProviderLogoProps) {
+	const provider = destinationProvider({ type, chatConnector })
 	const [errored, setErrored] = useState(false)
 	const inner = size - 14
 
@@ -288,5 +353,5 @@ export function ProviderLogo({ type, size = 40, className, bare }: ProviderLogoP
 }
 
 export const destinationTypeLabels: Record<AlertDestinationType, string> = Object.fromEntries(
-	DESTINATION_TYPES.map((type) => [type, PROVIDERS[type].label]),
+	Object.values(PROVIDERS).map((provider) => [provider.type, provider.label]),
 ) as Record<AlertDestinationType, string>

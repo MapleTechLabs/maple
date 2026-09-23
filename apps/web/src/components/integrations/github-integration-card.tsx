@@ -43,6 +43,7 @@ import { useOrganizationFeatureFlags } from "@/hooks/use-organization-feature-fl
 import { MapleApiAtomClient, retainedQuery } from "@/lib/services/common/atom-client"
 import { GITHUB_ACCENT, IntegrationIconPlate } from "./integration-catalog"
 import { useIntegrationConnect, type IntegrationConnect } from "./integration-connect"
+import { PrReviewSettingsButton } from "./pr-review-settings"
 import {
 	IntegrationEmpty,
 	IntegrationEmptyCard,
@@ -727,13 +728,14 @@ function RepoRow({
 			</div>
 			{/* Staged per organization: the switch appears only once the org carries the `prreview` flag. */}
 			{prReviewRolledOut ? <PrReviewToggle repo={repo} onChange={onSetPrReview} /> : null}
+			{prReviewRolledOut && repo.prReviewEnabled ? <PrReviewSettingsButton repo={repo} /> : null}
 			<BranchSelector repo={repo} onSelect={onSetTrackedBranch} />
 		</li>
 	)
 }
 
 /**
- * Per-repo opt-in to the pull request observability review. Optimistic like the branch
+ * Per-repo opt-in to the pull request review. Optimistic like the branch
  * selector: the switch moves at once and snaps back if the server refuses.
  */
 function PrReviewToggle({
@@ -757,7 +759,7 @@ function PrReviewToggle({
 		<label
 			htmlFor={id}
 			className="flex shrink-0 items-center gap-2 text-xs text-muted-foreground"
-			title="Post an observability review on every pull request opened against this repository"
+			title="Post a Maple code review on every pull request opened against this repository"
 		>
 			<span>Review PRs</span>
 			<Switch

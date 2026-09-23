@@ -28,12 +28,13 @@ import { Cause, Effect, Layer, ManagedRuntime } from "effect"
 import type { ChatSession } from "./ChatSession"
 import type { ChatTurnEvent } from "./events"
 import { withToolTranscript } from "./close-out"
-import { CLOSE_OUT_PROMPT, PR_REVIEW_CLOSE_OUT_PROMPT } from "./prompts"
+import { CLOSE_OUT_PROMPT, PR_REPLY_CLOSE_OUT_PROMPT, PR_REVIEW_CLOSE_OUT_PROMPT } from "./prompts"
 import { makeProgressRecorder, parseToolInput } from "./progress"
 import {
 	investigationForSession,
 	isAutonomousTurn,
 	makeRunUsage,
+	prReplyForSession,
 	prReviewForSession,
 	SUBMIT_DIAGNOSIS,
 } from "./tools"
@@ -108,7 +109,7 @@ export interface RunChatSessionTurnInput {
  * Metering is housekeeping, and it runs after the answer, on the way out of the turn.
  *
  * `endTurn` sits in the `finally` of `ChatSession.runTurn`, so whatever the metering finalizer
- * waits on holds the session's turn slot, and the stale-claim reclaim is 15 minutes out
+ * waits on holds the session's turn slot, and the stale-claim reclaim is tens of minutes out
  * (`TURN_STALE_MS` in `ChatSession.ts`). Unbounded, a POST to Autumn that never answers is a way
  * for a third party's outage to wedge a conversation.
  *
@@ -124,6 +125,8 @@ const NO_DIAGNOSIS_MESSAGE = "Maple ended this investigation without a diagnosis
 const NO_DIAGNOSIS_ERROR = "no_diagnosis: the agent ended its pass without submitting a diagnosis; retry"
 const NO_REVIEW_MESSAGE = "Maple ended this review without a report."
 const NO_REVIEW_ERROR = "no_review: the agent ended its pass without submitting a review; retry"
+const NO_REPLY_MESSAGE = "Maple ended this answer without posting it."
+const NO_REPLY_ERROR = "no_reply: the agent ended its pass without submitting an answer"
 
 /**
  * Meter what this turn spent into the org's AI usage.
@@ -200,7 +203,7 @@ const reviewBilling = (
 	sessionId: string,
 	messageId: string,
 ): { readonly source: "review"; readonly idempotencyKey: string } | undefined => {
-	const reviewId = prReviewForSession(sessionId)
+	const reviewId = prReviewForSession(sessionId) ?? prReplyForSession(sessionId)
 	if (reviewId === undefined) return undefined
 	return { source: "review", idempotencyKey: `${reviewId}:turn-${messageId}` }
 }
@@ -219,7 +222,7 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 		{ InvestigationServicesLive },
 		{ layerPg },
 		{ mapleDbConnectionLayer },
-		{ layerDecisionModel, layerLlm, resolveTriageModel },
+		{ layerDecisionModel, layerFindingEmbedder, layerLlm, resolveTriageModel },
 		{ McpToolExecutor },
 	] = await Promise.all([
 		import("../runtime/mcp-service-graph"),
@@ -230,12 +233,16 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 	])
 	const { InvestigationService } = await import("@maple/backend/services/errors/InvestigationService")
 	const { PrReviewService } = await import("@maple/backend/services/pr-review/PrReviewService")
+	const { PrReviewConversationService } =
+		await import("@maple/backend/services/pr-review/PrReviewConversationService")
 
 	const runtime = ManagedRuntime.make(
 		InvestigationServicesLive.pipe(
 			// Decisions before the clients: `layerLlm` is what answers the OpenRouter
 			// client the decision model runs on.
 			Layer.provideMerge(layerDecisionModel(input.env)),
+			// Read by `PrReviewService` as it is built: the review's feedback filter.
+			Layer.provideMerge(layerFindingEmbedder(input.env)),
 			Layer.provideMerge(layerLlm(input.env)),
 			Layer.provideMerge(layerPg),
 			Layer.provideMerge(mapleDbConnectionLayer(input.env)),
@@ -269,6 +276,7 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 
 	const investigationId = investigationForSession(input.sessionId)
 	const prReviewId = prReviewForSession(input.sessionId)
+	const prReplyId = prReplyForSession(input.sessionId)
 
 	// Mirror the autonomous pass's tool calls onto the investigation row. Writes are chained so
 	// two heartbeats cannot land out of order, and so `drainProgress` has one promise to await
@@ -307,6 +315,7 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 	const program = Effect.gen(function* () {
 		const investigations = yield* InvestigationService
 		const reviews = yield* PrReviewService
+		const conversations = yield* PrReviewConversationService
 		const toolExecutor = yield* McpToolExecutor
 		const runTenant = yield* withConnectorActor(tenant, origin)
 		const history = input.session.history()
@@ -344,6 +353,8 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 				model,
 				submitDiagnosis: investigations.submitDiagnosis,
 				submitReview: reviews.submitReview,
+				submitReply: conversations.submitReply,
+				stageEdit: conversations.stageEdit,
 				...(turn.closeOut === true ? { closeOut: true } : undefined),
 				text: turn.text,
 				history: turn.history,
@@ -410,7 +421,12 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 			held = undefined
 			const closeOut = yield* recoverAutonomousFailure(
 				run({
-					text: prReviewId === undefined ? CLOSE_OUT_PROMPT : PR_REVIEW_CLOSE_OUT_PROMPT,
+					text:
+						prReplyId !== undefined
+							? PR_REPLY_CLOSE_OUT_PROMPT
+							: prReviewId === undefined
+								? CLOSE_OUT_PROMPT
+								: PR_REVIEW_CLOSE_OUT_PROMPT,
 					history: withToolTranscript(input.session.history()),
 					closeOut: true,
 				}),
@@ -418,7 +434,11 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 			observability.compactions = (observability.compactions ?? 0) + closeOut.compactions
 			submitted = closeOut.submitted
 			yield* Effect.annotateCurrentSpan(
-				prReviewId === undefined ? "maple.investigation.closed_out" : "maple.pr_review.closed_out",
+				prReplyId !== undefined
+					? "maple.pr_reply.closed_out"
+					: prReviewId === undefined
+						? "maple.investigation.closed_out"
+						: "maple.pr_review.closed_out",
 				submitted,
 			)
 		}
@@ -433,6 +453,16 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 					.pipe(
 						Effect.catchCause((cause) =>
 							Effect.logError("Could not record the failed pass", cause),
+						),
+					)
+			}
+			if (!submitted && prReplyId !== undefined) {
+				observability.failureReason = "NoReply"
+				yield* conversations
+					.failReply(tenant.orgId, prReplyId, NO_REPLY_ERROR)
+					.pipe(
+						Effect.catchCause((cause) =>
+							Effect.logError("Could not record the failed reply", cause),
 						),
 					)
 			}
@@ -457,7 +487,12 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 							type: "turn-end",
 							messageId: input.messageId,
 							reason: "error",
-							error: prReviewId === undefined ? NO_DIAGNOSIS_MESSAGE : NO_REVIEW_MESSAGE,
+							error:
+								prReplyId !== undefined
+									? NO_REPLY_MESSAGE
+									: prReviewId === undefined
+										? NO_DIAGNOSIS_MESSAGE
+										: NO_REVIEW_MESSAGE,
 						},
 			)
 			recordedTerminal = true

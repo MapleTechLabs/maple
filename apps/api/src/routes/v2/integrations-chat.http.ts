@@ -212,6 +212,27 @@ export const HttpV2ChatIntegrationsLive = HttpApiBuilder.group(MapleApiV2, "chat
 						return toWorkspace(workspace)
 					}),
 				)
+				// Admin-gated like the other channel inventories: it reads a workspace's channel
+				// list off the platform, and only an admin can create a destination from it.
+				.handle("destinations", ({ params }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						yield* requireAdmin(tenant.roles, () =>
+							V2InsufficientPermissions.make(
+								"Only org admins can list a chat workspace's channels",
+							),
+						)
+						const destinations = yield* chat.listDestinations(tenant.orgId, params.id)
+						return {
+							object: "chat_workspace.destination_list" as const,
+							destinations: Arr.map(destinations, (destination) => ({
+								id: destination.id,
+								name: destination.name,
+								private: destination.private,
+							})),
+						}
+					}),
+				)
 				.handle("deleteWorkspace", ({ params }) =>
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context

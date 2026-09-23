@@ -1,4 +1,4 @@
-import type { PullRequestEventJob } from "@maple/domain/http"
+import type { PullRequestCommentJob, PullRequestEventJob } from "@maple/domain/http"
 import type { OrgId } from "@maple/domain/primitives"
 import { Context, Effect, Layer } from "effect"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
@@ -70,3 +70,16 @@ export const pullRequestEventSinkFanout = <R>(
 			}
 		}),
 	)
+
+/**
+ * Where a pull request comment that mentions the reviewer goes. Optional in `VcsSyncService`: a
+ * composition root without it drops such comments, which is what a root without reviews wants.
+ */
+export interface PullRequestCommentSinkApi {
+	readonly onPullRequestComment: (orgId: OrgId, job: PullRequestCommentJob) => Effect.Effect<void>
+}
+
+export class PullRequestCommentSink extends Context.Service<
+	PullRequestCommentSink,
+	PullRequestCommentSinkApi
+>()("@maple/api/services/integrations/vcs/PullRequestCommentSink") {}

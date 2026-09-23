@@ -6,6 +6,7 @@ import { ErrorActorsService } from "@maple/backend/services/errors/ErrorActorsSe
 import { OrgMembershipService } from "@maple/backend/services/auth/OrgMembershipService"
 import { InvestigationService } from "@maple/backend/services/errors/InvestigationService"
 import { PrReviewService } from "@maple/backend/services/pr-review/PrReviewService"
+import { PrReviewConversationService } from "@maple/backend/services/pr-review/PrReviewConversationService"
 
 export const McpServicesLive = McpToolExecutor.layer.pipe(
 	Layer.provide(Layer.mergeAll(Env.layer, EdgeCacheServiceLive)),
@@ -36,4 +37,5 @@ export const InvestigationServicesLive = Layer.mergeAll(
 	ErrorActorsService.layer,
 	InvestigationService.layer.pipe(Layer.provide(Env.layer)),
 	PrReviewService.layer.pipe(Layer.provide(Env.layer)),
+	PrReviewConversationService.layer.pipe(Layer.provide(Env.layer)),
 )

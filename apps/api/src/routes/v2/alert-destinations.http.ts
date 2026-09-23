@@ -2,6 +2,7 @@ import { HttpApiBuilder } from "effect/unstable/httpapi"
 import type { AlertDestinationDocument, AlertDestinationUpdateRequest } from "@maple/domain/http"
 import { auditDiff } from "./audit-changes"
 import {
+	ChatAlertDestinationConfig,
 	CurrentTenant,
 	DiscordAlertDestinationConfig,
 	EmailAlertDestinationConfig,
@@ -33,6 +34,8 @@ const toV2Destination = (doc: AlertDestinationDocument): V2AlertDestination => (
 	summary: doc.summary,
 	channel_label: doc.channelLabel,
 	member_user_ids: doc.memberUserIds,
+	...(doc.chatConnector === undefined ? undefined : { chat_connector: doc.chatConnector }),
+	...(doc.chatWorkspaceId === undefined ? undefined : { chat_workspace_id: doc.chatWorkspaceId }),
 	last_tested_at: doc.lastTestedAt,
 	last_test_error: doc.lastTestError,
 	created_at: doc.createdAt,
@@ -106,6 +109,14 @@ const toCreateRequest = (params: V2AlertDestinationCreateParams) => {
 				type: "email",
 				name: params.name,
 				memberUserIds: params.member_user_ids,
+				...(params.enabled !== undefined ? { enabled: params.enabled } : undefined),
+			})
+		case "chat":
+			return new ChatAlertDestinationConfig({
+				type: "chat",
+				name: params.name,
+				workspaceId: params.workspace_id,
+				channelId: params.channel_id,
 				...(params.enabled !== undefined ? { enabled: params.enabled } : undefined),
 			})
 	}
@@ -190,6 +201,12 @@ const toUpdateRequest = (params: V2AlertDestinationUpdateParams): AlertDestinati
 					? { memberUserIds: params.member_user_ids }
 					: undefined),
 			}
+		case "chat":
+			return {
+				type: "chat",
+				...shared,
+				...(params.channel_id !== undefined ? { channelId: params.channel_id } : undefined),
+			}
 	}
 }
 
@@ -216,6 +233,7 @@ export const destinationAuditDiff = auditDiff({
 		"channel_id",
 		"channel_name",
 		"chat_id",
+		"workspace_id",
 		"hazel_organization_id",
 		"hazel_organization_name",
 		"hazel_organization_logo_url",

@@ -83,6 +83,7 @@ describe("MCP dispatcher", () => {
 		// They are for Maple's own agents; a third-party MCP client never sees them.
 		const INTERNAL_TOOLS = [
 			"pr_changed_files",
+			"pr_context",
 			"pr_file_diff",
 			"sandbox_grep",
 			"sandbox_list_files",

@@ -8,6 +8,7 @@
 import {
 	type ChatTurnOrigin,
 	investigationIdFromChatSessionId,
+	prReplyIdFromChatSessionId,
 	prReviewIdFromChatSessionId,
 } from "@maple/domain/chat-session"
 import { evaluatePermission, type PermissionRuleset } from "@maple/domain/permission"
@@ -20,23 +21,30 @@ import {
 	normalizeTriageSubmission,
 	PrReviewId,
 	PrReviewNotFoundError,
+	PrReviewEditSubmission,
 	PrReviewPersistenceError,
+	PrReviewReplyId,
+	type PrReviewReplyNotFoundError,
+	PrReviewReplySubmission,
 	PrReviewSubmission,
+	type PrReviewVerdict,
 	SubmitDiagnosisRequest,
 	SubmitPrReviewRequest,
 } from "@maple/domain/http"
 import { InvestigationId } from "@maple/domain/primitives"
 import type { RunBudgetHook, RunUsageDelta } from "@effect-agent/engine/RunOptions"
-import { Effect, type Layer, Option, Schema } from "effect"
+import { type Cause, Effect, type Layer, Option, Schema } from "effect"
 import { Tool, Toolkit } from "effect/unstable/ai"
 import type { McpToolExecutorApi } from "../mcp/dispatcher"
 import type { McpToolSurface } from "@maple/domain/mcp-manifest"
 import { buildMapleToolkit, MapleToolFailure, summarizeToolFailure } from "../mcp/tools/llm-tools"
 import { toolHandlersWithContent } from "../platform/genai-spans"
 import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
+import { type ReviewCoverage, unreadRefusal } from "./review-coverage"
 
 const decodeInvestigationIdOption = Schema.decodeUnknownOption(InvestigationId)
 const decodePrReviewIdOption = Schema.decodeUnknownOption(PrReviewId)
+const decodePrReviewReplyIdOption = Schema.decodeUnknownOption(PrReviewReplyId)
 
 export type SubmitDiagnosis = (
 	orgId: TenantContext["orgId"],
@@ -49,6 +57,21 @@ export type SubmitDiagnosis = (
 
 export const SUBMIT_DIAGNOSIS = "submit_diagnosis"
 export const SUBMIT_REVIEW = "submit_review"
+
+export const SUBMIT_REPLY = "submit_reply"
+export const PROPOSE_EDIT = "propose_edit"
+
+export type SubmitReply = (
+	orgId: TenantContext["orgId"],
+	replyId: PrReviewReplyId,
+	body: string,
+) => Effect.Effect<string, PrReviewPersistenceError | PrReviewReplyNotFoundError>
+
+export type StageEdit = (
+	orgId: TenantContext["orgId"],
+	replyId: PrReviewReplyId,
+	edit: PrReviewEditSubmission,
+) => Effect.Effect<string, PrReviewPersistenceError | PrReviewReplyNotFoundError>
 
 export type SubmitReview = (
 	orgId: TenantContext["orgId"],
@@ -153,15 +176,92 @@ export const prReviewForSession = (sessionId: string): PrReviewId | undefined =>
 export const isAutonomousReviewTurn = (sessionId: string, origin: ChatTurnOrigin): boolean =>
 	prReviewForSession(sessionId) !== undefined && origin.kind === "autonomous"
 
-/** Any machine-started pass the runner closes out itself: an investigation's or a review's. */
+/** The pull request reply a session answers, or `undefined` for any other conversation. */
+export const prReplyForSession = (sessionId: string): PrReviewReplyId | undefined => {
+	const rawId = prReplyIdFromChatSessionId(sessionId)
+	if (!rawId) return undefined
+	return Option.getOrUndefined(decodePrReviewReplyIdOption(rawId))
+}
+
+/** A reply's own unattended pass; it must end on `submit_reply`. */
+export const isAutonomousReplyTurn = (sessionId: string, origin: ChatTurnOrigin): boolean =>
+	prReplyForSession(sessionId) !== undefined && origin.kind === "autonomous"
+
+/** Any machine-started pass the runner closes out itself: an investigation's, a review's, a reply's. */
 export const isAutonomousTurn = (sessionId: string, origin: ChatTurnOrigin): boolean =>
-	isAutonomousInvestigationTurn(sessionId, origin) || isAutonomousReviewTurn(sessionId, origin)
+	isAutonomousInvestigationTurn(sessionId, origin) ||
+	isAutonomousReviewTurn(sessionId, origin) ||
+	isAutonomousReplyTurn(sessionId, origin)
+
+export const replyTool = Tool.make(SUBMIT_REPLY, {
+	description:
+		"Post your answer on the pull request, in GitHub markdown, where the person asked. Call it " +
+		"exactly once, after you have read what the answer depends on. For a fix, call it after " +
+		"propose_edit: the staged edits are committed first and the result is added to your answer. " +
+		"After calling it, stop.",
+	parameters: PrReviewReplySubmission,
+	success: Schema.String,
+	failure: MapleToolFailure,
+})
+
+export const proposeEditTool = Tool.make(PROPOSE_EDIT, {
+	description:
+		"Stage one exact edit for a fix someone asked for with `@maple fix`. `oldText` is copied " +
+		"verbatim from the file at the pull request's head and must occur there exactly once; it " +
+		"becomes `newText`. An empty `oldText` creates a new file. Edits apply in order and are " +
+		"committed together when you call submit_reply. The answer says whether it was staged.",
+	parameters: PrReviewEditSubmission,
+	success: Schema.String,
+	failure: MapleToolFailure,
+})
+
+/**
+ * `submit_reply` and `propose_edit` for a reply session (`"<orgId>:prr-<id>"`). The reply id rides
+ * on the session, so the agent never chooses which thread it answers or which branch it commits to.
+ */
+export const buildReplyCompletion = (
+	sessionId: string,
+	tenant: TenantContext,
+	origin: ChatTurnOrigin,
+	submitReply: SubmitReply,
+	stageEdit: StageEdit,
+	sessionAttributes?: Readonly<Record<string, string>>,
+) => {
+	const replyId = prReplyForSession(sessionId)
+	if (replyId === undefined || origin.kind !== "autonomous") return undefined
+	const toolkit = Toolkit.make(replyTool, proposeEditTool)
+	let submitted = false
+	const asToolFailure = (tool: string) => (cause: Cause.Cause<unknown>) =>
+		Effect.fail(new MapleToolFailure({ message: `${tool} failed: ${summarizeToolFailure(cause)}` }))
+	return {
+		tool: SUBMIT_REPLY,
+		toolkit,
+		...toolHandlersWithContent(
+			toolkit,
+			{
+				[SUBMIT_REPLY]: (submission: PrReviewReplySubmission) =>
+					submitReply(tenant.orgId, replyId, submission.body ?? "").pipe(
+						Effect.tap(() => Effect.sync(() => (submitted = true))),
+						Effect.catchCause(asToolFailure(SUBMIT_REPLY)),
+					),
+				[PROPOSE_EDIT]: (edit: PrReviewEditSubmission) =>
+					stageEdit(tenant.orgId, replyId, edit).pipe(
+						Effect.catchCause(asToolFailure(PROPOSE_EDIT)),
+					),
+			},
+			sessionAttributes,
+		),
+		autonomous: isAutonomousReplyTurn(sessionId, origin),
+		submitted: () => submitted,
+	} satisfies RunCompletion
+}
 
 /** `parameters` is the lenient {@link PrReviewSubmission}, for the reason `diagnosisTool`'s is. */
 export const reviewTool = Tool.make(SUBMIT_REVIEW, {
 	description:
-		"Record your observability review of THIS pull request. Call it exactly once, after you have " +
-		"read every hunk that adds code, with your verdict, coverage and line-anchored findings. It " +
+		"Record your review of THIS pull request. Call it exactly once, after you have " +
+		"read every hunk you review, with your verdict, coverage, line-anchored findings and the " +
+		"handles of earlier findings this head fixes. It " +
 		"persists the review and posts it to the pull request. After calling it, stop.",
 	parameters: PrReviewSubmission,
 	success: Schema.String,
@@ -183,6 +283,8 @@ export const buildReviewCompletion = (
 	modelName: string,
 	partial = false,
 	sessionAttributes?: Readonly<Record<string, string>>,
+	/** What this pass has read. The first submission with files unread is refused once. */
+	coverage?: ReviewCoverage,
 ) => {
 	const reviewId = prReviewForSession(sessionId)
 	if (reviewId === undefined) return undefined
@@ -191,50 +293,61 @@ export const buildReviewCompletion = (
 	if (origin.kind !== "autonomous") return undefined
 	const toolkit = Toolkit.make(reviewTool)
 	let submitted = false
+	let refusedUnread = false
+	// Once only: a second call with files still unread is the agent submitting anyway. A close-out
+	// files what it has and a not_applicable verdict reads nothing, so neither is held.
+	const unreadToRefuse = (verdict: PrReviewVerdict): ReadonlyArray<string> => {
+		if (coverage === undefined || partial || refusedUnread || verdict === "not_applicable") return []
+		const unread = coverage.unread()
+		refusedUnread = unread.length > 0
+		return unread
+	}
+	const record = (submission: PrReviewSubmission) =>
+		Effect.suspend(() => {
+			const { report, filled, droppedFindings, resolved } = normalizePrReviewSubmission(submission)
+			const unread = unreadToRefuse(report.verdict)
+			if (unread.length > 0) {
+				return Effect.annotateCurrentSpan("maple.pr_review.unread_files", unread.length).pipe(
+					Effect.andThen(Effect.fail(new MapleToolFailure({ message: unreadRefusal(unread) }))),
+				)
+			}
+			return submitReview(
+				tenant.orgId,
+				reviewId,
+				new SubmitPrReviewRequest({
+					report,
+					model: modelName,
+					inputTokens: usage.input,
+					outputTokens: usage.output,
+					...(partial ? { partial: true } : undefined),
+					...(resolved.length > 0 ? { resolved } : undefined),
+				}),
+			).pipe(
+				Effect.tap(() =>
+					Effect.annotateCurrentSpan({
+						"maple.pr_review.filled_fields": filled.join(","),
+						"maple.pr_review.filled_count": filled.length,
+						"maple.pr_review.dropped_findings": droppedFindings,
+						"maple.pr_review.findings": report.findings.length,
+						"maple.pr_review.verdict": report.verdict,
+						"maple.pr_review.resolved": resolved.length,
+					}),
+				),
+				Effect.tap(() => Effect.sync(() => (submitted = true))),
+				Effect.as("Review recorded."),
+				Effect.catchCause((cause) =>
+					Effect.fail(
+						new MapleToolFailure({
+							message: `${SUBMIT_REVIEW} failed: ${summarizeToolFailure(cause)}`,
+						}),
+					),
+				),
+			)
+		})
 	return {
 		tool: SUBMIT_REVIEW,
 		toolkit,
-		...toolHandlersWithContent(
-			toolkit,
-			{
-				[SUBMIT_REVIEW]: (submission: PrReviewSubmission) =>
-					Effect.suspend(() => {
-						const { report, filled, droppedFindings } = normalizePrReviewSubmission(submission)
-						return submitReview(
-							tenant.orgId,
-							reviewId,
-							new SubmitPrReviewRequest({
-								report,
-								model: modelName,
-								inputTokens: usage.input,
-								outputTokens: usage.output,
-								...(partial ? { partial: true } : undefined),
-							}),
-						).pipe(
-							Effect.tap(() =>
-								Effect.annotateCurrentSpan({
-									"maple.pr_review.filled_fields": filled.join(","),
-									"maple.pr_review.filled_count": filled.length,
-									"maple.pr_review.dropped_findings": droppedFindings,
-									"maple.pr_review.findings": report.findings.length,
-									"maple.pr_review.verdict": report.verdict,
-								}),
-							),
-						)
-					}).pipe(
-						Effect.tap(() => Effect.sync(() => (submitted = true))),
-						Effect.as("Review recorded."),
-						Effect.catchCause((cause) =>
-							Effect.fail(
-								new MapleToolFailure({
-									message: `${SUBMIT_REVIEW} failed: ${summarizeToolFailure(cause)}`,
-								}),
-							),
-						),
-					),
-			},
-			sessionAttributes,
-		),
+		...toolHandlersWithContent(toolkit, { [SUBMIT_REVIEW]: record }, sessionAttributes),
 		autonomous: isAutonomousReviewTurn(sessionId, origin),
 		submitted: () => submitted,
 	} satisfies RunCompletion
@@ -341,10 +454,12 @@ export const buildChatToolkit = (
 	ruleset: PermissionRuleset,
 	surface: McpToolSurface,
 	sessionAttributes?: Readonly<Record<string, string>>,
+	onAnswer?: (tool: string, answer: string) => void,
 ) =>
 	buildMapleToolkit(executor, tenant, {
 		surface,
 		...(sessionAttributes === undefined ? undefined : { sessionAttributes }),
+		...(onAnswer === undefined ? undefined : { onAnswer }),
 		// `deny` means the model never sees the tool. That is a stronger guarantee than refusing the
 		// call afterwards, and it is free — an unoffered tool cannot be called.
 		include: (name) => evaluatePermission(ruleset, name) !== "deny",

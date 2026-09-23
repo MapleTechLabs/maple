@@ -147,9 +147,22 @@ export const ApiResult = Schema.Struct({
 	 * cannot read costs that message rather than the conversation around it.
 	 */
 	messages: Schema.optionalKey(Schema.Array(Schema.Unknown)),
+	/** A `conversations.list` page, left `Unknown` for the same reason as `messages`. */
+	channels: Schema.optionalKey(Schema.Array(Schema.Unknown)),
+	response_metadata: Schema.optionalKey(Schema.Struct({ next_cursor: Schema.optionalKey(Schema.String) })),
 })
+export type SlackApiResult = Schema.Schema.Type<typeof ApiResult>
 
 export const decodeApiResult = Schema.decodeUnknownEffect(ApiResult)
+
+/** One channel of a `conversations.list` page, as far as picking an alert destination reads it. */
+const Channel = Schema.Struct({
+	id: Schema.String,
+	name: Schema.optionalKey(Schema.String),
+	is_private: Schema.optionalKey(Schema.Boolean),
+})
+
+export const decodeChannel = Schema.decodeUnknownOption(Channel)
 
 /**
  * One earlier message, as `conversations.history` and `conversations.replies` answer it.

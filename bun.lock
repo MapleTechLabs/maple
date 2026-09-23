@@ -31,6 +31,7 @@
     "apps/ai": {
       "name": "@maple/ai",
       "dependencies": {
+        "@effect-agent/capabilities": "0.1.0-beta.85",
         "@effect-agent/core": "0.1.0-beta.85",
         "@effect-agent/engine": "0.1.0-beta.85",
         "@effect-agent/sandbox": "0.1.0-beta.85",
@@ -64,6 +65,7 @@
       "name": "@maple/alerting",
       "dependencies": {
         "@maple/backend": "workspace:*",
+        "@maple/chat-platform": "workspace:*",
         "@maple/infra": "workspace:*",
         "effect": "catalog:effect",
       },
@@ -1237,6 +1239,8 @@
     "@distilled.cloud/stripe": ["@distilled.cloud/stripe@1.0.0-rc.12", "", { "dependencies": { "@distilled.cloud/core": "1.0.0-rc.12" }, "peerDependencies": { "effect": ">=4.0.0-rc.115 || >=4.0.0" } }, "sha512-4OuZF362yU66G1jDFDgRFFv8ZNRPZ6lw8Wrd5R/isRNHpGgvggLNlKg1QXWEQaTcRzn3RBXczqQCVwQV9IRZDQ=="],
 
     "@drizzle-team/brocli": ["@drizzle-team/brocli@0.12.1", "", {}, "sha512-yHwomvolVafvUXhy5TdiJVkuNCxXn+bKOs2aWiWEQh/5YaV97Oa/abJz3dmx7lxgIUsUlS1Jl4mEfvJPo3YsVw=="],
+
+    "@effect-agent/capabilities": ["@effect-agent/capabilities@0.1.0-beta.85", "", { "dependencies": { "@effect-agent/core": "0.1.0-beta.85", "@effect-agent/engine": "0.1.0-beta.85", "@effect-agent/sandbox": "0.1.0-beta.85" }, "peerDependencies": { "effect": "^4.0.0-rc.112" } }, "sha512-yEhIF9iPGuE85BwUHdi74KgkbhRAkd058xrBoqifIVKD0taL8cZzOl3oSWC7pcdoloppyeUfxJDUQbfQ9B7Lmg=="],
 
     "@effect-agent/core": ["@effect-agent/core@0.1.0-beta.85", "", { "peerDependencies": { "effect": "^4.0.0-rc.112" } }, "sha512-EeqnGmz3C5YAh9dOvcdH5HwoMjRSGCrv5Y+4VNRGKpwXLzXkkO3Ln/HW7Fuv/MtevtKUKe8CbdNG8zQspho+/w=="],
 

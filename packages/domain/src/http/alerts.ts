@@ -5,6 +5,8 @@ import {
 	AlertDestinationId,
 	AlertIncidentId,
 	AlertRuleId,
+	ChatConnectorId,
+	ChatWorkspaceId,
 	ErrorIssueId,
 	HazelChannelId,
 	HazelOrganizationId,
@@ -24,6 +26,7 @@ export const AlertDestinationType = Schema.Literals([
 	"discord",
 	"telegram",
 	"email",
+	"chat",
 ]).annotate({
 	identifier: "@maple/AlertDestinationType",
 	title: "Alert Destination Type",
@@ -238,6 +241,21 @@ export class TelegramAlertDestinationConfig extends Schema.Class<TelegramAlertDe
 	enabled: Schema.optionalKey(Schema.Boolean),
 }) {}
 
+/**
+ * A channel in a chat workspace linked through a chat connector. Which connector posts it is read
+ * from the workspace row, never taken from the request — the workspace must belong to the org, and
+ * the channel must be one the workspace's connector lists; its name is read from that listing.
+ */
+export class ChatAlertDestinationConfig extends Schema.Class<ChatAlertDestinationConfig>(
+	"ChatAlertDestinationConfig",
+)({
+	type: Schema.Literal("chat"),
+	name: ChannelLabel,
+	workspaceId: ChatWorkspaceId,
+	channelId: NonEmptyString,
+	enabled: Schema.optionalKey(Schema.Boolean),
+}) {}
+
 export const MAX_EMAIL_RECIPIENTS = 10
 
 /**
@@ -267,6 +285,7 @@ export const AlertDestinationCreateRequest = Schema.Union([
 	DiscordAlertDestinationConfig,
 	TelegramAlertDestinationConfig,
 	EmailAlertDestinationConfig,
+	ChatAlertDestinationConfig,
 ])
 export type AlertDestinationCreateRequest = Schema.Schema.Type<typeof AlertDestinationCreateRequest>
 
@@ -333,6 +352,15 @@ export class UpdateEmailAlertDestinationConfig extends Schema.Class<UpdateEmailA
 	enabled: Schema.optionalKey(Schema.Boolean),
 }) {}
 
+/** The workspace is fixed at creation; moving a destination is a new channel in the same one. */
+export class UpdateChatAlertDestinationConfig extends Schema.Class<UpdateChatAlertDestinationConfig>(
+	"UpdateChatAlertDestinationConfig",
+)({
+	name: OptionalNonEmptyString,
+	channelId: OptionalNonEmptyString,
+	enabled: Schema.optionalKey(Schema.Boolean),
+}) {}
+
 export const AlertDestinationUpdateRequest = Schema.Union([
 	Schema.Struct({
 		type: Schema.Literal("slack-bot"),
@@ -362,6 +390,10 @@ export const AlertDestinationUpdateRequest = Schema.Union([
 		type: Schema.Literal("email"),
 		...UpdateEmailAlertDestinationConfig.fields,
 	}),
+	Schema.Struct({
+		type: Schema.Literal("chat"),
+		...UpdateChatAlertDestinationConfig.fields,
+	}),
 ])
 export type AlertDestinationUpdateRequest = Schema.Schema.Type<typeof AlertDestinationUpdateRequest>
 
@@ -376,6 +408,9 @@ export class AlertDestinationDocument extends Schema.Class<AlertDestinationDocum
 	channelLabel: Schema.NullOr(Schema.String),
 	/** Selected workspace-member recipients (email destinations only). */
 	memberUserIds: Schema.NullOr(Schema.Array(Schema.String)),
+	/** The connector and linked workspace a `chat` destination posts through; absent otherwise. */
+	chatConnector: Schema.optionalKey(ChatConnectorId),
+	chatWorkspaceId: Schema.optionalKey(ChatWorkspaceId),
 	lastTestedAt: Schema.NullOr(IsoDateTimeString),
 	lastTestError: Schema.NullOr(Schema.String),
 	/**

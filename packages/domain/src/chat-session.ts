@@ -70,6 +70,15 @@ export const prReviewIdFromChatSessionId = (sessionId: string): string | undefin
 	return tab.startsWith("pr-") ? tab.slice("pr-".length) : undefined
 }
 
+/** The chat session a reply to a pull request comment runs on: `<orgId>:prr-<replyId>`. */
+export const prReplySessionId = (orgId: string, replyId: string): string => `${orgId}:prr-${replyId}`
+
+/** Recover the reply id from a `prr-<id>` tab. `undefined` for other modes. */
+export const prReplyIdFromChatSessionId = (sessionId: string): string | undefined => {
+	const tab = tabIdFromChatSessionId(sessionId)
+	return tab.startsWith("prr-") ? tab.slice("prr-".length) : undefined
+}
+
 /**
  * What a conversation *is* — its persona and its budget.
  *
@@ -78,7 +87,14 @@ export const prReviewIdFromChatSessionId = (sessionId: string): string | undefin
  * from somewhere new. A connector-driven thread is an ordinary chat-mode conversation that a
  * connector is answering in, and it stays free to be anchored on an alert later.
  */
-export const ChatMode = Schema.Literals(["default", "alert", "widget-fix", "investigate", "pr-review"])
+export const ChatMode = Schema.Literals([
+	"default",
+	"alert",
+	"widget-fix",
+	"investigate",
+	"pr-review",
+	"pr-reply",
+])
 export type ChatMode = Schema.Schema.Type<typeof ChatMode>
 
 /** Mode is derived from the tab-id prefix, never sent by the client. */
@@ -87,6 +103,7 @@ export const chatModeFromSessionId = (sessionId: string): ChatMode => {
 	if (tab.startsWith("alert-")) return "alert"
 	if (tab.startsWith("widget-fix-")) return "widget-fix"
 	if (tab.startsWith("inv-")) return "investigate"
+	if (tab.startsWith("prr-")) return "pr-reply"
 	if (tab.startsWith("pr-")) return "pr-review"
 	return "default"
 }
