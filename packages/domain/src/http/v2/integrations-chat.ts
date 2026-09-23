@@ -2,8 +2,10 @@ import { HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/unstable/httpapi"
 import { Schema } from "effect"
 import {
 	IntegrationsConfigurationError,
+	IntegrationsNotConnectedError,
 	IntegrationsNotFoundError,
 	IntegrationsPersistenceError,
+	IntegrationsUpstreamError,
 	IntegrationsValidationError,
 } from "../integrations"
 import { ChatConnectorId, ChatWorkspaceId } from "../../primitives"
@@ -274,12 +276,57 @@ export const V2ChatWorkspaceDeleteResponse = Schema.Struct({
 })
 export type V2ChatWorkspaceDeleteResponse = Schema.Schema.Type<typeof V2ChatWorkspaceDeleteResponse>
 
-const [chatConfiguration, chatNotFound, chatPersistence, chatValidation] = publicErrors(
-	IntegrationsConfigurationError,
-	IntegrationsNotFoundError,
-	IntegrationsPersistenceError,
-	IntegrationsValidationError,
-)
+export const V2ChatDestination = Schema.Struct({
+	id: Schema.String.annotate({
+		description:
+			"The chat platform's own id for the channel — what a `chat` alert destination's `channel_id` takes.",
+		examples: ["123456789012345678"],
+	}),
+	name: Schema.String.annotate({
+		description: "The channel's name, without a leading `#`.",
+		examples: ["incidents"],
+	}),
+	private: Schema.Boolean.annotate({
+		description: "Whether the platform reports the channel as private.",
+		examples: [false],
+	}),
+}).annotate({
+	identifier: "ChatDestination",
+	title: "Chat destination",
+	description: "A channel in a linked chat workspace that an alert can be posted to.",
+})
+export type V2ChatDestination = Schema.Schema.Type<typeof V2ChatDestination>
+
+export const V2ChatDestinationList = Schema.Struct({
+	object: Schema.Literal("chat_workspace.destination_list").annotate({
+		description: 'The object type — always `"chat_workspace.destination_list"`.',
+	}),
+	destinations: Schema.Array(V2ChatDestination).annotate({
+		description: "The channels an alert can be posted to, in the order the platform lists them.",
+	}),
+}).annotate({
+	identifier: "ChatDestinationList",
+	title: "Chat destination list",
+	description:
+		"The channels in a linked chat workspace that an alert destination can post to. Not the standard list envelope: the platform answers with the whole set.",
+	examples: [
+		wireExample({
+			object: "chat_workspace.destination_list",
+			destinations: [{ id: "987654321098765432", name: "incidents", private: false }],
+		}),
+	],
+})
+export type V2ChatDestinationList = Schema.Schema.Type<typeof V2ChatDestinationList>
+
+const [chatConfiguration, chatNotConnected, chatNotFound, chatPersistence, chatUpstream, chatValidation] =
+	publicErrors(
+		IntegrationsConfigurationError,
+		IntegrationsNotConnectedError,
+		IntegrationsNotFoundError,
+		IntegrationsPersistenceError,
+		IntegrationsUpstreamError,
+		IntegrationsValidationError,
+	)
 
 export class V2ChatIntegrationsApiGroup extends HttpApiGroup.make("chatIntegration")
 	.add(
@@ -363,6 +410,26 @@ export class V2ChatIntegrationsApiGroup extends HttpApiGroup.make("chatIntegrati
 				summary: "Update a chat workspace",
 				description:
 					"Replaces a linked workspace's connector-defined settings. Requires an org-admin role and the `integrations:write` scope.",
+			}),
+		),
+	)
+	.add(
+		HttpApiEndpoint.get("destinations", "/chat_workspaces/:id/destinations", {
+			params: { id: ChatWorkspacePublicId },
+			success: V2ChatDestinationList,
+			error: [
+				V2InsufficientPermissions.schema,
+				chatNotFound,
+				chatNotConnected,
+				chatUpstream,
+				chatPersistence,
+			],
+		}).annotateMerge(
+			OpenApi.annotations({
+				identifier: "listChatWorkspaceDestinations",
+				summary: "List a chat workspace's alert destinations",
+				description:
+					"Lists the channels in a linked workspace that Maple can post an alert to, read live from the chat platform. A workspace whose install predates channel access answers `integration_not_connected`: reinstall the app to grant it. Requires an org-admin role and the `integrations:read` scope.",
 			}),
 		),
 	)
