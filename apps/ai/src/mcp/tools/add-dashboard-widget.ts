@@ -352,5 +352,6 @@ export function registerAddDashboardWidgetTool(server: McpToolRegistrar) {
 				}),
 			}
 		}),
+		{ phrases: ["Adding a widget"] },
 	)
 }

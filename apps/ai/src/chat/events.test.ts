@@ -7,6 +7,9 @@
  * the browser and the iOS app both see.
  */
 import { assert, describe, it } from "vitest"
+import type { ChatEvent } from "@maple/domain/chat-session"
+import { makeChatTranscript } from "@maple/domain/chat-transcript"
+import { APPROVAL_REQUIRED } from "../mcp/tools/llm-tools"
 import { makeTextSanitizer, toChatEvents, type AdapterContext } from "./events"
 
 /**
@@ -95,6 +98,20 @@ describe("toChatEvents", () => {
 		assert.notProperty(call, "proposed")
 	})
 
+	it("carries the tool's phrase, and leaves it off for a tool without one", () => {
+		const labelOf = (name: string) => (name === "run_sql" ? "Running a query" : undefined)
+		const [labelled] = toChatEvents(
+			event("ToolCallDeclared", { toolCallId: "c", toolName: "run_sql", parameters: {} }),
+			{ ...base, labelOf },
+		)
+		assert.deepInclude(labelled, { label: "Running a query" })
+		const [bare] = toChatEvents(
+			event("ToolCallDeclared", { toolCallId: "c", toolName: "submit_diagnosis", parameters: {} }),
+			{ ...base, labelOf },
+		)
+		assert.notProperty(bare, "label")
+	})
+
 	it("distinguishes a failed tool result from a successful one", () => {
 		assert.deepEqual(
 			toChatEvents(event("ToolCallSucceeded", { toolCallId: "c", result: "rows" }), base),
@@ -103,6 +120,36 @@ describe("toChatEvents", () => {
 		assert.deepEqual(toChatEvents(event("ToolCallFailed", { toolCallId: "c", message: "nope" }), base), [
 			{ type: "tool-result", messageId: "msg-1", callId: "c", output: "nope", isError: true },
 		])
+	})
+
+	it("leaves a proposal open, and ends its turn as finished rather than failed", () => {
+		const context: AdapterContext = {
+			messageId: "msg-1",
+			isProposed: (name) => name === "create_dashboard",
+			sanitizer: makeTextSanitizer(),
+		}
+		const refusal = {
+			errorTag: APPROVAL_REQUIRED,
+			message: "create_dashboard requires user approval and was not executed.",
+		}
+		// The sequence the engine emits for a gated call (see `run-tool-failures.test.ts`).
+		const chat = [
+			event("RunStarted"),
+			event("ToolCallDeclared", { toolCallId: "c", toolName: "create_dashboard", parameters: {} }),
+			event("ToolCallFailed", { toolCallId: "c", toolName: "create_dashboard", ...refusal }),
+			event("RunFailed", refusal),
+		].flatMap((engine) => toChatEvents(engine, context))
+		const transcript = makeChatTranscript()
+		chat.forEach((wire, index) => transcript.add({ ...wire, seq: index + 1 } as ChatEvent, 0))
+
+		assert.deepEqual(
+			chat.map((wire) => wire.type),
+			["turn-start", "tool-call", "turn-end"],
+		)
+		assert.deepInclude(chat.at(-1), { reason: "stop" })
+		const [call] = transcript.messages[0]?.toolCalls ?? []
+		assert.deepInclude(call, { id: "c", proposed: true })
+		assert.notProperty(call, "output")
 	})
 
 	describe("terminal reasons", () => {

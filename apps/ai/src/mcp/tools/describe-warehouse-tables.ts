@@ -73,5 +73,6 @@ export function registerDescribeWarehouseTablesTool(server: McpToolRegistrar) {
 				content: [{ type: "text" as const, text: lines.join("\n") }],
 			}
 		}),
+		{ phrases: ["Reading table schemas", "Describing warehouse tables"] },
 	)
 }

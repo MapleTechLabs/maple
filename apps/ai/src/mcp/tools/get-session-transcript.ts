@@ -148,6 +148,7 @@ export function registerGetSessionTranscriptTool(server: McpToolRegistrar) {
 				}),
 			}
 		}),
+		{ phrases: ["Reading a session transcript"] },
 	)
 }
 

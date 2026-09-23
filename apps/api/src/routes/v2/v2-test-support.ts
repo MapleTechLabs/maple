@@ -368,8 +368,6 @@ export const SlackIntegrationServiceStubLayer = Layer.succeed(
 		getStatus: die,
 		uninstall: die,
 		listChannels: die,
-		resolveForBot: die,
-		orgIdForTeam: die,
 		revokeByTeamId: die,
 		reconcileWorkspaces: die,
 	}),

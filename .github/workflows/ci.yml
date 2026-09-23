@@ -34,7 +34,6 @@ jobs:
             web: ${{ steps.filter.outputs.web == 'true' }}
             clickhouse: ${{ steps.filter.outputs.clickhouse == 'true' }}
             postgres: ${{ steps.filter.outputs.postgres == 'true' }}
-            slack: ${{ steps.filter.outputs.slack == 'true' }}
         steps:
             - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
 
@@ -61,7 +60,6 @@ jobs:
                         - 'lib/**'
                         - 'scripts/**'
                         - '!apps/ingest/**'
-                        - '!apps/slack-agent/**'
                         # Swift; built by ios.yml. Note the asymmetry: a
                         # packages/domain change still triggers ios:openapi:check
                         # below, so an iOS contract break fails on the cheap
@@ -151,13 +149,6 @@ jobs:
                         - *base
                         - 'scripts/*.sh'
                         - 'apps/cli/test/*.sh'
-                      slack:
-                        - *base
-                        - 'apps/slack-agent/**'
-                        # The approval-list drift canary below fails when a mutating
-                        # MCP tool lands on the API side without being mirrored here,
-                        # so apps/api has to re-trigger this job. Do not narrow.
-                        - 'apps/api/**'
 
             - name: Plan test lanes and verify scaling
               id: tests
@@ -411,54 +402,6 @@ jobs:
               env:
                   TEST_LANE: ${{ toJSON(matrix) }}
               run: python3 .github/scripts/run-tests.py
-
-    slack-agent:
-        name: Slack agent
-        needs: changes
-        if: ${{ needs.changes.outputs.slack == 'true' }}
-        runs-on: ubuntu-latest
-        timeout-minutes: 10
-        steps:
-            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
-
-            - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
-              with:
-                  # Rust and Python are for the ingest and Tinybird workflows; skipping
-                  # them keeps this job off their ~1 GB of toolchain cache.
-                  install_args: bun node
-
-            # The action always installs the root `maple` workspace, so naming
-            # it as the only filter installs the CI tools (oxlint and the JS
-            # plugins the shared config loads) and no workspace packages.
-            - uses: ./.github/actions/bun-install
-              with:
-                  filters: maple
-
-            # apps/slack-agent is deliberately outside the bun workspace (it
-            # self-deploys to Railway, not Cloudflare), so the root install and
-            # the `bun turbo` job above never reach it — it needs its own.
-            - uses: ./.github/actions/bun-install
-              with:
-                  working-directory: apps/slack-agent
-
-            - run: bun run typecheck
-              working-directory: apps/slack-agent
-
-            # Includes the approval-list drift canary: a mutating MCP tool added
-            # on the API side without mirroring it here would otherwise ship
-            # ungated to Slack.
-            - run: bun test
-              working-directory: apps/slack-agent
-
-            # Lint runs here rather than in the root `effect-lint` job for two
-            # reasons. The `ts` paths filter excludes apps/slack-agent, so a
-            # slack-agent-only PR never runs that job — the exact shape of #518,
-            # which shipped an `as unknown as` cast past the anti-slop rules that
-            # exist to catch it. And `effect-lint` is type-aware, which cannot
-            # resolve this app's `@types/bun` from a root install, so it rejects
-            # the tsconfig outright. The base config is AST-only, which is all
-            # the anti-slop and maple rules need.
-            - run: bun run lint:slack-agent
 
     # The only job where `layerPg` meets a real Postgres. Everything else that
     # touches the Database service runs on PGlite (in-process, single-connection,
@@ -928,7 +871,6 @@ jobs:
             - changes
             - typescript
             - tests
-            - slack-agent
             - postgres-connection-e2e
             - clickhouse-schema-e2e
             - local-checkpoint-native

@@ -314,12 +314,21 @@ impl)` over the plain `ChatSession` class — the outer Effect resolves state an
     database (PR previews) the lookup fails, is logged, and the mention goes unanswered
     rather than being told the workspace is unlinked.
 
-    It has **no public hostname**: the socket half dials out, and no webhook connector is
-    registered yet, so a custom domain would be DNS plus a certificate bought for a route
-    nothing calls. Under `bun dev chat-bot` the portless route reaches the webhook path. The
-    Worker is inert on a stage with no connector credentials — every connector key is bound
-    optional, and a connector without its configuration is skipped with one log line, so no
-    socket is opened and no turn is ever relayed.
+    It takes **one public hostname on production instances** (`domains.chat` —
+    `chat.maple.dev`, `chat.eu.maple.dev`): a webhook connector's platform is configured with a
+    request URL inside the vendor's own application, and that URL has to keep working across
+    deploys, which is what buys the custom domain the socket half never needed. A dev stage
+    reaches the same route through portless and a PR preview gets none — a connector there would
+    have neither credentials nor a database to resolve a workspace in. The Worker is inert on a
+    stage with no connector credentials: every connector key is bound optional, and a connector
+    without its configuration is skipped with one log line, so no socket is opened, the webhook
+    route answers 503, and no turn is ever relayed.
+
+    A connector whose install mints a credential per workspace (rather than using one
+    deployment-wide secret) has it sealed into `chat_workspaces.credentials_{ciphertext,iv,tag}`,
+    AAD-bound to `(org_id, connector, external_workspace_id)`. That is why chat-bot also binds
+    `MAPLE_INGEST_KEY_ENCRYPTION_KEY`, optionally: without it such a workspace fails its lookup
+    and the mention goes unanswered, while every other connector runs normally.
 
 - **The sandbox Worker** (`sandbox`): the one Worker in the fleet whose own module is
   its bundle entry. It hosts Cloudflare's Sandbox Durable Object (`@cloudflare/sandbox`),

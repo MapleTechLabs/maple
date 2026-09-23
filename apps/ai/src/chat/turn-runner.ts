@@ -156,7 +156,7 @@ const NO_REPLY_MESSAGE = "Maple ended this answer without posting it."
 const NO_REPLY_ERROR = "no_reply: the agent ended its pass without submitting an answer"
 
 /**
- * Meter what this turn spent into the org's AI usage, alongside the Slack agent.
+ * Meter what this turn spent into the org's AI usage.
  *
  * **One meter per turn, and this is it.** Two things used to bill the same tokens from different
  * angles: `submit_diagnosis` billed the running total it reports to `InvestigationService`, keyed

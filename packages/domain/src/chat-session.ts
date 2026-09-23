@@ -172,6 +172,8 @@ export class ChatTaskState extends Schema.Class<ChatTaskState>("@maple/ChatTaskS
 export class ChatToolCall extends Schema.Class<ChatToolCall>("@maple/ChatToolCall")({
 	id: Schema.String,
 	name: Schema.String,
+	/** The phrase its `tool-call` event carried, when it carried one. */
+	label: Schema.optionalKey(Schema.String),
 	input: Schema.Unknown,
 	/** Present once the tool settled. */
 	output: Schema.optionalKey(Schema.Unknown),
@@ -289,6 +291,8 @@ const eventFields = {
 		input: Schema.Unknown,
 		/** Approval-gated mutation: the tool did not run, this is a proposal. */
 		proposed: Schema.optionalKey(Schema.Boolean),
+		/** What the call is doing, for a reader (`Running a query`); absent for a tool with no phrase. */
+		label: Schema.optionalKey(Schema.String),
 		...task,
 	},
 	"tool-result": {

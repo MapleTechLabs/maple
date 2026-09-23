@@ -308,7 +308,7 @@ export function registerPullRequestTools(server: McpToolRegistrar) {
 				.pipe(Effect.mapError(toSourceError("pr_changed_files")))
 			return renderChangedFiles(repository, number, files)
 		}),
-		INTERNAL,
+		{ ...INTERNAL, phrases: ["Listing changed files"] },
 	)
 
 	server.tool(
@@ -355,6 +355,6 @@ export function registerPullRequestTools(server: McpToolRegistrar) {
 				.pipe(Effect.mapError(toSourceError("pr_file_diff")))
 			return renderFileDiffs(files, wanted)
 		}),
-		INTERNAL,
+		{ ...INTERNAL, phrases: ["Reading a diff"] },
 	)
 }

@@ -86,5 +86,6 @@ export function registerListErrorIssueEventsTool(server: McpToolRegistrar) {
 				}),
 			}
 		}),
+		{ phrases: ["Reading issue history"] },
 	)
 }

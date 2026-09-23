@@ -10,6 +10,7 @@
  */
 import type { ChatEvent, ChatTaskRef } from "@maple/domain/chat-session"
 import type * as RunEvent from "@effect-agent/core/RunEvent"
+import { APPROVAL_REQUIRED } from "../mcp/tools/llm-tools"
 
 /** Events the session log accepts. `seq` belongs to the Durable Object, which owns the ordering. */
 type WithoutSeq<T> = T extends unknown ? Omit<T, "seq"> : never
@@ -29,6 +30,8 @@ export interface AdapterContext {
 	 * carries no parameters, and the card needs the arguments the declaration already delivered.
 	 */
 	readonly isProposed?: (toolName: string) => boolean
+	/** What a declared call is doing, for a reader; undefined for a tool that has no phrase. */
+	readonly labelOf?: (toolName: string) => string | undefined
 	/** One {@link makeTextSanitizer} per run: the state it keeps spans deltas. */
 	readonly sanitizer: TextSanitizer
 }
@@ -226,6 +229,8 @@ const tagged = <E extends ChatTurnEvent>(context: AdapterContext, event: E): E =
 const completedReason = (finishReason: string): "stop" | "max-steps" =>
 	finishReason === "budget-exhausted" ? "max-steps" : "stop"
 
+const optionalLabel = (label: string | undefined) => (label === undefined ? undefined : { label })
+
 /**
  * One engine event as zero or more chat events.
  *
@@ -256,6 +261,7 @@ export const toChatEvents = (
 					name: event.toolName,
 					input: event.parameters,
 					...(context.isProposed?.(event.toolName) === true ? { proposed: true } : undefined),
+					...optionalLabel(context.labelOf?.(event.toolName)),
 				}),
 			]
 		case "ToolCallSucceeded":
@@ -268,6 +274,10 @@ export const toChatEvents = (
 				}),
 			]
 		case "ToolCallFailed":
+			// The gate's refusal is not the proposal's result. Recorded as one, it read as a decision
+			// everywhere a result settles a proposal: no connector drew the buttons, and every
+			// approval was refused as already settled.
+			if (event.errorTag === APPROVAL_REQUIRED) return []
 			return [
 				tagged(context, {
 					type: "tool-result",
@@ -287,6 +297,13 @@ export const toChatEvents = (
 				}),
 			]
 		case "RunFailed":
+			// A proposal is how the turn ends, not how it fails.
+			if (event.errorTag === APPROVAL_REQUIRED) {
+				return [
+					...flushed(context),
+					tagged(context, { type: "turn-end", messageId: context.messageId, reason: "stop" }),
+				]
+			}
 			return [
 				...flushed(context),
 				tagged(context, {

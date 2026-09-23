@@ -310,6 +310,7 @@ export function ChatIntegrationCard({ connector }: { connector: ChatConnectorId 
 	// so the mark is one component instance rather than one per render.
 	const entry = catalogEntry(chatIntegrationId(connector))
 	const Icon = entry.icon
+	const MonoIcon = entry.monoIcon ?? Icon
 	const workspaces = status?.workspaces ?? []
 	// Strictly true: a connector the API did not list is one this deployment
 	// cannot install either.
@@ -318,7 +319,7 @@ export function ChatIntegrationCard({ connector }: { connector: ChatConnectorId 
 
 	if (workspaces.length === 0) {
 		return (
-			<IntegrationEmpty icon={Icon} accent={entry.accent}>
+			<IntegrationEmpty icon={Icon} backerIcon={MonoIcon} accent={entry.accent}>
 				<IntegrationEmptyCard>
 					<IntegrationEmptyMedia />
 					<IntegrationEmptyHint>{manifest.description}</IntegrationEmptyHint>
@@ -326,7 +327,7 @@ export function ChatIntegrationCard({ connector }: { connector: ChatConnectorId 
 						{busy === "install" ? (
 							<LoaderIcon size={16} className="animate-spin" />
 						) : (
-							<Icon size={16} />
+							<MonoIcon size={16} />
 						)}
 						Add to {manifest.name}
 					</Button>

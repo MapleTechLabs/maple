@@ -1,5 +1,6 @@
 import type { ChatConnectorManifest } from "../install"
 import { discordManifest } from "./discord/manifest"
+import { slackManifest } from "./slack/manifest"
 
 export type { ChatConnectorManifest } from "../install"
 
@@ -9,4 +10,4 @@ export type { ChatConnectorManifest } from "../install"
  * so the browser bundle never pulls a connector's install flow or its HTTP
  * client just to draw a card.
  */
-export const chatConnectorManifests: ReadonlyArray<ChatConnectorManifest> = [discordManifest]
+export const chatConnectorManifests: ReadonlyArray<ChatConnectorManifest> = [discordManifest, slackManifest]

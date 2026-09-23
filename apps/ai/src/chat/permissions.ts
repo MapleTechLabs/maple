@@ -2,10 +2,9 @@
  * The rulesets Maple's chat agents run under.
  *
  * `MUTATING_TOOL_NAMES` stays exactly where it is and keeps its shape: it seeds `DEFAULT_RULESET`
- * here, and it remains the allowlist floor for `POST /internal/chat/apply`. That is the whole migration
- * story — the mirror in `apps/slack-agent/agent/lib/approval.ts` needs no change, and the
- * equivalence is pinned by a test in `apps/api/src/mcp/tools/mutating.test.ts` so day-one behaviour
- * cannot drift by accident.
+ * here, and it remains the allowlist floor for `POST /internal/chat/apply`. The equivalence is pinned
+ * by a test in `apps/api/src/mcp/tools/mutating.test.ts` so day-one behaviour cannot drift by
+ * accident.
  */
 import { PermissionRule, type PermissionRuleset } from "@maple/domain/permission"
 import { MUTATING_TOOL_NAMES } from "../mcp/tools/mutating"

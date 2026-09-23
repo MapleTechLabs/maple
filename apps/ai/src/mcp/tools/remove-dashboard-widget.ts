@@ -68,5 +68,6 @@ export function registerRemoveDashboardWidgetTool(server: McpToolRegistrar) {
 				}),
 			}
 		}),
+		{ phrases: ["Removing a widget"] },
 	)
 }

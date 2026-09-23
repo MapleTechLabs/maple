@@ -155,6 +155,7 @@ export function registerInspectSpanTool(server: McpToolRegistrar) {
 				}),
 			}
 		}),
+		{ phrases: ["Inspecting a span", "Reading span details"] },
 	)
 }
 

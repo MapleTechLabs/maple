@@ -10,5 +10,6 @@
  * the one an incoming event belongs to by id.
  */
 import { discord } from "./discord"
+import { slack } from "./slack"
 
-export const connectors = [discord]
+export const connectors = [discord, slack]

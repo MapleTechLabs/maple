@@ -100,7 +100,6 @@ export const apiConfiguredEnv = (stage: MapleStage, region: MapleRegion, domains
 		// Slack integration (bot install via OAuth v2)
 		optionalPlain("SLACK_CLIENT_ID"),
 		optionalSecret("SLACK_CLIENT_SECRET"),
-		optionalSecret("SLACK_INTERNAL_SERVICE_TOKEN"),
 		apnsEnv,
 		// The repository-reading half is shared with maple-ai; the install flow and
 		// the webhook receiver are this Worker's alone.

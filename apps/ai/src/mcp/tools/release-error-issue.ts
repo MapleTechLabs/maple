@@ -74,5 +74,6 @@ export function registerReleaseErrorIssueTool(server: McpToolRegistrar) {
 				}),
 			}
 		}),
+		{ phrases: ["Releasing an issue"] },
 	)
 }

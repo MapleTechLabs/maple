@@ -108,10 +108,9 @@ across regions because there is no routing.
           `https://api.eu.maple.dev/api/integrations/github/callback`, then replace all six
           `GITHUB_APP_*` values in `prod-eu`. A repository can then be installed on both Apps, one
           per instance, which is the point.
-        - **Slack app.** Redirect URLs alone would allow a shared app, but its Events URL goes to
-          the one `slack-agent`, which resolves workspaces against the US API and answers an EU
-          workspace with "not connected". An EU app with no event subscription (AI is off there)
-          keeps alert delivery and nothing else; redirect
+        - **Slack app.** Alert delivery needs only redirect URLs, but an EU app keeps the
+          install's credentials in the EU instance. An EU app with no event subscription (AI is
+          off there) keeps alert delivery and nothing else; redirect
           `https://api.eu.maple.dev/oauth/slack/callback`, new `SLACK_CLIENT_ID`/`SECRET` in
           `prod-eu`.
         - **Discord** (not configured on `prod-eu` yet). The install is the bot invite, and a bot
