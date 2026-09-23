@@ -73,4 +73,15 @@ export OTEL_SERVICE_NAME="my-service"
 
 Maple reads the standard semantic conventions; the attributes it relies on for the service map, error grouping and sampling-aware throughput are listed in [OpenTelemetry conventions](/docs/concepts/otel-conventions). To develop against a local sink instead of the cloud, run [Maple Local](/docs/local-mode) and point the endpoint at `http://localhost:4318`.
 
+## Data regions
+
+Maple Cloud runs in two regions. An organization's region is chosen during onboarding and cannot be changed afterwards. Send telemetry to the ingest endpoint of your organization's region, with an ingest key created in that region's dashboard. A key from one region is rejected by the other.
+
+| Region | Dashboard | Ingest endpoint |
+| --- | --- | --- |
+| United States | `https://app.maple.dev` | `https://ingest.maple.dev` |
+| European Union (Frankfurt) | `https://app.eu.maple.dev` | `https://ingest.eu.maple.dev` |
+
+Every guide on this site uses the US endpoint. For an EU organization, replace `ingest.maple.dev` with `ingest.eu.maple.dev` and nothing else changes. See [EU hosting](/eu) for what the EU region covers.
+
 Missing a guide for your stack? [Open an issue](https://github.com/MapleTechLabs/maple/issues) and tell us what you run.

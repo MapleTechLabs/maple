@@ -1,0 +1,23 @@
+---
+/**
+ * A region code (US, EU) as a small chip, the same shorthand the dashboard's org
+ * switcher labels organizations with. `active` marks the region a surface is about.
+ */
+interface Props {
+	region: "us" | "eu";
+	active?: boolean;
+	class?: string;
+}
+
+const { region, active = false, class: className = "" } = Astro.props;
+---
+
+<span
+	class:list={[
+		"inline-flex h-5 shrink-0 items-center rounded-md border px-1.5 text-[10px] font-semibold uppercase leading-none tracking-[0.12em]",
+		active ? "border-primary/40 bg-primary/10 text-primary" : "border-fg-muted/30 bg-bg text-fg",
+		className,
+	]}
+>
+	{region}
+</span>

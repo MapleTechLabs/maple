@@ -30,6 +30,7 @@ export const GET: APIRoute = ({ site }) => {
 				`- **${m.faq_home_price_q()}** ${m.faq_home_price_a()}`,
 				`- **${m.faq_home_agents_q()}** ${m.faq_home_agents_a()}`,
 				`- **${m.faq_selfhost_q()}** ${m.faq_selfhost_a()}`,
+				`- **${m.faq_region_q()}** ${m.faq_region_a()} [EU hosting](${url("/eu.md")})`,
 			].join("\n"),
 
 			`## ${m.how_heading()}`,
