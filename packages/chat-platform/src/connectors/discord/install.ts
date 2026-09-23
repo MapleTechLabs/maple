@@ -38,9 +38,9 @@ const BOT_PERMISSIONS = "309237730368"
 const BOT_SCOPE = "bot"
 
 /**
- * Discord snowflake: an unsigned 64-bit id as a decimal string. Guild and role
- * ids both use it, and keeping the check here means a hand-typed role id is a
- * 400 rather than a value the gateway silently never matches.
+ * Discord snowflake: an unsigned 64-bit id as a decimal string. Every id Discord
+ * mints is one, and checking it here means a value that is not an id fails where
+ * it is diagnosable rather than one the API silently never matches.
  */
 const Snowflake = Schema.String.check(Schema.isPattern(/^\d{17,20}$/))
 
@@ -56,11 +56,14 @@ const TokenResponse = Schema.Struct({
 const decodeTokenResponse = Schema.decodeUnknownEffect(TokenResponse)
 
 /**
- * The one setting Discord carries in V1 — see this directory's README. Decoded
- * with `onExcessProperty: "error"` so a key this connector does not define is
- * reported rather than silently dropped on the way into the settings column.
+ * Discord defines no workspace settings. Who may approve a change is no longer a per-server
+ * setting — it is whether the person clicking has linked their Discord account to a Maple user,
+ * which the `identity` half below is what enables.
+ *
+ * The struct stays rather than the decode being dropped: `onExcessProperty: "error"` is what
+ * reports a key this connector does not define instead of silently writing it into the column.
  */
-const DiscordSettings = Schema.Struct({ approver_role_id: Schema.optionalKey(Snowflake) })
+const DiscordSettings = Schema.Struct({})
 const decodeDiscordSettings = Schema.decodeUnknownEffect(DiscordSettings, {
 	onExcessProperty: "error",
 })
@@ -159,16 +162,10 @@ const decodeSettings = (
 			() =>
 				new ChatSettingsRejected({
 					connector: DISCORD_CONNECTOR_ID,
-					message:
-						"Discord accepts one setting, approver_role_id, and its value must be a Discord role ID (17–20 digits)",
+					message: "Discord has no settings to configure",
 				}),
 		),
-		Effect.map(
-			(settings): ChatWorkspaceSettings =>
-				settings.approver_role_id === undefined
-					? {}
-					: { approver_role_id: settings.approver_role_id },
-		),
+		Effect.as({}),
 	)
 
 export const discordInstall: ChatConnectorInstall = {

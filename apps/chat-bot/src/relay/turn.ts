@@ -20,7 +20,6 @@ import {
 	type ChatOutbound,
 	type ChatOutboundTransport,
 	type ChatTarget,
-	type ChatWorkspaceSettings,
 	type InboundAction,
 	type InboundEvent,
 	type InboundMessage,
@@ -33,13 +32,13 @@ import {
 	type ChatSessionId,
 } from "@maple/domain/chat-session"
 import type { ChatSessionStub } from "@maple/domain/chat-session-stub"
-import { ChatConnectorId, ExternalUserId, type OrgId } from "@maple/domain/primitives"
+import { ChatConnectorId, ExternalUserId, type OrgId, type UserId } from "@maple/domain/primitives"
 import { Duration, Effect, Exit, Option, Schema } from "effect"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import {
-	mayApprove,
+	approvalPolicy,
+	linkNotice,
 	messageWithToolCall,
-	NOT_AN_APPROVER_NOTICE,
 	PROPOSAL_GONE_NOTICE,
 	settledMessageBlocks,
 } from "./approval.ts"
@@ -48,8 +47,17 @@ import { chatTurnEvents, sessionUnreachable } from "./events.ts"
 /** The org behind a workspace, as the host Worker answers it. */
 export interface RelayWorkspace {
 	readonly orgId: OrgId
-	/** What the org configured for this workspace, decoded by the connector's own settings schema. */
-	readonly settings: ChatWorkspaceSettings
+}
+
+/** The org behind a workspace, plus who the person clicking is in Maple, if they are anybody. */
+export interface RelayApprover extends RelayWorkspace {
+	/**
+	 * The Maple user this chat account is linked to in that org.
+	 *
+	 * Absent means nobody has linked it — which is a refusal on a connector that can prove who
+	 * clicked, and irrelevant on one that cannot.
+	 */
+	readonly linkedUserId?: UserId
 }
 
 /**
@@ -71,6 +79,22 @@ export interface RelayPorts<R = never> {
 		connector: ChatConnectorId,
 		workspaceId: string,
 	) => Effect.Effect<Option.Option<RelayWorkspace>, WorkspaceLookupFailed>
+	/**
+	 * The same resolve a click needs, plus the clicker's Maple user — one database connection for
+	 * both, because an approval asks both questions and a click is one round trip's worth of work.
+	 */
+	readonly resolveApprover: (
+		connector: ChatConnectorId,
+		workspaceId: string,
+		externalUserId: string,
+	) => Effect.Effect<Option.Option<RelayApprover>, WorkspaceLookupFailed>
+	/**
+	 * Whether this connector can prove who clicked a button.
+	 *
+	 * The connector's `identity` half, as a fact rather than a function: the host knows which
+	 * connector it is running and this file must not.
+	 */
+	readonly supportsIdentity: boolean
 	/** Drop the link for a workspace the bot was removed from. */
 	readonly forgetWorkspace: (connector: ChatConnectorId, workspaceId: string) => Effect.Effect<void>
 	/** The conversation's Durable Object, or `undefined` where this deployment has no agent bound. */
@@ -264,13 +288,14 @@ const settleAction = Effect.fn("chat_bot.settle_approval")(function* <R>(
 		return yield* Effect.annotateCurrentSpan({ "maple.chat.approval": "no_approver" })
 	}
 
-	const workspace = yield* Effect.exit(ports.resolveWorkspace(action.connector, action.workspaceId))
-	// Unreadable, or unlinked: either way there is no configured approver role to check and no org
-	// to make a change in. The port has already logged a failure.
+	const workspace = yield* Effect.exit(
+		ports.resolveApprover(action.connector, action.workspaceId, approver.value),
+	)
+	// Unreadable, or unlinked: either way there is no org to make a change in. The port logged why.
 	if (Exit.isFailure(workspace) || Option.isNone(workspace.value)) {
 		return yield* Effect.annotateCurrentSpan({ "maple.chat.approval": "unavailable" })
 	}
-	const { orgId, settings } = workspace.value.value
+	const { orgId, linkedUserId } = workspace.value.value
 	// Not before here: the org is the workspace's, never the control's, and an approval nobody can
 	// attribute to an org is not answerable to an auditor.
 	yield* Effect.annotateCurrentSpan({ orgId })
@@ -287,10 +312,15 @@ const settleAction = Effect.fn("chat_bot.settle_approval")(function* <R>(
 		return yield* Effect.annotateCurrentSpan({ "maple.chat.approval": "foreign_session" })
 	}
 
-	if (!mayApprove(settings, action.actor)) {
-		yield* Effect.annotateCurrentSpan({ "maple.chat.approval": "refused" })
-		return yield* say(transport, replyTarget(action), NOT_AN_APPROVER_NOTICE)
+	// Who this click runs as. A connector that cannot prove who clicked gets the org-level identity
+	// and lets anyone in the conversation decide; one that can requires a link, and then the change
+	// runs as the Maple user behind it rather than as Maple itself.
+	const policy = approvalPolicy(ports.supportsIdentity, linkedUserId)
+	if (policy._tag === "unlinked") {
+		yield* Effect.annotateCurrentSpan({ "maple.chat.approval": "unlinked" })
+		return yield* say(transport, replyTarget(action), linkNotice(ports.appBaseUrl))
 	}
+	yield* Effect.annotateCurrentSpan({ "maple.chat.approval.as": policy._tag })
 
 	const session = ports.chatSession(request.sessionId)
 	if (session === undefined) {
@@ -313,6 +343,9 @@ const settleAction = Effect.fn("chat_bot.settle_approval")(function* <R>(
 					externalUserId: approver.value,
 					displayName: action.actor.displayName,
 				},
+				// Only ever the user the HOST resolved from its own database, never anything the
+				// click carried: this is what the change runs as.
+				...(policy._tag === "user" ? { actingUserId: policy.userId } : undefined),
 			}),
 	}).pipe(Effect.exit)
 	if (Exit.isFailure(outcome)) {

@@ -17,12 +17,7 @@ export const discordManifest: ChatConnectorManifest = {
 		],
 	},
 	accent: "#5865F2",
-	settingsFields: [
-		{
-			key: "approver_role_id",
-			label: "Approver role ID",
-			help: "Members holding this Discord role may approve the changes Maple proposes. Leave empty to let anyone who can manage the server approve.",
-			kind: "text",
-		},
-	],
+	// Nothing to configure per server: who may approve a change is decided by whether the person
+	// clicking has linked their Discord account to a Maple user.
+	settingsFields: [],
 }

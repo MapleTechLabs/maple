@@ -507,13 +507,15 @@ export const connectorTurnTenant = (orgId: OrgId): ChatTurnTenantEncoded =>
 const ORG_ADMIN_ROLE = Schema.decodeSync(RoleName)("org:admin")
 
 /**
- * The identity an APPROVED proposal runs under — the same connector tenant, now holding the role
- * the mutating tools check.
+ * The identity an approved proposal runs under **on a connector that cannot say who clicked**.
  *
- * The role is granted on the strength of a check that has already happened: the host Worker
- * resolved the workspace, read its configured approver role, and matched it against the roles the
- * platform reported for the person who clicked. A proposal reaching the session unapproved never
- * reaches this function, and the session is addressable only from Maple's own Workers.
+ * There is no person to be here: the platform gives Maple no way to prove which account pressed
+ * the button, so the org-level connector identity acts and everyone who can see the conversation
+ * can decide. The role is granted at apply time only — the turn that WROTE the proposal carried
+ * none, which is what makes the approval gate mean anything.
+ *
+ * A connector that implements the identity half never reaches this: its approvals run as the Maple
+ * user the clicker linked to, under that user's own roles, and nothing is granted to them at all.
  *
  * Deliberately beside {@link connectorTurnTenant} rather than built at the call site: the two are
  * one rule read together — a connector turn PROPOSES with no roles, and only an approval carries
@@ -550,6 +552,15 @@ export interface ChatProposalSettlement {
 	readonly toolCallId: string
 	readonly decision: ChatProposalDecision
 	readonly approver: ChatConnectorOrigin
+	/**
+	 * The Maple user the approver's chat account is linked to, resolved by the host from its own
+	 * database — never from anything the click carried.
+	 *
+	 * Present means the change runs as that user, under the roles they hold in the org at that
+	 * moment. Absent means the connector cannot prove who clicked, and the org-level connector
+	 * identity acts instead ({@link connectorApprovalTenant}).
+	 */
+	readonly actingUserId?: UserId
 }
 
 /**

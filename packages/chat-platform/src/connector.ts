@@ -9,6 +9,7 @@
  */
 import { ChatConnectorId } from "@maple/primitives"
 import { Schema } from "effect"
+import type { ChatConnectorIdentity } from "./identity"
 import type { ConnectorIngress } from "./ingress"
 import type { ChatConnectorInstall, ChatConnectorManifest } from "./install"
 import type { ChatOutbound } from "./outbound"
@@ -41,4 +42,13 @@ export interface ChatConnector<R = never> {
 	readonly install: ChatConnectorInstall
 	readonly outbound: ChatOutbound<R>
 	readonly ingress: ConnectorIngress
+	/**
+	 * How one person proves which account on this platform is theirs, where the platform can say.
+	 *
+	 * Optional, and its absence is a policy rather than a gap: a connector without it cannot tell
+	 * Maple who clicked a button, so everyone who can see the conversation may approve what the
+	 * agent proposes. A connector WITH it gets the stronger rule — only somebody who linked may
+	 * approve, and the change runs as the Maple user they linked to.
+	 */
+	readonly identity?: ChatConnectorIdentity
 }

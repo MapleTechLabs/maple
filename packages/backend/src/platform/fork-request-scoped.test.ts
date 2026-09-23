@@ -47,7 +47,8 @@ describe("forkRequestScoped", () => {
 		Effect.gen(function* () {
 			let finished = false
 			const scope: PgConnectionScopeApi = makePgConnectionScope("postgres://unused", undefined, {
-				openClient: (options) => makeMaplePgClient("postgres://maple:maple@127.0.0.1:1/never", options),
+				openClient: (options) =>
+					makeMaplePgClient("postgres://maple:maple@127.0.0.1:1/never", options),
 			})
 
 			yield* withPgConnectionScopeOf(

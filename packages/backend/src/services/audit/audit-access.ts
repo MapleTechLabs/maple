@@ -2,7 +2,7 @@ import { Context, Effect } from "effect"
 import type { HttpServerRequest, HttpServerResponse } from "effect/unstable/http"
 import type { HttpApiEndpoint, HttpApiGroup } from "effect/unstable/httpapi"
 import { AuditedRead, type AuditLogSource } from "@maple/domain/http"
-import type { ChatTurnOrigin } from "@maple/domain/chat-session"
+import { CONNECTOR_TENANT_USER_ID, type ChatTurnOrigin } from "@maple/domain/chat-session"
 import { chatConnectorAgentName } from "@maple/domain/system-agents"
 import type { ActorId, OrgId, UserId } from "@maple/domain/primitives"
 import type { McpToolSurface } from "@maple/domain/mcp-manifest"
@@ -92,7 +92,11 @@ export const auditAttribution = (tenant: AuditTenant, info: AuditActorInfo | und
 	// user: the connector's agent is the actor, and who asked is metadata. The
 	// label is set even when the actor row could not be resolved, so such an entry
 	// still says which connector it came from.
-	if (origin?.kind === "connector") {
+	//
+	// Unless they linked. A connector that can prove who clicked runs the change as the Maple user
+	// behind that chat account, and the tenant then carries a real user id instead of the
+	// placeholder — so the entry names the person, and the connector stays on it as metadata.
+	if (origin?.kind === "connector" && tenant.userId === CONNECTOR_TENANT_USER_ID) {
 		return {
 			actor: {
 				type: "agent",

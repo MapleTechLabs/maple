@@ -1,37 +1,54 @@
 /**
  * Who may approve a write Maple proposed, and what the conversation shows once somebody has.
  *
- * Pure, and vendor-neutral by construction: every input is either a stored setting or a membership
- * fact the connector reported as data. No platform can answer the question itself — a bot that
- * trusted "the platform let them click it" would let anybody in a channel run a change against the
- * org's data.
+ * Pure, and vendor-neutral by construction: the inputs are whether the connector can prove who
+ * clicked, and whether that person has linked their chat account to a Maple user. No platform
+ * answers the question itself — a bot that trusted "the platform let them click it" would let
+ * anybody in a channel run a change against the org's data.
  */
 import {
-	APPROVER_ROLE_SETTING,
 	decodeChatActionToken,
 	renderChatMessage,
 	splitBlocks,
 	type ChatBlock,
 	type ChatRenderContext,
-	type ChatWorkspaceSettings,
-	type InboundActor,
 } from "@maple/chat-platform"
 import type { ChatMessage } from "@maple/domain/chat-session"
+import type { UserId } from "@maple/domain/primitives"
 import { Option } from "effect"
 
 /**
- * Whether this person may decide this workspace's proposals.
+ * What a click is allowed to do, and whose authority it runs under.
  *
- * Two rules, and the second is the fallback for a workspace that has not configured the first:
- * a configured approver role is the whole answer, and where none is configured it is whoever the
- * platform says may manage the workspace. Never both — a configured role that somebody does not
- * hold is a refusal even for an administrator, because configuring the role is how an org says
- * who it meant.
+ * Three cases, because a chat platform gives Maple one of three things:
+ *
+ *   - `org` — the connector cannot prove who clicked, so there is nobody to be. Anyone who can see
+ *     the conversation may approve, and the change runs as the org-level connector identity. This
+ *     is the weaker rule and it is deliberate: without an identity half the alternative is a bot
+ *     that can propose changes and never apply them.
+ *   - `user` — the clicker linked this chat account to a Maple user, so the change runs as that
+ *     user, under whatever roles they hold in the org right now. A tool that requires an admin
+ *     enforces that itself; nothing here grants anything.
+ *   - `unlinked` — the connector CAN prove who clicked and this person has not linked. Refused,
+ *     because the alternative is silently falling back to the weaker rule on the one platform
+ *     where the stronger one was available.
  */
-export const mayApprove = (settings: ChatWorkspaceSettings, actor: InboundActor): boolean => {
-	const role = settings[APPROVER_ROLE_SETTING]?.trim()
-	return role === undefined || role === "" ? actor.isWorkspaceAdmin : actor.roleIds.includes(role)
+export type ApprovalPolicy =
+	| { readonly _tag: "org" }
+	| { readonly _tag: "user"; readonly userId: UserId }
+	| { readonly _tag: "unlinked" }
+
+export const approvalPolicy = (
+	supportsIdentity: boolean,
+	linkedUserId: UserId | undefined,
+): ApprovalPolicy => {
+	if (!supportsIdentity) return { _tag: "org" }
+	return linkedUserId === undefined ? { _tag: "unlinked" } : { _tag: "user", userId: linkedUserId }
 }
+
+/** Where somebody goes to link their account — Maple's own page, which is where a session is. */
+export const linkNotice = (appBaseUrl: string): string =>
+	`Link your chat account to Maple before approving changes: ${appBaseUrl}/integrations`
 
 /**
  * What the message that carried the controls should now say.
@@ -67,10 +84,6 @@ export const messageWithToolCall = (
 	toolCallId: string,
 ): ChatMessage | undefined =>
 	history.find((message) => message.toolCalls.some((call) => call.id === toolCallId))
-
-/** Short, neutral, and the same for every reason somebody may not decide: it is not a hint sheet. */
-export const NOT_AN_APPROVER_NOTICE =
-	"You're not set up to approve Maple's changes in this workspace — ask someone who is."
 
 /** The control outlived what it pointed at: a wiped conversation, or a build that changed the log. */
 export const PROPOSAL_GONE_NOTICE = "That change isn't waiting for a decision any more."

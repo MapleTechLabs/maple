@@ -20,9 +20,8 @@ import {
 } from "@maple/domain/chat-session"
 import { makeChatTranscript } from "@maple/domain/chat-transcript"
 import type { ChatSessionStub } from "@maple/domain/chat-session-stub"
-import { ChatConnectorId, OrgId } from "@maple/domain/primitives"
+import { ChatConnectorId, OrgId, UserId } from "@maple/domain/primitives"
 import {
-	APPROVER_ROLE_SETTING,
 	chatActionControlId,
 	chatConnectorId,
 	ChatOutboundError,
@@ -32,7 +31,6 @@ import {
 	type ChatMessageRef,
 	type ChatOutbound,
 	type ChatTarget,
-	type ChatWorkspaceSettings,
 	type InboundAction,
 	type InboundMessage,
 	type InboundWorkspaceRemoved,
@@ -207,8 +205,9 @@ const host = (
 		readonly announceUnlinked?: boolean
 		/** The database could not answer, which is not the same as nobody having linked it. */
 		readonly lookupFails?: boolean
-		/** What the org configured for this workspace — today, who may approve a proposed write. */
-		readonly settings?: ChatWorkspaceSettings
+		/** Whether this connector can prove who clicked, and who the clicker is in Maple. */
+		readonly supportsIdentity?: boolean
+		readonly linkedUserId?: UserId
 	},
 ): Host => {
 	const forgotten: Array<string> = []
@@ -218,7 +217,14 @@ const host = (
 		charts,
 		ports: {
 			outbound,
+			supportsIdentity: options?.supportsIdentity ?? false,
 			resolveWorkspace: (connector) =>
+				options?.lookupFails === true
+					? Effect.fail(
+							new WorkspaceLookupFailed({ connector, message: "the database said nothing" }),
+						)
+					: Effect.succeed(options?.linked === false ? Option.none() : Option.some({ orgId: ORG })),
+			resolveApprover: (connector) =>
 				options?.lookupFails === true
 					? Effect.fail(
 							new WorkspaceLookupFailed({ connector, message: "the database said nothing" }),
@@ -226,7 +232,12 @@ const host = (
 					: Effect.succeed(
 							options?.linked === false
 								? Option.none()
-								: Option.some({ orgId: ORG, settings: options?.settings ?? {} }),
+								: Option.some({
+										orgId: ORG,
+										...(options?.linkedUserId === undefined
+											? undefined
+											: { linkedUserId: options.linkedUserId }),
+									}),
 						),
 			forgetWorkspace: (_connector: ChatConnectorId, workspaceId: string) =>
 				Effect.sync(() => void forgotten.push(workspaceId)),
@@ -528,7 +539,7 @@ describe("relaying a mention", () => {
 
 // ── Approvals ────────────────────────────────────────────────────────────────
 
-const APPROVER_ROLE = "role-approvers"
+const ADA = Schema.decodeSync(UserId)("user_ada")
 const CALL_ID = "call_9"
 const CONTROL = chatActionControlId(
 	"approve",
@@ -604,17 +615,14 @@ describe("settling an approval somebody clicked", () => {
 				transcript: decidedTranscript("Approved by Ada.\nCreated alert rule ar_1."),
 			})
 			const deployment = host(platform.outbound, agent.stub, {
-				settings: { [APPROVER_ROLE_SETTING]: APPROVER_ROLE },
+				supportsIdentity: true,
+				linkedUserId: ADA,
 			})
 
 			yield* relayInboundEvent(
+				// No platform role and no platform admin: the link is the whole authorization.
 				click({
-					actor: {
-						id: "author-1",
-						displayName: "Ada",
-						roleIds: [APPROVER_ROLE],
-						isWorkspaceAdmin: false,
-					},
+					actor: { id: "author-1", displayName: "Ada", roleIds: [], isWorkspaceAdmin: false },
 				}),
 				deployment.ports,
 			)
@@ -633,6 +641,8 @@ describe("settling an approval somebody clicked", () => {
 						externalUserId: "author-1",
 						displayName: "Ada",
 					},
+					// The Maple user the host resolved, which is what the change runs as.
+					actingUserId: ADA,
 				},
 			])
 
@@ -679,22 +689,48 @@ describe("settling an approval somebody clicked", () => {
 		}),
 	)
 
-	it.effect("refuses somebody who does not hold the configured approver role", () =>
+	it.effect("refuses a clicker who has not linked, and says where to", () =>
 		Effect.gen(function* () {
 			const platform = chat()
 			const agent = session([])
-			const deployment = host(platform.outbound, agent.stub, {
-				settings: { [APPROVER_ROLE_SETTING]: APPROVER_ROLE },
-			})
+			const deployment = host(platform.outbound, agent.stub, { supportsIdentity: true })
 
-			// A workspace administrator, which is exactly the fallback a configured role replaces.
+			// A workspace administrator on the platform, which buys nothing: the connector can
+			// prove who clicked, so "nobody linked" must not fall back to letting anyone decide.
 			yield* relayInboundEvent(click(), deployment.ports)
 
 			expect(agent.settlements).toEqual([])
-			expect(notices(blocksOf(platform.calls))).toEqual([
-				"You're not set up to approve Maple's changes in this workspace — ask someone who is.",
-			])
 			expect(platform.calls[0]?.verb).toBe("post")
+			expect(notices(blocksOf(platform.calls))[0]).toContain("https://app.maple.dev/integrations")
+		}),
+	)
+
+	it.effect("lets anyone in the conversation decide when the connector cannot identify them", () =>
+		Effect.gen(function* () {
+			const platform = chat()
+			const agent = session([], { transcript: decidedTranscript("Approved by Ada.\nDone.") })
+			const deployment = host(platform.outbound, agent.stub, { supportsIdentity: false })
+
+			yield* relayInboundEvent(click(), deployment.ports)
+
+			// Settled, and with no acting user — the apply runs as the org-level connector identity.
+			expect(agent.settlements).toHaveLength(1)
+			expect(agent.settlements[0]).not.toHaveProperty("actingUserId")
+		}),
+	)
+
+	it.effect("hands the session the user the HOST resolved, never anything the click carried", () =>
+		Effect.gen(function* () {
+			const platform = chat()
+			const agent = session([], { transcript: decidedTranscript("Approved by Ada.\nDone.") })
+			const deployment = host(platform.outbound, agent.stub, {
+				supportsIdentity: true,
+				linkedUserId: ADA,
+			})
+
+			yield* relayInboundEvent(click(), deployment.ports)
+
+			expect(agent.settlements[0]?.actingUserId).toBe(ADA)
 		}),
 	)
 

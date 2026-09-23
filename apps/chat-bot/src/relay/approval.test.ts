@@ -1,50 +1,46 @@
 /**
- * Who may approve a write Maple proposed.
+ * Who may approve a write Maple proposed, and whose authority it runs under.
  *
- * The rule is short enough to read and dangerous enough to pin: it is the only thing between
- * anybody who can click a button in a shared channel and a change to the org's alerts. Every case
- * below is a workspace somebody actually configures.
+ * Three cases and one rule between them: a connector that cannot prove who clicked lets the
+ * conversation decide, and one that can requires a link and then runs as the person behind it.
+ * The case worth guarding hardest is the third — a connector that CAN identify must never fall
+ * back to the weaker rule for somebody who has not linked.
  */
-import { APPROVER_ROLE_SETTING, type InboundActor } from "@maple/chat-platform"
+import { Schema } from "effect"
+import { UserId } from "@maple/domain/primitives"
 import { describe, expect, it } from "vitest"
-import { mayApprove } from "./approval.ts"
+import { approvalPolicy, linkNotice } from "./approval.ts"
 
-const actor = (overrides: Partial<InboundActor> = {}): InboundActor => ({
-	id: "author-1",
-	displayName: "Ada",
-	roleIds: [],
-	isWorkspaceAdmin: false,
-	...overrides,
-})
-
-const APPROVERS = "role-approvers"
+const ADA = Schema.decodeSync(UserId)("user_ada")
 
 describe("who may approve", () => {
-	it("lets a holder of the configured role approve, admin or not", () => {
-		const settings = { [APPROVER_ROLE_SETTING]: APPROVERS }
-		expect(mayApprove(settings, actor({ roleIds: [APPROVERS] }))).toBe(true)
-		expect(mayApprove(settings, actor({ roleIds: ["role-other", APPROVERS] }))).toBe(true)
+	it("lets the conversation decide when the connector cannot say who clicked", () => {
+		// The weaker rule, and deliberate: without an identity half the alternative is a bot that
+		// proposes changes and can never apply them.
+		expect(approvalPolicy(false, undefined)).toEqual({ _tag: "org" })
 	})
 
-	it("refuses everyone else once a role is configured, administrators included", () => {
-		// Configuring the role IS the org saying who it meant, so it is not a floor that workspace
-		// administration sits above.
-		const settings = { [APPROVER_ROLE_SETTING]: APPROVERS }
-		expect(mayApprove(settings, actor({ roleIds: ["role-other"] }))).toBe(false)
-		expect(mayApprove(settings, actor({ isWorkspaceAdmin: true }))).toBe(false)
+	it("ignores a stray link on a connector that cannot say who clicked", () => {
+		// Nothing should have resolved one, and if something did it is not evidence about a
+		// platform that cannot prove identity at all.
+		expect(approvalPolicy(false, ADA)).toEqual({ _tag: "org" })
 	})
 
-	it("falls back to whoever may manage the workspace when no role is configured", () => {
-		expect(mayApprove({}, actor({ isWorkspaceAdmin: true }))).toBe(true)
-		expect(mayApprove({}, actor())).toBe(false)
-		// A role somebody typed as whitespace is no role, not a role nobody holds — otherwise
-		// clearing the field would lock every approval out of the workspace.
-		expect(mayApprove({ [APPROVER_ROLE_SETTING]: "   " }, actor({ isWorkspaceAdmin: true }))).toBe(true)
+	it("runs as the linked user when the connector can say who clicked", () => {
+		expect(approvalPolicy(true, ADA)).toEqual({ _tag: "user", userId: ADA })
 	})
 
-	it("never reads a role the platform did not report", () => {
-		// `roleIds` is what ingress carried, and the empty list is the answer for a member with no
-		// roles — never a wildcard.
-		expect(mayApprove({ [APPROVER_ROLE_SETTING]: APPROVERS }, actor())).toBe(false)
+	it("refuses an unlinked clicker rather than falling back to the weaker rule", () => {
+		// The whole point: on a platform where identity was available, "nobody linked" must not
+		// silently become "anyone in the channel may approve".
+		expect(approvalPolicy(true, undefined)).toEqual({ _tag: "unlinked" })
+	})
+})
+
+describe("the link hint", () => {
+	it("sends them to Maple, where a session exists to bind the link to", () => {
+		// Never straight to the platform's OAuth: the callback has to know which Maple user is
+		// linking, and only Maple's own page can establish that.
+		expect(linkNotice("https://app.maple.dev")).toContain("https://app.maple.dev/integrations")
 	})
 })

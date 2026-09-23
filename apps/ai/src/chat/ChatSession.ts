@@ -493,6 +493,9 @@ export class ChatSession {
 				env: this.env,
 				sessionId: settlement.sessionId,
 				approver: settlement.approver,
+				...(settlement.actingUserId === undefined
+					? undefined
+					: { actingUserId: settlement.actingUserId }),
 				tool: proposal.name,
 				input: proposal.input,
 			})
