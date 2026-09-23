@@ -10,6 +10,7 @@
  * block's `image_url` at most 3000 characters with a REQUIRED `alt_text` of at most 2000, and a
  * message's top-level `text` at most 40000.
  */
+import { chatActionControlId, type ChatActionToken } from "../../action-token"
 import type { ChatBlock, ChatToolActivity } from "../../render/blocks"
 import { escapeMrkdwn, toMrkdwn } from "./mrkdwn"
 
@@ -135,15 +136,19 @@ const toolLabel = (tool: ChatToolActivity): string => {
 }
 
 /**
- * The two buttons, carrying the driver's action token in a button's `value`.
+ * The two buttons, carrying the driver's action control id in a button's `value`.
  *
- * A tool call id is assigned by the model provider, so the token's length is not ours to bound — but
- * Slack's 2000 characters is wide enough that a token which does not fit is a token that is wrong.
+ * The value is Maple's, not Slack's — the host reads the decision back off it, so the format is
+ * `chatActionControlId`'s, and `action_id` only keeps the two buttons distinct within the block.
+ * A tool call id is assigned by the model provider, so the length is not ours to bound — but
+ * Slack's 2000 characters is wide enough that a value which does not fit is a token that is wrong.
  * A pair that would not fit is dropped rather than sent, because Slack rejects the whole message
  * over one oversized value.
  */
-const approvalActions = (token: string, toolName: string): SlackActions | null => {
-	if (token.length > MAX_BUTTON_VALUE_CHARS) return null
+const approvalActions = (token: ChatActionToken, toolName: string): SlackActions | null => {
+	const approve = chatActionControlId("approve", token)
+	const deny = chatActionControlId("deny", token)
+	if (approve.length > MAX_BUTTON_VALUE_CHARS || deny.length > MAX_BUTTON_VALUE_CHARS) return null
 	return {
 		type: "actions",
 		elements: [
@@ -151,14 +156,14 @@ const approvalActions = (token: string, toolName: string): SlackActions | null =
 				type: "button",
 				text: { type: "plain_text", text: clamp(`Run ${toolName}`, MAX_BUTTON_TEXT_CHARS) },
 				action_id: APPROVE_ACTION,
-				value: token,
+				value: approve,
 				style: "primary",
 			},
 			{
 				type: "button",
 				text: { type: "plain_text", text: "Skip" },
 				action_id: DENY_ACTION,
-				value: token,
+				value: deny,
 				style: "danger",
 			},
 		],
