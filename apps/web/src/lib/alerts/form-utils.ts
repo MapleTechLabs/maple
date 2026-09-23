@@ -21,6 +21,7 @@ import {
 	type AlertEventType,
 	type AlertSeverity,
 	type AlertSignalType,
+	type ChatWorkspaceId,
 	type QueryBuilderQueryDraftPayload,
 } from "@maple/domain/http"
 import type {
@@ -435,6 +436,15 @@ export type DestinationFormState = {
 	hazelChannelName: string
 	/** Selected workspace-member recipients (email type only). */
 	memberUserIds: string[]
+	/**
+	 * Chat connector destination: the linked workspace (fixed once created), the
+	 * connector that owns it (for its mark), and the channel picked from it.
+	 */
+	/** Branded as it arrives — from the connector list or the stored destination — so never decoded here. */
+	chatWorkspaceId: ChatWorkspaceId | null
+	chatConnector: string
+	chatChannelId: string
+	chatChannelName: string
 }
 
 export const MAX_EMAIL_MEMBER_RECIPIENTS = 10
@@ -459,6 +469,10 @@ export function defaultDestinationForm(type: AlertDestinationType = "slack-bot")
 		hazelChannelId: "",
 		hazelChannelName: "",
 		memberUserIds: [],
+		chatWorkspaceId: null,
+		chatConnector: "",
+		chatChannelId: "",
+		chatChannelName: "",
 	}
 }
 
@@ -486,6 +500,12 @@ export function destinationToFormState(destination: AlertDestinationDocument): D
 		hazelChannelId: "",
 		hazelChannelName: "",
 		memberUserIds: destination.memberUserIds != null ? [...destination.memberUserIds] : [],
+		// Like slack-bot: the stored channel's id isn't returned, its `#name` is.
+		chatWorkspaceId: destination.chatWorkspaceId ?? null,
+		chatConnector: destination.chatConnector ?? "",
+		chatChannelId: "",
+		chatChannelName:
+			destination.type === "chat" ? (destination.channelLabel?.replace(/^#/, "") ?? "") : "",
 	}
 }
 
@@ -554,6 +574,17 @@ export function buildDestinationCreateParamsV2(form: DestinationFormState): V2Al
 				name: form.name.trim(),
 				enabled: form.enabled,
 				member_user_ids: form.memberUserIds.map((userId) => asUserId(userId)),
+			}
+		case "chat":
+			// Unreachable from the dialog: its save stays disabled until a workspace is picked.
+			if (form.chatWorkspaceId === null) throw new Error("A chat destination needs a linked workspace")
+			// No channel name: the server reads it from the workspace's own listing.
+			return {
+				type: "chat",
+				name: form.name.trim(),
+				enabled: form.enabled,
+				workspace_id: form.chatWorkspaceId,
+				channel_id: form.chatChannelId.trim(),
 			}
 	}
 }
@@ -649,6 +680,16 @@ export function buildDestinationUpdateParamsV2(form: DestinationFormState): V2Al
 						}
 					: undefined),
 			}
+		case "chat": {
+			// Editing keeps the stored channel until a new one is picked.
+			const channelId = form.chatChannelId.trim()
+			return {
+				type: "chat",
+				enabled: form.enabled,
+				...(name ? { name } : undefined),
+				...(channelId ? { channel_id: channelId } : undefined),
+			}
+		}
 	}
 }
 

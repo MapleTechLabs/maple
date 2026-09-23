@@ -11,21 +11,24 @@
  * `POST /channels/{id}/messages`, edit is `PATCH /channels/{id}/messages/{id}`, typing is
  * `POST /channels/{id}/typing` and expires after ten seconds, a thread is
  * `POST /channels/{id}/messages/{id}/threads` with a 1–100 character name and an
- * `auto_archive_duration` of 60, 1440, 4320 or 10080 minutes, and a 429 answers with `retry_after`
- * in SECONDS (fractional).
+ * `auto_archive_duration` of 60, 1440, 4320 or 10080 minutes, a 429 answers with `retry_after`
+ * in SECONDS (fractional), and `GET /guilds/{id}/channels` lists a guild's channels (threads
+ * excluded) with their `type` and `position`.
  *
  * A Discord thread IS a channel, so once a turn is answering in one every call addresses the
  * thread's id — which is why the target's channel is resolved through {@link channelOf} rather
  * than read directly.
  */
 import { ChatConversationKey } from "@maple/primitives"
-import { Array as Arr, Duration, Effect, Option, Redacted, Schema } from "effect"
+import { Array as Arr, Duration, Effect, Option, Order, Redacted, Schema } from "effect"
 import { HttpClient, HttpClientRequest, type HttpClientResponse } from "effect/unstable/http"
 import type { ConnectorConfig, InboundAction, InboundMessage } from "../../ingress"
 import {
 	ChatOutboundError,
 	ConnectorCredentials,
 	type ChatConversation,
+	type ChatDestination,
+	type ChatOutboundFailureReason,
 	type ChatHistoryMessage,
 	type ChatMessageRef,
 	type ChatOutbound,
@@ -42,10 +45,9 @@ import { renderDiscordMessage } from "./render"
 /**
  * The bot token out of the configuration the host resolved.
  *
- * `BOT_TOKEN_CONFIG` (`./api.ts`) is also what the gateway half declares in its `requiredConfig`,
- * so one secret under one name serves both halves — and the host, which skips a connector whose
- * declared configuration is missing, is what makes the fallback here unreachable rather than a
- * silent unauthenticated mode.
+ * `BOT_TOKEN_CONFIG` (`./api.ts`) is declared by this half's `requiredConfig` and by the gateway
+ * half's, so one secret under one name serves both. A host that has not resolved it posts with an
+ * empty token, and Discord's 401 reports that as the auth failure it is.
  */
 const botToken = (config: ConnectorConfig): Redacted.Redacted<string> =>
 	Redacted.make(config.get(BOT_TOKEN_CONFIG) ?? "")
@@ -87,6 +89,28 @@ const CreatedMessage = Schema.Struct({
 
 /** A started thread is a channel, and its id is what every later call addresses. */
 const CreatedThread = Schema.Struct({ id: Schema.String })
+
+/** One guild channel, as far as picking an alert destination reads it. */
+const GuildChannel = Schema.Struct({
+	id: Schema.String,
+	type: Schema.Number,
+	name: Schema.optionalKey(Schema.NullOr(Schema.String)),
+	position: Schema.optionalKey(Schema.Number),
+})
+
+/** GUILD_TEXT and GUILD_ANNOUNCEMENT: the two channel types a message can be posted in directly. */
+const POSTABLE_CHANNEL_TYPES: ReadonlySet<number> = new Set([0, 5])
+
+/**
+ * What Discord's status says about a failure, where it says anything the caller can act on: a
+ * token the platform will not honour, a channel that is gone, a message it will not take.
+ */
+const reasonForStatus = (status: number): ChatOutboundFailureReason | undefined => {
+	if (status === 401 || status === 403) return "auth"
+	if (status === 404) return "not_found"
+	if (status === 400) return "rejected"
+	return undefined
+}
 
 /**
  * One earlier message, as `GET /channels/{id}/messages` answers it.
@@ -148,8 +172,12 @@ const threadName = (title: string): string => {
 /** A day of quiet before the thread leaves the channel list. Long enough to come back to an answer. */
 const THREAD_ARCHIVE_MINUTES = 1440
 
-/** The thread when the turn is in one, the channel otherwise — on Discord both are channel ids. */
-const channelOf = (target: ChatTarget): string => target.threadId ?? target.channelId
+/**
+ * The thread when the turn is in one, the channel otherwise — on Discord both are channel ids.
+ * Encoded, like every id that reaches a path here: a stored channel id is a value somebody
+ * submitted, and an unencoded `../` walks the bot's token onto another route.
+ */
+const channelOf = (target: ChatTarget): string => encodeURIComponent(target.threadId ?? target.channelId)
 
 /**
  * Every id Discord mints is a snowflake, which the key's charset covers — but the id came off the
@@ -180,6 +208,7 @@ class DiscordRateLimited extends Schema.TaggedError<DiscordRateLimited>()(
 export const discordOutbound: ChatOutbound<HttpClient.HttpClient | ConnectorCredentials> = {
 	connectorId: DISCORD_CONNECTOR_ID,
 	limits: { maxMessageChars: MAX_MESSAGE_CHARS, minEditInterval: MIN_EDIT_INTERVAL },
+	requiredConfig: [{ name: BOT_TOKEN_CONFIG, secret: true }],
 	transport: Effect.gen(function* () {
 		const client = yield* HttpClient.HttpClient
 		// Per call, not here: acquiring the transport must not cost the host its credential read.
@@ -221,8 +250,10 @@ export const discordOutbound: ChatOutbound<HttpClient.HttpClient | ConnectorCred
 			if (response.status === 429)
 				return yield* new DiscordRateLimited({ wait: yield* retryAfter(response) })
 			if (response.status >= 300) {
+				const reason = reasonForStatus(response.status)
 				return yield* failed(operation, `Discord answered ${response.status}`, {
 					status: response.status,
+					...(reason === undefined ? undefined : { reason }),
 				})
 			}
 			return response
@@ -259,7 +290,7 @@ export const discordOutbound: ChatOutbound<HttpClient.HttpClient | ConnectorCred
 				"thread",
 				"/channels/{channel_id}/messages/{message_id}/threads",
 				HttpClientRequest.post(
-					`${API_BASE}/channels/${request.channelId}/messages/${request.anchorMessageId}/threads`,
+					`${API_BASE}/channels/${encodeURIComponent(request.channelId)}/messages/${encodeURIComponent(request.anchorMessageId)}/threads`,
 				).pipe(
 					HttpClientRequest.bodyJsonUnsafe({
 						name: threadName(request.title),
@@ -305,7 +336,7 @@ export const discordOutbound: ChatOutbound<HttpClient.HttpClient | ConnectorCred
 					"edit",
 					"/channels/{channel_id}/messages/{message_id}",
 					HttpClientRequest.patch(
-						`${API_BASE}/channels/${channelOf(ref.target)}/messages/${ref.messageId}`,
+						`${API_BASE}/channels/${channelOf(ref.target)}/messages/${encodeURIComponent(ref.messageId)}`,
 					).pipe(body(blocks)),
 				).pipe(Effect.asVoid),
 
@@ -352,6 +383,40 @@ export const discordOutbound: ChatOutbound<HttpClient.HttpClient | ConnectorCred
 					),
 				)
 				return Arr.getSomes(Arr.map(page, historyMessage))
+			}),
+
+			/**
+			 * The guild's text and announcement channels, in the order Discord shows them.
+			 *
+			 * Whether the bot may post in each is a permission overwrite Discord does not summarise
+			 * here, so every one is listed and a channel that refuses the bot says so on the post.
+			 */
+			destinations: Effect.fn("Discord.destinations")(function* (workspaceId: string) {
+				const response = yield* send(
+					"destinations",
+					"/guilds/{guild_id}/channels",
+					HttpClientRequest.get(`${API_BASE}/guilds/${encodeURIComponent(workspaceId)}/channels`),
+				)
+				const json = yield* response.json.pipe(
+					Effect.mapError((cause) =>
+						failed("destinations", "Discord's reply could not be read", { cause }),
+					),
+				)
+				const channels = yield* Schema.decodeUnknownEffect(Schema.Array(GuildChannel))(json).pipe(
+					Effect.mapError((cause) =>
+						failed("destinations", "Discord did not answer with a list of channels", { cause }),
+					),
+				)
+				return Arr.sort(
+					channels.filter((channel) => POSTABLE_CHANNEL_TYPES.has(channel.type)),
+					byPosition,
+				).map(
+					(channel): ChatDestination => ({
+						id: channel.id,
+						name: channel.name ?? channel.id,
+						private: false,
+					}),
+				)
 			}),
 
 			/**
@@ -421,8 +486,17 @@ export const discordOutbound: ChatOutbound<HttpClient.HttpClient | ConnectorCred
 const failed = (
 	operation: ChatOutboundOperation,
 	message: string,
-	extra: { readonly status?: number; readonly cause?: unknown } = {},
+	extra: {
+		readonly status?: number
+		readonly reason?: ChatOutboundFailureReason
+		readonly cause?: unknown
+	} = {},
 ) => new ChatOutboundError({ message, connectorId: DISCORD_CONNECTOR_ID, operation, ...extra })
+
+const byPosition = Order.mapInput(
+	Order.Number,
+	(channel: { readonly position?: number }) => channel.position ?? 0,
+)
 
 /**
  * How long Discord asked us to wait, clamped. The JSON body is the documented source; the

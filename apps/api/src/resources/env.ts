@@ -10,7 +10,7 @@
  * optional-omit rule, the PR-preview exclusions and the `derived` values the
  * environment must not override.
  */
-import { chatConnectorConfigKeys } from "@maple/chat-platform"
+import { chatConnectorConfigKeys, chatConnectorOutboundConfigKeys } from "@maple/chat-platform"
 import type { MapleDomains, MapleRegion, MapleStage } from "@maple/infra/cloudflare"
 import {
 	apnsEnv,
@@ -92,9 +92,10 @@ export const apiConfiguredEnv = (stage: MapleStage, region: MapleRegion, domains
 		optionalPlain("HAZEL_OAUTH_SCOPES"),
 		// Chat connectors bind the install config each one declares; the names live
 		// in the connector directory, each says whether it is a secret, and an
-		// unset one just reports that connector unavailable. The bot token is not
-		// here: the ingress half runs in a different Worker, which binds its own.
-		...chatConnectorConfigKeys.map((key) =>
+		// unset one just reports that connector unavailable. The outbound config is
+		// here too, for listing a workspace's channels and sending a test alert;
+		// the ingress half runs in a different Worker, which binds its own.
+		...[...chatConnectorConfigKeys, ...chatConnectorOutboundConfigKeys].map((key) =>
 			key.secret ? optionalSecret(key.name) : optionalPlain(key.name),
 		),
 		// Slack integration (bot install via OAuth v2)

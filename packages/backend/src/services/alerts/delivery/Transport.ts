@@ -17,7 +17,8 @@
  * of any kind, which is why the four unverified providers were expensive to
  * cover before and are cheap now.
  */
-import type { AlertDeliveryFailure, AlertDestinationType } from "@maple/domain/http"
+import type { ChatBlock } from "@maple/chat-platform"
+import type { AlertDeliveryFailure, AlertDestinationType, ChatWorkspaceId, OrgId } from "@maple/domain/http"
 import type { Effect, Result } from "effect"
 import type { DestinationSecretConfig } from "../AlertDestinationHydration"
 import type { DispatchContext, DispatchResult } from "./context"
@@ -114,10 +115,11 @@ export interface HttpTransport<Config, Prepared = void> {
 }
 
 /**
- * A provider that is not an HTTP request at all. Only `email`: it fans out over
+ * A provider that is not an HTTP request at all. `email` fans out over
  * workspace members through the platform email channel, and its partial-success
  * case is a *success* with a degraded message — there is no per-member attempt
- * state, so retrying would re-mail the members who already received it.
+ * state, so retrying would re-mail the members who already received it. `chat`
+ * posts through a chat connector's own transport, which owns its HTTP.
  */
 export interface EffectTransport<Config> {
 	readonly kind: "effect"
@@ -130,12 +132,32 @@ export interface EffectTransport<Config> {
 	) => Effect.Effect<DispatchResult, AlertDeliveryFailure>
 }
 
+/** One alert, addressed to a channel in one of the org's linked chat workspaces. */
+export interface ChatAlertPost {
+	readonly orgId: OrgId
+	/** The `chat_workspaces` row id, not the platform's. */
+	readonly workspaceId: ChatWorkspaceId
+	readonly channelId: string
+	readonly blocks: ReadonlyArray<ChatBlock>
+}
+
+/** What the connector answered: who posted it, and the message it made. */
+export interface ChatAlertPosted {
+	readonly connectorName: string
+	readonly messageId: string
+}
+
 export interface EffectTransportDeps {
 	readonly sendEmail: (
 		to: string,
 		subject: string,
 		html: string,
 	) => Effect.Effect<void, AlertDeliveryFailure>
+	/**
+	 * Posts through the workspace's connector. Resolves the workspace by id AND org, so a
+	 * destination can only ever reach a workspace its own org linked.
+	 */
+	readonly postChatAlert: (post: ChatAlertPost) => Effect.Effect<ChatAlertPosted, AlertDeliveryFailure>
 }
 
 /** Narrows the secret-config union to the member a given destination type carries. */

@@ -90,6 +90,7 @@ const chat = (earlier: ReadonlyArray<ChatHistoryMessage> | ChatOutboundError = [
 		outbound: {
 			connectorId: TESTCHAT,
 			limits: { maxMessageChars: 2000, minEditInterval: Duration.millis(10) },
+			requiredConfig: [],
 			transport: Effect.sync(() => ({
 				post: (target, blocks) =>
 					Effect.sync(() => {
@@ -124,6 +125,7 @@ const chat = (earlier: ReadonlyArray<ChatHistoryMessage> | ChatOutboundError = [
 							? Effect.fail(earlier)
 							: Effect.succeed(earlier)
 					}),
+				destinations: () => Effect.die("a turn asked where alerts can go"),
 			})),
 		},
 	}
