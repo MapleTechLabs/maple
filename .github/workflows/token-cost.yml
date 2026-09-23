@@ -41,14 +41,8 @@ jobs:
               with:
                   filters: "@maple/ai @maple/api @maple-dev/effect-sdk @maple-dev/browser"
 
-            - name: Restore turbo cache
-              uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-              with:
-                  path: .turbo/cache
-                  key: turbo-v2-${{ runner.os }}-${{ github.job }}-${{ github.sha }}
-                  restore-keys: |
-                      turbo-v2-${{ runner.os }}-${{ github.job }}-
-                      turbo-v2-${{ runner.os }}-typescript-build-other-
+            - name: Turbo remote cache
+              uses: rharkor/caching-for-turbo@2238fae6eb9a9936f92356f54cb3660200d105e7 # v2.5.1
 
             # The SDK and browser workspace packages need their dist exports built.
             - name: Build workspace deps
