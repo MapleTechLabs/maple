@@ -120,6 +120,27 @@ describe("the git commands the tools build, against a real repository", () => {
 		}).pipe(Effect.provide(overRepo())),
 	)
 
+	it.effect("reads the pattern as extended regex, the dialect models write", () =>
+		Effect.gen(function* () {
+			const service = yield* RepoSandboxService
+			// Under basic regex the bar is literal and `\(` opens a group that never closes,
+			// so both of these found nothing or failed outright.
+			const alternation = yield* service.grep(
+				ORG,
+				{ repository: "octo/shop" },
+				{ pattern: "no such text|card declined" },
+			)
+			assert.isAtMost(alternation.exitCode, 1, alternation.stderr)
+			assert.include(alternation.stdout, "src/checkout.ts:2:")
+			const escaped = yield* service.grep(
+				ORG,
+				{ repository: "octo/shop" },
+				{ pattern: "declined\\(|card" },
+			)
+			assert.isAtMost(escaped.exitCode, 1, escaped.stderr)
+		}).pipe(Effect.provide(overRepo())),
+	)
+
 	it.effect("narrows with a path and a glob together, rather than widening", () =>
 		Effect.gen(function* () {
 			const service = yield* RepoSandboxService

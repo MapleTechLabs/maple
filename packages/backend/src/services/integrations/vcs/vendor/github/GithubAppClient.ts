@@ -29,6 +29,8 @@ const PER_PAGE = 100
 // Paginate effectively to the end (up to 100k items) while still bounding a
 // pathological loop. Hitting this cap is logged — truncation is never silent.
 const MAX_PAGES = 1000
+/** GitHub lists at most 3,000 files for one pull request. */
+const MAX_PR_FILE_PAGES = 30
 // Pages walked per consumer invocation before yielding a continuation. Caps
 // wall-clock per invocation to stay under Cloudflare Queues' 15-min limit;
 // the remainder resumes from a committer-date watermark in a follow-up job.
@@ -178,6 +180,64 @@ const GithubApiPullRequestSchema = Schema.Struct({
 export type GithubApiPullRequest = Schema.Schema.Type<typeof GithubApiPullRequestSchema>
 const GithubApiPullRequestList = Schema.Array(GithubApiPullRequestSchema)
 
+// One file of a pull request's diff. `patch` is absent for binary files and for
+// files GitHub judges too large to inline; the caller reads those another way.
+const GithubApiPullRequestFileSchema = Schema.Struct({
+	filename: Schema.String,
+	previous_filename: Schema.optionalKey(Schema.String),
+	status: Schema.String,
+	additions: Schema.Number,
+	deletions: Schema.Number,
+	patch: Schema.optionalKey(Schema.String),
+})
+export type GithubApiPullRequestFile = Schema.Schema.Type<typeof GithubApiPullRequestFileSchema>
+const GithubApiPullRequestFileList = Schema.Array(GithubApiPullRequestFileSchema)
+
+const GithubApiCheckRunSchema = Schema.Struct({
+	id: Schema.Number,
+	html_url: Schema.NullOr(Schema.String),
+})
+const GithubApiIssueCommentSchema = Schema.Struct({
+	id: Schema.Number,
+	html_url: Schema.String,
+	body: Schema.optionalKey(Schema.NullOr(Schema.String)),
+	performed_via_github_app: Schema.optionalKey(Schema.NullOr(Schema.Struct({ id: Schema.Number }))),
+})
+const GithubApiIssueCommentList = Schema.Array(GithubApiIssueCommentSchema)
+
+/** Pages of issue comments searched for the review's own summary comment before posting a new one. */
+const MAX_COMMENT_PAGES = 10
+
+const GithubApiReviewSchema = Schema.Struct({
+	id: Schema.Number,
+	html_url: Schema.optionalKey(Schema.NullOr(Schema.String)),
+})
+
+/** GitHub accepts at most this many annotations per check-run request. */
+export const CHECK_RUN_ANNOTATION_LIMIT = 50
+
+export interface GithubCheckRunInput {
+	readonly name: string
+	readonly headSha: string
+	readonly conclusion: "success" | "neutral"
+	readonly title: string
+	readonly summary: string
+	readonly annotations: ReadonlyArray<{
+		readonly path: string
+		readonly startLine: number
+		readonly endLine: number
+		readonly level: "notice" | "warning" | "failure"
+		readonly title: string
+		readonly message: string
+	}>
+}
+
+export interface GithubReviewInput {
+	readonly commitId: string
+	readonly body: string
+	readonly comments: ReadonlyArray<{ readonly path: string; readonly line: number; readonly body: string }>
+}
+
 const GithubCodeSearchResponseSchema = Schema.Struct({
 	items: Schema.Array(
 		Schema.Struct({
@@ -215,6 +275,11 @@ const decodeCommit = Schema.decodeUnknownEffect(GithubApiCommitSchema)
 const decodeBranchList = Schema.decodeUnknownEffect(GithubApiBranchList)
 const decodePullRequestList = Schema.decodeUnknownEffect(GithubApiPullRequestList)
 const decodePullRequest = Schema.decodeUnknownEffect(GithubApiPullRequestSchema)
+const decodePullRequestFiles = Schema.decodeUnknownEffect(GithubApiPullRequestFileList)
+const decodeCheckRun = Schema.decodeUnknownEffect(GithubApiCheckRunSchema)
+const decodeReview = Schema.decodeUnknownEffect(GithubApiReviewSchema)
+const decodeIssueComment = Schema.decodeUnknownEffect(GithubApiIssueCommentSchema)
+const decodeIssueCommentList = Schema.decodeUnknownEffect(GithubApiIssueCommentList)
 const decodeCodeSearch = Schema.decodeUnknownEffect(GithubCodeSearchResponseSchema)
 const decodeContentFile = Schema.decodeUnknownEffect(GithubContentFileSchema)
 
@@ -744,6 +809,215 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 				)
 			})
 
+			const authedSend = (
+				method: "POST" | "PATCH",
+				token: string,
+				url: string,
+				body: unknown,
+				context: string,
+			) =>
+				rateLimitedFetch(
+					tracedFetch(
+						url,
+						{
+							method,
+							headers: {
+								authorization: `token ${token}`,
+								accept: "application/vnd.github+json",
+								"content-type": "application/json",
+								"x-github-api-version": GITHUB_API_VERSION,
+								"user-agent": USER_AGENT,
+							},
+							body: JSON.stringify(body),
+						},
+						`${context} failed`,
+					),
+				)
+
+			// Every page: a review needs the whole diff, and GitHub itself stops at
+			// 3,000 files, which is PER_PAGE * MAX_PR_FILE_PAGES.
+			const listPullRequestFiles = Effect.fn("GithubAppClient.listPullRequestFiles")(function* (
+				externalInstallationId: string,
+				owner: string,
+				repo: string,
+				number: number,
+			) {
+				const config = yield* resolveConfig
+				const token = yield* mintInstallationToken(externalInstallationId)
+				const files: Array<GithubApiPullRequestFile> = []
+				for (let page = 1; page <= MAX_PR_FILE_PAGES; page++) {
+					const response = yield* authedGet(
+						config,
+						token,
+						`${config.apiBaseUrl}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pulls/${number}/files?per_page=${PER_PAGE}&page=${page}`,
+					)
+					if (!response.ok) return yield* failure(response, "List pull request files", "repository")
+					const json = yield* parseJson(response, "List pull request files")
+					const decoded = yield* decodePullRequestFiles(json).pipe(
+						Effect.mapError(
+							(cause) =>
+								new GithubAppError({
+									message: "Unexpected pull request files payload",
+									cause,
+								}),
+						),
+					)
+					files.push(...decoded)
+					if (decoded.length < PER_PAGE) break
+				}
+				return files
+			})
+
+			// Needs `checks: write` on the App. A 403 here is the installation not
+			// having accepted that permission yet; the provider maps it to a
+			// repository-scoped failure the review records as `publish_error`.
+			const createCheckRun = Effect.fn("GithubAppClient.createCheckRun")(function* (
+				externalInstallationId: string,
+				owner: string,
+				repo: string,
+				input: GithubCheckRunInput,
+			) {
+				const config = yield* resolveConfig
+				const token = yield* mintInstallationToken(externalInstallationId)
+				const response = yield* authedSend(
+					"POST",
+					token,
+					`${config.apiBaseUrl}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/check-runs`,
+					{
+						name: input.name,
+						head_sha: input.headSha,
+						status: "completed",
+						conclusion: input.conclusion,
+						output: {
+							title: input.title,
+							summary: input.summary,
+							annotations: input.annotations
+								.slice(0, CHECK_RUN_ANNOTATION_LIMIT)
+								.map((annotation) => ({
+									path: annotation.path,
+									start_line: annotation.startLine,
+									end_line: annotation.endLine,
+									annotation_level: annotation.level,
+									title: annotation.title,
+									message: annotation.message,
+								})),
+						},
+					},
+					"Create check run",
+				)
+				if (!response.ok) return yield* failure(response, "Create check run", "repository")
+				const json = yield* parseJson(response, "Create check run")
+				return yield* decodeCheckRun(json).pipe(
+					Effect.mapError(
+						(cause) => new GithubAppError({ message: "Unexpected check run payload", cause }),
+					),
+				)
+			})
+
+			// Needs `pull_requests: write`. `event: COMMENT` so the review never
+			// approves or blocks a merge; every comment is on the new side of the
+			// diff, which is the only side a line-anchored comment can name.
+			const createPullRequestReview = Effect.fn("GithubAppClient.createPullRequestReview")(function* (
+				externalInstallationId: string,
+				owner: string,
+				repo: string,
+				number: number,
+				input: GithubReviewInput,
+			) {
+				const config = yield* resolveConfig
+				const token = yield* mintInstallationToken(externalInstallationId)
+				const response = yield* authedSend(
+					"POST",
+					token,
+					`${config.apiBaseUrl}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pulls/${number}/reviews`,
+					{
+						commit_id: input.commitId,
+						body: input.body,
+						event: "COMMENT",
+						comments: input.comments.map((comment) => ({
+							path: comment.path,
+							line: comment.line,
+							side: "RIGHT",
+							body: comment.body,
+						})),
+					},
+					"Create pull request review",
+				)
+				if (!response.ok) return yield* failure(response, "Create pull request review", "repository")
+				const json = yield* parseJson(response, "Create pull request review")
+				return yield* decodeReview(json).pipe(
+					Effect.mapError(
+						(cause) => new GithubAppError({ message: "Unexpected review payload", cause }),
+					),
+				)
+			})
+
+			/**
+			 * Create or edit the one comment carrying `marker`, so every later review of the pull
+			 * request updates the same comment. Only a comment this App wrote is edited: a person who
+			 * quoted the marker keeps their comment, and the App could not edit it anyway.
+			 */
+			const upsertIssueComment = Effect.fn("GithubAppClient.upsertIssueComment")(function* (
+				externalInstallationId: string,
+				owner: string,
+				repo: string,
+				number: number,
+				marker: string,
+				body: string,
+			) {
+				const config = yield* resolveConfig
+				const token = yield* mintInstallationToken(externalInstallationId)
+				const base = `${config.apiBaseUrl}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`
+				let existing: number | undefined
+				for (let page = 1; page <= MAX_COMMENT_PAGES && existing === undefined; page++) {
+					const response = yield* authedGet(
+						config,
+						token,
+						`${base}/issues/${number}/comments?per_page=${PER_PAGE}&page=${page}`,
+					)
+					if (!response.ok)
+						return yield* failure(response, "List pull request comments", "repository")
+					const comments = yield* decodeIssueCommentList(
+						yield* parseJson(response, "List pull request comments"),
+					).pipe(
+						Effect.mapError(
+							(cause) => new GithubAppError({ message: "Unexpected comments payload", cause }),
+						),
+					)
+					existing = comments.find(
+						(comment) =>
+							(comment.body ?? "").includes(marker) &&
+							String(comment.performed_via_github_app?.id ?? "") === config.appId,
+					)?.id
+					if (comments.length < PER_PAGE) break
+				}
+				yield* Effect.annotateCurrentSpan("vcs.pull_request.comment_updated", existing !== undefined)
+				const response =
+					existing === undefined
+						? yield* authedSend(
+								"POST",
+								token,
+								`${base}/issues/${number}/comments`,
+								{ body },
+								"Create comment",
+							)
+						: yield* authedSend(
+								"PATCH",
+								token,
+								`${base}/issues/comments/${existing}`,
+								{ body },
+								"Update comment",
+							)
+				if (!response.ok) return yield* failure(response, "Write pull request comment", "repository")
+				return yield* decodeIssueComment(
+					yield* parseJson(response, "Write pull request comment"),
+				).pipe(
+					Effect.mapError(
+						(cause) => new GithubAppError({ message: "Unexpected comment payload", cause }),
+					),
+				)
+			})
+
 			const searchCode = Effect.fn("GithubAppClient.searchCode")(function* (
 				externalInstallationId: string,
 				owner: string,
@@ -923,6 +1197,10 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 				getCommit,
 				listPullRequests,
 				getPullRequest,
+				listPullRequestFiles,
+				createCheckRun,
+				createPullRequestReview,
+				upsertIssueComment,
 				searchCode,
 				getSourceFile,
 				mintCloneCredentials,

@@ -109,6 +109,7 @@ const rowToRepo = (row: VcsRepositoryRow): VcsRepo =>
 		syncStatus: row.syncStatus,
 		lastSyncedAt: dateToMs(row.lastSyncedAt),
 		lastSyncError: row.lastSyncError ?? null,
+		prReviewEnabled: row.prReviewEnabled,
 		createdAt: dateToMs(row.createdAt),
 		updatedAt: dateToMs(row.updatedAt),
 	})
@@ -866,6 +867,24 @@ export class VcsRepository extends Context.Service<VcsRepository>()("@maple/api/
 				.pipe(Effect.mapError(toPersistenceError))
 		})
 
+		// The pull request review opt-in. Org-scoped like every other write here so
+		// a repository id from another tenant no-ops.
+		const setPrReviewEnabled = Effect.fn("VcsRepository.setPrReviewEnabled")(function* (
+			orgId: OrgId,
+			repositoryId: VcsRepositoryId,
+			enabled: boolean,
+		) {
+			const now = msToDate(yield* Clock.currentTimeMillis)
+			yield* database
+				.execute((db) =>
+					db
+						.update(vcsRepositories)
+						.set({ prReviewEnabled: enabled, updatedAt: now })
+						.where(and(eq(vcsRepositories.orgId, orgId), eq(vcsRepositories.id, repositoryId))),
+				)
+				.pipe(Effect.mapError(toPersistenceError))
+		})
+
 		// Drop the branch rows by id (their repo keeps its commits — a branch is just
 		// a name in the picker now).
 		const deleteBranchesByIds = (ids: ReadonlyArray<VcsBranchId>) =>
@@ -1016,6 +1035,7 @@ export class VcsRepository extends Context.Service<VcsRepository>()("@maple/api/
 			getOrCreateBranch,
 			listBranchesByRepository,
 			changeTrackedBranch,
+			setPrReviewEnabled,
 			reconcileBranchDeletions,
 			deleteBranch,
 			purgeInstallation,

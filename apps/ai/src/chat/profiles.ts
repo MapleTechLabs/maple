@@ -27,7 +27,12 @@ export const profileForTurn = (agent: AgentDefinition, origin: ChatTurnOrigin): 
 		case "autonomous":
 			// Nobody can approve an unattended pass, so a gated tool is a wasted call and a
 			// repeated-failure slot. Denial is the only thing that works here.
-			return { surface: "chat", ruleset: READ_ONLY_RULESET, prompt: agent.prompt }
+			// An agent with its own unattended allowlist (the reviewer) runs under that instead.
+			return {
+				surface: "chat",
+				ruleset: agent.autonomousPermission ?? READ_ONLY_RULESET,
+				prompt: agent.prompt,
+			}
 		case "connector":
 			// Mutations are proposed exactly as in the app; the connector renders the approval. What
 			// it does not get is `bot`'s audience: not an internal surface, so the agents-only tools

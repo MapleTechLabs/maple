@@ -5,7 +5,7 @@ import { PullRequestLookup } from "./PullRequestLookup"
 /**
  * Binds the errors side's pull-request lookup to the VCS read surface.
  *
- * The adapter lives here for the same reason `PullRequestEventSinkLive` does:
+ * The adapter lives here for the same reason `fixVerificationPullRequestHandler` does:
  * the dependency points one way, and the impedance mismatch is absorbed at the
  * seam. `VcsSourceService` fails when the org has no installation, when the
  * repository is not connected, or when the provider is unreachable; the port
