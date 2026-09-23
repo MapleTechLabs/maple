@@ -8,9 +8,14 @@
  *
  * The parsers are `@maple/domain`'s, shared with the web transcript, so the two surfaces cannot
  * disagree about what counts as a chart or a card.
+ *
+ * What the two surfaces DO disagree about is how much of a turn to show. Web draws the whole
+ * interleaving — every tool call, and the prose the model wrote between them. A channel gets one
+ * line while the turn runs and the answer once it has finished; see {@link ChatRenderOptions}.
  */
 import { parseAnnotations, type AnnotationSegment } from "@maple/domain/chat-annotations"
 import {
+	chartFences,
 	normalizeUnit,
 	parseChartSpec,
 	splitChartFences,
@@ -21,14 +26,41 @@ import { formatDuration, formatNumber } from "@maple/domain/format"
 import { encodeChatActionToken } from "../action-token"
 import type { ChatBlock, ChatEntityBlock, ChatRenderContext, ChatToolActivity } from "./blocks"
 
+/**
+ * How much of a turn is being shown.
+ *
+ * Omitting it renders the finished message, so every cold re-render — a settling edit, a
+ * `history()` replay — gets the finished rendering without having to know it wanted one.
+ */
+export interface ChatRenderOptions {
+	/** The turn is still going: a status line stands in for the answer it has not reached. */
+	readonly running?: boolean
+}
+
 export const renderChatMessage = (
 	message: ChatMessage,
 	context: ChatRenderContext,
+	options?: ChatRenderOptions,
 ): ReadonlyArray<ChatBlock> => {
+	const running = options?.running === true
 	const blocks: Array<ChatBlock> = []
-	let chartIndex = 0
 
-	for (const part of splitChartFences(message.text)) {
+	// The calls that ran. A proposed one has not, so it neither reports progress nor cuts the prose
+	// that explains it — it has a block of its own further down.
+	const calls = message.toolCalls.filter((call) => call.proposed !== true)
+
+	// The latest one only, and only while the turn runs. A reader in a channel wants to know the
+	// bot is still working, not to keep a list of everything it touched on the way to an answer
+	// that is now sitting right under it.
+	const latest = running ? calls[calls.length - 1] : undefined
+	if (latest !== undefined) blocks.push({ kind: "activity", tools: [toolActivity(latest)] })
+
+	const start = answerOffset(message.text, calls, running)
+	// Whatever renders a chart's image numbers every fence in the WHOLE message, so prose dropped
+	// ahead of the answer still counts towards the index of a chart inside it.
+	let chartIndex = start === 0 ? 0 : chartFences(message.text.slice(0, start)).length
+
+	for (const part of splitChartFences(message.text.slice(start))) {
 		if (part.kind === "chart") {
 			// Counted before it is judged. The image endpoint numbers the fences it
 			// finds, not the ones that turned out to be charts, so skipping the index
@@ -64,9 +96,6 @@ export const renderChatMessage = (
 			else blocks.push(entityBlock(segment, context))
 		}
 	}
-
-	const activity = message.toolCalls.filter((call) => call.proposed !== true).map(toolActivity)
-	if (activity.length > 0) blocks.push({ kind: "activity", tools: activity })
 
 	for (const call of message.toolCalls) {
 		if (call.proposed !== true) continue
@@ -168,6 +197,34 @@ const entityBlock = (
 const joinDetail = (parts: ReadonlyArray<string | null>): string | null => {
 	const present = parts.filter((part): part is string => part !== null && part.length > 0)
 	return present.length === 0 ? null : present.join(" · ")
+}
+
+/**
+ * Where the prose worth showing starts.
+ *
+ * A turn's text is cut into segments by its tool calls' `textOffset`s, and every segment before
+ * the last call is the model talking its way towards an answer. Web re-interleaves all of it,
+ * which is what a transcript is for; a channel shows one segment, because the rest reads as a
+ * colleague thinking out loud between other people's messages.
+ *
+ * The offsets are sorted rather than read off the end: a `turn-retry` can leave an earlier call
+ * holding a larger offset than a later one, and they are clamped for the same reason. A call
+ * recorded before offsets existed cuts nothing, so an old turn still renders whole.
+ */
+const answerOffset = (text: string, calls: ReadonlyArray<ChatToolCall>, running: boolean): number => {
+	const bounds = calls
+		.map((call) => Math.min(call.textOffset ?? 0, text.length))
+		.sort((left, right) => left - right)
+	// Still running: the segment after the last call so far, which may yet be the answer. The next
+	// call is what turns it into narration, and re-rendering is what retracts it.
+	if (running) return bounds[bounds.length - 1] ?? 0
+	// Finished: the last segment that says anything. Normally that is the one after the final call,
+	// but a turn that stopped without answering has nothing there, and the closest it came to an
+	// answer is the segment before.
+	for (let index = bounds.length - 1; index >= 0; index--) {
+		if (text.slice(bounds[index]).trim().length > 0) return bounds[index]
+	}
+	return 0
 }
 
 const toolActivity = (call: ChatToolCall): ChatToolActivity => {

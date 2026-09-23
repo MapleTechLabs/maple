@@ -87,6 +87,10 @@ const prose = (blocks: ReadonlyArray<ChatBlock>): string =>
 		.map((block) => block.markdown)
 		.join("\n")
 
+/** Whatever the status line names, if a message is carrying one at all. */
+const working = (blocks: ReadonlyArray<ChatBlock>): ReadonlyArray<string> =>
+	blocks.flatMap((block) => (block.kind === "activity" ? block.tools.map((tool) => tool.name) : []))
+
 describe("driveChatTurn", () => {
 	it.effect("posts a placeholder, coalesces deltas into throttled edits, and flushes at the end", () =>
 		Effect.gen(function* () {
@@ -123,6 +127,138 @@ describe("driveChatTurn", () => {
 			expect(prose(chat.calls[1].blocks)).toBe("Checking")
 			expect(prose(chat.calls[2].blocks)).toBe("Checking it.")
 			expect(chat.typing).toEqual(["chan_1"])
+		}),
+	)
+
+	it.effect("shows the tool it is on while it works, and only the answer once it has", () =>
+		Effect.gen(function* () {
+			const chat = recorder()
+			const fiber = yield* Effect.forkChild(
+				driveChatTurn({
+					events: timeline([
+						[NOW, event(1, { type: "turn-start", messageId: "a1" })],
+						[
+							NOW,
+							event(2, {
+								type: "text-delta",
+								messageId: "a1",
+								text: "Let me look at the errors first.",
+							}),
+						],
+						[
+							NOW,
+							event(3, {
+								type: "tool-call",
+								messageId: "a1",
+								callId: "c1",
+								name: "find_errors",
+								input: {},
+							}),
+						],
+						[
+							Duration.millis(1500),
+							event(4, { type: "tool-result", messageId: "a1", callId: "c1", output: null }),
+						],
+						[
+							NOW,
+							event(5, {
+								type: "text-delta",
+								messageId: "a1",
+								text: " Now I'll check the traces.",
+							}),
+						],
+						[
+							NOW,
+							event(6, {
+								type: "tool-call",
+								messageId: "a1",
+								callId: "c2",
+								name: "search_traces",
+								input: {},
+							}),
+						],
+						[
+							Duration.millis(1500),
+							event(7, { type: "tool-result", messageId: "a1", callId: "c2", output: null }),
+						],
+						[
+							NOW,
+							event(8, {
+								type: "text-delta",
+								messageId: "a1",
+								text: " checkout times out on the database.",
+							}),
+						],
+						[
+							Duration.millis(1500),
+							event(9, { type: "turn-end", messageId: "a1", reason: "stop" }),
+						],
+					]),
+					messageId: "a1",
+					outbound: chat.outbound,
+					target,
+					context,
+				}),
+			)
+
+			yield* TestClock.adjust("6 seconds")
+			yield* Fiber.join(fiber)
+
+			const lines = chat.calls.map((call) => working(call.blocks))
+			// One tool at a time, never the list of everything the turn touched on its way here.
+			for (const line of lines) expect(line.length).toBeLessThanOrEqual(1)
+			expect(lines.flat()).toContain("find_errors")
+			expect(lines.flat()).toContain("search_traces")
+			// The words the model wrote to itself between its calls never reach the channel.
+			for (const call of chat.calls) expect(prose(call.blocks)).not.toMatch(/Let me|Now I'll/)
+			// The finished message is the answer and nothing else.
+			expect(chat.calls[chat.calls.length - 1].blocks).toEqual([
+				{ kind: "prose", markdown: "checkout times out on the database." },
+			])
+		}),
+	)
+
+	it.effect("reports a sub-agent on the same status line, not as a card of its own", () =>
+		Effect.gen(function* () {
+			const chat = recorder()
+			const fiber = yield* Effect.forkChild(
+				driveChatTurn({
+					events: timeline([
+						[NOW, event(1, { type: "turn-start", messageId: "a1" })],
+						[
+							NOW,
+							event(2, {
+								type: "tool-call",
+								messageId: "a1",
+								callId: "t1",
+								name: "task_reviewer",
+								input: {},
+							}),
+						],
+						[
+							NOW,
+							event(3, {
+								type: "turn-start",
+								messageId: "s1",
+								task: { id: "t1", agent: "reviewer", parentMessageId: "a1" },
+							}),
+						],
+						[
+							Duration.millis(1500),
+							event(4, { type: "turn-end", messageId: "a1", reason: "stop" }),
+						],
+					]),
+					messageId: "a1",
+					outbound: chat.outbound,
+					target,
+					context,
+				}),
+			)
+
+			yield* TestClock.adjust("3 seconds")
+			yield* Fiber.join(fiber)
+
+			expect(chat.calls.map((call) => working(call.blocks))).toContainEqual(["reviewer"])
 		}),
 	)
 
