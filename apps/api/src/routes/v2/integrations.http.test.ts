@@ -104,7 +104,6 @@ const slackServiceLayer = (overrides: Partial<SlackIntegrationServiceApi>) =>
 			getStatus: die,
 			uninstall: die,
 			listChannels: die,
-			resolveForBot: die,
 			revokeByTeamId: die,
 			reconcileWorkspaces: die,
 			...overrides,

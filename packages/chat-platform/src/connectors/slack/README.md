@@ -5,10 +5,7 @@ Everything Maple knows about Slack is in this directory. Two host Workers drive 
 half, `apps/chat-bot` runs the ingress and outbound halves.
 
 This is a **new Slack app**, separate from the one that delivers alerts to channels
-(`slack_workspaces`, `SlackIntegrationService`) and separate from the Railway agent in
-`apps/slack-agent`. It shares no table, no secret and no code with either. See
-[`docs/chat-connector-cutover.md`](../../../../../docs/chat-connector-cutover.md) for running it
-alongside the old agent and retiring that one.
+(`slack_workspaces`, `SlackIntegrationService`). It shares no table, no secret and no code with it.
 
 ## What has to exist before it runs
 

@@ -4,11 +4,9 @@ import { EventBaseLive } from "@maple/backend/platform/DatabasePgLive"
 
 import { SlackIntegrationService } from "@maple/backend/services/integrations/SlackIntegrationService"
 
-// Backstop for the Railway-hosted bot's app_uninstalled/tokens_revoked
-// detection (apps/slack-agent → POST /internal/slack/workspaces/:teamId/revoke,
-// see slack-integration.http.ts): catches a forward call the bot never made
-// (crash mid-processing, network blip to Maple) and installs that predate
-// this wiring.
+// Catches workspaces that removed the app (or revoked its tokens) from Slack's
+// own "Manage Apps" UI rather than Maple's dashboard: probes each active
+// install and revokes locally any Slack confirms are dead.
 
 /**
  * Deliberately not `maple-api`: background work sharing the request-facing

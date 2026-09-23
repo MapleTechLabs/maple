@@ -23,13 +23,6 @@
  * are Workers: `apps/api` needs {@link sparkline} for message text and
  * `apps/web` needs {@link renderChartSvg} for the image. `@maple/ui` peer-depends
  * on react, react-dom and tailwind, and no Worker in this repo imports it.
- *
- * A near-identical renderer lives at `apps/slack-agent/agent/lib/chart.ts`.
- * That app is deliberately outside the workspace (`"!apps/slack-agent"` in the
- * root `workspaces`) and so cannot import this; it also rasterises with
- * `@resvg/resvg-js`, which *does* carry fonts, so it keeps drawing its own
- * text and does not want this module's split. Treat the two as siblings, not
- * as a copy to keep in sync.
  */
 
 export type ChartKind = "line" | "area" | "bar"
