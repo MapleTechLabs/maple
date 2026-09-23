@@ -230,6 +230,17 @@ export const renderSlackMessage = (blocks: ReadonlyArray<ChatBlock>): SlackMessa
 				break
 			case "approval": {
 				const summary = block.summary === "" ? "" : `\n${escapeMrkdwn(block.summary)}`
+				if (block.outcome !== null) {
+					// A decided proposal keeps its line and loses its buttons: Slack leaves a button
+					// clickable forever, and the click would only ever be answered "settled".
+					rendered.push(
+						section(
+							`*\`${escapeMrkdwn(block.toolName)}\`*${summary}\n${escapeMrkdwn(block.outcome.text)}`,
+						),
+					)
+					fallback.push(`${block.toolName}: ${block.outcome.text}`)
+					break
+				}
 				rendered.push(section(`*Approve \`${escapeMrkdwn(block.toolName)}\`?*${summary}`))
 				const actions = approvalActions(block.token, block.toolName)
 				if (actions === null) rendered.push(section("This one has to be approved in Maple."))

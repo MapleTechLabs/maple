@@ -90,7 +90,13 @@ export const BlockActions = Schema.Struct({
 			message_ts: Schema.optionalKey(Schema.String),
 		}),
 	),
-	message: Schema.optionalKey(Schema.Struct({ ts: Schema.optionalKey(Schema.String) })),
+	message: Schema.optionalKey(
+		Schema.Struct({
+			ts: Schema.optionalKey(Schema.String),
+			/** The thread the control's message sits in — Maple's answer, so its parent mention. */
+			thread_ts: Schema.optionalKey(Schema.String),
+		}),
+	),
 	actions: Schema.Array(
 		Schema.Struct({
 			action_id: Schema.optionalKey(Schema.String),

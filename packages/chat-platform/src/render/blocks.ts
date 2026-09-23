@@ -62,6 +62,26 @@ export interface ChatActivityBlock {
 	readonly tools: ReadonlyArray<ChatToolActivity>
 }
 
+/**
+ * What came of a proposal, once somebody decided it.
+ *
+ * `text` is the `tool-result` the session recorded, which opens by naming who decided — the one
+ * string channel a tool result has, and the same one the model reads on its next turn.
+ */
+export interface ChatApprovalOutcome {
+	readonly approved: boolean
+	readonly text: string
+}
+
+/**
+ * How much of a decided proposal's result a channel is worth showing; the rest is in Maple.
+ *
+ * A ceiling rather than a guideline: the cutting charges every approval for it whether or not the
+ * proposal has been decided, so deciding one can never move its block into a different platform
+ * message from the one that carried the controls.
+ */
+export const MAX_APPROVAL_OUTCOME_CHARS = 200
+
 /** A mutation the agent paused on. The tool has NOT run; someone has to say yes. */
 export interface ChatApprovalBlock {
 	readonly kind: "approval"
@@ -69,6 +89,15 @@ export interface ChatApprovalBlock {
 	/** The call's arguments, in a sentence a reader can act on without reading JSON. */
 	readonly summary: string
 	readonly token: ChatActionToken
+	/**
+	 * Null while the proposal is still open, which is also when a connector gives it controls.
+	 *
+	 * A settled proposal keeps its block rather than disappearing: a reader coming back to the
+	 * thread needs to see what was asked for as well as what came of it — and keeping the block
+	 * count fixed is what lets the settling edit address the same platform message that carried the
+	 * controls.
+	 */
+	readonly outcome: ChatApprovalOutcome | null
 }
 
 export interface ChatNoticeBlock {

@@ -514,6 +514,67 @@ export const connectorTurnTenant = (orgId: OrgId): ChatTurnTenantEncoded =>
 		authMode: "self_hosted",
 	})
 
+const ORG_ADMIN_ROLE = Schema.decodeSync(RoleName)("org:admin")
+
+/**
+ * The identity an approved proposal runs under **on a connector that cannot say who clicked**.
+ * See `ChatConnector.identity` for the three-case approval policy this is half of.
+ *
+ * The role is granted at apply time only — the turn that WROTE the proposal carried none, which is
+ * what makes the approval gate mean anything. Deliberately beside {@link connectorTurnTenant}:
+ * the two are one rule read together.
+ */
+export const connectorApprovalTenant = (orgId: OrgId): ChatTurnTenantEncoded =>
+	encodeChatTurnTenant({
+		orgId,
+		userId: CONNECTOR_TENANT_USER_ID,
+		roles: [ORG_ADMIN_ROLE],
+		authMode: "self_hosted",
+	})
+
+/** Which connector, and who on it — the member of {@link ChatTurnOrigin} an approval carries. */
+export type ChatConnectorOrigin = Extract<ChatTurnOrigin, { readonly kind: "connector" }>
+
+/**
+ * What a click on an approval control asks for.
+ *
+ * Through a schema because the decision is read back off an untrusted control id: the members are
+ * derived from one declaration, so a third one cannot be added to the type while the parser that
+ * matches them silently keeps looking for two.
+ */
+export const ChatProposalDecision = Schema.Literals(["approve", "deny"])
+export type ChatProposalDecision = Schema.Schema.Type<typeof ChatProposalDecision>
+
+/** Every decision there is, for a caller that has to match a wire value against them. */
+export const CHAT_PROPOSAL_DECISIONS = ChatProposalDecision.literals
+
+/** Everything the session needs to settle a proposal: which call, which way, and who said so. */
+export interface ChatProposalSettlement {
+	/** `"<orgId>:<tabId>"`. A Durable Object cannot recover its own name, exactly as for `beginTurn`. */
+	readonly sessionId: string
+	readonly toolCallId: string
+	readonly decision: ChatProposalDecision
+	readonly approver: ChatConnectorOrigin
+	/**
+	 * The Maple user the approver's chat account is linked to, resolved by the host from its own
+	 * database — never from anything the click carried.
+	 *
+	 * Present means the change runs as that user, under the roles they hold in the org at that
+	 * moment. Absent means the connector cannot prove who clicked, and the org-level connector
+	 * identity acts instead ({@link connectorApprovalTenant}).
+	 */
+	readonly actingUserId?: UserId
+}
+
+/**
+ * What settling answered.
+ *
+ * A bare string because that is all the caller can act on: it re-reads the transcript for what the
+ * decision actually produced. `"settled"` is the second click on the same control — someone else
+ * got there first, or the same person clicked twice — and is a no-op by design.
+ */
+export type ChatProposalOutcome = "unknown" | "settled" | "decided"
+
 /**
  * The origin of a turn raised through Maple's own HTTP surface.
  *

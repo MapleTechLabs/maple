@@ -12,7 +12,9 @@
  * connector.
  */
 import {
+	decodeChatActionControlId,
 	driveChatTurn,
+	type ChatActionRequest,
 	type ChatChartRef,
 	type ChatConversation,
 	type ChatHistoryMessage,
@@ -27,12 +29,14 @@ import {
 	connectorSessionId,
 	connectorTurnTenant,
 	type ChatConversationKey,
+	type ChatMessage,
 	type ChatSessionId,
 } from "@maple/domain/chat-session"
 import type { ChatSessionStub } from "@maple/domain/chat-session-stub"
-import { ChatConnectorId, ExternalUserId, type OrgId } from "@maple/domain/primitives"
+import { ChatConnectorId, ExternalUserId, type OrgId, type UserId } from "@maple/domain/primitives"
 import { Clock, Duration, Effect, Exit, Option, Schema } from "effect"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
+import { settledMessageBlocks } from "./approval.ts"
 import {
 	chatTurnText,
 	conversationStillLive,
@@ -42,9 +46,16 @@ import {
 } from "./conversation.ts"
 import { chatTurnEvents, sessionUnreachable } from "./events.ts"
 
-/** The org behind a workspace, as the host Worker answers it. */
+/** The org behind a workspace, and who the person acting is in Maple, when one was asked about. */
 export interface RelayWorkspace {
 	readonly orgId: OrgId
+	/**
+	 * The Maple user the `externalUserId` that was asked about is linked to in that org.
+	 *
+	 * Absent means nobody has linked it — which is a refusal on a connector that can prove who
+	 * clicked, and irrelevant on one that cannot (and on a mention, which never asks).
+	 */
+	readonly linkedUserId?: UserId
 }
 
 /**
@@ -61,11 +72,26 @@ export class WorkspaceLookupFailed extends Schema.TaggedError<WorkspaceLookupFai
 export interface RelayPorts<R = never> {
 	/** The connector's outbound half — how a turn is shown on the platform it was asked on. */
 	readonly outbound: ChatOutbound<R>
-	/** The org that linked this workspace, `None` when nobody has, and a failure when it cannot be read. */
+	/**
+	 * The org that linked this workspace, `None` when nobody has, and a failure when it cannot be
+	 * read.
+	 *
+	 * `externalUserId` asks a second question in the same database connection: which Maple user
+	 * that chat account is linked to. A mention omits it; an approval passes it, and the host skips
+	 * the query anyway when the connector has no `identity` half to link with.
+	 */
 	readonly resolveWorkspace: (
 		connector: ChatConnectorId,
 		workspaceId: string,
+		externalUserId?: string,
 	) => Effect.Effect<Option.Option<RelayWorkspace>, WorkspaceLookupFailed>
+	/**
+	 * Whether this connector can prove who clicked a button.
+	 *
+	 * The connector's `identity` half, as a fact rather than a function: the host knows which
+	 * connector it is running and this file must not.
+	 */
+	readonly supportsIdentity: boolean
 	/** Drop the link for a workspace the bot was removed from. */
 	readonly forgetWorkspace: (connector: ChatConnectorId, workspaceId: string) => Effect.Effect<void>
 	/** The conversation's Durable Object, or `undefined` where this deployment has no agent bound. */
@@ -110,8 +136,12 @@ const BUSY_NOTICE = "Still working on the previous message here — ask again on
 
 const UNAVAILABLE_NOTICE = "Maple's agent can't be reached from here right now."
 
-const APPROVAL_NOTICE =
-	"Approving a change from chat isn't available yet — open the conversation in Maple to apply it."
+/** The control outlived what it pointed at: a wiped conversation, or a build that changed the log. */
+const PROPOSAL_GONE_NOTICE = "That change isn't waiting for a decision any more."
+
+/** Where somebody goes to link their account — Maple's own page, which is where a session is. */
+const LINK_NOTICE = (appBaseUrl: string) =>
+	`Link your chat account to Maple before approving changes: ${appBaseUrl}/integrations`
 
 const decodeExternalUserId = Schema.decodeUnknownOption(ExternalUserId)
 
@@ -325,13 +355,176 @@ const relayMessage = Effect.fn("chat_bot.relay_turn")(function* <R>(
  * A click on an approval the agent proposed.
  *
  * The connector has already acknowledged the click to its platform (ingress issues that request
- * itself, under the platform's own deadline), so what is left is telling the reader that Maple
- * cannot act on it yet. Applying a proposed mutation is the next change, and it starts here: the
- * token is untrusted wire input, read with `decodeChatActionToken`, never branded on arrival.
+ * itself, under the platform's own deadline), so everything here runs at its own pace. The order
+ * is the point:
+ *
+ *   1. read the control — untrusted wire input, never branded on arrival;
+ *   2. resolve the workspace and decide whether this person may approve anything here;
+ *   3. hand the SESSION the decision, which finds the proposal in its own log and runs it.
+ *
+ * Nothing the click carried reaches the tool. The control names a session and a call, the session
+ * reads the tool's name and arguments out of the transcript, and a control naming a session in
+ * another org is refused before the session is reached at all.
  */
-const acknowledgeAction = Effect.fnUntraced(function* <R>(action: InboundAction, ports: RelayPorts<R>) {
+const settleAction = Effect.fn("chat_bot.settle_approval")(function* <R>(
+	action: InboundAction,
+	ports: RelayPorts<R>,
+) {
+	yield* Effect.annotateCurrentSpan({ "maple.chat.connector": action.connector })
+	const control = decodeChatActionControlId(action.actionToken)
+	// A platform hands back whatever was on the control that was clicked, which includes controls
+	// Maple never rendered. Not ours is not an error.
+	if (Option.isNone(control)) {
+		return yield* Effect.annotateCurrentSpan({ "maple.chat.approval": "not_a_control" })
+	}
+	const request = control.value
+
 	const transport = yield* ports.outbound.transport
-	yield* say(transport, replyTarget(action), APPROVAL_NOTICE)
+	const approver = decodeExternalUserId(action.actor.id)
+	if (Option.isNone(approver)) {
+		return yield* Effect.annotateCurrentSpan({ "maple.chat.approval": "no_approver" })
+	}
+
+	const workspace = yield* Effect.exit(
+		ports.resolveWorkspace(action.connector, action.workspaceId, approver.value),
+	)
+	// Unreadable, or unlinked: either way there is no org to make a change in. The port logged why.
+	if (Exit.isFailure(workspace) || Option.isNone(workspace.value)) {
+		return yield* Effect.annotateCurrentSpan({ "maple.chat.approval": "unavailable" })
+	}
+	const { orgId, linkedUserId } = workspace.value.value
+	// Not before here: the org is the workspace's, never the control's, and an approval nobody can
+	// attribute to an org is not answerable to an auditor.
+	yield* Effect.annotateCurrentSpan({ orgId })
+
+	// The control names its own session, and the session it is allowed to name is THIS conversation's
+	// — rebuilt from the org that owns the workspace and the conversation the connector says the
+	// click landed in, neither of which came off the control.
+	//
+	// The org alone is not enough. A control is forgeable by design (see `action-token.ts`), so an
+	// approver in one channel could otherwise settle a proposal raised in a channel they cannot
+	// read, and the settling edit would then render that conversation's answer into theirs.
+	const conversation = yield* transport.conversation(action)
+	if (request.sessionId !== connectorSessionId(orgId, action.connector, conversation.conversationKey)) {
+		return yield* Effect.annotateCurrentSpan({ "maple.chat.approval": "foreign_session" })
+	}
+
+	// See `ChatConnector.identity` for the policy: a connector that can name the clicker requires a
+	// link, and one that cannot lets anyone in the conversation decide.
+	if (ports.supportsIdentity && linkedUserId === undefined) {
+		yield* Effect.annotateCurrentSpan({ "maple.chat.approval": "unlinked" })
+		return yield* say(transport, replyTarget(action), LINK_NOTICE(ports.appBaseUrl))
+	}
+	yield* Effect.annotateCurrentSpan({
+		"maple.chat.approval.as": linkedUserId === undefined ? "connector" : "user",
+	})
+
+	const session = ports.chatSession(request.sessionId)
+	if (session === undefined) {
+		yield* Effect.logError("No chat session binding on this deployment")
+		yield* Effect.annotateCurrentSpan({ "maple.chat.approval": "no_binding" })
+		return yield* say(transport, replyTarget(action), UNAVAILABLE_NOTICE)
+	}
+
+	const outcome = yield* Effect.tryPromise({
+		catch: sessionUnreachable(request.sessionId, "The chat session did not accept a decision"),
+		try: () =>
+			session.settleProposal({
+				sessionId: request.sessionId,
+				toolCallId: request.toolCallId,
+				decision: request.decision,
+				approver: {
+					kind: "connector",
+					connectorId: action.connector,
+					workspaceId: action.workspaceId,
+					externalUserId: approver.value,
+					displayName: action.actor.displayName,
+				},
+				// Only ever the user the HOST resolved from its own database, never anything the
+				// click carried: this is what the change runs as.
+				...(linkedUserId === undefined ? undefined : { actingUserId: linkedUserId }),
+			}),
+	}).pipe(Effect.exit)
+	if (Exit.isFailure(outcome)) {
+		yield* Effect.logError("A chat approval could not be settled").pipe(
+			Effect.annotateLogs({ "error.type": summarizeCause(outcome.cause) }),
+		)
+		yield* Effect.annotateCurrentSpan({ "maple.chat.approval": "unreachable" })
+		return yield* say(transport, replyTarget(action), UNAVAILABLE_NOTICE)
+	}
+	yield* Effect.annotateCurrentSpan({ "maple.chat.approval": outcome.value })
+
+	// A switch rather than a chain of ternaries, for the reason `relayed` below is one: an outcome
+	// added to the contract has to be answered here rather than quietly taking the last branch,
+	// which for this one would mean editing the message after a decision that never happened.
+	switch (outcome.value) {
+		case "unknown":
+			return yield* say(transport, replyTarget(action), PROPOSAL_GONE_NOTICE)
+		// Somebody got there first, or this click is the one that decided it. Both re-render from
+		// the transcript, which is idempotent and costs nothing but a read — and it is what lets a
+		// second click REPAIR a message whose first update failed, rather than leaving controls
+		// that look live on a proposal that is long settled. Nothing re-runs: `settleProposal`
+		// already refused to.
+		case "settled":
+		case "decided":
+			// A transcript that could not be re-read has already been logged; the decision stands
+			// either way, so the reader sees an unchanged message rather than a second failure.
+			return yield* showDecision(action, request, orgId, session, ports).pipe(Effect.ignore)
+		default:
+			return outcome.value satisfies never
+	}
+})
+
+/**
+ * Put the decision on the message that carried the controls.
+ *
+ * Re-read rather than reported: the session's log is what the decision produced, and rendering it
+ * the way the turn itself is rendered is what keeps one description of an approval in the codebase.
+ */
+const showDecision = Effect.fn("chat_bot.show_decision")(function* <R>(
+	action: InboundAction,
+	request: ChatActionRequest,
+	orgId: OrgId,
+	session: ChatSessionStub,
+	ports: RelayPorts<R>,
+) {
+	// A transcript that cannot be read leaves the decision applied and the message unchanged, which
+	// is confusing enough to be worth a line: the alternative is a silent degradation that looks
+	// exactly like the platform refusing the edit.
+	const history = yield* Effect.tryPromise({
+		catch: sessionUnreachable(request.sessionId, "The chat session did not answer with its history"),
+		try: () => session.history(),
+	}).pipe(
+		Effect.tapError((error) =>
+			Effect.logWarning("A settled approval could not be re-read").pipe(
+				Effect.annotateLogs({ "error.type": error._tag }),
+			),
+		),
+	)
+	// The session just settled this call, so its message is there.
+	const message = history.find((candidate) =>
+		candidate.toolCalls.some((call) => call.id === request.toolCallId),
+	)
+	if (message === undefined) return
+	const transport = yield* ports.outbound.transport
+	const blocks = settledMessageBlocks(
+		message,
+		request.toolCallId,
+		{
+			appBaseUrl: ports.appBaseUrl,
+			sessionId: request.sessionId,
+			chartImageUrl: (ref) => ports.chartImageUrl(orgId, ref),
+		},
+		ports.outbound.limits.maxMessageChars,
+	)
+	yield* transport.edit({ target: replyTarget(action), messageId: action.messageId }, blocks).pipe(
+		Effect.tapError((error) =>
+			Effect.logWarning("A settled approval could not be shown").pipe(
+				Effect.annotateLogs({ "error.type": error.operation }),
+			),
+		),
+		Effect.ignore,
+	)
 })
 
 /**
@@ -344,7 +537,7 @@ const relayed = <R>(event: InboundEvent, ports: RelayPorts<R>): Effect.Effect<vo
 		case "message":
 			return relayMessage(event, ports)
 		case "action":
-			return acknowledgeAction(event, ports)
+			return settleAction(event, ports)
 		case "workspace-removed":
 			// Unlink it and say nothing: there is nobody left in there to read a reply.
 			return ports.forgetWorkspace(event.connector, event.workspaceId)

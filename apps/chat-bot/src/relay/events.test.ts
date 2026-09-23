@@ -55,6 +55,7 @@ const stub = (connections: ReadonlyArray<ReadonlyArray<ChatEvent>>): ChatSession
 		endTurn: () => Promise.resolve(),
 		abort: () => Promise.resolve(),
 		beginTurn: () => Promise.resolve(undefined),
+		settleProposal: () => Promise.resolve("unknown"),
 		subscribe: () => Promise.resolve(sse(connections[Math.min(opened++, connections.length - 1)] ?? [])),
 	}
 }

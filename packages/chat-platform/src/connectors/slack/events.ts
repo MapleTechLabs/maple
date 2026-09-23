@@ -123,11 +123,10 @@ export const eventCallbackToInbound = (callback: SlackEventCallback): ReadonlyAr
 /**
  * A button press → an `action`, if it carries one of Maple's tokens.
  *
- * `actor` reports what Slack sends, which is an id and a name: the interaction payload carries no
- * roles and no administrator flag, and `users.info` — the only call that would answer either —
- * needs a scope this app does not request. So every Slack actor is reported with no membership
- * facts at all, and it is Maple's approval policy, not this connector, that decides what a
- * factless actor may do. The README says what adding the scope would buy.
+ * `actor` reports what Slack sends, which is an id and a name — all the contract asks for. Whether
+ * that person may approve is decided by whether they linked the account to a Maple user, and this
+ * connector declares no `identity`, so nobody can: see the README for why, and for what the link
+ * would cost.
  */
 export const blockActionsToInbound = (payload: SlackBlockActions): ReadonlyArray<InboundEvent> => {
 	// The workspace is the TEAM the interaction happened in, never `user.team_id`: in a Slack
@@ -139,19 +138,25 @@ export const blockActionsToInbound = (payload: SlackBlockActions): ReadonlyArray
 	const actionToken = payload.actions.find((action) => action.value !== undefined)?.value
 	if (workspaceId === undefined || channelId === undefined || messageId === undefined) return []
 	if (actionToken === undefined) return []
+	// The control sits on Maple's own answer, which lives in the thread the question opened — so
+	// the answer's `thread_ts` is that thread, and naming the conversation by it is what puts the
+	// click on the same session as the proposal. A control somehow outside a thread falls back to
+	// its own message, which is what a top-level conversation would have been keyed by anyway.
+	const threadId = payload.message?.thread_ts ?? messageId
 	return [
 		{
 			type: "action",
 			connector: SLACK_CONNECTOR_ID,
 			workspaceId,
 			channelId,
+			threadId,
 			messageId,
 			actionToken,
+			// An id and a name, which is all Slack sends. Whether this person may approve is not a
+			// fact Slack holds — it is whether they linked this account to a Maple user.
 			actor: {
 				id: payload.user.id,
 				displayName: payload.user.name ?? payload.user.username ?? payload.user.id,
-				roleIds: [],
-				isWorkspaceAdmin: false,
 			},
 		},
 	]

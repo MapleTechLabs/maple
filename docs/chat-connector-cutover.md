@@ -52,8 +52,13 @@ cutover, and keeps running throughout.
       read the messages above it — the thread is one the bot opened, which is what makes an
       un-addressed message in it still a turn;
     - **an un-addressed message in a channel the bot was merely invited to** is NOT answered;
-    - **an approval card** renders with both buttons, and pressing one produces
-      `maple.chat.event = action` — whatever the approval flow then does with it;
+    - **an approval card** renders with both buttons, pressing one applies the change, and the
+      card then keeps its line and loses its buttons;
+    - **the identity check**, which is what would let Slack approvals run as the person rather than
+      as the org: sign the same user in through Slack's OpenID Connect flow and compare the `sub`
+      it returns against the `user.id` on their `block_actions` payload. If they match, the
+      connector's `identity` can be implemented (see its README); nothing depends on the answer
+      today, so this is evidence-gathering rather than a gate;
     - **a private channel, a DM and a group DM** each behave like the public channel;
     - **formatting**: a turn with bold, italics, a link, a bullet list, a blockquote, a table and a
       code block is readable — the table arrives as a fenced block, and nothing renders as raw

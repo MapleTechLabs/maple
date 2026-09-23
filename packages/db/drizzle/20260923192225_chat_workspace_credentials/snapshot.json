@@ -1,9 +1,9 @@
 {
   "version": "8",
   "dialect": "postgres",
-  "id": "4810c5da-a7fb-4fd3-be2e-70348c9f7957",
+  "id": "2e5167bc-9197-4ee7-8368-9bd1bba3f894",
   "prevIds": [
-    "8ad643cc-de98-486e-a245-6328bd8707ca"
+    "285a924b-1a39-417f-99fa-b31ed02fa922"
   ],
   "ddl": [
     {
@@ -69,6 +69,12 @@
     {
       "isRlsEnabled": false,
       "name": "api_keys",
+      "entityType": "tables",
+      "schema": "public"
+    },
+    {
+      "isRlsEnabled": false,
+      "name": "chat_identities",
       "entityType": "tables",
       "schema": "public"
     },
@@ -2815,6 +2821,97 @@
       "entityType": "columns",
       "schema": "public",
       "table": "api_keys"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "id",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "chat_identities"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "org_id",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "chat_identities"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "connector",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "chat_identities"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "external_user_id",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "chat_identities"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "user_id",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "chat_identities"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "display_name",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "chat_identities"
+    },
+    {
+      "type": "timestamp with time zone",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "created_at",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "chat_identities"
     },
     {
       "type": "text",
@@ -12437,6 +12534,104 @@
       "nameExplicit": true,
       "columns": [
         {
+          "value": "org_id",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        },
+        {
+          "value": "connector",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        },
+        {
+          "value": "external_user_id",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        }
+      ],
+      "isUnique": true,
+      "where": null,
+      "with": "",
+      "method": "btree",
+      "concurrently": false,
+      "name": "chat_identities_org_connector_external_idx",
+      "entityType": "indexes",
+      "schema": "public",
+      "table": "chat_identities"
+    },
+    {
+      "nameExplicit": true,
+      "columns": [
+        {
+          "value": "org_id",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        },
+        {
+          "value": "connector",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        },
+        {
+          "value": "user_id",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        }
+      ],
+      "isUnique": true,
+      "where": null,
+      "with": "",
+      "method": "btree",
+      "concurrently": false,
+      "name": "chat_identities_org_connector_user_idx",
+      "entityType": "indexes",
+      "schema": "public",
+      "table": "chat_identities"
+    },
+    {
+      "nameExplicit": true,
+      "columns": [
+        {
+          "value": "org_id",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        },
+        {
+          "value": "user_id",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "with": "",
+      "method": "btree",
+      "concurrently": false,
+      "name": "chat_identities_org_user_idx",
+      "entityType": "indexes",
+      "schema": "public",
+      "table": "chat_identities"
+    },
+    {
+      "nameExplicit": true,
+      "columns": [
+        {
           "value": "connector",
           "isExpression": false,
           "asc": true,
@@ -15406,6 +15601,16 @@
       "name": "api_keys_pkey",
       "schema": "public",
       "table": "api_keys",
+      "entityType": "pks"
+    },
+    {
+      "columns": [
+        "id"
+      ],
+      "nameExplicit": false,
+      "name": "chat_identities_pkey",
+      "schema": "public",
+      "table": "chat_identities",
       "entityType": "pks"
     },
     {

@@ -158,6 +158,7 @@ describe("slack webhook ingress", () => {
 				team: { id: "T061EG9R6" },
 				user: { id: "U061F7AUR", name: "ada" },
 				container: { type: "message", message_ts: "1515449522.000016", channel_id: "C0LAN2Q65" },
+				message: { ts: "1515449522.000016", thread_ts: "1515449400.000001" },
 				actions: [{ action_id: "maple_approve", value: "sess-1|call-1" }],
 			})
 			const body = new URLSearchParams({ payload }).toString()
@@ -168,9 +169,10 @@ describe("slack webhook ingress", () => {
 					connector: "slack",
 					workspaceId: "T061EG9R6",
 					channelId: "C0LAN2Q65",
+					threadId: "1515449400.000001",
 					messageId: "1515449522.000016",
 					actionToken: "sess-1|call-1",
-					actor: { id: "U061F7AUR", displayName: "ada", roleIds: [], isWorkspaceAdmin: false },
+					actor: { id: "U061F7AUR", displayName: "ada" },
 				},
 			])
 		}),

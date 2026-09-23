@@ -18,9 +18,10 @@ import { connectors } from "@maple/chat-platform/connectors"
 import * as MapleCloudflareSDK from "@maple-dev/effect-sdk/cloudflare"
 import { chatSessionStub } from "@maple/domain/chat-session-stub"
 import type { ChatConnectorId, OrgId } from "@maple/domain/primitives"
+import type { IntegrationsPersistenceError } from "@maple/domain/http"
 import { workerTelemetryConfig } from "@maple/infra/worker-telemetry"
 import { workerEnvLayer } from "@maple/infra/worker-runtime"
-import { Effect, Exit, Layer, Option, Schema } from "effect"
+import { Cause, Effect, Layer, Option, Schema } from "effect"
 import { FetchHttpClient, HttpClient } from "effect/unstable/http"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import { parseBase64Aes256GcmKey } from "@maple/backend/platform/Crypto"
@@ -29,13 +30,13 @@ import { Database } from "@maple/backend/platform/DatabaseLive"
 import { layerPg } from "@maple/backend/platform/DatabasePgLive"
 import { mapleDbConnectionLayer } from "@maple/backend/platform/pg-connection-source"
 import { withPgConnectionScope } from "@maple/backend/platform/pg-connection-scope"
+import { resolveChatIdentity } from "@maple/backend/services/integrations/chat-identity-rows"
 import {
 	forgetChatWorkspace,
 	resolveChatWorkspace,
-	type ChatWorkspaceResolution,
 } from "@maple/backend/services/integrations/chat-workspace-rows"
 import { resolveConnectorConfig } from "../config.ts"
-import { relayInboundEvent, WorkspaceLookupFailed, type RelayPorts } from "./turn.ts"
+import { relayInboundEvent, WorkspaceLookupFailed, type RelayPorts, type RelayWorkspace } from "./turn.ts"
 
 /**
  * This Worker's own SDK instance, at module scope so its buffers are the isolate's.
@@ -62,28 +63,6 @@ class CredentialKeyUnusable extends Schema.TaggedError<CredentialKeyUnusable>()(
 	"@maple/chat-bot/CredentialKeyUnusable",
 	{ message: Schema.String },
 ) {}
-
-export interface RelayHost {
-	readonly env: Record<string, unknown>
-	/** Whether this conversation has already been told that its workspace is not linked. */
-	readonly announceUnlinked: Effect.Effect<boolean>
-	/** The relay object's own record of the conversations the bot opened — see `ConnectorRelay`. */
-	readonly ownsConversation: RelayPorts["ownsConversation"]
-	readonly rememberConversation: RelayPorts["rememberConversation"]
-}
-
-/**
- * One Postgres connection per inbound event, opened lazily and released as soon as the row is
- * read — well before the turn it starts has finished streaming. Sockets are bound to the
- * invocation that opened them, and a relayed turn outlives every statement it makes.
- */
-const withDatabase = <A, E>(env: Record<string, unknown>, program: Effect.Effect<A, E, Database>) =>
-	withPgConnectionScope(program).pipe(
-		// The connection's lifetime IS this scope — it is released with the lookup, not with the
-		// turn the lookup starts.
-		// oxlint-disable-next-line effecttsgo/strict-effect-provide
-		Effect.provide(Layer.provideMerge(layerPg, mapleDbConnectionLayer(env))),
-	)
 
 /**
  * The key a connector's per-workspace credential was sealed with, or `null` where this deployment
@@ -112,73 +91,141 @@ const credentialKey = (env: Record<string, unknown>): Effect.Effect<Buffer | nul
 		Effect.orElseSucceed(() => null),
 	)
 
+export interface RelayHost {
+	readonly env: Record<string, unknown>
+	/** Whether this conversation has already been told that its workspace is not linked. */
+	readonly announceUnlinked: Effect.Effect<boolean>
+	/** The relay object's own record of the conversations the bot opened — see `ConnectorRelay`. */
+	readonly ownsConversation: RelayPorts["ownsConversation"]
+	readonly rememberConversation: RelayPorts["rememberConversation"]
+}
+
 /**
- * The one row this event needs, read once.
- *
- * Hoisted out of the relay's port because its answer is needed twice — the relay asks which org
- * this is, and the transport is built from the credential the same row carries — and reading it
- * twice would be two Postgres connections for one mention.
+ * One Postgres connection per inbound event, opened lazily and released as soon as the row is
+ * read — well before the turn it starts has finished streaming. Sockets are bound to the
+ * invocation that opened them, and a relayed turn outlives every statement it makes.
  */
-const lookupWorkspace = Effect.fn("chat_bot.lookup_workspace")(function* (
+const withDatabase = <A, E>(env: Record<string, unknown>, program: Effect.Effect<A, E, Database>) =>
+	withPgConnectionScope(program).pipe(
+		// The connection's lifetime IS this scope — it is released with the lookup, not with the
+		// turn the lookup starts.
+		// oxlint-disable-next-line effecttsgo/strict-effect-provide
+		Effect.provide(Layer.provideMerge(layerPg, mapleDbConnectionLayer(env))),
+	)
+
+/**
+ * Logged where the cause is, and re-raised as the relay's own failure: what the relay must not do
+ * is mistake a database it could not read for a workspace nobody linked.
+ */
+const lookupFailed =
+	(connectorId: ChatConnectorId, message: string) =>
+	<A>(effect: Effect.Effect<A, IntegrationsPersistenceError>) =>
+		effect.pipe(
+			Effect.catchCause((cause) =>
+				// Interrupts stay interrupts: a relay cut short mid-lookup has nobody to answer, and
+				// reporting "the workspace could not be read" into the channel would be a lie told by
+				// a fiber that should already have stopped.
+				Cause.hasInterruptsOnly(cause)
+					? Effect.interrupt
+					: Effect.logError("Chat workspace could not be resolved").pipe(
+							Effect.annotateLogs({ "error.type": summarizeCause(cause) }),
+							Effect.andThen(
+								Effect.fail(new WorkspaceLookupFailed({ connector: connectorId, message })),
+							),
+						),
+			),
+		)
+
+/**
+ * The workspace this event belongs to: which org, which Maple user the clicker linked, and the
+ * credential the connector posts with — in ONE connection.
+ *
+ * Sequential rather than parallel because the second question needs the first one's answer: a link
+ * is per org, and the org is what the workspace names.
+ *
+ * The credential rides along because it comes out of the same row, and reading that row twice —
+ * once to answer the relay and once to build the transport — would be two Postgres connections for
+ * one mention.
+ */
+const lookupWorkspace = (
 	host: RelayHost,
+	connector: ChatConnector<HttpClient.HttpClient | ConnectorCredentials>,
 	connectorId: ChatConnectorId,
 	workspaceId: string,
-) {
-	yield* Effect.annotateCurrentSpan({
-		"maple.chat.connector": connectorId,
-		"maple.chat.workspace_id": workspaceId,
-	})
-	const key = yield* credentialKey(host.env)
-	return yield* withDatabase(
-		host.env,
-		Effect.flatMap(Database, (database) => resolveChatWorkspace(database, connectorId, workspaceId, key)),
-	).pipe(
-		// Logged here, where the cause is, and re-raised as the relay's own failure: what the
-		// relay must not do is mistake a database it could not read for a workspace nobody linked.
-		Effect.catchCause((cause) =>
-			Effect.logError("Chat workspace could not be resolved").pipe(
-				Effect.annotateLogs({
-					"error.type": summarizeCause(cause),
-					"maple.chat.connector": connectorId,
-					"maple.chat.workspace_id": workspaceId,
-				}),
-				Effect.andThen(
-					Effect.fail(
-						new WorkspaceLookupFailed({
-							connector: connectorId,
-							message: "The chat workspace could not be read",
-						}),
-					),
-				),
-			),
-		),
+	externalUserId: string | undefined,
+) =>
+	Effect.flatMap(credentialKey(host.env), (key) =>
+		withDatabase(
+			host.env,
+			Effect.gen(function* () {
+				const database = yield* Database
+				const workspace = yield* resolveChatWorkspace(database, connectorId, workspaceId, key)
+				if (Option.isNone(workspace)) return Option.none<ResolvedWorkspace>()
+				const credentials = workspace.value.credentials
+				// Nothing to link with, or nobody asked: one query.
+				if (externalUserId === undefined || connector.identity === undefined) {
+					return Option.some<ResolvedWorkspace>({
+						relay: { orgId: workspace.value.orgId },
+						credentials,
+					})
+				}
+				const identity = yield* resolveChatIdentity(
+					database,
+					workspace.value.orgId,
+					connectorId,
+					externalUserId,
+				)
+				return Option.some<ResolvedWorkspace>({
+					relay: {
+						orgId: workspace.value.orgId,
+						...(Option.isNone(identity) ? undefined : { linkedUserId: identity.value.userId }),
+					},
+					credentials,
+				})
+			}),
+		).pipe(lookupFailed(connectorId, "The chat workspace could not be read")),
 	)
-})
 
-/** What the lookup answered, replayable as the port's own effect — an `Exit` IS one. */
-type WorkspaceLookup = Exit.Exit<Option.Option<ChatWorkspaceResolution>, WorkspaceLookupFailed>
+/** What the one lookup answers: the relay's half, and the transport's. */
+interface ResolvedWorkspace {
+	readonly relay: RelayWorkspace
+	readonly credentials: string | undefined
+}
 
 /**
  * The config the connector's transport is built from: what the deployment set, plus this
  * workspace's own credential where it stored one.
  */
-const connectorCredentials = (config: ConnectorConfig, resolved: WorkspaceLookup): ConnectorConfig => {
-	if (Exit.isFailure(resolved) || Option.isNone(resolved.value)) return config
-	const credentials = resolved.value.value.credentials
-	return credentials === undefined ? config : new Map(config).set(WORKSPACE_CREDENTIALS, credentials)
+const connectorCredentials = (
+	config: ConnectorConfig,
+	resolved: Option.Option<ResolvedWorkspace>,
+): ConnectorConfig => {
+	if (Option.isNone(resolved) || resolved.value.credentials === undefined) return config
+	return new Map(config).set(WORKSPACE_CREDENTIALS, resolved.value.credentials)
 }
 
 const ports = (
 	host: RelayHost,
 	connector: ChatConnector<HttpClient.HttpClient | ConnectorCredentials>,
-	resolved: WorkspaceLookup,
+	lookup: (
+		connectorId: ChatConnectorId,
+		workspaceId: string,
+		externalUserId: string | undefined,
+	) => Effect.Effect<Option.Option<ResolvedWorkspace>, WorkspaceLookupFailed>,
 ): RelayPorts<HttpClient.HttpClient | ConnectorCredentials> => ({
 	outbound: connector.outbound,
-	// The arguments are ignored because the lookup already ran, against THIS event's own connector
-	// and workspace — the relay asks the same question the credential resolution asked, and asking
-	// it twice is a second Postgres connection for one mention. There is exactly one caller
-	// (`relay/turn.ts`), and it passes the event's own ids.
-	resolveWorkspace: () => resolved,
+	supportsIdentity: connector.identity !== undefined,
+	/**
+	 * The workspace, and — when a caller names a chat account — the Maple user it is linked to, in
+	 * ONE connection.
+	 *
+	 * Sequential rather than parallel because the second question needs the first one's answer: a
+	 * link is per org, and the org is what the workspace names.
+	 */
+	resolveWorkspace: (connectorId, workspaceId, externalUserId) =>
+		Effect.map(lookup(connectorId, workspaceId, externalUserId), (found) =>
+			Option.map(found, (workspace) => workspace.relay),
+		),
 	forgetWorkspace: (connectorId, workspaceId) =>
 		withDatabase(
 			host.env,
@@ -193,11 +240,7 @@ const ports = (
 			),
 			Effect.catchCause((cause) =>
 				Effect.logError("Chat workspace could not be unlinked").pipe(
-					Effect.annotateLogs({
-						"error.type": summarizeCause(cause),
-						"maple.chat.connector": connectorId,
-						"maple.chat.workspace_id": workspaceId,
-					}),
+					Effect.annotateLogs({ "error.type": summarizeCause(cause) }),
 				),
 			),
 		),
@@ -230,19 +273,27 @@ export const runInboundEvent = async (host: RelayHost, event: InboundEvent): Pro
 	const config = resolveConnectorConfig(host.env, connector)
 	if (config._tag === "missing") return
 
+	// One read for the whole event, memoized: the relay asks which org this is, and the transport is
+	// built from the credential the same row carries. `Effect.cached` is what keeps that one
+	// Postgres connection rather than two, without hoisting the read ahead of the relay's own
+	// decision about whether this message is a turn at all.
 	await Effect.runPromise(
 		Effect.gen(function* () {
-			// Before the relay, because the credential the connector posts with comes out of the
-			// same row the relay is about to ask for the org of. A workspace the bot was removed
-			// from is the one event needing neither — it unlinks the row rather than answering in
-			// it — so it is not looked up at all.
-			const resolved =
-				event.type === "workspace-removed"
-					? Exit.succeed(Option.none<ChatWorkspaceResolution>())
-					: yield* Effect.exit(lookupWorkspace(host, connector.id, event.workspaceId))
-			yield* relayInboundEvent(event, ports(host, connector, resolved)).pipe(
-				Effect.provideService(ConnectorCredentials, connectorCredentials(config.config, resolved)),
+			const lookup = yield* Effect.cached(
+				lookupWorkspace(
+					host,
+					connector,
+					event.connector,
+					event.workspaceId,
+					// Only a click names a person; a message is answered for the workspace.
+					event.type === "action" ? event.actor.id : undefined,
+				),
 			)
+			const resolved = yield* Effect.orElseSucceed(lookup, () => Option.none<ResolvedWorkspace>())
+			yield* relayInboundEvent(
+				event,
+				ports(host, connector, () => lookup),
+			).pipe(Effect.provideService(ConnectorCredentials, connectorCredentials(config.config, resolved)))
 		}).pipe(
 			// oxlint-disable-next-line effecttsgo/strict-effect-provide
 			Effect.provide(Layer.mergeAll(FetchHttpClient.layer, workerEnvLayer(host.env), telemetry.layer)),

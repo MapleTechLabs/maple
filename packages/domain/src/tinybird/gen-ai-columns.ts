@@ -132,7 +132,10 @@ export function genAiToolNameExpr(spanAttributes: MapColumnLike): Expr<string> {
 }
 
 export function genAiToolDescriptionExpr(spanAttributes: MapColumnLike): Expr<string> {
-	return leftUTF8(firstNonEmptyAttr(spanAttributes, GENAI_TOOL_DESCRIPTION_KEYS), GENAI_TOOL_DESCRIPTION_MAX)
+	return leftUTF8(
+		firstNonEmptyAttr(spanAttributes, GENAI_TOOL_DESCRIPTION_KEYS),
+		GENAI_TOOL_DESCRIPTION_MAX,
+	)
 }
 
 /** The provider's id for the response — the one fact two observations of the

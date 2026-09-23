@@ -20,7 +20,7 @@
 import { ChatConversationKey } from "@maple/primitives"
 import { Array as Arr, Duration, Effect, Option, Order, Redacted, Schema } from "effect"
 import { HttpClient, HttpClientRequest, type HttpClientResponse } from "effect/unstable/http"
-import type { ConnectorConfig, InboundMessage } from "../../ingress"
+import type { ConnectorConfig, InboundAction, InboundMessage } from "../../ingress"
 import {
 	ChatOutboundError,
 	ConnectorCredentials,
@@ -371,15 +371,21 @@ export const slackOutbound: ChatOutbound<HttpClient.HttpClient | ConnectorCreden
 			 * that thread — which is what `ingress` put in `threadId`, so this performs no I/O. A
 			 * follow-up in the same thread arrives with the same `thread_ts` and lands on the same
 			 * session without anything being remembered between events.
+			 *
+			 * A CLICK opens nothing: it happened inside a conversation that already exists, and the
+			 * name this answers with is what scopes the approval. Ingress reads it from the thread
+			 * the control's own message sits in, so it is the platform's address for where the click
+			 * landed rather than anything reconstructed here.
 			 */
-			conversation: (message: InboundMessage) => {
+			conversation: (message: InboundMessage | InboundAction) => {
 				const threadId = message.threadId ?? message.messageId
 				// A Slack thread begins with the reply that first carries the parent's `ts`, so a
 				// top-level mention is a conversation THIS bot is about to open — and one the host
 				// may then answer unaddressed messages in. A mention already inside a thread, and
 				// every un-addressed follow-up, opens nothing. No request either way: the thread's
 				// address is the anchor's own id.
-				const opened = message.mentionsBot && threadId === message.messageId
+				const opened =
+					message.type === "message" && message.mentionsBot && threadId === message.messageId
 				return Option.match(decodeConversationKey(conversationKeyOf(message.channelId, threadId)), {
 					onNone: () =>
 						Effect.fail(failed("thread", "Slack named a conversation Maple cannot address")),

@@ -11,7 +11,7 @@ import type { ChatConversationKey } from "@maple/primitives"
 import type { Duration, Effect } from "effect"
 import { Context, Schema } from "effect"
 import { ChatConnectorId } from "./connector"
-import type { ConnectorConfig, InboundMessage } from "./ingress"
+import type { ConnectorConfig, InboundAction, InboundMessage } from "./ingress"
 import type { ChatBlock } from "./render/blocks"
 
 /**
@@ -156,13 +156,21 @@ export interface ChatOutboundTransport {
 	 */
 	readonly openThread: (request: ChatThreadRequest) => Effect.Effect<string, ChatOutboundError>
 	/**
-	 * Which conversation this message belongs to, opening a thread for it where the platform has
-	 * them and the mention was not already in one.
+	 * Which conversation this event belongs to, opening a thread for a mention where the platform
+	 * has them and the mention was not already in one.
 	 *
 	 * On the transport rather than beside the normalized event because answering can take I/O, and
 	 * because the answer decides where every later call goes.
+	 *
+	 * An **action** is answered without opening anything: the click happened inside a conversation
+	 * that already exists, so the connector names it. That answer is what scopes an approval — the
+	 * host rebuilds the session id from it and refuses a control naming any other conversation — so
+	 * a connector must derive it from the platform's own address for where the click landed, never
+	 * from anything the control carried.
 	 */
-	readonly conversation: (message: InboundMessage) => Effect.Effect<ChatConversation, ChatOutboundError>
+	readonly conversation: (
+		event: InboundMessage | InboundAction,
+	) => Effect.Effect<ChatConversation, ChatOutboundError>
 	/**
 	 * The messages written in this conversation before `before`, NEWEST FIRST.
 	 *

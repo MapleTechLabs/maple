@@ -444,6 +444,30 @@ describe("slack transport", () => {
 		}).pipe(Effect.provide(http.layer))
 	})
 
+	it.effect("names a click's conversation by the thread its control sits in", () => {
+		const http = stub([{ status: 200, body: POSTED }])
+		return Effect.gen(function* () {
+			const transport = yield* slackOutbound.transport
+			// The same key the mention that opened this thread produced — that is what scopes the
+			// approval to the proposal it answers, rather than to the bot's own answer message.
+			const conversation = yield* transport.conversation({
+				type: "action",
+				connector: SLACK_CONNECTOR_ID,
+				workspaceId: "T1",
+				channelId: "C1",
+				threadId: "1700000000.000100",
+				messageId: "1700000000.000900",
+				actionToken: "sess-1|call-1",
+				actor: { id: "U1", displayName: "ada" },
+			})
+
+			expect(conversation.conversationKey).toBe("C1:1700000000.000100")
+			// A click opens nothing — it happened in a conversation that already existed.
+			expect(conversation.opened).toBe(false)
+			expect(http.seen).toHaveLength(0)
+		}).pipe(Effect.provide(http.layer))
+	})
+
 	it.effect("reports a top-level mention as a conversation the bot opened", () => {
 		const http = stub([{ status: 200, body: POSTED }])
 		return Effect.gen(function* () {

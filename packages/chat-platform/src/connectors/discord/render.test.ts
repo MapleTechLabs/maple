@@ -62,6 +62,7 @@ describe("renderDiscordMessage", () => {
 				toolName: "create_alert_rule",
 				summary: "name: checkout p95",
 				token: token("org_1:bot-42|call_9"),
+				outcome: null,
 			},
 		])
 
@@ -81,6 +82,25 @@ describe("renderDiscordMessage", () => {
 		])
 	})
 
+	it("takes the buttons off a proposal somebody decided, and says what came of it", () => {
+		const payload = renderDiscordMessage([
+			{
+				kind: "approval",
+				toolName: "create_alert_rule",
+				summary: "name: checkout p95",
+				token: token("org_1:bot-42|call_9"),
+				outcome: { approved: true, text: "Approved by Ada.\nCreated alert rule." },
+			},
+		])
+
+		// Discord leaves a component clickable forever, so the row has to go rather than be styled
+		// as spent.
+		expect(payload.components).toEqual([])
+		expect(payload.content).toBe(
+			"**`create_alert_rule`**\nname: checkout p95\nApproved by Ada.\nCreated alert rule.",
+		)
+	})
+
 	it("drops the buttons rather than sending a custom id Discord would reject", () => {
 		const payload = renderDiscordMessage([
 			{
@@ -88,6 +108,7 @@ describe("renderDiscordMessage", () => {
 				toolName: "create_alert_rule",
 				summary: "",
 				token: token(`org_1:bot-42|${"c".repeat(120)}`),
+				outcome: null,
 			},
 		])
 
@@ -101,6 +122,7 @@ describe("renderDiscordMessage", () => {
 			toolName: `tool_${index}`,
 			summary: "",
 			token: token(`org_1:bot-42|call_${index}`),
+			outcome: null,
 		}))
 		const payload = renderDiscordMessage(approvals)
 

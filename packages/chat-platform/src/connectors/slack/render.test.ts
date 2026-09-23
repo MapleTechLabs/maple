@@ -111,6 +111,7 @@ describe("approvals", () => {
 		toolName: "create_dashboard",
 		summary: "Creates a dashboard called Checkout",
 		token: token(value),
+		outcome: null,
 	})
 
 	it("carries the action token on both buttons, unchanged", () => {
@@ -132,6 +133,23 @@ describe("approvals", () => {
 				style: "danger",
 			},
 		])
+	})
+
+	it("keeps a settled proposal's line and loses its buttons", () => {
+		// Slack leaves a button clickable forever, so a decided proposal must stop offering one —
+		// the click would only ever be answered "settled".
+		const payload = renderSlackMessage([
+			{
+				kind: "approval",
+				toolName: "create_dashboard",
+				summary: "Creates a dashboard called Checkout",
+				token: token("sess-1|call-1"),
+				outcome: { approved: true, text: "Ada approved this." },
+			},
+		])
+		expect(payload.blocks.some((block) => block.type === "actions")).toBe(false)
+		const block = payload.blocks[0]
+		expect(block?.type === "section" && block.text.text).toContain("Ada approved this.")
 	})
 
 	it("says so rather than sending buttons Slack would reject the message over", () => {

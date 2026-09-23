@@ -214,13 +214,27 @@ does not have.
 
 ### Who may approve
 
-Slack's `block_actions` payload carries the user's id and name and **nothing about membership**: no
-roles, no `is_admin`, no `is_owner`. So `InboundActor` reports `roleIds: []` and
-`isWorkspaceAdmin: false`, and Maple's approval policy decides what a factless actor may do.
+**This connector declares no `identity`**, which is a policy rather than a gap: anyone who can see
+the conversation may approve, and the change runs as the org-level connector identity. See
+`ChatConnector.identity` for the three cases.
 
-The only way to learn otherwise is a `users.info` call, which needs the `users:read` scope — a scope
-change every installed workspace has to re-approve, and one extra API call on every button press.
-That is a trade worth making when there is a policy to enforce, and not before.
+Slack _can_ answer who clicked — "Sign in with Slack", its OpenID Connect flow — and implementing
+it is mechanically small: the same OAuth application, the same client credentials, the same
+redirect-URL list, an authorize URL at `https://slack.com/openid/connect/authorize` and two calls
+(`openid.connect.token`, then `openid.connect.userInfo`).
+
+It is not implemented because one fact it rests on **cannot be confirmed from Slack's
+documentation**: that the `sub` / `https://slack.com/user_id` claim returned by `userInfo` is the
+same `U…` id that arrives as `user.id` on a `block_actions` payload. Everything about this is
+plausible — Slack user ids are one namespace — but the link is keyed on that id, and the failure if
+it is wrong is silent and total: `identity` present with nothing linked means every approval is
+**refused**, which is worse than the weaker rule this connector ships with. Two other things are
+also undocumented: whether the `openid` scopes must be declared in the app manifest, and whether
+adding them forces workspaces that already installed the bot to re-authorize.
+
+What makes it cheap is one empirical check against a real workspace: log `sub` and the
+`block_actions` `user.id` for the same person and compare them. That check belongs with the smoke
+checklist in the cutover doc, and the flow can land the moment it passes.
 
 ## Reading the conversation back
 

@@ -189,6 +189,7 @@ describe("slack button presses", () => {
 		api_app_id: "A0MDYCDME",
 		token: "9s8d9as89d8as9d8as989",
 		container: { type: "message", message_ts: "1515449522.000016", channel_id: "C0LAN2Q65" },
+		message: { ts: "1515449522.000016", thread_ts: "1515449400.000001" },
 		trigger_id: "12321423423.333649436676.d8c1bb837935619ccad0f624c448ffb3",
 		channel: { id: "C0LAN2Q65", name: "incidents" },
 		response_url: "https://hooks.slack.com/actions/T061EG9R6/1234/abcd",
@@ -218,12 +219,14 @@ describe("slack button presses", () => {
 				connector: "slack",
 				workspaceId: "T061EG9R6",
 				channelId: "C0LAN2Q65",
+				// The control sits on Maple's answer, which lives in the thread the question opened —
+				// so this is the same conversation the proposal was made in, which is what scopes
+				// the approval.
+				threadId: "1515449400.000001",
 				messageId: "1515449522.000016",
 				actionToken: "sess-1|call-1",
-				// Slack's interaction payload carries no roles and no admin flag. Reporting none is
-				// the honest answer; guessing `true` here would be an authorization decision made by
-				// the absence of data.
-				actor: { id: "U061F7AUR", displayName: "ada", roleIds: [], isWorkspaceAdmin: false },
+				// An id and a name, which is all Slack sends.
+				actor: { id: "U061F7AUR", displayName: "ada" },
 			},
 		])
 	})
