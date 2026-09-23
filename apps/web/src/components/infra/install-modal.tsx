@@ -25,7 +25,8 @@ import { CopyButton } from "@maple/ui/components/ui/copy-button"
 import { ingestUrl } from "@/lib/services/common/ingest-url"
 import { retainedQueryV2 } from "@/lib/services/common/v2-atom-client"
 
-const HOSTED_INGEST_URL = "https://ingest.maple.dev"
+// The endpoint the chart and the agent image default to. The EU region is not it.
+const CHART_DEFAULT_INGEST_URL = "https://ingest.maple.dev"
 
 const DOCS_URLS = {
 	kubernetes: "https://maple.dev/docs/guides/kubernetes-infrastructure",
@@ -57,9 +58,9 @@ function helmCommand(token: string) {
 		`  --set-string maple.ingestKey.value=${token} \\`,
 		"  --set-string global.clusterName=production",
 	]
-	// Self-hosted Maple: tell the collector where to send OTLP. Hosted installs
+	// Any endpoint but the US one (self-hosted, or the EU region) is passed explicitly. US installs
 	// use the chart's baked-in default, so we omit the flag to keep it clean.
-	if (ingestUrl !== HOSTED_INGEST_URL) {
+	if (ingestUrl !== CHART_DEFAULT_INGEST_URL) {
 		lines[lines.length - 1] += " \\"
 		lines.push(`  --set-string maple.ingest.endpoint=${ingestUrl}`)
 	}
@@ -78,7 +79,7 @@ function dockerCommand(token: string) {
 		"  -p 4317:4317 -p 4318:4318 \\",
 		`  -e MAPLE_INGEST_KEY=${token} \\`,
 	]
-	if (ingestUrl !== HOSTED_INGEST_URL) {
+	if (ingestUrl !== CHART_DEFAULT_INGEST_URL) {
 		lines.push(`  -e MAPLE_ENDPOINT=${ingestUrl} \\`)
 	}
 	lines.push("  ghcr.io/mapletechlabs/maple/otel-collector-maple:0.2.0 \\")
@@ -149,7 +150,7 @@ export function InstallHostModal({ open, onOpenChange, defaultTab = "kubernetes"
 	)
 
 	const loading = Result.isInitial(keysResult)
-	const selfHosted = ingestUrl !== HOSTED_INGEST_URL
+	const customEndpoint = ingestUrl !== CHART_DEFAULT_INGEST_URL
 
 	// `snippet` is the real command (used for copy); `displaySnippet` masks the
 	// key unless the user explicitly reveals it.
@@ -204,7 +205,7 @@ export function InstallHostModal({ open, onOpenChange, defaultTab = "kubernetes"
 								loading={loading}
 								snippet={helmSnippet}
 								displaySnippet={helmDisplay}
-								rows={selfHosted ? 6 : 5}
+								rows={customEndpoint ? 6 : 5}
 								revealed={revealed}
 								onToggleReveal={() => setRevealed((v) => !v)}
 							/>
@@ -220,7 +221,7 @@ export function InstallHostModal({ open, onOpenChange, defaultTab = "kubernetes"
 								loading={loading}
 								snippet={dockerSnippet}
 								displaySnippet={dockerDisplay}
-								rows={selfHosted ? 10 : 9}
+								rows={customEndpoint ? 10 : 9}
 								revealed={revealed}
 								onToggleReveal={() => setRevealed((v) => !v)}
 							/>

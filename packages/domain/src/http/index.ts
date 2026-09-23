@@ -19,7 +19,11 @@ export * as CurrentTenant from "./current-tenant"
 // The tenant-resolution failures themselves, flat: `@maple/auth` raises all
 // three and has no use for the namespace. (`UnauthorizedError` already reaches
 // the barrel through `./warehouse`.)
-export { AuthorizationUnavailableError, OrganizationAccessDeniedError } from "./current-tenant"
+export {
+	AuthorizationUnavailableError,
+	OrganizationAccessDeniedError,
+	OrganizationWrongRegionError,
+} from "./current-tenant"
 export * from "./dashboard-sections"
 export * from "./dashboards"
 export * from "./demo"

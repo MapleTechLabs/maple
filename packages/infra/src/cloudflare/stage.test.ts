@@ -8,6 +8,7 @@ import {
 	resolveHyperdriveRefId,
 	resolveMapleDomains,
 	resolvePlanetscaleDatabase,
+	resolveRegionAppUrls,
 	resolveStorageJurisdiction,
 	resolveWorkerName,
 	resolveWorkerPlacement,
@@ -101,6 +102,15 @@ describe("resolveMapleDomains", () => {
 
 	it("has no eu hostnames for a PR preview", () => {
 		expect(() => resolveMapleDomains(stage("pr-12"), "eu")).toThrow(/PR previews have no eu hostnames/)
+	})
+
+	it("lists every region's dashboard on prd only", () => {
+		expect(resolveRegionAppUrls(stage("prd"))).toEqual({
+			us: "https://app.maple.dev",
+			eu: "https://app.eu.maple.dev",
+		})
+		expect(resolveRegionAppUrls(stage("pr-12"))).toEqual({})
+		expect(resolveRegionAppUrls(stage("david"))).toEqual({})
 	})
 })
 

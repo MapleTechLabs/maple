@@ -20,7 +20,7 @@ import { HttpErrorsLive } from "@/routes/v1/errors.http"
 import { HttpIntegrationsLive, IntegrationsCallbackRouter } from "@/routes/v1/integrations.http"
 import { OAuthDiscoveryRouter } from "@/routes/v1/oauth-discovery.http"
 import { HttpOrgClickHouseSettingsLive } from "@/routes/v1/org-clickhouse-settings.http"
-import { HttpOrganizationsLive } from "@/routes/v1/organizations.http"
+import { HttpOrganizationCreationLive, HttpOrganizationsLive } from "@/routes/v1/organizations.http"
 import { PlanetScaleWebhookRouter } from "@/routes/v1/planetscale-webhook.http"
 import { HttpQueryEngineLive } from "@/routes/internal/query-engine.http"
 import { HttpSessionReplaysInternalLive } from "@/routes/internal/session-replays.http"
@@ -68,6 +68,8 @@ import { HttpV2WidgetCredentialsLive } from "@/routes/v2/widget-credentials.http
 import { ApiAuthorizationLayer } from "@maple/backend/services/auth/ApiAuthorizationLayer"
 import { ApiAuthorizationV2Layer } from "@maple/backend/services/auth/ApiAuthorizationV2Layer"
 import { SessionAuthorizationLayer } from "@maple/backend/services/auth/SessionAuthorizationLayer"
+import { UserSessionAuthorizationLayer } from "@maple/backend/services/auth/UserSessionAuthorizationLayer"
+import { OrganizationRegionService } from "@maple/backend/services/org/OrganizationRegionService"
 import { ApiV2RateLimiter } from "@maple/backend/services/auth/ApiV2RateLimiter"
 import { McpToolRateLimiter } from "@maple/backend/services/auth/McpToolRateLimiter"
 import { EdgeCacheServiceLive } from "@maple/backend/platform/CacheBackendLive"
@@ -99,6 +101,7 @@ const ApiRoutes = HttpApiBuilder.layer(MapleApi).pipe(
 	Layer.provide(HttpIntegrationsLive),
 	Layer.provide(HttpOrgClickHouseSettingsLive),
 	Layer.provide(HttpOrganizationsLive),
+	Layer.provide(HttpOrganizationCreationLive),
 	Layer.provide(HttpSessionReplaysLive),
 	Layer.provide(V1ErrorBoundaryLive),
 )
@@ -219,10 +222,12 @@ export const ApiAuthLive = Layer.mergeAll(
 	ApiAuthorizationLayer,
 	ApiAuthorizationV2Layer,
 	SessionAuthorizationLayer,
+	UserSessionAuthorizationLayer,
 ).pipe(
 	Layer.provideMerge(ApiV2RateLimiter.layer),
 	Layer.provideMerge(McpToolRateLimiter.layer),
 	Layer.provideMerge(ApiKeysService.layer),
+	Layer.provideMerge(OrganizationRegionService.layer),
 	// Denied attempts and audited reads are recorded from inside the auth layers.
 	Layer.provideMerge(AuditLogService.layer),
 	// Membership verification for `x-maple-org-id`. Only the v2 layer asks for

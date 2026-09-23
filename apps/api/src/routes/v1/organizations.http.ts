@@ -21,3 +21,19 @@ export const HttpOrganizationsLive = HttpApiBuilder.group(MapleApi, "organizatio
 		)
 	}),
 )
+
+export const HttpOrganizationCreationLive = HttpApiBuilder.group(
+	MapleApi,
+	"organizationCreation",
+	(handlers) =>
+		Effect.gen(function* () {
+			const organizationService = yield* OrganizationService
+
+			return handlers.handle("create", ({ payload }) =>
+				Effect.gen(function* () {
+					const { userId } = yield* CurrentTenant.CurrentUser
+					return yield* organizationService.create(userId, payload.name, payload.region)
+				}),
+			)
+		}),
+)

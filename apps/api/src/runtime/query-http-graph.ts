@@ -11,6 +11,7 @@ import { HttpQueryEngineLive } from "@/routes/internal/query-engine.http"
 import { V1ErrorBoundaryLive } from "@maple/backend/http/error-boundary"
 import { NotFoundRouter } from "@/routes/discovery.http"
 import { SessionAuthorizationLayer } from "@maple/backend/services/auth/SessionAuthorizationLayer"
+import { OrganizationRegionService } from "@maple/backend/services/org/OrganizationRegionService"
 import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
 import { QueryEngineService } from "@maple/backend/services/warehouse/QueryEngineService"
 
@@ -33,7 +34,12 @@ export const QueryRoutes = Layer.mergeAll(
 	// was missing from every handler this graph built first, and
 	// `execute-raw-sql` answered 500 "Service not found" for that isolate's life.
 	Layer.provideMerge(
-		Layer.mergeAll(QueryEngineService.layer, WarehouseQueryService.layer, AuditLogService.layer),
+		Layer.mergeAll(
+			QueryEngineService.layer,
+			WarehouseQueryService.layer,
+			AuditLogService.layer,
+			OrganizationRegionService.layer,
+		),
 	),
 	Layer.provide(Layer.mergeAll(Env.layer, EdgeCacheServiceLive)),
 )

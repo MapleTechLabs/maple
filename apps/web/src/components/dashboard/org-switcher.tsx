@@ -6,10 +6,14 @@ import { isClerkAuthEnabled } from "@/lib/services/common/auth-mode"
 import { useGlobalNamespace } from "@/hooks/use-global-namespace"
 import { ClerkOrgSwitcherMenu, OrgAvatar } from "./org-switcher-menu"
 import { NamespaceScopeMenuGroup } from "./namespace-scope-menu"
+import { RegionBadge } from "@/components/region/region-badge"
+import { useOrganizationRegion } from "@/hooks/use-organization-region"
+import { hasMultipleRegions } from "@/lib/region"
 
 function ClerkOrgSwitcher() {
 	const { organization } = useOrganization()
 	const pinnedNamespace = useGlobalNamespace()
+	const orgRegion = useOrganizationRegion()
 	const orgName = organization?.name ?? "Select Organization"
 	const orgImageUrl = organization?.imageUrl
 
@@ -25,7 +29,12 @@ function ClerkOrgSwitcher() {
 				>
 					<OrgAvatar name={orgName} imageUrl={orgImageUrl} />
 					<div className="grid flex-1 text-left text-sm leading-tight">
-						<span className="truncate font-medium">{orgName}</span>
+						<span className="flex min-w-0 items-center gap-1.5">
+							<span className="truncate font-medium">{orgName}</span>
+							{hasMultipleRegions && orgRegion.isLoaded && (
+								<RegionBadge region={orgRegion.region} />
+							)}
+						</span>
 						{pinnedNamespace !== null ? (
 							<span className="truncate text-xs font-medium text-primary">
 								{pinnedNamespace}

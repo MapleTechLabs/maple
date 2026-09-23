@@ -1,6 +1,7 @@
 import { HttpApiMiddleware, HttpApiSecurity } from "effect/unstable/httpapi"
 import { Schema, Context as EffectContext } from "effect"
 import { AuthMode, OrgId, RoleName, UserId } from "../primitives"
+import { MapleRegion } from "../organization-regions"
 import { HttpTaggedError } from "./error-policy"
 
 export class UnauthorizedError extends HttpTaggedError<UnauthorizedError>()(
@@ -62,6 +63,29 @@ export class OrganizationAccessDeniedError extends HttpTaggedError<OrganizationA
 	},
 ) {}
 
+/**
+ * The organization lives on another regional instance. 403 rather than a 404: the organization
+ * exists and the caller is a member, it is only served somewhere else, which `orgRegion` names.
+ */
+export class OrganizationWrongRegionError extends HttpTaggedError<OrganizationWrongRegionError>()(
+	"@maple/http/errors/OrganizationWrongRegionError",
+	{
+		message: Schema.String,
+		orgId: OrgId,
+		orgRegion: MapleRegion,
+		region: MapleRegion,
+	},
+	{
+		status: 403,
+		code: "organization_wrong_region",
+		title: "Organization is in another region",
+		message: "This organization is served by another Maple region.",
+		retry: "never",
+		recovery: "none",
+		exposure: "public_message",
+	},
+) {}
+
 export class TenantSchema extends Schema.Class<TenantSchema>("TenantSchema")({
 	orgId: OrgId,
 	userId: UserId,
@@ -82,7 +106,12 @@ export class Authorization extends HttpApiMiddleware.Service<
 		provides: Context
 	}
 >()("Authorization", {
-	error: [UnauthorizedError, AuthorizationUnavailableError, OrganizationAccessDeniedError],
+	error: [
+		UnauthorizedError,
+		AuthorizationUnavailableError,
+		OrganizationAccessDeniedError,
+		OrganizationWrongRegionError,
+	],
 	security: {
 		bearer: HttpApiSecurity.bearer,
 	},
@@ -130,7 +159,29 @@ export class SessionAuthorization extends HttpApiMiddleware.Service<
 		AuthorizationUnavailableError,
 		ApiKeyNotAcceptedError,
 		OrganizationAccessDeniedError,
+		OrganizationWrongRegionError,
 	],
+	security: {
+		bearer: HttpApiSecurity.bearer,
+	},
+}) {}
+
+/** The signed-in user of a session that may have no active organization yet. */
+export class CurrentUser extends EffectContext.Service<CurrentUser, { readonly userId: UserId }>()(
+	"@maple/domain/http/CurrentUser",
+) {}
+
+/**
+ * A Clerk session, with or without an active organization. Only for requests that act before an
+ * organization exists; everything organization-scoped uses {@link SessionAuthorization}.
+ */
+export class UserSessionAuthorization extends HttpApiMiddleware.Service<
+	UserSessionAuthorization,
+	{
+		provides: CurrentUser
+	}
+>()("UserSessionAuthorization", {
+	error: [UnauthorizedError, ApiKeyNotAcceptedError],
 	security: {
 		bearer: HttpApiSecurity.bearer,
 	},

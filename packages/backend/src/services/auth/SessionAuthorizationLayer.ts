@@ -8,6 +8,7 @@ import { CurrentAuditActor } from "@maple/backend/services/auth/audit-actor"
 import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
 import { withAuditedRead } from "@maple/backend/services/audit/audit-access"
 import { Env } from "@maple/backend/platform/Env"
+import { OrganizationRegionService } from "@maple/backend/services/org/OrganizationRegionService"
 
 const getBearerToken = (headers: Record<string, string | undefined>): string | undefined => {
 	const header = headers["authorization"] ?? headers["Authorization"]
@@ -35,6 +36,7 @@ export const SessionAuthorizationLayer = Layer.effect(
 	Effect.gen(function* () {
 		const env = yield* Env
 		const audit = yield* AuditLogService
+		const regions = yield* OrganizationRegionService
 		const resolveTenant = makeResolveTenant(env)
 
 		return CurrentTenant.SessionAuthorization.of({
@@ -51,6 +53,7 @@ export const SessionAuthorizationLayer = Layer.effect(
 
 					const tenant = yield* resolveTenant(request.headers)
 					yield* annotateAuthSpan("session", { orgId: tenant.orgId, userId: tenant.userId })
+					yield* regions.ensureServedHere(tenant.orgId)
 					const actor = { type: "user", source: "dashboard" } as const
 					return yield* httpEffect.pipe(
 						Effect.provideService(CurrentTenant.Context, new CurrentTenant.TenantSchema(tenant)),

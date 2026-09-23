@@ -1,6 +1,8 @@
 import { lazy, memo, Suspense, useEffect } from "react"
 import { useAuth } from "@clerk/clerk-react"
 import { useMapleCustomer } from "@/hooks/use-maple-customer"
+import { useOrganizationRegion } from "@/hooks/use-organization-region"
+import { WrongRegionScreen } from "@/components/region/wrong-region-screen"
 import { useTimezonePreference } from "@/hooks/use-timezone-preference"
 import {
 	Navigate,
@@ -142,6 +144,9 @@ function ClerkReverseRedirects() {
 		}),
 	})
 	const { isSignedIn, orgId } = useAuth()
+	const orgRegion = useOrganizationRegion()
+	// An organization from another region is refused by this region's API.
+	const wrongRegion = Boolean(isSignedIn && orgId) && orgRegion.isLoaded && !orgRegion.servedHere
 	// Autumn customers are keyed by orgId, so getOrCreateCustomer can only
 	// succeed once an org is active. Skip the fetch for signed-out/org-less
 	// onboarding sessions (e.g. /sign-up, /org-required) to avoid guaranteed 401s.
@@ -149,7 +154,7 @@ function ClerkReverseRedirects() {
 		data: customer,
 		isLoading: isCustomerLoading,
 		error: customerError,
-	} = useMapleCustomer({ queryOptions: { enabled: Boolean(isSignedIn && orgId) } })
+	} = useMapleCustomer({ queryOptions: { enabled: Boolean(isSignedIn && orgId) && !wrongRegion } })
 
 	const redirectUrl = pathname + (searchStr ?? "")
 	const selectedPlan = hasSelectedPlan(customer)
@@ -197,6 +202,10 @@ function ClerkReverseRedirects() {
 	// about sending a signed-in reader somewhere better rather than gating them.
 	if (isFixturePath(pathname)) {
 		return <AppFrame />
+	}
+
+	if (wrongRegion) {
+		return <WrongRegionScreen region={orgRegion.region} />
 	}
 
 	if (isSignedIn && orgId) {

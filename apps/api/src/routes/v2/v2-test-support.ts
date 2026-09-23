@@ -169,6 +169,7 @@ export const V2GroupLayersExceptOnboardingChecklist = Layer.mergeAll(
 			Layer.succeed(OrganizationService, {
 				retrieve: (orgId) =>
 					Effect.succeed({ id: orgId, name: null, slug: null, imageUrl: null, createdAtMs: null }),
+				create: () => Effect.die("organization creation is not exercised by v2 route harnesses"),
 				delete: () => Effect.die("organization deletion is not exercised by v2 route harnesses"),
 			}),
 		),
@@ -248,6 +249,7 @@ export const Phase1ResourceStubsLayer = Layer.mergeAll(
 		collectActorDocs: die,
 	}),
 	Layer.succeed(OrganizationService, {
+		create: die,
 		retrieve: die,
 		delete: die,
 	}),

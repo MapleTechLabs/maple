@@ -1,12 +1,15 @@
 import { createClerkClient } from "@clerk/backend"
 import {
+	CreateOrganizationResponse,
 	DeleteOrganizationResponse,
 	OrganizationForbiddenError,
 	OrganizationPersistenceError,
 	OrganizationProviderError,
 	OrgId,
 	RoleName,
+	type UserId,
 } from "@maple/domain/http"
+import { type MapleRegion, organizationRegionMetadata } from "@maple/domain/organization-regions"
 import {
 	actors,
 	alertDeliveryEvents,
@@ -191,6 +194,12 @@ export interface OrganizationInfo {
 }
 
 export interface OrganizationServiceApi {
+	/** Creates a Clerk organization owned by `userId`, living in `region` from the start. */
+	readonly create: (
+		userId: UserId,
+		name: string,
+		region: MapleRegion,
+	) => Effect.Effect<CreateOrganizationResponse, OrganizationProviderError>
 	readonly retrieve: (orgId: OrgId) => Effect.Effect<OrganizationInfo, OrganizationProviderError>
 	readonly delete: (
 		orgId: OrgId,
@@ -289,6 +298,37 @@ export class OrganizationService extends Context.Service<OrganizationService, Or
 				} satisfies OrganizationInfo
 			})
 
+			const create = Effect.fn("OrganizationService.create")(function* (
+				userId: UserId,
+				name: string,
+				region: MapleRegion,
+			) {
+				yield* Effect.annotateCurrentSpan({ userId, "maple.org_region": region })
+				const clerk = clerkClient()
+				if (Option.isNone(clerk)) {
+					return yield* new OrganizationProviderError({
+						message: "Organizations can only be created in Clerk auth mode",
+					})
+				}
+				const org = yield* clerkRequest("Clerk.organizations.createOrganization", { userId }, () =>
+					clerk.value.organizations.createOrganization({
+						name,
+						createdBy: userId,
+						publicMetadata: organizationRegionMetadata(region),
+					}),
+				).pipe(Effect.mapError((error) => toProviderError(error.cause)))
+				const orgId = yield* Schema.decodeUnknownEffect(OrgId)(org.id).pipe(
+					Effect.mapError(
+						() =>
+							new OrganizationProviderError({
+								message: "Clerk returned an invalid organization id",
+							}),
+					),
+				)
+				yield* Effect.annotateCurrentSpan("orgId", orgId)
+				return new CreateOrganizationResponse({ orgId, region })
+			})
+
 			const deleteOrganization = Effect.fn("OrganizationService.delete")(function* (
 				orgId: OrgId,
 				roles: ReadonlyArray<RoleName>,
@@ -301,6 +341,7 @@ export class OrganizationService extends Context.Service<OrganizationService, Or
 			})
 
 			return {
+				create,
 				retrieve,
 				delete: deleteOrganization,
 			} satisfies OrganizationServiceApi
