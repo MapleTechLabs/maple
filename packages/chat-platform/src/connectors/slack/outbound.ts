@@ -407,7 +407,8 @@ export const slackOutbound: ChatOutbound<HttpClient.HttpClient | ConnectorCreden
 			destinations: Effect.fn("Slack.destinations")(function* (_workspaceId: string) {
 				const channels: Array<ChatDestination> = []
 				let cursor: string | undefined
-				for (let page = 0; page < MAX_CHANNEL_PAGES; page++) {
+				let pages = 0
+				for (; pages < MAX_CHANNEL_PAGES; pages++) {
 					const params = new URLSearchParams({
 						types: "public_channel,private_channel",
 						exclude_archived: "true",
@@ -431,6 +432,11 @@ export const slackOutbound: ChatOutbound<HttpClient.HttpClient | ConnectorCreden
 					cursor = result.response_metadata?.next_cursor
 					if (cursor === undefined || cursor === "") break
 				}
+				// A cursor still in hand after the last page is a workspace listed only in part.
+				yield* Effect.annotateCurrentSpan({
+					"chat.destinations.pages": Math.min(pages + 1, MAX_CHANNEL_PAGES),
+					"chat.destinations.truncated": cursor !== undefined && cursor !== "",
+				})
 				return Arr.sort(channels, byName)
 			}),
 

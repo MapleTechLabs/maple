@@ -172,8 +172,12 @@ const threadName = (title: string): string => {
 /** A day of quiet before the thread leaves the channel list. Long enough to come back to an answer. */
 const THREAD_ARCHIVE_MINUTES = 1440
 
-/** The thread when the turn is in one, the channel otherwise — on Discord both are channel ids. */
-const channelOf = (target: ChatTarget): string => target.threadId ?? target.channelId
+/**
+ * The thread when the turn is in one, the channel otherwise — on Discord both are channel ids.
+ * Encoded, like every id that reaches a path here: a stored channel id is a value somebody
+ * submitted, and an unencoded `../` walks the bot's token onto another route.
+ */
+const channelOf = (target: ChatTarget): string => encodeURIComponent(target.threadId ?? target.channelId)
 
 /**
  * Every id Discord mints is a snowflake, which the key's charset covers — but the id came off the
@@ -283,7 +287,7 @@ export const discordOutbound: ChatOutbound<HttpClient.HttpClient | ConnectorCred
 				"thread",
 				"/channels/{channel_id}/messages/{message_id}/threads",
 				HttpClientRequest.post(
-					`${API_BASE}/channels/${request.channelId}/messages/${request.anchorMessageId}/threads`,
+					`${API_BASE}/channels/${encodeURIComponent(request.channelId)}/messages/${encodeURIComponent(request.anchorMessageId)}/threads`,
 				).pipe(
 					HttpClientRequest.bodyJsonUnsafe({
 						name: threadName(request.title),
@@ -329,7 +333,7 @@ export const discordOutbound: ChatOutbound<HttpClient.HttpClient | ConnectorCred
 					"edit",
 					"/channels/{channel_id}/messages/{message_id}",
 					HttpClientRequest.patch(
-						`${API_BASE}/channels/${channelOf(ref.target)}/messages/${ref.messageId}`,
+						`${API_BASE}/channels/${channelOf(ref.target)}/messages/${encodeURIComponent(ref.messageId)}`,
 					).pipe(body(blocks)),
 				).pipe(Effect.asVoid),
 

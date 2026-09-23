@@ -549,6 +549,21 @@ describe("slack transport", () => {
 		}).pipe(Effect.provide(http.layer))
 	})
 
+	it.effect("stops walking a workspace's channels at the page cap", () => {
+		const page = JSON.stringify({
+			ok: true,
+			channels: [{ id: "C1", name: "alerts" }],
+			response_metadata: { next_cursor: "more" },
+		})
+		const http = stub([{ status: 200, body: page }])
+		return Effect.gen(function* () {
+			const transport = yield* slackOutbound.transport
+			const channels = yield* transport.destinations("T1")
+			expect(http.seen).toHaveLength(5)
+			expect(channels).toHaveLength(5)
+		}).pipe(Effect.provide(http.layer))
+	})
+
 	it.effect("reports a token without the listing scopes as an auth failure", () => {
 		// A workspace linked before the scopes were added: only a reinstall grants them.
 		const http = stub([{ status: 200, body: '{"ok":false,"error":"missing_scope"}' }])
