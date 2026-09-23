@@ -97,5 +97,6 @@ export function registerFindSlowTracesTool(server: McpToolRegistrar) {
 				}),
 			}
 		}),
+		{ phrases: ["Finding slow traces", "Looking for slow requests"] },
 	)
 }

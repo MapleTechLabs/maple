@@ -159,5 +159,6 @@ export function registerGetIncidentTimelineTool(server: McpToolRegistrar) {
 				}),
 			}
 		}),
+		{ phrases: ["Loading the incident timeline", "Building the incident timeline"] },
 	)
 }
