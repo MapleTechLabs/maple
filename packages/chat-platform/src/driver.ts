@@ -140,7 +140,7 @@ export const driveChatTurn = Effect.fn("ChatPlatform.driveChatTurn")(function* <
 	yield* Effect.forkChild(
 		// Best effort by nature, so the failure is a debug line and not even its tag: nothing acts on
 		// a missing typing indicator.
-		transport.typing(target).pipe(
+		(resumed ? Effect.void : transport.typing(target)).pipe(
 			Effect.tapCause(() => Effect.logDebug("Typing could not be shown")),
 			Effect.ignore,
 		),

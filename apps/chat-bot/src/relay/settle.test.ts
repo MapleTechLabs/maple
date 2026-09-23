@@ -122,29 +122,37 @@ const finalText = (calls: Platform["calls"]): Map<string, ReadonlyArray<ChatBloc
 	new Map(calls.map((call) => [call.ref.messageId, call.blocks]))
 
 /**
- * A session that has run (or is running) `turn`: `open` keeps its subscription up, as a live turn
- * does, and `running` is what it answers a settle with.
+ * A session that has run `turn`, or is still running it (`running`: its log stops mid-answer).
+ * `open` keeps a subscription up, as a live turn does; `gone` fails every read; `empty` is a fresh
+ * object that never ran anything.
  */
 const session = (options?: {
 	readonly open?: boolean
 	readonly running?: boolean
 	readonly gone?: boolean
-}): ChatSessionStub => ({
-	cursor: () => Promise.resolve(0),
-	running: () =>
-		options?.gone === true
-			? Promise.reject(new Error(ANSWER))
-			: Promise.resolve(options?.running ?? false),
-	history: () => Promise.resolve([]),
-	since: (cursor) => Promise.resolve(turn.filter((next) => next.seq > cursor)),
-	append: () => Promise.resolve(0),
-	holdsTurn: () => Promise.resolve(false),
-	endTurn: () => Promise.resolve(),
-	abort: () => Promise.resolve(),
-	settleProposal: () => Promise.resolve("unknown"),
-	beginTurn: (input) => Promise.resolve({ cursor: 0, messageId: input.messageId, turnMessageId: "a1" }),
-	subscribe: () => Promise.resolve(options?.open === true ? sse(turn.slice(0, 3), true) : sse(turn)),
-})
+	readonly empty?: boolean
+}): ChatSessionStub => {
+	const log = options?.empty === true ? [] : options?.running === true ? turn.slice(0, 3) : turn
+	return {
+		cursor: () => Promise.resolve(0),
+		running: () =>
+			options?.gone === true
+				? Promise.reject(new Error(ANSWER))
+				: Promise.resolve(options?.running ?? false),
+		history: () => Promise.resolve([]),
+		since: (cursor) =>
+			options?.gone === true
+				? Promise.reject(new Error(ANSWER))
+				: Promise.resolve(log.filter((next) => next.seq > cursor)),
+		append: () => Promise.resolve(0),
+		holdsTurn: () => Promise.resolve(false),
+		endTurn: () => Promise.resolve(),
+		abort: () => Promise.resolve(),
+		settleProposal: () => Promise.resolve("unknown"),
+		beginTurn: (input) => Promise.resolve({ cursor: 0, messageId: input.messageId, turnMessageId: "a1" }),
+		subscribe: () => Promise.resolve(options?.open === true ? sse(turn.slice(0, 3), true) : sse(turn)),
+	}
+}
 
 /** The relay object's storage, reduced to the one key a turn's checkpoint lives under. */
 const storage = () => ({ checkpoint: undefined as unknown, writes: 0 })
@@ -310,6 +318,23 @@ describe("settling a relayed turn", () => {
 				})),
 			})
 			expect(everything).not.toContain("checkout-service")
+		}),
+	)
+
+	it.effect("drops a turn whose session has nothing to settle it from, and says so once", () =>
+		Effect.gen(function* () {
+			const chat = platform()
+			const logs: Array<string> = []
+			const logger = Logger.make(({ message }) => void logs.push(String(message)))
+
+			const outcome = yield* settleRelayedTurn(
+				checkpointOf(["m1"]),
+				ports(chat.outbound, session({ empty: true }), storage()),
+			).pipe(Effect.provideContext(Context.make(Logger.CurrentLoggers, new Set([logger]))))
+
+			expect(outcome).toBe("done")
+			expect(chat.calls).toEqual([])
+			expect(logs).toHaveLength(1)
 		}),
 	)
 

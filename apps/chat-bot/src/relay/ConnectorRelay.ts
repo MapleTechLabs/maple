@@ -120,16 +120,16 @@ export class ConnectorRelay {
 	 * any checkpoint is left, which is how a turn the session is still running gets settled later.
 	 */
 	async alarm(): Promise<void> {
-		const recorded = await this.ctx.storage
-			.list({ prefix: TURN_PREFIX })
-			.catch(() => new Map<string, unknown>())
+		// Unlistable this time: re-armed, so the checkpoints are looked at again on the next tick.
+		const recorded = await this.ctx.storage.list({ prefix: TURN_PREFIX }).catch(() => undefined)
+		if (recorded === undefined) return this.armKeepAlive()
 		for (const [key, checkpoint] of recorded) {
 			if (this.relaying.has(key)) continue
 			this.live += 1
 			this.relaying.add(key)
 			this.ctx.waitUntil(this.settle(key, checkpoint))
 		}
-		if (this.live > 0 || recorded.size > 0) this.armKeepAlive()
+		if (this.live > 0) this.armKeepAlive()
 	}
 
 	/**
@@ -249,10 +249,12 @@ export class ConnectorRelay {
 		})
 	}
 
-	/** Deleted before it is released, for the same reason. */
+	/**
+	 * Left in `relaying`: an alarm that listed the key before the delete must not settle a turn
+	 * that already finished. Keys are per turn, so none is ever reused.
+	 */
 	private async forgetTurn(key: string): Promise<void> {
 		await this.ctx.storage.delete(key).catch(() => undefined)
-		this.relaying.delete(key)
 	}
 
 	/**

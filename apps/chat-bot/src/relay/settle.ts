@@ -50,16 +50,29 @@ export const settleRelayedTurn = Effect.fn("chat_bot.settle_turn")(
 		const expired = (yield* Clock.currentTimeMillis) - checkpoint.recordedAt > CHECKPOINT_TTL_MS
 		if (expired || session === undefined) return done
 		const unreachable = sessionUnreachable(checkpoint.sessionId, "The chat session could not be read")
-		if (yield* Effect.tryPromise({ try: () => session.running(), catch: unreachable })) {
-			const pending: SettleOutcome = "pending"
-			return pending
-		}
-		const workspace = yield* ports.resolveWorkspace(checkpoint.connector, checkpoint.target.workspaceId)
-		if (Option.isNone(workspace)) return done
 		const events = yield* Effect.tryPromise({
 			try: () => session.since(checkpoint.cursor),
 			catch: unreachable,
 		})
+		// Ended when its own `turn-end` is in the log — `running()` alone would also wait out a newer
+		// turn in the same session.
+		const ended = events.some(
+			(event) =>
+				event.type === "turn-end" &&
+				event.task === undefined &&
+				event.messageId === checkpoint.turnMessageId,
+		)
+		if (!ended && (yield* Effect.tryPromise({ try: () => session.running(), catch: unreachable }))) {
+			const pending: SettleOutcome = "pending"
+			return pending
+		}
+		// A session with nothing after the cursor is not the one that ran this turn.
+		if (events.length === 0) {
+			yield* Effect.logWarning("A relayed turn's session has no events to settle it from")
+			return done
+		}
+		const workspace = yield* ports.resolveWorkspace(checkpoint.connector, checkpoint.target.workspaceId)
+		if (Option.isNone(workspace)) return done
 		// The driver's own final render, into the messages already posted: surplus ones emptied, a
 		// tail the answer outgrew them by posted.
 		yield* driveChatTurn({
