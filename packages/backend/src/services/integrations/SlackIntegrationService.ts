@@ -26,7 +26,7 @@ import { Database, type DatabaseError } from "@maple/backend/platform/DatabaseLi
 import { Env } from "@maple/backend/platform/Env"
 import { ApiKeysService } from "@maple/backend/services/org/ApiKeysService"
 import { OAuthStateRepository } from "@maple/backend/services/auth/OAuthStateRepository"
-import { loadActiveWorkspaceByOrg, slackSecretAad, type SlackSecretColumn } from "./slack-bot-token"
+import { loadActiveWorkspaceByOrg, slackSecretAad } from "./slack-bot-token"
 
 const SLACK_PROVIDER = "slack"
 const SLACK_STATE_TTL_MS = 10 * 60_000 // 10 minutes
@@ -115,30 +115,13 @@ const CROSS_ORG_CONFLICT_MESSAGE =
 export const SLACK_CALLBACK_PATH = "/oauth/slack/callback"
 
 /**
- * The bot scopes Maple requests at install time. `chat:write.public` lets the
- * bot post to public channels it hasn't been invited to; `im:*` power the DM
- * agent surface. Keep in sync with the Slack app manifest.
+ * The bot scopes Maple requests at install time — only what alert delivery
+ * uses: `chat.postMessage` (`chat:write`, plus `chat:write.public` to post to
+ * public channels the bot hasn't been invited to) and the destination picker's
+ * `conversations.list` over public and private channels. Installs from before
+ * the trim hold a superset, which {@link missingBotScopes} reads as no drift.
  */
-const SLACK_BOT_SCOPE_LIST = [
-	"app_mentions:read",
-	// Agent surface (top bar / split pane): suggested prompts, thread titles,
-	// status. Without this in the grant, Slack shows the app as a plain bot.
-	"assistant:write",
-	"chat:write",
-	"chat:write.public",
-	"channels:read",
-	"channels:history",
-	"files:write",
-	"groups:read",
-	"groups:history",
-	"im:history",
-	"im:read",
-	"im:write",
-	// Instant "received" ack: the agent reacts :eyes: to messages it will
-	// work on.
-	"reactions:write",
-	"users:read",
-] as const
+const SLACK_BOT_SCOPE_LIST = ["chat:write", "chat:write.public", "channels:read", "groups:read"] as const
 
 export const SLACK_BOT_SCOPES = SLACK_BOT_SCOPE_LIST.join(",")
 
@@ -392,34 +375,22 @@ const make: Effect.Effect<
 		)
 
 	/**
-	 * Decrypt one of a row's secret columns. Both are AAD-bound to
-	 * `(org_id, team_id, column)`, so a ciphertext moved between rows or columns
-	 * fails the GCM tag check and surfaces as a persistence error.
+	 * Decrypt a row's bot token. It is AAD-bound to `(org_id, team_id, column)`,
+	 * so a ciphertext moved between rows fails the GCM tag check and surfaces as
+	 * a persistence error.
 	 */
-	const decryptRowSecret = (
-		row: SlackWorkspaceRow,
-		column: SlackSecretColumn,
-	): Effect.Effect<string, IntegrationsPersistenceError> => {
-		const encrypted =
-			column === "bot_token"
-				? { ciphertext: row.botTokenCiphertext, iv: row.botTokenIv, tag: row.botTokenTag }
-				: {
-						ciphertext: row.apiKeySecretCiphertext,
-						iv: row.apiKeySecretIv,
-						tag: row.apiKeySecretTag,
-					}
-		if (encrypted.ciphertext === null || encrypted.iv === null || encrypted.tag === null) {
+	const decryptBotToken = (row: SlackWorkspaceRow): Effect.Effect<string, IntegrationsPersistenceError> => {
+		const { botTokenCiphertext: ciphertext, botTokenIv: iv, botTokenTag: tag } = row
+		if (ciphertext === null || iv === null || tag === null) {
 			return Effect.fail(
-				new IntegrationsPersistenceError({
-					message: `Stored Slack installation has no ${column === "bot_token" ? "bot token" : "API key"}`,
-				}),
+				new IntegrationsPersistenceError({ message: "Stored Slack installation has no bot token" }),
 			)
 		}
 		return decryptAes256Gcm(
-			{ ciphertext: encrypted.ciphertext, iv: encrypted.iv, tag: encrypted.tag },
+			{ ciphertext, iv, tag },
 			encryptionKey,
 			() => new IntegrationsPersistenceError({ message: "Failed to decrypt stored Slack secret" }),
-			slackSecretAad(row.orgId, row.teamId, column),
+			slackSecretAad(row.orgId, row.teamId, "bot_token"),
 		)
 	}
 
@@ -620,81 +591,10 @@ const make: Effect.Effect<
 		}
 		const priorRow = Option.getOrUndefined(existingByTeam)
 
-		// An in-place re-auth: the same org re-runs the OAuth install over its own
-		// still-active binding — the flow for granting newly required scopes. The
-		// existing API key is KEPT rather than rotated. Reuse requires the key to still be
-		// live (an out-of-band revoke falls back to minting a fresh one), and the
-		// stored ciphertext stays valid as-is because its AAD is (org, team, column)
-		// and both are unchanged on this path.
-		const reusableSecret =
-			priorRow !== undefined &&
-			priorRow.orgId === orgId &&
-			priorRow.revokedAt === null &&
-			priorRow.apiKeyId !== null &&
-			priorRow.apiKeySecretCiphertext !== null &&
-			priorRow.apiKeySecretIv !== null &&
-			priorRow.apiKeySecretTag !== null
-				? {
-						apiKeyId: priorRow.apiKeyId,
-						ciphertext: priorRow.apiKeySecretCiphertext,
-						iv: priorRow.apiKeySecretIv,
-						tag: priorRow.apiKeySecretTag,
-					}
-				: undefined
-		const reusableKeyId = reusableSecret ? decodeApiKeyIdOption(reusableSecret.apiKeyId) : Option.none()
-		const priorKeyLive = Option.isSome(reusableKeyId)
-			? yield* apiKeys.get(orgId, reusableKeyId.value).pipe(
-					Effect.map((key) => !key.revoked && (key.expiresAt === null || key.expiresAt > now)),
-					Effect.catchTags({
-						"@maple/http/errors/ApiKeyNotFoundError": () => Effect.succeed(false),
-						"@maple/http/errors/ApiKeyPersistenceError": (error) =>
-							Effect.fail(
-								new IntegrationsPersistenceError({
-									message: `Failed to validate the existing Slack API key: ${error.message}`,
-								}),
-							),
-					}),
-				)
-			: false
-		const reusedKey = priorKeyLive ? reusableSecret : undefined
-
-		let apiKeyId: string
-		let apiKeyEnc: EncryptedValue
-		// The minted key exists before the row that points at it, so every failure
-		// from here on has to take it back out — otherwise the org keeps an active,
-		// unusable full-access key. A no-op on the reuse path.
-		let revokeMintedKey: Effect.Effect<void> = Effect.void
-		if (reusedKey !== undefined) {
-			apiKeyId = reusedKey.apiKeyId
-			apiKeyEnc = { ciphertext: reusedKey.ciphertext, iv: reusedKey.iv, tag: reusedKey.tag }
-		} else {
-			// Mint a full-access MCP-kind API key for the bot; capture the plaintext.
-			const created = yield* apiKeys
-				.create(orgId, initiatedByUserId, {
-					name: `Slack bot (${teamName ?? teamId})`,
-					kind: "mcp",
-					scopes: null,
-				})
-				.pipe(
-					Effect.mapError(
-						(error) =>
-							new IntegrationsPersistenceError({
-								message: `Failed to mint Slack API key: ${error.message}`,
-							}),
-					),
-				)
-			revokeMintedKey = apiKeys.revoke(orgId, created.id).pipe(Effect.ignore)
-			apiKeyId = created.id
-			apiKeyEnc = yield* encryptValue(
-				created.secret,
-				slackSecretAad(orgId, teamId, "api_key_secret"),
-			).pipe(Effect.tapError(() => revokeMintedKey))
-		}
-
 		const botTokenEnc = yield* encryptValue(
 			access.accessToken,
 			slackSecretAad(orgId, teamId, "bot_token"),
-		).pipe(Effect.tapError(() => revokeMintedKey))
+		)
 
 		const values = {
 			id: priorRow?.id ?? randomUUID(),
@@ -706,11 +606,13 @@ const make: Effect.Effect<
 			botTokenCiphertext: botTokenEnc.ciphertext,
 			botTokenIv: botTokenEnc.iv,
 			botTokenTag: botTokenEnc.tag,
-			apiKeyId,
-			apiKeySecretCiphertext: apiKeyEnc.ciphertext,
-			apiKeySecretIv: apiKeyEnc.iv,
-			apiKeySecretTag: apiKeyEnc.tag,
-			installedByUserId: row.initiatedByUserId,
+			// Rows from before the eve agent's retirement carry a minted Maple API
+			// key; an install over one clears it (and revokes it below).
+			apiKeyId: null,
+			apiKeySecretCiphertext: null,
+			apiKeySecretIv: null,
+			apiKeySecretTag: null,
+			installedByUserId: initiatedByUserId,
 			createdAt: new Date(priorRow ? priorRow.createdAt.getTime() : now),
 			updatedAt: new Date(now),
 			revokedAt: null,
@@ -802,18 +704,13 @@ const make: Effect.Effect<
 						? new IntegrationsForbiddenError({ message: CROSS_ORG_CONFLICT_MESSAGE })
 						: toPersistenceError(error),
 				),
-				Effect.tapError(() => revokeMintedKey),
 			)
 
-		// Best-effort: revoke the API keys of every workspace this install
-		// replaced — the prior same-team row (whose key we just rotated — unless
-		// this was an in-place re-auth that reused it) and any other-team rows we
-		// deactivated above. Bookkeeping must not fail the install now that the DB
-		// write has committed.
-		const keyIdsToRevoke = [
-			reusedKey !== undefined ? null : (priorRow?.apiKeyId ?? null),
-			...writeResult.revokedOtherKeyIds,
-		]
+		// Best-effort: revoke the legacy API keys of every row this install
+		// replaced — the prior same-team row and any other-team rows deactivated
+		// above. Bookkeeping must not fail the install now that the DB write has
+		// committed.
+		const keyIdsToRevoke = [priorRow?.apiKeyId ?? null, ...writeResult.revokedOtherKeyIds]
 		yield* Effect.forEach(keyIdsToRevoke, (rawKeyId) => {
 			if (!rawKeyId) return Effect.void
 			const keyId = decodeApiKeyIdOption(rawKeyId)
@@ -831,7 +728,6 @@ const make: Effect.Effect<
 			orgId,
 			teamId,
 			teamName,
-			reusedApiKey: reusedKey !== undefined,
 		})
 		return { orgId, teamName, updated }
 	})
@@ -902,11 +798,11 @@ const make: Effect.Effect<
 
 	const uninstall = Effect.fn("SlackIntegrationService.uninstall")(function* (orgId: OrgId) {
 		yield* Effect.annotateCurrentSpan({ orgId })
-		// A concurrent `completeInstall` upserts the SAME row id with fresh secrets
-		// and a freshly minted API key, so the revocation update below is a
-		// compare-and-set on (id, revoked_at, api_key_id): if it matches 0 rows we
-		// lost the race — we revoked only the OLD key and must NOT null the new
-		// install's secrets — so re-read and try once more against the fresh row.
+		// A concurrent `completeInstall` upserts the SAME row id with a fresh bot
+		// token, so the revocation update below is a compare-and-set on
+		// (id, revoked_at, updated_at): if it matches 0 rows we lost the race — we
+		// revoked only the OLD token and must NOT null the new install's — so
+		// re-read and try once more against the fresh row.
 		for (let attempt = 0; attempt < 2; attempt++) {
 			const rowOption = yield* loadActiveWorkspaceByOrg(database, orgId).pipe(
 				Effect.mapError(toPersistenceError),
@@ -914,7 +810,8 @@ const make: Effect.Effect<
 			if (Option.isNone(rowOption)) return { uninstalled: false }
 			const row = rowOption.value
 			const now = yield* Clock.currentTimeMillis
-			// Revoke the minted API key (best-effort — bookkeeping must not fail the uninstall).
+			// Revoke a pre-retirement row's legacy API key (best-effort — bookkeeping
+			// must not fail the uninstall).
 			if (row.apiKeyId) {
 				const keyId = decodeApiKeyIdOption(row.apiKeyId)
 				if (Option.isSome(keyId)) {
@@ -923,7 +820,7 @@ const make: Effect.Effect<
 			}
 			// Kill the token at Slack too — forgetting it locally leaves a live `xoxb-`
 			// token on the workspace. Best-effort like the key revoke above.
-			const revoked = yield* decryptRowSecret(row, "bot_token").pipe(
+			const revoked = yield* decryptBotToken(row).pipe(
 				Effect.flatMap(revokeBotTokenUpstream),
 				Effect.tapError((error) =>
 					Effect.logWarning("Slack auth.revoke failed", {
@@ -935,8 +832,8 @@ const make: Effect.Effect<
 				Effect.match({ onFailure: () => false, onSuccess: () => true }),
 			)
 			// Drop the stored secrets so a revoked row stops holding decryptable
-			// credentials. The API key secret always goes: `apiKeys.revoke` above kills
-			// it locally and only needs `apiKeyId`. The bot token is kept when Slack
+			// credentials. A legacy API key secret always goes: `apiKeys.revoke` above
+			// kills it locally and only needs `apiKeyId`. The bot token is kept when Slack
 			// did NOT confirm the revoke — it is the only way to retry killing a token
 			// that is still live upstream.
 			const updated = yield* database
@@ -958,9 +855,7 @@ const make: Effect.Effect<
 							and(
 								eq(slackWorkspaces.id, row.id),
 								isNull(slackWorkspaces.revokedAt),
-								row.apiKeyId === null
-									? isNull(slackWorkspaces.apiKeyId)
-									: eq(slackWorkspaces.apiKeyId, row.apiKeyId),
+								eq(slackWorkspaces.updatedAt, row.updatedAt),
 							),
 						)
 						.returning({ id: slackWorkspaces.id }),
@@ -1149,7 +1044,7 @@ const make: Effect.Effect<
 				}),
 			)
 		}
-		const botToken = yield* decryptRowSecret(rowOption.value, "bot_token")
+		const botToken = yield* decryptBotToken(rowOption.value)
 		const walk = collectChannelPages(botToken).pipe(
 			Effect.map((result) => ({
 				channels: sortChannels(result.channels),
@@ -1210,9 +1105,8 @@ const make: Effect.Effect<
 		yield* Effect.annotateCurrentSpan({ orgId })
 		const now = yield* Clock.currentTimeMillis
 		// Compare-and-set on the snapshot: a concurrent `completeInstall` reuses
-		// the same row id and writes fresh secrets plus a newly minted API key, so
-		// an unconditional update-by-id would mark that fresh install revoked, null
-		// its secrets, and leave the new full-access key active but orphaned. The
+		// the same row id and writes a fresh bot token, so an unconditional
+		// update-by-id would mark that fresh install revoked and null its token. The
 		// `updatedAt` guard makes the transition apply only to the exact version
 		// probed dead; a lost race leaves the reinstall alone (the hourly
 		// reconciliation re-probes it if its token is also dead).
@@ -1249,11 +1143,11 @@ const make: Effect.Effect<
 			})
 			return { revoked: false }
 		}
-		// Revoke the minted API key only for the version we actually transitioned
+		// Revoke a legacy API key only for the version we actually transitioned
 		// (best-effort — bookkeeping must not fail the revoke). Unlike `uninstall`,
 		// there is no `auth.revoke` call here: the caller already knows the bot
 		// token is dead (Slack told us via the event, or reconciliation just
-		// confirmed it via `auth.test`), so both secret columns were dropped above.
+		// confirmed it via `auth.test`), so every secret column was dropped above.
 		if (row.apiKeyId) {
 			const keyId = decodeApiKeyIdOption(row.apiKeyId)
 			if (Option.isSome(keyId)) {
@@ -1280,7 +1174,7 @@ const make: Effect.Effect<
 	 * on unattended.
 	 */
 	const probeAndRevokeIfDead = Effect.fnUntraced(function* (row: SlackWorkspaceRow) {
-		const outcome = yield* decryptRowSecret(row, "bot_token").pipe(
+		const outcome = yield* decryptBotToken(row).pipe(
 			Effect.flatMap(probeBotToken),
 			Effect.match({
 				onFailure: () => false,

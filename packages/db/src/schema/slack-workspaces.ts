@@ -4,15 +4,11 @@ import { index, pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-cor
 
 // Slack workspace installations. One row per Slack team (workspace) that has
 // installed the Maple Slack app via OAuth. A row binds a Slack `teamId` to a
-// Maple org and stores, encrypted, both the Slack bot token (used to post
-// messages / list channels) and a minted Maple API key secret (once handed to
-// the retired standalone Slack agent; still minted and revoked with the install).
-//
-// Unlike normal API keys — which are stored hash-only — the bot needs the raw
-// `maple_ak_…` secret at runtime, so we keep it encrypted (AES-256-GCM, same
-// column pattern as `alert_destinations`) alongside the key id. The ciphertexts
-// are bound to `(org_id, team_id, column)` via GCM additional authenticated data
-// (`slackSecretAad`), so a triple cannot be relocated to another row.
+// Maple org and stores, encrypted, the Slack bot token alert delivery posts
+// with (AES-256-GCM, same column pattern as `alert_destinations`). The
+// ciphertext is bound to `(org_id, team_id, column)` via GCM additional
+// authenticated data (`slackSecretAad`), so a triple cannot be relocated to
+// another row.
 //
 // `org_id` carries no foreign key: orgs live in Clerk, not Postgres, so no table
 // in this schema references them. Org deletion is handled by the explicit
@@ -35,10 +31,10 @@ export const slackWorkspaces = pgTable(
 		botTokenCiphertext: text("bot_token_ciphertext"),
 		botTokenIv: text("bot_token_iv"),
 		botTokenTag: text("bot_token_tag"),
-		// Minted Maple API key handed to the bot. `apiKeyId` references the
-		// `api_keys` row (for revocation); the encrypted columns hold the raw
-		// `maple_ak_…` secret so we can decrypt and forward it to the bot. Nullable
-		// for the same reason as the bot token — revocation only needs `apiKeyId`.
+		// Legacy: a Maple API key once minted per install for the retired
+		// standalone Slack agent. Nothing writes these any more; installs,
+		// uninstalls and revocations still revoke a leftover `apiKeyId` until the
+		// columns are dropped.
 		apiKeyId: text("api_key_id"),
 		apiKeySecretCiphertext: text("api_key_secret_ciphertext"),
 		apiKeySecretIv: text("api_key_secret_iv"),
@@ -47,7 +43,7 @@ export const slackWorkspaces = pgTable(
 		createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull(),
 		updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date" }).notNull(),
 		// Set when the install is uninstalled/revoked. Revoked rows read as "not
-		// installed" and are skipped by the bot-resolve + dispatch lookups.
+		// installed" and are skipped by the dispatch lookups.
 		revokedAt: timestamp("revoked_at", { withTimezone: true, mode: "date" }),
 		// Why `revoked_at` was set: `uninstalled` (dashboard), `superseded` (replaced
 		// by a same-org install of another team), or a remote reason — `app_uninstalled`

@@ -59,7 +59,7 @@ export const V2SlackIntegrationStatus = Schema.Struct({
 	missing_scopes: Schema.Array(Schema.String).annotate({
 		description:
 			"Bot scopes Maple now requires that the current installation has not granted. Non-empty means the app should be reconnected (a fresh OAuth install over the existing one) to pick up the new permissions — the bot keeps its channel memberships. Always empty when not installed.",
-		examples: [["reactions:write"]],
+		examples: [["groups:read"]],
 	}),
 }).annotate({
 	identifier: "SlackIntegration",

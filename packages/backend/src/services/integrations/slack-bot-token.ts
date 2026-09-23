@@ -16,13 +16,12 @@ import { Env } from "@maple/backend/platform/Env"
  */
 
 /** Which `slack_workspaces` secret an AAD binds to. */
-export type SlackSecretColumn = "bot_token" | "api_key_secret"
+export type SlackSecretColumn = "bot_token"
 
 /**
  * AAD for a `slack_workspaces` secret. Authenticated but not stored, so it binds
  * the ciphertext to its row: an attacker with DB write access cannot relocate an
- * `(iv, ciphertext, tag)` triple onto another org's row, and the bot token and
- * the Maple API key are not interchangeable with each other.
+ * `(iv, ciphertext, tag)` triple onto another org's row.
  */
 export const slackSecretAad = (orgId: string, teamId: string, column: SlackSecretColumn): Buffer =>
 	Buffer.from(`slack_workspaces:v1:${orgId}:${teamId}:${column}`, "utf8")

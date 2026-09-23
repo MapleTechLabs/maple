@@ -3,15 +3,10 @@ import { afterEach, assert, describe, it } from "@effect/vitest"
 import { ConfigProvider, Effect, Fiber, Layer, Schema } from "effect"
 import { TestClock } from "effect/testing"
 import { FetchHttpClient } from "effect/unstable/http"
-import { ApiKeyPersistenceError, OrgId, UserId } from "@maple/domain/http"
+import { OrgId, UserId } from "@maple/domain/http"
 import { Env } from "@maple/backend/platform/Env"
 import { SLACK_BOT_SCOPES, SlackIntegrationService } from "./SlackIntegrationService"
-import {
-	resolveSlackBotTokenForDispatch,
-	slackSecretAad,
-	SlackBotTokenResolver,
-	type SlackSecretColumn,
-} from "./slack-bot-token"
+import { resolveSlackBotTokenForDispatch, slackSecretAad, SlackBotTokenResolver } from "./slack-bot-token"
 import { ApiKeysService } from "@maple/backend/services/org/ApiKeysService"
 import { OAuthStateRepository } from "@maple/backend/services/auth/OAuthStateRepository"
 import { Database } from "@maple/backend/platform/DatabaseLive"
@@ -58,12 +53,12 @@ const makeConfig = (slackConfigured = true) =>
 const makeLayer = (
 	testDb: TestDb,
 	slackConfigured = true,
-	apiKeysLayer: typeof ApiKeysService.layer = ApiKeysService.layer,
+	databaseLayer: Layer.Layer<Database> = testDb.layer,
 ) =>
 	Layer.effect(SlackIntegrationService, SlackIntegrationService.make).pipe(
 		Layer.provide(FetchHttpClient.layer),
-		Layer.provide(Layer.mergeAll(apiKeysLayer, OAuthStateRepository.layer)),
-		Layer.provide(testDb.layer),
+		Layer.provide(Layer.mergeAll(ApiKeysService.layer, OAuthStateRepository.layer)),
+		Layer.provide(databaseLayer),
 		Layer.provide(Env.layer),
 		Layer.provide(makeConfig(slackConfigured)),
 	)
@@ -114,32 +109,39 @@ const runInterleaved = <A, E, R>(
 	})
 
 /**
- * Wrap the real ApiKeysService so `create` runs `inject` first. `apiKeys.create`
- * is the only seam between completeInstall's cross-org pre-check and its
- * transaction, so this lets a test interleave a "concurrent" write there and
- * exercise the transactional (setWhere) race path.
+ * Wrap Database so `inject` runs once, just before the first `db.transaction` —
+ * completeInstall's install transaction. Nothing else touches the database
+ * between the cross-org pre-check and that transaction, so this is how a test
+ * lands a "concurrent" write there and exercises the transactional (setWhere)
+ * race path.
  */
-const apiKeysWithInjectedCreate = (inject: () => Promise<void>) =>
+const databaseInjectingBeforeTransaction = (testDb: TestDb, inject: () => Promise<void>) =>
 	Layer.effect(
-		ApiKeysService,
+		Database,
 		Effect.gen(function* () {
-			const real = yield* ApiKeysService
-			const create: typeof real.create = (...args) =>
-				Effect.promise(inject).pipe(Effect.flatMap(() => real.create(...args)))
-			return { ...real, create } as typeof real
+			const real = yield* Database
+			let injected = false
+			return Database.of({
+				execute: (fn) =>
+					real.execute((db) =>
+						fn(
+							new Proxy(db, {
+								get: (target, prop, receiver) => {
+									if (prop !== "transaction" || injected)
+										return Reflect.get(target, prop, receiver)
+									injected = true
+									const transaction: typeof target.transaction = (...args) =>
+										Effect.promise(inject).pipe(
+											Effect.andThen(Effect.suspend(() => target.transaction(...args))),
+										)
+									return transaction
+								},
+							}),
+						),
+					),
+			})
 		}),
-	).pipe(Layer.provide(ApiKeysService.layer)) as typeof ApiKeysService.layer
-
-/** Simulate a transient API-key store failure at the re-auth reuse check. */
-const apiKeysWithFailingGet = Layer.effect(
-	ApiKeysService,
-	Effect.gen(function* () {
-		const real = yield* ApiKeysService
-		const get: typeof real.get = () =>
-			Effect.fail(new ApiKeyPersistenceError({ message: "simulated API-key lookup failure" }))
-		return { ...real, get } as typeof real
-	}),
-).pipe(Layer.provide(ApiKeysService.layer)) as typeof ApiKeysService.layer
+	).pipe(Layer.provide(testDb.layer))
 
 /** The pure dispatch helper needs only Database — build a minimal layer for it. */
 const databaseLayer = (testDb: TestDb) => testDb.layer
@@ -241,8 +243,8 @@ const slackAuthTestFetch = (responsesByToken: Record<string, unknown>): typeof g
 const withFetch = (
 	testDb: TestDb,
 	fetchImpl: typeof globalThis.fetch,
-	apiKeysLayer?: typeof ApiKeysService.layer,
-) => Layer.mergeAll(makeLayer(testDb, true, apiKeysLayer), Layer.succeed(FetchHttpClient.Fetch, fetchImpl))
+	databaseLayer?: Layer.Layer<Database>,
+) => Layer.mergeAll(makeLayer(testDb, true, databaseLayer), Layer.succeed(FetchHttpClient.Fetch, fetchImpl))
 
 const stateFromInstallUrl = (url: string): string => {
 	const state = new URL(url).searchParams.get("state")
@@ -253,17 +255,26 @@ const stateFromInstallUrl = (url: string): string => {
 const trackedDbs: TestDb[] = []
 afterEach(() => cleanupTestDbs(trackedDbs))
 
-const aadFor = (opts: { orgId: string; teamId: string }, column: SlackSecretColumn) =>
-	slackSecretAad(opts.orgId, opts.teamId, column)
-
-/** Insert an active, encrypted slack_workspaces row directly (bypasses OAuth). */
+/**
+ * Insert an active, encrypted slack_workspaces row directly (bypasses OAuth). It
+ * carries a legacy API key secret, as rows installed before the standalone
+ * Slack agent's retirement do, under a key id with no `api_keys` row.
+ */
 const insertWorkspace = async (
 	testDb: TestDb,
 	opts: { id: string; orgId: string; teamId: string; teamName: string; botToken: string; apiKey: string },
 ) => {
 	// Secrets are AAD-bound to (orgId, teamId, column) — fixtures must match.
-	const bot = encryptField(opts.botToken, ENCRYPTION_KEY, aadFor(opts, "bot_token"))
-	const key = encryptField(opts.apiKey, ENCRYPTION_KEY, aadFor(opts, "api_key_secret"))
+	const bot = encryptField(
+		opts.botToken,
+		ENCRYPTION_KEY,
+		slackSecretAad(opts.orgId, opts.teamId, "bot_token"),
+	)
+	const key = encryptField(
+		opts.apiKey,
+		ENCRYPTION_KEY,
+		Buffer.from(`slack_workspaces:v1:${opts.orgId}:${opts.teamId}:api_key_secret`, "utf8"),
+	)
 	await executeSql(
 		testDb,
 		`INSERT INTO slack_workspaces (
@@ -290,6 +301,30 @@ const insertWorkspace = async (
 		],
 	)
 }
+
+/**
+ * Point a workspace row at a live `api_keys` row — the full-access key installs
+ * minted for the retired standalone Slack agent — so a test can check that it
+ * is revoked.
+ */
+const attachLegacyApiKey = async (testDb: TestDb, teamId: string, keyId: string) => {
+	await executeSql(
+		testDb,
+		`INSERT INTO api_keys (id, org_id, name, key_hash, key_prefix, kind, created_at, created_by)
+		 SELECT $1, org_id, 'Slack bot', $2, 'maple_ak_', 'mcp', now(), 'user_installer'
+		 FROM slack_workspaces WHERE team_id = $3`,
+		[keyId, `hash-${keyId}`, teamId],
+	)
+	await executeSql(testDb, "UPDATE slack_workspaces SET api_key_id = $1 WHERE team_id = $2", [
+		keyId,
+		teamId,
+	])
+}
+
+const isApiKeyRevoked = (testDb: TestDb, keyId: string) =>
+	Effect.promise(() =>
+		queryFirstRow<{ revoked: boolean }>(testDb, "SELECT revoked FROM api_keys WHERE id = $1", [keyId]),
+	).pipe(Effect.map((row) => row?.revoked))
 
 describe("SlackIntegrationService", () => {
 	it.effect("startInstall persists a single-use state and returns a Slack authorize URL", () => {
@@ -518,46 +553,36 @@ describe("SlackIntegrationService", () => {
 		)
 	})
 
-	it.effect("uninstall revokes the API key minted for the bot", () => {
+	it.effect("uninstall revokes a legacy API key left on the row", () => {
 		const testDb = createTestDb(trackedDbs)
-		const teamRef = { current: { id: "T-KEY", name: "KeyOrg" } }
 		const revokeCalls: Array<string | null> = []
+		const keyId = "aaaaaaaa-2222-4333-8444-555555555555"
 		return Effect.gen(function* () {
+			yield* Effect.promise(async () => {
+				await insertWorkspace(testDb, {
+					id: "sw_key",
+					orgId: "org_key",
+					teamId: "T-KEY",
+					teamName: "KeyOrg",
+					botToken: "xoxb-T-KEY",
+					apiKey: "maple_ak_key",
+				})
+				await attachLegacyApiKey(testDb, "T-KEY", keyId)
+			})
+			assert.strictEqual(yield* isApiKeyRevoked(testDb, keyId), false)
+
 			const slack = yield* SlackIntegrationService
-			const start = yield* slack.startInstall(asOrgId("org_key"), asUserId("user_key"), "https://cb")
-			yield* slack.completeInstall("code_k", stateFromInstallUrl(start.url))
-
-			const workspace = yield* Effect.promise(() =>
-				queryFirstRow<{ api_key_id: string }>(
-					testDb,
-					"SELECT api_key_id FROM slack_workspaces WHERE team_id = 'T-KEY'",
-				),
-			)
-			assert.isString(workspace?.api_key_id)
-			const beforeUninstall = yield* Effect.promise(() =>
-				queryFirstRow<{ revoked: boolean }>(testDb, "SELECT revoked FROM api_keys WHERE id = $1", [
-					workspace!.api_key_id,
-				]),
-			)
-			assert.strictEqual(beforeUninstall?.revoked, false)
-
 			const result = yield* slack.uninstall(asOrgId("org_key"))
 			assert.strictEqual(result.uninstalled, true)
 
-			// The bot's full-access key must not outlive the installation.
-			const afterUninstall = yield* Effect.promise(() =>
-				queryFirstRow<{ revoked: boolean }>(testDb, "SELECT revoked FROM api_keys WHERE id = $1", [
-					workspace!.api_key_id,
-				]),
-			)
-			assert.strictEqual(afterUninstall?.revoked, true)
+			// The full-access key must not outlive the installation.
+			assert.strictEqual(yield* isApiKeyRevoked(testDb, keyId), true)
 			assert.deepStrictEqual(revokeCalls, ["Bearer xoxb-T-KEY"])
 		}).pipe(
 			Effect.provide(
-				Layer.mergeAll(
-					makeLayer(testDb),
-					testDb.layer,
-					Layer.succeed(FetchHttpClient.Fetch, slackInstallAndRevokeFetch(teamRef, revokeCalls)),
+				withFetch(
+					testDb,
+					slackInstallAndRevokeFetch({ current: { id: "T-KEY", name: "KeyOrg" } }, revokeCalls),
 				),
 			),
 		)
@@ -653,39 +678,6 @@ describe("SlackIntegrationService", () => {
 		}).pipe(Effect.provide(databaseLayer(testDb)))
 	})
 
-	it.effect("the bot token and the Maple API key ciphertexts are not interchangeable", () => {
-		const testDb = createTestDb(trackedDbs)
-		return Effect.gen(function* () {
-			yield* Effect.promise(() =>
-				insertWorkspace(testDb, {
-					id: "sw_swap",
-					orgId: "org_swap",
-					teamId: "T-SWAP",
-					teamName: "Swap",
-					botToken: "xoxb-swap",
-					apiKey: "maple_ak_swap",
-				}),
-			)
-			// Same row, columns swapped — the AAD names the column, so neither side
-			// decrypts.
-			yield* Effect.promise(() =>
-				executeSql(
-					testDb,
-					`UPDATE slack_workspaces SET
-						bot_token_ciphertext = api_key_secret_ciphertext,
-						bot_token_iv = api_key_secret_iv,
-						bot_token_tag = api_key_secret_tag
-					WHERE id = 'sw_swap'`,
-				),
-			)
-			const database = yield* Database
-			const error = yield* Effect.flip(
-				resolveSlackBotTokenForDispatch(database, ENCRYPTION_KEY, "org_swap"),
-			)
-			assert.include(error.message, "decrypt")
-		}).pipe(Effect.provide(databaseLayer(testDb)))
-	})
-
 	it.effect("resolveSlackBotTokenForDispatch fails when no active install exists", () => {
 		const testDb = createTestDb(trackedDbs)
 		return Effect.gen(function* () {
@@ -707,13 +699,8 @@ describe("SlackIntegrationService", () => {
 			// First install → workspace T1 becomes active.
 			const start1 = yield* slack.startInstall(asOrgId("org_a"), asUserId("user_a"), "https://cb")
 			yield* slack.completeInstall("code_1", stateFromInstallUrl(start1.url))
-			const firstKey = yield* Effect.promise(() =>
-				queryFirstRow<{ api_key_id: string }>(
-					testDb,
-					"SELECT api_key_id FROM slack_workspaces WHERE team_id = 'T1'",
-				),
-			)
-			assert.isString(firstKey?.api_key_id)
+			const firstKeyId = "bbbbbbbb-2222-4333-8444-555555555555"
+			yield* Effect.promise(() => attachLegacyApiKey(testDb, "T1", firstKeyId))
 
 			// Second install of a DIFFERENT team on the SAME org → replaces T1.
 			teamRef.current = { id: "T2", name: "TeamTwo" }
@@ -744,13 +731,8 @@ describe("SlackIntegrationService", () => {
 			const token = yield* resolveSlackBotTokenForDispatch(database, ENCRYPTION_KEY, "org_a")
 			assert.strictEqual(token, "xoxb-T2")
 
-			// The first workspace's minted API key was revoked.
-			const keyRow = yield* Effect.promise(() =>
-				queryFirstRow<{ revoked: boolean }>(testDb, "SELECT revoked FROM api_keys WHERE id = $1", [
-					firstKey!.api_key_id,
-				]),
-			)
-			assert.strictEqual(keyRow?.revoked, true)
+			// The replaced workspace's legacy API key was revoked.
+			assert.strictEqual(yield* isApiKeyRevoked(testDb, firstKeyId), true)
 		}).pipe(
 			Effect.provide(
 				Layer.mergeAll(
@@ -796,9 +778,10 @@ describe("SlackIntegrationService", () => {
 	})
 
 	it.effect(
-		"completeInstall over an active same-org install keeps the API key and refreshes the scope (zero-downtime re-auth)",
+		"completeInstall over an active same-org install refreshes the scope in place and retires a legacy API key",
 		() => {
 			const testDb = createTestDb(trackedDbs)
+			const legacyKeyId = "cccccccc-2222-4333-8444-555555555555"
 			return Effect.gen(function* () {
 				const slack = yield* SlackIntegrationService
 
@@ -806,12 +789,14 @@ describe("SlackIntegrationService", () => {
 				const first = yield* slack.completeInstall("code_1", stateFromInstallUrl(start1.url))
 				assert.strictEqual(first.updated, false)
 				const firstRow = yield* Effect.promise(() =>
-					queryFirstRow<{ id: string; api_key_id: string; scope: string }>(
+					queryFirstRow<{ id: string; scope: string }>(
 						testDb,
-						"SELECT id, api_key_id, scope FROM slack_workspaces WHERE team_id = 'T-RE'",
+						"SELECT id, scope FROM slack_workspaces WHERE team_id = 'T-RE'",
 					),
 				)
 				assert.strictEqual(firstRow?.scope, "chat:write")
+				// A row installed before the standalone agent's retirement.
+				yield* Effect.promise(() => attachLegacyApiKey(testDb, "T-RE", legacyKeyId))
 
 				// Re-auth WITHOUT uninstalling — the scope-upgrade flow.
 				const start2 = yield* slack.startInstall(asOrgId("org_re"), asUserId("user_re"), "https://cb")
@@ -821,29 +806,24 @@ describe("SlackIntegrationService", () => {
 				const secondRow = yield* Effect.promise(() =>
 					queryFirstRow<{
 						id: string
-						api_key_id: string
+						api_key_id: string | null
+						api_key_secret_ciphertext: string | null
 						scope: string
 						revoked_at: string | null
 					}>(
 						testDb,
-						"SELECT id, api_key_id, scope, revoked_at FROM slack_workspaces WHERE team_id = 'T-RE'",
+						"SELECT id, api_key_id, api_key_secret_ciphertext, scope, revoked_at FROM slack_workspaces WHERE team_id = 'T-RE'",
 					),
 				)
-				// Same row, same API key — the re-auth keeps the installation's
-				// credentials valid (no downtime); only the grant is refreshed.
+				// Same row, still active — only the grant is refreshed.
 				assert.strictEqual(secondRow?.id, firstRow?.id)
-				assert.strictEqual(secondRow?.api_key_id, firstRow?.api_key_id)
-				assert.strictEqual(secondRow?.scope, "chat:write,reactions:write")
+				assert.strictEqual(secondRow?.scope, "chat:write,channels:read")
 				assert.isNull(secondRow?.revoked_at)
+				// The legacy key is revoked and forgotten rather than carried forward.
+				assert.isNull(secondRow?.api_key_id)
+				assert.isNull(secondRow?.api_key_secret_ciphertext)
+				assert.strictEqual(yield* isApiKeyRevoked(testDb, legacyKeyId), true)
 
-				const keyRow = yield* Effect.promise(() =>
-					queryFirstRow<{ revoked: boolean }>(
-						testDb,
-						"SELECT revoked FROM api_keys WHERE id = $1",
-						[firstRow!.api_key_id],
-					),
-				)
-				assert.strictEqual(keyRow?.revoked, false)
 				const database = yield* Database
 				const token = yield* resolveSlackBotTokenForDispatch(database, ENCRYPTION_KEY, "org_re")
 				assert.strictEqual(token, "xoxb-T-RE")
@@ -861,7 +841,7 @@ describe("SlackIntegrationService", () => {
 									access_token: "xoxb-T-RE",
 									token_type: "bot",
 									// The re-approval is what grants the newly required scope.
-									scope: call === 0 ? "chat:write" : "chat:write,reactions:write",
+									scope: call === 0 ? "chat:write" : "chat:write,channels:read",
 									bot_user_id: "U0BOT",
 									team: { id: "T-RE", name: "ReAuth" },
 								}),
@@ -874,155 +854,34 @@ describe("SlackIntegrationService", () => {
 		},
 	)
 
-	it.effect("completeInstall does not rotate the API key when the reuse lookup fails", () => {
+	it.effect("completeInstall mints no Maple API key", () => {
 		const testDb = createTestDb(trackedDbs)
+		const teamRef = { current: { id: "T-NOKEY", name: "NoKey" } }
 		return Effect.gen(function* () {
 			const slack = yield* SlackIntegrationService
-
-			const firstStart = yield* slack.startInstall(
-				asOrgId("org_re_lookup"),
-				asUserId("user_re_lookup"),
+			const start = yield* slack.startInstall(
+				asOrgId("org_nokey"),
+				asUserId("user_nokey"),
 				"https://cb",
 			)
-			yield* slack.completeInstall("code_1", stateFromInstallUrl(firstStart.url))
-			const before = yield* Effect.promise(() =>
-				queryFirstRow<{ api_key_id: string; scope: string }>(
+			yield* slack.completeInstall("code_1", stateFromInstallUrl(start.url))
+
+			const row = yield* Effect.promise(() =>
+				queryFirstRow<{ api_key_id: string | null; api_key_secret_ciphertext: string | null }>(
 					testDb,
-					"SELECT api_key_id, scope FROM slack_workspaces WHERE team_id = 'T-RE-LOOKUP'",
+					"SELECT api_key_id, api_key_secret_ciphertext FROM slack_workspaces WHERE team_id = 'T-NOKEY'",
 				),
 			)
-
-			const secondStart = yield* slack.startInstall(
-				asOrgId("org_re_lookup"),
-				asUserId("user_re_lookup"),
-				"https://cb",
-			)
-			const error = yield* slack
-				.completeInstall("code_2", stateFromInstallUrl(secondStart.url))
-				.pipe(Effect.flip)
-			assert.strictEqual(error._tag, "@maple/http/errors/IntegrationsPersistenceError")
-
-			const after = yield* Effect.promise(() =>
-				queryFirstRow<{ api_key_id: string; scope: string }>(
+			assert.isNull(row?.api_key_id)
+			assert.isNull(row?.api_key_secret_ciphertext)
+			const keys = yield* Effect.promise(() =>
+				queryFirstRow<{ n: number }>(
 					testDb,
-					"SELECT api_key_id, scope FROM slack_workspaces WHERE team_id = 'T-RE-LOOKUP'",
+					"SELECT count(*)::int AS n FROM api_keys WHERE org_id = 'org_nokey'",
 				),
 			)
-			const keyCount = yield* Effect.promise(() =>
-				queryFirstRow<{ count: number }>(
-					testDb,
-					"SELECT count(*)::int AS count FROM api_keys WHERE org_id = 'org_re_lookup'",
-				),
-			)
-			assert.deepStrictEqual(after, before)
-			assert.strictEqual(keyCount?.count, 1)
-		}).pipe(
-			Effect.provide(
-				withFetch(
-					testDb,
-					slackApiFetch(OAUTH_URL, (_url, call) =>
-						jsonResponse({
-							ok: true,
-							access_token: "xoxb-T-RE-LOOKUP",
-							token_type: "bot",
-							scope: call === 0 ? "chat:write" : "chat:write,reactions:write",
-							bot_user_id: "U0BOT",
-							team: { id: "T-RE-LOOKUP", name: "ReAuth Lookup" },
-						}),
-					),
-					apiKeysWithFailingGet,
-				),
-			),
-		)
-	})
-
-	it.effect("completeInstall replaces an active binding's missing API key", () => {
-		const testDb = createTestDb(trackedDbs)
-		return Effect.gen(function* () {
-			const slack = yield* SlackIntegrationService
-
-			const firstStart = yield* slack.startInstall(
-				asOrgId("org_re_missing"),
-				asUserId("user_re_missing"),
-				"https://cb",
-			)
-			yield* slack.completeInstall("code_1", stateFromInstallUrl(firstStart.url))
-			const firstRow = yield* Effect.promise(() =>
-				queryFirstRow<{ api_key_id: string }>(
-					testDb,
-					"SELECT api_key_id FROM slack_workspaces WHERE team_id = 'T-RE-MISSING'",
-				),
-			)
-			yield* Effect.promise(() =>
-				executeSql(testDb, "DELETE FROM api_keys WHERE id = $1", [firstRow!.api_key_id]),
-			)
-
-			const secondStart = yield* slack.startInstall(
-				asOrgId("org_re_missing"),
-				asUserId("user_re_missing"),
-				"https://cb",
-			)
-			const second = yield* slack.completeInstall("code_2", stateFromInstallUrl(secondStart.url))
-			assert.strictEqual(second.updated, true)
-
-			const secondRow = yield* Effect.promise(() =>
-				queryFirstRow<{ api_key_id: string; scope: string }>(
-					testDb,
-					"SELECT api_key_id, scope FROM slack_workspaces WHERE team_id = 'T-RE-MISSING'",
-				),
-			)
-			assert.notStrictEqual(secondRow?.api_key_id, firstRow?.api_key_id)
-			assert.strictEqual(secondRow?.scope, "chat:write,reactions:write")
-		}).pipe(
-			Effect.provide(
-				withFetch(
-					testDb,
-					slackApiFetch(OAUTH_URL, (_url, call) =>
-						jsonResponse({
-							ok: true,
-							access_token: "xoxb-T-RE-MISSING",
-							token_type: "bot",
-							scope: call === 0 ? "chat:write" : "chat:write,reactions:write",
-							bot_user_id: "U0BOT",
-							team: { id: "T-RE-MISSING", name: "ReAuth Missing" },
-						}),
-					),
-				),
-			),
-		)
-	})
-
-	it.effect("completeInstall after an uninstall mints a fresh API key (no reuse of a revoked key)", () => {
-		const testDb = createTestDb(trackedDbs)
-		const teamRef = { current: { id: "T-ROT", name: "Rotate" } }
-		const revokeCalls: Array<string | null> = []
-		return Effect.gen(function* () {
-			const slack = yield* SlackIntegrationService
-
-			const start1 = yield* slack.startInstall(asOrgId("org_rot"), asUserId("user_rot"), "https://cb")
-			yield* slack.completeInstall("code_1", stateFromInstallUrl(start1.url))
-			const firstRow = yield* Effect.promise(() =>
-				queryFirstRow<{ api_key_id: string }>(
-					testDb,
-					"SELECT api_key_id FROM slack_workspaces WHERE team_id = 'T-ROT'",
-				),
-			)
-			yield* slack.uninstall(asOrgId("org_rot"))
-
-			const start2 = yield* slack.startInstall(asOrgId("org_rot"), asUserId("user_rot"), "https://cb")
-			const second = yield* slack.completeInstall("code_2", stateFromInstallUrl(start2.url))
-			// A reinstall over a revoked row is a fresh connect, not an update.
-			assert.strictEqual(second.updated, false)
-
-			const secondRow = yield* Effect.promise(() =>
-				queryFirstRow<{ api_key_id: string; revoked_at: string | null }>(
-					testDb,
-					"SELECT api_key_id, revoked_at FROM slack_workspaces WHERE team_id = 'T-ROT'",
-				),
-			)
-			assert.isNull(secondRow?.revoked_at)
-			assert.notStrictEqual(secondRow?.api_key_id, firstRow?.api_key_id)
-		}).pipe(Effect.provide(withFetch(testDb, slackInstallAndRevokeFetch(teamRef, revokeCalls))))
+			assert.strictEqual(keys?.n, 0)
+		}).pipe(Effect.provide(withFetch(testDb, slackOAuthFetch(teamRef))))
 	})
 
 	it.effect("getStatus reports required scopes the stored grant is missing", () => {
@@ -1041,9 +900,20 @@ describe("SlackIntegrationService", () => {
 			)
 			const slack = yield* SlackIntegrationService
 			const status = yield* slack.getStatus(asOrgId("org_drift"))
-			assert.include(status.missingScopes, "reactions:write")
-			assert.include(status.missingScopes, "app_mentions:read")
-			assert.notInclude(status.missingScopes, "chat:write")
+			assert.deepStrictEqual(
+				[...status.missingScopes],
+				["chat:write.public", "channels:read", "groups:read"],
+			)
+
+			// An install granted the pre-trim scope list (agent scopes included) holds
+			// a superset of today's — trimming must not nag it to reconnect.
+			yield* Effect.promise(() =>
+				executeSql(testDb, "UPDATE slack_workspaces SET scope = $1 WHERE id = 'sw_drift'", [
+					"app_mentions:read,assistant:write,chat:write,chat:write.public,channels:read,channels:history,files:write,groups:read,groups:history,im:history,im:read,im:write,reactions:write,users:read",
+				]),
+			)
+			const preTrim = yield* slack.getStatus(asOrgId("org_drift"))
+			assert.deepStrictEqual([...preTrim.missingScopes], [])
 
 			// A grant covering everything (order/spacing-insensitive) reports no drift.
 			yield* Effect.promise(() =>
@@ -1107,8 +977,8 @@ describe("SlackIntegrationService", () => {
 		() => {
 			const testDb = createTestDb(trackedDbs)
 			const teamRef = { current: { id: "T-race", name: "Race" } }
-			// Injected between the pre-check and the transaction (apiKeys.create is the
-			// only seam in between): a "concurrent" install binds T-race to org_victim.
+			// Injected between the pre-check and the transaction: a "concurrent"
+			// install binds T-race to org_victim.
 			let injected = false
 			const inject = async () => {
 				if (injected) return
@@ -1162,22 +1032,13 @@ describe("SlackIntegrationService", () => {
 					),
 				)
 				assert.isNull(oldRow?.revoked_at)
-
-				// The key was minted before the transaction that then aborted; leaving it
-				// behind would hand org_b an active, unusable full-access key. (The only
-				// api_keys row for org_b is that mint — the workspace fixtures above
-				// reference key ids that were never created.)
-				const mintedKeys = yield* Effect.promise(() =>
-					queryFirstRow<{ n: number; revoked_n: number }>(
-						testDb,
-						"SELECT count(*)::int AS n, count(*) FILTER (WHERE revoked)::int AS revoked_n FROM api_keys WHERE org_id = 'org_b'",
-					),
-				)
-				assert.strictEqual(mintedKeys?.n, 1)
-				assert.strictEqual(mintedKeys?.revoked_n, 1)
 			}).pipe(
 				Effect.provide(
-					withFetch(testDb, slackOAuthFetch(teamRef), apiKeysWithInjectedCreate(inject)),
+					withFetch(
+						testDb,
+						slackOAuthFetch(teamRef),
+						databaseInjectingBeforeTransaction(testDb, inject),
+					),
 				),
 			)
 		},
@@ -1744,49 +1605,27 @@ describe("SlackIntegrationService", () => {
 			}).pipe(Effect.provide(withFetch(testDb, neverFetch)))
 		})
 
-		it.effect("revokes the API key minted for the bot", () => {
+		it.effect("revokes a legacy API key left on the row", () => {
 			const testDb = createTestDb(trackedDbs)
-			const teamRef = { current: { id: "T-EVT2", name: "EvtOrg2" } }
+			const keyId = "dddddddd-2222-4333-8444-555555555555"
 			return Effect.gen(function* () {
+				yield* Effect.promise(async () => {
+					await insertWorkspace(testDb, {
+						id: "sw_evt2",
+						orgId: "org_evt2",
+						teamId: "T-EVT2",
+						teamName: "EvtOrg2",
+						botToken: "xoxb-evt2",
+						apiKey: "maple_ak_evt2",
+					})
+					await attachLegacyApiKey(testDb, "T-EVT2", keyId)
+				})
 				const slack = yield* SlackIntegrationService
-				const start = yield* slack.startInstall(
-					asOrgId("org_evt2"),
-					asUserId("user_evt2"),
-					"https://cb",
-				)
-				yield* slack.completeInstall("code_evt2", stateFromInstallUrl(start.url))
-
-				const workspace = yield* Effect.promise(() =>
-					queryFirstRow<{ api_key_id: string }>(
-						testDb,
-						"SELECT api_key_id FROM slack_workspaces WHERE team_id = 'T-EVT2'",
-					),
-				)
-				assert.isString(workspace?.api_key_id)
-
-				// `neverFetch` for the revoke itself would be wrong here — the layer is
-				// shared across install (which DOES call Slack) and revoke (which must
-				// NOT) — so scope the "no upstream call" assertion to auth.revoke only
-				// by never registering that endpoint below.
+				// `neverFetch`: a remote revocation already knows the token is dead, so
+				// it makes no auth.revoke call.
 				yield* slack.revokeByTeamId("T-EVT2", "tokens_revoked")
-
-				const keyRow = yield* Effect.promise(() =>
-					queryFirstRow<{ revoked: boolean }>(
-						testDb,
-						"SELECT revoked FROM api_keys WHERE id = $1",
-						[workspace!.api_key_id],
-					),
-				)
-				assert.strictEqual(keyRow?.revoked, true)
-			}).pipe(
-				Effect.provide(
-					Layer.mergeAll(
-						makeLayer(testDb),
-						testDb.layer,
-						Layer.succeed(FetchHttpClient.Fetch, slackOAuthFetch(teamRef)),
-					),
-				),
-			)
+				assert.strictEqual(yield* isApiKeyRevoked(testDb, keyId), true)
+			}).pipe(Effect.provide(withFetch(testDb, neverFetch)))
 		})
 
 		it.effect("is a no-op for an unknown or already-revoked team id", () => {
@@ -1814,11 +1653,10 @@ describe("SlackIntegrationService", () => {
 
 		it.effect("loses gracefully to a concurrent reinstall instead of revoking it", () => {
 			const testDb = createTestDb(trackedDbs)
-			const FRESH_KEY_ID = "99999999-8888-4777-8666-555555555555"
 			const arm = { active: false }
 			// Interpose on Database so the very next execute after arming — the
 			// revoke's snapshot SELECT — is immediately followed by a "concurrent
-			// completeInstall" landing fresh secrets and a new API key on the row.
+			// completeInstall" landing a fresh bot token on the row.
 			const racingDb = Layer.effect(
 				Database,
 				Effect.gen(function* () {
@@ -1834,10 +1672,9 @@ describe("SlackIntegrationService", () => {
 											testDb,
 											`UPDATE slack_workspaces
 											 SET updated_at = updated_at + interval '1 second',
-											     api_key_id = $2,
 											     bot_token_ciphertext = 'fresh-bot-ciphertext'
 											 WHERE team_id = $1`,
-											["T-RACE", FRESH_KEY_ID],
+											["T-RACE"],
 										),
 									)
 								}),
@@ -1871,17 +1708,12 @@ describe("SlackIntegrationService", () => {
 				assert.strictEqual(result.revoked, false)
 
 				const row = yield* Effect.promise(() =>
-					queryFirstRow<{
-						revoked_at: string | null
-						api_key_id: string | null
-						bot_token_ciphertext: string | null
-					}>(
+					queryFirstRow<{ revoked_at: string | null; bot_token_ciphertext: string | null }>(
 						testDb,
-						"SELECT revoked_at, api_key_id, bot_token_ciphertext FROM slack_workspaces WHERE team_id = 'T-RACE'",
+						"SELECT revoked_at, bot_token_ciphertext FROM slack_workspaces WHERE team_id = 'T-RACE'",
 					),
 				)
 				assert.isNull(row?.revoked_at)
-				assert.strictEqual(row?.api_key_id, FRESH_KEY_ID)
 				assert.strictEqual(row?.bot_token_ciphertext, "fresh-bot-ciphertext")
 			}).pipe(
 				Effect.provide(
