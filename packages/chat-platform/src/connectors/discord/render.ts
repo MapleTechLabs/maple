@@ -96,7 +96,7 @@ export const renderDiscordMessage = (blocks: ReadonlyArray<ChatBlock>): DiscordM
 				break
 			}
 			case "activity":
-				if (block.tools.length > 0) lines.push(`Tools: ${block.tools.map(toolLabel).join(" · ")}`)
+				if (block.tools.length > 0) lines.push(block.tools.map(toolLabel).join(" · "))
 				break
 			case "approval": {
 				const detail = block.summary === "" ? "" : `\n${block.summary}`
@@ -151,14 +151,11 @@ const ENTITY_LABELS = {
 	log: "Log",
 } as const
 
-/**
- * Tool names carry underscores, which Discord reads as italics, so a name is always in backticks
- * rather than the surrounding line being styled.
- */
+/** The status line: the phrase, then whether the call is still going or failed. */
 const toolLabel = (tool: ChatToolActivity): string => {
 	const detail = tool.detail === null ? "" : ` (${tool.detail})`
 	const status = tool.status === "running" ? "…" : tool.status === "failed" ? " (failed)" : ""
-	return `\`${tool.name}\`${detail}${status}`
+	return `${tool.label}${detail}${status}`
 }
 
 /**

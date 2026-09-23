@@ -105,7 +105,7 @@ describe("renderChatMessage", () => {
 		])
 
 		expect(renderChatMessage(working, context, true)).toEqual([
-			{ kind: "activity", tools: [{ name: "search_traces", status: "running", detail: null }] },
+			{ kind: "activity", tools: [{ label: "Searching traces", status: "running", detail: null }] },
 		])
 		// Finished, the reader has the answer in front of them and no use for the route to it.
 		expect(renderChatMessage(working, context)).toEqual([])
@@ -127,7 +127,10 @@ describe("renderChatMessage", () => {
 		)
 
 		expect(blocks).toEqual([
-			{ kind: "activity", tools: [{ name: "reviewer", status: "running", detail: "1 step" }] },
+			{
+				kind: "activity",
+				tools: [{ label: "Delegating to reviewer", status: "running", detail: "1 step" }],
+			},
 		])
 	})
 
@@ -149,7 +152,7 @@ describe("renderChatMessage", () => {
 		// Mid-turn the same segment is shown, because it may be the answer — under the status line,
 		// which is what it is an answer to.
 		expect(renderChatMessage(investigating, context, true)).toEqual([
-			{ kind: "activity", tools: [{ name: "search_traces", status: "done", detail: null }] },
+			{ kind: "activity", tools: [{ label: "Searching traces", status: "done", detail: null }] },
 			{ kind: "prose", markdown: "checkout is timing out on the database." },
 		])
 	})

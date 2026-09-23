@@ -32,6 +32,7 @@ import {
 	type ChatRenderContext,
 	type ChatToolActivity,
 } from "./blocks"
+import { toolPhrase } from "./tool-phrases"
 
 /**
  * @param running The turn is still going, so a status line stands in for the answer it has not
@@ -267,7 +268,7 @@ const toolActivity = (call: ChatToolCall): ChatToolActivity => {
 	const agent = delegatedAgentOf(call.name)
 	if (call.task !== undefined) {
 		return {
-			name: agent ?? call.name,
+			label: agent === undefined ? toolPhrase(call.name, call.id) : `Delegating to ${agent}`,
 			status:
 				call.task.status === "running"
 					? "running"
@@ -280,7 +281,7 @@ const toolActivity = (call: ChatToolCall): ChatToolActivity => {
 	return {
 		// `output` is optional on the wire, so its PRESENCE is what settles a call — a tool that
 		// answered with nothing has an output, and reading the value would call it still running.
-		name: call.name,
+		label: toolPhrase(call.name, call.id),
 		status: !("output" in call) ? "running" : call.isError === true ? "failed" : "done",
 		detail: null,
 	}

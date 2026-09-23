@@ -127,14 +127,11 @@ const ENTITY_LABELS = {
 	log: "Log",
 } as const
 
-/**
- * Tool names carry underscores, which mrkdwn reads as italics, so a name is always in backticks
- * rather than the surrounding line being styled.
- */
+/** The status line: the phrase, then whether the call is still going or failed. */
 const toolLabel = (tool: ChatToolActivity): string => {
 	const detail = tool.detail === null ? "" : ` (${escapeMrkdwn(tool.detail)})`
 	const status = tool.status === "running" ? "…" : tool.status === "failed" ? " (failed)" : ""
-	return `\`${escapeMrkdwn(tool.name)}\`${detail}${status}`
+	return `${escapeMrkdwn(tool.label)}${detail}${status}`
 }
 
 /**
@@ -224,8 +221,8 @@ export const renderSlackMessage = (blocks: ReadonlyArray<ChatBlock>): SlackMessa
 			}
 			case "activity":
 				if (block.tools.length > 0) {
-					rendered.push(context(`Tools: ${block.tools.map(toolLabel).join(" · ")}`))
-					fallback.push(`Tools: ${block.tools.map((tool) => tool.name).join(", ")}`)
+					rendered.push(context(block.tools.map(toolLabel).join(" · ")))
+					fallback.push(block.tools.map((tool) => tool.label).join(", "))
 				}
 				break
 			case "approval": {
