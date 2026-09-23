@@ -150,11 +150,15 @@ function ClerkReverseRedirects() {
 	// Autumn customers are keyed by orgId, so getOrCreateCustomer can only
 	// succeed once an org is active. Skip the fetch for signed-out/org-less
 	// onboarding sessions (e.g. /sign-up, /org-required) to avoid guaranteed 401s.
+	// It also waits for the org's region: asked sooner, an org that has not chosen one yet is
+	// refused on the EU dashboard, and that cached refusal outlives the choice.
 	const {
 		data: customer,
 		isLoading: isCustomerLoading,
 		error: customerError,
-	} = useMapleCustomer({ queryOptions: { enabled: Boolean(isSignedIn && orgId) && !wrongRegion } })
+	} = useMapleCustomer({
+		queryOptions: { enabled: Boolean(isSignedIn && orgId) && orgRegion.isLoaded && !wrongRegion },
+	})
 
 	const redirectUrl = pathname + (searchStr ?? "")
 	const selectedPlan = hasSelectedPlan(customer)

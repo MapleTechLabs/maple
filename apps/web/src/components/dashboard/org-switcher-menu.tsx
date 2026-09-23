@@ -11,7 +11,7 @@ import {
 	DropdownMenuTrigger,
 } from "@maple/ui/components/ui/dropdown-menu"
 import { CreateOrganizationDialog } from "./create-organization-dialog"
-import { organizationHomeRegion } from "@maple/domain/organization-regions"
+import { organizationHomeRegion, organizationRegionOpen } from "@maple/domain/organization-regions"
 import { RegionBadge } from "@/components/region/region-badge"
 import { currentRegion, hasMultipleRegions, regionAppUrl } from "@/lib/region"
 import { NamespaceScopeSubmenu } from "./namespace-scope-menu"
@@ -65,12 +65,18 @@ export function ClerkOrgSwitcherMenu({
 	})
 	const [showCreateDialog, setShowCreateDialog] = useState(false)
 
-	const switchOrganization = async (nextOrgId: string, nextOrgMetadata?: unknown) => {
-		if (!setActive || organization?.id === nextOrgId) return
-		await setActive({ organization: nextOrgId })
+	const switchOrganization = async (next: {
+		readonly id: string
+		readonly publicMetadata: unknown
+		readonly createdAt: Date
+	}) => {
+		if (!setActive || organization?.id === next.id) return
+		await setActive({ organization: next.id })
 		// The session is shared across regions, so the other region's dashboard opens on this org.
-		const region = organizationHomeRegion(nextOrgMetadata)
-		const url = region === currentRegion ? undefined : regionAppUrl(region)
+		// One that can still choose its region stays here, where onboarding asks for it.
+		const region = organizationHomeRegion(next.publicMetadata)
+		const open = organizationRegionOpen(next.publicMetadata, next.createdAt.getTime(), Date.now())
+		const url = open || region === currentRegion ? undefined : regionAppUrl(region)
 		if (url !== undefined) window.location.assign(`${url}/`)
 		else window.location.reload()
 	}
@@ -90,24 +96,24 @@ export function ClerkOrgSwitcherMenu({
 						{userMemberships?.data?.map((mem) => (
 							<DropdownMenuItem
 								key={mem.organization.id}
-								onClick={() =>
-									void switchOrganization(
-										mem.organization.id,
-										mem.organization.publicMetadata,
-									)
-								}
+								onClick={() => void switchOrganization(mem.organization)}
 							>
 								<OrgAvatar
 									name={mem.organization.name}
 									imageUrl={mem.organization.imageUrl}
 								/>
 								<span className="truncate">{mem.organization.name}</span>
-								{hasMultipleRegions && (
-									<RegionBadge
-										region={organizationHomeRegion(mem.organization.publicMetadata)}
-										className="ml-auto"
-									/>
-								)}
+								{hasMultipleRegions &&
+									!organizationRegionOpen(
+										mem.organization.publicMetadata,
+										mem.organization.createdAt.getTime(),
+										Date.now(),
+									) && (
+										<RegionBadge
+											region={organizationHomeRegion(mem.organization.publicMetadata)}
+											className="ml-auto"
+										/>
+									)}
 								{organization?.id === mem.organization.id && (
 									<CheckIcon
 										size={16}
