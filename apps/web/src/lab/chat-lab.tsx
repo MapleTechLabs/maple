@@ -80,7 +80,7 @@ export function ChatLab() {
 						messages={messages}
 						isLoading={isLoading}
 						resolvedApprovals={resolved}
-						onApprove={(_messageId, toolCallId) =>
+						onApprove={(toolCallId) =>
 							setResolved((prev) => new Map(prev).set(toolCallId, "applied"))
 						}
 						onDeny={(toolCallId) =>

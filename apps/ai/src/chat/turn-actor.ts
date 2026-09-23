@@ -1,17 +1,43 @@
 /**
- * Who a connector turn — and a mutation approved on one — acts as.
+ * Who a turn — and a mutation approved on one — acts as.
  *
- * Its own module rather than a function in `turn-runner`, because both readers need it and only
- * one of them is a turn: applying an approved proposal resolves the same actor without the model,
- * the agent engine or any of the graph `turn-runner` pulls in at module scope.
+ * Its own module rather than functions in `turn-runner`, because both readers need them and only
+ * one of them is a turn: applying an approved proposal resolves the same identity without the
+ * model, the agent engine or any of the graph `turn-runner` pulls in at module scope.
  */
-import type { ChatTurnOrigin } from "@maple/domain/chat-session"
+import {
+	decodeChatTurnTenant,
+	type ChatTurnOrigin,
+	type ChatTurnTenantEncoded,
+} from "@maple/domain/chat-session"
 import { chatConnectorAgentName } from "@maple/domain/system-agents"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
 import type { ActorDocument } from "@maple/domain/http"
 import { ErrorActorsService } from "@maple/backend/services/errors/ErrorActorsService"
 import { Cause, Effect, Option } from "effect"
+
+/**
+ * Decode the wire projection back into the `apps/api` tenant type.
+ *
+ * The Durable Object receives a plain, structured-cloneable object (RPC refuses class instances),
+ * so the brands have to be re-established on this side before the value is used as a
+ * `TenantContext`.
+ *
+ * The origin rides along because it is what the audit log attributes the turn's tool calls by —
+ * the tenant's user id answers that only for an app turn.
+ */
+export const toTenantContext = (encoded: ChatTurnTenantEncoded, origin: ChatTurnOrigin): TenantContext => {
+	const tenant = decodeChatTurnTenant(encoded)
+	return {
+		orgId: tenant.orgId,
+		userId: tenant.userId,
+		roles: [...tenant.roles],
+		authMode: tenant.authMode,
+		turnOrigin: origin,
+		...(!(tenant.actorId === undefined) ? { actorId: tenant.actorId } : undefined),
+	}
+}
 
 /**
  * Pin a connector turn to the agent actor that answers for that connector, one `ensureAgentActor`

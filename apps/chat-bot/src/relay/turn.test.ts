@@ -1047,7 +1047,7 @@ describe("settling an approval somebody clicked", () => {
 
 			yield* relayInboundEvent(click(), deployment.ports)
 
-			expect(agent.settlements[0]?.actingUserId).toBe(ADA)
+			expect(agent.settlements[0]).toHaveProperty("actingUserId", ADA)
 		}),
 	)
 
