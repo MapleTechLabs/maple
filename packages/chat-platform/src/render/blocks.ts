@@ -108,6 +108,44 @@ export interface ChatNoticeBlock {
 	readonly text: string
 }
 
+export interface ChatAlertField {
+	readonly label: string
+	/** Standard markdown. */
+	readonly value: string
+}
+
+export interface ChatAlertLink {
+	readonly label: string
+	readonly url: string
+	/** The one action the alert leads with, where the platform can emphasise a button. */
+	readonly primary: boolean
+}
+
+/**
+ * A notification Maple posts on its own — an alert firing or resolving — rather than a turn.
+ *
+ * A card rather than prose because an alert read in a busy channel needs what a card gives: the
+ * state as a colour bar, the facts as labelled fields, and the links as buttons.
+ */
+export interface ChatAlertBlock {
+	readonly kind: "alert"
+	/** `#rrggbb`: the state and severity, as the bar beside the card. */
+	readonly color: string
+	/** Plain text, emoji included. Never parsed as markup. */
+	readonly title: string
+	/** Standard markdown: what happened, in a sentence — or a rule's own templated body. */
+	readonly summary: string
+	readonly fields: ReadonlyArray<ChatAlertField>
+	readonly imageUrl: string | null
+	/** What the image shows, for a screen reader and for a platform that will not load it. */
+	readonly imageAlt: string
+	readonly links: ReadonlyArray<ChatAlertLink>
+	/** Standard markdown fragments, shown small under the card and joined by the connector. */
+	readonly footer: ReadonlyArray<string>
+	/** When it was sent, epoch ms, for a connector that can show it in each reader's own timezone. */
+	readonly sentAtMs: number | null
+}
+
 export type ChatBlock =
 	| ChatProseBlock
 	| ChatChartBlock
@@ -115,6 +153,7 @@ export type ChatBlock =
 	| ChatActivityBlock
 	| ChatApprovalBlock
 	| ChatNoticeBlock
+	| ChatAlertBlock
 
 /** Which chart, for the port that mints an image of it. */
 export interface ChatChartRef {

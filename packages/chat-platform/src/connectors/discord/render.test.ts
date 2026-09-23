@@ -1,9 +1,29 @@
 import { describe, expect, it } from "vitest"
-import type { ChatBlock } from "../../render/blocks"
+import type { ChatAlertBlock, ChatBlock } from "../../render/blocks"
 import type { ChatActionToken } from "../../action-token"
 import { EMPTY_CONTENT, MAX_ACTION_ROWS, MAX_CONTENT_CHARS, renderDiscordMessage } from "./render"
 
 const token = (value: string) => value as ChatActionToken
+
+const alert = (overrides: Partial<ChatAlertBlock> = {}): ChatAlertBlock => ({
+	kind: "alert",
+	color: "#e01e5a",
+	title: "\u{1F6A8} High error rate — Triggered",
+	summary: "**Error Rate** is **49.7%** — above the 5% threshold, measured over the last 5m.",
+	fields: [
+		{ label: "Severity", value: "\u{1F534} Critical" },
+		{ label: "Group", value: "`electric-sync`" },
+	],
+	imageUrl: null,
+	imageAlt: "High error rate over the alert window",
+	links: [
+		{ label: "Open in Maple", url: "https://app.maple.dev/alerts/1", primary: true },
+		{ label: "✨ Ask Maple AI", url: "https://app.maple.dev/chat", primary: false },
+	],
+	footer: ["\u{1F341} Maple Alerts", "`▁▁▇`", "Incident `inc_1`"],
+	sentAtMs: 1_700_000_000_000,
+	...overrides,
+})
 
 const chart = (imageUrl: string | null): ChatBlock => ({
 	kind: "chart",
@@ -170,5 +190,30 @@ describe("renderDiscordMessage", () => {
 		])
 		expect(payload.content).toHaveLength(MAX_CONTENT_CHARS)
 		expect(payload.content.endsWith("…")).toBe(true)
+	})
+
+	it("renders an alert as a coloured embed, with the links as a field", () => {
+		const payload = renderDiscordMessage([alert({ imageUrl: "https://charts.maple.dev/c.png" })])
+		expect(payload.content).toBe("")
+		expect(payload.embeds).toEqual([
+			{
+				title: "\u{1F6A8} High error rate — Triggered",
+				url: "https://app.maple.dev/alerts/1",
+				color: 0xe01e5a,
+				description: "**Error Rate** is **49.7%** — above the 5% threshold, measured over the last 5m.",
+				fields: [
+					{ name: "Severity", value: "\u{1F534} Critical", inline: true },
+					{ name: "Group", value: "`electric-sync`", inline: true },
+					{
+						name: "Links",
+						value: "[Open in Maple](https://app.maple.dev/alerts/1) · [✨ Ask Maple AI](https://app.maple.dev/chat)",
+						inline: false,
+					},
+				],
+				image: { url: "https://charts.maple.dev/c.png" },
+				footer: { text: "\u{1F341} Maple Alerts  ·  ▁▁▇  ·  Incident inc_1" },
+				timestamp: "2023-11-14T22:13:20.000Z",
+			},
+		])
 	})
 })
