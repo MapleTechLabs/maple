@@ -8,13 +8,38 @@ import { ChooseOrganizationRegionRequest } from "@maple/domain/http"
 
 import { useAtomSet } from "@/lib/effect-atom"
 import { MapleApiAtomClient } from "@/lib/services/common/atom-client"
-import { currentRegion, MAPLE_REGION_LABELS, type MapleRegion, regionAppUrl } from "@/lib/region"
+import { RegionFlag } from "@/components/region/region-flag"
+import { currentRegion, type MapleRegion, regionAppUrl } from "@/lib/region"
 import { DrawnCheck } from "./drawn-check"
-import { PixelGlyph } from "./pixel-glyph"
 
 const REGION_OPTIONS: ReadonlyArray<MapleRegion> = ["us", "eu"]
 
-const hostOf = (url: string | undefined) => (url === undefined ? undefined : new URL(url).host)
+/** Card copy and the colour a selected card takes, lifted from its flag so it reads on dark. */
+const REGION_CARDS = {
+	us: {
+		name: "United States",
+		place: "North America",
+		residency: "Data stays in the US",
+		accent: "#E5485B",
+		check: "border-[#E5485B] bg-[#E5485B] text-white",
+	},
+	eu: {
+		name: "European Union",
+		place: "Frankfurt, Germany",
+		residency: "Data stays in the EU",
+		accent: "#5B7CFF",
+		check: "border-[#5B7CFF] bg-[#5B7CFF] text-white",
+	},
+} as const satisfies Record<
+	MapleRegion,
+	{
+		name: string
+		place: string
+		residency: string
+		accent: string
+		check: string
+	}
+>
 
 /**
  * The first onboarding step for an organization created without a region (the one Clerk makes at
@@ -67,11 +92,11 @@ export function StepRegion() {
 					</p>
 				</div>
 
-				<fieldset className="grid min-w-0 gap-2.5 sm:grid-cols-2">
+				<fieldset className="grid min-w-0 gap-3 sm:grid-cols-2">
 					<legend className="sr-only">Data region</legend>
 					{REGION_OPTIONS.map((option) => {
 						const active = region === option
-						const host = hostOf(regionAppUrl(option))
+						const card = REGION_CARDS[option]
 						return (
 							<label key={option} className="group relative cursor-pointer">
 								<input
@@ -80,32 +105,59 @@ export function StepRegion() {
 									className="peer sr-only"
 									checked={active}
 									disabled={isSaving}
-									aria-label={MAPLE_REGION_LABELS[option].name}
+									aria-label={card.name}
 									onChange={() => setRegion(option)}
 								/>
 								<div
+									style={{
+										borderColor: active ? card.accent : undefined,
+										backgroundColor: active ? `${card.accent}0F` : undefined,
+									}}
 									className={cn(
-										"flex h-full items-start gap-3 rounded-xl border p-4 transition-colors duration-150 motion-reduce:transition-none peer-focus-visible:ring-2 peer-focus-visible:ring-ring peer-focus-visible:ring-offset-2 peer-focus-visible:ring-offset-background",
-										active
-											? "border-primary bg-primary/5"
-											: "border-border group-hover:border-foreground/30 group-hover:bg-foreground/[0.02]",
+										"flex h-full flex-col gap-5 rounded-xl border p-5 transition-colors duration-150 motion-reduce:transition-none peer-focus-visible:ring-2 peer-focus-visible:ring-ring peer-focus-visible:ring-offset-2 peer-focus-visible:ring-offset-background",
+										!active &&
+											"border-border group-hover:border-foreground/30 group-hover:bg-foreground/[0.02]",
 									)}
 								>
-									<PixelGlyph name="earth" selected={active} />
-									<div className="min-w-0 flex-1 pt-px">
-										<span className="block text-sm font-semibold">
-											{MAPLE_REGION_LABELS[option].name}
-										</span>
-										{host !== undefined && (
-											<span className="mt-1 block font-mono text-xs text-muted-foreground">
-												{host}
-											</span>
-										)}
+									<div className="flex items-start justify-between">
+										<RegionFlag
+											region={option}
+											className={cn(
+												"h-12 w-18 transition-[opacity,filter] duration-150 motion-reduce:transition-none",
+												!active &&
+													"opacity-70 saturate-50 group-hover:opacity-100 group-hover:saturate-100",
+											)}
+										/>
+										<DrawnCheck
+											checked={active}
+											className={active ? card.check : "opacity-0"}
+										/>
 									</div>
-									<DrawnCheck
-										checked={active}
-										className={cn("mt-0.5", !active && "opacity-0")}
-									/>
+									<div className="space-y-1">
+										<span className="block text-base font-semibold tracking-tight">
+											{card.name}
+										</span>
+										<span className="block text-sm text-muted-foreground">
+											{card.place}
+										</span>
+									</div>
+									<div className="mt-auto flex">
+										<span
+											className="inline-flex items-center gap-1.5 rounded-full border border-border px-2 py-0.5 text-[11px] font-medium text-muted-foreground"
+											style={{
+												color: active ? card.accent : undefined,
+												borderColor: active ? `${card.accent}66` : undefined,
+												backgroundColor: active ? `${card.accent}14` : undefined,
+											}}
+										>
+											<span
+												aria-hidden="true"
+												className="size-1.5 rounded-full"
+												style={{ backgroundColor: card.accent }}
+											/>
+											{card.residency}
+										</span>
+									</div>
 								</div>
 							</label>
 						)
