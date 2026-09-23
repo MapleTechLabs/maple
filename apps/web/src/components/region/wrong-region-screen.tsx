@@ -24,7 +24,7 @@ export function WrongRegionScreen({ region }: { region: MapleRegion }) {
 				{orgName} is in the {target.short} region
 			</h1>
 			<p className="mt-2 text-sm text-muted-foreground">
-				Its data is stored in {target.name}. You are on the {here.short} dashboard, which keeps a
+				Its data is stored in the {target.name}. You are on the {here.short} dashboard, which keeps a
 				separate set of organizations.
 			</p>
 			<div className="mt-6 flex flex-wrap items-center gap-2">

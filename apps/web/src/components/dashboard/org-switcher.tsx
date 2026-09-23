@@ -6,9 +6,8 @@ import { isClerkAuthEnabled } from "@/lib/services/common/auth-mode"
 import { useGlobalNamespace } from "@/hooks/use-global-namespace"
 import { ClerkOrgSwitcherMenu, OrgAvatar } from "./org-switcher-menu"
 import { NamespaceScopeMenuGroup } from "./namespace-scope-menu"
-import { RegionBadge } from "@/components/region/region-badge"
 import { useOrganizationRegion } from "@/hooks/use-organization-region"
-import { hasMultipleRegions } from "@/lib/region"
+import { hasMultipleRegions, MAPLE_REGION_LABELS } from "@/lib/region"
 
 function ClerkOrgSwitcher() {
 	const { organization } = useOrganization()
@@ -16,6 +15,9 @@ function ClerkOrgSwitcher() {
 	const orgRegion = useOrganizationRegion()
 	const orgName = organization?.name ?? "Select Organization"
 	const orgImageUrl = organization?.imageUrl
+	// Named on the subtitle line, where it cannot squeeze the org name.
+	const regionSuffix =
+		hasMultipleRegions && orgRegion.isLoaded ? ` · ${MAPLE_REGION_LABELS[orgRegion.region].short}` : ""
 
 	return (
 		<ClerkOrgSwitcherMenu
@@ -29,18 +31,16 @@ function ClerkOrgSwitcher() {
 				>
 					<OrgAvatar name={orgName} imageUrl={orgImageUrl} />
 					<div className="grid flex-1 text-left text-sm leading-tight">
-						<span className="flex min-w-0 items-center gap-1.5">
-							<span className="truncate font-medium">{orgName}</span>
-							{hasMultipleRegions && orgRegion.isLoaded && (
-								<RegionBadge region={orgRegion.region} />
-							)}
-						</span>
+						<span className="truncate font-medium">{orgName}</span>
 						{pinnedNamespace !== null ? (
-							<span className="truncate text-xs font-medium text-primary">
-								{pinnedNamespace}
+							<span className="truncate text-xs">
+								<span className="font-medium text-primary">{pinnedNamespace}</span>
+								<span className="text-muted-foreground">{regionSuffix}</span>
 							</span>
 						) : (
-							<span className="truncate text-xs text-muted-foreground">Organization</span>
+							<span className="truncate text-xs text-muted-foreground">
+								Organization{regionSuffix}
+							</span>
 						)}
 					</div>
 					<ChevronExpandYIcon size={16} className="ml-auto" />
