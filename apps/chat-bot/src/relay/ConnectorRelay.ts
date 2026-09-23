@@ -26,6 +26,7 @@
 import type { ChatConversation, InboundEvent } from "@maple/chat-platform"
 import * as Cloudflare from "alchemy/Cloudflare"
 import { Effect } from "effect"
+import { ConversationNotRecorded } from "./conversation.ts"
 import { connectorConversationRelayName, connectorRelayByName } from "./stub.ts"
 
 /** What this object reads off its Durable Object state. */
@@ -58,7 +59,9 @@ const openedKey = (conversationKey: string): string => `opened:${conversationKey
 export interface ConnectorRelayPorts {
 	readonly announceUnlinked: Effect.Effect<boolean>
 	readonly ownsConversation: (conversationKey: string) => Effect.Effect<boolean>
-	readonly rememberConversation: (conversation: ChatConversation) => Effect.Effect<void>
+	readonly rememberConversation: (
+		conversation: ChatConversation,
+	) => Effect.Effect<void, ConversationNotRecorded>
 }
 
 /**
@@ -112,7 +115,15 @@ export class ConnectorRelay {
 			announceUnlinked: Effect.sync(() => this.takeUnlinkedNotice()),
 			ownsConversation: (conversationKey) => Effect.promise(() => this.opened(conversationKey)),
 			rememberConversation: (conversation) =>
-				Effect.promise(() => this.rememberOpened(event, conversation)),
+				Effect.tryPromise({
+					catch: (cause) =>
+						new ConversationNotRecorded({
+							conversationKey: conversation.conversationKey,
+							message: "The conversation's relay object did not record that the bot opened it",
+							cause,
+						}),
+					try: () => this.rememberOpened(event, conversation),
+				}),
 		}
 	}
 
@@ -135,21 +146,16 @@ export class ConnectorRelay {
 	 * this object's own, and writing it here rather than through a stub is not an optimization: a
 	 * Durable Object calling itself is how a request deadlocks behind its own input gate.
 	 *
-	 * It is bookkeeping and it is caught here, because the turn this rides on is somebody's
-	 * question: a cross-object call that fails costs the follow-ups AFTER this answer, and must
-	 * never cost the answer — which is what an uncaught rejection in a `waitUntil`ed turn would do,
-	 * in a thread the bot has already opened.
+	 * A write that fails reaches the turn as `ConversationNotRecorded` rather than being reported
+	 * here: it costs the follow-ups AFTER this answer and must never cost the answer, and the turn
+	 * is where a log carries the org, the session and the span it belongs to.
 	 */
 	private async rememberOpened(event: InboundEvent, conversation: ChatConversation): Promise<void> {
 		const here = "channelId" in event ? event.channelId : undefined
 		const name = connectorConversationRelayName(event.connector, conversation.target)
-		const write =
-			here === conversation.target.channelId
-				? this.remember(conversation.conversationKey)
-				: connectorRelayByName(this.env, name)?.remember(conversation.conversationKey)
-		await write?.catch((cause) => {
-			console.error("[chat-bot.relay] conversation not recorded as the bot's own", cause)
-		})
+		await (here === conversation.target.channelId
+			? this.remember(conversation.conversationKey)
+			: connectorRelayByName(this.env, name)?.remember(conversation.conversationKey))
 	}
 
 	private armKeepAlive(): void {

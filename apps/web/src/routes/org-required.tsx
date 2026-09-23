@@ -1,9 +1,11 @@
-import { OrganizationSwitcher, useAuth } from "@clerk/clerk-react"
+import { useAuth } from "@clerk/clerk-react"
 import { Navigate, createFileRoute } from "@tanstack/react-router"
 import { Schema } from "effect"
 import { parseRedirectUrl } from "@/lib/redirect-utils"
 import { isClerkAuthEnabled } from "@/lib/services/common/auth-mode"
 import { AuthLayout } from "@/components/layout/auth-layout"
+import { ClerkOrgSwitcherMenu } from "@/components/dashboard/org-switcher-menu"
+import { Button } from "@maple/ui/components/ui/button"
 
 const OrgRequiredSearch = Schema.Struct({
 	redirect_url: Schema.optional(Schema.String),
@@ -46,7 +48,9 @@ function OrgRequiredPageClerk() {
 				Select or create an organization before entering the app.
 			</p>
 			<div className="mt-4">
-				<OrganizationSwitcher hidePersonal />
+				<ClerkOrgSwitcherMenu
+					trigger={<Button variant="outline">Select or create organization</Button>}
+				/>
 			</div>
 		</AuthLayout>
 	)

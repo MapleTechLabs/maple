@@ -8,7 +8,27 @@
  * looking at.
  */
 import type { ChatHistoryMessage, InboundMessage } from "@maple/chat-platform"
-import { wrapChatContext } from "@maple/domain/chat-preamble"
+import { CHAT_CONTEXT_CLOSE, CHAT_CONTEXT_OPEN, wrapChatContext } from "@maple/domain/chat-preamble"
+import { ChatConversationKey } from "@maple/domain/chat-session"
+import { Schema } from "effect"
+
+/**
+ * The bot opened a conversation and could not record that it had.
+ *
+ * Carried rather than swallowed where it happens, because it is the one failure that decides
+ * whether unaddressed messages are ever answered here: after it the bot goes on answering
+ * mentions and quietly stops answering anything else, which is indistinguishable from the rule
+ * working. It costs the messages AFTER this answer, never this one, so the turn logs it and
+ * carries on — but it logs it where the telemetry layer is live.
+ */
+export class ConversationNotRecorded extends Schema.TaggedError<ConversationNotRecorded>()(
+	"@maple/chat-bot/ConversationNotRecorded",
+	{
+		conversationKey: ChatConversationKey,
+		message: Schema.String,
+		cause: Schema.Defect(),
+	},
+) {}
 
 /** How many earlier messages the model is shown. */
 export const CONTEXT_MESSAGE_LIMIT = 20
@@ -30,12 +50,24 @@ export const FOLLOW_UP_WINDOW_MS = 24 * 60 * 60 * 1000
 /** UTC to the second. Milliseconds say nothing about when somebody spoke. */
 const instant = (at: number): string => `${new Date(at).toISOString().slice(0, 19)}Z`
 
+/**
+ * Take the fence's own markers out of anything a stranger wrote.
+ *
+ * Everything below goes INSIDE the fenced block, and the fence is a pair of literal strings in the
+ * text — so a display name or a message carrying the closing marker would end the block early. The
+ * model would read the rest as its own instructions rather than as a quoted conversation, and
+ * `stripChatContext`, which cuts at the FIRST close, would render the remainder in the app as
+ * something the asker typed. Removing the markers costs a message nothing: nobody types them.
+ */
+const unfenced = (value: string): string =>
+	value.split(CHAT_CONTEXT_CLOSE).join("").split(CHAT_CONTEXT_OPEN).join("")
+
 /** One line per message: no newline inside one survives, so the block reads as a transcript. */
 const line = (message: ChatHistoryMessage): string => {
-	const text = message.text.replace(/\s+/gu, " ").trim()
+	const text = unfenced(message.text).replace(/\s+/gu, " ").trim()
 	const cut =
 		text.length > CONTEXT_MAX_MESSAGE_CHARS ? `${text.slice(0, CONTEXT_MAX_MESSAGE_CHARS)}…` : text
-	return `${instant(message.at)} ${message.displayName}${message.isBot ? " (bot)" : ""}: ${cut}`
+	return `${instant(message.at)} ${unfenced(message.displayName)}${message.isBot ? " (bot)" : ""}: ${cut}`
 }
 
 /**
@@ -89,7 +121,7 @@ export interface ConversationContext {
  */
 export const chatTurnText = (message: InboundMessage, context: ConversationContext): string => {
 	const lines = [
-		`${message.author.displayName} is asking, in a chat conversation other people can read.`,
+		`${unfenced(message.author.displayName)} is asking, in a chat conversation other people can read.`,
 		`The time is ${instant(context.now)}.`,
 	]
 	const earlier = contextLines(context.recent, context.seenUpTo)
@@ -121,9 +153,9 @@ export const couldAnswerUnaddressed = (message: InboundMessage, ownsConversation
 	ownsConversation && !message.author.isBot && message.text.trim() !== ""
 
 /**
- * The other half, asked once the conversation's session has been read: it has actually held a
- * turn, and held one recently enough that this message is part of the same exchange rather than a
- * remark in a thread that went quiet days ago.
+ * The other half, asked once the conversation's session has been read: the bot has actually
+ * answered here, and answered recently enough that this message is part of the same exchange
+ * rather than a remark in a thread that went quiet days ago.
  */
-export const conversationStillLive = (lastTurnAt: number, now: number): boolean =>
-	lastTurnAt > 0 && now - lastTurnAt <= FOLLOW_UP_WINDOW_MS
+export const conversationStillLive = (lastReplyAt: number, now: number): boolean =>
+	lastReplyAt > 0 && now - lastReplyAt <= FOLLOW_UP_WINDOW_MS

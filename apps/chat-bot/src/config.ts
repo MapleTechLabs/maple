@@ -41,7 +41,7 @@ export const resolveConnectorConfig = (
 		const value = env[key.name]
 		if (typeof value === "string" && value.trim() !== "") {
 			config.set(key.name, value.trim())
-		} else if (key.optional !== true) {
+		} else {
 			missing.push(key.name)
 		}
 	}

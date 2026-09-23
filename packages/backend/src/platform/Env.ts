@@ -6,6 +6,7 @@
 import { chatConnectorConfig, type ChatConnectorConfig } from "@maple/chat-platform"
 import { optionalRedacted, optionalString, stringWithDefault } from "@maple/infra/config-helpers"
 import { Config, Context, Effect, Layer, Option, Redacted, Schema } from "effect"
+import { type MapleRegion, parseMapleRegion } from "@maple/domain/organization-regions"
 
 /** Fatal misconfiguration discovered at startup — surfaces as a tagged defect in the Cause. */
 class EnvValidationError extends Schema.TaggedError<EnvValidationError>()(
@@ -51,6 +52,8 @@ export interface EnvConfig {
 	readonly MAPLE_API_BASE_URL: string
 	/** Deployment environment (`production`, `pr-<n>`, `development`) — set by alchemy from the stage. */
 	readonly MAPLE_ENVIRONMENT: string
+	/** The regional instance this worker belongs to, derived by the stack from the stage (`prd-eu` → `eu`). */
+	readonly MAPLE_REGION: MapleRegion
 	/** Escape hatch: allow real email sends outside production (e.g. a deliberate test run on a dev stage). */
 	readonly MAPLE_EMAIL_ALLOW_NONPROD: string
 	/** Route every org to the managed warehouse; honoured only in development. */
@@ -188,6 +191,7 @@ const envConfig = Config.all({
 	MAPLE_APP_BASE_URL: stringWithDefault("MAPLE_APP_BASE_URL", "http://127.0.0.1:3471"),
 	MAPLE_API_BASE_URL: stringWithDefault("MAPLE_API_BASE_URL", "http://127.0.0.1:3472"),
 	MAPLE_ENVIRONMENT: stringWithDefault("MAPLE_ENVIRONMENT", "development"),
+	MAPLE_REGION: stringWithDefault("MAPLE_REGION", "us").pipe(Config.map(parseMapleRegion)),
 	MAPLE_EMAIL_ALLOW_NONPROD: stringWithDefault("MAPLE_EMAIL_ALLOW_NONPROD", "false"),
 	MAPLE_IGNORE_ORG_CLICKHOUSE: stringWithDefault("MAPLE_IGNORE_ORG_CLICKHOUSE", "false"),
 	CLERK_SECRET_KEY: optionalRedacted("CLERK_SECRET_KEY"),

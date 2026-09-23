@@ -8,6 +8,9 @@
  * trial?". Those are objections, not pricing questions — 83% of homepage
  * visitors leave without ever reaching the page that answers them.
  *
+ * Data residency joined them once the EU region shipped: it is the question an
+ * EU buyer asks before any of the others.
+ *
  * So the answers move up here, in the hero, stated flatly. The pricing page
  * keeps its full FAQ; this is the version a visitor reads in eight seconds.
  *
@@ -15,6 +18,7 @@
  * a hand-typed $39 here is a second source of truth that silently goes stale.
  */
 import * as m from "../../paraglide/messages.js";
+import RegionChip from "../RegionChip.astro";
 import { getOffer, money } from "../../lib/pricing-offer";
 
 const offer = await getOffer();
@@ -35,6 +39,15 @@ const points = [
 		href: "/docs/instrumentation",
 		cta: m.home_objection_otel_cta(),
 		external: false,
+	},
+	{
+		key: "region",
+		claim: m.home_objection_region_claim(),
+		detail: m.home_objection_region_detail(),
+		href: "/eu",
+		cta: m.home_objection_region_cta(),
+		external: false,
+		icon: true,
 	},
 	{
 		key: "trial",
@@ -58,7 +71,15 @@ const points = [
 			{
 				points.map((point) => (
 					<li class="home-objections__item">
-						<p class="home-objections__claim">{point.claim}</p>
+						<p class="home-objections__claim">
+							{point.claim}
+							{"icon" in point && (
+								<span class="home-objections__chips">
+									<RegionChip region="us" />
+									<RegionChip region="eu" />
+								</span>
+							)}
+						</p>
 						<p class="home-objections__detail">{point.detail}</p>
 						<a
 							href={point.href}
@@ -89,7 +110,7 @@ const points = [
 
 	.home-objections__grid {
 		display: grid;
-		grid-template-columns: repeat(3, minmax(0, 1fr));
+		grid-template-columns: repeat(4, minmax(0, 1fr));
 		gap: 0;
 		margin: 0;
 		padding: 0;
@@ -116,6 +137,13 @@ const points = [
 		font-weight: 600;
 		letter-spacing: -0.01em;
 		color: var(--fg);
+	}
+
+	.home-objections__chips {
+		display: inline-flex;
+		gap: 0.25rem;
+		margin-left: 0.5rem;
+		vertical-align: 1px;
 	}
 
 	.home-objections__detail {
@@ -145,8 +173,24 @@ const points = [
 		transform: translateX(2px);
 	}
 
-	/* Mobile is 26% of sessions and averages 0.37 clicks — it gets the same
-	   three answers stacked, not a truncated version. */
+	/* Four columns get too narrow for the copy below this width: two by two. */
+	@media (max-width: 1100px) and (min-width: 861px) {
+		.home-objections__grid {
+			grid-template-columns: repeat(2, minmax(0, 1fr));
+		}
+
+		.home-objections__item + .home-objections__item:nth-child(odd) {
+			padding-left: 0;
+			border-left: 0;
+		}
+
+		.home-objections__item:nth-child(n + 3) {
+			border-top: 1px solid var(--border);
+		}
+	}
+
+	/* Mobile is 26% of sessions and averages 0.37 clicks. It gets the same
+	   answers stacked, not a truncated version. */
 	@media (max-width: 860px) {
 		.home-objections__grid {
 			grid-template-columns: 1fr;

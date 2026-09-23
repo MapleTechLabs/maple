@@ -91,10 +91,10 @@ const CreatedThread = Schema.Struct({ id: Schema.String })
 /**
  * One earlier message, as `GET /channels/{id}/messages` answers it.
  *
- * `content` is empty for every message the application is not allowed to read — without the
- * privileged `MESSAGE_CONTENT` intent that is everything it was not mentioned in, over REST as
- * well as over the gateway. The user shape is the gateway half's, so the two readings of a Discord
- * message object cannot drift apart.
+ * `content` is empty for a message that carries no text of its own, and for every message the
+ * application is not allowed to read — the message-content grant governs this REST reply exactly
+ * as it governs the gateway. The user shape is the gateway half's, so the two readings of a
+ * Discord message object cannot drift apart.
  */
 const HistoryMessage = Schema.Struct({
 	author: User,

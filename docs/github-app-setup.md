@@ -36,6 +36,8 @@ Two URLs derive from it, and you will paste both into GitHub later. Note them no
 | Webhook delivery                                            | `https://YOUR_MAPLE_DOMAIN/api/integrations/github/webhook`  |
 | User authorization / post-install redirect ("Callback URL") | `https://YOUR_MAPLE_DOMAIN/api/integrations/github/callback` |
 
+> **One App per Maple instance.** Both URLs are registered on the App itself rather than sent per request, so an App serves exactly one deployment. Maple Cloud's EU instance runs its own App pointed at `https://api.eu.maple.dev`; reusing the US App sends EU installs and webhooks to the US API.
+
 > These paths are fixed in Maple's code. Do not change them — Maple receives webhooks at `/api/integrations/github/webhook` and completes the install flow at `/api/integrations/github/callback`.
 
 ---

@@ -10,12 +10,11 @@ One Discord application, created at <https://discord.com/developers/applications
 documented here rather than in the repo's `.env.example`, which is shared ground where no platform
 should be named; every name is declared once, in `api.ts`.
 
-| Secret                                 | Where it comes from                   | How it reaches the connector                              |
-| -------------------------------------- | ------------------------------------- | --------------------------------------------------------- |
-| `MAPLE_DISCORD_BOT_TOKEN`              | Bot tab → Token                       | `ingress.requiredConfig`, by name; `ConnectorCredentials` |
-| `MAPLE_DISCORD_MESSAGE_CONTENT_INTENT` | Not a secret — `1`/`true` to opt in   | `ingress.requiredConfig`, optional (see below)            |
-| `MAPLE_DISCORD_CLIENT_ID`              | OAuth2 tab → Client ID (not a secret) | `install.requiredConfig`, by name                         |
-| `MAPLE_DISCORD_CLIENT_SECRET`          | OAuth2 tab → Client Secret            | `install.requiredConfig`, by name                         |
+| Secret                        | Where it comes from                   | How it reaches the connector                              |
+| ----------------------------- | ------------------------------------- | --------------------------------------------------------- |
+| `MAPLE_DISCORD_BOT_TOKEN`     | Bot tab → Token                       | `ingress.requiredConfig`, by name; `ConnectorCredentials` |
+| `MAPLE_DISCORD_CLIENT_ID`     | OAuth2 tab → Client ID (not a secret) | `install.requiredConfig`, by name                         |
+| `MAPLE_DISCORD_CLIENT_SECRET` | OAuth2 tab → Client Secret            | `install.requiredConfig`, by name                         |
 
 A half whose names are unset is skipped rather than fatal: the dashboard reports the connector as
 unavailable and offers no connect button, the ingress half logs one line, and the rest of each
@@ -26,16 +25,22 @@ Worker runs.
    names it in `requiredConfig` so the host resolves it generically, and hands the resolved map to
    the outbound half as `ConnectorCredentials` — one secret, one name, read by both halves, and the
    connector never touches `process.env`.
-2. **Bot tab → Privileged Gateway Intents: leave all three OFF**, unless you want the two features
-   in "Message Content" below. This connector identifies with `GUILDS | GUILD_MESSAGES` by default.
-   Discord delivers message content without the privileged `MESSAGE_CONTENT` intent for messages in
-   which the app is mentioned, which is what a mention-only bot needs and nothing more.
+2. **Bot tab → Privileged Gateway Intents → Message Content: ON. This one is required** — the
+   connector always identifies with `GUILDS | GUILD_MESSAGES | MESSAGE_CONTENT`, and a gateway that
+   asks for an intent the application has not been granted is closed with 4014. Below 10,000 users
+   who can see the app it is a toggle; above that Discord reviews it. Leave the other two (Presence,
+   Server Members) off — this connector asks for neither. What the intent buys and what flipping it
+   costs are below.
 3. **Bot tab → Requires OAuth2 Code Grant: ON.** An install can then only complete through the code
    exchange the install half performs.
 4. **OAuth2 tab → Redirects.** Add `https://api.maple.dev/oauth/chat/discord/callback`, and the
-   equivalent origin for any other stage.
+   equivalent origin for any other stage that shares this application.
 5. **Installation tab → Scopes `bot` + `applications.commands`, permissions "Send Messages", "Read
    Message History", "Create Public Threads".**
+
+**One application per instance.** Two instances opening a Gateway session with one bot token both
+receive every mention and both answer, so the EU instance runs its own application: its redirect is
+`https://api.eu.maple.dev/oauth/chat/discord/callback`, and all three secrets above come from it.
 
 Nothing else is needed: the Gateway connection is outbound, so there is no public URL to register
 and no request signature to verify.
@@ -58,36 +63,37 @@ answer from Maple.
 4. **Mention it.** `@Maple why is checkout slow?` in a channel. The bot opens a thread on that
    message and edits one message in it as the answer streams. A follow-up mention inside the thread
    continues the same conversation; a mention in another channel starts a different one. A mention
-   while an answer is still being written is told so, and is not queued. With Message Content on
-   (below), a follow-up inside that thread needs no mention at all.
+   while an answer is still being written is told so, and is not queued. A follow-up inside that
+   thread needs no mention at all.
 
 One limit worth knowing before reporting a bug: a write the agent proposes is rendered as an
 approval card that **cannot be approved yet** — clicking it answers that approvals are not
 available yet.
 
-## Message Content (privileged, opt-in)
+## Message Content (privileged, required)
 
-Two things need the `MESSAGE_CONTENT` intent, because without it Discord gives the app empty
-`content` for every message it was not mentioned in — over the gateway **and over the REST API**:
+The connector identifies with `MESSAGE_CONTENT` on every connection. It is not optional and there
+is no switch: without it Discord gives the app empty `content` for every message it was not
+mentioned in — over the gateway **and over the REST API** — and both halves of what the bot reads
+go with it:
 
 - **the conversation the model is shown.** A mention is answered with the messages written around
   it, so "and the payments call?" means something. Without the intent that context is a list of
-  timestamps with nothing in it, so those messages are dropped and the model sees only the mention.
+  timestamps with nothing in it, and the model sees only the mention.
 - **answering a follow-up that did not mention the bot** in a thread Maple opened. Without the
-  intent the connector never reports those messages at all.
+  intent the connector never sees those messages at all.
 
-Everything else — a mention, an approval click, being removed from a server — works without it.
+**Enabling it:** Bot tab → Privileged Gateway Intents → Message Content. While fewer than **10,000
+users can see the app** across the servers it is in, this is a toggle you own; past that Discord
+reviews the app for continued access, and **asks you to reapply once a year** — so the grant is a
+standing thing to keep, not a box ticked once. It is still the application's setting rather than a
+deployment's: nothing in the env turns this on or off.
 
-To turn it on, in this order:
-
-1. **Bot tab → Privileged Gateway Intents → Message Content: ON.** Under 100 servers this is a
-   toggle; above it Discord requires verification and approval for the intent.
-2. Set `MAPLE_DISCORD_MESSAGE_CONTENT_INTENT=1` on the `chat-bot` deployment.
-
-The order matters. Identifying with an intent the application has not been granted closes the
-gateway with **4014**, which this connector treats as fatal — the socket stops rather than
-reconnecting into a loop, and the line it logs names this variable. Unset it (or grant the intent)
-and the next start recovers; nothing is lost but the time in between.
+**Flipping it costs about a minute of bot.** Discord closes every open gateway connection when the
+application's intents change, and identifying without the grant is close code **4014**, which this
+connector treats as fatal: the socket stops rather than reconnecting into a loop, and the line it
+logs says to enable Message Content in the portal. The cron tick brings the socket back on its own
+once the grant is in place — mentions during that window are missed, nothing else is.
 
 A bot that can read every message in every channel it can see is also a bot whose host pays a
 Durable Object round trip for each one. `apps/chat-bot` drops what cannot be a turn before that —

@@ -27,6 +27,7 @@ import {
 } from "@/components/icons"
 import { isClerkAuthEnabled } from "@/lib/services/common/auth-mode"
 import { openGlobalChat } from "@/components/chat/global-chat-sheet"
+import { aiChatEnabled } from "@/lib/region"
 import { paletteNavItems } from "@/components/dashboard/nav-items"
 import { useDashboardPreferences } from "@/hooks/use-dashboard-preferences"
 import { useDashboardsRead } from "@/hooks/use-dashboard-store"
@@ -197,15 +198,19 @@ function PaletteContent({
 
 		const isDark = theme === "dark"
 		const actions: PaletteEntry[] = [
-			{
-				id: "action:ask-maple-ai",
-				title: "Ask Maple AI",
-				group: "Actions",
-				keywords: "chat ai assistant maple ask question",
-				icon: ChatBubbleSparkleIcon,
-				run: openGlobalChat,
-				shortcut: "C",
-			},
+			...(aiChatEnabled
+				? [
+						{
+							id: "action:ask-maple-ai",
+							title: "Ask Maple AI",
+							group: "Actions",
+							keywords: "chat ai assistant maple ask question",
+							icon: ChatBubbleSparkleIcon,
+							run: openGlobalChat,
+							shortcut: "C",
+						} satisfies PaletteEntry,
+					]
+				: []),
 			{
 				id: "action:toggle-theme",
 				title: isDark ? "Switch to light mode" : "Switch to dark mode",

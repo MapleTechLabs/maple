@@ -22,7 +22,13 @@
  * `Command.Build`'s env did through `vite.config.ts`'s `define`. Non-prefixed
  * keys stay ordinary Worker bindings.
  */
-import { ApiWorker, MapleStack, resolveWorkerName, resolveWorkerPlacement } from "@maple/infra/cloudflare"
+import {
+	ApiWorker,
+	MapleStack,
+	resolveRegionAppUrls,
+	resolveWorkerName,
+	resolveWorkerPlacement,
+} from "@maple/infra/cloudflare"
 import { plainFrom } from "@maple/infra/env"
 import * as Cloudflare from "alchemy/Cloudflare"
 import { Effect } from "effect"
@@ -69,6 +75,10 @@ const props = Effect.gen(function* () {
 			VITE_API_BASE_URL: urls.api,
 			VITE_INGEST_URL: urls.ingest,
 			VITE_ELECTRIC_SYNC_URL: urls.electricSync,
+			// Which instance this dashboard is, and where the others are: an organization that
+			// lives in another region is sent there rather than served here.
+			VITE_MAPLE_REGION: region,
+			VITE_MAPLE_REGION_APP_URLS: JSON.stringify(resolveRegionAppUrls(stage)),
 			VITE_MAPLE_AUTH_MODE: yield* plainFrom(
 				["VITE_MAPLE_AUTH_MODE", "MAPLE_AUTH_MODE"],
 				"self_hosted",

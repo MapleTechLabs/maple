@@ -46,14 +46,6 @@ import { ChatConnectorId } from "./connector.ts"
 export interface ConnectorConfigKey {
 	readonly name: string
 	readonly secret: boolean
-	/**
-	 * A value the connector runs without.
-	 *
-	 * The host skips a connector whose configuration is incomplete, which is what makes a missing
-	 * credential a connector that does not start rather than one that fails every event. A switch
-	 * is not a credential: absent means off, and the connector still runs.
-	 */
-	readonly optional?: boolean
 }
 
 /**

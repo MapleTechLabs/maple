@@ -79,7 +79,7 @@ export const AuditResources = {
 	 * The org itself. No prefix: every row already carries `org_id`, and a
 	 * deleted org has no public ID left to resolve.
 	 */
-	organization: { verbs: ["deleted"] },
+	organization: { verbs: ["deleted", "region_chosen"] },
 	scrape_target: { prefix: PublicIdPrefixes.scrapeTarget, verbs: ["created", "updated", "deleted"] },
 	/**
 	 * Reads of recorded browser sessions — the surface most likely to carry

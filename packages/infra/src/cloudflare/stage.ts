@@ -1,4 +1,10 @@
-import { DEFAULT_MAPLE_REGION, isMapleRegion, type MapleRegion, regionSuffix } from "../region.ts"
+import {
+	DEFAULT_MAPLE_REGION,
+	isMapleRegion,
+	MAPLE_REGIONS,
+	type MapleRegion,
+	regionSuffix,
+} from "../region.ts"
 
 export type MapleStage = { kind: "prd" } | { kind: "pr"; prNumber: number } | { kind: "dev"; name: string }
 
@@ -237,6 +243,17 @@ export function resolveMapleDomains(
 		case "dev":
 			return {}
 	}
+}
+
+/**
+ * Every regional instance's dashboard URL, so the web app can send an organization that lives
+ * elsewhere to its own region. Only prd has more than one instance; other stages get none.
+ */
+export function resolveRegionAppUrls(stage: MapleStage): Partial<Record<MapleRegion, string>> {
+	if (stage.kind !== "prd") return {}
+	return Object.fromEntries(
+		MAPLE_REGIONS.map((region) => [region, `https://${resolveMapleDomains(stage, region).web}`]),
+	)
 }
 
 export type MapleDatabaseMode = "ref" | "declared" | "managed" | "none"
