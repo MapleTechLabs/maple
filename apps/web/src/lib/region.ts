@@ -22,3 +22,6 @@ export function regionAppUrl(region: MapleRegion): string | undefined {
 
 /** Whether this deployment has more than one region, and so whether regions are worth showing. */
 export const hasMultipleRegions = Object.keys(regionAppUrls).length > 1
+
+/** Maple AI chat is off on the EU instance for now; every chat entry point checks this. */
+export const aiChatEnabled = currentRegion !== "eu"
