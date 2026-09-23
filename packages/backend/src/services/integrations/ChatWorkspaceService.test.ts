@@ -106,6 +106,7 @@ const testConnector: ChatConnector = {
 	outbound: {
 		connectorId: TEST_CONNECTOR,
 		limits: { maxMessageChars: 1000, minEditInterval: Duration.millis(500) },
+		requiredConfig: [],
 		transport: Effect.die("the install flow reached the outbound transport"),
 	},
 	ingress: socketIngress({

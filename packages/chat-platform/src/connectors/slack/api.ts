@@ -28,6 +28,9 @@ export const CHANNEL_HISTORY_URL = `${API_BASE}/conversations.history`
 /** What a thread holds. Addressed by the PARENT message's `ts`, which is the thread's own id. */
 export const THREAD_REPLIES_URL = `${API_BASE}/conversations.replies`
 
+/** The channels a workspace has, for picking where an alert goes. Query-string arguments only. */
+export const CONVERSATIONS_LIST_URL = `${API_BASE}/conversations.list`
+
 /**
  * The application's OAuth credentials, named in the install half's `requiredConfig`.
  *
@@ -54,10 +57,18 @@ export const SIGNING_SECRET_CONFIG = "MAPLE_SLACK_SIGNING_SECRET"
  *
  *   app_mentions:read   receive `app_mention` — the only event that starts a turn
  *   chat:write          post and edit the answer
+ *   chat:write.public   post an alert to a public channel the bot was never invited to
  *   channels:history    read replies in a public channel's threads
  *   groups:history      …in a private channel's
  *   im:history          …in a direct message
  *   mpim:history        …in a group direct message
+ *   channels:read       list public channels, to pick where an alert goes
+ *   groups:read         …and the private channels the bot is in
+ *
+ * A workspace installed before the last three were added holds a token without them. It keeps
+ * answering mentions, but listing channels answers `missing_scope` and an alert to a channel the
+ * bot is not in answers `not_in_channel` — both reported as "reinstall to grant access", because
+ * reinstalling is the only way a token gains a scope.
  *
  * The four history scopes are what deliver `message` events at all, and a thread follow-up is a
  * `message` event: without them the bot can be addressed once and never hears the rest of the
@@ -75,10 +86,13 @@ export const SIGNING_SECRET_CONFIG = "MAPLE_SLACK_SIGNING_SECRET"
 export const BOT_SCOPES: ReadonlyArray<string> = [
 	"app_mentions:read",
 	"chat:write",
+	"chat:write.public",
 	"channels:history",
 	"groups:history",
 	"im:history",
 	"mpim:history",
+	"channels:read",
+	"groups:read",
 ]
 
 /** Slack's request-signing version prefix. One value has ever existed; it is `v0`. */

@@ -489,6 +489,76 @@ describe("slack transport", () => {
 		}).pipe(Effect.provide(http.layer))
 	})
 
+	it.effect("names what Slack said was wrong, where it said so", () => {
+		const http = stub([
+			{ status: 200, body: '{"ok":false,"error":"token_revoked"}' },
+			{ status: 200, body: '{"ok":false,"error":"not_in_channel"}' },
+			{ status: 200, body: '{"ok":false,"error":"invalid_blocks"}' },
+			{ status: 200, body: '{"ok":false,"error":"fatal_error"}' },
+		])
+		return Effect.gen(function* () {
+			const transport = yield* slackOutbound.transport
+			const post = () => Effect.flip(transport.post(target, [{ kind: "prose", markdown: "x" }]))
+			expect(yield* post()).toMatchObject({ reason: "auth" })
+			expect(yield* post()).toMatchObject({ reason: "not_found" })
+			expect(yield* post()).toMatchObject({ reason: "rejected" })
+			// Nothing the caller can act on: no reason, so it is retried like an outage.
+			expect("reason" in (yield* post())).toBe(false)
+		}).pipe(Effect.provide(http.layer))
+	})
+
+	it.effect("lists the workspace's channels across pages, by name, as a query string", () => {
+		const http = stub([
+			{
+				status: 200,
+				body: JSON.stringify({
+					ok: true,
+					channels: [
+						{ id: "C2", name: "incidents", is_private: false },
+						{ id: "G1", name: "oncall", is_private: true },
+					],
+					response_metadata: { next_cursor: "page-2" },
+				}),
+			},
+			{
+				status: 200,
+				body: JSON.stringify({
+					ok: true,
+					channels: [{ id: "C1", name: "alerts" }],
+					response_metadata: { next_cursor: "" },
+				}),
+			},
+		])
+		return Effect.gen(function* () {
+			const transport = yield* slackOutbound.transport
+			const channels = yield* transport.destinations("T1")
+
+			expect(channels).toEqual([
+				{ id: "C1", name: "alerts", private: false },
+				{ id: "C2", name: "incidents", private: false },
+				{ id: "G1", name: "oncall", private: true },
+			])
+			expect(http.seen).toHaveLength(2)
+			const first = new URL(http.seen[0]!.url)
+			expect(first.pathname).toBe("/api/conversations.list")
+			expect(first.searchParams.get("types")).toBe("public_channel,private_channel")
+			expect(first.searchParams.get("exclude_archived")).toBe("true")
+			expect(http.seen[0]?.method).toBe("GET")
+			expect(new URL(http.seen[1]!.url).searchParams.get("cursor")).toBe("page-2")
+			expect(http.seen[0]?.headers["authorization"]).toBe("Bearer xoxb-a-workspaces-own-token")
+		}).pipe(Effect.provide(http.layer))
+	})
+
+	it.effect("reports a token without the listing scopes as an auth failure", () => {
+		// A workspace linked before the scopes were added: only a reinstall grants them.
+		const http = stub([{ status: 200, body: '{"ok":false,"error":"missing_scope"}' }])
+		return Effect.gen(function* () {
+			const transport = yield* slackOutbound.transport
+			const failure = yield* Effect.flip(transport.destinations("T1"))
+			expect(failure).toMatchObject({ operation: "destinations", reason: "auth" })
+		}).pipe(Effect.provide(http.layer))
+	})
+
 	it.effect("opens nothing for a message that addressed nobody", () => {
 		const http = stub([{ status: 200, body: POSTED }])
 		return Effect.gen(function* () {
