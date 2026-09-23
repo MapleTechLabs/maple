@@ -24,7 +24,8 @@ ChatEvent stream ──▶ makeChatTranscript ──▶ renderChatMessage ──
   its token from `workspaceId` inside its own transport — the contract carries the address, never
   the secret. The credential itself arrives as `ConnectorCredentials`, the configuration the host
   resolved from the names the connector declared, so a host can drive any connector's outbound half
-  with two services it knows: that one and an HTTP client.
+  with two services it knows: that one and an HTTP client. It is an Effect the transport runs per
+  call, not at acquisition, so an event the host never answers never pays for resolving it.
 - `src/driver.ts` — one turn, named by the assistant message id `beginTurn` answered with: placeholder,
   throttled edits, retraction, splitting, approvals, and a short notice for a turn that did not
   simply finish. A stream from seq 0 replays whole earlier turns, which is why the turn is named
