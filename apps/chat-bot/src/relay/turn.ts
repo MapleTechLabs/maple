@@ -125,9 +125,9 @@ export interface RelayPorts<R = never> {
  *
  * The session ends a turn of its own accord — the run finishes, or its heartbeat fails a turn
  * whose object was evicted — so this is the bound on everything that could keep the stream open
- * without one, and it matches the session's own staleness ceiling.
+ * without one, and it matches the session's own staleness ceiling (`TURN_STALE_MS`).
  */
-const RELAY_TIMEOUT = Duration.minutes(15)
+const RELAY_TIMEOUT = Duration.minutes(25)
 
 const UNLINKED_NOTICE =
 	"This workspace isn't connected to a Maple organization yet — an admin can link it under Integrations in Maple."
