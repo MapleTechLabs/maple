@@ -226,6 +226,28 @@ export function splitChartFences(text: string): ReadonlyArray<ChartFencePart> {
 	return parts
 }
 
+/**
+ * Whether a fence is still open at the end of this text.
+ *
+ * The same line scan, for the one question a caller about to CUT a reply has. Counting backtick
+ * runs instead gets it wrong in both directions: a fence opened with four ticks holds lines of
+ * three as payload, and prose can name ``` mid-line without opening anything.
+ */
+export function hasOpenFence(text: string): boolean {
+	let open: number | undefined
+	for (const line of text.split("\n")) {
+		const fence = FENCE_OPEN.exec(line)
+		const ticks = fence?.[1]?.length ?? 0
+		if (open === undefined) {
+			if (ticks > 0) open = ticks
+			continue
+		}
+		// A closing fence is at least as long as the one that opened it and carries no info string.
+		if (ticks >= open && (fence?.[2] ?? "") === "") open = undefined
+	}
+	return open !== undefined
+}
+
 /** Every ```chart fence in a reply, in the order they appear in it. */
 export function chartFences(text: string): ReadonlyArray<string> {
 	return splitChartFences(text).flatMap((part) => (part.kind === "chart" ? [part.value] : []))

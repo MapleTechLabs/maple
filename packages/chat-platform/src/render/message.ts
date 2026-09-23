@@ -16,6 +16,7 @@
 import { parseAnnotations, type AnnotationSegment } from "@maple/domain/chat-annotations"
 import {
 	chartFences,
+	hasOpenFence,
 	normalizeUnit,
 	parseChartSpec,
 	splitChartFences,
@@ -60,7 +61,7 @@ export const renderChatMessage = (
 	// across the cut is counted by this scan too, exactly as the whole-message scan counts it.
 	let chartIndex = chartFences(message.text.slice(0, start)).length
 
-	for (const part of splitChartFences(message.text.slice(start))) {
+	for (const part of splitChartFences(visibleText(message.text, calls, start))) {
 		if (part.kind === "chart") {
 			// Counted before it is judged. The image endpoint numbers the fences it
 			// finds, not the ones that turned out to be charts, so skipping the index
@@ -202,6 +203,36 @@ const entityBlock = (
 const joinDetail = (parts: ReadonlyArray<string | null>): string | null => {
 	const present = parts.filter((part): part is string => part !== null && part.length > 0)
 	return present.length === 0 ? null : present.join(" · ")
+}
+
+/**
+ * The text from the cut on, with a blank line wherever a tool call interrupted the model.
+ *
+ * Usually one segment, because the cut lands on the last call. Two paths can leave a boundary
+ * inside the range anyway: {@link answerOffset}'s fallback, when the final segment is empty, and a
+ * retry's stale offset, which can sit after a later call's. Model text carries no separator of its
+ * own, so concatenating across a boundary runs two sentences together — "…at 40%.Two signatures."
+ *
+ * A boundary inside an unclosed fence is not a place to break: splitting one would stop it parsing
+ * and put a chart's payload in the channel as prose, under an index that no longer matches the
+ * whole-message numbering the image endpoint uses.
+ */
+const visibleText = (text: string, calls: ReadonlyArray<ChatToolCall>, start: number): string => {
+	const bounds = [...new Set(calls.map((call) => call.textOffset ?? text.length))]
+		.filter((at) => at > start && at < text.length)
+		.sort((left, right) => left - right)
+	const segments: Array<string> = []
+	let segment = ""
+	let from = start
+	for (const at of [...bounds, text.length]) {
+		segment += text.slice(from, at)
+		from = at
+		if (hasOpenFence(segment)) continue
+		segments.push(segment.trim())
+		segment = ""
+	}
+	segments.push(segment.trim())
+	return segments.filter((piece) => piece.length > 0).join("\n\n")
 }
 
 /**
