@@ -30,7 +30,14 @@ import {
 	resolveChatWorkspace,
 } from "@maple/backend/services/integrations/chat-workspace-rows"
 import { resolveConnectorConfig } from "../config.ts"
-import { relayWithWorkspace, WorkspaceLookupFailed, type RelayPorts, type ResolvedWorkspace } from "./turn.ts"
+import { decodeRelayTurnCheckpoint, settleRelayedTurn, type SettleOutcome } from "./settle.ts"
+import {
+	relayWithWorkspace,
+	withWorkspace,
+	WorkspaceLookupFailed,
+	type RelayPorts,
+	type ResolvedWorkspace,
+} from "./turn.ts"
 
 /**
  * This Worker's own SDK instance, at module scope so its buffers are the isolate's.
@@ -92,6 +99,8 @@ export interface RelayHost {
 	/** The relay object's own record of the conversations the bot opened — see `ConnectorRelay`. */
 	readonly ownsConversation: RelayPorts["ownsConversation"]
 	readonly rememberConversation: RelayPorts["rememberConversation"]
+	/** The relay object's checkpoint of the turn it is rendering — see `./settle.ts`. */
+	readonly recordTurn: RelayPorts["recordTurn"]
 }
 
 /**
@@ -220,6 +229,7 @@ const ports = (
 	announceUnlinked: host.announceUnlinked,
 	ownsConversation: host.ownsConversation,
 	rememberConversation: host.rememberConversation,
+	recordTurn: host.recordTurn,
 })
 
 /**
@@ -248,12 +258,56 @@ export const runInboundEvent = async (host: RelayHost, event: InboundEvent): Pro
 				event.type === "action" ? event.actor.id : undefined,
 			),
 			(resolveWorkspace) => ports(host, connector, resolveWorkspace),
-		).pipe(
+		).pipe(inRuntime(host.env)),
+	)
+}
+
+/** This Worker's runtime for an event's or a settle's Effect, and the flush that exports its spans. */
+const inRuntime =
+	(env: Record<string, unknown>) =>
+	<A>(program: Effect.Effect<A, never, HttpClient.HttpClient>) =>
+		program.pipe(
 			// oxlint-disable-next-line effecttsgo/strict-effect-provide
-			Effect.provide(Layer.mergeAll(FetchHttpClient.layer, workerEnvLayer(host.env), telemetry.layer)),
+			Effect.provide(Layer.mergeAll(FetchHttpClient.layer, workerEnvLayer(env), telemetry.layer)),
 			// On the fiber rather than in a `finally`: the flush is what exports this event's spans,
 			// so it belongs to the same interruption and failure handling they do.
-			Effect.ensuring(Effect.promise(() => telemetry.flush(host.env).catch(() => undefined))),
-		),
+			Effect.ensuring(Effect.promise(() => telemetry.flush(env).catch(() => undefined))),
+		)
+
+/**
+ * Settle a turn an evicted activation was relaying, through the same connector, config and lazy
+ * workspace read a new event gets. The conversation ports only a new message asks are inert.
+ */
+export const settleInboundTurn = async (
+	host: Pick<RelayHost, "env" | "recordTurn">,
+	stored: unknown,
+): Promise<SettleOutcome> => {
+	const checkpoint = decodeRelayTurnCheckpoint(stored)
+	const connector = Option.isNone(checkpoint)
+		? undefined
+		: connectors.find((candidate) => candidate.id === checkpoint.value.connector)
+	const config = connector === undefined ? undefined : resolveConnectorConfig(host.env, connector)
+	if (Option.isNone(checkpoint) || connector === undefined || config?._tag !== "ready") {
+		return Effect.runPromise(
+			Effect.logWarning("A turn checkpoint this build cannot settle was dropped").pipe(
+				Effect.as<SettleOutcome>("done"),
+				inRuntime(host.env),
+			),
+		)
+	}
+	const relayHost: RelayHost = {
+		...host,
+		announceUnlinked: Effect.succeed(false),
+		ownsConversation: () => Effect.succeed(false),
+		rememberConversation: () => Effect.void,
+	}
+	const { target } = checkpoint.value
+	return Effect.runPromise(
+		withWorkspace(
+			config.config,
+			lookupWorkspace(relayHost, connector, checkpoint.value.connector, target.workspaceId, undefined),
+			(resolveWorkspace) => ports(relayHost, connector, resolveWorkspace),
+			(settlePorts) => settleRelayedTurn(checkpoint.value, settlePorts),
+		).pipe(inRuntime(host.env)),
 	)
 }
