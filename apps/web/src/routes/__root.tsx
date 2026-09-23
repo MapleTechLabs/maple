@@ -205,6 +205,12 @@ function ClerkReverseRedirects() {
 	}
 
 	if (wrongRegion) {
+		// A new organization with no region yet is not in the wrong place, it has not picked one:
+		// onboarding asks, and this region's API lets that one request through.
+		if (orgRegion.open) {
+			if (pathname === "/quick-start") return <AppFrame />
+			return <Navigate to="/quick-start" search={{ redirect_url: redirectUrl }} replace />
+		}
 		return <WrongRegionScreen region={orgRegion.region} />
 	}
 

@@ -4,7 +4,11 @@ import { BillingPublicApiGroup } from "./billing"
 import { ErrorsApiGroup } from "./errors"
 import { IntegrationsApiGroup } from "./integrations"
 import { OrgClickHouseSettingsApiGroup } from "./org-clickhouse-settings"
-import { OrganizationCreationApiGroup, OrganizationsApiGroup } from "./organizations"
+import {
+	OrganizationCreationApiGroup,
+	OrganizationRegionApiGroup,
+	OrganizationsApiGroup,
+} from "./organizations"
 import { SessionReplaysApiGroup } from "./session-replay"
 import { V1SchemaErrors, V1UnexpectedErrors } from "./v1-boundary"
 export class MapleApi extends HttpApi.make("MapleApi")
@@ -16,6 +20,7 @@ export class MapleApi extends HttpApi.make("MapleApi")
 	.add(OrgClickHouseSettingsApiGroup)
 	.add(OrganizationsApiGroup)
 	.add(OrganizationCreationApiGroup)
+	.add(OrganizationRegionApiGroup)
 	.add(SessionReplaysApiGroup)
 	.middleware(V1SchemaErrors)
 	.middleware(V1UnexpectedErrors)

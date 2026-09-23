@@ -69,3 +69,40 @@ export const SessionAuthorizationLayer = Layer.effect(
 		})
 	}),
 )
+
+/**
+ * {@link SessionAuthorizationLayer} without the region check, for choosing an organization's
+ * region in onboarding. Everything else about the session is checked the same way.
+ */
+export const RegionlessSessionAuthorizationLayer = Layer.effect(
+	CurrentTenant.RegionlessSessionAuthorization,
+	Effect.gen(function* () {
+		const env = yield* Env
+		const audit = yield* AuditLogService
+		const resolveTenant = makeResolveTenant(env)
+
+		return CurrentTenant.RegionlessSessionAuthorization.of({
+			bearer: (httpEffect, options) =>
+				Effect.gen(function* () {
+					const request = yield* HttpServerRequest.HttpServerRequest
+					if (getBearerToken(request.headers)?.startsWith(API_KEY_PREFIX)) {
+						return yield* new CurrentTenant.ApiKeyNotAcceptedError({
+							message: "API keys cannot call the internal API; use the /v2 API instead",
+						})
+					}
+					const tenant = yield* resolveTenant(request.headers)
+					yield* annotateAuthSpan("session", { orgId: tenant.orgId, userId: tenant.userId })
+					const actor = { type: "user", source: "dashboard" } as const
+					return yield* httpEffect.pipe(
+						Effect.provideService(CurrentTenant.Context, new CurrentTenant.TenantSchema(tenant)),
+						Effect.provideService(CurrentAuditActor, actor),
+						withAuditedRead(audit, request, options, {
+							orgId: tenant.orgId,
+							actor: { type: "user", userId: tenant.userId },
+							source: actor.source,
+						}),
+					)
+				}),
+		})
+	}),
+)

@@ -14,6 +14,7 @@ import {
 	type MapleRegion,
 	MAPLE_REGION_LABELS,
 	organizationHomeRegion,
+	organizationRegionChosen,
 	organizationRegionsFrom,
 	organizationServedIn,
 } from "@maple/domain/organization-regions"
@@ -21,8 +22,14 @@ import { Clock, Context, Effect, Layer, Option, Redacted } from "effect"
 import { Env } from "@maple/backend/platform/Env"
 import { clerkRequest } from "@maple/backend/services/auth/clerk-request"
 
-/** A region is set once, at creation or in onboarding, so a minute of reuse is safe. */
+/** A chosen region never changes, so a minute of reuse is safe. */
 const REGIONS_TTL_MS = 60_000
+/**
+ * An organization with only the US default may still choose EU in onboarding, after which this
+ * instance must stop serving it. Short enough to close that window, long enough that the many
+ * organizations predating regions are not a Clerk read on every request.
+ */
+const UNCHOSEN_REGION_TTL_MS = 5_000
 
 export interface OrganizationRegionServiceApi {
 	/** The instance's own region. */
@@ -52,7 +59,11 @@ export class OrganizationRegionService extends Context.Service<
 			if (clerk === undefined) return Option.none<unknown>()
 			const nowMs = yield* Clock.currentTimeMillis
 			const cached = cache.get(orgId)
-			if (cached !== undefined && nowMs - cached.atMs < REGIONS_TTL_MS) {
+			const ttlMs =
+				cached !== undefined && organizationRegionChosen(cached.metadata)
+					? REGIONS_TTL_MS
+					: UNCHOSEN_REGION_TTL_MS
+			if (cached !== undefined && nowMs - cached.atMs < ttlMs) {
 				return Option.some(cached.metadata)
 			}
 			return yield* clerkRequest("Clerk.organizations.getOrganization", { orgId }, () =>

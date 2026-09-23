@@ -20,7 +20,11 @@ import { HttpErrorsLive } from "@/routes/v1/errors.http"
 import { HttpIntegrationsLive, IntegrationsCallbackRouter } from "@/routes/v1/integrations.http"
 import { OAuthDiscoveryRouter } from "@/routes/v1/oauth-discovery.http"
 import { HttpOrgClickHouseSettingsLive } from "@/routes/v1/org-clickhouse-settings.http"
-import { HttpOrganizationCreationLive, HttpOrganizationsLive } from "@/routes/v1/organizations.http"
+import {
+	HttpOrganizationCreationLive,
+	HttpOrganizationRegionLive,
+	HttpOrganizationsLive,
+} from "@/routes/v1/organizations.http"
 import { PlanetScaleWebhookRouter } from "@/routes/v1/planetscale-webhook.http"
 import { HttpQueryEngineLive } from "@/routes/internal/query-engine.http"
 import { HttpSessionReplaysInternalLive } from "@/routes/internal/session-replays.http"
@@ -67,7 +71,10 @@ import { HttpV2WidgetSummaryLive } from "@/routes/v2/widget-summary.http"
 import { HttpV2WidgetCredentialsLive } from "@/routes/v2/widget-credentials.http"
 import { ApiAuthorizationLayer } from "@maple/backend/services/auth/ApiAuthorizationLayer"
 import { ApiAuthorizationV2Layer } from "@maple/backend/services/auth/ApiAuthorizationV2Layer"
-import { SessionAuthorizationLayer } from "@maple/backend/services/auth/SessionAuthorizationLayer"
+import {
+	RegionlessSessionAuthorizationLayer,
+	SessionAuthorizationLayer,
+} from "@maple/backend/services/auth/SessionAuthorizationLayer"
 import { UserSessionAuthorizationLayer } from "@maple/backend/services/auth/UserSessionAuthorizationLayer"
 import { OrganizationRegionService } from "@maple/backend/services/org/OrganizationRegionService"
 import { ApiV2RateLimiter } from "@maple/backend/services/auth/ApiV2RateLimiter"
@@ -102,6 +109,7 @@ const ApiRoutes = HttpApiBuilder.layer(MapleApi).pipe(
 	Layer.provide(HttpOrgClickHouseSettingsLive),
 	Layer.provide(HttpOrganizationsLive),
 	Layer.provide(HttpOrganizationCreationLive),
+	Layer.provide(HttpOrganizationRegionLive),
 	Layer.provide(HttpSessionReplaysLive),
 	Layer.provide(V1ErrorBoundaryLive),
 )
@@ -222,6 +230,7 @@ export const ApiAuthLive = Layer.mergeAll(
 	ApiAuthorizationLayer,
 	ApiAuthorizationV2Layer,
 	SessionAuthorizationLayer,
+	RegionlessSessionAuthorizationLayer,
 	UserSessionAuthorizationLayer,
 ).pipe(
 	Layer.provideMerge(ApiV2RateLimiter.layer),

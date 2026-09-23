@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest"
 import {
 	organizationHomeRegion,
 	organizationRegionChosen,
+	organizationRegionOpen,
 	organizationRegionsFrom,
 	organizationServedIn,
 	parseMapleRegion,
@@ -53,5 +54,20 @@ describe("organizationRegionChosen", () => {
 		expect(organizationRegionChosen({ regions: ["mars"] })).toBe(false)
 		expect(organizationRegionChosen({ regions: ["us"] })).toBe(true)
 		expect(organizationRegionChosen({ regions: ["eu"] })).toBe(true)
+	})
+})
+
+describe("organizationRegionOpen", () => {
+	const now = Date.UTC(2026, 8, 23)
+	const day = 24 * 60 * 60 * 1000
+
+	it("is open for a new organization with no region", () => {
+		expect(organizationRegionOpen({}, now - day, now)).toBe(true)
+	})
+
+	it("is closed once a region is chosen, for old organizations, and without a creation time", () => {
+		expect(organizationRegionOpen({ regions: ["us"] }, now - day, now)).toBe(false)
+		expect(organizationRegionOpen({}, now - 8 * day, now)).toBe(false)
+		expect(organizationRegionOpen({}, undefined, now)).toBe(false)
 	})
 })

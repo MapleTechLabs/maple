@@ -186,3 +186,25 @@ export class UserSessionAuthorization extends HttpApiMiddleware.Service<
 		bearer: HttpApiSecurity.bearer,
 	},
 }) {}
+
+/**
+ * {@link SessionAuthorization} without the region check, for the one request that has to reach an
+ * organization before it belongs anywhere: choosing its region in onboarding. On the EU dashboard
+ * that organization still reads as US, so the region check would refuse the choice itself.
+ */
+export class RegionlessSessionAuthorization extends HttpApiMiddleware.Service<
+	RegionlessSessionAuthorization,
+	{
+		provides: Context
+	}
+>()("RegionlessSessionAuthorization", {
+	error: [
+		UnauthorizedError,
+		AuthorizationUnavailableError,
+		ApiKeyNotAcceptedError,
+		OrganizationAccessDeniedError,
+	],
+	security: {
+		bearer: HttpApiSecurity.bearer,
+	},
+}) {}

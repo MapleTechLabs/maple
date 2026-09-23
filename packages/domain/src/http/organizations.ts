@@ -2,7 +2,7 @@ import { HttpApiEndpoint, HttpApiGroup } from "effect/unstable/httpapi"
 import { Schema } from "effect"
 import { OrgId } from "../primitives"
 import { MapleRegion } from "../organization-regions"
-import { Authorization, UserSessionAuthorization } from "./current-tenant"
+import { Authorization, RegionlessSessionAuthorization, UserSessionAuthorization } from "./current-tenant"
 import { HttpTaggedError } from "./error-policy"
 
 export class DeleteOrganizationResponse extends Schema.Class<DeleteOrganizationResponse>(
@@ -94,15 +94,6 @@ export class OrganizationsApiGroup extends HttpApiGroup.make("organizations")
 			error: [OrganizationForbiddenError, OrganizationPersistenceError, OrganizationProviderError],
 		}),
 	)
-	.add(
-		// Onboarding's region step, for an organization created without one. Once only, and never
-		// after the organization has held a plan: by then it has data where it is.
-		HttpApiEndpoint.put("chooseRegion", "/region", {
-			payload: ChooseOrganizationRegionRequest,
-			success: ChooseOrganizationRegionResponse,
-			error: [OrganizationForbiddenError, OrganizationRegionLockedError, OrganizationProviderError],
-		}),
-	)
 	.prefix("/api/organizations")
 	.middleware(Authorization) {}
 
@@ -136,3 +127,20 @@ export class OrganizationCreationApiGroup extends HttpApiGroup.make("organizatio
 	)
 	.prefix("/api/organizations")
 	.middleware(UserSessionAuthorization) {}
+
+/**
+ * Onboarding's region step, for an organization created without one. Once only, within a week of
+ * creation, and never after the organization has held a plan: by then it has data where it is.
+ * Authorized without the region check, which would refuse an unchosen organization on the EU
+ * dashboard and a retry after the organization has moved.
+ */
+export class OrganizationRegionApiGroup extends HttpApiGroup.make("organizationRegion")
+	.add(
+		HttpApiEndpoint.put("choose", "/region", {
+			payload: ChooseOrganizationRegionRequest,
+			success: ChooseOrganizationRegionResponse,
+			error: [OrganizationForbiddenError, OrganizationRegionLockedError, OrganizationProviderError],
+		}),
+	)
+	.prefix("/api/organizations")
+	.middleware(RegionlessSessionAuthorization) {}

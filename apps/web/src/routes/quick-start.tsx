@@ -38,7 +38,22 @@ function QuickStartPage() {
 	const { activeStep, setActiveStep, completeStep, isStepComplete, qualifyAnswers, setQualifyAnswers } =
 		useQuickStart(orgId)
 
-	const { data: customer, isLoading, error } = useMapleCustomer()
+	// Asked first, and only where there is a choice: an organization Clerk created at sign-up has
+	// no region yet. It is read from the organization, not saved here, because choosing the other
+	// region continues onboarding on that region's dashboard.
+	const orgRegion = useOrganizationRegion()
+	const regionUnknown = isClerkAuthEnabled && hasMultipleRegions && !orgRegion.isLoaded
+	const needsRegion = isClerkAuthEnabled && hasMultipleRegions && orgRegion.isLoaded && orgRegion.open
+
+	// Billing is asked only once the region is settled: on the EU dashboard an organization without
+	// one still reads as US, and this instance refuses its requests until it chooses.
+	const {
+		data: customer,
+		isLoading,
+		error,
+	} = useMapleCustomer({
+		queryOptions: { enabled: !needsRegion && !regionUnknown },
+	})
 	const planSelected = hasSelectedPlan(customer)
 	// Shared with __root's redirect gate. Anything but "onboarding" means this org
 	// is not a new one — a lapsed subscriber arriving by bookmark, back button or
@@ -53,11 +68,6 @@ function QuickStartPage() {
 	const onboardingComplete =
 		STEP_IDS.filter((step) => step !== "plan").every(isStepComplete) && planSelected
 
-	// Asked first, and only where there is a choice: an organization Clerk created at sign-up has
-	// no region yet. It is read from the organization, not saved here, because choosing the other
-	// region continues onboarding on that region's dashboard.
-	const orgRegion = useOrganizationRegion()
-	const needsRegion = isClerkAuthEnabled && hasMultipleRegions && orgRegion.isLoaded && !orgRegion.chosen
 	// Counted for the rest of the visit once shown, so the step total does not shrink under the user.
 	const [regionStepShown, setRegionStepShown] = useState(false)
 	if (needsRegion && !regionStepShown) setRegionStepShown(true)
@@ -78,11 +88,11 @@ function QuickStartPage() {
 	// Wait for the customer before rendering a step: deciding from an unsettled
 	// query flashes "what's your role?" at a returning subscriber before the
 	// bail-out below can fire.
-	if (access === "loading") {
+	if (regionUnknown || (!needsRegion && access === "loading")) {
 		return <BootSplash />
 	}
 
-	if (onboardingComplete || access !== "onboarding") {
+	if (!needsRegion && (onboardingComplete || access !== "onboarding")) {
 		return <Navigate to="/" replace />
 	}
 

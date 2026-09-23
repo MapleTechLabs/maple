@@ -8,30 +8,17 @@ export const HttpOrganizationsLive = HttpApiBuilder.group(MapleApi, "organizatio
 	Effect.gen(function* () {
 		const organizationService = yield* OrganizationService
 
-		return handlers
-			.handle("chooseRegion", ({ payload }) =>
-				Effect.gen(function* () {
-					const tenant = yield* CurrentTenant.Context
-					const chosen = yield* organizationService.chooseRegion(
-						tenant.orgId,
-						tenant.roles,
-						payload.region,
-					)
-					yield* recordHttpAudit("organization.region_chosen")
-					return chosen
-				}),
-			)
-			.handle("delete", () =>
-				Effect.gen(function* () {
-					const tenant = yield* CurrentTenant.Context
-					const deleted = yield* organizationService.delete(tenant.orgId, tenant.roles)
-					// Recorded after the fact so a refused delete cannot leave an entry
-					// claiming the org is gone. The entry outlives the org: the audit
-					// log is never cascaded, which is the point of a trail.
-					yield* recordHttpAudit("organization.deleted")
-					return deleted
-				}),
-			)
+		return handlers.handle("delete", () =>
+			Effect.gen(function* () {
+				const tenant = yield* CurrentTenant.Context
+				const deleted = yield* organizationService.delete(tenant.orgId, tenant.roles)
+				// Recorded after the fact so a refused delete cannot leave an entry
+				// claiming the org is gone. The entry outlives the org: the audit
+				// log is never cascaded, which is the point of a trail.
+				yield* recordHttpAudit("organization.deleted")
+				return deleted
+			}),
+		)
 	}),
 )
 
@@ -49,4 +36,23 @@ export const HttpOrganizationCreationLive = HttpApiBuilder.group(
 				}),
 			)
 		}),
+)
+
+export const HttpOrganizationRegionLive = HttpApiBuilder.group(MapleApi, "organizationRegion", (handlers) =>
+	Effect.gen(function* () {
+		const organizationService = yield* OrganizationService
+
+		return handlers.handle("choose", ({ payload }) =>
+			Effect.gen(function* () {
+				const tenant = yield* CurrentTenant.Context
+				const chosen = yield* organizationService.chooseRegion(
+					tenant.orgId,
+					tenant.roles,
+					payload.region,
+				)
+				yield* recordHttpAudit("organization.region_chosen")
+				return chosen
+			}),
+		)
+	}),
 )

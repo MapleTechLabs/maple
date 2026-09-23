@@ -16,6 +16,7 @@ import {
 	organizationHomeRegion,
 	organizationRegionChosen,
 	organizationRegionMetadata,
+	organizationRegionOpen,
 } from "@maple/domain/organization-regions"
 import {
 	actors,
@@ -55,7 +56,7 @@ import {
 	vcsRepositories,
 } from "@maple/db"
 import { eq } from "drizzle-orm"
-import { Context, Effect, Layer, Option, Redacted, Schema } from "effect"
+import { Clock, Context, Effect, Layer, Option, Redacted, Schema } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { Env } from "@maple/backend/platform/Env"
 import { clerkRequest } from "@maple/backend/services/auth/clerk-request"
@@ -373,6 +374,14 @@ export class OrganizationService extends Context.Service<OrganizationService, Or
 					}
 					return yield* new OrganizationRegionLockedError({
 						message: "This organization's data region has already been chosen.",
+					})
+				}
+				// An organization that predates regions has data on US already, plan or not.
+				if (
+					!organizationRegionOpen(org.publicMetadata, org.createdAt, yield* Clock.currentTimeMillis)
+				) {
+					return yield* new OrganizationRegionLockedError({
+						message: "Only a new organization can choose its data region.",
 					})
 				}
 				const customer = yield* autumn

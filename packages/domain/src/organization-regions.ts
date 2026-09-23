@@ -52,6 +52,22 @@ export function organizationRegionChosen(metadata: unknown): boolean {
 	return Array.isArray(raw) && raw.some((value) => Option.isSome(decodeRegion(value)))
 }
 
+/** How long after creation an organization without a region may still choose one. */
+export const REGION_CHOICE_WINDOW_MS = 7 * 24 * 60 * 60 * 1000
+
+/**
+ * Whether the organization may still choose its region: none chosen yet, and new enough that it
+ * is the organization Clerk made at sign-up rather than one that predates regions and has data.
+ */
+export function organizationRegionOpen(
+	metadata: unknown,
+	createdAtMs: number | undefined,
+	nowMs: number,
+): boolean {
+	if (organizationRegionChosen(metadata) || createdAtMs === undefined) return false
+	return nowMs - createdAtMs < REGION_CHOICE_WINDOW_MS
+}
+
 /** The region an organization lives in: the first of its regions. */
 export function organizationHomeRegion(metadata: unknown): MapleRegion {
 	return organizationRegionsFrom(metadata)[0]

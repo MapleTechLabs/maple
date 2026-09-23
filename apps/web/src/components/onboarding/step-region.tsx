@@ -50,7 +50,7 @@ export function StepRegion() {
 	const [region, setRegion] = useState<MapleRegion>(currentRegion)
 	const [isSaving, setIsSaving] = useState(false)
 	const [errorMessage, setErrorMessage] = useState<string | null>(null)
-	const chooseRegion = useAtomSet(MapleApiAtomClient.mutation("organizations", "chooseRegion"), {
+	const chooseRegion = useAtomSet(MapleApiAtomClient.mutation("organizationRegion", "choose"), {
 		mode: "promiseExit",
 	})
 

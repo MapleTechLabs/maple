@@ -2,6 +2,7 @@ import { useOrganization } from "@clerk/clerk-react"
 import {
 	organizationHomeRegion,
 	organizationRegionChosen,
+	organizationRegionOpen,
 	organizationServedIn,
 } from "@maple/domain/organization-regions"
 import { useMemo } from "react"
@@ -15,8 +16,10 @@ export interface OrganizationRegionState {
 	readonly region: MapleRegion
 	/** Whether this dashboard's region serves the active organization. */
 	readonly servedHere: boolean
-	/** False while the organization only has the US default, which onboarding asks about. */
+	/** False while the organization only has the US default. */
 	readonly chosen: boolean
+	/** Whether onboarding may still ask for the region: none chosen, and the organization is new. */
+	readonly open: boolean
 }
 
 /** The active organization's region, from its Clerk public metadata. Clerk mode only. */
@@ -29,6 +32,7 @@ export function useOrganizationRegion(): OrganizationRegionState {
 			region: organizationHomeRegion(metadata),
 			servedHere: organizationServedIn(metadata, currentRegion),
 			chosen: organizationRegionChosen(metadata),
+			open: organizationRegionOpen(metadata, organization?.createdAt?.getTime(), Date.now()),
 		}),
 		[isLoaded, organization, metadata],
 	)
