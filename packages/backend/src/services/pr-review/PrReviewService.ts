@@ -315,6 +315,48 @@ const verdictTitle = (report: PrReviewReport, carried: CarriedFindings): string 
 /** The hidden line the summary comment is found by, so a later review edits it in place. */
 export const PR_REVIEW_COMMENT_MARKER = "<!-- maple-pr-review -->"
 
+const STATUS_OPEN = "<!-- maple-pr-review:status -->"
+const STATUS_CLOSE = "<!-- /maple-pr-review:status -->"
+
+/** What the summary comment says while no finished review has replaced it. */
+export type PrReviewStatusNotice =
+	| { readonly kind: "reviewing"; readonly headSha: string }
+	| { readonly kind: "failed"; readonly headSha: string }
+
+/**
+ * The summary comment with a status notice on top, the way a review announces itself before it
+ * has findings. An earlier review's summary stays underneath until the new one replaces the whole
+ * comment; only the previous notice is swapped out.
+ */
+export const withReviewStatus = (existing: string | undefined, notice: PrReviewStatusNotice): string => {
+	const previous = (existing ?? "")
+		.replace(PR_REVIEW_COMMENT_MARKER, "")
+		.replace(new RegExp(`${STATUS_OPEN}[\\s\\S]*?${STATUS_CLOSE}`), "")
+		.trim()
+	const sha = `\`${notice.headSha.slice(0, 7)}\``
+	const lines =
+		notice.kind === "reviewing"
+			? [
+					"> [!NOTE]",
+					previous === ""
+						? `> **Maple is reviewing this pull request** at ${sha}. This comment updates with the review when it finishes.`
+						: `> **Maple is reviewing the new changes** at ${sha}. The summary below is from the previous review and updates when this one finishes.`,
+				]
+			: [
+					"> [!WARNING]",
+					`> The review of ${sha} could not finish. Comment \`@maple review\` to try again.`,
+				]
+	return clampSummary(
+		[
+			PR_REVIEW_COMMENT_MARKER,
+			STATUS_OPEN,
+			...lines,
+			STATUS_CLOSE,
+			...(previous === "" ? [] : ["", previous]),
+		].join("\n"),
+	)
+}
+
 const SEVERITY_LABEL = {
 	critical: "Critical",
 	warn: "Warning",
@@ -805,6 +847,41 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 			})
 
 			/**
+			 * Put a status notice on the pull request's summary comment. Best effort: a review that
+			 * cannot say it started still runs, and its finished summary replaces the comment anyway.
+			 */
+			const postReviewStatus = (
+				orgId: OrgId,
+				repo: VcsRepo,
+				number: number,
+				notice: PrReviewStatusNotice,
+			) =>
+				Effect.gen(function* () {
+					const target = yield* providerFor(orgId, repo)
+					if (Option.isNone(target)) return
+					const { provider, installation, ref } = target.value
+					yield* provider.writePullRequestSummaryComment(installation, ref, {
+						number,
+						marker: PR_REVIEW_COMMENT_MARKER,
+						body: (existing) => withReviewStatus(existing, notice),
+					})
+				}).pipe(
+					Effect.catchCause((cause) =>
+						Effect.logWarning("[PrReview] could not post the review status comment").pipe(
+							Effect.annotateLogs({
+								orgId,
+								number,
+								status: notice.kind,
+								cause: summarizeCause(cause),
+							}),
+						),
+					),
+					Effect.withSpan("PrReviewService.postReviewStatus", {
+						attributes: { orgId, "maple.pr_review.status_notice": notice.kind },
+					}),
+				)
+
+			/**
 			 * Read the pull request's threads once and record what people did with the findings: the
 			 * 👍 / 👎 on each inline comment, and the open ones a person dismissed. Answers the
 			 * findings still open afterwards. A failed read changes nothing.
@@ -1111,6 +1188,8 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 					config,
 					...(followUp === undefined ? undefined : { followUp }),
 				})
+				// Before the turn, so a fast turn's finished summary is never overwritten by this notice.
+				yield* postReviewStatus(orgId, repo, job.number, { kind: "reviewing", headSha })
 				const claimed = yield* Effect.exit(
 					Effect.tryPromise(() =>
 						stub.beginTurn({
@@ -1139,6 +1218,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 						finishedAt: msToDate(nowMs),
 						updatedAt: msToDate(nowMs),
 					})
+					yield* postReviewStatus(orgId, repo, job.number, { kind: "failed", headSha })
 					yield* annotate("failed")
 					return { reviewId, outcome: "failed" as const }
 				}
@@ -1691,11 +1771,23 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 					const nowMs = yield* Clock.currentTimeMillis
 					yield* Effect.annotateCurrentSpan({ orgId, "maple.pr_review.id": reviewId })
 					// A superseded review's turn ending late must not overwrite `skipped`.
-					yield* updateWhere(orgId, reviewId, ACTIVE_STATUSES, {
+					const failed = yield* updateWhere(orgId, reviewId, ACTIVE_STATUSES, {
 						status: "failed",
 						error,
 						finishedAt: msToDate(nowMs),
 						updatedAt: msToDate(nowMs),
+					})
+					if (!failed) return
+					// The comment still says the review is running; say it stopped.
+					const review = yield* getReview(orgId, reviewId)
+					if (Option.isNone(review)) return
+					const repository = yield* repositories
+						.getRepositoryById(orgId, review.value.repositoryId)
+						.pipe(Effect.mapError(toPersistence))
+					if (Option.isNone(repository)) return
+					yield* postReviewStatus(orgId, repository.value, review.value.number, {
+						kind: "failed",
+						headSha: review.value.headSha,
 					})
 				},
 			)

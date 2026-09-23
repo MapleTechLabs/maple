@@ -117,6 +117,7 @@ const layerFor = (
 				return { sha: "cccccccccccccccccccccccccccccccccccccccc", htmlUrl: null }
 			}),
 		publishPullRequestReview: unused,
+		writePullRequestSummaryComment: unused,
 		searchCode: unused,
 		resolveRef: unused,
 		fetchCloneCredentials: unused,

@@ -1422,6 +1422,32 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 					}),
 				)
 
+			const writePullRequestSummaryComment: VcsProviderClient["writePullRequestSummaryComment"] = (
+				installation,
+				repo,
+				input,
+			) =>
+				client
+					.upsertIssueComment(
+						installation.externalInstallationId,
+						repo.owner,
+						repo.name,
+						input.number,
+						input.marker,
+						input.body,
+					)
+					.pipe(
+						Effect.map((comment) => ({ url: comment.html_url })),
+						Effect.mapError(toVcsError),
+						Effect.withSpan("GithubProvider.writePullRequestSummaryComment", {
+							attributes: {
+								"vcs.owner.name": repo.owner,
+								"vcs.repository.name": repo.name,
+								"vcs.pull_request.number": input.number,
+							},
+						}),
+					)
+
 			const fetchCloneCredentials: VcsProviderClient["fetchCloneCredentials"] = (installation, repo) =>
 				client
 					.mintCloneCredentials(installation.externalInstallationId, repo.owner, repo.name)
@@ -1447,6 +1473,7 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 				fetchCommenterPermission,
 				commitFiles,
 				publishPullRequestReview,
+				writePullRequestSummaryComment,
 				searchCode,
 				fetchSourceFile,
 				resolveRef,

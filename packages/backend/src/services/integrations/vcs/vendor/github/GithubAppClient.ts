@@ -1575,12 +1575,13 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 				repo: string,
 				number: number,
 				marker: string,
-				body: string,
+				// A function writes from the comment already there, so a status line keeps what it sits on.
+				body: string | ((existing: string | undefined) => string),
 			) {
 				const config = yield* resolveConfig
 				const token = yield* mintInstallationToken(externalInstallationId)
 				const base = `${config.apiBaseUrl}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`
-				let existing: number | undefined
+				let existing: { readonly id: number; readonly body?: string | null } | undefined
 				for (let page = 1; page <= MAX_COMMENT_PAGES && existing === undefined; page++) {
 					const response = yield* authedGet(
 						config,
@@ -1600,24 +1601,25 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 						(comment) =>
 							(comment.body ?? "").includes(marker) &&
 							String(comment.performed_via_github_app?.id ?? "") === config.appId,
-					)?.id
+					)
 					if (comments.length < PER_PAGE) break
 				}
 				yield* Effect.annotateCurrentSpan("vcs.pull_request.comment_updated", existing !== undefined)
+				const text = typeof body === "string" ? body : body(existing?.body ?? undefined)
 				const response =
 					existing === undefined
 						? yield* authedSend(
 								"POST",
 								token,
 								`${base}/issues/${number}/comments`,
-								{ body },
+								{ body: text },
 								"Create comment",
 							)
 						: yield* authedSend(
 								"PATCH",
 								token,
-								`${base}/issues/comments/${existing}`,
-								{ body },
+								`${base}/issues/comments/${existing.id}`,
+								{ body: text },
 								"Update comment",
 							)
 				if (!response.ok) return yield* failure(response, "Write pull request comment", "repository")
