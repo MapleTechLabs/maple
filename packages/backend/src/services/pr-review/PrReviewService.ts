@@ -26,6 +26,7 @@ import {
 	PrReviewNotFoundError,
 	PrReviewPersistenceError,
 	PrReviewReport,
+	type PrReviewFeedbackScope,
 	type PrReviewRepositoryConfig,
 	type PrReviewSeverity,
 	type PrReviewSkipReason,
@@ -44,9 +45,15 @@ import { wrapChatContext } from "@maple/domain/chat-preamble"
 import { encodeChatTurnTenant, prReviewSessionId } from "@maple/domain/chat-session"
 import { chatSessionStub } from "@maple/domain/chat-session-stub"
 import { UserId } from "@maple/domain/primitives"
-import { prReviewFindings, prReviews, type PrReviewFindingRow, type PrReviewRow } from "@maple/db"
+import {
+	prReviewFindingEmbeddings,
+	prReviewFindings,
+	prReviews,
+	type PrReviewFindingRow,
+	type PrReviewRow,
+} from "@maple/db"
 import { WorkerEnvironment } from "@maple/infra/worker-runtime"
-import { and, count, desc, eq, gte, inArray, ne } from "drizzle-orm"
+import { and, count, desc, eq, gt, gte, inArray, ne, or } from "drizzle-orm"
 import { Clock, Context, Effect, Exit, Layer, Option, Result, Schema } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
@@ -55,6 +62,14 @@ import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/Org
 import { VcsProviderRegistry } from "@maple/backend/services/integrations/vcs/VcsProviderRegistry"
 import { VcsRepository } from "@maple/backend/services/integrations/vcs/VcsRepository"
 import { VcsSyncQueue } from "@maple/backend/services/integrations/vcs/VcsSyncQueue"
+import {
+	applyFeedback,
+	FEEDBACK_EXAMPLE_LIMIT,
+	type FeedbackExample,
+	feedbackLabel,
+	findingText,
+} from "./feedback"
+import { FindingEmbedder } from "./FindingEmbedder"
 import {
 	dismissedFindings,
 	nextHandles,
@@ -560,6 +575,8 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 			const workerEnv = Option.getOrUndefined(yield* Effect.serviceOption(WorkerEnvironment))
 			// Present where webhooks are consumed; without it a push's review starts at once.
 			const syncQueue = Option.getOrUndefined(yield* Effect.serviceOption(VcsSyncQueue))
+			// Present where the agent runs; without it the feedback filter is off.
+			const embedder = Option.getOrUndefined(yield* Effect.serviceOption(FindingEmbedder))
 
 			const getReview: PrReviewServiceApi["getReview"] = Effect.fn("PrReviewService.getReview")(
 				function* (orgId, reviewId) {
@@ -655,6 +672,118 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 									.where(inArray(prReviewFindings.id, [...ids])),
 							)
 							.pipe(Effect.mapError(toPersistence), Effect.asVoid)
+
+			/**
+			 * Stored findings the team voted on, embedded with `model`, newest first. `repositoryId`
+			 * narrows the pool to one repository; absent, every repository of the org counts.
+			 */
+			const loadFeedbackExamples = (
+				orgId: OrgId,
+				model: string,
+				repositoryId: VcsRepositoryId | undefined,
+			) =>
+				database
+					.execute((db) =>
+						db
+							.select({
+								status: prReviewFindings.status,
+								reactionsUp: prReviewFindings.reactionsUp,
+								reactionsDown: prReviewFindings.reactionsDown,
+								embedding: prReviewFindingEmbeddings.embedding,
+							})
+							.from(prReviewFindingEmbeddings)
+							.innerJoin(
+								prReviewFindings,
+								eq(prReviewFindings.id, prReviewFindingEmbeddings.findingId),
+							)
+							.where(
+								and(
+									eq(prReviewFindingEmbeddings.orgId, orgId),
+									eq(prReviewFindingEmbeddings.model, model),
+									eq(prReviewFindings.orgId, orgId),
+									...(repositoryId === undefined
+										? []
+										: [eq(prReviewFindingEmbeddings.repositoryId, repositoryId)]),
+									or(
+										inArray(prReviewFindings.status, ["dismissed", "resolved"]),
+										gt(prReviewFindings.reactionsUp, 0),
+										gt(prReviewFindings.reactionsDown, 0),
+									),
+								),
+							)
+							.orderBy(desc(prReviewFindingEmbeddings.createdAt))
+							.limit(FEEDBACK_EXAMPLE_LIMIT),
+					)
+					.pipe(
+						Effect.mapError(toPersistence),
+						Effect.map((rows) =>
+							rows.flatMap((row): ReadonlyArray<FeedbackExample> => {
+								const label = feedbackLabel(row)
+								return label === undefined ? [] : [{ label, embedding: row.embedding }]
+							}),
+						),
+					)
+
+			/**
+			 * Drop the findings the team's votes reject, before they are stored or posted. Answers the
+			 * findings to keep and, when the model answered, their vectors to store for later reviews.
+			 * An embedding or read failure keeps every finding: the filter may only ever remove.
+			 */
+			const filterByFeedback = Effect.fn("PrReviewService.filterByFeedback")(function* (
+				orgId: OrgId,
+				repositoryId: VcsRepositoryId,
+				scope: PrReviewFeedbackScope,
+				findings: ReadonlyArray<PrReviewFinding>,
+			) {
+				const none: ReadonlyArray<PrReviewFinding> = []
+				const keepAll = (state: string) =>
+					Effect.as(Effect.annotateCurrentSpan({ "maple.pr_review.feedback_filter": state }), {
+						kept: findings,
+						vectors: undefined,
+						suppressed: none,
+					})
+				if (findings.length === 0) return yield* keepAll("empty")
+				if (embedder === undefined) return yield* keepAll("no_embedder")
+				// Embedded even with the filter off, so turning it on later has history to read.
+				const embedded = yield* embedder.embed(findings.map(findingText)).pipe(Effect.result)
+				if (Result.isFailure(embedded) || embedded.success.length !== findings.length) {
+					yield* Effect.logWarning("[PrReview] could not embed findings; posting all of them").pipe(
+						Effect.annotateLogs({
+							orgId,
+							error: Result.isFailure(embedded)
+								? embedded.failure.message
+								: `expected ${findings.length} vectors, got ${embedded.success.length}`,
+						}),
+					)
+					return yield* keepAll("embed_failed")
+				}
+				const vectors = embedded.success
+				const unfiltered = (state: string) =>
+					Effect.as(Effect.annotateCurrentSpan({ "maple.pr_review.feedback_filter": state }), {
+						kept: findings,
+						vectors,
+						suppressed: none,
+					})
+				if (scope === "off") return yield* unfiltered("off")
+				const examples = yield* loadFeedbackExamples(
+					orgId,
+					embedder.model,
+					scope === "repository" ? repositoryId : undefined,
+				).pipe(Effect.result)
+				if (Result.isFailure(examples)) {
+					yield* Effect.logWarning(
+						"[PrReview] could not read feedback examples; posting all findings",
+					).pipe(Effect.annotateLogs({ orgId, error: examples.failure.message }))
+					return yield* unfiltered("read_failed")
+				}
+				const { kept, keptVectors, suppressed } = applyFeedback(findings, vectors, examples.success)
+				yield* Effect.annotateCurrentSpan({
+					"maple.pr_review.feedback_filter": "applied",
+					"maple.pr_review.feedback_scope": scope,
+					"maple.pr_review.feedback_examples": examples.success.length,
+				})
+				return { kept, vectors: keptVectors, suppressed }
+			})
 
 			/** The provider, installation and reference a repository's reads and posts go through. */
 			const providerFor = Effect.fn("PrReviewService.providerFor")(function* (
@@ -1306,11 +1435,30 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 					allowed,
 					tracked.filter((finding) => !resolved.includes(finding)),
 				)
+				// The team's votes on earlier findings, applied to what is left; never to security or
+				// critical findings. A suppressed finding is neither stored nor posted.
+				const feedback = yield* filterByFeedback(
+					orgId,
+					review.repositoryId,
+					config.feedbackScope ?? "organization",
+					fresh,
+				)
+				if (feedback.suppressed.length > 0) {
+					yield* Effect.logInfo("[PrReview] findings suppressed by the team's feedback").pipe(
+						Effect.annotateLogs({
+							orgId,
+							reviewId,
+							suppressed: feedback.suppressed
+								.map((finding) => `${finding.path}:${finding.line} ${finding.title}`)
+								.join(" | "),
+						}),
+					)
+				}
 				const handles = nextHandles(
 					tracked.map((finding) => finding.handle),
-					fresh.length,
+					feedback.kept.length,
 				)
-				const findings = fresh.map(
+				const findings = feedback.kept.map(
 					(finding, i) => new PrReviewFinding({ ...finding, handle: handles[i] ?? "" }),
 				)
 				const hasIssues = [...findings, ...stillOpen].some((finding) => finding.severity !== "info")
@@ -1332,6 +1480,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 					"maple.pr_review.score": score,
 					"maple.pr_review.findings": report.findings.length,
 					"maple.pr_review.repeated": repeated,
+					"maple.pr_review.suppressed": feedback.suppressed.length,
 					"maple.pr_review.ignored": request.report.findings.length - allowed.length,
 					"maple.pr_review.resolved": resolved.length,
 					"maple.pr_review.carried_open": stillOpen.length,
@@ -1390,6 +1539,34 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 							),
 						)
 						.pipe(Effect.mapError(toPersistence))
+				}
+				// The vectors a later review compares against. Losing them only weakens a later filter,
+				// so a failed write is logged rather than failing a review that is already stored.
+				const vectors = feedback.vectors
+				if (embedder !== undefined && vectors !== undefined && findings.length > 0) {
+					yield* database
+						.execute((db) =>
+							db
+								.insert(prReviewFindingEmbeddings)
+								.values(
+									findings.map((finding, i) => ({
+										findingId: keys.get(finding.handle ?? "") ?? randomUUID(),
+										orgId,
+										repositoryId: review.repositoryId,
+										model: embedder.model,
+										embedding: [...(vectors[i] ?? [])],
+										createdAt: msToDate(nowMs),
+									})),
+								)
+								.onConflictDoNothing(),
+						)
+						.pipe(
+							Effect.catch((error) =>
+								Effect.logWarning("[PrReview] could not store finding embeddings").pipe(
+									Effect.annotateLogs({ orgId, reviewId, error: error.message }),
+								),
+							),
+						)
 				}
 				yield* setFindingStatus(
 					resolved.map((finding) => finding.id),

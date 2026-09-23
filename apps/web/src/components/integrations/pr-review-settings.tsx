@@ -3,6 +3,7 @@ import { Exit, Schema } from "effect"
 import {
 	GithubPrReviewConfigRequest,
 	PrReviewCategory,
+	PrReviewFeedbackScope,
 	PrReviewRepositoryConfig,
 	PrReviewSeverity,
 	type GithubRepoSummary,
@@ -66,6 +67,13 @@ const SEVERITY_LABELS = {
 	info: "Every finding",
 } satisfies Record<PrReviewSeverity, string>
 const isSeverity = Schema.is(PrReviewSeverity)
+
+const FEEDBACK_LABELS = {
+	organization: "Whole organization",
+	repository: "This repository",
+	off: "Off",
+} satisfies Record<PrReviewFeedbackScope, string>
+const isFeedbackScope = Schema.is(PrReviewFeedbackScope)
 
 const SKIP_LABELS = {
 	disabled: "reviews off",
@@ -155,6 +163,7 @@ interface FormState {
 	readonly minInlineSeverity: PrReviewSeverity
 	readonly reviewDrafts: boolean
 	readonly dailyLimit: string
+	readonly feedbackScope: PrReviewFeedbackScope
 }
 
 const stateFromConfig = (config: PrReviewRepositoryConfig): FormState => ({
@@ -164,6 +173,7 @@ const stateFromConfig = (config: PrReviewRepositoryConfig): FormState => ({
 	minInlineSeverity: config.minInlineSeverity ?? "warn",
 	reviewDrafts: config.reviewDrafts ?? false,
 	dailyLimit: config.dailyLimit === undefined ? "" : String(config.dailyLimit),
+	feedbackScope: config.feedbackScope ?? "organization",
 })
 
 const sameState = (a: FormState, b: FormState) =>
@@ -172,6 +182,7 @@ const sameState = (a: FormState, b: FormState) =>
 	a.minInlineSeverity === b.minInlineSeverity &&
 	a.reviewDrafts === b.reviewDrafts &&
 	a.dailyLimit === b.dailyLimit &&
+	a.feedbackScope === b.feedbackScope &&
 	a.categories.length === b.categories.length &&
 	a.categories.every((category) => b.categories.includes(category))
 
@@ -212,6 +223,7 @@ const configFromState = (state: FormState) => {
 		...(state.minInlineSeverity === "warn" ? undefined : { minInlineSeverity: state.minInlineSeverity }),
 		...(state.reviewDrafts ? { reviewDrafts: true } : undefined),
 		...(limit === "" ? undefined : { dailyLimit: Number(limit) }),
+		...(state.feedbackScope === "organization" ? undefined : { feedbackScope: state.feedbackScope }),
 	})
 }
 
@@ -359,6 +371,32 @@ function ConfigForm({ repo, config }: { repo: GithubRepoSummary; config: PrRevie
 					/>
 					<p className="text-xs text-muted-foreground">
 						Reviews per UTC day. The organization limit still applies.
+					</p>
+				</div>
+
+				<div className="flex flex-col gap-1.5">
+					<Label htmlFor={`${id}-feedback`}>Learn from feedback</Label>
+					<Select
+						items={FEEDBACK_LABELS}
+						value={state.feedbackScope}
+						onValueChange={(value) => {
+							if (isFeedbackScope(value)) update({ feedbackScope: value })
+						}}
+					>
+						<SelectTrigger id={`${id}-feedback`} className="w-full">
+							<SelectValue />
+						</SelectTrigger>
+						<SelectContent>
+							{PrReviewFeedbackScope.literals.map((scope) => (
+								<SelectItem key={scope} value={scope}>
+									{FEEDBACK_LABELS[scope]}
+								</SelectItem>
+							))}
+						</SelectContent>
+					</Select>
+					<p className="text-xs text-muted-foreground">
+						Skips findings like ones your team downvoted or dismissed. Security and critical
+						findings are always posted.
 					</p>
 				</div>
 			</div>

@@ -121,6 +121,12 @@ export const PrReviewFindingStatus = Schema.Literals(["open", "resolved", "dismi
 })
 export type PrReviewFindingStatus = Schema.Schema.Type<typeof PrReviewFindingStatus>
 
+export const PrReviewFeedbackScope = Schema.Literals(["organization", "repository", "off"]).annotate({
+	identifier: "@maple/PrReviewFeedbackScope",
+	title: "Pull Request Review Feedback Scope",
+})
+export type PrReviewFeedbackScope = Schema.Schema.Type<typeof PrReviewFeedbackScope>
+
 /**
  * Per-repository review settings. Every field is optional so a repository with none set reviews
  * with the defaults: every lens, no ignored paths, drafts skipped, notes posted.
@@ -139,6 +145,11 @@ export class PrReviewRepositoryConfig extends Schema.Class<PrReviewRepositoryCon
 	reviewDrafts: Schema.optionalKey(Schema.Boolean),
 	/** Reviews this repository may start per UTC day; the organization's ceiling still applies. */
 	dailyLimit: Schema.optionalKey(Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 500 }))),
+	/**
+	 * Whose votes decide which findings are suppressed before posting: every repository of the
+	 * organization (the default), this repository only, or nobody (`off`).
+	 */
+	feedbackScope: Schema.optionalKey(PrReviewFeedbackScope),
 }) {}
 
 /** The stored review: the shape a reader can rely on. */

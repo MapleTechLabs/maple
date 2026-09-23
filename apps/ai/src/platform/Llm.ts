@@ -10,9 +10,10 @@
  * `@effect/ai-openai-compat` pointed at the account's OpenAI-compatible base URL. Both post to
  * `/chat/completions`, which is what lets one shim serve the binding path.
  */
-import { OpenAiClient, OpenAiLanguageModel } from "@effect/ai-openai-compat"
+import { OpenAiClient, OpenAiEmbeddingModel, OpenAiLanguageModel } from "@effect/ai-openai-compat"
 import { OpenRouterClient, OpenRouterDecisionModel, OpenRouterLanguageModel } from "@effect/ai-openrouter"
 import { MAPLE_NATIVE_SESSION_ID_ATTR, MAPLE_NATIVE_TURN_ID_ATTR } from "@maple/domain/gen-ai"
+import { FindingEmbedder, PrReviewEmbeddingError } from "@maple/backend/services/pr-review/FindingEmbedder"
 import { Effect, Layer, Option, Redacted, Schema } from "effect"
 import type * as DecisionModel from "effect/unstable/ai/DecisionModel"
 import * as LanguageModel from "effect/unstable/ai/LanguageModel"
@@ -43,6 +44,15 @@ export const DEFAULT_DECISION_MODEL = "~typesafe/jev-latest"
  */
 const OPENROUTER_APP_URL = "https://maple.dev"
 const OPENROUTER_APP_TITLE = "Maple"
+
+/** OpenRouter's OpenAI-compatible API, which serves `/embeddings` alongside chat. */
+const OPENROUTER_API_URL = "https://openrouter.ai/api/v1"
+
+/**
+ * Default embedding model for the review's feedback filter. Changing it starts the filter from an
+ * empty history: stored vectors are only compared with vectors from the same model.
+ */
+export const DEFAULT_EMBEDDING_MODEL = "openai/text-embedding-3-small"
 
 /**
  * Where a model call came from and what it is running for.
@@ -116,6 +126,8 @@ export interface LlmEnv extends Record<string, unknown> {
 	readonly OPENROUTER_API_KEY?: string
 	/** Decision model id, overriding {@link DEFAULT_DECISION_MODEL}. */
 	readonly MAPLE_DECISION_MODEL?: string
+	/** Embedding model id, overriding {@link DEFAULT_EMBEDDING_MODEL}. */
+	readonly MAPLE_EMBEDDING_MODEL?: string
 }
 
 /**
@@ -393,6 +405,19 @@ const splicePerCallFields = (
 		})
 	})
 
+/** The HTTP client every OpenRouter call goes out on, with the app-attribution headers. */
+const openRouterHttp = Layer.effect(HttpClient.HttpClient)(
+	Effect.map(HttpClient.HttpClient, (client) =>
+		HttpClient.mapRequest(
+			client,
+			HttpClientRequest.setHeaders({
+				"HTTP-Referer": OPENROUTER_APP_URL,
+				"X-Title": OPENROUTER_APP_TITLE,
+			}),
+		),
+	),
+)
+
 /**
  * The runnable LLM stack — both provider clients, so the switch stays a pure env flip.
  *
@@ -409,21 +434,7 @@ export const layerLlm = (env: LlmEnv): Layer.Layer<LlmClients> => {
 		OpenRouterClient.layer({
 			apiKey: Redacted.make(readString(env, "OPENROUTER_API_KEY") ?? ""),
 			transformClient: withPerCallFields,
-		}).pipe(
-			Layer.provide(
-				Layer.effect(HttpClient.HttpClient)(
-					Effect.map(HttpClient.HttpClient, (client) =>
-						HttpClient.mapRequest(
-							client,
-							HttpClientRequest.setHeaders({
-								"HTTP-Referer": OPENROUTER_APP_URL,
-								"X-Title": OPENROUTER_APP_TITLE,
-							}),
-						),
-					),
-				).pipe(Layer.provide(http)),
-			),
-		),
+		}).pipe(Layer.provide(openRouterHttp.pipe(Layer.provide(http)))),
 		// The URL the shim already matches: `.../ai/v1/chat/completions`.
 		OpenAiClient.layer({
 			apiKey: Redacted.make(readString(env, "CLOUDFLARE_API_KEY") ?? BINDING_PLACEHOLDER),
@@ -448,3 +459,34 @@ export const layerDecisionModel = (
 /** The decision model this deploy asks, so a verdict can record what answered it. */
 export const resolveDecisionModel = (env: LlmEnv): string =>
 	readString(env, "MAPLE_DECISION_MODEL") ?? DEFAULT_DECISION_MODEL
+
+/**
+ * The embedder the PR review's feedback filter compares findings with, on OpenRouter whichever
+ * provider the agents run on: Workers AI's binding shim only answers chat. Its `OpenAiClient` is
+ * private to this layer, so it never replaces the Workers AI one `layerLlm` provides. Without an
+ * OpenRouter key there is no embedder, and the filter is off.
+ */
+export const layerFindingEmbedder = (env: LlmEnv): Layer.Layer<FindingEmbedder> | Layer.Layer<never> => {
+	const apiKey = readString(env, "OPENROUTER_API_KEY")
+	if (apiKey === undefined) return Layer.empty
+	const model = readString(env, "MAPLE_EMBEDDING_MODEL") ?? DEFAULT_EMBEDDING_MODEL
+	return Layer.effect(FindingEmbedder)(
+		Effect.map(OpenAiEmbeddingModel.make({ model }), (embeddings) => ({
+			model,
+			embed: (inputs: ReadonlyArray<string>) =>
+				embeddings.embedMany(inputs).pipe(
+					Effect.map((response) => response.embeddings.map((embedding) => embedding.vector)),
+					Effect.mapError(
+						(error) =>
+							new PrReviewEmbeddingError({ message: error.message, model, cause: error }),
+					),
+				),
+		})),
+	).pipe(
+		Layer.provide(
+			OpenAiClient.layer({ apiKey: Redacted.make(apiKey), apiUrl: OPENROUTER_API_URL }).pipe(
+				Layer.provide(openRouterHttp.pipe(Layer.provide(FetchHttpClient.layer))),
+			),
+		),
+	)
+}

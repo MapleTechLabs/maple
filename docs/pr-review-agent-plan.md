@@ -283,6 +283,23 @@ one product behind the same `prreview` rollout flag. Observability is one lens o
 - When a pull request closes, its threads are read once more for reactions and dismissals.
   `maple.pr_review.reactions_up` / `reactions_down` on the span are the live precision signal.
 
+### Learning from feedback
+
+- Every stored finding's `category: title` and body are embedded (`FindingEmbedder`, wired in
+  `apps/ai/src/platform/Llm.ts`, OpenRouter `/embeddings`, `openai/text-embedding-3-small` unless
+  `MAPLE_EMBEDDING_MODEL` says otherwise) into `pr_review_finding_embeddings`, keyed by finding and
+  stamped with the model. Vectors from different models are never compared.
+- A stored finding is negative when dismissed or when 👎 outnumber 👍; positive when 👍 outnumber
+  👎 or a later head fixed it; otherwise it does not vote.
+- In `submit_review`, after ignored paths, lenses and repeats, each new finding is compared with the
+  2,000 newest voting findings: cosine ≥ 0.5 to at least three negatives and fewer than three
+  positives suppresses it. It is neither stored nor posted, and `maple.pr_review.suppressed` counts
+  it. Security and critical findings are never suppressed. The 0.5 bar was measured on the default
+  model (same kind of comment 0.52 to 0.68, different kinds at most 0.44); re-measure on a new one.
+- The pool is the organization by default; `feedbackScope` in the repository settings narrows it
+  to the repository or turns the filter off (vectors are still stored, so turning it back on has
+  history). No embedder, or an embedding or read failure, posts every finding.
+
 ### Conversation (`@maple`)
 
 - `issue_comment` and `pull_request_review_comment` webhooks become `pull-request-comment` jobs only

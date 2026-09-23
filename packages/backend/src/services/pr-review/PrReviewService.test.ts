@@ -14,11 +14,15 @@ import {
 	type VcsSyncJob,
 	PrReviewId,
 	PrReviewReport,
+	PrReviewRepositoryConfig,
 	SubmitPrReviewRequest,
 	VcsRepoUnavailableError,
+	VcsRepositoryId,
 } from "@maple/domain/http"
+import { prReviewFindingEmbeddings, prReviewFindings } from "@maple/db"
 import { WorkerEnvironment } from "@maple/infra/worker-runtime"
 import { Effect, Layer, Option, Schema } from "effect"
+import { Database } from "@maple/backend/platform/DatabaseLive"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
 import {
 	asOrgId,
@@ -46,6 +50,7 @@ import {
 	renderCheckSummary,
 	renderSummaryComment,
 } from "./PrReviewService"
+import { FindingEmbedder, type FindingEmbedderApi, PrReviewEmbeddingError } from "./FindingEmbedder"
 
 const trackedDbs: TestDb[] = []
 afterEach(() => cleanupTestDbs(trackedDbs))
@@ -93,6 +98,7 @@ const layerFor = (
 		readonly resolvedThreads?: Array<string>
 		/** Present: pushes are debounced through this queue, which records what it was sent. */
 		readonly queued?: Array<{ readonly job: VcsSyncJob; readonly delaySeconds: number | undefined }>
+		readonly embedder?: FindingEmbedderApi
 	} = {},
 ) => {
 	// Only the one write is reached; every read dies so a test that strays says so loudly.
@@ -173,6 +179,9 @@ const layerFor = (
 								}),
 							sendBatch: () => Effect.void,
 						}),
+				options.embedder === undefined
+					? Layer.empty
+					: Layer.succeed(FindingEmbedder, options.embedder),
 				OrganizationFeatureFlagsService.fixed({
 					...ENABLED_ORGANIZATION_FEATURE_FLAGS,
 					prReview: options.rolledOut ?? true,
@@ -638,6 +647,289 @@ describe("PrReviewService.submitReview", () => {
 			)
 			assert.equal(result._tag, "@maple/http/pr-review/PrReviewNotFoundError")
 		}).pipe(Effect.provide(layerFor(testDb)))
+	})
+})
+
+const EMBEDDING_MODEL = "test-embedder"
+const NOISE = [1, 0, 0]
+const OTHER = [0, 1, 0]
+
+/** Anything mentioning "noisy" lands on one direction, everything else on another. */
+const fakeEmbedder = (calls: Array<ReadonlyArray<string>> = []): FindingEmbedderApi => ({
+	model: EMBEDDING_MODEL,
+	embed: (inputs) =>
+		Effect.sync(() => {
+			calls.push(inputs)
+			return inputs.map((text) => (text.includes("noisy") ? NOISE : OTHER))
+		}),
+})
+
+/** Earlier findings the team voted on, stored with their vectors the way `submitReview` stores them. */
+const seedVotes = (
+	repositoryId: VcsRepositoryId,
+	votes: ReadonlyArray<{
+		readonly status: "open" | "resolved" | "dismissed"
+		readonly up?: number
+		readonly down?: number
+		readonly embedding?: ReadonlyArray<number>
+		readonly model?: string
+	}>,
+) =>
+	Effect.gen(function* () {
+		const database = yield* Database
+		const now = new Date(0)
+		const rows = votes.map((vote, i) => ({ vote, id: `vote-${repositoryId}-${i}` }))
+		yield* database.execute((db) =>
+			db.insert(prReviewFindings).values(
+				rows.map(({ vote, id }, i) => ({
+					id,
+					orgId,
+					repositoryId,
+					number: 1,
+					reviewId: UNKNOWN_REVIEW,
+					handle: `F${i + 1}`,
+					path: "old.ts",
+					line: 1,
+					category: "convention" as const,
+					severity: "info" as const,
+					title: "noisy log line",
+					status: vote.status,
+					reactionsUp: vote.up ?? 0,
+					reactionsDown: vote.down ?? 0,
+					createdAt: now,
+					updatedAt: now,
+				})),
+			),
+		)
+		yield* database.execute((db) =>
+			db.insert(prReviewFindingEmbeddings).values(
+				rows.map(({ vote, id }) => ({
+					findingId: id,
+					orgId,
+					repositoryId,
+					model: vote.model ?? EMBEDDING_MODEL,
+					embedding: [...(vote.embedding ?? NOISE)],
+					createdAt: now,
+				})),
+			),
+		)
+	})
+
+const storedEmbeddings = Effect.gen(function* () {
+	const database = yield* Database
+	return yield* database.execute((db) => db.select().from(prReviewFindingEmbeddings))
+})
+
+const ELSEWHERE = Schema.decodeSync(VcsRepositoryId)("99999999-9999-4999-8999-999999999999")
+
+const noisyConvention = {
+	path: "src/log.ts",
+	line: 4,
+	category: "convention" as const,
+	severity: "warn" as const,
+	title: "noisy debug log",
+	body: "Drop the log line.",
+}
+
+describe("PrReviewService.submitReview feedback filter", () => {
+	it.effect("suppresses a finding like three the team downvoted or dismissed, never a security one", () => {
+		const testDb = createTestDb(trackedDbs)
+		const published: Array<PullRequestReviewPublication> = []
+		return Effect.gen(function* () {
+			const repositoryId = yield* seed(true)
+			yield* seedVotes(repositoryId, [
+				{ status: "open", down: 1 },
+				{ status: "resolved", up: 0, down: 2 },
+				{ status: "dismissed", up: 1 },
+				// Untouched: says nothing either way.
+				{ status: "open" },
+			])
+			const reviews = yield* PrReviewService
+			const started = yield* reviews.onPullRequestEvent(orgId, job())
+			yield* reviews.submitReview(
+				orgId,
+				started.reviewId!,
+				new SubmitPrReviewRequest({
+					report: report([
+						noisyConvention,
+						{ ...noisyConvention, line: 9, category: "security", title: "noisy token log" },
+						{ ...noisyConvention, line: 20, severity: "critical", title: "noisy crash" },
+						{ ...noisyConvention, line: 30, category: "correctness", title: "off by one" },
+					]),
+				}),
+			)
+			assert.deepEqual(
+				published[0]!.comments.map((comment) => comment.line),
+				[9, 20, 30],
+			)
+			const stored = Option.getOrThrow(yield* reviews.getReview(orgId, started.reviewId!))
+			assert.deepEqual(
+				stored.report?.findings.map((finding) => [finding.handle, finding.title]),
+				[
+					["F1", "noisy token log"],
+					["F2", "noisy crash"],
+					["F3", "off by one"],
+				],
+			)
+			// The posted findings are embedded for later reviews; the suppressed one is not stored.
+			const embeddings = yield* storedEmbeddings
+			assert.equal(embeddings.length, 4 + 3)
+			assert.deepEqual(
+				embeddings.filter((row) => !row.findingId.startsWith("vote-")).map((row) => row.embedding),
+				[NOISE, NOISE, OTHER],
+			)
+		}).pipe(Effect.provide(layerFor(testDb, { published, embedder: fakeEmbedder() })))
+	})
+
+	it.effect("posts it when as many similar findings were upvoted or fixed", () => {
+		const testDb = createTestDb(trackedDbs)
+		const published: Array<PullRequestReviewPublication> = []
+		return Effect.gen(function* () {
+			const repositoryId = yield* seed(true)
+			yield* seedVotes(repositoryId, [
+				{ status: "dismissed" },
+				{ status: "dismissed" },
+				{ status: "dismissed" },
+				{ status: "open", up: 2 },
+				{ status: "resolved" },
+				{ status: "resolved", up: 1 },
+			])
+			const reviews = yield* PrReviewService
+			const started = yield* reviews.onPullRequestEvent(orgId, job())
+			yield* reviews.submitReview(
+				orgId,
+				started.reviewId!,
+				new SubmitPrReviewRequest({ report: report([noisyConvention]) }),
+			)
+			assert.equal(published[0]!.comments.length, 1)
+		}).pipe(Effect.provide(layerFor(testDb, { published, embedder: fakeEmbedder() })))
+	})
+
+	it.effect("reads only this repository's votes when scoped to it, and none when off", () => {
+		const testDb = createTestDb(trackedDbs)
+		const published: Array<PullRequestReviewPublication> = []
+		return Effect.gen(function* () {
+			const repositoryId = yield* seed(true)
+			yield* seedVotes(ELSEWHERE, [
+				{ status: "dismissed" },
+				{ status: "dismissed" },
+				{ status: "dismissed" },
+			])
+			const repo = yield* VcsRepository
+			const reviews = yield* PrReviewService
+
+			yield* repo.setPrReviewConfig(
+				orgId,
+				repositoryId,
+				new PrReviewRepositoryConfig({ feedbackScope: "repository" }),
+			)
+			const scoped = yield* reviews.onPullRequestEvent(orgId, job())
+			yield* reviews.submitReview(
+				orgId,
+				scoped.reviewId!,
+				new SubmitPrReviewRequest({ report: report([noisyConvention]) }),
+			)
+			assert.equal(published[0]!.comments.length, 1)
+
+			yield* repo.setPrReviewConfig(orgId, repositoryId, new PrReviewRepositoryConfig({}))
+			const orgWide = yield* reviews.onPullRequestEvent(orgId, job({ number: 613, headSha: HEAD_2 }))
+			yield* reviews.submitReview(
+				orgId,
+				orgWide.reviewId!,
+				new SubmitPrReviewRequest({ report: report([noisyConvention]) }),
+			)
+			assert.equal(published[1]!.comments.length, 0)
+
+			yield* repo.setPrReviewConfig(
+				orgId,
+				repositoryId,
+				new PrReviewRepositoryConfig({ feedbackScope: "off" }),
+			)
+			const off = yield* reviews.onPullRequestEvent(
+				orgId,
+				job({ number: 614, headSha: sha("3333333333333333333333333333333333333333") }),
+			)
+			yield* reviews.submitReview(
+				orgId,
+				off.reviewId!,
+				new SubmitPrReviewRequest({ report: report([noisyConvention]) }),
+			)
+			assert.equal(published[2]!.comments.length, 1)
+		}).pipe(Effect.provide(layerFor(testDb, { published, embedder: fakeEmbedder() })))
+	})
+
+	it.effect("never compares vectors from another embedding model", () => {
+		const testDb = createTestDb(trackedDbs)
+		const published: Array<PullRequestReviewPublication> = []
+		return Effect.gen(function* () {
+			const repositoryId = yield* seed(true)
+			yield* seedVotes(
+				repositoryId,
+				Array.from({ length: 3 }, () => ({
+					status: "dismissed" as const,
+					model: "retired-embedder",
+				})),
+			)
+			const reviews = yield* PrReviewService
+			const started = yield* reviews.onPullRequestEvent(orgId, job())
+			yield* reviews.submitReview(
+				orgId,
+				started.reviewId!,
+				new SubmitPrReviewRequest({ report: report([noisyConvention]) }),
+			)
+			assert.equal(published[0]!.comments.length, 1)
+		}).pipe(Effect.provide(layerFor(testDb, { published, embedder: fakeEmbedder() })))
+	})
+
+	it.effect("posts every finding when the embedder fails, and stores no vectors", () => {
+		const testDb = createTestDb(trackedDbs)
+		const published: Array<PullRequestReviewPublication> = []
+		const failing: FindingEmbedderApi = {
+			model: EMBEDDING_MODEL,
+			embed: () =>
+				Effect.fail(
+					new PrReviewEmbeddingError({ message: "402 out of credits", model: EMBEDDING_MODEL }),
+				),
+		}
+		return Effect.gen(function* () {
+			const repositoryId = yield* seed(true)
+			yield* seedVotes(repositoryId, [
+				{ status: "dismissed" },
+				{ status: "dismissed" },
+				{ status: "dismissed" },
+			])
+			const reviews = yield* PrReviewService
+			const started = yield* reviews.onPullRequestEvent(orgId, job())
+			yield* reviews.submitReview(
+				orgId,
+				started.reviewId!,
+				new SubmitPrReviewRequest({ report: report([noisyConvention]) }),
+			)
+			assert.equal(published[0]!.comments.length, 1)
+			assert.equal((yield* storedEmbeddings).length, 3)
+		}).pipe(Effect.provide(layerFor(testDb, { published, embedder: failing })))
+	})
+
+	it.effect("does not embed at all without an embedder", () => {
+		const testDb = createTestDb(trackedDbs)
+		const published: Array<PullRequestReviewPublication> = []
+		return Effect.gen(function* () {
+			const repositoryId = yield* seed(true)
+			yield* seedVotes(repositoryId, [
+				{ status: "dismissed" },
+				{ status: "dismissed" },
+				{ status: "dismissed" },
+			])
+			const reviews = yield* PrReviewService
+			const started = yield* reviews.onPullRequestEvent(orgId, job())
+			yield* reviews.submitReview(
+				orgId,
+				started.reviewId!,
+				new SubmitPrReviewRequest({ report: report([noisyConvention]) }),
+			)
+			assert.equal(published[0]!.comments.length, 1)
+			assert.equal((yield* storedEmbeddings).length, 3)
+		}).pipe(Effect.provide(layerFor(testDb, { published })))
 	})
 })
 
