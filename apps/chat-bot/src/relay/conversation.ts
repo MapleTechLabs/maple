@@ -9,6 +9,26 @@
  */
 import type { ChatHistoryMessage, InboundMessage } from "@maple/chat-platform"
 import { CHAT_CONTEXT_CLOSE, CHAT_CONTEXT_OPEN, wrapChatContext } from "@maple/domain/chat-preamble"
+import { ChatConversationKey } from "@maple/domain/chat-session"
+import { Schema } from "effect"
+
+/**
+ * The bot opened a conversation and could not record that it had.
+ *
+ * Carried rather than swallowed where it happens, because it is the one failure that decides
+ * whether unaddressed messages are ever answered here: after it the bot goes on answering
+ * mentions and quietly stops answering anything else, which is indistinguishable from the rule
+ * working. It costs the messages AFTER this answer, never this one, so the turn logs it and
+ * carries on — but it logs it where the telemetry layer is live.
+ */
+export class ConversationNotRecorded extends Schema.TaggedError<ConversationNotRecorded>()(
+	"@maple/chat-bot/ConversationNotRecorded",
+	{
+		conversationKey: ChatConversationKey,
+		message: Schema.String,
+		cause: Schema.Defect(),
+	},
+) {}
 
 /** How many earlier messages the model is shown. */
 export const CONTEXT_MESSAGE_LIMIT = 20

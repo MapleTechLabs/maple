@@ -38,6 +38,7 @@ import {
 	conversationStillLive,
 	couldAnswerUnaddressed,
 	CONTEXT_MESSAGE_LIMIT,
+	type ConversationNotRecorded,
 } from "./conversation.ts"
 import { chatTurnEvents, sessionUnreachable } from "./events.ts"
 
@@ -81,7 +82,9 @@ export interface RelayPorts<R = never> {
 	 */
 	readonly ownsConversation: (conversationKey: ChatConversationKey) => Effect.Effect<boolean>
 	/** Record that the bot opened this conversation, before it says anything in it. */
-	readonly rememberConversation: (conversation: ChatConversation) => Effect.Effect<void>
+	readonly rememberConversation: (
+		conversation: ChatConversation,
+	) => Effect.Effect<void, ConversationNotRecorded>
 	/**
 	 * Whether to say anything about a workspace nobody has linked.
 	 *
@@ -196,9 +199,22 @@ const relayMessage = Effect.fn("chat_bot.relay_turn")(function* <R>(
 	// would leave an empty one behind every time.
 	const conversation = owned ?? (yield* transport.conversation(message))
 	// Recorded before anything is said in it, so a turn that then fails still leaves a conversation
-	// the bot will go on answering in. The port swallows its own failure: this is bookkeeping for
-	// the messages after this one, and it must not cost this one its answer.
-	if (conversation.opened) yield* ports.rememberConversation(conversation)
+	// the bot will go on answering in. A write that does not land costs the messages after this one
+	// rather than this one's answer — and it is the only reason the bot would go on answering
+	// mentions here and nothing else, so it is logged rather than dropped.
+	if (conversation.opened) {
+		yield* ports.rememberConversation(conversation).pipe(
+			Effect.tapError((error) =>
+				Effect.logWarning("Conversation not recorded as the bot's own").pipe(
+					Effect.annotateLogs({
+						"error.type": error._tag,
+						"maple.chat.conversation_key": conversation.conversationKey,
+					}),
+				),
+			),
+			Effect.ignore,
+		)
+	}
 	const sessionId = connectorSessionId(orgId, message.connector, conversation.conversationKey)
 	yield* Effect.annotateCurrentSpan({ orgId, "maple.chat.session_id": sessionId })
 

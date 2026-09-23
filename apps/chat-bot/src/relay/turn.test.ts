@@ -32,7 +32,7 @@ import {
 } from "@maple/chat-platform"
 import { Context, Duration, Effect, Logger, Option, References, Schema, Tracer } from "effect"
 import { TestClock } from "effect/testing"
-import { FOLLOW_UP_WINDOW_MS } from "./conversation.ts"
+import { ConversationNotRecorded, FOLLOW_UP_WINDOW_MS } from "./conversation.ts"
 import { relayInboundEvent, WorkspaceLookupFailed, type RelayPorts } from "./turn.ts"
 
 const TESTCHAT = chatConnectorId("testchat")
@@ -222,6 +222,8 @@ const host = (
 		readonly lookupFails?: boolean
 		/** A conversation the bot opened on some earlier event, as the relay object would remember it. */
 		readonly opened?: ReadonlyArray<string>
+		/** The relay object could not record the conversation the bot just opened. */
+		readonly rememberFails?: boolean
 	},
 ): Host => {
 	const forgotten: Array<string> = []
@@ -269,7 +271,15 @@ const host = (
 			}),
 			ownsConversation: (conversationKey) => Effect.sync(() => opened.has(conversationKey)),
 			rememberConversation: (conversation) =>
-				Effect.sync(() => void opened.add(conversation.conversationKey)),
+				options?.rememberFails === true
+					? Effect.fail(
+							new ConversationNotRecorded({
+								conversationKey: conversation.conversationKey,
+								message: "the object did not answer",
+								cause: new Error("storage unavailable"),
+							}),
+						)
+					: Effect.sync(() => void opened.add(conversation.conversationKey)),
 		},
 	}
 }
@@ -575,6 +585,20 @@ describe("relaying a mention", () => {
 			// And the conversation is now the bot's own, which is what lets the next message in it be
 			// answered without a mention.
 			expect([...deployment.opened]).toEqual([CONVERSATION])
+		}),
+	)
+
+	it.effect("answers the question even when it could not record the conversation it opened", () =>
+		Effect.gen(function* () {
+			// The cost is the follow-ups after this answer, and the answer is somebody's question.
+			const platform = chat()
+			const agent = session([silentTurn])
+			const deployment = host(platform.outbound, agent.stub, { rememberFails: true })
+
+			yield* relayInboundEvent(mention, deployment.ports)
+
+			expect(agent.turns).toHaveLength(1)
+			expect([...deployment.opened]).toEqual([])
 		}),
 	)
 

@@ -119,6 +119,23 @@ describe("remembering the conversations the bot opened", () => {
 			expect(yield* ports.ownsConversation(conversationKey("thread_b"))).toBe(false)
 		}).pipe(Effect.runPromise))
 
+	it("reports a write that did not land, rather than losing it to a console", () =>
+		Effect.gen(function* () {
+			// The turn logs this and answers anyway. It is still the one failure that makes a bot
+			// answer mentions here and nothing else, so it has to reach the turn to be logged there.
+			const broken = objectState()
+			broken.storage.put = () => Promise.reject(new Error("storage unavailable"))
+			const relay = new ConnectorRelay(broken, {})
+			const here = { ...message, channelId: "channel-1" }
+
+			const error = yield* Effect.flip(
+				relay.relayPorts(here).rememberConversation(conversation("channel-1", "thread_a")),
+			)
+
+			expect(error._tag).toBe("@maple/chat-bot/ConversationNotRecorded")
+			expect(error.conversationKey).toBe("thread_a")
+		}).pipe(Effect.runPromise))
+
 	it("survives a deployment that binds no relay namespace at all", () =>
 		Effect.gen(function* () {
 			// Nothing to write to, and the turn this rides on is somebody's question: the answer must
