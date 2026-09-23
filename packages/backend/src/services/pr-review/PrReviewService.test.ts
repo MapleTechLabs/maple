@@ -10,6 +10,8 @@ import {
 	GitCommitSha,
 	type PullRequestEventJob,
 	type PullRequestReviewPublication,
+	type PullRequestReviewThread,
+	type VcsSyncJob,
 	PrReviewId,
 	PrReviewReport,
 	SubmitPrReviewRequest,
@@ -32,12 +34,14 @@ import {
 import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
 import { ENABLED_ORGANIZATION_FEATURE_FLAGS } from "@maple/domain/organization-feature-flags"
 import { VcsRepository } from "@maple/backend/services/integrations/vcs/VcsRepository"
+import { VcsSyncQueue } from "@maple/backend/services/integrations/vcs/VcsSyncQueue"
 import {
 	buildPublication,
 	clampSummary,
 	PR_REVIEW_CHECK_NAME,
 	PR_REVIEW_COMMENT_MARKER,
 	PR_REVIEW_DAILY_CEILING,
+	PR_REVIEW_PUSH_DEBOUNCE_SECONDS,
 	PrReviewService,
 	renderCheckSummary,
 	renderSummaryComment,
@@ -85,6 +89,10 @@ const layerFor = (
 		readonly busy?: boolean
 		readonly withWorkerEnv?: boolean
 		readonly rolledOut?: boolean
+		readonly threads?: ReadonlyArray<PullRequestReviewThread>
+		readonly resolvedThreads?: Array<string>
+		/** Present: pushes are debounced through this queue, which records what it was sent. */
+		readonly queued?: Array<{ readonly job: VcsSyncJob; readonly delaySeconds: number | undefined }>
 	} = {},
 ) => {
 	// Only the one write is reached; every read dies so a test that strays says so loudly.
@@ -100,6 +108,12 @@ const layerFor = (
 		fetchPullRequest: unused,
 		fetchPullRequestFiles: unused,
 		fetchPullRequestContext: unused,
+		fetchReviewThreads: () => Effect.succeed(options.threads ?? []),
+		resolveReviewThread: (_installation, _repo, input) =>
+			Effect.sync(() => {
+				options.resolvedThreads?.push(`${input.threadId}:${input.reply}`)
+			}),
+		fetchChangedPaths: () => Effect.succeed(["b.ts", "c.ts"]),
 		searchCode: unused,
 		resolveRef: unused,
 		fetchCloneCredentials: unused,
@@ -119,6 +133,9 @@ const layerFor = (
 							publication.comments.length > 0
 								? "https://github.com/octo/repo/pull/612#pullrequestreview-1"
 								: null,
+						inlineComments: publication.comments.flatMap((comment, i) =>
+							comment.key === undefined ? [] : [{ key: comment.key, commentId: `c-${i}` }],
+						),
 					})
 		},
 	}
@@ -142,6 +159,15 @@ const layerFor = (
 				registry,
 				testDb.layer,
 				workerEnv,
+				options.queued === undefined
+					? Layer.empty
+					: Layer.succeed(VcsSyncQueue, {
+							send: (job, sendOptions) =>
+								Effect.sync(() => {
+									options.queued?.push({ job, delaySeconds: sendOptions?.delaySeconds })
+								}),
+							sendBatch: () => Effect.void,
+						}),
 				OrganizationFeatureFlagsService.fixed({
 					...ENABLED_ORGANIZATION_FEATURE_FLAGS,
 					prReview: options.rolledOut ?? true,
@@ -361,6 +387,37 @@ describe("PrReviewService.onPullRequestEvent", () => {
 		return firstDelivery.pipe(Effect.andThen(redelivery))
 	})
 
+	it.effect("debounces pushes: only the last head of a burst is reviewed", () => {
+		const testDb = createTestDb(trackedDbs)
+		const begun: Array<Begun> = []
+		const queued: Array<{ readonly job: VcsSyncJob; readonly delaySeconds: number | undefined }> = []
+		return Effect.gen(function* () {
+			yield* seed(true)
+			const reviews = yield* PrReviewService
+			const first = yield* reviews.onPullRequestEvent(orgId, job({ action: "synchronize" }))
+			const second = yield* reviews.onPullRequestEvent(
+				orgId,
+				job({ action: "synchronize", headSha: HEAD_2 }),
+			)
+			assert.equal(first.outcome, "deferred")
+			assert.equal(second.outcome, "deferred")
+			assert.equal(begun.length, 0)
+			assert.deepEqual(
+				queued.map((entry) => entry.delaySeconds),
+				[PR_REVIEW_PUSH_DEBOUNCE_SECONDS, PR_REVIEW_PUSH_DEBOUNCE_SECONDS],
+			)
+			// The delayed copies arrive: the first head was superseded, the second starts.
+			const [late, latest] = queued.map((entry) => entry.job)
+			assert(late?.kind === "pull-request-event" && latest?.kind === "pull-request-event")
+			assert.equal((yield* reviews.onPullRequestEvent(orgId, late)).skipReason, "superseded")
+			const started = yield* reviews.onPullRequestEvent(orgId, latest)
+			assert.equal(started.outcome, "started")
+			assert.equal(started.reviewId, second.reviewId)
+			assert.equal(begun.length, 1)
+			assert.include(begun[0]!.text, HEAD_2)
+		}).pipe(Effect.provide(layerFor(testDb, { begun, queued })))
+	})
+
 	it.effect("stops at the daily ceiling", () => {
 		const testDb = createTestDb(trackedDbs)
 		return Effect.gen(function* () {
@@ -427,6 +484,80 @@ describe("PrReviewService.submitReview", () => {
 			assert.isNull(stored.publishError)
 			assert.equal(stored.report?.findings.length, 1)
 		}).pipe(Effect.provide(layerFor(testDb, { published })))
+	})
+
+	it.effect("follows findings across pushes: resolves fixed ones, never reposts open ones", () => {
+		const testDb = createTestDb(trackedDbs)
+		const published: Array<PullRequestReviewPublication> = []
+		const begun: Array<Begun> = []
+		const resolvedThreads: Array<string> = []
+		const threads: ReadonlyArray<PullRequestReviewThread> = [
+			{
+				id: "T1",
+				isResolved: false,
+				comments: [{ commentId: "c-0", author: "maple[bot]", body: "F1" }],
+			},
+		]
+		const finding = (path: string, line: number, title: string) => ({
+			path,
+			line,
+			category: "correctness" as const,
+			severity: "warn" as const,
+			title,
+			body: "b",
+		})
+		return Effect.gen(function* () {
+			yield* seed(true)
+			const reviews = yield* PrReviewService
+			const first = yield* reviews.onPullRequestEvent(orgId, job())
+			yield* reviews.submitReview(
+				orgId,
+				first.reviewId!,
+				new SubmitPrReviewRequest({
+					report: report([
+						finding("a.ts", 10, "off by one"),
+						finding("b.ts", 20, "unchecked null"),
+					]),
+				}),
+			)
+			assert.deepEqual(
+				published[0]!.comments.map((comment) => comment.body.slice(0, 8)),
+				["**F1 · o", "**F2 · u"],
+			)
+
+			const second = yield* reviews.onPullRequestEvent(
+				orgId,
+				job({ action: "synchronize", headSha: HEAD_2 }),
+			)
+			const kickoff = begun.at(-1)!.text
+			assert.include(kickoff, "reviewed before, at 1111111")
+			assert.include(kickoff, "b.ts, c.ts")
+			assert.include(kickoff, "- F1 · a.ts:10 · correctness · warn · off by one")
+
+			yield* reviews.submitReview(
+				orgId,
+				second.reviewId!,
+				new SubmitPrReviewRequest({
+					resolved: ["F1"],
+					report: report([finding("b.ts", 21, "null again"), finding("c.ts", 3, "leaked handle")]),
+				}),
+			)
+			const publication = published[1]!
+			// F2 is still open, so its repeat is not posted; the new finding continues at F3.
+			assert.deepEqual(
+				publication.comments.map((comment) => comment.path),
+				["c.ts"],
+			)
+			assert.include(publication.summaryComment.body, "### Still open from earlier reviews")
+			assert.include(publication.summaryComment.body, "~~F1 · off by one~~")
+			assert.equal(publication.title, "80/100 · 2 issues to address")
+			assert.deepEqual(resolvedThreads, ["T1:Fixed in `2222222`."])
+			const stored = Option.getOrThrow(yield* reviews.getReview(orgId, second.reviewId!))
+			assert.deepEqual(
+				stored.report?.findings.map((f) => f.handle),
+				["F3"],
+			)
+		}).pipe(Effect.provide(layerFor(testDb, { published, begun, threads, resolvedThreads })))
 	})
 
 	it.effect("drops a submission for a review that was superseded while it ran", () => {

@@ -367,6 +367,7 @@ describe("GithubProvider publishing a review", () => {
 					id: 8,
 					html_url: "https://github.com/octo/shop/pull/612#pullrequestreview-8",
 				}),
+				jsonResponse([{ id: 81, path: "a.ts", line: 3 }]),
 			],
 			requests,
 		)
@@ -375,10 +376,12 @@ describe("GithubProvider publishing a review", () => {
 			const published = yield* provider.publishPullRequestReview(
 				INSTALLATION,
 				REPO,
-				publication([{ path: "a.ts", line: 3, body: "add a span" }]),
+				publication([{ path: "a.ts", line: 3, body: "add a span", key: "finding-1" }]),
 			)
 			assert.equal(published.reviewUrl, "https://github.com/octo/shop/pull/612#pullrequestreview-8")
-			assert.isTrue(requests.at(-1)?.endsWith("/repos/octo/shop/pulls/612/reviews"))
+			assert.isTrue(requests.at(-2)?.endsWith("/repos/octo/shop/pulls/612/reviews"))
+			// The posted comment's id comes back under the key it was submitted with.
+			assert.deepEqual(published.inlineComments, [{ key: "finding-1", commentId: "81" }])
 		}).pipe(Effect.provide(layer))
 	})
 })

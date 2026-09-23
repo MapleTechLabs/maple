@@ -4,6 +4,7 @@ import {
 	GitCommitSha,
 	type PullRequestContext,
 	type PullRequestFile,
+	type PullRequestReviewThread,
 	type PullRequestSummary,
 	type RepoUpsertInput,
 	type VcsInstallation,
@@ -917,6 +918,62 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 						Effect.mapError(toVcsError),
 					)
 
+			const fetchReviewThreads: VcsProviderClient["fetchReviewThreads"] = (
+				installation,
+				repo,
+				number,
+			) =>
+				client
+					.listReviewThreads(installation.externalInstallationId, repo.owner, repo.name, number)
+					.pipe(
+						Effect.map((threads) =>
+							threads.map(
+								(thread): PullRequestReviewThread => ({
+									id: thread.id,
+									isResolved: thread.isResolved,
+									comments: thread.comments.nodes.map((comment) => ({
+										commentId:
+											comment.databaseId === null ? null : String(comment.databaseId),
+										author: comment.author?.login ?? "(deleted user)",
+										body: comment.body,
+									})),
+								}),
+							),
+						),
+						Effect.mapError(toVcsError),
+					)
+
+			const resolveReviewThread: VcsProviderClient["resolveReviewThread"] = (
+				installation,
+				repo,
+				input,
+			) =>
+				client
+					.replyToReviewComment(
+						installation.externalInstallationId,
+						repo.owner,
+						repo.name,
+						input.number,
+						input.commentId,
+						input.reply,
+					)
+					.pipe(
+						Effect.andThen(
+							client.resolveReviewThread(installation.externalInstallationId, input.threadId),
+						),
+						Effect.mapError(toVcsError),
+					)
+
+			const fetchChangedPaths: VcsProviderClient["fetchChangedPaths"] = (
+				installation,
+				repo,
+				base,
+				head,
+			) =>
+				client
+					.compareFiles(installation.externalInstallationId, repo.owner, repo.name, base, head)
+					.pipe(Effect.mapError(toVcsError))
+
 			const fetchPullRequestContext: VcsProviderClient["fetchPullRequestContext"] = (
 				installation,
 				repo,
@@ -1004,7 +1061,11 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 						"vcs.pull_request.check_run_id": checkRun.id ?? "none",
 						"vcs.pull_request.comment_id": comment.id,
 					})
-					const published = { checkRunUrl: checkRun.html_url, commentUrl: comment.html_url }
+					const published = {
+						checkRunUrl: checkRun.html_url,
+						commentUrl: comment.html_url,
+						inlineComments: [] as ReadonlyArray<{ key: string; commentId: string }>,
+					}
 					if (publication.comments.length === 0 && publication.reviewBody === null) {
 						return { ...published, reviewUrl: null }
 					}
@@ -1035,7 +1096,26 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 						)
 					if (Option.isNone(review)) return { ...published, reviewUrl: null }
 					yield* Effect.annotateCurrentSpan("vcs.pull_request.review_id", review.value.id)
-					return { ...published, reviewUrl: review.value.html_url ?? null }
+					// GitHub lists a review's comments in the order they were submitted; pair them back
+					// to their keys by position, checking the path so a mismatch pairs nothing.
+					const listed = yield* client
+						.listReviewComments(
+							installation.externalInstallationId,
+							repo.owner,
+							repo.name,
+							publication.number,
+							review.value.id,
+						)
+						.pipe(Effect.orElseSucceed(() => []))
+					const inlineComments = publication.comments.flatMap((submitted, index) => {
+						const posted = listed[index]
+						return submitted.key !== undefined &&
+							posted !== undefined &&
+							posted.path === submitted.path
+							? [{ key: submitted.key, commentId: String(posted.id) }]
+							: []
+					})
+					return { ...published, inlineComments, reviewUrl: review.value.html_url ?? null }
 				}).pipe(
 					Effect.mapError(toVcsError),
 					// One span over the three posts, so each step's outcome lands on the publish itself.
@@ -1065,6 +1145,9 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 				fetchPullRequest,
 				fetchPullRequestFiles,
 				fetchPullRequestContext,
+				fetchReviewThreads,
+				resolveReviewThread,
+				fetchChangedPaths,
 				publishPullRequestReview,
 				searchCode,
 				fetchSourceFile,

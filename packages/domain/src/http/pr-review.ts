@@ -93,6 +93,8 @@ export class PrReviewFinding extends Schema.Class<PrReviewFinding>("PrReviewFind
 	body: Schema.String,
 	suggestion: Schema.optionalKey(Schema.String),
 	replacement: Schema.optionalKey(Schema.String),
+	/** The pull request-wide handle (`F3`) it is tracked by across pushes; set when stored. */
+	handle: Schema.optionalKey(Schema.String),
 }) {}
 
 /**
@@ -106,6 +108,35 @@ export class PrReviewCoverageUnit extends Schema.Class<PrReviewCoverageUnit>("Pr
 	kind: Schema.String,
 	instrumented: Schema.Boolean,
 	evidence: Schema.String,
+}) {}
+
+/**
+ * A finding's life across pushes. `resolved` is a later head that fixed it, confirmed by a review;
+ * `dismissed` is a person resolving its thread or answering it "won't fix", which the reviewer
+ * must respect rather than raise again.
+ */
+export const PrReviewFindingStatus = Schema.Literals(["open", "resolved", "dismissed"]).annotate({
+	identifier: "@maple/PrReviewFindingStatus",
+	title: "Pull Request Review Finding Status",
+})
+export type PrReviewFindingStatus = Schema.Schema.Type<typeof PrReviewFindingStatus>
+
+/**
+ * Per-repository review settings. Every field is optional so a repository with none set reviews
+ * with the defaults: every lens, no ignored paths, drafts skipped, notes posted.
+ */
+export class PrReviewRepositoryConfig extends Schema.Class<PrReviewRepositoryConfig>(
+	"PrReviewRepositoryConfig",
+)({
+	/** Extra review rules, read like the repository's own `.maple/review.md`. */
+	instructions: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(4_000))),
+	/** Glob-like path prefixes or `*.ext` suffixes the review never reads. */
+	ignorePaths: Schema.optionalKey(Schema.Array(Schema.String.check(Schema.isMaxLength(200)))),
+	/** Lenses the review files findings for; absent means all of them. */
+	categories: Schema.optionalKey(Schema.Array(PrReviewCategory)),
+	/** The lowest severity posted inline; the summary always carries every finding. */
+	minInlineSeverity: Schema.optionalKey(PrReviewSeverity),
+	reviewDrafts: Schema.optionalKey(Schema.Boolean),
 }) {}
 
 /** The stored review: the shape a reader can rely on. */
@@ -146,6 +177,8 @@ export const PrReviewCoverageSubmission = Schema.Struct({
 })
 
 export const PrReviewSubmission = Schema.Struct({
+	/** Handles of earlier open findings this head fixes, as the kickoff listed them. */
+	resolved: Schema.optionalKey(Schema.Array(Schema.String)),
 	verdict: Schema.optionalKey(Schema.Union([PrReviewVerdict, Schema.String])),
 	summary: Schema.optionalKey(Schema.String),
 	coverage: Schema.optionalKey(Schema.Array(PrReviewCoverageSubmission)),
@@ -173,6 +206,8 @@ export interface NormalizedPrReviewSubmission {
 	readonly filled: ReadonlyArray<string>
 	/** Findings dropped for no anchor line, or an observability finding with no audit check id. */
 	readonly droppedFindings: number
+	/** Handles of earlier findings the model says this head fixes, upper-cased and deduplicated. */
+	readonly resolved: ReadonlyArray<string>
 }
 
 /**
@@ -259,6 +294,13 @@ export const normalizePrReviewSubmission = (submission: PrReviewSubmission): Nor
 		}),
 		filled,
 		droppedFindings: rawFindings.length - findings.length,
+		resolved: [
+			...new Set(
+				(submission.resolved ?? [])
+					.map((handle) => handle.trim().toUpperCase())
+					.filter((handle) => /^F\d{1,4}$/.test(handle)),
+			),
+		].slice(0, MAX_FINDINGS),
 	}
 }
 
@@ -276,15 +318,15 @@ export type PrReviewGrade = "excellent" | "good" | "needs work" | "poor"
  */
 export const scorePrReview = (
 	report: PrReviewReport,
+	/** Findings from earlier reviews still open at this head: they count as much as new ones. */
+	carriedOpen: ReadonlyArray<{ readonly severity: PrReviewSeverity }> = [],
 ): { readonly score: number; readonly grade: PrReviewGrade } => {
-	const penalty = report.findings.reduce(
-		(sum, finding) => sum + PR_REVIEW_SCORE_PENALTY[finding.severity],
-		0,
-	)
+	const all = [...report.findings, ...carriedOpen]
+	const penalty = all.reduce((sum, finding) => sum + PR_REVIEW_SCORE_PENALTY[finding.severity], 0)
 	const score = Math.max(0, 100 - penalty)
 	// A real issue is never "excellent", whatever the arithmetic says: the headline must agree
 	// with the verdict beside it.
-	const hasIssues = report.findings.some((finding) => finding.severity !== "info")
+	const hasIssues = all.some((finding) => finding.severity !== "info")
 	const grade: PrReviewGrade =
 		score >= 90 && !hasIssues ? "excellent" : score >= 75 ? "good" : score >= 50 ? "needs work" : "poor"
 	return { score, grade }
@@ -298,6 +340,8 @@ export class SubmitPrReviewRequest extends Schema.Class<SubmitPrReviewRequest>("
 	outputTokens: Schema.optionalKey(Schema.Number),
 	/** Filed by the close-out turn after the pass ended without a report; posted as a partial. */
 	partial: Schema.optionalKey(Schema.Boolean),
+	/** Handles of earlier findings this head fixes. */
+	resolved: Schema.optionalKey(Schema.Array(Schema.String)),
 }) {}
 
 /** A review row as the dashboard reads it. */

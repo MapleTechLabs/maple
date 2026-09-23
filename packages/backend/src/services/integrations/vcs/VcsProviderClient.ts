@@ -5,6 +5,7 @@ import type {
 	GitCommitSha,
 	PullRequestContext,
 	PullRequestFile,
+	PullRequestReviewThread,
 	PullRequestReviewPublication,
 	PullRequestReviewPublished,
 	PullRequestSummary,
@@ -186,6 +187,54 @@ export interface VcsProviderClient {
 		number: number,
 	) => Effect.Effect<
 		ReadonlyArray<PullRequestFile>,
+		| VcsProviderError
+		| VcsInstallationGoneError
+		| VcsRepoUnavailableError
+		| VcsRepositoryBlockedError
+		| VcsRateLimitedError
+	>
+
+	/** Every review thread on a pull request, to follow the reviewer's own findings. */
+	readonly fetchReviewThreads: (
+		installation: VcsInstallation,
+		repo: VcsRepositoryRef,
+		number: number,
+	) => Effect.Effect<
+		ReadonlyArray<PullRequestReviewThread>,
+		| VcsProviderError
+		| VcsInstallationGoneError
+		| VcsRepoUnavailableError
+		| VcsRepositoryBlockedError
+		| VcsRateLimitedError
+	>
+
+	/** Reply on a finding's thread, then resolve it: a later head fixed it. */
+	readonly resolveReviewThread: (
+		installation: VcsInstallation,
+		repo: VcsRepositoryRef,
+		input: {
+			readonly number: number
+			readonly threadId: string
+			readonly commentId: string
+			readonly reply: string
+		},
+	) => Effect.Effect<
+		void,
+		| VcsProviderError
+		| VcsInstallationGoneError
+		| VcsRepoUnavailableError
+		| VcsRepositoryBlockedError
+		| VcsRateLimitedError
+	>
+
+	/** Paths that differ between two commits of one repository. */
+	readonly fetchChangedPaths: (
+		installation: VcsInstallation,
+		repo: VcsRepositoryRef,
+		base: string,
+		head: string,
+	) => Effect.Effect<
+		ReadonlyArray<string>,
 		| VcsProviderError
 		| VcsInstallationGoneError
 		| VcsRepoUnavailableError

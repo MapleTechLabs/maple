@@ -8,6 +8,7 @@ import {
 	clampQueueDelaySeconds,
 	MESSAGING_DESTINATION,
 	MESSAGING_SYSTEM,
+	VcsSyncQueue,
 } from "@maple/backend/services/integrations/vcs/VcsSyncQueue"
 import { VcsSyncService } from "@maple/backend/services/integrations/vcs/VcsSyncService"
 
@@ -40,7 +41,8 @@ const PullRequestEventSinkLive = pullRequestEventSinkFanout<IssueFixVerification
 	{ name: "pr-review", handler: prReviewPullRequestHandler },
 ]).pipe(
 	Layer.provide(IssueFixVerificationService.layer),
-	Layer.provide(PrReviewService.layer),
+	// The review trigger re-enqueues a push to debounce it, so it gets the queue here.
+	Layer.provide(PrReviewService.layer.pipe(Layer.provide(VcsSyncQueue.layer))),
 	Layer.provide(PullRequestLookup.none),
 )
 

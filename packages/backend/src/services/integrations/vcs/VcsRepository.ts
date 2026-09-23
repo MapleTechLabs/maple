@@ -4,6 +4,7 @@ import {
 	type CommitUpsertInput,
 	GitCommitSha,
 	type OrgId,
+	PrReviewRepositoryConfig,
 	type RepoUpsertInput,
 	type UserId,
 	VcsBranch,
@@ -45,6 +46,7 @@ const INSERT_CHUNK_SIZE = 1000
 const decodeInstallation = Schema.decodeUnknownSync(VcsInstallation)
 const decodeRepo = Schema.decodeUnknownSync(VcsRepo)
 const decodeCommit = Schema.decodeUnknownSync(VcsCommit)
+const decodePrReviewConfig = Schema.decodeUnknownOption(PrReviewRepositoryConfig)
 const decodeBranch = Schema.decodeUnknownSync(VcsBranch)
 // Validate the SHA shape via the branded type (the regex lives only there);
 // a malformed SHA throws and is caught into a VcsRepoDecodeError on write.
@@ -885,6 +887,45 @@ export class VcsRepository extends Context.Service<VcsRepository>()("@maple/api/
 				.pipe(Effect.mapError(toPersistenceError))
 		})
 
+		// A repository's review settings. A stored value that no longer decodes (a field renamed
+		// since) reads as the defaults rather than failing every review of the repository.
+		const getPrReviewConfig = Effect.fn("VcsRepository.getPrReviewConfig")(function* (
+			orgId: OrgId,
+			repositoryId: VcsRepositoryId,
+		) {
+			const rows = yield* database
+				.execute((db) =>
+					db
+						.select({ config: vcsRepositories.prReviewConfig })
+						.from(vcsRepositories)
+						.where(and(eq(vcsRepositories.orgId, orgId), eq(vcsRepositories.id, repositoryId)))
+						.limit(1),
+				)
+				.pipe(Effect.mapError(toPersistenceError))
+			return Option.getOrElse(
+				decodePrReviewConfig(rows[0]?.config ?? {}),
+				() => new PrReviewRepositoryConfig({}),
+			)
+		})
+
+		const setPrReviewConfig = Effect.fn("VcsRepository.setPrReviewConfig")(function* (
+			orgId: OrgId,
+			repositoryId: VcsRepositoryId,
+			config: PrReviewRepositoryConfig,
+		) {
+			const now = msToDate(yield* Clock.currentTimeMillis)
+			const rows = yield* database
+				.execute((db) =>
+					db
+						.update(vcsRepositories)
+						.set({ prReviewConfig: config, updatedAt: now })
+						.where(and(eq(vcsRepositories.orgId, orgId), eq(vcsRepositories.id, repositoryId)))
+						.returning({ id: vcsRepositories.id }),
+				)
+				.pipe(Effect.mapError(toPersistenceError))
+			return rows.length > 0
+		})
+
 		// Drop the branch rows by id (their repo keeps its commits — a branch is just
 		// a name in the picker now).
 		const deleteBranchesByIds = (ids: ReadonlyArray<VcsBranchId>) =>
@@ -1036,6 +1077,8 @@ export class VcsRepository extends Context.Service<VcsRepository>()("@maple/api/
 			listBranchesByRepository,
 			changeTrackedBranch,
 			setPrReviewEnabled,
+			getPrReviewConfig,
+			setPrReviewConfig,
 			reconcileBranchDeletions,
 			deleteBranch,
 			purgeInstallation,

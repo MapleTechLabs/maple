@@ -215,6 +215,63 @@ const GithubApiCheckRunList = Schema.Struct({
 		}),
 	),
 })
+const GithubApiReviewCommentList = Schema.Array(
+	Schema.Struct({
+		id: Schema.Number,
+		path: Schema.String,
+		line: Schema.optionalKey(Schema.NullOr(Schema.Number)),
+		original_line: Schema.optionalKey(Schema.NullOr(Schema.Number)),
+	}),
+)
+const GithubApiComparison = Schema.Struct({
+	files: Schema.optionalKey(Schema.Array(Schema.Struct({ filename: Schema.String }))),
+})
+const GithubGraphqlErrors = Schema.optionalKey(
+	Schema.NullOr(Schema.Array(Schema.Struct({ message: Schema.String }))),
+)
+const GithubReviewThreadsResponse = Schema.Struct({
+	data: Schema.optionalKey(
+		Schema.NullOr(
+			Schema.Struct({
+				repository: Schema.NullOr(
+					Schema.Struct({
+						pullRequest: Schema.NullOr(
+							Schema.Struct({
+								reviewThreads: Schema.Struct({
+									nodes: Schema.Array(
+										Schema.Struct({
+											id: Schema.String,
+											isResolved: Schema.Boolean,
+											comments: Schema.Struct({
+												nodes: Schema.Array(
+													Schema.Struct({
+														databaseId: Schema.NullOr(Schema.Number),
+														author: Schema.NullOr(
+															Schema.Struct({ login: Schema.String }),
+														),
+														body: Schema.String,
+													}),
+												),
+											}),
+										}),
+									),
+								}),
+							}),
+						),
+					}),
+				),
+			}),
+		),
+	),
+	errors: GithubGraphqlErrors,
+})
+const GithubMutationResponse = Schema.Struct({ errors: GithubGraphqlErrors })
+export type GithubReviewThread = NonNullable<
+	NonNullable<
+		NonNullable<Schema.Schema.Type<typeof GithubReviewThreadsResponse>["data"]>["repository"]
+	>["pullRequest"]
+>["reviewThreads"]["nodes"][number]
+
 export type GithubApiDiscussionComment = Schema.Schema.Type<typeof GithubApiDiscussionCommentList>[number]
 
 const GithubApiCheckRunSchema = Schema.Struct({
@@ -309,6 +366,27 @@ const decodeCheckRun = Schema.decodeUnknownEffect(GithubApiCheckRunSchema)
 const decodePullRequestCommits = Schema.decodeUnknownEffect(GithubApiPullRequestCommitList)
 const decodeDiscussionComments = Schema.decodeUnknownEffect(GithubApiDiscussionCommentList)
 const decodeCheckRunList = Schema.decodeUnknownEffect(GithubApiCheckRunList)
+const decodeReviewCommentList = Schema.decodeUnknownEffect(GithubApiReviewCommentList)
+const decodeComparison = Schema.decodeUnknownEffect(GithubApiComparison)
+const decodeReviewThreads = Schema.decodeUnknownEffect(GithubReviewThreadsResponse)
+const decodeMutation = Schema.decodeUnknownEffect(GithubMutationResponse)
+
+const REVIEW_THREADS_QUERY = `query($owner: String!, $name: String!, $number: Int!) {
+  repository(owner: $owner, name: $name) {
+    pullRequest(number: $number) {
+      reviewThreads(first: 100) {
+        nodes { id isResolved comments(first: 20) { nodes { databaseId author { login } body } } }
+      }
+    }
+  }
+}`
+const RESOLVE_THREAD_MUTATION = `mutation($threadId: ID!) {
+  resolveReviewThread(input: { threadId: $threadId }) { thread { id } }
+}`
+
+/** GitHub.com serves GraphQL at `/graphql`; Enterprise at `/api/graphql` beside `/api/v3`. */
+const graphqlUrl = (apiBaseUrl: string) =>
+	apiBaseUrl.endsWith("/api/v3") ? `${apiBaseUrl.slice(0, -"/v3".length)}/graphql` : `${apiBaseUrl}/graphql`
 const decodeReview = Schema.decodeUnknownEffect(GithubApiReviewSchema)
 const decodeIssueComment = Schema.decodeUnknownEffect(GithubApiIssueCommentSchema)
 const decodeIssueCommentList = Schema.decodeUnknownEffect(GithubApiIssueCommentList)
@@ -961,6 +1039,148 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 				return { commits, comments, checks }
 			})
 
+			const graphql = Effect.fnUntraced(function* (
+				externalInstallationId: string,
+				query: string,
+				variables: Record<string, unknown>,
+				context: string,
+			) {
+				const config = yield* resolveConfig
+				const token = yield* mintInstallationToken(externalInstallationId)
+				const response = yield* authedSend(
+					"POST",
+					token,
+					graphqlUrl(config.apiBaseUrl),
+					{ query, variables },
+					context,
+				)
+				if (!response.ok) return yield* failure(response, context, "repository")
+				return yield* parseJson(response, context)
+			})
+
+			const graphqlFailure = (context: string, errors: ReadonlyArray<{ readonly message: string }>) =>
+				new GithubAppError({
+					message: `${context} failed: ${errors
+						.map((error) => error.message)
+						.join("; ")
+						.slice(0, 300)}`,
+					scope: "repository",
+				})
+
+			/** Every review thread of a pull request, with the first comments of each. */
+			const listReviewThreads = Effect.fn("GithubAppClient.listReviewThreads")(function* (
+				externalInstallationId: string,
+				owner: string,
+				repo: string,
+				number: number,
+			) {
+				const json = yield* graphql(
+					externalInstallationId,
+					REVIEW_THREADS_QUERY,
+					{ owner, name: repo, number },
+					"List review threads",
+				)
+				const decoded = yield* decodeReviewThreads(json).pipe(
+					Effect.mapError(
+						(cause) =>
+							new GithubAppError({ message: "Unexpected review threads payload", cause }),
+					),
+				)
+				if (decoded.errors && decoded.errors.length > 0)
+					return yield* graphqlFailure("List review threads", decoded.errors)
+				return decoded.data?.repository?.pullRequest?.reviewThreads.nodes ?? []
+			})
+
+			// Needs `pull_requests: write`, which posting the review already required.
+			const resolveReviewThread = Effect.fn("GithubAppClient.resolveReviewThread")(function* (
+				externalInstallationId: string,
+				threadId: string,
+			) {
+				const json = yield* graphql(
+					externalInstallationId,
+					RESOLVE_THREAD_MUTATION,
+					{ threadId },
+					"Resolve review thread",
+				)
+				const decoded = yield* decodeMutation(json).pipe(
+					Effect.mapError(
+						(cause) => new GithubAppError({ message: "Unexpected mutation payload", cause }),
+					),
+				)
+				if (decoded.errors && decoded.errors.length > 0)
+					return yield* graphqlFailure("Resolve review thread", decoded.errors)
+			})
+
+			/** The inline comments one review created, for their ids. */
+			const listReviewComments = Effect.fn("GithubAppClient.listReviewComments")(function* (
+				externalInstallationId: string,
+				owner: string,
+				repo: string,
+				number: number,
+				reviewId: number,
+			) {
+				const config = yield* resolveConfig
+				const token = yield* mintInstallationToken(externalInstallationId)
+				const response = yield* authedGet(
+					config,
+					token,
+					`${config.apiBaseUrl}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pulls/${number}/reviews/${reviewId}/comments?per_page=${PER_PAGE}`,
+				)
+				if (!response.ok) return yield* failure(response, "List review comments", "repository")
+				return yield* decodeReviewCommentList(
+					yield* parseJson(response, "List review comments"),
+				).pipe(
+					Effect.mapError(
+						(cause) =>
+							new GithubAppError({ message: "Unexpected review comments payload", cause }),
+					),
+				)
+			})
+
+			const replyToReviewComment = Effect.fn("GithubAppClient.replyToReviewComment")(function* (
+				externalInstallationId: string,
+				owner: string,
+				repo: string,
+				number: number,
+				commentId: string,
+				body: string,
+			) {
+				const config = yield* resolveConfig
+				const token = yield* mintInstallationToken(externalInstallationId)
+				const response = yield* authedSend(
+					"POST",
+					token,
+					`${config.apiBaseUrl}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pulls/${number}/comments/${encodeURIComponent(commentId)}/replies`,
+					{ body },
+					"Reply to review comment",
+				)
+				if (!response.ok) return yield* failure(response, "Reply to review comment", "repository")
+			})
+
+			/** Paths that differ between two commits: what a push changed since the last review. */
+			const compareFiles = Effect.fn("GithubAppClient.compareFiles")(function* (
+				externalInstallationId: string,
+				owner: string,
+				repo: string,
+				base: string,
+				head: string,
+			) {
+				const config = yield* resolveConfig
+				const token = yield* mintInstallationToken(externalInstallationId)
+				const response = yield* authedGet(
+					config,
+					token,
+					`${config.apiBaseUrl}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/compare/${encodeURIComponent(base)}...${encodeURIComponent(head)}?per_page=${PER_PAGE}`,
+				)
+				if (!response.ok) return yield* failure(response, "Compare commits", "repository")
+				const decoded = yield* decodeComparison(yield* parseJson(response, "Compare commits")).pipe(
+					Effect.mapError(
+						(cause) => new GithubAppError({ message: "Unexpected comparison payload", cause }),
+					),
+				)
+				return (decoded.files ?? []).map((file) => file.filename)
+			})
+
 			// Needs `checks: write` on the App. A 403 here is the installation not
 			// having accepted that permission yet; the provider maps it to a
 			// repository-scoped failure the review records as `publish_error`.
@@ -1295,6 +1515,11 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 				getPullRequest,
 				listPullRequestFiles,
 				getPullRequestContext,
+				listReviewThreads,
+				resolveReviewThread,
+				listReviewComments,
+				replyToReviewComment,
+				compareFiles,
 				createCheckRun,
 				createPullRequestReview,
 				upsertIssueComment,

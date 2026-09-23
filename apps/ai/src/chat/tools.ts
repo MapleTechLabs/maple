@@ -161,7 +161,8 @@ export const isAutonomousTurn = (sessionId: string, origin: ChatTurnOrigin): boo
 export const reviewTool = Tool.make(SUBMIT_REVIEW, {
 	description:
 		"Record your review of THIS pull request. Call it exactly once, after you have " +
-		"read every hunk you review, with your verdict, coverage and line-anchored findings. It " +
+		"read every hunk you review, with your verdict, coverage, line-anchored findings and the " +
+		"handles of earlier findings this head fixes. It " +
 		"persists the review and posts it to the pull request. After calling it, stop.",
 	parameters: PrReviewSubmission,
 	success: Schema.String,
@@ -199,7 +200,8 @@ export const buildReviewCompletion = (
 			{
 				[SUBMIT_REVIEW]: (submission: PrReviewSubmission) =>
 					Effect.suspend(() => {
-						const { report, filled, droppedFindings } = normalizePrReviewSubmission(submission)
+						const { report, filled, droppedFindings, resolved } =
+							normalizePrReviewSubmission(submission)
 						return submitReview(
 							tenant.orgId,
 							reviewId,
@@ -209,6 +211,7 @@ export const buildReviewCompletion = (
 								inputTokens: usage.input,
 								outputTokens: usage.output,
 								...(partial ? { partial: true } : undefined),
+								...(resolved.length > 0 ? { resolved } : undefined),
 							}),
 						).pipe(
 							Effect.tap(() =>
@@ -218,6 +221,7 @@ export const buildReviewCompletion = (
 									"maple.pr_review.dropped_findings": droppedFindings,
 									"maple.pr_review.findings": report.findings.length,
 									"maple.pr_review.verdict": report.verdict,
+									"maple.pr_review.resolved": resolved.length,
 								}),
 							),
 						)

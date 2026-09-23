@@ -1,5 +1,5 @@
 /**
- * Observability review of pull requests.
+ * Code review of pull requests, observability included.
  *
  * Three moments, and this service owns all of them so the row's lifecycle is in one place:
  *
@@ -20,12 +20,14 @@ import {
 	type GitCommitSha,
 	type OrgId,
 	PrReview,
-	type PrReviewFinding,
+	PrReviewFinding,
 	type PrReviewGrade,
 	PrReviewId,
 	PrReviewNotFoundError,
 	PrReviewPersistenceError,
-	type PrReviewReport,
+	PrReviewReport,
+	type PrReviewRepositoryConfig,
+	type PrReviewSeverity,
 	type PrReviewSkipReason,
 	type PrReviewStatus,
 	PR_REVIEW_SCORE_PENALTY,
@@ -42,9 +44,9 @@ import { wrapChatContext } from "@maple/domain/chat-preamble"
 import { encodeChatTurnTenant, prReviewSessionId } from "@maple/domain/chat-session"
 import { chatSessionStub } from "@maple/domain/chat-session-stub"
 import { UserId } from "@maple/domain/primitives"
-import { prReviews, type PrReviewRow } from "@maple/db"
+import { prReviewFindings, prReviews, type PrReviewFindingRow, type PrReviewRow } from "@maple/db"
 import { WorkerEnvironment } from "@maple/infra/worker-runtime"
-import { and, count, eq, gte, inArray } from "drizzle-orm"
+import { and, count, desc, eq, gte, inArray, ne } from "drizzle-orm"
 import { Clock, Context, Effect, Exit, Layer, Option, Result, Schema } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
@@ -52,6 +54,17 @@ import { dateToMs, msToDate } from "@maple/backend/platform/time"
 import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
 import { VcsProviderRegistry } from "@maple/backend/services/integrations/vcs/VcsProviderRegistry"
 import { VcsRepository } from "@maple/backend/services/integrations/vcs/VcsRepository"
+import { VcsSyncQueue } from "@maple/backend/services/integrations/vcs/VcsSyncQueue"
+import {
+	dismissedFindings,
+	nextHandles,
+	pathIgnored,
+	renderFollowUp,
+	resolvedByHandle,
+	threadForFinding,
+	type TrackedFinding,
+	withoutRepeats,
+} from "./findings"
 
 /** The identity the review's turn runs as; the same actor the investigation pass uses. */
 const internalServiceUserId = Schema.decodeSync(UserId)("internal-service")
@@ -67,6 +80,12 @@ export const PR_REVIEW_CHECK_NAME = "Maple / review"
  * later setting; the number is chosen so no real team meets it on a normal day.
  */
 export const PR_REVIEW_DAILY_CEILING = 60
+
+/**
+ * How long a push waits before its review starts. A burst of pushes then costs one review of the
+ * last head instead of a started and aborted turn per push.
+ */
+export const PR_REVIEW_PUSH_DEBOUNCE_SECONDS = 90
 
 /** Bounds on what the kickoff message carries; the agent fetches the rest through its tools. */
 const KICKOFF_BODY_CHARS = 4_000
@@ -90,7 +109,7 @@ const BOT_AUTHOR = /\[bot\]$|^(dependabot|renovate|github-actions)/i
 
 export interface PrReviewTriggerOutcome {
 	readonly reviewId: PrReviewId | null
-	readonly outcome: "started" | "skipped" | "failed"
+	readonly outcome: "started" | "deferred" | "skipped" | "failed"
 	readonly skipReason?: PrReviewSkipReason
 }
 
@@ -184,6 +203,10 @@ export const buildReviewKickoff = (input: {
 	readonly baseSha: GitCommitSha | undefined
 	readonly fork: boolean
 	readonly body: string | null
+	/** The repository's review settings, as Maple's settings page saved them. */
+	readonly config?: PrReviewRepositoryConfig
+	/** For a later push: what changed since the last review, and which findings are still open. */
+	readonly followUp?: ReadonlyArray<string>
 }): string => {
 	const body = (input.body ?? "").trim()
 	const quoted =
@@ -205,10 +228,36 @@ export const buildReviewKickoff = (input: {
 		"",
 		...quoted.split("\n").map((line) => `> ${line}`),
 		"",
+		...renderConfigRules(input.config),
+		...(input.followUp === undefined || input.followUp.length === 0 ? [] : [...input.followUp, ""]),
 		"Start with pr_changed_files. Read every hunk that adds code with pr_file_diff before you decide anything. Finish with submit_review.",
 	]
 	return wrapChatContext(lines.join("\n"), "")
 }
+
+/** The repository's own settings, stated in the kickoff; the service enforces the same rules. */
+const renderConfigRules = (config: PrReviewRepositoryConfig | undefined): ReadonlyArray<string> => {
+	if (config === undefined) return []
+	const lines: Array<string> = []
+	if (config.instructions?.trim()) {
+		lines.push(
+			"Review rules this repository's maintainers set in Maple (binding, like its CLAUDE.md):",
+			"",
+			...config.instructions
+				.trim()
+				.split("\n")
+				.map((line) => `> ${line}`),
+			"",
+		)
+	}
+	if (config.ignorePaths !== undefined && config.ignorePaths.length > 0)
+		lines.push(`Never review these paths: ${config.ignorePaths.join(", ")}.`, "")
+	if (config.categories !== undefined && config.categories.length > 0)
+		lines.push(`File findings only in these categories: ${config.categories.join(", ")}.`, "")
+	return lines
+}
+
+const SEVERITY_RANK = { info: 0, warn: 1, critical: 2 } as const satisfies Record<PrReviewSeverity, number>
 
 const severityLevel = (severity: PrReviewFinding["severity"]): PullRequestCheckAnnotation["level"] => {
 	switch (severity) {
@@ -221,16 +270,24 @@ const severityLevel = (severity: PrReviewFinding["severity"]): PullRequestCheckA
 	}
 }
 
-const verdictTitle = (report: PrReviewReport): string => {
+/** Earlier findings the summary carries: still open at this head, or fixed by it. */
+export interface CarriedFindings {
+	readonly open: ReadonlyArray<TrackedFinding>
+	readonly resolved: ReadonlyArray<TrackedFinding>
+}
+
+const NO_CARRIED: CarriedFindings = { open: [], resolved: [] }
+
+const verdictTitle = (report: PrReviewReport, carried: CarriedFindings): string => {
+	const issues =
+		report.findings.filter((finding) => finding.severity !== "info").length +
+		carried.open.filter((finding) => finding.severity !== "info").length
+	if (issues > 0) return `${issues} ${issues === 1 ? "issue" : "issues"} to address`
 	switch (report.verdict) {
-		case "clean":
-			return "No issues found"
-		case "issues": {
-			const issues = report.findings.filter((finding) => finding.severity !== "info").length
-			return `${issues} ${issues === 1 ? "issue" : "issues"} to address`
-		}
 		case "not_applicable":
 			return "Nothing to review"
+		default:
+			return "No issues found"
 	}
 }
 
@@ -244,7 +301,7 @@ const SEVERITY_LABEL = {
 } as const satisfies Record<PrReviewFinding["severity"], string>
 
 /** `observability · SPAN-03`, or the bare category for every other lens. */
-const categoryLabel = (finding: PrReviewFinding): string =>
+const categoryLabel = (finding: { readonly category: string; readonly checkId?: string }): string =>
 	finding.checkId === undefined ? finding.category : `${finding.category} · ${finding.checkId}`
 
 const gradeLabel = (grade: PrReviewGrade): string => grade.charAt(0).toUpperCase() + grade.slice(1)
@@ -257,19 +314,22 @@ export interface ReviewMarkdownInput {
 	readonly headSha: GitCommitSha
 	/** The repository's web URL, for line links; GitHub Enterprise included. */
 	readonly repositoryUrl: string
+	readonly carried?: CarriedFindings
 }
 
 /**
- * The review as markdown: score, verdict, summary, findings linked to the exact lines, and what
- * was reviewed. One renderer for the check run and the pull request comment, so the two never
- * disagree; the comment adds a heading, since a check run already shows its title.
+ * The review as markdown: score, verdict, summary, findings linked to the exact lines, what earlier
+ * reviews raised that is still open or now fixed, and what was reviewed. One renderer for the check
+ * run and the pull request comment, so the two never disagree; the comment adds a heading.
  */
 export const renderReviewMarkdown = (input: ReviewMarkdownInput & { readonly heading: boolean }): string => {
 	const { report } = input
-	const { score, grade } = scorePrReview(report)
+	const carried = input.carried ?? NO_CARRIED
+	const { score, grade } = scorePrReview(report, carried.open)
+	const all = [...report.findings, ...carried.open]
 	const counts = (severity: PrReviewFinding["severity"]) =>
-		report.findings.filter((finding) => finding.severity === severity).length
-	const lineUrl = (finding: PrReviewFinding) =>
+		all.filter((finding) => finding.severity === severity).length
+	const lineUrl = (finding: { readonly path: string; readonly line: number; readonly endLine?: number }) =>
 		`${input.repositoryUrl.replace(/\/+$/, "")}/blob/${input.headSha}/${finding.path
 			.split("/")
 			.map(encodeURIComponent)
@@ -280,7 +340,7 @@ export const renderReviewMarkdown = (input: ReviewMarkdownInput & { readonly hea
 	const hasCoverage = report.coverage.length > 0
 	if (input.heading) lines.push(`## Maple review: ${score}/100`, "")
 	lines.push(
-		`**${gradeLabel(grade)}** · ${verdictTitle(report)} · reviewed \`${input.headSha.slice(0, 7)}\``,
+		`**${gradeLabel(grade)}** · ${verdictTitle(report, carried)} · reviewed \`${input.headSha.slice(0, 7)}\``,
 		"",
 		`| Score | Critical | Warnings | Notes |${hasCoverage ? " Changes observable |" : ""}`,
 		`| --- | --- | --- | --- |${hasCoverage ? " --- |" : ""}`,
@@ -293,13 +353,13 @@ export const renderReviewMarkdown = (input: ReviewMarkdownInput & { readonly hea
 		lines.push(
 			"### Findings",
 			"",
-			"| Severity | Category | Where | Finding |",
-			"| --- | --- | --- | --- |",
+			"| | Severity | Category | Where | Finding |",
+			"| --- | --- | --- | --- | --- |",
 		)
 		for (const finding of report.findings) {
 			const where = `${finding.path}:${finding.line}${finding.endLine === undefined ? "" : `-${finding.endLine}`}`
 			lines.push(
-				`| ${SEVERITY_LABEL[finding.severity]} | ${categoryLabel(finding)} | [\`${escapeCell(where)}\`](${lineUrl(finding)}) | ${escapeCell(finding.title)} |`,
+				`| ${finding.handle ?? ""} | ${SEVERITY_LABEL[finding.severity]} | ${categoryLabel(finding)} | [\`${escapeCell(where)}\`](${lineUrl(finding)}) | ${escapeCell(finding.title)} |`,
 			)
 		}
 		lines.push("")
@@ -316,6 +376,28 @@ export const renderReviewMarkdown = (input: ReviewMarkdownInput & { readonly hea
 			}
 			lines.push("</details>", "")
 		}
+	}
+	if (carried.open.length > 0) {
+		lines.push(
+			"### Still open from earlier reviews",
+			"",
+			"| | Severity | Category | Where | Finding |",
+			"| --- | --- | --- | --- | --- |",
+		)
+		for (const finding of carried.open) {
+			lines.push(
+				`| ${finding.handle} | ${SEVERITY_LABEL[finding.severity]} | ${finding.category} | [\`${escapeCell(`${finding.path}:${finding.line}`)}\`](${lineUrl(finding)}) | ${escapeCell(finding.title)} |`,
+			)
+		}
+		lines.push("")
+	}
+	if (carried.resolved.length > 0) {
+		lines.push(
+			`### Fixed since the last review`,
+			"",
+			...carried.resolved.map((finding) => `- ~~${finding.handle} · ${escapeCell(finding.title)}~~`),
+			"",
+		)
 	}
 	if (report.coverage.length > 0) {
 		lines.push(
@@ -335,7 +417,7 @@ export const renderReviewMarkdown = (input: ReviewMarkdownInput & { readonly hea
 		? " Check ids refer to Maple's instrumentation audit."
 		: ""
 	lines.push(
-		`<sub>Score: 100, minus ${PR_REVIEW_SCORE_PENALTY.critical} per critical finding, ${PR_REVIEW_SCORE_PENALTY.warn} per warning and ${PR_REVIEW_SCORE_PENALTY.info} per note.${auditNote} Updated on every push.</sub>`,
+		`<sub>Score: 100, minus ${PR_REVIEW_SCORE_PENALTY.critical} per critical finding, ${PR_REVIEW_SCORE_PENALTY.warn} per warning and ${PR_REVIEW_SCORE_PENALTY.info} per note still open.${auditNote} Updated on every push; resolve a thread or reply "won't fix" to dismiss a finding.</sub>`,
 	)
 	return lines.join("\n")
 }
@@ -378,22 +460,31 @@ const CHECK_SUMMARY_MAX_BYTES = 65_000
 // `suggestion` is a sketch in a plain fence; only `replacement`, exact code for the commented
 // range, becomes a ```suggestion block GitHub applies with one click.
 const renderComment = (finding: PrReviewFinding): string => {
-	const lines = [`**${finding.title}** · ${categoryLabel(finding)} · ${finding.severity}`, "", finding.body]
+	const lines = [
+		`**${finding.handle === undefined ? "" : `${finding.handle} · `}${finding.title}** · ${categoryLabel(finding)} · ${finding.severity}`,
+		"",
+		finding.body,
+	]
 	if (finding.suggestion) lines.push("", "```", finding.suggestion, "```")
 	if (finding.replacement !== undefined) lines.push("", "```suggestion", finding.replacement, "```")
 	return lines.join("\n")
 }
 
 /** A finding with a replacement comments on its whole range, the lines the suggestion replaces. */
-const inlineComment = (finding: PrReviewFinding): PullRequestReviewComment =>
-	finding.replacement !== undefined && finding.endLine !== undefined
-		? { path: finding.path, startLine: finding.line, line: finding.endLine, body: renderComment(finding) }
-		: { path: finding.path, line: finding.line, body: renderComment(finding) }
+const inlineComment = (finding: PrReviewFinding, key: string | undefined): PullRequestReviewComment => ({
+	path: finding.path,
+	...(finding.replacement !== undefined && finding.endLine !== undefined
+		? { startLine: finding.line, line: finding.endLine }
+		: { line: finding.line }),
+	body: renderComment(finding),
+	...(key === undefined ? undefined : { key }),
+})
 
 /**
  * What the review posts: a check run with every finding as an annotation, one summary comment
- * that is always written (and edited in place on later pushes), and inline comments for findings
- * at or above `warn`.
+ * that is always written (and edited in place on later pushes), and inline comments for new
+ * findings at or above the repository's inline threshold (`warn` by default). `keys` maps a
+ * finding's handle to the id the posted comment is recorded under.
  */
 export const buildPublication = (input: {
 	readonly number: number
@@ -401,9 +492,14 @@ export const buildPublication = (input: {
 	readonly report: PrReviewReport
 	readonly partial: boolean
 	readonly repositoryUrl: string
+	readonly carried?: CarriedFindings
+	readonly minInlineSeverity?: PrReviewSeverity
+	readonly keys?: ReadonlyMap<string, string>
 }): PullRequestReviewPublication => {
 	const { report } = input
-	const { score } = scorePrReview(report)
+	const carried = input.carried ?? NO_CARRIED
+	const { score } = scorePrReview(report, carried.open)
+	const threshold = SEVERITY_RANK[input.minInlineSeverity ?? "warn"]
 	const annotations: Array<PullRequestCheckAnnotation> = report.findings.map((finding) => ({
 		path: finding.path,
 		startLine: finding.line,
@@ -413,22 +509,29 @@ export const buildPublication = (input: {
 		message: finding.body || finding.title,
 	}))
 	const comments: Array<PullRequestReviewComment> = report.findings
-		.filter((finding) => finding.severity !== "info")
-		.map(inlineComment)
+		.filter((finding) => SEVERITY_RANK[finding.severity] >= threshold)
+		.map((finding) =>
+			inlineComment(
+				finding,
+				finding.handle === undefined ? undefined : input.keys?.get(finding.handle),
+			),
+		)
 	const markdown = {
 		report,
 		partial: input.partial,
 		headSha: input.headSha,
 		repositoryUrl: input.repositoryUrl,
+		carried,
 	}
+	const hasIssues = [...report.findings, ...carried.open].some((finding) => finding.severity !== "info")
 	return {
 		number: input.number,
 		headSha: input.headSha,
 		checkName: PR_REVIEW_CHECK_NAME,
-		title: `${score}/100 · ${verdictTitle(report)}`,
+		title: `${score}/100 · ${verdictTitle(report, carried)}`,
 		summary: renderCheckSummary(markdown),
 		// Never `failure`: the review informs, it does not block a merge.
-		conclusion: report.verdict === "issues" ? "neutral" : "success",
+		conclusion: hasIssues ? "neutral" : "success",
 		annotations,
 		summaryComment: { marker: PR_REVIEW_COMMENT_MARKER, body: renderSummaryComment(markdown) },
 		// The summary lives in the comment; the review only carries the inline notes.
@@ -450,6 +553,8 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 			const featureFlags = yield* OrganizationFeatureFlagsService
 			// Present inside a Worker, absent in tests; without it a trigger records `agent_unavailable`.
 			const workerEnv = Option.getOrUndefined(yield* Effect.serviceOption(WorkerEnvironment))
+			// Present where webhooks are consumed; without it a push's review starts at once.
+			const syncQueue = Option.getOrUndefined(yield* Effect.serviceOption(VcsSyncQueue))
 
 			const getReview: PrReviewServiceApi["getReview"] = Effect.fn("PrReviewService.getReview")(
 				function* (orgId, reviewId) {
@@ -498,6 +603,135 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 				reviewId: PrReviewId,
 				values: Partial<typeof prReviews.$inferInsert>,
 			) => updateWhere(orgId, reviewId, undefined, values)
+
+			const toTracked = (row: PrReviewFindingRow): TrackedFinding => ({
+				id: row.id,
+				handle: row.handle,
+				path: row.path,
+				line: row.line,
+				category: row.category,
+				severity: row.severity,
+				title: row.title,
+				status: row.status,
+				commentId: row.commentId ?? null,
+			})
+
+			/** Every finding this pull request has had, in handle order. */
+			const loadTracked = (orgId: OrgId, repositoryId: VcsRepositoryId, number: number) =>
+				database
+					.execute((db) =>
+						db
+							.select()
+							.from(prReviewFindings)
+							.where(
+								and(
+									eq(prReviewFindings.orgId, orgId),
+									eq(prReviewFindings.repositoryId, repositoryId),
+									eq(prReviewFindings.number, number),
+								),
+							),
+					)
+					.pipe(
+						Effect.mapError(toPersistence),
+						Effect.map((rows) => rows.map(toTracked)),
+					)
+
+			const setFindingStatus = (
+				ids: ReadonlyArray<string>,
+				values: Partial<typeof prReviewFindings.$inferInsert>,
+			) =>
+				ids.length === 0
+					? Effect.void
+					: database
+							.execute((db) =>
+								db
+									.update(prReviewFindings)
+									.set(values)
+									.where(inArray(prReviewFindings.id, [...ids])),
+							)
+							.pipe(Effect.mapError(toPersistence), Effect.asVoid)
+
+			/** The provider, installation and reference a repository's reads and posts go through. */
+			const providerFor = Effect.fn("PrReviewService.providerFor")(function* (
+				orgId: OrgId,
+				repo: VcsRepo,
+			) {
+				const installation = yield* repositories
+					.getInstallationById(orgId, repo.installationId)
+					.pipe(Effect.mapError(toPersistence))
+				if (Option.isNone(installation)) return Option.none()
+				const provider = yield* providers.resolve(repo.provider).pipe(Effect.option)
+				if (Option.isNone(provider)) return Option.none()
+				return Option.some({
+					provider: provider.value,
+					installation: installation.value,
+					ref: { externalRepoId: repo.externalRepoId, owner: repo.owner, name: repo.name },
+				})
+			})
+
+			/**
+			 * What a later push's kickoff says: the last reviewed head, what changed since, and the
+			 * findings still open. Threads a person resolved or answered "won't fix" are marked
+			 * dismissed first, so the reviewer never re-raises them. Provider reads that fail degrade
+			 * to less context, never to a failed review.
+			 */
+			const followUpFor = Effect.fn("PrReviewService.followUpFor")(function* (
+				orgId: OrgId,
+				repo: VcsRepo,
+				number: number,
+				headSha: GitCommitSha,
+				nowMs: number,
+			) {
+				const previous = yield* database
+					.execute((db) =>
+						db
+							.select({ headSha: prReviews.headSha })
+							.from(prReviews)
+							.where(
+								and(
+									eq(prReviews.repositoryId, repo.id),
+									eq(prReviews.number, number),
+									eq(prReviews.status, "completed"),
+									ne(prReviews.headSha, headSha),
+								),
+							)
+							.orderBy(desc(prReviews.finishedAt))
+							.limit(1),
+					)
+					.pipe(Effect.mapError(toPersistence))
+				const previousSha = previous[0]?.headSha
+				if (previousSha === undefined) return undefined
+				const tracked = yield* loadTracked(orgId, repo.id, number)
+				let open = tracked.filter((finding) => finding.status === "open")
+				const upstream = yield* providerFor(orgId, repo)
+				let changedPaths: ReadonlyArray<string> | undefined
+				if (Option.isSome(upstream)) {
+					const { provider, installation, ref } = upstream.value
+					if (open.some((finding) => finding.commentId !== null)) {
+						const threads = yield* provider
+							.fetchReviewThreads(installation, ref, number)
+							.pipe(Effect.orElseSucceed(() => []))
+						const dismissed = dismissedFindings(open, threads)
+						yield* setFindingStatus(
+							dismissed.map((finding) => finding.id),
+							{ status: "dismissed", updatedAt: msToDate(nowMs) },
+						)
+						open = open.filter((finding) => !dismissed.includes(finding))
+						yield* Effect.annotateCurrentSpan("maple.pr_review.dismissed", dismissed.length)
+					}
+					changedPaths = yield* provider
+						.fetchChangedPaths(installation, ref, previousSha, headSha)
+						.pipe(
+							Effect.map((paths): ReadonlyArray<string> | undefined => paths),
+							Effect.orElseSucceed(() => undefined),
+						)
+				}
+				yield* Effect.annotateCurrentSpan({
+					"maple.pr_review.carried_open": open.length,
+					"maple.pr_review.changed_since": changedPaths?.length ?? -1,
+				})
+				return renderFollowUp({ previousSha, changedPaths, open })
+			})
 
 			const startedToday = (orgId: OrgId, nowMs: number) =>
 				database
@@ -630,8 +864,9 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 				readonly headSha: GitCommitSha
 				readonly superseded: number
 				readonly nowMs: number
+				readonly config: PrReviewRepositoryConfig
 			}) {
-				const { orgId, reviewId, repo, job, headSha, superseded, nowMs } = input
+				const { orgId, reviewId, repo, job, headSha, superseded, nowMs, config } = input
 				const sessionId = prReviewSessionId(orgId, reviewId)
 				const annotate = (outcome: string, extra?: Record<string, string | number | boolean>) =>
 					Effect.annotateCurrentSpan({
@@ -653,6 +888,16 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 					return { reviewId, outcome: "failed" as const, skipReason: "agent_unavailable" as const }
 				}
 
+				const followUp = yield* followUpFor(orgId, repo, job.number, headSha, nowMs).pipe(
+					Effect.catchCause((cause) =>
+						Effect.logWarning(
+							"[PrReview] could not read earlier findings; reviewing from scratch",
+						).pipe(
+							Effect.annotateLogs({ orgId, reviewId, cause: summarizeCause(cause) }),
+							Effect.as(undefined),
+						),
+					),
+				)
 				const text = buildReviewKickoff({
 					repository: repo.fullName,
 					number: job.number,
@@ -668,6 +913,8 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 						job.headRepoFullName !== null &&
 						job.headRepoFullName.toLowerCase() !== repo.fullName.toLowerCase(),
 					body: job.body,
+					config,
+					...(followUp === undefined ? undefined : { followUp }),
 				})
 				const claimed = yield* Effect.exit(
 					Effect.tryPromise(() =>
@@ -744,7 +991,10 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 					yield* annotate("skipped", { "maple.pr_review.skip_reason": "not_rolled_out" })
 					return skip("not_rolled_out")
 				}
-				if (job.draft === true) {
+				const config = yield* repositories
+					.getPrReviewConfig(orgId, repo.id)
+					.pipe(Effect.mapError(toPersistence))
+				if (job.draft === true && config.reviewDrafts !== true) {
 					yield* annotate("skipped", { "maple.pr_review.skip_reason": "draft" })
 					return skip("draft")
 				}
@@ -758,6 +1008,41 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 					return skip("bot_author")
 				}
 				const nowMs = yield* Clock.currentTimeMillis
+				// The delayed copy of a push: start the row it queued, unless a later push replaced it.
+				if (job.deferredReview === true) {
+					const queued = yield* database
+						.execute((db) =>
+							db
+								.select({ id: prReviews.id })
+								.from(prReviews)
+								.where(
+									and(
+										eq(prReviews.orgId, orgId),
+										eq(prReviews.repositoryId, repo.id),
+										eq(prReviews.number, job.number),
+										eq(prReviews.headSha, headSha),
+										eq(prReviews.status, "queued"),
+									),
+								)
+								.limit(1),
+						)
+						.pipe(Effect.mapError(toPersistence))
+					const row = queued[0]
+					if (row === undefined) {
+						yield* annotate("skipped", { "maple.pr_review.skip_reason": "superseded" })
+						return skip("superseded")
+					}
+					return yield* start({
+						orgId,
+						reviewId: row.id,
+						repo,
+						job,
+						headSha,
+						superseded: 0,
+						nowMs,
+						config,
+					})
+				}
 				const started = yield* startedToday(orgId, nowMs)
 				if (started >= PR_REVIEW_DAILY_CEILING) {
 					yield* annotate("skipped", {
@@ -797,7 +1082,22 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 					)
 					.pipe(Effect.mapError(toPersistence))
 				if (inserted.length > 0) {
-					return yield* start({ orgId, reviewId, repo, job, headSha, superseded, nowMs })
+					if (job.action === "synchronize" && syncQueue !== undefined) {
+						const deferred = yield* syncQueue
+							.send(
+								{ ...job, deferredReview: true },
+								{ delaySeconds: PR_REVIEW_PUSH_DEBOUNCE_SECONDS },
+							)
+							.pipe(
+								Effect.as(true),
+								Effect.orElseSucceed(() => false),
+							)
+						if (deferred) {
+							yield* annotate("deferred", { "maple.pr_review.id": reviewId })
+							return { reviewId, outcome: "deferred" as const }
+						}
+					}
+					return yield* start({ orgId, reviewId, repo, job, headSha, superseded, nowMs, config })
 				}
 				// A row already exists for this head. A failed one is retried in place, which is what
 				// its own error message promises; anything else is a genuine duplicate.
@@ -807,7 +1107,16 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 					return skip("duplicate")
 				}
 				yield* annotate("retrying", { "maple.pr_review.id": reclaimed })
-				return yield* start({ orgId, reviewId: reclaimed, repo, job, headSha, superseded, nowMs })
+				return yield* start({
+					orgId,
+					reviewId: reclaimed,
+					repo,
+					job,
+					headSha,
+					superseded,
+					nowMs,
+					config,
+				})
 			})
 
 			const onPullRequestEvent: PrReviewServiceApi["onPullRequestEvent"] = (orgId, job) =>
@@ -834,16 +1143,6 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 					return yield* new PrReviewNotFoundError({ message: "No such review", reviewId })
 				}
 				const review = existing.value
-				const report = request.report
-				yield* Effect.annotateCurrentSpan({
-					orgId,
-					"maple.pr_review.id": reviewId,
-					"maple.pr_review.verdict": report.verdict,
-					"maple.pr_review.score": scorePrReview(report).score,
-					"maple.pr_review.findings": report.findings.length,
-					"maple.pr_review.coverage": report.coverage.length,
-					"maple.pr_review.partial": request.partial === true,
-				})
 				// Resolved before the row completes: a transient read failure here must leave the
 				// review active, so a retried submission can still publish.
 				const repository = yield* repositories
@@ -854,12 +1153,65 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 					: yield* repositories
 							.getInstallationById(orgId, repository.value.installationId)
 							.pipe(Effect.mapError(toPersistence))
+				const config = yield* repositories
+					.getPrReviewConfig(orgId, review.repositoryId)
+					.pipe(Effect.mapError(toPersistence))
+
+				// Earlier findings: the ones this head fixes, and the ones still open.
+				const tracked = yield* loadTracked(orgId, review.repositoryId, review.number)
+				const open = tracked.filter((finding) => finding.status === "open")
+				const resolved = resolvedByHandle(request.resolved ?? [], open)
+				const stillOpen = open.filter((finding) => !resolved.includes(finding))
+				// The repository's settings are enforced here, not only stated in the kickoff.
+				const allowed = request.report.findings.filter(
+					(finding) =>
+						!pathIgnored(finding.path, config.ignorePaths) &&
+						(config.categories === undefined ||
+							config.categories.length === 0 ||
+							config.categories.includes(finding.category)),
+				)
+				const { fresh, repeated } = withoutRepeats(
+					allowed,
+					tracked.filter((finding) => !resolved.includes(finding)),
+				)
+				const handles = nextHandles(
+					tracked.map((finding) => finding.handle),
+					fresh.length,
+				)
+				const findings = fresh.map(
+					(finding, i) => new PrReviewFinding({ ...finding, handle: handles[i] ?? "" }),
+				)
+				const hasIssues = [...findings, ...stillOpen].some((finding) => finding.severity !== "info")
+				const report = new PrReviewReport({
+					...request.report,
+					findings,
+					verdict: hasIssues
+						? "issues"
+						: request.report.verdict === "issues"
+							? "clean"
+							: request.report.verdict,
+				})
+				const carried = { open: stillOpen, resolved }
+				const score = scorePrReview(report, stillOpen).score
+				yield* Effect.annotateCurrentSpan({
+					orgId,
+					"maple.pr_review.id": reviewId,
+					"maple.pr_review.verdict": report.verdict,
+					"maple.pr_review.score": score,
+					"maple.pr_review.findings": report.findings.length,
+					"maple.pr_review.repeated": repeated,
+					"maple.pr_review.ignored": request.report.findings.length - allowed.length,
+					"maple.pr_review.resolved": resolved.length,
+					"maple.pr_review.carried_open": stillOpen.length,
+					"maple.pr_review.coverage": report.coverage.length,
+					"maple.pr_review.partial": request.partial === true,
+				})
 				// From an active state only. A review superseded while its completion call was in
 				// flight stays `skipped`, and its stale findings never reach the pull request.
 				const stored = yield* updateWhere(orgId, reviewId, ACTIVE_STATUSES, {
 					status: "completed",
 					reportJson: report,
-					score: scorePrReview(report).score,
+					score,
 					model: request.model ?? null,
 					inputTokens: request.inputTokens ?? null,
 					outputTokens: request.outputTokens ?? null,
@@ -881,6 +1233,37 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 					).pipe(Effect.annotateLogs({ orgId, reviewId, status: review.status }))
 					return
 				}
+
+				const keys = new Map(findings.map((finding) => [finding.handle ?? "", randomUUID()] as const))
+				if (findings.length > 0) {
+					yield* database
+						.execute((db) =>
+							db.insert(prReviewFindings).values(
+								findings.map((finding) => ({
+									id: keys.get(finding.handle ?? "") ?? randomUUID(),
+									orgId,
+									repositoryId: review.repositoryId,
+									number: review.number,
+									reviewId,
+									handle: finding.handle ?? "",
+									path: finding.path,
+									line: finding.line,
+									category: finding.category,
+									severity: finding.severity,
+									title: finding.title,
+									status: "open" as const,
+									createdAt: msToDate(nowMs),
+									updatedAt: msToDate(nowMs),
+								})),
+							),
+						)
+						.pipe(Effect.mapError(toPersistence))
+				}
+				yield* setFindingStatus(
+					resolved.map((finding) => finding.id),
+					{ status: "resolved", resolvedSha: review.headSha, updatedAt: msToDate(nowMs) },
+				)
+
 				if (Option.isNone(repository) || Option.isNone(installation)) return
 				const repo = repository.value
 				const publication = buildPublication({
@@ -889,17 +1272,24 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 					headSha: review.headSha,
 					report,
 					partial: request.partial === true,
+					carried,
+					keys,
+					...(config.minInlineSeverity === undefined
+						? undefined
+						: { minInlineSeverity: config.minInlineSeverity }),
 				})
-				const published = yield* providers.resolve(repo.provider).pipe(
-					Effect.flatMap((provider) =>
-						provider.publishPullRequestReview(
-							installation.value,
-							{ externalRepoId: repo.externalRepoId, owner: repo.owner, name: repo.name },
-							publication,
-						),
-					),
-					Effect.result,
-				)
+				const ref = { externalRepoId: repo.externalRepoId, owner: repo.owner, name: repo.name }
+				const provider = yield* providers.resolve(repo.provider).pipe(Effect.result)
+				if (Result.isFailure(provider)) {
+					yield* update(orgId, reviewId, {
+						publishError: provider.failure.message.slice(0, 500),
+						updatedAt: msToDate(nowMs),
+					})
+					return
+				}
+				const published = yield* provider.success
+					.publishPullRequestReview(installation.value, ref, publication)
+					.pipe(Effect.result)
 				if (Result.isFailure(published)) {
 					// Recorded, not retried: the usual cause is the installation not having
 					// accepted `checks: write` yet, and the report itself is already safe.
@@ -911,16 +1301,66 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 						publishError: published.failure.message.slice(0, 500),
 						updatedAt: msToDate(nowMs),
 					})
-					return
+				} else {
+					yield* Effect.annotateCurrentSpan({ "maple.pr_review.published": true })
+					yield* update(orgId, reviewId, {
+						checkRunUrl: published.success.checkRunUrl,
+						commentUrl: published.success.commentUrl,
+						reviewUrl: published.success.reviewUrl,
+						publishError: null,
+						updatedAt: msToDate(nowMs),
+					})
+					yield* Effect.forEach(
+						published.success.inlineComments,
+						({ key, commentId }) =>
+							database
+								.execute((db) =>
+									db
+										.update(prReviewFindings)
+										.set({ commentId })
+										.where(eq(prReviewFindings.id, key)),
+								)
+								.pipe(Effect.mapError(toPersistence)),
+						{ discard: true },
+					)
 				}
-				yield* Effect.annotateCurrentSpan({ "maple.pr_review.published": true })
-				yield* update(orgId, reviewId, {
-					checkRunUrl: published.success.checkRunUrl,
-					commentUrl: published.success.commentUrl,
-					reviewUrl: published.success.reviewUrl,
-					publishError: null,
-					updatedAt: msToDate(nowMs),
-				})
+
+				// A fixed finding's thread is answered and resolved, so the conversation shows it.
+				const toResolve = resolved.filter((finding) => finding.commentId !== null)
+				if (toResolve.length === 0) return
+				const threads = yield* provider.success
+					.fetchReviewThreads(installation.value, ref, review.number)
+					.pipe(Effect.orElseSucceed(() => []))
+				yield* Effect.forEach(
+					toResolve,
+					(finding) => {
+						const thread = threadForFinding(finding, threads)
+						if (thread === undefined || thread.isResolved || finding.commentId === null)
+							return Effect.void
+						return provider.success
+							.resolveReviewThread(installation.value, ref, {
+								number: review.number,
+								threadId: thread.id,
+								commentId: finding.commentId,
+								reply: `Fixed in \`${review.headSha.slice(0, 7)}\`.`,
+							})
+							.pipe(
+								Effect.catchCause((cause) =>
+									Effect.logWarning(
+										"[PrReview] could not resolve a fixed finding's thread",
+									).pipe(
+										Effect.annotateLogs({
+											orgId,
+											reviewId,
+											handle: finding.handle,
+											cause: summarizeCause(cause),
+										}),
+									),
+								),
+							)
+					},
+					{ discard: true },
+				)
 			})
 
 			const failReview: PrReviewServiceApi["failReview"] = Effect.fn("PrReviewService.failReview")(

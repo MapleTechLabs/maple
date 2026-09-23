@@ -2,8 +2,12 @@ import { boolean, index, integer, jsonb, pgTable, text, timestamp, uniqueIndex }
 import type { OrgId, UserId } from "@maple/domain/primitives"
 import type {
 	GitCommitSha,
+	PrReviewCategory,
+	PrReviewFindingStatus,
 	PrReviewId,
 	PrReviewReport,
+	PrReviewRepositoryConfig,
+	PrReviewSeverity,
 	PrReviewSkipReason,
 	PrReviewStatus,
 	VcsAccountType,
@@ -89,6 +93,8 @@ export const vcsRepositories = pgTable(
 		// Opt-in: Maple reviews this repository's pull requests for observability
 		// gaps. User-owned, like `tracked_branch`; a reconcile never touches it.
 		prReviewEnabled: boolean("pr_review_enabled").notNull().default(false),
+		/** Review settings for this repository; null reviews with the defaults. */
+		prReviewConfig: jsonb("pr_review_config").$type<PrReviewRepositoryConfig>(),
 		createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull(),
 		updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date" }).notNull(),
 	},
@@ -215,6 +221,41 @@ export const prReviews = pgTable(
 	],
 )
 
+/**
+ * One finding a review posted, followed across later pushes of the same pull request so it is
+ * never posted twice, is resolved on GitHub when a head fixes it, and stays quiet once a person
+ * dismissed it.
+ */
+export const prReviewFindings = pgTable(
+	"pr_review_findings",
+	{
+		id: text("id").notNull().primaryKey(),
+		orgId: text("org_id").$type<OrgId>().notNull(),
+		repositoryId: text("repository_id").$type<VcsRepositoryId>().notNull(),
+		number: integer("number").notNull(),
+		/** The review that first posted it. */
+		reviewId: text("review_id").$type<PrReviewId>().notNull(),
+		/** The short handle the reviewer is shown (`F3`), unique per pull request. */
+		handle: text("handle").notNull(),
+		path: text("path").notNull(),
+		line: integer("line").notNull(),
+		category: text("category").$type<PrReviewCategory>().notNull(),
+		severity: text("severity").$type<PrReviewSeverity>().notNull(),
+		title: text("title").notNull(),
+		status: text("status").$type<PrReviewFindingStatus>().notNull().default("open"),
+		/** The inline review comment's id, when the finding was posted inline. */
+		commentId: text("comment_id"),
+		/** The head that fixed it. */
+		resolvedSha: text("resolved_sha").$type<GitCommitSha>(),
+		createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull(),
+		updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date" }).notNull(),
+	},
+	(table) => [
+		uniqueIndex("pr_review_findings_pr_handle_idx").on(table.repositoryId, table.number, table.handle),
+		index("pr_review_findings_org_idx").on(table.orgId),
+	],
+)
+
 export type VcsInstallationRow = typeof vcsInstallations.$inferSelect
 export type VcsInstallationInsert = typeof vcsInstallations.$inferInsert
 export type VcsRepositoryRow = typeof vcsRepositories.$inferSelect
@@ -225,3 +266,4 @@ export type VcsRepositoryBranchRow = typeof vcsRepositoryBranches.$inferSelect
 export type VcsRepositoryBranchInsert = typeof vcsRepositoryBranches.$inferInsert
 export type PrReviewRow = typeof prReviews.$inferSelect
 export type PrReviewInsert = typeof prReviews.$inferInsert
+export type PrReviewFindingRow = typeof prReviewFindings.$inferSelect

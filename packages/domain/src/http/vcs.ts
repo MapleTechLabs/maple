@@ -271,13 +271,31 @@ export const PullRequestContext = Schema.Struct({
 })
 export type PullRequestContext = Schema.Schema.Type<typeof PullRequestContext>
 
-/** An inline review comment on the new side of the diff; `startLine` makes it span a range. */
+/**
+ * An inline review comment on the new side of the diff; `startLine` makes it span a range. `key`
+ * is the caller's own id for it, handed back with the comment's provider id once posted.
+ */
 export const PullRequestReviewComment = Schema.Struct({
 	path: Schema.String,
 	line: Schema.Number,
 	startLine: Schema.optionalKey(Schema.Number),
 	body: Schema.String,
+	key: Schema.optionalKey(Schema.String),
 })
+
+/** A review thread on a pull request, with its first comments, as the reviewer tracks it. */
+export const PullRequestReviewThread = Schema.Struct({
+	id: Schema.String,
+	isResolved: Schema.Boolean,
+	comments: Schema.Array(
+		Schema.Struct({
+			commentId: Schema.NullOr(Schema.String),
+			author: Schema.String,
+			body: Schema.String,
+		}),
+	),
+})
+export type PullRequestReviewThread = Schema.Schema.Type<typeof PullRequestReviewThread>
 export type PullRequestReviewComment = Schema.Schema.Type<typeof PullRequestReviewComment>
 
 export const PullRequestCheckAnnotation = Schema.Struct({
@@ -316,6 +334,8 @@ export const PullRequestReviewPublished = Schema.Struct({
 	checkRunUrl: Schema.NullOr(Schema.String),
 	commentUrl: Schema.NullOr(Schema.String),
 	reviewUrl: Schema.NullOr(Schema.String),
+	/** The provider's id for each posted inline comment that carried a `key`. */
+	inlineComments: Schema.Array(Schema.Struct({ key: Schema.String, commentId: Schema.String })),
 })
 export type PullRequestReviewPublished = Schema.Schema.Type<typeof PullRequestReviewPublished>
 
@@ -534,6 +554,11 @@ export const PullRequestEventJob = Schema.Struct({
 	draft: Schema.optionalKey(Schema.Boolean),
 	/** The head repository, which differs from `repoFullName` on a fork's pull request. */
 	headRepoFullName: Schema.optionalKey(Schema.NullOr(Schema.String)),
+	/**
+	 * Set on the copy the review trigger re-enqueues with a delay, to start a review once a burst
+	 * of pushes settles. Every other reader of pull request events ignores that copy.
+	 */
+	deferredReview: Schema.optionalKey(Schema.Boolean),
 })
 export type PullRequestEventJob = Schema.Schema.Type<typeof PullRequestEventJob>
 
