@@ -342,6 +342,7 @@ describe("bundled migrations", () => {
 
 			await pg.exec(sql)
 			expect(await publishedTables(pg)).toEqual([...SYNCED_TABLES].sort())
+			expect(await fullTables(pg)).toEqual([...SYNCED_TABLES].sort())
 		} finally {
 			await pg.close()
 		}

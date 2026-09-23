@@ -124,14 +124,18 @@ needs the check below.
 
 ```bash
 docker exec maple-postgres-1 psql -U maple -d maple -c "
-  SELECT c.relname, c.relreplident, p.pubname IS NOT NULL AS published
-  FROM pg_class c
-  LEFT JOIN pg_publication_tables p
-    ON p.pubname = 'electric_publication_default' AND p.schemaname = 'public' AND p.tablename = c.relname
-  WHERE c.relnamespace = 'public'::regnamespace AND (c.relreplident = 'f' OR p.pubname IS NOT NULL);"
+  WITH synced(name) AS (VALUES ('dashboards'),('alert_rules'),('alert_rule_states'),
+    ('alert_incidents'),('alert_destinations'),('api_keys'),('investigations'))
+  SELECT coalesce(s.name, p.tablename) AS table, c.relreplident, p.tablename IS NOT NULL AS published,
+         s.name IS NOT NULL AS expected
+  FROM synced s
+  FULL JOIN (SELECT tablename FROM pg_publication_tables
+             WHERE pubname = 'electric_publication_default') p ON p.tablename = s.name
+  LEFT JOIN pg_class c ON c.oid = to_regclass('public.' || quote_ident(coalesce(s.name, p.tablename)));"
 ```
 
-Every synced table should show `f` and `published = t`, and nothing else should appear.
+Every row should show `f`, `published = t` and `expected = t`. A missing synced table shows
+`published = f`; an extra member shows `expected = f`.
 To self-heal, apply the current membership (`SYNCED_TABLES` in
 `packages/db/src/migrations.test.ts`), every statement idempotent:
 

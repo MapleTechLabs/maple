@@ -26,6 +26,7 @@ DECLARE
 		'investigations'
 	];
 	synced_table text;
+	stale_schema text;
 	stale_table text;
 BEGIN
 	IF NOT EXISTS (SELECT 1 FROM pg_publication WHERE pubname = 'electric_publication_default') THEN
@@ -49,15 +50,22 @@ BEGIN
 		END IF;
 	END LOOP;
 
-	-- Anything else in the publication has no shape and only costs replication.
-	FOR stale_table IN
-		SELECT tablename
+	-- Anything else in the publication has no shape and only costs replication. FULL is
+	-- table-wide, so it stays while another publication still carries the table.
+	FOR stale_schema, stale_table IN
+		SELECT schemaname, tablename
 		FROM pg_publication_tables
 		WHERE pubname = 'electric_publication_default'
-			AND schemaname = 'public'
-			AND tablename <> ALL (synced)
+			AND NOT (schemaname = 'public' AND tablename = ANY (synced))
 	LOOP
-		EXECUTE format('ALTER PUBLICATION electric_publication_default DROP TABLE public.%I', stale_table);
-		EXECUTE format('ALTER TABLE public.%I REPLICA IDENTITY DEFAULT', stale_table);
+		EXECUTE format('ALTER PUBLICATION electric_publication_default DROP TABLE %I.%I', stale_schema, stale_table);
+		IF NOT EXISTS (
+			SELECT 1
+			FROM pg_publication_tables
+			WHERE schemaname = stale_schema
+				AND tablename = stale_table
+		) THEN
+			EXECUTE format('ALTER TABLE %I.%I REPLICA IDENTITY DEFAULT', stale_schema, stale_table);
+		END IF;
 	END LOOP;
 END $$;
