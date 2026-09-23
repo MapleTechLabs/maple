@@ -43,6 +43,7 @@ import { useOrganizationFeatureFlags } from "@/hooks/use-organization-feature-fl
 import { MapleApiAtomClient, retainedQuery } from "@/lib/services/common/atom-client"
 import { GITHUB_ACCENT, IntegrationIconPlate } from "./integration-catalog"
 import { useIntegrationConnect, type IntegrationConnect } from "./integration-connect"
+import { PrReviewSettingsButton } from "./pr-review-settings"
 import {
 	IntegrationEmpty,
 	IntegrationEmptyCard,
@@ -727,6 +728,7 @@ function RepoRow({
 			</div>
 			{/* Staged per organization: the switch appears only once the org carries the `prreview` flag. */}
 			{prReviewRolledOut ? <PrReviewToggle repo={repo} onChange={onSetPrReview} /> : null}
+			{prReviewRolledOut && repo.prReviewEnabled ? <PrReviewSettingsButton repo={repo} /> : null}
 			<BranchSelector repo={repo} onSelect={onSetTrackedBranch} />
 		</li>
 	)
