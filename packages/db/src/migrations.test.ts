@@ -290,6 +290,64 @@ describe("bundled migrations", () => {
 		}
 	}, 30_000)
 
+	const publishedTables = async (pg: PGlite) =>
+		(
+			await pg.query<{ tablename: string }>(
+				"select tablename from pg_publication_tables where pubname = 'electric_publication_default'",
+			)
+		).rows
+			.map((r) => r.tablename)
+			.sort()
+
+	const fullTables = async (pg: PGlite) =>
+		(
+			await pg.query<{ relname: string }>(
+				"select relname from pg_class where relkind = 'r' and relreplident = 'f' and relnamespace = 'public'::regnamespace",
+			)
+		).rows
+			.map((r) => r.relname)
+			.sort()
+
+	// The fresh EU database had an empty publication before the first migration ran,
+	// so 0009's CREATE PUBLICATION hit duplicate_object and its handler rolled back the
+	// whole block, REPLICA IDENTITY FULL included.
+	it("converges on the synced tables when the publication exists before any migration", async () => {
+		const pg = new PGlite()
+		try {
+			await pg.exec("CREATE PUBLICATION electric_publication_default")
+			await pg.exec(readBundledMigrationsSql())
+
+			expect(await publishedTables(pg)).toEqual([...SYNCED_TABLES].sort())
+			expect(await fullTables(pg)).toEqual([...SYNCED_TABLES].sort())
+		} finally {
+			await pg.close()
+		}
+	}, 30_000)
+
+	it("reconciles a drifted publication and re-runs as a no-op", async () => {
+		const pg = new PGlite()
+		try {
+			await pg.exec(readMigrationSqlBefore("electric_publication_reconcile"))
+			await pg.exec(`
+				ALTER PUBLICATION electric_publication_default DROP TABLE "dashboards";
+				ALTER TABLE "dashboards" REPLICA IDENTITY DEFAULT;
+				ALTER TABLE "error_issues" REPLICA IDENTITY FULL;
+				ALTER PUBLICATION electric_publication_default ADD TABLE "error_issues";
+			`)
+
+			const sql = readMigrationSql("electric_publication_reconcile")
+			await pg.exec(sql)
+			expect(await publishedTables(pg)).toEqual([...SYNCED_TABLES].sort())
+			expect(await fullTables(pg)).toEqual([...SYNCED_TABLES].sort())
+
+			await pg.exec(sql)
+			expect(await publishedTables(pg)).toEqual([...SYNCED_TABLES].sort())
+			expect(await fullTables(pg)).toEqual([...SYNCED_TABLES].sort())
+		} finally {
+			await pg.close()
+		}
+	}, 30_000)
+
 	it("deletes metric rules and removes retired destinations", async () => {
 		const pg = new PGlite()
 		await pg.exec(readMigrationSqlBefore("windy_bromley"))
