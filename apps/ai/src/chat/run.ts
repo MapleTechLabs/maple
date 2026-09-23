@@ -21,6 +21,7 @@ import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
 import { type AgentDefinition, agentForSession, chatAgent } from "./agents"
 import { profileForTurn } from "./profiles"
 import { makeTextSanitizer, toChatEvents, type ChatTurnEvent } from "./events"
+import { makeReviewCoverage } from "./review-coverage"
 import { buildReviewFanout } from "./review-fanout"
 import {
 	accumulateUsage,
@@ -28,6 +29,7 @@ import {
 	buildDiagnosisCompletion,
 	buildReplyCompletion,
 	buildReviewCompletion,
+	isAutonomousReviewTurn,
 	type RunCompletion,
 	SUBMIT_REVIEW,
 	type RunUsage,
@@ -134,12 +136,18 @@ export interface ChatRunOutcome {
 export const runChatTurn = (input: ChatRunInput) => {
 	const agent = input.agent ?? agentForSession(input.sessionId)
 	const profile = profileForTurn(agent, input.origin)
+	// Per run, and fed by the Maple handlers the review_files children share, so a group a child
+	// read counts as read.
+	const coverage = isAutonomousReviewTurn(input.sessionId, input.origin)
+		? makeReviewCoverage(input.text)
+		: undefined
 	const maple = buildChatToolkit(
 		input.toolExecutor,
 		input.tenant,
 		profile.ruleset,
 		profile.surface,
 		agentSessionSpanAttributes(input.model.tags),
+		coverage?.observe,
 	)
 	// One completion per session kind. The session id decides which, so a review session can never
 	// be handed the diagnosis tool or the other way round.
@@ -165,6 +173,7 @@ export const runChatTurn = (input: ChatRunInput) => {
 					input.model.name,
 					input.closeOut === true,
 					agentSessionSpanAttributes(input.model.tags),
+					coverage,
 				)) ??
 		(input.submitReply === undefined || input.stageEdit === undefined
 			? undefined

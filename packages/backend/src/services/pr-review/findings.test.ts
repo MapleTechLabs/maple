@@ -2,6 +2,7 @@ import { PrReviewFinding, type PullRequestReviewThread } from "@maple/domain/htt
 import { assert, describe, it } from "vitest"
 import {
 	dismissedFindings,
+	followUpScope,
 	nextHandles,
 	pathIgnored,
 	renderFollowUp,
@@ -138,5 +139,29 @@ describe("renderFollowUp", () => {
 		assert.include(text, "reviewed before, at abcdef1")
 		assert.include(text, "src/a.ts")
 		assert.include(text, "- F1 · src/a.ts:10 · correctness · warn · off by one")
+	})
+})
+
+describe("followUpScope", () => {
+	const kickoff = (changedPaths: ReadonlyArray<string> | undefined) =>
+		[
+			"Review pull request #7 of octo/shop.",
+			"",
+			...renderFollowUp({ previousSha: "abcdef1234", changedPaths, open: [] }),
+		].join("\n")
+
+	it("reads back the files renderFollowUp names", () => {
+		assert.deepEqual(followUpScope(kickoff(["src/a.ts", "src/b.ts"])), ["src/a.ts", "src/b.ts"])
+	})
+
+	it("reads back the listed files when the list is cut", () => {
+		const paths = Array.from({ length: 70 }, (_, i) => `src/f${i}.ts`)
+		assert.deepEqual(followUpScope(kickoff(paths)), paths.slice(0, 60))
+	})
+
+	it("is empty when nothing changed and undefined when the kickoff names no scope", () => {
+		assert.deepEqual(followUpScope(kickoff([])), [])
+		assert.isUndefined(followUpScope(kickoff(undefined)))
+		assert.isUndefined(followUpScope("Review pull request #7 of octo/shop."))
 	})
 })

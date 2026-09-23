@@ -134,6 +134,28 @@ const describeFile = (file: PullRequestFile): string => {
 /** Kinds a review reads: code, deploy and runtime config, and tests for the tests lens. */
 const REVIEWED_KINDS: ReadonlySet<ChangedFileKind> = new Set(["source", "infra", "config", "test"])
 
+const REVIEWED_KIND_NAMES: ReadonlySet<string> = new Set(REVIEWED_KINDS)
+const LISTED_FILE = /^- (.+?)(?: \(was .+\))? · [a-z]+ · \+\d+\/-\d+ · ([a-z]+)(, no patch)?$/
+const DIFF_HEADER = /^## (.+) · [a-z]+ · \+\d+\/-\d+$/
+
+/**
+ * The files a `pr_changed_files` answer asks the reviewer to read in `pr_file_diff`: the reviewed
+ * kinds that have a patch. Parsed back from {@link renderChangedFiles}, so the two change together.
+ */
+export const reviewablePathsInListing = (answer: string): ReadonlyArray<string> =>
+	answer.split("\n").flatMap((line) => {
+		const match = LISTED_FILE.exec(line)
+		if (match === null || match[3] !== undefined) return []
+		return REVIEWED_KIND_NAMES.has(match[2]!) ? [match[1]!] : []
+	})
+
+/** The files whose diff a `pr_file_diff` answer actually showed, from {@link renderFileDiff}'s headers. */
+export const pathsInDiffAnswer = (answer: string): ReadonlyArray<string> =>
+	answer.split("\n").flatMap((line) => {
+		const match = DIFF_HEADER.exec(line)
+		return match === null ? [] : [match[1]!]
+	})
+
 /**
  * Tool calls a review of this many files should need: a diff and two lookups per file, plus the
  * file list, the pull request context, the repository's rules and the submission. Stated to the

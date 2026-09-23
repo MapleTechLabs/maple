@@ -27,6 +27,7 @@ import {
 	type PrReviewReplyNotFoundError,
 	PrReviewReplySubmission,
 	PrReviewSubmission,
+	type PrReviewVerdict,
 	SubmitDiagnosisRequest,
 	SubmitPrReviewRequest,
 } from "@maple/domain/http"
@@ -39,6 +40,7 @@ import type { McpToolSurface } from "@maple/domain/mcp-manifest"
 import { buildMapleToolkit, MapleToolFailure, summarizeToolFailure } from "../mcp/tools/llm-tools"
 import { toolHandlersWithContent } from "../platform/genai-spans"
 import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
+import { type ReviewCoverage, unreadRefusal } from "./review-coverage"
 
 const decodeInvestigationIdOption = Schema.decodeUnknownOption(InvestigationId)
 const decodePrReviewIdOption = Schema.decodeUnknownOption(PrReviewId)
@@ -281,6 +283,8 @@ export const buildReviewCompletion = (
 	modelName: string,
 	partial = false,
 	sessionAttributes?: Readonly<Record<string, string>>,
+	/** What this pass has read. The first submission with files unread is refused once. */
+	coverage?: ReviewCoverage,
 ) => {
 	const reviewId = prReviewForSession(sessionId)
 	if (reviewId === undefined) return undefined
@@ -289,53 +293,61 @@ export const buildReviewCompletion = (
 	if (origin.kind !== "autonomous") return undefined
 	const toolkit = Toolkit.make(reviewTool)
 	let submitted = false
+	let refusedUnread = false
+	// Once only: a second call with files still unread is the agent submitting anyway. A close-out
+	// files what it has and a not_applicable verdict reads nothing, so neither is held.
+	const unreadToRefuse = (verdict: PrReviewVerdict): ReadonlyArray<string> => {
+		if (coverage === undefined || partial || refusedUnread || verdict === "not_applicable") return []
+		const unread = coverage.unread()
+		refusedUnread = unread.length > 0
+		return unread
+	}
+	const record = (submission: PrReviewSubmission) =>
+		Effect.suspend(() => {
+			const { report, filled, droppedFindings, resolved } = normalizePrReviewSubmission(submission)
+			const unread = unreadToRefuse(report.verdict)
+			if (unread.length > 0) {
+				return Effect.annotateCurrentSpan("maple.pr_review.unread_files", unread.length).pipe(
+					Effect.andThen(Effect.fail(new MapleToolFailure({ message: unreadRefusal(unread) }))),
+				)
+			}
+			return submitReview(
+				tenant.orgId,
+				reviewId,
+				new SubmitPrReviewRequest({
+					report,
+					model: modelName,
+					inputTokens: usage.input,
+					outputTokens: usage.output,
+					...(partial ? { partial: true } : undefined),
+					...(resolved.length > 0 ? { resolved } : undefined),
+				}),
+			).pipe(
+				Effect.tap(() =>
+					Effect.annotateCurrentSpan({
+						"maple.pr_review.filled_fields": filled.join(","),
+						"maple.pr_review.filled_count": filled.length,
+						"maple.pr_review.dropped_findings": droppedFindings,
+						"maple.pr_review.findings": report.findings.length,
+						"maple.pr_review.verdict": report.verdict,
+						"maple.pr_review.resolved": resolved.length,
+					}),
+				),
+				Effect.tap(() => Effect.sync(() => (submitted = true))),
+				Effect.as("Review recorded."),
+				Effect.catchCause((cause) =>
+					Effect.fail(
+						new MapleToolFailure({
+							message: `${SUBMIT_REVIEW} failed: ${summarizeToolFailure(cause)}`,
+						}),
+					),
+				),
+			)
+		})
 	return {
 		tool: SUBMIT_REVIEW,
 		toolkit,
-		...toolHandlersWithContent(
-			toolkit,
-			{
-				[SUBMIT_REVIEW]: (submission: PrReviewSubmission) =>
-					Effect.suspend(() => {
-						const { report, filled, droppedFindings, resolved } =
-							normalizePrReviewSubmission(submission)
-						return submitReview(
-							tenant.orgId,
-							reviewId,
-							new SubmitPrReviewRequest({
-								report,
-								model: modelName,
-								inputTokens: usage.input,
-								outputTokens: usage.output,
-								...(partial ? { partial: true } : undefined),
-								...(resolved.length > 0 ? { resolved } : undefined),
-							}),
-						).pipe(
-							Effect.tap(() =>
-								Effect.annotateCurrentSpan({
-									"maple.pr_review.filled_fields": filled.join(","),
-									"maple.pr_review.filled_count": filled.length,
-									"maple.pr_review.dropped_findings": droppedFindings,
-									"maple.pr_review.findings": report.findings.length,
-									"maple.pr_review.verdict": report.verdict,
-									"maple.pr_review.resolved": resolved.length,
-								}),
-							),
-						)
-					}).pipe(
-						Effect.tap(() => Effect.sync(() => (submitted = true))),
-						Effect.as("Review recorded."),
-						Effect.catchCause((cause) =>
-							Effect.fail(
-								new MapleToolFailure({
-									message: `${SUBMIT_REVIEW} failed: ${summarizeToolFailure(cause)}`,
-								}),
-							),
-						),
-					),
-			},
-			sessionAttributes,
-		),
+		...toolHandlersWithContent(toolkit, { [SUBMIT_REVIEW]: record }, sessionAttributes),
 		autonomous: isAutonomousReviewTurn(sessionId, origin),
 		submitted: () => submitted,
 	} satisfies RunCompletion
@@ -442,10 +454,12 @@ export const buildChatToolkit = (
 	ruleset: PermissionRuleset,
 	surface: McpToolSurface,
 	sessionAttributes?: Readonly<Record<string, string>>,
+	onAnswer?: (tool: string, answer: string) => void,
 ) =>
 	buildMapleToolkit(executor, tenant, {
 		surface,
 		...(sessionAttributes === undefined ? undefined : { sessionAttributes }),
+		...(onAnswer === undefined ? undefined : { onAnswer }),
 		// `deny` means the model never sees the tool. That is a stronger guarantee than refusing the
 		// call afterwards, and it is free — an unoffered tool cannot be called.
 		include: (name) => evaluatePermission(ruleset, name) !== "deny",
