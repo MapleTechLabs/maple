@@ -108,6 +108,11 @@ export const resolvedByHandle = (
 	return open.filter((finding) => wanted.has(finding.handle))
 }
 
+const NOTHING_CHANGED =
+	"No file changed since then (a rebase or an empty commit): check the open findings and submit."
+const CHANGED_SINCE = "Files changed since then; review these, the rest was already reviewed: "
+const MAX_LISTED_CHANGES = 60
+
 /** The kickoff section for a later push: what changed since, and what is still open. */
 export const renderFollowUp = (input: {
 	readonly previousSha: string
@@ -118,8 +123,8 @@ export const renderFollowUp = (input: {
 	if (input.changedPaths !== undefined) {
 		lines.push(
 			input.changedPaths.length === 0
-				? "No file changed since then (a rebase or an empty commit): check the open findings and submit."
-				: `Files changed since then; review these, the rest was already reviewed: ${input.changedPaths.slice(0, 60).join(", ")}${input.changedPaths.length > 60 ? `, and ${input.changedPaths.length - 60} more` : ""}.`,
+				? NOTHING_CHANGED
+				: `${CHANGED_SINCE}${input.changedPaths.slice(0, MAX_LISTED_CHANGES).join(", ")}${input.changedPaths.length > MAX_LISTED_CHANGES ? `, and ${input.changedPaths.length - MAX_LISTED_CHANGES} more` : ""}.`,
 		)
 	}
 	if (input.open.length === 0) {
@@ -134,6 +139,25 @@ export const renderFollowUp = (input: {
 		),
 	)
 	return lines
+}
+
+/**
+ * The files a later push's kickoff asks the reviewer to read, parsed back from
+ * {@link renderFollowUp}: none when nothing changed, `undefined` when the kickoff names no scope
+ * (a first review, or a push whose comparison failed) and every file is in scope.
+ */
+export const followUpScope = (kickoff: string): ReadonlyArray<string> | undefined => {
+	for (const line of kickoff.split("\n")) {
+		if (line === NOTHING_CHANGED) return []
+		if (line.startsWith(CHANGED_SINCE)) {
+			return line
+				.slice(CHANGED_SINCE.length)
+				.replace(/(, and \d+ more)?\.$/, "")
+				.split(", ")
+				.filter((path) => path !== "")
+		}
+	}
+	return undefined
 }
 
 const globToRegExp = (pattern: string): RegExp => {
