@@ -89,9 +89,8 @@ export interface BuildMapleToolsOptions {
 /**
  * A tool's failure as the model sees it: one line of text, never a cause.
  *
- * Where it goes depends on the tool's `failureMode` (see `buildMapleToolkit`): an ordinary tool
- * returns it to the model, which rewrites the call; a gated tool propagates it and ends the run,
- * which is how a proposal becomes the turn's last word and reaches the approval card.
+ * An ordinary tool returns it to the model, which rewrites the call. A gated tool fails with
+ * {@link ApprovalRequired} instead, which ends the run.
  */
 export class MapleToolFailure extends Schema.TaggedError<MapleToolFailure>()(
 	"@maple/api/mcp/MapleToolFailure",
@@ -99,6 +98,22 @@ export class MapleToolFailure extends Schema.TaggedError<MapleToolFailure>()(
 ) {}
 
 const fail = (message: string) => Effect.fail(new MapleToolFailure({ message }))
+
+/**
+ * A gated tool's refusal: the call is a proposal, and the run stops on it to wait for a decision.
+ *
+ * Its own tag, because the engine reports it as a failed call and a failed run, and neither is: the
+ * wire drops the one and ends the turn normally on the other (`chat/events.ts`).
+ */
+export class ApprovalRequired extends Schema.TaggedError<ApprovalRequired>()(
+	"@maple/api/mcp/ApprovalRequired",
+	{ message: Schema.String },
+) {}
+
+/** The tag the engine reports an {@link ApprovalRequired} under, as `errorTag`. */
+export const APPROVAL_REQUIRED: ApprovalRequired["_tag"] = "@maple/api/mcp/ApprovalRequired"
+
+const ToolFailure = Schema.Union([MapleToolFailure, ApprovalRequired])
 
 /**
  * How many times one build may dispatch the identical call before refusing it.
@@ -155,7 +170,7 @@ export const buildMapleToolkit = (
 			description: describe(definition, gated),
 			parameters: toInputSchema(definition.schema),
 			success: Schema.String,
-			failure: MapleToolFailure,
+			failure: ToolFailure,
 			// A proposal must end the run; any other failure goes back to the model as the call's result.
 			failureMode: gated ? "error" : "return",
 		})
@@ -179,7 +194,13 @@ export const buildMapleToolkit = (
 					),
 				)
 			const handle = (params: unknown) => {
-				if (gated) return fail(`${definition.name} requires user approval and was not executed.`)
+				if (gated) {
+					return Effect.fail(
+						new ApprovalRequired({
+							message: `${definition.name} requires user approval and was not executed.`,
+						}),
+					)
+				}
 				if (repeats(dispatched, definition.name, params) > IDENTICAL_CALL_LIMIT) {
 					return fail(
 						`${definition.name} has already been called ${IDENTICAL_CALL_LIMIT} times with these ` +
@@ -189,10 +210,12 @@ export const buildMapleToolkit = (
 				return dispatch(params)
 			}
 			return [definition.name, (params: unknown) => Effect.suspend(() => handle(params))]
+		}) as ReadonlyArray<
 			// A dynamic tool's shape is known only at runtime, so the model's arguments arrive
 			// unparsed and the handler parses them.
 			// oxlint-disable-next-line anti-slop/no-unknown-parameters
-		}) as ReadonlyArray<readonly [string, (params: unknown) => Effect.Effect<string, MapleToolFailure>]>,
+			readonly [string, (params: unknown) => Effect.Effect<string, MapleToolFailure | ApprovalRequired>]
+		>,
 	)
 	// Registered as one map, so a tool added to the catalogue cannot arrive without its span content.
 	// `handlers` is exposed alongside the layer because a caller that merges this toolkit with one

@@ -14,6 +14,7 @@ import { ThreadId } from "@effect-agent/core/Identifiers"
 import { Effect, Layer, Schema, Stream } from "effect"
 import { Prompt, Toolkit } from "effect/unstable/ai"
 import type { McpToolExecutorApi } from "../mcp/dispatcher"
+import { ApprovalRequired } from "../mcp/tools/llm-tools"
 import { agentSessionSpanAttributes, type ResolvedModel } from "../platform/Llm"
 import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
 import { type AgentDefinition, agentForSession, chatAgent } from "./agents"
@@ -197,6 +198,11 @@ export const runChatTurn = (input: ChatRunInput) => {
 					input.append(chat)
 				}
 			}),
+		),
+		// The gate's refusal is how a run stops on a proposal: the turn finished, it did not fail.
+		Effect.catchIf(
+			(error) => error instanceof ApprovalRequired,
+			() => Effect.void,
 		),
 		// Once per turn, the tag alone: a model that wrote a tool call as prose answered with
 		// nothing, and how often that happens is a question about the run's ending, not this turn.

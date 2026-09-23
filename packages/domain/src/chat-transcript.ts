@@ -155,9 +155,19 @@ const foldInto = (drafts: Drafts, event: ChatEvent, createdAt: number): void => 
 		case "tool-result": {
 			const message = open(event.messageId)
 			const index = message.toolCalls.findIndex((call) => call.id === event.callId)
-			if (index >= 0) {
+			const call = message.toolCalls[index]
+			// Logs written before the adapter dropped it hold the approval gate's own refusal as a
+			// proposal's result; it is not a decision. Can go once those sessions have aged out.
+			if (
+				call?.proposed === true &&
+				event.isError === true &&
+				event.output === `${call.name} requires user approval and was not executed.`
+			) {
+				break
+			}
+			if (call !== undefined) {
 				message.toolCalls[index] = {
-					...message.toolCalls[index],
+					...call,
 					output: event.output,
 					...(event.isError === true ? { isError: true } : undefined),
 				} as ChatToolCall

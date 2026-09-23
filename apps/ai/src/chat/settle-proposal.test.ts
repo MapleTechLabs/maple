@@ -152,6 +152,30 @@ describe("settling a proposal", () => {
 		assert.include(String(call?.output), "Maple couldn't apply this change")
 	})
 
+	it("decides a proposal whose log holds the gate's refusal, which is not a decision", async () => {
+		const session = makeSession()
+		session.append({ type: "turn-start", messageId: "a1" })
+		session.append({
+			type: "tool-call",
+			messageId: "a1",
+			callId: "call_9",
+			name: "create_alert_rule",
+			input: {},
+			proposed: true,
+		})
+		// What every proposal's log held before the adapter dropped the refusal.
+		session.append({
+			type: "tool-result",
+			messageId: "a1",
+			callId: "call_9",
+			output: "create_alert_rule requires user approval and was not executed.",
+			isError: true,
+		})
+
+		assert.equal(await settle(session, "deny"), "decided")
+		assert.equal(await settle(session, "deny"), "settled")
+	})
+
 	it("appends the result under the message that issued the call", async () => {
 		const session = withProposal(makeSession())
 		await settle(session, "approve")

@@ -10,6 +10,7 @@
  */
 import type { ChatEvent, ChatTaskRef } from "@maple/domain/chat-session"
 import type * as RunEvent from "@effect-agent/core/RunEvent"
+import { APPROVAL_REQUIRED } from "../mcp/tools/llm-tools"
 
 /** Events the session log accepts. `seq` belongs to the Durable Object, which owns the ordering. */
 type WithoutSeq<T> = T extends unknown ? Omit<T, "seq"> : never
@@ -268,6 +269,10 @@ export const toChatEvents = (
 				}),
 			]
 		case "ToolCallFailed":
+			// The gate's refusal is not the proposal's result. Recorded as one, it read as a decision
+			// everywhere a result settles a proposal: no connector drew the buttons, and every
+			// approval was refused as already settled.
+			if (event.errorTag === APPROVAL_REQUIRED) return []
 			return [
 				tagged(context, {
 					type: "tool-result",
@@ -287,6 +292,13 @@ export const toChatEvents = (
 				}),
 			]
 		case "RunFailed":
+			// A proposal is how the turn ends, not how it fails.
+			if (event.errorTag === APPROVAL_REQUIRED) {
+				return [
+					...flushed(context),
+					tagged(context, { type: "turn-end", messageId: context.messageId, reason: "stop" }),
+				]
+			}
 			return [
 				...flushed(context),
 				tagged(context, {
