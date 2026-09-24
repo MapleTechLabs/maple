@@ -55,11 +55,14 @@ describe("liveContextLimit", () => {
 })
 
 describe("agent budgets", () => {
-	/** A chat turn hit the old 600k-token rail at 23 tool calls: the step cap must bind first. */
-	it("lets a chat turn reach its step cap at a full live context", () => {
-		expect(CHAT_BUDGET.tokenBudget).toBeGreaterThanOrEqual(
-			CHAT_BUDGET.maxToolCalls * MAX_LIVE_CONTEXT_TOKENS,
-		)
+	/**
+	 * A chat turn hit a 600k rail at 23 tool calls, and a review hit 800k at 18: tokens count every
+	 * re-sent prompt, so the step cap or the wall clock must bind first on every agent.
+	 */
+	it("lets every turn reach its step cap at a full live context", () => {
+		for (const budget of [CHAT_BUDGET, INVESTIGATION_BUDGET, PR_REVIEW_BUDGET, PR_REPLY_BUDGET]) {
+			expect(budget.tokenBudget).toBeGreaterThanOrEqual(budget.maxToolCalls * MAX_LIVE_CONTEXT_TOKENS)
+		}
 	})
 
 	/** Past `TURN_STALE_MS` the session abandons the turn, so every turn's own deadline comes first. */

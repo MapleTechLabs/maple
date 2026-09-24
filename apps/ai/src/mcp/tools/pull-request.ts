@@ -156,14 +156,6 @@ export const pathsInDiffAnswer = (answer: string): ReadonlyArray<string> =>
 		return match === null ? [] : [match[1]!]
 	})
 
-/**
- * Tool calls a review of this many files should need: a diff and two lookups per file, plus the
- * file list, the pull request context, the repository's rules and the submission. Stated to the
- * agent in the file list, because a number it is handed binds far better than a prompt rule.
- */
-export const reviewCallBudget = (reviewedFiles: number): number =>
-	Math.min(500, Math.max(40, 10 * reviewedFiles + 20))
-
 /** What `pr_changed_files` answers for one pull request's files. Shared with the local runner. */
 export const renderChangedFiles = (
 	repository: string,
@@ -187,7 +179,7 @@ export const renderChangedFiles = (
 			? [`…and ${files.length - listed.length} more; review the source files listed above first.`]
 			: []),
 		"",
-		`Files to review: ${reviewed}. Budget for this whole review, this call and submit_review included: ${reviewCallBudget(reviewed)} tool calls.`,
+		`Files to review: ${reviewed}.`,
 		"Source, infra, config and test files are reviewed; generated files, docs, tooling and lockfiles are not. A file marked `no patch` is binary or too large for the provider to inline; read it with read_source_file at the head SHA if it matters.",
 	])
 }
