@@ -49,8 +49,10 @@ interface World {
 	rulesFail: boolean
 	customerStatus: number
 	redeemStatus: number
+	/** Autumn's customer subscriptions, already camelized as the client returns them. */
+	subscriptions: Array<{ planId: string; status: string; addOn?: boolean }>
 	orgLookups: number
-	redeems: Array<{ customerId: string; code: string }>
+	redeems: Array<{ customerId: string; planId: string; rewardId: string }>
 }
 
 const freshWorld = (): World => ({
@@ -65,6 +67,10 @@ const freshWorld = (): World => ({
 	rulesFail: false,
 	customerStatus: 200,
 	redeemStatus: 200,
+	subscriptions: [
+		{ planId: "bringyourowncloud", status: "active", addOn: true },
+		{ planId: "startup", status: "active" },
+	],
 	orgLookups: 0,
 	redeems: [],
 })
@@ -151,7 +157,7 @@ const stubs = (world: World) =>
 			getOrCreateCustomer: () =>
 				Effect.sync(() =>
 					world.customerStatus === 200
-						? ok({ id: ORG })
+						? ok({ id: ORG, subscriptions: world.subscriptions })
 						: { statusCode: world.customerStatus, response: { message: "autumn down" } },
 				),
 			aggregateEvents: die,
@@ -159,9 +165,9 @@ const stubs = (world: World) =>
 			previewAttach: die,
 			openCustomerPortal: die,
 			listPlans: die,
-			redeemReward: (customerId, { code }) =>
+			applyReward: (customerId, options) =>
 				Effect.sync(() => {
-					world.redeems.push({ customerId, code })
+					world.redeems.push({ customerId, ...options })
 					return world.redeemStatus === 200
 						? ok({ success: true })
 						: { statusCode: world.redeemStatus, response: { message: "autumn down" } }
@@ -353,7 +359,9 @@ describe("OnboardingChecklistService.claim", () => {
 			const first = yield* service.claim(tenant)
 			assert.strictEqual(first.report.status, "claimed")
 			assert.strictEqual(first.newlyClaimed, true)
-			assert.deepStrictEqual(world.redeems, [{ customerId: ORG, code: "ONBOARD30" }])
+			assert.deepStrictEqual(world.redeems, [
+				{ customerId: ORG, planId: "startup", rewardId: "onboarding_checklist" },
+			])
 			assert.notStrictEqual(yield* claimedAtInDb(testDb), null)
 
 			const again = yield* service.claim(tenant)
@@ -448,6 +456,24 @@ describe("OnboardingChecklistService.claim", () => {
 			world.customerStatus = 200
 			const result = yield* service.claim(tenant)
 			assert.strictEqual(result.report.status, "claimed")
+		}).pipe(Effect.provide(makeLayer(world, testDb)))
+	})
+
+	it.effect("refuses an org without a plan and gives the lease back", () => {
+		const world = freshWorld()
+		world.subscriptions = [{ planId: "startup", status: "expired" }]
+		const testDb = createTestDb(trackedDbs)
+		return Effect.gen(function* () {
+			yield* useMcpKey
+			yield* connectGithub(testDb)
+			const service = yield* OnboardingChecklistService
+			const error = yield* Effect.flip(service.claim(tenant))
+			assert.strictEqual(
+				error._tag === "@maple/http/errors/OnboardingRewardNotClaimableError" ? error.reason : null,
+				"no_subscription",
+			)
+			assert.strictEqual(world.redeems.length, 0)
+			assert.strictEqual(yield* reservedAtInDb(testDb), null)
 		}).pipe(Effect.provide(makeLayer(world, testDb)))
 	})
 

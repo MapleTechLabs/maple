@@ -1,11 +1,11 @@
-import { BillingNotConfiguredError, BillingUpstreamError } from "@maple/domain/http"
+import { BillingCustomer, BillingNotConfiguredError, BillingUpstreamError } from "@maple/domain/http"
 import type { OrgId } from "@maple/domain/primitives"
 import {
 	emptyOnboardingChecklistInputs,
 	evaluateOnboardingChecklist,
 	type OnboardingChecklistEvaluation,
 	type OnboardingChecklistInputs,
-	ONBOARDING_REWARD_PROMO_CODE,
+	ONBOARDING_REWARD_ID,
 	OnboardingChecklistUnavailableError,
 	onboardingRewardWindowOpen,
 	OnboardingRewardNotClaimableError,
@@ -16,7 +16,7 @@ import type { TenantContext } from "@maple/backend/services/auth/AuthService"
 import { AlertDestinationsService } from "@maple/backend/services/alerts/AlertDestinationsService"
 import { AlertRulesService } from "@maple/backend/services/alerts/AlertRulesService"
 import { AutumnClient } from "@maple/backend/services/billing/autumn-http"
-import { CUSTOMER_CACHE_BUCKET, classifyAutumn } from "@maple/backend/services/billing/autumn-client"
+import { CUSTOMER_CACHE_BUCKET, classifyAutumn, decodeUpstream } from "@maple/backend/services/billing/autumn-client"
 import { VcsRepository } from "@maple/backend/services/integrations/vcs/VcsRepository"
 import { ApiKeysService } from "@maple/backend/services/org/ApiKeysService"
 import { OnboardingService } from "@maple/backend/services/org/OnboardingService"
@@ -58,8 +58,8 @@ export interface OnboardingChecklistServiceApi {
 	) => Effect.Effect<OnboardingChecklistReport, OnboardingChecklistUnavailableError>
 	/**
 	 * Apply the credit. Re-verifies the steps and the window, reserves the claim
-	 * in Postgres, then redeems the reward in Autumn. Idempotent: a claimed org
-	 * gets its report back without a second redeem.
+	 * in Postgres, then applies the reward to the org's subscription in Autumn.
+	 * Idempotent: a claimed org gets its report back without a second apply.
 	 */
 	readonly claim: (
 		tenant: TenantContext,
@@ -282,13 +282,14 @@ const make = Effect.gen(function* () {
 			readonly upstreamStatus: number
 		}) => release.pipe(Effect.andThen(collapseToUpstream(error)))
 
-		// Nothing has been applied until the redeem call itself, so any failure before it
-		// gives the lease back. On the redeem, only a definite 4xx refusal does: a 5xx or a
-		// lost response may have applied the credit, so the lease stays until it expires and
+		// Nothing has been applied until the apply call itself, so any failure before it
+		// gives the lease back. On the apply, only a definite 4xx refusal does: a 5xx or a
+		// lost response may have applied the discount, so the lease stays until it expires and
 		// the failure is logged for reconciliation. `classifyAutumn` keeps the 4xx/5xx split
 		// that `ensureOk` collapses.
-		yield* autumn.getOrCreateCustomer(orgId, { expand: [] }).pipe(
+		const customer = yield* autumn.getOrCreateCustomer(orgId, { expand: [] }).pipe(
 			Effect.flatMap(classifyAutumn),
+			Effect.flatMap((body) => decodeUpstream(BillingCustomer, body)),
 			Effect.catchTags({
 				"@maple/http/errors/BillingPaymentRequiredError": releaseAndCollapse,
 				"@maple/http/errors/BillingConflictError": releaseAndCollapse,
@@ -298,7 +299,19 @@ const make = Effect.gen(function* () {
 					release.pipe(Effect.andThen(Effect.fail(error))),
 			}),
 		)
-		yield* autumn.redeemReward(orgId, { code: ONBOARDING_REWARD_PROMO_CODE }).pipe(
+		// The discount rides on the base plan's subscription, so an org without one has
+		// nothing to discount yet.
+		const planId = customer.subscriptions.find(
+			(subscription) => subscription.addOn !== true && subscription.status === "active",
+		)?.planId
+		if (planId === undefined) {
+			yield* release
+			return yield* new OnboardingRewardNotClaimableError({
+				message: "Start a plan before claiming the reward.",
+				reason: "no_subscription",
+			})
+		}
+		yield* autumn.applyReward(orgId, { planId, rewardId: ONBOARDING_REWARD_ID }).pipe(
 			Effect.flatMap(classifyAutumn),
 			Effect.catchTags({
 				"@maple/http/errors/BillingPaymentRequiredError": releaseAndCollapse,
@@ -307,7 +320,7 @@ const make = Effect.gen(function* () {
 				"@maple/http/errors/BillingRequestError": releaseAndCollapse,
 				"@maple/http/errors/BillingUpstreamError": (error) =>
 					Effect.logError(
-						"Onboarding reward redeem unanswered after reservation; needs reconciliation",
+						"Onboarding reward apply unanswered after reservation; needs reconciliation",
 					).pipe(Effect.annotateLogs({ orgId, error }), Effect.andThen(Effect.fail(error))),
 			}),
 		)
