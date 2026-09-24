@@ -63,9 +63,10 @@ function logAttributeConditions(opts: LogsQueryOpts): CH.Condition[] {
 
 /**
  * Adds an index-readable necessary condition ahead of the exact historical
- * `ILIKE` predicate. The confirmation predicate preserves substring semantics;
- * single-token searches stay scan-only because token indexes cannot safely
- * accelerate partial-word matches without introducing false negatives.
+ * `ILIKE` predicate. The confirmation predicate preserves substring semantics.
+ * Only interior words are indexed: the first and last word of a search can be
+ * part of a longer word in the body (`connection timeout` inside
+ * `Reconnection timeouts`), so a whole-token check on them drops real matches.
  */
 function logBodySearchCondition(body: CH.Expr<string>, opts: LogsQueryOpts): CH.Condition | undefined {
 	const search = opts.search
@@ -74,13 +75,8 @@ function logBodySearchCondition(body: CH.Expr<string>, opts: LogsQueryOpts): CH.
 	const exact = body.ilike(`%${search}%`)
 	if ((opts.bodySearchMode ?? "scan") === "scan") return exact
 
-	// Matches ClickHouse HasTokenImpl: split on ASCII punctuation/whitespace,
-	// while keeping non-ASCII letters intact.
-	const tokens = search
-		.toLowerCase()
-		.split(/[ -/:-@[-`{-~\t\n\r]+/)
-		.filter((token) => token.length > 0)
-	if (tokens.length < 2) return exact
+	const tokens = interiorSearchTokens(search)
+	if (tokens.length === 0) return exact
 
 	const normalizedBody = CH.lower_(body)
 	if (opts.bodySearchMode === "text") {
@@ -97,6 +93,19 @@ function logBodySearchCondition(body: CH.Expr<string>, opts: LogsQueryOpts): CH.
 		.reduce((condition, next) => condition.and(next))
 		.and(exact)
 }
+
+/**
+ * Words bounded by a separator on both sides, split like ClickHouse
+ * HasTokenImpl (ASCII punctuation/whitespace). Words with non-ASCII characters
+ * are skipped: ClickHouse `lower()` only folds ASCII, so JS lowercasing would
+ * produce a token the index never stored.
+ */
+const interiorSearchTokens = (search: string): ReadonlyArray<string> =>
+	search
+		.toLowerCase()
+		.split(/[ -/:-@[-`{-~\t\n\r]+/)
+		.slice(1, -1)
+		.filter((token) => token.length > 0 && /^[\x21-\x7e]+$/.test(token))
 
 /** Stable identity for log records that do not carry a native OTel record ID. */
 const logRecordIdentity = ($: ColumnAccessor<typeof Logs.columns>): CH.Expr<string> => {

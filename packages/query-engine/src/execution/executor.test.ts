@@ -925,14 +925,14 @@ describe("makeWarehouseExecutor capability-aware compilation", () => {
 				params: {
 					start_time: "2026-01-01 00:00:00",
 					end_time: "2026-01-02 00:00:00",
-					search: "Connection Timeout",
+					search: "Upstream Connection Timeout Reached",
 					limit: 10,
 				},
 			})
 
 			const executed = sqls.find((sql) => sql.includes("FROM logs") && sql.includes("hasAllTokens"))
 			assert.isDefined(executed)
-			assert.include(executed!, "Body ILIKE '%Connection Timeout%'")
+			assert.include(executed!, "Body ILIKE '%Upstream Connection Timeout Reached%'")
 			assert.include(executed!, "enable_full_text_index=1")
 		}),
 	)
