@@ -60,6 +60,14 @@ interface FetchOptions {
 /** T0's property-local date — see {@link T0}. Declared here because the fetch mock needs it. */
 const T0_DATE = "2026-09-09"
 
+/** The slice of GA4's `runReport` response this mock builds. */
+interface ReportResponse {
+	dimensionHeaders: Array<{ name: string }>
+	metricHeaders: Array<{ name: string }>
+	rows: Array<{ dimensionValues: Array<{ value: string }>; metricValues: Array<{ value: string }> }>
+	rowCount?: number
+}
+
 const json = (body: unknown, status = 200) =>
 	new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } })
 
@@ -129,10 +137,9 @@ const mockGoogleFetch = (options: FetchOptions): typeof globalThis.fetch => {
 			const report = options.reports[Math.min(reportIndex, options.reports.length - 1)]
 			reportIndex += 1
 			const metricNames = body.metrics.map((metric) => metric.name)
-			return json({
+			const report_: ReportResponse = {
 				dimensionHeaders: [{ name: "dateHour" }],
 				metricHeaders: metricNames.map((name) => ({ name })),
-				...(options.reportedRowCount === undefined ? {} : { rowCount: options.reportedRowCount }),
 				rows: [...(report ?? new Map())].map(([dateHour, sessions]) => ({
 					dimensionValues: [{ value: dateHour }],
 					// Only `sessions` carries a value; the rest report zero.
@@ -140,7 +147,9 @@ const mockGoogleFetch = (options: FetchOptions): typeof globalThis.fetch => {
 						value: name === "sessions" ? String(sessions) : "0",
 					})),
 				})),
-			})
+			}
+			if (options.reportedRowCount !== undefined) report_.rowCount = options.reportedRowCount
+			return json(report_)
 		}
 
 		// properties/{id} — the timezone lookup.
