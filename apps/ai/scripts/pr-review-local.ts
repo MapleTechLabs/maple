@@ -35,7 +35,12 @@ import {
 	type SubmitPrReviewRequest,
 	UserId,
 } from "@maple/domain/http"
-import { buildPublication, buildReviewKickoff } from "@maple/backend/services/pr-review/PrReviewService"
+import {
+	buildPublication,
+	buildReviewKickoff,
+	PR_REVIEW_RULE_FILES,
+	type RepositoryRuleFile,
+} from "@maple/backend/services/pr-review/PrReviewService"
 import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
 import { Effect, Option, References, Schema } from "effect"
 import { AGENTS } from "@/chat/agents"
@@ -117,6 +122,22 @@ const parseArgs = (argv: ReadonlyArray<string>): Args => {
 }
 
 // Processes
+
+/**
+ * The rule files at the base, as production's kickoff states them. A file absent from the base is
+ * skipped; one present but unreadable makes the whole read `undefined`, as a failed read does in
+ * production, so the agent reads the rules itself instead of reviewing without them.
+ */
+const readRules = (dir: string, baseSha: string): ReadonlyArray<RepositoryRuleFile> | undefined => {
+	const files: Array<RepositoryRuleFile> = []
+	for (const path of PR_REVIEW_RULE_FILES) {
+		if (!run(["git", "cat-file", "-e", `${baseSha}:${path}`], dir).ok) continue
+		const shown = run(["git", "show", `${baseSha}:${path}`], dir)
+		if (!shown.ok) return undefined
+		files.push({ path, content: shown.stdout })
+	}
+	return files
+}
 
 const run = (cmd: ReadonlyArray<string>, cwd?: string) => {
 	const [bin = "", ...rest] = cmd
@@ -794,6 +815,7 @@ export const reviewLocally = async (
 		baseSha: pr.base.sha,
 		fork: pr.head.repo !== null && pr.head.repo.full_name.toLowerCase() !== repository.toLowerCase(),
 		body: pr.body,
+		rules: readRules(clone.dir, pr.base.sha),
 	})
 	const { executor, cleanup: removeWorktrees } = makeExecutor({
 		repository,

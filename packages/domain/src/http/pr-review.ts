@@ -156,6 +156,17 @@ export class PrReviewRepositoryConfig extends Schema.Class<PrReviewRepositoryCon
 export class PrReviewReport extends Schema.Class<PrReviewReport>("PrReviewReport")({
 	verdict: PrReviewVerdict,
 	summary: Schema.String,
+	/** What the change does, one bullet per change; absent on reports stored before it existed. */
+	keyChanges: Schema.optionalKey(Schema.Array(Schema.String)),
+	/** The risks the reviewer examined and ruled out: what a clean review stands on. */
+	checked: Schema.optionalKey(Schema.Array(Schema.String)),
+	/**
+	 * How safe the change is to merge, 1 to 5: the reviewer's judgement, capped by the findings.
+	 * Stored already capped; see {@link confidencePrReview}.
+	 */
+	confidence: Schema.optionalKey(Schema.Number),
+	/** One sentence on what drives the confidence. */
+	confidenceReason: Schema.optionalKey(Schema.String),
 	coverage: Schema.Array(PrReviewCoverageUnit),
 	findings: Schema.Array(PrReviewFinding),
 }) {}
@@ -200,6 +211,10 @@ export const PrReviewSubmission = Schema.Struct({
 	resolved: Schema.optionalKey(Schema.NullOr(LenientArray(Schema.String))),
 	verdict: Schema.optionalKey(Schema.NullOr(Schema.Union([PrReviewVerdict, Schema.String]))),
 	summary: Schema.optionalKey(Schema.NullOr(Schema.String)),
+	keyChanges: Schema.optionalKey(Schema.NullOr(LenientArray(Schema.String))),
+	checked: Schema.optionalKey(Schema.NullOr(LenientArray(Schema.String))),
+	confidence: Schema.optionalKey(Schema.NullOr(LenientNumber)),
+	confidenceReason: Schema.optionalKey(Schema.NullOr(Schema.String)),
 	coverage: Schema.optionalKey(Schema.NullOr(LenientArray(PrReviewCoverageSubmission))),
 	findings: Schema.optionalKey(Schema.NullOr(LenientArray(PrReviewFindingSubmission))),
 })
@@ -213,6 +228,8 @@ const isCategory = Schema.is(PrReviewCategory)
 const MAX_FINDINGS = 50
 const MAX_COVERAGE = 50
 const MAX_TEXT = 4_000
+const MAX_BULLETS = 8
+const MAX_BULLET = 300
 
 /** The `maple-audit` check id grammar: a family and a number, or the REN-DUAL-style suffixes. */
 const AUDIT_CHECK_ID = /^(RES|STAT|SPAN|MAP|REN|LOG|MET|NAME|PII|LLM)-(\d{1,2}|[A-Z]+)$/
@@ -237,6 +254,14 @@ const listOf = <A>(
 	typeof value === "string" ? Option.getOrElse(decode(value), () => []) : (value ?? [])
 
 const clip = (value: string, max = MAX_TEXT) => (value.length > max ? `${value.slice(0, max)}…` : value)
+
+/** A bullet list as trimmed, non-empty lines; a leading `-` or `*` the model added is dropped. */
+const bulletsOf = (value: ReadonlyArray<string> | string | null | undefined): ReadonlyArray<string> =>
+	listOf(value, decodeHandles)
+		.map((item) => item.trim().replace(/^[-*]\s+/, ""))
+		.filter((item) => item !== "")
+		.slice(0, MAX_BULLETS)
+		.map((item) => clip(item, MAX_BULLET))
 
 export interface NormalizedPrReviewSubmission {
 	readonly report: PrReviewReport
@@ -324,10 +349,20 @@ export const normalizePrReviewSubmission = (submission: PrReviewSubmission): Nor
 		: submittedVerdict === undefined || submittedVerdict === "issues"
 			? "clean"
 			: submittedVerdict
+	const keyChanges = bulletsOf(submission.keyChanges)
+	const checked = bulletsOf(submission.checked)
+	const rawConfidence = toNumber(submission.confidence)
+	const confidence =
+		rawConfidence === undefined ? undefined : Math.min(5, Math.max(1, Math.round(rawConfidence)))
+	const confidenceReason = submission.confidenceReason?.trim()
 	return {
 		report: new PrReviewReport({
 			verdict,
 			summary: clip(submission.summary?.trim() || ""),
+			...(keyChanges.length > 0 ? { keyChanges } : undefined),
+			...(checked.length > 0 ? { checked } : undefined),
+			...(confidence === undefined ? undefined : { confidence }),
+			...(confidenceReason ? { confidenceReason: clip(confidenceReason, MAX_BULLET) } : undefined),
 			coverage,
 			findings,
 		}),
@@ -371,6 +406,70 @@ export const scorePrReview = (
 	return { score, grade }
 }
 
+/** What each confidence level tells the author. */
+export const PR_REVIEW_CONFIDENCE_LABEL = {
+	5: "safe to merge",
+	4: "safe after small fixes",
+	3: "needs attention",
+	2: "risky as written",
+	1: "do not merge",
+} as const satisfies Record<number, string>
+
+export type PrReviewConfidence = keyof typeof PR_REVIEW_CONFIDENCE_LABEL
+
+export interface PrReviewConfidenceResult {
+	readonly confidence: PrReviewConfidence
+	readonly reason: string | undefined
+	/** The findings held the reviewer's number down. */
+	readonly capped: boolean
+	/** What held it down, when something did. */
+	readonly cappedBy?: "critical" | "warn" | "partial"
+}
+
+const toConfidence = (value: number): PrReviewConfidence =>
+	value >= 4.5 ? 5 : value >= 3.5 ? 4 : value >= 2.5 ? 3 : value >= 1.5 ? 2 : 1
+
+/**
+ * The review's confidence that the change is safe to merge.
+ *
+ * The score counts findings; confidence is the reviewer's judgement of merge risk, which can sit
+ * lower than the findings alone imply (a large change, an untested path, code it could not verify)
+ * but never higher: a critical caps it at 2 (1 with more than one), a warning at 3, and a review
+ * that ended early at 3. A capped number loses the reviewer's reason, since that argued for more.
+ * Without a number from the reviewer the cap is the answer, and a note-only review reads 4.
+ * `undefined` for a pull request with nothing to review.
+ */
+export const confidencePrReview = (
+	report: PrReviewReport,
+	carriedOpen: ReadonlyArray<{ readonly severity: PrReviewSeverity }> = [],
+	partial = false,
+): PrReviewConfidenceResult | undefined => {
+	if (report.verdict === "not_applicable" && report.findings.length === 0 && carriedOpen.length === 0) {
+		return undefined
+	}
+	const all = [...report.findings, ...carriedOpen]
+	const count = (severity: PrReviewSeverity) => all.filter((finding) => finding.severity === severity).length
+	const criticals = count("critical")
+	const cap: PrReviewConfidence =
+		criticals > 1 ? 1 : criticals === 1 ? 2 : count("warn") > 0 || partial ? 3 : 5
+	const fallback: PrReviewConfidence = cap === 5 && count("info") > 0 ? 4 : cap
+	if (report.confidence === undefined) return { confidence: fallback, reason: undefined, capped: false }
+	const given = toConfidence(report.confidence)
+	if (given > cap) {
+		const cappedBy = criticals > 0 ? "critical" : count("warn") > 0 ? "warn" : "partial"
+		const why =
+			criticals > 1
+				? `${criticals} critical findings are open`
+				: criticals === 1
+					? "a critical finding is open"
+					: cappedBy === "warn"
+						? "a warning is open"
+						: "the review ended early"
+		return { confidence: cap, reason: `Held at ${cap} because ${why}.`, capped: true, cappedBy }
+	}
+	return { confidence: given, reason: report.confidenceReason, capped: false }
+}
+
 /** What the `submit_review` handler hands the service once it has normalized the submission. */
 export class SubmitPrReviewRequest extends Schema.Class<SubmitPrReviewRequest>("SubmitPrReviewRequest")({
 	report: PrReviewReport,
@@ -394,6 +493,8 @@ export class PrReviewListItem extends Schema.Class<PrReviewListItem>("PrReviewLi
 	skipReason: Schema.NullOr(PrReviewSkipReason),
 	verdict: Schema.NullOr(PrReviewVerdict),
 	score: Schema.NullOr(Schema.Number),
+	/** 1 to 5; null until a report is stored, and for reports stored before confidence existed. */
+	confidence: Schema.NullOr(Schema.Number),
 	findings: Schema.Number,
 	commentUrl: Schema.NullOr(Schema.String),
 	publishError: Schema.NullOr(Schema.String),
