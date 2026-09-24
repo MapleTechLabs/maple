@@ -38,7 +38,7 @@ there is no per-org routing anywhere, because each instance knows exactly one re
 | Replay blobs | R2, non-jurisdictional | R2, `jurisdiction: "eu"` |
 | Queues, Workflows | no jurisdiction control | see risks |
 | Clerk | one US instance | same instance, `app.eu.maple.dev` as a satellite domain |
-| AI features | OpenRouter, Workers AI | off |
+| AI features | OpenRouter, Workers AI | OpenRouter EU in-region endpoint (`eu.openrouter.ai`) |
 | Maple self-telemetry | US internal org | EU internal org, in `maple_eu` |
 | Repository sandbox (`apps/sandbox`) | prd Worker, US | per instance, EU Worker |
 | Landing, billing | shared | shared, no customer data |
@@ -171,15 +171,23 @@ Built on the `worktree-eu-region` branch; `docs/infra.md` § Regions is the refe
   build-time env, which the EU build sets to `ingest.eu.maple.dev`. No change.
 - Docs and the CLI: the EU endpoint is documented; the CLI already accepts an endpoint override.
 
-## Phase 4. AI features off on the EU instance
+## Phase 4. AI features on OpenRouter's EU endpoint
 
-Investigations, chat, the MCP agent tools and AI triage send spans and logs to model providers,
-and Workers AI has no region pin. The EU instance ships with all of them off. That is a stack-level
-switch, not a per-org one: the AI Worker still deploys (the api forwards `/mcp` and chat to it and
-the investigation fan-out reaches it), but its model seam in `apps/ai/src/platform/Llm.ts` has no
-provider configured, every LLM-backed surface returns a clear "not available in this region"
-failure, and the web hides the entry points behind a build-time flag. Turning them on later is an
-EU-hosted provider endpoint in the `prod-eu` environment plus the flag.
+Investigations, chat, the MCP agent tools and AI triage send spans and logs to model providers, so
+the EU instance shipped with them off (#997). They are back on through OpenRouter's in-region
+routing: with `MAPLE_REGION=eu`, `apps/ai/src/platform/Llm.ts` sends every chat, review, embedding
+and decision call to `https://eu.openrouter.ai/api/v1`, where requests are decrypted and served only
+by providers inside the EU, and a model with no EU provider is a 404 rather than a hop to the US.
+The account behind `prod-eu`'s `OPENROUTER_API_KEY` must be on OpenRouter's Business or Enterprise
+plan.
+
+- The EU catalogue is a subset and serves none of the US defaults, so the EU instance defaults to
+  `openai/gpt-6-luna` for chat, triage and reviews. `MAPLE_TRIAGE_MODEL_OPENROUTER` and
+  `MAPLE_REVIEW_MODEL_OPENROUTER` override it; any override must be in the EU catalogue
+  (`GET https://eu.openrouter.ai/api/v1/models`).
+- Jev has no EU provider, so there is no decision model and the investigation gate reads "no
+  verdict" as "investigate".
+- Workers AI has no region pin: `MAPLE_LLM_PROVIDER` must stay unset (OpenRouter) on `prod-eu`.
 
 ## Phase 5. Operations
 
@@ -225,7 +233,7 @@ Taken 2026-09-16:
 1. Clerk: one instance, `app.eu.maple.dev` as a satellite domain.
 2. Regional Services: not available; EU Workers run on best-effort placement, with the DO-hosted
    request path as the upgrade if a customer requires a hard execution guarantee.
-3. AI features off on `eu` at launch.
+3. AI features off on `eu` at launch. Turned back on 2026-09-25 over OpenRouter's EU endpoint (Phase 4).
 
 4. Sandbox deploys per instance from day one.
 

@@ -20,6 +20,7 @@ import {
 	layerDecisionModel,
 	DEFAULT_REVIEW_MODEL,
 	layerLlm,
+	resolveDecisionModel,
 	resolveReviewModel,
 	resolveTriageModel,
 	type LlmCallTags,
@@ -217,6 +218,35 @@ describe("resolveReviewModel", () => {
 	it("reviews on the triage model when agents run on Workers AI", () => {
 		const env = { ...openRouterEnv, MAPLE_LLM_PROVIDER: "workers-ai" }
 		expect(resolveReviewModel(env).name).toBe(resolveTriageModel(env).name)
+	})
+})
+
+describe("EU in-region routing", () => {
+	const euEnv: LlmEnv = { ...openRouterEnv, MAPLE_REGION: "eu" }
+
+	it.effect("sends the EU instance's calls to OpenRouter's EU endpoint, on an EU-served model", () =>
+		Effect.gen(function* () {
+			const request = yield* captureRequest(euEnv, tags)
+			expect(request.url).toBe("https://eu.openrouter.ai/api/v1/chat/completions")
+			expect(request.body.model).toBe("openai/gpt-6-luna")
+			const review = yield* captureRequest(euEnv, tags, resolveReviewModel)
+			expect(review.body.model).toBe("openai/gpt-6-luna")
+		}),
+	)
+
+	it.effect("leaves the US instance on the global endpoint", () =>
+		Effect.gen(function* () {
+			const request = yield* captureRequest({ ...openRouterEnv, MAPLE_REGION: "us" }, tags)
+			expect(request.url).toBe("https://openrouter.ai/api/v1/chat/completions")
+		}),
+	)
+
+	it("asks no decision model in the EU unless one is configured", () => {
+		expect(resolveDecisionModel(euEnv)).toBeUndefined()
+		expect(resolveDecisionModel({ ...euEnv, MAPLE_DECISION_MODEL: "typesafe/jev-1.13" })).toBe(
+			"typesafe/jev-1.13",
+		)
+		expect(resolveDecisionModel(openRouterEnv)).toBe(DEFAULT_DECISION_MODEL)
 	})
 })
 

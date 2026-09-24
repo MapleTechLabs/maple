@@ -9,7 +9,6 @@ import {
 	type WidgetFixContext,
 } from "@/components/chat/widget-fix-context"
 import { encodeAlertChartToSearchParam } from "@/lib/alerts/widget-chart-param"
-import { aiChatEnabled } from "@/lib/region"
 import { dataSourceRawSql, isQueryDataSource } from "@maple/widgets/dashboard"
 import { Result, useAtomValue } from "@/lib/effect-atom"
 import { dashboardSharesAtom } from "@/components/dashboard-builder/toolbar/dashboard-shares"
@@ -148,7 +147,7 @@ export function WidgetActionsProvider({
 				: undefined
 
 		const fix =
-			aiChatEnabled && dashboardId && errorKind === "decode"
+			dashboardId && errorKind === "decode"
 				? () => {
 						const ctx: WidgetFixContext = {
 							dashboardId,
