@@ -1,5 +1,5 @@
 import { useMemo } from "react"
-import { barY, defineChart, group } from "@tanstack/charts"
+import { defineChart } from "@tanstack/charts"
 import { scaleLinear } from "@tanstack/charts-scales/linear"
 
 import { formatWarehouseDateTime } from "@maple/query-engine"
@@ -10,9 +10,11 @@ import {
 	createTooltipFocusStore,
 	cursorTooltip,
 	DASHED_Y_GRID,
+	focusCrosshair,
 	linearYDomain,
-	minBarLength,
 	niceLinearDomain,
+	usePlotChromeColors,
+	useResolvedSeriesColors,
 	type PlotTooltipSeries,
 } from "@maple/ui/components/plot"
 import { ChartEmpty } from "@maple/ui/components/charts"
@@ -32,17 +34,9 @@ import {
 	type ToolSeriesPoint,
 } from "@/lib/agent-sessions/tool-analytics"
 
-const PLOT_HEIGHT = 220
-const BAR_RADIUS = 2
-const MAX_BAR_THICKNESS = 48
-const DIMMED_FILL_OPACITY = 0.3
+import { seriesLines, valueAt, type ChartRow, type ChartSeries, type PlotCell } from "./tool-chart-marks"
 
-/** One bar series of the chart. `key` is the column it reads off a row. */
-interface ChartSeries {
-	readonly key: string
-	readonly label: string
-	readonly color: string
-}
+const PLOT_HEIGHT = 220
 
 /** Duration draws all three readings at once; the driving one is in the primary. */
 const DURATION_SERIES = {
@@ -64,24 +58,6 @@ function durationSeries(driving: ToolPercentile): ReadonlyArray<ChartSeries> {
 	}))
 }
 
-/** One bucket of the whole scope. */
-interface ToolChartRow extends Record<string, string | number | Date | null> {
-	bucket: string
-	date: Date
-}
-
-/** One bar: a series at a bucket. `row` carries the whole bucket for the tooltip. */
-interface ToolBarCell {
-	readonly row: ToolChartRow
-	readonly key: string
-	readonly color: string
-}
-
-function valueAt(row: ToolChartRow, key: string): number | null {
-	const value = row[key]
-	return typeof value === "number" ? value : null
-}
-
 interface ToolSeriesChartProps {
 	/** One point per bucket — the selection merged inside the query. */
 	series: ReadonlyArray<ToolSeriesPoint>
@@ -99,17 +75,16 @@ interface ToolSeriesChartProps {
 }
 
 /**
- * The selected metric over the window, as bars for the whole scope.
+ * The selected metric over the window, for the whole scope.
  *
- * Bars, not a smoothed line: agent sessions are low volume, and a curve through
- * a handful of buckets reads as a trend the samples do not support. A bar per
- * bucket shows exactly where readings exist.
+ * Lines, over a series that arrives with every bucket of the window filled
+ * (`fillSeriesBuckets`), so a line drops to zero between bursts instead of
+ * bridging the silence as if the reading held.
  *
  * The series arrives already merged by the warehouse (`split: "none"`), never
  * folded here: a bucket's sessions do not add across tools and its percentiles
- * do not average. Duration draws P50, P90 and P95 side by side — grouped, never
- * stacked, since percentiles do not add — because "is the tail moving while the
- * median holds?" is the question the metric is picked for.
+ * do not average. Duration draws P50, P90 and P95 together because "is the tail
+ * moving while the median holds?" is the question the metric is picked for.
  */
 export function ToolSeriesChart({
 	series,
@@ -124,16 +99,20 @@ export function ToolSeriesChart({
 }: ToolSeriesChartProps) {
 	const focusStore = useMemo(() => createTooltipFocusStore(), [])
 	const { effectiveTimezone } = useTimezonePreference()
+	const chromeColors = usePlotChromeColors()
 
-	const bars = useMemo<ReadonlyArray<ChartSeries>>(
+	const plotted = useMemo<ReadonlyArray<ChartSeries>>(
 		() =>
 			metric === "duration"
 				? DURATION_SERIES[percentile]
 				: [{ key: metric, label: toolMetricLabel(metric, percentile), color: "var(--primary)" }],
 		[metric, percentile],
 	)
+	// Canvas strokes cannot read `var()`; the lines take resolved colors.
+	const colorTokens = useMemo(() => new Map(plotted.map((entry) => [entry.key, entry.color])), [plotted])
+	const colors = useResolvedSeriesColors(colorTokens, chromeColors.border)
 
-	const rows = useMemo<ReadonlyArray<ToolChartRow>>(
+	const rows = useMemo<ReadonlyArray<ChartRow>>(
 		() =>
 			series
 				.toSorted((a, b) => a.bucket - b.bucket)
@@ -160,45 +139,23 @@ export function ToolSeriesChart({
 		[rows, effectiveTimezone],
 	)
 
-	const tooltipSeries = useMemo<PlotTooltipSeries<ToolBarCell>[]>(
+	const tooltipSeries = useMemo<PlotTooltipSeries<PlotCell>[]>(
 		() =>
-			bars.map((bar) => ({
-				label: bar.label,
-				color: bar.color,
-				value: (cell: ToolBarCell) => valueAt(cell.row, bar.key),
+			plotted.map((entry) => ({
+				label: entry.label,
+				color: entry.color,
+				value: (cell: PlotCell) => valueAt(cell.row, entry.key),
 				format: (value: number) => formatToolMetric(value, metric),
 			})),
-		[bars, metric],
+		[plotted, metric],
 	)
 
 	const definition = useMemo(() => {
-		const yDomain = niceLinearDomain(linearYDomain({ rows, keys: bars.map((bar) => bar.key) }))
-		// One call against a peak of hundreds paints sub-pixel — see `minBarLength`.
-		const lift = minBarLength(yDomain)
-		// Long-form: `barY` groups side by side off `z` within ONE mark.
-		const cells = rows.flatMap((row) => bars.map((bar) => ({ row, key: bar.key, color: bar.color })))
-
+		const yDomain = niceLinearDomain(linearYDomain({ rows, keys: plotted.map((entry) => entry.key) }))
 		return defineChart({
-			marks: [
-				barY(cells, {
-					x: (cell: ToolBarCell) => cell.row.date,
-					y: (cell: ToolBarCell) => lift(valueAt(cell.row, cell.key)),
-					z: (cell: ToolBarCell) => cell.key,
-					fill: (cell: ToolBarCell) => cell.color,
-					layout: group(),
-					radius: BAR_RADIUS,
-					maxThickness: MAX_BAR_THICKNESS,
-					// The hovered bucket keeps its fill and every other one dims.
-					states: [
-						{
-							when: (context: { matches: (match: "x") => boolean }) => !context.matches("x"),
-							style: { fillOpacity: DIMMED_FILL_OPACITY },
-						},
-					],
-				}),
-			],
+			marks: [...seriesLines(rows, plotted, colors, chromeColors), focusCrosshair(chromeColors)],
 			scales: {
-				x: axis.xBand,
+				x: axis.x,
 				y: {
 					grid: DASHED_Y_GRID,
 					scale: scaleLinear().domain(yDomain),
@@ -223,7 +180,7 @@ export function ToolSeriesChart({
 			focusRing: false,
 			tooltip: cursorTooltip(focusStore.anchor),
 		})
-	}, [rows, bars, axis, metric, focusStore])
+	}, [rows, plotted, axis, metric, focusStore, colors, chromeColors])
 
 	const title = toolChartTitle({
 		metric,
@@ -265,16 +222,16 @@ export function ToolSeriesChart({
 
 			{/* Only where there is more than one series to tell apart — a single
 			    series is already named by the head. */}
-			{bars.length > 1 ? (
+			{plotted.length > 1 ? (
 				<div className="-mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 font-mono text-[11px] leading-3.5">
-					{bars.map((bar) => (
-						<span key={bar.key} className="flex items-center gap-1.5">
+					{plotted.map((entry) => (
+						<span key={entry.key} className="flex items-center gap-1.5">
 							<span
 								aria-hidden
 								className="size-2 shrink-0 rounded-[2px]"
-								style={{ backgroundColor: bar.color }}
+								style={{ backgroundColor: entry.color }}
 							/>
-							<span className="text-foreground/75">{bar.label}</span>
+							<span className="text-foreground/75">{entry.label}</span>
 						</span>
 					))}
 				</div>
@@ -297,7 +254,7 @@ export function ToolSeriesChart({
 								points={points}
 								series={tooltipSeries}
 								focusStore={focusStore}
-								heading={(cell: ToolBarCell) => axis.heading(cell.row.bucket)}
+								heading={(cell: PlotCell) => axis.heading(cell.row.bucket)}
 							/>
 						)}
 					/>

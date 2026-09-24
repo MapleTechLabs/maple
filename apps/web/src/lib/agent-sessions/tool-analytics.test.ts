@@ -5,6 +5,7 @@ import {
 	OTHER_SERIES_KEY,
 	TOOL_SERIES_COLOR_TOKENS,
 	errorRate,
+	fillSeriesBuckets,
 	formatDurationNs,
 	formatToolMetric,
 	metricSpark,
@@ -222,6 +223,27 @@ describe("metricSpark", () => {
 		const points = [point(2, "a", { calls: 10, errors: 5 }), point(1, "a", { calls: 20, errors: 2 })]
 		expect(metricSpark(points, "calls", "p90")).toEqual([20, 10])
 		expect(metricSpark(points, "error_rate", "p90")).toEqual([0.1, 0.5])
+	})
+})
+
+describe("fillSeriesBuckets", () => {
+	const minute = 60_000
+
+	it("zero-fills every bucket of the window the read skipped", () => {
+		const filled = fillSeriesBuckets(
+			[point(2 * minute, "all", { calls: 4, p90: 9 })],
+			30_000,
+			4 * minute,
+			60,
+		)
+		expect(filled.map((entry) => entry.bucket)).toEqual([0, minute, 2 * minute, 3 * minute])
+		expect(filled.map((entry) => entry.calls)).toEqual([0, 0, 4, 0])
+		expect(filled.map((entry) => entry.p90)).toEqual([0, 0, 9, 0])
+		expect(filled.every((entry) => entry.seriesKey === "all")).toBe(true)
+	})
+
+	it("keeps an empty series empty", () => {
+		expect(fillSeriesBuckets([], 0, 10 * minute, 60)).toEqual([])
 	})
 })
 
