@@ -191,7 +191,7 @@ export const makeNativeTracer = (
 			return parentRun === undefined ? open() : parentRun(open)
 		},
 		context(primitive, fiber) {
-			const run = runInFor(fiber.currentSpan)
+			const run = runInFor(fiber.cache.span)
 			return run === undefined
 				? primitive["~effect/Effect/evaluate"](fiber)
 				: run(() => primitive["~effect/Effect/evaluate"](fiber))
