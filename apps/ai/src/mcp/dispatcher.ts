@@ -171,7 +171,16 @@ export interface McpToolExecutorApi {
 		tenant: TenantContext,
 		target: RepositoryTarget,
 	) => Effect.Effect<void, SandboxError>
+	/**
+	 * Warm the org's repositories at their tracked branches when the commit an agent will read is
+	 * not known yet. Every checkout shares one mirror per repository, so the deployed commit it
+	 * picks later costs a delta fetch. Skipped past a few repositories rather than guessing.
+	 */
+	readonly prepareConnectedRepositories: (tenant: TenantContext) => Effect.Effect<void>
 }
+
+/** More connected repositories than this and an investigation warms none of them. */
+const MAX_PREPARED_REPOSITORIES = 3
 
 /**
  * Closed execution boundary for every MCP surface.
@@ -248,7 +257,39 @@ export class McpToolExecutor extends Context.Service<McpToolExecutor, McpToolExe
 				yield* sandbox.prepare(tenant.orgId, target)
 			}, Effect.provide(runtimeServices))
 
-			return { execute, prepareRepository }
+			const prepareConnectedRepositories = Effect.fn("McpToolExecutor.prepareConnectedRepositories")(
+				function* (tenant: TenantContext) {
+					const source = yield* VcsSourceService
+					const repositories = (yield* source.listRepositories(tenant.orgId)).filter(
+						(repository) => !repository.isArchived,
+					)
+					yield* Effect.annotateCurrentSpan("vcs.repository.count", repositories.length)
+					if (repositories.length > MAX_PREPARED_REPOSITORIES) return
+					yield* Effect.forEach(
+						repositories,
+						(repository) =>
+							prepareRepository(tenant, { repository: repository.fullName }).pipe(
+								Effect.catch((error) =>
+									Effect.logInfo("Could not prepare a repository checkout").pipe(
+										Effect.annotateLogs({
+											"vcs.repository.full_name": repository.fullName,
+											error: error.message,
+										}),
+									),
+								),
+							),
+						{ concurrency: "unbounded", discard: true },
+					)
+				},
+				Effect.catch((error) =>
+					Effect.logInfo("Could not list repositories to prepare").pipe(
+						Effect.annotateLogs({ error: error.message }),
+					),
+				),
+				Effect.provide(runtimeServices),
+			)
+
+			return { execute, prepareRepository, prepareConnectedRepositories }
 		}),
 	},
 ) {
