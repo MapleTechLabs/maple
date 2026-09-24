@@ -158,10 +158,10 @@ describe("approvals", () => {
 
 	it("hands the host a value it reads back as each button's decision", () => {
 		// The host decodes the clicked button's value alone; `action_id` never reaches it.
-		const payload = renderSlackMessage([{ ...approval(""), token: encodeChatActionToken("call_1") }])
+		const payload = renderSlackMessage([approval(encodeChatActionToken("call_1"))])
 		const actions = payload.blocks?.[1]
 		const values = actions?.type === "actions" ? actions.elements.map((button) => button.value) : []
-		expect(values.map((value) => Option.getOrUndefined(decodeChatActionControlId(value)))).toEqual([
+		expect(values.map((value) => Option.getOrUndefined(decodeChatActionControlId(value ?? "")))).toEqual([
 			{ decision: "approve", toolCallId: "call_1" },
 			{ decision: "deny", toolCallId: "call_1" },
 		])

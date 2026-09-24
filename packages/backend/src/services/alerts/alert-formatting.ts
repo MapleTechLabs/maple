@@ -155,7 +155,7 @@ export const formatSeverityLabel = (severity: AlertSeverity): string =>
 		Match.exhaustive,
 	)
 
-export const slackAttachmentColor = (eventType: string, severity: string): string => {
+export const alertAccentColor = (eventType: string, severity: string): string => {
 	if (eventType === "resolve") return "#2eb67d"
 	if (eventType === "test") return "#36c5f0"
 	if (severity === "critical") return "#e01e5a"
