@@ -11,7 +11,8 @@ import { useAutocompleteValuesContext } from "@/hooks/use-autocomplete-values"
 import type { ValueUnit } from "@/components/dashboard-builder/types"
 import { Switch } from "@maple/ui/components/ui/switch"
 import { getListPerformanceHints } from "@/lib/query-builder/performance-hints"
-import { GripDotsIcon } from "@/components/icons"
+import { CircleWarningIcon, GripDotsIcon } from "@/components/icons"
+import { listWhereClauseWarnings } from "@/lib/query-builder/widget-builder-shared"
 
 import {
 	DEFAULT_LIST_COLUMNS,
@@ -261,6 +262,10 @@ export function ListConfigPanel() {
 	}
 
 	const knownFields = KNOWN_FIELDS[listDataSource]
+	const filterWarnings = useMemo(
+		() => listWhereClauseWarnings(listDataSource, whereClause),
+		[listDataSource, whereClause],
+	)
 	// The query engine list returns the full attribute maps, so dynamic
 	// attribute key suggestions are valid for every source.
 	const attributePrefix = ATTRIBUTE_PREFIX[listDataSource]
@@ -401,6 +406,16 @@ export function ListConfigPanel() {
 					textareaClassName="min-h-[32px] resize-y text-xs"
 					ariaLabel="List filter"
 				/>
+				{filterWarnings.length > 0 && (
+					<div className="flex gap-2 border border-warning/30 bg-warning/10 p-2 text-xs text-warning-foreground">
+						<CircleWarningIcon size={14} className="mt-0.5 shrink-0" />
+						<ul className="space-y-1">
+							{filterWarnings.map((warning) => (
+								<li key={warning}>{warning}</li>
+							))}
+						</ul>
+					</div>
+				)}
 				{(() => {
 					if (listDataSource !== "traces") return null
 					const parsedLimit = Number.parseInt(limit, 10)
