@@ -70,10 +70,9 @@ describe("normalizePrReviewSubmission", () => {
 			["kept"],
 		)
 		assert.equal(report.coverage[0]?.unit, "GET /a")
-		assert.deepEqual(
-			normalizePrReviewSubmission({ findings: "not json", resolved: '["f2"]' }).resolved,
-			["F2"],
-		)
+		assert.deepEqual(normalizePrReviewSubmission({ findings: "not json", resolved: '["f2"]' }).resolved, [
+			"F2",
+		])
 		assert.equal(normalizePrReviewSubmission({ findings: "not json" }).report.findings.length, 0)
 	})
 
@@ -301,49 +300,101 @@ describe("lenient numbers and booleans", () => {
 })
 
 describe("confidencePrReview", () => {
-	const finding = (severity: "critical" | "warn" | "info") => ({
+	const finding = (
+		severity: "critical" | "warn" | "info",
+		category: "correctness" | "security" = "correctness",
+	) => ({
 		path: "a.ts",
 		line: 1,
-		category: "correctness" as const,
+		category,
 		severity,
 		title: "t",
 		body: "b",
 	})
 	const reportWith = (
 		findings: ReadonlyArray<ReturnType<typeof finding>>,
-		confidence?: number,
-		verdict: "clean" | "issues" | "not_applicable" = "clean",
+		extra: {
+			readonly confidence?: number
+			readonly tests?: "covered" | "partial" | "missing" | "not_needed"
+			readonly risk?: "low" | "medium" | "high"
+			readonly verdict?: "clean" | "issues" | "not_applicable"
+			readonly unobservable?: boolean
+		} = {},
 	) =>
 		new PrReviewReport({
-			verdict,
+			verdict: extra.verdict ?? "clean",
 			summary: "s",
-			coverage: [],
+			coverage:
+				extra.unobservable === true
+					? [{ unit: "cron", kind: "background", instrumented: false, evidence: "no span" }]
+					: [],
 			findings,
-			...(confidence === undefined ? undefined : { confidence, confidenceReason: "why" }),
+			...(extra.tests === undefined ? undefined : { tests: extra.tests }),
+			...(extra.risk === undefined ? undefined : { risk: extra.risk }),
+			...(extra.confidence === undefined
+				? undefined
+				: { confidence: extra.confidence, confidenceReason: "why" }),
 		})
+	const score = (...args: Parameters<typeof reportWith>) =>
+		confidencePrReview(reportWith(...args))?.confidence
 
-	it("keeps a judgement at or below what the findings allow, lower included", () => {
-		assert.deepEqual(confidencePrReview(reportWith([], 2)), { confidence: 2, reason: "why", capped: false })
-		assert.equal(confidencePrReview(reportWith([finding("warn")], 3))?.confidence, 3)
+	it("reads 5 for a clean, tested, contained change and ignores notes", () => {
+		assert.equal(score([], { tests: "covered", risk: "low" }), 5)
+		assert.equal(score([], { tests: "not_needed", risk: "low" }), 5)
+		assert.equal(score([finding("info")], { tests: "covered", risk: "low" }), 5)
+		assert.isUndefined(confidencePrReview(reportWith([], { verdict: "not_applicable" })))
 	})
 
-	it("caps a judgement above the findings and replaces its reason", () => {
-		const one = confidencePrReview(reportWith([finding("critical")], 5))
-		assert.deepEqual(one, {
-			confidence: 2,
-			reason: "Held at 2 because a critical finding is open.",
-			capped: true,
-			cappedBy: "critical",
-		})
-		assert.equal(confidencePrReview(reportWith([finding("critical")], 5), [finding("critical")])?.confidence, 1)
-		assert.equal(confidencePrReview(reportWith([], 5), [], true)?.confidence, 3)
+	it("takes off for untested behavior, a risky area and unobservable work", () => {
+		assert.equal(score([], { tests: "partial", risk: "low" }), 4)
+		assert.equal(score([], { tests: "covered", risk: "medium" }), 4)
+		assert.equal(score([], { tests: "missing", risk: "low" }), 4)
+		assert.equal(score([], { tests: "missing", risk: "high" }), 3)
+		assert.equal(score([], { tests: "covered", risk: "low", unobservable: true }), 4)
 	})
 
-	it("falls back to the cap without a judgement, and reads 4 for notes only", () => {
-		assert.equal(confidencePrReview(reportWith([]))?.confidence, 5)
-		assert.equal(confidencePrReview(reportWith([finding("info")]))?.confidence, 4)
-		assert.equal(confidencePrReview(reportWith([finding("warn")]))?.confidence, 3)
-		assert.isUndefined(confidencePrReview(reportWith([], undefined, "not_applicable")))
+	it("folds the findings' quality score in", () => {
+		assert.equal(score([finding("warn")], { tests: "covered", risk: "low" }), 4)
+		assert.equal(score([finding("warn"), finding("warn")], { tests: "covered", risk: "low" }), 3)
+		assert.equal(score([finding("warn")], { tests: "missing", risk: "high" }), 2)
+	})
+
+	it("caps on a critical, a security warning or an early end, and says why", () => {
+		const one = confidencePrReview(reportWith([finding("critical")], { tests: "covered", risk: "low" }))
+		assert.equal(one?.confidence, 2)
+		assert.equal(one?.reason, "Held at 2 because a critical finding is open.")
+		assert.equal(one?.cappedBy, "critical")
+		assert.equal(
+			confidencePrReview(reportWith([finding("critical")]), [finding("critical")])?.confidence,
+			1,
+		)
+		assert.equal(score([finding("warn", "security")]), 3)
+		assert.equal(confidencePrReview(reportWith([]), [], true)?.confidence, 3)
+	})
+
+	it("lets the reviewer lower the number by one point, never raise it", () => {
+		assert.equal(score([], { confidence: 1 }), 4)
+		assert.equal(score([], { confidence: 4 }), 4)
+		assert.equal(score([finding("warn"), finding("warn")], { confidence: 5 }), 3)
+		assert.equal(confidencePrReview(reportWith([], { confidence: 4 }))?.reason, "why")
+	})
+
+	it("keeps a known test or risk signal and drops an unknown one", () => {
+		const kept = normalizePrReviewSubmission({ summary: "s", tests: " Partial ", risk: "HIGH" }).report
+		assert.equal(kept.tests, "partial")
+		assert.equal(kept.risk, "high")
+		const dropped = normalizePrReviewSubmission({ summary: "s", tests: "some", risk: null }).report
+		assert.isUndefined(dropped.tests)
+		assert.isUndefined(dropped.risk)
+	})
+
+	it("lists what went into the number", () => {
+		assert.deepEqual(
+			confidencePrReview(
+				reportWith([finding("warn")], { tests: "not_needed", risk: "medium", unobservable: true }),
+			)?.factors,
+			["1 warning", "tests not needed", "risk medium", "0/1 new units observable"],
+		)
 	})
 
 	it("normalizes a quoted or out-of-range number from the model", () => {
