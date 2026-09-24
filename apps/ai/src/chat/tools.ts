@@ -260,7 +260,7 @@ export const buildReplyCompletion = (
 export const reviewTool = Tool.make(SUBMIT_REVIEW, {
 	description:
 		"Record your review of THIS pull request. Call it exactly once, after you have " +
-		"read every hunk you review, with your verdict, coverage, line-anchored findings and the " +
+		"read every hunk you review, with your verdict, confidence, summary, key changes, what you checked, coverage, line-anchored findings and the " +
 		"handles of earlier findings this head fixes. It " +
 		"persists the review and posts it to the pull request. After calling it, stop.",
 	parameters: PrReviewSubmission,

@@ -5,7 +5,14 @@
  * incident that made it so), which moves every guarantee a reader relies on into this function.
  */
 import { assert, describe, it } from "vitest"
-import { mentionsReviewer, normalizePrReviewSubmission, parseReplyCommand, scorePrReview } from "./pr-review"
+import {
+	confidencePrReview,
+	mentionsReviewer,
+	normalizePrReviewSubmission,
+	parseReplyCommand,
+	PrReviewReport,
+	scorePrReview,
+} from "./pr-review"
 
 describe("normalizePrReviewSubmission", () => {
 	it("keeps a finding that names a file and a new-side line", () => {
@@ -35,6 +42,20 @@ describe("normalizePrReviewSubmission", () => {
 		assert.equal(finding.checkId, "SPAN-03")
 		assert.equal(finding.category, "observability")
 		assert.equal(finding.severity, "warn")
+	})
+
+	it("keeps key changes and checks as trimmed bullets, however the list arrived", () => {
+		const { report } = normalizePrReviewSubmission({
+			verdict: "clean",
+			summary: "Adds a retry.",
+			keyChanges: ["- `retryFetch` retries GETs twice", "  ", "* Adds a jittered backoff"],
+			checked: JSON.stringify(["POSTs are not retried (`client.ts:40`)"]),
+		})
+		assert.deepEqual(report.keyChanges, ["`retryFetch` retries GETs twice", "Adds a jittered backoff"])
+		assert.deepEqual(report.checked, ["POSTs are not retried (`client.ts:40`)"])
+		const bare = normalizePrReviewSubmission({ verdict: "clean", summary: "x", keyChanges: [] }).report
+		assert.isUndefined(bare.keyChanges)
+		assert.isUndefined(bare.checked)
 	})
 
 	it("reads a list the model sent as its JSON text", () => {
@@ -276,5 +297,58 @@ describe("lenient numbers and booleans", () => {
 			normalizePrReviewSubmission({ findings: [{ path: "a.ts", line: "x" }] }).report.findings,
 			0,
 		)
+	})
+})
+
+describe("confidencePrReview", () => {
+	const finding = (severity: "critical" | "warn" | "info") => ({
+		path: "a.ts",
+		line: 1,
+		category: "correctness" as const,
+		severity,
+		title: "t",
+		body: "b",
+	})
+	const reportWith = (
+		findings: ReadonlyArray<ReturnType<typeof finding>>,
+		confidence?: number,
+		verdict: "clean" | "issues" | "not_applicable" = "clean",
+	) =>
+		new PrReviewReport({
+			verdict,
+			summary: "s",
+			coverage: [],
+			findings,
+			...(confidence === undefined ? undefined : { confidence, confidenceReason: "why" }),
+		})
+
+	it("keeps a judgement at or below what the findings allow, lower included", () => {
+		assert.deepEqual(confidencePrReview(reportWith([], 2)), { confidence: 2, reason: "why", capped: false })
+		assert.equal(confidencePrReview(reportWith([finding("warn")], 3))?.confidence, 3)
+	})
+
+	it("caps a judgement above the findings and replaces its reason", () => {
+		const one = confidencePrReview(reportWith([finding("critical")], 5))
+		assert.deepEqual(one, {
+			confidence: 2,
+			reason: "Held at 2 because a critical finding is open.",
+			capped: true,
+		})
+		assert.equal(confidencePrReview(reportWith([finding("critical")], 5), [finding("critical")])?.confidence, 1)
+		assert.equal(confidencePrReview(reportWith([], 5), [], true)?.confidence, 3)
+	})
+
+	it("falls back to the cap without a judgement, and reads 4 for notes only", () => {
+		assert.equal(confidencePrReview(reportWith([]))?.confidence, 5)
+		assert.equal(confidencePrReview(reportWith([finding("info")]))?.confidence, 4)
+		assert.equal(confidencePrReview(reportWith([finding("warn")]))?.confidence, 3)
+		assert.isUndefined(confidencePrReview(reportWith([], undefined, "not_applicable")))
+	})
+
+	it("normalizes a quoted or out-of-range number from the model", () => {
+		const high = normalizePrReviewSubmission({ verdict: "clean", summary: "s", confidence: "9" }).report
+		assert.equal(high.confidence, 5)
+		const low = normalizePrReviewSubmission({ verdict: "clean", summary: "s", confidence: 0.2 }).report
+		assert.equal(low.confidence, 1)
 	})
 })

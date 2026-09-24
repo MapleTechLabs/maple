@@ -593,8 +593,8 @@ describe("PrReviewService.submitReview", () => {
 				}),
 			)
 			assert.deepEqual(
-				published[0]!.comments.map((comment) => comment.body.slice(0, 8)),
-				["**F1 · o", "**F2 · u"],
+				published[0]!.comments.map((comment) => comment.body.match(/<sub>(F\d+) · /)?.[1]),
+				["F1", "F2"],
 			)
 
 			const second = yield* reviews.onPullRequestEvent(
@@ -625,7 +625,7 @@ describe("PrReviewService.submitReview", () => {
 			)
 			assert.include(publication.summaryComment.body, "### Still open from earlier reviews")
 			assert.include(publication.summaryComment.body, "~~F1 · off by one~~")
-			assert.equal(publication.title, "80/100 · 2 issues to address")
+			assert.equal(publication.title, "Confidence 3/5 · Quality 80/100 · 2 issues to address")
 			assert.deepEqual(resolvedThreads, ["T1:Fixed in `2222222`."])
 			const stored = Option.getOrThrow(yield* reviews.getReview(orgId, second.reviewId!))
 			assert.deepEqual(
@@ -993,6 +993,17 @@ describe("PrReviewService.submitReview feedback filter", () => {
 })
 
 describe("withReviewStatus", () => {
+	it("puts a notice under the previous review's scorecard, so the scores never move", () => {
+		const previous = renderSummaryComment({ report: report([]), partial: false, headSha: HEAD, repositoryUrl: REPO_URL })
+		const reviewing = withReviewStatus(previous, { kind: "reviewing", headSha: HEAD_2 }) ?? ""
+		assert.isTrue(reviewing.startsWith(`${PR_REVIEW_COMMENT_MARKER}\n## Maple review\n\n| Confidence |`))
+		assert.isBelow(reviewing.indexOf("| Confidence |"), reviewing.indexOf("Maple is reviewing the new changes"))
+		assert.isAbove(reviewing.indexOf("Adds one route."), reviewing.indexOf("Maple is reviewing the new changes"))
+		// Swapping the notice again neither stacks notices nor grows blank lines.
+		const again = withReviewStatus(reviewing, { kind: "reviewing", headSha: HEAD_2 }) ?? ""
+		assert.equal(again, reviewing)
+	})
+
 	it("keeps the previous review under the notice and swaps only the notice", () => {
 		const previous = `${PR_REVIEW_COMMENT_MARKER}\n## Maple review: 90/100\n\nOne warning.`
 		const reviewing = withReviewStatus(previous, { kind: "reviewing", headSha: HEAD_2 })
@@ -1048,7 +1059,7 @@ describe("buildPublication", () => {
 		assert.equal(publication.conclusion, "neutral")
 		assert.include(publication.reviewBody ?? "", "1 inline note")
 		// 100 - 10 (warn) - 2 (note)
-		assert.equal(publication.title, "88/100 · 1 issue to address")
+		assert.equal(publication.title, "Confidence 3/5 · Quality 88/100 · 1 issue to address")
 	})
 
 	it("always writes the summary comment, even with nothing to say inline", () => {
@@ -1063,8 +1074,10 @@ describe("buildPublication", () => {
 		assert.isNull(publication.reviewBody)
 		assert.equal(publication.comments.length, 0)
 		assert.isTrue(publication.summaryComment.body.startsWith(PR_REVIEW_COMMENT_MARKER))
-		assert.include(publication.summaryComment.body, "## Maple review: 100/100")
-		assert.include(publication.summaryComment.body, "**Excellent**")
+		assert.include(
+			publication.summaryComment.body,
+			"## Maple review\n\n| Confidence | Quality | Open findings | Commit |\n| --- | --- | --- | --- |\n| **5/5** · safe to merge | **100/100** · excellent | none |",
+		)
 	})
 
 	it("links each finding to its line at the reviewed commit", () => {
@@ -1086,8 +1099,9 @@ describe("buildPublication", () => {
 			repositoryUrl: `${REPO_URL}/`,
 		})
 		assert.include(comment, `(${REPO_URL}/blob/${HEAD}/src/a%20b.ts#L4-L6)`)
-		assert.include(comment, "| 75/100 | 1 | 0 | 0 | 0 of 1 |")
-		assert.include(comment, "<summary>What to change</summary>")
+		assert.include(comment, "| **2/5** · risky as written | **75/100** · good | 1 critical |")
+		assert.include(comment, "Observability coverage: 0 of 1 changes observable")
+		assert.include(comment, "<details><summary><b>Critical</b> · gap</summary>")
 		assert.include(comment, "minus 25 per critical finding")
 	})
 
@@ -1109,8 +1123,71 @@ describe("buildPublication", () => {
 			repositoryUrl: REPO_URL,
 		})
 		assert.include(summary, "| POST /orders | entrypoint | no | no withSpan |")
-		assert.include(summary, "| observability · SPAN-03 |")
+		assert.include(summary, "observability · SPAN-03 · [`a.ts:1`]")
 		assert.include(summary, "ended early")
+	})
+
+	it("lists findings most severe first, with code spans readable inside the collapsed title", () => {
+		const comment = renderSummaryComment({
+			report: new PrReviewReport({
+				...report([
+					{ path: "a.ts", line: 1, category: "tests", severity: "info", title: "note", body: "" },
+					{
+						path: "b.ts",
+						line: 2,
+						category: "security",
+						severity: "critical",
+						title: "`listKeys` skips the <tenant> filter",
+						body: "b",
+					},
+				]),
+				keyChanges: ["`listKeys` reads from the new table"],
+			}),
+			partial: false,
+			headSha: HEAD,
+			repositoryUrl: REPO_URL,
+		})
+		assert.isBelow(comment.indexOf("<b>Critical</b>"), comment.indexOf("<b>Note</b>"))
+		assert.include(comment, "<code>listKeys</code> skips the &lt;tenant&gt; filter</summary>")
+		assert.include(comment, "Adds one route.\n\n- `listKeys` reads from the new table")
+		assert.include(comment, "1 critical, 1 note")
+	})
+
+	it("shows what was checked on a clean review, and folds it away beside findings", () => {
+		const render = (findings: PrReviewReport["findings"]) =>
+			renderSummaryComment({
+				report: new PrReviewReport({ ...report(findings), checked: ["OrgId is filtered (`q.ts:4`)"] }),
+				partial: false,
+				headSha: HEAD,
+				repositoryUrl: REPO_URL,
+			})
+		assert.include(render([]), "### What was checked\n\n- OrgId is filtered (`q.ts:4`)")
+		assert.include(
+			render([{ path: "a.ts", line: 1, category: "correctness", severity: "warn", title: "t", body: "b" }]),
+			"<details><summary>What was checked</summary>",
+		)
+	})
+
+	it("shows the reviewer's confidence and reason, held down by what the findings allow", () => {
+		const render = (findings: PrReviewReport["findings"], partial = false) =>
+			renderSummaryComment({
+				report: new PrReviewReport({
+					...report(findings),
+					confidence: 5,
+					confidenceReason: "Small change, verified end to end.",
+				}),
+				partial,
+				headSha: HEAD,
+				repositoryUrl: REPO_URL,
+			})
+		assert.include(render([]), "**Why 5/5:** Small change, verified end to end.")
+		const warned = render([
+			{ path: "a.ts", line: 1, category: "correctness", severity: "warn", title: "t", body: "b" },
+		])
+		assert.include(warned, "| **3/5** · needs attention |")
+		assert.include(warned, "**Why 3/5:** Held at 3 because a warning is open.")
+		assert.notInclude(warned, "verified end to end")
+		assert.include(render([], true), "| **3/5** · needs attention |")
 	})
 
 	it("posts a replacement as a one-click suggestion over the lines it replaces", () => {
@@ -1136,7 +1213,8 @@ describe("buildPublication", () => {
 		assert.equal(comment.startLine, 3)
 		assert.equal(comment.line, 4)
 		assert.include(comment.body, "```suggestion\nfor (let i = 0; i <= n; i++) {\n\tvisit(i)\n```")
-		assert.include(comment.body, "correctness · warn")
+		assert.include(comment.body, "<sub>Warning · correctness</sub>")
+		assert.include(comment.body, "In `a.ts:3-4`: off by one.")
 		assert.notInclude(publication.summaryComment.body, "instrumentation audit")
 	})
 
