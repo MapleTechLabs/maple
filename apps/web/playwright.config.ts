@@ -58,7 +58,7 @@ export default defineConfig({
 			// Frame counts must measure UI work, not rrweb capture. Also keeps a
 			// local bench run (where VITE_MAPLE_INGEST_KEY resolves from .env.local)
 			// from posting bench sessions into real ingest. The @cross-browser spec
-			// asserts zero blob uploads, which is what guards this staying true.
+			// asserts zero blob and session-event uploads, which guards this staying true.
 			VITE_MAPLE_REPLAY: "off",
 		},
 	},
