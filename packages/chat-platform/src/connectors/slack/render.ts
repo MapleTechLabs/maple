@@ -359,8 +359,11 @@ export const renderSlackMessage = (blocks: ReadonlyArray<ChatBlock>): SlackMessa
 						rendered.push(section(`${escapeMrkdwn(outcome.text)}${link}`))
 						rendered.push(context(escapeMrkdwn(outcome.decision)))
 					}
+					// The top-level text is what a screen reader reads, so it carries the decision and link too.
 					fallback.push(
-						outcome.text === "" ? `${block.toolName}: ${outcome.decision}` : outcome.text,
+						outcome.text === ""
+							? `${block.toolName}: ${outcome.decision}${link}`
+							: `${outcome.text}${link}\n${outcome.decision}`,
 					)
 					break
 				}

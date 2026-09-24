@@ -6,10 +6,8 @@
  * verbatim put a report's headings and a dashboard's validation table into a thread. The record
  * stays as it is — the model reads it on its next turn — and a channel gets one sentence and a link.
  */
-import type { StructuredToolOutput } from "@maple/domain"
+import { Option, Schema } from "effect"
 import { MAX_APPROVAL_OUTCOME_CHARS, type ChatApprovalOutcome, type ChatRenderContext } from "./blocks"
-
-const STRUCTURED_MARKER = "__maple_ui"
 
 /** A decision line longer than this is not a name any more. */
 const MAX_DECISION_CHARS = 80
@@ -26,31 +24,11 @@ export const approvalOutcome = (
 	const [first = "", ...rest] = recorded.split("\n")
 	const decision = truncate(first.trim(), MAX_DECISION_CHARS)
 
-	const structured = isError ? null : structuredOf(rest)
-	const described = structured === null ? null : describe(structured, context.appBaseUrl)
+	const described = isError ? null : structuredOf(rest, context.appBaseUrl)
 	const url = described?.url ?? null
 	const text = described?.text ?? (isError ? firstReportLine(rest) : "The change went through.")
 	const room = Math.max(MIN_TEXT_CHARS, MAX_APPROVAL_OUTCOME_CHARS - decision.length - (url?.length ?? 0))
 	return { approved: !isError, decision, text: truncate(text, room), url }
-}
-
-/** The marker is the whole check, as it is for the web transcript's renderers. */
-const isStructured = (value: unknown): value is StructuredToolOutput =>
-	typeof value === "object" && value !== null && STRUCTURED_MARKER in value
-
-/** `createDualContent` writes the payload as one line of its own, after the report. */
-const structuredOf = (lines: ReadonlyArray<string>): StructuredToolOutput | null => {
-	for (const line of lines) {
-		const trimmed = line.trim()
-		if (!trimmed.startsWith("{")) continue
-		try {
-			const parsed: unknown = JSON.parse(trimmed)
-			if (isStructured(parsed)) return parsed
-		} catch {
-			// Report text that happens to open with a brace.
-		}
-	}
-	return null
 }
 
 /** A refusal's reason: the report's first line of prose — not a heading, not the payload. */
@@ -67,11 +45,63 @@ interface Described {
 	readonly url: string | null
 }
 
-/**
- * One sentence per mutating tool, in the bot's voice. A switch so that a tool added to the
- * structured union without a sentence here falls to the generic line rather than to its report.
- */
-const describe = (output: StructuredToolOutput, app: string): Described | null => {
+// The fields of each mutating tool's `__maple_ui` payload a sentence reads — decoded rather than
+// trusted, so a payload recorded by an older build of a tool falls to the generic line instead of
+// failing the whole message's render.
+const Named = Schema.Struct({ id: Schema.String, name: Schema.String })
+const OnDashboard = Schema.Struct({ dashboard: Named })
+const OnRule = Schema.Struct({ rule: Named })
+const OnIssue = Schema.Struct({ id: Schema.String })
+const Payload = <Tool extends string, Data extends Schema.Top>(tool: Tool, data: Data) =>
+	Schema.Struct({ __maple_ui: Schema.Literal(true), tool: Schema.Literal(tool), data })
+
+const MutationPayload = Schema.Union([
+	Payload("create_dashboard", OnDashboard),
+	Payload("update_dashboard", OnDashboard),
+	Payload("add_dashboard_widget", OnDashboard),
+	Payload("update_dashboard_widget", OnDashboard),
+	Payload("remove_dashboard_widget", OnDashboard),
+	Payload("reorder_dashboard_widgets", OnDashboard),
+	Payload("replace_dashboard_widgets", OnDashboard),
+	Payload("create_alert_rule", OnRule),
+	Payload("update_alert_rule", OnRule),
+	Payload("delete_alert_rule", Schema.Struct({})),
+	Payload(
+		"transition_error_issue",
+		Schema.Struct({ id: Schema.String, fromState: Schema.String, toState: Schema.String }),
+	),
+	Payload(
+		"set_issue_severity",
+		Schema.Struct({ id: Schema.String, severity: Schema.NullOr(Schema.String), applied: Schema.Boolean }),
+	),
+	Payload("claim_error_issue", OnIssue),
+	Payload("release_error_issue", OnIssue),
+	Payload("comment_on_error_issue", Schema.Struct({ issueId: Schema.String })),
+	Payload("propose_fix", Schema.Struct({ issueId: Schema.String })),
+	Payload(
+		"link_pull_request",
+		Schema.Struct({ issueId: Schema.String, repoFullName: Schema.String, number: Schema.Number }),
+	),
+	Payload("register_agent", Schema.Struct({ agentName: Schema.NullOr(Schema.String) })),
+	Payload("update_error_notification_policy", Schema.Struct({ enabled: Schema.Boolean })),
+])
+type MutationPayload = typeof MutationPayload.Type
+
+const decodePayload = Schema.decodeUnknownOption(Schema.fromJsonString(MutationPayload))
+
+/** `createDualContent` writes the payload as one line of its own, after the report. */
+const structuredOf = (lines: ReadonlyArray<string>, app: string): Described | null => {
+	for (const line of lines) {
+		const trimmed = line.trim()
+		if (!trimmed.startsWith("{")) continue
+		const payload = decodePayload(trimmed)
+		if (Option.isSome(payload)) return describe(payload.value, app)
+	}
+	return null
+}
+
+/** One sentence per mutating tool, in the bot's voice, and the page in Maple that shows it. */
+const describe = (output: MutationPayload, app: string): Described => {
 	const dashboard = (id: string) => `${app}/dashboards/${encodeURIComponent(id)}`
 	const alert = (id: string) => `${app}/alerts/${encodeURIComponent(id)}`
 	const issue = (id: string) => `${app}/errors/issues/${encodeURIComponent(id)}`
@@ -141,11 +171,9 @@ const describe = (output: StructuredToolOutput, app: string): Described | null =
 			return { text: "I released the issue.", url: issue(output.data.id) }
 		case "comment_on_error_issue":
 			return { text: "I commented on the issue.", url: issue(output.data.issueId) }
+		// The issue rather than the pull request: the link reads "Open in Maple".
 		case "propose_fix":
-			return {
-				text: "I proposed a fix for the issue.",
-				url: output.data.prUrl ?? issue(output.data.issueId),
-			}
+			return { text: "I proposed a fix for the issue.", url: issue(output.data.issueId) }
 		case "link_pull_request":
 			return {
 				text: `I linked ${output.data.repoFullName}#${output.data.number} to the issue.`,
@@ -166,8 +194,6 @@ const describe = (output: StructuredToolOutput, app: string): Described | null =
 					: "I turned off error notifications.",
 				url: null,
 			}
-		default:
-			return null
 	}
 }
 

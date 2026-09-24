@@ -441,6 +441,12 @@ describe("renderChatMessage", () => {
 				url: "https://app.maple.dev/dashboards/d_1",
 			},
 		})
+		// A payload without the fields its sentence reads is not described, and does not break the
+		// message it is in.
+		const malformed = JSON.stringify({ __maple_ui: true, tool: "create_dashboard", data: {} })
+		expect(decided(`Approved by Ada.\n${malformed}`)).toMatchObject({
+			outcome: { approved: true, text: "The change went through.", url: null },
+		})
 		// A refusal has no payload to describe; its reason is the report's first line of prose.
 		expect(
 			decided("Approved by Ada, but it did not go through.\n## Refused\nThe name is taken.", true),
