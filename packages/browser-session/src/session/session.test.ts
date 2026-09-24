@@ -10,7 +10,9 @@ import {
 	nextMetaVersion,
 	onSessionRotate,
 	peekSession,
+	resetSessionStorageStateForTests,
 	resetTabLeaseForTests,
+	resolveBillable,
 } from "./session"
 import { resetVisitorCacheForTests } from "../identity/visitor"
 
@@ -18,10 +20,13 @@ import { resetVisitorCacheForTests } from "../identity/visitor"
 // rotation logic can be exercised under Node with a controllable clock.
 class FakeStorage {
 	private store = new Map<string, string>()
+	/** Reads keep working while writes throw: the quota-exhaustion shape. */
+	writesThrow = false
 	getItem(key: string): string | null {
 		return this.store.has(key) ? this.store.get(key)! : null
 	}
 	setItem(key: string, value: string): void {
+		if (this.writesThrow) throw new DOMException("quota", "QuotaExceededError")
 		this.store.set(key, value)
 	}
 	removeItem(key: string): void {
@@ -48,6 +53,7 @@ beforeEach(() => {
 	vi.setSystemTime(new Date("2026-05-22T12:00:00Z"))
 	storage = new FakeStorage()
 	resetVisitorCacheForTests()
+	resetSessionStorageStateForTests()
 	vi.stubGlobal("window", {
 		sessionStorage: storage,
 		localStorage: new FakeStorage(),
@@ -424,5 +430,45 @@ describe("replay sampling", () => {
 		expect(claimReplaySample(1)).toBe(false)
 		adoptReplayDecision(session.id, true)
 		expect(claimReplaySample(1)).toBe(false)
+	})
+})
+
+describe("quota exhaustion", () => {
+	it("keeps nextMetaVersion advancing when reads work but writes throw", () => {
+		// Pinned at 1, every heartbeat was billed as a new session.
+		getSession()
+		storage.writesThrow = true
+		expect([nextMetaVersion(), nextMetaVersion(), nextMetaVersion()]).toEqual([1, 2, 3])
+	})
+
+	it("hands control back to storage once writes recover", () => {
+		getSession()
+		storage.writesThrow = true
+		nextMetaVersion()
+		nextMetaVersion()
+		storage.writesThrow = false
+
+		expect(nextMetaVersion()).toBe(3)
+		expect(JSON.parse(storage.getItem(STORAGE_KEY)!).metaVersion).toBe(3)
+	})
+})
+
+describe("resolveBillable", () => {
+	it("claims once and reads the persisted verdict back after a reload", () => {
+		const { id } = getSession()
+		const claim = vi.fn(() => true)
+
+		expect(resolveBillable(id, claim)).toBe(true)
+		resetSessionStorageStateForTests()
+		expect(resolveBillable(id, claim)).toBe(true)
+		expect(claim).toHaveBeenCalledTimes(1)
+		expect(JSON.parse(storage.getItem(STORAGE_KEY)!).billable).toBe(true)
+	})
+
+	it("never claims for a session that is not the stored one", () => {
+		getSession()
+		const claim = vi.fn(() => true)
+		expect(resolveBillable("someone-else", claim)).toBe(false)
+		expect(claim).not.toHaveBeenCalled()
 	})
 })

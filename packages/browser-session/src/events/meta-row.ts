@@ -60,6 +60,12 @@ export interface SessionMetaRowInput {
 	 * rendering a player with nothing to play.
 	 */
 	readonly recorded: boolean
+	/**
+	 * Whether this session owns its visit claim. The gateway bills
+	 * `billable_start == 1 && version == 1`, and falls back to `version == 1`
+	 * alone when the key is absent, so it is always sent.
+	 */
+	readonly billableStart?: boolean | undefined
 }
 
 interface SessionMetaRow extends Record<string, unknown> {
@@ -142,6 +148,7 @@ export function buildSessionMetaRow(input: SessionMetaRowInput): SessionMetaRow 
 		// the surviving row, which read as "one page, no clicks" — a bounce.
 		visitor_id: input.visitorId ?? "",
 		visitor_is_new: input.visitorIsNew ? 1 : 0,
+		billable_start: input.billableStart ? 1 : 0,
 		user_email: (input.captureUserEmail === false ? undefined : identity?.email) ?? "",
 		user_name: identity?.username ?? "",
 		group_id: identity?.groupId ?? "",

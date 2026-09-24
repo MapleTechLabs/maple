@@ -9,7 +9,7 @@
 //     chart's totals reconcile with them rather than telling a second story.
 //
 //   `dailySessionCountQuery`  — browser sessions per UTC day, from
-//     `session_replays` (one row per session). Kept as a separate query rather
+//     `session_replays` (several rows per session). Kept as a separate query rather
 //     than a UNION branch: the two tables disagree on column types (byte sums
 //     are UInt64, the session count is UInt64 but the bucket column comes from
 //     DateTime64) and unifying them has bitten us with 502s before.
@@ -76,15 +76,18 @@ export interface DailySessionCountOutput {
  * Per-UTC-day browser session count for one org.
  *
  * `session_replays` is PARTITION BY toDate(StartTime), so the window predicate
- * on `StartTime` prunes partitions. A session is counted on the day it started —
- * which is also how the ingest gateway meters it to Autumn, so the daily series
- * and the cycle total can't drift.
+ * on `StartTime` prunes partitions. A session is counted on the day it started.
+ *
+ * `uniq(SessionId)`, not `count()`: every heartbeat is a row until a merge
+ * collapses it, so `count()` rendered a 10-minute session as ~12. This counts
+ * sessions, which reads above the bill when a visitor used several tabs or
+ * subdomains inside one billed visit.
  */
 export function dailySessionCountQuery() {
 	return from(SessionReplays)
 		.select(($) => ({
 			day: CH.toStartOfInterval($.StartTime, DAY_SECONDS),
-			sessions: CH.count(),
+			sessions: CH.uniq($.SessionId),
 		}))
 		.where(($) => [
 			$.OrgId.eq(param.string("orgId")),

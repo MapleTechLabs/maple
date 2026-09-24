@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { markActivity, noteNavigation, peekSession, rotateSession } from "./session"
 import { type SessionLifecycleHooks, type SessionSuspendOptions, startSessionLifecycle } from "./lifecycle"
-import { resetVisitorCacheForTests } from "../identity/visitor"
+import { resetVisitClaimForTests } from "../identity/visit"
+import { resetVisitorCacheForTests, setVisitorTracking } from "../identity/visitor"
 
 // Same in-memory storage stand-in session.test.ts uses, so the rotation logic
 // under test is the real one on a controllable clock.
@@ -56,6 +57,8 @@ interface MutableDocumentStub {
 	removeEventListener: Listeners["remove"]
 }
 let doc: MutableDocumentStub
+/** The visitor's localStorage, shared by every tab a test opens. */
+let localStorage: FakeStorage
 
 const statuses = (): string[] => posted.map((p) => String(p.row.status))
 const last = (): Record<string, unknown> => posted[posted.length - 1]!.row
@@ -87,13 +90,15 @@ beforeEach(() => {
 	documentListeners = new Listeners()
 	windowListeners = new Listeners()
 	resetVisitorCacheForTests()
+	resetVisitClaimForTests()
 	doc = {
 		visibilityState: "visible",
 		addEventListener: documentListeners.add,
 		removeEventListener: documentListeners.remove,
 	}
 	const globals = globalThis as Record<string, unknown>
-	globals.window = { sessionStorage: new FakeStorage(), localStorage: new FakeStorage() }
+	localStorage = new FakeStorage()
+	globals.window = { sessionStorage: new FakeStorage(), localStorage }
 	globals.document = doc
 	globals.addEventListener = windowListeners.add
 	globals.removeEventListener = windowListeners.remove
@@ -128,6 +133,66 @@ describe("startSessionLifecycle", () => {
 		doc.visibilityState = "hidden"
 		vi.advanceTimersByTime(5 * HEARTBEAT)
 		expect(statuses()).toEqual(["active"])
+	})
+})
+
+describe("billable_start", () => {
+	/** A second tab: its own sessionStorage, the visitor's shared localStorage. */
+	const openSecondTab = (): void => {
+		const globals = globalThis as Record<string, unknown>
+		globals.window = { sessionStorage: new FakeStorage(), localStorage }
+		resetVisitClaimForTests()
+	}
+
+	it("is sticky across the session's rows, while only version 1 is billed", () => {
+		start()
+		expect(last()).toMatchObject({ version: 1, billable_start: 1 })
+
+		vi.advanceTimersByTime(HEARTBEAT)
+		expect(last()).toMatchObject({ version: 2, billable_start: 1 })
+
+		windowListeners.dispatch("pagehide")
+		expect(last()).toMatchObject({ status: "ended", billable_start: 1 })
+	})
+
+	it("does not bill a second tab inside the same visit", () => {
+		start()
+		expect(last().billable_start).toBe(1)
+
+		openSecondTab()
+		start()
+		expect(last()).toMatchObject({ version: 1, billable_start: 0 })
+	})
+
+	it("measures the visit from the latest activity, not from the claim", () => {
+		start()
+		// 45 active minutes: heartbeats carry the activity into the visit marker.
+		for (let i = 0; i < 45; i++) {
+			vi.advanceTimersByTime(MINUTE)
+			markActivity()
+		}
+
+		openSecondTab()
+		start()
+		expect(last()).toMatchObject({ version: 1, billable_start: 0 })
+	})
+
+	it("bills the session an idle rotation starts", async () => {
+		start()
+		vi.advanceTimersByTime(31 * MINUTE)
+		posted = []
+		rotateSession()
+		await flushMicrotasks()
+
+		expect(last()).toMatchObject({ status: "active", billable_start: 1 })
+	})
+
+	it("keeps the claim off storage when visitor tracking is off", () => {
+		setVisitorTracking(false)
+		start()
+		expect(last().billable_start).toBe(1)
+
+		expect(localStorage.getItem("maple.visit")).toBeNull()
 	})
 })
 
