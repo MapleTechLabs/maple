@@ -2,30 +2,20 @@ import type { Duration } from "effect"
 import { Effect, Layer, Redacted } from "effect"
 import { FetchHttpClient } from "effect/unstable/http"
 import { Otlp } from "effect/unstable/observability"
-import type { MapleRegion } from "@maple/browser-session/region"
-import { MAPLE_INGEST_ENDPOINTS, type ResolvedResource, resolveResource } from "./resource.js"
+import { type MapleRegion, warnIfKeylessMapleIngest } from "@maple/browser-session/region"
+import { type ResolvedResource, resolveResource } from "./resource.js"
 
 /**
- * Warn once about the one configuration that cannot work: no ingest key, and
- * the endpoint left at the public Maple ingest, which rejects unauthenticated
- * writes with a 401. Every other keyless setup — a local `maple start` sink, a
- * self-hosted collector — is legitimate and stays silent.
- *
  * A warning rather than a no-op: disabling export here would silently break
- * those keyless-to-custom-endpoint setups.
+ * keyless setups against a local `maple start` sink or a self-hosted collector.
  */
-let doomWarned = false
-const warnIfDoomed = (resolved: ResolvedResource): void => {
-	if (doomWarned) return
-	if (resolved.ingestKey !== undefined) return
-	if (!MAPLE_INGEST_ENDPOINTS.includes(resolved.endpoint)) return
-	doomWarned = true
-	console.warn(
-		"[MapleServerSDK] exporting to the public Maple ingest without an ingest key — " +
-			"every request will be rejected with 401. Set MAPLE_INGEST_KEY, or point MAPLE_ENDPOINT " +
-			"at your own collector.",
-	)
-}
+const warnIfDoomed = (resolved: ResolvedResource): void =>
+	warnIfKeylessMapleIngest({
+		logPrefix: "[MapleServerSDK]",
+		endpoint: resolved.endpoint,
+		hasIngestKey: resolved.ingestKey !== undefined,
+		hint: "Set MAPLE_INGEST_KEY, or point MAPLE_ENDPOINT at your own collector.",
+	})
 
 export interface MapleConfig {
 	/**

@@ -4,18 +4,6 @@ import * as EnvConfig from "./config.js"
 import { getContainerAttributes } from "./container.js"
 import { getAutoPlatformAttributes } from "./platform.js"
 
-/**
- * Public Maple ingest endpoints, one per region. The region's endpoint is used
- * when no endpoint is configured via `config.endpoint`, `MAPLE_ENDPOINT`, or
- * `OTEL_EXPORTER_OTLP_ENDPOINT`, so end users only need an ingest key (and,
- * for an EU organization, `region: "eu"` or `MAPLE_REGION=eu`).
- */
-export const DEFAULT_MAPLE_ENDPOINT = "https://ingest.maple.dev"
-export const MAPLE_INGEST_ENDPOINTS: ReadonlyArray<string> = [
-	DEFAULT_MAPLE_ENDPOINT,
-	"https://ingest.eu.maple.dev",
-]
-
 const stringOrUndefined = (value: unknown): string | undefined =>
 	typeof value === "string" && value.length > 0 ? value : undefined
 

@@ -1,13 +1,17 @@
 import { afterEach, describe, expect, it, vi } from "vitest"
 import {
 	ingestEndpointForRegion,
+	isMapleIngestEndpoint,
 	parseRegion,
+	resetKeylessWarningsForTests,
 	resetRegionWarningsForTests,
 	resolveIngestEndpoint,
+	warnIfKeylessMapleIngest,
 } from "./region"
 
 afterEach(() => {
 	resetRegionWarningsForTests()
+	resetKeylessWarningsForTests()
 	vi.restoreAllMocks()
 })
 
@@ -38,5 +42,28 @@ describe("region", () => {
 		expect(resolveIngestEndpoint({ endpoints: [undefined, ""], regions: [undefined, "eu"] })).toBe(
 			"https://ingest.eu.maple.dev",
 		)
+	})
+
+	it("recognizes Maple's hosted ingest, trailing slash or not", () => {
+		expect(isMapleIngestEndpoint("https://ingest.maple.dev")).toBe(true)
+		expect(isMapleIngestEndpoint("https://ingest.eu.maple.dev/")).toBe(true)
+		expect(isMapleIngestEndpoint("https://INGEST.maple.dev")).toBe(true)
+		expect(isMapleIngestEndpoint("https://ingest.maple.dev:443")).toBe(true)
+		expect(isMapleIngestEndpoint("https://ingest.maple.dev/proxy")).toBe(false)
+		expect(isMapleIngestEndpoint("https://telemetry.example.com")).toBe(false)
+		expect(isMapleIngestEndpoint("not a url")).toBe(false)
+	})
+
+	it("warns once about a keyless write to the hosted ingest, and never behind a proxy", () => {
+		const warn = vi.spyOn(console, "warn").mockImplementation(() => {})
+		const keyless = { logPrefix: "[t]", hasIngestKey: false, hint: "hint" }
+		warnIfKeylessMapleIngest({ ...keyless, endpoint: "https://telemetry.example.com" })
+		warnIfKeylessMapleIngest({ ...keyless, endpoint: "https://ingest.maple.dev", hasIngestKey: true })
+		expect(warn).not.toHaveBeenCalled()
+
+		warnIfKeylessMapleIngest({ ...keyless, endpoint: "https://ingest.maple.dev" })
+		warnIfKeylessMapleIngest({ ...keyless, endpoint: "https://ingest.maple.dev" })
+		expect(warn).toHaveBeenCalledTimes(1)
+		expect(String(warn.mock.calls[0]![0])).toContain("401")
 	})
 })

@@ -4,7 +4,11 @@
  */
 export interface IngestConfig {
 	readonly endpoint: string
-	readonly ingestKey: string
+	/**
+	 * Sent as `Authorization: Bearer …`, and nothing else: it never decides
+	 * whether a feature runs. Unset when a proxy in front of `endpoint` adds auth.
+	 */
+	readonly ingestKey?: string | undefined
 	/** `x-maple-sdk` value — see {@link SDK_HINT_HEADER}. */
 	readonly sdk: string
 	readonly maskAllInputs: boolean
@@ -40,12 +44,11 @@ export const SDK_HINT_HEADER = "x-maple-sdk"
 /** `<name>/<version>` — the one shape ingest expects in `x-maple-sdk`. */
 export const sdkHint = (name: string, version: string): string => `${name}/${version}`
 
-/** Auth + identity headers shared by every ingest request. */
+/** Auth + identity headers shared by every ingest request. No key, no `Authorization`. */
 export function ingestHeaders(config: Pick<IngestConfig, "ingestKey" | "sdk">): Record<string, string> {
-	return {
-		Authorization: `Bearer ${config.ingestKey}`,
-		[SDK_HINT_HEADER]: config.sdk,
-	}
+	const identity = { [SDK_HINT_HEADER]: config.sdk }
+	if (!config.ingestKey) return identity
+	return { Authorization: `Bearer ${config.ingestKey}`, ...identity }
 }
 
 // Replay POSTs are best-effort and must never throw into the host app, but a

@@ -18,7 +18,7 @@ const resolved = buildResolved(
 		ingestKey: Redacted.make("test-key"),
 		resource: { serviceName: "test", serviceVersion: undefined, attributes: {} },
 	},
-	{ userAgent: "test" },
+	{ userAgent: "test", keyless: "disable" },
 )
 
 const recordSpan = (spans: ReturnType<typeof makeSpanBuffer>, name: string) =>
@@ -33,6 +33,18 @@ describe("buildResolved", () => {
 		expect(resolved.headers["user-agent"]).toBe("test")
 		expect(resolved.headers["x-maple-sdk"]).toBe("test")
 		expect(resolved.headers.authorization).toBe("Bearer test-key")
+	})
+
+	vitestIt("applies each preset's keyless policy: disable, or send without Authorization", () => {
+		const keyless = {
+			endpoint: "https://proxy.test",
+			ingestKey: undefined,
+			resource: { serviceName: "test", serviceVersion: undefined, attributes: {} },
+		}
+		expect(buildResolved(keyless, { userAgent: "test", keyless: "disable" }).noOp).toBe(true)
+		const sent = buildResolved(keyless, { userAgent: "test", keyless: "send" })
+		expect(sent.noOp).toBe(false)
+		expect(sent.headers).not.toHaveProperty("authorization")
 	})
 })
 

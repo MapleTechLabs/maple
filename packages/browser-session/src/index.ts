@@ -34,14 +34,17 @@ export { getObservedTraceIds, publishSessionSink, readSessionSink, recordTraceId
 export type { TrackProps } from "./events/track"
 export { track } from "./events/track"
 export { isLikelyBot, parseUserAgent } from "./platform/user-agent"
-export { SDK_HINT_HEADER, sdkHint } from "./platform/transport"
+export { ingestHeaders, SDK_HINT_HEADER, sdkHint } from "./platform/transport"
 export { getVisitorId, isVisitorIdPersisted, setVisitorTracking } from "./identity/visitor"
 export type { MapleRegion } from "./platform/region"
 export {
 	DEFAULT_MAPLE_REGION,
 	ingestEndpointForRegion,
+	isMapleIngestEndpoint,
 	MAPLE_REGIONS,
 	parseRegion,
+	resetKeylessWarningsForTests,
 	resolveIngestEndpoint,
+	warnIfKeylessMapleIngest,
 } from "./platform/region"
 export { redactUrl, scrubUrl } from "./platform/url-privacy"
