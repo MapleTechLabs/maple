@@ -401,7 +401,7 @@ export interface VcsProviderClient {
 	>
 
 	/**
-	 * Write the review's summary comment, found by `marker` and edited in place, from the body
+	 * Write a review's summary comment, found by `marker` and edited in place, from the body
 	 * already there. How a review says it has started before it has anything else to say.
 	 * The read and the write are two requests, so the body function should only replace what it
 	 * recognises (see `withReviewStatus`).

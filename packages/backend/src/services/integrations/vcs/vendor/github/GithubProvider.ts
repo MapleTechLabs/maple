@@ -1271,7 +1271,7 @@ export class GithubProvider extends Context.Service<GithubProvider, VcsProviderC
 					)
 
 			// The check run first: it is what the PR's checks tab shows and it never fails on a bad
-			// line. Then the summary comment, always, edited in place on later pushes. Then the
+			// line. Then the summary comment, always, replacing the review's "reviewing" notice. Then the
 			// inline notes, which are dropped if GitHub refuses them: the comment already carries
 			// every finding.
 			const publishPullRequestReview: VcsProviderClient["publishPullRequestReview"] = (

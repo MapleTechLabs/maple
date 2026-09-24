@@ -206,6 +206,8 @@ export const prReviews = pgTable(
 		skipReason: text("skip_reason").$type<PrReviewSkipReason>(),
 		/** The `maple-chat` session (`<orgId>:pr-<id>`), written at insert; read to abort a superseded turn. */
 		sessionId: text("session_id"),
+		/** Bumped when a finished review is asked for again, so the repeat posts a comment of its own. */
+		commentAttempt: integer("comment_attempt").notNull().default(0),
 		/** Structured review; null until `submit_review` lands. */
 		reportJson: jsonb("report_json").$type<PrReviewReport>(),
 		score: integer("score"),

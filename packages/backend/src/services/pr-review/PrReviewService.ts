@@ -55,7 +55,7 @@ import {
 	type PrReviewRow,
 } from "@maple/db"
 import { WorkerEnvironment } from "@maple/infra/worker-runtime"
-import { and, count, desc, eq, gt, gte, inArray, ne, or } from "drizzle-orm"
+import { and, count, desc, eq, gt, gte, inArray, ne, or, sql } from "drizzle-orm"
 import { Cause, Clock, Context, Effect, Exit, Layer, Option, Result, Schema } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
@@ -308,7 +308,9 @@ const renderRepositoryRules = (
 		budget -= kept.length
 		lines.push(`<rules path="${rule.path}">`, kept)
 		if (kept.length < content.length) {
-			lines.push(`[cut at ${kept.length} of ${content.length} characters; read the rest only if a decision needs it]`)
+			lines.push(
+				`[cut at ${kept.length} of ${content.length} characters; read the rest only if a decision needs it]`,
+			)
 		}
 		lines.push("</rules>", "")
 	}
@@ -378,74 +380,61 @@ const verdictTitle = (report: PrReviewReport, carried: CarriedFindings): string 
 	}
 }
 
-/** The hidden line the summary comment is found by, so a later review edits it in place. */
-export const PR_REVIEW_COMMENT_MARKER = "<!-- maple-pr-review -->"
-
-/** Closes the scorecard; a status notice goes right under it, so the scores never move. */
-const SCORECARD_END = "<!-- /maple-pr-review:scorecard -->"
+/**
+ * The hidden line one review's comment is found by. Keyed on the review, so its "reviewing" notice
+ * is replaced by its own result, and the next review of the pull request starts a comment of its own.
+ * `attempt` counts repeats of a finished review of the same head, which reuse its row.
+ */
+export const prReviewCommentMarker = (reviewId: PrReviewId, attempt = 0): string =>
+	`<!-- maple-pr-review ${reviewId} ${attempt} -->`
 
 /** Opens a notice and names the head it is about: `<!-- maple-pr-review:status reviewing <sha> -->`. */
 const STATUS_OPEN = "<!-- maple-pr-review:status"
 const STATUS_CLOSE = "<!-- /maple-pr-review:status -->"
-// With the blank lines around it, so swapping a notice out never leaves a gap behind.
-const STATUS_BLOCK = new RegExp(`\\n*${STATUS_OPEN}[^>]*-->[\\s\\S]*?${STATUS_CLOSE}\\n*`)
 
-/** What the summary comment says while no finished review has replaced it. */
+/** What a review's comment says before its result replaces it. */
 export type PrReviewStatusNotice =
 	| { readonly kind: "reviewing"; readonly headSha: string }
 	| { readonly kind: "failed"; readonly headSha: string }
+	| { readonly kind: "superseded"; readonly headSha: string }
 
 /**
- * The summary comment with a status notice on top, the way a review announces itself before it
- * has findings. An earlier review's summary stays underneath until the new one replaces the whole
- * comment; only the previous notice is swapped out.
+ * A review's comment while it has no result: the notice alone, under the review's marker.
  *
- * `undefined` leaves the comment alone: a failure only replaces its own head's "reviewing"
- * notice, so a late one cannot overwrite a finished summary or a newer head's notice.
+ * `undefined` leaves the comment alone: a failure or a supersede only replaces its own
+ * "reviewing" notice, so a late one cannot overwrite a summary that was already published.
  */
 export const withReviewStatus = (
 	existing: string | undefined,
+	marker: string,
 	notice: PrReviewStatusNotice,
 ): string | undefined => {
 	if (
-		notice.kind === "failed" &&
+		notice.kind !== "reviewing" &&
 		!(existing ?? "").includes(`${STATUS_OPEN} reviewing ${notice.headSha} -->`)
 	) {
 		return undefined
 	}
-	const previous = (existing ?? "").replace(PR_REVIEW_COMMENT_MARKER, "").replace(STATUS_BLOCK, "\n\n").trim()
 	const sha = `\`${notice.headSha.slice(0, 7)}\``
-	const lines =
-		notice.kind === "reviewing"
-			? [
-					"> [!NOTE]",
-					previous === ""
-						? `> **Maple is reviewing this pull request** at ${sha}. This comment updates with the review when it finishes.`
-						: `> **Maple is reviewing the new changes** at ${sha}. The summary below is from the previous review and updates when this one finishes.`,
-				]
-			: [
-					"> [!WARNING]",
-					`> The review of ${sha} could not finish. Comment \`@maple review\` to try again.`,
-				]
-	const block = [`${STATUS_OPEN} ${notice.kind} ${notice.headSha} -->`, ...lines, STATUS_CLOSE].join("\n")
-	const cut = previous.indexOf(SCORECARD_END)
-	// Under the previous review's scorecard when it has one, so the scores stay where a reader looks.
-	const body =
-		cut === -1
-			? [block, ...(previous === "" ? [] : ["", previous])].join("\n")
-			: [
-					previous.slice(0, cut + SCORECARD_END.length),
-					"",
-					block,
-					previous.slice(cut + SCORECARD_END.length),
-				].join("\n")
-	return clampSummary(`${PR_REVIEW_COMMENT_MARKER}\n${body}`)
+	const lines = {
+		reviewing: [
+			"> [!NOTE]",
+			`> **Maple is reviewing this pull request** at ${sha}. This comment updates with the review when it finishes.`,
+		],
+		failed: [
+			"> [!WARNING]",
+			`> The review of ${sha} could not finish. Comment \`@maple review\` to try again.`,
+		],
+		superseded: [
+			"> [!NOTE]",
+			`> A newer push replaced ${sha} before its review finished. The latest commit is reviewed in a new comment.`,
+		],
+	}[notice.kind]
+	return [marker, `${STATUS_OPEN} ${notice.kind} ${notice.headSha} -->`, ...lines, STATUS_CLOSE].join("\n")
 }
 
-/** What the review's check run says before a result replaces it; `superseded` is check-only. */
-export const reviewCheckFor = (
-	notice: PrReviewStatusNotice | { readonly kind: "superseded"; readonly headSha: string },
-) => {
+/** What the review's check run says before a result replaces it. */
+export const reviewCheckFor = (notice: PrReviewStatusNotice) => {
 	const sha = `\`${notice.headSha.slice(0, 7)}\``
 	const run = { name: PR_REVIEW_CHECK_NAME, headSha: notice.headSha }
 	switch (notice.kind) {
@@ -560,11 +549,10 @@ export const renderReviewMarkdown = (input: ReviewMarkdownInput & { readonly hea
 				: `**${confidence.confidence}/5** · ${PR_REVIEW_CONFIDENCE_LABEL[confidence.confidence]}`
 		} | **${score}/100** · ${gradeLabel(grade).toLowerCase()} | ${tally.length > 0 ? tally.join(", ") : "none"} | \`${input.headSha.slice(0, 7)}\` |`,
 		"",
-		SCORECARD_END,
-		"",
 	)
 	// An early end is already the warning below; the reason would only say it again.
-	if (confidence?.reason !== undefined && confidence.cappedBy !== "partial") lines.push(`**Why ${confidence.confidence}/5:** ${confidence.reason}`, "")
+	if (confidence?.reason !== undefined && confidence.cappedBy !== "partial")
+		lines.push(`**Why ${confidence.confidence}/5:** ${confidence.reason}`, "")
 	if (input.partial) {
 		lines.push("> [!WARNING]", "> This review ended early; what follows is what it established.", "")
 	}
@@ -645,9 +633,9 @@ export const renderReviewMarkdown = (input: ReviewMarkdownInput & { readonly hea
 export const renderCheckSummary = (input: ReviewMarkdownInput): string =>
 	clampSummary(renderReviewMarkdown({ ...input, heading: false }))
 
-/** The pull request comment: the marker line, then the review with its heading. */
-export const renderSummaryComment = (input: ReviewMarkdownInput): string =>
-	clampSummary(`${PR_REVIEW_COMMENT_MARKER}\n${renderReviewMarkdown({ ...input, heading: true })}`)
+/** The pull request comment: the review's marker line, then the review with its heading. */
+export const renderSummaryComment = (marker: string, input: ReviewMarkdownInput): string =>
+	clampSummary(`${marker}\n${renderReviewMarkdown({ ...input, heading: true })}`)
 
 const SUMMARY_CUT_NOTICE = "\n\n_Summary cut at GitHub's limit; the full review is stored in Maple._"
 
@@ -726,12 +714,13 @@ const inlineComment = (finding: PrReviewFinding, key: string | undefined): PullR
 })
 
 /**
- * What the review posts: a check run with every finding as an annotation, one summary comment
- * that is always written (and edited in place on later pushes), and inline comments for new
+ * What the review posts: a check run with every finding as an annotation, a summary comment of
+ * its own that replaces its "reviewing" notice, and inline comments for new
  * findings at or above the repository's inline threshold (`warn` by default). `keys` maps a
  * finding's handle to the id the posted comment is recorded under.
  */
 export const buildPublication = (input: {
+	readonly reviewId: PrReviewId
 	readonly number: number
 	readonly headSha: GitCommitSha
 	readonly report: PrReviewReport
@@ -740,8 +729,10 @@ export const buildPublication = (input: {
 	readonly carried?: CarriedFindings
 	readonly minInlineSeverity?: PrReviewSeverity
 	readonly keys?: ReadonlyMap<string, string>
+	readonly commentAttempt?: number
 }): PullRequestReviewPublication => {
 	const { report } = input
+	const marker = prReviewCommentMarker(input.reviewId, input.commentAttempt)
 	const carried = input.carried ?? NO_CARRIED
 	const { score } = scorePrReview(report, carried.open)
 	const confidence = confidencePrReview(report, carried.open, input.partial)
@@ -788,7 +779,7 @@ export const buildPublication = (input: {
 				? "neutral"
 				: "success",
 		annotations,
-		summaryComment: { marker: PR_REVIEW_COMMENT_MARKER, body: renderSummaryComment(markdown) },
+		summaryComment: { marker, body: renderSummaryComment(marker, markdown) },
 		// The summary lives in the comment; the review only carries the inline notes.
 		reviewBody:
 			comments.length === 0
@@ -1060,20 +1051,38 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 					Effect.timeout("5 seconds"),
 					Effect.withSpan("PrReviewService.repositoryRules"),
 					Effect.catchCause((cause) =>
-						Effect.logWarning("[PrReview] could not read the repository rules; the agent reads them").pipe(
+						Effect.logWarning(
+							"[PrReview] could not read the repository rules; the agent reads them",
+						).pipe(
 							Effect.annotateLogs({ orgId, cause: summarizeCause(cause) }),
 							Effect.as(undefined),
 						),
 					),
 				)
 
+			/** The marker of the review's current comment; 0 for a row that is gone. */
+			const commentAttemptOf = (orgId: OrgId, reviewId: PrReviewId) =>
+				database
+					.execute((db) =>
+						db
+							.select({ commentAttempt: prReviews.commentAttempt })
+							.from(prReviews)
+							.where(and(eq(prReviews.orgId, orgId), eq(prReviews.id, reviewId)))
+							.limit(1),
+					)
+					.pipe(
+						Effect.map((rows) => rows[0]?.commentAttempt ?? 0),
+						Effect.mapError(toPersistence),
+					)
+
 			/**
-			 * Put a status notice on the pull request's summary comment and its check run, so the
+			 * Put a status notice on the review's own comment and its check run, so the
 			 * review shows as running in CI. Best effort, each on its own: a review that cannot say
 			 * it started still runs, and its finished result replaces both anyway.
 			 */
 			const postReviewStatus = (
 				orgId: OrgId,
+				reviewId: PrReviewId,
 				repo: VcsRepo,
 				number: number,
 				notice: PrReviewStatusNotice,
@@ -1082,6 +1091,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 					const target = yield* providerFor(orgId, repo)
 					if (Option.isNone(target)) return
 					const { provider, installation, ref } = target.value
+					const marker = prReviewCommentMarker(reviewId, yield* commentAttemptOf(orgId, reviewId))
 					const warn = (what: string) =>
 						Effect.catchCause((cause: Cause.Cause<unknown>) =>
 							Effect.logWarning(`[PrReview] could not post the review status ${what}`).pipe(
@@ -1098,8 +1108,8 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 							provider
 								.writePullRequestSummaryComment(installation, ref, {
 									number,
-									marker: PR_REVIEW_COMMENT_MARKER,
-									body: (existing) => withReviewStatus(existing, notice),
+									marker,
+									body: (existing) => withReviewStatus(existing, marker, notice),
 								})
 								.pipe(warn("comment")),
 							provider
@@ -1122,25 +1132,6 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 					Effect.withSpan("PrReviewService.postReviewStatus", {
 						attributes: { orgId, "maple.pr_review.status_notice": notice.kind },
 					}),
-				)
-
-			/** A replaced head's check run would otherwise show as running forever. Best effort. */
-			const closeSupersededCheck = (orgId: OrgId, repo: VcsRepo, headSha: string) =>
-				Effect.gen(function* () {
-					const target = yield* providerFor(orgId, repo)
-					if (Option.isNone(target)) return
-					const { provider, installation, ref } = target.value
-					yield* provider.writePullRequestCheck(
-						installation,
-						ref,
-						reviewCheckFor({ kind: "superseded", headSha }),
-					)
-				}).pipe(
-					Effect.catchCause((cause) =>
-						Effect.logWarning("[PrReview] could not close a superseded review's check run").pipe(
-							Effect.annotateLogs({ orgId, headSha, cause: summarizeCause(cause) }),
-						),
-					),
 				)
 
 			/**
@@ -1303,7 +1294,11 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 						finishedAt: msToDate(nowMs),
 						updatedAt: msToDate(nowMs),
 					})
-					yield* closeSupersededCheck(orgId, repo, row.headSha)
+					// Its comment and check run would otherwise say it is reviewing forever.
+					yield* postReviewStatus(orgId, row.id, repo, number, {
+						kind: "superseded",
+						headSha: row.headSha,
+					})
 				}
 				return rows.length
 			})
@@ -1339,6 +1334,9 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 								// A reclaimed skipped or completed row must not carry its old outcome forward.
 								skipReason: null,
 								publishError: null,
+								// A finished review asked for again is a new review, so it gets a new comment;
+								// a failed one retries in place and replaces its own failure notice.
+								commentAttempt: sql`case when ${prReviews.status} in ('completed', 'skipped') then ${prReviews.commentAttempt} + 1 else ${prReviews.commentAttempt} end`,
 								reportJson: null,
 								score: null,
 								startedAt: null,
@@ -1413,7 +1411,11 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 						),
 					),
 				)
-				const rules = yield* repositoryRules(orgId, repo, job.baseSha ?? job.baseRef ?? repo.defaultBranch)
+				const rules = yield* repositoryRules(
+					orgId,
+					repo,
+					job.baseSha ?? job.baseRef ?? repo.defaultBranch,
+				)
 				const text = buildReviewKickoff({
 					repository: repo.fullName,
 					number: job.number,
@@ -1434,7 +1436,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 					...(rules === undefined ? undefined : { rules }),
 				})
 				// Before the turn, so a fast turn's finished summary is never overwritten by this notice.
-				yield* postReviewStatus(orgId, repo, job.number, { kind: "reviewing", headSha })
+				yield* postReviewStatus(orgId, reviewId, repo, job.number, { kind: "reviewing", headSha })
 				const claimed = yield* Effect.exit(
 					Effect.tryPromise(() =>
 						stub.beginTurn({
@@ -1464,7 +1466,11 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 						updatedAt: msToDate(nowMs),
 					})
 					// Not ours to report when the turn already finished or a newer head took over.
-					if (failed) yield* postReviewStatus(orgId, repo, job.number, { kind: "failed", headSha })
+					if (failed)
+						yield* postReviewStatus(orgId, reviewId, repo, job.number, {
+							kind: "failed",
+							headSha,
+						})
 					yield* annotate("failed")
 					return { reviewId, outcome: "failed" as const }
 				}
@@ -1924,6 +1930,8 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 				if (Option.isNone(repository) || Option.isNone(installation)) return
 				const repo = repository.value
 				const publication = buildPublication({
+					reviewId,
+					commentAttempt: yield* commentAttemptOf(orgId, reviewId),
 					repositoryUrl: repo.htmlUrl,
 					number: review.number,
 					headSha: review.headSha,
@@ -2039,7 +2047,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 						.getRepositoryById(orgId, review.value.repositoryId)
 						.pipe(Effect.mapError(toPersistence))
 					if (Option.isNone(repository)) return
-					yield* postReviewStatus(orgId, repository.value, review.value.number, {
+					yield* postReviewStatus(orgId, reviewId, repository.value, review.value.number, {
 						kind: "failed",
 						headSha: review.value.headSha,
 					})
