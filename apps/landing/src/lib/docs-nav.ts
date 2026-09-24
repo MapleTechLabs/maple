@@ -43,7 +43,7 @@ export const SECTIONS = [
 		id: "reference",
 		icon: "Reference",
 		label: "Reference",
-		blurb: "REST API and the MCP server.",
+		blurb: "APIs, ingest, SQL, webhooks and limits.",
 		groups: ["Reference"],
 	},
 ] as const
@@ -81,7 +81,7 @@ export const GROUP_BLURBS = {
 	Integrations: "Pull metrics and context from the services around your app.",
 	Alerting: "Route alerts to Slack, PagerDuty, Discord, Telegram or a webhook.",
 	"Local Mode": "The whole product as one binary on your machine.",
-	Reference: "The REST API and the MCP server for AI agents.",
+	Reference: "The REST API, MCP server, ingest endpoint, SQL tables, alert webhooks and limits.",
 } satisfies Record<DocGroup, string>
 
 export const groupBlurb = (group: string): string => (isDocGroup(group) ? GROUP_BLURBS[group] : "")

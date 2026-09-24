@@ -4,7 +4,7 @@ import { type SessionLifecycleHandle, type SessionLifecycleOptions, startSession
 
 export interface MetadataSessionOptions extends SessionLifecycleOptions {
 	readonly endpoint: string
-	readonly ingestKey: string
+	readonly ingestKey?: string | undefined
 	/** `x-maple-sdk` value — `sdkHint(name, version)`. */
 	readonly sdk: string
 	/** Called after idle rotation installs the next session. */

@@ -1,6 +1,6 @@
 ---
 /**
- * LocalPromises — the standalone guarantees, stated as facts a reader can check.
+ * LocalPromises: the standalone guarantees, stated as facts a reader can check.
  *
  * Each item is a promise plus the mechanism that makes it true, including the
  * two places where "standalone" needs a qualifier: the dashboard page loads
@@ -16,18 +16,18 @@ const promises: Array<{ title: string; body: string }> = [
 	},
 	{
 		title: "Your telemetry stays on loopback",
-		body: "Ingest, storage, and every query run on 127.0.0.1. The dashboard page loads from local.maple.dev by default so UI fixes ship without a new binary — your data never goes there. Pass `--offline` and the UI is served from the binary too.",
+		body: "Ingest, storage, and every query run on 127.0.0.1. The dashboard page loads from local.maple.dev by default so UI fixes ship without a new binary; your data never goes there. Pass `--offline` and the UI is served from the binary too.",
 	},
 	{
 		title: "Works with no internet",
-		body: "With `--offline` everything, including the UI, comes out of the binary. The only other network call is a once-a-day check for a newer release — skipped for Homebrew installs, off with `MAPLE_NO_UPDATE_CHECK=1`.",
+		body: "With `--offline` everything, including the UI, comes out of the binary. The only other network call is a once-a-day check for a newer release. Homebrew installs skip it, and `MAPLE_NO_UPDATE_CHECK=1` turns it off.",
 	},
 	{
 		title: "You own the files",
 		body: "Everything lives under ~/.maple. Seal a day into Parquet with `maple archive` and query it with DuckDB; uninstalling removes the binary and leaves your data directory alone.",
 	},
 	{
-		title: "The full product, not a viewer",
+		title: "The full product",
 		body: "The same engine and views that run the hosted service: traces with correlated logs, log patterns, metrics, errors grouped by fingerprint, browser sessions, and a service map.",
 	},
 	{

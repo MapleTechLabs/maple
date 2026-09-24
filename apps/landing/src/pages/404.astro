@@ -8,7 +8,7 @@ const locale = Astro.currentLocale ?? "en";
 const l = (path: string) => getRelativeLocaleUrl(locale, path);
 ---
 
-<Layout title="Page Not Found — Maple" description="The page you're looking for doesn't exist or has been moved.">
+<Layout title="Page not found | Maple" description="The page you're looking for doesn't exist or has been moved.">
     <Nav />
     <section class="relative pt-[19px] min-h-[70vh] flex items-center justify-center">
         <div class="mx-auto max-w-6xl px-6 text-center">
@@ -21,7 +21,7 @@ const l = (path: string) => getRelativeLocaleUrl(locale, path);
                 <a href={l("/")} class="bg-primary text-primary-foreground px-6 py-2.5 text-sm font-medium hover:opacity-90 transition-opacity">
                     Back to home
                 </a>
-                <a href={l("/features/distributed-tracing")} class="border border-border px-6 py-2.5 text-sm font-medium text-fg hover:opacity-90 transition-opacity">
+                <a href={`${l("/")}#features`} class="border border-border px-6 py-2.5 text-sm font-medium text-fg hover:opacity-90 transition-opacity">
                     View features
                 </a>
             </div>

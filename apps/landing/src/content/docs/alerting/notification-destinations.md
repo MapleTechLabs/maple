@@ -106,6 +106,8 @@ POST a signed JSON payload to any HTTP endpoint you control — useful for custo
 - Set an optional **signing secret** to receive an `x-maple-signature` HMAC-SHA256 header so your endpoint can verify the payload came from Maple.
 - Your endpoint should respond with a `2xx` status; any other status is treated as a delivery failure and surfaced on the destination.
 
+The full payload, headers, signature verification and retry behaviour are in the [alert webhooks reference](/docs/reference/webhooks).
+
 ## Hazel
 
 Connect [Hazel](https://hazel.sh/docs/integrations/maple) through OAuth and pick a workspace channel

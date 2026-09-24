@@ -43,6 +43,7 @@ export const HttpSessionReplaysInternalLive = HttpApiBuilder.group(
 								visitorId: payload.visitorId,
 								hasErrors: payload.hasErrors,
 								search: payload.search,
+								pagePath: payload.pagePath,
 							}),
 							{
 								orgId: tenant.orgId,
@@ -74,6 +75,7 @@ export const HttpSessionReplaysInternalLive = HttpApiBuilder.group(
 							countries: pick("country"),
 							devices: pick("device"),
 							groups: pick("group"),
+							pages: pick("page"),
 							errorCount: Number(rows.find((row) => row.facetType === "error")?.count ?? 0),
 							totalSessions: Number(rows.find((row) => row.facetType === "total")?.count ?? 0),
 							liveSessions: Number(rows.find((row) => row.facetType === "live")?.count ?? 0),
