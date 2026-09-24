@@ -21,7 +21,6 @@ import {
 	type OrgId,
 	PrReview,
 	PrReviewFinding,
-	type PrReviewGrade,
 	PrReviewId,
 	PrReviewNotFoundError,
 	PrReviewPersistenceError,
@@ -32,7 +31,6 @@ import {
 	type PrReviewSkipReason,
 	type PrReviewStatus,
 	PR_REVIEW_CONFIDENCE_LABEL,
-	PR_REVIEW_SCORE_PENALTY,
 	confidencePrReview,
 	scorePrReview,
 	type PullRequestCheckAnnotation,
@@ -473,8 +471,6 @@ const SEVERITY_LABEL = {
 const categoryLabel = (finding: { readonly category: string; readonly checkId?: string }): string =>
 	finding.checkId === undefined ? finding.category : `${finding.category} · ${finding.checkId}`
 
-const gradeLabel = (grade: PrReviewGrade): string => grade.charAt(0).toUpperCase() + grade.slice(1)
-
 const escapeCell = (value: string) => value.replace(/\\/g, "\\\\").replace(/\|/g, "\\|").replace(/\n/g, " ")
 
 export interface ReviewMarkdownInput {
@@ -509,53 +505,40 @@ const whereLabel = (finding: { readonly path: string; readonly line: number; rea
 	`${finding.path}:${finding.line}${finding.endLine === undefined ? "" : `-${finding.endLine}`}`
 
 /**
- * The review as markdown, most important first: the verdict line, the summary and what the change
- * does, then each finding by severity as a collapsed entry whose title reads as the defect, what
- * earlier reviews raised, and what the reviewer checked. One renderer for the check run and the
+ * The review as markdown, most important first: the confidence and what decides it, a short summary
+ * and what the change does, then each finding by severity as a collapsed entry whose title reads as
+ * the defect, what earlier reviews raised, and (collapsed) what was checked. One renderer for the check run and the
  * pull request comment, so the two never disagree; the comment adds a heading.
  */
 export const renderReviewMarkdown = (input: ReviewMarkdownInput & { readonly heading: boolean }): string => {
 	const { report } = input
 	const carried = input.carried ?? NO_CARRIED
-	const { score, grade } = scorePrReview(report, carried.open)
+	const { score } = scorePrReview(report, carried.open)
 	const lineUrl = (finding: { readonly path: string; readonly line: number; readonly endLine?: number }) =>
 		`${input.repositoryUrl.replace(/\/+$/, "")}/blob/${input.headSha}/${finding.path
 			.split("/")
 			.map(encodeURIComponent)
 			.join("/")}#L${finding.line}${finding.endLine === undefined ? "" : `-L${finding.endLine}`}`
 	const observable = report.coverage.filter((unit) => unit.instrumented).length
-	const counted = [...report.findings, ...carried.open]
-	const tally = (["critical", "warn", "info"] as const)
-		.map((severity) => {
-			const n = counted.filter((finding) => finding.severity === severity).length
-			if (n === 0) return undefined
-			const label = SEVERITY_LABEL[severity].toLowerCase()
-			return `${n} ${label}${n === 1 ? "" : "s"}`
-		})
-		.filter((part) => part !== undefined)
 
 	const confidence = confidencePrReview(report, carried.open, input.partial)
 
-	// The scorecard: the same four columns in the same order on every review, so a reader's eye
-	// lands on each score without reading. A value that does not apply is a dash, never a gap.
+	// Confidence leads, like the check title: one number, then what decides it and what went in.
 	const lines: Array<string> = []
 	if (input.heading) lines.push("## Maple review", "")
-	lines.push(
-		"| Confidence | Quality | Open findings | Commit |",
-		"| --- | --- | --- | --- |",
-		`| ${
-			confidence === undefined
-				? "–"
-				: `**${confidence.confidence}/5** · ${PR_REVIEW_CONFIDENCE_LABEL[confidence.confidence]}`
-		} | **${score}/100** · ${gradeLabel(grade).toLowerCase()} | ${tally.length > 0 ? tally.join(", ") : "none"} | \`${input.headSha.slice(0, 7)}\` |`,
-		"",
-	)
-	// An early end is already the warning below; the reason would only say it again.
-	if (confidence?.reason !== undefined && confidence.cappedBy !== "partial")
-		lines.push(`**Why ${confidence.confidence}/5:** ${confidence.reason}`, "")
-	if (input.partial) {
-		lines.push("> [!WARNING]", "> This review ended early; what follows is what it established.", "")
+	if (confidence === undefined) {
+		lines.push("**Nothing to review**", "")
+	} else {
+		lines.push(
+			`**Confidence ${confidence.confidence}/5** · ${PR_REVIEW_CONFIDENCE_LABEL[confidence.confidence]}`,
+		)
+		// An early end is already the warning below; the reason would only say it again.
+		if (confidence.reason !== undefined && confidence.cappedBy !== "partial")
+			lines.push(confidence.reason)
+		lines.push(`<sub>${[`quality ${score}/100`, ...confidence.factors].join(" · ")}</sub>`, "")
 	}
+	if (input.partial)
+		lines.push("> [!WARNING]", "> This review ended early; what follows is what it established.", "")
 	if (report.summary) lines.push(report.summary, "")
 	if (report.keyChanges !== undefined && report.keyChanges.length > 0) {
 		lines.push(...report.keyChanges.map((change) => `- ${change}`), "")
@@ -598,13 +581,14 @@ export const renderReviewMarkdown = (input: ReviewMarkdownInput & { readonly hea
 	}
 	const checked = report.checked ?? []
 	if (checked.length > 0) {
-		// A clean review stands on what was ruled out, so it is shown; beside findings it is backup.
-		const list = checked.map((item) => `- ${item}`)
-		if (report.findings.length === 0 && carried.open.length === 0) {
-			lines.push("### What was checked", "", ...list, "")
-		} else {
-			lines.push("<details><summary>What was checked</summary>", "", ...list, "", "</details>", "")
-		}
+		lines.push(
+			"<details><summary>What was checked</summary>",
+			"",
+			...checked.map((item) => `- ${item}`),
+			"",
+			"</details>",
+			"",
+		)
 	}
 	if (report.coverage.length > 0) {
 		lines.push(
@@ -624,7 +608,7 @@ export const renderReviewMarkdown = (input: ReviewMarkdownInput & { readonly hea
 		? " Check ids refer to Maple's instrumentation audit."
 		: ""
 	lines.push(
-		`<sub>Updated on every push. Resolve a thread or reply "won't fix" to dismiss a finding, or mention @maple to ask about one. Confidence is the reviewer's judgement of merge risk, capped at 2 by a critical finding and 3 by a warning. Quality: 100, minus ${PR_REVIEW_SCORE_PENALTY.critical} per critical finding, ${PR_REVIEW_SCORE_PENALTY.warn} per warning and ${PR_REVIEW_SCORE_PENALTY.info} per note still open.${auditNote}</sub>`,
+		`<sub>\`${input.headSha.slice(0, 7)}\` · Updated on every push. Reply "won't fix" to dismiss a finding, or mention @maple to ask about one.${auditNote}</sub>`,
 	)
 	return lines.join("\n")
 }
@@ -734,7 +718,6 @@ export const buildPublication = (input: {
 	const { report } = input
 	const marker = prReviewCommentMarker(input.reviewId, input.commentAttempt)
 	const carried = input.carried ?? NO_CARRIED
-	const { score } = scorePrReview(report, carried.open)
 	const confidence = confidencePrReview(report, carried.open, input.partial)
 	const threshold = SEVERITY_RANK[input.minInlineSeverity ?? "warn"]
 	const annotations: Array<PullRequestCheckAnnotation> = report.findings.map((finding) => ({
@@ -768,7 +751,6 @@ export const buildPublication = (input: {
 		// Fixed order, like the scorecard: a check list scans down one column.
 		title: [
 			`Confidence ${confidence === undefined ? "–" : `${confidence.confidence}/5`}`,
-			`Quality ${score}/100`,
 			verdictTitle(report, carried),
 		].join(" · "),
 		summary: renderCheckSummary(markdown),

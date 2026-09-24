@@ -706,7 +706,8 @@ describe("PrReviewService.submitReview", () => {
 			)
 			assert.include(publication.summaryComment.body, "### Still open from earlier reviews")
 			assert.include(publication.summaryComment.body, "~~F1 · off by one~~")
-			assert.equal(publication.title, "Confidence 3/5 · Quality 80/100 · 2 issues to address")
+			// Two warnings (quality 80) and an unobservable route.
+			assert.equal(publication.title, "Confidence 2/5 · 2 issues to address")
 			assert.deepEqual(resolvedThreads, ["T1:Fixed in `2222222`."])
 			const stored = Option.getOrThrow(yield* reviews.getReview(orgId, second.reviewId!))
 			assert.deepEqual(
@@ -1140,8 +1141,8 @@ describe("buildPublication", () => {
 		assert.equal(publication.annotations[1]!.level, "notice")
 		assert.equal(publication.conclusion, "neutral")
 		assert.include(publication.reviewBody ?? "", "1 inline note")
-		// 100 - 10 (warn) - 2 (note)
-		assert.equal(publication.title, "Confidence 3/5 · Quality 88/100 · 1 issue to address")
+		// Quality 88 reads 4, less half a point for the unobservable route.
+		assert.equal(publication.title, "Confidence 3/5 · 1 issue to address")
 	})
 
 	it("always writes the summary comment, even with nothing to say inline", () => {
@@ -1159,7 +1160,7 @@ describe("buildPublication", () => {
 		assert.isTrue(publication.summaryComment.body.startsWith(prReviewCommentMarker(UNKNOWN_REVIEW)))
 		assert.include(
 			publication.summaryComment.body,
-			"## Maple review\n\n| Confidence | Quality | Open findings | Commit |\n| --- | --- | --- | --- |\n| **5/5** · safe to merge | **100/100** · excellent | none |",
+			"## Maple review\n\n**Confidence 4/5** · likely safe to merge\n<sub>quality 100/100 · no findings · 0/1 new units observable</sub>",
 		)
 	})
 
@@ -1182,10 +1183,10 @@ describe("buildPublication", () => {
 			repositoryUrl: `${REPO_URL}/`,
 		})
 		assert.include(comment, `(${REPO_URL}/blob/${HEAD}/src/a%20b.ts#L4-L6)`)
-		assert.include(comment, "| **2/5** · risky as written | **75/100** · good | 1 critical |")
+		assert.include(comment, "**Confidence 2/5** · risky as written")
+		assert.include(comment, "<sub>quality 75/100 · 1 critical · 0/1 new units observable</sub>")
 		assert.include(comment, "Observability coverage: 0 of 1 changes observable")
 		assert.include(comment, "<details><summary><b>Critical</b> · gap</summary>")
-		assert.include(comment, "minus 25 per critical finding")
 	})
 
 	it("renders the coverage table and the check ids into the summary", () => {
@@ -1233,10 +1234,10 @@ describe("buildPublication", () => {
 		assert.isBelow(comment.indexOf("<b>Critical</b>"), comment.indexOf("<b>Note</b>"))
 		assert.include(comment, "<code>listKeys</code> skips the &lt;tenant&gt; filter</summary>")
 		assert.include(comment, "Adds one route.\n\n- `listKeys` reads from the new table")
-		assert.include(comment, "1 critical, 1 note")
+		assert.include(comment, "1 critical · 1 note")
 	})
 
-	it("shows what was checked on a clean review, and folds it away beside findings", () => {
+	it("folds what was checked away, with findings or without", () => {
 		const render = (findings: PrReviewReport["findings"]) =>
 			renderSummaryComment(prReviewCommentMarker(UNKNOWN_REVIEW), {
 				report: new PrReviewReport({
@@ -1247,7 +1248,10 @@ describe("buildPublication", () => {
 				headSha: HEAD,
 				repositoryUrl: REPO_URL,
 			})
-		assert.include(render([]), "### What was checked\n\n- OrgId is filtered (`q.ts:4`)")
+		assert.include(
+			render([]),
+			"<details><summary>What was checked</summary>\n\n- OrgId is filtered (`q.ts:4`)",
+		)
 		assert.include(
 			render([
 				{ path: "a.ts", line: 1, category: "correctness", severity: "warn", title: "t", body: "b" },
@@ -1256,11 +1260,14 @@ describe("buildPublication", () => {
 		)
 	})
 
-	it("shows the reviewer's confidence and reason, held down by what the findings allow", () => {
+	it("shows the confidence and reason, held down by what the findings allow", () => {
 		const render = (findings: PrReviewReport["findings"], partial = false) =>
 			renderSummaryComment(prReviewCommentMarker(UNKNOWN_REVIEW), {
 				report: new PrReviewReport({
 					...report(findings),
+					coverage: [],
+					tests: "covered",
+					risk: "low",
 					confidence: 5,
 					confidenceReason: "Small change, verified end to end.",
 				}),
@@ -1268,17 +1275,22 @@ describe("buildPublication", () => {
 				headSha: HEAD,
 				repositoryUrl: REPO_URL,
 			})
-		assert.include(render([]), "**Why 5/5:** Small change, verified end to end.")
-		const warned = render([
-			{ path: "a.ts", line: 1, category: "correctness", severity: "warn", title: "t", body: "b" },
+		assert.include(
+			render([]),
+			"**Confidence 5/5** · safe to merge\nSmall change, verified end to end.\n<sub>quality 100/100 · no findings · tests covered · risk low</sub>",
+		)
+		const critical = render([
+			{ path: "a.ts", line: 1, category: "correctness", severity: "critical", title: "t", body: "b" },
 		])
-		assert.include(warned, "| **3/5** · needs attention |")
-		assert.include(warned, "**Why 3/5:** Held at 3 because a warning is open.")
-		assert.notInclude(warned, "verified end to end")
+		assert.include(
+			critical,
+			"**Confidence 2/5** · risky as written\nHeld at 2 because a critical finding is open.",
+		)
+		assert.notInclude(critical, "verified end to end")
 		const partial = render([], true)
-		assert.include(partial, "| **3/5** · needs attention |")
+		assert.include(partial, "**Confidence 3/5** · needs attention\n<sub>")
 		// The early end is the warning; a reason saying so again is left out.
-		assert.notInclude(partial, "**Why")
+		assert.notInclude(partial, "Held at")
 		assert.include(partial, "ended early")
 	})
 
