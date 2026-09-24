@@ -215,8 +215,7 @@ describe("aiSessionPageQuery", () => {
 		// maple-slack-agent spans are different spans — the ordinary case, since a
 		// trace's spans come from several services. Neither name may appear in the
 		// index read's WHERE at all.
-		// (A third `countIf` is the span count, which filters nothing.)
-		expect(sql.split("countIf(").length - 1).toBe(3)
+		expect(sql.slice(sql.indexOf("HAVING")).split("countIf(").length - 1).toBe(2)
 		expect(where).not.toContain("VendorId")
 		expect(where).not.toContain("ServiceName")
 		expect(sql).not.toContain("VendorId IN ('eve') AND ServiceName")

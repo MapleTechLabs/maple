@@ -420,10 +420,13 @@ const CLAUDE_CODE_TURN_SPAN: SeedSpan = {
 	attrs: {
 		[MAPLE_AI_VENDOR_ID_ATTR]: CLAUDE_CODE_VENDOR_ID,
 		[MAPLE_AI_SESSION_ID_ATTR]: CLAUDE_CODE_SESSION_ID,
+		"gen_ai.operation.name": "invoke_agent",
 	},
+	resource: PRODUCTION,
 }
 
-// The model call: tokens, no cost — Claude Code puts none on the span.
+// The model call as ingest restates it: tokens, no cost — Claude Code puts
+// none on the span.
 const CLAUDE_CODE_CALL_SPAN: SeedSpan = {
 	traceId: CLAUDE_CODE_TRACE,
 	spanId: "span-cc-call",
@@ -434,12 +437,13 @@ const CLAUDE_CODE_CALL_SPAN: SeedSpan = {
 	status: "Ok",
 	attrs: {
 		[MAPLE_AI_VENDOR_ID_ATTR]: CLAUDE_CODE_VENDOR_ID,
-		"gen_ai.system": "anthropic",
+		"gen_ai.operation.name": "chat",
 		"gen_ai.request.model": "claude-opus-5-5",
 		"gen_ai.response.id": "req_cc_1",
 		"gen_ai.usage.input_tokens": "100",
 		"gen_ai.usage.output_tokens": "20",
 	},
+	resource: PRODUCTION,
 }
 
 interface SeedEvent {
@@ -511,11 +515,11 @@ const seed = async (): Promise<void> => {
 
 	const events = CLAUDE_CODE_EVENTS.map(
 		(event) =>
-			`(${quote(CLAUDE_CODE_ORG_ID)}, ${quote(chDateTime(CLAUDE_CODE_EVENT_MS))}, ${quote(chDateTime(CLAUDE_CODE_EVENT_MS).slice(0, 19))}, ${quote(event.traceId)}, 'span-cc-turn', 'claude-code', 'claude_code.api_request', ${quote(event.scope)}, ${chMap(event.attrs)})`,
+			`(${quote(CLAUDE_CODE_ORG_ID)}, ${quote(chDateTime(CLAUDE_CODE_EVENT_MS))}, ${quote(chDateTime(CLAUDE_CODE_EVENT_MS).slice(0, 19))}, ${quote(event.traceId)}, 'span-cc-turn', 'claude-code', 'claude_code.api_request', ${chMap(PRODUCTION)}, ${quote(event.scope)}, ${chMap(event.attrs)})`,
 	).join("\n,")
 	await clickhouseExec(
 		`INSERT INTO logs
-		 (OrgId, Timestamp, TimestampTime, TraceId, SpanId, ServiceName, Body, ScopeName, LogAttributes)
+		 (OrgId, Timestamp, TimestampTime, TraceId, SpanId, ServiceName, Body, ResourceAttributes, ScopeName, LogAttributes)
 		 VALUES\n${events}`,
 		database,
 	)
@@ -1061,8 +1065,10 @@ describe.skipIf(!clickhouseE2eEnabled)("ai_trace_index materialization", () => {
 		// event twice, as delivered, and the spanless call's — and none for any
 		// event that misses a clause of it.
 		const records = await runJson(
-			`SELECT toString(Timestamp) AS Timestamp, TraceId, SessionId, VendorId, ServiceName, Model,
-			        SpanId, ParentSpanId, Duration, IsError, IsLlmCall, IsToolCall, Tokens, Cost, ResponseId
+			`SELECT toString(Timestamp) AS Timestamp, TraceId, SessionId, VendorId, ServiceName, DeploymentEnv,
+			        Model, SpanId, ParentSpanId, Duration, IsError, IsLlmCall, IsToolCall, Tokens,
+			        InputTokens + CacheReadTokens + CacheWriteTokens + OutputTokens + ReasoningTokens AS Buckets,
+			        Cost, ResponseId
 			 FROM ai_trace_index
 			 WHERE OrgId = ${quote(CLAUDE_CODE_ORG_ID)} AND startsWith(SpanId, 'usage:')
 			 ORDER BY Cost DESC`,
@@ -1073,6 +1079,7 @@ describe.skipIf(!clickhouseE2eEnabled)("ai_trace_index materialization", () => {
 			SessionId: CLAUDE_CODE_SESSION_ID,
 			VendorId: CLAUDE_CODE_VENDOR_ID,
 			ServiceName: "claude-code",
+			DeploymentEnv: "production",
 			Model: "",
 			SpanId: `usage:${requestId}`,
 			ParentSpanId: "",
@@ -1081,6 +1088,7 @@ describe.skipIf(!clickhouseE2eEnabled)("ai_trace_index materialization", () => {
 			IsLlmCall: 0,
 			IsToolCall: 0,
 			Tokens: 0,
+			Buckets: 0,
 			Cost: cost,
 			ResponseId: requestId,
 		})
@@ -1117,9 +1125,10 @@ describe.skipIf(!clickhouseE2eEnabled)("ai_trace_index materialization", () => {
 			]),
 			[[CLAUDE_CODE_SESSION_ID, 0.375, 1, 120, 2, 0, 0, ["claude-opus-5-5"], ["claude-code"]]],
 		)
-		// The cost sort and filter read the same sum.
+		// The cost filter reads the same deduped sum: 0.375 is in range, the 0.625
+		// a naive sum of the three records would read is not.
 		assert.deepStrictEqual(
-			(await rank({ sortBy: "cost", sortDir: "desc", costMin: 0.3 })).map((row) => row.sessionId),
+			(await rank({ costMin: 0.3, costMax: 0.4 })).map((row) => row.sessionId),
 			[CLAUDE_CODE_SESSION_ID],
 		)
 	})
