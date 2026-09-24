@@ -125,10 +125,12 @@ export OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
 export OTEL_EXPORTER_OTLP_ENDPOINT="https://ingest.maple.dev"   # https://ingest.eu.maple.dev for EU orgs
 export OTEL_EXPORTER_OTLP_HEADERS="Authorization=Bearer YOUR_INGEST_KEY"
 
-# Content. Each is off by default; turn on what you are allowed to store.
+# Content. Each is off by default; turn on what you are allowed to store. From Claude Code
+# v2.1.193 an unset OTEL_LOG_ASSISTANT_RESPONSES follows OTEL_LOG_USER_PROMPTS: set it to 0
+# explicitly if prompts are approved and replies are not.
 export OTEL_LOG_USER_PROMPTS=1         # the prompt that opens each turn
 export OTEL_LOG_TOOL_DETAILS=1         # tool arguments: Bash commands, file paths, MCP tool names
-export OTEL_LOG_TOOL_CONTENT=1         # tool results, in the transcript and on the tool pages
+export OTEL_LOG_TOOL_CONTENT=1         # tool results for Read, Bash, Edit and Write (not MCP tools)
 export OTEL_LOG_ASSISTANT_RESPONSES=1  # the assistant's replies, on the assistant_response event
 ```
 
@@ -138,7 +140,7 @@ What each span becomes:
 | ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
 | `claude_code.interaction`                                        | A turn, titled with the prompt when `OTEL_LOG_USER_PROMPTS=1`.                                                                              |
 | `claude_code.llm_request`                                        | A model call: model, the four token buckets (Anthropic's input count excludes the cache buckets, and Maple counts it that way), TTFT, finish reason and failures. |
-| `claude_code.tool`                                               | A tool call, with the command or file path as its arguments and the `tool.output` content as its result.                                   |
+| `claude_code.tool`                                               | A tool call, with the command or file path as its arguments and, for Read, Bash, Edit and Write, the `tool.output` content as its result.                                   |
 | `claude_code.tool.execution`, `claude_code.tool.blocked_on_user` | Shown in the trace as part of their tool call rather than as calls of their own. A failed run marks the tool call failed, with its error.   |
 
 Cost and the assistant's reply text are only on Claude Code's log events (`api_request`, `assistant_response`), not on its spans. They are stored and searchable under Logs; the session views read spans, so cost reads as unpriced there for now.

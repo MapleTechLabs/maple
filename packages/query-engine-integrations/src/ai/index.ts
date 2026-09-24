@@ -92,6 +92,7 @@ export {
 } from "./ai-tools"
 
 export {
+	AI_NON_SIGNAL_FIELDS,
 	aiFieldSourceKeys,
 	aiSpanAttributeKeys,
 	genAiIntegration,
