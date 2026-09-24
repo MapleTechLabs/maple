@@ -1,6 +1,6 @@
 ---
 /**
- * LocalLoopback — the /local page's data-flow figure.
+ * LocalLoopback: the /local page's data-flow figure.
  *
  * Five stages joined by hairlines, and one line underneath saying where all of
  * it lives. Static on purpose: the docs-tuned `LocalFlow.astro` keeps its
@@ -16,7 +16,7 @@ const nodes = [
 ];
 ---
 
-<figure class="llb" aria-label="Local mode data flow — a closed loop on localhost">
+<figure class="llb" aria-label="Local mode data flow: a closed loop on localhost">
 	<ol class="llb__track" role="list">
 		{
 			nodes.map((n, i) => (
