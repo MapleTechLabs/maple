@@ -45,6 +45,11 @@ interface FetchOptions {
 	readonly timeZone?: string
 	/** Force every Data API call to fail with this HTTP status. */
 	readonly dataApiStatus?: number
+	/**
+	 * Claim this `rowCount` and hand back nothing past the first page: a report the collector
+	 * cannot finish, however many times it asks.
+	 */
+	readonly reportedRowCount?: number
 	readonly dataApiBody?: string
 	otlpCalls: Array<OtlpMetricsPayload>
 	reportCalls: Array<{ propertyId: string; body: unknown }>
@@ -103,6 +108,7 @@ const mockGoogleFetch = (options: FetchOptions): typeof globalThis.fetch => {
 				dimensions: Array<{ name: string }>
 				metrics: Array<{ name: string }>
 				dateRanges: Array<{ startDate: string; endDate: string }>
+				offset?: string
 			}
 			const propertyId = url.split("/properties/")[1]?.split(":")[0] ?? ""
 			options.reportCalls.push({ propertyId, body })
@@ -115,12 +121,18 @@ const mockGoogleFetch = (options: FetchOptions): typeof globalThis.fetch => {
 			// would silently become "one per call" and the revision assertions would drift.
 			if (body.dateRanges[0]?.endDate !== T0_DATE) return json({ rows: [] })
 
+			// Every page after the first is empty, so a report claiming more rows than it ever
+			// hands over stays short no matter how far the collector pages.
+			if (options.reportedRowCount !== undefined && body.offset !== undefined) {
+				return json({ rowCount: options.reportedRowCount, rows: [] })
+			}
 			const report = options.reports[Math.min(reportIndex, options.reports.length - 1)]
 			reportIndex += 1
 			const metricNames = body.metrics.map((metric) => metric.name)
 			return json({
 				dimensionHeaders: [{ name: "dateHour" }],
 				metricHeaders: metricNames.map((name) => ({ name })),
+				...(options.reportedRowCount === undefined ? {} : { rowCount: options.reportedRowCount }),
 				rows: [...(report ?? new Map())].map(([dateHour, sessions]) => ({
 					dimensionValues: [{ value: dateHour }],
 					// Only `sessions` carries a value; the rest report zero.
@@ -341,6 +353,33 @@ describe("GoogleAnalyticsService", () => {
 				)
 				const traffic = rows.find((row) => row.dataset === "traffic")
 				// Nothing landed, so the head frontier must not have moved.
+				assert.isNull(traffic?.watermarkAt ?? null)
+			}).pipe(Effect.provide(makeLayer(testDb, fetchOptions)))
+		}),
+	)
+
+	it.effect("refuses to reconcile a window whose report came back short", () =>
+		Effect.gen(function* () {
+			const testDb = createTestDb(trackedDbs)
+			// One row on the wire, three claimed: the shape a page ceiling or an exhausted
+			// budget leaves behind. Reconciling it would read the two unseen series as revised
+			// to zero and retract them.
+			const fetchOptions = options([new Map([[HOUR, 10]])], { reportedRowCount: 3 })
+
+			yield* Effect.gen(function* () {
+				yield* TestClock.setTime(T0)
+				yield* seedConnection
+				const service = yield* GoogleAnalyticsService
+				const result = yield* service.pollOrg(ORG)
+
+				assert.isAbove(result.failures, 0)
+				assert.lengthOf(fetchOptions.otlpCalls, 0)
+				const database = yield* Database
+				const rows = yield* database.execute((db) =>
+					db.select().from(googleAnalyticsState).where(eq(googleAnalyticsState.orgId, ORG)),
+				)
+				const traffic = rows.find((row) => row.dataset === "traffic")
+				// The frontier stays put, so the next tick retries the same window.
 				assert.isNull(traffic?.watermarkAt ?? null)
 			}).pipe(Effect.provide(makeLayer(testDb, fetchOptions)))
 		}),
