@@ -103,7 +103,7 @@ function logBodySearchCondition(body: CH.Expr<string>, opts: LogsQueryOpts): CH.
  */
 const interiorSearchTokens = (search: string): ReadonlyArray<string> =>
 	search
-		.split(/[\t\n\r !-$&-/:-@[\]^`{-~]+/)
+		.split(/[\t\n\r !"#$&'()*+,\-./:;<=>?@[\]^`{|}~]+/)
 		.slice(1, -1)
 		.filter((token) => /^[A-Za-z0-9]+$/.test(token))
 		.map((token) => token.toLowerCase())
