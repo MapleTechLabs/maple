@@ -23,17 +23,24 @@ export const boundedText = (description: string, max: number) =>
 export const agentToolTextParam = (description: string) =>
 	boundedText(description, AI_TOOLS_SELECTION_MAX_CHARS)
 
-/** The selection minus `tool`: one tool requires it, the other filters by it. */
-export const agentToolSelectionParams = {
+/** The scope both tool-analytics tools take: which calls, by model, service and environment. */
+export const agentToolScopeParams = {
 	model: agentToolTextParam(
-		"Only calls attributed to this model (exact name, e.g. 'claude-sonnet-4'). A tool span carries no model of its own: it inherits its parent LLM call's, else its trace's",
+		"Only calls attributed to this model (exact name). A tool span inherits its parent LLM call's model, else its trace's",
 	),
 	service: agentToolTextParam("Only calls from this service (exact `service.name`)"),
-	environment: agentToolTextParam("Only calls from this deployment environment (e.g. production)"),
+	environment: agentToolTextParam("Only calls from this deployment environment (e.g. production, staging)"),
+}
+
+/** The selection minus `tool`: the overview filters tools by name, the error detail names one exactly. */
+export const agentToolSelectionParams = {
+	...agentToolScopeParams,
 	tool_contains: agentToolTextParam("Only tools whose name contains this text (case-insensitive)"),
 }
 
-type AgentToolSelectionInput = Schema.Struct.Type<typeof agentToolSelectionParams>
+type AgentToolSelectionInput = Schema.Struct.Type<typeof agentToolScopeParams> & {
+	readonly tool_contains?: string | undefined
+}
 
 /** The selection as the output echoes it; absent keys, never undefined ones. */
 export const agentToolSelection = (
@@ -58,10 +65,15 @@ export const selectionRequest = (selection: typeof AgentToolSelection.Type) => (
 
 /** The selection as the parameters that set it, for a next call. */
 export const selectionArgs = (selection: typeof AgentToolSelection.Type) => ({
+	...scopeArgs(selection),
+	tool_contains: selection.toolContains,
+})
+
+/** The scope alone, for a `get_agent_tool_error` call: it names its tool exactly, so it takes no `tool_contains`. */
+export const scopeArgs = (selection: typeof AgentToolSelection.Type) => ({
 	model: selection.model,
 	service: selection.service,
 	environment: selection.environment,
-	tool_contains: selection.toolContains,
 })
 
 /** One line describing what the numbers below it cover. Every value is the

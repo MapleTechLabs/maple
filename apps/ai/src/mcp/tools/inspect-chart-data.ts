@@ -1,6 +1,5 @@
 import { McpInvalidInputError, McpQueryError, type McpToolRegistrar } from "./types"
 import { Effect, Option, Schema } from "effect"
-import { WarehouseTimeInput } from "@maple/query-engine"
 import { InspectChartDataOutput } from "@maple/domain/mcp-outputs"
 import { dataSourceEndpoint } from "@maple/widgets/dashboard"
 import { CurrentMcpTenant } from "../lib/query-warehouse"
@@ -78,30 +77,24 @@ function rawSqlCell(value: Schema.Json | undefined): string {
 }
 
 const inspectChartDataDescription =
-	"Inspect the actual data a dashboard chart will render. " +
-	"The mutation tools (`create_dashboard`, `add_dashboard_widget`, `update_dashboard_widget`) now run this validation automatically. " +
-	"Use this tool to re-verify a widget after fixing it, or to inspect any existing widget on demand. " +
-	"Returns row counts, series statistics, sample data points, and sanity flags (EMPTY, ALL_ZEROS, FLAT_LINE, UNIT_MISMATCH, PERCENT_SCALE_MISMATCH, NEGATIVE_VALUES, UNREALISTIC_MAGNITUDE, SINGLE_SERIES_DOMINATES, CARDINALITY_EXPLOSION, SUSPICIOUS_GAP, BROKEN_BREAKDOWN, SINGLE_POINT, ALL_NULLS, BUILDER_WARNINGS). " +
-	"The verdict is one of `looks_healthy`, `suspicious`, or `broken`. **If the verdict is not `looks_healthy`, fix the widget via update_dashboard_widget and re-inspect.** " +
-	"Supports widgets backed by a `query` data source (timeseries and breakdown result shapes) and by `raw_sql` (which is executed and its rows returned). " +
-	"Limitations: formula expressions in `formulas[]` are NOT evaluated server-side — only the base queries are inspected; " +
-	"checks only the requested window without the dashboard UI's auto-fallback. For widgets backed by a curated `route` data source (service_overview, errors_summary, etc.), this tool returns guidance to use `query_data` directly with the widget's params."
+	"Run a dashboard widget's query and report what it would render: row counts, per-series statistics, sample points, sanity flags and a verdict (looks_healthy, suspicious, broken). " +
+	"The mutation tools already run this on the widgets they touch; call it to re-verify after a fix or to check any existing widget. " +
+	"If the verdict is not looks_healthy, fix the widget with update_dashboard_widget and inspect again. " +
+	"Supports `query` data sources (timeseries and breakdown) and `raw_sql` (executed, rows returned). " +
+	"Limits: `formulas[]` are not evaluated, only the base queries; the requested window is checked without the UI's auto-fallback; " +
+	"a curated `route` data source (service_overview, errors_summary, ...) is not inspected and the result points you to query_data with the widget's params."
 
 export function registerInspectChartDataTool(server: McpToolRegistrar) {
 	server.define({
 		name: TOOL,
 		description: inspectChartDataDescription,
 		parameters: Schema.Struct({
-			dashboard_id: P.text("Dashboard ID containing the widget"),
-			widget_id: P.text("Widget ID to inspect"),
-			start_time: Schema.optional(WarehouseTimeInput).annotate({
-				description:
-					"Override start time (YYYY-MM-DD HH:mm:ss UTC or ISO 8601), with end_time. Defaults to the widget's own timeRange, else the dashboard's.",
-			}),
-			end_time: Schema.optional(WarehouseTimeInput).annotate({
-				description:
-					"Override end time (YYYY-MM-DD HH:mm:ss UTC or ISO 8601), with start_time. Defaults to the widget's own timeRange, else the dashboard's.",
-			}),
+			dashboard_id: P.text("Dashboard ID"),
+			widget_id: P.text("Widget ID (get_dashboard lists them)"),
+			start_time: P.optionalTimestamp(
+				"Start of an override window (pass with end_time; omit both for the widget's pinned timeRange, else the dashboard's)",
+			),
+			end_time: P.optionalTimestamp("End of the override window (pass with start_time)"),
 		}),
 		output: InspectChartDataOutput,
 		hints: { readOnly: true },

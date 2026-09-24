@@ -40,11 +40,9 @@ export function registerDescribeWarehouseTablesTool(server: McpToolRegistrar) {
 	server.define({
 		name: TOOL,
 		description:
-			"Discover ClickHouse tables and columns available for the `raw_sql_chart` widget path of `add_dashboard_widget` (and any other ad-hoc warehouse SQL). Call with no arguments to list every table (name, description, column count). Pass `table` to get the full column list (`name`, `type`, optional `jsonPath`) plus hand-curated notes (enum casing, units, sort-key hints) for that table. Use this BEFORE writing raw SQL so you don't hallucinate table or column names.",
+			"Table and column catalog for raw warehouse SQL (run_sql, raw_sql widgets, raw_query alert rules). With no arguments it lists every table; with `table` it gives that table's columns, sorting key and notes on enum casing and units. Read it before writing SQL rather than guessing names.",
 		parameters: Schema.Struct({
-			table: P.optionalText(
-				"Optional table name. If provided, returns full column list and notes for that table. If omitted, lists every available table with a short description.",
-			),
+			table: P.optionalText("Table whose columns and notes to return"),
 		}),
 		output: DescribeWarehouseTablesOutput,
 		hints: { readOnly: true },

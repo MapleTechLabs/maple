@@ -59,7 +59,7 @@ export function registerGetAgentSessionTool(server: McpToolRegistrar) {
 	server.define({
 		name: "get_agent_session",
 		description:
-			"Read one AI agent session (an LLM agent trace, not a browser session replay): its verdict, the checks it failed or passed with what to do about each, its findings, wall/active/idle time, agent time by kind, turn and call counts, token buckets, reported cost, the models and tools it used, its failure groups and its turns. Derived from the session's own spans, exactly as the Agent Sessions page derives them: up to 10000 of them, past which it says so and every figure covers the spans it loaded. Pass start_time/end_time exactly as the `get_agent_session` call suggested under `list_agent_sessions` carries them: that makes the read a seek. Follow up with `inspect_span` for what one span actually said.",
+			"Read one AI agent session (an LLM agent trace; not a browser session replay, see `get_session_transcript`): its verdict, the checks it failed or passed and what to do about each, findings, wall/active/idle time, turns, LLM and tool calls, tokens, reported cost, models, tools and failure groups. Everything is derived from the session's own spans, up to 10000; past that it says so and every figure covers the spans loaded. `inspect_span` opens the span behind the verdict.",
 		parameters: Schema.Struct({
 			session_id: P.text(
 				"The agent session id, as `list_agent_sessions` reports it (a vendor id, or `trace:<traceId>`)",

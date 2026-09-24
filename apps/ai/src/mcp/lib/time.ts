@@ -51,7 +51,7 @@ export interface ResolvedTimeRange {
  * for bounds the agent didn't supply.
  *
  * Both bounds are {@link WarehouseDateTime}, so this function has no parsing to
- * do and no malformed case to handle: `optionalTimeParam` decoded and
+ * do and no malformed case to handle: `P.timeWindow` decoded and
  * canonicalized them at the tool's parameter boundary, or the call didn't
  * typecheck. That is the whole reason the brand exists — a tool cannot reach
  * this function with a raw string it forgot to validate.

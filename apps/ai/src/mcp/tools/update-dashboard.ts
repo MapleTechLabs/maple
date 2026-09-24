@@ -26,17 +26,17 @@ export function registerUpdateDashboardTool(server: McpToolRegistrar) {
 	server.define({
 		name: TOOL,
 		description:
-			"Update an existing dashboard's top-level metadata (name, description, time_range). For widget-level changes prefer the incremental tools: add_dashboard_widget, update_dashboard_widget, remove_dashboard_widget, reorder_dashboard_widgets — they do not require re-sending the whole dashboard. `dashboard_json` is still accepted as an escape hatch for full replacement but is expensive on large dashboards and easy to corrupt.",
+			"Change a dashboard's name, description or time_range. For widgets use add_dashboard_widget, update_dashboard_widget, remove_dashboard_widget, reorder_dashboard_widgets, or replace_dashboard_widgets for a validated rewrite of the whole list. `dashboard_json` replaces everything unvalidated; use it only to restore a saved document.",
 		parameters: Schema.Struct({
-			dashboard_id: P.text("ID of the dashboard to update (use list_dashboards to find IDs)"),
+			dashboard_id: P.text("Dashboard ID (ids from list_dashboards)"),
 			name: P.optionalText("New dashboard name"),
 			description: P.optionalText("New dashboard description"),
 			time_range: P.optionalText(
-				`New time range as relative shorthand — e.g. 15m, 6h, 24h, 7d, 2w, 3mo, or "today". Up to ${formatRangeSeconds(MAX_QUERY_RANGE_SECONDS)}.`,
+				`Relative shorthand: 15m, 6h, 24h, 7d, 2w, 3mo or "today". Up to ${formatRangeSeconds(MAX_QUERY_RANGE_SECONDS)}.`,
 			),
 			dashboard_json: optionalJsonText(
 				PortableDashboardDocument,
-				"Full dashboard JSON to replace the current configuration. Use get_dashboard to see the current schema.",
+				"The whole dashboard as JSON text, in the shape get_dashboard returns; replaces every widget. Prefer replace_dashboard_widgets.",
 			),
 		}),
 		output: UpdateDashboardOutput,

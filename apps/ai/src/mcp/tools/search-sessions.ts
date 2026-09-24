@@ -39,7 +39,7 @@ export function registerSearchSessionsTool(server: McpToolRegistrar) {
 	server.define({
 		name: "search_sessions",
 		description:
-			"Browser session replays (end-user web sessions), not AI agent sessions: for those use `list_agent_sessions`. List and filter browser session replays. Filter by WHO (user_id: the app's end-user id; user_search: their name or email; group_name: their company/team), by client (browser, country, device_type), by whether the session errored (has_errors), by how long it lasted (duration/active bounds), and/or by WHAT HAPPENED inside it (event_type, level, http_status_min, url_contains, message_contains, trace_id). Returns each session's metadata including the end-user id. All filters are ANDed. Follow up with `get_session_transcript` to read a session's events or `get_session_traces` to see the backend traces it produced.",
+			"Find browser session replays (end-user web sessions). Not AI agent sessions: those are `list_agent_sessions`. Filter by who (user_id, user_search, group_name), by client, by whether the session errored, by how long it lasted, or by what happened inside it (an event type, console level, HTTP status, URL, message or trace id). All filters are ANDed. Then `get_session_transcript` reads a session's events and `get_session_traces` lists the backend traces it produced.",
 		parameters: Schema.Struct({
 			...WINDOW.fields,
 			// Session metadata filters (who / where / how long)
@@ -50,9 +50,9 @@ export function registerSearchSessionsTool(server: McpToolRegistrar) {
 			group_name: P.optionalText(
 				"Exact match on the identified group (company / team) name (e.g. Acme Inc)",
 			),
-			service: P.service("Exact match on the session's service name"),
+			service: P.service(),
 			browser: P.optionalText("Exact match on browser name (e.g. Chrome)"),
-			country: P.optionalText("Exact match on country"),
+			country: P.optionalText("Only sessions from this country (two-letter ISO code, e.g. DE)"),
 			device_type: P.optionalText("Exact match on device type (e.g. desktop, mobile)"),
 			has_errors: P.optionalFlag("Only sessions with at least one recorded error"),
 			duration_min_ms: P.optionalNumber("Only sessions at least this long (ms)"),
@@ -205,6 +205,7 @@ export function registerSearchSessionsTool(server: McpToolRegistrar) {
 		render: (output) => {
 			const { sessions, pagination, eventFiltered } = output
 			const headers = [
+				"Session",
 				"User",
 				"Started",
 				"Duration",
@@ -216,7 +217,7 @@ export function registerSearchSessionsTool(server: McpToolRegistrar) {
 			]
 			const window = { start_time: output.timeRange.start, end_time: output.timeRange.end }
 			return {
-				title: "Sessions",
+				title: "Browser sessions",
 				scope: [
 					["Time range", `${output.timeRange.start} to ${output.timeRange.end}`],
 					["Rows", pagination.offset > 0 ? `from ${pagination.offset + 1}` : undefined],
@@ -224,7 +225,7 @@ export function registerSearchSessionsTool(server: McpToolRegistrar) {
 				...(sessions.length === 0
 					? {
 							empty: {
-								message: "No sessions matched the filters.",
+								message: "No browser sessions matched the filters.",
 								hints: ["Widen start_time/end_time, or drop some filters (they are ANDed)."],
 							},
 						}
@@ -238,6 +239,8 @@ export function registerSearchSessionsTool(server: McpToolRegistrar) {
 									sessions.map((s) => {
 										const device = [s.osName, s.deviceType].filter(Boolean).join(" / ")
 										const row = [
+											// The id every follow-up call takes; the Next list only names the first rows.
+											s.sessionId,
 											// Same fallback chain as the web list: a name beats an opaque id.
 											s.userName || s.userEmail || s.userId || "Anonymous",
 											s.startTime,

@@ -13,9 +13,9 @@ export function registerGetDashboardTool(server: McpToolRegistrar) {
 	server.define({
 		name: TOOL,
 		description:
-			"Get the full configuration of a dashboard by ID, including all widget definitions with their dataSource, display, and layout configs. Use list_dashboards first to find dashboard IDs. The returned JSON structure can be used as a reference when creating new dashboards via create_dashboard.",
+			"Full configuration of one dashboard: every widget with its id, visualization, dataSource, display, layout and any pinned timeRange. Widgets come back in the shape update_dashboard_widget and replace_dashboard_widgets take. Ids from list_dashboards.",
 		parameters: Schema.Struct({
-			dashboard_id: P.text("Dashboard ID to retrieve"),
+			dashboard_id: P.text("Dashboard ID"),
 		}),
 		output: GetDashboardOutput,
 		hints: { readOnly: true },

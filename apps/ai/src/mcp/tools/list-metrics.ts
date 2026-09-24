@@ -29,11 +29,11 @@ export function registerListMetricsTool(server: McpToolRegistrar) {
 	server.define({
 		name: "list_metrics",
 		description:
-			"Discover available custom metrics with their types, units, monotonicity, and data volume. Supports pagination: check hasMore in the response. Use query_data source=metrics with a discovered metric_name and metric_type. For monotonic sum metrics, prefer metric=rate or metric=increase instead of raw sum.",
+			"Discover custom metrics with their type, unit, monotonicity and data volume. Pass a discovered `metric_name` and `metric_type` to query_data source=metrics.",
 		parameters: Schema.Struct({
 			...WINDOW.fields,
 			service: P.service(),
-			search: P.optionalText("Search in metric name"),
+			search: P.optionalText("Substring of the metric name"),
 			metric_type: P.optionalOneOf(MetricType.literals, "Only metrics of this type"),
 			offset: P.offset({ max: 10_000 }),
 			limit: P.limit({ default: 50, max: 500, noun: "metrics" }),

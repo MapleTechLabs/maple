@@ -65,7 +65,7 @@ export function registerListAgentSessionsTool(server: McpToolRegistrar) {
 	server.define({
 		name: "list_agent_sessions",
 		description:
-			"List AI agent sessions (LLM agent traces stamped with gen_ai/maple_ai attributes, NOT browser session replays, which `search_sessions` serves). Each row is one agent session: its agent, vendor, models, LLM and tool calls, failures, tokens and reported cost. Filter by vendor/service/environment/model/agent/tool, by an id prefix (`search`), by whether it errored, and by duration/cost/token/call ranges. Follow up with the `get_agent_session` call suggested for a row: it carries the session's start_time/end_time, which turns the session read into a seek.",
+			"List AI agent sessions: LLM agent traces carrying gen_ai/maple_ai attributes. Not browser session replays: those are `search_sessions`. One row per session with its agent, vendor, models, LLM and tool calls, failures, tokens and reported cost. Open one with the `get_agent_session` call the result suggests; it carries the session's window, which makes that read a seek.",
 		parameters: Schema.Struct({
 			...WINDOW.fields,
 			vendors: P.optionalList(
@@ -75,7 +75,9 @@ export function registerListAgentSessionsTool(server: McpToolRegistrar) {
 			environments: P.optionalList("Deployment environments to match"),
 			models: P.optionalList("Model names to match"),
 			agents: P.optionalList("Agent names to match"),
-			tools: P.optionalList("Tool names the session called"),
+			tools: P.optionalList(
+				"Only sessions that called any of these tools (names as `get_agent_tools_overview` lists them)",
+			),
 			search: boundedText(
 				"Session id or trace id, or its leading characters (prefix match)",
 				AI_SESSION_SEARCH_MAX_CHARS,

@@ -15,25 +15,25 @@ export function registerSearchTracesTool(server: McpToolRegistrar) {
 	server.define({
 		name: "search_traces",
 		description:
-			"Search traces by service, duration, error status, HTTP method, span name, or custom attributes. When span_name is provided, searches at the span level (not just root spans) for accurate results. Use inspect_trace on interesting trace_ids. Use explore_attributes to discover attribute keys.",
+			"Find traces, newest first, by service, duration, error status, HTTP method, span name, or one span attribute. Without `span_name` the filters apply to each trace's entry span and one row per trace comes back; with `span_name` every span is searched and each row is a matching span. For the slowest traces ranked by duration with percentiles, use find_slow_traces. explore_attributes lists attribute keys and values.",
 		parameters: Schema.Struct({
 			...WINDOW.fields,
 			service: P.service(
-				"Only this service (exact `service.name`; searches all spans in the trace, not just root)",
+				"Only this service (exact `service.name`), matched on the entry span, or on every span when `span_name` is set",
 			),
-			has_error: P.optionalFlag("Only traces with errors"),
+			has_error: P.optionalFlag("Only spans with status Error"),
 			min_duration_ms: P.optionalNumber("Minimum duration in milliseconds"),
 			max_duration_ms: P.optionalNumber("Maximum duration in milliseconds"),
-			http_method: P.optionalText("Filter by HTTP method (GET, POST, etc.)"),
+			http_method: P.optionalText("Only spans with this HTTP method"),
 			span_name: P.optionalText(
-				"Filter by span name (searches all spans, substring match, case-insensitive)",
+				"Case-insensitive substring of the span name. Switches the search to span level",
 			),
-			trace_id: P.optionalText("Find a specific trace by ID"),
-			attribute_key: P.optionalText("Filter by span attribute key (e.g. user.id, request.id)"),
-			attribute_value: P.optionalText("Filter by span attribute value (requires attribute_key)"),
-			root_only: P.optionalFlag(
-				"Only match root spans for service/span_name filters (default: false, searches all spans)",
+			trace_id: P.optionalText("Only this trace"),
+			attribute_key: P.optionalText(
+				"Span attribute to filter on (e.g. user.id). Alone, requires the attribute to exist",
 			),
+			attribute_value: P.optionalText("Exact value for `attribute_key`"),
+			root_only: P.optionalFlag("With `span_name`, still match entry spans only instead of every span"),
 			offset: P.offset({ max: 10_000 }),
 			limit: P.limit({ default: 20, max: 200, noun: "traces" }),
 		}),

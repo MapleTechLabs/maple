@@ -101,7 +101,7 @@ export function registerErrorDetailTool(server: McpToolRegistrar) {
 	server.define({
 		name: "error_detail",
 		description:
-			"Get sample traces and correlated logs for a specific error, identified by its `fingerprint` (a decimal UInt64 from find_errors). Optionally include a timeseries to see if the error is getting worse. Use inspect_trace on a trace_id for the full span tree.",
+			"Sample traces and correlated logs for one error, by `fingerprint` (a decimal UInt64 from find_errors; not an issue id). Use inspect_trace on a trace_id for the full span tree.",
 		parameters: Schema.Struct({
 			fingerprint: P.text(
 				'The error FingerprintHash from find_errors: a decimal UInt64 string, e.g. "11640295108927840024". Not a list_error_issues issue id (those are UUIDs).',

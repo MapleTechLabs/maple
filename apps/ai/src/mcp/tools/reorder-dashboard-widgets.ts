@@ -63,12 +63,12 @@ export function registerReorderDashboardWidgetsTool(server: McpToolRegistrar) {
 	server.define({
 		name: TOOL,
 		description:
-			"Reposition or resize one or more widgets on a dashboard in a single call. Only the widgets you include are touched; any widget id not present in layouts_json keeps its existing layout. Useful for drag/drop-style moves without re-sending unrelated widget state.",
+			"Move or resize widgets on a dashboard. Only the listed widget ids change; the rest keep their layout.",
 		parameters: Schema.Struct({
-			dashboard_id: P.text("ID of the dashboard to reorder (use list_dashboards to find IDs)"),
+			dashboard_id: P.text("Dashboard ID (ids from list_dashboards)"),
 			layouts_json: P.json(
 				Schema.Array(LayoutEntrySchema),
-				"JSON array of layout updates: [{ widget_id, x, y, w, h, minW?, minH?, maxW?, maxH? }, ...]. Only listed widgets are updated.",
+				`Layout per widget, as JSON text: [{ widget_id, x, y, w, h, minW?, minH?, maxW?, maxH? }, ...]. Integers on a ${GRID_COLS}-column grid: x, y >= 0, 1 <= w <= ${GRID_COLS}, x + w <= ${GRID_COLS}, h >= 1.`,
 			),
 		}),
 		output: ReorderDashboardWidgetsOutput,

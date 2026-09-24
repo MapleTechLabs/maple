@@ -10,12 +10,12 @@ import { formatBucket, formatMetricValue, inferQueryDataUnit } from "../lib/form
 import { warehouseReadToMcpHandlers } from "../lib/map-warehouse-error"
 import { formatNumber } from "../lib/format"
 import * as P from "../lib/params"
+import { LOG_SEVERITIES } from "./search-logs"
 import { doc, type NextCall, type ToolDoc } from "../lib/tool-doc"
 import { QUERY_BUILDER_DATA_SOURCES, type QueryResultContract } from "@maple/query-model"
 
 const WINDOW = P.timeWindow({ defaultHours: 6 })
 
-const isProductEventKind = Schema.is(ProductEventKind)
 const decodeQuerySpec = Schema.decodeUnknownEffect(QuerySpec)
 
 type Output = typeof QueryDataOutput.Type
@@ -23,75 +23,62 @@ type Output = typeof QueryDataOutput.Type
 const queryDataSchema = Schema.Struct({
 	source: P.oneOf(
 		QUERY_BUILDER_DATA_SOURCES,
-		"Data source. Use 'traces' for request/span analysis (latency, errors, throughput). " +
-			"Use 'logs' for log volume analysis. " +
-			"Use 'metrics' for custom metric aggregation (requires metric_name and metric_type; call list_metrics first). " +
-			"Use 'product_events' for product analytics: track() events, page views and server events (call list_product_events to discover names).",
+		"'traces' for request/span analysis (latency, errors, throughput); 'logs' for log volume; " +
+			"'metrics' for a custom metric (needs metric_name and metric_type from list_metrics); " +
+			"'product_events' for track() events, page views and server events (names from list_product_events).",
 	),
 	kind: P.oneOf(
 		["timeseries", "breakdown"] as const satisfies ReadonlyArray<QueryResultContract>,
-		"Query shape. Use 'timeseries' when the user asks about trends, patterns, or 'how has X changed over time'. " +
-			"Use 'breakdown' when asking about top-N, distribution, or 'which services have the most errors'. " +
-			"Pick the right kind first: do not call this tool twice for the same question.",
+		"'timeseries' for how a value changed over time; 'breakdown' for top-N or distribution. " +
+			"Pick the right one first rather than calling twice.",
 	),
 	metric: P.optionalText(
-		"Metric to compute. Traces: count (request volume), avg_duration, p50_duration, p95_duration, p99_duration (latency), " +
-			"error_rate (0-1 ratio), apdex (user satisfaction, requires apdex_threshold_ms). Logs: count only. " +
-			"Product events: count, sessions, persons, users, visitors (distinct sessions / people / identified users / anonymous visitors). " +
-			"Metrics with kind=timeseries: avg, sum, min, max, count, rate, increase; with kind=breakdown ONLY avg, sum, count. " +
-			"For monotonic counters (typically metric_type=sum with isMonotonic=true from list_metrics), prefer rate or increase over raw sum. " +
-			"Default: 'count' for traces/logs, 'avg' for metrics.",
+		"Traces: count, avg_duration, p50_duration, p95_duration, p99_duration, error_rate (0-1 ratio), " +
+			"apdex (needs apdex_threshold_ms). Logs: count. Product events: count, sessions, persons, users, visitors. " +
+			"Metrics: avg, sum, min, max, count, rate, increase (breakdown: avg, sum, count only); " +
+			"prefer rate or increase for monotonic sums. Default: count, or avg for metrics.",
 	),
 	group_by: P.optionalText(
-		"Grouping dimension. Traces: service, span_name, status_code, http_method, attribute. " +
-			"Logs: service, severity. Metrics: service, attribute, resource_attribute. " +
+		"Traces: service, span_name, status_code, http_method, attribute. Logs: service, severity. " +
+			"Metrics: service, attribute, resource_attribute. " +
 			"Product events: event_name, kind, source, host, page_path, service, group, attribute. " +
-			"'none' is additionally valid for kind=timeseries but not for kind=breakdown. " +
-			"Default: 'none' for timeseries, 'service' for breakdown.",
+			"'attribute' needs attribute_key. Timeseries also take 'none' (the default); breakdown defaults to service.",
 	),
 	...WINDOW.fields,
-	service: P.service("Only this service (exact `service.name`; use list_services to discover)"),
+	service: P.service(),
 	// Traces-specific
 	span_name: P.optionalText("Filter by span name (traces only)"),
 	root_spans_only: P.optionalFlag("Only include root spans (traces only)"),
 	environments: P.optionalList(
-		"Environments to filter (traces only, use explore_attributes source=services to discover)",
+		"Only these deployment environments (traces only; explore_attributes source=services lists them)",
 	),
 	commit_shas: P.optionalList("Commit SHAs to filter (traces only)"),
-	apdex_threshold_ms: P.optionalNumber(
-		"Apdex threshold in milliseconds (traces only, required for apdex metric)",
-	),
+	apdex_threshold_ms: P.optionalNumber("Apdex threshold in ms (traces only; needed for metric=apdex)"),
 	// Logs-specific
-	severity: P.optionalText("Filter by log severity: TRACE, DEBUG, INFO, WARN, ERROR, FATAL (logs only)"),
+	severity: P.optionalOneOf(LOG_SEVERITIES, "Only this log severity (logs only)"),
 	// Product-events-specific
-	event_name: P.optionalList(
-		"Filter by event name, several allowed (product_events only, use list_product_events to discover)",
-	),
-	event_kind: P.optionalList("Filter by event kind: navigation, custom or screen (product_events only)"),
-	host: P.optionalText("Filter by the site host the event fired on (product_events only)"),
-	page_path: P.optionalText("Filter by the page path the event fired on (product_events only)"),
+	event_name: P.optionalList("Only these event names (product_events only)"),
+	event_kind: Schema.optional(Schema.Array(ProductEventKind)).annotate({
+		description: "Only these event kinds (product_events only)",
+	}),
+	host: P.optionalText("Only events fired on this site host (product_events only)"),
+	page_path: P.optionalText("Only events fired on this page path (product_events only)"),
 	// Metrics-specific
-	metric_name: P.optionalText(
-		"Metric name, required for source=metrics. Use list_metrics to discover available metrics.",
-	),
-	metric_type: P.optionalOneOf(MetricType.literals, "Metric type, required for source=metrics"),
+	metric_name: P.optionalText("The metric, from list_metrics (source=metrics only)"),
+	metric_type: P.optionalOneOf(MetricType.literals, "Type of `metric_name`, as list_metrics reports it"),
 	// Shared attribute filtering
-	attribute_key: P.optionalText(
-		"Attribute key for filtering or group_by=attribute. Use explore_attributes to discover keys.",
-	),
-	attribute_value: P.optionalText("Attribute value filter (requires attribute_key)"),
-	bucket_seconds: P.optionalNumber("Bucket size in seconds (timeseries only, auto-computed if omitted)"),
-	limit: P.limit({ default: 10, max: 100, noun: "breakdown rows (breakdown only)" }),
+	attribute_key: P.optionalText("Attribute to filter on, or to group by with group_by=attribute"),
+	attribute_value: P.optionalText("Exact value for attribute_key"),
+	bucket_seconds: P.optionalNumber("Bucket width in seconds (timeseries only; auto-computed when omitted)"),
+	limit: P.limit({ default: 10, max: 100, description: "Max rows of a breakdown" }),
 })
 
 type Params = typeof queryDataSchema.Type
 
 const queryDataDescription =
-	"Query timeseries or breakdown data from traces, logs, metrics, or product events. " +
-	"Start here for trend analysis, comparisons, and top-N queries. " +
-	"For error investigation, prefer find_errors and error_detail. " +
-	"For attribute discovery, call explore_attributes first. " +
-	"Defaults are applied automatically and shown in the response."
+	"Aggregate traces, logs, metrics or product events into a timeseries or a top-N breakdown. " +
+	"Start here for trends, comparisons and top-N; for errors prefer find_errors and error_detail; " +
+	"for a shape this tool cannot express, run_sql. Applied defaults are listed in the result."
 
 /** Default metric/group_by per source, as `[default, available]` for the decisions list. */
 const DEFAULT_METRIC = {
@@ -344,17 +331,6 @@ export function registerQueryDataTool(server: McpToolRegistrar) {
 					parameter: "attribute_key",
 					example: 'group_by="attribute" attribute_key="http.method"',
 				})
-			}
-
-			if (params.source === "product_events" && params.event_kind !== undefined) {
-				const bad = params.event_kind.find((kind) => !isProductEventKind(kind))
-				if (bad !== undefined) {
-					return yield* new McpInvalidInputError({
-						message: `\`event_kind\` must be navigation, custom or screen (got "${bad}").`,
-						parameter: "event_kind",
-						example: 'source="product_events" event_kind="custom"',
-					})
-				}
 			}
 
 			if (

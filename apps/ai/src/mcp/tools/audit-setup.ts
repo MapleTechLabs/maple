@@ -46,17 +46,16 @@ export function registerAuditSetupTool(server: McpToolRegistrar) {
 	server.define({
 		name: "audit_setup",
 		description:
-			"Audit the organization's whole Maple setup and report every check with its outcome. Covers alert routing and " +
-			"delivery health (rules that will never notify anyone), error-notification wiring, what each service is " +
-			"actually ingesting (traces/logs/metrics coverage, service.name mismatches), attribute and semantic-convention " +
-			"quality, trace completeness (spans whose parent never arrived, traces with no root), and integration health. " +
-			"Configuration checks always run; telemetry-backed checks report 'skip' when the warehouse is unavailable. " +
-			"Each finding carries a stable check id, a severity, the affected objects and a fix hint. Use this to answer " +
-			"'is my Maple setup correct' or 'why didn't anything alert me'; use get_instrumentation_recommendations for " +
-			"the per-attribute rename list.",
+			"Audit the organization's whole Maple setup and report every check with its outcome: alert routing and " +
+			"delivery (rules that will never notify anyone), error-notification wiring, what each service actually " +
+			"ingests (trace/log/metric coverage, service.name mismatches), attribute and semantic-convention quality, " +
+			"trace completeness (orphan spans, traces with no root) and integration health. Telemetry-backed checks " +
+			"skip when the warehouse is unavailable; configuration checks always run. Answers 'is my Maple setup " +
+			"correct' and 'why didn't anything alert me'. `get_instrumentation_recommendations` is the per-attribute " +
+			"rename list.",
 		parameters: Schema.Struct({
 			include_passing: P.optionalFlag(
-				"Include passing and skipped checks in the table (default: false, only findings are listed)",
+				"Also list passing and skipped checks (default false: findings only)",
 			),
 		}),
 		output: AuditSetupOutput,

@@ -24,6 +24,7 @@ import {
 	formatSeen,
 	cellOrDash,
 	pageCount,
+	scopeArgs,
 	selectionArgs,
 	selectionRequest,
 	TREND_BUCKETS,
@@ -72,7 +73,7 @@ export function registerGetAgentToolsOverviewTool(server: McpToolRegistrar) {
 	server.define({
 		name: "get_agent_tools_overview",
 		description:
-			"AI agent tool calls (the tools an LLM agent invokes during a session, not browser sessions and not Maple's own MCP tools): how much each tool is called, how often it fails, and how slow it is. Reports the window against the equal window before it, plus a per-tool breakdown. Selecting one `tool` also lists its failure groups by error fingerprint: what it fails with, how often, and whether it is still failing. The tool names it lists are the ones `get_agent_tool_error` takes, and the ones `list_agent_sessions tools=[…]` filters by. Start here with no filters, then select the tool with the worst error rate. For these calls over time, chart them with `query_data` or `run_sql`.",
+			"AI agent tool calls (the tools an LLM agent invokes; not browser sessions, not Maple's own MCP tools): calls, failures and latency per tool, for the window against the equal window before it. With `tool` set it also lists that tool's failure groups by fingerprint: what it fails with, how often, and whether it still fails; `get_agent_tool_error` opens a group. Tool names here are what `get_agent_tool_error tool` and `list_agent_sessions tools` take. Start with no `tool`.",
 		parameters: Schema.Struct({
 			...AGENT_TOOL_WINDOW.fields,
 			tool: agentToolTextParam("Only this tool (exact `gen_ai.tool.name`). Omit to compare every tool"),
@@ -268,7 +269,7 @@ export function registerGetAgentToolsOverviewTool(server: McpToolRegistrar) {
 									tool: failureGroups.tool,
 									fingerprint: group.fingerprint,
 									...window,
-									...selectionArgs(selection),
+									...scopeArgs(selection),
 								},
 								`sessions, message variants and sample payloads of ${group.errorType === "" ? "this group" : truncate(group.errorType, 40)} (${formatNumber(group.calls)} calls)`,
 							),

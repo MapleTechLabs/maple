@@ -1,7 +1,7 @@
-import { Effect, Schema } from "effect"
+import { Effect, Schema, SchemaTransformation } from "effect"
 import { GetSessionTranscriptOutput, SessionTranscriptEventType } from "@maple/domain/mcp-outputs"
 import { getSessionTranscript } from "@maple/query-engine/observability"
-import { McpInvalidInputError, type McpToolRegistrar } from "./types"
+import type { McpToolRegistrar } from "./types"
 import { warehouseToMcpHandlers } from "../lib/map-warehouse-error"
 import { withTenantExecutor, CurrentMcpTenant } from "../lib/query-warehouse"
 import { truncate } from "../lib/format"
@@ -12,7 +12,28 @@ type TranscriptEvent = (typeof GetSessionTranscriptOutput.Type.events)[number]
 type TranscriptFilters = typeof GetSessionTranscriptOutput.Type.filters
 type EventType = typeof SessionTranscriptEventType.Type
 
-const isEventType = Schema.is(SessionTranscriptEventType)
+/**
+ * The event types to keep, published as an array of the enum; a comma-separated string is still
+ * accepted (trimmed, lowercased) because the parameter used to be one.
+ */
+const EventTypeList = Schema.Union([
+	Schema.Array(SessionTranscriptEventType),
+	Schema.String.pipe(
+		Schema.decodeTo(
+			Schema.Array(Schema.String),
+			SchemaTransformation.transform<ReadonlyArray<string>, string>({
+				decode: (value) =>
+					value
+						.split(",")
+						.map((part) => part.trim().toLowerCase())
+						.filter((part) => part !== ""),
+				encode: (values) => values.join(","),
+			}),
+		),
+		// The split parts are then held to the enum, so an unknown type is a parameter error.
+		Schema.decodeTo(Schema.Array(SessionTranscriptEventType)),
+	),
+])
 
 /** Human-readable summary of the active filters, for the scope line and the empty message. */
 const describeFilters = (filters: TranscriptFilters): string => {
@@ -52,14 +73,14 @@ export function registerGetSessionTranscriptTool(server: McpToolRegistrar) {
 	server.define({
 		name: "get_session_transcript",
 		description:
-			"Browser session replays (end-user web sessions), not AI agent sessions: for those use `list_agent_sessions`. Read a browser session replay as a compact text transcript: navigation, clicks, console logs, network requests, and errors in order, each with the trace id it occurred under. Use after `search_sessions` to analyze what a user did and what went wrong. Returns one page of events: narrow with `only_errors`, `event_types`, or `around_trace_id`, or page through with `offset`. Drill into any referenced trace with `inspect_trace`.",
+			"Read a browser session replay (session id from `search_sessions`; for an AI agent session use `get_agent_session`) as a text transcript: navigation, clicks, console logs, network requests and errors in order, each with the trace id it ran under. Use it to see what a user did and where it went wrong; `inspect_trace` opens any referenced trace.",
 		parameters: Schema.Struct({
 			session_id: P.text("The session id to read (from search_sessions)"),
-			event_types: P.optionalList(
-				"Event types to include: navigation, click, input, console, network, error. Omit for all.",
-			),
+			event_types: Schema.optional(EventTypeList).annotate({
+				description: "Only these event types. Omit for all.",
+			}),
 			only_errors: P.optionalFlag(
-				"If true, only show what went wrong: error events, console errors, and failed (status >= 400) requests.",
+				"Only what went wrong: error events, console errors and requests with status >= 400.",
 			),
 			around_trace_id: P.optionalText(
 				"Only events that occurred under this trace id (focus on one backend request).",
@@ -71,18 +92,7 @@ export function registerGetSessionTranscriptTool(server: McpToolRegistrar) {
 		hints: { readOnly: true },
 		phrases: ["Reading a session transcript"],
 		handler: Effect.fn("McpTool.getSessionTranscript")(function* (params) {
-			const requested = [
-				...new Set((params.event_types ?? []).map((type) => type.trim().toLowerCase())),
-			]
-			const unknown = requested.filter((type) => !isEventType(type))
-			if (unknown.length > 0) {
-				return yield* new McpInvalidInputError({
-					message: `Unknown event type ${unknown.map((type) => `"${type}"`).join(", ")}. Valid types: ${SessionTranscriptEventType.literals.join(", ")}.`,
-					parameter: "event_types",
-					example: '["console","error"]',
-				})
-			}
-			const types: ReadonlyArray<EventType> = requested.filter(isEventType)
+			const types: ReadonlyArray<EventType> = [...new Set(params.event_types ?? [])]
 			const errorsOnly = params.only_errors ?? false
 			const lim = params.limit
 			const off = params.offset
@@ -146,8 +156,12 @@ export function registerGetSessionTranscriptTool(server: McpToolRegistrar) {
 		render: (output) => {
 			const { events, pagination, filters } = output
 			const filterNote = describeFilters(filters)
-			// Surface a few distinct trace ids for drill-down.
-			const traces = [...new Set(events.map((e) => e.traceId).filter(Boolean))].slice(0, 3)
+			// A few distinct traces for drill-down, each with the timestamp `inspect_trace` prunes on.
+			const traces = new Map<string, string>()
+			for (const event of events) {
+				if (event.traceId && !traces.has(event.traceId)) traces.set(event.traceId, event.timestamp)
+				if (traces.size === 3) break
+			}
 			return {
 				title: `Session ${output.sessionId}`,
 				scope: [
@@ -195,10 +209,10 @@ export function registerGetSessionTranscriptTool(server: McpToolRegistrar) {
 								),
 							},
 						}),
-				next: traces.map((id) =>
+				next: [...traces].map(([id, timestamp]) =>
 					doc.next(
 						"inspect_trace",
-						{ trace_id: id },
+						{ trace_id: id, timestamp },
 						"backend trace for a request in this session",
 					),
 				),

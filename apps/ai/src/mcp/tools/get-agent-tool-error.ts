@@ -20,7 +20,7 @@ import { McpInvalidInputError, type McpToolRegistrar } from "./types"
 import {
 	AGENT_TOOL_WINDOW,
 	agentToolSelection,
-	agentToolSelectionParams,
+	agentToolScopeParams,
 	boundedText,
 	cellOrDash,
 	decodeFingerprint,
@@ -59,16 +59,16 @@ export function registerGetAgentToolErrorTool(server: McpToolRegistrar) {
 	server.define({
 		name: "get_agent_tool_error",
 		description:
-			"One failure group of an AI agent tool call (the tools an LLM agent invokes during a session, not browser sessions and not Maple's own MCP tools): which sessions hit it, which message variants it folded, which models and services it happens under, and sample calls with the arguments they were made with and the results that came back. `tool` is an exact tool name from `get_agent_tools_overview`'s breakdown and `fingerprint` comes from the failure groups `get_agent_tools_overview` lists for a selected tool.",
+			"One failure group of an AI agent tool call, as `get_agent_tools_overview tool=…` lists them with their `fingerprint`: the sessions that hit it, the message variants it folded, the models and services it fails under, and sample calls with their arguments and results.",
 		parameters: Schema.Struct({
 			...AGENT_TOOL_WINDOW.fields,
-			tool: P.text("The failing tool (exact `gen_ai.tool.name`)").check(
-				Schema.isMaxLength(AI_TOOLS_SELECTION_MAX_CHARS),
-			),
+			tool: P.text(
+				"The failing tool (exact `gen_ai.tool.name`, as `get_agent_tools_overview` lists it)",
+			).check(Schema.isMaxLength(AI_TOOLS_SELECTION_MAX_CHARS)),
 			fingerprint: P.text(
 				"The error group, as `get_agent_tools_overview` reported it for this tool (a decimal number)",
 			),
-			...agentToolSelectionParams,
+			...agentToolScopeParams,
 			samples_session: boundedText(
 				"Only samples from this session id. It narrows the Samples section alone: the sessions, variants and where-it-fails tables still cover the whole group",
 				AI_TOOL_ERROR_SESSION_MAX_CHARS,
@@ -77,7 +77,7 @@ export function registerGetAgentToolErrorTool(server: McpToolRegistrar) {
 			payload_chars: P.limit({
 				default: 800,
 				max: AI_TOOL_ERROR_PAYLOAD_MAX,
-				noun: "characters of each argument/result block",
+				description: "Characters kept of each argument and result block",
 			}),
 		}),
 		output: GetAgentToolErrorOutput,

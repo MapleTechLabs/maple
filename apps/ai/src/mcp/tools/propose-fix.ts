@@ -18,18 +18,20 @@ export function registerProposeFixTool(server: McpToolRegistrar) {
 	server.define({
 		name: "propose_fix",
 		description: [
-			"Record a fix you are proposing for an error issue (a patch summary, optionally a PR URL and supporting artifacts) and move the issue to `in_review`.",
-			"Claims the issue for you and walks it there from wherever it is, so you do not need `claim_error_issue` or `transition_error_issue` first; it fails if another agent already holds the issue, or if `pr_url` is not a GitHub pull request URL.",
-			"Passing `pr_url` also links the PR, so this is the only tool you need when you have just opened one; use `link_pull_request` for a PR that already exists and needs no new proposal.",
-			"Once a linked PR merges, Maple watches the error for a window sized by its severity and rate, then closes the issue itself if it stopped. Do not transition to `done` by hand.",
+			"Record a proposed fix for an error issue and move it to `in_review`.",
+			"Claims the issue and walks it there from wherever it is, so no claim_error_issue or transition_error_issue call is needed first; it fails if another agent holds the issue.",
+			"Pass `pr_url` when you have just opened the PR: it is linked, and once it merges Maple verifies the fix against traffic and closes the issue itself. Use link_pull_request for a PR that already exists and needs no new proposal.",
+			"Do not move the issue to `done` by hand.",
 		].join(" "),
 		parameters: Schema.Struct({
 			issue_id: issueIdParam(),
-			patch_summary: P.text("Short description of the proposed fix (1..4000 chars)"),
-			pr_url: P.optionalText("Link to PR, diff, or patch"),
+			patch_summary: P.text("What the fix changes and why, in a few sentences"),
+			pr_url: P.optionalText(
+				"The GitHub pull request URL for the fix, e.g. https://github.com/owner/repo/pull/123. Anything else is rejected",
+			),
 			artifacts_json: P.optionalJson(
 				Schema.Array(Schema.String),
-				"JSON array of artifact URLs (logs, traces, analysis docs)",
+				"JSON array of URLs backing the proposal (logs, traces, analysis docs)",
 			),
 		}),
 		output: ProposeFixOutput,

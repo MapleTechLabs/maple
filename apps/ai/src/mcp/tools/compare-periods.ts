@@ -7,7 +7,7 @@ import * as P from "../lib/params"
 import { doc, type DocBlock } from "../lib/tool-doc"
 import { Effect, Schema } from "effect"
 import { ComparePeriodsOutput } from "@maple/domain/mcp-outputs"
-import { WarehouseTimeInput, formatWarehouseDateTime, parseWarehouseDateTime } from "@maple/query-engine"
+import { formatWarehouseDateTime, parseWarehouseDateTime } from "@maple/query-engine"
 
 type Output = typeof ComparePeriodsOutput.Type
 type RegressionFlag = NonNullable<Output["services"][number]["flags"]>[number]
@@ -67,26 +67,19 @@ export function registerComparePeriodsTool(server: McpToolRegistrar) {
 	server.define({
 		name: "compare_periods",
 		description:
-			"Compare system health between two time periods to detect regressions. Flags regressions automatically: error_rate_up, latency_up, throughput_drop. Useful after deploys or incident reports. Use around_time to auto-generate a 30min before/after comparison.",
+			"Compare error rate, throughput and P95 between two periods, overall and per service, and flag regressions (error_rate_up, latency_up, throughput_drop). Useful after a deploy or an incident report.",
 		parameters: Schema.Struct({
-			current_start: Schema.optional(WarehouseTimeInput).annotate({
-				description:
-					"Start of current period, UTC (YYYY-MM-DD HH:mm:ss or ISO 8601). Default: 1 hour before current_end",
-			}),
-			current_end: Schema.optional(WarehouseTimeInput).annotate({
-				description: "End of current period, UTC. Default: now",
-			}),
-			previous_start: Schema.optional(WarehouseTimeInput).annotate({
-				description:
-					"Start of previous period. Default: the current period's length before previous_end",
-			}),
-			previous_end: Schema.optional(WarehouseTimeInput).annotate({
-				description: "End of previous period. Default: current_start",
-			}),
-			around_time: Schema.optional(WarehouseTimeInput).annotate({
-				description:
-					"Auto-generate a 30min before/after comparison around this time. Overrides current_start/end and previous_start/end",
-			}),
+			current_start: P.optionalTimestamp(
+				"Start of the current period (default: 1 hour before current_end)",
+			),
+			current_end: P.optionalTimestamp("End of the current period (default: now)"),
+			previous_start: P.optionalTimestamp(
+				"Start of the previous period (default: the current period's length before previous_end)",
+			),
+			previous_end: P.optionalTimestamp("End of the previous period (default: current_start)"),
+			around_time: P.optionalTimestamp(
+				"Compare the 30 minutes before this time with the 30 minutes after it; overrides the four period bounds",
+			),
 			service: P.service("Scope the comparison to this service (exact `service.name`)"),
 			environment: P.environment(),
 		}),

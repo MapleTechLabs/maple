@@ -5,6 +5,8 @@
 import { Effect, Schema } from "effect"
 import {
 	ErrorIssueId,
+	MACHINE_OWNED_WORKFLOW_STATES,
+	WORKFLOW_STATE_ORDER,
 	type ErrorIssueLeaseConflictError,
 	type ErrorIssueNotFoundError,
 	type ErrorIssueTransitionError,
@@ -12,6 +14,14 @@ import {
 	type ErrorValidationError,
 } from "@maple/domain/http"
 import { McpInvalidInputError, McpQueryError } from "./types"
+
+/**
+ * The workflow states a caller may ask for. `regressed` and `verifying` are observations
+ * Maple's ticks make, not states an agent asserts, so no issue tool publishes them.
+ */
+export const SELECTABLE_STATES = WORKFLOW_STATE_ORDER.filter(
+	(state) => !MACHINE_OWNED_WORKFLOW_STATES.has(state),
+)
 
 /**
  * An issue id is a UUID. A fingerprint (a decimal UInt64 from find_errors) is the usual wrong

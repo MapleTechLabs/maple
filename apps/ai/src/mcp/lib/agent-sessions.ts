@@ -12,7 +12,8 @@ import {
 } from "@maple/domain/http"
 import type { AiGenAiField, MutableAiGenAiValues } from "@maple/domain/gen-ai"
 import { classifyAiSpan, lastUserMessageText, padSessionWindow } from "@maple/agent-sessions"
-import { formatWarehouseDateTime, parseWarehouseDateTime, WarehouseTimeInput } from "@maple/query-engine"
+import { formatWarehouseDateTime, parseWarehouseDateTime } from "@maple/query-engine"
+import * as P from "./params"
 import {
 	readAiSessionSpans,
 	resolveAiSessionWindow,
@@ -106,14 +107,10 @@ export interface SessionWindow {
 /** The window pair, both bounds or neither: with it the read is a seek on both
  *  levels, without it the session's bounds cost a resolve round trip first. */
 export const sessionWindowParams = {
-	start_time: Schema.optional(WarehouseTimeInput).annotate({
-		description:
-			"Start of the session's window, exactly as the `get_agent_session` call suggested under `list_agent_sessions` passes it. Pass with end_time (both or neither): it makes the read a seek instead of a lookup.",
-	}),
-	end_time: Schema.optional(WarehouseTimeInput).annotate({
-		description:
-			"End of the session's window, exactly as the `get_agent_session` call suggested under `list_agent_sessions` passes it.",
-	}),
+	start_time: P.optionalTimestamp(
+		"Start of the session's window (both bounds or neither; pass them as the `get_agent_session` call suggested by `list_agent_sessions` carries them, which makes the read a seek rather than a lookup)",
+	),
+	end_time: P.optionalTimestamp("End of the session's window (see start_time)"),
 }
 
 /** Both bounds are the decoded brand, so a tool cannot pass a raw string. */

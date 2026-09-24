@@ -11,14 +11,11 @@ export function registerDeleteAlertRuleTool(server: McpToolRegistrar) {
 	server.define({
 		name: "delete_alert_rule",
 		description:
-			"Permanently delete an alert rule. This is irreversible and also deletes the rule's incident history, " +
-			"delivery events, and evaluation state. Requires confirm=true. Use list_alert_rules to find rule IDs.",
+			"Permanently delete an alert rule together with its incident history, delivery events and evaluation state. " +
+			"Irreversible; requires confirm=true. Ids from list_alert_rules.",
 		parameters: Schema.Struct({
-			rule_id: P.text("Alert rule ID to delete (use list_alert_rules to find IDs)"),
-			confirm: P.flag(
-				"Must be true to confirm permanent deletion. This also deletes the rule's incident history, " +
-					"delivery events, and evaluation state: irreversible.",
-			),
+			rule_id: P.text("Alert rule ID"),
+			confirm: P.flag("Must be true. There is no undo."),
 		}),
 		output: DeleteAlertRuleOutput,
 		hints: { readOnly: false, destructive: true, idempotent: false },

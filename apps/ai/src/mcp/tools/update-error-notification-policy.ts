@@ -17,10 +17,12 @@ export function registerUpdateErrorNotificationPolicyTool(server: McpToolRegistr
 	server.define({
 		name: "update_error_notification_policy",
 		description:
-			"Configure the org-wide error notification policy. Controls whether incidents (first-seen, regression, auto-resolve) dispatch to alert destinations. Omit a field to leave it unchanged.",
+			"Configure the org-wide error notification policy: whether error incidents (first seen, regression, auto-resolve) are delivered to alert destinations, and which ones. Org admins only. Omit a field to leave it unchanged.",
 		parameters: Schema.Struct({
 			enabled: P.optionalFlag("Enable notifications overall"),
-			destination_ids: P.optionalList("Alert destination IDs to notify. Pass an empty list to clear."),
+			destination_ids: P.optionalList(
+				"Alert destination IDs (from list_alert_destinations) to deliver to. An empty list clears them",
+			),
 			notify_on_first_seen: P.optionalFlag(
 				"Notify on the first-ever occurrence of an error fingerprint",
 			),
@@ -29,9 +31,9 @@ export function registerUpdateErrorNotificationPolicyTool(server: McpToolRegistr
 				"Notify when an incident is auto-resolved after the silence window",
 			),
 			min_occurrence_count: P.optionalNumber(
-				"Only notify when the opening occurrence count meets this threshold (default 1)",
+				"Only notify when the incident's opening occurrence count reaches this number",
 			),
-			severity: P.optionalOneOf(AlertSeverity.literals, "Severity label attached to notifications"),
+			severity: P.optionalOneOf(AlertSeverity.literals, "Severity label carried on the notifications"),
 		}),
 		output: UpdateErrorNotificationPolicyOutput,
 		// Setting the same fields again changes nothing; omitted fields are left as they are.

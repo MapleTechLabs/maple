@@ -66,52 +66,54 @@ const Parameters = Schema.Struct({
 	),
 	template: P.optionalOneOf(
 		TEMPLATE_NAMES,
-		"Template to auto-fill signal_type, comparator, and threshold. " +
-			"high_error_rate: error_rate > 0.05 (5%). slow_p95: p95_latency > 1s. slow_p99: p99_latency > 2s. " +
-			"low_apdex: apdex < 0.8. throughput_drop: throughput < 100rpm. " +
-			"Use 'custom' for full control over signal_type/comparator/threshold. Default: custom.",
+		"Preset for signal_type, comparator and threshold; signal_type and comparator you pass are ignored, threshold overrides. " +
+			"high_error_rate: error_rate > 0.05, grouped by service.name unless services is set. slow_p95: p95_latency > 1000 ms. slow_p99: p99_latency > 2000 ms. " +
+			"low_apdex: apdex < 0.8 with apdex_threshold_ms 500. throughput_drop: throughput < 100 rpm. " +
+			"Omit (or pass custom) to set the three yourself.",
 	),
 	severity: P.optionalOneOf(ALERT_SEVERITIES, "Alert severity (default: warning)"),
 	threshold: P.optionalNumber(
-		"Threshold value (overrides template default). E.g. 0.05 for 5% error rate, 1000 for 1s latency",
+		"The value compared against. Units: error_rate and apdex are 0-1 ratios, latency is milliseconds, throughput is requests per minute. Overrides the template's.",
 	),
 	window_minutes: P.optionalNumber("Evaluation window in minutes (default: 5)"),
 	services: P.optionalList("Service names to scope the alert to"),
 	environments: P.optionalList(
 		"Deployment environments to scope the alert to (e.g. 'production'). Omit for all environments. Ignored for builder_query / raw_query, which filter inside their own query.",
 	),
-	enabled: P.optionalFlag("Whether the rule is enabled (default: true)"),
+	enabled: P.optionalFlag("Whether the rule evaluates (default true)"),
 	// Custom-mode params (used when template is 'custom' or omitted)
 	signal_type: P.optionalOneOf(
 		ALERT_SIGNAL_TYPES,
-		"Signal type (for custom). Use builder_query with a metrics draft for custom metrics. " +
+		"What the rule measures. builder_query takes query_builder_draft, raw_query takes raw_query_sql. " +
 			// Load-bearing caveat, not filler: without it an agent will happily create a
 			// rule that can never fire. Compressed, not dropped.
-			"NOTE: all except builder_query/raw_query are computed over ROOT spans only, so a service that fails on child spans but returns success from its entry point " +
-			"(common in cron jobs and workers: audit_setup STAT-04 lists them) reads as healthy at any threshold. Use raw_query there, or rely on error-issue notifications.",
+			"All other signals are computed over ROOT spans only: a service that fails on child spans but returns success from its entry point " +
+			"(cron jobs, workers; audit_setup STAT-04 lists them) reads healthy at any threshold. Use raw_query there or rely on error-issue notifications.",
 	),
 	comparator: P.optionalOneOf(
 		ALERT_COMPARATORS,
-		"Comparison operator (for custom): gt (>), gte (>=), lt (<), lte (<=), eq, neq",
+		"How the observed value is compared with threshold (breach when `value <comparator> threshold`). Ignored when a template is set.",
 	),
 	group_by: P.optionalList(
-		"Dimensions to evaluate the alert per-group. Built-in tokens: service.name, span.name, status.code, http.method, severity. Attribute keys (traces/metrics): attr.<key>. Examples: ['service.name'], ['service.name', 'attr.http.route'].",
+		"Evaluate one value per group. Built-in tokens: service.name, span.name, status.code, http.method, severity; attribute keys as attr.<key> (e.g. attr.http.route).",
 	),
 	minimum_sample_count: P.optionalNumber("Minimum sample count before evaluating (default: 0)"),
 	consecutive_breaches: P.optionalNumber("Consecutive breaches before alerting (default: 1)"),
 	consecutive_healthy: P.optionalNumber("Consecutive healthy evaluations before resolving (default: 1)"),
 	renotify_interval_minutes: P.optionalNumber("Re-notification interval in minutes (default: 60)"),
-	apdex_threshold_ms: P.optionalNumber("Apdex threshold in milliseconds (required when signal_type=apdex)"),
+	apdex_threshold_ms: P.optionalNumber(
+		"Response time counted as satisfactory, in ms. Required for signal_type=apdex.",
+	),
 	query_builder_draft: P.optionalJson(
 		QueryBuilderQueryDraftSchema,
-		"A query-builder draft, as an object or its JSON text (required when signal_type=builder_query). Same shape as dashboard custom-query widgets: { id, name, dataSource, aggregation, whereClause, groupBy, ... }.",
+		"The query to evaluate, in the query-builder draft shape dashboard custom-query widgets use ({ id, name, dataSource, aggregation, whereClause, groupBy, ... }). Required for signal_type=builder_query.",
 	),
 	raw_query_sql: P.optionalText(
-		"ClickHouse SQL returning a numeric `value` column, optional `group`/`samples` columns (required when signal_type=raw_query). Must reference $__orgFilter and $__timeFilter(col); supports $__startTime, $__endTime, and $__interval_s.",
+		"ClickHouse SQL returning a numeric `value` column and optional `group` / `samples` columns. Must reference $__orgFilter and $__timeFilter(col); $__startTime, $__endTime and $__interval_s are also available. Required for signal_type=raw_query.",
 	),
 	raw_query_reducer: P.optionalOneOf(
 		ALERT_REDUCERS,
-		"How to collapse raw_query result rows into one value (default: identity).",
+		"How several raw_query rows collapse into one value (default identity: the single row's value).",
 	),
 	notification_title: P.optionalText(
 		"Custom notification title template. Supports {{ variable }} substitution, e.g. " +
@@ -264,8 +266,8 @@ export function registerCreateAlertRuleTool(server: McpToolRegistrar) {
 		// The template names live on the `template` parameter, with their thresholds;
 		// repeating them here cost tokens twice for one fact.
 		description:
-			"Create an alert rule: from a `template` for common cases, or template='custom' for full control. " +
-			"Use list_alert_destinations to find destination_ids.",
+			"Create an alert rule. Pick a `template` for the common cases; otherwise pass signal_type, comparator and threshold yourself. " +
+			"Use list_alert_destinations for destination_ids.",
 		parameters: Parameters,
 		aliases: { service_names: "services" },
 		output: CreateAlertRuleOutput,

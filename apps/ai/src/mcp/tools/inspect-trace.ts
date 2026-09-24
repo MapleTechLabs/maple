@@ -5,7 +5,7 @@ import * as P from "../lib/params"
 import { buildTraceOverview, renderTraceOverview } from "../lib/render-trace"
 import { Effect, Schema } from "effect"
 import { InspectTraceOutput } from "@maple/domain/mcp-outputs"
-import { WarehouseTimeInput, parseWarehouseDateTime } from "@maple/query-engine"
+import { parseWarehouseDateTime } from "@maple/query-engine"
 import { inspectTrace } from "@maple/query-engine/observability"
 
 /**
@@ -22,20 +22,19 @@ export function registerInspectTraceTool(server: McpToolRegistrar) {
 	server.define({
 		name: "inspect_trace",
 		description:
-			"Get the span tree and logs for a single trace. Use this to understand request flow, find bottlenecks, and see error context. Large traces are bounded to an overview (errors and longest spans first); use `inspect_span` for one span's full attributes. Pass `timestamp` (any timestamp from the trace) so the query can prune ClickHouse partitions to a ±1h window. Without `timestamp` only the last 24h is scanned: pass `timestamp` for older traces.",
+			"Span tree and logs for one trace: request flow, bottlenecks, error context. Large traces are bounded to an overview (errors and longest spans first); `inspect_span` gives one span's full attributes. Without `timestamp` only the last 24h is scanned.",
 		parameters: Schema.Struct({
 			trace_id: P.text("The trace ID to inspect"),
-			timestamp: Schema.optional(WarehouseTimeInput).annotate({
-				description:
-					"Timestamp of any span in the trace, UTC (e.g. from `search_traces` results). Used to narrow the ClickHouse scan to a ±1h window: required for traces older than 24h, strongly recommended otherwise.",
-			}),
+			timestamp: P.optionalTimestamp(
+				"Any timestamp from the trace (e.g. from search_traces). Narrows the scan to ±1h around it; required for traces older than 24h",
+			),
 			errors_only: P.optionalFlag(
 				"Render only error spans, their ancestors and the roots: the fastest way to read a large trace's failure without its healthy spans.",
 			),
 			max_spans: P.limit({
 				default: MAX_OVERVIEW_SPANS,
 				max: MAX_OVERVIEW_SPANS_CEILING,
-				noun: "spans to render before collapsing the rest (errors and roots are always kept)",
+				description: "Max spans to render; errors and roots are always kept",
 			}),
 		}),
 		output: InspectTraceOutput,

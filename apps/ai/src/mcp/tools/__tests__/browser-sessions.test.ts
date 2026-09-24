@@ -137,7 +137,7 @@ describe("search_sessions", () => {
 		expect(output.sessions[0]?.errorCount).toBe(2)
 		expect(output.filters).toEqual({ hasErrors: true })
 		const text = markdown(result)
-		expect(text).toContain("| Ada |")
+		expect(text).toContain(`| ${SESSION_ID} | Ada |`)
 		expect(text).toContain(`\`get_session_transcript session_id="${SESSION_ID}"\``)
 	})
 
@@ -160,11 +160,14 @@ describe("get_session_transcript", () => {
 		const text = markdown(result)
 		expect(text).toContain('CLICK button#pay "Pay now"')
 		expect(text).toContain("NET   POST 500 /api/pay (120ms)")
-		expect(text).toContain(`\`inspect_trace trace_id="${TRACE_ID}"\``)
+		// The first event's timestamp rides along so `inspect_trace` prunes to the right day.
+		expect(text).toMatch(
+			new RegExp(`\\\`inspect_trace trace_id="${TRACE_ID}" timestamp="2026-09-24 10:00:0\\d"\\\``),
+		)
 
 		const bad = await call("get_session_transcript", { session_id: SESSION_ID, event_types: ["clicks"] })
 		expect(bad.isError).toBe(true)
-		expect(markdown(bad)).toContain("Invalid input (`event_types`)")
+		expect(markdown(bad)).toContain("Invalid parameters for `get_session_transcript`")
 	})
 })
 
@@ -175,7 +178,9 @@ describe("get_session_traces", () => {
 		expect(output.traces[0]?.hasError).toBe(true)
 		const text = markdown(result)
 		expect(text).toContain("### Backend traces")
-		expect(text).toContain(`\`inspect_trace trace_id="${TRACE_ID}"\`: errored POST /api/pay in api`)
+		expect(text).toContain(
+			`\`inspect_trace trace_id="${TRACE_ID}" timestamp="2026-09-24 10:00:02"\`: errored POST /api/pay in api`,
+		)
 	})
 
 	it("reports an unknown session as invalid input", async () => {

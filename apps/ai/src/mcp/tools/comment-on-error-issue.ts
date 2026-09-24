@@ -12,12 +12,18 @@ export function registerCommentOnErrorIssueTool(server: McpToolRegistrar) {
 	server.define({
 		name: "comment_on_error_issue",
 		description:
-			"Add a comment to the issue's timeline. Use kind='agent_note' for automated reasoning steps (visible in the audit log but styled differently in the UI).",
+			"Add a comment to an issue's timeline. Use `kind=agent_note` for automated reasoning steps: they stay in the audit log but the UI styles them apart from human comments. Commenting renews your lease if you hold one.",
 		parameters: Schema.Struct({
 			issue_id: issueIdParam(),
-			body: P.text("Comment body (markdown supported)"),
-			kind: P.optionalOneOf(["comment", "agent_note"], "'comment' (default) or 'agent_note'"),
-			visibility: P.optionalOneOf(["internal", "public"], "'internal' (default) or 'public'"),
+			body: P.text("Comment text, markdown"),
+			kind: P.optionalOneOf(
+				["comment", "agent_note"],
+				"`comment` for something a person should read, `agent_note` for an automated reasoning step",
+			),
+			visibility: P.optionalOneOf(
+				["internal", "public"],
+				"Who can see the comment; `internal` keeps it to the org's own members",
+			),
 		}),
 		output: CommentOnErrorIssueOutput,
 		hints: { readOnly: false, destructive: false, idempotent: false },

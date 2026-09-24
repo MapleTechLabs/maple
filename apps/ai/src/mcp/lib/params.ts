@@ -127,9 +127,18 @@ const clampTo = (spec: { readonly min: number; readonly max: number }) =>
  * A page size. Absent means the default; out-of-range values clamp, since a model asking for
  * 10,000 rows wants "as many as you allow", not an error.
  */
-export const limit = (spec: { readonly default: number; readonly max: number; readonly noun: string }) =>
+export const limit = (
+	spec: { readonly default: number; readonly max: number } & (
+		| { readonly noun: string }
+		/** A full sentence, for a bound that is not a page size; the default and max are appended. */
+		| { readonly description: string }
+	),
+) =>
 	NumberLike.annotate({
-		description: `Max ${spec.noun} to return (default ${spec.default}, max ${spec.max})`,
+		description:
+			"noun" in spec
+				? `Max ${spec.noun} to return (default ${spec.default}, max ${spec.max})`
+				: `${spec.description} (default ${spec.default}, max ${spec.max})`,
 	}).pipe(
 		Schema.decodeTo(Schema.Int, clampTo({ min: 1, max: spec.max })),
 		Schema.withDecodingDefaultType(Effect.succeed(spec.default)),
@@ -143,6 +152,15 @@ export const offset = (spec: { readonly max: number }) =>
 		Schema.decodeTo(Schema.Int, clampTo({ min: 0, max: spec.max })),
 		Schema.withDecodingDefaultType(Effect.succeed(0)),
 	)
+
+const TIMESTAMP_FORMAT = "UTC (YYYY-MM-DD HH:mm:ss or ISO 8601)"
+
+/** A single point in time, worded like the window bounds: `meaning` then the accepted format. */
+export const timestamp = (meaning: string) =>
+	WarehouseTimeInput.annotate({ description: `${meaning}, ${TIMESTAMP_FORMAT}` })
+
+export const optionalTimestamp = (meaning: string) =>
+	Schema.optional(WarehouseTimeInput).annotate({ description: `${meaning}, ${TIMESTAMP_FORMAT}` })
 
 /** The one spelling of a service filter. `service_name` is accepted as an alias by the registry. */
 export const service = (description = "Only this service (exact `service.name`)") => optionalText(description)
@@ -176,10 +194,10 @@ export const timeWindow = (spec: TimeWindowSpec) => {
 		spec,
 		fields: {
 			start_time: Schema.optional(WarehouseTimeInput).annotate({
-				description: `Start of the window, UTC (YYYY-MM-DD HH:mm:ss or ISO 8601). Default: ${formatHours(spec.defaultHours)} before end_time.${cap}`,
+				description: `Start of the window, ${TIMESTAMP_FORMAT}. Default: ${formatHours(spec.defaultHours)} before end_time.${cap}`,
 			}),
 			end_time: Schema.optional(WarehouseTimeInput).annotate({
-				description: "End of the window, UTC (YYYY-MM-DD HH:mm:ss or ISO 8601). Default: now.",
+				description: `End of the window, ${TIMESTAMP_FORMAT}. Default: now.`,
 			}),
 		},
 		resolve: (

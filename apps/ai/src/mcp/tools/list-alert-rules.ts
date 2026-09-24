@@ -12,12 +12,12 @@ export function registerListAlertRulesTool(server: McpToolRegistrar) {
 	server.define({
 		name: "list_alert_rules",
 		description:
-			"List configured alert rules with their severity, signal type, and condition. Use list_alert_incidents to see triggered alerts.",
+			"List configured alert rules with severity, signal type and condition. Use list_alert_incidents for what has fired.",
 		parameters: Schema.Struct({
 			services: P.optionalList("Only rules scoped to any of these services"),
 			signal_type: P.optionalOneOf(ALERT_SIGNAL_TYPES, "Only rules on this signal type"),
 			severity: P.optionalOneOf(ALERT_SEVERITIES, "Only rules with this severity"),
-			enabled_only: P.optionalFlag("Only return enabled rules (default: false)"),
+			enabled_only: P.optionalFlag("Only enabled rules"),
 		}),
 		aliases: { service_names: "services" },
 		output: ListAlertRulesOutput,

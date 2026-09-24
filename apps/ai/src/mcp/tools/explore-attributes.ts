@@ -122,19 +122,17 @@ const renderKeys = (output: Output): ToolDoc => {
 							keys.map((k) => [k.key, formatNumber(k.count)]),
 						),
 					],
-		next: keys
-			.slice(0, 3)
-			.map((k) =>
-				doc.next(
-					"explore_attributes",
-					{
-						source,
-						key: k.key,
-						...(output.scope === undefined ? undefined : { scope: output.scope }),
-					},
-					"see values for this key",
-				),
+		next: keys.slice(0, 3).map((k) =>
+			doc.next(
+				"explore_attributes",
+				{
+					source,
+					key: k.key,
+					...(output.scope === undefined ? undefined : { scope: output.scope }),
+				},
+				"see values for this key",
 			),
+		),
 	}
 }
 
@@ -142,23 +140,25 @@ export function registerExploreAttributesTool(server: McpToolRegistrar) {
 	server.define({
 		name: "explore_attributes",
 		description:
-			"Discover available attribute keys and their values. Call this before query_data or search_traces when you need to filter by custom attributes. " +
-			"Use source=services to discover available environments and commit SHAs for comparison.",
+			"Discover attribute keys and their values, for filtering in query_data and search_traces. " +
+			"source=services instead lists the environments and commit SHAs seen in the window.",
 		parameters: Schema.Struct({
 			source: P.oneOf(
 				["traces", "metrics", "services"],
-				"Data source. Use 'traces' to discover span/resource attribute keys (e.g. http.method, user.id). " +
-					"Use 'metrics' to discover metric attribute keys. " +
-					"Use 'services' to discover available environments and commit SHAs.",
+				"'traces' for span or resource attributes, 'metrics' for metric labels, 'services' for environments and commit SHAs",
 			),
 			scope: P.optionalOneOf(
 				["span", "resource"],
-				"Attribute scope for traces: 'span' (default) or 'resource'. Ignored for metrics/services.",
+				"Span or resource attributes (traces only; default span)",
 			),
-			key: P.optionalText("When provided, returns values for this key instead of listing all keys"),
-			service: P.service(),
+			key: P.optionalText("Return this key's values instead of the key list"),
+			service: P.service("Only this service (exact `service.name`). Not applied for source=services"),
 			...WINDOW.fields,
-			limit: P.limit({ default: 50, max: 500, noun: "keys or values" }),
+			limit: P.limit({
+				default: 50,
+				max: 500,
+				noun: "keys or values (not applied for source=services)",
+			}),
 		}),
 		aliases: P.SERVICE_ALIASES,
 		output: ExploreAttributesOutput,

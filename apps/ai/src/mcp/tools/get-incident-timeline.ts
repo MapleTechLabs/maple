@@ -20,14 +20,12 @@ export function registerGetIncidentTimelineTool(server: McpToolRegistrar) {
 	server.define({
 		name: "get_incident_timeline",
 		description:
-			"Get detailed incident timeline showing when alerts triggered, their observed values, and resolution status. Use after list_alert_incidents to get deeper details about specific incidents.",
+			"Incidents for one alert rule (or all rules) with first and last trigger, last notification and resolution timestamps: the per-incident detail behind list_alert_incidents. Pass rule_id to follow one rule over time.",
 		parameters: Schema.Struct({
-			rule_id: P.optionalText(
-				"Alert rule ID to filter incidents for (use list_alert_rules to find IDs)",
-			),
+			rule_id: P.optionalText("Only incidents of this rule (ids from list_alert_rules)"),
 			status: P.optionalOneOf(ALERT_INCIDENT_STATUSES, "Only incidents in this status"),
 			severity: P.optionalOneOf(ALERT_SEVERITIES, "Only incidents with this severity"),
-			group_key: P.optionalText("Filter by exact group key"),
+			group_key: P.optionalText("Only incidents with this exact group key"),
 			limit: P.limit({ default: 20, max: MAX_LIMIT, noun: "incidents" }),
 		}),
 		output: GetIncidentTimelineOutput,
@@ -128,6 +126,10 @@ export function registerGetIncidentTimelineTool(server: McpToolRegistrar) {
 				...new Set(open.flatMap((inc) => (inc.groupKey ? [inc.groupKey] : []))),
 			].slice(0, 3)
 			const limit = output.limit ?? 0
+			const scanNotice =
+				output.severity !== undefined || output.groupKey !== undefined
+					? `severity and group_key are applied to the ${FILTERED_SCAN} most recent incidents${output.ruleId === undefined ? "" : " of this rule"}; older matches are not returned.`
+					: undefined
 			return {
 				title: "Incident Timeline",
 				scope: [
@@ -136,11 +138,19 @@ export function registerGetIncidentTimelineTool(server: McpToolRegistrar) {
 					["Severity", output.severity],
 					["Group", output.groupKey],
 				],
+				...(scanNotice === undefined ? undefined : { notices: [scanNotice] }),
 				...(output.incidents.length === 0
 					? {
 							empty: {
 								message: "No incidents found matching the given filters.",
-								hints: ["Drop the rule_id, status, severity or group_key filter."],
+								hints: [
+									"Drop the rule_id, status, severity or group_key filter.",
+									...(scanNotice === undefined
+										? []
+										: [
+												"Add rule_id or status to reach older incidents than the scanned window covers.",
+											]),
+								],
 							},
 						}
 					: undefined),

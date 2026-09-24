@@ -48,6 +48,9 @@ const jsonTransformation = (hint: (value: unknown) => string | undefined) =>
 
 const noHint = (): undefined => undefined
 
+/** Published like `P.json`, so every JSON-text parameter carries the same media type. */
+const JSON_MEDIA_TYPE = "application/json"
+
 /**
  * A JSON-in-a-string parameter, published as a plain string and decoded against `schema`.
  *
@@ -60,7 +63,10 @@ export const jsonText = <S extends Schema.Codec<unknown, unknown, never, never>>
 	schema: S,
 	description: string,
 	hint: (value: unknown) => string | undefined = noHint,
-) => Schema.String.annotate({ description }).pipe(Schema.decodeTo(schema, jsonTransformation(hint)))
+) =>
+	Schema.String.annotate({ description, contentMediaType: JSON_MEDIA_TYPE }).pipe(
+		Schema.decodeTo(schema, jsonTransformation(hint)),
+	)
 
 /**
  * The optional form. The description goes on the property: a schema with an identifier (a
@@ -74,6 +80,7 @@ export const optionalJsonText = <S extends Schema.Codec<unknown, unknown, never,
 ) =>
 	Schema.optional(Schema.String.pipe(Schema.decodeTo(schema, jsonTransformation(hint)))).annotate({
 		description,
+		contentMediaType: JSON_MEDIA_TYPE,
 	})
 
 /**

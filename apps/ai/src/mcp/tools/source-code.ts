@@ -80,11 +80,11 @@ export function registerSourceCodeTools(server: McpToolRegistrar) {
 	server.define({
 		name: "search_source_code",
 		description:
-			"Search code in one connected source repository. Use exact exception text, function/class names, routes, span names, or log fragments from observed telemetry. Call read_source_file on promising paths. The repository must come from telemetry or list_source_repositories.",
+			"Search one connected repository through GitHub's code search: an index of the default branch, matched on whole tokens, not regex, and rate limited. It finds where a symbol or message lives, not what was deployed. Use exact exception text, function or class names, routes, span names or log fragments from telemetry, then read_source_file on promising paths. The repository comes from telemetry (vcs.repository.url.full) or list_source_repositories.",
 		parameters: Schema.Struct({
 			repository: REPOSITORY,
-			query: P.text("Plain code or text to search for; do not include repo/org/user qualifiers"),
-			path: P.optionalText("Optional repository path to narrow the search"),
+			query: P.text("Plain code or text to search for, without repo:, org: or user: qualifiers"),
+			path: P.optionalText("Directory or file to restrict the search to"),
 			limit: P.limit({ default: 10, max: 20, noun: "matches" }),
 		}),
 		output: SearchSourceCodeOutput,
@@ -168,15 +168,15 @@ export function registerSourceCodeTools(server: McpToolRegistrar) {
 	server.define({
 		name: "read_source_file",
 		description:
-			"Read a bounded line range from a file in one connected repository. For incident causality, pass the exact deployed commit SHA from telemetry as ref when available; otherwise the repository's tracked branch is used and the result is not proof of deployed code.",
+			"Read a line range from a file in one connected repository, through GitHub. For incident causality pass the deployed commit SHA from telemetry as `ref`; otherwise the tracked branch is read and the result is not proof of deployed code.",
 		parameters: Schema.Struct({
 			repository: REPOSITORY,
 			path: P.text("Repository-relative file path"),
 			ref: P.optionalText(
-				"Branch, tag, or preferably the exact deployed commit SHA (the service's vcs.ref.head.revision). A service version such as 0.0.22 is not a git ref",
+				"Branch, tag, or preferably the deployed commit SHA (the service's vcs.ref.head.revision). Default: the repository's tracked branch. A service version such as 0.0.22 is not a git ref",
 			),
-			start_line: P.optionalNumber("First 1-based line to return (default 1)"),
-			end_line: P.optionalNumber(`Last 1-based line to return (max ${MAX_FILE_LINES} lines)`),
+			start_line: P.optionalNumber("First line to return, 1-based"),
+			end_line: P.optionalNumber(`Last line to return; at most ${MAX_FILE_LINES} lines per call`),
 		}),
 		output: ReadSourceFileOutput,
 		hints: HINTS,

@@ -20,16 +20,15 @@ export function registerUpdateDashboardWidgetTool(server: McpToolRegistrar) {
 	server.define({
 		name: TOOL,
 		description:
-			"Replace a single widget on an existing dashboard. Pass the full widget JSON (the same shape as one entry in `widgets[]` from get_dashboard) for ONLY the widget you want to change; everything else is left untouched. The stored id is always forced to `widget_id`, so any `id` inside `widget_json` is ignored.\n\n" +
-			"**Call `describe_dashboard_schema` before editing** for the data-source kinds, unit vocabulary, aggregations and group-by tokens — generated from the live schema.\n\n" +
-			"This replaces the WHOLE widget, so omitting `timeRange` removes an existing per-widget override. The response carries render warnings plus an automatic validation summary; a `suspicious` or `broken` verdict means the chart will not render meaningfully as-is.",
+			"Replace one widget on a dashboard with the full widget object; other widgets and the dashboard metadata are untouched. Read describe_dashboard_schema before editing. " +
+			"Whole-widget semantics: leave `timeRange` out and an existing per-widget override is removed. " +
+			"The result carries render warnings and a validation verdict; suspicious or broken means the chart will not render meaningfully as saved.",
 		parameters: Schema.Struct({
-			dashboard_id: P.text(
-				"ID of the dashboard containing the widget (use list_dashboards to find IDs)",
-			),
-			widget_id: P.text("ID of the widget to replace (use get_dashboard to see existing widget ids)"),
+			dashboard_id: P.text("Dashboard ID (ids from list_dashboards)"),
+			widget_id: P.text("ID of the widget to replace (get_dashboard lists them)"),
 			widget_json: widgetJson(
-				'Full JSON for the replacement widget: { id, visualization, dataSource, display, layout, timeRange? }. Any `id` field inside this JSON is ignored in favor of widget_id. `timeRange` pins the widget to its own window (`{"type":"relative","value":"30m"}` or `{"type":"absolute","startTime":"...","endTime":"..."}`); omitting it means "follow the dashboard\'s range", so leaving it out of an update REMOVES an existing override.',
+				"The replacement widget as JSON text, the shape of one entry in get_dashboard's widgets[]: { visualization, dataSource, display, layout, timeRange? }. " +
+					"`visualization` is the stored value (chart, stat, ...), with display.chartId choosing bar or area; there is no panel_type here. An `id` inside is ignored in favour of widget_id.",
 			),
 		}),
 		output: UpdateDashboardWidgetOutput,

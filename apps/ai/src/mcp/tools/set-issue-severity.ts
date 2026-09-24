@@ -13,11 +13,11 @@ export function registerSetIssueSeverityTool(server: McpToolRegistrar) {
 	server.define({
 		name: "set_issue_severity",
 		description:
-			"Set or clear the triage severity of an issue. Severity drives escalation routing (critical/high/medium/low). API-key agents write with 'ai' precedence, so a human's manual severity is never overwritten; human sessions write a sticky manual override.",
+			"Set or clear the triage severity of an issue. Severity drives escalation routing. An agent identity writes with `ai` precedence and never overwrites a severity a human set by hand; the result says whether it applied. A human session writes a sticky manual override.",
 		parameters: Schema.Struct({
-			issue_id: issueIdParam("The issue ID (from list_error_issues)"),
-			severity: P.oneOf([...IssueSeverity.literals, "none"], "Target severity, or 'none' to clear"),
-			note: P.optionalText("Optional reasoning / context, stored on the severity event"),
+			issue_id: issueIdParam(),
+			severity: P.oneOf([...IssueSeverity.literals, "none"], "Target severity; `none` clears it"),
+			note: P.optionalText("Reasoning or context, stored on the severity event"),
 		}),
 		output: SetIssueSeverityOutput,
 		hints: { readOnly: false, destructive: false, idempotent: true },

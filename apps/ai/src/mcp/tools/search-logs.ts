@@ -45,7 +45,7 @@ export function registerSearchLogsTool(server: McpToolRegistrar) {
 	server.define({
 		name: "search_logs",
 		description:
-			"Search and filter logs by service, severity, keyword, or trace_id. A partial page names the call for the next one. Use inspect_trace to see the full trace for a log entry.",
+			"Individual log entries, newest first, filtered by service, severity, body text, trace or span. When the match is too large to read, use mine_log_patterns instead. inspect_trace shows the full trace behind an entry.",
 		parameters: Schema.Struct({
 			...WINDOW.fields,
 			service: P.service(),
@@ -53,9 +53,9 @@ export function registerSearchLogsTool(server: McpToolRegistrar) {
 				LOG_SEVERITIES,
 				"Only logs at this severity level (matches every SDK spelling of it)",
 			),
-			search: P.optionalText("Search text in log body"),
-			trace_id: P.optionalText("Filter by trace ID"),
-			span_id: P.optionalText("Filter by span ID (scope to a specific span within a trace)"),
+			search: P.optionalText("Substring of the log body"),
+			trace_id: P.optionalText("Only logs under this trace"),
+			span_id: P.optionalText("Only logs under this span"),
 			offset: P.offset({ max: 10_000 }),
 			limit: P.limit({ default: 30, max: 200, noun: "logs" }),
 		}),

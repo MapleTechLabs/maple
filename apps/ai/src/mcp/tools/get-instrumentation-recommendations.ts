@@ -86,18 +86,17 @@ export function registerGetInstrumentationRecommendationsTool(server: McpToolReg
 	server.define({
 		name: "get_instrumentation_recommendations",
 		description:
-			"Audit instrumentation quality for the org: lists detected span attribute issues reconciled against live data " +
-			"(deprecated semconv keys to rename, double-emitted old+new keys, non-conforming names) plus org-wide " +
-			"resource-attribute coverage gaps (deployment environment, vcs.*, service.version). Renames can be fixed at " +
-			"the SDK or by accepting the matching Recommendation Issue in Maple Settings → Ingestion (creates an ingest " +
-			"attribute mapping); double-emission and naming issues must be fixed at the SDK. Used by the maple-audit skill.",
+			"Span attribute issues found in the org's live data (deprecated semconv keys to rename, keys emitted under " +
+			"both old and new names, non-conforming names) plus org-wide resource attribute gaps (deployment " +
+			"environment, vcs.*, service.version). Each issue says whether an ingest mapping can fix it or only the " +
+			"SDK can. Use `audit_setup` for the whole setup; this is its attribute detail.",
 		parameters: Schema.Struct({
 			status: P.optionalOneOf(
 				["open", "dismissed", "applied", "resolved", "all"],
-				"Filter issues by status (default: open)",
+				"Only issues in this status (default open)",
 			),
 			include_coverage: P.optionalFlag(
-				"Set to false to skip the resource-attribute coverage section (default: included)",
+				"Include the resource attribute coverage section (default true)",
 			),
 		}),
 		output: GetInstrumentationRecommendationsOutput,

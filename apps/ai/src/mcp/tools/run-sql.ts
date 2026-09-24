@@ -6,6 +6,7 @@ import { autoBucketSeconds, runRawSql } from "../lib/run-raw-sql"
 import { truncate } from "../lib/format"
 import { toMcpQueryError } from "../lib/map-warehouse-error"
 import * as P from "../lib/params"
+import { MAX_RAW_SQL_RESULT_ROWS } from "@maple/domain/raw-sql"
 import { doc } from "../lib/tool-doc"
 import {
 	describeWarehouseTable,
@@ -93,26 +94,22 @@ const RUN_SQL_EXAMPLE = "SELECT count() AS c FROM traces WHERE $__orgFilter AND 
 
 const runSqlSchema = Schema.Struct({
 	sql: P.text(
-		"Raw ClickHouse SQL to run read-only. MUST reference the `$__orgFilter` macro " +
-			"(expands to `OrgId = '<your-org>'`) so the query is scoped to your org; queries without it are rejected. " +
-			"Optional macros: `$__timeFilter(Column)` (expands to `Column >= <start> AND Column <= <end>`), " +
-			"`$__startTime`, `$__endTime`, `$__interval_s` (bucket width in seconds for toStartOfInterval). " +
-			"Only a single SELECT is allowed; DDL/DML keywords (INSERT, DROP, ALTER, ...) are rejected. " +
-			"An outer 1,000-row result cap is always enforced. " +
-			"Use describe_warehouse_tables to discover table/column names.",
+		"The SELECT. It MUST contain `$__orgFilter` (expands to `OrgId = '<your-org>'`); a query without it is rejected. " +
+			"Other macros: `$__timeFilter(Column)` (`Column >= <start> AND Column <= <end>`), `$__startTime`, `$__endTime`, " +
+			"`$__interval_s` (bucket width for toStartOfInterval). Only one statement; DDL/DML is rejected.",
 	),
 	...WINDOW.fields,
 	granularity_seconds: P.optionalNumber(
-		"Value substituted for the `$__interval_s` macro. Auto-computed from the time range if omitted.",
+		"Value of `$__interval_s`. Auto-computed from the window when omitted.",
 	),
 })
 
 const runSqlDescription =
-	"Run read-only ClickHouse SQL against your org's warehouse and return the rows. " +
-	"Use this to verify a raw query before saving it as a raw_sql_chart widget, to spot-check data, " +
-	"or to answer questions the structured tools (query_data, explore_attributes) can't express. " +
-	"Org isolation is automatic and required via the `$__orgFilter` macro. Read-only: writes/DDL are rejected and an auto-LIMIT is applied. " +
-	"For dashboard widgets prefer add_dashboard_widget; for trends/top-N prefer query_data."
+	"Run one read-only ClickHouse SELECT against the org's warehouse and return its rows: " +
+	`at most ${MAX_RAW_SQL_RESULT_ROWS} are fetched and the first ${MAX_RENDERED_ROWS} rendered, with the true count reported. ` +
+	"Use it to answer what query_data cannot express, to spot-check data, or to test SQL before saving it " +
+	"as a raw_sql widget with add_dashboard_widget. For trends and top-N prefer query_data. " +
+	"describe_warehouse_tables gives table and column names."
 
 /** A warehouse cell as JSON: 64-bit ints can arrive as bigint, and nothing else is JSON-unsafe. */
 const toJson = (value: unknown): Schema.Json => {

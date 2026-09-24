@@ -46,52 +46,49 @@ export function registerAddDashboardWidgetTool(server: McpToolRegistrar) {
 		name: TOOL,
 		// The panel-type list is the `panel_type` enum, where it is binding; do not repeat it here.
 		description:
-			"Add a single widget to an existing dashboard without re-sending the whole document. Two creation paths:\n\n" +
-			"1. **Structured query builder**: pass `data_source_json` (a `kind`-discriminated data source) plus `display_json`.\n" +
-			"2. **Raw ClickHouse SQL**: pass `sql` instead and the tool builds the data source. `sql` MUST reference `$__orgFilter`. Call `describe_warehouse_tables` first so you do not guess table or column names.\n\n" +
-			"**Call `describe_dashboard_schema` before authoring** for the data-source kinds, unit vocabulary (`percent` is a 0–1 fraction, `percent_100` is 0–100 — inverted from Grafana), aggregations and group-by tokens, all generated from the live schema.\n\n" +
-			"Layout is auto-placed when `layout_json` is omitted. The response carries an automatic validation summary; a `suspicious` or `broken` verdict means the chart will not render meaningfully as-is.",
+			"Add one widget to a dashboard. Pick `panel_type`, then one of: `data_source_json` plus `display_json` (query builder); " +
+			"`sql` (raw ClickHouse, must reference `$__orgFilter`; read describe_warehouse_tables first for table and column names); " +
+			"`display_json.funnel.steps` with panel_type funnel; `display_json.paths` with panel_type paths (the last two derive their data source). " +
+			"Read describe_dashboard_schema before authoring: data-source kinds, units (`percent` is a 0-1 fraction, `percent_100` is 0-100, the reverse of Grafana), aggregations, group-by tokens. " +
+			"Layout is auto-placed unless layout_json is given. The result carries a validation verdict; suspicious or broken means the chart will not render meaningfully as saved.",
 		parameters: Schema.Struct({
-			dashboard_id: P.text(
-				"ID of the dashboard to add the widget to (use list_dashboards to find IDs)",
-			),
+			dashboard_id: P.text("Dashboard ID (ids from list_dashboards)"),
 			// The enum is the list: a newly `mcpExposed` widget type is advertised and accepted
 			// from the same table.
 			panel_type: P.optionalOneOf(
 				MCP_PANEL_TYPES,
-				"The widget KIND — not a title (set that via `display_json.title`). This one field replaces the old `visualization` + `display_json.chartId` + `display_type` combination: `bar` and `area` are directly reachable here, and the matching `chartId` and raw-SQL display type are derived for you.",
+				"The widget kind, not its title (title goes in display_json.title). chartId and the raw-SQL display type are derived from it.",
 			),
 			visualization: P.optionalOneOf(
 				MCP_VISUALIZATIONS,
-				"Legacy alias for `panel_type`, still accepted. It collapses line/bar/area into `chart` and then needs `display_json.chartId` to tell them apart — prefer `panel_type`.",
+				"Legacy spelling of panel_type. It folds line/bar/area into `chart` and needs display_json.chartId to tell them apart; prefer panel_type.",
 			),
 			sql: P.optionalText(
-				'Raw ClickHouse SQL with macros (`$__orgFilter` required). When set, the tool builds a `kind: "raw_sql"` data source and ignores `data_source_json`.',
+				'Raw ClickHouse SQL with macros; `$__orgFilter` is required. Builds a `kind: "raw_sql"` data source and ignores data_source_json.',
 			),
 			display_type: P.optionalOneOf(
 				RawSqlDisplayType.literals,
-				"Raw SQL display type. Only used when `sql` is set. Derived from `panel_type` (or `visualization` + `display_json.chartId`) if omitted.",
+				"Raw-SQL rendering when `sql` is set. Derived from panel_type; pass it only to override.",
 			),
 			granularity_seconds: P.optionalNumber(
-				"Bucket size in seconds for raw SQL timeseries. Only used when `sql` is set. If omitted the server auto-computes from the dashboard time range.",
+				"Bucket size for a raw-SQL timeseries; computed from the dashboard range when omitted.",
 			),
 			data_source_json: optionalDataSourceJson(
-				"JSON string for the widget's `kind`-discriminated data source (see `describe_dashboard_schema` section `data_sources`). Required for the structured-query path; ignored when `sql` is set, and derived for you when `display_json.funnel.steps` defines a product-event funnel. Use get_dashboard on an existing widget to see the exact shape.",
+				"The widget's `kind`-discriminated data source as JSON text (describe_dashboard_schema section data_sources). Required for the query-builder path; ignored with `sql`, derived for funnel and paths.",
 			),
 			display_json: optionalJsonText(
 				WidgetDisplayConfigSchema,
-				"JSON string for the widget's display config: { title?, unit?, thresholds?, chartId?, columns?, ... }. Required for the structured-query path; defaults to `{}` for the raw-SQL path. Use get_dashboard on an existing widget to see the exact shape.",
+				"Display config as JSON text: { title?, unit?, thresholds?, chartId?, columns?, funnel?, paths?, ... } (describe_dashboard_schema section display). Required for the query-builder path; defaults to {} with `sql`.",
 			),
 			layout_json: optionalJsonText(
 				WidgetLayoutSchema,
-				"Optional layout { x, y, w, h }. If omitted the widget is auto-placed using a 12-column grid with sensible default sizes per visualization.",
+				"Grid rectangle { x, y, w, h } on the 12-column grid, as JSON text. Omit to auto-place.",
 			),
-			widget_id: P.optionalText(
-				"Optional stable id for the new widget. If omitted a UUID is generated.",
-			),
+			widget_id: P.optionalText("Stable id for the widget; a UUID when omitted."),
 			time_range_json: P.optionalJson(
 				TimeRangeSchema,
-				'Optional time range pinning this widget to its own window instead of the dashboard\'s: `{"type":"relative","value":"30m"}` or `{"type":"absolute","startTime":"...","endTime":"..."}` (ISO 8601). Omit it and the widget follows the dashboard range, which is what almost every widget should do — use it only when the tile genuinely means a different window (an "active in the last 30 minutes" stat on a 7-day board). The widget header labels the override so readers can see it.',
+				'Pin the widget to its own window instead of the dashboard\'s: {"type":"relative","value":"30m"} or {"type":"absolute","startTime":"...","endTime":"..."} (ISO 8601). ' +
+					'Only for a tile that means a different window (a 30-minute "active now" stat on a 7-day board); the header labels the override.',
 			),
 		}),
 		output: AddDashboardWidgetOutput,

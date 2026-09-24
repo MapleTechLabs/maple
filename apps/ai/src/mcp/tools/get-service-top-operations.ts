@@ -17,13 +17,10 @@ export function registerGetServiceTopOperationsTool(server: McpToolRegistrar) {
 	server.define({
 		name: "get_service_top_operations",
 		description:
-			"Get the top operations (endpoints/spans) for a service, sorted by request count, error rate, or latency. Use after diagnosing a slow/erroring service to find which endpoints need attention.",
+			"Top operations (endpoints/spans) of one service, ranked by the chosen metric. Use after diagnose_service to find which endpoints need attention.",
 		parameters: Schema.Struct({
-			service: P.text("Service name to get top operations for (exact `service.name`)"),
-			metric: P.optionalOneOf(
-				TracesMetric.literals,
-				"Metric to sort by: count (request volume), error_rate, avg_duration, p95_duration (default: count)",
-			),
+			service: P.text("The service (exact `service.name`)"),
+			metric: P.optionalOneOf(TracesMetric.literals, "What to rank by (default count)"),
 			...WINDOW.fields,
 			limit: P.limit({ default: 20, max: 500, noun: "operations" }),
 		}),

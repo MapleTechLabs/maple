@@ -31,7 +31,7 @@ const Parameters = Schema.Struct({
 	severity: P.optionalOneOf(ALERT_SEVERITIES, "Alert severity"),
 	threshold: P.optionalNumber("Threshold value. E.g. 0.05 for 5% error rate, 1000 for 1s latency"),
 	window_minutes: P.optionalNumber("Evaluation window in minutes"),
-	services: P.optionalList("Service names to scope the alert to (replaces the current scope)"),
+	services: P.optionalList("Service scope (replaces the current one; an empty list means all services)"),
 	environments: P.optionalList(
 		"Deployment environments to scope the alert to (replaces the current scope; pass an empty list for all environments). Ignored for builder_query / raw_query.",
 	),
@@ -41,12 +41,9 @@ const Parameters = Schema.Struct({
 	),
 	signal_type: P.optionalOneOf(
 		ALERT_SIGNAL_TYPES,
-		"Signal type. Use builder_query with a metrics draft for custom metrics.",
+		"What the rule measures. builder_query takes query_builder_draft, raw_query takes raw_query_sql.",
 	),
-	comparator: P.optionalOneOf(
-		ALERT_COMPARATORS,
-		"Comparison operator: gt (>), gte (>=), lt (<), lte (<=), eq, neq",
-	),
+	comparator: P.optionalOneOf(ALERT_COMPARATORS, "How the observed value is compared with threshold"),
 	group_by: P.optionalList(
 		"Dimensions to evaluate the alert per-group (replaces the current grouping; an empty list removes it). " +
 			"Built-in tokens: service.name, span.name, status.code, http.method, severity. Attribute keys: attr.<key>.",
@@ -58,7 +55,7 @@ const Parameters = Schema.Struct({
 	apdex_threshold_ms: P.optionalNumber("Apdex threshold in milliseconds (for signal_type=apdex)"),
 	query_builder_draft: P.optionalJson(
 		QueryBuilderQueryDraftSchema,
-		"A query-builder draft, as an object or its JSON text (for signal_type=builder_query).",
+		"Query-builder draft, same shape as create_alert_rule (for signal_type=builder_query)",
 	),
 	raw_query_sql: P.optionalText(
 		"ClickHouse SQL returning a numeric `value` column (for signal_type=raw_query). Must reference $__orgFilter and $__timeFilter(col).",
@@ -68,10 +65,10 @@ const Parameters = Schema.Struct({
 		"How to collapse raw_query result rows into one value.",
 	),
 	notification_title: P.optionalText(
-		"Custom notification title template. Supports {{ variable }} substitution.",
+		"Notification title template with {{ variable }} substitution; variables as in create_alert_rule",
 	),
 	notification_body: P.optionalText(
-		"Custom notification body template (Markdown). Supports {{ variable }} substitution.",
+		"Notification body template (Markdown) with {{ variable }} and {{#if key}}...{{/if}}",
 	),
 })
 
@@ -133,8 +130,8 @@ export function registerUpdateAlertRuleTool(server: McpToolRegistrar) {
 	server.define({
 		name: "update_alert_rule",
 		description:
-			"Update an existing alert rule. Only provide the fields you want to change: every other field keeps its current value. " +
-			"Use list_alert_rules to find rule IDs and list_alert_destinations for destination IDs, or get_alert_rule to inspect the current config first.",
+			"Update an alert rule. Pass only the fields to change; the rest keep their current value (get_alert_rule shows it). " +
+			"Ids from list_alert_rules and list_alert_destinations.",
 		parameters: Parameters,
 		aliases: { service_names: "services" },
 		output: UpdateAlertRuleOutput,

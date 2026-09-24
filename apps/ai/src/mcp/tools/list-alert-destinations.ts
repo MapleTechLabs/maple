@@ -12,10 +12,10 @@ export function registerListAlertDestinationsTool(server: McpToolRegistrar) {
 	server.define({
 		name: "list_alert_destinations",
 		description:
-			"List the notification destinations alert rules can deliver to (chat channels such as Slack, Discord, PagerDuty, webhook, email, …) with their IDs, type, and delivery health. Pass these IDs as destination_ids to create_alert_rule / update_alert_rule.",
+			"List the notification destinations a rule can deliver to, with id, type and delivery health. Pass the ids as destination_ids to create_alert_rule / update_alert_rule.",
 		parameters: Schema.Struct({
 			type: P.optionalOneOf(ALERT_DESTINATION_TYPES, "Only destinations of this type"),
-			enabled_only: P.optionalFlag("Only return enabled destinations (default: false)"),
+			enabled_only: P.optionalFlag("Only enabled destinations"),
 		}),
 		output: ListAlertDestinationsOutput,
 		hints: { readOnly: true },

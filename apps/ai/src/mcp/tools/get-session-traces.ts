@@ -12,7 +12,7 @@ export function registerGetSessionTracesTool(server: McpToolRegistrar) {
 	server.define({
 		name: "get_session_traces",
 		description:
-			"Browser session replays (end-user web sessions), not AI agent sessions: for those use `list_agent_sessions`. Given a browser session id, return the session's browser metadata (browser, OS, device, country, entry URL, user, error count, duration) and the backend traces it observed, each summarized with root span name, service, duration, error status, and span count. Use after `search_sessions` to jump from a user session to the backend requests behind it; drill into any trace with `inspect_trace`.",
+			"The backend traces a browser session replay observed (session id from `search_sessions`; not an AI agent session), with the session's client, user and error summary. Use it to jump from a user's session to the requests behind it; `inspect_trace` opens one.",
 		parameters: Schema.Struct({
 			session_id: P.text("The session id to read (from search_sessions)"),
 			limit: P.limit({ default: 50, max: 100, noun: "traces" }),
@@ -120,7 +120,7 @@ export function registerGetSessionTracesTool(server: McpToolRegistrar) {
 					.map((t) =>
 						doc.next(
 							"inspect_trace",
-							{ trace_id: t.traceId },
+							{ trace_id: t.traceId, timestamp: t.startTime },
 							`${t.hasError ? "errored " : ""}${t.rootSpanName || "trace"} in ${t.rootServiceName || "?"}`,
 						),
 					),

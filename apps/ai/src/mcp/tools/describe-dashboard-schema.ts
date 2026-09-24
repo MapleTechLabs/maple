@@ -23,11 +23,11 @@ export function registerDescribeDashboardSchemaTool(server: McpToolRegistrar) {
 	server.define({
 		name: TOOL,
 		description:
-			"Discover what a dashboard widget can be: every panel type, the four data-source kinds, the unit vocabulary, valid aggregations and group-by tokens, and the display config. Call it before authoring or editing widgets — the tables are generated from the live schema, so unlike a remembered example they cannot be out of date.",
+			"What a dashboard widget can be: panel types, the four data-source kinds, the unit vocabulary, aggregations and group-by tokens, the display config. Generated from the live schema; read it before authoring or editing widgets rather than working from a remembered example.",
 		parameters: Schema.Struct({
 			section: P.optionalOneOf(
 				DASHBOARD_SCHEMA_SECTIONS,
-				"Optional section. Omit for an index plus the panel-type table.",
+				"Omit for the index plus the panel-type table.",
 			),
 		}),
 		output: DescribeDashboardSchemaOutput,

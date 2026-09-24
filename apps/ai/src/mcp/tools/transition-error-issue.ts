@@ -1,12 +1,12 @@
 import type { McpToolRegistrar } from "./types"
 import { Effect, Schema } from "effect"
-import { WarehouseTimeInput } from "@maple/query-engine"
 import { TransitionErrorIssueOutput } from "@maple/domain/mcp-outputs"
 import { CurrentMcpTenant } from "../lib/query-warehouse"
 import { resolveActorId } from "../lib/resolve-actor"
 import * as P from "../lib/params"
 import { doc } from "../lib/tool-doc"
 import {
+	SELECTABLE_STATES,
 	issueIdParam,
 	issueNotFound,
 	persistenceFailed,
@@ -14,35 +14,24 @@ import {
 	validationFailed,
 } from "./error-issue-shared"
 import { ErrorsService } from "@maple/backend/services/errors/ErrorsService"
-import {
-	MACHINE_OWNED_WORKFLOW_STATES,
-	WORKFLOW_STATE_ORDER,
-	describeWorkflowTransitions,
-} from "@maple/domain/http"
-
-/**
- * What a caller may ask for. `regressed` and `verifying` are observations Maple's ticks make,
- * not states an agent asserts, so they are not in the enum.
- */
-const SELECTABLE_STATES = WORKFLOW_STATE_ORDER.filter((state) => !MACHINE_OWNED_WORKFLOW_STATES.has(state))
 
 export function registerTransitionErrorIssueTool(server: McpToolRegistrar) {
 	server.define({
 		name: "transition_error_issue",
 		description: [
-			"Move an error issue to a new workflow state.",
-			`Valid transitions: ${describeWorkflowTransitions()}.`,
-			"`regressed` and `verifying` are set by Maple's own ticks and cannot be requested here: `regressed` means a fixed error started firing from a build that postdates the fix, and `verifying` means a linked PR merged and the post-merge check is running.",
-			"Do not move an issue to `done` yourself once a PR is linked: a merged PR opens a verification window that closes the issue for you when the error stops.",
+			"Move an error issue to another workflow state.",
+			"`regressed` and `verifying` are set by Maple's own ticks and cannot be requested: `regressed` means a fixed error fired again from a build after the fix, `verifying` means a linked PR merged and the post-merge check is running.",
+			"`cancelled` is final. A refused move names the states allowed from the current one.",
+			"Do not move an issue to `done` yourself once a PR is linked: the merge opens a verification window that closes the issue when the error stops.",
+			"Moving to a closed state ends your lease.",
 		].join(" "),
 		parameters: Schema.Struct({
 			issue_id: issueIdParam(),
 			to_state: P.oneOf(SELECTABLE_STATES, "Target workflow state"),
-			note: P.optionalText("Optional reasoning / context, stored on the event"),
-			snooze_until: Schema.optional(WarehouseTimeInput).annotate({
-				description:
-					"UTC datetime for a 'wontfix' transition. The issue re-opens as 'triage' if new events arrive after this time.",
-			}),
+			note: P.optionalText("Reasoning or context, stored on the event"),
+			snooze_until: P.optionalTimestamp(
+				"For a `wontfix` move: time after which new occurrences reopen the issue as `triage`",
+			),
 		}),
 		output: TransitionErrorIssueOutput,
 		hints: { readOnly: false, destructive: false, idempotent: true },
@@ -69,7 +58,6 @@ export function registerTransitionErrorIssueTool(server: McpToolRegistrar) {
 			return {
 				id: issue.id,
 				workflowState: issue.workflowState,
-				fromState: "",
 				toState: issue.workflowState,
 				assignedActorId: issue.assignedActor?.id ?? null,
 				leaseHolderActorId: issue.leaseHolder?.id ?? null,

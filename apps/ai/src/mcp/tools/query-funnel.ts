@@ -45,11 +45,11 @@ export function registerQueryFunnelTool(server: McpToolRegistrar) {
 	server.define({
 		name: TOOL,
 		description:
-			'Run a conversion funnel over product events: page views, browser `track()` events and server-side events, stitched per person. Give 1-10 ordered steps as `steps_json`; each step is `{kind:"event", eventName, attributeEquals?}`, `{kind:"page", pagePath, host?}`, or (step 1 only) `{kind:"session", dimension, value}` for how the session was acquired (`dimension`: referrerHost | utmSource | utmMedium | utmCampaign | country | host). Returns per-step counts, share of step 1, step-to-step conversion and drop-off; optionally broken down by an acquisition dimension or an event attribute (`breakdown_by`: one of the session dimensions, or `attribute:<key>`). Call `list_product_events` first to see which event names exist. Filters (`host`, `page_path`, `referrer_host`, `country`, `utm_*`, `device_type`, `browser`) narrow the population to persons with a matching session.',
+			"Conversion funnel over product events (page views, browser `track()` events and server-side events), stitched per person. Reports each step's count, share of step 1, step-to-step conversion and drop-off, optionally per `breakdown_by` group. An event step needs the exact name `list_product_events` lists. The host, page, referrer, country, utm, device and browser filters narrow the population to persons with a matching session.",
 		parameters: Schema.Struct({
 			steps_json: P.json(
 				Schema.Array(FunnelStep),
-				`JSON array of 1-${FUNNEL_MAX_STEPS} funnel steps, in order. Example: ${STEPS_EXAMPLE}`,
+				`JSON array of 1-${FUNNEL_MAX_STEPS} steps, in order. A step is {kind:"event", eventName, attributeEquals?}, {kind:"page", pagePath, host?}, or, as step 1 only, {kind:"session", dimension, value} for how the session was acquired (dimension: referrerHost, utmSource, utmMedium, utmCampaign, country or host). Example: ${STEPS_EXAMPLE}`,
 			),
 			key_by: P.optionalOneOf(
 				FunnelKeyBy.literals,
@@ -59,7 +59,7 @@ export function registerQueryFunnelTool(server: McpToolRegistrar) {
 				"The whole chain must complete within this many seconds of the step-1 event. Default 86400 (24h).",
 			),
 			breakdown_by: P.optionalText(
-				"Group persons by `referrerHost`, `utmSource`, `utmMedium`, `utmCampaign`, `country`, `host`, or `attribute:<key>` (an attribute on their events). Top groups by step-1 count.",
+				"Group by an acquisition dimension (referrerHost, utmSource, utmMedium, utmCampaign, country, host) or by `attribute:<key>` on the events. Top groups by step-1 count.",
 			),
 			breakdown_limit: P.limit({ default: 10, max: BREAKDOWN_MAX_GROUPS, noun: "breakdown groups" }),
 			...WINDOW.fields,

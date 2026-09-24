@@ -20,10 +20,10 @@ export function registerListAlertChecksTool(server: McpToolRegistrar) {
 	server.define({
 		name: "list_alert_checks",
 		description:
-			"List recent alert rule checks (one per evaluation) with observed value, threshold, sample count, and incident linkage. Use to tune thresholds, investigate flappy rules, or correlate a breach with prior near-misses.",
+			"List a rule's recent checks (one row per evaluation) with observed value, threshold, sample count and incident transition. Use it to tune thresholds, diagnose flapping, or see the near-misses before a breach.",
 		parameters: Schema.Struct({
-			rule_id: P.text("ID of the alert rule to inspect"),
-			group_key: P.optionalText("Filter by a specific group key"),
+			rule_id: P.text("Alert rule ID"),
+			group_key: P.optionalText("Only checks for this exact group key"),
 			status: P.optionalOneOf(ALERT_CHECK_STATUSES, "Only checks with this status"),
 			...WINDOW.fields,
 			limit: P.limit({ default: 100, max: 2000, noun: "checks" }),

@@ -21,11 +21,11 @@ export function registerClaimErrorIssueTool(server: McpToolRegistrar) {
 	server.define({
 		name: "claim_error_issue",
 		description:
-			"Claim a lease on an error issue so other agents don't duplicate work. Issues in 'triage' or 'todo' auto-transition to 'in_progress' on claim. The lease (default 30 min) renews automatically whenever you act on the issue (transition it, comment, or set its severity) and is released when you move it to a terminal state or call release_error_issue.",
+			"Take a lease on an error issue so other agents do not duplicate the work. Issues in `triage`, `regressed` or `todo` move to `in_progress` on claim. The lease renews whenever you act on the issue (transition it, comment, set its severity, propose a fix) and ends when the issue reaches `done` or `cancelled` or you call release_error_issue. Claiming an issue another agent holds fails.",
 		parameters: Schema.Struct({
 			issue_id: issueIdParam(),
 			lease_duration_seconds: P.optionalNumber(
-				`Lease TTL in seconds (${MIN_LEASE_SECONDS}..${MAX_LEASE_SECONDS}). Default: 1800 (30 min).`,
+				`How long the lease lasts without activity, ${MIN_LEASE_SECONDS} to ${MAX_LEASE_SECONDS} seconds (default 1800)`,
 			),
 		}),
 		output: ClaimErrorIssueOutput,

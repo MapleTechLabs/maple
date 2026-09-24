@@ -1,7 +1,6 @@
 import { McpQueryError, type McpToolRegistrar } from "./types"
 import { formatNumber, truncate } from "../lib/format"
 import { Effect, Schema } from "effect"
-import { WarehouseTimeInput } from "@maple/query-engine"
 import { ListErrorIssuesOutput } from "@maple/domain/mcp-outputs"
 import { CurrentMcpTenant } from "../lib/query-warehouse"
 import { warehouseReadToMcpHandlers } from "../lib/map-warehouse-error"
@@ -9,7 +8,7 @@ import * as P from "../lib/params"
 import { doc, type NextCall } from "../lib/tool-doc"
 import { actorLabel } from "./error-issue-shared"
 import { ErrorIssueReadModelsService } from "@maple/backend/services/errors/ErrorIssueReadModelsService"
-import { IssueKind, IssueSeverity, WORKFLOW_STATE_ORDER, WorkflowState } from "@maple/domain/http"
+import { IssueKind, IssueSeverity, WorkflowState } from "@maple/domain/http"
 
 type Output = typeof ListErrorIssuesOutput.Type
 type AnyRow = Output["issues"][number]
@@ -145,7 +144,8 @@ const nextCalls = (output: Output): ReadonlyArray<NextCall> => {
 export function registerListErrorIssuesTool(server: McpToolRegistrar) {
 	server.define({
 		name: "list_error_issues",
-		description: `List persistent, triageable error issues (grouped by exception fingerprint) with workflow state, counts, and assignment. Each issue persists across occurrences so state/notes/assignee survive new events. Workflow states: ${WORKFLOW_STATE_ORDER.join(", ")}. A "regressed" issue was fixed before and started firing again: read its events before investigating it as new.`,
+		description:
+			"List persistent error issues (one per exception fingerprint, plus alert and integration issues) with workflow state, counts, assignment and lease holder. An issue survives new occurrences, so its state, notes and assignee persist. The `Issue ID` is what the issue tools take; the `Fingerprint` column is what error_detail takes. A `regressed` issue was fixed before and started firing again: read its events before investigating it as new.",
 		parameters: Schema.Struct({
 			workflow_state: P.optionalOneOf(
 				WorkflowState.literals,
@@ -160,15 +160,14 @@ export function registerListErrorIssuesTool(server: McpToolRegistrar) {
 				"Filter by issue kind: error (fingerprint groups), alert (alert-rule incidents) or integration (third-party webhooks)",
 			),
 			service: P.service("Filter by service name"),
-			last_seen_after: Schema.optional(WarehouseTimeInput).annotate({
-				description:
-					'Only issues that received an occurrence after this time (YYYY-MM-DD HH:mm:ss). The way to ask "what fired recently" without paging the whole backlog.',
-			}),
+			last_seen_after: P.optionalTimestamp(
+				'Only issues with an occurrence after this time, the way to ask "what fired recently" without paging the whole backlog',
+			),
 			compact: P.optionalFlag(
-				"Narrow table and payload: id, state, severity, service, exception, events, last seen, fingerprint. Omits assignment, lease and notes.",
+				"Narrow table: id, state, severity, service, exception, events, last seen, fingerprint. Omits assignment, lease and notes",
 			),
 			limit: P.limit({ default: 50, max: MAX_LIMIT, noun: "issues" }),
-			include_archived: P.optionalFlag("Include archived issues in results"),
+			include_archived: P.optionalFlag("Also return archived issues"),
 		}),
 		aliases: P.SERVICE_ALIASES,
 		output: ListErrorIssuesOutput,

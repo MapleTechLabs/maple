@@ -17,7 +17,7 @@ export function registerMineLogPatternsTool(server: McpToolRegistrar) {
 	server.define({
 		name: "mine_log_patterns",
 		description:
-			"Cluster log messages into templates (e.g. 'GET /api/users/<*> 200 in <*>ms') with counts. Use this when search_logs would return too many rows to be useful: pattern mining collapses N matched logs into K distinct templates plus a per-template severity/service breakdown. Pair with a tight time range and selective filters: this samples up to 10 000 recent logs from the matched set, so a wide range with no filters will scan a lot of data.",
+			"Cluster log messages into templates (e.g. 'GET /api/users/<*> 200 in <*>ms') with counts and a per-template severity/service breakdown. Use when search_logs would return too many rows to read. It clusters a sample of the most recent matching logs, so pair it with a tight window and selective filters.",
 		parameters: Schema.Struct({
 			...WINDOW.fields,
 			service: P.service(),
@@ -25,12 +25,12 @@ export function registerMineLogPatternsTool(server: McpToolRegistrar) {
 				LOG_SEVERITIES,
 				"Only logs at this severity level (matches every SDK spelling of it)",
 			),
-			search: P.optionalText("Search substring in log body before clustering"),
-			trace_id: P.optionalText("Filter by trace ID"),
+			search: P.optionalText("Substring of the log body, applied before clustering"),
+			trace_id: P.optionalText("Only logs under this trace"),
 			sample_size: P.limit({
 				default: 10_000,
 				max: 50_000,
-				noun: "logs to sample for clustering (larger samples find rarer templates but cost more)",
+				description: "Recent logs sampled for clustering; more finds rarer templates, costs more",
 			}),
 			limit: P.limit({ default: 50, max: 200, noun: "patterns" }),
 		}),

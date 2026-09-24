@@ -22,10 +22,13 @@ export function registerListProductEventsTool(server: McpToolRegistrar) {
 	server.define({
 		name: TOOL,
 		description:
-			"List the product event names an org has recorded (browser `track()` events, server-side events and page views) with how often each fired and how many sessions and persons it reached. Use it to discover the step names for `query_funnel` (an event step needs an exact `eventName`). `kind` tells them apart: `custom` is a `track()`/server event, `navigation` is a page view (`$pageview`), `screen` a mobile screen. Filters (`host`, `page_path`, `referrer_host`, `country`, `utm_*`) narrow to events from matching sessions.",
+			"List the product event names an org recorded (browser `track()` events, server-side events, page views) with how often each fired and how many sessions and persons it reached. Use it to find exact step names for `query_funnel`. `kind`: `custom` is a `track()` or server event, `navigation` a page view, `screen` a mobile screen. `kind` and `search` select among the 200 most frequent names in the window.",
 		parameters: Schema.Struct({
 			...WINDOW.fields,
-			kind: P.optionalOneOf(ProductEventKind.literals, "Only events of this kind. Default: all."),
+			kind: P.optionalOneOf(
+				ProductEventKind.literals,
+				"Only events of this kind (see the description for what each means). Default: all.",
+			),
 			search: P.optionalText("Case-insensitive substring match on the event name."),
 			host: P.optionalText("Only events from sessions on this site host."),
 			page_path: P.optionalText("Only events from sessions that viewed this page path."),
@@ -103,7 +106,9 @@ export function registerListProductEventsTool(server: McpToolRegistrar) {
 				...(events.length === 0
 					? {
 							empty: {
-								message: "No product events matched.",
+								message: output.narrowed
+									? `No product events matched among the ${QUERY_MAX} most frequent names in the window.`
+									: "No product events matched.",
 								hints: expectsCustom
 									? [TRACK_HINT]
 									: ["Widen start_time/end_time, or drop the filters."],

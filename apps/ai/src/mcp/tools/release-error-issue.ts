@@ -6,6 +6,7 @@ import { resolveActorId } from "../lib/resolve-actor"
 import * as P from "../lib/params"
 import { doc } from "../lib/tool-doc"
 import {
+	SELECTABLE_STATES,
 	issueIdParam,
 	issueNotFound,
 	leaseConflict,
@@ -13,20 +14,19 @@ import {
 	transitionRefused,
 } from "./error-issue-shared"
 import { ErrorIssueWorkflowService } from "@maple/backend/services/errors/ErrorIssueWorkflowService"
-import { WorkflowState } from "@maple/domain/http"
 
 export function registerReleaseErrorIssueTool(server: McpToolRegistrar) {
 	server.define({
 		name: "release_error_issue",
 		description:
-			"Release the lease on an error issue you previously claimed, optionally transitioning it to another workflow state (default: 'todo').",
+			"Give up the lease you hold on an error issue, optionally moving it to another workflow state. Without `transition_to`, an `in_progress` issue goes back to `todo` and any other state is kept. Fails if another agent holds the lease.",
 		parameters: Schema.Struct({
 			issue_id: issueIdParam(),
 			transition_to: P.optionalOneOf(
-				WorkflowState.literals,
-				"Workflow state to land in after release (default: 'todo')",
+				SELECTABLE_STATES,
+				"Workflow state to leave the issue in. Default: `todo` if the issue is `in_progress`, otherwise unchanged",
 			),
-			note: P.optionalText("Optional reasoning / context"),
+			note: P.optionalText("Reasoning or context, stored on the release event"),
 		}),
 		output: ReleaseErrorIssueOutput,
 		hints: { readOnly: false, destructive: false, idempotent: false },

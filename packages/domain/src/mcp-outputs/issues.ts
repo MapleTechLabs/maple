@@ -76,8 +76,6 @@ export const ListErrorIssuesOutput = Schema.Struct({
 export const TransitionErrorIssueOutput = Schema.Struct({
 	id: Schema.String,
 	workflowState: Schema.String,
-	/** Always "": the service returns only the issue after the move. */
-	fromState: Schema.String,
 	toState: Schema.String,
 	assignedActorId: Schema.NullOr(Schema.String),
 	leaseHolderActorId: Schema.NullOr(Schema.String),

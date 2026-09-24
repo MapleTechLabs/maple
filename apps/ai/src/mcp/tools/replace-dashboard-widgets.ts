@@ -53,14 +53,15 @@ export function registerReplaceDashboardWidgetsTool(server: McpToolRegistrar) {
 	server.define({
 		name: TOOL,
 		description:
-			"Replace ALL widgets on a dashboard in one atomic, validated write — the safe middle ground between many incremental `add/update_dashboard_widget` calls and the corruption-prone full `dashboard_json` replace. Pass `widgets_json`: a JSON array of widget objects (same shape as `widgets[]` from get_dashboard). Each widget's query is validated BEFORE anything is persisted — if any widget references a filter/groupBy the engine can't honor, NOTHING is saved and the offending clauses are returned. Per-widget conveniences: `id` is auto-generated when omitted, and `layout` is auto-placed on a 12-column grid when omitted (so you can pass just `{ visualization, dataSource, display }`). Dashboard metadata (name, description, tags, time range) is left untouched. Returns an automatic validation summary; fix any `suspicious`/`broken` widgets and call again.",
+			"Replace every widget on a dashboard in one validated write. Every widget's query is checked first; if any has a clause the engine cannot honor, nothing is saved and the offending clauses are returned. " +
+			"Use it for a rewrite of the whole board; use add/update_dashboard_widget for one widget, and update_dashboard's dashboard_json only to restore a saved document. Dashboard metadata is untouched. The result carries a validation verdict per widget.",
 		parameters: Schema.Struct({
-			dashboard_id: P.text(
-				"ID of the dashboard whose widgets to replace (use list_dashboards to find IDs)",
-			),
+			dashboard_id: P.text("Dashboard ID (ids from list_dashboards)"),
 			widgets_json: jsonText(
 				Schema.Array(WidgetInput),
-				'JSON array of widget objects: [{ id?, visualization, dataSource, display, layout?, timeRange? }, ...]. `id` and `layout` are optional (auto-generated/auto-placed). `timeRange` pins one widget to its own window (`{"type":"relative","value":"30m"}` or `{"type":"absolute","startTime":"...","endTime":"..."}`); omit it and the widget follows the dashboard range, which is right for almost every widget. This REPLACES the entire widget list.',
+				"The complete new widget list as JSON text, each the shape of a get_dashboard widgets[] entry: [{ id?, visualization, dataSource, display, layout?, timeRange? }, ...]. " +
+					"`visualization` is the stored value (chart, stat, ...), not panel_type. id is generated and layout auto-placed on the 12-column grid when omitted. " +
+					'timeRange pins one widget to its own window ({"type":"relative","value":"30m"} or absolute startTime/endTime); leave it out for the dashboard\'s range.',
 				legacyWidgetsHint,
 			),
 		}),
@@ -128,7 +129,7 @@ export function registerReplaceDashboardWidgetsTool(server: McpToolRegistrar) {
 			).pipe(Effect.map((nested) => nested.flat()))
 			if (blocking.length > 0) {
 				return yield* invalid(
-					`Some widgets have clauses the engine can't honor — NOTHING was saved:\n- ${blocking.join("\n- ")}\n\nFix and retry. Span/resource attributes work automatically but cap at 5 attr filters; logs/metrics accept only a fixed set of filter/groupBy keys.`,
+					`Some widgets have clauses the engine can't honor; NOTHING was saved:\n- ${blocking.join("\n- ")}\n\nFix and retry. Span/resource attributes work automatically but cap at 5 attr filters; logs/metrics accept only a fixed set of filter/groupBy keys.`,
 				)
 			}
 
@@ -143,7 +144,7 @@ export function registerReplaceDashboardWidgetsTool(server: McpToolRegistrar) {
 			)
 			if (fatalRenderIssues.length > 0) {
 				return yield* invalid(
-					`Some widgets cannot render as configured — NOTHING was saved:\n- ${fatalRenderIssues.join("\n- ")}`,
+					`Some widgets cannot render as configured; NOTHING was saved:\n- ${fatalRenderIssues.join("\n- ")}`,
 				)
 			}
 			const renderWarnings = renderIssues.flatMap(({ widget, issues }) =>

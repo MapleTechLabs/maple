@@ -17,7 +17,7 @@ export function registerDiagnoseServiceTool(server: McpToolRegistrar) {
 		description:
 			"Deep investigation of one service: health metrics, Apdex, top errors, recent traces and logs. Use after list_services identifies a problem service.",
 		parameters: Schema.Struct({
-			service: P.text("The service name to diagnose (exact `service.name`)"),
+			service: P.text("The service (exact `service.name`)"),
 			...WINDOW.fields,
 			environment: P.environment(),
 		}),

@@ -7,7 +7,7 @@ import { doc, type DocBlock } from "../lib/tool-doc"
 import { Effect, Schema } from "effect"
 import { hasAiSignal, renderAiSpan } from "../lib/render-ai-span"
 import { InspectSpanOutput } from "@maple/domain/mcp-outputs"
-import { WarehouseTimeInput, parseWarehouseDateTime } from "@maple/query-engine"
+import { parseWarehouseDateTime } from "@maple/query-engine"
 import { spanDetail } from "@maple/query-engine/observability"
 import { AI_SESSION_SPANS_MAX_SPANS, GetAiSessionSpansRequest, TraceIdHex } from "@maple/domain/http"
 import {
@@ -65,18 +65,17 @@ export function registerInspectSpanTool(server: McpToolRegistrar) {
 	server.define({
 		name: "inspect_span",
 		description:
-			"Get the full attribute set for a single span (use after `inspect_trace`, which shows only a trimmed set of attributes per span). Pass the `span_id` shown in the trace tree. Pass `timestamp` (any timestamp from the trace) to prune ClickHouse partitions. For an AI agent span (an LLM call, a tool execution, an agent invocation) it also decodes the messages the span captured and the tool calls it made or executed, with each call's result resolved from the rest of its trace.",
+			"Full attribute set for one span; `inspect_trace` shows only a trimmed set per span. For an AI agent span (an LLM call, a tool execution, an agent invocation) it also decodes the captured messages and the tool calls it made or executed, with each call's result resolved from the rest of the trace.",
 		parameters: Schema.Struct({
 			trace_id: P.text("The trace ID the span belongs to"),
 			span_id: P.text("The span ID to inspect (from `inspect_trace` output)"),
-			timestamp: Schema.optional(WarehouseTimeInput).annotate({
-				description:
-					"Timestamp of the span, UTC (e.g. from `search_traces` results). Narrows the ClickHouse scan to a ±1h window, and saves an AI span the extra lookup that resolves its trace's bounds.",
-			}),
+			timestamp: P.optionalTimestamp(
+				"Timestamp of the span (e.g. from search_traces). Narrows the scan to ±1h and saves an AI span the lookup that resolves its trace's bounds",
+			),
 			payload_chars: P.limit({
 				default: 2_000,
 				max: 20_000,
-				noun: "characters of each captured message and payload (AI spans only)",
+				description: "Max characters per captured message or payload (AI spans only)",
 			}),
 		}),
 		output: InspectSpanOutput,

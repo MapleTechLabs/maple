@@ -13,10 +13,8 @@ export function registerRemoveDashboardWidgetTool(server: McpToolRegistrar) {
 		description:
 			"Remove a single widget from a dashboard by id. Other widgets and dashboard metadata are left untouched.",
 		parameters: Schema.Struct({
-			dashboard_id: P.text(
-				"ID of the dashboard containing the widget (use list_dashboards to find IDs)",
-			),
-			widget_id: P.text("ID of the widget to remove (use get_dashboard to see existing widget ids)"),
+			dashboard_id: P.text("Dashboard ID (ids from list_dashboards)"),
+			widget_id: P.text("ID of the widget to remove (get_dashboard lists them)"),
 		}),
 		output: RemoveDashboardWidgetOutput,
 		hints: { readOnly: false, destructive: true, idempotent: false },

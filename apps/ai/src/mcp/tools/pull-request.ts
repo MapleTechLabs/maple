@@ -435,7 +435,7 @@ export function registerPullRequestTools(server: McpToolRegistrar) {
 	server.define({
 		name: "pr_changed_files",
 		description:
-			"List every file one pull request changes, with additions, deletions and a coarse kind (source, test, generated, docs, config, infra, tooling, lockfile). Call it first when reviewing a pull request; review only the source files that add code, then read each with pr_file_diff. The repository must be the one named in the review's first message.",
+			"List every file one pull request changes, with additions, deletions and a coarse kind (source, test, generated, docs, config, infra, tooling, lockfile). Call it first when reviewing a pull request; generated files, docs, tooling and lockfiles are not reviewed. Read the rest with pr_file_diff. The repository must be the one named in the review's first message.",
 		parameters: Schema.Struct({ repository: REPOSITORY, number: NUMBER }),
 		output: PrChangedFilesOutput,
 		hints: HINTS,

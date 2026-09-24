@@ -16,11 +16,11 @@ export function registerListAlertIncidentsTool(server: McpToolRegistrar) {
 	server.define({
 		name: "list_alert_incidents",
 		description:
-			"List triggered alert incidents with their status, severity, group identity, and observed values.",
+			"List triggered alert incidents (open and resolved) with severity, group, condition and last observed value. For one rule's history with trigger, notify and resolve timestamps use get_incident_timeline.",
 		parameters: Schema.Struct({
-			status: P.optionalOneOf(ALERT_INCIDENT_STATUSES, "Only incidents in this status (default: all)"),
+			status: P.optionalOneOf(ALERT_INCIDENT_STATUSES, "Only incidents in this status"),
 			severity: P.optionalOneOf(ALERT_SEVERITIES, "Only incidents with this severity"),
-			group_key: P.optionalText("Filter incidents by exact group key"),
+			group_key: P.optionalText("Only incidents with this exact group key"),
 			limit: P.limit({ default: 50, max: MAX_LIMIT, noun: "incidents" }),
 		}),
 		output: ListAlertIncidentsOutput,
@@ -98,6 +98,10 @@ export function registerListAlertIncidentsTool(server: McpToolRegistrar) {
 				),
 			].slice(0, 3)
 			const limit = output.limit ?? 0
+			const scanNotice =
+				output.severity !== undefined || output.groupKey !== undefined
+					? `severity and group_key are applied to the ${FILTERED_SCAN} most recent incidents; older matches are not returned.`
+					: undefined
 			return {
 				title: "Alert Incidents",
 				scope: [
@@ -105,12 +109,18 @@ export function registerListAlertIncidentsTool(server: McpToolRegistrar) {
 					["Severity", output.severity],
 					["Group", output.groupKey],
 				],
+				...(scanNotice === undefined ? undefined : { notices: [scanNotice] }),
 				...(output.incidents.length === 0
 					? {
 							empty: {
 								message: "No alert incidents found.",
 								hints: [
 									"Drop the status, severity or group_key filter, or review rules with list_alert_rules.",
+									...(scanNotice === undefined
+										? []
+										: [
+												"Narrow with status, or use get_incident_timeline with rule_id, to reach older incidents.",
+											]),
 								],
 							},
 						}
