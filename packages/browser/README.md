@@ -19,6 +19,7 @@ import { MapleBrowser } from "@maple-dev/browser"
 MapleBrowser.init({
 	ingestKey: "maple_pk_...", // public ingest key
 	serviceName: "acme-web",
+	region: "eu", // "us" (default) or "eu"; must match your organization's region
 	environment: "production",
 	replay: { enabled: true, sampleRate: 1.0 },
 	privacy: { maskAllInputs: true },
@@ -117,6 +118,26 @@ a separate analytics silo. Calls before `init()` finishes are queued.
 MapleBrowser.track("checkout_completed", { plan: "pro", seats: 12 })
 ```
 
+## Regions
+
+Maple runs separate US and EU instances, and an ingest key only works in the
+region it was created in. Set `region: "eu"` for an organization on
+`app.eu.maple.dev`; the SDK then sends to `https://ingest.eu.maple.dev`. An
+explicit `endpoint` (a proxy, or self-hosted ingest) always wins over `region`.
+
+## Tracing across origins
+
+`fetch` spans carry the W3C `traceparent` header to same-origin requests only.
+When your API lives on another origin, list it so browser and backend spans
+join one trace, and allow the `traceparent` header in the API's CORS policy:
+
+```ts
+MapleBrowser.init({
+	// ...
+	tracing: { propagateTraceHeaderCorsUrls: [/^https:\/\/api\.example\.com\//] },
+})
+```
+
 ## Linking a marketing site to your app
 
 The visitor id lives in localStorage **and** a cookie scoped to your registered
@@ -130,6 +151,18 @@ stay per-origin; `VisitorId` is the join key. Override the scope with
 `maskAllInputs` (default **on**) masks every `<input>` value. Use rrweb's
 attribute hooks (`data-rr-block`, `.rr-block`, `.rr-ignore`) to block elements
 or subtrees from capture.
+
+URLs are redacted before they leave the page: the values of credential-shaped
+query and fragment parameters (`token`, `code`, `access_token`, `password`, …)
+become `REDACTED` in session rows, events, network events, replay meta events
+and span attributes. Add your own rewriting with `privacy.sanitizeUrl`, for
+example to collapse ids in paths:
+
+```ts
+privacy: {
+	sanitizeUrl: (url) => url.replace(/\/users\/\d+/, "/users/:id")
+}
+```
 
 `privacy.requireConsent` holds all capture until `MapleBrowser.setConsent(true)`.
 Global Privacy Control is honored by default and suppresses the persistent

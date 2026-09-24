@@ -37,11 +37,27 @@ function formatArgs(args: unknown[]): string {
 			if (typeof a === "string") return a
 			if (a instanceof Error) return `${a.name}: ${a.message}`
 			try {
-				return JSON.stringify(a)
+				return boundedStringify(a, MAX_MESSAGE) ?? String(a)
 			} catch {
 				return String(a)
 			}
 		})
 		.join(" ")
 	return text.length > MAX_MESSAGE ? `${text.slice(0, MAX_MESSAGE)}…` : text
+}
+
+/**
+ * `JSON.stringify` that stops descending once roughly `budget` characters have
+ * been produced. The message is cut to `MAX_MESSAGE` anyway, and serializing a
+ * whole store object on every `console.log` first was a main-thread cost paid
+ * on the host app's hot path. A replacer returning `undefined` skips a value
+ * without visiting its children, so the walk is bounded by the budget.
+ */
+function boundedStringify(value: unknown, budget: number): string | undefined {
+	let used = 0
+	return JSON.stringify(value, (key, nested: unknown) => {
+		if (used > budget) return undefined
+		used += key.length + (typeof nested === "string" ? nested.length : 4)
+		return nested
+	})
 }

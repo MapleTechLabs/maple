@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import {
 	gzip,
-	keepaliveFor,
+	reserveKeepalive,
+	resetKeepaliveBudgetForTests,
 	postSessionBlob,
 	postSessionEvents,
 	postSessionMeta,
@@ -21,19 +22,29 @@ const CONFIG = {
 const lastInit = (fetchMock: ReturnType<typeof vi.fn>): RequestInit =>
 	fetchMock.mock.calls.at(-1)?.[1] as RequestInit
 
-describe("keepaliveFor", () => {
+describe("reserveKeepalive", () => {
+	beforeEach(() => resetKeepaliveBudgetForTests())
+
 	it("passes small bodies through", () => {
-		expect(keepaliveFor(true, 1_024)).toBe(true)
+		expect(reserveKeepalive(true, 1_024)).toBeTypeOf("function")
 	})
 
-	it("drops keepalive past the shared 64KiB budget", () => {
+	it("drops keepalive past the budget", () => {
 		// The browser rejects an over-budget keepalive request outright, so a
 		// normal request the page may not outlive is still the better bet.
-		expect(keepaliveFor(true, 64 * 1024)).toBe(false)
+		expect(reserveKeepalive(true, 64 * 1024)).toBeUndefined()
+	})
+
+	it("shares one budget across concurrent writes", () => {
+		const first = reserveKeepalive(true, 30 * 1024)
+		expect(first).toBeTypeOf("function")
+		expect(reserveKeepalive(true, 30 * 1024)).toBeUndefined()
+		first?.()
+		expect(reserveKeepalive(true, 30 * 1024)).toBeTypeOf("function")
 	})
 
 	it("never turns keepalive on for a caller that didn't ask", () => {
-		expect(keepaliveFor(false, 1)).toBe(false)
+		expect(reserveKeepalive(false, 1)).toBeUndefined()
 	})
 })
 

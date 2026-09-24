@@ -1,6 +1,7 @@
 // Replay bootstrap for the Effect client SDK. rrweb stays behind a dynamic
 // import, while the consent-aware controller itself is always lightweight.
 import {
+	claimReplaySample,
 	clearPendingEvents,
 	clearSessionSink,
 	configurePrivacy,
@@ -84,7 +85,6 @@ export const startClientSession = (config: ClientSessionConfig): ClientSessionHa
 		getIdentity: getCurrentIdentity,
 	}
 	const replayEnabled = (config.replay?.enabled ?? true) && typeof document !== "undefined"
-	const sampled = replayEnabled && Math.random() < (config.replay?.sampleRate ?? 1)
 	let runtime: Runtime | undefined
 	let stopped = false
 	let generation = 0
@@ -115,6 +115,9 @@ export const startClientSession = (config: ClientSessionConfig): ClientSessionHa
 		setVisitorTracking((config.privacy?.persistVisitorId ?? true) && mayPersistIdentifier())
 		const session = (rotateOnNextStart ? rotateSession() : undefined) ?? getSession()
 		rotateOnNextStart = false
+		// Rolled once per session and persisted on it, so every page load of a
+		// session records (or skips) it consistently.
+		const sampled = replayEnabled && claimReplaySample(config.replay?.sampleRate ?? 1)
 		const next: Runtime = { sink: startEventSink(engineConfig, session.id) }
 		runtime = next
 		const ownGeneration = ++generation

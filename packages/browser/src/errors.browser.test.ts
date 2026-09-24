@@ -43,6 +43,16 @@ describe("captureException", () => {
 		assert.strictEqual(exceptionEventOf(fromString!)?.attributes?.["exception.message"], "string failure")
 	})
 
+	it("records an error once when a boundary reports it and the handler sees it again", () => {
+		const stop = setupErrorCapture()
+		const error = new Error("render crash")
+		captureException(error)
+		window.dispatchEvent(new ErrorEvent("error", { error, message: error.message }))
+		stop()
+
+		assert.strictEqual(exporter.getFinishedSpans().length, 1)
+	})
+
 	it("carries a custom name and caller attributes", () => {
 		captureException(new Error("boom"), {
 			name: "browser.uncaught_error",

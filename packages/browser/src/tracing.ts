@@ -3,10 +3,11 @@ import {
 	hasConsent,
 	readSessionSink,
 	recordTraceId,
+	scrubUrl,
 	SDK_HINT_HEADER,
 	sdkHint,
 } from "@maple/browser-session"
-import { context, propagation, ProxyTracerProvider, trace } from "@opentelemetry/api"
+import { context, propagation, ProxyTracerProvider, type Tracer, trace } from "@opentelemetry/api"
 import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-http"
 import { registerInstrumentations } from "@opentelemetry/instrumentation"
 import { FetchInstrumentation } from "@opentelemetry/instrumentation-fetch"
@@ -18,14 +19,24 @@ import { ATTR_SERVICE_NAME, ATTR_SERVICE_VERSION } from "@opentelemetry/semantic
 import type { ResolvedConfig } from "./config"
 import { SDK_NAME, SDK_VERSION } from "./version"
 
+/** Span attributes that carry a page or request URL. */
+const URL_ATTRIBUTES = ["url.full", "http.url"] as const
+
 /**
- * Captures every span's trace id into the session sink. Lightweight — runs
- * alongside the BatchSpanProcessor, does no export of its own.
+ * Captures every span's trace id into the session sink, and redacts URL
+ * attributes before anything can export them. Lightweight: runs alongside the
+ * BatchSpanProcessor, does no export of its own.
  */
 export class TraceIdCollector implements SpanProcessor {
 	constructor(private readonly getUserId: () => string | undefined = () => undefined) {}
 
 	onStart(span: Span): void {
+		// The fetch instrumentation sets `url.full` once, at creation, so this is
+		// the one place it has to be rewritten.
+		for (const key of URL_ATTRIBUTES) {
+			const value = span.attributes[key]
+			if (typeof value === "string") span.setAttribute(key, scrubUrl(value))
+		}
 		if (!hasConsent()) return
 		recordTraceId(span.spanContext().traceId)
 		const sessionId = readSessionSink()?.sessionId
@@ -86,6 +97,18 @@ class ConsentSpanExporter implements SpanExporter {
 const EXPORT_INTERVAL_MS = 2_000
 
 /**
+ * The provider this SDK registered, while it is live. `captureException` spans
+ * through it directly: the global provider may belong to the host app, which
+ * registered first and so kept the global.
+ */
+let mapleProvider: WebTracerProvider | undefined
+
+/** A tracer on Maple's provider when tracing is live, otherwise the global one. */
+export function mapleTracer(name: string, version: string): Tracer {
+	return (mapleProvider ?? trace.getTracerProvider()).getTracer(name, version)
+}
+
+/**
  * Set up browser OTel tracing exporting to Maple's ingest. When
  * `tracingInstrumentFetch` is true, fetch() calls are auto-instrumented and
  * their trace ids feed the session. Disable it when an external tracer (e.g.
@@ -143,9 +166,12 @@ export function setupTracing(config: ResolvedConfig): () => Promise<void> {
 		],
 	})
 	provider.register()
+	mapleProvider = provider
 	// The OTel globals are first-write-wins. If a host app registered its own
-	// provider before us, ours never became the global one — remember whether we
-	// won so shutdown releases only globals this SDK actually owns.
+	// provider before us, ours never became the global one: remember whether we
+	// won so shutdown releases only globals this SDK actually owns. Everything
+	// this SDK spans passes `provider` explicitly, so losing the global costs
+	// nothing but ambient context.
 	const globalProvider = trace.getTracerProvider()
 	const ownsGlobals =
 		globalProvider === provider ||
@@ -177,11 +203,16 @@ export function setupTracing(config: ResolvedConfig): () => Promise<void> {
 
 	const unregisterInstrumentations = config.tracingInstrumentFetch
 		? registerInstrumentations({
+				// Explicit, not the global: a host app that registered its own provider
+				// first owns the global, and these spans would otherwise go to it.
+				tracerProvider: provider,
 				instrumentations: [
 					new FetchInstrumentation({
-						// Propagate trace context to same-origin + Maple ingest only by
-						// default; customers widen via their own config if needed.
+						// Maple's own ingest calls are not traced at all.
 						ignoreUrls: [new RegExp(`${escapeRegExp(config.endpoint)}/v1/`)],
+						// `traceparent` goes to same-origin requests only, unless the app
+						// lists the cross-origin APIs that accept it.
+						propagateTraceHeaderCorsUrls: [...config.propagateTraceHeaderCorsUrls],
 					}),
 				],
 			})
@@ -193,6 +224,7 @@ export function setupTracing(config: ResolvedConfig): () => Promise<void> {
 			window.removeEventListener("pagehide", onExit)
 		}
 		unregisterInstrumentations?.()
+		if (mapleProvider === provider) mapleProvider = undefined
 		await provider.shutdown()
 		// Release the globals so a later init() can register a live provider.
 		// The global proxy keeps delegating to this now-shut-down provider

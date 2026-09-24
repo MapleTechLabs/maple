@@ -1,5 +1,5 @@
 import { type Emit, safeEmit } from "../../capture/shared"
-import { activeTraceId } from "../../events/trace-id"
+import { activeTraceId, withStartedTraceId } from "../../events/trace-id"
 
 /**
  * Capture fetch + XHR requests as session events, tagged with the active trace
@@ -13,10 +13,15 @@ export function installNetworkCapture(emit: Emit, ignoreUrl: (url: string) => bo
 		window.fetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
 			const url = requestUrl(input)
 			const method = requestMethod(input, init)
-			const traceId = activeTraceId()
+			const ambientTraceId = activeTraceId()
 			const start = performance.now()
+			let traceId = ambientTraceId
 			try {
-				const res = await origFetch(input, init)
+				// Synchronous up to here, so a fetch instrumentation wrapped inside
+				// this one starts its span within the slot.
+				const call = withStartedTraceId(() => origFetch(input, init))
+				traceId = call.traceId ?? ambientTraceId
+				const res = await call.result
 				record(url, method, res.status, start, traceId)
 				return res
 			} catch (error) {
@@ -61,11 +66,13 @@ export function installNetworkCapture(emit: Emit, ignoreUrl: (url: string) => bo
 		XHR.prototype.send = function (this: XMLHttpRequest, ...args: unknown[]) {
 			const meta = this as XhrMeta
 			const start = performance.now()
-			const traceId = activeTraceId()
+			let traceId = activeTraceId()
 			this.addEventListener("loadend", () => {
 				record(meta.__mapleUrl ?? "", meta.__mapleMethod ?? "GET", this.status, start, traceId)
 			})
-			return origSend.apply(this, args as never)
+			const call = withStartedTraceId(() => origSend.apply(this, args as never))
+			traceId = call.traceId ?? traceId
+			return call.result
 		}
 	}
 

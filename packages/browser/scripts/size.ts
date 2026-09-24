@@ -36,8 +36,12 @@ const BUDGET = {
 	 * 11, not the 5 this once read: that 5 was calibrated against a measurement
 	 * that counted only the entry chunk and silently dropped the shared chunk
 	 * next to it. Our eager first-party code has been ~10 kB the whole time.
+	 *
+	 * 13.5 since 2026-09: default URL redaction, the duplicated-tab lease, the
+	 * shared keepalive budget, per-session replay sampling and the `region`
+	 * option added ~1.9 kB, all on paths that must run before the lazy chunk.
 	 */
-	firstParty: 11,
+	firstParty: 13.5,
 }
 
 /** How close to a ceiling counts as worth warning about. */
