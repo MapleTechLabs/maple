@@ -347,6 +347,12 @@ export const V2SessionReplaySearchParams = Schema.Struct({
 		Schema.Boolean.annotate({ description: "Only sessions with (or without) errors." }),
 	),
 	search: Schema.optionalKey(Schema.String.annotate({ description: "Free-text search over URL/user." })),
+	page_path: Schema.optionalKey(
+		Schema.String.annotate({
+			description:
+				"Only sessions that navigated to this exact page path (pathname only, no query string or fragment) at any point, not just on entry.",
+		}),
+	),
 	duration_min_ms: Schema.optionalKey(
 		Schema.Number.annotate({ description: "Minimum session duration in ms." }),
 	),

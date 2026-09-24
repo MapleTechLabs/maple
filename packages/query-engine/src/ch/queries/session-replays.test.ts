@@ -215,12 +215,12 @@ describe("sessionReplaysFacetsQuery userId filter", () => {
 	it("narrows every facet branch by the exact UserId", () => {
 		const q = sessionReplaysFacetsQuery({ userId: "user_123" })
 		const { sql } = compileUnionUnsafe(q, { ...baseParams, ...WINDOW })
-		// Branches: service / browser / country / device / group / error count /
+		// Branches: service / browser / country / device / group / page / error count /
 		// duration histogram / p50 / p95 / total / live — userId is applied to all
 		// of them (never excluded, unlike each branch's own dimension), so the
 		// distribution reflects the selected user rather than the whole org.
 		const occurrences = sql.split("UserId = 'user_123'").length - 1
-		expect(occurrences).toBe(11)
+		expect(occurrences).toBe(12)
 	})
 
 	it("omits the UserId predicate when absent", () => {
@@ -278,8 +278,8 @@ describe("session replay identity columns", () => {
 		const q = sessionReplaysFacetsQuery({ groupName: "Acme Inc" })
 		const { sql } = compileUnionUnsafe(q, { ...baseParams, ...WINDOW })
 		expect(sql).toContain("GroupName AS name")
-		// 11 branches, minus the group branch itself.
-		expect(sql.split("GroupName = 'Acme Inc'").length - 1).toBe(10)
+		// 12 branches, minus the group branch itself.
+		expect(sql.split("GroupName = 'Acme Inc'").length - 1).toBe(11)
 	})
 
 	it("never offers an empty group as a facet option", () => {
@@ -591,13 +591,58 @@ describe("sessionReplaysFacetsQuery header counts", () => {
 			...WINDOW,
 		})
 		// VisitorId has no facet branch of its own, so like userId it narrows all
-		// eleven. Left out, the sidebar and header described the whole org while
+		// twelve. Left out, the sidebar and header described the whole org while
 		// the list beside them showed one browser.
-		expect(sql.split("VisitorId = 'vis_abc'").length - 1).toBe(11)
+		expect(sql.split("VisitorId = 'vis_abc'").length - 1).toBe(12)
 	})
 
 	it("omits the visitor predicate when absent", () => {
 		const { sql } = compileUnionUnsafe(sessionReplaysFacetsQuery({}), { ...baseParams, ...WINDOW })
 		expect(sql).not.toContain("VisitorId =")
+	})
+})
+
+// Page visited: a session matches if it navigated to the path at any point, read
+// from product_events (time-sorted, PagePath pre-parsed) rather than session_events.
+
+describe("page visited filter", () => {
+	const PAGE_SUBQUERY = "SessionId IN (SELECT SessionId AS SessionId FROM product_events"
+	const flat = (sql: string) => sql.replace(/\s+/g, " ")
+
+	it("narrows every list branch to sessions that navigated to the exact path", () => {
+		const branches = [{}, { durationMinMs: 1_000 }, { activeTimeMinMs: 1_000 }, { eventType: "error" }]
+		for (const opts of branches) {
+			const sql = flat(
+				compileUnsafe(sessionReplaysListQuery({ ...opts, pagePath: "/pricing" }), {
+					...baseParams,
+					...WINDOW,
+				}).sql,
+			)
+			expect(sql, JSON.stringify(opts)).toContain(PAGE_SUBQUERY)
+			expect(sql).toContain("PagePath = '/pricing'")
+			expect(sql).toContain("Kind = 'navigation'")
+			// The window bounds the subquery too, or it would scan the table's full retention.
+			expect(sql).toMatch(/FROM product_events WHERE .*Timestamp >= /)
+		}
+	})
+
+	it("leaves the list untouched when unset", () => {
+		const { sql } = compileUnsafe(sessionReplaysListQuery({}), { ...baseParams, ...WINDOW })
+		expect(sql).not.toContain("product_events")
+	})
+
+	it("adds a page facet, counted per session and narrowed by the other filters", () => {
+		const q = sessionReplaysFacetsQuery({ browser: "Chrome" })
+		const sql = flat(compileUnionUnsafe(q, { ...baseParams, ...WINDOW }).sql)
+		expect(sql).toContain("PagePath AS name")
+		expect(sql).toContain("PagePath != ''")
+		expect(sql).toMatch(/SessionId IN \(SELECT SessionId AS SessionId FROM session_replays WHERE .*BrowserName = 'Chrome'\)/)
+	})
+
+	it("excludes the selected page from the page facet branch only", () => {
+		const q = sessionReplaysFacetsQuery({ pagePath: "/pricing" })
+		const { sql } = compileUnionUnsafe(q, { ...baseParams, ...WINDOW })
+		// 12 branches, minus the page branch itself.
+		expect(sql.split("PagePath = '/pricing'").length - 1).toBe(11)
 	})
 })
