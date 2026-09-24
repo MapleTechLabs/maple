@@ -1,5 +1,5 @@
 import { useMemo } from "react"
-import { barY, defineChart, group } from "@tanstack/charts"
+import { defineChart } from "@tanstack/charts"
 import { scaleLinear } from "@tanstack/charts-scales/linear"
 
 import { formatWarehouseDateTime } from "@maple/query-engine"
@@ -10,9 +10,12 @@ import {
 	createTooltipFocusStore,
 	cursorTooltip,
 	DASHED_Y_GRID,
+	focusCrosshair,
 	linearYDomain,
 	minBarLength,
 	niceLinearDomain,
+	usePlotChromeColors,
+	useResolvedSeriesColors,
 	type PlotTooltipSeries,
 } from "@maple/ui/components/plot"
 import { ChartEmpty } from "@maple/ui/components/charts"
@@ -23,18 +26,22 @@ import { CHART_EMPTY_MESSAGE, bucketDate, makeBucketAxis } from "@/components/in
 import { useTimezonePreference } from "@/hooks/use-timezone-preference"
 import { errorRate, formatDurationNs, type ToolSeriesPoint } from "@/lib/agent-sessions/tool-analytics"
 
+import {
+	groupedBars,
+	seriesLines,
+	valueAt,
+	type ChartRow,
+	type ChartSeries,
+	type PlotCell,
+} from "./tool-chart-marks"
+
 const PLOT_HEIGHT = 160
-const BAR_RADIUS = 2
-const MAX_BAR_THICKNESS = 48
-const DIMMED_FILL_OPACITY = 0.3
 
 // Hoisted, not written at the call site: every `Cell` memo below keys on these,
 // and a fresh array (or arrow) per render rebuilds the chart definition on every
 // parent render.
 const CALLS_SERIES = [{ key: "calls", label: "Calls", color: "var(--primary)" }] as const
-const ERROR_RATE_SERIES = [
-	{ key: "errorRate", label: "Error rate", color: "var(--severity-error)" },
-] as const
+const ERROR_RATE_SERIES = [{ key: "errorRate", label: "Error rate", color: "var(--severity-error)" }] as const
 const DURATION_SERIES = [
 	{ key: "p50", label: "P50", color: "var(--muted-foreground)" },
 	{ key: "p90", label: "P90", color: "var(--primary)" },
@@ -46,30 +53,6 @@ const CALLS_PER_SESSION_SERIES = [
 
 const formatOneDecimal = (value: number): string => value.toFixed(1)
 
-/** One bar series of one cell. `key` is the column it reads off the row. */
-interface ChartSeries {
-	readonly key: string
-	readonly label: string
-	readonly color: string
-}
-
-interface ChartRow extends Record<string, string | number | Date | null> {
-	bucket: string
-	date: Date
-}
-
-/** One bar: a series at a bucket. `row` carries the whole bucket for the tooltip. */
-interface BarCell {
-	readonly row: ChartRow
-	readonly key: string
-	readonly color: string
-}
-
-function valueAt(row: ChartRow, key: string): number | null {
-	const value = row[key]
-	return typeof value === "number" ? value : null
-}
-
 /**
  * The tool detail page's four readings of one tool, as a 2×2 grid divided by
  * hairlines.
@@ -80,8 +63,10 @@ function valueAt(row: ChartRow, key: string): number | null {
  * rise together, and a selector makes that story something you have to
  * remember rather than see.
  *
- * Bars, not smoothed lines: a tool's calls are sparse, and a curve through a
- * handful of buckets reads as a trend the samples do not support.
+ * Counts are bars; error rate and duration are lines, since they are readings
+ * rather than amounts. The series arrives with every bucket of the window
+ * filled (`fillSeriesBuckets`), so a line drops to zero between bursts instead
+ * of bridging the silence as if the reading held.
  *
  * The series read behind this page asks for `split: "none"`, so a point is
  * already the whole tool's bucket — its quantiles are measured and its session
@@ -126,8 +111,15 @@ export function ToolDetailCharts({
 				rows={rows}
 				series={ERROR_RATE_SERIES}
 				format={formatErrorRate}
+				mark="line"
 			/>
-			<Cell title="Duration" rows={rows} series={DURATION_SERIES} format={formatDurationNs} />
+			<Cell
+				title="Duration"
+				rows={rows}
+				series={DURATION_SERIES}
+				format={formatDurationNs}
+				mark="line"
+			/>
 			<Cell
 				title="Calls per session"
 				rows={rows}
@@ -150,50 +142,40 @@ function Cell({
 	rows,
 	series,
 	format,
+	mark = "bar",
 }: {
 	title: string
 	rows: ReadonlyArray<ChartRow>
 	series: ReadonlyArray<ChartSeries>
 	format: (value: number) => string
+	mark?: "bar" | "line"
 }) {
 	const focusStore = useMemo(() => createTooltipFocusStore(), [])
 	const { effectiveTimezone } = useTimezonePreference()
+	const chromeColors = usePlotChromeColors()
+	// Canvas strokes cannot read `var()`; the line marks take resolved colors.
+	const colorTokens = useMemo(() => new Map(series.map((entry) => [entry.key, entry.color])), [series])
+	const colors = useResolvedSeriesColors(colorTokens, chromeColors.border)
 
 	const axis = useMemo(
-		() => makeBucketAxis(rows.map((row) => row.bucket), effectiveTimezone),
+		() =>
+			makeBucketAxis(
+				rows.map((row) => row.bucket),
+				effectiveTimezone,
+			),
 		[rows, effectiveTimezone],
 	)
 
 	const definition = useMemo(() => {
 		const yDomain = niceLinearDomain(linearYDomain({ rows, keys: series.map((entry) => entry.key) }))
-		// One call against a peak of hundreds paints sub-pixel — see `minBarLength`.
-		const lift = minBarLength(yDomain)
-		// Long-form: `barY` groups side by side off `z` within ONE mark. Grouped,
-		// never stacked — the duration percentiles do not add.
-		const cells = rows.flatMap((row) =>
-			series.map((entry) => ({ row, key: entry.key, color: entry.color })),
-		)
 		return defineChart({
-			marks: [
-				barY(cells, {
-					x: (cell: BarCell) => cell.row.date,
-					y: (cell: BarCell) => lift(valueAt(cell.row, cell.key)),
-					z: (cell: BarCell) => cell.key,
-					fill: (cell: BarCell) => cell.color,
-					layout: group(),
-					radius: BAR_RADIUS,
-					maxThickness: MAX_BAR_THICKNESS,
-					// The hovered bucket keeps its fill and every other one dims.
-					states: [
-						{
-							when: (context: { matches: (match: "x") => boolean }) => !context.matches("x"),
-							style: { fillOpacity: DIMMED_FILL_OPACITY },
-						},
-					],
-				}),
-			],
+			marks:
+				mark === "line"
+					? [...seriesLines(rows, series, colors, chromeColors), focusCrosshair(chromeColors)]
+					: [groupedBars(rows, series, minBarLength(yDomain))],
 			scales: {
-				x: axis.xBand,
+				// Bars are centred on the bucket and need the half-bucket padding.
+				x: mark === "line" ? axis.x : axis.xBand,
 				y: {
 					grid: DASHED_Y_GRID,
 					scale: scaleLinear().domain(yDomain),
@@ -219,14 +201,14 @@ function Cell({
 			focusRing: false,
 			tooltip: cursorTooltip(focusStore.anchor),
 		})
-	}, [rows, series, axis, format, focusStore])
+	}, [rows, series, axis, format, focusStore, mark, colors, chromeColors])
 
-	const tooltipSeries = useMemo<PlotTooltipSeries<BarCell>[]>(
+	const tooltipSeries = useMemo<PlotTooltipSeries<PlotCell>[]>(
 		() =>
 			series.map((entry) => ({
 				label: entry.label,
 				color: entry.color,
-				value: (cell: BarCell) => valueAt(cell.row, entry.key),
+				value: (cell: PlotCell) => valueAt(cell.row, entry.key),
 				format,
 			})),
 		[series, format],
@@ -268,7 +250,7 @@ function Cell({
 								points={points}
 								series={tooltipSeries}
 								focusStore={focusStore}
-								heading={(cell: BarCell) => axis.heading(cell.row.bucket)}
+								heading={(cell: PlotCell) => axis.heading(cell.row.bucket)}
 							/>
 						)}
 					/>

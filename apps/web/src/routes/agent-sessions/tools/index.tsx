@@ -3,6 +3,7 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router"
 import { Schema } from "effect"
 
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
+import { toEpochMs } from "@maple/ui/lib/time-format"
 
 import { AgentSessionsTabs } from "@/components/agent-sessions/tools/agent-sessions-tabs"
 import { AgentToolsView } from "@/components/agent-sessions/tools/agent-tools-view"
@@ -17,8 +18,10 @@ import {
 } from "@/components/time-range-picker/search"
 import { sessionTimeRangeSearchMiddleware } from "@/components/time-range-picker/session-time-range"
 import { TimeRangeHeaderControls } from "@/components/time-range-picker/time-range-header-controls"
+import { chartBucketSeconds } from "@/components/infra/chart-utils"
 import { useEffectiveTimeRange } from "@/hooks/use-effective-time-range"
 import { Result, useAtomValue } from "@/lib/effect-atom"
+import { fillSeriesBuckets } from "@/lib/agent-sessions/tool-analytics"
 import {
 	TOOL_ANALYTICS_DEFAULT_PRESET,
 	ToolAnalyticsSearchFields,
@@ -153,7 +156,14 @@ function AgentToolsBody({
 		.onSuccess((value) => value)
 		.orElse(() => ({ data: [], seriesKind: "tool" }) as const)
 	const scopeSeries = Result.builder(results.scopeSeries)
-		.onSuccess((value) => value.data)
+		.onSuccess((value) =>
+			fillSeriesBuckets(
+				value.data,
+				toEpochMs(window.startTime),
+				toEpochMs(window.endTime),
+				chartBucketSeconds(window.startTime, window.endTime),
+			),
+		)
 		.orElse(() => [])
 	const scopeSeriesFailure = Result.builder(results.scopeSeries)
 		.onError((failure) => failure as unknown)
