@@ -184,10 +184,12 @@ describe("discord transport", () => {
 		}).pipe(Effect.provide(http.layer))
 	})
 
-	it.effect("takes a channel that will not hold a thread as the conversation itself", () => {
-		// What a mention already inside a thread answers with, and what a channel the bot may not
-		// start threads in answers with. Either way the mention's own channel is the conversation.
-		const http = stub([{ status: 400, body: '{"message":"Cannot start a thread here"}' }])
+	it.effect("takes a channel that will not hold a thread as the conversation, but not as its own", () => {
+		// What a channel the bot may not start threads in answers with.
+		const http = stub([
+			{ status: 403, body: '{"message":"Missing Permissions","code":50013}' },
+			{ status: 200, body: '{"id":"conv_1","type":0}' },
+		])
 		return Effect.gen(function* () {
 			const transport = yield* discordOutbound.transport
 			const conversation = yield* transport.conversation(mention)
@@ -199,6 +201,40 @@ describe("discord transport", () => {
 				// which is the whole risk of this fallback.
 				opened: false,
 			})
+			expect(http.seen[1].url).toBe("https://discord.com/api/v10/channels/conv_1")
+		}).pipe(Effect.provide(http.layer))
+	})
+
+	it.effect("takes a thread it was mentioned in as its own conversation", () => {
+		// What Discord answers for a thread started from a message that is already in one.
+		const http = stub([
+			{ status: 400, body: '{"message":"Cannot execute action on this channel type","code":50024}' },
+			{ status: 200, body: '{"id":"conv_1","type":11}' },
+		])
+		return Effect.gen(function* () {
+			const transport = yield* discordOutbound.transport
+			const conversation = yield* transport.conversation(mention)
+
+			expect(conversation).toEqual({
+				conversationKey: "conv_1",
+				target: { workspaceId: "guild_1", channelId: "conv_1" },
+				// The bot's own, so a follow-up in the thread is answered without a mention.
+				opened: true,
+			})
+		}).pipe(Effect.provide(http.layer))
+	})
+
+	it.effect("answers in the channel, mention-only, when its type cannot be read either", () => {
+		const http = stub([
+			{ status: 400, body: "{}" },
+			{ status: 500, body: "{}" },
+		])
+		return Effect.gen(function* () {
+			const transport = yield* discordOutbound.transport
+			const conversation = yield* transport.conversation(mention)
+
+			expect(conversation.opened).toBe(false)
+			expect(conversation.conversationKey).toBe("conv_1")
 		}).pipe(Effect.provide(http.layer))
 	})
 
