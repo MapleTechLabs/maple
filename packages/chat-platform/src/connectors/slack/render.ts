@@ -163,10 +163,14 @@ const ENTITY_LABELS = {
 	log: "Log",
 } as const
 
-/** The status line: the phrase, then whether the call is still going or failed. */
+/**
+ * The status line: the phrase, then whether the call failed. The ellipsis stays once the call
+ * finishes: dropping it on completion only made the line jump, "Running a query…" to
+ * "Running a query".
+ */
 const toolLabel = (tool: ChatToolActivity): string => {
 	const detail = tool.detail === null ? "" : ` (${escapeMrkdwn(tool.detail)})`
-	const status = tool.status === "running" ? "…" : tool.status === "failed" ? " (failed)" : ""
+	const status = tool.status === "failed" ? "… (failed)" : "…"
 	return `${escapeMrkdwn(tool.label)}${detail}${status}`
 }
 

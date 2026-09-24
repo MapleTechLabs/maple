@@ -348,8 +348,12 @@ export const chartCard = (title: string, spec: ChartSpec): ChartCard => {
 						// service is a chart a reader can draw a wrong conclusion from.
 						label(plot.hidden === 0 ? "" : `+${plot.hidden} more`, 12, COLOR.muted)
 					: // What it is, and what it is now — the two things a reader glancing
-						// at a re-notification is actually checking.
-						label(solo.latest, 17, COLOR.ink, 600),
+						// at a re-notification is actually checking. Named, because a bare
+						// "0%" beside a spike reads as a total rather than the last bucket.
+						container({
+							style: { display: "flex", flexDirection: "row", alignItems: "baseline", gap: 8 },
+							children: [label("now", 12, COLOR.muted), label(solo.latest, 17, COLOR.ink, 600)],
+						}),
 			]),
 			// The plot and its time axis share a column, so the axis inherits the
 			// plot's left edge instead of being told about the gutter twice.

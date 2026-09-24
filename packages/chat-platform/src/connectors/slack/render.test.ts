@@ -208,7 +208,7 @@ describe("the rest of the vocabulary", () => {
 		])
 		expect(payload.blocks?.[0]).toEqual({
 			type: "context",
-			elements: [{ type: "mrkdwn", text: "Searching traces · Running a query…" }],
+			elements: [{ type: "mrkdwn", text: "Searching traces… · Running a query…" }],
 		})
 	})
 
