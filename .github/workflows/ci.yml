@@ -244,15 +244,12 @@ jobs:
                   git fetch --no-tags --depth=1 origin \
                     "+refs/heads/$GITHUB_BASE_REF:refs/remotes/origin/$GITHUB_BASE_REF"
 
-            # Each shard has one rolling cache writer. `github.sha` forces a new
-            # save so every shard rolls forward independently.
-            - name: Restore turbo cache
-              uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-              with:
-                  path: .turbo/cache
-                  key: turbo-v2-${{ runner.os }}-${{ github.job }}-${{ matrix.shard }}-${{ github.sha }}
-                  restore-keys: |
-                      turbo-v2-${{ runner.os }}-${{ github.job }}-${{ matrix.shard }}-
+            # One turbo cache shared by every job and workflow, served from the
+            # Actions cache one artifact at a time. A result any job has produced
+            # (the effect-sdk build every test lane depends on, say) is a hit for
+            # all the others; per-job tarballs rebuilt it in each of them.
+            - name: Turbo remote cache
+              uses: rharkor/caching-for-turbo@2238fae6eb9a9936f92356f54cb3660200d105e7 # v2.5.1
 
             # Alchemy entrypoints reach Workers whose SDK and Alchemy imports
             # need declarations built from the workspace sources.
@@ -390,13 +387,8 @@ jobs:
               if: matrix.browser-workspace != '' && steps.test-browser-cache.outputs.cache-hit != 'true'
               working-directory: ${{ matrix.browser-workspace }}
               run: bun run playwright install chromium
-            - name: Restore turbo cache
-              uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-              with:
-                  path: .turbo/cache
-                  key: turbo-tests-v1-${{ runner.os }}-${{ matrix.name }}-${{ github.sha }}
-                  restore-keys: |
-                      turbo-tests-v1-${{ runner.os }}-${{ matrix.name }}-
+            - name: Turbo remote cache
+              uses: rharkor/caching-for-turbo@2238fae6eb9a9936f92356f54cb3660200d105e7 # v2.5.1
             - name: Run bounded test lane
               timeout-minutes: 5
               env:
@@ -441,13 +433,8 @@ jobs:
 
             - uses: ./.github/actions/bun-install
 
-            - name: Restore turbo cache
-              uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-              with:
-                  path: .turbo/cache
-                  key: turbo-v2-${{ runner.os }}-${{ github.job }}-${{ github.sha }}
-                  restore-keys: |
-                      turbo-v2-${{ runner.os }}-${{ github.job }}-
+            - name: Turbo remote cache
+              uses: rharkor/caching-for-turbo@2238fae6eb9a9936f92356f54cb3660200d105e7 # v2.5.1
 
             # No migrations: the suite creates the one scratch table it needs and
             # drops it. Keeping it schema-independent means a migration change can
@@ -499,13 +486,8 @@ jobs:
                   CLICKHOUSE_HTTP_PASSWORD: maple
               run: bun run --cwd lib/effect-clickhouse-http test
 
-            - name: Restore turbo cache
-              uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-              with:
-                  path: .turbo/cache
-                  key: turbo-v2-${{ runner.os }}-${{ github.job }}-${{ github.sha }}
-                  restore-keys: |
-                      turbo-v2-${{ runner.os }}-${{ github.job }}-
+            - name: Turbo remote cache
+              uses: rharkor/caching-for-turbo@2238fae6eb9a9936f92356f54cb3660200d105e7 # v2.5.1
 
             - name: Replay migrations and verify search indexes
               env:
@@ -556,17 +538,8 @@ jobs:
 
             - uses: ./.github/actions/bun-install
 
-            # Same rolling turbo cache as the typescript job: this is the only
-            # job that runs `turbo build` (via alchemy:build-deps inside
-            # build-local-binary.sh) with no cache restore, so those packages
-            # compiled cold on every run.
-            - name: Restore turbo cache
-              uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-              with:
-                  path: .turbo/cache
-                  key: turbo-v2-${{ runner.os }}-${{ github.job }}-${{ github.sha }}
-                  restore-keys: |
-                      turbo-v2-${{ runner.os }}-${{ github.job }}-
+            - name: Turbo remote cache
+              uses: rharkor/caching-for-turbo@2238fae6eb9a9936f92356f54cb3660200d105e7 # v2.5.1
 
             - name: Build native local bundle
               timeout-minutes: 5
@@ -779,13 +752,8 @@ jobs:
               with:
                   filters: "@maple/web"
 
-            - name: Restore turbo cache
-              uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-              with:
-                  path: .turbo/cache
-                  key: turbo-v2-${{ runner.os }}-${{ github.job }}-${{ matrix.shard }}-${{ github.sha }}
-                  restore-keys: |
-                      turbo-v2-${{ runner.os }}-${{ github.job }}-${{ matrix.shard }}-
+            - name: Turbo remote cache
+              uses: rharkor/caching-for-turbo@2238fae6eb9a9936f92356f54cb3660200d105e7 # v2.5.1
 
             # The perf dev server (vite) resolves @maple-dev/browser and
             # @maple-dev/effect-sdk from their built dist/ (gitignored), so build
