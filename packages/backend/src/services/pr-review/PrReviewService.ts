@@ -55,7 +55,7 @@ import {
 	type PrReviewRow,
 } from "@maple/db"
 import { WorkerEnvironment } from "@maple/infra/worker-runtime"
-import { and, count, desc, eq, gt, gte, inArray, ne, or } from "drizzle-orm"
+import { and, count, desc, eq, gt, gte, inArray, ne, or, sql } from "drizzle-orm"
 import { Cause, Clock, Context, Effect, Exit, Layer, Option, Result, Schema } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
@@ -383,8 +383,10 @@ const verdictTitle = (report: PrReviewReport, carried: CarriedFindings): string 
 /**
  * The hidden line one review's comment is found by. Keyed on the review, so its "reviewing" notice
  * is replaced by its own result, and the next review of the pull request starts a comment of its own.
+ * `attempt` counts repeats of a finished review of the same head, which reuse its row.
  */
-export const prReviewCommentMarker = (reviewId: PrReviewId): string => `<!-- maple-pr-review ${reviewId} -->`
+export const prReviewCommentMarker = (reviewId: PrReviewId, attempt = 0): string =>
+	`<!-- maple-pr-review ${reviewId} ${attempt} -->`
 
 /** Opens a notice and names the head it is about: `<!-- maple-pr-review:status reviewing <sha> -->`. */
 const STATUS_OPEN = "<!-- maple-pr-review:status"
@@ -727,9 +729,10 @@ export const buildPublication = (input: {
 	readonly carried?: CarriedFindings
 	readonly minInlineSeverity?: PrReviewSeverity
 	readonly keys?: ReadonlyMap<string, string>
+	readonly commentAttempt?: number
 }): PullRequestReviewPublication => {
 	const { report } = input
-	const marker = prReviewCommentMarker(input.reviewId)
+	const marker = prReviewCommentMarker(input.reviewId, input.commentAttempt)
 	const carried = input.carried ?? NO_CARRIED
 	const { score } = scorePrReview(report, carried.open)
 	const confidence = confidencePrReview(report, carried.open, input.partial)
@@ -1057,6 +1060,21 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 					),
 				)
 
+			/** The marker of the review's current comment; 0 for a row that is gone. */
+			const commentAttemptOf = (orgId: OrgId, reviewId: PrReviewId) =>
+				database
+					.execute((db) =>
+						db
+							.select({ commentAttempt: prReviews.commentAttempt })
+							.from(prReviews)
+							.where(and(eq(prReviews.orgId, orgId), eq(prReviews.id, reviewId)))
+							.limit(1),
+					)
+					.pipe(
+						Effect.map((rows) => rows[0]?.commentAttempt ?? 0),
+						Effect.mapError(toPersistence),
+					)
+
 			/**
 			 * Put a status notice on the review's own comment and its check run, so the
 			 * review shows as running in CI. Best effort, each on its own: a review that cannot say
@@ -1073,7 +1091,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 					const target = yield* providerFor(orgId, repo)
 					if (Option.isNone(target)) return
 					const { provider, installation, ref } = target.value
-					const marker = prReviewCommentMarker(reviewId)
+					const marker = prReviewCommentMarker(reviewId, yield* commentAttemptOf(orgId, reviewId))
 					const warn = (what: string) =>
 						Effect.catchCause((cause: Cause.Cause<unknown>) =>
 							Effect.logWarning(`[PrReview] could not post the review status ${what}`).pipe(
@@ -1316,6 +1334,9 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 								// A reclaimed skipped or completed row must not carry its old outcome forward.
 								skipReason: null,
 								publishError: null,
+								// A finished review asked for again is a new review, so it gets a new comment;
+								// a failed one retries in place and replaces its own failure notice.
+								commentAttempt: sql`case when ${prReviews.status} in ('completed', 'skipped') then ${prReviews.commentAttempt} + 1 else ${prReviews.commentAttempt} end`,
 								reportJson: null,
 								score: null,
 								startedAt: null,
@@ -1910,6 +1931,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 				const repo = repository.value
 				const publication = buildPublication({
 					reviewId,
+					commentAttempt: yield* commentAttemptOf(orgId, reviewId),
 					repositoryUrl: repo.htmlUrl,
 					number: review.number,
 					headSha: review.headSha,

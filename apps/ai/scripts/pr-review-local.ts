@@ -476,9 +476,9 @@ const fetchPullRequestContext = (args: Args, headSha: string): PullRequestContex
 	const checks = read(GhContextChecks, `${slug}/commits/${headSha}/check-runs?per_page=100`).check_runs
 	return {
 		commits: commits.map((commit) => ({ sha: commit.sha, message: commit.commit.message })),
-		// Maple's own summary comment is left out, as the production tool leaves out the App's.
+		// Maple's own review comments (one per review) are left out, as the production tool leaves out the App's.
 		comments: comments
-			.filter((comment) => !(comment.body ?? "").includes("<!-- maple-pr-review -->"))
+			.filter((comment) => !(comment.body ?? "").includes("<!-- maple-pr-review"))
 			.map((comment) => ({
 				author: comment.user?.login ?? "(deleted user)",
 				path: comment.path ?? null,

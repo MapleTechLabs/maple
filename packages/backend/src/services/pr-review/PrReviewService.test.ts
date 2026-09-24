@@ -470,6 +470,34 @@ describe("PrReviewService.onPullRequestEvent", () => {
 		}).pipe(Effect.provide(layerFor(testDb, { begun, aborted, checks })))
 	})
 
+	it.effect("a repeat asked for on a reviewed head posts a new comment and keeps the earlier one", () => {
+		const testDb = createTestDb(trackedDbs)
+		const comments: Array<string> = []
+		return Effect.gen(function* () {
+			yield* seed(true)
+			const reviews = yield* PrReviewService
+			const first = yield* reviews.onPullRequestEvent(orgId, job())
+			yield* reviews.submitReview(
+				orgId,
+				first.reviewId!,
+				new SubmitPrReviewRequest({
+					report: report([]),
+					model: "test-model",
+					inputTokens: 1,
+					outputTokens: 1,
+				}),
+			)
+			const repeat = yield* reviews.reviewNow(orgId, job())
+			// The same row, reclaimed: only the comment it writes to is new.
+			assert.equal(repeat.reviewId, first.reviewId)
+			const [, result, notice] = comments
+			assert.equal(comments.length, 3)
+			assert.isTrue(result!.startsWith(`${prReviewCommentMarker(first.reviewId!, 0)}\n## Maple review`))
+			assert.isTrue(notice!.startsWith(prReviewCommentMarker(first.reviewId!, 1)))
+			assert.include(notice!, "Maple is reviewing this pull request")
+		}).pipe(Effect.provide(layerFor(testDb, { comments })))
+	})
+
 	it.effect("closes a superseded review's comment instead of leaving it reviewing", () => {
 		const testDb = createTestDb(trackedDbs)
 		const comments: Array<string> = []
