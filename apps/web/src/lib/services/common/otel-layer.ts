@@ -48,11 +48,15 @@ const telemetry = MapleFlush.make({
 	// resolve to one VisitorId. Local dev needs the override: browsers make
 	// `*.localhost` cookies host-only, so web.localhost and landing.localhost
 	// would each mint their own visitor.
-	...(import.meta.env.VITE_MAPLE_COOKIE_DOMAIN
-		? {
-				privacy: { cookieDomain: import.meta.env.VITE_MAPLE_COOKIE_DOMAIN },
-			}
-		: undefined),
+	//
+	// VITE_MAPLE_CAPTURE=off (the perf bench) asks for consent that never comes,
+	// so nothing is captured or sent: no spans, session rows or page views.
+	privacy: {
+		...(import.meta.env.VITE_MAPLE_COOKIE_DOMAIN
+			? { cookieDomain: import.meta.env.VITE_MAPLE_COOKIE_DOMAIN }
+			: undefined),
+		...(import.meta.env.VITE_MAPLE_CAPTURE === "off" ? { requireConsent: true } : undefined),
+	},
 })
 
 export const mapleOtelLayer = telemetry.layer

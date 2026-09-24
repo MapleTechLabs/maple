@@ -62,6 +62,9 @@ export default defineConfig(({ mode }) => {
 		// process.env (playwright.config.ts) and must win over any `.env*` value,
 		// or bench runs would record and post sessions to real ingest.
 		"VITE_MAPLE_REPLAY",
+		// "off" sends no browser telemetry at all (the perf bench; see
+		// playwright.config.ts). Same precedence rule as VITE_MAPLE_REPLAY.
+		"VITE_MAPLE_CAPTURE",
 		// Forces the visitor-id cookie's Domain=. Only needed locally, where
 		// *.localhost cookies are host-only and web/landing would not share a
 		// visitor id; production discovers `.maple.dev` by probing.
