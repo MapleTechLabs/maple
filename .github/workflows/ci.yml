@@ -122,6 +122,7 @@ jobs:
                         # it. Without these two the PR that broke every main chart
                         # would still skip the only job that could have caught it.
                         - 'packages/query-engine/**'
+                        - 'packages/query-engine-integrations/src/ai/**'
                         - 'packages/domain/src/clickhouse/**'
                         - 'packages/domain/src/tinybird/**'
                         # The migrations this job replays, and the datasource
@@ -524,6 +525,19 @@ jobs:
               run: >-
                   bun run --filter=@maple/backend test --
                   src/services/warehouse/web-analytics-parity.clickhouse.e2e.test.ts
+
+            # `ai_trace_index` has two writers (spans, and Claude Code's log events)
+            # whose rows the session sums merge by response id; only real inserts
+            # through the real views prove the write filters and the reads agree.
+            - name: Verify ai_trace_index materialization
+              env:
+                  CLICKHOUSE_E2E: "1"
+                  CLICKHOUSE_E2E_URL: http://127.0.0.1:8123
+                  CLICKHOUSE_E2E_USER: maple
+                  CLICKHOUSE_E2E_PASSWORD: maple
+              run: >-
+                  bun run --filter=@maple/backend test --
+                  src/services/warehouse/ai-trace-index-materialization.clickhouse.e2e.test.ts
 
     local-checkpoint-native:
         name: Local checkpoint native
