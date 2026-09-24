@@ -19,11 +19,11 @@
 import * as CH from "@maple-dev/effect-clickhouse/expr"
 import { compileFnCallCond } from "@maple-dev/effect-clickhouse"
 import * as T from "@maple-dev/effect-clickhouse/types"
-import { param } from "@maple-dev/effect-clickhouse"
+import { inSubquery, param } from "@maple-dev/effect-clickhouse"
 import { from, fromQuery, type ColumnAccessor, type CHQuery } from "@maple-dev/effect-clickhouse"
 import { unionAll, type CHUnionQuery } from "@maple-dev/effect-clickhouse"
 import { SESSION_LIVE_WINDOW_SECONDS } from "@maple/domain/query-engine"
-import { SessionReplays, SessionReplayEvents, TraceDetailSpans } from "../tables"
+import { ProductEvents, SessionReplays, SessionReplayEvents, TraceDetailSpans } from "../tables"
 import { sessionActivityAggregateQuery, sessionEventMatchQuery } from "./session-events"
 import type { FacetOutput } from "./query-helpers"
 
@@ -80,6 +80,29 @@ function ifNotFinite(value: CH.Expr<number | null>, fallback: number): CH.Expr<n
 	return CH.ifNull(CH.ifNotFinite(value, fallback), CH.lit(fallback))
 }
 
+// Sessions that navigated to one page path inside the window.
+//
+// Reads `product_events`, not `session_events`: its sort key leads with
+// (OrgId, Timestamp), so the window is a primary-index range, and `PagePath` was
+// parsed at write time. `session_events` is sorted by SessionId, so the same
+// predicate there scans every event of every session in the window's partitions
+// and runs `path(Url)` on each (see `productEvents` in datasources.ts).
+//
+// Bounded by the list's own window, which bounds session *start*: a session that
+// began just before `endTime` and reached the page after it is missed. For the
+// usual "last N" windows `endTime` is now, so nothing is.
+function pageVisitSessions(pagePath: string) {
+	return from(ProductEvents)
+		.select(($) => ({ SessionId: $.SessionId }))
+		.where(($) => [
+			$.OrgId.eq(param.string("orgId")),
+			$.Timestamp.gte(param.dateTimeString("startTime")),
+			$.Timestamp.lte(param.dateTimeString("endTime")),
+			$.Kind.eq("navigation"),
+			$.PagePath.eq(pagePath),
+		])
+}
+
 // List query
 
 export interface SessionReplaysListOpts {
@@ -109,6 +132,8 @@ export interface SessionReplaysListOpts {
 	hasErrors?: boolean
 	/** Substring match on the initial page URL. */
 	search?: string
+	/** Exact page path (no query/hash) the session navigated to at any point. */
+	pagePath?: string
 	/**
 	 * Keyset cursor: the (StartTime, SessionId) of the last row of the previous
 	 * page, matching this query's `ORDER BY startTime DESC, sessionId DESC`.
@@ -285,6 +310,8 @@ export function sessionReplaysListQuery(
 			CH.when(opts.groupName, (v: string) => $.GroupName.eq(v)),
 			CH.whenTrue(opts.hasErrors, () => $.ErrorCount.gt(0)),
 			CH.when(opts.search, (v: string) => $.UrlInitial.ilike(`%${v}%`)),
+			// SessionId is version-invariant, so this is row-level like the rest.
+			CH.when(opts.pagePath, (v: string) => inSubquery($.SessionId, pageVisitSessions(v))),
 			// Version-invariant, so the keyset can sit in WHERE ahead of the GROUP BY
 			// rather than becoming another post-aggregate predicate.
 			CH.when(opts.cursor, (c: { startTime: string; sessionId?: string }) =>
@@ -510,11 +537,13 @@ export interface SessionReplaysFacetsOpts {
 	visitorId?: string
 	hasErrors?: boolean
 	search?: string
+	/** Exact visited page path — excluded from its own (page) branch. */
+	pagePath?: string
 }
 
 export type SessionReplaysFacetsOutput = FacetOutput
 
-type SessionFacetKey = "service" | "browser" | "country" | "device" | "group"
+type SessionFacetKey = "service" | "browser" | "country" | "device" | "group" | "page"
 
 export function sessionReplaysFacetsQuery(
 	opts: SessionReplaysFacetsOpts,
@@ -539,6 +568,9 @@ export function sessionReplaysFacetsQuery(
 		CH.when(opts.visitorId, (v: string) => $.VisitorId.eq(v)),
 		CH.whenTrue(opts.hasErrors, () => $.ErrorCount.gt(0)),
 		CH.when(opts.search, (v: string) => $.UrlInitial.ilike(`%${v}%`)),
+		exclude === "page"
+			? undefined
+			: CH.when(opts.pagePath, (v: string) => inSubquery($.SessionId, pageVisitSessions(v))),
 	]
 
 	const makeFacet = (
@@ -556,6 +588,36 @@ export function sessionReplaysFacetsQuery(
 			.groupBy("name")
 			.orderBy(["count", "desc"])
 			.limit(limit)
+
+	// Pages visited, by sessions that reached them. Unlike the other facets this
+	// counts from `product_events` (a session visits many pages), narrowed to the
+	// sessions every other active filter admits. That session set is always
+	// applied, not only when a filter is set: it is what restricts the count to
+	// sessions that *started* in the window, which is the population the list and
+	// the other facets describe. 200 rather than 50 because the sidebar searches
+	// this list client-side, and paths are the one long-tailed dimension here.
+	const pageFacet = from(ProductEvents)
+		.select(($) => ({
+			name: $.PagePath,
+			count: CH.uniq($.SessionId),
+			facetType: CH.lit("page"),
+		}))
+		.where(($) => [
+			$.OrgId.eq(param.string("orgId")),
+			$.Timestamp.gte(param.dateTimeString("startTime")),
+			$.Timestamp.lte(param.dateTimeString("endTime")),
+			$.Kind.eq("navigation"),
+			$.PagePath.neq(""),
+			inSubquery(
+				$.SessionId,
+				from(SessionReplays)
+					.select(($$) => ({ SessionId: $$.SessionId }))
+					.where(($$) => baseWhere($$, "page")),
+			),
+		])
+		.groupBy("name")
+		.orderBy(["count", "desc"])
+		.limit(200)
 
 	// Session-length distribution, as half-octave log buckets from 1s:
 	//   floor_ms = round(pow(2, floor(log2(clamped_s) * 2) / 2) * 1000)
@@ -650,6 +712,7 @@ export function sessionReplaysFacetsQuery(
 		// the `= ''` rows, so sessions recorded before identify() never surface as a
 		// blank option.
 		makeFacet("group", ($) => $.GroupName),
+		pageFacet,
 		durationHistogram,
 		durationStat("p50", 0.5),
 		durationStat("p95", 0.95),
@@ -678,6 +741,7 @@ export function sessionReplaysFacetsQuery(
 					$.UserName.ilike(`%${v}%`).or($.UserEmail.ilike(`%${v}%`)),
 				),
 				CH.when(opts.search, (v: string) => $.UrlInitial.ilike(`%${v}%`)),
+				CH.when(opts.pagePath, (v: string) => inSubquery($.SessionId, pageVisitSessions(v))),
 				$.ErrorCount.gt(0),
 			]),
 	).format("JSON")

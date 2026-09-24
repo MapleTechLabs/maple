@@ -563,6 +563,13 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 			),
 	},
 	{
+		// The product_events semi-join behind the "Page visited" filter.
+		module: "session-replays",
+		name: "sessionReplaysListQuery",
+		label: "page-visited",
+		compile: () => CH.compileUnsafe(CH.sessionReplaysListQuery({ pagePath: "/pricing" }), window),
+	},
+	{
 		module: "session-replays",
 		name: "sessionReplaysFacetsQuery",
 		label: "default",
@@ -579,6 +586,14 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 				CH.sessionReplaysFacetsQuery({ userSearch: "ada", groupName: "Acme Inc" }),
 				window,
 			),
+	},
+	{
+		// A selected page narrows every other branch and is excluded from its own.
+		module: "session-replays",
+		name: "sessionReplaysFacetsQuery",
+		label: "page-visited",
+		compile: () =>
+			CH.compileUnionUnsafe(CH.sessionReplaysFacetsQuery({ pagePath: "/pricing" }), window),
 	},
 	{
 		module: "session-replays",

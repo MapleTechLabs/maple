@@ -21,6 +21,8 @@ export interface ReplaysSearchState {
 	readonly visitorId?: string
 	readonly hasErrors?: boolean
 	readonly q?: string
+	/** Exact page path visited anywhere in the session. */
+	readonly page?: string
 	readonly durationMin?: number
 	readonly durationMax?: number
 	readonly activeMin?: number
@@ -55,6 +57,7 @@ export const replaysFilterInputs = (search: ReplaysSearchState) => {
 		visitorId: search.visitorId,
 		hasErrors: search.hasErrors,
 		search: search.q,
+		pagePath: search.page,
 		// URL params are whole seconds; the warehouse filters in ms.
 		durationMinMs: search.durationMin != null ? search.durationMin * 1000 : undefined,
 		durationMaxMs: search.durationMax != null ? search.durationMax * 1000 : undefined,
