@@ -107,6 +107,8 @@ export interface SlackMessageRequest extends SlackMessagePayload {
 	readonly channel: string
 	readonly thread_ts?: string
 	readonly ts?: string
+	/** `chat.postEphemeral`'s one extra argument: who alone sees it. */
+	readonly user?: string
 }
 
 /**
