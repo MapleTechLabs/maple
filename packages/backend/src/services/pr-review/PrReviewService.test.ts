@@ -41,6 +41,7 @@ import { VcsRepository } from "@maple/backend/services/integrations/vcs/VcsRepos
 import { VcsSyncQueue } from "@maple/backend/services/integrations/vcs/VcsSyncQueue"
 import {
 	buildPublication,
+	buildReviewKickoff,
 	clampSummary,
 	PR_REVIEW_CHECK_NAME,
 	PR_REVIEW_COMMENT_MARKER,
@@ -1187,7 +1188,29 @@ describe("buildPublication", () => {
 		assert.include(warned, "| **3/5** · needs attention |")
 		assert.include(warned, "**Why 3/5:** Held at 3 because a warning is open.")
 		assert.notInclude(warned, "verified end to end")
-		assert.include(render([], true), "| **3/5** · needs attention |")
+		const partial = render([], true)
+		assert.include(partial, "| **3/5** · needs attention |")
+		// The early end is the warning; a reason saying so again is left out.
+		assert.notInclude(partial, "**Why")
+		assert.include(partial, "ended early")
+	})
+
+	it("is green only for a finished review that is confident the change is safe", () => {
+		const conclusion = (confidence: number | undefined, partial = false) =>
+			buildPublication({
+				number: 1,
+				headSha: HEAD,
+				partial,
+				repositoryUrl: REPO_URL,
+				report: new PrReviewReport({
+					...report([]),
+					...(confidence === undefined ? undefined : { confidence }),
+				}),
+			}).conclusion
+		assert.equal(conclusion(5), "success")
+		assert.equal(conclusion(4), "success")
+		assert.equal(conclusion(3), "neutral")
+		assert.equal(conclusion(undefined, true), "neutral")
 	})
 
 	it("posts a replacement as a one-click suggestion over the lines it replaces", () => {
@@ -1266,5 +1289,49 @@ describe("buildPublication", () => {
 		const astral = clampSummary("😀".repeat(30_000))
 		assert.isTrue(astral.startsWith("😀"))
 		assert.isAtMost(new TextEncoder().encode(astral).byteLength, 65_535)
+	})
+})
+
+describe("buildReviewKickoff", () => {
+	const kickoff = (overrides: Partial<Parameters<typeof buildReviewKickoff>[0]>) =>
+		buildReviewKickoff({
+			repository: "acme/shop",
+			number: 7,
+			url: "https://github.com/acme/shop/pull/7",
+			title: "Add retries",
+			authorLogin: "ada",
+			headRef: "feat/retry",
+			baseRef: "main",
+			headSha: HEAD,
+			baseSha: undefined,
+			fork: false,
+			body: "Retries GETs.",
+			...overrides,
+		})
+	const rules = [
+		{ path: "CLAUDE.md", content: "Use Effect.\n" },
+		{ path: ".maple/review.md", content: "No console.log." },
+	]
+
+	it("states the rules first, so every review of the repository shares one cacheable prefix", () => {
+		const first = kickoff({ rules })
+		const second = kickoff({ rules, number: 8, headSha: HEAD_2, title: "Other", body: "Other." })
+		const prefix = first.slice(0, first.indexOf("Review pull request #7"))
+		assert.include(prefix, '<rules path="CLAUDE.md">\nUse Effect.\n</rules>')
+		assert.include(prefix, '<rules path=".maple/review.md">')
+		assert.notInclude(prefix, HEAD)
+		assert.isTrue(second.startsWith(prefix))
+	})
+
+	it("says when the repository has no rules, and says nothing when they could not be read", () => {
+		assert.include(kickoff({ rules: [] }), "has no CLAUDE.md, AGENTS.md, .maple/review.md at the base")
+		const unread = kickoff({})
+		assert.notInclude(unread, "<rules")
+		assert.notInclude(unread, "has no CLAUDE.md")
+	})
+
+	it("cuts rules past the budget and says where", () => {
+		const text = kickoff({ rules: [{ path: "CLAUDE.md", content: "x".repeat(40_000) }] })
+		assert.include(text, "[cut at 30000 of 40000 characters")
 	})
 })

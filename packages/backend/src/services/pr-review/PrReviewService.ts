@@ -99,6 +99,18 @@ export const PR_REVIEW_PUSH_DEBOUNCE_SECONDS = 90
 /** Bounds on what the kickoff message carries; the agent fetches the rest through its tools. */
 const KICKOFF_BODY_CHARS = 4_000
 
+/** The files a repository states its rules in, read at the base and stated in this order. */
+export const PR_REVIEW_RULE_FILES = ["CLAUDE.md", "AGENTS.md", ".maple/review.md"] as const
+
+/** Rules beyond this are cut; the agent can still read the rest when a decision needs it. */
+const RULES_MAX_CHARS = 30_000
+
+/** A rule file as read at the base commit. */
+export interface RepositoryRuleFile {
+	readonly path: string
+	readonly content: string
+}
+
 const AGENT_UNAVAILABLE_ERROR = "agent_unavailable: the review agent is not configured; retry"
 const START_FAILED_ERROR = "start_failed: the review agent could not start a turn; retry"
 
@@ -229,6 +241,11 @@ export const buildReviewKickoff = (input: {
 	readonly config?: PrReviewRepositoryConfig
 	/** For a later push: what changed since the last review, and which findings are still open. */
 	readonly followUp?: ReadonlyArray<string>
+	/**
+	 * The repository's rule files at the base; empty when it has none, absent when they could not
+	 * be read (the agent then reads them itself).
+	 */
+	readonly rules?: ReadonlyArray<RepositoryRuleFile>
 }): string => {
 	const body = (input.body ?? "").trim()
 	const quoted =
@@ -238,6 +255,7 @@ export const buildReviewKickoff = (input: {
 				? `${body.slice(0, KICKOFF_BODY_CHARS)}…`
 				: body
 	const lines = [
+		...renderRepositoryRules(input.repository, input.rules),
 		`Review pull request #${input.number} of ${input.repository}.`,
 		"",
 		`- URL: ${input.url}`,
@@ -255,6 +273,42 @@ export const buildReviewKickoff = (input: {
 		"Start with pr_changed_files. Read every hunk that adds code with pr_file_diff before you decide anything. Finish with submit_review.",
 	]
 	return wrapChatContext(lines.join("\n"), "")
+}
+
+/**
+ * The repository's rules, first in the kickoff and free of anything about this pull request: the
+ * system prompt and this block are then the same bytes for every review of the repository until
+ * its rules change, which is the prefix a provider's prompt cache keys on. A commit or a number in
+ * here would make every review a cache miss.
+ */
+const renderRepositoryRules = (
+	repository: string,
+	rules: ReadonlyArray<RepositoryRuleFile> | undefined,
+): ReadonlyArray<string> => {
+	if (rules === undefined) return []
+	if (rules.length === 0) {
+		return [
+			`${repository} has no ${PR_REVIEW_RULE_FILES.join(", ")} at the base. Do not look for them.`,
+			"",
+		]
+	}
+	let budget = RULES_MAX_CHARS
+	const lines = [
+		`The repository rules of ${repository}, read at the base branch. They bind this review; do not read these files again.`,
+		"",
+	]
+	for (const rule of rules) {
+		const content = rule.content.trim()
+		const kept = content.length > budget ? content.slice(0, Math.max(0, budget)) : content
+		budget -= kept.length
+		lines.push(`<rules path="${rule.path}">`, kept)
+		if (kept.length < content.length) {
+			lines.push(`[cut at ${kept.length} of ${content.length} characters; read the rest only if a decision needs it]`)
+		}
+		lines.push("</rules>", "")
+		if (budget <= 0) break
+	}
+	return lines
 }
 
 /** The repository's own settings, stated in the kickoff; the service enforces the same rules. */
@@ -488,7 +542,8 @@ export const renderReviewMarkdown = (input: ReviewMarkdownInput & { readonly hea
 		SCORECARD_END,
 		"",
 	)
-	if (confidence?.reason !== undefined) lines.push(`**Why ${confidence.confidence}/5:** ${confidence.reason}`, "")
+	// An early end is already the warning below; the reason would only say it again.
+	if (confidence?.reason !== undefined && confidence.cappedBy !== "partial") lines.push(`**Why ${confidence.confidence}/5:** ${confidence.reason}`, "")
 	if (input.partial) {
 		lines.push("> [!WARNING]", "> This review ended early; what follows is what it established.", "")
 	}
@@ -707,8 +762,12 @@ export const buildPublication = (input: {
 			verdictTitle(report, carried),
 		].join(" · "),
 		summary: renderCheckSummary(markdown),
-		// Never `failure`: the review informs, it does not block a merge.
-		conclusion: hasIssues ? "neutral" : "success",
+		// Never `failure`: the review informs, it does not block a merge. Green only for a review
+		// that finished, found nothing to address and is confident the change is safe.
+		conclusion:
+			hasIssues || input.partial || (confidence !== undefined && confidence.confidence <= 3)
+				? "neutral"
+				: "success",
 		annotations,
 		summaryComment: { marker: PR_REVIEW_COMMENT_MARKER, body: renderSummaryComment(markdown) },
 		// The summary lives in the comment; the review only carries the inline notes.
@@ -959,6 +1018,35 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 					ref: { externalRepoId: repo.externalRepoId, owner: repo.owner, name: repo.name },
 				})
 			})
+
+			/**
+			 * The repository's rule files at the base, for the kickoff. Best effort: `undefined` when
+			 * any read fails, and the agent reads them itself as it did before.
+			 */
+			const repositoryRules = (orgId: OrgId, repo: VcsRepo, ref: string) =>
+				Effect.gen(function* () {
+					const target = yield* providerFor(orgId, repo)
+					if (Option.isNone(target)) return undefined
+					const { provider, installation, ref: repoRef } = target.value
+					const files = yield* Effect.forEach(
+						PR_REVIEW_RULE_FILES,
+						(path) => provider.fetchSourceFile(installation, repoRef, path, ref),
+						{ concurrency: "unbounded" },
+					)
+					return files.flatMap((file) =>
+						Option.isSome(file) ? [{ path: file.value.path, content: file.value.content }] : [],
+					)
+				}).pipe(
+					// The review starts without them rather than late.
+					Effect.timeout("5 seconds"),
+					Effect.withSpan("PrReviewService.repositoryRules"),
+					Effect.catchCause((cause) =>
+						Effect.logWarning("[PrReview] could not read the repository rules; the agent reads them").pipe(
+							Effect.annotateLogs({ orgId, cause: summarizeCause(cause) }),
+							Effect.as(undefined),
+						),
+					),
+				)
 
 			/**
 			 * Put a status notice on the pull request's summary comment and its check run, so the
@@ -1306,6 +1394,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 						),
 					),
 				)
+				const rules = yield* repositoryRules(orgId, repo, job.baseSha ?? job.baseRef ?? repo.defaultBranch)
 				const text = buildReviewKickoff({
 					repository: repo.fullName,
 					number: job.number,
@@ -1323,6 +1412,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 					body: job.body,
 					config,
 					...(followUp === undefined ? undefined : { followUp }),
+					...(rules === undefined ? undefined : { rules }),
 				})
 				// Before the turn, so a fast turn's finished summary is never overwritten by this notice.
 				yield* postReviewStatus(orgId, repo, job.number, { kind: "reviewing", headSha })
@@ -1703,7 +1793,10 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 						: new PrReviewReport({
 								...rest,
 								confidence: confidence.confidence,
-								...(confidence.reason === undefined ? undefined : { confidenceReason: confidence.reason }),
+								// An early end is shown as the review's warning; its capped reason would repeat it.
+								...(confidence.reason === undefined || confidence.cappedBy === "partial"
+									? undefined
+									: { confidenceReason: confidence.reason }),
 							})
 				const carried = { open: stillOpen, resolved }
 				const score = scorePrReview(report, stillOpen).score

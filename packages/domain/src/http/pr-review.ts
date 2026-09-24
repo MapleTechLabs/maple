@@ -422,6 +422,8 @@ export interface PrReviewConfidenceResult {
 	readonly reason: string | undefined
 	/** The findings held the reviewer's number down. */
 	readonly capped: boolean
+	/** What held it down, when something did. */
+	readonly cappedBy?: "critical" | "warn" | "partial"
 }
 
 const toConfidence = (value: number): PrReviewConfidence =>
@@ -454,15 +456,16 @@ export const confidencePrReview = (
 	if (report.confidence === undefined) return { confidence: fallback, reason: undefined, capped: false }
 	const given = toConfidence(report.confidence)
 	if (given > cap) {
+		const cappedBy = criticals > 0 ? "critical" : count("warn") > 0 ? "warn" : "partial"
 		const why =
 			criticals > 1
 				? `${criticals} critical findings are open`
 				: criticals === 1
 					? "a critical finding is open"
-					: count("warn") > 0
+					: cappedBy === "warn"
 						? "a warning is open"
 						: "the review ended early"
-		return { confidence: cap, reason: `Held at ${cap} because ${why}.`, capped: true }
+		return { confidence: cap, reason: `Held at ${cap} because ${why}.`, capped: true, cappedBy }
 	}
 	return { confidence: given, reason: report.confidenceReason, capped: false }
 }

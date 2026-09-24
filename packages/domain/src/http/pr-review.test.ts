@@ -333,6 +333,7 @@ describe("confidencePrReview", () => {
 			confidence: 2,
 			reason: "Held at 2 because a critical finding is open.",
 			capped: true,
+			cappedBy: "critical",
 		})
 		assert.equal(confidencePrReview(reportWith([finding("critical")], 5), [finding("critical")])?.confidence, 1)
 		assert.equal(confidencePrReview(reportWith([], 5), [], true)?.confidence, 3)
