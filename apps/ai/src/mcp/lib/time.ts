@@ -107,16 +107,3 @@ export function rangeExceededMessage(
 		`Narrow start_time/end_time to ${cap} or less. For wider trends use \`query_data\` with a timeseries query, which aggregates instead of scanning raw rows.`,
 	].join(" ")
 }
-
-/**
- * Standard MCP error result for an over-wide range. Returned directly by tools.
- */
-export function rangeExceededResult(
-	range: Pick<ResolvedTimeRange, "maxHours" | "requestedHours">,
-	toolName: string,
-) {
-	return {
-		content: [{ type: "text" as const, text: rangeExceededMessage(range, toolName) }],
-		isError: true as const,
-	}
-}

@@ -248,6 +248,24 @@ database), reached from Workers via the Hyperdrive binding `MAPLE_DB`.
       "SELECT id, name, set_id FROM icons WHERE klass='outline' AND grid=24 AND name LIKE '%search%';"
     ```
 
+## MCP tool contract
+
+Every tool is `server.define({ parameters, output, hints, render, handler })`
+(`apps/ai/src/mcp/tools/types.ts`); the registry owns decode, aliases, errors, output encoding and
+text rendering, so no tool does those itself.
+
+- **Parameters** come from the vocabulary in `apps/ai/src/mcp/lib/params.ts`: `P.timeWindow`,
+  `P.service`, `P.limit`, `P.oneOf`, `P.optionalList`, `P.json`... One spelling per concept;
+  retired names (`service_name`, `since`) are `aliases`, never published.
+  `registry.contract.test.ts` enforces it.
+- **Output** is an Effect Schema in `packages/domain/src/mcp-outputs/`. It is the public
+  `outputSchema`/`structuredContent` and the chat UI's payload. The model never sees it: it reads
+  `render(output)`, a `ToolDoc` (`lib/tool-doc.ts`) with typed `next` calls that the registry
+  validates against the target tool's schema.
+- **Failures** are typed: `McpInvalidInputError` (fix the call), `McpNotReadyError` (retry later),
+  `McpUnavailableError` (capability not set up), `McpQueryBudgetError`, `McpQueryError`. No
+  `isError` literals in tools.
+
 ## Repository sandbox (agent code access)
 
 When an org has connected GitHub, Maple's own agents (chat and the investigation pass) get

@@ -49,9 +49,6 @@ export type PanelTypeResolution =
 
 const panelTypeList = MCP_PANEL_TYPES.map((panel) => `"${panel}"`).join(", ")
 
-/** Rendered into tool descriptions so the accepted list can't drift from the table. */
-export const PANEL_TYPE_LIST_MD = MCP_PANEL_TYPES.map((panel) => `\`${panel}\``).join(", ")
-
 export const resolvePanelType = (input: PanelTypeInput): PanelTypeResolution => {
 	const panelTypeRaw = input.panel_type?.trim()
 	const visualizationRaw = input.visualization?.trim()

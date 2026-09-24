@@ -1,7 +1,9 @@
-import { McpQueryError, requiredStringParam, type McpToolRegistrar } from "./types"
+import { McpInvalidInputError, type McpToolRegistrar } from "./types"
 import { Effect, Schema } from "effect"
-import { createDualContent } from "../lib/structured-output"
-import { withDashboardMutation } from "../lib/dashboard-mutations"
+import { ReorderDashboardWidgetsOutput } from "@maple/domain/mcp-outputs"
+import { toDashboardRow, withDashboardMutation } from "../lib/dashboard-mutations"
+import * as P from "../lib/params"
+import { doc } from "../lib/tool-doc"
 
 const TOOL = "reorder_dashboard_widgets"
 
@@ -13,17 +15,15 @@ const GRID_COLS = 12
 
 const LayoutEntrySchema = Schema.Struct({
 	widget_id: Schema.String,
-	x: Schema.Number,
-	y: Schema.Number,
-	w: Schema.Number,
-	h: Schema.Number,
-	minW: Schema.optionalKey(Schema.Number),
-	minH: Schema.optionalKey(Schema.Number),
-	maxW: Schema.optionalKey(Schema.Number),
-	maxH: Schema.optionalKey(Schema.Number),
+	x: Schema.Finite,
+	y: Schema.Finite,
+	w: Schema.Finite,
+	h: Schema.Finite,
+	minW: Schema.optionalKey(Schema.Finite),
+	minH: Schema.optionalKey(Schema.Finite),
+	maxW: Schema.optionalKey(Schema.Finite),
+	maxH: Schema.optionalKey(Schema.Finite),
 })
-
-const LayoutsFromJson = Schema.fromJsonString(Schema.Array(LayoutEntrySchema))
 
 type LayoutEntry = typeof LayoutEntrySchema.Type
 
@@ -60,72 +60,57 @@ const validateLayoutGeometry = (entries: ReadonlyArray<LayoutEntry>): string[] =
 }
 
 export function registerReorderDashboardWidgetsTool(server: McpToolRegistrar) {
-	server.tool(
-		TOOL,
-		"Reposition or resize one or more widgets on a dashboard in a single call. Only the widgets you include are touched; any widget id not present in layouts_json keeps its existing layout. Useful for drag/drop-style moves without re-sending unrelated widget state.",
-		Schema.Struct({
-			dashboard_id: requiredStringParam(
-				"ID of the dashboard to reorder (use list_dashboards to find IDs)",
-			),
-			layouts_json: requiredStringParam(
+	server.define({
+		name: TOOL,
+		description:
+			"Reposition or resize one or more widgets on a dashboard in a single call. Only the widgets you include are touched; any widget id not present in layouts_json keeps its existing layout. Useful for drag/drop-style moves without re-sending unrelated widget state.",
+		parameters: Schema.Struct({
+			dashboard_id: P.text("ID of the dashboard to reorder (use list_dashboards to find IDs)"),
+			layouts_json: P.json(
+				Schema.Array(LayoutEntrySchema),
 				"JSON array of layout updates: [{ widget_id, x, y, w, h, minW?, minH?, maxW?, maxH? }, ...]. Only listed widgets are updated.",
 			),
 		}),
-		Effect.fn("McpTool.reorderDashboardWidgets")(function* ({ dashboard_id, layouts_json }) {
-			const layouts = yield* Schema.decodeEffect(LayoutsFromJson)(layouts_json).pipe(
-				Effect.mapError(
-					(error) =>
-						new McpQueryError({
-							message: `Invalid layouts_json: ${String(error)}`,
-							pipeName: TOOL,
-							cause: error,
-						}),
-				),
-			)
-
+		output: ReorderDashboardWidgetsOutput,
+		hints: { readOnly: false, destructive: false, idempotent: true },
+		phrases: ["Reordering widgets"],
+		handler: Effect.fn("McpTool.reorderDashboardWidgets")(function* ({
+			dashboard_id,
+			layouts_json: layouts,
+		}) {
 			if (layouts.length === 0) {
-				return {
-					isError: true,
-					content: [
-						{
-							type: "text" as const,
-							text: "layouts_json must contain at least one layout entry.",
-						},
-					],
-				}
+				return yield* new McpInvalidInputError({
+					message: "layouts_json must contain at least one layout entry.",
+					parameter: "layouts_json",
+				})
 			}
 
 			const geometryErrors = validateLayoutGeometry(layouts)
 			if (geometryErrors.length > 0) {
-				return {
-					isError: true,
-					content: [
-						{
-							type: "text" as const,
-							text: `Invalid layout geometry:\n- ${geometryErrors.join("\n- ")}`,
-						},
-					],
-				}
+				return yield* new McpInvalidInputError({
+					message: `Invalid layout geometry:\n- ${geometryErrors.join("\n- ")}`,
+					parameter: "layouts_json",
+				})
 			}
 
-			const result = yield* withDashboardMutation(dashboard_id, TOOL, (existingWidgets) =>
-				Effect.gen(function* () {
-					const layoutById = new Map(layouts.map((entry) => [entry.widget_id, entry] as const))
+			const dashboard = yield* withDashboardMutation(dashboard_id, TOOL, (existingWidgets) => {
+				const layoutById = new Map(layouts.map((entry) => [entry.widget_id, entry] as const))
 
-					const unknownIds = layouts
-						.filter((entry) => !existingWidgets.some((w) => w.id === entry.widget_id))
-						.map((entry) => entry.widget_id)
+				const unknownIds = layouts
+					.filter((entry) => !existingWidgets.some((w) => w.id === entry.widget_id))
+					.map((entry) => entry.widget_id)
 
-					if (unknownIds.length > 0) {
-						return yield* Effect.fail(
-							new McpQueryError({
-								message: `Unknown widget ids in layouts_json: ${unknownIds.join(", ")}. Use get_dashboard to see existing widget ids.`,
-								pipeName: TOOL,
-							}),
-						)
-					}
+				if (unknownIds.length > 0) {
+					return Effect.fail(
+						new McpInvalidInputError({
+							message: `Unknown widget ids in layouts_json: ${unknownIds.join(", ")}. Use get_dashboard to see existing widget ids.`,
+							parameter: "layouts_json",
+						}),
+					)
+				}
 
-					return existingWidgets.map((widget) => {
+				return Effect.succeed(
+					existingWidgets.map((widget) => {
 						const update = layoutById.get(widget.id)
 						if (!update) return widget
 						return {
@@ -141,45 +126,25 @@ export function registerReorderDashboardWidgetsTool(server: McpToolRegistrar) {
 								maxH: update.maxH,
 							},
 						}
-					})
-				}),
-			)
-
-			if (!result.ok) {
-				return {
-					isError: true,
-					content: [{ type: "text" as const, text: result.notFound }],
-				}
-			}
-
-			const { dashboard } = result
-
-			const lines = [
-				`## Widgets Reordered`,
-				`Dashboard: ${dashboard.name} (${dashboard.id})`,
-				`Widgets updated: ${layouts.length}`,
-				`Total widgets: ${dashboard.widgets.length}`,
-				`Updated: ${dashboard.updatedAt.slice(0, 19)}`,
-			]
+					}),
+				)
+			})
 
 			return {
-				content: createDualContent(lines.join("\n"), {
-					tool: TOOL,
-					data: {
-						dashboard: {
-							id: dashboard.id,
-							name: dashboard.name,
-							description: dashboard.description,
-							tags: dashboard.tags ? [...dashboard.tags] : undefined,
-							widgetCount: dashboard.widgets.length,
-							createdAt: dashboard.createdAt,
-							updatedAt: dashboard.updatedAt,
-						},
-						updatedWidgetIds: layouts.map((entry) => entry.widget_id),
-					},
-				}),
+				dashboard: toDashboardRow(dashboard),
+				updatedWidgetIds: layouts.map((entry) => entry.widget_id),
 			}
 		}),
-		{ phrases: ["Reordering widgets"] },
-	)
+		render: (output) => ({
+			title: "Widgets Reordered",
+			blocks: [
+				doc.fields([
+					["Dashboard", `${output.dashboard.name} (${output.dashboard.id})`],
+					["Widgets updated", output.updatedWidgetIds.length],
+					["Total widgets", output.dashboard.widgetCount],
+					["Updated", output.dashboard.updatedAt.slice(0, 19)],
+				]),
+			],
+		}),
+	})
 }

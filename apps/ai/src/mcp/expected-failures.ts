@@ -20,6 +20,14 @@ const MCP_EXPECTED_FAILURE_STATUS = {
 	"@maple/mcp/decode-error": 400,
 	"@maple/mcp/errors/McpAuthMissingError": 401,
 	"@maple/mcp/errors/McpAuthInvalidError": 401,
+	// The call was well-formed JSON but the tool will not do what it asks.
+	"@maple/mcp/errors/McpInvalidInputError": 400,
+	// A dependency still warming up: the same call works later.
+	"@maple/mcp/errors/McpNotReadyError": 409,
+	// A capability the org or deployment has not set up.
+	"@maple/mcp/errors/McpUnavailableError": 412,
+	// The query hit a warehouse budget; mirrors `WarehouseQuotaExceededError`'s 429.
+	"@maple/mcp/errors/McpQueryBudgetError": 429,
 } satisfies Record<string, number>
 
 // Keyed by a plain string so a `_tag` off any failure can be looked up without

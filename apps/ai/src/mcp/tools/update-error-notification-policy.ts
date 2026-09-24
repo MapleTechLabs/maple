@@ -1,174 +1,128 @@
-import {
-	McpQueryError,
-	optionalBooleanParam,
-	optionalNumberParam,
-	optionalStringParam,
-	validationError,
-	type McpToolRegistrar,
-} from "./types"
-import { Effect, Option, Schema } from "effect"
-import { createDualContent } from "../lib/structured-output"
+import { McpInvalidInputError, McpUnavailableError, type McpToolRegistrar } from "./types"
+import { Effect, Schema } from "effect"
+import { UpdateErrorNotificationPolicyOutput } from "@maple/domain/mcp-outputs"
 import { CurrentMcpTenant } from "../lib/query-warehouse"
+import * as P from "../lib/params"
+import { doc } from "../lib/tool-doc"
+import { persistenceFailed, validationFailed } from "./error-issue-shared"
 import { ErrorPolicyService } from "@maple/backend/services/errors/ErrorPolicyService"
 import { AlertDestinationId, AlertSeverity, ErrorNotificationPolicyUpsertRequest } from "@maple/domain/http"
 
-const decodeSeverity = Schema.decodeUnknownOption(AlertSeverity)
 const decodeDestinationId = Schema.decodeUnknownEffect(AlertDestinationId)
+const decodePatch = Schema.decodeEffect(ErrorNotificationPolicyUpsertRequest)
+
+const yesNo = (value: boolean): string => (value ? "yes" : "no")
 
 export function registerUpdateErrorNotificationPolicyTool(server: McpToolRegistrar) {
-	server.tool(
-		"update_error_notification_policy",
-		"Configure the org-wide error notification policy. Controls whether incidents (first-seen, regression, auto-resolve) dispatch to alert destinations. Omit a field to leave it unchanged.",
-		Schema.Struct({
-			enabled: optionalBooleanParam("Enable notifications overall"),
-			destination_ids: optionalStringParam(
-				"Comma-separated alert destination IDs to notify. Pass empty string to clear.",
-			),
-			notify_on_first_seen: optionalBooleanParam(
+	server.define({
+		name: "update_error_notification_policy",
+		description:
+			"Configure the org-wide error notification policy. Controls whether incidents (first-seen, regression, auto-resolve) dispatch to alert destinations. Omit a field to leave it unchanged.",
+		parameters: Schema.Struct({
+			enabled: P.optionalFlag("Enable notifications overall"),
+			destination_ids: P.optionalList("Alert destination IDs to notify. Pass an empty list to clear."),
+			notify_on_first_seen: P.optionalFlag(
 				"Notify on the first-ever occurrence of an error fingerprint",
 			),
-			notify_on_regression: optionalBooleanParam("Notify when a resolved issue re-occurs"),
-			notify_on_resolve: optionalBooleanParam(
+			notify_on_regression: P.optionalFlag("Notify when a resolved issue re-occurs"),
+			notify_on_resolve: P.optionalFlag(
 				"Notify when an incident is auto-resolved after the silence window",
 			),
-			min_occurrence_count: optionalNumberParam(
+			min_occurrence_count: P.optionalNumber(
 				"Only notify when the opening occurrence count meets this threshold (default 1)",
 			),
-			severity: optionalStringParam("Severity label attached to notifications: warning or critical"),
+			severity: P.optionalOneOf(AlertSeverity.literals, "Severity label attached to notifications"),
 		}),
-		Effect.fn("McpTool.updateErrorNotificationPolicy")(function* ({
-			enabled,
-			destination_ids,
-			notify_on_first_seen,
-			notify_on_regression,
-			notify_on_resolve,
-			min_occurrence_count,
-			severity,
-		}) {
-			// `severity` is optional; when present it must decode to a valid
-			// AlertSeverity. Model the parsed-or-absent value as an Option.
-			const parsedSeverity =
-				severity === undefined ? Option.none<AlertSeverity>() : decodeSeverity(severity)
-			if (severity !== undefined && Option.isNone(parsedSeverity)) {
-				return validationError(`Invalid severity: ${severity}. Must be one of: warning, critical.`)
-			}
-			const decodedSeverity = Option.getOrUndefined(parsedSeverity)
-
+		output: UpdateErrorNotificationPolicyOutput,
+		// Setting the same fields again changes nothing; omitted fields are left as they are.
+		hints: { readOnly: false, destructive: false, idempotent: true },
+		phrases: ["Updating the notification policy"],
+		handler: Effect.fn("McpTool.updateErrorNotificationPolicy")(function* (params) {
 			const tenant = yield* CurrentMcpTenant
 			const policies = yield* ErrorPolicyService
 
-			const patch: Partial<{
-				enabled: boolean
-				destinationIds: ReadonlyArray<AlertDestinationId>
-				notifyOnFirstSeen: boolean
-				notifyOnRegression: boolean
-				notifyOnResolve: boolean
-				minOccurrenceCount: number
-				severity: AlertSeverity
-			}> = {} satisfies Partial<{
-				enabled: boolean
-				destinationIds: ReadonlyArray<AlertDestinationId>
-				notifyOnFirstSeen: boolean
-				notifyOnRegression: boolean
-				notifyOnResolve: boolean
-				minOccurrenceCount: number
-				severity: AlertSeverity
-			}>
-			if (enabled !== undefined) patch.enabled = enabled
-			if (destination_ids !== undefined) {
-				const tokens = destination_ids
-					.split(",")
-					.map((s) => s.trim())
-					.filter((s) => s.length > 0)
-				patch.destinationIds = yield* Effect.forEach(tokens, (token) =>
-					decodeDestinationId(token).pipe(
-						Effect.mapError(
-							(cause) =>
-								new McpQueryError({
-									message: `Invalid alert destination ID: ${token}`,
-									pipeName: "update_error_notification_policy",
-									cause,
-								}),
-						),
-					),
-				)
-			}
-			if (notify_on_first_seen !== undefined) patch.notifyOnFirstSeen = notify_on_first_seen
-			if (notify_on_regression !== undefined) patch.notifyOnRegression = notify_on_regression
-			if (notify_on_resolve !== undefined) patch.notifyOnResolve = notify_on_resolve
-			if (min_occurrence_count !== undefined) patch.minOccurrenceCount = min_occurrence_count
-			if (decodedSeverity !== undefined) patch.severity = decodedSeverity
+			const destinationIds =
+				params.destination_ids === undefined
+					? undefined
+					: yield* Effect.forEach(params.destination_ids, (token) =>
+							decodeDestinationId(token).pipe(
+								Effect.mapError(
+									() =>
+										new McpInvalidInputError({
+											message: `Invalid alert destination ID: ${token}`,
+											parameter: "destination_ids",
+										}),
+								),
+							),
+						)
 
-			const decodedPatch = yield* Schema.decodeEffect(ErrorNotificationPolicyUpsertRequest)(patch).pipe(
+			const patch = yield* decodePatch({
+				...(params.enabled === undefined ? undefined : { enabled: params.enabled }),
+				...(destinationIds === undefined ? undefined : { destinationIds }),
+				...(params.notify_on_first_seen === undefined
+					? undefined
+					: { notifyOnFirstSeen: params.notify_on_first_seen }),
+				...(params.notify_on_regression === undefined
+					? undefined
+					: { notifyOnRegression: params.notify_on_regression }),
+				...(params.notify_on_resolve === undefined
+					? undefined
+					: { notifyOnResolve: params.notify_on_resolve }),
+				...(params.min_occurrence_count === undefined
+					? undefined
+					: { minOccurrenceCount: params.min_occurrence_count }),
+				...(params.severity === undefined ? undefined : { severity: params.severity }),
+			}).pipe(
 				Effect.mapError(
 					(error) =>
-						new McpQueryError({
-							message: `Invalid notification policy payload: ${String(error)}`,
-							pipeName: "update_error_notification_policy",
-							cause: error,
+						new McpInvalidInputError({
+							message: `Invalid notification policy: ${error.message}`,
+							parameter: "min_occurrence_count",
 						}),
 				),
 			)
 
 			const policy = yield* policies
-				.upsertNotificationPolicy(tenant.orgId, tenant.userId, tenant.roles, decodedPatch)
+				.upsertNotificationPolicy(tenant.orgId, tenant.userId, tenant.roles, patch)
 				.pipe(
 					Effect.catchTags({
 						"@maple/http/errors/ErrorForbiddenError": (error) =>
 							Effect.fail(
-								new McpQueryError({
-									message: `${error._tag}: ${error.message}`,
-									pipeName: "update_error_notification_policy",
-									cause: error,
-								}),
+								new McpUnavailableError({ message: error.message, capability: "org_admin" }),
 							),
-						"@maple/http/errors/ErrorPersistenceError": (error) =>
-							Effect.fail(
-								new McpQueryError({
-									message: error.message,
-									pipeName: "update_error_notification_policy",
-									cause: error,
-								}),
-							),
-						"@maple/http/errors/ErrorValidationError": (error) =>
-							Effect.fail(
-								new McpQueryError({
-									message: error.message,
-									pipeName: "update_error_notification_policy",
-									cause: error,
-								}),
-							),
+						"@maple/http/errors/ErrorPersistenceError": persistenceFailed(
+							"update_error_notification_policy",
+						),
+						"@maple/http/errors/ErrorValidationError": validationFailed(),
 					}),
 				)
 
-			const lines = [
-				`## Error notification policy updated`,
-				`- Enabled: ${policy.enabled ? "yes" : "no"}`,
-				`- Destinations: ${
-					policy.destinationIds.length > 0 ? policy.destinationIds.join(", ") : "—"
-				}`,
-				`- First seen: ${policy.notifyOnFirstSeen ? "yes" : "no"}`,
-				`- Regression: ${policy.notifyOnRegression ? "yes" : "no"}`,
-				`- Resolve: ${policy.notifyOnResolve ? "yes" : "no"}`,
-				`- Min occurrence: ${policy.minOccurrenceCount}`,
-				`- Severity: ${policy.severity}`,
-			]
-
 			return {
-				content: createDualContent(lines.join("\n"), {
-					tool: "update_error_notification_policy",
-					data: {
-						enabled: policy.enabled,
-						destinationIds: policy.destinationIds,
-						notifyOnFirstSeen: policy.notifyOnFirstSeen,
-						notifyOnRegression: policy.notifyOnRegression,
-						notifyOnResolve: policy.notifyOnResolve,
-						minOccurrenceCount: policy.minOccurrenceCount,
-						severity: policy.severity,
-					},
-				}),
+				enabled: policy.enabled,
+				destinationIds: policy.destinationIds,
+				notifyOnFirstSeen: policy.notifyOnFirstSeen,
+				notifyOnRegression: policy.notifyOnRegression,
+				notifyOnResolve: policy.notifyOnResolve,
+				minOccurrenceCount: policy.minOccurrenceCount,
+				severity: policy.severity,
 			}
 		}),
-		{ phrases: ["Updating the notification policy"] },
-	)
+		render: (output) => ({
+			title: "Error notification policy updated",
+			blocks: [
+				doc.fields([
+					["Enabled", yesNo(output.enabled)],
+					[
+						"Destinations",
+						output.destinationIds.length > 0 ? output.destinationIds.join(", ") : "—",
+					],
+					["First seen", yesNo(output.notifyOnFirstSeen)],
+					["Regression", yesNo(output.notifyOnRegression)],
+					["Resolve", yesNo(output.notifyOnResolve)],
+					["Min occurrence", output.minOccurrenceCount],
+					["Severity", output.severity],
+				]),
+			],
+		}),
+	})
 }

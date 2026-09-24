@@ -37,7 +37,12 @@ import { type Cause, Effect, type Layer, Option, Schema } from "effect"
 import { Tool, Toolkit } from "effect/unstable/ai"
 import type { McpToolExecutorApi } from "../mcp/dispatcher"
 import type { McpToolSurface } from "@maple/domain/mcp-manifest"
-import { buildMapleToolkit, MapleToolFailure, summarizeToolFailure } from "../mcp/tools/llm-tools"
+import {
+	buildMapleToolkit,
+	MapleToolFailure,
+	summarizeToolFailure,
+	type ToolUiPayload,
+} from "../mcp/tools/llm-tools"
 import { toolHandlersWithContent } from "../platform/genai-spans"
 import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
 import { type ReviewCoverage, unreadRefusal } from "./review-coverage"
@@ -455,11 +460,13 @@ export const buildChatToolkit = (
 	surface: McpToolSurface,
 	sessionAttributes?: Readonly<Record<string, string>>,
 	onAnswer?: (tool: string, answer: string) => void,
+	onUi?: (toolCallId: string, ui: ToolUiPayload) => void,
 ) =>
 	buildMapleToolkit(executor, tenant, {
 		surface,
 		...(sessionAttributes === undefined ? undefined : { sessionAttributes }),
 		...(onAnswer === undefined ? undefined : { onAnswer }),
+		...(onUi === undefined ? undefined : { onUi }),
 		// `deny` means the model never sees the tool. That is a stronger guarantee than refusing the
 		// call afterwards, and it is free — an unoffered tool cannot be called.
 		include: (name) => evaluatePermission(ruleset, name) !== "deny",

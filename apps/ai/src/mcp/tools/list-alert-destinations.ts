@@ -1,23 +1,26 @@
-import { optionalBooleanParam, optionalStringParam, type McpToolRegistrar } from "./types"
-import { formatTable } from "../lib/format"
+import type { McpToolRegistrar } from "./types"
 import { toMcpHttpError } from "../lib/map-http-error"
-import { formatNextSteps } from "../lib/next-steps"
 import { Effect, Schema } from "effect"
-import { createDualContent } from "../lib/structured-output"
+import { ListAlertDestinationsOutput } from "@maple/domain/mcp-outputs"
 import { CurrentMcpTenant } from "../lib/query-warehouse"
 import { AlertsService } from "@maple/backend/services/alerts/AlertsService"
+import { ALERT_DESTINATION_TYPES } from "../lib/alert-rules"
+import * as P from "../lib/params"
+import { doc } from "../lib/tool-doc"
 
 export function registerListAlertDestinationsTool(server: McpToolRegistrar) {
-	server.tool(
-		"list_alert_destinations",
-		"List the notification destinations alert rules can deliver to (chat channels such as Slack, Discord, PagerDuty, webhook, email, …) with their IDs, type, and delivery health. Pass these IDs as destination_ids to create_alert_rule / update_alert_rule.",
-		Schema.Struct({
-			type: optionalStringParam(
-				"Filter by destination type: pagerduty, webhook, hazel-oauth, discord, telegram, email, chat",
-			),
-			enabled_only: optionalBooleanParam("Only return enabled destinations (default: false)"),
+	server.define({
+		name: "list_alert_destinations",
+		description:
+			"List the notification destinations alert rules can deliver to (chat channels such as Slack, Discord, PagerDuty, webhook, email, …) with their IDs, type, and delivery health. Pass these IDs as destination_ids to create_alert_rule / update_alert_rule.",
+		parameters: Schema.Struct({
+			type: P.optionalOneOf(ALERT_DESTINATION_TYPES, "Only destinations of this type"),
+			enabled_only: P.optionalFlag("Only return enabled destinations (default: false)"),
 		}),
-		Effect.fn("McpTool.listAlertDestinations")(function* ({ type, enabled_only }) {
+		output: ListAlertDestinationsOutput,
+		hints: { readOnly: true },
+		phrases: ["Listing alert destinations", "Checking alert destinations"],
+		handler: Effect.fn("McpTool.listAlertDestinations")(function* (params) {
 			const tenant = yield* CurrentMcpTenant
 			const alerts = yield* AlertsService
 
@@ -25,70 +28,70 @@ export function registerListAlertDestinationsTool(server: McpToolRegistrar) {
 				.listDestinations(tenant.orgId)
 				.pipe(Effect.mapError(toMcpHttpError("list_alert_destinations")))
 
-			let destinations = result.destinations
-			if (type) {
-				destinations = destinations.filter((d) => d.type === type)
-			}
-			if (enabled_only) {
-				destinations = destinations.filter((d) => d.enabled)
-			}
+			const destinations = result.destinations.filter(
+				(d) =>
+					(params.type === undefined || d.type === params.type) &&
+					(params.enabled_only !== true || d.enabled),
+			)
 
 			yield* Effect.annotateCurrentSpan({
 				orgId: tenant.orgId,
-				destinationType: type ?? "all",
+				destinationType: params.type ?? "all",
 				"result.rowCount": destinations.length,
 			})
 
-			const lines: string[] = [
-				`## Alert Destinations`,
-				`Total: ${destinations.length} destination${destinations.length !== 1 ? "s" : ""}`,
-				``,
-			]
-
-			if (destinations.length === 0) {
-				lines.push("No alert destinations found. Add one in Alerts → Destinations.")
-			} else {
-				const headers = ["ID", "Name", "Type", "Target", "Enabled", "Last error"]
-				const rows = destinations.map((d) => [
-					d.id,
-					d.name,
-					d.type,
-					d.channelLabel ?? d.summary,
-					d.enabled ? "Yes" : d.disabledReason ? `No (${d.disabledReason})` : "No",
-					d.lastTestError ?? "—",
-				])
-				lines.push(formatTable(headers, rows))
-			}
-
-			lines.push(
-				formatNextSteps([
-					'`update_alert_rule rule_id="<id>" destination_ids="<ids>"` — route a rule to these destinations (replaces its current list)',
-					"`list_alert_rules` — see which destinations each rule uses",
-				]),
-			)
-
 			return {
-				content: createDualContent(lines.join("\n"), {
-					tool: "list_alert_destinations",
-					data: {
-						destinations: destinations.map((d) => ({
-							id: d.id,
-							name: d.name,
-							type: d.type,
-							enabled: d.enabled,
-							summary: d.summary,
-							channelLabel: d.channelLabel,
-							lastTestedAt: d.lastTestedAt,
-							lastTestError: d.lastTestError,
-							disabledReason: d.disabledReason ?? null,
-							createdAt: d.createdAt,
-							updatedAt: d.updatedAt,
-						})),
-						total: destinations.length,
-					},
-				}),
+				destinations: destinations.map((d) => ({
+					id: d.id,
+					name: d.name,
+					type: d.type,
+					enabled: d.enabled,
+					summary: d.summary,
+					channelLabel: d.channelLabel,
+					lastTestedAt: d.lastTestedAt,
+					lastTestError: d.lastTestError,
+					disabledReason: d.disabledReason ?? null,
+					createdAt: d.createdAt,
+					updatedAt: d.updatedAt,
+				})),
+				total: destinations.length,
+				...(params.type === undefined ? undefined : { type: params.type }),
+				...(params.enabled_only === undefined ? undefined : { enabledOnly: params.enabled_only }),
 			}
 		}),
-		{ phrases: ["Listing alert destinations", "Checking alert destinations"] },
-	)
+		render: (output) => ({
+			title: "Alert Destinations",
+			scope: [
+				["Type", output.type],
+				["Enabled only", output.enabledOnly === true ? "yes" : undefined],
+			],
+			...(output.destinations.length === 0
+				? { empty: { message: "No alert destinations found. Add one in Alerts > Destinations." } }
+				: undefined),
+			blocks:
+				output.destinations.length === 0
+					? []
+					: [
+							doc.text(`Total: ${output.total} destination${output.total !== 1 ? "s" : ""}`),
+							doc.table(
+								["ID", "Name", "Type", "Target", "Enabled", "Last error"],
+								output.destinations.map((d) => [
+									d.id,
+									d.name,
+									d.type,
+									d.channelLabel ?? d.summary,
+									d.enabled ? "Yes" : d.disabledReason ? `No (${d.disabledReason})` : "No",
+									d.lastTestError ?? "-",
+								]),
+							),
+						],
+			next: [
+				doc.next(
+					"list_alert_rules",
+					{},
+					"see which destinations each rule uses; route a rule with update_alert_rule destination_ids (replaces its current list)",
+				),
+			],
+		}),
+	})
 }

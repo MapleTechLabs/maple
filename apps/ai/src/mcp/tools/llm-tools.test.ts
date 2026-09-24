@@ -12,7 +12,7 @@ import { assert, describe, it } from "vitest"
 import type { McpToolExecutorApi } from "../dispatcher"
 import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
 import { makeRecordingTracer } from "@maple/backend/testing/recording-tracer"
-import { APPROVAL_NOTE, buildMapleToolkit } from "./llm-tools"
+import { APPROVAL_NOTE, buildMapleToolkit, splitToolResult, type ToolUiPayload } from "./llm-tools"
 
 const TENANT: TenantContext = {
 	orgId: Schema.decodeSync(OrgId)("org_test"),
@@ -88,6 +88,38 @@ describe("buildMapleToolkit", () => {
 		await Effect.runPromise(handlers.list_services!({}, {} as never))
 		await Effect.runPromise(Effect.result(handlers.run_sql!({ sql: "select 1" }, {} as never)))
 		assert.deepEqual(seen, ["list_services: list_services ran"])
+	})
+
+	it("gives the model text only and hands the typed output to the UI under its call id", async () => {
+		const executor: McpToolExecutorApi = {
+			execute: () =>
+				Effect.succeed({
+					content: [{ type: "text" as const, text: "## Services" }],
+					structuredContent: { services: [] },
+				}),
+		}
+		const uis: Array<readonly [string, ToolUiPayload]> = []
+		const { handlers } = buildMapleToolkit(executor, TENANT, {
+			surface: "chat",
+			onUi: (callId, ui) => uis.push([callId, ui]),
+		})
+		const answer = await Effect.runPromise(handlers.list_services!({}, { toolCallId: "call-1" } as never))
+		assert.equal(answer, "## Services")
+		assert.deepEqual(uis, [
+			["call-1", { __maple_ui: true, tool: "list_services", data: { services: [] } }],
+		])
+	})
+
+	it("strips a legacy UI block from the model's text and still recovers it for the UI", () => {
+		const legacy = JSON.stringify({ __maple_ui: true, tool: "list_services", data: { services: [] } })
+		const split = splitToolResult("list_services", {
+			content: [
+				{ type: "text", text: "## Services" },
+				{ type: "text", text: legacy },
+			],
+		})
+		assert.equal(split.text, "## Services")
+		assert.deepEqual(split.ui, { __maple_ui: true, tool: "list_services", data: { services: [] } })
 	})
 
 	it("fails a tool that reported an error with its message", async () => {

@@ -4,6 +4,10 @@ import { McpToolExecutor, listMcpTools } from "./dispatcher"
 import { CurrentMcpRequestTenant } from "./lib/query-warehouse"
 import type { McpToolResult } from "./tools/types"
 
+/**
+ * The text blocks are what a model reads; `structuredContent` is the typed output the tool's
+ * `outputSchema` describes, for clients that consume data rather than prose.
+ */
 const toCallToolResult = (result: McpToolResult): McpSchema.CallToolResult =>
 	new McpSchema.CallToolResult({
 		isError: result.isError === true ? true : undefined,
@@ -11,6 +15,9 @@ const toCallToolResult = (result: McpToolResult): McpSchema.CallToolResult =>
 			type: "text" as const,
 			text: entry.text,
 		})),
+		...(result.structuredContent === undefined
+			? undefined
+			: { structuredContent: result.structuredContent }),
 	})
 
 const toBoundaryErrorResult = (error: { readonly _tag: string; readonly message: string }) =>
@@ -31,6 +38,12 @@ export const McpToolsLive = Layer.effectDiscard(
 					name: descriptor.name,
 					description: descriptor.description,
 					inputSchema: descriptor.inputSchema,
+					...(descriptor.outputSchema === undefined
+						? undefined
+						: { outputSchema: descriptor.outputSchema }),
+					...(descriptor.annotations === undefined
+						? undefined
+						: { annotations: descriptor.annotations }),
 				}),
 				annotations: Context.empty(),
 				handle: (payload: unknown) =>

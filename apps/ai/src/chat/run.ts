@@ -14,7 +14,7 @@ import { ThreadId } from "@effect-agent/core/Identifiers"
 import { Effect, Layer, Schema, Stream } from "effect"
 import { Prompt, Toolkit } from "effect/unstable/ai"
 import type { McpToolExecutorApi } from "../mcp/dispatcher"
-import { ApprovalRequired } from "../mcp/tools/llm-tools"
+import { ApprovalRequired, type ToolUiPayload } from "../mcp/tools/llm-tools"
 import { mapleToolPhrase } from "../mcp/tools/registry"
 import { agentSessionSpanAttributes, type ResolvedModel } from "../platform/Llm"
 import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
@@ -141,6 +141,8 @@ export const runChatTurn = (input: ChatRunInput) => {
 	const coverage = isAutonomousReviewTurn(input.sessionId, input.origin)
 		? makeReviewCoverage(input.text)
 		: undefined
+	// A call's UI payload, held until its result event is written. Never part of what the model reads.
+	const uiByCall = new Map<string, ToolUiPayload>()
 	const maple = buildChatToolkit(
 		input.toolExecutor,
 		input.tenant,
@@ -148,6 +150,7 @@ export const runChatTurn = (input: ChatRunInput) => {
 		profile.surface,
 		agentSessionSpanAttributes(input.model.tags),
 		coverage?.observe,
+		(toolCallId, ui) => uiByCall.set(toolCallId, ui),
 	)
 	// One completion per session kind. The session id decides which, so a review session can never
 	// be handed the diagnosis tool or the other way round.
@@ -239,6 +242,11 @@ export const runChatTurn = (input: ChatRunInput) => {
 					messageId: input.messageId,
 					isProposed,
 					labelOf: mapleToolPhrase,
+					uiOf: (toolCallId) => {
+						const ui = uiByCall.get(toolCallId)
+						uiByCall.delete(toolCallId)
+						return ui
+					},
 					sanitizer,
 				})) {
 					input.append(chat)

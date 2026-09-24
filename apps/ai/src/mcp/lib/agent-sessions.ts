@@ -12,13 +12,13 @@ import {
 } from "@maple/domain/http"
 import type { AiGenAiField, MutableAiGenAiValues } from "@maple/domain/gen-ai"
 import { classifyAiSpan, lastUserMessageText, padSessionWindow } from "@maple/agent-sessions"
-import { formatWarehouseDateTime, parseWarehouseDateTime } from "@maple/query-engine"
+import { formatWarehouseDateTime, parseWarehouseDateTime, WarehouseTimeInput } from "@maple/query-engine"
 import {
 	readAiSessionSpans,
 	resolveAiSessionWindow,
 } from "@maple/backend/services/ai-sessions/ai-session-reads"
 import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
-import { optionalTimeParam, type McpToolError, type McpToolResult } from "../tools/types"
+import { McpInvalidInputError, McpQueryBudgetError } from "../tools/types"
 import { formatNumber } from "./format"
 
 /** Spans one call loads; past it the answer covers the session's beginning. */
@@ -106,12 +106,14 @@ export interface SessionWindow {
 /** The window pair, both bounds or neither: with it the read is a seek on both
  *  levels, without it the session's bounds cost a resolve round trip first. */
 export const sessionWindowParams = {
-	start_time: optionalTimeParam(
-		"Start of the session's window, exactly as the `get_agent_session` line under a `list_agent_sessions` row prints it. Pass with end_time (both or neither) — it makes the read a seek instead of a lookup.",
-	),
-	end_time: optionalTimeParam(
-		"End of the session's window, exactly as the `get_agent_session` line under a `list_agent_sessions` row prints it.",
-	),
+	start_time: Schema.optional(WarehouseTimeInput).annotate({
+		description:
+			"Start of the session's window, exactly as the `get_agent_session` call suggested under `list_agent_sessions` passes it. Pass with end_time (both or neither): it makes the read a seek instead of a lookup.",
+	}),
+	end_time: Schema.optional(WarehouseTimeInput).annotate({
+		description:
+			"End of the session's window, exactly as the `get_agent_session` call suggested under `list_agent_sessions` passes it.",
+	}),
 }
 
 /** Both bounds are the decoded brand, so a tool cannot pass a raw string. */
@@ -119,37 +121,43 @@ export type SessionWindowParams = {
 	readonly [K in keyof typeof sessionWindowParams]?: (typeof sessionWindowParams)[K]["Type"]
 }
 
-/** A lone bound is a parameter error, not a branch in the handler: declared on
- *  the params struct it is refused at the decode boundary like any other. */
-export const sessionWindowPairCheck = Schema.makeFilter((params: SessionWindowParams) =>
-	(params.start_time === undefined) === (params.end_time === undefined)
-		? undefined
-		: "start_time and end_time are a pair — pass both (the bounds the `get_agent_session` line under a `list_agent_sessions` row prints) or neither",
-)
-
-export function sessionWindowFrom(params: SessionWindowParams): SessionWindow | undefined {
+/** The pair as a window, or none; a lone bound is an input error naming the pair. */
+export const sessionWindowFrom = (
+	params: SessionWindowParams,
+): Effect.Effect<SessionWindow | undefined, McpInvalidInputError> => {
 	const { start_time, end_time } = params
-	return start_time !== undefined && end_time !== undefined
-		? { startTime: start_time, endTime: end_time }
-		: undefined
+	if ((start_time === undefined) !== (end_time === undefined)) {
+		return Effect.fail(
+			new McpInvalidInputError({
+				message:
+					"start_time and end_time are a pair: pass both (the bounds the `get_agent_session` call under a `list_agent_sessions` row carries) or neither.",
+				parameter: start_time === undefined ? "start_time" : "end_time",
+			}),
+		)
+	}
+	return Effect.succeed(
+		start_time !== undefined && end_time !== undefined
+			? { startTime: start_time, endTime: end_time }
+			: undefined,
+	)
 }
 
-/** A list row's bounds as the next-step hint the model passes back, padded the
- *  way the page pads the same row (`padSessionWindow`). A row's bounds are the
- *  extent of its AGENT spans and both read levels bound on `Timestamp`, so
- *  handing them over verbatim drops the app spans around them — and with them
- *  the span count, services and failures the page reports. The pad also absorbs
- *  the sub-second end a whole-second param truncates. A bound the warehouse
- *  wrote in a shape `Date.parse` cannot read goes back verbatim — a hint is
- *  worth less than a thrown `RangeError`. */
-export function windowHint(window: SessionWindow): string {
+/** A list row's bounds as the window a next `get_agent_session` call passes, padded the way
+ *  the page pads the same row (`padSessionWindow`). A row's bounds are the extent of its AGENT
+ *  spans and both read levels bound on `Timestamp`, so handing them over verbatim drops the app
+ *  spans around them. The pad also absorbs the sub-second end a whole-second param truncates. A
+ *  bound `Date.parse` cannot read goes back verbatim. */
+export function paddedWindowArgs(window: { readonly startTime: string; readonly endTime: string }): {
+	readonly start_time: string
+	readonly end_time: string
+} {
 	const startMs = parseWarehouseDateTime(window.startTime)
 	const endMs = parseWarehouseDateTime(window.endTime)
 	if (Number.isNaN(startMs) || Number.isNaN(endMs)) {
-		return `start_time="${window.startTime}" end_time="${window.endTime}"`
+		return { start_time: window.startTime, end_time: window.endTime }
 	}
 	const padded = padSessionWindow(startMs, endMs)
-	return `start_time="${padded.startTime}" end_time="${padded.endTime}"`
+	return { start_time: padded.startTime, end_time: padded.endTime }
 }
 
 /** The sentinel a caught 413 hands back: retry this page smaller. */
@@ -222,42 +230,53 @@ export const loadAgentSessionSpans = Effect.fn("loadAgentSessionSpans")(function
 	return { spans, truncated, window }
 })
 
-/** What a load that stopped short says about itself: which ceiling stopped it,
- *  and — for the byte cap, the one a narrower window fixes — the absolute
- *  `start_time` the next call resumes from. Without one the model has no bound
- *  to narrow towards but the session's own. */
-export function truncationNote(load: {
+/** How much of a session a load read: which ceiling stopped it, and for the byte cap (the one a
+ *  narrower window fixes) the absolute `start_time` the next call resumes from. */
+export function loadSummary(load: {
 	readonly spans: ReadonlyArray<AiSessionSpan>
 	readonly truncated: "cap" | "too_large" | false
-}): ReadonlyArray<string> {
-	if (load.truncated === false) return []
-	const count = formatNumber(load.spans.length)
-	if (load.truncated === "cap") {
-		return [
-			`Loaded the first ${count} spans of this session (the cap); every figure below covers those spans only.`,
-		]
+}): {
+	readonly spans: number
+	readonly truncated: "none" | "cap" | "too_large"
+	readonly resumeStartTime?: string
+} {
+	if (load.truncated !== "too_large") {
+		return { spans: load.spans.length, truncated: load.truncated === false ? "none" : "cap" }
 	}
 	const last = load.spans[load.spans.length - 1]
 	const resumeMs = last === undefined ? Number.NaN : parseWarehouseDateTime(last.timestamp)
-	const resume = Number.isNaN(resumeMs)
-		? "a narrower start_time/end_time"
-		: `start_time="${formatWarehouseDateTime(resumeMs)}" with the same end_time`
-	return [
-		`Loaded the first ${count} spans; the rest exceeded the response byte limit. Pass ${resume} to read the remainder.`,
-	]
+	return {
+		spans: load.spans.length,
+		truncated: "too_large",
+		...(Number.isNaN(resumeMs) ? undefined : { resumeStartTime: formatWarehouseDateTime(resumeMs) }),
+	}
 }
 
-/** The tool's answer to a 413 — the one failure a narrower request fixes.
- *  Applied to the handler body, so the read keeps its typed failure. */
-export const catchSessionTooLarge =
-	(recovery: string) =>
-	<A, R>(
-		self: Effect.Effect<A, McpToolError | AiSessionTooLargeError, R>,
-	): Effect.Effect<A | McpToolResult, McpToolError, R> =>
-		Effect.catchTag(self, "@maple/http/ai-sessions/AiSessionTooLargeError", (error) =>
-			Effect.succeed<McpToolResult>({
-				isError: true,
-				content: [{ type: "text", text: `${error.message} ${recovery}` }],
+/** The sentence a truncated load reads as. Without one the model has no bound to narrow
+ *  towards but the session's own. */
+export function truncationNote(load: ReturnType<typeof loadSummary>): string | undefined {
+	if (load.truncated === "none") return undefined
+	const count = formatNumber(load.spans)
+	if (load.truncated === "cap") {
+		return `Loaded the first ${count} spans of this session (the cap); every figure below covers those spans only.`
+	}
+	const resume =
+		load.resumeStartTime === undefined
+			? "a narrower start_time/end_time"
+			: `start_time="${load.resumeStartTime}" with the same end_time`
+	return `Loaded the first ${count} spans; the rest exceeded the response byte limit. Pass ${resume} to read the remainder.`
+}
+
+/** The tool's answer to a 413, the one failure a narrower request fixes:
+ *  `Effect.catchTag("@maple/http/ai-sessions/AiSessionTooLargeError", sessionTooLarge(...))`. */
+export const sessionTooLarge =
+	(tool: string, recovery: string) =>
+	(error: AiSessionTooLargeError): Effect.Effect<never, McpQueryBudgetError> =>
+		Effect.fail(
+			new McpQueryBudgetError({
+				message: `${error.message} ${recovery}`,
+				pipeName: tool,
+				setting: "max_response_bytes",
 			}),
 		)
 

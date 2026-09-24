@@ -1,23 +1,27 @@
-import { Clock, Effect, Result, Schema } from "effect"
+import { Clock, Effect, Result, Schema, SchemaIssue, SchemaTransformation } from "effect"
 import { randomUUID } from "node:crypto"
 import {
 	DashboardId,
 	DashboardWidgetSchema,
+	type DashboardConcurrencyError,
+	type DashboardNotFoundError,
+	type DashboardPersistenceError,
+	type DashboardStoredConfigInvalidError,
+	type DashboardValidationError,
 	IsoDateTimeString,
-	TimeRangeSchema,
 	WidgetDataSourceSchema,
-	WidgetDisplayConfigSchema,
-	WidgetLayoutSchema,
 	defaultWidgetLayout,
 	findNextPosition,
 	WIDGET_TYPES,
+	type DashboardDocument,
 	type PanelType,
 	widgetTypeByVisualization,
 	withWidgets,
 } from "@maple/domain/http"
+import type { DashboardRow } from "@maple/domain/mcp-outputs"
 import { CurrentMcpTenant } from "./query-warehouse"
 import { DashboardPersistenceService } from "@maple/backend/services/dashboards/DashboardPersistenceService"
-import { McpQueryError } from "../tools/types"
+import { McpInvalidInputError, McpQueryError } from "../tools/types"
 
 const decodeDashboardId = Schema.decodeUnknownEffect(DashboardId)
 
@@ -25,17 +29,51 @@ export type DashboardWidget = typeof DashboardWidgetSchema.Type
 
 const decodeIsoDateTimeString = Schema.decodeUnknownSync(IsoDateTimeString)
 
-const WidgetFromJson = Schema.fromJsonString(DashboardWidgetSchema)
-const DataSourceFromJson = Schema.fromJsonString(WidgetDataSourceSchema)
-const DisplayFromJson = Schema.fromJsonString(WidgetDisplayConfigSchema)
-const LayoutFromJson = Schema.fromJsonString(WidgetLayoutSchema)
-const TimeRangeFromJson = Schema.fromJsonString(TimeRangeSchema)
+const parseJsonValue = Schema.decodeEffect(Schema.fromJsonString(Schema.Unknown))
 
-const jsonDecodeError = (field: string, tool: string) => (error: unknown) =>
-	new McpQueryError({
-		message: `Invalid ${field}: ${String(error)}`,
-		pipeName: tool,
-		cause: error,
+const jsonTransformation = (hint: (value: unknown) => string | undefined) =>
+	SchemaTransformation.transformEffect<unknown, string>({
+		decode: (text) =>
+			parseJsonValue(text).pipe(
+				Effect.mapError((error) => error.issue),
+				Effect.flatMap((value) => {
+					const message = hint(value)
+					return message === undefined
+						? Effect.succeed(value)
+						: Effect.fail(new SchemaIssue.InvalidValue({ message }, value))
+				}),
+			),
+		encode: (value) => Effect.succeed(JSON.stringify(value)),
+	})
+
+const noHint = (): undefined => undefined
+
+/**
+ * A JSON-in-a-string parameter, published as a plain string and decoded against `schema`.
+ *
+ * `P.json` would also publish the object form, and the dashboard schemas run to 10-23 KB of JSON
+ * Schema each; `describe_dashboard_schema` is where their shape is documented. `hint` may reject
+ * a parsed value with a corrective message before the schema's own (much longer) failure.
+ */
+// BOUNDARY: `hint` reads the parsed JSON before the schema decodes it.
+export const jsonText = <S extends Schema.Codec<unknown, unknown, never, never>>(
+	schema: S,
+	description: string,
+	hint: (value: unknown) => string | undefined = noHint,
+) => Schema.String.annotate({ description }).pipe(Schema.decodeTo(schema, jsonTransformation(hint)))
+
+/**
+ * The optional form. The description goes on the property: a schema with an identifier (a
+ * `Schema.Class`, the data-source union) publishes as a `$ref`, which would otherwise carry it.
+ */
+// BOUNDARY: `hint` reads the parsed JSON before the schema decodes it.
+export const optionalJsonText = <S extends Schema.Codec<unknown, unknown, never, never>>(
+	schema: S,
+	description: string,
+	hint: (value: unknown) => string | undefined = noHint,
+) =>
+	Schema.optional(Schema.String.pipe(Schema.decodeTo(schema, jsonTransformation(hint)))).annotate({
+		description,
 	})
 
 /**
@@ -51,21 +89,17 @@ const jsonDecodeError = (field: string, tool: string) => (error: unknown) =>
  * falls through to a `route` source and persists as a permanently blank widget.
  * Failing loudly with the v3 equivalent is the correction; guessing is not.
  */
-const LegacyDataSourceFromJson = Schema.fromJsonString(
-	Schema.Struct({
-		endpoint: Schema.String,
-		// A v3 source always carries `kind`; its absence is what identifies the
-		// legacy shape. `Schema.Undefined` makes "must not be present" explicit
-		// rather than a manual `=== undefined` guard.
-		kind: Schema.optionalKey(Schema.Undefined),
-	}),
-)
+const LegacyDataSource = Schema.Struct({
+	endpoint: Schema.String,
+	// A v3 source always carries `kind`; its absence is what identifies the legacy shape.
+	kind: Schema.optionalKey(Schema.Undefined),
+})
 
-const decodeLegacyDataSource = Schema.decodeUnknownResult(LegacyDataSourceFromJson)
+const decodeLegacyDataSource = Schema.decodeUnknownResult(LegacyDataSource)
 
-const legacyDataSourceHint = (json: string): string | null => {
-	const decoded = decodeLegacyDataSource(json)
-	if (Result.isFailure(decoded)) return null
+export const legacyDataSourceHint = (value: unknown): string | undefined => {
+	const decoded = decodeLegacyDataSource(value)
+	if (Result.isFailure(decoded)) return undefined
 
 	const { endpoint } = decoded.success
 	const equivalent =
@@ -85,57 +119,67 @@ const legacyDataSourceHint = (json: string): string | null => {
 	)
 }
 
-/**
- * The same hint, reached through a whole widget's `dataSource` field. Kept
- * separate so the widget decoder can look one level in without the caller
- * hand-rolling a parse.
- */
-const WidgetDataSourceFieldFromJson = Schema.fromJsonString(Schema.Struct({ dataSource: Schema.Unknown }))
+/** The same hint, one level in: a whole widget whose `dataSource` is the v2 shape. */
+const decodeWidgetDataSourceField = Schema.decodeUnknownResult(Schema.Struct({ dataSource: Schema.Unknown }))
 
-const decodeWidgetDataSourceField = Schema.decodeUnknownResult(WidgetDataSourceFieldFromJson)
-
-const legacyWidgetDataSourceHint = (json: string): string | null => {
-	const decoded = decodeWidgetDataSourceField(json)
-	if (Result.isFailure(decoded)) return null
-	return legacyDataSourceHint(JSON.stringify(decoded.success.dataSource))
+export const legacyWidgetDataSourceHint = (value: unknown): string | undefined => {
+	const decoded = decodeWidgetDataSourceField(value)
+	return Result.isFailure(decoded) ? undefined : legacyDataSourceHint(decoded.success.dataSource)
 }
 
-export const decodeWidgetJson = (json: string, tool: string) =>
-	Schema.decodeEffect(WidgetFromJson)(json).pipe(
-		Effect.mapError((error) => {
-			const hint = legacyWidgetDataSourceHint(json)
-			return new McpQueryError({
-				message: hint ? `Invalid widget_json: ${hint}` : `Invalid widget_json: ${String(error)}`,
-				pipeName: tool,
-				cause: error,
-			})
-		}),
-	)
+/** `data_source_json`: a v3 data source, with the v2 shape rejected by name. */
+export const dataSourceJson = (description: string) =>
+	jsonText(WidgetDataSourceSchema, description, legacyDataSourceHint)
 
-export const decodeDataSourceJson = (json: string, tool: string) =>
-	Schema.decodeEffect(DataSourceFromJson)(json).pipe(
-		Effect.mapError((error) => {
-			const hint = legacyDataSourceHint(json)
-			return hint
-				? new McpQueryError({
-						message: `Invalid data_source_json: ${hint}`,
-						pipeName: tool,
-						cause: error,
-					})
-				: jsonDecodeError("data_source_json", tool)(error)
-		}),
-	)
+export const optionalDataSourceJson = (description: string) =>
+	optionalJsonText(WidgetDataSourceSchema, description, legacyDataSourceHint)
 
-export const decodeDisplayJson = (json: string, tool: string) =>
-	Schema.decodeEffect(DisplayFromJson)(json).pipe(Effect.mapError(jsonDecodeError("display_json", tool)))
+/** `widget_json`: one whole widget. */
+export const widgetJson = (description: string) =>
+	jsonText(DashboardWidgetSchema, description, legacyWidgetDataSourceHint)
 
-export const decodeLayoutJson = (json: string, tool: string) =>
-	Schema.decodeEffect(LayoutFromJson)(json).pipe(Effect.mapError(jsonDecodeError("layout_json", tool)))
+/** The {@link DashboardRow} every dashboard tool reports. */
+export const toDashboardRow = (dashboard: DashboardDocument): typeof DashboardRow.Type => ({
+	id: dashboard.id,
+	name: dashboard.name,
+	...(dashboard.description === undefined ? undefined : { description: dashboard.description }),
+	...(dashboard.tags === undefined ? undefined : { tags: [...dashboard.tags] }),
+	widgetCount: dashboard.widgets.length,
+	createdAt: dashboard.createdAt,
+	updatedAt: dashboard.updatedAt,
+})
 
-export const decodeTimeRangeJson = (json: string, tool: string) =>
-	Schema.decodeEffect(TimeRangeFromJson)(json).pipe(
-		Effect.mapError(jsonDecodeError("time_range_json", tool)),
-	)
+export const dashboardNotFound = (dashboardId: string) =>
+	new McpInvalidInputError({
+		message: `Dashboard not found: ${dashboardId}. Use list_dashboards to find available dashboard IDs.`,
+		parameter: "dashboard_id",
+	})
+
+type DashboardServiceError =
+	| DashboardNotFoundError
+	| DashboardValidationError
+	| DashboardPersistenceError
+	| DashboardStoredConfigInvalidError
+	| DashboardConcurrencyError
+
+/** Persistence failures as MCP errors: a missing or rejected document is the caller's to fix, the rest are ours. */
+export const toMcpDashboardError =
+	(tool: string) =>
+	(error: DashboardServiceError): McpInvalidInputError | McpQueryError => {
+		switch (error._tag) {
+			case "@maple/http/errors/DashboardNotFoundError":
+				return dashboardNotFound(error.dashboardId)
+			case "@maple/http/errors/DashboardValidationError":
+				return new McpInvalidInputError({
+					message:
+						error.details.length === 0
+							? error.message
+							: `${error.message}\n- ${error.details.join("\n- ")}`,
+				})
+			default:
+				return new McpQueryError({ message: error.message, pipeName: tool, cause: error })
+		}
+	}
 
 export const generateWidgetId = (): string => randomUUID()
 
@@ -188,23 +232,17 @@ export const withDashboardMutation = Effect.fn("withDashboardMutation")(function
 	tool: string,
 	transform: (
 		existingWidgets: ReadonlyArray<DashboardWidget>,
-	) => Effect.Effect<ReadonlyArray<DashboardWidget>, McpQueryError>,
+	) => Effect.Effect<ReadonlyArray<DashboardWidget>, McpInvalidInputError>,
 ) {
 	const tenant = yield* CurrentMcpTenant
 	const persistence = yield* DashboardPersistenceService
 
-	// `mutate` reports "not found" via a typed `DashboardNotFoundError` and
-	// concurrency exhaustion via `DashboardConcurrencyError`. We collapse
-	// the not-found case into the structured `notFound` return shape that
-	// callers already render to the user, and map the remaining persistence
-	// error tags onto `McpQueryError`.
 	const dashboardIdBranded = yield* decodeDashboardId(dashboardId).pipe(
 		Effect.mapError(
-			(cause) =>
-				new McpQueryError({
+			() =>
+				new McpInvalidInputError({
 					message: `Invalid dashboard_id: ${dashboardId}. Use list_dashboards to find available dashboard IDs.`,
-					pipeName: tool,
-					cause,
+					parameter: "dashboard_id",
 				}),
 		),
 	)
@@ -224,22 +262,8 @@ export const withDashboardMutation = Effect.fn("withDashboardMutation")(function
 			}),
 		)
 		.pipe(
-			Effect.map((dashboard) => ({ ok: true as const, dashboard })),
-			Effect.catchTag("@maple/http/errors/DashboardNotFoundError", () =>
-				Effect.succeed({
-					ok: false as const,
-					notFound: `Dashboard not found: ${dashboardId}. Use list_dashboards to find available dashboard IDs.`,
-				}),
+			Effect.mapError((error) =>
+				error instanceof McpInvalidInputError ? error : toMcpDashboardError(tool)(error),
 			),
-			Effect.catchTags({
-				"@maple/http/errors/DashboardPersistenceError": (error) =>
-					Effect.fail(new McpQueryError({ message: error.message, pipeName: tool, cause: error })),
-				"@maple/http/errors/DashboardStoredConfigInvalidError": (error) =>
-					Effect.fail(new McpQueryError({ message: error.message, pipeName: tool, cause: error })),
-				"@maple/http/errors/DashboardConcurrencyError": (error) =>
-					Effect.fail(new McpQueryError({ message: error.message, pipeName: tool, cause: error })),
-				"@maple/http/errors/DashboardValidationError": (error) =>
-					Effect.fail(new McpQueryError({ message: error.message, pipeName: tool, cause: error })),
-			}),
 		)
 })

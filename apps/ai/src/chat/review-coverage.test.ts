@@ -18,7 +18,7 @@ const file = (path: string): PullRequestFile => ({
 
 const FILES = [file("src/a.ts"), file("src/b.ts"), file("src/a.test.ts"), file("docs/a.md")]
 const listing = renderChangedFiles("octo/shop", 7, FILES).content[0]!.text
-const diffs = (...paths: Array<string>) => renderFileDiffs(FILES, paths).content[0]!.text
+const diffs = (...paths: Array<string>) => renderFileDiffs("octo/shop", 7, FILES, paths).content[0]!.text
 
 describe("makeReviewCoverage", () => {
 	it("owes nothing before the file list is read", () => {

@@ -1,6 +1,6 @@
-import { McpQueryError, optionalStringParam, requiredStringParam, type McpToolRegistrar } from "./types"
+import { McpInvalidInputError, type McpToolRegistrar } from "./types"
 import { Clock, Effect, Schema } from "effect"
-import { createDualContent } from "../lib/structured-output"
+import { UpdateDashboardOutput } from "@maple/domain/mcp-outputs"
 import { CurrentMcpTenant } from "../lib/query-warehouse"
 import { DashboardPersistenceService } from "@maple/backend/services/dashboards/DashboardPersistenceService"
 import { DashboardDocument, DashboardId, PortableDashboardDocument } from "@maple/domain/http"
@@ -8,73 +8,73 @@ import { IsoDateTimeString } from "@maple/domain"
 import { validateDashboardTimeRange } from "../lib/resolve-dashboard-time-range"
 import { MAX_QUERY_RANGE_SECONDS, formatRangeSeconds } from "@maple/query-engine"
 import { collectDocumentRenderWarnings } from "../lib/validate-widget-renderability"
+import {
+	dashboardNotFound,
+	toMcpDashboardError,
+	optionalJsonText,
+	toDashboardRow,
+} from "../lib/dashboard-mutations"
+import * as P from "../lib/params"
+import { doc } from "../lib/tool-doc"
 
-const PortableDashboardFromJson = Schema.fromJsonString(PortableDashboardDocument)
+const TOOL = "update_dashboard"
+
 const decodeIsoDateTimeString = Schema.decodeUnknownSync(IsoDateTimeString)
-const decodeDashboardId = Schema.decodeUnknownSync(DashboardId)
+const decodeDashboardId = Schema.decodeUnknownEffect(DashboardId)
 
 export function registerUpdateDashboardTool(server: McpToolRegistrar) {
-	server.tool(
-		"update_dashboard",
-		"Update an existing dashboard's top-level metadata (name, description, time_range). For widget-level changes prefer the incremental tools: add_dashboard_widget, update_dashboard_widget, remove_dashboard_widget, reorder_dashboard_widgets — they do not require re-sending the whole dashboard. `dashboard_json` is still accepted as an escape hatch for full replacement but is expensive on large dashboards and easy to corrupt.",
-		Schema.Struct({
-			dashboard_id: requiredStringParam(
-				"ID of the dashboard to update (use list_dashboards to find IDs)",
-			),
-			name: optionalStringParam("New dashboard name"),
-			description: optionalStringParam("New dashboard description"),
-			time_range: optionalStringParam(
+	server.define({
+		name: TOOL,
+		description:
+			"Update an existing dashboard's top-level metadata (name, description, time_range). For widget-level changes prefer the incremental tools: add_dashboard_widget, update_dashboard_widget, remove_dashboard_widget, reorder_dashboard_widgets — they do not require re-sending the whole dashboard. `dashboard_json` is still accepted as an escape hatch for full replacement but is expensive on large dashboards and easy to corrupt.",
+		parameters: Schema.Struct({
+			dashboard_id: P.text("ID of the dashboard to update (use list_dashboards to find IDs)"),
+			name: P.optionalText("New dashboard name"),
+			description: P.optionalText("New dashboard description"),
+			time_range: P.optionalText(
 				`New time range as relative shorthand — e.g. 15m, 6h, 24h, 7d, 2w, 3mo, or "today". Up to ${formatRangeSeconds(MAX_QUERY_RANGE_SECONDS)}.`,
 			),
-			dashboard_json: optionalStringParam(
+			dashboard_json: optionalJsonText(
+				PortableDashboardDocument,
 				"Full dashboard JSON to replace the current configuration. Use get_dashboard to see the current schema.",
 			),
 		}),
-		Effect.fn("McpTool.updateDashboard")(function* ({
+		output: UpdateDashboardOutput,
+		// `dashboard_json` overwrites every widget: the same call cannot be undone.
+		hints: { readOnly: false, destructive: true, idempotent: true },
+		phrases: ["Updating a dashboard"],
+		handler: Effect.fn("McpTool.updateDashboard")(function* ({
 			dashboard_id,
 			name,
 			description,
 			time_range,
-			dashboard_json,
+			dashboard_json: portable,
 		}) {
 			if (time_range) {
 				const timeRangeError = validateDashboardTimeRange(time_range)
 				if (timeRangeError) {
-					return {
-						isError: true as const,
-						content: [{ type: "text" as const, text: timeRangeError }],
-					}
+					return yield* new McpInvalidInputError({
+						message: timeRangeError,
+						parameter: "time_range",
+					})
 				}
 			}
 
 			const tenant = yield* CurrentMcpTenant
 			const persistence = yield* DashboardPersistenceService
 
-			const portable = dashboard_json
-				? yield* Schema.decodeEffect(PortableDashboardFromJson)(dashboard_json).pipe(
-						Effect.mapError(
-							(cause) =>
-								new McpQueryError({
-									message: "Invalid dashboard JSON",
-									pipeName: "update_dashboard",
-									cause,
-								}),
-						),
-					)
-				: null
-
-			const dashboardIdBranded = decodeDashboardId(dashboard_id)
+			const dashboardIdBranded = yield* decodeDashboardId(dashboard_id).pipe(
+				Effect.mapError(() => dashboardNotFound(dashboard_id)),
+			)
 
 			const nowMillis = yield* Clock.currentTimeMillis
 			const now = decodeIsoDateTimeString(new Date(nowMillis).toISOString())
 
-			const result = yield* persistence
+			const dashboard = yield* persistence
 				.mutate(tenant.orgId, tenant.userId, dashboardIdBranded, (existing) =>
 					Effect.sync(() => {
-						// `description`/`tags` are `Schema.optionalKey` on `DashboardDocument`;
-						// the Schema.Class constructor permits an absent key but rejects a
-						// present `undefined`. A tag-less / description-less dashboard surfaces
-						// those fields as `undefined`, so omit the key instead of forwarding it.
+						// `description`/`tags` are `Schema.optionalKey` on `DashboardDocument`: the
+						// constructor rejects a present `undefined`, so omit the key instead.
 						if (portable) {
 							return new DashboardDocument({
 								id: existing.id,
@@ -111,76 +111,30 @@ export function registerUpdateDashboardTool(server: McpToolRegistrar) {
 						})
 					}),
 				)
-				.pipe(
-					Effect.map((dashboard) => ({ ok: true as const, dashboard })),
-					Effect.catchTag("@maple/http/errors/DashboardNotFoundError", () =>
-						Effect.succeed({ ok: false as const }),
-					),
-					Effect.mapError(
-						(error) =>
-							new McpQueryError({
-								message: error.message,
-								pipeName: "update_dashboard",
-								cause: error,
-							}),
-					),
-				)
-
-			if (!result.ok) {
-				return {
-					isError: true,
-					content: [
-						{
-							type: "text" as const,
-							text: `Dashboard not found: ${dashboard_id}. Use list_dashboards to find available dashboard IDs.`,
-						},
-					],
-				}
-			}
-
-			const { dashboard } = result
-
-			const lines: string[] = [
-				`## Dashboard Updated`,
-				`ID: ${dashboard.id}`,
-				`Name: ${dashboard.name}`,
-				`Widgets: ${dashboard.widgets.length}`,
-				`Updated: ${dashboard.updatedAt.slice(0, 19)}`,
-			]
-
-			if (dashboard.description) {
-				lines.splice(3, 0, `Description: ${dashboard.description}`)
-			}
-
-			// Advisory only. This tool is the full-replacement / restore escape
-			// hatch, so a legacy board carrying an ungrouped pie or a `"GB"` unit
-			// must still round-trip — blocking here would make it unrestorable.
-			const renderWarnings = collectDocumentRenderWarnings(dashboard.widgets)
-			if (renderWarnings.length > 0) {
-				lines.push(
-					"",
-					"### Render warnings (saved anyway)",
-					...renderWarnings.map((warning) => `- ${warning}`),
-				)
-			}
+				.pipe(Effect.mapError(toMcpDashboardError(TOOL)))
 
 			return {
-				content: createDualContent(lines.join("\n"), {
-					tool: "update_dashboard",
-					data: {
-						dashboard: {
-							id: dashboard.id,
-							name: dashboard.name,
-							description: dashboard.description,
-							tags: dashboard.tags ? [...dashboard.tags] : undefined,
-							widgetCount: dashboard.widgets.length,
-							createdAt: dashboard.createdAt,
-							updatedAt: dashboard.updatedAt,
-						},
-					},
-				}),
+				dashboard: toDashboardRow(dashboard),
+				replaced: portable !== undefined,
+				// Advisory only. This tool is the full-replacement / restore escape hatch, so a
+				// legacy board carrying an ungrouped pie or a `"GB"` unit must still round-trip.
+				renderWarnings: collectDocumentRenderWarnings(dashboard.widgets),
 			}
 		}),
-		{ phrases: ["Updating a dashboard"] },
-	)
+		render: (output) => ({
+			title: "Dashboard Updated",
+			blocks: [
+				doc.fields([
+					["ID", output.dashboard.id],
+					["Name", output.dashboard.name],
+					["Description", output.dashboard.description],
+					["Widgets", output.dashboard.widgetCount],
+					["Updated", output.dashboard.updatedAt.slice(0, 19)],
+				]),
+				...(output.renderWarnings.length > 0
+					? [doc.heading("Render warnings (saved anyway)"), doc.list(output.renderWarnings)]
+					: []),
+			],
+		}),
+	})
 }

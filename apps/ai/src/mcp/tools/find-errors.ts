@@ -1,127 +1,139 @@
-import {
-	optionalNumberParam,
-	optionalStringParam,
-	optionalTimeParam,
-	validationError,
-	type McpToolRegistrar,
-} from "./types"
-import { toMcpQueryError } from "../lib/map-warehouse-error"
-import { CurrentMcpTenant } from "../lib/query-warehouse"
-import { resolveTimeRange } from "../lib/time"
-import { formatNumber, formatTable, tableCell, truncate } from "../lib/format"
-import { formatNextSteps } from "../lib/next-steps"
-import { Array as Arr, Effect, Schema } from "effect"
-import { createDualContent } from "../lib/structured-output"
+import { Effect, Schema } from "effect"
+import { FindErrorsOutput } from "@maple/domain/mcp-outputs"
 import { findErrors } from "@maple/query-engine/observability"
 import { provideWarehouseExecutorFromTenant } from "@maple/backend/services/warehouse/WarehouseQueryService"
+import type { McpToolRegistrar } from "./types"
+import { toMcpQueryError } from "../lib/map-warehouse-error"
+import { CurrentMcpTenant } from "../lib/query-warehouse"
+import { formatNumber, truncate } from "../lib/format"
+import * as P from "../lib/params"
+import { doc } from "../lib/tool-doc"
+
+const WINDOW = P.timeWindow({ defaultHours: 6 })
 
 export function registerFindErrorsTool(server: McpToolRegistrar) {
-	server.tool(
-		"find_errors",
+	server.define({
+		name: "find_errors",
 		// Do not reinstate the old claim that a fingerprint is the "same identity as
 		// list_error_issues" — it is not. A fingerprint is a decimal UInt64 hash; an
 		// issue id is a UUID. Conflating them was the sole cause of every production
 		// error_detail failure.
-		"Find and categorize errors by type with counts and affected services. Each error has a stable `fingerprint` (a decimal UInt64) — pass it to error_detail for sample traces. The error-issue tools take an `issue_id` UUID from list_error_issues instead, which is a separate identity.",
-		Schema.Struct({
-			start_time: optionalTimeParam("Start of time range (YYYY-MM-DD HH:mm:ss)"),
-			end_time: optionalTimeParam("End of time range (YYYY-MM-DD HH:mm:ss)"),
-			service: optionalStringParam("Filter to a specific service"),
-			environment: optionalStringParam("Filter by deployment environment (e.g. production, staging)"),
-			identity: optionalStringParam(
+		description:
+			"Find and categorize errors by type with counts and affected services. Each error has a stable `fingerprint` (a decimal UInt64): pass it to error_detail for sample traces. The error-issue tools take an `issue_id` UUID from list_error_issues instead, which is a separate identity.",
+		parameters: Schema.Struct({
+			...WINDOW.fields,
+			service: P.service(),
+			environment: P.environment(),
+			identity: P.optionalOneOf(
+				["unexpected"],
 				'Pass "unexpected" to keep only identities that break a no-unknown-errors policy: labels outside `namespace_prefix` (library tags such as `AI.Error`, bare `Error`) plus the 5xx and unexpected-error-envelope markers. Omit for all errors.',
 			),
-			namespace_prefix: optionalStringParam(
+			namespace_prefix: P.optionalText(
 				'The prefix every deliberate, namespaced error tag starts with (default "@maple/"). Only used with identity="unexpected".',
 			),
-			limit: optionalNumberParam("Max results (default 20)"),
+			limit: P.limit({ default: 20, max: 200, noun: "error types" }),
 		}),
-		Effect.fn("McpTool.findErrors")(function* ({
-			start_time,
-			end_time,
-			service,
-			environment,
-			identity,
-			namespace_prefix,
-			limit,
-		}) {
-			if (identity !== undefined && identity !== "unexpected") {
-				return validationError(`Invalid identity: '${identity}'. Pass "unexpected" or omit it.`)
-			}
-			const { st, et } = resolveTimeRange(start_time, end_time)
+		aliases: P.SERVICE_ALIASES,
+		output: FindErrorsOutput,
+		hints: { readOnly: true },
+		phrases: ["Looking for errors", "Finding errors"],
+		handler: Effect.fn("McpTool.findErrors")(function* (params) {
+			const { st, et } = yield* WINDOW.resolve(params, "find_errors")
 			const tenant = yield* CurrentMcpTenant
 			yield* Effect.annotateCurrentSpan({
 				orgId: tenant.orgId,
-				service: service ?? "all",
-				identity: identity ?? "all",
+				service: params.service ?? "all",
+				identity: params.identity ?? "all",
 			})
 
 			const errors = yield* findErrors({
 				timeRange: { startTime: st, endTime: et },
-				service: service ?? undefined,
-				environment: environment ?? undefined,
-				identity: identity ?? undefined,
-				namespacePrefix: namespace_prefix ?? undefined,
-				limit: limit ?? 20,
+				service: params.service,
+				environment: params.environment,
+				identity: params.identity,
+				namespacePrefix: params.namespace_prefix,
+				limit: params.limit,
 			}).pipe(
 				provideWarehouseExecutorFromTenant(tenant),
 				Effect.mapError(toMcpQueryError("errors_by_type")),
 			)
 
-			if (errors.length === 0) {
-				const scope = identity === "unexpected" ? "unexpected-identity errors" : "errors"
-				return { content: [{ type: "text", text: `No ${scope} found in ${st} — ${et}` }] }
-			}
-
-			const lines: string[] = [
-				identity === "unexpected" ? `## Unexpected Error Identities` : `## Errors by Type`,
-				``,
-			]
-
-			// One occurrence's message per row: the same tag can own a dozen fingerprints, and the
-			// label alone gave no way to tell them apart short of an error_detail call each.
-			const headers = ["Error", "Message", "Fingerprint", "Count", "Affected Services", "Last Seen"]
-			const rows = Arr.map(errors, (e) => [
-				truncate(e.label, 60),
-				tableCell(e.sampleMessage, 80),
-				e.fingerprintHash,
-				formatNumber(e.count),
-				String(e.affectedServicesCount),
-				e.lastSeen,
-			])
-
-			lines.push(formatTable(headers, rows))
-			lines.push(``, `Total: ${errors.length} error types`)
-
-			const nextSteps: string[] = []
-			for (const e of Arr.take(errors, 3)) {
-				nextSteps.push(
-					`\`error_detail fingerprint="${e.fingerprintHash}"\` — see sample traces and logs for "${e.label}"`,
-				)
-			}
-			nextSteps.push(
-				'`query_data source="traces" kind="timeseries" metric="error_rate"` — chart error rate trend',
-			)
-			lines.push(formatNextSteps(nextSteps))
-
+			const identity: typeof FindErrorsOutput.Type.identity = params.identity ?? "all"
 			return {
-				content: createDualContent(lines.join("\n"), {
-					tool: "find_errors",
-					data: {
-						timeRange: { start: st, end: et },
-						identity: identity ?? "all",
-						errors: Arr.map(errors, (e) => ({
-							fingerprintHash: e.fingerprintHash,
-							label: e.label,
-							sampleMessage: e.sampleMessage,
-							count: e.count,
-							affectedServicesCount: e.affectedServicesCount,
-							lastSeen: e.lastSeen,
-						})),
-					},
-				}),
+				timeRange: { start: st, end: et },
+				identity,
+				errors: errors.map((error) => ({
+					fingerprintHash: error.fingerprintHash,
+					label: error.label,
+					sampleMessage: error.sampleMessage,
+					count: error.count,
+					affectedServicesCount: error.affectedServicesCount,
+					lastSeen: error.lastSeen,
+				})),
 			}
 		}),
-		{ phrases: ["Looking for errors", "Finding errors"] },
-	)
+		render: (output) => {
+			const noun = output.identity === "unexpected" ? "unexpected-identity errors" : "errors"
+			return {
+				title: output.identity === "unexpected" ? "Unexpected Error Identities" : "Errors by Type",
+				scope: [["Time range", `${output.timeRange.start} to ${output.timeRange.end}`]],
+				...(output.errors.length === 0
+					? {
+							empty: {
+								message: `No ${noun} found in this window.`,
+								hints: [
+									"Widen start_time/end_time, or drop the service and environment filters.",
+								],
+							},
+						}
+					: undefined),
+				blocks:
+					output.errors.length === 0
+						? []
+						: [
+								// One occurrence's message per row: the same tag can own a dozen fingerprints, and
+								// the label alone gave no way to tell them apart short of an error_detail call each.
+								doc.table(
+									[
+										"Error",
+										"Message",
+										"Fingerprint",
+										"Count",
+										"Affected Services",
+										"Last Seen",
+									],
+									output.errors.map((error) => [
+										truncate(error.label, 60),
+										truncate(error.sampleMessage, 80),
+										error.fingerprintHash,
+										formatNumber(error.count),
+										String(error.affectedServicesCount),
+										error.lastSeen,
+									]),
+								),
+								doc.text(`Total: ${output.errors.length} error types`),
+							],
+				next: [
+					...output.errors
+						.slice(0, 3)
+						.map((error) =>
+							doc.next(
+								"error_detail",
+								{ fingerprint: error.fingerprintHash },
+								`sample traces and logs for "${error.label}"`,
+							),
+						),
+					...(output.errors.length === 0
+						? []
+						: [
+								doc.next(
+									"query_data",
+									{ source: "traces", kind: "timeseries", metric: "error_rate" },
+									"chart the error rate trend",
+								),
+							]),
+				],
+			}
+		},
+	})
 }

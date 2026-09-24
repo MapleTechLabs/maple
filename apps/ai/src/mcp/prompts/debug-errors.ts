@@ -15,7 +15,7 @@ export const DebugErrorsPrompt = McpServer.prompt({
 				`2. Call \`find_errors\`${service_name ? ` with service="${service_name}"` : ""} to categorize error types by frequency\n` +
 				`3. For the top error, call \`error_detail\` with its fingerprint to get sample traces and error trends\n` +
 				`4. Call \`inspect_trace\` on a sample trace_id to find the root span causing the error\n` +
-				`5. Call \`service_map\`${service_name ? ` with service_name="${service_name}"` : ""} to check if upstream dependencies are involved\n` +
+				`5. Call \`service_map\`${service_name ? ` with service="${service_name}"` : ""} to check if upstream dependencies are involved\n` +
 				`6. Summarize: root cause, affected services, error frequency, and recommended action`,
 		),
 })
