@@ -111,6 +111,38 @@ If your agent runs on one of these, use the framework's own OpenTelemetry export
 | Effect AI                        | `@effect/opentelemetry`                             | One per trace                                             |
 | OpenAI SDK via OpenInference     | OpenInference `openai` instrumentation              | `session.id`                                              |
 
+### Claude Code
+
+Claude Code's tracing is a beta behind its own flag, and its content is redacted unless you opt in. Set these in the shell that runs `claude`, or under `env` in `~/.claude/settings.json` to cover every session including the desktop app:
+
+```bash
+export CLAUDE_CODE_ENABLE_TELEMETRY=1
+export CLAUDE_CODE_ENHANCED_TELEMETRY_BETA=1   # traces; without it there are no spans to build a session from
+export OTEL_TRACES_EXPORTER=otlp
+export OTEL_LOGS_EXPORTER=otlp                 # events: prompts, responses, per-request cost
+export OTEL_METRICS_EXPORTER=otlp              # optional: cost and token counters
+export OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
+export OTEL_EXPORTER_OTLP_ENDPOINT="https://ingest.maple.dev"   # https://ingest.eu.maple.dev for EU orgs
+export OTEL_EXPORTER_OTLP_HEADERS="Authorization=Bearer YOUR_INGEST_KEY"
+
+# Content. Each is off by default; turn on what you are allowed to store.
+export OTEL_LOG_USER_PROMPTS=1         # the prompt that opens each turn
+export OTEL_LOG_TOOL_DETAILS=1         # tool arguments: Bash commands, file paths, MCP tool names
+export OTEL_LOG_TOOL_CONTENT=1         # tool results, in the transcript and on the tool pages
+export OTEL_LOG_ASSISTANT_RESPONSES=1  # the assistant's replies, on the assistant_response event
+```
+
+What each span becomes:
+
+| Claude Code span                                                 | In Agent Sessions                                                                                                                           |
+| ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `claude_code.interaction`                                        | A turn, titled with the prompt when `OTEL_LOG_USER_PROMPTS=1`.                                                                              |
+| `claude_code.llm_request`                                        | A model call: model, the four token buckets (Anthropic's input count excludes the cache buckets, and Maple counts it that way), TTFT, finish reason and failures. |
+| `claude_code.tool`                                               | A tool call, with the command or file path as its arguments and the `tool.output` content as its result.                                   |
+| `claude_code.tool.execution`, `claude_code.tool.blocked_on_user` | Shown in the trace as part of their tool call rather than as calls of their own. A failed run marks the tool call failed, with its error.   |
+
+Cost and the assistant's reply text are only on Claude Code's log events (`api_request`, `assistant_response`), not on its spans. They are stored and searchable under Logs; the session views read spans, so cost reads as unpriced there for now.
+
 For the frameworks that give you one session per trace, stamp `gen_ai.conversation.id` on every span of the conversation (a span processor is the usual place) and Maple groups them into one session.
 
 Two dialects that are not frameworks are recognised as well: any **OpenInference** emitter (`openinference.span.kind`, `llm.*`, `input.value`) and any **OpenLLMetry / Traceloop** emitter (`traceloop.*`, `llm.*`). Their spans land as sessions without a framework name attached.
