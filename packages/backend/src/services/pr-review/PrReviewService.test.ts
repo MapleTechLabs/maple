@@ -470,6 +470,25 @@ describe("PrReviewService.onPullRequestEvent", () => {
 		}).pipe(Effect.provide(layerFor(testDb, { begun, aborted, checks })))
 	})
 
+	it.effect("closes a superseded review's comment instead of leaving it reviewing", () => {
+		const testDb = createTestDb(trackedDbs)
+		const comments: Array<string> = []
+		return Effect.gen(function* () {
+			yield* seed(true)
+			const reviews = yield* PrReviewService
+			const first = yield* reviews.onPullRequestEvent(orgId, job())
+			const second = yield* reviews.onPullRequestEvent(
+				orgId,
+				job({ action: "synchronize", headSha: HEAD_2 }),
+			)
+			const ofFirst = comments.filter((body) => body.startsWith(prReviewCommentMarker(first.reviewId!)))
+			assert.equal(ofFirst.length, 2)
+			assert.include(ofFirst[1]!, "A newer push replaced")
+			assert.notInclude(ofFirst[1]!, "is reviewing")
+			assert.isTrue(comments.at(-1)!.startsWith(prReviewCommentMarker(second.reviewId!)))
+		}).pipe(Effect.provide(layerFor(testDb, { comments })))
+	})
+
 	it.effect("records a review the agent could not start rather than losing it", () => {
 		const testDb = createTestDb(trackedDbs)
 		return Effect.gen(function* () {
@@ -1039,7 +1058,14 @@ describe("withReviewStatus", () => {
 		assert.notInclude(failed, "is reviewing")
 	})
 
-	it("leaves a finished summary alone when a review fails late", () => {
+	it("closes its own notice when a newer push replaces the review", () => {
+		const reviewing = withReviewStatus(undefined, MARKER, { kind: "reviewing", headSha: HEAD })
+		const superseded = withReviewStatus(reviewing, MARKER, { kind: "superseded", headSha: HEAD })
+		assert.include(superseded, "A newer push replaced")
+		assert.notInclude(superseded, "is reviewing")
+	})
+
+	it("leaves a finished summary alone when a review fails or is superseded late", () => {
 		const finished = renderSummaryComment(MARKER, {
 			report: report([]),
 			partial: false,
@@ -1047,6 +1073,7 @@ describe("withReviewStatus", () => {
 			repositoryUrl: REPO_URL,
 		})
 		assert.isUndefined(withReviewStatus(finished, MARKER, { kind: "failed", headSha: HEAD }))
+		assert.isUndefined(withReviewStatus(finished, MARKER, { kind: "superseded", headSha: HEAD }))
 	})
 })
 

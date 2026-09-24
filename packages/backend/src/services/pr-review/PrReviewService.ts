@@ -394,12 +394,13 @@ const STATUS_CLOSE = "<!-- /maple-pr-review:status -->"
 export type PrReviewStatusNotice =
 	| { readonly kind: "reviewing"; readonly headSha: string }
 	| { readonly kind: "failed"; readonly headSha: string }
+	| { readonly kind: "superseded"; readonly headSha: string }
 
 /**
  * A review's comment while it has no result: the notice alone, under the review's marker.
  *
- * `undefined` leaves the comment alone: a failure only replaces its own "reviewing" notice, so a
- * late one cannot overwrite a summary that was already published.
+ * `undefined` leaves the comment alone: a failure or a supersede only replaces its own
+ * "reviewing" notice, so a late one cannot overwrite a summary that was already published.
  */
 export const withReviewStatus = (
 	existing: string | undefined,
@@ -407,29 +408,31 @@ export const withReviewStatus = (
 	notice: PrReviewStatusNotice,
 ): string | undefined => {
 	if (
-		notice.kind === "failed" &&
+		notice.kind !== "reviewing" &&
 		!(existing ?? "").includes(`${STATUS_OPEN} reviewing ${notice.headSha} -->`)
 	) {
 		return undefined
 	}
 	const sha = `\`${notice.headSha.slice(0, 7)}\``
-	const lines =
-		notice.kind === "reviewing"
-			? [
-					"> [!NOTE]",
-					`> **Maple is reviewing this pull request** at ${sha}. This comment updates with the review when it finishes.`,
-				]
-			: [
-					"> [!WARNING]",
-					`> The review of ${sha} could not finish. Comment \`@maple review\` to try again.`,
-				]
+	const lines = {
+		reviewing: [
+			"> [!NOTE]",
+			`> **Maple is reviewing this pull request** at ${sha}. This comment updates with the review when it finishes.`,
+		],
+		failed: [
+			"> [!WARNING]",
+			`> The review of ${sha} could not finish. Comment \`@maple review\` to try again.`,
+		],
+		superseded: [
+			"> [!NOTE]",
+			`> A newer push replaced ${sha} before its review finished. The latest commit is reviewed in a new comment.`,
+		],
+	}[notice.kind]
 	return [marker, `${STATUS_OPEN} ${notice.kind} ${notice.headSha} -->`, ...lines, STATUS_CLOSE].join("\n")
 }
 
-/** What the review's check run says before a result replaces it; `superseded` is check-only. */
-export const reviewCheckFor = (
-	notice: PrReviewStatusNotice | { readonly kind: "superseded"; readonly headSha: string },
-) => {
+/** What the review's check run says before a result replaces it. */
+export const reviewCheckFor = (notice: PrReviewStatusNotice) => {
 	const sha = `\`${notice.headSha.slice(0, 7)}\``
 	const run = { name: PR_REVIEW_CHECK_NAME, headSha: notice.headSha }
 	switch (notice.kind) {
@@ -1113,25 +1116,6 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 					}),
 				)
 
-			/** A replaced head's check run would otherwise show as running forever. Best effort. */
-			const closeSupersededCheck = (orgId: OrgId, repo: VcsRepo, headSha: string) =>
-				Effect.gen(function* () {
-					const target = yield* providerFor(orgId, repo)
-					if (Option.isNone(target)) return
-					const { provider, installation, ref } = target.value
-					yield* provider.writePullRequestCheck(
-						installation,
-						ref,
-						reviewCheckFor({ kind: "superseded", headSha }),
-					)
-				}).pipe(
-					Effect.catchCause((cause) =>
-						Effect.logWarning("[PrReview] could not close a superseded review's check run").pipe(
-							Effect.annotateLogs({ orgId, headSha, cause: summarizeCause(cause) }),
-						),
-					),
-				)
-
 			/**
 			 * Read the pull request's threads once and record what people did with the findings: the
 			 * 👍 / 👎 on each inline comment, and the open ones a person dismissed. Answers the
@@ -1292,7 +1276,11 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 						finishedAt: msToDate(nowMs),
 						updatedAt: msToDate(nowMs),
 					})
-					yield* closeSupersededCheck(orgId, repo, row.headSha)
+					// Its comment and check run would otherwise say it is reviewing forever.
+					yield* postReviewStatus(orgId, row.id, repo, number, {
+						kind: "superseded",
+						headSha: row.headSha,
+					})
 				}
 				return rows.length
 			})
