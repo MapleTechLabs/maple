@@ -20,6 +20,8 @@ export const TOKEN_URL = `${API_BASE}/oauth.v2.access`
 
 export const POST_MESSAGE_URL = `${API_BASE}/chat.postMessage`
 
+export const POST_EPHEMERAL_URL = `${API_BASE}/chat.postEphemeral`
+
 export const UPDATE_MESSAGE_URL = `${API_BASE}/chat.update`
 
 /** What a channel holds. Answers newest first, which is the order the history contract asks for. */

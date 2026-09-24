@@ -64,14 +64,17 @@ export interface ChatActivityBlock {
 }
 
 /**
- * What came of a proposal, once somebody decided it.
- *
- * `text` is the `tool-result` the session recorded, which opens by naming who decided — the one
- * string channel a tool result has, and the same one the model reads on its next turn.
+ * What came of a proposal, once somebody decided it — read out of the `tool-result` the session
+ * recorded (see `approval-outcome.ts`), never that result verbatim.
  */
 export interface ChatApprovalOutcome {
 	readonly approved: boolean
+	/** Who decided: `Approved by Ada.` */
+	readonly decision: string
+	/** What came of it, as one sentence in the bot's voice. Empty when there is nothing to add. */
 	readonly text: string
+	/** Where the change can be seen in Maple. */
+	readonly url: string | null
 }
 
 /**

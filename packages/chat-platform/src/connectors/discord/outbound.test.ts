@@ -6,7 +6,7 @@ import { describe, expect, it } from "@effect/vitest"
 import { Effect, Fiber, Layer } from "effect"
 import { HttpClient, HttpClientResponse, type HttpClientRequest } from "effect/unstable/http"
 import { TestClock } from "effect/testing"
-import type { InboundMessage } from "../../ingress"
+import type { InboundAction, InboundMessage } from "../../ingress"
 import { ChatOutboundError, ConnectorCredentials } from "../../outbound"
 import { BOT_TOKEN_CONFIG } from "./api"
 import { DISCORD_CONNECTOR_ID } from "./id"
@@ -77,6 +77,32 @@ describe("discord transport", () => {
 
 			expect(ref).toEqual({ target, messageId: "m1" })
 			expect(http.seen[0].headers["authorization"]).toBe("Bot bot-token")
+		}).pipe(Effect.provide(http.layer))
+	})
+
+	it.effect("answers a click privately, on the interaction's own follow-up webhook", () => {
+		const http = stub([{ status: 200, body: CREATED }])
+		const click: InboundAction = {
+			type: "action",
+			connector: DISCORD_CONNECTOR_ID,
+			workspaceId: "guild_1",
+			channelId: "conv_1",
+			messageId: "msg_3",
+			actionToken: "approval:abc",
+			actor: { id: "user_2", displayName: "Ada" },
+			replyHandle: "app_1/interaction-token",
+		}
+		return Effect.gen(function* () {
+			const transport = yield* discordOutbound.transport
+			yield* transport.whisper(click, [{ kind: "prose", markdown: "only you" }])
+
+			expect(http.seen[0].url).toBe("https://discord.com/api/v10/webhooks/app_1/interaction-token")
+			expect(sentThreadBody(http.seen[0])).toMatchObject({ content: "only you", flags: 64 })
+
+			// Without the interaction there is no way to show one person a message.
+			const { replyHandle: _, ...unanswerable } = click
+			const failure = yield* Effect.flip(transport.whisper(unanswerable, []))
+			expect(failure.operation).toBe("whisper")
 		}).pipe(Effect.provide(http.layer))
 	})
 
