@@ -77,3 +77,35 @@ export function resolveIngestEndpoint(options: {
 	const region = options.regions.find((value) => value !== undefined && value !== null && value !== "")
 	return ingestEndpointForRegion(region)
 }
+
+/** Maple's hosted ingest, which rejects every write that carries no ingest key. */
+export function isMapleIngestEndpoint(endpoint: string): boolean {
+	const normalized = trimTrailingSlashes(endpoint)
+	return MAPLE_REGIONS.some((region) => INGEST_ENDPOINTS[region] === normalized)
+}
+
+let keylessWarned = new Set<string>()
+
+/**
+ * Warn once per SDK about the one keyless setup that cannot work. The ingest
+ * key is auth only, so every SDK still sends without one (a proxy or local sink
+ * in front of a custom endpoint completes it), but Maple's hosted ingest 401s.
+ */
+export function warnIfKeylessMapleIngest(options: {
+	readonly logPrefix: string
+	readonly endpoint: string
+	readonly hasIngestKey: boolean
+	readonly hint: string
+}): void {
+	if (options.hasIngestKey || !isMapleIngestEndpoint(options.endpoint)) return
+	if (keylessWarned.has(options.logPrefix)) return
+	keylessWarned.add(options.logPrefix)
+	console.warn(
+		`${options.logPrefix} sending to the public Maple ingest without an ingest key; every request will be rejected with 401. ${options.hint}`,
+	)
+}
+
+/** Test seam: clears the keyless-warning memory. */
+export function resetKeylessWarningsForTests(): void {
+	keylessWarned = new Set()
+}
