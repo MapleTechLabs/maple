@@ -20,6 +20,7 @@ const ready = (overrides: Partial<GatewayState> = {}): GatewayState =>
 		sequence: 7,
 		heartbeatIntervalMs: 41_250,
 		botUserId: "900000000000000001",
+		intents: INTENTS,
 		...overrides,
 	})
 
@@ -75,6 +76,29 @@ describe("the handshake", () => {
 		expect(resume.d).toEqual({ token: "bot-token", session_id: "session-1", seq: 7 })
 	})
 
+	it("identifies afresh over a session asked for with other intents, rather than resuming it", () => {
+		// A RESUME keeps the intents of the IDENTIFY that made the session, however many deploys it
+		// survives — so a session from before an intent was added would never receive it. `undefined`
+		// is every session identified before the intents were recorded.
+		for (const intents of [undefined, (1 << 0) | (1 << 9)]) {
+			const held = ready({ intents })
+			expect(gatewayProtocol.connectUrl(held, config)).toBe(
+				"wss://gateway.discord.gg/?v=10&encoding=json",
+			)
+			const step = gatewayProtocol.onFrame(
+				held,
+				frame({ op: OP.hello, d: { heartbeat_interval: 41_250 } }),
+				NOW,
+				config,
+			)
+			const identify = sent(step.send?.[0])
+			expect(identify.op).toBe(OP.identify)
+			expect(identify.d).toMatchObject({ intents: INTENTS })
+			expect(step.state.sessionId).toBeUndefined()
+			expect(step.state.sequence).toBeUndefined()
+		}
+	})
+
 	it("reconnects when HELLO does not decode", () => {
 		const step = gatewayProtocol.onFrame(state(), frame({ op: OP.hello, d: {} }), NOW, config)
 		expect(step.directive).toEqual({ _tag: "reconnect", closeCode: 4000 })
@@ -93,6 +117,7 @@ describe("the handshake", () => {
 		)
 		expect(step.state.sessionId).toBe("session-2")
 		expect(step.state.botUserId).toBe("900000000000000001")
+		expect(step.state.intents).toBe(INTENTS)
 		expect(gatewayProtocol.connectUrl(step.state, config)).toBe(
 			"wss://gateway-eu-west1-a.discord.gg/?v=10&encoding=json",
 		)

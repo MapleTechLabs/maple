@@ -9,7 +9,6 @@
  */
 import { describe, expect, it } from "@effect/vitest"
 import {
-	ChatSessionId,
 	decodeChatEventPayload,
 	encodeChatEventPayload,
 	type ChatEvent,
@@ -860,10 +859,7 @@ describe("relaying a message that mentioned nobody", () => {
 
 const ADA = Schema.decodeSync(UserId)("user_ada")
 const CALL_ID = "call_9"
-const CONTROL = chatActionControlId(
-	"approve",
-	encodeChatActionToken(Schema.decodeSync(ChatSessionId)(SESSION_ID), CALL_ID),
-)
+const CONTROL = chatActionControlId("approve", encodeChatActionToken(CALL_ID))
 
 const click = (overrides: Partial<InboundAction> = {}): InboundAction => ({
 	type: "action",
@@ -974,7 +970,7 @@ describe("settling an approval somebody clicked", () => {
 					kind: "approval",
 					toolName: "create_alert_rule",
 					summary: "name: checkout p95",
-					token: `${SESSION_ID}|${CALL_ID}`,
+					token: CALL_ID,
 					outcome: { approved: true, text: "Approved by Ada.\nCreated alert rule ar_1." },
 				},
 			])
@@ -991,10 +987,7 @@ describe("settling an approval somebody clicked", () => {
 
 			yield* relayInboundEvent(
 				click({
-					actionToken: chatActionControlId(
-						"deny",
-						encodeChatActionToken(Schema.decodeSync(ChatSessionId)(SESSION_ID), CALL_ID),
-					),
+					actionToken: chatActionControlId("deny", encodeChatActionToken(CALL_ID)),
 				}),
 				deployment.ports,
 			)
@@ -1065,63 +1058,20 @@ describe("settling an approval somebody clicked", () => {
 		}),
 	)
 
-	it.effect("refuses a control naming a conversation in another organization", () =>
+	it.effect("settles in the conversation the click landed in, whatever the control was copied from", () =>
 		Effect.gen(function* () {
 			const platform = chat()
 			const agent = session([])
 			const deployment = host(platform.outbound, agent.stub)
 
-			const reason = yield* refusalReason(
-				relayInboundEvent(
-					click({
-						actionToken: chatActionControlId(
-							"approve",
-							encodeChatActionToken(
-								Schema.decodeSync(ChatSessionId)(`org_other:bot-${TESTCHAT}-${CONVERSATION}`),
-								CALL_ID,
-							),
-						),
-					}),
-					deployment.ports,
-				),
-			)
+			// A control is forgeable by design and names only a call, so the session is rebuilt from
+			// the workspace's org and the clicked conversation. A proposal raised elsewhere is not in
+			// this session's log, so it cannot be settled from here.
+			yield* relayInboundEvent(click({ channelId: "otherchannel" }), deployment.ports)
 
-			// The workspace's own org is the only one its members may change, however the control got
-			// into the channel. Asserted by REASON: every silent refusal looks the same otherwise, so
-			// this would stay green if the control simply stopped decoding.
-			expect(reason).toBe("foreign_session")
-			expect(agent.settlements).toEqual([])
-			expect(platform.calls).toEqual([])
-		}),
-	)
-
-	it.effect("refuses a control naming another conversation in the approver's own org", () =>
-		Effect.gen(function* () {
-			const platform = chat()
-			const agent = session([])
-			const deployment = host(platform.outbound, agent.stub)
-
-			// The same org, so the org check passes — and a control is forgeable by design. Without
-			// the conversation check an approver in one channel could settle a proposal raised in a
-			// channel they cannot read, and the settling edit would render that answer into theirs.
-			const reason = yield* refusalReason(
-				relayInboundEvent(
-					click({
-						actionToken: chatActionControlId(
-							"approve",
-							encodeChatActionToken(
-								Schema.decodeSync(ChatSessionId)(`${ORG}:bot-${TESTCHAT}-otherchannel`),
-								CALL_ID,
-							),
-						),
-					}),
-					deployment.ports,
-				),
-			)
-
-			expect(reason).toBe("foreign_session")
-			expect(agent.settlements).toEqual([])
-			expect(platform.calls).toEqual([])
+			expect(agent.settlements.map((settlement) => settlement.sessionId)).toEqual([
+				`${ORG}:bot-${TESTCHAT}-otherchannel`,
+			])
 		}),
 	)
 

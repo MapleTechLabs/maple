@@ -90,6 +90,12 @@ const CreatedMessage = Schema.Struct({
 /** A started thread is a channel, and its id is what every later call addresses. */
 const CreatedThread = Schema.Struct({ id: Schema.String })
 
+/** A channel, as far as telling a thread from a channel reads it. */
+const ChannelType = Schema.Struct({ type: Schema.Number })
+
+/** `ANNOUNCEMENT_THREAD`, `PUBLIC_THREAD` and `PRIVATE_THREAD`. */
+const THREAD_CHANNEL_TYPES: ReadonlySet<number> = new Set([10, 11, 12])
+
 /** One guild channel, as far as picking an alert destination reads it. */
 const GuildChannel = Schema.Struct({
 	id: Schema.String,
@@ -307,6 +313,23 @@ export const discordOutbound: ChatOutbound<HttpClient.HttpClient | ConnectorCred
 			return thread.id
 		})
 
+		const isThread = Effect.fn("Discord.isThread")(function* (channelId: string) {
+			const response = yield* send(
+				"thread",
+				"/channels/{channel_id}",
+				HttpClientRequest.get(`${API_BASE}/channels/${encodeURIComponent(channelId)}`),
+			)
+			const json = yield* response.json.pipe(
+				Effect.mapError((cause) => failed("thread", "Discord's reply could not be read", { cause })),
+			)
+			const channel = yield* Schema.decodeUnknownEffect(ChannelType)(json).pipe(
+				Effect.mapError((cause) =>
+					failed("thread", "Discord answered with no channel type", { cause }),
+				),
+			)
+			return THREAD_CHANNEL_TYPES.has(channel.type)
+		})
+
 		return {
 			post: Effect.fn("Discord.post")(function* (target: ChatTarget, blocks: ReadonlyArray<ChatBlock>) {
 				const response = yield* send(
@@ -427,8 +450,12 @@ export const discordOutbound: ChatOutbound<HttpClient.HttpClient | ConnectorCred
 			 * that same id as its `channel_id` and lands on the same session.
 			 *
 			 * Discord will not start a thread from a message that is already in one, and answers the
-			 * same way in a channel where the bot may not start them at all. Both mean the same thing
-			 * here: the mention's own channel is the conversation.
+			 * same way in a channel where the bot may not start them at all. Either way the mention's
+			 * own channel is the conversation — but only the first is the bot's own. A thread somebody
+			 * mentioned the bot in is a bounded exchange the bot was brought into, so its follow-ups are
+			 * answered like those in a thread the bot started; a plain channel stays mention-only,
+			 * because owning it would answer every passing remark in a team's channel. The channel's
+			 * type is read only on this path, and a read that fails answers "not a thread".
 			 *
 			 * A CLICK opens nothing: the interaction already happened inside a conversation, and
 			 * Discord's own `channel_id` for it is that conversation's id. Read from the interaction
@@ -461,7 +488,15 @@ export const discordOutbound: ChatOutbound<HttpClient.HttpClient | ConnectorCred
 									}),
 								),
 							),
-							Effect.orElseSucceed(() => ({ channelId: event.channelId, opened: false })),
+							Effect.catch(() =>
+								isThread(event.channelId).pipe(
+									Effect.orElseSucceed(() => false),
+									Effect.map((inThread) => ({
+										channelId: event.channelId,
+										opened: inThread,
+									})),
+								),
+							),
 						)
 				).pipe(
 					Effect.flatMap(({ channelId, opened }) =>

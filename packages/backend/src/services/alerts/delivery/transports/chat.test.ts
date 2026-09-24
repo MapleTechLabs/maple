@@ -1,5 +1,5 @@
 import type { AlertDestinationRow } from "@maple/db"
-import { ChatOutboundError, chatConnectorId, type ChatBlock } from "@maple/chat-platform"
+import { ChatOutboundError, chatConnectorId, type ChatAlertBlock, type ChatBlock } from "@maple/chat-platform"
 import { AlertDestinationId, ChatWorkspaceId, OrgId } from "@maple/domain/http"
 import { assert, describe, it } from "@effect/vitest"
 import { Effect, Schema } from "effect"
@@ -71,6 +71,8 @@ const context: DispatchContext = {
 	sampleCount: 1200,
 	template: null,
 	sparkline: "▁▂▅▇",
+	sentAtMs: 1_700_000_000_000,
+	chartUrl: "https://charts.localhost/c.png",
 }
 
 const inputFor = (overrides: Partial<RenderInput<SecretConfigOf<"chat">>> = {}) => ({
@@ -83,11 +85,11 @@ const inputFor = (overrides: Partial<RenderInput<SecretConfigOf<"chat">>> = {}) 
 	...overrides,
 })
 
-const markdownOf = (blocks: ReadonlyArray<ChatBlock>): string => {
+const cardOf = (blocks: ReadonlyArray<ChatBlock>): ChatAlertBlock => {
 	assert.strictEqual(blocks.length, 1)
 	const [block] = blocks
-	if (block?.kind !== "prose") throw new Error("expected one prose block")
-	return block.markdown
+	if (block?.kind !== "alert") throw new Error("expected one alert block")
+	return block
 }
 
 const TESTCHAT = chatConnectorId("testchat")
@@ -98,34 +100,49 @@ const outboundError = (extra: {
 }) => new ChatOutboundError({ message: "refused", connectorId: TESTCHAT, operation: "post", ...extra })
 
 describe("chat alert blocks", () => {
-	it("says what fired, what was observed, and where to look", () => {
-		const markdown = markdownOf(buildChatAlertBlocks(inputFor()))
-		assert.include(markdown, "**Checkout error rate** — Triggered")
-		assert.include(markdown, "**Severity**")
-		assert.include(markdown, "**Window** 5m")
-		assert.include(markdown, "**Group** `checkout`")
-		assert.include(markdown, "`▁▂▅▇`")
-		assert.include(markdown, `[Open in Maple](${LINK})`)
-		assert.include(markdown, `[Ask Maple AI](${CHAT})`)
+	it("is the slack-bot card: title, summary, severity and group, chart, links, footer", () => {
+		const card = cardOf(buildChatAlertBlocks(inputFor()))
+		assert.strictEqual(card.title, "\u{1F6A8} Checkout error rate — Triggered")
+		assert.strictEqual(card.color, "#e01e5a")
+		assert.include(card.summary, "**Error Rate** is **8%**")
+		assert.deepStrictEqual(
+			card.fields.map((field) => field.label),
+			["Severity", "Group"],
+		)
+		assert.strictEqual(card.fields[1]?.value, "`checkout`")
+		assert.strictEqual(card.imageUrl, "https://charts.localhost/c.png")
+		assert.deepStrictEqual(card.links, [
+			{ label: "Open in Maple", url: LINK, primary: true },
+			{ label: "✨ Ask Maple AI", url: CHAT, primary: false },
+		])
+		assert.deepStrictEqual(card.footer, ["\u{1F341} Maple Alerts", "`▁▂▅▇`", "Incident `inc_1`"])
+		assert.strictEqual(card.sentAtMs, 1_700_000_000_000)
+	})
+
+	it("colours a resolve green", () => {
+		const card = cardOf(buildChatAlertBlocks(inputFor({ context: { ...context, eventType: "resolve" } })))
+		assert.strictEqual(card.color, "#2eb67d")
+		assert.include(card.title, "Resolved")
 	})
 
 	it("leaves the group out of an ungrouped rule", () => {
-		const markdown = markdownOf(
-			buildChatAlertBlocks(inputFor({ context: { ...context, groupKey: "__total__" } })),
+		const card = cardOf(buildChatAlertBlocks(inputFor({ context: { ...context, groupKey: "__total__" } })))
+		assert.deepStrictEqual(
+			card.fields.map((field) => field.label),
+			["Severity"],
 		)
-		assert.notInclude(markdown, "**Group**")
 	})
 
 	it("uses the rule's own template in place of the title and summary", () => {
-		const markdown = markdownOf(
+		const card = cardOf(
 			buildChatAlertBlocks(
 				inputFor({ templated: { title: "Checkout is on fire", body: "Page **Ada**." } }),
 			),
 		)
-		assert.isTrue(markdown.startsWith("**Checkout is on fire**"))
-		assert.include(markdown, "Page **Ada**.")
-		assert.notInclude(markdown, "**Severity**")
-		assert.include(markdown, `[Open in Maple](${LINK})`)
+		assert.strictEqual(card.title, "Checkout is on fire")
+		assert.strictEqual(card.summary, "Page **Ada**.")
+		assert.deepStrictEqual(card.fields, [])
+		assert.strictEqual(card.links[0]?.url, LINK)
 	})
 })
 
@@ -173,7 +190,7 @@ describe("chat through dispatchDelivery", () => {
 			})
 			assert.strictEqual(result.providerMessage, "Delivered to Test Chat #incidents")
 			assert.strictEqual(posts[0]?.workspaceId, WORKSPACE)
-			assert.include(markdownOf(posts[0]?.blocks ?? []), "**Checkout error rate**")
+			assert.include(cardOf(posts[0]?.blocks ?? []).title, "Checkout error rate")
 		})
 	})
 })
