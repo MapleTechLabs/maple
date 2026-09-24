@@ -26,6 +26,13 @@ import { layerWorkersAi } from "./WorkersAiHttpClient"
 export const DEFAULT_OPENROUTER_MODEL = "z-ai/glm-5.3-flash:nitro"
 
 /**
+ * Default model for pull request reviews and replies, which run on their own model rather than the
+ * triage default: glm-5.3-flash leaked 1.2% of its tool calls as text, which ended 8 of 14 early
+ * reviews by 2026-09-24. Changing chat's model would have retuned investigations with it.
+ */
+export const DEFAULT_REVIEW_MODEL = "deepseek/deepseek-v4.1-flash"
+
+/**
  * Default decision model: TypeSafe's Jev, reached through OpenRouter.
  *
  * A decision model answers a bounded question — pick one of these labels, rate this, how likely is
@@ -117,6 +124,8 @@ export interface LlmEnv extends Record<string, unknown> {
 	readonly MAPLE_LLM_PROVIDER?: string
 	readonly MAPLE_TRIAGE_MODEL_OPENROUTER?: string
 	readonly MAPLE_TRIAGE_MODEL_WORKERS_AI?: string
+	/** OpenRouter model id for pull request reviews and replies, overriding {@link DEFAULT_REVIEW_MODEL}. */
+	readonly MAPLE_REVIEW_MODEL_OPENROUTER?: string
 	/** Context window in tokens, overriding {@link MODEL_LIMITS} for the configured model. */
 	readonly MAPLE_TRIAGE_MODEL_CONTEXT?: string
 	/** Max completion tokens, overriding {@link MODEL_LIMITS} for the configured model. */
@@ -164,6 +173,8 @@ const MODEL_LIMITS: Record<string, { readonly context: number; readonly output: 
 	// Verified against OpenRouter's catalogue: context_length 1_310_720, max_completion_tokens
 	// 131_072. Held a notch under, same conservative margin as the other rows.
 	"z-ai/glm-5.3-flash:nitro": { context: 1_000_000, output: 128_000 },
+	// OpenRouter's catalogue: context_length 1_048_576, max_completion_tokens 131_072.
+	"deepseek/deepseek-v4.1-flash": { context: 1_000_000, output: 128_000 },
 	// Moonshot's own kimi-k2.6 is 262_144, but Cloudflare does not publish the window its Workers AI
 	// deployment actually serves. Held at the conservative default until someone measures it.
 	"@cf/moonshotai/kimi-k2.6": { context: 128_000, output: 8_000 },
@@ -211,8 +222,14 @@ export interface ResolvedModel {
 	readonly tags?: LlmCallTags
 }
 
-const limitsFor = (env: LlmEnv, name: string): { readonly context: number; readonly output: number } => {
+/** The triage overrides describe the triage model, so a review model reads only the table. */
+const limitsFor = (
+	env: LlmEnv,
+	name: string,
+	overridable = true,
+): { readonly context: number; readonly output: number } => {
 	const known = MODEL_LIMITS[name] ?? DEFAULT_MODEL_LIMITS
+	if (!overridable) return known
 	return {
 		context: readPositiveInt(env, "MAPLE_TRIAGE_MODEL_CONTEXT") ?? known.context,
 		output: readPositiveInt(env, "MAPLE_TRIAGE_MODEL_OUTPUT") ?? known.output,
@@ -307,6 +324,7 @@ const openRouterModel = (
 	effortKey: keyof LlmEnv,
 	fallbackEffort: ReasoningEffort | undefined,
 	tags: LlmCallTags | undefined,
+	overridableLimits = true,
 ): ResolvedModel => {
 	const effort = readReasoningEffort(env, effortKey) ?? fallbackEffort
 	return {
@@ -321,7 +339,7 @@ const openRouterModel = (
 				sessionAttributes: agentSessionSpanAttributes(tags),
 			},
 		),
-		limits: limitsFor(env, name),
+		limits: limitsFor(env, name, overridableLimits),
 		tags,
 	}
 }
@@ -360,6 +378,22 @@ export const resolveTriageModel = (env: LlmEnv, tags?: LlmCallTags): ResolvedMod
 				// picked here would retune three stages with different shapes at once.
 				undefined,
 				tags,
+			)
+
+/**
+ * The model pull request reviews and replies run on. OpenRouter only: the id is an OpenRouter id,
+ * so a Workers AI deployment reviews on its triage model rather than sending it one.
+ */
+export const resolveReviewModel = (env: LlmEnv, tags?: LlmCallTags): ResolvedModel =>
+	resolveLlmProvider(env) === "workers-ai"
+		? resolveTriageModel(env, tags)
+		: openRouterModel(
+				env,
+				readString(env, "MAPLE_REVIEW_MODEL_OPENROUTER") ?? DEFAULT_REVIEW_MODEL,
+				"MAPLE_TRIAGE_REASONING_EFFORT",
+				undefined,
+				tags,
+				false,
 			)
 
 /**

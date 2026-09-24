@@ -53,7 +53,7 @@ import {
 	renderPullRequestContext,
 } from "@/mcp/tools/pull-request"
 import type { McpToolResult } from "@/mcp/tools/types"
-import { layerLlm, resolveTriageModel, type ResolvedModel } from "@/platform/Llm"
+import { layerLlm, resolveReviewModel, type ResolvedModel } from "@/platform/Llm"
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url))
 
@@ -759,7 +759,7 @@ export const reviewLocally = async (
 		)
 		process.exit(1)
 	}
-	if (args.model !== undefined) process.env.MAPLE_TRIAGE_MODEL_OPENROUTER = args.model
+	if (args.model !== undefined) process.env.MAPLE_REVIEW_MODEL_OPENROUTER = args.model
 	const promptOverride = args.promptFile === undefined ? undefined : readFileSync(args.promptFile, "utf8")
 	const repository = `${args.owner}/${args.repo}`
 
@@ -781,7 +781,7 @@ export const reviewLocally = async (
 	}
 	const env = { ...process.env }
 	const model =
-		injected.model ?? resolveTriageModel(env, { surface: "chat", orgId, sessionId, turnId: messageId })
+		injected.model ?? resolveReviewModel(env, { surface: "chat", orgId, sessionId, turnId: messageId })
 	const kickoff = buildReviewKickoff({
 		repository,
 		number: args.number,

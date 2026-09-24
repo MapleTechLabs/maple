@@ -222,7 +222,7 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 		{ InvestigationServicesLive },
 		{ layerPg },
 		{ mapleDbConnectionLayer },
-		{ layerDecisionModel, layerFindingEmbedder, layerLlm, resolveTriageModel },
+		{ layerDecisionModel, layerFindingEmbedder, layerLlm, resolveReviewModel, resolveTriageModel },
 		{ McpToolExecutor },
 	] = await Promise.all([
 		import("../runtime/mcp-service-graph"),
@@ -319,12 +319,9 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 		const toolExecutor = yield* McpToolExecutor
 		const runTenant = yield* withConnectorActor(tenant, origin)
 		const history = input.session.history()
-		const model = resolveTriageModel(input.env, {
-			surface,
-			orgId: tenant.orgId,
-			sessionId: input.sessionId,
-			turnId: input.messageId,
-		})
+		const model = (
+			prReviewId === undefined && prReplyId === undefined ? resolveTriageModel : resolveReviewModel
+		)(input.env, { surface, orgId: tenant.orgId, sessionId: input.sessionId, turnId: input.messageId })
 
 		// The session recorded the user's message before the run started, so the transcript's tail is
 		// this run's input rather than part of its history.
