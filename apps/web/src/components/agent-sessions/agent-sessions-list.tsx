@@ -704,7 +704,11 @@ const BUCKET_COVERAGE_MIN = 0.9
 const INPUT_BUCKETS: ReadonlySet<TokenBucketKey> = new Set(["input", "cacheRead", "cacheWrite"])
 
 /** Under an "Input"/"Output" heading, the same-named bucket needs its own word. */
-const SUB_LABEL: Partial<Record<TokenBucketKey, string>> = { input: "Fresh", output: "Response" }
+function subLabel(bucket: (typeof TOKEN_BUCKETS)[number]): string {
+	if (bucket.key === "input") return "Fresh"
+	if (bucket.key === "output") return "Response"
+	return bucket.label
+}
 
 /**
  * Two lines, in over out, each in its side's colour: what the session sent
@@ -754,12 +758,11 @@ function TokenBar({ session }: { session: AgentSessionRow }) {
 								<span aria-hidden className={cn("size-1.5 rounded-full", side.fill)} />
 								{side.title}: {side.count.toLocaleString()}
 							</span>
-							{side.parts.length > 1 &&
-								side.parts.map((bucket) => (
-									<span key={bucket.key} className="pl-3 text-muted-foreground">
-										{SUB_LABEL[bucket.key] ?? bucket.label}: {buckets[bucket.key].toLocaleString()}
-									</span>
-								))}
+							{side.parts.map((bucket) => (
+								<span key={bucket.key} className="pl-3 text-muted-foreground">
+									{subLabel(bucket)}: {buckets[bucket.key].toLocaleString()}
+								</span>
+							))}
 						</div>
 					))}
 				</div>
