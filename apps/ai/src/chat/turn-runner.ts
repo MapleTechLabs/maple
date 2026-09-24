@@ -341,6 +341,11 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 				Effect.forkChild,
 			)
 		}
+		// An investigation picks its commit from telemetry mid-pass, so warm the repositories it
+		// could read instead: the deployed commit then clones from a filled mirror in seconds.
+		if (investigationId !== undefined) {
+			yield* toolExecutor.prepareConnectedRepositories(runTenant).pipe(Effect.forkChild)
+		}
 		const history = input.session.history()
 		const model = (
 			prReviewId === undefined && prReplyId === undefined ? resolveTriageModel : resolveReviewModel
