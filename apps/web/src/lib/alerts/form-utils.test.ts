@@ -174,46 +174,6 @@ describe("buildRuleCreateParamsV2", () => {
 	})
 })
 
-describe("slack-bot destination params", () => {
-	it("builds create params with channel id and trimmed name/channel name", () => {
-		const params = buildDestinationCreateParamsV2({
-			...defaultDestinationForm("slack-bot"),
-			name: "  Prod incidents  ",
-			slackChannelId: "C0789CHAN",
-			slackChannelName: "  incidents  ",
-		})
-		expect(params).toEqual({
-			type: "slack-bot",
-			name: "Prod incidents",
-			enabled: true,
-			channel_id: "C0789CHAN",
-			channel_name: "incidents",
-		})
-	})
-
-	it("omits channel_name when blank on create", () => {
-		const params = buildDestinationCreateParamsV2({
-			...defaultDestinationForm("slack-bot"),
-			name: "Prod",
-			slackChannelId: "C0789CHAN",
-			slackChannelName: "   ",
-		})
-		expect(params).not.toHaveProperty("channel_name")
-		expect(params).toMatchObject({ type: "slack-bot", channel_id: "C0789CHAN" })
-	})
-
-	it("drops omitted fields on update so a blank channel keeps the stored one", () => {
-		const params = buildDestinationUpdateParamsV2({
-			...defaultDestinationForm("slack-bot"),
-			name: "",
-			slackChannelId: "",
-			slackChannelName: "",
-			enabled: false,
-		})
-		expect(params).toEqual({ type: "slack-bot", enabled: false })
-	})
-})
-
 describe("telegram destination params", () => {
 	it("builds create params with a trimmed token and chat id", () => {
 		const params = buildDestinationCreateParamsV2({

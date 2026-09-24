@@ -39,7 +39,6 @@ const EXTERNALLY_CONSUMED: Readonly<Record<string, ReadonlyArray<string>>> = {
 	digest_subscriptions: ["org_id", "user_id", "email", "enabled", "last_sent_at"],
 	// Integration breadth — read as booleans ("has this org connected X"), so
 	// only the join key matters.
-	slack_workspaces: ["org_id"],
 	planetscale_connections: ["org_id"],
 	oauth_connections: ["org_id", "provider"],
 	dashboards: ["org_id"],

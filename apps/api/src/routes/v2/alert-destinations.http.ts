@@ -9,7 +9,6 @@ import {
 	HazelOAuthAlertDestinationConfig,
 	AlertDestinationNotFoundError,
 	PagerDutyAlertDestinationConfig,
-	SlackBotAlertDestinationConfig,
 	TelegramAlertDestinationConfig,
 	WebhookAlertDestinationConfig,
 } from "@maple/domain/http"
@@ -49,14 +48,6 @@ const toV2DestinationMutation = (doc: AlertDestinationDocument): V2AlertDestinat
 
 const toCreateRequest = (params: V2AlertDestinationCreateParams) => {
 	switch (params.type) {
-		case "slack-bot":
-			return new SlackBotAlertDestinationConfig({
-				type: "slack-bot",
-				name: params.name,
-				channelId: params.channel_id,
-				...(params.channel_name !== undefined ? { channelName: params.channel_name } : undefined),
-				...(params.enabled !== undefined ? { enabled: params.enabled } : undefined),
-			})
 		case "pagerduty":
 			return new PagerDutyAlertDestinationConfig({
 				type: "pagerduty",
@@ -128,13 +119,6 @@ const toUpdateRequest = (params: V2AlertDestinationUpdateParams): AlertDestinati
 		...(params.enabled !== undefined ? { enabled: params.enabled } : undefined),
 	}
 	switch (params.type) {
-		case "slack-bot":
-			return {
-				type: "slack-bot",
-				...shared,
-				...(params.channel_id !== undefined ? { channelId: params.channel_id } : undefined),
-				...(params.channel_name !== undefined ? { channelName: params.channel_name } : undefined),
-			}
 		case "pagerduty":
 			return {
 				type: "pagerduty",

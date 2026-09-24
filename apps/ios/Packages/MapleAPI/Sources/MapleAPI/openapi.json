@@ -3303,7 +3303,6 @@
       },
       "_maple_AlertDestinationType": {
         "enum": [
-          "slack-bot",
           "pagerduty",
           "webhook",
           "hazel-oauth",
@@ -7686,7 +7685,7 @@
       "name": "Alert Deliveries"
     },
     {
-      "description": "Notification channels for alert rules — Slack bot, PagerDuty, generic webhooks, Hazel OAuth, Discord, Telegram, and workspace-member email. Create and manage destinations, then reference them from alert rules via `destination_ids`. Mutations are admin-only; channel secrets are write-only.",
+      "description": "Notification channels for alert rules — PagerDuty, generic webhooks, Hazel OAuth, Discord, Telegram, workspace-member email, and channels in linked chat workspaces. Create and manage destinations, then reference them from alert rules via `destination_ids`. Mutations are admin-only; channel secrets are write-only.",
       "name": "Alert Destinations"
     },
     {
@@ -7696,10 +7695,6 @@
     {
       "description": "Telemetry ingest credentials for your organization: a public key for client-side senders and a private key for server-side senders. Retrieve them or roll either key. All operations are admin-only.",
       "name": "Ingest Keys"
-    },
-    {
-      "description": "Install and manage the Maple Slack app for your organization: begin an OAuth install, read installation status, list channels, and uninstall.",
-      "name": "Slack Integration"
     },
     {
       "description": "Link a chat workspace to your organization through a configured connector, and manage or remove the links that already exist. Where a connector's platform can say who acted, each member may also link their own chat account to their Maple user.",

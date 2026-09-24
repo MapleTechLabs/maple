@@ -25,8 +25,7 @@ export const TELEGRAM_BOT_TOKEN_PATTERN = /^\d{5,}:[A-Za-z0-9_-]{30,}$/
 
 /**
  * Telegram answers HTTP 200 with `{ ok: false, description, error_code }` for
- * logical failures — the same shape of lie Slack tells, so the body is the
- * source of truth, not the status.
+ * logical failures, so the body is the source of truth, not the status.
  */
 const TelegramResponseSchema = Schema.Struct({
 	ok: Schema.optionalKey(Schema.Boolean),

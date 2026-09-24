@@ -4,15 +4,15 @@ import { assert, describe, it } from "@effect/vitest"
 import { createHmac } from "node:crypto"
 import { Effect, Schema } from "effect"
 import type { DispatchContext } from "./AlertDeliveryDispatch"
-import { dispatchDelivery, type DispatchDeps } from "./delivery/dispatch"
+import { dispatchDelivery } from "./delivery/dispatch"
+import type { EffectTransportDeps } from "./delivery/Transport"
 
 /**
  * Characterization tests: they pin what each provider ACTUALLY sends today,
  * before the delivery layer is restructured onto a transport registry.
  *
  * `discord`, `pagerduty`, `webhook` and `hazel-oauth` had no direct dispatch
- * coverage at all — every dispatch test targeted slack-bot or email — so a
- * refactor had nothing to refactor against. These are deliberately literal
+ * coverage at all, so a refactor had nothing to refactor against. These are deliberately literal
  * (exact URL, exact headers, exact parsed body) rather than
  * behaviour-describing: their job is to make any change to the wire show up as
  * a reviewable diff.
@@ -76,17 +76,10 @@ const contextFor = (secretConfig: DispatchContext["secretConfig"]): DispatchCont
 })
 
 /** Neither dep may be invoked by these four providers. */
-const noDeps: DispatchDeps = {
+const noDeps: EffectTransportDeps = {
 	postChatAlert: failingChatPost,
 	sendEmail: () =>
 		Effect.fail(new AlertDeliveryError({ message: "unexpected sendEmail", destinationType: "email" })),
-	resolveSlackBotToken: () =>
-		Effect.fail(
-			new AlertDeliveryError({
-				message: "unexpected resolveSlackBotToken",
-				destinationType: "slack-bot",
-			}),
-		),
 }
 
 interface RecordedCall {

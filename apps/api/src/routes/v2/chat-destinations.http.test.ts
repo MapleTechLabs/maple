@@ -36,7 +36,6 @@ import {
 	ApiV2RateLimiterAllowAllLayer,
 	ConfigResourceServiceStubsLayer,
 	PlanetScaleServiceStubsLayer,
-	SlackIntegrationServiceStubLayer,
 	TelemetryServiceStubsLayer,
 } from "./v2-test-support"
 
@@ -159,7 +158,6 @@ const makeHarness = (
 		// Before the facade stubs, so this fake is the destination service the routes see.
 		Layer.provide(destinationsLayer(recorded)),
 		Layer.provide(AlertsServiceStubLayer),
-		Layer.provide(SlackIntegrationServiceStubLayer),
 		Layer.provide(PlanetScaleServiceStubsLayer),
 		Layer.provide(ConfigResourceServiceStubsLayer),
 		Layer.provide(TelemetryServiceStubsLayer),

@@ -111,8 +111,6 @@ export interface EnvConfig {
 	 * left out, and the platform's refusal reports the gap.
 	 */
 	readonly CHAT_CONNECTOR_OUTBOUND_CONFIG: ConnectorConfig
-	readonly SLACK_CLIENT_ID: Option.Option<string>
-	readonly SLACK_CLIENT_SECRET: Option.Option<Redacted.Redacted<string>>
 	/**
 	 * Dedicated bearer secret for the repository sandbox Worker, kept distinct
 	 * from `INTERNAL_SERVICE_TOKEN`:
@@ -227,8 +225,6 @@ const envConfig = Config.all({
 	),
 	CHAT_CONNECTOR_CONFIG: chatConnectorConfig,
 	CHAT_CONNECTOR_OUTBOUND_CONFIG: chatConnectorOutboundConfig,
-	SLACK_CLIENT_ID: optionalString("SLACK_CLIENT_ID"),
-	SLACK_CLIENT_SECRET: optionalRedacted("SLACK_CLIENT_SECRET"),
 	SANDBOX_INTERNAL_SERVICE_TOKEN: optionalRedacted("SANDBOX_INTERNAL_SERVICE_TOKEN"),
 	APNS_TEAM_ID: optionalString("APNS_TEAM_ID"),
 	APNS_KEY_ID: optionalString("APNS_KEY_ID"),

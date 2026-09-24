@@ -1,7 +1,7 @@
 import { AlertValidationError } from "@maple/domain/http"
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import { alertDestinations } from "@maple/db"
-import { AlertDestinationId, OrgId } from "@maple/domain/http"
+import { AlertDestinationId, ChatWorkspaceId, OrgId } from "@maple/domain/http"
 import { eq } from "drizzle-orm"
 import { Effect, Schema } from "effect"
 import { encryptAes256Gcm } from "@maple/backend/platform/Crypto"
@@ -139,19 +139,22 @@ describe("hydrateDestinationRow", () => {
 	it.effect("hydrates a chat destination carrying optional public config keys", () => {
 		const testDb = createTestDb(createdDbs)
 		const id = asDestinationId("00000000-0000-4000-8000-000000000002")
+		const workspaceId = Schema.decodeUnknownSync(ChatWorkspaceId)("11111111-1111-4111-8111-111111111111")
 		const secretConfig: DestinationSecretConfig = {
-			type: "slack-bot",
+			type: "chat",
+			workspaceId,
 			channelId: "C123",
 			channelName: "alerts",
 		}
 		return Effect.gen(function* () {
 			yield* seedDestination({
 				id,
-				type: "slack-bot",
+				type: "chat",
 				publicConfig: {
-					summary: "#alerts",
+					summary: "Acme",
 					channelLabel: "#alerts",
-					memberUserIds: ["user_1", "user_2"],
+					chatConnector: "testchat",
+					chatWorkspaceId: workspaceId,
 				},
 				secretConfig,
 			})
@@ -159,9 +162,10 @@ describe("hydrateDestinationRow", () => {
 
 			const hydrated = yield* hydrateDestinationRow(row, ENCRYPTION_KEY, hydrationErrors)
 			assert.deepStrictEqual(hydrated.publicConfig, {
-				summary: "#alerts",
+				summary: "Acme",
 				channelLabel: "#alerts",
-				memberUserIds: ["user_1", "user_2"],
+				chatConnector: "testchat",
+				chatWorkspaceId: workspaceId,
 			})
 			assert.deepStrictEqual(hydrated.secretConfig, secretConfig)
 		}).pipe(Effect.provide(testDb.layer))

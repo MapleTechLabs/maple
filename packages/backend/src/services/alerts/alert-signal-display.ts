@@ -4,7 +4,7 @@
  *
  * `signalType` alone is NOT that name. It is the rule's *query kind*, and two of
  * its members — `builder_query` and `raw_query` — say only "this rule runs a
- * query", not what the query measures. Printing the enum verbatim produced Slack
+ * query", not what the query measures. Printing the enum verbatim produced chat
  * messages reading "builder_query is 1041923". The measured quantity for those
  * two lives in the rule's `queryBuilderDraft` / `rawQueryReducer`, which is why
  * this resolves from the rule rather than from the enum.

@@ -7,8 +7,8 @@ const PLANE =
 
 /**
  * The Telegram mark: the brand-blue disc with the white plane, as Telegram
- * ships it. Like `SlackIcon`, the fills are the brand's own — `className` and
- * `color` cannot tint it. Use `TelegramMonoIcon` where the surface owns the
+ * ships it. The fills are the brand's own — `className` and `color` cannot
+ * tint it. Use `TelegramMonoIcon` where the surface owns the
  * color.
  */
 function TelegramIcon({ size = 24, className, ...props }: IconProps) {

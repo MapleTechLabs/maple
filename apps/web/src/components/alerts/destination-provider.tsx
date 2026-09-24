@@ -7,26 +7,12 @@ import {
 	DiscordIcon,
 	EnvelopeIcon,
 	HazelIcon,
-	SlackIcon,
 	TelegramIcon,
 } from "@/components/icons"
-import {
-	chatConnectorIcon,
-	SLACK_ACCENT,
-	SLACK_ACCENT_ON_LIGHT,
-} from "@/components/integrations/integration-catalog"
+import { chatConnectorIcon } from "@/components/integrations/integration-catalog"
 import { cn } from "@maple/ui/lib/utils"
 
 const BRANDFETCH_CLIENT_ID = "1id0IQ-4i8Z46-n-DfQ"
-
-// Both Slack rows are the same brand: derive every Slack color from the one
-// accent the integrations catalog owns — already theme-aware (deep aubergine on
-// light, the same hue lifted on dark, where the aubergine is darker than the card
-// and disappears). That keeps the selected tile ring in the picker visible.
-const SLACK_ACCENT_BG = `color-mix(in srgb, ${SLACK_ACCENT} 30%, transparent)`
-// Slack's pale lilac only reads on dark (8.0:1 on the 30% tint); the aubergine
-// holds AA on light (7.5:1).
-const SLACK_ACCENT_TEXT = `light-dark(${SLACK_ACCENT_ON_LIGHT}, #E8C5EA)`
 
 // Both Hazel rows are the same brand. Its orange is 2.5:1 on its own light tint —
 // burnt orange for light, brand orange on dark (4.6:1).
@@ -91,19 +77,6 @@ export type DestinationProvider = {
 }
 
 export const PROVIDERS: Record<AlertDestinationType, DestinationProvider> = {
-	"slack-bot": {
-		type: "slack-bot",
-		label: "Slack (bot)",
-		description: "Post alerts to a channel via the installed Maple Slack app — no webhook to manage.",
-		accent: SLACK_ACCENT,
-		accentBg: SLACK_ACCENT_BG,
-		accentText: SLACK_ACCENT_TEXT,
-		// 14.0:1 light / 4.65:1 dark.
-		accentOn: INK_ON_DARK_ACCENT,
-		fallbackIcon: ({ size = 22, className }) => <SlackIcon size={size} className={className} />,
-		docsUrl: "https://maple.dev/docs/integrations/slack",
-		docsLabel: "Slack integration guide",
-	},
 	pagerduty: {
 		type: "pagerduty",
 		label: "PagerDuty",
@@ -235,7 +208,6 @@ export const chatDestinationProvider = (connectorId: string | undefined): Destin
  * workspace instead, since which workspace is the whole choice.
  */
 export const DESTINATION_TYPES: ReadonlyArray<AlertDestinationType> = [
-	"slack-bot",
 	"discord",
 	"telegram",
 	"email",

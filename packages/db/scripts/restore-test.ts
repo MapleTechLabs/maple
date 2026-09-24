@@ -76,7 +76,6 @@ const CRITICAL_TABLES: ReadonlyArray<{ readonly name: string; readonly nonEmpty:
 	{ name: "error_issues", nonEmpty: true },
 	{ name: "error_issue_events", nonEmpty: true },
 	{ name: "vcs_installations", nonEmpty: false },
-	{ name: "slack_workspaces", nonEmpty: false },
 ]
 
 interface Backup {

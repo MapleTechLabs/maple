@@ -334,8 +334,7 @@ export class CloudflarePrimeResponse extends Schema.Class<CloudflarePrimeRespons
 //      mounted for external callers. This is their wire contract, frozen.
 //   2. `PlanetScaleConnectionService` / `PlanetScaleService`, whose method
 //      signatures they are — the v2 handlers map them to the snake_case/ISO
-//      wire format at the boundary, the same way the Slack handlers map
-//      `SlackInstallStatus`.
+//      wire format at the boundary.
 //
 // So (1) can be deleted once no customer is calling it, and (2) will keep these
 // alive afterwards as plain service types. Do not reshape them to match v2:

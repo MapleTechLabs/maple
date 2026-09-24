@@ -19,7 +19,7 @@ export interface AlertEmailContent {
 
 /**
  * Render the alert notification email from the same pre-formatted values the
- * Slack/Discord payload builders use, so channels never drift. Custom
+ * chat/Discord payload builders use, so channels never drift. Custom
  * notification templates are not consulted for email — HTML email can't safely
  * render arbitrary user Markdown, so email always uses the built-in format.
  */

@@ -412,13 +412,12 @@ describe("V2 alerts wire format", () => {
 	})
 
 	it("decodes destination create params per union arm and rejects mismatched configs", () => {
-		const slack = Schema.decodeUnknownSync(V2AlertDestinationCreateParams)({
-			type: "slack-bot",
+		const pagerduty = Schema.decodeUnknownSync(V2AlertDestinationCreateParams)({
+			type: "pagerduty",
 			name: "On-call",
-			channel_id: "C123",
-			channel_name: "incidents",
+			integration_key: "routing-key",
 		})
-		expect(slack.type).toBe("slack-bot")
+		expect(pagerduty.type).toBe("pagerduty")
 
 		const email = Schema.decodeUnknownSync(V2AlertDestinationCreateParams)({
 			type: "email",
@@ -432,7 +431,7 @@ describe("V2 alerts wire format", () => {
 			Schema.decodeUnknownSync(V2AlertDestinationCreateParams)({
 				type: "pagerduty",
 				name: "PD",
-				webhook_url: "https://hooks.slack.com/services/T/B/X",
+				webhook_url: "https://discord.com/api/webhooks/1/x",
 			}),
 		).toThrow()
 	})

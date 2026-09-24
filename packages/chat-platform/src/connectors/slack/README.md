@@ -4,9 +4,6 @@ Everything Maple knows about Slack is in this directory. Two host Workers drive 
 `ChatConnector` and neither learns which platform it is talking to: `apps/api` runs the install
 half, `apps/chat-bot` runs the ingress and outbound halves.
 
-This is a **new Slack app**, separate from the one that delivers alerts to channels
-(`slack_workspaces`, `SlackIntegrationService`). It shares no table, no secret and no code with it.
-
 ## What has to exist before it runs
 
 One Slack app, created at <https://api.slack.com/apps> (from the manifest below). Its secrets are
