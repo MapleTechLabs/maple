@@ -1,6 +1,6 @@
 ---
 /**
- * ComparePage — the single template behind every `/compare/<slug>` route,
+ * ComparePage: the single template behind every `/compare/<slug>` route,
  * in all three locales.
  *
  * The spine, and why it is in this order:
@@ -22,7 +22,7 @@
  * advantages grid, migration cards and an FAQ that between them made the
  * same four claims six times. Each claim now lives in exactly one place:
  * "how they differ" in the table, "what it costs" in the receipts. There is
- * deliberately no "choose X when" verdict block — the table's edge column
+ * deliberately no "choose X when" verdict block: the table's edge column
  * already says it row by row, and the user didn't want it said twice.
  */
 import * as m from "../../paraglide/messages.js";
@@ -53,7 +53,7 @@ if (!competitor) throw new Error(`ComparePage: unknown competitor slug "${slug}"
 
 const locale = Astro.currentLocale ?? "en";
 
-// Messages are called HERE, during render — never at module scope and never
+// Messages are called HERE, during render: never at module scope and never
 // in getStaticPaths. Paraglide resolves the locale per call.
 const title = competitor.seoTitle();
 const description = competitor.seoDescription();

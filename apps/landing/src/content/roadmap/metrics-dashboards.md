@@ -1,5 +1,5 @@
 ---
-title: "Metrics & Dashboards"
+title: "Metrics and dashboards"
 status: "shipped"
 category: "metrics"
 quarter: "Q1 2026"

@@ -8,7 +8,7 @@ import BrandAssetTile from "../components/brand/BrandAssetTile.astro";
 
 // English-only and hardcoded, like /local and /privacy. The kit filenames are
 // the contract with anyone who has linked to one, so they live here as literals
-// rather than being derived — a helper that renamed them would break inbound
+// rather than being derived; a helper that renamed them would break inbound
 // links silently.
 import markAmber from "../../public/brand/logo/maple-mark-amber.svg?raw";
 import markInk from "../../public/brand/logo/maple-mark-ink.svg?raw";
@@ -20,9 +20,9 @@ import lockupReversed from "../../public/brand/wordmark/maple-lockup-reversed.sv
 import lockupInk from "../../public/brand/wordmark/maple-lockup-ink.svg?raw";
 import lockupWhite from "../../public/brand/wordmark/maple-lockup-white.svg?raw";
 
-const pageTitle = "Brand — Maple";
+const pageTitle = "Brand | Maple";
 const pageDescription =
-    "The Maple logo, wordmark, colours, and type — with a downloadable brand kit. Use them as they are; please don't redraw them.";
+    "The Maple logo, wordmark, colors, and type, with a downloadable brand kit. Use them as they are; please don't redraw them.";
 
 const KIT = "/brand/maple-brand-kit.zip";
 
@@ -33,7 +33,7 @@ const INK = "#171410";
 
 const lockups = [
     {
-        name: "Lockup — primary",
+        name: "Lockup, primary",
         note: "amber mark, ink type · light grounds",
         svg: lockupPrimary,
         href: "/brand/wordmark/maple-lockup-primary.svg",
@@ -41,7 +41,7 @@ const lockups = [
         ground: BONE,
     },
     {
-        name: "Lockup — reversed",
+        name: "Lockup, reversed",
         note: "amber mark, bone type · dark grounds",
         svg: lockupReversed,
         href: "/brand/wordmark/maple-lockup-reversed.svg",
@@ -49,7 +49,7 @@ const lockups = [
         ground: INK,
     },
     {
-        name: "Lockup — mono ink",
+        name: "Lockup, mono ink",
         note: "one fill · print, engraving, embroidery",
         svg: lockupInk,
         href: "/brand/wordmark/maple-lockup-ink.svg",
@@ -57,7 +57,7 @@ const lockups = [
         ground: BONE,
     },
     {
-        name: "Lockup — mono white",
+        name: "Lockup, mono white",
         note: "one fill · photography, dark print",
         svg: lockupWhite,
         href: "/brand/wordmark/maple-lockup-white.svg",
@@ -68,7 +68,7 @@ const lockups = [
 
 const marks = [
     {
-        name: "Mark — amber",
+        name: "Mark, amber",
         note: "the default, on any ground it clears",
         svg: markAmber,
         href: "/brand/logo/maple-mark-amber.svg",
@@ -76,15 +76,15 @@ const marks = [
         ground: INK,
     },
     {
-        name: "Mark — ink",
-        note: "light grounds, single colour",
+        name: "Mark, ink",
+        note: "light grounds, single color",
         svg: markInk,
         href: "/brand/logo/maple-mark-ink.svg",
         png: "/brand/logo/maple-mark-ink-1024.png",
         ground: BONE,
     },
     {
-        name: "Mark — white",
+        name: "Mark, white",
         note: "photography and dark print",
         svg: markWhite,
         href: "/brand/logo/maple-mark-white.svg",
@@ -109,9 +109,9 @@ const marks = [
     },
 ];
 
-// Two kinds of colour, kept apart because their authoritative form differs.
-// Asset colours are hex — that is what is written into the SVGs and the icon
-// script. Interface colours are oklch, because that is what tokens.css declares
+// Two kinds of color, kept apart because their authoritative form differs.
+// Asset colors are hex, which is what is written into the SVGs and the icon
+// script. Interface colors are oklch, because that is what tokens.css declares
 // and a hex here would be a lossy transcription of it.
 const assetColors = [
     { name: "Amber", value: "#E86F00", note: "the mark", on: INK },
@@ -134,12 +134,12 @@ const rules = [
     {
         ok: false,
         title: "Don't fill the mark with a gradient",
-        body: "The eyes and the notch beside the trunk are knockouts in a single evenodd path — whatever sits behind reads through them. A gradient arrives at the eyes at a different value than at the silhouette edge, and they stop reading as eyes.",
+        body: "The eyes and the notch beside the trunk are knockouts in a single evenodd path, so whatever sits behind reads through them. A gradient arrives at the eyes at a different value than at the silhouette edge, and they stop reading as eyes.",
     },
     {
         ok: false,
         title: "Don't put the tile inside our chrome",
-        body: "The rounded tile exists so the mark survives a browser tab strip. Inside a header or a slide that already has a surface, it is a box around a box — use the bare mark.",
+        body: "The rounded tile exists so the mark survives a browser tab strip. Inside a header or a slide that already has a surface, it is a box around a box. Use the bare mark.",
     },
     {
         ok: false,
@@ -148,25 +148,25 @@ const rules = [
     },
     {
         ok: false,
-        title: "Don't stretch, rotate, or recolour",
-        body: "Scale it uniformly and take a colourway from this page. If none of them clears your ground, use mono white or mono ink rather than mixing a new one.",
+        title: "Don't stretch, rotate, or recolor",
+        body: "Scale it uniformly and take a colorway from this page. If none of them clears your ground, use mono white or mono ink rather than mixing a new one.",
     },
     {
         ok: true,
         title: "Do give it room, and size",
-        body: "Keep clear space of at least half the mark's width on every side. The bare mark stops resolving below 16px — its eyes are barely a pixel wide and antialias into a blob — so below that, use the tile.",
+        body: "Keep clear space of at least half the mark's width on every side. The bare mark stops resolving below 16px (its eyes are barely a pixel wide and antialias into a blob), so below that, use the tile.",
     },
     {
         ok: true,
         title: "Do use the files as they are",
-        body: "Everything here is the exact byte the product ships. If you need something that isn't in the kit — a different ratio, a partner lockup — ask rather than improvise.",
+        body: "Everything here is the exact byte the product ships. If you need something that isn't in the kit (a different ratio, a partner lockup), ask rather than improvise.",
     },
 ];
 ---
 
 <Layout title={pageTitle} description={pageDescription}>
     <!-- The Organization block carries `logo`, and this is the one page whose
-         subject is that logo — if any page should emit it, it is this one. -->
+         subject is that logo; if any page should emit it, it is this one. -->
     <SeoHead title={pageTitle} description={pageDescription} includeOrganization />
 
     <Nav />
@@ -182,7 +182,7 @@ const rules = [
                 </h1>
                 <p class="mt-6 text-sm md:text-base text-fg-muted leading-relaxed max-w-2xl">
                     Writing about Maple, building an integration, or putting us on a slide? Take what
-                    you need — no permission required, and no need to ask first. The one thing we do
+                    you need. No permission is required, and no need to ask first. The one thing we do
                     ask is that you use the artwork as it is rather than redrawing it.
                 </p>
                 <div class="mt-9 flex flex-wrap items-center gap-3">
@@ -196,14 +196,14 @@ const rules = [
                         <span class="brand-cta__meta">.zip</span>
                     </a>
                     <span class="text-xs text-fg-muted">
-                        Logo, wordmark, and app icons — SVG plus PNG at 256, 512, and 1024.
+                        Logo, wordmark, and app icons: SVG plus PNG at 256, 512, and 1024.
                     </span>
                 </div>
             </div>
         </div>
     </section>
 
-    <!-- 01 — Logo -->
+    <!-- 01: Logo -->
     <section class="bg-bg-deep border-t border-border">
         <div class="mx-auto max-w-6xl px-6 py-20 md:py-24">
             <div class="max-w-2xl mb-12">
@@ -213,7 +213,7 @@ const rules = [
                     A tree, and the word next to it
                 </h2>
                 <p class="mt-5 text-sm md:text-base text-fg-muted leading-relaxed">
-                    The lockup is the default — reach for the bare mark only where the name is
+                    The lockup is the default. Reach for the bare mark only where the name is
                     already present, and for the tile only where the mark has to hold its own edge
                     against chrome we don't control. Each tile below shows the exact file you get.
                 </p>
@@ -231,24 +231,24 @@ const rules = [
         </div>
     </section>
 
-    <!-- 02 — Colour -->
+    <!-- 02: Color -->
     <section class="bg-bg border-t border-border">
         <div class="mx-auto max-w-6xl px-6 py-20 md:py-24">
             <div class="max-w-2xl mb-12">
-                <LocalEyebrow index="02" label="Colour" />
+                <LocalEyebrow index="02" label="Color" />
                 <h2
                     class="font-display text-3xl sm:text-4xl font-semibold leading-[1.06] tracking-tight">
                     One amber, one ink
                 </h2>
                 <p class="mt-5 text-sm md:text-base text-fg-muted leading-relaxed">
                     The brand is a warm amber at hue 59 on a near-black that leans brown rather than
-                    blue. Everything else in the product is a neutral or a severity colour — the
+                    blue. Everything else in the product is a neutral or a severity color; the
                     accent is deliberately the only saturated thing on screen.
                 </p>
             </div>
 
             <div class="mb-4 text-[10px] uppercase tracking-[0.18em] text-fg-muted">
-                Artwork — hex is authoritative
+                Artwork: hex is authoritative
             </div>
             <div class="grid sm:grid-cols-3 gap-4 mb-12">
                 {
@@ -270,7 +270,7 @@ const rules = [
             </div>
 
             <div class="mb-4 text-[10px] uppercase tracking-[0.18em] text-fg-muted">
-                Interface — oklch is authoritative
+                Interface: oklch is authoritative
             </div>
             <div class="ui-tokens">
                 {
@@ -290,7 +290,7 @@ const rules = [
         </div>
     </section>
 
-    <!-- 03 — Type -->
+    <!-- 03: Type -->
     <section class="bg-bg-deep border-t border-border">
         <div class="mx-auto max-w-6xl px-6 py-20 md:py-24">
             <div class="grid lg:grid-cols-[minmax(0,380px)_1fr] gap-12 lg:gap-16 items-start">
@@ -301,8 +301,8 @@ const rules = [
                         Geist, and Geist Mono
                     </h2>
                     <p class="mt-5 text-sm md:text-base text-fg-muted leading-relaxed">
-                        Headings are Geist. Body copy is Geist Mono — that is not a mistake or a
-                        code-block rule, it is the default text face across the product. An
+                        Headings are Geist. Body copy is Geist Mono, which is the default text face
+                        across the product rather than a code-block rule. An
                         observability tool is read the way a terminal is read, and the monospace
                         keeps ids, durations, and hex digests in columns that line up.
                     </p>
@@ -331,7 +331,7 @@ const rules = [
         </div>
     </section>
 
-    <!-- 04 — Usage -->
+    <!-- 04: Usage -->
     <section class="bg-bg border-t border-border">
         <div class="mx-auto max-w-6xl px-6 py-20 md:py-24">
             <div class="max-w-2xl mb-12">
@@ -341,9 +341,8 @@ const rules = [
                     Four things not to do, two to do
                 </h2>
                 <p class="mt-5 text-sm md:text-base text-fg-muted leading-relaxed">
-                    These aren't style preferences — each one is a property the artwork actually
-                    has, and breaking it produces a logo that renders wrong rather than one we
-                    merely dislike.
+                    Each one is a property the artwork actually has. Breaking it produces a logo
+                    that renders wrong rather than one we merely dislike.
                 </p>
             </div>
 
@@ -360,7 +359,7 @@ const rules = [
             </div>
 
             <p class="mt-12 text-sm text-fg-muted leading-relaxed max-w-2xl">
-                Need something the kit doesn't cover — a partner lockup, a different ratio, or
+                Need something the kit doesn't cover, such as a partner lockup, a different ratio, or
                 permission to do one of the four things above? Email
                 <a class="text-primary hover:underline" href="mailto:hello@maple.dev">hello@maple.dev</a
                 >.
@@ -368,14 +367,14 @@ const rules = [
         </div>
     </section>
 
-    <!-- 05 — Terms -->
+    <!-- 05: Terms -->
     <section class="bg-bg-deep border-t border-border">
         <div class="mx-auto max-w-6xl px-6 py-20 md:py-24">
             <div class="max-w-2xl">
                 <LocalEyebrow index="05" label="Terms" />
                 <h2
                     class="font-display text-3xl sm:text-4xl font-semibold leading-[1.06] tracking-tight">
-                    The licence covers the code, not the name
+                    The license covers the code, and the name stays ours
                 </h2>
                 <p class="mt-5 text-sm md:text-base text-fg-muted leading-relaxed">
                     Maple's source is FSL-1.1-ALv2, and each release converts to Apache 2.0 two
@@ -405,7 +404,7 @@ const rules = [
     import { bindCopyButtons } from "../lib/copy-to-clipboard";
 
     // Three surfaces, one payload contract: every host carries `data-copy`, so
-    // the binding is the same for an SVG file and a colour value.
+    // the binding is the same for an SVG file and a color value.
     const brand = { event: "brand_asset_copied", key: "asset" } as const;
 
     bindCopyButtons({
@@ -452,7 +451,7 @@ const rules = [
         opacity: 0.62;
     }
 
-    /* --- colour swatches --- */
+    /* --- color swatches --- */
     .sw {
         border: 1px solid var(--border);
         border-radius: 10px;

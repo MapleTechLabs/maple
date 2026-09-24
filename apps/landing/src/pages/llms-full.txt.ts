@@ -1,5 +1,5 @@
 /**
- * `/llms-full.txt` — every doc concatenated into one file, in sidebar order.
+ * `/llms-full.txt`: every doc concatenated into one file, in sidebar order.
  *
  * The single-fetch counterpart to walking `/docs.md` link by link. This is what
  * `/llms.txt` points at as "the full documentation".
