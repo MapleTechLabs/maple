@@ -31,6 +31,7 @@ import {
 	OrgId,
 	type PullRequestContext,
 	type PullRequestFile,
+	PrReviewId,
 	PullRequestFileStatus,
 	type SubmitPrReviewRequest,
 	UserId,
@@ -1024,6 +1025,8 @@ export const reviewLocally = async (
 
 	const report = submitted.report
 	const publication = buildPublication({
+		// Each run is its own review, so a posted run gets a comment of its own.
+		reviewId: Schema.decodeSync(PrReviewId)(randomUUID()),
 		repositoryUrl: `https://github.com/${repository}`,
 		number: args.number,
 		headSha: pr.head.sha,
