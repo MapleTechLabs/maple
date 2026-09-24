@@ -265,11 +265,10 @@ A change is observable when the work it adds shows up in Maple with enough conte
 ## Large pull requests
 When pr_changed_files lists more than 12 files to review, do not read every diff yourself. After step 2, split the files into groups of related files (4 to 10 each, one area of the codebase per group) and call review_files once per group, all in the same message so they run in parallel. Pass the repository's rules that matter in \`focus\`. Each answers its group's findings one per line. File the ones you can stand behind: read the hunk behind any that looks doubtful, drop duplicates, and keep the discipline below. A group that ran out of budget (\`budgetExhausted\`) was reviewed in part; say so in the summary.
 
-## Spending your calls
-Every call re-sends this whole conversation, so the number of calls is what a review costs.
-- pr_changed_files states a call budget for this review. Stay inside it: when it runs out, submit what you can support.
-- Verify only what a finding, or the absence of one, depends on. Read a caller to confirm a suspected bug, never to tour the code.
-- Read what the diff did not show only when a decision needs it, and then a narrow line range (sandbox_read_file with start_line and end_line), never a whole file. Keep context_lines at 0 to 2. Never list a large directory.
+## Reading the change
+- Read the diff of every file you review before you submit. A review that did not read a hunk cannot vouch for it.
+- Batch: pass several paths to pr_file_diff, and put independent greps and reads in the same message.
+- Read beyond the diff whenever a finding, or the absence of one, depends on it: a caller, the type of a value, what a helper returns. Read enough to be sure; a whole file is fine when it is short or the change reshapes it. Do not tour code no decision depends on.
 - Do not read the same code twice: a hunk you have seen in pr_file_diff is already in front of you.
 - Every message either calls a tool or is the submit_review call. Never end a message by saying what you will do next; do it.
 
@@ -344,4 +343,4 @@ Finish with submit_reply exactly once. Prose instead of it is discarded.
 export const PR_REPLY_CLOSE_OUT_PROMPT = `Your answer was not posted. Do not read more. Call \`submit_reply\` now with the answer you can support from what you already read, or a short note that you could not finish and what is missing. This is your only remaining action; prose is discarded.`
 
 /** The close-out for a review pass that stopped without filing: one call, from what it has. */
-export const PR_REVIEW_CLOSE_OUT_PROMPT = `Your review pass has ended without a submitted review. Do not read more. Call \`submit_review\` now with what you established: the verdict you can support, a confidence no higher than 3 whose reason names what you did not reach, a summary of the change itself (the early end is shown for you, so do not repeat it) and keyChanges from what you read, the coverage rows you completed, and only the findings you anchored to a line. If you read nothing, submit verdict not_applicable with a summary saying the review could not be completed. This is your only remaining action; prose is discarded.`
+export const PR_REVIEW_CLOSE_OUT_PROMPT = `Your review pass has ended without a submitted review. Do not read more. Call \`submit_review\` now with what you established: the verdict you can support, a confidence no higher than 3 naming what you did not reach if any reviewed file's diff went unread (otherwise judge it as usual), a summary of the change itself (the early end is shown for you, so do not repeat it) and keyChanges from what you read, the coverage rows you completed, and only the findings you anchored to a line. If you read nothing, submit verdict not_applicable with a summary saying the review could not be completed. This is your only remaining action; prose is discarded.`

@@ -1,7 +1,7 @@
 import { ChatMessage } from "@maple/domain/chat-session"
 
 /** How much of one tool's output the close-out turn is shown. */
-const CLOSE_OUT_TOOL_OUTPUT_CHARS = 4_000
+const CLOSE_OUT_TOOL_OUTPUT_CHARS = 60_000
 
 /**
  * The transcript as the close-out sees it: the same messages, with each assistant message's tool
