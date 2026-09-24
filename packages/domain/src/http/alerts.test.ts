@@ -6,7 +6,6 @@ import {
 	AlertRuleUpsertRequest,
 	AlertSignalType,
 	PagerDutyAlertDestinationConfig,
-	SlackBotAlertDestinationConfig,
 	WebhookAlertDestinationConfig,
 } from "./alerts"
 
@@ -24,26 +23,6 @@ describe("AlertDestinationCreateRequest", () => {
 	// side and produces the plain wire-format object on the output side.
 	// These tests assert the encoded wire shape matches what HTTP clients
 	// see on the wire.
-	it("encodes slack bot destination instances to the plain wire shape", () => {
-		expect(
-			encode(
-				new SlackBotAlertDestinationConfig({
-					type: "slack-bot",
-					name: "Ops Slack",
-					enabled: true,
-					channelId: "C123",
-					channelName: "ops-alerts",
-				}),
-			),
-		).toEqual({
-			type: "slack-bot",
-			name: "Ops Slack",
-			enabled: true,
-			channelId: "C123",
-			channelName: "ops-alerts",
-		})
-	})
-
 	it("encodes pagerduty and webhook destination instances to the plain wire shape", () => {
 		expect(
 			encode(
@@ -85,25 +64,6 @@ describe("AlertDestinationCreateRequest", () => {
 
 	// Decode goes the other direction: plain wire-format objects in, class
 	// instances out. The union discriminates on `type`.
-	it("decodes a slack bot wire object into a SlackBotAlertDestinationConfig instance", () => {
-		const decoded = decode({
-			type: "slack-bot",
-			name: "Ops Slack",
-			enabled: true,
-			channelId: "C123",
-			channelName: "ops-alerts",
-		})
-
-		expect(decoded).toBeInstanceOf(SlackBotAlertDestinationConfig)
-		expect(decoded).toMatchObject({
-			type: "slack-bot",
-			name: "Ops Slack",
-			enabled: true,
-			channelId: "C123",
-			channelName: "ops-alerts",
-		})
-	})
-
 	it("decodes a pagerduty wire object into a PagerDutyAlertDestinationConfig instance", () => {
 		const decoded = decode({
 			type: "pagerduty",
@@ -148,12 +108,12 @@ describe("AlertDestinationCreateRequest", () => {
 		expect(Exit.isFailure(result)).toBe(true)
 	})
 
-	it("fails to decode a slack bot destination missing the required channelId", () => {
+	it("rejects the retired slack-bot destination type", () => {
 		const result = decodeExit({
 			type: "slack-bot",
 			name: "Ops Slack",
 			enabled: true,
-			channelName: "ops-alerts",
+			channelId: "C123",
 		})
 
 		expect(Exit.isFailure(result)).toBe(true)
@@ -168,12 +128,12 @@ describe("AlertNotificationTemplate", () => {
 		const decoded = decode({
 			title: "{{ rule.name }} fired",
 			body: "*Observed:* {{ observed.summary }}",
-			overrides: { slack: { body: "slack-only body" } },
+			overrides: { discord: { body: "discord-only body" } },
 		})
 		expect(decoded).toEqual({
 			title: "{{ rule.name }} fired",
 			body: "*Observed:* {{ observed.summary }}",
-			overrides: { slack: { body: "slack-only body" } },
+			overrides: { discord: { body: "discord-only body" } },
 		})
 	})
 

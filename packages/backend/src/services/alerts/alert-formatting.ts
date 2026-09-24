@@ -50,7 +50,7 @@ const round = (value: number, decimals = 2): string => {
  *
  * An ungrouped rule stores `UNGROUPED_GROUP_KEY` (`"__total__"`) as its group
  * key — a storage sentinel meaning "the whole rule", not a group anyone named.
- * It was reaching notifications verbatim, so Slack rendered a `Group` field
+ * It was reaching notifications verbatim, so chat messages showed a `Group` field
  * reading `__total__`. `issue-hub.ts` and the web alert-source card already
  * guard against it; the notification path did not.
  */

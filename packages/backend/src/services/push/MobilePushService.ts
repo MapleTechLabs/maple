@@ -25,7 +25,7 @@ import { MobileDevicesService, type MobileDevice } from "./MobileDevicesService"
 /**
  * Fans an alert event out to the phones registered in the organization.
  *
- * Independent of the rule's destinations on purpose: a rule with no Slack
+ * Independent of the rule's destinations on purpose: a rule with no chat
  * channel still reaches the people who installed the app, and a person's
  * phone follows them rather than the rule. Best-effort — every failure is a
  * log line and a metric, never an error on the scheduler tick that produced

@@ -31,7 +31,6 @@ import { HttpSessionReplaysInternalLive } from "@/routes/internal/session-replay
 import { ScraperInternalRouter } from "@/routes/v1/scraper-internal.http"
 import { HttpSessionReplaysLive } from "@/routes/v1/session-replay.http"
 import { ChatCallbackRouter } from "@/routes/v1/chat-integration.http"
-import { SlackCallbackRouter } from "@/routes/v1/slack-integration.http"
 import { VcsWebhookRouter } from "@/routes/v1/vcs-webhook.http"
 import { AutumnWebhookRouter } from "@/routes/webhooks/autumn.http"
 import { ClerkWebhookRouter } from "@/routes/webhooks/clerk.http"
@@ -47,7 +46,7 @@ import { V2TransportErrorBoundaryLive } from "@/routes/v2/error-envelope"
 import { HttpV2ErrorIssuesLive } from "@/routes/v2/error-issues.http"
 import { HttpV2IngestKeysLive } from "@/routes/v2/ingest-keys.http"
 import { HttpV2ChatIntegrationsLive } from "@/routes/v2/integrations-chat.http"
-import { HttpV2PlanetScaleIntegrationsLive, HttpV2SlackIntegrationsLive } from "@/routes/v2/integrations.http"
+import { HttpV2PlanetScaleIntegrationsLive } from "@/routes/v2/integrations.http"
 import { HttpV2InvestigationsLive } from "@/routes/v2/investigations.http"
 import { HttpV2MobileDevicesLive } from "@/routes/v2/mobile-devices.http"
 import { HttpV2OrganizationLive } from "@/routes/v2/organization.http"
@@ -149,7 +148,6 @@ const ApiV2Routes = HttpApiBuilder.layer(MapleApiV2).pipe(
 			HttpV2AlertDestinationsLive,
 			HttpV2AlertIncidentsLive,
 			HttpV2IngestKeysLive,
-			HttpV2SlackIntegrationsLive,
 			HttpV2ChatIntegrationsLive,
 			HttpV2PlanetScaleIntegrationsLive,
 			HttpV2ErrorIssuesLive,
@@ -208,7 +206,6 @@ const rawRoutes = <Routes extends Layer.Any>(
 const RawRoutes = rawRoutes(
 	Layer.mergeAll(
 		IntegrationsCallbackRouter,
-		SlackCallbackRouter,
 		ChatCallbackRouter,
 		OAuthDiscoveryRouter,
 		PlanetScaleWebhookRouter,

@@ -15,10 +15,6 @@ import type {
 	V2PlanetScaleIntegration,
 	V2PlanetScaleOrganizationList,
 	V2PlanetScaleWebhookConfig,
-	V2SlackChannelList,
-	V2SlackIntegrationStatus,
-	V2SlackInstallResponse,
-	V2SlackUninstallResponse,
 } from "@maple/domain/http/v2"
 import {
 	MapleApiV2,
@@ -41,14 +37,6 @@ import {
 } from "@maple/backend/services/auth/PlanetScaleOAuthService"
 import { PlanetScaleConnectionService } from "@maple/backend/services/integrations/PlanetScaleConnectionService"
 import { PlanetScaleService } from "@maple/backend/services/integrations/PlanetScaleService"
-import type {
-	SlackChannelList,
-	SlackInstallStatus,
-} from "@maple/backend/services/integrations/SlackIntegrationService"
-import {
-	SLACK_CALLBACK_PATH,
-	SlackIntegrationService,
-} from "@maple/backend/services/integrations/SlackIntegrationService"
 
 /**
  * Best-effort origin of the incoming request. `x-forwarded-*` is client-supplied
@@ -84,7 +72,7 @@ const parentDomain = (hostname: string): string => {
 }
 
 /**
- * Whether an origin may be used as the Slack OAuth callback origin.
+ * Whether an origin may be used as an OAuth callback origin.
  *
  * The callback URL is embedded in the authorize URL *and* persisted as
  * `oauth_auth_states.redirectUri`, then replayed as `redirect_uri` in the token
@@ -99,8 +87,8 @@ const parentDomain = (hostname: string): string => {
  *   - local dev puts them on sibling `*.localhost` hosts (portless proxy) or on
  *     loopback ports.
  *
- * Anything else fails closed; Slack's registered-redirect allowlist is then a
- * second line of defense rather than the only one.
+ * Anything else fails closed; the provider's registered-redirect allowlist is
+ * then a second line of defense rather than the only one.
  */
 export const isTrustedCallbackOrigin = (origin: string, appBaseUrl: string): boolean => {
 	const host = hostnameOf(origin)
@@ -117,19 +105,6 @@ export const isTrustedCallbackOrigin = (origin: string, appBaseUrl: string): boo
 	// Require a dot so a bare TLD (`evil.dev` vs `app.maple.dev`) never matches.
 	return parent.includes(".") && parent === parentDomain(appHost)
 }
-
-const toSlackStatus = (status: SlackInstallStatus): V2SlackIntegrationStatus => ({
-	object: "slack_integration",
-	installed: status.installed,
-	team_id: status.teamId,
-	team_name: status.teamName,
-	bot_user_id: status.botUserId,
-	installed_at: isoTimestampOrNull(status.installedAt),
-	disconnected_reason: status.disconnectedReason,
-	disconnected_team_name: status.disconnectedTeamName,
-	disconnected_at: isoTimestampOrNull(status.disconnectedAt),
-	missing_scopes: status.missingScopes,
-})
 
 const toPlanetScaleStatus = (status: PlanetScaleIntegrationStatus): V2PlanetScaleIntegration => ({
 	object: "planetscale_integration",
@@ -222,95 +197,6 @@ const resolveWindow = (startTime: string, endTime: string) => {
 		endMs: Math.max(Math.ceil(endMs / MINUTE) * MINUTE, alignedStart + MINUTE),
 	})
 }
-
-const toChannelList = (list: SlackChannelList): V2SlackChannelList => ({
-	object: "slack_integration.channel_list",
-	channels: Arr.map(list.channels, (channel) => ({
-		id: channel.id,
-		name: channel.name,
-		is_private: channel.isPrivate,
-		is_member: channel.isMember,
-	})),
-	truncated: list.truncated,
-})
-
-export const HttpV2SlackIntegrationsLive = HttpApiBuilder.group(MapleApiV2, "slackIntegration", (handlers) =>
-	Effect.gen(function* () {
-		const slack = yield* SlackIntegrationService
-		const env = yield* Env
-
-		return handlers
-			.handle("status", () =>
-				Effect.gen(function* () {
-					const tenant = yield* CurrentTenant.Context
-					const status = yield* slack
-						.getStatus(tenant.orgId)
-						.pipe(tapHttpErrors("Slack integration status failed"))
-					return toSlackStatus(status)
-				}),
-			)
-			.handle("install", () =>
-				Effect.gen(function* () {
-					const tenant = yield* CurrentTenant.Context
-					yield* requireAdmin(tenant.roles, () =>
-						V2InsufficientPermissions.make("Only org admins can install the Slack app"),
-					)
-					const req = yield* HttpServerRequest.HttpServerRequest
-					const origin = resolveRequestOrigin(req)
-					if (!isTrustedCallbackOrigin(origin, env.MAPLE_APP_BASE_URL)) {
-						yield* Effect.logError("Rejected Slack install: untrusted callback origin", {
-							origin,
-						})
-						return yield* Effect.fail(
-							V2CallbackHostUnavailable.make("Slack installs are not available from this host"),
-						)
-					}
-					const callbackUrl = `${origin}${SLACK_CALLBACK_PATH}`
-					const result = yield* slack
-						.startInstall(tenant.orgId, tenant.userId, callbackUrl)
-						.pipe(tapHttpErrors("Slack install failed"))
-					yield* recordHttpAudit("slack_integration.install_started")
-					return {
-						object: "slack_integration.install" as const,
-						url: result.url,
-					} satisfies V2SlackInstallResponse
-				}),
-			)
-			.handle("uninstall", () =>
-				Effect.gen(function* () {
-					const tenant = yield* CurrentTenant.Context
-					yield* requireAdmin(tenant.roles, () =>
-						V2InsufficientPermissions.make("Only org admins can uninstall the Slack app"),
-					)
-					yield* slack
-						.uninstall(tenant.orgId)
-						.pipe(tapHttpErrors("Slack integration uninstall failed"))
-					yield* recordHttpAudit("slack_integration.uninstalled")
-					return {
-						object: "slack_integration" as const,
-						installed: false as const,
-					} satisfies V2SlackUninstallResponse
-				}),
-			)
-			.handle("channels", () =>
-				Effect.gen(function* () {
-					const tenant = yield* CurrentTenant.Context
-					// Admin-gated like install/uninstall: the list leaks the workspace's
-					// channel inventory, including *private* channels the bot has been
-					// invited to, which is not something every org member should be able
-					// to enumerate. `status` deliberately stays ungated — the Slack
-					// integration card renders install state for everyone.
-					yield* requireAdmin(tenant.roles, () =>
-						V2InsufficientPermissions.make("Only org admins can list Slack channels"),
-					)
-					const list = yield* slack
-						.listChannels(tenant.orgId)
-						.pipe(tapHttpErrors("Slack channel list failed"))
-					return toChannelList(list)
-				}),
-			)
-	}),
-)
 
 export const HttpV2PlanetScaleIntegrationsLive = HttpApiBuilder.group(
 	MapleApiV2,

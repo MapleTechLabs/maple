@@ -21,7 +21,6 @@ describe("AlertReadModelsService boundary", () => {
 			"Env",
 			"OrgClickHouseSettingsService",
 			"QueryEngineService",
-			"SlackBotTokenResolver",
 		]) {
 			expect(imports.some((specifier) => specifier.endsWith(`/${forbidden}`))).toBe(false)
 		}

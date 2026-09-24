@@ -2,7 +2,7 @@
  * Built-in default notification templates.
  *
  * These approximate Maple's designed notification format (lead sentence +
- * compact facts — see buildSlackBlocks) using the `{{ variable }}` grammar.
+ * compact facts — see buildSummaryLine) using the `{{ variable }}` grammar.
  * They seed the rule editor, power the live preview, and fill whichever field
  * (title/body) a partially-customized template leaves unset. NOTE: at dispatch
  * time, a rule with NO custom template at all takes the hardcoded designed

@@ -8,7 +8,7 @@ import { isTrustedCallbackOrigin, resolveRequestOrigin } from "./integrations.ht
  */
 const fakeRequest = (
 	headers: Record<string, string | undefined>,
-	url = "/v2/integrations/slack/install",
+	url = "/v2/integrations/planetscale/connect",
 ): HttpServerRequest.HttpServerRequest => ({ headers, url }) as HttpServerRequest.HttpServerRequest
 
 /**
@@ -68,19 +68,19 @@ describe("resolveRequestOrigin (untrusted — reflects client-controlled headers
 
 	it("falls back to parsing an absolute request url when no host headers exist", () => {
 		const origin = resolveRequestOrigin(
-			fakeRequest({}, "https://api.example.com:8443/v2/integrations/slack"),
+			fakeRequest({}, "https://api.example.com:8443/v2/integrations/planetscale"),
 		)
 		assert.strictEqual(origin, "https://api.example.com:8443")
 	})
 
 	it("returns an empty origin when no host is known and the url is relative", () => {
-		const origin = resolveRequestOrigin(fakeRequest({}, "/v2/integrations/slack/install"))
+		const origin = resolveRequestOrigin(fakeRequest({}, "/v2/integrations/planetscale/connect"))
 		assert.strictEqual(origin, "")
 	})
 })
 
 /**
- * The security boundary for the Slack OAuth callback origin. The resolved origin
+ * The security boundary for an OAuth callback origin. The resolved origin
  * is embedded in the authorize URL, persisted as `oauth_auth_states.redirectUri`
  * and replayed as `redirect_uri` in the token exchange, so an attacker-chosen
  * host would mint an authorize URL pointing at their own callback. Only hosts in

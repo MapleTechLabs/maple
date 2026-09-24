@@ -29,7 +29,7 @@ export interface TrackTokenUsageOptions {
 	readonly inputTokens: number
 	readonly outputTokens: number
 	readonly idempotencyKey: string
-	readonly source: "triage" | "review" | "slack" | "chat" | "bot"
+	readonly source: "triage" | "review" | "chat" | "bot"
 }
 
 interface TrackEvent {

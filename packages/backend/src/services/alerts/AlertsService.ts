@@ -111,7 +111,6 @@ import { WarehouseQueryService } from "@maple/backend/services/warehouse/Warehou
 import { chartImageUrl, chartWindow, loadChartSeries } from "./alert-chart-series"
 import { systemTenant } from "./system-tenant"
 import type { AlertChecksRow } from "@maple/domain/tinybird"
-import { SlackBotTokenResolver } from "@maple/backend/services/integrations/slack-bot-token"
 import { ChatAlertPoster } from "./ChatAlertPoster"
 
 import { MobilePushService, type ResolvedAfterHold } from "@maple/backend/services/push/MobilePushService"
@@ -404,7 +403,6 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 			const runtime = yield* AlertRuntime
 			const email = yield* EmailService
 			const orgChSettings = yield* OrgClickHouseSettingsService
-			const slackBotToken = yield* SlackBotTokenResolver
 			const chatAlertPoster = yield* ChatAlertPoster
 			const mobilePush = yield* MobilePushService
 			const encryptionKey = yield* parseAlertDestinationEncryptionKey(
@@ -415,7 +413,6 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 				appBaseUrl: env.MAPLE_APP_BASE_URL,
 				runtime,
 				email,
-				resolveSlackBotToken: slackBotToken.resolve,
 				postChatAlert: chatAlertPoster.post,
 			})
 			const {
@@ -781,7 +778,7 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 					resolvedAfterHold: ResolvedAfterHold | null = null,
 				) {
 					// Phones first, and regardless of destinations: push is per person,
-					// not per rule, and a rule with no Slack channel still has people
+					// not per rule, and a rule with no chat channel still has people
 					// who installed the app. Best-effort by contract — it never fails
 					// the tick.
 					const linkUrl = resolveNotificationLinkUrl(rule, incident.groupKey)
@@ -3519,7 +3516,6 @@ export class AlertsService extends Context.Service<AlertsService, AlertsServiceA
 	static readonly layer = Layer.effect(this, this.make).pipe(
 		Layer.provide(
 			Layer.mergeAll(
-				SlackBotTokenResolver.layer,
 				ChatAlertPoster.layer,
 				MobilePushService.layer,
 				OrgClickHouseSettingsService.layer,

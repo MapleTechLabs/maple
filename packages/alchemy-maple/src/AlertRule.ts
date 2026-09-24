@@ -87,7 +87,7 @@ export type AlertRule = Resource<
  *
  * @example
  * ```typescript
- * const slack = yield* Maple.AlertDestination("oncall", { ... })
+ * const oncall = yield* Maple.AlertDestination("oncall", { ... })
  * yield* Maple.AlertRule("checkout-errors", {
  *   name: "Checkout error rate",
  *   severity: "critical",
@@ -95,7 +95,7 @@ export type AlertRule = Resource<
  *   comparator: "gt",
  *   threshold: 0.05,
  *   window_minutes: 5,
- *   destination_ids: [slack.destinationId],
+ *   destination_ids: [oncall.destinationId],
  * })
  * ```
  */

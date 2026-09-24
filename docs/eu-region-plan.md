@@ -42,7 +42,7 @@ there is no per-org routing anywhere, because each instance knows exactly one re
 | Maple self-telemetry | US internal org | EU internal org, in `maple_eu` |
 | Repository sandbox (`apps/sandbox`) | prd Worker, US | per instance, EU Worker |
 | Landing, billing | shared | shared, no customer data |
-| GitHub App, Slack app | US apps | EU apps of their own, see Phase 0 step 8 |
+| GitHub App, chat connector apps | US apps | EU apps of their own, see Phase 0 step 8 |
 | OAuth clients (Cloudflare, PlanetScale, Hazel) | US redirect URIs | same clients, EU redirect URIs added |
 | Scraper (Railway) | US service | EU service of its own |
 
@@ -108,11 +108,6 @@ across regions because there is no routing.
           `https://api.eu.maple.dev/api/integrations/github/callback`, then replace all six
           `GITHUB_APP_*` values in `prod-eu`. A repository can then be installed on both Apps, one
           per instance, which is the point.
-        - **Slack app.** Alert delivery needs only redirect URLs, but an EU app keeps the
-          install's credentials in the EU instance. An EU app with no event subscription (AI is
-          off there) keeps alert delivery and nothing else; redirect
-          `https://api.eu.maple.dev/oauth/slack/callback`, new `SLACK_CLIENT_ID`/`SECRET` in
-          `prod-eu`.
         - **Discord** (not configured on `prod-eu` yet). The install is the bot invite, and a bot
           token opens a Gateway session that receives every mention, so a shared application would
           have both instances answer. Create an EU application, register
@@ -124,7 +119,7 @@ across regions because there is no routing.
       EU Railway region with `MAPLE_API_URL=https://api.eu.maple.dev`,
       `MAPLE_INGEST_URL=https://ingest.eu.maple.dev` and `prod-eu`'s `SD_INTERNAL_TOKEN`.
 
-    Until the EU GitHub and Slack apps exist, remove their keys from `prod-eu`: connecting then fails
+    Until the EU GitHub App exists, remove its keys from `prod-eu`: connecting then fails
     up front with "not configured" instead of sending the user through a flow that cannot finish.
 
 ## Phase 1. The stack honours the region on Cloudflare (built)
