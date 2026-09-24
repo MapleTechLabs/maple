@@ -72,8 +72,8 @@ Bundled, minified and gzipped, as your bundler would ship it:
 
 |                  | gzipped | what it is                                                |
 | ---------------- | ------- | --------------------------------------------------------- |
-| **eager**        | ~32 kB  | every page load, before any sampling decision             |
-| ↳ our code alone | ~3.5 kB | the marginal cost if your app already ships OpenTelemetry |
+| **eager**        | ~36 kB  | every page load, before any sampling decision             |
+| ↳ our code alone | ~13 kB  | the marginal cost if your app already ships OpenTelemetry |
 | **lazy**         | ~61 kB  | rrweb — downloaded only by sessions sampled into replay   |
 
 The eager figure is ~90% OpenTelemetry. If your app already uses the OTel web

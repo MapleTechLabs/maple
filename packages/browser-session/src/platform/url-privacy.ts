@@ -14,7 +14,7 @@ export type UrlSanitizer = (url: string) => string
 const REDACTED = "REDACTED"
 
 const SENSITIVE_PARAM =
-	/^(access_token|id_token|refresh_token|token|auth|authorization|code|state|password|passwd|pwd|pass|secret|client_secret|api_key|apikey|key|signature|sig|otp|jwt|session|sessionid|session_id|ticket|__clerk_ticket|reset_token|magic|nonce)$/i
+	/^(access_token|id_token|refresh_token|token|token_hash|auth|authorization|code|oobcode|state|password|passwd|pwd|pass|secret|client_secret|api_key|apikey|key|signature|sig|otp|jwt|session|sessionid|session_id|ticket|__clerk_ticket|reset_token|magic|nonce|x-amz-signature|x-amz-credential|x-amz-security-token|x-goog-signature|x-goog-credential)$/i
 
 /** Sanitizers live on `globalThis`, like consent: one page, one policy, however many SDK copies. */
 const SANITIZERS_KEY = "__MAPLE_URL_SANITIZERS__"
@@ -51,6 +51,23 @@ function redactParams(params: URLSearchParams): boolean {
 	return changed
 }
 
+/**
+ * Implicit-flow tokens ride the fragment as `#access_token=…&…`; a hash-routed
+ * app carries them in the route's own query, `#/reset?token=…`. The route path
+ * is kept either way.
+ */
+function redactFragment(fragment: string): string {
+	if (fragment.startsWith("/") || fragment.startsWith("!/")) {
+		const queryAt = fragment.indexOf("?")
+		if (queryAt === -1) return fragment
+		const params = new URLSearchParams(fragment.slice(queryAt + 1))
+		return redactParams(params) ? `${fragment.slice(0, queryAt)}?${params.toString()}` : fragment
+	}
+	if (!fragment.includes("=")) return fragment
+	const params = new URLSearchParams(fragment)
+	return redactParams(params) ? params.toString() : fragment
+}
+
 const ABSOLUTE = /^[a-z][a-z0-9+.-]*:/i
 const RELATIVE_BASE = "http://relative.invalid"
 
@@ -65,18 +82,16 @@ export function redactUrl(url: string): string {
 		return url
 	}
 	let changed = redactParams(parsed.searchParams)
-	// Implicit-flow tokens ride the fragment as `#access_token=…&…`. A hash
-	// route (`#/settings`) has no `=` before its path and is left alone.
 	const fragment = parsed.hash.slice(1)
-	if (fragment.includes("=") && !fragment.startsWith("/")) {
-		const params = new URLSearchParams(fragment)
-		if (redactParams(params)) {
-			parsed.hash = params.toString()
-			changed = true
-		}
+	const redactedFragment = redactFragment(fragment)
+	if (redactedFragment !== fragment) {
+		parsed.hash = redactedFragment
+		changed = true
 	}
 	if (!changed) return url
 	if (absolute) return parsed.href
+	// Protocol-relative (`//cdn.example.com/a`): keep the host, drop the base's scheme.
+	if (url.startsWith("//")) return parsed.href.slice(parsed.protocol.length)
 	const tail = `${parsed.pathname}${parsed.search}${parsed.hash}`
 	return url.startsWith("/") ? tail : tail.replace(/^\//, "")
 }

@@ -45,19 +45,20 @@ const asError = (value: unknown): Error => {
  */
 let reported = new WeakSet<object>()
 
-/** Whether `error` was already reported; marks it reported either way. */
-const alreadyReported = (error: unknown): boolean => {
-	if (typeof error !== "object" || error === null) return false
-	if (reported.has(error)) return true
-	reported.add(error)
-	return false
-}
+/** Whether this exact error object was already recorded. */
+const alreadyReported = (error: unknown): boolean =>
+	typeof error === "object" && error !== null && reported.has(error)
 
 /** Test seam. */
 export function resetReportedErrorsForTests(): void {
 	reported = new WeakSet()
 }
 
+/**
+ * Record `error` on a one-off span. The error is claimed only when the span is
+ * recording: before `init()` the tracer is a no-op, and claiming it then would
+ * swallow the same error reported again once tracing is live.
+ */
 function recordException(error: unknown, options: CaptureExceptionOptions): void {
 	const normalized = asError(error)
 	const span = mapleTracer(SDK_NAME, SDK_VERSION).startSpan(options.name ?? "exception", {
@@ -67,6 +68,7 @@ function recordException(error: unknown, options: CaptureExceptionOptions): void
 			...options.attributes,
 		},
 	})
+	if (span.isRecording() && typeof error === "object" && error !== null) reported.add(error)
 	span.recordException(normalized)
 	span.setStatus({ code: SpanStatusCode.ERROR, message: normalized.message })
 	span.end()

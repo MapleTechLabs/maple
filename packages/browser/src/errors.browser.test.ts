@@ -2,7 +2,7 @@ import { assert, beforeEach, describe, it } from "vitest"
 import { SpanStatusCode, trace } from "@opentelemetry/api"
 import { BasicTracerProvider, InMemorySpanExporter, SimpleSpanProcessor } from "@opentelemetry/sdk-trace-base"
 import type { ReadableSpan } from "@opentelemetry/sdk-trace-base"
-import { captureException, setupErrorCapture } from "./errors"
+import { captureException, resetReportedErrorsForTests, setupErrorCapture } from "./errors"
 
 const exporter = new InMemorySpanExporter()
 
@@ -49,6 +49,17 @@ describe("captureException", () => {
 		captureException(error)
 		window.dispatchEvent(new ErrorEvent("error", { error, message: error.message }))
 		stop()
+
+		assert.strictEqual(exporter.getFinishedSpans().length, 1)
+	})
+
+	it("still records an error reported before tracing was live", () => {
+		resetReportedErrorsForTests()
+		const error = new Error("early")
+		trace.disable()
+		captureException(error)
+		trace.setGlobalTracerProvider(provider)
+		captureException(error)
 
 		assert.strictEqual(exporter.getFinishedSpans().length, 1)
 	})

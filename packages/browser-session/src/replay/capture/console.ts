@@ -4,6 +4,8 @@ const LEVELS = ["log", "info", "warn", "error", "debug"] as const
 type Level = (typeof LEVELS)[number]
 
 const MAX_MESSAGE = 2_000
+/** No array logged into a 2,000-character message needs more elements than this. */
+const MAX_ARRAY_ELEMENTS = 100
 
 /**
  * Capture `console.*` calls as session events. Wraps each method, emits a
@@ -58,6 +60,11 @@ function boundedStringify(value: unknown, budget: number): string | undefined {
 	return JSON.stringify(value, (key, nested: unknown) => {
 		if (used > budget) return undefined
 		used += key.length + (typeof nested === "string" ? nested.length : 4)
+		// An array is walked index by index even when every element is skipped,
+		// so a million-element array is cut down before it is visited.
+		if (Array.isArray(nested) && nested.length > MAX_ARRAY_ELEMENTS) {
+			return nested.slice(0, MAX_ARRAY_ELEMENTS)
+		}
 		return nested
 	})
 }

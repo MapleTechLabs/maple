@@ -14,7 +14,27 @@ describe("redactUrl", () => {
 		expect(redactUrl("https://app.test/cb#access_token=abc&expires_in=3600")).toBe(
 			"https://app.test/cb#access_token=REDACTED&expires_in=3600",
 		)
-		expect(redactUrl("https://app.test/#/settings?token=x")).toBe("https://app.test/#/settings?token=x")
+		expect(redactUrl("https://app.test/#/settings")).toBe("https://app.test/#/settings")
+		expect(redactUrl("https://app.test/#/reset?token=x&tab=2")).toBe(
+			"https://app.test/#/reset?token=REDACTED&tab=2",
+		)
+		expect(redactUrl("https://app.test/#!/cb?code=x")).toBe("https://app.test/#!/cb?code=REDACTED")
+	})
+
+	it("covers provider reset links and presigned URLs", () => {
+		expect(redactUrl("https://app.test/auth?mode=resetPassword&oobCode=abc")).toBe(
+			"https://app.test/auth?mode=resetPassword&oobCode=REDACTED",
+		)
+		expect(redactUrl("https://app.test/confirm?token_hash=abc")).toBe(
+			"https://app.test/confirm?token_hash=REDACTED",
+		)
+		expect(redactUrl("https://b.s3.test/o?X-Amz-Signature=abc&X-Amz-Expires=60")).toBe(
+			"https://b.s3.test/o?X-Amz-Signature=REDACTED&X-Amz-Expires=60",
+		)
+	})
+
+	it("keeps the host of a protocol-relative URL", () => {
+		expect(redactUrl("//cdn.example.com/a?token=x")).toBe("//cdn.example.com/a?token=REDACTED")
 	})
 
 	it("keeps relative URLs relative", () => {

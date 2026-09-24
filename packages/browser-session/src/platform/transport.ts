@@ -118,22 +118,29 @@ function byteLength(body: string | Uint8Array): number {
 
 /**
  * POST to ingest, spending the shared keepalive budget when `keepalive` is
- * requested. Rejects exactly as `fetch` does; callers own the error policy.
+ * requested. Resolves with the status only: the response body is cancelled
+ * before the reservation is released, because the browser counts a keepalive
+ * request against the page-wide limit until its response body ends, not
+ * until headers arrive. Rejects exactly as `fetch` does; callers own the
+ * error policy.
  */
 export async function postToIngest(
 	url: string,
 	headers: Record<string, string>,
 	body: string | Uint8Array,
 	keepalive: boolean,
-): Promise<Response> {
+): Promise<{ readonly ok: boolean; readonly status: number }> {
 	const release = reserveKeepalive(keepalive, byteLength(body))
 	try {
-		return await fetch(url, {
+		const response = await fetch(url, {
 			method: "POST",
 			headers,
 			body: body as BodyInit,
 			keepalive: release !== undefined,
 		})
+		// Nothing reads ingest's body; ending it here is what ends the request.
+		await response.body?.cancel().catch(() => {})
+		return { ok: response.ok, status: response.status }
 	} finally {
 		release?.()
 	}

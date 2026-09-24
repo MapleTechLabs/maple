@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import {
 	gzip,
+	postToIngest,
 	reserveKeepalive,
 	resetKeepaliveBudgetForTests,
 	postSessionBlob,
@@ -45,6 +46,25 @@ describe("reserveKeepalive", () => {
 
 	it("never turns keepalive on for a caller that didn't ask", () => {
 		expect(reserveKeepalive(false, 1)).toBeUndefined()
+	})
+
+	it("ends a still-open response body before releasing the reservation", async () => {
+		let cancelled = false
+		const body = new ReadableStream({
+			cancel() {
+				cancelled = true
+			},
+		})
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(async () => new Response(body, { status: 202 })),
+		)
+		const result = await postToIngest("https://ingest.test/x", {}, "x".repeat(40 * 1024), true)
+		expect(result.ok).toBe(true)
+		expect(cancelled).toBe(true)
+		// Released once the body ended, so the next unload write gets the whole budget.
+		expect(reserveKeepalive(true, 40 * 1024)).toBeTypeOf("function")
+		vi.unstubAllGlobals()
 	})
 })
 

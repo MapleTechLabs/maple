@@ -556,6 +556,13 @@ export function nextMetaVersion(): number {
 	return version
 }
 
+/** A uniform draw in [0, 1) from Web Crypto, the same source session ids use. */
+function uniformRandom(): number {
+	const values = new Uint32Array(1)
+	crypto.getRandomValues(values)
+	return (values[0] ?? 0) / 0x1_0000_0000
+}
+
 /**
  * This session's replay sampling decision, rolled against `sampleRate` the
  * first time it is asked and then persisted, so every page load of the session
@@ -564,7 +571,7 @@ export function nextMetaVersion(): number {
 export function claimReplaySample(sampleRate: number): boolean {
 	const record = readRecord() ?? getSession()
 	if (record.replaySampled !== undefined) return record.replaySampled
-	const sampled = Math.random() < sampleRate
+	const sampled = uniformRandom() < sampleRate
 	writeRecord({ ...record, replaySampled: sampled })
 	return sampled
 }

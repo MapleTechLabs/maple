@@ -54,6 +54,13 @@ export function ingestEndpointForRegion(region: unknown): string {
 	return INGEST_ENDPOINTS[DEFAULT_MAPLE_REGION]
 }
 
+/** Loop rather than `/\/+$/`: that pattern backtracks polynomially on a long run of slashes. */
+function trimTrailingSlashes(value: string): string {
+	let end = value.length
+	while (end > 0 && value.charCodeAt(end - 1) === 47) end--
+	return value.slice(0, end)
+}
+
 /**
  * Resolve the ingest base URL. An explicit URL always beats a region, whichever
  * source each came from, so a collector or proxy endpoint is never bypassed by
@@ -65,7 +72,7 @@ export function resolveIngestEndpoint(options: {
 	readonly regions: ReadonlyArray<unknown>
 }): string {
 	for (const endpoint of options.endpoints) {
-		if (endpoint) return endpoint.replace(/\/+$/, "")
+		if (endpoint) return trimTrailingSlashes(endpoint)
 	}
 	const region = options.regions.find((value) => value !== undefined && value !== null && value !== "")
 	return ingestEndpointForRegion(region)
