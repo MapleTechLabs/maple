@@ -1,4 +1,4 @@
-import { Schema } from "effect"
+import { Option, Schema } from "effect"
 import { OrgId } from "../primitives"
 import { HttpTaggedError } from "./error-policy"
 import { GitCommitSha, VcsRepositoryId } from "./vcs"
@@ -143,7 +143,7 @@ export class PrReviewRepositoryConfig extends Schema.Class<PrReviewRepositoryCon
 	/** The lowest severity posted inline; the summary always carries every finding. */
 	minInlineSeverity: Schema.optionalKey(PrReviewSeverity),
 	reviewDrafts: Schema.optionalKey(Schema.Boolean),
-	/** Reviews this repository may start per UTC day; the organization's ceiling still applies. */
+	/** Reviews this repository may start per UTC day. */
 	dailyLimit: Schema.optionalKey(Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 500 }))),
 	/**
 	 * Whose votes decide which findings are suppressed before posting: every repository of the
@@ -171,6 +171,8 @@ export class PrReviewReport extends Schema.Class<PrReviewReport>("PrReviewReport
 /** Models quote numbers and booleans (`"12"`, `"true"`) and send `null` for a field they skip; a strict decode here ends the run. */
 const LenientNumber = Schema.Union([Schema.Number, Schema.String])
 const LenientBoolean = Schema.Union([Schema.Boolean, Schema.String])
+/** A list sent as its JSON text: the kept string is parsed by the normalizer, not rejected here. */
+const LenientArray = <S extends Schema.Top>(item: S) => Schema.Union([Schema.Array(item), Schema.String])
 
 export const PrReviewFindingSubmission = Schema.Struct({
 	path: Schema.optionalKey(Schema.NullOr(Schema.String)),
@@ -195,11 +197,11 @@ export const PrReviewCoverageSubmission = Schema.Struct({
 
 export const PrReviewSubmission = Schema.Struct({
 	/** Handles of earlier open findings this head fixes, as the kickoff listed them. */
-	resolved: Schema.optionalKey(Schema.NullOr(Schema.Array(Schema.String))),
+	resolved: Schema.optionalKey(Schema.NullOr(LenientArray(Schema.String))),
 	verdict: Schema.optionalKey(Schema.NullOr(Schema.Union([PrReviewVerdict, Schema.String]))),
 	summary: Schema.optionalKey(Schema.NullOr(Schema.String)),
-	coverage: Schema.optionalKey(Schema.NullOr(Schema.Array(PrReviewCoverageSubmission))),
-	findings: Schema.optionalKey(Schema.NullOr(Schema.Array(PrReviewFindingSubmission))),
+	coverage: Schema.optionalKey(Schema.NullOr(LenientArray(PrReviewCoverageSubmission))),
+	findings: Schema.optionalKey(Schema.NullOr(LenientArray(PrReviewFindingSubmission))),
 })
 export type PrReviewSubmission = Schema.Schema.Type<typeof PrReviewSubmission>
 
@@ -222,6 +224,17 @@ const toNumber = (value: number | string | null | undefined): number | undefined
 
 const toBoolean = (value: boolean | string | null | undefined): boolean =>
 	typeof value === "string" ? value.trim().toLowerCase() === "true" : value === true
+
+const decodeFindings = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Array(PrReviewFindingSubmission)))
+const decodeCoverage = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Array(PrReviewCoverageSubmission)))
+const decodeHandles = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Array(Schema.String)))
+
+/** A lenient list as its items; JSON text that is not a list of them reads as empty. */
+const listOf = <A>(
+	value: ReadonlyArray<A> | string | null | undefined,
+	decode: (text: string) => Option.Option<ReadonlyArray<A>>,
+): ReadonlyArray<A> =>
+	typeof value === "string" ? Option.getOrElse(decode(value), () => []) : (value ?? [])
 
 const clip = (value: string, max = MAX_TEXT) => (value.length > max ? `${value.slice(0, max)}…` : value)
 
@@ -248,7 +261,7 @@ export const normalizePrReviewSubmission = (submission: PrReviewSubmission): Nor
 	const filled = Object.entries(submission)
 		.filter(([, value]) => value !== undefined)
 		.map(([key]) => key)
-	const rawFindings = submission.findings ?? []
+	const rawFindings = listOf(submission.findings, decodeFindings)
 	const findings: Array<PrReviewFinding> = []
 	for (const raw of rawFindings) {
 		const path = raw.path?.trim()
@@ -289,7 +302,7 @@ export const normalizePrReviewSubmission = (submission: PrReviewSubmission): Nor
 		if (findings.length >= MAX_FINDINGS) break
 	}
 	const coverage: Array<PrReviewCoverageUnit> = []
-	for (const raw of submission.coverage ?? []) {
+	for (const raw of listOf(submission.coverage, decodeCoverage)) {
 		const unit = raw.unit?.trim()
 		if (!unit) continue
 		coverage.push(
@@ -322,7 +335,7 @@ export const normalizePrReviewSubmission = (submission: PrReviewSubmission): Nor
 		droppedFindings: rawFindings.length - findings.length,
 		resolved: [
 			...new Set(
-				(submission.resolved ?? [])
+				listOf(submission.resolved, decodeHandles)
 					.map((handle) => handle.trim().toUpperCase())
 					.filter((handle) => /^F\d{1,4}$/.test(handle)),
 			),
