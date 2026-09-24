@@ -19,14 +19,6 @@ const customer = {
 				overageLimit: 75,
 			},
 		],
-		usageAlerts: [
-			{
-				featureId: "metrics",
-				enabled: true,
-				threshold: 85,
-				thresholdType: "usage_percentage",
-			},
-		],
 	},
 } as BillingCustomer
 
@@ -35,23 +27,13 @@ describe("updateFeatureControls", () => {
 	// class identity: a plain literal dies with "Expected UpdateBillingControlsRequest"
 	// before any request goes out, and tsc can't see it.
 	it("returns a payload the endpoint encoder accepts", () => {
-		const next = updateFeatureControls({
-			customer,
-			featureId: "logs",
-			overageLimit: 250,
-			alertPercent: 80,
-		})
+		const next = updateFeatureControls({ featureId: "logs", overageLimit: 250 })
 
 		expect(() => Schema.encodeUnknownSync(UpdateBillingControlsRequest)(next)).not.toThrow()
 	})
 
-	it("upserts only the selected feature so unrelated Autumn controls stay untouched", () => {
-		const next = updateFeatureControls({
-			customer,
-			featureId: "logs",
-			overageLimit: 250,
-			alertPercent: 80,
-		})
+	it("upserts only the selected feature so unrelated caps stay untouched", () => {
+		const next = updateFeatureControls({ featureId: "logs", overageLimit: 250 })
 
 		expect(next.spendLimits).toEqual([
 			{
@@ -61,36 +43,17 @@ describe("updateFeatureControls", () => {
 				overageLimit: 250,
 			},
 		])
-		expect(next.usageAlerts).toEqual([
-			{
-				featureId: "logs",
-				enabled: true,
-				threshold: 80,
-				thresholdType: "usage_percentage",
-				name: "Maple billing warning",
-			},
-		])
 		expect(next.spendLimits[0]).not.toHaveProperty("skipOverageBilling")
+		// A usage alert is delivered to Maple's own webhook endpoint, so the UI
+		// never writes one; an empty list upserts nothing.
+		expect(next.usageAlerts).toEqual([])
 	})
 
-	it("explicitly disables controls when their fields are cleared", () => {
-		const next = updateFeatureControls({
-			customer,
-			featureId: "logs",
-			overageLimit: null,
-			alertPercent: null,
-		})
+	it("explicitly disables the cap when the field is cleared", () => {
+		const next = updateFeatureControls({ featureId: "logs", overageLimit: null })
 
 		expect(next.spendLimits).toEqual([{ featureId: "logs", enabled: false }])
-		expect(next.usageAlerts).toEqual([
-			{
-				featureId: "logs",
-				enabled: false,
-				threshold: 80,
-				thresholdType: "usage_percentage",
-				name: "Maple billing warning",
-			},
-		])
+		expect(next.usageAlerts).toEqual([])
 	})
 })
 

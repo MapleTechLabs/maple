@@ -3,8 +3,9 @@ import * as Option from "effect/Option"
 import * as Redacted from "effect/Redacted"
 import * as Schema from "effect/Schema"
 import { optionalString } from "./config-helpers.ts"
-import type { MapleStage } from "./cloudflare/stage.ts"
+import type { MapleDomains, MapleStage } from "./cloudflare/stage.ts"
 import { resolveDeploymentEnvironment } from "./cloudflare/stage.ts"
+import { DEFAULT_MAPLE_REGION, type MapleRegion } from "./region.ts"
 
 /**
  * Deploy-time environment for the Cloudflare workers.
@@ -173,12 +174,17 @@ export const ingestKeyCryptoEnv: Config.Config<WorkerEnv> = merge(
 	requireSecretEntry("MAPLE_INGEST_KEY_LOOKUP_HMAC_KEY"),
 )
 
-/** Public URLs the workers build links with (emails, share links, quick-start snippets). */
-export const appUrlsEnv: Config.Config<WorkerEnv> = merge(
-	plainWithDefault("MAPLE_INGEST_PUBLIC_URL", "https://ingest.maple.dev"),
-	plainWithDefault("MAPLE_APP_BASE_URL", "https://app.maple.dev"),
-	plainWithDefault("EMAIL_FROM", "Maple <notifications@noreply.maple.dev>"),
-)
+/**
+ * Public URLs the workers build links with (emails, share links, quick-start
+ * snippets). Defaults follow the deploy's own hostnames, so the EU instance
+ * links to itself; a dev stage has none and falls back to production's.
+ */
+export const appUrlsEnv = (domains: MapleDomains = {}): Config.Config<WorkerEnv> =>
+	merge(
+		plainWithDefault("MAPLE_INGEST_PUBLIC_URL", `https://${domains.ingest ?? "ingest.maple.dev"}`),
+		plainWithDefault("MAPLE_APP_BASE_URL", `https://${domains.web ?? "app.maple.dev"}`),
+		plainWithDefault("EMAIL_FROM", "Maple <notifications@noreply.maple.dev>"),
+	)
 
 /**
  * The worker's own OTLP export, through the ingest gateway.
@@ -190,7 +196,10 @@ export const appUrlsEnv: Config.Config<WorkerEnv> = merge(
  * missing binding quietly restores the behaviour where any occurrence reopens a
  * fixed issue.
  */
-export const selfObservabilityEnv = (stage: MapleStage): Config.Config<WorkerEnv> =>
+export const selfObservabilityEnv = (
+	stage: MapleStage,
+	region: MapleRegion = DEFAULT_MAPLE_REGION,
+): Config.Config<WorkerEnv> =>
 	merge(
 		// Bound under a different name than it is read from. Optional on dev stages
 		// only: no developer has a real ingest key, and absent means self-observability off.
@@ -207,6 +216,14 @@ export const selfObservabilityEnv = (stage: MapleStage): Config.Config<WorkerEnv
 				),
 		optionalPlain("MAPLE_ENDPOINT"),
 		derived("MAPLE_ENVIRONMENT", resolveDeploymentEnvironment(stage)),
+		// The instance a Worker runs in. Read where a Durable Object stub is
+		// addressed (`chatSessionStub`), which is the one place the runtime has to
+		// know: the EU instance keeps its objects in the `eu` jurisdiction.
+		derived("MAPLE_REGION", region),
+		// Stamped on every span and log as a resource attribute (the SDK reads the OTel
+		// variable off the Worker env). Both instances report to the US internal org
+		// for now, and this is what tells their `maple-api`s apart there.
+		derived("OTEL_RESOURCE_ATTRIBUTES", `maple.region=${region}`),
 		// GITHUB_SHA is read as its own key and re-labelled, rather than passed to
 		// `optionalPlain`'s `fallback` — a `process.env.GITHUB_SHA` read there would
 		// bypass the ConfigProvider and so miss `.env` / `--env-file`.
@@ -240,11 +257,17 @@ export const selfObservabilityEnv = (stage: MapleStage): Config.Config<WorkerEnv
  * - `scraper` — runs in production but is not part of this stack (see the
  *   dev-only note in `alchemy.run.ts`), so it sits on its own revision.
  * - `maple-landing`, `maple-ios` — deployed, but stamp no revision.
- * - api's background service names (`maple-vcs-sync`, `maple-investigations`,
- *   …) — the same Worker as `maple-api`, so they add no signal.
+ * - api's background service names (`maple-vcs-sync`, …) — the same Worker as
+ *   `maple-api`, so they add no signal. `maple-investigations` is no longer one
+ *   of them: the fan-out runs on `maple-ai` now, which is listed in its own
+ *   right below.
  */
 export const PRD_LOCKSTEP_REVISION_SERVICES = [
 	"alerting",
+	// The agent surfaces. Added when maple-ai first deployed to prd; the alert
+	// rule's SQL, which lives in the production database rather than this repo,
+	// has to list it too or a skewed maple-ai goes unnoticed.
+	"maple-ai",
 	"electric-sync",
 	"ingest",
 	"maple-api",
@@ -272,7 +295,20 @@ export const planetScaleOAuthEnv: Config.Config<WorkerEnv> = merge(
 	optionalPlain("MAPLE_PLANETSCALE_API_BASE_URL"),
 )
 
-/** Apple push (iOS app) — token auth; see `apps/api/src/platform/Apns.ts`. */
+/**
+ * The GitHub App as a repository reader: app id + private key mint installation
+ * tokens, `GITHUB_API_BASE_URL` points them at GitHub Enterprise Server. Bound by
+ * every Worker that resolves a connected repository — api for the integration,
+ * maple-ai for the agents' source and sandbox tools. The install flow's client
+ * id/secret and the webhook secret stay api-only.
+ */
+export const githubAppSourceEnv: Config.Config<WorkerEnv> = merge(
+	optionalPlain("GITHUB_APP_ID"),
+	optionalSecret("GITHUB_APP_PRIVATE_KEY"),
+	optionalPlain("GITHUB_API_BASE_URL"),
+)
+
+/** Apple push (iOS app) — token auth; see `packages/backend/src/platform/Apns.ts`. */
 export const apnsEnv: Config.Config<WorkerEnv> = merge(
 	optionalPlain("APNS_TEAM_ID"),
 	optionalPlain("APNS_KEY_ID"),

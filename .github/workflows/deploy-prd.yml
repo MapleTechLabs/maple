@@ -3,6 +3,10 @@ name: Deploy PRD (Cloudflare via Alchemy)
 # Gated on CI rather than `push: main`. Both used to fire on the same push with
 # separate concurrency groups, so a red CI still shipped to production.
 # `workflow_dispatch` stays as the manual escape hatch and skips the gate.
+#
+# One production deploy is one commit shipped to every instance. The steps
+# live in `deploy-prd-instance.yml`, called once per instance below; the
+# ingest binary is built once and shared by both.
 on:
     workflow_run:
         workflows: ["CI"]
@@ -20,136 +24,69 @@ permissions:
 
 jobs:
     # Separate job because it needs an arm64 runner — see the workflow itself.
+    # Same gate as deploy-prd: a superseded CI run has nothing to deploy, so it
+    # should not spend an arm64 runner compiling a binary nobody will ship.
     ingest-binary:
+        if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
         uses: ./.github/workflows/build-ingest-binary.yml
 
+    # On a workflow_run event `github.sha` is the default branch head, not the
+    # commit CI actually ran against — so pin everything to head_sha, both for
+    # what gets deployed and for the telemetry stamp.
     deploy-prd:
         needs: ingest-binary
-        runs-on: ubuntu-latest
-        timeout-minutes: 45
-        # On a workflow_run event `github.sha` is the default branch head, not the
-        # commit CI actually ran against — so pin everything to head_sha, both for
-        # what gets deployed and for the telemetry stamp.
         if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
-        environment: production
-        env:
-            INFISICAL_ENV_SLUG: prod
-            # Stamped onto deployed telemetry as `vcs.ref.head.revision` (server SDK
-            # reads COMMIT_SHA; web build reads VITE_COMMIT_SHA via Vite define).
-            COMMIT_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
-            VITE_COMMIT_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
-        steps:
-            - name: Checkout
-              uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
-              with:
-                  ref: ${{ github.event.workflow_run.head_sha || github.ref }}
+        uses: ./.github/workflows/deploy-prd-instance.yml
+        secrets: inherit
+        with:
+            region: us
+            commit-sha: ${{ github.event.workflow_run.head_sha || github.sha }}
 
-            # Toolchain, Infisical secrets, AWS OIDC (after Infisical, so its
-            # credentials win), dependencies, and the ingest binary the
-            # `ingest-binary` job compiled — one composite, one order.
-            - name: Deploy setup
-              id: setup
-              uses: ./.github/actions/deploy-setup
-              with:
-                  infisical-env-slug: ${{ env.INFISICAL_ENV_SLUG }}
-                  infisical-identity-id: ${{ secrets.INFISICAL_MACHINE_IDENTITY_ID }}
-                  infisical-project-slug: ${{ vars.INFISICAL_PROJECT_SLUG }}
-                  aws-role-arn: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
-
-            # NOTE: prod schema migrations are applied OUT OF BAND (manually, via
-            # `bun run migrate:prod` → `ps:apply-schema main`, against the direct 5432
-            # port), NOT by this workflow — so a deploy never touches the prod database
-            # and needs no MAPLE_PG_URL/admin credential. The worker binds to the
-            # pre-configured `maple-prd` Hyperdrive (`MapleDb` in packages/infra).
-            # apply-schema installs default privileges granting PUBLIC before it
-            # migrates, so new and rebuilt tables are readable by every consumer —
-            # including the ingest gateway, which reaches Postgres through PSBouncer as
-            # a role that does NOT inherit `postgres`.
-
-            # alchemy's env-credential path (CI=true) otherwise discovers the account
-            # with an STS GetCallerIdentity issued while its own AWSEnvironment is
-            # still being built, and that call waits on the half-built environment
-            # for its endpoint resolver — a self-deadlock with no network I/O and no
-            # log line. That was the "AWS ingest deploy hang" (#378). With the id
-            # supplied, the lookup is skipped. Reproduced locally with CI=true and
-            # the id unset on alchemy 2.0.0-beta.64 through beta.74.
-            #
-            # One pass, no retry. A stage's first deploy used to fail here — its
-            # ACM certificates were created PENDING_VALIDATION and their 443
-            # listeners refused them — and was recovered by a second step that
-            # published the validation CNAMEs with `scripts/acm-cert-validate.sh`
-            # and deployed again. The stack now publishes those records itself and
-            # waits for ISSUED (`@maple/infra/acm`), so a first deploy completes
-            # like any other and a failure here is a real failure.
-            - name: Deploy PRD stack with Alchemy
-              id: deploy
-              run: bun run alchemy:deploy:prd
-              env:
-                  AWS_ACCOUNT_ID: ${{ steps.setup.outputs.aws-account-id }}
-
-            # Alchemy isolates per-resource failures on purpose: a Worker that
-            # fails to upload never interrupts its siblings, so a deploy can
-            # leave production serving two commits at once. It did on
-            # 2026-09-07 — `api` was rejected with `ScriptStartupError` while
-            # `app`, `landing`, `alerting` and `ingest` all shipped, and prod
-            # ran a 6h-old api behind a current web until someone read the log.
-            #
-            # `always()`: when the deploy step fails this is exactly when the
-            # answer matters — it names which Worker is stale instead of
-            # leaving it in a 4000-line log. It also catches the quieter case
-            # the deploy cannot report at all, where alchemy succeeds but the
-            # script serving traffic is not the one we just uploaded.
-            #
-            # Liveness only. Every other prod Worker is covered by the
-            # "Prod revision skew" alert, which compares
-            # `vcs.ref.head.revision` across services from their own telemetry.
-            # Which services that is, and the fact that it assumes they always
-            # deploy together, is pinned in `PRD_LOCKSTEP_REVISION_SERVICES`
-            # (`packages/infra/src/env.ts`) — change what this workflow deploys
-            # and `env.test.ts` will tell you the rule needs editing too.
-            - name: Verify the deployed api serves this commit
-              if: ${{ always() && steps.deploy.outcome != 'skipped' }}
-              env:
-                  EXPECTED: ${{ env.COMMIT_SHA }}
-              run: |
-                  set -uo pipefail
-                  # Cloudflare propagates a new script over a few seconds, so a
-                  # single probe races the rollout rather than testing it.
-                  for attempt in 1 2 3 4 5 6; do
-                      served=$(curl -fsS --max-time 10 -D - -o /dev/null https://api.maple.dev/health 2>/dev/null \
-                          | tr -d '\r' | awk 'tolower($1) == "x-maple-revision:" { print $2 }')
-                      [ "$served" = "$EXPECTED" ] && break
-                      echo "attempt $attempt: api serves '${served:-<none>}', expected '$EXPECTED'"
-                      sleep 10
-                  done
-                  if [ "$served" = "$EXPECTED" ]; then
-                      echo "api is serving $EXPECTED"
-                      exit 0
-                  fi
-                  if [ -z "$served" ]; then
-                      echo "::error::api /health returned no x-maple-revision header. Either the Worker predates this check or it is not answering — check the deploy log for a resource that reported 'fail'."
-                  else
-                      echo "::error::PARTIAL DEPLOY — api is serving $served but this run deployed $EXPECTED. The api Worker did not update; other Workers likely did. Find the resource that reported 'fail' in the deploy log above."
-                  fi
-                  exit 1
+    # The EU instance (`prd-eu`, `*.eu.maple.dev`). Opt-in through the
+    # `MAPLE_DEPLOY_EU` repository variable until its accounts exist — the stack
+    # refuses to deploy `eu` without its Hyperdrive configs — after which it
+    # ships on every green CI run alongside `us`. Sequenced after `us` so a
+    # change that breaks the deploy stops at one instance.
+    deploy-prd-eu:
+        needs: [ingest-binary, deploy-prd]
+        if: ${{ vars.MAPLE_DEPLOY_EU == '1' && (github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success') }}
+        uses: ./.github/workflows/deploy-prd-instance.yml
+        secrets: inherit
+        with:
+            region: eu
+            commit-sha: ${{ github.event.workflow_run.head_sha || github.sha }}
 
     # A skipped job does not fail its run, so with CI red this workflow reported
     # SUCCESS while nothing deployed — which is how a broken `main` looked like a
     # string of clean deploys for several commits, and why an Electric deploy
     # nobody had noticed was never running took an hour to spot. This job always
     # runs, so the run's conclusion says what actually happened.
+    #
+    # A *cancelled* CI run is not a broken main: CI cancels in-progress runs on
+    # `main` when a newer push lands, and the superseding commit's own run
+    # deploys both. Reporting that as "Fix main" made every back-to-back push
+    # look like a deploy failure.
     deployment-gate:
-        needs: deploy-prd
+        needs: [deploy-prd, deploy-prd-eu]
         if: ${{ always() }}
         runs-on: ubuntu-latest
         steps:
             - name: Report whether the deploy ran
+              env:
+                  CI_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+                  HEAD_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
               run: |
                   result="${{ needs.deploy-prd.result }}"
+                  if [ "$result" = "skipped" ] && [ "$CI_CONCLUSION" = "cancelled" ]; then
+                      echo "::notice::Nothing to deploy: CI for $HEAD_SHA was cancelled, superseded by a newer push to main."
+                      exit 0
+                  fi
                   if [ "$result" = "skipped" ]; then
-                      echo "::error::Nothing was deployed: CI did not pass for ${{ github.event.workflow_run.head_sha || github.sha }}. Fix main, then re-run."
+                      echo "::error::Nothing was deployed: CI did not pass for $HEAD_SHA. Fix main, then re-run."
                       exit 1
                   fi
                   # A genuine deploy failure already fails its own job and reddens
-                  # the run; there is nothing to add here.
+                  # the run; there is nothing to add here. The EU job is skipped
+                  # by design until MAPLE_DEPLOY_EU is set.
                   echo "deploy-prd: $result"
+                  echo "deploy-prd-eu: ${{ needs.deploy-prd-eu.result }}"

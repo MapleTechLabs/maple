@@ -3,8 +3,8 @@ import { CurrentTenant, MobileDeviceNotFoundError } from "@maple/domain/http"
 import type { V2MobileDevice } from "@maple/domain/http/v2"
 import { MapleApiV2, isoTimestamp } from "@maple/domain/http/v2"
 import { Effect } from "effect"
-import { LiveActivitiesService } from "@/services/push/LiveActivitiesService"
-import { MobileDevicesService, type MobileDevice } from "@/services/push/MobileDevicesService"
+import { LiveActivitiesService } from "@maple/backend/services/push/LiveActivitiesService"
+import { MobileDevicesService, type MobileDevice } from "@maple/backend/services/push/MobileDevicesService"
 
 const toV2 = (device: MobileDevice): V2MobileDevice => ({
 	id: device.id,

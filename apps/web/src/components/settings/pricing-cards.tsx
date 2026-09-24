@@ -10,7 +10,7 @@ import { getTrialStatus } from "@/lib/billing/plan-gating"
 import { buildCheckoutSuccessUrl } from "@/lib/billing/checkout-return"
 import { useCheckoutReturn } from "@/hooks/use-checkout-return"
 import { CheckoutConfirmingPanel, CheckoutTimedOutNotice } from "@/components/settings/checkout-return-panel"
-import { formatCurrency } from "@/lib/billing/currency"
+import { formatCurrency } from "@maple/domain/format"
 
 type Plan = CatalogPlan
 type PlanItem = CatalogPlanItem

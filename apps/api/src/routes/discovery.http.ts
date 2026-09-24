@@ -1,9 +1,9 @@
 import { MapleApiV2, v2RouteNotFoundBody } from "@maple/domain/http/v2"
 import { mapleMcpServerManifest } from "@maple/domain/mcp-manifest"
-import { Effect } from "effect"
+import { Context, Effect, identity, Option } from "effect"
 import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/unstable/http"
 import { OpenApi } from "effect/unstable/httpapi"
-import { Env } from "@/platform/Env"
+import { Env } from "@maple/backend/platform/Env"
 
 /**
  * Machine discovery for agents and tooling.
@@ -38,11 +38,30 @@ const untrustedRequestOrigin = (request: HttpServerRequest.HttpServerRequest) =>
 	return host ? `${proto}://${host}` : ""
 }
 
+const baseSpecTransform = Option.getOrElse(
+	Context.getOption(MapleApiV2.annotations, OpenApi.Transform),
+	() => identity,
+)
+
+/**
+ * The v2 API as this instance publishes it: `servers` and `externalDocs` name the configured
+ * origin, so the EU instance's document and `/v2/docs` point at `api.eu.maple.dev`, not the US.
+ */
+export const instanceApiV2 = (origin: string) =>
+	MapleApiV2.annotate(OpenApi.Servers, [{ url: origin, description: "Production" }]).annotate(
+		OpenApi.Transform,
+		(spec) => ({
+			...baseSpecTransform(spec),
+			externalDocs: { url: `${origin}/v2/docs`, description: "Interactive Maple API reference" },
+		}),
+	)
+
 let openApiDocument: string | undefined
-const openApiJson = Effect.sync(() => {
-	openApiDocument ??= JSON.stringify(OpenApi.fromApi(MapleApiV2))
-	return openApiDocument
-})
+const openApiJson = (origin: string) =>
+	Effect.sync(() => {
+		openApiDocument ??= JSON.stringify(OpenApi.fromApi(instanceApiV2(origin)))
+		return openApiDocument
+	})
 
 const apiIndex = (origin: string) => ({
 	name: "Maple API",
@@ -56,7 +75,10 @@ const apiIndex = (origin: string) => ({
 
 export const DiscoveryRouter = HttpRouter.use((router) =>
 	Effect.gen(function* () {
-		const serveOpenApi = Effect.map(openApiJson, (body) =>
+		const env = yield* Env
+		const origin = env.MAPLE_API_BASE_URL.replace(/\/+$/, "")
+
+		const serveOpenApi = Effect.map(openApiJson(origin), (body) =>
 			HttpServerResponse.text(body, {
 				status: 200,
 				contentType: "application/json; charset=utf-8",
@@ -65,9 +87,6 @@ export const DiscoveryRouter = HttpRouter.use((router) =>
 		)
 		yield* router.add("GET", "/openapi.json", serveOpenApi)
 		yield* router.add("GET", "/v2/openapi.json", serveOpenApi)
-
-		const env = yield* Env
-		const origin = env.MAPLE_API_BASE_URL.replace(/\/+$/, "")
 
 		const manifest = HttpServerResponse.jsonUnsafe(mapleMcpServerManifest({ apiBaseUrl: origin }), {
 			headers: PUBLIC_CACHE,

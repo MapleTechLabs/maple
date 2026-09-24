@@ -3,7 +3,7 @@ import { Exit } from "effect"
 import { useMountEffect } from "@/hooks/use-mount-effect"
 import { toastManager } from "@maple/ui/components/ui/toast"
 import { useAtomSet } from "@/lib/effect-atom"
-import { MapleInternalAtomClient } from "@/lib/services/common/internal-atom-client"
+import { MapleAiAtomClient } from "@/lib/services/common/ai-atom-client"
 import { useMapleChat, type FailedSend } from "@/hooks/use-maple-chat"
 import { useTypeAnywhereFocus } from "@/hooks/use-type-anywhere-focus"
 import {
@@ -31,12 +31,12 @@ import {
 	PromptInputSubmit,
 } from "@/components/ai-elements/prompt-input"
 import { Suggestions, Suggestion } from "@/components/ai-elements/suggestion"
-import { ThinkingOrbIcon } from "@/components/ai-elements/thinking-orb-icon"
+import { DotLoader } from "@/components/ai-elements/dot-loader"
 import { Button } from "@maple/ui/components/ui/button"
 import { trackProduct } from "@/lib/analytics"
-import { makeChatApplyPayload } from "./chat-apply-payload"
-import type { AiTriageResult } from "@maple/domain/http"
+import { ChatApplyRequest, type AiTriageResult } from "@maple/domain/http"
 import { TurnFailureNotice } from "./turn-failure-notice"
+import { ChatEmptyState } from "./chat-empty-state"
 
 const DEFAULT_SUGGESTIONS = [
 	"What's the overall system health?",
@@ -73,6 +73,12 @@ interface ChatConversationProps {
 	focusMessageId?: string
 	/** Builds a shareable permalink for a message; omit where the thread isn't shareable. */
 	permalinkFor?: (messageId: string) => string
+	/**
+	 * Where "start typing and it lands in the composer" listens. `"page"` for a chat
+	 * that owns the viewport or an open chat panel; `"region"` (the default) for a
+	 * chat embedded in a page that still has its own single-key shortcuts.
+	 */
+	typeAnywhere?: "page" | "region"
 }
 
 export function ChatConversation({
@@ -89,13 +95,17 @@ export function ChatConversation({
 	fallbackDiagnosis = null,
 	focusMessageId,
 	permalinkFor,
+	typeAnywhere = "region",
 }: ChatConversationProps) {
 	const textareaRef = useRef<HTMLTextAreaElement>(null)
 	const regionRef = useRef<HTMLDivElement>(null)
-	// Scoped to this conversation's own region: on a full page (an investigation)
-	// a window-wide listener swallows every global shortcut, so typing `?` for the
-	// shortcut sheet silently drops a question mark into the composer instead.
-	useTypeAnywhereFocus(textareaRef, isActive && !readOnly, regionRef)
+	// A region scope only sees keys while focus is already inside the thread, which is
+	// what an embedded chat wants: on a page that keeps its own single-key shortcuts
+	// (an investigation) a window-wide listener would swallow `?` for the shortcut
+	// sheet and drop a question mark into the composer instead. A chat that owns the
+	// page has no such shortcuts to protect and listens on the window, so a keystroke
+	// with nothing focused still reaches the composer.
+	useTypeAnywhereFocus(textareaRef, isActive && !readOnly, typeAnywhere === "page" ? undefined : regionRef)
 
 	const referrerPath = useMemo(() => readChatReferrer(), [tabId])
 	const derivedContexts = useMemo<AutoContext[]>(
@@ -157,8 +167,9 @@ export function ChatConversation({
 	} = useMapleChat({ tabId, context })
 	const diagnosisMessageId = useMemo(() => findDiagnosisMessageId(messages), [messages])
 
-	// Apply an approved proposal via Maple's authenticated API (propose-then-apply).
-	const applyProposal = useAtomSet(MapleInternalAtomClient.mutation("chat", "apply"), {
+	// Decide a proposal by reference: the session runs it and records the outcome in the transcript,
+	// so the card resolves on every device and the model's next turn knows what happened.
+	const decideProposal = useAtomSet(MapleAiAtomClient.mutation("chat", "apply"), {
 		mode: "promiseExit",
 	})
 	const [resolvedApprovals, setResolvedApprovals] = useState<Map<string, "applied" | "denied">>(
@@ -174,16 +185,21 @@ export function ChatConversation({
 		})
 	}, [])
 	const handleDeny = useCallback(
-		(toolCallId: string) => resolveApproval(toolCallId, "denied"),
-		[resolveApproval],
+		async (toolCallId: string) => {
+			if (!sessionId) return
+			const exit = await decideProposal({
+				payload: new ChatApplyRequest({ sessionId, toolCallId, decision: "deny" }),
+			})
+			if (Exit.isSuccess(exit)) resolveApproval(toolCallId, "denied")
+			else toastManager.add({ title: "Couldn't deny this change", type: "error" })
+		},
+		[decideProposal, sessionId, resolveApproval],
 	)
 	const handleApprove = useCallback(
-		async (messageId: string, toolCallId: string, tool: string, input: unknown) => {
-			// `sessionId` + `messageId` + `toolCallId` are what let the server settle the proposal in the
-			// durable transcript, so the card resolves on every device and the model's next turn knows
-			// the mutation happened.
-			const exit = await applyProposal({
-				payload: makeChatApplyPayload(tool, input, { sessionId, messageId, toolCallId }),
+		async (toolCallId: string, tool: string) => {
+			if (!sessionId) return
+			const exit = await decideProposal({
+				payload: new ChatApplyRequest({ sessionId, toolCallId, decision: "approve" }),
 			})
 			if (Exit.isSuccess(exit)) {
 				if (exit.value.isError) {
@@ -196,7 +212,7 @@ export function ChatConversation({
 				toastManager.add({ title: `Failed to apply ${tool}`, type: "error" })
 			}
 		},
-		[applyProposal, sessionId, resolveApproval],
+		[decideProposal, sessionId, resolveApproval],
 	)
 
 	useEffect(() => {
@@ -279,19 +295,7 @@ export function ChatConversation({
 							propose a corrected widget JSON for you to approve.
 						</EmptyNotice>
 					) : (
-						<div className="flex w-full min-w-0 max-w-full flex-col items-center gap-3 px-4">
-							<div className="space-y-1 text-center">
-								<h3 className="font-medium text-sm">Maple AI</h3>
-								<p className="text-muted-foreground text-sm">
-									Ask me about your traces, logs, errors, and services.
-								</p>
-							</div>
-							<Suggestions className="mt-2 w-full justify-center">
-								{suggestions.map((s) => (
-									<Suggestion key={s} suggestion={s} onClick={() => handleSend(s)} />
-								))}
-							</Suggestions>
-						</div>
+						<ChatEmptyState suggestions={suggestions} onSelect={handleSend} />
 					)
 				}
 			/>
@@ -305,9 +309,6 @@ export function ChatConversation({
 							))}
 						</Suggestions>
 					)}
-					{!isWidgetFixMode && !isInvestigationMode && (
-						<PageContextChips contexts={activeContexts} onDismiss={dismissContext} />
-					)}
 					{failedSends.length > 0 && (
 						<FailedSendNotice
 							failed={failedSends[failedSends.length - 1]!}
@@ -318,6 +319,9 @@ export function ChatConversation({
 						<TurnFailureNotice error={error} onContinue={() => handleSend("Continue.")} />
 					) : null}
 					<PromptInput onSubmit={({ text }) => handleSend(text)}>
+						{!isWidgetFixMode && !isInvestigationMode && (
+							<PageContextChips contexts={activeContexts} onDismiss={dismissContext} />
+						)}
 						<PromptInputTextarea
 							ref={textareaRef}
 							placeholder={
@@ -407,7 +411,7 @@ function EmptyNotice({
 	return (
 		<div className="flex flex-col items-center justify-center gap-2 text-center">
 			<p className="flex items-center gap-1.5 text-xs uppercase tracking-[0.14em] text-muted-foreground/70">
-				{busy ? <ThinkingOrbIcon state="breathing" /> : null}
+				{busy ? <DotLoader /> : null}
 				<span className={busy ? "shimmer" : undefined}>{title}</span>
 			</p>
 			<p className="max-w-sm text-sm text-muted-foreground">{children}</p>

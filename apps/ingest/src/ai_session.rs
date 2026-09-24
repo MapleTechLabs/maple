@@ -22,6 +22,10 @@
 //! (like `maple_org_id`) and `maple.*` belongs to the SDKs, so the two can
 //! never collide again.
 //!
+//! One vendor's dialect is restated as well as stamped: Claude Code's native
+//! keys become the `gen_ai.*` keys every reader keys on, and the phases of its
+//! tool calls are left unstamped — see `ai_session/claude_code.rs`.
+//!
 //! Detection is ordered first-match over the vendor predicates below; the
 //! session ID is the first non-empty session-granularity attribute for the
 //! matched vendor. Vendors without a session-level identifier (their
@@ -56,6 +60,8 @@
 use opentelemetry_proto::tonic::collector::trace::v1::ExportTraceServiceRequest;
 use opentelemetry_proto::tonic::common::v1::{any_value, AnyValue, KeyValue};
 use opentelemetry_proto::tonic::trace::v1::span::Event;
+
+mod claude_code;
 
 pub const ATTR_NAMESPACE: &str = "maple_ai.";
 pub const VENDOR_ID_ATTR: &str = "maple_ai.vendor.id";
@@ -99,6 +105,7 @@ pub struct SpanView<'a> {
 /// attributes onto the matching spans. Non-AI spans are left untouched (apart
 /// from the namespace strip, which only runs when a `maple_ai.*` key exists).
 pub fn stamp_trace_request(request: &mut ExportTraceServiceRequest) {
+    let mut tool_failures = claude_code::ToolFailures::new();
     for resource_spans in &mut request.resource_spans {
         let resource = resource_facts(
             resource_spans
@@ -147,6 +154,13 @@ pub fn stamp_trace_request(request: &mut ExportTraceServiceRequest) {
                 let Some(classification) = classification else {
                     continue;
                 };
+                if classification.vendor == claude_code::VENDOR_ID {
+                    if claude_code::is_phase(&span.name) {
+                        claude_code::note_tool_failure(span, &mut tool_failures);
+                        continue;
+                    }
+                    claude_code::normalize(span);
+                }
                 // One reserve, not up to three doubling reallocs that each
                 // copy every existing KeyValue.
                 span.attributes.reserve(3);
@@ -162,6 +176,9 @@ pub fn stamp_trace_request(request: &mut ExportTraceServiceRequest) {
                 }
             }
         }
+    }
+    if !tool_failures.is_empty() {
+        claude_code::fold_tool_failures(request, &tool_failures);
     }
 }
 
@@ -182,6 +199,7 @@ fn string_attribute(key: &str, value: &str) -> KeyValue {
 fn owned_string_attribute(key: &str, value: String) -> KeyValue {
     KeyValue {
         key: key.to_owned(),
+        key_strindex: 0,
         value: Some(AnyValue {
             value: Some(any_value::Value::StringValue(value)),
         }),
@@ -1458,6 +1476,7 @@ mod tests {
     fn integer_session_ids_are_stringified() {
         let span_attrs = vec![KeyValue {
             key: "session.id".to_owned(),
+            key_strindex: 0,
             value: Some(AnyValue {
                 value: Some(any_value::Value::IntValue(4211)),
             }),
@@ -1494,6 +1513,209 @@ mod tests {
         );
         // span.type alone, without the claude-code service, is not enough.
         assert!(classify("", "anything", &[("span.type", "llm_request")], &[]).is_none());
+    }
+
+    fn claude_request(spans: Vec<Span>) -> ExportTraceServiceRequest {
+        ExportTraceServiceRequest {
+            resource_spans: vec![ResourceSpans {
+                resource: Some(Resource {
+                    attributes: attrs(&[("service.name", "claude-code")]),
+                    ..Default::default()
+                }),
+                scope_spans: vec![ScopeSpans {
+                    scope: Some(InstrumentationScope {
+                        name: "com.anthropic.claude_code.tracing".to_owned(),
+                        ..Default::default()
+                    }),
+                    spans,
+                    ..Default::default()
+                }],
+                ..Default::default()
+            }],
+        }
+    }
+
+    fn claude_span(name: &str, pairs: &[(&str, &str)]) -> Span {
+        Span {
+            name: name.to_owned(),
+            attributes: attrs(pairs),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn claude_code_spans_are_restated_as_gen_ai() {
+        let mut tool = claude_span(
+            "claude_code.tool",
+            &[
+                ("session.id", "cc-9"),
+                ("tool_name", "Bash"),
+                ("tool_use_id", "toolu_1"),
+                ("full_command", "ls -la"),
+            ],
+        );
+        tool.events.push(Event {
+            name: "tool.output".to_owned(),
+            attributes: attrs(&[("output", "a\nb"), ("bash_command", "ls -la")]),
+            ..Default::default()
+        });
+        let mut request = claude_request(vec![
+            claude_span(
+                "claude_code.interaction",
+                &[("session.id", "cc-9"), ("user_prompt", "fix the bug")],
+            ),
+            claude_span(
+                "claude_code.llm_request",
+                &[
+                    ("session.id", "cc-9"),
+                    ("gen_ai.system", "anthropic"),
+                    ("input_tokens", "2"),
+                    ("output_tokens", "782"),
+                    ("cache_read_tokens", "114514"),
+                    ("cache_creation_tokens", "3549"),
+                    ("ttft_ms", "934"),
+                    ("success", "true"),
+                ],
+            ),
+            tool,
+        ]);
+        request.resource_spans[0].scope_spans[0].spans[1]
+            .attributes
+            .push(KeyValue {
+                key: "gen_ai.usage.output_tokens".to_owned(),
+                key_strindex: 0,
+                value: Some(AnyValue {
+                    value: Some(any_value::Value::StringValue("900".to_owned())),
+                }),
+            });
+
+        stamp_trace_request(&mut request);
+        let spans = &request.resource_spans[0].scope_spans[0].spans;
+
+        let interaction = &spans[0].attributes;
+        assert_eq!(
+            attr_value(interaction, "gen_ai.operation.name").as_deref(),
+            Some("invoke_agent")
+        );
+        assert_eq!(
+            attr_value(interaction, "gen_ai.input.messages").as_deref(),
+            Some(r#"[{"parts":[{"content":"fix the bug","type":"text"}],"role":"user"}]"#)
+        );
+
+        let llm = &spans[1].attributes;
+        for (key, value) in [
+            ("gen_ai.operation.name", "chat"),
+            ("gen_ai.usage.input_tokens", "2"),
+            ("gen_ai.usage.cache_read.input_tokens", "114514"),
+            ("gen_ai.usage.cache_creation.input_tokens", "3549"),
+            ("gen_ai.response.time_to_first_chunk", "0.934"),
+        ] {
+            assert_eq!(attr_value(llm, key).as_deref(), Some(value), "{key}");
+        }
+        // The emitter's own key wins, and is never written twice.
+        assert_eq!(
+            llm.iter()
+                .filter(|kv| kv.key == "gen_ai.usage.output_tokens")
+                .count(),
+            1
+        );
+        assert_eq!(
+            attr_value(llm, "gen_ai.usage.output_tokens").as_deref(),
+            Some("900")
+        );
+        assert!(attr_value(llm, "gen_ai.response.status").is_none());
+
+        let tool = &spans[2].attributes;
+        assert_eq!(
+            attr_value(tool, "gen_ai.operation.name").as_deref(),
+            Some("execute_tool")
+        );
+        assert_eq!(
+            attr_value(tool, "gen_ai.tool.name").as_deref(),
+            Some("Bash")
+        );
+        assert_eq!(
+            attr_value(tool, "gen_ai.tool.call.arguments").as_deref(),
+            Some(r#"{"command":"ls -la"}"#)
+        );
+        assert_eq!(
+            attr_value(tool, "gen_ai.tool.call.result").as_deref(),
+            Some(r#"{"bash_command":"ls -la","output":"a\nb"}"#)
+        );
+    }
+
+    #[test]
+    fn claude_code_redacted_prompt_and_failed_request() {
+        let mut request = claude_request(vec![
+            claude_span("claude_code.interaction", &[("user_prompt", "<REDACTED>")]),
+            claude_span(
+                "claude_code.llm_request",
+                &[("success", "false"), ("error", "overloaded")],
+            ),
+        ]);
+        stamp_trace_request(&mut request);
+        let spans = &request.resource_spans[0].scope_spans[0].spans;
+        assert!(attr_value(&spans[0].attributes, "gen_ai.input.messages").is_none());
+        assert_eq!(
+            attr_value(&spans[1].attributes, "gen_ai.response.status").as_deref(),
+            Some("failed")
+        );
+    }
+
+    #[test]
+    fn claude_code_tool_phases_are_unstamped_and_fold_their_failure() {
+        let mut request = claude_request(vec![
+            claude_span(
+                "claude_code.tool",
+                &[
+                    ("session.id", "cc-9"),
+                    ("tool_name", "mcp__x"),
+                    ("tool_use_id", "toolu_2"),
+                ],
+            ),
+            claude_span(
+                "claude_code.tool.execution",
+                &[
+                    ("session.id", "cc-9"),
+                    ("gen_ai.tool.call.id", "toolu_2"),
+                    ("tool_use_id", "toolu_2"),
+                    ("success", "false"),
+                    ("error", "Syntax error"),
+                    ("error_class", "McpToolCallError"),
+                ],
+            ),
+            claude_span(
+                "claude_code.tool.blocked_on_user",
+                &[("session.id", "cc-9"), ("decision", "accept")],
+            ),
+        ]);
+        stamp_trace_request(&mut request);
+        let spans = &request.resource_spans[0].scope_spans[0].spans;
+
+        for phase in &spans[1..] {
+            assert!(
+                !phase
+                    .attributes
+                    .iter()
+                    .any(|kv| kv.key.starts_with(ATTR_NAMESPACE)),
+                "{} must not be stamped as agent work",
+                phase.name
+            );
+            assert!(attr_value(&phase.attributes, "gen_ai.operation.name").is_none());
+        }
+        let tool = &spans[0].attributes;
+        assert_eq!(
+            attr_value(tool, VENDOR_ID_ATTR).as_deref(),
+            Some("claude_agent_sdk")
+        );
+        assert_eq!(
+            attr_value(tool, "error.type").as_deref(),
+            Some("McpToolCallError")
+        );
+        assert_eq!(
+            attr_value(tool, "gen_ai.tool.call.result").as_deref(),
+            Some(r#"{"error":"Syntax error"}"#)
+        );
     }
 
     #[test]

@@ -1,8 +1,9 @@
 import { browserLocation, browserNavigator } from "../platform/browser-globals"
 import type { ResolvedIdentity } from "../identity/identity"
-import { type IngestConfig, ingestHeaders, keepaliveFor } from "../platform/transport"
+import { type IngestConfig, ingestHeaders, postToIngest } from "../platform/transport"
 import type { EntryContext } from "../session/session"
 import { parseUserAgent } from "../platform/user-agent"
+import { scrubUrl } from "../platform/url-privacy"
 
 /** ClickHouse-style `YYYY-MM-DD HH:MM:SS.mmm` in UTC (matches the ingest gateway). */
 export function formatCHDateTime(date: Date): string {
@@ -79,8 +80,11 @@ export function buildSessionMetaRow(input: SessionMetaRowInput): SessionMetaRow 
 	const now = new Date()
 	const location = browserLocation()
 	const identity = input.identity
-	const entryUrl = input.entry?.entryUrl ?? location?.href ?? ""
-	const referrer = input.entry?.referrer ?? ""
+	// Scrubbed here as well as at capture: a record persisted by an older SDK
+	// build still carries the raw URLs.
+	// `||`, not `??`: a record from before entry capture existed reports "".
+	const entryUrl = scrubUrl(input.entry?.entryUrl || location?.href || "")
+	const referrer = scrubUrl(input.entry?.referrer ?? "")
 	const utm = input.entry?.utm ?? {}
 
 	const row: SessionMetaRow = {
@@ -89,7 +93,9 @@ export function buildSessionMetaRow(input: SessionMetaRowInput): SessionMetaRow 
 		status: input.status,
 		version: input.version,
 		user_id: identity?.id ?? input.userId ?? "",
-		url_initial: location?.href ?? "",
+		// The session's first page. `location.href` here was the page a later
+		// heartbeat happened to post from, and the latest row wins.
+		url_initial: entryUrl,
 		user_agent: userAgent,
 		browser_name: ua.browserName,
 		os_name: ua.osName,
@@ -190,15 +196,12 @@ export async function postSessionMetaRow(
 	keepalive = false,
 ): Promise<void> {
 	const body = `${JSON.stringify(row)}\n`
-	await fetch(`${target.endpoint.replace(/\/$/, "")}/v1/sessionReplays/meta`, {
-		method: "POST",
-		headers: {
-			...ingestHeaders(target),
-			"content-type": "application/x-ndjson",
-		},
+	await postToIngest(
+		`${target.endpoint.replace(/\/$/, "")}/v1/sessionReplays/meta`,
+		{ ...ingestHeaders(target), "content-type": "application/x-ndjson" },
 		body,
-		keepalive: keepaliveFor(keepalive, body.length),
-	}).catch(() => {
+		keepalive,
+	).catch(() => {
 		// Session metadata is best-effort; never throw into the host app.
 	})
 }

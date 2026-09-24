@@ -1,4 +1,4 @@
-import { useState, type FormEvent, type ReactElement } from "react"
+import { useState, type ReactElement } from "react"
 import { useOrganization, useOrganizationList } from "@clerk/clerk-react"
 import { CheckIcon, PlusIcon } from "@/components/icons"
 import {
@@ -10,15 +10,10 @@ import {
 	DropdownMenuSeparator,
 	DropdownMenuTrigger,
 } from "@maple/ui/components/ui/dropdown-menu"
-import {
-	Dialog,
-	DialogContent,
-	DialogHeader,
-	DialogTitle,
-	DialogDescription,
-} from "@maple/ui/components/ui/dialog"
-import { Input } from "@maple/ui/components/ui/input"
-import { Button } from "@maple/ui/components/ui/button"
+import { CreateOrganizationDialog } from "./create-organization-dialog"
+import { organizationHomeRegion, organizationRegionOpen } from "@maple/domain/organization-regions"
+import { RegionBadge } from "@/components/region/region-badge"
+import { currentRegion, hasMultipleRegions, regionAppUrl } from "@/lib/region"
 import { NamespaceScopeSubmenu } from "./namespace-scope-menu"
 
 export function OrgAvatar({
@@ -65,36 +60,25 @@ export function ClerkOrgSwitcherMenu({
 	namespaceScope?: boolean
 }) {
 	const { organization } = useOrganization()
-	const { userMemberships, setActive, createOrganization } = useOrganizationList({
+	const { userMemberships, setActive } = useOrganizationList({
 		userMemberships: { infinite: true },
 	})
 	const [showCreateDialog, setShowCreateDialog] = useState(false)
-	const [newOrgName, setNewOrgName] = useState("")
-	const [isCreating, setIsCreating] = useState(false)
-	const [errorMessage, setErrorMessage] = useState<string | null>(null)
 
-	const switchOrganization = async (nextOrgId: string) => {
-		if (!setActive || organization?.id === nextOrgId) return
-		await setActive({ organization: nextOrgId })
-		window.location.reload()
-	}
-
-	const handleCreateOrg = async (e: FormEvent<HTMLFormElement>) => {
-		e.preventDefault()
-		if (isCreating || !createOrganization) return
-
-		setIsCreating(true)
-		setErrorMessage(null)
-
-		try {
-			const newOrg = await createOrganization({ name: newOrgName.trim() })
-			await switchOrganization(newOrg.id)
-			return
-		} catch (error) {
-			setErrorMessage(error instanceof Error ? error.message : "Failed to create organization")
-		} finally {
-			setIsCreating(false)
-		}
+	const switchOrganization = async (next: {
+		readonly id: string
+		readonly publicMetadata: unknown
+		readonly createdAt: Date
+	}) => {
+		if (!setActive || organization?.id === next.id) return
+		await setActive({ organization: next.id })
+		// The session is shared across regions, so the other region's dashboard opens on this org.
+		// One that can still choose its region stays here, where onboarding asks for it.
+		const region = organizationHomeRegion(next.publicMetadata)
+		const open = organizationRegionOpen(next.publicMetadata, next.createdAt.getTime(), Date.now())
+		const url = open || region === currentRegion ? undefined : regionAppUrl(region)
+		if (url !== undefined) window.location.assign(`${url}/`)
+		else window.location.reload()
 	}
 
 	return (
@@ -112,15 +96,29 @@ export function ClerkOrgSwitcherMenu({
 						{userMemberships?.data?.map((mem) => (
 							<DropdownMenuItem
 								key={mem.organization.id}
-								onClick={() => void switchOrganization(mem.organization.id)}
+								onClick={() => void switchOrganization(mem.organization)}
 							>
 								<OrgAvatar
 									name={mem.organization.name}
 									imageUrl={mem.organization.imageUrl}
 								/>
 								<span className="truncate">{mem.organization.name}</span>
+								{hasMultipleRegions &&
+									!organizationRegionOpen(
+										mem.organization.publicMetadata,
+										mem.organization.createdAt.getTime(),
+										Date.now(),
+									) && (
+										<RegionBadge
+											region={organizationHomeRegion(mem.organization.publicMetadata)}
+											className="ml-auto"
+										/>
+									)}
 								{organization?.id === mem.organization.id && (
-									<CheckIcon size={16} className="ml-auto" />
+									<CheckIcon
+										size={16}
+										className={hasMultipleRegions ? undefined : "ml-auto"}
+									/>
 								)}
 							</DropdownMenuItem>
 						))}
@@ -136,39 +134,7 @@ export function ClerkOrgSwitcherMenu({
 				</DropdownMenuContent>
 			</DropdownMenu>
 
-			<Dialog
-				open={showCreateDialog}
-				onOpenChange={(open) => {
-					setShowCreateDialog(open)
-					if (!open) {
-						setNewOrgName("")
-						setErrorMessage(null)
-					}
-				}}
-			>
-				<DialogContent className="sm:max-w-sm">
-					<DialogHeader>
-						<DialogTitle>Create Organization</DialogTitle>
-						<DialogDescription>
-							Create a new organization to collaborate with your team.
-						</DialogDescription>
-					</DialogHeader>
-					<form className="space-y-3" onSubmit={handleCreateOrg}>
-						<Input
-							placeholder="Organization name"
-							value={newOrgName}
-							onChange={(e) => setNewOrgName(e.target.value)}
-							disabled={isCreating}
-							required
-							autoFocus
-						/>
-						{errorMessage && <p className="text-sm text-destructive">{errorMessage}</p>}
-						<Button type="submit" className="w-full" disabled={isCreating || !newOrgName.trim()}>
-							{isCreating ? "Creating..." : "Create"}
-						</Button>
-					</form>
-				</DialogContent>
-			</Dialog>
+			<CreateOrganizationDialog open={showCreateDialog} onOpenChange={setShowCreateDialog} />
 		</>
 	)
 }

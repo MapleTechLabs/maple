@@ -15,11 +15,11 @@ import {
 import { MapleApiV2, paginateOffsetQuery, timestamp } from "@maple/domain/http/v2"
 import type { V2AnomalyIncident, V2AnomalyIncidentTimeseries, V2AnomalySettings } from "@maple/domain/http/v2"
 import { Effect } from "effect"
-import { recordHttpAudit } from "@/services/audit/AuditLogService"
-import { requireAdmin } from "@/services/auth/auth"
-import { AnomalyDetectionService } from "@/services/alerts/AnomalyDetectionService"
-import { ErrorsService } from "@/services/errors/ErrorsService"
-import { ErrorActorsService } from "@/services/errors/ErrorActorsService"
+import { recordHttpAudit } from "@maple/backend/services/audit/AuditLogService"
+import { requireAdmin } from "@maple/backend/services/auth/auth"
+import { AnomalyDetectionService } from "@maple/backend/services/alerts/AnomalyDetectionService"
+import { ErrorsService } from "@maple/backend/services/errors/ErrorsService"
+import { ErrorActorsService } from "@maple/backend/services/errors/ErrorActorsService"
 
 const toV2Incident = (doc: AnomalyIncidentDocument): V2AnomalyIncident => ({
 	id: doc.id,

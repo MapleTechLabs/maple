@@ -30,7 +30,7 @@ Ask questions about your system in natural language using Maple's MCP integratio
 ## Getting Started
 
 1. Sign up at [app.maple.dev](https://app.maple.dev) or self-host on your own infrastructure
-2. Point your OpenTelemetry SDK at Maple's ingest endpoint
+2. Point your OpenTelemetry SDK at Maple's ingest endpoint (`https://ingest.eu.maple.dev` for an organization in the EU region, see [Data regions](/docs/instrumentation#data-regions))
 3. Start exploring in the dashboard
 
 The fastest path: run **`maple-onboard`** in Claude Code (or Codex / Cursor with the skill installed) and it'll walk every service in the repo, install OpenTelemetry, wire traces / logs / metrics, and verify the bootstrap end-to-end.

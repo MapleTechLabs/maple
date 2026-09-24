@@ -10,13 +10,15 @@
  * optional-omit rule, the PR-preview exclusions and the `derived` values the
  * environment must not override.
  */
-import type { MapleDomains, MapleStage } from "@maple/infra/cloudflare"
+import { chatConnectorConfigKeys, chatConnectorOutboundConfigKeys } from "@maple/chat-platform"
+import type { MapleDomains, MapleRegion, MapleStage } from "@maple/infra/cloudflare"
 import {
 	apnsEnv,
 	appUrlsEnv,
 	authEnv,
 	cloudflareOAuthEnv,
 	derived,
+	githubAppSourceEnv,
 	ingestKeyCryptoEnv,
 	merge,
 	optionalPlain,
@@ -28,7 +30,7 @@ import {
 	tinybirdEnv,
 } from "@maple/infra/env"
 
-export const apiConfiguredEnv = (stage: MapleStage, domains: MapleDomains) =>
+export const apiConfiguredEnv = (stage: MapleStage, region: MapleRegion, domains: MapleDomains) =>
 	merge(
 		tinybirdEnv,
 		// ClickHouse (BYO warehouse); `tinybird` unless an org config overrides it.
@@ -45,7 +47,7 @@ export const apiConfiguredEnv = (stage: MapleStage, domains: MapleDomains) =>
 		authEnv,
 		ingestKeyCryptoEnv,
 		requireSecretEntry("MAPLE_SHARE_TOKEN_HMAC_KEY"),
-		appUrlsEnv,
+		appUrlsEnv(domains),
 		// The worker's own canonical origin — everything it publishes about itself
 		// (MCP `server.json`, the discovery index) is built from this rather than
 		// from client-controlled forwarded headers. Stages with a real domain
@@ -69,14 +71,7 @@ export const apiConfiguredEnv = (stage: MapleStage, domains: MapleDomains) =>
 		plainWithDefault("QE_BUCKET_CACHE_READ_CONCURRENCY", "6"),
 		plainWithDefault("EDGE_CACHE_READ_TIMEOUT_MS", "40"),
 		// MAPLE_ENDPOINT / MAPLE_ENVIRONMENT / COMMIT_SHA / MAPLE_INGEST_KEY.
-		selfObservabilityEnv(stage),
-		// Agent LLM path. `MAPLE_LLM_PROVIDER` flips between OpenRouter (default) and
-		// Workers AI; both stay wired, so a switch is this one var plus a redeploy.
-		// See `@/platform/Llm` for the provider-scoped model overrides.
-		optionalPlain("MAPLE_LLM_PROVIDER"),
-		optionalPlain("MAPLE_TRIAGE_MODEL_OPENROUTER"),
-		optionalPlain("MAPLE_TRIAGE_MODEL_WORKERS_AI"),
-		optionalSecret("OPENROUTER_API_KEY"),
+		selfObservabilityEnv(stage, region),
 		// Svix signing secrets for the public webhook receivers (`/webhooks/clerk`,
 		// `/webhooks/autumn`); each route answers 503 until its secret is set.
 		optionalSecret("CLERK_WEBHOOK_SECRET"),
@@ -95,18 +90,22 @@ export const apiConfiguredEnv = (stage: MapleStage, domains: MapleDomains) =>
 		optionalPlain("HAZEL_OAUTH_CLIENT_ID"),
 		optionalSecret("HAZEL_OAUTH_CLIENT_SECRET"),
 		optionalPlain("HAZEL_OAUTH_SCOPES"),
-		// Slack integration (bot install via OAuth v2)
-		optionalPlain("SLACK_CLIENT_ID"),
-		optionalSecret("SLACK_CLIENT_SECRET"),
-		optionalSecret("SLACK_INTERNAL_SERVICE_TOKEN"),
+		// Chat connectors bind the install config each one declares; the names live
+		// in the connector directory, each says whether it is a secret, and an
+		// unset one just reports that connector unavailable. The outbound config is
+		// here too, for listing a workspace's channels and sending a test alert;
+		// the ingress half runs in a different Worker, which binds its own.
+		...[...chatConnectorConfigKeys, ...chatConnectorOutboundConfigKeys].map((key) =>
+			key.secret ? optionalSecret(key.name) : optionalPlain(key.name),
+		),
 		apnsEnv,
-		optionalPlain("GITHUB_APP_ID"),
+		// The repository-reading half is shared with maple-ai; the install flow and
+		// the webhook receiver are this Worker's alone.
+		githubAppSourceEnv,
 		optionalPlain("GITHUB_APP_SLUG"),
-		optionalSecret("GITHUB_APP_PRIVATE_KEY"),
 		optionalPlain("GITHUB_APP_CLIENT_ID"),
 		optionalSecret("GITHUB_APP_CLIENT_SECRET"),
 		optionalSecret("GITHUB_APP_WEBHOOK_SECRET"),
-		optionalPlain("GITHUB_API_BASE_URL"),
 		cloudflareOAuthEnv,
 		planetScaleOAuthEnv,
 	)

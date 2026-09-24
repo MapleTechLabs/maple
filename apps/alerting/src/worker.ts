@@ -13,13 +13,17 @@
  * their own, and a failure outside a tick (the layer build) is logged below.
  */
 import {
+	AiWorker,
 	cachedRecoverable,
-	CLOUDFLARE_WORKER_PLACEMENT,
 	emailBinding,
 	MapleDb,
+	mapleDbEnv,
 	MapleStack,
+	type MapleDomains,
+	type MapleRegion,
 	type MapleStage,
 	resolveWorkerName,
+	resolveWorkerPlacement,
 } from "@maple/infra/cloudflare"
 import {
 	apnsEnv,
@@ -35,10 +39,7 @@ import {
 	tinybirdEnv,
 } from "@maple/infra/env"
 import { WorkerTelemetry } from "@maple/infra/worker-telemetry"
-import {
-	INVESTIGATION_FANOUT_BINDING,
-	type InvestigationFanoutWorkflowPayload,
-} from "@maple/domain/investigation-fanout"
+import { chatConnectorOutboundConfigKeys } from "@maple/chat-platform"
 import * as Cloudflare from "alchemy/Cloudflare"
 import { Cause, Effect, Layer, Ref } from "effect"
 import { HttpServerResponse } from "effect/unstable/http"
@@ -47,21 +48,14 @@ import { HttpServerResponse } from "effect/unstable/http"
  * The alerting worker's resource bindings, split from the `Config`-sourced env
  * so `InferEnv` can derive `AlertingWorkerEnv` below.
  */
-const makeWorkerBindings = ({ stage }: { stage: MapleStage }) => ({
-	// Cross-script binding to the investigation fan-out Workflow the api Worker
-	// hosts as an alchemy class. Alert, error, and anomaly ticks start
-	// investigations when incidents open. Bound under the CLASS name because the
-	// api services shared with these ticks read it there
-	// (`INVESTIGATION_FANOUT_BINDING`, one constant for both). The
-	// physical workflow name derives from `scriptName` + `className` on both
-	// sides; `scriptName` makes this a reference-only binding.
-	[INVESTIGATION_FANOUT_BINDING]: Cloudflare.Workflow<InvestigationFanoutWorkflowPayload>(
-		INVESTIGATION_FANOUT_BINDING,
-		{
-			className: INVESTIGATION_FANOUT_BINDING,
-			scriptName: resolveWorkerName("api", stage),
-		},
-	),
+const makeWorkerBindings = ({ stage, region }: { stage: MapleStage; region: MapleRegion }) => ({
+	// Cross-script reference to the chat Durable Object the AI Worker hosts.
+	// Alert, error, and anomaly ticks start an investigation's agent turn on it
+	// when incidents open; `chatSessionStub` reads it off `env` under the class name.
+	ChatSession: Cloudflare.DurableObject("ChatSession", {
+		className: "ChatSession",
+		scriptName: resolveWorkerName("ai", stage, region),
+	}),
 	...emailBinding(stage),
 })
 
@@ -83,20 +77,20 @@ export type AlertingWorkerEnv = Partial<Cloudflare.InferEnv<ReturnType<typeof ma
  * than from a resource. Largely the api worker's set — the two share 32 keys,
  * which is why the groups live in `@maple/infra/env`.
  */
-const configuredEnv = (stage: MapleStage) =>
+const configuredEnv = (stage: MapleStage, region: MapleRegion, domains: MapleDomains) =>
 	merge(
 		// Alert-rule evaluation runs Tinybird-scoped raw SQL through
 		// TinybirdOrgTokenService, so this is the same set the api worker binds.
 		tinybirdEnv,
 		authEnv,
 		ingestKeyCryptoEnv,
-		appUrlsEnv,
+		appUrlsEnv(domains),
 		// MAPLE_ENDPOINT / MAPLE_ENVIRONMENT / COMMIT_SHA / MAPLE_INGEST_KEY.
 		// MAPLE_ENVIRONMENT is stage-derived and NOT env-overridable: it gates both
 		// the non-prod cron skip below and EmailService.emailAllowed, so an override
 		// would open both at once and leave the prd-only EMAIL binding as the sole
 		// guard.
-		selfObservabilityEnv(stage),
+		selfObservabilityEnv(stage, region),
 		// Non-prod stages skip all crons (they share live org data via the prod DB);
 		// set to "1" on a stage to deliberately exercise crons there.
 		optionalPlain("MAPLE_ALERTING_ALLOW_NONPROD"),
@@ -111,6 +105,12 @@ const configuredEnv = (stage: MapleStage) =>
 		apnsEnv,
 		cloudflareOAuthEnv,
 		planetScaleOAuthEnv,
+		// `chat` destinations post through a chat connector, which reads the outbound
+		// config it declared; the workspace's own credential is opened with the
+		// ingest-key encryption key above.
+		...chatConnectorOutboundConfigKeys.map((key) =>
+			key.secret ? optionalSecret(key.name) : optionalPlain(key.name),
+		),
 	)
 
 /**
@@ -121,18 +121,28 @@ const configuredEnv = (stage: MapleStage) =>
  */
 const props = Effect.gen(function* () {
 	if (globalThis.__ALCHEMY_RUNTIME__) return { main: import.meta.url }
-	const { stage, workerDev, devEnv } = yield* MapleStack
-	const env = yield* configuredEnv(stage)
+	const { stage, region, domains, workerDev, devEnv, db } = yield* MapleStack
+	// maple-ai, which answers the investigation gate's question (`IncidentClassifier`)
+	// before a tick spends a model pass on an incident. Handed over as `AiWorker`
+	// like api's binding, because a `Worker.ref` cannot see a sibling this deploy creates.
+	const ai = yield* AiWorker
+	const env = yield* configuredEnv(stage, region, domains)
 	return {
 		main: import.meta.url,
-		name: resolveWorkerName("alerting", stage),
+		name: resolveWorkerName("alerting", stage, region),
 		compatibility: { date: "2026-04-08", flags: ["nodejs_compat"] },
-		placement: CLOUDFLARE_WORKER_PLACEMENT,
+		placement: resolveWorkerPlacement(region),
 		// Under `bun dev`: a sticky port the app's route follows.
 		dev: workerDev("alerting"),
 		workersDev: false,
 		// `devEnv` last, so `.env.local` cannot override the inter-app URLs.
-		env: { ...makeWorkerBindings({ stage }), ...env, ...devEnv },
+		env: {
+			...makeWorkerBindings({ stage, region }),
+			...mapleDbEnv(db, "alerting"),
+			AI_WORKER: ai,
+			...env,
+			...devEnv,
+		},
 	}
 })
 
@@ -145,10 +155,10 @@ const props = Effect.gen(function* () {
 const ALERTING_CRONS = ["* * * * *", "*/5 * * * *", "*/15 * * * *", "0 * * * *"] as const
 
 /**
- * Non-prod stages (stg, PR previews) share live org data — stg's Hyperdrive
- * points at the prod database — so their crons would iterate real orgs with
- * stage-local Tinybird/Clerk credentials: every tick fails per-org and floods
- * the error dashboards (and historically sent duplicate emails, see #237).
+ * Non-prod stages (PR previews, dev) share live org data, so their crons would
+ * iterate real orgs with stage-local Tinybird/Clerk credentials: every tick
+ * fails per-org and floods the error dashboards (and historically sent
+ * duplicate emails, see #237).
  * Same gating philosophy as the prd-only EMAIL binding, with an explicit
  * override for deliberately exercising crons on a non-prod stage.
  */
@@ -166,7 +176,7 @@ export default class Alerting extends Cloudflare.Worker<Alerting>()(
 		// validation or in the deploy process. A rejected import is retried on
 		// the next fire rather than pinned (`Effect.cached` keeps the failure).
 		const scheduled = yield* cachedRecoverable(Effect.promise(() => import("./scheduled")))
-		// `MAPLE_DB` in the stage's flavor — on stg/prd its own dashboard-managed
+		// `MAPLE_DB` in the stage's flavor — on prd its own dashboard-managed
 		// config: `alerting` issues ~97% of the workers' Postgres traffic and was
 		// starving the api's connection pool when the two shared one. The ticks
 		// read it off the fire's env.

@@ -1,11 +1,11 @@
 ---
 /**
- * CompareHub — `/compare`, the index the breadcrumbs used to point at without
+ * CompareHub: `/compare`, the index the breadcrumbs used to point at without
  * it existing.
  *
  * Two things and a CTA: the line-item bill every vendor on one sheet (the
  * homepage's BillComparison, re-headed), then one cell per comparison page.
- * Nothing vendor-specific here — that lives on the per-vendor pages.
+ * Nothing vendor-specific here: that lives on the per-vendor pages.
  */
 import * as m from "../../paraglide/messages.js";
 import { comparePath, competitors } from "../../lib/competitors";
@@ -113,7 +113,7 @@ const cards = competitors.map((competitor, i) => ({
 
 	<BillComparison eyebrow={m.cmp_hub_matrix_eyebrow()} title={m.cmp_hub_matrix_title()} lede={m.bill_lede()} links={false} />
 
-	<PageCta title={m.cmp_cta_title()} lede={m.cmp_cta_lede()} />
+	<PageCta title={m.cmp_cta_title()} lede={m.cmp_cta_lede()} artwork="/art/maple-compare-panorama.webp" />
 
 	<Footer />
 </Layout>

@@ -70,6 +70,13 @@ describe("makeBucketLabeler", () => {
 		expect(label(new Date(2026, 6, 3, 0, 0).toISOString())).toBe(`${expectedDate}, 12am`)
 	})
 
+	it("labels in the given zone", () => {
+		const buckets = ["2026-07-01T10:00:00Z", "2026-07-04T10:00:00Z"]
+		// 15:00Z is 00:00 the next day in Tokyo.
+		expect(makeBucketLabeler(buckets, "Asia/Tokyo")("2026-07-03T15:00:00Z")).toBe("Jul 4, 12am")
+		expect(isoToLabel("2026-07-03T15:30:00Z", "Asia/Tokyo")).toBe("12:30 AM")
+	})
+
 	it("falls back to time-of-day for empty or unparsable input", () => {
 		expect(makeBucketLabeler([])("2026-07-03T14:35:00Z")).toBe(isoToLabel("2026-07-03T14:35:00Z"))
 	})

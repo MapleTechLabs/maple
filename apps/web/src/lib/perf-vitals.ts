@@ -1,8 +1,9 @@
 import { Effect, Metric } from "effect"
-import { onCLS, onINP, onLCP, type Metric as WebVitalMetric } from "web-vitals"
+import { onCLS, onINP, onLCP } from "web-vitals/attribution"
 
 import { isLabPath } from "@/lab/registry"
-import { runtime } from "./services/common/runtime"
+import { vitalAttribution, type VitalWithAttribution } from "./perf-attribution"
+import { mapleRuntime } from "./registry"
 
 /**
  * Production RUM for the dashboard itself. Emits Core Web Vitals and a periodic
@@ -37,7 +38,7 @@ function readHeap(): MemoryInfo | undefined {
 }
 
 function logRow(message: string, attributes: Record<string, string | number | boolean>): void {
-	runtime.runFork(Effect.logInfo(message).pipe(Effect.annotateLogs(attributes)))
+	mapleRuntime.runFork(Effect.logInfo(message).pipe(Effect.annotateLogs(attributes)))
 }
 
 const clsMetric = Metric.histogram("web.vitals.cls", {
@@ -69,11 +70,14 @@ const maxBlockingMetric = Metric.histogram("web.performance.max_blocking_ms", {
 })
 const heapUsedMetric = Metric.gauge("web.performance.js_heap_used_bytes")
 
-function reportVital(metric: WebVitalMetric): void {
+function reportVital(metric: VitalWithAttribution): void {
 	const valueMetric = metric.name === "CLS" ? clsMetric : metric.name === "INP" ? inpMetric : lcpMetric
-	runtime.runFork(
+	// The region is a bounded set, so it is safe as a metric attribute; the selector
+	// and timing breakdown stay on the log row.
+	const { region, attributes } = vitalAttribution(metric)
+	mapleRuntime.runFork(
 		Effect.all([
-			Metric.update(valueMetric, metric.value),
+			Metric.update(Metric.withAttributes(valueMetric, { "maple.vital.region": region }), metric.value),
 			Metric.update(vitalRatings, `${metric.name.toLowerCase()}:${metric.rating}`),
 		]),
 	)
@@ -83,6 +87,7 @@ function reportVital(metric: WebVitalMetric): void {
 		"maple.vital.rating": metric.rating,
 		"maple.vital.navigation_type": metric.navigationType,
 		"maple.route.path": window.location.pathname,
+		...attributes,
 	})
 }
 
@@ -112,7 +117,7 @@ export function initPerfVitals(): void {
 	const emitSummary = () => {
 		if (longFrames === 0) return
 		const heap = readHeap()
-		runtime.runFork(
+		mapleRuntime.runFork(
 			Effect.all([
 				Metric.update(longFramesMetric, longFrames),
 				Metric.update(totalBlockingMetric, totalBlockingMs),

@@ -33,10 +33,10 @@ count.txt
 todos.json
 apps/api/.data/
 apps/api/scripts/.bench/
+apps/ai/scripts/.pr-review-runs/
+apps/ai/scripts/.pr-review-evals/
 
 .alchemy
-# eve agent build/model-catalog cache
-.eve
 .mcp.json
 .dev.vars
 apps/chat-agent/.dev.vars
@@ -69,3 +69,9 @@ apps/ios/build/
 
 # Generic ClickHouse benchmark artifacts (may contain literal query inputs)
 .bench/
+
+# backup restore drill reports (packages/db/scripts/restore-test.ts)
+.restore-test/
+
+# Vitest Browser Mode failure screenshots and traces
+.vitest/

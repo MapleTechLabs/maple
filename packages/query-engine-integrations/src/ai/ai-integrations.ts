@@ -50,6 +50,12 @@ export interface AiIntegration {
 	 * field from something other than a single attribute.
 	 */
 	readonly refine?: (values: MutableAiGenAiValues, ctx: AiRefineContext) => void
+	/**
+	 * Attribute keys `refine` reads that no source list names. The span read
+	 * projects only the keys the mapper is known to read (`aiSpanAttributeKeys`),
+	 * so a key missing here is a key `refine` never sees.
+	 */
+	readonly refineKeys?: readonly string[]
 }
 
 /** An integration carrying a source list for every catalog field. */
@@ -239,6 +245,39 @@ const resolvedIntegrations = new Map<string, ResolvedAiIntegration>(
 	]),
 )
 
+/**
+ * Every attribute key the mapper can read off a span, across every integration:
+ * the envelope, each field's source keys, and what the refine hooks read. The
+ * span read projects the attribute map down to these (plus the
+ * `AI_PROMPT_VARIABLE_PREFIX` family, which has no fixed key), so a key not in
+ * this list never reaches `mapAiSpan` — in production the map's bulk is
+ * `db.query.text` and friends, which the mapper never looked at.
+ */
+export const aiSpanAttributeKeys: readonly string[] = [
+	...new Set([
+		MAPLE_AI_SESSION_ID_ATTR,
+		MAPLE_AI_VENDOR_ID_ATTR,
+		MAPLE_AI_VENDOR_VERSION_ATTR,
+		...[genAiIntegration, ...resolvedIntegrations.values()].flatMap((integration) =>
+			Object.values(integration.sources).flat(),
+		),
+		...Object.values(AI_VENDOR_INTEGRATIONS).flatMap((vendor) => vendor.refineKeys ?? []),
+	]),
+]
+
+/**
+ * Every source key any integration reads for one field, the canonical spelling
+ * first — what a warehouse aggregation coalesces over to read the field the
+ * way `mapAiSpan` would, whichever vendor stamped the span.
+ */
+export const aiFieldSourceKeys = (field: AiGenAiField): readonly string[] => [
+	...new Set(
+		[genAiIntegration, ...resolvedIntegrations.values()].flatMap(
+			(integration) => integration.sources[field],
+		),
+	),
+]
+
 /** The integration for a vendor stamp, or the default for a stamp with no entry. */
 export const resolveAiIntegration = (vendorId: string | undefined): ResolvedAiIntegration => {
 	const resolved = vendorId === undefined ? undefined : resolvedIntegrations.get(vendorId)
@@ -260,11 +299,16 @@ const collectPromptVariables = (attributes: Record<string, string>): Record<stri
 }
 
 /**
- * A core field is plain OTel semconv that every HTTP client span carries, so
- * mapping one is not evidence that this span is an AI span.
+ * Fields whose presence is not evidence that a span is an AI span. A core field
+ * is plain OTel semconv every HTTP client span carries. A tool call id says
+ * which call a span belongs to, not that the span is one — Claude Code stamps
+ * it on the run and the permission wait of a call whose own span carries the
+ * name, and read as signal each phase became a tool call of its own.
  */
+export const AI_NON_SIGNAL_FIELDS: ReadonlySet<AiGenAiField> = new Set([...AI_CORE_FIELDS, "toolCallId"])
+
 const hasAiSignal = (values: MutableAiGenAiValues): boolean =>
-	Object.keys(values).some((field) => !AI_CORE_FIELDS.has(field as AiGenAiField))
+	Object.keys(values).some((field) => !AI_NON_SIGNAL_FIELDS.has(field as AiGenAiField))
 
 export const mapAiSpan = (row: AiSessionSpansOutput): AiAgentSpan => {
 	// Span attributes only, envelope and source keys alike. The gateway strips

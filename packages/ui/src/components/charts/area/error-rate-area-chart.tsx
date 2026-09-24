@@ -7,7 +7,6 @@ import {
 	FixedMetricLegend,
 	PlotFrame,
 	asFiniteNumber,
-	dashedGridY,
 	fixedMetricTooltipBody,
 	focusCrosshair,
 	focusDot,
@@ -158,7 +157,6 @@ export const ErrorRateAreaChart = memo(function ErrorRateAreaChart({
 				...(hasDashed ? [verticalGradient(fadedGradientId, color, 0.15, 0)] : []),
 			],
 			marks: [
-				dashedGridY(),
 				band(solid, gradientId),
 				...(hasDashed ? [band(dashed, fadedGradientId)] : []),
 				edge(solid, false),

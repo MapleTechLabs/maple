@@ -9,51 +9,385 @@
  * One delegated listener for every `[data-zoomable]` on the page rather than an
  * island per frame: the frames are static Astro, and the inline image stays
  * legible on its own if this script never runs.
+ *
+ * The shot grows out of the plate that was clicked and shrinks back into it, so
+ * the enlargement reads as the same object rather than a new one. Once open it
+ * behaves like a photo viewer: click to magnify at the pointer, pinch or
+ * ctrl-wheel for continuous zoom, drag to pan, drag down to dismiss.
  */
 ---
 
 <dialog id="media-lightbox" class="media-lightbox" aria-label="Enlarged screenshot">
-	<form method="dialog" class="media-lightbox__dismiss">
-		<button type="submit" aria-label="Close">
-			<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square">
-				<path d="M6 6l12 12M18 6L6 18" />
-			</svg>
-		</button>
-	</form>
-	<img alt="" decoding="async" />
+	<div class="media-lightbox__scrim" data-scrim></div>
+	<div class="media-lightbox__stage">
+		<img class="media-lightbox__img" alt="" decoding="async" draggable="false" />
+	</div>
+	<button type="button" class="media-lightbox__dismiss" data-close aria-label="Close">
+		<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square">
+			<path d="M6 6l12 12M18 6L6 18" />
+		</svg>
+	</button>
 </dialog>
 
 <script>
 	import { trackLanding } from "../lib/telemetry";
 
 	const dialog = document.querySelector<HTMLDialogElement>("#media-lightbox");
-	const full = dialog?.querySelector("img");
+	const img = dialog?.querySelector<HTMLImageElement>(".media-lightbox__img");
+	const scrim = dialog?.querySelector<HTMLElement>("[data-scrim]");
 
-	if (dialog && full) {
+	if (dialog && img && scrim) {
+		/* Apple's sheet curve: fast off the mark, long settle, no overshoot. */
+		const EASE = "cubic-bezier(0.32, 0.72, 0, 1)";
+		const SETTLE = "cubic-bezier(0.22, 1, 0.36, 1)";
+		const OPEN_MS = 420;
+		const CLOSE_MS = 300;
+		const MAX_SCALE = 6;
+		const reduced = matchMedia("(prefers-reduced-motion: reduce)");
+
+		/* Prose screenshots are worth enlarging too; links keep their own job. */
+		for (const el of document.querySelectorAll<HTMLImageElement>(".docs-content img")) {
+			if (!el.closest("a")) el.dataset.zoomable = "";
+		}
+
+		let origin: HTMLImageElement | null = null;
+		/* Layout box of the open image at rest — every transform is relative to it. */
+		let base = new DOMRect();
+		let scale = 1;
+		let tx = 0;
+		let ty = 0;
+		let transition: Animation | null = null;
+		let scrimFade: Animation | null = null;
+
+		const transform = () => `translate(${tx}px, ${ty}px) scale(${scale})`;
+		const apply = () => {
+			img.style.transform = transform();
+			if (scale > 1.01) img.dataset.zoomed = "";
+			else delete img.dataset.zoomed;
+		};
+
+		const fadeScrim = (to: number, duration: number, easing: string) => {
+			const from = Number(scrim.style.opacity || 1);
+			scrimFade?.cancel();
+			scrim.style.opacity = `${to}`;
+			scrimFade = scrim.animate([{ opacity: from }, { opacity: to }], { duration, easing });
+		};
+
+		/* Reads the resting box, so it has to run with no animation in flight —
+		   getBoundingClientRect() reports the animated rect, not the layout one. */
+		const measure = () => {
+			transition?.cancel();
+			img.style.transform = "none";
+			base = img.getBoundingClientRect();
+			apply();
+		};
+
+		/* The image can only travel as far as its overhang past the viewport. */
+		const panLimits = () => ({
+			x: Math.max(0, (base.width * scale - innerWidth) / 2),
+			y: Math.max(0, (base.height * scale - innerHeight) / 2),
+		});
+
+		const clampPan = () => {
+			const limit = panLimits();
+			tx = Math.min(limit.x, Math.max(-limit.x, tx));
+			ty = Math.min(limit.y, Math.max(-limit.y, ty));
+		};
+
+		/* Past the edge the image follows the finger less and less, never stops dead. */
+		const rubberband = (over: number, span: number) => (over * span * 0.55) / (span + 0.55 * Math.abs(over));
+
+		const presented = () => getComputedStyle(img).transform;
+
+		const retarget = (duration: number, easing: string) => {
+			const from = presented();
+			transition?.cancel();
+			apply();
+			if (reduced.matches) return;
+			transition = img.animate([{ transform: from }, { transform: transform() }], { duration, easing });
+		};
+
+		/* Zoom about a viewport point: that point of the image stays under the pointer. */
+		const zoomTo = (next: number, cx: number, cy: number, animated = true) => {
+			const target = Math.min(MAX_SCALE, Math.max(1, next));
+			const centerX = base.left + base.width / 2;
+			const centerY = base.top + base.height / 2;
+			tx = cx - centerX - (target / scale) * (cx - centerX - tx);
+			ty = cy - centerY - (target / scale) * (cy - centerY - ty);
+			scale = target;
+			clampPan();
+			if (animated) retarget(320, SETTLE);
+			else apply();
+		};
+
+		/* Maps the open image onto the plate it came from — the FLIP both ways. */
+		const originTransform = () => {
+			if (!origin?.isConnected) return null;
+			const rect = origin.getBoundingClientRect();
+			if (rect.bottom < 0 || rect.top > innerHeight || rect.width === 0) return null;
+			const s = rect.width / base.width;
+			const dx = rect.left + rect.width / 2 - (base.left + base.width / 2);
+			const dy = rect.top + rect.height / 2 - (base.top + base.height / 2);
+			return { transform: `translate(${dx}px, ${dy}px) scale(${s})`, radius: getComputedStyle(origin).borderRadius };
+		};
+
+		const open = async (source: HTMLImageElement) => {
+			if (dialog.open) return;
+			origin = source;
+			scale = 1;
+			tx = 0;
+			ty = 0;
+			img.alt = source.alt;
+			/* The plate is already loaded, so its intrinsic size gives the viewer a
+			   correct box before the full-size bitmap lands — otherwise the first
+			   open measures a 0×0 image and the zoom anchors to nothing. */
+			img.width = source.naturalWidth || source.width;
+			img.height = source.naturalHeight || source.height;
+			img.src = source.dataset.zoomSrc || source.currentSrc || source.src;
+			transition?.cancel();
+			img.style.borderRadius = "";
+			/* Hidden until the bitmap is ready, so the growth never starts mid-decode. */
+			img.style.opacity = "0";
+			scrim.style.opacity = "0";
+			dialog.showModal();
+			apply();
+			/* Dim first, present second: the page must react on the click even when
+			   the full-size bitmap takes a moment to decode. */
+			fadeScrim(1, reduced.matches ? 160 : OPEN_MS, "ease-out");
+
+			if (!img.complete) await img.decode().catch(() => {});
+			measure();
+			img.style.opacity = "";
+
+			const from = reduced.matches ? null : originTransform();
+			transition = img.animate(
+				from
+					? [
+							{ transform: from.transform, borderRadius: from.radius, opacity: 0.6 },
+							{ transform: "none", borderRadius: "6px", opacity: 1 },
+						]
+					: [{ opacity: 0 }, { opacity: 1 }],
+				{ duration: from ? OPEN_MS : 160, easing: EASE },
+			);
+
+			trackLanding("media_opened", { label: source.alt, path: window.location.pathname });
+		};
+
+		const close = () => {
+			if (dialog.dataset.closing !== undefined) return;
+			dialog.dataset.closing = "";
+			const back = reduced.matches ? null : originTransform();
+			const from = presented();
+			fadeScrim(0, CLOSE_MS, "ease-in");
+			transition?.cancel();
+			/* The end state is written to the element rather than held by a filling
+			   animation — a lingering fill would still be overriding the transform
+			   the next time the viewer opens and measures itself. */
+			if (back) {
+				img.style.transform = back.transform;
+				img.style.borderRadius = back.radius;
+			}
+			img.style.opacity = back ? "0.6" : "0";
+			transition = img.animate(
+				back
+					? [
+							{ transform: from, borderRadius: "6px", opacity: 1 },
+							{ transform: back.transform, borderRadius: back.radius, opacity: 0.6 },
+						]
+					: [{ opacity: 1 }, { opacity: 0 }],
+				{ duration: back ? CLOSE_MS : 140, easing: EASE },
+			);
+			/* Idempotent, and on a timer too — a cancelled animation must never
+			   leave the viewer wedged open with no way back to the page. */
+			const settle = () => {
+				if (dialog.dataset.closing === undefined) return;
+				dialog.close();
+				delete dialog.dataset.closing;
+				scrimFade?.cancel();
+				transition?.cancel();
+				scrim.style.opacity = "";
+				img.style.opacity = "";
+				img.style.borderRadius = "";
+				img.removeAttribute("src");
+			};
+			transition.onfinish = settle;
+			transition.oncancel = settle;
+			setTimeout(settle, CLOSE_MS + 120);
+		};
+
 		document.addEventListener("click", (event) => {
 			const target = event.target;
 			if (!(target instanceof Element)) return;
 			const zoomable = target.closest<HTMLImageElement>("img[data-zoomable]");
-			if (!zoomable) return;
-			full.src = zoomable.currentSrc || zoomable.src;
-			full.alt = zoomable.alt;
-			dialog.showModal();
-			trackLanding("media_opened", {
-				label: zoomable.alt,
-				path: window.location.pathname,
-			});
+			if (zoomable) void open(zoomable);
 		});
 
-		// Native <dialog> handles Esc; the backdrop is the dialog element itself,
-		// so a click that lands on it (rather than on the image) closes.
-		dialog.addEventListener("click", (event) => {
-			if (event.target === dialog) dialog.close();
+		dialog.querySelector("[data-close]")?.addEventListener("click", close);
+		/* The stage covers the viewport, so it — not the scrim — is what a click
+		   beside the shot actually lands on. Both dismiss. */
+		dialog.querySelector(".media-lightbox__stage")?.addEventListener("click", (event) => {
+			if (event.target !== img) close();
+		});
+		scrim.addEventListener("click", close);
+
+		/* Esc closes through the same animation rather than snapping shut. */
+		dialog.addEventListener("cancel", (event) => {
+			event.preventDefault();
+			close();
 		});
 
-		// Release the decoded full-size bitmap when the viewer is dismissed.
-		dialog.addEventListener("close", () => {
-			full.removeAttribute("src");
+		addEventListener("resize", () => {
+			if (!dialog.open) return;
+			measure();
+			clampPan();
+			apply();
 		});
+
+		dialog.addEventListener("keydown", (event) => {
+			const step = event.key === "+" || event.key === "=" ? 1.6 : event.key === "-" ? 1 / 1.6 : null;
+			if (step) zoomTo(scale * step, innerWidth / 2, innerHeight / 2);
+			else if (event.key === "0") zoomTo(1, innerWidth / 2, innerHeight / 2);
+		});
+
+		dialog.addEventListener(
+			"wheel",
+			(event) => {
+				/* ctrl+wheel is what a trackpad pinch arrives as; a plain wheel pans. */
+				if (event.ctrlKey) {
+					event.preventDefault();
+					zoomTo(scale * Math.exp(-event.deltaY / 220), event.clientX, event.clientY, false);
+				} else if (scale > 1.01) {
+					event.preventDefault();
+					tx -= event.deltaX;
+					ty -= event.deltaY;
+					clampPan();
+					apply();
+				}
+			},
+			{ passive: false },
+		);
+
+		type Point = { x: number; y: number };
+		const pointers = new Map<number, Point>();
+		let mode: "idle" | "pan" | "dismiss" | "pinch" = "idle";
+		let start: Point = { x: 0, y: 0 };
+		let startPan: Point = { x: 0, y: 0 };
+		let startScale = 1;
+		let startSpan = 0;
+		let moved = false;
+		let velocity = 0;
+		let lastY = 0;
+		let lastAt = 0;
+
+		const centroid = (): Point => {
+			const points = [...pointers.values()];
+			const sum = points.reduce((acc, p) => ({ x: acc.x + p.x, y: acc.y + p.y }), { x: 0, y: 0 });
+			return { x: sum.x / points.length, y: sum.y / points.length };
+		};
+
+		const span = () => {
+			const [a, b] = [...pointers.values()];
+			return Math.hypot(a.x - b.x, a.y - b.y);
+		};
+
+		img.addEventListener("pointerdown", (event) => {
+			pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+			transition?.cancel();
+			startPan = { x: tx, y: ty };
+			startScale = scale;
+			moved = false;
+			velocity = 0;
+			lastY = event.clientY;
+			lastAt = event.timeStamp;
+			if (pointers.size === 2) {
+				mode = "pinch";
+				start = centroid();
+				startSpan = span();
+			} else {
+				mode = scale > 1.01 ? "pan" : "dismiss";
+				start = { x: event.clientX, y: event.clientY };
+			}
+			/* Last, so tracking survives even if capture is refused: the gesture
+			   keeps following a pointer that wanders off the shot. */
+			img.setPointerCapture(event.pointerId);
+		});
+
+		img.addEventListener("pointermove", (event) => {
+			if (!pointers.has(event.pointerId)) return;
+			pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+			const dx = event.clientX - start.x;
+			const dy = event.clientY - start.y;
+			if (!moved && Math.hypot(dx, dy) < 6) return;
+			moved = true;
+
+			/* Samples closer than a frame apart measure noise, not a flick. */
+			const dt = event.timeStamp - lastAt;
+			if (dt >= 8) {
+				velocity = Math.max(-5000, Math.min(5000, ((event.clientY - lastY) / dt) * 1000));
+				lastY = event.clientY;
+				lastAt = event.timeStamp;
+			}
+
+			if (mode === "pinch" && pointers.size === 2) {
+				const mid = centroid();
+				zoomTo(startScale * (span() / startSpan), mid.x, mid.y, false);
+				return;
+			}
+			if (mode === "pan") {
+				const limit = panLimits();
+				const nextX = startPan.x + dx;
+				const nextY = startPan.y + dy;
+				const overX = nextX > limit.x ? nextX - limit.x : nextX < -limit.x ? nextX + limit.x : 0;
+				const overY = nextY > limit.y ? nextY - limit.y : nextY < -limit.y ? nextY + limit.y : 0;
+				tx = nextX - overX + rubberband(overX, innerWidth);
+				ty = nextY - overY + rubberband(overY, innerHeight);
+				apply();
+				return;
+			}
+			/* Dragging an unzoomed shot pushes it away and thins the scrim with it. */
+			const travel = Math.min(1, Math.abs(dy) / (innerHeight * 0.5));
+			tx = dx * 0.4;
+			ty = dy;
+			scale = 1 - travel * 0.2;
+			apply();
+			scrim.style.opacity = `${1 - travel * 0.85}`;
+		});
+
+		const release = (event: PointerEvent) => {
+			pointers.delete(event.pointerId);
+			if (pointers.size > 0) {
+				/* One finger lifted mid-pinch: re-anchor so the survivor keeps panning. */
+				const remaining = [...pointers.values()][0];
+				start = remaining;
+				startPan = { x: tx, y: ty };
+				startScale = scale;
+				mode = scale > 1.01 ? "pan" : "dismiss";
+				return;
+			}
+			if (mode === "dismiss" && moved) {
+				/* Where the flick was heading decides it, not where the finger stopped. */
+				const projected = ty + (velocity / 1000) * 0.998 / (1 - 0.998);
+				if (Math.abs(projected) > innerHeight * 0.2) {
+					close();
+				} else {
+					tx = 0;
+					ty = 0;
+					scale = 1;
+					retarget(360, SETTLE);
+					fadeScrim(1, 260, "ease-out");
+				}
+			} else if (mode === "pan") {
+				clampPan();
+				retarget(320, SETTLE);
+			} else if (!moved) {
+				/* A tap on the shot magnifies where it was tapped, and back again. */
+				zoomTo(scale > 1.01 ? 1 : 2.5, event.clientX, event.clientY);
+			}
+			mode = "idle";
+		};
+
+		img.addEventListener("pointerup", release);
+		img.addEventListener("pointercancel", release);
 	}
 </script>
 
@@ -63,48 +397,79 @@
 	}
 
 	.media-lightbox {
-		/* Leave room for the dismiss control and a margin of backdrop, so the
-		   frame reads as lifted off the page rather than pinned to its edges. */
-		max-width: min(92vw, 1600px);
-		max-height: 88vh;
-		width: auto;
-		/* Native centring: a modal <dialog> resolves `auto` insets against the
-		   viewport, which `margin: auto` alone does not do once max-height bites. */
-		margin: auto;
+		width: 100vw;
+		max-width: 100vw;
+		height: 100dvh;
+		max-height: 100dvh;
+		margin: 0;
 		padding: 0;
-		border: 1px solid var(--border);
-		border-radius: 6px;
-		background: var(--bg-elevated, var(--background));
-		color: var(--fg, currentColor);
+		border: 0;
+		background: transparent;
 		overflow: hidden;
+		/* The scrim is a real element, not ::backdrop — a gesture has to be able
+		   to fade it frame by frame while the shot is dragged away. */
+		overscroll-behavior: contain;
 	}
 
 	.media-lightbox::backdrop {
-		background: color-mix(in oklch, black 78%, transparent);
-		backdrop-filter: blur(2px);
+		background: transparent;
 	}
 
-	.media-lightbox img {
+	.media-lightbox__scrim {
+		position: fixed;
+		inset: 0;
+		background: color-mix(in oklch, black 82%, transparent);
+		backdrop-filter: blur(6px);
+	}
+
+	@media (prefers-reduced-transparency: reduce) {
+		.media-lightbox__scrim {
+			background: black;
+			backdrop-filter: none;
+		}
+	}
+
+	.media-lightbox__stage {
+		position: relative;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		width: 100%;
+		height: 100%;
+	}
+
+	.media-lightbox__img {
 		display: block;
 		width: auto;
-		max-width: 100%;
-		max-height: 88vh;
 		height: auto;
+		/* Room for the dismiss control and a margin of scrim, so the shot reads as
+		   lifted off the page rather than pinned to its edges. */
+		max-width: min(92vw, 1600px);
+		max-height: 88vh;
 		object-fit: contain;
+		border: 1px solid var(--border);
+		border-radius: 6px;
+		background: var(--bg-elevated, var(--background));
+		transform-origin: center center;
+		will-change: transform;
+		touch-action: none;
+		user-select: none;
+		cursor: zoom-in;
 	}
 
-	/* Inside the frame, not hanging off it: anchored outside, the control is
-	   clipped away entirely whenever the image is tall enough to reach the
-	   top of the viewport. */
+	.media-lightbox__img[data-zoomed] {
+		cursor: grab;
+	}
+
+	.media-lightbox__img[data-zoomed]:active {
+		cursor: grabbing;
+	}
+
 	.media-lightbox__dismiss {
-		position: absolute;
-		top: 0.625rem;
-		right: 0.625rem;
+		position: fixed;
+		top: 1rem;
+		right: 1rem;
 		z-index: 1;
-		margin: 0;
-	}
-
-	.media-lightbox__dismiss button {
 		display: inline-flex;
 		align-items: center;
 		justify-content: center;
@@ -120,20 +485,7 @@
 		transition: color 150ms ease;
 	}
 
-	.media-lightbox__dismiss button:hover {
+	.media-lightbox__dismiss:hover {
 		color: var(--fg, currentColor);
-	}
-
-	@media (prefers-reduced-motion: no-preference) {
-		.media-lightbox[open] {
-			animation: media-lightbox-in 160ms cubic-bezier(0, 0, 0.2, 1);
-		}
-	}
-
-	@keyframes media-lightbox-in {
-		from {
-			opacity: 0;
-			transform: scale(0.98);
-		}
 	}
 </style>

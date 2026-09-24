@@ -1,6 +1,9 @@
 import { lazy, memo, Suspense, useEffect } from "react"
 import { useAuth } from "@clerk/clerk-react"
 import { useMapleCustomer } from "@/hooks/use-maple-customer"
+import { useOrganizationRegion } from "@/hooks/use-organization-region"
+import { WrongRegionScreen } from "@/components/region/wrong-region-screen"
+import { useTimezonePreference } from "@/hooks/use-timezone-preference"
 import {
 	Navigate,
 	Outlet,
@@ -15,6 +18,7 @@ import { isFixturePath, isPublicPath } from "@/lib/public-routes"
 import { parseRedirectUrl } from "@/lib/redirect-utils"
 import { AnchoredToastProvider, ToastProvider } from "@maple/ui/components/ui/toast"
 import { AttributesProvider } from "@maple/ui/components/attributes/context"
+import { PlotTimeZoneProvider } from "@maple/ui/components/plot"
 import { BootSplash } from "@/components/boot-splash"
 import { highlightCode } from "@/lib/sugar-high"
 import { isClerkAuthEnabled } from "@/lib/services/common/auth-mode"
@@ -91,23 +95,28 @@ const AppFrame = memo(function AppFrame() {
 	// component rebuilds its query inputs under the new scope, so no memoized
 	// atom key can keep serving the previous scope's rows.
 	const globalNamespace = useGlobalNamespace()
+	// Every chart prints its clock in the selected zone; the provider is the one
+	// seam the plot layer reads it through.
+	const { effectiveTimezone } = useTimezonePreference()
 	useEffect(() => {
 		captureChatReferrer(pathname)
 	}, [pathname])
 	return (
 		<AttributesProvider highlightJson={highlightCode} renderValue={renderAttributeValue}>
-			<ToastProvider position="bottom-right">
-				<AnchoredToastProvider>
-					<Outlet key={globalNamespace ?? "__all__"} />
-					{!isPublicPath(pathname) && <IdleRoutePrefetch />}
-					{!isPublicPath(pathname) && (
-						<>
-							<GlobalShortcuts />
-							<GlobalChatSheet />
-						</>
-					)}
-				</AnchoredToastProvider>
-			</ToastProvider>
+			<PlotTimeZoneProvider timeZone={effectiveTimezone}>
+				<ToastProvider position="bottom-right">
+					<AnchoredToastProvider>
+						<Outlet key={globalNamespace ?? "__all__"} />
+						{!isPublicPath(pathname) && <IdleRoutePrefetch />}
+						{!isPublicPath(pathname) && (
+							<>
+								<GlobalShortcuts />
+								<GlobalChatSheet />
+							</>
+						)}
+					</AnchoredToastProvider>
+				</ToastProvider>
+			</PlotTimeZoneProvider>
 		</AttributesProvider>
 	)
 })
@@ -135,14 +144,21 @@ function ClerkReverseRedirects() {
 		}),
 	})
 	const { isSignedIn, orgId } = useAuth()
+	const orgRegion = useOrganizationRegion()
+	// An organization from another region is refused by this region's API.
+	const wrongRegion = Boolean(isSignedIn && orgId) && orgRegion.isLoaded && !orgRegion.servedHere
 	// Autumn customers are keyed by orgId, so getOrCreateCustomer can only
 	// succeed once an org is active. Skip the fetch for signed-out/org-less
 	// onboarding sessions (e.g. /sign-up, /org-required) to avoid guaranteed 401s.
+	// It also waits for the org's region: asked sooner, an org that has not chosen one yet is
+	// refused on the EU dashboard, and that cached refusal outlives the choice.
 	const {
 		data: customer,
 		isLoading: isCustomerLoading,
 		error: customerError,
-	} = useMapleCustomer({ queryOptions: { enabled: Boolean(isSignedIn && orgId) } })
+	} = useMapleCustomer({
+		queryOptions: { enabled: Boolean(isSignedIn && orgId) && orgRegion.isLoaded && !wrongRegion },
+	})
 
 	const redirectUrl = pathname + (searchStr ?? "")
 	const selectedPlan = hasSelectedPlan(customer)
@@ -190,6 +206,16 @@ function ClerkReverseRedirects() {
 	// about sending a signed-in reader somewhere better rather than gating them.
 	if (isFixturePath(pathname)) {
 		return <AppFrame />
+	}
+
+	if (wrongRegion) {
+		// A new organization with no region yet is not in the wrong place, it has not picked one:
+		// onboarding asks, and this region's API lets that one request through.
+		if (orgRegion.open) {
+			if (pathname === "/quick-start") return <AppFrame />
+			return <Navigate to="/quick-start" search={{ redirect_url: redirectUrl }} replace />
+		}
+		return <WrongRegionScreen region={orgRegion.region} />
 	}
 
 	if (isSignedIn && orgId) {

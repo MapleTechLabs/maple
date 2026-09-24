@@ -10,7 +10,7 @@ import {
 	PlotTooltipBody,
 	createTooltipFocusStore,
 	cursorTooltip,
-	dashedGridY,
+	DASHED_Y_GRID,
 	focusCrosshair,
 	focusDot,
 	resolvePlotColor,
@@ -126,7 +126,6 @@ export function AnomalyTimeseriesChart({
 		return defineChart({
 			gradients: [verticalGradient(gradientId, stroke, 0.3, 0.03)],
 			marks: [
-				dashedGridY(),
 				// The incident window. `decorative` so the shading never takes the
 				// pointer away from the series underneath it.
 				...(window
@@ -189,6 +188,7 @@ export function AnomalyTimeseriesChart({
 					},
 				},
 				y: {
+					grid: DASHED_Y_GRID,
 					scale: scaleLinear().domain(yDomain),
 					axis: { line: false, ticks: { size: 0, padding: 8, format: valueFormatter } },
 				},

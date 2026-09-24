@@ -17,7 +17,7 @@ interface IntegrationEmptyContextValue {
 	 * Glyph for the two dimmed backer plates — defaults to `icon`. Multicolor marks
 	 * hard-code their path fills, so the backers' `text-muted-foreground/70` can't
 	 * reach them and all three plates render equally loud, flattening the depth
-	 * hierarchy. Pass the mark's monochrome variant (e.g. `SlackMonoIcon`) so the
+	 * hierarchy. Pass the mark's monochrome variant (e.g. `CloudflareMonoIcon`) so the
 	 * backers recede and the center plate keeps the brand color to itself.
 	 */
 	backerIcon?: IntegrationGlyph
@@ -54,8 +54,8 @@ function useIntegrationEmptyContext(caller: string): IntegrationEmptyContextValu
  * </IntegrationEmpty>
  * ```
  *
- * Marks whose fills are hard-coded per path (Slack) additionally pass
- * `backerIcon={SlackMonoIcon}` so the dim backer plates don't render at full brand
+ * Marks whose fills are hard-coded per path additionally pass a monochrome
+ * `backerIcon` (as above) so the dim backer plates don't render at full brand
  * saturation next to the colored center plate.
  */
 export function IntegrationEmpty({

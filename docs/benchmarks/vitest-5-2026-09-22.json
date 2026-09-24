@@ -1,0 +1,373 @@
+{
+	"date": "2026-09-22",
+	"vitest": "5.0.1",
+	"node": "24.18.0",
+	"bun": "1.4.2",
+	"platform": "macOS arm64",
+	"workers": 2,
+	"notes": [
+		"Compatibility runs, not paired performance comparisons.",
+		"VITE_MAPLE_AUTH_MODE=self_hosted overrides local development auth config.",
+		"External integrations remain skipped by their existing environment gates.",
+		"44 eval cases collected with an unmatched name filter and placeholder credential; no model calls."
+	],
+	"suites": [
+		{
+			"suite": "apps/alerting",
+			"exit": 0,
+			"seconds": 2.489,
+			"passed": 10,
+			"pending": 0,
+			"failed": 0,
+			"report_sha256": "2b146122aef8c817e44745bcbaeb670b401fe62698c28d8a16abb722c66c20aa"
+		},
+		{
+			"suite": "apps/scraper",
+			"exit": 0,
+			"seconds": 0.906,
+			"passed": 104,
+			"pending": 0,
+			"failed": 0,
+			"report_sha256": "d24336c4ca342621708d00e53a61877b7e009b5ffdb381ca7105028e066cf025"
+		},
+		{
+			"suite": "apps/landing",
+			"exit": 0,
+			"seconds": 3.474,
+			"passed": 33,
+			"pending": 0,
+			"failed": 0,
+			"report_sha256": "4e18d4b341c33318a27e02146ae1754fdb7dcaf144512320a86ea3bf4e54022d"
+		},
+		{
+			"suite": "apps/local-ui",
+			"exit": 0,
+			"seconds": 2.019,
+			"passed": 11,
+			"pending": 0,
+			"failed": 0,
+			"report_sha256": "f8e34e3ed5496e13ad1b559f93cdb6b97a806266f4c80f33ca2e0d1b80f06a64"
+		},
+		{
+			"suite": "apps/web",
+			"exit": 0,
+			"seconds": 68.916,
+			"passed": 2499,
+			"pending": 0,
+			"failed": 0,
+			"report_sha256": "f544e3c62b2635153dc6c5f7a1dfd5868d8ab0add0b01e485cf5523ad536f0a2"
+		},
+		{
+			"suite": "apps/cli",
+			"exit": 0,
+			"seconds": 4.03,
+			"passed": 591,
+			"failed": 0
+		},
+		{
+			"suite": "apps/sandbox",
+			"exit": 0,
+			"seconds": 0.386,
+			"passed": 32,
+			"pending": 0,
+			"failed": 0,
+			"report_sha256": "a1b4f45dafffa5ba5bd71d06c7584e4d9dfc6150156a9d5137bdd86416e1d6a2"
+		},
+		{
+			"suite": "apps/ai",
+			"exit": 0,
+			"seconds": 21.298,
+			"passed": 679,
+			"pending": 0,
+			"failed": 0,
+			"report_sha256": "8f00ecb96743bb61babc4b88ebf755cd3e616ef4799c8709de6f615c8c698522"
+		},
+		{
+			"suite": "apps/api",
+			"exit": 0,
+			"seconds": 27.965,
+			"passed": 441,
+			"pending": 391,
+			"failed": 0,
+			"report_sha256": "4d35e2f062cd0e04cdad9ff6fe668fedaa514a0c47a4ad4bd218e9eac7ac8988"
+		},
+		{
+			"suite": "apps/chat-bot",
+			"exit": 0,
+			"seconds": 0.679,
+			"passed": 42,
+			"pending": 0,
+			"failed": 0,
+			"report_sha256": "0913f8b41f61510efe5c424c10c7eaed4638a773c9701b93093dda96f4ec40e1"
+		},
+		{
+			"suite": "apps/electric-sync",
+			"exit": 0,
+			"seconds": 1.333,
+			"passed": 82,
+			"pending": 0,
+			"failed": 0,
+			"report_sha256": "19df5cf6278385652baafb18e195d1ea044a72b28e4fdc959fdf45d5e0410b2b"
+		},
+		{
+			"suite": "packages/ui",
+			"exit": 0,
+			"seconds": 12.759,
+			"passed": 674,
+			"pending": 0,
+			"failed": 0,
+			"report_sha256": "9aa6b4e5ad6ce4b61546cf6dd60d2fd8df56f0caa5ac28a9f64dcbd4b94402b1"
+		},
+		{
+			"suite": "packages/alchemy-maple",
+			"exit": 0,
+			"seconds": 1.232,
+			"passed": 44,
+			"pending": 0,
+			"failed": 0,
+			"report_sha256": "2af698b6443783f87d5f8f48479cb1a72fdd0abe9a352e945d5c16f696e0c277"
+		},
+		{
+			"suite": "packages/alerting-core",
+			"exit": 0,
+			"seconds": 0.347,
+			"passed": 12,
+			"pending": 0,
+			"failed": 0,
+			"report_sha256": "734624e79c54927a6b6d0aa569b353489825ba7938dc2050394947189af9e24c"
+		},
+		{
+			"suite": "packages/infra",
+			"exit": 0,
+			"seconds": 1.048,
+			"passed": 79,
+			"pending": 0,
+			"failed": 0,
+			"report_sha256": "f3eac360aa8587d9eb2d1ad582f0b6158e27d66ea78706baa71334e344209336"
+		},
+		{
+			"suite": "packages/query-engine-integrations",
+			"exit": 0,
+			"seconds": 2.692,
+			"passed": 421,
+			"pending": 0,
+			"failed": 0,
+			"report_sha256": "545c1982c11da07ce15e9e55e902e943a7a46bcaf217f4dae0ec8654bf2f8e09"
+		},
+		{
+			"suite": "packages/auth",
+			"exit": 0,
+			"seconds": 0.612,
+			"passed": 72,
+			"pending": 0,
+			"failed": 0,
+			"report_sha256": "aa218e163ae266c9c9cba0f54bcca15ae6bc6367f40194d878632812e1c7debe"
+		},
+		{
+			"suite": "packages/query-engine",
+			"exit": 0,
+			"seconds": 8.413,
+			"passed": 1497,
+			"pending": 0,
+			"failed": 0,
+			"report_sha256": "caf06fe79ee2f13a319267c2c5867c222f7544d8aa71a4ed3aaf5ee05d07dca8"
+		},
+		{
+			"suite": "packages/effect-sdk",
+			"exit": 0,
+			"seconds": 6.637,
+			"passed": 133,
+			"pending": 0,
+			"failed": 0,
+			"report_sha256": "e84e59192cdc7784723ac5d59d907bbebbcf3ea2a200ee2f87465a4f046d92ab"
+		},
+		{
+			"suite": "packages/backend",
+			"exit": 0,
+			"seconds": 58.705,
+			"passed": 1810,
+			"pending": 178,
+			"failed": 0,
+			"report_sha256": "3219d6f07cb74bf8a4fb6b3579610018613ed25296f3d9efe80c778719d0d389"
+		},
+		{
+			"suite": "packages/eventing-core",
+			"exit": 0,
+			"seconds": 0.483,
+			"passed": 39,
+			"pending": 0,
+			"failed": 0,
+			"report_sha256": "859ac4764470a521613fcd286410f796944c7838ca480a02cbaf736e661633f4"
+		},
+		{
+			"suite": "packages/browser",
+			"exit": 0,
+			"seconds": 0.696,
+			"passed": 19,
+			"pending": 0,
+			"failed": 0,
+			"report_sha256": "9559a3a679e33cd3fca67af6d0779f286dc22f48ef82b4fcbd6d5df7aa7c1266"
+		},
+		{
+			"suite": "packages/chat-platform",
+			"exit": 0,
+			"seconds": 0.766,
+			"passed": 127,
+			"pending": 0,
+			"failed": 0,
+			"report_sha256": "1c29e3f196706cac78056b901b7b952d341c1e09fd95886c130e86abb7c9e437"
+		},
+		{
+			"suite": "packages/agent-sessions",
+			"exit": 0,
+			"seconds": 1.663,
+			"passed": 278,
+			"pending": 0,
+			"failed": 0,
+			"report_sha256": "2c1415eda33d2e8882fbcd87d6ad4c8c0813e21057423315918d8165b90d769a"
+		},
+		{
+			"suite": "packages/db",
+			"exit": 0,
+			"seconds": 3.057,
+			"passed": 53,
+			"pending": 0,
+			"failed": 0,
+			"report_sha256": "30c854f832b16f809f76ba3abd8293a3705cfb41fdddb7554796305cc2522a7a"
+		},
+		{
+			"suite": "packages/domain",
+			"exit": 0,
+			"seconds": 4.569,
+			"passed": 768,
+			"pending": 0,
+			"failed": 0,
+			"report_sha256": "f7c92f0ba0bc088f4d922ccf4923e03f1ff04a98475c1d50e72bad325f32895c"
+		},
+		{
+			"suite": "packages/email",
+			"exit": 0,
+			"seconds": 0.236,
+			"passed": 17,
+			"pending": 0,
+			"failed": 0,
+			"report_sha256": "7a7bdfb8092c84d49bdb598a9c7053472c2038184b7d492e6e55f565ac5c6684"
+		},
+		{
+			"suite": "packages/widgets",
+			"exit": 0,
+			"seconds": 0.663,
+			"passed": 203,
+			"pending": 0,
+			"failed": 0,
+			"report_sha256": "224635f998f2a9823d355c9a105f82c4d734ba294ef20c59255f19f13509696c"
+		},
+		{
+			"suite": "packages/clickhouse-cli",
+			"exit": 0,
+			"seconds": 0.396,
+			"passed": 6,
+			"pending": 0,
+			"failed": 0,
+			"report_sha256": "2b97a9c880a1831d5fdcdfb20d2f5d65092f045c7f1e0b5e26392c9ef7c1b8b4"
+		},
+		{
+			"suite": "packages/browser-session",
+			"exit": 0,
+			"seconds": 0.911,
+			"passed": 170,
+			"pending": 0,
+			"failed": 0,
+			"report_sha256": "b2efa7195d7572d072635f3a7cc0283fb359dd8ff1f0a6b110b1ff983e2df4d5"
+		},
+		{
+			"suite": "packages/query-model",
+			"exit": 0,
+			"seconds": 0.339,
+			"passed": 21,
+			"pending": 0,
+			"failed": 0,
+			"report_sha256": "04fc834ed994bab9516236f2ef1341d26cf7d8c14804f918d123c2f689e67ce6"
+		},
+		{
+			"suite": "lib/alchemy-portless",
+			"exit": 0,
+			"seconds": 0.258,
+			"passed": 4,
+			"pending": 0,
+			"failed": 0,
+			"report_sha256": "549fcdb9879ff2d025a8f6c38ee00c9549c45b0fdb820a24824e04c70b235251"
+		},
+		{
+			"suite": "lib/safe-fetch",
+			"exit": 0,
+			"seconds": 0.316,
+			"passed": 69,
+			"pending": 0,
+			"failed": 0,
+			"report_sha256": "6923b31d2906bda2bb1d724acda4cff789f5bbfd30fed4f90665a25ce902f382"
+		},
+		{
+			"suite": "lib/cache",
+			"exit": 0,
+			"seconds": 0.576,
+			"passed": 21,
+			"pending": 0,
+			"failed": 0,
+			"report_sha256": "ba9855198ac9fcc7ad16760f9d22a7fd6b7cc2f5e106ba2c0eb054e142fd363b"
+		},
+		{
+			"suite": "lib/otel-helpers",
+			"exit": 0,
+			"seconds": 0.037,
+			"passed": 5,
+			"failed": 0
+		},
+		{
+			"suite": "lib/ai-model-catalog",
+			"exit": 0,
+			"seconds": 0.252,
+			"passed": 15,
+			"pending": 0,
+			"failed": 0,
+			"report_sha256": "86746d197ad798a0a66114c52607783f4d49ed86ad5d24e884f5c92256e4c4aa"
+		},
+		{
+			"suite": "lib/unitflow",
+			"exit": 0,
+			"seconds": 1.197,
+			"passed": 141,
+			"pending": 0,
+			"failed": 0,
+			"report_sha256": "c4de1f975b265ab762fd224e7ef6caeb37d1edc0e2c53949f982fa416344f483"
+		},
+		{
+			"suite": "lib/effect-clickhouse-http",
+			"exit": 0,
+			"seconds": 0.576,
+			"passed": 590,
+			"pending": 9,
+			"failed": 0,
+			"report_sha256": "2baa19ccebae0003f32820b4766cbfd58b961ae73e843ec8158866ba9dcb2a2f"
+		}
+	],
+	"passed": 11812,
+	"failed": 0,
+	"typecheck": {
+		"existing_diagnostics": 218,
+		"added": 0,
+		"removed": 0
+	},
+	"backend_5x": {
+		"copies": 5,
+		"workers": 2,
+		"seconds": 281.601,
+		"passed": 9050,
+		"pending": 890,
+		"failed": 0,
+		"report_sha256": "6ea44b53efdc1fe1b95c2363d0c1f53bb8d7523dc2d6c48feb1efbbae2780034",
+		"same_test_outcomes_as_v4": true,
+		"node_compile_cache": false,
+		"notes": "Single validation run; prior v4 fivefold measurement enabled Node compile caching, so this is not a controlled version-speedup comparison."
+	}
+}

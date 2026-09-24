@@ -1,14 +1,18 @@
+import { EdgeCacheServiceLive } from "@maple/backend/platform/CacheBackendLive"
 import type { Message } from "@cloudflare/workers-types"
 import type { OrgId } from "@maple/domain/primitives"
 import { Cause, Clock, Effect, Layer } from "effect"
-import { summarizeCause } from "@/platform/describe-cause"
-import { EventBaseLive } from "@/platform/DatabasePgLive"
-import type { QueueBatch } from "@/platform/queue-batch"
-import { systemTenant } from "@/services/alerts/system-tenant"
-import { AUDIT_LOG_DATASOURCE } from "@/services/audit/AuditLogService"
-import { WarehouseQueryService } from "@/services/warehouse/WarehouseQueryService"
-import { WarehouseLive } from "@/runtime/warehouse-layer"
-import { type AuditLogEvent, auditEventToRow, decodeAuditLogEvent } from "./services/audit/audit-event"
+import { summarizeCause } from "@maple/backend/platform/describe-cause"
+import { EventBaseLive } from "@maple/backend/platform/DatabasePgLive"
+import type { QueueBatch } from "@maple/backend/platform/queue-batch"
+import { systemTenant } from "@maple/backend/services/alerts/system-tenant"
+import { AUDIT_LOG_DATASOURCE } from "@maple/backend/services/audit/AuditLogService"
+import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
+import {
+	type AuditLogEvent,
+	auditEventToRow,
+	decodeAuditLogEvent,
+} from "@maple/backend/services/audit/audit-event"
 
 /**
  * The consumer writes through `WarehouseQueryService.ingest`, which pins every
@@ -17,7 +21,9 @@ import { type AuditLogEvent, auditEventToRow, decodeAuditLogEvent } from "./serv
  * layer requires them, not because a write ever consults them. Its spans are
  * `maple-api`'s, through the telemetry the bridge builds into the event.
  */
-export const AuditEventsLive = WarehouseLive.pipe(Layer.provide(EventBaseLive))
+export const AuditEventsLive = WarehouseQueryService.layer.pipe(
+	Layer.provide(Layer.mergeAll(EventBaseLive, EdgeCacheServiceLive)),
+)
 
 /**
  * Must match `maxRetries` on the audit-events consumer in `worker.ts`.

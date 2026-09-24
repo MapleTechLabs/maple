@@ -29,6 +29,7 @@ export type PanelType =
 	| "histogram"
 	| "heatmap"
 	| "funnel"
+	| "paths"
 	| "markdown"
 
 /**
@@ -53,6 +54,7 @@ export const WIDGET_VISUALIZATIONS = [
 	"histogram",
 	"heatmap",
 	"funnel",
+	"paths",
 	"markdown",
 ] as const
 
@@ -81,6 +83,7 @@ export type OwnedDisplayKey =
 	| "listWhereClause"
 	| "listLimit"
 	| "listRootOnly"
+	| "paths"
 
 export interface WidgetTypeMeta {
 	readonly panelType: PanelType
@@ -272,6 +275,22 @@ export const WIDGET_TYPES: Record<PanelType, WidgetTypeMeta> = {
 	// "100%". `hbar` is that panel: rows sorted by value, each labelled with its
 	// share of the **total**.
 	funnel: breakdownPanel("funnel", "Funnel", { requiresGroupBy: true }),
+	// Paths walk a per-person event sequence out from one anchor and have no
+	// query-set or raw-SQL shape at all: the definition lives on
+	// `display.paths` and is answered by the `product_events_paths` route only.
+	paths: {
+		panelType: "paths",
+		label: "Paths",
+		visualization: "paths",
+		chartId: "query-builder-paths",
+		chartCategory: "paths",
+		defaultLayout: WIDE_LAYOUT,
+		isScalar: false,
+		ownedDisplayKeys: ["chartId", "paths"],
+		requiresGroupBy: false,
+		mcpExposed: true,
+		persesKinds: [],
+	},
 	hbar: breakdownPanel("hbar", "Horizontal Bar", {
 		requiresGroupBy: true,
 		// Perses' BarChart is horizontal, but `bar` has imported it since the
@@ -309,6 +328,7 @@ export const PANEL_TYPES: ReadonlyArray<WidgetTypeMeta> = [
 	WIDGET_TYPES.histogram,
 	WIDGET_TYPES.heatmap,
 	WIDGET_TYPES.funnel,
+	WIDGET_TYPES.paths,
 	WIDGET_TYPES.markdown,
 ]
 

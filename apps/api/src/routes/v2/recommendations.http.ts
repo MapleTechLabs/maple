@@ -4,7 +4,7 @@ import { CurrentTenant, RecommendationIssueNotFoundError } from "@maple/domain/h
 import { MapleApiV2, paginateArray } from "@maple/domain/http/v2"
 import type { V2Recommendation } from "@maple/domain/http/v2"
 import { Effect } from "effect"
-import { RecommendationIssueService } from "@/services/errors/RecommendationIssueService"
+import { RecommendationIssueService } from "@maple/backend/services/errors/RecommendationIssueService"
 
 const toV2Recommendation = (issue: RecommendationIssue): V2Recommendation => ({
 	id: issue.id,

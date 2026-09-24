@@ -8,23 +8,14 @@
  *
  * Deliberately free of React and of `@xyflow/react` runtime imports: the layout
  * is arithmetic over a fixed column grid, and keeping it that way is what lets
- * the shape rules (which node kinds appear, how the lens column collapses) be
- * unit-tested without mounting a canvas.
+ * the shape rules (which node kinds appear) be unit-tested without mounting a
+ * canvas.
  */
 import type { V2Investigation } from "@maple/domain/http/v2"
 import { formatNumber } from "@maple/ui/lib/format"
 import { toEpochMs } from "@maple/ui/lib/time-format"
 
-import { lensCopy } from "../lens-catalogue"
-import {
-	type LensRun,
-	type LensNodeState,
-	checksHeld,
-	lensChecks,
-	lensNodeState,
-	lensTally,
-} from "../lens-derive"
-import { splitDuration } from "../investigation-display"
+import { reportHeadline, splitDuration } from "../investigation-display"
 import {
 	classifyAction,
 	routingContextFromInvestigation,
@@ -36,23 +27,11 @@ import {
  * Geometry
  *
  * Taken from the Paper frame rather than eyeballed: spine nodes are 146 wide with
- * a 52px gutter (146 + 52 = 198 between column origins), lens nodes 146×52, the
- * actions column 280. The right edge lands at 990 + 280 = 1270, the width of the
+ * a 52px gutter (146 + 52 = 198 between column origins), the actions column 280. The right edge lands at 990 + 280 = 1270, the width of the
  * design's graph frame.
  * -----------------------------------------------------------------------------------------------*/
 
 export const SPINE_WIDTH = 146
-/**
- * Wider than the design's 146, and wider than the spine beside it.
- *
- * At 146 the text column is 126px, which is seventeen 12px mono characters —
- * shorter than almost every lane name the planner writes, so the entire fan
- * rendered as a column of identical `Deploy correlati…`. A card whose title is
- * mostly ellipsis reads as broken layout no matter how well the rest of it is
- * drawn. 180 buys twenty-two characters, which clears the catalogue names and
- * most planner-written ones.
- */
-export const LENS_WIDTH = 180
 export const ACTION_WIDTH = 280
 const GUTTER = 52
 
@@ -87,17 +66,12 @@ export const SPINE_HEIGHT_LIVE = 168
  * summing one height per node, and a fan whose rows changed height every poll
  * would walk up and down the canvas as lanes settled.
  */
-export const LENS_HEIGHT = 64
-const LENS_GAP = 8
+const COLUMN_GAP = 8
 export const ACTION_HEIGHT = 76
 const ACTION_GAP = 8
 export const HEADING_HEIGHT = 12
 /** Column headings ride 20px above their column's top edge. */
 const HEADING_OFFSET = 20
-
-/** Above five lenses the column collapses to the top four plus a "+N more" node. */
-const LENS_VISIBLE_MAX = 4
-const LENS_COLLAPSE_ABOVE = 5
 
 /* -------------------------------------------------------------------------------------------------
  * Node model
@@ -135,33 +109,12 @@ export interface SpineNodeData {
 	readonly lifted?: boolean
 	/** This step is happening right now — the node rings and its strands march. */
 	readonly live?: boolean
-	/** What the live step is doing, e.g. `FANNING OUT · 2/4 REPORTED`. Only set while `live`. */
+	/** What the live step is doing, e.g. `GATHERING EVIDENCE`. Only set while `live`. */
 	readonly phase?: string
 }
 
-export interface LensNodeData {
-	readonly title: string
-	readonly question: string
-	/** The validator's own sentence for this lane — hover text, not a printed row. */
-	readonly result: string
-	readonly state: LensNodeState
-	readonly elapsed: string | null
-	/**
-	 * What the lane is doing right now, printed while it runs.
-	 *
-	 * It was already on the wire and already derived — `lensChecks` reads it for
-	 * the rail — but on this canvas it only ever reached a `title` tooltip, which
-	 * is the one place a reader watching a run in progress will not look.
-	 */
-	readonly progressNote: string | null
-}
-
-export interface LensOverflowNodeData {
-	readonly hidden: number
-}
-
 /**
- * The step after the fan, while there is no verdict to show.
+ * The step after the investigation, while there is no verdict to show.
  *
  * It states the *process* and never a result: no suspected cause, no confidence,
  * no timestamp. A placeholder verdict would be a claim the run has not made; a
@@ -206,15 +159,6 @@ export interface ActionNodeData {
 
 export type ProvenanceNode =
 	| { id: string; type: "spine"; position: XY; width: number; height: number; data: SpineNodeData }
-	| { id: string; type: "lens"; position: XY; width: number; height: number; data: LensNodeData }
-	| {
-			id: string
-			type: "lensOverflow"
-			position: XY
-			width: number
-			height: number
-			data: LensOverflowNodeData
-	  }
 	| {
 			id: string
 			type: "pendingVerdict"
@@ -246,7 +190,7 @@ export interface XY {
 	readonly y: number
 }
 
-export type EdgeKind = "causal" | "fan" | "roadmap"
+export type EdgeKind = "causal" | "roadmap"
 
 export interface ProvenanceEdge {
 	readonly id: string
@@ -272,8 +216,6 @@ export interface ProvenanceGraph {
 	readonly edges: ReadonlyArray<ProvenanceEdge>
 	readonly width: number
 	readonly height: number
-	/** Column heading above the lens fan, e.g. `FANNED OUT · 4 LENSES`. Null when there was no fan-out. */
-	readonly lensHeading: string | null
 	/** Column heading above the actions column. Null when the report proposed nothing. */
 	readonly actionHeading: string | null
 	/** `14:02 → 14:03 · 38s`, or as much of it as the timestamps carry. */
@@ -315,8 +257,8 @@ export function buildProvenanceGraph(investigation: V2Investigation): Provenance
 
 	const pushColumn = (nodes: Array<ProvenanceNode>, width: number, kind: EdgeKind) => {
 		if (nodes.length === 0) return
-		// A fan into many nodes, or a merge out of many, carries its label on the
-		// column heading instead — the same word repeated on four strands is noise.
+		// A column of many nodes carries its label on the column heading instead —
+		// the same word repeated on three strands is noise.
 		const label = upstream.length === 1 && nodes.length === 1 ? nextLabel : undefined
 		for (const source of upstream) {
 			for (const node of nodes) {
@@ -431,50 +373,6 @@ export function buildProvenanceGraph(investigation: V2Investigation): Provenance
 	)
 	if (running) liveIds.add("investigation")
 
-	/* --- the lens fan -------------------------------------------------------- */
-
-	const { visible, hidden } = selectLenses(investigation.lens_runs)
-	// `lensChecks` returns one entry per lane in the order given, so this is the
-	// validator's own sentence for each visible lane. It used to be the checks
-	// rail's second line; with the rail gone it is the node's hover text, and it is
-	// the only place the *reason* a lane held or didn't survives on this tab.
-	const results = lensChecks(visible)
-	const lensNodes: Array<ProvenanceNode> = visible.map((run, index) => {
-		const id = `lens-${run.lensId}-${index}`
-		// A queued lane is live too: nothing has happened on it yet, which is
-		// precisely why its strand should not read as settled.
-		if (run.status === "checking" || run.status === "queued") liveIds.add(id)
-		return {
-			id,
-			type: "lens" as const,
-			position: { x: 0, y: 0 },
-			width: LENS_WIDTH,
-			height: LENS_HEIGHT,
-			data: {
-				title: lensCopy(run).name,
-				question: run.question ?? "",
-				result: results[index]?.result ?? "",
-				state: lensNodeState(run),
-				elapsed: run.elapsedSeconds == null ? null : `${run.elapsedSeconds.toFixed(1)}s`,
-				progressNote: run.progressNote,
-			},
-		}
-	})
-	if (hidden > 0) {
-		lensNodes.push({
-			id: "lens-overflow",
-			type: "lensOverflow",
-			position: { x: 0, y: 0 },
-			width: LENS_WIDTH,
-			height: LENS_HEIGHT,
-			data: { hidden },
-		})
-	}
-	if (lensNodes.length > 0) {
-		nextLabel = "FANNED OUT"
-		pushColumn(lensNodes, LENS_WIDTH, "fan")
-	}
-
 	/* --- verdict ------------------------------------------------------------- */
 
 	/*
@@ -482,7 +380,7 @@ export function buildProvenanceGraph(investigation: V2Investigation): Provenance
 	 * the investigation has not made yet. What stands in its place is a node about
 	 * the process rather than the finding — see `PendingVerdictNodeData`.
 	 */
-	const awaitingVerdict = running && lensNodes.length > 0
+	const awaitingVerdict = running
 	if (awaitingVerdict) {
 		pushColumn(
 			[
@@ -492,14 +390,18 @@ export function buildProvenanceGraph(investigation: V2Investigation): Provenance
 					position: { x: 0, y: 0 },
 					width: SPINE_WIDTH,
 					height: SPINE_HEIGHT_TALL,
-					data: pendingVerdict(investigation),
+					data: { word: "AWAITING VERDICT", note: null },
 				},
 			],
 			SPINE_WIDTH,
-			"fan",
+			"causal",
 		)
 		liveIds.add("pending-verdict")
 	} else if (!running && report) {
+		// The node is one line wide, so it takes the one field written to be a line.
+		// `suspectedCause` is prompted for a mechanism as well as a cause and arrives
+		// as a paragraph, which this node clamps to three lines of it.
+		const verdictTitle = reportHeadline(report) ?? report.suspectedCause
 		pushColumn(
 			[
 				{
@@ -518,7 +420,7 @@ export function buildProvenanceGraph(investigation: V2Investigation): Provenance
 							? {
 									glyph: "verdict",
 									eyebrow: "PARTIAL RESULT",
-									title: report.suspectedCause,
+									title: verdictTitle,
 									note: `${report.ruledOut?.length ?? 0} ruled out · ${report.unchecked?.length ?? 0} unchecked`,
 									...(investigation.updated_at
 										? { at: investigation.updated_at }
@@ -528,7 +430,7 @@ export function buildProvenanceGraph(investigation: V2Investigation): Provenance
 							: {
 									glyph: "verdict",
 									eyebrow: "VERDICT",
-									title: report.suspectedCause,
+									title: verdictTitle,
 									note: `${report.confidence} confidence`,
 									...(investigation.diagnosed_at
 										? { at: investigation.diagnosed_at }
@@ -538,7 +440,7 @@ export function buildProvenanceGraph(investigation: V2Investigation): Provenance
 				},
 			],
 			SPINE_WIDTH,
-			"fan",
+			"causal",
 		)
 	}
 
@@ -598,12 +500,11 @@ export function buildProvenanceGraph(investigation: V2Investigation): Provenance
 		return kind === "action" || kind === "actionGhost"
 	}
 	const columnHeight = (column: { nodes: Array<ProvenanceNode> }): number => {
-		const gap = isActionColumn(column) ? ACTION_GAP : LENS_GAP
+		const gap = isActionColumn(column) ? ACTION_GAP : COLUMN_GAP
 		return column.nodes.reduce((total, node, index) => total + node.height + (index ? gap : 0), 0)
 	}
 	const height = Math.max(0, ...columns.map(columnHeight))
 
-	const lensHeading = lensColumnHeading(investigation)
 	const actionHeading = proposing
 		? `PROPOSES · ${actions.length} ${actions.length === 1 ? "ACTION" : "ACTIONS"} BY IMPACT`
 		: // No count while the ghosts stand there — a count is a claim about a report
@@ -615,18 +516,17 @@ export function buildProvenanceGraph(investigation: V2Investigation): Provenance
 	const headings: Array<ProvenanceNode> = []
 	let x = 0
 	for (const column of columns) {
-		const gap = isActionColumn(column) ? ACTION_GAP : LENS_GAP
+		const gap = isActionColumn(column) ? ACTION_GAP : COLUMN_GAP
 		const top = (height - columnHeight(column)) / 2
 		let y = top
 		for (const node of column.nodes) {
 			;(node as { position: XY }).position = { x, y }
 			y += node.height + gap
 		}
-		// The two multi-node columns carry their count as a heading; the spine
-		// columns say what they are on the node itself.
+		// The actions column carries its count as a heading; the spine columns say
+		// what they are on the node itself.
 		const kind = column.nodes[0]?.type
-		const text =
-			kind === "action" || kind === "actionGhost" ? actionHeading : kind === "lens" ? lensHeading : null
+		const text = kind === "action" || kind === "actionGhost" ? actionHeading : null
 		if (text) {
 			headings.push({
 				id: `heading-${kind}`,
@@ -647,7 +547,6 @@ export function buildProvenanceGraph(investigation: V2Investigation): Provenance
 		edges: edges.map((edge) => (liveIds.has(edge.target) ? { ...edge, live: true } : edge)),
 		width: Math.max(0, x - GUTTER),
 		height,
-		lensHeading,
 		actionHeading,
 		caption: caption(investigation),
 		runningSince: running && Number.isFinite(openedMs) ? openedMs : null,
@@ -658,55 +557,12 @@ export function buildProvenanceGraph(investigation: V2Investigation): Provenance
  * Derivations
  * -----------------------------------------------------------------------------------------------*/
 
-/**
- * The top four by planner priority, with the rest folded into one node.
- *
- * Priority ascends (1 is highest), and lanes written before the planner carry
- * none — those sort last but keep their dispatch order, so the column is never
- * reshuffled arbitrarily. Below the collapse threshold every lane is shown: four
- * strands and a "+1 more" reads worse than five strands.
- */
-export function selectLenses(runs: ReadonlyArray<LensRun>): {
-	visible: ReadonlyArray<LensRun>
-	hidden: number
-} {
-	if (runs.length <= LENS_COLLAPSE_ABOVE) return { visible: runs, hidden: 0 }
-	const ranked = runs
-		.map((run, index) => ({ run, index }))
-		.sort((a, b) => {
-			const left = a.run.priority ?? Number.POSITIVE_INFINITY
-			const right = b.run.priority ?? Number.POSITIVE_INFINITY
-			return left - right || a.index - b.index
-		})
-		.slice(0, LENS_VISIBLE_MAX)
-		// Back into dispatch order, so the fan reads top-to-bottom as it ran.
-		.sort((a, b) => a.index - b.index)
-	return { visible: ranked.map((entry) => entry.run), hidden: runs.length - ranked.length }
-}
-
 /** The name the origin node prints — the exception, not the opaque `iss_…`. */
 const originTitle = (investigation: V2Investigation): string | null => {
 	const { snapshot } = investigation
 	const candidate = snapshot.errorLabel ?? snapshot.exceptionType ?? snapshot.title
 	const text = candidate?.trim()
 	return text ? text : null
-}
-
-/**
- * `FANNED OUT · 4 LENSES · 1 HELD`.
- *
- * The held count was the checks rail's header, and it is the fastest read of
- * whether the verdict deserves trust — so when the rail went it came here rather
- * than being lost. It is withheld until the validator has actually ranked: "0
- * held" printed over four still-running lanes states a result nobody reached.
- */
-const lensColumnHeading = (investigation: V2Investigation): string | null => {
-	const lenses = investigation.lens_runs
-	if (lenses.length === 0) return null
-	const base = `FANNED OUT · ${lenses.length} ${lenses.length === 1 ? "LENS" : "LENSES"}`
-	const status = investigation.validator?.status
-	if (status !== "ranked" && status !== "rejected_all") return base
-	return `${base} · ${checksHeld(lensChecks(lenses))} HELD`
 }
 
 /**
@@ -728,43 +584,8 @@ const incidentTitle = (investigation: V2Investigation): string => {
 	return subject.type === "incident" ? `${subject.incident_kind} incident` : "Incident"
 }
 
-/**
- * Which stage a running pass is in, for the amber node's second line.
- *
- * `running` is checked before the validator, because `blocked` means "the
- * validator has nothing to rank yet" and is set for the whole time the lanes are
- * still reporting — reading it first would label a fan-out mid-flight
- * "VALIDATING", which is the one stage it demonstrably is not in.
- */
-const livePhase = (investigation: V2Investigation): string => {
-	const state = investigation.fanout?.state
-	if (state === "queued") return "QUEUEING"
-	if (state === "running") {
-		const tally = lensTally(investigation.lens_runs)
-		// The bare ratio, not "1/3 REPORTED": the node is 146px and the longer form
-		// truncated to "FANNING OUT · 1/3…", losing the word it was spent on. What
-		// the ratio counts is stated by the fan it sits next to.
-		return tally.total > 0 ? `FANNING OUT · ${tally.settled}/${tally.total}` : "FANNING OUT"
-	}
-	if (state === "validating" || investigation.validator?.status === "blocked") return "VALIDATING"
-	// The single-pass path — a freeform question, or an org that opted out of planning.
-	return "RUNNING"
-}
-
-/**
- * The ghost step's two lines. Both describe work, never a finding: `settled`
- * counts lanes that will not change again, which is the same number the fan is
- * showing, so the two cannot disagree.
- */
-const pendingVerdict = (investigation: V2Investigation): PendingVerdictNodeData => {
-	const tally = lensTally(investigation.lens_runs)
-	const validating =
-		investigation.fanout?.state === "validating" || (tally.total > 0 && tally.settled === tally.total)
-	return {
-		word: validating ? "VALIDATING" : "AWAITING VERDICT",
-		note: tally.total > 0 ? `${tally.settled} of ${tally.total} lenses reported` : null,
-	}
-}
+/** The amber node's second line while the pass runs: one agent, one stage. */
+const livePhase = (_investigation: V2Investigation): string => "GATHERING EVIDENCE"
 
 /** The run's outcome, which is the one thing the canvas doesn't say anywhere else. */
 // `Record<string, string>` with a `?? status` fallback downstream, so a missing

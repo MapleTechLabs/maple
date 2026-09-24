@@ -1,11 +1,13 @@
 import { describe, expect, it } from "vitest"
 import { parseMapleStage } from "../cloudflare/stage.ts"
 import {
+	parseIngestFleets,
 	parseMapleRegion,
 	resolveAwsRegion,
 	resolveAwsResourceName,
 	resolveCollectorEndpoint,
 	resolveCollectorTaskSize,
+	resolveElectricDbPoolSize,
 	resolveIngestCidrBlock,
 	resolveIngestDesiredCount,
 	resolveIngestNamespaceName,
@@ -35,7 +37,7 @@ describe("parseMapleRegion", () => {
 describe("resolveAwsResourceName", () => {
 	it("leaves us unsuffixed so adding eu renames nothing", () => {
 		expect(resolveAwsResourceName("ingest", parseMapleStage("prd"), "us")).toBe("maple-ingest")
-		expect(resolveAwsResourceName("ingest", parseMapleStage("stg"), "us")).toBe("maple-ingest-stg")
+		expect(resolveAwsResourceName("ingest", parseMapleStage("pr-12"), "us")).toBe("maple-ingest-pr-12")
 	})
 
 	it("defaults to us when no region is passed", () => {
@@ -44,7 +46,11 @@ describe("resolveAwsResourceName", () => {
 
 	it("suffixes eu, keeping the two instances distinct at every stage", () => {
 		expect(resolveAwsResourceName("ingest", parseMapleStage("prd"), "eu")).toBe("maple-ingest-eu")
-		expect(resolveAwsResourceName("ingest", parseMapleStage("stg"), "eu")).toBe("maple-ingest-eu-stg")
+		expect(resolveAwsResourceName("ingest", parseMapleStage("pr-12"), "eu")).toBe("maple-ingest-eu-pr-12")
+	})
+
+	it("rejects the removed stg stage rather than naming a dev stack after it", () => {
+		expect(() => parseMapleStage("stg")).toThrow(/"stg" stage was removed/)
 	})
 })
 
@@ -59,7 +65,6 @@ describe("region topology", () => {
 describe("collector service discovery", () => {
 	it("puts the collector in a per-stage namespace the gateway can name at plan time", () => {
 		expect(resolveIngestNamespaceName(parseMapleStage("prd"))).toBe("maple-ingest.internal")
-		expect(resolveIngestNamespaceName(parseMapleStage("stg"))).toBe("maple-ingest-stg.internal")
 		expect(resolveIngestNamespaceName(parseMapleStage("pr-12"))).toBe("maple-ingest-pr-12.internal")
 		expect(resolveIngestNamespaceName(parseMapleStage("prd"), "eu")).toBe("maple-ingest-eu.internal")
 	})
@@ -75,20 +80,16 @@ describe("collector service discovery", () => {
 
 	it("deploys the gateway to every deployed stage, but never to a dev stage", () => {
 		expect(stageDeploysIngest(parseMapleStage("prd"))).toBe(true)
-		expect(stageDeploysIngest(parseMapleStage("stg"))).toBe(true)
 		expect(stageDeploysIngest(parseMapleStage("pr-12"))).toBe(true)
 		expect(stageDeploysIngest(parseMapleStage("dev-alice"))).toBe(false)
 	})
 
-	it("writes replay blobs on stg and prd, and only where the gateway runs", () => {
+	it("writes replay blobs on prd, and only where the gateway runs", () => {
 		expect(stageEnablesReplayBlobs(parseMapleStage("prd"))).toBe(true)
-		// stg deliberately included: production must not be the first place the
-		// R2 write path ever runs.
-		expect(stageEnablesReplayBlobs(parseMapleStage("stg"))).toBe(true)
 		expect(stageEnablesReplayBlobs(parseMapleStage("pr-12"))).toBe(false)
 		expect(stageEnablesReplayBlobs(parseMapleStage("dev-alice"))).toBe(false)
 		// A stage cannot write blobs without a gateway to write them.
-		for (const stage of ["prd", "stg", "pr-12", "dev-alice"]) {
+		for (const stage of ["prd", "pr-12", "dev-alice"]) {
 			if (stageEnablesReplayBlobs(parseMapleStage(stage))) {
 				expect(stageDeploysIngest(parseMapleStage(stage))).toBe(true)
 			}
@@ -97,9 +98,8 @@ describe("collector service discovery", () => {
 
 	it("deploys the collector to prd only for now, a subset of the gateway stages", () => {
 		expect(stageDeploysCollector(parseMapleStage("prd"))).toBe(true)
-		expect(stageDeploysCollector(parseMapleStage("stg"))).toBe(false)
 		expect(stageDeploysCollector(parseMapleStage("pr-12"))).toBe(false)
-		for (const stage of ["prd", "stg", "pr-12", "dev-alice"]) {
+		for (const stage of ["prd", "pr-12", "dev-alice"]) {
 			if (stageDeploysCollector(parseMapleStage(stage))) {
 				expect(stageDeploysIngest(parseMapleStage(stage))).toBe(true)
 			}
@@ -108,8 +108,8 @@ describe("collector service discovery", () => {
 
 	it("sizes the collector task with 1 GiB everywhere so the memory limiter can fire", () => {
 		expect(resolveCollectorTaskSize(parseMapleStage("prd"))).toEqual({ cpu: 512, memory: 1024 })
-		expect(resolveCollectorTaskSize(parseMapleStage("stg"))).toEqual({ cpu: 256, memory: 1024 })
 		expect(resolveCollectorTaskSize(parseMapleStage("pr-12"))).toEqual({ cpu: 256, memory: 1024 })
+		expect(resolveCollectorTaskSize(parseMapleStage("dev-alice"))).toEqual({ cpu: 256, memory: 1024 })
 	})
 })
 
@@ -124,8 +124,30 @@ describe("resolveIngestScaling", () => {
 	})
 
 	it("keeps every other stage at a fixed count", () => {
-		expect(resolveIngestScaling(parseMapleStage("stg"))).toBeUndefined()
 		expect(resolveIngestScaling(parseMapleStage("pr-12"))).toBeUndefined()
 		expect(resolveIngestScaling(parseMapleStage("dev-alice"))).toBeUndefined()
+	})
+})
+
+describe("parseIngestFleets", () => {
+	it("is EC2 only when unset", () => {
+		expect(parseIngestFleets(undefined)).toEqual({ fargate: false, ec2: true })
+		expect(parseIngestFleets("")).toEqual({ fargate: false, ec2: true })
+	})
+
+	it("can bring Fargate back beside EC2, or alone", () => {
+		expect(parseIngestFleets("fargate, ec2")).toEqual({ fargate: true, ec2: true })
+		expect(parseIngestFleets("fargate")).toEqual({ fargate: true, ec2: false })
+	})
+
+	it("rejects a fleet it does not know rather than deploying neither", () => {
+		expect(() => parseIngestFleets("ec2,metal")).toThrow(/metal/)
+	})
+})
+
+describe("resolveElectricDbPoolSize", () => {
+	it("fits eu into its 25-connection cluster and leaves us on Electric's default", () => {
+		expect(resolveElectricDbPoolSize("eu")).toBe(4)
+		expect(resolveElectricDbPoolSize("us")).toBeUndefined()
 	})
 })

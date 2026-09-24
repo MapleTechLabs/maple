@@ -9,6 +9,7 @@ import { QueryErrorState } from "@/components/common/query-error-state"
 import { useEffectiveTimeRange } from "@/hooks/use-effective-time-range"
 import { useRefreshableAtomValue } from "@/hooks/use-refreshable-atom-value"
 import { MetricsGrid } from "@/components/dashboard/metrics-grid"
+import { APDEX_HINT } from "@/components/dashboard/chart-hints"
 import type { ChartLegendMode, ChartTooltipMode } from "@maple/ui/components/charts/_shared/chart-types"
 import { Tabs, TabsList, TabsTrigger } from "@maple/ui/components/ui/tabs"
 import {
@@ -20,6 +21,7 @@ import type { ServiceDetailTimeSeriesPoint } from "@/api/warehouse/services"
 import { useCommitMarkers } from "@/components/vcs/commit-markers/use-commit-markers"
 import type { ReleasePoint } from "@/components/vcs/commit-markers/marker-layout"
 import { TimeRangeSearchFields, applyTimeRangeSearch } from "@/components/time-range-picker/search"
+import { sessionTimeRangeSearchMiddleware } from "@/components/time-range-picker/session-time-range"
 import { PageRefreshProvider } from "@/components/time-range-picker/page-refresh-context"
 import { TimeRangeHeaderControls } from "@/components/time-range-picker/time-range-header-controls"
 import { Button } from "@maple/ui/components/ui/button"
@@ -65,12 +67,14 @@ const serviceDetailSearchSchema = Schema.Struct({
 export const Route = createFileRoute("/services/$serviceName")({
 	component: ServiceDetailPage,
 	validateSearch: Schema.toStandardSchemaV1(serviceDetailSearchSchema),
+	search: { middlewares: [sessionTimeRangeSearchMiddleware({ maxRangeSeconds: ONE_YEAR_SECONDS })] },
 })
 
 interface ServiceChartConfig {
 	id: string
 	chartId: string
 	title: string
+	titleHint?: { text: string; href?: string }
 	layout: { x: number; y: number; w: number; h: number }
 	legend?: ChartLegendMode
 	tooltip?: ChartTooltipMode
@@ -98,6 +102,7 @@ const SERVICE_CHARTS: ServiceChartConfig[] = [
 		id: "apdex",
 		chartId: "apdex-area",
 		title: "Apdex",
+		titleHint: APDEX_HINT,
 		layout: { x: 0, y: 4, w: 6, h: 4 },
 		tooltip: "visible",
 	},
@@ -122,6 +127,10 @@ function ServiceDetailPage() {
 function ServiceDetailContent() {
 	const { serviceName } = Route.useParams()
 	const search = Route.useSearch()
+	// Links minted before the services list labelled the empty environment carried
+	// `environments=[""]`, which rendered a blank switcher; read it as "all".
+	const selected = search.environments?.filter((env) => env !== "")
+	const environments = selected?.length ? selected : undefined
 	const navigate = useNavigate({ from: Route.fullPath })
 
 	const { startTime: effectiveStartTime, endTime: effectiveEndTime } = useEffectiveTimeRange(
@@ -244,8 +253,8 @@ function ServiceDetailContent() {
 									serviceName={serviceName}
 									startTime={effectiveStartTime}
 									endTime={effectiveEndTime}
-									environments={search.environments}
-									value={search.environments?.[0]}
+									environments={environments}
+									value={environments?.[0]}
 									onChange={handleEnvironmentChange}
 								/>
 								<div className="flex items-center gap-2">
@@ -277,7 +286,7 @@ function ServiceDetailContent() {
 								serviceName={serviceName}
 								effectiveStartTime={effectiveStartTime}
 								effectiveEndTime={effectiveEndTime}
-								environments={search.environments}
+								environments={environments}
 								onShowDependencies={handleShowDependencies}
 								onShowOperations={handleShowOperations}
 							/>
@@ -287,7 +296,7 @@ function ServiceDetailContent() {
 								serviceName={serviceName}
 								effectiveStartTime={effectiveStartTime}
 								effectiveEndTime={effectiveEndTime}
-								environments={search.environments}
+								environments={environments}
 								startTime={search.startTime}
 								endTime={search.endTime}
 								timePreset={search.timePreset}
@@ -298,7 +307,7 @@ function ServiceDetailContent() {
 								serviceName={serviceName}
 								effectiveStartTime={effectiveStartTime}
 								effectiveEndTime={effectiveEndTime}
-								environments={search.environments}
+								environments={environments}
 								startTime={search.startTime}
 								endTime={search.endTime}
 								timePreset={search.timePreset}
@@ -312,7 +321,7 @@ function ServiceDetailContent() {
 								timePreset={search.timePreset}
 								effectiveStartTime={effectiveStartTime}
 								effectiveEndTime={effectiveEndTime}
-								environments={search.environments}
+								environments={environments}
 							/>
 						)}
 					</DashboardLayout.Scroll>
@@ -433,6 +442,7 @@ function OverviewTab({
 				id: chart.id,
 				chartId: chart.chartId,
 				title: chart.title,
+				titleHint: chart.titleHint,
 				layout: chart.layout,
 				data: detailPoints,
 				legend: chart.legend,

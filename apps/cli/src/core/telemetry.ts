@@ -1,4 +1,5 @@
 import { Maple } from "@maple-dev/effect-sdk/server"
+import { Layer } from "effect"
 import { MAPLE_VERSION } from "../version"
 
 // Publishable ("pk") ingest token, baked into the distributed binary so CLI
@@ -27,7 +28,7 @@ const resolveEnvironment = (): string => {
 }
 
 /**
- * OpenTelemetry layer for the CLI — traces + logs about the CLI itself
+ * OpenTelemetry layer for the CLI — traces, logs, and metrics about the CLI itself
  * (commands, warehouse queries) and, when running `maple start`, the server's
  * OTLP-ingest and `/local/query` request handling.
  *
@@ -41,18 +42,29 @@ const resolveEnvironment = (): string => {
  * `shutdownTimeout` bounds the flush on exit so a slow or unreachable endpoint
  * never hangs a command.
  */
-export const TelemetryLayer = Maple.layer({
-	serviceName: "maple-cli",
-	serviceNamespace: "core",
-	serviceVersion: MAPLE_VERSION,
-	environment: resolveEnvironment(),
-	repositoryUrl: "https://github.com/MapleTechLabs/maple",
-	ingestKey: process.env.MAPLE_INGEST_KEY ?? DEFAULT_INGEST_KEY,
-	shutdownTimeout: "3 seconds",
-	// NOTE: expected user outcomes ("maple is already running", `--help`) no
-	// longer record as Error spans — `bin.ts` recovers them inside the root span
-	// and annotates `maple.cli.outcome` instead. That is a CLI-side fix, not the
-	// SDK's `anticipatedErrorIdentifiers`, which lives in Maple's flushable tracer
-	// while this server layer wires Effect's stock `Otlp.layerJson`. Anything
-	// still arriving as an Error span here is a genuine failure.
-})
+/**
+ * `MAPLE_TELEMETRY=off` mutes the CLI's own telemetry entirely. CI's native
+ * probes set it: they induce failures on purpose — digest mismatches, crashed
+ * retirements, adversarial registries — and every one landed in the production
+ * errors hub as a `maple-cli` issue (hundreds of `deployment.environment=ci`
+ * events a week nobody could act on). Ordinary CI use of the CLI stays on.
+ */
+const telemetryOff = process.env.MAPLE_TELEMETRY === "off"
+
+export const TelemetryLayer: Layer.Layer<never> = telemetryOff
+	? Layer.empty
+	: Maple.layer({
+			serviceName: "maple-cli",
+			serviceNamespace: "core",
+			serviceVersion: MAPLE_VERSION,
+			environment: resolveEnvironment(),
+			repositoryUrl: "https://github.com/MapleTechLabs/maple",
+			ingestKey: process.env.MAPLE_INGEST_KEY ?? DEFAULT_INGEST_KEY,
+			shutdownTimeout: "3 seconds",
+			// NOTE: expected user outcomes ("maple is already running", `--help`) no
+			// longer record as Error spans — `bin.ts` recovers them inside the root span
+			// and annotates `maple.cli.outcome` instead. That is a CLI-side fix, not the
+			// SDK's `anticipatedErrorIdentifiers`, which lives in Maple's flushable tracer
+			// while this server layer wires Effect's stock `Otlp.layerJson`. Anything
+			// still arriving as an Error span here is a genuine failure.
+		})

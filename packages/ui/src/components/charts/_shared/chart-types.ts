@@ -176,6 +176,19 @@ export interface QueryBuilderFunnelChartProps extends PlotProps {
 	 * `true` adds the step-to-step conversion; `false` suppresses both.
 	 */
 	showStepPercent?: boolean
+	/**
+	 * Descending bars (default), or the drop-off view: one column per step with
+	 * the loss since the previous step drawn as a hatched cap, the conversion
+	 * and median time on the connector, and where the leavers went on hover.
+	 * The view reads the optional `p50Ms` / `p90Ms` / `leavers` row fields.
+	 */
+	variant?: "bars" | "dropoff"
+}
+
+/** The paths sankey: rows are `{ hop, fromNode, toNode, count }`. */
+export interface PathsChartProps extends PlotProps {
+	/** Which way the walk went; `before` draws the anchor on the right. */
+	direction?: "after" | "before"
 }
 
 export interface QueryBuilderHbarChartProps extends PlotProps {
@@ -199,4 +212,13 @@ export interface ThroughputAreaChartProps extends ServiceChartProps {
 /** The presentational gallery charts, which take data and nothing else. */
 export interface SimpleChartProps extends PlotProps {}
 
-export type ChartCategory = "bar" | "hbar" | "area" | "line" | "pie" | "histogram" | "heatmap" | "funnel"
+export type ChartCategory =
+	| "bar"
+	| "hbar"
+	| "area"
+	| "line"
+	| "pie"
+	| "histogram"
+	| "heatmap"
+	| "funnel"
+	| "paths"

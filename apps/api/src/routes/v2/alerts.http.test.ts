@@ -1,3 +1,8 @@
+import { LiveActivitiesService } from "@maple/backend/services/push/LiveActivitiesService"
+import { MobileDevicesService } from "@maple/backend/services/push/MobileDevicesService"
+import { ApnsClient } from "@maple/backend/platform/Apns"
+import { MobilePushService } from "@maple/backend/services/push/MobilePushService"
+import { ChatAlertPoster } from "@maple/backend/services/alerts/ChatAlertPoster"
 import { afterEach, describe, expect, it } from "@effect/vitest"
 import { ConfigProvider, Context, Effect, Layer, ManagedRuntime, Schema } from "effect"
 import { HttpRouter } from "effect/unstable/http"
@@ -11,26 +16,26 @@ import {
 import { MapleApiV2 } from "@maple/domain/http/v2"
 import { BucketCacheService } from "@maple/query-engine/caching"
 import { EdgeCacheService } from "@maple/cache"
-import { CacheBackendLive } from "@/platform/CacheBackendLive"
-import { EmailService } from "@/platform/EmailService"
-import { Env } from "@/platform/Env"
-import { cleanupTestDbs, createTestDb, executeSql, type TestDb } from "@/platform/test-pglite"
-import type { WarehouseQueryServiceApi } from "@/services/warehouse/WarehouseQueryService"
-import { WarehouseQueryService } from "@/services/warehouse/WarehouseQueryService"
-import { ApiAuthorizationV2Layer } from "@/services/auth/ApiAuthorizationV2Layer"
-import { AuditLogService } from "@/services/audit/AuditLogService"
-import { ApiKeysService } from "@/services/org/ApiKeysService"
-import { AuthService } from "@/services/auth/AuthService"
-import { DashboardPersistenceService } from "@/services/dashboards/DashboardPersistenceService"
-import { SharedDashboardService } from "@/services/dashboards/SharedDashboardService"
-import { AlertRuntime, AlertsService } from "@/services/alerts/AlertsService"
-import { AlertDestinationsService } from "@/services/alerts/AlertDestinationsService"
-import { AlertReadModelsService } from "@/services/alerts/AlertReadModelsService"
-import { AlertRulesService } from "@/services/alerts/AlertRulesService"
-import { HazelOAuthService, type HazelOAuthServiceApi } from "@/services/auth/HazelOAuthService"
-import { OrgClickHouseSettingsService } from "@/services/org/OrgClickHouseSettingsService"
-import { OrgMembersService, type OrgMembersServiceApi } from "@/services/org/OrgMembersService"
-import { QueryEngineService } from "@/services/warehouse/QueryEngineService"
+import { CacheBackendLive } from "@maple/backend/platform/CacheBackendLive"
+import { EmailService } from "@maple/backend/platform/EmailService"
+import { Env } from "@maple/backend/platform/Env"
+import { cleanupTestDbs, createTestDb, executeSql, type TestDb } from "@maple/backend/platform/test-pglite"
+import type { WarehouseQueryServiceApi } from "@maple/backend/services/warehouse/WarehouseQueryService"
+import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
+import { ApiAuthorizationV2Layer } from "@maple/backend/services/auth/ApiAuthorizationV2Layer"
+import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
+import { ApiKeysService } from "@maple/backend/services/org/ApiKeysService"
+import { AuthService } from "@maple/backend/services/auth/AuthService"
+import { DashboardPersistenceService } from "@maple/backend/services/dashboards/DashboardPersistenceService"
+import { SharedDashboardService } from "@maple/backend/services/dashboards/SharedDashboardService"
+import { AlertRuntime, AlertsService } from "@maple/backend/services/alerts/AlertsService"
+import { AlertDestinationsService } from "@maple/backend/services/alerts/AlertDestinationsService"
+import { AlertReadModelsService } from "@maple/backend/services/alerts/AlertReadModelsService"
+import { AlertRulesService } from "@maple/backend/services/alerts/AlertRulesService"
+import { HazelOAuthService, type HazelOAuthServiceApi } from "@maple/backend/services/auth/HazelOAuthService"
+import { OrgClickHouseSettingsService } from "@maple/backend/services/org/OrgClickHouseSettingsService"
+import { OrgMembersService, type OrgMembersServiceApi } from "@maple/backend/services/org/OrgMembersService"
+import { QueryEngineService } from "@maple/backend/services/warehouse/QueryEngineService"
 import { V2TransportErrorBoundaryLive } from "./error-envelope"
 import {
 	AllV2GroupLayersLive,
@@ -38,10 +43,9 @@ import {
 	ConfigResourceServiceStubsLayer,
 	makeWarehouseServiceStub,
 	PlanetScaleServiceStubsLayer,
-	SlackIntegrationServiceStubLayer,
 	TelemetryServiceStubsLayer,
 } from "./v2-test-support"
-import { InvestigationService } from "@/services/errors/InvestigationService"
+import { InvestigationService } from "@maple/backend/services/errors/InvestigationService"
 import { compiledQueryOf } from "@maple/query-engine/execution"
 
 const createdDbs: TestDb[] = []
@@ -84,7 +88,7 @@ const makeHarness = (
 	const warehouseLive = Layer.succeed(WarehouseQueryService, warehouseService)
 	const edgeCacheLive = EdgeCacheService.layer.pipe(Layer.provide(CacheBackendLive))
 	const bucketCacheLive = BucketCacheService.layer.pipe(Layer.provide(edgeCacheLive))
-	const queryEngineLive = QueryEngineService.layer.pipe(
+	const queryEngineLive = Layer.effect(QueryEngineService, QueryEngineService.make).pipe(
 		Layer.provide(warehouseLive),
 		Layer.provide(edgeCacheLive),
 		Layer.provide(bucketCacheLive),
@@ -116,18 +120,27 @@ const makeHarness = (
 	const orgChSettingsLive = OrgClickHouseSettingsService.layer.pipe(
 		Layer.provide(Layer.mergeAll(envLive, testDb.layer, edgeCacheLive)),
 	)
-	const alertDestinationsLive = AlertDestinationsService.layer.pipe(
+	const alertDestinationsLive = Layer.effect(AlertDestinationsService, AlertDestinationsService.make).pipe(
+		Layer.provide(ChatAlertPoster.layer),
 		Layer.provide(
 			Layer.mergeAll(envLive, testDb.layer, runtimeLive, hazelOAuthLive, emailLive, orgMembersLive),
 		),
 	)
-	const alertReadModelsLive = AlertReadModelsService.layer.pipe(
+	const alertReadModelsLive = Layer.effect(AlertReadModelsService, AlertReadModelsService.make).pipe(
 		Layer.provide(Layer.mergeAll(testDb.layer, warehouseLive)),
 	)
 	const alertRulesLive = AlertRulesService.layer.pipe(
 		Layer.provide(Layer.mergeAll(testDb.layer, runtimeLive)),
 	)
-	const alertsLive = AlertsService.layer.pipe(
+	const alertsLive = Layer.effect(AlertsService, AlertsService.make).pipe(
+		Layer.provide(ChatAlertPoster.layer),
+		Layer.provide(
+			Layer.effect(MobilePushService, MobilePushService.make).pipe(
+				Layer.provide(
+					Layer.mergeAll(ApnsClient.layer, MobileDevicesService.layer, LiveActivitiesService.layer),
+				),
+			),
+		),
 		Layer.provide(
 			Layer.mergeAll(
 				envLive,
@@ -162,7 +175,6 @@ const makeHarness = (
 		Layer.provide(ConfigResourceServiceStubsLayer),
 		Layer.provide(TelemetryServiceStubsLayer),
 		Layer.provide(V2TransportErrorBoundaryLive),
-		Layer.provide(SlackIntegrationServiceStubLayer),
 		Layer.provide(PlanetScaleServiceStubsLayer),
 		Layer.provideMerge(ApiAuthorizationV2Layer),
 		Layer.provideMerge(AuditLogService.layerMemory),
@@ -730,45 +742,6 @@ describe("v2 alerts over HTTP", () => {
 		await harness.dispose()
 	})
 
-	/**
-	 * `toCreateRequest` / `toUpdateRequest` in alert-destinations.http.ts translate
-	 * the snake_case v2 wire params into the internal camelCase destination configs.
-	 * The schemas on either side are covered elsewhere (openapi decode tests,
-	 * AlertsService merge semantics); these exercise the mapping itself end to end,
-	 * so a dropped or misspelled field surfaces as a wrong stored channel rather
-	 * than a silent no-op.
-	 */
-	it("maps slack-bot create params through to the stored channel", async () => {
-		const harness = makeHarness()
-		const key = await harness.bootstrapKey(["alerts:write"])
-
-		const created = await harness.request("POST", "/v2/alerts/destinations", key.secret, {
-			type: "slack-bot",
-			name: "On-call Slack",
-			channel_id: "C0789CHAN",
-			channel_name: "incidents",
-		})
-		expect(created.status).toBe(200)
-		expect(created.body.type).toBe("slack-bot")
-		// `channel_name` → `channelName`, which AlertsService renders as the label.
-		expect(created.body.channel_label).toBe("#incidents")
-		expect(created.body.summary).toBe("#incidents")
-		// The channel id is config, not a secret, but it is never echoed back.
-		expect(JSON.stringify(created.body)).not.toContain("C0789CHAN")
-
-		// `channel_name` is optional on create; without it there is no label.
-		const minimal = await harness.request("POST", "/v2/alerts/destinations", key.secret, {
-			type: "slack-bot",
-			name: "Bare Slack",
-			channel_id: "C0790BARE",
-		})
-		expect(minimal.status).toBe(200)
-		expect(minimal.body.channel_label).toBeNull()
-		expect(minimal.body.summary).toBe("Slack channel")
-
-		await harness.dispose()
-	})
-
 	it("preserves the exact Hazel integration failure on destination create", async () => {
 		const unavailable = () => Effect.die("unexpected Hazel OAuth method")
 		const hazelOAuth: HazelOAuthServiceApi = {
@@ -825,58 +798,6 @@ describe("v2 alerts over HTTP", () => {
 		expect(response.status).toBe(503)
 		expect(response.body.error._tag).toBe("@maple/http/errors/AlertMemberDirectoryUnavailableError")
 		expect(JSON.stringify(response.body)).not.toContain("Clerk")
-		await harness.dispose()
-	})
-
-	it("maps slack-bot update params and never clobbers the stored channel with a blank", async () => {
-		const harness = makeHarness()
-		const key = await harness.bootstrapKey(["alerts:write"])
-
-		const created = await harness.request("POST", "/v2/alerts/destinations", key.secret, {
-			type: "slack-bot",
-			name: "On-call Slack",
-			channel_id: "C0789CHAN",
-			channel_name: "incidents",
-		})
-		expect(created.status).toBe(200)
-		const id: string = created.body.id
-
-		// A supplied channel_name maps through and re-derives the label.
-		const renamed = await harness.request("PATCH", `/v2/alerts/destinations/${id}`, key.secret, {
-			type: "slack-bot",
-			channel_name: "alerts",
-		})
-		expect(renamed.status).toBe(200)
-		expect(renamed.body.channel_label).toBe("#alerts")
-
-		// An omitted channel_name is DROPPED by the mapper (rather than sent as
-		// `channelName: undefined`), so AlertsService keeps the stored channel — a
-		// name-only edit must not wipe it.
-		const nameOnly = await harness.request("PATCH", `/v2/alerts/destinations/${id}`, key.secret, {
-			type: "slack-bot",
-			name: "Primary on-call Slack",
-		})
-		expect(nameOnly.status).toBe(200)
-		expect(nameOnly.body.name).toBe("Primary on-call Slack")
-		expect(nameOnly.body.channel_label).toBe("#alerts")
-
-		// An explicit blank never reaches the mapper: both fields are non-empty
-		// optional strings, so a blank is rejected at decode instead of silently
-		// wiping the stored channel.
-		for (const blank of [{ channel_name: "" }, { channel_id: "" }]) {
-			const rejected = await harness.request("PATCH", `/v2/alerts/destinations/${id}`, key.secret, {
-				type: "slack-bot",
-				...blank,
-			})
-			expect(rejected.status).toBe(400)
-			expect(rejected.body.error).toMatchObject({ type: "invalid_request_error" })
-		}
-
-		// …and the stored channel survived every rejected write.
-		const after = await harness.request("GET", `/v2/alerts/destinations/${id}`, key.secret)
-		expect(after.status).toBe(200)
-		expect(after.body.channel_label).toBe("#alerts")
-
 		await harness.dispose()
 	})
 

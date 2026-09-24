@@ -182,6 +182,27 @@ export const isTransportFailure = (cause: unknown, depth = 0): boolean => {
 export const isNetworkBlip = (cause: unknown): boolean =>
 	isTransportFailure(cause) && isBlipping(originOf(apiBaseUrl), Date.now())
 
+const tagOf = (cause: unknown): string | undefined =>
+	typeof cause === "object" && cause !== null && "_tag" in cause && typeof cause._tag === "string"
+		? cause._tag
+		: undefined
+
+/**
+ * What the API answered, on the adapter's span. A 500 arrives as the sanitized
+ * `V1UnexpectedError`, whose message says nothing; its tag and the public
+ * body's code are the only facts this side has, and without them the web span
+ * reads "An unexpected error occurred" for a warehouse timeout and a wiring bug
+ * alike.
+ */
+const annotateUpstreamFailure = (cause: unknown) => {
+	const body = isPublicErrorEnvelope(cause) ? cause.error : isPublicErrorBody(cause) ? cause : undefined
+	const tag = body?._tag ?? tagOf(cause) ?? (cause instanceof Error ? cause.name : typeof cause)
+	return Effect.annotateCurrentSpan({
+		"error.type": tag,
+		...(body === undefined ? undefined : { "maple.upstream.error_code": body.code }),
+	})
+}
+
 /** Preserve known errors; introduce a local query error only for an unstructured failure. */
 export const normalizeWarehouseError = (
 	operation: string,
@@ -223,6 +244,7 @@ export function runWarehouseQuery<A, E>(
 	execute: () => Effect.Effect<A, E, MapleApiAtomClient | MapleInternalAtomClient>,
 ): Effect.Effect<A, WarehouseApiError | BackendError> {
 	return Effect.suspend(execute).pipe(
+		Effect.tapError(annotateUpstreamFailure),
 		Effect.withSpan(operation),
 		// Warehouse adapters are imperative server-function entrypoints and own this runtime layer.
 		// oxlint-disable-next-line effecttsgo/strict-effect-provide
@@ -244,6 +266,7 @@ export function runWarehouseQueryV2<A, E>(
 	execute: () => Effect.Effect<A, E, MapleApiV2AtomClient>,
 ): Effect.Effect<A, WarehouseApiError | BackendError> {
 	return Effect.suspend(execute).pipe(
+		Effect.tapError(annotateUpstreamFailure),
 		Effect.withSpan(operation),
 		// Warehouse adapters are imperative server-function entrypoints and own this runtime layer.
 		// oxlint-disable-next-line effecttsgo/strict-effect-provide

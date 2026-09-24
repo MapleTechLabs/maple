@@ -61,6 +61,7 @@ export type DataSourceEndpoint =
 	| "custom_query_builder_list"
 	| "raw_sql_chart"
 	| "product_events_funnel"
+	| "product_events_paths"
 	| "markdown_static"
 
 // A straight alias of the schema type, as of v3.

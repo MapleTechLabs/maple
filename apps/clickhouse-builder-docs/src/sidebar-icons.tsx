@@ -301,8 +301,10 @@ const icons = {
 
 type SidebarIconName = keyof typeof icons
 
+// `in` would accept `__proto__`, `constructor` and every other inherited name,
+// and hand the SVG a function to render.
 function isSidebarIconName(name: string): name is SidebarIconName {
-	return name in icons
+	return Object.hasOwn(icons, name)
 }
 
 export function sidebarIcon(name: string | undefined) {

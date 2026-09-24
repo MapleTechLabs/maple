@@ -65,7 +65,38 @@ const gzipBytes = chunks.reduce((total, chunk) => total + chunk.gzipBytes, 0)
 // the role/intent id literals and legacy-save maps in the quick-start atom the
 // root gate reads, and one lab registry entry. The cards' own copy is split
 // off so the route chunk carries it. main was at 683.4 KB.
-const maxGzipBytes = 685 * 1024
+// 689 KB from #832 (2026-09-11): the agent Tools pages cost ~6.9 KB of startup
+// measured against main's 681.3 — five internal endpoints on the contract every
+// page's client carries, two route registrations whose search schemas pull in
+// the tool view-model constants and the session time-range middleware, and the
+// warehouse atoms for the new reads. Moving the one new query-engine helper
+// out of the barrel was tried and saved nothing.
+// 690 KB from the tool error groups (2026-09-11): ~3.3 KB of startup measured
+// against main's 686.3 — a sixth tools endpoint and the fingerprint, variant and
+// sample-cursor schemas on the contract every page's client carries, the atoms
+// for the new reads, and the detail route's `variant` search param. The display
+// rules, the redaction list they read and the modal's parts stay in the route
+// chunk; none of them is in the startup graph.
+// 692 KB from product events as a query-builder source (#877, 2026-09-13):
+// ~1.9 KB of startup measured against main's 689.9 — the fourth source's
+// aggregation, group-by and where-clause vocabularies in the query-builder
+// model every panel reads, the product-event `QuerySpec` arms and filters on
+// the contract every page's client carries, and three gallery tiles in the
+// widget registry. The step editor and the funnel suggestions stay in the
+// editor's route chunk.
+// 693 KB from the funnel drop-off view and the paths widget (#878, 2026-09-13):
+// ~0.3 KB of startup measured in CI against #877's 691.9 — a fourteenth panel
+// type in the widget-type table, the `paths` and `funnel.variant` display
+// blocks on the stored and v2 schemas, two picker presets with their icon,
+// and the paths widget type's lowering. Both charts, the paths query panel
+// and the sample data stay in lazy chunks.
+// 695 KB from the onboarding reward checklist (#890, 2026-09-14): ~1.2 KB of
+// startup measured in CI against #878's 693.0 — the checklist group's two
+// endpoints and step/status schemas on the contract every page's client
+// carries, the pill in the persistent top bar with its live clock, and the
+// hook's query and seen-flag atoms. The popover's panel and pointer are small
+// and render only while open, so nothing there is worth a lazy chunk.
+const maxGzipBytes = 695 * 1024
 const budgetLabel = `${(maxGzipBytes / 1024).toFixed(1)} KB`
 
 // Anything lazy-only: chat, replay, and every dev-only lab surface. The

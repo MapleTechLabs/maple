@@ -39,7 +39,11 @@ export interface MapleMcpManifestOptions {
 	readonly siteUrl?: string
 }
 
-const trimTrailingSlash = (url: string) => url.replace(/\/+$/, "")
+const trimTrailingSlash = (url: string) => {
+	let end = url.length
+	while (end > 0 && url[end - 1] === "/") end--
+	return url.slice(0, end)
+}
 
 export const mapleMcpServerManifest = ({
 	apiBaseUrl,
@@ -83,3 +87,31 @@ export const mapleMcpServerManifest = ({
 		],
 	} as const
 }
+
+/**
+ * Which entry point drove this tool call.
+ *
+ * The surfaces share one dispatcher, and until this existed none of them were
+ * distinguishable in telemetry: the public-vs-internal traffic split had to be
+ * inferred from the ratio of `tools/call` spans to executor spans. Required
+ * rather than defaulted, for the same reason `tenant` is — a caller that forgets
+ * it should not silently be counted as somebody else.
+ *
+ * It lives in the domain because the audit log records it, and the audit log is
+ * read by a Worker that does not itself run any of these surfaces.
+ */
+export type McpToolSurface =
+	/** The public MCP transport (`mcp/server.ts`). */
+	| "mcp"
+	/** The in-process AI chat agent (`chat/turn-runner.ts`). */
+	| "chat"
+	/**
+	 * The chat-platform bot, which runs the same agent engine as `chat` but answers into a channel
+	 * anyone in it can post to. Its own surface rather than `chat` precisely so it is *not* an
+	 * internal one: see `INTERNAL_SURFACES` in `apps/ai/src/mcp/tools/types.ts`.
+	 */
+	| "bot"
+	/** Retired agent workflow passes. Kept so already-audited rows stay readable. */
+	| "workflow"
+	/** Retired worker-to-worker internal RPC. Kept so already-audited rows stay readable. */
+	| "rpc"

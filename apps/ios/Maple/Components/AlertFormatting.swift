@@ -161,7 +161,7 @@ extension AlertEventType {
 extension AlertDestinationType {
 	var label: String {
 		switch self {
-		case .slackBot: "Slack"
+		case .chat: "Chat"
 		case .pagerduty: "PagerDuty"
 		case .webhook: "Webhook"
 		case .hazelOauth: "Hazel"

@@ -32,8 +32,8 @@ import {
 	podMetricSpec,
 	toCloudflareFilters,
 	workloadMetricSpec,
-} from "@/routes/query-helpers"
-import { traceCacheTtlSeconds } from "@/services/warehouse/trace-detail-cache"
+} from "@maple/backend/queries/query-helpers"
+import { traceCacheTtlSeconds } from "@maple/backend/services/warehouse/trace-detail-cache"
 
 // App-side queries depend on integrations or API-only helpers, so moving them
 // into the core registry would invert dependencies. Entries own query inputs;

@@ -39,6 +39,10 @@ import {
 	FunnelKeyBy,
 	FunnelPopulationFilters,
 	FunnelStep,
+	FunnelVariant,
+	PathsAnchor,
+	PathsDirection,
+	PathsInclude,
 	QUERY_RESULT_KINDS,
 	QueryBuilderFormulaSchema,
 	QueryBuilderQueryDraftSchema,
@@ -387,6 +391,7 @@ export const V2WidgetDisplay = Schema.Struct({
 					}),
 				),
 			),
+			variant: optional(FunnelVariant),
 		}).pipe(
 			Schema.encodeKeys({
 				showStepPercent: "show_step_percent",
@@ -395,6 +400,35 @@ export const V2WidgetDisplay = Schema.Struct({
 				breakdownBy: "breakdown_by",
 			}),
 		),
+	),
+	// The paths definition, same discipline as the funnel block: the anchor is
+	// the query-engine's `FunnelStep` contract and keeps its own keys.
+	paths: optional(
+		Schema.Struct({
+			anchor: PathsAnchor,
+			direction: optional(PathsDirection),
+			depth: optional(Schema.Number),
+			branches: optional(Schema.Number),
+			keyBy: optional(FunnelKeyBy),
+			windowSeconds: optional(Schema.Number),
+			include: optional(PathsInclude),
+			exclude: optional(Schema.Array(Schema.String)),
+			filters: optional(
+				Schema.Struct(FunnelPopulationFilters.fields).pipe(
+					Schema.encodeKeys({
+						pagePath: "page_path",
+						referrerHost: "referrer_host",
+						deviceType: "device_type",
+						browserName: "browser_name",
+						osName: "os_name",
+						utmSource: "utm_source",
+						utmMedium: "utm_medium",
+						utmCampaign: "utm_campaign",
+						visitorType: "visitor_type",
+					}),
+				),
+			),
+		}).pipe(Schema.encodeKeys({ keyBy: "key_by", windowSeconds: "window_seconds" })),
 	),
 	histogram: optional(
 		Schema.Struct({
@@ -1127,7 +1161,7 @@ export class V2DashboardsApiGroup extends HttpApiGroup.make("dashboards")
 				identifier: "upsertDashboardWidgetShare",
 				summary: "Share a single widget",
 				description:
-					"Creates a share link scoped to one widget, or changes the mode of the one it already has. Independent of the dashboard's own share: revoking or re-scoping the board leaves widget links untouched. A `public` widget share may be embedded in an iframe.",
+					"Creates a share link scoped to one widget, or changes the mode of the one it already has. The link only resolves while the dashboard itself is shared, and never grants more than the dashboard's own mode: unsharing the board disables it, sharing the board again restores it. A `public` widget share on a `public` dashboard may be embedded in an iframe.",
 			}),
 		),
 	)

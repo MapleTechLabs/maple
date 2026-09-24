@@ -89,7 +89,7 @@ For self-hosted deployments, set `COMMIT_SHA` in your build pipeline and `MAPLE_
 
 Some funnel steps only happen on the backend — a `signup_completed` in a webhook handler, a
 `plan_started` when billing confirms a subscription. `MapleEvents` posts those to Maple's
-[product events endpoint](/docs/session-replay/product-events-api) so they land in the same
+[product events endpoint](/docs/product-events/api) so they land in the same
 `product_events` table as the browser SDK's `track()` calls, keyed to the same person.
 
 ```typescript

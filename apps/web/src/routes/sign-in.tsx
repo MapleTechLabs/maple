@@ -9,8 +9,8 @@ import { validateInternalRedirect } from "@maple/ui/lib/sanitizers"
 import { apiBaseUrl } from "@/lib/services/common/api-base-url"
 import { isClerkAuthEnabled } from "@/lib/services/common/auth-mode"
 import { setSelfHostedSessionToken } from "@/lib/services/common/self-hosted-auth"
-import { AuthLayout } from "@/components/layout/auth-layout"
-import { clerkAppearance } from "@/lib/clerk-appearance"
+import { AccountLayout } from "@/components/layout/account-layout"
+import { clerkAuthCardAppearance } from "@/lib/clerk-appearance"
 import { tracedFetch } from "@/lib/services/common/telemetry"
 
 const SignInSearch = Schema.Struct({
@@ -80,29 +80,49 @@ export function SelfHostedSignInPage() {
 	}
 
 	return (
-		<AuthLayout>
-			<div className="space-y-4">
-				<div className="space-y-1">
-					<h1 className="text-xl font-semibold">Sign in</h1>
-					<p className="text-sm text-muted-foreground">Enter the root password to access Maple.</p>
+		<AccountLayout>
+			<div className="space-y-8">
+				<div className="space-y-2">
+					<h1 className="font-display font-[650] text-[30px] leading-[1.1] tracking-[-0.03em]">
+						Sign in to Maple
+					</h1>
+					<p className="font-display text-muted-foreground text-sm leading-relaxed">
+						This deployment is self-hosted. Enter the root password to continue.
+					</p>
 				</div>
-				<form className="space-y-3" onSubmit={onSubmit}>
-					<Input
-						type="password"
-						placeholder="Root password"
-						value={password}
-						onChange={(event) => setPassword(event.target.value)}
-						autoComplete="current-password"
-						disabled={isSubmitting}
-						required
-					/>
-					{errorMessage ? <p className="text-sm text-destructive">{errorMessage}</p> : null}
+				<form className="space-y-6" onSubmit={onSubmit}>
+					{/* Label and field are one group: the gap between them stays tighter
+					 * than the gap to the next control, or the pairing stops reading. */}
+					<div className="space-y-2">
+						<label
+							htmlFor="root-password"
+							className="block font-mono font-medium text-xs tracking-[0.02em]"
+						>
+							Root password
+						</label>
+						<Input
+							id="root-password"
+							aria-invalid={Boolean(errorMessage)}
+							aria-describedby={errorMessage ? "login-error" : undefined}
+							type="password"
+							value={password}
+							onChange={(event) => setPassword(event.target.value)}
+							autoComplete="current-password"
+							disabled={isSubmitting}
+							required
+						/>
+						{errorMessage ? (
+							<p id="login-error" role="alert" className="font-mono text-destructive text-xs">
+								{errorMessage}
+							</p>
+						) : null}
+					</div>
 					<Button type="submit" className="w-full" disabled={isSubmitting}>
-						{isSubmitting ? "Signing in..." : "Sign in"}
+						{isSubmitting ? "Signing in\u2026" : "Sign in"}
 					</Button>
 				</form>
 			</div>
-		</AuthLayout>
+		</AccountLayout>
 	)
 }
 
@@ -115,9 +135,9 @@ function SignInPage() {
 
 	if (isClerkAuthEnabled) {
 		return (
-			<AuthLayout>
-				<SignIn appearance={clerkAppearance} forceRedirectUrl={target ?? undefined} />
-			</AuthLayout>
+			<AccountLayout>
+				<SignIn appearance={clerkAuthCardAppearance} forceRedirectUrl={target ?? undefined} />
+			</AccountLayout>
 		)
 	}
 

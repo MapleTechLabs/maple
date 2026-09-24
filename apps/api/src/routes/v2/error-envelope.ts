@@ -8,9 +8,9 @@ import {
 	V2UnexpectedFailure,
 	V2UnexpectedErrors,
 } from "@maple/domain/http/v2"
-import { failureStackOf, failureTypeOf, recordRenderedFailure } from "@/routes/rendered-failure"
-import { describeSchemaIssue } from "@/routes/schema-error-detail"
-import { observeServerError } from "@/routes/server-error-observability"
+import { failureStackOf, failureTypeOf, recordRenderedFailure } from "@maple/backend/http/rendered-failure"
+import { describeSchemaIssue } from "@maple/backend/http/schema-error-detail"
+import { observeServerError } from "@maple/backend/http/server-error-observability"
 
 type V2SchemaBoundaryError =
 	| ReturnType<typeof V2InvalidRequest.make>
@@ -24,8 +24,9 @@ type V2SchemaBoundaryError =
  *
  * `param` carries the full JSON path (`widgets[3].display.fill_nulls`), not
  * just its first segment, and the message names the enclosing widget when the
- * path points inside a `widgets[]` array — the envelope holds one error, so a
- * document with several bad fields reports the first and counts the rest.
+ * failure reports the offending value to resolve it from. The envelope holds one
+ * error, so a document with several bad fields reports the first and counts the
+ * rest.
  */
 const V2SchemaErrorTransformLive = HttpApiMiddleware.layerSchemaErrorTransform(
 	V2SchemaErrors,

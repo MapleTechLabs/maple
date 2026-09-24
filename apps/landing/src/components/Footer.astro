@@ -14,7 +14,7 @@ const stars = await getGitHubStars();
 
 <footer class="border-t border-border bg-bg-deep">
     <!-- Manifesto line: one refusal per line. That break is the whole gesture,
-         so each sentence is its own block — a character cap only broke it
+         so each sentence is its own block. A character cap only broke it
          mid-sentence ("No per-seat fees. No / proprietary agents. No black /
          boxes.") at the sizes that mattered. -->
     <div class="border-b border-border">
@@ -58,6 +58,8 @@ const stars = await getGitHubStars();
                     <li><a href={`${l("/")}#features`} class="text-fg-muted text-xs hover:text-foreground transition-colors">{m.footer_features()}</a></li>
                     <li><a href={`${l("/")}#how-it-works`} class="text-fg-muted text-xs hover:text-foreground transition-colors">{m.footer_how_it_works()}</a></li>
                     <li><a href={l("/pricing")} class="text-fg-muted text-xs hover:text-foreground transition-colors">{m.footer_pricing()}</a></li>
+                    <!-- English-only, like /about: bare href, not l(). -->
+                    <li><a href="/eu" class="text-fg-muted text-xs hover:text-foreground transition-colors">{m.footer_eu_hosting()}</a></li>
                     <li><a href={l("/opentelemetry")} class="text-fg-muted text-xs hover:text-foreground transition-colors">{m.footer_opentelemetry()}</a></li>
                     <li><a href={l("/roadmap")} class="text-fg-muted text-xs hover:text-foreground transition-colors">{m.footer_roadmap()}</a></li>
                     <li><a href={l("/local")} class="text-fg-muted text-xs hover:text-foreground transition-colors">{m.nav_local()}</a></li>
@@ -74,7 +76,7 @@ const stars = await getGitHubStars();
                 <h4 class="text-[10px] text-foreground font-medium uppercase tracking-wider mb-4">{m.footer_features()}</h4>
                 <ul class="space-y-2">
                     <!-- Derived from the registry. The hand-written list carried
-                         seven of the eight features — browser-sessions had been
+                         seven of the eight features; browser-sessions had been
                          missing since it shipped. -->
                     {features.map((feature) => (
                         <li><a href={featurePath(locale, feature.slug)} class="text-fg-muted text-xs hover:text-foreground transition-colors">{feature.navLabel()}</a></li>
@@ -91,6 +93,7 @@ const stars = await getGitHubStars();
                     <li><a href={l("/compare/new-relic")} class="text-fg-muted text-xs hover:text-foreground transition-colors">{m.footer_vs_new_relic()}</a></li>
                     <li><a href={l("/compare/dash0")} class="text-fg-muted text-xs hover:text-foreground transition-colors">{m.footer_vs_dash0()}</a></li>
                     <li><a href={l("/compare/signoz")} class="text-fg-muted text-xs hover:text-foreground transition-colors">{m.footer_vs_signoz()}</a></li>
+                    <li><a href={l("/compare/axiom")} class="text-fg-muted text-xs hover:text-foreground transition-colors">{m.footer_vs_axiom()}</a></li>
                 </ul>
 
                 <h4 class="text-[10px] text-foreground font-medium uppercase tracking-wider mb-4 mt-6">{m.footer_integrations()}</h4>
@@ -125,7 +128,7 @@ const stars = await getGitHubStars();
         <div class="mt-12 pt-6 border-t border-border flex flex-col sm:flex-row items-center sm:justify-between gap-4">
             <div class="flex items-center gap-3">
                 <p class="text-fg-muted text-[10px]">{m.footer_copyright()}</p>
-                <!-- A licence stamp is exactly the register this footer wants. -->
+                <!-- A license stamp is exactly the register this footer wants. -->
                 <span class="rounded border border-border px-1.5 py-0.5 text-[10px] text-fg-muted">{m.bill_v_apache()}</span>
             </div>
             <div class="flex items-center gap-4">
@@ -134,7 +137,7 @@ const stars = await getGitHubStars();
                 <a href="/contact" class="text-fg-muted text-[10px] hover:text-foreground transition-colors">{m.footer_contact()}</a>
                 <a href={l("/privacy")} class="text-fg-muted text-[10px] hover:text-foreground transition-colors">{m.footer_privacy()}</a>
                 <a href={l("/terms")} class="text-fg-muted text-[10px] hover:text-foreground transition-colors">{m.footer_terms()}</a>
-                <!-- English-only page, so a bare href rather than l() — same as
+                <!-- English-only page, so a bare href rather than l(), same as
                      /changelog and /docs above. -->
                 <a href="/brand" class="text-fg-muted text-[10px] hover:text-foreground transition-colors">{m.footer_brand()}</a>
                 <LanguageSwitcher />

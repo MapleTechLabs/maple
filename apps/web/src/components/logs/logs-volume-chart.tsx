@@ -10,7 +10,7 @@ import {
 	PlotTooltipBody,
 	createTooltipFocusStore,
 	cursorTooltip,
-	dashedGridY,
+	DASHED_Y_GRID,
 	linearYDomain,
 	niceLinearDomain,
 	resolvePlotColor,
@@ -20,6 +20,7 @@ import {
 import { useTheme } from "@maple/ui/hooks/use-theme"
 import { ChartLoading } from "@maple/ui/components/charts"
 import { useEffectiveTimeRange } from "@/hooks/use-effective-time-range"
+import { useTimezonePreference } from "@/hooks/use-timezone-preference"
 import { useGlobalNamespace } from "@/hooks/use-global-namespace"
 import { getCustomChartTimeSeriesResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
 import { computeBucketSeconds } from "@/api/warehouse/timeseries-utils"
@@ -93,9 +94,10 @@ function LogsVolumePlot({
 		return resolved
 	}, [seriesKeys, theme])
 
+	const { effectiveTimezone } = useTimezonePreference()
 	const axisContext = useMemo(
-		() => ({ rangeMs, bucketSeconds: dataBucketSeconds }),
-		[rangeMs, dataBucketSeconds],
+		() => ({ rangeMs, bucketSeconds: dataBucketSeconds, timeZone: effectiveTimezone }),
+		[rangeMs, dataBucketSeconds, effectiveTimezone],
 	)
 
 	/**
@@ -135,7 +137,6 @@ function LogsVolumePlot({
 
 		return defineChart({
 			marks: [
-				dashedGridY(),
 				barY(cells, {
 					x: (cell: SeverityCell) => cell.bucket,
 					y: (cell: SeverityCell) => cell.value,
@@ -177,6 +178,7 @@ function LogsVolumePlot({
 					},
 				},
 				y: {
+					grid: DASHED_Y_GRID,
 					scale: scaleLinear().domain(yDomain),
 					axis: {
 						line: false,
@@ -223,6 +225,135 @@ function LogsVolumePlot({
 					/>
 				)}
 			/>
+		</div>
+	)
+}
+
+/** Number of time labels along the empty strip's baseline. */
+const EMPTY_STRIP_TICKS = 5
+
+/** Ghost bars behind the empty strip's caption: a silhouette of the histogram, not data. */
+const EMPTY_STRIP_BARS = 64
+
+/**
+ * Deterministic ghost bars (heights as a fraction of the strip) so the
+ * silhouette is the same on every render — a random one would flicker like
+ * it was loading. Two slow sine waves give a soft, plausibly log-like contour,
+ * and each bar is split into severity slices bottom-up the way the real
+ * histogram stacks them: mostly info, a thin warn band, an occasional error cap.
+ */
+const EMPTY_STRIP_BARS_STACKED = Array.from({ length: EMPTY_STRIP_BARS }, (_, i) => {
+	const t = i / (EMPTY_STRIP_BARS - 1)
+	const wave = 0.5 + 0.3 * Math.sin(t * Math.PI * 3.1 + 0.8) + 0.2 * Math.sin(t * Math.PI * 7.3 + 2.1)
+	const total = 0.18 + wave * 0.45
+	const warn = total * (0.08 + 0.1 * (0.5 + 0.5 * Math.sin(t * Math.PI * 5.7 + 1.3)))
+	// Errors cluster: a few bars carry a cap, most carry none.
+	const errorPulse = Math.max(0, Math.sin(t * Math.PI * 9.4 + 0.4) - 0.55)
+	const error = total * errorPulse * 0.5
+	return [
+		{ severity: "INFO", height: total - warn - error },
+		{ severity: "WARN", height: warn },
+		{ severity: "ERROR", height: error },
+	]
+})
+
+/**
+ * What the volume strip shows when the window holds no logs.
+ *
+ * The real plot degenerates here — no series means no x domain, so the axis
+ * loses its time labels and `niceLinearDomain` invents a 0/0.5/1 count axis.
+ * Rather than a chart of nothing, keep the strip's height and gutter so the
+ * page does not jump when logs arrive, and use the space to say what the
+ * histogram is: the window along the baseline, and the severities it stacks.
+ */
+function EmptyVolumeStrip({
+	startTime,
+	endTime,
+	bucketSeconds,
+}: {
+	startTime: string
+	endTime: string
+	bucketSeconds: number
+}) {
+	const { effectiveTimezone } = useTimezonePreference()
+	const startMs = new Date(normalizeTimestampInput(startTime)).getTime()
+	const endMs = new Date(normalizeTimestampInput(endTime)).getTime()
+	const rangeMs = Math.max(0, endMs - startMs)
+	const axisContext = { rangeMs, bucketSeconds, timeZone: effectiveTimezone }
+
+	const ticks = Array.from({ length: EMPTY_STRIP_TICKS }, (_, i) => {
+		const ms = startMs + (rangeMs * i) / (EMPTY_STRIP_TICKS - 1)
+		return {
+			label: formatBucketLabel(formatForTinybird(new Date(ms)), axisContext, "tick"),
+			left: (i / (EMPTY_STRIP_TICKS - 1)) * 100,
+		}
+	})
+
+	const legend = SEVERITY_ORDER.filter((s) => s !== "WARNING")
+
+	return (
+		<div
+			style={{ height: LOGS_VOLUME_CHART_HEIGHT }}
+			className="flex w-full select-none pt-1 text-muted-foreground"
+			aria-label="Log volume by severity, no logs in the selected range"
+		>
+			<div className="flex w-10 shrink-0 flex-col justify-end pb-[18px] pr-1 text-right text-[10px] leading-none">
+				0
+			</div>
+			<div className="relative flex min-w-0 flex-1 flex-col">
+				<div className="relative flex-1">
+					<div className="absolute inset-x-0 top-0 border-t border-dashed border-border/60" />
+					<div className="absolute inset-x-0 top-1/2 border-t border-dashed border-border/60" />
+					<div aria-hidden className="absolute inset-0 flex items-end gap-px opacity-[0.18]">
+						{EMPTY_STRIP_BARS_STACKED.map((slices, i) => (
+							<div key={i} className="flex h-full min-w-0 flex-1 flex-col-reverse">
+								{slices.map((slice) => (
+									<div
+										key={slice.severity}
+										style={{
+											height: `${slice.height * 100}%`,
+											backgroundColor: SEVERITY_COLORS[slice.severity],
+										}}
+									/>
+								))}
+							</div>
+						))}
+					</div>
+					<div className="absolute inset-0 flex flex-col items-center justify-center gap-2">
+						<span className="text-xs">No log volume in this window</span>
+						<ul className="flex items-center gap-3 text-[10px] uppercase tracking-wide opacity-60">
+							{legend.map((severity) => (
+								<li key={severity} className="flex items-center gap-1.5">
+									<span
+										className="size-1.5 rounded-[2px]"
+										style={{ backgroundColor: SEVERITY_COLORS[severity] }}
+									/>
+									{severity}
+								</li>
+							))}
+						</ul>
+					</div>
+				</div>
+				<div className="relative h-[18px] border-t border-border">
+					{ticks.map((tick, i) => (
+						<span
+							key={tick.label + i}
+							className="absolute top-1 whitespace-nowrap text-[10px] leading-none"
+							style={{
+								left: `${tick.left}%`,
+								transform:
+									i === 0
+										? "none"
+										: i === ticks.length - 1
+											? "translateX(-100%)"
+											: "translateX(-50%)",
+							}}
+						>
+							{tick.label}
+						</span>
+					))}
+				</div>
+			</div>
 		</div>
 	)
 }
@@ -375,7 +506,6 @@ export function LogsVolumeChart({ filters, onTimeRangeSelect }: LogsVolumeChartP
 		.onError(() => null)
 		.onSuccess((response, result) => {
 			const points = response.data
-			if (points.length === 0) return null
 
 			// Severity is grouped by the RAW `SeverityText`, and SDKs disagree on
 			// its case — one org ships `INFO`, `Info` and `info` side by side. They
@@ -424,12 +554,29 @@ export function LogsVolumeChart({ filters, onTimeRangeSelect }: LogsVolumeChartP
 			const dataBucketSeconds = inferBucketSeconds(chartData)
 			bucketSecondsRef.current = dataBucketSeconds ?? 300
 
+			const header = (
+				<div className="mb-1 flex items-baseline gap-2">
+					<span className="text-sm font-medium">{formatNumber(totalCount)} logs</span>
+					<span className="text-xs text-muted-foreground">in selected range</span>
+				</div>
+			)
+
+			if (totalCount === 0) {
+				return (
+					<div className={`transition-opacity ${result.waiting ? "opacity-60" : ""}`}>
+						{header}
+						<EmptyVolumeStrip
+							startTime={effectiveStartTime}
+							endTime={effectiveEndTime}
+							bucketSeconds={bucketSeconds}
+						/>
+					</div>
+				)
+			}
+
 			return (
 				<div className={`transition-opacity ${result.waiting ? "opacity-60" : ""}`}>
-					<div className="mb-1 flex items-baseline gap-2">
-						<span className="text-sm font-medium">{formatNumber(totalCount)} logs</span>
-						<span className="text-xs text-muted-foreground">in selected range</span>
-					</div>
+					{header}
 					<LogsVolumePlot
 						chartData={chartData}
 						seriesKeys={seriesKeys}

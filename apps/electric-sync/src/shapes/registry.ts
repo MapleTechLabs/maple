@@ -73,17 +73,14 @@ const SUBSCRIPTIONS = {
 			"updated_at",
 		],
 	},
-	// The two investigation shapes are `scoped`: org alone is too wide here. An org
+	// The investigation shape is `scoped`: org alone is too wide here. An org
 	// accumulates investigations forever and a browser only ever renders one, so an
-	// org-wide shape would stream the entire history (and every lane of every run)
-	// to read a single page. The scope column is pinned here; only its *value*
-	// comes from the client, and only as positional `$2`.
-	//
-	// The projection drops what the v2 wire already withholds — the planner's
-	// `plan_json`, the lens lanes' `evidence_json` / `hypothesis_json` /
-	// `mechanism` / `self_doubt`, and the workflow bookkeeping. Nothing renders
-	// them, and they are the largest columns on both tables.
-	investigation: {
+	// org-wide shape would stream the entire history to read a single page. The
+	// scope column is pinned here; only its *value* comes from the client, and only
+	// as positional `$2`.
+	// `_v2` because `columns` gained `progress_json`: widening an immutable projection is a new
+	// shape and a full re-sync, cheap here since a browser holds one row of it.
+	investigation_v2: {
 		table: "investigations",
 		scope: "id",
 		columns: [
@@ -94,53 +91,18 @@ const SUBSCRIPTIONS = {
 			"subject_json",
 			"snapshot_json",
 			"report_json",
+			"progress_json",
 			"severity",
 			"confidence",
 			"model",
 			"input_tokens",
 			"output_tokens",
 			"error",
-			"fanout_state",
-			"fanout_size",
-			// The lane rows are filtered to the current attempt client-side, exactly
-			// as InvestigationService does — a straggler from a previous attempt must
-			// not appear beside the run that superseded it.
-			"fanout_attempt",
-			"validator_note",
-			"validator_elapsed_ms",
 			"created_by",
 			"created_at",
 			"started_at",
 			"diagnosed_at",
 			"updated_at",
-		],
-	},
-	investigation_lens_runs: {
-		table: "investigation_lens_runs",
-		scope: "investigation_id",
-		columns: [
-			"id",
-			"org_id",
-			"investigation_id",
-			"lens_id",
-			"attempt",
-			"ordinal",
-			"status",
-			"verdict",
-			"claim",
-			"reason",
-			"progress_note",
-			"confidence",
-			"tool_count",
-			"elapsed_ms",
-			"lens_name",
-			"lens_question",
-			"priority",
-			"deadline_hit",
-			// Not on the v2 wire, and the reason a synced lane can do something a
-			// polled one could not: with the instant a lane started, a running lane's
-			// elapsed can tick locally instead of waiting for the next `elapsed_ms`.
-			"started_at",
 		],
 	},
 } as const satisfies Record<string, SubscriptionDefinition>

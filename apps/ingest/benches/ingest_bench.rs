@@ -121,7 +121,8 @@ impl BenchFixture {
                 wal_store_heartbeat_interval: maple_ingest::wal_store::DEFAULT_HEARTBEAT_INTERVAL,
                 batch_max_rows: 5_000,
                 batch_max_bytes: 4 * 1024 * 1024,
-                batch_max_wait: Duration::from_millis(10),
+                queue_max_age: Duration::ZERO,
+            batch_max_wait: Duration::from_millis(10),
                 export_concurrency_per_shard: 1,
                 export_max_attempts: 20,
                 clickhouse_export_timeout: Duration::from_secs(5),
@@ -255,6 +256,7 @@ fn build_traces(count: usize) -> ExportTraceServiceRequest {
 fn string_kv(key: &str, value: &str) -> KeyValue {
     KeyValue {
         key: key.to_owned(),
+        key_strindex: 0,
         value: Some(AnyValue {
             value: Some(any_value::Value::StringValue(value.to_owned())),
         }),

@@ -865,7 +865,9 @@
 .logo-cell {
 	display: inline-flex;
 	align-items: center;
-	gap: 14px;
+	/* 16px = half the 32px mark height: the clear space Effect's brand
+	   guidelines require around their logomark, applied to every cell. */
+	gap: 16px;
 	padding: 0 clamp(30px, 4.5vw, 60px);
 	white-space: nowrap;
 	color: var(--muted-foreground);
@@ -1274,6 +1276,45 @@
 	border-color: color-mix(in oklab, var(--primary) 50%, var(--border));
 }
 
+/* Shiki stamps the fence's language on the block. Show it where the copy
+   button will appear, and hand that corner over on hover so the two never
+   sit side by side. Touch devices keep the button visible, so they skip the label. */
+.docs-content
+	pre[data-language]:not(
+		[data-language="plaintext"],
+		[data-language="text"],
+		[data-language="txt"]
+	)::before {
+	content: attr(data-language);
+	position: absolute;
+	top: 0.5rem;
+	right: 0.5rem;
+	padding: 3px 8px;
+	border: 1px solid transparent;
+	border-radius: 5px;
+	font-family: var(--font-mono, ui-monospace, monospace);
+	font-size: 10px;
+	line-height: normal;
+	letter-spacing: 0.08em;
+	text-transform: uppercase;
+	color: color-mix(in oklab, var(--muted-foreground) 70%, transparent);
+	background: color-mix(in oklab, var(--bg-elevated) 85%, var(--background));
+	pointer-events: none;
+	transition: opacity 150ms ease;
+}
+
+.docs-content pre:hover::before,
+.docs-content pre:focus-within::before,
+.docs-content pre:has(.code-copy.is-done)::before {
+	opacity: 0;
+}
+
+@media (hover: none) {
+	.docs-content pre[data-language]::before {
+		display: none;
+	}
+}
+
 .docs-content .code-copy.is-done {
 	color: var(--chart-3);
 	border-color: color-mix(in oklab, var(--chart-3) 55%, var(--border));
@@ -1320,6 +1361,30 @@
 	@apply text-fg font-semibold;
 }
 
+/* Concept docs (Apdex, sampling) lean on a handful of terms whose meaning is
+   the whole page. Coloring those terms inline keeps the prose scannable; the
+   colors match the bands the diagrams draw, so "tolerating" is the same amber
+   in a paragraph as it is on the axis. Body text stays body text. */
+.docs-content .hl-t {
+	@apply font-mono font-medium;
+	color: var(--primary);
+}
+
+.docs-content .hl-ok {
+	@apply font-medium;
+	color: var(--success);
+}
+
+.docs-content .hl-warn {
+	@apply font-medium;
+	color: var(--warning);
+}
+
+.docs-content .hl-bad {
+	@apply font-medium;
+	color: var(--destructive);
+}
+
 /* Hover-revealed section permalinks, injected by DocsLayout. Inline after
    the heading text so nothing hangs past the column edge on phones. */
 .docs-content .heading-anchor {
@@ -1331,6 +1396,21 @@
 	@apply opacity-100 text-primary;
 }
 
+/* UI screenshots in a walkthrough. Unlike the section art below, these are
+   panels of the product at their own aspect: cropping one to 1280 × 660 would
+   cut the fields the step is pointing at. */
+.docs-content figure.shot {
+	@apply my-6;
+}
+
+.docs-content figure.shot img {
+	@apply w-full h-auto aspect-auto object-contain border border-border rounded-lg my-0 bg-bg-deep;
+}
+
+.docs-content figure.shot figcaption {
+	@apply mt-2 text-xs text-fg-muted;
+}
+
 /*
  * Release/section art in prose. Markdown images can't carry width/height, so
  * the source aspect (1280 × 660, exported @2x) plus this ratio box is what
@@ -1338,6 +1418,62 @@
  */
 .docs-content img {
 	@apply w-full h-auto aspect-[1280/660] object-cover bg-bg-deep border border-border rounded-xl my-8;
+}
+
+/* ──────────────────────────────────────────────────────────────
+   Docs reading scale. Docs pages run in proportional Geist (DocsLayout
+   sets it on <body>, as the blog does for its prose), so this block only
+   sizes the type; `.docs-content` above stays the shared plumbing the
+   changelog also renders with. Same specificity — source order decides,
+   so it stays below the .docs-content block.
+   ────────────────────────────────────────────────────────────── */
+.docs-prose p {
+	@apply text-[15px] leading-[1.7] text-fg/80 mb-5;
+}
+
+.docs-prose ul,
+.docs-prose ol {
+	@apply text-[15px] leading-[1.7] text-fg/80 mb-5 space-y-1.5 pl-5;
+}
+
+.docs-prose h2 {
+	@apply text-[22px] tracking-[-0.02em] mt-12 mb-4;
+}
+
+.docs-prose h3 {
+	@apply text-[17px] tracking-[-0.01em] mt-9 mb-3;
+}
+
+.docs-prose h4 {
+	@apply text-[15px] font-semibold text-fg mt-7 mb-2;
+}
+
+/* The body sits under its own rule, so the first heading needs no top gap. */
+.docs-prose .docs-body > :first-child {
+	margin-top: 0;
+}
+
+.docs-prose blockquote {
+	@apply text-[14.5px] leading-[1.65] text-fg/80 my-6;
+}
+
+.docs-prose table {
+	@apply text-[14px];
+}
+
+.docs-prose th {
+	@apply font-mono p-2.5;
+}
+
+.docs-prose td {
+	@apply p-2.5 align-top;
+}
+
+/* Shiki wraps lines inline (`wrap: true`, for the blog column). Guides are
+   read for their commands, so code scrolls sideways instead of folding. */
+.docs-prose pre {
+	white-space: pre !important;
+	@apply my-6;
 }
 
 /* ──────────────────────────────────────────────────────────────
@@ -1472,7 +1608,7 @@ html {
 	scroll-padding-top: 5rem;
 }
 
-/* Docs stack a category strip under the header (5.75rem), so anchors need more room. */
+/* Docs stack a section strip under the header (6rem), so anchors need more room. */
 html.docs {
-	scroll-padding-top: 6.75rem;
+	scroll-padding-top: 7rem;
 }

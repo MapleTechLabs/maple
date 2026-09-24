@@ -2,7 +2,7 @@ import { afterAll, describe, expect, it } from "@effect/vitest"
 import { MAPLE_MCP_SERVER_NAME } from "@maple/domain/mcp-manifest"
 import { ConfigProvider, Effect, Layer } from "effect"
 import { HttpRouter, HttpServerResponse } from "effect/unstable/http"
-import { Env } from "@/platform/Env"
+import { Env } from "@maple/backend/platform/Env"
 import { DiscoveryRouter, NotFoundRouter } from "./discovery.http"
 
 const API_ORIGIN = "https://api.maple.test"
@@ -55,7 +55,9 @@ describe("DiscoveryRouter", () => {
 			const doc = await response.json()
 			expect(doc.openapi).toMatch(/^3\.1\./)
 			expect(doc.info.title).toBe("Maple API")
-			expect(doc.servers).toEqual([{ url: "https://api.maple.dev", description: "Production" }])
+			expect(doc.servers).toEqual([{ url: API_ORIGIN, description: "Production" }])
+			expect(doc.externalDocs.url).toBe(`${API_ORIGIN}/v2/docs`)
+			expect(doc.info.contact.email).toBe("support@maple.dev")
 			expect(Object.keys(doc.paths).length).toBeGreaterThan(20)
 			const operations = Object.values(doc.paths).flatMap((item) =>
 				Object.values(item as Record<string, { operationId?: string; description?: string }>),

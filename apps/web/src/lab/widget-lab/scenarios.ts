@@ -1,5 +1,6 @@
 import type { WidgetDataState, WidgetDisplayConfig } from "@/components/dashboard-builder/types"
 import { chartRegistry } from "@maple/ui/components/charts/registry"
+import { funnelDropoffSampleData, pathsSampleData } from "@maple/ui/components/charts/_shared/sample-data"
 import { HEATMAP_COLOR_SCALES } from "@maple/domain/http"
 
 export interface WidgetScenario {
@@ -1199,6 +1200,11 @@ const funnelManyStages = [
 
 export const funnelScenarios: WidgetScenario[] = [
 	{
+		label: "Loading",
+		dataState: loadingState,
+		display: { title: "Signup conversion", unit: "number", funnel: {} },
+	},
+	{
 		label: "4 stages (% of first)",
 		dataState: ready(funnelStages),
 		display: { title: "Signup conversion", unit: "number", funnel: {} },
@@ -1301,7 +1307,143 @@ const hbarTopOperations = [
 	{ name: "SessionStore.load", value: 14_600_000 },
 ]
 
+// Funnel drop-off view
+
+export const funnelDropoffScenarios: WidgetScenario[] = [
+	{
+		label: "Loading",
+		dataState: loadingState,
+		display: { title: "Signup → first trace", unit: "number", funnel: { variant: "dropoff" } },
+	},
+	{
+		label: "Drop-off with timing + leavers (hover a step)",
+		dataState: ready(funnelDropoffSampleData),
+		display: {
+			title: "Signup → first trace",
+			unit: "number",
+			funnel: { variant: "dropoff", showStepPercent: true },
+		},
+	},
+	{
+		label: "Drop-off, counts only (query-set funnel)",
+		dataState: ready(funnelStages),
+		display: { title: "Signup conversion", unit: "number", funnel: { variant: "dropoff" } },
+	},
+	{
+		label: "Drop-off, percentages off",
+		dataState: ready(funnelDropoffSampleData),
+		display: {
+			title: "Signup conversion",
+			unit: "number",
+			funnel: { variant: "dropoff", showStepPercent: false },
+		},
+	},
+	{
+		label: "Drop-off, 6 steps (folds at narrow widths)",
+		dataState: ready(funnelManyStages),
+		display: { title: "Checkout", unit: "number", funnel: { variant: "dropoff", showStepPercent: true } },
+	},
+	{
+		label: "Drop-off, grouped (breakdown)",
+		dataState: ready([
+			{ name: "Visited", value: 1900, group: "google" },
+			{ name: "Visited", value: 1200, group: "twitter" },
+			{ name: "Visited", value: 980, group: "github" },
+			{ name: "Signed up", value: 820, group: "google" },
+			{ name: "Signed up", value: 610, group: "twitter" },
+			{ name: "Signed up", value: 410, group: "github" },
+			{ name: "Activated", value: 560, group: "google" },
+			{ name: "Activated", value: 470, group: "twitter" },
+			{ name: "Activated", value: 250, group: "github" },
+		]),
+		display: { title: "Drop-off by utm.source", unit: "number", funnel: { variant: "dropoff" } },
+	},
+	{
+		label: "Drop-off, empty",
+		dataState: ready([]),
+		display: { title: "Drop-off", unit: "number", funnel: { variant: "dropoff" } },
+	},
+]
+
+// Paths
+
+export const pathsScenarios: WidgetScenario[] = [
+	{
+		label: "Loading",
+		dataState: loadingState,
+		display: {
+			title: "Paths after Signed up",
+			paths: { anchor: { kind: "event", eventName: "Signed up" } },
+		},
+	},
+	{
+		label: "After an event, 3 steps, top 4 (hover a node)",
+		dataState: ready(pathsSampleData),
+		display: {
+			title: "Paths after Signed up",
+			paths: { anchor: { kind: "event", eventName: "Signed up" } },
+		},
+	},
+	{
+		label: "Before an event (reverse)",
+		dataState: ready(pathsSampleData),
+		display: {
+			title: "Paths before Plan started",
+			paths: { anchor: { kind: "event", eventName: "Plan started" }, direction: "before" },
+		},
+	},
+	{
+		label: "Two steps, everyone ends",
+		dataState: ready([
+			{ hop: 1, fromNode: "/pricing", toNode: "/docs", count: 40 },
+			{ hop: 1, fromNode: "/pricing", toNode: "", count: 60 },
+			{ hop: 2, fromNode: "/docs", toNode: "", count: 40 },
+		]),
+		display: { title: "Paths after /pricing", paths: { anchor: { kind: "page", pagePath: "/pricing" } } },
+	},
+	{
+		label: "Long labels",
+		dataState: ready([
+			{
+				hop: 1,
+				fromNode: "checkout_payment_method_selected_v2",
+				toNode: "/account/settings/billing/invoices/2026",
+				count: 300,
+			},
+			{
+				hop: 1,
+				fromNode: "checkout_payment_method_selected_v2",
+				toNode: "subscription_upgrade_dialog_opened",
+				count: 120,
+			},
+			{ hop: 1, fromNode: "checkout_payment_method_selected_v2", toNode: "", count: 80 },
+			{
+				hop: 2,
+				fromNode: "/account/settings/billing/invoices/2026",
+				toNode: "invoice_downloaded",
+				count: 200,
+			},
+			{ hop: 2, fromNode: "/account/settings/billing/invoices/2026", toNode: "", count: 100 },
+			{ hop: 2, fromNode: "subscription_upgrade_dialog_opened", toNode: "$other", count: 120 },
+		]),
+		display: {
+			title: "Paths",
+			paths: { anchor: { kind: "event", eventName: "checkout_payment_method_selected_v2" } },
+		},
+	},
+	{
+		label: "Empty",
+		dataState: ready([]),
+		display: { title: "Paths", paths: { anchor: { kind: "event", eventName: "" } } },
+	},
+]
+
 export const hbarScenarios: WidgetScenario[] = [
+	{
+		label: "Loading",
+		dataState: loadingState,
+		display: { title: "Busiest Operations", unit: "number" },
+	},
 	{
 		label: "Top operations (% of total)",
 		dataState: ready(hbarTopOperations),

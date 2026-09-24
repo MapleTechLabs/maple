@@ -1,0 +1,122 @@
+---
+/**
+ * Surfaces: the build-it-yourself section, for vendors that are a store with
+ * a dashboard builder on top.
+ *
+ * The difference table says *what* differs, row by row. This says what the
+ * difference looks like: four surfaces Maple ships built, each drawn by the
+ * same live artifact the feature pages use, each answered by one line of what
+ * assembling it costs on the other tool. That line is the section. A reader
+ * who skims the artifacts and reads only the `On <vendor>` rules still leaves
+ * with the argument.
+ *
+ * Rows alternate media side. Four identical copy-left/media-right rows read as
+ * a template, which is the same reason the homepage alternates Kubernetes and
+ * web analytics.
+ *
+ * Artifacts are resolved here from the registry's string ids, because
+ * `lib/competitors.ts` is read by a client island and cannot import `.astro`.
+ * The analytics cell is a capture rather than a plate for the reason the
+ * homepage gives: that page is a KPI strip and breakdown tables, and a still
+ * of the real thing reads as more honest than a wireframe of it.
+ */
+import * as m from "../../paraglide/messages.js";
+import { MAPLE_SURFACES, type SurfaceId, type Surfaces } from "../../lib/competitors";
+import MediaFrame from "../home/MediaFrame.astro";
+import LiveBrowserSessions from "../live/LiveBrowserSessions.astro";
+import LiveK8sWorkloads from "../live/LiveK8sWorkloads.astro";
+import LiveServiceMap from "../live/LiveServiceMap.astro";
+
+interface Props {
+	competitorName: string;
+	surfaces: Surfaces;
+}
+
+const { competitorName, surfaces } = Astro.props;
+
+// `analytics` is null on purpose: it renders the capture below, not a plate.
+const ARTIFACTS = {
+	"service-map": LiveServiceMap,
+	sessions: LiveBrowserSessions,
+	kubernetes: LiveK8sWorkloads,
+	analytics: null,
+} satisfies Record<SurfaceId, unknown>;
+
+const rows = surfaces.rows.map((row) => ({
+	surface: MAPLE_SURFACES[row.surface],
+	instead: row.instead(),
+}));
+---
+
+<section id="surfaces" class="scroll-mt-28 bg-bg">
+	<div class="shell py-16 md:py-24">
+		<p class="text-[10px] font-medium uppercase tracking-[0.18em] text-fg-muted">{m.cmp_surfaces_eyebrow()}</p>
+		<h2
+			class="mt-4 max-w-[22ch] font-display text-3xl font-medium leading-[1.05] tracking-[-0.02em] text-fg md:text-[40px]"
+		>
+			{m.cmp_surfaces_title({ name: competitorName })}
+		</h2>
+		<p class="mt-5 max-w-[62ch] text-sm leading-relaxed text-fg-muted md:text-[15px]">{surfaces.lede}</p>
+
+		<div class="mt-10 border-t border-border md:mt-14">
+			{
+				rows.map(({ surface, instead }, i) => {
+					const Artifact = ARTIFACTS[surface.id];
+					return (
+						<div
+							class:list={[
+								"grid gap-8 border-b border-border py-10 lg:items-center lg:gap-16 lg:py-14",
+								// The artifact always takes the wide track. Copy is first in
+								// the DOM and `lg:order-last` moves it into the second cell on
+								// odd rows, so those rows put the wide track first.
+								i % 2 === 1
+									? "lg:grid-cols-[minmax(0,1.28fr)_minmax(0,0.72fr)]"
+									: "lg:grid-cols-[minmax(0,0.72fr)_minmax(0,1.28fr)]",
+							]}
+						>
+							{/* Copy first in the DOM so it reads first on mobile; the
+							    odd rows move it right of the artifact at lg. */}
+							<div class:list={["min-w-0", i % 2 === 1 && "lg:order-last"]}>
+								<span class="text-[11px] font-medium tabular-nums text-fg-muted">
+									{String(i + 1).padStart(2, "0")}
+								</span>
+								<h3 class="mt-3 font-display text-xl leading-snug tracking-[-0.01em] text-fg md:text-2xl">
+									{surface.name()}
+								</h3>
+								<p class="mt-3 max-w-[52ch] text-[13px] leading-relaxed text-fg-muted md:text-sm">
+									{surface.body()}
+								</p>
+
+								<p class="mt-6 max-w-[52ch] border-l-2 border-border pl-4 text-[13px] leading-relaxed text-fg-muted">
+									<span class="text-fg">{m.cmp_surfaces_instead_label({ name: competitorName })}</span>{" "}
+									{instead}
+								</p>
+
+								<a
+									href={surface.href}
+									class="group mt-5 inline-flex items-center gap-1.5 text-[13px] text-fg-muted transition-colors hover:text-fg"
+								>
+									{m.cmp_surfaces_link()}
+									<span class="transition-transform group-hover:translate-x-0.5">→</span>
+								</a>
+							</div>
+
+							<div class="min-w-0">
+								{Artifact ? (
+									<Artifact />
+								) : (
+									<MediaFrame
+										label={m.cmp_surface_analytics_shot()}
+										src="/screenshots/surface-analytics.webp"
+										width={896}
+										height={696}
+									/>
+								)}
+							</div>
+						</div>
+					);
+				})
+			}
+		</div>
+	</div>
+</section>

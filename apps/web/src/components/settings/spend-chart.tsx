@@ -10,7 +10,7 @@ import {
 	PlotTooltipBody,
 	createTooltipFocusStore,
 	cursorTooltip,
-	dashedGridY,
+	DASHED_Y_GRID,
 	focusCrosshair,
 	resolvePlotColor,
 	usePlotChromeColors,
@@ -39,7 +39,7 @@ function dayOf(datum: SpendDatum): CumulativePoint {
 }
 import { ChartEmpty, ChartLoading } from "@maple/ui/components/charts"
 
-import { formatCurrency } from "@/lib/billing/currency"
+import { formatCurrency } from "@maple/domain/format"
 import {
 	buildCumulativeSeries,
 	type CumulativePoint,
@@ -176,7 +176,6 @@ export function SpendChart({ model, daily }: { model: SpendModel; daily: DailySp
 
 		return defineChart({
 			marks: [
-				dashedGridY(),
 				areaY(cells, {
 					x: (cell: SpendCell) => cell.point.date,
 					y: (cell: SpendCell) => cell.value,
@@ -253,6 +252,7 @@ export function SpendChart({ model, daily }: { model: SpendModel; daily: DailySp
 					},
 				},
 				y: {
+					grid: DASHED_Y_GRID,
 					scale: scaleLinear().domain([0, yMax]),
 					axis: {
 						line: false,

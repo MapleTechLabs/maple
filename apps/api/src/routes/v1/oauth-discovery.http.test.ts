@@ -3,9 +3,9 @@ import { afterEach, describe, expect, it } from "@effect/vitest"
 import { OrgId, RoleName, UserId } from "@maple/domain/http"
 import { ConfigProvider, Context, Effect, Layer, ManagedRuntime, Schema } from "effect"
 import { HttpRouter } from "effect/unstable/http"
-import { Env } from "@/platform/Env"
-import { cleanupTestDbs, createTestDb, type TestDb } from "@/platform/test-pglite"
-import { McpOAuthService } from "@/services/auth/McpOAuthService"
+import { Env } from "@maple/backend/platform/Env"
+import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
+import { McpOAuthService } from "@maple/backend/services/auth/McpOAuthService"
 import { OAuthDiscoveryRouter } from "./oauth-discovery.http"
 
 const createdDbs: TestDb[] = []

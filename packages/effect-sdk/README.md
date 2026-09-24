@@ -12,7 +12,7 @@ npm install @maple-dev/effect-sdk effect
 
 Auto-detects commit SHA and deployment environment from common platform env vars (Railway, Vercel, Cloudflare Pages, Render).
 
-`Maple.layer` always exports. The endpoint defaults to the public Maple ingest (`https://ingest.maple.dev`), so supplying an ingest key is usually all you need. A missing key does **not** switch export off — that keeps keyless setups working against a local `maple start` sink or your own OTLP collector. Keyless against the public ingest is the one combination that can't work (it 401s), and it logs a one-shot warning.
+`Maple.layer` always exports. The endpoint defaults to the public Maple ingest for your region (`https://ingest.maple.dev`, or `https://ingest.eu.maple.dev` with `region: "eu"` / `MAPLE_REGION=eu`), so supplying an ingest key is usually all you need. A missing key does **not** switch export off — that keeps keyless setups working against a local `maple start` sink or your own OTLP collector. Keyless against the public ingest is the one combination that can't work (it 401s), and it logs a one-shot warning.
 
 > `MapleFlush.make` and the Cloudflare `make()` behave differently: they **do** no-op when no ingest key resolves. Reach for those if you want telemetry to disable itself automatically.
 
@@ -32,7 +32,8 @@ Effect.runPromise(program.pipe(Effect.provide(TracerLive)))
 | Variable                      | Description                                                      |
 | ----------------------------- | ---------------------------------------------------------------- |
 | `MAPLE_INGEST_KEY`            | Maple ingest key. Required by the public ingest                  |
-| `MAPLE_ENDPOINT`              | Ingest endpoint URL. Defaults to `https://ingest.maple.dev`      |
+| `MAPLE_REGION`                | `us` (default) or `eu`. Used only when no endpoint is set        |
+| `MAPLE_ENDPOINT`              | Ingest endpoint URL. Defaults to the region's public ingest      |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | Endpoint fallback, honored when `MAPLE_ENDPOINT` is unset        |
 | `MAPLE_ENVIRONMENT`           | Deployment environment override                                  |
 | `MAPLE_REPOSITORY_URL`        | Repository URL, emitted as `vcs.repository.url.full`             |
@@ -86,7 +87,7 @@ When `MAPLE_INGEST_KEY` is unset, the SDK runs in no-op mode: buffers are draine
 | `logsPath`                    | OTLP logs path appended to `endpoint`. Default `/v1/logs`                                                                                                                                                                                                                             |
 | `tracer`                      | `"otlp"` (default) buffers spans for `flush(env)`; `"native"` mirrors them onto Cloudflare's own tracing — see [Native tracing](#native-tracing-experimental)                                                                                                                         |
 
-The same `MAPLE_ENDPOINT` / `MAPLE_INGEST_KEY` / `MAPLE_ENVIRONMENT` env vars apply, read from the Workers `env` binding.
+The same `MAPLE_ENDPOINT` / `MAPLE_REGION` / `MAPLE_INGEST_KEY` / `MAPLE_ENVIRONMENT` env vars apply, read from the Workers `env` binding.
 
 Server spans follow the OTEL HTTP semantic conventions for status: a 5xx response marks the span `Error` (with an `HttpServerErrorResponse` exception event) even when the handler returned it as a plain response — which is what `HttpRouter.toWebHandler` and alchemy's Worker bridge do with a defect — while 4xx responses stay `Ok`.
 
@@ -155,8 +156,8 @@ import { Effect } from "effect"
 
 const TracerLive = Maple.layer({
 	serviceName: "my-frontend",
-	endpoint: "https://ingest.maple.dev",
 	ingestKey: "maple_pk_...",
+	region: "eu", // omit for the US region
 })
 
 const program = Effect.log("Hello!").pipe(Effect.withSpan("hello"))
@@ -218,8 +219,8 @@ The browser presets (`Maple.layer` and `MapleFlush.make`) record **rrweb session
 ```typescript
 const TracerLive = Maple.layer({
 	serviceName: "my-frontend",
-	endpoint: "https://ingest.maple.dev",
 	ingestKey: "maple_pk_...",
+	region: "eu", // omit for the US region
 	replay: {
 		sampleRate: 0.1, // record 10% of sessions (default 1)
 		maskAllInputs: true, // default
@@ -325,8 +326,8 @@ import { MapleFlush } from "@maple-dev/effect-sdk/client"
 
 const telemetry = MapleFlush.make({
 	serviceName: "my-frontend",
-	endpoint: "https://ingest.maple.dev",
 	ingestKey: "maple_pk_...",
+	region: "eu", // omit for the US region
 	// flushOnUnload: true (default) registers pagehide / visibilitychange→hidden handlers
 })
 // telemetry.layer keeps the replay-session trace linking from Maple.layer.
@@ -338,21 +339,22 @@ By default the client preset flushes on `pagehide` and `visibilitychange→hidde
 
 Both server and client layers accept these options:
 
-| Option                  | Required                             | Description                                           |
-| ----------------------- | ------------------------------------ | ----------------------------------------------------- |
-| `serviceName`           | Yes                                  | Service name reported in telemetry                    |
-| `endpoint`              | No (server: defaults) / Yes (client) | Maple ingest endpoint URL                             |
-| `ingestKey`             | Required by the public ingest        | Maple ingest key. Flushable presets no-op without one |
-| `serviceVersion`        | No                                   | Override auto-detected commit SHA                     |
-| `serviceNamespace`      | No                                   | Logical group, emitted as `service.namespace`         |
-| `repositoryUrl`         | No (server / Cloudflare only)        | Repository URL, emitted as `vcs.repository.url.full`  |
-| `environment`           | No                                   | Override auto-detected environment                    |
-| `attributes`            | No                                   | Additional resource attributes (highest precedence)   |
-| `maxBatchSize`          | No                                   | Max batch size for export                             |
-| `tracerExportInterval`  | No                                   | Trace export interval                                 |
-| `loggerExportInterval`  | No                                   | Log export interval                                   |
-| `metricsExportInterval` | No                                   | Metrics export interval                               |
-| `shutdownTimeout`       | No                                   | Graceful shutdown timeout                             |
+| Option                  | Required                      | Description                                                                 |
+| ----------------------- | ----------------------------- | --------------------------------------------------------------------------- |
+| `serviceName`           | Yes                           | Service name reported in telemetry                                          |
+| `region`                | No                            | `"us"` (default) or `"eu"`. Ignored when an endpoint is set                 |
+| `endpoint`              | No                            | Ingest endpoint URL. Overrides `region`; env endpoints do too on the server |
+| `ingestKey`             | Required by the public ingest | Maple ingest key. Flushable presets no-op without one                       |
+| `serviceVersion`        | No                            | Override auto-detected commit SHA                                           |
+| `serviceNamespace`      | No                            | Logical group, emitted as `service.namespace`                               |
+| `repositoryUrl`         | No (server / Cloudflare only) | Repository URL, emitted as `vcs.repository.url.full`                        |
+| `environment`           | No                            | Override auto-detected environment                                          |
+| `attributes`            | No                            | Additional resource attributes (highest precedence)                         |
+| `maxBatchSize`          | No                            | Max batch size for export                                                   |
+| `tracerExportInterval`  | No                            | Trace export interval                                                       |
+| `loggerExportInterval`  | No                            | Log export interval                                                         |
+| `metricsExportInterval` | No                            | Metrics export interval                                                     |
+| `shutdownTimeout`       | No                            | Graceful shutdown timeout                                                   |
 
 The flushable presets (`MapleFlush.make`, and the Cloudflare `make`) replace the
 four interval options with `autoFlushInterval`, and add `excludeLogSpans`,

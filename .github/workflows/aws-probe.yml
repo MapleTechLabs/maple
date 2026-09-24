@@ -58,9 +58,11 @@ jobs:
         # so a slow build shows up as a slow build rather than masquerading as
         # the hang being investigated.
         timeout-minutes: 20
-        # The OIDC role's trust policy only accepts
-        # `repo:MapleTechLabs/maple:environment:{production,staging}` subs, so the
-        # job has to declare one of them to get credentials at all.
+        # The OIDC role's trust policy accepts the
+        # `repo:MapleTechLabs/maple:environment:production` sub (it was also
+        # written for a `staging` subject, a GitHub Environment that no longer
+        # exists), so the job has to declare `production` to get credentials at
+        # all.
         environment: production
         env:
             PROBE_LEVEL: ${{ inputs.level }}

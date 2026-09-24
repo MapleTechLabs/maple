@@ -191,9 +191,14 @@ export {
 	productEventNamesRowSchema,
 	productEventsForTraceQuery,
 	productEventTraceSamplesQuery,
+	productEventsFunnelTimingQuery,
+	productEventsFunnelTimingRowSchema,
+	productEventsFunnelLeaversQuery,
+	productEventsFunnelLeaversRowSchema,
 	ProductEventsFunnelError,
 	FUNNEL_MAX_STEPS,
 	FUNNEL_BREAKDOWN_MAX_GROUPS,
+	FUNNEL_LEAVERS_PER_STEP,
 	type FunnelStep,
 	type FunnelKeyBy,
 	type FunnelSessionDimension,
@@ -208,7 +213,44 @@ export {
 	type ProductEventsFunnelBreakdownOutput,
 	type ProductEventNamesOpts,
 	type ProductEventNamesOutput,
+	type ProductEventsFunnelTimingOutput,
+	type ProductEventsFunnelLeaversOutput,
 } from "./queries/product-events"
+
+// Queries — Product events (paths after / before an anchor)
+export {
+	productEventsPathsQuery,
+	productEventsPathsRowSchema,
+	PATHS_MAX_DEPTH,
+	PATHS_MAX_BRANCHES,
+	PATHS_OTHER,
+	type PathsAnchor,
+	type PathsDirection,
+	type PathsInclude,
+	type ProductEventsPathsOpts,
+	type ProductEventsPathsOutput,
+} from "./queries/product-events-paths"
+
+// Queries — Product events as a query-builder source (timeseries / breakdown / list)
+export {
+	productEventsTimeseriesQuery,
+	productEventsBreakdownQuery,
+	productEventsListQuery,
+	productEventAttributeKeysQuery,
+	productEventAttributeValuesQuery,
+	type ProductEventsQueryOpts,
+	type ProductEventsGroupByKey,
+	type ProductEventsTimeseriesOpts,
+	type ProductEventsTimeseriesOutput,
+	type ProductEventsBreakdownOpts,
+	type ProductEventsBreakdownOutput,
+	type ProductEventsListOpts,
+	type ProductEventsListOutput,
+	type ProductEventAttributeKeysOpts,
+	type ProductEventAttributeKeysOutput,
+	type ProductEventAttributeValuesOpts,
+	type ProductEventAttributeValuesOutput,
+} from "./queries/product-events-explore"
 
 // Queries — Services
 export {
@@ -469,6 +511,13 @@ export {
 	type ServiceLivenessOutput,
 	type TelemetryPulseOutput,
 } from "./queries/liveness"
+
+// Queries — Signal presence (what the org has ever sent, per signal; drives every empty state)
+export {
+	signalPresenceQuery,
+	type SignalPresenceOutput,
+	type TelemetrySignal,
+} from "./queries/signal-presence"
 
 // Queries — Top Operations (per-service operation ranking by metric)
 export {

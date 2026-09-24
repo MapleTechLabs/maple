@@ -7,7 +7,6 @@ import { formatRelativeTime, toEpochMs } from "@maple/ui/lib/time-format"
 
 import { SeverityBadge } from "@/components/errors/severity-badge"
 import { ConfidenceMeter } from "./confidence-meter"
-import { hasFanout, lensTally } from "./lens-derive"
 import {
 	investigationFinding,
 	investigationHeadline,
@@ -75,7 +74,7 @@ function InvestigationRow({ investigation }: { investigation: V2Investigation })
 						</span>
 					) : null}
 				</div>
-				<RowFinding investigation={investigation} finding={finding} />
+				<RowFinding finding={finding} />
 			</div>
 			<span className="w-20 shrink-0 max-md:hidden">
 				<ConfidenceMeter confidence={investigation.confidence} />
@@ -97,32 +96,16 @@ function InvestigationRow({ investigation }: { investigation: V2Investigation })
 	)
 }
 
-/**
- * The row's second line. A running pass says how far through the fan-out it is
- * rather than a generic "gathering evidence…" — that is the one thing someone
- * watching a live investigation actually wants from a list.
- */
-function RowFinding({
-	investigation,
-	finding,
-}: {
-	investigation: V2Investigation
-	finding: ReturnType<typeof investigationFinding>
-}) {
-	if (finding.kind === "pending" && hasFanout(investigation)) {
-		const tally = lensTally(investigation.lens_runs)
-		// `settled`, not `reported`: a crashed lens is a terminal `no_finding` lane
-		// and the run moves on, so counting only reporters leaves the row claiming
-		// lenses are still out when none are. And the validator is only blocked
-		// while that is true — once every lane has settled it is the one running.
-		const waiting = tally.settled < tally.total
+/** The row's second line: the finding, or that the agent is still at work. */
+function RowFinding({ finding }: { finding: ReturnType<typeof investigationFinding> }) {
+	if (finding.kind === "pending") {
 		return (
 			<span className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
 				<span aria-hidden className="size-1.5 shrink-0 animate-pulse rounded-full bg-primary" />
-				<span className="truncate">
-					{waiting
-						? `${tally.settled} of ${tally.total} lenses reported · validator blocked`
-						: `All ${tally.total} lenses reported · ranking`}
+				{/* The finding carries the running pass's last step when it has one, so
+				    the row is not free to print a fixed string over the top of it. */}
+				<span className="truncate" title={finding.text}>
+					{finding.text}
 				</span>
 			</span>
 		)
@@ -143,9 +126,6 @@ function RowFinding({
 			)}
 			title={finding.text}
 		>
-			{finding.kind === "pending" ? (
-				<span aria-hidden className="size-1.5 shrink-0 animate-pulse rounded-full bg-primary" />
-			) : null}
 			<span className="truncate">{finding.text}</span>
 		</span>
 	)

@@ -1,8 +1,8 @@
 import { OrgId, RoleName, UserId } from "@maple/domain/http"
 import { Effect, Layer, Option, Schema } from "effect"
 import { HttpRouter, type HttpServerRequest } from "effect/unstable/http"
-import { Env } from "@/platform/Env"
-import { MembershipRevocationService } from "@/services/auth/MembershipRevocationService"
+import { Env } from "@maple/backend/platform/Env"
+import { MembershipRevocationService } from "@maple/backend/services/auth/MembershipRevocationService"
 import {
 	CLERK_MEMBERSHIP_EVENTS,
 	decodeClerkEnvelope,
@@ -12,9 +12,9 @@ import {
 	isClerkMembershipEvent,
 	signupCompletedEvent,
 	type ClerkMembershipEventType,
-} from "@/services/product-events/clerk-events"
-import { ProductEventsService } from "@/services/product-events/ProductEventsService"
-import { AuditLogService } from "@/services/audit/AuditLogService"
+} from "@maple/backend/services/product-events/clerk-events"
+import { ProductEventsService } from "@maple/backend/services/product-events/ProductEventsService"
+import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
 import { receiveSvixWebhook, webhookText } from "./svix-receiver"
 
 /**

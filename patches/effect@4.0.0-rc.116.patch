@@ -1,0 +1,162 @@
+diff --git a/dist/internal/redacted.js b/dist/internal/redacted.js
+index b71c514f6c36983a6fb94a663e9ff878d58a3c1b..6192bdac6f761aef3c8e1ed2f3b4747ffd55692f 100644
+--- a/dist/internal/redacted.js
++++ b/dist/internal/redacted.js
+@@ -1,5 +1,11 @@
+ /** @internal */
+-export const redactedRegistry = /*#__PURE__*/new WeakMap();
++// Patched (maple): share the registry across duplicate `effect` module
++// instances via a Symbol.for-keyed global (like effect v3's globalValue).
++// Bun's isolated linker gives the alchemy CLI and the user's alchemy.run.ts
++// two path-distinct copies of this module; a module-local WeakMap makes
++// `Redacted.value` throw "Unable to get redacted value" for a Redacted made
++// by the other copy.
++export const redactedRegistry = globalThis[Symbol.for("effect/Redacted/redactedRegistry")] ??= /*#__PURE__*/new WeakMap();
+ /** @internal */
+ export const value = self => {
+   if (redactedRegistry.has(self)) {
+diff --git a/dist/unstable/ai/LanguageModel.js b/dist/unstable/ai/LanguageModel.js
+index e2f77b2c4104355f487259f3a5798a0716628160..7ed73ef178c53282e38243e47a4c78c230065429 100644
+--- a/dist/unstable/ai/LanguageModel.js
++++ b/dist/unstable/ai/LanguageModel.js
+@@ -338,16 +338,19 @@ export const make = /*#__PURE__*/Effect.fnUntraced(function* (params) {
+       previousResponseId: undefined,
+       incrementalPrompt: undefined
+     };
++    // Patched (maple): the span transformer is resolved first, and its
++    // aggregate handed to `streamContent`, so the parts of a chunk the
++    // response schema rejects still reach it. See `deferDecodeFailure`.
++    const spanTransformer = yield* getSpanTransformer;
++    const content = Option.isSome(spanTransformer) ? [] : undefined;
+     // Resolve the content stream for the request
+-    const stream = yield* streamContent(options, providerOptions);
++    const stream = yield* streamContent(options, providerOptions, content);
+     // Return the stream immediately if there is no span transformer
+-    const spanTransformer = yield* getSpanTransformer;
+-    if (Option.isNone(spanTransformer)) {
++    if (Option.isNone(spanTransformer) || content === undefined) {
+       return stream;
+     }
+     // Otherwise aggregate generated content and apply the span transformer
+     // when the stream is finished
+-    const content = [];
+     return stream.pipe(Stream.mapArray(parts => {
+       content.push(...parts);
+       return parts;
+@@ -525,7 +528,7 @@ export const make = /*#__PURE__*/Effect.fnUntraced(function* (params) {
+     // Retain pre-resolved results so Chat can recognize completed approvals on later turns.
+     return [...preResolvedResults, ...content, ...toolResults];
+   });
+-  const streamContent = Effect.fnUntraced(function* (options, providerOptions) {
++  const streamContent = Effect.fnUntraced(function* (options, providerOptions, undelivered) {
+     const tracker = Option.getOrUndefined(yield* Effect.serviceOption(ResponseIdTracker.ResponseIdTracker));
+     const toolChoice = options.toolChoice ?? "auto";
+     const concurrency = options.concurrency ?? "unbounded";
+@@ -548,6 +551,43 @@ export const make = /*#__PURE__*/Effect.fnUntraced(function* (params) {
+         if (part.type !== "response-metadata") emitted = true;
+       })), Stream.catchReason("AiError", "InvalidRequestError", (_, error) => emitted ? Stream.fail(error) : params.streamText(fallbackOptions))) : params.streamText(requestOptions);
+     };
++    // Patched (maple): a chunk the response schema rejects fails the stream
++    // only once the provider's stream has been read to its end.
++    //
++    // A provider emits a `tool-call` part as soon as its arguments parse, and
++    // the `finish` part — the one carrying the usage — from the terminal chunk
++    // after it. Failing at the rejected chunk cancelled the response body
++    // before that chunk arrived, so neither the span transformer nor the
++    // provider's own span annotations ever saw what a completed, billed call
++    // had used.
++    //
++    // From the rejected chunk on nothing is delivered downstream: a consumer
++    // sees the failure it always saw, at the end of the stream instead of in
++    // the middle of it. Every withheld part is appended, as the provider
++    // emitted it and so undecoded, to the span transformer's aggregate — the
++    // reason `streamText` creates that aggregate before the stream. The path
++    // that resolves tool calls itself, below, is left as it was.
++    const UNDELIVERED = Symbol("effect/ai/LanguageModel/undelivered");
++    const deferDecodeFailure = (stream, decodeParts) => {
++      let rejection = undefined;
++      const withhold = chunk => {
++        if (undelivered !== undefined) {
++          for (const part of chunk) undelivered.push(part);
++        }
++        return [UNDELIVERED];
++      };
++      return stream.pipe(Stream.mapArrayEffect(chunk => rejection !== undefined ? Effect.sync(() => withhold(chunk)) : decodeParts(chunk).pipe(tracker ? Effect.tap(decodedParts => {
++        for (const part of decodedParts) {
++          if (part.type === "response-metadata" && Predicate.isNotUndefined(part.id)) {
++            tracker.markParts(providerOptions.prompt.content, part.id);
++          }
++        }
++        return Effect.void;
++      }) : identity, Effect.catch(error => Effect.sync(() => {
++        rejection = error;
++        return withhold(chunk);
++      })))), Stream.filter(part => part !== UNDELIVERED), Stream.concat(Stream.suspend(() => rejection === undefined ? Stream.empty : Stream.fail(rejection))));
++    };
+     // Check for pending approvals that need resolution
+     const {
+       approved: pendingApproved,
+@@ -577,14 +617,7 @@ export const make = /*#__PURE__*/Effect.fnUntraced(function* (params) {
+       }
+       const schema = Schema.NonEmptyArray(Response.StreamPart(Toolkit.empty));
+       const decodeParts = Schema.decodeEffect(schema);
+-      return pipe(streamWithNonIncrementalFallback(), Stream.mapArrayEffect(parts => decodeParts(parts).pipe(tracker ? Effect.tap(decodedParts => {
+-        for (const part of decodedParts) {
+-          if (part.type === "response-metadata" && Predicate.isNotUndefined(part.id)) {
+-            tracker.markParts(providerOptions.prompt.content, part.id);
+-          }
+-        }
+-        return Effect.void;
+-      }) : identity)));
++      return deferDecodeFailure(streamWithNonIncrementalFallback(), decodeParts);
+     }
+     // If there is a toolkit resolve and apply it to the provider options
+     const toolkit = yield* resolveToolkit(options.toolkit);
+@@ -609,14 +642,7 @@ export const make = /*#__PURE__*/Effect.fnUntraced(function* (params) {
+       }
+       const schema = Schema.NonEmptyArray(Response.StreamPart(Toolkit.empty));
+       const decodeParts = Schema.decodeEffect(schema);
+-      return pipe(streamWithNonIncrementalFallback(), Stream.mapArrayEffect(parts => decodeParts(parts).pipe(tracker ? Effect.tap(decodedParts => {
+-        for (const part of decodedParts) {
+-          if (part.type === "response-metadata" && part.id) {
+-            tracker.markParts(providerOptions.prompt.content, part.id);
+-          }
+-        }
+-        return Effect.void;
+-      }) : identity)));
++      return deferDecodeFailure(streamWithNonIncrementalFallback(), decodeParts);
+     }
+     // Pre-resolve pending tool approvals before calling the LLM
+     let preResolvedStreamParts = [];
+@@ -679,14 +705,7 @@ export const make = /*#__PURE__*/Effect.fnUntraced(function* (params) {
+     // If tool call resolution is disabled, return the response without
+     // resolving the tool calls that were generated
+     if (options.disableToolCallResolution === true) {
+-      return streamWithNonIncrementalFallback().pipe(Stream.mapArrayEffect(parts => decodeParts(parts).pipe(tracker ? Effect.tap(decodedParts => {
+-        for (const part of decodedParts) {
+-          if (part.type === "response-metadata" && Predicate.isNotUndefined(part.id)) {
+-            tracker.markParts(providerOptions.prompt.content, part.id);
+-          }
+-        }
+-        return Effect.void;
+-      }) : identity)));
++      return deferDecodeFailure(streamWithNonIncrementalFallback(), decodeParts);
+     }
+     // Queue for decoded parts and tool results
+     const queue = yield* Queue.make();
+diff --git a/dist/unstable/httpapi/HttpApiBuilder.js b/dist/unstable/httpapi/HttpApiBuilder.js
+index 0e2a1b906f0ff3a065489cd9489f543490a29938..98ce2bccbc8d4a75a312ed56366a52bc0e2fcbca 100644
+--- a/dist/unstable/httpapi/HttpApiBuilder.js
++++ b/dist/unstable/httpapi/HttpApiBuilder.js
+@@ -365,7 +365,10 @@ function handlerToHttpEffect(api, group, endpoint, context, handler, isRaw) {
+ /** @internal */
+ export function handlerToRoute(api, group, handler, context) {
+   const endpoint = handler.endpoint;
+-  return HttpRouter.route(endpoint.method, HttpApiPath.toRouterPath(endpoint.path, endpoint.params), handlerToHttpEffect(api, group, endpoint, context, handler.handler, handler.isRaw), {
++  // Patched (maple): build the handler Effect on first request, not while the
++  // router graph is built, so a Worker's cold start does not pay for every route.
++  let httpEffect;
++  return HttpRouter.route(endpoint.method, HttpApiPath.toRouterPath(endpoint.path, endpoint.params), Effect.suspend(() => httpEffect ??= handlerToHttpEffect(api, group, endpoint, context, handler.handler, handler.isRaw)), {
+     uninterruptible: handler.uninterruptible
+   });
+ }

@@ -1,16 +1,16 @@
 /**
- * `/compare/<slug>.md` — the comparison registry, serialized.
+ * `/compare/<slug>.md`: the comparison registry, serialized.
  *
  * English-only and un-prefixed, like every other twin: an endpoint runs
  * outside Paraglide's per-render locale storage, so the thunks resolve to the
  * source locale, which is what we want.
  *
- * Same order as the HTML page — differences, price, migration, FAQ,
- * sources — and the same numbers: the receipts are priced with the functions
+ * Same order as the HTML page (differences, price, migration, FAQ,
+ * sources) and the same numbers: the receipts are priced with the functions
  * the page and the calculator use, so the three can't disagree.
  */
 import type { APIRoute, GetStaticPaths } from "astro"
-import { competitorBySlug, competitors, type Competitor } from "../../lib/competitors"
+import { competitors, type Competitor, MAPLE_SURFACES } from "../../lib/competitors"
 import { absolute, blocks, docHeader, markdown, table } from "../../lib/page-markdown"
 import * as m from "../../paraglide/messages.js"
 import {
@@ -38,7 +38,7 @@ const monthLabel = (checked: string) =>
 const dollars = (amount: number) => formatLineAmount(amount)
 
 /** Pipes inside a cell would break the row. */
-const cell = (text: string) => text.replace(/\|/g, "\\|")
+const cell = (text: string) => text.replaceAll("\\", "\\\\").replaceAll("|", "\\|")
 
 export const GET: APIRoute = ({ props, site }) => {
 	const { competitor } = props as { competitor: Competitor }
@@ -69,6 +69,21 @@ export const GET: APIRoute = ({ props, site }) => {
 		`**${m.cmp_parity_label()}:** ${competitor.parity.map((item) => item()).join(" · ")}`,
 	)
 
+	// The Surfaces section, where the page has one: the same four rows, with
+	// the artifact's argument carried by its copy rather than the drawing.
+	const surfaces = competitor.surfaces
+		? blocks(
+				`## ${m.cmp_surfaces_title({ name })}`,
+				competitor.surfaces.lede(),
+				competitor.surfaces.rows
+					.map((row) => {
+						const surface = MAPLE_SURFACES[row.surface]
+						return `- **${surface.name()}**: ${surface.body()} ${m.cmp_surfaces_instead_label({ name })} ${row.instead()}`
+					})
+					.join("\n"),
+			)
+		: undefined
+
 	const values = defaultValues(competitor.vendor)
 	const config = vendorConfigs[competitor.vendor]
 	const maple = estimateMaple(competitor.vendor, values)
@@ -79,7 +94,7 @@ export const GET: APIRoute = ({ props, site }) => {
 			[label, "Amount"],
 			[
 				...estimate.breakdown.map((item) => [
-					`${item.label} — ${item.detail}`,
+					`${item.label}: ${item.detail}`,
 					item.value === 0 ? m.cmp_price_free() : dollars(item.value),
 				]),
 				["**Total**", `**${dollars(estimate.total)}**`],
@@ -103,7 +118,7 @@ export const GET: APIRoute = ({ props, site }) => {
 		`## ${m.cmp_migration_title({ name })}`,
 		m.cmp_migration_lede(),
 		competitor.migration.map((step, i) => `${i + 1}. **${step.title()}** ${step.body()}`).join("\n"),
-		`\`\`\`yaml\n# otel-collector.yaml — ${m.cmp_migration_diff_caption()}\n${competitor.migrationDiff}\n\`\`\``,
+		`\`\`\`yaml\n# otel-collector.yaml. ${m.cmp_migration_diff_caption()}\n${competitor.migrationDiff}\n\`\`\``,
 	)
 
 	const faq = blocks(
@@ -117,7 +132,7 @@ export const GET: APIRoute = ({ props, site }) => {
 		competitor.sources
 			.map(
 				(s, i) =>
-					`${i + 1}. [${s.label}](${s.url}) — ${m.cmp_sources_checked({ date: monthLabel(s.checked) })}`,
+					`${i + 1}. [${s.label}](${s.url}), ${m.cmp_sources_checked({ date: monthLabel(s.checked) })}`,
 			)
 			.join("\n"),
 	)
@@ -134,6 +149,7 @@ export const GET: APIRoute = ({ props, site }) => {
 		blocks(
 			docHeader(competitor.heroTitle(), competitor.heroLede()),
 			differences,
+			surfaces,
 			price,
 			migration,
 			faq,

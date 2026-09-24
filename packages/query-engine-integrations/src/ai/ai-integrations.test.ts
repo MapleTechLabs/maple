@@ -18,7 +18,6 @@ const row = (
 	statusMessage: "",
 	timestamp: "2026-08-12 15:18:42.207000000",
 	spanAttributes,
-	resourceAttributes: {},
 	...overrides,
 })
 
@@ -320,6 +319,35 @@ describe("non-AI spans", () => {
 		expect(mapped.isAiSpan).toBe(false)
 	})
 
+	it("does not treat a tool call id alone as AI signal", () => {
+		// Claude Code's `claude_code.tool.execution` phase: the call id says which
+		// call the span belongs to; the call's own span is the tool call.
+		const phase = mapAiSpan(
+			row({ "gen_ai.tool.call.id": "toolu_1" }, { spanName: "claude_code.tool.execution" }),
+		)
+		expect(phase.genAi.toolCallId).toBe("toolu_1")
+		expect(phase.isAiSpan).toBe(false)
+	})
+
+	it("does not treat a gateway's routing metadata as AI signal", () => {
+		// `span.metadata.*` is any instrumentation's to stamp. The attempt fields
+		// are decoded for the span that has them, but they do not make it an AI
+		// span — the operation name on a real provider attempt does that.
+		const attempt = {
+			"span.metadata.attempt_index": "1",
+			"span.metadata.status_code": "429",
+			"trace.metadata.openrouter.provider_name": "Fireworks",
+		}
+		const bare = mapAiSpan(row(attempt))
+		expect(bare.isAiSpan).toBe(false)
+		expect(bare.genAi.attemptStatusCode).toBe(429)
+
+		const real = mapAiSpan(row({ ...attempt, "gen_ai.operation.name": "chat" }))
+		expect(real.isAiSpan).toBe(true)
+		expect(real.genAi.attemptIndex).toBe(1)
+		expect(real.genAi.attemptProvider).toBe("Fireworks")
+	})
+
 	it("counts the gateway stamp alone as AI signal", () => {
 		// The gateway saw evidence the read path cannot (scope, resource SDK
 		// name, span events), so its stamp outranks the absence of gen_ai keys.
@@ -349,18 +377,6 @@ describe("span envelope", () => {
 			vendorVersion: "0",
 			isAiSpan: true,
 		})
-	})
-
-	it("reads gen_ai keys from span attributes alone", () => {
-		// A resource-level `gen_ai.*` key describes the process, not the
-		// operation: honouring it would stamp every span of that service —
-		// Postgres, HTTP, everything — as an AI span.
-		const mapped = mapAiSpan(
-			row({}, { resourceAttributes: { "gen_ai.request.model": "resource-level" } }),
-		)
-
-		expect(mapped.genAi.requestModel).toBeUndefined()
-		expect(mapped.isAiSpan).toBe(false)
 	})
 
 	it("maps a whole trace's worth of spans in order", () => {
@@ -397,15 +413,6 @@ describe("resolveAiIntegration", () => {
 })
 
 describe("untrusted attribute keys", () => {
-	it("ignores a vendor stamp that arrives via a resource attribute", () => {
-		// The envelope is read from span attributes alone, so a resource-level
-		// stamp neither selects an integration nor marks the span.
-		const mapped = mapAiSpan(row({}, { resourceAttributes: { "maple_ai.vendor.id": "eve" } }))
-
-		expect(mapped.vendorId).toBeUndefined()
-		expect(mapped.isAiSpan).toBe(false)
-	})
-
 	it("keeps a prompt variable literally named __proto__ as AI signal", () => {
 		expect(mapAiSpan(row({ "gen_ai.prompt.variable.__proto__": "kept" })).isAiSpan).toBe(true)
 	})

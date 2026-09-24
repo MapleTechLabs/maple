@@ -35,7 +35,7 @@ Using the same **2026-09-03 23:48:28–2026-09-04 23:48:28 UTC** window as the f
 
 These are observed repeated executions, **not guaranteed removable requests**. They include failures and can reflect retries, late-arriving data, different execution settings, or separate rule evaluations. Tenant identity is grouped explicitly, including for raw SQL scoped by JWT rather than a SQL predicate. SQL equality alone does not prove a shared result is appropriate.
 
-The existing [evaluation cache](../apps/api/src/services/warehouse/QueryEngineService.ts) already lasts 90 seconds. Successful `cachedEvaluate` spans recorded 8,593 hits and 156,540 misses: **5.2% hit rate**. Another 5,802 failed spans lacked a completed hit outcome and are excluded from that denominator. Hits averaged 4.46 ms versus 121.27 ms for successful misses; this is observational, not a controlled speedup comparison.
+The existing [evaluation cache](../packages/backend/src/services/warehouse/QueryEngineService.ts) already lasts 90 seconds. Successful `cachedEvaluate` spans recorded 8,593 hits and 156,540 misses: **5.2% hit rate**. Another 5,802 failed spans lacked a completed hit outcome and are excluded from that denominator. Hits averaged 4.46 ms versus 121.27 ms for successful misses; this is observational, not a controlled speedup comparison.
 
 Separate `EdgeCacheService.getOrCompute` spans for `qe-evaluate` recorded:
 
@@ -54,7 +54,7 @@ Most reads therefore missed normally; circuit-breaker skips and timeouts are add
 
 Of 97,436 raw-alert warehouse executions, **5,716 failed (5.9%)**. Error-message classification found **5,616 invalid-authentication-token failures**, 69 HTTP 503 failures, and 31 timeouts. Authentication failures alone account for 5.8% of raw-alert traffic and deserve investigation before further tuning of the small raw-alert SQL samples.
 
-The [raw execution route](../apps/api/src/services/warehouse/WarehouseQueryService.ts) substitutes an organization-scoped JWT on managed Tinybird. [TinybirdOrgTokenService](../apps/api/src/services/integrations/TinybirdOrgTokenService.ts) already refreshes tokens before expiry, and the executor's client identity includes credentials. The historical failure counts do **not** establish an expiry or client-cache bug. Correlate failures with deployment, token minting, routing, and upstream diagnostics to identify the cause. Preserve organization scoping throughout that investigation. Error-class artifacts contain counts without credential-bearing messages.
+The [raw execution route](../packages/backend/src/services/warehouse/WarehouseQueryService.ts) substitutes an organization-scoped JWT on managed Tinybird. [TinybirdOrgTokenService](../packages/backend/src/services/integrations/TinybirdOrgTokenService.ts) already refreshes tokens before expiry, and the executor's client identity includes credentials. The historical failure counts do **not** establish an expiry or client-cache bug. Correlate failures with deployment, token minting, routing, and upstream diagnostics to identify the cause. Preserve organization scoping throughout that investigation. Error-class artifacts contain counts without credential-bearing messages.
 
 ## 4. Reject a blanket minute-tier switch for service facets
 

@@ -40,12 +40,15 @@ export {
 export { toWidgetRequest, type WidgetRequest } from "./request"
 export {
 	makeProductEventsFunnelDataSource,
+	makeProductEventsPathsDataSource,
 	makeQueryDataSource,
 	makeRawSqlDataSource,
 	makeRouteDataSource,
 	makeStaticDataSource,
 	PRODUCT_EVENTS_FUNNEL_ENDPOINT,
+	PRODUCT_EVENTS_PATHS_ENDPOINT,
 	type ProductEventsFunnelDefinition,
+	type ProductEventsPathsDefinition,
 	type QueryDataSourceInput,
 	type RawSqlDataSourceInput,
 } from "./construct"

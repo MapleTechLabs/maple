@@ -9,16 +9,18 @@ import { V2AttributeMappingsApiGroup } from "./attribute-mappings"
 import { V2AuditLogApiGroup } from "./audit-log"
 import { V2DashboardsApiGroup } from "./dashboards"
 import { V2IngestKeysApiGroup } from "./ingest-keys"
-import { V2SlackIntegrationsApiGroup } from "./integrations"
+import { V2ChatIntegrationsApiGroup } from "./integrations-chat"
 import { V2PlanetScaleIntegrationsApiGroup } from "./integrations-planetscale"
 import { V2ErrorIssuesApiGroup } from "./error-issues"
 import { V2InvestigationsApiGroup } from "./investigations"
 import { V2MobileDevicesApiGroup } from "./mobile-devices"
+import { V2OnboardingChecklistApiGroup } from "./onboarding-checklist"
 import { V2OrganizationApiGroup } from "./organization"
 import { V2InstrumentationRecommendationsApiGroup } from "./recommendations"
 import { V2ScrapeTargetsApiGroup } from "./scrape-targets"
 import { V2SessionReplaysApiGroup } from "./session-replays"
 import { V2InstrumentationAuditApiGroup } from "./setup-audit"
+import { V2TelemetrySignalsApiGroup } from "./telemetry-signals"
 import { V2SharePublicApiGroup } from "./share"
 import { V2WidgetCredentialsApiGroup } from "./widget-credentials"
 import { V2WidgetSummaryApiGroup } from "./widget-summary"
@@ -91,7 +93,7 @@ export class MapleApiV2 extends HttpApi.make("MapleApiV2")
 	.add(V2AlertDestinationsApiGroup)
 	.add(V2AlertIncidentsApiGroup)
 	.add(V2IngestKeysApiGroup)
-	.add(V2SlackIntegrationsApiGroup)
+	.add(V2ChatIntegrationsApiGroup)
 	.add(V2PlanetScaleIntegrationsApiGroup)
 	.add(V2ErrorIssuesApiGroup)
 	.add(V2AttributeMappingsApiGroup)
@@ -99,9 +101,11 @@ export class MapleApiV2 extends HttpApi.make("MapleApiV2")
 	.add(V2ScrapeTargetsApiGroup)
 	.add(V2InstrumentationRecommendationsApiGroup)
 	.add(V2InstrumentationAuditApiGroup)
+	.add(V2TelemetrySignalsApiGroup)
 	.add(V2InvestigationsApiGroup)
 	.add(V2AnomaliesApiGroup)
 	.add(V2OrganizationApiGroup)
+	.add(V2OnboardingChecklistApiGroup)
 	.add(V2MobileDevicesApiGroup)
 	.add(V2SessionReplaysApiGroup)
 	.add(V2TracesApiGroup)

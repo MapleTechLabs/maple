@@ -13,6 +13,9 @@ import {
 	GithubDeleteRepositoryResponse,
 	GithubDisconnectResponse,
 	GithubIntegrationStatus,
+	GithubSetPrReviewResponse,
+	GithubPrReviewConfigResponse,
+	GithubPrReviewsResponse,
 	GithubSetTrackedBranchResponse,
 	GithubStartConnectResponse,
 	HazelChannelsListResponse,
@@ -25,14 +28,6 @@ import {
 	IntegrationsUpstreamError,
 	IntegrationsValidationError,
 	MapleApi,
-	PlanetScaleDatabasesResponse,
-	PlanetScaleDisconnectResponse,
-	PlanetScaleEventsResponse,
-	PlanetScaleOrganizationsResponse,
-	PlanetScaleOrganizationSummary,
-	PlanetScaleQueryInsightsResponse,
-	PlanetScaleStartConnectResponse,
-	PlanetScaleWebhookConfigResponse,
 	RoleName,
 	UserId,
 	VCS_COMMIT_DETAILS_MAX_SHAS,
@@ -46,12 +41,12 @@ import { cloudflareAnalyticsState } from "@maple/db"
 import { EdgeCacheService } from "@maple/cache"
 import { and, desc, eq, ne } from "drizzle-orm"
 import { Effect, Option, Schema } from "effect"
-import { Database } from "@/platform/DatabaseLive"
-import { Env } from "@/platform/Env"
-import { graphqlQuery } from "@/services/integrations/CloudflareApi"
-import { CloudflareAnalyticsService } from "@/services/integrations/CloudflareAnalyticsService"
-import { CloudflareOAuthService } from "@/services/auth/CloudflareOAuthService"
-import { abrCount } from "@/services/integrations/cloudflare-analytics/mapping"
+import { Database } from "@maple/backend/platform/DatabaseLive"
+import { Env } from "@maple/backend/platform/Env"
+import { graphqlQuery } from "@maple/backend/services/integrations/CloudflareApi"
+import { CloudflareAnalyticsService } from "@maple/backend/services/integrations/CloudflareAnalyticsService"
+import { CloudflareOAuthService } from "@maple/backend/services/auth/CloudflareOAuthService"
+import { abrCount } from "@maple/backend/services/integrations/cloudflare-analytics/mapping"
 import {
 	decodeTopTrafficResponse,
 	HTTP_DATASET,
@@ -59,16 +54,19 @@ import {
 	topTrafficFilterVariables,
 	topTrafficQuery,
 	type TopTrafficGroupDefinition,
-} from "@/services/integrations/cloudflare-analytics/queries"
-import { PlanetScaleConnectionService } from "@/services/integrations/PlanetScaleConnectionService"
-import { PlanetScaleService } from "@/services/integrations/PlanetScaleService"
-import { PLANETSCALE_CALLBACK_PATH, PlanetScaleOAuthService } from "@/services/auth/PlanetScaleOAuthService"
-import { GithubConnectService } from "@/services/integrations/vcs/vendor/github/GithubConnectService"
-import { VcsCommitService } from "@/services/integrations/vcs/VcsCommitService"
-import { VcsSourceService } from "@/services/integrations/vcs/VcsSourceService"
-import { HazelOAuthService } from "@/services/auth/HazelOAuthService"
-import { requireAdmin as requireAdminRole } from "@/services/auth/auth"
-import { summarizeCause } from "@/platform/describe-cause"
+} from "@maple/backend/services/integrations/cloudflare-analytics/queries"
+import { PlanetScaleConnectionService } from "@maple/backend/services/integrations/PlanetScaleConnectionService"
+import { PlanetScaleService } from "@maple/backend/services/integrations/PlanetScaleService"
+import {
+	PLANETSCALE_CALLBACK_PATH,
+	PlanetScaleOAuthService,
+} from "@maple/backend/services/auth/PlanetScaleOAuthService"
+import { GithubConnectService } from "@maple/backend/services/integrations/vcs/vendor/github/GithubConnectService"
+import { VcsCommitService } from "@maple/backend/services/integrations/vcs/VcsCommitService"
+import { VcsSourceService } from "@maple/backend/services/integrations/vcs/VcsSourceService"
+import { HazelOAuthService } from "@maple/backend/services/auth/HazelOAuthService"
+import { requireAdmin as requireAdminRole } from "@maple/backend/services/auth/auth"
+import { summarizeCause } from "@maple/backend/platform/describe-cause"
 
 const asExternalUserId = Schema.decodeUnknownSync(ExternalUserId)
 const asUserId = Schema.decodeUnknownSync(UserId)
@@ -565,6 +563,45 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleApi, "integrations
 							payload.trackedBranch,
 						)
 						return new GithubSetTrackedBranchResponse(result)
+					}),
+				)
+				.handle("githubSetPrReview", ({ params, payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						yield* requireAdmin(tenant.roles)
+						const result = yield* github.setPrReviewEnabled(
+							tenant.orgId,
+							params.repositoryId,
+							payload.enabled,
+						)
+						return new GithubSetPrReviewResponse(result)
+					}),
+				)
+				// Any member may read a repository's review settings and history; only admins change them.
+				.handle("githubGetPrReviewConfig", ({ params }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						const config = yield* github.getPrReviewConfig(tenant.orgId, params.repositoryId)
+						return new GithubPrReviewConfigResponse({ config })
+					}),
+				)
+				.handle("githubSetPrReviewConfig", ({ params, payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						yield* requireAdmin(tenant.roles)
+						const config = yield* github.setPrReviewConfig(
+							tenant.orgId,
+							params.repositoryId,
+							payload.config,
+						)
+						return new GithubPrReviewConfigResponse({ config })
+					}),
+				)
+				.handle("githubListPrReviews", ({ params }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						const reviews = yield* github.listPrReviews(tenant.orgId, params.repositoryId)
+						return new GithubPrReviewsResponse({ reviews })
 					}),
 				)
 				// No admin gate — any org member may resolve commit SHAs for hover cards.

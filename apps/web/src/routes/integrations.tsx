@@ -11,15 +11,17 @@ import {
 import { GithubIntegrationCard } from "@/components/integrations/github-integration-card"
 import { HazelIntegrationCard } from "@/components/integrations/hazel-integration-card"
 import { PlanetScaleIntegrationCard } from "@/components/integrations/planetscale-integration-card"
-import { SlackIntegrationCard } from "@/components/integrations/slack-integration-card"
+import { ChatIntegrationCard } from "@/components/integrations/chat-integration-card"
 import {
 	IntegrationCatalog,
 	IntegrationIconPlate,
 	IntegrationsSummary,
 	catalogEntry,
+	chatConnectorOf,
 	isIntegrationId,
 	useIntegrationOverviews,
 	useIntegrationStatuses,
+	useIsIntegrationVisible,
 	type IntegrationId,
 } from "@/components/integrations/integration-catalog"
 import {
@@ -40,62 +42,58 @@ import { ArrowLeftIcon, CircleInfoIcon, ExternalLinkIcon, LoaderIcon } from "@/c
 // never fail `validateSearch` and blank the page.
 const IntegrationsSearch = Schema.Struct({
 	integration: Schema.optional(Schema.String),
-	// Post-OAuth return params set by the Slack install callback redirect. Plain
-	// strings for the same reason as `integration` — a truncated, retried, or
-	// hand-edited callback URL must degrade to the catalog, not the error boundary.
-	slack: Schema.optional(Schema.String),
-	slack_message: Schema.optional(Schema.String),
-	slack_team: Schema.optional(Schema.String),
+	// Return params set by the chat install callback. Plain strings for the same
+	// reason as `integration` — a truncated, retried, or hand-edited callback URL
+	// must degrade to the catalog, not the error boundary. `chat_reason` is a
+	// closed set of codes rather than a message — the callback deliberately sends
+	// no provider-authored text for this page to render.
+	chat: Schema.optional(Schema.String),
+	chat_reason: Schema.optional(Schema.String),
+	chat_workspace: Schema.optional(Schema.String),
+	// Return params set by the per-member account-link callback, which shares
+	// `chat_reason` with the install half above.
+	chat_identity: Schema.optional(Schema.String),
+	chat_identity_name: Schema.optional(Schema.String),
 })
 
 /**
- * Slack's documented OAuth `error` codes, plus the messages our own callback
- * emits, mapped to curated copy. Everything reaching the toast is an untrusted
- * URL param — rendering a backend/attacker-authored string verbatim inside an
- * authenticated page is a phishing surface — so unknown values fall back to a
- * generic line rather than being echoed.
+ * Curated copy per `chat_reason` code, for each of the two outcomes the callback reports.
+ *
+ * `failed` — which the callback emits for an upstream, persistence or malformed-callback failure
+ * — deliberately has no entry: there is nothing specific to say, so it takes the generic line, as
+ * does any code a newer API emits than this bundle knows. `conflict` has no entry on the account
+ * side because linking cannot produce one; re-linking moves the binding rather than colliding.
  */
-// A Map, not an object literal: the key is attacker-controlled, and a plain
-// object would happily resolve `toString` / `constructor` off the prototype.
-const SLACK_ERROR_COPY = new Map<string, string>([
-	["access_denied", "Slack install cancelled — the app wasn't authorized."],
-	["invalid_scope", "Slack rejected the requested permissions. Try installing again."],
-	[
-		"invalid_team_for_non_distributed_app",
-		"That Slack workspace can't install this app. Ask a workspace admin for access.",
-	],
-	["invalid_browser", "Slack couldn't complete the install in this browser. Try again from Slack."],
-	["invalid_client_id", "Slack rejected Maple's app credentials. Contact support."],
-	["bad_client_secret", "Slack rejected Maple's app credentials. Contact support."],
-	["oauth_authorization_url_mismatch", "The Slack install link expired. Start the install again."],
-	// Messages our own callback emits (exact literals from
-	// `apps/api/src/routes/slack-integration.http.ts` + SlackIntegrationService).
-	[
-		"This Slack workspace is already connected to a different Maple organization. Uninstall it there first.",
-		"That Slack workspace is already connected to a different Maple organization. Uninstall it there first.",
-	],
-	[
-		"Slack state expired — restart the install flow",
-		"The Slack install link expired. Start the install again.",
-	],
-	[
-		"Slack state not recognized — restart the install flow",
-		"The Slack install link is no longer valid. Start the install again.",
-	],
-	["Missing code or state in callback", "Slack's callback was incomplete. Start the install again."],
-	["Malformed callback URL", "Slack's callback was incomplete. Start the install again."],
-])
+const CHAT_ERROR_COPY = {
+	workspace: {
+		generic: "Couldn't link the chat workspace. Try again.",
+		reasons: new Map<string, string>([
+			["state", "The install link expired. Start the install again."],
+			["conflict", "That workspace is already linked to a different Maple organization."],
+			["unconfigured", "This chat connector isn't configured in Maple. Contact support."],
+			["unknown", "Unknown chat connector."],
+		]),
+	},
+	identity: {
+		generic: "Couldn't link your chat account. Try again.",
+		reasons: new Map<string, string>([
+			["state", "The link expired. Start the account link again."],
+			["unconfigured", "This chat connector isn't configured in Maple. Contact support."],
+			["unknown", "Unknown chat connector."],
+		]),
+	},
+} as const
 
-const GENERIC_SLACK_ERROR = "Slack connection failed. Try installing again."
+const chatErrorMessage = (kind: keyof typeof CHAT_ERROR_COPY, raw: string | undefined): string => {
+	const copy = CHAT_ERROR_COPY[kind]
+	return (raw ? copy.reasons.get(raw.trim()) : undefined) ?? copy.generic
+}
 
 /** Longest attacker-controlled string we'll surface (workspace names in a toast). */
 const MAX_UNTRUSTED_LABEL = 64
 
 const clampLabel = (value: string): string =>
 	value.length > MAX_UNTRUSTED_LABEL ? `${value.slice(0, MAX_UNTRUSTED_LABEL - 1)}…` : value
-
-const slackErrorMessage = (raw: string | undefined): string =>
-	(raw ? SLACK_ERROR_COPY.get(raw.trim()) : undefined) ?? GENERIC_SLACK_ERROR
 
 export const Route = createFileRoute("/integrations")({
 	component: IntegrationsPage,
@@ -106,37 +104,46 @@ function IntegrationsPage() {
 	const search = Route.useSearch()
 	const navigate = useNavigate({ from: Route.fullPath })
 	const { visibleSections } = useVisibleSettingsSections()
+	const isVisible = useIsIntegrationVisible()
+	// An id the org isn't shown falls back to the hub, so a stale link lands on
+	// the catalog rather than a card the org has no tile for.
 	const integration =
-		search.integration && isIntegrationId(search.integration) ? search.integration : undefined
-
-	// Surface the Slack OAuth callback result once, then strip the return params
-	// from the URL so a refresh doesn't re-toast. Narrowed here rather than in
-	// `validateSearch` — an unrecognised value is simply not a callback return.
-	const slackReturn =
-		search.slack === "connected" || search.slack === "updated" || search.slack === "error"
-			? search.slack
+		search.integration && isIntegrationId(search.integration) && isVisible(search.integration)
+			? search.integration
 			: undefined
-	const slackMessage = search.slack_message
-	const slackTeam = search.slack_team
+
+	// Surface a chat connector's callback result once, then strip the return params
+	// from the URL so a refresh doesn't re-toast. Two outcomes under two params, so a workspace install and one member's account link never
+	// read as one another; everything after the first line treats them alike.
+	const chatKind =
+		search.chat === "connected" || search.chat === "error"
+			? ("workspace" as const)
+			: search.chat_identity === "linked" || search.chat_identity === "error"
+				? ("identity" as const)
+				: undefined
+	const chatOk = search.chat === "connected" || search.chat_identity === "linked"
+	const chatReason = search.chat_reason
+	const chatName = search.chat_workspace ?? search.chat_identity_name
+	const chatCard = search.integration
 	useEffect(() => {
-		if (!slackReturn) return
-		// Keyed toast: StrictMode double-invokes effects, and the navigate below can
-		// re-run the effect before the params are stripped — the id dedupes both.
-		if (slackReturn === "connected") {
-			toastManager.add({
-				id: "slack-oauth",
-				title: slackTeam ? `Slack connected to ${clampLabel(slackTeam)}` : "Slack connected",
-				type: "success",
-			})
-		} else if (slackReturn === "updated") {
-			// An in-place re-auth of the existing installation (permissions refresh) —
-			// "connected" would wrongly suggest it had been disconnected in between.
-			toastManager.add({ id: "slack-oauth", title: "Slack connection updated", type: "success" })
-		} else {
-			toastManager.add({ id: "slack-oauth", title: slackErrorMessage(slackMessage), type: "error" })
-		}
-		navigate({ search: { integration: "slack" }, replace: true })
-	}, [slackReturn, slackMessage, slackTeam, navigate])
+		if (chatKind === undefined) return
+		// Names come from the chat platform — untrusted, so clamped.
+		const name = chatName ? clampLabel(chatName) : undefined
+		const connected =
+			chatKind === "workspace"
+				? (name ?? "").length > 0
+					? `Connected ${name}`
+					: "Chat workspace connected"
+				: (name ?? "").length > 0
+					? `Linked as ${name}`
+					: "Chat account linked"
+		toastManager.add({
+			id: "chat-oauth",
+			title: chatOk ? connected : chatErrorMessage(chatKind, chatReason),
+			type: chatOk ? "success" : "error",
+		})
+		navigate({ search: chatCard ? { integration: chatCard } : {}, replace: true })
+	}, [chatKind, chatOk, chatReason, chatName, chatCard, navigate])
 
 	// The hub shares the settings shell: same sidebar, "Integrations" highlighted.
 	const settingsSidebar = (
@@ -176,6 +183,7 @@ function IntegrationsPage() {
 	}
 
 	const entry = catalogEntry(integration)
+	const chatConnector = chatConnectorOf(integration)
 
 	return (
 		<IntegrationConnectProvider integration={integration}>
@@ -216,7 +224,9 @@ function IntegrationsPage() {
 										</AlertDescription>
 									</Alert>
 								)}
-								{integration === "cloudflare" ? (
+								{chatConnector !== null ? (
+									<ChatIntegrationCard connector={chatConnector} />
+								) : integration === "cloudflare" ? (
 									<CloudflareAccountCard />
 								) : integration === "hazel" ? (
 									<HazelIntegrationCard />
@@ -224,8 +234,6 @@ function IntegrationsPage() {
 									<GithubIntegrationCard />
 								) : integration === "planetscale" ? (
 									<PlanetScaleIntegrationCard />
-								) : integration === "slack" ? (
-									<SlackIntegrationCard />
 								) : (
 									// prometheus + warpstream share the generic scrape-target flow
 									<ScrapeTargetsSection sourceFilter="prometheus" />

@@ -1146,6 +1146,38 @@ export const aiTraceIndex = defineDatasource("ai_trace_index", {
 		// Helicone, …), which land in the same session as separate traces — are
 		// counted once. '' where the span carries none.
 		ResponseId: t.string(),
+		// Migration 0031 — the last facts the Agent Sessions list read off the
+		// raw spans: the vendor's version beside its id, and the five disjoint
+		// buckets `Tokens` is the sum of (`genAiUsageBucketsExpr`), so a row
+		// renders from one index query instead of a fan-out over
+		// `trace_detail_spans`. '' / 0 on rows materialized before it.
+		VendorVersion: t.string().lowCardinality(),
+		InputTokens: t.float64(),
+		CacheReadTokens: t.float64(),
+		CacheWriteTokens: t.float64(),
+		OutputTokens: t.float64(),
+		ReasoningTokens: t.float64(),
+		// Migration 0032 — why a failing span failed and what a tool call says it
+		// does, so the tool detail page is this index too. `IsError` said THAT a
+		// call failed and nothing more, so its Errors table, its failure modal and
+		// its header each seeked `trace_detail_spans` inside the window's whole
+		// spread of partitions — seconds to tens of seconds, and the header's
+		// description was the page's render gate. All three are facts of the tool
+		// span itself. `StatusMessage` and `ToolDescription` are truncated by the
+		// view (`GENAI_STATUS_MESSAGE_MAX`, `GENAI_TOOL_DESCRIPTION_MAX`); only
+		// tool spans ever carry a description, so the column is '' on the rest.
+		// `FailedToolCallResult` is a failed tool call's result (truncated,
+		// `GENAI_FAILED_TOOL_CALL_RESULT_MAX`; '' on every other span), because
+		// several frameworks describe a tool failure there and nowhere else.
+		// `ErrorFingerprint` groups failures: a hash of that result, else of the
+		// status message, redacted as `error_events` redacts messages; 0 on spans
+		// that did not fail. Redacting at read time would cost seconds per million
+		// failures. '' / 0 on rows materialized before it, like 0026/0029/0031.
+		ErrorType: t.string().lowCardinality(),
+		StatusMessage: t.string(),
+		ToolDescription: t.string(),
+		FailedToolCallResult: t.string(),
+		ErrorFingerprint: t.uint64(),
 	},
 	engine: engine.mergeTree({
 		partitionKey: "toDate(Timestamp)",

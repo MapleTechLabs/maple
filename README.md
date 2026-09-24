@@ -104,9 +104,9 @@ single `Alchemy.Stack("maple", …)` whose program yields one module per app:
 - `apps/web/src/worker.ts` / `apps/landing/src/worker.ts` / `apps/local-ui/src/worker.ts`
   — static builds via `Command.Build` + asset-serving Workers
 
-Stage grammar is `prd` / `stg` / `pr-<number>` / dev names, resolved via
+Stage grammar is `prd` / `pr-<number>` / dev names, resolved via
 `@maple/infra/cloudflare` (`parseMapleStage`, `resolveMapleDomains`, `resolveWorkerName`,
-`resolveHyperdriveRefId`, `resolveDatabaseMode`). stg/prd bind the
+`resolveHyperdriveRefId`, `resolveDatabaseMode`). prd binds the
 dashboard-managed Hyperdrive by config ID (`resolveHyperdriveRefId`) — origin credentials
 never touch a deploy. `MAPLE_PG_URL` is only needed for dev stages, whose Hyperdrive alchemy
 manages itself. PR previews bind **no database at all** (`resolveDatabaseMode` → `"none"`):
@@ -115,7 +115,6 @@ DB-backed routes 500, everything else in the preview works.
 Run locally:
 
 ```bash
-bun run alchemy:deploy:stg
 PR_NUMBER=123 bun run alchemy:deploy:pr
 ```
 
@@ -126,13 +125,11 @@ never run a v1 `alchemy destroy` against a live stage.
 Tear down:
 
 ```bash
-bun run alchemy:destroy:stg
 PR_NUMBER=123 bun run alchemy:destroy:pr
 ```
 
 CI workflows:
 
-- STG (default on push to `main`): `.github/workflows/deploy-stg.yml`
 - PRD (manual only via `workflow_dispatch`): `.github/workflows/deploy-prd.yml`
 - PR preview lifecycle: `.github/workflows/deploy-pr-preview.yml` (`pull_request` opened/synchronize/reopened/closed)
 
@@ -146,8 +143,8 @@ Secrets source model (CI):
       slug like `maple` would then blank out the PR-preview deployment URL
       `app-pr-<n>.maple.dev`)
     - GitHub repo **secret** `INFISICAL_MACHINE_IDENTITY_ID` (the machine identity ID)
-- Infisical environments (`prod`, `staging`, `dev` — mapped from the old Doppler
-  `prd`/`stg`/`pr` configs) must define:
+- Infisical environments (`prod`, `dev` — mapped from the old Doppler
+  `prd`/`pr` configs) must define:
     - `CLOUDFLARE_API_TOKEN`
     - `CLOUDFLARE_DEFAULT_ACCOUNT_ID` (bridged to alchemy v2's `CLOUDFLARE_ACCOUNT_ID` in the root `alchemy.run.ts`; `ALCHEMY_PASSWORD`/`ALCHEMY_STATE_TOKEN` were v1-only and are no longer read)
     - `TINYBIRD_HOST`
@@ -161,11 +158,11 @@ Secrets source model (CI):
     - `CLERK_PUBLISHABLE_KEY`
     - `CLERK_JWT_KEY`
 
-Setup note: the machine identity must have a **GitHub OIDC** auth method configured in Infisical (scoped to this repo, ideally to the `production`/`staging`/`pr-preview` GitHub environments) and read access to the project. The workflows select secrets via `project-slug` (`INFISICAL_PROJECT_SLUG`) and per-stage `env-slug` (`prod`/`staging`/`dev`).
+Setup note: the machine identity must have a **GitHub OIDC** auth method configured in Infisical (scoped to this repo, ideally to the `production`/`pr-preview` GitHub environments) and read access to the project. The workflows select secrets via `project-slug` (`INFISICAL_PROJECT_SLUG`) and per-stage `env-slug` (`prod`/`dev`).
 
 Runtime API URL behavior:
 
-- Deploy-time web builds resolve `VITE_API_BASE_URL` from the Cloudflare api worker domain (`api.maple.dev` in `prd`, `api-staging.maple.dev` in `stg`, worker.dev URL for `pr-*`).
+- Deploy-time web builds resolve `VITE_API_BASE_URL` from the Cloudflare api worker domain (`api.maple.dev` in `prd`, worker.dev URL for `pr-*`).
 - Local `bun --filter=@maple/web dev` can still use root `.env` `VITE_API_BASE_URL` for local API routing.
 
 ## Environment
@@ -193,7 +190,7 @@ For ingest + key auth, set these at minimum in your root `.env` when running the
 
 Maple persists application state in PostgreSQL:
 
-- Production and staging use PlanetScale Postgres through Cloudflare Hyperdrive.
+- Production uses PlanetScale Postgres through Cloudflare Hyperdrive.
 - Wrangler development uses the Docker Postgres started by `bun db:up`.
 - Non-Worker local entrypoints use embedded PGlite under `apps/api/.data/pglite`; set
   `MAPLE_DB_URL=memory://` for an ephemeral database.

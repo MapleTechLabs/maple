@@ -61,9 +61,15 @@ export { logsCount, logsTimeseries } from "./logs"
 export {
 	productEventsFunnel,
 	productEventsFunnelBreakdown,
+	productEventsFunnelTiming,
+	productEventsFunnelLeavers,
+	productEventsPaths,
 	productEventNames,
 	productEventsForTrace,
 	productEventTraceSamples,
+	productEventsTimeseries,
+	productEventsBreakdown,
+	productEventsList,
 } from "./product-events"
 
 /**

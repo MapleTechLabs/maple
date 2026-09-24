@@ -41,6 +41,7 @@ import { retainedQueryV2 } from "@/lib/services/common/v2-atom-client"
 import { formatNumber } from "@maple/ui/lib/format"
 import { useEffectiveTimeRange } from "@/hooks/use-effective-time-range"
 import { TimeRangeSearchFields, applyTimeRangeSearch } from "@/components/time-range-picker/search"
+import { sessionTimeRangeSearchMiddleware } from "@/components/time-range-picker/session-time-range"
 import { PageRefreshProvider } from "@/components/time-range-picker/page-refresh-context"
 import { TimeRangeHeaderControls } from "@/components/time-range-picker/time-range-header-controls"
 
@@ -51,6 +52,7 @@ const planetscaleSearchSchema = Schema.Struct({
 export const Route = createFileRoute("/infra/planetscale/")({
 	component: PlanetScalePage,
 	validateSearch: Schema.toStandardSchemaV1(planetscaleSearchSchema),
+	search: { middlewares: [sessionTimeRangeSearchMiddleware()] },
 })
 
 function PlanetScalePage() {

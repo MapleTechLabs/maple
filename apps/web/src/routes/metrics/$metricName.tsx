@@ -5,6 +5,7 @@ import { DashboardLayout } from "@/components/layout/dashboard-layout"
 import { MetricDetail } from "@/components/metrics/metric-detail"
 import type { MetricQueryPatch } from "@/components/metrics/metric-query-controls"
 import { TimeRangeSearchFields, applyTimeRangeSearch } from "@/components/time-range-picker/search"
+import { sessionTimeRangeSearchMiddleware } from "@/components/time-range-picker/session-time-range"
 import { PageRefreshProvider } from "@/components/time-range-picker/page-refresh-context"
 import { TimeRangeHeaderControls } from "@/components/time-range-picker/time-range-header-controls"
 import { AutocompleteValuesProvider } from "@/hooks/use-autocomplete-values"
@@ -36,6 +37,7 @@ function buildBackToMetricsHref(searchStr: string): string {
 export const Route = createFileRoute("/metrics/$metricName")({
 	component: MetricDetailPage,
 	validateSearch: Schema.toStandardSchemaV1(metricDetailSearchSchema),
+	search: { middlewares: [sessionTimeRangeSearchMiddleware()] },
 })
 
 function MetricDetailPage() {

@@ -73,6 +73,8 @@ function makeIncident(overrides: Record<string, unknown> = {}): AlertIncidentDoc
 		dedupeKey: "dedupe",
 		lastDeliveredEventType: null,
 		lastNotifiedAt: null,
+		holdReason: null,
+		heldSince: null,
 		errorIssueId: null,
 		...overrides,
 	})

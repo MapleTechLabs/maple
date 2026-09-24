@@ -1,4 +1,5 @@
 import type { Duration } from "effect"
+import { type MapleRegion, resolveIngestEndpoint } from "@maple/browser-session"
 import { Effect, Layer } from "effect"
 import { Otlp } from "effect/unstable/observability"
 import { trySyncOrUndefined } from "../shared/try-sync.js"
@@ -12,8 +13,14 @@ import { clearIdentity as clearIdentityUser, identify as identifyUser } from "./
 export interface MapleClientConfig {
 	/** The service name reported in traces, logs, and metrics. */
 	readonly serviceName: string
-	/** Maple ingest endpoint URL. */
-	readonly endpoint: string
+	/**
+	 * Region your Maple organization lives in: `"us"` (default,
+	 * `https://ingest.maple.dev`) or `"eu"` (`https://ingest.eu.maple.dev`).
+	 * Ignored when `endpoint` is set.
+	 */
+	readonly region?: MapleRegion | undefined
+	/** Maple ingest endpoint URL. Overrides `region`; use it for a proxy or self-hosted ingest. */
+	readonly endpoint?: string | undefined
 	/** Maple ingest key for authentication. */
 	readonly ingestKey?: string | undefined
 	/** Service version or commit SHA. */
@@ -71,8 +78,8 @@ export interface MapleClientConfig {
  *
  * const TracerLive = Maple.layer({
  *   serviceName: "my-frontend",
- *   endpoint: "https://ingest.maple.dev",
  *   ingestKey: "maple_pk_...",
+ *   region: "eu", // omit for the US region
  * })
  *
  * const program = Effect.log("Hello!").pipe(Effect.withSpan("hello"))
@@ -110,8 +117,9 @@ export const layer = (config: MapleClientConfig) => {
 	if (config.serviceNamespace) attributes["service.namespace"] = config.serviceNamespace
 	if (config.attributes) Object.assign(attributes, config.attributes)
 
+	const endpoint = resolveIngestEndpoint({ endpoints: [config.endpoint], regions: [config.region] })
 	const clientSessionConfig = {
-		endpoint: config.endpoint,
+		endpoint,
 		ingestKey: config.ingestKey,
 		serviceName: config.serviceName,
 		environment: config.environment,
@@ -122,7 +130,7 @@ export const layer = (config: MapleClientConfig) => {
 	} as const
 
 	const base = Otlp.layerJson({
-		baseUrl: config.endpoint,
+		baseUrl: endpoint,
 		resource: {
 			serviceName: config.serviceName,
 			serviceVersion: config.serviceVersion,

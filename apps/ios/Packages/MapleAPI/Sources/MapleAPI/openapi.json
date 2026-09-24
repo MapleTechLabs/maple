@@ -295,6 +295,8 @@
             "error_issue_id": null,
             "first_triggered_at": "2026-07-15T09:10:00.000Z",
             "group_key": null,
+            "held_since": null,
+            "hold_reason": null,
             "id": "inc_tC4d9V79DCDzgbGKhAnff9",
             "last_delivered_event_type": "trigger",
             "last_notified_at": "2026-07-15T09:10:05.000Z",
@@ -330,6 +332,14 @@
           "group_key": {
             "description": "The breaching group for grouped rules, or `null` for ungrouped rules.",
             "type": "string"
+          },
+          "held_since": {
+            "description": "When the current hold began, or `null` when the incident is not held.",
+            "type": "string"
+          },
+          "hold_reason": {
+            "$ref": "#/components/schemas/_maple_AlertIncidentHoldReason",
+            "description": "Set while an open incident is waiting on telemetry: the breach stopped appearing, but the service's data could not be proven to still be flowing. `volume_collapsed`, `no_data` and `sampling_changed` resolve once telemetry resumes or their hold ceiling elapses; `probe_failed` (Maple could not run the check) has no ceiling and resolves on the next successful check. `null` while firing or once resolved."
           },
           "id": {
             "$ref": "#/components/schemas/_maple_AlertIncidentId"
@@ -2365,6 +2375,186 @@
         "title": "Service list",
         "type": "object"
       },
+      "ServiceOperation": {
+        "additionalProperties": false,
+        "description": "One span name inside a service, with its volume, errors and latency over the window.",
+        "properties": {
+          "error_count": {
+            "type": "number"
+          },
+          "error_rate": {
+            "type": "number"
+          },
+          "estimated_span_count": {
+            "type": "number"
+          },
+          "name": {
+            "type": "string"
+          },
+          "p50_latency_ms": {
+            "type": "number"
+          },
+          "p95_latency_ms": {
+            "type": "number"
+          },
+          "p99_latency_ms": {
+            "type": "number"
+          },
+          "span_count": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "name",
+          "span_count",
+          "estimated_span_count",
+          "error_count",
+          "error_rate",
+          "p50_latency_ms",
+          "p95_latency_ms",
+          "p99_latency_ms"
+        ],
+        "title": "Service operation",
+        "type": "object"
+      },
+      "ServiceOverview": {
+        "additionalProperties": false,
+        "description": "Everything a service detail screen paints from, in one response: the window summary, a per-bucket series of every golden signal, and the busiest operations.",
+        "examples": [
+          {
+            "bucket_seconds": 120,
+            "end_time": "2026-07-15T13:00:00.000Z",
+            "object": "service_overview",
+            "operations": [
+              {
+                "error_count": 8,
+                "error_rate": 0.0004,
+                "estimated_span_count": 20000,
+                "name": "GET /checkout",
+                "p50_latency_ms": 22,
+                "p95_latency_ms": 180,
+                "p99_latency_ms": 910,
+                "span_count": 20000
+              }
+            ],
+            "points": [
+              {
+                "error_rate": 0.0003,
+                "estimated_span_count": 1500,
+                "p50_latency_ms": 18,
+                "p95_latency_ms": 140,
+                "p99_latency_ms": 870,
+                "span_count": 1500,
+                "timestamp": "2026-07-15T12:00:00.000Z"
+              }
+            ],
+            "service": {
+              "baseline_p95_latency_ms": 120,
+              "baseline_span_count": 300000,
+              "deployment_environments": [
+                "production"
+              ],
+              "error_count": 12,
+              "error_rate": 0.00027,
+              "has_sampling": false,
+              "name": "api",
+              "object": "service",
+              "p50_latency_ms": 18.4,
+              "p95_latency_ms": 142.9,
+              "p99_latency_ms": 890.1,
+              "sampling_weight": 1,
+              "service_namespaces": [
+                "checkout"
+              ],
+              "span_count": 45000,
+              "throughput": 12.5,
+              "traced_throughput": 12.5
+            },
+            "start_time": "2026-07-15T12:00:00.000Z"
+          }
+        ],
+        "properties": {
+          "bucket_seconds": {
+            "exclusiveMinimum": 0,
+            "type": "integer"
+          },
+          "end_time": {
+            "type": "string"
+          },
+          "object": {
+            "enum": [
+              "service_overview"
+            ],
+            "type": "string"
+          },
+          "operations": {
+            "items": {
+              "$ref": "#/components/schemas/ServiceOperation"
+            },
+            "type": "array"
+          },
+          "points": {
+            "items": {
+              "$ref": "#/components/schemas/ServiceOverviewPoint"
+            },
+            "type": "array"
+          },
+          "service": {
+            "$ref": "#/components/schemas/Service"
+          },
+          "start_time": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "object",
+          "service",
+          "start_time",
+          "end_time",
+          "points",
+          "operations"
+        ],
+        "title": "Service overview",
+        "type": "object"
+      },
+      "ServiceOverviewPoint": {
+        "additionalProperties": false,
+        "description": "One time bucket of a service's throughput, error rate and latency percentiles.",
+        "properties": {
+          "error_rate": {
+            "type": "number"
+          },
+          "estimated_span_count": {
+            "type": "number"
+          },
+          "p50_latency_ms": {
+            "type": "number"
+          },
+          "p95_latency_ms": {
+            "type": "number"
+          },
+          "p99_latency_ms": {
+            "type": "number"
+          },
+          "span_count": {
+            "type": "number"
+          },
+          "timestamp": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "timestamp",
+          "span_count",
+          "estimated_span_count",
+          "error_rate",
+          "p50_latency_ms",
+          "p95_latency_ms",
+          "p99_latency_ms"
+        ],
+        "title": "Service overview point",
+        "type": "object"
+      },
       "TimeseriesSeries": {
         "additionalProperties": false,
         "properties": {
@@ -3113,13 +3303,13 @@
       },
       "_maple_AlertDestinationType": {
         "enum": [
-          "slack-bot",
           "pagerduty",
           "webhook",
           "hazel-oauth",
           "discord",
           "telegram",
-          "email"
+          "email",
+          "chat"
         ],
         "title": "Alert Destination Type",
         "type": "string"
@@ -3132,6 +3322,16 @@
           "test"
         ],
         "title": "Alert Event Type",
+        "type": "string"
+      },
+      "_maple_AlertIncidentHoldReason": {
+        "enum": [
+          "no_data",
+          "volume_collapsed",
+          "sampling_changed",
+          "probe_failed"
+        ],
+        "title": "Alert Incident Hold Reason",
         "type": "string"
       },
       "_maple_AlertIncidentId": {
@@ -6616,6 +6816,183 @@
         ]
       }
     },
+    "/v2/services/{name}/overview": {
+      "get": {
+        "description": "Returns the service summary, a per-bucket series of throughput, error rate and latency percentiles, and its busiest operations — the reads behind a service detail screen, composed server-side in one round-trip. Requires `services:read`.",
+        "operationId": "getServiceOverview",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/_maple_ServiceName"
+            }
+          },
+          {
+            "in": "query",
+            "name": "start_time",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "end_time",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "deployment_environment",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "bucket_seconds",
+            "required": false,
+            "schema": {
+              "pattern": "^[+-]?\\d*\\.?\\d+(?:[Ee][+-]?\\d+)?$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ServiceOverview"
+                }
+              }
+            },
+            "description": "Everything a service detail screen paints from, in one response: the window summary, a per-bucket series of every golden signal, and the busiest operations."
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/v2/TimeRangeInvalidError failure. HTTP 400. | The @maple/http/v2/TelemetryRangeTooLargeError failure. HTTP 400. | The @maple/http/v2/TelemetryBucketCountTooLargeError failure. HTTP 400. | The @maple/http/v2/TraceQueryInvalidError failure. HTTP 400. | The @maple/http/errors/WarehouseInvalidSqlError failure. HTTP 400. | The @maple/http/errors/QueryEngineValidationError failure. HTTP 400. | The @maple/http/v2/InvalidRequestError failure. HTTP 400."
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/v2/InvalidCredentialsError failure. HTTP 401. | The @maple/http/errors/UnauthorizedError failure. HTTP 401."
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/v2/InsufficientScopeError failure. HTTP 403. | The @maple/http/v2/OrganizationAccessDeniedError failure. HTTP 403."
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/v2/ServiceNotFoundError failure. HTTP 404."
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/errors/WarehouseQuotaExceededError failure. HTTP 429. | The @maple/http/v2/RateLimitError failure. HTTP 429.",
+            "headers": {
+              "Retry-After": {
+                "description": "Seconds to wait or an HTTP-date indicating when the request may be retried.",
+                "example": 60,
+                "schema": {
+                  "oneOf": [
+                    {
+                      "minimum": 1,
+                      "type": "integer"
+                    },
+                    {
+                      "type": "string"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/errors/WarehouseMalformedQueryError failure. HTTP 500. | The @maple/http/errors/WarehouseScopeError failure. HTTP 500. | The @maple/http/errors/OrgClickHouseSettingsEncryptionError failure. HTTP 500. | The @maple/http/errors/QueryEngineResultMismatchError failure. HTTP 500. | The @maple/http/v2/ResponseSchemaError failure. HTTP 500. | The @maple/http/v2/UnexpectedError failure. HTTP 500."
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/errors/WarehouseQueryError failure. HTTP 502. | The @maple/http/errors/WarehouseAuthError failure. HTTP 502. | The @maple/http/errors/WarehouseConfigError failure. HTTP 502. | The @maple/http/errors/WarehouseClientError failure. HTTP 502. | The @maple/http/errors/WarehouseSchemaDriftError failure. HTTP 502. | The @maple/http/errors/WarehouseResultDecodeError failure. HTTP 502. | The @maple/http/errors/OrgClickHouseSettingsStoredConfigInvalidError failure. HTTP 502."
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/errors/WarehouseUpstreamError failure. HTTP 503. | The @maple/http/errors/OrgClickHouseSettingsPersistenceError failure. HTTP 503. | The @maple/http/errors/ApiKeyLookupPersistenceError failure. HTTP 503. | The @maple/http/errors/AuthorizationUnavailableError failure. HTTP 503."
+          },
+          "504": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapleErrorEnvelope"
+                }
+              }
+            },
+            "description": "The @maple/http/errors/QueryEngineTimeoutError failure. HTTP 504. | The @maple/http/v2/WorkerUnavailableError failure. HTTP 504."
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Retrieve a service overview",
+        "tags": [
+          "Services"
+        ]
+      }
+    },
     "/v2/traces/breakdown": {
       "post": {
         "description": "Aggregates traces by one dimension. Requires `traces:read`.",
@@ -7308,7 +7685,7 @@
       "name": "Alert Deliveries"
     },
     {
-      "description": "Notification channels for alert rules — Slack bot, PagerDuty, generic webhooks, Hazel OAuth, Discord, Telegram, and workspace-member email. Create and manage destinations, then reference them from alert rules via `destination_ids`. Mutations are admin-only; channel secrets are write-only.",
+      "description": "Notification channels for alert rules — PagerDuty, generic webhooks, Hazel OAuth, Discord, Telegram, workspace-member email, and channels in linked chat workspaces. Create and manage destinations, then reference them from alert rules via `destination_ids`. Mutations are admin-only; channel secrets are write-only.",
       "name": "Alert Destinations"
     },
     {
@@ -7320,8 +7697,8 @@
       "name": "Ingest Keys"
     },
     {
-      "description": "Install and manage the Maple Slack app for your organization: begin an OAuth install, read installation status, list channels, and uninstall.",
-      "name": "Slack Integration"
+      "description": "Link a chat workspace to your organization through a configured connector, and manage or remove the links that already exist. Where a connector's platform can say who acted, each member may also link their own chat account to their Maple user.",
+      "name": "Chat Integrations"
     },
     {
       "description": "Connect PlanetScale to your organization and manage what Maple collects from it: connection status, organization binding, the metrics service token that enables branch-metrics scraping, the database inventory, webhook setup, query insights, and the lifecycle event timeline.",
@@ -7336,7 +7713,7 @@
       "name": "Attribute Mappings"
     },
     {
-      "description": "The organization's append-only audit trail — allowed and denied actions performed through the dashboard, the public API, and MCP, attributed to the user, API key, or agent that performed them, with before/after diffs for updates. Reading it requires organization-administrator access (or the `audit_log:read` scope for API keys).",
+      "description": "The organization's append-only audit trail — allowed and denied actions performed through the dashboard, the public API, MCP, and any linked chat platform, attributed to the user, API key, or agent that performed them, with before/after diffs for updates. Reading it requires organization-administrator access (or the `audit_log:read` scope for API keys).",
       "name": "Audit Log"
     },
     {
@@ -7352,6 +7729,10 @@
       "name": "Setup Audit"
     },
     {
+      "description": "Which signals are reaching Maple. The input every empty state needs to tell 'nothing is wired up' apart from 'nothing happened'.",
+      "name": "Telemetry Signals"
+    },
+    {
       "description": "Durable investigation war-rooms — autonomous or human-opened diagnostic sessions over incidents and ad-hoc questions, each carrying its structured AI diagnosis.",
       "name": "Investigations"
     },
@@ -7362,6 +7743,10 @@
     {
       "description": "The authenticated organization's identity.",
       "name": "Organization"
+    },
+    {
+      "description": "Activation steps a new org completes to earn a credit, and the claim that applies it.",
+      "name": "Onboarding Checklist"
     },
     {
       "description": "Push-notification registrations for the native apps. Per user, per organization.",

@@ -22,9 +22,19 @@ interface Props {
 
 const { eyebrow, title, links, class: className = "" } = Astro.props;
 
-// Three per row for the feature and use-case pages, four for the compare
-// pages (every other vendor), so a 1px-gap grid never shows an empty cell.
-const columns = links.length % 4 === 0 ? "lg:grid-cols-4" : "lg:grid-cols-3";
+// Three per row for the feature and use-case pages, four when the count
+// divides by four, so a 1px-gap grid never shows an empty cell. Counts that
+// divide by neither (five, with six vendors in the compare registry) lay out
+// on six columns instead: full rows of three take two columns each and the
+// remainder stretches to fill the last row, the way CompareHub does it.
+const ragged = links.length % 4 !== 0 && links.length % 3 !== 0;
+const columns = ragged ? "lg:grid-cols-6" : links.length % 4 === 0 ? "lg:grid-cols-4" : "lg:grid-cols-3";
+const lastRowCount = links.length % 3 || 3;
+const spanOf = (i: number) => {
+	if (!ragged) return undefined;
+	if (i < links.length - lastRowCount) return "lg:col-span-2";
+	return lastRowCount === 1 ? "lg:col-span-6" : lastRowCount === 2 ? "lg:col-span-3" : "lg:col-span-2";
+};
 ---
 
 <section class={`bg-bg-deep ${className}`}>
@@ -41,7 +51,10 @@ const columns = links.length % 4 === 0 ? "lg:grid-cols-4" : "lg:grid-cols-3";
 		>
 			{
 				links.map((link, i) => (
-					<a href={link.href} class="group flex flex-col gap-3 bg-bg p-6 transition-colors hover:bg-bg-elevated md:p-8">
+					<a
+						href={link.href}
+						class:list={["group flex flex-col gap-3 bg-bg p-6 transition-colors hover:bg-bg-elevated md:p-8", spanOf(i)]}
+					>
 						<span class="text-[11px] font-medium tabular-nums text-fg-muted">
 							{String(i + 1).padStart(2, "0")}
 						</span>

@@ -34,9 +34,8 @@
 			"@maple/infra/worker-telemetry": ["./packages/infra/src/cloudflare/worker-telemetry.ts"],
 			"@maple/infra/workers-cache": ["./packages/infra/src/cloudflare/workers-cache.ts"],
 			"@maple/alchemy-portless": ["./lib/alchemy-portless/src/index.ts"],
-			// alerting's `src/worker.ts` dynamic-imports its ticks, which reach the api
-			// layer graph through `@maple/api/alerting` — written against apps/api's own
-			// `@/` alias, so the program needs it too.
+			// API route modules retain their app-local alias. Shared backend and
+			// AI modules use package imports or relative paths.
 			"@/*": ["./apps/api/src/*"]
 		}
 	},

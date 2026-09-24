@@ -7,13 +7,13 @@ import { resolveRangeChecked, type Range } from "../core/time"
 import * as Ops from "../core/operations"
 
 import { formatWarehouseDateTime } from "@maple/query-engine"
-const spanName = Flag.optional(Flag.string("span-name").pipe(Flag.withDescription("Filter by span name")))
-const errorsOnly = Flag.boolean("errors").pipe(
+const spanName = Flag.optional(Flag.String("span-name").pipe(Flag.withDescription("Filter by span name")))
+const errorsOnly = Flag.Boolean("errors").pipe(
 	Flag.withDescription("Only include errored spans"),
 	Flag.withDefault(false),
 )
 const bucket = Flag.optional(
-	Flag.integer("bucket").pipe(Flag.withDescription("Bucket size in seconds (default 60)")),
+	Flag.Int("bucket").pipe(Flag.withDescription("Bucket size in seconds (default 60)")),
 )
 
 export const timeseries = Command.make("timeseries", {
@@ -23,7 +23,7 @@ export const timeseries = Command.make("timeseries", {
 	service: f.service,
 	environment: f.environment,
 	span: spanName,
-	groupBy: Flag.choice("group-by", ["none", "service", "span_name", "status_code", "http_method"]).pipe(
+	groupBy: Flag.Literals("group-by", ["none", "service", "span_name", "status_code", "http_method"]).pipe(
 		Flag.withDescription("Group series by dimension"),
 		Flag.withDefault("none"),
 	),
@@ -57,7 +57,7 @@ export const breakdown = Command.make("breakdown", {
 	service: f.service,
 	environment: f.environment,
 	span: spanName,
-	groupBy: Flag.choice("group-by", ["service", "span_name", "status_code", "http_method"]).pipe(
+	groupBy: Flag.Literals("group-by", ["service", "span_name", "status_code", "http_method"]).pipe(
 		Flag.withDescription("Group results by dimension"),
 		Flag.withDefault("span_name"),
 	),
@@ -86,14 +86,14 @@ const win = 30 * 60 * 1000
 
 export const compare = Command.make("compare", {
 	around: Flag.optional(
-		Flag.string("around").pipe(
+		Flag.String("around").pipe(
 			Flag.withDescription("Compare the 30m before vs after this UTC time (YYYY-MM-DD HH:mm:ss)"),
 		),
 	),
-	currentStart: Flag.optional(Flag.string("current-start")),
-	currentEnd: Flag.optional(Flag.string("current-end")),
-	previousStart: Flag.optional(Flag.string("previous-start")),
-	previousEnd: Flag.optional(Flag.string("previous-end")),
+	currentStart: Flag.optional(Flag.String("current-start")),
+	currentEnd: Flag.optional(Flag.String("current-end")),
+	previousStart: Flag.optional(Flag.String("previous-start")),
+	previousEnd: Flag.optional(Flag.String("previous-end")),
 	environment: f.environment,
 }).pipe(
 	Command.withDescription("Compare service health between two time windows (regression detection)"),

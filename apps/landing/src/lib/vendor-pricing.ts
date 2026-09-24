@@ -1,5 +1,5 @@
 /**
- * Vendor price models — the arithmetic behind the pricing calculator and the
+ * Vendor price models: the arithmetic behind the pricing calculator and the
  * server-rendered receipts on `/compare/*`.
  *
  * Pure TypeScript, no React, so an Astro template can price the reference
@@ -12,10 +12,10 @@
  * Maple branch converts with a per-item estimate documented at that branch.
  */
 
-export type Vendor = "datadog" | "grafana" | "new-relic" | "dash0" | "openobserve" | "signoz"
+export type Vendor = "datadog" | "grafana" | "new-relic" | "dash0" | "openobserve" | "signoz" | "axiom"
 
 /** Month the list prices were last checked against the vendors' pages. */
-export const PRICES_VERIFIED = "2026-08"
+export const PRICES_VERIFIED = "2026-09"
 
 export interface SliderConfig {
 	key: string
@@ -200,23 +200,64 @@ export const vendorConfigs = {
 			},
 		],
 	},
+	axiom: {
+		name: "Axiom",
+		sliders: [
+			{
+				key: "logVolume",
+				label: "Log volume",
+				min: 10,
+				max: 10000,
+				step: 50,
+				default: 100,
+				unit: "GB/mo",
+			},
+			{
+				key: "traceVolume",
+				label: "Trace volume",
+				min: 10,
+				max: 10000,
+				step: 50,
+				default: 100,
+				unit: "GB/mo",
+			},
+			{
+				key: "metricVolume",
+				label: "Metric volume",
+				min: 10,
+				max: 10000,
+				step: 50,
+				default: 100,
+				unit: "GB/mo",
+			},
+			{
+				key: "queryHours",
+				label: "Query compute",
+				min: 10,
+				max: 5000,
+				step: 10,
+				default: 250,
+				unit: "GB-hrs/mo",
+			},
+		],
+	},
 } satisfies Record<Vendor, { name: string; sliders: SliderConfig[] }>
 
-/** The slider defaults — the reference workload the receipts are priced on. */
+/** The slider defaults: the reference workload the receipts are priced on. */
 export const defaultValues = (vendor: Vendor): Record<string, number> => {
 	const values: Record<string, number> = {}
 	for (const slider of vendorConfigs[vendor].sliders) values[slider.key] = slider.default
 	return values
 }
 
-/** "15 hosts", "1.5 TB/mo" — the same rendering the slider shows. */
+/** "15 hosts", "1.5 TB/mo", the same rendering the slider shows. */
 export const formatSliderValue = (config: SliderConfig, value: number): string =>
 	config.unit.includes("GB") && value >= 1000
 		? `${(value / 1000).toFixed(value % 1000 === 0 ? 0 : 1)} TB/mo`
 		: `${value.toLocaleString()} ${config.unit}`
 
 /**
- * "Infrastructure hosts 15 · APM hosts 10 · …" — the reference workload as a
+ * "Infrastructure hosts 15 · APM hosts 10 · …": the reference workload as a
  * sentence. Values alone read as "15 hosts · 10 hosts", which says nothing.
  */
 export const describeWorkload = (vendor: Vendor, values: Record<string, number>): string =>
@@ -241,7 +282,7 @@ const datadog = (values: Record<string, number>): Estimate => {
 	const apmCost = values.apmHosts * 31
 	const logIngestion = values.logVolume * 0.1
 	// Indexing assumes ~1 KB/event (≈1M events per GB) with ~15% of events
-	// indexed — deliberately conservative; many Datadog setups index more.
+	// indexed, deliberately conservative; many Datadog setups index more.
 	const logIndexing = values.logVolume * 0.15 * 1.7
 	const totalLog = logIngestion + logIndexing
 
@@ -261,14 +302,14 @@ const datadog = (values: Record<string, number>): Estimate => {
 
 const grafana = (values: Record<string, number>): Estimate => {
 	// Published pay-as-you-go: $19/mo platform fee, metrics $6.50 per 1k active
-	// series beyond 10k free, logs & traces $0.45/GB ingested ($0.05 process +
-	// $0.40 write; retention and query billed separately, not modeled) beyond
-	// 50 GB free each, $8 per active user beyond 3 free.
+	// series beyond 10k free, logs & traces $0.55/GB ($0.05 process + $0.40
+	// write + $0.10 retain for the plan's 30 days) beyond 50 GB free each, $8
+	// per active user beyond 3 free.
 	const platformFee = 19
 	const metricSeriesK = values.metricSeries
 	const metricsOverage = Math.max(0, metricSeriesK - 10) * 6.5
-	const logsOverage = Math.max(0, values.logVolume - 50) * 0.45
-	const tracesOverage = Math.max(0, values.traceVolume - 50) * 0.45
+	const logsOverage = Math.max(0, values.logVolume - 50) * 0.55
+	const tracesOverage = Math.max(0, values.traceVolume - 50) * 0.55
 	const userCost = Math.max(0, values.teamSize - 3) * 8
 
 	return {
@@ -309,8 +350,9 @@ const newRelic = (values: Record<string, number>): Estimate => {
 }
 
 const dash0 = (values: Record<string, number>): Estimate => {
-	// Dash0 published per-data-point pricing: spans & logs $0.60 per million,
-	// metrics $0.20 per million.
+	// Dash0 published per-data-point pricing, ingestion plus storage at the
+	// default retention: spans & logs $0.06 + $0.54 = $0.60 per million (30
+	// days), metrics $0.02 + $0.18 = $0.20 per million (13 months).
 	const spanCost = values.spans * 0.6
 	const logCost = values.logs * 0.6
 	const metricCost = values.metricPoints * 0.2
@@ -327,7 +369,7 @@ const dash0 = (values: Record<string, number>): Estimate => {
 
 const openObserve = (values: Record<string, number>): Estimate => {
 	// OpenObserve Cloud published pricing: $0.50/GB ingested (their headline
-	// rate, which already includes the 30% annual-commitment discount — the
+	// rate, which already includes the 30% annual-commitment discount, the
 	// cheapest published rate). Query volume ($0.01/GB scanned) and extended
 	// retention ($0.02/GB per extra 30 days) are not modeled, which biases the
 	// estimate in OpenObserve's favor.
@@ -349,13 +391,13 @@ const signoz = (values: Record<string, number>): Estimate => {
 	// SigNoz Cloud (Teams) published pricing: logs & traces $0.30/GB ingested at
 	// the default 15-day retention, metrics $0.10 per million samples at the
 	// default 1-month retention, and a $49/mo base fee that *includes* $49 of
-	// usage — so the receipt is base fee + usage − (up to) $49 of included
+	// usage, so the receipt is base fee + usage minus (up to) $49 of included
 	// usage, i.e. max($49, usage), matching SigNoz's own calculator.
 	// $49 is the standing base fee, not a promo: SigNoz cut it from $199 in
 	// May 2025 and the struck-through $199 on their page is the old anchor.
-	// Longer retention costs more and is not modeled ($/GB: 15d 0.30, 30d 0.40,
-	// 90d 0.60, 180d 0.80, 1y 1.40; $/mn metric samples: 1mo 0.10, 3mo 0.12,
-	// 6mo 0.15, 13mo 0.18), which biases the estimate in SigNoz's favor.
+	// Longer retention (30d to 1y for logs and traces, 3 to 13 months for
+	// metrics) raises both rates and is not modeled, which biases the estimate
+	// in SigNoz's favor.
 	const BASE_FEE = 49
 	const INCLUDED_USAGE = 49
 	const logCost = values.logVolume * 0.3
@@ -380,20 +422,97 @@ const signoz = (values: Record<string, number>): Estimate => {
 	}
 }
 
-/** What the vendor charges for `values` — the slider state of `vendorConfigs[vendor]`. */
+/**
+ * Marginal tiers, AWS-style: each band prices only the amount that falls in
+ * it, which is what "sub-linear" means on Axiom's rate card. `[upTo, rate]`,
+ * the last band open-ended.
+ */
+const tiered = (amount: number, tiers: readonly [number, number][]): number => {
+	let priced = 0
+	let cost = 0
+	for (const [upTo, rate] of tiers) {
+		const inBand = Math.min(amount, upTo) - priced
+		if (inBand <= 0) break
+		cost += inBand * rate
+		priced += inBand
+	}
+	return cost
+}
+
+const axiom = (values: Record<string, number>): Estimate => {
+	// Axiom Cloud's published rate card: $25/mo platform fee, then three
+	// meters, each with an Always Free allowance and marginal volume tiers.
+	// Data loading: 1,000 GB free, then $0.12/GB falling to $0.06 above 5 PB.
+	// Query compute: 100 GB-hours free, then $0.20 falling to $0.08.
+	// Storage: 100 GB of compressed data free, then $0.03/GB/mo.
+	// Credits convert at $1 and pre-purchase discounts (to $0.53 per credit on
+	// a 36-month term) are not modeled, which biases the estimate in Axiom's
+	// favor.
+	const PLATFORM_FEE = 25
+	const LOADING_TIERS = [
+		[1_000, 0],
+		[100_000, 0.12],
+		[500_000, 0.1],
+		[1_000_000, 0.085],
+		[5_000_000, 0.07],
+		[Number.POSITIVE_INFINITY, 0.06],
+	] as const satisfies readonly [number, number][]
+	const QUERY_TIERS = [
+		[100, 0],
+		[500, 0.2],
+		[5_000, 0.16],
+		[50_000, 0.12],
+		[2_500_000, 0.1],
+		[Number.POSITIVE_INFINITY, 0.08],
+	] as const satisfies readonly [number, number][]
+
+	const ingestGB = values.logVolume + values.traceVolume + values.metricVolume
+	const loading = tiered(ingestGB, LOADING_TIERS)
+	const query = tiered(values.queryHours, QUERY_TIERS)
+	// Storage bills compressed bytes at Axiom's documented 95% default ratio,
+	// over a month of ingest held for a month, the shortest retention this
+	// month's data can have, so the cheapest this line gets.
+	const storedGB = ingestGB * 0.05
+	const storage = Math.max(0, storedGB - 100) * 0.03
+
+	return {
+		total: PLATFORM_FEE + loading + query + storage,
+		breakdown: [
+			{ label: "Platform fee", value: PLATFORM_FEE, detail: "$25/mo Axiom Cloud" },
+			{
+				label: "Data loading",
+				value: loading,
+				detail: `${Math.round(ingestGB).toLocaleString()} GB (1 TB free)`,
+			},
+			{
+				label: "Query compute",
+				value: query,
+				detail: `${values.queryHours.toLocaleString()} GB-hrs (100 free)`,
+			},
+			{
+				label: "Storage",
+				value: storage,
+				detail: `${Math.round(storedGB).toLocaleString()} GB compressed (100 GB free)`,
+			},
+		],
+	}
+}
+
+/** What the vendor charges for `values`, the slider state of `vendorConfigs[vendor]`. */
 export const estimateVendor = (vendor: Vendor, values: Record<string, number>): Estimate => {
 	if (vendor === "datadog") return datadog(values)
 	if (vendor === "grafana") return grafana(values)
 	if (vendor === "dash0") return dash0(values)
 	if (vendor === "openobserve") return openObserve(values)
 	if (vendor === "signoz") return signoz(values)
+	if (vendor === "axiom") return axiom(values)
 	return newRelic(values)
 }
 
 /** What Maple charges for the same workload, converted into decoded OTLP volume. */
 export const estimateMaple = (vendor: Vendor, values: Record<string, number>): Estimate => {
 	// Maple Startup (autumn.config.ts): $39/mo with 100 GB included per signal
-	// (logs, traces, metrics) and $0.30/GB overage billed per signal — the
+	// (logs, traces, metrics) and $0.30/GB overage billed per signal; the
 	// allowances are not a fungible 300 GB pool. Maple meters decoded OTLP
 	// payload bytes; where a competitor bills in counts instead of volume, the
 	// branch converts using a per-item byte estimate documented at that branch.
@@ -405,7 +524,7 @@ export const estimateMaple = (vendor: Vendor, values: Record<string, number>): E
 	if (vendor === "datadog") {
 		// Trace volume from APM hosts is a rough estimate: ~25 GB of spans per
 		// host per month (≈10 spans/sec at ~1 KB/span). Real per-host volume
-		// varies widely — Datadog's own included allotment is 150 GB/host.
+		// varies widely; Datadog's own included allotment is 150 GB/host.
 		logsGB = values.logVolume
 		tracesGB = values.apmHosts * 25
 	} else if (vendor === "grafana") {
@@ -414,8 +533,9 @@ export const estimateMaple = (vendor: Vendor, values: Record<string, number>): E
 		logsGB = values.logVolume
 		tracesGB = values.traceVolume
 		metricsGB = values.metricSeries * 4.32
-	} else if (vendor === "openobserve") {
-		// Both bill per GB ingested, so volumes map across directly.
+	} else if (vendor === "openobserve" || vendor === "axiom") {
+		// Both bill per GB ingested, so volumes map across directly. Axiom's
+		// query-compute meter has no Maple counterpart: queries are included.
 		logsGB = values.logVolume
 		tracesGB = values.traceVolume
 		metricsGB = values.metricVolume
@@ -423,7 +543,7 @@ export const estimateMaple = (vendor: Vendor, values: Record<string, number>): E
 		// SigNoz bills logs and traces per GB ingested, so those map across
 		// directly. Metrics are billed per sample (one data point of one time
 		// series); converting at ~0.1 KB per decoded metric data point gives
-		// 0.1 GB per million samples — the same ratio the Dash0 and Grafana
+		// 0.1 GB per million samples, the same ratio the Dash0 and Grafana
 		// branches use.
 		logsGB = values.logVolume
 		tracesGB = values.traceVolume
@@ -437,7 +557,7 @@ export const estimateMaple = (vendor: Vendor, values: Record<string, number>): E
 	} else {
 		// New Relic's slider is one total volume; assume it splits evenly
 		// across the three signals (under an even split the per-signal
-		// overage sum equals max(0, total − 300)).
+		// overage sum equals max(0, total - 300)).
 		logsGB = values.dataVolume / 3
 		tracesGB = values.dataVolume / 3
 		metricsGB = values.dataVolume / 3
@@ -460,20 +580,21 @@ export const estimateMaple = (vendor: Vendor, values: Record<string, number>): E
 
 /**
  * The per-vendor caveat under every estimate. Literal English, matching the
- * calculator's own disclaimer — these are modelling assumptions, not copy.
+ * calculator's own disclaimer: these are modeling assumptions, not copy.
  */
 export const vendorCaveat = {
 	grafana:
-		"Grafana bills active series (1 data point per minute per series), so the Maple estimate converts 1k active series to ~4.32 GB/mo assuming ~0.1 KB per decoded metric data point — your real ratio depends on attribute sizes. Grafana log and trace rates model ingest (process + write); retention and query fees are not included.",
+		"Grafana bills active series at one data point a minute, so the Maple estimate converts 1k series to about 4.32 GB a month at 0.1 KB per decoded data point. Grafana's $0.55/GB is process, write and retain at the plan's 30 days.",
 	datadog:
-		"Trace volume is estimated at ~25 GB of spans per APM host per month, and Datadog log indexing assumes ~1 KB per event with ~15% of events indexed; actual volumes depend on request rate and instrumentation density.",
+		"Trace volume is estimated at about 25 GB of spans per APM host a month. Datadog log indexing assumes 1 KB per event with 15% of events indexed.",
 	"new-relic":
-		"New Relic modeled on Standard ($10 first user + $99/user, max 5) up to 5 full platform users and Pro ($349/user/mo, annual commitment) above, with the Original Data option ($0.40/GB beyond 100 GB free); data is assumed to split evenly across logs, traces, and metrics.",
-	dash0: "Dash0 bills per data point (spans & logs $0.60/M, metrics $0.20/M); Maple bills per GB, so the Maple estimate converts at roughly 1 KB per span and log record and 0.1 KB per metric data point. Your real ratio depends on attribute and payload sizes.",
+		"New Relic is modeled on Standard ($10 for the first user, $99 each after, five at most) and Pro ($349 per user a month on an annual term) above five, with Original Data at $0.40/GB beyond 100 GB free. Data is split evenly across logs, traces and metrics.",
+	dash0: "Dash0 bills per data point, ingestion plus storage at the default retention. The Maple estimate converts at 1 KB per span or log record and 0.1 KB per metric data point; your ratio depends on attribute sizes.",
 	openobserve:
-		"OpenObserve modeled at its headline $0.50/GB ingestion rate, which already includes the 30% annual-commitment discount; query fees ($0.01/GB scanned) and extended retention beyond the included 30 days for logs and traces ($0.02/GB per additional 30 days) are not included, which favors OpenObserve.",
-	signoz: "SigNoz modeled on the Teams plan at its default retention (logs and traces $0.30/GB at 15 days, metrics $0.10 per million samples at 1 month) with the $49/mo base fee, from which $49 of usage is subtracted as included; longer retention costs more (up to $1.40/GB at 1 year) and is not included, which favors SigNoz. Maple bills per GB, so the Maple estimate converts metric samples at roughly 0.1 KB per data point (0.1 GB per million samples).",
+		"OpenObserve is modeled at its headline $0.50/GB, which already includes the 30% annual-commitment discount. Query fees and retention beyond 30 days are not modeled, which favors OpenObserve.",
+	axiom: "Axiom is modeled on Axiom Cloud's rate card: $25 a month, data loading at $0.12/GB beyond 1 TB free, query compute at $0.20/GB-hour beyond 100 GB-hours free, and storage at $0.03/GB a month beyond 100 GB at Axiom's documented 95% compression and one month of retention. Pre-purchase credit discounts and the SSO, Directory Sync, RBAC and audit log add-ons are not modeled. Maple has no query or storage meter, so its estimate is ingest only.",
+	signoz: "SigNoz is modeled on the Teams plan at default retention: logs and traces $0.30/GB at 15 days, metrics $0.10 per million samples at one month, and the $49 base fee with $49 of usage included. Longer retention raises both rates and is not modeled, which favors SigNoz. The Maple estimate converts metric samples at 0.1 KB per data point.",
 } satisfies Record<Vendor, string>
 
 export const MAPLE_PRICING_NOTE =
-	"Maple pricing based on the Startup plan ($39/mo with 100 GB included per signal — logs, traces, metrics — then $0.30/GB, billed per signal), metered on uncompressed (decoded OTLP) bytes."
+	"Maple pricing based on the Startup plan ($39/mo with 100 GB included per signal (logs, traces, metrics), then $0.30/GB, billed per signal), metered on uncompressed (decoded OTLP) bytes."

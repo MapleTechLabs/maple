@@ -7,6 +7,7 @@ import { formatRelativeTimeOrDate } from "@maple/ui/lib/time-format"
 
 import { SeverityBadge } from "@/components/errors/severity-badge"
 import { SectionCard } from "@/components/services/section-card"
+import { useTimezonePreference } from "@/hooks/use-timezone-preference"
 import { Result, useAtomValue } from "@/lib/effect-atom"
 import { retainedQueryV2 } from "@/lib/services/common/v2-atom-client"
 import { errorIssueFromV2 } from "@/lib/services/error-issues"
@@ -60,6 +61,7 @@ interface IssueLineProps {
 }
 
 function IssueLine({ issue, onVersion }: IssueLineProps) {
+	const { effectiveTimezone } = useTimezonePreference()
 	const title = issue.errorLabel || issue.exceptionType || issue.exceptionMessage || "Unknown error"
 	return (
 		<Link
@@ -78,7 +80,7 @@ function IssueLine({ issue, onVersion }: IssueLineProps) {
 				{formatNumber(onVersion ?? issue.occurrenceCount)}×
 			</span>
 			<span className="w-14 shrink-0 text-right font-mono text-xs tabular-nums text-muted-foreground/70">
-				{formatRelativeTimeOrDate(issue.lastSeenAt)}
+				{formatRelativeTimeOrDate(issue.lastSeenAt, undefined, effectiveTimezone)}
 			</span>
 		</Link>
 	)

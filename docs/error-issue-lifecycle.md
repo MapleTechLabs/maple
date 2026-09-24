@@ -3,7 +3,7 @@
 How an error goes from "something threw in production" to "fixed, and we checked".
 
 This is the flow both humans and agents are meant to follow. If you are changing anything under
-`apps/api/src/services/errors/`, this page is the contract you are changing.
+`packages/backend/src/services/errors/`, this page is the contract you are changing.
 
 ## The pieces
 
@@ -108,14 +108,39 @@ There are exactly **three** places, and they do different jobs:
 ### 1. Auto-investigation on a new incident
 
 Off by default; an admin opts in per org (`ai_triage_settings`). When an incident opens — first-seen
-or regression — `maybeEnqueueTriage` starts an investigation, subject to a daily budget counted in
-_model passes_, not runs (`maxPassesPerDay`, default 90; one fanned-out incident is about six
-passes).
+or regression — `maybeEnqueueTriage` starts an investigation, subject to a daily budget in runs and
+in model passes (`maxRunsPerDay`, `maxPassesPerDay`; one investigation is one pass).
 
-The run either takes the single-pass path or fans out: a **planner** writes hypotheses for this
-specific incident, each is dispatched to its own **lens** agent, and a **validator** ranks them and
-promotes one cause. Everything it decided — including the hypotheses it chose _not_ to test — is
-persisted on the investigation, which is what makes a conclusion readable a week later.
+Three gates stand between an open incident and that pass, cheapest first, and every refusal lands
+on the `maybeStartInvestigation` span as `maple.investigation.start_result`:
+
+1. **The issue's own history** (`evaluateIssueGate`, no model). An issue past `triage`/`regressed`
+   is somebody's already; one diagnosed within the last week (a day for alerts and anomalies) is
+   answered already, unless the incident is a `regression`; a pass still under way answers for
+   this flare-up too. This is where the repeats die: an error incident auto-resolves after thirty
+   quiet minutes and the next occurrence opens a fresh one, so an issue firing on a retry cadence
+   opened 83 incidents in five days and was diagnosed, identically, on fifteen of them.
+2. **The decision model** (`IncidentClassifier` → maple-ai's `POST /internal/triage/classify`,
+   Jev over OpenRouter). It answers what the incident is (`investigate` / `monitor` / `noise`),
+   how bad, whether a customer noticed, and whether one of the service's recent diagnoses already
+   explains it. `evaluateIncidentGate` skips confident noise (`noise`) and confident matches
+   (`covered_by_prior`), never anything the detector called `high` or `critical`, and only ever
+   raises the severity the run is seeded with. A skipped noise incident labels its issue's
+   severity if nobody had, without escalating. No verdict — no binding, no token, a failed or
+   slow call — always reads as investigate; a broken classifier must not become a policy of
+   dropping incidents.
+3. **The daily budget**, judged by the severity the classifier settled on, so the reserve for
+   `high`/`critical` is reachable by an incident the detector left unclassified.
+
+A manual start (`force`) passes the first two; the quota still applies.
+
+The run is one turn of the investigate agent on the investigation's `ChatSession` Durable Object:
+it gathers the evidence, tests the rival explanations itself, and closes on `submit_diagnosis`. A
+pass that stops in prose or dies on a model error gets one close-out turn over its own tool
+transcript; a pass that still files nothing is marked `failed` with `no_diagnosis`. The report's
+`ruledOut` is what records the explanations it tested and dropped, which is what makes a conclusion
+readable a week later. (Until 2026-09 this was a planner → hypothesis lanes → validator workflow;
+the handoffs lost the evidence and most passes never reached a verdict.)
 
 The result lands back on the issue as an `ai_triage` timeline event plus an applied severity.
 Severity is what escalates, so an AI-set severity can page people (`issue_escalations`), gated on
@@ -177,15 +202,16 @@ loop in verification without a human ever seeing it.
 
 ## The files
 
-| Concern                                 | File                                                          |
-| --------------------------------------- | ------------------------------------------------------------- |
-| State machine, transitions, labels      | `packages/domain/src/http/errors.ts`                          |
-| Verification windows, verdicts          | `packages/domain/src/http/fix-verification.ts`                |
-| Transitions, leases, timeline events    | `apps/api/src/services/errors/ErrorIssueWorkflowService.ts`   |
-| The errors tick (incidents, regression) | `apps/api/src/services/errors/error-tick-persistence.ts`      |
-| Starting an investigation               | `apps/api/src/services/errors/ai-triage-enqueue.ts`           |
-| Planner / lenses / validator            | `apps/api/src/workflows/`                                     |
-| Writing a diagnosis back                | `apps/api/src/services/errors/apply-diagnosis.ts`             |
-| PR links and verification windows       | `apps/api/src/services/errors/IssueFixVerificationService.ts` |
-| The verification tick                   | `apps/api/src/services/errors/FixVerificationTickService.ts`  |
-| What agents are told                    | `apps/api/src/mcp/resources/instructions.ts`                  |
+| Concern                                 | File                                                                  |
+| --------------------------------------- | --------------------------------------------------------------------- |
+| State machine, transitions, labels      | `packages/domain/src/http/errors.ts`                                  |
+| Verification windows, verdicts          | `packages/domain/src/http/fix-verification.ts`                        |
+| Transitions, leases, timeline events    | `packages/backend/src/services/errors/ErrorIssueWorkflowService.ts`   |
+| The errors tick (incidents, regression) | `packages/backend/src/services/errors/error-tick-persistence.ts`      |
+| Starting an investigation               | `packages/backend/src/services/errors/ai-triage-enqueue.ts`           |
+| The gates in front of it                | `investigation-gate.ts`, `IncidentClassifier.ts`, `apps/ai/src/triage/` |
+| The investigate agent and its close-out | `apps/ai/src/chat/turn-runner.ts`, `apps/ai/src/chat/prompts.ts`      |
+| Writing a diagnosis back                | `packages/backend/src/services/errors/apply-diagnosis.ts`             |
+| PR links and verification windows       | `packages/backend/src/services/errors/IssueFixVerificationService.ts` |
+| The verification tick                   | `packages/backend/src/services/errors/FixVerificationTickService.ts`  |
+| What agents are told                    | `apps/api/src/mcp/resources/instructions.ts`                          |

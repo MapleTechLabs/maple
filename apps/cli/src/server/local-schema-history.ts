@@ -241,4 +241,43 @@ export const LOCAL_SCHEMA_HISTORY: ReadonlyArray<LocalSchemaHistoryEntry> = Obje
 		manifestDigest: "caec674c22441b89a3294d9158ca1b4b1d7b3b1b41f9cef3853b9570ad1db7b8",
 		projectRevision: "ed74788ef292834069e0ea6ee3b22d68fc604fb66cb54d2d551db67ce8d20b3a",
 	}),
+	Object.freeze({
+		// v21 adds the vendor version and the five token buckets to
+		// `ai_trace_index` and recreates `ai_trace_index_mv` to fill them
+		// (ClickHouse migration 0031), so the Agent Sessions list renders a row
+		// from the index alone. No part is rewritten and no row moves; rows
+		// materialized under v20 keep '' / 0 in the new columns until raw
+		// retention ages them out.
+		//
+		// projectRevision is carried forward deliberately — it is a hardcoded
+		// constant that no longer tracks the generator's header, and the identity
+		// this gate compares is the fingerprint/digest pair.
+		version: 21,
+		fingerprint: "8710bef778e01cfd",
+		digest: "8710bef778e01cfd7bfc48fea53d8fce0a592ef2cf23feea7f07eb6cf59f42ea",
+		manifestDigest: "78e6c9b0a73120a1d1cca1ccd35932c5af75b0748b64f0c60c6b6199165e4912",
+		projectRevision: "ed74788ef292834069e0ea6ee3b22d68fc604fb66cb54d2d551db67ce8d20b3a",
+	}),
+	Object.freeze({
+		// v22 adds the failure type, the status message, the tool description, a
+		// failed tool call's result and an error fingerprint to `ai_trace_index`
+		// and recreates `ai_trace_index_mv` to fill them (ClickHouse migration
+		// 0032), so the Agent Sessions tool detail page renders from the index
+		// alone. No part is rewritten and no row moves; rows materialized under
+		// v21 keep '' or 0 in the new columns until raw retention ages them out.
+		//
+		// projectRevision is carried forward deliberately — it is a hardcoded
+		// constant that no longer tracks the generator's header, and the identity
+		// this gate compares is the fingerprint/digest pair.
+		version: 22,
+		fingerprint: "ffa6bcb08863f58f",
+		digest: "ffa6bcb08863f58ff44cd3be5be3f8dcee849b7b704dc8dc91d622cf28e06d5a",
+		manifestDigest: "b1f8e56de0f33d42c366a3176b87f1ad17bf8d363008165d4b5ae11b18bb4f05",
+		projectRevision: "ed74788ef292834069e0ea6ee3b22d68fc604fb66cb54d2d551db67ce8d20b3a",
+	}),
+] as const)
+
+/** Immutable SQLite control DDL identities, checked by clickhouse:schema:check. */
+export const LOCAL_CONTROL_SCHEMA_HISTORY = Object.freeze([
+	Object.freeze({ version: 1, digest: "9af9047b0e0e4f3562c0ee02bab4c25969960712dab862aee73eb5e8dc16b522" }),
 ] as const)

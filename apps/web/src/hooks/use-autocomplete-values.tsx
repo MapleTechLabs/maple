@@ -9,7 +9,10 @@ import {
 	getSpanAttributeKeysResultAtom,
 	getSpanAttributeValuesResultAtom,
 	getTracesFacetsResultAtom,
+	getProductEventAttributeKeysResultAtom,
+	productEventNamesResultAtom,
 } from "@/lib/services/atoms/warehouse-query-atoms"
+import { formatWarehouseDateTime } from "@maple/query-engine"
 import { QUERY_BUILDER_METRIC_TYPES } from "@maple/query-engine/query-builder"
 import { toNames } from "@/lib/query-builder/autocomplete-utils"
 import type { WhereClauseAutocompleteValues } from "@/lib/query-builder/where-clause-autocomplete"
@@ -20,6 +23,7 @@ export interface AutocompleteValuesContextType {
 	traces: WhereClauseAutocompleteValues
 	logs: WhereClauseAutocompleteValues
 	metrics: WhereClauseAutocompleteValues
+	product_events: WhereClauseAutocompleteValues
 	/** Raw span attribute keys for GroupBy, column selectors, etc. */
 	attributeKeys: string[]
 	resourceAttributeKeys: string[]
@@ -96,6 +100,24 @@ function AutocompleteValuesInner({
 		activated,
 	)
 
+	// Product events: both lookups need a concrete window, so they fall back to
+	// the same 24h the span lookups use server-side.
+	const eventWindow = React.useMemo(() => {
+		const nowMs = Date.now()
+		return {
+			startTime: startTime ?? formatWarehouseDateTime(nowMs - 24 * 60 * 60 * 1000),
+			endTime: endTime ?? formatWarehouseDateTime(nowMs),
+		}
+	}, [startTime, endTime])
+	const productEventNamesResult = useGatedAtomValue(
+		productEventNamesResultAtom({ data: { ...eventWindow, limit: 200 } }),
+		activated,
+	)
+	const productEventAttributeKeysResult = useGatedAtomValue(
+		getProductEventAttributeKeysResultAtom({ data: eventWindow }),
+		activated,
+	)
+
 	const spanAttributeValuesResult = useGatedAtomValue(
 		getSpanAttributeValuesResultAtom({
 			data: { startTime, endTime, attributeKey: activeAttributeKey ?? "" },
@@ -153,6 +175,22 @@ function AutocompleteValuesInner({
 		[metricAttributeKeysResult],
 	)
 
+	const productEventNames = React.useMemo(
+		() =>
+			Result.builder(productEventNamesResult)
+				.onSuccess((r) => r.data.map((row) => row.eventName))
+				.orElse(() => []),
+		[productEventNamesResult],
+	)
+
+	const productEventAttributeKeys = React.useMemo(
+		() =>
+			Result.builder(productEventAttributeKeysResult)
+				.onSuccess((r) => r.data.map((row) => row.attributeKey))
+				.orElse(() => []),
+		[productEventAttributeKeysResult],
+	)
+
 	const value = React.useMemo((): AutocompleteValuesContextType => {
 		const tracesFacets = Result.builder(tracesFacetsResult)
 			.onSuccess((r) => r.data)
@@ -195,6 +233,10 @@ function AutocompleteValuesInner({
 				metricTypes: [...QUERY_BUILDER_METRIC_TYPES],
 				attributeKeys: metricAttributeKeys,
 			},
+			product_events: {
+				eventNames: productEventNames,
+				attributeKeys: productEventAttributeKeys,
+			},
 			attributeKeys,
 			resourceAttributeKeys,
 			metricAttributeKeys,
@@ -208,6 +250,8 @@ function AutocompleteValuesInner({
 		resourceAttributeKeys,
 		resourceAttributeValues,
 		metricAttributeKeys,
+		productEventNames,
+		productEventAttributeKeys,
 		activate,
 	])
 

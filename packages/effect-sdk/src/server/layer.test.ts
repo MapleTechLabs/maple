@@ -29,7 +29,7 @@ describe("Maple.layer", () => {
 		})
 
 		expect(keys).toContain("effect/Tracer")
-		expect(keys).toContain("effect/Loggers/CurrentLoggers")
+		expect(keys).toContain("effect/Logger/CurrentLoggers")
 		expect(keys).toContain("effect/observability/OtlpExporter/Flusher")
 	})
 

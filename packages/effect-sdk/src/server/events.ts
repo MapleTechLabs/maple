@@ -38,6 +38,7 @@ import {
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/unstable/http"
 import { SDK_VERSION } from "../version.js"
 import { resolveResource } from "./resource.js"
+import type { MapleRegion } from "@maple/browser-session/region"
 
 export type { TrackProps }
 
@@ -61,6 +62,11 @@ export interface MapleEventsConfig {
 	 * `OTEL_EXPORTER_OTLP_ENDPOINT`, then the public Maple ingest.
 	 */
 	readonly endpoint?: string | undefined
+	/**
+	 * Region your Maple organization lives in: `"us"` (default) or `"eu"`.
+	 * Falls back to `MAPLE_REGION`. Any endpoint, set here or in env, wins.
+	 */
+	readonly region?: MapleRegion | undefined
 	/** Maple ingest key. Falls back to `MAPLE_INGEST_KEY`. Without one, events are dropped. */
 	readonly ingestKey?: string | undefined
 	/** Path appended to `endpoint`. Default `/v1/events`. */
@@ -138,6 +144,7 @@ export const make = Effect.fn("MapleEvents.make")(function* (config: MapleEvents
 	const resolved = yield* resolveResource({
 		serviceName: config.serviceName,
 		endpoint: config.endpoint,
+		region: config.region,
 		ingestKey: config.ingestKey,
 		sdkType: "server",
 	})

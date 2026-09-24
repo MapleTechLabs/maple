@@ -8,6 +8,8 @@ import { cn } from "@maple/ui/lib/utils"
 import type { VcsCommitDetailResponse } from "@maple/domain/http"
 
 import { ChevronRightIcon } from "@/components/icons"
+import { useTimezonePreference } from "@/hooks/use-timezone-preference"
+import { formatTimestampInTimezone } from "@/lib/timezone-format"
 import { Result, useAtomValue } from "@/lib/effect-atom"
 import type { TimeRangeSearch } from "@/components/time-range-picker/search"
 import {
@@ -185,6 +187,7 @@ function ReleasesTableRows({
 }: ReleasesTableProps & { commits: ReadonlyMap<string, VcsCommitDetailResponse> }) {
 	const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set())
 	const nowMs = Date.now()
+	const { effectiveTimezone } = useTimezonePreference()
 
 	const toggle = (sha: string) =>
 		setExpanded((current) => {
@@ -217,7 +220,7 @@ function ReleasesTableRows({
 				</TableHeader>
 				<TableBody>
 					{groups.map((group) => {
-						const day = releaseDayLabel(group.firstSeen, nowMs)
+						const day = releaseDayLabel(group.firstSeen, nowMs, effectiveTimezone)
 						const showDay = day !== lastDay
 						lastDay = day
 						const primary = group.services[0]!
@@ -272,9 +275,16 @@ function ReleasesTableRows({
 									</TableCell>
 									<TableCell
 										className="whitespace-nowrap py-2 align-top font-mono text-xs tabular-nums text-muted-foreground"
-										title={new Date(group.firstSeen).toLocaleString()}
+										title={formatTimestampInTimezone(group.firstSeen, {
+											timeZone: effectiveTimezone,
+											withYear: true,
+										})}
 									>
-										{formatRelativeTimeOrDate(group.firstSeen)}
+										{formatRelativeTimeOrDate(
+											group.firstSeen,
+											undefined,
+											effectiveTimezone,
+										)}
 									</TableCell>
 									<TableCell className="py-2 text-right align-top font-mono text-xs tabular-nums">
 										{formatNumber(group.spanCount)}
@@ -338,9 +348,16 @@ function ReleasesTableRows({
 												<TableCell className="py-1.5" />
 												<TableCell
 													className="whitespace-nowrap py-1.5 font-mono text-xs tabular-nums text-muted-foreground"
-													title={new Date(service.firstSeen).toLocaleString()}
+													title={formatTimestampInTimezone(service.firstSeen, {
+														timeZone: effectiveTimezone,
+														withYear: true,
+													})}
 												>
-													{formatRelativeTimeOrDate(service.firstSeen)}
+													{formatRelativeTimeOrDate(
+														service.firstSeen,
+														undefined,
+														effectiveTimezone,
+													)}
 												</TableCell>
 												<TableCell className="py-1.5 text-right font-mono text-xs tabular-nums">
 													{formatNumber(service.spanCount)}

@@ -126,7 +126,7 @@ export const GUIDE_SECTIONS: readonly GuideSection[] = [
 			{
 				name: "Product events API",
 				hint: "Server-side track() over NDJSON",
-				href: "/docs/session-replay/product-events-api",
+				href: "/docs/product-events/api",
 				icon: { mark: "webhooks" },
 			},
 		],

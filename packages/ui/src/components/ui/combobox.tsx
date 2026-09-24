@@ -150,9 +150,12 @@ export function ComboboxPopup({
 	align = "start",
 	anchor: anchorProp,
 	portalProps,
+	positionerClassName,
 	...props
 }: ComboboxPrimitive.Popup.Props & {
 	align?: ComboboxPrimitive.Positioner.Props["align"]
+	/** Extra classes on the positioner, e.g. a higher `z-*` when the combobox lives inside a popover (`z-55`). */
+	positionerClassName?: string
 	sideOffset?: ComboboxPrimitive.Positioner.Props["sideOffset"]
 	alignOffset?: ComboboxPrimitive.Positioner.Props["alignOffset"]
 	side?: ComboboxPrimitive.Positioner.Props["side"]
@@ -168,7 +171,7 @@ export function ComboboxPopup({
 				align={align}
 				alignOffset={alignOffset}
 				anchor={anchor}
-				className="z-50 select-none"
+				className={cn("z-50 select-none", positionerClassName)}
 				data-slot="combobox-positioner"
 				side={side}
 				sideOffset={sideOffset}

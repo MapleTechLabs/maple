@@ -7,7 +7,7 @@
  * not import `.astro` or `astro:i18n`.
  *
  * The shape is difference-first. A comparison is not a feature matrix with
- * two columns of checkmarks — those pages had eleven ✓/✓ rows out of sixteen
+ * two columns of checkmarks: those pages had eleven ✓/✓ rows out of sixteen
  * and buried the five that mattered. Each entry instead carries:
  *
  * - `differences`: rows where the two tools actually diverge, each cell a
@@ -35,7 +35,7 @@ export type Edge = "maple" | "competitor" | "even"
 export interface Source {
 	label: string
 	url: string
-	/** `YYYY-MM` — the month the claim was last checked against the page. */
+	/** `YYYY-MM`: the month the claim was last checked against the page. */
 	checked: string
 }
 
@@ -62,6 +62,65 @@ export interface Faq {
 	answer: Msg
 }
 
+/**
+ * The built surfaces the `Surfaces` section shows off, keyed by the artifact
+ * that draws them. Names and bodies are Maple's own and identical on every
+ * page; only the "what you'd do instead" line is per vendor, which is why
+ * that is the only half stored on the competitor.
+ *
+ * `artifact` is a string id, not a component: NavBar is a client island that
+ * reads this registry, so nothing here may import an `.astro` file.
+ * `components/compare/Surfaces.astro` resolves the id, the way
+ * `components/page/slots.ts` does for the feature pages.
+ */
+export type SurfaceId = "service-map" | "sessions" | "analytics" | "kubernetes"
+
+export interface Surface {
+	id: SurfaceId
+	name: Msg
+	body: Msg
+	/** Link to the feature page that owns this surface. */
+	href: string
+}
+
+export const MAPLE_SURFACES = {
+	"service-map": {
+		id: "service-map",
+		name: m.cmp_surface_map_name,
+		body: m.cmp_surface_map_body,
+		href: "/features/service-catalog",
+	},
+	sessions: {
+		id: "sessions",
+		name: m.cmp_surface_sessions_name,
+		body: m.cmp_surface_sessions_body,
+		href: "/features/browser-sessions",
+	},
+	analytics: {
+		id: "analytics",
+		name: m.cmp_surface_analytics_name,
+		body: m.cmp_surface_analytics_body,
+		href: "/features/browser-sessions",
+	},
+	kubernetes: {
+		id: "kubernetes",
+		name: m.cmp_surface_k8s_name,
+		body: m.cmp_surface_k8s_body,
+		href: "/features/kubernetes-monitoring",
+	},
+} satisfies Record<SurfaceId, Surface>
+
+/**
+ * The section only earns its place against a vendor that is a store plus a
+ * dashboard builder, where every row below is a thing the visitor would
+ * assemble out of panels, so it is optional, and each row must say what
+ * assembling it actually means on that vendor.
+ */
+export interface Surfaces {
+	lede: Msg
+	rows: { surface: SurfaceId; instead: Msg }[]
+}
+
 export interface Competitor {
 	slug: string
 	/** Literal vendor name; product names are never translated. */
@@ -80,6 +139,8 @@ export interface Competitor {
 	heroLede: Msg
 	differences: DifferenceRow[]
 	parity: Msg[]
+	/** Vendors that are a warehouse with a dashboard builder get this. */
+	surfaces?: Surfaces
 	migration: MigrationStep[]
 	/**
 	 * The one code block on the page: the Collector exporter change, as the
@@ -92,8 +153,11 @@ export interface Competitor {
 }
 
 const CHECKED = "2026-08"
-/** SigNoz was added a month after the others and checked separately. */
+/** Pricing pages and the docs the price rows cite were re-read on 2026-09-25. */
+const CHECKED_PRICING = "2026-09"
+/** SigNoz and Axiom were added after the others and checked separately. */
 const CHECKED_SIGNOZ = "2026-09"
+const CHECKED_AXIOM = "2026-09"
 
 const MAPLE_EXPORTER = `  otlphttp/maple:
     endpoint: https://ingest.maple.dev
@@ -260,21 +324,21 @@ export const competitors: Competitor[] = [
 			{ question: m.cmp_dd_faq_5_q, answer: m.cmp_dd_faq_5_a },
 		],
 		sources: [
-			{ label: "Datadog pricing", url: "https://www.datadoghq.com/pricing/", checked: CHECKED },
+			{ label: "Datadog pricing", url: "https://www.datadoghq.com/pricing/", checked: CHECKED_PRICING },
 			{
 				label: "Datadog: OpenTelemetry in Datadog",
 				url: "https://docs.datadoghq.com/opentelemetry/",
-				checked: CHECKED,
+				checked: CHECKED_PRICING,
 			},
 			{
 				label: "Datadog: Log Management pricing",
 				url: "https://www.datadoghq.com/pricing/?product=log-management",
-				checked: CHECKED,
+				checked: CHECKED_PRICING,
 			},
 			{
 				label: "Datadog: Bits AI and MCP Server",
 				url: "https://docs.datadoghq.com/bits_ai/mcp_server/",
-				checked: CHECKED,
+				checked: CHECKED_PRICING,
 			},
 			{
 				label: "Datadog integrations",
@@ -410,7 +474,7 @@ export const competitors: Competitor[] = [
 			{ question: m.cmp_gf_faq_5_q, answer: m.cmp_gf_faq_5_a },
 		],
 		sources: [
-			{ label: "Grafana Cloud pricing", url: "https://grafana.com/pricing/", checked: CHECKED },
+			{ label: "Grafana Cloud pricing", url: "https://grafana.com/pricing/", checked: CHECKED_PRICING },
 			{
 				label: "Grafana licensing (AGPL-3.0)",
 				url: "https://grafana.com/licensing/",
@@ -555,7 +619,7 @@ export const competitors: Competitor[] = [
 			{ question: m.cmp_nr_faq_5_q, answer: m.cmp_nr_faq_5_a },
 		],
 		sources: [
-			{ label: "New Relic pricing", url: "https://newrelic.com/pricing", checked: CHECKED },
+			{ label: "New Relic pricing", url: "https://newrelic.com/pricing", checked: CHECKED_PRICING },
 			{
 				label: "New Relic: OpenTelemetry",
 				url: "https://docs.newrelic.com/docs/opentelemetry/",
@@ -564,7 +628,7 @@ export const competitors: Competitor[] = [
 			{
 				label: "New Relic: data retention",
 				url: "https://docs.newrelic.com/docs/data-apis/manage-data/manage-data-retention/",
-				checked: CHECKED,
+				checked: CHECKED_PRICING,
 			},
 			{ label: "New Relic AI", url: "https://newrelic.com/platform/new-relic-ai", checked: CHECKED },
 			{
@@ -609,7 +673,7 @@ export const competitors: Competitor[] = [
 				topic: m.cmp_topic_retention,
 				maple: m.cmp_d0_retention_maple,
 				competitor: m.cmp_d0_retention_them,
-				edge: "maple",
+				edge: "competitor",
 				source: 0,
 			},
 			{
@@ -626,6 +690,14 @@ export const competitors: Competitor[] = [
 				maple: m.cmp_d0_ai_maple,
 				competitor: m.cmp_d0_ai_them,
 				edge: "even",
+			},
+			{
+				id: "synthetics",
+				topic: m.cmp_topic_synthetics,
+				maple: m.cmp_dd_synthetics_maple,
+				competitor: m.cmp_d0_synthetics_them,
+				edge: "competitor",
+				source: 0,
 			},
 			{
 				id: "promql",
@@ -665,7 +737,7 @@ export const competitors: Competitor[] = [
 			{ question: m.cmp_d0_faq_5_q, answer: m.cmp_d0_faq_5_a },
 		],
 		sources: [
-			{ label: "Dash0 pricing", url: "https://www.dash0.com/pricing", checked: CHECKED },
+			{ label: "Dash0 pricing", url: "https://www.dash0.com/pricing", checked: CHECKED_PRICING },
 			{ label: "Dash0 on GitHub", url: "https://github.com/dash0hq", checked: CHECKED },
 			{ label: "Dash0 documentation", url: "https://www.dash0.com/documentation", checked: CHECKED },
 		],
@@ -741,6 +813,14 @@ export const competitors: Competitor[] = [
 				source: 6,
 			},
 			{
+				id: "cost-controls",
+				topic: m.cmp_topic_cost_controls,
+				maple: m.cmp_sn_cost_controls_maple,
+				competitor: m.cmp_sn_cost_controls_them,
+				edge: "even",
+				source: 8,
+			},
+			{
 				id: "selfhost",
 				topic: m.cmp_topic_selfhost,
 				maple: m.cmp_sn_selfhost_maple,
@@ -755,14 +835,6 @@ export const competitors: Competitor[] = [
 				competitor: m.cmp_sn_promql_them,
 				edge: "competitor",
 				source: 7,
-			},
-			{
-				id: "cost-controls",
-				topic: m.cmp_topic_cost_controls,
-				maple: m.cmp_sn_cost_controls_maple,
-				competitor: m.cmp_sn_cost_controls_them,
-				edge: "competitor",
-				source: 8,
 			},
 			{
 				id: "channels",
@@ -839,6 +911,197 @@ export const competitors: Competitor[] = [
 				url: "https://signoz.io/docs/setup-alerts-notification/",
 				checked: CHECKED_SIGNOZ,
 			},
+		],
+		locales: ["en", "ja", "ko"],
+	},
+	{
+		slug: "axiom",
+		name: "Axiom",
+		vendor: "axiom",
+		mark: "axiom",
+		site: "axiom.co",
+		navLabel: m.nav_vs_axiom,
+		navDesc: m.nav_desc_vs_axiom,
+		seoTitle: m.cmp_ax_seo_title,
+		seoDescription: m.cmp_ax_seo_desc,
+		heroTitle: m.cmp_ax_hero_title,
+		heroLede: m.cmp_ax_hero_lede,
+		differences: [
+			{
+				id: "pricing",
+				topic: m.cmp_topic_pricing,
+				maple: m.cmp_ax_pricing_maple,
+				competitor: m.cmp_ax_pricing_them,
+				edge: "maple",
+				source: 0,
+			},
+			{
+				id: "errors",
+				topic: m.cmp_topic_errors,
+				maple: m.cmp_ax_errors_maple,
+				competitor: m.cmp_ax_errors_them,
+				edge: "maple",
+				source: 3,
+			},
+			{
+				id: "rum",
+				topic: m.cmp_topic_rum,
+				maple: m.cmp_ax_rum_maple,
+				competitor: m.cmp_ax_rum_them,
+				edge: "maple",
+				source: 8,
+			},
+			{
+				id: "source",
+				topic: m.cmp_topic_source,
+				maple: m.cmp_ax_source_maple,
+				competitor: m.cmp_ax_source_them,
+				edge: "maple",
+			},
+			{
+				id: "selfhost",
+				topic: m.cmp_topic_selfhost,
+				maple: m.cmp_ax_selfhost_maple,
+				competitor: m.cmp_ax_selfhost_them,
+				edge: "maple",
+				source: 2,
+			},
+			{
+				id: "local",
+				topic: m.cmp_topic_local,
+				maple: m.cmp_ax_local_maple,
+				competitor: m.cmp_ax_local_them,
+				edge: "maple",
+			},
+			{
+				id: "query",
+				topic: m.cmp_topic_query,
+				maple: m.cmp_ax_query_maple,
+				competitor: m.cmp_ax_query_them,
+				edge: "even",
+				source: 4,
+			},
+			{
+				id: "ai",
+				topic: m.cmp_topic_ai,
+				maple: m.cmp_ax_ai_maple,
+				competitor: m.cmp_ax_ai_them,
+				edge: "even",
+				source: 5,
+			},
+			{
+				id: "cost-controls",
+				topic: m.cmp_topic_cost_controls,
+				maple: m.cmp_ax_cost_controls_maple,
+				competitor: m.cmp_ax_cost_controls_them,
+				edge: "even",
+				source: 0,
+			},
+			{
+				id: "volume-pricing",
+				topic: m.cmp_topic_volume_pricing,
+				maple: m.cmp_ax_volume_pricing_maple,
+				competitor: m.cmp_ax_volume_pricing_them,
+				edge: "competitor",
+				source: 1,
+			},
+			{
+				id: "retention",
+				topic: m.cmp_topic_retention,
+				maple: m.cmp_ax_retention_maple,
+				competitor: m.cmp_ax_retention_them,
+				edge: "competitor",
+				source: 1,
+			},
+			{
+				id: "integrations",
+				topic: m.cmp_topic_integrations,
+				maple: m.cmp_ax_integrations_maple,
+				competitor: m.cmp_ax_integrations_them,
+				edge: "competitor",
+				source: 6,
+			},
+			{
+				id: "compliance",
+				topic: m.cmp_topic_compliance,
+				maple: m.cmp_ax_compliance_maple,
+				competitor: m.cmp_ax_compliance_them,
+				edge: "competitor",
+				source: 7,
+			},
+		],
+		// Axiom has no error-tracking product and no session replay, so the
+		// shared parity line drops its errors chip. The difference rows above
+		// carry both.
+		parity: [
+			m.cmp_parity_tracing,
+			m.cmp_parity_logs,
+			m.cmp_parity_metrics,
+			m.cmp_parity_alerting,
+			m.cmp_parity_k8s,
+			m.cmp_parity_api,
+			m.cmp_parity_mcp,
+			m.cmp_parity_otel,
+		],
+		surfaces: {
+			lede: m.cmp_ax_surfaces_lede,
+			rows: [
+				{ surface: "service-map", instead: m.cmp_ax_surface_map_instead },
+				{ surface: "sessions", instead: m.cmp_ax_surface_sessions_instead },
+				{ surface: "analytics", instead: m.cmp_ax_surface_analytics_instead },
+				{ surface: "kubernetes", instead: m.cmp_ax_surface_k8s_instead },
+			],
+		},
+		migration: [
+			{ title: m.cmp_ax_mig_1_title, body: m.cmp_ax_mig_1_body },
+			{ title: m.cmp_ax_mig_2_title, body: m.cmp_ax_mig_2_body },
+		],
+		migrationDiff: collectorDiff(
+			"otlphttp/axiom",
+			`  otlphttp/axiom:
+    compression: zstd
+    endpoint: https://api.axiom.co
+    headers:
+      authorization: Bearer \${env:AXIOM_API_TOKEN}
+      x-axiom-dataset: \${env:AXIOM_DATASET}`,
+		),
+		faqs: [
+			{ question: m.cmp_ax_faq_1_q, answer: m.cmp_ax_faq_1_a },
+			{ question: m.cmp_ax_faq_2_q, answer: m.cmp_ax_faq_2_a },
+			{ question: m.cmp_ax_faq_3_q, answer: m.cmp_ax_faq_3_a },
+			{ question: m.cmp_ax_faq_4_q, answer: m.cmp_ax_faq_4_a },
+			{ question: m.cmp_ax_faq_5_q, answer: m.cmp_ax_faq_5_a },
+		],
+		sources: [
+			{ label: "Axiom pricing", url: "https://axiom.co/pricing", checked: CHECKED_AXIOM },
+			{
+				label: "Axiom rate card (the machine-readable one)",
+				url: "https://axiom.co/pricing/llms.txt",
+				checked: CHECKED_AXIOM,
+			},
+			{
+				label: "Axiom: edge deployments",
+				url: "https://axiom.co/docs/reference/edge-deployments",
+				checked: CHECKED_AXIOM,
+			},
+			{
+				label: "Axiom: monitors",
+				url: "https://axiom.co/docs/monitor-data/monitors",
+				checked: CHECKED_AXIOM,
+			},
+			{ label: "Axiom: APL", url: "https://axiom.co/docs/apl/introduction", checked: CHECKED_AXIOM },
+			{
+				label: "Axiom: AI agents, MCP server and skills",
+				url: "https://axiom.co/docs/console/intelligence/ai-agents-overview",
+				checked: CHECKED_AXIOM,
+			},
+			{
+				label: "Axiom: apps and integrations",
+				url: "https://axiom.co/docs/apps/introduction",
+				checked: CHECKED_AXIOM,
+			},
+			{ label: "Axiom Trust Center", url: "https://trust.axiom.co/", checked: CHECKED_AXIOM },
+			{ label: "Axiom for Vercel", url: "https://axiom.co/vercel", checked: CHECKED_AXIOM },
 		],
 		locales: ["en", "ja", "ko"],
 	},

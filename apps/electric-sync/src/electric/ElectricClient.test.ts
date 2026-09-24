@@ -228,15 +228,11 @@ describe("buildUpstreamShapeUrl", () => {
 	 * an org-wide shape would stream the whole history to read a single page.
 	 */
 	it("narrows a scoped shape to one investigation, positionally", () => {
-		const { params } = buildUrl("investigation", { scopeValue: "inv_1" })
+		const { params } = buildUrl("investigation_v2", { scopeValue: "inv_1" })
 		assert.strictEqual(params.get("table"), "investigations")
 		assert.strictEqual(params.get("where"), `"org_id" = $1 AND "id" = $2`)
 		assert.strictEqual(params.get("params[1]"), "org_123")
 		assert.strictEqual(params.get("params[2]"), "inv_1")
-
-		const lanes = buildUrl("investigation_lens_runs", { scopeValue: "inv_1" }).params
-		assert.strictEqual(lanes.get("where"), `"org_id" = $1 AND "investigation_id" = $2`)
-		assert.strictEqual(lanes.get("params[2]"), "inv_1")
 	})
 
 	/**
@@ -245,30 +241,18 @@ describe("buildUpstreamShapeUrl", () => {
 	 * whitelist rather than the request.
 	 */
 	it("binds a hostile scope value as a parameter rather than into the WHERE", () => {
-		const { params } = buildUrl("investigation", { scopeValue: `x" OR "org_id" <> '` })
+		const { params } = buildUrl("investigation_v2", { scopeValue: `x" OR "org_id" <> '` })
 		assert.strictEqual(params.get("where"), `"org_id" = $1 AND "id" = $2`)
 		assert.strictEqual(params.get("params[2]"), `x" OR "org_id" <> '`)
 	})
 
 	it("projects only the investigation columns the page renders", () => {
 		const columns =
-			buildUrl("investigation", { scopeValue: "inv_1" }).params.get("columns")?.split(",") ?? []
+			buildUrl("investigation_v2", { scopeValue: "inv_1" }).params.get("columns")?.split(",") ?? []
 		assert.include(columns, "id")
 		assert.include(columns, "org_id")
 		assert.include(columns, "report_json")
-		// Needed to filter lanes to the live attempt, exactly as the service does.
-		assert.include(columns, "fanout_attempt")
-		// Nothing renders the planner's transcript; it is also the largest column.
-		assert.notInclude(columns, "plan_json")
-		assert.notInclude(columns, "workflow_instance_id")
-
-		const lanes =
-			buildUrl("investigation_lens_runs", { scopeValue: "inv_1" }).params.get("columns")?.split(",") ??
-			[]
-		assert.include(lanes, "progress_note")
-		assert.include(lanes, "started_at")
-		assert.notInclude(lanes, "evidence_json")
-		assert.notInclude(lanes, "hypothesis_json")
+		assert.include(columns, "started_at")
 	})
 
 	it("adds Electric Cloud source credentials only when provided", () => {
@@ -465,7 +449,10 @@ describe("ElectricClient.fetchShape", () => {
 			const error = yield* Fiber.join(fiber)
 			assert.strictEqual(error._tag, "@maple/electric-sync/ElectricUpstreamUnreachable")
 			// The span must be able to say a timeout is what happened, not `undefined`.
-			assert.include(error.message, "Timeout")
+			// effect rc.116's `TimeoutException` carries its own text, so the ceiling
+			// that fired is named too; it used to carry only a tag.
+			assert.include(error.message, "timed out")
+			assert.include(error.message, "30s")
 		}).pipe(Effect.provide(clientLayer())),
 	)
 

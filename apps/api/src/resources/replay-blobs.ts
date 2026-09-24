@@ -4,7 +4,7 @@
  * bucket-scoped token is minted in `apps/ingest/alchemy.run.ts`, next to the
  * writer — and the api Worker binds the same bucket to hydrate
  * `session_replay_events` rows whose `Events` is empty. Stage-isolated, so a
- * pr/stg deploy can never serve or overwrite prd recordings. Declared once
+ * pr deploy can never serve or overwrite prd recordings. Declared once
  * here; alchemy registers a resource by id, so the second yield returns the
  * first's registration.
  *
@@ -16,15 +16,21 @@
  * Don't add `locationHint`: it is advisory (the bucket stayed `wnam` anyway)
  * and changing it replaces a name-pinned bucket, which GC then deletes. Took
  * prd red on 2026-08-24. Colocation needs a new bucket, not a replace.
+ *
+ * The EU instance's bucket is created in the `eu` jurisdiction — a hard
+ * storage pin, unlike a location hint — and, like jurisdiction itself, that is
+ * fixed at creation. It is a different bucket (`maple-replay-blobs-eu`), so
+ * nothing here ever replaces the US one.
  */
-import { stageProps } from "@maple/infra/cloudflare"
+import { resolveStorageJurisdiction, stageProps } from "@maple/infra/cloudflare"
 import * as Cloudflare from "alchemy/Cloudflare"
 import * as RemovalPolicy from "alchemy/RemovalPolicy"
 
 export const ReplayBlobs = Cloudflare.R2.Bucket(
 	"replay-blobs",
-	stageProps<Cloudflare.R2.BucketProps>("replay-blobs", (name) => ({
+	stageProps<Cloudflare.R2.BucketProps>("replay-blobs", (name, { region }) => ({
 		name,
+		jurisdiction: resolveStorageJurisdiction(region),
 		// Deliberately unprefixed, so the rule covers whatever key scheme is
 		// current. `replay_object_key` is versioned (`v1/…`) precisely so a
 		// format change can write under a new prefix while the old one ages

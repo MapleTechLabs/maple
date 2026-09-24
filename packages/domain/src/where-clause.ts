@@ -18,6 +18,8 @@ export type Operator = Schema.Schema.Type<typeof Operator>
 
 export const ParsedClause = Schema.Struct({
 	key: Schema.String,
+	/** The key as typed, for sources whose keys are case-sensitive (`track()` props). */
+	rawKey: Schema.optionalKey(Schema.String),
 	operator: Operator,
 	value: Schema.String,
 })
@@ -107,6 +109,19 @@ export function splitWhereClause(expression: string): string[] {
 	return parts.map((part) => part.trim()).filter(Boolean)
 }
 
+/**
+ * A value as the quoted literal the grammar above reads back verbatim. The
+ * grammar has no escape character, so the quote is the one the value does not
+ * contain. A value carrying both kinds cannot be spelled at all; it is emitted
+ * as-is so the parser rejects the clause visibly instead of a quietly altered
+ * value matching something else.
+ */
+export function quoteWhereValue(value: string): string {
+	if (!value.includes('"')) return `"${value}"`
+	if (!value.includes("'")) return `'${value}'`
+	return `"${value}"`
+}
+
 export interface ParseWhereClauseResult {
 	clauses: readonly ParsedClause[]
 	warnings: readonly WhereClauseParseWarning[]
@@ -129,6 +144,7 @@ export function parseWhereClause(expression: string): ParseWhereClauseResult {
 		if (notExistsMatch) {
 			clauses.push({
 				key: notExistsMatch[1].trim().toLowerCase(),
+				rawKey: notExistsMatch[1].trim(),
 				operator: "!exists",
 				value: "",
 			})
@@ -139,6 +155,7 @@ export function parseWhereClause(expression: string): ParseWhereClauseResult {
 		if (existsMatch) {
 			clauses.push({
 				key: existsMatch[1].trim().toLowerCase(),
+				rawKey: existsMatch[1].trim(),
 				operator: "exists",
 				value: "",
 			})
@@ -151,6 +168,7 @@ export function parseWhereClause(expression: string): ParseWhereClauseResult {
 		if (notContainsMatch) {
 			clauses.push({
 				key: notContainsMatch[1].trim().toLowerCase(),
+				rawKey: notContainsMatch[1].trim(),
 				operator: "!contains",
 				value: (notContainsMatch[2] ?? notContainsMatch[3] ?? notContainsMatch[4] ?? "").trim(),
 			})
@@ -161,6 +179,7 @@ export function parseWhereClause(expression: string): ParseWhereClauseResult {
 		if (containsMatch) {
 			clauses.push({
 				key: containsMatch[1].trim().toLowerCase(),
+				rawKey: containsMatch[1].trim(),
 				operator: "contains",
 				value: (containsMatch[2] ?? containsMatch[3] ?? containsMatch[4] ?? "").trim(),
 			})
@@ -184,6 +203,7 @@ export function parseWhereClause(expression: string): ParseWhereClauseResult {
 
 			clauses.push({
 				key: compMatch[1].trim().toLowerCase(),
+				rawKey: compMatch[1].trim(),
 				operator: compMatch[2] as Operator,
 				value: (compMatch[3] ?? compMatch[4] ?? compMatch[5] ?? "").trim(),
 			})

@@ -80,6 +80,28 @@ export const traceSessionTraceId = (sessionId: string): string | undefined => {
 export const MAPLE_NATIVE_SESSION_ID_ATTR = "maple_ai.session.id"
 /** Groups one turn's spans inside a session; lifted into `conversationId` read-side. */
 export const MAPLE_NATIVE_TURN_ID_ATTR = "maple_ai.turn.id"
+
+// `gen_ai.operation.name` is an open set. These group the semantic convention's
+// operation names — plus `agent_step`, which the Vercel AI SDK emits and
+// production data carries — into the four readings the product distinguishes.
+// Shared between the session summary query and the web's span classifier so an
+// "llm call" is the same span on the server and on the page.
+export const AI_INFERENCE_OPERATIONS = [
+	"chat",
+	"generate_content",
+	"text_completion",
+	"fetch_response",
+] as const
+/** Inference-shaped work that is not a model turn: an embedding is never an "llm call". */
+export const AI_RETRIEVAL_OPERATIONS = ["embeddings", "retrieval"] as const
+export const AI_TOOL_OPERATIONS = ["execute_tool"] as const
+export const AI_AGENT_OPERATIONS = [
+	"invoke_agent",
+	"create_agent",
+	"invoke_workflow",
+	"plan",
+	"agent_step",
+] as const
 /**
  * Count of whole oldest messages dropped from `gen_ai.input.messages` to fit
  * the emitter's attribute budget. Write-only diagnostics: nothing decodes it,
@@ -286,6 +308,14 @@ export const AI_GENAI_FIELDS = {
 	// workflow
 	workflowName: { key: "gen_ai.workflow.name", type: "string" },
 
+	// gateway routing — a gateway that tries several upstream providers for one
+	// generation (OpenRouter Broadcast) emits one child span per attempt, with the
+	// provider it went to and the HTTP status that sent it to the next one. A
+	// failed attempt whose generation succeeded is a retry, not a failure.
+	attemptIndex: { key: "span.metadata.attempt_index", type: "number" },
+	attemptStatusCode: { key: "span.metadata.status_code", type: "number" },
+	attemptProvider: { key: "trace.metadata.openrouter.provider_name", type: "string" },
+
 	// core semconv attributes AI spans carry — see `AI_CORE_FIELDS`
 	errorType: { key: "error.type", type: "string" },
 	serverAddress: { key: "server.address", type: "string" },
@@ -295,11 +325,20 @@ export const AI_GENAI_FIELDS = {
 export type AiGenAiField = keyof typeof AI_GENAI_FIELDS
 
 /**
- * Plain core-semconv attributes that AI spans happen to carry, not AI signal.
- * Every ordinary HTTP client span in the trace has them too, which is why the
- * mapper refuses to treat one as evidence that a span is an AI span.
+ * Attributes AI spans happen to carry that are not AI signal: the plain
+ * core-semconv keys every ordinary HTTP client span in the trace has too, and
+ * a gateway's un-namespaced routing metadata, whose generic `span.metadata.*`
+ * keys any instrumentation might stamp. The mapper refuses to treat one as
+ * evidence that a span is an AI span.
  */
-export const AI_CORE_FIELDS: ReadonlySet<AiGenAiField> = new Set(["errorType", "serverAddress", "serverPort"])
+export const AI_CORE_FIELDS: ReadonlySet<AiGenAiField> = new Set([
+	"errorType",
+	"serverAddress",
+	"serverPort",
+	"attemptIndex",
+	"attemptStatusCode",
+	"attemptProvider",
+])
 
 /**
  * `gen_ai.prompt.variable.<name>` is a TEMPLATED attribute: the key carries the

@@ -1,4 +1,8 @@
-import { buildTimeseriesQuerySpec, createQueryDraft } from "@maple/query-engine/query-builder"
+import {
+	buildTimeseriesQuerySpec,
+	createQueryDraft,
+	resetQueryForDataSource,
+} from "@maple/query-engine/query-builder"
 import { TRACE_DEFAULT_COLUMNS, type ListColumnDraft } from "@/lib/query-builder/list-widget-config"
 import type {
 	DashboardWidget,
@@ -10,6 +14,7 @@ import { widgetTypes } from "@/components/dashboard-builder/widgets/types"
 import { fromPanelType, toPanelType } from "@/lib/query-builder/panel-types"
 import {
 	defaultFunnelDraft,
+	DEFAULT_PATHS_DRAFT,
 	deriveDefaultWidgetTitle,
 	hasActiveGroupBy,
 	inferDefaultUnitForQueries,
@@ -126,6 +131,7 @@ export function toInitialState(widget: DashboardWidget): QueryBuilderWidgetState
 		heatmapScaleType: "linear",
 		markdownContent: "",
 		funnel: defaultFunnelDraft(),
+		paths: DEFAULT_PATHS_DRAFT(),
 		...definition.initialState?.(widget),
 	}
 
@@ -138,6 +144,19 @@ export function toInitialState(widget: DashboardWidget): QueryBuilderWidgetState
 	if (querySet !== null) {
 		const { queries, formulas } = loadQueryDrafts(querySet)
 		if (queries.length > 0) return { ...shared, queries, formulas }
+	}
+
+	// A product-event funnel's placeholder query A is a product-event query,
+	// not a traces one: the panel's source select and `funnel.source` tell the
+	// same story, and `reconcileFunnelSource` (run on every settings change)
+	// keeps the step editor open instead of flipping the funnel back to the
+	// query set on the first rail edit.
+	if (definition.meta.panelType === "funnel" && definition.ownsDataSource?.(shared)) {
+		return {
+			...shared,
+			queries: [resetQueryForDataSource(createQueryDraft(0), "product_events")],
+			formulas: [],
+		}
 	}
 
 	return { ...shared, queries: [legacyQueryDraft(routeParams)], formulas: [] }
@@ -257,6 +276,10 @@ export function buildWidgetDisplay(
 export function validateQueries(state: QueryBuilderWidgetState): string | null {
 	const definition = definitionForState(state)
 
+	// A paths widget has its own panel and its own definition to check.
+	if (definition.queryEditor === "paths") {
+		return definition.validate?.({ state, activeQueries: [], visibleQueries: [] }) ?? null
+	}
 	// Neither uses the query builder — a list is configured by ListConfigPanel and
 	// a note doesn't query at all, so validating their placeholder draft would
 	// block Apply on an error the user has no panel to fix.

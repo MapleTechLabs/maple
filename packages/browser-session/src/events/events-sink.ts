@@ -6,6 +6,7 @@ import { approximateSize } from "../platform/approximate-size"
 import { markActivity, noteNavigation } from "../session/session"
 import { activeTraceId } from "./trace-id"
 import { getVisitorId } from "../identity/visitor"
+import { scrubUrl } from "../platform/url-privacy"
 
 /**
  * A distilled, structured session event. Sparse: only the fields relevant to
@@ -317,14 +318,14 @@ function toRow(
 		timestamp: formatCHDateTime(new Date(ev.timestamp ?? Date.now())),
 		seq,
 		type: ev.type,
-		url: ev.url ?? (typeof location !== "undefined" ? location.href : ""),
+		url: scrubUrl(ev.url ?? (typeof location !== "undefined" ? location.href : "")),
 		trace_id: ev.traceId ?? activeTraceId() ?? "",
 		level: ev.level ?? "",
 		message: ev.message ?? "",
 		target_selector: ev.targetSelector ?? "",
 		target_text: ev.targetText ?? "",
 		net_method: ev.net?.method ?? "",
-		net_url: ev.net?.url ?? "",
+		net_url: ev.net ? scrubUrl(ev.net.url) : "",
 		net_status: ev.net?.status ?? 0,
 		net_duration_ms: ev.net?.durationMs ?? 0,
 		error_stack: ev.errorStack ?? "",

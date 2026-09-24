@@ -1,9 +1,9 @@
 /**
- * The investigation detail page's two synced shapes, and the mapper that turns
- * their rows back into the `V2Investigation` the page already renders.
+ * The investigation detail page's synced shape, and the mapper that turns its
+ * row back into the `V2Investigation` the page already renders.
  *
  * This replaced a 3s poll of `/v2/investigations/:id`. The poll capped how live
- * the provenance canvas could be — a lane transition was up to three seconds
+ * the provenance canvas could be — a verdict landing was up to three seconds
  * stale — and it could not carry a clock at all, so every elapsed readout had to
  * be re-derived on the client anyway.
  *
@@ -52,7 +52,7 @@ const decodeInvestigation = Schema.decodeUnknownOption(Schema.toType(V2Investiga
 // Rows
 
 /**
- * Identity row schema for the `investigation` shape — one struct per column the
+ * Identity row schema for the `investigation_v2` shape. One struct per column the
  * proxy projects, so a post-deploy column drift surfaces as a SchemaValidationError
  * (→ the bounded self-heal) rather than as silently-missing fields. Timestamps stay
  * `Schema.String`: the timestamptz parser has already normalized them to ISO.
@@ -65,17 +65,13 @@ export const InvestigationRowSchema = Schema.Struct({
 	subject_json: Schema.Unknown,
 	snapshot_json: Schema.NullOr(Schema.Unknown),
 	report_json: Schema.NullOr(Schema.Unknown),
+	progress_json: Schema.NullOr(Schema.Unknown),
 	severity: Schema.NullOr(Schema.String),
 	confidence: Schema.NullOr(Schema.String),
 	model: Schema.NullOr(Schema.String),
 	input_tokens: Schema.NullOr(Schema.Number),
 	output_tokens: Schema.NullOr(Schema.Number),
 	error: Schema.NullOr(Schema.String),
-	fanout_state: Schema.String,
-	fanout_size: Schema.Number,
-	fanout_attempt: Schema.Number,
-	validator_note: Schema.NullOr(Schema.String),
-	validator_elapsed_ms: Schema.NullOr(Schema.Number),
 	created_by: Schema.NullOr(Schema.String),
 	created_at: Schema.String,
 	started_at: Schema.NullOr(Schema.String),
@@ -84,33 +80,7 @@ export const InvestigationRowSchema = Schema.Struct({
 })
 export type InvestigationRow = typeof InvestigationRowSchema.Type
 
-export const InvestigationLensRunRowSchema = Schema.Struct({
-	id: Schema.String,
-	org_id: Schema.String,
-	investigation_id: Schema.String,
-	lens_id: Schema.String,
-	attempt: Schema.Number,
-	ordinal: Schema.Number,
-	status: Schema.String,
-	verdict: Schema.String,
-	claim: Schema.NullOr(Schema.String),
-	reason: Schema.NullOr(Schema.String),
-	progress_note: Schema.NullOr(Schema.String),
-	confidence: Schema.NullOr(Schema.String),
-	tool_count: Schema.Number,
-	elapsed_ms: Schema.NullOr(Schema.Number),
-	lens_name: Schema.NullOr(Schema.String),
-	lens_question: Schema.NullOr(Schema.String),
-	priority: Schema.NullOr(Schema.Number),
-	deadline_hit: Schema.Boolean,
-	started_at: Schema.NullOr(Schema.String),
-})
-export type InvestigationLensRunRow = typeof InvestigationLensRunRowSchema.Type
-
 // Mappers (mirror toV2Investigation + InvestigationService's row mappers)
-
-/** Mirrors `elapsedSeconds` in InvestigationService — ms → one decimal place. */
-const elapsedSeconds = (ms: number | null): number | null => (ms == null ? null : Math.round(ms / 100) / 10)
 
 /**
  * The stored subject, renamed to the wire's snake_case shape.
@@ -208,69 +178,14 @@ const fallbackSnapshot = (subject: V2Investigation["subject"]): V2Investigation[
 })
 
 /**
- * The validator lane, derived rather than stored — mirrors `validatorFor` in
- * InvestigationService. Its status is a function of the fan-out state, and its
- * note falls back to a tally of the lanes, so a run that ranked without writing a
- * note still says what it concluded.
- */
-export const deriveValidator = (
-	row: InvestigationRow,
-	lenses: ReadonlyArray<InvestigationLensRunRow>,
-): V2Investigation["validator"] => {
-	if (row.fanout_state === "none" || row.fanout_state === "queued") return null
-	const elapsed = elapsedSeconds(row.validator_elapsed_ms)
-	const count = (verdict: string) => lenses.filter((lens) => lens.verdict === verdict).length
-
-	if (row.fanout_state === "ranked" || row.fanout_state === "superseded") {
-		return {
-			status: "ranked",
-			note:
-				row.validator_note ??
-				`${count("promoted")} promoted · ${count("merged")} merged · ${count("ruled_out")} ruled out`,
-			elapsedSeconds: elapsed,
-		}
-	}
-	if (row.fanout_state === "rejected_all") {
-		return {
-			status: "rejected_all",
-			note: row.validator_note ?? "no candidate held up",
-			elapsedSeconds: elapsed,
-		}
-	}
-	// `running` / `validating` — blocked is what "the validator has nothing to rank
-	// yet" is called, and the boards read it to withhold a held count.
-	return { status: "blocked", note: row.validator_note ?? "waiting on the lenses", elapsedSeconds: elapsed }
-}
-
-/**
- * Lanes belonging to the live attempt, in dispatch order.
- *
- * Both halves matter and both mirror the server. A retried run leaves the
- * previous attempt's lanes in the table, and rendering them beside the attempt
- * that superseded them shows one run assembled from two; and ordering is a
- * contract the boards rely on — the fan reads top-to-bottom as it ran.
- */
-export const liveLensRuns = (
-	row: InvestigationRow,
-	lenses: ReadonlyArray<InvestigationLensRunRow>,
-): ReadonlyArray<InvestigationLensRunRow> =>
-	lenses
-		.filter((lens) => lens.investigation_id === row.id && lens.attempt === row.fanout_attempt)
-		.toSorted((left, right) => left.ordinal - right.ordinal)
-
-/**
- * The whole page's object, rebuilt from the two shapes.
+ * The whole page's object, rebuilt from the row.
  *
  * `report_json` and `snapshot_json` are passed through as the stored documents:
  * the server's only work on them is decoding evidence trace ids, which is a
  * validation step, not a transform — the values the browser renders are the
  * stored ones either way.
  */
-export const rowsToInvestigation = (
-	row: InvestigationRow,
-	lenses: ReadonlyArray<InvestigationLensRunRow>,
-): V2Investigation | null => {
-	const lanes = liveLensRuns(row, lenses)
+export const rowsToInvestigation = (row: InvestigationRow): V2Investigation | null => {
 	const subject = rowToSubject(row)
 	if (subject === null) return null
 	const stored = row.snapshot_json == null ? Option.none() : decodeSnapshot(row.snapshot_json)
@@ -281,6 +196,7 @@ export const rowsToInvestigation = (
 		subject,
 		snapshot: Option.getOrElse(stored, () => fallbackSnapshot(subject)),
 		report: row.report_json,
+		progress: row.progress_json,
 		model: row.model,
 		severity: row.severity,
 		confidence: row.confidence,
@@ -293,23 +209,6 @@ export const rowsToInvestigation = (
 		started_at: row.started_at,
 		diagnosed_at: row.diagnosed_at,
 		updated_at: row.updated_at,
-		lens_runs: lanes.map((lens) => ({
-			lensId: lens.lens_id,
-			status: lens.status,
-			verdict: lens.verdict,
-			claim: lens.claim,
-			reason: lens.reason,
-			progressNote: lens.progress_note,
-			confidence: lens.confidence,
-			toolCount: lens.tool_count,
-			elapsedSeconds: elapsedSeconds(lens.elapsed_ms),
-			name: lens.lens_name,
-			question: lens.lens_question,
-			priority: lens.priority,
-			deadlineHit: lens.deadline_hit,
-		})),
-		validator: deriveValidator(row, lanes),
-		fanout: { state: row.fanout_state, size: row.fanout_size },
 	}
 	return Option.getOrNull(decodeInvestigation(candidate))
 }
@@ -318,7 +217,7 @@ export const rowsToInvestigation = (
 
 export const createInvestigationCollection = (orgId: string, investigationId: string) =>
 	createSyncedCollection({
-		shape: "investigation",
+		shape: "investigation_v2",
 		scope: investigationId,
 		orgId,
 		schema: InvestigationRowSchema,
@@ -326,15 +225,4 @@ export const createInvestigationCollection = (orgId: string, investigationId: st
 		getKey: (row) => row.id,
 	})
 
-export const createInvestigationLensRunsCollection = (orgId: string, investigationId: string) =>
-	createSyncedCollection({
-		shape: "investigation_lens_runs",
-		scope: investigationId,
-		orgId,
-		schema: InvestigationLensRunRowSchema,
-		parser: timestamptzParser,
-		getKey: (row) => row.id,
-	})
-
 export type InvestigationCollection = ReturnType<typeof createInvestigationCollection>
-export type InvestigationLensRunsCollection = ReturnType<typeof createInvestigationLensRunsCollection>

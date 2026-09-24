@@ -5,7 +5,7 @@ Maple stores relational application state in PostgreSQL with a schema defined by
 
 ## Runtime modes
 
-- **Production and staging:** one PlanetScale Postgres branch per stage. Cloudflare Workers
+- **Production:** the PlanetScale Postgres `main` branch. Cloudflare Workers
   connect through the `MAPLE_DB` Hyperdrive binding; the application never opens the direct
   administrative connection.
 - **Wrangler development:** Docker Postgres on port 5499 through Hyperdrive's
@@ -16,30 +16,38 @@ Maple stores relational application state in PostgreSQL with a schema defined by
   need `Database` fail normally; DB-free routes such as health checks continue to work.
 
 Application code keeps timestamps as epoch-millisecond numbers and converts at the Drizzle
-boundary — use `msToDate` / `dateToMs` from `apps/api/src/platform/time.ts` rather than bare
+boundary — use `msToDate` / `dateToMs` from `packages/backend/src/platform/time.ts` rather than bare
 `new Date(ms)` / `.getTime()`, including inside Promise-land helpers.
 
 ## Connections on Workers
 
-One connection per invocation — request, cron tick, or Workflow run — created lazily on the first
+One connection pool per invocation — request, cron tick, or Workflow run — created lazily on the first
 query and closed at the boundary. This is Cloudflare's documented Hyperdrive shape, and
-`makePgConnectionScope` (`apps/api/src/platform/pg-connection-scope.ts`) is the only implementation
-of it: `pgConnectionMiddleware` installs a scope for HTTP, `withPgConnectionScope` for cron, and
+`makePgConnectionScope` (`packages/backend/src/platform/pg-connection-scope.ts`) is the only implementation
+of it: `withPgConnectionScope` installs a scope around each worker's request handler and cron tick, and
 `executeOnFreshPgClient` is the same scope one call long for entry points that have none.
 
 Workers tie TCP sockets to the invocation that opened them, so a connection may be reused freely
 within one but must never outlive it. Two settings carry hard-won history:
 
-- **`max: 5`** — Cloudflare's documented value. `max` is a ceiling, not a reservation: postgres.js
+The driver is node-postgres through `@effect/sql-pg`: one `pg.Pool` per invocation, built lazily
+by `createMaplePgPool` (`packages/db/src/client.ts`) and handed to `PgClient.fromPool` rather than
+`PgClient.make`, because `make` probes with `SELECT 1` at acquire. Two settings carry hard-won
+history:
+
+- **`max: 5`** — Cloudflare's documented value. `max` is a ceiling, not a reservation: the pool
   opens a second socket only when a second statement is genuinely in flight. It was 1 for one day
   on the theory that Postgres should hold at most one of the Worker's six outbound slots, which
   serialized every statement in a cron tick behind one connection (`SELECT actors` p50 928ms →
   5687ms at flat volume).
-- **A bounded `connect_timeout`** — postgres.js only raises `CONNECT_TIMEOUT` from
-  `connectTimedOut()`, and its `timer()` is a no-op when the option is unset, so an unbounded dial
-  hangs for the whole invocation and lands with no `error.type` to classify. The bound is generous
-  and single: a 2s cap alone once took production 5xx from 0.06% to 5.01%, and the retry ladder
-  that followed existed only to compensate for it.
+- **A bounded dial** (10s, `connectionTimeoutMillis` on each `Client`, never on the `Pool`) —
+  unset, a stalled dial hangs for the whole invocation and lands with no `error.type` to classify.
+  On the pool the same option also times out waiting for a free client, so a fan-out wider than
+  `max` would fail against a healthy server. A dial that hits the bound carries no driver code and
+  lands as `error.type = ConnectionError` (`postgres-errors.ts` classifies code-less acquire
+  failures); a refused one carries the socket's own code (`ECONNREFUSED`). The bound is generous and single: a
+  2s cap alone once took production 5xx from 0.06% to 5.01%, and the retry ladder that followed
+  existed only to compensate for it.
 
 ## Local development
 
@@ -61,9 +69,12 @@ Change the Drizzle schema, then generate the SQL and metadata together:
 bun run --cwd packages/db db:generate
 ```
 
-Review the generated file in `packages/db/drizzle/` and its matching journal/snapshot changes.
-Do not hand-create a migration without also updating `drizzle/meta/_journal.json`; both deployed
-Postgres and PGlite use Drizzle's journal ordering.
+Review the generated folder in `packages/db/drizzle/`: one `<timestamp>_<name>/` per migration
+holding `migration.sql` and the DDL `snapshot.json` (drizzle-kit v1 layout, no journal). The
+migrator orders folders by name and applies every folder the database has not recorded. A
+hand-authored migration (data backfill, publication change) still needs a folder with both
+files: run `drizzle-kit generate --custom --name <name>` to scaffold it rather than creating the
+folder by hand, so the snapshot chain stays intact.
 
 Useful local commands:
 
@@ -77,9 +88,42 @@ bun run --cwd packages/db db:studio
 
 ## Deployment and tests
 
-CI runs `drizzle-kit migrate` against the stage's PlanetScale **direct** port 5432 before the
-Alchemy deployment. Never run migrations through a pooler or Hyperdrive. The deployed Worker
-does not migrate on boot.
+The prd deploy applies migrations: `alchemy.run.ts` declares the instance's PlanetScale `main` branch
+(`maple` on `prd`, `maple-eu` on `prd-eu`) as `Planetscale.PostgresBranch` with `migrations` pointed
+at `packages/db/drizzle`, and the api, ai and
+alerting Workers carry its name in their env so they upload after it. Bookkeeping is alchemy's
+`__alchemy_migrations`; `drizzle.__drizzle_migrations` was copied in once and is frozen, so never run
+`drizzle-kit migrate` against prd. The deploy migrates as a temporary role that is dropped with
+`postgres` as its successor, so the tables it creates end up owned by `postgres` with no other grants.
+Every runtime role must therefore inherit `postgres` (`USAGE`, not mere membership, which only
+grants `SET ROLE`). Inheritance is fixed when PlanetScale creates the role and `GRANT postgres` is
+refused, so a role without it is replaced: mint the new one with `--inherited-roles postgres`, rotate
+the consumer's URL, then delete the old role. This must list no runtime credential (a personal dev
+credential may appear):
+
+```sql
+SELECT rolname FROM pg_roles WHERE rolname LIKE 'pscale\_api\_%' AND NOT pg_has_role(rolname, 'postgres', 'usage')
+```
+
+The ingest gateway's credential is declared rather than minted: `Planetscale.PostgresRole` in
+`alchemy.run.ts` inherits `postgres`, its pooled 6432 URL is the fleet's `maple-pg-url` secret, and
+its id sits in the task env so a replaced role rolls the fleet onto the new secret before alchemy
+deletes the old role. `MAPLE_INGEST_PG_URL` in Infisical remains only for stages that deploy a fleet
+without a database branch (PR previews).
+
+Electric's is declared too, on both instances: `Planetscale.PostgresRole("electric", { withReplication:
+true })`, whose direct 5432 URL is the task's `DATABASE_URL` (`docs/electric-sync.md`). `withReplication`
+rides Maple's alchemy patch until [alchemy-run/alchemy#1777](https://github.com/alchemy-run/alchemy/pull/1777)
+ships; alchemy renders every role URL with `sslmode=verify-full`, which neither ECS client accepts, so
+`pgUrlRequireSsl` in `@maple/infra/aws` rewrites it for both.
+
+The EU instance's Worker credentials are declared the same way: `declareMapleDb` in `alchemy.run.ts`
+mints one role per consumer on `maple-eu` and a Hyperdrive config on each role's direct origin, and
+the Workers bind them from their props. No dashboard config and no hand-minted role exist there
+(`resolveDatabaseMode` is `"declared"`); the US prd keeps its dashboard-managed configs, bound by id.
+
+The deploy reads `PLANETSCALE_API_TOKEN_ID` / `PLANETSCALE_API_TOKEN` /
+`PLANETSCALE_ORGANIZATION` from Infisical prod; `bun dev` leaves the PlanetScale provider out.
 
 PGlite applies the same bundled migrations while its layer is built. The test harness caches a
 fresh migrated PGlite snapshot and restores it per test, so integration tests exercise the

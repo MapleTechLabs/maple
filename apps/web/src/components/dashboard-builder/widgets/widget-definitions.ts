@@ -1,5 +1,7 @@
 import {
 	ArrowTrendDownIcon,
+	BranchForkIcon,
+	ConnectionIcon,
 	PulseIcon,
 	FileIcon,
 	AlertWarningIcon,
@@ -18,6 +20,7 @@ import type {
 } from "@/components/dashboard-builder/types"
 import {
 	makeProductEventsFunnelDataSource,
+	makeProductEventsPathsDataSource,
 	makeQueryDataSource,
 	makeRouteDataSource,
 	makeStaticDataSource,
@@ -252,12 +255,46 @@ export const listPresets: WidgetPresetDefinition[] = [
 			],
 		},
 	},
+	{
+		id: "list-product-events",
+		name: "Recent Events",
+		description: "Latest track() calls and server-side events",
+		icon: ConnectionIcon,
+		visualization: "list",
+		dataSource: makeQueryDataSource({
+			resultShape: "list",
+			queries: [
+				{
+					...createQueryDraft(0),
+					id: "preset-list-product-events",
+					dataSource: "product_events",
+					aggregation: "count",
+					whereClause: 'event.kind != "navigation"',
+				},
+			],
+			limit: 25,
+			columns: ["timestamp", "eventName", "userId", "pagePath", "source"],
+		}),
+		display: {
+			title: "Recent Events",
+			listDataSource: "product_events",
+			listWhereClause: 'event.kind != "navigation"',
+			listLimit: 25,
+			columns: [
+				{ field: "timestamp", header: "Time" },
+				{ field: "eventName", header: "Event" },
+				{ field: "userId", header: "User" },
+				{ field: "pagePath", header: "Page" },
+				{ field: "source", header: "Source" },
+			],
+		},
+	},
 ]
 
 function buildBreakdownQuery(
 	index: number,
 	overrides: {
-		dataSource: "traces" | "logs"
+		dataSource: "traces" | "logs" | "product_events"
 		whereClause: string
 		aggregation: string
 		groupBy: string[]
@@ -277,9 +314,9 @@ function buildBreakdownQuery(
 		limit: "10",
 		legend: overrides.legend ?? draft.legend,
 	}
-	return overrides.dataSource === "logs"
-		? { ...base, dataSource: "logs" }
-		: { ...base, dataSource: "traces" }
+	if (overrides.dataSource === "logs") return { ...base, dataSource: "logs" }
+	if (overrides.dataSource === "product_events") return { ...base, dataSource: "product_events" }
+	return { ...base, dataSource: "traces" }
 }
 
 export const piePresets: WidgetPresetDefinition[] = [
@@ -336,6 +373,32 @@ export const piePresets: WidgetPresetDefinition[] = [
 		},
 	},
 	{
+		id: "pie-events-by-page",
+		name: "Events by Page",
+		description: "Where track() events fire, by page path",
+		icon: ConnectionIcon,
+		visualization: "pie",
+		dataSource: makeQueryDataSource({
+			resultShape: "breakdown",
+			queries: [
+				buildBreakdownQuery(0, {
+					dataSource: "product_events",
+					whereClause: 'event.kind = "custom"',
+					aggregation: "count",
+					groupBy: ["page.path"],
+				}),
+			],
+			formulas: [],
+			comparison: { mode: "none", includePercentChange: false },
+		}),
+		display: {
+			title: "Events by Page",
+			chartId: "query-builder-pie",
+			unit: "number",
+			pie: { donut: true, showLabels: false, showPercent: true },
+		},
+	},
+	{
 		id: "pie-traces-by-service",
 		name: "Traces by Service",
 		description: "Distribution of trace volume across services",
@@ -378,6 +441,21 @@ export const funnelPresets: WidgetPresetDefinition[] = [
 			chartId: "query-builder-funnel",
 			unit: "number",
 			funnel: { showStepPercent: true, steps: [] },
+		},
+	},
+	{
+		id: "funnel-dropoff-product-events",
+		name: "Drop-off",
+		description:
+			"Where people leave a product-event funnel, how long each step takes, and where the leavers went",
+		icon: ArrowTrendDownIcon,
+		visualization: "funnel",
+		dataSource: makeProductEventsFunnelDataSource({ steps: [], variant: "dropoff" }),
+		display: {
+			title: "Drop-off",
+			chartId: "query-builder-funnel",
+			unit: "number",
+			funnel: { showStepPercent: true, steps: [], variant: "dropoff" },
 		},
 	},
 	{
@@ -434,6 +512,40 @@ export const funnelPresets: WidgetPresetDefinition[] = [
 	},
 ]
 
+export const pathsPresets: WidgetPresetDefinition[] = [
+	{
+		id: "paths-after-event",
+		name: "Paths after an event",
+		description: "What people do in the steps after one event or page, top branches per step",
+		icon: BranchForkIcon,
+		visualization: "paths",
+		// No anchor yet: the route answers the empty state and the editor opens on
+		// the anchor picker.
+		dataSource: makeProductEventsPathsDataSource({ anchor: { kind: "event", eventName: "" } }),
+		display: {
+			title: "Paths",
+			chartId: "query-builder-paths",
+			paths: { anchor: { kind: "event", eventName: "" }, direction: "after" },
+		},
+	},
+	{
+		id: "paths-before-event",
+		name: "Paths before an event",
+		description: "How people arrived at one event or page, read back from it",
+		icon: BranchForkIcon,
+		visualization: "paths",
+		dataSource: makeProductEventsPathsDataSource({
+			anchor: { kind: "event", eventName: "" },
+			direction: "before",
+		}),
+		display: {
+			title: "Paths to",
+			chartId: "query-builder-paths",
+			paths: { anchor: { kind: "event", eventName: "" }, direction: "before" },
+		},
+	},
+]
+
 export const hbarPresets: WidgetPresetDefinition[] = [
 	{
 		id: "hbar-top-operations",
@@ -456,6 +568,31 @@ export const hbarPresets: WidgetPresetDefinition[] = [
 		}),
 		display: {
 			title: "Busiest Operations",
+			chartId: "query-builder-hbar",
+			unit: "number",
+		},
+	},
+	{
+		id: "hbar-top-events",
+		name: "Top Events",
+		description: "Most-fired product events, by distinct persons",
+		icon: ConnectionIcon,
+		visualization: "hbar",
+		dataSource: makeQueryDataSource({
+			resultShape: "breakdown",
+			queries: [
+				buildBreakdownQuery(0, {
+					dataSource: "product_events",
+					whereClause: 'event.kind != "navigation"',
+					aggregation: "persons",
+					groupBy: ["event.name"],
+				}),
+			],
+			formulas: [],
+			comparison: { mode: "none", includePercentChange: false },
+		}),
+		display: {
+			title: "Top Events",
 			chartId: "query-builder-hbar",
 			unit: "number",
 		},

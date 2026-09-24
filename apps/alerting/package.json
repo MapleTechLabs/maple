@@ -7,8 +7,8 @@
 		"typecheck": "tsc --noEmit"
 	},
 	"dependencies": {
-		"@maple/api": "workspace:*",
-		"@maple/domain": "workspace:*",
+		"@maple/backend": "workspace:*",
+		"@maple/chat-platform": "workspace:*",
 		"@maple/infra": "workspace:*",
 		"effect": "catalog:effect"
 	},

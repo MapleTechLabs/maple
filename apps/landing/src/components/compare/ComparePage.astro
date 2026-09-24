@@ -1,6 +1,6 @@
 ---
 /**
- * ComparePage — the single template behind every `/compare/<slug>` route,
+ * ComparePage: the single template behind every `/compare/<slug>` route,
  * in all three locales.
  *
  * The spine, and why it is in this order:
@@ -8,6 +8,8 @@
  *   00  PageHero          bg-bg        the question: "Maple vs X"
  *   01  CompareNav        sticky       five anchors, the page's wayfinding
  *   02  DifferenceTable   bg-bg-deep   the evidence, difference-first
+ *   02a Surfaces          bg-bg        optional: what the vendor leaves you
+ *                                      to build, drawn by the live artifacts
  *   03  Receipts          bg-bg        the same month billed twice, then the
  *                                      calculator for the visitor's numbers
  *   04  Migration         bg-bg-deep   three steps + the exporter change
@@ -20,7 +22,7 @@
  * advantages grid, migration cards and an FAQ that between them made the
  * same four claims six times. Each claim now lives in exactly one place:
  * "how they differ" in the table, "what it costs" in the receipts. There is
- * deliberately no "choose X when" verdict block — the table's edge column
+ * deliberately no "choose X when" verdict block: the table's edge column
  * already says it row by row, and the user didn't want it said twice.
  */
 import * as m from "../../paraglide/messages.js";
@@ -39,6 +41,7 @@ import DifferenceTable from "./DifferenceTable.astro";
 import Migration from "./Migration.astro";
 import Receipts from "./Receipts.astro";
 import Sources from "./Sources.astro";
+import Surfaces from "./Surfaces.astro";
 
 interface Props {
 	slug: string;
@@ -50,7 +53,7 @@ if (!competitor) throw new Error(`ComparePage: unknown competitor slug "${slug}"
 
 const locale = Astro.currentLocale ?? "en";
 
-// Messages are called HERE, during render — never at module scope and never
+// Messages are called HERE, during render: never at module scope and never
 // in getStaticPaths. Paraglide resolves the locale per call.
 const title = competitor.seoTitle();
 const description = competitor.seoDescription();
@@ -103,7 +106,7 @@ const dateModified = competitor.sources.map((source) => source.checked).sort().a
 		<ComparePair slot="aside" competitor={competitor} />
 	</PageHero>
 
-	<CompareNav competitorName={competitor.name} />
+	<CompareNav competitorName={competitor.name} surfaces={Boolean(competitor.surfaces)} />
 
 	<DifferenceTable
 		competitorName={competitor.name}
@@ -111,6 +114,8 @@ const dateModified = competitor.sources.map((source) => source.checked).sort().a
 		parity={competitor.parity.map((item) => item())}
 		sources={competitor.sources}
 	/>
+
+	{competitor.surfaces && <Surfaces competitorName={competitor.name} surfaces={competitor.surfaces} />}
 
 	<Receipts vendor={competitor.vendor} competitorName={competitor.name} />
 
@@ -128,7 +133,7 @@ const dateModified = competitor.sources.map((source) => source.checked).sort().a
 
 	<CrossLinks eyebrow={m.cmp_related_eyebrow()} title={m.cmp_related_title()} links={crossLinks} />
 
-	<PageCta title={m.cmp_cta_title()} lede={m.cmp_cta_lede()} />
+	<PageCta title={m.cmp_cta_title()} lede={m.cmp_cta_lede()} artwork="/art/maple-compare-panorama.webp" />
 
 	<Footer />
 </Layout>

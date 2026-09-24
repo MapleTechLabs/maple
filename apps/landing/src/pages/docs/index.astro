@@ -15,14 +15,16 @@ type Doc = (typeof allDocs)[number];
 const byOrder = (a: Doc, b: Doc) => a.data.order - b.data.order || a.data.title.localeCompare(b.data.title);
 const bySlug = (slug: string) => allDocs.find((d) => d.id === slug);
 
+// Each card carries the glyph of the surface it opens, matching the sidebar
+// and section strip (DocsCategoryIcon ids).
 const START_HERE = [
-    "getting-started/introduction",
-    INSTRUMENTATION_SLUG,
-    "local-mode",
-    "mcp",
-].flatMap((slug) => {
+    { slug: "getting-started/introduction", icon: "Getting Started" },
+    { slug: INSTRUMENTATION_SLUG, icon: "Instrumentation" },
+    { slug: "local-mode", icon: "Local Mode" },
+    { slug: "mcp", icon: "MCP" },
+].flatMap(({ slug, icon }) => {
     const doc = bySlug(slug);
-    return doc ? [doc] : [];
+    return doc ? [{ doc, icon }] : [];
 });
 
 // Every group except the two the page already covers above.
@@ -47,20 +49,36 @@ const topics = [...new Set(allDocs.map((d) => d.data.group))]
 >
     <div class="docs-index">
         <header>
-            <h1 class="font-display text-3xl md:text-4xl font-medium tracking-[-0.02em] text-fg">Documentation</h1>
-            <p class="mt-3 max-w-[60ch] text-sm leading-relaxed text-fg-muted">
+            <h1 class="text-[34px] font-semibold leading-[1.1] tracking-[-0.03em] text-fg md:text-[40px]">Documentation</h1>
+            <p class="mt-4 max-w-[58ch] text-[16px] leading-[1.6] text-pretty text-fg-muted">
                 Maple is an OpenTelemetry-native observability platform for traces, logs, metrics, errors and sessions. Point any OTel SDK at it and start exploring; these pages cover the how.
             </p>
         </header>
 
         {/* ── Start here ─────────────────────────────────────── */}
         <section class="mt-10" aria-labelledby="start-here">
-            <h2 id="start-here" class="text-[10px] font-medium uppercase tracking-[0.18em] text-fg-muted">Start here</h2>
+            <h2 id="start-here" class="font-mono text-[10px] font-medium uppercase tracking-[0.18em] text-fg-muted">Start here</h2>
             <div class="hairline-grid mt-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
-                {START_HERE.map((doc) => (
-                    <a href={`/docs/${doc.id}`} class="cell block p-5 transition-colors hover:bg-bg-elevated">
-                        <span class="block text-[13px] font-medium text-fg">{doc.data.title}</span>
-                        <p class="mt-1.5 text-[12px] leading-relaxed text-fg-muted line-clamp-3">{doc.data.description}</p>
+                {START_HERE.map(({ doc, icon }) => (
+                    <a href={`/docs/${doc.id}`} class="cell group flex flex-col p-5 transition-colors hover:bg-bg-elevated">
+                        <span class="flex items-center justify-between">
+                            <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-border bg-bg-elevated text-primary transition-colors group-hover:border-primary/40" aria-hidden="true">
+                                <DocsCategoryIcon name={icon} class="h-4 w-4" />
+                            </span>
+                            <svg
+                                class="h-3.5 w-3.5 -translate-x-1 text-fg-muted opacity-0 transition-[opacity,transform] duration-200 group-hover:translate-x-0 group-hover:opacity-100 motion-reduce:transition-none"
+                                viewBox="0 0 24 24"
+                                fill="none"
+                                stroke="currentColor"
+                                stroke-width="2"
+                                stroke-linecap="square"
+                                aria-hidden="true"
+                            >
+                                <path d="M16.99 12H17" /><path d="M14.99 10H15" /><path d="M14.99 14H15" /><path d="M12.99 16H13" /><path d="M12.99 8H13" /><path d="M10.99 6H11" /><path d="M10.99 18H11" /><path d="M8.99 20H9" /><path d="M8.99 4H9" />
+                            </svg>
+                        </span>
+                        <span class="mt-4 block text-[14px] font-medium text-fg">{doc.data.title}</span>
+                        <p class="mt-1.5 text-[13px] leading-relaxed text-fg-muted line-clamp-3">{doc.data.description}</p>
                     </a>
                 ))}
             </div>
@@ -69,8 +87,8 @@ const topics = [...new Set(allDocs.map((d) => d.data.group))]
         {/* ── Instrumentation ─────────────────────────────────── */}
         <section class="mt-12" aria-labelledby="instrument">
             <div class="flex items-baseline justify-between gap-4">
-                <h2 id="instrument" class="text-[10px] font-medium uppercase tracking-[0.18em] text-fg-muted">Instrument your application</h2>
-                <a href={`/docs/${INSTRUMENTATION_SLUG}`} class="text-[12.5px] text-primary transition-colors hover:text-fg">All guides</a>
+                <h2 id="instrument" class="font-mono text-[10px] font-medium uppercase tracking-[0.18em] text-fg-muted">Instrument your application</h2>
+                <a href={`/docs/${INSTRUMENTATION_SLUG}`} class="text-[13px] text-primary transition-colors hover:text-fg">All guides</a>
             </div>
             <div class="hairline-grid mt-4 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4">
                 {LANGUAGES.map((lang) => (
@@ -78,40 +96,59 @@ const topics = [...new Set(allDocs.map((d) => d.data.group))]
                         <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-border bg-bg-elevated" aria-hidden="true">
                             <LanguageLogo id={lang.id} class="h-4 w-4" />
                         </span>
-                        <span class="truncate text-[13px] font-medium text-fg">{lang.name}</span>
+                        <span class="truncate text-[14px] font-medium text-fg">{lang.name}</span>
                     </a>
                 ))}
                 <a href="/docs/session-replay/browser-sdk" class="cell flex items-center gap-3 p-4 transition-colors hover:bg-bg-elevated">
                     <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-border bg-bg-elevated" aria-hidden="true">
                         <BrandMarkIcon id="javascript" class="h-4 w-4" />
                     </span>
-                    <span class="truncate text-[13px] font-medium text-fg">Browser</span>
+                    <span class="truncate text-[14px] font-medium text-fg">Browser</span>
                 </a>
                 <a href={`/docs/${INSTRUMENTATION_SLUG}#anything-that-speaks-otlp`} class="cell flex items-center gap-3 p-4 transition-colors hover:bg-bg-elevated">
                     <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-border bg-bg-elevated" aria-hidden="true">
                         <BrandMarkIcon id="opentelemetry" class="h-4 w-4" />
                     </span>
-                    <span class="truncate text-[13px] font-medium text-fg">Any OTLP exporter</span>
+                    <span class="truncate text-[14px] font-medium text-fg">Any OTLP exporter</span>
                 </a>
             </div>
         </section>
 
         {/* ── Browse by topic ─────────────────────────────────── */}
         <section class="mt-12" aria-labelledby="topics">
-            <h2 id="topics" class="text-[10px] font-medium uppercase tracking-[0.18em] text-fg-muted">Browse by topic</h2>
+            <h2 id="topics" class="font-mono text-[10px] font-medium uppercase tracking-[0.18em] text-fg-muted">Browse by topic</h2>
             <div class="hairline-grid mt-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
                 {topics.map(({ group, blurb, docs }) => (
                     <div class="cell p-5">
-                        <h3 class="flex items-center gap-2 text-[13px] font-medium text-fg">
+                        <h3 class="flex items-center gap-2 text-[14px] font-medium text-fg">
                             <DocsCategoryIcon name={group} class="h-3.5 w-3.5 shrink-0 text-primary/80" />
                             {group}
+                            <span class="ml-auto font-mono text-[10px] font-normal tabular-nums text-fg-muted/70" aria-label={`${docs.length} pages`}>
+                                {docs.length}
+                            </span>
                         </h3>
-                        {blurb && <p class="mt-1.5 text-[12px] leading-relaxed text-fg-muted">{blurb}</p>}
-                        <ul class="mt-3 space-y-1.5">
+                        {blurb && <p class="mt-1.5 text-[13px] leading-relaxed text-fg-muted">{blurb}</p>}
+                        {/* Full-width rows with a chevron: these must read as links at
+                            rest, not as a bullet list that happens to be clickable. */}
+                        <ul class="-mx-2 mt-3 space-y-px">
                             {docs.map((doc) => (
                                 <li>
-                                    <a href={`/docs/${doc.id}`} class="text-[12.5px] text-fg-muted transition-colors hover:text-fg">
-                                        {doc.data.title}
+                                    <a
+                                        href={`/docs/${doc.id}`}
+                                        class="group/link flex items-center justify-between gap-3 rounded-md px-2 py-1.5 text-[13.5px] text-fg/85 transition-colors hover:bg-bg-elevated hover:text-fg focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary"
+                                    >
+                                        <span class="truncate">{doc.data.title}</span>
+                                        <svg
+                                            class="h-3.5 w-3.5 shrink-0 text-fg-muted/60 transition-[color,transform] duration-200 group-hover/link:translate-x-0.5 group-hover/link:text-primary motion-reduce:transition-none"
+                                            viewBox="0 0 24 24"
+                                            fill="none"
+                                            stroke="currentColor"
+                                            stroke-width="2"
+                                            stroke-linecap="square"
+                                            aria-hidden="true"
+                                        >
+                                            <path d="M16.99 12H17" /><path d="M14.99 10H15" /><path d="M14.99 14H15" /><path d="M12.99 16H13" /><path d="M12.99 8H13" /><path d="M10.99 6H11" /><path d="M10.99 18H11" /><path d="M8.99 20H9" /><path d="M8.99 4H9" />
+                                        </svg>
                                     </a>
                                 </li>
                             ))}
@@ -122,7 +159,7 @@ const topics = [...new Set(allDocs.map((d) => d.data.group))]
         </section>
 
         {/* ── Footer ──────────────────────────────────────────── */}
-        <footer class="mt-12 flex flex-col gap-2 border-t border-border pt-6 text-[12px] text-fg-muted sm:flex-row sm:items-center sm:justify-between">
+        <footer class="mt-14 flex flex-col gap-2 border-t border-border pt-6 text-[13px] text-fg-muted sm:flex-row sm:items-center sm:justify-between">
             <p>
                 Every page is also plain markdown: append <code class="rounded bg-bg-elevated px-1.5 py-0.5 text-fg">.md</code> to its URL, or start from
                 <a href="/llms.txt" class="text-fg transition-colors hover:text-primary">/llms.txt</a>.

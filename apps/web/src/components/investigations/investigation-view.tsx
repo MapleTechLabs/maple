@@ -13,7 +13,6 @@ import { MapleApiV2AtomClient } from "@/lib/services/common/v2-atom-client"
 import { EvidenceTab } from "./evidence-tab"
 import { ProvenanceCanvas } from "./flow/provenance-canvas"
 import { FollowUpComposer } from "./follow-up-composer"
-import { HypothesesTab } from "./hypotheses-tab"
 import { ImpactStrip } from "./impact-strip"
 import { investigationHeadline } from "./investigation-display"
 import { InvestigationHeader } from "./investigation-header"
@@ -265,23 +264,24 @@ export function InvestigationView({
 								<div className="flex flex-col gap-7">
 									{tab === "evidence" ? (
 										<EvidenceTab investigation={investigation} />
-									) : tab === "hypotheses" ? (
-										<HypothesesTab investigation={investigation} />
 									) : (
 										<>
 											{/*
-											 * The canvas leads. It carries what the rail's run
-											 * spine, its checks panel and the Next-actions ledger
-											 * used to say separately — one causal read instead of
-											 * three partial ones — so the verdict below it
-											 * qualifies a chain the reader has already seen.
+											 * The verdict leads. The canvas led for a while, on the
+											 * reasoning that a verdict qualifies a chain better
+											 * once the reader has seen the chain. In practice a
+											 * reader arrives with one question, and answering it
+											 * below a 330px graph meant scrolling past the
+											 * provenance of an answer they had not read yet. The
+											 * graph is how the run got there, which is the second
+											 * question, so it sits where the second question does.
 											 */}
+											<VerdictCard investigation={investigation} />
 											<ProvenanceCanvas
 												investigation={investigation}
 												openActionIndex={openActionIndex}
 												onOpenAction={handleOpenAction}
 											/>
-											<VerdictCard investigation={investigation} />
 											<ImpactStrip investigation={investigation} />
 											<SignalsCard investigation={investigation} />
 										</>

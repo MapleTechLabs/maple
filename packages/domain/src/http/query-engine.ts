@@ -24,7 +24,14 @@ import { AuditedRead } from "./audit-log"
 import { SessionAuthorization } from "./current-tenant"
 import { HttpTaggedError } from "./error-policy"
 import { warehouseHttpErrors } from "./warehouse"
-import { FunnelBreakdownBy, FunnelKeyBy, FunnelStep } from "@maple/query-model"
+import {
+	FunnelBreakdownBy,
+	FunnelKeyBy,
+	FunnelStep,
+	PathsAnchor,
+	PathsDirection,
+	PathsInclude,
+} from "@maple/query-model"
 
 /**
  * A timeseries bucket width.
@@ -36,7 +43,7 @@ import { FunnelBreakdownBy, FunnelKeyBy, FunnelStep } from "@maple/query-model"
  * of a 400. `packages/domain/src/query-engine.ts` already had this right; these
  * declarations did not.
  */
-const BucketSeconds = Schema.Number.check(Schema.isInt(), Schema.isGreaterThan(0)).pipe(
+export const BucketSeconds = Schema.Number.check(Schema.isInt(), Schema.isGreaterThan(0)).pipe(
 	Schema.annotate({
 		identifier: "BucketSeconds",
 		description: "Timeseries bucket width in whole seconds, greater than zero.",
@@ -1785,6 +1792,12 @@ export {
 	FunnelSessionDimension,
 	FunnelSessionStep,
 	FunnelStep,
+	PATHS_MAX_BRANCHES,
+	PATHS_MAX_DEPTH,
+	PATHS_OTHER,
+	PathsAnchor,
+	PathsDirection,
+	PathsInclude,
 } from "@maple/query-model"
 
 const ProductEventsFunnelFields = {
@@ -1822,6 +1835,67 @@ export class ProductEventsFunnelBreakdownResponse extends Schema.Class<ProductEv
 	"ProductEventsFunnelBreakdownResponse",
 )({
 	data: Schema.Array(Schema.Struct({ group: Schema.String, step: Schema.Number, count: Schema.Number })),
+}) {}
+
+// Drop-off details for the same funnel definition. Two endpoints rather than
+// flags on the funnel request so the plain funnel (and `query_funnel`) keep
+// their one-query cost; the drop-off widget asks for all three.
+
+export class ProductEventsFunnelTimingRequest extends Schema.Class<ProductEventsFunnelTimingRequest>(
+	"ProductEventsFunnelTimingRequest",
+)(ProductEventsFunnelFields) {}
+
+export class ProductEventsFunnelTimingResponse extends Schema.Class<ProductEventsFunnelTimingResponse>(
+	"ProductEventsFunnelTimingResponse",
+)({
+	/** One row per step 2..N: milliseconds from the previous step, over persons who reached this one. */
+	data: Schema.Array(Schema.Struct({ step: Schema.Number, p50Ms: Schema.Number, p90Ms: Schema.Number })),
+}) {}
+
+export class ProductEventsFunnelLeaversRequest extends Schema.Class<ProductEventsFunnelLeaversRequest>(
+	"ProductEventsFunnelLeaversRequest",
+)(ProductEventsFunnelFields) {}
+
+export class ProductEventsFunnelLeaversResponse extends Schema.Class<ProductEventsFunnelLeaversResponse>(
+	"ProductEventsFunnelLeaversResponse",
+)({
+	/** Per step 2..N, the most common next event of persons who did not reach it; `next` is `''` when nothing followed. */
+	data: Schema.Array(Schema.Struct({ step: Schema.Number, next: Schema.String, count: Schema.Number })),
+}) {}
+
+// Paths: the hops after (or before) one anchor event or page.
+
+export class ProductEventsPathsRequest extends Schema.Class<ProductEventsPathsRequest>(
+	"ProductEventsPathsRequest",
+)({
+	startTime: TinybirdDateTime,
+	endTime: TinybirdDateTime,
+	anchor: PathsAnchor,
+	direction: PathsDirection,
+	/** Hops from the anchor, 1..5. */
+	depth: Schema.Number,
+	/** Named nodes per column, 1..10; the rest fold into `$other`. */
+	branches: Schema.Number,
+	keyBy: FunnelKeyBy,
+	/** How far from the anchor a hop may be. */
+	windowSeconds: Schema.Number,
+	include: Schema.optional(PathsInclude),
+	exclude: Schema.optional(Schema.Array(Schema.String)),
+	...WebAnalyticsFilterFields,
+}) {}
+
+export class ProductEventsPathsResponse extends Schema.Class<ProductEventsPathsResponse>(
+	"ProductEventsPathsResponse",
+)({
+	/** `toNode` is `''` for a sequence that ended and `$other` for a folded node. */
+	data: Schema.Array(
+		Schema.Struct({
+			hop: Schema.Number,
+			fromNode: Schema.String,
+			toNode: Schema.String,
+			count: Schema.Number,
+		}),
+	),
 }) {}
 
 export class ProductEventNamesRequest extends Schema.Class<ProductEventNamesRequest>(
@@ -2216,6 +2290,7 @@ export class WorkloadInfraTimeseriesResponse extends Schema.Class<WorkloadInfraT
 export {
 	LogsQueryDraftSchema,
 	MetricsQueryDraftSchema,
+	ProductEventsQueryDraftSchema,
 	QueryBuilderAddOnsSchema,
 	QueryBuilderFormulaSchema,
 	type QueryBuilderFormulaPayload,
@@ -2871,6 +2946,27 @@ export class QueryEngineApiGroup extends HttpApiGroup.make("queryEngine")
 		HttpApiEndpoint.post("productEventsFunnelBreakdown", "/product-events-funnel-breakdown", {
 			payload: ProductEventsFunnelBreakdownRequest,
 			success: ProductEventsFunnelBreakdownResponse,
+			error: validatedQueryEndpointErrors,
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("productEventsFunnelTiming", "/product-events-funnel-timing", {
+			payload: ProductEventsFunnelTimingRequest,
+			success: ProductEventsFunnelTimingResponse,
+			error: validatedQueryEndpointErrors,
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("productEventsFunnelLeavers", "/product-events-funnel-leavers", {
+			payload: ProductEventsFunnelLeaversRequest,
+			success: ProductEventsFunnelLeaversResponse,
+			error: validatedQueryEndpointErrors,
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("productEventsPaths", "/product-events-paths", {
+			payload: ProductEventsPathsRequest,
+			success: ProductEventsPathsResponse,
 			error: validatedQueryEndpointErrors,
 		}),
 	)

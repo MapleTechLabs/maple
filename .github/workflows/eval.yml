@@ -48,10 +48,10 @@ jobs:
 
             - uses: ./.github/actions/bun-install
               with:
-                  filters: "@maple/api"
+                  filters: "@maple/ai"
 
             - name: Run MCP evals
-              run: bun run --filter @maple/api eval
+              run: bun run --filter @maple/ai eval
               env:
                   OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
                   # Override to eval a different model (defaults to the prod kimi-k2.5).

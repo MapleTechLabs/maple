@@ -5,6 +5,8 @@ import {
 	AlertDestinationId,
 	AlertIncidentId,
 	AlertRuleId,
+	ChatConnectorId,
+	ChatWorkspaceId,
 	ErrorIssueId,
 	HazelChannelId,
 	HazelOrganizationId,
@@ -17,13 +19,13 @@ import { QueryBuilderQueryDraftSchema } from "./query-engine"
 import { HttpTaggedError } from "./error-policy"
 
 export const AlertDestinationType = Schema.Literals([
-	"slack-bot",
 	"pagerduty",
 	"webhook",
 	"hazel-oauth",
 	"discord",
 	"telegram",
 	"email",
+	"chat",
 ]).annotate({
 	identifier: "@maple/AlertDestinationType",
 	title: "Alert Destination Type",
@@ -106,6 +108,24 @@ export const AlertIncidentStatus = Schema.Literals(["open", "resolved"]).annotat
 })
 export type AlertIncidentStatus = Schema.Schema.Type<typeof AlertIncidentStatus>
 
+/**
+ * Why an open incident is waiting on telemetry instead of resolving. The
+ * breach stopped appearing in evaluations, but the liveness probe could not
+ * prove the service's data was still flowing, so the all-clear is deferred.
+ * `status` stays `"open"` while held — a hold is a sub-state of open, not a
+ * third status, so every consumer of `open`/`resolved` keeps working.
+ */
+export const AlertIncidentHoldReason = Schema.Literals([
+	"no_data",
+	"volume_collapsed",
+	"sampling_changed",
+	"probe_failed",
+]).annotate({
+	identifier: "@maple/AlertIncidentHoldReason",
+	title: "Alert Incident Hold Reason",
+})
+export type AlertIncidentHoldReason = Schema.Schema.Type<typeof AlertIncidentHoldReason>
+
 export const AlertEventType = Schema.Literals(["trigger", "resolve", "renotify", "test"]).annotate({
 	identifier: "@maple/AlertEventType",
 	title: "Alert Event Type",
@@ -154,18 +174,6 @@ export const MAX_ALERT_WINDOW_MINUTES = 24 * 60
 export const AlertWindowMinutes = PositiveInt.pipe(
 	Schema.check(Schema.isLessThanOrEqualTo(MAX_ALERT_WINDOW_MINUTES)),
 )
-
-export class SlackBotAlertDestinationConfig extends Schema.Class<SlackBotAlertDestinationConfig>(
-	"SlackBotAlertDestinationConfig",
-)({
-	type: Schema.Literal("slack-bot"),
-	name: ChannelLabel,
-	// The Slack channel the installed bot posts to. No per-destination token —
-	// the bot token is resolved from the org's slack_workspaces row at dispatch.
-	channelId: NonEmptyString,
-	channelName: OptionalNonEmptyString,
-	enabled: Schema.optionalKey(Schema.Boolean),
-}) {}
 
 export class PagerDutyAlertDestinationConfig extends Schema.Class<PagerDutyAlertDestinationConfig>(
 	"PagerDutyAlertDestinationConfig",
@@ -220,6 +228,21 @@ export class TelegramAlertDestinationConfig extends Schema.Class<TelegramAlertDe
 	enabled: Schema.optionalKey(Schema.Boolean),
 }) {}
 
+/**
+ * A channel in a chat workspace linked through a chat connector. Which connector posts it is read
+ * from the workspace row, never taken from the request — the workspace must belong to the org, and
+ * the channel must be one the workspace's connector lists; its name is read from that listing.
+ */
+export class ChatAlertDestinationConfig extends Schema.Class<ChatAlertDestinationConfig>(
+	"ChatAlertDestinationConfig",
+)({
+	type: Schema.Literal("chat"),
+	name: ChannelLabel,
+	workspaceId: ChatWorkspaceId,
+	channelId: NonEmptyString,
+	enabled: Schema.optionalKey(Schema.Boolean),
+}) {}
+
 export const MAX_EMAIL_RECIPIENTS = 10
 
 /**
@@ -242,24 +265,15 @@ export class EmailAlertDestinationConfig extends Schema.Class<EmailAlertDestinat
 }) {}
 
 export const AlertDestinationCreateRequest = Schema.Union([
-	SlackBotAlertDestinationConfig,
 	PagerDutyAlertDestinationConfig,
 	WebhookAlertDestinationConfig,
 	HazelOAuthAlertDestinationConfig,
 	DiscordAlertDestinationConfig,
 	TelegramAlertDestinationConfig,
 	EmailAlertDestinationConfig,
+	ChatAlertDestinationConfig,
 ])
 export type AlertDestinationCreateRequest = Schema.Schema.Type<typeof AlertDestinationCreateRequest>
-
-export class UpdateSlackBotAlertDestinationConfig extends Schema.Class<UpdateSlackBotAlertDestinationConfig>(
-	"UpdateSlackBotAlertDestinationConfig",
-)({
-	name: OptionalNonEmptyString,
-	channelId: OptionalNonEmptyString,
-	channelName: OptionalNonEmptyString,
-	enabled: Schema.optionalKey(Schema.Boolean),
-}) {}
 
 export class UpdatePagerDutyAlertDestinationConfig extends Schema.Class<UpdatePagerDutyAlertDestinationConfig>(
 	"UpdatePagerDutyAlertDestinationConfig",
@@ -315,11 +329,16 @@ export class UpdateEmailAlertDestinationConfig extends Schema.Class<UpdateEmailA
 	enabled: Schema.optionalKey(Schema.Boolean),
 }) {}
 
+/** The workspace is fixed at creation; moving a destination is a new channel in the same one. */
+export class UpdateChatAlertDestinationConfig extends Schema.Class<UpdateChatAlertDestinationConfig>(
+	"UpdateChatAlertDestinationConfig",
+)({
+	name: OptionalNonEmptyString,
+	channelId: OptionalNonEmptyString,
+	enabled: Schema.optionalKey(Schema.Boolean),
+}) {}
+
 export const AlertDestinationUpdateRequest = Schema.Union([
-	Schema.Struct({
-		type: Schema.Literal("slack-bot"),
-		...UpdateSlackBotAlertDestinationConfig.fields,
-	}),
 	Schema.Struct({
 		type: Schema.Literal("pagerduty"),
 		...UpdatePagerDutyAlertDestinationConfig.fields,
@@ -344,6 +363,10 @@ export const AlertDestinationUpdateRequest = Schema.Union([
 		type: Schema.Literal("email"),
 		...UpdateEmailAlertDestinationConfig.fields,
 	}),
+	Schema.Struct({
+		type: Schema.Literal("chat"),
+		...UpdateChatAlertDestinationConfig.fields,
+	}),
 ])
 export type AlertDestinationUpdateRequest = Schema.Schema.Type<typeof AlertDestinationUpdateRequest>
 
@@ -358,6 +381,9 @@ export class AlertDestinationDocument extends Schema.Class<AlertDestinationDocum
 	channelLabel: Schema.NullOr(Schema.String),
 	/** Selected workspace-member recipients (email destinations only). */
 	memberUserIds: Schema.NullOr(Schema.Array(Schema.String)),
+	/** The connector and linked workspace a `chat` destination posts through; absent otherwise. */
+	chatConnector: Schema.optionalKey(ChatConnectorId),
+	chatWorkspaceId: Schema.optionalKey(ChatWorkspaceId),
 	lastTestedAt: Schema.NullOr(IsoDateTimeString),
 	lastTestError: Schema.NullOr(Schema.String),
 	/**
@@ -395,7 +421,7 @@ export class AlertDestinationsListResponse extends Schema.Class<AlertDestination
 /**
  * A single template string (title or body). Capped to keep stored configs and
  * rendered notifications bounded. Markdown is allowed in `body`; channels render
- * it per their own dialect (Slack mrkdwn, Discord markdown, plain text).
+ * it per their own dialect (Discord markdown, Telegram HTML, plain text).
  */
 const TemplateString = Schema.String.check(Schema.isMaxLength(4_000))
 
@@ -639,6 +665,9 @@ export class AlertIncidentDocument extends Schema.Class<AlertIncidentDocument>("
 	dedupeKey: Schema.String,
 	lastDeliveredEventType: Schema.NullOr(AlertEventType),
 	lastNotifiedAt: Schema.NullOr(IsoDateTimeString),
+	/** Set while the incident is open but waiting on telemetry; see {@link AlertIncidentHoldReason}. */
+	holdReason: Schema.NullOr(AlertIncidentHoldReason),
+	heldSince: Schema.NullOr(IsoDateTimeString),
 	errorIssueId: Schema.NullOr(ErrorIssueId),
 }) {}
 
@@ -952,7 +981,7 @@ const alertDeliveryErrorFields = {
 	destinationType: Schema.optionalKey(AlertDestinationType),
 	/** Provider HTTP status, when the failure came from a response. */
 	providerStatus: Schema.optionalKey(Schema.Number),
-	/** Provider-specific failure code, e.g. Slack's `not_in_channel`. */
+	/** Provider-specific failure code, e.g. a chat platform's `not_in_channel`. */
 	providerErrorCode: Schema.optionalKey(Schema.String),
 	cause: Schema.optionalKey(Schema.Defect()),
 }
@@ -989,7 +1018,7 @@ export class AlertDeliveryAuthError extends HttpTaggedError<AlertDeliveryAuthErr
 
 /**
  * The target channel/endpoint is gone or unreachable as configured — a 404, a
- * deleted webhook, or a Slack channel the bot is not a member of. Retrying
+ * deleted webhook, or a chat channel the bot can no longer post to. Retrying
  * cannot fix it; the destination has to be pointed somewhere else.
  */
 export class AlertDeliveryTargetMissingError extends HttpTaggedError<AlertDeliveryTargetMissingError>()(
@@ -1094,66 +1123,3 @@ export const ListRuleChecksQuery = Schema.Struct({
 		Schema.NumberFromString.check(Schema.isInt(), Schema.isBetween({ minimum: 1, maximum: 2000 })),
 	),
 })
-
-/**
- * The opaque, signed id of an alert notification's chart image (see
- * `alertChartId` in `@maple/db`).
- *
- * Carries a rule id and a time window, signed — no credential, and nothing that
- * can be turned into one. Loosely checked here because its structure is the
- * signer's business: a malformed id fails verification, which is the same
- * uniform "no such chart" as a tampered one.
- */
-export const AlertChartId = Schema.String.check(Schema.isMinLength(3), Schema.isMaxLength(1024)).annotate({
-	identifier: "AlertChartId",
-})
-
-export const AlertChartRequest = Schema.Struct({
-	chartId: AlertChartId,
-}).annotate({ identifier: "AlertChartRequest" })
-
-/** `[epochMillis, value]`, oldest first. */
-export const AlertChartPoint = Schema.Tuple([Schema.Number, Schema.Number]).annotate({
-	identifier: "AlertChartPoint",
-})
-
-/** Which side of the threshold the renderer shades; `none` for range comparators. */
-export const AlertChartBreachSide = Schema.Literals(["above", "below", "none"]).annotate({
-	identifier: "AlertChartBreachSide",
-})
-export type AlertChartBreachSide = Schema.Schema.Type<typeof AlertChartBreachSide>
-
-/**
- * Chart unit, as the static renderer names them.
- *
- * The single authority for this list: it types the HTTP response *and* the
- * signed chart id's payload in `@maple/db`, so the wire and the signature
- * cannot disagree about what units exist. The renderer in `@maple/widgets`
- * declares a structurally identical union — it sits below this package and
- * cannot import it — and the two meet in `apps/web`, where a divergence is a
- * type error rather than a runtime surprise.
- */
-export const AlertChartUnit = Schema.Literals([
-	"number",
-	"percent",
-	"duration_ms",
-	"bytes",
-	"requests_per_sec",
-]).annotate({ identifier: "AlertChartUnit" })
-export type AlertChartUnit = Schema.Schema.Type<typeof AlertChartUnit>
-
-/**
- * Everything the image needs, and nothing else.
- *
- * Deliberately not the alert, the incident or the rule: this is fetched by
- * whatever renders the picture, so it carries one series of numbers and the
- * words drawn on the card. No org name, no destination, no incident id.
- */
-export class AlertChartResponse extends Schema.Class<AlertChartResponse>("AlertChartResponse")({
-	title: Schema.String,
-	unit: AlertChartUnit,
-	kind: Schema.Literals(["line", "area", "bar"]),
-	points: Schema.Array(AlertChartPoint),
-	threshold: Schema.NullOr(Schema.Number),
-	breachSide: AlertChartBreachSide,
-}) {}

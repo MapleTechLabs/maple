@@ -4,7 +4,8 @@ import { Button } from "@maple/ui/components/ui/button"
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@maple/ui/components/ui/empty"
 import { cn } from "@maple/ui/lib/utils"
 
-import { PlusIcon } from "@/components/icons"
+import { useOpenDestinationDialog } from "@/components/alerts/destination-manager-context"
+import { PaperPlaneIcon, PlusIcon } from "@/components/icons"
 import { ALERT_TEMPLATES, type AlertTemplate } from "@/lib/alerts/templates"
 
 /**
@@ -33,21 +34,67 @@ const TILE_TONE: Record<AlertTemplate["id"], { glyph: string; hoverBorder: strin
 	},
 } satisfies Record<AlertTemplate["id"], { glyph: string; hoverBorder: string }>
 
-export function AlertsEmptyState({ isAdmin, serviceName }: { isAdmin: boolean; serviceName?: string }) {
+export function AlertsEmptyState({
+	isAdmin,
+	hasDestinations,
+	serviceName,
+}: {
+	isAdmin: boolean
+	/** Without one, a rule has nowhere to send its incidents — so that comes first. */
+	hasDestinations: boolean
+	serviceName?: string
+}) {
+	const openDestinationDialog = useOpenDestinationDialog()
+	const needsDestination = !hasDestinations
+
 	return (
 		<Empty className="py-12">
 			<QuietMonitor />
 			<EmptyHeader>
-				<EmptyTitle>No rules are watching yet</EmptyTitle>
+				<EmptyTitle>
+					{needsDestination ? "Two steps to your first alert" : "No rules are watching yet"}
+				</EmptyTitle>
 				<EmptyDescription>
-					{isAdmin
-						? "A threshold rule opens an incident the moment a signal crosses it. Start from a common one:"
-						: "Ask an admin to create the first alert rule."}
+					{!isAdmin
+						? "Ask an admin to create the first alert rule."
+						: needsDestination
+							? "A rule opens an incident when a signal crosses a threshold, and sends it somewhere. Pick the somewhere first."
+							: "A threshold rule opens an incident the moment a signal crosses it. Start from a common one:"}
 				</EmptyDescription>
 			</EmptyHeader>
 
 			{isAdmin && (
 				<div className="flex w-full max-w-3xl flex-col items-center gap-4">
+					{needsDestination && (
+						<div className="flex w-full items-center gap-3 rounded-lg border border-primary/40 bg-primary/[0.06] p-3 text-left">
+							<StepBadge n={1} />
+							<div className="min-w-0 flex-1">
+								<p className="text-sm font-medium">Add a destination</p>
+								<p className="text-xs text-muted-foreground">
+									Slack, Discord, PagerDuty, Telegram, email or a webhook. Rules notify
+									these.
+								</p>
+							</div>
+							{openDestinationDialog ? (
+								<Button size="sm" onClick={openDestinationDialog}>
+									<PaperPlaneIcon size={14} />
+									Add destination
+								</Button>
+							) : (
+								<Button size="sm" render={<Link to="/alerts" search={{ tab: "settings" }} />}>
+									<PaperPlaneIcon size={14} />
+									Add destination
+								</Button>
+							)}
+						</div>
+					)}
+					{needsDestination && (
+						<div className="flex w-full items-center gap-3 px-1 text-left">
+							<StepBadge n={2} />
+							<p className="text-sm font-medium">Create a rule</p>
+							<span className="text-xs text-muted-foreground">Start from a common one:</span>
+						</div>
+					)}
 					<div className="grid w-full grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
 						{ALERT_TEMPLATES.map((template) => (
 							<TemplateTile key={template.id} template={template} serviceName={serviceName} />
@@ -64,6 +111,14 @@ export function AlertsEmptyState({ isAdmin, serviceName }: { isAdmin: boolean; s
 				</div>
 			)}
 		</Empty>
+	)
+}
+
+function StepBadge({ n }: { n: number }) {
+	return (
+		<span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-primary/15 font-mono text-xs font-semibold text-primary">
+			{n}
+		</span>
 	)
 }
 

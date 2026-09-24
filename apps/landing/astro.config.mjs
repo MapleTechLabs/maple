@@ -63,6 +63,8 @@ export default defineConfig({
 	trailingSlash: "ignore",
 	redirects: {
 		"/docs/sdks/overview": "/docs/instrumentation",
+		"/docs/session-replay/product-events-api": "/docs/product-events/api",
+		"/docs/session-replay/product-events-api.md": "/docs/product-events/api.md",
 	},
 	i18n: {
 		locales: ["en", "ja", "ko"],

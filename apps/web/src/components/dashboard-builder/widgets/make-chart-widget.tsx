@@ -167,8 +167,13 @@ function renderChart({ entry, display, data, className, legend }: RenderArgs): R
 					className={className}
 					unit={display.unit}
 					showStepPercent={display.funnel?.showStepPercent}
+					variant={display.funnel?.variant}
 				/>
 			)
+		}
+		case "paths": {
+			const Chart = entry.component
+			return <Chart data={data} className={className} direction={display.paths?.direction} />
 		}
 		case "hbar": {
 			const Chart = entry.component
@@ -204,7 +209,17 @@ export function makeChartWidget(options: ChartWidgetOptions) {
 
 		const chartData =
 			dataState.status === "ready" && Array.isArray(dataState.data) ? dataState.data : undefined
-		const skeleton = <ChartSkeleton variant={entry.category} />
+		// The funnel's two views share a registry entry; the drop-off one gets
+		// its own ghost so the swap-in does not jump from rows to columns.
+		const skeleton = (
+			<ChartSkeleton
+				variant={
+					entry.category === "funnel" && display.funnel?.variant === "dropoff"
+						? "funnel-dropoff"
+						: entry.category
+				}
+			/>
+		)
 
 		return (
 			<WidgetFrame
@@ -267,6 +282,12 @@ export const HeatmapWidget = makeChartWidget({
 export const FunnelWidget = makeChartWidget({
 	displayName: "FunnelWidget",
 	defaultChartId: "query-builder-funnel",
+})
+
+export const PathsWidget = makeChartWidget({
+	displayName: "PathsWidget",
+	defaultChartId: "query-builder-paths",
+	className: "h-full w-full",
 })
 
 export const HbarWidget = makeChartWidget({

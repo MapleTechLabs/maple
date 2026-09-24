@@ -12,24 +12,23 @@ import { useListNavigation } from "@/hooks/use-list-navigation"
 import { usePageScrollMargin } from "@/hooks/use-page-scroll-margin"
 import { buildSessionAxis, type AxisTick, type SessionAxis } from "@/lib/agent-sessions/session-axis"
 import {
-	countTurnTokens,
-	spanTokenBuckets,
-	type IdleGap,
-	type SessionSummary,
-	type SessionTokenTotals,
-} from "@/lib/agent-sessions/session-summary"
-import {
 	classifyAiSpan,
+	countTurnTokens,
 	GEN_AI_OPERATIONS,
 	isLlmCall,
 	spanEndMs,
 	spanFailed,
 	spanModel,
 	spanStartMs,
+	spanTokenBuckets,
 	spanTtftMs,
-	type SessionTurn,
+	toolSpanIssuers,
 	type AiSpanCategory,
-} from "@/lib/agent-sessions/session-turns"
+	type IdleGap,
+	type SessionSummary,
+	type SessionTokenTotals,
+	type SessionTurn,
+} from "@maple/agent-sessions"
 import { filterSpans, isDelegation } from "@/lib/agent-sessions/span-filters"
 import { useDetectedModels, type DetectedModel } from "@/hooks/use-detected-models"
 import { TOKEN_BUCKETS } from "@/lib/agent-sessions/token-buckets"
@@ -136,9 +135,13 @@ export function SessionWaterfall({
 	)
 	const ticks = axis.ticks
 
+	// Parses every model call's output, so it is held apart from the rows, which
+	// rebuild on each keystroke in the filter.
+	const issuers = useMemo(() => toolSpanIssuers(turns.flatMap((turn) => turn.spans)), [turns])
+
 	const rows = useMemo(
-		() => buildRows({ turns, gaps: collapsedGaps, collapsedTurns, query, agentSpansOnly }),
-		[turns, collapsedGaps, collapsedTurns, query, agentSpansOnly],
+		() => buildRows({ turns, gaps: collapsedGaps, collapsedTurns, query, agentSpansOnly, issuers }),
+		[turns, collapsedGaps, collapsedTurns, query, agentSpansOnly, issuers],
 	)
 
 	const virtualizer = useVirtualizer({
@@ -354,6 +357,7 @@ function buildRows(input: {
 	collapsedTurns: ReadonlySet<string>
 	query: string
 	agentSpansOnly: boolean
+	issuers: ReadonlyMap<string, string>
 }): readonly WaterfallRow[] {
 	const surviving = input.turns.flatMap((turn) => {
 		const spans = filterSpans(turn.spans, input.query, input.agentSpansOnly)
@@ -382,7 +386,7 @@ function buildRows(input: {
 			flushGaps(turn.endMs)
 			continue
 		}
-		for (const { span, depth } of orderByTree(spans)) {
+		for (const { span, depth } of orderByTree(spans, input.issuers)) {
 			// Nothing at all runs during an idle gap, so no span straddles one: the
 			// turn's own rows split cleanly at the first span that starts after it.
 			flushGaps(spanStartMs(span))
@@ -396,15 +400,22 @@ function buildRows(input: {
 }
 
 /** Depth-first over the parent chain, with anything whose parent was filtered
- *  out (or lives in another turn) promoted to the top level. */
-function orderByTree(spans: readonly AiSessionSpan[]): readonly { span: AiSessionSpan; depth: number }[] {
+ *  out (or lives in another turn) promoted to the top level. A tool span sits
+ *  under the model call that issued it (`toolSpanIssuers`) while that call is on
+ *  the page, and under its own parent otherwise. */
+function orderByTree(
+	spans: readonly AiSessionSpan[],
+	issuers: ReadonlyMap<string, string>,
+): readonly { span: AiSessionSpan; depth: number }[] {
 	const present = new Set(spans.map((span) => span.spanId))
 	const children = new Map<string, AiSessionSpan[]>()
 	const roots: AiSessionSpan[] = []
 	for (const span of spans) {
-		if (span.parentSpanId !== "" && present.has(span.parentSpanId)) {
-			const siblings = children.get(span.parentSpanId)
-			if (siblings === undefined) children.set(span.parentSpanId, [span])
+		const issuer = issuers.get(span.spanId)
+		const parentId = issuer !== undefined && present.has(issuer) ? issuer : span.parentSpanId
+		if (parentId !== "" && present.has(parentId)) {
+			const siblings = children.get(parentId)
+			if (siblings === undefined) children.set(parentId, [span])
 			else siblings.push(span)
 		} else {
 			roots.push(span)

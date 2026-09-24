@@ -4,16 +4,16 @@ import { HttpRouter } from "effect/unstable/http"
 import { HttpApiBuilder } from "effect/unstable/httpapi"
 import { OrgId, UserId } from "@maple/domain/http"
 import { MapleApiV2, encodePublicId } from "@maple/domain/http/v2"
-import { cleanupTestDbs, createTestDb, type TestDb } from "@/platform/test-pglite"
-import { Env } from "@/platform/Env"
-import { ApiAuthorizationV2Layer } from "@/services/auth/ApiAuthorizationV2Layer"
-import { AuditLogService } from "@/services/audit/AuditLogService"
-import { ApiKeysService } from "@/services/org/ApiKeysService"
-import { AuthService } from "@/services/auth/AuthService"
-import { DashboardPersistenceService } from "@/services/dashboards/DashboardPersistenceService"
-import { SharedDashboardService } from "@/services/dashboards/SharedDashboardService"
-import { LiveActivitiesService } from "@/services/push/LiveActivitiesService"
-import { MobileDevicesService } from "@/services/push/MobileDevicesService"
+import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
+import { Env } from "@maple/backend/platform/Env"
+import { ApiAuthorizationV2Layer } from "@maple/backend/services/auth/ApiAuthorizationV2Layer"
+import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
+import { ApiKeysService } from "@maple/backend/services/org/ApiKeysService"
+import { AuthService } from "@maple/backend/services/auth/AuthService"
+import { DashboardPersistenceService } from "@maple/backend/services/dashboards/DashboardPersistenceService"
+import { SharedDashboardService } from "@maple/backend/services/dashboards/SharedDashboardService"
+import { LiveActivitiesService } from "@maple/backend/services/push/LiveActivitiesService"
+import { MobileDevicesService } from "@maple/backend/services/push/MobileDevicesService"
 import { V2TransportErrorBoundaryLive } from "./error-envelope"
 import {
 	AlertsServiceStubLayer,
@@ -22,7 +22,6 @@ import {
 	ConfigResourceServiceStubsLayer,
 	Phase1ResourceStubsLayer,
 	PlanetScaleServiceStubsLayer,
-	SlackIntegrationServiceStubLayer,
 	TelemetryServiceStubsLayer,
 } from "./v2-test-support"
 
@@ -76,7 +75,6 @@ const makeHarness = () => {
 		Layer.provide(AlertsServiceStubLayer),
 		Layer.provide(ConfigResourceServiceStubsLayer),
 		Layer.provide(Phase1ResourceStubsLayer),
-		Layer.provide(SlackIntegrationServiceStubLayer),
 		Layer.provide(PlanetScaleServiceStubsLayer),
 		Layer.provide(TelemetryServiceStubsLayer),
 		Layer.provideMerge(ApiAuthorizationV2Layer),

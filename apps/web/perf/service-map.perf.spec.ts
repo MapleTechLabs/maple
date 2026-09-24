@@ -14,6 +14,10 @@ import { writeFile } from "node:fs/promises"
 
 const BENCH_URL = "/lab/bench/service-map?services=120&edges=400&rps=high&seed=1"
 
+// Lets CI's --shard split these tests across machines. The config's single
+// worker still runs them one at a time, so frame timings stay undisturbed.
+test.describe.configure({ mode: "parallel" })
+
 interface Metrics {
 	fps: number
 	frameP50: number

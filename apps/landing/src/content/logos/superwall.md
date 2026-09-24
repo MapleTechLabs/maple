@@ -1,5 +1,5 @@
 ---
 name: "Superwall"
 href: "https://superwall.com"
-order: 4
+order: 1
 ---

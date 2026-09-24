@@ -19,7 +19,12 @@ import {
 	roundIntervalSeconds,
 	MAX_AUTO_DATA_POINTS,
 	snapRangeForCache,
+	isCalendarAlignedShorthand,
+	startOfDayInTimeZone,
+	timeZoneOffsetMs,
 	warehouseDateTimeToIso,
+	zonedDateParts,
+	zonedPartsToEpochMs,
 } from "./datetime"
 
 describe("warehouseDateTimeToIso", () => {
@@ -615,5 +620,113 @@ describe("resolveTimeRangeWindow", () => {
 				endTime: "2026-03-02 00:00:00",
 			}),
 		).toBeNull()
+	})
+})
+
+describe("calendar arithmetic in an IANA zone", () => {
+	it("reads the wall clock in the zone", () => {
+		const at = Date.parse("2026-03-08T14:30:00.000Z")
+		expect(zonedDateParts(at, "America/New_York")).toEqual({
+			year: 2026,
+			month: 3,
+			day: 8,
+			hour: 10,
+			minute: 30,
+			second: 0,
+		})
+		expect(zonedDateParts(at, "Asia/Tokyo").hour).toBe(23)
+	})
+
+	it("reports the offset with its sign and across DST", () => {
+		expect(timeZoneOffsetMs("Asia/Tokyo", Date.parse("2026-03-08T14:30:00Z"))).toBe(9 * 3_600_000)
+		expect(timeZoneOffsetMs("America/New_York", Date.parse("2026-01-15T12:00:00Z"))).toBe(-5 * 3_600_000)
+		expect(timeZoneOffsetMs("America/New_York", Date.parse("2026-07-15T12:00:00Z"))).toBe(-4 * 3_600_000)
+		expect(timeZoneOffsetMs("UTC", Date.parse("2026-07-15T12:00:00.750Z"))).toBe(0)
+	})
+
+	it("round-trips a wall clock through the instant it names", () => {
+		const at = Date.parse("2026-07-15T03:45:12Z")
+		for (const zone of ["UTC", "Europe/Berlin", "America/Los_Angeles", "Asia/Kolkata"]) {
+			expect(zonedPartsToEpochMs(zonedDateParts(at, zone), zone)).toBe(at)
+		}
+	})
+
+	it("moves forward across a skipped hour and takes the earlier of a repeated one", () => {
+		// Havana springs forward at 00:00 on 2026-03-08: midnight does not exist, so
+		// the day starts at 01:00 CDT (05:00Z), not 23:00 of the 7th.
+		expect(startOfDayInTimeZone(Date.parse("2026-03-08T12:00:00Z"), "America/Havana")).toBe(
+			Date.parse("2026-03-08T05:00:00Z"),
+		)
+		// Berlin repeats 02:00–03:00 on 2026-10-25; 02:30 is first CEST (00:30Z).
+		expect(
+			zonedPartsToEpochMs(
+				{ year: 2026, month: 10, day: 25, hour: 2, minute: 30, second: 0 },
+				"Europe/Berlin",
+			),
+		).toBe(Date.parse("2026-10-25T00:30:00Z"))
+	})
+
+	it("finds midnight in the zone, not the runtime's", () => {
+		// 2026-03-08 14:30Z is 09:30 in New York and 23:30 in Tokyo, both on the 8th.
+		const at = Date.parse("2026-03-08T14:30:00Z")
+		expect(startOfDayInTimeZone(at, "America/New_York")).toBe(Date.parse("2026-03-08T05:00:00Z"))
+		expect(startOfDayInTimeZone(at, "Asia/Tokyo")).toBe(Date.parse("2026-03-07T15:00:00Z"))
+		expect(startOfDayInTimeZone(at, "UTC")).toBe(Date.parse("2026-03-08T00:00:00Z"))
+	})
+
+	it("resolves 'today' and day presets at the zone's midnight", () => {
+		const now = Date.parse("2026-03-08T14:30:00Z")
+		expect(resolveRelativeRange("today", now, "Asia/Tokyo")).toEqual({
+			startMs: Date.parse("2026-03-07T15:00:00Z"),
+			endMs: now,
+		})
+		// Midnight New York six days earlier: EST (-5) on the 2nd, DST starts on the 8th.
+		expect(resolveRelativeRange("7d", now, "America/New_York")!.startMs).toBe(
+			Date.parse("2026-03-02T05:00:00Z"),
+		)
+	})
+
+	it("counts day presets on the calendar across a DST change", () => {
+		// 00:30 EDT on Mar 14 (04:30Z); six 24h steps back is 23:30 EST on Mar 7,
+		// which would have made "7d" eight calendar days.
+		const now = Date.parse("2026-03-14T04:30:00Z")
+		expect(resolveRelativeRange("7d", now, "America/New_York")!.startMs).toBe(
+			Date.parse("2026-03-08T05:00:00Z"),
+		)
+	})
+
+	it("keeps a calendar-aligned start when snapping for the cache", () => {
+		const now = Date.parse("2026-03-10T12:07:00Z")
+		const resolved = resolveRelativeRangeToWarehouse("7d", now, "Asia/Tokyo")!
+		const snapped = snapRangeForCache(resolved, { anchoredStart: true })
+		expect(snapped.startTime).toBe(resolved.startTime)
+		expect(snapped.endTime).not.toBe(resolved.endTime)
+		expect(isCalendarAlignedShorthand("7d")).toBe(true)
+		expect(isCalendarAlignedShorthand("2w")).toBe(true)
+		expect(isCalendarAlignedShorthand("today")).toBe(true)
+		expect(isCalendarAlignedShorthand("12h")).toBe(false)
+		// A month start keeps the time of day, so it must slide with the snapped end.
+		expect(isCalendarAlignedShorthand("1mo")).toBe(false)
+	})
+
+	it("disambiguates a day start that rolled into the previous month", () => {
+		// "2w" on 2026-11-07 starts on 2026-10-25, the day Berlin falls back; its
+		// midnight is 22:00Z (CEST), not 23:00Z.
+		const now = Date.parse("2026-11-07T10:00:00Z")
+		expect(resolveRelativeRange("2w", now, "Europe/Berlin")!.startMs).toBe(
+			Date.parse("2026-10-24T22:00:00Z"),
+		)
+		// Same across a year boundary.
+		expect(resolveRelativeRange("7d", Date.parse("2027-01-03T10:00:00Z"), "UTC")!.startMs).toBe(
+			Date.parse("2026-12-28T00:00:00Z"),
+		)
+	})
+
+	it("counts months on the zone's calendar and clamps the day", () => {
+		// 31 Mar 00:30 Tokyo is 30 Mar 15:30Z; one month back is 28 Feb 00:30 Tokyo.
+		const now = Date.parse("2026-03-30T15:30:00Z")
+		expect(resolveRelativeRange("1mo", now, "Asia/Tokyo")!.startMs).toBe(
+			Date.parse("2026-02-27T15:30:00Z"),
+		)
 	})
 })

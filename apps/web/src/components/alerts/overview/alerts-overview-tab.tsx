@@ -339,7 +339,11 @@ const AlertsOverviewContent = memo(function AlertsOverviewContent({
 				</div>
 
 				{filteredRules.length === 0 && rules.length === 0 ? (
-					<AlertsEmptyState isAdmin={isAdmin} serviceName={search.serviceName} />
+					<AlertsEmptyState
+						isAdmin={isAdmin}
+						hasDestinations={destinations.length > 0}
+						serviceName={search.serviceName}
+					/>
 				) : filteredRules.length === 0 ? (
 					<Empty className="py-12">
 						<EmptyHeader>

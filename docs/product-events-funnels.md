@@ -446,3 +446,41 @@ is 1970, which would turn the bound back into "everything".
   next step — it is a wrapper over `setAttributes` that builds the `prop.*` keys and joins
   `include`, not new machinery, and it is where the empty-string overwrite idiom would get a name
   (`attributes: "none"`) instead of being a documented convention.
+
+## Drop-off view and paths (2026-09-13)
+
+Two more ways to read `product_events`, both on the dashboard.
+
+**Funnel drop-off** is a display variant of the existing funnel widget
+(`display.funnel.variant: "dropoff"`), not a new panel type. One column per
+step: the solid bar is who reached it, the hatched cap above it who left since
+the previous step. When the variant is set the route params carry
+`details: true` and the funnel route also runs `productEventsFunnelTimingQuery`
+(p50/p90 milliseconds between consecutive steps) and
+`productEventsFunnelLeaversQuery` (the first event after the last step a leaver
+reached, top 6 per step, `''` = nothing followed). Both walk each person's
+chain from the first step-1 event — a first-occurrence approximation of the
+chain `windowFunnel` counted, so a person the funnel counts at level N can
+occasionally have no step-N timestamp and is left out of the quantiles. The
+extras ride on the same `{ name, value }` rows as optional per-step fields
+(`p50Ms`, `p90Ms`, `leavers`), so a reader that only knows the bars ignores
+them. With a `breakdownBy` the route returns the grouped rows only: the drop-off view then draws one
+hatched cap per group and no timing or leavers, since those are per-step totals.
+Endpoints: `/product-events-funnel-timing`, `/product-events-funnel-leavers`.
+
+**Paths** is a new panel type (`paths`, route `product_events_paths`,
+definition on `display.paths`): what people do in the hops after (or before)
+one anchor event or page. `productEventsPathsQuery` finds each person's anchor
+instant (the first going forward, the last going backward), reads only the
+rows inside `windowSeconds` of it in `(ts, seq)` order — the anchor row always
+kept, `include` / `exclude` narrowing the rest — collapses consecutive repeats,
+and emits one
+`{ hop, fromNode, toNode, count }` row per hop up to `depth` (1–5). Only the
+top `branches` (1–10) nodes per column are named; the rest fold into
+`$other` on both sides of every hop, and a sequence that stops short ends in
+`''`. Page views are named by `PagePath`, everything else by `EventName`;
+`include` narrows to events or pages, `exclude` drops names before sequencing.
+The hop rows are a CTE so the ranking and both sides of the fold join read
+them once. `docs/query-benchmarking.md`'s catalog carries fixtures for both,
+and `web-analytics-parity.clickhouse.e2e.test.ts` runs them against a real
+ClickHouse.

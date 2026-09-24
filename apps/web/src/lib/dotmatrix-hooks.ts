@@ -1,8 +1,21 @@
 "use client"
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { useMediaQuery } from "@maple/ui/hooks/use-media-query"
 
 import type { DotMatrixPhase } from "@/lib/dotmatrix-core"
+
+/**
+ * The one hand edit to the vendored runtime, kept if these files are re-pulled.
+ *
+ * Upstream reads the preference in an effect over `useState`, which starts every loader at
+ * "motion is fine" and corrects a frame later, and reads `window` unguarded so a server render
+ * throws. `useMediaQuery` is Maple's `useSyncExternalStore` version of the same query: right on
+ * the first paint, and it has a server snapshot.
+ */
+export function usePrefersReducedMotion(): boolean {
+	return useMediaQuery("(prefers-reduced-motion: reduce)")
+}
 
 interface UseDotMatrixPhasesOptions {
 	animated?: boolean

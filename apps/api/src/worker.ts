@@ -8,34 +8,33 @@
  * `maple-api`, background work under its own service names (`eventTelemetry`).
  *
  * The bundle entry is the one alchemy generates around this module: the
- * default export is the Worker, and the chat Durable Object and the two
- * Workflows are alchemy classes the init yields — their bindings, the
+ * default export is the Worker, and the chat Durable Object and the
+ * Workflow are alchemy classes the init yields — their bindings, the
  * namespace, the physical workflows and the entry's class exports all derive
  * from those yields.
  */
 import {
-	cachedRecoverable,
-	CLOUDFLARE_WORKER_PLACEMENT,
 	emailBinding,
+	mapleDbEnv,
 	MapleStack,
+	AiWorker,
+	type MapleRegion,
 	type MapleStage,
 	resolveWorkerName,
+	resolveWorkerPlacement,
 } from "@maple/infra/cloudflare"
+import { isolateContext } from "@maple/infra/worker-http"
 import { WorkerTelemetry } from "@maple/infra/worker-telemetry"
 import * as Cloudflare from "alchemy/Cloudflare"
 import * as AlchemyTelemetry from "alchemy/Telemetry"
-import { Context, Effect, Layer } from "effect"
-import ChatSessionObject from "./chat/ChatSession"
+import { Effect, Layer } from "effect"
 import { ApiObservabilityLive } from "./http/api-observability"
-import { MCP_ANTICIPATED_ERROR_IDENTIFIERS } from "./mcp/expected-failures"
 import { apiConfiguredEnv } from "./resources/env"
 import { ApiBindingLayers, apiPorts, bindApiClients } from "./worker/bindings"
 import { registerQueueConsumers } from "./worker/consumers"
 import { registerCrons } from "./worker/crons"
-import { buildApp, makeFetch } from "./worker/http"
-import { buildRpcServices, makeInternalRpc } from "./worker/rpc"
+import { makeAppGraphs, makeFetch } from "./worker/http"
 import ClickHouseSchemaApplyWorkflow from "./workflows/ClickHouseSchemaApplyWorkflow"
-import InvestigationFanoutWorkflow from "./workflows/InvestigationFanoutWorkflow"
 
 /**
  * The bindings that stay declared on `env`. Everything the services reach at
@@ -43,12 +42,22 @@ import InvestigationFanoutWorkflow from "./workflows/InvestigationFanoutWorkflow
  * is bound by stage — alchemy's capabilities have no "on some stages" form —
  * or read by name by code the Worker does not own (the LLM shim's `AI`).
  */
-const makeWorkerBindings = ({ stage }: { stage: MapleStage }) => ({
+const makeWorkerBindings = ({ stage, region }: { stage: MapleStage; region: MapleRegion }) => ({
 	// Workers AI (`env.AI`) behind an AI Gateway, driving the AI-triage agent.
 	// NOTE: the deploy token needs the account-level "AI Gateway: Edit" permission
-	// for this resource.
-	AI: Cloudflare.AI.Gateway("maple-api-ai"),
+	// for this resource. Deployed stages only: the gateway has no local emulation,
+	// so declaring it under `alchemy dev` diffs it against Cloudflare and demands
+	// an `alchemy login`; without the binding the Llm shim is a no-op.
 	...emailBinding(stage),
+	// The chat Durable Object maple-ai hosts, bound cross-script under its CLASS
+	// name — which is what `chatSessionStub` reads off `env`. `resolveWorkerName`
+	// rather than the yielded Worker's output on purpose: consuming the output
+	// would make api's deploy wait on ai's, and this is a reference-only binding
+	// that needs no such ordering.
+	ChatSession: Cloudflare.DurableObject("ChatSession", {
+		className: "ChatSession",
+		scriptName: resolveWorkerName("ai", stage, region),
+	}),
 })
 
 /**
@@ -59,15 +68,18 @@ const makeWorkerBindings = ({ stage }: { stage: MapleStage }) => ({
  */
 const props = Effect.gen(function* () {
 	if (globalThis.__ALCHEMY_RUNTIME__) return { main: import.meta.url }
-	const { stage, domains, workerDev, devEnv } = yield* MapleStack
+	const { stage, region, domains, workerDev, devEnv, db } = yield* MapleStack
+	// maple-ai, which serves `/mcp` and the chat surface. api keeps the hostname
+	// and forwards, so the public address and the OAuth identity do not move.
+	const ai = yield* AiWorker
 	// Resolved before any resource is created, so a misconfigured deploy fails
 	// with the full list of missing vars rather than part-way through applying.
-	const configuredEnv = yield* apiConfiguredEnv(stage, domains)
+	const configuredEnv = yield* apiConfiguredEnv(stage, region, domains)
 	return {
 		main: import.meta.url,
-		name: resolveWorkerName("api", stage),
+		name: resolveWorkerName("api", stage, region),
 		compatibility: { date: "2026-04-08", flags: ["nodejs_compat"] },
-		placement: CLOUDFLARE_WORKER_PLACEMENT,
+		placement: resolveWorkerPlacement(region),
 		// Under `bun dev`: a sticky port the app's route follows.
 		dev: workerDev("api"),
 		workersDev: true,
@@ -89,7 +101,9 @@ const props = Effect.gen(function* () {
 		domain: domains.api,
 		// `devEnv` last, so `.env.local` cannot override the inter-app URLs.
 		env: {
-			...makeWorkerBindings({ stage }),
+			...makeWorkerBindings({ stage, region }),
+			...mapleDbEnv(db, "api"),
+			AI_WORKER: ai,
 			...configuredEnv,
 			...devEnv,
 		},
@@ -103,27 +117,20 @@ export default class MapleApi extends Cloudflare.Worker<MapleApi>()(
 		// The Durable Object and the Workflows this Worker hosts: yielding each
 		// binds it under the class name, registers it at plan time and exports
 		// the class from the generated entry.
-		yield* ChatSessionObject
 		yield* ClickHouseSchemaApplyWorkflow
-		yield* InvestigationFanoutWorkflow
 		const clients = yield* bindApiClients
 		const ports = apiPorts(clients, yield* Cloudflare.WorkerEnvironment)
 		// The service graphs are built on the first event, not here: init also
 		// runs at plan time, where alchemy auto-binds every `Config` it sees read
 		// onto the Worker, and this Worker's env is declared in full by `props`.
 		// `cachedRecoverable` rather than building eagerly is what lets `/health`
-		// and preflights answer while the graph cannot build. The captured context
-		// drops the init's deferred execution context (a handler must see the
-		// event's own) and the init's memo map.
-		const isolate = Context.omit(
-			Cloudflare.WorkerExecutionContext,
-			Layer.CurrentMemoMap,
-		)(yield* Effect.context())
-		const app = yield* cachedRecoverable(buildApp(isolate, ports))
-		const rpcServices = yield* cachedRecoverable(buildRpcServices(isolate, ports))
+		// and preflights answer while the graph cannot build. `isolateContext`
+		// says what the captured context must not carry into the graph.
+		const isolate = isolateContext(yield* Effect.context())
+		const { app, queryApp } = yield* makeAppGraphs(isolate, ports)
 		yield* registerCrons(ports)
 		yield* registerQueueConsumers(ports)
-		return { fetch: makeFetch(app, ports), ...makeInternalRpc(rpcServices, ports) }
+		return { fetch: makeFetch(app, ports, queryApp) }
 	}).pipe(
 		// The init IS the entry point: the cron and queue sources need the host
 		// Worker, which exists only here.
@@ -133,11 +140,9 @@ export default class MapleApi extends Cloudflare.Worker<MapleApi>()(
 				ApiBindingLayers,
 				Cloudflare.Workers.CronEventSourceLive,
 				Cloudflare.Queues.EventSourceLive,
-				WorkerTelemetry({
-					serviceName: "maple-api",
-					dropSpanNames: ["McpServer/Notifications."],
-					anticipatedErrorIdentifiers: MCP_ANTICIPATED_ERROR_IDENTIFIERS,
-				}),
+				// No `dropSpanNames`: the MCP server's notification spans are maple-ai's
+				// to drop now, and its telemetry config is where that option lives.
+				WorkerTelemetry({ serviceName: "maple-api" }),
 				// The references the bridge's `HttpMiddleware.tracer` reads, built into
 				// every event beside the SDK; they cannot live in the app graph.
 				AlchemyTelemetry.layer(ApiObservabilityLive),

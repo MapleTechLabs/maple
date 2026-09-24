@@ -247,7 +247,7 @@ export function BillingSection({ isAdmin = true }: { isAdmin?: boolean }) {
 			<section className="mt-12">
 				<SectionHeader
 					title="Billing controls"
-					subtitle="Stored and enforced by Autumn per feature"
+					subtitle="Paid overage caps, enforced per feature"
 				/>
 				<div className="mt-4">
 					{customer === undefined ? (

@@ -1,6 +1,5 @@
 ---
-// Nucleo Pixel glyphs for the docs category nav (header bar + sidebar group
-// headings). Converted from the licensed "Nucleo Pixel" set (24-grid): strokes
+// Nucleo Pixel glyphs for the docs groups (sidebar headings + index cards). Converted from the licensed "Nucleo Pixel" set (24-grid): strokes
 // remapped to currentColor, square caps + stroke-width 2 preserve the pixel look.
 interface Props {
 	name: string;
@@ -97,6 +96,38 @@ const base = {
 	</svg>
 )}
 
+{name === "Product Events" && (
+	<svg class={className} {...base}>
+		<path d="M3 6V3H21V6" />
+		<path d="M5 8L5 8.01" />
+		<path d="M19 8L19 8.01" />
+		<path d="M7 10L7 10.01" />
+		<path d="M17 10L17 10.01" />
+		<path d="M9 12L9 12.01" />
+		<path d="M15 12L15 12.01" />
+		<path d="M10 14V21H12" />
+		<path d="M14 14V19" />
+	</svg>
+)}
+
+{name === "Agent Sessions" && (
+	<svg class={className} {...base}>
+		<path d="M3 4H21V16H13L8 21V16H3V4Z" />
+		<path d="M8 9H8.01" />
+		<path d="M12 9H12.01" />
+		<path d="M16 9H16.01" />
+	</svg>
+)}
+
+{name === "Dashboards" && (
+	<svg class={className} {...base}>
+		<path d="M3 3H10V12H3V3Z" />
+		<path d="M14 3H21V8H14V3Z" />
+		<path d="M14 12H21V21H14V12Z" />
+		<path d="M3 16H10V21H3V16Z" />
+	</svg>
+)}
+
 {name === "Infrastructure" && (
 	<svg class={className} {...base}>
 		<path d="M17 6.5V6.49" />
@@ -153,6 +184,19 @@ const base = {
 		<path d="M7.01 16L7 16" />
 		<path d="M7.01 8L7 8" />
 		<path d="M9.01 10L9 10" />
+	</svg>
+)}
+
+{name === "MCP" && (
+	<svg class={className} {...base}>
+		<path d="M16 2V7" />
+		<path d="M8 2V7" />
+		<path d="M18 15.01V15" />
+		<path d="M6 15.01V15" />
+		<path d="M4 13V7H20V13" />
+		<path d="M10 21H14" />
+		<path d="M16 19V17" />
+		<path d="M8 19V17" />
 	</svg>
 )}
 

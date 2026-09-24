@@ -15,9 +15,8 @@ import { MAPLE_NATIVE_TURN_ID_ATTR, type MutableAiGenAiValues } from "@maple/dom
 /**
  * Vercel AI SDK — the `ai.*` dialect.
  *
- * Current AI SDK versions emit canonical `gen_ai.*` attributes (production
- * spans from `apps/slack-agent`, which runs the SDK through eve, carry
- * `gen_ai.operation.name`, `gen_ai.usage.*` and friends), so these keys serve
+ * Current AI SDK versions emit canonical `gen_ai.*` attributes
+ * (`gen_ai.operation.name`, `gen_ai.usage.*` and friends), so these keys serve
  * older versions. All of them appear verbatim in the installed `ai` package's
  * telemetry code.
  *
@@ -58,10 +57,9 @@ const vercelAiSdkIntegration: AiIntegration = {
 		toolCallArguments: ["ai.toolCall.args"],
 		toolCallResult: ["ai.toolCall.result"],
 		toolDefinitions: ["ai.prompt.tools"],
-		// `ai.telemetry.functionId` is the name the app gave the traced call. In
-		// this org's spans it carries the same value the sibling `invoke_agent`
-		// span puts in `gen_ai.agent.name` (`slack-agent`), which is the only
-		// agent identity an older-SDK span has.
+		// `ai.telemetry.functionId` is the name the app gave the traced call —
+		// typically the same value a sibling `invoke_agent` span puts in
+		// `gen_ai.agent.name`, and the only agent identity an older-SDK span has.
 		agentName: ["ai.telemetry.functionId"],
 	},
 }
@@ -115,6 +113,7 @@ const openInferenceIntegration: AiIntegration = {
 		)
 		if (operation !== undefined) values.operationName = operation
 	},
+	refineKeys: ["openinference.span.kind"],
 }
 
 /**
@@ -130,6 +129,7 @@ const eveIntegration: AiIntegration = {
 		const turnId = ctx.attributes["eve.turn.id"]
 		if (turnId !== undefined && turnId !== "") values.conversationId = turnId
 	},
+	refineKeys: ["eve.turn.id"],
 }
 
 /**
@@ -139,14 +139,16 @@ const eveIntegration: AiIntegration = {
  * only the turn id needs lifting — `maple_ai.turn.id` is the conversation-level
  * grouping key inside a session, kept out of `gen_ai.conversation.id` on the
  * wire because the semconv key names the whole conversation, not one turn.
+ * It wins over a `gen_ai.conversation.id` on the same span for that reason: the
+ * agent engine stamps its thread id — the session — on the tool spans it opens.
  */
 const mapleIntegration: AiIntegration = {
 	id: "maple",
 	refine: (values: MutableAiGenAiValues, ctx: AiRefineContext) => {
-		if (values.conversationId !== undefined) return
 		const turnId = ctx.attributes[MAPLE_NATIVE_TURN_ID_ATTR]
 		if (turnId !== undefined && turnId !== "") values.conversationId = turnId
 	},
+	refineKeys: [MAPLE_NATIVE_TURN_ID_ATTR],
 }
 
 /**

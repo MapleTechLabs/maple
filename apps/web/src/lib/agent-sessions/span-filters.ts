@@ -5,7 +5,7 @@
 
 import type { AiSessionSpan } from "@maple/domain/http"
 
-import { classifyAiSpan, spanModel } from "./session-turns"
+import { classifyAiSpan, spanModel } from "@maple/agent-sessions"
 
 /**
  * The toolbar's filter, applied identically by every view.

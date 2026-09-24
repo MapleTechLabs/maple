@@ -7,7 +7,7 @@
  * it into a browser bundle.
  */
 import { getCollection, type CollectionEntry } from "astro:content"
-import { groupRank } from "./docs-nav"
+import { SECTIONS, groupRank, sectionForGroup } from "./docs-nav"
 
 export type Doc = CollectionEntry<"docs">
 
@@ -30,4 +30,24 @@ export async function getDocGroups(): Promise<{ group: string; docs: Doc[] }[]> 
 				(a, b) => a.data.order - b.data.order || a.data.title.localeCompare(b.data.title),
 			),
 		}))
+}
+
+/**
+ * The four sidebar sections with what the switchers need: the page count,
+ * the first page to open on, and whether `currentSlug` lives inside.
+ */
+export async function getDocSections(currentSlug: string) {
+	const groups = await getDocGroups()
+	const currentGroup = groups.find((g) => g.docs.some((d) => d.id === currentSlug))?.group
+	const activeId = currentGroup ? sectionForGroup(currentGroup).id : SECTIONS[0].id
+	return SECTIONS.map((section) => {
+		const docs = groups.filter((g) => sectionForGroup(g.group).id === section.id).flatMap((g) => g.docs)
+		const first = docs[0]
+		return {
+			...section,
+			count: docs.length,
+			href: first ? `/docs/${first.id}` : "/docs",
+			active: section.id === activeId,
+		}
+	})
 }

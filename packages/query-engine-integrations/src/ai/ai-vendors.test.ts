@@ -15,7 +15,6 @@ const row = (vendorId: string, spanAttributes: Record<string, string>): AiSessio
 	statusMessage: "",
 	timestamp: "2026-08-12 15:19:41.626000000",
 	spanAttributes: { ...spanAttributes, "maple_ai.vendor.id": vendorId, "maple_ai.vendor.version": "0" },
-	resourceAttributes: {},
 })
 
 describe("vercel_ai_sdk", () => {
@@ -288,12 +287,13 @@ describe("maple", () => {
 		expect(mapped.isAiSpan).toBe(true)
 	})
 
-	it("does not overwrite a conversation id the span already declared", () => {
+	it("reads the turn id over a conversation id on the same span", () => {
+		// The engine's tool spans carry its thread id — the session — as the conversation id.
 		const mapped = mapAiSpan(
-			row("maple", { "gen_ai.conversation.id": "conv-1", "maple_ai.turn.id": "msg_1" }),
+			row("maple", { "gen_ai.conversation.id": "org_1:inv-abc", "maple_ai.turn.id": "msg_1" }),
 		)
 
-		expect(mapped.genAi.conversationId).toBe("conv-1")
+		expect(mapped.genAi.conversationId).toBe("msg_1")
 	})
 })
 

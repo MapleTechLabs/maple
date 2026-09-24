@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import {
+	adoptReplayDecision,
+	claimReplaySample,
 	getSession,
 	getSessionId,
 	isNewVisitorSession,
@@ -8,6 +10,7 @@ import {
 	nextMetaVersion,
 	onSessionRotate,
 	peekSession,
+	resetTabLeaseForTests,
 } from "./session"
 import { resetVisitorCacheForTests } from "../identity/visitor"
 
@@ -20,6 +23,15 @@ class FakeStorage {
 	}
 	setItem(key: string, value: string): void {
 		this.store.set(key, value)
+	}
+	removeItem(key: string): void {
+		this.store.delete(key)
+	}
+	key(index: number): string | null {
+		return [...this.store.keys()][index] ?? null
+	}
+	get length(): number {
+		return this.store.size
 	}
 	clear(): void {
 		this.store.clear()
@@ -358,5 +370,59 @@ describe("stored record validation", () => {
 		const session = getSession()
 		expect(session.id).toBe("sess-future")
 		expect(session).not.toHaveProperty("somethingFromTheFuture")
+	})
+})
+
+describe("duplicated tabs", () => {
+	const TAB_NONCE_KEY = "__MAPLE_TAB_NONCE__"
+	const owner = globalThis as Record<string, unknown>
+
+	afterEach(() => {
+		resetTabLeaseForTests()
+		delete owner[TAB_NONCE_KEY]
+	})
+
+	/** Another tab with a copy of this tab's sessionStorage and its own nonce. */
+	const becomeDuplicateTab = (): void => {
+		resetTabLeaseForTests()
+		owner[TAB_NONCE_KEY] = "other-tab"
+	}
+
+	it("starts its own session instead of sharing the copied one", () => {
+		const original = getSession()
+		nextChunkSeq()
+		becomeDuplicateTab()
+		const duplicate = getSession()
+		expect(duplicate.id).not.toBe(original.id)
+		expect(nextChunkSeq()).toBe(0)
+	})
+
+	it("keeps the session when the other tab's lease has aged out", () => {
+		const original = getSession()
+		vi.advanceTimersByTime(3 * MINUTE)
+		becomeDuplicateTab()
+		expect(getSession().id).toBe(original.id)
+	})
+
+	it("keeps the session for another SDK copy in the same tab", () => {
+		const original = getSession()
+		resetTabLeaseForTests()
+		expect(getSession().id).toBe(original.id)
+	})
+})
+
+describe("replay sampling", () => {
+	it("rolls once per session and keeps the answer", () => {
+		getSession()
+		expect(claimReplaySample(1)).toBe(true)
+		expect(claimReplaySample(0)).toBe(true)
+	})
+
+	it("lets a running page pin a rotated session to its mode", () => {
+		const session = getSession()
+		adoptReplayDecision(session.id, false)
+		expect(claimReplaySample(1)).toBe(false)
+		adoptReplayDecision(session.id, true)
+		expect(claimReplaySample(1)).toBe(false)
 	})
 })

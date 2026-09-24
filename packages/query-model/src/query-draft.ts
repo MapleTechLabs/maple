@@ -11,7 +11,7 @@ import { Schema } from "effect"
  * domain for it.
  */
 
-export const QUERY_BUILDER_DATA_SOURCES = ["traces", "logs", "metrics"] as const
+export const QUERY_BUILDER_DATA_SOURCES = ["traces", "logs", "metrics", "product_events"] as const
 export type QueryBuilderDataSource = (typeof QUERY_BUILDER_DATA_SOURCES)[number]
 
 export const QUERY_BUILDER_METRIC_TYPES = ["sum", "gauge", "histogram", "exponential_histogram"] as const
@@ -89,9 +89,15 @@ export const MetricsQueryDraftSchema = Schema.Struct({
 	isMonotonic: Schema.optional(Schema.Boolean),
 })
 
+export const ProductEventsQueryDraftSchema = Schema.Struct({
+	...queryDraftBaseFields,
+	dataSource: Schema.Literal("product_events"),
+})
+
 export const QueryBuilderQueryDraftSchema = Schema.Union([
 	TracesQueryDraftSchema,
 	LogsQueryDraftSchema,
 	MetricsQueryDraftSchema,
+	ProductEventsQueryDraftSchema,
 ])
 export type QueryBuilderQueryDraftPayload = Schema.Schema.Type<typeof QueryBuilderQueryDraftSchema>

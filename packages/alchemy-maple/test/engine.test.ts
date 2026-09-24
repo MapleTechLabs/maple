@@ -6,7 +6,7 @@ import { renamedFrom } from "alchemy/Rename"
 import * as Core from "alchemy/Test/Core"
 import * as Provider from "alchemy/Provider"
 import * as State from "alchemy/State"
-import { sync } from "alchemy/Sync"
+import * as Drift from "alchemy/Drift"
 import { ApiKey, ApiKeyProvider } from "../src/ApiKey"
 import { Dashboard, DashboardProvider } from "../src/Dashboard"
 import { AlertRule, AlertRuleProvider, type AlertRuleProps } from "../src/AlertRule"
@@ -130,7 +130,10 @@ const makeHarness = () => {
 		run: <A>(effect: Core.TestEffect<A>) => Core.toEffect(effect, options),
 		sync: (stack: Core.ScratchStack, stage = "test", dryRun = false) =>
 			Core.withProviders(
-				sync({ name: stack.name, stage }, { dryRun }).pipe(Effect.provide(stack.state)),
+				(dryRun
+					? Drift.detect({ name: stack.name, stage })
+					: Drift.repair({ name: stack.name, stage })
+				).pipe(Effect.provide(stack.state)),
 				{ ...options, stage },
 				stack.name,
 			),

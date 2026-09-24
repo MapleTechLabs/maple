@@ -1,0 +1,392 @@
+import { afterEach, assert, describe, it } from "@effect/vitest"
+import { orgOnboardingState } from "@maple/db"
+import { eq, sql } from "drizzle-orm"
+import { EffectDrizzleQueryError } from "drizzle-orm/effect-core"
+import { Cause, Effect, Exit, Schema, Tracer } from "effect"
+import { ConnectionError, SqlError, UniqueViolation } from "effect/unstable/sql/SqlError"
+import { Database, DatabaseError, executeWithSpan } from "./DatabaseLive"
+import { PGLITE_DB_NAMESPACE } from "./DatabasePgliteLive"
+import { cleanupTestDbs, createTestDb, type TestDb } from "./test-pglite"
+
+const trackedDbs: TestDb[] = []
+
+afterEach(() => cleanupTestDbs(trackedDbs))
+
+/**
+ * Records every span the runtime creates so tests can assert the DB span's
+ * kind and attributes. NativeSpan keeps `kind` and `attributes` public.
+ */
+const makeRecordingTracer = () => {
+	const spans: Array<Tracer.NativeSpan> = []
+	const tracer = Tracer.make({
+		span(options) {
+			const span = new Tracer.NativeSpan(options)
+			spans.push(span)
+			return span
+		},
+	})
+	return { spans, tracer }
+}
+
+/**
+ * DB spans are renamed to their query summary once the SQL is known, so they can
+ * no longer be found by name — `db.system.name` is the stable marker.
+ */
+const dbSpans = (spans: ReadonlyArray<Tracer.NativeSpan>) =>
+	spans.filter((span) => span.attributes.get("db.system.name") === "postgresql")
+
+/** A failure the callback raises on its own — not the driver's, so it must pass through untouched. */
+class CallbackFailure extends Schema.TaggedError<CallbackFailure>()("@maple/test/CallbackFailure", {
+	message: Schema.String,
+}) {}
+
+/** A pg error the way node-postgres raises it: the class hangs off `code`. */
+const pgError = (code: string, message: string): Error => Object.assign(new Error(message), { code })
+
+describe("Database execute span instrumentation", () => {
+	it.effect("emits a Client-kind span with DB semconv attributes on success", () =>
+		Effect.gen(function* () {
+			const { spans, tracer } = makeRecordingTracer()
+			const database = yield* Database
+
+			const rows = yield* database
+				.execute((db) =>
+					db.select().from(orgOnboardingState).where(eq(orgOnboardingState.orgId, "org_span_test")),
+				)
+				.pipe(Effect.withTracer(tracer))
+
+			assert.deepStrictEqual(rows, [])
+			const [span, ...rest] = dbSpans(spans)
+			assert.isDefined(span)
+			// One span per call: the driver's own per-statement spans are suppressed.
+			assert.deepStrictEqual(rest, [])
+			assert.strictEqual(span.kind, "client")
+			assert.strictEqual(span.attributes.get("db.system.name"), "postgresql")
+			assert.strictEqual(span.attributes.get("peer.service"), "planetscale-postgres")
+			assert.strictEqual(span.attributes.get("db.namespace"), PGLITE_DB_NAMESPACE)
+			// OTel wants the span named after its query, not after the call site.
+			assert.strictEqual(span.name, "SELECT org_onboarding_state")
+			assert.strictEqual(span.attributes.get("db.query.summary"), "SELECT org_onboarding_state")
+			assert.strictEqual(span.attributes.get("db.operation.name"), "SELECT")
+			assert.strictEqual(span.attributes.get("db.collection.name"), "org_onboarding_state")
+			const queryText = span.attributes.get("db.query.text")
+			assert.isString(queryText)
+			// Parameterized text: placeholder present, the literal param value absent.
+			assert.include(queryText as string, "$1")
+			assert.include(queryText as string, "org_onboarding_state")
+			assert.notInclude(queryText as string, "org_span_test")
+			assert.match(span.attributes.get("db.query.fingerprint") as string, /^[0-9a-f]{8}$/)
+			assert.strictEqual(span.attributes.get("db.statement_count"), 1)
+			assert.strictEqual(span.attributes.get("db.query.truncated"), false)
+			assert.isNumber(span.attributes.get("db.duration_ms"))
+			assert.strictEqual(span.attributes.get("result.rowCount"), 0)
+			assert.strictEqual(span.attributes.get("db.response.returned_rows"), 0)
+		}).pipe(Effect.provide(createTestDb(trackedDbs).layer)),
+	)
+
+	it.effect("keeps identity attributes and captured SQL on the error path", () =>
+		Effect.gen(function* () {
+			const { spans, tracer } = makeRecordingTracer()
+			const database = yield* Database
+
+			const exit = yield* database
+				.execute((db) => db.execute(sql`select broken from nowhere`))
+				.pipe(Effect.withTracer(tracer), Effect.exit)
+
+			assert.isTrue(Exit.isFailure(exit))
+			const [span] = dbSpans(spans)
+			assert.isDefined(span)
+			// Set at span declaration, so the edge exists for failed calls too.
+			assert.strictEqual(span.attributes.get("db.system.name"), "postgresql")
+			assert.strictEqual(span.attributes.get("peer.service"), "planetscale-postgres")
+			// The statement fired before failing, so the tapError path captured it —
+			// including the rename and the derived operation/collection.
+			assert.include(span.attributes.get("db.query.text") as string, "select broken from nowhere")
+			assert.strictEqual(span.name, "SELECT nowhere")
+			assert.strictEqual(span.attributes.get("db.operation.name"), "SELECT")
+			// `undefined_table`, straight from the driver's SQLSTATE.
+			assert.strictEqual(span.attributes.get("error.type"), "42P01")
+			assert.strictEqual(span.attributes.get("db.response.status_code"), "42P01")
+			assert.isNumber(span.attributes.get("db.duration_ms"))
+			assert.strictEqual(span.status._tag, "Ended")
+			assert.isTrue(span.status._tag === "Ended" && Exit.isFailure(span.status.exit))
+		}).pipe(Effect.provide(createTestDb(trackedDbs).layer)),
+	)
+
+	it.effect("absorbs the driver failure into DatabaseError, root cause first", () =>
+		Effect.gen(function* () {
+			const database = yield* Database
+
+			const error = yield* database
+				.execute((db) => db.execute(sql`select broken from nowhere`))
+				.pipe(Effect.flip)
+
+			assert.strictEqual(error._tag, "@maple/api/lib/DatabaseError")
+			// The Postgres diagnostic leads; the statement follows so a truncated
+			// log line still says what went wrong.
+			assert.match(
+				error.message,
+				/^relation "nowhere" does not exist \[while: select broken from nowhere\]/,
+			)
+			assert.instanceOf(error.cause, SqlError)
+		}).pipe(Effect.provide(createTestDb(trackedDbs).layer)),
+	)
+
+	it.effect("never serializes the bound params of a failed statement", () =>
+		Effect.gen(function* () {
+			const database = yield* Database
+
+			const error = yield* database
+				.execute((db) => db.execute(sql`insert into nowhere values (${"sk_live_SECRET_HASH"})`))
+				.pipe(Effect.flip)
+
+			// drizzle's own error interpolates params into `message`, and
+			// `Schema.Defect` encodes `message` — so it must not be the stored cause.
+			const encoded = JSON.stringify(Schema.encodeSync(DatabaseError)(error))
+			assert.notInclude(encoded, "sk_live_SECRET_HASH")
+			assert.notInclude(error.message, "sk_live_SECRET_HASH")
+			assert.include(encoded, 'relation \\"nowhere\\" does not exist')
+		}).pipe(Effect.provide(createTestDb(trackedDbs).layer)),
+	)
+
+	it.effect("rejects a bound Date inside a transaction in the test harness", () =>
+		Effect.gen(function* () {
+			const database = yield* Database
+
+			const error = yield* database
+				.execute((db) =>
+					db.transaction((tx) => tx.execute(sql`select ${new Date(0)}::timestamptz as at`)),
+				)
+				.pipe(Effect.flip)
+
+			// `@effect/sql-pglite` routes BEGIN, the statement and ROLLBACK through
+			// `pglite.query`, so the guard sees transactions without a second hook.
+			assert.include(error.message, "Bound a Date as param $1")
+		}).pipe(Effect.provide(createTestDb(trackedDbs).layer)),
+	)
+
+	it.effect("absorbs a failed COMMIT into DatabaseError instead of dying", () =>
+		Effect.gen(function* () {
+			const { spans, tracer } = makeRecordingTracer()
+			const database = yield* Database
+			yield* database.execute((db) =>
+				db.execute(sql`create table deferred_parent (id int primary key)`),
+			)
+			yield* database.execute((db) =>
+				db.execute(
+					sql`create table deferred_child (parent_id int references deferred_parent (id) deferrable initially deferred)`,
+				),
+			)
+
+			// Every statement succeeds; the foreign key is only checked at COMMIT,
+			// which `@effect/sql`'s transaction wrapper runs under `orDie`.
+			const exit = yield* database
+				.execute((db) =>
+					db.transaction((tx) =>
+						tx.execute(sql`insert into deferred_child (parent_id) values (1)`),
+					),
+				)
+				.pipe(Effect.withTracer(tracer), Effect.exit)
+
+			assert.isTrue(Exit.isFailure(exit))
+			const failure = Exit.isFailure(exit) ? Cause.findErrorOption(exit.cause) : undefined
+			assert.isTrue(failure !== undefined && failure._tag === "Some")
+			const error = failure?._tag === "Some" ? failure.value : undefined
+			assert.instanceOf(error, DatabaseError)
+			assert.include(error?.message, "foreign key")
+			const span = dbSpans(spans).at(-1)
+			assert.strictEqual(span?.attributes.get("error.type"), "23503")
+			assert.strictEqual(span?.attributes.get("db.connect.failed"), false)
+		}).pipe(Effect.provide(createTestDb(trackedDbs).layer)),
+	)
+
+	it.effect("captures every statement of a transaction in one span", () =>
+		Effect.gen(function* () {
+			const { spans, tracer } = makeRecordingTracer()
+			const database = yield* Database
+			const now = new Date()
+
+			yield* database
+				.execute((db) =>
+					db.transaction((tx) =>
+						Effect.gen(function* () {
+							yield* tx
+								.insert(orgOnboardingState)
+								.values({ orgId: "org_tx_test", createdAt: now, updatedAt: now })
+							yield* tx
+								.select()
+								.from(orgOnboardingState)
+								.where(eq(orgOnboardingState.orgId, "org_tx_test"))
+						}),
+					),
+				)
+				.pipe(Effect.withTracer(tracer))
+
+			const [span, ...rest] = dbSpans(spans)
+			assert.isDefined(span)
+			assert.deepStrictEqual(rest, [])
+			assert.strictEqual(span.attributes.get("db.statement_count"), 2)
+			const queryText = span.attributes.get("db.query.text") as string
+			assert.include(queryText, "insert into")
+			assert.include(queryText, "select")
+			// A multi-statement call is summarized by the joined text — the same
+			// input the warehouse derives its fallback label from — so the leading
+			// statement names the span.
+			assert.strictEqual(span.name, "INSERT org_onboarding_state")
+			assert.strictEqual(span.attributes.get("db.operation.name"), "INSERT")
+		}).pipe(Effect.provide(createTestDb(trackedDbs).layer)),
+	)
+
+	it.effect("passes a domain failure raised inside the callback through untouched", () =>
+		Effect.gen(function* () {
+			const database = yield* Database
+			const rollback = new CallbackFailure({ message: "business rule violated" })
+
+			const error = yield* database
+				.execute((db) =>
+					db.transaction((tx) =>
+						Effect.gen(function* () {
+							yield* tx.select().from(orgOnboardingState)
+							return yield* Effect.fail(rollback)
+						}),
+					),
+				)
+				.pipe(Effect.flip)
+
+			// Not a database failure, so not a DatabaseError: the callback's own
+			// error is what rolled the transaction back and what the caller sees.
+			assert.strictEqual(error, rollback)
+		}).pipe(Effect.provide(createTestDb(trackedDbs).layer)),
+	)
+
+	it.effect("keeps the placeholder name when the call fails before any statement", () =>
+		Effect.gen(function* () {
+			const { spans, tracer } = makeRecordingTracer()
+			const database = yield* Database
+
+			const exit = yield* database
+				.execute(() => Effect.fail(new CallbackFailure({ message: "connection refused" })))
+				.pipe(Effect.withTracer(tracer), Effect.exit)
+
+			assert.isTrue(Exit.isFailure(exit))
+			const [span] = dbSpans(spans)
+			assert.isDefined(span)
+			assert.strictEqual(span.name, "Database.execute")
+			assert.isUndefined(span.attributes.get("db.query.summary"))
+			assert.isUndefined(span.attributes.get("db.operation.name"))
+		}).pipe(Effect.provide(createTestDb(trackedDbs).layer)),
+	)
+
+	it.effect("isolates statement capture between concurrent executes", () =>
+		Effect.gen(function* () {
+			const { spans, tracer } = makeRecordingTracer()
+			const database = yield* Database
+
+			yield* Effect.all(
+				[
+					database.execute((db) =>
+						db.select().from(orgOnboardingState).where(eq(orgOnboardingState.orgId, "org_a")),
+					),
+					database.execute((db) => db.execute(sql`select 1 as concurrent_probe`)),
+				],
+				{ concurrency: 2 },
+			).pipe(Effect.withTracer(tracer))
+
+			const texts = dbSpans(spans).map((span) => span.attributes.get("db.query.text") as string)
+			assert.strictEqual(texts.length, 2)
+			const selectSpan = texts.find((text) => text.includes("org_onboarding_state"))
+			const probeSpan = texts.find((text) => text.includes("concurrent_probe"))
+			assert.isDefined(selectSpan)
+			assert.isDefined(probeSpan)
+			assert.notInclude(selectSpan as string, "concurrent_probe")
+			assert.notInclude(probeSpan as string, "org_onboarding_state")
+			for (const span of dbSpans(spans)) {
+				assert.strictEqual(span.attributes.get("db.statement_count"), 1)
+			}
+		}).pipe(Effect.provide(createTestDb(trackedDbs).layer)),
+	)
+})
+
+/**
+ * `db.duration_ms` alone cannot distinguish a stalled connection handshake from
+ * a slow query — the ambiguity that made the production p95 investigation
+ * guesswork. These cover the split that resolves it.
+ */
+describe("Database execute failure classification", () => {
+	// There is no connect/query split. The pool connects on the first statement,
+	// so the split could only ever be synthesized by a `select 1` probe that cost
+	// a round trip on every request. What it was used to infer — is this a
+	// connection problem or a query problem — `error.type` states outright.
+	it.effect("classifies a connection failure by class rather than by duration", () =>
+		Effect.gen(function* () {
+			const { spans, tracer } = makeRecordingTracer()
+			const failure = new SqlError({
+				reason: new ConnectionError({
+					cause: pgError("ECONNREFUSED", "connect ECONNREFUSED 10.0.0.1:5432"),
+					message: "Connection error",
+					operation: "acquireConnection",
+				}),
+			})
+
+			const exit = yield* executeWithSpan(() => Effect.fail(failure)).pipe(
+				Effect.withTracer(tracer),
+				Effect.exit,
+			)
+
+			assert.isTrue(Exit.isFailure(exit))
+			const [span] = dbSpans(spans)
+			assert.isDefined(span)
+			assert.strictEqual(span.attributes.get("error.type"), "ECONNREFUSED")
+			assert.strictEqual(span.attributes.get("db.connect.failed"), true)
+			assert.isNumber(span.attributes.get("db.duration_ms"))
+		}),
+	)
+
+	it.effect("classifies a statement failure separately, with its SQLSTATE", () =>
+		Effect.gen(function* () {
+			const { spans, tracer } = makeRecordingTracer()
+			const failure = new EffectDrizzleQueryError({
+				query: 'insert into "api_keys" …',
+				params: [],
+				cause: Cause.fail(
+					new SqlError({
+						reason: new UniqueViolation({
+							cause: pgError(
+								"23505",
+								'duplicate key value violates unique constraint "api_keys_pkey"',
+							),
+							constraint: "api_keys_pkey",
+						}),
+					}),
+				),
+			})
+
+			const exit = yield* executeWithSpan(() => Effect.fail(failure)).pipe(
+				Effect.withTracer(tracer),
+				Effect.exit,
+			)
+
+			assert.isTrue(Exit.isFailure(exit))
+			const [span] = dbSpans(spans)
+			assert.isDefined(span)
+			assert.strictEqual(span.attributes.get("error.type"), "23505")
+			assert.strictEqual(span.attributes.get("db.response.status_code"), "23505")
+			assert.strictEqual(span.attributes.get("db.connect.failed"), false)
+		}),
+	)
+
+	it.effect("merges attributes recorded by the body", () =>
+		Effect.gen(function* () {
+			const { spans, tracer } = makeRecordingTracer()
+
+			yield* executeWithSpan((hooks) => {
+				hooks.record({ "db.connect.reused": true })
+				return Effect.succeed("ok")
+			}).pipe(Effect.withTracer(tracer))
+
+			const [span] = dbSpans(spans)
+			assert.isDefined(span)
+			assert.strictEqual(span.attributes.get("db.connect.reused"), true)
+		}),
+	)
+})

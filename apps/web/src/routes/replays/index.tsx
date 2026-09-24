@@ -15,6 +15,7 @@ import { Result } from "@/lib/effect-atom"
 import { useRefreshableAtomValue } from "@/hooks/use-refreshable-atom-value"
 import { listReplaysResultAtom, replaysFacetsResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
 import { TimeRangeSearchFields, applyTimeRangeSearch } from "@/components/time-range-picker/search"
+import { sessionTimeRangeSearchMiddleware } from "@/components/time-range-picker/session-time-range"
 import { TimeRangeHeaderControls } from "@/components/time-range-picker/time-range-header-controls"
 import { PageRefreshProvider } from "@/components/time-range-picker/page-refresh-context"
 import type { TimeRange } from "@/components/time-range-picker/types"
@@ -53,6 +54,7 @@ const replaysSearchSchema = Schema.Struct({
 export const Route = createFileRoute("/replays/")({
 	component: ReplaysPage,
 	validateSearch: Schema.toStandardSchemaV1(replaysSearchSchema),
+	search: { middlewares: [sessionTimeRangeSearchMiddleware()] },
 	loaderDeps: ({ search }) => search,
 	// Both queries are on the critical path and neither is cached server-side, so
 	// starting them here rather than on mount is worth real time: the router runs

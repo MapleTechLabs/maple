@@ -1,8 +1,8 @@
 import { HttpApiBuilder } from "effect/unstable/httpapi"
 import { CurrentTenant, MapleApi } from "@maple/domain/http"
 import { Effect } from "effect"
-import { recordHttpAudit } from "@/services/audit/AuditLogService"
-import { OrgClickHouseSettingsService } from "@/services/org/OrgClickHouseSettingsService"
+import { recordHttpAudit } from "@maple/backend/services/audit/AuditLogService"
+import { OrgClickHouseSettingsService } from "@maple/backend/services/org/OrgClickHouseSettingsService"
 
 export const HttpOrgClickHouseSettingsLive = HttpApiBuilder.group(
 	MapleApi,

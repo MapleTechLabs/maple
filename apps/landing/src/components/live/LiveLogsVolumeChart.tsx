@@ -1,7 +1,7 @@
 import { useMemo } from "react"
 import { barY, defineChart, stack } from "@tanstack/charts"
 import { scaleLinear, scaleTime } from "d3-scale"
-import { PlotFrame, dashedGridY, usePlotColors } from "@maple/ui/components/plot"
+import { PlotFrame, DASHED_Y_GRID, usePlotColors } from "@maple/ui/components/plot"
 
 import {
 	formatBucketTick,
@@ -90,7 +90,6 @@ export default function LiveLogsVolumeChart() {
 		() =>
 			defineChart({
 				marks: [
-					dashedGridY(),
 					barY(cells, {
 						x: (cell: SeverityCell) => cell.date,
 						y: (cell: SeverityCell) => cell.value,
@@ -120,6 +119,7 @@ export default function LiveLogsVolumeChart() {
 						},
 					},
 					y: {
+						grid: DASHED_Y_GRID,
 						scale: scaleLinear().domain([0, yMax]),
 						nice: true,
 						axis: {

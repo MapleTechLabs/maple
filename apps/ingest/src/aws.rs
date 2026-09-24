@@ -442,10 +442,16 @@ impl S3Client {
     /// the key not existing, which S3 answers with 412 when it does — the
     /// primitive orphan claiming is built on.
     pub async fn put(&self, key: &str, body: Vec<u8>, if_none_match: bool) -> Result<(), S3Error> {
-        let mut headers = vec![(
-            "content-type".to_owned(),
-            "application/octet-stream".to_owned(),
-        )];
+        // Explicit because hyper omits `Content-Length: 0` for an empty body, and
+        // S3 answers a PUT without it with 411 — the heartbeat's empty PUT never
+        // landed, so no owner was ever claimable.
+        let mut headers = vec![
+            (
+                "content-type".to_owned(),
+                "application/octet-stream".to_owned(),
+            ),
+            ("content-length".to_owned(), body.len().to_string()),
+        ];
         if if_none_match {
             headers.push(("if-none-match".to_owned(), "*".to_owned()));
         }

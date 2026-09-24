@@ -9,7 +9,7 @@ import {
 import { Context, Effect, Layer } from "effect"
 import { HttpRouter } from "effect/unstable/http"
 import { HttpApi, HttpApiBuilder } from "effect/unstable/httpapi"
-import { V1ErrorBoundaryLive } from "../v1/error-boundary"
+import { V1ErrorBoundaryLive } from "@maple/backend/http/error-boundary"
 import { HttpAiModelsInternalLive } from "./ai-models.http"
 
 // The wire shape is a hand-written mirror of the resolver's. Assignability at
@@ -83,6 +83,7 @@ describe("POST /internal/ai-models/detect", () => {
 				displayName: "GLM 5.3 Flash (nitro)",
 				vendorSlug: "z-ai",
 				vendorName: "Z.ai",
+				brandColor: null,
 				family: null,
 				source: "openrouter",
 			})
@@ -100,6 +101,7 @@ describe("POST /internal/ai-models/detect", () => {
 				openRouterId: null,
 				vendorSlug: null,
 				vendorName: null,
+				brandColor: null,
 				family: null,
 				source: "unknown",
 			})
@@ -150,6 +152,12 @@ describe("POST /internal/ai-models/detect-many", () => {
 				"GPT-4o-mini",
 			])
 			expect(response.body.map((model) => model.family)).toEqual(["claude", null, null])
+			// The brand travels as a light/dark pair, or null where none is listed.
+			expect(response.body.map((model) => model.brandColor)).toEqual([
+				{ light: "#D97757", dark: "#D97757" },
+				null,
+				{ light: "#000000", dark: "#FFFFFF" },
+			])
 		} finally {
 			await harness.dispose()
 		}

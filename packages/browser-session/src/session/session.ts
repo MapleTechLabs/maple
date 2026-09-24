@@ -1,5 +1,6 @@
 import { claimNewVisitor } from "../identity/visitor"
 import { isStringRecord, parseJsonObject } from "../platform/json"
+import { scrubUrl } from "../platform/url-privacy"
 
 const STORAGE_KEY = "maple.session"
 
@@ -75,6 +76,13 @@ export interface SessionRecord {
 	pageViews?: number
 	clickCount?: number
 	errorCount?: number
+	/**
+	 * Whether this session records replay. Decided once per session, not per
+	 * page load: re-rolling on every load split one session into recorded and
+	 * unrecorded pages, and the latest metadata row (which wins) could label a
+	 * recorded session "Not recorded".
+	 */
+	replaySampled?: boolean
 }
 
 /** Optional keys carrying a plain number. Absent is fine; wrongly typed is not. */
@@ -124,6 +132,10 @@ function parseSessionRecord(raw: string): SessionRecord | undefined {
 		if (typeof value.visitorIsNew !== "boolean") return undefined
 		record.visitorIsNew = value.visitorIsNew
 	}
+	if (value.replaySampled !== undefined) {
+		if (typeof value.replaySampled !== "boolean") return undefined
+		record.replaySampled = value.replaySampled
+	}
 	if (value.utm !== undefined) {
 		if (!isStringRecord(value.utm)) return undefined
 		record.utm = value.utm
@@ -166,11 +178,12 @@ function readEntryContext(): Partial<SessionRecord> {
 	} catch {
 		// Malformed query string — no UTM, not a failure.
 	}
+	const href = scrubUrl(location.href)
 	return {
-		entryUrl: location.href,
-		entryReferrer: typeof document !== "undefined" ? document.referrer : "",
+		entryUrl: href,
+		entryReferrer: typeof document !== "undefined" ? scrubUrl(document.referrer) : "",
 		utm,
-		lastUrl: location.href,
+		lastUrl: href,
 		pageViews: 0,
 		clickCount: 0,
 		errorCount: 0,
@@ -211,6 +224,139 @@ function writeRecord(record: SessionRecord): void {
 	} catch {
 		// Private mode / storage disabled — the ephemeral copy is the source of truth.
 	}
+	claimTab(record.id)
+}
+
+// Duplicate-tab detection.
+//
+// "Duplicate tab" and `window.open` with an opener copy sessionStorage, so the
+// new tab would resume the same session id and the same `chunkSeq`. Both tabs
+// then upload chunk N under one key and overwrite each other, and the replay
+// interleaves two DOMs. Each tab (not each SDK copy: the nonce lives on
+// `globalThis`) leases the session it writes in localStorage; a tab that finds
+// a live lease held by someone else starts its own session.
+//
+// A reload is not a duplicate: `pagehide` releases the lease before the next
+// document reads it. A lease is live for `TAB_LEASE_TTL_MS` after its last
+// write, which covers the 60s heartbeat of a visible tab; a crashed tab's lease
+// simply ages out.
+const TAB_LEASE_PREFIX = "maple.session.tab."
+const TAB_LEASE_TTL_MS = 2 * 60_000
+const TAB_LEASE_REFRESH_MS = 5_000
+const TAB_NONCE_KEY = "__MAPLE_TAB_NONCE__"
+
+/** The session id this tab has checked (or minted) and may keep using. */
+let verifiedSessionId: string | undefined
+let leaseWrittenAt = 0
+let releaseInstalled = false
+/**
+ * Set from `pagehide` until the page is shown again. The lifecycle's own
+ * `pagehide` handler posts an `ended` row after ours runs, which writes the
+ * record; re-leasing there would make the next load of this tab look like a
+ * duplicate and rotate on every reload.
+ */
+let leaseReleased = false
+
+function tabNonce(): string {
+	const owner = globalThis as Record<string, unknown>
+	const existing = owner[TAB_NONCE_KEY]
+	if (typeof existing === "string") return existing
+	const fresh = crypto.randomUUID()
+	owner[TAB_NONCE_KEY] = fresh
+	return fresh
+}
+
+function leaseStorage(): Storage | undefined {
+	try {
+		return typeof window !== "undefined" ? window.localStorage : undefined
+	} catch {
+		return undefined
+	}
+}
+
+function readLease(storage: Storage, sessionId: string): { nonce: string; at: number } | undefined {
+	const raw = storage.getItem(`${TAB_LEASE_PREFIX}${sessionId}`)
+	if (!raw) return undefined
+	const split = raw.lastIndexOf(":")
+	const at = Number(raw.slice(split + 1))
+	return split > 0 && Number.isFinite(at) ? { nonce: raw.slice(0, split), at } : undefined
+}
+
+function claimTab(sessionId: string): void {
+	const now = Date.now()
+	if (verifiedSessionId === sessionId && now - leaseWrittenAt < TAB_LEASE_REFRESH_MS) return
+	if (verifiedSessionId !== undefined && verifiedSessionId !== sessionId) releaseTab(verifiedSessionId)
+	verifiedSessionId = sessionId
+	if (leaseReleased) return
+	leaseWrittenAt = now
+	const storage = leaseStorage()
+	if (!storage) return
+	try {
+		storage.setItem(`${TAB_LEASE_PREFIX}${sessionId}`, `${tabNonce()}:${now}`)
+	} catch {
+		// Storage full or blocked: detection degrades, capture does not.
+	}
+	installLeaseRelease()
+}
+
+function releaseTab(sessionId: string): void {
+	const storage = leaseStorage()
+	if (!storage) return
+	try {
+		if (readLease(storage, sessionId)?.nonce === tabNonce()) {
+			storage.removeItem(`${TAB_LEASE_PREFIX}${sessionId}`)
+		}
+	} catch {
+		// Best-effort.
+	}
+}
+
+function installLeaseRelease(): void {
+	if (releaseInstalled || typeof globalThis.addEventListener !== "function") return
+	releaseInstalled = true
+	globalThis.addEventListener("pagehide", () => {
+		leaseReleased = true
+		if (verifiedSessionId !== undefined) releaseTab(verifiedSessionId)
+	})
+	// A bfcache restore is the same tab coming back: lease again on next write.
+	globalThis.addEventListener("pageshow", () => {
+		leaseReleased = false
+		leaseWrittenAt = 0
+	})
+}
+
+/** Drop leases a crashed tab never released. */
+function pruneLeases(storage: Storage, now: number): void {
+	for (let i = storage.length - 1; i >= 0; i--) {
+		const key = storage.key(i)
+		if (!key?.startsWith(TAB_LEASE_PREFIX)) continue
+		const lease = readLease(storage, key.slice(TAB_LEASE_PREFIX.length))
+		if (!lease || now - lease.at > TAB_LEASE_TTL_MS) storage.removeItem(key)
+	}
+}
+
+/**
+ * Whether another live tab holds `record`'s session. Checked once per session
+ * id per tab; after that this tab has claimed it.
+ */
+function ownedByAnotherTab(record: SessionRecord, now: number): boolean {
+	if (verifiedSessionId === record.id) return false
+	const storage = leaseStorage()
+	if (!storage) return false
+	try {
+		pruneLeases(storage, now)
+		const lease = readLease(storage, record.id)
+		return lease !== undefined && lease.nonce !== tabNonce() && now - lease.at <= TAB_LEASE_TTL_MS
+	} catch {
+		return false
+	}
+}
+
+/** Test seam: forget this tab's lease state. */
+export function resetTabLeaseForTests(): void {
+	verifiedSessionId = undefined
+	leaseWrittenAt = 0
+	leaseReleased = false
 }
 
 export function isSessionExpired(record: SessionRecord, now = Date.now()): boolean {
@@ -256,7 +402,7 @@ function installRotatedRecord(previous: SessionRecord | undefined, next: Session
 export function getSession(): SessionRecord {
 	const now = Date.now()
 	const existing = readRecord()
-	if (existing && !isSessionExpired(existing, now)) {
+	if (existing && !isSessionExpired(existing, now) && !ownedByAnotherTab(existing, now)) {
 		const record = { ...migrateRecord(existing), lastActivityAt: now }
 		writeRecord(record)
 		return record
@@ -283,10 +429,14 @@ export function rotateSession(): SessionRecord | undefined {
  */
 function touchSession(now: number): SessionRecord {
 	const existing = readRecord()
-	if (existing && !isSessionExpired(existing, now)) {
+	if (existing && !isSessionExpired(existing, now) && !ownedByAnotherTab(existing, now)) {
 		const migrated = migrateRecord(existing)
 		const touched = { ...migrated, lastActivityAt: now }
-		if (migrated !== existing || now - existing.lastActivityAt > ACTIVITY_TOUCH_THROTTLE_MS) {
+		if (
+			migrated !== existing ||
+			verifiedSessionId !== existing.id ||
+			now - existing.lastActivityAt > ACTIVITY_TOUCH_THROTTLE_MS
+		) {
 			writeRecord(touched)
 		}
 		return touched
@@ -327,7 +477,7 @@ export function noteNavigation(url: string): void {
 	const record = touchSession(now)
 	writeRecord({
 		...record,
-		lastUrl: url,
+		lastUrl: scrubUrl(url),
 		pageViews: (record.pageViews ?? 0) + 1,
 		lastActivityAt: now,
 	})
@@ -404,4 +554,35 @@ export function nextMetaVersion(): number {
 	const version = (record.metaVersion ?? 2) + 1
 	writeRecord({ ...record, metaVersion: version })
 	return version
+}
+
+/** A uniform draw in [0, 1) from Web Crypto, the same source session ids use. */
+function uniformRandom(): number {
+	const values = new Uint32Array(1)
+	crypto.getRandomValues(values)
+	return (values[0] ?? 0) / 0x1_0000_0000
+}
+
+/**
+ * This session's replay sampling decision, rolled against `sampleRate` the
+ * first time it is asked and then persisted, so every page load of the session
+ * agrees. Call after `getSession()` has resolved the session.
+ */
+export function claimReplaySample(sampleRate: number): boolean {
+	const record = readRecord() ?? getSession()
+	if (record.replaySampled !== undefined) return record.replaySampled
+	const sampled = uniformRandom() < sampleRate
+	writeRecord({ ...record, replaySampled: sampled })
+	return sampled
+}
+
+/**
+ * Pin a session to the capture mode a running page is already in. A session
+ * minted by idle rotation mid-page inherits that page's mode rather than
+ * rolling again, and later loads of it honour the same answer.
+ */
+export function adoptReplayDecision(sessionId: string, recorded: boolean): void {
+	const record = readRecord()
+	if (!record || record.id !== sessionId || record.replaySampled !== undefined) return
+	writeRecord({ ...record, replaySampled: recorded })
 }

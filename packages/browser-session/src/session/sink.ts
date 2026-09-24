@@ -1,6 +1,8 @@
 // The single definition of the cross-SDK session sink contract. Both
 // `@maple-dev/browser` (publisher) and `@maple-dev/effect-sdk` (consumer)
 // bundle this module, so the key literal and shape can no longer drift apart.
+import { noteStartedTraceId } from "../events/trace-id"
+
 const SESSION_SINK_KEY = "__MAPLE_BROWSER_SESSION__"
 
 export interface MapleBrowserSessionSink {
@@ -33,6 +35,7 @@ const MAX_TRACE_IDS_PER_SESSION = 200
 
 /** Record a trace id seen during the session. Idempotent per id. */
 export function recordTraceId(traceId: string, sessionId = readSessionSink()?.sessionId): void {
+	noteStartedTraceId(traceId)
 	if (!sessionId) return
 	let ids = observedTraceIdsBySession.get(sessionId)
 	if (!ids) {

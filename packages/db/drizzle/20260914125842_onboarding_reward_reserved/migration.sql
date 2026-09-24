@@ -1,0 +1,1 @@
+ALTER TABLE "org_onboarding_state" ADD COLUMN "reward_reserved_at" timestamp with time zone;

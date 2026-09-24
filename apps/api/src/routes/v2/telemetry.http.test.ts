@@ -5,21 +5,24 @@ import { QueryEngineExecuteResponse, type QueryEngineExecuteRequest } from "@map
 import { ConfigProvider, Context, Effect, Layer, ManagedRuntime, Option, Schema } from "effect"
 import { HttpRouter } from "effect/unstable/http"
 import { HttpApiBuilder } from "effect/unstable/httpapi"
-import { Env } from "@/platform/Env"
-import { cleanupTestDbs, createTestDb, type TestDb } from "@/platform/test-pglite"
+import { Env } from "@maple/backend/platform/Env"
+import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
 import {
 	WarehouseQueryService,
 	type WarehouseQueryServiceApi,
-} from "@/services/warehouse/WarehouseQueryService"
-import { ApiAuthorizationV2Layer } from "@/services/auth/ApiAuthorizationV2Layer"
-import { AuditLogService } from "@/services/audit/AuditLogService"
-import { ApiKeysService } from "@/services/org/ApiKeysService"
-import { AuthService } from "@/services/auth/AuthService"
-import { DashboardPersistenceService } from "@/services/dashboards/DashboardPersistenceService"
-import { LiveActivitiesService } from "@/services/push/LiveActivitiesService"
-import { MobileDevicesService } from "@/services/push/MobileDevicesService"
-import { SharedDashboardService } from "@/services/dashboards/SharedDashboardService"
-import { QueryEngineService, type QueryEngineServiceApi } from "@/services/warehouse/QueryEngineService"
+} from "@maple/backend/services/warehouse/WarehouseQueryService"
+import { ApiAuthorizationV2Layer } from "@maple/backend/services/auth/ApiAuthorizationV2Layer"
+import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
+import { ApiKeysService } from "@maple/backend/services/org/ApiKeysService"
+import { AuthService } from "@maple/backend/services/auth/AuthService"
+import { DashboardPersistenceService } from "@maple/backend/services/dashboards/DashboardPersistenceService"
+import { LiveActivitiesService } from "@maple/backend/services/push/LiveActivitiesService"
+import { MobileDevicesService } from "@maple/backend/services/push/MobileDevicesService"
+import { SharedDashboardService } from "@maple/backend/services/dashboards/SharedDashboardService"
+import {
+	QueryEngineService,
+	type QueryEngineServiceApi,
+} from "@maple/backend/services/warehouse/QueryEngineService"
 import { V2TransportErrorBoundaryLive } from "./error-envelope"
 import {
 	AlertsServiceStubLayer,
@@ -28,7 +31,6 @@ import {
 	ConfigResourceServiceStubsLayer,
 	makeWarehouseServiceStub,
 	PlanetScaleServiceStubsLayer,
-	SlackIntegrationServiceStubLayer,
 } from "./v2-test-support"
 import { compiledQueryOf } from "@maple/query-engine/execution"
 
@@ -176,6 +178,22 @@ const rowsForSql = (sql: string): ReadonlyArray<Record<string, unknown>> => {
 	if (sql.includes("AS environment")) {
 		return [{ environment: "production" }, { environment: "staging" }]
 	}
+	if (sql.includes("bSpanName") || sql.includes("service_operations_minutely")) {
+		return [
+			{
+				spanName: "GET /checkout",
+				spanCount: "8",
+				estimatedSpanCount: "16",
+				errorCount: "2",
+				estimatedErrorCount: "4",
+				errorRate: "0.25",
+				avgDurationMs: "20",
+				p50DurationMs: "12",
+				p95DurationMs: "38",
+				p99DurationMs: "49",
+			},
+		]
+	}
 	if (sql.includes("FROM service_overview_spans")) {
 		return [
 			{
@@ -232,6 +250,34 @@ const queryEngineStub = {
 				}),
 			)
 		}
+		if (
+			request.query.kind === "timeseries" &&
+			"allMetrics" in request.query &&
+			request.query.allMetrics
+		) {
+			return Effect.succeed(
+				new QueryEngineExecuteResponse({
+					result: {
+						kind: "timeseries",
+						source: request.query.source,
+						data: [
+							{
+								bucket: "2026-07-15 12:00:00",
+								series: {
+									count: 10,
+									estimated_span_count: 20,
+									error_rate: 0.2,
+									p50_duration: 10,
+									p95_duration: 40,
+									p99_duration: 50,
+									apdex: 0.9,
+								},
+							},
+						],
+					},
+				}),
+			)
+		}
 		return Effect.succeed(
 			new QueryEngineExecuteResponse({
 				result: {
@@ -271,7 +317,6 @@ const makeHarness = (
 		Layer.provide(AllV2GroupLayersLive),
 		Layer.provide(telemetryLive),
 		Layer.provide(V2TransportErrorBoundaryLive),
-		Layer.provide(SlackIntegrationServiceStubLayer),
 		Layer.provide(PlanetScaleServiceStubsLayer),
 		Layer.provide(AlertsServiceStubLayer),
 		Layer.provide(ConfigResourceServiceStubsLayer),
@@ -401,6 +446,52 @@ describe("v2 telemetry reads over HTTP", () => {
 		})
 		const service = await harness.request("GET", `/v2/services/api?${windowQuery}`, key.secret)
 		expect(service.status).toBe(200)
+
+		// One round-trip for the phone's service detail: the same summary row the
+		// retrieve returns, every golden signal per bucket, and the busiest
+		// operations — with the bucket the caller asked for echoed back.
+		const overview = await harness.request(
+			"GET",
+			`/v2/services/api/overview?${windowQuery}&bucket_seconds=120`,
+			key.secret,
+		)
+		expect(overview.status, JSON.stringify(overview.body)).toBe(200)
+		expect(overview.body).toMatchObject({
+			object: "service_overview",
+			service: { name: "api", span_count: 10, baseline_p95_latency_ms: 35 },
+			start_time: START,
+			end_time: END,
+			bucket_seconds: 120,
+		})
+		expect(overview.body.points).toEqual([
+			{
+				timestamp: START,
+				span_count: 10,
+				estimated_span_count: 20,
+				error_rate: 0.2,
+				p50_latency_ms: 10,
+				p95_latency_ms: 40,
+				p99_latency_ms: 50,
+			},
+		])
+		expect(overview.body.operations).toEqual([
+			{
+				name: "GET /checkout",
+				span_count: 8,
+				estimated_span_count: 16,
+				error_count: 2,
+				error_rate: 0.25,
+				p50_latency_ms: 12,
+				p95_latency_ms: 38,
+				p99_latency_ms: 49,
+			},
+		])
+		const tooManyBuckets = await harness.request(
+			"GET",
+			`/v2/services/api/overview?${windowQuery}&bucket_seconds=1`,
+			key.secret,
+		)
+		expect(tooManyBuckets.status).toBe(400)
 
 		const serviceMap = await harness.request("GET", `/v2/service_map?${windowQuery}`, key.secret)
 		expect(serviceMap.status).toBe(200)
@@ -596,6 +687,63 @@ describe("v2 telemetry reads over HTTP", () => {
 		expect(baselineSql).toContain("'2026-07-08 12:00:00'")
 		expect(baselineSql).toContain("'2026-07-15 12:00:00'")
 		expect(baselineSql).not.toMatch(/'\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d+'/)
+		await harness.dispose()
+	})
+
+	// Regression: timeseries and breakdowns read the hourly rollups whenever the
+	// filters allow, and those floor their bounds through `toDateTime` or compare
+	// them against plain `DateTime` columns. Millisecond bounds made every
+	// unfiltered `POST /v2/logs/breakdown` fail with `Cannot parse string '…576'
+	// as DateTime`. The query engine is stubbed here, so check what reaches it.
+	it("sends second-precision window bounds to the timeseries and breakdown queries", async () => {
+		const observedWindows: Array<{ path: string; startTime: string; endTime: string }> = []
+		let currentPath = ""
+		const queryEngine: QueryEngineServiceApi = {
+			...queryEngineStub,
+			execute: (tenant, request) => {
+				observedWindows.push({
+					path: currentPath,
+					startTime: request.startTime,
+					endTime: request.endTime,
+				})
+				return queryEngineStub.execute(tenant, request)
+			},
+		}
+		const harness = makeHarness(warehouseStub, queryEngine)
+		const key = await harness.bootstrapKey()
+		const bounds = { start_time: "2026-07-15T08:30:00.576Z", end_time: "2026-07-15T12:15:00.100Z" }
+		const metricFilters = { metric_name: "http.server.duration", metric_type: "histogram" }
+
+		for (const [path, body] of [
+			["/v2/traces/timeseries", { ...bounds, aggregation: "count" }],
+			["/v2/traces/breakdown", { ...bounds, aggregation: "count", group_by: "service" }],
+			["/v2/logs/timeseries", { ...bounds, aggregation: "count" }],
+			["/v2/logs/breakdown", { ...bounds, aggregation: "count", group_by: "service" }],
+			["/v2/metrics/timeseries", { ...bounds, aggregation: "avg", filters: metricFilters }],
+			[
+				"/v2/metrics/breakdown",
+				{ ...bounds, aggregation: "avg", group_by: "service", filters: metricFilters },
+			],
+		] as const) {
+			currentPath = path
+			const response = await harness.request("POST", path, key.secret, body)
+			expect(response.status, path).toBe(200)
+		}
+
+		expect(observedWindows.map((window) => window.path)).toEqual([
+			"/v2/traces/timeseries",
+			"/v2/traces/breakdown",
+			"/v2/logs/timeseries",
+			"/v2/logs/breakdown",
+			"/v2/metrics/timeseries",
+			"/v2/metrics/breakdown",
+		])
+		for (const window of observedWindows) {
+			expect(window, window.path).toMatchObject({
+				startTime: "2026-07-15 08:30:00",
+				endTime: "2026-07-15 12:15:00",
+			})
+		}
 		await harness.dispose()
 	})
 

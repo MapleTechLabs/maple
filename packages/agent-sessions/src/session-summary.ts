@@ -1,0 +1,1219 @@
+// Everything the session header states, derived from the spans.
+//
+// Three rules shape this module. Time is measured as *occupancy* of the wall
+// clock, never as a sum of span durations — a session running four tools in
+// parallel would otherwise report 180% of itself. Tokens are counted at the
+// deepest span that reports them, because frameworks that also roll usage up to
+// the agent span would otherwise double the bill. And token buckets are
+// normalised to be disjoint at the point they are read off a span: a provider
+// that counts cached tokens inside its prompt figure, or reasoning inside its
+// completion figure, has them carved back out (see `genAiUsageConvention`), so
+// `input` always means the uncached prompt, `output` the visible completion,
+// and a total is always the plain sum of the buckets.
+
+import { genAiUsageConvention } from "@maple/domain/gen-ai"
+import type { AiSessionSpan } from "@maple/domain/http"
+
+import { formatCurrency, formatDuration, formatNumber } from "@maple/domain/format"
+import {
+	describeSchemaFailure,
+	failureDetailText,
+	incompleteRunTool,
+	rawFailureText,
+	stripFailurePrefixes,
+	toolNamedBySchemaError,
+} from "./failure-text"
+import {
+	classifyAiSpan,
+	isLlmCall,
+	spanEndMs,
+	spanFailed,
+	spanModel,
+	spanStartMs,
+	spanTtftMs,
+	type SessionTurn,
+} from "./session-turns"
+
+/**
+ * Shortest hole in the session that counts as the user thinking rather than the
+ * framework working. Below it, a gap is overhead and stays in active time.
+ */
+const IDLE_GAP_MIN_MS = 5_000
+
+export interface IdleGap {
+	readonly id: string
+	readonly startMs: number
+	readonly endMs: number
+	readonly durationMs: number
+}
+
+/** Classes of agent time, in the order the breakdown stacks them. */
+export type AgentTimeKind = "ttft" | "inference" | "tool"
+
+const AGENT_TIME_KIND_ORDER: readonly AgentTimeKind[] = ["ttft", "inference", "tool"]
+
+export interface AgentTimeSegment {
+	readonly kind: AgentTimeKind
+	readonly ms: number
+}
+
+/**
+ * What the agents spent, rather than what the clock did. Every work span
+ * contributes its whole duration, so two subagents inferring at once cost two
+ * seconds of agent time per second of wall clock — `totalMs` exceeding the wall
+ * clock is the fan-out, not an error.
+ */
+export interface SessionAgentTime {
+	readonly totalMs: number
+	/** Non-zero segments only, stacked in `AGENT_TIME_KIND_ORDER`: an
+	 *  unavailable TTFT is absent, never a zero-width band. */
+	readonly segments: readonly AgentTimeSegment[]
+}
+
+export interface SessionTokenTotals {
+	/** Uncached prompt tokens: providers whose prompt figure contains the cache
+	 *  buckets have them carved back out. See `spanTokenBuckets`. */
+	readonly input: number
+	readonly cacheRead: number
+	readonly cacheWrite: number
+	/** Visible completion tokens: providers whose completion figure contains
+	 *  the reasoning have it carved back out, the same way. */
+	readonly output: number
+	readonly reasoning: number
+	/** The buckets are disjoint after normalisation, so this is their sum. */
+	readonly total: number
+}
+
+/**
+ * Where the session's usage figures came from, so a view can say why a number
+ * is missing rather than printing a zero it cannot stand behind.
+ *
+ * - `per-call` — each model call reported its own usage.
+ * - `roll-up` — a wrapper span reported the sum of calls that also reported.
+ * - `session-level` — every figure comes from a span covering more than one
+ *   turn, so the session has a total and the individual turns do not.
+ * - `none` — nothing reported usage.
+ */
+export type SessionTokenReporting = "per-call" | "roll-up" | "session-level" | "none"
+
+export interface SessionModelUsage {
+	readonly model: string
+	readonly llmCalls: number
+	readonly tokens: SessionTokenTotals
+	/** Reported spend over this model's calls, or nothing when none of them
+	 *  carried a cost — the same rule the session's own `cost` follows. */
+	readonly cost: number | undefined
+}
+
+/** One call of a tool: when it ran, what it cost, and how to open it. */
+export interface SessionToolCall {
+	readonly spanId: string
+	readonly startMs: number
+	readonly durationMs: number
+	readonly failed: boolean
+	/** The instrumentation's own word for what went wrong, on a failed call. */
+	readonly errorLabel: string | undefined
+	/** The failure's message — the status message, or the recorded result for a
+	 *  framework that reports a failed call as a value on an `Ok` span. */
+	readonly errorDetail: string | undefined
+	/** The `Turn n` the call ran in, or nothing for a call outside every turn. */
+	readonly turnIndex: number | undefined
+}
+
+/** One tool, and every call the session made to it. */
+export interface SessionToolUsage {
+	readonly name: string
+	readonly calls: number
+	/** Of those calls, the ones whose span reported a failure. */
+	readonly failed: number
+	/** `gen_ai.tool.description`, from the first span that stamped one. */
+	readonly description: string | undefined
+	/** What the tool's own calls cost, summed — overlapping calls are counted
+	 *  once each, so this is agent time rather than wall clock. */
+	readonly totalMs: number
+	readonly slowestMs: number
+	/** Every call, in start order. */
+	readonly events: readonly SessionToolCall[]
+}
+
+/**
+ * How a failure is named on the page — the bucket it counts in, and the label
+ * the breakdown groups by.
+ *
+ * - `error`: an errored span nothing below names — the catch-all.
+ * - `rateLimited`, `contextExceeded`, `refusal`: the model-side signals the
+ *   rail has always drawn apart.
+ * - `providerError`: the model call itself failed at the provider or gateway.
+ * - `invalidOutput`: the model answered, and the answer failed the schema the
+ *   agent demanded of it — an agent-author problem, not a provider one.
+ * - `toolArguments`: a tool refused the arguments the model sent — the tool
+ *   ran fine, the model called it wrong.
+ * - `toolUnavailable`: a tool could not run at all — an integration not
+ *   connected, a repository not linked, a permission missing.
+ * - `toolTimeout`: a tool's backend gave up.
+ * - `incomplete`: the run ended without the completion the agent required.
+ */
+export type SessionFailureKind =
+	| "error"
+	| "rateLimited"
+	| "contextExceeded"
+	| "refusal"
+	| "providerError"
+	| "invalidOutput"
+	| "toolArguments"
+	| "toolUnavailable"
+	| "toolTimeout"
+	| "incomplete"
+
+export interface SessionFailureEvent {
+	readonly kind: SessionFailureKind
+	/** What went wrong, in the instrumentation's own vocabulary. */
+	readonly label: string
+	/** The tool the failure is about, for the kinds that name one. */
+	readonly tool?: string
+	readonly span: AiSessionSpan
+}
+
+/** Failure events sharing a label, counted. */
+export interface SessionFailureGroup {
+	readonly kind: SessionFailureKind
+	readonly label: string
+	readonly count: number
+}
+
+export interface SessionWorkCounts {
+	readonly turns: number
+	readonly llmCalls: number
+	readonly toolCalls: number
+}
+
+export interface SessionFailureCounts {
+	/** Every errored span not named by one of the buckets below. */
+	readonly errors: number
+	readonly rateLimited: number
+	readonly contextExceeded: number
+	readonly refusals: number
+}
+
+export interface SessionSummary {
+	readonly startMs: number
+	readonly endMs: number
+	readonly wallClockMs: number
+	readonly activeMs: number
+	readonly idleMs: number
+	readonly idleGaps: readonly IdleGap[]
+	readonly agentTime: SessionAgentTime
+	/** The last turn did not close cleanly. */
+	readonly failed: boolean
+	/** The opening user message, when content was captured. */
+	readonly title: string | undefined
+	readonly agentNames: readonly string[]
+	readonly vendorIds: readonly string[]
+	readonly serviceNames: readonly string[]
+	readonly models: readonly SessionModelUsage[]
+	readonly tokens: SessionTokenTotals
+	/** How those tokens were reported — the one thing a per-turn number cannot
+	 *  express, and the reason a turn may have none. */
+	readonly tokenReporting: SessionTokenReporting
+	/**
+	 * Spend in USD as the instrumentation reported it. Maple does not price
+	 * tokens itself: no convention attribute carries a price, so only spans
+	 * stamped with one by an instrumentation that did its own pricing
+	 * (`gen_ai.usage.cost` and its vendor spellings) contribute. `undefined`
+	 * when no span reported a cost at all.
+	 */
+	readonly cost: number | undefined
+	readonly work: SessionWorkCounts
+	readonly failures: SessionFailureCounts
+	/** The same failures those counts tally, grouped by what they say went wrong
+	 *  and ordered busiest first. */
+	readonly failureGroups: readonly SessionFailureGroup[]
+	/** Tools by how often they were called, busiest first. */
+	readonly tools: readonly SessionToolUsage[]
+	readonly spanCount: number
+	readonly traceCount: number
+}
+
+// Error signals, read off `error.type` (often just the status code),
+// `gen_ai.response.status` and the span's own status message. `length` is
+// deliberately absent from the context pattern: as a finish reason it means
+// max_tokens was reached, which is a normal completion, not a failure.
+const RATE_LIMIT_PATTERN = /\b429\b|rate.?limit|too.many.requests|resource.exhausted|overloaded/i
+const CONTEXT_EXCEEDED_PATTERN =
+	/context.{0,16}(length|window|limit)|maximum.context|prompt is too long|too many tokens/i
+const REFUSAL_FINISH_REASONS = new Set(["refusal", "content_filter"])
+
+export function buildSessionSummary({
+	spans,
+	turns,
+}: {
+	readonly spans: readonly AiSessionSpan[]
+	readonly turns: readonly SessionTurn[]
+}): SessionSummary {
+	// Sorted here so the first-seen orders below (agent names, vendors) are the
+	// session's own order rather than the order the warehouse returned rows in.
+	const ordered = [...spans].sort((a, b) => spanStartMs(a) - spanStartMs(b))
+	const byId = new Map(ordered.map((span) => [span.spanId, span]))
+
+	// Reduced, not spread: a partly loaded session can hold tens of thousands
+	// of spans, past what a spread argument list survives.
+	const startMs = ordered.reduce((min, span) => Math.min(min, spanStartMs(span)), Number.POSITIVE_INFINITY)
+	const endMs = ordered.reduce((max, span) => Math.max(max, spanEndMs(span)), Number.NEGATIVE_INFINITY)
+	const wallClockMs = endMs - startMs
+
+	const idleGaps = findIdleGaps(ordered)
+	const idleMs = idleGaps.reduce((total, gap) => total + gap.durationMs, 0)
+
+	const usage = countableUsageSpans(ordered, byId)
+	const calls = countedLlmCalls(ordered, byId, usage.bySpan, usage.costs)
+	// The counts and the breakdown are two readings of this one list.
+	const events = failureEvents(ordered)
+
+	return {
+		startMs,
+		endMs,
+		wallClockMs,
+		activeMs: wallClockMs - idleMs,
+		idleMs,
+		idleGaps,
+		agentTime: computeAgentTime(ordered),
+		failed: turns[turns.length - 1]?.failed === true,
+		title: turns[0]?.label,
+		agentNames: distinctInOrder(ordered.map((span) => span.genAi.agentName)),
+		vendorIds: distinctInOrder(ordered.map((span) => span.vendorId)),
+		serviceNames: byFrequency(ordered.map((span) => span.serviceName)),
+		models: modelUsage(calls, usage.bySpan, usage.costs),
+		tokens: sumTokens([...usage.bySpan.values()]),
+		tokenReporting: classifyTokenReporting(usage, byId, turns),
+		cost: usage.costs.size === 0 ? undefined : sumCosts(usage.costs.values()),
+		work: {
+			turns: turns.length,
+			llmCalls: calls.length,
+			toolCalls: ordered.filter((span) => classifyAiSpan(span) === "tool").length,
+		},
+		failures: countFailures(events),
+		failureGroups: groupFailures(events),
+		tools: toolUsage(ordered, turns),
+		spanCount: ordered.length,
+		traceCount: new Set(ordered.map((span) => span.traceId)).size,
+	}
+}
+
+/* -------------------------------------------------------------------------- */
+/* Time                                                                       */
+/* -------------------------------------------------------------------------- */
+
+interface Interval {
+	readonly startMs: number
+	readonly endMs: number
+}
+
+/** Merge overlapping intervals into a disjoint, ordered cover. */
+function union(intervals: readonly Interval[]): Interval[] {
+	const sorted = [...intervals]
+		.filter((interval) => interval.endMs > interval.startMs)
+		.sort((a, b) => a.startMs - b.startMs)
+	const merged: Interval[] = []
+	for (const interval of sorted) {
+		const last = merged[merged.length - 1]
+		if (last !== undefined && interval.startMs <= last.endMs) {
+			if (interval.endMs > last.endMs) merged[merged.length - 1] = { ...last, endMs: interval.endMs }
+		} else {
+			merged.push(interval)
+		}
+	}
+	return merged
+}
+
+/**
+ * The stretches where nothing at all was running, long enough to read as the
+ * session waiting on a human. Short holes stay in active time — they are the
+ * framework's own overhead between spans, and calling a 200ms pause "idle"
+ * would scatter the waterfall with meaningless gap rows.
+ */
+export function findIdleGaps(spans: readonly AiSessionSpan[]): readonly IdleGap[] {
+	const busy = union(spans.map((span) => ({ startMs: spanStartMs(span), endMs: spanEndMs(span) })))
+	const gaps: IdleGap[] = []
+	for (let i = 1; i < busy.length; i++) {
+		const startMs = busy[i - 1].endMs
+		const endMs = busy[i].startMs
+		const durationMs = endMs - startMs
+		if (durationMs > IDLE_GAP_MIN_MS) gaps.push({ id: `gap:${startMs}`, startMs, endMs, durationMs })
+	}
+	return gaps
+}
+
+/**
+ * Sum what the agents spent, by class of work.
+ *
+ * Every work span contributes its whole duration — nothing is unioned and
+ * nothing is resolved by priority, which is the difference from the wall-clock
+ * reading this replaced: a session running four subagents in parallel spent
+ * four seconds of agent time per second, and flattening that onto one clock
+ * hid the fan-out and quietly stole the overlap from whichever class lost the
+ * priority order. The waterfall is where time reads chronologically.
+ *
+ * A TTFT splits its own span: the wait is not inference, and a session whose
+ * time is mostly first-token latency is a different session from one that is
+ * mostly generation. Agent and non-AI spans contribute nothing — an agent span
+ * covers its children, and adding it would count the same work twice.
+ */
+export function computeAgentTime(spans: readonly AiSessionSpan[]): SessionAgentTime {
+	const totals = new Map<AgentTimeKind, number>()
+	const add = (kind: AgentTimeKind, ms: number) => {
+		if (ms > 0) totals.set(kind, (totals.get(kind) ?? 0) + ms)
+	}
+
+	for (const span of spans) {
+		const spanStart = spanStartMs(span)
+		const spanEnd = spanEndMs(span)
+		const category = classifyAiSpan(span)
+		if (category !== "tool" && category !== "inference") continue
+		if (category === "tool") {
+			add("tool", spanEnd - spanStart)
+			continue
+		}
+		const ttftMs = spanTtftMs(span)
+		// A TTFT longer than the span itself is instrumentation disagreeing with
+		// itself; the span's own duration is the one both classes must fit in.
+		const ttft = ttftMs === undefined ? 0 : Math.min(ttftMs, spanEnd - spanStart)
+		add("ttft", ttft)
+		add("inference", spanEnd - spanStart - ttft)
+	}
+
+	const segments = AGENT_TIME_KIND_ORDER.map((kind) => ({ kind, ms: totals.get(kind) ?? 0 })).filter(
+		(segment) => segment.ms > 0,
+	)
+	return {
+		totalMs: segments.reduce((total, segment) => total + segment.ms, 0),
+		segments,
+	}
+}
+
+/* -------------------------------------------------------------------------- */
+/* Tokens, models, cost                                                       */
+/* -------------------------------------------------------------------------- */
+
+const EMPTY_TOKENS: SessionTokenTotals = {
+	input: 0,
+	cacheRead: 0,
+	cacheWrite: 0,
+	output: 0,
+	reasoning: 0,
+	total: 0,
+}
+
+/**
+ * The five `gen_ai.usage.*` buckets a span reports, normalised to disjoint
+ * buckets — or nothing when it reports none. A reporter whose prompt figure
+ * already contains its cache buckets, or whose completion figure contains its
+ * reasoning, has them carved back out (`genAiUsageConvention` says which), so
+ * `input` is always the uncached prompt, `output` the visible completion, and
+ * the total is always the sum, whichever convention the reporter billed under.
+ * `ai_trace_index`'s `Tokens` column reaches the same sum at insert
+ * (`genAiTokensExpr`), which is what keeps the list's usage equal to the
+ * detail page's. Exported so the waterfall and the flow split a span's usage
+ * the same way the header does rather than re-deriving the prompt/completion
+ * halves.
+ */
+export function spanTokenBuckets(span: AiSessionSpan): SessionTokenTotals | undefined {
+	const { usageInputTokens, usageCacheReadInputTokens, usageCacheCreationInputTokens } = span.genAi
+	const { usageOutputTokens, usageReasoningOutputTokens } = span.genAi
+	if (
+		usageInputTokens === undefined &&
+		usageCacheReadInputTokens === undefined &&
+		usageCacheCreationInputTokens === undefined &&
+		usageOutputTokens === undefined &&
+		usageReasoningOutputTokens === undefined
+	) {
+		return undefined
+	}
+	const convention = genAiUsageConvention(span.vendorId, span.genAi.providerName)
+	const cacheRead = usageCacheReadInputTokens ?? 0
+	const cacheWrite = usageCacheCreationInputTokens ?? 0
+	const reasoning = usageReasoningOutputTokens ?? 0
+	const reportedInput = usageInputTokens ?? 0
+	const reportedOutput = usageOutputTokens ?? 0
+	return tokenTotals({
+		// Clamped: a reporter whose nested figures exceed the figure that is
+		// supposed to contain them is mis-stamped, and a negative bucket would be
+		// a worse lie than a zero.
+		input: convention.inputIncludesCache
+			? Math.max(0, reportedInput - cacheRead - cacheWrite)
+			: reportedInput,
+		cacheRead,
+		cacheWrite,
+		output: convention.outputIncludesReasoning ? Math.max(0, reportedOutput - reasoning) : reportedOutput,
+		reasoning,
+	})
+}
+
+/** The five disjoint buckets plus their sum. */
+function tokenTotals(buckets: Omit<SessionTokenTotals, "total">): SessionTokenTotals {
+	return {
+		...buckets,
+		total: buckets.input + buckets.cacheRead + buckets.cacheWrite + buckets.output + buckets.reasoning,
+	}
+}
+
+interface CountableUsage {
+	/** Dedup-adjusted usage per reporting span; reporters left with nothing are absent. */
+	readonly bySpan: ReadonlyMap<string, SessionTokenTotals>
+	/** Reported cost per span under the same rules; an empty map means nothing
+	 *  reported a cost at all — "not measured", not "free". */
+	readonly costs: ReadonlyMap<string, number>
+	/** Some reporter summed usage that a span beneath it also reported. */
+	readonly rolledUp: boolean
+}
+
+/**
+ * Usage per span, with what a deeper span already reported taken off it.
+ *
+ * Several frameworks stamp `gen_ai.usage.*` on the model span AND sum it onto
+ * the agent span that wraps it. Counting the deepest reporter keeps the session
+ * total equal to what was actually billed. The wrapper is not dropped outright,
+ * though: it keeps whatever it reported ABOVE the sum of the reporters beneath
+ * it — zero for a clean roll-up, and the missing call's usage when one of its
+ * children reported none.
+ */
+function countableUsageSpans(
+	spans: readonly AiSessionSpan[],
+	byId: ReadonlyMap<string, AiSessionSpan>,
+): CountableUsage {
+	const reported = new Map<string, SessionTokenTotals>()
+	for (const span of spans) {
+		const tokens = spanTokenBuckets(span)
+		if (tokens !== undefined) reported.set(span.spanId, tokens)
+	}
+
+	const bySpan = new Map<string, SessionTokenTotals>()
+	let rolledUp = false
+	for (const [spanId, { own, beneath }] of chargeToNearestReporter(byId, reported)) {
+		if (beneath.length > 0) rolledUp = true
+		const tokens = excessTokens(own, sumTokens(beneath))
+		if (tokens.total > 0) bySpan.set(spanId, tokens)
+	}
+	const collapsed = collapseObservations(bySpan, costBySpan(spans, byId), byId)
+	return { bySpan: collapsed.tokens, costs: collapsed.costs, rolledUp }
+}
+
+/**
+ * Reporters sharing a `gen_ai.response.id` are one model call observed twice —
+ * the app's own span and a gateway's mirror of it (OpenRouter Broadcast,
+ * Helicone, …), which lands in the same session as a separate trace, out of
+ * reach of the parent/child netting above. The provider's response id is the
+ * one fact both observations carry, so the call is counted once, at the
+ * larger claim: the observation with the most tokens represents it (the
+ * first, on a tie), and it carries the largest cost any of them reported — a
+ * gateway prices a call the app's SDK could not, and the per-model table must
+ * find that price on the same span it finds the tokens. Reporters without an
+ * id are kept as they are — the page does not guess.
+ */
+function collapseObservations(
+	tokens: ReadonlyMap<string, SessionTokenTotals>,
+	costs: ReadonlyMap<string, number>,
+	byId: ReadonlyMap<string, AiSessionSpan>,
+): { readonly tokens: ReadonlyMap<string, SessionTokenTotals>; readonly costs: ReadonlyMap<string, number> } {
+	const groups = new Map<string, string[]>()
+	for (const spanId of new Set([...tokens.keys(), ...costs.keys()])) {
+		const responseId = byId.get(spanId)?.genAi.responseId
+		if (responseId === undefined || responseId === "") continue
+		groups.set(responseId, [...(groups.get(responseId) ?? []), spanId])
+	}
+	const keptTokens = new Map(tokens)
+	const keptCosts = new Map(costs)
+	for (const group of groups.values()) {
+		const total = (spanId: string) => tokens.get(spanId)?.total ?? 0
+		const representative = group.reduce((best, spanId) => (total(spanId) > total(best) ? spanId : best))
+		const reported = group.flatMap((spanId) => costs.get(spanId) ?? [])
+		for (const spanId of group) {
+			if (spanId === representative) continue
+			keptTokens.delete(spanId)
+			keptCosts.delete(spanId)
+		}
+		if (reported.length > 0) keptCosts.set(representative, Math.max(...reported))
+	}
+	return { tokens: keptTokens, costs: keptCosts }
+}
+
+/**
+ * The model calls the session made, each counted once. A model span counts
+ * when it is the deepest account of its call: it reported usage its children
+ * do not already cover, or it reported none and neither did any span above it
+ * — so a failed call still counts, while a gateway's provider attempt under
+ * the call that reports (OpenRouter's `provider attempt N`) and an SDK's
+ * `generateText` over its `doGenerate` do not. Calls sharing a response id
+ * are one call, represented by the observation whose usage claim was kept so
+ * the per-model table finds its tokens.
+ */
+function countedLlmCalls(
+	spans: readonly AiSessionSpan[],
+	byId: ReadonlyMap<string, AiSessionSpan>,
+	tokensBySpan: ReadonlyMap<string, SessionTokenTotals>,
+	costsBySpan: ReadonlyMap<string, number>,
+): readonly AiSessionSpan[] {
+	const reportsUsage = (span: AiSessionSpan) =>
+		(spanTokenBuckets(span)?.total ?? 0) > 0 || (span.genAi.usageCost ?? 0) > 0
+	const claimed = (span: AiSessionSpan) =>
+		tokensBySpan.has(span.spanId) || (costsBySpan.get(span.spanId) ?? 0) > 0
+	const deepest = spans.filter((span) => {
+		if (!isLlmCall(span)) return false
+		if (reportsUsage(span)) return claimed(span)
+		const seen = new Set<string>([span.spanId])
+		let parent = byId.get(span.parentSpanId)
+		while (parent !== undefined && !seen.has(parent.spanId)) {
+			if (reportsUsage(parent)) return false
+			seen.add(parent.spanId)
+			parent = byId.get(parent.parentSpanId)
+		}
+		return true
+	})
+	const byResponse = new Map<string, AiSessionSpan>()
+	const unkeyed: AiSessionSpan[] = []
+	for (const span of deepest) {
+		const responseId = span.genAi.responseId
+		if (responseId === undefined || responseId === "") {
+			unkeyed.push(span)
+			continue
+		}
+		const current = byResponse.get(responseId)
+		if (current === undefined || (!claimed(current) && claimed(span))) byResponse.set(responseId, span)
+	}
+	return [...unkeyed, ...byResponse.values()].sort((a, b) => spanStartMs(a) - spanStartMs(b))
+}
+
+/**
+ * Each reporter charged to the NEAREST ancestor that also reports, so a
+ * two-level roll-up subtracts each figure once rather than at every level.
+ * Every reporter has an entry, carrying what it reported itself (`own`) next to
+ * what was charged to it; a leaf's list is empty.
+ */
+function chargeToNearestReporter<T>(
+	byId: ReadonlyMap<string, AiSessionSpan>,
+	reported: ReadonlyMap<string, T>,
+): Map<string, { readonly own: T; readonly beneath: T[] }> {
+	const claimed = new Map([...reported].map(([spanId, own]) => [spanId, { own, beneath: [] as T[] }]))
+	for (const [spanId, span] of byId) {
+		const value = reported.get(spanId)
+		if (value === undefined) continue
+		const seen = new Set<string>([spanId])
+		let parent = byId.get(span.parentSpanId)
+		while (parent !== undefined && !seen.has(parent.spanId)) {
+			seen.add(parent.spanId)
+			const ancestor = claimed.get(parent.spanId)
+			if (ancestor !== undefined) {
+				ancestor.beneath.push(value)
+				break
+			}
+			parent = byId.get(parent.parentSpanId)
+		}
+	}
+	return claimed
+}
+
+/**
+ * Reported cost per span under the same deepest-reporter rule as tokens: a
+ * wrapper that sums its children's cost onto itself keeps only what it claims
+ * above them. Every span that reported a cost has an entry, a fully rolled-up
+ * wrapper's being zero — so an empty map means nothing reported at all, which
+ * is the difference between "free" and "not measured".
+ */
+function costBySpan(
+	spans: readonly AiSessionSpan[],
+	byId: ReadonlyMap<string, AiSessionSpan>,
+): ReadonlyMap<string, number> {
+	const reported = new Map<string, number>()
+	for (const span of spans) {
+		const cost = span.genAi.usageCost
+		if (cost !== undefined && cost >= 0) reported.set(span.spanId, cost)
+	}
+
+	const bySpan = new Map<string, number>()
+	for (const [spanId, { own, beneath }] of chargeToNearestReporter(byId, reported)) {
+		bySpan.set(spanId, Math.max(0, own - beneath.reduce((sum, c) => sum + c, 0)))
+	}
+	return bySpan
+}
+
+function sumCosts(costs: Iterable<number>): number {
+	let usd = 0
+	for (const cost of costs) usd += cost
+	return usd
+}
+
+/** Per bucket, what `reported` claims over `counted`. Never negative: a wrapper
+ *  that under-reports its own children adds nothing rather than subtracting. */
+function excessTokens(reported: SessionTokenTotals, counted: SessionTokenTotals): SessionTokenTotals {
+	return tokenTotals({
+		input: Math.max(0, reported.input - counted.input),
+		cacheRead: Math.max(0, reported.cacheRead - counted.cacheRead),
+		cacheWrite: Math.max(0, reported.cacheWrite - counted.cacheWrite),
+		output: Math.max(0, reported.output - counted.output),
+		reasoning: Math.max(0, reported.reasoning - counted.reasoning),
+	})
+}
+
+/**
+ * A span that reports usage for more than the turn it started in.
+ *
+ * Turns are partitioned by time, so a span belongs to the turn its start falls
+ * in. A session root — or a long-lived agent span — that reports the whole
+ * session's usage would therefore dump all of it into turn 1 and leave every
+ * later turn reading zero, which is the one number that is certainly wrong. It
+ * counts for the session and for the per-model table, and for no single turn.
+ *
+ * `turns` is in start order, so the first turn starting after this span is the
+ * next one; a reporter that outlives that boundary covers more than one turn.
+ */
+function isSessionLevelReporter(span: AiSessionSpan, turns: readonly SessionTurn[]): boolean {
+	const next = turns.find((turn) => turn.startMs > spanStartMs(span))
+	return next !== undefined && spanEndMs(span) > next.startMs
+}
+
+/**
+ * One turn's tokens, by the same deepest-reporter rule the header counts the
+ * session by, less any session-level reporter. The turns therefore add up to
+ * the total printed above them whenever the usage was reported per turn, and
+ * read as absent rather than as a wrong number when it was not.
+ */
+export function countTurnTokens(turn: SessionTurn, turns: readonly SessionTurn[]): SessionTokenTotals {
+	return countTurnUsage(turn, turns).tokens
+}
+
+/** One turn's tokens next to what it cost, counted by the same rule. */
+export interface SessionTurnUsage {
+	readonly tokens: SessionTokenTotals
+	/** Reported cost, or absent when nothing in the turn reported one — "not
+	 *  measured", never "free". */
+	readonly cost: number | undefined
+}
+
+/**
+ * A turn's usage: the tokens `countTurnTokens` returns, and the cost the same
+ * spans reported. The transcript prints this on the chapter header instead of
+ * on every call beneath it, so the two have to be counted together.
+ */
+export function countTurnUsage(turn: SessionTurn, turns: readonly SessionTurn[]): SessionTurnUsage {
+	const byId = new Map(turn.spans.map((span) => [span.spanId, span]))
+	const { bySpan, costs } = countableUsageSpans(turn.spans, byId)
+	// Walked over the deduplicated map rather than `turn.spans`: the session-level
+	// test needs the span, and a page-overlapping read can repeat a row.
+	const counted = [...byId.values()].filter((span) => !isSessionLevelReporter(span, turns))
+	const reported = counted.flatMap((span) => costs.get(span.spanId) ?? [])
+	return {
+		tokens: sumTokens(
+			counted.flatMap((span) => {
+				const tokens = bySpan.get(span.spanId)
+				return tokens === undefined ? [] : [tokens]
+			}),
+		),
+		cost: reported.length > 0 ? reported.reduce((sum, value) => sum + value, 0) : undefined,
+	}
+}
+
+/** Which of the three reporting shapes the session's instrumentation used. */
+function classifyTokenReporting(
+	usage: CountableUsage,
+	byId: ReadonlyMap<string, AiSessionSpan>,
+	turns: readonly SessionTurn[],
+): SessionTokenReporting {
+	const reporters = [...byId.values()].filter((span) => usage.bySpan.has(span.spanId))
+	if (reporters.length === 0) return "none"
+	if (reporters.every((span) => isSessionLevelReporter(span, turns))) {
+		return "session-level"
+	}
+	return usage.rolledUp ? "roll-up" : "per-call"
+}
+
+function sumTokens(totals: readonly SessionTokenTotals[]): SessionTokenTotals {
+	return totals.reduce(
+		(sum, tokens) => ({
+			input: sum.input + tokens.input,
+			cacheRead: sum.cacheRead + tokens.cacheRead,
+			cacheWrite: sum.cacheWrite + tokens.cacheWrite,
+			output: sum.output + tokens.output,
+			reasoning: sum.reasoning + tokens.reasoning,
+			total: sum.total + tokens.total,
+		}),
+		EMPTY_TOKENS,
+	)
+}
+
+/**
+ * Tokens and calls per model, over the counted model calls alone
+ * (`countedLlmCalls`). A call that reported usage without naming a model gets
+ * no row — its tokens are in the session total, which is where a number with
+ * no model belongs.
+ */
+function modelUsage(
+	calls: readonly AiSessionSpan[],
+	tokensBySpan: ReadonlyMap<string, SessionTokenTotals>,
+	costsBySpan: ReadonlyMap<string, number>,
+): readonly SessionModelUsage[] {
+	const byModel = new Map<string, { llmCalls: number; tokens: SessionTokenTotals[]; costs: number[] }>()
+
+	for (const span of calls) {
+		const model = spanModel(span)
+		if (model === undefined) continue
+		let entry = byModel.get(model)
+		if (entry === undefined) {
+			entry = { llmCalls: 0, tokens: [], costs: [] }
+			byModel.set(model, entry)
+		}
+		entry.llmCalls++
+		const tokens = tokensBySpan.get(span.spanId)
+		if (tokens !== undefined) entry.tokens.push(tokens)
+		const cost = costsBySpan.get(span.spanId)
+		if (cost !== undefined) entry.costs.push(cost)
+	}
+
+	return [...byModel]
+		.map(([model, entry]) => ({
+			model,
+			llmCalls: entry.llmCalls,
+			tokens: sumTokens(entry.tokens),
+			// A model whose calls reported no cost reads as unpriced rather than
+			// free — the session total may still be non-zero from another model.
+			cost: entry.costs.length === 0 ? undefined : sumCosts(entry.costs),
+		}))
+		.sort((a, b) => b.llmCalls - a.llmCalls || b.tokens.total - a.tokens.total)
+}
+
+/**
+ * Tools by how often the session called them. Named by `gen_ai.tool.name` where
+ * the instrumentation stamped one and by the span name otherwise, so a
+ * framework that skips the attribute still gets a histogram rather than
+ * disappearing from a column whose total says 63.
+ */
+function toolUsage(
+	spans: readonly AiSessionSpan[],
+	turns: readonly SessionTurn[],
+): readonly SessionToolUsage[] {
+	const turnIndexBySpan = new Map<string, number>()
+	for (const turn of turns) {
+		for (const span of turn.spans) turnIndexBySpan.set(span.spanId, turn.index)
+	}
+
+	const byName = new Map<string, { description: string | undefined; events: SessionToolCall[] }>()
+	for (const span of spans) {
+		if (classifyAiSpan(span) !== "tool") continue
+		const name = span.genAi.toolName ?? span.spanName
+		const entry = byName.get(name) ?? { description: undefined, events: [] }
+		// The first stamped description speaks for the tool: emitters send the
+		// same definition on every call, so later ones only repeat it.
+		entry.description ??= span.genAi.toolDescription
+		const failed = spanFailed(span)
+		entry.events.push({
+			spanId: span.spanId,
+			startMs: spanStartMs(span),
+			durationMs: spanEndMs(span) - spanStartMs(span),
+			failed,
+			errorLabel: failed ? (span.genAi.errorType ?? "error") : undefined,
+			errorDetail: failed ? failureDetailText(span) : undefined,
+			turnIndex: turnIndexBySpan.get(span.spanId),
+		})
+		byName.set(name, entry)
+	}
+
+	return (
+		[...byName]
+			.map(([name, entry]) => ({
+				name,
+				calls: entry.events.length,
+				failed: entry.events.filter((event) => event.failed).length,
+				description: entry.description,
+				totalMs: entry.events.reduce((total, event) => total + event.durationMs, 0),
+				slowestMs: Math.max(...entry.events.map((event) => event.durationMs)),
+				events: entry.events,
+			}))
+			// Reach leads, time breaks the tie: what the agent kept going back to is
+			// the first thing a reader scans the ledger for.
+			.sort((a, b) => b.calls - a.calls || b.totalMs - a.totalMs || a.name.localeCompare(b.name))
+	)
+}
+
+/* -------------------------------------------------------------------------- */
+/* Work and failures                                                          */
+/* -------------------------------------------------------------------------- */
+
+function errorSignal(span: AiSessionSpan): string {
+	return [span.genAi.errorType, span.genAi.responseStatus, span.statusMessage]
+		.filter((value): value is string => value !== undefined && value !== "")
+		.join(" ")
+}
+
+/** The error a span reports, or nothing — for a span that did not fail, or one
+ *  that failed without saying anything an ancestor could be matched against. */
+function failureSignal(span: AiSessionSpan): string | undefined {
+	if (!spanFailed(span)) return undefined
+	const signal = errorSignal(span)
+	return signal === "" ? undefined : signal
+}
+
+function refusalSignal(span: AiSessionSpan): string | undefined {
+	const reasons = (span.genAi.responseFinishReasons ?? [])
+		.map((reason) => reason.toLowerCase())
+		.filter((reason) => REFUSAL_FINISH_REASONS.has(reason))
+	return reasons.length === 0 ? undefined : reasons.join(",")
+}
+
+/**
+ * Ancestors carrying a signal a span below them already carries.
+ *
+ * Frameworks stamp the model call's error and its finish reasons on the agent
+ * span wrapping it as well. Counted at both levels, one refusal is two and one
+ * failure is two — so only the deepest span carrying a given signal counts.
+ *
+ * Exported for `session-findings.ts`, whose truncation detector reads finish
+ * reasons under the same copied-onto-the-wrapper convention refusals follow.
+ */
+export function shadowedAncestorIds(
+	spans: readonly AiSessionSpan[],
+	signalOf: (span: AiSessionSpan) => string | undefined,
+): ReadonlySet<string> {
+	const byId = new Map(spans.map((span) => [span.spanId, span]))
+	const shadowed = new Set<string>()
+	for (const span of spans) {
+		const signal = signalOf(span)
+		if (signal === undefined) continue
+		const seen = new Set<string>([span.spanId])
+		let parent = byId.get(span.parentSpanId)
+		while (parent !== undefined && !seen.has(parent.spanId)) {
+			if (signalOf(parent) === signal) shadowed.add(parent.spanId)
+			seen.add(parent.spanId)
+			parent = byId.get(parent.parentSpanId)
+		}
+	}
+	return shadowed
+}
+
+/**
+ * A gateway's per-provider attempt under one generation: OpenRouter tries
+ * several upstream providers for a single model call and emits a child span
+ * per try, marked with the provider and the status that moved it on. A failed
+ * attempt is the gateway's retry, not the agent's failure — the generation
+ * above it is what succeeded or failed.
+ */
+export function isProviderAttempt(span: AiSessionSpan): boolean {
+	return (
+		span.genAi.attemptIndex !== undefined ||
+		span.genAi.attemptStatusCode !== undefined ||
+		/^provider attempt\b/i.test(span.spanName)
+	)
+}
+
+/** Span kinds that are the app talking to something else: a client call's
+ *  4xx or a server span's 5xx is the app's business, never the agent's. The
+ *  warehouse spells the kind two ways (`SPAN_KIND_CLIENT` on the managed
+ *  schema, `Client` on BYO ClickHouse), so it is compared normalised. */
+const RPC_SPAN_KINDS = new Set(["CLIENT", "SERVER", "PRODUCER", "CONSUMER"])
+
+function isRpcSpan(span: AiSessionSpan): boolean {
+	return RPC_SPAN_KINDS.has(span.spanKind.replace(/^SPAN_KIND_/i, "").toUpperCase())
+}
+
+/**
+ * The app's own failed spans that restate an agent failure: the service and
+ * client spans under a failed tool call, the run wrapper over a failed model
+ * call. One cause, one event — the AI span carries it. An app span with no
+ * failed AI span above or below it is kept: it is the only record of whatever
+ * went wrong there.
+ */
+function appSpanShadowedIds(spans: readonly AiSessionSpan[]): ReadonlySet<string> {
+	const byId = new Map(spans.map((span) => [span.spanId, span]))
+	const failedAi = spans.filter((span) => span.isAiSpan && spanFailed(span) && !isProviderAttempt(span))
+	// Every ancestor of a failed AI span is shadowed from below.
+	const shadowed = new Set<string>()
+	for (const span of failedAi) {
+		const seen = new Set<string>([span.spanId])
+		let parent = byId.get(span.parentSpanId)
+		while (parent !== undefined && !seen.has(parent.spanId)) {
+			shadowed.add(parent.spanId)
+			seen.add(parent.spanId)
+			parent = byId.get(parent.parentSpanId)
+		}
+	}
+	// A failed app span under a failed AI span is shadowed from above.
+	for (const span of spans) {
+		if (span.isAiSpan || !spanFailed(span) || shadowed.has(span.spanId)) continue
+		const seen = new Set<string>([span.spanId])
+		let parent = byId.get(span.parentSpanId)
+		while (parent !== undefined && !seen.has(parent.spanId)) {
+			if (parent.isAiSpan && spanFailed(parent) && !isProviderAttempt(parent)) {
+				shadowed.add(span.spanId)
+				break
+			}
+			seen.add(parent.spanId)
+			parent = byId.get(parent.parentSpanId)
+		}
+	}
+	return shadowed
+}
+
+/**
+ * Everything that went wrong, one event per span that went wrong, in start
+ * order. First match wins — a tool call that failed with a 429 is one event, a
+ * rate limit, because that is the cause worth acting on — and `error` is the
+ * catch-all, so every failed span produces an event.
+ *
+ * "Failed" is {@link spanFailed}, not span status alone: a framework that
+ * records a failed model or tool call as a value on an `Ok` span (a
+ * `provider-error` event that completes the stream, a tool error returned as a
+ * result) still counts, off `error.type` / `gen_ai.response.status`.
+ *
+ * Refusals are the exception: they are a finish reason on a span that
+ * succeeded, so they are read independently of span status.
+ *
+ * Three things a failed span can be are not events. A gateway's failed
+ * provider attempt is a retry the generation above it absorbed
+ * ({@link isProviderAttempt}); the findings report those on their own row. The
+ * app's client and server spans are the app's own traffic — a 405 from an MCP
+ * probe is not the agent failing. And the app's internal spans that sit above
+ * or below a failed AI span restate it ({@link appSpanShadowedIds}).
+ *
+ * Both take the deepest reporter, because a framework that copies the model's
+ * error or finish reason onto the agent span wrapping it would otherwise report
+ * one failure as two — and a call observed by the app and again by a gateway's
+ * mirror carries the same response id, so it is one event too.
+ *
+ * Exported because the counts, the Overview's breakdown and its verdict are
+ * three readings of this one list, and they must not disagree.
+ */
+export function failureEvents(spans: readonly AiSessionSpan[]): readonly SessionFailureEvent[] {
+	// An attempt neither reports nor shadows: the generation above it is the
+	// one call, and its own refusal or failure is the gateway's retry.
+	const shadowedFailures = shadowedAncestorIds(spans, agentSignal(failureSignal))
+	const shadowedRefusals = shadowedAncestorIds(spans, agentSignal(refusalSignal))
+	const shadowedApp = appSpanShadowedIds(spans)
+	const events: SessionFailureEvent[] = []
+
+	for (const span of spans) {
+		if (isProviderAttempt(span)) continue
+		if (refusalSignal(span) !== undefined && !shadowedRefusals.has(span.spanId)) {
+			events.push({ kind: "refusal", label: "refusal", span })
+		}
+		if (!spanFailed(span) || shadowedFailures.has(span.spanId)) continue
+		if (!span.isAiSpan && (isRpcSpan(span) || shadowedApp.has(span.spanId))) continue
+		events.push({ ...classifyFailure(span), span })
+	}
+
+	return dedupeByResponseId(events)
+}
+
+/** The signal as the agent's spans carry it: a provider attempt's is not read. */
+function agentSignal(
+	signalOf: (span: AiSessionSpan) => string | undefined,
+): (span: AiSessionSpan) => string | undefined {
+	return (span) => (isProviderAttempt(span) ? undefined : signalOf(span))
+}
+
+/**
+ * One model call, two observers: the app's own span and a gateway mirror of it
+ * (OpenRouter Broadcast) land in one session as separate traces with the same
+ * `gen_ai.response.id`. The observation that named the cause keeps the event:
+ * a specific kind over the catch-alls, then the longer text. Refusals are a
+ * finish reason, not a failure, so a refused call that also failed keeps both,
+ * while its refusal seen twice is one.
+ */
+function dedupeByResponseId(events: readonly SessionFailureEvent[]): readonly SessionFailureEvent[] {
+	const slots = new Map<string, { index: number; event: SessionFailureEvent }>()
+	const kept: SessionFailureEvent[] = []
+	for (const event of events) {
+		const id = event.span.genAi.responseId
+		if (id === undefined || id === "") {
+			kept.push(event)
+			continue
+		}
+		// A refusal and a failure of one call are two events; two observers of
+		// its refusal are one.
+		const key = `${event.kind === "refusal" ? "refusal" : "failure"}:${id}`
+		const slot = slots.get(key)
+		if (slot === undefined) {
+			slots.set(key, { index: kept.length, event })
+			kept.push(event)
+			continue
+		}
+		const specific = failureSpecificity(event) - failureSpecificity(slot.event)
+		const longer =
+			(rawFailureText(event.span) ?? "").length - (rawFailureText(slot.event.span) ?? "").length
+		if (specific > 0 || (specific === 0 && longer > 0)) {
+			kept[slot.index] = event
+			slot.event = event
+		}
+	}
+	return kept
+}
+
+/** Whether the event's kind says what happened, or is one of the catch-alls. */
+function failureSpecificity(event: SessionFailureEvent): number {
+	return event.kind === "error" || event.kind === "providerError" ? 0 : 1
+}
+
+// The words a failed tool's message uses for each cause. Written for what
+// frameworks and Maple's own tools actually say, so a reader gets "the model
+// called it wrong" against "it could not run" instead of one `error` bucket.
+// Matched against the message with its framework prefixes stripped — the
+// `@maple/http/errors/IntegrationsUpstreamError` tag on a GitHub 500 would
+// otherwise read as an integration that is not connected — and bounded, so a
+// megabyte tool result cannot stall the read.
+const CLASSIFIED_TEXT_CHARS = 1000
+const TOOL_TIMEOUT_PATTERN = /timeout|timed out|deadline exceeded/i
+/** A schema or parameter rejection: unambiguous, so it is read before the
+ *  availability words — a missing key named `integration` is still the model's
+ *  arguments. Read off the raw text, whose framework wrapper is the cue. */
+const TOOL_SCHEMA_PATTERN = /invalid (parameters?|arguments?|params?|input)|schemaerror|missing key/i
+const TOOL_ARGUMENTS_PATTERN =
+	/invalid (group_by|metric|filter|time range|value)|is required|requires `|must reference|must be|not a valid|unknown (function|column|table|field)|no table named|not found\b[\s\S]{0,400}available tables|resource '[^']*' not found|illegal types|too large|out of range|unsupported/i
+const TOOL_UNAVAILABLE_PATTERN =
+	/not configured|not connected|not available|unavailable|not enabled|not installed|unauthori[sz]ed|forbidden|permission denied|access denied|no sandbox|integration/i
+
+function classifyFailure(span: AiSessionSpan): Omit<SessionFailureEvent, "span"> {
+	const signal = errorSignal(span)
+	if (RATE_LIMIT_PATTERN.test(signal)) return { kind: "rateLimited", label: "rate_limit" }
+	if (CONTEXT_EXCEEDED_PATTERN.test(signal)) {
+		return { kind: "contextExceeded", label: "context_length_exceeded" }
+	}
+
+	const raw = (rawFailureText(span) ?? "").slice(0, CLASSIFIED_TEXT_CHARS)
+	const text = stripFailurePrefixes(raw)
+	if (incompleteRunTool(text) !== undefined) return { kind: "incomplete", label: "incomplete" }
+
+	// `error.type` is the instrumentation's own word for it; the tool name is
+	// what separates one failing tool from another under a shared `tool_error`.
+	const name = span.genAi.errorType ?? "error"
+	const tool = span.genAi.toolName ?? (classifyAiSpan(span) === "tool" ? span.spanName : undefined)
+	if (tool !== undefined) {
+		// A parameter error names the tool whose schema was violated; a batch
+		// of calls can stamp a sibling's name on the span. `error.type` joins
+		// the words: a framework that stamps `timeout` and records no message
+		// has still said what happened. The schema wrapper is one of the
+		// prefixes stripping removes, so it is read off the raw text.
+		const named = toolNamedBySchemaError(raw) ?? tool
+		const words = `${span.genAi.errorType ?? ""} ${text}`
+		// The schema cue first: a rejected parameter named `timeout` is still
+		// the model's arguments.
+		if (TOOL_SCHEMA_PATTERN.test(raw))
+			return { kind: "toolArguments", label: `tool_arguments · ${named}`, tool: named }
+		if (TOOL_TIMEOUT_PATTERN.test(words)) {
+			return { kind: "toolTimeout", label: `tool_timeout · ${named}`, tool: named }
+		}
+		if (TOOL_UNAVAILABLE_PATTERN.test(words)) {
+			return { kind: "toolUnavailable", label: `tool_unavailable · ${named}`, tool: named }
+		}
+		if (TOOL_ARGUMENTS_PATTERN.test(words)) {
+			return { kind: "toolArguments", label: `tool_arguments · ${named}`, tool: named }
+		}
+		return { kind: "error", label: `${name} · ${named}`, tool: named }
+	}
+
+	if (span.genAi.errorType === "invalid_output" || describeSchemaFailure(text) !== undefined) {
+		return { kind: "invalidOutput", label: "invalid_output" }
+	}
+	// A model call that failed at the provider: Maple's own agents stamp
+	// `provider_error`; a gateway mirror's generation span stamps nothing and is
+	// known by where it came from. A more specific `error.type` keeps its name.
+	if (
+		span.genAi.errorType === "provider_error" ||
+		(span.genAi.errorType === undefined && span.vendorId === "openrouter" && isLlmCall(span))
+	) {
+		return { kind: "providerError", label: "provider_error" }
+	}
+	return { kind: "error", label: name }
+}
+
+function countFailures(events: readonly SessionFailureEvent[]): SessionFailureCounts {
+	const counts = { errors: 0, rateLimited: 0, contextExceeded: 0, refusals: 0 }
+	for (const event of events) {
+		if (event.kind === "rateLimited") counts.rateLimited++
+		else if (event.kind === "contextExceeded") counts.contextExceeded++
+		else if (event.kind === "refusal") counts.refusals++
+		else counts.errors++
+	}
+	return counts
+}
+
+/** Events sharing a label, counted, busiest first. */
+export function groupFailures(events: readonly SessionFailureEvent[]): readonly SessionFailureGroup[] {
+	const groups = new Map<string, SessionFailureGroup>()
+	for (const event of events) {
+		const existing = groups.get(event.label)
+		groups.set(event.label, {
+			kind: event.kind,
+			label: event.label,
+			count: (existing?.count ?? 0) + 1,
+		})
+	}
+	return [...groups.values()].sort((a, b) => b.count - a.count || a.label.localeCompare(b.label))
+}
+
+/* -------------------------------------------------------------------------- */
+/* How one call reads                                                         */
+/* -------------------------------------------------------------------------- */
+
+/** A $0.0004 session printed "$0.00" reads as "measured, and it was free".
+ *  Shared by the overview's rails, the span expansion's meta strip and the
+ *  transcript, so a call and the rail it rolls up into can never disagree. */
+export function formatCost(usd: number): string {
+	return usd > 0 && usd < 0.01 ? "<$0.01" : formatCurrency(usd, "usd")
+}
+
+/** `6.4K → 512 tok`: the prompt half of a usage figure against the completion
+ *  half, shared by a call's meta line and the turn header that sums them. */
+export function tokenFlowLabel(buckets: SessionTokenTotals): string {
+	const completion = buckets.output + buckets.reasoning
+	return `${formatNumber(buckets.total - completion)} → ${formatNumber(completion)} tok`
+}
+
+export interface CallMetaOptions {
+	/** `false` drops tokens and cost — the transcript prints those once per
+	 *  turn rather than on every call inside it. */
+	readonly usage?: boolean
+}
+
+/**
+ * One model call's facts, in reading order: `claude-opus-5`, `6.4K → 512 tok`,
+ * `$0.11`, `ttft 780ms`, `stop tool_use`. Every part is omitted where the span
+ * did not report it, and the model is always first when there is one — the
+ * transcript's structure row leans on that to print the rest without it.
+ *
+ * Returned as parts rather than as one string so a caller that wants a subset
+ * can take one, instead of slicing the joined line back apart.
+ */
+export function callMetaParts(span: AiSessionSpan, options?: CallMetaOptions): readonly string[] {
+	const parts: string[] = []
+	const model = spanModel(span)
+	if (model !== undefined) parts.push(model)
+
+	const buckets = options?.usage === false ? undefined : spanTokenBuckets(span)
+	if (buckets !== undefined && buckets.total > 0) parts.push(tokenFlowLabel(buckets))
+	const cost = options?.usage === false ? undefined : span.genAi.usageCost
+	if (cost !== undefined) parts.push(formatCost(cost))
+	const ttftMs = spanTtftMs(span)
+	if (ttftMs !== undefined) parts.push(`ttft ${formatDuration(ttftMs)}`)
+	const finish = span.genAi.responseFinishReasons
+	if (finish !== undefined && finish.length > 0) parts.push(`stop ${finish.join(", ")}`)
+	return parts
+}
+
+export function callMetaLine(span: AiSessionSpan, options?: CallMetaOptions): string {
+	return callMetaParts(span, options).join(" · ")
+}
+
+/* -------------------------------------------------------------------------- */
+/* Small collection helpers                                                   */
+/* -------------------------------------------------------------------------- */
+
+function distinctInOrder(values: readonly (string | undefined)[]): readonly string[] {
+	const seen: string[] = []
+	for (const value of values) {
+		if (value !== undefined && value !== "" && !seen.includes(value)) seen.push(value)
+	}
+	return seen
+}
+
+/** Distinct values, busiest first — the header names the dominant service. */
+function byFrequency(values: readonly string[]): readonly string[] {
+	const counts = new Map<string, number>()
+	for (const value of values) counts.set(value, (counts.get(value) ?? 0) + 1)
+	return [...counts].sort((a, b) => b[1] - a[1]).map(([value]) => value)
+}

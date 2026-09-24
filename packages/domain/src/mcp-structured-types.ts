@@ -239,8 +239,12 @@ export interface ListMetricsData {
 }
 
 export interface QueryDataQueryContext {
-	source: "traces" | "logs" | "metrics"
+	source: "traces" | "logs" | "metrics" | "product_events"
 	serviceName?: string
+	eventName?: string
+	eventKind?: string
+	host?: string
+	pagePath?: string
 	spanName?: string
 	rootSpansOnly?: boolean
 	environments?: string[]
@@ -317,6 +321,25 @@ export interface ListAlertRulesData {
 	total: number
 }
 
+export interface AlertDestinationRow {
+	id: string
+	name: string
+	type: string
+	enabled: boolean
+	summary: string
+	channelLabel: string | null
+	lastTestedAt: string | null
+	lastTestError: string | null
+	disabledReason: string | null
+	createdAt: string
+	updatedAt: string
+}
+
+export interface ListAlertDestinationsData {
+	destinations: AlertDestinationRow[]
+	total: number
+}
+
 export interface CreateAlertRuleData {
 	rule: AlertRuleRow
 }
@@ -357,6 +380,9 @@ export interface AlertIncidentRow {
 	signalType: string
 	severity: string
 	status: string
+	/** Set while an open incident is waiting on telemetry rather than observing a breach. */
+	holdReason: string | null
+	heldSince: string | null
 	threshold: number
 	comparator: string
 	firstTriggeredAt: string
@@ -965,6 +991,7 @@ export type StructuredToolOutput =
 	| { tool: "query_data"; data: QueryDataData }
 	| { tool: "service_map"; data: ServiceMapData }
 	| { tool: "list_alert_rules"; data: ListAlertRulesData }
+	| { tool: "list_alert_destinations"; data: ListAlertDestinationsData }
 	| { tool: "list_alert_incidents"; data: ListAlertIncidentsData }
 	| { tool: "list_alert_checks"; data: ListAlertChecksData }
 	| { tool: "create_alert_rule"; data: CreateAlertRuleData }
