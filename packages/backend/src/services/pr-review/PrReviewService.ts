@@ -89,15 +89,6 @@ const internalServiceUserId = Schema.decodeSync(UserId)("internal-service")
 export const PR_REVIEW_CHECK_NAME = "Maple / review"
 
 /**
- * Reviews an organization may start per UTC day, across its repositories.
- *
- * A ceiling rather than a budget: a busy monorepo can push far more than this and the point is
- * that a runaway bot branch cannot spend the org's agent minutes. Per-org configuration is a
- * later setting; the number is chosen so no real team meets it on a normal day.
- */
-export const PR_REVIEW_DAILY_CEILING = 60
-
-/**
  * How long a push waits before its review starts. A burst of pushes then costs one review of the
  * last head instead of a started and aborted turn per push.
  */
@@ -1076,26 +1067,6 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 				return renderFollowUp({ previousSha, changes, open })
 			})
 
-			const startedToday = (orgId: OrgId, nowMs: number) =>
-				database
-					.execute((db) =>
-						db
-							.select({ total: count() })
-							.from(prReviews)
-							.where(
-								and(
-									eq(prReviews.orgId, orgId),
-									// Every row is a started attempt, superseded ones included: a branch pushing
-									// faster than reviews finish is the case the ceiling exists for.
-									gte(prReviews.createdAt, msToDate(utcDayStart(nowMs))),
-								),
-							),
-					)
-					.pipe(
-						Effect.mapError(toPersistence),
-						Effect.map((rows) => Number(rows[0]?.total ?? 0)),
-					)
-
 			/** A review of the same pull request still running, whose head this delivery replaces. */
 			const supersede = Effect.fn("PrReviewService.supersede")(function* (
 				orgId: OrgId,
@@ -1418,14 +1389,6 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 						nowMs,
 						config,
 					})
-				}
-				const started = yield* startedToday(orgId, nowMs)
-				if (started >= PR_REVIEW_DAILY_CEILING) {
-					yield* annotate("skipped", {
-						"maple.pr_review.skip_reason": "quota",
-						"maple.pr_review.started_today": started,
-					})
-					return skip("quota")
 				}
 				if (config.dailyLimit !== undefined) {
 					const repoToday = yield* database

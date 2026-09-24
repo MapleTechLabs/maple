@@ -44,7 +44,6 @@ import {
 	clampSummary,
 	PR_REVIEW_CHECK_NAME,
 	PR_REVIEW_COMMENT_MARKER,
-	PR_REVIEW_DAILY_CEILING,
 	PR_REVIEW_PUSH_DEBOUNCE_SECONDS,
 	PrReviewService,
 	renderCheckSummary,
@@ -504,23 +503,6 @@ describe("PrReviewService.onPullRequestEvent", () => {
 			assert.equal(begun.length, 1)
 			assert.include(begun[0]!.text, HEAD_2)
 		}).pipe(Effect.provide(layerFor(testDb, { begun, queued })))
-	})
-
-	it.effect("stops at the daily ceiling", () => {
-		const testDb = createTestDb(trackedDbs)
-		return Effect.gen(function* () {
-			yield* seed(true)
-			const reviews = yield* PrReviewService
-			for (let number = 1; number <= PR_REVIEW_DAILY_CEILING; number++) {
-				const outcome = yield* reviews.onPullRequestEvent(orgId, job({ number }))
-				assert.equal(outcome.outcome, "started", `review ${number}`)
-			}
-			const over = yield* reviews.onPullRequestEvent(
-				orgId,
-				job({ number: PR_REVIEW_DAILY_CEILING + 1 }),
-			)
-			assert.equal(over.skipReason, "quota")
-		}).pipe(Effect.provide(layerFor(testDb)))
 	})
 })
 

@@ -37,6 +37,25 @@ describe("normalizePrReviewSubmission", () => {
 		assert.equal(finding.severity, "warn")
 	})
 
+	it("reads a list the model sent as its JSON text", () => {
+		// glm-5.3-flash sent `findings` as a string in prod; a strict decode ended the review early.
+		const { report } = normalizePrReviewSubmission({
+			findings: JSON.stringify([{ path: "src/a.ts", line: 3, title: "kept" }]),
+			coverage: JSON.stringify([{ unit: "GET /a", instrumented: true }]),
+			resolved: '["f1"]',
+		})
+		assert.deepEqual(
+			report.findings.map((finding) => finding.title),
+			["kept"],
+		)
+		assert.equal(report.coverage[0]?.unit, "GET /a")
+		assert.deepEqual(
+			normalizePrReviewSubmission({ findings: "not json", resolved: '["f2"]' }).resolved,
+			["F2"],
+		)
+		assert.equal(normalizePrReviewSubmission({ findings: "not json" }).report.findings.length, 0)
+	})
+
 	it("drops a finding it cannot anchor to a line rather than inventing one", () => {
 		const { report, droppedFindings } = normalizePrReviewSubmission({
 			findings: [

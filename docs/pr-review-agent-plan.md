@@ -30,8 +30,8 @@ in order, skipping with the reason in brackets:
 - the PR is not a draft (`draft`) and the job carries a head SHA (`no_head_sha`);
 - the author is not a bot: a `[bot]` suffix, dependabot, renovate or GitHub Actions
   (`bot_author`);
-- the organization has started fewer than `PR_REVIEW_DAILY_CEILING` (60) reviews today, counting
-  every row started today whatever its status (`quota`);
+- the repository has not reached its own optional `dailyLimit` today (`quota`); there is no
+  organization-wide ceiling;
 - the head SHA has no live review yet (`duplicate`); a failed one is reclaimed for another attempt.
 
 A review that passes inserts a `pr_reviews` row and starts one turn on the session
