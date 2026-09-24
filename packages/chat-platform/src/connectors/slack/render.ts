@@ -364,7 +364,7 @@ export const renderSlackMessage = (blocks: ReadonlyArray<ChatBlock>): SlackMessa
 					// well: a dashboard named `<!channel>` must not page a workspace.
 					fallback.push(
 						outcome.text === ""
-							? `${block.toolName}: ${escapeMrkdwn(outcome.decision)}${link}`
+							? `${escapeMrkdwn(block.toolName)}: ${escapeMrkdwn(outcome.decision)}${link}`
 							: `${escapeMrkdwn(outcome.text)}${link}\n${escapeMrkdwn(outcome.decision)}`,
 					)
 					break
