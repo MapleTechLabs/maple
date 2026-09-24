@@ -15,6 +15,22 @@ import { Schema } from "effect"
 /** Where checkouts live inside the container; one directory per commit. */
 export const SANDBOX_WORKSPACE_ROOT = "/workspace/maple"
 
+/**
+ * One bare mirror of the repository per container. Every checkout is a `--shared` clone of it,
+ * so a new commit fetches only what the mirror lacks. Outside the workspace root so checkout
+ * eviction never sees it.
+ */
+export const SANDBOX_MIRROR_DIR = "/workspace/maple-mirror.git"
+
+/** Serializes every change to the mirror: fetches, and the snapshot a backup is taken from. */
+export const SANDBOX_MIRROR_LOCK = "/workspace/maple-mirror.lock"
+
+/** Where a backed-up mirror is restored to (read-only) before being copied into place. */
+export const SANDBOX_SEED_DIR = "/workspace/maple-seed"
+
+/** The mirror's point-in-time copy a backup archives, so a fetch never lands mid-archive. */
+export const SANDBOX_SNAPSHOT_DIR = "/workspace/maple-snapshot"
+
 /** The unprivileged account every agent command runs as. Created on first checkout. */
 export const SANDBOX_RUN_AS_USER = "maple-agent"
 

@@ -4,7 +4,8 @@ import { WarehouseQueryService } from "@maple/backend/services/warehouse/Warehou
 import { VcsSourceService } from "@maple/backend/services/integrations/vcs/VcsSourceService"
 import { SandboxClient } from "@maple/backend/sandbox/client"
 import { CloudflareRepoSandboxLive } from "@maple/backend/services/sandbox/CloudflareRepoSandbox"
-import { RepoSandboxService } from "@maple/backend/services/sandbox/RepoSandboxService"
+import type { SandboxError } from "@effect-agent/sandbox/Sandbox"
+import { RepoSandboxService, type RepositoryTarget } from "@maple/backend/services/sandbox/RepoSandboxService"
 
 import { AlertsService } from "@maple/backend/services/alerts/AlertsService"
 
@@ -162,6 +163,14 @@ export interface McpToolExecutorApi {
 		input: unknown,
 		surface: McpToolSurface,
 	) => Effect.Effect<McpToolResult, McpToolNotFoundError>
+	/**
+	 * Start cloning a repository's commit before any tool asks for it. Not a tool call: nothing
+	 * is audited, because nothing the model chose runs.
+	 */
+	readonly prepareRepository: (
+		tenant: TenantContext,
+		target: RepositoryTarget,
+	) => Effect.Effect<void, SandboxError>
 }
 
 /**
@@ -230,7 +239,16 @@ export class McpToolExecutor extends Context.Service<McpToolExecutor, McpToolExe
 				return result
 			})
 
-			return { execute }
+			const prepareRepository = Effect.fn("McpToolExecutor.prepareRepository")(function* (
+				tenant: TenantContext,
+				target: RepositoryTarget,
+			) {
+				yield* Effect.annotateCurrentSpan({ "vcs.repository.full_name": target.repository })
+				const sandbox = yield* RepoSandboxService
+				yield* sandbox.prepare(tenant.orgId, target)
+			}, Effect.provide(runtimeServices))
+
+			return { execute, prepareRepository }
 		}),
 	},
 ) {

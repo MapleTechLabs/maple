@@ -7,7 +7,7 @@
  * alchemy's Effect-native Workers generate their entry — it exports the bridge
  * classes it created and nothing else, so a third-party class declared in
  * `worker.ts` would never reach the deployed script. A plain module is used
- * verbatim, so `export { Sandbox }` below is what binds.
+ * verbatim, so the `Sandbox` class below is what binds.
  *
  * The api reaches this over a service binding and is the only caller: there is
  * no route and no public hostname. It carries the tenant, mints the credential
@@ -17,15 +17,119 @@
  * would otherwise keep out of a test: this module is the SDK, the binding and
  * the runtime, and nothing else.
  */
-import { getSandbox, type Sandbox as SandboxClass } from "@cloudflare/sandbox"
-import { Effect } from "effect"
+import { Sandbox as SdkSandbox, getSandbox } from "@cloudflare/sandbox"
+import { Effect, Option } from "effect"
 import { handle } from "./handle"
-
-export { Sandbox } from "@cloudflare/sandbox"
+import {
+	MIRROR_BACKUP_KEY,
+	type MirrorBackupHost,
+	backupMirror,
+	decodeStoredMirrorBackup,
+	restoreMirror,
+} from "./mirror-backup"
 
 interface SandboxWorkerEnv {
-	readonly Sandbox: DurableObjectNamespace<SandboxClass>
+	readonly Sandbox: DurableObjectNamespace<Sandbox>
 	readonly SANDBOX_INTERNAL_SERVICE_TOKEN?: string
+	// Read by the SDK itself for its backup API; all of them, or backups stay off.
+	readonly BACKUP_BUCKET?: R2Bucket
+	readonly BACKUP_BUCKET_NAME?: string
+	readonly R2_ACCESS_KEY_ID?: string
+	readonly R2_SECRET_ACCESS_KEY?: string
+	readonly CLOUDFLARE_ACCOUNT_ID?: string
+	/**
+	 * `"true"` in local dev, where the SDK can neither presign R2 URLs nor mount FUSE: archives go
+	 * through the bucket binding and restores extract instead. Same archive format.
+	 */
+	readonly SANDBOX_BACKUP_LOCAL_BUCKET?: string
+}
+
+/** The SDK's own marker for a sessionless command, which is what every call here uses. */
+const SESSIONLESS = "__DISABLE_SESSION__"
+
+/**
+ * Cloudflare's Sandbox, plus the mirror backup (`mirror-backup.ts`). One instance per repository
+ * per organization, so its storage is where that repository's backup handle belongs.
+ */
+export class Sandbox extends SdkSandbox<SandboxWorkerEnv> {
+	private backupRunning = false
+	/**
+	 * The restore in flight. Two cold clones of different commits both ask; the SDK queues a second
+	 * restore, which starts by unmounting the seed the first clone is copying from.
+	 */
+	private restoring: Promise<void> | undefined
+
+	private mirrorHost(): MirrorBackupHost {
+		const env = this.env
+		const localBucket = env.SANDBOX_BACKUP_LOCAL_BUCKET === "true"
+		return {
+			configured:
+				env.BACKUP_BUCKET !== undefined &&
+				(localBucket ||
+					(env.BACKUP_BUCKET_NAME !== undefined &&
+						env.R2_ACCESS_KEY_ID !== undefined &&
+						env.R2_SECRET_ACCESS_KEY !== undefined &&
+						env.CLOUDFLARE_ACCOUNT_ID !== undefined)),
+			exec: (command) => this.execWithSessionToken(command, SESSIONLESS),
+			createBackup: (options) => this.createBackup({ ...options, localBucket }),
+			restoreBackup: async (backup) => {
+				await this.restoreBackup({ ...backup, localBucket })
+			},
+			readBackup: async () =>
+				Option.flatMap(Option.fromNullishOr(await this.ctx.storage.get(MIRROR_BACKUP_KEY)), (value) =>
+					decodeStoredMirrorBackup(value),
+				),
+			writeBackup: (backup) =>
+				this.ctx.storage.put(MIRROR_BACKUP_KEY, { id: backup.id, createdAt: backup.createdAt }),
+			forgetBackup: async () => {
+				await this.ctx.storage.delete(MIRROR_BACKUP_KEY)
+			},
+			now: () => Date.now(),
+		}
+	}
+
+	/** Awaited by the clone path: the seed has to be in place before the clone script looks for it. */
+	async restoreMirror(): Promise<void> {
+		this.restoring ??= Effect.runPromise(
+			restoreMirror(this.mirrorHost()).pipe(
+				Effect.tap((outcome) =>
+					Effect.logInfo("sandbox mirror restore").pipe(
+						Effect.annotateLogs({ "maple.sandbox.mirror.restore": outcome }),
+					),
+				),
+				Effect.asVoid,
+			),
+			// Cleared after the assignment above even when the Effect finishes synchronously, which
+			// `Effect.ensuring` would not be: it would run first and leave a settled promise here.
+		).finally(() => {
+			this.restoring = undefined
+		})
+		return this.restoring
+	}
+
+	/**
+	 * Returns at once: the archive is written in the background, which the container keeps alive
+	 * for. One at a time per repository; a call while one runs is dropped, not queued.
+	 */
+	async backupMirror(): Promise<void> {
+		if (this.backupRunning) return
+		this.backupRunning = true
+		this.ctx.waitUntil(
+			Effect.runPromise(
+				backupMirror(this.mirrorHost()).pipe(
+					Effect.tap((outcome) =>
+						outcome === "created" ? Effect.logInfo("sandbox mirror backed up") : Effect.void,
+					),
+					Effect.catch((error) =>
+						Effect.logWarning("sandbox mirror backup failed").pipe(
+							Effect.annotateLogs({ "error.message": error.message }),
+						),
+					),
+					Effect.ensuring(Effect.sync(() => (this.backupRunning = false))),
+				),
+			),
+		)
+	}
 }
 
 /**

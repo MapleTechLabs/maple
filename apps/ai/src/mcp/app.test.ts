@@ -17,7 +17,7 @@ afterEach(() => cleanupTestDbs(createdDbs))
 const makeMcpToolExecutorStubLayer = (
 	execute: McpToolExecutorApi["execute"] = () =>
 		Effect.succeed({ content: [{ type: "text" as const, text: "ok" }] }),
-) => Layer.succeed(McpToolExecutor, { execute })
+) => Layer.succeed(McpToolExecutor, { execute, prepareRepository: () => Effect.void })
 
 const makeRateLimiterStubLayer = (
 	check: RateLimiterApi["check"] = () => Effect.succeed("allowed" as const),
