@@ -47,7 +47,11 @@ describe("region", () => {
 	it("recognizes Maple's hosted ingest, trailing slash or not", () => {
 		expect(isMapleIngestEndpoint("https://ingest.maple.dev")).toBe(true)
 		expect(isMapleIngestEndpoint("https://ingest.eu.maple.dev/")).toBe(true)
+		expect(isMapleIngestEndpoint("https://INGEST.maple.dev")).toBe(true)
+		expect(isMapleIngestEndpoint("https://ingest.maple.dev:443")).toBe(true)
+		expect(isMapleIngestEndpoint("https://ingest.maple.dev/proxy")).toBe(false)
 		expect(isMapleIngestEndpoint("https://telemetry.example.com")).toBe(false)
+		expect(isMapleIngestEndpoint("not a url")).toBe(false)
 	})
 
 	it("warns once about a keyless write to the hosted ingest, and never behind a proxy", () => {

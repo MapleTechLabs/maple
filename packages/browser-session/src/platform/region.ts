@@ -80,8 +80,15 @@ export function resolveIngestEndpoint(options: {
 
 /** Maple's hosted ingest, which rejects every write that carries no ingest key. */
 export function isMapleIngestEndpoint(endpoint: string): boolean {
-	const normalized = trimTrailingSlashes(endpoint)
-	return MAPLE_REGIONS.some((region) => INGEST_ENDPOINTS[region] === normalized)
+	let parsed: URL
+	try {
+		parsed = new URL(endpoint)
+	} catch {
+		return false
+	}
+	// `URL` lowercases the host and drops a default port, so equivalent spellings match.
+	if (trimTrailingSlashes(parsed.pathname) !== "") return false
+	return MAPLE_REGIONS.some((region) => INGEST_ENDPOINTS[region] === parsed.origin)
 }
 
 let keylessWarned = new Set<string>()
