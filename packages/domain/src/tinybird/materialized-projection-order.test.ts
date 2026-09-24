@@ -75,8 +75,20 @@ const findTopLevelFrom = (sql: string): number => {
 	throw new Error(`could not find top-level FROM in SQL:\n${sql}`)
 }
 
+/**
+ * Drop `--` line comments before scanning. Both scanners below track string
+ * literals by toggling on `'`, and an apostrophe in prose ("Drizzle\'s params
+ * line") reads as an opening quote — which silently desynchronizes the rest of
+ * the parse and surfaces as "could not find top-level FROM".
+ */
+const stripLineComments = (sql: string): string =>
+	sql
+		.split("\n")
+		.map((line) => line.replace(/(^|\s)--.*$/, ""))
+		.join("\n")
+
 const pipeSelectColumns = (resource: Resource): string[] => {
-	const sql = blockBody(resource, "SQL")
+	const sql = stripLineComments(blockBody(resource, "SQL"))
 	const selectMatch = /\bSELECT\b/i.exec(sql)
 	expect(selectMatch, `${resource.name} should include SELECT`).not.toBeNull()
 
@@ -97,11 +109,15 @@ const pipeSelectColumns = (resource: Resource): string[] => {
 describe("materialized projection order", () => {
 	it("keeps materialized projections aligned with target datasource column order", () => {
 		const targets = [
+			["ai_trace_index", "ai_trace_index_mv"],
+			["service_map_edges_hourly", "service_map_edges_hourly_ingest_mv"],
 			["service_overview_spans", "service_overview_spans_mv"],
 			["service_overview_hourly", "service_overview_hourly_mv"],
 			["service_operations_hourly", "service_operations_hourly_mv"],
 			["trace_list_mv", "trace_list_mv_mv"],
 			["logs_aggregates_hourly", "logs_aggregates_hourly_mv"],
+			["error_events_by_time", "error_events_by_time_mv"],
+			["error_fingerprints_minutely", "error_fingerprints_minutely_mv"],
 		] as const
 
 		for (const [datasourceName, pipeName] of targets) {

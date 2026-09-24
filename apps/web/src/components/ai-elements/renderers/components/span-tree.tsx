@@ -1,4 +1,4 @@
-import type { BaseComponentProps } from "@json-render/react"
+import type { RendererComponentProps } from "./types"
 import { cn } from "@maple/ui/lib/utils"
 import { formatDuration } from "@maple/ui/lib/format"
 
@@ -52,14 +52,19 @@ function SpanNode({ span, isLast, depth }: { span: SpanNode; isLast: boolean; de
 	)
 }
 
-export function SpanTree({ props }: BaseComponentProps<SpanTreeProps>) {
+export function SpanTree({ props }: RendererComponentProps<SpanTreeProps>) {
 	const { spans, traceId } = props
 
 	return (
 		<div className="space-y-1">
 			<div className="text-[10px] text-muted-foreground">
 				Trace{" "}
-				<a href={`/traces/${traceId}`} className="font-mono text-primary hover:underline">
+				<a
+					href={`/traces/${traceId}`}
+					target="_blank"
+					rel="noreferrer"
+					className="font-mono text-primary hover:underline"
+				>
 					{traceId.slice(0, 12)}
 				</a>
 			</div>

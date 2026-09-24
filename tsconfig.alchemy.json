@@ -1,6 +1,11 @@
 {
 	"compilerOptions": {
-		"lib": ["esnext"],
+		// apps/api's exact lib list: this program reaches its graph through
+		// alerting's ticks. workers-types alone lacks DOM-only members that code
+		// uses (`ResponseType` values, TextDecoder options), and `esnext` in place
+		// of ES2023 makes the DOM and workers-types stream globals disagree in
+		// packages/infra's worker-runtime modules.
+		"lib": ["ES2023", "DOM", "DOM.Iterable"],
 		"target": "esnext",
 		"module": "preserve",
 		"moduleResolution": "bundler",
@@ -8,10 +13,31 @@
 		"noEmit": true,
 		"strict": true,
 		"skipLibCheck": true,
-		"types": ["node"],
+		// workers-types is load-bearing for the binding parity gates: without the
+		// ambient globals (Workflow, Service, KVNamespace, …), the references to
+		// them inside alchemy's InferEnv .d.ts silently resolve to `any` under
+		// skipLibCheck and the assignability half of every gate passes vacuously.
+		"types": ["node", "@cloudflare/workers-types"],
+		// Every `@maple/infra` subpath the stack files import. Listing only some of
+		// them let the rest resolve through node_modules instead, so the root
+		// typecheck and turbo's disagreed about which sources they were checking.
 		"paths": {
-			"@maple/infra/cloudflare": ["./packages/infra/src/cloudflare/index.ts"]
+			"@maple/infra": ["./packages/infra/src/index.ts"],
+			"@maple/infra/acm": ["./packages/infra/src/aws/acm-dns-validation.ts"],
+			"@maple/infra/aws": ["./packages/infra/src/aws/index.ts"],
+			"@maple/infra/cached-recoverable": ["./packages/infra/src/cloudflare/cached-recoverable.ts"],
+			"@maple/infra/cloudflare": ["./packages/infra/src/cloudflare/index.ts"],
+			"@maple/infra/config-helpers": ["./packages/infra/src/config-helpers.ts"],
+			"@maple/infra/dev-urls": ["./packages/infra/src/dev-urls.ts"],
+			"@maple/infra/env": ["./packages/infra/src/env.ts"],
+			"@maple/infra/worker-runtime": ["./packages/infra/src/cloudflare/worker-runtime.ts"],
+			"@maple/infra/worker-telemetry": ["./packages/infra/src/cloudflare/worker-telemetry.ts"],
+			"@maple/infra/workers-cache": ["./packages/infra/src/cloudflare/workers-cache.ts"],
+			"@maple/alchemy-portless": ["./lib/alchemy-portless/src/index.ts"],
+			// API route modules retain their app-local alias. Shared backend and
+			// AI modules use package imports or relative paths.
+			"@/*": ["./apps/api/src/*"]
 		}
 	},
-	"include": ["alchemy.run.ts", "apps/*/alchemy.run.ts"]
+	"include": ["alchemy.run.ts", "apps/*/alchemy.run.ts", "scripts/aws-probe.run.ts"]
 }

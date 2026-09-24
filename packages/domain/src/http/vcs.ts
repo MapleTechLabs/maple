@@ -1,16 +1,13 @@
 import { Schema, SchemaGetter } from "effect"
 import { OrgId, UserId } from "../primitives"
+import { PullRequestLinkState } from "./fix-verification"
 
-// ---------------------------------------------------------------------------
 // Vendor-agnostic VCS integration types.
 //
 // Everything here is provider-neutral: rows carry a `provider` discriminator
 // and GitHub-specific concepts (App auth, REST/webhook payload shapes) live in
 // the GitHub layer behind the `VcsProviderClient` port. Adding another provider
 // means extending `VcsProviderId` + the enum normalizations — no new tables.
-// ---------------------------------------------------------------------------
-
-// ---- Branded IDs ----------------------------------------------------------
 
 export const VcsInstallationId = Schema.String.check(Schema.isUUID()).pipe(
 	Schema.brand("@maple/VcsInstallationId"),
@@ -39,7 +36,7 @@ export type VcsBranchId = Schema.Schema.Type<typeof VcsBranchId>
 /**
  * A full 40-char git commit SHA. Case-insensitive on input and normalized to
  * lowercase during decode, so the same commit is identified regardless of the
- * case a provider — or an OTel `deployment.commit_sha` attribute — emits it in.
+ * case a provider — or an OTel `vcs.ref.head.revision` attribute — emits it in.
  * Strict — unlike the permissive telemetry `CommitSha` brand (which must not
  * throw on arbitrary OTel data) — so the SHA-shape regex lives in exactly this
  * one declarative type, validated at the webhook/REST boundary and on persistence.
@@ -59,8 +56,6 @@ export const GitCommitSha = Schema.String.pipe(
 	Schema.annotate({ identifier: "@maple/GitCommitSha", title: "Git Commit SHA" }),
 )
 export type GitCommitSha = Schema.Schema.Type<typeof GitCommitSha>
-
-// ---- Provider + normalized enums ------------------------------------------
 
 /** The set of supported VCS providers. Extend this array to add a provider. */
 export const VcsProviderId = Schema.Literals(["github"]).annotate({
@@ -106,8 +101,6 @@ export const VcsRepoStatus = Schema.Literals(["active", "removed"]).annotate({
 	title: "VCS Repository Status",
 })
 export type VcsRepoStatus = Schema.Schema.Type<typeof VcsRepoStatus>
-
-// ---- Row → domain models (validated reads) --------------------------------
 
 export class VcsInstallation extends Schema.Class<VcsInstallation>("VcsInstallation")({
 	id: VcsInstallationId,
@@ -161,6 +154,8 @@ export class VcsRepo extends Schema.Class<VcsRepo>("VcsRepo")({
 	syncStatus: VcsRepoSyncStatus,
 	lastSyncedAt: Schema.NullOr(Schema.Number),
 	lastSyncError: Schema.NullOr(Schema.String),
+	/** Opt-in: Maple reviews this repository's pull requests for observability. */
+	prReviewEnabled: Schema.Boolean,
 	createdAt: Schema.Number,
 	updatedAt: Schema.Number,
 }) {}
@@ -202,7 +197,150 @@ export class VcsBranch extends Schema.Class<VcsBranch>("VcsBranch")({
 	updatedAt: Schema.Number,
 }) {}
 
-// ---- Boundary input DTOs (provider → repo / queue) ------------------------
+/**
+ * One pull request as a provider reports it, normalized.
+ *
+ * Read-only and never persisted: this is what the attach-a-PR picker lists and
+ * what hydrates a link at attach time. `state` collapses the provider's own
+ * split representation — GitHub answers `state: "open" | "closed"` alongside a
+ * separate `merged_at` — into the same three-way {@link PullRequestLinkState}
+ * the stored link and the webhook mapper already use, so a merged PR is never
+ * mistaken for a plain closed one.
+ */
+export const PullRequestSummary = Schema.Struct({
+	number: Schema.Number,
+	title: Schema.String,
+	url: Schema.String,
+	authorLogin: Schema.NullOr(Schema.String),
+	state: PullRequestLinkState,
+	/** The branch the PR merges *from* — what a person recognizes it by. */
+	headRef: Schema.String,
+	baseRef: Schema.String,
+	isDraft: Schema.Boolean,
+	updatedAtMs: Schema.Number,
+	mergedAtMs: Schema.NullOr(Schema.Number),
+	mergeCommitSha: Schema.NullOr(Schema.String),
+})
+export type PullRequestSummary = Schema.Schema.Type<typeof PullRequestSummary>
+
+/** One file of a pull request's diff, as the provider reports it. */
+export const PullRequestFileStatus = Schema.Literals([
+	"added",
+	"modified",
+	"removed",
+	"renamed",
+	"copied",
+	"changed",
+	"unchanged",
+])
+export type PullRequestFileStatus = Schema.Schema.Type<typeof PullRequestFileStatus>
+
+export const PullRequestFile = Schema.Struct({
+	path: Schema.String,
+	previousPath: Schema.NullOr(Schema.String),
+	status: PullRequestFileStatus,
+	additions: Schema.Number,
+	deletions: Schema.Number,
+	/** The unified diff of this file; null when the provider withholds it (binary, or too large). */
+	patch: Schema.NullOr(Schema.String),
+})
+export type PullRequestFile = Schema.Schema.Type<typeof PullRequestFile>
+
+/**
+ * What a reviewer reads around a pull request's diff: its commits, what people and other bots
+ * already said on it (the reviewer's own comments excluded), and the checks on its head commit.
+ */
+export const PullRequestContext = Schema.Struct({
+	commits: Schema.Array(Schema.Struct({ sha: Schema.String, message: Schema.String })),
+	comments: Schema.Array(
+		Schema.Struct({
+			author: Schema.String,
+			path: Schema.NullOr(Schema.String),
+			line: Schema.NullOr(Schema.Number),
+			body: Schema.String,
+		}),
+	),
+	checks: Schema.Array(
+		Schema.Struct({
+			name: Schema.String,
+			status: Schema.String,
+			conclusion: Schema.NullOr(Schema.String),
+			title: Schema.NullOr(Schema.String),
+		}),
+	),
+})
+export type PullRequestContext = Schema.Schema.Type<typeof PullRequestContext>
+
+/**
+ * An inline review comment on the new side of the diff; `startLine` makes it span a range. `key`
+ * is the caller's own id for it, handed back with the comment's provider id once posted.
+ */
+export const PullRequestReviewComment = Schema.Struct({
+	path: Schema.String,
+	line: Schema.Number,
+	startLine: Schema.optionalKey(Schema.Number),
+	body: Schema.String,
+	key: Schema.optionalKey(Schema.String),
+})
+
+/** A review thread on a pull request, with its first comments, as the reviewer tracks it. */
+export const PullRequestReviewThread = Schema.Struct({
+	id: Schema.String,
+	isResolved: Schema.Boolean,
+	comments: Schema.Array(
+		Schema.Struct({
+			commentId: Schema.NullOr(Schema.String),
+			author: Schema.String,
+			body: Schema.String,
+			/** 👍 and 👎 on the comment: the author's verdict on a finding, read as precision. */
+			thumbsUp: Schema.Number,
+			thumbsDown: Schema.Number,
+		}),
+	),
+})
+export type PullRequestReviewThread = Schema.Schema.Type<typeof PullRequestReviewThread>
+export type PullRequestReviewComment = Schema.Schema.Type<typeof PullRequestReviewComment>
+
+export const PullRequestCheckAnnotation = Schema.Struct({
+	path: Schema.String,
+	startLine: Schema.Number,
+	endLine: Schema.Number,
+	level: Schema.Literals(["notice", "warning", "failure"]),
+	title: Schema.String,
+	message: Schema.String,
+})
+export type PullRequestCheckAnnotation = Schema.Schema.Type<typeof PullRequestCheckAnnotation>
+
+/**
+ * What a provider posts back onto a pull request for one review: a check run on the head commit
+ * and, when there is something to say inline, one review carrying the comments.
+ */
+export const PullRequestReviewPublication = Schema.Struct({
+	number: Schema.Number,
+	headSha: GitCommitSha,
+	checkName: Schema.String,
+	title: Schema.String,
+	summary: Schema.String,
+	conclusion: Schema.Literals(["success", "neutral"]),
+	annotations: Schema.Array(PullRequestCheckAnnotation),
+	/**
+	 * The one summary comment the review keeps on the pull request. `marker` is a hidden line the
+	 * provider finds it by, so a later review edits it in place instead of adding another.
+	 */
+	summaryComment: Schema.Struct({ marker: Schema.String, body: Schema.String }),
+	reviewBody: Schema.NullOr(Schema.String),
+	comments: Schema.Array(PullRequestReviewComment),
+})
+export type PullRequestReviewPublication = Schema.Schema.Type<typeof PullRequestReviewPublication>
+
+export const PullRequestReviewPublished = Schema.Struct({
+	checkRunUrl: Schema.NullOr(Schema.String),
+	commentUrl: Schema.NullOr(Schema.String),
+	reviewUrl: Schema.NullOr(Schema.String),
+	/** The provider's id for each posted inline comment that carried a `key`. */
+	inlineComments: Schema.Array(Schema.Struct({ key: Schema.String, commentId: Schema.String })),
+})
+export type PullRequestReviewPublished = Schema.Schema.Type<typeof PullRequestReviewPublished>
 
 /** Normalized repository, returned by a provider and persisted by the repo. */
 export const RepoUpsertInput = Schema.Struct({
@@ -280,8 +418,6 @@ export const VcsRepositoryRef = Schema.Struct({
 	name: Schema.String,
 })
 export type VcsRepositoryRef = Schema.Schema.Type<typeof VcsRepositoryRef>
-
-// ---- Queue jobs (vendor-agnostic; orgId resolved by the orchestrator) ------
 
 export const VcsInstallationSyncReason = Schema.Literals([
 	"created",
@@ -383,16 +519,106 @@ export const BranchEventJob = Schema.Struct({
 })
 export type BranchEventJob = Schema.Schema.Type<typeof BranchEventJob>
 
+// A pull request webhook. Unlike every other job here this one touches no VCS
+// table: it is forwarded to the errors side, which owns the issue⇄PR link and
+// the post-merge verification window. The job carries only VCS facts (the
+// provider's own ids, the PR's text) so this layer stays ignorant of issues —
+// `VcsSyncService` resolves the org and hands it over.
+//
+// `title` and `body` are carried because the auto-link scan reads them: a PR
+// that names a Maple issue in its description links itself. `body` is nullable
+// (GitHub sends null for an empty description) and unbounded here; the scan
+// itself is a bounded regex.
+export const PullRequestEventJob = Schema.Struct({
+	kind: Schema.Literal("pull-request-event"),
+	provider: VcsProviderId,
+	externalInstallationId: Schema.String,
+	externalRepoId: Schema.String,
+	repoFullName: Schema.String,
+	number: Schema.Number,
+	// GitHub's `action`, narrowed to the ones that change a link's meaning.
+	// `closed` covers both "merged" and "closed without merging"; `merged`
+	// below is what distinguishes them.
+	action: Schema.Literals(["opened", "edited", "reopened", "closed", "synchronize", "ready_for_review"]),
+	url: Schema.String,
+	title: Schema.NullOr(Schema.String),
+	body: Schema.NullOr(Schema.String),
+	authorLogin: Schema.NullOr(Schema.String),
+	merged: Schema.Boolean,
+	mergeCommitSha: Schema.NullOr(Schema.String),
+	mergedAtMs: Schema.NullOr(Schema.Number),
+	deliveryId: Schema.optionalKey(Schema.String),
+	// The commits the review runs against. `optionalKey` so a job queued before
+	// these fields existed still decodes; the review trigger skips a job without a head.
+	headSha: Schema.optionalKey(GitCommitSha),
+	baseSha: Schema.optionalKey(GitCommitSha),
+	headRef: Schema.optionalKey(Schema.String),
+	baseRef: Schema.optionalKey(Schema.String),
+	draft: Schema.optionalKey(Schema.Boolean),
+	/** The head repository, which differs from `repoFullName` on a fork's pull request. */
+	headRepoFullName: Schema.optionalKey(Schema.NullOr(Schema.String)),
+	/**
+	 * Set on the copy the review trigger re-enqueues with a delay, to start a review once a burst
+	 * of pushes settles. Every other reader of pull request events ignores that copy.
+	 */
+	deferredReview: Schema.optionalKey(Schema.Boolean),
+})
+export type PullRequestEventJob = Schema.Schema.Type<typeof PullRequestEventJob>
+
+/**
+ * A comment on a pull request that mentions Maple: in the conversation, or on a review thread.
+ * Mapped only for `created` comments that mention the reviewer, so the queue never carries chatter.
+ */
+export const PullRequestCommentJob = Schema.Struct({
+	kind: Schema.Literal("pull-request-comment"),
+	provider: VcsProviderId,
+	externalInstallationId: Schema.String,
+	externalRepoId: Schema.String,
+	repoFullName: Schema.String,
+	number: Schema.Number,
+	commentId: Schema.String,
+	surface: Schema.Literals(["conversation", "review_thread"]),
+	/** The thread's first comment, which a reply is posted under. Review threads only. */
+	threadRootId: Schema.optionalKey(Schema.String),
+	authorLogin: Schema.String,
+	/** GitHub's `author_association`: OWNER, MEMBER, COLLABORATOR, CONTRIBUTOR, NONE, ... */
+	authorAssociation: Schema.String,
+	body: Schema.String,
+	url: Schema.String,
+	path: Schema.optionalKey(Schema.String),
+	line: Schema.optionalKey(Schema.Number),
+	deliveryId: Schema.optionalKey(Schema.String),
+})
+export type PullRequestCommentJob = Schema.Schema.Type<typeof PullRequestCommentJob>
+
+/** A pull request's head as the reviewer needs it to answer, and to commit a fix. */
+export const PullRequestHead = Schema.Struct({
+	number: Schema.Number,
+	title: Schema.String,
+	url: Schema.String,
+	body: Schema.NullOr(Schema.String),
+	authorLogin: Schema.NullOr(Schema.String),
+	state: Schema.String,
+	draft: Schema.Boolean,
+	headSha: GitCommitSha,
+	headRef: Schema.String,
+	baseSha: GitCommitSha,
+	baseRef: Schema.String,
+	/** Null when the head repository was deleted. */
+	headRepoFullName: Schema.NullOr(Schema.String),
+})
+export type PullRequestHead = Schema.Schema.Type<typeof PullRequestHead>
+
 export const VcsSyncJob = Schema.Union([
 	InstallationSyncJob,
 	SyncCommitsJob,
 	PushJob,
 	SyncBranchesJob,
 	BranchEventJob,
+	PullRequestEventJob,
+	PullRequestCommentJob,
 ])
 export type VcsSyncJob = Schema.Schema.Type<typeof VcsSyncJob>
-
-// ---- Tagged errors --------------------------------------------------------
 
 export class VcsRepoPersistenceError extends Schema.TaggedError<VcsRepoPersistenceError>()(
 	"@maple/http/errors/VcsRepoPersistenceError",
@@ -446,6 +672,24 @@ export class VcsRepoUnavailableError extends Schema.TaggedError<VcsRepoUnavailab
 ) {}
 
 /**
+ * The provider is permanently refusing access to a specific repository for a
+ * reason retrying cannot clear: GitHub answers `451 Unavailable For Legal
+ * Reasons` (DMCA takedown, `{"block":{"reason":"dmca"}}`) or a `403` carrying
+ * the same block body. Distinct from `VcsRepoUnavailableError` (deleted /
+ * renamed / access lost) so the two are separable in telemetry — a blocked repo
+ * needs an operator, a gone repo needs nothing.
+ *
+ * TERMINAL: the sync consumer must drain the job, never redeliver it. A DMCA
+ * block on one repo retried ~12x per scheduled run, every 12h, for a year before
+ * this existed.
+ */
+export class VcsRepositoryBlockedError extends Schema.TaggedError<VcsRepositoryBlockedError>()(
+	"@maple/http/errors/VcsRepositoryBlockedError",
+	{ message: Schema.String, status: Schema.optionalKey(Schema.Number) },
+	{ httpApiStatus: 451 },
+) {}
+
+/**
  * A provider rate limit too far out to wait inline. `retryAfterSeconds` is seconds
  * until the budget resets (from `retry-after` / rate-limit headers). The sync
  * consumer redelivers the failed job with this delay; backfill catches it earlier
@@ -477,7 +721,7 @@ export class UnknownVcsProviderError extends Schema.TaggedError<UnknownVcsProvid
 
 /**
  * The requested commit reference is not a resolvable git SHA — it failed the
- * strict 40-hex `GitCommitSha` shape. Telemetry `deployment.commit_sha` is
+ * strict 40-hex `GitCommitSha` shape. Telemetry `vcs.ref.head.revision` is
  * unguarded OTel data, so a value can be a short SHA, a tag, or arbitrary text;
  * the hover-card endpoint surfaces that as this distinct, non-retryable error
  * (422) rather than a generic 400, so the dashboard can render a muted

@@ -1,6 +1,6 @@
 import { HttpApiEndpoint, HttpApiGroup } from "effect/unstable/httpapi"
 import { Schema } from "effect"
-import { Authorization } from "./current-tenant"
+import { SessionAuthorization } from "./current-tenant"
 
 export const DigestSubscriptionId = Schema.String.check(Schema.isUUID()).pipe(
 	Schema.brand("@maple/DigestSubscriptionId"),
@@ -19,10 +19,21 @@ export class DigestSubscriptionResponse extends Schema.Class<DigestSubscriptionR
 	enabled: Schema.Boolean,
 	dayOfWeek: Schema.Number,
 	timezone: Schema.String,
+	/** Empty = every namespace / environment. */
+	namespaces: Schema.Array(Schema.String),
+	environments: Schema.Array(Schema.String),
 	lastSentAt: Schema.NullOr(Schema.Number),
 	createdAt: Schema.Number,
 	updatedAt: Schema.Number,
 }) {}
+
+/**
+ * A scope is a pick-list of values the org actually reports, so a handful of
+ * short strings. Bounded at the boundary because every stored scope is later
+ * sorted, joined into query params, logged and rendered on each digest tick —
+ * an unbounded array would let one subscriber inflate all of that.
+ */
+const ScopeValues = Schema.Array(Schema.String.check(Schema.isMaxLength(200))).check(Schema.isMaxLength(50))
 
 export class UpsertDigestSubscriptionRequest extends Schema.Class<UpsertDigestSubscriptionRequest>(
 	"UpsertDigestSubscriptionRequest",
@@ -31,6 +42,8 @@ export class UpsertDigestSubscriptionRequest extends Schema.Class<UpsertDigestSu
 	enabled: Schema.optionalKey(Schema.Boolean),
 	dayOfWeek: Schema.optionalKey(Schema.Number),
 	timezone: Schema.optionalKey(Schema.String),
+	namespaces: Schema.optionalKey(ScopeValues),
+	environments: Schema.optionalKey(ScopeValues),
 }) {}
 
 export class DigestPreviewResponse extends Schema.Class<DigestPreviewResponse>("DigestPreviewResponse")({
@@ -95,5 +108,5 @@ export class DigestApiGroup extends HttpApiGroup.make("digest")
 			error: [DigestPersistenceError, DigestNotConfiguredError, DigestRenderError],
 		}),
 	)
-	.prefix("/api/digest")
-	.middleware(Authorization) {}
+	.prefix("/internal/digest")
+	.middleware(SessionAuthorization) {}

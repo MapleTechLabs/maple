@@ -1,32 +1,68 @@
 {
 	"$schema": "https://unpkg.com/knip@6/schema.json",
-	"ignoreWorkspaces": ["apps/ingest", "apps/landing", "apps/mobile", "examples/*", "lib/llm"],
-	"ignore": ["**/routeTree.gen.ts", ".context/**", ".deepsec/**"],
+	"ignoreWorkspaces": ["apps/ingest", "apps/ios", "examples/*"],
+	"ignore": [".deepsec/**", "**/*.type-test.ts"],
 	"ignoreExportsUsedInFile": true,
 	"workspaces": {
 		".": {
-			"entry": ["alchemy.run.ts", "scripts/**/*.ts"],
-			"ignoreBinaries": ["wrangler", "tb", "pscale"]
+			"entry": ["alchemy.run.ts", "scripts/**/*.ts", "scripts/oxlint-plugins/*.mjs"],
+			"ignoreBinaries": ["tb", "pscale"],
+			// alchemy's optional peer, dynamic-imported when the deploy applies migrations.
+			"ignoreDependencies": ["pg"]
 		},
 		"apps/web": {
+			// `src/worker-entry.ts` is the deployed Worker entry, named by the vite
+			// source as the string `main: "src/worker-entry.ts"` in `src/worker.ts`'s
+			// props. knip cannot follow a path in a string, so without this it reports
+			// the entry and everything only it reaches (the handler, the OG renderers)
+			// as unused files.
 			"entry": [
 				"src/routes/**/*.tsx",
 				"src/worker.ts",
-				"alchemy.run.ts",
+				"src/worker-entry.ts",
 				"src/components/ai-elements/**",
 				"src/components/icons/**",
 				"src/lib/effect-atom.ts"
 			]
 		},
+		"apps/landing": {
+			"entry": ["src/worker.ts", "tools/**/*.ts", "tools/**/*.js"],
+			"ignoreDependencies": ["@paper-design/shaders"]
+		},
 		"apps/api": {
-			"entry": ["alchemy.run.ts", "autumn.config.ts"],
-			"ignoreDependencies": ["cloudflare"]
+			// src/worker.ts was auto-detected from wrangler.jsonc's `main` until the
+			// wrangler configs were deleted; the Worker entries are now named here.
+			// bench-suites/*.ts are loaded by path from scripts/bench-queries.ts (a dynamic
+			// import off the CLI's --suite argument), so knip cannot see the edge.
+			"entry": [
+				"src/worker.ts",
+				"autumn.config.ts",
+				"scripts/cold-path/*.{ts,mjs}",
+				"scripts/bench-suites/*.ts"
+			]
+		},
+		// Single-module Workers: the root alchemy.run.ts imports src/worker.ts, and
+		// alchemy bundles it, so it is the app's one entry.
+		"apps/ai": {
+			"entry": ["src/worker.ts"]
 		},
 		"apps/alerting": {
-			"entry": ["alchemy.run.ts"]
+			"entry": ["src/worker.ts"]
+		},
+		"apps/chat-bot": {
+			"entry": ["src/worker.ts"]
+		},
+		"apps/electric-sync": {
+			"entry": ["src/worker.ts"]
+		},
+		// The sandbox Worker's entry is its own plain module (that is the point: a
+		// generated entry would drop the container-backed class export), and the
+		// alchemy declaration beside it is what the root stack yields.
+		"apps/sandbox": {
+			"entry": ["src/worker.ts", "alchemy.run.ts"]
 		},
 		"apps/local-ui": {
-			"entry": ["src/worker.ts", "alchemy.run.ts"]
+			"entry": ["src/worker.ts"]
 		},
 		"apps/cli": {
 			"entry": [
@@ -34,22 +70,31 @@
 				"test/archive-probe-helpers.ts",
 				"test/merge-injection-probe.ts",
 				"test/native-local-store-migration-fixture.ts",
-				"test/native-reconnect-probe.ts"
+				"test/native-service-map-ingest-bridge-probe.ts"
 			],
 			"ignoreBinaries": ["duckdb"]
-		},
-		"packages/domain": {
-			"entry": ["scripts/**/*.ts"]
 		},
 		"packages/db": {
 			"entry": ["scripts/**/*.ts"],
 			"ignoreBinaries": ["pscale"]
 		},
 		"packages/email": {
-			"entry": ["src/render-preview.tsx"]
+			"entry": ["scripts/**/*.ts"],
+			"ignore": ["src/generated/**"],
+			"ignoreDependencies": ["tailwindcss"]
 		},
-		"lib/effect-cloudflare": {
-			"ignoreDependencies": ["cloudflare"]
+		// fumapress reads press.config.tsx and src/app.css by convention, and Base UI
+		// arrives through fumadocs-ui's preset; knip sees no import edge to either.
+		"apps/clickhouse-builder-docs": {
+			"entry": ["press.config.tsx", "src/app.css"],
+			"ignoreDependencies": ["@base-ui/react"]
+		},
+		"lib/ai-model-catalog": {
+			"entry": ["scripts/**/*.ts"]
+		},
+		"lib/alchemy-portless": {
+			// The dev-sidecar entry alchemy loads by URL, not by import.
+			"entry": ["src/Local.ts"]
 		},
 		"packages/query-engine": {
 			"entry": ["src/drain/index.ts"]
@@ -71,6 +116,7 @@
 		"nsTypes": "warn",
 		"enumMembers": "warn",
 		"namespaceMembers": "warn",
-		"duplicates": "warn"
+		"duplicates": "warn",
+		"cycles": "error"
 	}
 }

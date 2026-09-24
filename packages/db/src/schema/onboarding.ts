@@ -1,7 +1,8 @@
+import type { OrgId } from "@maple/domain"
 import { boolean, pgTable, text, timestamp } from "drizzle-orm/pg-core"
 
 export const orgOnboardingState = pgTable("org_onboarding_state", {
-	orgId: text("org_id").notNull().primaryKey(),
+	orgId: text("org_id").$type<OrgId>().notNull().primaryKey(),
 	userId: text("user_id"),
 	email: text("email"),
 	role: text("role"),
@@ -13,6 +14,10 @@ export const orgOnboardingState = pgTable("org_onboarding_state", {
 	connectNudgeEmailSentAt: timestamp("connect_nudge_email_sent_at", { withTimezone: true, mode: "date" }),
 	stalledEmailSentAt: timestamp("stalled_email_sent_at", { withTimezone: true, mode: "date" }),
 	activationEmailSentAt: timestamp("activation_email_sent_at", { withTimezone: true, mode: "date" }),
+	/** When the onboarding-checklist credit was confirmed applied by billing. Set once, never cleared. */
+	rewardClaimedAt: timestamp("reward_claimed_at", { withTimezone: true, mode: "date" }),
+	/** A claim in flight: taken before the billing call, cleared on outcome, and treated as stale after a lease. */
+	rewardReservedAt: timestamp("reward_reserved_at", { withTimezone: true, mode: "date" }),
 	createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull(),
 	updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date" }).notNull(),
 })

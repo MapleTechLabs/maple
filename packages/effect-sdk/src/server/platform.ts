@@ -1,4 +1,3 @@
-// ---------------------------------------------------------------------------
 // Auto-detected platform / runtime resource attributes
 //
 // Maps `std-env` runtime + provider detection plus a small set of
@@ -19,7 +18,6 @@
 // AWS Lambda detection is done via env vars (`AWS_LAMBDA_FUNCTION_NAME`)
 // because std-env's `provider` doesn't enumerate Lambda — Lambda runs node on
 // EC2-managed hosts and isn't a CI/CD provider in std-env's taxonomy.
-// ---------------------------------------------------------------------------
 
 import { Match } from "effect"
 import { platform, provider, runtime } from "std-env"
@@ -75,10 +73,10 @@ const archAttrs = (a: string): Attrs =>
 				),
 			}
 
-const lambdaAttrs = (env: PlatformInputs["env"]): Attrs => ({
+const lambdaAttrs = (env: PlatformInputs["env"], functionName: string): Attrs => ({
 	"cloud.provider": "aws",
 	"cloud.platform": "aws_lambda",
-	"faas.name": env.AWS_LAMBDA_FUNCTION_NAME!,
+	"faas.name": functionName,
 	...(env.AWS_LAMBDA_FUNCTION_VERSION && { "faas.version": env.AWS_LAMBDA_FUNCTION_VERSION }),
 	...(env.AWS_LAMBDA_LOG_STREAM_NAME && { "faas.instance": env.AWS_LAMBDA_LOG_STREAM_NAME }),
 	...(env.AWS_REGION
@@ -95,11 +93,17 @@ const providerAttrs = (prov: string, env: PlatformInputs["env"]): Attrs =>
 	Match.value(prov).pipe(
 		Match.when(
 			"cloudflare_workers",
-			(): Attrs => ({ "cloud.provider": "cloudflare", "cloud.platform": "cloudflare.workers" }),
+			(): Attrs => ({
+				"cloud.provider": "cloudflare",
+				"cloud.platform": "cloudflare.workers",
+			}),
 		),
 		Match.when(
 			"cloudflare_pages",
-			(): Attrs => ({ "cloud.provider": "cloudflare", "cloud.platform": "cloudflare.pages" }),
+			(): Attrs => ({
+				"cloud.provider": "cloudflare",
+				"cloud.platform": "cloudflare.pages",
+			}),
 		),
 		Match.when(
 			"vercel",
@@ -124,7 +128,10 @@ const providerAttrs = (prov: string, env: PlatformInputs["env"]): Attrs =>
 		),
 		Match.when(
 			"firebase_app_hosting",
-			(): Attrs => ({ "cloud.provider": "gcp", "cloud.platform": "gcp_firebase_app_hosting" }),
+			(): Attrs => ({
+				"cloud.provider": "gcp",
+				"cloud.platform": "gcp_firebase_app_hosting",
+			}),
 		),
 		Match.when(
 			"aws_amplify",
@@ -157,7 +164,10 @@ const providerAttrs = (prov: string, env: PlatformInputs["env"]): Attrs =>
 		),
 		Match.when(
 			"edgeone_pages",
-			(): Attrs => ({ "cloud.provider": "tencent_cloud", "cloud.platform": "tencent_edgeone_pages" }),
+			(): Attrs => ({
+				"cloud.provider": "tencent_cloud",
+				"cloud.platform": "tencent_edgeone_pages",
+			}),
 		),
 		Match.orElse((): Attrs => empty),
 	)
@@ -195,7 +205,10 @@ export const derivePlatformAttributes = (inputs: PlatformInputs): PlatformAttrib
 
 	// Lambda overrides std-env's provider when present; matches the original
 	// short-circuit semantics. Otherwise std-env's provider drives cloud.*.
-	const cloudAttrs = env.AWS_LAMBDA_FUNCTION_NAME ? lambdaAttrs(env) : providerAttrs(prov, env)
+	// The presence of the function name IS the Lambda detection, so hand it to
+	// `lambdaAttrs` rather than have it look the same variable up again.
+	const lambdaFunctionName = env.AWS_LAMBDA_FUNCTION_NAME
+	const cloudAttrs = lambdaFunctionName ? lambdaAttrs(env, lambdaFunctionName) : providerAttrs(prov, env)
 	const cloudResolved = "cloud.provider" in cloudAttrs
 
 	return {

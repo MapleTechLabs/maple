@@ -2,6 +2,7 @@ import { useMemo, useState } from "react"
 import { useNavigate } from "@tanstack/react-router"
 import { Exit } from "effect"
 import { useAtomSet } from "@/lib/effect-atom"
+import { displayError } from "@/lib/error-messages"
 import type { V2Investigation } from "@maple/domain/http/v2"
 import { toastManager } from "@maple/ui/components/ui/toast"
 
@@ -10,14 +11,14 @@ import type { InvestigationContext } from "@/components/chat/investigation-conte
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
 import { MapleApiV2AtomClient } from "@/lib/services/common/v2-atom-client"
 import { EvidenceTab } from "./evidence-tab"
+import { ProvenanceCanvas } from "./flow/provenance-canvas"
 import { FollowUpComposer } from "./follow-up-composer"
-import { HypothesesTab } from "./hypotheses-tab"
 import { ImpactStrip } from "./impact-strip"
 import { investigationHeadline } from "./investigation-display"
 import { InvestigationHeader } from "./investigation-header"
-import { InvestigationRail } from "./investigation-rail"
+import { InvestigationMeta } from "./investigation-meta"
 import { type InvestigationTab, InvestigationTabs } from "./investigation-tabs"
-import { NextActions } from "./next-actions"
+import { SignalsCard } from "./signals-card"
 import { VerdictCard } from "./verdict-card"
 
 const factKey = (label: string) =>
@@ -48,19 +49,34 @@ const factValue = (facts: V2Investigation["snapshot"]["facts"], label: string): 
 
 const contextFromInvestigation = (investigation: V2Investigation): InvestigationContext => {
 	const subject = investigation.subject
-	const kind = subject.type === "freeform" ? "freeform" : subject.incident_kind
+	const kind =
+		subject.type === "freeform"
+			? "freeform"
+			: subject.type === "fix_verification"
+				? "error"
+				: subject.incident_kind
 	// Without this the signal is always unknown, every alert falls through to
 	// `investigationSuggestions`' generic branch, and its per-signal prompts are
 	// dead code on the one page that should use them.
 	const signalType = factValue(investigation.snapshot.facts, "signal")
 	return {
 		kind,
-		id: subject.type === "freeform" ? investigation.id : subject.incident_id,
+		// A fix-verification is presented as an error investigation, so its id must
+		// be the error issue's — everything downstream keys on it as one: the chat
+		// tab id, the preamble's `error_issue_id`, and the error tool hints. Using
+		// the investigation id there pointed all three at a resource that is not an
+		// error issue.
+		id:
+			subject.type === "freeform"
+				? investigation.id
+				: subject.type === "fix_verification"
+					? subject.issue_id
+					: subject.incident_id,
 		title: investigation.snapshot.title,
 		severity: investigation.severity ?? investigation.snapshot.severity ?? "unclassified",
 		status: investigation.status,
-		...(signalType ? { signalType } : {}),
-		...(investigation.snapshot.scope ? { scope: investigation.snapshot.scope } : {}),
+		...(signalType ? { signalType } : undefined),
+		...(investigation.snapshot.scope ? { scope: investigation.snapshot.scope } : undefined),
 		facts: investigation.snapshot.facts.map((fact) => ({
 			key: factKey(fact.label),
 			label: fact.label,
@@ -70,18 +86,25 @@ const contextFromInvestigation = (investigation: V2Investigation): Investigation
 			subject.type === "incident"
 				? {
 						incidentId: subject.incident_id,
-						...(subject.issue_id ? { issueId: subject.issue_id } : {}),
+						...(subject.issue_id ? { issueId: subject.issue_id } : undefined),
 						...(investigation.snapshot.scope
 							? { serviceName: investigation.snapshot.scope }
-							: {}),
+							: undefined),
 					}
-				: undefined,
+				: subject.type === "fix_verification"
+					? {
+							issueId: subject.issue_id,
+							...(investigation.snapshot.scope
+								? { serviceName: investigation.snapshot.scope }
+								: undefined),
+						}
+					: undefined,
 		...(investigation.report
 			? {
 					aiSummary: investigation.report.summary,
 					aiSuspectedCause: investigation.report.suspectedCause,
 				}
-			: {}),
+			: undefined),
 	}
 }
 
@@ -98,13 +121,14 @@ const contextFromInvestigation = (investigation: V2Investigation): Investigation
  * they've navigated away from it.
  */
 export function InvestigationView({
+	action,
 	investigation,
 	tab,
-	onRefresh,
 }: {
+	/** The open proposed-action detail, straight off `?action=` and not yet narrowed. */
+	action: unknown
 	investigation: V2Investigation
 	tab: InvestigationTab
-	onRefresh: () => void
 }) {
 	const navigate = useNavigate()
 	const [busy, setBusy] = useState(false)
@@ -128,9 +152,13 @@ export function InvestigationView({
 				title: isResolved ? "Investigation reopened" : "Investigation restarted",
 				type: "success",
 			})
-			onRefresh()
+			// No refetch: the row this page renders is an Electric shape, so the
+			// restart's writes arrive on their own.
 		} else {
-			toastManager.add({ title: "Investigation could not be restarted", type: "error" })
+			// The server's reason is the whole message — a daily-budget 429 says which
+			// ceiling was hit and when it resets, and a fixed title threw all of it away.
+			const { title, message } = displayError(result)
+			toastManager.add({ title, description: message, type: "error" })
 		}
 	}
 
@@ -144,9 +172,9 @@ export function InvestigationView({
 		setBusy(false)
 		if (Exit.isSuccess(result)) {
 			toastManager.add({ title: "Investigation resolved", type: "success" })
-			onRefresh()
 		} else {
-			toastManager.add({ title: "Investigation could not be resolved", type: "error" })
+			const { title, message } = displayError(result)
+			toastManager.add({ title, description: message, type: "error" })
 		}
 	}
 
@@ -156,6 +184,32 @@ export function InvestigationView({
 	 * sends and history loading around it — so the question is handed to the Chat
 	 * tab, which is where the answer belongs anyway.
 	 */
+	/**
+	 * Anything that isn't a real index — a hand-edited `?action=abc`, a stale link,
+	 * a fractional or negative number — resolves to no open panel. The canvas then
+	 * looks the index up, finds nothing, and the page renders as if it were absent.
+	 */
+	const openActionIndex =
+		typeof action === "number" && Number.isInteger(action) && action >= 0 ? action : null
+
+	const handleOpenAction = (index: number | null) => {
+		// `replace` so opening and closing the panel doesn't stack history entries
+		// between the reader and the page they arrived from.
+		// Written out rather than reduced over `prev`: an untyped reducer here sees
+		// the union of every route's search params, and this route's `tab` literal
+		// does not survive that widening. The canvas only renders on Overview, so
+		// carrying `tab` forward is all there is to carry.
+		void navigate({
+			to: "/investigations/$id",
+			params: { id: investigation.id },
+			search: {
+				...(!(tab === "overview") ? { tab } : undefined),
+				...(!(index === null) ? { action: index } : undefined),
+			},
+			replace: true,
+		})
+	}
+
 	const handleFollowUp = () => {
 		void navigate({
 			to: "/investigations/$id",
@@ -210,15 +264,35 @@ export function InvestigationView({
 								<div className="flex flex-col gap-7">
 									{tab === "evidence" ? (
 										<EvidenceTab investigation={investigation} />
-									) : tab === "hypotheses" ? (
-										<HypothesesTab investigation={investigation} />
 									) : (
 										<>
+											{/*
+											 * The verdict leads. The canvas led for a while, on the
+											 * reasoning that a verdict qualifies a chain better
+											 * once the reader has seen the chain. In practice a
+											 * reader arrives with one question, and answering it
+											 * below a 330px graph meant scrolling past the
+											 * provenance of an answer they had not read yet. The
+											 * graph is how the run got there, which is the second
+											 * question, so it sits where the second question does.
+											 */}
 											<VerdictCard investigation={investigation} />
+											<ProvenanceCanvas
+												investigation={investigation}
+												openActionIndex={openActionIndex}
+												onOpenAction={handleOpenAction}
+											/>
 											<ImpactStrip investigation={investigation} />
-											<NextActions investigation={investigation} />
+											<SignalsCard investigation={investigation} />
 										</>
 									)}
+									{/*
+									 * The audit trail, under the finding rather than beside it.
+									 * This is what was left of the right rail once the canvas took
+									 * over the run and the checks — not enough to keep a 320px
+									 * column standing next to a graph that wanted the width.
+									 */}
+									<InvestigationMeta investigation={investigation} />
 								</div>
 							</DashboardLayout.Scroll>
 							{/*
@@ -236,9 +310,6 @@ export function InvestigationView({
 						</>
 					)}
 				</DashboardLayout.Content>
-				<DashboardLayout.RightPanel title="Investigation context" width="w-80">
-					<InvestigationRail investigation={investigation} />
-				</DashboardLayout.RightPanel>
 			</DashboardLayout.Body>
 		</DashboardLayout.Root>
 	)

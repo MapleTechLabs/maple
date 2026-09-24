@@ -119,19 +119,139 @@ describe("auth-headers", () => {
 			const gate = new Promise<void>((resolve) => {
 				release = resolve
 			})
+			const stale = bearerExpiringIn(600)
+			const fresh = bearerExpiringIn(600).replace("signature", "signature-after-switch")
+			let call = 0
 			setMapleAuthHeadersProvider(async () => {
-				await gate
-				return { authorization: bearerExpiringIn(600) }
+				call += 1
+				if (call === 1) {
+					await gate
+					return { authorization: stale }
+				}
+				return { authorization: fresh }
 			})
 
 			const pending = getMapleAuthHeaders()
 			setActiveOrgId("org_switched_mid_flight")
 			release?.()
-			await pending
 
-			// The in-flight token belonged to the previous org — it must not populate
-			// the cache for the new one.
-			expect(hasCachedMapleAuthToken()).toBe(false)
+			// The in-flight token belonged to the previous org — it must reach
+			// neither the caller nor the cache for the new one.
+			await expect(pending).resolves.toEqual({ authorization: fresh })
+			await expect(getMapleAuthHeaders()).resolves.toEqual({ authorization: fresh })
+		})
+
+		it("never hands a caller the token of an identity it did not start under", async () => {
+			let release: (() => void) | undefined
+			const gate = new Promise<void>((resolve) => {
+				release = resolve
+			})
+			const first = bearerExpiringIn(600)
+			const second = bearerExpiringIn(600).replace("signature", "signature-second-org")
+			let call = 0
+			setMapleAuthHeadersProvider(async () => {
+				call += 1
+				if (call === 1) {
+					await gate
+					return { authorization: first }
+				}
+				return { authorization: second }
+			})
+
+			// Opens the refresh that belongs to the first org.
+			const beforeSwitch = getMapleAuthHeaders()
+			setActiveOrgId("org_second")
+			// Arrives after the switch: it used to join the open promise and send the
+			// first org's bearer, which the API resolves against the wrong tenant.
+			const afterSwitch = getMapleAuthHeaders()
+			release?.()
+
+			await expect(afterSwitch).resolves.toEqual({ authorization: second })
+			// The caller that started before the switch also re-resolves rather than
+			// returning a token for an org the user has left.
+			await expect(beforeSwitch).resolves.toEqual({ authorization: second })
+		})
+
+		it("lets a straggling refresh settle without evicting its successor", async () => {
+			let releaseFirst: (() => void) | undefined
+			const gate = new Promise<void>((resolve) => {
+				releaseFirst = resolve
+			})
+			const second = bearerExpiringIn(600)
+			let call = 0
+			setMapleAuthHeadersProvider(async () => {
+				call += 1
+				if (call === 1) {
+					await gate
+					return { authorization: bearerExpiringIn(600) }
+				}
+				return { authorization: second }
+			})
+
+			const orphaned = getMapleAuthHeaders()
+			setActiveOrgId("org_second")
+			const successor = getMapleAuthHeaders()
+			releaseFirst?.()
+			await Promise.all([orphaned, successor])
+
+			// The straggler's `finally` must not clear the successor's slot, and the
+			// cache must hold the current identity's token.
+			expect(hasCachedMapleAuthToken()).toBe(true)
+			await expect(getMapleAuthHeaders()).resolves.toEqual({ authorization: second })
+			expect(call).toBe(2)
+		})
+
+		it("fails closed when the org switches while a request is being authorized", async () => {
+			let release: (() => void) | undefined
+			const gate = new Promise<void>((resolve) => {
+				release = resolve
+			})
+			let call = 0
+			setMapleAuthHeadersProvider(async () => {
+				call += 1
+				if (call === 1) {
+					await gate
+					return { authorization: bearerExpiringIn(600) }
+				}
+				return { authorization: bearerExpiringIn(600) }
+			})
+			setActiveOrgId("org_first")
+			// The request below was constructed under org_first. Re-signing it with
+			// org_second's bearer would run it — a create, an update — against the
+			// wrong tenant, so it must be refused, not retried.
+			const pending = getMapleAuthHeaders()
+			setActiveOrgId("org_second")
+			release?.()
+
+			await expect(pending).rejects.toMatchObject({
+				_tag: "@maple/web/services/MapleAuthIdentityChangedError",
+			})
+		})
+
+		it("fails closed when the identity moves again during the boot-path retry", async () => {
+			// Started with no active org (boot), so one re-resolve is allowed — but
+			// if the identity changes again mid-retry, the token being returned
+			// already belongs to an org the user has left.
+			const gates: Array<() => void> = []
+			setMapleAuthHeadersProvider(async () => {
+				await new Promise<void>((resolve) => {
+					gates.push(resolve)
+				})
+				return { authorization: bearerExpiringIn(600) }
+			})
+			const pending = getMapleAuthHeaders()
+			setActiveOrgId("org_b")
+			// Release the first resolve; the retry starts under org_b's generation.
+			gates.shift()?.()
+			await vi.waitFor(() => {
+				if (gates.length === 0) throw new Error("retry not started")
+			})
+			setActiveOrgId("org_c")
+			gates.shift()?.()
+
+			await expect(pending).rejects.toMatchObject({
+				_tag: "@maple/web/services/MapleAuthIdentityChangedError",
+			})
 		})
 
 		it("drops the cached token on sign-out", async () => {

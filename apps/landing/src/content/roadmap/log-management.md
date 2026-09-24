@@ -1,5 +1,5 @@
 ---
-title: "Log Management"
+title: "Log management"
 status: "shipped"
 category: "logs"
 quarter: "Q1 2026"

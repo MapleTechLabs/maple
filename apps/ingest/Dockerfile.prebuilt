@@ -1,0 +1,37 @@
+# Runner-only image. The binary is compiled BEFORE the deploy (by
+# .github/workflows/build-ingest-binary.yml, which every deploy workflow calls)
+# and dropped at dist/maple-ingest, so `alchemy deploy` pays a COPY instead of a
+# from-scratch cargo build of 385 crates.
+#
+# That binary is aarch64: the ECS tasks are Graviton (`runtimePlatform` in
+# alchemy.run.ts), so this image builds for linux/arm64 and the debian base
+# below resolves to the arm64 variant. COPY preserves the file mode from the
+# build context — the workflow restores the exec bit that the artifact upload
+# drops, because a non-executable binary here surfaces as a task that starts and
+# exits on `permission denied`.
+#
+# Why not just cache the Docker layers: alchemy's image build passes only
+# tag/context/file/platform/build-arg to the daemon (`AWS/ECR/Image.ts`), with
+# no --cache-from, and a fresh CI runner has an empty local cache. So a
+# Dockerfile that compiles is a cold compile every single deploy, however it is
+# layered. Moving the compile out is the only place a cache can exist.
+#
+# The compile MUST happen against bookworm's glibc (2.36) — building on the
+# ubuntu-24.04 runner (2.39) instead produces a binary that dies at startup with
+# `version 'GLIBC_2.39' not found`. The workflow enforces this by compiling
+# inside rust:1.88-bookworm rather than on the host.
+#
+# `Dockerfile` (the self-contained source build) stays the default and is what a
+# local `alchemy deploy` uses; alchemy.run.ts picks this one only when
+# dist/maple-ingest is actually present.
+FROM debian:bookworm-slim
+
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends ca-certificates && \
+    rm -rf /var/lib/apt/lists/*
+
+COPY dist/maple-ingest /usr/local/bin/maple-ingest
+
+EXPOSE 3474
+
+CMD ["maple-ingest"]

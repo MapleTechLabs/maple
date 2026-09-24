@@ -42,6 +42,31 @@
 	--chart-error: oklch(0.577 0.245 27.325);
 	--chart-throughput: oklch(0.58 0.14 285);
 	--chart-apdex: oklch(0.6 0.17 155);
+	/* Token usage buckets. A fixed set of five that is always drawn together, in
+	   one bar, at 6px tall — so they get designated hues 72° apart rather than
+	   chart-1..5 slots, whose spacing is tuned per theme and put input next to
+	   reasoning at a distance the eye cannot resolve at that size. Warm for what
+	   the model produced, cool for what it was given, magenta for what it
+	   thought. Same hues in both themes; only lightness moves. */
+	/* The agent-session vocabulary: the four kinds of work the occupancy bar,
+	   the waterfall and the flow view all draw, usually side by side in a 16px
+	   bar. Designated hues ~85° apart, the same in both themes, for the reason
+	   the token buckets have them — the chart-1..5 slots are spaced per theme,
+	   and in dark they put TTFT (chart-3, green) next to tool (chart-4, teal)
+	   at ΔE 0.08, which is one band to the eye. Only lightness moves per theme.
+	   Agent keeps the amber it has always worn in dark: it marks a span, and no
+	   view draws a span beside a class of agent time, so its closeness to TTFT
+	   costs nothing — while a purple agent read as the reasoning tokens, which
+	   wear the same glyph two sections away. */
+	--chart-ai-ttft: oklch(0.64 0.16 65);
+	--chart-ai-tool: oklch(0.6 0.15 155);
+	--chart-ai-inference: oklch(0.6 0.15 250);
+	--chart-ai-agent: oklch(0.63 0.16 59);
+	--chart-tok-input: oklch(0.6 0.15 246);
+	--chart-tok-cache-read: oklch(0.62 0.13 174);
+	--chart-tok-cache-write: oklch(0.62 0.15 102);
+	--chart-tok-output: oklch(0.6 0.18 30);
+	--chart-tok-reasoning: oklch(0.6 0.19 318);
 	--radius: 8px;
 	--sidebar: oklch(0.985 0 0);
 	--sidebar-foreground: oklch(0.141 0.005 285.823);
@@ -59,7 +84,9 @@
 	--severity-trace: oklch(0.552 0.016 285.938); /* zinc-500 */
 	--severity-debug: oklch(0.623 0.214 259.815); /* blue-500 */
 	--severity-info: oklch(0.696 0.17 162.48); /* emerald-500 */
-	--severity-warn: oklch(0.769 0.188 70.08); /* amber-500 */
+	/* Deeper than amber-500 so WARN text clears a white canvas; hue 74 keeps it
+	   off the hue-59 primary. */
+	--severity-warn: oklch(0.7 0.17 74);
 	--severity-error: oklch(0.637 0.237 25.331); /* red-500 */
 	--severity-fatal: oklch(0.505 0.213 27.518); /* red-700 */
 	--service-1: oklch(0.58 0.17 250); /* Blue */
@@ -184,6 +211,15 @@
 	   tuned slightly lighter for the dark canvas. */
 	--chart-throughput: oklch(0.66 0.14 290);
 	--chart-apdex: oklch(0.658 0.134 151);
+	--chart-ai-ttft: oklch(0.73 0.15 65);
+	--chart-ai-tool: oklch(0.7 0.14 155);
+	--chart-ai-inference: oklch(0.69 0.15 250);
+	--chart-ai-agent: oklch(0.714 0.154 59);
+	--chart-tok-input: oklch(0.69 0.15 246);
+	--chart-tok-cache-read: oklch(0.72 0.12 174);
+	--chart-tok-cache-write: oklch(0.73 0.15 102);
+	--chart-tok-output: oklch(0.7 0.16 30);
+	--chart-tok-reasoning: oklch(0.7 0.17 318);
 	--sidebar: oklch(0.185 0.007 56);
 	--sidebar-foreground: oklch(0.91 0.016 74);
 	--sidebar-primary: oklch(0.714 0.154 59);
@@ -198,7 +234,9 @@
 	--severity-trace: oklch(0.603 0.023 72); /* warm gray #8A7F72 */
 	--severity-debug: oklch(0.693 0.165 254); /* blue #4A9EFF */
 	--severity-info: oklch(0.658 0.134 151); /* green #4AA865 */
-	--severity-warn: oklch(0.714 0.154 59); /* amber #E8872B */
+	/* Yellow-amber, deliberately NOT --primary (hue 59): a WARN chip must never
+	   read as a button, a link or the selected row. */
+	--severity-warn: oklch(0.8 0.15 84);
 	--severity-error: oklch(0.654 0.176 30); /* red-orange #E85D4A */
 	--severity-fatal: oklch(0.555 0.174 30); /* dark red #C43D2E */
 	--service-1: oklch(0.68 0.17 250); /* Blue */
@@ -286,6 +324,15 @@
 	--color-chart-error: var(--chart-error);
 	--color-chart-throughput: var(--chart-throughput);
 	--color-chart-apdex: var(--chart-apdex);
+	--color-chart-ai-ttft: var(--chart-ai-ttft);
+	--color-chart-ai-tool: var(--chart-ai-tool);
+	--color-chart-ai-inference: var(--chart-ai-inference);
+	--color-chart-ai-agent: var(--chart-ai-agent);
+	--color-chart-tok-input: var(--chart-tok-input);
+	--color-chart-tok-cache-read: var(--chart-tok-cache-read);
+	--color-chart-tok-cache-write: var(--chart-tok-cache-write);
+	--color-chart-tok-output: var(--chart-tok-output);
+	--color-chart-tok-reasoning: var(--chart-tok-reasoning);
 	--color-ring: var(--ring);
 	--color-input: var(--input);
 	--color-border: var(--border);

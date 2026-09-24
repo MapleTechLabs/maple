@@ -6,26 +6,24 @@ real time using [ElectricSQL](https://electric.ax) shapes fronted by
 (traces, logs, metrics via `@maple/query-engine`) is **not** synced — it stays on
 the effect-atom + `WarehouseQueryService` path.
 
-Electric sync is the **only read path** for the dashboards, alerts, and
-error-issue verticals — there is no fetch fallback, so the web app needs the
-sync worker (and its upstream Electric) reachable for those lists to load.
+Electric sync is the primary read path for the dashboards and alerts verticals.
+Only `/dashboards` has a fallback: it degrades to a plain-HTTP snapshot with
+writes disabled (`SyncDegradedBanner`). The alerts lists have none — with the
+sync worker or its upstream unreachable they show `SyncUnavailable` and a retry.
+So an Electric outage is visible, and a deploy of the singleton service is a
+short one.
 
-The reusable machinery lives in the **`@maple/effect-db`** workspace package
-(source-only, consumed by `apps/web`'s Vite and, later, the mobile app):
+The reusable machinery lives in two workspace libraries:
 
-- `@maple/effect-db/electric` — `createEffectCollection` (an Effect-native wrapper
-  over `@tanstack/electric-db-collection`: Effect Schema rows + `Effect` write
-  handlers run on a `ManagedRuntime` + exponential backoff + typed `awaitTxIdEffect`),
-  and `optimisticAction` (declare collections → optimistic apply → `Effect` server
-  call returning a txid → automatic `awaitTxId` across all declared collections →
-  typed errors). The backoff `onError` also dispatches the `auth:session-expired`
-  (401) and `collection:schema-error` (post-deploy schema drift) window events.
-- `@maple/effect-db/atom` — `makeQuery`/`makeQueryUnsafe`/`makeCollectionAtom`,
-  bridging a TanStack DB live query to an effect-atom `Atom<AsyncResult<…>>`.
-
-Ported and adapted from the hazel repo's two libraries to effect `4.0.0-beta.93`
-(`Effect.catch` → `Effect.catchEager`; the electric collection utils slimmed to
-`{ awaitTxId, awaitMatch }`).
+- `@maple/effect-db/electric` — `createEffectCollection` wraps
+  `@tanstack/electric-db-collection` with Effect Schema rows, Effect write
+  handlers run on a `ManagedRuntime`, exponential backoff, and typed
+  `awaitTxIdEffect`. The backoff `onError` also dispatches the
+  `auth:session-expired` (401) and `collection:schema-error` (post-deploy schema
+  drift) window events.
+- `@maple/unitflow/db` — collection subscriptions feed model-scoped Stores used
+  by the dashboards and alerts lists. Mutations use the typed API write paths;
+  alert toggles run through `Mutation.make`.
 
 ## How it fits together
 
@@ -40,11 +38,11 @@ apps/electric-sync Worker — /api/sync/shape  (src/routes/shape.http.ts, a raw 
   a standalone, DB-free worker (deploys independently of apps/api)
   auth: Clerk/self-hosted tenant resolution ONLY (makeResolveTenant, shared from
         @maple/api/electric-sync) — no API-key path, since it has no database
-  pins: table + `"org_id" = $1` (+ per-shape extra WHERE), params[1]=orgId, source_id/secret
+  pins: table + `"org_id" = $1` (+ per-shape extra WHERE), params[1]=orgId, secret
   forwards ONLY offset/handle/live/cursor from the client
   streams Electric's response back (buffers the long-poll body)
 
-Electric (Electric Cloud in prod / docker `electric` locally)
+Electric (apps/electric on ECS Fargate in prod / docker `electric` locally)
   ← logical replication ← PlanetScale Postgres (direct 5432, publication electric_publication_default)
 
 writes: endpoint captures the Postgres txid on the mutating statement
@@ -83,16 +81,17 @@ have since moved back to the typed `/v2` endpoints, and were pruned from both by
    If your Postgres volume predates the `wal_level` change, recreate it:
    `docker compose -f docker-compose.development.yml up -d --force-recreate postgres electric`.
 2. `bun db:migrate:local` applies migrations, including `0009_electric_publication`.
-3. `.env.local`: `ELECTRIC_URL=http://localhost:3473` and
-   `VITE_ELECTRIC_SYNC_URL=http://localhost:3476` (both already in `.env.example`).
-   `ELECTRIC_URL` is now read by the `apps/electric-sync` worker (default port 3476);
-   `VITE_ELECTRIC_SYNC_URL` points the web app's ShapeStreams at it.
-4. Run the app (`bun dev`) — it starts the `electric-sync` worker alongside the
-   others via portless. The dashboards/alerts/errors lists read exclusively from
-   the sync path, so steps 1–3 are required for them to load.
+3. `.env.local`: `ELECTRIC_URL=http://localhost:3473` (already in `.env.example`), read by
+   the `apps/electric-sync` worker. Under `bun dev` the web app finds that worker at
+   `https://electric-sync.localhost` on its own; `VITE_ELECTRIC_SYNC_URL` only matters when
+   running the web app on a raw port without the portless proxy.
+4. Run the app (`bun dev`) — the `electric-sync` worker comes up in the `alchemy dev`
+   stack with everything else (`bun dev api electric-sync web` for just the pieces that
+   matter here). The dashboards/alerts/errors lists read exclusively from the sync path, so
+   steps 1–3 are required for them to load.
 
 Smoke-test the proxy directly (through the standalone worker; needs a bearer):
-`curl -g 'http://localhost:3476/api/sync/shape?shape=dashboards&offset=-1' -H "authorization: Bearer <token>"`,
+`curl -g 'https://electric-sync.localhost/api/sync/shape?shape=dashboards&offset=-1' -H "authorization: Bearer <token>"`,
 or hit Electric with no proxy: `curl -g 'http://localhost:3473/v1/shape?table=dashboards&offset=-1'`.
 
 ### Troubleshooting
@@ -101,70 +100,144 @@ or hit Electric with no proxy: `curl -g 'http://localhost:3473/v1/shape?table=da
 no upstream `ELECTRIC_URL`. Two causes:
 
 1. `ELECTRIC_URL` isn't set in `.env.local`. Set `ELECTRIC_URL=http://localhost:3473`,
-   then **restart** the worker — `--env-file` is read once at wrangler startup, so a
-   hot source reload won't pick it up (`bun dev`, or just the `electric-sync` task).
+   then **restart** `bun dev` — `--env-file` is read once when `alchemy dev` starts, so
+   a hot source reload won't pick it up.
 2. The docker `electric` service isn't running on `:3473`. `bun db:up` starts it now;
    confirm with `docker compose ps` (expect `maple-electric-1`).
 
-**Shapes 404 / Electric can't find the publication** — the shape stream errors even
-though the worker is configured. The `0009_electric_publication` migration wraps its
-`CREATE PUBLICATION` in a `DO $$ … EXCEPTION WHEN OTHERS THEN RAISE NOTICE … END $$`
-guard (so the PGlite test path doesn't abort on `CREATE PUBLICATION`, which PGlite
-can't run). The downside: on real Postgres a genuine failure inside that block is
-**silently swallowed** as a NOTICE and drizzle still records 0009 as applied — so
-`bun db:migrate:local` will **not** re-run it. Verify and self-heal:
+**Shapes 404 / `Database table public.<t> is missing from the publication`** (or
+`does not have its replica identity set to FULL`). The early publication migrations
+(`0009`, `0011`, `0014`, `0037`) wrap their DDL in `DO $$ … EXCEPTION WHEN OTHERS THEN
+RAISE NOTICE … END $$`, so on real Postgres a failure inside one is swallowed and drizzle
+or alchemy still records it as applied. The case that actually happened: on the fresh
+EU database the publication existed, empty, before the first migration ran. `0009`'s
+`CREATE PUBLICATION` raised `duplicate_object`, and that handler rolls back the entire
+block, `REPLICA IDENTITY FULL` included. The later migrations then `ADD`ed their own
+tables, so only `dashboards`, `alert_rules`, `alert_rule_states` and `alert_incidents`
+were missing.
+
+`electric_publication_reconcile` closes this for every new database: it runs after all
+of them, unguarded, and converges the publication on `SYNCED_TABLES` (creates it if
+absent, sets FULL, adds what is missing, drops and resets anything extra). It is a no-op
+on a database that is already correct. A database that ran it and then drifted by hand
+needs the check below.
 
 ```bash
-docker exec maple-postgres-1 psql -U maple -d maple -c "SELECT pubname FROM pg_publication;"
+docker exec maple-postgres-1 psql -U maple -d maple -c "
+  WITH synced(name) AS (VALUES ('dashboards'),('alert_rules'),('alert_rule_states'),
+    ('alert_incidents'),('alert_destinations'),('api_keys'),('investigations'))
+  SELECT coalesce(s.name, p.tablename) AS table, c.relreplident, p.tablename IS NOT NULL AS published,
+         s.name IS NOT NULL AS expected
+  FROM synced s
+  FULL JOIN (SELECT tablename FROM pg_publication_tables
+             WHERE pubname = 'electric_publication_default') p ON p.tablename = s.name
+  LEFT JOIN pg_class c ON c.oid = to_regclass('public.' || quote_ident(coalesce(s.name, p.tablename)));"
 ```
 
-If `electric_publication_default` is absent, apply the publication + `REPLICA IDENTITY
-FULL` directly (this is the body of `0009`; drizzle won't re-run it for you):
-
-Note this is the **current** membership (0009 + 0011 + 0014 minus the tables 0022
-pruned), not the literal body of `0009` — recreating it from 0009 alone would
-re-publish the four dead tables.
+Every row should show `f`, `published = t` and `expected = t`. A missing synced table shows
+`published = f`; an extra member shows `expected = f`.
+To self-heal, apply the current membership (`SYNCED_TABLES` in
+`packages/db/src/migrations.test.ts`), every statement idempotent:
 
 ```bash
 docker exec -i maple-postgres-1 psql -U maple -d maple <<'SQL'
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_publication WHERE pubname = 'electric_publication_default') THEN
+    CREATE PUBLICATION electric_publication_default;
+  END IF;
+END $$;
 ALTER TABLE "dashboards"         REPLICA IDENTITY FULL;
 ALTER TABLE "alert_rules"        REPLICA IDENTITY FULL;
 ALTER TABLE "alert_rule_states"  REPLICA IDENTITY FULL;
 ALTER TABLE "alert_incidents"    REPLICA IDENTITY FULL;
 ALTER TABLE "alert_destinations" REPLICA IDENTITY FULL;
 ALTER TABLE "api_keys"           REPLICA IDENTITY FULL;
-CREATE PUBLICATION electric_publication_default FOR TABLE
-  "dashboards","alert_rules","alert_rule_states","alert_incidents","alert_destinations","api_keys";
+ALTER TABLE "investigations"     REPLICA IDENTITY FULL;
+ALTER PUBLICATION electric_publication_default SET TABLE
+  "dashboards","alert_rules","alert_rule_states","alert_incidents",
+  "alert_destinations","api_keys","investigations";
 SQL
 ```
+
+On PlanetScale run the same SQL through `pscale shell <database> main` (as done for
+`maple-eu` on 2026-09-23). `SET TABLE` replaces the membership in one statement; a table
+it removes keeps FULL until you reset it with `REPLICA IDENTITY DEFAULT`.
 
 **Nothing syncs but no error** — check `VITE_ELECTRIC_SYNC_URL` points at the
 running `electric-sync` worker and that the docker `electric` service is up. It's
 a build-time constant, so a Vite restart is needed after changing it.
 
-## Production runbook (PlanetScale + Electric Cloud)
+## Production (PlanetScale + self-hosted Electric on ECS)
+
+Electric Cloud is gone. `apps/electric` runs the upstream `electricsql/electric`
+image on ECS Fargate at `electric.maple.dev`, with
+its own cluster, ALB, security groups and certificate **inside the ingest fleet's
+VPC**. The shared VPC is forced, not an economy: two `AWS.EC2.Network`s in one
+alchemy stack fight over the internet gateway — under `--adopt` the second one's
+create resolves to the first's IGW and tries to detach it, which AWS refuses on a
+VPC whose tasks hold public IPs (`DependencyViolation: … has some mapped public
+address(es)`). Both services want the same network anyway: public subnets, public
+IPs, no NAT.
+Nothing was migrated to get there: Postgres is the source of truth and Electric
+is a cache over its logical replication stream.
+
+**What guards it.** The service is public, because its only caller is a Worker at
+the Cloudflare edge with no private route into a VPC. `ELECTRIC_SECRET` is the
+control — Electric requires it on every shape request, and the sync worker
+appends it as `?secret=` exactly as it did for Cloud's source secret. One secret,
+both ends of the hop. The task security group additionally admits `ELECTRIC_PORT`
+only from the ALB's group, so a task's public IP is not a way around TLS.
+
+**It is a singleton.** Two Electrics cannot share a replication slot, so the
+service runs `desiredCount: 1` with `minimumHealthyPercent: 0` — stop the old
+task, then start the new one. Every deploy therefore has a ~60s window with no
+sync: `/dashboards` degrades to its HTTP snapshot (`SyncDegradedBanner`), while
+the alerts lists have no fallback and sit in their retry state. This is why the
+image tag is pinned in `apps/electric/Dockerfile` rather than tracking `:latest`
+like local docker does.
+
+### Standing it up
 
 1. **PlanetScale cluster params:** `wal_level=logical`, `max_replication_slots>=10`,
    `max_wal_senders>=10`, `max_slot_wal_keep_size>=4096`, `sync_replication_slots=on`,
-   `hot_standby_feedback=on`.
-2. **Dedicated role:** a Postgres role with `REPLICATION` + `SELECT` on the synced
-   tables (avoid the ephemeral pscale migration roles).
-3. **Migration:** `0009_electric_publication` ships via the normal CI
-   `drizzle-kit migrate`. Because prod runs `ELECTRIC_MANUAL_TABLE_PUBLISHING=true`,
-   Electric never needs to own the tables — the migration owns the publication,
-   sidestepping PlanetScale's inability to reassign table ownership.
-4. **Electric Cloud source:** point it at the **direct** connection string
-   (port 5432 — not PSBouncer/6432, not Hyperdrive), `ELECTRIC_MANUAL_TABLE_PUBLISHING=true`.
-   Record `source_id` / `secret`.
-5. **Env:** set `ELECTRIC_URL`, `ELECTRIC_SOURCE_ID`, `ELECTRIC_SECRET` — now wired
-   into the standalone sync worker (`apps/electric-sync/alchemy.run.ts` +
-   `src/config.ts`), which also needs the auth env (`MAPLE_AUTH_MODE`,
-   `MAPLE_ROOT_PASSWORD` or `CLERK_*`). The root `alchemy.run.ts` bakes the worker's
-   public origin into the web build as `VITE_ELECTRIC_SYNC_URL`. Then `alchemy deploy`.
-   With `ELECTRIC_URL` unset the proxy returns 503 and the synced lists fail to load.
-6. Validate initial per-org snapshot sizes before deploying a new synced table.
+   `hot_standby_feedback=on`. Already set for Cloud; unchanged.
+2. **The role is declared:** `Planetscale.PostgresRole("electric", { withReplication: true,
+inheritedRoles: ["postgres"] })` in `alchemy.run.ts`. The `REPLICATION` _attribute_ is never
+   inherited through role membership, Electric's database validation rejects a role without it
+   with a message that does not say so, and PlanetScale issues it only alongside `postgres`.
+   Its DIRECT 5432 URL (logical replication cannot run through PSBouncer or Hyperdrive), rewritten
+   to `sslmode=require` because Electric refuses `verify-full`, is the task's `DATABASE_URL`.
+3. **Env:** `ELECTRIC_SECRET`. Both secrets reach the task through Secrets Manager, never the
+   task definition's plaintext `env`; the role id sits in `env` so a replaced role restarts the
+   singleton on the new secret before alchemy deletes the old one.
+4. **Migrate,** then `alchemy deploy`. No new migration is needed: the service
+   reads the publication the migrations maintain, and `electric_publication_reconcile`
+   makes a fresh database's membership exact even if the publication already exists.
+5. **DNS.** The stack publishes the ACM validation CNAME into the `maple.dev`
+   zone and waits for the certificate to reach `ISSUED` before attaching the 443
+   listener (`@maple/infra/acm`), so the first deploy needs no second pass. The
+   one manual record is a **proxied CNAME for `electric.maple.dev` at the ALB** —
+   the deploy output carries the hostname.
+6. **Verify** before pointing anything at it:
+   `curl https://electric.maple.dev/v1/health`, then a shape through the proxy —
+   `curl -g 'https://sync.maple.dev/api/sync/shape?shape=dashboards&offset=-1' -H "authorization: Bearer <token>"`.
+7. **Cut over:** set `ELECTRIC_URL=https://electric.maple.dev` and clear
+   `ELECTRIC_SOURCE_ID`, then redeploy the sync worker. Reverting is the same env
+   change backwards, which is the entire point of running the two side by side.
 
-## PR previews (no Electric source — dormant since 2026-08)
+### The publication
+
+`ELECTRIC_MANUAL_TABLE_PUBLISHING=true`, and `ELECTRIC_REPLICATION_STREAM_ID` is
+left at Electric's `default` — so it reads `electric_publication_default`, the
+migration-owned publication, and opens `electric_slot_default` for itself.
+
+Electric Cloud never used that pair: it created its own generated
+`cloud_electric_pub_*` / `cloud_electric_slot_*`. That is why the self-hosted
+service can run beside it on the same database with no collision, and why
+flipping `ELECTRIC_URL` between them is a reversible env change rather than a
+leap.
+
+## PR previews (no Electric source — dormant since 2026-08, now also Cloud-less)
 
 **PR previews no longer have an Electric source.** They stopped provisioning a
 PlanetScale branch (see `resolveDatabaseMode` in
@@ -175,9 +248,10 @@ therefore withholds `ELECTRIC_URL`/`ELECTRIC_SOURCE_ID`/`ELECTRIC_SECRET` on the
 credentials and proxy its shapes at another stage's data. The sync worker deploys
 unconfigured, returns 503, and the web app falls back to its effect-atom fetches.
 
-The `down`/`sweep` paths below still run: they reap environments left over from
-PRs opened before the cutover (each still holds a plan max-databases slot). The
-`up` path described here is dormant and documents the reverse path.
+Both paths are now dead, not just `up`: Electric Cloud is gone, so there are no
+environments left to reap and `scripts/electric-pr-branch.ts` has nothing to call.
+What follows is kept as the record of what previews used to do — restoring live
+sync in a preview means pointing it at a self-hosted Electric, not at Cloud.
 
 The former lifecycle: an ephemeral Electric Cloud **environment** `pr-<n>` + a
 Postgres **source** per PR, mirroring the PlanetScale/Tinybird branch lifecycle.
@@ -213,11 +287,13 @@ green (and the worker 503s) until the token lands in Infisical.
 
 ## Adding a synced table later
 
-1. New Drizzle migration: `ALTER PUBLICATION electric_publication_default ADD TABLE "<t>";`
-   plus `ALTER TABLE "<t>" REPLICA IDENTITY FULL;`. Prefer an explicit
-   `pg_publication_tables` existence check for idempotency (as in `0022`) over
-   `0009`'s `DO $$ … EXCEPTION WHEN OTHERS … END $$` guard — that guard swallows
-   real failures while drizzle still records the migration as applied.
+1. New Drizzle migration (`db:generate --custom`) that adds the table with
+   `ALTER TABLE "<t>" REPLICA IDENTITY FULL` and `ALTER PUBLICATION
+electric_publication_default ADD TABLE "<t>"`, each behind a catalog check
+   (`pg_class.relreplident`, `pg_publication_tables`) as in
+   `electric_publication_reconcile`. **No `EXCEPTION` handler.** PGlite (0.5+) runs
+   `CREATE/ALTER PUBLICATION` and `pg_publication_tables`, so the guard the early
+   migrations carry protects nothing, and it is exactly what hid the EU failure.
 2. Add the shape to the whitelist in `apps/electric-sync/src/routes/shape.http.ts`.
 3. Add a collection under `apps/web/src/lib/collections/` via
    `createEffectCollection` (model on `dashboards.ts` for a write vertical, or

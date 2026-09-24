@@ -17,11 +17,25 @@ import { track, type TrackProps } from "@maple-dev/effect-sdk/client"
 
 export type ProductEvent =
 	| "onboarding_step_completed"
+	/** The org admin redeemed the onboarding-checklist credit from the top bar. */
+	| "onboarding_reward_claimed"
 	| "integration_connected"
 	| "alert_rule_created"
 	| "api_key_created"
 	| "dashboard_created"
 	| "chat_message_sent"
+	/**
+	 * Client-side intent signal fired right before the Stripe redirect. The
+	 * server-side `plan_started` (Autumn webhook / inline attach) is the truth for
+	 * "started a plan"; this only exists to size checkout drop-off.
+	 */
+	| "plan_checkout_started"
+	/**
+	 * The buyer came back from Stripe. `confirmed` says whether the plan was
+	 * visible by the time we stopped waiting — a `false` is a Stripe→Autumn sync
+	 * slower than `CHECKOUT_CONFIRM_TIMEOUT_MS`, or an abandoned checkout.
+	 */
+	| "plan_checkout_returned"
 
 /**
  * Record a product event. Never throws and never awaits — the SDK buffers and

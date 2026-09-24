@@ -1,32 +1,19 @@
 import { HttpApiBuilder } from "effect/unstable/httpapi"
-import type {
-	IngestAttributeMapping,
-	IngestAttributeMappingId,
-	IngestAttributeMappingNotFoundError,
-	IngestAttributeMappingPersistenceError,
-	IngestAttributeMappingValidationError,
-	OrgId,
-} from "@maple/domain/http"
+import type { IngestAttributeMapping, IngestAttributeMappingId, OrgId } from "@maple/domain/http"
 import {
 	CreateIngestAttributeMappingRequest,
 	CurrentTenant,
+	IngestAttributeMappingForbiddenError,
+	IngestAttributeMappingNotFoundError,
 	UpdateIngestAttributeMappingRequest,
 } from "@maple/domain/http"
-import {
-	MapleApiV2,
-	dependencyUnavailable,
-	invalidRequest,
-	paginateArray,
-	resourceNotFound,
-} from "@maple/domain/http/v2"
-import type {
-	V2AttributeMapping,
-	V2InvalidRequestError,
-	V2NotFoundError,
-	V2ServiceUnavailableError,
-} from "@maple/domain/http/v2"
+import { MapleApiV2, paginateArray } from "@maple/domain/http/v2"
+import type { V2AttributeMapping } from "@maple/domain/http/v2"
 import { Array as Arr, Effect, Option } from "effect"
-import { IngestAttributeMappingService } from "@/services/org/IngestAttributeMappingService"
+import { requireAdmin } from "@maple/backend/services/auth/auth"
+import { diffAuditChanges, pickPresentFields } from "@/routes/v2/audit-changes"
+import { recordHttpAudit } from "@maple/backend/services/audit/AuditLogService"
+import { IngestAttributeMappingService } from "@maple/backend/services/org/IngestAttributeMappingService"
 
 const toV2AttributeMapping = (mapping: IngestAttributeMapping): V2AttributeMapping => ({
 	id: mapping.id,
@@ -41,62 +28,28 @@ const toV2AttributeMapping = (mapping: IngestAttributeMapping): V2AttributeMappi
 	updated_at: mapping.updatedAt,
 })
 
-/** Service tagged errors → v2 envelope errors (endpoints without a 404). */
-const mapCommonError =
-	(operation: string) =>
-	<A, R>(
-		effect: Effect.Effect<
-			A,
-			IngestAttributeMappingValidationError | IngestAttributeMappingPersistenceError,
-			R
-		>,
-	): Effect.Effect<A, V2InvalidRequestError | V2ServiceUnavailableError, R> =>
-		effect.pipe(
-			Effect.catchTags({
-				"@maple/http/errors/IngestAttributeMappingValidationError": (error) =>
-					Effect.fail(invalidRequest("parameter_invalid", error.message)),
-				"@maple/http/errors/IngestAttributeMappingPersistenceError": () =>
-					Effect.fail(dependencyUnavailable(`attribute_mapping_${operation}_unavailable`)),
-			}),
-		)
-
-/** Service tagged errors → v2 envelope errors (endpoints with a 404). */
-const mapMutationError =
-	(operation: string) =>
-	<A, R>(
-		effect: Effect.Effect<
-			A,
-			| IngestAttributeMappingNotFoundError
-			| IngestAttributeMappingValidationError
-			| IngestAttributeMappingPersistenceError,
-			R
-		>,
-	): Effect.Effect<A, V2NotFoundError | V2InvalidRequestError | V2ServiceUnavailableError, R> =>
-		effect.pipe(
-			Effect.catchTags({
-				"@maple/http/errors/IngestAttributeMappingNotFoundError": () =>
-					Effect.fail(resourceNotFound("attribute_mapping", "No such attribute mapping.")),
-				"@maple/http/errors/IngestAttributeMappingValidationError": (error) =>
-					Effect.fail(invalidRequest("parameter_invalid", error.message)),
-				"@maple/http/errors/IngestAttributeMappingPersistenceError": () =>
-					Effect.fail(dependencyUnavailable(`attribute_mapping_${operation}_unavailable`)),
-			}),
-		)
-
-const mapPersistenceError = <A, R>(
-	effect: Effect.Effect<A, IngestAttributeMappingPersistenceError, R>,
-): Effect.Effect<A, V2ServiceUnavailableError, R> =>
-	effect.pipe(
-		Effect.catchTag("@maple/http/errors/IngestAttributeMappingPersistenceError", () =>
-			Effect.fail(dependencyUnavailable("attribute_mapping_list_unavailable")),
-		),
-	)
+/** Update-payload fields that are diffable through the wire shape. */
+const mappingAuditKeys: ReadonlyArray<
+	"name" | "source_context" | "source_key" | "target_key" | "operation" | "enabled"
+> = ["name", "source_context", "source_key", "target_key", "operation", "enabled"]
 
 export const HttpV2AttributeMappingsLive = HttpApiBuilder.group(MapleApiV2, "attributeMappings", (handlers) =>
 	Effect.gen(function* () {
 		const service = yield* IngestAttributeMappingService
 
-		const listMappings = (orgId: OrgId) => service.list(orgId).pipe(mapPersistenceError)
+		// A mapping rewrites every ingested span for the whole org, so the writes
+		// are admin-only; the reads stay open to any member.
+		const requireMappingAdmin = (tenant: CurrentTenant.TenantSchema, action: string) =>
+			requireAdmin(
+				tenant.roles,
+				() =>
+					new IngestAttributeMappingForbiddenError({
+						message: `Only org admins can ${action} attribute mappings`,
+						...(tenant.roles.length > 0 ? { roles: [...tenant.roles] } : undefined),
+					}),
+			)
+
+		const listMappings = (orgId: OrgId) => service.list(orgId)
 
 		const findMapping = (orgId: OrgId, id: IngestAttributeMappingId) =>
 			listMappings(orgId).pipe(
@@ -106,7 +59,10 @@ export const HttpV2AttributeMappingsLive = HttpApiBuilder.group(MapleApiV2, "att
 						{
 							onNone: () =>
 								Effect.fail(
-									resourceNotFound("attribute_mapping", "No such attribute mapping."),
+									new IngestAttributeMappingNotFoundError({
+										mappingId: id,
+										message: "No such attribute mapping.",
+									}),
 								),
 							onSome: Effect.succeed,
 						},
@@ -133,54 +89,77 @@ export const HttpV2AttributeMappingsLive = HttpApiBuilder.group(MapleApiV2, "att
 			.handle("create", ({ payload }) =>
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
-					const created = yield* service
-						.create(
-							tenant.orgId,
-							new CreateIngestAttributeMappingRequest({
-								name: payload.name,
-								sourceContext: payload.source_context,
-								sourceKey: payload.source_key,
-								targetKey: payload.target_key,
-								operation: payload.operation,
-								...(payload.enabled !== undefined ? { enabled: payload.enabled } : {}),
-							}),
-						)
-						.pipe(mapCommonError("create"))
+					yield* requireMappingAdmin(tenant, "create")
+					const created = yield* service.create(
+						tenant.orgId,
+						new CreateIngestAttributeMappingRequest({
+							name: payload.name,
+							sourceContext: payload.source_context,
+							sourceKey: payload.source_key,
+							targetKey: payload.target_key,
+							operation: payload.operation,
+							...(payload.enabled !== undefined ? { enabled: payload.enabled } : undefined),
+						}),
+					)
+
+					yield* recordHttpAudit("attribute_mapping.created", {
+						resourceId: created.id,
+						metadata: { name: created.name },
+					})
+
 					return toV2AttributeMapping(created)
 				}),
 			)
 			.handle("update", ({ params, payload }) =>
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
-					const updated = yield* service
-						.update(
-							tenant.orgId,
-							params.id,
-							new UpdateIngestAttributeMappingRequest({
-								...(payload.name !== undefined ? { name: payload.name } : {}),
-								...(payload.source_context !== undefined
-									? { sourceContext: payload.source_context }
-									: {}),
-								...(payload.source_key !== undefined
-									? { sourceKey: payload.source_key }
-									: {}),
-								...(payload.target_key !== undefined
-									? { targetKey: payload.target_key }
-									: {}),
-								...(payload.operation !== undefined ? { operation: payload.operation } : {}),
-								...(payload.enabled !== undefined ? { enabled: payload.enabled } : {}),
-							}),
-						)
-						.pipe(mapMutationError("update"))
+					yield* requireMappingAdmin(tenant, "update")
+					const current = yield* findMapping(tenant.orgId, params.id)
+					const updated = yield* service.update(
+						tenant.orgId,
+						params.id,
+						new UpdateIngestAttributeMappingRequest({
+							...(payload.name !== undefined ? { name: payload.name } : undefined),
+							...(payload.source_context !== undefined
+								? {
+										sourceContext: payload.source_context,
+									}
+								: undefined),
+							...(payload.source_key !== undefined
+								? { sourceKey: payload.source_key }
+								: undefined),
+							...(payload.target_key !== undefined
+								? { targetKey: payload.target_key }
+								: undefined),
+							...(payload.operation !== undefined
+								? { operation: payload.operation }
+								: undefined),
+							...(payload.enabled !== undefined ? { enabled: payload.enabled } : undefined),
+						}),
+					)
+
+					const changes = diffAuditChanges(
+						pickPresentFields(mappingAuditKeys, payload, toV2AttributeMapping(current)),
+						pickPresentFields(mappingAuditKeys, payload, toV2AttributeMapping(updated)),
+					)
+					yield* recordHttpAudit("attribute_mapping.updated", {
+						resourceId: updated.id,
+						changes,
+						metadata: { name: updated.name },
+					})
+
 					return toV2AttributeMapping(updated)
 				}),
 			)
 			.handle("delete", ({ params }) =>
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
-					const deleted = yield* service
-						.delete(tenant.orgId, params.id)
-						.pipe(mapMutationError("delete"))
+					yield* requireMappingAdmin(tenant, "delete")
+					const deleted = yield* service.delete(tenant.orgId, params.id)
+					yield* recordHttpAudit("attribute_mapping.deleted", {
+						resourceId: deleted.id,
+					})
+
 					return { id: deleted.id, object: "attribute_mapping" as const, deleted: true as const }
 				}),
 			)

@@ -1,8 +1,6 @@
 import { Match, Schema } from "effect"
 
-// ---------------------------------------------------------------------------
 // Schemas
-// ---------------------------------------------------------------------------
 
 export const Operator = Schema.Literals([
 	"=",
@@ -20,6 +18,8 @@ export type Operator = Schema.Schema.Type<typeof Operator>
 
 export const ParsedClause = Schema.Struct({
 	key: Schema.String,
+	/** The key as typed, for sources whose keys are case-sensitive (`track()` props). */
+	rawKey: Schema.optionalKey(Schema.String),
 	operator: Operator,
 	value: Schema.String,
 })
@@ -33,24 +33,22 @@ export class WhereClauseParseWarning extends Schema.TaggedError<WhereClauseParse
 	},
 ) {}
 
-// ---------------------------------------------------------------------------
 // Key alias normalization (single source of truth)
-// ---------------------------------------------------------------------------
 
 export const normalizeKey = (raw: string): string =>
 	Match.value(raw.trim().toLowerCase()).pipe(
 		Match.when("service", () => "service.name"),
 		Match.when("span", () => "span.name"),
 		Match.whenOr("environment", "env", () => "deployment.environment"),
-		Match.when("commit_sha", () => "deployment.commit_sha"),
+		// `deployment.commit_sha` is retired telemetry, kept only as an alias so a
+		// saved where-clause written against it still names the commit filter.
+		Match.whenOr("commit_sha", "deployment.commit_sha", () => "vcs.ref.head.revision"),
 		Match.when("root.only", () => "root_only"),
 		Match.when("errors_only", () => "has_error"),
 		Match.orElse((k) => k),
 	)
 
-// ---------------------------------------------------------------------------
 // Shared parsing helpers
-// ---------------------------------------------------------------------------
 
 const TRUE_VALUES = new Set(["1", "true", "yes", "y"])
 const FALSE_VALUES = new Set(["0", "false", "no", "n"])
@@ -76,9 +74,7 @@ export function splitCsv(input: string): string[] {
 		.filter(Boolean)
 }
 
-// ---------------------------------------------------------------------------
 // Where-clause parser
-// ---------------------------------------------------------------------------
 
 /**
  * Split a where-clause expression into its `AND`-joined clauses (the grammar
@@ -113,6 +109,19 @@ export function splitWhereClause(expression: string): string[] {
 	return parts.map((part) => part.trim()).filter(Boolean)
 }
 
+/**
+ * A value as the quoted literal the grammar above reads back verbatim. The
+ * grammar has no escape character, so the quote is the one the value does not
+ * contain. A value carrying both kinds cannot be spelled at all; it is emitted
+ * as-is so the parser rejects the clause visibly instead of a quietly altered
+ * value matching something else.
+ */
+export function quoteWhereValue(value: string): string {
+	if (!value.includes('"')) return `"${value}"`
+	if (!value.includes("'")) return `'${value}'`
+	return `"${value}"`
+}
+
 export interface ParseWhereClauseResult {
 	clauses: readonly ParsedClause[]
 	warnings: readonly WhereClauseParseWarning[]
@@ -130,59 +139,58 @@ export function parseWhereClause(expression: string): ParseWhereClauseResult {
 	const warnings: WhereClauseParseWarning[] = []
 
 	for (const part of parts) {
-		// Try "!exists" operator (no value) BEFORE "exists" so the longer prefix wins
+		// Match negated operators first so the shorter prefix cannot consume them.
 		const notExistsMatch = part.match(/^([a-zA-Z0-9_.-]+)\s+!\s*exists$/i)
 		if (notExistsMatch) {
 			clauses.push({
 				key: notExistsMatch[1].trim().toLowerCase(),
+				rawKey: notExistsMatch[1].trim(),
 				operator: "!exists",
 				value: "",
 			})
 			continue
 		}
 
-		// Try "exists" operator (no value)
 		const existsMatch = part.match(/^([a-zA-Z0-9_.-]+)\s+exists$/i)
 		if (existsMatch) {
 			clauses.push({
 				key: existsMatch[1].trim().toLowerCase(),
+				rawKey: existsMatch[1].trim(),
 				operator: "exists",
 				value: "",
 			})
 			continue
 		}
 
-		// Try "!contains" operator BEFORE "contains" so the longer prefix wins
 		const notContainsMatch = part.match(
 			/^([a-zA-Z0-9_.-]+)\s+!\s*contains\s+(?:"([^"]*)"|'([^']*)'|([^\s]+))$/i,
 		)
 		if (notContainsMatch) {
 			clauses.push({
 				key: notContainsMatch[1].trim().toLowerCase(),
+				rawKey: notContainsMatch[1].trim(),
 				operator: "!contains",
 				value: (notContainsMatch[2] ?? notContainsMatch[3] ?? notContainsMatch[4] ?? "").trim(),
 			})
 			continue
 		}
 
-		// Try "contains" operator
 		const containsMatch = part.match(/^([a-zA-Z0-9_.-]+)\s+contains\s+(?:"([^"]*)"|'([^']*)'|([^\s]+))$/i)
 		if (containsMatch) {
 			clauses.push({
 				key: containsMatch[1].trim().toLowerCase(),
+				rawKey: containsMatch[1].trim(),
 				operator: "contains",
 				value: (containsMatch[2] ?? containsMatch[3] ?? containsMatch[4] ?? "").trim(),
 			})
 			continue
 		}
 
-		// Try comparison operators: !=, <=, >=, <, >, =
 		const compMatch = part.match(
 			/^([a-zA-Z0-9_.-]+)\s*(!=|<=|>=|<|>|=)\s*(?:"([^"]*)"|'([^']*)'|([^\s]+))$/,
 		)
 		if (compMatch) {
 			const unquotedToken = compMatch[5]
-			// Detect unclosed quote in unquoted capture
 			if (unquotedToken && (unquotedToken.startsWith('"') || unquotedToken.startsWith("'"))) {
 				warnings.push(
 					new WhereClauseParseWarning({
@@ -195,6 +203,7 @@ export function parseWhereClause(expression: string): ParseWhereClauseResult {
 
 			clauses.push({
 				key: compMatch[1].trim().toLowerCase(),
+				rawKey: compMatch[1].trim(),
 				operator: compMatch[2] as Operator,
 				value: (compMatch[3] ?? compMatch[4] ?? compMatch[5] ?? "").trim(),
 			})

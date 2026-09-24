@@ -1,0 +1,226 @@
+import { useMemo, type ReactNode } from "react"
+import { createFileRoute, useNavigate } from "@tanstack/react-router"
+import { Schema } from "effect"
+
+import { Skeleton } from "@maple/ui/components/ui/skeleton"
+import { toEpochMs } from "@maple/ui/lib/time-format"
+
+import { AgentSessionsTabs } from "@/components/agent-sessions/tools/agent-sessions-tabs"
+import { AgentToolsView } from "@/components/agent-sessions/tools/agent-tools-view"
+import { ToolMetricStripLoading } from "@/components/agent-sessions/tools/tool-metric-strip"
+import { QueryErrorState } from "@/components/common/query-error-state"
+import { DashboardLayout } from "@/components/layout/dashboard-layout"
+import { PageRefreshProvider } from "@/components/time-range-picker/page-refresh-context"
+import {
+	TimeRangeSearchFields,
+	applyTimeRangeSearch,
+	type TimeRangeSearch,
+} from "@/components/time-range-picker/search"
+import { sessionTimeRangeSearchMiddleware } from "@/components/time-range-picker/session-time-range"
+import { TimeRangeHeaderControls } from "@/components/time-range-picker/time-range-header-controls"
+import { chartBucketSeconds } from "@/components/infra/chart-utils"
+import { useEffectiveTimeRange } from "@/hooks/use-effective-time-range"
+import { Result, useAtomValue } from "@/lib/effect-atom"
+import { fillSeriesBuckets } from "@/lib/agent-sessions/tool-analytics"
+import {
+	TOOL_ANALYTICS_DEFAULT_PRESET,
+	ToolAnalyticsSearchFields,
+	type ToolAnalyticsSearch,
+} from "@/lib/agent-sessions/tool-search"
+import { useAgentSessionsTabCounts, useToolAnalytics } from "@/lib/agent-sessions/use-tool-analytics"
+import { aiSessionsFacetsResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
+
+const toolsSearchSchema = Schema.Struct({
+	...ToolAnalyticsSearchFields,
+	...TimeRangeSearchFields,
+})
+
+export const Route = createFileRoute("/agent-sessions/tools/")({
+	component: AgentToolsPage,
+	validateSearch: Schema.toStandardSchemaV1(toolsSearchSchema),
+	search: { middlewares: [sessionTimeRangeSearchMiddleware()] },
+})
+
+function AgentToolsPage() {
+	const search = Route.useSearch()
+	const navigate = useNavigate({ from: Route.fullPath })
+	const preset = search.timePreset ?? TOOL_ANALYTICS_DEFAULT_PRESET
+	const { startTime, endTime } = useEffectiveTimeRange(search.startTime, search.endTime, preset)
+	// One object for the whole render tree below: it is a dependency of every
+	// selection memo down there, and a fresh literal defeats all of them.
+	const window = useMemo(() => ({ startTime, endTime }), [startTime, endTime])
+
+	const onSearchChange = (patch: Partial<ToolAnalyticsSearch>) => {
+		navigate({ search: (prev) => ({ ...prev, ...patch }) })
+	}
+
+	const handleTimeChange = (
+		range: { startTime?: string; endTime?: string; presetValue?: string },
+		options?: { replace?: boolean },
+	) => {
+		navigate({
+			replace: options?.replace,
+			search: (prev) => ({ ...applyTimeRangeSearch(prev, range) }),
+		})
+	}
+
+	return (
+		<PageRefreshProvider timePreset={preset}>
+			<DashboardLayout.Root>
+				<DashboardLayout.Breadcrumbs
+					items={[{ label: "Agent Sessions", href: "/agent-sessions" }, { label: "Tools" }]}
+				/>
+				<DashboardLayout.Body>
+					<DashboardLayout.Content>
+						<DashboardLayout.Scroll className="p-0">
+							<AgentToolsBody
+								search={search}
+								window={window}
+								preset={preset}
+								onSearchChange={onSearchChange}
+								actions={
+									<TimeRangeHeaderControls
+										startTime={search.startTime ?? startTime}
+										endTime={search.endTime ?? endTime}
+										presetValue={
+											search.timePreset ??
+											(search.startTime ? undefined : TOOL_ANALYTICS_DEFAULT_PRESET)
+										}
+										onTimeChange={handleTimeChange}
+									/>
+								}
+							/>
+						</DashboardLayout.Scroll>
+					</DashboardLayout.Content>
+				</DashboardLayout.Body>
+			</DashboardLayout.Root>
+		</PageRefreshProvider>
+	)
+}
+
+/**
+ * The page's reads, resolved.
+ *
+ * The **totals** read is the one the page waits on: it is the smallest and it
+ * is what the strip — the page's selector — is made of. The rest fill in under
+ * it rather than holding the page on a skeleton, but a failed read says so in
+ * its own panel, and the Tools table says when it has not answered: "no tool
+ * calls" is a finding. The split series only feeds the table's sparks, which go
+ * quiet without it.
+ */
+function AgentToolsBody({
+	search,
+	window,
+	preset,
+	onSearchChange,
+	actions,
+}: {
+	search: ToolAnalyticsSearch & TimeRangeSearch
+	window: { startTime: string; endTime: string }
+	preset: string
+	onSearchChange: (patch: Partial<ToolAnalyticsSearch>) => void
+	actions: ReactNode
+}) {
+	const results = useToolAnalytics(search, window)
+	const tabCounts = useAgentSessionsTabCounts(window)
+	// Memoized: it is memo input for the detail links the table builds.
+	const timeRange = useMemo(
+		() => ({
+			startTime: search.startTime,
+			endTime: search.endTime,
+			timePreset: search.timePreset,
+		}),
+		[search.startTime, search.endTime, search.timePreset],
+	)
+
+	// Service, model and environment options come from the sessions facets — the
+	// same counted lists the list page's sidebar uses. A dedicated facets
+	// endpoint for this page would be a second query returning the same arrays.
+	// Plain `useAtomValue`: the options refresh when the window rolls, which is
+	// enough, and keeping them off the Reload subscription stops a manual refresh
+	// from rebuilding the selects underneath a click.
+	const facetsResult = useAtomValue(aiSessionsFacetsResultAtom({ data: window }))
+	const facets = Result.builder(facetsResult)
+		.onSuccess((value) => value)
+		.orElse(() => undefined)
+
+	const breakdowns = Result.builder(results.breakdowns)
+		.onSuccess((value) => value)
+		.orElse(() => ({ tools: [] }))
+	const breakdownsFailure = Result.builder(results.breakdowns)
+		.onError((failure) => failure as unknown)
+		.orElse(() => undefined)
+	// `seriesKind` is the server's, derived from the same selection the query
+	// keyed on — the chart labels models as models without re-deriving it.
+	const series = Result.builder(results.series)
+		.onSuccess((value) => value)
+		.orElse(() => ({ data: [], seriesKind: "tool" }) as const)
+	const scopeSeries = Result.builder(results.scopeSeries)
+		.onSuccess((value) =>
+			fillSeriesBuckets(
+				value.data,
+				toEpochMs(window.startTime),
+				toEpochMs(window.endTime),
+				chartBucketSeconds(window.startTime, window.endTime),
+			),
+		)
+		.orElse(() => [])
+	const scopeSeriesFailure = Result.builder(results.scopeSeries)
+		.onError((failure) => failure as unknown)
+		.orElse(() => undefined)
+
+	return Result.builder(results.totals)
+		.onInitial(() => (
+			<div className="flex flex-col gap-5 pt-4">
+				{/* The real strip while the page waits: it is what must not move when
+				    a reader switches tabs. */}
+				<AgentSessionsTabs
+					active="tools"
+					search={timeRange}
+					counts={tabCounts}
+					className="border-b border-border px-6"
+				/>
+				<Skeleton className="mx-6 h-8 max-w-2xl" />
+				<ToolMetricStripLoading />
+				<Skeleton className="mx-6 h-56" />
+				<Skeleton className="mx-6 h-80" />
+			</div>
+		))
+		.onError((error) => (
+			<QueryErrorState error={error} titleOverride="Failed to load agent tool analytics" />
+		))
+		.onSuccess((totals, result) => (
+			<AgentToolsView
+				search={search}
+				onSearchChange={onSearchChange}
+				data={{
+					series: series.data,
+					seriesKind: series.seriesKind,
+					scopeSeries,
+					seriesLoading: Result.isInitial(results.scopeSeries),
+					seriesFailure: scopeSeriesFailure,
+					totals: totals.current,
+					previousTotals: totals.previous,
+					allSessions: totals.allSessions,
+					// The "of M" denominator: the Tools breakdown is scoped to the
+					// selected model but NOT to the selected tool, so its sum is exactly
+					// the population the tool chip narrows. Zero while that read is in
+					// flight, which `scopeSummary` renders as "nothing narrowed" rather
+					// than as a wrong ratio.
+					scopeCalls: breakdowns.tools.reduce((sum, row) => sum + row.calls, 0),
+					tools: breakdowns.tools,
+					toolsLoading: Result.isInitial(results.breakdowns),
+					toolsFailure: breakdownsFailure,
+				}}
+				serviceOptions={facets?.services ?? []}
+				modelOptions={facets?.models ?? []}
+				envOptions={facets?.environments ?? []}
+				windowLabel={preset}
+				timeRange={timeRange}
+				tabCounts={tabCounts}
+				actions={actions}
+				waiting={result.waiting}
+			/>
+		))
+		.render()
+}

@@ -75,6 +75,85 @@ describe("getActiveInfraCorrelations", () => {
 		expect(pod).toMatchObject({ namespace: "team a/b" })
 	})
 
+	it("detects a Docker container and carries the host for the deep-link", () => {
+		const groups = getActiveInfraCorrelations({
+			"container.name": "redis",
+			"host.name": "docker-host-1",
+		})
+		expect(groups.map((g) => g.kind)).toEqual(["container", "host"])
+		expect(groups[0]).toMatchObject({
+			kind: "container",
+			identifier: "redis",
+			hostName: "docker-host-1",
+		})
+	})
+
+	it("suppresses the container group on k8s records — kubeletstats rows also carry container.name", () => {
+		const groups = getActiveInfraCorrelations({
+			"container.name": "app",
+			"k8s.pod.name": "checkout-7c9f",
+			"k8s.node.name": "ip-10-0-1-5",
+		})
+		expect(groups.map((g) => g.kind)).toEqual(["pod", "node"])
+	})
+
+	it("treats an empty container.name as absent", () => {
+		expect(getActiveInfraCorrelations({ "container.name": "" })).toEqual([])
+	})
+
+	it("suppresses the container group when a non-docker runtime is declared", () => {
+		// containerd/cri-o records have no docker_stats metrics — the group would
+		// be a stack of empty charts.
+		const groups = getActiveInfraCorrelations({
+			"container.name": "app",
+			"container.runtime": "containerd",
+			"host.name": "node-1",
+		})
+		expect(groups.map((g) => g.kind)).toEqual(["host"])
+	})
+
+	it("keeps the container group when container.runtime is docker", () => {
+		const groups = getActiveInfraCorrelations({
+			"container.name": "app",
+			"container.runtime": "docker",
+		})
+		expect(groups.map((g) => g.kind)).toEqual(["container"])
+	})
+
+	/**
+	 * Semconv v1.37.0 renamed the key. Reading only the old spelling made a
+	 * canonical runtime read as absent, and absent *passes* the docker check —
+	 * so a containerd record would have rendered the empty docker chart stack
+	 * the check above exists to prevent. Both spellings, both directions.
+	 */
+	it("honours the renamed container.runtime.name in both directions", () => {
+		expect(
+			getActiveInfraCorrelations({
+				"container.name": "app",
+				"container.runtime.name": "containerd",
+				"host.name": "node-1",
+			}).map((g) => g.kind),
+		).toEqual(["host"])
+
+		expect(
+			getActiveInfraCorrelations({
+				"container.name": "app",
+				"container.runtime.name": "docker",
+			}).map((g) => g.kind),
+		).toEqual(["container"])
+	})
+
+	it("prefers the canonical spelling when an instrumentation sends both", () => {
+		// Dual-emitting SDKs exist; the canonical key is the one to believe.
+		const groups = getActiveInfraCorrelations({
+			"container.name": "app",
+			"container.runtime.name": "containerd",
+			"container.runtime": "docker",
+			"host.name": "node-1",
+		})
+		expect(groups.map((g) => g.kind)).toEqual(["host"])
+	})
+
 	it("each group carries at least one chart", () => {
 		const groups = getActiveInfraCorrelations({
 			"k8s.pod.name": "p",

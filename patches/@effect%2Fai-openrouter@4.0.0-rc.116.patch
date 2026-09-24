@@ -1,0 +1,55 @@
+diff --git a/dist/OpenRouterLanguageModel.js b/dist/OpenRouterLanguageModel.js
+index 5f2344b9ba778bffaf88d07d4b12a2fcae0f056a..c59b4252edea72e6e7210de8f6e3e247964476d0 100644
+--- a/dist/OpenRouterLanguageModel.js
++++ b/dist/OpenRouterLanguageModel.js
+@@ -720,7 +720,22 @@ const makeStreamResponse = /*#__PURE__*/Effect.fnUntraced(function* ({
+       reasoning: undefined
+     }
+   };
+-  return stream.pipe(Stream.mapEffect(Effect.fnUntraced(function* (event) {
++  // Patched (maple): a stream that ends without a usage block still has to
++  // finish. See the terminal-chunk patch at the tail of this function.
++  //
++  // The synthetic chunk carries every field a real one is required to have
++  // except `id` — which must stay absent, because a value there would emit a
++  // second `response-metadata` part naming a response the stream never
++  // identified. Every branch below is guarded against what it does not carry,
++  // and these three keep it that way the next time one of them grows a read.
++  let finishEmitted = false;
++  return stream.pipe(Stream.concat(Stream.suspend(() => finishEmitted ? Stream.empty : Stream.make({
++    object: "chat.completion.chunk",
++    created: 0,
++    model: "",
++    choices: [],
++    maple_terminal: true
++  }))), Stream.mapEffect(Effect.fnUntraced(function* (event) {
+     const parts = [];
+     if (Predicate.isNotUndefined(event.error)) {
+       finishReason = "error";
+@@ -996,7 +1011,16 @@ const makeStreamResponse = /*#__PURE__*/Effect.fnUntraced(function* ({
+     }
+     // Usage is only emitted by the last part of the stream, so we need to
+     // handle flushing any remaining text / reasoning / tool calls
+-    if (Predicate.isNotUndefined(event.usage)) {
++    //
++    // Patched (maple): `|| event.maple_terminal`. OpenRouter does not always
++    // send the usage block, and this flush is where the turn's `finish` part,
++    // its accumulated tool calls, `reasoning-end` and `text-end` are all
++    // emitted — so a stream that ends without one used to deliver no finish
++    // part at all, and with it neither the tool calls the model declared nor
++    // any accounting. The synthetic terminal chunk concatenated above reaches
++    // this branch when nothing else did; `usage` then stays as initialized,
++    // whose fields are all optional to the reader.
++    if (Predicate.isNotUndefined(event.usage) || event.maple_terminal === true) {
+       // Fix for Gemini 3 thoughtSignature: when there are tool calls with encrypted
+       // reasoning (thoughtSignature), the model returns 'stop' but expects continuation.
+       // Override to 'tool-calls' so the SDK knows to continue the conversation.
+@@ -1074,6 +1098,8 @@ const makeStreamResponse = /*#__PURE__*/Effect.fnUntraced(function* ({
+         response: buildHttpResponseDetails(response),
+         metadata
+       });
++      // Patched (maple): tells the synthetic terminal chunk to stand down.
++      finishEmitted = true;
+     }
+     return parts;
+   })), Stream.flattenIterable);

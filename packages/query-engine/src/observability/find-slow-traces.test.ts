@@ -3,7 +3,8 @@ import { Effect, Layer } from "effect"
 import { WarehouseUpstreamError } from "@maple/domain/http"
 import { findSlowTraces } from "./find-slow-traces"
 import { WarehouseExecutor } from "./WarehouseExecutor"
-import type { WarehouseExecutorShape } from "./WarehouseExecutor"
+import type { WarehouseExecutorApi } from "./WarehouseExecutor"
+import { compiledQueryOf } from "../execution/compiled-input"
 
 interface CapturedCalls {
 	pipeCalls: Array<{ pipe: string; params: Record<string, unknown> }>
@@ -13,10 +14,10 @@ const makeMockExecutor = (
 	captured: CapturedCalls,
 	slowRows: ReadonlyArray<Record<string, unknown>> = [],
 	statsRows: ReadonlyArray<Record<string, unknown>> = [],
-): WarehouseExecutorShape => ({
+): WarehouseExecutorApi => ({
 	orgId: "org_test",
-	compiledQuery: (compiled) => compiled.decodeRows([]).pipe(Effect.orDie),
-	compiledQueryFirst: (compiled) => compiled.decodeFirstRow([]).pipe(Effect.orDie),
+	compiledQuery: (compiled) => compiledQueryOf(compiled).decodeRows([]).pipe(Effect.orDie),
+	compiledQueryFirst: (compiled) => compiledQueryOf(compiled).decodeFirstRow([]).pipe(Effect.orDie),
 	query: (pipe: string, params: Record<string, unknown>) => {
 		captured.pipeCalls.push({ pipe, params })
 		const data = pipe === "slow_traces" ? slowRows : pipe === "traces_duration_stats" ? statsRows : []
@@ -24,7 +25,7 @@ const makeMockExecutor = (
 	},
 })
 
-const makeLayer = (executor: WarehouseExecutorShape) => Layer.succeed(WarehouseExecutor, executor)
+const makeLayer = (executor: WarehouseExecutorApi) => Layer.succeed(WarehouseExecutor, executor)
 
 describe("findSlowTraces", () => {
 	it.effect("queries the slow_traces pipe (not list_traces) with the requested limit", () =>
@@ -125,10 +126,11 @@ describe("findSlowTraces", () => {
 
 	it.effect("propagates warehouse errors from the executor", () =>
 		Effect.gen(function* () {
-			const failingExecutor: WarehouseExecutorShape = {
+			const failingExecutor: WarehouseExecutorApi = {
 				orgId: "org_test",
-				compiledQuery: (compiled) => compiled.decodeRows([]).pipe(Effect.orDie),
-				compiledQueryFirst: (compiled) => compiled.decodeFirstRow([]).pipe(Effect.orDie),
+				compiledQuery: (compiled) => compiledQueryOf(compiled).decodeRows([]).pipe(Effect.orDie),
+				compiledQueryFirst: (compiled) =>
+					compiledQueryOf(compiled).decodeFirstRow([]).pipe(Effect.orDie),
 				query: () =>
 					Effect.fail(
 						new WarehouseUpstreamError({

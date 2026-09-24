@@ -7,8 +7,9 @@ import type { ListWorkloadsResponse } from "@maple/domain/http"
 import type { WorkloadKind } from "@/api/warehouse/infra"
 
 import { HostStatusBadge } from "./status-badge"
-import { UsageBar } from "./usage-bar"
-import { ColumnHead, DataTable, MetaChip, ROW_LINK_CLASS, useTableSort } from "./primitives/data-table"
+import { MeterRows } from "./primitives/meter-rows"
+import { MetaLine } from "./primitives/meta-line"
+import { ColumnHead, DataTable, ROW_LINK_CLASS, useTableSort } from "./primitives/data-table"
 import { formatRelativeTime } from "@maple/ui/lib/time-format"
 
 export type WorkloadRow = ListWorkloadsResponse["data"][number]
@@ -26,7 +27,7 @@ export function WorkloadTableLoading() {
 	return (
 		<DataTable.Root ariaLabel="Workloads">
 			<DataTable.Head>
-				<ColumnHead label="Workload" width="flex-1 min-w-[260px]" />
+				<ColumnHead label="Workload" width="w-0 flex-1 min-w-[260px]" />
 				<ColumnHead label="Status" width="w-[88px]" />
 				<ColumnHead label="Pods" align="right" width="w-[60px]" />
 				<ColumnHead label="Avg CPU" align="right" width="w-[160px]" hidden="hidden md:flex" />
@@ -34,7 +35,7 @@ export function WorkloadTableLoading() {
 				<ColumnHead label="Last seen" align="right" width="w-[100px]" />
 			</DataTable.Head>
 			<DataTable.SkeletonRows count={4}>
-				<div className="min-w-[260px] flex-1">
+				<div className="w-0 min-w-[260px] flex-1">
 					<Skeleton className="h-4 w-48" />
 					<Skeleton className="mt-1.5 h-3 w-32" />
 				</div>
@@ -63,7 +64,7 @@ export function WorkloadTable({ workloads, kind, waiting, referenceTime }: Workl
 					currentKey={sortKey}
 					dir={sortDir}
 					onSort={handleSort}
-					width="flex-1 min-w-[260px]"
+					width="w-0 flex-1 min-w-[260px]"
 				/>
 				<ColumnHead label="Status" width="w-[88px]" />
 				<ColumnHead<SortKey>
@@ -115,15 +116,11 @@ export function WorkloadTable({ workloads, kind, waiting, referenceTime }: Workl
 					search={wl.namespace ? { namespace: wl.namespace } : {}}
 					className={ROW_LINK_CLASS}
 				>
-					<div className="min-w-[260px] flex-1">
+					<div className="w-0 min-w-[260px] flex-1">
 						<div className="truncate font-mono text-[13px] font-medium text-foreground transition-colors group-hover:text-primary">
 							{wl.workloadName}
 						</div>
-						<div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
-							{wl.namespace && <MetaChip>ns {wl.namespace}</MetaChip>}
-							<span className="text-foreground/20">·</span>
-							<MetaChip>kind {kind}</MetaChip>
-						</div>
+						<MetaLine items={[wl.namespace && `ns ${wl.namespace}`, `kind ${kind}`]} />
 					</div>
 					<div className="w-[88px]">
 						<HostStatusBadge lastSeen={wl.lastSeen} referenceTime={referenceTime} />
@@ -132,10 +129,10 @@ export function WorkloadTable({ workloads, kind, waiting, referenceTime }: Workl
 						{wl.podCount}
 					</div>
 					<div className="hidden w-[160px] md:block">
-						<UsageBar fraction={wl.avgCpuLimitPct} />
+						<MeterRows hideLabels meters={[{ label: "CPU", fraction: wl.avgCpuLimitPct }]} />
 					</div>
 					<div className="hidden w-[160px] lg:block">
-						<UsageBar fraction={wl.avgMemoryLimitPct} />
+						<MeterRows hideLabels meters={[{ label: "MEM", fraction: wl.avgMemoryLimitPct }]} />
 					</div>
 					<div className="w-[100px] text-right">
 						<Tooltip>

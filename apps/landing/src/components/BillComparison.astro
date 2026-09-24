@@ -1,22 +1,40 @@
 ---
 /**
- * BillComparison — spec-sheet-style table.
+ * BillComparison: spec-sheet-style table.
  * Dense, numerical, deliberately not pretty. No icons, no checkmarks, no
  * card grid. The Maple column is amber-tinted to register as the answer.
  *
  * Numbers/positions are approximations meant for editorial comparison;
  * exact pricing is in /pricing and /compare/* pages.
  */
-import * as m from "../paraglide/messages";
+import * as m from "../paraglide/messages.js";
+
+interface Props {
+	/** The homepage passes nothing and gets its own chapter heading; /compare
+	 *  overrides the three lines and drops the link row it already is. */
+	eyebrow?: string;
+	title?: string;
+	lede?: string;
+	links?: boolean;
+	class?: string;
+}
+
+const {
+	eyebrow = m.bill_eyebrow(),
+	title = m.bill_title(),
+	lede = m.bill_lede(),
+	links = true,
+	class: className = "",
+} = Astro.props;
 ---
 
-<section class="relative bg-bg-deep">
+<section class={`relative bg-bg-deep ${className}`}>
 	<div class="shell py-16 md:py-32">
-		<div class="text-[10px] uppercase tracking-[0.18em] text-fg-muted mb-4">{m.bill_eyebrow()}</div>
+		<div class="text-[10px] uppercase tracking-[0.18em] text-fg-muted mb-4">{eyebrow}</div>
 		<h2 class="max-w-[20ch] font-display text-3xl font-medium leading-[1.05] tracking-[-0.02em] md:text-[40px] lg:text-[54px]">
-			{m.bill_title()}
+			{title}
 		</h2>
-		<p class="mt-4 text-sm md:text-base text-fg-muted max-w-xl leading-relaxed">{m.bill_lede()}</p>
+		<p class="mt-4 text-sm md:text-base text-fg-muted max-w-xl leading-relaxed">{lede}</p>
 
 		<div class="mt-12 overflow-hidden rounded-xl border border-border bg-bg-elevated">
 			<div class="overflow-x-auto">
@@ -28,6 +46,9 @@ import * as m from "../paraglide/messages";
 							<th class="text-left font-medium px-4 py-3 border-b border-border">Datadog</th>
 							<th class="text-left font-medium px-4 py-3 border-b border-border">New Relic</th>
 							<th class="text-left font-medium px-4 py-3 border-b border-border">Grafana Cloud</th>
+							<th class="text-left font-medium px-4 py-3 border-b border-border">Dash0</th>
+							<th class="text-left font-medium px-4 py-3 border-b border-border">SigNoz</th>
+							<th class="text-left font-medium px-4 py-3 border-b border-border">Axiom</th>
 						</tr>
 					</thead>
 					<tbody>
@@ -35,36 +56,51 @@ import * as m from "../paraglide/messages";
 							<td class="px-4 py-3 border-b border-border text-fg-muted">{m.bill_row_per_host()}</td>
 							<td class="px-4 py-3 border-b border-border bg-primary/8 text-primary font-medium">{m.bill_v_none()}</td>
 							<td class="px-4 py-3 border-b border-border text-foreground">$15+ / host / mo</td>
-							<td class="px-4 py-3 border-b border-border text-foreground">{m.bill_v_bundled()}</td>
-							<td class="px-4 py-3 border-b border-border text-foreground">{m.bill_v_bundled()}</td>
+							<td class="px-4 py-3 border-b border-border text-foreground">{m.bill_v_none()}</td>
+							<td class="px-4 py-3 border-b border-border text-foreground">{m.bill_v_none()}</td>
+							<td class="px-4 py-3 border-b border-border text-foreground">{m.bill_v_none()}</td>
+							<td class="px-4 py-3 border-b border-border text-foreground">{m.bill_v_none()}</td>
+							<td class="px-4 py-3 border-b border-border text-foreground">{m.bill_v_none()}</td>
 						</tr>
 						<tr>
 							<td class="px-4 py-3 border-b border-border text-fg-muted">{m.bill_row_per_seat()}</td>
 							<td class="px-4 py-3 border-b border-border bg-primary/8 text-primary font-medium">{m.bill_v_none()}</td>
-							<td class="px-4 py-3 border-b border-border text-foreground">{m.bill_v_enterprise()}</td>
-							<td class="px-4 py-3 border-b border-border text-foreground">$99 / full-user / mo</td>
+							<td class="px-4 py-3 border-b border-border text-foreground">{m.bill_v_none()}</td>
+							<td class="px-4 py-3 border-b border-border text-foreground">$10 first, then $99–349 / full-platform user / mo</td>
 							<td class="px-4 py-3 border-b border-border text-foreground">$8+ / active-user / mo</td>
+							<td class="px-4 py-3 border-b border-border text-foreground">{m.bill_v_none()}</td>
+							<td class="px-4 py-3 border-b border-border text-foreground">{m.bill_v_none()}</td>
+							<td class="px-4 py-3 border-b border-border text-foreground">{m.bill_v_none()}</td>
 						</tr>
 						<tr>
 							<td class="px-4 py-3 border-b border-border text-fg-muted">{m.bill_row_ingest()}</td>
 							<td class="px-4 py-3 border-b border-border bg-primary/8 text-primary font-medium">{m.bill_v_usage()}</td>
-							<td class="px-4 py-3 border-b border-border text-foreground">$1.27 / M events</td>
-							<td class="px-4 py-3 border-b border-border text-foreground">$0.30 / GB</td>
-							<td class="px-4 py-3 border-b border-border text-foreground">$0.50 / M lines</td>
+							<td class="px-4 py-3 border-b border-border text-foreground">$0.10 / GB + $1.70 / M indexed</td>
+							<td class="px-4 py-3 border-b border-border text-foreground">$0.40 / GB</td>
+							<td class="px-4 py-3 border-b border-border text-foreground">$0.55 / GB</td>
+							<td class="px-4 py-3 border-b border-border text-foreground">$0.60 / M spans or logs · $0.20 / M metric points</td>
+							<td class="px-4 py-3 border-b border-border text-foreground">$0.30 / GB · $0.10 / M samples</td>
+							<td class="px-4 py-3 border-b border-border text-foreground">$0.12 / GB + $0.20 / GB-hr</td>
 						</tr>
 						<tr>
 							<td class="px-4 py-3 border-b border-border text-fg-muted">{m.bill_row_retention()}</td>
 							<td class="px-4 py-3 border-b border-border bg-primary/8 text-primary font-medium">30d default · custom</td>
-							<td class="px-4 py-3 border-b border-border text-foreground">15d default</td>
-							<td class="px-4 py-3 border-b border-border text-foreground">30d default</td>
-							<td class="px-4 py-3 border-b border-border text-foreground">14d default</td>
+							<td class="px-4 py-3 border-b border-border text-foreground">15d indexed logs (option shown)</td>
+							<td class="px-4 py-3 border-b border-border text-foreground">30d logs · 8d traces</td>
+							<td class="px-4 py-3 border-b border-border text-foreground">30d logs/traces · 13mo metrics</td>
+							<td class="px-4 py-3 border-b border-border text-foreground">30d spans/logs · 13mo metrics</td>
+							<td class="px-4 py-3 border-b border-border text-foreground">15d logs/traces · 1mo metrics</td>
+							<td class="px-4 py-3 border-b border-border text-foreground">Configurable · from $0.03 / GB stored</td>
 						</tr>
 						<tr>
 							<td class="px-4 py-3 border-b border-border text-fg-muted">{m.bill_row_otel()}</td>
 							<td class="px-4 py-3 border-b border-border bg-primary/8 text-primary font-medium">{m.bill_v_native()}</td>
-							<td class="px-4 py-3 border-b border-border text-foreground">{m.bill_v_partial()}</td>
 							<td class="px-4 py-3 border-b border-border text-foreground">{m.bill_v_yes()}</td>
 							<td class="px-4 py-3 border-b border-border text-foreground">{m.bill_v_yes()}</td>
+							<td class="px-4 py-3 border-b border-border text-foreground">{m.bill_v_yes()}</td>
+							<td class="px-4 py-3 border-b border-border text-foreground">{m.bill_v_native()}</td>
+							<td class="px-4 py-3 border-b border-border text-foreground">{m.bill_v_native()}</td>
+							<td class="px-4 py-3 border-b border-border text-foreground">{m.bill_v_native()}</td>
 						</tr>
 						<tr>
 							<td class="px-4 py-3 border-b border-border text-fg-muted">{m.bill_row_oss()}</td>
@@ -72,6 +108,9 @@ import * as m from "../paraglide/messages";
 							<td class="px-4 py-3 border-b border-border text-foreground">{m.bill_v_proprietary()}</td>
 							<td class="px-4 py-3 border-b border-border text-foreground">{m.bill_v_proprietary()}</td>
 							<td class="px-4 py-3 border-b border-border text-foreground">AGPL components</td>
+							<td class="px-4 py-3 border-b border-border text-foreground">{m.bill_v_proprietary()}</td>
+							<td class="px-4 py-3 border-b border-border text-foreground">MIT + commercial ee/</td>
+							<td class="px-4 py-3 border-b border-border text-foreground">{m.bill_v_proprietary()}</td>
 						</tr>
 						<tr>
 							<td class="px-4 py-3 border-b border-border text-fg-muted">{m.bill_row_selfhost()}</td>
@@ -79,10 +118,16 @@ import * as m from "../paraglide/messages";
 							<td class="px-4 py-3 border-b border-border text-foreground">{m.bill_v_no()}</td>
 							<td class="px-4 py-3 border-b border-border text-foreground">{m.bill_v_no()}</td>
 							<td class="px-4 py-3 border-b border-border text-foreground">{m.bill_v_oss_only()}</td>
+							<td class="px-4 py-3 border-b border-border text-foreground">{m.bill_v_no()}</td>
+							<td class="px-4 py-3 border-b border-border text-foreground">{m.bill_v_supported()}</td>
+							<td class="px-4 py-3 border-b border-border text-foreground">{m.bill_v_no()}</td>
 						</tr>
 						<tr>
 							<td class="px-4 py-3 text-fg-muted">{m.bill_row_mcp()}</td>
-							<td class="px-4 py-3 bg-primary/8 text-primary font-medium">{m.bill_v_first_class()}</td>
+							<td class="px-4 py-3 bg-primary/8 text-primary font-medium">{m.bill_v_hosted()}</td>
+							<td class="px-4 py-3 text-foreground">{m.bill_v_yes()}</td>
+							<td class="px-4 py-3 text-foreground">{m.bill_v_yes()}</td>
+							<td class="px-4 py-3 text-foreground">{m.bill_v_yes()}</td>
 							<td class="px-4 py-3 text-foreground">{m.bill_v_yes()}</td>
 							<td class="px-4 py-3 text-foreground">{m.bill_v_yes()}</td>
 							<td class="px-4 py-3 text-foreground">{m.bill_v_yes()}</td>
@@ -96,7 +141,7 @@ import * as m from "../paraglide/messages";
 			{m.bill_footnote()}
 		</p>
 
-		<div class="mt-8 flex flex-wrap items-center gap-x-6 gap-y-3 text-sm">
+		{links && <div class="mt-8 flex flex-wrap items-center gap-x-6 gap-y-3 text-sm">
 			<a href="/pricing" class="text-primary border-b border-primary/40 hover:border-primary pb-px transition-colors">
 				{m.bill_link_calculator()}
 			</a>
@@ -112,6 +157,12 @@ import * as m from "../paraglide/messages";
 			<a href="/compare/dash0" class="text-fg-muted hover:text-fg border-b border-border hover:border-foreground pb-px transition-colors">
 				{m.bill_link_vs_dash0()}
 			</a>
-		</div>
+			<a href="/compare/signoz" class="text-fg-muted hover:text-fg border-b border-border hover:border-foreground pb-px transition-colors">
+				{m.bill_link_vs_signoz()}
+			</a>
+			<a href="/compare/axiom" class="text-fg-muted hover:text-fg border-b border-border hover:border-foreground pb-px transition-colors">
+				{m.bill_link_vs_axiom()}
+			</a>
+		</div>}
 	</div>
 </section>

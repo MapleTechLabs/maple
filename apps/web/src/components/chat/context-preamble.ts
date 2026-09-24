@@ -46,9 +46,7 @@ export const buildContextPreamble = (ctx: ChatContext): string => {
 	return ""
 }
 
-// ---------------------------------------------------------------------------
 // Formatters (ported from apps/chat-agent/src/index.ts)
-// ---------------------------------------------------------------------------
 
 const formatAutoContextLine = (ctx: AutoContext): string => {
 	switch (ctx.kind) {
@@ -68,6 +66,8 @@ const formatAutoContextLine = (ctx: AutoContext): string => {
 			return `- alert_rule: ${ctx.ruleId}`
 		case "host":
 			return `- host: ${ctx.hostName}`
+		case "container":
+			return `- container: ${ctx.containerName}`
 		case "logs_explorer":
 			return "- view: logs explorer"
 		case "metrics_explorer":
@@ -103,7 +103,7 @@ const SIGNAL_TOOL_HINTS: Record<string, string> = {
 	throughput:
 		"- Use `compare_periods` to contrast the alert window against the prior equivalent window.\n- `service_map` can reveal upstream dependencies that dropped or surged.",
 	metric: "- Use `query_data` or `inspect_chart_data` to pull the raw metric values across the window.",
-}
+} satisfies Record<string, string>
 
 const formatWidgetFixContextBlock = (ctx: WidgetFixContext): string => {
 	const lines = [
@@ -140,7 +140,7 @@ const KIND_HEADING: Record<InvestigationKind, string> = {
 	anomaly: "Attached Anomaly",
 	error: "Attached Error",
 	freeform: "Investigation subject",
-}
+} satisfies Record<InvestigationKind, string>
 
 const ERROR_TOOL_HINTS =
 	"- Prefer `error_detail`, `find_errors`, and `list_error_issue_events` for this issue.\n- Use `search_logs` and `inspect_trace` on representative occurrences to read stack traces."

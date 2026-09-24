@@ -1,12 +1,13 @@
 import { Result, useAtomRefresh } from "@/lib/effect-atom"
-import { useNavigate } from "@tanstack/react-router"
+import { getRouteApi } from "@tanstack/react-router"
 
 import { useEffectiveTimeRange } from "@/hooks/use-effective-time-range"
 import { useRefreshableAtomValue } from "@/hooks/use-refreshable-atom-value"
-import { FilterSection } from "@/components/traces/filter-section"
-import { Route } from "@/routes/services/index"
+import { FilterSection, SearchableFilterSection } from "@/components/traces/filter-section"
 import { getServicesFacetsResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
 import { isServiceHealth, useServiceHealthSummary } from "@/components/services/use-service-health-summary"
+import { PinnedNamespaceNotice } from "@/components/filters/pinned-namespace-notice"
+import { useGlobalNamespace } from "@/hooks/use-global-namespace"
 import {
 	FilterSidebarBody,
 	FilterSidebarError,
@@ -15,13 +16,16 @@ import {
 	FilterSidebarLoading,
 } from "@/components/filters/filter-sidebar"
 
+const routeApi = getRouteApi("/services/")
+
 function LoadingState() {
 	return <FilterSidebarLoading sectionCount={2} />
 }
 
 export function ServicesFilterSidebar() {
-	const navigate = useNavigate({ from: Route.fullPath })
-	const search = Route.useSearch()
+	const navigate = routeApi.useNavigate()
+	const search = routeApi.useSearch()
+	const pinnedNamespace = useGlobalNamespace()
 	const { startTime: effectiveStartTime, endTime: effectiveEndTime } = useEffectiveTimeRange(
 		search.startTime,
 		search.endTime,
@@ -44,7 +48,11 @@ export function ServicesFilterSidebar() {
 		startTime: effectiveStartTime,
 		endTime: effectiveEndTime,
 		environments: search.environments,
+		namespaces: search.namespaces,
 		commitShas: search.commitShas,
+		excludedEnvironments: search.excludedEnvironments,
+		excludedNamespaces: search.excludedNamespaces,
+		excludedCommitShas: search.excludedCommitShas,
 	})
 
 	const updateFilter = <K extends keyof typeof search>(key: K, value: (typeof search)[K]) => {
@@ -69,7 +77,11 @@ export function ServicesFilterSidebar() {
 
 	const hasActiveFilters =
 		(search.environments?.length ?? 0) > 0 ||
+		(search.namespaces?.length ?? 0) > 0 ||
 		(search.commitShas?.length ?? 0) > 0 ||
+		(search.excludedEnvironments?.length ?? 0) > 0 ||
+		(search.excludedNamespaces?.length ?? 0) > 0 ||
+		(search.excludedCommitShas?.length ?? 0) > 0 ||
 		search.health !== undefined
 
 	return Result.builder(facetsResult)
@@ -107,18 +119,41 @@ export function ServicesFilterSidebar() {
 							options={facets.environments}
 							selected={search.environments ?? []}
 							onChange={(val) => updateFilter("environments", val)}
+							excluded={search.excludedEnvironments ?? []}
+							onExcludedChange={(val) => updateFilter("excludedEnvironments", val)}
 						/>
+
+						{pinnedNamespace !== null ? (
+							<PinnedNamespaceNotice namespace={pinnedNamespace} />
+						) : (
+							facets.namespaces.length > 0 && (
+								<SearchableFilterSection
+									title="Namespace"
+									options={facets.namespaces}
+									selected={search.namespaces ?? []}
+									onChange={(val) => updateFilter("namespaces", val)}
+									excluded={search.excludedNamespaces ?? []}
+									onExcludedChange={(val) => updateFilter("excludedNamespaces", val)}
+								/>
+							)
+						)}
 
 						<FilterSection
 							title="Commit SHA"
 							options={facets.commitShas}
 							selected={search.commitShas ?? []}
 							onChange={(val) => updateFilter("commitShas", val)}
+							excluded={search.excludedCommitShas ?? []}
+							onExcludedChange={(val) => updateFilter("excludedCommitShas", val)}
 						/>
 
-						{facets.environments.length === 0 && facets.commitShas.length === 0 && (
-							<p className="text-sm text-muted-foreground py-4">No filter options available</p>
-						)}
+						{facets.environments.length === 0 &&
+							facets.namespaces.length === 0 &&
+							facets.commitShas.length === 0 && (
+								<p className="text-sm text-muted-foreground py-4">
+									No filter options available
+								</p>
+							)}
 					</FilterSidebarBody>
 				</FilterSidebarFrame>
 			)

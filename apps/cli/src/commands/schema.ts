@@ -13,6 +13,7 @@ import {
 	runLocalStoreMigration,
 	type MigrationPlan,
 } from "../server/local-store-migrations"
+import { maintenanceOperation } from "../server/checkpoints"
 import { readMarker } from "../server/store-version"
 
 class SchemaCommandError extends Schema.TaggedError<SchemaCommandError>()("@maple/cli/SchemaCommandError", {
@@ -22,24 +23,24 @@ class SchemaCommandError extends Schema.TaggedError<SchemaCommandError>()("@mapl
 const defaultDataDir = (): string => join(homedir(), ".maple", "data")
 
 const dataDirFlag = Flag.optional(
-	Flag.string("data-dir").pipe(
+	Flag.String("data-dir").pipe(
 		Flag.withDescription("Embedded ClickHouse data directory (default: ~/.maple/data)"),
 	),
 )
 
-const yesFlag = Flag.boolean("yes").pipe(
+const yesFlag = Flag.Boolean("yes").pipe(
 	Flag.withAlias("y"),
 	Flag.withDescription("Confirm the migration and its stated preservation envelope"),
 	Flag.withDefault(false),
 )
 
-const abandonYesFlag = Flag.boolean("yes").pipe(
+const abandonYesFlag = Flag.Boolean("yes").pipe(
 	Flag.withAlias("y"),
 	Flag.withDescription("Confirm quarantining the staged target while preserving the active source"),
 	Flag.withDefault(false),
 )
 
-const dryRunFlag = Flag.boolean("dry-run").pipe(
+const dryRunFlag = Flag.Boolean("dry-run").pipe(
 	Flag.withDescription("Print the migration plan without creating a target or changing the source"),
 	Flag.withDefault(false),
 )
@@ -132,7 +133,8 @@ export const schemaMigrate = Command.make("migrate", {
 	Command.withHandler(
 		Effect.fnUntraced(function* (args) {
 			const dataDir = resolvedDataDir(args.dataDir)
-			const preview = yield* Effect.tryPromise({
+			const preview = yield* maintenanceOperation({
+				operation: "schema.migrate_preview",
 				try: () => runLocalStoreMigration({ dataDir, dryRun: true }),
 				catch: (error) =>
 					new SchemaCommandError({
@@ -154,7 +156,8 @@ export const schemaMigrate = Command.make("migrate", {
 					return
 				}
 			}
-			const result = yield* Effect.tryPromise({
+			const result = yield* maintenanceOperation({
+				operation: "schema.migrate_apply",
 				try: () =>
 					runLocalStoreMigration({
 						dataDir,
@@ -198,7 +201,8 @@ export const schemaAbandon = Command.make("abandon", {
 				)
 				return
 			}
-			const quarantine = yield* Effect.tryPromise({
+			const quarantine = yield* maintenanceOperation({
+				operation: "schema.abandon",
 				try: () => abandonLocalStoreMigrationPreservingSource(dataDir),
 				catch: (error) =>
 					new SchemaCommandError({

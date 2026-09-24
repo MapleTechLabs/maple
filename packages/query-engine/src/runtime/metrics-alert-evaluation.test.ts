@@ -1,6 +1,7 @@
 import { assert, describe, it } from "@effect/vitest"
 import { DeploymentEnvironment, MetricName, OrgId } from "@maple/domain"
 import { Effect } from "effect"
+import { compiledQueryOf } from "../execution/compiled-input"
 import type { MetricsTimeseriesQuery } from "@maple/domain/query-engine"
 import {
 	makeQueryEngineEvaluateSeries,
@@ -24,7 +25,7 @@ const makeWarehouse = (
 ): QueryEngineWarehouse => ({
 	rawSqlQuery: () => Effect.die("unexpected rawSqlQuery"),
 	compiledQuery(_tenant, compiled, options) {
-		onCompiled(compiled.sql, options?.context)
+		onCompiled(compiledQueryOf(compiled).sql, options?.context)
 		return Effect.succeed(rows as ReadonlyArray<never>)
 	},
 	compiledQueryWithCapabilities: () => Effect.die("unexpected capability-aware query"),
@@ -74,7 +75,10 @@ describe("metric alert evaluation", () => {
 			)
 
 			assert.include(sql, "OrgId = 'org_metrics_alert_test'")
-			assert.include(sql, "ResourceAttributes['deployment.environment'] IN ('production')")
+			assert.include(
+				sql,
+				"coalesce(nullIf(ResourceAttributes['deployment.environment.name'], ''), ResourceAttributes['deployment.environment']) IN ('production')",
+			)
 			assert.strictEqual(context, "metricsAlertEval")
 			assert.deepStrictEqual(result, [
 				{

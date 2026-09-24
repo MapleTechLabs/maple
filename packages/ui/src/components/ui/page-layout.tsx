@@ -42,6 +42,21 @@ function usePageLayout() {
 	return ctx
 }
 
+const noopScrolledReporter = (_scrolled: boolean) => {}
+
+/**
+ * `setIsScrolled` for a pane that owns its own scroller and so sits under
+ * {@link Fill} rather than {@link ScrollArea} — a virtualized table, say — but
+ * still wants the sticky area above it to raise its shadow.
+ *
+ * Unlike {@link usePageLayout} this tolerates being outside a `PageLayout`
+ * (returning a no-op), because such panes are also mounted standalone in the
+ * `/lab/bench` harnesses.
+ */
+function usePageScrolledReporter(): (scrolled: boolean) => void {
+	return React.use(PageLayoutContext)?.setIsScrolled ?? noopScrolledReporter
+}
+
 /* -------------------------------------------------------------------------------------------------
  * Root
  * -------------------------------------------------------------------------------------------------*/
@@ -111,7 +126,7 @@ function Title({
 		<h1
 			data-slot="page-title"
 			className={cn(
-				"font-display text-3xl font-semibold tracking-tight truncate leading-[1.1]",
+				"font-display text-2xl font-semibold tracking-tight truncate leading-[1.1]",
 				className,
 			)}
 			title={title}
@@ -327,12 +342,17 @@ function RightSidebar({
 	className,
 	title = "Details",
 	width = "w-72",
+	open,
+	onOpenChange,
 }: {
 	children: React.ReactNode
 	className?: string
 	/** Accessible name for the sheet at narrow widths. */
 	title?: string
 	width?: string
+	/** Controlled sheet state, for a rail that opens from a selection rather than the header trigger. */
+	open?: boolean
+	onOpenChange?: (open: boolean) => void
 }) {
 	const { filterSidebarCollapsed, rightSheetOpen, setRightSheetOpen, setHasRightSidebar } = usePageLayout()
 	const hasContent = React.Children.toArray(children).length > 0
@@ -349,7 +369,13 @@ function RightSidebar({
 
 	if (filterSidebarCollapsed) {
 		return (
-			<Sheet open={rightSheetOpen} onOpenChange={setRightSheetOpen}>
+			<Sheet
+				open={open ?? rightSheetOpen}
+				onOpenChange={(next) => {
+					setRightSheetOpen(next)
+					onOpenChange?.(next)
+				}}
+			>
 				<SheetContent side="right" className="w-80 overflow-y-auto p-4">
 					<SheetHeader className="sr-only">
 						<SheetTitle>{title}</SheetTitle>
@@ -426,4 +452,4 @@ export const PageLayout = {
 	RightSidebarTrigger,
 }
 
-export { usePageLayout }
+export { usePageLayout, usePageScrolledReporter }

@@ -1,165 +1,128 @@
 # CLAUDE.md
 
 Maple is an OpenTelemetry observability platform: TanStack Start (React 19, Vite) + Effect on the
-backend, ClickHouse/Tinybird as the warehouse.
+backend, ClickHouse/Tinybird as the warehouse, PlanetScale Postgres for relational state.
 
 ## Workspace layout
 
-Three roots, and the split is a rule, not a habit:
+- `apps/*`: deployables (web, api, ai, ingest, alerting, cli, landing, sandbox, ...).
+- `packages/*`: shared code that knows Maple (`domain`, `query-engine`, `backend`, `ui`, `db`, ...).
+- `lib/*`: zero Maple knowledge, could ship as a standalone OSS library. A `lib/` package that
+  imports `@maple/domain` must move to `packages/`. New packages default to `packages/`.
 
-- **`apps/*`** — deployables (web, api, ingest, alerting, cli, landing, …).
-- **`packages/*`** — shared code that **knows Maple**: its schema, tables, API, or product.
-  `domain`, `query-engine`, `ui`, `db`, `auth`, `effect-sdk`, `browser`, …
-- **`lib/*`** — libraries with **zero Maple knowledge**, extractable to their own repo tomorrow.
-  `clickhouse-builder`, `effect-cloudflare`, `effect-db`, `effect-router`, `cache`,
-  `otel-helpers`, `unitflow`.
+`@maple-dev/effect-clickhouse` lives in the separate effect-clickhouse repo; change it there.
 
-The test for `lib/` is "could this ship as a standalone OSS library?" — not "is it published?"
-and not "did we write it?". Publishability is a `package.json` fact, not a directory fact:
-`packages/effect-sdk` and `packages/browser` are both published. **New packages go in
-`packages/` unless they pass the lib test.**
-
-Anything in `lib/` that starts importing `@maple/domain` has stopped qualifying — move it to
-`packages/` rather than weakening the rule.
-
-## Local dev
-
-Sign in at `https://web.localhost` with the Clerk test account `david+clerk_test@gmail.com` /
-`Maple-Dev-Kx92qZ!` when you need an authenticated browser session.
+## Commands
 
 ```bash
-bun dev                        # all apps via turbo → https://[<worktree>.]<app>.localhost
-bun --filter=@maple/web dev:app # single app, raw port, no portless proxy
-bun run test                   # Vitest via turbo (NOT `bun test` — that's Bun's own runner)
+bun dev                        # full alchemy dev stack at https://[<worktree>.]<app>.localhost
+bun dev api web                # subset
+bun --filter=@maple/web dev    # single app, raw port
+bun run test                   # Vitest via turbo (NOT `bun test`)
 bun typecheck
-bun run tinybird:manifest      # regenerate after editing datasources.ts
-bun db:up && bun db:migrate:local   # docker Postgres for wrangler dev (vitest uses embedded PGlite)
-bun run --cwd apps/api tinybird:deploy   # tinybird:dev / :build / :deploy live in apps/api
+bun run tinybird:manifest      # after editing datasources.ts
+bun run local-schema:bump <slug>   # local chDB schema bump for a datasources.ts change
+bun db:up && bun db:migrate:local
+bun run --cwd packages/db db:generate   # new Drizzle migration
+bun run dev:signin             # one-shot signed-in Clerk link (dev user david+clerk_test@gmail.com)
 ```
 
-Toolchain (bun/node/rust/python) is pinned in [`mise.toml`](mise.toml); `mise run setup` does
-first-time install + `.env.local` + portless CA. mise is optional but bump versions there when
-upgrading a runtime (keep `bun` in sync with `packageManager`).
+Dev password fallback: `Maple-Dev-Kx92qZ!`. Toolchain is pinned in `mise.toml`; keep `bun` in sync
+with `packageManager`.
+
+## Backend architecture
+
+- `apps/ai` runs the public MCP server, the chat agent, and investigations. `apps/api` forwards
+  `/mcp`, `/api/chat/*`, `/internal/chat/*` to it over a service binding; OAuth stays in `apps/api`.
+- An investigation is **one agent turn** ending in `submit_diagnosis`. Do not split it across
+  planner/lanes/validator. Sub-agents are fine elsewhere (e.g. review fan-out) via `SubagentHost`.
+- LLM code (Effect AI + `@effect-agent/*`) is only in `apps/ai`; Maple-specific wiring lives in
+  `apps/ai/src/platform/Llm.ts`.
+- Shared services live in `packages/backend`, imported via `@maple/backend/*` subpaths.
+
+### Service conventions
+
+- Services acquire their dependencies in the constructor; public methods must not leak
+  implementation services in their Effect requirements. Request-scoped context (transactions,
+  tenant, actor) stays on the invocation, never captured at construction.
+- Each service owns `static readonly layer = Layer.effect(this, this.make)` with internal deps via
+  `Layer.provide`. `Env`, `Database`, caches, and bindings come from the app root.
 
 ## Warehouse queries
 
-**No Tinybird pipes/endpoints exist.** All backend queries use the ClickHouse DSL in
-`@maple/query-engine` and run through `WarehouseQueryService.compiledQuery()`, which routes to the
-Tinybird SDK or ClickHouse per org config. Never `fetch()` `/v0/sql` directly.
+No Tinybird pipes/endpoints. All queries use the ClickHouse DSL in `@maple/query-engine` and run
+through `WarehouseQueryService.compiledQuery()`. Never `fetch()` `/v0/sql`.
 
-Subpath exports: `./ch` (DSL + `compile`), `./runtime` (dashboard/alert lowering, `evaluate`,
-cache keys), `./execution` (`makeWarehouseExecutor` — retry, error mapping, OrgId scoping, spans),
-`./caching` (edge/bucket caches behind a `CacheBackend` port), `./profiles` (cost profiles →
-`SETTINGS`), `./observability` (MCP/agent helpers). The **root barrel stays driver-free** so web/cli
-can import it; only `apps/api` touches the other subpaths (`WarehouseQueryService.ts` injects the
-drivers, `QueryEngineService.ts` the caches).
-
-To add a query: define it in `packages/query-engine/src/ch/queries/*.ts` with
-`from(Table).select(...).where(...)` + `param.*` placeholders, export from `src/ch/index.ts`, then:
+Add a query in `packages/query-engine/src/ch/queries/*.ts`, export from `src/ch/index.ts`:
 
 ```typescript
-const compiled = CH.compile(CH.myQuery({ limit: 50 }), { orgId, startTime, endTime })
-const rows = yield * warehouse.compiledQuery(tenant, compiled, { profile: "list", context: "myQuery" })
+const rows = yield* warehouse.compiledQuery(tenant, CH.compile(CH.myQuery({ limit: 50 }), { orgId, startTime, endTime }), {
+  profile: "list",
+  context: "myQuery",
+})
 ```
 
-`compiledQuery` runs the SQL and decodes rows through the query's `rowSchema` (if declared);
-`profile` defaults to `"aggregation"` when omitted (`"unbounded"` is the explicit opt-out). There is
-no `castRows` — a cast that looked type-safe hid wire-format drift.
+- Every query **must** filter `OrgId` (`$.OrgId.eq(param.string("orgId"))`); enforced at runtime.
+- Pass the unrun `CH.compile` Effect; never `Effect.orDie` it at a call site.
+- Identity UInt64s (hashes/ids) must be `toString()`-wrapped in the SELECT. `rowSchema`s use
+  `CH.CHNumber`, never `Schema.Number`.
+- Request fields that reach `param.*` or column comparisons are validated at the HTTP boundary
+  (`TinybirdDateTime`, `BucketSeconds`, `WarehouseDateTime`) so bad input is a 400, not a 500.
+- The query-engine root barrel stays driver-free (web/cli import it).
+- `packages/domain/src/tinybird/endpoints.ts` is type-only.
+- Read `docs/warehouse-rollups.md` before adding a materialized view. Query perf work uses
+  `bun run bench:queries` (see `docs/query-benchmarking.md`); empty-table timings prove nothing.
 
-- Every query **must** filter `OrgId` (`$.OrgId.eq(param.string("orgId"))`) — enforced at runtime.
-- `context` labels the `executeSql` span (`query.context`), which also carries `db.query.text`,
-  `db.query.fingerprint`, `db.duration_ms`, `result.rowCount`, `orgId`, `query.profile`.
-- **64-bit ints arrive as numbers on every backend**: ClickHouse-protocol clients pin
-  `output_format_json_quote_64bit_integers=0` (`BackendDialect.unquote64BitIntegers`), matching the
-  Tinybird SDK. Two rules remain: (1) identity UInt64s (hashes/ids) must be `toString()`-wrapped in
-  the SELECT — values above 2^53 corrupt as JS numbers; the SQL-catalog e2e sweep enforces this.
-  (2) `rowSchema`s still use `CH.CHNumber`, never `Schema.Number`, so a gateway/readonly cluster
-  that refuses the setting (quoted wire) keeps decoding.
-- `packages/domain/src/tinybird/endpoints.ts` is **type-only** — no `defineEndpoint()` calls.
+## Application database (Postgres / Drizzle)
 
-## Application database (PlanetScale Postgres)
+Schema in `packages/db/src/schema/`, reached via Hyperdrive binding `MAPLE_DB`. Drizzle runs on
+Effect (`drizzle-orm/effect-postgres`): queries are `yield*`ed, `db.transaction` takes an Effect.
 
-Relational state (issues, alert rules, dashboards, org config, keys) is Drizzle/`pgTable` in
-`packages/db/src/schema/`, one PS branch per deployed stage (`main`=prd, `stg`), reached from
-Workers via the Hyperdrive binding `MAPLE_DB`.
-
-- App code keeps epoch-ms numbers and converts at the drizzle boundary (`new Date(ms)` writing,
-  `.getTime()` reading; `msToDate`/`dateToMs` in `apps/api/src/lib/time.ts`). Never read driver
-  write-result shapes — use `.returning()` + length. `count(*)` needs `::int` (bigint → string).
-- Layers: `DatabasePgLive` (Workers, short-lived postgres.js client per `execute`) and
-  `DatabasePgliteLive` (tests/local; `createTestDb()` in `apps/api/src/lib/test-pglite.ts`).
-- Migrations: `bun run --cwd packages/db db:generate`; CI applies them against the branch's DIRECT
-  port 5432 (never a pooler) before `alchemy deploy`. PGlite applies them at layer build.
-- **PR preview deploys are disabled** (2026-08, cost). `deploy-pr-preview.yml` triggers on the
-  `closed` event only, so it tears down pre-cutover stacks and never deploys a new one; restore
-  `types: [opened, synchronize, reopened, closed]` to re-enable.
-- **PR previews have no application database** either (PS-DEV branches billed continuously and
-  ate the Hyperdrive config cap) — this is the state previews return to when re-enabled.
-  `resolveDatabaseMode` in
-  `packages/infra/src/cloudflare/stage.ts` returns `"none"` for `pr`, so no `MAPLE_DB` is bound
-  and `DatabasePgLive` fails every query with a `DatabaseError` — DB-backed routes 500, the rest
-  of the preview works. To restore: return `"managed"` for `pr` and re-add the PlanetScale +
-  Electric steps to `.github/workflows/deploy-pr-preview.yml` (the scripts are kept, dormant).
-- The ingest gateway resolves ingest keys from the same Postgres via PSBouncer (6432, no Hyperdrive).
+- Use `msToDate` / `dateToMs` (`packages/backend/src/platform/time.ts`) at the drizzle boundary.
+- Use `.returning()` + length, never driver write-result shapes. `count(*)` needs `::int`. Wrap raw
+  `db.execute(sql...)` in `rawRows`.
+- One pool per invocation via `withPgConnectionScope`; connections never outlive the invocation.
+  Fork DB work off a request only with `forkRequestScoped`.
+- Tests use `createTestDb()` (PGlite, `packages/backend/src/platform/test-pglite.ts`).
+- **Migrations apply in the prd alchemy deploy.** Never run `drizzle-kit migrate` against prd.
+- PR previews (only with the `preview` label) have no database; DB-backed routes 500 there.
 
 ## Conventions
 
-- **Imports:** `@/` path alias. `src/routeTree.gen.ts` is generated — don't edit.
-- **Schemas:** Effect Schema, not Zod, for everything new. Wrap with `Schema.toStandardSchemaV1()`
-  for TanStack Router `validateSearch`. `Schema.optionalKey()` for JSON-decoded HTTP/domain schemas;
-  `Schema.optional()` only where `undefined` is a real JS value (search params, MCP tool params).
-- **Effect:** source is vendored at `.context/effect/` (subtree of Effect-TS/effect-smol).
-- **LLM core:** `lib/llm` (`@maple/llm`) is a vendored copy of `anomalyco/opencode`'s
-  `packages/llm`, pinned by SHA in `lib/llm/UPSTREAM.json` and re-synced with
-  `bun run llm:sync`. Don't reformat it and don't put Maple behaviour inside it — see
-  `lib/llm/MAPLE.md`.
-- **Span status codes:** Title case — `"Ok"`, `"Error"`, `"Unset"`.
-- **UI:** shadcn/Base UI + Tailwind 4 (`npx shadcn@latest add <component>`), Recharts, Nucleo icons.
-  Find an icon in the local Nucleo DB, then port it into `apps/web/src/components/icons/` by copying
-  an existing component (currentColor, camelCase attrs) and exporting it from `index.ts`:
-    ```bash
-    sqlite3 "~/Library/Application Support/Nucleo/icons/data.sqlite3" \
-      "SELECT id, name, set_id FROM icons WHERE klass='outline' AND grid=24 AND name LIKE '%search%';"
-    ```
+- **Schemas:** Effect Schema, not Zod. `Schema.optionalKey()` for JSON HTTP/domain schemas,
+  `Schema.optional()` only where `undefined` is a real value (search params, MCP tool params).
+- **Errors:** expected failures use `Schema.TaggedError` with a namespaced tag, `message`, and
+  schema-backed context (`Schema.Defect()` for unknown causes). Keep them in the typed channel;
+  remap with `catchTag`/`catchTags`. No plain `Error`, throws, or `Data.TaggedError`. Branded IDs in
+  error context; undecodable input goes in a `raw*` string, never cast to a brand.
+- **Types:** `Record<string, any>` is a lint error (repo is at zero). Use `Record<string, unknown>`.
+- **Library source:** read `node_modules/effect/src/`, `node_modules/@effect/*/src/`, and
+  `node_modules/alchemy/src/` for APIs at the installed version.
+- **Span status codes:** Title case: `"Ok"`, `"Error"`, `"Unset"`. Only 5xx is `Error` for server
+  spans. Custom attributes use `maple.*`.
+- **Self-tracing:** the API traces itself through ingest; keep `withTracerDisabledWhen()` and avoid
+  spans on hot paths like token validation.
+- **UI:** shadcn/Base UI + Tailwind 4, Recharts, Nucleo icons. Port icons into
+  `apps/web/src/components/icons/` from the local Nucleo DB:
+  ```bash
+  sqlite3 "~/Library/Application Support/Nucleo/icons/data.sqlite3" \
+    "SELECT id, name, set_id FROM icons WHERE klass='outline' AND grid=24 AND name LIKE '%search%';"
+  ```
+- `@/` resolves to each app's source. `src/routeTree.gen.ts` is generated.
 
-## Self-observability (trace loop prevention)
+## Repository sandbox
 
-The API traces itself through the ingest gateway, so dashboard traffic generates traces. Keep
-`HttpMiddleware.withTracerDisabledWhen()` (skips `/health` + `OPTIONS`) and be careful adding spans
-to per-request hot paths like token validation. OTLP export bypasses the API, so it can't recurse.
+Internal-only agent tools (`sandbox_*`, `apps/ai/src/mcp/tools/sandbox.ts`) run commands against a
+git clone in Cloudflare's Sandbox container (`apps/sandbox`, prd only). Invariants:
 
-`apps/ingest` (Rust) self-instruments over OTLP/HTTP to its own `INGEST_FORWARD_OTLP_ENDPOINT`
-(startup guard refuses a loopback endpoint), as `service.name="ingest"`, `maple_org_id="internal"`,
-and `deployment.environment.name` **dual-emitted** as the legacy `deployment.environment` because
-the Tinybird MVs still pre-extract the old key. Custom fields use the `maple.*` namespace. Span
-status follows OTEL HTTP semconv for SERVER spans: **only 5xx is `Error`, 4xx rejections are `Ok`**
-(`otel_status_for_rejection` in `apps/ingest/src/main.rs`) so error dashboards aren't flooded by
-expected 401/402/429s. Operational metrics (`apps/ingest/src/metrics.rs`) push via OTLP every 30s —
-there is no Prometheus `/metrics` endpoint. At high QPS set `OTEL_TRACES_SAMPLER=parentbased_traceidratio`.
+- Refs are validated (`unsafeRef`) and encoded before the GitHub call.
+- The clone credential never appears in command arguments.
+- Commands run unprivileged, read-only, no egress; refuse to run if the network namespace fails.
 
-## Docs (`docs/`)
+Test with `bun run --cwd apps/sandbox verify:image` (needs Docker); it catches what unit tests can't.
 
-`api-v2.md` (v2 public API spec) · `sampling-throughput.md` · `persistence.md` ·
-`sst-fork-workflow.md` · `local-mode.md` (single-binary CLI + embedded chDB) ·
-`tinybird-pr-branches.md` · `otel-spec/` (OTel spec map @ v1.58.0 — start at its README).
+## Docs
 
-## Picking models for subagents and workflows
-
-Higher = better. Cost reflects what I actually pay, not list price.
-
-| Model    | Cost | Intelligence | Taste |
-| -------- | ---- | ------------ | ----- |
-| gpt-5.6  | 10   | 9            | 7     |
-| gpt-5.5  | 9    | 8            | 5     |
-| sonnet-5 | 5    | 5            | 7     |
-| opus-4.8 | 4    | 7            | 8     |
-| fable-5  | 2    | 9            | 9     |
-
-- Defaults, not limits — escalate to a smarter model without asking if output misses the bar.
-  When axes conflict: intelligence > taste > cost.
-- Bulk/mechanical work (clear-spec implementation, migrations, data analysis): gpt-5.5.
-- User-facing work (UI, copy, API design) needs taste ≥ 7. Reviews: fable-5 or opus-4.8.
-- **Never use Haiku.**
-- Claude models run via the Agent/Workflow `model` param. gpt-5.5 is only reachable through the
-  Codex plugin (`/codex:rescue`, `:status`, `:result`, `:cancel`, `:transfer`); inside a workflow,
-  wrap it — spawn a `model: 'sonnet'`, `effort: 'low'` agent that runs `codex exec` via Bash.
+Read the relevant doc before touching an area: `error-issue-lifecycle.md` (anything in
+`packages/backend/src/services/errors/`), `warehouse-rollups.md`, `service-map-architecture.md`,
+`ingest-wal-durability.md`, `local-mode.md`, `infra.md`, `api-v2.md`, `otel-spec/`.

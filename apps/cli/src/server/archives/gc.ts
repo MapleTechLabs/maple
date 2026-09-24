@@ -1,3 +1,4 @@
+// SAFETY-FILE: JSON rows here come from fixed internal formats and are validated before domain use.
 import { createHash, randomUUID } from "node:crypto"
 import { existsSync, lstatSync, readdirSync, readFileSync, statSync } from "node:fs"
 import { lstat, rm } from "node:fs/promises"
@@ -17,6 +18,7 @@ import {
 	signalRoot,
 } from "./paths"
 import {
+	parseArchiveActivePointer,
 	readArchiveGenerationManifest,
 	type ArchiveGenerationManifest,
 	type ArchiveShardRecord,
@@ -283,6 +285,22 @@ export const planArchiveGc = (archiveDir: string, keep: number): GcPlan => {
 				})
 				continue
 			}
+			// The pointer must select EXACTLY ONE verified generation. A stale but
+			// well-formed pointer (its target deleted or never published) would
+			// otherwise classify every real generation as superseded — and with
+			// keep=0 the whole range would enter the delete set while the pointer
+			// references nothing that survives. That is uncertain state: over-retain.
+			const pointerTargets = verified.filter((g) => g.generationId === activeGenerationId)
+			if (pointerTargets.length !== 1) {
+				excludedRanges.push({
+					signal,
+					rangeStart,
+					reason:
+						`active pointer selects ${pointerTargets.length} verified generations ` +
+						`(target ${activeGenerationId}); range is uncertain (over-retained)`,
+				})
+				continue
+			}
 			// Partition: active (never deleted) vs superseded.
 			const superseded = verified
 				.filter((g) => g.generationId !== activeGenerationId)
@@ -347,16 +365,14 @@ const readActiveGenerationIdStrict = (
 	if (!existsSync(pointerPath)) return null
 	assertNoSymlinkSync(archiveDir, pointerPath, "archive active pointer")
 	assertRealFileSync(pointerPath, "archive active pointer")
-	const raw = JSON.parse(readFileSync(pointerPath, "utf8")) as Record<string, unknown>
-	if (
-		raw.formatVersion !== 1 ||
-		typeof raw.generationId !== "string" ||
-		raw.signal !== signal ||
-		raw.rangeStart !== rangeDate
-	) {
-		throw new Error(`malformed active pointer at ${pointerPath}`)
-	}
-	return raw.generationId
+	// Full pointer validation (id shape, selectedAt, signal/range binding) —
+	// the same parser every other pointer read uses, not a looser private one.
+	const pointer = parseArchiveActivePointer(
+		JSON.parse(readFileSync(pointerPath, "utf8")) as unknown,
+		signal,
+		rangeDate,
+	)
+	return pointer.generationId
 }
 
 /** Deterministic tombstone path for a GC target beneath the operation dir. */
@@ -593,14 +609,6 @@ const removeTombstone = async (tomb: string): Promise<void> => {
 }
 
 /**
- * Exported alias of {@link collectOneTarget} for the action-driven reconcile
- * executor (Gate 3b r4): the plan decides WHICH targets to collect; this helper
- * executes ONE target's topology switch (rename/remove/verify) with its source +
- * pointer precondition revalidation.
- */
-export const collectOneTargetForReconcile = collectOneTarget
-
-/**
  * Reconcile an interrupted GC operation. Drives the FROZEN target set to
  * completion idempotently — NEVER re-expands the set. A pointer change or source
  * divergence at any stage stops collection and preserves remaining state.
@@ -759,19 +767,6 @@ export const preflightGcTargets = async (archiveDir: string, intent: GcOperation
 		}
 		revalidateSource(archiveDir, target)
 		revalidatePointer(archiveDir, target)
-	}
-}
-
-/** Legacy compatibility wrapper — delegates to the split helpers by phase. */
-export const reconcileGcOperation = async (
-	_dataDir: string,
-	archiveDir: string,
-	intent: GcOperationIntent,
-): Promise<void> => {
-	if (intent.phase === "complete") {
-		await verifyCompleteAndArchiveGc(archiveDir, intent)
-	} else {
-		await resumeFrozenTargetsAndCompleteGc(archiveDir, intent)
 	}
 }
 

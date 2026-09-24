@@ -1,3 +1,4 @@
+// TEST-SEAM: This focused test replaces process-global modules that have no instance-level injection seam.
 import { assert, describe, it } from "@effect/vitest"
 import { vi } from "vitest"
 
@@ -148,34 +149,37 @@ describe("rowToAlertRuleDocument", () => {
 })
 
 describe("rowToAlertIncidentDocument", () => {
+	const incidentRow: AlertIncidentRow = {
+		id: INCIDENT_ID,
+		org_id: "org_1",
+		rule_id: RULE_ID,
+		incident_key: "key-1",
+		rule_name: "High error rate",
+		group_key: null,
+		signal_type: "error_rate",
+		severity: "critical",
+		status: "open",
+		comparator: "gt",
+		threshold: 0.05,
+		threshold_upper: null,
+		first_triggered_at: "2026-07-04T00:00:00.000Z",
+		last_triggered_at: "2026-07-04T01:00:00.000Z",
+		resolved_at: null,
+		last_observed_value: 0.3,
+		last_sample_count: 200,
+		last_evaluated_at: "2026-07-04T01:00:00.000Z",
+		dedupe_key: "dk-1",
+		last_delivered_event_type: "trigger",
+		last_notified_at: "2026-07-04T01:00:00.000Z",
+		hold_reason: null,
+		held_since: null,
+		error_issue_id: null,
+		created_at: "2026-07-04T00:00:00.000Z",
+		updated_at: "2026-07-04T01:00:00.000Z",
+	}
+
 	it("maps a raw alert_incidents row", () => {
-		const row: AlertIncidentRow = {
-			id: INCIDENT_ID,
-			org_id: "org_1",
-			rule_id: RULE_ID,
-			incident_key: "key-1",
-			rule_name: "High error rate",
-			group_key: null,
-			signal_type: "error_rate",
-			severity: "critical",
-			status: "open",
-			comparator: "gt",
-			threshold: 0.05,
-			threshold_upper: null,
-			first_triggered_at: "2026-07-04T00:00:00.000Z",
-			last_triggered_at: "2026-07-04T01:00:00.000Z",
-			resolved_at: null,
-			last_observed_value: 0.3,
-			last_sample_count: 200,
-			last_evaluated_at: "2026-07-04T01:00:00.000Z",
-			dedupe_key: "dk-1",
-			last_delivered_event_type: "trigger",
-			last_notified_at: "2026-07-04T01:00:00.000Z",
-			error_issue_id: null,
-			created_at: "2026-07-04T00:00:00.000Z",
-			updated_at: "2026-07-04T01:00:00.000Z",
-		}
-		const doc = rowToAlertIncidentDocument(row)
+		const doc = rowToAlertIncidentDocument(incidentRow)
 		assert.strictEqual(doc.id, INCIDENT_ID)
 		assert.strictEqual(doc.ruleId, RULE_ID)
 		assert.strictEqual(doc.status, "open")
@@ -184,6 +188,19 @@ describe("rowToAlertIncidentDocument", () => {
 		assert.strictEqual(doc.resolvedAt, null)
 		assert.strictEqual(doc.errorIssueId, null)
 		assert.strictEqual(doc.firstTriggeredAt, "2026-07-04T00:00:00.000Z")
+		assert.strictEqual(doc.holdReason, null)
+		assert.strictEqual(doc.heldSince, null)
+	})
+
+	it("maps a held row's hold reason and timestamp", () => {
+		const doc = rowToAlertIncidentDocument({
+			...incidentRow,
+			hold_reason: "volume_collapsed",
+			held_since: "2026-07-04T00:40:00.000Z",
+		})
+		assert.strictEqual(doc.status, "open")
+		assert.strictEqual(doc.holdReason, "volume_collapsed")
+		assert.strictEqual(doc.heldSince, "2026-07-04T00:40:00.000Z")
 	})
 })
 
@@ -191,12 +208,12 @@ describe("rowToAlertDestinationDocument", () => {
 	const base: AlertDestinationRow = {
 		id: DEST_ID,
 		org_id: "org_1",
-		name: "Ops Slack",
-		type: "slack-bot",
+		name: "Ops Telegram",
+		type: "telegram",
 		enabled: true,
 		// Only the public config the browser renders — no secrets (those live in
 		// the excluded encrypted columns, which the shape never projects).
-		config_json: { summary: "Slack channel #ops", channelLabel: "#ops" },
+		config_json: { summary: "Telegram chat -100123", channelLabel: "-100123" },
 		last_tested_at: "2026-07-04T00:00:00.000Z",
 		last_test_error: null,
 		created_at: "2026-06-01T00:00:00.000Z",
@@ -206,11 +223,11 @@ describe("rowToAlertDestinationDocument", () => {
 	it("maps a raw alert_destinations row and derives the public config", () => {
 		const doc = rowToAlertDestinationDocument(base)
 		assert.strictEqual(doc.id, DEST_ID)
-		assert.strictEqual(doc.name, "Ops Slack")
-		assert.strictEqual(doc.type, "slack-bot")
+		assert.strictEqual(doc.name, "Ops Telegram")
+		assert.strictEqual(doc.type, "telegram")
 		assert.strictEqual(doc.enabled, true)
-		assert.strictEqual(doc.summary, "Slack channel #ops")
-		assert.strictEqual(doc.channelLabel, "#ops")
+		assert.strictEqual(doc.summary, "Telegram chat -100123")
+		assert.strictEqual(doc.channelLabel, "-100123")
 		assert.strictEqual(doc.lastTestedAt, "2026-07-04T00:00:00.000Z")
 		assert.strictEqual(doc.lastTestError, null)
 		assert.strictEqual(doc.createdAt, "2026-06-01T00:00:00.000Z")

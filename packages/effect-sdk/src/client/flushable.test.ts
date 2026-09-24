@@ -1,3 +1,4 @@
+// SAFETY-FILE: JSON in this test is emitted by the fixture or unit under test before its fields are asserted.
 import { describe, it } from "@effect/vitest"
 import { resetConsentForTests, setConsent } from "@maple/browser-session"
 import { Effect, Metric } from "effect"
@@ -36,7 +37,7 @@ const setupFetch = (responder: (url: string) => Response = () => new Response(nu
 // EventTarget. Lets us drive `pagehide` / `visibilitychange` without jsdom.
 const setupDom = () => {
 	const listeners: Record<string, Set<EventListenerOrEventListenerObject>> = {}
-	const g = globalThis as Record<string, any>
+	const g = globalThis as Record<string, unknown>
 	const orig = {
 		add: g.addEventListener,
 		remove: g.removeEventListener,
@@ -227,7 +228,7 @@ describe("MapleFlush.make (client)", () => {
 			}
 		).resourceSpans[0].resource.attributes
 		const attrMap = Object.fromEntries(attrs.map((a) => [a.key, a.value.stringValue]))
-		expect(attrMap["browser.user_agent"]).toBe("TestAgent/1.0")
+		expect(attrMap["user_agent.original"]).toBe("TestAgent/1.0")
 		expect(attrMap["browser.language"]).toBe("en-GB")
 		// Intl is always present in node/browsers; just assert it's a non-empty string.
 		expect(typeof attrMap["browser.timezone"]).toBe("string")
@@ -235,7 +236,7 @@ describe("MapleFlush.make (client)", () => {
 
 	it("links the active replay session: records the trace id + stamps session.id", async () => {
 		const { calls, restore: rf } = setupFetch()
-		const g = globalThis as Record<string, any>
+		const g = globalThis as Record<string, unknown>
 		const recordTraceId = vi.fn()
 		g.__MAPLE_BROWSER_SESSION__ = { sessionId: "sess-123", recordTraceId }
 		restore = () => {
@@ -268,21 +269,28 @@ describe("MapleFlush.make (client)", () => {
 
 	it("stamps session.id from the self-managed session when no sink is published", async () => {
 		const { calls, restore: rf } = setupFetch()
-		// Standalone: no @maple-dev/browser sink, just a browser-like window with
+		// Standalone: no @maple-dev/browser sink, just a browser DOM with
 		// sessionStorage. The bundled @maple/browser-session core must mint a
 		// session and stamp its id on every span.
 		const store = new Map<string, string>()
-		vi.stubGlobal("window", {
-			sessionStorage: {
-				getItem: (k: string) => store.get(k) ?? null,
-				setItem: (k: string, v: string) => void store.set(k, v),
-			},
-		})
+		vi.stubGlobal(
+			"window",
+			Object.assign(new EventTarget(), {
+				sessionStorage: {
+					getItem: (k: string) => store.get(k) ?? null,
+					setItem: (k: string, v: string) => void store.set(k, v),
+				},
+			}),
+		)
+		vi.stubGlobal(
+			"document",
+			Object.assign(new EventTarget(), { cookie: "", visibilityState: "visible" }),
+		)
 		restore = () => {
 			rf()
 			vi.unstubAllGlobals()
 		}
-		const telemetry = make(baseConfig)
+		const telemetry = make({ ...baseConfig, replay: { enabled: false } })
 
 		await Effect.runPromise(
 			Effect.succeed(undefined).pipe(Effect.withSpan("op-a"), Effect.provide(telemetry.layer)),
@@ -308,6 +316,7 @@ describe("MapleFlush.make (client)", () => {
 			const sessionAttr = span.attributes.find((a) => a.key === "session.id")
 			expect(sessionAttr?.value.stringValue).toBe(stored.id)
 		}
+		await telemetry.dispose()
 	})
 
 	it("flushes on pagehide and dispose() removes the unload listeners", async () => {
@@ -353,12 +362,36 @@ describe("MapleFlush.make (client)", () => {
 		expect(calls.length).toBe(afterAuto)
 	})
 
-	it("runs in no-op mode when no ingest key is configured", async () => {
-		const consoleInfoSpy = vi.spyOn(console, "info").mockImplementation(() => {})
+	it("does not re-export unchanged cumulative metrics on every interval", async () => {
+		vi.useFakeTimers()
+		const { calls, restore: r } = setupFetch()
+		restore = r
+		const telemetry = make({ ...baseConfig, autoFlushInterval: 5_000 })
+		const counter = Metric.counter("rare_browser_metric")
+
+		await Effect.runPromise(Metric.update(counter, 1).pipe(Effect.provide(telemetry.layer)))
+		await vi.advanceTimersByTimeAsync(5_000)
+		expect(calls.filter((call) => call.url.endsWith("/v1/metrics"))).toHaveLength(1)
+
+		// The metric is cumulative, but it has not changed. Subsequent trace/log
+		// flush ticks must not generate duplicate metrics requests.
+		await vi.advanceTimersByTimeAsync(15_000)
+		expect(calls.filter((call) => call.url.endsWith("/v1/metrics"))).toHaveLength(1)
+
+		await Effect.runPromise(Metric.update(counter, 1).pipe(Effect.provide(telemetry.layer)))
+		await vi.advanceTimersByTimeAsync(5_000)
+		expect(calls.filter((call) => call.url.endsWith("/v1/metrics"))).toHaveLength(2)
+
+		await telemetry.dispose()
+		expect(calls.filter((call) => call.url.endsWith("/v1/metrics"))).toHaveLength(2)
+	})
+
+	it("still exports without Authorization when no ingest key is set, for a proxy to add", async () => {
+		const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {})
 		const { calls, restore: rf } = setupFetch()
 		restore = () => {
 			rf()
-			consoleInfoSpy.mockRestore()
+			warnSpy.mockRestore()
 		}
 		const telemetry = make({
 			serviceName: "unit-test",
@@ -372,9 +405,11 @@ describe("MapleFlush.make (client)", () => {
 		)
 		await telemetry.flush()
 
-		expect(calls.length).toBe(0)
-		expect(consoleInfoSpy).toHaveBeenCalledTimes(1)
-		expect(consoleInfoSpy.mock.calls[0][0]).toContain("no ingest key configured")
+		const traces = calls.find((call) => call.url.endsWith("/v1/traces"))
+		expect(traces).toBeDefined()
+		expect(traces!.headers).not.toHaveProperty("authorization")
+		// A custom endpoint is a proxy or collector: keyless is legitimate there.
+		expect(warnSpy).not.toHaveBeenCalled()
 	})
 
 	it("flushes on visibilitychange only when the document is hidden", async () => {

@@ -36,6 +36,18 @@ Source: `packages/query-engine/src/execution/executor.ts` (`executeSql`)
 | `query.profile` | string | `executor.ts` | Execution profile (e.g. `"list"`, `"analytics"`). Set via `SqlQueryOptions.profile`. |
 | `ch.settings` | string (JSON) | `executor.ts` | JSON-encoded ClickHouse settings applied to the query |
 | `result.rowCount` | int | `executor.ts` | Number of rows returned |
+| `db.response.returned_rows` | int | `executor.ts` | OTel spelling of `result.rowCount`, success only |
+| `db.operation.name` | string | `executor.ts` | Leading SQL verb (`SELECT`, `INSERT`) from `summarizeSql` |
+| `db.collection.name` | string | `executor.ts` | First table named by the statement; the datasource for `ingest` |
+| `db.query.summary` | string | `executor.ts` | `{operation} {collection}` — identical to what the shape rollup derives when absent |
+| `db.operation.batch.size` | int | `executor.ts` | Rows in an `ingest` batch |
+| `error.type` | string | `executor.ts` | Failure only: ClickHouse exception type (`UNKNOWN_TABLE`), else its code, else the error tag |
+| `db.response.status_code` | string | `executor.ts` | Failure only: the ClickHouse error code, else the upstream HTTP status |
+
+`executeSql` is the **one** `Client` span per logical warehouse operation, retries included, as the
+OTel database conventions ask. The drivers run on `warehouseHttpClient(...)`, which disables the
+Effect `HttpClient` tracer for their round-trips — do not let an `http.client POST` span reappear
+under it.
 
 ## `warehouse.*` group
 
@@ -138,9 +150,24 @@ Source: `apps/api/src/lib/EmailService.ts`
 
 ---
 
-## `maple.*` vendor namespace (ingest gateway)
+## `maple.*` vendor namespace
 
-Custom domain attributes for the Rust ingest gateway. All `maple.*` keys are reserved for Maple-specific metadata that has no OTel semconv equivalent.
+All `maple.*` keys are reserved for Maple-specific metadata that has no OTel semconv equivalent.
+
+### API entity attributes
+
+| Key | Type | Set at | Meaning |
+|---|---|---|---|
+| `maple.api_key.id` | string | `ApiKeysService.ts` | API key entity involved in an operation. |
+| `maple.api_key.last_used_memo_hit` | bool | `ApiKeysService.ts` | Whether a last-used write was skipped by the per-isolate memo. |
+| `maple.dashboard.id` | string | `DashboardPersistenceService.ts` | Dashboard entity involved in an operation. |
+| `maple.dashboard.version_id` | string | `DashboardPersistenceService.ts` | Dashboard history version involved in an operation. |
+| `maple.ingest_attribute_mapping.id` | string | `IngestAttributeMappingService.ts` | Ingest attribute mapping involved in an operation. |
+| `maple.organization.member.requested_count` | int | `OrgMembersService.ts` | Number of member ids requested for resolution. |
+
+### Ingest gateway
+
+Custom domain attributes for the Rust ingest gateway.
 
 Source: `apps/ingest/src/main.rs:843-861` (inbound signal span), `:920-937` (Cloudflare logpush), `:1132-1145` (downstream forward).
 

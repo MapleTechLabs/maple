@@ -1,5 +1,5 @@
-import type { Row, ShapeStreamOptions } from "@electric-sql/client"
-import type { StandardSchemaV1 } from "@standard-schema/spec"
+import type { Row, ShapeStreamOptions as SyncStreamOptions } from "@electric-sql/client"
+import type { StandardSchemaV1 } from "effect/StandardSchema"
 import type { Collection, CollectionConfig } from "@tanstack/db"
 import { BTreeIndex } from "@tanstack/db"
 import type { ElectricCollectionUtils, Txid } from "@tanstack/electric-db-collection"
@@ -17,7 +17,7 @@ export type { CollectionStatus } from "@tanstack/db"
  * Type for the ShapeStream onError handler.
  * Returns void to stop syncing, or an object to continue with modified params/headers.
  */
-type OnErrorHandler = NonNullable<ShapeStreamOptions<unknown>["onError"]>
+type OnErrorHandler = NonNullable<SyncStreamOptions<unknown>["onError"]>
 
 /**
  * Default backoff configuration.
@@ -84,22 +84,15 @@ function dispatchSyncFailed(collectionId: string | undefined): void {
  */
 function logVia(
 	runtime: ManagedRuntime.ManagedRuntime<unknown, unknown> | undefined,
-	level: "warning" | "error" | "debug",
-	message: string,
+	log: Effect.Effect<void>,
 	annotations: Record<string, unknown>,
 ): void {
-	const log = (
-		level === "warning"
-			? Effect.logWarning(message)
-			: level === "error"
-				? Effect.logError(message)
-				: Effect.logDebug(message)
-	).pipe(Effect.annotateLogs(annotations))
+	const annotatedLog = log.pipe(Effect.annotateLogs(annotations))
 	if (runtime) {
-		runtime.runFork(log)
+		runtime.runFork(annotatedLog)
 		return
 	}
-	Effect.runFork(log)
+	Effect.runFork(annotatedLog)
 }
 
 /**
@@ -115,12 +108,10 @@ function createBackoffOnError(
 	let currentDelay = backoffConfig.initialDelayMs
 	let resetTimeout: ReturnType<typeof setTimeout> | null = null
 
-	// Reset backoff state after a period of successful operation
 	const scheduleReset = () => {
 		if (resetTimeout) {
 			clearTimeout(resetTimeout)
 		}
-		// Reset after configured timeout of no errors
 		resetTimeout = setTimeout(() => {
 			retryCount = 0
 			currentDelay = backoffConfig.initialDelayMs
@@ -130,24 +121,15 @@ function createBackoffOnError(
 	return async (error) => {
 		retryCount++
 
-		// Dispatch error state changed event
 		dispatchErrorStateChanged(collectionId, true)
 
-		// Check if this is a 401 auth error - stop this stream and hand recovery to
-		// the app. A 401 here is usually a transient token problem (expired Clerk
-		// token on a long-lived stream, or a stale-org stream after an org switch),
-		// NOT proof the session is gone — permanently killing sync would leave the
-		// collection alive but deaf, so every later optimistic write would await a
-		// txid that can never arrive and time out. The recovery listener recreates
-		// the collections (minting a fresh token via the auth-headers provider)
-		// under a bounded retry budget, so a genuinely dead session degrades to a
-		// stopped stream instead of a loop.
+		// A 401 can be a stale stream token, so let the app recreate the collection
+		// under its bounded retry budget instead of leaving a live-but-deaf instance.
 		const errorStatus = (error as { status?: number })?.status
 		if (errorStatus === 401) {
 			logVia(
 				runtime,
-				"warning",
-				"Authentication error (401), stopping stream and requesting recovery",
+				Effect.logWarning("Authentication error (401), stopping stream and requesting recovery"),
 				{
 					collectionId,
 					status: 401,
@@ -156,27 +138,24 @@ function createBackoffOnError(
 			if (typeof window !== "undefined") {
 				window.dispatchEvent(new CustomEvent("collection:auth-error", { detail: { collectionId } }))
 			}
-			// Return undefined to stop syncing this (stale-token) stream
 			return
 		}
 
-		// Check if this is a schema validation error - likely a stale cache after a deploy
+		// A schema mismatch usually means the client retained a pre-deploy shape.
 		const errorName = (error as Error)?.name || (error as { _tag?: string })?._tag
 		if (errorName === "SchemaValidationError") {
-			logVia(runtime, "warning", "Schema validation error, dispatching recovery event", {
+			logVia(runtime, Effect.logWarning("Schema validation error, dispatching recovery event"), {
 				collectionId,
 				errorName,
 			})
 			if (typeof window !== "undefined") {
 				window.dispatchEvent(new CustomEvent("collection:schema-error"))
 			}
-			// Return undefined to stop syncing — the layout will handle recovery
 			return
 		}
 
-		// Check if max retries exceeded
 		if (retryCount > backoffConfig.maxRetries) {
-			logVia(runtime, "error", "Max retries exceeded, stopping sync", {
+			logVia(runtime, Effect.logError("Max retries exceeded, stopping sync"), {
 				collectionId,
 				maxRetries: backoffConfig.maxRetries,
 				retryCount,
@@ -185,16 +164,12 @@ function createBackoffOnError(
 			// Terminal: nothing will refetch this shape until the collection is
 			// recreated, so tell the app rather than leaving it on a skeleton.
 			dispatchSyncFailed(collectionId)
-			// Return undefined to stop syncing
 			return
 		}
 
-		// Calculate delay with optional jitter
-		const delay = backoffConfig.jitter
-			? currentDelay * (0.5 + Math.random()) // Jitter between 50-150% of delay
-			: currentDelay
+		const delay = backoffConfig.jitter ? currentDelay * (0.5 + Math.random()) : currentDelay
 
-		logVia(runtime, "warning", "Connection error, retrying", {
+		logVia(runtime, Effect.logWarning("Connection error, retrying"), {
 			collectionId,
 			delayMs: Math.round(delay),
 			retryCount,
@@ -203,25 +178,19 @@ function createBackoffOnError(
 			cause: error,
 		})
 
-		// Wait for the delay
 		await new Promise((resolve) => setTimeout(resolve, delay))
 
-		// Increase delay for next retry (exponential backoff)
 		currentDelay = Math.min(currentDelay * backoffConfig.multiplier, backoffConfig.maxDelayMs)
 
-		// Schedule reset of backoff state
 		scheduleReset()
 
-		// Call user's onError handler if provided
 		if (userOnError) {
 			const result = await userOnError(error)
-			// If user handler returns a result, use it
 			if (result !== undefined) {
 				return result
 			}
 		}
 
-		// Return empty object to continue syncing with same params
 		return {}
 	}
 }
@@ -232,24 +201,22 @@ type InferSchemaOutput<T> = T extends StandardSchemaV1
 		: Record<string, unknown>
 	: Record<string, unknown>
 
-/**
- * Effect-based utilities for Electric collections.
- */
+/** Effect-based Electric collection utilities. */
 export interface EffectElectricCollectionUtils extends ElectricCollectionUtils {
-	/**
-	 * Wait for a specific transaction ID to be synced (Effect version).
-	 */
+	/** Waits for a transaction to reach this collection. */
 	readonly awaitTxIdEffect: (
 		txid: Txid,
 		timeout?: number,
 	) => Effect.Effect<boolean, TxIdTimeoutError | InvalidTxIdError | AwaitTxIdError>
 }
 
-/**
- * Creates Electric collection options with Effect-based handlers
- */
+type AnyEffectElectricCollectionConfig =
+	| (EffectElectricCollectionConfig<any, any, any, any, any> & {
+			runtime: ManagedRuntime.ManagedRuntime<any, unknown>
+	  })
+	| (EffectElectricCollectionConfig<any, any, any, any, never> & { runtime?: never })
 
-// With schema + with runtime (R inferred from runtime)
+/** Creates Electric collection options with Effect-based handlers. */
 export function effectElectricCollectionOptions<T extends StandardSchemaV1, R>(
 	config: EffectElectricCollectionConfig<
 		InferSchemaOutput<T>,
@@ -267,7 +234,6 @@ export function effectElectricCollectionOptions<T extends StandardSchemaV1, R>(
 	schema: T
 }
 
-// With schema + without runtime (R must be never)
 export function effectElectricCollectionOptions<T extends StandardSchemaV1>(
 	config: EffectElectricCollectionConfig<
 		InferSchemaOutput<T>,
@@ -285,7 +251,6 @@ export function effectElectricCollectionOptions<T extends StandardSchemaV1>(
 	schema: T
 }
 
-// Without schema + with runtime (R inferred from runtime)
 export function effectElectricCollectionOptions<T extends Row<unknown>, R>(
 	config: EffectElectricCollectionConfig<T, string | number, never, Record<string, never>, R> & {
 		schema?: never
@@ -297,7 +262,6 @@ export function effectElectricCollectionOptions<T extends Row<unknown>, R>(
 	schema?: never
 }
 
-// Without schema + without runtime (R must be never)
 export function effectElectricCollectionOptions<T extends Row<unknown>>(
 	config: EffectElectricCollectionConfig<T, string | number, never, Record<string, never>, never> & {
 		schema?: never
@@ -309,25 +273,32 @@ export function effectElectricCollectionOptions<T extends Row<unknown>>(
 	schema?: never
 }
 
-export function effectElectricCollectionOptions(
-	config: EffectElectricCollectionConfig<any, any, any, any, any>,
-): CollectionConfig<any, string | number, any, any> & {
+export function effectElectricCollectionOptions(config: AnyEffectElectricCollectionConfig): CollectionConfig<
+	any,
+	string | number,
+	any,
+	any
+> & {
 	id?: string
 	utils: EffectElectricCollectionUtils
 	schema?: any
 } {
-	const promiseOnInsert = convertInsertHandler(config.onInsert, config.runtime)
-	const promiseOnUpdate = convertUpdateHandler(config.onUpdate, config.runtime)
-	const promiseOnDelete = convertDeleteHandler(config.onDelete, config.runtime)
+	const promiseOnInsert = config.runtime
+		? convertInsertHandler(config.onInsert, config.runtime)
+		: convertInsertHandler(config.onInsert)
+	const promiseOnUpdate = config.runtime
+		? convertUpdateHandler(config.onUpdate, config.runtime)
+		: convertUpdateHandler(config.onUpdate)
+	const promiseOnDelete = config.runtime
+		? convertDeleteHandler(config.onDelete, config.runtime)
+		: convertDeleteHandler(config.onDelete)
 
-	// Handle backoff configuration
 	const backoffEnabled = config.backoff !== false
 	const backoffConfig: Required<BackoffConfig> = backoffEnabled
-		? { ...DEFAULT_BACKOFF_CONFIG, ...(typeof config.backoff === "object" ? config.backoff : {}) }
-		: DEFAULT_BACKOFF_CONFIG // Won't be used when disabled
+		? { ...DEFAULT_BACKOFF_CONFIG, ...(typeof config.backoff === "object" ? config.backoff : undefined) }
+		: DEFAULT_BACKOFF_CONFIG
 
-	// Create modified shapeOptions with backoff-wrapped onError
-	const modifiedShapeOptions = backoffEnabled
+	const modifiedSyncOptions = backoffEnabled
 		? {
 				...config.shapeOptions,
 				onError: createBackoffOnError(
@@ -343,7 +314,7 @@ export function effectElectricCollectionOptions(
 		autoIndex: "eager",
 		defaultIndexType: BTreeIndex,
 		...config,
-		shapeOptions: modifiedShapeOptions,
+		shapeOptions: modifiedSyncOptions,
 		onInsert: promiseOnInsert,
 		onUpdate: promiseOnUpdate,
 		onDelete: promiseOnDelete,
@@ -452,5 +423,5 @@ export function createEffectCollection<A extends Row<unknown>, TRuntime>(
 	} as Parameters<typeof effectElectricCollectionOptions>[0])
 
 	const collection = tanstackCreateCollection(options as any)
-	return collection as unknown as EffectCollection<A>
+	return collection as EffectCollection<A>
 }

@@ -1,220 +1,140 @@
-import { Cause, Exit, Option } from "effect"
+// BOUNDARY: This module intentionally carries opaque values; callers decode them before domain use.
+import { Cause, Exit, Option, Schema } from "effect"
 import { HttpClientError } from "effect/unstable/http"
 import {
-	cleanErrorMessage,
-	isWarehouseErrorTag,
-	presentWarehouseError,
-	type WarehouseErrorLike,
-} from "@maple/domain"
+	PublicHttpErrorBodySchema,
+	type AnyPublicHttpErrorBody,
+	type HttpErrorRecovery,
+} from "@maple/domain/http"
 import { isChunkLoadError } from "./chunk-reload"
 
-export interface FormattedError {
+export const NetworkErrorTag = "@maple/web/errors/NetworkError" as const
+export const UnexpectedErrorTag = "@maple/web/errors/UnexpectedError" as const
+
+export interface ClientErrorDefinition {
+	readonly _tag: `@maple/web/errors/${string}`
+	readonly code: string
 	readonly title: string
-	readonly description: string
-	/** `"network"` = transient connectivity failure; safe to auto-retry. */
-	readonly kind?: "network"
+	readonly message: string
+	readonly retryable: boolean
+	readonly recovery: HttpErrorRecovery
 }
 
-const hasTag = (value: unknown): value is { _tag: string; [key: string]: unknown } =>
-	typeof value === "object" &&
-	value !== null &&
-	"_tag" in value &&
-	typeof (value as { _tag: unknown })._tag === "string"
+export const makeClientErrorBody = (definition: ClientErrorDefinition): AnyPublicHttpErrorBody => ({
+	type: "api_error",
+	...definition,
+})
 
-const sanitizeMessage = cleanErrorMessage
+/**
+ * Shared so the warehouse layer can raise this same body as a typed failure —
+ * `WarehouseUnreachableError` — rather than only reaching it by unwrapping a
+ * cause chain. One copy, one tag, whichever way a dropped connection arrives.
+ */
+export const NetworkErrorBody = makeClientErrorBody({
+	_tag: NetworkErrorTag,
+	code: "network_unreachable",
+	title: "Cannot reach Maple API",
+	message: "Check your connection. Data will resume once the API is reachable.",
+	retryable: true,
+	recovery: "retry",
+})
 
-const stringField = (value: unknown, key: string): string | undefined => {
-	if (typeof value === "object" && value !== null && key in value) {
-		const v = (value as Record<string, unknown>)[key]
-		if (typeof v === "string") return sanitizeMessage(v)
-	}
-	return undefined
-}
+const TimeoutError = makeClientErrorBody({
+	_tag: "@maple/web/errors/TimeoutError",
+	code: "request_timeout",
+	title: "Request timed out",
+	message: "The API did not respond in time. Try again when you're ready.",
+	retryable: true,
+	recovery: "retry",
+})
 
-const stringArrayField = (value: unknown, key: string): ReadonlyArray<string> | undefined => {
-	if (typeof value === "object" && value !== null && key in value) {
-		const v = (value as Record<string, unknown>)[key]
-		if (Array.isArray(v)) return v.filter((item): item is string => typeof item === "string")
-	}
-	return undefined
-}
+const InvalidUrlError = makeClientErrorBody({
+	_tag: "@maple/web/errors/InvalidUrlError",
+	code: "invalid_request_url",
+	title: "This request could not be sent",
+	message: "Reload Maple. If the problem continues, contact support.",
+	retryable: false,
+	recovery: "refresh",
+})
+
+const HttpRequestError = makeClientErrorBody({
+	_tag: "@maple/web/errors/HttpRequestError",
+	code: "http_request_failed",
+	title: "The request failed",
+	message: "Maple could not complete this request.",
+	retryable: false,
+	recovery: "none",
+})
+
+const StaleChunkError = makeClientErrorBody({
+	_tag: "@maple/web/errors/StaleChunkError",
+	code: "stale_chunk",
+	title: "Maple was updated",
+	message: "Reload to use the latest version.",
+	retryable: false,
+	recovery: "refresh",
+})
+
+const UnexpectedError = makeClientErrorBody({
+	_tag: UnexpectedErrorTag,
+	code: "unexpected_error",
+	title: "Something went wrong",
+	message: "An unexpected error occurred. Try again, or reload if the problem continues.",
+	retryable: false,
+	recovery: "refresh",
+})
+
+const isPublicErrorBody = Schema.is(PublicHttpErrorBodySchema)
 
 const unwrap = (error: unknown): unknown => {
-	if (Cause.isCause(error)) {
-		return Option.getOrElse(Cause.findErrorOption(error), () => error)
-	}
-	if (Exit.isExit(error)) {
-		return Option.getOrElse(Exit.findErrorOption(error), () => error)
-	}
+	if (Cause.isCause(error)) return Option.getOrElse(Cause.findErrorOption(error), () => error)
+	if (Exit.isExit(error)) return Option.getOrElse(Exit.findErrorOption(error), () => error)
 	return error
 }
 
-export interface V2ErrorInfo {
-	readonly type: string
-	readonly code: string
-	readonly message: string
+const nestedCause = (value: unknown): unknown =>
+	typeof value === "object" && value !== null && "cause" in value
+		? (value as { readonly cause: unknown }).cause
+		: undefined
+
+/** Read the public body shared by decoded HTTP responses and live tagged errors. */
+export const publicError = (input: unknown): AnyPublicHttpErrorBody | null => {
+	const value = unwrap(input)
+	if (isPublicErrorBody(value)) return value
+	if (typeof value !== "object" || value === null || !("error" in value)) return null
+	const body = (value as { readonly error: unknown }).error
+	return isPublicErrorBody(body) ? body : null
 }
 
-/**
- * Extract the v2 API error envelope (`{ error: { type, code, message } }`)
- * from a failure, unwrapping Cause/Exit first. Returns null for anything that
- * isn't a v2-shaped error, so callers can fall through to the v1 handling.
- */
-export const v2ErrorInfo = (input: unknown): V2ErrorInfo | null => {
-	const error = unwrap(input)
-	if (typeof error !== "object" || error === null || !("error" in error)) return null
-	const body = (error as { error: unknown }).error
-	const type = stringField(body, "type")
-	const code = stringField(body, "code")
-	const message = stringField(body, "message")
-	if (type === undefined || code === undefined || message === undefined) return null
-	return { type, code, message }
+const isTimeoutException = (value: unknown): boolean =>
+	typeof DOMException !== "undefined" && value instanceof DOMException && value.name === "TimeoutError"
+
+const displayErrorInternal = (input: unknown, depth: number): AnyPublicHttpErrorBody => {
+	const value = unwrap(input)
+	const declared = publicError(value)
+	if (declared !== null) return declared
+
+	if (HttpClientError.isHttpClientError(value)) {
+		if (value.reason._tag === "TransportError") {
+			return isTimeoutException(value.reason.cause) ? TimeoutError : NetworkErrorBody
+		}
+		return value.reason._tag === "InvalidUrlError" ? InvalidUrlError : HttpRequestError
+	}
+
+	if (isChunkLoadError(value)) return StaleChunkError
+
+	const cause = nestedCause(value)
+	if (depth < 4 && cause !== undefined && cause !== value) {
+		const nested = displayErrorInternal(cause, depth + 1)
+		if (nested._tag !== UnexpectedErrorTag) return nested
+	}
+
+	return UnexpectedError
 }
 
-const V2_ERROR_TITLES: Record<string, string> = {
-	invalid_request_error: "Invalid request",
-	authentication_error: "Not authorized",
-	permission_error: "Not authorized",
-	not_found_error: "Not found",
-	conflict_error: "Conflict",
-	rate_limit_error: "Rate limited",
-	api_error: "Server error",
-}
+/** Resolve any application failure to the single safe public error contract. */
+export const displayError = (input: unknown): AnyPublicHttpErrorBody => displayErrorInternal(input, 0)
 
-export const formatBackendError = (input: unknown): FormattedError => {
-	const error = unwrap(input)
+export const isAutomaticRetryError = (error: AnyPublicHttpErrorBody): boolean => error.retryable
 
-	const v2 = v2ErrorInfo(error)
-	if (v2 !== null) {
-		return {
-			title: V2_ERROR_TITLES[v2.type] ?? "Something went wrong",
-			description: v2.message,
-		}
-	}
-
-	// All nine warehouse tags share one presenter in @maple/domain
-	// (warehouse-error-meta) — the same copy the API surfaces elsewhere, and the
-	// one place a new warehouse tag must be described.
-	if (hasTag(error) && isWarehouseErrorTag(error._tag)) {
-		const like: WarehouseErrorLike = {
-			_tag: error._tag,
-			...(typeof error.message === "string" ? { message: error.message } : {}),
-			...(typeof error.setting === "string" ? { setting: error.setting } : {}),
-			...(typeof error.upstreamStatus === "number" ? { upstreamStatus: error.upstreamStatus } : {}),
-			...(typeof error.kind === "string" ? { kind: error.kind } : {}),
-		}
-		return presentWarehouseError(like)
-	}
-
-	if (hasTag(error)) {
-		switch (error._tag) {
-			case "@maple/http/errors/QueryEngineTimeoutError": {
-				return {
-					title: "Query timed out",
-					description:
-						"The query took longer than 30 seconds. Narrow the time range or add filters.",
-				}
-			}
-			case "@maple/http/errors/QueryEngineValidationError": {
-				const message = stringField(error, "message") ?? "Invalid query parameters"
-				const details = stringArrayField(error, "details") ?? []
-				return {
-					// The engine's `message` is the specific headline ("List query time
-					// range too large"); a generic title here discarded it whenever
-					// `details` was populated, which is nearly always.
-					title: message,
-					description: details.length > 0 ? details.join("; ") : message,
-				}
-			}
-			case "@maple/http/errors/QueryEngineExecutionError": {
-				const message = stringField(error, "message") ?? "Query execution failed"
-				const causeMessage = stringField(error, "causeMessage")
-				return {
-					title: "Query failed",
-					description: causeMessage ? `${message}: ${causeMessage}` : message,
-				}
-			}
-			case "@maple/http/errors/UnauthorizedError": {
-				return {
-					title: "Not authorized",
-					description:
-						"Your session may have expired. Try refreshing the page or signing in again.",
-				}
-			}
-		}
-	}
-
-	if (HttpClientError.isHttpClientError(error)) {
-		const reasonTag = error.reason._tag
-		const status =
-			"response" in error.reason && error.reason.response ? error.reason.response.status : undefined
-		if (status === 401 || status === 403) {
-			return {
-				title: "Not authorized",
-				description: "Your session may have expired. Try refreshing the page or signing in again.",
-			}
-		}
-		if (status === 429) {
-			return {
-				title: "Rate limited",
-				description: "Too many requests. Wait a moment and try again.",
-			}
-		}
-		if (status === 504) {
-			return {
-				title: "Query timed out",
-				description: "The request took too long to complete. Narrow the time range or add filters.",
-			}
-		}
-		if (reasonTag === "TransportError" || reasonTag === "InvalidUrlError") {
-			return {
-				title: "Cannot reach Maple API",
-				description: "Check your connection — data will resume once the API is reachable.",
-				// A bad URL never self-heals — only transport failures auto-retry.
-				...(reasonTag === "TransportError" ? { kind: "network" as const } : {}),
-			}
-		}
-		if (status !== undefined && status >= 500) {
-			return {
-				title: "Server error",
-				description: error.message ?? `The Maple API returned ${status}.`,
-			}
-		}
-	}
-
-	if (isChunkLoadError(error)) {
-		return {
-			title: "Maple was updated",
-			description: "Reloading to pick up the new version…",
-		}
-	}
-
-	if (error instanceof Error) {
-		// Transport-level failures carry request URLs in their message — swap the
-		// internals for actionable copy.
-		if (/transport error|failed to fetch|load failed|networkerror/i.test(error.message)) {
-			return {
-				title: "Cannot reach Maple API",
-				description: "Check your connection — data will resume once the API is reachable.",
-				kind: "network",
-			}
-		}
-		return {
-			title: "Something went wrong",
-			description: error.message || "An unexpected error occurred.",
-		}
-	}
-
-	const message = stringField(error, "message")
-	if (message) {
-		return {
-			title: "Something went wrong",
-			description: message,
-		}
-	}
-
-	return {
-		title: "Something went wrong",
-		description: typeof error === "string" ? error : "An unexpected error occurred.",
-	}
-}
+export const isUnexpectedError = (error: AnyPublicHttpErrorBody): boolean => error._tag === UnexpectedErrorTag

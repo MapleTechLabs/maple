@@ -1,11 +1,11 @@
 ---
 /**
- * FeaturePage — the single template behind all eight `/features/*` routes, in
+ * FeaturePage — the single template behind all `/features/*` routes, in
  * all three locales.
  *
  * The spine, and its tonal cadence:
  *
- *   00  PageHero            bg-bg       dot-grid veil       (page top)
+ *   00  PageHero            bg-bg       feature engraving   (page top)
  *   01  SurfacePanel        bg-bg       border-t            tone flat → hairline
  *   02  ArtifactSection     bg-bg       border-t            tone flat → hairline
  *   03  [extra sections]    per section                     kubernetes only
@@ -22,7 +22,7 @@
  * `.live-frame__live` pulse and `--severity-warn` fills, which share the
  * primary hue; two of them plus the closing CTA reads speckled rather than rare.
  */
-import * as m from "../../paraglide/messages";
+import * as m from "../../paraglide/messages.js";
 import { featureBySlug } from "../../lib/features";
 import { featurePath, useCasePath } from "../../lib/page-registry";
 import { useCaseBySlug } from "../../lib/use-cases";
@@ -85,6 +85,7 @@ const crossLinks = [
 		eyebrow={feature.navLabel()}
 		title={feature.heroTitle()}
 		lede={feature.heroLede()}
+		illustration={feature.illustration}
 		breadcrumb={[
 			{ label: m.breadcrumb_home(), href: "/" },
 			{ label: m.breadcrumb_features(), href: "/#features" },

@@ -1,6 +1,14 @@
-import { Clock, Effect, Option, Schema } from "effect"
-import { LogsFacetDimension, QueryEngineExecuteRequest, formatWarehouseDateTime } from "@maple/query-engine"
-import { TraceId, SpanId } from "@maple/domain"
+// BOUNDARY: This module intentionally carries opaque values; callers decode them before domain use.
+import { Clock, Effect, Schema } from "effect"
+import {
+	LogsFacetDimension,
+	QueryEngineExecuteRequest,
+	coerceLogRow,
+	coerceLogRows,
+	formatWarehouseDateTime,
+	type LogRow,
+} from "@maple/query-engine"
+import { TraceId } from "@maple/domain"
 import {
 	DeploymentEnvironment,
 	GetLogRequest,
@@ -8,7 +16,7 @@ import {
 	ServiceName,
 	ServiceNamespace,
 } from "@maple/domain/http"
-import { MapleApiAtomClient } from "@/lib/services/common/atom-client"
+import { MapleInternalAtomClient } from "@/lib/services/common/internal-atom-client"
 import {
 	WarehouseDateTimeString,
 	decodeInput,
@@ -18,15 +26,20 @@ import {
 	runWarehouseQuery,
 } from "@/api/warehouse/effect-utils"
 
-const toTraceId = Schema.decodeSync(TraceId)
-const toSpanId = Schema.decodeSync(SpanId)
-
 const ListLogsInputSchema = Schema.Struct({
 	limit: Schema.optional(
 		Schema.Int.check(Schema.isGreaterThanOrEqualTo(1), Schema.isLessThanOrEqualTo(1000)),
 	),
 	service: Schema.optional(ServiceName),
 	severity: Schema.optional(Schema.String),
+	services: Schema.optional(Schema.Array(ServiceName)),
+	severities: Schema.optional(Schema.Array(Schema.String)),
+	deploymentEnvs: Schema.optional(Schema.Array(DeploymentEnvironment)),
+	namespaces: Schema.optional(Schema.Array(ServiceNamespace)),
+	excludedServices: Schema.optional(Schema.Array(ServiceName)),
+	excludedSeverities: Schema.optional(Schema.Array(Schema.String)),
+	excludedDeploymentEnvs: Schema.optional(Schema.Array(DeploymentEnvironment)),
+	excludedNamespaces: Schema.optional(Schema.Array(ServiceNamespace)),
 	minSeverity: Schema.optional(
 		Schema.Int.check(Schema.isGreaterThanOrEqualTo(0), Schema.isLessThanOrEqualTo(255)),
 	),
@@ -46,51 +59,18 @@ export type ListLogsInput = (typeof ListLogsInputSchema)["Encoded"]
 
 const DEFAULT_LIMIT = 100
 
-export interface Log {
-	timestamp: string
-	severityText: string
-	severityNumber: number
-	serviceName: string
-	body: string
-	traceId: TraceId
-	spanId: SpanId
-	logAttributes: Record<string, string>
-	resourceAttributes: Record<string, string>
-}
+/**
+ * A log row as the list renders it. The shape (and `coerceLogRow`) lives in
+ * `@maple/query-engine` so the share API's `list_logs` plan produces the same
+ * rows this function does; the alias keeps the existing imports.
+ */
+export type Log = LogRow
 
 export interface LogsResponse {
 	data: Log[]
 	meta: {
 		limit: number
 		cursor: string | null
-	}
-}
-
-const parseJson = Option.liftThrowable((value: string): unknown => JSON.parse(value))
-
-function parseAttributes(value: string | null | undefined): Record<string, string> {
-	if (!value) return {}
-	return parseJson(value).pipe(
-		Option.flatMap((parsed) =>
-			parsed && typeof parsed === "object"
-				? Option.some(parsed as Record<string, string>)
-				: Option.none(),
-		),
-		Option.getOrElse((): Record<string, string> => ({})),
-	)
-}
-
-function transformLog(raw: Record<string, unknown>): Log {
-	return {
-		timestamp: String(raw.timestamp ?? ""),
-		severityText: String(raw.severityText ?? ""),
-		severityNumber: Number(raw.severityNumber ?? 0),
-		serviceName: String(raw.serviceName ?? ""),
-		body: String(raw.body ?? ""),
-		traceId: raw.traceId ? toTraceId(String(raw.traceId)) : ("" as TraceId),
-		spanId: raw.spanId ? toSpanId(String(raw.spanId)) : ("" as SpanId),
-		logAttributes: parseAttributes(raw.logAttributes as string),
-		resourceAttributes: parseAttributes(raw.resourceAttributes as string),
 	}
 }
 
@@ -105,7 +85,7 @@ const listLogsEffect = Effect.fn("QueryEngine.listLogs")(function* ({ data }: { 
 
 	const logsResult = yield* runWarehouseQuery("listLogs", () =>
 		Effect.gen(function* () {
-			const client = yield* MapleApiAtomClient
+			const client = yield* MapleInternalAtomClient
 			return yield* client.queryEngine.listLogs({
 				payload: new ListLogsRequest({
 					startTime: input.startTime ?? fallback.startTime,
@@ -113,6 +93,14 @@ const listLogsEffect = Effect.fn("QueryEngine.listLogs")(function* ({ data }: { 
 					limit,
 					service: input.service,
 					severity: input.severity,
+					services: input.services,
+					severities: input.severities,
+					deploymentEnvs: input.deploymentEnvs,
+					namespaces: input.namespaces,
+					excludedServices: input.excludedServices,
+					excludedSeverities: input.excludedSeverities,
+					excludedDeploymentEnvs: input.excludedDeploymentEnvs,
+					excludedNamespaces: input.excludedNamespaces,
 					minSeverity: input.minSeverity,
 					traceId: input.traceId,
 					spanId: input.spanId,
@@ -127,7 +115,7 @@ const listLogsEffect = Effect.fn("QueryEngine.listLogs")(function* ({ data }: { 
 		}),
 	)
 
-	const logs = logsResult.data.map(transformLog)
+	const logs = coerceLogRows(logsResult.data)
 	const cursor = logs.length === limit && logs.length > 0 ? logs[logs.length - 1].timestamp : null
 
 	return {
@@ -139,11 +127,9 @@ const listLogsEffect = Effect.fn("QueryEngine.listLogs")(function* ({ data }: { 
 	}
 })
 
-// ---------------------------------------------------------------------------
 // Single log lookup — exact-match by composite key, backs the `/logs/$logId`
 // shareable detail page. `timestamp` is the raw ClickHouse DateTime64 string
 // (sub-second precision), so it is not constrained to WarehouseDateTimeString.
-// ---------------------------------------------------------------------------
 
 const GetLogInputSchema = Schema.Struct({
 	timestamp: Schema.String,
@@ -167,7 +153,7 @@ const getLogEffect = Effect.fn("QueryEngine.getLog")(function* ({ data }: { data
 
 	const response = yield* runWarehouseQuery("getLog", () =>
 		Effect.gen(function* () {
-			const client = yield* MapleApiAtomClient
+			const client = yield* MapleInternalAtomClient
 			return yield* client.queryEngine.getLog({
 				payload: new GetLogRequest({
 					timestamp: input.timestamp,
@@ -180,7 +166,7 @@ const getLogEffect = Effect.fn("QueryEngine.getLog")(function* ({ data }: { data
 	)
 
 	return {
-		data: response.data.length > 0 ? transformLog(response.data[0]) : null,
+		data: response.data.length > 0 ? coerceLogRow(response.data[0]) : null,
 	} satisfies GetLogResult
 })
 
@@ -214,12 +200,26 @@ const getLogsCountEffect = Effect.fn("QueryEngine.getLogsCount")(function* ({
 				filters: {
 					serviceName: input.service,
 					severity: input.severity,
+					serviceNames: input.services,
+					severities: input.severities,
 					traceId: input.traceId,
 					search: input.search,
-					environments: input.deploymentEnv ? [input.deploymentEnv] : undefined,
+					environments: input.deploymentEnvs?.length
+						? input.deploymentEnvs
+						: input.deploymentEnv
+							? [input.deploymentEnv]
+							: undefined,
 					deploymentEnvMatchMode: input.deploymentEnvMatchMode,
-					namespaces: input.namespace ? [input.namespace] : undefined,
+					namespaces: input.namespaces?.length
+						? input.namespaces
+						: input.namespace
+							? [input.namespace]
+							: undefined,
 					namespaceMatchMode: input.namespaceMatchMode,
+					excludedServiceNames: input.excludedServices,
+					excludedSeverities: input.excludedSeverities,
+					excludedEnvironments: input.excludedDeploymentEnvs,
+					excludedNamespaces: input.excludedNamespaces,
 				},
 			},
 		}),
@@ -241,6 +241,9 @@ const GetLogsFacetsInputSchema = Schema.Struct({
 	deploymentEnv: Schema.optional(DeploymentEnvironment),
 	deploymentEnvMatchMode: Schema.optional(Schema.Literal("contains")),
 	namespace: Schema.optional(ServiceNamespace),
+	// Multi-value spelling, wins over the scalar (matches `listLogs`). Carries
+	// the org-global namespace pin.
+	namespaces: Schema.optional(Schema.Array(ServiceNamespace)),
 	namespaceMatchMode: Schema.optional(Schema.Literal("contains")),
 	startTime: Schema.optional(WarehouseDateTimeString),
 	endTime: Schema.optional(WarehouseDateTimeString),
@@ -273,7 +276,11 @@ const getLogsFacetsEffect = Effect.fn("QueryEngine.getLogsFacets")(function* ({
 					severity: input.severity,
 					environments: input.deploymentEnv ? [input.deploymentEnv] : undefined,
 					deploymentEnvMatchMode: input.deploymentEnvMatchMode,
-					namespaces: input.namespace ? [input.namespace] : undefined,
+					namespaces: input.namespaces?.length
+						? input.namespaces
+						: input.namespace
+							? [input.namespace]
+							: undefined,
 					namespaceMatchMode: input.namespaceMatchMode,
 				},
 			},
@@ -345,13 +352,10 @@ const getLogsFacetValuesEffect = Effect.fn("QueryEngine.getLogsFacetValues")(fun
 	}
 })
 
-// ---------------------------------------------------------------------------
-// Log attribute keys / values
 // Backed by `log_attribute_keys_mv` and `log_attribute_values_mv` →
 // `attribute_keys_hourly` / `attribute_values_hourly`. Reads the rollup, not
 // the raw `logs` table — autocomplete on log attribute name/value stays fast
 // regardless of tenant log volume.
-// ---------------------------------------------------------------------------
 
 const GetLogAttributeKeysInputSchema = Schema.Struct({
 	startTime: Schema.optional(WarehouseDateTimeString),

@@ -1,18 +1,22 @@
-import { motion } from "motion/react"
 import { MapleMark } from "@maple/ui/components/icons/maple-mark"
 import { cn } from "@maple/ui/lib/utils"
 import { OnboardingOrgSwitcher, OnboardingUserMenu } from "./onboarding-header-actions"
 
-const PIP_TRANSITION = { duration: 0.4, ease: [0.16, 1, 0.3, 1] as const }
-
 export function OnboardingLayout({
 	currentStep,
-	totalSteps = 3,
+	totalSteps = 4,
 	stepLabel,
+	accountActions = (
+		<>
+			<OnboardingOrgSwitcher />
+			<OnboardingUserMenu />
+		</>
+	),
 	children,
 }: {
 	currentStep: number
 	totalSteps?: number
+	accountActions?: React.ReactNode
 	stepLabel?: string
 	children: React.ReactNode
 }) {
@@ -46,31 +50,30 @@ export function OnboardingLayout({
 					{Array.from({ length: totalSteps }).map((_, i) => {
 						const reached = i < currentStep
 						return (
-							<div key={i} className="flex h-1 w-7 items-center justify-center">
-								<motion.div
-									className={cn("h-full w-full overflow-hidden rounded-full bg-muted")}
-									initial={false}
-									animate={{ scaleX: reached ? 1 : 4 / 7 }}
-									transition={PIP_TRANSITION}
-								>
-									<motion.div
-										className="h-full rounded-full bg-primary origin-left"
-										initial={false}
-										animate={{ scaleX: reached ? 1 : 0 }}
-										transition={PIP_TRANSITION}
-									/>
-								</motion.div>
+							// Width, not scale: scaling a pill squashes its end caps mid-transition.
+							<div
+								key={i}
+								className={cn(
+									"h-1 overflow-hidden rounded-full bg-muted transition-[width] duration-400 ease-[cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-none",
+									reached ? "w-7" : "w-4",
+								)}
+							>
+								<div
+									className={cn(
+										"h-full origin-left bg-primary transition-transform duration-400 ease-[cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-none",
+										reached ? "scale-x-100" : "scale-x-0",
+									)}
+								/>
 							</div>
 						)
 					})}
 				</div>
 
 				<div className="flex items-center gap-3">
-					<OnboardingOrgSwitcher />
 					<span className="hidden text-sm text-muted-foreground tabular-nums sm:inline">
 						{stepLabel ?? `Step ${currentStep} of ${totalSteps}`}
 					</span>
-					<OnboardingUserMenu />
+					{accountActions}
 				</div>
 			</header>
 

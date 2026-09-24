@@ -12,16 +12,16 @@ describe("local UI endpoint selection", () => {
 
 	it("uses loopback for a custom hosted UI carrying the startup marker", () => {
 		const page = location(
-			"https://local-staging.maple.dev/preview?channel=next&port=4418&maple-local-api=loopback",
+			"https://local-preview.maple.dev/preview?channel=next&port=4418&maple-local-api=loopback",
 		)
 		expect(localApiBaseForLocation(page)).toBe("http://127.0.0.1:4418")
 		expect(localOtlpEndpointForLocation(page)).toBe("http://127.0.0.1:4418")
 	})
 
 	it("keeps an embedded LAN or TLS-proxied UI same-origin", () => {
-		const page = location("https://srvmini2.lan:4418/?api_key=not-propagated")
+		const page = location("https://node-a.example.test:4418/?api_key=not-propagated")
 		expect(localApiBaseForLocation(page)).toBe("")
-		expect(localOtlpEndpointForLocation(page)).toBe("https://srvmini2.lan:4418")
+		expect(localOtlpEndpointForLocation(page)).toBe("https://node-a.example.test:4418")
 	})
 
 	it("keeps the Vite development UI same-origin for its proxied query and OTLP routes", () => {

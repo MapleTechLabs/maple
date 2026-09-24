@@ -1,13 +1,14 @@
 import * as React from "react"
 import { Result } from "@/lib/effect-atom"
-import { Effect } from "effect"
 
 import { listTraces, type Trace, type TracesResponse } from "@/api/warehouse/traces"
 import { listTracesResultAtom, type QueryAtomFailure } from "@/lib/services/atoms/warehouse-query-atoms"
-import { useRetainedRefreshableResultValue } from "@/hooks/use-retained-refreshable-result-value"
+import { useGlobalNamespace } from "@/hooks/use-global-namespace"
+import { useRefreshableAtomValue } from "@/hooks/use-refreshable-atom-value"
 import { useTableRefreshTimeRange } from "@/hooks/use-table-refresh-time-range"
 import type { TracesSearchParams } from "@/routes/traces"
 import { logClientError } from "@/lib/services/common/telemetry"
+import { mapleRuntime } from "@/lib/registry"
 
 const PAGE_SIZE = 100
 const FETCH_THRESHOLD = 20
@@ -19,13 +20,20 @@ export interface UseInfiniteTracesReturn {
 	isFetchingNextPage: boolean
 	hasNextPage: boolean
 	isCapped: boolean
+	/** Noise traces the server dropped across every loaded page (see `hideNoise`). */
+	hiddenCount: number
 	fetchNextPage: () => void
 }
 
 function buildQueryParams(
 	filters: TracesSearchParams | undefined,
 	refreshedRange: { startTime: string; endTime: string },
+	globalNamespace: string | null,
 ) {
+	// The org-global pin overrides URL namespace filters (they stay in the URL
+	// untouched; unpinning restores them). Applied here so the atom page and the
+	// direct pagination fetches below stay byte-for-byte identical.
+	const pinned = globalNamespace !== null
 	return {
 		services: filters?.services,
 		spanNames: filters?.spanNames,
@@ -35,7 +43,7 @@ function buildQueryParams(
 		httpMethods: filters?.httpMethods,
 		httpStatusCodes: filters?.httpStatusCodes,
 		deploymentEnvs: filters?.deploymentEnvs,
-		namespaces: filters?.namespaces,
+		namespaces: pinned ? [globalNamespace] : filters?.namespaces,
 		attributeFilters: filters?.attributeFilters,
 		resourceAttributeFilters: filters?.resourceAttributeFilters,
 		startTime: refreshedRange.startTime,
@@ -44,13 +52,17 @@ function buildQueryParams(
 		serviceMatchMode: filters?.serviceMatchMode,
 		spanNameMatchMode: filters?.spanNameMatchMode,
 		deploymentEnvMatchMode: filters?.deploymentEnvMatchMode,
-		namespaceMatchMode: filters?.namespaceMatchMode,
+		namespaceMatchMode: pinned ? undefined : filters?.namespaceMatchMode,
 		excludedServices: filters?.excludedServices,
 		excludedSpanNames: filters?.excludedSpanNames,
 		excludedDeploymentEnvs: filters?.excludedDeploymentEnvs,
-		excludedNamespaces: filters?.excludedNamespaces,
+		excludedNamespaces: pinned ? undefined : filters?.excludedNamespaces,
 		excludedHttpMethods: filters?.excludedHttpMethods,
 		excludedHttpStatusCodes: filters?.excludedHttpStatusCodes,
+		hideNoise: filters?.hideNoise,
+		minSpanCount: filters?.minSpanCount,
+		sortBy: filters?.sortBy,
+		sortDir: filters?.sortDir,
 	}
 }
 
@@ -62,14 +74,16 @@ export function useInfiniteTraces(filters: TracesSearchParams | undefined): UseI
 		defaultRange: "12h",
 	})
 
+	const globalNamespace = useGlobalNamespace()
+
 	const queryParams = React.useMemo(
-		() => buildQueryParams(filters, refreshedRange),
-		[filters, refreshedRange],
+		() => buildQueryParams(filters, refreshedRange, globalNamespace),
+		[filters, refreshedRange, globalNamespace],
 	)
 
 	const filterKey = React.useMemo(() => JSON.stringify(queryParams), [queryParams])
 
-	const firstPageResult = useRetainedRefreshableResultValue(
+	const firstPageResult = useRefreshableAtomValue(
 		listTracesResultAtom({
 			data: { ...queryParams, limit: PAGE_SIZE, offset: 0 },
 		}),
@@ -96,15 +110,23 @@ export function useInfiniteTraces(filters: TracesSearchParams | undefined): UseI
 	}, [firstPageResult, additionalPages])
 	const isCapped = allData.length >= MAX_RETAINED_TRACES
 
+	const hiddenCount = React.useMemo(() => {
+		const first = Result.isSuccess(firstPageResult) ? firstPageResult.value.meta.hiddenCount : 0
+		return first + additionalPages.reduce((sum, page) => sum + page.meta.hiddenCount, 0)
+	}, [firstPageResult, additionalPages])
+
+	// "More pages exist" means the warehouse page came back full BEFORE the
+	// server-side noise filter ran. `data.length === PAGE_SIZE` would end
+	// pagination on the first page with any hidden rows.
 	const hasNextPage = React.useMemo(() => {
 		if (isCapped) return false
 		if (paginationStopped) return false
 		if (!Result.isSuccess(firstPageResult)) return false
 		if (additionalPages.length === 0) {
-			return firstPageResult.value.data.length === PAGE_SIZE
+			return firstPageResult.value.meta.scannedCount === PAGE_SIZE
 		}
 		const lastPage = additionalPages[additionalPages.length - 1]
-		return lastPage.data.length === PAGE_SIZE
+		return lastPage.meta.scannedCount === PAGE_SIZE
 	}, [firstPageResult, additionalPages, paginationStopped, isCapped])
 
 	const fetchNextPage = React.useCallback(() => {
@@ -113,9 +135,13 @@ export function useInfiniteTraces(filters: TracesSearchParams | undefined): UseI
 		setIsFetchingNextPage(true)
 
 		const currentKey = filterKeyRef.current
-		const offset = allData.length
+		// Offset counts warehouse rows consumed, not rows kept: the server drops
+		// noise rows after paging, so offsetting by `allData.length` would rescan
+		// the filtered region and duplicate every kept row in it.
+		const offset = (additionalPages.length + 1) * PAGE_SIZE
 
-		Effect.runPromise(listTraces({ data: { ...queryParams, limit: PAGE_SIZE, offset } }))
+		mapleRuntime
+			.runPromise(listTraces({ data: { ...queryParams, limit: PAGE_SIZE, offset } }))
 			.then((result) => {
 				if (filterKeyRef.current !== currentKey) return
 				setAdditionalPages((prev) => [...prev, result])
@@ -134,7 +160,7 @@ export function useInfiniteTraces(filters: TracesSearchParams | undefined): UseI
 				}
 				isFetchingRef.current = false
 			})
-	}, [queryParams, allData.length, hasNextPage])
+	}, [queryParams, additionalPages.length, hasNextPage])
 
 	return {
 		firstPageResult,
@@ -142,6 +168,7 @@ export function useInfiniteTraces(filters: TracesSearchParams | undefined): UseI
 		isFetchingNextPage,
 		hasNextPage,
 		isCapped,
+		hiddenCount,
 		fetchNextPage,
 	}
 }

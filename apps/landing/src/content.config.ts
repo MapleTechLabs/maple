@@ -1,5 +1,6 @@
 import { defineCollection, z } from "astro:content"
 import { glob } from "astro/loaders"
+import { LANGUAGE_IDS } from "./lib/docs-languages"
 
 const roadmap = defineCollection({
 	loader: glob({ pattern: "**/*.md", base: "./src/content/roadmap" }),
@@ -22,9 +23,10 @@ const docs = defineCollection({
 		group: z.string(),
 		order: z.number().default(0),
 		draft: z.boolean().default(false),
-		sdk: z
-			.enum(["effect", "node", "nextjs", "python", "go", "rust", "java", "csharp", "kotlin", "laravel"])
-			.optional(),
+		// Short label for the sidebar when the title is too long for one row
+		// ("Node.js" for "Node.js Instrumentation").
+		navLabel: z.string().optional(),
+		sdk: z.enum(LANGUAGE_IDS).optional(),
 	}),
 })
 
@@ -35,6 +37,8 @@ const blog = defineCollection({
 		description: z.string(),
 		date: z.coerce.date(),
 		author: z.string().default("Maple Team"),
+		// Byline subtitle (role/title). Omitted for the "Maple Team" default.
+		authorRole: z.string().optional(),
 		category: z.enum(["engineering", "product", "guides", "company"]).optional(),
 		// Optional real cover screenshot served from /public/blog; falls back to a
 		// generated on-brand motif when omitted.

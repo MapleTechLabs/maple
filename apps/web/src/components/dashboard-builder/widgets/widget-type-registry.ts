@@ -1,5 +1,5 @@
 import type { ComponentType } from "react"
-import { WIDGET_TYPES, type PanelType, type WidgetTypeMeta } from "@maple/domain/http"
+import type { WidgetTypeMeta } from "@maple/domain/http"
 
 import type { IconComponent } from "@/components/icons"
 import type {
@@ -14,9 +14,8 @@ import type {
 	QueryBuilderWidgetState,
 } from "@/lib/query-builder/widget-builder-shared"
 import type { WidgetDataSource } from "@/components/dashboard-builder/types"
-import type { QueryBuilderQueryDraft } from "@/lib/query-builder/model"
+import type { QueryBuilderQueryDraft } from "@maple/query-engine/query-builder"
 
-// ---------------------------------------------------------------------------
 // The widget-type framework.
 //
 // A `WidgetTypeDefinition` is everything the app needs to know about one kind of
@@ -32,7 +31,6 @@ import type { QueryBuilderQueryDraft } from "@/lib/query-builder/model"
 // The type-agnostic half — labels, layout, owned display keys, MCP exposure,
 // Perses kinds — lives in `@maple/domain` so the API and the MCP tools read the
 // same table. This module adds the parts that only exist in a browser.
-// ---------------------------------------------------------------------------
 
 export type VisualizationComponent = ComponentType<{
 	dataState: WidgetDataState
@@ -79,10 +77,10 @@ export interface WidgetTypeDefinition {
 	Renderer: VisualizationComponent
 	/**
 	 * Which editor the left half of the widget editor shows. `"builder"` is the
-	 * query builder; `"list"` and `"markdown"` are their own panels and skip
-	 * query validation entirely.
+	 * query builder; `"list"`, `"markdown"` and `"paths"` are their own panels
+	 * and skip query validation (paths validates its own definition).
 	 */
-	queryEditor: "builder" | "list" | "markdown"
+	queryEditor: "builder" | "list" | "markdown" | "paths"
 	/** The type-specific half of the settings rail. Reads state from context. */
 	ConfigPanel: ComponentType
 	/** Ready-made widgets offered in the "Add widget" picker. */
@@ -99,6 +97,13 @@ export interface WidgetTypeDefinition {
 	buildDisplay: (ctx: BuildDisplayContext) => WidgetDisplayConfig
 	/** Returns a message that blocks Apply, or `null`. Shared rules run first. */
 	validate?: (ctx: ValidateContext) => string | null
+	/**
+	 * True when, for this state, the type fetches through a source of its own
+	 * rather than the query set — a funnel with product-event steps. The shared
+	 * query validation (at least one query, group-by required, …) is skipped and
+	 * only `validate` runs.
+	 */
+	ownsDataSource?: (state: QueryBuilderWidgetState) => boolean
 }
 
 /**
@@ -117,4 +122,4 @@ export const extendDisplay = (
 	return display
 }
 
-export { WIDGET_TYPES, type PanelType, type WidgetTypeMeta }
+export type { WidgetTypeMeta }

@@ -1,5 +1,5 @@
 import { Result } from "@/lib/effect-atom"
-import { useNavigate } from "@tanstack/react-router"
+import { getRouteApi } from "@tanstack/react-router"
 
 import {
 	FilterSection,
@@ -8,9 +8,9 @@ import {
 	serviceColorMap,
 } from "./filter-section"
 import { DurationRangeFilter } from "./duration-range-filter"
-import { Route } from "@/routes/traces"
+import { PinnedNamespaceNotice } from "@/components/filters/pinned-namespace-notice"
+import { useGlobalNamespace } from "@/hooks/use-global-namespace"
 import type { TracesFacetsResponse } from "@/api/warehouse/traces"
-import type { TracesSearchParams } from "@/routes/traces"
 import {
 	FilterSidebarBody,
 	FilterSidebarError,
@@ -18,6 +18,9 @@ import {
 	FilterSidebarHeader,
 	FilterSidebarLoading,
 } from "@/components/filters/filter-sidebar"
+
+const routeApi = getRouteApi("/traces/")
+type TracesSearchParams = ReturnType<typeof routeApi.useSearch>
 
 function LoadingState() {
 	return <FilterSidebarLoading sectionCount={5} />
@@ -38,6 +41,7 @@ function TracesFilterSidebarView({
 	onDurationRangeChange,
 	onClearFilters,
 }: TracesFilterSidebarViewProps) {
+	const pinnedNamespace = useGlobalNamespace()
 	const hasActiveFilters =
 		(filters.services?.length ?? 0) > 0 ||
 		(filters.spanNames?.length ?? 0) > 0 ||
@@ -49,7 +53,13 @@ function TracesFilterSidebarView({
 		filters.minDurationMs !== undefined ||
 		filters.maxDurationMs !== undefined ||
 		(filters.attributeFilters?.length ?? 0) > 0 ||
-		(filters.resourceAttributeFilters?.length ?? 0) > 0
+		(filters.resourceAttributeFilters?.length ?? 0) > 0 ||
+		(filters.excludedServices?.length ?? 0) > 0 ||
+		(filters.excludedSpanNames?.length ?? 0) > 0 ||
+		(filters.excludedDeploymentEnvs?.length ?? 0) > 0 ||
+		(filters.excludedNamespaces?.length ?? 0) > 0 ||
+		(filters.excludedHttpMethods?.length ?? 0) > 0 ||
+		(filters.excludedHttpStatusCodes?.length ?? 0) > 0
 
 	return Result.builder(facetsResult)
 		.onInitial(() => <LoadingState />)
@@ -74,25 +84,47 @@ function TracesFilterSidebarView({
 							onChange={(checked) => onFilterChange("rootOnly", checked ? undefined : false)}
 						/>
 
+						{/* Only meaningful on the grouped trace list — the span-level
+						    list (rootOnly off) has no trace structure to judge. */}
+						{(filters.rootOnly ?? true) && (
+							<SingleCheckboxFilter
+								title="Hide Single-Span Noise"
+								checked={filters.hideNoise ?? true}
+								onChange={(checked) =>
+									onFilterChange("hideNoise", checked ? undefined : false)
+								}
+							/>
+						)}
+
 						<FilterSection
 							title="Environment"
 							options={facets.deploymentEnvs ?? []}
 							selected={filters.deploymentEnvs ?? []}
 							onChange={(val) => onFilterChange("deploymentEnvs", val)}
+							excluded={filters.excludedDeploymentEnvs ?? []}
+							onExcludedChange={(val) => onFilterChange("excludedDeploymentEnvs", val)}
 						/>
 
-						<SearchableFilterSection
-							title="Namespace"
-							options={facets.namespaces ?? []}
-							selected={filters.namespaces ?? []}
-							onChange={(val) => onFilterChange("namespaces", val)}
-						/>
+						{pinnedNamespace !== null ? (
+							<PinnedNamespaceNotice namespace={pinnedNamespace} />
+						) : (
+							<SearchableFilterSection
+								title="Namespace"
+								options={facets.namespaces ?? []}
+								selected={filters.namespaces ?? []}
+								onChange={(val) => onFilterChange("namespaces", val)}
+								excluded={filters.excludedNamespaces ?? []}
+								onExcludedChange={(val) => onFilterChange("excludedNamespaces", val)}
+							/>
+						)}
 
 						<SearchableFilterSection
 							title="Service"
 							options={facets.services ?? []}
 							selected={filters.services ?? []}
 							onChange={(val) => onFilterChange("services", val)}
+							excluded={filters.excludedServices ?? []}
+							onExcludedChange={(val) => onFilterChange("excludedServices", val)}
 							colorMap={serviceColorMap(facets.services ?? [])}
 						/>
 
@@ -101,6 +133,8 @@ function TracesFilterSidebarView({
 							options={facets.spanNames ?? []}
 							selected={filters.spanNames ?? []}
 							onChange={(val) => onFilterChange("spanNames", val)}
+							excluded={filters.excludedSpanNames ?? []}
+							onExcludedChange={(val) => onFilterChange("excludedSpanNames", val)}
 						/>
 
 						<DurationRangeFilter
@@ -115,6 +149,8 @@ function TracesFilterSidebarView({
 							options={facets.httpMethods ?? []}
 							selected={filters.httpMethods ?? []}
 							onChange={(val) => onFilterChange("httpMethods", val)}
+							excluded={filters.excludedHttpMethods ?? []}
+							onExcludedChange={(val) => onFilterChange("excludedHttpMethods", val)}
 						/>
 
 						<FilterSection
@@ -122,6 +158,8 @@ function TracesFilterSidebarView({
 							options={facets.httpStatusCodes ?? []}
 							selected={filters.httpStatusCodes ?? []}
 							onChange={(val) => onFilterChange("httpStatusCodes", val)}
+							excluded={filters.excludedHttpStatusCodes ?? []}
+							onExcludedChange={(val) => onFilterChange("excludedHttpStatusCodes", val)}
 						/>
 					</FilterSidebarBody>
 				</FilterSidebarFrame>
@@ -136,8 +174,8 @@ interface TracesFilterSidebarProps {
 }
 
 export function TracesFilterSidebar({ facetsResult }: TracesFilterSidebarProps) {
-	const navigate = useNavigate({ from: Route.fullPath })
-	const search = Route.useSearch()
+	const navigate = routeApi.useNavigate()
+	const search = routeApi.useSearch()
 
 	const onFilterChange = <K extends keyof TracesSearchParams>(key: K, value: TracesSearchParams[K]) => {
 		navigate({

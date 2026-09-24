@@ -23,7 +23,7 @@ import {
 import { promoteGeneration, selectActiveGeneration } from "../src/server/archives/generation"
 import { type ArchiveGenerationManifest, parseArchiveActivePointer } from "../src/server/archives/manifest"
 import { CHDB_VERSION, MAPLE_VERSION } from "../src/version"
-import { SCHEMA_FINGERPRINT } from "../src/server/serve"
+import { SCHEMA_FINGERPRINT } from "../src/server/schema-identity"
 import { rebuildCatalog } from "../src/server/archives/listing"
 import { planArchiveGc, runArchiveGc, verifyCompletedGcInvariants } from "../src/server/archives/gc"
 import { writeInitialIntent, type GcOperationIntent } from "../src/server/archives/journal"
@@ -225,6 +225,41 @@ describe("archive gc planning", () => {
 			strictEqual(plan.deleteSet.length, 0)
 			ok(plan.excludedRanges.length >= 1, "range excluded for ambiguous pointer")
 			void old
+		})
+	})
+
+	it("over-retains a range whose well-formed pointer selects no verified generation", async () => {
+		await withArchive(async (archiveDir) => {
+			// Both generations are real and verifiable, but the pointer — valid in
+			// shape, binding, and selectedAt — targets a generation that does not
+			// exist. Without the exactly-one-verified-target invariant, both
+			// generations would be classified superseded and keep=0 would delete
+			// the ENTIRE range while the pointer references nothing that survives.
+			await seedPublishedGeneration(archiveDir, { createdAt: "2026-06-02T00:00:00.000Z" })
+			await seedPublishedGeneration(archiveDir, {
+				createdAt: "2026-06-03T00:00:00.000Z",
+				selectActive: true,
+			})
+			await rebuildSignalCatalog(archiveDir, "traces")
+			const pointerPath = activePointerPath(archiveDir, "traces", "2026-06-01")
+			writeFileSync(
+				pointerPath,
+				JSON.stringify({
+					formatVersion: 1,
+					generationId: randomUUID(),
+					signal: "traces",
+					rangeStart: "2026-06-01",
+					selectedAt: "2026-06-04T00:00:00.000Z",
+				}),
+			)
+			const plan = planArchiveGc(archiveDir, 0)
+			strictEqual(plan.deleteSet.length, 0, "nothing targeted under a stale pointer")
+			ok(
+				plan.excludedRanges.some(
+					(r) => r.rangeStart === "2026-06-01" && r.reason.includes("selects 0 verified"),
+				),
+				"range excluded as uncertain",
+			)
 		})
 	})
 

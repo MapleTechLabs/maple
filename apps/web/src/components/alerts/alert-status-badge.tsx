@@ -9,6 +9,7 @@ export type AlertStatusState =
 	| "error"
 	| "stale"
 	| "no-data"
+	| "held"
 
 const toneByState: Record<AlertStatusState, { dot: string; text: string; label: string }> = {
 	firing: { dot: "bg-destructive", text: "text-destructive font-medium", label: "Firing" },
@@ -19,7 +20,11 @@ const toneByState: Record<AlertStatusState, { dot: string; text: string; label: 
 	error: { dot: "bg-warning", text: "text-warning font-medium", label: "Error" },
 	stale: { dot: "bg-warning", text: "text-warning", label: "Stale" },
 	"no-data": { dot: "bg-muted-foreground", text: "text-muted-foreground", label: "No data" },
-}
+	// An open incident whose breach stopped appearing while its telemetry could
+	// not be proven live: neither firing nor resolved until data returns or the
+	// hold ceiling elapses.
+	held: { dot: "bg-warning", text: "text-warning", label: "Waiting on data" },
+} satisfies Record<AlertStatusState, { dot: string; text: string; label: string }>
 
 export function AlertStatusBadge({
 	state,

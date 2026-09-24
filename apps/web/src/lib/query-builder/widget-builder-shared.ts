@@ -7,8 +7,8 @@ import {
 	type QueryBuilderFormulaDraft,
 	type QueryBuilderMetricType,
 	type QueryBuilderQueryDraft,
-} from "@/lib/query-builder/model"
-import type { ListColumnDraft, ListDataSource } from "@/components/dashboard-builder/config/list-config-panel"
+} from "@maple/query-engine/query-builder"
+import type { ListColumnDraft, ListDataSource } from "@/lib/query-builder/list-widget-config"
 import type {
 	TimeRange,
 	ValueUnit,
@@ -16,10 +16,23 @@ import type {
 	WidgetDataSource,
 } from "@/components/dashboard-builder/types"
 import type { LegendPosition } from "@/components/dashboard-builder/config/settings-fields"
+import { STAT_AGGREGATES, type StatAggregate } from "@maple/domain/http"
+import {
+	DEFAULT_PATHS_BRANCHES,
+	DEFAULT_PATHS_DEPTH,
+	type FunnelBreakdownBy,
+	type FunnelKeyBy,
+	type FunnelVariant,
+	type PathsDirection,
+	type PathsInclude,
+	toQueryBuilderDataSource,
+	type QueryComparisonMode,
+} from "@maple/query-model"
+import type { FunnelStepDraft } from "@/lib/query-builder/funnel-filters"
+import { DEFAULT_FUNNEL_KEY_BY, DEFAULT_FUNNEL_WINDOW_SECONDS } from "@/components/funnels/definition"
 import type { HeatmapColorScale, HeatmapScaleType } from "@maple/domain/http"
 import { normalizeKey, parseBoolean, parseWhereClause as parseWhereClauses } from "@maple/domain/where-clause"
 
-// ---------------------------------------------------------------------------
 // Shared widget-builder vocabulary.
 //
 // Everything here is type-agnostic: the editor's state shape, the parsers that
@@ -27,9 +40,17 @@ import { normalizeKey, parseBoolean, parseWhereClause as parseWhereClauses } fro
 // builder needs. It lives apart from `widget-builder-utils.ts` so the per-type
 // definitions under `components/dashboard-builder/widgets/types/` can import it
 // without an import cycle through the registry those dispatchers read.
-// ---------------------------------------------------------------------------
 
-export type StatAggregate = "sum" | "first" | "count" | "avg" | "max" | "min"
+// The single widget-side spelling of the shared reducer table.
+export { STAT_AGGREGATES, type StatAggregate } from "@maple/domain/http"
+
+export type PointsMode = "auto" | "always" | "never"
+
+/** `chartPresentation.showPoints` ⇄ `PointsMode`: absent is Auto. */
+export const pointsModeFromShowPoints = (showPoints: boolean | undefined): PointsMode =>
+	showPoints === undefined ? "auto" : showPoints ? "always" : "never"
+export const showPointsFromPointsMode = (mode: PointsMode): boolean | undefined =>
+	mode === "auto" ? undefined : mode === "always"
 
 export interface QueryBuilderWidgetState {
 	visualization: VisualizationType
@@ -45,34 +66,123 @@ export interface QueryBuilderWidgetState {
 	curveType: "linear" | "monotone"
 	queries: QueryBuilderQueryDraft[]
 	formulas: QueryBuilderFormulaDraft[]
-	comparisonMode: "none" | "previous_period"
+	comparisonMode: QueryComparisonMode
 	includePercentChange: boolean
-	debug: boolean
 	statAggregate: StatAggregate
 	statValueField: string
 	unit: ValueUnit
 	legendPosition: LegendPosition
 	seriesStatsEnabled: boolean
+	/**
+	 * Point dots on line/area series. `auto` (no stored preference) dots isolated
+	 * points always and every point only when they fit the width; the other two
+	 * pin `chartPresentation.showPoints`.
+	 */
+	pointsMode: PointsMode
 	tableLimit: string
 	// Threshold lines (chart) / threshold coloring (stat, gauge)
 	thresholds: Array<{ value: number; color: string }>
-	// Gauge-specific
 	gaugeMin: string
 	gaugeMax: string
 	// Stat-specific: render a trend sparkline behind the value
 	sparklineEnabled: boolean
-	// List-specific
 	listDataSource: ListDataSource
 	listWhereClause: string
 	listLimit: string
 	listColumns: ListColumnDraft[]
 	listRootOnly: boolean
-	// Heatmap-specific
-	heatmapColorScale: HeatmapColorScale
+	/**
+	 * `undefined` means "never chosen" — the rail shows
+	 * `DEFAULT_HEATMAP_COLOR_SCALE` (what the chart already renders) and Apply
+	 * leaves `display.heatmap.colorScale` absent, so opening the editor cannot
+	 * repaint a widget the user never touched the palette on.
+	 */
+	heatmapColorScale: HeatmapColorScale | undefined
 	heatmapScaleType: HeatmapScaleType
 	// Markdown-specific: the note body. Static — never hits the warehouse.
 	markdownContent: string
+	/**
+	 * Funnel-specific: the product-event funnel definition, edited as the
+	 * widget's query panel. `source` is the panel's source choice — "Product
+	 * events" fetches through the funnel route from this definition; the query
+	 * set draws a group-by breakdown as a funnel, exactly as before.
+	 */
+	funnel: FunnelWidgetDraft
+	/** Paths-specific: the anchor and the walk, edited as the widget's query panel. */
+	paths: PathsWidgetDraft
 }
+
+/** What a funnel widget's one query panel reads from. */
+export type FunnelSource = "product_events" | "query_set"
+
+export type FunnelAddOnKey = "keyBy" | "window" | "breakdown"
+
+/** The funnel widget's editor state for its `display.funnel` definition block. */
+export interface FunnelWidgetDraft {
+	source: FunnelSource
+	/** Wire steps plus the raw filter text an event step is typed with. */
+	steps: FunnelStepDraft[]
+	keyBy: FunnelKeyBy
+	windowSeconds: number
+	breakdownBy?: FunnelBreakdownBy
+	/** The population filter as typed; compiled to `display.funnel.filters` on Apply. */
+	filterClause: string
+	/** `display.funnel.showStepPercent` — the chart's tri-state label mode. */
+	showStepPercent: boolean | undefined
+	/** `display.funnel.variant` — descending bars, or the drop-off view. */
+	variant: FunnelVariant
+	/** Which optional rows the panel shows, mirroring a query panel's add-on bar. */
+	addOns: Record<FunnelAddOnKey, boolean>
+}
+
+export type PathsAddOnKey = "keyBy" | "window" | "include" | "exclude"
+
+/** The paths widget's editor state for its `display.paths` definition block. */
+export interface PathsWidgetDraft {
+	/** The anchor as a step draft; never a session step. */
+	anchor: FunnelStepDraft
+	direction: PathsDirection
+	depth: number
+	branches: number
+	keyBy: FunnelKeyBy
+	windowSeconds: number
+	include: PathsInclude
+	/** Comma-separated names to drop before sequencing, as typed. */
+	excludeText: string
+	filterClause: string
+	addOns: Record<PathsAddOnKey, boolean>
+}
+
+/** A fresh paths draft: an empty event anchor, three steps forward, four branches. */
+export const DEFAULT_PATHS_DRAFT = (): PathsWidgetDraft => ({
+	anchor: { kind: "event", eventName: "" },
+	direction: "after",
+	depth: DEFAULT_PATHS_DEPTH,
+	branches: DEFAULT_PATHS_BRANCHES,
+	keyBy: DEFAULT_FUNNEL_KEY_BY,
+	windowSeconds: DEFAULT_FUNNEL_WINDOW_SECONDS,
+	include: "all",
+	excludeText: "",
+	filterClause: "",
+	addOns: { keyBy: false, window: false, include: false, exclude: false },
+})
+
+/** A fresh funnel draft: the query-set funnel, no steps, the /analytics defaults. */
+export const defaultFunnelDraft = (): FunnelWidgetDraft => ({
+	source: "query_set",
+	steps: [],
+	keyBy: DEFAULT_FUNNEL_KEY_BY,
+	windowSeconds: DEFAULT_FUNNEL_WINDOW_SECONDS,
+	filterClause: "",
+	showStepPercent: undefined,
+	variant: "bars",
+	addOns: { keyBy: false, window: false, breakdown: false },
+})
+
+/** Whether the widget is a product-event funnel — fetched from its definition, not its query set. */
+export const isProductEventsFunnel = (
+	state: Pick<QueryBuilderWidgetState, "visualization" | "funnel">,
+): boolean => state.visualization === "funnel" && state.funnel.source === "product_events"
 
 /**
  * What a panel type's `buildDataSource` is handed. `base` is the timeseries
@@ -115,7 +225,7 @@ export function inferDisplayUnitForQuery(query: QueryBuilderQueryDraft): ValueUn
 		return undefined
 	}
 
-	if (query.dataSource === "logs") {
+	if (query.dataSource === "logs" || query.dataSource === "product_events") {
 		return "number"
 	}
 
@@ -178,22 +288,12 @@ function toMetricType(input: unknown, fallback: QueryBuilderMetricType): QueryBu
 }
 
 export function toStatAggregate(value: unknown): StatAggregate {
-	return value === "sum" ||
-		value === "first" ||
-		value === "count" ||
-		value === "avg" ||
-		value === "max" ||
-		value === "min"
-		? value
-		: "first"
+	return STAT_AGGREGATES.find((candidate) => candidate === value) ?? "first"
 }
 
 function normalizeLoadedQuery(raw: QueryBuilderQueryDraft, index: number): QueryBuilderQueryDraft {
 	const base = createQueryDraft(index)
-	const source: QueryBuilderDataSource =
-		raw.dataSource === "traces" || raw.dataSource === "logs" || raw.dataSource === "metrics"
-			? raw.dataSource
-			: base.dataSource
+	const source: QueryBuilderDataSource = toQueryBuilderDataSource(raw.dataSource) ?? base.dataSource
 
 	const shared = {
 		id: raw.id || base.id,
@@ -229,7 +329,9 @@ function normalizeLoadedQuery(raw: QueryBuilderQueryDraft, index: number): Query
 			isMonotonic: metrics?.isMonotonic ?? metrics?.metricType === "sum",
 		}
 	}
-	return source === "logs" ? { ...shared, dataSource: "logs" } : { ...shared, dataSource: "traces" }
+	if (source === "logs") return { ...shared, dataSource: "logs" }
+	if (source === "product_events") return { ...shared, dataSource: "product_events" }
+	return { ...shared, dataSource: "traces" }
 }
 
 export function toSeriesFieldOptions(state: QueryBuilderWidgetState): string[] {
@@ -286,7 +388,15 @@ const TRACES_AGGREGATION_TITLES: Record<string, string> = {
 	p99_duration: "P99 duration",
 	error_rate: "Error rate",
 	apdex: "Apdex",
-}
+} satisfies Record<string, string>
+
+const PRODUCT_EVENTS_AGGREGATION_TITLES = new Map<string, string>([
+	["count", "Count of events"],
+	["sessions", "Sessions with events"],
+	["persons", "Persons with events"],
+	["users", "Users with events"],
+	["visitors", "Visitors with events"],
+])
 
 /**
  * Human-readable fallback title derived from the first visible query, e.g.
@@ -313,12 +423,22 @@ export function deriveDefaultWidgetTitle(queries: readonly QueryBuilderQueryDraf
 	if (query.dataSource === "logs") {
 		return `Count of logs${bySuffix}`
 	}
+	if (query.dataSource === "product_events") {
+		return `${PRODUCT_EVENTS_AGGREGATION_TITLES.get(query.aggregation) ?? query.aggregation}${bySuffix}`
+	}
 	const base = TRACES_AGGREGATION_TITLES[query.aggregation] ?? `${query.aggregation} of traces`
 	return `${base}${bySuffix}`
 }
 
 /** Reads a persisted widget's `params.queries` back into editor drafts. */
-export function loadQueryDrafts(params: Record<string, unknown>): {
+/**
+ * Editor drafts from a stored query set.
+ *
+ * Takes `{ queries, formulas }` rather than a params bag so callers hand it the
+ * result of `dataSourceQuerySet` — the accessor that reads v2 and v3 alike —
+ * instead of reaching into `dataSource.params` themselves.
+ */
+export function loadQueryDrafts(params: { queries?: unknown; formulas?: unknown }): {
 	queries: QueryBuilderQueryDraft[]
 	formulas: QueryBuilderFormulaDraft[]
 } {
@@ -413,7 +533,7 @@ export function buildListEndpointParams(
 	const { clauses } = parseWhereClauses(whereClause)
 	// NOTE: startTime/endTime are injected by useWidgetData from the dashboard
 	// time range — do NOT include them here or they'll clash with interpolation.
-	const params: Record<string, unknown> = { limit }
+	const params: Record<string, unknown> = { limit } satisfies Record<string, unknown>
 
 	if (dataSource === "traces") {
 		const attributeFilters: Array<{ key: string; value: string; matchMode?: string }> = []

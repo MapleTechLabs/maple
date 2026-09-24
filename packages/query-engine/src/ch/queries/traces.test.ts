@@ -1,13 +1,15 @@
 import { describe, expect, it } from "vitest"
-import { compileCH } from "@maple-dev/clickhouse-builder"
+import { compileUnsafe } from "@maple-dev/effect-clickhouse"
 import {
 	slowTracesQuery,
 	spanSearchQuery,
 	traceListQuery,
+	traceServicesByTraceIdsQuery,
 	traceSummariesQuery,
 	tracesListQuery,
 	tracesRootListQuery,
 } from "./traces"
+import { canUseTracesAggregatesMv } from "./query-helpers"
 
 const baseParams = {
 	orgId: "org_1",
@@ -18,7 +20,7 @@ const baseParams = {
 
 describe("traceSummariesQuery", () => {
 	it("matches any span through a filtered semi-join and paginates root summaries deterministically", () => {
-		const { sql } = compileCH(
+		const { sql } = compileUnsafe(
 			traceSummariesQuery({
 				serviceName: "api",
 				hasError: true,
@@ -43,20 +45,21 @@ describe("traceSummariesQuery", () => {
 	})
 
 	it("restricts the matching subquery to root spans when spanScope=root", () => {
-		const { sql } = compileCH(traceSummariesQuery({ serviceName: "api", spanScope: "root" }), baseParams)
+		const { sql } = compileUnsafe(
+			traceSummariesQuery({ serviceName: "api", spanScope: "root" }),
+			baseParams,
+		)
 		expect(sql).toMatch(/TraceId IN \(SELECT\s+TraceId AS traceId/)
 		expect(sql).toContain("SpanKind IN ('Server', 'Consumer')")
 	})
 })
 
-// ---------------------------------------------------------------------------
 // tracesListQuery
-// ---------------------------------------------------------------------------
 
 describe("tracesListQuery", () => {
 	it("compiles basic list with all columns", () => {
 		const q = tracesListQuery({})
-		const { sql } = compileCH(q, baseParams)
+		const { sql } = compileUnsafe(q, baseParams)
 		expect(sql).toContain("FROM traces")
 		expect(sql).toContain("TraceId AS traceId")
 		expect(sql).toContain("Timestamp AS timestamp")
@@ -74,21 +77,56 @@ describe("tracesListQuery", () => {
 		expect(sql).toContain("FORMAT JSON")
 	})
 
+	it("keeps the timestamp cutoff untouched when sorting explicitly by timestamp desc", () => {
+		const explicit = compileUnsafe(
+			tracesListQuery({ sortBy: "timestamp", sortDir: "desc" }),
+			baseParams,
+		).sql
+		expect(explicit).toBe(compileUnsafe(tracesListQuery({}), baseParams).sql)
+		expect(explicit).toContain("SELECT min(ts) FROM")
+	})
+
+	it("moves the cutoff onto (Duration, Timestamp) when sorting by duration", () => {
+		const { sql } = compileUnsafe(tracesListQuery({ sortBy: "durationMs", limit: 50 }), baseParams)
+		// Stage 1 ranks by the sort column, not by recency.
+		expect(sql).toContain("ORDER BY d DESC, ts DESC")
+		expect(sql).toContain("SELECT min((d, ts)) FROM")
+		expect(sql).toContain("(Duration, Timestamp) >= (SELECT min((d, ts))")
+		expect(sql).toContain("ORDER BY durationMs DESC, timestamp DESC")
+		expect(sql).not.toContain("SELECT min(ts) FROM")
+	})
+
+	it("flips the cutoff aggregate and comparison for an ascending duration sort", () => {
+		const { sql } = compileUnsafe(tracesListQuery({ sortBy: "durationMs", sortDir: "asc" }), baseParams)
+		expect(sql).toContain("ORDER BY d ASC, ts ASC")
+		expect(sql).toContain("(Duration, Timestamp) <= (SELECT max((d, ts))")
+		expect(sql).toContain("ORDER BY durationMs ASC, timestamp ASC")
+	})
+
+	it("covers limit + offset rows in the duration cutoff so deep pages stay correct", () => {
+		const { sql } = compileUnsafe(
+			tracesListQuery({ sortBy: "durationMs", limit: 50, offset: 100 }),
+			baseParams,
+		)
+		expect(sql).toContain("LIMIT 150")
+		expect(sql).toContain("OFFSET 100")
+	})
+
 	it("applies cursor pagination", () => {
 		const q = tracesListQuery({ cursor: "2024-01-01T12:00:00" })
-		const { sql } = compileCH(q, baseParams)
+		const { sql } = compileUnsafe(q, baseParams)
 		expect(sql).toContain("Timestamp < '2024-01-01T12:00:00'")
 	})
 
 	it("applies custom limit", () => {
 		const q = tracesListQuery({ limit: 100 })
-		const { sql } = compileCH(q, baseParams)
+		const { sql } = compileUnsafe(q, baseParams)
 		expect(sql).toContain("LIMIT 100")
 	})
 
 	it("applies offset", () => {
 		const q = tracesListQuery({ limit: 50, offset: 20 })
-		const { sql } = compileCH(q, baseParams)
+		const { sql } = compileUnsafe(q, baseParams)
 		expect(sql).toContain("LIMIT 50")
 		expect(sql).toContain("OFFSET 20")
 	})
@@ -99,7 +137,7 @@ describe("tracesListQuery", () => {
 			spanName: "GET /users",
 			errorsOnly: true,
 		})
-		const { sql } = compileCH(q, baseParams)
+		const { sql } = compileUnsafe(q, baseParams)
 		expect(sql).toContain("ServiceName = 'api'")
 		expect(sql).toContain("SpanName = 'GET /users'")
 		expect(sql).toContain("StatusCode = 'Error'")
@@ -109,7 +147,7 @@ describe("tracesListQuery", () => {
 		const q = tracesListQuery({
 			columns: ["spanAttributes.http.method", "resourceAttributes.service.version"],
 		})
-		const { sql } = compileCH(q, baseParams)
+		const { sql } = compileUnsafe(q, baseParams)
 		// Projected map literal uses map(...) instead of the bare column.
 		expect(sql).toContain("'http.method'")
 		expect(sql).toContain("'service.version'")
@@ -117,7 +155,7 @@ describe("tracesListQuery", () => {
 
 	it("gates the heavy column scan on a cheap cutoff subquery", () => {
 		const q = tracesListQuery({ limit: 100 })
-		const { sql } = compileCH(q, baseParams)
+		const { sql } = compileUnsafe(q, baseParams)
 
 		// Outer query keeps the heavy Map columns.
 		expect(sql).toContain("SpanAttributes AS spanAttributes")
@@ -140,7 +178,7 @@ describe("tracesListQuery", () => {
 
 	it("extends the cutoff limit by offset so the cutoff covers all skipped rows", () => {
 		const q = tracesListQuery({ limit: 25, offset: 100 })
-		const { sql } = compileCH(q, baseParams)
+		const { sql } = compileUnsafe(q, baseParams)
 		const cutoffMatch = sql.match(/SELECT min\(ts\) FROM \(([\s\S]*?)\)\)/)
 		expect(cutoffMatch).not.toBeNull()
 		const inner = cutoffMatch![1]!
@@ -151,7 +189,7 @@ describe("tracesListQuery", () => {
 
 	it("applies the same filters to both the cutoff and outer stages", () => {
 		const q = tracesListQuery({ serviceName: "api", errorsOnly: true })
-		const { sql } = compileCH(q, baseParams)
+		const { sql } = compileUnsafe(q, baseParams)
 		// Each filter appears twice — once per stage.
 		expect(sql.match(/ServiceName = 'api'/g)).toHaveLength(2)
 		expect(sql.match(/OrgId = 'org_1'/g)).toHaveLength(2)
@@ -162,20 +200,39 @@ describe("tracesListQuery", () => {
 
 	it("includes the cursor in the cutoff subquery so pagination narrows the cheap scan too", () => {
 		const q = tracesListQuery({ cursor: "2024-01-01T12:00:00" })
-		const { sql } = compileCH(q, baseParams)
+		const { sql } = compileUnsafe(q, baseParams)
 		// Cursor predicate applies in both stages.
 		expect(sql.match(/Timestamp < '2024-01-01T12:00:00'/g)).toHaveLength(2)
 	})
 })
 
-// ---------------------------------------------------------------------------
+// traceServicesByTraceIdsQuery
+
+describe("traceServicesByTraceIdsQuery", () => {
+	it("aggregates one page of trace services through keyed and partition-pruned filters", () => {
+		const { sql } = compileUnsafe(
+			traceServicesByTraceIdsQuery({ traceIds: ["trace-a", "trace-b"] }),
+			baseParams,
+		)
+
+		expect(sql).toContain("FROM service_map_spans")
+		expect(sql).toContain("OrgId = 'org_1'")
+		expect(sql).toContain("TraceId IN ('trace-a', 'trace-b')")
+		expect(sql).toContain("Timestamp >= '2024-01-01 00:00:00'")
+		expect(sql).toContain("Timestamp <= '2024-01-02 00:00:00'")
+		expect(sql).toContain("groupUniqArray(ServiceName)")
+		expect(sql).toContain("argMin(ServiceName, (if(ParentSpanId = '', 0, 1), Timestamp))")
+		expect(sql).toContain("GROUP BY traceId")
+		expect(sql).toContain("LIMIT 2")
+	})
+})
+
 // tracesRootListQuery
-// ---------------------------------------------------------------------------
 
 describe("tracesRootListQuery", () => {
 	it("compiles basic root list with all columns", () => {
 		const q = tracesRootListQuery({})
-		const { sql } = compileCH(q, baseParams)
+		const { sql } = compileUnsafe(q, baseParams)
 		expect(sql).toContain("FROM traces")
 		expect(sql).toContain("TraceId AS traceId")
 		expect(sql).toContain("Timestamp AS startTime")
@@ -198,7 +255,7 @@ describe("tracesRootListQuery", () => {
 
 	it("projects the URL/host keys into rootSpanAttributes for client-span labels", () => {
 		const q = tracesRootListQuery({})
-		const { sql } = compileCH(q, baseParams)
+		const { sql } = compileUnsafe(q, baseParams)
 		// These keys (omitted by the flat rootHttp* columns) let getHttpInfo build
 		// a client destination instead of falling back to "http.client GET".
 		expect(sql).toContain("'url.full'")
@@ -208,26 +265,26 @@ describe("tracesRootListQuery", () => {
 
 	it("applies rootOnly filter (SpanKind in Server/Consumer OR ParentSpanId='')", () => {
 		const q = tracesRootListQuery({})
-		const { sql } = compileCH(q, baseParams)
+		const { sql } = compileUnsafe(q, baseParams)
 		expect(sql).toContain("SpanKind IN ('Server', 'Consumer') OR ParentSpanId = ''")
 	})
 
 	it("applies cursor pagination", () => {
 		const q = tracesRootListQuery({ cursor: "2024-01-01T12:00:00" })
-		const { sql } = compileCH(q, baseParams)
+		const { sql } = compileUnsafe(q, baseParams)
 		expect(sql).toContain("Timestamp < '2024-01-01T12:00:00'")
 	})
 
 	it("applies offset", () => {
 		const q = tracesRootListQuery({ limit: 50, offset: 20 })
-		const { sql } = compileCH(q, baseParams)
+		const { sql } = compileUnsafe(q, baseParams)
 		expect(sql).toContain("LIMIT 50")
 		expect(sql).toContain("OFFSET 20")
 	})
 
 	it("gates the heavy column scan on a cheap cutoff subquery", () => {
 		const q = tracesRootListQuery({ limit: 100 })
-		const { sql } = compileCH(q, baseParams)
+		const { sql } = compileUnsafe(q, baseParams)
 
 		// Outer query keeps the heavy Map lookups.
 		expect(sql).toContain("'http.method'")
@@ -253,7 +310,7 @@ describe("tracesRootListQuery", () => {
 
 	it("extends the cutoff limit by offset", () => {
 		const q = tracesRootListQuery({ limit: 25, offset: 75 })
-		const { sql } = compileCH(q, baseParams)
+		const { sql } = compileUnsafe(q, baseParams)
 		const cutoffMatch = sql.match(/SELECT min\(ts\) FROM \(([\s\S]*?)\)\)/)
 		expect(cutoffMatch).not.toBeNull()
 		const inner = cutoffMatch![1]!
@@ -262,7 +319,7 @@ describe("tracesRootListQuery", () => {
 
 	it("applies the same filters to both stages", () => {
 		const q = tracesRootListQuery({ serviceName: "api", errorsOnly: true })
-		const { sql } = compileCH(q, baseParams)
+		const { sql } = compileUnsafe(q, baseParams)
 		expect(sql.match(/ServiceName = 'api'/g)).toHaveLength(2)
 		expect(sql.match(/OrgId = 'org_1'/g)).toHaveLength(2)
 		// `StatusCode = 'Error'` shows up in the WHERE of both stages (errorsOnly)
@@ -271,9 +328,7 @@ describe("tracesRootListQuery", () => {
 	})
 })
 
-// ---------------------------------------------------------------------------
 // traceListQuery
-// ---------------------------------------------------------------------------
 
 /**
  * Body of the `TraceId IN (SELECT traceId FROM (…))` page subquery. Scans for
@@ -295,7 +350,7 @@ function pageSubquery(sql: string): string {
 
 describe("traceListQuery", () => {
 	it("returns one aggregated row per trace, keyed on TraceId", () => {
-		const { sql } = compileCH(traceListQuery({}), baseParams)
+		const { sql } = compileUnsafe(traceListQuery({}), baseParams)
 
 		expect(sql).toContain("FROM trace_detail_spans")
 		expect(sql).toContain("TraceId AS traceId")
@@ -307,17 +362,66 @@ describe("traceListQuery", () => {
 		expect(sql).toContain("FORMAT JSON")
 	})
 
-	it("pages over true roots only, so a multi-service trace yields a single row", () => {
-		const inner = pageSubquery(compileCH(traceListQuery({}), baseParams).sql)
+	it("pages over the roots-only MV by default, read-in-order on its sort key", () => {
+		const inner = pageSubquery(compileUnsafe(traceListQuery({}), baseParams).sql)
 
+		// trace_list_mv stores true roots only, sorted (OrgId, Timestamp,
+		// TraceId) — no ParentSpanId predicate needed, and "newest N" pages
+		// without scanning the window like raw `traces` would.
+		expect(inner).toContain("FROM trace_list_mv")
+		expect(inner).not.toContain("SpanKind IN ('Server', 'Consumer')")
+	})
+
+	it("falls back to raw traces paging when a filter the MV lacks is present", () => {
+		const { sql } = compileUnsafe(
+			traceListQuery({ attributeFilters: [{ key: "user.id", value: "u1", mode: "equals" }] }),
+			baseParams,
+		)
+		const inner = pageSubquery(sql)
+
+		expect(inner).toContain("FROM traces")
 		expect(inner).toContain("ParentSpanId = ''")
 		// NOT the entry-point predicate tracesRootListQuery uses — that matches
 		// one span per service and would re-introduce duplicate rows per trace.
 		expect(inner).not.toContain("SpanKind IN ('Server', 'Consumer')")
+		expect(inner).toContain("SpanAttributes['user.id'] = 'u1'")
+	})
+
+	it("maps HTTP method/status attribute filters onto the MV's pre-extracted columns", () => {
+		const inner = pageSubquery(
+			compileUnsafe(
+				traceListQuery({
+					attributeFilters: [
+						{ key: "http.method", value: "GET", mode: "equals" },
+						{ key: "http.status_code", values: ["500", "502"], mode: "in" },
+					],
+				}),
+				baseParams,
+			).sql,
+		)
+
+		expect(inner).toContain("FROM trace_list_mv")
+		expect(inner).toContain("HttpMethod = 'GET'")
+		expect(inner).toContain("HttpStatusCode IN ('500', '502')")
+	})
+
+	it("truncates the ns cursor to the MV's second-granularity Timestamp", () => {
+		const inner = pageSubquery(
+			compileUnsafe(
+				traceListQuery({
+					cursor: { timestamp: "2024-01-01 12:00:00.123456789", traceId: "trace123" },
+				}),
+				baseParams,
+			).sql,
+		)
+
+		expect(inner).toContain("Timestamp < '2024-01-01 12:00:00'")
+		expect(inner).not.toContain("12:00:00.123456789")
+		expect(inner).toContain("TraceId < 'trace123'")
 	})
 
 	it("reads only TraceId + Timestamp in the paging stage", () => {
-		const inner = pageSubquery(compileCH(traceListQuery({}), baseParams).sql)
+		const inner = pageSubquery(compileUnsafe(traceListQuery({}), baseParams).sql)
 
 		expect(inner).toContain("TraceId AS traceId")
 		expect(inner).toContain("Timestamp AS ts")
@@ -326,7 +430,7 @@ describe("traceListQuery", () => {
 	})
 
 	it("measures the whole trace's wall clock, not the root span's Duration", () => {
-		const { sql } = compileCH(traceListQuery({}), baseParams)
+		const { sql } = compileUnsafe(traceListQuery({}), baseParams)
 
 		expect(sql).toContain(
 			"intDiv(max(toUnixTimestamp64Nano(Timestamp) + toInt64(Duration)) - min(toUnixTimestamp64Nano(Timestamp)), 1000) AS durationMicros",
@@ -334,7 +438,7 @@ describe("traceListQuery", () => {
 	})
 
 	it("picks root-span fields with a root-first tuple ordering", () => {
-		const { sql } = compileCH(traceListQuery({}), baseParams)
+		const { sql } = compileUnsafe(traceListQuery({}), baseParams)
 
 		expect(sql).toContain("argMin(SpanName, (if(ParentSpanId = '', 0, 1), Timestamp)) AS rootSpanName")
 		expect(sql).toContain("AS rootSpanKind")
@@ -348,7 +452,7 @@ describe("traceListQuery", () => {
 	})
 
 	it("projects the URL/host keys into rootSpanAttributes for client-span labels", () => {
-		const { sql } = compileCH(traceListQuery({}), baseParams)
+		const { sql } = compileUnsafe(traceListQuery({}), baseParams)
 
 		expect(sql).toContain("'url.full'")
 		expect(sql).toContain("'server.address'")
@@ -356,7 +460,7 @@ describe("traceListQuery", () => {
 	})
 
 	it("lists the root service first, then the rest sorted", () => {
-		const { sql } = compileCH(traceListQuery({}), baseParams)
+		const { sql } = compileUnsafe(traceListQuery({}), baseParams)
 
 		expect(sql).toContain(
 			"arrayDistinct(arrayPushFront(arraySort(groupUniqArray(ServiceName)), argMin(ServiceName, (if(ParentSpanId = '', 0, 1), Timestamp)))) AS services",
@@ -365,7 +469,7 @@ describe("traceListQuery", () => {
 
 	it("breaks cursor ties on TraceId so same-timestamp traces are not skipped", () => {
 		const inner = pageSubquery(
-			compileCH(
+			compileUnsafe(
 				traceListQuery({ cursor: { timestamp: "2024-01-01 12:00:00", traceId: "trace123" } }),
 				baseParams,
 			).sql,
@@ -377,7 +481,7 @@ describe("traceListQuery", () => {
 	})
 
 	it("applies limit and offset to the paging stage only", () => {
-		const { sql } = compileCH(traceListQuery({ limit: 50, offset: 20 }), baseParams)
+		const { sql } = compileUnsafe(traceListQuery({ limit: 50, offset: 20 }), baseParams)
 		const inner = pageSubquery(sql)
 
 		expect(inner).toContain("LIMIT 50")
@@ -388,7 +492,7 @@ describe("traceListQuery", () => {
 	})
 
 	it("filters traces in the paging stage, and never re-filters the aggregate", () => {
-		const { sql } = compileCH(
+		const { sql } = compileUnsafe(
 			traceListQuery({ serviceName: "api", errorsOnly: true, minDurationMs: 250 }),
 			baseParams,
 		)
@@ -400,24 +504,25 @@ describe("traceListQuery", () => {
 		expect(inner).toContain("Timestamp >= '2024-01-01 00:00:00'")
 		expect(inner).toContain("Timestamp <= '2024-01-02 00:00:00'")
 
-		// The aggregate is scoped by OrgId + TraceId alone: re-applying the span
-		// filters there would drop the very children spanCount has to count, and
-		// a time bound would clip children that outlive the window.
+		// The aggregate is scoped by OrgId + TraceId + a PADDED window: re-applying
+		// the span filters there would drop the very children spanCount has to
+		// count, and an exact time bound would clip children that outlive the
+		// window — but a completely unbounded aggregate defeats partition pruning
+		// and times out on prod retention, hence the ±1h pad.
 		const outer = sql.slice(sql.indexOf("FROM trace_detail_spans")).replace(inner, "")
 		expect(outer).toContain("OrgId = 'org_1'")
 		expect(outer).not.toContain("ServiceName = 'api'")
-		expect(outer).not.toContain("Timestamp >=")
+		expect(outer).toContain("Timestamp >= subtractHours(toDateTime('2024-01-01 00:00:00'), 1)")
+		expect(outer).toContain("Timestamp <= addHours(toDateTime('2024-01-02 00:00:00'), 1)")
 	})
 })
 
-// ---------------------------------------------------------------------------
 // slowTracesQuery
-// ---------------------------------------------------------------------------
 
 describe("slowTracesQuery", () => {
 	it("reads slow root spans from the pre-extracted trace list MV", () => {
 		const q = slowTracesQuery({ service: "api", environment: "prod", limit: 5 })
-		const { sql } = compileCH(q, baseParams)
+		const { sql } = compileUnsafe(q, baseParams)
 
 		expect(sql).toContain("FROM trace_list_mv")
 		expect(sql).toContain("ServiceName = 'api'")
@@ -429,14 +534,12 @@ describe("slowTracesQuery", () => {
 	})
 })
 
-// ---------------------------------------------------------------------------
 // spanSearchQuery
-// ---------------------------------------------------------------------------
 
 describe("spanSearchQuery", () => {
 	it("uses the trace-detail table when a trace id is provided", () => {
 		const q = spanSearchQuery({ traceId: "trace_123", spanName: "GET /users", limit: 50, offset: 10 })
-		const { sql } = compileCH(q, baseParams)
+		const { sql } = compileUnsafe(q, baseParams)
 
 		expect(sql).toContain("FROM trace_detail_spans")
 		expect(sql).toContain("TraceId = 'trace_123'")
@@ -447,7 +550,7 @@ describe("spanSearchQuery", () => {
 
 	it("keeps broad span searches on the raw traces table", () => {
 		const q = spanSearchQuery({ spanName: "GET /users", limit: 20 })
-		const { sql } = compileCH(q, baseParams)
+		const { sql } = compileUnsafe(q, baseParams)
 
 		expect(sql).toContain("FROM traces")
 		expect(sql).not.toContain("FROM trace_detail_spans")
@@ -456,7 +559,7 @@ describe("spanSearchQuery", () => {
 
 	it("two-stages the raw-traces path so the attribute Maps are read after a cutoff", () => {
 		const q = spanSearchQuery({ spanName: "GET /users", limit: 20, offset: 5 })
-		const { sql } = compileCH(q, baseParams)
+		const { sql } = compileUnsafe(q, baseParams)
 
 		// `traces` is sorted (OrgId, ServiceName, SpanName, toDateTime(Timestamp)),
 		// so `ORDER BY Timestamp DESC` cannot read in order — single-stage meant
@@ -470,8 +573,21 @@ describe("spanSearchQuery", () => {
 
 	it("does not add a cutoff on the trace-detail path", () => {
 		const q = spanSearchQuery({ traceId: "trace_123", limit: 50 })
-		const { sql } = compileCH(q, baseParams)
+		const { sql } = compileUnsafe(q, baseParams)
 
 		expect(sql).not.toContain("SELECT min(ts)")
+	})
+})
+
+describe("commit-sha exclusion", () => {
+	it("routes off the hourly MV, which carries no CommitSha", () => {
+		// The inclusion already bails here. The exclusion has to bail for the same reason: the MV
+		// cannot answer a question about a column it does not store, and silently serving it would
+		// return rows the filter was meant to drop.
+		expect(canUseTracesAggregatesMv({ rootOnly: true }, undefined, 3600)).toBe(true)
+		expect(canUseTracesAggregatesMv({ rootOnly: true, commitShas: ["abc"] }, undefined, 3600)).toBe(false)
+		expect(
+			canUseTracesAggregatesMv({ rootOnly: true, excludedCommitShas: ["abc"] }, undefined, 3600),
+		).toBe(false)
 	})
 })

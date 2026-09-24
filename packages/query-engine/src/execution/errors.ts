@@ -1,64 +1,125 @@
+// BOUNDARY: This module owns unparsed external values and narrows them before domain use.
 import {
-	cleanErrorMessage,
-	extractUpstreamStatus,
 	WarehouseAuthError,
 	WarehouseClientError,
 	WarehouseConfigError,
+	WarehouseInvalidSqlError,
 	WarehouseMalformedQueryError,
 	WarehouseQueryError,
 	WarehouseQuotaExceededError,
 	WarehouseSchemaDriftError,
 	WarehouseUpstreamError,
+	type WarehouseClassifiedError as DomainWarehouseClassifiedError,
+	type WarehouseReadError,
+	type WarehouseSettingsRouteError,
+	type WarehouseTokenRouteError,
 } from "@maple/domain/http"
+import type { WarehouseDriverError, WarehouseDriverFailureReason } from "./driver-error"
 import { detectQuotaSetting } from "../profiles"
 
-// The message sanitizer and status sniffer moved to `@maple/domain/http`
-// (warehouse-error-meta) so the web formatter shares one implementation;
-// re-exported here for existing consumers/tests.
-export { cleanErrorMessage, extractUpstreamStatus }
+/**
+ * The OTel database conventions' failure attributes for a warehouse span.
+ * `db.response.status_code` is the code the database answered with — the
+ * ClickHouse error code where the driver saw one, otherwise the HTTP status
+ * an upstream returned. `error.type` names the failure at low cardinality:
+ * the ClickHouse exception type (`UNKNOWN_TABLE`), then the code, then the
+ * error's own tag for failures that never reached a database.
+ */
+export const warehouseFailureAttributes = (error: {
+	readonly _tag: string
+	readonly clickhouseCode?: string | undefined
+	readonly clickhouseType?: string | undefined
+	readonly upstreamStatus?: number | undefined
+}): Record<string, string> => {
+	const statusCode =
+		error.clickhouseCode ?? (error.upstreamStatus === undefined ? undefined : String(error.upstreamStatus))
+	return {
+		"error.type": error.clickhouseType ?? error.clickhouseCode ?? error._tag,
+		...(statusCode === undefined ? undefined : { "db.response.status_code": statusCode }),
+	}
+}
+
+const INVALID_TOKEN_MARKER = "invalid token"
 
 /**
- * Every warehouse error `mapWarehouseError` can produce. Precondition failures
- * (`WarehouseValidationError`) are raised by the executor before a query runs,
- * not by this classifier, so they're intentionally absent here.
+ * `Invalid token b'…'` / `Invalid token "…"` with the quoted token redacted. A
+ * single left-to-right scan: the lazy-regex version was quadratic on a message
+ * made of repeated markers, and this is an untrusted upstream body.
  */
-export type WarehouseSqlError =
-	| WarehouseQueryError
-	| WarehouseUpstreamError
-	| WarehouseAuthError
-	| WarehouseConfigError
-	| WarehouseClientError
-	| WarehouseSchemaDriftError
-	| WarehouseMalformedQueryError
-	| WarehouseQuotaExceededError
-
-type ClickHouseErrorDetails = {
-	readonly message: string
-	readonly code?: string
-	readonly type?: string
+const redactInvalidTokens = (message: string): string => {
+	const lower = message.toLowerCase()
+	let out = ""
+	let cursor = 0
+	for (;;) {
+		const at = lower.indexOf(INVALID_TOKEN_MARKER, cursor)
+		if (at === -1) break
+		let i = at + INVALID_TOKEN_MARKER.length
+		while (i < message.length && /\s/.test(message.charAt(i))) i++
+		if (message[i] === "b") i++
+		const quote = message[i]
+		const close = quote === "'" || quote === '"' ? message.indexOf(quote, i + 1) : -1
+		if (close === -1) {
+			out += message.slice(cursor, i)
+			cursor = i
+			continue
+		}
+		out += `${message.slice(cursor, i + 1)}[redacted]${quote}`
+		cursor = close + 1
+	}
+	return out + message.slice(cursor)
 }
+
+const redactWarehouseCredentials = (message: string): string =>
+	redactInvalidTokens(message).replace(
+		/\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b/g,
+		"[redacted]",
+	)
+
+/** Strip credentials, HTML error pages and whitespace noise before exposing an upstream failure. */
+export const cleanErrorMessage = (raw: string): string => {
+	const redacted = redactWarehouseCredentials(raw)
+	let cleaned = redacted
+	const htmlIndex = cleaned.search(/<\s*(html|head|body|center|h1|hr|title)\b/i)
+	if (htmlIndex >= 0) cleaned = cleaned.slice(0, htmlIndex)
+	cleaned = cleaned
+		.replace(/<[^>]+>/g, " ")
+		.replace(/\s+/g, " ")
+		.trim()
+	if (cleaned.endsWith(":")) cleaned = cleaned.slice(0, -1).trim()
+	return cleaned || redacted.slice(0, 200)
+}
+
+const extractUpstreamStatus = (message: string): number | undefined => {
+	const match = message.match(/(?:status|HTTP status|response status code)[:\s]+(\d{3})/i)
+	if (match) return Number(match[1])
+	const titleMatch = message.match(/\b(\d{3})\s+(?:error|service temporarily unavailable)\b/i)
+	if (titleMatch) return Number(titleMatch[1])
+	return undefined
+}
+
+/**
+ * Every warehouse error `mapWarehouseError` can produce. Precondition and row
+ * decode failures are raised elsewhere in the executor, so they are absent.
+ */
+export type WarehouseClassifiedError = DomainWarehouseClassifiedError
+
+/** Failures while resolving settings or executing an ordinary read. */
+export type WarehouseReadExecutionError = WarehouseClassifiedError | WarehouseSettingsRouteError
+
+/** Raw SQL adds org-token failures to the normal read execution set. */
+export type WarehouseExecutionError = WarehouseReadExecutionError | WarehouseTokenRouteError
+
+/** SQL execution plus the result-schema failure unique to compiled queries. */
+export type WarehouseCompiledQueryError = WarehouseReadError
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
 	typeof value === "object" && value !== null
-
-const optionalString = (value: unknown): string | undefined =>
-	typeof value === "string" ? value : typeof value === "number" ? String(value) : undefined
 
 const unknownToMessage = (error: unknown, fallback = "ClickHouse query failed"): string => {
 	if (typeof error === "string") return error
 	if (error instanceof Error) return error.message
 	if (isRecord(error) && typeof error.message === "string") return error.message
 	return fallback
-}
-
-const getClickHouseErrorDetails = (error: unknown): ClickHouseErrorDetails => {
-	const message = unknownToMessage(error)
-	if (!isRecord(error)) return { message }
-	return {
-		message,
-		code: optionalString(error.code),
-		type: typeof error.type === "string" ? error.type : undefined,
-	}
 }
 
 /** Fields shared by every warehouse error, built once per classification. */
@@ -79,14 +140,20 @@ type ClassifiedBase = {
 export type SqlAuthorship = "maple" | "caller"
 
 type ClassificationRule = {
+	/**
+	 * HTTP status match. Consulted only when the driver reported no ClickHouse
+	 * identity: a `DB::Exception` rides on whatever status the server picked for
+	 * its code (a type mismatch is a 500 on some versions), and that status must
+	 * not outrank the code that names the actual failure.
+	 */
 	readonly status?: (status: number) => boolean
 	readonly types?: ReadonlySet<string>
 	readonly pattern?: RegExp
-	readonly extra?: (error: unknown) => boolean
+	readonly reasons?: ReadonlySet<WarehouseDriverFailureReason>
 	/** Restricts the rule to SQL with this authorship. Unset means either. */
 	readonly authoredBy?: SqlAuthorship
 	/** Construct the tagged error for this rule. `upstreamStatus` is only used by the rules that carry it. */
-	readonly make: (base: ClassifiedBase, upstreamStatus: number | undefined) => WarehouseSqlError
+	readonly make: (base: ClassifiedBase, upstreamStatus: number | undefined) => WarehouseClassifiedError
 }
 
 // Ordered rules — first match wins. A raw error can satisfy several patterns
@@ -103,6 +170,7 @@ const CLASSIFICATION_RULES: ReadonlyArray<ClassificationRule> = [
 	},
 	{
 		status: (s) => s === 408 || s === 429 || (s >= 500 && s < 600),
+		reasons: new Set(["transport"]),
 		types: new Set([
 			"NETWORK_ERROR",
 			"SOCKET_TIMEOUT",
@@ -118,17 +186,58 @@ const CLASSIFICATION_RULES: ReadonlyArray<ClassificationRule> = [
 		make: (base, upstreamStatus) => new WarehouseUpstreamError({ ...base, upstreamStatus }),
 	},
 	{
+		// A table the CALLER named that does not exist — `run_sql`, the raw_sql
+		// widget, `maple query`. The config rule below reads the identical
+		// complaint as "Maple is pointed at the wrong database", which told a user
+		// who mistyped `FROM spans` that their warehouse was misconfigured. Same
+		// caller-before-maple ordering as the malformed-query twin further down.
+		//
+		// Deliberately no `status` matcher: a bare 404 says nothing about whether a
+		// table was named, so `Invalid URL`, `UNKNOWN_SETTING` and Tinybird's
+		// "Resource '<name>' not found" (a missing datasource, genuinely config)
+		// stay with the rule below.
+		authoredBy: "caller",
+		types: new Set(["UNKNOWN_DATABASE", "UNKNOWN_TABLE", "TABLE_IS_DROPPED"]),
+		pattern: /unknown table|table .* does not exist|database .* does not exist/i,
+		make: (base) => new WarehouseInvalidSqlError(base),
+	},
+	{
 		status: (s) => s === 404,
 		types: new Set(["UNKNOWN_DATABASE", "UNKNOWN_TABLE", "TABLE_IS_DROPPED", "UNKNOWN_SETTING"]),
+		// "Resource '<name>' not found" is the Tinybird gateway's phrasing of
+		// UNKNOWN_TABLE; without it a missing datasource fell through to the
+		// generic query error and the per-org missing-table fallbacks never fired.
 		pattern:
-			/Invalid URL|unknown database|unknown table|table .* does not exist|database .* does not exist/i,
+			/Invalid URL|unknown database|unknown table|table .* does not exist|database .* does not exist|Resource '[^']*' not found/i,
 		make: (base) => new WarehouseConfigError(base),
 	},
 	{
+		reasons: new Set(["protocol"]),
 		pattern:
 			/Cannot decode .* as JSON|Unexpected token .* JSON|Stream has been already consumed|Failed to parse ClickHouse response/i,
-		extra: (error) => error instanceof SyntaxError,
 		make: (base) => new WarehouseClientError(base),
+	},
+	{
+		// The same analyzer complaints as the Maple-authored rule below, but about
+		// SQL the CALLER wrote. Without this twin a plain typo in a raw_sql widget
+		// or `run_sql` — a stray comma, a function called with two arguments — fell
+		// past every authorship-guarded rule to the default `WarehouseQueryError`:
+		// a 502 reading "Database query failed. Contact support" that hid the one
+		// thing the author needed, which was ClickHouse's own explanation.
+		authoredBy: "caller",
+		types: new Set([
+			"NO_COMMON_TYPE",
+			"ILLEGAL_TYPE_OF_ARGUMENT",
+			"ILLEGAL_AGGREGATION",
+			"NUMBER_OF_ARGUMENTS_DOESNT_MATCH",
+			"TYPE_MISMATCH",
+			"SYNTAX_ERROR",
+			"UNKNOWN_FUNCTION",
+			"AMBIGUOUS_COLUMN_NAME",
+		]),
+		pattern:
+			/There is no supertype|Illegal type .* of argument|Number of arguments doesn't match|Syntax error/i,
+		make: (base) => new WarehouseInvalidSqlError(base),
 	},
 	{
 		// The analyzer refused SQL that Maple itself generated: mismatched `if()`
@@ -161,11 +270,37 @@ const CLASSIFICATION_RULES: ReadonlyArray<ClassificationRule> = [
 		make: (base) => new WarehouseMalformedQueryError(base),
 	},
 	{
+		// The same complaint as the schema-drift rule below, but about SQL the CALLER
+		// wrote — the `run_sql` MCP tool and the raw_sql widget. A bad table alias
+		// (`t.OrgId`) or a column the author invented is a mistake in that query, not
+		// evidence that the cluster's schema is behind.
+		//
+		// This rule exists because the drift rule below had no authorship guard, so
+		// agent typos came back to customers as "your ClickHouse cluster's schema is
+		// out of sync — run schema apply". Ordered first so the caller case is claimed
+		// before the Maple-authored one can match it.
+		authoredBy: "caller",
+		types: new Set([
+			"UNKNOWN_IDENTIFIER",
+			"NO_SUCH_COLUMN_IN_TABLE",
+			"THERE_IS_NO_COLUMN",
+			"NOT_FOUND_COLUMN_IN_BLOCK",
+		]),
+		pattern:
+			/Unknown (?:expression or function )?identifier|Missing columns|There is no column|No such column/i,
+		make: (base) => new WarehouseInvalidSqlError(base),
+	},
+	{
 		// CH error types raised when a column or function reference doesn't exist in
 		// the cluster's schema. For BYO-ClickHouse customers this is almost always
 		// schema drift between Maple's expected schema and what the cluster has —
 		// resolved by running schema apply, not by retrying. Surfacing it as a
 		// distinct error lets the MCP layer return an actionable message.
+		//
+		// `authoredBy: "maple"` is load-bearing for the same reason it is on the
+		// malformed-query rule above: only a query WE generated can testify about the
+		// cluster's schema. See the caller-authored twin directly above.
+		authoredBy: "maple",
 		types: new Set([
 			"UNKNOWN_IDENTIFIER",
 			"NO_SUCH_COLUMN_IN_TABLE",
@@ -178,12 +313,15 @@ const CLASSIFICATION_RULES: ReadonlyArray<ClassificationRule> = [
 	},
 ]
 
-export const toWarehouseQueryError = (pipe: string, error: unknown) =>
-	new WarehouseQueryError({
-		message: cleanErrorMessage(unknownToMessage(error, "Warehouse query failed")),
+export const toWarehouseQueryError = (pipe: string, error: unknown) => {
+	const rawMessage = unknownToMessage(error, "Warehouse query failed")
+	const redacted = redactWarehouseCredentials(rawMessage)
+	return new WarehouseQueryError({
+		message: cleanErrorMessage(redacted),
 		pipeName: pipe,
-		cause: error,
+		cause: redacted === rawMessage ? error : redacted,
 	})
+}
 
 /**
  * Classify a warehouse failure into a tagged error.
@@ -194,32 +332,45 @@ export const toWarehouseQueryError = (pipe: string, error: unknown) =>
  */
 export const mapWarehouseError = (
 	pipe: string,
-	error: unknown,
+	error: WarehouseDriverError,
 	authoredBy: SqlAuthorship = "caller",
-): WarehouseSqlError => {
-	const { message: rawMessage, code, type } = getClickHouseErrorDetails(error)
+): WarehouseClassifiedError => {
+	const rawMessage = error.message
+	const { code, type } = error
+	const redacted = redactWarehouseCredentials(rawMessage)
 	const message = cleanErrorMessage(rawMessage)
 	const base: ClassifiedBase = {
 		pipeName: pipe,
 		message,
-		cause: error,
+		// Tinybird can echo the rejected JWT. Keeping the original cause would
+		// leak it through Effect's cause/stack rendering even with a clean message.
+		cause: redacted === rawMessage ? error : redacted,
 		clickhouseCode: code,
 		clickhouseType: type,
 	}
+
+	// The driver refused to run: an endpoint it cannot address, settings it will
+	// not send, a redirect it will not follow. Nothing about the query or the
+	// cluster's health is known, so this is configuration, never transient.
+	if (error.reason === "config") return new WarehouseConfigError(base)
 
 	const setting = detectQuotaSetting(rawMessage, code, type)
 	if (setting) {
 		return new WarehouseQuotaExceededError({ ...base, setting })
 	}
 
-	const upstreamStatus = extractUpstreamStatus(rawMessage)
+	const upstreamStatus = error.status ?? extractUpstreamStatus(rawMessage)
+	const hasIdentity = code !== undefined || type !== undefined
 	for (const rule of CLASSIFICATION_RULES) {
 		if (rule.authoredBy !== undefined && rule.authoredBy !== authoredBy) continue
 		const matches =
-			(rule.status !== undefined && upstreamStatus !== undefined && rule.status(upstreamStatus)) ||
+			(rule.reasons !== undefined && rule.reasons.has(error.reason)) ||
+			(rule.status !== undefined &&
+				!hasIdentity &&
+				upstreamStatus !== undefined &&
+				rule.status(upstreamStatus)) ||
 			(rule.types !== undefined && type !== undefined && rule.types.has(type)) ||
-			(rule.pattern !== undefined && rule.pattern.test(rawMessage)) ||
-			(rule.extra !== undefined && rule.extra(error))
+			(rule.pattern !== undefined && rule.pattern.test(rawMessage))
 		if (matches) return rule.make(base, upstreamStatus)
 	}
 	return new WarehouseQueryError(base)

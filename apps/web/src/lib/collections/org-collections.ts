@@ -37,10 +37,6 @@ export type OrgCollections = {
 // switch is exactly the desired lifecycle.
 let current: OrgCollections | null = null
 
-// ---------------------------------------------------------------------------
-// Self-heal generation counter
-// ---------------------------------------------------------------------------
-//
 // When a collection's shape stream fails schema validation (a post-deploy column
 // drift), the @maple/effect-db factory dispatches a `"collection:schema-error"`
 // window event. We bump this generation and notify subscribers; `getOrgCollections`
@@ -71,9 +67,6 @@ export const recreateOrgCollections = (): void => {
 	for (const listener of generationListeners) listener()
 }
 
-// ---------------------------------------------------------------------------
-// Terminal sync failures
-// ---------------------------------------------------------------------------
 //
 // `collection:sync-failed` (from @maple/effect-db) means a shape stream spent its
 // whole backoff budget and STOPPED — nothing will refetch it until the collection
@@ -129,10 +122,6 @@ export const retryOrgCollections = (): void => {
 	recreateOrgCollections()
 }
 
-// ---------------------------------------------------------------------------
-// Bounded self-heal
-// ---------------------------------------------------------------------------
-//
 // A schema error the recreated shape can't clear (e.g. a client row-schema that
 // declares a column the *deployed* table doesn't have — every row fails
 // validation) would otherwise loop forever: recreate → re-subscribe → same bad
@@ -206,7 +195,7 @@ const scheduleBoundedHeal = (source: HealSource): void => {
 		// paths' recreate has no other trace, so log it here for dev consoles/telemetry.
 		if (source === "stuck-loading" || source === "auth-error") {
 			mapleRuntime.runFork(
-				Effect.logWarning(`Electric sync self-heal: recreating org collections (${source})`).pipe(
+				Effect.logWarning("Electric sync self-heal is recreating organization collections").pipe(
 					Effect.annotateLogs({
 						source,
 						attempt: schemaHealAttempts,
@@ -268,7 +257,7 @@ type SyncedCollectionLifecycle = Pick<DashboardsCollection, "subscriberCount" | 
  * a leaked subscription: tearing down then still logs the live-query error
  * once, but a stale shape stream must not long-poll forever.
  */
-const cleanupCollectionWhenIdle = (collection: SyncedCollectionLifecycle): void => {
+export const cleanupCollectionWhenIdle = (collection: SyncedCollectionLifecycle): void => {
 	if (collection.subscriberCount === 0) {
 		void collection.cleanup()
 		return

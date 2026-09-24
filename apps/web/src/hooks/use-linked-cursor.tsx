@@ -2,7 +2,7 @@ import type { CSSProperties, MouseEvent, PointerEvent, RefObject } from "react"
 import { useRef } from "react"
 
 /**
- * Linked cursor for a container of independent Recharts plots.
+ * Linked cursor for a container of independent plots, under either renderer.
  *
  * Recharts' own `syncId` synchronizes charts through its event bus: every
  * pointer move re-renders every synced chart's tooltip store (a render storm on
@@ -12,23 +12,33 @@ import { useRef } from "react"
  *
  * Usage:
  * - Spread `containerProps` on the element that wraps all linked charts.
- * - Mark each chart's positioned wrapper (the element containing the Recharts
- *   plot) with {@link linkedCursorChartProps} and render a
- *   {@link LinkedCursorOverlay} inside it, absolutely positioned against it.
+ * - Mark each chart's positioned wrapper (the element containing the plot) with
+ *   {@link linkedCursorChartProps} and render a {@link LinkedCursorOverlay}
+ *   inside it, absolutely positioned against it.
  *
- * The overlay is aligned to each chart's `.recharts-cartesian-grid` plot rect
- * when the pointer enters the container, so charts with different y-axis
- * widths/margins all show the cursor at the same time-bucket ratio. The
- * hovered chart keeps Recharts' native cursor+tooltip (its overlay is hidden
- * via the `data-linked-cursor-source` marker); siblings show the CSS line.
- * A capture-phase mouse-move throttle caps the hovered chart's tooltip store
- * at 30 updates/sec while the CSS cursor keeps pointer-event speed.
+ * The overlay is aligned to each chart's own plot rect on the first pointer move
+ * of a hover session, so charts with different y-axis widths and margins all show
+ * the cursor at the same time-bucket ratio — no chart has to be told what width
+ * its neighbours resolved to. The hovered chart keeps its own native
+ * cursor+tooltip (its overlay is hidden via the `data-linked-cursor-source`
+ * marker); siblings show the CSS line.
  */
 
 export const LINKED_CURSOR_CHART_ATTR = "data-linked-cursor-chart"
 const CHART_SELECTOR = `[${LINKED_CURSOR_CHART_ATTR}]`
 const OVERLAY_SELECTOR = "[data-linked-cursor-overlay]"
-const PLOT_SELECTOR = ".recharts-cartesian-grid"
+/**
+ * The plot rect — the region inside the axes — under either renderer. Recharts
+ * paints `.recharts-cartesian-grid`; `PlotFrame` positions an aria-hidden
+ * `[data-chart-plot]` over the same box from its render callback.
+ *
+ * Mirrors `apps/web/perf/plot-locator.ts`, which the Playwright specs import.
+ * Deliberately duplicated rather than shared: `perf/` is a separate Playwright
+ * project outside the app's `src` graph, and reaching across that boundary to
+ * save one string would put test-harness code in the production bundle's import
+ * graph.
+ */
+const PLOT_SELECTOR = "[data-chart-plot], .recharts-cartesian-grid"
 const TOOLTIP_UPDATE_INTERVAL_MS = 1000 / 30
 
 interface LinkedCursorStyle extends CSSProperties {
@@ -43,7 +53,6 @@ const LINKED_CURSOR_STYLE: LinkedCursorStyle = {
 
 export interface LinkedCursorContainerProps {
 	style: CSSProperties | undefined
-	onPointerEnter: (event: PointerEvent<HTMLElement>) => void
 	onMouseMoveCapture: (event: MouseEvent<HTMLElement>) => void
 	onPointerMove: (event: PointerEvent<HTMLElement>) => void
 	onPointerLeave: (event: PointerEvent<HTMLElement>) => void
@@ -71,9 +80,18 @@ function hideLinkedCursor(container: HTMLElement, activeChartRef: RefObject<HTML
 }
 
 /**
- * Snap every overlay onto its chart's plot rect. Runs on container pointer
- * enter — the cursor is only visible while hovering, so that is the only
- * moment alignment matters, and it keeps per-pointer-move work at zero reads.
+ * Snap every overlay onto its chart's plot rect. Runs once per hover session, on
+ * the first pointer move over a plot — the cursor is only visible while
+ * hovering, so that is the only moment alignment matters, and every later move
+ * in the session does zero layout reads.
+ *
+ * Deliberately NOT driven by `pointerenter`. That fires before the plots have
+ * laid out whenever the pointer is already inside the container as the charts
+ * mount (a route change or late data under a resting cursor), and every
+ * zero-width plot is skipped below — leaving the overlays at their unsized 0x0
+ * default with no second chance to align, because moving the pointer around
+ * inside the container never re-enters it. The cursor then turned "on" but
+ * painted nothing until you left the window and came back.
  */
 function alignOverlays(container: HTMLElement) {
 	const placements: Array<{
@@ -85,7 +103,7 @@ function alignOverlays(container: HTMLElement) {
 	}> = []
 	for (const chart of container.querySelectorAll<HTMLElement>(CHART_SELECTOR)) {
 		const overlay = chart.querySelector<HTMLElement>(OVERLAY_SELECTOR)
-		const plot = chart.querySelector<SVGGraphicsElement>(PLOT_SELECTOR)
+		const plot = chart.querySelector<Element>(PLOT_SELECTOR)
 		const host = overlay?.offsetParent
 		if (!overlay || !plot || !(host instanceof HTMLElement)) continue
 		const plotBounds = plot.getBoundingClientRect()
@@ -110,11 +128,8 @@ function alignOverlays(container: HTMLElement) {
 export function useLinkedCursor(enabled: boolean): { containerProps: LinkedCursorContainerProps } {
 	const activeChartRef = useRef<HTMLElement | null>(null)
 	const lastTooltipUpdateRef = useRef(0)
-
-	const handlePointerEnter = (event: PointerEvent<HTMLElement>) => {
-		if (!enabled) return
-		alignOverlays(event.currentTarget)
-	}
+	/** Cleared whenever the cursor hides, so each hover session aligns exactly once. */
+	const alignedRef = useRef(false)
 
 	const handleMouseMoveCapture = (event: MouseEvent<HTMLElement>) => {
 		if (!enabled) return
@@ -125,9 +140,19 @@ export function useLinkedCursor(enabled: boolean): { containerProps: LinkedCurso
 			return
 		}
 
-		// Recharts handles mouse movement through React's bubble phase. Keep the
-		// linked CSS cursor at pointer-event speed while limiting the active chart's
-		// tooltip store to 30 updates/sec.
+		// Recharts handles mouse movement through React's BUBBLE phase, on an
+		// ancestor of the plot, so stopping the synthetic event here keeps the
+		// hovered Recharts chart's tooltip store at 30 updates/sec while the CSS
+		// cursor stays at pointer-event speed.
+		//
+		// This does nothing for a TanStack chart, and does not need to: its renderer
+		// binds NATIVE `pointermove` listeners to its own container
+		// (`dist/renderer.js`, `dist/interaction-cursor.js`), a sibling of this React
+		// tree — a synthetic `mousemove` stopped in React's capture phase never
+		// reaches a native listener on a descendant element, and TanStack's tooltip
+		// is imperative rather than React state, so there is no store to throttle.
+		// The throttle survives because the infra grids (host metrics, k8s workloads,
+		// the correlation panel) are still Recharts and still linked.
 		event.stopPropagation()
 	}
 
@@ -136,8 +161,9 @@ export function useLinkedCursor(enabled: boolean): { containerProps: LinkedCurso
 
 		const target = event.target
 		const chart = target instanceof Element ? target.closest<HTMLElement>(CHART_SELECTOR) : null
-		const plot = chart?.querySelector<SVGGraphicsElement>(PLOT_SELECTOR)
+		const plot = chart?.querySelector<Element>(PLOT_SELECTOR)
 		if (!chart || !plot || !event.currentTarget.contains(chart)) {
+			alignedRef.current = false
 			hideLinkedCursor(event.currentTarget, activeChartRef)
 			return
 		}
@@ -149,8 +175,14 @@ export function useLinkedCursor(enabled: boolean): { containerProps: LinkedCurso
 			event.clientY >= bounds.top &&
 			event.clientY <= bounds.bottom
 		if (!insidePlot || bounds.width === 0) {
+			alignedRef.current = false
 			hideLinkedCursor(event.currentTarget, activeChartRef)
 			return
+		}
+
+		if (!alignedRef.current) {
+			alignedRef.current = true
+			alignOverlays(event.currentTarget)
 		}
 
 		const ratio = Math.min(1, Math.max(0, (event.clientX - bounds.left) / bounds.width))
@@ -162,13 +194,13 @@ export function useLinkedCursor(enabled: boolean): { containerProps: LinkedCurso
 	const handlePointerLeave = (event: PointerEvent<HTMLElement>) => {
 		if (!enabled) return
 		lastTooltipUpdateRef.current = 0
+		alignedRef.current = false
 		hideLinkedCursor(event.currentTarget, activeChartRef)
 	}
 
 	return {
 		containerProps: {
 			style: enabled ? LINKED_CURSOR_STYLE : undefined,
-			onPointerEnter: handlePointerEnter,
 			onMouseMoveCapture: handleMouseMoveCapture,
 			onPointerMove: handlePointerMove,
 			onPointerLeave: handlePointerLeave,
@@ -193,7 +225,7 @@ export function LinkedCursorOverlay({ chartId }: { chartId: string }) {
 			}}
 		>
 			<div
-				className="absolute inset-y-0 left-0 w-px bg-border will-change-transform"
+				className="absolute inset-y-0 left-0 w-px bg-muted-foreground/45 will-change-transform"
 				style={{
 					transform: "translateX(calc(var(--linked-cursor-ratio) * (100cqw - 1px)))",
 				}}

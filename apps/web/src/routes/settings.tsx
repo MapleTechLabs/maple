@@ -8,7 +8,7 @@ import { BillingSection } from "@/components/settings/billing-section"
 import { MembersSection } from "@/components/settings/members-section"
 import { IngestionSection } from "@/components/settings/ingestion-section"
 import { ApiKeysSection } from "@/components/settings/api-keys-section"
-import { DeveloperSection } from "@/components/settings/developer-section"
+import { AuditLogSection } from "@/components/settings/audit-log-section"
 import { McpSection } from "@/components/settings/mcp-section"
 import { NotificationsSection } from "@/components/settings/notifications-section"
 import { AutomationSection } from "@/components/settings/automation-section"
@@ -24,11 +24,13 @@ import {
 	type SettingsTab,
 } from "@/components/settings/settings-nav"
 
-/** Pre-hub tabs that moved to /integrations — kept decodable so old deep links redirect. */
-const legacyTabValues = ["connectors", "integrations", "escalations", "ai"] as const
+/** Retired tabs — kept decodable so old deep links redirect instead of landing on a blank page. */
+const legacyTabValues = ["connectors", "integrations", "escalations", "ai", "developer"] as const
 
 const SettingsSearch = Schema.Struct({
 	tab: Schema.optional(Schema.Literals([...settingsTabValues, ...legacyTabValues])),
+	// Stripe Checkout return marker — see `lib/billing/checkout-return.ts`.
+	checkout: Schema.optional(Schema.Literal("complete")),
 })
 
 export const Route = createFileRoute("/settings")({
@@ -56,6 +58,10 @@ function SettingsPage() {
 	if (search.tab === "escalations" || search.tab === "ai") {
 		return <Navigate to="/settings" search={{ tab: "automation" }} replace />
 	}
+	// "API Reference" is now the reference block at the foot of the API Keys page.
+	if (search.tab === "developer") {
+		return <Navigate to="/settings" search={{ tab: "api-keys" }} replace />
+	}
 
 	const activeTab = resolveActiveSettingsTab(search.tab, visibleItems)
 
@@ -76,10 +82,7 @@ function SettingsPage() {
 				<DashboardLayout.Body>
 					<DashboardLayout.Content>
 						<DashboardLayout.Sticky>
-							<DashboardLayout.Header
-								title="Settings"
-								description="Manage your workspace settings."
-							/>
+							<DashboardLayout.Header title="Settings" />
 						</DashboardLayout.Sticky>
 						<DashboardLayout.Scroll>
 							<div className="space-y-3">
@@ -100,7 +103,7 @@ function SettingsPage() {
 				<DashboardLayout.Body>
 					<DashboardLayout.Content>
 						<DashboardLayout.Sticky>
-							<DashboardLayout.Header title="Settings" description="Workspace settings." />
+							<DashboardLayout.Header title="Settings" />
 						</DashboardLayout.Sticky>
 						<DashboardLayout.Scroll>
 							<p className="text-muted-foreground text-sm">
@@ -133,12 +136,10 @@ function SettingsPage() {
 					<DashboardLayout.Scroll>
 						{activeTab === "organization" && <OrganizationSection />}
 						{activeTab === "members" && <MembersSection />}
+						{activeTab === "audit-log" && <AuditLogSection />}
 						{activeTab === "setup-audit" && <SetupAuditSection />}
 						{activeTab === "ingestion" && <IngestionSection />}
 						{activeTab === "api-keys" && <ApiKeysSection />}
-						{activeTab === "developer" && (
-							<DeveloperSection onNavigateToApiKeys={() => handleTabSelect("api-keys")} />
-						)}
 						{activeTab === "mcp" && <McpSection />}
 						{activeTab === "notifications" && <NotificationsSection />}
 						{activeTab === "automation" && (

@@ -1,24 +1,36 @@
-import { motion, useReducedMotion } from "motion/react"
-
+import { useState } from "react"
 import { Badge } from "@maple/ui/components/ui/badge"
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@maple/ui/components/ui/collapsible"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { cn } from "@maple/ui/lib/utils"
 import {
+	ChevronDownIcon,
 	ChevronRightIcon,
 	CloudflareIcon,
 	GithubIcon,
 	HazelIcon,
 	PlanetScaleIcon,
 	PrometheusIcon,
-	SlackIcon,
 	WarpStreamIcon,
 } from "@/components/icons"
+import { Option, Schema } from "effect"
+import { ChatConnectorId } from "@maple/domain/primitives"
+import { chatConnectorManifests } from "@maple/chat-platform/manifests"
+import type { ChatConnectorManifest } from "@maple/chat-platform/manifests"
 import { PLANETSCALE_COLOR } from "@/components/infra/planetscale/metrics"
+import { useChatConnectorGate } from "@/hooks/use-organization-feature-flags"
 import { formatRelativeTime } from "@maple/ui/lib/time-format"
 import { Result, useAtomValue } from "@/lib/effect-atom"
-import { MapleApiAtomClient } from "@/lib/services/common/atom-client"
-import { MapleApiV2AtomClient } from "@/lib/services/common/v2-atom-client"
+import { retainedQuery } from "@/lib/services/common/atom-client"
+import { retainedQueryV2 } from "@/lib/services/common/v2-atom-client"
 import { scrapeTargetsListAtom } from "@/lib/services/atoms/scrape-target-atoms"
+
+/**
+ * A chat connector's catalog id. The connector half is data from
+ * `@maple/chat-platform/manifests`, so the catalog gains a chat platform
+ * without this file learning its name.
+ */
+export type ChatIntegrationId = `chat-${string}`
 
 export type IntegrationId =
 	| "cloudflare"
@@ -27,7 +39,48 @@ export type IntegrationId =
 	| "warpstream"
 	| "hazel"
 	| "github"
-	| "slack"
+	| ChatIntegrationId
+
+const decodeConnectorId = Schema.decodeUnknownOption(ChatConnectorId)
+
+export const chatIntegrationId = (connector: string): ChatIntegrationId => `chat-${connector}`
+
+/**
+ * The connector behind a chat catalog id, or `null` for every other entry.
+ * Decoded rather than sliced: the id arrives from a URL, and the branded value
+ * is what the API client's path parameter takes.
+ */
+export const chatConnectorOf = (id: IntegrationId): ChatConnectorId | null =>
+	id.startsWith("chat-") ? Option.getOrNull(decodeConnectorId(id.slice("chat-".length))) : null
+
+/**
+ * Renders a manifest's icon data — one `<svg>` for every chat connector. Paths
+ * keep their brand fills unless `monochrome`, which paints every path in
+ * `currentColor` for surfaces that own the color (a filled button, a dim backer).
+ */
+export const chatConnectorIcon = (
+	icon: ChatConnectorManifest["icon"],
+	monochrome = false,
+): React.ComponentType<{ size?: number; className?: string }> =>
+	function ChatConnectorGlyph({ size = 24, className }) {
+		return (
+			<svg
+				xmlns="http://www.w3.org/2000/svg"
+				viewBox={icon.viewBox}
+				width={size}
+				height={size}
+				className={className}
+				fill="currentColor"
+				aria-hidden="true"
+			>
+				{icon.paths.map((path, index) => (
+					// Path data carries no id of its own, and the array is a module
+					// constant — the index is stable for the lifetime of the app.
+					<path key={index} d={path.d} fill={monochrome ? undefined : path.fill} />
+				))}
+			</svg>
+		)
+	}
 
 /**
  * Third-party brand accents for the icon-plate wash — no app token applies.
@@ -36,34 +89,6 @@ export type IntegrationId =
 export const GITHUB_ACCENT = "#181717"
 export const HAZEL_ACCENT = "#F46F0F"
 export const CLOUDFLARE_ACCENT = "#F38020"
-
-/**
- * Slack's deep aubergine — the brand's identity color, and the light-theme value.
- * It is oklch(0.267), i.e. *darker* than the dark `--card` (oklch 0.224), so every
- * accent consumer collapses on the dark canvas: the 16% plate wash below lands at
- * 1.01:1 against the card, and the destination picker's 1.5px selected ring at
- * 1.23:1. On light it is 14:1 against the card — keep it there.
- */
-export const SLACK_ACCENT_ON_LIGHT = "#4A154B"
-/**
- * Dark-canvas stand-in: the same aubergine hue lifted onto the dark canvas —
- * oklch(0.58 0.16 330) against the brand's oklch(0.267 0.107 328), so it still
- * reads as Slack purple rather than a new brand color. It takes the selected ring
- * to 3.68:1 (over the 3:1 bar for non-text UI) and the wash to ΔL 0.042 in oklab,
- * 6× the aubergine's 0.007 and two thirds of the GitHub neutral fallback's 0.065.
- *
- * Not the mark's sky blue (#36C5F0), tempting as its 8.5:1 ring is: `accent` also
- * paints the destination dialog's save button, which hard-codes white label text —
- * the blue drops that to 2.0:1, while this holds 4.65:1.
- */
-export const SLACK_ACCENT_ON_DARK = "#AD51A7"
-/**
- * `light-dark()` resolves against the `color-scheme` the theme hook pins on the
- * root element, so one constant covers both canvases wherever a raw brand color
- * is expected. Consumers must combine it with `color-mix()`, never hex-alpha
- * concatenation.
- */
-export const SLACK_ACCENT = `light-dark(${SLACK_ACCENT_ON_LIGHT}, ${SLACK_ACCENT_ON_DARK})`
 
 export interface CatalogEntry {
 	readonly id: IntegrationId
@@ -77,8 +102,23 @@ export interface CatalogEntry {
 	 * vanish on the card at `accent` (e.g. GitHub's near-black). The wash still uses `accent`.
 	 */
 	readonly iconClassName?: string
+	/** `icon` in `currentColor`, for a multicolor mark on a surface that owns the color. */
+	readonly monoIcon?: React.ComponentType<{ size?: number; className?: string }>
 	readonly docsUrl?: string
 }
+
+/**
+ * Chat connectors, straight from their manifests: name, description, mark and
+ * accent are the connector's own data, so this file lists none of them.
+ */
+const CHAT_ENTRIES: ReadonlyArray<CatalogEntry> = chatConnectorManifests.map((manifest) => ({
+	id: chatIntegrationId(manifest.id),
+	name: manifest.name,
+	description: manifest.description,
+	icon: chatConnectorIcon(manifest.icon),
+	monoIcon: chatConnectorIcon(manifest.icon, true),
+	accent: manifest.accent,
+}))
 
 const CATALOG: ReadonlyArray<CatalogEntry> = [
 	{
@@ -135,18 +175,21 @@ const CATALOG: ReadonlyArray<CatalogEntry> = [
 		iconClassName: "text-foreground",
 		docsUrl: "https://maple.dev/docs/integrations/github",
 	},
-	{
-		id: "slack",
-		name: "Slack",
-		description:
-			"Install the Maple Slack app — ask Maple questions, create dashboards, and route alerts to channels.",
-		icon: SlackIcon,
-		// Theme-aware by construction (see SLACK_ACCENT). The `iconClassName` escape
-		// hatch GitHub uses can't help here: Slack's mark is multicolor, so tinting
-		// the glyph via className does nothing — the accent itself has to move.
-		accent: SLACK_ACCENT,
-		docsUrl: "https://maple.dev/docs/integrations/slack",
-	},
+	...CHAT_ENTRIES,
+]
+
+/**
+ * The ones shown up front on an empty hub: Cloudflare, GitHub and every chat
+ * connector. Every other entry serves a specific piece of infrastructure and only
+ * matters to the orgs running it, so it waits behind "Discover more integrations"
+ * rather than padding the first screen.
+ *
+ * Order is the order they appear in.
+ */
+const RECOMMENDED: ReadonlyArray<IntegrationId> = [
+	"cloudflare",
+	"github",
+	...CHAT_ENTRIES.map((entry) => entry.id),
 ]
 
 export const catalogEntry = (id: IntegrationId): CatalogEntry => CATALOG.find((entry) => entry.id === id)!
@@ -159,12 +202,27 @@ export const catalogEntry = (id: IntegrationId): CatalogEntry => CATALOG.find((e
 export const isIntegrationId = (value: string): value is IntegrationId =>
 	CATALOG.some((entry) => entry.id === value)
 
+/**
+ * Whether an entry belongs in this organization's catalog. Chat connectors roll
+ * out per org, so they are hidden until the org's flag says otherwise — and
+ * while Clerk is still answering, which keeps a tile from flashing in.
+ */
+export function useIsIntegrationVisible(): (id: IntegrationId) => boolean {
+	const chatConnectorGate = useChatConnectorGate()
+	return (id) => {
+		const connector = chatConnectorOf(id)
+		return connector === null || chatConnectorGate(connector)
+	}
+}
+
 interface CardStatus {
 	readonly label: string
 	readonly variant: "success" | "warning" | "error" | "outline"
 }
 
 const NOT_CONNECTED: CardStatus = { label: "Not connected", variant: "outline" }
+/** Shipped, but this deployment holds no credentials for it. */
+const NOT_CONFIGURED: CardStatus = { label: "Not configured", variant: "outline" }
 // Status query failed — distinct from "Not connected" so a fetch error doesn't
 // masquerade as a disconnected integration.
 const STATUS_UNAVAILABLE: CardStatus = { label: "Status unavailable", variant: "outline" }
@@ -175,30 +233,28 @@ const STATUS_UNAVAILABLE: CardStatus = { label: "Status unavailable", variant: "
  */
 export function useIntegrationStatuses(): Partial<Record<IntegrationId, CardStatus | null>> {
 	const cloudflareAccountResult = useAtomValue(
-		MapleApiAtomClient.query("integrations", "cloudflareStatus", {
+		retainedQuery("integrations", "cloudflareStatus", {
 			reactivityKeys: ["cloudflareIntegrationStatus"],
 		}),
 	)
 	const scrapeResult = useAtomValue(scrapeTargetsListAtom)
 	const planetscaleResult = useAtomValue(
-		MapleApiV2AtomClient.query("planetscaleIntegration", "status", {
+		retainedQueryV2("planetscaleIntegration", "status", {
 			reactivityKeys: ["planetscaleIntegration"],
 		}),
 	)
 	const hazelResult = useAtomValue(
-		MapleApiAtomClient.query("integrations", "hazelStatus", {
+		retainedQuery("integrations", "hazelStatus", {
 			reactivityKeys: ["hazelIntegrationStatus"],
 		}),
 	)
 	const githubResult = useAtomValue(
-		MapleApiAtomClient.query("integrations", "githubStatus", {
+		retainedQuery("integrations", "githubStatus", {
 			reactivityKeys: ["githubIntegrationStatus"],
 		}),
 	)
-	const slackResult = useAtomValue(
-		MapleApiV2AtomClient.query("slackIntegration", "status", {
-			reactivityKeys: ["slackIntegration"],
-		}),
+	const chatResult = useAtomValue(
+		retainedQueryV2("chatIntegration", "connectors", { reactivityKeys: ["chatIntegration"] }),
 	)
 
 	const cloudflare: CardStatus | null = Result.builder(cloudflareAccountResult)
@@ -265,15 +321,30 @@ export function useIntegrationStatuses(): Partial<Record<IntegrationId, CardStat
 		.onInitial(() => null)
 		.orElse(() => STATUS_UNAVAILABLE)
 
-	const slack: CardStatus | null = Result.builder(slackResult)
-		.onSuccess(
-			(status): CardStatus =>
-				status.installed
-					? { label: status.team_name ?? "Connected", variant: "success" }
-					: NOT_CONNECTED,
-		)
-		.onInitial(() => null)
-		.orElse(() => STATUS_UNAVAILABLE)
+	const chat = Object.fromEntries(
+		chatConnectorManifests.map((manifest) => [
+			chatIntegrationId(manifest.id),
+			Result.builder(chatResult)
+				.onSuccess((response): CardStatus => {
+					const connector = response.data.find((entry) => entry.id === manifest.id)
+					const workspaces = connector?.workspaces ?? []
+					if (workspaces.length === 0) {
+						// A deployment without the connector's credentials cannot link
+						// anything — say so rather than implying a connect that will fail.
+						return connector?.available === false ? NOT_CONFIGURED : NOT_CONNECTED
+					}
+					return {
+						label:
+							workspaces.length === 1
+								? (workspaces[0]?.name ?? "Connected")
+								: `${workspaces.length} workspaces`,
+						variant: "success",
+					}
+				})
+				.onInitial((): CardStatus | null => null)
+				.orElse(() => STATUS_UNAVAILABLE),
+		]),
+	)
 
 	return {
 		cloudflare,
@@ -283,24 +354,8 @@ export function useIntegrationStatuses(): Partial<Record<IntegrationId, CardStat
 		warpstream: { label: "Via Prometheus", variant: "outline" },
 		hazel,
 		github,
-		slack,
+		...chat,
 	}
-}
-
-const GRID_VARIANTS = {
-	hidden: {},
-	show: {
-		transition: { staggerChildren: 0.05, delayChildren: 0.05 },
-	},
-}
-
-const ITEM_VARIANTS = {
-	hidden: { opacity: 0, y: 6 },
-	show: {
-		opacity: 1,
-		y: 0,
-		transition: { duration: 0.32, ease: [0.16, 1, 0.3, 1] as const },
-	},
 }
 
 /**
@@ -359,11 +414,9 @@ export function IntegrationIconPlate({
 	)
 }
 
-// ---------------------------------------------------------------------------
 // Overview model — the dense connected-row / available-card split. Derived from
 // the same list queries as `useIntegrationStatuses` (plus the cheap PlanetScale
 // inventory read); deliberately NO warehouse queries at hub level.
-// ---------------------------------------------------------------------------
 
 interface ConnectedOverview {
 	readonly kind: "connected"
@@ -407,36 +460,34 @@ const maxMs = (values: ReadonlyArray<number | null | undefined>): number | null 
 
 export function useIntegrationOverviews(): Record<IntegrationId, IntegrationOverview> {
 	const cloudflareResult = useAtomValue(
-		MapleApiAtomClient.query("integrations", "cloudflareStatus", {
+		retainedQuery("integrations", "cloudflareStatus", {
 			reactivityKeys: ["cloudflareIntegrationStatus"],
 		}),
 	)
 	const scrapeResult = useAtomValue(scrapeTargetsListAtom)
 	const planetscaleResult = useAtomValue(
-		MapleApiV2AtomClient.query("planetscaleIntegration", "status", {
+		retainedQueryV2("planetscaleIntegration", "status", {
 			reactivityKeys: ["planetscaleIntegration"],
 		}),
 	)
 	// Poller-inventory read (no warehouse) — feeds the "N databases tracked" stat.
 	const planetscaleDbResult = useAtomValue(
-		MapleApiV2AtomClient.query("planetscaleIntegration", "databases", {
+		retainedQueryV2("planetscaleIntegration", "databases", {
 			reactivityKeys: ["planetscaleIntegration"],
 		}),
 	)
 	const hazelResult = useAtomValue(
-		MapleApiAtomClient.query("integrations", "hazelStatus", {
+		retainedQuery("integrations", "hazelStatus", {
 			reactivityKeys: ["hazelIntegrationStatus"],
 		}),
 	)
 	const githubResult = useAtomValue(
-		MapleApiAtomClient.query("integrations", "githubStatus", {
+		retainedQuery("integrations", "githubStatus", {
 			reactivityKeys: ["githubIntegrationStatus"],
 		}),
 	)
-	const slackResult = useAtomValue(
-		MapleApiV2AtomClient.query("slackIntegration", "status", {
-			reactivityKeys: ["slackIntegration"],
-		}),
+	const chatResult = useAtomValue(
+		retainedQueryV2("chatIntegration", "connectors", { reactivityKeys: ["chatIntegration"] }),
 	)
 
 	const cloudflare: IntegrationOverview = Result.builder(cloudflareResult)
@@ -603,24 +654,32 @@ export function useIntegrationOverviews(): Record<IntegrationId, IntegrationOver
 		.onInitial(() => null)
 		.orElse(() => UNAVAILABLE)
 
-	const slack: IntegrationOverview = Result.builder(slackResult)
-		.onSuccess(
-			(status): IntegrationOverview =>
-				status.installed
-					? {
-							kind: "connected",
-							health: "healthy",
-							stateLabel: "Healthy",
-							context: status.team_name ?? null,
-							stat: "Alerts & agent ready",
-							// Slack has no sync loop — messages are push-per-alert/query.
-							lastSyncLabel: null,
-							issue: null,
-						}
-					: CONNECT,
-		)
-		.onInitial(() => null)
-		.orElse(() => UNAVAILABLE)
+	const chat = Object.fromEntries(
+		chatConnectorManifests.map((manifest) => [
+			chatIntegrationId(manifest.id),
+			Result.builder(chatResult)
+				.onSuccess((response): IntegrationOverview => {
+					const workspaces =
+						response.data.find((entry) => entry.id === manifest.id)?.workspaces ?? []
+					if (workspaces.length === 0) return CONNECT
+					return {
+						kind: "connected",
+						health: "healthy",
+						stateLabel: "Healthy",
+						context:
+							workspaces.length === 1
+								? (workspaces[0]?.name ?? null)
+								: plural(workspaces.length, "workspace"),
+						stat: "Alerts & agent ready",
+						// No sync loop — the bot is push-per-message.
+						lastSyncLabel: null,
+						issue: null,
+					}
+				})
+				.onInitial((): IntegrationOverview => null)
+				.orElse(() => UNAVAILABLE),
+		]),
+	)
 
 	return {
 		cloudflare,
@@ -630,7 +689,7 @@ export function useIntegrationOverviews(): Record<IntegrationId, IntegrationOver
 		warpstream: SET_UP,
 		hazel,
 		github,
-		slack,
+		...chat,
 	}
 }
 
@@ -687,9 +746,8 @@ function ConnectedRow({
 }) {
 	const connected = overview.kind === "connected" ? overview : null
 	return (
-		<motion.button
+		<button
 			type="button"
-			variants={ITEM_VARIANTS}
 			onClick={() => onSelect(entry.id)}
 			className="group flex w-full items-center gap-4 px-4 py-3 text-left outline-none transition-colors hover:bg-muted/40 focus-visible:bg-muted/40 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/40"
 		>
@@ -700,7 +758,7 @@ function ConnectedRow({
 				plateClassName="size-8 rounded-lg"
 				size={18}
 			/>
-			<span className="flex w-44 min-w-0 shrink-0 flex-col gap-0.5 2xl:w-52">
+			<span className="flex min-w-0 flex-1 flex-col gap-0.5 sm:w-44 sm:flex-none 2xl:w-52">
 				<span className="truncate text-sm font-semibold">{entry.name}</span>
 				{connected?.context && (
 					<span className="truncate text-xs text-muted-foreground">{connected.context}</span>
@@ -731,7 +789,7 @@ function ConnectedRow({
 					className="text-muted-foreground/70 transition-colors group-hover:text-foreground"
 				/>
 			</span>
-		</motion.button>
+		</button>
 	)
 }
 
@@ -745,9 +803,8 @@ function AvailableCard({
 	onSelect: (id: IntegrationId) => void
 }) {
 	return (
-		<motion.button
+		<button
 			type="button"
-			variants={ITEM_VARIANTS}
 			onClick={() => onSelect(entry.id)}
 			className="group flex items-center gap-4 rounded-lg border border-border/60 bg-card p-4 text-left outline-none transition-colors hover:border-border hover:bg-muted/40 focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40"
 		>
@@ -771,7 +828,7 @@ function AvailableCard({
 			>
 				{cta} →
 			</span>
-		</motion.button>
+		</button>
 	)
 }
 
@@ -796,30 +853,80 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
 	)
 }
 
+/**
+ * The collapsed shelf for everything not connected and not recommended. The
+ * overlapping marks are the preview — they say which integrations are inside
+ * without spending a row each.
+ */
+function DiscoverMore({
+	entries,
+	onSelect,
+}: {
+	entries: ReadonlyArray<{ entry: CatalogEntry; overview: AvailableOverview }>
+	onSelect: (id: IntegrationId) => void
+}) {
+	const [open, setOpen] = useState(false)
+	return (
+		<Collapsible open={open} onOpenChange={setOpen}>
+			<CollapsibleTrigger className="group flex w-full cursor-pointer items-center gap-3 rounded-lg border border-border/60 border-dashed bg-card/50 px-4 py-3 text-left outline-none transition-colors hover:border-border hover:bg-muted/40 focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40 data-panel-open:border-solid">
+				<span className="flex shrink-0 items-center -space-x-2" aria-hidden>
+					{entries.map(({ entry }) => (
+						<IntegrationIconPlate
+							key={entry.id}
+							icon={entry.icon}
+							accent={entry.accent}
+							iconClassName={entry.iconClassName}
+							plateClassName="size-7 rounded-md"
+							size={14}
+						/>
+					))}
+				</span>
+				<span className="truncate text-sm font-medium">Discover more integrations</span>
+				<span className="hidden text-xs text-muted-foreground sm:inline">
+					{entries.length} available
+				</span>
+				<ChevronDownIcon
+					size={14}
+					className="ml-auto shrink-0 text-muted-foreground/70 transition-transform duration-200 group-hover:text-foreground group-data-panel-open:rotate-180 motion-reduce:transition-none"
+				/>
+			</CollapsibleTrigger>
+			<CollapsibleContent className="grid grid-cols-1 gap-3 pt-3 lg:grid-cols-2">
+				{entries.map(({ entry, overview }) => (
+					<AvailableCard key={entry.id} entry={entry} cta={overview.cta} onSelect={onSelect} />
+				))}
+			</CollapsibleContent>
+		</Collapsible>
+	)
+}
+
 export function IntegrationCatalog({ onSelect }: { onSelect: (id: IntegrationId) => void }) {
 	const overviews = useIntegrationOverviews()
-	const reduceMotion = useReducedMotion()
+	const isVisible = useIsIntegrationVisible()
+	const catalog = CATALOG.filter((entry) => isVisible(entry.id))
 
-	const connected = CATALOG.flatMap((entry) => {
+	const connected = catalog.flatMap((entry) => {
 		const overview = overviews[entry.id]
 		return overview !== null && (overview.kind === "connected" || overview.kind === "unavailable")
 			? [{ entry, overview }]
 			: []
 	})
-	const available = CATALOG.flatMap((entry) => {
+	const available = catalog.flatMap((entry) => {
 		const overview = overviews[entry.id]
 		return overview !== null && overview.kind === "available" ? [{ entry, overview }] : []
 	})
-	const loading = CATALOG.filter((entry) => overviews[entry.id] === null)
+	const loading = catalog.filter((entry) => overviews[entry.id] === null)
+
+	// Nothing connected yet, and nothing still resolving that could change that:
+	// lead with the broadly useful integrations so the hub opens on a
+	// choice rather than a catalog. A partially loaded hub isn't empty — wait.
+	const showRecommended = connected.length === 0 && loading.length === 0
+	const recommended = showRecommended
+		? RECOMMENDED.flatMap((id) => available.filter(({ entry }) => entry.id === id))
+		: []
+	const more = available.filter(({ entry }) => !recommended.some((r) => r.entry.id === entry.id))
 
 	return (
-		<motion.div
-			className="flex flex-col gap-6"
-			variants={GRID_VARIANTS}
-			// Reduced motion: render everything in place with no staggered transform.
-			initial={reduceMotion ? false : "hidden"}
-			animate="show"
-		>
+		<div className="flex flex-col gap-6 animate-in fade-in slide-in-from-bottom-1 [animation-duration:300ms] motion-reduce:animate-none">
 			{(connected.length > 0 || loading.length > 0) && (
 				<section className="flex flex-col gap-2">
 					<SectionLabel>Connected</SectionLabel>
@@ -838,11 +945,11 @@ export function IntegrationCatalog({ onSelect }: { onSelect: (id: IntegrationId)
 					</div>
 				</section>
 			)}
-			{available.length > 0 && (
+			{recommended.length > 0 && (
 				<section className="flex flex-col gap-2">
-					<SectionLabel>Available</SectionLabel>
+					<SectionLabel>Start here</SectionLabel>
 					<div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
-						{available.map(({ entry, overview }) => (
+						{recommended.map(({ entry, overview }) => (
 							<AvailableCard
 								key={entry.id}
 								entry={entry}
@@ -853,6 +960,7 @@ export function IntegrationCatalog({ onSelect }: { onSelect: (id: IntegrationId)
 					</div>
 				</section>
 			)}
-		</motion.div>
+			{more.length > 0 && <DiscoverMore entries={more} onSelect={onSelect} />}
+		</div>
 	)
 }

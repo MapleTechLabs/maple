@@ -3,7 +3,7 @@ import { Link } from "@tanstack/react-router"
 import { cn } from "@maple/ui/lib/utils"
 
 import { Result } from "@/lib/effect-atom"
-import { useRetainedRefreshableResultValue } from "@/hooks/use-retained-refreshable-result-value"
+import { useRefreshableAtomValue } from "@/hooks/use-refreshable-atom-value"
 import { getServiceDependenciesBundleResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
 import { toSingleDeploymentEnv } from "@/lib/services/environments"
 import { ServiceDot } from "@maple/ui/components/service-dot"
@@ -34,7 +34,7 @@ const KIND_ICON: Record<Exclude<DependencyKind, "service">, typeof DatabaseIcon>
 	http: GlobeIcon,
 	messaging: PaperPlaneIcon,
 	rpc: NetworkNodesIcon,
-}
+} satisfies Record<Exclude<DependencyKind, "service">, typeof DatabaseIcon>
 
 /**
  * "Talks to" strip: the service's busiest downstream targets as one quiet row of
@@ -48,7 +48,7 @@ export function ServiceDependencyStrip({
 	environments,
 	onViewAll,
 }: ServiceDependencyStripProps) {
-	const bundleResult = useRetainedRefreshableResultValue(
+	const bundleResult = useRefreshableAtomValue(
 		getServiceDependenciesBundleResultAtom({
 			data: {
 				serviceName,

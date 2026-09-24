@@ -13,10 +13,14 @@
 // rename swaps the directory entry, so the running process keeps its old inode
 // while new invocations pick up the new binary. Keep the triple/URL logic here
 // in sync with install.sh.
-import { Clock, Duration, Effect, Option, Schema } from "effect"
+import { Clock, Duration, Effect, Option, Schema, Stream } from "effect"
+import { FileSystem } from "effect/FileSystem"
+import { PlatformError } from "effect/PlatformError"
 import { HttpClient, HttpClientRequest } from "effect/unstable/http"
+import * as ChildProcess from "effect/unstable/process/ChildProcess"
+import { ChildProcessSpawner } from "effect/unstable/process/ChildProcessSpawner"
+import { randomUUID } from "node:crypto"
 import { realpathSync } from "node:fs"
-import { chmod, mkdir, rename, rm } from "node:fs/promises"
 import { dirname, join } from "node:path"
 import { amber, bold, dim, green } from "../lib/style"
 import { MAPLE_VERSION } from "../version"
@@ -28,14 +32,14 @@ export class UpdateError extends Schema.TaggedError<UpdateError>()("@maple/cli/U
 	message: Schema.String,
 }) {}
 
-const REPO = "Makisuo/maple"
+const REPO = "MapleTechLabs/maple"
 const LATEST_API = `https://api.github.com/repos/${REPO}/releases/latest`
 /** Throttle window for the startup check — hit GitHub at most once per day. */
 export const CHECK_TTL_MS = 24 * 60 * 60 * 1000
 const CHECKSUM_TIMEOUT = Duration.seconds(30)
 const DOWNLOAD_TIMEOUT = Duration.minutes(2)
 
-// --- pure helpers (unit-tested) ----------------------------------------------
+const LatestReleaseResponse = Schema.Struct({ tag_name: Schema.optionalKey(Schema.String) })
 
 /** Drop a leading "v" so release tags ("v0.6.0") compare against MAPLE_VERSION
  *  ("0.6.0", already stripped in version.ts). */
@@ -92,8 +96,6 @@ export const shouldCheck = (
 	return nowMs - last >= ttlMs
 }
 
-// --- IO ----------------------------------------------------------------------
-
 const resolveTarget: Effect.Effect<string, UpdateError> = Effect.suspend(() => {
 	const t = targetTripleFor(process.platform, process.arch)
 	return t
@@ -129,7 +131,7 @@ export const fetchLatestTag = (timeoutMs = 5000): Effect.Effect<string, UpdateEr
 			Effect.mapError((error) => toUpdateError("could not read GitHub release response", error)),
 		)
 		const body = yield* Effect.try({
-			try: () => JSON.parse(text) as { tag_name?: string },
+			try: () => Schema.decodeUnknownSync(Schema.fromJsonString(LatestReleaseResponse))(text),
 			catch: (error) => toUpdateError("could not decode GitHub release response", error),
 		})
 		if (!body.tag_name) {
@@ -154,9 +156,23 @@ export const fetchLatestTag = (timeoutMs = 5000): Effect.Effect<string, UpdateEr
  *  (the symlink on PATH resolves here). */
 const resolveInstallDir = (): string => dirname(realpathSync(process.execPath))
 
+const errnoCode = (e: unknown): string | undefined =>
+	typeof e === "object" && e !== null && "code" in e ? String((e as { code?: unknown }).code) : undefined
+
+/**
+ * A permission failure on the install dir is the one fs error with actionable
+ * advice, so it must survive the mapping. `FileSystem` reports it as a
+ * `PlatformError` whose `reason._tag` is "PermissionDenied" and whose `cause`
+ * carries the original errno error — check both, not just a bare `.code`.
+ */
+const isPermissionDenied = (e: unknown): boolean => {
+	if (e instanceof PlatformError && e.reason._tag === "PermissionDenied") return true
+	const code = errnoCode(e) ?? errnoCode((e as { cause?: unknown } | null)?.cause)
+	return code === "EACCES" || code === "EPERM"
+}
+
 const mapFsError = (e: unknown, installDir: string): UpdateError => {
-	const code = (e as { code?: string } | null)?.code
-	if (code === "EACCES" || code === "EPERM") {
+	if (isPermissionDenied(e)) {
 		return new UpdateError({
 			message: `cannot write to ${installDir} — re-run the installer (curl -fsSL https://maple.dev/cli/install | sh) or fix permissions`,
 		})
@@ -219,8 +235,6 @@ const fetchText = (
 		}),
 	)
 
-export const __testables = { downloadTo, fetchText }
-
 const sha256File = (path: string): Effect.Effect<string, UpdateError> =>
 	Effect.tryPromise({
 		try: async () => {
@@ -234,36 +248,91 @@ const sha256File = (path: string): Effect.Effect<string, UpdateError> =>
 			}),
 	})
 
-const extractTar = (tarball: string, destDir: string): Effect.Effect<void, UpdateError> =>
-	Effect.tryPromise({
-		try: async () => {
-			const proc = Bun.spawn(["tar", "-xzf", tarball, "-C", destDir], {
+const extractTar = (
+	tarball: string,
+	destDir: string,
+): Effect.Effect<void, UpdateError, ChildProcessSpawner> =>
+	Effect.gen(function* () {
+		const spawner = yield* ChildProcessSpawner
+		const handle = yield* spawner.spawn(
+			ChildProcess.make("tar", ["-xzf", tarball, "-C", destDir], {
+				stdin: "ignore",
 				stdout: "ignore",
 				stderr: "pipe",
-			})
-			const code = await proc.exited
-			if (code !== 0) {
-				const err = await new Response(proc.stderr).text()
-				throw new Error(`tar exited ${code}: ${err.trim()}`)
-			}
-		},
-		catch: (e) =>
-			new UpdateError({
-				message: `could not extract bundle: ${e instanceof Error ? e.message : String(e)}`,
 			}),
-	})
+		)
+		// Drain stderr alongside the exit status: `tar` cannot exit while its
+		// diagnostics are still buffered in an unread pipe.
+		const [code, stderr] = yield* Effect.all(
+			[handle.exitCode, Stream.mkString(Stream.decodeText(handle.stderr))],
+			{ concurrency: "unbounded" },
+		)
+		if (code !== 0) {
+			return yield* new UpdateError({
+				message: `could not extract bundle: tar exited ${code}: ${stderr.trim()}`,
+			})
+		}
+	}).pipe(
+		Effect.scoped,
+		Effect.catchTag("PlatformError", (e) =>
+			Effect.fail(new UpdateError({ message: `could not extract bundle: ${e.message}` })),
+		),
+	)
 
 /** Best-effort: strip the Gatekeeper quarantine flag macOS sets on downloads. */
-const clearQuarantine = (paths: ReadonlyArray<string>): Effect.Effect<void> =>
-	Effect.promise(async () => {
-		try {
-			await Bun.spawn(["xattr", "-dr", "com.apple.quarantine", ...paths], {
+const clearQuarantine = (paths: ReadonlyArray<string>): Effect.Effect<void, never, ChildProcessSpawner> =>
+	Effect.gen(function* () {
+		const spawner = yield* ChildProcessSpawner
+		yield* spawner.exitCode(
+			ChildProcess.make("xattr", ["-dr", "com.apple.quarantine", ...paths], {
+				stdin: "ignore",
 				stdout: "ignore",
 				stderr: "ignore",
-			}).exited
-		} catch {
-			// best effort — quarantine clearing failing shouldn't fail the update
-		}
+			}),
+		)
+	}).pipe(
+		// Quarantine clearing failing must never fail the update. Unlike the
+		// previous bare `catch`, the cause is logged rather than discarded.
+		Effect.tapCause((cause) => Effect.logDebug("could not clear macOS quarantine flag", cause)),
+		Effect.ignore,
+	)
+
+/**
+ * Swap both bundle files into place. Each rename is atomic but the PAIR is
+ * not; the previous files are parked inside `tmpDir` first so a failure after
+ * the first swap restores the matched old pair instead of leaving a new
+ * executable beside an old native library. A hard crash mid-swap can still
+ * mismatch — rerunning `maple update` replaces both.
+ */
+const swapBundlePair = (
+	srcDir: string,
+	installDir: string,
+	tmpDir: string,
+): Effect.Effect<void, PlatformError, FileSystem> =>
+	Effect.gen(function* () {
+		const fs = yield* FileSystem
+		const previousDir = join(tmpDir, "previous")
+		const mapleDst = join(installDir, "maple")
+		const libDst = join(installDir, "libchdb.so")
+		const restorePrevious = Effect.gen(function* () {
+			for (const [parked, dst] of [
+				[join(previousDir, "maple"), mapleDst],
+				[join(previousDir, "libchdb.so"), libDst],
+			] as const) {
+				if (yield* fs.exists(parked)) {
+					yield* fs.remove(dst, { force: true }).pipe(Effect.ignore)
+					yield* fs.rename(parked, dst)
+				}
+			}
+		}).pipe(Effect.ignore)
+		yield* Effect.gen(function* () {
+			yield* fs.makeDirectory(previousDir, { recursive: true })
+			if (yield* fs.exists(mapleDst)) yield* fs.rename(mapleDst, join(previousDir, "maple"))
+			yield* fs.rename(join(srcDir, "maple"), mapleDst)
+			if (yield* fs.exists(libDst)) yield* fs.rename(libDst, join(previousDir, "libchdb.so"))
+			yield* fs.rename(join(srcDir, "libchdb.so"), libDst)
+			yield* fs.chmod(mapleDst, 0o755)
+		}).pipe(Effect.tapError(() => restorePrevious))
 	})
 
 export interface UpdateResult {
@@ -274,8 +343,9 @@ export interface UpdateResult {
 /** Download, verify, and atomically install a release bundle in place. */
 export const performUpdate = (
 	opts: { tag?: string } = {},
-): Effect.Effect<UpdateResult, UpdateError, HttpClient.HttpClient> =>
+): Effect.Effect<UpdateResult, UpdateError, HttpClient.HttpClient | ChildProcessSpawner | FileSystem> =>
 	Effect.gen(function* () {
+		const fs = yield* FileSystem
 		const target = yield* resolveTarget
 		const tagRaw = opts.tag ?? (yield* fetchLatestTag(10_000))
 		const tag = tagRaw.startsWith("v") ? tagRaw : `v${tagRaw}`
@@ -287,23 +357,37 @@ export const performUpdate = (
 		const name = `maple-${tag}-${target}`
 		const url = `https://github.com/${REPO}/releases/download/${tag}/${name}.tar.gz`
 		// Temp dir lives *inside* installDir so the final rename is same-filesystem
-		// (atomic; cross-device rename would EXDEV).
-		const tmpDir = join(installDir, ".maple-update-tmp")
+		// (atomic; cross-device rename would EXDEV). It is UNIQUE per invocation:
+		// a shared name let one updater delete another's extracted library after
+		// its executable had already been installed, pairing mismatched files.
+		const tmpDir = join(installDir, `.maple-update-tmp-${randomUUID()}`)
+
+		// Best-effort sweep of temp dirs abandoned by crashed updates (including
+		// the legacy fixed ".maple-update-tmp" name). Age-gated so a concurrent
+		// in-flight update is never touched.
+		const sweepStaleTmpDirs = Effect.gen(function* () {
+			const entries = yield* fs.readDirectory(installDir)
+			const cutoff = Date.now() - 60 * 60 * 1000
+			for (const entry of entries) {
+				if (!entry.startsWith(".maple-update-tmp")) continue
+				const path = join(installDir, entry)
+				const info = yield* fs.stat(path)
+				if (Option.exists(info.mtime, (mtime) => mtime.getTime() < cutoff)) {
+					yield* fs.remove(path, { recursive: true, force: true })
+				}
+			}
+		}).pipe(Effect.ignore)
 
 		yield* Effect.scoped(
 			Effect.gen(function* () {
 				yield* Effect.addFinalizer(() =>
-					Effect.promise(() => rm(tmpDir, { recursive: true, force: true }).catch(() => {})),
+					fs.remove(tmpDir, { recursive: true, force: true }).pipe(Effect.ignore),
 				)
 
-				// Fresh temp dir.
-				yield* Effect.tryPromise({
-					try: async () => {
-						await rm(tmpDir, { recursive: true, force: true })
-						await mkdir(tmpDir, { recursive: true })
-					},
-					catch: (e) => mapFsError(e, installDir),
-				})
+				yield* sweepStaleTmpDirs
+				yield* fs
+					.makeDirectory(tmpDir, { recursive: true })
+					.pipe(Effect.mapError((e) => mapFsError(e, installDir)))
 
 				const tarball = join(tmpDir, "bundle.tar.gz")
 				yield* downloadTo(url, tarball)
@@ -321,15 +405,9 @@ export const performUpdate = (
 				yield* extractTar(tarball, tmpDir)
 				const srcDir = join(tmpDir, name)
 
-				// Atomic in-place swap of both bundle files.
-				yield* Effect.tryPromise({
-					try: async () => {
-						await rename(join(srcDir, "maple"), join(installDir, "maple"))
-						await rename(join(srcDir, "libchdb.so"), join(installDir, "libchdb.so"))
-						await chmod(join(installDir, "maple"), 0o755)
-					},
-					catch: (e) => mapFsError(e, installDir),
-				})
+				yield* swapBundlePair(srcDir, installDir, tmpDir).pipe(
+					Effect.mapError((e) => mapFsError(e, installDir)),
+				)
 
 				if (process.platform === "darwin") {
 					yield* clearQuarantine([join(installDir, "maple"), join(installDir, "libchdb.so")])
@@ -339,8 +417,6 @@ export const performUpdate = (
 
 		return { tag, installDir }
 	})
-
-// --- startup notice ----------------------------------------------------------
 
 const NOTIFY_SKIP_FLAGS = new Set(["--version", "-v", "--help", "-h"])
 
@@ -380,7 +456,7 @@ export const maybeNotifyUpdate: Effect.Effect<void, never, MapleConfig | HttpCli
 		if (shouldCheck(Option.getOrUndefined(config.lastUpdateCheck), now)) {
 			const fetched = yield* fetchLatestTag(1500).pipe(
 				Effect.map((tag) => Option.some(tag)),
-				Effect.catch(() => Effect.succeed(Option.none<string>())),
+				Effect.orElseSucceed(() => Option.none<string>()),
 			)
 			if (Option.isSome(fetched)) {
 				latest = fetched.value
@@ -397,3 +473,5 @@ export const maybeNotifyUpdate: Effect.Effect<void, never, MapleConfig | HttpCli
 		}
 	},
 )
+
+export const __testables = { downloadTo, extractTar, fetchText, mapFsError, swapBundlePair }

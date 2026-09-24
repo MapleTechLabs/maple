@@ -12,7 +12,7 @@ import {
 import { WhereClauseEditor } from "@/components/query-builder/where-clause-editor"
 import { useAutocompleteValuesContext } from "@/hooks/use-autocomplete-values"
 import { useMetricScopedAutocomplete } from "@/hooks/use-metric-scoped-autocomplete"
-import { getMetricsAggregations, type QueryBuilderMetricType } from "@/lib/query-builder/model"
+import { getMetricsAggregations, type QueryBuilderMetricType } from "@maple/query-engine/query-builder"
 
 const GROUP_BY_NONE = "__none__"
 
@@ -119,7 +119,6 @@ export function MetricQueryControls({
 					className="flex-1"
 					textareaClassName="min-h-8 resize-y text-xs"
 					ariaLabel={`Where clause for ${metricName}`}
-					highlight
 				/>
 			</div>
 

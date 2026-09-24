@@ -1,4 +1,3 @@
-// ---------------------------------------------------------------------------
 // Cloudflare zone filters
 //
 // The Cloudflare poller stores dimensions as SLICES, not a cube. Each breakdown
@@ -13,10 +12,9 @@
 // as data. Every query passes its metric family's row, inapplicable keys are
 // dropped here, and the handler reports them back as `ignoredFilters` so the UI
 // can mark that panel zone-wide rather than silently lying about its scope.
-// ---------------------------------------------------------------------------
 
-import * as CH from "@maple-dev/clickhouse-builder/expr"
-import { type ColumnAccessor } from "@maple-dev/clickhouse-builder"
+import * as CH from "@maple-dev/effect-clickhouse/expr"
+import { type ColumnAccessor } from "@maple-dev/effect-clickhouse"
 import type { MetricsGauge, MetricsSum } from "@maple/query-engine/ch/tables"
 
 /** Filter key → the metric attribute it lives on. */
@@ -76,7 +74,7 @@ export const CF_FILTERABLE: Record<string, ReadonlyArray<CfFilterKey>> = {
 	[CF_METRIC.requestsByClient]: ["method", "protocol", "deviceType"],
 	[CF_METRIC.firewallEvents]: ["host", "firewallAction", "firewallSource", "firewallRuleId"],
 	[CF_METRIC.dnsQueries]: ["dnsQueryName", "dnsResponseCode"],
-}
+} satisfies Record<string, ReadonlyArray<CfFilterKey>>
 
 export interface CloudflareFilterOpts {
 	readonly hosts?: ReadonlyArray<string>
@@ -111,7 +109,7 @@ const VALUES_BY_KEY: Record<CfFilterKey, keyof CloudflareFilterOpts> = {
 	firewallRuleId: "firewallRuleIds",
 	dnsQueryName: "dnsQueryNames",
 	dnsResponseCode: "dnsResponseCodes",
-}
+} satisfies Record<CfFilterKey, keyof CloudflareFilterOpts>
 
 const FILTER_KEYS = Object.keys(VALUES_BY_KEY) as ReadonlyArray<CfFilterKey>
 
@@ -174,8 +172,9 @@ export const cloudflareFilterConditions = (
 	})
 	// `CH.when` only skips null/undefined, so an empty needle would compile to a match-everything
 	// predicate — noise in the SQL and a needless change to the query fingerprint.
-	if (active("path") && (opts.pathContains ?? "") !== "") {
-		conditions.push(CH.positionCaseInsensitive(attrExpr($, "path"), CH.lit(opts.pathContains!)).gt(0))
+	const pathContains = opts.pathContains ?? ""
+	if (active("path") && pathContains !== "") {
+		conditions.push(CH.positionCaseInsensitive(attrExpr($, "path"), CH.lit(pathContains)).gt(0))
 	}
 	return conditions
 }

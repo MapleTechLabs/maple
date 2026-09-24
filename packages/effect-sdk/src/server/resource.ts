@@ -1,14 +1,8 @@
+import { type MapleRegion, resolveIngestEndpoint } from "@maple/browser-session/region"
 import { Effect, Option, Redacted } from "effect"
 import * as EnvConfig from "./config.js"
+import { getContainerAttributes } from "./container.js"
 import { getAutoPlatformAttributes } from "./platform.js"
-
-/**
- * Public Maple ingest endpoint. Used as the default when no endpoint is
- * configured via `config.endpoint`, `MAPLE_ENDPOINT`, or
- * `OTEL_EXPORTER_OTLP_ENDPOINT` — so end users only need to supply an ingest
- * key, not an URL.
- */
-const DEFAULT_MAPLE_ENDPOINT = "https://ingest.maple.dev"
 
 const stringOrUndefined = (value: unknown): string | undefined =>
 	typeof value === "string" && value.length > 0 ? value : undefined
@@ -46,6 +40,7 @@ export interface ResourceConfigInput {
 	readonly serviceNamespace?: string | undefined
 	readonly environment?: string | undefined
 	readonly endpoint?: string | undefined
+	readonly region?: MapleRegion | undefined
 	readonly ingestKey?: string | undefined
 	readonly attributes?: Record<string, unknown> | undefined
 	readonly sdkType?: "server" | "cloudflare" | "client" | undefined
@@ -66,7 +61,12 @@ const isCommitSha = (value: string | undefined): value is string =>
 	value !== undefined && /^[0-9a-f]{7,40}$/i.test(value)
 
 export interface ResolvedResource {
-	readonly endpoint: string | undefined
+	/**
+	 * Always resolves — the region's endpoint is the final fallback, so this
+	 * is deliberately NOT optional. Presets disable themselves on a missing
+	 * ingest key, never on a missing endpoint.
+	 */
+	readonly endpoint: string
 	readonly ingestKey: Redacted.Redacted<string> | undefined
 	readonly resource: {
 		readonly serviceName: string
@@ -95,7 +95,13 @@ export interface ResolvedResource {
  */
 export const resolveResource = Effect.fn("resolveResource")(function* (config: ResourceConfigInput) {
 	const envEndpoint = yield* EnvConfig.endpoint
-	const endpoint = config.endpoint ?? Option.getOrUndefined(envEndpoint) ?? DEFAULT_MAPLE_ENDPOINT
+	const envRegion = yield* EnvConfig.region
+	// Any explicit URL, programmatic or env, beats any region: a collector the
+	// k8s chart injects must not be bypassed by a region set in code.
+	const endpoint = resolveIngestEndpoint({
+		endpoints: [config.endpoint, Option.getOrUndefined(envEndpoint)],
+		regions: [config.region, Option.getOrUndefined(envRegion)],
+	})
 
 	const envIngestKey = yield* EnvConfig.ingestKey
 	const ingestKey = config.ingestKey ? Redacted.make(config.ingestKey) : Option.getOrUndefined(envIngestKey)
@@ -120,6 +126,10 @@ export const resolveResource = Effect.fn("resolveResource")(function* (config: R
 
 	const attributes: Record<string, unknown> = {}
 	Object.assign(attributes, getAutoPlatformAttributes())
+	// Best-effort Docker identity (container.runtime / container.id) so app
+	// telemetry correlates with docker_stats metrics. Lowest precedence — an
+	// explicit OTEL_RESOURCE_ATTRIBUTES container.id overrides it below.
+	Object.assign(attributes, getContainerAttributes())
 	attributes["maple.sdk.type"] = config.sdkType ?? "server"
 	attributes["service.instance.id"] = getServiceInstanceId()
 	if (environment) {
@@ -131,7 +141,6 @@ export const resolveResource = Effect.fn("resolveResource")(function* (config: R
 		attributes["deployment.environment"] = environment
 		attributes["deployment.environment.name"] = environment
 	}
-	if (serviceVersion) attributes["deployment.commit_sha"] = serviceVersion
 	if (repositoryUrl) attributes["vcs.repository.url.full"] = repositoryUrl
 	if (headRevision) attributes["vcs.ref.head.revision"] = headRevision
 	if (config.serviceNamespace) attributes["service.namespace"] = config.serviceNamespace
@@ -161,11 +170,14 @@ export const resolveResourceFromEnv = (
 	env: Record<string, unknown>,
 	config: ResourceConfigInput,
 ): ResolvedResource => {
-	const endpoint =
-		config.endpoint ??
-		stringOrUndefined(env.MAPLE_ENDPOINT) ??
-		stringOrUndefined(env.OTEL_EXPORTER_OTLP_ENDPOINT) ??
-		DEFAULT_MAPLE_ENDPOINT
+	const endpoint = resolveIngestEndpoint({
+		endpoints: [
+			config.endpoint,
+			stringOrUndefined(env.MAPLE_ENDPOINT),
+			stringOrUndefined(env.OTEL_EXPORTER_OTLP_ENDPOINT),
+		],
+		regions: [config.region, stringOrUndefined(env.MAPLE_REGION)],
+	})
 
 	const rawIngestKey = stringOrUndefined(env.MAPLE_INGEST_KEY)
 	const ingestKey = config.ingestKey
@@ -211,7 +223,6 @@ export const resolveResourceFromEnv = (
 		attributes["deployment.environment"] = environment
 		attributes["deployment.environment.name"] = environment
 	}
-	if (serviceVersion) attributes["deployment.commit_sha"] = serviceVersion
 	if (repositoryUrl) attributes["vcs.repository.url.full"] = repositoryUrl
 	if (headRevision) attributes["vcs.ref.head.revision"] = headRevision
 	if (config.serviceNamespace) attributes["service.namespace"] = config.serviceNamespace

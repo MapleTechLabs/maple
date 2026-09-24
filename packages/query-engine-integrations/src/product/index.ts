@@ -5,8 +5,8 @@
 export {
 	auditAttributeKeyInventoryQuery,
 	auditAttributeKeyInventoryRowSchema,
-	auditSpanShapeByServiceQuery,
-	auditSpanShapeRowSchema,
+	auditSpanProfileByServiceQuery,
+	auditSpanProfileRowSchema,
 	auditSamplingByServiceQuery,
 	auditSamplingRowSchema,
 	auditLogSeverityByServiceQuery,
@@ -20,14 +20,12 @@ export {
 	auditLogCorrelationQuery,
 	auditLogCorrelationRowSchema,
 	auditOrphanSpansSQL,
-	auditOrphanSpanRowSchema,
 	auditRootlessTracesSQL,
-	auditRootlessTraceRowSchema,
 	auditTraceSampleModulus,
 	AUDIT_LOG_CORRELATION_MAX_HOURS,
 	AUDIT_PEER_KEYS,
 	type AuditAttributeKeyRow,
-	type AuditSpanShapeRow,
+	type AuditSpanProfileRow,
 	type AuditSamplingRow,
 	type AuditLogSeverityRow,
 	type AuditMetricLabelRow,
@@ -40,10 +38,10 @@ export {
 } from "./setup-audit"
 
 export {
+	dailyProductEventCountQuery,
+	dailyProductEventCountRowSchema,
 	dailySessionCountQuery,
-	dailySessionCountRowSchema,
 	dailySignalVolumeQuery,
-	dailySignalVolumeRowSchema,
 	type DailySessionCountOutput,
 	type DailySignalVolumeOutput,
 } from "./billing-usage"

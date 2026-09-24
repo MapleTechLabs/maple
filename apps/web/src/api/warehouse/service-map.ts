@@ -2,20 +2,19 @@ import { Clock, Effect, Schema } from "effect"
 import {
 	DeploymentEnvironment,
 	ServiceCloudflareStatsRequest,
-	ServiceDbEdgesRequest,
 	ServiceDbQuerySummaryRequest,
 	ServiceDependenciesBundleRequest,
-	ServiceDependenciesRequest,
+	ServiceMapBundleRequest,
 	ServiceName,
 	ServicePlanetScaleStatsRequest,
-	ServicePlatformsRequest,
 } from "@maple/domain/http"
-import { MapleApiAtomClient } from "@/lib/services/common/atom-client"
+import { MapleInternalAtomClient } from "@/lib/services/common/internal-atom-client"
 import { summarizeSampling } from "@/lib/sampling"
 import { WarehouseDateTimeString, decodeInput, runWarehouseQuery } from "@/api/warehouse/effect-utils"
 import { transformExternalEdge } from "@/api/warehouse/service-external-edges"
+import { coerceOverviewRows } from "@/api/warehouse/services"
 
-import { formatWarehouseDateTime } from "@maple/query-engine"
+import { formatWarehouseDateTime, parseWarehouseDateTime } from "@maple/query-engine"
 export interface ServiceEdge {
 	sourceService: string
 	targetService: string
@@ -24,7 +23,8 @@ export interface ServiceEdge {
 	errorCount: number
 	errorRate: number
 	avgDurationMs: number
-	p95DurationMs: number
+	/** Slowest call in the window, not a percentile — see `maxDurationMs` in ch/queries/service-map.ts. */
+	maxDurationMs: number
 	hasSampling: boolean
 	samplingWeight: number
 }
@@ -39,6 +39,13 @@ export interface ServiceDbEdge {
 	errorCount: number
 	errorRate: number
 	avgDurationMs: number
+	/** Slowest call in the window, not a percentile — see `maxDurationMs` in ch/queries/service-map.ts. */
+	maxDurationMs: number
+	/**
+	 * Sample-weighted p95 in ms, merged from the edge rollup's t-digest. `0` when
+	 * the window predates migration 0022 and has no digest to merge — callers fall
+	 * back to `maxDurationMs` and must relabel it as a max.
+	 */
 	p95DurationMs: number
 	hasSampling: boolean
 	samplingWeight: number
@@ -135,7 +142,7 @@ function transformEdge(row: Record<string, unknown>, durationSeconds: number): S
 		errorCount,
 		errorRate: callCount > 0 ? errorCount / callCount : 0,
 		avgDurationMs: Number(row.avgDurationMs ?? 0),
-		p95DurationMs: Number(row.p95DurationMs ?? 0),
+		maxDurationMs: Number(row.maxDurationMs ?? 0),
 		hasSampling: sampling.hasSampling,
 		samplingWeight: sampling.weight,
 	}
@@ -147,36 +154,6 @@ const defaultTimeRange = (nowMillis: number) => {
 		endTime: formatWarehouseDateTime(nowMillis),
 	}
 }
-
-export const getServiceMap = Effect.fn("QueryEngine.getServiceMap")(function* ({
-	data,
-}: {
-	data: GetServiceMapInput
-}) {
-	const input = yield* decodeInput(GetServiceMapInputSchema, data ?? {}, "getServiceMap")
-	const fallback = defaultTimeRange(yield* Clock.currentTimeMillis)
-
-	const result = yield* runWarehouseQuery("serviceDependencies", () =>
-		Effect.gen(function* () {
-			const client = yield* MapleApiAtomClient
-			return yield* client.queryEngine.serviceDependencies({
-				payload: new ServiceDependenciesRequest({
-					startTime: input.startTime ?? fallback.startTime,
-					endTime: input.endTime ?? fallback.endTime,
-					deploymentEnv: input.deploymentEnv,
-				}),
-			})
-		}),
-	)
-
-	const startMs = input.startTime ? new Date(input.startTime.replace(" ", "T") + "Z").getTime() : 0
-	const endMs = input.endTime ? new Date(input.endTime.replace(" ", "T") + "Z").getTime() : 0
-	const durationSeconds = startMs > 0 && endMs > 0 ? Math.max((endMs - startMs) / 1000, 1) : 3600
-
-	return {
-		edges: result.data.map((row) => transformEdge(row, durationSeconds)),
-	}
-})
 
 // Service-detail Dependencies tab in one request: the service-map edges, the
 // DB edges, and the external edges run server-side under a single tenant/config
@@ -194,7 +171,7 @@ export const getServiceDependenciesBundle = Effect.fn("QueryEngine.getServiceDep
 
 	const result = yield* runWarehouseQuery("serviceDependenciesBundle", () =>
 		Effect.gen(function* () {
-			const client = yield* MapleApiAtomClient
+			const client = yield* MapleInternalAtomClient
 			return yield* client.queryEngine.serviceDependenciesBundle({
 				payload: new ServiceDependenciesBundleRequest({
 					serviceName: input.serviceName,
@@ -206,8 +183,8 @@ export const getServiceDependenciesBundle = Effect.fn("QueryEngine.getServiceDep
 		}),
 	)
 
-	const startMs = new Date(startTime.replace(" ", "T") + "Z").getTime()
-	const endMs = new Date(endTime.replace(" ", "T") + "Z").getTime()
+	const startMs = parseWarehouseDateTime(startTime)
+	const endMs = parseWarehouseDateTime(endTime)
 	const durationSeconds = startMs > 0 && endMs > 0 ? Math.max((endMs - startMs) / 1000, 1) : 3600
 
 	return {
@@ -232,50 +209,17 @@ function transformDbEdge(row: Record<string, unknown>, durationSeconds: number):
 		errorCount,
 		errorRate: callCount > 0 ? errorCount / callCount : 0,
 		avgDurationMs: Number(row.avgDurationMs ?? 0),
+		maxDurationMs: Number(row.maxDurationMs ?? 0),
 		p95DurationMs: Number(row.p95DurationMs ?? 0),
 		hasSampling: sampling.hasSampling,
 		samplingWeight: sampling.weight,
 	}
 }
 
-export const getServiceMapDbEdges = Effect.fn("QueryEngine.getServiceMapDbEdges")(function* ({
-	data,
-}: {
-	data: GetServiceMapInput
-}) {
-	const input = yield* decodeInput(GetServiceMapInputSchema, data ?? {}, "getServiceMapDbEdges")
-	const fallback = defaultTimeRange(yield* Clock.currentTimeMillis)
-
-	const result = yield* runWarehouseQuery("serviceDbEdges", () =>
-		Effect.gen(function* () {
-			const client = yield* MapleApiAtomClient
-			return yield* client.queryEngine.serviceDbEdges({
-				payload: new ServiceDbEdgesRequest({
-					startTime: input.startTime ?? fallback.startTime,
-					endTime: input.endTime ?? fallback.endTime,
-					deploymentEnv: input.deploymentEnv,
-				}),
-			})
-		}),
-	)
-
-	const startMs = input.startTime ? new Date(input.startTime.replace(" ", "T") + "Z").getTime() : 0
-	const endMs = input.endTime ? new Date(input.endTime.replace(" ", "T") + "Z").getTime() : 0
-	const durationSeconds = startMs > 0 && endMs > 0 ? Math.max((endMs - startMs) / 1000, 1) : 3600
-
-	return {
-		edges: result.data.map((row) => transformDbEdge(row, durationSeconds)),
-	}
-})
-
-// ---------------------------------------------------------------------------
-// Cloudflare direct-integration Worker analytics
-//
 // The analytics poller writes Worker metrics under the synthetic service name
 // `cloudflare-worker/{script}` with no spans. The map overlays these onto the
 // matching instrumented service node (by service name or faas.name); scripts
 // with no matching real service are dropped — CF data never creates nodes.
-// ---------------------------------------------------------------------------
 
 const WORKER_SERVICE_PREFIX = "cloudflare-worker/"
 
@@ -325,7 +269,7 @@ export const getServiceMapCloudflare = Effect.fn("QueryEngine.getServiceMapCloud
 
 	const result = yield* runWarehouseQuery("serviceCloudflareStats", () =>
 		Effect.gen(function* () {
-			const client = yield* MapleApiAtomClient
+			const client = yield* MapleInternalAtomClient
 			return yield* client.queryEngine.serviceCloudflareStats({
 				payload: new ServiceCloudflareStatsRequest({
 					startTime: input.startTime ?? fallback.startTime,
@@ -335,8 +279,8 @@ export const getServiceMapCloudflare = Effect.fn("QueryEngine.getServiceMapCloud
 		}),
 	)
 
-	const startMs = input.startTime ? new Date(input.startTime.replace(" ", "T") + "Z").getTime() : 0
-	const endMs = input.endTime ? new Date(input.endTime.replace(" ", "T") + "Z").getTime() : 0
+	const startMs = input.startTime ? parseWarehouseDateTime(input.startTime) : 0
+	const endMs = input.endTime ? parseWarehouseDateTime(input.endTime) : 0
 	const durationSeconds = startMs > 0 && endMs > 0 ? Math.max((endMs - startMs) / 1000, 1) : 3600
 
 	return {
@@ -344,14 +288,10 @@ export const getServiceMapCloudflare = Effect.fn("QueryEngine.getServiceMapCloud
 	}
 })
 
-// ---------------------------------------------------------------------------
-// PlanetScale scraped-metrics rollups
-//
 // The scraper collects PlanetScale's Prometheus metrics per branch; the map
 // overlays the per-database rollup onto the matching trace-derived DB node
 // (matched by database name against the org's polled inventory). PlanetScale
 // data never creates nodes of its own.
-// ---------------------------------------------------------------------------
 
 export interface PlanetScaleDatabaseStat {
 	database: string
@@ -397,7 +337,7 @@ export const getServiceMapPlanetScale = Effect.fn("QueryEngine.getServiceMapPlan
 
 	const result = yield* runWarehouseQuery("servicePlanetScaleStats", () =>
 		Effect.gen(function* () {
-			const client = yield* MapleApiAtomClient
+			const client = yield* MapleInternalAtomClient
 			return yield* client.queryEngine.servicePlanetScaleStats({
 				payload: new ServicePlanetScaleStatsRequest({
 					startTime: input.startTime ?? fallback.startTime,
@@ -430,7 +370,7 @@ export const getPlanetScaleBranchStats = Effect.fn("QueryEngine.getPlanetScaleBr
 
 	const result = yield* runWarehouseQuery("planetscaleBranchStats", () =>
 		Effect.gen(function* () {
-			const client = yield* MapleApiAtomClient
+			const client = yield* MapleInternalAtomClient
 			return yield* client.queryEngine.servicePlanetScaleStats({
 				payload: new ServicePlanetScaleStatsRequest({
 					startTime: input.startTime ?? fallback.startTime,
@@ -461,7 +401,7 @@ export const getServiceDbQuerySummary = Effect.fn("QueryEngine.getServiceDbQuery
 
 	const result = yield* runWarehouseQuery("serviceDbQuerySummary", () =>
 		Effect.gen(function* () {
-			const client = yield* MapleApiAtomClient
+			const client = yield* MapleInternalAtomClient
 			return yield* client.queryEngine.serviceDbQuerySummary({
 				payload: new ServiceDbQuerySummaryRequest({
 					dbSystem: input.dbSystem,
@@ -484,29 +424,39 @@ export const getServiceDbQuerySummary = Effect.fn("QueryEngine.getServiceDbQuery
 	} satisfies ServiceDbQuerySummaryResponse
 })
 
-export const getServicePlatforms = Effect.fn("QueryEngine.getServicePlatforms")(function* ({
+export const getServiceMapBundle = Effect.fn("QueryEngine.getServiceMapBundle")(function* ({
 	data,
 }: {
 	data: GetServiceMapInput
 }) {
-	const input = yield* decodeInput(GetServiceMapInputSchema, data ?? {}, "getServicePlatforms")
+	const input = yield* decodeInput(GetServiceMapInputSchema, data ?? {}, "getServiceMapBundle")
 	const fallback = defaultTimeRange(yield* Clock.currentTimeMillis)
+	const startTime = input.startTime ?? fallback.startTime
+	const endTime = input.endTime ?? fallback.endTime
 
-	const result = yield* runWarehouseQuery("servicePlatforms", () =>
+	const result = yield* runWarehouseQuery("serviceMapBundle", () =>
 		Effect.gen(function* () {
-			const client = yield* MapleApiAtomClient
-			return yield* client.queryEngine.servicePlatforms({
-				payload: new ServicePlatformsRequest({
-					startTime: input.startTime ?? fallback.startTime,
-					endTime: input.endTime ?? fallback.endTime,
+			const client = yield* MapleInternalAtomClient
+			return yield* client.queryEngine.serviceMapBundle({
+				payload: new ServiceMapBundleRequest({
+					startTime,
+					endTime,
 					deploymentEnv: input.deploymentEnv,
+					environments: input.deploymentEnv ? [input.deploymentEnv] : undefined,
 				}),
 			})
 		}),
 	)
 
+	const startMs = parseWarehouseDateTime(startTime)
+	const endMs = parseWarehouseDateTime(endTime)
+	const durationSeconds = startMs > 0 && endMs > 0 ? Math.max((endMs - startMs) / 1000, 1) : 3600
+
 	return {
-		platforms: result.data.map((row) => ({
+		edges: result.dependencies.map((row) => transformEdge(row, durationSeconds)),
+		dbEdges: result.dbEdges.map((row) => transformDbEdge(row, durationSeconds)),
+		overview: coerceOverviewRows(result.overview, durationSeconds),
+		platforms: result.platforms.map((row) => ({
 			serviceName: row.serviceName,
 			platform: row.platform,
 			k8sCluster: row.k8sCluster,
@@ -515,6 +465,16 @@ export const getServicePlatforms = Effect.fn("QueryEngine.getServicePlatforms")(
 			faasName: row.faasName,
 			mapleSdkType: row.mapleSdkType,
 			runtime: row.processRuntimeName,
+		})),
+		workloads: result.workloads.map((row) => ({
+			serviceName: row.serviceName,
+			workloadKind: row.workloadKind,
+			workloadName: row.workloadName,
+			namespace: row.namespace,
+			clusterName: row.clusterName,
+			podCount: row.podCount,
+			avgCpuLimitUtilization: row.avgCpuLimitUtilization,
+			avgMemoryLimitUtilization: row.avgMemoryLimitUtilization,
 		})),
 	}
 })

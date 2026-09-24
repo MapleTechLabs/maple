@@ -1,3 +1,5 @@
+import { startOfDayInTimeZone } from "@maple/query-engine/datetime"
+import { isValidRawSql } from "@maple/domain/raw-sql"
 import {
 	AlertCheckDocument,
 	AlertDeliveryEventDocument,
@@ -19,6 +21,7 @@ import {
 	type AlertEventType,
 	type AlertSeverity,
 	type AlertSignalType,
+	type ChatWorkspaceId,
 	type QueryBuilderQueryDraftPayload,
 } from "@maple/domain/http"
 import type {
@@ -31,13 +34,13 @@ import type {
 	V2AlertRuleTestParams,
 } from "@maple/domain/http/v2"
 import type { QueryEngineAlertReducer } from "@maple/query-engine"
-import { Cause, Exit, Option, Schema } from "effect"
-import { v2ErrorInfo } from "@/lib/error-messages"
+import { Exit, Schema } from "effect"
+import { errorMessage } from "@/lib/error-toast"
 import {
 	buildTimeseriesQuerySpec,
 	createQueryDraft,
 	type QueryBuilderQueryDraft,
-} from "@/lib/query-builder/model"
+} from "@maple/query-engine/query-builder"
 import { formatErrorRate, formatLatency, formatNumber } from "@maple/ui/lib/format"
 
 const asHazelOrganizationId = Schema.decodeUnknownSync(HazelOrganizationId)
@@ -92,7 +95,7 @@ export type RuleFormState = {
 	/**
 	 * Custom notification message. Empty strings mean "use the built-in format".
 	 * `title` + Markdown `body` support `{{ variable }}` substitution; channels
-	 * render them per their dialect (Slack Block Kit, Discord embed, …).
+	 * render them per their dialect (chat blocks, Discord embed, …).
 	 */
 	notificationTitle: string
 	notificationBody: string
@@ -106,7 +109,7 @@ export const signalLabels: Record<AlertSignalType, string> = {
 	throughput: "Throughput",
 	builder_query: "Query builder",
 	raw_query: "Raw SQL",
-}
+} satisfies Record<AlertSignalType, string>
 
 export const RAW_QUERY_REDUCER_LABELS: Record<QueryEngineAlertReducer, string> = {
 	identity: "Last bucket",
@@ -114,7 +117,7 @@ export const RAW_QUERY_REDUCER_LABELS: Record<QueryEngineAlertReducer, string> =
 	avg: "Average",
 	min: "Minimum",
 	max: "Maximum",
-}
+} satisfies Record<QueryEngineAlertReducer, string>
 
 /** Default ClickHouse SQL shown when a fresh raw_query alert is created. */
 const DEFAULT_RAW_QUERY_SQL = `SELECT
@@ -134,7 +137,7 @@ export const comparatorLabels: Record<AlertComparator, string> = {
 	neq: "!=",
 	between: "between",
 	not_between: "not between",
-}
+} satisfies Record<AlertComparator, string>
 
 /** Returns true for comparators that need a second (upper) threshold. */
 export const isRangeComparator = (c: AlertComparator): c is "between" | "not_between" =>
@@ -142,26 +145,9 @@ export const isRangeComparator = (c: AlertComparator): c is "between" | "not_bet
 
 export { destinationTypeLabels } from "@/components/alerts/destination-provider"
 
-export function getExitErrorMessage(exit: Exit.Exit<unknown, unknown>, fallback: string): string {
-	if (Exit.isSuccess(exit)) return fallback
-	const failure = Option.getOrUndefined(Exit.findErrorOption(exit))
-	// v2 error envelope ({ error: { type, code, message } }) — the message is the
-	// server's human-readable explanation (validation details included).
-	const v2 = v2ErrorInfo(failure)
-	if (v2 !== null && v2.message.trim().length > 0) return v2.message
-	if (failure instanceof Error && failure.message.trim().length > 0) return failure.message
-	if (
-		typeof failure === "object" &&
-		failure !== null &&
-		"message" in failure &&
-		typeof failure.message === "string" &&
-		failure.message.trim().length > 0
-	) {
-		return failure.message
-	}
-	const defect = Cause.squash(exit.cause)
-	if (defect instanceof Error && defect.message.trim().length > 0) return defect.message
-	return fallback
+export function getExitErrorMessage(exit: unknown, fallback: string): string {
+	if (!Exit.isExit(exit) || Exit.isSuccess(exit)) return fallback
+	return errorMessage(exit, fallback)
 }
 
 export function formatSignalValue(signalType: AlertSignalType, value: number | null): string {
@@ -241,9 +227,9 @@ export function normalizeRuleQueryDraft(draft: QueryBuilderQueryDraftPayload | n
 			isMonotonic: draft.isMonotonic ?? draft.metricType === "sum",
 		}
 	}
-	return draft.dataSource === "logs"
-		? { ...shared, dataSource: "logs" }
-		: { ...shared, dataSource: "traces" }
+	if (draft.dataSource === "logs") return { ...shared, dataSource: "logs" }
+	if (draft.dataSource === "product_events") return { ...shared, dataSource: "product_events" }
+	return { ...shared, dataSource: "traces" }
 }
 
 export function defaultRuleForm(serviceName?: string): RuleFormState {
@@ -352,8 +338,8 @@ export function buildRuleCreateParamsV2(form: RuleFormState): V2AlertRuleCreateP
 	const notificationTemplate =
 		notificationTitle.length > 0 || notificationBody.length > 0
 			? {
-					...(notificationTitle.length > 0 ? { title: notificationTitle } : {}),
-					...(notificationBody.length > 0 ? { body: notificationBody } : {}),
+					...(notificationTitle.length > 0 ? { title: notificationTitle } : undefined),
+					...(notificationBody.length > 0 ? { body: notificationBody } : undefined),
 				}
 			: null
 	return {
@@ -411,11 +397,10 @@ export function isRulePreviewReady(form: RuleFormState): boolean {
 	}
 	if (form.signalType === "builder_query") return deriveRuleQueryIssues(form).length === 0
 	if (form.signalType === "raw_query") {
-		return (
-			form.rawQuerySql.trim().length > 0 &&
-			form.rawQuerySql.includes("$__orgFilter") &&
-			deriveRuleQueryIssues(form).length === 0
-		)
+		// The alert workload additionally requires $__timeFilter, and the shared
+		// validator covers the deny list, statement shape and terminal clauses that
+		// this used to leave for the server to discover.
+		return isValidRawSql(form.rawQuerySql.trim(), "alert") && deriveRuleQueryIssues(form).length === 0
 	}
 	return deriveRuleQueryIssues(form).length === 0
 }
@@ -430,17 +415,12 @@ export type DestinationFormState = {
 	enabled: boolean
 	/** Discord incoming-webhook URL. */
 	webhookUrl: string
-	/**
-	 * Slack (bot) destination: the channel the installed Maple bot posts to.
-	 * `slackChannelId` is the Slack channel id (`C0789CHAN`), `slackChannelName`
-	 * its display name (`incidents`). No webhook/secret — the bot token is
-	 * resolved from the org's Slack workspace at dispatch.
-	 */
-	slackChannelId: string
-	slackChannelName: string
 	integrationKey: string
 	url: string
 	signingSecret: string
+	/** Telegram bot token from @BotFather, and the chat it posts to. */
+	telegramBotToken: string
+	telegramChatId: string
 	hazelOrganizationId: string
 	hazelOrganizationName: string
 	hazelOrganizationLogoUrl: string | null
@@ -448,28 +428,41 @@ export type DestinationFormState = {
 	hazelChannelName: string
 	/** Selected workspace-member recipients (email type only). */
 	memberUserIds: string[]
+	/**
+	 * Chat connector destination: the linked workspace (fixed once created), the
+	 * connector that owns it (for its mark), and the channel picked from it.
+	 */
+	/** Branded as it arrives — from the connector list or the stored destination — so never decoded here. */
+	chatWorkspaceId: ChatWorkspaceId | null
+	chatConnector: string
+	chatChannelId: string
+	chatChannelName: string
 }
 
 export const MAX_EMAIL_MEMBER_RECIPIENTS = 10
 
-/** Defaults to `slack-bot` — the tile the dialog lists first. */
-export function defaultDestinationForm(type: AlertDestinationType = "slack-bot"): DestinationFormState {
+/** Defaults to `discord` — the tile the dialog lists first. */
+export function defaultDestinationForm(type: AlertDestinationType = "discord"): DestinationFormState {
 	return {
 		type,
 		name: "",
 		enabled: true,
 		webhookUrl: "",
-		slackChannelId: "",
-		slackChannelName: "",
 		integrationKey: "",
 		url: "",
 		signingSecret: "",
+		telegramBotToken: "",
+		telegramChatId: "",
 		hazelOrganizationId: "",
 		hazelOrganizationName: "",
 		hazelOrganizationLogoUrl: null,
 		hazelChannelId: "",
 		hazelChannelName: "",
 		memberUserIds: [],
+		chatWorkspaceId: null,
+		chatConnector: "",
+		chatChannelId: "",
+		chatChannelName: "",
 	}
 }
 
@@ -479,35 +472,31 @@ export function destinationToFormState(destination: AlertDestinationDocument): D
 		name: destination.name,
 		enabled: destination.enabled,
 		webhookUrl: "",
-		// slack-bot hydrates `channelLabel` as `#name`; keep the current channel
-		// visible on edit (its id isn't returned — an empty id keeps the stored one).
-		slackChannelId: "",
-		slackChannelName:
-			destination.type === "slack-bot" ? (destination.channelLabel?.replace(/^#/, "") ?? "") : "",
 		integrationKey: "",
 		url: "",
 		signingSecret: "",
+		// The bot token is a secret and never returned; the chat id is not, and
+		// comes back as `channelLabel` so an edit doesn't demand retyping it.
+		telegramBotToken: "",
+		telegramChatId: destination.type === "telegram" ? (destination.channelLabel ?? "") : "",
 		hazelOrganizationId: "",
 		hazelOrganizationName: "",
 		hazelOrganizationLogoUrl: null,
 		hazelChannelId: "",
 		hazelChannelName: "",
 		memberUserIds: destination.memberUserIds != null ? [...destination.memberUserIds] : [],
+		// The stored channel's id isn't returned, its `#name` is — kept so the current
+		// channel stays visible on edit (an empty id keeps the stored one).
+		chatWorkspaceId: destination.chatWorkspaceId ?? null,
+		chatConnector: destination.chatConnector ?? "",
+		chatChannelId: "",
+		chatChannelName:
+			destination.type === "chat" ? (destination.channelLabel?.replace(/^#/, "") ?? "") : "",
 	}
 }
 
 export function buildDestinationCreateParamsV2(form: DestinationFormState): V2AlertDestinationCreateParams {
 	switch (form.type) {
-		case "slack-bot": {
-			const channelName = form.slackChannelName.trim()
-			return {
-				type: "slack-bot",
-				name: form.name.trim(),
-				enabled: form.enabled,
-				channel_id: form.slackChannelId.trim(),
-				...(channelName ? { channel_name: channelName } : {}),
-			}
-		}
 		case "pagerduty":
 			return {
 				type: "pagerduty",
@@ -522,7 +511,7 @@ export function buildDestinationCreateParamsV2(form: DestinationFormState): V2Al
 				name: form.name.trim(),
 				enabled: form.enabled,
 				url: form.url.trim(),
-				...(signingSecret ? { signing_secret: signingSecret } : {}),
+				...(signingSecret ? { signing_secret: signingSecret } : undefined),
 			}
 		}
 		case "hazel-oauth": {
@@ -535,7 +524,7 @@ export function buildDestinationCreateParamsV2(form: DestinationFormState): V2Al
 				hazel_organization_name: form.hazelOrganizationName.trim(),
 				...(logoUrl !== null && logoUrl.trim().length > 0
 					? { hazel_organization_logo_url: logoUrl.trim() }
-					: {}),
+					: undefined),
 				hazel_channel_id: asHazelChannelId(form.hazelChannelId.trim()),
 				hazel_channel_name: form.hazelChannelName.trim(),
 			}
@@ -547,12 +536,31 @@ export function buildDestinationCreateParamsV2(form: DestinationFormState): V2Al
 				enabled: form.enabled,
 				webhook_url: form.webhookUrl.trim(),
 			}
+		case "telegram":
+			return {
+				type: "telegram",
+				name: form.name.trim(),
+				enabled: form.enabled,
+				bot_token: form.telegramBotToken.trim(),
+				chat_id: form.telegramChatId.trim(),
+			}
 		case "email":
 			return {
 				type: "email",
 				name: form.name.trim(),
 				enabled: form.enabled,
 				member_user_ids: form.memberUserIds.map((userId) => asUserId(userId)),
+			}
+		case "chat":
+			// Unreachable from the dialog: its save stays disabled until a workspace is picked.
+			if (form.chatWorkspaceId === null) throw new Error("A chat destination needs a linked workspace")
+			// No channel name: the server reads it from the workspace's own listing.
+			return {
+				type: "chat",
+				name: form.name.trim(),
+				enabled: form.enabled,
+				workspace_id: form.chatWorkspaceId,
+				channel_id: form.chatChannelId.trim(),
 			}
 	}
 }
@@ -564,24 +572,13 @@ export function buildDestinationCreateParamsV2(form: DestinationFormState): V2Al
 export function buildDestinationUpdateParamsV2(form: DestinationFormState): V2AlertDestinationUpdateParams {
 	const name = form.name.trim()
 	switch (form.type) {
-		case "slack-bot": {
-			const channelId = form.slackChannelId.trim()
-			const channelName = form.slackChannelName.trim()
-			return {
-				type: "slack-bot",
-				enabled: form.enabled,
-				...(name ? { name } : {}),
-				...(channelId ? { channel_id: channelId } : {}),
-				...(channelName ? { channel_name: channelName } : {}),
-			}
-		}
 		case "pagerduty": {
 			const integrationKey = form.integrationKey.trim()
 			return {
 				type: "pagerduty",
 				enabled: form.enabled,
-				...(name ? { name } : {}),
-				...(integrationKey ? { integration_key: integrationKey } : {}),
+				...(name ? { name } : undefined),
+				...(integrationKey ? { integration_key: integrationKey } : undefined),
 			}
 		}
 		case "webhook": {
@@ -590,9 +587,9 @@ export function buildDestinationUpdateParamsV2(form: DestinationFormState): V2Al
 			return {
 				type: "webhook",
 				enabled: form.enabled,
-				...(name ? { name } : {}),
-				...(url ? { url } : {}),
-				...(signingSecret ? { signing_secret: signingSecret } : {}),
+				...(name ? { name } : undefined),
+				...(url ? { url } : undefined),
+				...(signingSecret ? { signing_secret: signingSecret } : undefined),
 			}
 		}
 		case "hazel-oauth": {
@@ -603,16 +600,18 @@ export function buildDestinationUpdateParamsV2(form: DestinationFormState): V2Al
 			return {
 				type: "hazel-oauth",
 				enabled: form.enabled,
-				...(name ? { name } : {}),
-				...(organizationId ? { hazel_organization_id: asHazelOrganizationId(organizationId) } : {}),
-				...(organizationName ? { hazel_organization_name: organizationName } : {}),
+				...(name ? { name } : undefined),
+				...(organizationId
+					? { hazel_organization_id: asHazelOrganizationId(organizationId) }
+					: undefined),
+				...(organizationName ? { hazel_organization_name: organizationName } : undefined),
 				...(form.hazelOrganizationLogoUrl === null
 					? { hazel_organization_logo_url: null }
 					: form.hazelOrganizationLogoUrl.trim()
 						? { hazel_organization_logo_url: form.hazelOrganizationLogoUrl.trim() }
 						: {}),
-				...(channelId ? { hazel_channel_id: asHazelChannelId(channelId) } : {}),
-				...(channelName ? { hazel_channel_name: channelName } : {}),
+				...(channelId ? { hazel_channel_id: asHazelChannelId(channelId) } : undefined),
+				...(channelName ? { hazel_channel_name: channelName } : undefined),
 			}
 		}
 		case "discord": {
@@ -620,19 +619,42 @@ export function buildDestinationUpdateParamsV2(form: DestinationFormState): V2Al
 			return {
 				type: "discord",
 				enabled: form.enabled,
-				...(name ? { name } : {}),
-				...(webhookUrl ? { webhook_url: webhookUrl } : {}),
+				...(name ? { name } : undefined),
+				...(webhookUrl ? { webhook_url: webhookUrl } : undefined),
+			}
+		}
+		case "telegram": {
+			const botToken = form.telegramBotToken.trim()
+			const chatId = form.telegramChatId.trim()
+			return {
+				type: "telegram",
+				enabled: form.enabled,
+				...(name ? { name } : undefined),
+				...(botToken ? { bot_token: botToken } : undefined),
+				...(chatId ? { chat_id: chatId } : undefined),
 			}
 		}
 		case "email":
 			return {
 				type: "email",
 				enabled: form.enabled,
-				...(name ? { name } : {}),
+				...(name ? { name } : undefined),
 				...(form.memberUserIds.length > 0
-					? { member_user_ids: form.memberUserIds.map((userId) => asUserId(userId)) }
-					: {}),
+					? {
+							member_user_ids: form.memberUserIds.map((userId) => asUserId(userId)),
+						}
+					: undefined),
 			}
+		case "chat": {
+			// Editing keeps the stored channel until a new one is picked.
+			const channelId = form.chatChannelId.trim()
+			return {
+				type: "chat",
+				enabled: form.enabled,
+				...(name ? { name } : undefined),
+				...(channelId ? { channel_id: channelId } : undefined),
+			}
+		}
 	}
 }
 
@@ -668,7 +690,7 @@ export function v2PreviewToResponse(result: V2AlertRulePreviewResult): AlertRule
 								status: point.status,
 								...(point.provisional !== undefined
 									? { provisional: point.provisional }
-									: {}),
+									: undefined),
 							}),
 					),
 				}),
@@ -770,9 +792,10 @@ export function computeIncidentStats(incidents: AlertIncidentDocument[]) {
 /*  Shared Formatters                                                         */
 /* -------------------------------------------------------------------------- */
 
-export function formatAlertDateTime(value: string | null): string {
+export function formatAlertDateTime(value: string | null, timeZone?: string): string {
 	if (!value) return "Never"
 	return new Date(value).toLocaleString(undefined, {
+		timeZone,
 		month: "short",
 		day: "numeric",
 		year: "numeric",
@@ -781,9 +804,10 @@ export function formatAlertDateTime(value: string | null): string {
 	})
 }
 
-export function formatAlertDateTimeFull(value: string | null): string {
+export function formatAlertDateTimeFull(value: string | null, timeZone?: string): string {
 	if (!value) return "—"
 	return new Date(value).toLocaleString(undefined, {
+		timeZone,
 		month: "short",
 		day: "numeric",
 		hour: "2-digit",
@@ -793,25 +817,31 @@ export function formatAlertDateTimeFull(value: string | null): string {
 }
 
 /** Time of day only (`03:10 PM`) — used where a day header already carries the date. */
-export function formatAlertTime(value: string | null): string {
+export function formatAlertTime(value: string | null, timeZone?: string): string {
 	if (!value) return "—"
 	return new Date(value).toLocaleTimeString(undefined, {
+		timeZone,
 		hour: "2-digit",
 		minute: "2-digit",
 	})
 }
 
-const startOfLocalDay = (d: Date): number => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime()
+/** Midnight of the day holding `ms`, in `timeZone` or the browser's zone. */
+const startOfDay = (ms: number, timeZone: string | undefined): number => {
+	if (timeZone !== undefined) return startOfDayInTimeZone(ms, timeZone)
+	const d = new Date(ms)
+	return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime()
+}
 
 /** Day-bucket heading: `Today` / `Yesterday` / `Jun 4, 2026`. */
-function formatAlertDayHeading(value: string): string {
+function formatAlertDayHeading(value: string, timeZone: string | undefined): string {
 	const date = new Date(value)
-	const today = startOfLocalDay(new Date())
-	const target = startOfLocalDay(date)
-	const dayMs = 86_400_000
+	const today = startOfDay(Date.now(), timeZone)
+	const target = startOfDay(date.getTime(), timeZone)
 	if (target === today) return "Today"
-	if (target === today - dayMs) return "Yesterday"
-	return date.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })
+	// Any instant inside the previous day, so a 23- or 25-hour day still counts.
+	if (target === startOfDay(today - 1, timeZone)) return "Yesterday"
+	return date.toLocaleDateString(undefined, { timeZone, month: "short", day: "numeric", year: "numeric" })
 }
 
 /* -------------------------------------------------------------------------- */
@@ -828,7 +858,7 @@ export const eventTypeMeta: Record<AlertEventType, { label: string; dot: string;
 	resolve: { label: "Resolved", dot: "bg-success", text: "text-success" },
 	renotify: { label: "Re-notified", dot: "bg-warning", text: "text-warning" },
 	test: { label: "Test", dot: "bg-info", text: "text-info" },
-}
+} satisfies Record<AlertEventType, { label: string; dot: string; text: string }>
 
 export type DeliveryStatusVariant = "success" | "error" | "warning" | "outline"
 
@@ -841,7 +871,7 @@ export const deliveryStatusMeta: Record<
 	failed: { label: "Failed", variant: "error" },
 	processing: { label: "Sending", variant: "warning" },
 	queued: { label: "Queued", variant: "outline" },
-}
+} satisfies Record<AlertDeliveryStatus, { label: string; variant: DeliveryStatusVariant }>
 
 export interface DeliveryEventDayGroup {
 	key: string
@@ -855,16 +885,16 @@ export interface DeliveryEventDayGroup {
  */
 export function groupDeliveryEventsByDay(
 	events: ReadonlyArray<AlertDeliveryEventDocument>,
+	timeZone?: string,
 ): DeliveryEventDayGroup[] {
 	const groups: DeliveryEventDayGroup[] = []
 	for (const event of events) {
-		const d = new Date(event.scheduledAt)
-		const key = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`
+		const key = String(startOfDay(Date.parse(event.scheduledAt), timeZone))
 		const last = groups[groups.length - 1]
 		if (last && last.key === key) {
 			last.events.push(event)
 		} else {
-			groups.push({ key, label: formatAlertDayHeading(event.scheduledAt), events: [event] })
+			groups.push({ key, label: formatAlertDayHeading(event.scheduledAt, timeZone), events: [event] })
 		}
 	}
 	return groups

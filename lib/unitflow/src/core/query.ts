@@ -103,6 +103,7 @@ const depValues = <Deps extends Record<string, Store.Source<any>>>(
 		for (const [key, source] of Object.entries(stores)) {
 			out[key] = yield* Store.get(source)
 		}
+		// SAFETY: every own key in `stores` is populated from that key's source before returning.
 		return out as DepValues<Deps>
 	})
 
@@ -216,9 +217,9 @@ export function make(
 		| Effect.Effect<any, any, any>
 		| MakeOptions<Record<string, Store.Source<any>>, any, any, any>,
 ): Effect.Effect<any, never, any> {
-	return Effect.isEffect(requestOrOptions)
-		? base({}, () => requestOrOptions)
-		: base(requestOrOptions.stores ?? {}, requestOrOptions.handler)
+	return "handler" in requestOrOptions
+		? base(requestOrOptions.stores ?? {}, requestOrOptions.handler)
+		: base({}, () => requestOrOptions)
 }
 
 /** Forks one pipeline per source that reloads the query whenever that

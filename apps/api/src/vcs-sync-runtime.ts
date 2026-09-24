@@ -1,95 +1,60 @@
-import type { MessageBatch } from "@cloudflare/workers-types"
-import * as MapleCloudflareSDK from "@maple-dev/effect-sdk/cloudflare"
-import { ANTICIPATED_ERROR_IDENTIFIERS } from "@maple/domain/anticipated-errors"
-import { WorkerConfigProviderLayer, WorkerEnvironment } from "@maple/effect-cloudflare"
+import { EdgeCacheServiceLive } from "@maple/backend/platform/CacheBackendLive"
+import { eventTelemetry } from "@maple/infra/worker-telemetry"
 import { Cause, Effect, Layer, Option } from "effect"
-import { layerPg } from "@/platform/DatabasePgLive"
-import { Env } from "@/platform/Env"
-import { GithubAppClient } from "./services/integrations/vcs/vendor/github/GithubAppClient"
-import { GithubHttp } from "./services/integrations/vcs/vendor/github/GithubHttp"
-import { GithubProvider } from "./services/integrations/vcs/vendor/github/GithubProvider"
-import { VcsProviderRegistry } from "./services/integrations/vcs/VcsProviderRegistry"
-import { VcsRepository } from "./services/integrations/vcs/VcsRepository"
-import { VcsScheduledSyncService } from "./services/integrations/vcs/VcsScheduledSyncService"
+import { EventBaseLive } from "@maple/backend/platform/DatabasePgLive"
+
+import { VcsScheduledSyncService } from "@maple/backend/services/integrations/vcs/VcsScheduledSyncService"
 import {
 	clampQueueDelaySeconds,
 	MESSAGING_DESTINATION,
 	MESSAGING_SYSTEM,
 	VcsSyncQueue,
-} from "./services/integrations/vcs/VcsSyncQueue"
-import { VcsSyncService } from "./services/integrations/vcs/VcsSyncService"
+} from "@maple/backend/services/integrations/vcs/VcsSyncQueue"
+import { VcsSyncService } from "@maple/backend/services/integrations/vcs/VcsSyncService"
 
-// ---------------------------------------------------------------------------
-// Per-invocation runtime for the `VCS_SYNC_QUEUE` consumer. Mirrors the
-// alerting worker's `buildLayer`: its own light layer graph (NOT the fetch
-// path's MainLive) so the queue invocation stays within the startup CPU budget.
-// ---------------------------------------------------------------------------
+import { IssueFixVerificationService } from "@maple/backend/services/errors/IssueFixVerificationService"
+import { PullRequestLookup } from "@maple/backend/services/errors/PullRequestLookup"
+import { fixVerificationPullRequestHandler } from "@maple/backend/services/errors/pull-request-sink-live"
+import { pullRequestEventSinkFanout } from "@maple/backend/services/integrations/vcs/PullRequestEventSink"
+import { PrReviewService } from "@maple/backend/services/pr-review/PrReviewService"
+import { prReviewPullRequestHandler } from "@maple/backend/services/pr-review/pull-request-review-handler"
+import { prReviewCommentSinkLive } from "@maple/backend/services/pr-review/pull-request-comment-handler"
+import { summarizeCause } from "@maple/backend/platform/describe-cause"
+import type { QueueBatch } from "@maple/backend/platform/queue-batch"
 
-const telemetry = MapleCloudflareSDK.make({
-	serviceName: "maple-api",
-	serviceNamespace: "backend",
-	repositoryUrl: "https://github.com/Makisuo/maple",
-	anticipatedErrorIdentifiers: [...ANTICIPATED_ERROR_IDENTIFIERS],
-})
+// Per-invocation runtime for the VCS sync queue, independent of the HTTP graph.
+// No tracer or logger of its own: the Worker provides `vcsSyncTelemetry` around
+// the event, and a layer here that carried one would shadow it. The Worker env,
+// its `ConfigProvider` and the binding ports come from the Worker too
+// (`apiPorts`), provided around the event.
 
-export const buildVcsSyncLayer = (_env: Record<string, unknown>) => {
-	const ConfigLive = WorkerConfigProviderLayer
-	const EnvLive = Env.layer.pipe(Layer.provide(ConfigLive))
-	const DatabaseLive = layerPg.pipe(Layer.provide(WorkerEnvironment.layer))
-	const Base = Layer.mergeAll(EnvLive, DatabaseLive, WorkerEnvironment.layer)
+/**
+ * Deliberately not `maple-api`: background work sharing the request-facing
+ * service's name skewed its percentiles (p99 32s, 2026-09-04).
+ */
+export const vcsSyncTelemetry = eventTelemetry({ serviceName: "maple-vcs-sync" })
 
-	const VcsRepositoryLive = VcsRepository.layer.pipe(Layer.provide(Base))
-	const GithubAppClientLive = GithubAppClient.layer.pipe(
-		Layer.provide(Layer.mergeAll(EnvLive, GithubHttp.layer)),
-	)
-	const GithubProviderLive = GithubProvider.layer.pipe(
-		Layer.provide(Layer.mergeAll(EnvLive, GithubAppClientLive)),
-	)
-	const VcsProviderRegistryLive = VcsProviderRegistry.layer.pipe(Layer.provide(GithubProviderLive))
-	const VcsSyncQueueLive = VcsSyncQueue.layer.pipe(Layer.provide(WorkerEnvironment.layer))
-	const VcsSyncServiceLive = VcsSyncService.layer.pipe(
-		Layer.provide(Layer.mergeAll(VcsRepositoryLive, VcsProviderRegistryLive, VcsSyncQueueLive)),
-	)
+// One delivery, two readers: the issue link / verification window, and the
+// review trigger. Each is isolated in the fan-out so a defect in
+// one never costs the other the event.
+const PullRequestEventSinkLive = pullRequestEventSinkFanout<IssueFixVerificationService | PrReviewService>([
+	{ name: "fix-verification", handler: fixVerificationPullRequestHandler },
+	{ name: "pr-review", handler: prReviewPullRequestHandler },
+]).pipe(
+	Layer.provide(IssueFixVerificationService.layer),
+	// The review trigger re-enqueues a push to debounce it, so it gets the queue here.
+	Layer.provide(PrReviewService.layer.pipe(Layer.provide(VcsSyncQueue.layer))),
+	Layer.provide(PullRequestLookup.none),
+)
 
-	return VcsSyncServiceLive.pipe(Layer.provideMerge(telemetry.layer), Layer.provideMerge(ConfigLive))
-}
+export const VcsSyncLive = VcsSyncService.layer.pipe(
+	Layer.provide(PullRequestEventSinkLive),
+	// `@maple` mentions on pull requests; the review debounce's queue is not needed to answer.
+	Layer.provide(prReviewCommentSinkLive),
+	Layer.provide(Layer.mergeAll(EventBaseLive, EdgeCacheServiceLive)),
+)
 
-// The periodic (cron) producer's layer graph. Deliberately lighter than the
-// consumer's: enqueuing installation-sync jobs needs only storage + the queue —
-// NOT the provider registry (the consumer does all provider work).
-export const buildVcsScheduledLayer = (_env: Record<string, unknown>) => {
-	const ConfigLive = WorkerConfigProviderLayer
-	const EnvLive = Env.layer.pipe(Layer.provide(ConfigLive))
-	const DatabaseLive = layerPg.pipe(Layer.provide(WorkerEnvironment.layer))
-	const Base = Layer.mergeAll(EnvLive, DatabaseLive, WorkerEnvironment.layer)
-
-	const VcsRepositoryLive = VcsRepository.layer.pipe(Layer.provide(Base))
-	const VcsSyncQueueLive = VcsSyncQueue.layer.pipe(Layer.provide(WorkerEnvironment.layer))
-	const VcsScheduledSyncServiceLive = VcsScheduledSyncService.layer.pipe(
-		Layer.provide(Layer.mergeAll(VcsRepositoryLive, VcsSyncQueueLive)),
-	)
-
-	return VcsScheduledSyncServiceLive.pipe(
-		Layer.provideMerge(telemetry.layer),
-		Layer.provideMerge(ConfigLive),
-	)
-}
-
-// Scrape-check retention's cron layer — the lightest of the three: the job talks
-// only to Postgres, so it deliberately skips the scrape-targets service and its
-// PlanetScale discovery/OAuth dependencies.
-export const buildScrapeRetentionLayer = (_env: Record<string, unknown>) => {
-	const ConfigLive = WorkerConfigProviderLayer
-	const DatabaseLive = layerPg.pipe(Layer.provide(WorkerEnvironment.layer))
-
-	return DatabaseLive.pipe(
-		Layer.provideMerge(WorkerEnvironment.layer),
-		Layer.provideMerge(telemetry.layer),
-		Layer.provideMerge(ConfigLive),
-	)
-}
-
-export const flushVcsTelemetry = (env: Record<string, unknown>) => telemetry.flush(env)
+export const VcsScheduledLive = VcsScheduledSyncService.layer.pipe(Layer.provide(EventBaseLive))
 
 // The cron program: enqueue a periodic refresh per processable installation.
 export const runScheduledSync = Effect.gen(function* () {
@@ -115,7 +80,7 @@ export const runScheduledSync = Effect.gen(function* () {
 		Effect.annotateCurrentSpan({ "vcs.scheduled.outcome": "failed" }).pipe(
 			Effect.flatMap(() =>
 				Effect.logError("[VCS] scheduled sync tick failed").pipe(
-					Effect.annotateLogs({ error: Cause.pretty(cause) }),
+					Effect.annotateLogs({ error: summarizeCause(cause) }),
 				),
 			),
 		),
@@ -123,11 +88,11 @@ export const runScheduledSync = Effect.gen(function* () {
 	Effect.withSpan("VcsScheduledSync.tick"),
 )
 
-// Must match `max_retries` in wrangler.jsonc / alchemy.run.ts. No DLQ exists, so on the
+// Must match the consumer's `maxRetries` in worker.ts. No DLQ exists, so on the
 // final delivery (attempt > max_retries) we persist a terminal status instead of silently dropping.
 const VCS_SYNC_MAX_RETRIES = 3
 
-export const processBatch = (batch: MessageBatch<unknown>) =>
+export const processBatch = (batch: QueueBatch) =>
 	Effect.gen(function* () {
 		const service = yield* VcsSyncService
 		yield* Effect.forEach(
@@ -158,20 +123,24 @@ export const processBatch = (batch: MessageBatch<unknown>) =>
 								"vcs.queue.message.outcome": outcome,
 								// Tag rate-limit errors so `retry_delayed`/`exhausted` spans are filterable without parsing logs.
 								...(isRateLimited
-									? { "vcs.queue.failure.tag": "@maple/http/errors/VcsRateLimitedError" }
-									: {}),
+									? {
+											"vcs.queue.failure.tag": "@maple/http/errors/VcsRateLimitedError",
+										}
+									: undefined),
 								...(isDelaySecondsSet
 									? { "vcs.queue.retry.delay_seconds": delaySeconds }
-									: {}),
+									: undefined),
 							}).pipe(
 								Effect.flatMap(() =>
 									Effect.logError("[VCS] sync message failed").pipe(
 										Effect.annotateLogs({
-											error: Cause.pretty(cause),
+											error: summarizeCause(cause),
 											attempt: message.attempts,
 											outcome,
-											...(isFinalAttempt ? { exhausted: true } : {}),
-											...(isDelaySecondsSet ? { retryDelaySeconds: delaySeconds } : {}),
+											...(isFinalAttempt ? { exhausted: true } : undefined),
+											...(isDelaySecondsSet
+												? { retryDelaySeconds: delaySeconds }
+												: undefined),
 										}),
 									),
 								),

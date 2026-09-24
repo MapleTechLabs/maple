@@ -1,4 +1,4 @@
-import { Cause, Exit } from "effect"
+import { Effect, Exit } from "effect"
 import { toastManager } from "@maple/ui/components/ui/toast"
 import { useAtomSet } from "@/lib/effect-atom"
 import { MapleApiAtomClient } from "@/lib/services/common/atom-client"
@@ -13,16 +13,10 @@ import {
 } from "@maple/domain/http"
 import { WORKFLOW_LABEL } from "@/components/icons/workflow-ring"
 import { logClientError } from "@/lib/services/common/telemetry"
+import { showErrorToast } from "@/lib/error-toast"
+import { batchOutcome, forEachIssue, ISSUES_KEY, issueKey } from "./issue-batch"
 
-const INVALIDATE = ["errorIssues"] as const
-
-function describeFailure(result: Exit.Exit<unknown, unknown>): string {
-	if (Exit.isSuccess(result)) return ""
-	const errors = Cause.prettyErrors(result.cause)
-	const first = errors[0]
-	if (first?.message) return first.message
-	return Cause.pretty(result.cause).slice(0, 300)
-}
+const INVALIDATE = [ISSUES_KEY] as const
 
 function logFailure(label: string, result: Exit.Exit<unknown, unknown>) {
 	if (Exit.isSuccess(result)) return
@@ -30,6 +24,47 @@ function logFailure(label: string, result: Exit.Exit<unknown, unknown>) {
 		"maple.issue.mutation": label,
 	})
 }
+
+// Bulk actions are one atom run each (see `forEachIssue` for why N writes to
+// the per-issue mutation atoms silently moved only one issue).
+const transitionManyAtom = MapleApiAtomClient.runtime.fn<{
+	readonly issueIds: ReadonlyArray<ErrorIssueId>
+	readonly toState: WorkflowState
+}>()(
+	Effect.fnUntraced(function* ({ issueIds, toState }) {
+		const client = yield* MapleApiAtomClient
+		return yield* forEachIssue(issueIds, (issueId) =>
+			client.errors.transitionIssue({
+				params: { issueId },
+				payload: new ErrorIssueTransitionRequest({ toState }),
+			}),
+		)
+	}),
+)
+
+const claimManyAtom = MapleApiAtomClient.runtime.fn<{ readonly issueIds: ReadonlyArray<ErrorIssueId> }>()(
+	Effect.fnUntraced(function* ({ issueIds }) {
+		const client = yield* MapleApiAtomClient
+		return yield* forEachIssue(issueIds, (issueId) =>
+			client.errors.claimIssue({ params: { issueId }, payload: new ErrorIssueClaimRequest({}) }),
+		)
+	}),
+)
+
+const setSeverityManyAtom = MapleApiAtomClient.runtime.fn<{
+	readonly issueIds: ReadonlyArray<ErrorIssueId>
+	readonly severity: IssueSeverity | null
+}>()(
+	Effect.fnUntraced(function* ({ issueIds, severity }) {
+		const client = yield* MapleApiAtomClient
+		return yield* forEachIssue(issueIds, (issueId) =>
+			client.errors.setIssueSeverity({
+				params: { issueId },
+				payload: new ErrorIssueSetSeverityRequest({ severity }),
+			}),
+		)
+	}),
+)
 
 export function useIssueMutations(onSuccess?: () => void) {
 	const transition = useAtomSet(MapleApiAtomClient.mutation("errors", "transitionIssue"), {
@@ -40,60 +75,46 @@ export function useIssueMutations(onSuccess?: () => void) {
 	const severity = useAtomSet(MapleApiAtomClient.mutation("errors", "setIssueSeverity"), {
 		mode: "promiseExit",
 	})
+	const transitionBatch = useAtomSet(transitionManyAtom, { mode: "promiseExit" })
+	const claimBatch = useAtomSet(claimManyAtom, { mode: "promiseExit" })
+	const severityBatch = useAtomSet(setSeverityManyAtom, { mode: "promiseExit" })
 
 	const transitionTo = async (issueId: ErrorIssueId, toState: WorkflowState) => {
 		const result = await transition({
 			params: { issueId },
 			payload: new ErrorIssueTransitionRequest({ toState }),
-			reactivityKeys: [...INVALIDATE, `errorIssue:${issueId}`],
+			reactivityKeys: [...INVALIDATE, issueKey(issueId)],
 		})
 		if (Exit.isSuccess(result)) {
 			onSuccess?.()
 			toastManager.add({ title: `Moved to ${WORKFLOW_LABEL[toState]}`, type: "success" })
 		} else {
 			logFailure("transitionTo", result)
-			toastManager.add({
-				title: "State change failed",
-				description: describeFailure(result),
-				type: "error",
-			})
+			showErrorToast(result, { title: "State change failed" })
 		}
 		return result
 	}
 
 	const transitionMany = async (issueIds: ReadonlyArray<ErrorIssueId>, toState: WorkflowState) => {
 		if (issueIds.length === 0) return
-		const results = await Promise.all(
-			issueIds.map((issueId) =>
-				transition({
-					params: { issueId },
-					payload: new ErrorIssueTransitionRequest({ toState }),
-					reactivityKeys: [...INVALIDATE, `errorIssue:${issueId}`],
-				}),
-			),
+		const exit = await transitionBatch({ issueIds, toState })
+		const outcome = batchOutcome(issueIds.length, exit, (failure) =>
+			logFailure("transitionMany", failure),
 		)
-		const failures = results.filter((r) => !Exit.isSuccess(r))
-		const failed = failures.length
-		failures.forEach((r) => logFailure("transitionMany", r))
-		if (failed === 0) {
+		if (outcome.failed === 0) {
 			onSuccess?.()
 			toastManager.add({
 				title: `Moved ${issueIds.length} to ${WORKFLOW_LABEL[toState]}`,
 				type: "success",
 			})
-		} else if (failed < issueIds.length) {
+		} else if (outcome.succeeded > 0) {
 			onSuccess?.()
-			toastManager.add({
-				title: `Moved ${issueIds.length - failed} of ${issueIds.length}; ${failed} failed`,
-				description: describeFailure(failures[0]!),
+			showErrorToast(outcome.firstFailure, {
+				title: `Moved ${outcome.succeeded} of ${issueIds.length}; ${outcome.failed} failed`,
 				type: "warning",
 			})
 		} else {
-			toastManager.add({
-				title: "State change failed",
-				description: describeFailure(failures[0]!),
-				type: "error",
-			})
+			showErrorToast(outcome.firstFailure, { title: "State change failed" })
 		}
 	}
 
@@ -101,38 +122,33 @@ export function useIssueMutations(onSuccess?: () => void) {
 		const result = await claim({
 			params: { issueId },
 			payload: new ErrorIssueClaimRequest({}),
-			reactivityKeys: [...INVALIDATE, `errorIssue:${issueId}`],
+			reactivityKeys: [...INVALIDATE, issueKey(issueId)],
 		})
 		if (Exit.isSuccess(result)) {
 			onSuccess?.()
 			toastManager.add({ title: "Claimed", type: "success" })
 		} else {
 			logFailure("claim", result)
-			toastManager.add({ title: "Claim failed", description: describeFailure(result), type: "error" })
+			showErrorToast(result, { title: "Claim failed" })
 		}
 		return result
 	}
 
 	const claimMany = async (issueIds: ReadonlyArray<ErrorIssueId>) => {
 		if (issueIds.length === 0) return
-		const results = await Promise.all(
-			issueIds.map((issueId) =>
-				claim({
-					params: { issueId },
-					payload: new ErrorIssueClaimRequest({}),
-					reactivityKeys: [...INVALIDATE, `errorIssue:${issueId}`],
-				}),
-			),
-		)
-		const failed = results.filter((result) => !Exit.isSuccess(result))
-		if (failed.length === 0) {
+		const exit = await claimBatch({ issueIds })
+		const outcome = batchOutcome(issueIds.length, exit, (failure) => logFailure("claimMany", failure))
+		if (outcome.failed === 0) {
 			onSuccess?.()
 			toastManager.add({ title: `Claimed ${issueIds.length} issues`, type: "success" })
-		} else {
-			toastManager.add({
-				title: `Claimed ${issueIds.length - failed.length} of ${issueIds.length}`,
-				type: "error",
+		} else if (outcome.succeeded > 0) {
+			onSuccess?.()
+			showErrorToast(outcome.firstFailure, {
+				title: `Claimed ${outcome.succeeded} of ${issueIds.length}; ${outcome.failed} failed`,
+				type: "warning",
 			})
+		} else {
+			showErrorToast(outcome.firstFailure, { title: "Claim failed" })
 		}
 	}
 
@@ -140,14 +156,14 @@ export function useIssueMutations(onSuccess?: () => void) {
 		const result = await release({
 			params: { issueId },
 			payload: new ErrorIssueReleaseRequest({}),
-			reactivityKeys: [...INVALIDATE, `errorIssue:${issueId}`],
+			reactivityKeys: [...INVALIDATE, issueKey(issueId)],
 		})
 		if (Exit.isSuccess(result)) {
 			onSuccess?.()
 			toastManager.add({ title: "Released", type: "success" })
 		} else {
 			logFailure("release", result)
-			toastManager.add({ title: "Release failed", description: describeFailure(result), type: "error" })
+			showErrorToast(result, { title: "Release failed" })
 		}
 		return result
 	}
@@ -156,7 +172,7 @@ export function useIssueMutations(onSuccess?: () => void) {
 		const result = await severity({
 			params: { issueId },
 			payload: new ErrorIssueSetSeverityRequest({ severity: value }),
-			reactivityKeys: [...INVALIDATE, `errorIssue:${issueId}`],
+			reactivityKeys: [...INVALIDATE, issueKey(issueId)],
 		})
 		if (Exit.isSuccess(result)) {
 			onSuccess?.()
@@ -166,35 +182,28 @@ export function useIssueMutations(onSuccess?: () => void) {
 			})
 		} else {
 			logFailure("setSeverity", result)
-			toastManager.add({
-				title: "Severity change failed",
-				description: describeFailure(result),
-				type: "error",
-			})
+			showErrorToast(result, { title: "Severity change failed" })
 		}
 		return result
 	}
 
 	const setSeverityMany = async (issueIds: ReadonlyArray<ErrorIssueId>, value: IssueSeverity | null) => {
 		if (issueIds.length === 0) return
-		const results = await Promise.all(
-			issueIds.map((issueId) =>
-				severity({
-					params: { issueId },
-					payload: new ErrorIssueSetSeverityRequest({ severity: value }),
-					reactivityKeys: [...INVALIDATE, `errorIssue:${issueId}`],
-				}),
-			),
+		const exit = await severityBatch({ issueIds, severity: value })
+		const outcome = batchOutcome(issueIds.length, exit, (failure) =>
+			logFailure("setSeverityMany", failure),
 		)
-		const failed = results.filter((result) => !Exit.isSuccess(result))
-		if (failed.length === 0) {
+		if (outcome.failed === 0) {
 			onSuccess?.()
 			toastManager.add({ title: `Updated severity for ${issueIds.length} issues`, type: "success" })
-		} else {
-			toastManager.add({
-				title: `Updated ${issueIds.length - failed.length} of ${issueIds.length} issues`,
-				type: "error",
+		} else if (outcome.succeeded > 0) {
+			onSuccess?.()
+			showErrorToast(outcome.firstFailure, {
+				title: `Updated ${outcome.succeeded} of ${issueIds.length}; ${outcome.failed} failed`,
+				type: "warning",
 			})
+		} else {
+			showErrorToast(outcome.firstFailure, { title: "Severity change failed" })
 		}
 	}
 

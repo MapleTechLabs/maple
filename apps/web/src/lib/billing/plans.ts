@@ -1,23 +1,6 @@
 export const TRIAL_DURATION_DAYS = 14
 
-export interface PlanLimits {
-	logsGB: number
-	tracesGB: number
-	metricsGB: number
-	retentionDays: number
-	browserSessions: number
-}
-
-const PLAN_LIMITS: Record<string, PlanLimits> = {
-	starter: { logsGB: 10, tracesGB: 10, metricsGB: 10, retentionDays: 7, browserSessions: 5000 },
-	startup: { logsGB: 40, tracesGB: 40, metricsGB: 40, retentionDays: 30, browserSessions: 5000 },
-}
-
 const DEFAULT_PLAN = "starter"
-
-export function getPlanLimits(planSlug: string | undefined): PlanLimits {
-	return PLAN_LIMITS[planSlug ?? DEFAULT_PLAN] ?? PLAN_LIMITS[DEFAULT_PLAN]
-}
 
 export interface PlanFeature {
 	icon: string
@@ -47,7 +30,7 @@ const PLAN_FEATURES: Record<string, PlanFeature[]> = {
 		{ icon: "code", label: "API access", value: "Full" },
 		{ icon: "shield", label: "Support", value: "Priority" },
 	],
-}
+} satisfies Record<string, PlanFeature[]>
 
 export function getPlanFeatures(planSlug: string | undefined): PlanFeature[] {
 	return PLAN_FEATURES[planSlug ?? DEFAULT_PLAN] ?? PLAN_FEATURES[DEFAULT_PLAN]
@@ -56,7 +39,7 @@ export function getPlanFeatures(planSlug: string | undefined): PlanFeature[] {
 const PLAN_DESCRIPTIONS: Record<string, string> = {
 	starter: "For individuals and small projects",
 	startup: "For growing teams",
-}
+} satisfies Record<string, string>
 
 export function getPlanDescription(planSlug: string): string {
 	return PLAN_DESCRIPTIONS[planSlug] ?? PLAN_DESCRIPTIONS["startup"]

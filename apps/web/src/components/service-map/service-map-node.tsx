@@ -13,6 +13,7 @@ import {
 	KubernetesIcon,
 	ServerIcon,
 } from "@/components/icons"
+import { formatRuntime } from "./service-map-runtime"
 import type { ServicePlatform } from "@/api/warehouse/service-map"
 import { resolveDbNodePresentation, resolvePlanetScaleDbPresentation, withAlpha } from "./service-map-db"
 import { getServiceMapNodeColor, type ServiceNodeData } from "./service-map-utils"
@@ -33,26 +34,6 @@ function getPlatformIcon(platform: ServicePlatform | undefined): {
 			return { Icon: GlobeIcon, label: "Web (browser)", branded: false }
 		default:
 			return { Icon: ServerIcon, label: "Unknown runtime", branded: false }
-	}
-}
-
-function formatRuntimeLabel(rt: string | undefined): { short: string; full: string } | null {
-	if (!rt) return null
-	switch (rt) {
-		case "nodejs":
-			return { short: "node", full: "Node.js" }
-		case "edge-light":
-			return { short: "edge", full: "Edge runtime" }
-		case "bun":
-			return { short: "bun", full: "Bun" }
-		case "deno":
-			return { short: "deno", full: "Deno" }
-		case "workerd":
-			return { short: "workerd", full: "Cloudflare workerd" }
-		case "fastly":
-			return { short: "fastly", full: "Fastly Compute" }
-		default:
-			return { short: rt, full: rt }
 	}
 }
 
@@ -131,8 +112,10 @@ const Handles = () => (
 function DatabaseNode({ data }: { data: ServiceNodeData }) {
 	const {
 		throughput,
+		hasSampling,
 		errorRate,
 		avgLatencyMs,
+		maxLatencyMs,
 		p95LatencyMs,
 		dbSystem,
 		dbNamespace,
@@ -191,7 +174,10 @@ function DatabaseNode({ data }: { data: ServiceNodeData }) {
 
 					{/* Metrics row */}
 					<div className="flex gap-4">
-						<MetricCell label="calls/s" value={formatRate(throughput)} />
+						<MetricCell
+							label="calls/s"
+							value={`${hasSampling ? "~" : ""}${formatRate(throughput)}`}
+						/>
 						<MetricCell
 							label="err%"
 							value={`${(errorRate * 100).toFixed(1)}%`}
@@ -202,10 +188,13 @@ function DatabaseNode({ data }: { data: ServiceNodeData }) {
 							value={formatLatency(avgLatencyMs)}
 							valueClassName={latencyToneClass(avgLatencyMs, "avg")}
 						/>
+						{/* A p95 when the rollup has a digest to merge; the slowest call
+						    otherwise, and then the label says so. Never one under the
+						    other's name — that gap read 3s against a 7ms p95. */}
 						<MetricCell
-							label="p95"
-							value={formatLatency(p95LatencyMs ?? 0)}
-							valueClassName={latencyToneClass(p95LatencyMs ?? 0, "p95")}
+							label={p95LatencyMs === undefined ? "max" : "p95"}
+							value={formatLatency(p95LatencyMs ?? maxLatencyMs ?? 0)}
+							valueClassName={latencyToneClass(p95LatencyMs ?? maxLatencyMs ?? 0, "p95")}
 						/>
 					</div>
 
@@ -262,7 +251,8 @@ function ServiceNode({ data }: { data: ServiceNodeData }) {
 		runtime,
 		colorMode,
 	} = data
-	const runtimeInfo = formatRuntimeLabel(runtime)
+	const runtimeInfo = formatRuntime(runtime, platform)
+	const RuntimeIcon = runtimeInfo?.Icon
 	const accentColor = getServiceMapNodeColor(
 		{ label, kind: "service", errorRate, platform },
 		colorMode ?? "service",
@@ -296,18 +286,33 @@ function ServiceNode({ data }: { data: ServiceNodeData }) {
 								/>
 							</TooltipTrigger>
 							<TooltipContent side="bottom">
+								{/* The runtime glyph carries its own tooltip; only fold the runtime in
+								    here when it renders as a bare text chip instead. */}
 								<p>
 									{iconLabel}
-									{runtimeInfo ? ` · ${runtimeInfo.full}` : ""}
+									{runtimeInfo && !RuntimeIcon ? ` · ${runtimeInfo.full}` : ""}
 								</p>
 							</TooltipContent>
 						</Tooltip>
 						<span className="truncate text-xs font-medium text-foreground">{label}</span>
-						{runtimeInfo && (
-							<span className="shrink-0 text-[9px] font-medium uppercase tracking-wide text-muted-foreground/60">
-								{runtimeInfo.short}
-							</span>
-						)}
+						{runtimeInfo &&
+							(RuntimeIcon ? (
+								<Tooltip>
+									<TooltipTrigger>
+										<RuntimeIcon
+											size={12}
+											className="shrink-0 text-muted-foreground/70"
+										/>
+									</TooltipTrigger>
+									<TooltipContent side="bottom">
+										<p>{runtimeInfo.full}</p>
+									</TooltipContent>
+								</Tooltip>
+							) : (
+								<span className="shrink-0 text-[9px] font-medium uppercase tracking-wide text-muted-foreground/60">
+									{runtimeInfo.short}
+								</span>
+							))}
 					</div>
 
 					{/* Metrics row */}

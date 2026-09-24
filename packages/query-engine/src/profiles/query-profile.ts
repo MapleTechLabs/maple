@@ -1,3 +1,5 @@
+import { parseStatement, renderStatement, withSettings } from "@maple-dev/effect-clickhouse/sql"
+
 /**
  * ClickHouse query settings forwarded via inline `SETTINGS` clause.
  *
@@ -65,7 +67,7 @@ export type WarehouseQueryOptions = {
 
 /**
  * The single per-call option type shared by every warehouse query surface
- * (`WarehouseQueryServiceShape`, the `WarehouseExecutor` facade, the runtime
+ * (`WarehouseQueryServiceApi`, the `WarehouseExecutor` facade, the runtime
  * `QueryEngineWarehouse` port, and the CLI executors). It lives next to the
  * profiles because it is a pure type with no execution-layer dependency.
  */
@@ -79,23 +81,11 @@ export type SqlQueryOptions = WarehouseQueryOptions & {
 	/**
 	 * Route this query to the INGEST backend (managed Tinybird) instead of the
 	 * per-org read config. Prefer declaring this at the query definition via
-	 * `.routing("ingest")` (carried on `CompiledQuery.routing`); use this option
+	 * `.route("ingest")` (carried on `CompiledQuery.route`); use this option
 	 * only for hand-written SQL or when the pin depends on runtime state (e.g.
 	 * reads of gateway-written data gated on write-readiness).
 	 */
 	route?: "ingest"
-	/**
-	 * Abort the read once the encoded response crosses these bounds, failing with
-	 * `WarehouseResponseLimitError` instead of buffering the rest.
-	 *
-	 * ClickHouse settings cap what the *warehouse* spends; this caps what *we*
-	 * are willing to materialize in a 128 MB Worker. Set it for queries whose
-	 * result size is driven by user data rather than by the query shape — without
-	 * it an oversized response dies as a platform abort, which the transient
-	 * classifier reads as a flaky upstream and retries. Reach for it via
-	 * `compiledQueryBounded`, which surfaces the error in its signature.
-	 */
-	responseLimits?: { readonly maxRows: number; readonly maxBytes: number }
 }
 
 /**
@@ -114,7 +104,7 @@ export const QueryProfile: Record<QueryProfileName, WarehouseQuerySettings> = {
 	rawAlert: { maxExecutionTime: 5, maxMemoryUsage: 256_000_000, maxThreads: 2 },
 	explain: { maxExecutionTime: 2, maxMemoryUsage: 128_000_000 },
 	unbounded: {},
-}
+} satisfies Record<QueryProfileName, WarehouseQuerySettings>
 
 const settingToCh: Record<keyof WarehouseQuerySettings, string> = {
 	maxExecutionTime: "max_execution_time",
@@ -122,7 +112,7 @@ const settingToCh: Record<keyof WarehouseQuerySettings, string> = {
 	maxThreads: "max_threads",
 	maxBlockSize: "max_block_size",
 	enableFullTextIndex: "enable_full_text_index",
-}
+} satisfies Record<keyof WarehouseQuerySettings, string>
 
 /**
  * Settings Tinybird's `/v0/sql` rejects with "Usage of setting '…' is
@@ -147,22 +137,11 @@ export const stripTinybirdRestrictedSettings = (
 }
 
 /**
- * Matches a trailing `FORMAT <name>` clause (the DSL compiler terminates every
- * query with `FORMAT JSON`). `SETTINGS` must precede `FORMAT` — Tinybird's
- * ClickHouse rejects `FORMAT JSON SETTINGS …` with a syntax error.
+ * The `SETTINGS …` clause for these settings, or undefined when there is
+ * nothing to set. Non-finite and undefined values are dropped.
  */
-const trailingFormatRe = /\s+FORMAT\s+\w+\s*$/i
-
-/**
- * Add a ClickHouse `SETTINGS` clause to a SQL string, inserting it before a
- * trailing `FORMAT <name>` clause when present. Returns the input unchanged
- * when no settings are provided.
- *
- * Caller must guarantee the SQL doesn't already contain a SETTINGS
- * clause — none of maple's DSL queries do today.
- */
-export const appendSettings = (sql: string, settings: WarehouseQuerySettings | undefined): string => {
-	if (!settings) return sql
+export const settingsClause = (settings: WarehouseQuerySettings | undefined): string | undefined => {
+	if (!settings) return undefined
 	const parts: string[] = []
 	for (const key of Object.keys(settings) as Array<keyof WarehouseQuerySettings>) {
 		const value = settings[key]
@@ -170,15 +149,28 @@ export const appendSettings = (sql: string, settings: WarehouseQuerySettings | u
 			parts.push(`${settingToCh[key]}=${value}`)
 		}
 	}
-	if (parts.length === 0) return sql
-	const clause = `SETTINGS ${parts.join(", ")}`
-	const trimmed = sql.replace(/;\s*$/, "")
-	const formatMatch = trimmed.match(trailingFormatRe)
-	if (formatMatch) {
-		const body = trimmed.slice(0, formatMatch.index)
-		return `${body} ${clause}${formatMatch[0]}`
-	}
-	return `${trimmed} ${clause}`
+	return parts.length === 0 ? undefined : `SETTINGS ${parts.join(", ")}`
+}
+
+/**
+ * Add a ClickHouse `SETTINGS` clause to SQL text, before a trailing `FORMAT`
+ * clause when there is one (Tinybird's ClickHouse rejects the inverse order).
+ * Returns the input unchanged when there is nothing to set.
+ *
+ * A statement that already carries its own `SETTINGS` is returned untouched —
+ * appending a second clause is a syntax error, and silently merging would hide
+ * whichever budget lost. Raw SQL rejects an author-supplied `SETTINGS` upstream
+ * in `prepareRawSql`; no DSL query emits one.
+ *
+ * The executor works on the parsed statement instead of round-tripping text;
+ * this is for call sites that hold SQL as a string.
+ */
+export const appendSettings = (sql: string, settings: WarehouseQuerySettings | undefined): string => {
+	const clause = settingsClause(settings)
+	if (clause === undefined) return sql
+	const statement = parseStatement(sql)
+	if (statement.settings !== undefined) return sql
+	return renderStatement(withSettings(statement, clause))
 }
 
 /**
@@ -200,12 +192,12 @@ type QuotaSetting = "max_execution_time" | "max_memory_usage" | "max_threads"
 const CODE_TO_SETTING: Record<string, QuotaSetting> = {
 	"159": "max_execution_time", // TIMEOUT_EXCEEDED
 	"241": "max_memory_usage", // MEMORY_LIMIT_EXCEEDED
-}
+} satisfies Record<string, QuotaSetting>
 
 const TYPE_TO_SETTING: Record<string, QuotaSetting> = {
 	TIMEOUT_EXCEEDED: "max_execution_time",
 	MEMORY_LIMIT_EXCEEDED: "max_memory_usage",
-}
+} satisfies Record<string, QuotaSetting>
 
 /**
  * Message-only fallback patterns. Deliberately tight: bare substrings like

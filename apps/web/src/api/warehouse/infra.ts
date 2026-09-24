@@ -2,6 +2,7 @@ import {
 	FleetUtilizationTimeseriesRequest,
 	HostDetailSummaryRequest,
 	HostInfraTimeseriesRequest,
+	InfraPresenceRequest,
 	ListHostsRequest,
 	ListPodsRequest,
 	PodsSummaryRequest,
@@ -16,9 +17,15 @@ import {
 	WorkloadDetailSummaryRequest,
 	WorkloadInfraTimeseriesRequest,
 	WorkloadFacetsRequest,
+	ListContainersRequest,
+	ContainersSummaryRequest,
+	ContainerDetailSummaryRequest,
+	ContainerInfraTimeseriesRequest,
+	ContainerFacetsRequest,
 	type FleetUtilizationTimeseriesResponse,
 	type HostDetailSummaryResponse,
 	type HostInfraTimeseriesResponse,
+	type InfraPresenceResponse,
 	type ListHostsResponse,
 	type ListPodsResponse,
 	type PodsSummaryResponse,
@@ -33,9 +40,14 @@ import {
 	type WorkloadDetailSummaryResponse,
 	type WorkloadInfraTimeseriesResponse,
 	type WorkloadFacetsResponse,
+	type ListContainersResponse,
+	type ContainersSummaryResponse,
+	type ContainerDetailSummaryResponse,
+	type ContainerInfraTimeseriesResponse,
+	type ContainerFacetsResponse,
 } from "@maple/domain/http"
 import { Effect } from "effect"
-import { MapleApiAtomClient } from "@/lib/services/common/atom-client"
+import { MapleInternalAtomClient } from "@/lib/services/common/internal-atom-client"
 import { runWarehouseQuery } from "./effect-utils"
 
 export type WorkloadKind = "deployment" | "statefulset" | "daemonset"
@@ -46,7 +58,31 @@ export type PodSortKey = "saturation" | "cpuUsage" | "cpuLimitPct" | "memoryLimi
 export type SortDirection = "asc" | "desc"
 
 /** One-click fleet scopes from the summary band. */
-export type PodScope = "saturated" | "elevated" | "unbounded" | "stale"
+export type PodScope = "saturated" | "elevated" | "unbounded"
+
+/** Which slice of the window's pods to list — see the domain contract. */
+export type PodLifecycle = "live" | "ended" | "all"
+
+export interface InfraPresenceInput {
+	startTime: string
+	endTime: string
+}
+
+/** Which Infrastructure surfaces report telemetry — the sidebar's visibility gate. */
+export function infraPresence({ data }: { data: InfraPresenceInput }) {
+	return runWarehouseQuery("infraPresence", () =>
+		Effect.gen(function* () {
+			const client = yield* MapleInternalAtomClient
+			const response: InfraPresenceResponse = yield* client.queryEngine.infraPresence({
+				payload: new InfraPresenceRequest({
+					startTime: data.startTime,
+					endTime: data.endTime,
+				}),
+			})
+			return response
+		}),
+	)
+}
 
 export interface ListHostsInput {
 	startTime: string
@@ -59,7 +95,7 @@ export interface ListHostsInput {
 export function listHosts({ data }: { data: ListHostsInput }) {
 	return runWarehouseQuery("listHosts", () =>
 		Effect.gen(function* () {
-			const client = yield* MapleApiAtomClient
+			const client = yield* MapleInternalAtomClient
 			const response: ListHostsResponse = yield* client.queryEngine.listHosts({
 				payload: new ListHostsRequest({
 					startTime: data.startTime,
@@ -83,7 +119,7 @@ export interface HostDetailSummaryInput {
 export function hostDetailSummary({ data }: { data: HostDetailSummaryInput }) {
 	return runWarehouseQuery("hostDetailSummary", () =>
 		Effect.gen(function* () {
-			const client = yield* MapleApiAtomClient
+			const client = yield* MapleInternalAtomClient
 			const response: HostDetailSummaryResponse = yield* client.queryEngine.hostDetailSummary({
 				payload: new HostDetailSummaryRequest({
 					startTime: data.startTime,
@@ -115,7 +151,7 @@ export interface FleetUtilizationTimeseriesInput {
 export function fleetUtilizationTimeseries({ data }: { data: FleetUtilizationTimeseriesInput }) {
 	return runWarehouseQuery("fleetUtilizationTimeseries", () =>
 		Effect.gen(function* () {
-			const client = yield* MapleApiAtomClient
+			const client = yield* MapleInternalAtomClient
 			const response: FleetUtilizationTimeseriesResponse =
 				yield* client.queryEngine.fleetUtilizationTimeseries({
 					payload: new FleetUtilizationTimeseriesRequest({
@@ -132,7 +168,7 @@ export function fleetUtilizationTimeseries({ data }: { data: FleetUtilizationTim
 export function hostInfraTimeseries({ data }: { data: HostInfraTimeseriesInput }) {
 	return runWarehouseQuery("hostInfraTimeseries", () =>
 		Effect.gen(function* () {
-			const client = yield* MapleApiAtomClient
+			const client = yield* MapleInternalAtomClient
 			const response: HostInfraTimeseriesResponse = yield* client.queryEngine.hostInfraTimeseries({
 				payload: new HostInfraTimeseriesRequest({
 					startTime: data.startTime,
@@ -146,10 +182,6 @@ export function hostInfraTimeseries({ data }: { data: HostInfraTimeseriesInput }
 		}),
 	)
 }
-
-// ---------------------------------------------------------------------------
-// Pods
-// ---------------------------------------------------------------------------
 
 export interface ListPodsInput {
 	startTime: string
@@ -165,9 +197,21 @@ export interface ListPodsInput {
 	jobs?: ReadonlyArray<string>
 	environments?: ReadonlyArray<string>
 	computeTypes?: ReadonlyArray<string>
+	excludedPodNames?: ReadonlyArray<string>
+	excludedNamespaces?: ReadonlyArray<string>
+	excludedNodeNames?: ReadonlyArray<string>
+	excludedClusters?: ReadonlyArray<string>
+	excludedDeployments?: ReadonlyArray<string>
+	excludedStatefulsets?: ReadonlyArray<string>
+	excludedDaemonsets?: ReadonlyArray<string>
+	excludedJobs?: ReadonlyArray<string>
+	excludedEnvironments?: ReadonlyArray<string>
+	excludedComputeTypes?: ReadonlyArray<string>
 	workloadKind?: WorkloadKind
 	workloadName?: string
 	scope?: PodScope
+	/** Server-side default is `live`. */
+	lifecycle?: PodLifecycle
 	sortBy?: PodSortKey
 	sortDir?: SortDirection
 	limit?: number
@@ -177,7 +221,7 @@ export interface ListPodsInput {
 export function listPods({ data }: { data: ListPodsInput }) {
 	return runWarehouseQuery("listPods", () =>
 		Effect.gen(function* () {
-			const client = yield* MapleApiAtomClient
+			const client = yield* MapleInternalAtomClient
 			const response: ListPodsResponse = yield* client.queryEngine.listPods({
 				payload: new ListPodsRequest({
 					startTime: data.startTime,
@@ -193,9 +237,20 @@ export function listPods({ data }: { data: ListPodsInput }) {
 					jobs: data.jobs,
 					environments: data.environments,
 					computeTypes: data.computeTypes,
+					excludedPodNames: data.excludedPodNames,
+					excludedNamespaces: data.excludedNamespaces,
+					excludedNodeNames: data.excludedNodeNames,
+					excludedClusters: data.excludedClusters,
+					excludedDeployments: data.excludedDeployments,
+					excludedStatefulsets: data.excludedStatefulsets,
+					excludedDaemonsets: data.excludedDaemonsets,
+					excludedJobs: data.excludedJobs,
+					excludedEnvironments: data.excludedEnvironments,
+					excludedComputeTypes: data.excludedComputeTypes,
 					workloadKind: data.workloadKind,
 					workloadName: data.workloadName,
 					scope: data.scope,
+					lifecycle: data.lifecycle,
 					sortBy: data.sortBy,
 					sortDir: data.sortDir,
 					limit: data.limit,
@@ -223,7 +278,7 @@ export interface PodsSummaryInput {
 export function podsSummary({ data }: { data: PodsSummaryInput }) {
 	return runWarehouseQuery("podsSummary", () =>
 		Effect.gen(function* () {
-			const client = yield* MapleApiAtomClient
+			const client = yield* MapleInternalAtomClient
 			const response: PodsSummaryResponse = yield* client.queryEngine.podsSummary({
 				payload: new PodsSummaryRequest({
 					startTime: data.startTime,
@@ -252,12 +307,22 @@ export interface PodFacetsInput {
 	jobs?: ReadonlyArray<string>
 	environments?: ReadonlyArray<string>
 	computeTypes?: ReadonlyArray<string>
+	excludedPodNames?: ReadonlyArray<string>
+	excludedNamespaces?: ReadonlyArray<string>
+	excludedNodeNames?: ReadonlyArray<string>
+	excludedClusters?: ReadonlyArray<string>
+	excludedDeployments?: ReadonlyArray<string>
+	excludedStatefulsets?: ReadonlyArray<string>
+	excludedDaemonsets?: ReadonlyArray<string>
+	excludedJobs?: ReadonlyArray<string>
+	excludedEnvironments?: ReadonlyArray<string>
+	excludedComputeTypes?: ReadonlyArray<string>
 }
 
 export function getPodFacets({ data }: { data: PodFacetsInput }) {
 	return runWarehouseQuery("podFacets", () =>
 		Effect.gen(function* () {
-			const client = yield* MapleApiAtomClient
+			const client = yield* MapleInternalAtomClient
 			const response: PodFacetsResponse = yield* client.queryEngine.podFacets({
 				payload: new PodFacetsRequest({
 					startTime: data.startTime,
@@ -273,6 +338,16 @@ export function getPodFacets({ data }: { data: PodFacetsInput }) {
 					jobs: data.jobs,
 					environments: data.environments,
 					computeTypes: data.computeTypes,
+					excludedPodNames: data.excludedPodNames,
+					excludedNamespaces: data.excludedNamespaces,
+					excludedNodeNames: data.excludedNodeNames,
+					excludedClusters: data.excludedClusters,
+					excludedDeployments: data.excludedDeployments,
+					excludedStatefulsets: data.excludedStatefulsets,
+					excludedDaemonsets: data.excludedDaemonsets,
+					excludedJobs: data.excludedJobs,
+					excludedEnvironments: data.excludedEnvironments,
+					excludedComputeTypes: data.excludedComputeTypes,
 				}),
 			})
 			return response
@@ -290,7 +365,7 @@ export interface PodDetailSummaryInput {
 export function podDetailSummary({ data }: { data: PodDetailSummaryInput }) {
 	return runWarehouseQuery("podDetailSummary", () =>
 		Effect.gen(function* () {
-			const client = yield* MapleApiAtomClient
+			const client = yield* MapleInternalAtomClient
 			const response: PodDetailSummaryResponse = yield* client.queryEngine.podDetailSummary({
 				payload: new PodDetailSummaryRequest({
 					startTime: data.startTime,
@@ -318,7 +393,7 @@ export interface PodInfraTimeseriesInput {
 export function podInfraTimeseries({ data }: { data: PodInfraTimeseriesInput }) {
 	return runWarehouseQuery("podInfraTimeseries", () =>
 		Effect.gen(function* () {
-			const client = yield* MapleApiAtomClient
+			const client = yield* MapleInternalAtomClient
 			const response: PodInfraTimeseriesResponse = yield* client.queryEngine.podInfraTimeseries({
 				payload: new PodInfraTimeseriesRequest({
 					startTime: data.startTime,
@@ -334,10 +409,6 @@ export function podInfraTimeseries({ data }: { data: PodInfraTimeseriesInput }) 
 	)
 }
 
-// ---------------------------------------------------------------------------
-// Nodes
-// ---------------------------------------------------------------------------
-
 export interface ListNodesInput {
 	startTime: string
 	endTime: string
@@ -352,7 +423,7 @@ export interface ListNodesInput {
 export function listNodes({ data }: { data: ListNodesInput }) {
 	return runWarehouseQuery("listNodes", () =>
 		Effect.gen(function* () {
-			const client = yield* MapleApiAtomClient
+			const client = yield* MapleInternalAtomClient
 			const response: ListNodesResponse = yield* client.queryEngine.listNodes({
 				payload: new ListNodesRequest({
 					startTime: data.startTime,
@@ -382,7 +453,7 @@ export interface NodeFacetsInput {
 export function getNodeFacets({ data }: { data: NodeFacetsInput }) {
 	return runWarehouseQuery("nodeFacets", () =>
 		Effect.gen(function* () {
-			const client = yield* MapleApiAtomClient
+			const client = yield* MapleInternalAtomClient
 			const response: NodeFacetsResponse = yield* client.queryEngine.nodeFacets({
 				payload: new NodeFacetsRequest({
 					startTime: data.startTime,
@@ -407,7 +478,7 @@ export interface NodeDetailSummaryInput {
 export function nodeDetailSummary({ data }: { data: NodeDetailSummaryInput }) {
 	return runWarehouseQuery("nodeDetailSummary", () =>
 		Effect.gen(function* () {
-			const client = yield* MapleApiAtomClient
+			const client = yield* MapleInternalAtomClient
 			const response: NodeDetailSummaryResponse = yield* client.queryEngine.nodeDetailSummary({
 				payload: new NodeDetailSummaryRequest({
 					startTime: data.startTime,
@@ -433,7 +504,7 @@ export interface NodeInfraTimeseriesInput {
 export function nodeInfraTimeseries({ data }: { data: NodeInfraTimeseriesInput }) {
 	return runWarehouseQuery("nodeInfraTimeseries", () =>
 		Effect.gen(function* () {
-			const client = yield* MapleApiAtomClient
+			const client = yield* MapleInternalAtomClient
 			const response: NodeInfraTimeseriesResponse = yield* client.queryEngine.nodeInfraTimeseries({
 				payload: new NodeInfraTimeseriesRequest({
 					startTime: data.startTime,
@@ -448,9 +519,187 @@ export function nodeInfraTimeseries({ data }: { data: NodeInfraTimeseriesInput }
 	)
 }
 
-// ---------------------------------------------------------------------------
+// Containers (Docker)
+
+/** Mirrors ContainerSortKeyLiteral in @maple/domain — `saturation` is peak-of-either-percent. */
+export type ContainerSortKey = "saturation" | "cpuPct" | "memoryPct" | "containerName" | "lastSeen"
+
+/** One-click fleet scopes from the containers summary band (no `unbounded` — see domain). */
+export type ContainerScope = "saturated" | "elevated" | "stale"
+
+export interface ContainerFilterInputs {
+	search?: string
+	containerNames?: ReadonlyArray<string>
+	hostNames?: ReadonlyArray<string>
+	images?: ReadonlyArray<string>
+	composeProjects?: ReadonlyArray<string>
+	composeServices?: ReadonlyArray<string>
+	environments?: ReadonlyArray<string>
+	excludedContainerNames?: ReadonlyArray<string>
+	excludedHostNames?: ReadonlyArray<string>
+	excludedImages?: ReadonlyArray<string>
+	excludedComposeProjects?: ReadonlyArray<string>
+	excludedComposeServices?: ReadonlyArray<string>
+	excludedEnvironments?: ReadonlyArray<string>
+}
+
+export interface ListContainersInput extends ContainerFilterInputs {
+	startTime: string
+	endTime: string
+	scope?: ContainerScope
+	sortBy?: ContainerSortKey
+	sortDir?: SortDirection
+	limit?: number
+	offset?: number
+}
+
+const containerFilterPayload = (data: ContainerFilterInputs) => ({
+	search: data.search,
+	containerNames: data.containerNames,
+	hostNames: data.hostNames,
+	images: data.images,
+	composeProjects: data.composeProjects,
+	composeServices: data.composeServices,
+	environments: data.environments,
+	excludedContainerNames: data.excludedContainerNames,
+	excludedHostNames: data.excludedHostNames,
+	excludedImages: data.excludedImages,
+	excludedComposeProjects: data.excludedComposeProjects,
+	excludedComposeServices: data.excludedComposeServices,
+	excludedEnvironments: data.excludedEnvironments,
+})
+
+export function listContainers({ data }: { data: ListContainersInput }) {
+	return runWarehouseQuery("listContainers", () =>
+		Effect.gen(function* () {
+			const client = yield* MapleInternalAtomClient
+			const response: ListContainersResponse = yield* client.queryEngine.listContainers({
+				payload: new ListContainersRequest({
+					startTime: data.startTime,
+					endTime: data.endTime,
+					...containerFilterPayload(data),
+					scope: data.scope,
+					sortBy: data.sortBy,
+					sortDir: data.sortDir,
+					limit: data.limit,
+					offset: data.offset,
+				}),
+			})
+			return response
+		}),
+	)
+}
+
+export interface ContainersSummaryInput {
+	startTime: string
+	endTime: string
+	hostNames?: ReadonlyArray<string>
+	environments?: ReadonlyArray<string>
+}
+
+/** Fleet-shape counts for the containers summary band — scope-only, like podsSummary. */
+export function containersSummary({ data }: { data: ContainersSummaryInput }) {
+	return runWarehouseQuery("containersSummary", () =>
+		Effect.gen(function* () {
+			const client = yield* MapleInternalAtomClient
+			const response: ContainersSummaryResponse = yield* client.queryEngine.containersSummary({
+				payload: new ContainersSummaryRequest({
+					startTime: data.startTime,
+					endTime: data.endTime,
+					hostNames: data.hostNames,
+					environments: data.environments,
+				}),
+			})
+			return response
+		}),
+	)
+}
+
+export interface ContainerFacetsInput extends ContainerFilterInputs {
+	startTime: string
+	endTime: string
+}
+
+export function getContainerFacets({ data }: { data: ContainerFacetsInput }) {
+	return runWarehouseQuery("containerFacets", () =>
+		Effect.gen(function* () {
+			const client = yield* MapleInternalAtomClient
+			const response: ContainerFacetsResponse = yield* client.queryEngine.containerFacets({
+				payload: new ContainerFacetsRequest({
+					startTime: data.startTime,
+					endTime: data.endTime,
+					...containerFilterPayload(data),
+				}),
+			})
+			return response
+		}),
+	)
+}
+
+export interface ContainerDetailSummaryInput {
+	startTime: string
+	endTime: string
+	containerName: string
+	hostName?: string
+}
+
+export function containerDetailSummary({ data }: { data: ContainerDetailSummaryInput }) {
+	return runWarehouseQuery("containerDetailSummary", () =>
+		Effect.gen(function* () {
+			const client = yield* MapleInternalAtomClient
+			const response: ContainerDetailSummaryResponse = yield* client.queryEngine.containerDetailSummary(
+				{
+					payload: new ContainerDetailSummaryRequest({
+						startTime: data.startTime,
+						endTime: data.endTime,
+						containerName: data.containerName,
+						hostName: data.hostName,
+					}),
+				},
+			)
+			return response
+		}),
+	)
+}
+
+export type ContainerInfraMetric =
+	| "cpu"
+	| "memory_percent"
+	| "memory_bytes"
+	| "network"
+	| "disk_io"
+	| "uptime"
+
+export interface ContainerInfraTimeseriesInput {
+	startTime: string
+	endTime: string
+	containerName: string
+	hostName?: string
+	metric: ContainerInfraMetric
+	bucketSeconds?: number
+}
+
+export function containerInfraTimeseries({ data }: { data: ContainerInfraTimeseriesInput }) {
+	return runWarehouseQuery("containerInfraTimeseries", () =>
+		Effect.gen(function* () {
+			const client = yield* MapleInternalAtomClient
+			const response: ContainerInfraTimeseriesResponse =
+				yield* client.queryEngine.containerInfraTimeseries({
+					payload: new ContainerInfraTimeseriesRequest({
+						startTime: data.startTime,
+						endTime: data.endTime,
+						containerName: data.containerName,
+						hostName: data.hostName,
+						metric: data.metric,
+						bucketSeconds: data.bucketSeconds,
+					}),
+				})
+			return response
+		}),
+	)
+}
+
 // Workloads (Deployments / StatefulSets / DaemonSets)
-// ---------------------------------------------------------------------------
 
 export interface ListWorkloadsInput {
 	startTime: string
@@ -469,7 +718,7 @@ export interface ListWorkloadsInput {
 export function listWorkloads({ data }: { data: ListWorkloadsInput }) {
 	return runWarehouseQuery("listWorkloads", () =>
 		Effect.gen(function* () {
-			const client = yield* MapleApiAtomClient
+			const client = yield* MapleInternalAtomClient
 			const response: ListWorkloadsResponse = yield* client.queryEngine.listWorkloads({
 				payload: new ListWorkloadsRequest({
 					startTime: data.startTime,
@@ -505,7 +754,7 @@ export interface WorkloadFacetsInput {
 export function getWorkloadFacets({ data }: { data: WorkloadFacetsInput }) {
 	return runWarehouseQuery("workloadFacets", () =>
 		Effect.gen(function* () {
-			const client = yield* MapleApiAtomClient
+			const client = yield* MapleInternalAtomClient
 			const response: WorkloadFacetsResponse = yield* client.queryEngine.workloadFacets({
 				payload: new WorkloadFacetsRequest({
 					startTime: data.startTime,
@@ -535,7 +784,7 @@ export interface WorkloadDetailSummaryInput {
 export function workloadDetailSummary({ data }: { data: WorkloadDetailSummaryInput }) {
 	return runWarehouseQuery("workloadDetailSummary", () =>
 		Effect.gen(function* () {
-			const client = yield* MapleApiAtomClient
+			const client = yield* MapleInternalAtomClient
 			const response: WorkloadDetailSummaryResponse = yield* client.queryEngine.workloadDetailSummary({
 				payload: new WorkloadDetailSummaryRequest({
 					startTime: data.startTime,
@@ -566,7 +815,7 @@ export interface WorkloadInfraTimeseriesInput {
 export function workloadInfraTimeseries({ data }: { data: WorkloadInfraTimeseriesInput }) {
 	return runWarehouseQuery("workloadInfraTimeseries", () =>
 		Effect.gen(function* () {
-			const client = yield* MapleApiAtomClient
+			const client = yield* MapleInternalAtomClient
 			const response: WorkloadInfraTimeseriesResponse =
 				yield* client.queryEngine.workloadInfraTimeseries({
 					payload: new WorkloadInfraTimeseriesRequest({

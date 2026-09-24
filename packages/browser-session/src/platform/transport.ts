@@ -1,0 +1,266 @@
+/**
+ * The slice of configuration the replay engine needs. Both SDKs adapt their
+ * own config shapes onto this.
+ */
+export interface IngestConfig {
+	readonly endpoint: string
+	/**
+	 * Sent as `Authorization: Bearer …`, and nothing else: it never decides
+	 * whether a feature runs. Unset when a proxy in front of `endpoint` adds auth.
+	 */
+	readonly ingestKey?: string | undefined
+	/** `x-maple-sdk` value — see {@link SDK_HINT_HEADER}. */
+	readonly sdk: string
+	readonly maskAllInputs: boolean
+	readonly maskAllText: boolean
+	/**
+	 * Identity from `identify()`, consulted when session-event rows are built so
+	 * a late `identify()` still stamps `user_id`/`group_id` on the rows that
+	 * follow it — the same source the session metadata row reads.
+	 */
+	readonly getIdentity?: (() => EventIdentity | undefined) | undefined
+}
+
+/**
+ * The slice of `ResolvedIdentity` that rides on session-event rows. Declared
+ * structurally so this transport layer stays free of the identity module.
+ */
+export interface EventIdentity {
+	readonly id?: string | undefined
+	readonly groupId?: string | undefined
+}
+
+/**
+ * Header stamped on every request to ingest: `<sdk-name>/<version>`, e.g.
+ * `maple-browser/0.3.0`. Browsers refuse to let a page set `user-agent`, so
+ * without this a rejected request carried nothing that said which SDK build
+ * produced it. Ingest records it as `maple.sdk` on the request span. Every
+ * gateway that receives browser traffic must allow it in CORS (`apps/ingest`
+ * and the CLI's local listener do) — a header the SDK always sends and
+ * preflight refuses blocks the whole SDK, not just the header.
+ */
+export const SDK_HINT_HEADER = "x-maple-sdk"
+
+/** `<name>/<version>` — the one shape ingest expects in `x-maple-sdk`. */
+export const sdkHint = (name: string, version: string): string => `${name}/${version}`
+
+/** Auth + identity headers shared by every ingest request. No key, no `Authorization`. */
+export function ingestHeaders(config: Pick<IngestConfig, "ingestKey" | "sdk">): Record<string, string> {
+	const identity = { [SDK_HINT_HEADER]: config.sdk }
+	if (!config.ingestKey) return identity
+	return { Authorization: `Bearer ${config.ingestKey}`, ...identity }
+}
+
+// Replay POSTs are best-effort and must never throw into the host app, but a
+// fully broken ingest endpoint should not be *silent*. Warn at most once every
+// 30s so a misconfigured endpoint is visible in the console without spamming it.
+// Rate-limited per call site, so a broken endpoint surfaces each distinct
+// failure rather than whichever one happened to warn first.
+const lastWarnAt = new Map<string, number>()
+export function warnDropped(what: string, error: unknown): void {
+	const now = Date.now()
+	if (now - (lastWarnAt.get(what) ?? 0) < 30_000) return
+	lastWarnAt.set(what, now)
+	console.warn(`[maple] session replay ${what} failed (dropping; will retry on next chunk):`, error)
+}
+
+/**
+ * Combined budget for this SDK's in-flight `keepalive` bodies.
+ *
+ * The Fetch spec caps the *combined* in-flight keepalive body at 64 KiB per
+ * page, and the browser rejects a request that would cross it. On the way out
+ * up to three of our writes go at once (metadata row, final events batch, last
+ * replay chunk), so the budget has to be shared rather than checked per
+ * request. It stops short of 64 KiB because the OTLP trace exporter spends
+ * from the same page-wide allowance under its own accounting.
+ *
+ * Over the budget a write goes out as a normal request, which the page may or
+ * may not survive long enough to finish: strictly better than a guaranteed
+ * rejection.
+ */
+const KEEPALIVE_BUDGET_BYTES = 48 * 1024
+
+/** On `globalThis`: two bundled SDK copies still share one page-wide allowance. */
+const KEEPALIVE_KEY = "__MAPLE_KEEPALIVE_INFLIGHT__"
+
+function keepaliveInflight(): { bytes: number } {
+	const owner = globalThis as Record<string, unknown>
+	const existing = owner[KEEPALIVE_KEY] as { bytes: number } | undefined
+	if (existing) return existing
+	const fresh = { bytes: 0 }
+	owner[KEEPALIVE_KEY] = fresh
+	return fresh
+}
+
+/**
+ * Reserve `bytes` of the shared keepalive budget. Returns the release function
+ * when the request may use `keepalive`, `undefined` when it must not.
+ */
+export function reserveKeepalive(requested: boolean, bytes: number): (() => void) | undefined {
+	if (!requested) return undefined
+	const inflight = keepaliveInflight()
+	if (inflight.bytes + bytes > KEEPALIVE_BUDGET_BYTES) return undefined
+	inflight.bytes += bytes
+	let released = false
+	return () => {
+		if (released) return
+		released = true
+		inflight.bytes = Math.max(0, inflight.bytes - bytes)
+	}
+}
+
+/** Test seam. */
+export function resetKeepaliveBudgetForTests(): void {
+	keepaliveInflight().bytes = 0
+}
+
+/** Body size in bytes: the keepalive limit counts bytes, and `string.length` counts UTF-16 units. */
+function byteLength(body: string | Uint8Array): number {
+	return typeof body === "string" ? new TextEncoder().encode(body).byteLength : body.byteLength
+}
+
+/**
+ * POST to ingest, spending the shared keepalive budget when `keepalive` is
+ * requested. Resolves with the status only: the response body is cancelled
+ * before the reservation is released, because the browser counts a keepalive
+ * request against the page-wide limit until its response body ends, not
+ * until headers arrive. Rejects exactly as `fetch` does; callers own the
+ * error policy.
+ */
+export async function postToIngest(
+	url: string,
+	headers: Record<string, string>,
+	body: string | Uint8Array,
+	keepalive: boolean,
+): Promise<{ readonly ok: boolean; readonly status: number }> {
+	const release = reserveKeepalive(keepalive, byteLength(body))
+	try {
+		const response = await fetch(url, {
+			method: "POST",
+			headers,
+			body: body as BodyInit,
+			keepalive: release !== undefined,
+		})
+		// Nothing reads ingest's body; ending it here is what ends the request.
+		await response.body?.cancel().catch(() => {})
+		return { ok: response.ok, status: response.status }
+	} finally {
+		release?.()
+	}
+}
+
+/**
+ * Smallest well-formed gzip stream: a 10-byte header plus an 8-byte trailer.
+ * Anything shorter cannot carry a complete member, whatever it contains.
+ */
+const GZIP_MIN_BYTES = 18
+
+/**
+ * gzip a byte buffer using the native CompressionStream (no library).
+ *
+ * Throws rather than returning a partial stream. The write and close promises
+ * used to be discarded, so a page torn down mid-compression still resolved
+ * `arrayBuffer()` — with only the bytes already flushed — and the caller posted
+ * a 3-byte header stub as if it were a complete chunk. Ingest rejected those as
+ * corrupt gzip; they were 82% of all replay-blob failures, overwhelmingly from
+ * crawlers, which tear the page down on nearly every session.
+ */
+export async function gzip(bytes: Uint8Array): Promise<Uint8Array> {
+	const stream = new CompressionStream("gzip")
+	const writer = stream.writable.getWriter()
+	// Both halves are started before either is awaited: awaiting the write first
+	// deadlocks once the chunk exceeds the stream's internal queue, because
+	// nothing is draining the readable end yet.
+	const written = writer.write(bytes as BufferSource).then(() => writer.close())
+	const [buffer] = await Promise.all([new Response(stream.readable).arrayBuffer(), written])
+	const out = new Uint8Array(buffer)
+	if (out.length < GZIP_MIN_BYTES || out[0] !== 0x1f || out[1] !== 0x8b || out[2] !== 0x08) {
+		throw new Error(`gzip produced ${out.length} bytes, not a complete gzip stream`)
+	}
+	return out
+}
+
+/** POST session metadata (NDJSON, single row). `keepalive` for the final unload write. */
+export async function postSessionMeta(
+	config: IngestConfig,
+	row: Record<string, unknown>,
+	keepalive = false,
+): Promise<void> {
+	const body = `${JSON.stringify(row)}\n`
+	await postToIngest(
+		`${config.endpoint}/v1/sessionReplays/meta`,
+		{ ...ingestHeaders(config), "content-type": "application/x-ndjson" },
+		body,
+		keepalive,
+	).catch((error) => {
+		// Replay is best-effort; never throw into the host app.
+		warnDropped("metadata POST", error)
+	})
+}
+
+/** POST distilled session events (NDJSON, one row per event). Best-effort. */
+export async function postSessionEvents(
+	config: IngestConfig,
+	rows: ReadonlyArray<Record<string, unknown>>,
+	keepalive = false,
+): Promise<void> {
+	if (rows.length === 0) return
+	const body = `${rows.map((row) => JSON.stringify(row)).join("\n")}\n`
+	await postToIngest(
+		`${config.endpoint}/v1/sessionEvents`,
+		{ ...ingestHeaders(config), "content-type": "application/x-ndjson" },
+		body,
+		keepalive,
+	).catch((error) => {
+		warnDropped("events POST", error)
+	})
+}
+
+export interface ChunkMeta {
+	readonly sessionId: string
+	readonly chunkSeq: number
+	readonly isCheckpoint: boolean
+	readonly eventCount: number
+	readonly durationMs: number
+}
+
+/**
+ * How ingest answered a chunk upload. `"exhausted"` is the 413 ingest returns
+ * once a session has hit its recorded-size ceiling; every later chunk of that
+ * session gets the same answer, so the recorder must stop uploading rather than
+ * pay for a rejected POST every flush for the rest of the page's life.
+ */
+export type BlobPostOutcome = "accepted" | "rejected" | "exhausted" | "failed"
+
+const SESSION_EXHAUSTED_STATUS = 413
+
+/** POST a gzipped rrweb event chunk. */
+export async function postSessionBlob(
+	config: IngestConfig,
+	meta: ChunkMeta,
+	gzipped: Uint8Array,
+	keepalive = false,
+): Promise<BlobPostOutcome> {
+	try {
+		const response = await postToIngest(
+			`${config.endpoint}/v1/sessionReplays/blob`,
+			{
+				...ingestHeaders(config),
+				"content-type": "application/octet-stream",
+				"x-maple-session-id": meta.sessionId,
+				"x-maple-chunk-seq": String(meta.chunkSeq),
+				"x-maple-is-checkpoint": meta.isCheckpoint ? "1" : "0",
+				"x-maple-event-count": String(meta.eventCount),
+				"x-maple-duration-ms": String(meta.durationMs),
+			},
+			gzipped,
+			keepalive,
+		)
+		if (response.ok) return "accepted"
+		return response.status === SESSION_EXHAUSTED_STATUS ? "exhausted" : "rejected"
+	} catch (error) {
+		// Best-effort.
+		warnDropped("blob PUT", error)
+		return "failed"
+	}
+}

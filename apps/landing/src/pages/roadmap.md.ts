@@ -1,5 +1,5 @@
 /**
- * `/roadmap.md` — the roadmap grouped by status, shipped first.
+ * `/roadmap.md`: the roadmap grouped by status, shipped first.
  *
  * Entries carry their body as the detail, so this is the whole page rather than
  * a summary of it.
@@ -14,7 +14,7 @@ const STATUS_HEADING: Record<(typeof STATUS_ORDER)[number], string> = {
 	"in-progress": "In progress",
 	planned: "Planned",
 	exploring: "Exploring",
-}
+} satisfies Record<(typeof STATUS_ORDER)[number], string>
 
 export const GET: APIRoute = async () => {
 	const entries = await getCollection("roadmap")
@@ -31,7 +31,9 @@ export const GET: APIRoute = async () => {
 			...items.map((entry) =>
 				blocks(
 					`### ${entry.data.title}`,
-					`${entry.data.category} · ${entry.data.quarter}${entry.data.shipped_date ? ` · shipped ${entry.data.shipped_date}` : ""}`,
+					[entry.data.category, entry.data.quarter, entry.data.shipped_date && `shipped ${entry.data.shipped_date}`]
+						.filter(Boolean)
+						.join(" · "),
 					entry.data.description,
 					entry.body ?? "",
 				),

@@ -1,0 +1,171 @@
+import { describe, expect, it } from "@effect/vitest"
+import { Schema } from "effect"
+import { QueryBuilderQueryDraftSchema } from "@maple/domain/http"
+import { buildBreakdownQuerySpec, buildTimeseriesQuerySpec } from "@maple/query-engine/query-builder"
+import type { BuildSpecResult } from "@maple/query-engine/query-builder"
+import { DASHBOARD_TEMPLATES } from "./index"
+import type { TemplateDefinition, TemplateParameterValues } from "./types"
+
+// "Templates never rot" guard (mirrors the widget-preset guard in
+// apps/web/src/components/dashboard-builder/widgets/widget-definitions.test.ts):
+// every query-builder-backed widget in every dashboard template must decode as
+// a valid query draft and lower to a QuerySpec with no warnings. The original
+// bug — the Node.js/JVM runtime templates using `p95_duration` on a metrics
+// query, which the engine rejects outright — shipped widgets that could never
+// render, and nothing caught it.
+
+const decodeQueryDraft = Schema.decodeUnknownSync(QueryBuilderQueryDraftSchema)
+
+function sampleParams(template: TemplateDefinition): TemplateParameterValues {
+	const values: TemplateParameterValues = {}
+	for (const param of template.parameters) {
+		if (param.required) {
+			values[param.key] = param.placeholder ?? "sample"
+		}
+	}
+	return values
+}
+
+// Optional params usually thread scoping filters (host_name, cluster_name,
+// namespace, …) into where clauses. Building with every param filled ensures
+// those clauses actually lower — an optional filter the engine ignores with a
+// warning (e.g. an unsupported key) must fail the guard, not silently no-op.
+function allParams(template: TemplateDefinition): TemplateParameterValues {
+	const values: TemplateParameterValues = {}
+	for (const param of template.parameters) {
+		values[param.key] = param.placeholder ?? "sample"
+	}
+	return values
+}
+
+// v3 replaced the `custom_query_builder_*` endpoint names with `kind: "query"`
+// plus a `resultShape`, so the spec builder is selected by shape.
+function specBuilderFor(
+	resultKind,
+): ((query: Parameters<typeof buildTimeseriesQuerySpec>[0]) => BuildSpecResult) | null {
+	if (resultKind === "timeseries") return buildTimeseriesQuerySpec
+	if (resultKind === "breakdown") return buildBreakdownQuerySpec
+	return null
+}
+
+describe("dashboard template query specs", () => {
+	function checkTemplate(template: TemplateDefinition, params: TemplateParameterValues, variant: string) {
+		const built = template.build(params)
+		for (const widget of built.widgets) {
+			const dataSource = widget.dataSource
+			if (dataSource.kind !== "query") continue
+			const buildSpec = specBuilderFor(dataSource.resultShape)
+			if (!buildSpec) continue
+
+			const rawQueries = dataSource.queries
+			expect(Array.isArray(rawQueries), `${template.id}/${widget.id}: queries`).toBe(true)
+			if (!Array.isArray(rawQueries)) continue
+			expect(rawQueries.length, `${template.id}/${widget.id}`).toBeGreaterThan(0)
+
+			for (const raw of rawQueries) {
+				const query = decodeQueryDraft(raw)
+				const result = buildSpec(query)
+				const label = `${template.id}/${widget.id}/${query.name} (${variant})`
+				expect(result.query, `${label}: ${result.error ?? ""}`).not.toBeNull()
+				expect(result.warnings, label).toEqual([])
+			}
+		}
+	}
+
+	for (const template of DASHBOARD_TEMPLATES) {
+		it(`${template.id} query-builder widgets lower to valid query specs`, () => {
+			checkTemplate(template, sampleParams(template), "required params")
+			// Second pass with every optional param filled: scoping params must
+			// emit where clauses the engine actually honors — an ignored filter
+			// surfaces as a warning and fails here.
+			if (template.parameters.some((p) => !p.required)) {
+				checkTemplate(template, allParams(template), "all params")
+			}
+		})
+	}
+
+	// If the query-builder result shapes are ever renamed, the loop above would
+	// silently skip everything and the guard would pass vacuously. Recount here
+	// (template building is pure) instead of sharing a mutable counter across
+	// tests — that breaks under shuffle, sharding, and `it.only`.
+	it("exercises at least one query-builder widget across templates", () => {
+		let queryBuilderQueries = 0
+		for (const template of DASHBOARD_TEMPLATES) {
+			const built = template.build(sampleParams(template))
+			for (const widget of built.widgets) {
+				const dataSource = widget.dataSource
+				if (dataSource.kind !== "query") continue
+				if (!specBuilderFor(dataSource.resultShape)) continue
+				queryBuilderQueries += dataSource.queries.length
+			}
+		}
+		expect(queryBuilderQueries).toBeGreaterThan(0)
+	})
+
+	// `unit` is an open string on the wire, so a misspelling doesn't fail validation — it falls
+	// through `formatValueByUnit`'s `orElse` and silently renders a bare number. Templates shipped
+	// `unit: "ms"` and `unit: "seconds"` for months, dropping the suffix off every latency readout.
+	const KNOWN_UNITS = new Set([
+		"none",
+		"number",
+		"percent",
+		"percent_100",
+		"duration_ns",
+		"duration_us",
+		"duration_ms",
+		"duration_s",
+		"bytes",
+		"requests_per_sec",
+		"short",
+	])
+
+	function* displayUnits(display: Record<string, unknown>): Generator<[string, string]> {
+		if (typeof display.unit === "string") yield ["display.unit", display.unit]
+		if (Array.isArray(display.columns)) {
+			for (const column of display.columns) {
+				const unit = (column as { unit?: unknown; field?: unknown }).unit
+				if (typeof unit === "string") yield [`column ${String(column.field)}`, unit]
+			}
+		}
+	}
+
+	it("only uses units formatValueByUnit knows how to render", () => {
+		for (const template of DASHBOARD_TEMPLATES) {
+			for (const widget of template.build(allParams(template)).widgets) {
+				for (const [where, unit] of displayUnits(widget.display)) {
+					expect(KNOWN_UNITS, `${template.id}/${widget.id}: ${where} = "${unit}"`).toContain(unit)
+				}
+			}
+		}
+	})
+
+	// `percent` is the canonical 0–1 ratio and multiplies by 100 at display, so a formula that
+	// already scales to 0–100 renders 100× high — the Cloudflare cache-hit and 5xx KPIs read
+	// "8500.0%" until this was caught.
+	it("never pairs a *-100 formula with the 0–1 percent unit", () => {
+		for (const template of DASHBOARD_TEMPLATES) {
+			for (const widget of template.build(allParams(template)).widgets) {
+				if (widget.display.unit !== "percent") continue
+				const formulas = widget.dataSource.params?.formulas
+				if (!Array.isArray(formulas)) continue
+				for (const formula of formulas) {
+					const expression = String((formula as { expression?: unknown }).expression ?? "")
+					expect(
+						expression.replace(/\s+/g, ""),
+						`${template.id}/${widget.id}: "${expression}" under unit "percent"`,
+					).not.toMatch(/\*100$/)
+				}
+			}
+		}
+	})
+
+	it("uses PlanetScale's canonical discovery label keys", () => {
+		const template = DASHBOARD_TEMPLATES.find((candidate) => candidate.id === "planetscale")
+		expect(template).toBeDefined()
+		const encoded = JSON.stringify(template?.build({ database: "shop" }))
+		expect(encoded).toContain("attr.planetscale_database_name")
+		expect(encoded).toContain("attr.planetscale_branch_name")
+		expect(encoded).not.toContain('"attr.planetscale_database"')
+		expect(encoded).not.toContain('"attr.planetscale_branch"')
+	})
+})

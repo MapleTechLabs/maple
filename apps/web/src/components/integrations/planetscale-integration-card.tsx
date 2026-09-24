@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react"
-import { Cause, Exit } from "effect"
+import { Exit } from "effect"
 import { Badge } from "@maple/ui/components/ui/badge"
 import { Button } from "@maple/ui/components/ui/button"
 import {
@@ -21,7 +21,8 @@ import { cn } from "@maple/ui/lib/utils"
 import { isExcluded } from "@/components/infra/planetscale/branch-selection"
 import { useIntervalRefresh } from "@/hooks/use-interval-refresh"
 import { Result, useAtomRefresh, useAtomSet, useAtomValue } from "@/lib/effect-atom"
-import { MapleApiV2AtomClient } from "@/lib/services/common/v2-atom-client"
+import { MapleApiV2AtomClient, retainedQueryV2 } from "@/lib/services/common/v2-atom-client"
+import { showErrorToast } from "@/lib/error-toast"
 import { IntegrationIconPlate, catalogEntry } from "./integration-catalog"
 import { useIntegrationConnect } from "./integration-connect"
 import {
@@ -54,7 +55,7 @@ const parsePatternList = (value: string): string[] =>
  * as a single status row — the machinery stays out of the UI.
  */
 export function PlanetScaleIntegrationCard() {
-	const statusQuery = MapleApiV2AtomClient.query("planetscaleIntegration", "status", {
+	const statusQuery = retainedQueryV2("planetscaleIntegration", "status", {
 		reactivityKeys: ["planetscaleIntegration"],
 	})
 	const statusResult = useAtomValue(statusQuery)
@@ -428,14 +429,14 @@ function PlanetScaleOrgPicker(props: {
 	cancelLabel: string
 }) {
 	const organizationsResult = useAtomValue(
-		MapleApiV2AtomClient.query("planetscaleIntegration", "organizations", {
+		retainedQueryV2("planetscaleIntegration", "organizations", {
 			reactivityKeys: ["planetscaleIntegration"],
 		}),
 	)
 	// Powers the live filter preview. Empty before the first inventory poll, which
 	// is exactly the pending-org-selection case — the preview then stays quiet.
 	const inventoryResult = useAtomValue(
-		MapleApiV2AtomClient.query("planetscaleIntegration", "databases", {
+		retainedQueryV2("planetscaleIntegration", "databases", {
 			reactivityKeys: ["planetscaleIntegration"],
 		}),
 	)
@@ -474,8 +475,8 @@ function PlanetScaleOrgPicker(props: {
 		const result = await selectOrganization({
 			payload: {
 				organization: selected,
-				...(include.length > 0 ? { include_branches: include } : {}),
-				...(exclude.length > 0 ? { exclude_branches: exclude } : {}),
+				...(include.length > 0 ? { include_branches: include } : undefined),
+				...(exclude.length > 0 ? { exclude_branches: exclude } : undefined),
 			},
 			// finalizeOrgSelection re-parents the managed scrape target — refresh the list below.
 			reactivityKeys: ["planetscaleIntegration", "scrapeTargets"],
@@ -485,11 +486,7 @@ function PlanetScaleOrgPicker(props: {
 			toastManager.add({ title: `PlanetScale organization ${selected} connected`, type: "success" })
 			props.onDone()
 		} else {
-			// Surface the API's message (missing scope, org outside the grant, …) — actionable.
-			toastManager.add({
-				title: extractErrorMessage(result) ?? "Failed to connect PlanetScale organization",
-				type: "error",
-			})
+			showErrorToast(result, { fallbackTitle: "Failed to connect PlanetScale organization" })
 		}
 	}
 
@@ -620,7 +617,7 @@ function PlanetScaleWebhookSetup() {
 
 function PlanetScaleWebhookConfig() {
 	const configResult = useAtomValue(
-		MapleApiV2AtomClient.query("planetscaleIntegration", "webhookConfig", {
+		retainedQueryV2("planetscaleIntegration", "webhookConfig", {
 			reactivityKeys: ["planetscaleIntegration"],
 		}),
 	)
@@ -663,12 +660,4 @@ function PlanetScaleWebhookConfig() {
 			</p>
 		</div>
 	)
-}
-
-/** Best-effort human message from a failed mutation Exit (tagged API errors carry one). */
-function extractErrorMessage(result: Exit.Exit<unknown, unknown>): string | null {
-	if (Exit.isSuccess(result)) return null
-	const first = Cause.prettyErrors(result.cause)[0]
-	if (first?.message) return first.message
-	return null
 }

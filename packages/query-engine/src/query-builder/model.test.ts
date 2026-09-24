@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest"
 import type { QueryBuilderQueryDraftPayload } from "@maple/domain/http"
-import { buildBreakdownQuerySpec, buildTimeseriesQuerySpec } from "./model"
+import type { QueryBuilderDataSource } from "@maple/query-model"
+import {
+	AGGREGATIONS_BY_SOURCE,
+	buildBreakdownQuerySpec,
+	buildTimeseriesQuerySpec,
+	GROUP_BY_TOKENS,
+	resolveGroupBy,
+} from "./model"
 
 // Minimal traces draft factory — only the fields the builder reads matter; the
 // rest satisfy the payload shape.
@@ -269,5 +276,264 @@ describe("has_error tri-state (MAP-49)", () => {
 
 	it("absent clause leaves errorsOnly unset", () => {
 		expect(errorsOnlyOf("")).toBeUndefined()
+	})
+})
+
+// `GROUP_BY_TOKENS` is a documentation catalog exported alongside the `Match`
+// chains rather than derived from them, so nothing but a test keeps the two in
+// step. The MCP schema doc renders from this catalog; a token listed here but
+// dropped by the resolver would teach an agent to write a group-by that
+// silently does nothing.
+describe("GROUP_BY_TOKENS catalog matches the resolvers", () => {
+	const draftFor = (
+		dataSource: QueryBuilderDataSource,
+		groupBy: ReadonlyArray<string>,
+	): QueryBuilderQueryDraftPayload => {
+		const base = {
+			...tracesDraft(),
+			dataSource,
+			addOns: { groupBy: true, having: false, orderBy: false, limit: false, legend: false },
+			groupBy: [...groupBy],
+		}
+		if (dataSource === "logs") return { ...base, aggregation: "count" } as QueryBuilderQueryDraftPayload
+		if (dataSource === "metrics") {
+			return {
+				...base,
+				aggregation: "avg",
+				metricName: "http.server.duration",
+				metricType: "gauge",
+			} as QueryBuilderQueryDraftPayload
+		}
+		return base as QueryBuilderQueryDraftPayload
+	}
+
+	for (const source of ["traces", "logs", "metrics", "product_events"] as const) {
+		for (const token of GROUP_BY_TOKENS[source].literals) {
+			it(`${source}: "${token}" resolves without a warning`, () => {
+				const result = buildTimeseriesQuerySpec(draftFor(source, [token]))
+				expect(result.error).toBeNull()
+				expect(result.warnings).toEqual([])
+			})
+		}
+
+		for (const prefix of GROUP_BY_TOKENS[source].prefixes) {
+			it(`${source}: "${prefix}myKey" resolves without a warning`, () => {
+				const result = buildTimeseriesQuerySpec(draftFor(source, [`${prefix}myKey`]))
+				expect(result.error).toBeNull()
+				expect(result.warnings).toEqual([])
+			})
+		}
+	}
+
+	it("logs does not support attr.* — the catalog lists no prefixes for it", () => {
+		expect(GROUP_BY_TOKENS.logs.prefixes).toEqual([])
+		const result = buildTimeseriesQuerySpec(draftFor("logs", ["attr.anything"]))
+		expect(result.warnings.join(" ")).toContain("logs source does not support attr.*")
+	})
+
+	// The catalogue is the documented vocabulary (MCP schema doc renders it) and
+	// the dashboard builder is one consumer of it; `resolveGroupBy` is the other
+	// (alert compilation). Before these were generated from one alias map the
+	// alert side silently omitted every snake_case alias, so a token an agent
+	// read out of the docs and saved in a widget hard-failed alert validation.
+	for (const source of ["traces", "logs", "metrics", "product_events"] as const) {
+		for (const token of GROUP_BY_TOKENS[source].literals) {
+			it(`${source}: "${token}" resolves through resolveGroupBy too`, () => {
+				const resolved = resolveGroupBy(source, [token])
+				expect(resolved.warnings).toEqual([])
+				expect(resolved.tokens.length).toBe(1)
+			})
+		}
+
+		for (const prefix of GROUP_BY_TOKENS[source].prefixes) {
+			it(`${source}: "${prefix}myKey" resolves through resolveGroupBy too`, () => {
+				const resolved = resolveGroupBy(source, [`${prefix}myKey`])
+				expect(resolved.warnings).toEqual([])
+				expect(resolved.tokens.length).toBe(1)
+			})
+		}
+	}
+
+	// Same token, same meaning on both sides — not merely "both accept it".
+	it("builder and resolveGroupBy agree on the canonical token for every alias", () => {
+		for (const source of ["traces", "logs", "metrics", "product_events"] as const) {
+			for (const token of GROUP_BY_TOKENS[source].literals) {
+				const built = buildTimeseriesQuerySpec(draftFor(source, [token]))
+				const spec = built.query as { groupBy?: ReadonlyArray<string> } | null
+				const builderTokens = spec?.groupBy ?? []
+				const resolverTokens = resolveGroupBy(source, [token]).tokens
+				expect({ source, token, tokens: [...builderTokens] }).toEqual({
+					source,
+					token,
+					tokens: [...resolverTokens],
+				})
+			}
+		}
+	})
+})
+
+// Aggregation enforcement now reads `AGGREGATIONS_BY_SOURCE`, the same array the
+// builder UI and the MCP schema doc render. These pin the two together.
+describe("aggregation enforcement follows AGGREGATIONS_BY_SOURCE", () => {
+	for (const source of ["traces", "logs", "metrics", "product_events"] as const) {
+		for (const option of AGGREGATIONS_BY_SOURCE[source]) {
+			it(`${source}: "${option.value}" is accepted`, () => {
+				const draft = {
+					...tracesDraft(),
+					dataSource: source,
+					aggregation: option.value,
+					...(source === "metrics"
+						? { metricName: "http.server.duration", metricType: "gauge" }
+						: undefined),
+				} as QueryBuilderQueryDraftPayload
+				expect(buildTimeseriesQuerySpec(draft).error).toBeNull()
+			})
+		}
+	}
+
+	it("bare p95 on traces is rejected, and the error names valueField", () => {
+		const result = buildTimeseriesQuerySpec(tracesDraft({ aggregation: "p95" }))
+		expect(result.error).toContain("valueField")
+	})
+
+	it("bare p95 on traces is accepted once valueField names a numeric attribute", () => {
+		const result = buildTimeseriesQuerySpec(
+			tracesDraft({ aggregation: "p95", valueField: "attr.result.rowCount" }),
+		)
+		expect(result.error).toBeNull()
+	})
+
+	it("p95 on metrics is rejected and the error lists the valid set", () => {
+		const result = buildTimeseriesQuerySpec({
+			...tracesDraft(),
+			dataSource: "metrics",
+			aggregation: "p95",
+			metricName: "http.server.duration",
+			metricType: "gauge",
+		} as QueryBuilderQueryDraftPayload)
+		expect(result.error).toContain("Unsupported metrics aggregation")
+		expect(result.error).toContain("rate")
+	})
+})
+
+describe("product_events drafts", () => {
+	const draft = (overrides: Partial<QueryBuilderQueryDraftPayload> = {}) =>
+		({ ...tracesDraft(), dataSource: "product_events", ...overrides }) as QueryBuilderQueryDraftPayload
+
+	const filtersOf = (whereClause: string) => {
+		const result = buildTimeseriesQuerySpec(draft({ whereClause }))
+		return {
+			warnings: result.warnings,
+			filters: (result.query as { filters?: Record<string, unknown> } | null)?.filters,
+		}
+	}
+
+	it("lowers row columns to list filters and != to the excluded list", () => {
+		const { filters, warnings } = filtersOf(
+			'event.name = "signup_completed, plan_started" AND host != "localhost" AND service.name = "maple-api"',
+		)
+		expect(warnings).toEqual([])
+		expect(filters).toEqual({
+			eventNames: ["signup_completed", "plan_started"],
+			excludedHosts: ["localhost"],
+			serviceNames: ["maple-api"],
+		})
+	})
+
+	it("lowers session dimensions to the semi-join fields", () => {
+		const { filters } = filtersOf('country = "DE" AND utm.source = "twitter" AND visitor.type = "new"')
+		expect(filters).toEqual({ country: "DE", utmSource: "twitter", visitorType: "new" })
+	})
+
+	it("treats bare and attr.-prefixed keys as track() props", () => {
+		const { filters } = filtersOf('plan = "startup" AND attr.seats > 5')
+		expect(filters?.attributeFilters).toEqual([
+			{ key: "plan", mode: "equals", value: "startup" },
+			{ key: "seats", mode: "gt", value: "5" },
+		])
+	})
+
+	it("warns on an operator a row column cannot take", () => {
+		const { filters, warnings } = filtersOf('event.name contains "signup"')
+		expect(filters).toBeUndefined()
+		expect(warnings.join(" ")).toContain("supports only = and !=")
+	})
+
+	it("carries a single attr.* group-by key on the filters", () => {
+		const result = buildTimeseriesQuerySpec(
+			draft({
+				addOns: { groupBy: true, having: false, orderBy: false, limit: false, legend: false },
+				groupBy: ["event.name", "attr.plan"],
+			}),
+		)
+		expect(result.error).toBeNull()
+		expect(result.query).toMatchObject({
+			source: "product_events",
+			metric: "count",
+			groupBy: ["event_name", "attribute"],
+			filters: { groupByAttributeKey: "plan" },
+		})
+	})
+
+	it("rejects an aggregation from another source", () => {
+		const result = buildTimeseriesQuerySpec(draft({ aggregation: "p95_duration" }))
+		expect(result.error).toContain("Unsupported product events aggregation")
+		expect(result.error).toContain("persons")
+	})
+
+	it("builds a breakdown from the first real group-by", () => {
+		const result = buildBreakdownQuerySpec(
+			draft({
+				aggregation: "sessions",
+				addOns: { groupBy: true, having: false, orderBy: false, limit: false, legend: false },
+				groupBy: ["page.path"],
+			}),
+		)
+		expect(result.query).toMatchObject({
+			kind: "breakdown",
+			source: "product_events",
+			metric: "sessions",
+			groupBy: "page_path",
+		})
+	})
+})
+
+describe("product_events clause edge cases", () => {
+	const draft = (overrides: Partial<QueryBuilderQueryDraftPayload> = {}) =>
+		({ ...tracesDraft(), dataSource: "product_events", ...overrides }) as QueryBuilderQueryDraftPayload
+
+	it("keeps the case of prop keys in filters and group-bys", () => {
+		const result = buildTimeseriesQuerySpec(
+			draft({
+				whereClause: 'attr.planTier = "pro" AND Channel = "cli"',
+				addOns: { groupBy: true, having: false, orderBy: false, limit: false, legend: false },
+				groupBy: ["attr.planTier"],
+			}),
+		)
+		expect(result.query).toMatchObject({
+			filters: {
+				groupByAttributeKey: "planTier",
+				attributeFilters: [
+					{ key: "planTier", mode: "equals", value: "pro" },
+					{ key: "Channel", mode: "equals", value: "cli" },
+				],
+			},
+		})
+	})
+
+	it("slices the prop key at the prefix even when lowercasing changes its length", () => {
+		const result = buildTimeseriesQuerySpec(
+			draft({
+				addOns: { groupBy: true, having: false, orderBy: false, limit: false, legend: false },
+				groupBy: ["attr.İstanbul"],
+			}),
+		)
+		expect(result.query).toMatchObject({ filters: { groupByAttributeKey: "İstanbul" } })
+	})
+
+	it("rejects != on visitor.type instead of selecting the negated value", () => {
+		const result = buildTimeseriesQuerySpec(draft({ whereClause: 'visitor.type != "new"' }))
+		expect(result.query).toMatchObject({ filters: undefined })
+		expect(result.warnings.join(" ")).toContain("supports only =")
 	})
 })

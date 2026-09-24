@@ -1,4 +1,5 @@
-import { boolean, index, jsonb, pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core"
+import type { OrgId } from "@maple/domain"
+import { boolean, index, jsonb, pgTable, primaryKey, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core"
 
 /**
  * Poll-state for the PlanetScale management-API poller, mirroring
@@ -19,7 +20,7 @@ export const planetscalePollState = pgTable(
 	"planetscale_poll_state",
 	{
 		id: text("id").notNull().primaryKey(),
-		orgId: text("org_id").notNull(),
+		orgId: text("org_id").$type<OrgId>().notNull(),
 		dataset: text("dataset").notNull(),
 		// "" for the org-wide inventory anchor row — kept NOT NULL so the unique
 		// index treats it like any other row.
@@ -68,7 +69,7 @@ export const planetscaleDatabases = pgTable(
 	"planetscale_databases",
 	{
 		id: text("id").notNull().primaryKey(),
-		orgId: text("org_id").notNull(),
+		orgId: text("org_id").$type<OrgId>().notNull(),
 		/** PlanetScale's database id. */
 		databaseId: text("database_id").notNull(),
 		name: text("name").notNull(),
@@ -118,7 +119,7 @@ export const planetscaleEvents = pgTable(
 	"planetscale_events",
 	{
 		id: text("id").notNull().primaryKey(),
-		orgId: text("org_id").notNull(),
+		orgId: text("org_id").$type<OrgId>().notNull(),
 		/** PlanetScale's database id when resolvable; "" for webhooks that carry only the name. */
 		databaseId: text("database_id").notNull().default(""),
 		databaseName: text("database_name").notNull(),
@@ -160,3 +161,23 @@ export const planetscaleEvents = pgTable(
 
 export type PlanetScaleEventRow = typeof planetscaleEvents.$inferSelect
 export type PlanetScaleEventInsert = typeof planetscaleEvents.$inferInsert
+
+/**
+ * Exactly-once guard for issue mutations driven by an at-least-once queue.
+ * The receipt is inserted in the same transaction as the issue update, so a
+ * crash before commit leaves both absent and a retry can safely finish them.
+ */
+export const planetscaleIssueReceipts = pgTable(
+	"planetscale_issue_receipts",
+	{
+		orgId: text("org_id").$type<OrgId>().notNull(),
+		eventId: text("event_id").notNull(),
+		processedAt: timestamp("processed_at", { withTimezone: true, mode: "date" }).notNull(),
+	},
+	(table) => [
+		primaryKey({ columns: [table.orgId, table.eventId] }),
+		index("planetscale_issue_receipts_processed_at_idx").on(table.processedAt),
+	],
+)
+
+export type PlanetScaleIssueReceiptRow = typeof planetscaleIssueReceipts.$inferSelect

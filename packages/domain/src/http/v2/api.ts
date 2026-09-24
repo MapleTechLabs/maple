@@ -6,42 +6,65 @@ import { V2AlertIncidentsApiGroup } from "./alert-incidents"
 import { V2AlertRulesApiGroup } from "./alert-rules"
 import { V2ApiKeysApiGroup } from "./api-keys"
 import { V2AttributeMappingsApiGroup } from "./attribute-mappings"
+import { V2AuditLogApiGroup } from "./audit-log"
 import { V2DashboardsApiGroup } from "./dashboards"
 import { V2IngestKeysApiGroup } from "./ingest-keys"
-import { V2SlackIntegrationsApiGroup } from "./integrations"
+import { V2ChatIntegrationsApiGroup } from "./integrations-chat"
 import { V2PlanetScaleIntegrationsApiGroup } from "./integrations-planetscale"
 import { V2ErrorIssuesApiGroup } from "./error-issues"
 import { V2InvestigationsApiGroup } from "./investigations"
+import { V2MobileDevicesApiGroup } from "./mobile-devices"
+import { V2OnboardingChecklistApiGroup } from "./onboarding-checklist"
 import { V2OrganizationApiGroup } from "./organization"
 import { V2InstrumentationRecommendationsApiGroup } from "./recommendations"
 import { V2ScrapeTargetsApiGroup } from "./scrape-targets"
 import { V2SessionReplaysApiGroup } from "./session-replays"
 import { V2InstrumentationAuditApiGroup } from "./setup-audit"
+import { V2TelemetrySignalsApiGroup } from "./telemetry-signals"
+import { V2SharePublicApiGroup } from "./share"
+import { V2WidgetCredentialsApiGroup } from "./widget-credentials"
+import { V2WidgetSummaryApiGroup } from "./widget-summary"
 import {
+	V2EnvironmentsApiGroup,
 	V2LogsApiGroup,
 	V2MetricsApiGroup,
 	V2ServiceMapApiGroup,
 	V2ServicesApiGroup,
 	V2TracesApiGroup,
 } from "./telemetry"
-import { V2UnexpectedErrors } from "./auth"
+import { V2SchemaErrors, V2UnexpectedErrors } from "./auth"
+import { collapseQueryParameterNullBranches } from "./openapi-nullable"
 
 const HTTP_OPERATION_METHODS = ["get", "post", "put", "patch", "delete", "head"] as const
 
+interface OpenApiResponse {
+	headers?: Record<string, unknown>
+}
+interface OpenApiOperation {
+	readonly responses?: Record<string, OpenApiResponse | undefined>
+}
+type OpenApiPathItem = Partial<Record<(typeof HTTP_OPERATION_METHODS)[number], OpenApiOperation>>
+interface OpenApiSpec {
+	readonly paths?: Record<string, OpenApiPathItem | undefined>
+}
+
 /** Add the rate-limit retry contract to every generated 429 response. */
-const addRateLimitResponseHeaders = (spec: Record<string, any>): Record<string, any> => {
+const addRateLimitResponseHeaders = <S extends OpenApiSpec>(spec: S): S => {
 	for (const pathItem of Object.values(spec.paths ?? {})) {
 		if (typeof pathItem !== "object" || pathItem === null) continue
 		for (const method of HTTP_OPERATION_METHODS) {
-			const operation = (pathItem as Record<string, any>)[method]
+			const operation = pathItem[method]
 			if (typeof operation !== "object" || operation === null) continue
 			const response = operation.responses?.["429"]
-			if (typeof response !== "object" || response === null) continue
+			if (typeof response !== "object" || response === null || response === undefined) continue
 			response.headers = {
 				...response.headers,
 				"Retry-After": {
-					description: "Seconds to wait before retrying the request.",
-					schema: { type: "integer", minimum: 1 },
+					description:
+						"Seconds to wait or an HTTP-date indicating when the request may be retried.",
+					schema: {
+						oneOf: [{ type: "integer", minimum: 1 }, { type: "string" }],
+					},
 					example: 60,
 				},
 			}
@@ -70,22 +93,31 @@ export class MapleApiV2 extends HttpApi.make("MapleApiV2")
 	.add(V2AlertDestinationsApiGroup)
 	.add(V2AlertIncidentsApiGroup)
 	.add(V2IngestKeysApiGroup)
-	.add(V2SlackIntegrationsApiGroup)
+	.add(V2ChatIntegrationsApiGroup)
 	.add(V2PlanetScaleIntegrationsApiGroup)
 	.add(V2ErrorIssuesApiGroup)
 	.add(V2AttributeMappingsApiGroup)
+	.add(V2AuditLogApiGroup)
 	.add(V2ScrapeTargetsApiGroup)
 	.add(V2InstrumentationRecommendationsApiGroup)
 	.add(V2InstrumentationAuditApiGroup)
+	.add(V2TelemetrySignalsApiGroup)
 	.add(V2InvestigationsApiGroup)
 	.add(V2AnomaliesApiGroup)
 	.add(V2OrganizationApiGroup)
+	.add(V2OnboardingChecklistApiGroup)
+	.add(V2MobileDevicesApiGroup)
 	.add(V2SessionReplaysApiGroup)
 	.add(V2TracesApiGroup)
 	.add(V2LogsApiGroup)
 	.add(V2MetricsApiGroup)
 	.add(V2ServicesApiGroup)
 	.add(V2ServiceMapApiGroup)
+	.add(V2EnvironmentsApiGroup)
+	.add(V2SharePublicApiGroup)
+	.add(V2WidgetSummaryApiGroup)
+	.add(V2WidgetCredentialsApiGroup)
+	.middleware(V2SchemaErrors)
 	.middleware(V2UnexpectedErrors)
 	.annotateMerge(
 		OpenApi.annotations({
@@ -93,14 +125,14 @@ export class MapleApiV2 extends HttpApi.make("MapleApiV2")
 			version: "2.0.0",
 			summary: "The public, stability-committed HTTP API for the Maple observability platform.",
 			description: [
-				"The Maple public API is a resource-oriented REST interface for everything the dashboard can do.",
+				"The Maple public API is a resource-oriented REST interface for customer-stable resources and workflows.",
 				"It follows Stripe's design philosophy, modernized where useful:",
 				"",
 				"- **Resources** are plural nouns under `/v2` (`/v2/api_keys`). Related resources share a product namespace (`/v2/alerts/rules`, `/v2/alerts/destinations`). Non-CRUD verbs are sub-resource POSTs (`/v2/api_keys/{id}/roll`).",
 				"- **Object IDs** are opaque, prefixed strings (`key_…`, `dash_…`) — reversible encodings of internal IDs.",
 				"- **Wire format** is snake_case JSON with an `object` type field on every resource and ISO-8601 UTC timestamps.",
 				'- **Lists** use cursor pagination and a uniform `{ object: "list", data, has_more, next_cursor }` envelope.',
-				"- **Errors** use a uniform `{ error: { type, code, message } }` envelope with a closed set of `type`s and stable `code`s.",
+				"- **Errors** use a uniform `{ error: { _tag, type, code, title, message, retryable, recovery } }` envelope. `_tag` is the semantic Maple error identity; `code` remains the stable public integration key.",
 				"- **Auth** is a Bearer API key (`maple_ak_…`) or dashboard session token; keys can be restricted with scopes.",
 				"",
 				"See `docs/api-v2.md` for the full conventions.",
@@ -110,7 +142,9 @@ export class MapleApiV2 extends HttpApi.make("MapleApiV2")
 			// key (they are not in `OpenAPISpecInfo`), so inject them via the api-level
 			// spec transform, which receives the whole generated document.
 			transform: (spec) => {
-				const withRateLimitHeaders = addRateLimitResponseHeaders(spec)
+				const withRateLimitHeaders = collapseQueryParameterNullBranches(
+					addRateLimitResponseHeaders(spec),
+				)
 				return {
 					...withRateLimitHeaders,
 					info: {

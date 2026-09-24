@@ -1,6 +1,9 @@
 import { lazy, memo, Suspense, useEffect } from "react"
 import { useAuth } from "@clerk/clerk-react"
 import { useMapleCustomer } from "@/hooks/use-maple-customer"
+import { useOrganizationRegion } from "@/hooks/use-organization-region"
+import { WrongRegionScreen } from "@/components/region/wrong-region-screen"
+import { useTimezonePreference } from "@/hooks/use-timezone-preference"
 import {
 	Navigate,
 	Outlet,
@@ -10,16 +13,19 @@ import {
 } from "@tanstack/react-router"
 import { selectedPlanKnownAtomFor } from "@/atoms/selected-plan-atoms"
 import { useAtom } from "@/lib/effect-atom"
-import { hasSelectedPlan, isUsableCustomer } from "@/lib/billing/plan-gating"
+import { hasSelectedPlan, resolvePlanAccess } from "@/lib/billing/plan-gating"
+import { isFixturePath, isPublicPath } from "@/lib/public-routes"
 import { parseRedirectUrl } from "@/lib/redirect-utils"
 import { AnchoredToastProvider, ToastProvider } from "@maple/ui/components/ui/toast"
 import { AttributesProvider } from "@maple/ui/components/attributes/context"
+import { PlotTimeZoneProvider } from "@maple/ui/components/plot"
 import { BootSplash } from "@/components/boot-splash"
 import { highlightCode } from "@/lib/sugar-high"
 import { isClerkAuthEnabled } from "@/lib/services/common/auth-mode"
 import type { RouterAuthContext } from "@/router"
 import type { EffectRouterContext } from "@effect-router/core"
 import { captureChatReferrer } from "@/components/chat/auto-contexts"
+import { useGlobalNamespace } from "@/hooks/use-global-namespace"
 import { GlobalChatSheet } from "@/components/chat/global-chat-sheet"
 import { GlobalShortcuts } from "@/components/command-palette/global-shortcuts"
 import { IdleRoutePrefetch } from "@/components/performance/idle-route-prefetch"
@@ -30,7 +36,7 @@ const CommitShaAttributeValue = lazy(() =>
 	})),
 )
 
-const COMMIT_SHA_KEYS = new Set(["deployment.commit_sha", "vcs.ref.head.revision"])
+const COMMIT_SHA_KEYS = new Set(["vcs.ref.head.revision"])
 
 function renderAttributeValue(attrKey: string, value: string) {
 	if (!COMMIT_SHA_KEYS.has(attrKey)) return null
@@ -41,42 +47,39 @@ function renderAttributeValue(attrKey: string, value: string) {
 	)
 }
 
-const PUBLIC_PATHS = new Set([
-	"/sign-in",
-	"/sign-up",
-	"/org-required",
-	// Fixture-only dev surfaces. They render `scenarios.ts` / generated data and
-	// never touch a warehouse or the app database, so gating them on a session
-	// only made the widget gallery unreachable without a running API.
-	"/widget-lab",
-	"/service-map-bench",
-	"/service-detail-bench",
-	"/infra-bench",
-	"/logs-bench",
-	"/overview-bench",
-])
-
+/**
+ * Fixture-only dev surfaces. They render `scenarios.ts` / generated data and
+ * never touch a warehouse or the app database, so gating them on a session only
+ * made the widget gallery unreachable without a running API.
+ *
+ * Named separately from the auth pages because they need one thing those do not:
+ * a bypass of the *plan* gate as well as the auth one. A signed-in session whose
+ * Autumn customer query never settles — the normal state of a local dev API,
+ * which 401s it — parks every one of these behind the boot splash forever, which
+ * is the same "unreachable without a running API" failure the auth bypass exists
+ * to prevent, arriving through the other door.
+ */
 // Routes that render their own onboarding/billing UI and so must never be
 // gated on plan selection (neither redirected away nor blocked while loading).
 const ALLOWED_WITHOUT_PLAN = ["/select-plan", "/quick-start", "/cli-login", "/mcp-authorize"]
 
 export const Route = createRootRouteWithContext<{ auth: RouterAuthContext } & EffectRouterContext>()({
 	beforeLoad: ({ context, location }) => {
-		if (PUBLIC_PATHS.has(location.pathname)) return
+		if (isPublicPath(location.pathname)) return
 
 		const redirectUrl = location.pathname + (location.searchStr ?? "")
 
 		if (!context.auth?.isAuthenticated) {
 			throw redirect({
 				to: "/sign-in",
-				search: { redirect_url: redirectUrl } as Record<string, string>,
+				search: { redirect_url: redirectUrl } satisfies Record<string, string>,
 			})
 		}
 
 		if (!context.auth.orgId) {
 			throw redirect({
 				to: "/org-required",
-				search: { redirect_url: redirectUrl } as Record<string, string>,
+				search: { redirect_url: redirectUrl } satisfies Record<string, string>,
 			})
 		}
 	},
@@ -88,23 +91,32 @@ export const Route = createRootRouteWithContext<{ auth: RouterAuthContext } & Ef
 // the entire route tree on every commit.
 const AppFrame = memo(function AppFrame() {
 	const pathname = useRouterState({ select: (s) => s.location.pathname })
+	// Remount the page tree when the org-global namespace pin changes: every
+	// component rebuilds its query inputs under the new scope, so no memoized
+	// atom key can keep serving the previous scope's rows.
+	const globalNamespace = useGlobalNamespace()
+	// Every chart prints its clock in the selected zone; the provider is the one
+	// seam the plot layer reads it through.
+	const { effectiveTimezone } = useTimezonePreference()
 	useEffect(() => {
 		captureChatReferrer(pathname)
 	}, [pathname])
 	return (
 		<AttributesProvider highlightJson={highlightCode} renderValue={renderAttributeValue}>
-			<ToastProvider position="bottom-right">
-				<AnchoredToastProvider>
-					<Outlet />
-					{!PUBLIC_PATHS.has(pathname) && <IdleRoutePrefetch />}
-					{!PUBLIC_PATHS.has(pathname) && (
-						<>
-							<GlobalShortcuts />
-							<GlobalChatSheet />
-						</>
-					)}
-				</AnchoredToastProvider>
-			</ToastProvider>
+			<PlotTimeZoneProvider timeZone={effectiveTimezone}>
+				<ToastProvider position="bottom-right">
+					<AnchoredToastProvider>
+						<Outlet key={globalNamespace ?? "__all__"} />
+						{!isPublicPath(pathname) && <IdleRoutePrefetch />}
+						{!isPublicPath(pathname) && (
+							<>
+								<GlobalShortcuts />
+								<GlobalChatSheet />
+							</>
+						)}
+					</AnchoredToastProvider>
+				</ToastProvider>
+			</PlotTimeZoneProvider>
 		</AttributesProvider>
 	)
 })
@@ -132,34 +144,47 @@ function ClerkReverseRedirects() {
 		}),
 	})
 	const { isSignedIn, orgId } = useAuth()
+	const orgRegion = useOrganizationRegion()
+	// An organization from another region is refused by this region's API.
+	const wrongRegion = Boolean(isSignedIn && orgId) && orgRegion.isLoaded && !orgRegion.servedHere
 	// Autumn customers are keyed by orgId, so getOrCreateCustomer can only
 	// succeed once an org is active. Skip the fetch for signed-out/org-less
 	// onboarding sessions (e.g. /sign-up, /org-required) to avoid guaranteed 401s.
+	// It also waits for the org's region: asked sooner, an org that has not chosen one yet is
+	// refused on the EU dashboard, and that cached refusal outlives the choice.
 	const {
 		data: customer,
 		isLoading: isCustomerLoading,
 		error: customerError,
-	} = useMapleCustomer({ queryOptions: { enabled: Boolean(isSignedIn && orgId) } })
+	} = useMapleCustomer({
+		queryOptions: { enabled: Boolean(isSignedIn && orgId) && orgRegion.isLoaded && !wrongRegion },
+	})
 
 	const redirectUrl = pathname + (searchStr ?? "")
 	const selectedPlan = hasSelectedPlan(customer)
+	// One reading of the customer query, shared with /quick-start's bail-out so
+	// the two gates cannot disagree. "app" covers both a current subscriber and an
+	// org that held a plan and let it lapse — the latter is never onboarded again,
+	// it gets the app plus the reactivation banner (`SubscriptionEndedBanner`).
+	const access = resolvePlanAccess({ customer, error: customerError, isLoading: isCustomerLoading })
+	const mayRenderApp = access === "app"
 
 	// Per-org, localStorage-backed memory (effect-atom KVS) of whether this org
-	// was last seen on an active selected plan. Drives the optimistic "render the
+	// was last seen entitled to render the app. Drives the optimistic "render the
 	// dashboard while the plan is still loading" fast path below. Falls back to an
 	// inert in-memory atom while there's no org (org-less / still-settling auth).
-	const [knownSelectedPlan, setKnownSelectedPlan] = useAtom(selectedPlanKnownAtomFor(orgId))
+	const [knownMayRenderApp, setKnownMayRenderApp] = useAtom(selectedPlanKnownAtomFor(orgId))
 
 	// Once the customer query settles to a usable payload, record whether this
-	// org holds an active selected plan, so the flag only ever reflects a
-	// genuinely-known plan state — skip while loading or on an error/unusable
-	// payload so a transient blip can't flip it. A planless settle (e.g.
-	// unsubscribe) clears it here, ending the optimistic flash. See MAP-45.
+	// org may render the app, so the flag only ever reflects a genuinely-known
+	// billing state — skip while loading or on an error/unusable payload so a
+	// transient blip can't flip it. A never-subscribed settle clears it here,
+	// ending the optimistic flash. See MAP-45.
 	useEffect(() => {
-		if (!isSignedIn || !orgId || isCustomerLoading) return
-		if (customerError || !isUsableCustomer(customer)) return
-		setKnownSelectedPlan(selectedPlan)
-	}, [isSignedIn, orgId, isCustomerLoading, customerError, customer, selectedPlan, setKnownSelectedPlan])
+		if (!isSignedIn || !orgId) return
+		if (access === "loading" || access === "unknown") return
+		setKnownMayRenderApp(mayRenderApp)
+	}, [isSignedIn, orgId, access, mayRenderApp, setKnownMayRenderApp])
 
 	if (isSignedIn && pathname === "/sign-in") {
 		const target = getRedirectTarget(searchStr)
@@ -176,12 +201,29 @@ function ClerkReverseRedirects() {
 		return <Navigate to={target.pathname} search={target.search} replace />
 	}
 
+	// A fixture surface has no org-scoped data to gate, so it renders whatever the
+	// plan query is doing. Checked after the auth-page redirects above, which are
+	// about sending a signed-in reader somewhere better rather than gating them.
+	if (isFixturePath(pathname)) {
+		return <AppFrame />
+	}
+
+	if (wrongRegion) {
+		// A new organization with no region yet is not in the wrong place, it has not picked one:
+		// onboarding asks, and this region's API lets that one request through.
+		if (orgRegion.open) {
+			if (pathname === "/quick-start") return <AppFrame />
+			return <Navigate to="/quick-start" search={{ redirect_url: redirectUrl }} replace />
+		}
+		return <WrongRegionScreen region={orgRegion.region} />
+	}
+
 	if (isSignedIn && orgId) {
 		// If Autumn is down — or returns an error-shaped `200` payload that isn't
 		// a usable customer — let users through rather than blocking them. Without
 		// this, a malformed customer falls through as "no plan" and bounces the
 		// user into /quick-start onboarding.
-		if (customerError || (customer && !isUsableCustomer(customer))) {
+		if (access === "unknown") {
 			return <AppFrame />
 		}
 		// Dev-only: `?quota_preview=` forces the usage-alert banner for visual
@@ -194,19 +236,19 @@ function ClerkReverseRedirects() {
 		// Plan not yet known (query still loading/retrying). Allowed-without-plan
 		// routes render their own onboarding UI, so let them through. For every
 		// other route, only optimistically render the dashboard when this browser
-		// already knows the org holds a selected plan — otherwise show a loading
+		// already knows the org may render the app — otherwise show a loading
 		// screen until the query settles, so we never flash the dashboard before
-		// bouncing a planless user to /quick-start. The flag is cleared on
-		// unsubscribe, so that case flashes once and then takes the wait path.
-		if (isCustomerLoading && !quotaPreview) {
-			if (ALLOWED_WITHOUT_PLAN.includes(pathname) || knownSelectedPlan) {
+		// bouncing a never-subscribed user to /quick-start.
+		if (access === "loading" && !quotaPreview) {
+			if (ALLOWED_WITHOUT_PLAN.includes(pathname) || knownMayRenderApp) {
 				return <AppFrame />
 			}
 			return <BootSplash />
 		}
 
-		// Plan known (or dev quota preview): apply the gate.
-		if (!selectedPlan && !quotaPreview && !ALLOWED_WITHOUT_PLAN.includes(pathname)) {
+		// Plan known (or dev quota preview): apply the gate. Only an org that has
+		// never held a plan is sent to onboarding — a lapsed one gets the app.
+		if (!mayRenderApp && !quotaPreview && !ALLOWED_WITHOUT_PLAN.includes(pathname)) {
 			return <Navigate to="/quick-start" search={{ redirect_url: redirectUrl }} replace />
 		}
 		if (selectedPlan && pathname === "/select-plan") {

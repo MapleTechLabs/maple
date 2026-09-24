@@ -1,377 +1,240 @@
+/**
+ * The alerting Worker in alchemy's single-module form: this file is both the
+ * resource the root stack yields (`yield* Alerting`) and the bundle alchemy
+ * deploys (`main: import.meta.url`). Stage-derived props read `MapleStack`;
+ * `impl` runs once per isolate, on the first event, and registers one handler
+ * per cron. The ticks live in `./scheduled`, imported on the first fire so
+ * the api layer graph stays off the startup path — and out of the deploy
+ * process, where init also runs.
+ *
+ * Alchemy's cron source reports every fire as successful, so the platform's
+ * retry never engages here. Nothing is lost: the ticks already log and
+ * swallow their own failures (`catchTickFailure`), the schedules re-fire on
+ * their own, and a failure outside a tick (the layer build) is logged below.
+ */
 import {
-	ANTICIPATED_ERROR_IDENTIFIERS,
-	AlertsService,
-	AnomalyDetectionService,
-	BucketCacheService,
-	CacheBackendLive,
-	CloudflareAnalyticsService,
-	CloudflareOAuthService,
-	DigestService,
-	EdgeCacheService,
-	EmailService,
-	Env,
-	ErrorsService,
-	EscalationService,
-	HazelOAuthService,
-	layerPg,
-	NotificationDispatcher,
-	OrgClickHouseSettingsService,
-	OrgIngestKeysService,
-	OrgMembersService,
-	PlanetScaleOAuthService,
-	PlanetScaleService,
-	QueryEngineService,
-	ServiceMapRollupService,
-	TinybirdOrgTokenService,
-	WarehouseQueryService,
-} from "@maple/api/alerting"
-import * as MapleCloudflareSDK from "@maple-dev/effect-sdk/cloudflare"
-import { runScheduledEffect, WorkerConfigProviderLayer, WorkerEnvironment } from "@maple/effect-cloudflare"
-import { Cause, Effect, Layer, Match } from "effect"
-
-// Module-scope construction; `flush(env)` resolves env on first call. The
-// in-isolate buffers coalesce concurrent scheduled ticks into one POST per
-// signal.
-const telemetry = MapleCloudflareSDK.make({
-	serviceName: "alerting",
-	serviceNamespace: "backend",
-	repositoryUrl: "https://github.com/Makisuo/maple",
-	anticipatedErrorIdentifiers: [...ANTICIPATED_ERROR_IDENTIFIERS],
-})
-
-const buildLayer = (_env: Record<string, unknown>) => {
-	const ConfigLive = WorkerConfigProviderLayer
-	const EnvLive = Env.layer.pipe(Layer.provide(ConfigLive))
-
-	const DatabaseLive = layerPg.pipe(Layer.provide(WorkerEnvironment.layer))
-
-	const BaseLive = Layer.mergeAll(EnvLive, DatabaseLive)
-
-	const OrgClickHouseSettingsLive = OrgClickHouseSettingsService.layer.pipe(Layer.provide(BaseLive))
-
-	const TinybirdOrgTokenLive = TinybirdOrgTokenService.layer.pipe(Layer.provide(EnvLive))
-
-	const WarehouseQueryServiceLive = WarehouseQueryService.layer.pipe(
-		Layer.provide(Layer.mergeAll(EnvLive, OrgClickHouseSettingsLive, TinybirdOrgTokenLive)),
-	)
-
-	// EdgeCacheService's storage backend is injected via the CacheBackend port.
-	// Define the wired layer once so it memoizes to a single shared instance.
-	const EdgeCacheServiceLive = EdgeCacheService.layer.pipe(Layer.provide(CacheBackendLive))
-
-	const BucketCacheServiceLive = BucketCacheService.layer.pipe(Layer.provide(EdgeCacheServiceLive))
-
-	const QueryEngineServiceLive = QueryEngineService.layer.pipe(
-		Layer.provide(WarehouseQueryServiceLive),
-		Layer.provide(EdgeCacheServiceLive),
-		Layer.provide(BucketCacheServiceLive),
-	)
-
-	const HazelOAuthServiceLive = HazelOAuthService.layer.pipe(Layer.provide(BaseLive))
-
-	// EmailService resolves the Cloudflare Email Service `EMAIL` binding from
-	// WorkerEnvironment (delivery binding) in addition to EnvLive (EMAIL_FROM).
-	const EmailServiceLive = EmailService.layer.pipe(
-		Layer.provide(Layer.mergeAll(EnvLive, WorkerEnvironment.layer)),
-	)
-
-	const OrgMembersServiceLive = OrgMembersService.layer.pipe(Layer.provide(EnvLive))
-
-	// WorkerEnvironment is merged in so the incident-open issue-hub hook can see
-	// the cross-script AI_TRIAGE_WORKFLOW binding (absent → triage marked failed).
-	// AlertRuntime is a Context.Reference with defaults, so it needs no wiring here.
-	const AlertsServiceLive = AlertsService.layer.pipe(
-		Layer.provide(
-			Layer.mergeAll(
-				BaseLive,
-				QueryEngineServiceLive,
-				WarehouseQueryServiceLive,
-				HazelOAuthServiceLive,
-				EmailServiceLive,
-				OrgMembersServiceLive,
-				WorkerEnvironment.layer,
-			),
-		),
-	)
-
-	const NotificationDispatcherLive = NotificationDispatcher.layer.pipe(
-		Layer.provide(Layer.mergeAll(BaseLive, HazelOAuthServiceLive, EmailServiceLive)),
-	)
-
-	const EscalationServiceLive = EscalationService.layer.pipe(
-		Layer.provide(Layer.mergeAll(BaseLive, NotificationDispatcherLive)),
-	)
-
-	// WorkerEnvironment is merged in so the incident-open AI-triage hook can see
-	// the cross-script AI_TRIAGE_WORKFLOW binding (absent → triage marked failed).
-	const ErrorsServiceLive = ErrorsService.layer.pipe(
-		Layer.provide(
-			Layer.mergeAll(
-				BaseLive,
-				WarehouseQueryServiceLive,
-				EdgeCacheServiceLive,
-				NotificationDispatcherLive,
-				WorkerEnvironment.layer,
-			),
-		),
-	)
-
-	const AnomalyDetectionServiceLive = AnomalyDetectionService.layer.pipe(
-		Layer.provide(
-			Layer.mergeAll(
-				BaseLive,
-				WarehouseQueryServiceLive,
-				EdgeCacheServiceLive,
-				WorkerEnvironment.layer,
-			),
-		),
-	)
-
-	const DigestServiceLive = DigestService.layer.pipe(
-		Layer.provide(
-			Layer.mergeAll(BaseLive, WarehouseQueryServiceLive, EdgeCacheServiceLive, EmailServiceLive),
-		),
-	)
-
-	const ServiceMapRollupServiceLive = ServiceMapRollupService.layer.pipe(
-		Layer.provide(Layer.mergeAll(BaseLive, WarehouseQueryServiceLive)),
-	)
-
-	const CloudflareOAuthServiceLive = CloudflareOAuthService.layer.pipe(Layer.provide(BaseLive))
-
-	const OrgIngestKeysServiceLive = OrgIngestKeysService.layer.pipe(Layer.provide(BaseLive))
-
-	const CloudflareAnalyticsServiceLive = CloudflareAnalyticsService.layer.pipe(
-		Layer.provide(
-			Layer.mergeAll(
-				BaseLive,
-				WarehouseQueryServiceLive,
-				CloudflareOAuthServiceLive,
-				OrgIngestKeysServiceLive,
-				OrgClickHouseSettingsLive,
-			),
-		),
-	)
-
-	const PlanetScaleOAuthServiceLive = PlanetScaleOAuthService.layer.pipe(Layer.provide(BaseLive))
-
-	const PlanetScaleServiceLive = PlanetScaleService.layer.pipe(
-		Layer.provide(Layer.mergeAll(BaseLive, PlanetScaleOAuthServiceLive)),
-	)
-
-	return Layer.mergeAll(
-		AlertsServiceLive,
-		AnomalyDetectionServiceLive,
-		CloudflareAnalyticsServiceLive,
-		PlanetScaleServiceLive,
-		DigestServiceLive,
-		ErrorsServiceLive,
-		EscalationServiceLive,
-		ServiceMapRollupServiceLive,
-	).pipe(Layer.provideMerge(telemetry.layer), Layer.provideMerge(ConfigLive))
-}
+	AiWorker,
+	cachedRecoverable,
+	emailBinding,
+	MapleDb,
+	mapleDbEnv,
+	MapleStack,
+	type MapleDomains,
+	type MapleRegion,
+	type MapleStage,
+	resolveWorkerName,
+	resolveWorkerPlacement,
+} from "@maple/infra/cloudflare"
+import {
+	apnsEnv,
+	appUrlsEnv,
+	authEnv,
+	cloudflareOAuthEnv,
+	ingestKeyCryptoEnv,
+	merge,
+	optionalPlain,
+	optionalSecret,
+	planetScaleOAuthEnv,
+	selfObservabilityEnv,
+	tinybirdEnv,
+} from "@maple/infra/env"
+import { WorkerTelemetry } from "@maple/infra/worker-telemetry"
+import { chatConnectorOutboundConfigKeys } from "@maple/chat-platform"
+import * as Cloudflare from "alchemy/Cloudflare"
+import { Cause, Effect, Layer, Ref } from "effect"
+import { HttpServerResponse } from "effect/unstable/http"
 
 /**
- * Standard tick failure isolation. A broken tick must not fail the whole scheduled
- * invocation (several ticks share one cron dispatch), so genuine failures are logged and
- * swallowed — but interrupt-only causes (isolate teardown) are re-raised so they reach
- * `runScheduledEffect`'s `onInterrupt: "graceful"` handling instead of logging a phantom
- * tick failure. Mirrors the per-org guards inside the tick services.
+ * The alerting worker's resource bindings, split from the `Config`-sourced env
+ * so `InferEnv` can derive `AlertingWorkerEnv` below.
  */
-const catchTickFailure = (label: string) =>
-	Effect.catchCause((cause: Cause.Cause<unknown>) =>
-		Cause.hasInterruptsOnly(cause)
-			? Effect.interrupt
-			: Effect.logError(label).pipe(Effect.annotateLogs({ error: Cause.pretty(cause) })),
+const makeWorkerBindings = ({ stage, region }: { stage: MapleStage; region: MapleRegion }) => ({
+	// Cross-script reference to the chat Durable Object the AI Worker hosts.
+	// Alert, error, and anomaly ticks start an investigation's agent turn on it
+	// when incidents open; `chatSessionStub` reads it off `env` under the class name.
+	ChatSession: Cloudflare.DurableObject("ChatSession", {
+		className: "ChatSession",
+		scriptName: resolveWorkerName("ai", stage, region),
+	}),
+	...emailBinding(stage),
+})
+
+/**
+ * The alerting worker's runtime env, derived from the declaration above — one
+ * source of truth, imported (type-only) by `./scheduled.ts`.
+ *
+ * `Partial` because a binding's absence is a real runtime state: ref stages
+ * attach MAPLE_DB after the Worker exists, EMAIL is prd-only, and `alchemy
+ * dev` emulation does not cover every binding. The configuration vars stay
+ * `unknown` on purpose: config is read through the Effect ConfigProvider
+ * (`workerEnvLayer` → the shared `Env` service), never off `env` directly.
+ */
+export type AlertingWorkerEnv = Partial<Cloudflare.InferEnv<ReturnType<typeof makeWorkerBindings>>> &
+	Record<string, unknown>
+
+/**
+ * Everything in the alerting worker's env that comes from configuration rather
+ * than from a resource. Largely the api worker's set — the two share 32 keys,
+ * which is why the groups live in `@maple/infra/env`.
+ */
+const configuredEnv = (stage: MapleStage, region: MapleRegion, domains: MapleDomains) =>
+	merge(
+		// Alert-rule evaluation runs Tinybird-scoped raw SQL through
+		// TinybirdOrgTokenService, so this is the same set the api worker binds.
+		tinybirdEnv,
+		authEnv,
+		ingestKeyCryptoEnv,
+		appUrlsEnv(domains),
+		// MAPLE_ENDPOINT / MAPLE_ENVIRONMENT / COMMIT_SHA / MAPLE_INGEST_KEY.
+		// MAPLE_ENVIRONMENT is stage-derived and NOT env-overridable: it gates both
+		// the non-prod cron skip below and EmailService.emailAllowed, so an override
+		// would open both at once and leave the prd-only EMAIL binding as the sole
+		// guard.
+		selfObservabilityEnv(stage, region),
+		// Non-prod stages skip all crons (they share live org data via the prod DB);
+		// set to "1" on a stage to deliberately exercise crons there.
+		optionalPlain("MAPLE_ALERTING_ALLOW_NONPROD"),
+		// Dev-only escape hatch from per-org BYO rows (see apps/api/src/resources/env.ts).
+		optionalPlain("MAPLE_IGNORE_ORG_CLICKHOUSE"),
+		optionalSecret("AUTUMN_SECRET_KEY"),
+		optionalSecret("INTERNAL_SERVICE_TOKEN"),
+		// The alerting worker is where incidents open and resolve, so it is the one
+		// that sends push (platform/Apns.ts) — and it runs the Cloudflare analytics
+		// and PlanetScale inventory pollers, each of which resolves and refreshes
+		// per-org OAuth tokens with the same config the api worker uses.
+		apnsEnv,
+		cloudflareOAuthEnv,
+		planetScaleOAuthEnv,
+		// `chat` destinations post through a chat connector, which reads the outbound
+		// config it declared; the workspace's own credential is opened with the
+		// ingest-key encryption key above.
+		...chatConnectorOutboundConfigKeys.map((key) =>
+			key.secret ? optionalSecret(key.name) : optionalPlain(key.name),
+		),
 	)
 
-const alertTick = Effect.gen(function* () {
-	const alerts = yield* AlertsService
-	const result = yield* alerts.runSchedulerTick()
-	yield* Effect.logInfo("Alerting worker tick complete").pipe(
-		Effect.annotateLogs({
-			evaluatedCount: result.evaluatedCount,
-			processedCount: result.processedCount,
-			evaluationFailureCount: result.evaluationFailureCount,
-			deliveryFailureCount: result.deliveryFailureCount,
-		}),
-	)
-}).pipe(Effect.withSpan("alerting.scheduler_tick"), catchTickFailure("Alerting worker tick failed"))
-
-const errorTick = Effect.gen(function* () {
-	const errors = yield* ErrorsService
-	const result = yield* errors.runTick()
-	yield* Effect.logInfo("Errors worker tick complete").pipe(
-		Effect.annotateLogs({
-			orgsProcessed: result.orgsProcessed,
-			issuesTouched: result.issuesTouched,
-			incidentsOpened: result.incidentsOpened,
-			incidentsResolved: result.incidentsResolved,
-			issuesReopened: result.issuesReopened,
-			issuesArchived: result.issuesArchived,
-			issuesDeleted: result.issuesDeleted,
-			retentionRan: result.retentionRan,
-		}),
-	)
-}).pipe(Effect.withSpan("alerting.error_tick"), catchTickFailure("Errors worker tick failed"))
-
-const escalationTick = Effect.gen(function* () {
-	const escalations = yield* EscalationService
-	const result = yield* escalations.runEscalationTick()
-	if (result.processed > 0) {
-		yield* Effect.logInfo("Escalation tick complete").pipe(
-			Effect.annotateLogs({
-				processed: result.processed,
-				sent: result.sent,
-				skipped: result.skipped,
-				failed: result.failed,
-				retried: result.retried,
-			}),
-		)
+/**
+ * Alchemy evaluates a Worker's props wherever the class is yielded — the
+ * deployed bundle included, where they are inert. `__ALCHEMY_RUNTIME__` folds to
+ * `true` there, so the stack-side branch below, and the `@maple/infra` modules
+ * only it reaches, are dead-code-eliminated from what ships.
+ */
+const props = Effect.gen(function* () {
+	if (globalThis.__ALCHEMY_RUNTIME__) return { main: import.meta.url }
+	const { stage, region, domains, workerDev, devEnv, db } = yield* MapleStack
+	// maple-ai, which answers the investigation gate's question (`IncidentClassifier`)
+	// before a tick spends a model pass on an incident. Handed over as `AiWorker`
+	// like api's binding, because a `Worker.ref` cannot see a sibling this deploy creates.
+	const ai = yield* AiWorker
+	const env = yield* configuredEnv(stage, region, domains)
+	return {
+		main: import.meta.url,
+		name: resolveWorkerName("alerting", stage, region),
+		compatibility: { date: "2026-04-08", flags: ["nodejs_compat"] },
+		placement: resolveWorkerPlacement(region),
+		// Under `bun dev`: a sticky port the app's route follows.
+		dev: workerDev("alerting"),
+		workersDev: false,
+		// `devEnv` last, so `.env.local` cannot override the inter-app URLs.
+		env: {
+			...makeWorkerBindings({ stage, region }),
+			...mapleDbEnv(db, "alerting"),
+			AI_WORKER: ai,
+			...env,
+			...devEnv,
+		},
 	}
-}).pipe(Effect.withSpan("alerting.escalation_tick"), catchTickFailure("Escalation tick failed"))
+})
 
-const digestTick = Effect.gen(function* () {
-	const digest = yield* DigestService
-	const result = yield* digest.runDigestTick()
-	yield* Effect.logInfo("Digest tick complete").pipe(
-		Effect.annotateLogs({
-			sentCount: result.sentCount,
-			errorCount: result.errorCount,
-			skipped: result.skipped,
-		}),
-	)
-}).pipe(Effect.withSpan("alerting.digest_tick"), catchTickFailure("Digest tick failed"))
+/**
+ * The schedules, each attached to the Worker by its `cron` handler below and
+ * dispatched to a tick group by `selectScheduledProgram`. `0 9 * * *` (the
+ * onboarding drip) was retired when that sequence moved to maple-portal's
+ * campaign system.
+ */
+const ALERTING_CRONS = ["* * * * *", "*/5 * * * *", "*/15 * * * *", "0 * * * *"] as const
 
-// The onboarding drip moved to maple-portal (`camp_onboarding`), which owns the
-// sequence, its send log and its suppression list. `org_onboarding_state` stays
-// here — the in-app checklist still uses the rest of that table — and so do its
-// four `*_email_sent_at` columns, which are what the portal's backfill reads.
+/**
+ * Non-prod stages (PR previews, dev) share live org data, so their crons would
+ * iterate real orgs with stage-local Tinybird/Clerk credentials: every tick
+ * fails per-org and floods the error dashboards (and historically sent
+ * duplicate emails, see #237).
+ * Same gating philosophy as the prd-only EMAIL binding, with an explicit
+ * override for deliberately exercising crons on a non-prod stage.
+ */
+const cronsEnabled = (env: Record<string, unknown>): boolean =>
+	env.MAPLE_ENVIRONMENT === "production" ||
+	env.MAPLE_ALERTING_ALLOW_NONPROD === "1" ||
+	env.MAPLE_ALERTING_ALLOW_NONPROD === "true"
 
-const serviceMapRollupTick = Effect.gen(function* () {
-	const rollup = yield* ServiceMapRollupService
-	const result = yield* rollup.runRollupTick()
-	yield* Effect.logInfo("Service map rollup tick complete").pipe(
-		Effect.annotateLogs({
-			orgsProcessed: result.orgsProcessed,
-			hoursRolledUp: result.hoursRolledUp,
-			edgesWritten: result.edgesWritten,
-			resolutionsWritten: result.resolutionsWritten,
-			resolutionHoursChecked: result.resolutionHoursChecked,
-			emptyResolutionHours: result.emptyResolutionHours,
-			orgFailures: result.orgFailures,
-		}),
-	)
-}).pipe(
-	Effect.withSpan("alerting.service_map_rollup_tick"),
-	catchTickFailure("Service map rollup tick failed"),
-)
+export default class Alerting extends Cloudflare.Worker<Alerting>()(
+	"alerting",
+	props,
+	Effect.gen(function* () {
+		// Imported on the first fire and kept for the isolate: `./scheduled`
+		// carries the whole api layer graph, which has no business in startup
+		// validation or in the deploy process. A rejected import is retried on
+		// the next fire rather than pinned (`Effect.cached` keeps the failure).
+		const scheduled = yield* cachedRecoverable(Effect.promise(() => import("./scheduled")))
+		// `MAPLE_DB` in the stage's flavor — on prd its own dashboard-managed
+		// config: `alerting` issues ~97% of the workers' Postgres traffic and was
+		// starving the api's connection pool when the two shared one. The ticks
+		// read it off the fire's env.
+		yield* MapleDb("alerting")
+		// Once per isolate, not once per fire.
+		const loggedNonProdSkip = yield* Ref.make(false)
 
-const anomalyTick = Effect.gen(function* () {
-	const anomalies = yield* AnomalyDetectionService
-	const result = yield* anomalies.runTick()
-	yield* Effect.logInfo("Anomaly detection tick complete").pipe(
-		Effect.annotateLogs({
-			orgsProcessed: result.orgsProcessed,
-			seriesEvaluated: result.seriesEvaluated,
-			incidentsOpened: result.incidentsOpened,
-			incidentsAttached: result.incidentsAttached,
-			incidentsReopened: result.incidentsReopened,
-			incidentsContinued: result.incidentsContinued,
-			incidentsResolved: result.incidentsResolved,
-			orgFailures: result.orgFailures,
-		}),
-	)
-}).pipe(Effect.withSpan("alerting.anomaly_tick"), catchTickFailure("Anomaly detection tick failed"))
+		const onFire = (controller: ScheduledController) =>
+			Effect.gen(function* () {
+				const env = yield* Cloudflare.WorkerEnvironment
+				if (!cronsEnabled(env)) {
+					if (!(yield* Ref.getAndSet(loggedNonProdSkip, true))) {
+						yield* Effect.logInfo("Skipping alerting crons on non-production stage").pipe(
+							Effect.annotateLogs({
+								"maple.environment":
+									typeof env.MAPLE_ENVIRONMENT === "string"
+										? env.MAPLE_ENVIRONMENT
+										: "unset",
+								hint: "set MAPLE_ALERTING_ALLOW_NONPROD=1 to run them here",
+							}),
+						)
+					}
+					return
+				}
+				const { runScheduled } = yield* scheduled
+				// The tick's spans and logs go to the SDK the bridge built into this
+				// fire's scope; the flush is that scope's finalizer, after the fire.
+				yield* runScheduled(controller.cron, env).pipe(
+					// Interrupts are isolate teardown: the schedule re-fires anyway, and
+					// they must not be logged as a failed run (same rule as the ticks').
+					Effect.catchCause((cause) =>
+						Cause.hasInterruptsOnly(cause)
+							? Effect.void
+							: Effect.logError("Alerting scheduled run failed", cause).pipe(
+									Effect.annotateLogs({ "maple.alerting.cron": controller.cron }),
+								),
+					),
+				)
+			})
 
-const cloudflareAnalyticsTick = Effect.gen(function* () {
-	const analytics = yield* CloudflareAnalyticsService
-	const result = yield* analytics.pollAllOrgs()
-	yield* Effect.logInfo("Cloudflare analytics tick complete").pipe(
-		Effect.annotateLogs({
-			orgs: result.orgs,
-			rowsIngested: result.rowsIngested,
-			skipped: result.skipped,
-			failures: result.failures,
-			perOrg: result.perOrg,
-		}),
-	)
-}).pipe(
-	Effect.withSpan("alerting.cloudflare_analytics_tick"),
-	catchTickFailure("Cloudflare analytics tick failed"),
-)
-
-const planetScaleTick = Effect.gen(function* () {
-	const planetscale = yield* PlanetScaleService
-	const result = yield* planetscale.pollAllOrgs()
-	if (result.orgs > 0) {
-		yield* Effect.logInfo("PlanetScale poll tick complete").pipe(
-			Effect.annotateLogs({
-				orgs: result.orgs,
-				refreshed: result.refreshed,
-				skipped: result.skipped,
-				failures: result.failures,
-				deployEvents: result.deployEvents,
-			}),
-		)
-	}
-}).pipe(Effect.withSpan("alerting.planetscale_tick"), catchTickFailure("PlanetScale poll tick failed"))
-
-interface ScheduledEventLike {
-	readonly cron: string
-}
-
-interface ExecutionContextLike {
-	waitUntil(promise: Promise<unknown>): void
-}
-
-export default {
-	async scheduled(
-		event: ScheduledEventLike,
-		env: Record<string, unknown>,
-		ctx: ExecutionContextLike,
-	): Promise<void> {
-		// Non-prod stages (stg, PR previews) share live org data — stg's Hyperdrive
-		// points at the prod database — so their crons would iterate real orgs with
-		// stage-local Tinybird/Clerk credentials: every tick fails per-org and floods
-		// the error dashboards (and historically sent duplicate emails, see #237).
-		// Same gating philosophy as the prd-only EMAIL binding, with an explicit
-		// override for deliberately exercising crons on a non-prod stage.
-		const environment = typeof env.MAPLE_ENVIRONMENT === "string" ? env.MAPLE_ENVIRONMENT : ""
-		const allowNonProd =
-			env.MAPLE_ALERTING_ALLOW_NONPROD === "1" || env.MAPLE_ALERTING_ALLOW_NONPROD === "true"
-		if (environment !== "production" && !allowNonProd) {
-			console.log(
-				`Skipping alerting cron on non-production stage (MAPLE_ENVIRONMENT=${environment || "unset"}, cron=${event.cron}); set MAPLE_ALERTING_ALLOW_NONPROD=1 to run crons here`,
-			)
-			return
+		for (const cron of ALERTING_CRONS) {
+			yield* Cloudflare.Workers.cron(cron, onFire)
 		}
-		const program = Match.value(event.cron).pipe(
-			Match.when("*/5 * * * *", () =>
-				Effect.all([anomalyTick, cloudflareAnalyticsTick, planetScaleTick], {
-					concurrency: 3,
-					discard: true,
-				}),
-			),
-			Match.when("*/15 * * * *", () => digestTick),
-			Match.when("0 * * * *", () => serviceMapRollupTick),
-			Match.orElse(() =>
-				Effect.all([alertTick, errorTick, escalationTick], {
-					concurrency: 2,
-					discard: true,
-				}),
-			),
-		)
-		try {
-			// Cron ticks cancel gracefully on isolate teardown — the schedule reruns
-			// anyway, and re-raised interrupts (see the per-org catchCause guards in the
-			// tick services) must not surface as failed invocations.
-			await runScheduledEffect(buildLayer(env), program, ctx, { onInterrupt: "graceful" })
-		} finally {
-			ctx.waitUntil(telemetry.flush(env))
+
+		return {
+			fetch: Effect.succeed(HttpServerResponse.text("maple-alerting: scheduled only", { status: 404 })),
 		}
-	},
-	fetch(_request: Request): Response {
-		return new Response("maple-alerting: scheduled only", { status: 404 })
-	},
-}
+	}).pipe(
+		// The Worker's init IS the entry point: the cron source needs the host
+		// Worker, which only exists here, and the bridge builds the telemetry
+		// into each event's scope — a cron fire included — and flushes it after.
+		// oxlint-disable-next-line effecttsgo/strict-effect-provide
+		Effect.provide(
+			Layer.mergeAll(
+				Cloudflare.Hyperdrive.ConnectBinding,
+				Cloudflare.Workers.CronEventSourceLive,
+				WorkerTelemetry({ serviceName: "alerting" }),
+			),
+		),
+	),
+) {}

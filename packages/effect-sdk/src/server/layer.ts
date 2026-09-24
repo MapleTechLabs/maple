@@ -2,12 +2,25 @@ import type { Duration } from "effect"
 import { Effect, Layer, Redacted } from "effect"
 import { FetchHttpClient } from "effect/unstable/http"
 import { Otlp } from "effect/unstable/observability"
-import { resolveResource } from "./resource.js"
+import { type MapleRegion, warnIfKeylessMapleIngest } from "@maple/browser-session/region"
+import { type ResolvedResource, resolveResource } from "./resource.js"
+
+/**
+ * A warning rather than a no-op: disabling export here would silently break
+ * keyless setups against a local `maple start` sink or a self-hosted collector.
+ */
+const warnIfDoomed = (resolved: ResolvedResource): void =>
+	warnIfKeylessMapleIngest({
+		logPrefix: "[MapleServerSDK]",
+		endpoint: resolved.endpoint,
+		hasIngestKey: resolved.ingestKey !== undefined,
+		hint: "Set MAPLE_INGEST_KEY, or point MAPLE_ENDPOINT at your own collector.",
+	})
 
 export interface MapleConfig {
 	/**
 	 * Service name reported in traces, logs, and metrics. When omitted, falls
-	 * back to `OTEL_SERVICE_NAME` env var, then `"unknown_service"`.
+	 * back to `OTEL_SERVICE_NAME` env var, then `"unknown"`.
 	 */
 	readonly serviceName?: string | undefined
 	/** Override auto-detected service version (commit SHA). */
@@ -28,9 +41,15 @@ export interface MapleConfig {
 	/**
 	 * Ingest endpoint URL. When omitted, falls back to `MAPLE_ENDPOINT` then
 	 * `OTEL_EXPORTER_OTLP_ENDPOINT` env vars (the latter is what the
-	 * maple-k8s-infra chart's operator injects into pods).
+	 * maple-k8s-infra chart's operator injects into pods), then to the
+	 * region's public ingest.
 	 */
 	readonly endpoint?: string | undefined
+	/**
+	 * Region your Maple organization lives in: `"us"` (default) or `"eu"`.
+	 * Falls back to `MAPLE_REGION`. Any endpoint, set here or in env, wins.
+	 */
+	readonly region?: MapleRegion | undefined
 	/** Maple ingest key. Overrides MAPLE_INGEST_KEY env var. */
 	readonly ingestKey?: string | undefined
 	/**
@@ -51,12 +70,22 @@ export interface MapleConfig {
  * configured for Maple.
  *
  * Auto-detects commit SHA and deployment environment from common platform
- * env vars (Railway, Vercel, Cloudflare Pages, Render). Returns a no-op layer
- * when no endpoint is configured, making it safe for local development.
+ * env vars (Railway, Vercel, Cloudflare Pages, Render).
+ *
+ * This layer **always exports** — there is no disable switch. The endpoint
+ * defaults to the public Maple ingest, and a missing ingest key does not turn
+ * export off, so a keyless app pointed at a local `maple start` sink or a
+ * self-hosted collector still ships telemetry. Keyless against the public
+ * ingest is the one futile combination and logs a one-shot warning.
+ *
+ * Note the contrast with `MapleFlush.make` and the Cloudflare `make`, which DO
+ * no-op without an ingest key. If you want telemetry to switch itself off in
+ * local dev, use one of those, or leave `MAPLE_ENDPOINT` pointed at a sink you
+ * control.
  *
  * For Cloudflare Workers, prefer `@maple-dev/effect-sdk/cloudflare`'s `make()`
  * — it has no background fiber and exposes an explicit `flush` Effect that
- * `@maple/effect-cloudflare`'s `withRequestRuntime` schedules in
+ * `@maple/infra/worker-runtime`'s `withRequestRuntime` schedules in
  * `ctx.waitUntil`. This layer's `Otlp.layerJson` background-export fiber
  * doesn't tick on Workers between invocations.
  *
@@ -75,7 +104,12 @@ export const layer = (config: MapleConfig = {}) =>
 	Layer.unwrap(
 		Effect.gen(function* () {
 			const resolved = yield* resolveResource({ ...config, sdkType: "server" })
-			if (!resolved.endpoint) return Layer.empty
+			// Always export. A missing ingest key is NOT a disable signal here:
+			// pointing a keyless app at a local `maple start` sink or a self-hosted
+			// OTLP collector is a supported setup, and those accept unauthenticated
+			// writes. Only the keyless-to-public-ingest combination is futile, and
+			// that one gets a warning rather than silence — see `warnIfDoomed`.
+			warnIfDoomed(resolved)
 
 			return Otlp.layerJson({
 				baseUrl: resolved.endpoint,

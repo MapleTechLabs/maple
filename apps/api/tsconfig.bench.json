@@ -1,0 +1,10 @@
+{
+	"extends": "./tsconfig.json",
+	"include": [
+		"scripts/bench-queries.ts",
+		"scripts/cold-path/*.ts",
+		"scripts/bench-suites/*.ts",
+		"scripts/query-bench/catalog.clickhouse.e2e.test.ts"
+	],
+	"exclude": []
+}

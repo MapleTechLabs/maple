@@ -1,4 +1,3 @@
-// ---------------------------------------------------------------------------
 // Relative-time formatting — the single implementation.
 //
 // This module replaced fourteen independent relative-time formatters spread
@@ -15,7 +14,6 @@
 //
 // Import the `@maple/query-engine/datetime` leaf, never the package root — the
 // root barrel pulls the drivers and would bloat every bundle that touches `cn`.
-// ---------------------------------------------------------------------------
 
 import { parseWarehouseDateTime } from "@maple/query-engine/datetime"
 
@@ -100,11 +98,18 @@ const RELATIVE_CUTOVER_MS = 7 * 24 * 60 * 60 * 1000
  * Relative inside the last week, an absolute locale date beyond it. Past a few
  * days "23d ago" stops being easier to read than the date itself.
  */
-export function formatRelativeTimeOrDate(input: TimeInput, nowMs: number = Date.now()): string {
+export function formatRelativeTimeOrDate(
+	input: TimeInput,
+	nowMs: number = Date.now(),
+	timeZone?: string,
+): string {
 	const epochMs = toEpochMs(input)
 	if (!Number.isFinite(epochMs)) return "—"
 	if (nowMs - epochMs >= RELATIVE_CUTOVER_MS) {
+		// The date branch is a wall-clock reading, so it takes the viewer's selected
+		// zone where the page has one; the relative branch is zone-free.
 		return new Date(epochMs).toLocaleDateString(undefined, {
+			timeZone,
 			month: "short",
 			day: "numeric",
 			year: "numeric",

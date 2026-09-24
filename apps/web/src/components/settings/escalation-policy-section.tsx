@@ -6,7 +6,7 @@ import { toastManager } from "@maple/ui/components/ui/toast"
 import { Schema } from "effect"
 
 import { Result, useAtomRefresh, useAtomSet, useAtomValue } from "@/lib/effect-atom"
-import { MapleApiAtomClient } from "@/lib/services/common/atom-client"
+import { MapleApiAtomClient, retainedQuery } from "@/lib/services/common/atom-client"
 import { useAlertDestinationsList } from "@/hooks/use-alerts-list"
 import {
 	IssueEscalationPolicyRule,
@@ -28,9 +28,8 @@ import {
 	AlertMultiSegmentedSelect,
 	type AlertSegmentedOption,
 } from "@/components/alerts/alert-segmented-select"
-import { ProviderLogo } from "@/components/alerts/destination-provider"
+import { destinationProvider, ProviderLogo } from "@/components/alerts/destination-provider"
 import { SeverityBadge, SEVERITY_ORDER } from "@/components/errors/severity-badge"
-import { destinationTypeLabels } from "@/lib/alerts/form-utils"
 
 const CONFIDENCE_ANY = "any" as const
 
@@ -54,7 +53,7 @@ const emptyDraft = (): DraftRules => ({
  * detection-time alerts keep using the alert rule's own destinations.
  */
 export function EscalationPolicySection({ isAdmin }: { isAdmin: boolean }) {
-	const policyQueryAtom = MapleApiAtomClient.query("errors", "getEscalationPolicy", {
+	const policyQueryAtom = retainedQuery("errors", "getEscalationPolicy", {
 		reactivityKeys: ["issueEscalationPolicy"],
 	})
 	const policyResult = useAtomValue(policyQueryAtom)
@@ -95,9 +94,11 @@ export function EscalationPolicySection({ isAdmin }: { isAdmin: boolean }) {
 				new IssueEscalationPolicyRule({
 					severity,
 					destinationIds: decodeDestinationIds(rules[severity].destinationIds),
-					...(rules[severity].minConfidence === CONFIDENCE_ANY
-						? {}
-						: { minConfidence: rules[severity].minConfidence as EscalationConfidence }),
+					...(!(rules[severity].minConfidence === CONFIDENCE_ANY)
+						? {
+								minConfidence: rules[severity].minConfidence as EscalationConfidence,
+							}
+						: undefined),
 				}),
 		)
 		const result = await upsertMutation({
@@ -172,12 +173,14 @@ export function EscalationPolicySection({ isAdmin }: { isAdmin: boolean }) {
 						}
 						const destinationOptions = response.destinations.map((d) => ({
 							value: d.id,
-							icon: <ProviderLogo type={d.type} size={24} bare />,
+							icon: (
+								<ProviderLogo type={d.type} chatConnector={d.chatConnector} size={24} bare />
+							),
 							label: (
 								<span className="flex items-center gap-2">
 									<span className="font-medium">{d.name}</span>
 									<span className="text-muted-foreground text-xs">
-										{destinationTypeLabels[d.type]}
+										{destinationProvider(d).label}
 									</span>
 								</span>
 							),

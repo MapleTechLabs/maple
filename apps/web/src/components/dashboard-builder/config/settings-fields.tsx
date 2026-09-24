@@ -5,7 +5,12 @@ import { Input } from "@maple/ui/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@maple/ui/components/ui/select"
 import { Textarea } from "@maple/ui/components/ui/textarea"
 import { cn } from "@maple/ui/lib/utils"
-import { HEATMAP_COLOR_SCALES, type HeatmapColorScale } from "@maple/domain/http"
+import {
+	DEFAULT_HEATMAP_COLOR_SCALE,
+	HEATMAP_COLOR_SCALES,
+	WIDGET_UNITS,
+	type HeatmapColorScale,
+} from "@maple/domain/http"
 import type { ValueUnit } from "@/components/dashboard-builder/types"
 import { TimeRangePicker } from "@/components/time-range-picker/time-range-picker"
 import { useDashboardTimeRange } from "@/components/dashboard-builder/dashboard-providers"
@@ -13,13 +18,14 @@ import { resolveTimeRange } from "@/atoms/dashboard-time-range-atoms"
 import { WidgetBuilderForm } from "@/atoms/widget-query-builder-atoms"
 import { useAtom } from "@/lib/effect-atom"
 import { PANEL_TYPES, fromPanelType, toPanelType } from "@/lib/query-builder/panel-types"
+import { reconcileFunnelSource } from "@/components/dashboard-builder/config/funnel-source"
 import {
+	STAT_AGGREGATES,
 	toSeriesFieldOptions,
 	type QueryBuilderWidgetState,
 	type StatAggregate,
 } from "@/lib/query-builder/widget-builder-shared"
 
-// ---------------------------------------------------------------------------
 // The settings rail's vocabulary.
 //
 // Each field reads and writes the builder state through context, so a panel
@@ -27,7 +33,6 @@ import {
 // one form gated on `isStat && …`. The rail used to be a single 592-line
 // component behind seven `isX` booleans and two `showX` booleans, where adding a
 // widget type meant threading a tenth flag through every section.
-// ---------------------------------------------------------------------------
 
 export type LegendPosition = "bottom" | "right" | "hidden"
 
@@ -53,7 +58,7 @@ function useSettings() {
 		seriesFieldOptions: toSeriesFieldOptions(state),
 		sourceMode: use(SourceModeContext),
 		set: (updates: Partial<QueryBuilderWidgetState>) =>
-			setState((current) => ({ ...current, ...updates })),
+			setState((current) => reconcileFunnelSource({ ...current, ...updates })),
 	}
 }
 
@@ -220,6 +225,28 @@ function Curve() {
 	)
 }
 
+/**
+ * Point dots on line/area series. Auto is Grafana's rule: isolated points (a
+ * single non-zero bucket a line cannot draw) always get a dot; every point does
+ * only when the series is sparse enough for the dots not to touch.
+ */
+function Points() {
+	const { state, set } = useSettings()
+	return (
+		<Field label="Points">
+			<Segments
+				value={state.pointsMode}
+				onSelect={(pointsMode) => set({ pointsMode })}
+				options={[
+					{ value: "auto", label: "Auto" },
+					{ value: "always", label: "Always" },
+					{ value: "never", label: "Never" },
+				]}
+			/>
+		</Field>
+	)
+}
+
 const titleCase = (value: string) => value[0]!.toUpperCase() + value.slice(1)
 
 /** The ramp itself, so picking a palette is a visual choice rather than a word. */
@@ -239,19 +266,20 @@ function RampSwatch({ scale }: { scale: HeatmapColorScale }) {
 
 function HeatmapColors() {
 	const { state, set } = useSettings()
+	// An unset palette shows the ramp the chart actually renders, not a second
+	// default — ticking it is a no-op, so no Apply repaints an untouched widget.
+	const colorScale = state.heatmapColorScale ?? DEFAULT_HEATMAP_COLOR_SCALE
 	return (
 		<>
 			<Field label="Color scale">
 				<Select
 					items={Object.fromEntries(HEATMAP_COLOR_SCALES.map((scale) => [scale, titleCase(scale)]))}
-					value={state.heatmapColorScale}
-					onValueChange={(value) =>
-						set({ heatmapColorScale: value as typeof state.heatmapColorScale })
-					}
+					value={colorScale}
+					onValueChange={(value) => set({ heatmapColorScale: value as HeatmapColorScale })}
 				>
 					<SelectTrigger className="w-full">
 						<span className="flex items-center gap-2">
-							<RampSwatch scale={state.heatmapColorScale} />
+							<RampSwatch scale={colorScale} />
 							<SelectValue />
 						</span>
 					</SelectTrigger>
@@ -281,15 +309,16 @@ function HeatmapColors() {
 	)
 }
 
+// The four `duration_*` tokens collapse into one "Duration" entry with a
+// separate scale select below, so this list is the shared catalog minus those,
+// plus the grouping affordance. Everything else is derived, so a token added to
+// `WIDGET_UNITS` appears here without an edit.
 const UNIT_OPTIONS: Array<{ value: string; label: string }> = [
-	{ value: "none", label: "None" },
-	{ value: "number", label: "Number" },
-	{ value: "percent", label: "Percent (0–1)" },
-	{ value: "percent_100", label: "Percent (0–100)" },
+	...WIDGET_UNITS.filter((unit) => !unit.token.startsWith("duration_")).map((unit) => ({
+		value: unit.token,
+		label: unit.label,
+	})),
 	{ value: "duration", label: "Duration" },
-	{ value: "bytes", label: "Bytes" },
-	{ value: "requests_per_sec", label: "Requests/sec" },
-	{ value: "short", label: "Short" },
 ]
 
 const DURATION_SCALE_OPTIONS = [
@@ -376,8 +405,6 @@ function Legend({ seriesStats = true }: { seriesStats?: boolean }) {
 		</Field>
 	)
 }
-
-const STAT_AGGREGATES: StatAggregate[] = ["first", "sum", "count", "avg", "max", "min"]
 
 /** How the timeseries a stat or gauge reads is reduced to one number. */
 function ScalarReduction() {
@@ -584,12 +611,6 @@ function QueryOptions() {
 					disabled={state.comparisonMode === "none"}
 					onChange={(includePercentChange) => set({ includePercentChange })}
 				/>
-				<CheckboxRow
-					id="qb-debug"
-					label="Debug"
-					checked={state.debug}
-					onChange={(debug) => set({ debug })}
-				/>
 			</div>
 		</>
 	)
@@ -666,10 +687,61 @@ function WidgetTimeRange() {
 }
 
 /**
+ * The funnel chart's percentage labels: Auto (share of step 1), Conversion
+ * (adds the step-to-step rate), Off. Three states because
+ * `display.funnel.showStepPercent` is a tri-state — unset keeps the
+ * long-standing default, and a widget saved before the control existed must
+ * keep rendering as it did.
+ */
+function FunnelStepPercent() {
+	const { state, set } = useSettings()
+	const value = state.funnel.showStepPercent
+	return (
+		<Field label="Step labels">
+			<Segments
+				value={value === undefined ? "auto" : value ? "conversion" : "off"}
+				onSelect={(next) =>
+					set({
+						funnel: {
+							...state.funnel,
+							showStepPercent: next === "auto" ? undefined : next === "conversion",
+						},
+					})
+				}
+				options={[
+					{ value: "auto", label: "Auto" },
+					{ value: "conversion", label: "Conversion" },
+					{ value: "off", label: "Off" },
+				]}
+			/>
+		</Field>
+	)
+}
+
+/** Bars, or the step-by-step drop-off view with timing and leavers. */
+function FunnelVariant() {
+	const { state, set } = useSettings()
+	return (
+		<Field label="View">
+			<Segments
+				value={state.funnel.variant}
+				onSelect={(variant) => set({ funnel: { ...state.funnel, variant } })}
+				options={[
+					{ value: "bars", label: "Bars" },
+					{ value: "dropoff", label: "Drop-off" },
+				]}
+			/>
+		</Field>
+	)
+}
+
+/**
  * The rail's field vocabulary. A panel type's `ConfigPanel` composes these; none
  * of them takes the widget state as a prop.
  */
 export const WidgetSettings = {
+	FunnelStepPercent,
+	FunnelVariant,
 	Divider,
 	Name,
 	Description,
@@ -677,6 +749,7 @@ export const WidgetSettings = {
 	TypePicker,
 	Stacked,
 	Curve,
+	Points,
 	HeatmapColors,
 	Unit,
 	Legend,

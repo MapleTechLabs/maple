@@ -1,36 +1,20 @@
-// ---------------------------------------------------------------------------
-// Client flushable preset — manual `flush()` for the browser
-//
-// `Maple.layer` (the `Otlp.layerJson`-based client preset) exports on a 5s
-// timer but never flushes on page unload — the scope doesn't close on
-// `pagehide`, so the last few seconds of spans (including replay-linked traces)
-// are silently lost. This preset swaps the Otlp layer for the buffer-backed
-// tracer/logger and adds an explicit `flush()` plus, by default, a `pagehide` /
-// `visibilitychange→hidden` handler that flushes the tail before the tab goes
-// away — the browser equivalent of the Cloudflare preset's `ctx.waitUntil`.
-//
-//   import { MapleFlush } from "@maple-dev/effect-sdk/client"
-//   const telemetry = MapleFlush.make({
-//     serviceName: "my-frontend",
-//     endpoint: "https://ingest.maple.dev",
-//     ingestKey: "maple_pk_...",
-//   })
-//   // ...provide telemetry.layer to your runtime...
-//
-// Flush uses `fetch(url, { keepalive: true })`, not `navigator.sendBeacon`:
-// Maple's ingest gateway authenticates via the `Authorization` header (no
-// query-param auth), and sendBeacon cannot set request headers, so it would
-// 401 whenever an ingest key is set. `keepalive` carries the header AND lets
-// the request outlive the unloading document (for small bodies).
-//
-// Traces, logs, and Effect metric snapshots are flushed together.
-// ---------------------------------------------------------------------------
+// Browser telemetry preset with explicit and unload-triggered flushes for
+// buffered traces, logs, and metric snapshots. Transport uses keepalive fetch:
+// unlike sendBeacon it can carry the ingest key's Authorization header.
 
-import { hasConsent, onConsentChange } from "@maple/browser-session"
+import {
+	hasConsent,
+	type MapleRegion,
+	onConsentChange,
+	resolveIngestEndpoint,
+	warnIfKeylessMapleIngest,
+} from "@maple/browser-session"
+import { SDK_VERSION } from "../version.js"
 import { Layer, Redacted } from "effect"
 import {
 	buildResolved,
 	type FlushTransport,
+	guardFlush,
 	makeSerializedFlush,
 	type Resolved,
 	type ResourceInput,
@@ -39,7 +23,9 @@ import {
 } from "../shared/flush-core.js"
 import { type LogBuffer, makeLogBuffer } from "../shared/flushable-logger.js"
 import { makeMetricBuffer } from "../shared/flushable-metrics.js"
-import { makeSpanBuffer, type SpanBuffer } from "../shared/flushable-tracer.js"
+import { type CaptureExceptionOptions, makeSpanBuffer, type SpanBuffer } from "../shared/flushable-tracer.js"
+import { browserDocument, browserNavigator } from "./browser-globals.js"
+import { trySyncOrUndefined } from "../shared/try-sync.js"
 import { type ClientReplayConfig, startClientSession } from "./replay-loader.js"
 import { withSessionLink } from "./session-link.js"
 import type { PrivacyOptions } from "./track.js"
@@ -54,12 +40,27 @@ const browserInstanceId =
 export interface MapleClientFlushableConfig {
 	/** Service name reported in traces, logs, and metrics. */
 	readonly serviceName: string
-	/** Maple ingest endpoint URL. */
-	readonly endpoint: string
-	/** Maple ingest key. When unset, the preset runs in no-op mode. */
+	/**
+	 * Region your Maple organization lives in: `"us"` (default,
+	 * `https://ingest.maple.dev`) or `"eu"` (`https://ingest.eu.maple.dev`).
+	 * Ignored when `endpoint` is set.
+	 */
+	readonly region?: MapleRegion | undefined
+	/** Maple ingest endpoint URL. Overrides `region`; use it for a proxy or self-hosted ingest. */
+	readonly endpoint?: string | undefined
+	/**
+	 * Sent as `Authorization: Bearer …`, and nothing else. When unset, telemetry,
+	 * replay and session rows still send, headerless, for a proxy in front of
+	 * `endpoint` to authenticate.
+	 */
 	readonly ingestKey?: string | undefined
 	/** Service version or commit SHA. */
 	readonly serviceVersion?: string | undefined
+	/**
+	 * Logical group this service belongs to, emitted as the OTel
+	 * `service.namespace` resource attribute. Optional — only stamped when set.
+	 */
+	readonly serviceNamespace?: string | undefined
 	/** Deployment environment (e.g. "production", "staging"). */
 	readonly environment?: string | undefined
 	/** Additional resource attributes (highest precedence). */
@@ -99,7 +100,7 @@ export interface MapleClientFlushableConfig {
 	 * Post session metadata rows for the standalone session so it appears in
 	 * Maple's Sessions UI (list entry + linked traces, no replay recording).
 	 * Default `true`; no-ops when `@maple-dev/browser` is on the page (it owns
-	 * the session rows), during SSR, or without an ingest key.
+	 * the session rows) or without a browser DOM.
 	 */
 	readonly emitSessionMeta?: boolean | undefined
 	/**
@@ -108,6 +109,16 @@ export interface MapleClientFlushableConfig {
 	 * sampleRate 1 and inputs masked — set `{ enabled: false }` to opt out.
 	 */
 	readonly replay?: ClientReplayConfig | undefined
+	/**
+	 * Capture uncaught errors and unhandled promise rejections from the page and
+	 * record them as error spans. Default `true`.
+	 *
+	 * Without this the SDK only ever sees failures that happened *inside* an
+	 * Effect span, which in a browser is the minority of them — a React render
+	 * crash, a throw in an event handler and a floating rejected promise all
+	 * bypass Effect entirely and would otherwise never reach Maple.
+	 */
+	readonly captureGlobalErrors?: boolean | undefined
 	/**
 	 * Consent gating, persistent-visitor-id storage, and whether `identify()`'s
 	 * email reaches the warehouse. Defaults capture everything except where a
@@ -124,6 +135,16 @@ export interface FlushableTelemetry {
 	 * instrumented code.
 	 */
 	readonly layer: Layer.Layer<never>
+	/**
+	 * Record an error that never passed through an Effect span — the escape
+	 * hatch for the places a browser throws outside Effect. The canonical caller
+	 * is a React error boundary, which catches the error and, unless it reports
+	 * it here, is the reason nobody ever hears about the crash.
+	 *
+	 * BOUNDARY: a thrown value is unparsed by definition — JavaScript can throw
+	 * anything. It is narrowed on the way into the exception event.
+	 */
+	readonly captureException: (error: unknown, options?: CaptureExceptionOptions) => void
 	/** Drain the buffers and POST them now (keepalive). Never rejects. */
 	readonly flush: () => Promise<void>
 	/** Remove unload listeners, stop the auto-flush timer, then do one final flush. */
@@ -147,17 +168,19 @@ const buildBrowserAttributes = (config: MapleClientFlushableConfig): Record<stri
 	const attributes: Record<string, unknown> = {
 		"maple.sdk.type": "client",
 		"service.instance.id": browserInstanceId,
-	}
-	const g = globalThis as Record<string, any>
-	if (typeof g["navigator"] !== "undefined") {
-		const nav = g["navigator"]
-		if (nav.userAgent) attributes["browser.user_agent"] = nav.userAgent
+	} satisfies Record<string, unknown>
+	const nav = browserNavigator()
+	if (nav) {
+		// `user_agent.original` is the semconv key; `browser.user_agent` was
+		// deprecated in favour of it.
+		if (nav.userAgent) attributes["user_agent.original"] = nav.userAgent
 		if (nav.language) attributes["browser.language"] = nav.language
 	}
 	if (typeof Intl !== "undefined") {
-		try {
-			attributes["browser.timezone"] = Intl.DateTimeFormat().resolvedOptions().timeZone
-		} catch {}
+		// A locale-stripped build throws from `DateTimeFormat` rather than
+		// reporting an unknown zone.
+		const timezone = trySyncOrUndefined(() => Intl.DateTimeFormat().resolvedOptions().timeZone)
+		if (timezone) attributes["browser.timezone"] = timezone
 	}
 	if (config.environment) {
 		// Dual-emit: legacy key (pre-extracted by Tinybird MVs) + the canonical
@@ -165,7 +188,12 @@ const buildBrowserAttributes = (config: MapleClientFlushableConfig): Record<stri
 		attributes["deployment.environment"] = config.environment
 		attributes["deployment.environment.name"] = config.environment
 	}
-	if (config.serviceVersion) attributes["deployment.commit_sha"] = config.serviceVersion
+	// `serviceVersion` may be a semver release string, which belongs in
+	// `service.version` but not in `vcs.*` — only a SHA-shaped value is stamped.
+	if (config.serviceVersion && /^[0-9a-f]{7,40}$/i.test(config.serviceVersion)) {
+		attributes["vcs.ref.head.revision"] = config.serviceVersion
+	}
+	if (config.serviceNamespace) attributes["service.namespace"] = config.serviceNamespace
 	if (config.attributes) Object.assign(attributes, config.attributes)
 	return attributes
 }
@@ -182,8 +210,15 @@ export const make = (config: MapleClientFlushableConfig): FlushableTelemetry => 
 	]
 	const anticipatedIdentifiers =
 		anticipatedErrorIdentifiers.length > 0 ? new Set(anticipatedErrorIdentifiers) : undefined
+	const endpoint = resolveIngestEndpoint({ endpoints: [config.endpoint], regions: [config.region] })
+	warnIfKeylessMapleIngest({
+		logPrefix: "[MapleClientSDK]",
+		endpoint,
+		hasIngestKey: Boolean(config.ingestKey),
+		hint: "Pass `ingestKey`, or point `endpoint` at a proxy that adds it.",
+	})
 	const clientSession = startClientSession({
-		endpoint: config.endpoint,
+		endpoint,
 		ingestKey: config.ingestKey,
 		serviceName: config.serviceName,
 		environment: config.environment,
@@ -215,7 +250,7 @@ export const make = (config: MapleClientFlushableConfig): FlushableTelemetry => 
 	// `process.env`, no server `resolveResource` (keeps this out of the client
 	// bundle).
 	const resource: ResourceInput = {
-		endpoint: config.endpoint,
+		endpoint,
 		ingestKey: config.ingestKey ? Redacted.make(config.ingestKey) : undefined,
 		resource: {
 			serviceName: config.serviceName,
@@ -227,41 +262,37 @@ export const make = (config: MapleClientFlushableConfig): FlushableTelemetry => 
 		tracesPath: config.tracesPath,
 		logsPath: config.logsPath,
 		metricsPath: config.metricsPath,
-		userAgent: "maple-effect-sdk-client/0.0.0",
+		userAgent: `maple-effect-sdk-client/${SDK_VERSION}`,
+		keyless: "send",
 	})
 
 	const tracesState: SignalState = { disabledUntil: 0 }
 	const logsState: SignalState = { disabledUntil: 0 }
 	const metricsState: SignalState = { disabledUntil: 0 }
-	let noOpLogged = false
 
-	const flush = makeSerializedFlush(async (): Promise<void> => {
-		if (!hasConsent()) {
-			spans.drain()
-			logs.drain()
-			metrics.drain()
-			return
-		}
-		await runFlush({
-			resolved,
-			spans,
-			logs,
-			metrics,
-			tracesState,
-			logsState,
-			metricsState,
-			transport: keepaliveTransport,
-			logPrefix: "[MapleClientSDK]",
-			onNoOp: () => {
-				if (!noOpLogged) {
-					noOpLogged = true
-					console.info(
-						"[MapleClientSDK] no ingest key configured — telemetry disabled (pass `ingestKey` to enable)",
-					)
-				}
-			},
-		})
-	})
+	// Never rejects — fired from `pagehide`/`visibilitychange` handlers and the
+	// auto-flush timer as `void flush()`.
+	const flush = makeSerializedFlush(
+		guardFlush("[MapleClientSDK]", async (): Promise<void> => {
+			if (!hasConsent()) {
+				spans.drain()
+				logs.drain()
+				metrics.drain()
+				return
+			}
+			await runFlush({
+				resolved,
+				spans,
+				logs,
+				metrics,
+				tracesState,
+				logsState,
+				metricsState,
+				transport: keepaliveTransport,
+				logPrefix: "[MapleClientSDK]",
+			})
+		}),
+	)
 
 	const intervalMs =
 		config.autoFlushInterval === undefined
@@ -277,12 +308,69 @@ export const make = (config: MapleClientFlushableConfig): FlushableTelemetry => 
 		;(timer as { unref?: () => void }).unref?.()
 	}
 
+	/**
+	 * One error reaching two paths must still be one issue. React rethrows a
+	 * boundary-caught error in development, so a boundary that reports it *and*
+	 * `window.onerror` would otherwise fingerprint the same crash twice.
+	 */
+	const reported = new WeakSet<object>()
+	const captureException = (error: unknown, options: CaptureExceptionOptions = {}): void => {
+		if (typeof error === "object" && error !== null) {
+			if (reported.has(error)) return
+			reported.add(error)
+		}
+		const page = globalThis.location?.href
+		spans.captureException(error, {
+			...options,
+			attributes: {
+				...(page !== undefined ? { "url.full": page } : undefined),
+				...options.attributes,
+			},
+		})
+	}
+
+	const onWindowError = (event: ErrorEvent): void => {
+		// A cross-origin script reports as a bare "Script error." with no error
+		// object, no usable frames and no filename. It fingerprints to a single
+		// meaningless issue that buries the real ones, so it is dropped rather
+		// than recorded — the fix for those is CORS on the script tag, not a
+		// louder error tracker.
+		const error: unknown =
+			event.error ?? (event.message && event.filename ? new Error(event.message) : undefined)
+		if (error === undefined) return
+		captureException(error, {
+			name: "browser.uncaught_error",
+			attributes: {
+				"maple.exception.source": "window.onerror",
+				// `code.file.path` / `code.line.number` since semconv v1.34.0. Nothing
+				// reads the names they replaced, so they are dropped rather than
+				// dual-emitted — carrying both would put four near-identical rows on
+				// every uncaught error in the attribute list.
+				...(event.filename ? { "code.file.path": event.filename } : undefined),
+				...(event.lineno ? { "code.line.number": event.lineno } : undefined),
+			},
+		})
+	}
+
+	const onUnhandledRejection = (event: PromiseRejectionEvent): void => {
+		captureException(event.reason, {
+			name: "browser.unhandled_rejection",
+			attributes: { "maple.exception.source": "unhandledrejection" },
+		})
+	}
+
+	const canCaptureGlobals =
+		(config.captureGlobalErrors ?? true) && typeof globalThis.addEventListener === "function"
+	if (canCaptureGlobals) {
+		globalThis.addEventListener("error", onWindowError)
+		globalThis.addEventListener("unhandledrejection", onUnhandledRejection)
+	}
+
 	const onPageHide = (): void => {
 		void flush()
 	}
 	const onVisibilityChange = (): void => {
-		const doc = (globalThis as Record<string, any>)["document"]
-		if (doc && doc.visibilityState === "hidden") void flush()
+		if (browserDocument()?.visibilityState === "hidden") void flush()
 	}
 	const canListen = (config.flushOnUnload ?? true) && typeof globalThis.addEventListener === "function"
 	if (canListen) {
@@ -299,10 +387,14 @@ export const make = (config: MapleClientFlushableConfig): FlushableTelemetry => 
 			globalThis.removeEventListener("pagehide", onPageHide)
 			globalThis.removeEventListener("visibilitychange", onVisibilityChange)
 		}
+		if (canCaptureGlobals) {
+			globalThis.removeEventListener("error", onWindowError)
+			globalThis.removeEventListener("unhandledrejection", onUnhandledRejection)
+		}
 		stopConsentListener()
 		await flush()
 		await clientSession.stop()
 	}
 
-	return { layer, flush, dispose }
+	return { layer, captureException, flush, dispose }
 }

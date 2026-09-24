@@ -1,15 +1,15 @@
 ---
 /**
- * The changelog index — a release ledger, not a card feed.
+ * The changelog index: a release ledger rather than a card feed.
  *
  * Leads with the newest release rendered as a panel (highlights, not the full
- * body — the permalink owns that text) and lists every prior month as a
+ * body; the permalink owns that text) and lists every prior month as a
  * hairline row beneath. With a single release the ledger is absent rather than
  * empty-stated with a dashed box; the page still reads complete.
  *
  * Deliberately monochrome in its own chrome. RoadmapBoard one nav item away
  * owns the site's categorical chart colors, so the only saturated things here
- * are the BREAKING key and the release cover — and the covers are drawn to the
+ * are the BREAKING key and the release cover, and the covers are drawn to the
  * same rule, one amber moment each. See DESIGN.md on spending amber once per
  * screen.
  */
@@ -24,9 +24,9 @@ import { formatDate, isoDate } from "../../lib/blog";
 const releases = await getSortedReleases();
 const [latest, ...earlier] = releases;
 
-const pageTitle = "Changelog — What shipped in Maple";
+const pageTitle = "Changelog | What shipped in Maple";
 const pageDescription =
-    "Every Maple release, month by month. Traces, logs, metrics, alerting, integrations and the API — what changed and what broke.";
+    "Every Maple release, month by month. Traces, logs, metrics, alerting, integrations and the API: what changed and what broke.";
 
 const canonicalUrl = Astro.site ? new URL("/changelog", Astro.site).toString() : undefined;
 
@@ -35,8 +35,8 @@ const jsonLd = {
     "@type": "CollectionPage",
     name: "Maple changelog",
     description: pageDescription,
-    ...(canonicalUrl ? { url: canonicalUrl } : {}),
-    ...(latest ? { dateModified: isoDate(latest.data.date) } : {}),
+    ...((canonicalUrl) ? ({ url: canonicalUrl }) : undefined),
+    ...((latest) ? ({ dateModified: isoDate(latest.data.date) }) : undefined),
     publisher: {
         "@type": "Organization",
         name: "Maple",
@@ -47,7 +47,7 @@ const jsonLd = {
         headline: r.data.title,
         description: r.data.description,
         datePublished: isoDate(r.data.date),
-        ...(Astro.site ? { url: new URL(`/changelog/${r.id}`, Astro.site).toString() } : {}),
+        ...((Astro.site) ? ({ url: new URL(`/changelog/${r.id}`, Astro.site).toString() }) : undefined),
     })),
 };
 
@@ -87,7 +87,7 @@ const key = "font-mono text-[10px] uppercase tracking-[0.14em] text-fg-muted";
                     What shipped
                 </h1>
                 <p class="mt-5 max-w-[62ch] text-sm leading-relaxed text-pretty text-fg-muted">
-                    Every Maple release, month by month — the features, the fixes, and anything that
+                    Every Maple release, month by month: the features, the fixes, and anything that
                     needs your attention before you upgrade.
                 </p>
 

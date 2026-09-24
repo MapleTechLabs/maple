@@ -1,6 +1,6 @@
 ---
 import { getRelativeLocaleUrl } from "astro:i18n";
-import * as m from "../paraglide/messages";
+import * as m from "../paraglide/messages.js";
 import LanguageSwitcher from "./LanguageSwitcher.astro";
 import { getGitHubStars, formatStars } from "../lib/github-stars";
 import { features } from "../lib/features";
@@ -13,17 +13,29 @@ const stars = await getGitHubStars();
 ---
 
 <footer class="border-t border-border bg-bg-deep">
-    <!-- Manifesto line. Capped at 20ch so it breaks into three lines — one
-         refusal per line. That break is the whole gesture. -->
+    <!-- Manifesto line: one refusal per line. That break is the whole gesture,
+         so each sentence is its own block. A character cap only broke it
+         mid-sentence ("No per-seat fees. No / proprietary agents. No black /
+         boxes.") at the sizes that mattered. -->
     <div class="border-b border-border">
         <div class="shell py-16 md:py-24">
-            <p class="font-display text-3xl md:text-5xl font-medium text-foreground leading-[1.1] max-w-[20ch] tracking-[-0.02em]">
-                {m.footer_manifesto()}
+            <p class="font-display text-3xl md:text-5xl font-medium text-foreground leading-[1.1] tracking-[-0.02em]">
+                {m.footer_manifesto().split(/(?<=[.。])\s+/).map((line) => <span class="block">{line}</span>)}
             </p>
         </div>
     </div>
 
-    <div class="shell py-12">
+    <div class="footer-directory">
+        <img
+            class="footer-directory__art"
+            src="/art/maple-footer-courtyard.webp"
+            width="1536"
+            height="1024"
+            alt=""
+            loading="lazy"
+            decoding="async"
+        />
+    <div class="shell footer-directory__content py-12">
         <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-8 lg:gap-12">
             <!-- Col 1: Logo + tagline -->
             <div class="col-span-2 md:col-span-3 lg:col-span-2">
@@ -46,10 +58,13 @@ const stars = await getGitHubStars();
                     <li><a href={`${l("/")}#features`} class="text-fg-muted text-xs hover:text-foreground transition-colors">{m.footer_features()}</a></li>
                     <li><a href={`${l("/")}#how-it-works`} class="text-fg-muted text-xs hover:text-foreground transition-colors">{m.footer_how_it_works()}</a></li>
                     <li><a href={l("/pricing")} class="text-fg-muted text-xs hover:text-foreground transition-colors">{m.footer_pricing()}</a></li>
+                    <!-- English-only, like /about: bare href, not l(). -->
+                    <li><a href="/eu" class="text-fg-muted text-xs hover:text-foreground transition-colors">{m.footer_eu_hosting()}</a></li>
                     <li><a href={l("/opentelemetry")} class="text-fg-muted text-xs hover:text-foreground transition-colors">{m.footer_opentelemetry()}</a></li>
                     <li><a href={l("/roadmap")} class="text-fg-muted text-xs hover:text-foreground transition-colors">{m.footer_roadmap()}</a></li>
                     <li><a href={l("/local")} class="text-fg-muted text-xs hover:text-foreground transition-colors">{m.nav_local()}</a></li>
                     <li><a href="/docs" class="text-fg-muted text-xs hover:text-foreground transition-colors">{m.nav_docs()}</a></li>
+                    <li><a href="/guides" class="text-fg-muted text-xs hover:text-foreground transition-colors">{m.nav_guides()}</a></li>
                     <li><a href="/blog" class="text-fg-muted text-xs hover:text-foreground transition-colors">{m.nav_blog()}</a></li>
                     <!-- English-only, like /docs and /blog above: bare href, not l(). -->
                     <li><a href="/changelog" class="text-fg-muted text-xs hover:text-foreground transition-colors">{m.nav_changelog()}</a></li>
@@ -61,7 +76,7 @@ const stars = await getGitHubStars();
                 <h4 class="text-[10px] text-foreground font-medium uppercase tracking-wider mb-4">{m.footer_features()}</h4>
                 <ul class="space-y-2">
                     <!-- Derived from the registry. The hand-written list carried
-                         seven of the eight features — browser-sessions had been
+                         seven of the eight features; browser-sessions had been
                          missing since it shipped. -->
                     {features.map((feature) => (
                         <li><a href={featurePath(locale, feature.slug)} class="text-fg-muted text-xs hover:text-foreground transition-colors">{feature.navLabel()}</a></li>
@@ -77,6 +92,8 @@ const stars = await getGitHubStars();
                     <li><a href={l("/compare/grafana")} class="text-fg-muted text-xs hover:text-foreground transition-colors">{m.footer_vs_grafana()}</a></li>
                     <li><a href={l("/compare/new-relic")} class="text-fg-muted text-xs hover:text-foreground transition-colors">{m.footer_vs_new_relic()}</a></li>
                     <li><a href={l("/compare/dash0")} class="text-fg-muted text-xs hover:text-foreground transition-colors">{m.footer_vs_dash0()}</a></li>
+                    <li><a href={l("/compare/signoz")} class="text-fg-muted text-xs hover:text-foreground transition-colors">{m.footer_vs_signoz()}</a></li>
+                    <li><a href={l("/compare/axiom")} class="text-fg-muted text-xs hover:text-foreground transition-colors">{m.footer_vs_axiom()}</a></li>
                 </ul>
 
                 <h4 class="text-[10px] text-foreground font-medium uppercase tracking-wider mb-4 mt-6">{m.footer_integrations()}</h4>
@@ -94,12 +111,13 @@ const stars = await getGitHubStars();
                     <!-- GitHub keeps its text row for the star count; X and
                          Discord move to icons in the bottom bar, so they aren't
                          listed twice. -->
-                    <li><a href="https://github.com/Makisuo/maple" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-1.5 text-fg-muted text-xs hover:text-foreground transition-colors">{m.footer_github()}{stars != null && <span class="tabular-nums">{formatStars(stars)}</span>}</a></li>
+                    <li><a href="https://github.com/MapleTechLabs/maple" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-1.5 text-fg-muted text-xs hover:text-foreground transition-colors">{m.footer_github()}{stars != null && <span class="tabular-nums">{formatStars(stars)}</span>}</a></li>
                     <li><a href="https://opentelemetry.io" target="_blank" rel="noopener noreferrer" class="text-fg-muted text-xs hover:text-foreground transition-colors">{m.footer_opentelemetry()}</a></li>
                 </ul>
 
                 <h4 class="text-[10px] text-foreground font-medium uppercase tracking-wider mb-4 mt-6">{m.footer_learn()}</h4>
                 <ul class="space-y-2">
+                    <li><a href="/guides/what-is-apm" class="text-fg-muted text-xs hover:text-foreground transition-colors">{m.footer_what_is_apm()}</a></li>
                     <li><a href={l("/observability")} class="text-fg-muted text-xs hover:text-foreground transition-colors">{m.footer_what_is_observability()}</a></li>
                     <li><a href={l("/best-open-source-observability-tools")} class="text-fg-muted text-xs hover:text-foreground transition-colors">{m.footer_best_tools()}</a></li>
                 </ul>
@@ -110,18 +128,24 @@ const stars = await getGitHubStars();
         <div class="mt-12 pt-6 border-t border-border flex flex-col sm:flex-row items-center sm:justify-between gap-4">
             <div class="flex items-center gap-3">
                 <p class="text-fg-muted text-[10px]">{m.footer_copyright()}</p>
-                <!-- A licence stamp is exactly the register this footer wants. -->
+                <!-- A license stamp is exactly the register this footer wants. -->
                 <span class="rounded border border-border px-1.5 py-0.5 text-[10px] text-fg-muted">{m.bill_v_apache()}</span>
             </div>
             <div class="flex items-center gap-4">
+                <!-- English-only trust pages (see lib/company.ts): bare hrefs, not l(). -->
+                <a href="/about" class="text-fg-muted text-[10px] hover:text-foreground transition-colors">{m.footer_about()}</a>
+                <a href="/contact" class="text-fg-muted text-[10px] hover:text-foreground transition-colors">{m.footer_contact()}</a>
                 <a href={l("/privacy")} class="text-fg-muted text-[10px] hover:text-foreground transition-colors">{m.footer_privacy()}</a>
                 <a href={l("/terms")} class="text-fg-muted text-[10px] hover:text-foreground transition-colors">{m.footer_terms()}</a>
+                <!-- English-only page, so a bare href rather than l(), same as
+                     /changelog and /docs above. -->
+                <a href="/brand" class="text-fg-muted text-[10px] hover:text-foreground transition-colors">{m.footer_brand()}</a>
                 <LanguageSwitcher />
                 <div class="flex items-center gap-3 border-l border-border pl-4">
-                    <a href="https://github.com/Makisuo/maple" target="_blank" rel="noopener noreferrer" aria-label={m.footer_github()} class="text-fg-muted hover:text-foreground transition-colors">
+                    <a href="https://github.com/MapleTechLabs/maple" target="_blank" rel="noopener noreferrer" aria-label={m.footer_github()} class="text-fg-muted hover:text-foreground transition-colors">
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12" /></svg>
                     </a>
-                    <a href="https://x.com/maple_dev" target="_blank" rel="noopener noreferrer" aria-label={m.footer_twitter()} class="text-fg-muted hover:text-foreground transition-colors">
+                    <a href="https://x.com/Mapledotdev" target="_blank" rel="noopener noreferrer" aria-label={m.footer_twitter()} class="text-fg-muted hover:text-foreground transition-colors">
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M18.901 1.153h3.68l-8.04 9.19L24 22.846h-7.406l-5.8-7.584-6.638 7.584H.474l8.6-9.83L0 1.154h7.594l5.243 6.932ZM17.61 20.644h2.039L6.486 3.24H4.298Z" /></svg>
                     </a>
                     <a href="https://discord.gg/BnXjKuwJqP" target="_blank" rel="noopener noreferrer" aria-label={m.footer_discord()} class="text-fg-muted hover:text-foreground transition-colors">
@@ -131,4 +155,39 @@ const stars = await getGitHubStars();
             </div>
         </div>
     </div>
+    </div>
 </footer>
+
+<style>
+    .footer-directory {
+        position: relative;
+        isolation: isolate;
+        overflow: hidden;
+    }
+
+    .footer-directory__content {
+        position: relative;
+        z-index: 1;
+    }
+
+    .footer-directory__art {
+        position: absolute;
+        inset-inline: 0;
+        bottom: 0;
+        display: block;
+        width: 100%;
+        /* Crop away the empty sky so the colonnade sits behind the links. */
+        height: 240%;
+        object-fit: cover;
+        object-position: center bottom;
+        opacity: 0.28;
+        pointer-events: none;
+        mask-image: linear-gradient(to bottom, transparent 45%, black 65%);
+    }
+
+    @media (max-width: 767px) {
+        .footer-directory__art {
+            opacity: 0.22;
+        }
+    }
+</style>

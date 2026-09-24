@@ -1,20 +1,19 @@
-import { Link } from "@tanstack/react-router"
-import { useOrganization } from "@clerk/clerk-react"
 import { useMapleCustomer } from "@/hooks/use-maple-customer"
 
 import { Result, useAtomValue } from "@/lib/effect-atom"
 import { isClerkAuthEnabled } from "@/lib/services/common/auth-mode"
 import { hasBringYourOwnCloudAddOn } from "@/lib/billing/plan-gating"
+import { useOrganizationFeatureFlags } from "@/hooks/use-organization-feature-flags"
 import { useIsOrgAdmin } from "@/hooks/use-is-org-admin"
-import { MapleApiAtomClient } from "@/lib/services/common/atom-client"
+import { retainedQuery } from "@/lib/services/common/atom-client"
 import {
 	BellIcon,
 	CircleCheckIcon,
-	CodeIcon,
 	CreditCardIcon,
 	DatabaseIcon,
 	GearIcon,
 	GridIcon,
+	HistoryIcon,
 	KeyIcon,
 	ServerIcon,
 	ShieldIcon,
@@ -22,36 +21,36 @@ import {
 	UserIcon,
 	type IconComponent,
 } from "@/components/icons"
-import { cn } from "@maple/ui/lib/utils"
+import { SettingsNavShell } from "@/components/settings/settings-nav-shell"
 
 export const settingsTabValues = [
 	"organization",
 	"members",
-	"setup-audit",
+	"billing",
+	"audit-log",
 	"ingestion",
-	"api-keys",
-	"developer",
-	"mcp",
+	"data-platform",
+	"setup-audit",
 	"notifications",
 	"automation",
-	"billing",
-	"data-platform",
+	"api-keys",
+	"mcp",
 ] as const
 export type SettingsTab = (typeof settingsTabValues)[number]
 
 export const settingsTabLabels: Record<SettingsTab, string> = {
 	organization: "Organization",
 	members: "Members",
-	"setup-audit": "Setup Audit",
+	billing: "Billing",
+	"audit-log": "Audit Log",
 	ingestion: "Ingestion",
-	"api-keys": "API Keys",
-	developer: "API Reference",
-	mcp: "MCP",
+	"data-platform": "Data Platform",
+	"setup-audit": "Setup Audit",
 	notifications: "Notifications",
 	automation: "Automation",
-	billing: "Billing",
-	"data-platform": "Data Platform",
-}
+	"api-keys": "API Keys",
+	mcp: "MCP",
+} satisfies Record<SettingsTab, string>
 
 interface NavItem {
 	id: SettingsTab
@@ -96,12 +95,21 @@ interface NavLinkItem {
 }
 
 export interface SettingsNavSection {
-	id: "workspace" | "data" | "behavior" | "infra"
+	id: "workspace" | "connections" | "data" | "alerting"
 	title: string
-	items: NavItem[]
-	links?: NavLinkItem[]
+	/** Tabs and sibling-page links in one ordered list — nav position is declared, not derived. */
+	items: Array<NavItem | NavLinkItem>
 }
 
+/**
+ * Four groups, each earning its header: who can use the workspace and what it costs; what talks to
+ * Maple from outside; where telemetry comes from and where it lands; and what Maple does when
+ * something breaks.
+ *
+ * Group order does not decide the landing tab; `DEFAULT_SETTINGS_TAB_ORDER` does, on purpose.
+ *
+ * Within a group, rows run most-visited first rather than alphabetically.
+ */
 const navSections: SettingsNavSection[] = [
 	{
 		id: "workspace",
@@ -109,10 +117,19 @@ const navSections: SettingsNavSection[] = [
 		items: [
 			{ id: "organization", label: "Organization", icon: GearIcon },
 			{ id: "members", label: "Members", icon: UserIcon },
-			// Spans alerting, ingestion and integrations, so it sits at workspace level rather than
-			// under any one of them.
-			{ id: "setup-audit", label: "Setup Audit", icon: CircleCheckIcon },
 			{ id: "billing", label: "Billing", icon: CreditCardIcon },
+			{ id: "audit-log", label: "Audit Log", icon: HistoryIcon },
+		],
+	},
+	{
+		id: "connections",
+		title: "Connections",
+		items: [
+			// A sibling page rather than a tab, and the most-visited row in the nav, so it leads its
+			// group. Nothing about it being a route should push it down the list.
+			{ id: "integrations", label: "Integrations", icon: GridIcon, to: "/integrations" },
+			{ id: "api-keys", label: "API Keys", icon: KeyIcon },
+			{ id: "mcp", label: "MCP", icon: SquareTerminalIcon },
 		],
 	},
 	{
@@ -120,26 +137,27 @@ const navSections: SettingsNavSection[] = [
 		title: "Data",
 		items: [
 			{ id: "ingestion", label: "Ingestion", icon: ServerIcon },
-			{ id: "api-keys", label: "API Keys", icon: KeyIcon },
-			{ id: "developer", label: "API Reference", icon: CodeIcon },
-			{ id: "mcp", label: "MCP", icon: SquareTerminalIcon },
+			{ id: "data-platform", label: "Data Platform", icon: DatabaseIcon },
+			// A diagnostic over everything that feeds Maple, so it closes the group it reports on.
+			{ id: "setup-audit", label: "Setup Audit", icon: CircleCheckIcon },
 		],
-		links: [{ id: "integrations", label: "Integrations", icon: GridIcon, to: "/integrations" }],
 	},
 	{
-		id: "behavior",
-		title: "Behavior",
+		id: "alerting",
+		title: "Alerting",
 		items: [
 			{ id: "notifications", label: "Notifications", icon: BellIcon },
 			{ id: "automation", label: "Automation", icon: ShieldIcon },
 		],
 	},
-	{
-		id: "infra",
-		title: "Infrastructure",
-		items: [{ id: "data-platform", label: "Data Platform", icon: DatabaseIcon }],
-	},
 ]
+
+/**
+ * The tab rows of a section list, dropping sibling-page links. `visibleItems` feeds tab resolution,
+ * and `/integrations` is a route rather than a tab — it must never surface as a fallback tab id.
+ */
+const tabItems = (sections: ReadonlyArray<SettingsNavSection>): ReadonlyArray<NavItem> =>
+	sections.flatMap((section) => section.items.filter((row): row is NavItem => !("to" in row)))
 
 /**
  * Permission-filtered settings nav sections, shared by /settings and the
@@ -150,10 +168,13 @@ export function useVisibleSettingsSections() {
 	// in the Clerk-auth path below. `isClerkAuthEnabled` is a build-time constant
 	// today, but keeping the hooks above the early return avoids a conditional-hook
 	// hazard if it ever becomes dynamic.
-	const sessionResult = useAtomValue(MapleApiAtomClient.query("auth", "session", {}))
+	const sessionResult = useAtomValue(retainedQuery("auth", "session", {}))
 	const isAdmin = useIsOrgAdmin()
 	const { data: customer, isLoading: isCustomerLoading } = useMapleCustomer()
-	const { organization } = useOrganization()
+	// Shared with the main sidebar and the flagged routes, so a flag can't be read
+	// one way here and another way there (it already force-enables when self-hosted,
+	// which is what the `!isClerkAuthEnabled` branch below used to do inline).
+	const { flags: featureFlags } = useOrganizationFeatureFlags()
 
 	const visibleSections = navSections
 		.map((section) => ({
@@ -170,12 +191,12 @@ export function useVisibleSettingsSections() {
 				return true
 			}),
 		}))
-		.filter((section) => section.items.length > 0 || (section.links?.length ?? 0) > 0)
+		.filter((section) => section.items.length > 0)
 
 	if (!isClerkAuthEnabled) {
 		return {
 			visibleSections,
-			visibleItems: visibleSections.flatMap((s) => s.items),
+			visibleItems: tabItems(visibleSections),
 			isAdmin: true,
 			canAccessDataPlatform: true,
 			canAccessAi: true,
@@ -185,22 +206,24 @@ export function useVisibleSettingsSections() {
 	}
 
 	const canAccessDataPlatform = isAdmin && hasBringYourOwnCloudAddOn(customer)
-	const hasAiMetadataFlag = organization?.publicMetadata?.bringyourownai === true
-	const canAccessAi = isAdmin && hasAiMetadataFlag
+	const canAccessAi = isAdmin && featureFlags.aiAutoTriage
 
 	const dataSections = navSections
 		.map((section) => ({
 			...section,
 			items: section.items.filter((item) => {
 				if (item.id === "data-platform") return canAccessDataPlatform
+				// `GET /v2/audit_log` is admin-only; hide the tab rather than let a
+				// member open it into a 403.
+				if (item.id === "audit-log") return isAdmin
 				return true
 			}),
 		}))
-		.filter((section) => section.items.length > 0 || (section.links?.length ?? 0) > 0)
+		.filter((section) => section.items.length > 0)
 
 	return {
 		visibleSections: dataSections,
-		visibleItems: dataSections.flatMap((s) => s.items),
+		visibleItems: tabItems(dataSections),
 		isAdmin,
 		canAccessDataPlatform,
 		canAccessAi,
@@ -214,18 +237,6 @@ export function useVisibleSettingsSections() {
 	}
 }
 
-const rowClass = (isActive: boolean) =>
-	cn(
-		"group relative flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-sm transition-colors text-left",
-		isActive
-			? "bg-accent text-accent-foreground font-medium"
-			: "text-muted-foreground hover:bg-accent/50 hover:text-foreground",
-	)
-
-function ActiveIndicator() {
-	return <span aria-hidden className="absolute inset-y-1.5 left-0 w-[2px] rounded-full bg-primary" />
-}
-
 export function SettingsNav({
 	sections,
 	active,
@@ -236,42 +247,5 @@ export function SettingsNav({
 	active: SettingsTab | "integrations"
 	onSelectTab: (tab: SettingsTab) => void
 }) {
-	return (
-		<nav className="flex flex-col gap-5">
-			{sections.map((section) => (
-				<div key={section.id} className="flex flex-col gap-1">
-					<div className="px-2.5 text-[10px] font-medium uppercase tracking-[0.14em] text-muted-foreground/60">
-						{section.title}
-					</div>
-					<div className="flex flex-col gap-0.5">
-						{section.items.map((item) => {
-							const isActive = item.id === active
-							return (
-								<button
-									key={item.id}
-									type="button"
-									onClick={() => onSelectTab(item.id)}
-									className={rowClass(isActive)}
-								>
-									{isActive && <ActiveIndicator />}
-									<item.icon size={16} className="shrink-0" />
-									{item.label}
-								</button>
-							)
-						})}
-						{section.links?.map((link) => {
-							const isActive = link.id === active
-							return (
-								<Link key={link.to} to={link.to} className={rowClass(isActive)}>
-									{isActive && <ActiveIndicator />}
-									<link.icon size={16} className="shrink-0" />
-									{link.label}
-								</Link>
-							)
-						})}
-					</div>
-				</div>
-			))}
-		</nav>
-	)
+	return <SettingsNavShell sections={sections} active={active} onSelectTab={onSelectTab} />
 }

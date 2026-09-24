@@ -15,7 +15,7 @@
 //     can see paths the stored top-N never kept. The chart hides there, because
 //     live mode has no history. Live is an action, never a side effect of
 //     typing — every keystroke used to be a Cloudflare GraphQL round trip.
-//   - Rank. Rows carry a share-proportional tint, so a hundred keys read as a
+//   - Rank. Rows carry a share-proportional bar, so a hundred keys read as a
 //     decaying shape instead of a flat wall of names.
 
 import { useDeferredValue, useMemo, useState, type ReactNode } from "react"
@@ -24,6 +24,7 @@ import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { cn } from "@maple/ui/lib/utils"
 
 import { Result, useAtomValue } from "@/lib/effect-atom"
+import { useTimezonePreference } from "@/hooks/use-timezone-preference"
 import type {
 	CloudflareBreakdownDimension,
 	CloudflareBreakdownTotal,
@@ -33,11 +34,11 @@ import {
 	cloudflareTopTrafficResultAtom,
 	cloudflareZoneBreakdownResultAtom,
 } from "@/lib/services/atoms/warehouse-query-atoms"
-import { useRetainedRefreshableResultValue } from "@/hooks/use-retained-refreshable-result-value"
+import { useRefreshableAtomValue } from "@/hooks/use-refreshable-atom-value"
 import { formatNumber } from "@maple/ui/lib/format"
 import { MagnifierIcon, XmarkIcon } from "@/components/icons"
 import { ColumnHead, DataTable, useTableSort } from "../primitives/data-table"
-import { shareTint } from "../primitives/share-tint"
+import { shareBar } from "../primitives/share-bar"
 import { formatBytes, formatPercent } from "@maple/ui/lib/format"
 import { StackedBreakdownChart } from "./cloudflare-zone-detail-charts"
 import {
@@ -118,11 +119,11 @@ const CHIP_CLASS =
 	"inline-flex items-center rounded-sm border border-border/70 bg-background/60 px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground"
 
 /** ISO-8601 UTC → "Jul 28". */
-const formatCollectedFrom = (iso: string) => {
+const formatCollectedFrom = (iso: string, timeZone: string) => {
 	const date = new Date(iso)
 	return Number.isNaN(date.getTime())
 		? null
-		: date.toLocaleDateString(undefined, { month: "short", day: "numeric", timeZone: "UTC" })
+		: date.toLocaleDateString(undefined, { month: "short", day: "numeric", timeZone })
 }
 
 export function CloudflareBreakdownPanel({
@@ -155,7 +156,7 @@ export function CloudflareBreakdownPanel({
 
 	// Read here rather than inside StoredBreakdown so the header's scope marker can report the
 	// filters the server actually applied instead of guessing at them.
-	const storedResult = useRetainedRefreshableResultValue(
+	const storedResult = useRefreshableAtomValue(
 		cloudflareZoneBreakdownResultAtom({
 			data: {
 				serviceName,
@@ -346,7 +347,7 @@ function BreakdownTable({
 			stickySurfaceClass="bg-card"
 		>
 			<DataTable.Head>
-				{head(dimension.column, "key", "flex-1 min-w-[220px]")}
+				{head(dimension.column, "key", "w-0 flex-1 min-w-[220px]")}
 				{head("Requests", "requests", "w-[110px]")}
 				{head("Error rate", "errorRate", "w-[90px]")}
 				{head("Bandwidth", "bytes", "w-[90px]", "hidden md:flex")}
@@ -356,12 +357,8 @@ function BreakdownTable({
 			{sorted.map((row) => {
 				const selected = selectedValues.includes(row.key)
 				return (
-					<div
-						key={row.key}
-						className={ROW_CLASS}
-						style={{ backgroundImage: shareTint(row.share) }}
-					>
-						<div className="min-w-[220px] flex-1 truncate">
+					<div key={row.key} className={ROW_CLASS} style={shareBar(row.share)}>
+						<div className="w-0 min-w-[220px] flex-1 truncate">
 							{interactive && onToggleFilter ? (
 								<button
 									type="button"
@@ -429,6 +426,7 @@ function StoredBreakdown({
 }) {
 	// Deferred so a keystroke paints the input immediately and the 100-row re-render trails it.
 	const query = useDeferredValue(search).trim().toLowerCase()
+	const { effectiveTimezone } = useTimezonePreference()
 
 	return Result.builder(result)
 		.onInitial(() => (
@@ -447,7 +445,7 @@ function StoredBreakdown({
 			const collectedFrom =
 				data.coverageStart != null &&
 				warehouseTimeToMs(startTime) < new Date(data.coverageStart).getTime() - 60_000
-					? formatCollectedFrom(data.coverageStart)
+					? formatCollectedFrom(data.coverageStart, effectiveTimezone)
 					: null
 			const notCollected = data.coverageStart == null && data.totals.length === 0
 			const matches =

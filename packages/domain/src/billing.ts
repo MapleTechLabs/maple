@@ -14,26 +14,33 @@ export interface PlanGatingSubscription {
 	readonly plan?: { readonly name?: string | null } | null
 }
 
-/** Active, and not an add-on / auto-enabled / legacy-free tier. Trials count — Autumn reports them as `active`. */
-export function isActivePlanSubscription(sub: PlanGatingSubscription | null | undefined): boolean {
+/**
+ * A real plan subscription — not an add-on, an auto-enabled entitlement, or the
+ * legacy free tier — whatever its status. Status-blind on purpose: a lapsed
+ * (`expired` / `canceled`) row still identifies a returning customer, which is
+ * what tells the web gate to keep them in the app rather than dropping them back
+ * into new-user onboarding.
+ */
+export function isPlanSubscription(sub: PlanGatingSubscription | null | undefined): boolean {
 	if (!sub) return false
 	if (sub.addOn || sub.autoEnable) return false
 	if (sub.planId?.toLowerCase() === "free" || sub.plan?.name?.toLowerCase() === "free") return false
-	return sub.status === "active"
+	return true
 }
 
-// ---------------------------------------------------------------------------
+/** Active, and not an add-on / auto-enabled / legacy-free tier. Trials count — Autumn reports them as `active`. */
+export function isActivePlanSubscription(sub: PlanGatingSubscription | null | undefined): boolean {
+	return isPlanSubscription(sub) && sub?.status === "active"
+}
+
 // Cycle pricing
 //
-// One definition of "what does this cycle cost so far", in cents, shared by the
-// billing page's spend chart and the API's spend-limit evaluator. The two must
-// agree exactly: a chart that says $199 while the evaluator pauses ingestion at
-// its $200 limit is worse than either being wrong alone.
+// One definition of "what does this cycle cost so far", in cents, used by the
+// billing page's spend chart and invoice estimates.
 //
 // Cents throughout. Rates are per-unit dollars in the Autumn catalog (e.g.
 // $0.30/GB, $0.002/session), so the multiply happens in cents and rounds once,
 // at the end — not per feature.
-// ---------------------------------------------------------------------------
 
 export interface FeatureUsagePricing {
 	/** Usage this cycle, in the feature's billed unit (GB, or a raw count). */
@@ -67,6 +74,17 @@ export interface CycleSpend {
 }
 
 const toCents = (dollars: number) => dollars * 100
+
+/**
+ * Units consumed this cycle. The balance's `usage` is the meter Autumn invoices
+ * from — it resets with the cycle — so it is the authority whenever the feature
+ * has a balance. The event aggregate is only the fallback for a feature the
+ * customer has no balance for (metered but not on their plan).
+ */
+export const meteredUsage = (
+	balance: { readonly usage?: number | null | undefined } | undefined,
+	aggregate: number | null | undefined,
+): number => balance?.usage ?? aggregate ?? 0
 
 /** Units of `feature` beyond its included allotment. Never negative. */
 export function overageUnits(feature: FeatureUsagePricing): number {
@@ -133,26 +151,38 @@ export function cycleSpend({
 }
 
 /**
- * Straight-line projection of `spentCents` to the end of the cycle, holding the
- * base fee flat: only overage accrues with time. Returns `spentCents` when the
- * cycle has no elapsed portion to extrapolate from.
+ * Where the cycle lands at the current pace: each feature's remaining usage is
+ * extrapolated and added to what is already metered, then priced, so overage
+ * only starts once the projection crosses the allotment.
+ *
+ * The pace comes from `cycleUsage` (units recorded inside this cycle), not from
+ * `used`: Autumn doesn't reset a balance when a trial converts, so `used` in the
+ * first paid cycle still carries the trial. Pacing that over a few paid days
+ * projected many times the real bill. A feature without `cycleUsage` paces on
+ * `used`. Returns the current spend when nothing has elapsed.
  */
 export function projectCycleSpend({
-	baseCents,
-	overageCents,
+	baseDollars,
+	features,
+	cycleUsage,
 	elapsedMs,
 	totalMs,
 }: {
-	readonly baseCents: number
-	readonly overageCents: number
+	readonly baseDollars: number | null
+	readonly features: Readonly<Record<string, FeatureUsagePricing>>
+	readonly cycleUsage?: Readonly<Record<string, number | undefined>>
 	readonly elapsedMs: number
 	readonly totalMs: number
 }): number {
-	if (elapsedMs <= 0 || totalMs <= 0 || elapsedMs >= totalMs) return baseCents + overageCents
-	return baseCents + Math.round(overageCents * (totalMs / elapsedMs))
+	const remaining = elapsedMs <= 0 || totalMs <= elapsedMs ? 0 : (totalMs - elapsedMs) / elapsedMs
+	const projected: Record<string, FeatureUsagePricing> = {}
+	for (const [featureId, feature] of Object.entries(features)) {
+		const paced = Math.min(cycleUsage?.[featureId] ?? feature.used, feature.used)
+		projected[featureId] = { ...feature, used: feature.used + paced * remaining }
+	}
+	return cycleSpend({ baseDollars, features: projected }).totalCents
 }
 
-// ---------------------------------------------------------------------------
 // Whose prices apply
 //
 // Two sources describe a plan: the customer's OWN subscription plan (expanded
@@ -162,7 +192,6 @@ export function projectCycleSpend({
 // pays. Pricing from the catalog in that case bills them at somebody else's
 // rates, so the customer's own plan always wins and the catalog is the fallback
 // for the (common) case where nothing was expanded.
-// ---------------------------------------------------------------------------
 
 /** Structural view of a plan's per-feature line, from either source. */
 export interface PlanItemLike {

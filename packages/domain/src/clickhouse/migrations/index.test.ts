@@ -1,3 +1,4 @@
+import { String as Str } from "effect"
 import { describe, expect, it } from "vitest"
 import { type BackfillSpec, isBackfill, renderStatementFull } from "../backfill"
 import { migration_0004_service_namespace_projections } from "./0004_service_namespace_projections"
@@ -15,7 +16,27 @@ import {
 import { migration_0010_search_indexes } from "./0010_search_indexes"
 import { migration_0011_session_analytics_columns } from "./0011_session_analytics_columns"
 import { migration_0012_session_event_attribute_keys } from "./0012_session_event_attribute_keys"
-import { migration_0013_session_billable_start } from "./0013_session_billable_start"
+import { migration_0013_service_map_ingest_bridge } from "./0013_service_map_ingest_bridge"
+import { migration_0014_web_events, webEventsBackfill } from "./0014_web_events"
+import {
+	migration_0015_service_overview_minutely,
+	serviceOverviewMinutelyBackfill,
+} from "./0015_service_overview_minutely"
+import { migration_0016_error_events_4xx_and_frame_redaction } from "./0016_error_events_4xx_and_frame_redaction"
+import { migration_0017_error_service_version_columns } from "./0017_error_service_version_columns"
+import { migration_0018_apple_crash_frames } from "./0018_apple_crash_frames"
+import { migration_0019_mv_sweep } from "./0019_mv_sweep"
+import { migration_0020_semconv_key_renames } from "./0020_semconv_key_renames"
+import { migration_0022_service_map_edge_quantiles } from "./0022_service_map_edge_quantiles"
+import { migration_0023_service_operations_discriminators } from "./0023_service_operations_discriminators"
+import { migration_0024_ai_trace_index } from "./0024_ai_trace_index"
+import { migration_0025_commit_sha_vcs_revision } from "./0025_commit_sha_vcs_revision"
+import { migration_0026_ai_trace_index_filter_columns } from "./0026_ai_trace_index_filter_columns"
+import { migration_0027_audit_log } from "./0027_audit_log"
+import { migration_0028_product_events_from_traces } from "./0028_product_events_from_traces"
+import { migration_0030_error_events_attribute_fallback } from "./0030_error_events_attribute_fallback"
+import { migration_0031_ai_trace_index_list_columns } from "./0031_ai_trace_index_list_columns"
+import { migration_0032_ai_trace_index_tool_detail_columns } from "./0032_ai_trace_index_tool_detail_columns"
 import { clickHouseSchemaVersion, latestMigrationVersion, migrations } from "./index"
 
 const backfills = migration_0004_service_namespace_projections.statements.filter(
@@ -30,21 +51,278 @@ const renderedSql = migration_0004_service_namespace_projections.statements
 
 describe("ClickHouse migrations", () => {
 	it("keeps migrations ordered by version", () => {
-		expect(migrations.map((m) => m.version)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13])
-		expect(migrations.at(-1)).toBe(migration_0013_session_billable_start)
-		expect(latestMigrationVersion).toBe(13)
-		// 0010 is performance-only, so the ingest-gating version skips it: 9 → 13.
-		expect(clickHouseSchemaVersion).toBe("13")
+		expect(migrations.map((m) => m.version)).toEqual([
+			1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27,
+			28, 29, 30, 31, 32,
+		])
+		expect(migrations.at(-1)).toBe(migration_0032_ai_trace_index_tool_detail_columns)
+		expect(latestMigrationVersion).toBe(32)
+		// 0010 and 0014-0020 are read-path only and skipped by the ingest-gating
+		// version; 0021 is not — the gateway writes `session_events`' new identity
+		// columns and `product_events` directly, so a BYO-CH org must apply it
+		// before ingest routes there again. 0022 is read-path only again: both
+		// tables it touches are MV-populated and the gateway writes neither, and
+		// 0023 is the same: it only adds counter columns to those MV-populated
+		// service-operations rollups. 0024 is read-path only too: `ai_trace_index`
+		// is MV-populated and the gateway never writes it, and 0025 only rebuilds
+		// the three MV-populated service-overview views. 0027 (`audit_log`) is
+		// written by the API worker through Tinybird, never by the gateway.
+		expect(clickHouseSchemaVersion).toBe("21")
 		expect(migration_0010_search_indexes.requiredForIngest).toBe(false)
+		expect(migration_0014_web_events.requiredForIngest).toBe(false)
+		expect(migration_0015_service_overview_minutely.requiredForIngest).toBe(false)
+		expect(migration_0016_error_events_4xx_and_frame_redaction.requiredForIngest).toBe(false)
+		expect(migration_0017_error_service_version_columns.requiredForIngest).toBe(false)
+		expect(migration_0018_apple_crash_frames.requiredForIngest).toBe(false)
+		expect(migration_0019_mv_sweep.requiredForIngest).toBe(false)
+		expect(migration_0020_semconv_key_renames.requiredForIngest).toBe(false)
+		expect(migration_0022_service_map_edge_quantiles.requiredForIngest).toBe(false)
+		expect(migration_0023_service_operations_discriminators.requiredForIngest).toBe(false)
+		expect(migration_0024_ai_trace_index.requiredForIngest).toBe(false)
+		expect(migration_0025_commit_sha_vcs_revision.requiredForIngest).toBe(false)
+		// 0026 widens the same MV-populated ai_trace_index and rebuilds its view.
+		expect(migration_0026_ai_trace_index_filter_columns.requiredForIngest).toBe(false)
+		expect(migration_0027_audit_log.requiredForIngest).toBe(false)
+		expect(migration_0028_product_events_from_traces.requiredForIngest).toBe(false)
+		// 0030 only recreates the error-events MVs.
+		expect(migration_0030_error_events_attribute_fallback.requiredForIngest).toBe(false)
+		// 0031 and 0032 widen the same MV-populated ai_trace_index again.
+		expect(migration_0031_ai_trace_index_list_columns.requiredForIngest).toBe(false)
+		expect(migration_0032_ai_trace_index_tool_detail_columns.requiredForIngest).toBe(false)
 	})
 
-	it("adds BillableStart with a constant default, so the ALTER stays metadata-only", () => {
-		const sql = migration_0013_session_billable_start.statements.join("\n")
+	it("recreates both error-events MVs with the span-attribute exception fallback", () => {
+		const statements: ReadonlyArray<string> =
+			migration_0030_error_events_attribute_fallback.statements.filter((stmt) => !isBackfill(stmt))
+		const sql = statements.join("\n")
 
-		// Trailing column + constant DEFAULT is what keeps this off the mutation
-		// path; without the default, rows from SDKs predating the field quarantine.
-		expect(sql).toContain("ADD COLUMN IF NOT EXISTS BillableStart UInt8 DEFAULT 0")
-		expect(sql).not.toContain("MATERIALIZE COLUMN")
+		// An MV's SELECT is frozen at creation, so both views are dropped before
+		// they are recreated; error_events_by_time_mv shares the projection
+		// byte-for-byte and must never disagree with error_events_mv on a label.
+		for (const view of ["error_events_mv", "error_events_by_time_mv"]) {
+			const dropAt = statements.findIndex((stmt) => stmt === `DROP VIEW IF EXISTS ${view}`)
+			const createAt = statements.findIndex((stmt) =>
+				stmt.startsWith(`CREATE MATERIALIZED VIEW IF NOT EXISTS ${view} `),
+			)
+			expect(dropAt).toBeGreaterThanOrEqual(0)
+			expect(createAt).toBeGreaterThan(dropAt)
+		}
+
+		// Nothing is rewritten: error_events keeps no span attributes to re-derive
+		// from, and recomputing FingerprintHash would re-bucket every issue.
+		expect(sql).not.toContain("ALTER TABLE error_events")
+		expect(migration_0030_error_events_attribute_fallback.statements.some(isBackfill)).toBe(false)
+	})
+
+	it("recreates both error-events MVs with the 4xx guard and the widened frame redaction", () => {
+		const sql = migration_0016_error_events_4xx_and_frame_redaction.statements
+			.filter((stmt) => !isBackfill(stmt))
+			.join("\n")
+
+		// An MV's SELECT is frozen at creation, so both views must be dropped.
+		// error_events_by_time_mv shares the projection byte-for-byte; leaving it
+		// behind would make the two tables disagree on what an error is.
+		expect(sql).toContain("DROP VIEW IF EXISTS error_events_mv")
+		expect(sql).toContain("DROP VIEW IF EXISTS error_events_by_time_mv")
+		expect(sql).toContain("CREATE MATERIALIZED VIEW IF NOT EXISTS error_events_mv TO error_events")
+		expect(sql).toContain(
+			"CREATE MATERIALIZED VIEW IF NOT EXISTS error_events_by_time_mv TO error_events_by_time",
+		)
+
+		// Both semconv spellings of the status attribute, and the guard itself.
+		expect(sql).toContain("SpanAttributes['http.response.status_code']")
+		expect(sql).toContain("SpanAttributes['http.status_code']")
+		expect(sql).toContain("_httpStatus >= 400 AND _httpStatus < 500")
+		// Only exception-less spans are dropped — never one carrying a real error.
+		expect(sql).toContain("_ei = 0")
+
+		// Frame redaction now matches _msgFallback's: ids in the top stack line
+		// must not split one bug into one issue per occurrence.
+		expect(sql).toContain(":[0-9]+|line [0-9]+|0x[0-9a-fA-F]+|[0-9a-fA-F]{8,}|[0-9]{6,}")
+
+		// Nothing is rewritten: recomputing FingerprintHash would re-bucket every
+		// existing issue, and the 4xx noise already stored carries no HTTP status
+		// to filter on. New events only.
+		expect(sql).not.toContain("ALTER TABLE error_events")
+		expect(migration_0016_error_events_4xx_and_frame_redaction.statements.some(isBackfill)).toBe(false)
+	})
+
+	it("adds the ServiceVersion columns before recreating the MVs that write them", () => {
+		const statements: ReadonlyArray<string> =
+			migration_0017_error_service_version_columns.statements.filter((stmt) => !isBackfill(stmt))
+		const sql = statements.join("\n")
+
+		// The drifted columns: present in the 0001 snapshot, never ALTERed onto a
+		// server provisioned before they were added to the datasource definitions.
+		expect(sql).toContain(
+			"ALTER TABLE error_events ADD COLUMN IF NOT EXISTS ServiceVersion LowCardinality(String)",
+		)
+		expect(sql).toContain(
+			"ALTER TABLE error_events_by_time ADD COLUMN IF NOT EXISTS ServiceVersion LowCardinality(String)",
+		)
+		expect(sql).toContain(
+			"ALTER TABLE error_fingerprints_minutely ADD COLUMN IF NOT EXISTS ServiceVersions SimpleAggregateFunction(groupUniqArrayArray, Array(String))",
+		)
+
+		// An MV's SELECT is frozen at creation, so each view is dropped and
+		// recreated from the current snapshot body.
+		for (const view of ["error_events_mv", "error_events_by_time_mv", "error_fingerprints_minutely_mv"]) {
+			const dropAt = statements.findIndex((stmt) => stmt === `DROP VIEW IF EXISTS ${view}`)
+			const createAt = statements.findIndex((stmt) =>
+				stmt.startsWith(`CREATE MATERIALIZED VIEW IF NOT EXISTS ${view} `),
+			)
+			expect(dropAt).toBeGreaterThanOrEqual(0)
+			expect(createAt).toBeGreaterThan(dropAt)
+		}
+
+		// Every ALTER must land before the first view that writes into it — a
+		// recreated MV needs somewhere to put the new column.
+		const lastAlter = statements.reduce(
+			(last, stmt, index) => (stmt.startsWith("ALTER TABLE ") ? index : last),
+			-1,
+		)
+		const firstDrop = statements.findIndex((stmt) => stmt.startsWith("DROP VIEW "))
+		expect(lastAlter).toBeLessThan(firstDrop)
+
+		// The recreated bodies must actually populate the columns, or the ALTERs
+		// are cosmetic and errorIssuesScan keeps returning empty version arrays.
+		expect(sql).toContain("AS ServiceVersion")
+		expect(sql).toContain("groupUniqArray(ServiceVersion) AS ServiceVersions")
+
+		// Nothing is backfilled: ServiceVersion comes from the source span's
+		// resource attributes, which these target tables do not keep.
+		expect(migration_0017_error_service_version_columns.statements.some(isBackfill)).toBe(false)
+	})
+
+	it("installs service_overview_minutely with a live-write MV and no POPULATE", () => {
+		const sql = migration_0015_service_overview_minutely.statements
+			.filter((stmt) => !isBackfill(stmt))
+			.join("\n")
+
+		// Mirrors service_overview_hourly's prefix, not service_operations_minutely's:
+		// the queries reading this filter on service and time, often with no
+		// environment predicate.
+		expect(sql).toContain(
+			"ORDER BY (OrgId, ServiceName, Minute, DeploymentEnv, ServiceNamespace, CommitSha)",
+		)
+		// Daily parts: a month-wide part at minute grain cannot prune a 12h window.
+		expect(sql).toContain("PARTITION BY toDate(Minute)")
+		expect(sql).toContain("TTL toDate(Minute) + INTERVAL 90 DAY")
+		// Three quantiles, matching service_overview_hourly. The two feed one UNION
+		// ALL, and a (0.5, 0.95) state here — the shape service_operations_minutely
+		// uses — would not type-check against the hourly branch.
+		expect(sql).toContain("AggregateFunction(quantilesTDigest(0.5, 0.95, 0.99), UInt64)")
+		expect(sql).toContain(
+			"CREATE MATERIALIZED VIEW IF NOT EXISTS service_overview_minutely_mv TO service_overview_minutely",
+		)
+		// Entry-point predicate identical to service_overview_spans_mv and
+		// service_overview_hourly_mv — all three tiers must agree on what a
+		// service-level span is.
+		expect(sql).toContain("WHERE SpanKind IN ('Server', 'Consumer') OR ParentSpanId = ''")
+
+		// Reads traces, NOT service_overview_minutely: cascading the hourly rollup
+		// off this table would make the backfill below double-count 30 days into
+		// service_overview_hourly, which is retained a year and cannot be rebuilt.
+		expect(sql).not.toContain("FROM service_overview_minutely")
+		expect(sql).not.toContain("POPULATE")
+	})
+
+	it("orders 0015 so the backfill and the MV never both write", () => {
+		const kinds = migration_0015_service_overview_minutely.statements.map((stmt) =>
+			isBackfill(stmt) ? "backfill" : stmt.split("\n")[0]!.trim(),
+		)
+
+		const dropIndex = kinds.findIndex((kind) => kind.startsWith("DROP VIEW"))
+		const truncateIndex = kinds.findIndex((kind) => kind.startsWith("TRUNCATE"))
+		const backfillIndex = kinds.indexOf("backfill")
+		const createMvIndex = kinds.findIndex((kind) => kind.startsWith("CREATE MATERIALIZED VIEW"))
+
+		// DROP → TRUNCATE → backfill → CREATE MV. The truncate makes a re-apply
+		// converge instead of doubling, and is only safe because the view is
+		// detached first.
+		expect(dropIndex).toBeGreaterThanOrEqual(0)
+		expect(dropIndex).toBeLessThan(truncateIndex)
+		expect(truncateIndex).toBeLessThan(backfillIndex)
+		expect(backfillIndex).toBeLessThan(createMvIndex)
+	})
+
+	it("backfills service_overview_minutely from the entry-point projection", () => {
+		// service_overview_spans is already filtered to the entry-point predicate,
+		// so the backfill matches the MV by construction rather than by a re-typed
+		// WHERE. Raw traces offers no deeper window; both are retained 30 days.
+		expect(serviceOverviewMinutelyBackfill.from).toBe("service_overview_spans")
+		expect(serviceOverviewMinutelyBackfill.tsColumn).toBe("Timestamp")
+		expect(serviceOverviewMinutelyBackfill.target).toBe("service_overview_minutely")
+		// Day-aligned chunks are coarser than minute groups, so no group straddles
+		// a chunk boundary.
+		expect(serviceOverviewMinutelyBackfill.groupBy).toBe(
+			"OrgId, Minute, ServiceName, DeploymentEnv, ServiceNamespace, CommitSha",
+		)
+		expect(serviceOverviewMinutelyBackfill.select).toContain(
+			"quantilesTDigestState(0.5, 0.95, 0.99)(Duration)",
+		)
+	})
+
+	it("installs web_events with a live-write MV and no POPULATE", () => {
+		const sql = migration_0014_web_events.statements.filter((stmt) => !isBackfill(stmt)).join("\n")
+
+		// Time-first sorting key is the entire point of the table: session_events
+		// is sorted (OrgId, SessionId, Timestamp, Seq), so a time range there can
+		// only prune partitions.
+		expect(sql).toContain("ORDER BY (OrgId, Timestamp, SessionId, Seq)")
+		expect(sql).toContain("INDEX idx_event_name EventName TYPE set(64) GRANULARITY 4")
+		expect(sql).toContain("CREATE MATERIALIZED VIEW IF NOT EXISTS web_events_mv TO web_events")
+		expect(sql).toContain("WHERE Type IN ('navigation', 'custom')")
+
+		// POPULATE would race the view's own writes into a table with no dedup, and
+		// it is unchunked — history comes from `webEventsBackfill` instead, which
+		// the apply plan splits into day-aligned steps and which runs while no
+		// writer is attached.
+		expect(sql).not.toContain("POPULATE")
+
+		// `Kind` carries the source `Type` through untouched so the page-view
+		// predicate stays provably identical to the pre-rollup `Type = 'navigation'`
+		// even when a customer calls `track('$pageview')`.
+		expect(sql).toContain("Type AS Kind")
+	})
+
+	it("orders the web_events backfill so it can never overlap the materialized view", () => {
+		// The whole double-count hazard is an ordering property, and nothing else
+		// checks it. web_events has no dedup, so a backfill running while the view
+		// is attached counts every page view in the overlap twice.
+		const kinds = migration_0014_web_events.statements.map((stmt) =>
+			isBackfill(stmt)
+				? "backfill"
+				: String(stmt).includes("CREATE MATERIALIZED VIEW")
+					? "create-view"
+					: String(stmt).includes("DROP VIEW")
+						? "drop-view"
+						: String(stmt).includes("TRUNCATE")
+							? "truncate"
+							: "create-table",
+		)
+		expect(kinds).toEqual(["drop-view", "create-table", "truncate", "backfill", "create-view"])
+
+		// Restated as the invariant rather than the sequence, so a future insertion
+		// between them still has to preserve it.
+		expect(kinds.indexOf("backfill")).toBeLessThan(kinds.indexOf("create-view"))
+		expect(kinds.indexOf("drop-view")).toBeLessThan(kinds.indexOf("truncate"))
+		expect(kinds.indexOf("truncate")).toBeLessThan(kinds.indexOf("backfill"))
+	})
+
+	it("keeps the web_events backfill projection identical to its materialized view", () => {
+		// Two divergent copies of this SELECT would show up as a page-view count
+		// that steps at the backfill boundary — on a table with no dedup, nothing
+		// else would catch it.
+		const mvBody = migration_0014_web_events.statements.find((s) =>
+			String(s).includes("CREATE MATERIALIZED VIEW"),
+		)
+		expect(String(mvBody)).toContain(webEventsBackfill.select)
+		expect(webEventsBackfill.where).toBe("Type IN ('navigation', 'custom')")
+		expect(webEventsBackfill.from).toBe("session_events")
+		expect(webEventsBackfill.tsColumn).toBe("Timestamp")
+		// Row-wise: no GROUP BY means no group can straddle a chunk boundary.
+		expect(webEventsBackfill.groupBy).toBeUndefined()
 	})
 
 	it("adds session analytics columns with defaults so older SDK rows never quarantine", () => {
@@ -80,6 +358,39 @@ describe("ClickHouse migrations", () => {
 			"ALTER TABLE session_events MODIFY COLUMN Attributes Map(String, String)",
 		])
 		expect(migrations.find((m) => m.version === 12)?.requiredForIngest).toBeUndefined()
+	})
+
+	it("routes service-map rollup writes through a zero-retention plain-schema bridge", () => {
+		const ingressTable = migration_0013_service_map_ingest_bridge.statements.find((statement) =>
+			statement.startsWith("CREATE TABLE IF NOT EXISTS service_map_edges_hourly_ingest"),
+		)
+		const ingressView = migration_0013_service_map_ingest_bridge.statements.find((statement) =>
+			statement.startsWith("CREATE MATERIALIZED VIEW IF NOT EXISTS service_map_edges_hourly_ingest_mv"),
+		)
+
+		expect(ingressTable).toContain("ENGINE = Null")
+		expect(ingressTable).toContain("CallCount UInt64")
+		expect(ingressTable).not.toContain("AggregateFunction(")
+		expect(ingressView).toContain("TO service_map_edges_hourly")
+		expect(renderStatementFull(ingressView!, "maple")).toContain(
+			"FROM `maple`.`service_map_edges_hourly_ingest`",
+		)
+		expect(migrations.find((m) => m.version === 13)?.requiredForIngest).toBeUndefined()
+	})
+
+	it("adds the incremental minutely error rollup without replacing the deployed time-copy view", () => {
+		const sql = migration_0013_service_map_ingest_bridge.statements.join("\n\n")
+		const minutelyView = migration_0013_service_map_ingest_bridge.statements.find((statement) =>
+			statement.startsWith("CREATE MATERIALIZED VIEW IF NOT EXISTS error_fingerprints_minutely_mv"),
+		)
+
+		expect(sql).toContain("CREATE TABLE IF NOT EXISTS error_fingerprints_minutely")
+		expect(sql).toContain("PARTITION BY toYYYYMM(Minute)")
+		expect(sql).toContain("ORDER BY (OrgId, Minute, FingerprintHash)")
+		expect(minutelyView).toContain("FROM error_events")
+		expect(renderStatementFull(minutelyView!, "maple")).toContain("FROM `maple`.`error_events`")
+		expect(sql).not.toContain("DROP TABLE IF EXISTS error_events_by_time_mv")
+		expect(sql).not.toContain("DROP VIEW IF EXISTS error_events_by_time_mv")
 	})
 
 	it("adds the portable search substrate without requiring experimental text indexes", () => {
@@ -120,6 +431,72 @@ describe("ClickHouse migrations", () => {
 		expect(serviceOverviewHourlyBackfill.tsColumn).toBe("Timestamp")
 		expect(serviceOperationsHourlyBackfill.from).toBe("service_operations_minutely")
 		expect(serviceOperationsHourlyBackfill.tsColumn).toBe("Minute")
+	})
+
+	it("orders 0009 so a re-apply converges instead of doubling the annual rollups", () => {
+		// The targets are additive AggregatingMergeTrees retained a year: replaying
+		// the backfills after a partial failure (chunk N fails, admin re-runs the
+		// apply) would double every sum until TTL. DROP → TRUNCATE → backfill →
+		// CREATE MV is the 0015 cutover shape, restated as invariants.
+		const kinds = migration_0009_one_year_service_history.statements.map((stmt) =>
+			// Str.split returns a NonEmptyArray, so the head index is statically safe.
+			isBackfill(stmt) ? `backfill:${stmt.target}` : Str.split(stmt, "\n")[0].trim(),
+		)
+		const at = (needle: string) => {
+			const index = kinds.findIndex((kind) => kind.startsWith(needle))
+			expect(index, needle).toBeGreaterThanOrEqual(0)
+			return index
+		}
+
+		// Both live writers are detached before either target is truncated.
+		expect(at("DROP VIEW IF EXISTS service_overview_hourly_mv")).toBeLessThan(
+			at("TRUNCATE TABLE IF EXISTS service_overview_hourly"),
+		)
+		expect(at("DROP VIEW IF EXISTS service_operations_hourly_mv")).toBeLessThan(
+			at("TRUNCATE TABLE IF EXISTS service_operations_hourly"),
+		)
+		// Each target is emptied before its backfill, and its view reattaches after.
+		expect(at("TRUNCATE TABLE IF EXISTS service_overview_hourly")).toBeLessThan(
+			at("backfill:service_overview_hourly"),
+		)
+		expect(at("backfill:service_overview_hourly")).toBeLessThan(
+			at("CREATE MATERIALIZED VIEW IF NOT EXISTS service_overview_hourly_mv"),
+		)
+		expect(at("TRUNCATE TABLE IF EXISTS service_operations_hourly")).toBeLessThan(
+			at("backfill:service_operations_hourly"),
+		)
+		expect(at("backfill:service_operations_hourly")).toBeLessThan(
+			at("CREATE MATERIALIZED VIEW IF NOT EXISTS service_operations_hourly_mv"),
+		)
+	})
+
+	it("keeps every backfill convergent on re-apply: target emptied or rebuilt first", () => {
+		// A migration is recorded only after every statement succeeds, so a failure
+		// anywhere replays the WHOLE migration — including backfills that already
+		// inserted. Every backfill target must therefore be emptied of the rows the
+		// backfill writes earlier in the same migration: truncated, rebuilt from
+		// scratch (DROP TABLE IF EXISTS <fresh> + rename swap), or scoped-deleted
+		// for a dual-fed target (0021). An additive INSERT…SELECT into a surviving
+		// table doubles on the rerun and nothing downstream can detect it.
+		// identity_links is exempt because a replay is a merge no-op: its only
+		// aggregate is SimpleAggregateFunction(min) keyed by the full sorting key,
+		// so re-inserted rows collapse to the values already stored.
+		const mergeIdempotentTargets = new Set(["identity_links"])
+		for (const migration of migrations) {
+			migration.statements.forEach((stmt, index) => {
+				if (!isBackfill(stmt) || mergeIdempotentTargets.has(stmt.target)) return
+				const before = migration.statements
+					.slice(0, index)
+					.filter((s): s is string => typeof s === "string")
+				const emptied = before.some(
+					(s) =>
+						s.startsWith(`TRUNCATE TABLE IF EXISTS ${stmt.target}`) ||
+						s.startsWith(`DROP TABLE IF EXISTS ${stmt.target}`) ||
+						s.startsWith(`DELETE FROM ${stmt.target} `),
+				)
+				expect(emptied, `m${migration.version} backfill:${stmt.target}`).toBe(true)
+			})
+		}
 	})
 
 	it("adds the service-operation rollup and exposes a coordinated chunkable backfill", () => {
@@ -245,5 +622,268 @@ describe("ClickHouse migrations", () => {
 		expect(renderedSql).toContain(
 			"INSERT INTO `default`.`service_overview_spans` (OrgId, Timestamp, ServiceName,",
 		)
+	})
+})
+
+describe("migration 0018 — Apple crash frames", () => {
+	const creates = migration_0018_apple_crash_frames.statements.filter((stmt) => stmt.startsWith("CREATE"))
+
+	it("recreates both error-events MVs with the Apple frame alternative", () => {
+		expect(creates).toHaveLength(2)
+		for (const sql of creates) {
+			// Frame index, binary name, hex address — an iOS crash has no source
+			// position to key on, because it arrives unsymbolicated.
+			expect(sql).toContain("^[0-9]+ +\\\\S.* +0x[0-9a-fA-F]+")
+			// The other runtimes' alternatives are untouched; only iOS hashes rotate.
+			expect(sql).toContain('^[ \\\\t]*at |^[ \\\\t]*File "')
+		}
+	})
+
+	it("does not backfill", () => {
+		// Recomputing FingerprintHash would re-bucket every existing issue. The
+		// FINGERPRINT_VERSION bump retires the collapsed iOS issues instead.
+		expect(migration_0018_apple_crash_frames.statements.some((stmt) => stmt.includes("UPDATE"))).toBe(
+			false,
+		)
+	})
+})
+
+describe("migration 0026 — ai_trace_index filter columns", () => {
+	const statements = migration_0026_ai_trace_index_filter_columns.statements
+
+	it("widens the index with idempotent ALTERs before recreating its view", () => {
+		const alters = statements.filter((stmt) =>
+			stmt.startsWith("ALTER TABLE ai_trace_index ADD COLUMN IF NOT EXISTS"),
+		)
+		expect(alters.map((stmt) => stmt.split(" ")[8])).toEqual([
+			"DeploymentEnv",
+			"Model",
+			"AgentName",
+			"ToolName",
+			"SpanId",
+			"ParentSpanId",
+			"Duration",
+			"IsError",
+			"IsLlmCall",
+			"IsToolCall",
+			"Tokens",
+			"Cost",
+		])
+		// The facet dimensions are LowCardinality(String): never free text.
+		for (const stmt of alters.slice(0, 4)) expect(stmt).toMatch(/ LowCardinality\(String\)$/)
+		// The view's SELECT is frozen at creation, so the body change needs a drop
+		// — and the drop must come after the ALTERs and before the CREATE, or the
+		// recreated view maps a column its target does not yet have.
+		const drop = statements.indexOf("DROP VIEW IF EXISTS ai_trace_index_mv")
+		const create = statements.findIndex((stmt) => stmt.startsWith("CREATE MATERIALIZED VIEW"))
+		expect(drop).toBe(alters.length)
+		expect(create).toBe(drop + 1)
+		expect(statements).toHaveLength(alters.length + 2)
+	})
+
+	it("recreates the view with the coalesced GenAI identity, measures and the semconv environment", () => {
+		const create = statements.find((stmt) => stmt.startsWith("CREATE MATERIALIZED VIEW"))!
+		expect(create).toContain("TO ai_trace_index AS")
+		// The write filter is unchanged: membership in the table is still the
+		// detection predicate the read side relies on.
+		expect(create).toContain("WHERE SpanAttributes['maple_ai.vendor.id'] != ''")
+		expect(create).toContain(
+			"coalesce(nullIf(ResourceAttributes['deployment.environment.name'], ''), ResourceAttributes['deployment.environment']) AS DeploymentEnv",
+		)
+		// Response model before request model, canonical keys before dialects.
+		expect(create).toContain(
+			"coalesce(nullIf(SpanAttributes['gen_ai.response.model'], ''), nullIf(SpanAttributes['gen_ai.request.model'], ''), nullIf(SpanAttributes['ai.response.model'], ''), nullIf(SpanAttributes['ai.model.id'], ''), SpanAttributes['llm.model_name']) AS Model",
+		)
+		expect(create).toContain(
+			"coalesce(nullIf(SpanAttributes['gen_ai.agent.name'], ''), SpanAttributes['ai.telemetry.functionId']) AS AgentName",
+		)
+		expect(create).toContain(
+			"coalesce(nullIf(SpanAttributes['gen_ai.tool.name'], ''), nullIf(SpanAttributes['ai.toolCall.name'], ''), SpanAttributes['tool.name']) AS ToolName",
+		)
+		// The measures: the span's kind and failure as flags, its usage as sums
+		// the page can rank on, and the ids that let a roll-up be undone.
+		expect(create).toContain("SpanId,\n          ParentSpanId,\n          Duration,")
+		expect(create).toContain(
+			"toUInt8(((StatusCode = 'Error' OR SpanAttributes['error.type'] != '') OR SpanAttributes['gen_ai.response.status'] IN ('failed', 'error'))) AS IsError",
+		)
+		expect(create).toMatch(
+			/toUInt8\(.*IN \('chat', 'generate_content', 'text_completion', 'fetch_response'\).*\) AS IsLlmCall/,
+		)
+		expect(create).toMatch(/toUInt8\(.*IN \('execute_tool'\).*\) AS IsToolCall/)
+		expect(create).toMatch(
+			/toFloat64OrZero\(coalesce\(nullIf\(SpanAttributes\['gen_ai\.usage\.input_tokens'\], ''\).*\) AS Tokens/,
+		)
+		expect(create).toContain("SpanAttributes['llm.cost.total'])) AS Cost")
+	})
+
+	it("does not backfill", () => {
+		expect(statements.some((stmt) => typeof stmt !== "string" || stmt.includes("INSERT"))).toBe(false)
+	})
+})
+
+describe("migration 0029 — ai_trace_index usage conventions", () => {
+	const migration = migrations.find((entry) => entry.version === 29)!
+
+	it("adds ResponseId and recreates the view with the convention-aware token sum", () => {
+		const [alter, drop, create, ...rest] = migration.statements as ReadonlyArray<string>
+		expect(rest).toEqual([])
+		expect(alter).toBe("ALTER TABLE ai_trace_index ADD COLUMN IF NOT EXISTS ResponseId String")
+		expect(drop).toBe("DROP VIEW IF EXISTS ai_trace_index_mv")
+		expect(create).toContain(
+			"coalesce(nullIf(SpanAttributes['gen_ai.response.id'], ''), SpanAttributes['ai.response.id']) AS ResponseId",
+		)
+		expect(create).toMatch(
+			/^CREATE MATERIALIZED VIEW IF NOT EXISTS ai_trace_index_mv TO ai_trace_index AS/,
+		)
+		// The prompt half nests the cache for the re-summing vendors and the
+		// OpenAI-shaped providers, and adds it beside the prompt for Anthropic.
+		expect(create).toContain(
+			"multiIf(SpanAttributes['maple_ai.vendor.id'] IN ('vercel_ai_sdk', 'maple'), greatest(",
+		)
+		expect(create).toContain(
+			"IN ('anthropic'), toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.input_tokens']",
+		)
+		// The completion half sets reasoning beside the completion for Gemini alone.
+		expect(create).toContain(
+			"IN ('gcp.gemini', 'gemini', 'gcp.vertex_ai', 'vertex_ai'), toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.output_tokens']",
+		)
+		expect(create).toContain(") AS Tokens")
+		// Every 0026 column still projected: the view maps to the table by NAME.
+		for (const column of [
+			"DeploymentEnv",
+			"Model",
+			"AgentName",
+			"ToolName",
+			"IsError",
+			"IsLlmCall",
+			"IsToolCall",
+			"Tokens",
+			"Cost",
+			"ResponseId",
+		]) {
+			expect(create).toContain(` AS ${column}`)
+		}
+		expect(create).toMatch(/\bSpanId,\s+ParentSpanId,\s+Duration,/)
+	})
+
+	it("does not backfill and does not gate ingest", () => {
+		expect(migration.requiredForIngest).toBe(false)
+		expect(migration.statements.some(isBackfill)).toBe(false)
+	})
+})
+
+describe("migration 0031 — ai_trace_index list columns", () => {
+	const migration = migrations.find((entry) => entry.version === 31)!
+
+	it("adds the vendor version and the five token buckets, then recreates the view", () => {
+		const statements = migration.statements as ReadonlyArray<string>
+		const alters = statements.slice(0, 6)
+		const [drop, create, ...rest] = statements.slice(6)
+		expect(rest).toEqual([])
+		expect(alters).toEqual([
+			"ALTER TABLE ai_trace_index ADD COLUMN IF NOT EXISTS VendorVersion LowCardinality(String)",
+			"ALTER TABLE ai_trace_index ADD COLUMN IF NOT EXISTS InputTokens Float64",
+			"ALTER TABLE ai_trace_index ADD COLUMN IF NOT EXISTS CacheReadTokens Float64",
+			"ALTER TABLE ai_trace_index ADD COLUMN IF NOT EXISTS CacheWriteTokens Float64",
+			"ALTER TABLE ai_trace_index ADD COLUMN IF NOT EXISTS OutputTokens Float64",
+			"ALTER TABLE ai_trace_index ADD COLUMN IF NOT EXISTS ReasoningTokens Float64",
+		])
+		// An MV's SELECT is frozen at creation, so the 0029 view is dropped
+		// before the widened one is created.
+		expect(drop).toBe("DROP VIEW IF EXISTS ai_trace_index_mv")
+		expect(create).toMatch(
+			/^CREATE MATERIALIZED VIEW IF NOT EXISTS ai_trace_index_mv TO ai_trace_index AS/,
+		)
+		expect(create).toContain("SpanAttributes['maple_ai.vendor.version'] AS VendorVersion")
+		// The buckets are the disjoint split, so the nesting conventions carve
+		// the cache out of the prompt and the reasoning out of the completion.
+		expect(create).toContain(
+			"greatest(0, toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.input_tokens']",
+		)
+		expect(create).toContain(
+			"greatest(0, toFloat64OrZero(coalesce(nullIf(SpanAttributes['gen_ai.usage.output_tokens']",
+		)
+		// Every column the target holds is still projected: the view maps to the
+		// table by NAME.
+		for (const column of [
+			"Tokens",
+			"Cost",
+			"ResponseId",
+			"VendorVersion",
+			"InputTokens",
+			"CacheReadTokens",
+			"CacheWriteTokens",
+			"OutputTokens",
+			"ReasoningTokens",
+		]) {
+			expect(create).toContain(` AS ${column}`)
+		}
+	})
+
+	it("does not backfill and does not gate ingest", () => {
+		expect(migration.requiredForIngest).toBe(false)
+		expect(migration.statements.some(isBackfill)).toBe(false)
+	})
+})
+
+describe("migration 0032 — ai_trace_index tool detail columns", () => {
+	const migration = migrations.find((entry) => entry.version === 32)!
+
+	it("adds the failure's type, message, tool call result and fingerprint and the tool description, then recreates the view", () => {
+		const statements = migration.statements as ReadonlyArray<string>
+		const alters = statements.slice(0, 5)
+		const [drop, create, ...rest] = statements.slice(5)
+		expect(rest).toEqual([])
+		expect(alters).toEqual([
+			"ALTER TABLE ai_trace_index ADD COLUMN IF NOT EXISTS ErrorType LowCardinality(String)",
+			"ALTER TABLE ai_trace_index ADD COLUMN IF NOT EXISTS StatusMessage String",
+			"ALTER TABLE ai_trace_index ADD COLUMN IF NOT EXISTS ToolDescription String",
+			"ALTER TABLE ai_trace_index ADD COLUMN IF NOT EXISTS FailedToolCallResult String",
+			"ALTER TABLE ai_trace_index ADD COLUMN IF NOT EXISTS ErrorFingerprint UInt64",
+		])
+		// An MV's SELECT is frozen at creation, so the 0031 view is dropped
+		// before the widened one is created.
+		expect(drop).toBe("DROP VIEW IF EXISTS ai_trace_index_mv")
+		expect(create).toMatch(
+			/^CREATE MATERIALIZED VIEW IF NOT EXISTS ai_trace_index_mv TO ai_trace_index AS/,
+		)
+		// `error.type` is plain semconv, so one key answers for every dialect —
+		// and it is the same lookup `IsError` already tests for emptiness.
+		expect(create).toContain("SpanAttributes['error.type'] AS ErrorType")
+		// Both free-text columns are cut at insert, in CHARACTERS: `left` would
+		// cut mid-codepoint on any message or description holding one.
+		expect(create).toContain("leftUTF8(StatusMessage, 400) AS StatusMessage")
+		expect(create).toContain(
+			"leftUTF8(coalesce(nullIf(SpanAttributes['gen_ai.tool.description'], ''), SpanAttributes['tool.description']), 2000) AS ToolDescription",
+		)
+		// A tool call's result is carried only where the call failed, cut the same
+		// way.
+		expect(create).toContain(
+			"leftUTF8(coalesce(nullIf(SpanAttributes['gen_ai.tool.call.result'], ''), SpanAttributes['ai.toolCall.result']), 1000), '') AS FailedToolCallResult",
+		)
+		// The fingerprint hashes that result, else the index's own status message,
+		// through the redaction chain `error_events` uses — its first pattern
+		// innermost, its last outermost — and is 0 on a span that did not fail.
+		expect(create).toContain("cityHash64(replaceRegexpAll(replaceRegexpAll(")
+		expect(create).toContain("leftUTF8(StatusMessage, 400)), 400), '[a-zA-Z0-9._%+-]+@")
+		expect(create).toContain("'[0-9a-fA-F-]{6,}|[0-9]+', '#')), 0) AS ErrorFingerprint")
+		// Every column the target holds is still projected: the view maps to the
+		// table by NAME.
+		for (const column of [
+			"VendorVersion",
+			"ReasoningTokens",
+			"ErrorType",
+			"StatusMessage",
+			"ToolDescription",
+			"FailedToolCallResult",
+			"ErrorFingerprint",
+		]) {
+			expect(create).toContain(` AS ${column}`)
+		}
+	})
+
+	it("does not backfill and does not gate ingest", () => {
+		expect(migration.requiredForIngest).toBe(false)
+		expect(migration.statements.some(isBackfill)).toBe(false)
 	})
 })

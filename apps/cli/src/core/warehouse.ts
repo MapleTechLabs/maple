@@ -1,15 +1,10 @@
 import { Effect, Layer } from "effect"
 import { HttpClient } from "effect/unstable/http"
-import {
-	WarehouseExecutor,
-	type WarehouseExecutorShape,
-	type SqlQueryOptions,
-} from "@maple/query-engine/observability"
+import { WarehouseExecutor, type SqlQueryOptions } from "@maple/query-engine/observability"
 import { WarehouseConfigError } from "@maple/domain/http/warehouse-errors"
 import type { WarehouseQueryName } from "@maple/domain/warehouse-queries"
-import { Mode } from "./mode"
-import { makeLocalWarehouseExecutorShape } from "./executor"
-import { makeRemoteWarehouseExecutorShape } from "./remote-executor"
+import { Mode, ModeError } from "./mode"
+import { makeLocalWarehouseExecutorApi } from "./executor"
 
 /**
  * Provides `WarehouseExecutor` whose concrete backend (local chDB vs remote
@@ -30,28 +25,54 @@ export const WarehouseExecutorFromMode = Layer.effect(
 	WarehouseExecutor,
 	Effect.gen(function* () {
 		const mode = yield* Mode
-		const client = yield* HttpClient.HttpClient
-		const getShape = yield* Effect.cached(
+		// Captured at layer build so the executor's methods stay requirement-free:
+		// the local driver runs on the CLI's one HttpClient.
+		const http = yield* HttpClient.HttpClient
+		const getExecutor = yield* Effect.cached(
 			mode.resolve.pipe(
-				Effect.map(
-					(m): WarehouseExecutorShape =>
-						m._tag === "local"
-							? makeLocalWarehouseExecutorShape(m.baseUrl)
-							: makeRemoteWarehouseExecutorShape(client, m.apiUrl, m.token, m.orgId ?? ""),
+				Effect.flatMap((m) =>
+					m._tag === "local"
+						? makeLocalWarehouseExecutorApi(m.baseUrl).pipe(
+								Effect.provideService(HttpClient.HttpClient, http),
+							)
+						: // Remote mode never reaches the executor: `operations.ts`
+							// dispatches to the v2 client before asking for one. Anything
+							// that lands here is an operation that forgot to branch, so
+							// fail loudly rather than silently querying the local store.
+							Effect.fail(
+								new ModeError({
+									message:
+										"Remote mode does not use the warehouse executor — this operation is missing its v2 dispatch.",
+								}),
+							),
 				),
-				Effect.mapError((e) => new WarehouseConfigError({ message: e.message, pipeName: "mode" })),
+				// `WarehouseExecutor`'s error channel is the domain warehouse union, so
+				// a mode failure has to travel as one. It rides in `cause` rather than
+				// being flattened into the message: `bin.ts` recovers "No Maple backend
+				// found" as an expected outcome, and deciding that by testing the
+				// carrier's tag is a real check. The previous discriminator was
+				// `pipeName === "mode"` — a string compare against a field that
+				// otherwise holds a query name, so any query that happened to be
+				// called "mode" would have been silently recovered as an Ok outcome.
+				Effect.mapError(
+					(cause) => new WarehouseConfigError({ message: cause.message, pipeName: "mode", cause }),
+				),
 			),
 		)
 		return WarehouseExecutor.of({
 			orgId: "",
 			query: <T>(pipe: string, params: Record<string, unknown>, options?: SqlQueryOptions) =>
-				getShape.pipe(
-					Effect.flatMap((shape) => shape.query<T>(pipe as WarehouseQueryName, params, options)),
+				getExecutor.pipe(
+					Effect.flatMap((executor) =>
+						executor.query<T>(pipe as WarehouseQueryName, params, options),
+					),
 				),
 			compiledQuery: (compiled, options?: SqlQueryOptions) =>
-				getShape.pipe(Effect.flatMap((shape) => shape.compiledQuery(compiled, options))),
+				getExecutor.pipe(Effect.flatMap((executor) => executor.compiledQuery(compiled, options))),
 			compiledQueryFirst: (compiled, options?: SqlQueryOptions) =>
-				getShape.pipe(Effect.flatMap((shape) => shape.compiledQueryFirst(compiled, options))),
+				getExecutor.pipe(
+					Effect.flatMap((executor) => executor.compiledQueryFirst(compiled, options)),
+				),
 		})
 	}),
 )

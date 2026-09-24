@@ -1,17 +1,15 @@
 import { describe, expect, it } from "vitest"
 import { Effect } from "effect"
-import { compileCH, compileUnion } from "@maple-dev/clickhouse-builder"
+import { compileUnsafe, compileUnionUnsafe } from "@maple-dev/effect-clickhouse"
 import {
 	serviceOverviewQuery,
 	serviceOverviewRowSchema,
 	serviceCatalogQuery,
 	serviceHealthSnapshotQuery,
-	serviceHealthSnapshotRowSchema,
 	serviceHealthBaselineQuery,
 	serviceReleasesTimelineQuery,
 	serviceEnvironmentsQuery,
 	serviceApdexTimeseriesQuery,
-	serviceApdexTimeseriesRowSchema,
 	serviceUsageQuery,
 	serviceUsageWithPreviousQuery,
 	servicesFacetsQuery,
@@ -26,7 +24,7 @@ const baseParams = {
 
 describe("serviceCatalogQuery", () => {
 	it("aggregates by service name with pruning filters and limit-plus-one pagination", () => {
-		const { sql } = compileCH(
+		const { sql } = compileUnsafe(
 			serviceCatalogQuery({
 				deploymentEnvironment: "production",
 				serviceNamespace: "checkout",
@@ -49,15 +47,14 @@ describe("serviceCatalogQuery", () => {
 	})
 })
 
-// ---------------------------------------------------------------------------
 // serviceHealthSnapshotQuery
-// ---------------------------------------------------------------------------
 
 describe("serviceHealthSnapshotQuery", () => {
 	it("reads the hourly aggregate and merges weighted golden signals", () => {
-		const { sql } = compileCH(serviceHealthSnapshotQuery({ environments: ["production"] }), baseParams, {
-			rowSchema: serviceHealthSnapshotRowSchema,
-		})
+		const { sql } = compileUnsafe(
+			serviceHealthSnapshotQuery({ environments: ["production"] }),
+			baseParams,
+		)
 
 		expect(sql).toContain("FROM traces_aggregates_hourly")
 		expect(sql).toContain("OrgId = 'org_1'")
@@ -71,9 +68,7 @@ describe("serviceHealthSnapshotQuery", () => {
 	})
 
 	it("coerces BYO ClickHouse string-encoded aggregates", () => {
-		const compiled = compileCH(serviceHealthSnapshotQuery({}), baseParams, {
-			rowSchema: serviceHealthSnapshotRowSchema,
-		})
+		const compiled = compileUnsafe(serviceHealthSnapshotQuery({}), baseParams)
 		const rows = Effect.runSync(
 			compiled.decodeRows([
 				{
@@ -96,35 +91,74 @@ describe("serviceHealthSnapshotQuery", () => {
 	})
 })
 
-// ---------------------------------------------------------------------------
 // serviceOverviewQuery
-// ---------------------------------------------------------------------------
+
+describe("serviceOverviewQuery exclusions", () => {
+	it("emits NOT IN for every excluded dimension", () => {
+		const { sql } = compileUnsafe(
+			serviceOverviewQuery({
+				excludedEnvironments: ["staging"],
+				excludedNamespaces: ["internal"],
+				excludedCommitShas: ["deadbeef"],
+			}),
+			baseParams,
+		)
+		expect(sql).toContain("DeploymentEnv NOT IN ('staging')")
+		expect(sql).toContain("ServiceNamespace NOT IN ('internal')")
+		expect(sql).toContain("CommitSha NOT IN ('deadbeef')")
+	})
+
+	it("applies the exclusion on every rollup tier, not just the raw edge", () => {
+		// The window is a splice of raw edges + minutely + hourly interiors. A predicate applied to
+		// only one tier would drop the excluded rows for part of the range and keep them for the
+		// rest, which reads as the filter half-working.
+		const { sql } = compileUnsafe(serviceOverviewQuery({ excludedEnvironments: ["staging"] }), baseParams)
+		const occurrences = (sql.match(/DeploymentEnv NOT IN \('staging'\)/g) ?? []).length
+		expect(occurrences).toBeGreaterThanOrEqual(2)
+	})
+})
 
 describe("serviceOverviewQuery", () => {
 	it("compiles basic overview with all columns", () => {
 		const q = serviceOverviewQuery({})
-		const { sql } = compileCH(q, baseParams)
+		const { sql } = compileUnsafe(q, baseParams)
 		expect(sql).toContain("FROM service_overview_spans")
-		expect(sql).toContain("bServiceName AS serviceName")
-		expect(sql).toContain("bServiceNamespace AS serviceNamespace")
-		expect(sql).toContain("bEnvironment AS environment")
-		expect(sql).toContain("bCommitSha AS commitSha")
 		expect(sql).toContain("FROM service_overview_hourly")
 		expect(sql).toContain("UNION ALL")
-		expect(sql).toContain("sum(bSpanCount) AS throughput")
-		expect(sql).toContain("sum(bErrorCount) AS errorCount")
-		expect(sql).toContain("sum(bEstimatedErrorCount) AS estimatedErrorCount")
-		expect(sql).toContain("quantilesTDigestMerge(0.5, 0.95, 0.99)(bDurationQuantiles)")
-		expect(sql).toContain("min(bFirstSeen) AS firstSeen")
-		expect(sql).toContain("GROUP BY serviceName, serviceNamespace, environment, commitSha")
+
+		// Inner level keeps the commit dimension so the breakdown survives...
+		expect(sql).toContain("GROUP BY cServiceName, cServiceNamespace, cEnvironment, cCommitSha")
+		// ...carrying the quantiles as an unfinalized state. A finalized quantile
+		// here could only be averaged by the outer level, which is the bug this
+		// query exists to fix.
+		expect(sql).toContain("quantilesTDigestMergeState(0.5, 0.95, 0.99)(bDurationQuantiles)")
+
+		// Outer level collapses to the grain the UI renders.
+		expect(sql).toContain("GROUP BY serviceName, environment")
+		expect(sql).toContain("quantilesTDigestMerge(0.5, 0.95, 0.99)(cDurationQuantiles)")
+		expect(sql).toContain("argMax(cServiceNamespace, cEstimatedSpanCount)")
+		expect(sql).toContain("sum(cSpanCount) AS throughput")
+		expect(sql).toContain("sum(cErrorCount) AS errorCount")
+		expect(sql).toContain("sum(cEstimatedErrorCount) AS estimatedErrorCount")
+		expect(sql).toContain("min(cFirstSeen) AS firstSeen")
+
+		// Commits ride along as a capped, count-descending tuple array rather than
+		// one row per commit. `arrayReverseSort`, not `arraySort(x -> -x.2)`: the
+		// counts are UInt64 and negating an unsigned integer wraps.
+		expect(sql).toContain("arrayReverseSort(x -> x.2, groupArray(tuple(")
+		expect(sql).toContain("), 1, 20) AS commits")
+		expect(sql).not.toContain("AS commitSha")
+
 		expect(sql).toContain("ORDER BY throughput DESC")
-		expect(sql).toContain("LIMIT 100")
+		// On the collapsed grain, so a few frequently-deployed services can no
+		// longer consume the budget and silently drop other services off the list.
+		expect(sql).toContain("LIMIT 500")
 		expect(sql).toContain("FORMAT JSON")
 	})
 
 	it("merges sampling-corrected counts from raw edges and hourly interiors", () => {
 		const q = serviceOverviewQuery({})
-		const { sql } = compileCH(q, baseParams)
+		const { sql } = compileUnsafe(q, baseParams)
 		expect(sql).toContain("estimatedSpanCount")
 		expect(sql).toContain("sum(SampleRate)")
 		expect(sql).toContain("estimatedErrorCount")
@@ -138,18 +172,18 @@ describe("serviceOverviewQuery", () => {
 
 	it("applies environment filter", () => {
 		const q = serviceOverviewQuery({ environments: ["production"] })
-		const { sql } = compileCH(q, baseParams)
+		const { sql } = compileUnsafe(q, baseParams)
 		expect(sql).toContain("DeploymentEnv IN ('production')")
 	})
 
 	it("applies commitSha filter", () => {
 		const q = serviceOverviewQuery({ commitShas: ["abc123", "def456"] })
-		const { sql } = compileCH(q, baseParams)
+		const { sql } = compileUnsafe(q, baseParams)
 		expect(sql).toContain("CommitSha IN ('abc123', 'def456')")
 	})
 
 	it("coerces BYO ClickHouse string-encoded annual aggregates", () => {
-		const compiled = compileCH(serviceOverviewQuery({}), baseParams, {
+		const compiled = compileUnsafe(serviceOverviewQuery({}), baseParams, {
 			rowSchema: serviceOverviewRowSchema,
 		})
 		const [decoded] = Effect.runSync(
@@ -158,7 +192,6 @@ describe("serviceOverviewQuery", () => {
 					serviceName: "api",
 					serviceNamespace: "checkout",
 					environment: "production",
-					commitSha: "abc123",
 					throughput: "100",
 					errorCount: "2",
 					estimatedErrorCount: "4",
@@ -168,22 +201,28 @@ describe("serviceOverviewQuery", () => {
 					p99LatencyMs: "80",
 					estimatedSpanCount: "200",
 					firstSeen: "2024-01-01 00:00:00",
+					// The counts inside the tuple are UInt64, so a gateway/readonly
+					// cluster returns them quoted here too — CHNumber, not Schema.Number.
+					commits: [
+						["abc123", "80", "2", "2024-01-01 00:00:00"],
+						["def456", "20", "0", "2024-01-01 06:00:00"],
+					],
 				},
 			]),
 		)
 		expect(decoded.estimatedSpanCount).toBe(200)
 		expect(decoded.p95LatencyMs).toBe(42)
+		expect(decoded.commits).toHaveLength(2)
+		expect(decoded.commits[0]).toEqual(["abc123", 80, 2, "2024-01-01 00:00:00"])
 	})
 })
 
-// ---------------------------------------------------------------------------
 // serviceHealthBaselineQuery
-// ---------------------------------------------------------------------------
 
 describe("serviceHealthBaselineQuery", () => {
 	it("compiles a per-service p95 baseline scoped to the org", () => {
 		const q = serviceHealthBaselineQuery({})
-		const { sql } = compileCH(q, baseParams)
+		const { sql } = compileUnsafe(q, baseParams)
 		expect(sql).toContain("FROM service_overview_spans")
 		expect(sql).toContain("FROM service_overview_hourly")
 		expect(sql).toContain("OrgId = 'org_1'")
@@ -201,20 +240,18 @@ describe("serviceHealthBaselineQuery", () => {
 
 	it("applies environment and namespace filters", () => {
 		const q = serviceHealthBaselineQuery({ environments: ["production"], namespaces: ["shop"] })
-		const { sql } = compileCH(q, baseParams)
+		const { sql } = compileUnsafe(q, baseParams)
 		expect(sql).toContain("DeploymentEnv IN ('production')")
 		expect(sql).toContain("ServiceNamespace IN ('shop')")
 	})
 })
 
-// ---------------------------------------------------------------------------
 // serviceReleasesTimelineQuery
-// ---------------------------------------------------------------------------
 
 describe("serviceReleasesTimelineQuery", () => {
-	it("compiles releases timeline", () => {
-		const q = serviceReleasesTimelineQuery({ serviceName: "api" })
-		const { sql } = compileCH(q, baseParams)
+	it("compiles releases timeline on the hourly tier for hour-multiple buckets", () => {
+		const q = serviceReleasesTimelineQuery({ serviceName: "api", bucketSeconds: 3600 })
+		const { sql } = compileUnsafe(q, baseParams)
 		expect(sql).toContain("FROM service_overview_spans")
 		expect(sql).toContain("FROM service_overview_hourly")
 		expect(sql).toContain("ServiceName = 'api'")
@@ -226,16 +263,36 @@ describe("serviceReleasesTimelineQuery", () => {
 		expect(sql).toContain("ORDER BY bucket ASC")
 		expect(sql).toContain("LIMIT 1000")
 	})
+
+	it("drops the hourly tier for the sub-hour default bucket", () => {
+		// 300s is this query's production default. An hour-floored row carries no
+		// position inside the hour, so reading the hourly tier here would pile every
+		// interior hour onto the bucket containing `:00` — one spike per hour with
+		// zeros between.
+		const q = serviceReleasesTimelineQuery({ serviceName: "api", bucketSeconds: 300 })
+		const { sql } = compileUnsafe(q, baseParams)
+		expect(sql).toContain("FROM service_overview_minutely")
+		expect(sql).not.toContain("FROM service_overview_hourly")
+		// The raw edge floors to the minute too, so every tier agrees on grain.
+		expect(sql).toContain("toStartOfMinute(Timestamp) AS bBucket")
+	})
+
+	it("falls back to a raw scan for sub-minute buckets", () => {
+		// No rollup tier can place a row inside a minute.
+		const q = serviceReleasesTimelineQuery({ serviceName: "api", bucketSeconds: 30 })
+		const { sql } = compileUnsafe(q, baseParams)
+		expect(sql).toContain("FROM service_overview_spans")
+		expect(sql).not.toContain("FROM service_overview_minutely")
+		expect(sql).not.toContain("FROM service_overview_hourly")
+	})
 })
 
-// ---------------------------------------------------------------------------
 // serviceEnvironmentsQuery
-// ---------------------------------------------------------------------------
 
 describe("serviceEnvironmentsQuery", () => {
 	it("compiles a service-scoped, time-windowed distinct-environments query", () => {
 		const q = serviceEnvironmentsQuery({ serviceName: "api" })
-		const { sql } = compileCH(q, baseParams)
+		const { sql } = compileUnsafe(q, baseParams)
 		expect(sql).toContain("FROM service_overview_spans")
 		expect(sql).toContain("FROM service_overview_hourly")
 		expect(sql).toContain("bEnvironment AS environment")
@@ -252,14 +309,12 @@ describe("serviceEnvironmentsQuery", () => {
 	})
 })
 
-// ---------------------------------------------------------------------------
 // serviceApdexTimeseriesQuery
-// ---------------------------------------------------------------------------
 
 describe("serviceApdexTimeseriesQuery", () => {
 	it("compiles apdex timeseries with default threshold", () => {
-		const q = serviceApdexTimeseriesQuery({ serviceName: "api" })
-		const { sql } = compileCH(q, baseParams)
+		const q = serviceApdexTimeseriesQuery({ serviceName: "api", bucketSeconds: 3600 })
+		const { sql } = compileUnsafe(q, baseParams)
 		// Exact raw partial hours surround complete hourly aggregate buckets.
 		expect(sql).toContain("FROM service_overview_spans")
 		expect(sql).toContain("FROM service_overview_hourly")
@@ -283,8 +338,12 @@ describe("serviceApdexTimeseriesQuery", () => {
 	})
 
 	it("compiles with custom threshold", () => {
-		const q = serviceApdexTimeseriesQuery({ serviceName: "api", apdexThresholdMs: 250 })
-		const { sql } = compileCH(q, baseParams)
+		const q = serviceApdexTimeseriesQuery({
+			serviceName: "api",
+			apdexThresholdMs: 250,
+			bucketSeconds: 3600,
+		})
+		const { sql } = compileUnsafe(q, baseParams)
 		expect(sql).toContain("Duration / 1000000 < 250")
 		// Tolerating = 4x threshold
 		expect(sql).toContain("Duration / 1000000 < 1000")
@@ -297,8 +356,8 @@ describe("serviceApdexTimeseriesQuery", () => {
 		// evaluates as `satisfied + ((tolerating*0.5)/count())` ≈ satisfied,
 		// producing 6-digit "Apdex" values instead of a 0–1 ratio.
 		// The split-term form below is unambiguous left-to-right.
-		const q = serviceApdexTimeseriesQuery({ serviceName: "api" })
-		const { sql } = compileCH(q, baseParams)
+		const q = serviceApdexTimeseriesQuery({ serviceName: "api", bucketSeconds: 3600 })
+		const { sql } = compileUnsafe(q, baseParams)
 		// The Apdex SELECT must contain the split-term form: each countIf is
 		// divided by count() before being summed, instead of summed first.
 		expect(sql).toContain(
@@ -309,9 +368,10 @@ describe("serviceApdexTimeseriesQuery", () => {
 	})
 
 	it("coerces BYO ClickHouse string-encoded Apdex aggregates", () => {
-		const compiled = compileCH(serviceApdexTimeseriesQuery({ serviceName: "api" }), baseParams, {
-			rowSchema: serviceApdexTimeseriesRowSchema,
-		})
+		const compiled = compileUnsafe(
+			serviceApdexTimeseriesQuery({ serviceName: "api", bucketSeconds: 3600 }),
+			baseParams,
+		)
 		const [decoded] = Effect.runSync(
 			compiled.decodeRows([
 				{
@@ -328,14 +388,12 @@ describe("serviceApdexTimeseriesQuery", () => {
 	})
 })
 
-// ---------------------------------------------------------------------------
 // serviceUsageQuery
-// ---------------------------------------------------------------------------
 
 describe("serviceUsageQuery", () => {
 	it("compiles basic usage query", () => {
 		const q = serviceUsageQuery({})
-		const { sql } = compileCH(q, baseParams)
+		const { sql } = compileUnsafe(q, baseParams)
 		expect(sql).toContain("FROM service_usage")
 		expect(sql).toContain("ServiceName AS serviceName")
 		expect(sql).toContain("sum(LogCount) AS totalLogCount")
@@ -354,7 +412,7 @@ describe("serviceUsageQuery", () => {
 
 	it("applies serviceName filter", () => {
 		const q = serviceUsageQuery({ serviceName: "api" })
-		const { sql } = compileCH(q, baseParams)
+		const { sql } = compileUnsafe(q, baseParams)
 		expect(sql).toContain("ServiceName = 'api'")
 	})
 
@@ -363,7 +421,7 @@ describe("serviceUsageQuery", () => {
 		// like 22:23–22:38 returns no rows. The fix wraps both bounds with
 		// `toStartOfHour(toDateTime(...))` so the enclosing hour contributes.
 		const q = serviceUsageQuery({})
-		const { sql } = compileCH(q, baseParams)
+		const { sql } = compileUnsafe(q, baseParams)
 		expect(sql).toContain("Hour >= toStartOfHour(toDateTime('2024-01-01 00:00:00'))")
 		expect(sql).toContain("Hour <= toStartOfHour(toDateTime('2024-01-02 00:00:00'))")
 	})
@@ -380,7 +438,7 @@ describe("serviceUsageWithPreviousQuery", () => {
 
 	it("splits current and previous windows with sumIf in one scan", () => {
 		const q = serviceUsageWithPreviousQuery({})
-		const { sql } = compileCH(q, params)
+		const { sql } = compileUnsafe(q, params)
 		// Single scan of the union window [previousStartTime, endTime].
 		expect((sql.match(/FROM service_usage/g) || []).length).toBe(1)
 		expect(sql).toContain("Hour >= toStartOfHour(toDateTime('2024-01-01 00:00:00'))")
@@ -398,14 +456,12 @@ describe("serviceUsageWithPreviousQuery", () => {
 	})
 })
 
-// ---------------------------------------------------------------------------
 // servicesFacetsQuery
-// ---------------------------------------------------------------------------
 
 describe("servicesFacetsQuery", () => {
 	it("compiles UNION ALL with environment, namespace, commit_sha, and service facets", () => {
 		const q = servicesFacetsQuery()
-		const { sql } = compileUnion(q, baseParams)
+		const { sql } = compileUnionUnsafe(q, baseParams)
 		const unionCount = (sql.match(/UNION ALL/g) || []).length
 		expect(unionCount).toBe(7) // 4 facet branches, each with a raw/hourly window union
 		expect(sql).toContain("'environment' AS facetType")

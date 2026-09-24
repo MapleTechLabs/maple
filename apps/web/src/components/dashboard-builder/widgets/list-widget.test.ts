@@ -1,8 +1,11 @@
+// SAFETY-FILE: JSON in this test is emitted by the fixture or unit under test before its fields are asserted.
+// TEST-SEAM: This focused test replaces process-global modules that have no instance-level injection seam.
+// BOUNDARY: Test doubles preserve opaque values so the consuming boundary can be exercised.
 import { assert, beforeEach, describe, expect, it } from "@effect/vitest"
 import { Effect } from "effect"
 import { vi } from "vitest"
 
-// --- Mock effect-utils BEFORE importing anything that uses it ---
+// This mock must be registered before importing its consumers.
 const executeQueryEngineMock = vi.fn()
 const runWarehouseQueryMock = vi.fn()
 
@@ -21,6 +24,8 @@ vi.mock("@/api/warehouse/effect-utils", async () => {
 // does not leak between tests.
 const defaultExecuteQueryEngine = (operation: string) => {
 	if (operation.includes("listTraces")) {
+		// Grouped (one-row-per-trace) shape — the default list mode. See the
+		// `groupByTrace` branch of the query-engine list dispatch.
 		return Effect.succeed({
 			result: {
 				kind: "list",
@@ -28,18 +33,20 @@ const defaultExecuteQueryEngine = (operation: string) => {
 				data: [
 					{
 						traceId: "t1",
-						timestamp: "2026-03-28 00:00:00",
+						startTime: "2026-03-28 00:00:00",
+						endTime: "2026-03-28 00:00:01",
 						durationMs: 142,
-						serviceName: "api-gw",
-						spanName: "GET /api/users",
-						spanKind: "SERVER",
-						statusCode: "Ok",
-						hasError: 0,
-						spanAttributes: {
+						spanCount: 3,
+						services: ["api-gw"],
+						rootSpanName: "GET /api/users",
+						rootSpanKind: "Server",
+						rootSpanStatusCode: "Ok",
+						rootSpanAttributes: {
 							"http.method": "GET",
 							"http.route": "/api/users",
 							"http.status_code": "200",
 						},
+						hasError: false,
 					},
 				],
 			},
@@ -73,15 +80,12 @@ beforeEach(() => {
 	runWarehouseQueryMock.mockImplementation(defaultRunWarehouseQuery)
 })
 
-// --- Now import production code ---
 import { listTraces } from "@/api/warehouse/traces"
 import { listLogs } from "@/api/warehouse/logs"
 import { serverFunctionMap } from "@/components/dashboard-builder/data-source-registry"
 import { resolveFieldPath } from "@/lib/resolve-field-path"
 
-// -------------------------------------------------------------------------
 // 1. Verify listTraces works with exactly the params a list widget sends
-// -------------------------------------------------------------------------
 describe("list widget data flow", () => {
 	it.effect("listTraces succeeds with list widget params (no filter)", () =>
 		Effect.gen(function* () {
@@ -138,9 +142,7 @@ describe("list widget data flow", () => {
 		}),
 	)
 
-	// -----------------------------------------------------------------------
 	// 2. Verify serverFunctionMap contains list endpoints
-	// -----------------------------------------------------------------------
 	it("serverFunctionMap has list_traces", () => {
 		expect(serverFunctionMap.list_traces).toBeDefined()
 		expect(typeof serverFunctionMap.list_traces).toBe("function")
@@ -151,10 +153,8 @@ describe("list widget data flow", () => {
 		expect(typeof serverFunctionMap.list_logs).toBe("function")
 	})
 
-	// -----------------------------------------------------------------------
 	// 3. Verify the full atom-like call path:
 	//    serverFn({ data: params }) → response.data extraction
-	// -----------------------------------------------------------------------
 	it.effect("serverFunctionMap.list_traces({ data }) returns { data: Trace[] }", () =>
 		Effect.gen(function* () {
 			const serverFn = serverFunctionMap.list_traces
@@ -204,9 +204,7 @@ describe("list widget data flow", () => {
 	)
 })
 
-// -------------------------------------------------------------------------
 // 4. Simulate the exact widgetFetchAtom flow (JSON key roundtrip)
-// -------------------------------------------------------------------------
 describe("widgetFetchAtom simulation", () => {
 	function normalizeForKey(value: unknown): unknown {
 		if (value === null || typeof value !== "object") return value
@@ -232,7 +230,7 @@ describe("widgetFetchAtom simulation", () => {
 				startTime: resolvedTimeRange.startTime,
 				endTime: resolvedTimeRange.endTime,
 				...widgetParams,
-			}
+			} satisfies Record<string, unknown>
 
 			// 2. Encode key like widgetFetchAtom
 			const key = encodeKey({ endpoint: "list_traces", params: resolvedParams })
@@ -269,7 +267,7 @@ describe("widgetFetchAtom simulation", () => {
 				startTime: resolvedTimeRange.startTime,
 				endTime: resolvedTimeRange.endTime,
 				...widgetParams,
-			}
+			} satisfies Record<string, unknown>
 
 			const key = encodeKey({ endpoint: "list_logs", params: resolvedParams })
 			const { endpoint, params } = JSON.parse(key)
@@ -285,9 +283,7 @@ describe("widgetFetchAtom simulation", () => {
 	)
 })
 
-// -------------------------------------------------------------------------
 // 5. Test buildWidgetDataSource for list
-// -------------------------------------------------------------------------
 describe("buildWidgetDataSource for list", () => {
 	// Import dynamically to avoid circular dependency issues
 	it.effect("produces correct data source from list state", () =>
@@ -305,7 +301,7 @@ describe("buildWidgetDataSource for list", () => {
 				limit: number,
 			): Record<string, unknown> {
 				const { clauses } = parseWhereClause(whereClause)
-				const params: Record<string, unknown> = { limit }
+				const params: Record<string, unknown> = { limit } satisfies Record<string, unknown>
 				if (dataSource === "traces") {
 					for (const clause of clauses) {
 						const key = normKey(clause.key)
@@ -368,9 +364,7 @@ describe("buildWidgetDataSource for list", () => {
 	)
 })
 
-// -------------------------------------------------------------------------
 // 6. resolveFieldPath tests
-// -------------------------------------------------------------------------
 describe("resolveFieldPath", () => {
 	const traceRow = {
 		traceId: "t1",

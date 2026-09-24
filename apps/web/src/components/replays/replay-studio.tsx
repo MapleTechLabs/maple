@@ -1,16 +1,20 @@
 import { ReplaySurface, ReplayTransport } from "@/components/replays/replay-player"
 import { ReplayPlayerProvider } from "@/components/replays/replay-player-context"
-import { ReplayEditorTimeline, type SessionTraceSummary } from "@/components/replays/replay-editor-timeline"
-import { SessionRail, type EventRow } from "@/components/replays/session-events-panel"
-import { recordedMarker, type ReplayPartitionWindow } from "@/components/replays/replay-format"
+import { ReplayEditorTimeline } from "@/components/replays/replay-editor-timeline"
+import { SessionRail } from "@/components/replays/session-events-panel"
+import {
+	isSessionLive,
+	recordedMarker,
+	replayFormat,
+	sessionDurationMs,
+	type ReplayPartitionWindow,
+} from "@/components/replays/replay-format"
 import { Reveal, SessionIdentityBar } from "@/components/replays/session-detail-parts"
+import { useLiveClock } from "@/hooks/use-live-clock"
 
-// ---------------------------------------------------------------------------
 // Replay studio
 //
-// The shared layout for the session-replay detail page, rendered by both the
-// live route (`/replays/$sessionId`) and the placeholder-data preview
-// (`/replays/preview`) so the two never drift.
+// The shared layout for the session-replay detail page.
 //
 // Player-first layout (lg+): a single-line identity bar on top, then the
 // recording with its transport docked directly beneath (one unit) and the
@@ -20,18 +24,14 @@ import { Reveal, SessionIdentityBar } from "@/components/replays/session-detail-
 // (Session). The page itself never scrolls (`DashboardLayout.Fill`). Below lg
 // the rail drops under the stage column and the left column's scroller owns
 // the page.
-// ---------------------------------------------------------------------------
 
-/** The session metadata the studio renders. Structurally satisfied by both the
- *  warehouse `getReplayResult` row (branded + nullable columns) and the preview
- *  fixture (plain literals). */
+/** The session metadata the studio renders from the warehouse `getReplayResult` row. */
 interface ReplayStudioSession {
 	readonly userId?: string | null
 	readonly urlInitial: string
 	readonly startTime: string
 	readonly durationMs: number | null
-	/** Engaged time (ms), computed server-side from session_events gaps. Omitted
-	 *  on the preview fixture; null when the session has no distilled events. */
+	/** Engaged time (ms), computed server-side from session_events gaps. */
 	readonly activeTimeMs?: number | null
 	/** Idle time (ms) — the long-gap complement of active time. */
 	readonly idleTimeMs?: number | null
@@ -45,15 +45,22 @@ interface ReplayStudioSession {
 	readonly serviceName?: string | null
 	readonly userAgent?: string | null
 	readonly status?: string
+	/** Heartbeat timestamp; read with `status` to tell an open session from one
+	 *  whose tab went away without sending an end row. */
+	readonly lastActivityAt?: string | null
 	/** JSON-encoded `session_replays.ResourceAttributes`; carries the SDK's
-	 *  `maple.session.recorded` marker. Omitted on the preview fixture. */
+	 *  `maple.session.recorded` marker. */
 	readonly resourceAttributes?: string | null
 	// Analytics dimensions, passed straight through to the rail's Session tab.
-	// All optional: the preview fixture and pre-migration-0011 sessions have none.
+	// All optional because pre-migration-0011 sessions have none.
 	readonly visitorId?: string | null
 	readonly visitorIsNew?: boolean
+	readonly userName?: string | null
+	readonly groupId?: string | null
 	readonly groupName?: string | null
 	readonly userEmail?: string | null
+	/** `identify()` traits, JSON-encoded `Record<string, string>`. */
+	readonly userTraits?: string | null
 	readonly entryPath?: string | null
 	readonly exitPath?: string | null
 	readonly referrerHost?: string | null
@@ -62,38 +69,49 @@ interface ReplayStudioSession {
 	readonly utmCampaign?: string | null
 }
 
-/** Placeholder-data bundle for the preview route — bypasses every warehouse fetch. */
-interface ReplayStudioPreview {
-	readonly rrwebEvents: ReadonlyArray<unknown>
-	readonly traceSummaries: ReadonlyArray<SessionTraceSummary>
-	readonly transcript: ReadonlyArray<EventRow>
-}
-
 export function ReplayStudio({
 	sessionId,
 	session,
 	traceIds,
-	preview,
 	window,
 }: {
 	sessionId: string
 	session: ReplayStudioSession
 	traceIds: ReadonlyArray<string>
-	preview?: ReplayStudioPreview
-	/** Partition-pruning window threaded into the detail atoms (matches the
-	 *  route prefetch key). Omitted on the preview route, which bypasses fetches. */
+	/** Partition-pruning window threaded into the detail atoms; matches the route prefetch key. */
 	window?: ReplayPartitionWindow
 }) {
-	const isActive = session.status === "active"
-	const label = session.userId || "Anonymous session"
+	// Live-ness is `status` *and* recency. Without the recency half a session
+	// whose tab died keeps the player on "Recording in progress — frames appear
+	// as chunks finish uploading" forever, waiting on an upload that ended when
+	// the tab did.
+	const liveness = {
+		status: session.status ?? "",
+		lastActivityAt: session.lastActivityAt ?? null,
+		startTime: session.startTime,
+		durationMs: session.durationMs,
+	}
+	// Ticking, not a render-time `Date.now()`: this session is one row, and the
+	// player's "still uploading" state has to give up on its own once the
+	// heartbeat goes quiet, with no refetch to repaint it.
+	const nowMs = useLiveClock({ enabled: liveness.status === "active" })
+	const isActive = isSessionLive(liveness, nowMs)
+	// Same walk as the list rows: a person is recognizable by name long before
+	// they are by an opaque id, and only a session that was never identified
+	// falls all the way through.
+	const label = session.userName || session.userEmail || session.userId || "Anonymous session"
 	const recorded = recordedMarker(session.resourceAttributes)
+	// Which engine plays this session (browser rrweb vs mobile H.264 segments).
+	// Read from the already-loaded session metadata, so the player never has to
+	// download a chunk to find out what it is looking at.
+	const format = replayFormat(session.resourceAttributes)
 
 	return (
 		<ReplayPlayerProvider
 			sessionId={sessionId}
-			previewEvents={preview?.rrwebEvents}
 			window={window}
 			recorded={recorded}
+			format={format}
 			sessionActive={isActive}
 		>
 			<div className="flex min-h-0 flex-1 flex-col lg:flex-row">
@@ -107,7 +125,7 @@ export function ReplayStudio({
 							urlInitial={session.urlInitial}
 							startTime={session.startTime}
 							isActive={isActive}
-							durationMs={session.durationMs}
+							durationMs={sessionDurationMs(liveness)}
 							errorCount={session.errorCount}
 						/>
 					</Reveal>
@@ -118,11 +136,7 @@ export function ReplayStudio({
 					</div>
 
 					<Reveal delay={0.08}>
-						<ReplayEditorTimeline
-							traceIds={traceIds}
-							previewSummaries={preview?.traceSummaries}
-							window={window}
-						/>
+						<ReplayEditorTimeline traceIds={traceIds} window={window} />
 					</Reveal>
 				</div>
 
@@ -132,8 +146,6 @@ export function ReplayStudio({
 					sessionId={sessionId}
 					session={{ ...session, recorded }}
 					traceIds={traceIds}
-					previewEvents={preview?.transcript}
-					previewSummaries={preview?.traceSummaries}
 					window={window}
 					className="shrink-0 border-t max-lg:h-96 lg:w-84 lg:border-t-0 lg:border-l"
 				/>

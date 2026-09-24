@@ -22,7 +22,6 @@ import {
 } from "@/components/icons"
 import { MarkerLegend } from "./marker-legend"
 
-// ---------------------------------------------------------------------------
 // Replay editor timeline
 //
 // A video-editor-style strip below the recording: a transport row, a time
@@ -34,7 +33,6 @@ import { MarkerLegend } from "./marker-legend"
 //
 // All rows reserve the same `LANE_GUTTER` on the left, so percentage-based
 // time positions line up across tracks and with the playhead overlay.
-// ---------------------------------------------------------------------------
 
 /** Left gutter (label column) shared by every row. Narrows on phones to leave the
  *  time axis room. Kept in sync with the `left-28 sm:left-36` offsets on the scrub
@@ -74,12 +72,9 @@ export interface SessionTraceSummary {
 
 export function ReplayEditorTimeline({
 	traceIds,
-	previewSummaries,
 	window,
 }: {
 	traceIds: ReadonlyArray<string>
-	/** Placeholder-data preview: render these summaries instead of fetching them. */
-	previewSummaries?: ReadonlyArray<SessionTraceSummary>
 	/** Partition-pruning window for the trace-summaries query (the session's span). */
 	window?: ReplayPartitionWindow
 }) {
@@ -118,19 +113,12 @@ export function ReplayEditorTimeline({
 					<ActivityTrack player={player} />
 					<ScrubSurface player={player} />
 				</div>
-				<TracesTrack
-					traceIds={traceIds}
-					seek={seek}
-					previewSummaries={previewSummaries}
-					window={window}
-				/>
+				<TracesTrack traceIds={traceIds} seek={seek} window={window} />
 				<Playhead player={player} />
 			</div>
 		</section>
 	)
 }
-
-// --- Header ----------------------------------------------------------------
 
 function TimelineHeader() {
 	// Slim header: the play / scrub / speed controls live in the transport docked
@@ -145,8 +133,6 @@ function TimelineHeader() {
 		</div>
 	)
 }
-
-// --- Ruler ----------------------------------------------------------------
 
 function TimeRuler({ totalMs }: { totalMs: number }) {
 	const ticks = React.useMemo(() => {
@@ -177,8 +163,6 @@ function TimeRuler({ totalMs }: { totalMs: number }) {
 		</div>
 	)
 }
-
-// --- Scrub surface (master scrub) -----------------------------------------
 
 /**
  * Transparent drag surface covering the ruler + activity rows (everything right
@@ -229,8 +213,6 @@ function ScrubSurface({ player }: { player: ReplayPlayerContextValue }) {
 		/>
 	)
 }
-
-// --- Activity track (visual) ----------------------------------------------
 
 function ActivityTrack({ player }: { player: ReplayPlayerContextValue }) {
 	const { displayTotalMs, markers, idleBands } = player
@@ -289,17 +271,13 @@ function ActivityTrack({ player }: { player: ReplayPlayerContextValue }) {
 	)
 }
 
-// --- Traces track ---------------------------------------------------------
-
 const TracesTrack = React.memo(function TracesTrack({
 	traceIds,
 	seek,
-	previewSummaries,
 	window,
 }: {
 	traceIds: ReadonlyArray<string>
 	seek: SeekContext
-	previewSummaries?: ReadonlyArray<SessionTraceSummary>
 	window?: ReplayPartitionWindow
 }) {
 	const result = useAtomValue(getSessionTraceSummariesResultAtom({ data: { traceIds, ...window } }))
@@ -315,19 +293,6 @@ const TracesTrack = React.memo(function TracesTrack({
 			)}
 		</div>
 	)
-
-	if (previewSummaries) {
-		return (
-			<div>
-				{header(previewSummaries.length)}
-				<ul className="max-h-72 overflow-y-auto">
-					{previewSummaries.map((s) => (
-						<TraceRow key={s.traceId} summary={s} seek={seek} preview />
-					))}
-				</ul>
-			</div>
-		)
-	}
 
 	if (traceIds.length === 0) {
 		return (
@@ -384,16 +349,7 @@ const TracesTrack = React.memo(function TracesTrack({
 	)
 })
 
-function TraceRow({
-	summary,
-	seek,
-	preview = false,
-}: {
-	summary: SessionTraceSummary
-	seek: SeekContext
-	/** Preview rows have no real trace to expand, so the span lane is disabled. */
-	preview?: boolean
-}) {
+function TraceRow({ summary, seek }: { summary: SessionTraceSummary; seek: SeekContext }) {
 	const [expanded, setExpanded] = React.useState(false)
 	const range = spanDisplayRange({
 		spanStartIso: summary.startTime,
@@ -413,23 +369,19 @@ function TraceRow({
 						"flex shrink-0 items-center gap-1.5 border-r border-border/60 pr-2 pl-2 text-xs",
 					)}
 				>
-					{preview ? (
-						<span className="size-5 shrink-0" aria-hidden />
-					) : (
-						<button
-							type="button"
-							onClick={() => setExpanded((v) => !v)}
-							aria-expanded={expanded}
-							title={expanded ? "Hide spans" : `Show ${summary.spanCount} spans`}
-							className="relative grid size-5 shrink-0 place-items-center rounded text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground pointer-coarse:after:absolute pointer-coarse:after:size-full pointer-coarse:after:min-h-11 pointer-coarse:after:min-w-11"
-						>
-							{expanded ? (
-								<ChevronDownIcon className="size-3.5" />
-							) : (
-								<ChevronRightIcon className="size-3.5" />
-							)}
-						</button>
-					)}
+					<button
+						type="button"
+						onClick={() => setExpanded((v) => !v)}
+						aria-expanded={expanded}
+						title={expanded ? "Hide spans" : `Show ${summary.spanCount} spans`}
+						className="relative grid size-5 shrink-0 place-items-center rounded text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground pointer-coarse:after:absolute pointer-coarse:after:size-full pointer-coarse:after:min-h-11 pointer-coarse:after:min-w-11"
+					>
+						{expanded ? (
+							<ChevronDownIcon className="size-3.5" />
+						) : (
+							<ChevronRightIcon className="size-3.5" />
+						)}
+					</button>
 					<Link
 						to="/traces/$traceId"
 						params={{ traceId: summary.traceId }}
@@ -510,8 +462,6 @@ function TraceBar({
 		</span>
 	)
 }
-
-// --- Span lane (lazy, on expand) ------------------------------------------
 
 interface SpanRow {
 	readonly spanId: string
@@ -626,8 +576,6 @@ function SpanRowItem({ span, seek }: { span: SpanRow; seek: SeekContext }) {
 		</div>
 	)
 }
-
-// --- Playhead -------------------------------------------------------------
 
 function Playhead({ player }: { player: ReplayPlayerContextValue }) {
 	const position = pct(player.displayCurrentMs, player.displayTotalMs)

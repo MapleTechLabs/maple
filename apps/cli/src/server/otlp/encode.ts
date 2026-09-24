@@ -28,25 +28,23 @@ export interface EncodedBatch {
 
 type AttrMap = Record<string, string>
 
-interface AnyValue {
+export interface AnyValue {
 	stringValue?: string
 	boolValue?: boolean
 	intValue?: string | number
 	doubleValue?: number
 	bytesValue?: string
-	arrayValue?: { values?: AnyValue[] }
-	kvlistValue?: { values?: KeyValue[] }
+	arrayValue?: { values?: readonly AnyValue[] }
+	kvlistValue?: { values?: readonly KeyValue[] }
 	value?: string
 }
 
-interface KeyValue {
+export interface KeyValue {
 	key?: string
 	value?: AnyValue
 }
 
-// ---------------------------------------------------------------------------
 // Value / format helpers (ports of the Rust functions of the same name)
-// ---------------------------------------------------------------------------
 
 /**
  * Port of Rust `bytes_hex`: base64-decode the field to bytes; if empty or all
@@ -98,6 +96,8 @@ function base64ToBytes(b64: string): Uint8Array {
  * 400 from the ingest handler rather than the generic 500 an encoder crash
  * would produce.
  */
+// The pure encoder throws this sentinel for its HTTP adapter to translate into a 400 response.
+// oxlint-disable-next-line effecttsgo/extends-native-error
 export class OtlpFieldError extends Error {
 	constructor(message: string) {
 		super(message)
@@ -314,7 +314,7 @@ function expandExponential(s: string, eIndex: number): string {
  * Port of Rust `attr_map`: `{ [key]: anyValueString(value) }`. Every value is
  * coerced to a string (the ClickHouse columns are `Map(String, String)`).
  */
-function attrMap(attributes: KeyValue[] | undefined): AttrMap {
+function attrMap(attributes: readonly KeyValue[] | undefined): AttrMap {
 	const out: AttrMap = {}
 	if (!attributes) {
 		return out
@@ -379,9 +379,7 @@ function severityNumberToText(n: number | undefined): string {
 	return ""
 }
 
-// ---------------------------------------------------------------------------
 // Shared numeric coercions
-// ---------------------------------------------------------------------------
 
 /** UInt32 flags field — present as a number after `defaults: true`. */
 function asUint32(value: number | string | undefined): number {
@@ -439,9 +437,7 @@ function numberPointValue(point: { asDouble?: number; asInt?: string | number })
 	return 0
 }
 
-// ---------------------------------------------------------------------------
 // Exemplars (port of Rust `encode_exemplars`)
-// ---------------------------------------------------------------------------
 
 interface Exemplar {
 	traceId?: string
@@ -482,9 +478,7 @@ function encodeExemplars(exemplars: Exemplar[] | undefined): EncodedExemplars {
 	return out
 }
 
-// ---------------------------------------------------------------------------
 // NDJSON assembly
-// ---------------------------------------------------------------------------
 
 function toBatches(byDatasource: Map<string, Record<string, unknown>[]>): EncodedBatch[] {
 	const batches: EncodedBatch[] = []
@@ -504,9 +498,7 @@ function toBatches(byDatasource: Map<string, Record<string, unknown>[]>): Encode
 	return batches
 }
 
-// ---------------------------------------------------------------------------
 // Traces
-// ---------------------------------------------------------------------------
 
 interface TraceRequest {
 	resourceSpans?: ResourceSpans[]
@@ -606,9 +598,7 @@ export function encodeTraces(req: unknown): EncodedBatch[] {
 	return toBatches(byDatasource)
 }
 
-// ---------------------------------------------------------------------------
 // Logs
-// ---------------------------------------------------------------------------
 
 interface LogsRequest {
 	resourceLogs?: ResourceLogs[]
@@ -689,9 +679,7 @@ function isNonZeroNano(value: string | number | undefined): boolean {
 	return true
 }
 
-// ---------------------------------------------------------------------------
 // Metrics
-// ---------------------------------------------------------------------------
 
 interface MetricsRequest {
 	resourceMetrics?: ResourceMetrics[]

@@ -1,0 +1,92 @@
+{
+	"$schema": "./node_modules/@effect/tsgo/oxlint-schema.json",
+	"extends": ["./.oxlintrc.json", "./node_modules/@effect/tsgo/oxlint-presets/recommended.json"],
+	"plugins": ["eslint", "unicorn", "typescript", "oxc", "react", "jsx-a11y", "effecttsgo"],
+	"jsPlugins": ["./scripts/oxlint-plugins/maple.mjs"],
+	"options": {
+		"typeAware": true
+	},
+	"rules": {
+		"effecttsgo/catch-to-ignore": "error",
+		"effecttsgo/catch-to-or-else-succeed": "error",
+		"effecttsgo/duplicate-package": "error",
+		"effecttsgo/effect-do-notation": "warn",
+		"effecttsgo/effect-in-failure": "error",
+		"effecttsgo/effect-in-void-success": "error",
+		"effecttsgo/extends-native-error": "error",
+		"effecttsgo/generic-effect-services": "error",
+		"effecttsgo/global-console-in-effect": "error",
+		"effecttsgo/global-error-in-effect-failure": "error",
+		"effecttsgo/global-fetch-in-effect": "error",
+		"effecttsgo/global-random-in-effect": "error",
+		"effecttsgo/lazy-promise-in-effect-sync": "error",
+		"effecttsgo/leaking-requirements": "error",
+		"effecttsgo/multiple-catch-tag": "error",
+		"effecttsgo/multiple-effect-provide": "error",
+		"effecttsgo/nested-effect-gen-yield": "warn",
+		"effecttsgo/outdated-api": "error",
+		"effecttsgo/promise-in-effect-success": "error",
+		"effecttsgo/redundant-map-error": "error",
+		"effecttsgo/return-effect-in-gen": "error",
+		"effecttsgo/run-effect-inside-effect": "error",
+		"effecttsgo/service-not-as-class": "warn",
+		"effecttsgo/strict-effect-provide": "error",
+		"effecttsgo/sync-to-succeed": "error",
+		"effecttsgo/unnecessary-effect-gen": "error",
+		"effecttsgo/unnecessary-pipe-chain": "error",
+		"effecttsgo/unnecessary-typeof-type": "error"
+	},
+	"overrides": [
+		// Framework composition roots, standalone libraries, generated-client CLI dispatch, and operational probes expose generic Effect channels.
+		{
+			"files": [
+				"apps/api/src/worker.ts",
+				"apps/api/src/worker/**",
+				"apps/cli/**",
+				"examples/**/main.ts",
+				"lib/**",
+				"scripts/**"
+			],
+			"rules": {
+				"effecttsgo/any-unknown-in-error-context": "off"
+			}
+		},
+		// Tests may use host globals and intentionally incomplete layers; production code may not.
+		{
+			"files": [
+				"**/*.test.ts",
+				"**/*.test.tsx",
+				"**/*.spec.ts",
+				"**/*.spec.tsx",
+				"**/test/**",
+				"**/tests/**",
+				"**/__tests__/**"
+			],
+			"rules": {
+				"effecttsgo/any-unknown-in-error-context": "off",
+				"effecttsgo/async-function": "off",
+				"effecttsgo/crypto-random-uuid": "off",
+				"effecttsgo/global-console": "off",
+				"effecttsgo/global-date": "off",
+				"effecttsgo/global-fetch": "off",
+				"effecttsgo/global-random": "off",
+				"effecttsgo/global-timers": "off",
+				"effecttsgo/new-promise": "off",
+				"effecttsgo/node-builtin-import": "off",
+				"effecttsgo/process-env": "off",
+				"effecttsgo/strict-effect-provide": "off"
+			}
+		}
+	],
+	"ignorePatterns": [
+		".agents/**",
+		".codex/**",
+		".context/**",
+		".deepsec/**",
+		".factory/**",
+		".impeccable/**",
+		".superset/**",
+		"apps/web/src/routeTree.gen.ts",
+		"lib/thinking-orbs/**"
+	]
+}

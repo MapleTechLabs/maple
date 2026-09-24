@@ -27,6 +27,11 @@ export type IssueSelectionMsg =
 			/** The visible rows in display order, for resolving a shift-range. */
 			readonly orderedIds: ReadonlyArray<string>
 	  }
+	| {
+			/** The header checkbox: every visible row, or none once they all are. */
+			readonly _tag: "AllToggled"
+			readonly orderedIds: ReadonlyArray<string>
+	  }
 	| { readonly _tag: "Cleared" }
 
 export const initialIssueSelection: IssueSelectionState = { selectedIds: new Set(), anchor: null }
@@ -38,18 +43,34 @@ export const toggledSelection = (
 	orderedIds: ReadonlyArray<string>,
 ): IssueSelectionMsg => ({ _tag: "Toggled", id, shiftKey, orderedIds })
 
+export const allToggledSelection = (orderedIds: ReadonlyArray<string>): IssueSelectionMsg => ({
+	_tag: "AllToggled",
+	orderedIds,
+})
+
 export const clearedSelection: IssueSelectionMsg = { _tag: "Cleared" }
 
 /**
  * The whole selection state machine. Mirrors the route's previous imperative
  * handler exactly: a shift+anchor toggle adds the inclusive range (leaving the
  * anchor put); any other toggle flips the single row and becomes the new
- * anchor; clear resets both.
+ * anchor; clear resets both. Select-all adds every visible row, or clears
+ * when they are all already in. It drops the anchor, because a range that
+ * starts from "everything" has nowhere to extend.
  */
 export const updateIssueSelection: Reducer.Update<IssueSelectionState, IssueSelectionMsg> = (state, msg) => {
 	switch (msg._tag) {
 		case "Cleared":
 			return [initialIssueSelection, Command.none]
+		case "AllToggled": {
+			const allSelected =
+				msg.orderedIds.length > 0 && msg.orderedIds.every((id) => state.selectedIds.has(id))
+			if (allSelected) return [initialIssueSelection, Command.none]
+			return [
+				{ selectedIds: new Set([...state.selectedIds, ...msg.orderedIds]), anchor: null },
+				Command.none,
+			]
+		}
 		case "Toggled": {
 			const next = new Set(state.selectedIds)
 			if (msg.shiftKey && state.anchor !== null) {

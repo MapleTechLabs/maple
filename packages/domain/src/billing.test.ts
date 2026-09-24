@@ -2,10 +2,12 @@ import { describe, expect, it } from "vitest"
 import {
 	cycleSpend,
 	isActivePlanSubscription,
+	isPlanSubscription,
 	isPricedPlan,
 	overageUnits,
 	projectCycleSpend,
 	resolveSubscriptionPlan,
+	meteredUsage,
 } from "./billing"
 
 // The Startup plan as it ships in apps/api/autumn.config.ts: $39/mo, 100 GB of
@@ -16,6 +18,21 @@ const startupFeatures = {
 	metrics: { used: 160, included: 100, ratePerUnit: 0.3 },
 	browser_sessions: { used: 26_700, included: 5_000, ratePerUnit: 0.002 },
 }
+
+describe("meteredUsage", () => {
+	it("prefers the balance meter Autumn invoices from over the event aggregate", () => {
+		// The aggregate is a rolling cycle-length window, so mid-cycle it overstates.
+		expect(meteredUsage({ usage: 379.75 }, 433.98)).toBe(379.75)
+		expect(meteredUsage({ usage: 0 }, 12)).toBe(0)
+	})
+
+	it("falls back to the aggregate for a feature with no balance (not on the plan)", () => {
+		expect(meteredUsage(undefined, 1_576)).toBe(1_576)
+		expect(meteredUsage({ usage: null }, 1_576)).toBe(1_576)
+		expect(meteredUsage({}, undefined)).toBe(0)
+		expect(meteredUsage(undefined, undefined)).toBe(0)
+	})
+})
 
 describe("overageUnits", () => {
 	it("is the excess over included, floored at zero", () => {
@@ -71,26 +88,45 @@ describe("cycleSpend", () => {
 })
 
 describe("projectCycleSpend", () => {
-	it("extrapolates overage only, holding the base fee flat", () => {
-		const day = 86_400_000
-		// Day 29 of 31: $39 base + $160.40 overage → $39 + $171.46.
+	const day = 86_400_000
+	const logs = (used: number) => ({
+		logs: { used, included: 100, ratePerUnit: 0.5, unlimited: false },
+	})
+
+	it("extrapolates usage, then prices only what crosses the allotment", () => {
+		// Day 10 of 30 at 60 GB → 180 GB, 80 GB over at $0.50 → $39 + $40.
 		expect(
 			projectCycleSpend({
-				baseCents: 3_900,
-				overageCents: 16_040,
-				elapsedMs: 29 * day,
-				totalMs: 31 * day,
+				baseDollars: 39,
+				features: logs(60),
+				elapsedMs: 10 * day,
+				totalMs: 30 * day,
 			}),
-		).toBe(21_046)
+		).toBe(7_900)
+	})
+
+	it("paces on this cycle's usage, not on a balance carrying the trial", () => {
+		// The balance holds 320 GB (trial + 2 paid days); only 40 GB landed in
+		// the cycle. 320 + 40 GB/2 days × 28 days = 880 GB, 780 GB over at $0.50.
+		// Pacing the whole balance over 2 days would have projected 4,800 GB.
+		expect(
+			projectCycleSpend({
+				baseDollars: 39,
+				features: logs(320),
+				cycleUsage: { logs: 40 },
+				elapsedMs: 2 * day,
+				totalMs: 30 * day,
+			}),
+		).toBe(3_900 + 39_000)
 	})
 
 	it("returns spend as-is at cycle end or with nothing elapsed", () => {
 		expect(
-			projectCycleSpend({ baseCents: 3_900, overageCents: 16_040, elapsedMs: 100, totalMs: 100 }),
-		).toBe(19_940)
-		expect(
-			projectCycleSpend({ baseCents: 3_900, overageCents: 16_040, elapsedMs: 0, totalMs: 100 }),
-		).toBe(19_940)
+			projectCycleSpend({ baseDollars: 39, features: logs(200), elapsedMs: 100, totalMs: 100 }),
+		).toBe(8_900)
+		expect(projectCycleSpend({ baseDollars: 39, features: logs(200), elapsedMs: 0, totalMs: 100 })).toBe(
+			8_900,
+		)
 	})
 })
 
@@ -116,6 +152,27 @@ describe("isActivePlanSubscription", () => {
 		expect(isActivePlanSubscription({})).toBe(false)
 		expect(isActivePlanSubscription(null)).toBe(false)
 		expect(isActivePlanSubscription(undefined)).toBe(false)
+	})
+})
+
+describe("isPlanSubscription", () => {
+	it("is true for a real base plan whatever its status", () => {
+		expect(isPlanSubscription({ planId: "startup", status: "active" })).toBe(true)
+		expect(isPlanSubscription({ planId: "startup", status: "expired" })).toBe(true)
+		expect(isPlanSubscription({ planId: "startup", status: "canceled" })).toBe(true)
+		expect(isPlanSubscription({ planId: "startup", status: "scheduled" })).toBe(true)
+	})
+
+	it("is false for add-on, auto-enabled, and free plans", () => {
+		expect(isPlanSubscription({ planId: "byoc", status: "expired", addOn: true })).toBe(false)
+		expect(isPlanSubscription({ planId: "starter", status: "expired", autoEnable: true })).toBe(false)
+		expect(isPlanSubscription({ planId: "free", status: "expired" })).toBe(false)
+		expect(isPlanSubscription({ planId: "x", status: "expired", plan: { name: "Free" } })).toBe(false)
+	})
+
+	it("is false for missing input", () => {
+		expect(isPlanSubscription(null)).toBe(false)
+		expect(isPlanSubscription(undefined)).toBe(false)
 	})
 })
 

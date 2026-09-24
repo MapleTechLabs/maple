@@ -1,6 +1,6 @@
 import { Button } from "@maple/ui/components/ui/button"
 import { useNetworkAutoRetry } from "@/hooks/use-network-auto-retry"
-import { formatBackendError } from "@/lib/error-messages"
+import { displayError, isAutomaticRetryError } from "@/lib/error-messages"
 import { cn } from "@maple/ui/lib/utils"
 
 /**
@@ -9,7 +9,7 @@ import { cn } from "@maple/ui/lib/utils"
  * Speaks the product's own language: a "dropped signal" readout — a live
  * signal line that cuts out mid-stream, with a dashed trail where the data
  * should be — the same mini-monitor idiom as the alerts empty state's
- * QuietMonitor. Copy comes from `formatBackendError`, plus a recovery action
+ * QuietMonitor. Copy comes from `displayError`, plus a recovery action
  * when the caller can offer one.
  *
  * - `panel` — centered block for main content areas (tables, detail views,
@@ -32,19 +32,23 @@ interface ErrorStateProps {
 }
 
 export function ErrorState({ error, title, onRetry, variant = "panel", className }: ErrorStateProps) {
-	const formatted = formatBackendError(error)
+	const formatted = displayError(error)
 	const heading = title ?? formatted.title
+	const canRetry =
+		onRetry !== undefined && (formatted.recovery === "retry" || formatted.recovery === "refresh")
 	// Connectivity blips self-heal: probe on a backoff poll + the `online`
 	// event, so recovery doesn't require the user to click or reload.
-	const autoRetrying = formatted.kind === "network" && onRetry !== undefined
-	useNetworkAutoRetry(autoRetrying, onRetry)
-	const description = autoRetrying
-		? `${formatted.description} Retrying automatically…`
-		: formatted.description
+	const autoRetrying = useNetworkAutoRetry(isAutomaticRetryError(formatted) && canRetry, onRetry)
+	const description = autoRetrying ? `${formatted.message} Retrying automatically…` : formatted.message
 
 	if (variant === "inline") {
 		return (
-			<div className={cn("flex flex-col gap-1.5 py-4", className)}>
+			<div
+				className={cn("flex flex-col gap-1.5 py-4", className)}
+				role="alert"
+				aria-live="polite"
+				aria-atomic="true"
+			>
 				<div className="flex items-center gap-2">
 					<span
 						className="flex size-5 shrink-0 items-center justify-center rounded-md bg-destructive/10 text-destructive"
@@ -55,7 +59,7 @@ export function ErrorState({ error, title, onRetry, variant = "panel", className
 					<p className="text-xs font-medium text-foreground">{heading}</p>
 				</div>
 				<p className="text-xs whitespace-pre-wrap text-muted-foreground">{description}</p>
-				{onRetry && (
+				{canRetry && (
 					<Button
 						size="sm"
 						variant="ghost"
@@ -76,13 +80,16 @@ export function ErrorState({ error, title, onRetry, variant = "panel", className
 					"flex flex-wrap items-center gap-x-4 gap-y-3 rounded-lg border border-dashed px-4 py-3.5",
 					className,
 				)}
+				role="alert"
+				aria-live="polite"
+				aria-atomic="true"
 			>
 				<DroppedSignalGlyph compact />
 				<div className="min-w-0 flex-1 basis-56 space-y-0.5">
 					<p className="text-sm font-medium text-foreground">{heading}</p>
 					<p className="line-clamp-2 text-xs text-muted-foreground">{description}</p>
 				</div>
-				{onRetry && (
+				{canRetry && (
 					<Button size="sm" variant="outline" className="shrink-0" onClick={onRetry}>
 						Try again
 					</Button>
@@ -97,6 +104,9 @@ export function ErrorState({ error, title, onRetry, variant = "panel", className
 				"flex h-full flex-col items-center justify-center gap-4 rounded-lg border border-dashed px-6 py-8 text-center",
 				className,
 			)}
+			role="alert"
+			aria-live="polite"
+			aria-atomic="true"
 		>
 			<div className="rounded-lg border bg-card/50 px-3 py-2.5">
 				<DroppedSignalGlyph />
@@ -105,7 +115,7 @@ export function ErrorState({ error, title, onRetry, variant = "panel", className
 				<p className="text-sm font-medium text-foreground">{heading}</p>
 				<p className="text-xs whitespace-pre-wrap text-muted-foreground">{description}</p>
 			</div>
-			{onRetry && (
+			{canRetry && (
 				<Button size="sm" variant="outline" onClick={onRetry}>
 					Try again
 				</Button>

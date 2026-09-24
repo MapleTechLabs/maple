@@ -10,6 +10,7 @@ import {
 	timestamp,
 	uniqueIndex,
 } from "drizzle-orm/pg-core"
+import { sql } from "drizzle-orm"
 import type {
 	AlertDeliveryEventId,
 	AlertDestinationId,
@@ -33,6 +34,18 @@ export const alertDestinations = pgTable(
 		secretTag: text("secret_tag").notNull(),
 		lastTestedAt: timestamp("last_tested_at", { withTimezone: true, mode: "date" }),
 		lastTestError: text("last_test_error"),
+		/**
+		 * Consecutive *terminal* delivery failures (`retry: "never"` — a provider
+		 * 4xx, revoked credentials, a deleted channel). Reset to 0 by any
+		 * successful delivery and by an edit that could have fixed the config.
+		 * A retryable failure (5xx/429/timeout) does not touch it: those are the
+		 * provider having a bad minute, not the destination being broken.
+		 */
+		consecutiveFailures: integer("consecutive_failures").notNull().default(0),
+		lastFailureAt: timestamp("last_failure_at", { withTimezone: true, mode: "date" }),
+		/** Set when the counter crossed the auto-disable threshold. */
+		disabledAt: timestamp("disabled_at", { withTimezone: true, mode: "date" }),
+		disabledReason: text("disabled_reason"),
 		createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull(),
 		updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date" }).notNull(),
 		createdBy: text("created_by").notNull(),
@@ -168,6 +181,11 @@ export const alertIncidents = pgTable(
 		dedupeKey: text("dedupe_key").notNull(),
 		lastDeliveredEventType: text("last_delivered_event_type"),
 		lastNotifiedAt: timestamp("last_notified_at", { withTimezone: true, mode: "date" }),
+		// Set while an open incident is waiting on telemetry: the breach stopped
+		// showing up but the liveness probe could not prove the data was still
+		// flowing. Both are null once the incident is firing or resolved.
+		holdReason: text("hold_reason"),
+		heldSince: timestamp("held_since", { withTimezone: true, mode: "date" }),
 		// Issue-hub link: the error_issues row (kind="alert") this incident
 		// feeds, mirroring anomalyIncidents.errorIssueId.
 		errorIssueId: text("error_issue_id").$type<ErrorIssueId>(),
@@ -180,6 +198,14 @@ export const alertIncidents = pgTable(
 		index("alert_incidents_org_rule_idx").on(table.orgId, table.ruleId),
 		index("alert_incidents_org_issue_idx").on(table.orgId, table.errorIssueId),
 		uniqueIndex("alert_incidents_incident_key_idx").on(table.incidentKey),
+		// One open incident per (rule, group): the scheduler's claim serializes
+		// rule evaluation in the common case, and this makes duplicate opens from
+		// an expired claim impossible instead of merely unlikely. NULL groupKey
+		// rows (pre-scheduler history) escape the constraint; the scheduler always
+		// writes a string key.
+		uniqueIndex("alert_incidents_open_group_idx")
+			.on(table.orgId, table.ruleId, table.groupKey)
+			.where(sql`${table.status} = 'open'`),
 	],
 )
 

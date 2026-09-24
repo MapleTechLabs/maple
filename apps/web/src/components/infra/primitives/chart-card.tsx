@@ -1,5 +1,6 @@
 import type { ReactNode } from "react"
 import { cn } from "@maple/ui/lib/utils"
+import { ChartEmpty } from "@maple/ui/components/charts"
 
 /** Every infra detail chart plots at this height, so a grid of them never staggers. */
 export const CHART_HEIGHT = 200
@@ -17,7 +18,12 @@ export function ChartCard({
 	className,
 }: {
 	title: string
-	legend: ReactNode
+	/**
+	 * Optional: a single-series chart whose series is named by the title has
+	 * nothing to disambiguate, and web analytics' chart is legended by the KPI
+	 * strip above it. Multi-series charts should still pass one.
+	 */
+	legend?: ReactNode
 	/** Scope marker: what this panel is actually filtered to. */
 	scope?: ReactNode
 	children: ReactNode
@@ -37,14 +43,14 @@ export function ChartCard({
 	)
 }
 
-/** Centered message filling a chart's plot area — "no data", "not collected", and friends. */
+/**
+ * Centered message filling an infra card's plot area — "no data", "not
+ * collected", and friends.
+ *
+ * A thin alias over {@link ChartEmpty} that supplies the infra card height, kept
+ * so the many infra call sites don't each repeat `height={CHART_HEIGHT}`. The
+ * look lives in the shared primitive.
+ */
 export function ChartCardMessage({ children }: { children: ReactNode }) {
-	return (
-		<div
-			className="flex items-center justify-center px-3 text-center font-mono text-[11px] text-muted-foreground"
-			style={{ height: CHART_HEIGHT }}
-		>
-			{children}
-		</div>
-	)
+	return <ChartEmpty height={CHART_HEIGHT}>{children}</ChartEmpty>
 }

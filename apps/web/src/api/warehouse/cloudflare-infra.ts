@@ -1,11 +1,9 @@
-// ---------------------------------------------------------------------------
 // Cloudflare infrastructure page data
 //
 // Per-zone HTTP edge analytics (`cloudflare/{zoneName}`) and per-Worker
 // invocation analytics (`cloudflare-worker/{scriptName}`) written by the
 // direct-integration analytics poller. Backs /infra/cloudflare. Rates are
 // derived here as 0–1 ratios (×100 only at display, per repo convention).
-// ---------------------------------------------------------------------------
 
 import { Effect, Schema } from "effect"
 import {
@@ -15,13 +13,13 @@ import {
 	CloudflareInfraZoneDetailRequest,
 	CloudflareInfraZoneDnsRequest,
 	CloudflareInfraZoneFacetsRequest,
-	CloudflareInfraZoneHostsRequest,
 	CloudflareInfraZonesRequest,
 	CloudflareInfraZoneSecurityRequest,
 	CloudflareInfraZoneTimeseriesRequest,
 	CloudflareTopTrafficRequest,
 } from "@maple/domain/http"
 import { MapleApiAtomClient } from "@/lib/services/common/atom-client"
+import { MapleInternalAtomClient } from "@/lib/services/common/internal-atom-client"
 import { WarehouseDateTimeString, decodeInput, runWarehouseQuery } from "@/api/warehouse/effect-utils"
 
 const ZONE_SERVICE_PREFIX = "cloudflare/"
@@ -130,9 +128,6 @@ const cloudflareFilterPayload = (input: CloudflareFilterInput) => {
 	return out
 }
 
-/** Filter keys the responding panel could not apply — drives the zone-wide scope markers. */
-export type CloudflareIgnoredFilters = ReadonlyArray<string>
-
 const TimeRangeInputSchema = Schema.Struct({
 	startTime: WarehouseDateTimeString,
 	endTime: WarehouseDateTimeString,
@@ -157,7 +152,7 @@ export const getCloudflareZones = Effect.fn("QueryEngine.getCloudflareZones")(fu
 	const input = yield* decodeInput(TimeRangeInputSchema, data, "getCloudflareZones")
 	const result = yield* runWarehouseQuery("cloudflareInfraZones", () =>
 		Effect.gen(function* () {
-			const client = yield* MapleApiAtomClient
+			const client = yield* MapleInternalAtomClient
 			return yield* client.queryEngine.cloudflareInfraZones({
 				payload: new CloudflareInfraZonesRequest({
 					startTime: input.startTime,
@@ -203,7 +198,7 @@ export const getCloudflareZoneTimeseries = Effect.fn("QueryEngine.getCloudflareZ
 	const input = yield* decodeInput(TimeseriesInputSchema, data, "getCloudflareZoneTimeseries")
 	const result = yield* runWarehouseQuery("cloudflareInfraZoneTimeseries", () =>
 		Effect.gen(function* () {
-			const client = yield* MapleApiAtomClient
+			const client = yield* MapleInternalAtomClient
 			return yield* client.queryEngine.cloudflareInfraZoneTimeseries({
 				payload: new CloudflareInfraZoneTimeseriesRequest({
 					startTime: input.startTime,
@@ -274,7 +269,7 @@ export const getCloudflareZoneDetail = Effect.fn("QueryEngine.getCloudflareZoneD
 	const input = yield* decodeInput(ZoneDetailInputSchema, data, "getCloudflareZoneDetail")
 	const result = yield* runWarehouseQuery("cloudflareInfraZoneDetail", () =>
 		Effect.gen(function* () {
-			const client = yield* MapleApiAtomClient
+			const client = yield* MapleInternalAtomClient
 			return yield* client.queryEngine.cloudflareInfraZoneDetail({
 				payload: new CloudflareInfraZoneDetailRequest({
 					serviceName: input.serviceName,
@@ -326,7 +321,7 @@ export const getCloudflareWorkers = Effect.fn("QueryEngine.getCloudflareWorkers"
 	const input = yield* decodeInput(TimeRangeInputSchema, data, "getCloudflareWorkers")
 	const result = yield* runWarehouseQuery("cloudflareInfraWorkers", () =>
 		Effect.gen(function* () {
-			const client = yield* MapleApiAtomClient
+			const client = yield* MapleInternalAtomClient
 			return yield* client.queryEngine.cloudflareInfraWorkers({
 				payload: new CloudflareInfraWorkersRequest({
 					startTime: input.startTime,
@@ -356,74 +351,7 @@ export const getCloudflareWorkers = Effect.fn("QueryEngine.getCloudflareWorkers"
 	}
 })
 
-// ---------------------------------------------------------------------------
-// Zone detail: extended sections (hosts, security, DNS) + live top traffic
-// ---------------------------------------------------------------------------
-
-export interface CloudflareZoneHostTotal {
-	/** Hostname (poller-capped top N; the tail shows as "other", pre-host rows as ""). */
-	host: string
-	requests: number
-	errors5xx: number
-	/** 5xx error ratio, 0–1. */
-	errorRate: number
-	cacheHits: number
-	/** Served-by-cache ratio, 0–1. */
-	cacheHitRate: number
-	bytes: number
-}
-
-export interface CloudflareZoneHostBucket {
-	bucket: string
-	host: string
-	requests: number
-}
-
-export const getCloudflareZoneHosts = Effect.fn("QueryEngine.getCloudflareZoneHosts")(function* ({
-	data,
-}: {
-	data: CloudflareZoneDetailInput
-}) {
-	const input = yield* decodeInput(ZoneDetailInputSchema, data, "getCloudflareZoneHosts")
-	const result = yield* runWarehouseQuery("cloudflareInfraZoneHosts", () =>
-		Effect.gen(function* () {
-			const client = yield* MapleApiAtomClient
-			return yield* client.queryEngine.cloudflareInfraZoneHosts({
-				payload: new CloudflareInfraZoneHostsRequest({
-					serviceName: input.serviceName,
-					startTime: input.startTime,
-					endTime: input.endTime,
-					bucketSeconds: input.bucketSeconds,
-					...cloudflareFilterPayload(input),
-				}),
-			})
-		}),
-	)
-	return {
-		totals: result.totals.map((row): CloudflareZoneHostTotal => {
-			const requests = Number(row.requests ?? 0)
-			const errors5xx = Number(row.errors5xx ?? 0)
-			const cacheHits = Number(row.cacheHits ?? 0)
-			return {
-				host: String(row.host ?? ""),
-				requests,
-				errors5xx,
-				errorRate: ratio(errors5xx, requests),
-				cacheHits,
-				cacheHitRate: ratio(cacheHits, requests),
-				bytes: Number(row.bytes ?? 0),
-			}
-		}),
-		buckets: result.buckets.map(
-			(row): CloudflareZoneHostBucket => ({
-				bucket: String(row.bucket ?? ""),
-				host: String(row.host ?? ""),
-				requests: Number(row.requests ?? 0),
-			}),
-		),
-		ignoredFilters: result.ignoredFilters,
-	}
-})
+// Zone detail: security, DNS, and live top traffic
 
 export interface CloudflareZoneFirewallBucket {
 	bucket: string
@@ -448,7 +376,7 @@ export const getCloudflareZoneSecurity = Effect.fn("QueryEngine.getCloudflareZon
 	const input = yield* decodeInput(ZoneDetailInputSchema, data, "getCloudflareZoneSecurity")
 	const result = yield* runWarehouseQuery("cloudflareInfraZoneSecurity", () =>
 		Effect.gen(function* () {
-			const client = yield* MapleApiAtomClient
+			const client = yield* MapleInternalAtomClient
 			return yield* client.queryEngine.cloudflareInfraZoneSecurity({
 				payload: new CloudflareInfraZoneSecurityRequest({
 					serviceName: input.serviceName,
@@ -502,7 +430,7 @@ export const getCloudflareZoneDns = Effect.fn("QueryEngine.getCloudflareZoneDns"
 	const input = yield* decodeInput(ZoneDetailInputSchema, data, "getCloudflareZoneDns")
 	const result = yield* runWarehouseQuery("cloudflareInfraZoneDns", () =>
 		Effect.gen(function* () {
-			const client = yield* MapleApiAtomClient
+			const client = yield* MapleInternalAtomClient
 			return yield* client.queryEngine.cloudflareInfraZoneDns({
 				payload: new CloudflareInfraZoneDnsRequest({
 					serviceName: input.serviceName,
@@ -560,7 +488,7 @@ export const getCloudflarePlatformResources = Effect.fn("QueryEngine.getCloudfla
 		const input = yield* decodeInput(TimeRangeInputSchema, data, "getCloudflarePlatformResources")
 		const result = yield* runWarehouseQuery("cloudflareInfraPlatformResources", () =>
 			Effect.gen(function* () {
-				const client = yield* MapleApiAtomClient
+				const client = yield* MapleInternalAtomClient
 				return yield* client.queryEngine.cloudflareInfraPlatformResources({
 					payload: new CloudflareInfraPlatformResourcesRequest({
 						startTime: input.startTime,
@@ -597,9 +525,7 @@ export const getCloudflarePlatformResources = Effect.fn("QueryEngine.getCloudfla
 	},
 )
 
-// ---------------------------------------------------------------------------
 // Generic zone breakdown + filter facets
-// ---------------------------------------------------------------------------
 
 export const CLOUDFLARE_BREAKDOWN_DIMENSIONS = [
 	"path",
@@ -674,7 +600,7 @@ export const getCloudflareZoneBreakdown = Effect.fn("QueryEngine.getCloudflareZo
 	const input = yield* decodeInput(BreakdownInputSchema, data, "getCloudflareZoneBreakdown")
 	const result = yield* runWarehouseQuery("cloudflareInfraZoneBreakdown", () =>
 		Effect.gen(function* () {
-			const client = yield* MapleApiAtomClient
+			const client = yield* MapleInternalAtomClient
 			return yield* client.queryEngine.cloudflareInfraZoneBreakdown({
 				payload: new CloudflareInfraZoneBreakdownRequest({
 					serviceName: input.serviceName,
@@ -682,7 +608,7 @@ export const getCloudflareZoneBreakdown = Effect.fn("QueryEngine.getCloudflareZo
 					startTime: input.startTime,
 					endTime: input.endTime,
 					bucketSeconds: input.bucketSeconds,
-					...(input.limit === undefined ? {} : { limit: input.limit }),
+					...(!(input.limit === undefined) ? { limit: input.limit } : undefined),
 					...cloudflareFilterPayload(input),
 				}),
 			})
@@ -736,7 +662,7 @@ export const getCloudflareZoneFacets = Effect.fn("QueryEngine.getCloudflareZoneF
 	const input = yield* decodeInput(ZoneFacetsInputSchema, data, "getCloudflareZoneFacets")
 	return yield* runWarehouseQuery("cloudflareInfraZoneFacets", () =>
 		Effect.gen(function* () {
-			const client = yield* MapleApiAtomClient
+			const client = yield* MapleInternalAtomClient
 			return yield* client.queryEngine.cloudflareInfraZoneFacets({
 				payload: new CloudflareInfraZoneFacetsRequest({
 					serviceName: input.serviceName,
@@ -796,14 +722,14 @@ export const getCloudflareTopTraffic = Effect.fn("Integrations.getCloudflareTopT
 					dimension: input.dimension,
 					startTime: input.startTime,
 					endTime: input.endTime,
-					...(input.limit === undefined ? {} : { limit: input.limit }),
+					...(!(input.limit === undefined) ? { limit: input.limit } : undefined),
 					...cloudflareFilterPayload({
 						hosts: input.hosts,
 						countries: input.countries,
 						methods: input.methods,
 						cacheStatuses: input.cacheStatuses,
 					}),
-					...(input.contains ? { contains: input.contains } : {}),
+					...(input.contains ? { contains: input.contains } : undefined),
 				}),
 			})
 		}),

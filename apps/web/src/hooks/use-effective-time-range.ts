@@ -1,30 +1,54 @@
 import { useMemo } from "react"
 import { useOptionalPageRefreshContext } from "@/components/time-range-picker/page-refresh-context"
-import { relativeToAbsolute } from "@/lib/time-utils"
+import { useTimezonePreference } from "@/hooks/use-timezone-preference"
+import { isCalendarAlignedShorthand } from "@maple/query-engine"
+import { relativeToAbsolute, snapRangeForCache } from "@/lib/time-utils"
 
 interface TimeRange {
 	startTime: string
 	endTime: string
 }
 
+export interface ResolveEffectiveTimeRangeOptions {
+	/** The zone day-aligned presets ("today", "7d") start their day in. Defaults to the selected one. */
+	timeZone?: string
+	/**
+	 * Floor the endpoint to the cache-key grid. Default `true`.
+	 *
+	 * Pass `false` only when the user has explicitly asked for fresh data — see
+	 * the note on refresh below.
+	 */
+	snap?: boolean
+}
+
 /**
  * The hook's resolution, without the hook — so a router `loader` can build the
- * exact same query inputs the component will and prefetch against them. Safe to
- * call from both: atom family keys run through `encodeKey`, which snaps
- * timestamps to a 15s grid, so a loader and a component resolving `now`
- * milliseconds apart land on the same cache entry.
+ * exact same query inputs the component will and prefetch against them.
+ *
+ * A preset range has no absolute endpoint in the URL, so it is re-resolved
+ * against `Date.now()` on every fresh mount. `snapRangeForCache` floors that
+ * endpoint to a grid scaled to the window (15s for 1h, 5m for 12h, 15m for 7d),
+ * which is what makes the atom key hold still between navigations — a loader
+ * and a component resolving `now` milliseconds apart land on the same entry,
+ * and so does the same page revisited a minute later.
+ *
+ * An explicit `startTime`/`endTime` pair is an absolute range the user chose;
+ * it is already stable and is returned untouched.
  */
 export function resolveEffectiveTimeRange(
 	startTime?: string,
 	endTime?: string,
 	defaultRange: string = "12h",
+	options?: ResolveEffectiveTimeRangeOptions,
 ): TimeRange {
 	if (startTime && endTime) {
 		return { startTime, endTime }
 	}
-	const resolved = relativeToAbsolute(defaultRange)
-	if (resolved) return resolved
-	return relativeToAbsolute("12h")!
+	const resolved =
+		relativeToAbsolute(defaultRange, options?.timeZone) ?? relativeToAbsolute("12h", options?.timeZone)!
+	return options?.snap === false
+		? resolved
+		: snapRangeForCache(resolved, { anchoredStart: isCalendarAlignedShorthand(defaultRange) })
 }
 
 /**
@@ -43,10 +67,22 @@ export function useEffectiveTimeRange(
 ): TimeRange {
 	const pageRefresh = useOptionalPageRefreshContext()
 	const refreshVersion = pageRefresh?.refreshVersion ?? 0
+	// A day-aligned preset starts at the selected zone's midnight, so a zone
+	// change re-resolves the window.
+	const { effectiveTimezone } = useTimezonePreference()
 
 	return useMemo(
-		() => resolveEffectiveTimeRange(startTime, endTime, defaultRange),
+		// Snap while idle, but not once the user has asked for fresh data. Snapping
+		// a reload would leave the window up to a grid interval in the past, so the
+		// newest rows stay invisible however many times they click it. The bypass
+		// lasts only for this mount — `refreshVersion` is back to 0 on the next
+		// one, so navigation returns to stable, cache-friendly keys.
+		() =>
+			resolveEffectiveTimeRange(startTime, endTime, defaultRange, {
+				snap: refreshVersion === 0,
+				timeZone: effectiveTimezone,
+			}),
 		// eslint-disable-next-line react-hooks/exhaustive-deps
-		[startTime, endTime, defaultRange, refreshVersion],
+		[startTime, endTime, defaultRange, refreshVersion, effectiveTimezone],
 	)
 }

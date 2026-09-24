@@ -24,7 +24,7 @@ describe("Maple.layer (client) — session linking after refactor", () => {
 
 	it("records the trace id and stamps session.id via the published session sink", async () => {
 		const restoreFetch = setupFetch()
-		const g = globalThis as Record<string, any>
+		const g = globalThis as Record<string, unknown>
 		const recordTraceId = vi.fn()
 		g.__MAPLE_BROWSER_SESSION__ = { sessionId: "sess-xyz", recordTraceId }
 		restore = () => {
@@ -38,9 +38,7 @@ describe("Maple.layer (client) — session linking after refactor", () => {
 			ingestKey: "secret",
 		})
 
-		await Effect.runPromise(
-			Effect.sync(() => undefined).pipe(Effect.withSpan("page-load"), Effect.provide(TracerLive)),
-		)
+		await Effect.runPromise(Effect.void.pipe(Effect.withSpan("page-load"), Effect.provide(TracerLive)))
 
 		// The session sink saw this span's trace id — proves the decorator is
 		// still wired into Maple.layer post-extraction.
@@ -50,7 +48,7 @@ describe("Maple.layer (client) — session linking after refactor", () => {
 
 	it("no-ops cleanly when no session sink is published", async () => {
 		const restoreFetch = setupFetch()
-		const g = globalThis as Record<string, any>
+		const g = globalThis as Record<string, unknown>
 		delete g.__MAPLE_BROWSER_SESSION__
 		restore = restoreFetch
 
@@ -60,8 +58,6 @@ describe("Maple.layer (client) — session linking after refactor", () => {
 		})
 
 		// Just has to run without throwing — proves the layer still composes.
-		await Effect.runPromise(
-			Effect.sync(() => undefined).pipe(Effect.withSpan("page-load"), Effect.provide(TracerLive)),
-		)
+		await Effect.runPromise(Effect.void.pipe(Effect.withSpan("page-load"), Effect.provide(TracerLive)))
 	})
 })

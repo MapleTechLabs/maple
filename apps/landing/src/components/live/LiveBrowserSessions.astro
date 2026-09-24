@@ -27,7 +27,7 @@ interface SessionEvent {
 }
 
 const events: SessionEvent[] = [
-	{ t: "0:00", type: "nav", label: "/ — landing", tid: "1a2f" },
+	{ t: "0:00", type: "nav", label: "/ · landing", tid: "1a2f" },
 	{ t: "0:07", type: "click", label: "Pricing → /pricing", tid: "1a2f" },
 	{ t: "0:21", type: "nav", label: "/checkout", tid: "9f3c" },
 	{ t: "0:34", type: "input", label: "card number · masked", tid: "9f3c" },
@@ -38,14 +38,14 @@ const events: SessionEvent[] = [
 	{ t: "1:12", type: "click", label: "Retry payment", tid: "b740" },
 ];
 
-const typeLabel: Record<EventType, string> = {
+const typeLabel: Record<EventType, string>  = {
 	nav: "NAV",
 	click: "CLICK",
 	input: "INPUT",
 	console: "CONSOLE",
 	net: "NET",
 	error: "ERROR",
-};
+} satisfies Record<EventType, string>;
 
 const n = events.length;
 

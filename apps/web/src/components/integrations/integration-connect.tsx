@@ -1,47 +1,45 @@
-import { createContext, use, useEffect, useRef, useState } from "react"
+import { createContext, use, useEffectEvent, useRef, useState } from "react"
 import type React from "react"
-import { Cause, Exit } from "effect"
+import { Exit, Result, Schema } from "effect"
 import {
 	CloudflareStartConnectRequest,
 	GithubStartConnectRequest,
 	HazelStartConnectRequest,
+	IntegrationReturnPath,
 } from "@maple/domain/http"
 import { toastManager } from "@maple/ui/components/ui/toast"
 
 import { trackProduct } from "@/lib/analytics"
 import { useAtomRefresh, useAtomSet } from "@/lib/effect-atom"
-import { MapleApiAtomClient } from "@/lib/services/common/atom-client"
-import { MapleApiV2AtomClient } from "@/lib/services/common/v2-atom-client"
+import { MapleApiAtomClient, retainedQuery } from "@/lib/services/common/atom-client"
+import { MapleApiV2AtomClient, retainedQueryV2 } from "@/lib/services/common/v2-atom-client"
+import { showErrorToast } from "@/lib/error-toast"
+import { useMountEffect } from "@/hooks/use-mount-effect"
 import type { IntegrationId } from "./integration-catalog"
 
-/**
- * The lifted connect flow for an integration drill-in. Provided once per
- * drill-in by `IntegrationConnectProvider` so the header's Connect button and
- * the card's in-card action share one handler and one busy flag.
- */
+// The callback page is served from the API origin and only accepts a
+// dashboard-relative path, so send the path rather than `location.href`.
+const decodeReturnPath = Schema.decodeUnknownResult(IntegrationReturnPath)
+const RETURN_PATH_ROOT = Schema.decodeUnknownSync(IntegrationReturnPath)("/")
+
+export const currentReturnPath = (): IntegrationReturnPath =>
+	Result.getOrElse(
+		decodeReturnPath(`${window.location.pathname}${window.location.search}`),
+		() => RETURN_PATH_ROOT,
+	)
+
 export interface IntegrationConnect {
 	readonly connect: () => void
-	/** True while the start call is in flight — disables every Connect affordance at once. */
 	readonly busy: boolean
-	/**
-	 * True while the OAuth popup is open (GitHub: plus a grace window after it
-	 * closes) — the flow may still complete server-side, so pollers key off this.
-	 */
 	readonly popupActive: boolean
 }
 
 const IntegrationConnectContext = createContext<IntegrationConnect | null>(null)
 
-/** Null for integrations without an OAuth connect flow (prometheus/warpstream). */
 export function useIntegrationConnect(): IntegrationConnect | null {
 	return use(IntegrationConnectContext)
 }
 
-/**
- * Mounts the matching OAuth connect flow for the drill-in. Scrape-based
- * integrations render children bare — `useIntegrationConnect()` stays null,
- * which is also the header's "no Connect button" signal.
- */
 export function IntegrationConnectProvider({
 	integration,
 	children,
@@ -63,70 +61,105 @@ export function IntegrationConnectProvider({
 	}
 }
 
-/** Best-effort human message from a failed mutation Exit (tagged API errors carry one). */
-function extractErrorMessage(result: Exit.Exit<unknown, unknown>): string | null {
-	if (Exit.isSuccess(result)) return null
-	const first = Cause.prettyErrors(result.cause)[0]
-	if (first?.message) return first.message
-	return null
-}
+// Open synchronously to avoid popup blocking; cross-origin closure must be polled.
+const POPUP_TICK_MS = 500
+/** Ticks between `onPoll` calls — 3s, brisk enough to feel immediate without hammering the API. */
+const POLL_EVERY_TICKS = 6
 
 /**
- * Shared popup choreography for the OAuth flows: open the popup synchronously
- * (inside the click) so the browser doesn't block it, point it at the authorize
- * URL once the start call returns, and poll the handle for closure —
- * cross-origin popups fire no "closed" event, and the refresh-on-close covers
- * the case where the success message never arrives (popup closed manually or
- * blocked) so the drill-in can't get stuck on a stale view.
+ * Placeholder for the popup between `window.open` and the authorize redirect. The window has to be
+ * opened inside the click to survive the popup blocker, but the redirect URL only exists once the
+ * start mutation answers — without this the user watches a blank white window for that round trip.
  */
+const interimDocument = (label: string) => `<!doctype html>
+<html lang="en"><head><meta charset="utf-8" /><title>Connecting to ${label}</title>
+<style>
+  body { margin:0; min-height:100vh; display:flex; align-items:center; justify-content:center;
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size:13px;
+    background:#fff; color:#3f3f46; }
+  @media (prefers-color-scheme: dark) { body { background:#1c1917; color:#d6d3d1; } }
+</style></head><body>Connecting to ${label}…</body></html>`
+
 function useOAuthPopupFlow({
 	windowName,
 	windowFeatures,
+	label,
 	start,
-	startErrorMessage,
+	startErrorTitle,
 	onClosed,
+	onPoll,
 	closeGraceMs = 0,
 }: {
 	windowName: string
 	windowFeatures: string
+	/** Provider name, shown in the popup while the authorize URL is being fetched. */
+	label: string
 	start: () => Promise<Exit.Exit<{ readonly redirectUrl: string }, unknown>>
-	startErrorMessage: (result: Exit.Exit<{ readonly redirectUrl: string }, unknown>) => string
+	startErrorTitle: string
 	onClosed: () => void
-	/** Keeps `popupActive` true for this long after close (GitHub's backfill-enqueue gap). */
+	/**
+	 * Called every few seconds while the popup is out. The provider's own page may sever
+	 * `window.opener` (Cross-Origin-Opener-Policy), which drops the callback's postMessage and
+	 * can make the popup read as closed the moment it navigates — so a flow that only reacts to
+	 * the message, or only to the close, has cases where the dashboard never updates at all.
+	 * Polling here is what makes the outcome converge regardless of which signal survived.
+	 */
+	onPoll?: () => void
 	closeGraceMs?: number
 }): IntegrationConnect {
 	const [busy, setBusy] = useState(false)
 	const popupRef = useRef<Window | null>(null)
+	const closeGraceTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+	const tickRef = useRef(0)
 	const [popupOpen, setPopupOpen] = useState(false)
 	const [inCloseGrace, setInCloseGrace] = useState(false)
 
-	// Deliberately a raw interval, not `useIntervalRefresh`: this watches a cross-origin
-	// popup handle rather than refreshing an atom, and the hook's `document.hidden` skip
-	// would be actively wrong here — while the popup holds focus the opener can read as
-	// hidden, so the close would never be detected and the UI would hang in "connecting".
-	useEffect(() => {
-		if (!popupOpen) return
-		const id = setInterval(() => {
-			if (popupRef.current?.closed ?? true) {
-				popupRef.current = null
-				setPopupOpen(false)
-				if (closeGraceMs > 0) setInCloseGrace(true)
-				onClosed()
+	const tick = useEffectEvent(() => {
+		if (onPoll && (popupOpen || inCloseGrace)) {
+			tickRef.current += 1
+			if (tickRef.current % POLL_EVERY_TICKS === 0) onPoll()
+		}
+		if (!popupOpen || !(popupRef.current?.closed ?? true)) return
+		popupRef.current = null
+		setPopupOpen(false)
+		if (closeGraceMs > 0) {
+			setInCloseGrace(true)
+			if (closeGraceTimeoutRef.current !== undefined) {
+				clearTimeout(closeGraceTimeoutRef.current)
 			}
-		}, 500)
-		return () => clearInterval(id)
-	}, [popupOpen, closeGraceMs, onClosed])
+			closeGraceTimeoutRef.current = setTimeout(() => setInCloseGrace(false), closeGraceMs)
+		}
+		onClosed()
+	})
 
-	useEffect(() => {
-		if (!inCloseGrace) return
-		const id = setTimeout(() => setInCloseGrace(false), closeGraceMs)
-		return () => clearTimeout(id)
-	}, [inCloseGrace, closeGraceMs])
+	useMountEffect(() => {
+		// react-doctor-disable-next-line react-doctor/rules-of-hooks -- React Doctor does not recognize useMountEffect as an Effect Event boundary.
+		const poll = () => tick()
+		const id = setInterval(poll, POPUP_TICK_MS)
+		return () => {
+			clearInterval(id)
+			if (closeGraceTimeoutRef.current !== undefined) {
+				clearTimeout(closeGraceTimeoutRef.current)
+			}
+		}
+	})
+
+	/** A blocked popup used to fail silently — the button just did nothing, twice. */
+	const reportBlocked = () =>
+		toastManager.add({
+			title: `Your browser blocked the ${label} window`,
+			description: "Allow pop-ups for this site, then try connecting again.",
+			type: "error",
+		})
 
 	async function connect() {
 		const popup = window.open("", windowName, windowFeatures)
 		popupRef.current = popup
-		if (popup) setPopupOpen(true)
+		if (popup) {
+			setPopupOpen(true)
+			popup.document.write(interimDocument(label))
+			popup.document.close()
+		}
 		setBusy(true)
 		const result = await start()
 		setBusy(false)
@@ -134,83 +167,118 @@ function useOAuthPopupFlow({
 			const url = result.value.redirectUrl
 			if (popup && !popup.closed) {
 				popup.location.href = url
-			} else {
-				const reopened = window.open(url, windowName, windowFeatures)
-				popupRef.current = reopened
-				if (reopened) setPopupOpen(true)
+				return
 			}
+			// The gesture that would let this through is long gone, so this only succeeds when the
+			// first open was closed rather than blocked — say so instead of no-oping.
+			const reopened = window.open(url, windowName, windowFeatures)
+			popupRef.current = reopened
+			if (reopened) setPopupOpen(true)
+			else reportBlocked()
 		} else {
 			popup?.close()
 			popupRef.current = null
 			setPopupOpen(false)
-			toastManager.add({ title: startErrorMessage(result), type: "error" })
+			showErrorToast(result, { title: startErrorTitle })
 		}
 	}
 
 	return { connect: () => void connect(), busy, popupActive: popupOpen || inCloseGrace }
 }
 
-/** The OAuth popup returns to this same SPA and posts a message before closing. */
 function useIntegrationMessage(
 	type: string,
 	onMessage: (data: { status?: string; message?: string }) => void,
 ) {
-	// Ref'd so the listener registers once but always sees the latest handler.
-	const handlerRef = useRef(onMessage)
-	handlerRef.current = onMessage
-	useEffect(() => {
-		function listener(event: MessageEvent) {
-			if (event.data?.type !== type) return
-			// Every provider's popup posts back through here, so the activation event
-			// is recorded once rather than in each card's success branch.
-			if (event.data?.status === "success") {
-				trackProduct("integration_connected", { provider: type.split(":").pop() ?? type })
-			}
-			handlerRef.current(event.data)
+	const handleMessage = useEffectEvent((event: MessageEvent) => {
+		if (event.data?.type !== type) return
+		if (event.data?.status === "success") {
+			trackProduct("integration_connected", { provider: type.split(":").pop() ?? type })
 		}
+		onMessage(event.data)
+	})
+	useMountEffect(() => {
+		// react-doctor-disable-next-line react-doctor/rules-of-hooks -- React Doctor does not recognize useMountEffect as an Effect Event boundary.
+		const listener = (event: MessageEvent) => handleMessage(event)
 		window.addEventListener("message", listener)
 		return () => window.removeEventListener("message", listener)
-	}, [type])
+	})
 }
 
 function CloudflareConnectBoundary({ children }: { children: React.ReactNode }) {
 	const refreshStatus = useAtomRefresh(
-		MapleApiAtomClient.query("integrations", "cloudflareStatus", {
+		retainedQuery("integrations", "cloudflareStatus", {
 			reactivityKeys: ["cloudflareIntegrationStatus"],
 		}),
 	)
 	const refreshUsage = useAtomRefresh(
-		MapleApiAtomClient.query("integrations", "cloudflareUsage", {
+		retainedQuery("integrations", "cloudflareUsage", {
 			reactivityKeys: ["cloudflareIntegrationUsage"],
 		}),
 	)
 	const startConnect = useAtomSet(MapleApiAtomClient.mutation("integrations", "cloudflareStart"), {
 		mode: "promiseExit",
 	})
+	const primeConnection = useAtomSet(MapleApiAtomClient.mutation("integrations", "cloudflarePrime"), {
+		mode: "promiseExit",
+	})
+	// Whether this attempt's prime already ran against a live grant. A prime that lands before the
+	// callback committed reports `connected: false` and leaves the flag down, so the next signal of
+	// the same attempt retries it rather than assuming the work was done.
+	const primedRef = useRef(false)
+
+	/**
+	 * Discover zones and Workers now instead of on the alerting cron's next five-minute tick. The
+	 * API used to do this inside the OAuth callback, which held the popup blank for the whole poll;
+	 * running it from here keeps the popup's job to "authorize and close" and puts the wait under
+	 * the card's own "finding your zones" banner, where it is explained and self-updating.
+	 */
+	const primeIntegration = useEffectEvent(async () => {
+		if (primedRef.current) return
+		primedRef.current = true
+		const result = await primeConnection({
+			reactivityKeys: ["cloudflareIntegrationStatus", "cloudflareIntegrationUsage"],
+		})
+		primedRef.current = Exit.isSuccess(result) && result.value.connected
+		refreshStatus()
+		refreshUsage()
+	})
 
 	useIntegrationMessage("maple:integration:cloudflare", (data) => {
 		if (data.status === "success") {
 			toastManager.add({ title: "Cloudflare account connected", type: "success" })
-			refreshStatus()
-			refreshUsage()
+			void primeIntegration()
 		} else if (data.status === "error") {
 			toastManager.add({ title: data.message ?? "Cloudflare connection failed", type: "error" })
+			// The message is not proof of what was persisted — a replayed callback reports a
+			// consumed state as an error over a grant that landed. Re-read rather than guess.
+			refreshStatus()
 		}
 	})
 
 	const value = useOAuthPopupFlow({
 		windowName: "maple-cloudflare-connect",
 		windowFeatures: "popup,width=520,height=680",
-		start: () =>
-			startConnect({
-				payload: new CloudflareStartConnectRequest({ returnTo: window.location.href }),
+		label: "Cloudflare",
+		start: () => {
+			primedRef.current = false
+			return startConnect({
+				payload: new CloudflareStartConnectRequest({ returnTo: currentReturnPath() }),
 				reactivityKeys: ["cloudflareIntegrationStatus"],
-			}),
-		startErrorMessage: () => "Failed to start Cloudflare connect flow",
+			})
+		},
+		startErrorTitle: "Failed to start Cloudflare connect flow",
 		onClosed: () => {
 			refreshStatus()
 			refreshUsage()
+			// Also prime here: a lost postMessage (or a popup the user closed on the success page)
+			// must not be the difference between an integration that fills in and one that looks
+			// like connecting did nothing. No-ops server-side when no grant landed.
+			void primeIntegration()
 		},
+		onPoll: refreshStatus,
+		// Keep polling past the close so a grant committed at the last moment still lands in view.
+		closeGraceMs: 15_000,
 	})
 
 	return <IntegrationConnectContext value={value}>{children}</IntegrationConnectContext>
@@ -218,7 +286,7 @@ function CloudflareConnectBoundary({ children }: { children: React.ReactNode }) 
 
 function HazelConnectBoundary({ children }: { children: React.ReactNode }) {
 	const refreshStatus = useAtomRefresh(
-		MapleApiAtomClient.query("integrations", "hazelStatus", {
+		retainedQuery("integrations", "hazelStatus", {
 			reactivityKeys: ["hazelIntegrationStatus"],
 		}),
 	)
@@ -237,13 +305,14 @@ function HazelConnectBoundary({ children }: { children: React.ReactNode }) {
 
 	const value = useOAuthPopupFlow({
 		windowName: "maple-hazel-connect",
+		label: "Hazel",
 		windowFeatures: "popup,width=520,height=640",
 		start: () =>
 			startConnect({
-				payload: new HazelStartConnectRequest({ returnTo: window.location.href }),
+				payload: new HazelStartConnectRequest({ returnTo: currentReturnPath() }),
 				reactivityKeys: ["hazelIntegrationStatus"],
 			}),
-		startErrorMessage: () => "Failed to start Hazel connect flow",
+		startErrorTitle: "Failed to start Hazel connect flow",
 		onClosed: refreshStatus,
 	})
 
@@ -252,7 +321,7 @@ function HazelConnectBoundary({ children }: { children: React.ReactNode }) {
 
 function GithubConnectBoundary({ children }: { children: React.ReactNode }) {
 	const refreshStatus = useAtomRefresh(
-		MapleApiAtomClient.query("integrations", "githubStatus", {
+		retainedQuery("integrations", "githubStatus", {
 			reactivityKeys: ["githubIntegrationStatus"],
 		}),
 	)
@@ -271,16 +340,16 @@ function GithubConnectBoundary({ children }: { children: React.ReactNode }) {
 
 	const value = useOAuthPopupFlow({
 		windowName: "maple-github-connect",
+		label: "GitHub",
 		windowFeatures: "popup,width=600,height=720",
 		start: () =>
 			startConnect({
-				payload: new GithubStartConnectRequest({ returnTo: window.location.href }),
+				payload: new GithubStartConnectRequest({ returnTo: currentReturnPath() }),
 				reactivityKeys: ["githubIntegrationStatus"],
 			}),
-		startErrorMessage: () => "Failed to start GitHub connect flow",
+		startErrorTitle: "Failed to start GitHub connect flow",
 		onClosed: refreshStatus,
-		// Repos backfill server-side after install with no push channel — keep the
-		// card's status polling alive through the enqueue gap after the popup closes.
+		// Keep polling through the server-side repository backfill enqueue gap.
 		closeGraceMs: 10_000,
 	})
 
@@ -289,7 +358,7 @@ function GithubConnectBoundary({ children }: { children: React.ReactNode }) {
 
 function PlanetscaleConnectBoundary({ children }: { children: React.ReactNode }) {
 	const refreshStatus = useAtomRefresh(
-		MapleApiV2AtomClient.query("planetscaleIntegration", "status", {
+		retainedQueryV2("planetscaleIntegration", "status", {
 			reactivityKeys: ["planetscaleIntegration"],
 		}),
 	)
@@ -307,16 +376,14 @@ function PlanetscaleConnectBoundary({ children }: { children: React.ReactNode })
 
 	const value = useOAuthPopupFlow({
 		windowName: "maple-planetscale-connect",
+		label: "PlanetScale",
 		windowFeatures: "popup,width=520,height=680",
-		// PlanetScale is the one provider on v2, whose wire format is snake_case —
-		// adapt at the boundary rather than teaching the shared hook two shapes.
 		start: () =>
 			startConnect({
-				payload: { return_to: window.location.href },
+				payload: { return_to: currentReturnPath() },
 				reactivityKeys: ["planetscaleIntegration"],
 			}).then(Exit.map(({ redirect_url }) => ({ redirectUrl: redirect_url }))),
-		startErrorMessage: (result) =>
-			extractErrorMessage(result) ?? "Failed to start PlanetScale connect flow",
+		startErrorTitle: "Failed to start PlanetScale connect flow",
 		onClosed: refreshStatus,
 	})
 

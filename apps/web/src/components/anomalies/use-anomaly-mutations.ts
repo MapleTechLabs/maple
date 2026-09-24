@@ -1,38 +1,27 @@
-import { Cause, Exit } from "effect"
+import { Exit } from "effect"
 import { toastManager } from "@maple/ui/components/ui/toast"
 import { useAtomSet } from "@/lib/effect-atom"
-import { MapleApiAtomClient } from "@/lib/services/common/atom-client"
-import {
-	AnomalyIncidentLinkIssueRequest,
-	type AnomalyIncidentId,
-	type ErrorIssueId,
-} from "@maple/domain/http"
-
-function describeFailure(result: Exit.Exit<unknown, unknown>): string {
-	if (Exit.isSuccess(result)) return ""
-	const errors = Cause.prettyErrors(result.cause)
-	const first = errors[0]
-	if (first?.message) return first.message
-	return Cause.pretty(result.cause).slice(0, 300)
-}
+import { MapleApiV2AtomClient } from "@/lib/services/common/v2-atom-client"
+import { showErrorToast } from "@/lib/error-toast"
+import type { AnomalyIncidentId, ErrorIssueId } from "@maple/domain/http"
 
 export function useAnomalyMutations() {
-	const resolve = useAtomSet(MapleApiAtomClient.mutation("anomalies", "resolveIncident"), {
+	const resolve = useAtomSet(MapleApiV2AtomClient.mutation("anomalies", "resolveIncident"), {
 		mode: "promiseExit",
 	})
-	const setIssue = useAtomSet(MapleApiAtomClient.mutation("anomalies", "setIncidentIssue"), {
+	const setIssue = useAtomSet(MapleApiV2AtomClient.mutation("anomalies", "setIncidentIssue"), {
 		mode: "promiseExit",
 	})
 
 	const resolveIncident = async (incidentId: AnomalyIncidentId) => {
 		const result = await resolve({
-			params: { incidentId },
+			params: { id: incidentId },
 			reactivityKeys: ["anomalyIncidents", `anomalyIncident:${incidentId}`],
 		})
 		if (Exit.isSuccess(result)) {
 			toastManager.add({ title: "Anomaly resolved", type: "success" })
 		} else {
-			toastManager.add({ title: "Resolve failed", description: describeFailure(result), type: "error" })
+			showErrorToast(result, { title: "Resolve failed" })
 		}
 		return result
 	}
@@ -50,8 +39,8 @@ export function useAnomalyMutations() {
 			.filter((id): id is ErrorIssueId => id != null)
 			.flatMap((id) => [`errorIssue:${id}`, `errorIssue:${id}:anomalies`, `errorIssue:${id}:events`])
 		const result = await setIssue({
-			params: { incidentId },
-			payload: new AnomalyIncidentLinkIssueRequest({ issueId }),
+			params: { id: incidentId },
+			payload: { issue_id: issueId },
 			reactivityKeys: ["anomalyIncidents", `anomalyIncident:${incidentId}`, ...issueKeys],
 		})
 		if (Exit.isSuccess(result)) {
@@ -60,11 +49,7 @@ export function useAnomalyMutations() {
 				type: "success",
 			})
 		} else {
-			toastManager.add({
-				title: issueId === null ? "Unlink failed" : "Link failed",
-				description: describeFailure(result),
-				type: "error",
-			})
+			showErrorToast(result, { title: issueId === null ? "Unlink failed" : "Link failed" })
 		}
 		return result
 	}

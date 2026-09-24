@@ -1,19 +1,24 @@
 import type { Effect, Option } from "effect"
+import type { ClickHouseStatement } from "@maple-dev/effect-clickhouse/sql"
 import type { OrgId, UserId } from "@maple/domain"
 import type {
 	RawSqlValidationError,
+	ManagedWarehouseError,
+	WarehouseConfigError,
 	WarehouseQueryRequest,
 	WarehouseQueryResponse,
+	WarehouseSettingsRouteError,
+	WarehouseTokenRouteError,
 	WarehouseValidationError,
-	WarehouseSchemaDriftError,
 } from "@maple/domain/http"
 import type { ResolvedWarehouseConfig } from "./backend"
-import type { CompiledQuery } from "../ch"
+import type { CompiledQuery, CompiledQueryInput, QueryBuilderError } from "../ch"
 import type { WarehouseCapabilities } from "../capabilities"
-import type { WarehouseExecutorShape } from "../observability"
+import type { WarehouseExecutorApi } from "../observability"
 import type { SqlQueryOptions } from "../profiles"
-import type { WarehouseSqlError } from "./errors"
-import type { WarehouseResponseLimitError } from "./response-limits"
+import type { WarehouseClassifiedError, WarehouseCompiledQueryError, WarehouseExecutionError } from "./errors"
+import type { WarehouseDriverError } from "./driver-error"
+import type { WarehouseResponseLimitError, WarehouseResponseLimits } from "./response-limits"
 
 /** The minimal tenant surface the executor reads (org scope + identity for spans). */
 export interface ExecutionTenant {
@@ -26,18 +31,39 @@ export type { SqlQueryOptions } from "../profiles"
 
 export type { ResolvedWarehouseConfig } from "./backend"
 
-/** Minimal client interface — raw SQL execution plus row inserts. */
+/**
+ * An ingest-routed compiled query skips tenant route resolution entirely, so
+ * its type excludes the configuration failures that only that lookup can emit.
+ */
+export type CompiledQueryError<Routing extends string | undefined> = Routing extends "ingest"
+	? ManagedWarehouseError
+	: WarehouseCompiledQueryError
+
+/**
+ * Lazy, interruptible driver effects — statement execution plus row inserts.
+ * Adapters own Promise conversion and forward interruption to their transport.
+ *
+ * The executor hands over a parsed `ClickHouseStatement` with its terminal
+ * clauses already settled for this backend's dialect: `SETTINGS` applied, and
+ * `format` present exactly when the dialect declares the wire format in the
+ * statement. A driver renders it (`statement.text`) and sends it — deciding
+ * for itself which clauses to add or strip is what let the executor and the
+ * drivers disagree.
+ */
 export interface WarehouseSqlClient {
 	readonly sql: (
-		sql: string,
+		statement: ClickHouseStatement,
 		options?: {
-			readonly responseLimits?: {
-				readonly maxRows: number
-				readonly maxBytes: number
-			}
+			readonly responseLimits?: WarehouseResponseLimits
 		},
-	) => Promise<{ data: ReadonlyArray<Record<string, unknown>> }>
-	readonly insert: (datasource: string, rows: ReadonlyArray<unknown>) => Promise<void>
+	) => Effect.Effect<
+		{ data: ReadonlyArray<Record<string, unknown>> },
+		WarehouseDriverError | WarehouseResponseLimitError
+	>
+	readonly insert: (
+		datasource: string,
+		rows: ReadonlyArray<unknown>,
+	) => Effect.Effect<void, WarehouseDriverError>
 }
 
 /**
@@ -50,6 +76,12 @@ export interface WarehouseSqlClient {
  *              in the managed write pipeline (e.g. `alert_checks`)
  */
 export type RoutePurpose = "read" | "raw" | "ingest"
+
+export type WarehouseTrustedRouteError = WarehouseSettingsRouteError
+export type WarehouseRawRouteError =
+	| WarehouseSettingsRouteError
+	| WarehouseTokenRouteError
+	| WarehouseConfigError
 
 /** The host's routing decision: which backend, with which credentials, and why. */
 export interface WarehouseRoute {
@@ -66,6 +98,30 @@ export interface WarehouseRoute {
 	readonly clientCacheKey: string
 }
 
+export interface WarehouseRouteResolver {
+	(
+		tenant: ExecutionTenant,
+		purpose: "read",
+		label: string,
+	): Effect.Effect<WarehouseRoute, WarehouseTrustedRouteError>
+	(tenant: ExecutionTenant, purpose: "ingest", label: string): Effect.Effect<WarehouseRoute>
+	(
+		tenant: ExecutionTenant,
+		purpose: "read" | "ingest",
+		label: string,
+	): Effect.Effect<WarehouseRoute, WarehouseTrustedRouteError>
+	(
+		tenant: ExecutionTenant,
+		purpose: "raw",
+		label: string,
+	): Effect.Effect<WarehouseRoute, WarehouseRawRouteError>
+	(
+		tenant: ExecutionTenant,
+		purpose: RoutePurpose,
+		label: string,
+	): Effect.Effect<WarehouseRoute, WarehouseRawRouteError>
+}
+
 /**
  * The injected dependencies of the warehouse executor. The host app provides
  * the driver construction (`createClient`) and the routing decision
@@ -74,12 +130,13 @@ export interface WarehouseRoute {
  * client cache, OrgId scoping, span instrumentation — lives in this package.
  */
 export interface WarehouseExecutorDeps {
-	readonly createClient: (config: ResolvedWarehouseConfig) => WarehouseSqlClient
-	readonly resolveRoute: (
-		tenant: ExecutionTenant,
-		purpose: RoutePurpose,
-		label: string,
-	) => Effect.Effect<WarehouseRoute, WarehouseSqlError>
+	/**
+	 * Build a driver for a resolved backend. Construction is an Effect: a driver
+	 * validates its endpoint and captures its HTTP client, and a refusal surfaces
+	 * as a `config`-reason driver error rather than a per-query surprise.
+	 */
+	readonly createClient: (config: ResolvedWarehouseConfig) => Effect.Effect<WarehouseSqlClient, WarehouseDriverError>
+	readonly resolveRoute: WarehouseRouteResolver
 	/**
 	 * Drop whatever the host caches to answer `resolveRoute` for this tenant, and
 	 * report whether that actually invalidated a per-org routing override.
@@ -102,15 +159,45 @@ export interface WarehouseExecutorDeps {
 	readonly invalidateRoute?: (tenant: ExecutionTenant) => Effect.Effect<boolean>
 }
 
-export interface WarehouseQueryServiceShape {
+/**
+ * Compile a query once the tenant's live capabilities are known.
+ *
+ * Effect-returning because `CH.compile` is: a missing param or an unencodable
+ * value is a typed failure now rather than a thrown one. See
+ * {@link CompiledQueryInput} for what this port does with that failure.
+ */
+export type CapabilityCompile<T> = (
+	capabilities: WarehouseCapabilities,
+) => Effect.Effect<CompiledQuery<T>, QueryBuilderError>
+
+/**
+ * What the execution methods accept in place of a compiled query — re-exported
+ * from the builder because this port is where the choice is made.
+ *
+ * `CH.compile` returns an `Effect`, and this port takes it unrun: one place
+ * decides what a compile failure means, rather than every call site deciding
+ * again. The decision is `orDie`. A query reaching this port is built from
+ * Maple's own query definitions, so a `QueryBuilderError` here says a
+ * definition and its params disagree — a bug, not a condition a route can
+ * report its way out of.
+ *
+ * A caller whose params carry values off the wire is the exception, and owes
+ * that failure an answer *before* it gets here: constrain the value at the HTTP
+ * boundary so the compile cannot fail, or `Effect.mapError` it into a domain
+ * failure the route already returns. What it must not do is hand the raw
+ * `Effect` over and let this seam turn a bad request into a 500.
+ */
+export type { CompiledQueryInput } from "../ch"
+
+export interface WarehouseQueryServiceApi {
 	readonly query: (
 		tenant: ExecutionTenant,
 		payload: WarehouseQueryRequest,
 		options?: SqlQueryOptions,
-	) => Effect.Effect<WarehouseQueryResponse, WarehouseSqlError | WarehouseValidationError>
+	) => Effect.Effect<WarehouseQueryResponse, WarehouseCompiledQueryError | WarehouseValidationError>
 	/**
 	 * Execute a query that deliberately spans every tenant. The compiled query
-	 * must declare `.crossOrg()`, and `justification` is recorded on the span so
+	 * must declare `.crossTenant()`, and `justification` is recorded on the span so
 	 * cross-tenant reads are auditable from the traces.
 	 *
 	 * There is deliberately no general `sqlQuery(tenant, sql)` on this shape:
@@ -119,23 +206,31 @@ export interface WarehouseQueryServiceShape {
 	 */
 	readonly crossOrgQuery: <T>(
 		tenant: ExecutionTenant,
-		compiled: CompiledQuery<T>,
+		compiled: CompiledQueryInput<T>,
 		options: SqlQueryOptions & { readonly justification: string },
-	) => Effect.Effect<
-		ReadonlyArray<T>,
-		WarehouseSqlError | WarehouseValidationError | WarehouseSchemaDriftError
-	>
+	) => Effect.Effect<ReadonlyArray<T>, WarehouseCompiledQueryError>
 	/** Execute validated user-authored SQL with tenant-scoped credentials and hard response limits. */
 	readonly rawSqlQuery: (
 		tenant: ExecutionTenant,
 		sql: string,
 		options?: Pick<SqlQueryOptions, "profile" | "context">,
-	) => Effect.Effect<ReadonlyArray<Record<string, unknown>>, WarehouseSqlError | RawSqlValidationError>
-	readonly compiledQuery: <T>(
-		tenant: ExecutionTenant,
-		compiled: CompiledQuery<T> | ((capabilities: WarehouseCapabilities) => CompiledQuery<T>),
-		options?: SqlQueryOptions,
-	) => Effect.Effect<ReadonlyArray<T>, WarehouseSqlError | WarehouseValidationError>
+	) => Effect.Effect<
+		ReadonlyArray<Record<string, unknown>>,
+		WarehouseExecutionError | RawSqlValidationError
+	>
+
+	readonly compiledQuery: {
+		<T, Routing extends string | undefined>(
+			tenant: ExecutionTenant,
+			compiled: CompiledQueryInput<T, Routing>,
+			options?: SqlQueryOptions,
+		): Effect.Effect<ReadonlyArray<T>, CompiledQueryError<Routing>>
+		<T>(
+			tenant: ExecutionTenant,
+			compiled: CapabilityCompile<T>,
+			options?: SqlQueryOptions,
+		): Effect.Effect<ReadonlyArray<T>, WarehouseCompiledQueryError>
+	}
 	/**
 	 * `compiledQuery` with an explicit ceiling on how much of the response we are
 	 * willing to materialize, failing with `WarehouseResponseLimitError` past it.
@@ -146,24 +241,21 @@ export interface WarehouseQueryServiceShape {
 	 */
 	readonly compiledQueryBounded: <T>(
 		tenant: ExecutionTenant,
-		compiled: CompiledQuery<T>,
+		compiled: CompiledQueryInput<T>,
 		options: SqlQueryOptions & {
-			readonly responseLimits: { readonly maxRows: number; readonly maxBytes: number }
+			readonly responseLimits: WarehouseResponseLimits
 		},
-	) => Effect.Effect<
-		ReadonlyArray<T>,
-		WarehouseSqlError | WarehouseValidationError | WarehouseResponseLimitError
-	>
+	) => Effect.Effect<ReadonlyArray<T>, WarehouseCompiledQueryError | WarehouseResponseLimitError>
 	readonly compiledQueryWithCapabilities: <T>(
 		tenant: ExecutionTenant,
-		compile: (capabilities: WarehouseCapabilities) => CompiledQuery<T>,
+		compile: CapabilityCompile<T>,
 		options?: SqlQueryOptions,
-	) => Effect.Effect<ReadonlyArray<T>, WarehouseSqlError | WarehouseValidationError>
+	) => Effect.Effect<ReadonlyArray<T>, WarehouseCompiledQueryError>
 	readonly compiledQueryFirst: <T>(
 		tenant: ExecutionTenant,
-		compiled: CompiledQuery<T> | ((capabilities: WarehouseCapabilities) => CompiledQuery<T>),
+		compiled: CompiledQueryInput<T> | CapabilityCompile<T>,
 		options?: SqlQueryOptions,
-	) => Effect.Effect<Option.Option<T>, WarehouseSqlError | WarehouseValidationError>
+	) => Effect.Effect<Option.Option<T>, WarehouseCompiledQueryError>
 	/**
 	 * Resolve this tenant's route and capabilities once, so a fan-out that
 	 * follows finds them memoized instead of each branch deriving them itself.
@@ -186,10 +278,10 @@ export interface WarehouseQueryServiceShape {
 		tenant: ExecutionTenant,
 		datasource: string,
 		rows: ReadonlyArray<T>,
-	) => Effect.Effect<void, WarehouseSqlError>
+	) => Effect.Effect<void, WarehouseClassifiedError>
 	/**
 	 * Present this service as the package-level `WarehouseExecutor` for a given
 	 * tenant — the single managed-warehouse implementation of that interface.
 	 */
-	readonly asExecutor: (tenant: ExecutionTenant) => WarehouseExecutorShape
+	readonly asExecutor: (tenant: ExecutionTenant) => WarehouseExecutorApi
 }

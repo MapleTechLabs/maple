@@ -1,4 +1,4 @@
-// ---------------------------------------------------------------------------
+// BOUNDARY: This module intentionally carries opaque values; callers decode them before domain use.
 // Dashboard variable interpolation
 //
 // Resolves `$name` / `${name}` references inside widget data-source params
@@ -15,9 +15,8 @@
 //   - `whereClause`-like values are handled clause-by-clause: a clause that
 //     references an "All" selection is dropped entirely (All = don't filter).
 //   - everything else gets plain text substitution.
-// ---------------------------------------------------------------------------
 
-import { escapeClickHouseString } from "../sql"
+import { escapeClickHouseString } from "@maple-dev/effect-clickhouse/sql"
 import { splitWhereClause } from "@maple/domain/where-clause"
 
 /** Sentinel for the "All" selection, both in URLs and resolved values. */

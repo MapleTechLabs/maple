@@ -1,0 +1,611 @@
+// SAFETY-FILE: the SSE body here is a test fixture, parsed by the provider under test.
+/**
+ * What the model-call span carries, and who puts it there.
+ *
+ * Maple used to tee every streamed model response through its own `HttpClient` to recover
+ * `gen_ai.response.id` and `gen_ai.response.model`, because the previous provider's protocol
+ * dropped them. Both are the identity a broadcasting gateway's own trace of the call shares with
+ * ours, and what Agent Sessions collapses the two observations on; without them a call through
+ * such a gateway counts twice.
+ *
+ * The Effect AI providers emit a `response-metadata` part and annotate both onto the span they
+ * already open, so the tee was doing the work twice. This is the test that says so — delete it and
+ * the tee has to come back.
+ */
+import { assert, describe, it } from "@effect/vitest"
+import { MAPLE_NATIVE_SESSION_ID_ATTR, MAPLE_NATIVE_TURN_ID_ATTR } from "@maple/domain/gen-ai"
+import { Cause, Effect, Exit, Layer, Option, Schema, Stream } from "effect"
+import type { Tracer } from "effect"
+import { AiError, LanguageModel, Tool, Toolkit } from "effect/unstable/ai"
+import type { Response as AiResponse } from "effect/unstable/ai"
+import { FetchHttpClient } from "effect/unstable/http"
+import { instrumentLanguageModel } from "./genai-spans"
+import { layerLlm, resolveTriageModel } from "./Llm"
+
+/** Two frames, the first naming the response and the model that served it. */
+const SSE = [
+	": OPENROUTER PROCESSING",
+	"",
+	'data: {"id":"gen-1","object":"chat.completion.chunk","created":1730000000,"model":"z-ai/glm-5.3-flash","choices":[{"index":0,"delta":{"role":"assistant","content":"Hi"},"finish_reason":null}]}',
+	"",
+	'data: {"id":"gen-1","object":"chat.completion.chunk","created":1730000000,"model":"z-ai/glm-5.3-flash","choices":[{"index":0,"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":4,"completion_tokens":1,"total_tokens":5}}',
+	"",
+	"data: [DONE]",
+	"",
+].join("\n")
+
+const ENV = { OPENROUTER_API_KEY: "test-key" }
+
+const sseFetch: typeof globalThis.fetch = () =>
+	Promise.resolve(new Response(SSE, { status: 200, headers: { "content-type": "text/event-stream" } }))
+
+/** Every span the run opened, in creation order. */
+const recordingTracer = () => {
+	/** `endedWith` is the attributes as the span ended — what an exporter would actually ship. */
+	const spans: Array<Tracer.Span & { readonly endedWith: ReadonlyMap<string, unknown> }> = []
+	let next = 0
+	const tracer: Tracer.Tracer = {
+		span: (options) => {
+			const attributes = new Map<string, unknown>()
+			const endedWith = new Map<string, unknown>()
+			next += 1
+			const span: Tracer.Span = {
+				_tag: "Span",
+				name: options.name,
+				spanId: `span-${next}`,
+				traceId: "trace-1",
+				parent: options.parent,
+				annotations: options.annotations,
+				status: { _tag: "Started", startTime: options.startTime },
+				attributes,
+				links: options.links,
+				sampled: options.sampled,
+				kind: options.kind,
+				end: (_endTime: bigint, _exit: Exit.Exit<unknown, unknown>) => {
+					for (const [key, value] of attributes) endedWith.set(key, value)
+				},
+				attribute: (key, value) => {
+					attributes.set(key, value)
+				},
+				event: () => {},
+				addLinks: () => {},
+			}
+			spans.push(Object.assign(span, { endedWith }))
+			return span
+		},
+	}
+	return { spans, tracer }
+}
+
+/** One OpenRouter stream frame. */
+const chunk = (delta: Record<string, unknown>, finishReason: string | null) => ({
+	id: "gen-3",
+	object: "chat.completion.chunk",
+	created: 1730000000,
+	model: "z-ai/glm-5.3-flash",
+	choices: [{ index: 0, delta, finish_reason: finishReason }],
+})
+
+/**
+ * One call answered by `frames`: how it ended, the types of the parts the consumer was handed, and
+ * the model-call span's attributes as it ended.
+ */
+const runModelCall = (
+	request: Parameters<typeof LanguageModel.streamText>[0],
+	frames: ReadonlyArray<unknown>,
+	env: Parameters<typeof resolveTriageModel>[0] = ENV,
+	status = 200,
+) =>
+	Effect.gen(function* () {
+		const recorder = recordingTracer()
+		const body = `${frames.map((frame) => `data: ${JSON.stringify(frame)}\n\n`).join("")}data: [DONE]\n\n`
+		const delivered: Array<string> = []
+
+		const exit = yield* LanguageModel.streamText(request).pipe(
+			Stream.tap((part) => Effect.sync(() => void delivered.push(part.type))),
+			Stream.runDrain,
+			Effect.exit,
+			Effect.provide(Layer.provideMerge(resolveTriageModel(env).layer, layerLlm(env))),
+			Effect.provideService(FetchHttpClient.Fetch, () =>
+				Promise.resolve(
+					new Response(body, { status, headers: { "content-type": "text/event-stream" } }),
+				),
+			),
+			Effect.withTracer(recorder.tracer),
+		)
+
+		const span = recorder.spans.find(
+			(candidate) => candidate.attributes.get("gen_ai.operation.name") === "chat",
+		)
+		assert.isDefined(span, "no model-call span was opened")
+		return { exit, delivered, attributes: span?.endedWith ?? new Map<string, unknown>() }
+	})
+
+/** The model-call span's attributes as it ended, for one call answered by `frames`. */
+const endedModelCall = (
+	prompt: Parameters<typeof LanguageModel.streamText>[0]["prompt"],
+	frames: ReadonlyArray<unknown>,
+	env: Parameters<typeof resolveTriageModel>[0] = ENV,
+	status = 200,
+) => Effect.map(runModelCall({ prompt }, frames, env, status), ({ attributes }) => attributes)
+
+/** The one tool the rejection fixtures declare: a parameter the model can get wrong. */
+const submitPlan = Tool.make("submit_plan", { parameters: Schema.Struct({ limit: Schema.Finite }) })
+
+/** The chunk carrying a tool call whose parameter the tool cannot take. */
+const rejectedToolCallChunk = chunk(
+	{
+		role: "assistant",
+		tool_calls: [
+			{
+				index: 0,
+				id: "call_1",
+				type: "function",
+				function: { name: "submit_plan", arguments: '{"limit":"ten"}' },
+			},
+		],
+	},
+	null,
+)
+
+/**
+ * The rejected tool call, then the terminal chunk with the usage — the order every provider
+ * streams them in, so the rejection lands before the usage does.
+ */
+const rejectedToolCallFrames = (usage: Record<string, unknown>) => [
+	rejectedToolCallChunk,
+	{ ...chunk({}, "tool_calls"), usage },
+]
+
+/** The typed failure a call ended with. Fails the test when it succeeded, died, or was interrupted. */
+const aiFailure = (exit: Exit.Exit<unknown, unknown>): AiError.AiError => {
+	assert.isTrue(Exit.isFailure(exit), "the call did not fail")
+	if (!Exit.isFailure(exit)) throw new Error("unreachable")
+	assert.isFalse(Cause.hasDies(exit.cause), `the call died: ${Cause.pretty(exit.cause)}`)
+	const error = Option.getOrUndefined(Cause.findErrorOption(exit.cause))
+	assert.isTrue(AiError.isAiError(error), `not an AiError: ${Cause.pretty(exit.cause)}`)
+	if (!AiError.isAiError(error)) throw new Error("unreachable")
+	return error
+}
+
+/**
+ * One `submit_plan` call answered by a bare provider streaming `parts` verbatim — how it ended, and
+ * the attributes of Effect AI's own span (a bare provider stamps no `gen_ai.operation.name`).
+ */
+const runFakeProviderCall = (parts: Stream.Stream<AiResponse.StreamPartEncoded>) =>
+	Effect.gen(function* () {
+		const recorder = recordingTracer()
+		const provider = LanguageModel.make({
+			generateText: () => Effect.succeed([]),
+			streamText: () => parts,
+		})
+		const model = Layer.effect(
+			LanguageModel.LanguageModel,
+			instrumentLanguageModel(provider, { providerName: "fake", sessionAttributes: {} }),
+		)
+
+		const exit = yield* LanguageModel.streamText({
+			prompt: "hi",
+			toolkit: Toolkit.make(submitPlan),
+			disableToolCallResolution: true,
+		}).pipe(Stream.runDrain, Effect.exit, Effect.provide(model), Effect.withTracer(recorder.tracer))
+
+		const attributes = recorder.spans.find((span) => span.name === "LanguageModel.streamText")?.endedWith
+		assert.isDefined(attributes, "no model-call span was opened")
+		return { exit, attributes: attributes ?? new Map<string, unknown>() }
+	})
+
+describe("the model-call span", () => {
+	it.live("carries the served response id and model, from the provider itself", () =>
+		Effect.gen(function* () {
+			const recorder = recordingTracer()
+			const model = resolveTriageModel(ENV)
+
+			yield* LanguageModel.streamText({ prompt: "hi" }).pipe(
+				Stream.runDrain,
+				Effect.ignore,
+				// The model layer needs the client, so they are provided as one stack rather than
+				// chained. `Fetch` is a context reference read per request, not a layer requirement, so
+				// it has to reach the fiber making the call.
+				Effect.provide(Layer.provideMerge(model.layer, layerLlm(ENV))),
+				Effect.provideService(FetchHttpClient.Fetch, sseFetch),
+				Effect.withTracer(recorder.tracer),
+			)
+
+			const modelCall = recorder.spans.find(
+				(span) => span.attributes.get("gen_ai.operation.name") === "chat",
+			)
+			assert.isDefined(modelCall, "no model-call span was opened")
+			assert.strictEqual(modelCall?.attributes.get("gen_ai.response.id"), "gen-1")
+			assert.strictEqual(modelCall?.attributes.get("gen_ai.response.model"), "z-ai/glm-5.3-flash")
+		}),
+	)
+
+	/**
+	 * The regression that fragmented every chat into one agent session per turn: Effect AI's span
+	 * carries no session key, and the gateway files a sessionless trace as a session of its own.
+	 */
+	it.live("carries the agent session, turn and workflow, before the span ends", () =>
+		Effect.gen(function* () {
+			const recorder = recordingTracer()
+			const model = resolveTriageModel(ENV, {
+				surface: "chat",
+				orgId: "org_1",
+				sessionId: "org_1:inv-1",
+				turnId: "inv_1_h1",
+				workflowName: "investigation",
+			})
+
+			yield* LanguageModel.streamText({ prompt: "hi" }).pipe(
+				Stream.runDrain,
+				Effect.ignore,
+				Effect.provide(Layer.provideMerge(model.layer, layerLlm(ENV))),
+				Effect.provideService(FetchHttpClient.Fetch, sseFetch),
+				Effect.withTracer(recorder.tracer),
+			)
+
+			const modelCall = recorder.spans.find(
+				(span) => span.attributes.get("gen_ai.operation.name") === "chat",
+			)
+			assert.isDefined(modelCall, "no model-call span was opened")
+			assert.strictEqual(modelCall?.endedWith.get(MAPLE_NATIVE_SESSION_ID_ATTR), "org_1:inv-1")
+			assert.strictEqual(modelCall?.endedWith.get(MAPLE_NATIVE_TURN_ID_ATTR), "inv_1_h1")
+			assert.strictEqual(modelCall?.endedWith.get("gen_ai.workflow.name"), "investigation")
+			// Only the model call: the gateway reads the key alone as an agent span.
+			const stamped = recorder.spans.filter((span) => span.attributes.has(MAPLE_NATIVE_SESSION_ID_ATTR))
+			assert.deepStrictEqual(stamped, [modelCall])
+		}),
+	)
+
+	/**
+	 * The regression from the move onto Effect AI: its providers annotate the model and two token
+	 * totals, and every investigation span lost its messages, cache and reasoning tokens and cost.
+	 */
+	it.live("carries the conversation, the usage buckets, the cost and the timings", () =>
+		Effect.gen(function* () {
+			const recorder = recordingTracer()
+			const env = { ...ENV, MAPLE_TRIAGE_REASONING_EFFORT: "high" }
+			const sse = [
+				'data: {"id":"gen-2","object":"chat.completion.chunk","created":1730000000,"model":"z-ai/glm-5.3-flash","choices":[{"index":0,"delta":{"role":"assistant","content":"Look"},"finish_reason":null}]}',
+				"",
+				'data: {"id":"gen-2","object":"chat.completion.chunk","created":1730000000,"model":"z-ai/glm-5.3-flash","choices":[{"index":0,"delta":{"content":"ing"},"finish_reason":null}]}',
+				"",
+				'data: {"id":"gen-2","object":"chat.completion.chunk","created":1730000000,"model":"z-ai/glm-5.3-flash","choices":[{"index":0,"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":40,"completion_tokens":12,"total_tokens":52,"cost":0.0042,"prompt_tokens_details":{"cached_tokens":30},"completion_tokens_details":{"reasoning_tokens":5}}}',
+				"",
+				"data: [DONE]",
+				"",
+			].join("\n")
+
+			yield* LanguageModel.streamText({
+				prompt: [
+					{ role: "system", content: "Be brief." },
+					{ role: "user", content: [{ type: "text", text: "hi" }] },
+				],
+			}).pipe(
+				Stream.runDrain,
+				Effect.ignore,
+				Effect.provide(Layer.provideMerge(resolveTriageModel(env).layer, layerLlm(env))),
+				Effect.provideService(FetchHttpClient.Fetch, () =>
+					Promise.resolve(
+						new Response(sse, { status: 200, headers: { "content-type": "text/event-stream" } }),
+					),
+				),
+				Effect.withTracer(recorder.tracer),
+			)
+
+			const attributes = recorder.spans.find(
+				(span) => span.attributes.get("gen_ai.operation.name") === "chat",
+			)?.endedWith
+			assert.isDefined(attributes, "no model-call span was opened")
+			const json = (key: string) => JSON.parse(String(attributes?.get(key)))
+
+			assert.strictEqual(attributes?.get("gen_ai.provider.name"), "openrouter")
+			assert.strictEqual(attributes?.get("gen_ai.request.stream"), true)
+			assert.strictEqual(attributes?.get("gen_ai.request.reasoning.level"), "high")
+			assert.strictEqual(attributes?.get("gen_ai.output.type"), "text")
+			assert.deepStrictEqual(json("gen_ai.system_instructions"), [
+				{ type: "text", content: "Be brief." },
+			])
+			assert.deepStrictEqual(json("gen_ai.input.messages"), [
+				{ role: "user", parts: [{ type: "text", content: "hi" }] },
+			])
+			assert.deepStrictEqual(json("gen_ai.output.messages"), [
+				{ role: "assistant", parts: [{ type: "text", content: "Looking" }], finish_reason: "stop" },
+			])
+			assert.deepStrictEqual(attributes?.get("gen_ai.response.finish_reasons"), ["stop"])
+			assert.strictEqual(attributes?.get("gen_ai.usage.input_tokens"), 40)
+			assert.strictEqual(attributes?.get("gen_ai.usage.output_tokens"), 12)
+			assert.strictEqual(attributes?.get("gen_ai.usage.cache_read.input_tokens"), 30)
+			assert.strictEqual(attributes?.get("gen_ai.usage.reasoning.output_tokens"), 5)
+			assert.strictEqual(attributes?.get("gen_ai.usage.cost"), 0.0042)
+			const firstChunkMs = Math.round(
+				Number(attributes?.get("gen_ai.response.time_to_first_chunk")) * 1000,
+			)
+			assert.isAtLeast(firstChunkMs, 0)
+			assert.isAtMost(firstChunkMs, Number(attributes?.get("maple_ai.model_duration_ms")))
+			// The finish part passed the tap, so the call is timed by it and is not a rejected one.
+			assert.isFalse(attributes?.has("error.type"))
+			assert.isFalse(attributes?.has("gen_ai.response.status"))
+		}),
+	)
+
+	/**
+	 * Guards the `effect` patch hunk in `patches/` that defers a rejected chunk's failure to the end
+	 * of the provider stream.
+	 *
+	 * The provider emits a `tool-call` part the moment its arguments parse, and the `finish` part —
+	 * the one carrying the usage — from the terminal chunk after it. Effect AI decodes each chunk
+	 * against the toolkit as it arrives, and a rejected chunk used to fail the stream on the spot,
+	 * which cancelled the response body before the terminal chunk was read: the span ended with no
+	 * `gen_ai.usage.*` and no cost for a call the model had run to completion.
+	 */
+	it.effect("keeps the usage of a call the run rejects after the model finished", () =>
+		Effect.gen(function* () {
+			const { exit, delivered, attributes } = yield* runModelCall(
+				{
+					prompt: "hi",
+					toolkit: Toolkit.make(submitPlan),
+					// What the agent engine sends: the run owns tool execution.
+					disableToolCallResolution: true,
+				},
+				[
+					chunk({ role: "assistant", content: "On it." }, null),
+					...rejectedToolCallFrames({
+						prompt_tokens: 40,
+						completion_tokens: 12,
+						total_tokens: 52,
+						cost: 0.0042,
+					}),
+				],
+			)
+
+			// The call still fails the way it always did — a parameter the tool cannot take is the
+			// run's problem to report — just once the stream has been read to its end, and from the
+			// rejected chunk on the consumer is handed nothing.
+			assert.strictEqual(aiFailure(exit).reason._tag, "InvalidOutputError")
+			assert.include(delivered, "text-delta")
+			assert.notInclude(delivered, "tool-call")
+			assert.notInclude(delivered, "finish")
+			assert.strictEqual(attributes.get("gen_ai.usage.input_tokens"), 40)
+			assert.strictEqual(attributes.get("gen_ai.usage.output_tokens"), 12)
+			assert.strictEqual(attributes.get("gen_ai.usage.cost"), 0.0042)
+			assert.deepStrictEqual(attributes.get("gen_ai.response.finish_reasons"), ["tool_call"])
+			// The run's rejection is recorded the way a provider's failure is, so the session view's
+			// failure counting sees it, next to the usage it still has to bill.
+			assert.strictEqual(attributes.get("error.type"), "invalid_output")
+			assert.strictEqual(attributes.get("gen_ai.response.status"), "failed")
+			// The first chunk passed the tap that times it; the finish part never did, so the
+			// transformer stamps the duration itself as the drained stream ends. The test clock does not
+			// move, so both read as the instant the call started.
+			assert.strictEqual(attributes.get("gen_ai.response.time_to_first_chunk"), 0)
+			assert.strictEqual(attributes.get("maple_ai.model_duration_ms"), 0)
+			assert.deepStrictEqual(JSON.parse(String(attributes.get("gen_ai.output.messages"))), [
+				{
+					role: "assistant",
+					parts: [
+						{ type: "text", content: "On it." },
+						{ type: "tool_call", id: "call_1", name: "submit_plan", arguments: { limit: "ten" } },
+					],
+					finish_reason: "tool_call",
+				},
+			])
+		}),
+	)
+
+	it.effect("times a rejected call whose very first chunk was the rejected one", () =>
+		Effect.gen(function* () {
+			const { exit, delivered, attributes } = yield* runModelCall(
+				{ prompt: "hi", toolkit: Toolkit.make(submitPlan), disableToolCallResolution: true },
+				rejectedToolCallFrames({ prompt_tokens: 40, completion_tokens: 12, total_tokens: 52 }),
+			)
+
+			assert.strictEqual(aiFailure(exit).reason._tag, "InvalidOutputError")
+			assert.deepStrictEqual(delivered, [])
+			assert.strictEqual(attributes.get("gen_ai.usage.input_tokens"), 40)
+			assert.strictEqual(attributes.get("error.type"), "invalid_output")
+			// Nothing passed the tap, so there is no first chunk to time — the attribute is omitted
+			// rather than guessed — while the withheld finish part still gets the duration stamped.
+			assert.isFalse(attributes.has("gen_ai.response.time_to_first_chunk"))
+			assert.strictEqual(attributes.get("maple_ai.model_duration_ms"), 0)
+		}),
+	)
+
+	it.effect("marks a rejected call whose terminal chunk carried no usage", () =>
+		Effect.gen(function* () {
+			// The provider closes every stream with a finish part, usage or not.
+			const { exit, delivered, attributes } = yield* runModelCall(
+				{ prompt: "hi", toolkit: Toolkit.make(submitPlan), disableToolCallResolution: true },
+				[rejectedToolCallChunk],
+			)
+
+			assert.strictEqual(aiFailure(exit).reason._tag, "InvalidOutputError")
+			assert.deepStrictEqual(delivered, [])
+			assert.isFalse(attributes.has("gen_ai.usage.input_tokens"))
+			assert.isFalse(attributes.has("gen_ai.usage.cost"))
+			assert.strictEqual(attributes.get("error.type"), "invalid_output")
+			assert.strictEqual(attributes.get("maple_ai.model_duration_ms"), 0)
+		}),
+	)
+
+	it.effect("records no duration or failure when a rejected stream ends without a finish part", () =>
+		Effect.gen(function* () {
+			const { exit, attributes } = yield* runFakeProviderCall(
+				Stream.make({
+					type: "tool-call",
+					id: "call_1",
+					name: "submit_plan",
+					params: { limit: "ten" },
+				}),
+			)
+
+			assert.strictEqual(aiFailure(exit).reason._tag, "InvalidOutputError")
+			// No finish part means nothing to bill and no moment to time; the failure is the stream's
+			// own exit, so the Maple attributes do not repeat it.
+			assert.isFalse(attributes.has("gen_ai.usage.input_tokens"))
+			assert.isFalse(attributes.has("maple_ai.model_duration_ms"))
+			assert.isFalse(attributes.has("error.type"))
+			assert.deepStrictEqual(JSON.parse(String(attributes.get("gen_ai.output.messages"))), [
+				{
+					role: "assistant",
+					parts: [
+						{ type: "tool_call", id: "call_1", name: "submit_plan", arguments: { limit: "ten" } },
+					],
+				},
+			])
+		}),
+	)
+
+	/**
+	 * The withheld parts reach the transformer as the provider emitted them, without the defaults
+	 * decoding fills in — `metadata` on a finish part is one such default, and the OpenAI-compatible
+	 * provider leaves it off. The cost read has to expect that, or the transformer throws in a
+	 * finalizer, the typed failure becomes a defect, and the span ends with nothing on it.
+	 */
+	it.effect("keeps the usage of a rejected call whose finish part carries no metadata", () =>
+		Effect.gen(function* () {
+			const { exit, attributes } = yield* runFakeProviderCall(
+				Stream.make(
+					{ type: "tool-call", id: "call_1", name: "submit_plan", params: { limit: "ten" } },
+					{
+						type: "finish",
+						reason: "tool-calls",
+						usage: { inputTokens: { total: 40 }, outputTokens: { total: 12 } },
+					},
+				),
+			)
+
+			assert.strictEqual(aiFailure(exit).reason._tag, "InvalidOutputError")
+			assert.strictEqual(attributes.get("gen_ai.usage.input_tokens"), 40)
+			assert.strictEqual(attributes.get("gen_ai.usage.output_tokens"), 12)
+			assert.isFalse(attributes.has("gen_ai.usage.cost"))
+		}),
+	)
+
+	it.live("carries the prompt's tool calls and results, with the finish reason in semconv form", () =>
+		Effect.gen(function* () {
+			const attributes = yield* endedModelCall(
+				[
+					{ role: "user", content: [{ type: "text", text: "why is checkout slow?" }] },
+					{
+						role: "assistant",
+						content: [
+							{
+								type: "tool-call",
+								id: "call_0",
+								name: "service_map",
+								params: {},
+								providerExecuted: false,
+							},
+						],
+					},
+					{
+						role: "tool",
+						content: [
+							{
+								type: "tool-result",
+								id: "call_0",
+								name: "service_map",
+								isFailure: false,
+								result: "checkout -> db",
+								providerExecuted: false,
+							},
+						],
+					},
+				],
+				// Text rather than a tool call: decoding a streamed tool call needs the toolkit that declared
+				// it, which a bare `streamText` does not have.
+				[
+					chunk({ role: "assistant", content: "Checking the database." }, null),
+					{
+						...chunk({}, "tool_calls"),
+						usage: { prompt_tokens: 4, completion_tokens: 1, total_tokens: 5 },
+					},
+				],
+			)
+
+			assert.deepStrictEqual(JSON.parse(String(attributes.get("gen_ai.input.messages"))), [
+				{ role: "user", parts: [{ type: "text", content: "why is checkout slow?" }] },
+				{
+					role: "assistant",
+					parts: [{ type: "tool_call", id: "call_0", name: "service_map", arguments: {} }],
+				},
+				{
+					role: "tool",
+					parts: [{ type: "tool_call_response", id: "call_0", response: "checkout -> db" }],
+				},
+			])
+			assert.deepStrictEqual(JSON.parse(String(attributes.get("gen_ai.output.messages"))), [
+				{
+					role: "assistant",
+					parts: [{ type: "text", content: "Checking the database." }],
+					finish_reason: "tool_call",
+				},
+			])
+			assert.deepStrictEqual(attributes.get("gen_ai.response.finish_reasons"), ["tool_call"])
+		}),
+	)
+
+	/** A provider failure delivered as a finish reason completes the stream, so the span exit stays green. */
+	it.live("marks a call the provider failed", () =>
+		Effect.gen(function* () {
+			const attributes = yield* endedModelCall("hi", [
+				chunk({ role: "assistant", content: "partial" }, null),
+				{ ...chunk({}, "error"), usage: { prompt_tokens: 4, completion_tokens: 1, total_tokens: 5 } },
+			])
+
+			assert.strictEqual(attributes.get("error.type"), "provider_error")
+			assert.strictEqual(attributes.get("gen_ai.response.status"), "failed")
+		}),
+	)
+
+	it.live("asks for no reasoning level when reasoning is off", () =>
+		Effect.gen(function* () {
+			const attributes = yield* endedModelCall(
+				"hi",
+				[
+					{
+						...chunk({ role: "assistant", content: "hi" }, "stop"),
+						usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+					},
+				],
+				{ ...ENV, MAPLE_TRIAGE_REASONING_EFFORT: "off" },
+			)
+
+			assert.strictEqual(attributes.get("gen_ai.provider.name"), "openrouter")
+			assert.isFalse(attributes.has("gen_ai.request.reasoning.level"))
+		}),
+	)
+
+	/** The transformer applies as the stream ends, including when it fails before a single chunk. */
+	it.live("still carries the conversation when the provider rejects the call", () =>
+		Effect.gen(function* () {
+			const attributes = yield* endedModelCall("hi", [], ENV, 400)
+
+			assert.deepStrictEqual(JSON.parse(String(attributes.get("gen_ai.input.messages"))), [
+				{ role: "user", parts: [{ type: "text", content: "hi" }] },
+			])
+			assert.isFalse(attributes.has("gen_ai.response.time_to_first_chunk"))
+			assert.isFalse(attributes.has("maple_ai.model_duration_ms"))
+		}),
+	)
+
+	it.live("carries no session when the caller has none", () =>
+		Effect.gen(function* () {
+			const recorder = recordingTracer()
+
+			yield* LanguageModel.streamText({ prompt: "hi" }).pipe(
+				Stream.runDrain,
+				Effect.ignore,
+				Effect.provide(Layer.provideMerge(resolveTriageModel(ENV).layer, layerLlm(ENV))),
+				Effect.provideService(FetchHttpClient.Fetch, sseFetch),
+				Effect.withTracer(recorder.tracer),
+			)
+
+			assert.isTrue(
+				recorder.spans.some((span) => span.attributes.get("gen_ai.operation.name") === "chat"),
+				"no model-call span was opened",
+			)
+			assert.isFalse(recorder.spans.some((span) => span.attributes.has(MAPLE_NATIVE_SESSION_ID_ATTR)))
+		}),
+	)
+})

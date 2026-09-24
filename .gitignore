@@ -1,4 +1,7 @@
 .tinyb
+# Written by the Tinybird CD job to point `deploy` at a specific workspace host
+# (the CLI has no --host flag); takes priority over the committed tinybird.json.
+tinybird.config.json
 .tinybird-generated
 .tinybird-entities-*.mjs
 # D1→Postgres migration dumps — contain prod data, never commit
@@ -30,10 +33,10 @@ count.txt
 todos.json
 apps/api/.data/
 apps/api/scripts/.bench/
+apps/ai/scripts/.pr-review-runs/
+apps/ai/scripts/.pr-review-evals/
 
 .alchemy
-# eve agent build/model-catalog cache
-.eve
 .mcp.json
 .dev.vars
 apps/chat-agent/.dev.vars
@@ -53,7 +56,22 @@ playwright/.cache/
 /apps/ingest/target
 /apps/ingest/.wal
 
-# local-only Drizzle Studio config pointing at miniflare D1
+# local-only Drizzle Studio configuration
 drizzle.config.local.ts
 .18bd7*.bun-build
 .[0-9a-f]*.bun-build
+apps/ingest/dist/
+
+# ios (apps/ios has its own .gitignore too; these guard the repo root)
+apps/ios/Maple.xcodeproj/
+apps/ios/Config/Secrets.xcconfig
+apps/ios/build/
+
+# Generic ClickHouse benchmark artifacts (may contain literal query inputs)
+.bench/
+
+# backup restore drill reports (packages/db/scripts/restore-test.ts)
+.restore-test/
+
+# Vitest Browser Mode failure screenshots and traces
+.vitest/

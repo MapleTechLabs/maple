@@ -57,6 +57,7 @@
 import { spawnSync } from "node:child_process"
 import { appendFileSync } from "node:fs"
 import { fileURLToPath } from "node:url"
+import * as Predicate from "effect/Predicate"
 
 type Subcommand = "up" | "down" | "sweep"
 
@@ -240,7 +241,8 @@ const waitUntilReady = async (database: string, branchName: string): Promise<voi
 		const show = runPscale(["branch", "show", database, branchName, "--format", "json"], { secret: true })
 		if (show.exitCode === 0) {
 			try {
-				const parsed = JSON.parse(show.stdout) as { ready?: boolean; state?: string }
+				const parsed: unknown = JSON.parse(show.stdout)
+				if (!Predicate.isObject(parsed)) throw new TypeError("branch state is not an object")
 				if (parsed.ready === true || parsed.state === "ready") {
 					console.log(`✓ Branch ${branchName} is ready`)
 					return
@@ -321,7 +323,9 @@ const createCredential = (
 	}
 	let parsed: Record<string, unknown>
 	try {
-		parsed = JSON.parse(result.stdout) as Record<string, unknown>
+		const value: unknown = JSON.parse(result.stdout)
+		if (!Predicate.isObject(value)) throw new TypeError("role response is not an object")
+		parsed = value
 	} catch {
 		return fail("Could not parse `pscale role create --format json` output")
 	}
@@ -394,8 +398,8 @@ const fetchPrState = async (prNumber: string): Promise<"open" | "closed" | "unkn
 
 /**
  * Delete every `pr-<n>` branch whose PR is closed. Only branches matching the
- * exact `pr-<digits>` shape are considered — `main`, `stg`, and anything else
- * are never candidates. Branches whose PR state cannot be determined are
+ * exact `pr-<digits>` shape are considered — `main` and anything else are
+ * never candidates. Branches whose PR state cannot be determined are
  * skipped (deleting on uncertainty risks tearing down a live preview).
  */
 const sweepOrphanBranches = async (database: string): Promise<void> => {
@@ -415,7 +419,11 @@ const sweepOrphanBranches = async (database: string): Promise<void> => {
 	}
 	let branches: ReadonlyArray<{ name?: string }>
 	try {
-		branches = JSON.parse(list.stdout) as ReadonlyArray<{ name?: string }>
+		const value: unknown = JSON.parse(list.stdout)
+		if (!Array.isArray(value) || !value.every(Predicate.isObject)) {
+			throw new TypeError("branch list response is not an object array")
+		}
+		branches = value
 	} catch {
 		return fail("Could not parse `pscale branch list --format json` output")
 	}
@@ -471,7 +479,7 @@ const createAndAwaitBranch = async (database: string, branchName: string): Promi
  * packages/db/scripts/reset-preview-branch.ts). Returns false on failure so the
  * caller can fall back to delete → recreate.
  */
-const resetBranchInPlace = (connectionUrl: string, replicationUrl?: string): boolean => {
+const resetBranchInPlace = (branchName: string, connectionUrl: string, replicationUrl?: string): boolean => {
 	const dbPackageDir = fileURLToPath(new URL("../packages/db", import.meta.url))
 	console.log(`$ bun run --cwd packages/db db:reset-preview`)
 	const proc = spawnSync("bun", ["run", "--cwd", dbPackageDir, "db:reset-preview"], {
@@ -480,9 +488,12 @@ const resetBranchInPlace = (connectionUrl: string, replicationUrl?: string): boo
 		env: {
 			...process.env,
 			DATABASE_URL: connectionUrl,
+			// The reset script's guard: name the pr-* branch this credential was
+			// minted for. A generic CI flag no longer authorizes the wipe.
+			RESET_EXPECTED_BRANCH: branchName,
 			// The inactive-slot sweep needs the REPLICATION attribute the main
 			// role deliberately lacks.
-			...(replicationUrl ? { REPLICATION_DATABASE_URL: replicationUrl } : {}),
+			...(replicationUrl ? { REPLICATION_DATABASE_URL: replicationUrl } : undefined),
 		},
 	})
 	return proc.status === 0
@@ -534,7 +545,7 @@ const main = async () => {
 			// branch delete revokes both roles and fresh ones are minted after the
 			// recreate.
 			const electric = createCredential(database, branchName, { replication: true, suffix: "-repl" })
-			if (resetBranchInPlace(credential.url, electric.url)) {
+			if (resetBranchInPlace(branchName, credential.url, electric.url)) {
 				maskAndExport({ MAPLE_PG_URL: credential.url, MAPLE_PG_ELECTRIC_URL: electric.url }, [
 					credential.password,
 					electric.password,

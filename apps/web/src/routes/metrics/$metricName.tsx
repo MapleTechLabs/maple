@@ -5,13 +5,15 @@ import { DashboardLayout } from "@/components/layout/dashboard-layout"
 import { MetricDetail } from "@/components/metrics/metric-detail"
 import type { MetricQueryPatch } from "@/components/metrics/metric-query-controls"
 import { TimeRangeSearchFields, applyTimeRangeSearch } from "@/components/time-range-picker/search"
+import { sessionTimeRangeSearchMiddleware } from "@/components/time-range-picker/session-time-range"
 import { PageRefreshProvider } from "@/components/time-range-picker/page-refresh-context"
 import { TimeRangeHeaderControls } from "@/components/time-range-picker/time-range-header-controls"
 import { AutocompleteValuesProvider } from "@/hooks/use-autocomplete-values"
 import { useEffectiveTimeRange } from "@/hooks/use-effective-time-range"
+import { QUERY_BUILDER_METRIC_TYPES } from "@maple/query-model"
 
 const metricDetailSearchSchema = Schema.Struct({
-	type: Schema.optional(Schema.Literals(["sum", "gauge", "histogram", "exponential_histogram"])),
+	type: Schema.optional(Schema.Literals(QUERY_BUILDER_METRIC_TYPES)),
 	agg: Schema.optional(Schema.Literals(["avg", "sum", "min", "max", "count", "rate", "increase"])),
 	where: Schema.optional(Schema.String),
 	groupBy: Schema.optional(Schema.String),
@@ -35,6 +37,7 @@ function buildBackToMetricsHref(searchStr: string): string {
 export const Route = createFileRoute("/metrics/$metricName")({
 	component: MetricDetailPage,
 	validateSearch: Schema.toStandardSchemaV1(metricDetailSearchSchema),
+	search: { middlewares: [sessionTimeRangeSearchMiddleware()] },
 })
 
 function MetricDetailPage() {
@@ -56,11 +59,11 @@ function MetricDetailPage() {
 		navigate({
 			search: (prev) => ({
 				...prev,
-				...("agg" in patch ? { agg: patch.agg as MetricDetailSearchParams["agg"] } : {}),
-				...("where" in patch ? { where: patch.where || undefined } : {}),
-				...("groupBy" in patch ? { groupBy: patch.groupBy } : {}),
-				...("step" in patch ? { step: patch.step || undefined } : {}),
-				...("bd" in patch ? { bd: patch.bd } : {}),
+				...("agg" in patch ? { agg: patch.agg as MetricDetailSearchParams["agg"] } : undefined),
+				...("where" in patch ? { where: patch.where || undefined } : undefined),
+				...("groupBy" in patch ? { groupBy: patch.groupBy } : undefined),
+				...("step" in patch ? { step: patch.step || undefined } : undefined),
+				...("bd" in patch ? { bd: patch.bd } : undefined),
 			}),
 			replace: true,
 		})

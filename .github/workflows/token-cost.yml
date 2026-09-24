@@ -8,8 +8,9 @@ on:
     pull_request:
         branches: [main]
         paths:
-            - "apps/api/src/mcp/**"
+            - "apps/ai/src/mcp/**"
             - "packages/domain/src/**"
+            - ".github/actions/bun-install/action.yml"
             - ".github/workflows/token-cost.yml"
 
 concurrency:
@@ -25,31 +26,42 @@ jobs:
         runs-on: ubuntu-latest
         timeout-minutes: 20
         steps:
-            - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
               with:
                   fetch-depth: 0
 
-            - uses: jdx/mise-action@c37c93293d6b742fc901e1406b8f764f6fb19dac # v2.4.4
+            - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
 
-            - run: bun install --frozen-lockfile
+            # This script only needs the agent Worker's dependency closure, which
+            # includes apps/api: the tools import api's services by path alias, and
+            # those modules resolve `@maple/domain/*` out of api's own node_modules.
+            # Installing all workspaces accounted for roughly half of this job's
+            # wall time.
+            - uses: ./.github/actions/bun-install
+              with:
+                  filters: "@maple/ai @maple/api @maple-dev/effect-sdk @maple-dev/browser"
 
-            # @maple/api's measure-tokens imports query-engine, which pulls the
-            # dist-based @maple-dev/clickhouse-builder (+ effect-sdk, browser).
-            # Those ship from dist/ and must be built before they can be loaded.
+            - name: Turbo remote cache
+              uses: rharkor/caching-for-turbo@2238fae6eb9a9936f92356f54cb3660200d105e7 # v2.5.1
+
+            # The SDK and browser workspace packages need their dist exports built.
             - name: Build workspace deps
               run: bun run alchemy:build-deps
 
             - name: Measure (PR head)
-              run: bun run --filter @maple/api measure-tokens -- -o "$RUNNER_TEMP/head.json" | tee "$RUNNER_TEMP/head.txt"
+              run: bun run --filter @maple/ai measure-tokens -- -o "$RUNNER_TEMP/head.json" | tee "$RUNNER_TEMP/head.txt"
 
             # Re-measure against the base source (reusing the same node_modules) for a
             # best-effort delta. Source-only swap avoids a second install.
             - name: Measure (base)
               continue-on-error: true
               run: |
-                  git checkout "${{ github.event.pull_request.base.sha }}" -- apps/api/src packages/domain/src || true
-                  bun run --filter @maple/api measure-tokens -- -o "$RUNNER_TEMP/base.json" || echo '{"total":0}' > "$RUNNER_TEMP/base.json"
-                  git checkout HEAD -- apps/api/src packages/domain/src || true
+                  # The agent Worker did not exist before the split, so on an older
+                  # base both the pathspec and the script are absent. Either way the
+                  # base reads 0 and the delta is the whole cost, once.
+                  git checkout "${{ github.event.pull_request.base.sha }}" -- apps/ai/src apps/api/src packages/backend/src packages/domain/src || true
+                  bun run --filter @maple/ai measure-tokens -- -o "$RUNNER_TEMP/base.json" || echo '{"total":0}' > "$RUNNER_TEMP/base.json"
+                  git checkout HEAD -- apps/ai/src apps/api/src packages/backend/src packages/domain/src || true
 
             - name: Summary
               run: |

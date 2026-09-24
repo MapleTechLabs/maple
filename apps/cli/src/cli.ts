@@ -26,19 +26,19 @@ export const cli = Command.make("maple").pipe(
 			"the mode is auto-detected and can be forced with --local / --remote.",
 	),
 	Command.withSharedFlags({
-		remote: Flag.boolean("remote").pipe(
+		remote: Flag.Boolean("remote").pipe(
 			Flag.withDescription("Force remote mode (requires `maple login`)"),
 			Flag.withDefault(false),
 		),
-		local: Flag.boolean("local").pipe(
+		local: Flag.Boolean("local").pipe(
 			Flag.withDescription("Force local mode (requires a running `maple start`)"),
 			Flag.withDefault(false),
 		),
-		debug: Flag.boolean("debug").pipe(
+		debug: Flag.Boolean("debug").pipe(
 			Flag.withDescription("Print compiled SQL and per-query timing to stderr"),
 			Flag.withDefault(false),
 		),
-		format: Flag.choice("format", ["json", "table"]).pipe(
+		format: Flag.Literals("format", ["json", "table"]).pipe(
 			Flag.withDescription("Output format for query results (default: json)"),
 			Flag.withDefault("json" as const),
 		),

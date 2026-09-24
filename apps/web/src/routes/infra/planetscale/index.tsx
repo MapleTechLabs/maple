@@ -2,7 +2,7 @@ import { useMemo } from "react"
 import { createFileRoute, useNavigate } from "@tanstack/react-router"
 import { Schema } from "effect"
 import { Result, useAtomValue } from "@/lib/effect-atom"
-import { useRetainedRefreshableResultValue } from "@/hooks/use-retained-refreshable-result-value"
+import { useRefreshableAtomValue } from "@/hooks/use-refreshable-atom-value"
 
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@maple/ui/components/ui/empty"
 
@@ -37,10 +37,11 @@ import {
 	type SetupStep,
 } from "@/components/integrations/planetscale-setup-steps"
 import { getServiceMapPlanetScaleResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
-import { MapleApiV2AtomClient } from "@/lib/services/common/v2-atom-client"
+import { retainedQueryV2 } from "@/lib/services/common/v2-atom-client"
 import { formatNumber } from "@maple/ui/lib/format"
 import { useEffectiveTimeRange } from "@/hooks/use-effective-time-range"
 import { TimeRangeSearchFields, applyTimeRangeSearch } from "@/components/time-range-picker/search"
+import { sessionTimeRangeSearchMiddleware } from "@/components/time-range-picker/session-time-range"
 import { PageRefreshProvider } from "@/components/time-range-picker/page-refresh-context"
 import { TimeRangeHeaderControls } from "@/components/time-range-picker/time-range-header-controls"
 
@@ -51,6 +52,7 @@ const planetscaleSearchSchema = Schema.Struct({
 export const Route = createFileRoute("/infra/planetscale/")({
 	component: PlanetScalePage,
 	validateSearch: Schema.toStandardSchemaV1(planetscaleSearchSchema),
+	search: { middlewares: [sessionTimeRangeSearchMiddleware()] },
 })
 
 function PlanetScalePage() {
@@ -76,7 +78,7 @@ function PlanetScalePage() {
 	// Integration-gated: the page is useful exactly when the org has the
 	// PlanetScale integration connected.
 	const statusResult = useAtomValue(
-		MapleApiV2AtomClient.query("planetscaleIntegration", "status", {
+		retainedQueryV2("planetscaleIntegration", "status", {
 			reactivityKeys: ["planetscaleIntegration"],
 		}),
 	)
@@ -156,13 +158,13 @@ function PlanetScaleData({
 	lastInventoryError: string | null
 }) {
 	const inventoryResult = useAtomValue(
-		MapleApiV2AtomClient.query("planetscaleIntegration", "databases", {
+		retainedQueryV2("planetscaleIntegration", "databases", {
 			reactivityKeys: ["planetscaleIntegration"],
 		}),
 	)
 	// Retained so changing the time range dims the numbers instead of replacing
 	// the whole page with skeletons.
-	const statsResult = useRetainedRefreshableResultValue(
+	const statsResult = useRefreshableAtomValue(
 		getServiceMapPlanetScaleResultAtom({ data: { startTime, endTime } }),
 	)
 

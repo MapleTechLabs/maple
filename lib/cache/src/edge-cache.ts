@@ -1,17 +1,23 @@
+// BOUNDARY: This module owns unparsed external values and narrows them before domain use.
 import { Clock, Config, Context, Effect, Layer, Option, Schema } from "effect"
 import { CacheBackend, type EdgeCacheBackend } from "./cache-backend"
+import { isolateOutboundSlots, trackOutboundSlot, type OutboundSlotsCell } from "./outbound-slots"
 
 export { CacheBackend, type EdgeCacheBackend } from "./cache-backend"
 
 export class EdgeCacheIOError extends Schema.TaggedError<EdgeCacheIOError>()(
 	"@maple/cache/EdgeCacheIOError",
 	{
-		op: Schema.Literals(["get", "put"]),
+		op: Schema.Literals(["get", "put", "delete"]),
 		bucket: Schema.String,
 		key: Schema.String,
 		cause: Schema.String,
 	},
-) {}
+) {
+	override get message(): string {
+		return `Edge cache ${this.op} failed for ${this.bucket}/${this.key}: ${this.cause}`
+	}
+}
 
 export interface EdgeCacheGetOrComputeOptions<A = unknown, I = unknown> {
 	readonly bucket: string
@@ -41,6 +47,23 @@ export interface EdgeCacheGetOrComputeOptions<A = unknown, I = unknown> {
 	 * `DEFAULT_EDGE_CACHE_READ_TIMEOUT_MS`.
 	 */
 	readonly readTimeoutMs?: number
+	/**
+	 * Skip the backend read whenever outbound I/O is already holding one of the
+	 * runtime's connection slots (see `OutboundSlotsCell`), and go straight to
+	 * `compute`.
+	 *
+	 * Opt in when `compute` is cheap relative to the read gamble. A read issued
+	 * while a slot is held is the read most likely to queue past its deadline —
+	 * and an abandoned read is worse than no read, because `cache.match()` is
+	 * not cancellable and keeps its slot until it settles. For a bucket whose
+	 * `compute` is a ~20ms indexed row lookup, betting a 40ms deadline plus a
+	 * possible held slot to save that lookup never pays.
+	 *
+	 * This is the deterministic sibling of the timeout-rate breaker below, and
+	 * the only protection available to buckets whose reads land one-per-isolate
+	 * — the breaker needs samples those buckets can never accumulate.
+	 */
+	readonly skipReadWhenSlotsHeld?: boolean
 }
 
 export interface EdgeCacheResult<A> {
@@ -61,7 +84,7 @@ export interface EdgeCacheReadResult<A> {
 	readonly readMs: number
 }
 
-export interface EdgeCacheServiceShape {
+export interface EdgeCacheServiceApi {
 	readonly getOrCompute: <A, E, R, I = unknown>(
 		options: EdgeCacheGetOrComputeOptions<A, I>,
 		compute: Effect.Effect<A, E, R>,
@@ -91,8 +114,8 @@ const sha256Hex = async (input: string): Promise<string> => {
 	const digest = await crypto.subtle.digest("SHA-256", bytes)
 	const view = new Uint8Array(digest)
 	let out = ""
-	for (let i = 0; i < view.length; i++) {
-		out += view[i]!.toString(16).padStart(2, "0")
+	for (const byte of view) {
+		out += byte.toString(16).padStart(2, "0")
 	}
 	return out
 }
@@ -147,8 +170,8 @@ const sha256Hex = async (input: string): Promise<string> => {
 export const DEFAULT_EDGE_CACHE_READ_TIMEOUT_MS = 40
 
 /**
- * Consecutive timeouts on one bucket before reads are skipped, and how long to
- * skip them for.
+ * Per-bucket timeout-rate breaker: how long to skip reads for, and the decaying
+ * failure ratio that opens the skip.
  *
  * At a high timeout rate the reads are not merely useless, they are actively
  * harmful: each abandoned `cache.match()` holds one of the Worker's six
@@ -157,29 +180,55 @@ export const DEFAULT_EDGE_CACHE_READ_TIMEOUT_MS = 40
  * reads in flight, fewer slots held, and the next read after the window has a
  * free slot to land in.
  *
- * Deliberately cheap to recover from: a single successful read resets the
- * counter, so a bucket that was momentarily contended is not penalised beyond
- * one window.
+ * This was a count of *consecutive* timeouts that any single success reset to
+ * zero. That is memoryless at exactly the rates seen in production — measured
+ * over 24h on `caches.default`: 61 timeouts against 45 hits and 236 misses, so
+ * roughly one read in five, arriving interleaved rather than in runs. The
+ * breaker opened, waited its window, let one read through, saw it succeed,
+ * reset to zero, and paid two more full deadlines before opening again. It
+ * never converged, and timeouts still cost a span p50 of 12,936ms.
+ *
+ * An exponentially-weighted ratio keeps the history a run-counter throws away.
+ * Recovery is still fast but no longer free: from a saturated ratio of 1.0 a
+ * successful probe decays it to 0.67, then 0.44 — two good reads to close,
+ * versus one under the old rule.
  */
-const READ_BREAKER_TIMEOUTS = 2
 const READ_BREAKER_WINDOW_MS = 2_000
+/** Weight of the newest outcome in the EWMA. 1/3 → ~2 successes to recover. */
+const READ_BREAKER_DECAY = 1 / 3
+/** Ratio at or above which the bucket stops being read. */
+const READ_BREAKER_OPEN_RATIO = 0.5
+/**
+ * Outcomes required before the ratio may open the breaker, so one unlucky first
+ * read on a cold bucket cannot skip the next window on a sample size of one.
+ *
+ * Two, not three: at three this breaker had **never fired in production** — zero
+ * spans with `cache.read_status = "skipped"` across 137 reads sitting at a 33.6%
+ * timeout rate. The requests that actually suffer make exactly two cache reads
+ * (measured: 46 of 46 two-read requests lost one read to the deadline, while 36
+ * of 36 one-read requests lost none), so a three-sample gate could never close in
+ * time to protect the very shape it exists for. One unlucky read still cannot
+ * open it alone.
+ */
+const READ_BREAKER_MIN_SAMPLES = 2
 
 /**
- * Build an `EdgeCacheServiceShape` against a specific backend. Exported for
+ * Build an `EdgeCacheServiceApi` against a specific backend. Exported for
  * tests so they can substitute a fake backend (e.g. a JSON-roundtripping one)
  * without going through `detectWorkersCache`.
  */
 export const makeEdgeCacheService = (
 	backend: EdgeCacheBackend,
 	readTimeoutMs = DEFAULT_EDGE_CACHE_READ_TIMEOUT_MS,
-): EdgeCacheServiceShape => {
+	slots: OutboundSlotsCell = isolateOutboundSlots,
+): EdgeCacheServiceApi => {
 	const boundedReadTimeoutMs = Number.isFinite(readTimeoutMs)
 		? Math.max(1, Math.floor(readTimeoutMs))
 		: DEFAULT_EDGE_CACHE_READ_TIMEOUT_MS
-	// Per-bucket consecutive-timeout state for the read breaker. Isolate-scoped
-	// and intentionally plain data — never an in-flight Promise or I/O handle,
-	// which could not be shared across requests (see the note in `getOrCompute`).
-	const readBreaker = new Map<string, { timeouts: number; skipUntil: number }>()
+	// Per-bucket timeout-rate state for the read breaker. Isolate-scoped and
+	// intentionally plain data — never an in-flight Promise or I/O handle, which
+	// could not be shared across requests (see the note in `getOrCompute`).
+	const readBreaker = new Map<string, { ratio: number; samples: number; skipUntil: number }>()
 
 	const shouldSkipRead = (bucket: string, nowMs: number): boolean => {
 		const state = readBreaker.get(bucket)
@@ -187,14 +236,18 @@ export const makeEdgeCacheService = (
 	}
 
 	const recordReadOutcome = (bucket: string, timedOut: boolean, nowMs: number): void => {
-		if (!timedOut) {
-			readBreaker.delete(bucket)
-			return
-		}
-		const timeouts = (readBreaker.get(bucket)?.timeouts ?? 0) + 1
+		const state = readBreaker.get(bucket)
+		const previousRatio = state?.ratio ?? 0
+		// Cap the sample count at the minimum: it is a "have we seen enough yet"
+		// gate, not a running total, and letting it grow would only risk overflow
+		// on a long-lived isolate.
+		const samples = Math.min((state?.samples ?? 0) + 1, READ_BREAKER_MIN_SAMPLES)
+		const ratio = previousRatio + READ_BREAKER_DECAY * ((timedOut ? 1 : 0) - previousRatio)
+		const open = samples >= READ_BREAKER_MIN_SAMPLES && ratio >= READ_BREAKER_OPEN_RATIO
 		readBreaker.set(bucket, {
-			timeouts,
-			skipUntil: timeouts >= READ_BREAKER_TIMEOUTS ? nowMs + READ_BREAKER_WINDOW_MS : 0,
+			ratio,
+			samples,
+			skipUntil: open ? nowMs + READ_BREAKER_WINDOW_MS : 0,
 		})
 	}
 
@@ -208,9 +261,18 @@ export const makeEdgeCacheService = (
 		const deadline = new Promise<{ readonly value: undefined; readonly timedOut: true }>((resolve) => {
 			timer = setTimeout(() => resolve({ value: undefined, timedOut: true }), timeoutMs)
 		})
-		const read = Promise.resolve()
-			.then(() => backend.get(bucket, key, nowMs))
-			.then((value) => ({ value, timedOut: false as const }))
+		// The slot is held until the UNDERLYING read settles, not until the race
+		// does: an abandoned `cache.match()` cannot be cancelled and keeps its
+		// connection slot long after the deadline gave up on it. Tying release to
+		// the backend promise makes `slots.held()` reflect that zombie for exactly
+		// as long as it is real.
+		slots.acquire()
+		const backendRead = Promise.resolve().then(() => backend.get(bucket, key, nowMs))
+		backendRead.then(
+			() => slots.release(),
+			() => slots.release(),
+		)
+		const read = backendRead.then((value) => ({ value, timedOut: false as const }))
 		return Promise.race([read, deadline]).finally(() => {
 			if (timer !== undefined) clearTimeout(timer)
 		})
@@ -248,10 +310,19 @@ export const makeEdgeCacheService = (
 			const ttlSeconds =
 				typeof options.ttlSeconds === "function" ? options.ttlSeconds(value) : options.ttlSeconds
 			const writeNowMs = yield* Clock.currentTimeMillis
-			yield* Effect.tryPromise({
-				try: () => backend.put(options.bucket, hash, stored, ttlSeconds, writeNowMs),
-				catch: (error) => error,
-			}).pipe(
+			yield* trackOutboundSlot(
+				Effect.tryPromise({
+					try: () => backend.put(options.bucket, hash, stored, ttlSeconds, writeNowMs),
+					catch: (cause) =>
+						new EdgeCacheIOError({
+							op: "put",
+							bucket: options.bucket,
+							key: options.key,
+							cause: cause instanceof Error ? cause.message : String(cause),
+						}),
+				}),
+				slots,
+			).pipe(
 				Effect.tapError((error) =>
 					Effect.logWarning("Edge cache put failed; continuing without cache").pipe(
 						Effect.annotateLogs({
@@ -271,15 +342,31 @@ export const makeEdgeCacheService = (
 			const nowMs = readStartedAt
 			const timeoutMs = resolveReadTimeoutMs(options.readTimeoutMs)
 			yield* Effect.annotateCurrentSpan("cache.read_timeout_ms", timeoutMs)
-			// The breaker is checked before the read, not after: the point is to NOT
+			// Both gates are checked before the read, not after: the point is to NOT
 			// occupy a connection slot on a bucket that is currently failing to
 			// return one.
-			const skipRead = shouldSkipRead(options.bucket, nowMs)
+			const slotsHeld = slots.held()
+			const skipForSlots = options.skipReadWhenSlotsHeld === true && slotsHeld > 0
+			const skipForBreaker = shouldSkipRead(options.bucket, nowMs)
+			const skipRead = skipForBreaker || skipForSlots
+			yield* Effect.annotateCurrentSpan("cache.slots_held", slotsHeld)
+			if (skipRead) {
+				yield* Effect.annotateCurrentSpan(
+					"cache.skip_reason",
+					skipForBreaker ? "breaker" : "slots_held",
+				)
+			}
 			const read = skipRead
 				? { value: undefined, timedOut: false as const }
 				: yield* Effect.tryPromise({
 						try: () => readBackend(options.bucket, hash, nowMs, timeoutMs),
-						catch: (error) => error,
+						catch: (cause) =>
+							new EdgeCacheIOError({
+								op: "get",
+								bucket: options.bucket,
+								key: options.key,
+								cause: cause instanceof Error ? cause.message : String(cause),
+							}),
 					}).pipe(
 						Effect.tapError((error) =>
 							Effect.logWarning("Edge cache get failed; treating as miss").pipe(
@@ -350,7 +437,13 @@ export const makeEdgeCacheService = (
 		const hash = yield* Effect.promise(() => sha256Hex(options.key))
 		yield* Effect.tryPromise({
 			try: () => backend.delete(options.bucket, hash),
-			catch: (error) => error,
+			catch: (cause) =>
+				new EdgeCacheIOError({
+					op: "delete",
+					bucket: options.bucket,
+					key: options.key,
+					cause: cause instanceof Error ? cause.message : String(cause),
+				}),
 		}).pipe(
 			Effect.tapError((error) =>
 				Effect.logWarning("Edge cache delete failed; entry will expire via TTL").pipe(
@@ -418,22 +511,31 @@ export const makeEdgeCacheService = (
 		ttlSeconds: number,
 	) {
 		const nowMs = yield* Clock.currentTimeMillis
-		return yield* Effect.tryPromise({
-			try: () => backend.put(bucket, key, value, ttlSeconds, nowMs),
-			catch: (cause) =>
-				new EdgeCacheIOError({
-					op: "put",
-					bucket,
-					key,
-					cause: cause instanceof Error ? cause.message : String(cause),
-				}),
-		})
+		return yield* trackOutboundSlot(
+			Effect.tryPromise({
+				try: () => backend.put(bucket, key, value, ttlSeconds, nowMs),
+				catch: (cause) =>
+					new EdgeCacheIOError({
+						op: "put",
+						bucket,
+						key,
+						cause: cause instanceof Error ? cause.message : String(cause),
+					}),
+			}),
+			slots,
+		)
 	})
 
-	return { getOrCompute, invalidate, rawGetDetailed, rawGet, rawPut } satisfies EdgeCacheServiceShape
+	return {
+		getOrCompute,
+		invalidate,
+		rawGetDetailed,
+		rawGet,
+		rawPut,
+	} satisfies EdgeCacheServiceApi
 }
 
-export class EdgeCacheService extends Context.Service<EdgeCacheService, EdgeCacheServiceShape>()(
+export class EdgeCacheService extends Context.Service<EdgeCacheService, EdgeCacheServiceApi>()(
 	"@maple/cache/EdgeCacheService",
 ) {
 	/**
@@ -445,7 +547,7 @@ export class EdgeCacheService extends Context.Service<EdgeCacheService, EdgeCach
 		this,
 		Effect.gen(function* () {
 			const backend = yield* CacheBackend
-			const readTimeoutMs = yield* Config.number("EDGE_CACHE_READ_TIMEOUT_MS").pipe(
+			const readTimeoutMs = yield* Config.Number("EDGE_CACHE_READ_TIMEOUT_MS").pipe(
 				Config.withDefault(DEFAULT_EDGE_CACHE_READ_TIMEOUT_MS),
 			)
 			return EdgeCacheService.of(makeEdgeCacheService(backend, readTimeoutMs))

@@ -1,30 +1,29 @@
-import { useEffect, useState } from "react"
+import { useState } from "react"
 import { Result } from "@/lib/effect-atom"
-import { useNavigate } from "@tanstack/react-router"
+import { getRouteApi } from "@tanstack/react-router"
 
 import {
 	FilterSection,
 	SearchableFilterSection,
-	SingleCheckboxFilter,
 	type FilterOption,
 } from "@/components/filters/filter-section"
 import { MagnifierIcon, XmarkIcon } from "@/components/icons"
 import { browserIconFor, deviceIconFor } from "@/components/replays/session-icons"
-import { Route } from "@/routes/replays"
 import {
 	InputGroup,
 	InputGroupAddon,
 	InputGroupButton,
 	InputGroupInput,
 } from "@maple/ui/components/ui/input-group"
-import { Label } from "@maple/ui/components/ui/label"
 import { FILTER_SECTION_LABEL } from "@maple/ui/components/filters/filter-styles"
+import { Separator } from "@maple/ui/components/ui/separator"
+import { cn } from "@maple/ui/lib/utils"
 import {
 	RangeFilterSection,
-	formatSeconds,
 	type RangeBucket,
 	type RangePreset,
 } from "@maple/ui/components/filters/range-filter-section"
+import { percentilePresets, toLogBuckets } from "@/components/filters/range-distribution"
 import {
 	FilterSidebarBody,
 	FilterSidebarError,
@@ -32,6 +31,8 @@ import {
 	FilterSidebarHeader,
 	FilterSidebarLoading,
 } from "@/components/filters/filter-sidebar"
+
+const routeApi = getRouteApi("/replays/")
 
 interface ReplaysFacetItem {
 	readonly name: string
@@ -46,6 +47,8 @@ interface ReplaysFacets {
 	/** Identified groups (company / team). Empty for orgs that never call
 	 *  `identify()` with a group — the section hides itself then. */
 	readonly groups: ReadonlyArray<ReplaysFacetItem>
+	/** Page paths visited anywhere in a session, by sessions that reached them. */
+	readonly pages: ReadonlyArray<ReplaysFacetItem>
 	readonly errorCount: number
 	/** Session-length distribution: `name` is the bucket floor in ms. */
 	readonly durationBuckets: ReadonlyArray<ReplaysFacetItem>
@@ -53,73 +56,21 @@ interface ReplaysFacets {
 	readonly durationP95: number
 }
 
-/** Share of sessions the axis must cover before the rest is folded into a single
- *  overflow bar. Real data has abandoned tabs measured in days; on a log axis one
- *  of those stretches the range past 500h and squashes every genuine session into
- *  the first few pixels. */
-const AXIS_COVERAGE = 0.99
-
 // The warehouse buckets session length into half-octaves from 1s and returns only
-// the non-empty ones (see sessionReplaysFacetsQuery). Rebuild the full run, in
-// seconds, so the histogram's axis stays continuous instead of collapsing gaps
-// into neighbouring bars.
+// the non-empty ones, named by their floor in ms (see sessionReplaysFacetsQuery).
 export function toDurationBuckets(raw: ReadonlyArray<ReplaysFacetItem>): RangeBucket[] {
-	const counts = new Map<number, number>()
-	for (const item of raw) {
-		const floorMs = Number(item.name)
-		if (!Number.isFinite(floorMs) || floorMs <= 0) continue
-		counts.set(Math.round(Math.log2(floorMs / 1000) * 2), item.count)
-	}
-	if (counts.size === 0) return []
-
-	const octaves = [...counts.keys()]
-	const buckets: RangeBucket[] = []
-	for (let k = Math.min(...octaves); k <= Math.max(...octaves); k++) {
-		const from = 2 ** (k / 2)
-		buckets.push({ from, to: from * Math.SQRT2, count: counts.get(k) ?? 0 })
-	}
-
-	// Keep the outliers visible as one unbounded bar at the right edge rather than
-	// dropping them — they're real sessions, and folding them into the last kept
-	// bucket would misreport it as a spike.
-	const total = buckets.reduce((sum, b) => sum + b.count, 0)
-	if (total === 0) return buckets
-	let covered = 0
-	for (const [index, bucket] of buckets.entries()) {
-		covered += bucket.count
-		if (covered < total * AXIS_COVERAGE) continue
-		const tail = buckets.slice(index + 1)
-		const tailCount = tail.reduce((sum, b) => sum + b.count, 0)
-		if (tailCount === 0) return buckets.slice(0, index + 1)
-		return [
-			...buckets.slice(0, index + 1),
-			{ from: tail[0]!.from, to: Number.POSITIVE_INFINITY, count: tailCount, unbounded: true },
-		]
-	}
-	return buckets
+	return toLogBuckets(
+		raw.map((item) => ({ floor: Number(item.name) / 1000, count: item.count })),
+		2,
+	)
 }
 
-// "Bounced" is the one shortcut that names an intent rather than a threshold;
-// the percentiles are this audience's own vocabulary and carry their resolved
-// value. Percentiles under a second make a degenerate preset — skip them.
+// "Bounced" is the one shortcut that names an intent rather than a threshold.
 function sessionLengthPresets(p50Ms: number, p95Ms: number): RangePreset[] {
-	const presets: RangePreset[] = [{ key: "bounced", label: "Bounced", value: "<10s", max: 10 }]
-	for (const [key, label, ms] of [
-		["p50", "> p50", p50Ms],
-		["p95", "> p95", p95Ms],
-	] as const) {
-		const seconds = roundThreshold(ms / 1000)
-		if (seconds >= 1) presets.push({ key, label, value: formatSeconds(seconds), min: seconds })
-	}
-	return presets
-}
-
-/** A percentile lands on values like 2647s, which reads as "44m 7s" — precision
- *  no one asked for on a shortcut. Round to the nearest minute above a minute;
- *  the seconds it drops can't change which sessions you care about. */
-function roundThreshold(seconds: number): number {
-	if (seconds < 60) return Math.round(seconds)
-	return Math.round(seconds / 60) * 60
+	return [
+		{ key: "bounced", label: "Bounced", value: "<10s", max: 10 },
+		...percentilePresets(p50Ms / 1000, p95Ms / 1000, "s"),
+	]
 }
 
 // Active time has no distribution behind it — computing one means scanning
@@ -146,20 +97,17 @@ interface ReplaysFilterSidebarProps {
 }
 
 export function ReplaysFilterSidebar({ facetsResult }: ReplaysFilterSidebarProps) {
-	const navigate = useNavigate({ from: Route.fullPath })
-	const search = Route.useSearch()
+	const navigate = routeApi.useNavigate()
+	const search = routeApi.useSearch()
 
 	// Single-value params: take the last toggled option (switching dimensions
 	// replaces the prior value; unchecking the only one clears it).
-	const setSingle = (key: "service" | "browser" | "country" | "deviceType" | "group", values: string[]) => {
+	const setSingle = (
+		key: "service" | "browser" | "country" | "deviceType" | "group" | "page",
+		values: string[],
+	) => {
 		navigate({
 			search: (prev) => ({ ...prev, [key]: values.at(-1) ?? undefined }),
-		})
-	}
-
-	const toggleHasErrors = (checked: boolean) => {
-		navigate({
-			search: (prev) => ({ ...prev, hasErrors: checked || undefined }),
 		})
 	}
 
@@ -199,6 +147,7 @@ export function ReplaysFilterSidebar({ facetsResult }: ReplaysFilterSidebarProps
 		!!search.userId ||
 		!!search.user ||
 		!!search.group ||
+		!!search.page ||
 		search.hasErrors === true ||
 		search.durationMin != null ||
 		search.durationMax != null ||
@@ -214,6 +163,7 @@ export function ReplaysFilterSidebar({ facetsResult }: ReplaysFilterSidebarProps
 			const countries = withSelected(facets.countries, search.country)
 			const devices = withSelected(facets.devices, search.deviceType)
 			const groups = withSelected(facets.groups, search.group)
+			const pages = withSelected(facets.pages, search.page)
 
 			const hasFacets =
 				services.length > 0 ||
@@ -221,37 +171,24 @@ export function ReplaysFilterSidebar({ facetsResult }: ReplaysFilterSidebarProps
 				countries.length > 0 ||
 				devices.length > 0 ||
 				groups.length > 0 ||
+				pages.length > 0 ||
 				facets.errorCount > 0
 
 			return (
 				<FilterSidebarFrame waiting={result.waiting}>
 					<FilterSidebarHeader canClear={hasActiveFilters} onClear={clearAllFilters} />
 					<FilterSidebarBody>
-						<TextFilter
-							id="replays-user-search"
-							label="Name or email"
-							placeholder="Filter by name or email…"
-							clearLabel="Clear name or email filter"
-							value={search.user}
-							onApply={setUserSearch}
-						/>
+						{/* Browse before you type. The counted facets and the two range controls
+						    lead, because they answer "what is in here" without you knowing anything
+						    first; the identity fields are demoted to the foot of the rail, because
+						    they only pay off once you already have a name in mind. Leading with two
+						    empty text boxes spent the top third of the rail on controls that show
+						    nothing until typed into.
 
-						<TextFilter
-							id="replays-user-filter"
-							label="User ID"
-							placeholder="Filter by user ID…"
-							clearLabel="Clear user ID filter"
-							value={search.userId}
-							onApply={setUserId}
-						/>
-
-						<SingleCheckboxFilter
-							title="Has errors"
-							checked={search.hasErrors === true}
-							onChange={toggleHasErrors}
-							count={facets.errorCount}
-						/>
-
+						    There is deliberately no "Has errors" checkbox here: the toolbar carries
+						    that exact filter, with the same facet count, as a one-click chip. Two
+						    controls for one boolean in the same viewport is not redundancy, it is a
+						    question about whether they agree. */}
 						<RangeFilterSection
 							title="Session length"
 							unit="s"
@@ -272,6 +209,16 @@ export function ReplaysFilterSidebar({ facetsResult }: ReplaysFilterSidebarProps
 							presets={ACTIVE_TIME_PRESETS}
 						/>
 
+						{/* Every page a session reached, not just where it landed — the toolbar
+						    search covers the entry URL. Top 200 by sessions; the search box
+						    filters that list. */}
+						<SearchableFilterSection
+							title="Page visited"
+							options={pages}
+							selected={search.page ? [search.page] : []}
+							onChange={(vals) => setSingle("page", vals)}
+						/>
+
 						<SearchableFilterSection
 							title="Service"
 							options={services}
@@ -287,17 +234,6 @@ export function ReplaysFilterSidebar({ facetsResult }: ReplaysFilterSidebarProps
 							getOptionIcon={browserIconFor}
 						/>
 
-						{/* Hidden entirely when nobody is grouped — an empty facet list here
-						    would just read as a broken section. */}
-						{groups.length > 0 && (
-							<SearchableFilterSection
-								title="Group"
-								options={groups}
-								selected={search.group ? [search.group] : []}
-								onChange={(vals) => setSingle("group", vals)}
-							/>
-						)}
-
 						<FilterSection
 							title="Device"
 							options={devices}
@@ -311,6 +247,40 @@ export function ReplaysFilterSidebar({ facetsResult }: ReplaysFilterSidebarProps
 							options={countries}
 							selected={search.country ? [search.country] : []}
 							onChange={(vals) => setSingle("country", vals)}
+						/>
+
+						{/* Hidden entirely when nobody is grouped — an empty facet list here
+						    would just read as a broken section. */}
+						{groups.length > 0 && (
+							<SearchableFilterSection
+								title="Group"
+								options={groups}
+								selected={search.group ? [search.group] : []}
+								onChange={(vals) => setSingle("group", vals)}
+							/>
+						)}
+
+						{/* The rule is the separator's job: everything above is picked from a
+						    list the warehouse supplied, everything below is typed from memory. */}
+						<Separator className="my-2" />
+						<h4 className={cn(FILTER_SECTION_LABEL, "py-1 text-muted-foreground")}>Identity</h4>
+
+						<TextFilter
+							key={`user:${search.user ?? ""}`}
+							id="replays-user-search"
+							placeholder="Name or email…"
+							clearLabel="Clear name or email filter"
+							value={search.user}
+							onApply={setUserSearch}
+						/>
+
+						<TextFilter
+							key={`userId:${search.userId ?? ""}`}
+							id="replays-user-filter"
+							placeholder="User ID…"
+							clearLabel="Clear user ID filter"
+							value={search.userId}
+							onApply={setUserId}
 						/>
 
 						{!hasFacets && (
@@ -332,20 +302,14 @@ export function ReplaysFilterSidebar({ facetsResult }: ReplaysFilterSidebarProps
 // local-state-synced input. The × clears both the field and the applied filter.
 interface TextFilterProps {
 	id: string
-	label: string
 	placeholder: string
 	clearLabel: string
 	value: string | undefined
 	onApply: (value: string | undefined) => void
 }
 
-function TextFilter({ id, label, placeholder, clearLabel, value, onApply }: TextFilterProps) {
+function TextFilter({ id, placeholder, clearLabel, value, onApply }: TextFilterProps) {
 	const [text, setText] = useState(value ?? "")
-
-	// Keep in sync when the param changes elsewhere (Clear all, the active-user chip's ×).
-	useEffect(() => {
-		setText(value ?? "")
-	}, [value])
 
 	const clear = () => {
 		setText("")
@@ -354,21 +318,19 @@ function TextFilter({ id, label, placeholder, clearLabel, value, onApply }: Text
 
 	return (
 		<form
-			className="py-2"
+			className="py-1"
 			onSubmit={(e) => {
 				e.preventDefault()
 				onApply(text.trim() || undefined)
 			}}
 		>
-			<Label htmlFor={id} className={`mb-2 block ${FILTER_SECTION_LABEL} text-muted-foreground`}>
-				{label}
-			</Label>
 			<InputGroup>
 				<InputGroupAddon>
 					<MagnifierIcon />
 				</InputGroupAddon>
 				<InputGroupInput
 					id={id}
+					aria-label={placeholder.replace("…", "")}
 					size="sm"
 					value={text}
 					onChange={(e) => setText(e.target.value)}

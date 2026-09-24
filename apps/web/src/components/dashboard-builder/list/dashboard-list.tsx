@@ -67,7 +67,7 @@ const SORT_LABELS: Record<DashboardSortOption, string> = {
 	"name-asc": "Name A–Z",
 	"name-desc": "Name Z–A",
 	widgets: "Most widgets",
-}
+} satisfies Record<DashboardSortOption, string>
 
 export type DashboardScope = "all" | "favorites"
 
@@ -379,7 +379,10 @@ export function DashboardList({
 	}
 
 	return (
-		<div className="flex min-h-0 flex-col">
+		// Not shrinkable: as a flex child of the page scroll area it would
+		// otherwise compress below its content, spilling the rows past its own
+		// box so the bottom padding lands behind them instead of after them.
+		<div className="flex shrink-0 flex-col pb-6">
 			<div className="flex flex-wrap items-center gap-2 pb-3">
 				<ToolbarSearch
 					query={query}

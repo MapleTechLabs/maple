@@ -6,25 +6,14 @@ import {
 	CurrentTenant,
 	ErrorIncidentId,
 	InvestigationCreateRequest,
+	InvestigationDataCorruptionError,
 	InvestigationFreeformSubject,
 	InvestigationId,
 	InvestigationIncidentSubject,
 	InvestigationSubjectSnapshot,
-	type InvestigationNotFoundError,
-	type InvestigationPersistenceError,
-	type InvestigationQuotaError,
-	type InvestigationRejectedError,
-	type InvestigationUnavailableError,
 	TraceId,
 } from "@maple/domain/http"
-import {
-	MapleApiV2,
-	dependencyUnavailable,
-	investigationQuotaReached,
-	paginateOffsetQuery,
-	resourceNotFound,
-	upstreamError,
-} from "@maple/domain/http/v2"
+import { MapleApiV2, paginateOffsetQuery } from "@maple/domain/http/v2"
 import type {
 	V2Investigation,
 	V2InvestigationCreateParams,
@@ -32,24 +21,13 @@ import type {
 	V2InvestigationSubject,
 } from "@maple/domain/http/v2"
 import { Effect, Match, Schema } from "effect"
-import { InvestigationService } from "@/services/errors/InvestigationService"
-
-class InvestigationSubjectDecodeError extends Schema.TaggedError<InvestigationSubjectDecodeError>()(
-	"@maple/api/routes/v2/InvestigationSubjectDecodeError",
-	{
-		investigationId: InvestigationId,
-		field: Schema.String,
-		value: Schema.String,
-		incidentKind: Schema.optionalKey(Schema.String),
-		incidentId: Schema.optionalKey(Schema.String),
-		message: Schema.String,
-	},
-) {}
+import { recordHttpAudit } from "@maple/backend/services/audit/AuditLogService"
+import { InvestigationService } from "@maple/backend/services/errors/InvestigationService"
 
 const toWireSubject = Effect.fn("HttpV2Investigations.toWireSubject")(function* (
 	investigationId: InvestigationId,
 	subject: InvestigationSubject,
-): Effect.fn.Return<V2InvestigationSubject, InvestigationSubjectDecodeError> {
+): Effect.fn.Return<V2InvestigationSubject, InvestigationDataCorruptionError> {
 	yield* Effect.annotateCurrentSpan(
 		subject.type === "incident"
 			? {
@@ -67,12 +45,21 @@ const toWireSubject = Effect.fn("HttpV2Investigations.toWireSubject")(function* 
 			context_refs: subject.contextRefs,
 		}
 	}
+	if (subject.type === "fix_verification") {
+		return {
+			type: "fix_verification",
+			issue_id: subject.issueId,
+			pull_request_url: subject.pullRequestUrl,
+			baseline_versions: subject.baselineVersions,
+			merged_at: subject.mergedAt,
+		}
+	}
 	const shared = {
 		type: "incident" as const,
 		issue_id: subject.issueId ?? null,
 	}
 	const decodeFailure = () =>
-		new InvestigationSubjectDecodeError({
+		new InvestigationDataCorruptionError({
 			investigationId,
 			field: "subject.incident_id",
 			value: subject.incidentId,
@@ -82,8 +69,8 @@ const toWireSubject = Effect.fn("HttpV2Investigations.toWireSubject")(function* 
 		})
 	return yield* Match.value(subject.incidentKind).pipe(
 		Match.when("error", () =>
-			Schema.decodeUnknownEffect(ErrorIncidentId)(subject.incidentId).pipe(
-				Effect.catchTag("SchemaError", () => Effect.fail(decodeFailure())),
+			Schema.decodeEffect(ErrorIncidentId)(subject.incidentId).pipe(
+				Effect.mapError(decodeFailure),
 				Effect.map((incidentId) => ({
 					...shared,
 					incident_kind: "error" as const,
@@ -92,8 +79,8 @@ const toWireSubject = Effect.fn("HttpV2Investigations.toWireSubject")(function* 
 			),
 		),
 		Match.when("anomaly", () =>
-			Schema.decodeUnknownEffect(AnomalyIncidentId)(subject.incidentId).pipe(
-				Effect.catchTag("SchemaError", () => Effect.fail(decodeFailure())),
+			Schema.decodeEffect(AnomalyIncidentId)(subject.incidentId).pipe(
+				Effect.mapError(decodeFailure),
 				Effect.map((incidentId) => ({
 					...shared,
 					incident_kind: "anomaly" as const,
@@ -102,8 +89,8 @@ const toWireSubject = Effect.fn("HttpV2Investigations.toWireSubject")(function* 
 			),
 		),
 		Match.when("alert", () =>
-			Schema.decodeUnknownEffect(AlertIncidentId)(subject.incidentId).pipe(
-				Effect.catchTag("SchemaError", () => Effect.fail(decodeFailure())),
+			Schema.decodeEffect(AlertIncidentId)(subject.incidentId).pipe(
+				Effect.mapError(decodeFailure),
 				Effect.map((incidentId) => ({
 					...shared,
 					incident_kind: "alert" as const,
@@ -121,7 +108,7 @@ const toInternalSubject = (subject: V2InvestigationCreateSubject): Investigation
 				type: "incident",
 				incidentKind: subject.incident_kind,
 				incidentId: subject.incident_id,
-				...(subject.issue_id !== undefined ? { issueId: subject.issue_id } : {}),
+				...(subject.issue_id !== undefined ? { issueId: subject.issue_id } : undefined),
 			})
 		: new InvestigationFreeformSubject({
 				type: "freeform",
@@ -131,23 +118,22 @@ const toInternalSubject = (subject: V2InvestigationCreateSubject): Investigation
 			})
 
 const toInternalSnapshot = (snapshot: V2InvestigationCreateParams["snapshot"] | undefined) =>
-	snapshot === undefined ? undefined : Schema.decodeUnknownSync(InvestigationSubjectSnapshot)(snapshot)
+	snapshot === undefined ? undefined : Schema.decodeSync(InvestigationSubjectSnapshot)(snapshot)
 
 const toV2Investigation = Effect.fn("HttpV2Investigations.toV2Investigation")(function* (
 	doc: InvestigationDocument,
-): Effect.fn.Return<V2Investigation, InvestigationSubjectDecodeError> {
+): Effect.fn.Return<V2Investigation, InvestigationDataCorruptionError> {
 	yield* Effect.annotateCurrentSpan("investigationId", doc.id)
 	const decodeReportTraceId = (traceId: string) =>
-		Schema.decodeUnknownEffect(TraceId)(traceId).pipe(
-			Effect.catchTag("SchemaError", () =>
-				Effect.fail(
-					new InvestigationSubjectDecodeError({
+		Schema.decodeEffect(TraceId)(traceId).pipe(
+			Effect.mapError(
+				() =>
+					new InvestigationDataCorruptionError({
 						investigationId: doc.id,
 						field: "report.evidence.trace_ids",
 						value: traceId,
 						message: "Stored investigation report contains an invalid trace identifier",
 					}),
-				),
 			),
 		)
 	const report =
@@ -169,6 +155,7 @@ const toV2Investigation = Effect.fn("HttpV2Investigations.toV2Investigation")(fu
 		subject: yield* toWireSubject(doc.id, doc.subject),
 		snapshot: doc.snapshot,
 		report,
+		progress: doc.progress,
 		model: doc.model,
 		severity: doc.severity,
 		confidence: doc.confidence,
@@ -181,128 +168,22 @@ const toV2Investigation = Effect.fn("HttpV2Investigations.toV2Investigation")(fu
 		started_at: doc.startedAt,
 		diagnosed_at: doc.diagnosedAt,
 		updated_at: doc.updatedAt,
-		// Ordering is a contract — `LENS_DISPATCH_ORDER` decides which lenses a
-		// narrow run gets — and the service already returns them ordered by ordinal.
-		lens_runs: doc.lensRuns.map((lens) => ({
-			lensId: lens.lensId,
-			status: lens.status,
-			verdict: lens.verdict,
-			claim: lens.claim,
-			reason: lens.reason,
-			progressNote: lens.progressNote,
-			confidence: lens.confidence,
-			toolCount: lens.toolCount,
-			elapsedSeconds: lens.elapsedSeconds,
-			name: lens.name,
-			question: lens.question,
-			priority: lens.priority,
-			deadlineHit: lens.deadlineHit,
-		})),
-		validator:
-			doc.validator === null
-				? null
-				: {
-						status: doc.validator.status,
-						note: doc.validator.note,
-						elapsedSeconds: doc.validator.elapsedSeconds,
-					},
-		fanout: { state: doc.fanout.state, size: doc.fanout.size },
 	}
 })
 
-/** Service tagged errors → v2 envelope errors (no 404 on the contract). */
-const mapPersistenceError =
-	(operation: string) =>
-	<A, R>(effect: Effect.Effect<A, InvestigationPersistenceError, R>) =>
-		effect.pipe(
-			Effect.catchTag("@maple/http/investigations/InvestigationPersistenceError", () =>
-				Effect.fail(dependencyUnavailable(`investigation_${operation}_unavailable`)),
-			),
-		)
-
-/** Service tagged errors → v2 envelope errors (endpoints with a 404). */
-const mapWith404 =
-	(operation: string) =>
-	<A, R>(effect: Effect.Effect<A, InvestigationPersistenceError | InvestigationNotFoundError, R>) =>
-		effect.pipe(
-			Effect.catchTags({
-				"@maple/http/investigations/InvestigationNotFoundError": () =>
-					Effect.fail(resourceNotFound("investigation", "No such investigation.")),
-				"@maple/http/investigations/InvestigationPersistenceError": () =>
-					Effect.fail(dependencyUnavailable(`investigation_${operation}_unavailable`)),
-			}),
-		)
-
-const mapStartErrors = <A, R>(
-	effect: Effect.Effect<
-		A,
-		| InvestigationPersistenceError
-		| InvestigationNotFoundError
-		| InvestigationQuotaError
-		| InvestigationRejectedError
-		| InvestigationUnavailableError,
-		R
-	>,
-) =>
-	effect.pipe(
-		Effect.catchTags({
-			"@maple/http/investigations/InvestigationNotFoundError": () =>
-				Effect.fail(resourceNotFound("investigation", "No such investigation.")),
-			"@maple/http/investigations/InvestigationPersistenceError": () =>
-				Effect.fail(dependencyUnavailable("investigation_start_unavailable")),
-			"@maple/http/investigations/InvestigationQuotaError": (error) =>
-				Effect.fail(investigationQuotaReached(error.retryableAt)),
-			"@maple/http/investigations/InvestigationRejectedError": (error) =>
-				Effect.fail(
-					upstreamError(
-						"investigation_start_rejected",
-						`The investigation agent rejected the start request with HTTP ${error.status}.`,
-					),
-				),
-			"@maple/http/investigations/InvestigationUnavailableError": (error) =>
-				Effect.fail(dependencyUnavailable(`investigation_${error.reason}`)),
-		}),
-	)
-
-const mapCreateStartErrors = <A, R>(
-	effect: Effect.Effect<
-		A,
-		| InvestigationPersistenceError
-		| InvestigationQuotaError
-		| InvestigationRejectedError
-		| InvestigationUnavailableError,
-		R
-	>,
-) =>
-	effect.pipe(
-		Effect.catchTags({
-			"@maple/http/investigations/InvestigationPersistenceError": () =>
-				Effect.fail(dependencyUnavailable("investigation_start_unavailable")),
-			"@maple/http/investigations/InvestigationQuotaError": (error) =>
-				Effect.fail(investigationQuotaReached(error.retryableAt)),
-			"@maple/http/investigations/InvestigationRejectedError": (error) =>
-				Effect.fail(
-					upstreamError(
-						"investigation_start_rejected",
-						`The investigation agent rejected the start request with HTTP ${error.status}.`,
-					),
-				),
-			"@maple/http/investigations/InvestigationUnavailableError": (error) =>
-				Effect.fail(dependencyUnavailable(`investigation_${error.reason}`)),
-		}),
-	)
-
-const mapSubjectDecodeError = (error: InvestigationSubjectDecodeError) =>
+const logSubjectDecodeError = (error: InvestigationDataCorruptionError) =>
 	Effect.logError(error.message).pipe(
 		Effect.annotateLogs({
 			investigationId: error.investigationId,
 			field: error.field,
 			value: error.value,
-			...(error.incidentKind !== undefined ? { incidentKind: error.incidentKind } : {}),
-			...(error.incidentId !== undefined ? { incidentId: error.incidentId } : {}),
+			...(error.incidentKind !== undefined ? { incidentKind: error.incidentKind } : undefined),
+			...(error.incidentId !== undefined ? { incidentId: error.incidentId } : undefined),
 		}),
-		Effect.andThen(Effect.fail(dependencyUnavailable("investigation_subject_decode_failed"))),
 	)
+
+const serializeInvestigation = (doc: InvestigationDocument) =>
+	toV2Investigation(doc).pipe(Effect.tapError(logSubjectDecodeError))
 
 export const HttpV2InvestigationsLive = HttpApiBuilder.group(MapleApiV2, "investigations", (handlers) =>
 	Effect.gen(function* () {
@@ -315,23 +196,22 @@ export const HttpV2InvestigationsLive = HttpApiBuilder.group(MapleApiV2, "invest
 					const page = yield* paginateOffsetQuery(query, ({ limit, offset }) =>
 						service
 							.listInvestigations(tenant.orgId, {
-								...(query.status !== undefined ? { status: query.status } : {}),
-								...(query.issue_id !== undefined ? { issueId: query.issue_id } : {}),
+								...(query.status !== undefined ? { status: query.status } : undefined),
+								...(query.issue_id !== undefined ? { issueId: query.issue_id } : undefined),
 								...(query.incident_kind !== undefined
-									? { incidentKind: query.incident_kind }
-									: {}),
-								...(query.incident_id !== undefined ? { incidentId: query.incident_id } : {}),
+									? {
+											incidentKind: query.incident_kind,
+										}
+									: undefined),
+								...(query.incident_id !== undefined
+									? { incidentId: query.incident_id }
+									: undefined),
 								limit,
 								offset,
 							})
 							.pipe(
-								mapPersistenceError("list"),
 								Effect.flatMap((response) =>
-									Effect.forEach(response.investigations, toV2Investigation),
-								),
-								Effect.catchTag(
-									"@maple/api/routes/v2/InvestigationSubjectDecodeError",
-									mapSubjectDecodeError,
+									Effect.forEach(response.investigations, serializeInvestigation),
 								),
 							),
 					)
@@ -341,67 +221,53 @@ export const HttpV2InvestigationsLive = HttpApiBuilder.group(MapleApiV2, "invest
 			.handle("retrieve", ({ params }) =>
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
-					const doc = yield* service
-						.getInvestigation(tenant.orgId, params.id)
-						.pipe(mapWith404("retrieve"))
-					return yield* toV2Investigation(doc).pipe(
-						Effect.catchTag(
-							"@maple/api/routes/v2/InvestigationSubjectDecodeError",
-							mapSubjectDecodeError,
-						),
-					)
+					const doc = yield* service.getInvestigation(tenant.orgId, params.id)
+
+					return yield* serializeInvestigation(doc)
 				}),
 			)
 			.handle("create", ({ payload }) =>
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
-					const doc = yield* service
-						.createAndStartInvestigation(
-							tenant.orgId,
-							tenant.userId,
-							new InvestigationCreateRequest({
-								subject: toInternalSubject(payload.subject),
-								...(payload.snapshot !== undefined
-									? { snapshot: toInternalSnapshot(payload.snapshot) }
-									: {}),
-							}),
-							{ automatic: false },
-						)
-						.pipe(mapCreateStartErrors)
-					return yield* toV2Investigation(doc).pipe(
-						Effect.catchTag(
-							"@maple/api/routes/v2/InvestigationSubjectDecodeError",
-							mapSubjectDecodeError,
-						),
+					const doc = yield* service.createAndStartInvestigation(
+						tenant.orgId,
+						tenant.userId,
+						new InvestigationCreateRequest({
+							subject: toInternalSubject(payload.subject),
+							...(payload.snapshot !== undefined
+								? {
+										snapshot: toInternalSnapshot(payload.snapshot),
+									}
+								: undefined),
+						}),
 					)
+					yield* recordHttpAudit("investigation.created", {
+						resourceId: doc.id,
+						metadata: { subject_type: payload.subject.type },
+					})
+
+					return yield* serializeInvestigation(doc)
 				}),
 			)
 			.handle("restart", ({ params }) =>
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
-					const doc = yield* service
-						.restartInvestigation(tenant.orgId, params.id)
-						.pipe(mapStartErrors)
-					return yield* toV2Investigation(doc).pipe(
-						Effect.catchTag(
-							"@maple/api/routes/v2/InvestigationSubjectDecodeError",
-							mapSubjectDecodeError,
-						),
-					)
+					const doc = yield* service.restartInvestigation(tenant.orgId, params.id)
+					yield* recordHttpAudit("investigation.restarted", { resourceId: doc.id })
+
+					return yield* serializeInvestigation(doc)
 				}),
 			)
 			.handle("updateStatus", ({ params, payload }) =>
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
-					const doc = yield* service
-						.updateStatus(tenant.orgId, params.id, payload.status)
-						.pipe(mapWith404("update_status"))
-					return yield* toV2Investigation(doc).pipe(
-						Effect.catchTag(
-							"@maple/api/routes/v2/InvestigationSubjectDecodeError",
-							mapSubjectDecodeError,
-						),
-					)
+					const doc = yield* service.updateStatus(tenant.orgId, params.id, payload.status)
+					yield* recordHttpAudit("investigation.status_changed", {
+						resourceId: doc.id,
+						metadata: { to_status: payload.status },
+					})
+
+					return yield* serializeInvestigation(doc)
 				}),
 			)
 	}),

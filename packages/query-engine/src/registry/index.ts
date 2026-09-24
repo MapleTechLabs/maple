@@ -1,9 +1,25 @@
-/**
- * Declarative warehouse query registry.
- *
- * Kept out of the root barrel deliberately: entries pull in `./runtime` for the
- * cache-policy types, and the root barrel stays driver-free so web and cli can
- * import it. Only `apps/api` should reach for this subpath.
- */
-export { defineQuery, type QueryDef } from "./query-def"
+// Separate from the driver-free root barrel used by web and CLI consumers.
+export {
+	defineQuery,
+	isTimeBucketQueryCachePolicy,
+	makeTimeBucketQueryCachePolicy,
+	queryDefinitionCacheIdentity,
+	resolveQueryDefinitionCache,
+	type QueryCachePolicy,
+	type QueryDefinition,
+	type TimeBucketQueryCachePolicy,
+} from "./query-definition"
+export * from "./logs"
+export {
+	productEventsFunnelOpts,
+	productEventsPathsOpts,
+	productEventsQueryOptions,
+	productEventsTimeseries,
+	productEventsBreakdown,
+	productEventsList,
+	toProductEventsTimeseriesInput,
+	type ProductEventsTimeseriesInput,
+	type ProductEventsBreakdownInput,
+	type ProductEventsListInput,
+} from "./product-events"
 export * as Queries from "./queries"

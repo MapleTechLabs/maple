@@ -1,0 +1,330 @@
+import { useCallback, useEffect, useMemo, type ReactNode } from "react"
+import { createFileRoute, Link, useNavigate, useRouterState } from "@tanstack/react-router"
+import { Schema } from "effect"
+
+import type { GetAiSessionSummaryResponse } from "@maple/domain/http"
+import { formatWarehouseDateTime } from "@maple/query-engine"
+import { toEpochMs } from "@maple/ui/lib/time-format"
+import { Skeleton } from "@maple/ui/components/ui/skeleton"
+
+import { SquareSparkleIcon } from "@/components/icons"
+import { Button } from "@maple/ui/components/ui/button"
+import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@maple/ui/components/ui/empty"
+import { DashboardLayout } from "@/components/layout/dashboard-layout"
+import { QueryErrorState } from "@/components/common/query-error-state"
+import { SessionHeader } from "@/components/agent-sessions/session-detail/session-header"
+import { SessionLoadIndicator } from "@/components/agent-sessions/session-detail/session-load-indicator"
+import {
+	isSessionView,
+	SessionViews,
+	type SessionView,
+} from "@/components/agent-sessions/session-detail/session-views"
+import { useSessionSpans, type SessionSpansState } from "@/hooks/use-session-spans"
+import {
+	breadcrumbSessionId,
+	buildBackToSessionsHref,
+	buildSessionSummary,
+	buildSessionTurns,
+	resolveWindow,
+} from "@maple/agent-sessions"
+import { Result, useAtomValue } from "@/lib/effect-atom"
+import { displayError } from "@/lib/error-messages"
+import { disabledResultAtom } from "@/lib/services/atoms/disabled-result-atom"
+import { aiSessionSummaryResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
+
+const agentSessionSearchSchema = Schema.Struct({
+	// Warehouse timestamps: the session's first and last span, carried in from
+	// the list row or — for a link that arrived without them — written back here
+	// once the read resolved the session. They bound the warehouse read, which is
+	// what makes it cheap; without them it finds the session by id across
+	// retention instead, which is why the page bothers to stamp them.
+	t: Schema.optional(Schema.String),
+	end: Schema.optional(Schema.String),
+	// Which of the four views is open. A search param rather than a route
+	// segment on purpose: Back from the detail page returns to the list the
+	// reader came from, not to the view they looked at before this one.
+	view: Schema.optional(Schema.String),
+	// The span open in the inspection popover, in whichever view it was opened
+	// from. In the URL rather than component state so a pasted link reopens the
+	// exact span someone was looking at.
+	span: Schema.optional(Schema.String.check(Schema.isMinLength(1), Schema.isTrimmed())),
+	// A tool name to open pre-filtered to, set by the links out of
+	// `/agent-sessions/tools`. It seeds the views' existing span filter rather
+	// than adding a second one — a reader who arrived asking about `run_tests`
+	// should not have to type it again into a six-hundred-row waterfall, and the
+	// filter is theirs to clear from the toolbar like any other.
+	tool: Schema.optional(Schema.String.check(Schema.isMinLength(1), Schema.isTrimmed())),
+})
+
+const SESSION_TOO_LARGE_TAG = "@maple/http/ai-sessions/AiSessionTooLargeError"
+
+export const Route = createFileRoute("/agent-sessions/$sessionId")({
+	component: AgentSessionDetailPage,
+	validateSearch: Schema.toStandardSchemaV1(agentSessionSearchSchema),
+})
+
+function AgentSessionDetailPage() {
+	const { sessionId } = Route.useParams()
+	const search = Route.useSearch()
+	const queryWindow = useMemo(() => resolveWindow(search.t, search.end), [search.t, search.end])
+	// `undefined` spreads to nothing, which is exactly the request the endpoint
+	// reads as "resolve this session from its id".
+	const spansState = useSessionSpans(sessionId, queryWindow)
+	// The whole session's totals — only for a session that did not fit the
+	// first page, where they are what the progress indicator counts toward.
+	// One that did is complete in hand, and what the page computes from it IS
+	// the total; the extra warehouse read would buy nothing.
+	const summaryResult = useAtomValue(
+		spansState.progress !== undefined
+			? aiSessionSummaryResultAtom({ data: { sessionId, ...queryWindow } })
+			: disabledResultAtom<GetAiSessionSummaryResponse>(),
+	)
+
+	return Result.builder(spansState.firstPage)
+		.onInitial(() => (
+			<SessionShell sessionId={sessionId}>
+				<DashboardLayout.Content>
+					<DashboardLayout.Sticky>
+						<Skeleton className="h-9 w-80" />
+					</DashboardLayout.Sticky>
+					<DashboardLayout.Fill>
+						{/* The Overview's own shape — switcher, verdict, vitals, time bar —
+						    so the page doesn't reflow on resolve. */}
+						<div className="space-y-6 p-4">
+							<Skeleton className="h-8 w-72" />
+							<div className="flex flex-wrap items-start justify-between gap-8">
+								<div className="space-y-3">
+									<Skeleton className="h-9 w-[26rem] max-w-full" />
+									<Skeleton className="h-4 w-80 max-w-full" />
+								</div>
+								<div className="flex gap-6">
+									{Array.from({ length: 3 }).map((_, index) => (
+										<Skeleton key={index} className="h-16 w-32" />
+									))}
+								</div>
+							</div>
+							<Skeleton className="h-4 w-full rounded-sm" />
+							<div className="space-y-2">
+								{Array.from({ length: 8 }).map((_, index) => (
+									<Skeleton key={index} className="h-12 w-full" />
+								))}
+							</div>
+						</div>
+					</DashboardLayout.Fill>
+				</DashboardLayout.Content>
+			</SessionShell>
+		))
+		.onError((error) => (
+			<SessionShell sessionId={sessionId}>
+				<DashboardLayout.Content>
+					<DashboardLayout.Sticky>
+						<DashboardLayout.Header title={breadcrumbSessionId(sessionId)} />
+					</DashboardLayout.Sticky>
+					<DashboardLayout.Scroll>
+						<QueryErrorState
+							error={error}
+							// The 413 describes itself precisely ("Session is too large to
+							// load"); overriding it would replace a specific, actionable
+							// message with a generic one.
+							titleOverride={
+								displayError(error)._tag === SESSION_TOO_LARGE_TAG
+									? undefined
+									: "Failed to load this agent session"
+							}
+						/>
+					</DashboardLayout.Scroll>
+				</DashboardLayout.Content>
+			</SessionShell>
+		))
+		.onSuccess((value) =>
+			value.data.length === 0 ? (
+				<SessionShell sessionId={sessionId}>
+					<DashboardLayout.Content>
+						<DashboardLayout.Sticky>
+							<DashboardLayout.Header title={breadcrumbSessionId(sessionId)} />
+						</DashboardLayout.Sticky>
+						<DashboardLayout.Scroll>
+							<EmptySession sessionId={sessionId} windowed={queryWindow !== undefined} />
+						</DashboardLayout.Scroll>
+					</DashboardLayout.Content>
+				</SessionShell>
+			) : (
+				<SessionDetailBody
+					sessionId={sessionId}
+					spansState={spansState}
+					totals={Result.isSuccess(summaryResult) ? summaryResult.value : undefined}
+				/>
+			),
+		)
+		.render()
+}
+
+function SessionDetailBody({
+	sessionId,
+	spansState,
+	totals,
+}: {
+	sessionId: string
+	spansState: SessionSpansState
+	totals: GetAiSessionSummaryResponse | undefined
+}) {
+	const { spans, progress } = spansState
+	const turns = useMemo(() => buildSessionTurns(spans), [spans])
+	const summary = useMemo(() => buildSessionSummary({ spans, turns }), [spans, turns])
+
+	const search = Route.useSearch()
+	const navigate = useNavigate({ from: Route.fullPath })
+
+	// An unknown or absent `?view=` reads as the default rather than as an error:
+	// the param is a hint from a link, and a mistyped one should still land the
+	// reader on a page.
+	const view: SessionView =
+		search.view !== undefined && isSessionView(search.view) ? search.view : "overview"
+
+	const changeView = useCallback(
+		(next: SessionView) => {
+			navigate({ search: (prev: Record<string, unknown>) => ({ ...prev, view: next }) })
+		},
+		[navigate],
+	)
+
+	// A link that arrived without hints cost the warehouse a session lookup across
+	// retention; stamping the bounds it found into the URL means this link never
+	// pays for that again — a reload, a share, a bookmark all take the pruned
+	// read. The exact bounds go in, unpadded: `resolveWindow` pads on the way out,
+	// and padding here would compound on every write.
+	//
+	// An effect for the same reason `useCheckoutReturn` uses one: the URL is
+	// external state being reconciled after an async result landed, which is not
+	// something render can derive. `search.t` is both the guard and the result, so
+	// it runs once and the re-render it causes is a no-op.
+	//
+	// A session still being written gets the bounds it had at read time, exactly
+	// as a link from the list page does — the padding `resolveWindow` adds is the
+	// only slack either one has.
+	//
+	// For a session that did not fit the first page the bounds are the whole
+	// session's, from the totals read: stamping where the spans in hand end
+	// would make every later load of the link read a session cut short. Until
+	// that read answers — and if it never does — the link stays unstamped,
+	// which costs a resolve per load and lies to no one.
+	const startMs = totals?.startTime === undefined ? summary.startMs : toEpochMs(totals.startTime)
+	const endMs = totals?.endTime === undefined ? summary.endMs : toEpochMs(totals.endTime)
+	useEffect(() => {
+		if (search.t !== undefined || (progress !== undefined && totals === undefined)) return
+		navigate({
+			replace: true,
+			search: (prev: Record<string, unknown>) => ({
+				...prev,
+				t: formatWarehouseDateTime(startMs),
+				end: formatWarehouseDateTime(endMs),
+			}),
+		})
+	}, [navigate, search.t, progress, totals, startMs, endMs])
+
+	const selectSpan = useCallback(
+		(spanId: string | undefined) => {
+			navigate({
+				search: (prev: Record<string, unknown>) => ({ ...prev, span: spanId }),
+				// Opening a span is a step the reader may want Back to undo;
+				// moving the panel to another span, or closing it, is not.
+				replace: search.span !== undefined,
+			})
+		},
+		[navigate, search.span],
+	)
+
+	return (
+		<SessionShell sessionId={sessionId}>
+			<DashboardLayout.Content>
+				<DashboardLayout.Sticky>
+					<DashboardLayout.Header
+						titleContent={<SessionHeader sessionId={sessionId} summary={summary} />}
+					>
+						{/* The one sign a session larger than a page is still arriving.
+						    Every view renders what is in hand and grows as pages land;
+						    nothing below asks the reader to fetch anything. */}
+						{progress !== undefined && progress.phase !== "complete" && (
+							<SessionLoadIndicator progress={progress} totals={totals} />
+						)}
+					</DashboardLayout.Header>
+				</DashboardLayout.Sticky>
+				{/* `py-0` (the content blocks carry the padding instead) so the views'
+				    sticky elements pin flush to the scroller's edges — sticky offsets
+				    resolve against the padding edge. The top edge is the control bar;
+				    the bottom is the Flow view's floor, whose legend and zoom otherwise
+				    float a padding's height short of the viewport with the canvas
+				    scrolling visibly beneath them. `pr-6` keeps the overlay
+				    scrollbar off the right-aligned duration/cost columns, and
+				    `overflow-x-hidden` means a span that escapes its truncation can
+				    never make the whole page scroll sideways. */}
+				<DashboardLayout.Scroll className="overflow-x-hidden py-0 pr-6">
+					{/* Content-driven height inside the scroller: `shrink-0` because a
+					    scroll container's flex items shrink to fit before they overflow,
+					    which would collapse the views instead of scrolling them; `grow`
+					    (basis auto, not `flex-1`'s basis 0) so short content still fills
+					    the viewport; the floor keeps the empty states from a sliver. */}
+					<div className="flex min-h-64 shrink-0 grow flex-col">
+						<SessionViews
+							view={view}
+							onViewChange={changeView}
+							turns={turns}
+							summary={summary}
+							progress={progress}
+							totals={totals}
+							selectedSpanId={search.span}
+							onSelectSpan={selectSpan}
+							initialQuery={search.tool}
+						/>
+					</div>
+				</DashboardLayout.Scroll>
+			</DashboardLayout.Content>
+			{/* No side panel at any width: span detail opens as a popover against
+			    the row, node or finding the reader clicked. */}
+		</SessionShell>
+	)
+}
+
+/** Root, breadcrumbs, and the body row every branch fills with a `Content` column. */
+function SessionShell({ sessionId, children }: { sessionId: string; children: ReactNode }) {
+	const searchStr = useRouterState({ select: (state) => state.location.searchStr })
+
+	return (
+		<DashboardLayout.Root>
+			<DashboardLayout.Breadcrumbs
+				items={[
+					{ label: "Agent Sessions", href: buildBackToSessionsHref(searchStr) },
+					{ label: breadcrumbSessionId(sessionId) },
+				]}
+			/>
+			<DashboardLayout.Body>{children}</DashboardLayout.Body>
+		</DashboardLayout.Root>
+	)
+}
+
+function EmptySession({ sessionId, windowed }: { sessionId: string; windowed: boolean }) {
+	return (
+		<Empty>
+			<EmptyHeader>
+				<EmptyMedia variant="icon">
+					<SquareSparkleIcon />
+				</EmptyMedia>
+				<EmptyTitle>No spans for this session</EmptyTitle>
+				{/* Two genuinely different failures. With a window the read was
+				    bounded by the link's own timestamps, so a stale or hand-edited
+				    link can miss a session that exists; without one the search
+				    already covered everything still retained, and promising a wider
+				    range would be a lie. */}
+				<EmptyDescription>
+					Nothing was found for <span className="font-mono">{sessionId}</span>
+					{windowed
+						? " around the time this link points at. Open it from the Agent Sessions list to search again."
+						: " in any retained trace — the session may be older than the trace retention."}
+				</EmptyDescription>
+			</EmptyHeader>
+			<Button variant="outline" size="sm" render={<Link to="/agent-sessions" />}>
+				Back to agent sessions
+			</Button>
+		</Empty>
+	)
+}

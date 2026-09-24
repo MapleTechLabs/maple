@@ -8,6 +8,7 @@ import { type Pipeable, pipeArguments } from "effect/Pipeable"
 import * as PubSub from "effect/PubSub"
 import * as Scope from "effect/Scope"
 import * as Stream from "effect/Stream"
+import { UnitflowMisuseError } from "./defects.js"
 import {
 	completeCounted,
 	isExpectedTermination,
@@ -71,7 +72,7 @@ export const make = <A = void>(options?: Options): Event<A> => ({
 	id: `event:${++nextEventId}`,
 	"~source": true,
 	"~sink": true,
-	...(options?.name === undefined ? {} : { name: options.name }),
+	...(!(options?.name === undefined) ? { name: options.name } : undefined),
 })
 
 export const isEvent = (value: unknown): value is Event<unknown> =>
@@ -98,7 +99,7 @@ export const setter = <A>(store: Store.Store<A>, options?: Pick<Options, "name">
 	id: `event:${++nextEventId}`,
 	"~source": true,
 	"~sink": true,
-	...(options?.name === undefined ? {} : { name: options.name }),
+	...(!(options?.name === undefined) ? { name: options.name } : undefined),
 })
 
 const CombinedTypeId = Symbol.for("@unitflow/core/CombinedEvent")
@@ -130,18 +131,32 @@ export const combine = <const Sources extends ReadonlyArray<Source<any>>>(
 	[CombinedTypeId]: { sources },
 	id: `event:${++nextEventId}`,
 	"~source": true,
-	...(options?.name === undefined ? {} : { name: options.name }),
+	...(!(options?.name === undefined) ? { name: options.name } : undefined),
 })
 
 export const pubsub = Effect.fnUntraced(function* <A>(
 	event: Source<A> | Sink<A>,
 ): Generator<Effect.Effect<unknown, never, Registry>, PubSub.PubSub<A>, never> {
 	if (isCombined(event)) {
-		return yield* Effect.die(new Error("Unitflow combined events are merged and have no backing pubsub."))
+		// The shape is fixed when the model is declared, so a program that asks this
+		// once asks it every time — a misuse to fix, not a failure to handle.
+		// oxlint-disable-next-line maple/no-effect-die
+		return yield* Effect.die(
+			new UnitflowMisuseError({
+				id: event.id,
+				message: "Unitflow combined events are merged and have no backing pubsub.",
+			}),
+		)
 	}
 	if (isSetter(event)) {
+		// The shape is fixed when the model is declared, so a program that asks this
+		// once asks it every time — a misuse to fix, not a failure to handle.
+		// oxlint-disable-next-line maple/no-effect-die
 		return yield* Effect.die(
-			new Error("Unitflow setter events are backed by their store and have no pubsub."),
+			new UnitflowMisuseError({
+				id: event.id,
+				message: "Unitflow setter events are backed by their store and have no pubsub.",
+			}),
 		)
 	}
 	const registry = yield* Registry
@@ -226,8 +241,7 @@ const closeHandlerEntry = (registry: RegistryService, id: string, entry: Handler
 /**
  * INTERNAL. One synchronous dispatch step: counting, pubsub publication, and
  * direct handler delivery — the order every emit path must keep (a subscriber
- * woken by the publish must already find its item accounted for). The store
- * layer feeds `Store.changed` events through this without a watcher pipeline.
+ * woken by the publish must already find its item accounted for).
  */
 export const dispatchUnsafe = <A>(
 	registry: RegistryService,

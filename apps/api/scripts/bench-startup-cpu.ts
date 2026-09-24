@@ -1,5 +1,6 @@
 #!/usr/bin/env bun
-// ---------------------------------------------------------------------------
+// SAFETY-FILE: JSON rows here come from fixed internal formats and are validated before domain use.
+// BOUNDARY: This module intentionally carries opaque values; callers decode them before domain use.
 // bench-startup-cpu.ts — does defining Schema/TaggedError classes actually
 // cost meaningful Cloudflare *startup* CPU?
 //
@@ -11,8 +12,8 @@
 //
 // Cloudflare error 10021 ("Script startup exceeded CPU time limit") fires during
 // upload validation, which runs ONLY the worker's top-level module scope against
-// a fixed budget (~400ms documented; behaved like ~1s here). So the only thing
-// that matters is: how much CPU does *constructing* these schemas burn at import?
+// a fixed 1s budget. The relevant question is therefore: how much CPU does
+// *constructing* these schemas burn at import?
 //
 //   bun run scripts/bench-startup-cpu.ts                 # micro (default)
 //   bun run scripts/bench-startup-cpu.ts micro --json
@@ -25,22 +26,20 @@
 // NOTE ON ENGINE FIDELITY: Workers run on V8 (workerd); Bun runs on JSC. The
 // ABSOLUTE numbers here are JSC's; the RELATIVE marginal cost (extra error class
 // vs. baseline graph) is what settles the argument and is engine-agnostic. For
-// the authoritative V8 startup number, use `worker` mode (it shells out to
-// `wrangler check startup`, which profiles the real worker on workerd).
-// ---------------------------------------------------------------------------
+// a local workerd startup profile, use `worker` mode. It builds the installed
+// Alchemy-generated entry with Rolldown, then asks Wrangler to profile it.
+// Local profiles are not Cloudflare production CPU measurements.
 
 import { spawnSync } from "node:child_process"
-import { readdirSync, readFileSync, statSync } from "node:fs"
+import { readdirSync, readFileSync, statSync, writeFileSync } from "node:fs"
 import { join, resolve } from "node:path"
-import { Schema } from "effect"
+import { Predicate, Schema } from "effect"
 import { HttpApiEndpoint, HttpApiGroup } from "effect/unstable/httpapi"
 
-// --- Cloudflare reference points (for the verdict) -------------------------
-const CF_STARTUP_BUDGET_MS = 400 // documented startup CPU ceiling
+// https://developers.cloudflare.com/workers/platform/limits/#worker-startup-time
+const CF_STARTUP_BUDGET_MS = 1_000
 const OBSERVED_BLOWUP_MS = 1000 // what the team saw blow up (per the fix session)
-const POST_FIX_STARTUP_MS = 25 // post lazy-import startup CPU (per memory)
 
-// --- tiny measurement harness ----------------------------------------------
 type Sample = { wallMs: number; cpuMs: number }
 
 const measureOnce = (fn: () => unknown): Sample => {
@@ -76,8 +75,6 @@ const bench = (label: string, reps: number, fn: () => unknown): BenchResult => {
 // mirrors how every real class has a distinct tag string.
 let _uid = 0
 const uid = (prefix: string): string => `__bench/${prefix}/${_uid++}`
-
-// --- workloads -------------------------------------------------------------
 
 // A TaggedError shaped exactly like the real WarehouseQueryError (6 fields, one
 // a 6-member Literals union) — the unit the comment says is expensive.
@@ -137,7 +134,6 @@ const buildApiGroup = (endpoints: number, errorsPerEndpoint: number, pool: Reado
 	return g
 }
 
-// --- micro mode ------------------------------------------------------------
 const runMicro = (opts: {
 	reps: number
 	classes: number
@@ -198,10 +194,9 @@ const runMicro = (opts: {
 	const row = (r: BenchResult) =>
 		`  ${r.label.padEnd(44)} cpu ${fmt(r.cpuMs)} ms   wall ${fmt(r.wallMs)} ms`
 
-	const engine =
-		typeof (globalThis as any).Bun !== "undefined"
-			? "Bun/JSC"
-			: `Node/V8 ${process.versions?.v8 ?? ""}`.trim()
+	const engine = Predicate.isNotUndefined((globalThis as any).Bun)
+		? "Bun/JSC"
+		: `Node/V8 ${process.versions?.v8 ?? ""}`.trim()
 	console.log(`\nbench-startup-cpu — micro (median of ${reps} reps, ${engine})\n`)
 	console.log(row(rTagged))
 	console.log(row(rStructs))
@@ -230,13 +225,12 @@ const runMicro = (opts: {
 		`  evaluating the ENTIRE static import graph (all of @maple/domain + MCP tool/JSON-schema` +
 			` derivation + OpenApi.fromApi), not the error taxonomy — which is why the fix was deferring`,
 	)
+	console.log(`  ./app behind a dynamic import, not trimming error classes.`)
 	console.log(
-		`  ./app behind a dynamic import, not trimming error classes. Post-fix startup is ~${POST_FIX_STARTUP_MS} ms.`,
+		`  Use \`bun run scripts/bench-startup-cpu.ts worker\` for the current authoritative V8/workerd number.\n`,
 	)
-	console.log(`  Authoritative V8/workerd number: \`bun run scripts/bench-startup-cpu.ts worker\`.\n`)
 }
 
-// --- cpuprofile parsing (V8 .cpuprofile format) ----------------------------
 type CpuProfile = {
 	nodes: Array<{
 		id: number
@@ -281,7 +275,7 @@ const parseProfile = (path: string, json: boolean) => {
 
 	const ranked = [...byFrame.entries()].sort((a, b) => b[1].self - a[1].self)
 	const idleMs = idleUs / 1000
-	const activeCpuMs = wallMs - idleMs // CPU actually spent executing JS at startup
+	const activeCpuMs = (profile.timeDeltas.reduce((sum, delta) => sum + delta, 0) - idleUs) / 1000 // Sampled active time; exclude unsampled time.
 	const schemaMs = ranked.filter(([, v]) => v.schema).reduce((s, [, v]) => s + v.self, 0) / 1000
 
 	if (json) {
@@ -306,11 +300,12 @@ const parseProfile = (path: string, json: boolean) => {
 	console.log(`\nstartup CPU profile: ${path}\n`)
 	console.log(`  startup phase (wall):     ${wallMs.toFixed(1)} ms  (incl. ${idleMs.toFixed(1)} ms idle)`)
 	console.log(
-		`  active startup CPU:        ${activeCpuMs.toFixed(1)} ms` + `   ← the number 10021 measures`,
+		`  active startup CPU:        ${activeCpuMs.toFixed(1)} ms` +
+			`   (local sampled time, not production CPU)`,
 	)
 	console.log(
 		`  Cloudflare budget:        ${CF_STARTUP_BUDGET_MS} ms` +
-			`  (${((activeCpuMs / CF_STARTUP_BUDGET_MS) * 100).toFixed(1)}% used)`,
+			`  (production upload validation; local timing is not budget utilization)`,
 	)
 	console.log(
 		`  schema/httpapi/domain:    ${schemaMs.toFixed(1)} ms` +
@@ -324,7 +319,6 @@ const parseProfile = (path: string, json: boolean) => {
 	console.log()
 }
 
-// --- worker mode (authoritative) -------------------------------------------
 const newestCpuProfile = (since: number): string | undefined => {
 	const roots = [process.cwd(), join(process.cwd(), ".wrangler"), join(process.cwd(), "dist")]
 	let best: { path: string; mtime: number } | undefined
@@ -361,15 +355,40 @@ const runWorker = (explicitProfile: string | undefined, json: boolean) => {
 		return
 	}
 	const since = Date.now() - 1000
-	const outfile = join(process.cwd(), "worker-startup.cpuprofile")
-	console.error("→ running `wrangler check startup` (this builds the worker)…\n")
+	const checkDir = join(process.cwd(), "node_modules", ".cache", "maple-startup-check")
+	const outfile = join(checkDir, "worker-startup.cpuprofile")
+	const root = resolve(process.cwd(), "../..")
+	const build = spawnSync("bun", [resolve(root, "apps/api/scripts/cold-path/build-bundle2.mjs")], {
+		cwd: root,
+		stdio: "inherit",
+		env: { ...process.env, STARTUP: "1", SEO: "0", OUT: checkDir },
+	})
+	if (build.status !== 0) {
+		process.exitCode = 1
+		return
+	}
+	const configPath = join(checkDir, "wrangler.json")
+	writeFileSync(
+		configPath,
+		JSON.stringify({
+			name: "maple-api-startup-check",
+			main: "./worker.js",
+			find_additional_modules: true,
+			rules: [{ type: "ESModule", globs: ["**/*.js"] }],
+			compatibility_date: "2026-04-08",
+			compatibility_flags: ["nodejs_compat"],
+		}),
+	)
+	console.error("→ profiling the Alchemy/Rolldown bundle with `wrangler check startup --no-bundle`…\n")
 	// Repo-pinned wrangler (not @latest); deterministic --outfile so we parse the
 	// exact file rather than guessing.
-	const res = spawnSync("bunx", ["wrangler", "check", "startup", "--outfile", outfile], {
-		stdio: "inherit",
-		cwd: process.cwd(),
-	})
+	const res = spawnSync(
+		"bunx",
+		["wrangler", "check", "startup", "--args=--no-bundle", "--config", configPath, "--outfile", outfile],
+		{ stdio: "inherit", cwd: checkDir },
+	)
 	if (res.status !== 0) {
+		process.exitCode = 1
 		console.error(
 			`\nwrangler exited ${res.status ?? "?"}. If it produced a .cpuprofile anyway, parse it with:` +
 				`\n  bun run scripts/bench-startup-cpu.ts parse <file.cpuprofile>`,
@@ -383,6 +402,7 @@ const runWorker = (explicitProfile: string | undefined, json: boolean) => {
 		}
 	})()
 	if (!profile) {
+		process.exitCode = 1
 		console.error(
 			"\nNo fresh .cpuprofile found. wrangler may print a path — parse it directly with `parse <file>`.",
 		)
@@ -391,7 +411,6 @@ const runWorker = (explicitProfile: string | undefined, json: boolean) => {
 	parseProfile(profile, json)
 }
 
-// --- arg parsing -----------------------------------------------------------
 const argv = process.argv.slice(2)
 const mode = argv[0] && !argv[0].startsWith("-") ? argv[0] : "micro"
 const flag = (name: string, dflt: number): number => {

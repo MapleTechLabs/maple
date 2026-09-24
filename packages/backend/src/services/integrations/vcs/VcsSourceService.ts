@@ -1,0 +1,456 @@
+import {
+	GitCommitSha,
+	IntegrationsNotConnectedError,
+	IntegrationsPersistenceError,
+	IntegrationsUpstreamError,
+	isInstallationProcessable,
+	type OrgId,
+	type PullRequestContext,
+	type PullRequestFile,
+	type PullRequestReviewPublication,
+	type PullRequestReviewPublished,
+	type PullRequestSummary,
+	type VcsInstallation,
+	type VcsRepo,
+} from "@maple/domain/http"
+import { Context, Effect, Layer, Option, Schema } from "effect"
+import { VcsProviderRegistry } from "./VcsProviderRegistry"
+import { VcsRepository } from "./VcsRepository"
+import type { VcsCodeSearchMatch, VcsSourceFile } from "./VcsProviderClient"
+
+export class VcsSourceRepositoryNotFoundError extends Schema.TaggedError<VcsSourceRepositoryNotFoundError>()(
+	"@maple/api/vcs/VcsSourceRepositoryNotFoundError",
+	{ repository: Schema.String, message: Schema.String },
+) {}
+
+export class VcsSourceFileNotFoundError extends Schema.TaggedError<VcsSourceFileNotFoundError>()(
+	"@maple/api/vcs/VcsSourceFileNotFoundError",
+	{ repository: Schema.String, path: Schema.String, ref: Schema.String, message: Schema.String },
+) {}
+
+/**
+ * Everything that can go wrong resolving *which* repository to talk to, before
+ * a path is involved. Split out from `VcsSourceError` so the pull-request reads
+ * do not advertise a file-not-found failure they cannot raise — a caller that
+ * had to catch a dead tag to satisfy the compiler would be handling a case that
+ * never happens.
+ */
+type VcsRepositoryScopedError =
+	| IntegrationsNotConnectedError
+	| IntegrationsPersistenceError
+	| IntegrationsUpstreamError
+	| VcsSourceRepositoryNotFoundError
+
+type VcsSourceError = VcsRepositoryScopedError | VcsSourceFileNotFoundError
+
+export class VcsSourceRefNotFoundError extends Schema.TaggedError<VcsSourceRefNotFoundError>()(
+	"@maple/api/vcs/VcsSourceRefNotFoundError",
+	{ repository: Schema.String, ref: Schema.String, message: Schema.String },
+) {}
+
+/** A commit the sandbox can check out: the exact SHA a ref names, and how to clone it. */
+export interface RepositoryCheckout {
+	readonly provider: VcsRepo["provider"]
+	readonly fullName: string
+	readonly ref: string
+	readonly sha: GitCommitSha
+	/** The remote to clone. Carries no credential of its own. */
+	readonly remoteUrl: string
+	/** Short-lived and scoped to this repository; staged into the sandbox, never put in a URL. */
+	readonly token: string
+}
+
+const isCommitSha = Schema.is(GitCommitSha)
+
+export interface ConnectedSourceRepository {
+	readonly provider: VcsRepo["provider"]
+	readonly fullName: string
+	readonly defaultBranch: string
+	readonly trackedBranch: string
+	readonly htmlUrl: string
+	readonly isPrivate: boolean
+	readonly isArchived: boolean
+}
+
+export interface VcsSourceServiceApi {
+	readonly listRepositories: (
+		orgId: OrgId,
+	) => Effect.Effect<ReadonlyArray<ConnectedSourceRepository>, VcsRepositoryScopedError>
+	/** Recent pull requests in one connected repository — the attach-a-PR picker's options. */
+	readonly listPullRequests: (
+		orgId: OrgId,
+		repository: string,
+		opts: { readonly limit: number },
+	) => Effect.Effect<ReadonlyArray<PullRequestSummary>, VcsRepositoryScopedError>
+	/**
+	 * One pull request by number. `Option.none` covers both "no such PR" and — via
+	 * the caller catching `VcsSourceRepositoryNotFoundError` — a repo this org has
+	 * never connected, which is a routine case for a pasted link.
+	 */
+	readonly fetchPullRequest: (
+		orgId: OrgId,
+		repository: string,
+		number: number,
+	) => Effect.Effect<Option.Option<PullRequestSummary>, VcsRepositoryScopedError>
+	/** Every file of one pull request's diff. The reviewer's view of what changed. */
+	readonly listPullRequestFiles: (
+		orgId: OrgId,
+		repository: string,
+		number: number,
+	) => Effect.Effect<ReadonlyArray<PullRequestFile>, VcsRepositoryScopedError>
+	/** Commits, existing discussion and head checks of one pull request. */
+	readonly getPullRequestContext: (
+		orgId: OrgId,
+		repository: string,
+		number: number,
+	) => Effect.Effect<PullRequestContext, VcsRepositoryScopedError>
+	/** Post a review's outcome onto its pull request. The only write this service makes. */
+	readonly publishPullRequestReview: (
+		orgId: OrgId,
+		repository: string,
+		publication: PullRequestReviewPublication,
+	) => Effect.Effect<PullRequestReviewPublished, VcsRepositoryScopedError>
+	readonly searchCode: (
+		orgId: OrgId,
+		repository: string,
+		query: string,
+		opts: { readonly path?: string; readonly limit: number },
+	) => Effect.Effect<ReadonlyArray<VcsCodeSearchMatch>, VcsRepositoryScopedError>
+	readonly readFile: (
+		orgId: OrgId,
+		repository: string,
+		path: string,
+		ref?: string,
+	) => Effect.Effect<VcsSourceFile & { readonly ref: string }, VcsSourceError>
+	/** Resolve `ref` (default: the tracked branch) to a commit and a pre-signed archive URL for it. */
+	readonly resolveCheckout: (
+		orgId: OrgId,
+		repository: string,
+		ref?: string,
+	) => Effect.Effect<RepositoryCheckout, VcsRepositoryScopedError | VcsSourceRefNotFoundError>
+}
+
+const asPersistence = <A, E extends { readonly message: string }>(effect: Effect.Effect<A, E>) =>
+	effect.pipe(Effect.mapError((error) => new IntegrationsPersistenceError({ message: error.message })))
+
+const asUpstream = <A, E extends { readonly message: string; readonly status?: number }>(
+	effect: Effect.Effect<A, E>,
+) =>
+	effect.pipe(
+		Effect.mapError(
+			(error) =>
+				new IntegrationsUpstreamError({
+					message: error.message,
+					...(!(error.status === undefined) ? { status: error.status } : undefined),
+				}),
+		),
+	)
+
+export class VcsSourceService extends Context.Service<VcsSourceService, VcsSourceServiceApi>()(
+	"@maple/api/services/vcs/VcsSourceService",
+	{
+		make: Effect.gen(function* () {
+			const repoStore = yield* VcsRepository
+			const providers = yield* VcsProviderRegistry
+
+			const activeInstallations = Effect.fn("VcsSourceService.activeInstallations")(function* (
+				orgId: OrgId,
+			) {
+				const installations = (yield* asPersistence(repoStore.listInstallationsByOrg(orgId))).filter(
+					isInstallationProcessable,
+				)
+				if (installations.length === 0) {
+					return yield* new IntegrationsNotConnectedError({
+						message: "No source repository integration is connected for this organization.",
+					})
+				}
+				return installations
+			})
+
+			const repositoriesFor = Effect.fn("VcsSourceService.repositoriesFor")(function* (
+				installations: ReadonlyArray<VcsInstallation>,
+			) {
+				return yield* Effect.forEach(installations, (installation) =>
+					asPersistence(repoStore.listRepositoriesByInstallation(installation.id, "active")).pipe(
+						Effect.map((repositories) =>
+							repositories.map((repository) => ({ installation, repository })),
+						),
+					),
+				).pipe(Effect.map((groups) => groups.flat()))
+			})
+
+			const resolveRepository = Effect.fn("VcsSourceService.resolveRepository")(function* (
+				orgId: OrgId,
+				fullName: string,
+			) {
+				const installations = yield* activeInstallations(orgId)
+				const entries = yield* repositoriesFor(installations)
+				const found = entries.find(
+					(entry) => entry.repository.fullName.toLowerCase() === fullName.toLowerCase(),
+				)
+				if (!found) {
+					return yield* new VcsSourceRepositoryNotFoundError({
+						repository: fullName,
+						message: `Repository '${fullName}' is not connected to this Maple organization. Call list_source_repositories to see the available repositories.`,
+					})
+				}
+				return found
+			})
+
+			const listRepositories = Effect.fn("VcsSourceService.listRepositories")(function* (orgId: OrgId) {
+				yield* Effect.annotateCurrentSpan({ orgId })
+				const entries = yield* repositoriesFor(yield* activeInstallations(orgId))
+				return entries
+					.map(({ repository }) => ({
+						provider: repository.provider,
+						fullName: repository.fullName,
+						defaultBranch: repository.defaultBranch,
+						trackedBranch: repository.trackedBranch ?? repository.defaultBranch,
+						htmlUrl: repository.htmlUrl,
+						isPrivate: repository.isPrivate,
+						isArchived: repository.isArchived,
+					}))
+					.sort((a, b) => a.fullName.localeCompare(b.fullName))
+			})
+
+			const listPullRequests: VcsSourceServiceApi["listPullRequests"] = Effect.fn(
+				"VcsSourceService.listPullRequests",
+			)(function* (orgId, repositoryName, opts) {
+				yield* Effect.annotateCurrentSpan({
+					orgId,
+					"vcs.repository.full_name": repositoryName,
+				})
+				const { installation, repository } = yield* resolveRepository(orgId, repositoryName)
+				const provider = yield* asUpstream(providers.resolve(repository.provider))
+				const pullRequests = yield* asUpstream(
+					provider.fetchPullRequests(
+						installation,
+						{
+							externalRepoId: repository.externalRepoId,
+							owner: repository.owner,
+							name: repository.name,
+						},
+						opts,
+					),
+				)
+				yield* Effect.annotateCurrentSpan({ "result.rowCount": pullRequests.length })
+				return pullRequests
+			})
+
+			const fetchPullRequest: VcsSourceServiceApi["fetchPullRequest"] = Effect.fn(
+				"VcsSourceService.fetchPullRequest",
+			)(function* (orgId, repositoryName, number) {
+				yield* Effect.annotateCurrentSpan({
+					orgId,
+					"vcs.repository.full_name": repositoryName,
+					"vcs.pull_request.number": number,
+				})
+				const { installation, repository } = yield* resolveRepository(orgId, repositoryName)
+				const provider = yield* asUpstream(providers.resolve(repository.provider))
+				return yield* asUpstream(
+					provider.fetchPullRequest(
+						installation,
+						{
+							externalRepoId: repository.externalRepoId,
+							owner: repository.owner,
+							name: repository.name,
+						},
+						number,
+					),
+				)
+			})
+
+			const listPullRequestFiles: VcsSourceServiceApi["listPullRequestFiles"] = Effect.fn(
+				"VcsSourceService.listPullRequestFiles",
+			)(function* (orgId, repositoryName, number) {
+				yield* Effect.annotateCurrentSpan({
+					orgId,
+					"vcs.repository.full_name": repositoryName,
+					"vcs.pull_request.number": number,
+				})
+				const { installation, repository } = yield* resolveRepository(orgId, repositoryName)
+				const provider = yield* asUpstream(providers.resolve(repository.provider))
+				const files = yield* asUpstream(
+					provider.fetchPullRequestFiles(
+						installation,
+						{
+							externalRepoId: repository.externalRepoId,
+							owner: repository.owner,
+							name: repository.name,
+						},
+						number,
+					),
+				)
+				yield* Effect.annotateCurrentSpan({ "result.rowCount": files.length })
+				return files
+			})
+
+			const getPullRequestContext: VcsSourceServiceApi["getPullRequestContext"] = Effect.fn(
+				"VcsSourceService.getPullRequestContext",
+			)(function* (orgId, repositoryName, number) {
+				yield* Effect.annotateCurrentSpan({
+					orgId,
+					"vcs.repository.full_name": repositoryName,
+					"vcs.pull_request.number": number,
+				})
+				const { installation, repository } = yield* resolveRepository(orgId, repositoryName)
+				const provider = yield* asUpstream(providers.resolve(repository.provider))
+				return yield* asUpstream(
+					provider.fetchPullRequestContext(
+						installation,
+						{
+							externalRepoId: repository.externalRepoId,
+							owner: repository.owner,
+							name: repository.name,
+						},
+						number,
+					),
+				)
+			})
+
+			const publishPullRequestReview: VcsSourceServiceApi["publishPullRequestReview"] = Effect.fn(
+				"VcsSourceService.publishPullRequestReview",
+			)(function* (orgId, repositoryName, publication) {
+				yield* Effect.annotateCurrentSpan({
+					orgId,
+					"vcs.repository.full_name": repositoryName,
+					"vcs.pull_request.number": publication.number,
+					"vcs.ref.head.revision": publication.headSha,
+				})
+				const { installation, repository } = yield* resolveRepository(orgId, repositoryName)
+				const provider = yield* asUpstream(providers.resolve(repository.provider))
+				return yield* asUpstream(
+					provider.publishPullRequestReview(
+						installation,
+						{
+							externalRepoId: repository.externalRepoId,
+							owner: repository.owner,
+							name: repository.name,
+						},
+						publication,
+					),
+				)
+			})
+
+			const searchCode: VcsSourceServiceApi["searchCode"] = Effect.fn("VcsSourceService.searchCode")(
+				function* (orgId, repositoryName, query, opts) {
+					yield* Effect.annotateCurrentSpan({
+						orgId,
+						"vcs.repository.full_name": repositoryName,
+						"vcs.source.query_length": query.length,
+					})
+					const { installation, repository } = yield* resolveRepository(orgId, repositoryName)
+					const provider = yield* asUpstream(providers.resolve(repository.provider))
+					return yield* asUpstream(
+						provider.searchCode(
+							installation,
+							{
+								externalRepoId: repository.externalRepoId,
+								owner: repository.owner,
+								name: repository.name,
+							},
+							query,
+							opts,
+						),
+					)
+				},
+			)
+
+			const readFile: VcsSourceServiceApi["readFile"] = Effect.fn("VcsSourceService.readFile")(
+				function* (orgId, repositoryName, path, requestedRef) {
+					yield* Effect.annotateCurrentSpan({
+						orgId,
+						"vcs.repository.full_name": repositoryName,
+						"vcs.source.path": path,
+					})
+					const { installation, repository } = yield* resolveRepository(orgId, repositoryName)
+					const ref = requestedRef ?? repository.trackedBranch ?? repository.defaultBranch
+					const provider = yield* asUpstream(providers.resolve(repository.provider))
+					const file = yield* asUpstream(
+						provider.fetchSourceFile(
+							installation,
+							{
+								externalRepoId: repository.externalRepoId,
+								owner: repository.owner,
+								name: repository.name,
+							},
+							path,
+							ref,
+						),
+					)
+					if (Option.isNone(file)) {
+						return yield* new VcsSourceFileNotFoundError({
+							repository: repository.fullName,
+							path,
+							ref,
+							message: `No file '${path}' exists in '${repository.fullName}' at ref '${ref}'.`,
+						})
+					}
+					return { ...file.value, ref }
+				},
+			)
+
+			const resolveCheckout: VcsSourceServiceApi["resolveCheckout"] = Effect.fn(
+				"VcsSourceService.resolveCheckout",
+			)(function* (orgId, repositoryName, requestedRef) {
+				const { installation, repository } = yield* resolveRepository(orgId, repositoryName)
+				const ref = requestedRef ?? repository.trackedBranch ?? repository.defaultBranch
+				yield* Effect.annotateCurrentSpan({
+					orgId,
+					"vcs.repository.full_name": repository.fullName,
+					"vcs.ref.head.name": ref,
+				})
+				const provider = yield* asUpstream(providers.resolve(repository.provider))
+				const repoRef = {
+					externalRepoId: repository.externalRepoId,
+					owner: repository.owner,
+					name: repository.name,
+				}
+				// A full SHA needs no lookup; anything else is asked of the provider.
+				const resolved = isCommitSha(ref)
+					? Option.some(ref)
+					: yield* asUpstream(provider.resolveRef(installation, repoRef, ref))
+				if (Option.isNone(resolved)) {
+					// The message is the agent's only chance to recover: sandbox tool failures are
+					// returned to the model as the call's text, so a bare "no such ref" leaves it
+					// with nothing to try next. An agent reading a `service.version` of `0.0.14` and
+					// passing it here is the case that produced this, repeatedly, in prod.
+					return yield* new VcsSourceRefNotFoundError({
+						repository: repository.fullName,
+						ref,
+						message:
+							`No ref '${ref}' exists in '${repository.fullName}'. ` +
+							`Pass a commit SHA or branch that the telemetry actually carries ` +
+							`(\`vcs.ref.head.revision\`), or omit the ref to use the repository's tracked branch. ` +
+							`A service version string is not a git ref.`,
+					})
+				}
+				const credentials = yield* asUpstream(provider.fetchCloneCredentials(installation, repoRef))
+				yield* Effect.annotateCurrentSpan({ "vcs.ref.head.revision": resolved.value })
+				return {
+					provider: repository.provider,
+					fullName: repository.fullName,
+					ref,
+					sha: resolved.value,
+					...credentials,
+				}
+			})
+
+			return {
+				listRepositories,
+				listPullRequests,
+				fetchPullRequest,
+				listPullRequestFiles,
+				getPullRequestContext,
+				publishPullRequestReview,
+				searchCode,
+				readFile,
+				resolveCheckout,
+			} satisfies VcsSourceServiceApi
+		}),
+	},
+) {
+	static readonly layer = Layer.effect(this, this.make).pipe(
+		Layer.provide(Layer.mergeAll(VcsProviderRegistry.layer, VcsRepository.layer)),
+	)
+}

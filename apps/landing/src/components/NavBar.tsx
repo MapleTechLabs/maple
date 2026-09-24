@@ -12,39 +12,51 @@ import { buttonVariants } from "@maple/ui/components/ui/button"
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@maple/ui/components/ui/sheet"
 import { MapleMark } from "@maple/ui/components/icons/maple-mark"
 import { cn } from "@maple/ui/lib/utils"
-import * as m from "../paraglide/messages"
+import * as m from "../paraglide/messages.js"
 import { broadcastSignedIn } from "./auth-signal"
 import { ClerkProvider } from "./ClerkProvider"
+import { APP_SIGN_IN_URL, APP_SIGN_UP_URL, APP_URL } from "../lib/app-urls"
 import { formatStars } from "../lib/github-stars"
 import { features } from "../lib/features"
 import { featurePath, useCasePath } from "../lib/page-registry"
 import { useCases } from "../lib/use-cases"
 import { identifyLanding } from "../lib/telemetry"
 import { GithubStarButton, Octocat } from "./GithubStarButton"
+import { LogoContextMenu } from "./LogoContextMenu"
 
 const PUBLISHABLE_KEY = import.meta.env.PUBLIC_CLERK_PUBLISHABLE_KEY
 
 type MenuLink = { href: string; label: () => string; desc: () => string }
 
-function AuthAwareCTA() {
-	const { isSignedIn, isLoaded, userId } = useAuth()
-	const signedIn = isLoaded && isSignedIn === true
-	useEffect(() => {
-		broadcastSignedIn(signedIn)
-		// This island is the only place Clerk is mounted, so it is also the only
-		// place that can name the visitor. Anonymous visitors still link to their
-		// later app sessions through the cross-subdomain visitor cookie.
-		identifyLanding(signedIn ? userId : null)
-	}, [signedIn, userId])
-	return signedIn ? m.nav_dashboard() : m.nav_get_started()
+type CTAProps = {
+	className?: string
+	trackLocation: string
+	"aria-hidden"?: boolean
+	tabIndex?: number
 }
 
-function CTAButton() {
-	// Only use Clerk auth hook when the provider is actually available
-	if (!PUBLISHABLE_KEY) {
-		return m.nav_get_started()
-	}
-	return <AuthAwareCTA />
+/**
+ * The href flips with the label: signed out, "Get started" has to name
+ * `/sign-up`, because the app root sends a session-less visitor to `/sign-in`.
+ */
+function CTAButton({ signedIn, trackLocation, ...rest }: CTAProps & { signedIn: boolean }) {
+	const href = signedIn ? APP_URL : APP_SIGN_UP_URL
+	const label = signedIn ? m.nav_dashboard() : m.nav_get_started()
+	return (
+		<a
+			href={href}
+			data-track="cta_click"
+			data-track-location={trackLocation}
+			// Signed-out "Start free trial" and signed-in "Dashboard" are the same
+			// element in the same slot; without these two the warehouse cannot
+			// tell an acquisition click from a returning visitor's.
+			data-track-label={label}
+			data-track-destination={href}
+			{...rest}
+		>
+			{label}
+		</a>
+	)
 }
 
 function Eyebrow({ children }: { children: React.ReactNode }) {
@@ -92,7 +104,9 @@ function useHeaderCtaCollapsed() {
 	return collapsed
 }
 
-function NavBarInner({ locale = "en", stars }: { locale?: string; stars?: number | null }) {
+type NavBarProps = { locale?: string; stars?: number | null }
+
+export function NavBarInner({ locale = "en", stars, signedIn }: NavBarProps & { signedIn: boolean }) {
 	const [menuOpen, setMenuOpen] = useState(false)
 	const ctaCollapsed = useHeaderCtaCollapsed()
 	const l = (path: string) => (locale === "en" ? path : `/${locale}${path}`)
@@ -128,6 +142,8 @@ function NavBarInner({ locale = "en", stars }: { locale?: string; stars?: number
 			desc: () => m.nav_desc_vs_new_relic(),
 		},
 		{ href: l("/compare/dash0"), label: () => m.nav_vs_dash0(), desc: () => m.nav_desc_vs_dash0() },
+		{ href: l("/compare/signoz"), label: () => m.nav_vs_signoz(), desc: () => m.nav_desc_vs_signoz() },
+		{ href: l("/compare/axiom"), label: () => m.nav_vs_axiom(), desc: () => m.nav_desc_vs_axiom() },
 	]
 
 	const mobileGroups: { title: string; links: MenuLink[] }[] = [
@@ -142,18 +158,18 @@ function NavBarInner({ locale = "en", stars }: { locale?: string; stars?: number
 			{/* Logo. The nav list is absolutely centred rather than laid out
 			    between the two groups, so the centring survives the asymmetric
 			    right-hand group (star pill + Log in + CTA). */}
-			<div className="flex items-center">
+			<LogoContextMenu>
 				<a href={l("/")} className="flex items-center gap-2.5">
 					<MapleMark size={26} className="text-primary shrink-0" />
 					<span className="text-fg font-medium text-sm">Maple</span>
 				</a>
-			</div>
+			</LogoContextMenu>
 
 			<div className="absolute left-1/2 hidden -translate-x-1/2 lg:block">
 				<NavigationMenu className="flex">
 					<NavigationMenuList>
 						<NavigationMenuItem>
-							<NavigationMenuTrigger className="h-9 bg-transparent hover:bg-muted/20 text-[13px] text-fg-muted hover:text-fg data-popup-open:text-fg">
+							<NavigationMenuTrigger className="h-10 bg-transparent hover:bg-muted/20 text-[15px] text-fg-muted hover:text-fg data-popup-open:text-fg">
 								{m.nav_product()}
 							</NavigationMenuTrigger>
 							<NavigationMenuContent className="p-0">
@@ -225,7 +241,7 @@ function NavBarInner({ locale = "en", stars }: { locale?: string; stars?: number
 						<NavigationMenuItem>
 							<a
 								href={l("/pricing")}
-								className="inline-flex h-9 w-max items-center justify-center bg-transparent px-2.5 py-1.5 text-[13px] font-medium text-fg-muted hover:bg-muted/20 hover:text-fg transition-all"
+								className="inline-flex h-10 w-max items-center justify-center bg-transparent px-2.5 py-1.5 text-[15px] font-medium text-fg-muted hover:bg-muted/20 hover:text-fg transition-all"
 							>
 								{m.nav_pricing()}
 							</a>
@@ -234,7 +250,7 @@ function NavBarInner({ locale = "en", stars }: { locale?: string; stars?: number
 						<NavigationMenuItem>
 							<a
 								href={l("/local")}
-								className="inline-flex h-9 w-max items-center justify-center bg-transparent px-2.5 py-1.5 text-[13px] font-medium text-fg-muted hover:bg-muted/20 hover:text-fg transition-all"
+								className="inline-flex h-10 w-max items-center justify-center bg-transparent px-2.5 py-1.5 text-[15px] font-medium text-fg-muted hover:bg-muted/20 hover:text-fg transition-all"
 							>
 								{m.nav_local()}
 							</a>
@@ -243,18 +259,9 @@ function NavBarInner({ locale = "en", stars }: { locale?: string; stars?: number
 						<NavigationMenuItem>
 							<a
 								href="/docs"
-								className="inline-flex h-9 w-max items-center justify-center bg-transparent px-2.5 py-1.5 text-[13px] font-medium text-fg-muted hover:bg-muted/20 hover:text-fg transition-all"
+								className="inline-flex h-10 w-max items-center justify-center bg-transparent px-2.5 py-1.5 text-[15px] font-medium text-fg-muted hover:bg-muted/20 hover:text-fg transition-all"
 							>
 								{m.nav_docs()}
-							</a>
-						</NavigationMenuItem>
-
-						<NavigationMenuItem>
-							<a
-								href="/blog"
-								className="inline-flex h-9 w-max items-center justify-center bg-transparent px-2.5 py-1.5 text-[13px] font-medium text-fg-muted hover:bg-muted/20 hover:text-fg transition-all"
-							>
-								{m.nav_blog()}
 							</a>
 						</NavigationMenuItem>
 					</NavigationMenuList>
@@ -265,41 +272,42 @@ function NavBarInner({ locale = "en", stars }: { locale?: string; stars?: number
 			<div className="flex items-center gap-3 sm:gap-4">
 				<GithubStarButton stars={stars} className="hidden sm:inline-flex" />
 
-				<a
-					href="https://app.maple.dev"
-					data-track="cta_click"
-					data-track-location="nav_login"
-					className="hidden text-[13px] font-medium text-fg-muted transition-colors hover:text-fg md:inline-flex"
-				>
-					{m.nav_login()}
-				</a>
+				{!signedIn && (
+					<a
+						href={APP_SIGN_IN_URL}
+						data-track="cta_click"
+						data-track-location="nav_login"
+						data-track-label={m.nav_login()}
+						data-track-destination={APP_SIGN_IN_URL}
+						className="hidden text-[15px] font-medium text-fg-muted transition-colors hover:text-fg md:inline-flex"
+					>
+						{m.nav_login()}
+					</a>
+				)}
 
-				<a
-					href="https://app.maple.dev"
-					data-track="cta_click"
-					data-track-location="nav"
+				<CTAButton
+					signedIn={signedIn}
+					trackLocation="nav"
 					className={cn(
-						buttonVariants({ size: "sm" }),
-						"overflow-hidden transition-all duration-300",
+						buttonVariants({ size: "lg" }),
+						"text-[15px] sm:text-[15px] overflow-hidden transition-all duration-300",
 						ctaCollapsed
 							? "pointer-events-none max-w-0 border-0 px-0 opacity-0 -ml-3"
-							: "max-w-40 opacity-100 ml-0",
+							: "max-w-48 opacity-100 ml-0",
 					)}
 					aria-hidden={ctaCollapsed}
 					tabIndex={ctaCollapsed ? -1 : undefined}
-				>
-					<CTAButton />
-				</a>
+				/>
 
 				{/* The centred nav list only fits from lg, so the sheet has to
 				    cover everything below it — not just below sm. */}
 				<button
-					className="lg:hidden p-1.5 text-fg-muted hover:text-fg transition-colors"
+					className="lg:hidden inline-flex size-11 items-center justify-center text-fg-muted hover:text-fg transition-colors"
 					onClick={() => setMenuOpen(true)}
 					aria-label="Open menu"
 				>
 					<svg
-						className="w-5 h-5"
+						className="w-6 h-6"
 						viewBox="0 0 24 24"
 						fill="none"
 						stroke="currentColor"
@@ -373,7 +381,7 @@ function NavBarInner({ locale = "en", stars }: { locale?: string; stars?: number
 
 						<div className="pt-6 flex flex-col gap-4">
 							<a
-								href="https://github.com/Makisuo/maple"
+								href="https://github.com/MapleTechLabs/maple"
 								target="_blank"
 								rel="noopener noreferrer"
 								className="flex items-center justify-between text-xs text-fg-muted hover:text-fg transition-colors"
@@ -384,14 +392,11 @@ function NavBarInner({ locale = "en", stars }: { locale?: string; stars?: number
 								</span>
 								{stars != null && <span className="tabular-nums">{formatStars(stars)}</span>}
 							</a>
-							<a
-								href="https://app.maple.dev"
-								data-track="cta_click"
-								data-track-location="nav_mobile"
-								className={buttonVariants({ size: "sm" })}
-							>
-								<CTAButton />
-							</a>
+							<CTAButton
+								signedIn={signedIn}
+								trackLocation="nav_mobile"
+								className={buttonVariants({ size: "lg" })}
+							/>
 						</div>
 					</nav>
 				</SheetContent>
@@ -400,10 +405,31 @@ function NavBarInner({ locale = "en", stars }: { locale?: string; stars?: number
 	)
 }
 
-export function NavBar({ locale = "en", stars }: { locale?: string; stars?: number | null }) {
+/**
+ * Reads Clerk once for the whole header so "Log in" and the CTA agree on the
+ * visitor's state. Must render inside ClerkProvider.
+ */
+function AuthAwareNavBar(props: NavBarProps) {
+	const { isSignedIn, isLoaded, userId } = useAuth()
+	const signedIn = isLoaded && isSignedIn === true
+	useEffect(() => {
+		broadcastSignedIn(signedIn)
+		// This island is the only place Clerk is mounted, so it is also the only
+		// place that can name the visitor. Anonymous visitors still link to their
+		// later app sessions through the cross-subdomain visitor cookie.
+		identifyLanding(signedIn ? userId : null)
+	}, [signedIn, userId])
+	return <NavBarInner {...props} signedIn={signedIn} />
+}
+
+export function NavBar(props: NavBarProps) {
+	// Only use the Clerk auth hook when the provider is actually available
+	if (!PUBLISHABLE_KEY) {
+		return <NavBarInner {...props} signedIn={false} />
+	}
 	return (
 		<ClerkProvider>
-			<NavBarInner locale={locale} stars={stars} />
+			<AuthAwareNavBar {...props} />
 		</ClerkProvider>
 	)
 }

@@ -1,21 +1,25 @@
 import { HttpApiMiddleware, HttpApiSecurity, OpenApi } from "effect/unstable/httpapi"
 import { Schema } from "effect"
-import { Context } from "../current-tenant"
+import { ApiKeyLookupPersistenceError } from "../api-keys"
+import { AuthorizationUnavailableError, Context, UnauthorizedError } from "../current-tenant"
 import {
-	V2ApiError,
-	V2AuthenticationError,
-	V2InvalidRequestError,
-	V2PermissionError,
-	V2RateLimitError,
-	V2ServiceUnavailableError,
+	V2InsufficientScope,
+	V2InvalidCredentials,
+	V2OrganizationAccessDenied,
+	V2InvalidRequest,
+	V2RateLimited,
+	V2ResponseSchemaFailure,
+	V2UnexpectedFailure,
+	V2WorkerUnavailable,
 } from "./errors"
+import { publicError } from "./public-error"
 
 /**
  * v2 bearer authorization. Same credential resolution as v1 (`maple_ak_…` API
  * key, else Clerk/self-hosted session token) but errors use the v2 envelope
  * and API keys are subject to scope enforcement (see docs/api-v2.md#scopes).
  *
- * Note: the error option must stay a *list* of classes (not `Schema.Union`) so
+ * Note: the error option must stay a *list* of schemas (not `Schema.Union`) so
  * each error keeps its own `httpApiStatus` when responses are encoded.
  */
 export class AuthorizationV2 extends HttpApiMiddleware.Service<
@@ -24,7 +28,15 @@ export class AuthorizationV2 extends HttpApiMiddleware.Service<
 		provides: Context
 	}
 >()("AuthorizationV2", {
-	error: [V2AuthenticationError, V2PermissionError, V2RateLimitError, V2ServiceUnavailableError],
+	error: [
+		V2InvalidCredentials.schema,
+		V2InsufficientScope.schema,
+		V2RateLimited.schema,
+		V2OrganizationAccessDenied.schema,
+		publicError(ApiKeyLookupPersistenceError),
+		publicError(UnauthorizedError),
+		publicError(AuthorizationUnavailableError),
+	],
 	security: {
 		bearer: HttpApiSecurity.bearer.pipe(
 			HttpApiSecurity.annotateMerge(
@@ -41,16 +53,17 @@ export class AuthorizationV2 extends HttpApiMiddleware.Service<
 /** Converts unexpected route defects into the public v2 API-error envelope. */
 export class V2UnexpectedErrors extends HttpApiMiddleware.Service<V2UnexpectedErrors>()(
 	"V2UnexpectedErrors",
-	{ error: V2ApiError },
+	{ error: [V2UnexpectedFailure.schema, V2WorkerUnavailable.schema] },
 ) {}
 
 /**
  * Rewrites request-decode failures (params/query/payload schema errors) into
  * the v2 `invalid_request_error` envelope. Implemented in apps/api via
- * `HttpApiMiddleware.layerSchemaErrorTransform`; every v2 group must attach it.
+ * `HttpApiMiddleware.layerSchemaErrorTransform`; `MapleApiV2` attaches it once
+ * after composing every resource group.
  */
 export class V2SchemaErrors extends HttpApiMiddleware.Service<V2SchemaErrors>()("V2SchemaErrors", {
-	error: V2InvalidRequestError,
+	error: [V2InvalidRequest.schema, V2ResponseSchemaFailure.schema],
 }) {}
 
 /** Scope string grammar: `<family>:read`, `<family>:write`, or `*`. */
@@ -104,16 +117,23 @@ const isReadOnlyPost = (path: string): boolean =>
 /**
  * Mechanical scope derivation: the resource family is the first path segment
  * after `/v2/`. GET/HEAD and explicitly registered read-only POST queries require
- * read access; mutation methods require write access. Returns null for non-/v2 paths.
+ * read access; mutation methods require write access.
+ *
+ * `routePath` must be the router's **matched route template** (`/v2/api_keys`,
+ * `/v2/api_keys/:keyId`), never the raw request URL. The router matches
+ * case-insensitively, decodes percent-escapes, collapses duplicate slashes and
+ * strips `;`-suffixes, so a raw URL that reaches an endpoint (`/V2/api_keys`,
+ * `/v2/%61pi_keys`) can miss this pattern while the handler still runs. Null
+ * means "unclassifiable" and callers must fail closed, not skip the check.
  */
-export const requiredScopeForRequest = (method: string, path: string): RequiredScope | null => {
-	const match = /^\/v2\/([a-z][a-z0-9_]*)(?:\/|$)/.exec(path)
-	if (match === null) return null
+export const requiredScopeForRoute = (method: string, routePath: string): RequiredScope | null => {
+	const [, family] = /^\/v2\/([a-z][a-z0-9_]*)(?:\/|$)/.exec(routePath) ?? []
+	if (family === undefined) return null
 	const access =
-		method === "GET" || method === "HEAD" || (method === "POST" && isReadOnlyPost(path))
+		method === "GET" || method === "HEAD" || (method === "POST" && isReadOnlyPost(routePath))
 			? "read"
 			: "write"
-	return { family: match[1]!, access }
+	return { family, access }
 }
 
 /**

@@ -21,11 +21,6 @@ export const TimeRangeSearchFields = {
 	timePreset: Schema.optional(Schema.String),
 }
 
-const TimeRangeSearchStruct = Schema.Struct(TimeRangeSearchFields)
-
-/** Structural shape of the time-range slice of any route's search params. */
-export type TimeRangeSearch = typeof TimeRangeSearchStruct.Type
-
 export function applyTimeRangeSearch<T extends Record<string, unknown>>(prev: T, range: TimeRange) {
 	if (range.presetValue) {
 		return {
@@ -41,4 +36,20 @@ export function applyTimeRangeSearch<T extends Record<string, unknown>>(prev: T,
 		endTime: range.endTime,
 		timePreset: undefined,
 	}
+}
+
+/** The decoded shape of `TimeRangeSearchFields` — what a link carries to keep the window. */
+export interface TimeRangeSearch {
+	startTime?: string
+	endTime?: string
+	timePreset?: string
+}
+
+/**
+ * Just the window, nothing else. For a link between sibling pages whose other
+ * search params don't transfer — a pod filter means nothing on the nodes list —
+ * and for "clear filters", which must keep the window and drop the rest.
+ */
+export function pickTimeRangeSearch(search: TimeRangeSearch): TimeRangeSearch {
+	return { startTime: search.startTime, endTime: search.endTime, timePreset: search.timePreset }
 }

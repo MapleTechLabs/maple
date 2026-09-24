@@ -1,6 +1,7 @@
 // Replay bootstrap for the Effect client SDK. rrweb stays behind a dynamic
 // import, while the consent-aware controller itself is always lightweight.
 import {
+	claimReplaySample,
 	clearPendingEvents,
 	clearSessionSink,
 	configurePrivacy,
@@ -19,14 +20,12 @@ import {
 } from "@maple/browser-session"
 import { setupStandaloneSession } from "./standalone-session.js"
 import { getCurrentIdentity } from "./user.js"
+import { CLIENT_SDK_HINT } from "../version.js"
 
 export interface ClientReplayConfig {
-	/** Record rrweb session replays. Default `true`. Session analytics are kept. */
+	/** Record rrweb session replays. Default `true`. */
 	readonly enabled?: boolean | undefined
-	/**
-	 * Fraction of sessions to capture, 0–1. Default `1`. An unsampled visitor
-	 * produces no session rows and is not billed.
-	 */
+	/** Fraction of sessions to record, 0–1. Default `1`. */
 	readonly sampleRate?: number | undefined
 	/** Mask all `<input>` values in the recording. Default `true`. */
 	readonly maskAllInputs?: boolean | undefined
@@ -72,21 +71,19 @@ const noOpHandle: ClientSessionHandle = { stop: () => Promise.resolve() }
 export const startClientSession = (config: ClientSessionConfig): ClientSessionHandle => {
 	configurePrivacy(config.privacy)
 	if (!hasConsent()) clearPendingEvents()
-	if (typeof window === "undefined" || !config.ingestKey || readSessionSink()) return noOpHandle
+	// React Native exposes window without a browser DOM or Web Crypto.
+	if (typeof window === "undefined" || typeof document === "undefined" || readSessionSink())
+		return noOpHandle
 
 	const engineConfig = {
 		endpoint: config.endpoint.replace(/\/$/, ""),
 		ingestKey: config.ingestKey,
+		sdk: CLIENT_SDK_HINT,
 		maskAllInputs: config.replay?.maskAllInputs ?? true,
 		maskAllText: config.replay?.maskAllText ?? false,
+		getIdentity: getCurrentIdentity,
 	}
 	const replayEnabled = (config.replay?.enabled ?? true) && typeof document !== "undefined"
-	// One draw, two decisions — see the same split in `@maple-dev/browser`'s
-	// `init.ts`. The sample rate reaches the metadata rows because those are what
-	// Autumn bills; `enabled: false` drops only the recording, never the session.
-	const sampledIn = Math.random() < (config.replay?.sampleRate ?? 1)
-	const captureSession = sampledIn
-	const sampled = replayEnabled && sampledIn
 	let runtime: Runtime | undefined
 	let stopped = false
 	let generation = 0
@@ -117,10 +114,9 @@ export const startClientSession = (config: ClientSessionConfig): ClientSessionHa
 		setVisitorTracking((config.privacy?.persistVisitorId ?? true) && mayPersistIdentifier())
 		const session = (rotateOnNextStart ? rotateSession() : undefined) ?? getSession()
 		rotateOnNextStart = false
-		// Sampled out: no sink, no metadata row, nothing billed. Leaving `runtime`
-		// unset keeps `stopRuntime` a no-op, which is exactly right — there is
-		// nothing to flush.
-		if (!captureSession) return
+		// Rolled once per session and persisted on it, so every page load of a
+		// session records (or skips) it consistently.
+		const sampled = replayEnabled && claimReplaySample(config.replay?.sampleRate ?? 1)
 		const next: Runtime = { sink: startEventSink(engineConfig, session.id) }
 		runtime = next
 		const ownGeneration = ++generation
@@ -133,7 +129,8 @@ export const startClientSession = (config: ClientSessionConfig): ClientSessionHa
 					}
 					next.replay = startReplaySession({
 						endpoint: config.endpoint,
-						ingestKey: config.ingestKey!,
+						ingestKey: config.ingestKey,
+						sdk: CLIENT_SDK_HINT,
 						serviceName: config.serviceName,
 						environment: config.environment,
 						serviceVersion: config.serviceVersion,

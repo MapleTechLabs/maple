@@ -1,17 +1,11 @@
 import { AtomHttpApi } from "@/lib/effect-atom"
 import { MapleApi } from "@maple/domain/http"
-import { Effect } from "effect"
-import { HttpClient, HttpClientError } from "effect/unstable/http"
+import { encodeOrgScopedKey, identityFromKey } from "@/lib/cache-key"
+import { withRetention } from "@/lib/services/atoms/retained-atom"
 import { apiBaseUrl } from "./api-base-url"
-import { hasCachedMapleAuthToken, invalidateMapleAuthToken } from "./auth-headers"
+import { getActiveOrgId } from "./auth-headers"
+import { transformMapleApiClient } from "./api-client-transform"
 import { MapleFetchHttpClientLive } from "./http-client"
-import { isRetryableTransportError, mapleRetrySchedule } from "./retry-policy"
-
-/**
- * Requests already given their one stale-token retry, keyed by request identity
- * so concurrent 401s don't consume each other's allowance.
- */
-const retriedUnauthorized = new WeakSet<object>()
 
 export class MapleApiAtomClient extends AtomHttpApi.Service<MapleApiAtomClient>()(
 	"@maple/web/services/common/MapleApiAtomClient",
@@ -25,49 +19,64 @@ export class MapleApiAtomClient extends AtomHttpApi.Service<MapleApiAtomClient>(
 		// `FetchHttpClient.layer` + mapleFetch so the memoMap priming in
 		// registry.ts keeps the JWT-injecting fetch (see the registry comment —
 		// rewrapping it ships every API request without auth, mass 401s).
-		transformClient: (client) =>
-			client.pipe(
-				(self) =>
-					HttpClient.transform(self, (effect, request) =>
-						request.url.startsWith(apiBaseUrl)
-							? Effect.annotateSpans(effect, "peer.service", "maple-api")
-							: effect,
-					),
-				HttpClient.retry({
-					times: 3,
-					schedule: mapleRetrySchedule,
-					while: (error) => {
-						// Transient network failures (idempotent requests only) self-heal
-						// with backoff instead of failing fast to the error UI.
-						if (isRetryableTransportError(error)) return true
-						if (!HttpClientError.isHttpClientError(error)) return false
-						const status = error.response?.status
-						if (status === undefined) return false
-						// Retry on 500/502/503 — not 504 (query timeout, won't get faster)
-						if (status >= 500 && status < 600 && status !== 504) return true
-						if (status !== 401) return false
-						// A bearer token served from the auth-headers cache can go stale
-						// ahead of its own `exp` — revoked session, org switch, clock skew —
-						// and then 401s every request until it's dropped. Drop it and let
-						// exactly one retry go out with a freshly minted token; a second 401
-						// means the failure is real, so it falls through and fails fast.
-						const request = (error as { request?: { url?: string } }).request
-						const firstAttempt = request !== undefined && !retriedUnauthorized.has(request)
-						if (firstAttempt) retriedUnauthorized.add(request)
-						if (firstAttempt && hasCachedMapleAuthToken()) {
-							invalidateMapleAuthToken()
-							return true
-						}
-						// Billing reads (customer/usage/plans) can fire during the Clerk
-						// token-settle window where getToken() is transiently null → the
-						// request goes out unauthenticated → 401. Unlike the rest of the API
-						// (which only mounts after auth settles), retry 401 *only* for the
-						// billing endpoints so the data self-heals without a refresh. Scoped
-						// by URL so a genuine auth failure elsewhere still fails fast.
-						if (request?.url?.includes("/api/billing/")) return true
-						return false
-					},
-				}),
-			),
+		transformClient: transformMapleApiClient,
 	},
 ) {}
+
+/**
+ * Idle TTL applied to every `retainedQuery` atom.
+ *
+ * `AtomHttpApi.query` applies neither `setIdleTTL` nor `keepAlive` unless a
+ * `timeToLive` is given, so a bare query atom is disposed the moment its last
+ * subscriber unmounts — every revisit is a cold fetch, however quickly the user
+ * comes back. A minute is enough to make back-and-forth navigation free and
+ * short enough that anything not covered by `reactivityKeys` self-heals fast.
+ *
+ * Staleness past the TTL is not a risk: retention only fills the visual gap
+ * while a refetch is in flight, it never suppresses the refetch.
+ */
+export const DEFAULT_QUERY_TTL = "1 minute"
+
+/**
+ * `MapleApiAtomClient.query` with caching that survives unmount.
+ *
+ * Prefer this over calling `.query` directly — the bare version has no TTL and
+ * no retention, which is why settings, integrations and similar panels used to
+ * flash a skeleton on every single visit.
+ *
+ * Pass `timeToLive` in the request to override the default; pass
+ * `reactivityKeys` (as before) so mutations invalidate the atom.
+ */
+// The single cast in this module, and it is confined to the signature rather
+// than the body. `query`'s return type is a conditional resolved from the
+// group/endpoint literals; a forwarder cannot restate that relationship, so TS
+// rejects both the generic arguments going in and the generic atom coming out.
+// The runtime behaviour is a pass-through — `withRetention` wraps the atom
+// without changing its value type — so the borrowed signature stays accurate.
+const queryWithRetention = (
+	group: string,
+	endpoint: string,
+	request: Record<string, unknown> | undefined,
+) => {
+	const atom = MapleApiAtomClient.query(
+		group as never,
+		endpoint as never,
+		{
+			timeToLive: DEFAULT_QUERY_TTL,
+			...request,
+		} as never,
+	)
+
+	// Org-scoped, and with any time window stripped, so the identity is stable
+	// across windows but can never serve one org's rows to another. `group` and
+	// `endpoint` namespace it, so two endpoints taking the same request shape
+	// cannot collide.
+	const identity = `${group}:${endpoint}:${identityFromKey(
+		encodeOrgScopedKey(getActiveOrgId(), request ?? {}),
+	)}`
+
+	return withRetention(atom, identity)
+}
+
+// SAFETY: queryWithRetention preserves MapleApiAtomClient.query's arguments and narrows its retained atom result.
+export const retainedQuery = queryWithRetention as unknown as typeof MapleApiAtomClient.query

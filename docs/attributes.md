@@ -21,13 +21,13 @@ The bare minimum every span needs. `service.name` is the primary axis Maple grou
 
 Tag every span with these and you get per-environment and per-version slices for free across the services table, service map, and per-service overview.
 
-| Attribute                     | Example      | What Maple does with it                                                                                          |
-| ----------------------------- | ------------ | ---------------------------------------------------------------------------------------------------------------- |
-| `deployment.environment`      | `production` | Filterable everywhere; per-env throughput / latency / error rate; environment chips in span detail.              |
-| `deployment.environment.name` | `production` | Accepted as an alias for `deployment.environment` in infrastructure queries.                                     |
-| `deployment.commit_sha`       | `c0b92f68`   | Per-version metrics in service overview; exposed as the `commit_sha` discovery facet so you can pivot by deploy. |
+| Attribute                     | Example      | What Maple does with it                                                                                                                                                                                                                                                         |
+| ----------------------------- | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `deployment.environment.name` | `production` | The current OTel key. Filterable everywhere; per-env throughput / latency / error rate; environment chips in span detail.                                                                                                                                                       |
+| `deployment.environment`      | `production` | The deprecated spelling of the same attribute. Read everywhere the `.name` key is, so older instrumentation keeps working.                                                                                                                                                      |
+| `vcs.ref.head.revision`       | `c0b92f68…`  | The commit a service was built from. Release markers, the deploy list and per-version metrics in service overview; exposed as the `commit_sha` discovery facet so you can pivot by deploy. (`deployment.commit_sha`, Maple's former vendor key, is retired and no longer read.) |
 
-Maple's SDKs currently dual-emit both `deployment.environment` and `deployment.environment.name` — they're treated as the same value. Emitting either is fine. In the search bar, `env`, `environment`, and `commit_sha` are short aliases — see [Filter aliases](#filter-aliases) below.
+OpenTelemetry renamed this attribute (`deployment.environment` → `deployment.environment.name`); Maple reads whichever one your spans carry, preferring `.name` when both are present, so emitting either is fine. Maple's own SDKs dual-emit both. The same holds for `messaging.destination` → `messaging.destination.name` on messaging spans. In the search bar, `env`, `environment`, and `commit_sha` are short aliases — see [Filter aliases](#filter-aliases) below.
 
 ## Span status & kind
 
@@ -252,6 +252,26 @@ Always shown in the chip strip when present.
 | `k8s.kubelet.version` | Display in node metadata panel.                                               |
 | `container.runtime`   | Display in K8s node metadata (containerd, cri-o, etc.).                       |
 
+### Containers (Docker)
+
+The Maple Docker agent's `docker_stats` receiver stamps these on container metrics; `/infra/containers`
+groups on `(container.name, host.name)` — Docker names are only unique per host. Rows carrying a
+`k8s.pod.name` are treated as Kubernetes, not Docker.
+
+| Attribute              | What Maple does with it                                                                 |
+| ---------------------- | --------------------------------------------------------------------------------------- |
+| `container.name`       | Container identity: list/detail views and the span/log Infrastructure tab detect key.   |
+| `container.id`         | Facet cardinality (recreated containers keep their name, not their id) and correlation. |
+| `container.image.name` | Image facet + display chip.                                                             |
+| `compose.project`      | From the `com.docker.compose.project` label, promoted to resource by the agent; facet.  |
+| `compose.service`      | From the `com.docker.compose.service` label, promoted to resource by the agent; facet.  |
+
+To correlate **app telemetry** with containers, the app's spans must also carry `container.id`
+(or at least `container.name`). `@maple/effect-sdk` auto-detects Docker identity best-effort
+(mountinfo/cgroup/hostname); the reliable path is explicit:
+`OTEL_RESOURCE_ATTRIBUTES=container.id=$(hostname),container.name=myservice` in the compose file
+(Docker's default hostname is the short container id).
+
 ## Cloud & platform badges
 
 These set the platform badge and runtime icon next to a service on the service map. SDKs running on common platforms auto-detect most of them — document the keys so self-instrumenters can match.
@@ -276,14 +296,14 @@ Maple reads the W3C `tracestate: ot=th:<threshold>` header to extrapolate throug
 
 In Maple's WHERE-clause search bar (trace list, log search, dashboard widgets), you can type a short alias and it resolves to the canonical attribute. Source of truth: `normalizeKey` in [packages/domain/src/where-clause.ts](../packages/domain/src/where-clause.ts).
 
-| Alias                | Resolves to                                        |
-| -------------------- | -------------------------------------------------- |
-| `service`            | `service.name`                                     |
-| `span`               | `span.name`                                        |
-| `environment`, `env` | `deployment.environment`                           |
-| `commit_sha`         | `deployment.commit_sha`                            |
-| `root.only`          | `root_only` (synthetic boolean — root spans only)  |
-| `errors_only`        | `has_error` (synthetic boolean — error spans only) |
+| Alias                                 | Resolves to                                        |
+| ------------------------------------- | -------------------------------------------------- |
+| `service`                             | `service.name`                                     |
+| `span`                                | `span.name`                                        |
+| `environment`, `env`                  | `deployment.environment`                           |
+| `commit_sha`, `deployment.commit_sha` | `vcs.ref.head.revision`                            |
+| `root.only`                           | `root_only` (synthetic boolean — root spans only)  |
+| `errors_only`                         | `has_error` (synthetic boolean — error spans only) |
 
 So `env = "production"` and `deployment.environment = "production"` mean the same thing; pick whichever is shorter.
 

@@ -12,7 +12,7 @@
  * centred stage.
  */
 import { getRelativeLocaleUrl } from "astro:i18n";
-import * as m from "../../paraglide/messages";
+import * as m from "../../paraglide/messages.js";
 import LiveK8sHeatmap from "../live/LiveK8sHeatmap.astro";
 
 const locale = Astro.currentLocale ?? "en";
@@ -86,7 +86,7 @@ const points = [
 						{m.k8s_link_feature()}
 					</a>
 					<a
-						href="https://github.com/Makisuo/maple/tree/main/deploy/k8s-infra"
+						href="https://github.com/MapleTechLabs/maple/tree/main/deploy/k8s-infra"
 						target="_blank"
 						rel="noopener noreferrer"
 						class="text-fg-muted transition-colors hover:text-fg"

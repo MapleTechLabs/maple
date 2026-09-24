@@ -1,5 +1,7 @@
 import { consentAllowedSince, hasConsent } from "@maple/browser-session"
 import { Effect, Layer } from "effect"
+
+import { trySyncOrUndefined } from "../shared/try-sync.js"
 import {
 	FetchHttpClient,
 	HttpBody,
@@ -8,55 +10,74 @@ import {
 	HttpClientResponse,
 } from "effect/unstable/http"
 
-type JsonObject = Record<string, any>
-
-const after = (value: unknown, threshold: bigint): boolean => {
-	try {
-		return BigInt(String(value ?? 0)) >= threshold
-	} catch {
-		return false
-	}
+/**
+ * Only timestamps are modeled; all other OTLP fields pass through via spreads.
+ */
+interface OtlpSpan {
+	readonly startTimeUnixNano?: unknown
+}
+interface OtlpLogRecord {
+	readonly timeUnixNano?: unknown
+	readonly observedTimeUnixNano?: unknown
+}
+interface OtlpScopeSpans {
+	readonly spans?: ReadonlyArray<OtlpSpan>
+}
+interface OtlpScopeLogs {
+	readonly logRecords?: ReadonlyArray<OtlpLogRecord>
+}
+interface OtlpResourceSpans {
+	readonly scopeSpans?: ReadonlyArray<OtlpScopeSpans>
+}
+interface OtlpResourceLogs {
+	readonly scopeLogs?: ReadonlyArray<OtlpScopeLogs>
+}
+interface OtlpBody {
+	readonly resourceSpans?: ReadonlyArray<OtlpResourceSpans>
+	readonly resourceLogs?: ReadonlyArray<OtlpResourceLogs>
 }
 
-const pruneTraces = (body: JsonObject, threshold: bigint): JsonObject | undefined => {
+// A nanosecond timestamp that is not a numeric string throws out of `BigInt`
+// rather than producing NaN, and an event with no readable timestamp cannot be
+// shown to postdate consent — so it is dropped.
+const after = (value: unknown, threshold: bigint): boolean =>
+	trySyncOrUndefined(() => BigInt(String(value ?? 0)) >= threshold) ?? false
+
+const pruneTraces = (body: OtlpBody, threshold: bigint): OtlpBody | undefined => {
 	const resourceSpans = (body.resourceSpans ?? [])
-		.map((resource: JsonObject) => ({
+		.map((resource) => ({
 			...resource,
 			scopeSpans: (resource.scopeSpans ?? [])
-				.map((scope: JsonObject) => ({
+				.map((scope) => ({
 					...scope,
-					spans: (scope.spans ?? []).filter((span: JsonObject) =>
-						after(span.startTimeUnixNano, threshold),
-					),
+					spans: (scope.spans ?? []).filter((span) => after(span.startTimeUnixNano, threshold)),
 				}))
-				.filter((scope: JsonObject) => scope.spans.length > 0),
+				.filter((scope) => scope.spans.length > 0),
 		}))
-		.filter((resource: JsonObject) => resource.scopeSpans.length > 0)
+		.filter((resource) => resource.scopeSpans.length > 0)
 	return resourceSpans.length > 0 ? { ...body, resourceSpans } : undefined
 }
 
-const pruneLogs = (body: JsonObject, threshold: bigint): JsonObject | undefined => {
+const pruneLogs = (body: OtlpBody, threshold: bigint): OtlpBody | undefined => {
 	const resourceLogs = (body.resourceLogs ?? [])
-		.map((resource: JsonObject) => ({
+		.map((resource) => ({
 			...resource,
 			scopeLogs: (resource.scopeLogs ?? [])
-				.map((scope: JsonObject) => ({
+				.map((scope) => ({
 					...scope,
-					logRecords: (scope.logRecords ?? []).filter((record: JsonObject) =>
+					logRecords: (scope.logRecords ?? []).filter((record) =>
 						after(record.timeUnixNano ?? record.observedTimeUnixNano, threshold),
 					),
 				}))
-				.filter((scope: JsonObject) => scope.logRecords.length > 0),
+				.filter((scope) => scope.logRecords.length > 0),
 		}))
-		.filter((resource: JsonObject) => resource.scopeLogs.length > 0)
+		.filter((resource) => resource.scopeLogs.length > 0)
 	return resourceLogs.length > 0 ? { ...body, resourceLogs } : undefined
 }
 
 /**
- * Keep only signals captured under the current consent grant. Effect metrics
- * are cumulative and cannot be separated at this HTTP boundary, so the
- * built-in OTLP preset suppresses them when explicit consent gating is used;
- * MapleFlush uses its gated registry and can export post-grant metrics safely.
+ * Keeps signals captured under the current grant. Cumulative Effect metrics
+ * cannot be separated here, so explicit-consent installs suppress them.
  */
 export const filterOtlpRequestForConsent = (
 	request: HttpClientRequest.HttpClientRequest,
@@ -66,11 +87,17 @@ export const filterOtlpRequestForConsent = (
 	if (!requireConsent) return request
 	if (request.url.endsWith("/v1/metrics")) return undefined
 	if (request.body._tag !== "Uint8Array") return undefined
+	// Bound before the closure: narrowing on `request.body` does not survive into one.
+	const body = request.body
 
 	const since = consentAllowedSince()
 	if (!Number.isFinite(since)) return undefined
-	try {
-		const decoded = JSON.parse(new TextDecoder().decode(request.body.body)) as JsonObject
+	// Unknown payloads must fail closed on an explicit-consent install: an
+	// undecodable body, or a `since` past the BigInt range, drops the request
+	// rather than forwarding it unfiltered.
+	return trySyncOrUndefined(() => {
+		// SAFETY: The SDK's OTLP encoder created this body; malformed shapes throw here and fail closed.
+		const decoded = JSON.parse(new TextDecoder().decode(body.body)) as OtlpBody
 		const threshold = BigInt(Math.trunc(since)) * 1_000_000n
 		const filtered = request.url.endsWith("/v1/traces")
 			? pruneTraces(decoded, threshold)
@@ -78,15 +105,11 @@ export const filterOtlpRequestForConsent = (
 				? pruneLogs(decoded, threshold)
 				: undefined
 		return filtered
-			? HttpClientRequest.setBody(request, HttpBody.jsonUnsafe(filtered, request.body.contentType))
+			? HttpClientRequest.setBody(request, HttpBody.jsonUnsafe(filtered, body.contentType))
 			: undefined
-	} catch {
-		// Unknown payloads must fail closed on an explicit-consent install.
-		return undefined
-	}
+	})
 }
 
-/** HTTP client used only by Effect's OTLP exporters. */
 export const consentHttpClientLayer = (requireConsent: boolean) =>
 	Layer.effect(
 		HttpClient.HttpClient,

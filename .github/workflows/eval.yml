@@ -42,14 +42,16 @@ jobs:
         runs-on: ubuntu-latest
         timeout-minutes: 30
         steps:
-            - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
 
-            - uses: jdx/mise-action@c37c93293d6b742fc901e1406b8f764f6fb19dac # v2.4.4
+            - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
 
-            - run: bun install --frozen-lockfile
+            - uses: ./.github/actions/bun-install
+              with:
+                  filters: "@maple/ai"
 
             - name: Run MCP evals
-              run: bun run --filter @maple/api eval
+              run: bun run --filter @maple/ai eval
               env:
                   OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
                   # Override to eval a different model (defaults to the prod kimi-k2.5).

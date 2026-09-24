@@ -1,18 +1,40 @@
 import { HttpApiBuilder } from "effect/unstable/httpapi"
-import { CurrentTenant, MetricName, ServiceName, SpanId, TraceId } from "@maple/domain/http"
+import {
+	CurrentTenant,
+	MetricName,
+	QueryEngineResultMismatchError,
+	ServiceName,
+	SpanId,
+	TraceId,
+} from "@maple/domain/http"
 import {
 	MapleApiV2,
-	dependencyUnavailable,
-	invalidRequest,
 	paginateOffsetQuery,
-	resourceNotFound,
 	timestamp,
+	V2LogIdInvalid,
+	V2LogNotFound,
+	V2LogQueryInvalid,
+	V2MetricQueryInvalid,
+	SERVICE_OVERVIEW_OPERATIONS_LIMIT,
+	V2ServiceNotFound,
+	V2SpanNotFound,
+	V2TelemetryBreakdownFilterRequired,
+	V2TelemetryBucketCountTooLarge,
+	V2TelemetryRangeTooLarge,
+	V2TimeRangeInvalid,
+	V2TraceNotFound,
+	V2TraceQueryInvalid,
 	type Timestamp,
 	type V2Log,
+	type V2LogFilters,
 	type V2Metric,
+	type V2MetricFilters,
 	type V2Service,
 	type V2ServiceMapEdge,
+	type V2ServiceOperation,
+	type V2ServiceOverviewPoint,
 	type V2Span,
+	type V2TraceFilters,
 	type V2TraceSummary,
 } from "@maple/domain/http/v2"
 import {
@@ -32,43 +54,17 @@ import {
 	MAX_UNFILTERED_BREAKDOWN_RANGE_SECONDS,
 } from "@maple/query-engine/runtime"
 import { Effect, Encoding, Option, Result, Schema } from "effect"
-import { WarehouseQueryService } from "@/services/warehouse/WarehouseQueryService"
-import { QueryEngineService } from "@/services/warehouse/QueryEngineService"
-import { warehouseToV2 } from "./warehouse-error-map"
+import { decodeKeysetCursor, encodeKeysetCursor } from "@/routes/v2/keyset-cursor"
+import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
+import { QueryEngineService } from "@maple/backend/services/warehouse/QueryEngineService"
+import { isMissingServiceOperationsRollup } from "@maple/backend/services/warehouse/missing-table"
 
 const decodeTraceId = Schema.decodeSync(TraceId)
 const decodeSpanId = Schema.decodeSync(SpanId)
 const decodeServiceName = Schema.decodeSync(ServiceName)
 const decodeMetricName = Schema.decodeSync(MetricName)
 
-const metricCatalogRowSchema = Schema.Struct({
-	metricName: Schema.String,
-	metricType: Schema.String,
-	serviceName: Schema.String,
-	metricDescription: Schema.String,
-	metricUnit: Schema.String,
-	dataPointCount: CH.CHNumber,
-	firstSeen: Schema.String,
-	lastSeen: Schema.String,
-	// `metric_catalog.IsMonotonic` is `SimpleAggregateFunction(anyLast, UInt8)` —
-	// always 0/1 on the wire, never a JSON boolean. `CHNumber` covers both the
-	// numeric and the quoted-string encoding.
-	isMonotonic: CH.CHNumber,
-})
-
-const serviceCatalogRowSchema = Schema.Struct({
-	serviceName: Schema.String,
-	serviceNamespaces: Schema.Array(Schema.String),
-	deploymentEnvironments: Schema.Array(Schema.String),
-	spanCount: CH.CHNumber,
-	errorCount: CH.CHNumber,
-	estimatedErrorCount: CH.CHNumber,
-	estimatedSpanCount: CH.CHNumber,
-	p50LatencyMs: CH.CHNumber,
-	p95LatencyMs: CH.CHNumber,
-	p99LatencyMs: CH.CHNumber,
-})
-
+const HOUR_MS = 60 * 60 * 1000
 const PARTITION_HINT_RADIUS_MS = 60 * 60 * 1000
 const PUBLIC_TIMESERIES_DEFAULT_SERIES_LIMIT = 50
 const PUBLIC_BREAKDOWN_DEFAULT_LIMIT = 20
@@ -78,42 +74,68 @@ const MAX_SEARCH_RANGE_SECONDS = MAX_LIST_RANGE_SECONDS
 // they can span far wider than any query-engine kind — no shared equivalent.
 const MAX_SUMMARY_RANGE_SECONDS = 60 * 60 * 24 * 365
 
-const mapWarehouseError = warehouseToV2
-
-const toWarehouseDateTime = (value: string, param: string) => {
-	const ms = Date.parse(value)
-	return Number.isNaN(ms)
-		? Effect.fail(invalidRequest("parameter_invalid", `Invalid ISO-8601 timestamp for ${param}.`, param))
-		: Effect.succeed(formatWarehouseDateTimeMs(ms))
-}
+/**
+ * Window bound precision, which has to match the table being read.
+ *
+ * Raw signal tables (`traces`, `logs`) store `DateTime64`, so a fractional
+ * literal is both valid and load-bearing — a log search can legitimately span
+ * 200ms, and rounding to whole seconds would widen it.
+ *
+ * The summary rollups (`service_overview_spans`, the hourly tiers) store plain
+ * `DateTime`. There, a fractional literal is a hard `TYPE_MISMATCH`, and the
+ * splice's floor arithmetic used to reject it earlier still with
+ * `Cannot parse string '…000' as DateTime`. Whole seconds cost nothing on a
+ * window measured in hours.
+ *
+ * Timeseries and breakdowns count as rollup reads: the query engine reads the
+ * hourly tiers whenever the filters allow, so they use `"second"` even though
+ * their edges come from the raw tables.
+ *
+ * Required, deliberately: this used to default to `"millisecond"`, so a handler
+ * reading a rollup only had to omit it to 500 on every call — which is how
+ * `v2ListMetrics` shipped broken against `metric_catalog`. Stating the table's
+ * precision is now the price of calling `parseWindow`.
+ */
+type WindowPrecision = "second" | "millisecond"
 
 const parseWindow = (
 	start: string,
 	end: string,
-	options: { readonly maxSeconds?: number; readonly rangeLabel?: string } = {},
+	options: {
+		readonly precision: WindowPrecision
+		readonly maxSeconds?: number
+		readonly rangeLabel?: string
+	},
 ) =>
 	Effect.gen(function* () {
+		// Both bounds are `Timestamp`, whose schema already rejected anything
+		// unparseable at the HTTP boundary — so `Date.parse` cannot be NaN here and
+		// ordering is the only thing left to check. Testing all three together used
+		// to report an unparseable `start_time` as "end_time must be later than
+		// start_time", blaming the wrong parameter.
 		const startMs = Date.parse(start)
 		const endMs = Date.parse(end)
-		if (Number.isNaN(startMs) || Number.isNaN(endMs) || endMs <= startMs) {
+		if (endMs <= startMs) {
 			return yield* Effect.fail(
-				invalidRequest("time_range_invalid", "end_time must be later than start_time.", "end_time"),
+				V2TimeRangeInvalid.make("end_time must be later than start_time.", {
+					param: "end_time",
+				}),
 			)
 		}
 		const rangeSeconds = (endMs - startMs) / 1000
 		const maxSeconds = options.maxSeconds ?? MAX_QUERY_RANGE_SECONDS
 		if (rangeSeconds > maxSeconds) {
 			return yield* Effect.fail(
-				invalidRequest(
-					"time_range_too_large",
+				V2TelemetryRangeTooLarge.make(
 					`${options.rangeLabel ?? "Telemetry queries"} support a maximum time range of ${formatRangeSeconds(maxSeconds)}.`,
-					"start_time",
+					{ param: "start_time" },
 				),
 			)
 		}
+		const format = options.precision === "second" ? formatWarehouseDateTime : formatWarehouseDateTimeMs
 		return {
-			startTime: yield* toWarehouseDateTime(start, "start_time"),
-			endTime: yield* toWarehouseDateTime(end, "end_time"),
+			startTime: format(startMs),
+			endTime: format(endMs),
 			rangeSeconds,
 		}
 	})
@@ -197,31 +219,7 @@ const parseLogKey = (value: string) => {
 			expandHexId(parsed[1] as string).toUpperCase(),
 		] as const)
 	} catch {
-		return Effect.fail(invalidRequest("log_id_invalid", "Malformed log ID.", "id"))
-	}
-}
-
-const encodeKeysetCursor = (prefix: string, parts: ReadonlyArray<string>) =>
-	`${prefix}_${Encoding.encodeBase64Url(JSON.stringify(parts))}`
-
-const decodeKeysetCursor = (value: string | undefined, prefix: string, length: number) => {
-	if (value === undefined) return Effect.succeed<ReadonlyArray<string> | undefined>(undefined)
-	if (!value.startsWith(`${prefix}_`)) {
-		return Effect.fail(invalidRequest("parameter_invalid", "Invalid pagination cursor.", "cursor"))
-	}
-	const decoded = Encoding.decodeBase64UrlString(value.slice(prefix.length + 1))
-	if (Result.isFailure(decoded)) {
-		return Effect.fail(invalidRequest("parameter_invalid", "Invalid pagination cursor.", "cursor"))
-	}
-	try {
-		const parts = JSON.parse(decoded.success) as unknown
-		return Array.isArray(parts) &&
-			parts.length === length &&
-			parts.every((part) => typeof part === "string")
-			? Effect.succeed(parts as ReadonlyArray<string>)
-			: Effect.fail(invalidRequest("parameter_invalid", "Invalid pagination cursor.", "cursor"))
-	} catch {
-		return Effect.fail(invalidRequest("parameter_invalid", "Invalid pagination cursor.", "cursor"))
+		return Effect.fail(V2LogIdInvalid.make(undefined, { param: "id" }))
 	}
 }
 
@@ -322,12 +320,12 @@ const attributeFilters = (
 ) =>
 	filters?.map((filter) => ({
 		key: filter.key,
-		...(filter.value !== undefined ? { value: String(filter.value) } : {}),
+		...(filter.value !== undefined ? { value: String(filter.value) } : undefined),
 		mode: filter.operator,
-		...(filter.negated !== undefined ? { negated: filter.negated } : {}),
+		...(filter.negated !== undefined ? { negated: filter.negated } : undefined),
 	}))
 
-const traceFilters = (filters: Record<string, any> | undefined, groupByAttributeKey?: string) => {
+const traceFilters = (filters: V2TraceFilters | undefined, groupByAttributeKey?: string) => {
 	if (!filters && !groupByAttributeKey) return undefined
 	const httpFilters = [
 		...(filters?.http_method
@@ -356,7 +354,7 @@ const traceFilters = (filters: Record<string, any> | undefined, groupByAttribute
 	}
 }
 
-const logFilters = (filters: Record<string, any> | undefined) =>
+const logFilters = (filters: V2LogFilters | undefined) =>
 	filters
 		? {
 				serviceName: filters.service_name,
@@ -373,7 +371,7 @@ const logFilters = (filters: Record<string, any> | undefined) =>
 		: undefined
 
 const metricFilters = (
-	filters: Record<string, any>,
+	filters: V2MetricFilters,
 	groupByAttributeKey?: string,
 	groupByResourceAttributeKey?: string,
 ) => ({
@@ -384,19 +382,15 @@ const metricFilters = (
 	groupByResourceAttributeKey,
 })
 
-const queryError = (signal: "trace" | "log" | "metric") => (error: unknown) => {
-	const tag = typeof error === "object" && error !== null && "_tag" in error ? String(error._tag) : ""
-	return tag.includes("Validation")
-		? invalidRequest(`${signal}_query_invalid`, "The aggregation request is invalid.", "aggregation")
-		: dependencyUnavailable(`${signal}_query_unavailable`)
-}
+const decodeQueryEngineRequest = <E>(input: unknown, onInvalid: () => E) =>
+	Schema.decodeUnknownEffect(QueryEngineExecuteRequest)(input).pipe(Effect.mapError(onInvalid))
 
-const decodeQueryEngineRequest = (input: unknown, signal: "trace" | "log" | "metric") =>
-	Schema.decodeUnknownEffect(QueryEngineExecuteRequest)(input).pipe(
-		Effect.mapError(() =>
-			invalidRequest(`${signal}_query_invalid`, "The aggregation request is invalid.", "aggregation"),
-		),
-	)
+const queryResultMismatch = (expectedKind: string, actualKind: string) =>
+	new QueryEngineResultMismatchError({
+		message: `Expected ${expectedKind} query result, received ${actualKind}`,
+		expectedKind,
+		actualKind,
+	})
 
 const validateTimeseriesBucket = (
 	startTime: string,
@@ -408,10 +402,9 @@ const validateTimeseriesBucket = (
 		requestedBucketSeconds ?? computeBucketSeconds(Date.parse(startTime), Date.parse(endTime))
 	return Math.floor(rangeSeconds / bucketSeconds) + 1 > MAX_TIMESERIES_BUCKETS
 		? Effect.fail(
-				invalidRequest(
-					"bucket_count_too_large",
+				V2TelemetryBucketCountTooLarge.make(
 					`bucket_seconds produces more than ${MAX_TIMESERIES_BUCKETS.toLocaleString("en-US")} buckets.`,
-					"bucket_seconds",
+					{ param: "bucket_seconds" },
 				),
 			)
 		: Effect.succeed(bucketSeconds)
@@ -429,10 +422,9 @@ const validateBreakdownRange = (rangeSeconds: number, filters: unknown) => {
 		return Effect.void
 	}
 	return Effect.fail(
-		invalidRequest(
-			"breakdown_filter_required",
+		V2TelemetryBreakdownFilterRequired.make(
 			`Breakdowns over ${formatRangeSeconds(MAX_UNFILTERED_BREAKDOWN_RANGE_SECONDS)} require at least one narrowing filter.`,
-			"filters",
+			{ param: "filters" },
 		),
 	)
 }
@@ -465,12 +457,10 @@ export const HttpV2TracesLive = HttpApiBuilder.group(MapleApiV2, "traces", (hand
 					orgId: tenant.orgId,
 				},
 			)
-			return yield* warehouse
-				.compiledQuery(tenant, compiled, {
-					profile: "list",
-					context: "v2GetTrace",
-				})
-				.pipe(Effect.mapError(mapWarehouseError("trace_query")))
+			return yield* warehouse.compiledQuery(tenant, compiled, {
+				profile: "list",
+				context: "v2GetTrace",
+			})
 		})
 
 		return handlers
@@ -480,6 +470,7 @@ export const HttpV2TracesLive = HttpApiBuilder.group(MapleApiV2, "traces", (hand
 					const window = yield* parseWindow(payload.start_time, payload.end_time, {
 						maxSeconds: MAX_SEARCH_RANGE_SECONDS,
 						rangeLabel: "Trace search",
+						precision: "millisecond",
 					})
 					const limit = payload.limit ?? 20
 					const cursorParts = yield* decodeKeysetCursor(payload.cursor, "trc", 2)
@@ -508,9 +499,11 @@ export const HttpV2TracesLive = HttpApiBuilder.group(MapleApiV2, "traces", (hand
 						}),
 						{ orgId: tenant.orgId, ...window },
 					)
-					const rows = yield* warehouse
-						.compiledQuery(tenant, compiled, { profile: "list", context: "v2TraceSearch" })
-						.pipe(Effect.mapError(mapWarehouseError("trace_search")))
+					const rows = yield* warehouse.compiledQuery(tenant, compiled, {
+						profile: "list",
+						context: "v2TraceSearch",
+					})
+
 					const dataRows = rows.slice(0, limit)
 					const last = dataRows.at(-1)
 					const hasMore = rows.length > limit
@@ -531,6 +524,7 @@ export const HttpV2TracesLive = HttpApiBuilder.group(MapleApiV2, "traces", (hand
 					const window = yield* parseWindow(payload.start_time, payload.end_time, {
 						maxSeconds: MAX_QUERY_RANGE_SECONDS,
 						rangeLabel: "Trace timeseries",
+						precision: "second",
 					})
 					const bucketSeconds = yield* validateTimeseriesBucket(
 						payload.start_time,
@@ -556,13 +550,12 @@ export const HttpV2TracesLive = HttpApiBuilder.group(MapleApiV2, "traces", (hand
 								filters: traceFilters(payload.filters, payload.group_by_attribute_key),
 							},
 						},
-						"trace",
+						() => V2TraceQueryInvalid.make(undefined, { param: "aggregation" }),
 					)
-					const response = yield* queryEngine
-						.execute(tenant, request)
-						.pipe(Effect.mapError(queryError("trace")))
+					const response = yield* queryEngine.execute(tenant, request)
+
 					if (response.result.kind !== "timeseries") {
-						return yield* Effect.fail(dependencyUnavailable("trace_query_unavailable"))
+						return yield* Effect.fail(queryResultMismatch("timeseries", response.result.kind))
 					}
 					return {
 						object: "trace_timeseries" as const,
@@ -581,6 +574,7 @@ export const HttpV2TracesLive = HttpApiBuilder.group(MapleApiV2, "traces", (hand
 					const window = yield* parseWindow(payload.start_time, payload.end_time, {
 						maxSeconds: MAX_BREAKDOWN_RANGE_SECONDS,
 						rangeLabel: "Trace breakdown",
+						precision: "second",
 					})
 					yield* validateBreakdownRange(window.rangeSeconds, payload.filters)
 					const request = yield* decodeQueryEngineRequest(
@@ -600,13 +594,12 @@ export const HttpV2TracesLive = HttpApiBuilder.group(MapleApiV2, "traces", (hand
 								filters: traceFilters(payload.filters, payload.group_by_attribute_key),
 							},
 						},
-						"trace",
+						() => V2TraceQueryInvalid.make(undefined, { param: "aggregation" }),
 					)
-					const response = yield* queryEngine
-						.execute(tenant, request)
-						.pipe(Effect.mapError(queryError("trace")))
+					const response = yield* queryEngine.execute(tenant, request)
+
 					if (response.result.kind !== "breakdown") {
-						return yield* Effect.fail(dependencyUnavailable("trace_query_unavailable"))
+						return yield* Effect.fail(queryResultMismatch("breakdown", response.result.kind))
 					}
 					return {
 						object: "trace_breakdown" as const,
@@ -625,7 +618,7 @@ export const HttpV2TracesLive = HttpApiBuilder.group(MapleApiV2, "traces", (hand
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
 					const rows = yield* hierarchy(tenant, params.trace_id)
-					if (rows.length === 0) return yield* resourceNotFound("trace", "No such trace.")
+					if (rows.length === 0) return yield* Effect.fail(V2TraceNotFound.make())
 					const truncated = rows.length > CH.SPAN_HIERARCHY_MAX_SPANS
 					const spans = rows.slice(0, CH.SPAN_HIERARCHY_MAX_SPANS).map(toSpan)
 					const startMs = Math.min(...spans.map((span) => Date.parse(span.start_time)))
@@ -660,8 +653,8 @@ export const HttpV2TracesLive = HttpApiBuilder.group(MapleApiV2, "traces", (hand
 							),
 							{ profile: "discovery", context: "v2GetSpan" },
 						)
-						.pipe(Effect.mapError(mapWarehouseError("span_query")), Effect.map(Option.getOrNull))
-					if (!detail) return yield* resourceNotFound("span", "No such span.")
+						.pipe(Effect.map(Option.getOrNull))
+					if (!detail) return yield* Effect.fail(V2SpanNotFound.make())
 					return toSpan(detail)
 				}),
 			)
@@ -679,6 +672,7 @@ export const HttpV2LogsLive = HttpApiBuilder.group(MapleApiV2, "logs", (handlers
 					const window = yield* parseWindow(payload.start_time, payload.end_time, {
 						maxSeconds: MAX_SEARCH_RANGE_SECONDS,
 						rangeLabel: "Log search",
+						precision: "millisecond",
 					})
 					const limit = payload.limit ?? 20
 					const cursorParts = yield* decodeKeysetCursor(payload.cursor, "log", 5)
@@ -700,13 +694,12 @@ export const HttpV2LogsLive = HttpApiBuilder.group(MapleApiV2, "logs", (handlers
 						}),
 						{ orgId: tenant.orgId, ...window },
 					)
-					const rows = yield* warehouse
-						.compiledQuery(tenant, compiled, {
-							profile: "list",
-							context: "v2LogSearch",
-							settings: filters?.body_search ? LOGS_BODY_SEARCH_SETTINGS : undefined,
-						})
-						.pipe(Effect.mapError(mapWarehouseError("log_search")))
+					const rows = yield* warehouse.compiledQuery(tenant, compiled, {
+						profile: "list",
+						context: "v2LogSearch",
+						settings: filters?.body_search ? LOGS_BODY_SEARCH_SETTINGS : undefined,
+					})
+
 					const dataRows = rows.slice(0, limit)
 					const last = dataRows.at(-1)
 					const hasMore = rows.length > limit
@@ -733,6 +726,7 @@ export const HttpV2LogsLive = HttpApiBuilder.group(MapleApiV2, "logs", (handlers
 					const window = yield* parseWindow(payload.start_time, payload.end_time, {
 						maxSeconds: MAX_QUERY_RANGE_SECONDS,
 						rangeLabel: "Log timeseries",
+						precision: "second",
 					})
 					const bucketSeconds = yield* validateTimeseriesBucket(
 						payload.start_time,
@@ -754,13 +748,12 @@ export const HttpV2LogsLive = HttpApiBuilder.group(MapleApiV2, "logs", (handlers
 								filters: logFilters(payload.filters),
 							},
 						},
-						"log",
+						() => V2LogQueryInvalid.make(undefined, { param: "aggregation" }),
 					)
-					const response = yield* queryEngine
-						.execute(tenant, request)
-						.pipe(Effect.mapError(queryError("log")))
+					const response = yield* queryEngine.execute(tenant, request)
+
 					if (response.result.kind !== "timeseries") {
-						return yield* Effect.fail(dependencyUnavailable("log_query_unavailable"))
+						return yield* Effect.fail(queryResultMismatch("timeseries", response.result.kind))
 					}
 					return {
 						object: "log_timeseries" as const,
@@ -779,6 +772,7 @@ export const HttpV2LogsLive = HttpApiBuilder.group(MapleApiV2, "logs", (handlers
 					const window = yield* parseWindow(payload.start_time, payload.end_time, {
 						maxSeconds: MAX_BREAKDOWN_RANGE_SECONDS,
 						rangeLabel: "Log breakdown",
+						precision: "second",
 					})
 					yield* validateBreakdownRange(window.rangeSeconds, payload.filters)
 					const request = yield* decodeQueryEngineRequest(
@@ -794,13 +788,12 @@ export const HttpV2LogsLive = HttpApiBuilder.group(MapleApiV2, "logs", (handlers
 								filters: logFilters(payload.filters),
 							},
 						},
-						"log",
+						() => V2LogQueryInvalid.make(undefined, { param: "aggregation" }),
 					)
-					const response = yield* queryEngine
-						.execute(tenant, request)
-						.pipe(Effect.mapError(queryError("log")))
+					const response = yield* queryEngine.execute(tenant, request)
+
 					if (response.result.kind !== "breakdown") {
-						return yield* Effect.fail(dependencyUnavailable("log_query_unavailable"))
+						return yield* Effect.fail(queryResultMismatch("breakdown", response.result.kind))
 					}
 					return {
 						object: "log_breakdown" as const,
@@ -834,8 +827,8 @@ export const HttpV2LogsLive = HttpApiBuilder.group(MapleApiV2, "logs", (handlers
 							profile: "list",
 							context: "v2GetLog",
 						})
-						.pipe(Effect.mapError(mapWarehouseError("log_query")), Effect.map(Option.getOrNull))
-					if (!row) return yield* resourceNotFound("log", "No such log.")
+						.pipe(Effect.map(Option.getOrNull))
+					if (!row) return yield* Effect.fail(V2LogNotFound.make())
 					return toLog(row)
 				}),
 			)
@@ -850,43 +843,47 @@ export const HttpV2MetricsLive = HttpApiBuilder.group(MapleApiV2, "metrics", (ha
 			.handle("list", ({ query }) =>
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
-					const window = yield* parseWindow(query.start_time, query.end_time)
-					const page = yield* paginateOffsetQuery(query, ({ limit, offset }) => {
-						const compiled = CH.compile(
-							CH.listMetricsQuery({
-								serviceName: query.service_name,
-								metricType: query.metric_type,
-								search: query.search,
-								limit,
-								offset,
-							}),
-							{ orgId: tenant.orgId, ...window },
-							{ rowSchema: metricCatalogRowSchema },
-						)
-						return warehouse
-							.compiledQuery(tenant, compiled, {
-								profile: "discovery",
-								context: "v2ListMetrics",
-							})
-							.pipe(
-								Effect.mapError(mapWarehouseError("metric_catalog")),
-								Effect.map(
-									(rows): ReadonlyArray<V2Metric> =>
-										rows.map((row) => ({
-											object: "metric",
-											name: decodeMetricName(row.metricName),
-											type: row.metricType,
-											service_name: row.serviceName,
-											description: row.metricDescription,
-											unit: row.metricUnit,
-											is_monotonic: Number(row.isMonotonic) !== 0,
-											data_point_count: Number(row.dataPointCount),
-											first_seen: chToIso(row.firstSeen),
-											last_seen: chToIso(row.lastSeen),
-										})),
-								),
-							)
+					// `metric_catalog.Hour` is a plain DateTime — a fractional bound is a
+					// hard TYPE_MISMATCH, not a rounding difference.
+					const window = yield* parseWindow(query.start_time, query.end_time, {
+						precision: "second",
 					})
+					const page = yield* paginateOffsetQuery(query, ({ limit, offset }) =>
+						Effect.gen(function* () {
+							const compiled = CH.compile(
+								CH.listMetricsQuery({
+									serviceName: query.service_name,
+									metricType: query.metric_type,
+									search: query.search,
+									limit,
+									offset,
+								}),
+								{ orgId: tenant.orgId, ...window },
+							)
+							return yield* warehouse
+								.compiledQuery(tenant, compiled, {
+									profile: "discovery",
+									context: "v2ListMetrics",
+								})
+								.pipe(
+									Effect.map(
+										(rows): ReadonlyArray<V2Metric> =>
+											rows.map((row) => ({
+												object: "metric",
+												name: decodeMetricName(row.metricName),
+												type: row.metricType,
+												service_name: row.serviceName,
+												description: row.metricDescription,
+												unit: row.metricUnit,
+												is_monotonic: Number(row.isMonotonic) !== 0,
+												data_point_count: Number(row.dataPointCount),
+												first_seen: chToIso(row.firstSeen),
+												last_seen: chToIso(row.lastSeen),
+											})),
+									),
+								)
+						}),
+					)
 					return { object: "list" as const, ...page }
 				}),
 			)
@@ -896,6 +893,7 @@ export const HttpV2MetricsLive = HttpApiBuilder.group(MapleApiV2, "metrics", (ha
 					const window = yield* parseWindow(payload.start_time, payload.end_time, {
 						maxSeconds: MAX_QUERY_RANGE_SECONDS,
 						rangeLabel: "Metric timeseries",
+						precision: "second",
 					})
 					const bucketSeconds = yield* validateTimeseriesBucket(
 						payload.start_time,
@@ -921,13 +919,12 @@ export const HttpV2MetricsLive = HttpApiBuilder.group(MapleApiV2, "metrics", (ha
 								),
 							},
 						},
-						"metric",
+						() => V2MetricQueryInvalid.make(undefined, { param: "aggregation" }),
 					)
-					const response = yield* queryEngine
-						.execute(tenant, request)
-						.pipe(Effect.mapError(queryError("metric")))
+					const response = yield* queryEngine.execute(tenant, request)
+
 					if (response.result.kind !== "timeseries") {
-						return yield* Effect.fail(dependencyUnavailable("metric_query_unavailable"))
+						return yield* Effect.fail(queryResultMismatch("timeseries", response.result.kind))
 					}
 					return {
 						object: "metric_timeseries" as const,
@@ -946,6 +943,7 @@ export const HttpV2MetricsLive = HttpApiBuilder.group(MapleApiV2, "metrics", (ha
 					const window = yield* parseWindow(payload.start_time, payload.end_time, {
 						maxSeconds: MAX_BREAKDOWN_RANGE_SECONDS,
 						rangeLabel: "Metric breakdown",
+						precision: "second",
 					})
 					yield* validateBreakdownRange(window.rangeSeconds, payload.filters)
 					const request = yield* decodeQueryEngineRequest(
@@ -965,13 +963,12 @@ export const HttpV2MetricsLive = HttpApiBuilder.group(MapleApiV2, "metrics", (ha
 								),
 							},
 						},
-						"metric",
+						() => V2MetricQueryInvalid.make(undefined, { param: "aggregation" }),
 					)
-					const response = yield* queryEngine
-						.execute(tenant, request)
-						.pipe(Effect.mapError(queryError("metric")))
+					const response = yield* queryEngine.execute(tenant, request)
+
 					if (response.result.kind !== "breakdown") {
-						return yield* Effect.fail(dependencyUnavailable("metric_query_unavailable"))
+						return yield* Effect.fail(queryResultMismatch("breakdown", response.result.kind))
 					}
 					return {
 						object: "metric_breakdown" as const,
@@ -989,7 +986,40 @@ export const HttpV2MetricsLive = HttpApiBuilder.group(MapleApiV2, "metrics", (ha
 	}),
 )
 
-const toService = (
+// The latency baseline covers the seven days BEFORE the window being judged,
+// so a regression that is still running can't raise the bar it is measured
+// against.
+const BASELINE_WINDOW_MS = 7 * 24 * 60 * 60 * 1000
+// Matches the `serviceHealthBaseline` registry definition the dashboard reads
+// through, so both surfaces re-read a week-wide aggregate at the same rate.
+const BASELINE_CACHE_SECONDS = 3600
+
+/**
+ * The trailing p95 a service is judged against, keyed by service name. The
+ * catalog rows aggregate every namespace and environment under one name, so
+ * the baseline rows collapse the same way: the busiest row wins rather than
+ * the numbers being averaged across populations that don't compare.
+ */
+export type ServiceBaselines = ReadonlyMap<string, { p95LatencyMs: number; spanCount: number }>
+
+const collapseBaselines = (
+	rows: readonly {
+		serviceName: string
+		baselineP95LatencyMs: number
+		baselineSpanCount: number
+	}[],
+): ServiceBaselines => {
+	const map = new Map<string, { p95LatencyMs: number; spanCount: number }>()
+	for (const row of rows) {
+		const spanCount = Number(row.baselineSpanCount)
+		const current = map.get(row.serviceName)
+		if (current !== undefined && current.spanCount >= spanCount) continue
+		map.set(row.serviceName, { p95LatencyMs: Number(row.baselineP95LatencyMs), spanCount })
+	}
+	return map
+}
+
+export const toService = (
 	row: {
 		serviceName: string
 		serviceNamespaces: readonly string[]
@@ -1003,11 +1033,13 @@ const toService = (
 		p99LatencyMs: number
 	},
 	rangeSeconds: number,
+	baselines: ServiceBaselines,
 ): V2Service => {
 	const spanCount = Number(row.spanCount)
 	const estimatedSpanCount = Number(row.estimatedSpanCount)
 	const estimatedErrorCount = Number(row.estimatedErrorCount)
-	return {
+	const baseline = baselines.get(row.serviceName)
+	const service: V2Service = {
 		object: "service",
 		name: decodeServiceName(row.serviceName),
 		service_namespaces: [...row.serviceNamespaces],
@@ -1023,65 +1055,322 @@ const toService = (
 		has_sampling: estimatedSpanCount > spanCount + 0.001,
 		sampling_weight: spanCount > 0 ? estimatedSpanCount / spanCount : 1,
 	}
+	// Omitted rather than zeroed when the service has no history: a zero
+	// baseline would read as "instant, therefore everything is a regression".
+	if (baseline === undefined) return service
+	return {
+		...service,
+		baseline_p95_latency_ms: baseline.p95LatencyMs,
+		baseline_span_count: baseline.spanCount,
+	}
 }
+
+/**
+ * The all-metrics timeseries as the overview carries it: one object per
+ * bucket, in the engine's bucket order. The engine names the metrics; an
+ * absent key is a bucket the engine hole-filled, which reads as zero.
+ */
+const toOverviewPoints = (
+	data: ReadonlyArray<{ readonly bucket: string; readonly series: Readonly<Record<string, number>> }>,
+): ReadonlyArray<V2ServiceOverviewPoint> =>
+	data.map((point) => ({
+		timestamp: chToIso(point.bucket),
+		span_count: Number(point.series.count ?? 0),
+		estimated_span_count: Number(point.series.estimated_span_count ?? point.series.count ?? 0),
+		error_rate: Number(point.series.error_rate ?? 0),
+		p50_latency_ms: Number(point.series.p50_duration ?? 0),
+		p95_latency_ms: Number(point.series.p95_duration ?? 0),
+		p99_latency_ms: Number(point.series.p99_duration ?? 0),
+	}))
+
+const toOperation = (row: CH.ServiceOperationsSummaryOutput): V2ServiceOperation => ({
+	name: String(row.spanName),
+	span_count: Number(row.spanCount),
+	estimated_span_count: Number(row.estimatedSpanCount),
+	error_count: Number(row.errorCount),
+	error_rate: Number(row.errorRate),
+	p50_latency_ms: Number(row.p50DurationMs),
+	p95_latency_ms: Number(row.p95DurationMs),
+	p99_latency_ms: Number(row.p99DurationMs),
+})
 
 export const HttpV2ServicesLive = HttpApiBuilder.group(MapleApiV2, "services", (handlers) =>
 	Effect.gen(function* () {
 		const warehouse = yield* WarehouseQueryService
+		const queryEngine = yield* QueryEngineService
+
+		/**
+		 * Trailing p95 per service for the seven days before `windowStartMs`.
+		 *
+		 * Hour-floored so a polling client's drifting window keeps hitting the
+		 * same cache entry, and cached for an hour — a week-wide aggregate that
+		 * moves slowly should not be re-read on every list request.
+		 */
+		const loadBaselines = (
+			tenant: CurrentTenant.TenantSchema,
+			windowStartMs: number,
+			filters: { deploymentEnvironment?: string; serviceNamespace?: string },
+		) =>
+			Effect.gen(function* () {
+				const endMs = Math.floor(windowStartMs / HOUR_MS) * HOUR_MS
+				const window = {
+					startTime: formatWarehouseDateTime(endMs - BASELINE_WINDOW_MS),
+					endTime: formatWarehouseDateTime(endMs),
+				}
+				const compiled = CH.compile(
+					CH.serviceHealthBaselineQuery({
+						environments: filters.deploymentEnvironment
+							? [filters.deploymentEnvironment]
+							: undefined,
+						namespaces: filters.serviceNamespace ? [filters.serviceNamespace] : undefined,
+					}),
+					{ orgId: tenant.orgId, ...window },
+				)
+				const rows = yield* queryEngine.cachedDirect(
+					tenant,
+					"v2ServiceHealthBaseline",
+					{ ...window, ...filters },
+					warehouse.compiledQuery(tenant, compiled, {
+						profile: "aggregation",
+						context: "v2ServiceHealthBaseline",
+					}),
+					BASELINE_CACHE_SECONDS,
+				)
+				return collapseBaselines(rows)
+			}).pipe(
+				// A missing baseline is a supported state — clients fall back to
+				// absolute thresholds — so a failed baseline read degrades the health
+				// signal instead of failing the whole listing.
+				Effect.catchCause((cause) =>
+					Effect.as(
+						Effect.logWarning("v2 service baseline read failed", cause),
+						collapseBaselines([]),
+					),
+				),
+			)
+
 		const execute = (
 			tenant: CurrentTenant.TenantSchema,
 			window: { startTime: string; endTime: string; rangeSeconds: number },
+			baselines: ServiceBaselines,
 			opts: Parameters<typeof CH.serviceCatalogQuery>[0],
-		) => {
-			const compiled = CH.compile(
-				CH.serviceCatalogQuery(opts),
-				{ orgId: tenant.orgId, ...window },
-				{ rowSchema: serviceCatalogRowSchema },
-			)
-			return warehouse
-				.compiledQuery(tenant, compiled, {
-					profile: "aggregation",
-					context: "v2ServiceCatalog",
-				})
-				.pipe(
-					Effect.mapError(mapWarehouseError("service_query")),
-					Effect.map((rows) => rows.map((row) => toService(row, window.rangeSeconds))),
-				)
-		}
-		return handlers
-			.handle("list", ({ query }) =>
-				Effect.gen(function* () {
-					const tenant = yield* CurrentTenant.Context
-					const window = yield* parseWindow(query.start_time, query.end_time, {
-						maxSeconds: MAX_SUMMARY_RANGE_SECONDS,
-						rangeLabel: "Service queries",
+		) =>
+			Effect.gen(function* () {
+				const compiled = CH.compile(CH.serviceCatalogQuery(opts), { orgId: tenant.orgId, ...window })
+				return yield* warehouse
+					.compiledQuery(tenant, compiled, {
+						profile: "aggregation",
+						context: "v2ServiceCatalog",
 					})
-					const page = yield* paginateOffsetQuery(query, ({ limit, offset }) =>
-						execute(tenant, window, {
+					.pipe(
+						Effect.map((rows) =>
+							rows.map((row) => toService(row, window.rangeSeconds, baselines)),
+						),
+					)
+			})
+		return (
+			handlers
+				.handle("list", ({ query }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						const window = yield* parseWindow(query.start_time, query.end_time, {
+							maxSeconds: MAX_SUMMARY_RANGE_SECONDS,
+							// Reads the hourly rollups, whose Timestamp is a plain DateTime.
+							precision: "second",
+							rangeLabel: "Service queries",
+						})
+						const baselines = yield* loadBaselines(tenant, Date.parse(query.start_time), {
 							deploymentEnvironment: query.deployment_environment,
 							serviceNamespace: query.service_namespace,
-							limit,
-							offset,
-						}),
-					)
-					return { object: "list" as const, ...page }
-				}),
-			)
-			.handle("retrieve", ({ params, query }) =>
-				Effect.gen(function* () {
-					const tenant = yield* CurrentTenant.Context
-					const window = yield* parseWindow(query.start_time, query.end_time, {
-						maxSeconds: MAX_SUMMARY_RANGE_SECONDS,
-						rangeLabel: "Service queries",
-					})
-					const rows = yield* execute(tenant, window, {
-						serviceName: params.name,
-						limit: 1,
-					})
-					if (!rows[0]) return yield* resourceNotFound("service", "No such service.")
-					return rows[0]
-				}),
-			)
+						})
+						const page = yield* paginateOffsetQuery(query, ({ limit, offset }) =>
+							execute(tenant, window, baselines, {
+								deploymentEnvironment: query.deployment_environment,
+								serviceNamespace: query.service_namespace,
+								limit,
+								offset,
+							}),
+						)
+						return { object: "list" as const, ...page }
+					}),
+				)
+				.handle("retrieve", ({ params, query }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						const window = yield* parseWindow(query.start_time, query.end_time, {
+							maxSeconds: MAX_SUMMARY_RANGE_SECONDS,
+							// Reads the hourly rollups, whose Timestamp is a plain DateTime.
+							precision: "second",
+							rangeLabel: "Service queries",
+						})
+						const baselines = yield* loadBaselines(tenant, Date.parse(query.start_time), {})
+						const rows = yield* execute(tenant, window, baselines, {
+							serviceName: params.name,
+							limit: 1,
+						})
+						if (!rows[0]) return yield* Effect.fail(V2ServiceNotFound.make())
+						return rows[0]
+					}),
+				)
+				/**
+				 * The reads behind a service detail screen, in one Worker invocation.
+				 *
+				 * The phone used to compose this from six requests (the summary, three
+				 * single-metric timeseries, two breakdowns), each re-resolving per-org
+				 * config and paying its own round-trip, and painted only when the
+				 * slowest landed. Here config resolves once, the three warehouse reads
+				 * run concurrently, and the all-metrics timeseries is one query for
+				 * every signal rather than one per signal.
+				 *
+				 * The summary is the screen, so its failure is the request's. The
+				 * series and the operations are context next to it and degrade in
+				 * place — a null `bucket_seconds` with no points, an empty operations
+				 * list — the way the widget summary's sparklines do.
+				 */
+				.handle("overview", ({ params, query }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						// The series read raw traces (or the minutely tier), so the window
+						// takes the timeseries range cap rather than the catalog's annual one.
+						const window = yield* parseWindow(query.start_time, query.end_time, {
+							maxSeconds: MAX_QUERY_RANGE_SECONDS,
+							precision: "second",
+							rangeLabel: "Service overview queries",
+						})
+						const bucketSeconds = yield* validateTimeseriesBucket(
+							query.start_time,
+							query.end_time,
+							window.rangeSeconds,
+							query.bucket_seconds,
+						)
+						const environmentFilter = query.deployment_environment
+							? { deploymentEnvironment: query.deployment_environment }
+							: {}
+						const timeseriesRequest = yield* decodeQueryEngineRequest(
+							{
+								startTime: window.startTime,
+								endTime: window.endTime,
+								query: {
+									kind: "timeseries",
+									source: "traces",
+									metric: "count",
+									allMetrics: true,
+									bucketSeconds,
+									filters: {
+										serviceName: params.name,
+										...(query.deployment_environment
+											? { environments: [query.deployment_environment] }
+											: undefined),
+									},
+								},
+							},
+							() => V2TraceQueryInvalid.make(undefined, { param: "bucket_seconds" }),
+						)
+
+						yield* warehouse.warmRoute(tenant)
+
+						const summary = Effect.gen(function* () {
+							const baselines = yield* loadBaselines(
+								tenant,
+								Date.parse(query.start_time),
+								environmentFilter,
+							)
+							const rows = yield* execute(tenant, window, baselines, {
+								serviceName: params.name,
+								...environmentFilter,
+								limit: 1,
+							})
+							return rows[0]
+						})
+
+						const points = queryEngine.execute(tenant, timeseriesRequest).pipe(
+							Effect.map((response) =>
+								response.result.kind === "timeseries"
+									? toOverviewPoints(response.result.data)
+									: [],
+							),
+							Effect.catchCause((cause) =>
+								Effect.as(
+									Effect.logWarning("v2 service overview timeseries read failed", cause),
+									null,
+								),
+							),
+						)
+
+						const operationOptions = {
+							serviceName: params.name,
+							environments: query.deployment_environment
+								? [query.deployment_environment]
+								: undefined,
+							limit: SERVICE_OVERVIEW_OPERATIONS_LIMIT,
+						}
+						const operationParams = {
+							orgId: tenant.orgId,
+							startTime: window.startTime,
+							endTime: window.endTime,
+						}
+						const operationRowSchema = { rowSchema: CH.serviceOperationsSummaryRowSchema }
+						const runOperations = (rollup: boolean) =>
+							warehouse.compiledQuery(
+								tenant,
+								rollup
+									? CH.compile(
+											CH.serviceOperationsSummaryQuery(operationOptions),
+											operationParams,
+											operationRowSchema,
+										)
+									: CH.compile(
+											CH.serviceOperationsSummaryRawQuery(operationOptions),
+											operationParams,
+											operationRowSchema,
+										),
+								{
+									profile: "aggregation",
+									context: rollup
+										? "v2ServiceOverviewOperations"
+										: "v2ServiceOverviewOperationsRaw",
+								},
+							)
+						// Same rollout state as the internal Operations tab: the
+						// `service_operations_*` rollups reach a BYO cluster only when its
+						// admin applies schema, so a missing table reads raw traces instead.
+						const operations = runOperations(true).pipe(
+							Effect.catch((error) =>
+								isMissingServiceOperationsRollup(error)
+									? Effect.logWarning(
+											"service_operations rollup is absent on this cluster; reading raw traces for the v2 service overview.",
+										).pipe(
+											Effect.annotateLogs({ orgId: tenant.orgId }),
+											Effect.andThen(runOperations(false)),
+										)
+									: Effect.fail(error),
+							),
+							Effect.map((rows) => rows.map(toOperation)),
+							Effect.catchCause((cause) =>
+								Effect.as(
+									Effect.logWarning("v2 service overview operations read failed", cause),
+									[] as ReadonlyArray<V2ServiceOperation>,
+								),
+							),
+						)
+
+						const [service, series, operationRows] = yield* Effect.all(
+							[summary, points, operations],
+							{ concurrency: 3 },
+						)
+						if (!service) return yield* Effect.fail(V2ServiceNotFound.make())
+						return {
+							object: "service_overview" as const,
+							service,
+							start_time: timestamp(query.start_time),
+							end_time: timestamp(query.end_time),
+							bucket_seconds: series === null ? null : bucketSeconds,
+							points: series ?? [],
+							operations: operationRows,
+						}
+					}),
+				)
+		)
 	}),
 )
 
@@ -1091,7 +1380,7 @@ const toMapEdge = (row: {
 	callCount: number
 	errorCount: number
 	avgDurationMs: number
-	p95DurationMs: number
+	maxDurationMs: number
 	estimatedSpanCount: number
 }): V2ServiceMapEdge => {
 	const calls = Number(row.callCount)
@@ -1106,11 +1395,51 @@ const toMapEdge = (row: {
 		error_count: errors,
 		error_rate: calls > 0 ? errors / calls : 0,
 		avg_duration_ms: Number(row.avgDurationMs),
-		max_duration_ms: Number(row.p95DurationMs),
+		max_duration_ms: Number(row.maxDurationMs),
 		has_sampling: estimated > calls + 0.001,
 		sampling_weight: calls > 0 ? estimated / calls : 1,
 	}
 }
+
+/**
+ * The values every other endpoint's `deployment_environment` filter accepts.
+ *
+ * `"discovery"` rather than `"aggregation"`: the read is a `GROUP BY` over one
+ * LowCardinality column, and clients poll it to keep an environment picker
+ * populated. A cheap ceiling is the honest description of that work, and it
+ * stops a slow one from spending an analytical budget it never needed.
+ */
+export const HttpV2EnvironmentsLive = HttpApiBuilder.group(MapleApiV2, "environments", (handlers) =>
+	Effect.gen(function* () {
+		const warehouse = yield* WarehouseQueryService
+		return handlers.handle("list", ({ query }) =>
+			Effect.gen(function* () {
+				const tenant = yield* CurrentTenant.Context
+				const window = yield* parseWindow(query.start_time, query.end_time, {
+					maxSeconds: MAX_SUMMARY_RANGE_SECONDS,
+					// Reads the hourly rollups, whose Timestamp is a plain DateTime.
+					precision: "second",
+					rangeLabel: "Environment queries",
+				})
+				const compiled = CH.compile(CH.serviceEnvironmentsQuery(), { orgId: tenant.orgId, ...window })
+				const rows = yield* warehouse.compiledQuery(tenant, compiled, {
+					profile: "discovery",
+					context: "v2Environments",
+				})
+
+				return {
+					object: "list" as const,
+					data: rows.map((row) => ({ object: "environment" as const, name: row.environment })),
+					// The query's own limit sits well above any real organization's
+					// environment count, so a page is always the whole list. Paginating
+					// would hand clients a cursor that is never non-null.
+					has_more: false,
+					next_cursor: null,
+				}
+			}),
+		)
+	}),
+)
 
 export const HttpV2ServiceMapLive = HttpApiBuilder.group(MapleApiV2, "serviceMap", (handlers) =>
 	Effect.gen(function* () {
@@ -1120,6 +1449,8 @@ export const HttpV2ServiceMapLive = HttpApiBuilder.group(MapleApiV2, "serviceMap
 				const tenant = yield* CurrentTenant.Context
 				const window = yield* parseWindow(query.start_time, query.end_time, {
 					maxSeconds: MAX_SUMMARY_RANGE_SECONDS,
+					// Reads the hourly rollups, whose Timestamp is a plain DateTime.
+					precision: "second",
 					rangeLabel: "Service map queries",
 				})
 				const compiled = query.service_name
@@ -1134,12 +1465,11 @@ export const HttpV2ServiceMapLive = HttpApiBuilder.group(MapleApiV2, "serviceMap
 							{ deploymentEnv: query.deployment_environment },
 							{ orgId: tenant.orgId, ...window },
 						)
-				const rows = yield* warehouse
-					.compiledQuery(tenant, compiled, {
-						profile: "aggregation",
-						context: "v2ServiceMap",
-					})
-					.pipe(Effect.mapError(mapWarehouseError("service_map_query")))
+				const rows = yield* warehouse.compiledQuery(tenant, compiled, {
+					profile: "aggregation",
+					context: "v2ServiceMap",
+				})
+
 				return {
 					object: "service_map" as const,
 					start_time: timestamp(query.start_time),

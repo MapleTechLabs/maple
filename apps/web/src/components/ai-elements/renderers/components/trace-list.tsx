@@ -1,4 +1,4 @@
-import type { BaseComponentProps } from "@json-render/react"
+import type { RendererComponentProps } from "./types"
 import { cn } from "@maple/ui/lib/utils"
 import { LatencyValue } from "@maple/ui/components/latency-value"
 import { formatDuration } from "@maple/ui/lib/format"
@@ -23,7 +23,7 @@ interface TraceListProps {
 	}
 }
 
-export function TraceList({ props }: BaseComponentProps<TraceListProps>) {
+export function TraceList({ props }: RendererComponentProps<TraceListProps>) {
 	const { traces, stats } = props
 
 	return (
@@ -57,6 +57,8 @@ export function TraceList({ props }: BaseComponentProps<TraceListProps>) {
 								<td className="py-1 pr-2">
 									<a
 										href={`/traces/${trace.traceId}${trace.startTime ? `?t=${encodeURIComponent(trace.startTime)}` : ""}`}
+										target="_blank"
+										rel="noreferrer"
 										className="font-mono text-primary hover:underline"
 									>
 										{trace.traceId.slice(0, 12)}

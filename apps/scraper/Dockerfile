@@ -1,11 +1,13 @@
 # Build context: repo root (workspace deps @maple/domain + @maple-dev/effect-sdk).
 # Railway: set the service's config file path to apps/scraper/railway.json and
 # keep the root directory at the repo root.
-FROM oven/bun:1.3.11 AS runner
+FROM oven/bun:1.4.0 AS runner
 WORKDIR /app
 
 COPY . .
-RUN bun install --frozen-lockfile && bun run --cwd packages/effect-sdk build
+# Build the workspace SDK consumed by the scraper.
+RUN bun install --frozen-lockfile \
+	&& bun run --cwd packages/effect-sdk build
 
 EXPOSE 3475
 

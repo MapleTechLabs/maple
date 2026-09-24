@@ -11,10 +11,13 @@ import {
 	useAtomSet,
 	useAtomSubscribe,
 	useAtomSuspense,
-	useAtomValue,
+	useAtomValue as useAtomValueRaw,
 } from "@effect/atom-react"
 import { Cause, Option } from "effect"
+import * as React from "react"
 import * as AsyncResult from "effect/unstable/reactivity/AsyncResult"
+import * as Atom_ from "effect/unstable/reactivity/Atom"
+import { getActiveOrgId, subscribeActiveOrgId } from "@/lib/services/common/auth-headers"
 
 export {
 	RegistryContext,
@@ -29,12 +32,105 @@ export {
 	useAtomSet,
 	useAtomSubscribe,
 	useAtomSuspense,
-	useAtomValue,
 }
 export * as Atom from "effect/unstable/reactivity/Atom"
 export * as AtomHttpApi from "effect/unstable/reactivity/AtomHttpApi"
 export * as Registry from "effect/unstable/reactivity/AtomRegistry"
 export * as ScopedAtom from "@effect/atom-react/ScopedAtom"
+
+interface RetainedSuccess {
+	readonly orgId: string | null
+	readonly result: AsyncResult.Success<unknown, unknown>
+}
+
+/**
+ * Keep the last success on screen while a *differently keyed* atom loads.
+ *
+ * Effect-atom already covers a refresh of a live atom — that yields a waiting
+ * result carrying the previous value. It has nothing to offer when the atom
+ * itself changes, which is what every filter rail does: ticking a checkbox
+ * rewrites the search params, the components build a new atom key, and the
+ * fresh atom starts at `Initial`. Every `Result.builder(...).onInitial(...)`
+ * on the page then paints its skeleton, so a one-checkbox filter reads as a
+ * full page reload.
+ *
+ * `withRetention` (see `retained-atom.ts`) closes the same gap at the atom
+ * layer, but only across *time windows* — its identity deliberately keeps the
+ * filters, because a persisted cache that served one filter's rows under
+ * another's key would be wrong for every later reader.
+ *
+ * This is the render-local half: the previous value is held by the hook call
+ * itself, so it can only ever be shown to the component that just watched it
+ * arrive. It is returned flagged `waiting`, which is the signal list pages
+ * already dim on — data stays put, the page marks itself busy, and the rows
+ * swap when the query lands.
+ *
+ * The org is part of the retained entry rather than assumed stable: an org
+ * switch also rebuilds every atom key, and showing the previous org's rows —
+ * even dimmed, even briefly — is the exact leak `ORG_KEY_SEPARATOR` exists to
+ * prevent.
+ *
+ * The tradeoff is deliberate: a detail page whose key comes from a route param
+ * shows the previous entity's numbers for the length of one query. That is the
+ * same call the service-detail panels already made one at a time; it is worth
+ * it because the alternative — every list, chart and facet count in the app
+ * unmounting into a skeleton on a checkbox — is what this removes. Surfaces
+ * that must not show a stale value read `result.waiting` and say so.
+ */
+function useRetainedResult<A>(value: A): A {
+	const orgId = React.useSyncExternalStore(subscribeActiveOrgId, getActiveOrgId, getActiveOrgId)
+	const [retained, setRetained] = React.useState<RetainedSuccess | null>(null)
+
+	let next = retained
+	if (next !== null && next.orgId !== orgId) {
+		next = null
+	}
+	if (AsyncResult.isAsyncResult(value) && AsyncResult.isSuccess(value)) {
+		// Compared by identity, then by payload. Identity keeps a steady success
+		// from queueing a state write on every render; the payload check is the
+		// backstop for an atom rebuilt per render, whose fallback wraps the same
+		// retained payload in a fresh Success each time — writing state for those
+		// re-renders in a loop until React throws "Too many re-renders" (#301).
+		if (
+			next === null ||
+			(next.result !== value &&
+				(next.result.value !== value.value || next.result.timestamp !== value.timestamp))
+		) {
+			next = { orgId, result: value }
+		}
+	}
+	if (next !== retained) {
+		setRetained(next)
+	}
+
+	return React.useMemo(() => {
+		if (next === null || !AsyncResult.isAsyncResult(value) || !AsyncResult.isInitial(value)) {
+			return value
+		}
+		return AsyncResult.success(next.result.value, {
+			waiting: true,
+			timestamp: next.result.timestamp,
+		}) as A
+	}, [next, value])
+}
+
+/**
+ * `useAtomValue`, plus keep-previous-data for `AsyncResult` atoms.
+ *
+ * Wrapped here rather than in a hook every call site has to remember, because
+ * the skeleton flash it removes is not a property of any one page — it happens
+ * anywhere an atom key is derived from search params. Non-`AsyncResult` atoms
+ * pass through untouched.
+ */
+export interface UseAtomValue {
+	<A>(atom: Atom_.Atom<A>): A
+	<A, B>(atom: Atom_.Atom<A>, f: (_: A) => B): B
+}
+
+export const useAtomValue: UseAtomValue = (<A, B>(atom: Atom_.Atom<A>, f?: (_: A) => B) =>
+	// `f` is forwarded rather than branched on: upstream already does the
+	// `if (f)` itself, so this stays a single unconditional hook call.
+	useRetainedResult(useAtomValueRaw(atom, f as (_: A) => B))) as never
 
 type ResultValue<T> = T extends AsyncResult.AsyncResult<infer A, any> ? A : never
 type ResultError<T> = T extends AsyncResult.AsyncResult<any, infer E> ? E : never
@@ -45,9 +141,9 @@ class ResultBuilder<A, E, B> {
 		private readonly mapped: Option.Option<B>,
 	) {}
 
-	onSuccess<C>(f: (value: A, result: AsyncResult.Success<A, E>) => C): ResultBuilder<A, E, C> {
+	onSuccess<C>(f: (value: A, result: AsyncResult.Success<A, E>) => C): ResultBuilder<A, E, B | C> {
 		if (Option.isSome(this.mapped)) {
-			return new ResultBuilder(this.result, this.mapped as unknown as Option.Option<C>)
+			return new ResultBuilder(this.result, this.mapped)
 		}
 
 		if (AsyncResult.isSuccess(this.result)) {
@@ -59,7 +155,7 @@ class ResultBuilder<A, E, B> {
 
 	onInitial<C>(f: () => C): ResultBuilder<A, E, B | C> {
 		if (Option.isSome(this.mapped)) {
-			return new ResultBuilder(this.result, this.mapped as unknown as Option.Option<B | C>)
+			return new ResultBuilder(this.result, this.mapped)
 		}
 
 		if (AsyncResult.isInitial(this.result)) {
@@ -71,7 +167,7 @@ class ResultBuilder<A, E, B> {
 
 	onError<C>(f: (error: E) => C): ResultBuilder<A, E, B | C> {
 		if (Option.isSome(this.mapped)) {
-			return new ResultBuilder(this.result, this.mapped as unknown as Option.Option<B | C>)
+			return new ResultBuilder(this.result, this.mapped)
 		}
 
 		if (AsyncResult.isFailure(this.result)) {

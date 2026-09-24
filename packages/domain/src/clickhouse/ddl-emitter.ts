@@ -65,7 +65,7 @@ interface ParsedPipe {
 	readonly target: string
 }
 
-const SECTION_HEADER = /^([A-Z_][A-Z0-9_]*)\s*(>|".*"|.+)?\s*$/
+const SECTION_HEADER = /^([A-Z_][A-Z0-9_]*)([\s\S]*)$/
 
 const parseDatasource = (content: string): ParsedDatasourceSchema => {
 	const lines = content.split("\n")
@@ -176,7 +176,7 @@ const parseDatasource = (content: string): ParsedDatasourceSchema => {
 	if (engine.length === 0) {
 		throw new Error("Datasource is missing an ENGINE declaration")
 	}
-	if (sortingKey.length === 0) {
+	if (engine !== "Null" && sortingKey.length === 0) {
 		throw new Error("Datasource is missing an ENGINE_SORTING_KEY declaration")
 	}
 
@@ -335,7 +335,9 @@ export const emitCreateTable = (datasource: ResourceContent, options?: EmitterOp
 	if (parsed.partitionKey.length > 0) {
 		lines.push(`PARTITION BY ${parsed.partitionKey}`)
 	}
-	lines.push(`ORDER BY (${parsed.sortingKey})`)
+	if (parsed.sortingKey.length > 0) {
+		lines.push(`ORDER BY (${parsed.sortingKey})`)
+	}
 	if (parsed.ttl !== undefined && parsed.ttl.length > 0) {
 		lines.push(`TTL ${parsed.ttl}`)
 	}
@@ -382,7 +384,7 @@ export const emitJsonPathSpec = (
 
 	const colJsonPath = new Map<string, string>()
 	for (const line of original) {
-		const m = /^\s+([A-Za-z_][A-Za-z0-9_]*)\s+.*?`json:([^`]+)`/.exec(line)
+		const m = /^\s+([A-Za-z_][A-Za-z0-9_]*)\s[^`]*`json:([^`]+)`/.exec(line)
 		if (m) {
 			const colName = m[1]
 			const path = m[2]
@@ -403,8 +405,6 @@ export const emitJsonPathSpec = (
 	})
 }
 
-// --- Runtime parsers for already-emitted statements --------------------------
-//
 // `parseEmittedCreateTable` and `parseEmittedCreateMaterializedView` consume
 // the *output* of the emitters (i.e. the SQL strings we ship in
 // `latestSnapshotStatements`) and reconstruct a structured shape suitable for

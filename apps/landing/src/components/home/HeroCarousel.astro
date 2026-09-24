@@ -17,7 +17,7 @@
  * the stage holds a fixed aspect box, so a placeholder and a real capture
  * occupy the same rectangle.
  */
-import * as m from "../../paraglide/messages";
+import * as m from "../../paraglide/messages.js";
 import MediaFrame from "./MediaFrame.astro";
 
 /** Dwell per slide, ms. Long enough to read a dashboard, short enough to cycle. */
@@ -33,7 +33,7 @@ const slides = [
 		key: "overview",
 		tab: m.hero_shot_overview(),
 		line: m.hero_shot_overview_line(),
-		label: "The Maple overview dashboard — request volume, error rate and latency across every service",
+		label: "The Maple overview dashboard: request volume, error rate and latency across every service",
 		src: "/screenshots/hero-dashboard.webp",
 	},
 	{
@@ -45,8 +45,10 @@ const slides = [
 	},
 	{
 		key: "services",
-		tab: m.features_col_services(),
-		line: m.features_service_heading(),
+		tab: m.hero_shot_services(),
+		// Its own line: the catalog plate used to borrow the services-column
+		// heading, which said the same thing as slide 1's caption.
+		line: m.hero_shot_services_line(),
 		label: "The service catalog comparing latency percentiles, error-rate trends and throughput across production services",
 		src: "/screenshots/hero-services.webp",
 	},

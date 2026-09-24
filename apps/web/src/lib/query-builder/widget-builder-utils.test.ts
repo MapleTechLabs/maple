@@ -1,5 +1,6 @@
+import type { WidgetDataSource } from "@/components/dashboard-builder/types"
 import { describe, expect, it } from "vitest"
-import { BREAKDOWN_TAIL_LIMIT, createFormulaDraft, createQueryDraft } from "@/lib/query-builder/model"
+import { BREAKDOWN_TAIL_LIMIT, createFormulaDraft, createQueryDraft } from "@maple/query-engine/query-builder"
 import {
 	buildWidgetDataSource,
 	buildWidgetDisplay,
@@ -11,14 +12,33 @@ import {
 	type QueryBuilderWidgetState,
 } from "@/lib/query-builder/widget-builder-utils"
 import type { DashboardWidget } from "@/components/dashboard-builder/types"
+import { defaultFunnelDraft, DEFAULT_PATHS_DRAFT } from "@/lib/query-builder/widget-builder-shared"
+
+/**
+ * What a widget routed to, as one comparable value.
+ *
+ * v2 answered this with an endpoint string; v3 answers it with `kind` plus, for
+ * queries, `resultShape`. Collapsing the two back into a single token keeps these
+ * routing assertions reading as routing assertions rather than as narrowing.
+ */
+const routedTo = (dataSource: WidgetDataSource): string =>
+	dataSource.kind === "query" ? dataSource.resultShape : dataSource.kind
+
+/** The query arm's request-shaping fields, which v2 kept in the `params` bag. */
+const queryFields = (dataSource: WidgetDataSource): Record<string, unknown> => {
+	if (dataSource.kind !== "query") throw new Error(`expected a query source, got ${dataSource.kind}`)
+	const { kind: _kind, resultShape: _resultKind, transform: _transform, ...fields } = dataSource
+	return fields
+}
 
 function makeWidget(): DashboardWidget {
 	return {
 		id: "widget-1",
 		visualization: "chart",
 		dataSource: {
-			endpoint: "custom_query_builder_timeseries",
-			params: {},
+			kind: "query",
+			resultShape: "timeseries",
+			queries: [],
 		},
 		display: {},
 		layout: { x: 0, y: 0, w: 6, h: 4 },
@@ -38,12 +58,12 @@ function makeState(): QueryBuilderWidgetState {
 		formulas: [],
 		comparisonMode: "none",
 		includePercentChange: true,
-		debug: false,
 		statAggregate: "first",
 		statValueField: "",
 		unit: "number",
 		legendPosition: "bottom",
 		seriesStatsEnabled: false,
+		pointsMode: "auto",
 		tableLimit: "",
 		listDataSource: "traces",
 		listWhereClause: "",
@@ -57,6 +77,8 @@ function makeState(): QueryBuilderWidgetState {
 		gaugeMax: "",
 		sparklineEnabled: false,
 		markdownContent: "",
+		funnel: defaultFunnelDraft(),
+		paths: DEFAULT_PATHS_DRAFT(),
 	}
 }
 
@@ -80,7 +102,7 @@ describe("widget-builder hidden series behavior", () => {
 
 		const dataSource = buildWidgetDataSource(widget, state, ["A", "B"])
 
-		expect(dataSource.endpoint).toBe("custom_query_builder_timeseries")
+		expect(routedTo(dataSource)).toBe("timeseries")
 		expect(dataSource.transform?.hideSeries?.baseNames).toEqual(["A"])
 	})
 
@@ -197,7 +219,7 @@ describe("widget-builder hidden series behavior", () => {
 		const dataSource = buildWidgetDataSource(widget, state, ["B"])
 
 		expect(dataSource.transform?.hideSeries?.baseNames).toEqual(["Errors", "Error ratio"])
-		expect(dataSource.params).toMatchObject({
+		expect(queryFields(dataSource)).toMatchObject({
 			queries: state.queries,
 			formulas: state.formulas,
 		})
@@ -211,19 +233,19 @@ describe("funnel/heatmap endpoint routing (MAP-49)", () => {
 			const widget = makeWidget()
 			const state = { ...makeState(), visualization }
 			const dataSource = buildWidgetDataSource(widget, state, ["A", "B"])
-			expect(dataSource.endpoint).toBe("custom_query_builder_breakdown")
+			expect(routedTo(dataSource)).toBe("breakdown")
 		},
 	)
 
 	it("keeps charts on the timeseries endpoint", () => {
 		const widget = makeWidget()
 		const dataSource = buildWidgetDataSource(widget, makeState(), ["A", "B"])
-		expect(dataSource.endpoint).toBe("custom_query_builder_timeseries")
+		expect(routedTo(dataSource)).toBe("timeseries")
 	})
 
 	it("sends breakdown params the endpoint schema accepts, and nothing more", () => {
 		// QueryBuilderBreakdownInputSchema accepts only startTime/endTime/queries
-		// and the optional defaultLimit. An extra key (formulas, comparison, debug)
+		// and the optional defaultLimit. An extra key (formulas, comparison)
 		// fails the request decode and leaves the widget stuck on its loading
 		// skeleton, so this is a contract test, not a style preference.
 		const state = {
@@ -232,7 +254,7 @@ describe("funnel/heatmap endpoint routing (MAP-49)", () => {
 			formulas: [createFormulaDraft(0, ["A", "B"])],
 		}
 		const dataSource = buildWidgetDataSource(makeWidget(), state, ["A", "B"])
-		expect(Object.keys(dataSource.params ?? {})).toEqual(["queries", "defaultLimit"])
+		expect(Object.keys(queryFields(dataSource))).toEqual(["queries", "defaultLimit"])
 	})
 
 	it("asks for the long tail on a pie, and only on a pie", () => {
@@ -243,15 +265,236 @@ describe("funnel/heatmap endpoint routing (MAP-49)", () => {
 			"A",
 			"B",
 		])
-		expect(pie.params?.defaultLimit).toBe(BREAKDOWN_TAIL_LIMIT)
+		expect(queryFields(pie).defaultLimit).toBe(BREAKDOWN_TAIL_LIMIT)
 
 		for (const visualization of ["funnel", "heatmap", "histogram"] as const) {
 			const dataSource = buildWidgetDataSource(makeWidget(), { ...makeState(), visualization }, [
 				"A",
 				"B",
 			])
-			expect(dataSource.params?.defaultLimit).toBeUndefined()
+			expect(queryFields(dataSource).defaultLimit).toBeUndefined()
 		}
+	})
+})
+
+describe("product-event funnel widget", () => {
+	const funnelState = (): QueryBuilderWidgetState => ({
+		...makeState(),
+		visualization: "funnel",
+		chartId: "query-builder-funnel",
+		// A placeholder draft with no group-by — what the shared validation would
+		// reject if it ran; the funnel definition owns the source instead.
+		queries: [
+			{
+				...createQueryDraft(0),
+				groupBy: [],
+				addOns: { ...createQueryDraft(0).addOns, groupBy: false },
+			},
+		],
+		funnel: {
+			...defaultFunnelDraft(),
+			source: "product_events",
+			steps: [
+				{ kind: "page", pagePath: "/pricing" },
+				{ kind: "event", eventName: "signup_completed" },
+			],
+			keyBy: "visitor",
+			windowSeconds: 3600,
+		},
+	})
+
+	it("routes to the product_events_funnel route with the definition as params", () => {
+		const dataSource = buildWidgetDataSource(makeWidget(), funnelState(), ["A"])
+		expect(dataSource.kind).toBe("route")
+		if (dataSource.kind !== "route") throw new Error("expected a route")
+		expect(dataSource.endpoint).toBe("product_events_funnel")
+		expect(dataSource.params).toEqual({
+			steps: [
+				{ kind: "page", pagePath: "/pricing" },
+				{ kind: "event", eventName: "signup_completed" },
+			],
+			keyBy: "visitor",
+			windowSeconds: 3600,
+		})
+	})
+
+	it("compiles step filters, the population filter and the breakdown into the params", () => {
+		const state: QueryBuilderWidgetState = {
+			...funnelState(),
+			funnel: {
+				...funnelState().funnel,
+				steps: [
+					{ kind: "page", pagePath: "/pricing", host: "example.com" },
+					{
+						kind: "event",
+						eventName: "signup_completed",
+						filterClause: 'plan = "pro" AND source = cli',
+					},
+				],
+				filterClause: 'country = "DE" AND utm.source = "twitter"',
+				breakdownBy: "referrerHost",
+			},
+		}
+		const dataSource = buildWidgetDataSource(makeWidget(), state, ["A"])
+		if (dataSource.kind !== "route") throw new Error("expected a route")
+		expect(dataSource.params).toEqual({
+			steps: [
+				{ kind: "page", pagePath: "/pricing", host: "example.com" },
+				{
+					kind: "event",
+					eventName: "signup_completed",
+					attributeEquals: { plan: "pro", source: "cli" },
+				},
+			],
+			keyBy: "visitor",
+			windowSeconds: 3600,
+			breakdownBy: "referrerHost",
+			country: "DE",
+			utmSource: "twitter",
+		})
+	})
+
+	it("stays a group-by breakdown on the query-set source, whatever the steps say", () => {
+		const state: QueryBuilderWidgetState = {
+			...funnelState(),
+			funnel: { ...funnelState().funnel, source: "query_set" },
+		}
+		expect(routedTo(buildWidgetDataSource(makeWidget(), state, ["A"]))).toBe("breakdown")
+	})
+
+	it("persists the definition on display.funnel and reads it back", () => {
+		const state: QueryBuilderWidgetState = {
+			...funnelState(),
+			funnel: {
+				...funnelState().funnel,
+				steps: [
+					{ kind: "page", pagePath: "/pricing" },
+					{ kind: "event", eventName: "signup_completed", filterClause: 'plan = "pro"' },
+				],
+				filterClause: 'country = "DE"',
+				breakdownBy: "attribute:plan",
+				showStepPercent: false,
+			},
+		}
+		const widget = {
+			...makeWidget(),
+			visualization: "funnel" as const,
+			display: { funnel: { showStepPercent: true } },
+		}
+		const display = buildWidgetDisplay(widget, state)
+		expect(display.funnel).toEqual({
+			showStepPercent: false,
+			steps: [
+				{ kind: "page", pagePath: "/pricing" },
+				{ kind: "event", eventName: "signup_completed", attributeEquals: { plan: "pro" } },
+			],
+			keyBy: "visitor",
+			windowSeconds: 3600,
+			breakdownBy: "attribute:plan",
+			filters: { country: "DE" },
+		})
+
+		const reopened = toInitialState({
+			...widget,
+			display,
+			dataSource: buildWidgetDataSource(widget, state, ["A"]),
+		})
+		// Query A mirrors the funnel's source: `reconcileFunnelSource` runs on every
+		// settings-rail edit and would otherwise flip the funnel back to the query set.
+		expect(reopened.queries[0]?.dataSource).toBe("product_events")
+		expect(reopened.funnel).toEqual({
+			source: "product_events",
+			steps: [
+				{ kind: "page", pagePath: "/pricing" },
+				{
+					kind: "event",
+					eventName: "signup_completed",
+					attributeEquals: { plan: "pro" },
+					filterClause: 'plan = "pro"',
+				},
+			],
+			keyBy: "visitor",
+			windowSeconds: 3600,
+			breakdownBy: "attribute:plan",
+			filterClause: 'country = "DE"',
+			variant: "bars",
+			showStepPercent: false,
+			addOns: { keyBy: true, window: true, breakdown: true },
+		})
+	})
+
+	it("opens a widget stored with steps but no source field on the product-events source", () => {
+		const widget = {
+			...makeWidget(),
+			visualization: "funnel" as const,
+			display: { funnel: { steps: [{ kind: "event" as const, eventName: "x" }] } },
+		}
+		expect(toInitialState(widget).funnel).toMatchObject({
+			source: "product_events",
+			steps: [{ kind: "event", eventName: "x" }],
+			addOns: { keyBy: false, window: false, breakdown: false },
+		})
+	})
+
+	it("opens a product-events route widget without a display definition on its own params", () => {
+		const widget = {
+			...makeWidget(),
+			visualization: "funnel" as const,
+			display: {},
+			dataSource: {
+				kind: "route" as const,
+				endpoint: "product_events_funnel",
+				params: { steps: [{ kind: "page", pagePath: "/" }], keyBy: "session", country: "DE" },
+			},
+		}
+		expect(toInitialState(widget).funnel).toMatchObject({
+			source: "product_events",
+			steps: [{ kind: "page", pagePath: "/" }],
+			keyBy: "session",
+			filterClause: 'country = "DE"',
+		})
+	})
+
+	it("keeps only the rendering flag on the query-set source", () => {
+		const state: QueryBuilderWidgetState = {
+			...funnelState(),
+			funnel: { ...defaultFunnelDraft(), showStepPercent: true },
+		}
+		const widget = {
+			...makeWidget(),
+			visualization: "funnel" as const,
+			display: {
+				funnel: { showStepPercent: true, steps: [{ kind: "event" as const, eventName: "x" }] },
+			},
+		}
+		expect(buildWidgetDisplay(widget, state).funnel).toEqual({ showStepPercent: true })
+	})
+
+	it("skips the group-by requirement and validates the definition instead", () => {
+		expect(validateQueries(funnelState())).toBeNull()
+		const blank = {
+			...funnelState(),
+			funnel: { ...funnelState().funnel, steps: [{ kind: "event" as const, eventName: "" }] },
+		}
+		expect(validateQueries(blank)).toContain("Step 1 needs")
+		const none = { ...funnelState(), funnel: { ...funnelState().funnel, steps: [] } }
+		expect(validateQueries(none)).toBe("Add at least one step")
+		const badStepFilter = {
+			...funnelState(),
+			funnel: {
+				...funnelState().funnel,
+				steps: [{ kind: "event" as const, eventName: "x", filterClause: "plan != pro" }],
+			},
+		}
+		expect(validateQueries(badStepFilter)).toMatch(/^Step 1: /)
+		const badFilter = {
+			...funnelState(),
+			funnel: { ...funnelState().funnel, filterClause: 'plan = "pro"' },
+		}
+		expect(validateQueries(badFilter)).toMatch(/^Filters: /)
+		// On the query-set source the ordinary rule is back: a funnel needs a group-by.
+		const plain = { ...funnelState(), funnel: defaultFunnelDraft() }
+		expect(validateQueries(plain)).toContain("group-by")
 	})
 })
 
@@ -269,15 +512,13 @@ describe("histogram data shape routing", () => {
 		// An ungrouped histogram is a distribution of raw values bucketized
 		// client-side — a count-by-group breakdown is a different chart (MAP-49).
 		const dataSource = buildWidgetDataSource(makeWidget(), ungroupedTraceState(), ["A"])
-		expect(dataSource.endpoint).toBe("custom_query_builder_list")
-		expect(dataSource.params).toMatchObject({ columns: ["durationMs"] })
+		expect(routedTo(dataSource)).toBe("list")
+		expect(queryFields(dataSource)).toMatchObject({ columns: ["durationMs"] })
 	})
 
 	it("routes a grouped histogram to the breakdown endpoint", () => {
 		const state = { ...makeState(), visualization: "histogram" as const }
-		expect(buildWidgetDataSource(makeWidget(), state, ["A"]).endpoint).toBe(
-			"custom_query_builder_breakdown",
-		)
+		expect(routedTo(buildWidgetDataSource(makeWidget(), state, ["A"]))).toBe("breakdown")
 	})
 
 	it("round-trips a list-backed histogram instead of dropping its query", () => {
@@ -285,6 +526,40 @@ describe("histogram data shape routing", () => {
 		const dataSource = buildWidgetDataSource(makeWidget(), state, ["A"])
 		const reopened = toInitialState({ ...makeWidget(), visualization: "histogram", dataSource })
 		expect(reopened.queries[0].id).toBe(state.queries[0].id)
+	})
+})
+
+describe("heatmap palette default", () => {
+	const heatmapWidget = (heatmap?: { colorScale?: "amber" | "blues"; scaleType?: "linear" }) => ({
+		...makeWidget(),
+		visualization: "heatmap" as const,
+		display: heatmap === undefined ? {} : { heatmap },
+	})
+
+	it("leaves the palette unset when the widget never stored one", () => {
+		expect(toInitialState(heatmapWidget()).heatmapColorScale).toBeUndefined()
+	})
+
+	it("does not materialise a palette on Apply for an untouched widget", () => {
+		// The bug this guards: the rail seeded "blues" while the chart renders
+		// amber, so opening a pre-`colorScale` heatmap and pressing Apply repainted
+		// it blue without the user touching the palette control.
+		const widget = heatmapWidget()
+		const state = toInitialState(widget)
+		const display = buildWidgetDisplay(widget, state)
+		expect(display.heatmap?.colorScale).toBeUndefined()
+		expect(display.heatmap?.scaleType).toBe("linear")
+	})
+
+	it("writes the palette once the user picks one", () => {
+		const widget = heatmapWidget()
+		const state = { ...toInitialState(widget), heatmapColorScale: "blues" as const }
+		expect(buildWidgetDisplay(widget, state).heatmap?.colorScale).toBe("blues")
+	})
+
+	it("round-trips a stored palette", () => {
+		const widget = heatmapWidget({ colorScale: "amber" })
+		expect(buildWidgetDisplay(widget, toInitialState(widget)).heatmap?.colorScale).toBe("amber")
 	})
 })
 
@@ -299,7 +574,7 @@ describe("display key ownership across type switches", () => {
 	})
 
 	it("clears per-visualization keys the new visualization does not own", () => {
-		const widget = {
+		const widget: DashboardWidget = {
 			...makeWidget(),
 			visualization: "markdown",
 			display: {
@@ -337,7 +612,7 @@ describe("markdown widgets", () => {
 		const dataSource = buildWidgetDataSource(makeWidget(), state, [])
 		const display = buildWidgetDisplay(makeWidget(), state)
 
-		expect(dataSource.endpoint).toBe("markdown_static")
+		expect(routedTo(dataSource)).toBe("static")
 		expect(display.markdown).toEqual({ content: "# Runbook" })
 		expect(
 			toInitialState({ ...makeWidget(), visualization: "markdown", dataSource, display })
@@ -459,5 +734,37 @@ describe("widget-builder series stats default", () => {
 		const widget = widgetWithPresentation({ legend: "visible", seriesStats: true })
 		const state = toInitialState(widget)
 		expect(buildWidgetDisplay(widget, state).chartPresentation?.seriesStats).toBe(true)
+	})
+})
+
+// Point dots: Auto is the ABSENCE of `showPoints`, so switching back to Auto has
+// to remove a previously pinned value rather than leave it in the spread.
+describe("widget-builder points mode", () => {
+	function widgetWithPresentation(
+		chartPresentation: DashboardWidget["display"]["chartPresentation"],
+	): DashboardWidget {
+		const widget = makeWidget()
+		return { ...widget, display: { ...widget.display, chartPresentation } }
+	}
+
+	it("reads absent / true / false as auto / always / never", () => {
+		expect(toInitialState(widgetWithPresentation({ legend: "visible" })).pointsMode).toBe("auto")
+		expect(toInitialState(widgetWithPresentation(undefined)).pointsMode).toBe("auto")
+		expect(
+			toInitialState(widgetWithPresentation({ legend: "visible", showPoints: true })).pointsMode,
+		).toBe("always")
+		expect(
+			toInitialState(widgetWithPresentation({ legend: "visible", showPoints: false })).pointsMode,
+		).toBe("never")
+	})
+
+	it("writes always / never as showPoints and drops the key for auto", () => {
+		const widget = widgetWithPresentation({ legend: "visible", showPoints: true })
+		const state = toInitialState(widget)
+		expect(
+			buildWidgetDisplay(widget, { ...state, pointsMode: "never" }).chartPresentation?.showPoints,
+		).toBe(false)
+		const auto = buildWidgetDisplay(widget, { ...state, pointsMode: "auto" }).chartPresentation
+		expect(auto).not.toHaveProperty("showPoints")
 	})
 })

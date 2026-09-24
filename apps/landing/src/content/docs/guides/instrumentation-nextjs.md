@@ -2,13 +2,14 @@
 title: "Next.js Instrumentation"
 description: "Instrument a Next.js application with @vercel/otel and send traces, logs, and metrics to Maple."
 group: "Instrumentation"
-order: 4
+order: 6
+navLabel: "Next.js"
 sdk: "nextjs"
 ---
 
 This guide covers instrumenting a Next.js application -- App Router, Pages Router, route handlers, and middleware -- using `@vercel/otel` and shipping traces and logs to Maple.
 
-> **Run this with Claude Code:** `maple-onboard` walks every service in the repo, installs OpenTelemetry, and verifies the bootstrap end-to-end. See the [maple-onboard skill](https://github.com/Makisuo/maple/tree/main/skills/maple-onboard). Already instrumented? `maple-audit` reviews the existing setup against Maple's conventions and fixes gaps — see the [maple-audit skill](https://github.com/Makisuo/maple/tree/main/skills/maple-audit).
+> **Run this with Claude Code:** `maple-onboard` walks every service in the repo, installs OpenTelemetry, and verifies the bootstrap end-to-end. See the [maple-onboard skill](https://github.com/MapleTechLabs/maple/tree/main/skills/maple-onboard). Already instrumented? `maple-audit` reviews the existing setup against Maple's conventions and fixes gaps — see the [maple-audit skill](https://github.com/MapleTechLabs/maple/tree/main/skills/maple-audit).
 
 ## Prerequisites
 

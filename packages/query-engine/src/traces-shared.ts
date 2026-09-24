@@ -1,13 +1,9 @@
-// ---------------------------------------------------------------------------
 // Shared constants and helpers used by the CH DSL queries.
-// ---------------------------------------------------------------------------
 
 import type { TracesMetric, AttributeFilter } from "@maple/domain/query-engine"
 import type { AttributeIndexMode } from "./capabilities"
 
-// ---------------------------------------------------------------------------
 // Metric → column needs mapping
-// ---------------------------------------------------------------------------
 
 export type MetricNeed = "count" | "avg_duration" | "quantiles" | "error_rate" | "apdex"
 
@@ -19,11 +15,9 @@ export const METRIC_NEEDS: Record<TracesMetric, MetricNeed[]> = {
 	p99_duration: ["count", "quantiles"],
 	error_rate: ["count", "error_rate"],
 	apdex: ["count", "apdex"],
-}
+} satisfies Record<TracesMetric, MetricNeed[]>
 
-// ---------------------------------------------------------------------------
 // trace_list_mv column mappings (used by performance-hints UI)
-// ---------------------------------------------------------------------------
 
 export const TRACE_LIST_MV_ATTR_MAP: Record<string, string> = {
 	"http.method": "HttpMethod",
@@ -33,21 +27,20 @@ export const TRACE_LIST_MV_ATTR_MAP: Record<string, string> = {
 	"http.target": "HttpRoute",
 	"http.status_code": "HttpStatusCode",
 	"http.response.status_code": "HttpStatusCode",
-}
+} satisfies Record<string, string>
 
 export const TRACE_LIST_MV_RESOURCE_MAP: Record<string, string> = {
 	"deployment.environment": "DeploymentEnv",
-}
+	"deployment.environment.name": "DeploymentEnv",
+} satisfies Record<string, string>
 
-// ---------------------------------------------------------------------------
 // Attribute filter → typed Condition
-// ---------------------------------------------------------------------------
 
-import * as CH from "@maple-dev/clickhouse-builder/expr"
+import * as CH from "@maple-dev/effect-clickhouse/expr"
 import { normalizedSpanNameExpr } from "@maple/domain/tinybird/span-display-name"
+import * as T from "@maple-dev/effect-clickhouse/types"
 
-// ---------------------------------------------------------------------------
-// HTTP semconv coalescing
+// Semconv rename coalescing
 //
 // OpenTelemetry renamed several HTTP span attributes in the stable semconv:
 //   http.method      → http.request.method
@@ -57,14 +50,26 @@ import { normalizedSpanNameExpr } from "@maple/domain/tinybird/span-display-name
 // use *either* key. Filters that read the raw `traces` table must coalesce the
 // same way — otherwise a facet shows a count while applying it matches zero
 // rows (the data carries the new key, the filter looked up the old one).
-// ---------------------------------------------------------------------------
 
 const HTTP_SEMCONV_ALIASES: Record<string, readonly string[]> = {
 	"http.method": ["http.method", "http.request.method"],
 	"http.request.method": ["http.method", "http.request.method"],
 	"http.status_code": ["http.status_code", "http.response.status_code"],
 	"http.response.status_code": ["http.status_code", "http.response.status_code"],
-}
+} satisfies Record<string, readonly string[]>
+
+/**
+ * The same treatment for the one renamed *resource* attribute: the registry
+ * marks `deployment.environment` deprecated, "Replaced by
+ * `deployment.environment.name`". Both spellings are in the wild — our own SDKs
+ * dual-emit, a current OTel SDK sends only `.name`, an older one only the legacy
+ * key — so either filter spelling has to match either stored key. Canonical
+ * first, matching `DEPLOYMENT_ENV_SQL`'s coalesce order.
+ */
+const RESOURCE_SEMCONV_ALIASES: Record<string, readonly string[]> = {
+	"deployment.environment": ["deployment.environment.name", "deployment.environment"],
+	"deployment.environment.name": ["deployment.environment.name", "deployment.environment"],
+} satisfies Record<string, readonly string[]>
 
 /** `if(map[k0] != '', map[k0], if(map[k1] != '', …))` — first non-empty alias. */
 function coalescedMapGet(mapExpr: CH.Expr<Record<string, string>>, keys: readonly string[]): CH.Expr<string> {
@@ -101,15 +106,36 @@ export function httpDisplaySpanName(
 
 export function buildAttrFilterCondition(
 	af: AttributeFilter,
-	mapName: "SpanAttributes" | "LogAttributes" | "ResourceAttributes",
-	indexMode: AttributeIndexMode = "none",
+	mapName: "SpanAttributes" | "LogAttributes" | "ResourceAttributes" | "Attributes",
+	requestedIndexMode: AttributeIndexMode = "none",
 ): CH.Condition {
+	// `product_events.Attributes` carries no skip index, so the exact predicate stands alone.
+	const indexMode: AttributeIndexMode = mapName === "Attributes" ? "none" : requestedIndexMode
 	const mapExpr = CH.dynamicColumn<Record<string, string>>(mapName)
-	// Span attributes renamed across OTel semconv versions match either spelling,
-	// mirroring trace_list_mv. Resource attributes have no such aliases.
-	const keys = mapName === "SpanAttributes" ? (HTTP_SEMCONV_ALIASES[af.key] ?? [af.key]) : [af.key]
+	// Attributes renamed across OTel semconv versions match either spelling,
+	// mirroring trace_list_mv (span attributes) and the MVs' pre-extracted
+	// `DeploymentEnv` (resource attributes).
+	const aliasTable =
+		mapName === "SpanAttributes"
+			? HTTP_SEMCONV_ALIASES
+			: mapName === "ResourceAttributes"
+				? RESOURCE_SEMCONV_ALIASES
+				: undefined
+	const keys = aliasTable?.[af.key] ?? [af.key]
 	const colExpr: CH.Expr<string> = coalescedMapGet(mapExpr, keys)
 	const value = af.value ?? ""
+
+	/**
+	 * OR one index prefilter per aliased key. `undefined` when there are no keys
+	 * to prefilter on, in which case the exact predicate stands alone — an
+	 * alias table never yields an empty list, but a prefilter over no keys is
+	 * `has(…, NULL)` rather than a wider read.
+	 */
+	const orOverKeys = (make: (key: string) => CH.Condition): CH.Condition | undefined =>
+		keys.reduce<CH.Condition | undefined>(
+			(acc, key) => (acc === undefined ? make(key) : acc.or(make(key))),
+			undefined,
+		)
 
 	const positive = ((): CH.Condition => {
 		if (af.mode === "exists") {
@@ -121,11 +147,8 @@ export function buildAttrFilterCondition(
 			// makes `!exists` (the `NOT (...)` wrapper below) mean "absent or empty".
 			const exact = anyMapContains(mapExpr, keys).and(colExpr.neq(""))
 			if (af.negated || indexMode === "none") return exact
-			let candidate = CH.has(CH.mapKeys(mapExpr), CH.lit(keys[0]!))
-			for (let i = 1; i < keys.length; i++) {
-				candidate = candidate.or(CH.has(CH.mapKeys(mapExpr), CH.lit(keys[i]!)))
-			}
-			return candidate.and(exact)
+			const candidate = orOverKeys((key) => CH.has(CH.mapKeys(mapExpr), CH.lit(key)))
+			return candidate === undefined ? exact : candidate.and(exact)
 		}
 		if (af.mode === "contains") {
 			return CH.positionCaseInsensitive(colExpr, CH.lit(value)).gt(0)
@@ -166,23 +189,21 @@ export function buildAttrFilterCondition(
 				LogAttributes: "LogAttributeItems",
 				ResourceAttributes: "ResourceAttributeItems",
 			} as const
+			if (mapName === "Attributes") return exact
 			const items = CH.dynamicColumn<ReadonlyArray<string>>(itemColumnByMap[mapName])
-			let candidate = CH.has(items, CH.concat(keys[0]!, CH.rawExpr<string>("char(31)"), value))
-			for (let i = 1; i < keys.length; i++) {
-				candidate = candidate.or(
-					CH.has(items, CH.concat(keys[i]!, CH.rawExpr<string>("char(31)"), value)),
-				)
-			}
-			return candidate.and(exact)
+			const candidate = orOverKeys((key) =>
+				CH.has(items, CH.concat(key, CH.rawExpr("char(31)", T.string), value)),
+			)
+			return candidate === undefined ? exact : candidate.and(exact)
 		}
 
 		// Bloom filters index keys and values independently. The original map
 		// equality remains as exact confirmation, preventing cross-key matches.
-		let keyCandidate = CH.has(CH.mapKeys(mapExpr), CH.lit(keys[0]!))
-		for (let i = 1; i < keys.length; i++) {
-			keyCandidate = keyCandidate.or(CH.has(CH.mapKeys(mapExpr), CH.lit(keys[i]!)))
-		}
-		return keyCandidate.and(CH.has(CH.mapValues(mapExpr), CH.lit(value))).and(exact)
+		const keyCandidate = orOverKeys((key) => CH.has(CH.mapKeys(mapExpr), CH.lit(key)))
+		const valueCandidate = CH.has(CH.mapValues(mapExpr), CH.lit(value))
+		return keyCandidate === undefined
+			? valueCandidate.and(exact)
+			: keyCandidate.and(valueCandidate).and(exact)
 	})()
 
 	return af.negated ? CH.not(positive) : positive

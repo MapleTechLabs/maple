@@ -13,6 +13,85 @@ export const funnelSampleData = [
 	{ name: "Converted", value: 360 },
 ]
 
+/** The drop-off view's extras on the same stages: time between steps and where the leavers went. */
+export const funnelDropoffSampleData = [
+	{ name: "Visited", value: 4820 },
+	{
+		name: "Signed up",
+		value: 2110,
+		p50Ms: 252_000,
+		p90Ms: 3_600_000,
+		leavers: [
+			{ name: "", count: 1190 },
+			{ name: "/docs/quickstart", count: 840 },
+			{ name: "/pricing", count: 410 },
+			{ name: "/blog", count: 270 },
+		],
+	},
+	{
+		name: "Activated",
+		value: 940,
+		p50Ms: 6_000_000,
+		p90Ms: 86_400_000,
+		leavers: [
+			{ name: "", count: 520 },
+			{ name: "/docs/quickstart", count: 360 },
+			{ name: "/settings/team", count: 140 },
+			{ name: "/settings/billing", count: 90 },
+			{ name: "/support", count: 60 },
+		],
+	},
+	{
+		name: "Converted",
+		value: 360,
+		p50Ms: 180_000_000,
+		p90Ms: 600_000_000,
+		leavers: [
+			{ name: "/settings/billing", count: 260 },
+			{ name: "", count: 210 },
+			{ name: "/pricing", count: 110 },
+		],
+	},
+]
+
+/** Hops out of one anchor, three steps deep, with the two sentinels the query emits. */
+export const pathsSampleData = [
+	{ hop: 1, fromNode: "Signed up", toNode: "Created ingest key", count: 1460 },
+	{ hop: 1, fromNode: "Signed up", toNode: "/docs/quickstart", count: 310 },
+	{ hop: 1, fromNode: "Signed up", toNode: "", count: 140 },
+	{ hop: 1, fromNode: "Signed up", toNode: "/settings/team", count: 120 },
+	{ hop: 1, fromNode: "Signed up", toNode: "$other", count: 80 },
+	{ hop: 2, fromNode: "Created ingest key", toNode: "First trace received", count: 940 },
+	{ hop: 2, fromNode: "Created ingest key", toNode: "/docs/quickstart", count: 280 },
+	{ hop: 2, fromNode: "Created ingest key", toNode: "", count: 180 },
+	{ hop: 2, fromNode: "Created ingest key", toNode: "$other", count: 60 },
+	{ hop: 2, fromNode: "/docs/quickstart", toNode: "Created ingest key", count: 130 },
+	{ hop: 2, fromNode: "/docs/quickstart", toNode: "First trace received", count: 80 },
+	{ hop: 2, fromNode: "/docs/quickstart", toNode: "", count: 80 },
+	{ hop: 2, fromNode: "/docs/quickstart", toNode: "$other", count: 20 },
+	{ hop: 2, fromNode: "/settings/team", toNode: "Invited teammate", count: 70 },
+	{ hop: 2, fromNode: "/settings/team", toNode: "", count: 40 },
+	{ hop: 2, fromNode: "/settings/team", toNode: "$other", count: 10 },
+	{ hop: 2, fromNode: "$other", toNode: "", count: 30 },
+	{ hop: 2, fromNode: "$other", toNode: "/docs/quickstart", count: 50 },
+	{ hop: 3, fromNode: "First trace received", toNode: "/traces", count: 610 },
+	{ hop: 3, fromNode: "First trace received", toNode: "Created dashboard", count: 200 },
+	{ hop: 3, fromNode: "First trace received", toNode: "Plan started", count: 150 },
+	{ hop: 3, fromNode: "First trace received", toNode: "", count: 60 },
+	{ hop: 3, fromNode: "/docs/quickstart", toNode: "", count: 140 },
+	{ hop: 3, fromNode: "/docs/quickstart", toNode: "First trace received", count: 90 },
+	{ hop: 3, fromNode: "/docs/quickstart", toNode: "$other", count: 100 },
+	{ hop: 3, fromNode: "Created ingest key", toNode: "First trace received", count: 40 },
+	{ hop: 3, fromNode: "Created ingest key", toNode: "Plan started", count: 40 },
+	{ hop: 3, fromNode: "Created ingest key", toNode: "", count: 20 },
+	{ hop: 3, fromNode: "Created ingest key", toNode: "$other", count: 30 },
+	{ hop: 3, fromNode: "Invited teammate", toNode: "Plan started", count: 20 },
+	{ hop: 3, fromNode: "Invited teammate", toNode: "Created dashboard", count: 40 },
+	{ hop: 3, fromNode: "Invited teammate", toNode: "", count: 10 },
+	{ hop: 3, fromNode: "$other", toNode: "", count: 10 },
+	{ hop: 3, fromNode: "$other", toNode: "$other", count: 80 },
+]
+
 /** Ranked, not sequential — the top rows are deliberately near-identical, which
  *  is the case a funnel mislabels as four separate "100%" stages. */
 export const hbarSampleData = [

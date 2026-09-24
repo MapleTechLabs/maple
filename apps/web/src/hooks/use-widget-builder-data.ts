@@ -1,13 +1,14 @@
 import * as React from "react"
 import { Result, useAtomValue } from "@/lib/effect-atom"
 import { useAutocompleteValuesContext } from "@/hooks/use-autocomplete-values"
-import { type QueryBuilderMetricType } from "@/lib/query-builder/model"
-import { resetAggregationForMetricType } from "@/lib/query-builder/model"
+import { type QueryBuilderMetricType } from "@maple/query-engine/query-builder"
+import { resetAggregationForMetricType } from "@maple/query-engine/query-builder"
 import { listMetricsResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
 import { disabledResultAtom } from "@/lib/services/atoms/disabled-result-atom"
 import { useWidgetBuilder } from "@/hooks/use-widget-builder"
 import { toNames } from "@/lib/query-builder/autocomplete-utils"
 import { useDashboardVariablesOptional } from "@/components/dashboard-builder/dashboard-variables-context"
+import { useFunnelSuggestions } from "@/components/funnels/use-funnel-suggestions"
 
 interface MetricSelectionOption {
 	value: string
@@ -26,6 +27,10 @@ export function useWidgetBuilderData() {
 	const deferredMetricSearch = React.useDeferredValue(metricSearch)
 
 	const hasMetricsQuery = state.queries.some((q) => q.dataSource === "metrics")
+	const hasProductEventsQuery = state.queries.some((q) => q.dataSource === "product_events")
+	// Page paths and session facets for a product-event query's where clause —
+	// the same lookups the funnel panel completes from.
+	const funnelSuggestions = useFunnelSuggestions(undefined, { enabled: hasProductEventsQuery })
 
 	const metricsResult = useAtomValue(
 		hasMetricsQuery
@@ -89,10 +94,15 @@ export function useWidgetBuilderData() {
 				services: metricServices,
 				variables: variableNames,
 			},
+			product_events: {
+				...baseAutocompleteValues.product_events,
+				pagePaths: funnelSuggestions.pagePaths.map((page) => page.name),
+				productEventFacets: funnelSuggestions.facets,
+				variables: variableNames,
+			},
 		}
-	}, [baseAutocompleteValues, metricRows, variableNames])
+	}, [baseAutocompleteValues, funnelSuggestions, metricRows, variableNames])
 
-	// Apply default metric selection when metric options first become available
 	const [appliedMetricDefault, setAppliedMetricDefault] = React.useState(false)
 	if (metricSelectionOptions.length > 0 && !appliedMetricDefault) {
 		const [defaultMetricName, defaultMetricTypeRaw] = metricSelectionOptions[0].value.split("::")

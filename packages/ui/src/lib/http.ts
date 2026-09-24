@@ -69,10 +69,10 @@ const parseSpanName = (name: string): Option.Option<NameInfo> => {
 				}),
 		),
 		Match.when(
-			(p) => p.length === 1 && isHttpMethod(p[0]!),
+			(p): p is [string] => p.length === 1 && isHttpMethod(p[0]),
 			([method]) =>
 				Option.some<NameInfo>({
-					method: method!.toUpperCase(),
+					method: method.toUpperCase(),
 					routeHint: Option.none(),
 				}),
 		),
@@ -181,7 +181,7 @@ export const HTTP_METHOD_HEX: Record<string, string> = {
 	DELETE: "#E85D4A",
 	HEAD: "#8A7F72",
 	OPTIONS: "#5A5248",
-}
+} satisfies Record<string, string>
 
 // Kept as literals (not derived from HTTP_METHOD_HEX) because Tailwind's JIT
 // scanner can't see class names built from template strings. A colocated test
@@ -194,4 +194,4 @@ export const HTTP_METHOD_COLORS: Record<string, string> = {
 	DELETE: "bg-[#E85D4A]",
 	HEAD: "bg-[#8A7F72]",
 	OPTIONS: "bg-[#5A5248]",
-}
+} satisfies Record<string, string>

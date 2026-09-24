@@ -33,6 +33,17 @@ describe("ClickHouse DDL emitter", () => {
 		expect(ddl).toContain("TTL toDate(Timestamp) + INTERVAL 30 DAY")
 	})
 
+	it("emits Null-engine ingestion bridges without a sorting key", async () => {
+		const manifest = await buildTinybirdProjectManifest()
+		const ingress = manifest.datasources.find((ds) => ds.name === "service_map_edges_hourly_ingest")
+		expect(ingress).toBeDefined()
+
+		const ddl = emitCreateTable(ingress!)
+		expect(ddl).toContain("ENGINE = Null")
+		expect(ddl).not.toContain("ORDER BY")
+		expect(ddl).not.toContain("`json:")
+	})
+
 	it("preserves DEFAULT expressions on computed columns", async () => {
 		const manifest = await buildTinybirdProjectManifest()
 		const traces = manifest.datasources.find((ds) => ds.name === "traces")
@@ -78,7 +89,7 @@ describe("ClickHouse DDL emitter", () => {
 		expect(ddl).toMatch(/^CREATE MATERIALIZED VIEW IF NOT EXISTS error_events_mv TO error_events AS/)
 		expect(ddl).toContain("FROM traces")
 		expect(ddl).toContain("WHERE StatusCode = 'Error'")
-		expect(ddl).toContain("cityHash64(OrgId, ServiceName, _exType, _fpFrames, _msgFallback)")
+		expect(ddl).toContain("cityHash64(OrgId, ServiceName, _exType, _fpFrames, _msgSig)")
 	})
 
 	it("emits a JSONPath spec mapping each ingested column to its $.path", async () => {

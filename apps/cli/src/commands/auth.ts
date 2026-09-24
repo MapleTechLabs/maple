@@ -1,7 +1,9 @@
 import * as os from "node:os"
 import * as Command from "effect/unstable/cli/Command"
 import * as Flag from "effect/unstable/cli/Flag"
-import { Console, Duration, Effect, Option, Redacted, Schema } from "effect"
+import { Console, Duration, Effect, Option, Redacted, Schema, Stream } from "effect"
+import { Stdio } from "effect/Stdio"
+import { HttpClient, HttpClientRequest } from "effect/unstable/http"
 import { MapleConfig } from "../core/config"
 import { deleteNativeCredential } from "../core/credential-store"
 import { Mode } from "../core/mode"
@@ -26,33 +28,21 @@ type DevicePoll =
 	| { readonly status: "denied" }
 	| { readonly status: "expired" }
 
-const readStdinLine = Effect.tryPromise(
-	() =>
-		new Promise<string>((resolve) => {
-			let data = ""
-			const onData = (chunk: string) => {
-				data += chunk
-				const nl = data.indexOf("\n")
-				if (nl >= 0) {
-					cleanup()
-					resolve(data.slice(0, nl))
-				}
-			}
-			const onEnd = () => {
-				cleanup()
-				resolve(data)
-			}
-			const cleanup = () => {
-				process.stdin.off("data", onData)
-				process.stdin.off("end", onEnd)
-				process.stdin.pause()
-			}
-			process.stdin.setEncoding("utf8")
-			process.stdin.on("data", onData)
-			process.stdin.on("end", onEnd)
-			process.stdin.resume()
-		}),
-).pipe(Effect.orElseSucceed(() => ""))
+/**
+ * Read the first line of standard input, or everything before EOF when the
+ * input never ends in a newline (a piped `--with-token` secret usually does
+ * not). `Stdio.stdin` terminates at EOF and `splitLines` flushes the trailing
+ * partial line, so both cases resolve rather than hanging.
+ *
+ * Deliberately NOT `Terminal.readLine`: that waits for a readline "line" event
+ * and never resolves on EOF, so `printf tok | maple auth login --with-token`
+ * would hang forever.
+ */
+const readStdinLine = Effect.gen(function* () {
+	const stdio = yield* Stdio
+	const line = yield* Stream.decodeText(stdio.stdin).pipe(Stream.splitLines, Stream.take(1), Stream.runHead)
+	return Option.getOrElse(line, () => "")
+}).pipe(Effect.orElseSucceed(() => ""))
 
 const normalizeApiUrl = (value: string) =>
 	Effect.try({
@@ -64,28 +54,55 @@ const normalizeApiUrl = (value: string) =>
 		catch: () => new CliAuthError({ message: `Invalid Maple API URL: ${value}` }),
 	})
 
-const requestJson = <A>(url: string, init?: RequestInit): Effect.Effect<A, CliAuthError> =>
-	Effect.tryPromise({
-		try: async () => {
-			const response = await fetch(url, init)
-			const body = (await response.json().catch(() => null)) as ({ message?: unknown } & A) | null
-			if (!response.ok) {
-				throw new Error(
+interface JsonRequestInit {
+	readonly method?: "GET" | "POST" | "DELETE"
+	readonly headers?: Readonly<Record<string, string>>
+	readonly body?: string
+}
+
+const requestJson = <A>(
+	url: string,
+	init?: JsonRequestInit,
+): Effect.Effect<A, CliAuthError, HttpClient.HttpClient> =>
+	Effect.gen(function* () {
+		const client = yield* HttpClient.HttpClient
+		let request = HttpClientRequest.make(init?.method ?? "GET")(url)
+		if (init?.headers !== undefined) {
+			request = HttpClientRequest.setHeaders(request, init.headers)
+		}
+		if (init?.body !== undefined) {
+			request = HttpClientRequest.bodyText(request, init.body, "application/json")
+		}
+
+		const response = yield* client.execute(request).pipe(
+			Effect.mapError(
+				(error) =>
+					new CliAuthError({
+						message: error instanceof Error ? error.message : "Maple API request failed",
+					}),
+			),
+		)
+		const body = (yield* response.json.pipe(Effect.orElseSucceed(() => null))) as
+			| ({ message?: unknown } & A)
+			| null
+		if (response.status < 200 || response.status >= 300) {
+			return yield* new CliAuthError({
+				message:
 					typeof body?.message === "string"
 						? body.message
 						: `Maple API returned HTTP ${response.status}`,
-				)
-			}
-			if (body === null) throw new Error("Maple API returned an empty response")
-			return body
-		},
-		catch: (error) =>
-			new CliAuthError({
-				message: error instanceof Error ? error.message : "Maple API request failed",
-			}),
+			})
+		}
+		if (body === null) {
+			return yield* new CliAuthError({ message: "Maple API returned an empty response" })
+		}
+		return body
 	})
 
-const validateToken = (apiUrl: string, token: string): Effect.Effect<Session, CliAuthError> =>
+const validateToken = (
+	apiUrl: string,
+	token: string,
+): Effect.Effect<Session, CliAuthError, HttpClient.HttpClient> =>
 	requestJson<Session>(`${apiUrl}/api/auth/session`, {
 		headers: { authorization: `Bearer ${token}` },
 	}).pipe(
@@ -134,18 +151,18 @@ const saveCredential = (apiUrl: string, token: string, session: Session, managed
 			yield* revokeManagedToken(previousApiUrl, previousToken).pipe(Effect.ignore)
 		}
 		if (previousApiUrl && previousApiUrl !== apiUrl) {
-			yield* Effect.promise(() => deleteNativeCredential(previousApiUrl))
+			yield* deleteNativeCredential(previousApiUrl)
 		}
 		return store
 	})
 
 const loginFlags = {
 	apiUrl: Flag.optional(
-		Flag.string("api-url").pipe(
+		Flag.String("api-url").pipe(
 			Flag.withDescription("Maple API base URL (default: https://api.maple.dev)"),
 		),
 	),
-	withToken: Flag.boolean("with-token").pipe(
+	withToken: Flag.Boolean("with-token").pipe(
 		Flag.withDescription("Read an existing API token from standard input instead of opening a browser"),
 		Flag.withDefault(false),
 	),

@@ -1,0 +1,113 @@
+import type * as Cloudflare from "alchemy/Cloudflare"
+import type * as Planetscale from "alchemy/Planetscale"
+import * as Context from "effect/Context"
+import * as Effect from "effect/Effect"
+import type { WorkerDev } from "@maple/alchemy-portless"
+import type { DevApp } from "../dev-urls.ts"
+import { Stage } from "alchemy/Stage"
+import type { MapleRegion } from "../region.ts"
+import {
+	type MapleDbConsumer,
+	type MapleDeployment,
+	type MapleDomains,
+	type MapleStage,
+	parseMapleDeployment,
+	resolveWorkerName,
+} from "./stage.ts"
+
+/**
+ * prd's database: the branch whose deploy applies the migrations, and on a `"declared"`
+ * instance the Hyperdrive config each consumer binds as `MAPLE_DB`.
+ */
+export interface MapleDbResources {
+	readonly schema: Planetscale.PostgresBranch
+	readonly hyperdrives: Record<MapleDbConsumer, Cloudflare.Hyperdrive.Connection> | undefined
+}
+
+/**
+ * Public origins of the apps the others point at, as plan-time strings:
+ * custom domains on deployed stages, portless routes under `bun dev`,
+ * env-supplied (or empty) on a cloud-deployed dev stage.
+ */
+export interface MapleUrls {
+	readonly api: string
+	readonly ingest: string
+	readonly electricSync: string
+}
+
+export interface MapleStackContext {
+	readonly stage: MapleStage
+	/** The instance this deploy belongs to; `us` unless the stage string says `-eu`. */
+	readonly region: MapleRegion
+	readonly domains: MapleDomains
+	readonly urls: MapleUrls
+	/** A Worker's `dev` block under `bun dev` (served, or left `external`); undefined on a deploy. */
+	readonly workerDev: (app: DevApp) => WorkerDev | undefined
+	/**
+	 * Inter-app URLs handed to the Workers as env under `bun dev`, spread last
+	 * so `.env.local` cannot override them; undefined on a deploy.
+	 */
+	readonly devEnv: Record<string, string> | undefined
+	/** prd's database resources; undefined on the other stages. */
+	readonly db: MapleDbResources | undefined
+}
+
+/**
+ * What the stack tells a single-module Worker (`main: import.meta.url`) about
+ * the deploy it belongs to. The Worker's props Effect yields it; the root stack
+ * provides it once, from `Alchemy.Stage`. Plan-time only: a Worker reads it
+ * behind its `__ALCHEMY_RUNTIME__` guard, so it never has to exist in an isolate.
+ */
+export class MapleStack extends Context.Service<MapleStack, MapleStackContext>()("@maple/infra/MapleStack") {}
+
+/**
+ * The deployed api Worker, for a Worker whose props bind it (web's `API`
+ * service binding). The root provides it right after yielding the api, so
+ * web's module never imports the api's; a `Worker.ref` would not do — it
+ * reads stored state and cannot see a sibling created by the same deploy.
+ */
+export class ApiWorker extends Context.Service<ApiWorker, Cloudflare.Worker>()("@maple/infra/ApiWorker") {}
+
+/**
+ * The deployed sandbox Worker, for maple-ai's service binding to it — the
+ * Worker whose agents run the sandbox tools. Provided by the root right after
+ * yielding it, for the same reason as {@link ApiWorker}: a `Worker.ref` reads
+ * stored state and cannot see a sibling this deploy creates.
+ */
+export class SandboxWorker extends Context.Service<SandboxWorker, Cloudflare.Worker>()(
+	"@maple/infra/SandboxWorker",
+) {}
+
+/**
+ * The deployed AI Worker, for the api's binding to it — the one that forwards
+ * `/mcp` and the chat paths so they keep answering on api's origin, with the
+ * OAuth issuer and RFC 8707 resource identifiers unchanged. Provided by the root
+ * right after yielding it, for the same reason as {@link ApiWorker}: a
+ * `Worker.ref` reads stored state and cannot see a sibling this deploy creates.
+ */
+export class AiWorker extends Context.Service<AiWorker, Cloudflare.Worker>()("@maple/infra/AiWorker") {}
+
+/**
+ * Props for a resource declared at module scope whose physical name is
+ * stage-derived (`resolveWorkerName(base, stage, region)`): `make` receives
+ * that name, and the deployment for anything else region-bound (a bucket's
+ * jurisdiction), and returns the props. Reads alchemy's own `Stage` — one of the platform
+ * services a Worker's init may require, unlike `MapleStack` — so the
+ * declaration can be yielded from the init as well as from the props. Alchemy
+ * evaluates a resource's props Effect wherever the resource is yielded — the
+ * deployed bundle included, where it is inert — so, like a Worker's props,
+ * this returns nothing under `__ALCHEMY_RUNTIME__` and the stage read is
+ * dead-code-eliminated from what ships.
+ */
+export const stageProps = <Props extends object>(
+	base: string,
+	make: (name: string, deployment: MapleDeployment) => Props,
+): Effect.Effect<Partial<Props>, never, Stage> =>
+	Effect.gen(function* () {
+		if (globalThis.__ALCHEMY_RUNTIME__) return {}
+		const deployment = parseMapleDeployment(yield* Stage)
+		return make(resolveWorkerName(base, deployment.stage, deployment.region), deployment)
+	})
+
+/** {@link stageProps} for the common case: a resource whose only stage-derived prop is `name`. */
+export const stageNamed = (base: string) => stageProps(base, (name) => ({ name }))

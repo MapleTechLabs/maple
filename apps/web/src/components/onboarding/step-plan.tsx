@@ -1,3 +1,4 @@
+import type { ReactNode } from "react"
 import { useMapleCustomer } from "@/hooks/use-maple-customer"
 import { TRIAL_DURATION_DAYS } from "@/lib/billing/plans"
 import { PricingCards } from "@/components/settings/pricing-cards"
@@ -7,6 +8,12 @@ import { ArrowLeftIcon } from "@/components/icons"
 export function StepPlan({ onBack }: { onBack?: () => void }) {
 	const { isLoading } = useMapleCustomer()
 
+	return (
+		<StepPlanLayout onBack={onBack}>{isLoading ? <PricingSkeleton /> : <PricingCards />}</StepPlanLayout>
+	)
+}
+
+export function StepPlanLayout({ onBack, children }: { onBack?: () => void; children: ReactNode }) {
 	return (
 		<div className="flex-1 flex flex-col items-center px-6 py-12 overflow-auto">
 			<div className="w-full max-w-5xl">
@@ -21,7 +28,7 @@ export function StepPlan({ onBack }: { onBack?: () => void }) {
 					</p>
 				</div>
 
-				{isLoading ? <PricingSkeleton /> : <PricingCards />}
+				{children}
 
 				{onBack && (
 					<div className="mt-8 flex items-center justify-start">

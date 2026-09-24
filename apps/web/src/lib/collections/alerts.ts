@@ -6,12 +6,15 @@ import {
 	AlertEventType,
 	AlertGroupBy,
 	AlertIncidentDocument,
+	AlertIncidentHoldReason,
 	AlertIncidentStatus,
 	AlertNotificationTemplate,
 	AlertRuleDocument,
 	AlertRuleId,
 	AlertSeverity,
 	AlertSignalType,
+	ChatConnectorId,
+	ChatWorkspaceId,
 	ErrorIssueId,
 	IsoDateTimeString,
 	QueryBuilderQueryDraftSchema,
@@ -34,6 +37,7 @@ const asSeverity = Schema.decodeUnknownSync(AlertSeverity)
 const asSignalType = Schema.decodeUnknownSync(AlertSignalType)
 const asComparator = Schema.decodeUnknownSync(AlertComparator)
 const asIncidentStatus = Schema.decodeUnknownSync(AlertIncidentStatus)
+const asHoldReason = Schema.decodeUnknownSync(AlertIncidentHoldReason)
 const asEventType = Schema.decodeUnknownSync(AlertEventType)
 const asReducer = Schema.decodeUnknownSync(QueryEngineAlertReducer)
 const asNoDataBehavior = Schema.decodeUnknownSync(QueryEngineNoDataBehavior)
@@ -53,9 +57,7 @@ const decodeGroupByFromJson = Schema.decodeUnknownSync(Schema.fromJsonString(Ale
 const safeParseStringArray = (value: unknown): ReadonlyArray<string> =>
 	Option.getOrElse(decodeStringArray(value), () => [] as ReadonlyArray<string>)
 
-// ---------------------------------------------------------------------------
 // alert_rules
-// ---------------------------------------------------------------------------
 
 /**
  * Identity row schema for `alert_rules` — mirrors the pgTable columns (snake_case)
@@ -101,9 +103,7 @@ export const AlertRuleRowSchema = Schema.Struct({
 })
 export type AlertRuleRow = typeof AlertRuleRowSchema.Type
 
-// ---------------------------------------------------------------------------
 // alert_rule_states
-// ---------------------------------------------------------------------------
 
 export const AlertRuleStateRowSchema = Schema.Struct({
 	org_id: Schema.String,
@@ -120,9 +120,7 @@ export const AlertRuleStateRowSchema = Schema.Struct({
 })
 export type AlertRuleStateRow = typeof AlertRuleStateRowSchema.Type
 
-// ---------------------------------------------------------------------------
 // alert_incidents
-// ---------------------------------------------------------------------------
 
 export const AlertIncidentRowSchema = Schema.Struct({
 	id: Schema.String,
@@ -146,15 +144,15 @@ export const AlertIncidentRowSchema = Schema.Struct({
 	dedupe_key: Schema.String,
 	last_delivered_event_type: Schema.NullOr(Schema.String),
 	last_notified_at: Schema.NullOr(Schema.String),
+	hold_reason: Schema.NullOr(Schema.String),
+	held_since: Schema.NullOr(Schema.String),
 	error_issue_id: Schema.NullOr(Schema.String),
 	created_at: Schema.String,
 	updated_at: Schema.String,
 })
 export type AlertIncidentRow = typeof AlertIncidentRowSchema.Type
 
-// ---------------------------------------------------------------------------
 // Mappers (mirror the server row→document mappers in AlertsService.ts)
-// ---------------------------------------------------------------------------
 
 /**
  * Most recent evaluation error/timestamp for a rule, aggregated across its group
@@ -254,12 +252,12 @@ export const rowToAlertIncidentDocument = (row: AlertIncidentRow): AlertIncident
 		lastDeliveredEventType:
 			row.last_delivered_event_type != null ? asEventType(row.last_delivered_event_type) : null,
 		lastNotifiedAt: row.last_notified_at != null ? decodeIso(row.last_notified_at) : null,
+		holdReason: row.hold_reason != null ? asHoldReason(row.hold_reason) : null,
+		heldSince: row.held_since != null ? decodeIso(row.held_since) : null,
 		errorIssueId: row.error_issue_id != null ? asErrorIssueId(row.error_issue_id) : null,
 	})
 
-// ---------------------------------------------------------------------------
 // Collections (read-only — no write handlers)
-// ---------------------------------------------------------------------------
 
 export const createAlertRulesCollection = (orgId: string) =>
 	createSyncedCollection({
@@ -289,9 +287,7 @@ export const createAlertIncidentsCollection = (orgId: string) =>
 		getKey: (row) => row.id,
 	})
 
-// ---------------------------------------------------------------------------
 // alert_destinations
-// ---------------------------------------------------------------------------
 
 /**
  * Identity row schema for the `alert_destinations` shape. The shape is
@@ -325,6 +321,8 @@ const AlertDestinationPublicConfig = Schema.Struct({
 	summary: Schema.String,
 	channelLabel: Schema.NullOr(Schema.String),
 	memberUserIds: Schema.optionalKey(Schema.Array(Schema.String)),
+	chatConnector: Schema.optionalKey(ChatConnectorId),
+	chatWorkspaceId: Schema.optionalKey(ChatWorkspaceId),
 })
 const decodeDestinationPublicConfig = Schema.decodeUnknownOption(AlertDestinationPublicConfig)
 
@@ -350,6 +348,12 @@ export const rowToAlertDestinationDocument = (row: AlertDestinationRow): AlertDe
 		summary: publicConfig.summary,
 		channelLabel: publicConfig.channelLabel,
 		memberUserIds: publicConfig.memberUserIds != null ? [...publicConfig.memberUserIds] : null,
+		...(publicConfig.chatConnector === undefined
+			? undefined
+			: { chatConnector: publicConfig.chatConnector }),
+		...(publicConfig.chatWorkspaceId === undefined
+			? undefined
+			: { chatWorkspaceId: publicConfig.chatWorkspaceId }),
 		lastTestedAt: row.last_tested_at != null ? decodeIso(row.last_tested_at) : null,
 		lastTestError: row.last_test_error,
 		createdAt: decodeIso(row.created_at),

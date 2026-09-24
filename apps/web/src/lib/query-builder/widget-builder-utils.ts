@@ -1,8 +1,9 @@
-import { buildTimeseriesQuerySpec, createQueryDraft } from "@/lib/query-builder/model"
 import {
-	TRACE_DEFAULT_COLUMNS,
-	type ListColumnDraft,
-} from "@/components/dashboard-builder/config/list-config-panel"
+	buildTimeseriesQuerySpec,
+	createQueryDraft,
+	resetQueryForDataSource,
+} from "@maple/query-engine/query-builder"
+import { TRACE_DEFAULT_COLUMNS, type ListColumnDraft } from "@/lib/query-builder/list-widget-config"
 import type {
 	DashboardWidget,
 	WidgetDataSource,
@@ -12,43 +13,33 @@ import type { LegendPosition } from "@/components/dashboard-builder/config/setti
 import { widgetTypes } from "@/components/dashboard-builder/widgets/types"
 import { fromPanelType, toPanelType } from "@/lib/query-builder/panel-types"
 import {
+	defaultFunnelDraft,
+	DEFAULT_PATHS_DRAFT,
 	deriveDefaultWidgetTitle,
 	hasActiveGroupBy,
 	inferDefaultUnitForQueries,
 	isVisibleQuery,
 	legacyQueryDraft,
 	loadQueryDrafts,
+	pointsModeFromShowPoints,
+	showPointsFromPointsMode,
 	toHiddenSeriesBaseNames,
 	type BuildDataSourceContext,
 	type QueryBuilderWidgetState,
 } from "@/lib/query-builder/widget-builder-shared"
 import { WIDGET_TYPES } from "@maple/domain/http"
+import { dataSourceQuerySet, dataSourceRouteParams, makeQueryDataSource } from "@maple/widgets/dashboard"
 
-/**
- * Endpoints whose `params.queries` are query-builder drafts. Histograms with no
- * group-by persist their raw value rows through the list endpoint — without it
- * the preset's query is dropped the moment the widget is opened and replaced by
- * the legacy fallback draft.
- */
-const QUERY_BUILDER_ENDPOINTS = new Set([
-	"custom_query_builder_timeseries",
-	"custom_query_builder_breakdown",
-	"custom_query_builder_list",
-])
-
-// ---------------------------------------------------------------------------
 // Lowering the widget editor's state to a persisted widget, and back.
 //
 // This module owns only what every widget type shares. The per-type halves live
 // in `components/dashboard-builder/widgets/types/*` — see `widget-type-registry`
 // for why. What used to be four if-chains over `state.visualization` is now four
 // dispatches through one registry.
-// ---------------------------------------------------------------------------
 
-export type { QueryBuilderWidgetState, StatAggregate } from "@/lib/query-builder/widget-builder-shared"
+export type { QueryBuilderWidgetState } from "@/lib/query-builder/widget-builder-shared"
 export {
 	deriveDefaultWidgetTitle,
-	histogramValueColumn,
 	inferDefaultUnitForQueries,
 	inferDisplayUnitForQuery,
 	toSeriesFieldOptions,
@@ -57,16 +48,18 @@ export {
 const definitionForState = (state: QueryBuilderWidgetState) =>
 	widgetTypes[toPanelType(state.visualization, state.chartId)]
 
-// ---------------------------------------------------------------------------
 // Persisted widget → editor state
-// ---------------------------------------------------------------------------
 
 export function toInitialState(widget: DashboardWidget): QueryBuilderWidgetState {
-	const params = (widget.dataSource.params ?? {}) as Record<string, unknown>
-	const rawComparison =
-		params.comparison && typeof params.comparison === "object"
-			? (params.comparison as Record<string, unknown>)
-			: {}
+	// `querySet` is non-null for every widget whose queries are query-builder
+	// drafts — including the list shape, which is how a histogram with no group-by
+	// persists its raw value rows. Reading it structurally rather than testing an
+	// endpoint name is what keeps this working when the stored shape flips to v3.
+	const querySet = dataSourceQuerySet(widget.dataSource)
+	// Only a legacy pre-query-builder widget (`custom_timeseries` and friends)
+	// still needs its raw bag, and only for the fallback draft below.
+	const routeParams = dataSourceRouteParams(widget.dataSource) ?? {}
+	const rawComparison = querySet?.comparison ?? {}
 
 	// Normalize the (visualization, chartId) pair through the panel-type map on
 	// open. This repairs widgets corrupted by the old "Chart Style" dropdown —
@@ -108,16 +101,19 @@ export function toInitialState(widget: DashboardWidget): QueryBuilderWidgetState
 			typeof rawComparison.includePercentChange === "boolean"
 				? rawComparison.includePercentChange
 				: true,
-		debug: params.debug === true,
 		statAggregate: "first",
 		statValueField: "",
-		unit: widget.display.unit ?? inferDefaultUnitForQueries(loadQueryDrafts(params).queries) ?? "number",
+		unit:
+			widget.display.unit ??
+			inferDefaultUnitForQueries(loadQueryDrafts(querySet ?? {}).queries) ??
+			"number",
 		legendPosition,
 		// The Min/Max/Mean/Last table is opt-in: it costs up to 45% of the widget's
 		// height, so a widget only shows it by asking for it. Widgets persisted
 		// before the flag existed carry no `seriesStats` and therefore lose the
 		// table — that is the intent, and re-ticking the box restores it.
 		seriesStatsEnabled: chartPresentation?.seriesStats ?? false,
+		pointsMode: pointsModeFromShowPoints(chartPresentation?.showPoints),
 		tableLimit: "",
 		thresholds: (widget.display.thresholds ?? []).map((threshold) => ({
 			value: threshold.value,
@@ -131,9 +127,11 @@ export function toInitialState(widget: DashboardWidget): QueryBuilderWidgetState
 		listLimit: "",
 		listColumns: TRACE_DEFAULT_COLUMNS as ListColumnDraft[],
 		listRootOnly: true,
-		heatmapColorScale: "blues",
+		heatmapColorScale: undefined,
 		heatmapScaleType: "linear",
 		markdownContent: "",
+		funnel: defaultFunnelDraft(),
+		paths: DEFAULT_PATHS_DRAFT(),
 		...definition.initialState?.(widget),
 	}
 
@@ -143,17 +141,28 @@ export function toInitialState(widget: DashboardWidget): QueryBuilderWidgetState
 		return { ...shared, queries: [createQueryDraft(0)], formulas: [] }
 	}
 
-	if (QUERY_BUILDER_ENDPOINTS.has(widget.dataSource.endpoint)) {
-		const { queries, formulas } = loadQueryDrafts(params)
+	if (querySet !== null) {
+		const { queries, formulas } = loadQueryDrafts(querySet)
 		if (queries.length > 0) return { ...shared, queries, formulas }
 	}
 
-	return { ...shared, queries: [legacyQueryDraft(params)], formulas: [] }
+	// A product-event funnel's placeholder query A is a product-event query,
+	// not a traces one: the panel's source select and `funnel.source` tell the
+	// same story, and `reconcileFunnelSource` (run on every settings change)
+	// keeps the step editor open instead of flipping the funnel back to the
+	// query set on the first rail edit.
+	if (definition.meta.panelType === "funnel" && definition.ownsDataSource?.(shared)) {
+		return {
+			...shared,
+			queries: [resetQueryForDataSource(createQueryDraft(0), "product_events")],
+			formulas: [],
+		}
+	}
+
+	return { ...shared, queries: [legacyQueryDraft(routeParams)], formulas: [] }
 }
 
-// ---------------------------------------------------------------------------
 // Editor state → persisted widget
-// ---------------------------------------------------------------------------
 
 /** The plain timeseries data source every query-driven type starts from. */
 function timeseriesDataSource(state: QueryBuilderWidgetState): {
@@ -166,19 +175,16 @@ function timeseriesDataSource(state: QueryBuilderWidgetState): {
 
 	return {
 		sharedTransform,
-		base: {
-			endpoint: "custom_query_builder_timeseries",
-			params: {
-				queries: state.queries,
-				formulas: state.formulas,
-				comparison: {
-					mode: state.comparisonMode,
-					includePercentChange: state.includePercentChange,
-				},
-				debug: state.debug,
+		base: makeQueryDataSource({
+			resultShape: "timeseries",
+			queries: state.queries,
+			formulas: state.formulas,
+			comparison: {
+				mode: state.comparisonMode,
+				includePercentChange: state.includePercentChange,
 			},
-			transform: sharedTransform,
-		},
+			...(!(sharedTransform === undefined) ? { transform: sharedTransform } : undefined),
+		}),
 	}
 }
 
@@ -225,6 +231,7 @@ export function buildWidgetDisplay(
 				? ("right" as const)
 				: ("visible" as const)
 
+	const showPoints = showPointsFromPointsMode(state.pointsMode)
 	const base: WidgetDisplayConfig = {
 		...widget.display,
 		// Query-driven widgets saved without a title get a derived one
@@ -240,8 +247,13 @@ export function buildWidgetDisplay(
 			...widget.display.chartPresentation,
 			legend: legendValue,
 			seriesStats: state.seriesStatsEnabled,
+			showPoints,
 		},
 	}
+	// Auto is the ABSENCE of a preference: drop the key rather than persist
+	// `undefined`, and so the spread above cannot carry a stale value forward
+	// once the user switches back to Auto.
+	if (showPoints === undefined) delete base.chartPresentation?.showPoints
 
 	for (const key of OWNED_DISPLAY_KEYS) {
 		delete base[key]
@@ -261,17 +273,24 @@ export function buildWidgetDisplay(
 	})
 }
 
-// ---------------------------------------------------------------------------
-// Validation
-// ---------------------------------------------------------------------------
-
 export function validateQueries(state: QueryBuilderWidgetState): string | null {
 	const definition = definitionForState(state)
 
+	// A paths widget has its own panel and its own definition to check.
+	if (definition.queryEditor === "paths") {
+		return definition.validate?.({ state, activeQueries: [], visibleQueries: [] }) ?? null
+	}
 	// Neither uses the query builder — a list is configured by ListConfigPanel and
 	// a note doesn't query at all, so validating their placeholder draft would
 	// block Apply on an error the user has no panel to fix.
 	if (definition.queryEditor !== "builder") return null
+
+	// A type that has swapped its query set for a source of its own (a funnel
+	// with product-event steps) validates that source instead: its query drafts
+	// are the placeholder the state shape requires, not what reaches the warehouse.
+	if (definition.ownsDataSource?.(state)) {
+		return definition.validate?.({ state, activeQueries: [], visibleQueries: [] }) ?? null
+	}
 
 	const activeQueries = state.queries.filter((query) => query.enabled !== false)
 	if (activeQueries.length === 0) return "Add at least one query"

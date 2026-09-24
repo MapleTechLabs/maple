@@ -1,28 +1,171 @@
 import { HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/unstable/httpapi"
 import { Schema } from "effect"
 import { MetricName, ServiceName, SpanId, TraceId } from "../../primitives"
-import { AuthorizationV2, V2SchemaErrors } from "./auth"
-import { ListOf, ListQuery, Timestamp } from "./envelopes"
-import {
-	V2InvalidRequestError,
-	V2NotFoundError,
-	V2RateLimitError,
-	V2ServiceUnavailableError,
-	V2UpstreamError,
-} from "./errors"
+import { AuditedRead } from "../audit-log"
+import { AuthorizationV2 } from "./auth"
+import { wireExample, ListOf, ListQuery, Timestamp } from "./envelopes"
+import { defineV2Error, V2CursorInvalid, V2ParameterInvalid, V2TimeRangeInvalid } from "./errors"
 import { PublicId, PublicIdPrefixes } from "./public-id"
+import { V2QueryErrors, V2WarehouseReadErrors } from "./query-errors"
 
-const wireExample = <A>(example: object): A => example as A
-// Warehouse-backed endpoints surface the full outcome range: 400 for a bad
-// request, 429 for a quota breach, 502 for an upstream/query fault, 503 for a
-// genuine outage. These used to be collapsed into one 503 (see
-// telemetry.http.ts's mapWarehouseError), which told a user with a bad time
-// range that the service was down.
-const commonErrors = [
-	V2InvalidRequestError,
-	V2RateLimitError,
-	V2ServiceUnavailableError,
-	V2UpstreamError,
+export const V2TelemetryRangeTooLarge = defineV2Error({
+	tag: "@maple/http/v2/TelemetryRangeTooLargeError",
+	status: 400,
+	code: "time_range_too_large",
+	title: "Time range too large",
+	message: "The requested time range exceeds this operation's limit.",
+	retry: "never",
+	recovery: "fix_request",
+	identifier: "TelemetryRangeTooLargeError",
+})
+
+export const V2TelemetryBucketCountTooLarge = defineV2Error({
+	tag: "@maple/http/v2/TelemetryBucketCountTooLargeError",
+	status: 400,
+	code: "bucket_count_too_large",
+	title: "Too many time buckets",
+	message: "bucket_seconds produces too many buckets.",
+	retry: "never",
+	recovery: "fix_request",
+	identifier: "TelemetryBucketCountTooLargeError",
+})
+
+export const V2TelemetryBreakdownFilterRequired = defineV2Error({
+	tag: "@maple/http/v2/TelemetryBreakdownFilterRequiredError",
+	status: 400,
+	code: "breakdown_filter_required",
+	title: "Breakdown filter required",
+	message: "This breakdown range requires at least one narrowing filter.",
+	retry: "never",
+	recovery: "fix_request",
+	identifier: "TelemetryBreakdownFilterRequiredError",
+})
+
+export const V2TraceQueryInvalid = defineV2Error({
+	tag: "@maple/http/v2/TraceQueryInvalidError",
+	status: 400,
+	code: "trace_query_invalid",
+	title: "Invalid trace query",
+	message: "The trace aggregation request is invalid.",
+	retry: "never",
+	recovery: "fix_request",
+	identifier: "TraceQueryInvalidError",
+})
+
+export const V2LogQueryInvalid = defineV2Error({
+	tag: "@maple/http/v2/LogQueryInvalidError",
+	status: 400,
+	code: "log_query_invalid",
+	title: "Invalid log query",
+	message: "The log aggregation request is invalid.",
+	retry: "never",
+	recovery: "fix_request",
+	identifier: "LogQueryInvalidError",
+})
+
+export const V2MetricQueryInvalid = defineV2Error({
+	tag: "@maple/http/v2/MetricQueryInvalidError",
+	status: 400,
+	code: "metric_query_invalid",
+	title: "Invalid metric query",
+	message: "The metric aggregation request is invalid.",
+	retry: "never",
+	recovery: "fix_request",
+	identifier: "MetricQueryInvalidError",
+})
+
+export const V2TraceNotFound = defineV2Error({
+	tag: "@maple/http/v2/TraceNotFoundError",
+	status: 404,
+	code: "trace_not_found",
+	title: "Trace not found",
+	message: "No such trace.",
+	retry: "never",
+	recovery: "none",
+	identifier: "TraceNotFoundError",
+})
+
+export const V2SpanNotFound = defineV2Error({
+	tag: "@maple/http/v2/SpanNotFoundError",
+	status: 404,
+	code: "span_not_found",
+	title: "Span not found",
+	message: "No such span.",
+	retry: "never",
+	recovery: "none",
+	identifier: "SpanNotFoundError",
+})
+
+export const V2LogIdInvalid = defineV2Error({
+	tag: "@maple/http/v2/LogIdInvalidError",
+	status: 400,
+	code: "log_id_invalid",
+	title: "Invalid log ID",
+	message: "Malformed log ID.",
+	retry: "never",
+	recovery: "fix_request",
+	identifier: "LogIdInvalidError",
+})
+
+export const V2LogNotFound = defineV2Error({
+	tag: "@maple/http/v2/LogNotFoundError",
+	status: 404,
+	code: "log_not_found",
+	title: "Log not found",
+	message: "No such log.",
+	retry: "never",
+	recovery: "none",
+	identifier: "LogNotFoundError",
+})
+
+export const V2ServiceNotFound = defineV2Error({
+	tag: "@maple/http/v2/ServiceNotFoundError",
+	status: 404,
+	code: "service_not_found",
+	title: "Service not found",
+	message: "No such service.",
+	retry: "never",
+	recovery: "none",
+	identifier: "ServiceNotFoundError",
+})
+
+const windowErrors = [V2TimeRangeInvalid.schema, V2TelemetryRangeTooLarge.schema] as const
+const warehouseWindowErrors = [...windowErrors, ...V2WarehouseReadErrors] as const
+const traceTimeseriesErrors = [
+	...windowErrors,
+	V2TelemetryBucketCountTooLarge.schema,
+	V2TraceQueryInvalid.schema,
+	...V2QueryErrors,
+] as const
+const traceBreakdownErrors = [
+	...windowErrors,
+	V2TelemetryBreakdownFilterRequired.schema,
+	V2TraceQueryInvalid.schema,
+	...V2QueryErrors,
+] as const
+const logTimeseriesErrors = [
+	...windowErrors,
+	V2TelemetryBucketCountTooLarge.schema,
+	V2LogQueryInvalid.schema,
+	...V2QueryErrors,
+] as const
+const logBreakdownErrors = [
+	...windowErrors,
+	V2TelemetryBreakdownFilterRequired.schema,
+	V2LogQueryInvalid.schema,
+	...V2QueryErrors,
+] as const
+const metricTimeseriesErrors = [
+	...windowErrors,
+	V2TelemetryBucketCountTooLarge.schema,
+	V2MetricQueryInvalid.schema,
+	...V2QueryErrors,
+] as const
+const metricBreakdownErrors = [
+	...windowErrors,
+	V2TelemetryBreakdownFilterRequired.schema,
+	V2MetricQueryInvalid.schema,
+	...V2QueryErrors,
 ] as const
 const PositiveInteger = Schema.Number.check(Schema.isInt(), Schema.isGreaterThan(0))
 const PositiveFinite = Schema.Number.check(Schema.isFinite(), Schema.isGreaterThan(0))
@@ -101,6 +244,7 @@ const TraceFilters = Schema.Struct({
 	attributes: Schema.optionalKey(AttributeFilterCollection),
 	resource_attributes: Schema.optionalKey(AttributeFilterCollection),
 }).annotate({ identifier: "TraceFilters", title: "Trace filters" })
+export type V2TraceFilters = Schema.Schema.Type<typeof TraceFilters>
 
 const LogFilters = Schema.Struct({
 	service_name: Schema.optionalKey(ServiceName),
@@ -116,6 +260,7 @@ const LogFilters = Schema.Struct({
 	attributes: Schema.optionalKey(AttributeFilterCollection),
 	resource_attributes: Schema.optionalKey(AttributeFilterCollection),
 }).annotate({ identifier: "LogFilters", title: "Log filters" })
+export type V2LogFilters = Schema.Schema.Type<typeof LogFilters>
 
 const MetricType = Schema.Literals(["sum", "gauge", "histogram", "exponential_histogram"])
 const MetricFilters = Schema.Struct({
@@ -123,6 +268,7 @@ const MetricFilters = Schema.Struct({
 	metric_type: MetricType,
 	service_name: Schema.optionalKey(ServiceName),
 }).annotate({ identifier: "MetricFilters", title: "Metric filters" })
+export type V2MetricFilters = Schema.Schema.Type<typeof MetricFilters>
 
 export const V2TimeseriesValuePoint = Schema.Struct({
 	timestamp: Timestamp,
@@ -556,7 +702,7 @@ export class V2TracesApiGroup extends HttpApiGroup.make("traces")
 		HttpApiEndpoint.post("search", "/search", {
 			payload: V2TraceSearchParams,
 			success: TraceList,
-			error: [...commonErrors],
+			error: [V2CursorInvalid.schema, ...warehouseWindowErrors],
 		}).annotateMerge(
 			OpenApi.annotations({
 				identifier: "searchTraces",
@@ -569,7 +715,7 @@ export class V2TracesApiGroup extends HttpApiGroup.make("traces")
 		HttpApiEndpoint.post("timeseries", "/timeseries", {
 			payload: V2TraceTimeseriesParams,
 			success: V2TraceTimeseriesResult,
-			error: [...commonErrors],
+			error: traceTimeseriesErrors,
 		}).annotateMerge(
 			OpenApi.annotations({
 				identifier: "queryTraceTimeseries",
@@ -582,7 +728,7 @@ export class V2TracesApiGroup extends HttpApiGroup.make("traces")
 		HttpApiEndpoint.post("breakdown", "/breakdown", {
 			payload: V2TraceBreakdownParams,
 			success: V2TraceBreakdownResult,
-			error: [...commonErrors],
+			error: traceBreakdownErrors,
 		}).annotateMerge(
 			OpenApi.annotations({
 				identifier: "queryTraceBreakdown",
@@ -595,7 +741,7 @@ export class V2TracesApiGroup extends HttpApiGroup.make("traces")
 		HttpApiEndpoint.get("retrieve", "/:trace_id", {
 			params: { trace_id: TraceId },
 			success: V2Trace,
-			error: [...commonErrors, V2NotFoundError],
+			error: [...V2WarehouseReadErrors, V2TraceNotFound.schema],
 		}).annotateMerge(
 			OpenApi.annotations({
 				identifier: "getTrace",
@@ -609,7 +755,7 @@ export class V2TracesApiGroup extends HttpApiGroup.make("traces")
 		HttpApiEndpoint.get("retrieveSpan", "/:trace_id/spans/:span_id", {
 			params: { trace_id: TraceId, span_id: SpanId },
 			success: V2Span,
-			error: [...commonErrors, V2NotFoundError],
+			error: [...V2WarehouseReadErrors, V2SpanNotFound.schema],
 		}).annotateMerge(
 			OpenApi.annotations({
 				identifier: "getSpan",
@@ -620,7 +766,7 @@ export class V2TracesApiGroup extends HttpApiGroup.make("traces")
 	)
 	.prefix("/v2/traces")
 	.middleware(AuthorizationV2)
-	.middleware(V2SchemaErrors)
+	.annotate(AuditedRead, "telemetry.read")
 	.annotateMerge(
 		OpenApi.annotations({
 			title: "Traces",
@@ -673,7 +819,7 @@ export class V2LogsApiGroup extends HttpApiGroup.make("logs")
 		HttpApiEndpoint.post("search", "/search", {
 			payload: V2LogSearchParams,
 			success: LogList,
-			error: [...commonErrors],
+			error: [V2CursorInvalid.schema, ...warehouseWindowErrors],
 		}).annotateMerge(
 			OpenApi.annotations({
 				identifier: "searchLogs",
@@ -686,7 +832,7 @@ export class V2LogsApiGroup extends HttpApiGroup.make("logs")
 		HttpApiEndpoint.post("timeseries", "/timeseries", {
 			payload: V2LogTimeseriesParams,
 			success: V2LogTimeseriesResult,
-			error: [...commonErrors],
+			error: logTimeseriesErrors,
 		}).annotateMerge(
 			OpenApi.annotations({
 				identifier: "queryLogTimeseries",
@@ -699,7 +845,7 @@ export class V2LogsApiGroup extends HttpApiGroup.make("logs")
 		HttpApiEndpoint.post("breakdown", "/breakdown", {
 			payload: V2LogBreakdownParams,
 			success: V2LogBreakdownResult,
-			error: [...commonErrors],
+			error: logBreakdownErrors,
 		}).annotateMerge(
 			OpenApi.annotations({
 				identifier: "queryLogBreakdown",
@@ -712,7 +858,7 @@ export class V2LogsApiGroup extends HttpApiGroup.make("logs")
 		HttpApiEndpoint.get("retrieve", "/:id", {
 			params: { id: LogPublicId },
 			success: V2Log,
-			error: [...commonErrors, V2NotFoundError],
+			error: [V2LogIdInvalid.schema, ...V2WarehouseReadErrors, V2LogNotFound.schema],
 		}).annotateMerge(
 			OpenApi.annotations({
 				identifier: "getLog",
@@ -723,7 +869,7 @@ export class V2LogsApiGroup extends HttpApiGroup.make("logs")
 	)
 	.prefix("/v2/logs")
 	.middleware(AuthorizationV2)
-	.middleware(V2SchemaErrors)
+	.annotate(AuditedRead, "telemetry.read")
 	.annotateMerge(
 		OpenApi.annotations({
 			title: "Logs",
@@ -766,7 +912,7 @@ export class V2MetricsApiGroup extends HttpApiGroup.make("metrics")
 		HttpApiEndpoint.get("list", "/", {
 			query: V2MetricListQuery,
 			success: MetricList,
-			error: [...commonErrors],
+			error: [V2ParameterInvalid.schema, ...warehouseWindowErrors],
 		}).annotateMerge(
 			OpenApi.annotations({
 				identifier: "listMetrics",
@@ -780,7 +926,7 @@ export class V2MetricsApiGroup extends HttpApiGroup.make("metrics")
 		HttpApiEndpoint.post("timeseries", "/timeseries", {
 			payload: V2MetricsTimeseriesParams,
 			success: V2MetricTimeseriesResult,
-			error: [...commonErrors],
+			error: metricTimeseriesErrors,
 		}).annotateMerge(
 			OpenApi.annotations({
 				identifier: "queryMetricsTimeseries",
@@ -793,7 +939,7 @@ export class V2MetricsApiGroup extends HttpApiGroup.make("metrics")
 		HttpApiEndpoint.post("breakdown", "/breakdown", {
 			payload: V2MetricsBreakdownParams,
 			success: V2MetricBreakdownResult,
-			error: [...commonErrors],
+			error: metricBreakdownErrors,
 		}).annotateMerge(
 			OpenApi.annotations({
 				identifier: "queryMetricBreakdown",
@@ -804,7 +950,7 @@ export class V2MetricsApiGroup extends HttpApiGroup.make("metrics")
 	)
 	.prefix("/v2/metrics")
 	.middleware(AuthorizationV2)
-	.middleware(V2SchemaErrors)
+	.annotate(AuditedRead, "telemetry.read")
 	.annotateMerge(
 		OpenApi.annotations({
 			title: "Metrics",
@@ -827,6 +973,15 @@ export const V2Service = Schema.Struct({
 	p99_latency_ms: Schema.Number,
 	has_sampling: Schema.Boolean,
 	sampling_weight: Schema.Number,
+	// The service's own trailing-7d p95, ending where the requested window
+	// starts, so an ongoing regression can't inflate its own baseline. Absent
+	// when the service has no history in that window. Clients judge latency
+	// against this rather than an absolute threshold — a batch worker whose p95
+	// is always seconds is healthy, not degraded.
+	baseline_p95_latency_ms: Schema.optionalKey(Schema.Number),
+	// Spans behind `baseline_p95_latency_ms`. A baseline built from a handful of
+	// spans is noise; clients should ignore it below their own minimum.
+	baseline_span_count: Schema.optionalKey(Schema.Number),
 }).annotate({
 	identifier: "Service",
 	title: "Service",
@@ -872,12 +1027,148 @@ const ServiceList = ListOf(V2Service).annotate({
 	title: "Service list",
 })
 
+/**
+ * One bucket of a service's golden signals, as the phone charts them.
+ *
+ * Counts, not rates: the client divides `span_count` / `estimated_span_count`
+ * by the response's `bucket_seconds`, so the chart and the headline number
+ * provably carry the same unit (the same rule as `WidgetSummaryService.points`).
+ * Latencies are already milliseconds and `error_rate` is already a 0–1 ratio.
+ */
+export const V2ServiceOverviewPoint = Schema.Struct({
+	timestamp: Timestamp,
+	span_count: Schema.Number,
+	/** Sampling-corrected; equals `span_count` when nothing was sampled. */
+	estimated_span_count: Schema.Number,
+	error_rate: Schema.Number,
+	p50_latency_ms: Schema.Number,
+	p95_latency_ms: Schema.Number,
+	p99_latency_ms: Schema.Number,
+}).annotate({
+	identifier: "ServiceOverviewPoint",
+	title: "Service overview point",
+	description: "One time bucket of a service's throughput, error rate and latency percentiles.",
+})
+export type V2ServiceOverviewPoint = Schema.Schema.Type<typeof V2ServiceOverviewPoint>
+
+export const V2ServiceOperation = Schema.Struct({
+	name: Schema.String,
+	span_count: Schema.Number,
+	estimated_span_count: Schema.Number,
+	error_count: Schema.Number,
+	error_rate: Schema.Number,
+	p50_latency_ms: Schema.Number,
+	p95_latency_ms: Schema.Number,
+	p99_latency_ms: Schema.Number,
+}).annotate({
+	identifier: "ServiceOperation",
+	title: "Service operation",
+	description: "One span name inside a service, with its volume, errors and latency over the window.",
+})
+export type V2ServiceOperation = Schema.Schema.Type<typeof V2ServiceOperation>
+
+/** Operations returned by the overview: the busiest by estimated volume. */
+export const SERVICE_OVERVIEW_OPERATIONS_LIMIT = 25
+
+export const V2ServiceOverview = Schema.Struct({
+	object: Schema.Literal("service_overview"),
+	service: V2Service,
+	start_time: Timestamp,
+	end_time: Timestamp,
+	/**
+	 * Bucket length behind `points`. Null when the series could not be read,
+	 * which tells the client to render the summary without a chart instead of
+	 * guessing a unit.
+	 */
+	bucket_seconds: Schema.NullOr(PositiveInteger),
+	points: Schema.Array(V2ServiceOverviewPoint),
+	/**
+	 * The busiest `SERVICE_OVERVIEW_OPERATIONS_LIMIT` span names over the
+	 * window, by estimated volume. Empty when the read failed — the operations
+	 * are context next to the summary, not the summary itself.
+	 */
+	operations: Schema.Array(V2ServiceOperation),
+}).annotate({
+	identifier: "ServiceOverview",
+	title: "Service overview",
+	description:
+		"Everything a service detail screen paints from, in one response: the window summary, a per-bucket series of every golden signal, and the busiest operations.",
+	examples: [
+		wireExample({
+			object: "service_overview",
+			service: {
+				object: "service",
+				name: "api",
+				service_namespaces: ["checkout"],
+				deployment_environments: ["production"],
+				throughput: 12.5,
+				traced_throughput: 12.5,
+				span_count: 45_000,
+				error_count: 12,
+				error_rate: 0.00027,
+				p50_latency_ms: 18.4,
+				p95_latency_ms: 142.9,
+				p99_latency_ms: 890.1,
+				has_sampling: false,
+				sampling_weight: 1,
+				baseline_p95_latency_ms: 120,
+				baseline_span_count: 300_000,
+			},
+			start_time: "2026-07-15T12:00:00.000Z",
+			end_time: "2026-07-15T13:00:00.000Z",
+			bucket_seconds: 120,
+			points: [
+				{
+					timestamp: "2026-07-15T12:00:00.000Z",
+					span_count: 1500,
+					estimated_span_count: 1500,
+					error_rate: 0.0003,
+					p50_latency_ms: 18,
+					p95_latency_ms: 140,
+					p99_latency_ms: 870,
+				},
+			],
+			operations: [
+				{
+					name: "GET /checkout",
+					span_count: 20_000,
+					estimated_span_count: 20_000,
+					error_count: 8,
+					error_rate: 0.0004,
+					p50_latency_ms: 22,
+					p95_latency_ms: 180,
+					p99_latency_ms: 910,
+				},
+			],
+		}),
+	],
+})
+export type V2ServiceOverview = Schema.Schema.Type<typeof V2ServiceOverview>
+
+export const V2ServiceOverviewQuery = Schema.Struct({
+	...V2TelemetryWindowQuery.fields,
+	deployment_environment: Schema.optional(Schema.String),
+	/**
+	 * Bucket length for `points`. Defaults to whatever gives the window roughly
+	 * 40 buckets; a value the window cannot hold in 1,500 buckets is a 400.
+	 */
+	bucket_seconds: Schema.optional(PositiveInteger),
+}).annotate({ identifier: "ServiceOverviewQuery", title: "Service overview query" })
+
+const serviceOverviewErrors = [
+	...windowErrors,
+	V2TelemetryBucketCountTooLarge.schema,
+	V2TraceQueryInvalid.schema,
+	...V2QueryErrors,
+	V2ServiceNotFound.schema,
+] as const
+
 export class V2ServicesApiGroup extends HttpApiGroup.make("services")
 	.add(
 		HttpApiEndpoint.get("list", "/", {
 			query: V2ServiceListQuery,
 			success: ServiceList,
-			error: [...commonErrors],
+			error: [V2ParameterInvalid.schema, ...warehouseWindowErrors],
 		}).annotateMerge(
 			OpenApi.annotations({
 				identifier: "listServices",
@@ -892,7 +1183,7 @@ export class V2ServicesApiGroup extends HttpApiGroup.make("services")
 			params: { name: ServiceName },
 			query: V2TelemetryWindowQuery,
 			success: V2Service,
-			error: [...commonErrors, V2NotFoundError],
+			error: [...warehouseWindowErrors, V2ServiceNotFound.schema],
 		}).annotateMerge(
 			OpenApi.annotations({
 				identifier: "getService",
@@ -902,13 +1193,81 @@ export class V2ServicesApiGroup extends HttpApiGroup.make("services")
 			}),
 		),
 	)
+	.add(
+		HttpApiEndpoint.get("overview", "/:name/overview", {
+			params: { name: ServiceName },
+			query: V2ServiceOverviewQuery,
+			success: V2ServiceOverview,
+			error: serviceOverviewErrors,
+		}).annotateMerge(
+			OpenApi.annotations({
+				identifier: "getServiceOverview",
+				summary: "Retrieve a service overview",
+				description:
+					"Returns the service summary, a per-bucket series of throughput, error rate and latency percentiles, and its busiest operations — the reads behind a service detail screen, composed server-side in one round-trip. Requires `services:read`.",
+			}),
+		),
+	)
 	.prefix("/v2/services")
 	.middleware(AuthorizationV2)
-	.middleware(V2SchemaErrors)
 	.annotateMerge(
 		OpenApi.annotations({
 			title: "Services",
 			description: "Observed service health summaries.",
+		}),
+	) {}
+
+export const V2Environment = Schema.Struct({
+	object: Schema.Literal("environment"),
+	name: Schema.String,
+}).annotate({
+	identifier: "Environment",
+	title: "Environment",
+	description: "One deployment environment telemetry has been observed in.",
+	examples: [wireExample({ object: "environment", name: "production" })],
+})
+export type V2Environment = Schema.Schema.Type<typeof V2Environment>
+
+const EnvironmentList = ListOf(V2Environment).annotate({
+	identifier: "EnvironmentList",
+	title: "Environment list",
+})
+
+/**
+ * The values every other endpoint's `deployment_environment` filter accepts.
+ *
+ * Its own resource family rather than a field on the service listing: an
+ * environment picker is organization-wide, and a client that derived the list
+ * from a page of `/v2/services` would silently miss an environment that only
+ * appears past that page's `limit`. Reading the rollups grouped by environment
+ * is also the cheaper question — it does not aggregate per-service health
+ * nobody asked for.
+ *
+ * The empty environment is never returned. Downstream the DSL reads `''` as
+ * "no filter", so a caller who selected it would get every environment back
+ * under a label claiming otherwise.
+ */
+export class V2EnvironmentsApiGroup extends HttpApiGroup.make("environments")
+	.add(
+		HttpApiEndpoint.get("list", "/", {
+			query: V2TelemetryWindowQuery,
+			success: EnvironmentList,
+			error: warehouseWindowErrors,
+		}).annotateMerge(
+			OpenApi.annotations({
+				identifier: "listEnvironments",
+				summary: "List deployment environments",
+				description:
+					"Lists the deployment environments observed in an explicit time window, in name order. The list is unpaginated — `has_more` is always false — because an organization has tens of environments, not thousands. Requires `environments:read`.",
+			}),
+		),
+	)
+	.prefix("/v2/environments")
+	.middleware(AuthorizationV2)
+	.annotateMerge(
+		OpenApi.annotations({
+			title: "Environments",
+			description: "The deployment environments telemetry has been observed in.",
 		}),
 	) {}
 
@@ -917,7 +1276,7 @@ export class V2ServiceMapApiGroup extends HttpApiGroup.make("serviceMap")
 		HttpApiEndpoint.get("retrieve", "/", {
 			query: V2ServiceMapQuery,
 			success: V2ServiceMap,
-			error: [...commonErrors],
+			error: warehouseWindowErrors,
 		}).annotateMerge(
 			OpenApi.annotations({
 				identifier: "getServiceMap",
@@ -929,7 +1288,6 @@ export class V2ServiceMapApiGroup extends HttpApiGroup.make("serviceMap")
 	)
 	.prefix("/v2/service_map")
 	.middleware(AuthorizationV2)
-	.middleware(V2SchemaErrors)
 	.annotateMerge(
 		OpenApi.annotations({
 			title: "Service Map",

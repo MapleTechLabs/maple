@@ -1,10 +1,11 @@
 import { Link } from "@tanstack/react-router"
 import type { ErrorIssueSampleTrace } from "@maple/domain/http"
-import { Empty, EmptyHeader, EmptyTitle } from "@maple/ui/components/ui/empty"
+import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@maple/ui/components/ui/empty"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@maple/ui/components/ui/table"
 import { cn } from "@maple/ui/lib/utils"
 import { formatRelativeTime } from "@maple/ui/lib/time-format"
-import { normalizeTimestampInput } from "@/lib/timezone-format"
+import { formatTimestampInTimezone } from "@/lib/timezone-format"
+import { useTimezonePreference } from "@/hooks/use-timezone-preference"
 import { ServiceDot } from "@maple/ui/components/service-dot"
 
 interface IssueOccurrencesTableProps {
@@ -12,11 +13,17 @@ interface IssueOccurrencesTableProps {
 }
 
 export function IssueOccurrencesTable({ traces }: IssueOccurrencesTableProps) {
+	const { effectiveTimezone } = useTimezonePreference()
+
 	if (traces.length === 0) {
 		return (
 			<Empty>
 				<EmptyHeader>
-					<EmptyTitle>No samples in window</EmptyTitle>
+					<EmptyTitle>No samples in this window</EmptyTitle>
+					<EmptyDescription>
+						This fingerprint was not seen in the selected range. Widen the time range to find
+						traces to open.
+					</EmptyDescription>
 				</EmptyHeader>
 			</Empty>
 		)
@@ -37,7 +44,10 @@ export function IssueOccurrencesTable({ traces }: IssueOccurrencesTableProps) {
 					<TableRow key={`${trace.traceId}-${trace.spanId}`}>
 						<TableCell
 							className="tabular-nums text-muted-foreground"
-							title={new Date(normalizeTimestampInput(trace.timestamp)).toLocaleString()}
+							title={formatTimestampInTimezone(trace.timestamp, {
+								timeZone: effectiveTimezone,
+								withYear: true,
+							})}
 						>
 							{formatRelativeTime(trace.timestamp)}
 						</TableCell>

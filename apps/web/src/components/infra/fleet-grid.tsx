@@ -104,7 +104,10 @@ export function FleetGrid({ hosts }: FleetGridProps) {
 	)
 
 	const legend = useMemo<HoneycombLegendItem[]>(() => {
-		const c: Record<HoneycombTone, number> = { ok: 0, warn: 0, crit: 0, stale: 0 }
+		const c: Record<HoneycombTone, number> = { ok: 0, warn: 0, crit: 0, stale: 0 } satisfies Record<
+			HoneycombTone,
+			number
+		>
 		for (const a of annotated) c[a.tone]++
 		return [
 			{ tone: "ok", label: "Healthy", count: c.ok },
@@ -115,7 +118,7 @@ export function FleetGrid({ hosts }: FleetGridProps) {
 	}, [annotated])
 
 	const actions = (
-		<div className="flex items-center gap-1">
+		<div className="flex flex-wrap items-center gap-1">
 			<span className="mr-1 text-[11px] text-muted-foreground">Sort</span>
 			{SORT_OPTIONS.map((opt) => (
 				<button

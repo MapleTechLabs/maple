@@ -3,10 +3,12 @@ import { Schema } from "effect"
 
 import { AlertsOverviewTab } from "@/components/alerts/overview/alerts-overview-tab"
 import { AlertsSettingsTab, useDestinationManager } from "@/components/alerts/overview/settings-tab"
+import { DestinationDialog } from "@/components/alerts/destination-dialog"
+import { OpenDestinationDialogProvider } from "@/components/alerts/destination-manager-context"
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
 import { PlusIcon } from "@/components/icons"
 import { useAlertDestinationsList } from "@/hooks/use-alerts-list"
-import { MapleApiAtomClient } from "@/lib/services/common/atom-client"
+import { retainedQuery } from "@/lib/services/common/atom-client"
 import { BooleanFromStringParam, OptionalStringArrayParam } from "@/lib/search-params"
 import { Result, useAtomValue } from "@/lib/effect-atom"
 import { Button } from "@maple/ui/components/ui/button"
@@ -43,7 +45,7 @@ function AlertsPage() {
 
 	// Session + destinations back the header action only; the tabs own the rest
 	// of their data (the atoms are shared, so this costs no extra requests).
-	const sessionResult = useAtomValue(MapleApiAtomClient.query("auth", "session", {}))
+	const sessionResult = useAtomValue(retainedQuery("auth", "session", {}))
 	const { result: destinationsResult } = useAlertDestinationsList()
 	const isAdmin = Result.builder(sessionResult)
 		.onSuccess((session) => session.roles.some((role) => role === "root" || role === "org:admin"))
@@ -88,28 +90,34 @@ function AlertsPage() {
 		)
 
 	return (
-		<DashboardLayout.Root>
-			<DashboardLayout.Breadcrumbs items={[{ label: "Alerts" }]} />
-			<DashboardLayout.Body>
-				<DashboardLayout.Content>
-					<DashboardLayout.Sticky>
-						<DashboardLayout.Header
-							title="Alerts"
-							description="Monitor your services and get notified when things go wrong."
-						>
-							{headerActions}
-						</DashboardLayout.Header>
-						{tabBar}
-					</DashboardLayout.Sticky>
-					<DashboardLayout.Scroll>
-						{activeTab === "overview" ? (
-							<AlertsOverviewTab />
-						) : (
-							<AlertsSettingsTab manager={destinationManager} isAdmin={isAdmin} />
-						)}
-					</DashboardLayout.Scroll>
-				</DashboardLayout.Content>
-			</DashboardLayout.Body>
-		</DashboardLayout.Root>
+		<OpenDestinationDialogProvider value={isAdmin ? () => destinationManager.openDialog() : null}>
+			<DashboardLayout.Root>
+				<DashboardLayout.Breadcrumbs items={[{ label: "Alerts" }]} />
+				<DashboardLayout.Body>
+					<DashboardLayout.Content>
+						<DashboardLayout.Sticky>
+							<DashboardLayout.Header title="Alerts">{headerActions}</DashboardLayout.Header>
+							{tabBar}
+						</DashboardLayout.Sticky>
+						<DashboardLayout.Scroll>
+							{activeTab === "overview" ? (
+								<AlertsOverviewTab />
+							) : (
+								<AlertsSettingsTab manager={destinationManager} isAdmin={isAdmin} />
+							)}
+						</DashboardLayout.Scroll>
+					</DashboardLayout.Content>
+				</DashboardLayout.Body>
+				<DestinationDialog
+					open={destinationManager.dialogOpen}
+					onOpenChange={destinationManager.setDialogOpen}
+					form={destinationManager.form}
+					onFormChange={destinationManager.setForm}
+					isEditing={destinationManager.isEditing}
+					saving={destinationManager.saving}
+					onSave={destinationManager.save}
+				/>
+			</DashboardLayout.Root>
+		</OpenDestinationDialogProvider>
 	)
 }

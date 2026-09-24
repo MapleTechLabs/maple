@@ -59,12 +59,22 @@ describe("makeBucketLabeler", () => {
 		expect(label(buckets[0]!)).not.toMatch(/Jul/)
 	})
 
-	it("prefixes the date once the buckets cross 24h", () => {
+	it("prefixes the date and compacts the time once the buckets cross 24h", () => {
 		const buckets = ["2026-07-01T10:00:00Z", "2026-07-04T10:00:00Z"]
 		const label = makeBucketLabeler(buckets)
-		const iso = "2026-07-03T14:35:00Z"
-		const expectedDate = new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric" })
-		expect(label(iso)).toBe(`${expectedDate}, ${isoToLabel(iso)}`)
+		const onTheHour = new Date(2026, 6, 3, 15, 0)
+		const offTheHour = new Date(2026, 6, 3, 14, 35)
+		const expectedDate = onTheHour.toLocaleDateString("en-US", { month: "short", day: "numeric" })
+		expect(label(onTheHour.toISOString())).toBe(`${expectedDate}, 3pm`)
+		expect(label(offTheHour.toISOString())).toBe(`${expectedDate}, 2:35pm`)
+		expect(label(new Date(2026, 6, 3, 0, 0).toISOString())).toBe(`${expectedDate}, 12am`)
+	})
+
+	it("labels in the given zone", () => {
+		const buckets = ["2026-07-01T10:00:00Z", "2026-07-04T10:00:00Z"]
+		// 15:00Z is 00:00 the next day in Tokyo.
+		expect(makeBucketLabeler(buckets, "Asia/Tokyo")("2026-07-03T15:00:00Z")).toBe("Jul 4, 12am")
+		expect(isoToLabel("2026-07-03T15:30:00Z", "Asia/Tokyo")).toBe("12:30 AM")
 	})
 
 	it("falls back to time-of-day for empty or unparsable input", () => {

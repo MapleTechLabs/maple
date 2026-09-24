@@ -2,7 +2,7 @@ import { describe, it } from "@effect/vitest"
 import { getActiveSink } from "@maple/browser-session"
 import { Effect } from "effect"
 import { afterEach, beforeEach, expect, vi } from "vitest"
-import { make } from "./flushable.js"
+import { make as makeTelemetry } from "./flushable.js"
 import { resetStandaloneSessionForTests } from "./standalone-session.js"
 import { identify } from "./user.js"
 
@@ -10,10 +10,24 @@ import { identify } from "./user.js"
 // `/v1/sessionReplays/meta` rows (active on setup, ended with observed trace
 // ids on tab-hide) when no `@maple-dev/browser` sink is on the page.
 
+interface MetaRowView {
+	readonly session_id: string
+	readonly status: string
+	readonly version: number
+	readonly service_name: string
+	readonly url_initial: string
+	readonly user_id: string
+	readonly click_count: number
+	readonly error_count: number
+	readonly trace_ids: ReadonlyArray<string>
+	readonly resource_attributes: Record<string, string>
+}
+
 interface MetaPost {
 	readonly url: string
-	readonly row: Record<string, any>
+	readonly row: MetaRowView
 	readonly keepalive: boolean | undefined
+	readonly authorization: string | null
 }
 
 const setupFetch = () => {
@@ -22,22 +36,31 @@ const setupFetch = () => {
 	globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
 		const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url
 		if (url.includes("/v1/sessionReplays/meta") && typeof init?.body === "string") {
-			metaPosts.push({ url, row: JSON.parse(init.body.trim()), keepalive: init?.keepalive })
+			metaPosts.push({
+				url,
+				row: JSON.parse(init.body.trim()),
+				keepalive: init?.keepalive,
+				authorization: new Headers(init.headers).get("authorization"),
+			})
 		}
 		return new Response(null, { status: 200 })
 	}) as typeof fetch
 	return { metaPosts, restore: () => void (globalThis.fetch = original) }
 }
 
-const stubWindow = () => {
+const stubBrowser = () => {
 	const store = new Map<string, string>()
-	vi.stubGlobal("window", {
-		sessionStorage: {
-			getItem: (k: string) => store.get(k) ?? null,
-			setItem: (k: string, v: string) => void store.set(k, v),
-		},
-		location: { href: "https://app.example.com/dashboard" },
-	})
+	vi.stubGlobal(
+		"window",
+		Object.assign(new EventTarget(), {
+			sessionStorage: {
+				getItem: (k: string) => store.get(k) ?? null,
+				setItem: (k: string, v: string) => void store.set(k, v),
+			},
+			location: { href: "https://app.example.com/dashboard" },
+		}),
+	)
+	vi.stubGlobal("document", Object.assign(new EventTarget(), { cookie: "", visibilityState: "visible" }))
 	return store
 }
 
@@ -46,19 +69,28 @@ const baseConfig = {
 	endpoint: "https://collector.test",
 	ingestKey: "secret",
 	environment: "test",
-	serviceVersion: "abc123",
+	serviceVersion: "63c0c0321644dce742e92dfd09fb96e907649bc4",
 	autoFlushInterval: false as const,
 	flushOnUnload: false as const,
+	replay: { enabled: false },
 }
 
 describe("standalone session emission (client)", () => {
 	let restore: () => void
+	const clients: Array<ReturnType<typeof makeTelemetry>> = []
+	const make = (config: Parameters<typeof makeTelemetry>[0]) => {
+		const client = makeTelemetry(config)
+		clients.push(client)
+		return client
+	}
 
 	beforeEach(() => {
 		resetStandaloneSessionForTests()
 	})
 
-	afterEach(() => {
+	afterEach(async () => {
+		await Promise.all(clients.splice(0).map((client) => client.dispose()))
+		resetStandaloneSessionForTests()
 		identify(undefined)
 		restore?.()
 		vi.unstubAllGlobals()
@@ -67,7 +99,7 @@ describe("standalone session emission (client)", () => {
 	it("posts an active session row on make() with the stored session id", async () => {
 		const { metaPosts, restore: r } = setupFetch()
 		restore = r
-		const store = stubWindow()
+		const store = stubBrowser()
 
 		make(baseConfig)
 
@@ -82,7 +114,9 @@ describe("standalone session emission (client)", () => {
 		expect(row.service_name).toBe("unit-test")
 		expect(row.url_initial).toBe("https://app.example.com/dashboard")
 		expect(row.resource_attributes["deployment.environment"]).toBe("test")
-		expect(row.resource_attributes["deployment.commit_sha"]).toBe("abc123")
+		expect(row.resource_attributes["vcs.ref.head.revision"]).toBe(
+			"63c0c0321644dce742e92dfd09fb96e907649bc4",
+		)
 		// This path posts metadata only — no rrweb chunks follow it. The marker is
 		// what lets the Sessions UI say "not recorded" instead of rendering a
 		// player over nothing.
@@ -92,7 +126,7 @@ describe("standalone session emission (client)", () => {
 	it("normalizes cleared identity to an anonymous session row", async () => {
 		const { metaPosts, restore: r } = setupFetch()
 		restore = r
-		stubWindow()
+		stubBrowser()
 		identify("user_to_clear")
 		identify(undefined)
 
@@ -105,7 +139,7 @@ describe("standalone session emission (client)", () => {
 	it("keeps persisted click/error totals and adds live capture deltas", async () => {
 		const { metaPosts, restore: r } = setupFetch()
 		restore = r
-		const store = stubWindow()
+		const store = stubBrowser()
 		store.set(
 			"maple.session",
 			JSON.stringify({
@@ -145,7 +179,7 @@ describe("standalone session emission (client)", () => {
 	it("keeps the session alive while a second client runtime still holds it", async () => {
 		const { metaPosts, restore: r } = setupFetch()
 		restore = r
-		stubWindow()
+		stubBrowser()
 
 		const first = make(baseConfig)
 		const second = make(baseConfig)
@@ -165,7 +199,7 @@ describe("standalone session emission (client)", () => {
 	it("treats a repeated dispose of the same runtime as a no-op", async () => {
 		const { metaPosts, restore: r } = setupFetch()
 		restore = r
-		stubWindow()
+		stubBrowser()
 
 		const telemetry = make(baseConfig)
 		await new Promise((resolve) => setTimeout(resolve, 0))
@@ -178,13 +212,13 @@ describe("standalone session emission (client)", () => {
 
 	it("posts nothing when the @maple-dev/browser sink owns the session", async () => {
 		const { metaPosts, restore: rf } = setupFetch()
-		const g = globalThis as Record<string, any>
+		const g = globalThis as Record<string, unknown>
 		g.__MAPLE_BROWSER_SESSION__ = { sessionId: "sess-1", recordTraceId: () => {} }
 		restore = () => {
 			rf()
 			delete g.__MAPLE_BROWSER_SESSION__
 		}
-		stubWindow()
+		stubBrowser()
 
 		make(baseConfig)
 
@@ -192,23 +226,32 @@ describe("standalone session emission (client)", () => {
 		expect(metaPosts.length).toBe(0)
 	})
 
-	it("posts nothing during SSR or without an ingest key", async () => {
+	it("posts nothing during SSR", async () => {
 		const { metaPosts, restore: r } = setupFetch()
 		restore = r
 
 		make(baseConfig) // node: no window
 
-		stubWindow()
-		make({ ...baseConfig, ingestKey: undefined }) // window but no key
-
 		await new Promise((resolve) => setTimeout(resolve, 0))
 		expect(metaPosts.length).toBe(0)
+	})
+
+	it("posts without Authorization when no ingest key is set, for a proxy to add", async () => {
+		const { metaPosts, restore: r } = setupFetch()
+		restore = r
+		stubBrowser()
+
+		make({ ...baseConfig, ingestKey: undefined })
+
+		await new Promise((resolve) => setTimeout(resolve, 0))
+		expect(metaPosts.map((post) => post.row.status)).toEqual(["active"])
+		expect(metaPosts[0]!.authorization).toBeNull()
 	})
 
 	it("attaches observed trace ids to the ended row and rotates sessions", async () => {
 		const { metaPosts, restore: r } = setupFetch()
 		restore = r
-		const store = stubWindow()
+		const store = stubBrowser()
 
 		const telemetry = make(baseConfig)
 		await Effect.runPromise(

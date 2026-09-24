@@ -1,9 +1,13 @@
 import { describe, it } from "@effect/vitest"
 import { ok, strictEqual } from "node:assert"
+import { execFileSync } from "node:child_process"
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { mkdtemp, readFile, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { Duration, Effect } from "effect"
+import * as BunServices from "@effect/platform-bun/BunServices"
+import { Duration, Effect, Exit } from "effect"
+import { FileSystem } from "effect/FileSystem"
 import { FetchHttpClient } from "effect/unstable/http"
 import {
 	__testables,
@@ -181,4 +185,120 @@ describe("update HTTP", () => {
 			await rm(dir, { recursive: true, force: true })
 		}
 	})
+})
+
+describe("extractTar", () => {
+	// Real `tar` through ChildProcess: the conversion away from Bun.spawn has to
+	// keep both the success path and the stderr-bearing failure path intact.
+	it("extracts a real tarball", () =>
+		Effect.runPromise(
+			Effect.gen(function* () {
+				const dir = mkdtempSync(join(tmpdir(), "maple-extract-"))
+				mkdirSync(join(dir, "src", "bundle"), { recursive: true })
+				writeFileSync(join(dir, "src", "bundle", "maple"), "#!/bin/sh\necho hi\n")
+				execFileSync("tar", ["-czf", join(dir, "b.tar.gz"), "-C", join(dir, "src"), "bundle"])
+				mkdirSync(join(dir, "out"))
+				yield* __testables.extractTar(join(dir, "b.tar.gz"), join(dir, "out"))
+				ok(existsSync(join(dir, "out", "bundle", "maple")), "bundle was not extracted")
+				strictEqual(
+					readFileSync(join(dir, "out", "bundle", "maple"), "utf8").includes("echo hi"),
+					true,
+				)
+				rmSync(dir, { recursive: true, force: true })
+			}).pipe(Effect.provide(BunServices.layer)),
+		))
+
+	it("reports tar's own diagnostics on a corrupt archive", () =>
+		Effect.runPromise(
+			Effect.gen(function* () {
+				const dir = mkdtempSync(join(tmpdir(), "maple-extract-bad-"))
+				writeFileSync(join(dir, "b.tar.gz"), "definitely not a gzip stream")
+				const error = yield* Effect.flip(__testables.extractTar(join(dir, "b.tar.gz"), dir))
+				ok(
+					error.message.startsWith("could not extract bundle:"),
+					`unexpected message: ${error.message}`,
+				)
+				// Proves stderr was drained rather than dropped with the pipe.
+				ok(error.message.length > "could not extract bundle: tar exited 1: ".length)
+				rmSync(dir, { recursive: true, force: true })
+			}).pipe(Effect.provide(BunServices.layer)),
+		))
+})
+
+describe("mapFsError", () => {
+	// FileSystem reports EACCES as a PlatformError whose `reason._tag` is
+	// "PermissionDenied"; the old `.code` check could not see through that, which
+	// would have silently dropped the actionable install-dir advice.
+	it("keeps the installer advice for a real permission failure", () =>
+		Effect.runPromise(
+			Effect.gen(function* () {
+				const dir = mkdtempSync(join(tmpdir(), "maple-perm-"))
+				const locked = join(dir, "locked")
+				mkdirSync(locked)
+				chmodSync(locked, 0o500)
+				const fs = yield* FileSystem
+				const failure = yield* Effect.flip(fs.makeDirectory(join(locked, "child")))
+				const mapped = __testables.mapFsError(failure, locked)
+				ok(
+					mapped.message.includes("re-run the installer"),
+					`permission advice was lost: ${mapped.message}`,
+				)
+				chmodSync(locked, 0o700)
+				rmSync(dir, { recursive: true, force: true })
+			}).pipe(Effect.provide(BunServices.layer)),
+		))
+
+	it("passes other failures through with their own message", () => {
+		strictEqual(__testables.mapFsError(new Error("disk on fire"), "/tmp/x").message, "disk on fire")
+	})
+})
+
+describe("swapBundlePair", () => {
+	const layout = async () => {
+		const { mkdtemp, mkdir, writeFile } = await import("node:fs/promises")
+		const { tmpdir } = await import("node:os")
+		const root = await mkdtemp(join(tmpdir(), "maple-update-swap-"))
+		const installDir = join(root, "install")
+		const srcDir = join(root, "src")
+		const tmpDir = join(root, "tmp")
+		await mkdir(installDir, { recursive: true })
+		await mkdir(srcDir, { recursive: true })
+		await mkdir(tmpDir, { recursive: true })
+		await writeFile(join(installDir, "maple"), "old-maple")
+		await writeFile(join(installDir, "libchdb.so"), "old-lib")
+		return { root, installDir, srcDir, tmpDir }
+	}
+
+	// Plain `it` + `Effect.runPromise` (see archive-candidate-child.test.ts):
+	// `it.effect` hangs on real fs work under bun test.
+	it("installs both files together", () =>
+		Effect.runPromise(
+			Effect.gen(function* () {
+				const { root, installDir, srcDir, tmpDir } = yield* Effect.promise(layout)
+				const fs = yield* FileSystem
+				yield* fs.writeFileString(join(srcDir, "maple"), "new-maple")
+				yield* fs.writeFileString(join(srcDir, "libchdb.so"), "new-lib")
+				yield* __testables.swapBundlePair(srcDir, installDir, tmpDir)
+				strictEqual(yield* fs.readFileString(join(installDir, "maple")), "new-maple")
+				strictEqual(yield* fs.readFileString(join(installDir, "libchdb.so")), "new-lib")
+				yield* fs.remove(root, { recursive: true, force: true })
+			}).pipe(Effect.provide(BunServices.layer)),
+		))
+
+	it("restores the matched old pair when the second rename fails", () =>
+		Effect.runPromise(
+			Effect.gen(function* () {
+				const { root, installDir, srcDir, tmpDir } = yield* Effect.promise(layout)
+				const fs = yield* FileSystem
+				// Only the executable extracted — the library rename will fail after
+				// the maple swap already happened. The old code left new-maple beside
+				// old-lib; the swap must put the matched old pair back instead.
+				yield* fs.writeFileString(join(srcDir, "maple"), "new-maple")
+				const exit = yield* __testables.swapBundlePair(srcDir, installDir, tmpDir).pipe(Effect.exit)
+				ok(Exit.isFailure(exit), "swap must report the failure")
+				strictEqual(yield* fs.readFileString(join(installDir, "maple")), "old-maple")
+				strictEqual(yield* fs.readFileString(join(installDir, "libchdb.so")), "old-lib")
+				yield* fs.remove(root, { recursive: true, force: true })
+			}).pipe(Effect.provide(BunServices.layer)),
+		))
 })

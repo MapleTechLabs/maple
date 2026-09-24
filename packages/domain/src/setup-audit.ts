@@ -16,6 +16,27 @@
 // tested (delivery works fine without ever pressing Test), onboarding checklist incomplete (owned by
 // the onboarding surface). A check that fires on every healthy org is noise, not an audit.
 
+import { Schema } from "effect"
+import { HttpTaggedError } from "./http/error-policy"
+
+export class SetupAuditUnavailableError extends HttpTaggedError<SetupAuditUnavailableError>()(
+	"@maple/http/errors/SetupAuditUnavailableError",
+	{
+		message: Schema.String,
+		operation: Schema.String,
+		cause: Schema.Defect(),
+	},
+	{
+		status: 503,
+		code: "setup_audit_unavailable",
+		title: "Setup audit is temporarily unavailable",
+		message: "The setup audit is temporarily unavailable. Retry in a few seconds.",
+		retry: "backoff",
+		recovery: "retry",
+		exposure: "redacted",
+	},
+) {}
+
 export type AuditSeverity = "critical" | "warn" | "info"
 export type AuditStatus = "pass" | "fail" | "skip"
 
@@ -97,12 +118,10 @@ export interface SetupAuditReport {
 	readonly openRecommendationCount: number
 }
 
-// ---------------------------------------------------------------------------
 // Inputs
 //
 // Flat readonly structs of exactly the fields the checks read — never Drizzle row types or ClickHouse
 // row shapes. That boundary is what keeps this module driver-free and its tests infra-free.
-// ---------------------------------------------------------------------------
 
 export interface AuditAlertRule {
 	readonly id: string
@@ -200,7 +219,7 @@ export interface AuditServiceUsage {
 	readonly metricCount: number
 }
 
-export interface AuditSpanShape {
+export interface AuditSpanProfile {
 	readonly serviceName: string
 	readonly spanCount: number
 	readonly errorCount: number
@@ -233,7 +252,7 @@ export interface WarehouseAuditInputs {
 	readonly attributeKeys: ReadonlyArray<AuditAttributeKey>
 	/** Per-service signal volumes — the answer to "what is this service actually sending". */
 	readonly serviceUsage: ReadonlyArray<AuditServiceUsage>
-	readonly spanShape: ReadonlyArray<AuditSpanShape>
+	readonly spanShape: ReadonlyArray<AuditSpanProfile>
 	readonly logSeverity: ReadonlyArray<{
 		readonly serviceName: string
 		readonly severityText: string
@@ -291,9 +310,7 @@ export interface SetupAuditInputs {
 	readonly warehouse: WarehouseAuditInputs | undefined
 }
 
-// ---------------------------------------------------------------------------
 // Helpers
-// ---------------------------------------------------------------------------
 
 /** How many affected entities a single finding carries; the rest are counted, not listed. */
 const AFFECTED_LIMIT = 20
@@ -364,9 +381,7 @@ const resourceKeyCheck = (
 	},
 })
 
-// ---------------------------------------------------------------------------
 // Checks
-// ---------------------------------------------------------------------------
 
 const alertingChecks: ReadonlyArray<AuditCheck> = [
 	{
@@ -822,10 +837,8 @@ const integrationChecks: ReadonlyArray<AuditCheck> = [
 	},
 ]
 
-// ---------------------------------------------------------------------------
 // Telemetry checks — what you are actually ingesting, and whether it follows the
 // conventions Maple's features read.
-// ---------------------------------------------------------------------------
 
 /** Below this a service's log volume is too small for a correlation rate to mean anything. */
 const LOG_CORRELATION_MIN_LOGS = 20
@@ -847,12 +860,14 @@ const UNSTRUCTURED_LOG_KEY_LIMIT = 3
 const STANDARD_SEVERITIES = new Set(["TRACE", "DEBUG", "INFO", "WARN", "WARNING", "ERROR", "FATAL"])
 
 /**
- * Attribute keys people invent instead of the semconv names Maple reads. `deployment.commit_sha` is
- * deliberately absent — Maple's own rollups pre-extract it, so it is supported, not invented.
+ * Attribute keys people invent instead of the semconv names Maple reads. `deployment.commit_sha`
+ * was Maple's own vendor key for the commit and is retired: nothing reads it any more, so it is
+ * flagged like any other parallel spelling of `vcs.ref.head.revision`.
  */
 const INVENTED_RESOURCE_KEYS = [
 	"env",
 	"environment",
+	"deployment.commit_sha",
 	"git.repo",
 	"git.commit",
 	"git.sha",
@@ -1097,7 +1112,7 @@ const attributeQualityChecks: ReadonlyArray<AuditCheck> = [
 	resourceKeyCheck(
 		"RES-05",
 		"Deploys are identifiable",
-		["vcs.ref.head.revision", "deployment.commit_sha"],
+		["vcs.ref.head.revision"],
 		"No commit revision on any resource. Release markers and per-deploy comparisons have nothing to anchor to.",
 		"Set `vcs.ref.head.revision` best-effort from the build environment (`VERCEL_GIT_COMMIT_SHA`, `GITHUB_SHA`, …). Never shell out to git at runtime.",
 	),
@@ -1405,13 +1420,11 @@ const serviceMapChecks: ReadonlyArray<AuditCheck> = [
 	},
 ]
 
-// ---------------------------------------------------------------------------
 // Trace completeness
 //
 // These read a short, lagged, possibly trace-sampled window, so they speak in rates and never claim
 // exact counts. Crucially they cannot detect ingest loss — the warehouse only ever sees what arrived.
 // Every finding below is phrased as an internal-consistency result, which is what it actually is.
-// ---------------------------------------------------------------------------
 
 /** Below this many observed children a service's orphan rate is noise. */
 const TRACE_MIN_SAMPLE = 50
@@ -1540,9 +1553,7 @@ export const SETUP_AUDIT_CHECKS: ReadonlyArray<AuditCheck> = [
 	...integrationChecks,
 ]
 
-// ---------------------------------------------------------------------------
 // Runner
-// ---------------------------------------------------------------------------
 
 const emptySummary: SetupAuditSummary = { critical: 0, warn: 0, info: 0, pass: 0, skip: 0 }
 

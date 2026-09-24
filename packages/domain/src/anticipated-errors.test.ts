@@ -1,15 +1,19 @@
 import { describe, expect, it } from "vitest"
 import { ANTICIPATED_ERROR_IDENTIFIERS, isAnticipatedErrorIdentifier } from "./anticipated-errors"
+import { deriveAnticipatedIdentifiers } from "./anticipated-errors-derive"
 
 describe("ANTICIPATED_ERROR_IDENTIFIERS", () => {
-	it("includes legacy tags and v2 Schema.Error names for 4xx business errors", () => {
+	it("matches the reflection-derived set", () => {
+		expect([...ANTICIPATED_ERROR_IDENTIFIERS].sort()).toEqual([...deriveAnticipatedIdentifiers()].sort())
+	})
+
+	it("includes exact tagged-error identifiers for 4xx business errors", () => {
 		for (const identifier of [
 			"@maple/http/errors/UnauthorizedError",
 			"@maple/http/errors/RawSqlValidationError",
-			"@maple/http/ai-triage/AiTriageNotFoundError",
 			"@maple/http/errors/IntegrationsNotConnectedError",
 			"@maple/http/v2/InvalidRequestError",
-			"@maple/http/v2/AuthenticationError",
+			"@maple/http/v2/InvalidCredentialsError",
 			"@maple/http/v2/RateLimitError",
 		]) {
 			expect(isAnticipatedErrorIdentifier(identifier), identifier).toBe(true)
@@ -20,14 +24,14 @@ describe("ANTICIPATED_ERROR_IDENTIFIERS", () => {
 		for (const identifier of [
 			"@maple/http/errors/WarehouseQueryError",
 			"@maple/http/errors/QueryEngineTimeoutError",
-			"@maple/http/v2/ApiError",
-			"@maple/http/v2/ServiceUnavailableError",
+			"@maple/http/v2/UnexpectedError",
+			"@maple/http/v2/WorkerUnavailableError",
 		]) {
 			expect(isAnticipatedErrorIdentifier(identifier), identifier).toBe(false)
 		}
 	})
 
-	it("derives a non-trivial set (reflection still works)", () => {
+	it("contains a non-trivial generated set", () => {
 		expect(ANTICIPATED_ERROR_IDENTIFIERS.size).toBeGreaterThan(25)
 	})
 })

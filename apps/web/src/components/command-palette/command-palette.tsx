@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from "react"
-import { Link } from "@tanstack/react-router"
+import { useMemo, useState, type KeyboardEvent } from "react"
 import Fuse, { type IFuseOptions } from "fuse.js"
+import { Link } from "@tanstack/react-router"
 import { useTheme } from "@maple/ui/hooks/use-theme"
 import {
 	Command,
@@ -23,12 +23,14 @@ import {
 	KeyboardIcon,
 	MoonIcon,
 	SunIcon,
+	UserIcon,
 } from "@/components/icons"
+import { isClerkAuthEnabled } from "@/lib/services/common/auth-mode"
 import { openGlobalChat } from "@/components/chat/global-chat-sheet"
 import { paletteNavItems } from "@/components/dashboard/nav-items"
 import { useDashboardPreferences } from "@/hooks/use-dashboard-preferences"
 import { useDashboardsRead } from "@/hooks/use-dashboard-store"
-import { useInfraEnabled } from "@/hooks/use-infra-enabled"
+import { useOrganizationFeatureFlags } from "@/hooks/use-organization-feature-flags"
 import { useAtomValue } from "@/lib/effect-atom"
 import { Result } from "@/lib/effect-atom"
 import { getTracesFacetValuesResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
@@ -114,35 +116,33 @@ function PaletteContent({
 	// query only fires once the palette is first opened.
 	const { dashboards } = useDashboardsRead()
 	const { favorites } = useDashboardPreferences()
-	const infraEnabled = useInfraEnabled()
 	const servicesFacetResult = useAtomValue(getTracesFacetValuesResultAtom({ data: { facet: "service" } }))
 	const serviceNames = Result.builder(servicesFacetResult)
 		.onSuccess((r) => r.data.map((item) => item.name))
 		.orElse(() => [])
 
-	// The forced-open Autocomplete stopPropagation()s Escape (and swallows ⌘K)
-	// before the Dialog or the document-level hotkey manager sees it, so handle
-	// both from the capture phase while the palette is mounted.
-	useEffect(() => {
-		const onKeyDown = (event: KeyboardEvent) => {
-			if (event.key === "Escape") {
-				event.preventDefault()
-				close()
-			} else if ((event.key === "k" || event.key === "K") && (event.metaKey || event.ctrlKey)) {
-				event.preventDefault()
-				toggle()
-			}
+	// The forced-open Autocomplete swallows Escape and ⌘K. Its parent popup sees
+	// the capture phase first, so keep those actions in the event that caused them.
+	const handleKeyDownCapture = (event: KeyboardEvent) => {
+		if (event.key === "Escape") {
+			event.preventDefault()
+			close()
+		} else if ((event.key === "k" || event.key === "K") && (event.metaKey || event.ctrlKey)) {
+			event.preventDefault()
+			toggle()
 		}
-		document.addEventListener("keydown", onKeyDown, true)
-		return () => document.removeEventListener("keydown", onKeyDown, true)
-	}, [close, toggle])
+	}
+
+	// Flagged-off pages must not be findable by name either, so the palette reads
+	// the same flags the sidebar does and passes them to the same builder.
+	const { flags: featureFlags } = useOrganizationFeatureFlags()
 
 	const entries = useMemo<PaletteEntry[]>(() => {
 		// Sections *and* their children — Traces, Logs, Metrics, Replays, Hosts,
 		// the K8s lists and the integration pages are all reachable by name here,
 		// which is what lets the sidebar fold them into two sections.
 		const navigation: PaletteEntry[] = [
-			...paletteNavItems({ infraEnabled }).map((item) => ({
+			...paletteNavItems(featureFlags).map((item) => ({
 				id: item.id,
 				title: item.title,
 				group: "Navigation" as const,
@@ -158,6 +158,20 @@ function PaletteContent({
 				icon: GearIcon,
 				href: "/settings",
 			},
+			// `/account` redirects away in self-hosted mode, where there is no user record to manage.
+			...(isClerkAuthEnabled
+				? [
+						{
+							id: "nav:/account",
+							title: "Account",
+							group: "Navigation" as const,
+							keywords:
+								"account profile picture name password two-factor 2fa mfa passkey email security sessions devices",
+							icon: UserIcon,
+							href: "/account",
+						},
+					]
+				: []),
 		]
 
 		const serviceEntries: PaletteEntry[] = serviceNames.map((name) => ({
@@ -213,9 +227,7 @@ function PaletteContent({
 		]
 
 		return [...navigation, ...serviceEntries, ...dashboardEntries, ...actions]
-	}, [dashboards, favorites, infraEnabled, serviceNames, theme, setTheme, onShowShortcuts])
-
-	const fuse = useMemo(() => new Fuse(entries, FUSE_OPTIONS), [entries])
+	}, [dashboards, favorites, serviceNames, theme, setTheme, onShowShortcuts, featureFlags])
 
 	// Browse mode shows only a taste of the services list — the full set stays
 	// searchable, but dozens of service rows shouldn't bury Dashboards/Actions.
@@ -223,12 +235,13 @@ function PaletteContent({
 		let serviceCount = 0
 		return entries.filter((entry) => entry.group !== "Services" || serviceCount++ < 5)
 	}, [entries])
+	const fuse = useMemo(() => new Fuse(entries, FUSE_OPTIONS), [entries])
 
-	// `null` => browse mode (empty query); otherwise the ranked Fuse hits.
+	// `null` => browse mode (empty query); otherwise locally ranked hits.
 	const results = useMemo<PaletteEntry[] | null>(() => {
 		const trimmed = query.trim()
 		if (!trimmed) return null
-		return fuse.search(trimmed, { limit: MAX_RESULTS }).map((r) => r.item)
+		return fuse.search(trimmed, { limit: MAX_RESULTS }).map(({ item }) => item)
 	}, [fuse, query])
 
 	const renderEntry = (entry: PaletteEntry) => {
@@ -303,7 +316,7 @@ function PaletteContent({
 	const grouped = groupEntries(results ?? browseEntries)
 
 	return (
-		<CommandDialogPopup>
+		<CommandDialogPopup onKeyDownCapture={handleKeyDownCapture}>
 			<Command
 				inline={false}
 				filter={null}

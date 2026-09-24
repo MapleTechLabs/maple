@@ -1,6 +1,6 @@
 ---
 title: "Maple Local"
-description: "Run Maple as a single binary on your machine — OTLP ingest, an embedded ClickHouse, a query API, and the dashboard, with no cloud and no auth."
+description: "Run the whole of Maple as one binary on your machine: OTLP ingest, an embedded ClickHouse, a query API, the dashboard and a CLI. No account, no containers, nothing to deploy."
 group: "Local Mode"
 order: 1
 ---
@@ -12,58 +12,88 @@ import InstallTabs from "../../components/local/InstallTabs.astro"
 
 <LocalHero />
 
-Local mode is the fastest way to look at OpenTelemetry data — point any OTLP exporter at `localhost`, open the dashboard, and explore traces, logs, and metrics with no account and nothing to deploy. It's the same query engine and UI as hosted Maple, running entirely on your machine. Everything is single-tenant: every row is stored under `org_id = "local"`.
+Maple Local is the full product running on your machine, free, for local development. Point any OpenTelemetry exporter at `localhost`, open the dashboard, and explore traces, logs, metrics, errors, sessions and a service map. It is not a client for the hosted service: nothing here needs an account, and nothing leaves your machine.
 
-## Install
+## What you get
 
-Pick your package manager. Homebrew is the easiest path on macOS and Linux; the install script works anywhere a shell does.
+| Surface | What it is |
+| --- | --- |
+| **OTLP/HTTP ingest** | `POST /v1/{traces,logs,metrics}` on port `4318`, protobuf or JSON, gzip optional. Any OTel SDK works unchanged. |
+| **Dashboard** | The same Maple UI, either auto-updating from `local.maple.dev` or bundled in the binary for offline use. |
+| **CLI** | `maple services`, `maple traces`, `maple errors` and twenty more, printing JSON you can pipe into `jq` or an agent. |
+| **Raw SQL** | `maple query "<sql>"` against the embedded store when the typed commands don't cover it. |
+
+Data lives in `~/.maple/data` and survives restarts. The server writes a restore point every 30 minutes, so a crash costs at most that much telemetry.
+
+## 1. Install
+
+Homebrew is the easiest path on macOS and Linux. The install script works anywhere a shell does.
 
 <InstallTabs />
 
-> Prefer to do it by hand? Download a release bundle (both `maple` + `libchdb`) from [GitHub Releases](https://github.com/Makisuo/maple/releases), or read [`scripts/install.sh`](https://github.com/Makisuo/maple/blob/main/scripts/install.sh) first before piping it to a shell.
+> Prefer to do it by hand? Download a release bundle (both `maple` and `libchdb`) from [GitHub Releases](https://github.com/MapleTechLabs/maple/releases), or read [`scripts/install.sh`](https://github.com/MapleTechLabs/maple/blob/main/scripts/install.sh) before piping it to a shell. Later, `maple update` upgrades a script install in place; Homebrew installs use `brew upgrade maple`.
 
-## Start the server
-
-```bash
-maple start            # OTLP ingest + embedded ClickHouse + query API on :4318
-maple start --offline  # …serve the UI bundled in the binary (no internet, no prompts)
-maple start -d         # …or detached; logs to ~/.maple/maple.log, stop with `maple stop`
-```
-
-`maple start` is the long-lived process: it owns the embedded ClickHouse (chDB) connection and hosts OTLP/HTTP ingest, the `/local/query` API, and (with `--offline`) the dashboard — all on one port that binds loopback by default. Data persists in `~/.maple/data` between runs.
-
-Common flags: `--host` (default `127.0.0.1`), `--advertise-host`, `--port` (default `4318`), `--data-dir` (default `~/.maple/data`), `--offline`, `--background`/`-d`, and `--reset` to wipe an incompatible store before starting. See the [CLI reference](/docs/local-mode/cli-reference#server-commands) for the full list, plus `maple stop` and `maple reset`.
-
-To reach the bundled UI from another machine, opt into the complete unauthenticated listener and print a real client-facing hostname:
+## 2. Start the server
 
 ```bash
-maple start --host 0.0.0.0 --advertise-host maple.home.arpa --offline
+maple start            # ingest + embedded ClickHouse + query API on :4318
+maple start --offline  # …and serve the dashboard from the binary (no internet)
+maple start -d         # …detached; logs to ~/.maple/maple.log, stop with `maple stop`
 ```
 
-This exposes the UI, raw SQL query API, health endpoint, and direct OTLP routes—not just ingest. Use it only on a trusted network or behind TLS with browser-compatible authentication. The bundled UI does not add a Bearer API key or propagate an entry-page query parameter to API requests.
+`maple start` is the one long-lived process. It owns the embedded database and hosts ingest, the query API and, with `--offline`, the dashboard, all on a single port bound to loopback. The startup banner prints the addresses and a link to open.
 
-## Send telemetry
+The flags you are likely to touch:
 
-The server speaks OTLP/HTTP on `POST /v1/{traces,logs,metrics}` (protobuf or JSON, gzip optional) — the same protocol every OpenTelemetry SDK already exports. Point your app at it; no auth header is needed locally:
+| Flag | Default | Use it when |
+| --- | --- | --- |
+| `--port <int>` | `4318` | Something else already listens on 4318 |
+| `--data-dir <path>` | `~/.maple/data` | You want a second, separate store |
+| `--offline` | off | You have no internet, or want the UI same-origin |
+| `--background`, `-d` | off | You want it out of the way; `maple stop` ends it |
+| `--reset` | off | A new binary refuses an old store; wipes live data, keeps checkpoints |
+
+Everything else, including bind and advertise hosts, checkpoint cadence and recovery policy, is in the [CLI reference](/docs/local-mode/cli-reference#maple-start).
+
+## 3. Send telemetry
+
+Point your app at the server. No auth header is needed locally, and most exporters default to protobuf, so this is usually all it takes:
 
 ```bash
 export OTEL_EXPORTER_OTLP_ENDPOINT="http://127.0.0.1:4318"
 export OTEL_SERVICE_NAME="my-service"
 ```
 
-That's it — most exporters default to protobuf and work out of the box. For language-specific setup (custom spans, log correlation, framework auto-instrumentation), follow the [instrumentation guides](/docs/getting-started/introduction). Any data you can already send to hosted Maple flows into local mode unchanged.
+For custom spans, log correlation and framework auto-instrumentation, follow the guide for your language in [Instrument your application](/docs/instrumentation). Anything you can send to hosted Maple flows into the local server unchanged.
 
 <LocalFlow />
 
-## Open the dashboard
+## 4. Open the dashboard
 
-By default `maple start` points you at the auto-updating dashboard hosted at `local.maple.dev`, which talks back to your binary on loopback (the startup banner prints a link with the bound `?port=`). Because that page is a public origin reaching a local server, Chrome may show a one-time "access devices on your local network" prompt.
+The banner links to the dashboard. There are two ways to serve it:
 
-Pass `--offline` to serve the dashboard bundled inside the binary from the configured bind address instead: same-origin, no prompt, and it works with no internet. The banner prints a connection-safe address; wildcard LAN binds should set `--advertise-host` to the hostname another browser will use.
+| | Default (`local.maple.dev`) | `--offline` |
+| --- | --- | --- |
+| Where the UI comes from | Hosted, always the latest build | Bundled inside the binary |
+| Talks to your data over | Loopback, from a public origin | Same origin |
+| Needs internet | Yes, to load the page | No |
+| Browser prompt | Chrome asks once to "access devices on your local network" | None |
+
+Both read the same local store. Pick `--offline` when you are on a plane, behind a strict proxy, or would rather not see the prompt.
+
+### Reaching it from another machine
+
+Bind to all interfaces and print a hostname the other browser will actually use:
+
+```bash
+maple start --host 0.0.0.0 --advertise-host maple.home.arpa --offline
+```
+
+This exposes every route without authentication: the UI, raw SQL, health and OTLP ingest. Use it only on a network you trust, or behind TLS with browser-managed auth such as a session cookie. The bundled UI does not attach API keys to its requests.
 
 ## Query from the terminal
 
-The same binary is also a query CLI. Every command runs against the running server and prints JSON by default (add `--format table` for an aligned table, or `--debug` to see the compiled SQL on stderr):
+The same binary is the query CLI. Every command runs against the running server and prints JSON by default. Add `--format table` for an aligned table, or `--debug` to see the compiled SQL on stderr.
 
 ```bash
 maple services                         # active services at a glance
@@ -74,12 +104,29 @@ maple query "SELECT count() FROM traces"
 
 <LocalCommandGrid />
 
-Most query flags are shared: `--since` (e.g. `30m`, `1h`, `24h`, `7d`) or absolute `--start`/`--end`, `--service`/`-s`, `--env`/`-e`, and `--limit`/`-n`. The full surface — every command, argument, and flag — lives in the [CLI reference](/docs/local-mode/cli-reference).
+Most query commands share the same filters: `--since` (`30m`, `1h`, `24h`, `7d`) or absolute `--start`/`--end`, `--service`/`-s`, `--env`/`-e`, and `--limit`/`-n`. The [CLI reference](/docs/local-mode/cli-reference) has every command, argument and flag.
 
-## Local vs. remote
+## Your data
 
-The same CLI talks to either your local server or a hosted Maple workspace. The mode is resolved per command: an explicit `--local`/`--remote` flag wins, then a pinned default (`maple use local|remote|auto`), then auto-detect — a stored token implies remote, otherwise it probes the local server's `/health`. Run `maple whoami` to see what's resolved. Connect a remote workspace with `maple login`; details are in the [CLI reference](/docs/local-mode/cli-reference#auth-and-configuration).
+- **Where it lives.** `~/.maple/data`, or whatever `--data-dir` you passed. Logs and traces are kept for 30 days, metrics for 90.
+- **Restore points.** The running server refreshes a checkpoint every 30 minutes (`--checkpoint-interval`, `off` to disable). `maple checkpoint` takes one on demand; `maple restore` brings the store back to the last good one and quarantines the current store rather than deleting it.
+- **Starting over.** `maple reset` clears live data and keeps checkpoints. `maple start --reset` does the same in one step after an incompatible upgrade.
+- **Keeping history.** `maple archive` exports sealed days as Parquet you can open in DuckDB, so the hot store stays small without losing anything.
 
-## How it works
+Details, including what happens after an unclean shutdown, are on [Checkpoints & archives](/docs/local-mode/checkpoints-and-archives).
 
-One Bun-compiled binary is both the CLI and the server, talking to ClickHouse in-process via `bun:ffi` → `libchdb` (no subprocess, no second language). For the architecture, the `/local/query` contract, the UI-origin model, and the release bundle, see the [local-mode design doc](https://github.com/Makisuo/maple/blob/main/docs/local-mode.md).
+## One CLI, two backends
+
+The same `maple` also talks to a hosted Maple workspace. Sign in from the terminal and it opens your browser:
+
+```bash
+maple auth login     # browser sign-in; `--with-token` reads a token from stdin instead
+maple whoami         # which backend a command would hit right now
+maple use local      # pin it; `maple use auto` restores detection
+```
+
+Per command, an explicit `--local` or `--remote` wins, then the pinned default, then auto-detect: a stored login means remote, otherwise the CLI probes the local server. Everything except `maple query` works against both. Raw SQL stays local because the hosted warehouse is shared between organisations.
+
+## Under the hood
+
+One compiled binary is both the CLI and the server. It talks to ClickHouse in-process through `libchdb`, so there is no subprocess and no second runtime to install. Short-lived CLI commands and the dashboard read the store over the same `POST /local/query` contract. The architecture, the UI origin model and the release bundle are described in the [local mode design doc](https://github.com/MapleTechLabs/maple/blob/main/docs/local-mode.md).

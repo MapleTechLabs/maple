@@ -18,9 +18,13 @@ import { Kbd } from "@maple/ui/components/ui/kbd"
 import { ChatBubbleSparkleIcon, LayoutLeftIcon, LayoutRightIcon } from "@/components/icons"
 import { openGlobalChat } from "@/components/chat/global-chat-sheet"
 import { ConnectButton } from "@/components/header/connect-button"
+import { OnboardingChecklistButton } from "@/components/header/onboarding-checklist-button"
 import { QuotaBanner } from "@/components/billing/quota-banner"
 import { PaymentFailedBanner } from "@/components/billing/payment-failed-banner"
-import { Link, defaultParseSearch } from "@tanstack/react-router"
+import { SubscriptionEndedBanner } from "@/components/billing/subscription-ended-banner"
+import { AppUpdateBanner } from "@/components/layout/app-update-banner"
+import { Link } from "@tanstack/react-router"
+import { parseSearchFromHref } from "@/lib/href"
 import { isClerkAuthEnabled } from "@/lib/services/common/auth-mode"
 
 /* -------------------------------------------------------------------------------------------------
@@ -45,14 +49,6 @@ import { isClerkAuthEnabled } from "@/lib/services/common/auth-mode"
 interface BreadcrumbEntry {
 	label: string
 	href?: string
-}
-
-function parseSearchFromHref(href: string): { pathname: string; search?: Record<string, unknown> } {
-	const [pathname, queryString] = href.split("?")
-	if (!queryString) {
-		return { pathname }
-	}
-	return { pathname, search: defaultParseSearch(queryString) as Record<string, unknown> }
 }
 
 /** Sidebar + inset + skip link + `PageLayout.Root`. Everything else composes inside. */
@@ -80,7 +76,7 @@ function Root({ children }: { children: React.ReactNode }) {
  */
 function Breadcrumbs({ items, children }: { items: BreadcrumbEntry[]; children?: React.ReactNode }) {
 	return (
-		<header className="flex h-16 shrink-0 items-center gap-2 border-b px-4">
+		<header data-slot="app-topbar" className="flex h-16 shrink-0 items-center gap-2 border-b px-4">
 			<SidebarTrigger className="-ml-1" />
 			<Separator orientation="vertical" className="mr-2 h-4" />
 			<Breadcrumb>
@@ -133,6 +129,7 @@ function Breadcrumbs({ items, children }: { items: BreadcrumbEntry[]; children?:
 						Ask Maple AI <Kbd>C</Kbd>
 					</TooltipContent>
 				</Tooltip>
+				<OnboardingChecklistButton />
 				<ConnectButton />
 				{/* Self-gating: renders only when the sidebar has collapsed to a sheet *and* a
 				    `Filters` region is mounted to open. Both conditions live in `PageLayout`'s
@@ -155,10 +152,15 @@ function Breadcrumbs({ items, children }: { items: BreadcrumbEntry[]; children?:
 	)
 }
 
-/** Billing banners + the horizontal `Filters | Content | RightPanel` row. */
+/** App-shell banners + the horizontal `Filters | Content | RightPanel` row. */
 function Body({ children }: { children: React.ReactNode }) {
 	return (
 		<>
+			{/* Ungated, unlike the billing banners below: a stale bundle is stale
+			    whether or not the deployment uses Clerk, and self-hosted installs
+			    have the same long-lived-tab problem. */}
+			<AppUpdateBanner />
+			{isClerkAuthEnabled && <SubscriptionEndedBanner />}
 			{isClerkAuthEnabled && <PaymentFailedBanner />}
 			{isClerkAuthEnabled && <QuotaBanner />}
 			<PageLayout.Body>{children}</PageLayout.Body>
@@ -167,8 +169,9 @@ function Body({ children }: { children: React.ReactNode }) {
 }
 
 /** Filter rail, flush left of the content and full height. A sheet below `lg`. */
-function Filters({ children }: { children: React.ReactNode }) {
-	return <PageLayout.FilterSidebar>{children}</PageLayout.FilterSidebar>
+/** `width` is a Tailwind class, forwarded for rails whose content needs more than `w-64`. */
+function Filters({ children, width }: { children: React.ReactNode; width?: string }) {
+	return <PageLayout.FilterSidebar width={width}>{children}</PageLayout.FilterSidebar>
 }
 
 /** The main column: `Sticky` (optional) above `Scroll`. */
@@ -177,8 +180,8 @@ function Content({ children }: { children: React.ReactNode }) {
 }
 
 /** Pinned above the scroll area — the page header, and anything else that shouldn't scroll away. */
-function Sticky({ children }: { children: React.ReactNode }) {
-	return <PageLayout.StickyArea>{children}</PageLayout.StickyArea>
+function Sticky({ children, className }: { children: React.ReactNode; className?: string }) {
+	return <PageLayout.StickyArea className={className}>{children}</PageLayout.StickyArea>
 }
 
 /**
@@ -208,8 +211,8 @@ function Header({
 }
 
 /** The scrolling page body. */
-function Scroll({ children }: { children: React.ReactNode }) {
-	return <PageLayout.ScrollArea>{children}</PageLayout.ScrollArea>
+function Scroll({ children, className }: { children: React.ReactNode; className?: string }) {
+	return <PageLayout.ScrollArea className={className}>{children}</PageLayout.ScrollArea>
 }
 
 /**
@@ -227,13 +230,17 @@ function RightPanel({
 	title,
 	/** Widen past the `w-72` default where the rail carries the page's substance. */
 	width,
+	open,
+	onOpenChange,
 }: {
 	children: React.ReactNode
 	title?: string
 	width?: string
+	open?: boolean
+	onOpenChange?: (open: boolean) => void
 }) {
 	return (
-		<PageLayout.RightSidebar title={title} width={width}>
+		<PageLayout.RightSidebar title={title} width={width} open={open} onOpenChange={onOpenChange}>
 			{children}
 		</PageLayout.RightSidebar>
 	)

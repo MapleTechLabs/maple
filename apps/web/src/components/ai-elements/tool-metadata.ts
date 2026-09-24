@@ -105,6 +105,7 @@ const toolLabels: Record<string, string> = {
 	replace_dashboard_widgets: "Replace Widgets",
 	// alerts & incidents
 	list_alert_rules: "List Alert Rules",
+	list_alert_destinations: "List Alert Destinations",
 	get_alert_rule: "Get Alert Rule",
 	create_alert_rule: "Create Alert Rule",
 	update_alert_rule: "Update Alert Rule",
@@ -117,10 +118,16 @@ const toolLabels: Record<string, string> = {
 	search_sessions: "Search Sessions",
 	get_session_traces: "Session Traces",
 	get_session_transcript: "Session Transcript",
+	// agent sessions (AI/LLM agent traces)
+	list_agent_sessions: "Agent Sessions",
+	get_agent_session: "Agent Session",
+	get_agent_tools_overview: "Agent Tool Usage",
+	get_agent_tool_error: "Agent Tool Error",
 	// misc
+	run_sql: "Run SQL",
 	register_agent: "Register Agent",
 	get_event: "Get Event",
-}
+} satisfies Record<string, string>
 
 const toolIcons: Record<string, IconComponent> = {
 	system_health: PulseIcon,
@@ -162,6 +169,7 @@ const toolIcons: Record<string, IconComponent> = {
 	reorder_dashboard_widgets: SlidersIcon,
 	replace_dashboard_widgets: GridIcon,
 	list_alert_rules: BellIcon,
+	list_alert_destinations: BellIcon,
 	get_alert_rule: BellIcon,
 	create_alert_rule: BellIcon,
 	update_alert_rule: BellIcon,
@@ -170,9 +178,71 @@ const toolIcons: Record<string, IconComponent> = {
 	list_alert_checks: CircleCheckIcon,
 	get_incident_timeline: HistoryIcon,
 	update_error_notification_policy: BellIcon,
+	run_sql: DatabaseIcon,
 	search_sessions: HistoryIcon,
 	get_session_traces: HistoryIcon,
 	get_session_transcript: ChatBubbleSparkleIcon,
+	list_agent_sessions: ChatBubbleSparkleIcon,
+	get_agent_session: ChatBubbleSparkleIcon,
+	get_agent_tools_overview: ChartBarTrendUpIcon,
+	get_agent_tool_error: FireIcon,
 	register_agent: IdBadgeIcon,
 	get_event: CircleInfoIcon,
+} satisfies Record<string, IconComponent>
+
+/**
+ * Verbs that survive being turned into a present participle. Maple's tool labels are mostly
+ * verb-first (`Search Traces`, `Update Dashboard`), but a good third of them name a thing
+ * instead (`System Health`, `Incident Timeline`) — and "Systeming Health" is worse than no
+ * live label at all, so those take a generic verb rather than a mangled one.
+ */
+const LABEL_VERBS = new Set([
+	"Add",
+	"Claim",
+	"Comment",
+	"Compare",
+	"Create",
+	"Delete",
+	"Describe",
+	"Diagnose",
+	"Explore",
+	"Find",
+	"Get",
+	"Inspect",
+	"List",
+	"Mine",
+	"Propose",
+	"Query",
+	"Register",
+	"Release",
+	"Remove",
+	"Reorder",
+	"Replace",
+	"Run",
+	"Search",
+	"Set",
+	"Transition",
+	"Update",
+])
+
+/** Consonant-doubling and silent-`e` cases the suffix rule alone gets wrong. */
+const IRREGULAR_PARTICIPLE = new Map([
+	["Get", "Getting"],
+	["Run", "Running"],
+	["Set", "Setting"],
+])
+
+const participle = (verb: string): string =>
+	IRREGULAR_PARTICIPLE.get(verb) ?? (verb.endsWith("e") ? `${verb.slice(0, -1)}ing` : `${verb}ing`)
+
+/**
+ * What a running call is *doing*, for the transcript's live line: `Searching Traces`,
+ * `Updating Dashboard`, `Checking System Health`. The settled row keeps the plain label —
+ * the participle is only right while the call is in flight.
+ */
+export function toolActivity(toolName: string): string {
+	const label = toolLabel(toolName)
+	const [first = "", ...rest] = label.split(" ")
+	if (!LABEL_VERBS.has(first)) return `Checking ${label}`
+	return [participle(first), ...rest].join(" ")
 }

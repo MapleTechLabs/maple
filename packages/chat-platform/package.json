@@ -1,0 +1,27 @@
+{
+	"name": "@maple/chat-platform",
+	"private": true,
+	"type": "module",
+	"sideEffects": false,
+	"exports": {
+		".": "./src/index.ts",
+		"./connectors": "./src/connectors/index.ts",
+		"./manifests": "./src/connectors/manifests.ts"
+	},
+	"scripts": {
+		"test": "vitest run",
+		"typecheck": "tsc --noEmit"
+	},
+	"dependencies": {
+		"@maple/domain": "workspace:*",
+		"@maple/primitives": "workspace:*",
+		"effect": "catalog:effect"
+	},
+	"devDependencies": {
+		"@effect/language-service": "catalog:effect",
+		"@effect/vitest": "catalog:effect",
+		"@types/node": "catalog:tooling",
+		"typescript": "catalog:tooling",
+		"vitest": "catalog:"
+	}
+}

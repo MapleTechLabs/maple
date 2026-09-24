@@ -1,0 +1,21 @@
+import type { IconProps } from "./icon"
+
+/** Inception Labs. */
+function InceptionIcon({ size = 24, className, ...props }: IconProps) {
+	return (
+		<svg
+			xmlns="http://www.w3.org/2000/svg"
+			viewBox="0 0 24 24"
+			width={size}
+			height={size}
+			className={className}
+			fill="currentColor"
+			fillRule="evenodd"
+			aria-hidden="true"
+			{...props}
+		>
+			<path d="M14.767 1H7.884L1 7.883v6.884h6.884V7.883h6.883V1zM9.234 23h6.882L23 16.116V9.233h-6.884v6.883H9.234V23z" />
+		</svg>
+	)
+}
+export { InceptionIcon }

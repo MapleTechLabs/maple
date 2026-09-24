@@ -1,3 +1,16 @@
+//! Load generator for the ingest gateway. Dev tooling, not part of the served
+//! binary.
+#![expect(
+    clippy::cast_precision_loss,
+    reason = "every f64 cast here widens a request/byte counter for rate and percentile math, \
+              where the counters stay many orders of magnitude below 2^53"
+)]
+#![expect(
+    clippy::expect_used,
+    reason = "a load generator that cannot start its own fixtures has nothing to measure, so \
+              failing loudly at setup is the intended behaviour"
+)]
+
 use std::collections::HashMap;
 use std::io::Read;
 use std::path::PathBuf;
@@ -39,6 +52,10 @@ struct LoadConfig {
     max_rss_mb: Option<u64>,
     min_rps: Option<f64>,
     queue_dir: PathBuf,
+    /// Round-trip latency the fake Autumn adds to every billing call. `None`
+    /// leaves `AUTUMN_SECRET_KEY` unset, which is how ingest ran before billing
+    /// existed and how CI runs by default.
+    autumn_latency_ms: Option<u64>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -52,6 +69,17 @@ struct FakeTinybirdState {
     imports: Arc<AtomicU64>,
     rows: Arc<AtomicU64>,
     bytes: Arc<AtomicU64>,
+}
+
+/// Stand-in for Autumn. Counts every billing call and holds each one open for
+/// `latency`, which is what makes the difference between a per-request check
+/// and a cached one visible in the request percentiles.
+#[derive(Clone)]
+struct FakeAutumnState {
+    checks: Arc<AtomicU64>,
+    tracks: Arc<AtomicU64>,
+    finalizes: Arc<AtomicU64>,
+    latency: Duration,
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -87,6 +115,14 @@ struct LoadSummary {
     max_rss_mb: f64,
     max_cpu_percent: f64,
     avg_cpu_percent: f64,
+    autumn_latency_ms: u64,
+    /// Billing calls made across the whole run. `autumn_calls_per_request` is
+    /// the headline: 2.0 is a check plus a finalize on every request, ~0.0 is a
+    /// warm decision cache.
+    autumn_checks: u64,
+    autumn_tracks: u64,
+    autumn_finalizes: u64,
+    autumn_calls_per_request: f64,
 }
 
 #[tokio::main(flavor = "multi_thread")]
@@ -106,14 +142,34 @@ async fn main() -> Result<(), DynError> {
         }
     });
 
-    let mut ingest = spawn_ingest(&cfg, &format!("http://{fake_addr}"))?;
+    // Autumn lives on its own listener so its injected latency cannot queue
+    // behind the export path's requests.
+    let autumn_state = FakeAutumnState::new(cfg.autumn_latency_ms.unwrap_or(0));
+    let autumn_listener = tokio::net::TcpListener::bind(("127.0.0.1", 0)).await?;
+    let autumn_addr = autumn_listener.local_addr()?;
+    let autumn_app = Router::new()
+        .route("/v1/balances.check", post(fake_autumn_check))
+        .route("/v1/balances.track", post(fake_autumn_track))
+        .route("/v1/balances.finalize", post(fake_autumn_finalize))
+        .with_state(autumn_state.clone());
+    tokio::spawn(async move {
+        if let Err(error) = axum::serve(autumn_listener, autumn_app).await {
+            eprintln!("fake Autumn server failed: {error}");
+        }
+    });
+
+    let mut ingest = spawn_ingest(
+        &cfg,
+        &format!("http://{fake_addr}"),
+        &format!("http://{autumn_addr}"),
+    )?;
     wait_for_ingest_health(cfg.ingest_port).await?;
 
     let (sample_tx, sample_rx) = mpsc::unbounded_channel();
     let monitor_pid = ingest.id();
     let monitor = tokio::spawn(async move { monitor_process(monitor_pid, sample_tx).await });
 
-    let payload = build_logs_payload(cfg.batch_logs)?;
+    let payload = build_logs_payload(cfg.batch_logs);
     let started = Instant::now();
     let (successes, failures, mut latencies) = run_load(&cfg, payload).await?;
     let request_duration = started.elapsed();
@@ -123,8 +179,8 @@ async fn main() -> Result<(), DynError> {
     wait_for_exported_rows(&fake_state, expected_rows).await?;
     let export_catchup = catchup_started.elapsed();
 
-    let _ = ingest.kill();
-    let _ = ingest.wait();
+    drop(ingest.kill());
+    drop(ingest.wait());
     monitor.abort();
 
     let monitor_summary = summarize_samples(sample_rx);
@@ -147,6 +203,11 @@ async fn main() -> Result<(), DynError> {
         max_rss_mb: monitor_summary.max_rss_kib as f64 / 1024.0,
         max_cpu_percent: monitor_summary.max_cpu_percent,
         avg_cpu_percent: monitor_summary.avg_cpu_percent,
+        autumn_latency_ms: cfg.autumn_latency_ms.unwrap_or(0),
+        autumn_checks: autumn_state.checks.load(Ordering::Relaxed),
+        autumn_tracks: autumn_state.tracks.load(Ordering::Relaxed),
+        autumn_finalizes: autumn_state.finalizes.load(Ordering::Relaxed),
+        autumn_calls_per_request: autumn_state.total_calls() as f64 / successes.max(1) as f64,
     };
 
     let pretty = serde_json::to_string_pretty(&summary)?;
@@ -158,19 +219,20 @@ async fn main() -> Result<(), DynError> {
         }
     }
     enforce_thresholds(&cfg, &summary)?;
-    let _ = std::fs::remove_dir_all(&cfg.queue_dir);
+    drop(std::fs::remove_dir_all(&cfg.queue_dir));
     Ok(())
 }
 
 impl LoadConfig {
     fn from_env() -> Result<Self, DynError> {
-        let ingest_bin = std::env::var("LOAD_TEST_INGEST_BIN")
-            .map(PathBuf::from)
-            .unwrap_or_else(|_| {
+        let ingest_bin = std::env::var("LOAD_TEST_INGEST_BIN").map_or_else(
+            |_| {
                 std::env::current_exe()
                     .expect("current executable path")
                     .with_file_name(format!("maple-ingest{}", std::env::consts::EXE_SUFFIX))
-            });
+            },
+            PathBuf::from,
+        );
 
         Ok(Self {
             ingest_mode: IngestMode::from_env()?,
@@ -183,8 +245,8 @@ impl LoadConfig {
             max_rss_mb: env_optional_u64("LOAD_TEST_MAX_RSS_MB")?,
             min_rps: env_optional_f64("LOAD_TEST_MIN_RPS")?,
             queue_dir: std::env::var("LOAD_TEST_QUEUE_DIR")
-                .map(PathBuf::from)
-                .unwrap_or_else(|_| unique_temp_dir("maple-ingest-load-wal")),
+                .map_or_else(|_| unique_temp_dir("maple-ingest-load-wal"), PathBuf::from),
+            autumn_latency_ms: env_optional_u64("LOAD_TEST_AUTUMN_LATENCY_MS")?,
         })
     }
 }
@@ -192,7 +254,7 @@ impl LoadConfig {
 impl IngestMode {
     fn from_env() -> Result<Self, DynError> {
         let raw = std::env::var("LOAD_TEST_INGEST_MODE")
-            .unwrap_or_else(|_| "tinybird".to_string())
+            .unwrap_or_else(|_| "tinybird".to_owned())
             .trim()
             .to_ascii_lowercase();
         match raw.as_str() {
@@ -218,6 +280,46 @@ impl Default for FakeTinybirdState {
             bytes: Arc::new(AtomicU64::new(0)),
         }
     }
+}
+
+impl FakeAutumnState {
+    fn new(latency_ms: u64) -> Self {
+        Self {
+            checks: Arc::new(AtomicU64::new(0)),
+            tracks: Arc::new(AtomicU64::new(0)),
+            finalizes: Arc::new(AtomicU64::new(0)),
+            latency: Duration::from_millis(latency_ms),
+        }
+    }
+
+    fn total_calls(&self) -> u64 {
+        self.checks.load(Ordering::Relaxed)
+            + self.tracks.load(Ordering::Relaxed)
+            + self.finalizes.load(Ordering::Relaxed)
+    }
+}
+
+async fn fake_autumn_check(State(state): State<FakeAutumnState>) -> axum::Json<serde_json::Value> {
+    state.checks.fetch_add(1, Ordering::Relaxed);
+    sleep(state.latency).await;
+    axum::Json(serde_json::json!({
+        "allowed": true,
+        "balance": { "remaining": 1_000_000, "unlimited": false, "overage_allowed": true }
+    }))
+}
+
+async fn fake_autumn_track(State(state): State<FakeAutumnState>) -> axum::Json<serde_json::Value> {
+    state.tracks.fetch_add(1, Ordering::Relaxed);
+    sleep(state.latency).await;
+    axum::Json(serde_json::json!({ "success": true }))
+}
+
+async fn fake_autumn_finalize(
+    State(state): State<FakeAutumnState>,
+) -> axum::Json<serde_json::Value> {
+    state.finalizes.fetch_add(1, Ordering::Relaxed);
+    sleep(state.latency).await;
+    axum::Json(serde_json::json!({ "success": true }))
 }
 
 async fn fake_tinybird_import(
@@ -273,7 +375,11 @@ fn decode_body(headers: &HeaderMap, body: &[u8]) -> Option<String> {
     }
 }
 
-fn spawn_ingest(cfg: &LoadConfig, tinybird_host: &str) -> Result<Child, DynError> {
+fn spawn_ingest(
+    cfg: &LoadConfig,
+    tinybird_host: &str,
+    autumn_host: &str,
+) -> Result<Child, DynError> {
     if !cfg.ingest_bin.exists() {
         return Err(format!(
             "ingest binary not found at {}. Run `cargo build --release --bin maple-ingest --bin load_test` first, or set LOAD_TEST_INGEST_BIN.",
@@ -292,6 +398,7 @@ fn spawn_ingest(cfg: &LoadConfig, tinybird_host: &str) -> Result<Child, DynError
         .env("TINYBIRD_TOKEN", "load-test-token")
         .env("INGEST_KEY_STORE_BACKEND", "static")
         .env("MAPLE_ORG_ID_OVERRIDE", "org_load_test")
+        .env("MAPLE_INTERNAL_ORG_ID", "org_load_test")
         .env("MAPLE_INGEST_KEY_LOOKUP_HMAC_KEY", "load-test-hmac-secret")
         .env("INGEST_QUEUE_DIR", &cfg.queue_dir)
         .env("INGEST_WAL_SHARDS", "4")
@@ -305,6 +412,11 @@ fn spawn_ingest(cfg: &LoadConfig, tinybird_host: &str) -> Result<Child, DynError
         .env("RUST_LOG", "warn")
         .stdout(Stdio::null())
         .stderr(Stdio::null());
+    if cfg.autumn_latency_ms.is_some() {
+        command
+            .env("AUTUMN_SECRET_KEY", "am_sk_load_test")
+            .env("AUTUMN_API_URL", autumn_host);
+    }
     Ok(command.spawn()?)
 }
 
@@ -333,7 +445,9 @@ async fn run_load(cfg: &LoadConfig, payload: Vec<u8>) -> Result<(u64, u64, Vec<u
     let next_request = Arc::new(AtomicU64::new(0));
     let successes = Arc::new(AtomicU64::new(0));
     let failures = Arc::new(AtomicU64::new(0));
-    let latencies = Arc::new(Mutex::new(Vec::with_capacity(cfg.requests as usize)));
+    let latencies = Arc::new(Mutex::new(Vec::with_capacity(
+        usize::try_from(cfg.requests).unwrap_or(usize::MAX),
+    )));
     let started = Instant::now();
 
     let mut tasks = Vec::with_capacity(cfg.concurrency);
@@ -404,8 +518,9 @@ async fn pace_request(started: Instant, request_index: u64, target_rps: u64) {
     }
     let target_elapsed = Duration::from_secs_f64(request_index as f64 / target_rps as f64);
     let elapsed = started.elapsed();
-    if target_elapsed > elapsed {
-        sleep(target_elapsed - elapsed).await;
+    let remaining = target_elapsed.saturating_sub(elapsed);
+    if !remaining.is_zero() {
+        sleep(remaining).await;
     }
 }
 
@@ -428,7 +543,9 @@ async fn wait_for_exported_rows(
 async fn monitor_process(pid: u32, tx: mpsc::UnboundedSender<ProcessSample>) {
     loop {
         if let Some(sample) = sample_process(pid) {
-            let _ = tx.send(sample);
+            if tx.send(sample).is_err() {
+                break;
+            }
         }
         sleep(Duration::from_millis(500)).await;
     }
@@ -467,13 +584,13 @@ fn summarize_samples(mut rx: mpsc::UnboundedReceiver<ProcessSample>) -> MonitorS
     summary
 }
 
-fn build_logs_payload(batch_logs: usize) -> Result<Vec<u8>, DynError> {
+fn build_logs_payload(batch_logs: usize) -> Vec<u8> {
     let records = (0..batch_logs)
         .map(|index| LogRecord {
             time_unix_nano: 1_700_000_000_000_000_000 + index as u64,
             observed_time_unix_nano: 1_700_000_000_000_000_000 + index as u64,
             severity_number: 9,
-            severity_text: "INFO".to_string(),
+            severity_text: "INFO".to_owned(),
             body: Some(AnyValue {
                 value: Some(any_value::Value::StringValue(format!(
                     "load test log {index}"
@@ -493,8 +610,8 @@ fn build_logs_payload(batch_logs: usize) -> Result<Vec<u8>, DynError> {
             }),
             scope_logs: vec![ScopeLogs {
                 scope: Some(InstrumentationScope {
-                    name: "maple-ingest-load-test".to_string(),
-                    version: env!("CARGO_PKG_VERSION").to_string(),
+                    name: "maple-ingest-load-test".to_owned(),
+                    version: env!("CARGO_PKG_VERSION").to_owned(),
                     attributes: Vec::new(),
                     dropped_attributes_count: 0,
                 }),
@@ -504,14 +621,15 @@ fn build_logs_payload(batch_logs: usize) -> Result<Vec<u8>, DynError> {
             schema_url: String::new(),
         }],
     };
-    Ok(request.encode_to_vec())
+    request.encode_to_vec()
 }
 
 fn string_kv(key: &str, value: &str) -> KeyValue {
     KeyValue {
-        key: key.to_string(),
+        key: key.to_owned(),
+        key_strindex: 0,
         value: Some(AnyValue {
-            value: Some(any_value::Value::StringValue(value.to_string())),
+            value: Some(any_value::Value::StringValue(value.to_owned())),
         }),
     }
 }
@@ -520,6 +638,12 @@ fn percentile_ms(latencies_us: &[u128], percentile: f64) -> f64 {
     if latencies_us.is_empty() {
         return 0.0;
     }
+    #[expect(
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        reason = "percentile is a caller-supplied 0.0..=1.0 fraction, so the rounded product is a \
+                  valid index into the slice; the `min` below is the backstop"
+    )]
     let index = ((latencies_us.len() - 1) as f64 * percentile).round() as usize;
     latencies_us[index.min(latencies_us.len() - 1)] as f64 / 1000.0
 }
@@ -587,7 +711,6 @@ fn env_optional_f64(name: &str) -> Result<Option<f64>, DynError> {
 fn unique_temp_dir(prefix: &str) -> PathBuf {
     let nanos = SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .map(|duration| duration.as_nanos())
-        .unwrap_or(0);
+        .map_or(0, |duration| duration.as_nanos());
     std::env::temp_dir().join(format!("{prefix}-{}-{nanos}", std::process::id()))
 }

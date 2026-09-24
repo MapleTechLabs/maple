@@ -4,31 +4,35 @@ import { HttpRouter } from "effect/unstable/http"
 import { HttpApiBuilder } from "effect/unstable/httpapi"
 import { OrgId, ScrapeTargetId, UserId } from "@maple/domain/http"
 import { decodePublicId, MapleApiV2 } from "@maple/domain/http/v2"
-import { cleanupTestDbs, createTestDb, type TestDb } from "@/platform/test-pglite"
-import type { WarehouseQueryServiceShape } from "@/services/warehouse/WarehouseQueryService"
-import { WarehouseQueryService } from "@/services/warehouse/WarehouseQueryService"
-import { Env } from "@/platform/Env"
-import { ApiAuthorizationV2Layer } from "@/services/auth/ApiAuthorizationV2Layer"
-import { ApiKeysService } from "@/services/org/ApiKeysService"
-import { AuthService } from "@/services/auth/AuthService"
-import { DashboardPersistenceService } from "@/services/dashboards/DashboardPersistenceService"
-import { IngestAttributeMappingService } from "@/services/org/IngestAttributeMappingService"
-import { OrgIngestKeysService } from "@/services/org/OrgIngestKeysService"
-import { PlanetScaleDiscoveryService } from "@/services/integrations/PlanetScaleDiscoveryService"
-import { PlanetScaleOAuthService } from "@/services/auth/PlanetScaleOAuthService"
-import { RecommendationIssueService } from "@/services/errors/RecommendationIssueService"
-import { ScrapeTargetsService } from "@/services/integrations/ScrapeTargetsService"
-import { V2SchemaErrorsLive } from "./error-envelope"
+import { cleanupTestDbs, createTestDb, executeSql, type TestDb } from "@maple/backend/platform/test-pglite"
+
+import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
+import { Env } from "@maple/backend/platform/Env"
+import { ApiAuthorizationV2Layer } from "@maple/backend/services/auth/ApiAuthorizationV2Layer"
+import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
+import { ApiKeysService } from "@maple/backend/services/org/ApiKeysService"
+import { AuthService } from "@maple/backend/services/auth/AuthService"
+import { DashboardPersistenceService } from "@maple/backend/services/dashboards/DashboardPersistenceService"
+import { SharedDashboardService } from "@maple/backend/services/dashboards/SharedDashboardService"
+import { IngestAttributeMappingService } from "@maple/backend/services/org/IngestAttributeMappingService"
+import { OrgIngestKeysService } from "@maple/backend/services/org/OrgIngestKeysService"
+import { PlanetScaleDiscoveryService } from "@maple/backend/services/integrations/PlanetScaleDiscoveryService"
+import { PlanetScaleOAuthService } from "@maple/backend/services/auth/PlanetScaleOAuthService"
+import { RecommendationIssueService } from "@maple/backend/services/errors/RecommendationIssueService"
+import { ScrapeTargetsService } from "@maple/backend/services/integrations/ScrapeTargetsService"
+import { V2TransportErrorBoundaryLive } from "./error-envelope"
 import {
 	AlertsServiceStubLayer,
 	AllV2GroupLayersLive,
 	ApiV2RateLimiterAllowAllLayer,
+	makeWarehouseServiceStub,
 	Phase1ResourceStubsLayer,
 	PlanetScaleServiceStubsLayer,
-	SlackIntegrationServiceStubLayer,
 	SetupAuditServiceStubLayer,
+	SignalPresenceServiceStubLayer,
 	TelemetryServiceStubsLayer,
 } from "./v2-test-support"
+import { compiledQueryOf } from "@maple/query-engine/execution"
 
 /**
  * End-to-end HTTP tests for the v2 config-resource bundle (attribute_mappings,
@@ -58,17 +62,13 @@ const testConfig = () =>
 const die = () => Effect.die(new Error("not available in this test harness"))
 
 /** Recommendations reconcile against the warehouse; an empty read is a valid state. */
-const warehouseStub: WarehouseQueryServiceShape = {
+const warehouseStub = makeWarehouseServiceStub({
 	query: () => Effect.die(new Error("unexpected warehouse pipe query")),
-	sqlQuery: () => Effect.succeed([]),
 	rawSqlQuery: () => Effect.succeed([]),
-	compiledQuery: (_tenant, compiled) => compiled.decodeRows([]).pipe(Effect.orDie),
+	compiledQuery: (_tenant, compiled) => compiledQueryOf(compiled).decodeRows([]).pipe(Effect.orDie),
 	compiledQueryFirst: () => Effect.die(new Error("unexpected compiled query")),
 	ingest: () => Effect.void,
-	asExecutor: () => {
-		throw new Error("asExecutor is not supported by this test stub")
-	},
-}
+})
 
 /** PlanetScale integrations are only reached by `planetscale` targets. */
 const planetScaleStubs = Layer.mergeAll(
@@ -92,29 +92,35 @@ const makeHarness = () => {
 	const testDb = createTestDb(createdDbs)
 	const envLive = Env.layer.pipe(Layer.provide(testConfig()))
 	const warehouseLive = Layer.succeed(WarehouseQueryService, warehouseStub)
-	const scrapeTargetsLive = ScrapeTargetsService.layer.pipe(Layer.provide(planetScaleStubs))
+	const scrapeTargetsLive = Layer.effect(ScrapeTargetsService, ScrapeTargetsService.make).pipe(
+		Layer.provide(planetScaleStubs),
+	)
 	const servicesLive = Layer.mergeAll(
 		ApiKeysService.layer,
 		AuthService.layer,
 		DashboardPersistenceService.layer,
+		SharedDashboardService.layer,
 		IngestAttributeMappingService.layer,
 		OrgIngestKeysService.layer,
-		RecommendationIssueService.layer.pipe(Layer.provide(warehouseLive)),
+		Layer.effect(RecommendationIssueService, RecommendationIssueService.make).pipe(
+			Layer.provide(warehouseLive),
+		),
 		scrapeTargetsLive,
 	).pipe(Layer.provideMerge(Layer.mergeAll(envLive, testDb.layer)))
 
 	const routes = HttpApiBuilder.layer(MapleApiV2).pipe(
 		Layer.provide(AllV2GroupLayersLive),
-		Layer.provide(V2SchemaErrorsLive),
-		Layer.provide(SlackIntegrationServiceStubLayer),
+		Layer.provide(V2TransportErrorBoundaryLive),
 		Layer.provide(PlanetScaleServiceStubsLayer),
 		Layer.provide(AlertsServiceStubLayer),
 		Layer.provide(Phase1ResourceStubsLayer),
 		Layer.provide(SetupAuditServiceStubLayer),
+		Layer.provide(SignalPresenceServiceStubLayer),
 		Layer.provide(TelemetryServiceStubsLayer),
 		// session_replays (in AllV2GroupLayersLive) needs the warehouse at the routes level.
 		Layer.provide(warehouseLive),
 		Layer.provideMerge(ApiAuthorizationV2Layer),
+		Layer.provideMerge(AuditLogService.layerMemory),
 		Layer.provideMerge(ApiV2RateLimiterAllowAllLayer),
 		Layer.provideMerge(servicesLive),
 	)
@@ -133,8 +139,10 @@ const makeHarness = () => {
 			new Request(`http://maple.test${path}`, {
 				method,
 				headers: {
-					...(options.token !== undefined ? { authorization: `Bearer ${options.token}` } : {}),
-					...(options.body !== undefined ? { "content-type": "application/json" } : {}),
+					...(options.token !== undefined
+						? { authorization: `Bearer ${options.token}` }
+						: undefined),
+					...(options.body !== undefined ? { "content-type": "application/json" } : undefined),
 				},
 				body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
 			}),
@@ -152,6 +160,17 @@ const makeHarness = () => {
 			Effect.gen(function* () {
 				const service = yield* ApiKeysService
 				return yield* service.create(ORG, USER, { name: "config-test", scopes })
+			}),
+		)
+	/** A key whose pinned roles make it a plain member rather than `root`. */
+	const bootstrapMemberKey = () =>
+		runtime.runPromise(
+			Effect.gen(function* () {
+				const service = yield* ApiKeysService
+				return yield* service.create(ORG, USER, {
+					name: "config-test-member",
+					metadataJson: { source: "maple_cli", roles: ["org:member"], deviceName: "laptop" },
+				})
 			}),
 		)
 	const seedScrapeChecks = (publicId: string, count: number) => {
@@ -173,11 +192,22 @@ const makeHarness = () => {
 			}),
 		)
 	}
+	const corruptScrapeDiscoveryConfig = async (publicId: string) => {
+		const internalId = decodePublicId("scrp", publicId)
+		if (internalId === null) throw new Error(`Invalid scrape target public ID: ${publicId}`)
+		await executeSql(
+			testDb,
+			"UPDATE scrape_targets SET target_type = 'planetscale', discovery_config_json = '{}'::jsonb WHERE id = $1",
+			[internalId],
+		)
+	}
 
 	return {
 		request,
 		bootstrapKey,
+		bootstrapMemberKey,
 		seedScrapeChecks,
+		corruptScrapeDiscoveryConfig,
 		dispose: async () => {
 			await disposeHandler()
 			await runtime.dispose()
@@ -260,6 +290,54 @@ describe("v2 attribute_mappings over HTTP", () => {
 		expect(missing.status).toBe(404)
 		expect(missing.body.error.type).toBe("not_found_error")
 		expect(missing.body.error.code).toBe("attribute_mapping_not_found")
+		await harness.dispose()
+	})
+	// Mappings rewrite every ingested span org-wide, so the writes are admin-only.
+	it("refuses attribute_mapping writes from a non-admin member", async () => {
+		const harness = makeHarness()
+		const admin = await harness.bootstrapKey()
+		const member = await harness.bootstrapMemberKey()
+
+		const created = await harness.request("POST", "/v2/attribute_mappings", {
+			token: admin.secret,
+			body: {
+				name: "Promote team label",
+				source_context: "resource",
+				source_key: "labels.team",
+				target_key: "team",
+				operation: "copy",
+			},
+		})
+		expect(created.status).toBe(200)
+
+		const denied = await harness.request("POST", "/v2/attribute_mappings", {
+			token: member.secret,
+			body: {
+				name: "Member mapping",
+				source_context: "resource",
+				source_key: "labels.other",
+				target_key: "other",
+				operation: "copy",
+			},
+		})
+		expect(denied.status).toBe(403)
+		expect(denied.body.error.code).toBe("attribute_mapping_forbidden")
+
+		const patched = await harness.request("PATCH", `/v2/attribute_mappings/${created.body.id}`, {
+			token: member.secret,
+			body: { enabled: false },
+		})
+		expect(patched.status).toBe(403)
+
+		const deleted = await harness.request("DELETE", `/v2/attribute_mappings/${created.body.id}`, {
+			token: member.secret,
+		})
+		expect(deleted.status).toBe(403)
+
+		// Reads stay open to any member.
+		const list = await harness.request("GET", "/v2/attribute_mappings", { token: member.secret })
+		expect(list.status).toBe(200)
+		expect(list.body.data).toHaveLength(1)
 		await harness.dispose()
 	})
 })
@@ -356,6 +434,48 @@ describe("v2 scrape_targets over HTTP", () => {
 		await harness.dispose()
 	})
 
+	it("refuses scrape-target writes from a non-admin member", async () => {
+		const harness = makeHarness()
+		const adminKey = await harness.bootstrapKey()
+		const memberKey = await harness.bootstrapMemberKey()
+
+		const created = await harness.request("POST", "/v2/scrape_targets", {
+			token: adminKey.secret,
+			body: {
+				name: "payments prometheus",
+				url: "https://example.com:1/metrics",
+				target_type: "prometheus",
+			},
+		})
+		expect(created.status).toBe(200)
+
+		// A member keeps the reads — the credential itself is never returned.
+		const listed = await harness.request("GET", "/v2/scrape_targets", { token: memberKey.secret })
+		expect(listed.status).toBe(200)
+
+		for (const [method, path, body] of [
+			["POST", "/v2/scrape_targets", { name: "member target", url: "https://example.com:1/m" }],
+			["PATCH", `/v2/scrape_targets/${created.body.id}`, { url: "https://evil.example.com/m" }],
+			["POST", `/v2/scrape_targets/${created.body.id}/probe`, undefined],
+			["DELETE", `/v2/scrape_targets/${created.body.id}`, undefined],
+		] as const) {
+			const denied = await harness.request(method, path, {
+				token: memberKey.secret,
+				...(body !== undefined ? { body } : undefined),
+			})
+			expect(denied.status).toBe(403)
+			expect(denied.body.error.type).toBe("permission_error")
+		}
+
+		// Still there, still untouched.
+		const after = await harness.request("GET", `/v2/scrape_targets/${created.body.id}`, {
+			token: adminKey.secret,
+		})
+		expect(after.status).toBe(200)
+		expect(after.body.url).toBe("https://example.com:1/metrics")
+		await harness.dispose()
+	})
+
 	it("paginates scrape checks beyond the former 200-row window", async () => {
 		const harness = makeHarness()
 		const key = await harness.bootstrapKey()
@@ -402,6 +522,35 @@ describe("v2 scrape_targets over HTTP", () => {
 		})
 		expect(invalid.status).toBe(400)
 		expect(invalid.body.error.type).toBe("invalid_request_error")
+		await harness.dispose()
+	})
+
+	it("returns the exact stored-config tag instead of fabricating PlanetScale defaults", async () => {
+		const harness = makeHarness()
+		const key = await harness.bootstrapKey()
+		const created = await harness.request("POST", "/v2/scrape_targets", {
+			token: key.secret,
+			body: {
+				name: "corrupt target",
+				url: "https://example.com:1/metrics",
+				target_type: "prometheus",
+			},
+		})
+		expect(created.status).toBe(200)
+		await harness.corruptScrapeDiscoveryConfig(created.body.id)
+
+		const response = await harness.request("GET", `/v2/scrape_targets/${created.body.id}`, {
+			token: key.secret,
+		})
+		expect(response.status).toBe(502)
+		expect(response.body.error).toMatchObject({
+			_tag: "@maple/http/errors/ScrapeTargetStoredConfigInvalidError",
+			type: "api_error",
+			code: "scrape_target_stored_config_invalid",
+			retryable: false,
+			recovery: "reconnect",
+		})
+		expect(JSON.stringify(response.body)).not.toContain("discovery_config_json")
 		await harness.dispose()
 	})
 })
@@ -463,9 +612,13 @@ describe("v2 unexpected-error envelope", () => {
 		expect(response.status).toBe(500)
 		expect(response.body).toEqual({
 			error: {
+				_tag: "@maple/http/v2/UnexpectedError",
 				type: "api_error",
 				code: "internal_error",
+				title: "Something went wrong",
 				message: "An unexpected error occurred on our end.",
+				retryable: false,
+				recovery: "contact_support",
 			},
 		})
 		expect(JSON.stringify(response.body)).not.toContain("not available in this test harness")

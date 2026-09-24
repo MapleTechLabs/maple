@@ -1,8 +1,9 @@
 ---
-title: "AI Chat"
-status: "in-progress"
+title: "AI chat"
+status: "shipped"
 category: "ai"
 quarter: "Q1 2026"
-description: "Conversational AI interface for querying your observability data. Ask questions about errors, performance, and service health in natural language."
+description: "Conversational interface for your observability data. Ask about errors, performance, and service health in plain language."
 order: 9
+shipped_date: "2026-02"
 ---

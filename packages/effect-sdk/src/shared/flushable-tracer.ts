@@ -1,18 +1,43 @@
-// ---------------------------------------------------------------------------
 // Buffer-backed OTLP tracer (platform-agnostic)
 //
 // Pure Tracer that pushes OTLP-shaped spans into a caller-owned buffer. URL,
 // resource, and headers are NOT baked in here — the caller (the Cloudflare,
 // server, or client flushable preset) resolves them and POSTs the drained
 // buffer on `flush`, so the layer itself can be constructed without I/O.
-// ---------------------------------------------------------------------------
-import { Cause, type Context, Layer, type Option, Predicate, Tracer } from "effect"
+import { Cause, Context, Exit, Layer, Option, Predicate, Tracer } from "effect"
 import * as ErrorReporter from "effect/ErrorReporter"
 import * as OtlpResource from "effect/unstable/observability/OtlpResource"
 import type { ExtractTag } from "effect/Types"
 
+export interface CaptureExceptionOptions {
+	/** Span name. Default `"exception"`. */
+	readonly name?: string | undefined
+	/** Extra span attributes (e.g. the URL the error happened on). */
+	readonly attributes?: Record<string, unknown> | undefined
+}
+
 export interface SpanBuffer {
 	readonly tracerLayer: Layer.Layer<never>
+	/**
+	 * Record a thrown value that never passed through an Effect span.
+	 *
+	 * Everything else in this buffer arrives because an Effect *span* failed —
+	 * which means an error thrown outside Effect had no path here at all. In a
+	 * browser that is most of them: a React render crash caught by an error
+	 * boundary, a throw in an event handler, a rejected promise nobody awaited.
+	 *
+	 * The error is recorded as a one-off span carrying a `Die` cause, so it takes
+	 * the same road as every other failure: `makeOtlpSpan` gives it status
+	 * `Error` and an `exception` event with type/message/stacktrace, which is
+	 * exactly the shape `error_events_mv` fingerprints on. A `Die` (not a `Fail`)
+	 * because an uncaught throw is by definition not an anticipated failure —
+	 * that also keeps it clear of the `anticipatedErrorIdentifiers` filter, which
+	 * would otherwise let a caller silence real crashes by tag.
+	 *
+	 * BOUNDARY: a thrown value is unparsed by definition — JavaScript can throw
+	 * anything. `Cause.prettyErrors` narrows it on the way into the event.
+	 */
+	readonly captureException: (error: unknown, options?: CaptureExceptionOptions) => void
 	readonly drain: () => Array<OtlpSpan>
 	readonly restore: (items: ReadonlyArray<OtlpSpan>) => void
 	readonly setDisabled: (value: boolean) => void
@@ -91,8 +116,26 @@ export const makeSpanBuffer = (options: SpanBufferOptions = {}): SpanBuffer => {
 		},
 	})
 
+	const captureException = (error: unknown, captureOptions: CaptureExceptionOptions = {}): void => {
+		if (disabled) return
+		const now = BigInt(Date.now()) * 1_000_000n
+		const span = makeSpan({
+			name: captureOptions.name ?? "exception",
+			parent: Option.none(),
+			annotations: Context.empty(),
+			status: { _tag: "Started", startTime: now },
+			attributes: new Map(Object.entries(captureOptions.attributes ?? {})),
+			links: [],
+			sampled: true,
+			kind: "internal",
+			export: exportFn,
+		})
+		span.end(now, Exit.failCause(Cause.die(error)))
+	}
+
 	return {
 		tracerLayer: Layer.succeed(Tracer.Tracer, tracer),
+		captureException,
 		drain: () => {
 			const items = buffer
 			buffer = []
@@ -110,9 +153,7 @@ export const makeSpanBuffer = (options: SpanBufferOptions = {}): SpanBuffer => {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // OTLP span construction (adapted from `effect/unstable/observability/OtlpTracer`)
-// ---------------------------------------------------------------------------
 
 const ATTR_EXCEPTION_TYPE = "exception.type"
 const ATTR_EXCEPTION_MESSAGE = "exception.message"
@@ -175,6 +216,15 @@ const generateId = (len: number): string => {
 const failureIdentifier = (error: unknown): string | undefined => {
 	if (Predicate.hasProperty(error, "_tag") && typeof error._tag === "string") return error._tag
 	if (Predicate.hasProperty(error, "name") && typeof error.name === "string") return error.name
+	// An error that crossed an HTTP boundary arrives as a decoded *body*, not as
+	// the class that raised it. An API that wraps its bodies in `{ error: … }` —
+	// a common envelope convention — therefore hands the failure channel a plain
+	// object with no identifier of its own, and every identifier a caller
+	// configured goes unmatched: expected 4xx answers record as `Error` spans
+	// whose entire message is the JSON-stringified envelope. Unwrap one level, and
+	// only for the body's own tag.
+	const body = Predicate.hasProperty(error, "error") ? error.error : undefined
+	if (Predicate.hasProperty(body, "_tag") && typeof body._tag === "string") return body._tag
 	return undefined
 }
 
@@ -193,6 +243,18 @@ const isFullyAnticipated = (
 	return failErrors.length > 0 && failErrors.every((error) => isAnticipatedFailure(error, identifiers))
 }
 
+// OTEL HTTP semconv for SERVER spans: a 5xx response is an error even when the
+// handler rendered it as a plain response — exactly what the HTTP boundaries
+// (`HttpRouter.toWebHandler`, alchemy's Worker bridge) do with a defect, so the
+// span would otherwise reach the warehouse as `Ok` and the crash never reach
+// error tracking. A 4xx is a rejection the service handled and stays `Ok`.
+const renderedServerError = (self: SpanImpl): number | undefined => {
+	if (self.kind !== "server") return undefined
+	const raw = self.attributes.get("http.response.status_code")
+	const code = typeof raw === "number" ? raw : typeof raw === "string" ? Number(raw) : Number.NaN
+	return Number.isInteger(code) && code >= 500 ? code : undefined
+}
+
 const makeOtlpSpan = (self: SpanImpl, anticipatedErrorIdentifiers?: ReadonlySet<string>): OtlpSpan => {
 	const status = self.status as ExtractTag<Tracer.SpanStatus, "Ended">
 	const attributes = OtlpResource.entriesToAttributes(self.attributes.entries())
@@ -204,7 +266,29 @@ const makeOtlpSpan = (self: SpanImpl, anticipatedErrorIdentifiers?: ReadonlySet<
 	}))
 
 	let otelStatus: Status
-	if (status.exit._tag === "Success") {
+	const serverError = status.exit._tag === "Success" ? renderedServerError(self) : undefined
+	if (serverError !== undefined) {
+		const method = self.attributes.get("http.request.method")
+		const path = self.attributes.get("url.path")
+		const message =
+			typeof method === "string" && typeof path === "string"
+				? `HTTP ${serverError} (${method} ${path})`
+				: `HTTP ${serverError}`
+		otelStatus = { code: StatusCode.Error, message }
+		// Only when nothing named the failure itself — relabelling a recorded exception would
+		// collapse every such 5xx into one anonymous bucket in error tracking.
+		if (!events.some((event) => event.name === "exception")) {
+			events.push({
+				name: "exception",
+				timeUnixNano: String(status.endTime),
+				droppedAttributesCount: 0,
+				attributes: [
+					{ key: ATTR_EXCEPTION_TYPE, value: { stringValue: "HttpServerErrorResponse" } },
+					{ key: ATTR_EXCEPTION_MESSAGE, value: { stringValue: message } },
+				],
+			})
+		}
+	} else if (status.exit._tag === "Success") {
 		otelStatus = constOtelStatusSuccess
 	} else if (Cause.hasInterruptsOnly(status.exit.cause)) {
 		otelStatus = { code: StatusCode.Ok, message: "Interrupted" }
@@ -263,9 +347,7 @@ const makeOtlpSpan = (self: SpanImpl, anticipatedErrorIdentifiers?: ReadonlySet<
 	}
 }
 
-// ---------------------------------------------------------------------------
 // OTLP wire types
-// ---------------------------------------------------------------------------
 
 export interface OtlpSpan {
 	readonly traceId: string

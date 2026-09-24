@@ -1,17 +1,24 @@
 /// <reference types="vitest/config" />
 import path from "node:path"
+import { playwright } from "@vitest/browser-playwright"
 import { defineConfig, loadEnv } from "vite"
 import { devtools } from "@tanstack/devtools-vite"
 import tanstackRouter from "@tanstack/router-plugin/vite"
 import viteReact from "@vitejs/plugin-react"
 import tailwindcss from "@tailwindcss/vite"
 import { siblingUrl } from "../../packages/infra/src/dev-urls.ts"
+import { versionManifest } from "./vite-plugin-version-manifest.ts"
 
 const envDir = path.resolve(import.meta.dirname, "../..")
 
 export default defineConfig(({ mode }) => {
 	const env = loadEnv(mode, envDir, "")
 
+	// `bun dev` no longer reaches this: web is a `Cloudflare.Website.Vite` Worker,
+	// so alchemy runs vite itself and supplies these three from the stack's own
+	// URLs as `define`. It stays for a vite server started by hand next to a
+	// portless stack (`bun --filter=@maple/web dev`), which has no other way to
+	// learn its siblings' routes.
 	if (process.env.PORTLESS_URL) {
 		process.env.VITE_API_BASE_URL ??= siblingUrl("api")
 		process.env.VITE_INGEST_URL ??= siblingUrl("ingest")
@@ -43,11 +50,13 @@ export default defineConfig(({ mode }) => {
 		"VITE_API_BASE_URL",
 		"VITE_INGEST_URL",
 		"VITE_ELECTRIC_SYNC_URL",
+		"VITE_MAPLE_REGION",
+		"VITE_MAPLE_REGION_APP_URLS",
 		"VITE_MAPLE_AUTH_MODE",
 		"VITE_CLERK_PUBLISHABLE_KEY",
 		"VITE_MAPLE_INGEST_KEY",
 		// Injected at deploy time (CI sets VITE_COMMIT_SHA=github.sha); stamped onto
-		// browser telemetry as `deployment.commit_sha` / `service.version`.
+		// browser telemetry as `vcs.ref.head.revision` / `service.version`.
 		"VITE_COMMIT_SHA",
 		// "off" disables rrweb self-recording. The perf bench sets it via
 		// process.env (playwright.config.ts) and must win over any `.env*` value,
@@ -67,18 +76,42 @@ export default defineConfig(({ mode }) => {
 	}
 
 	return {
+		optimizeDeps: { include: ["react-dom/client", "web-vitals"] },
 		envDir,
 		// Keep the Playwright perf suite (perf/*.perf.spec.ts) out of the Vitest
 		// run — it's executed separately via `bun run test:perf`.
 		test: {
-			include: ["src/**/*.test.{ts,tsx}"],
+			projects: [
+				{
+					test: {
+						name: "node",
+						server: { deps: { inline: ["@effect/vitest"] } },
+						environment: "node",
+						include: ["src/**/*.test.{ts,tsx}"],
+						exclude: ["src/**/*.browser.test.{ts,tsx}"],
+					},
+				},
+				{
+					test: {
+						name: "browser",
+						include: ["src/**/*.browser.test.{ts,tsx}"],
+						browser: {
+							enabled: true,
+							headless: true,
+							provider: playwright(),
+							instances: [{ browser: "chromium" }],
+						},
+					},
+				},
+			],
 		},
 		resolve: {
 			tsconfigPaths: true,
 		},
 		define,
 		plugins: [
-			devtools(),
+			// Console piping forwards every browser console line into the dev server's stdout.
+			devtools({ consolePiping: { enabled: false } }),
 			tanstackRouter({
 				target: "react",
 				autoCodeSplitting: true,
@@ -97,6 +130,11 @@ export default defineConfig(({ mode }) => {
 			}),
 			tailwindcss(),
 			viteReact(),
+			// Reads the same `process.env` the `define` block above does, rather than
+			// `import.meta.env`, because this runs in the Vite process and not in the
+			// bundle. An empty value (any build that is not a deploy) makes the
+			// client-side check inert — see `use-app-version.ts`.
+			versionManifest(process.env.VITE_COMMIT_SHA?.trim() || ""),
 		],
 		build: {
 			// The bundle budget reads Vite's static/dynamic import graph instead of

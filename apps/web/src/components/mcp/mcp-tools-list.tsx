@@ -89,6 +89,26 @@ const MCP_TOOLS = [
 		description:
 			"Create a dashboard from a template (service_health, error_tracking, blank) or custom JSON.",
 	},
+	{
+		name: "list_agent_sessions",
+		description:
+			"List AI agent sessions with their agent, vendor, models, LLM and tool calls, failures, tokens, and cost. Filter by vendor, service, model, tool, errors, or duration/cost ranges.",
+	},
+	{
+		name: "get_agent_session",
+		description:
+			"Read one AI agent session: verdict and findings, active/idle time, token and cost breakdown, models and tools used, failure groups, and turns.",
+	},
+	{
+		name: "get_agent_tools_overview",
+		description:
+			"Show how often each AI agent tool is called, how often it fails, and how slow it is, compared with the previous window. Select a tool to list its failure groups.",
+	},
+	{
+		name: "get_agent_tool_error",
+		description:
+			"Investigate one agent tool failure group: affected sessions, message variants, models and services, and sample calls with their arguments and results.",
+	},
 ] as const
 
 export function McpToolsList() {
@@ -101,14 +121,19 @@ export function McpToolsList() {
 				</div>
 			</CardHeader>
 			<CardContent>
-				<div className="space-y-3">
+				<dl className="grid grid-cols-1 sm:grid-cols-[max-content_1fr] sm:gap-x-6 divide-y divide-border/60">
 					{MCP_TOOLS.map((tool) => (
-						<div key={tool.name} className="flex gap-3">
-							<code className="text-xs font-medium shrink-0 pt-0.5">{tool.name}</code>
-							<p className="text-muted-foreground text-xs">{tool.description}</p>
+						<div
+							key={tool.name}
+							className="grid grid-cols-subgrid sm:col-span-2 gap-y-1 py-2.5 first:pt-0 last:pb-0"
+						>
+							<dt>
+								<code className="font-mono text-xs font-medium">{tool.name}</code>
+							</dt>
+							<dd className="text-muted-foreground text-xs leading-relaxed">{tool.description}</dd>
 						</div>
 					))}
-				</div>
+				</dl>
 			</CardContent>
 		</Card>
 	)

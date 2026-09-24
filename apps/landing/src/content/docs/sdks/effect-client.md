@@ -1,8 +1,9 @@
 ---
-title: "Browser"
+title: "Effect SDK in the browser"
 description: "Set up the Effect SDK in browser environments with explicit configuration and auto-captured browser metadata."
-group: "Platforms"
-order: 4
+group: "Instrumentation"
+order: 3
+navLabel: "Browser"
 sdk: "effect"
 ---
 
@@ -37,7 +38,7 @@ The `/client` import is required — the bare `@maple-dev/effect-sdk` import res
 
 The client layer reads from `globalThis.navigator` and `Intl.DateTimeFormat` to populate resource attributes automatically:
 
-- `browser.user_agent` — `navigator.userAgent`
+- `user_agent.original` — `navigator.userAgent`
 - `browser.language` — `navigator.language`
 - `browser.timezone` — `Intl.DateTimeFormat().resolvedOptions().timeZone`
 - `maple.sdk.type` — always `"client"`, so server- and browser-emitted spans can be filtered apart

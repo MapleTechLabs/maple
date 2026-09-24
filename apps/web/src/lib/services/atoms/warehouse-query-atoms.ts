@@ -1,7 +1,9 @@
 import { Atom } from "@/lib/effect-atom"
 import { Effect, Schema } from "effect"
-import { encodeOrgScopedKey, orgScopedKeyPayload } from "@/lib/cache-key"
+import { encodeOrgScopedKey, identityFromKey, orgScopedKeyPayload } from "@/lib/cache-key"
+import { nextRetentionNamespace, withRetention } from "@/lib/services/atoms/retained-atom"
 import { getActiveOrgId } from "@/lib/services/common/auth-headers"
+import { getGlobalNamespace } from "@/lib/services/common/global-namespace"
 import { MapleApiAtomClient } from "@/lib/services/common/atom-client"
 import type { BackendError, WarehouseApiError } from "@/api/warehouse/effect-utils"
 import {
@@ -12,16 +14,12 @@ import {
 	getServiceDetailOverview,
 	getServiceDetailThroughputRefinement,
 } from "@/api/warehouse/custom-charts"
-import {
-	getErrorDetailTraces,
-	getErrorsByType,
-	getErrorsFacets,
-	getErrorsSummary,
-	getErrorsTimeseries,
-} from "@/api/warehouse/errors"
+import { getErrorsByType, getErrorsFacets, getErrorsSpark, getErrorsSummary } from "@/api/warehouse/errors"
+import { getReleaseDetail, getReleases } from "@/api/warehouse/releases"
 import {
 	getLog,
 	getLogAttributeKeys,
+	getLogsCount,
 	getLogsFacetValues,
 	getLogsFacets,
 	listLogs,
@@ -37,9 +35,15 @@ import {
 	fleetUtilizationTimeseries,
 	getNodeFacets,
 	getPodFacets,
+	getContainerFacets,
 	getWorkloadFacets,
+	containersSummary,
+	containerDetailSummary,
+	containerInfraTimeseries,
+	listContainers,
 	hostDetailSummary,
 	hostInfraTimeseries,
+	infraPresence,
 	listHosts,
 	listPods,
 	podsSummary,
@@ -53,16 +57,15 @@ import {
 	workloadInfraTimeseries,
 } from "@/api/warehouse/infra"
 import { getServiceUsage } from "@/api/warehouse/service-usage"
+import { getServiceEndpoints } from "@/api/warehouse/service-endpoints"
 import { getServiceOperations } from "@/api/warehouse/service-operations"
 import {
 	getServiceDependenciesBundle,
-	getServiceMap,
+	getServiceMapBundle,
 	getPlanetScaleBranchStats,
 	getServiceMapCloudflare,
 	getServiceMapPlanetScale,
-	getServiceMapDbEdges,
 	getServiceDbQuerySummary,
-	getServicePlatforms,
 } from "@/api/warehouse/service-map"
 import { getServiceWorkloads } from "@/api/warehouse/service-infra"
 import {
@@ -73,7 +76,6 @@ import {
 	getCloudflareZoneDetail,
 	getCloudflareZoneDns,
 	getCloudflareZoneFacets,
-	getCloudflareZoneHosts,
 	getCloudflareZones,
 	getCloudflareZoneSecurity,
 	getCloudflareZoneTimeseries,
@@ -112,6 +114,36 @@ import {
 	getSessionTraceSummaries,
 	listReplays,
 } from "@/api/warehouse/replays"
+import {
+	getAiSessionSpans,
+	getAiSessionSummary,
+	getAiSessionsDistributions,
+	getAiSessionsFacets,
+	listAiSessions,
+} from "@/api/warehouse/ai-sessions"
+import {
+	getAiToolBreakdowns,
+	getAiToolErrorDetail,
+	getAiToolErrorSamples,
+	getAiToolErrors,
+	getAiToolSeries,
+	getAiToolTotals,
+} from "@/api/warehouse/ai-session-tools"
+import {
+	getWebAnalyticsBreakdowns,
+	getWebAnalyticsEvents,
+	getWebAnalyticsLive,
+	getWebAnalyticsPages,
+	getWebAnalyticsPageviews,
+	getWebAnalyticsSummary,
+	getWebAnalyticsTimeseries,
+} from "@/api/warehouse/web-analytics"
+import {
+	getProductEventAttributeKeys,
+	getProductEventNames,
+	getProductEventsForTrace,
+	getProductEventTraceSamples,
+} from "@/api/warehouse/product-events"
 
 /**
  * The error union every warehouse server function fails with: the structured
@@ -122,7 +154,64 @@ type QueryError = WarehouseApiError | BackendError
 type QueryEffect<Input, Output> = (input: Input) => Effect.Effect<Output, QueryError, never>
 
 interface QueryAtomOptions {
+	/**
+	 * Idle TTL in ms, applied via `Atom.setIdleTTL` — how long the atom's result
+	 * survives after the LAST unmount, so a back-navigation re-renders from cache
+	 * instead of refetching.
+	 *
+	 * NOT a freshness window despite the name: a mounted atom never refetches on
+	 * this timer, and lowering it does not make data fresher — it only shortens
+	 * the window in which returning to a page is free. Tune it to how long a
+	 * user's round trip away from the page tends to be.
+	 */
 	staleTime?: number
+	/**
+	 * Pin the org-global namespace (see `global-namespace.ts`) into this query's
+	 * input before key encoding, so the pin lands in both the request payload and
+	 * the cache key. `"top"` writes `data.namespaces`, `"filters"` writes
+	 * `data.filters.namespaces`. Only for families whose input schema accepts
+	 * `namespaces` — decode drops unknown keys, which would silently un-scope
+	 * the query while still fragmenting its cache.
+	 */
+	globalNamespace?: GlobalNamespaceScope
+}
+
+type GlobalNamespaceScope = "top" | "filters"
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+	typeof value === "object" && value !== null && !Array.isArray(value)
+
+const pinIntoData = (
+	data: Record<string, unknown>,
+	scope: GlobalNamespaceScope,
+	ns: string,
+): Record<string, unknown> => {
+	if (scope === "filters") {
+		const prevFilters = isRecord(data.filters) ? data.filters : {}
+		return { ...data, filters: { ...prevFilters, namespaces: [ns], excludedNamespaces: undefined } }
+	}
+	// URL-borne namespace filters are ignored (overridden), never rewritten —
+	// unpinning restores them untouched. `encodeKey` strips `undefined` entries.
+	return {
+		...data,
+		namespaces: [ns],
+		namespace: undefined,
+		namespaceMatchMode: undefined,
+		excludedNamespaces: undefined,
+	}
+}
+
+/** Merge the pinned global namespace into a `{ data }` query input, if any.
+ * Exported for its unit tests — production callers go through the families. */
+export const applyGlobalNamespace = (
+	input: unknown,
+	scope: GlobalNamespaceScope,
+): Record<string, unknown> => {
+	const base = isRecord(input) ? input : {}
+	const ns = getGlobalNamespace()
+	if (ns === null) return base
+	const data = isRecord(base.data) ? base.data : {}
+	return { ...base, data: pinIntoData(data, scope, ns) }
 }
 
 class QueryAtomError extends Schema.TaggedError<QueryAtomError>()("@maple/web/services/QueryAtomError", {
@@ -130,29 +219,23 @@ class QueryAtomError extends Schema.TaggedError<QueryAtomError>()("@maple/web/se
 	cause: Schema.optionalKey(Schema.Unknown),
 }) {}
 
-// The error union surfaced to atom consumers: the structured query errors plus
-// any tagged backend error, all normalized through `QueryAtomError`'s shape for
-// anything that is not already a known tagged error.
+// Query failures already carry a useful local, v1, or v2 shape. Only cache-key
+// decoding needs an atom-local wrapper.
 export type QueryAtomFailure = QueryError | QueryAtomError
-
-const isTaggedBackendError = (error: QueryError): boolean => error._tag.startsWith("@maple/http/errors/")
-
-const toQueryAtomError = (error: QueryError): QueryAtomFailure => {
-	// Tagged `@maple/http/errors/*` errors are already user-presentable via
-	// `formatBackendError`; pass them through untouched.
-	if (isTaggedBackendError(error)) return error
-	// Remaining: a structured `WarehouseApiError`, all of which carry `message`.
-	const message = "message" in error ? error.message : "Warehouse query atom failed"
-	return new QueryAtomError({
-		message,
-		cause: error,
-	})
-}
 
 function makeQueryAtomFamily<Input, Output>(query: QueryEffect<Input, Output>, options?: QueryAtomOptions) {
 	const UnknownFromJson = Schema.fromJsonString(Schema.Unknown)
+	// Namespaces this family's retained results. Without it, two queries taking
+	// only a time window would share a logical identity and hand each other's
+	// rows back as fallbacks.
+	const namespace = nextRetentionNamespace()
 
 	const family = Atom.family((key: string) => {
+		// The same query under a different time window, so a remount onto a
+		// rolled-over key renders the previous window's data immediately rather
+		// than an empty skeleton. See `withRetention`.
+		const identity = `${namespace}:${identityFromKey(key)}`
+
 		// Build on the mounted `MapleApiAtomClient.runtime` (not bare `Atom.make`,
 		// which runs on the default atom runtime). That runtime owns the Maple OTLP
 		// tracer that actually flushes, so the wrapper span each `query` opens — e.g.
@@ -162,9 +245,15 @@ function makeQueryAtomFamily<Input, Output>(query: QueryEffect<Input, Output>, o
 		// shipped). The inner query spans already export by re-providing this same
 		// (memoized) layer; this lifts the parent onto the same tracer.
 		let resultAtom = MapleApiAtomClient.runtime.atom(
-			Schema.decodeUnknownEffect(UnknownFromJson)(orgScopedKeyPayload(key)).pipe(
+			Schema.decodeEffect(UnknownFromJson)(orgScopedKeyPayload(key)).pipe(
+				Effect.mapError(
+					(cause) =>
+						new QueryAtomError({
+							message: "Invalid warehouse query cache key",
+							cause,
+						}),
+				),
 				Effect.flatMap((input) => query(input as Input)),
-				Effect.mapError(toQueryAtomError),
 			),
 		)
 
@@ -172,10 +261,22 @@ function makeQueryAtomFamily<Input, Output>(query: QueryEffect<Input, Output>, o
 			resultAtom = Atom.setIdleTTL(resultAtom, options.staleTime)
 		}
 
-		return resultAtom
+		// Applied at the atom rather than in a hook so that both consumers get it
+		// — `useAtomValue` and `useRefreshableAtomValue` alike — with no
+		// call-site changes.
+		return withRetention(resultAtom, identity)
 	})
 
-	return (input: Input) => family(encodeOrgScopedKey(getActiveOrgId(), input))
+	// Pinning happens before key encoding so loader `warmAtoms` and component
+	// reads stay byte-for-byte identical, and the pin re-keys the cache entry.
+	const scope = options?.globalNamespace
+	return (input: Input) =>
+		family(
+			encodeOrgScopedKey(
+				getActiveOrgId(),
+				scope === undefined ? input : applyGlobalNamespace(input, scope),
+			),
+		)
 }
 
 export const getServiceUsageResultAtom = makeQueryAtomFamily(getServiceUsage, {
@@ -183,6 +284,10 @@ export const getServiceUsageResultAtom = makeQueryAtomFamily(getServiceUsage, {
 })
 
 export const getServiceOperationsResultAtom = makeQueryAtomFamily(getServiceOperations, {
+	staleTime: 30_000,
+})
+
+export const getServiceEndpointsResultAtom = makeQueryAtomFamily(getServiceEndpoints, {
 	staleTime: 30_000,
 })
 
@@ -195,31 +300,37 @@ export const getServicesFacetsResultAtom = makeQueryAtomFamily(getServicesFacets
 
 export const getServiceOverviewResultAtom = makeQueryAtomFamily(getServiceOverview, {
 	staleTime: 30_000,
+	globalNamespace: "top",
 })
 
 export const getServiceHealthSnapshotResultAtom = makeQueryAtomFamily(getServiceHealthSnapshot, {
 	staleTime: 30_000,
+	globalNamespace: "top",
 })
 
 export const getServiceHealthBaselineResultAtom = makeQueryAtomFamily(getServiceHealthBaseline, {
 	// The trailing-7d latency baseline moves slowly and the request payload is
 	// hour-snapped, so keep it warm far longer than the live overview.
 	staleTime: 30 * 60_000,
+	globalNamespace: "top",
 })
 
 export const getCustomChartServiceSparklinesResultAtom = makeQueryAtomFamily(
 	getCustomChartServiceSparklines,
 	{
 		staleTime: 30_000,
+		globalNamespace: "top",
 	},
 )
 
 export const listTracesResultAtom = makeQueryAtomFamily(listTraces, {
 	staleTime: 30_000,
+	globalNamespace: "top",
 })
 
 export const getTracesFacetsResultAtom = makeQueryAtomFamily(getTracesFacets, {
 	staleTime: 30_000,
+	globalNamespace: "top",
 })
 
 // Single-dimension facet list for dashboard variables — server compiles only
@@ -238,8 +349,110 @@ export const listReplaysResultAtom = makeQueryAtomFamily(listReplays, {
 	staleTime: 30_000,
 })
 
+export const listAiSessionsResultAtom = makeQueryAtomFamily(listAiSessions, {
+	staleTime: 30_000,
+})
+
+export const aiSessionsFacetsResultAtom = makeQueryAtomFamily(getAiSessionsFacets, {
+	staleTime: 30_000,
+})
+
+export const aiSessionsDistributionsResultAtom = makeQueryAtomFamily(getAiSessionsDistributions, {
+	staleTime: 30_000,
+})
+
+export const aiSessionSpansResultAtom = makeQueryAtomFamily(getAiSessionSpans, {
+	staleTime: 60_000,
+})
+
+export const aiSessionSummaryResultAtom = makeQueryAtomFamily(getAiSessionSummary, {
+	staleTime: 60_000,
+})
+
+// Agent Sessions › Tools. Five reads over one selection, all 30s: the page is
+// a time-ranged analytics view whose numbers are watched while a rollout lands,
+// and one TTL keeps the strip, the chart and the breakdowns from refreshing
+// against each other.
+export const aiToolSeriesResultAtom = makeQueryAtomFamily(getAiToolSeries, {
+	staleTime: 30_000,
+})
+
+export const aiToolTotalsResultAtom = makeQueryAtomFamily(getAiToolTotals, {
+	staleTime: 30_000,
+})
+
+export const aiToolBreakdownsResultAtom = makeQueryAtomFamily(getAiToolBreakdowns, {
+	staleTime: 30_000,
+})
+
+export const aiToolErrorsResultAtom = makeQueryAtomFamily(getAiToolErrors, {
+	staleTime: 30_000,
+})
+
+export const aiToolErrorDetailResultAtom = makeQueryAtomFamily(getAiToolErrorDetail, {
+	staleTime: 30_000,
+})
+
+export const aiToolErrorSamplesResultAtom = makeQueryAtomFamily(getAiToolErrorSamples, {
+	staleTime: 30_000,
+})
+
 export const replaysFacetsResultAtom = makeQueryAtomFamily(getReplaysFacets, {
 	staleTime: 30_000,
+})
+
+// Web analytics — one page, six atoms, all 30s. Traffic numbers are watched
+// during a launch, so a longer TTL reads as a stalled page; a shorter one just
+// re-runs the same 30-day-TTL scans.
+export const webAnalyticsSummaryResultAtom = makeQueryAtomFamily(getWebAnalyticsSummary, {
+	staleTime: 30_000,
+})
+
+// The live counter polls itself (see `AnalyticsLiveBadge`), and its window is
+// resolved server-side, so a stale entry here would just hold a number the badge
+// is actively trying to advance.
+export const webAnalyticsLiveResultAtom = makeQueryAtomFamily(getWebAnalyticsLive, {
+	staleTime: 5_000,
+})
+
+export const webAnalyticsTimeseriesResultAtom = makeQueryAtomFamily(getWebAnalyticsTimeseries, {
+	staleTime: 30_000,
+})
+
+export const webAnalyticsPageviewsResultAtom = makeQueryAtomFamily(getWebAnalyticsPageviews, {
+	staleTime: 30_000,
+})
+
+export const webAnalyticsPagesResultAtom = makeQueryAtomFamily(getWebAnalyticsPages, {
+	staleTime: 30_000,
+})
+
+export const webAnalyticsEventsResultAtom = makeQueryAtomFamily(getWebAnalyticsEvents, {
+	staleTime: 30_000,
+})
+
+export const webAnalyticsBreakdownsResultAtom = makeQueryAtomFamily(getWebAnalyticsBreakdowns, {
+	staleTime: 30_000,
+})
+
+// The event-name list backs the step builder's autocomplete and changes only
+// when someone ships a new `track()` call, so it can sit for a minute.
+export const productEventNamesResultAtom = makeQueryAtomFamily(getProductEventNames, {
+	staleTime: 60_000,
+})
+
+export const getProductEventAttributeKeysResultAtom = makeQueryAtomFamily(getProductEventAttributeKeys, {
+	staleTime: 60_000,
+})
+
+// A completed trace's product events never change, so this is only ever refetched
+// because the trace is still open. 60s matches the route cache behind it.
+export const productEventsForTraceResultAtom = makeQueryAtomFamily(getProductEventsForTrace, {
+	staleTime: 60_000,
+})
+
+export const productEventTraceSamplesResultAtom = makeQueryAtomFamily(getProductEventTraceSamples, {
+	staleTime: 60_000,
 })
 
 export const getReplayResultAtom = makeQueryAtomFamily(getReplay, {
@@ -281,14 +494,21 @@ export const getSpanDetailResultAtom = makeQueryAtomFamily(getSpanDetail, {
 
 export const listLogsResultAtom = makeQueryAtomFamily(listLogs, {
 	staleTime: 30_000,
+	globalNamespace: "top",
 })
 
 export const getLogResultAtom = makeQueryAtomFamily(getLog, {
 	staleTime: 60_000,
 })
 
+export const getLogsCountResultAtom = makeQueryAtomFamily(getLogsCount, {
+	staleTime: 60_000,
+	globalNamespace: "top",
+})
+
 export const getLogsFacetsResultAtom = makeQueryAtomFamily(getLogsFacets, {
 	staleTime: 30_000,
+	globalNamespace: "top",
 })
 
 export const getLogsFacetValuesResultAtom = makeQueryAtomFamily(getLogsFacetValues, {
@@ -297,22 +517,22 @@ export const getLogsFacetValuesResultAtom = makeQueryAtomFamily(getLogsFacetValu
 
 export const getErrorsByTypeResultAtom = makeQueryAtomFamily(getErrorsByType, {
 	staleTime: 60_000,
+	globalNamespace: "top",
 })
 
-export const getErrorDetailTracesResultAtom = makeQueryAtomFamily(getErrorDetailTraces, {
-	staleTime: 120_000,
+export const getErrorsSparkResultAtom = makeQueryAtomFamily(getErrorsSpark, {
+	staleTime: 60_000,
+	globalNamespace: "top",
 })
 
 export const getErrorsFacetsResultAtom = makeQueryAtomFamily(getErrorsFacets, {
 	staleTime: 60_000,
+	globalNamespace: "top",
 })
 
 export const getErrorsSummaryResultAtom = makeQueryAtomFamily(getErrorsSummary, {
 	staleTime: 60_000,
-})
-
-export const getErrorsTimeseriesResultAtom = makeQueryAtomFamily(getErrorsTimeseries, {
-	staleTime: 30_000,
+	globalNamespace: "top",
 })
 
 export const listMetricsResultAtom = makeQueryAtomFamily(listMetrics, {
@@ -333,6 +553,13 @@ export const getMetricAttributeKeysResultAtom = makeQueryAtomFamily(getMetricAtt
 
 export const getMetricAttributeValuesResultAtom = makeQueryAtomFamily(getMetricAttributeValues, {
 	staleTime: 60_000,
+})
+
+// Long idle TTL on purpose: this gates the sidebar, so it is mounted on every
+// page, and an org growing a new infra surface is not something the nav has to
+// notice within the minute. Matches the 300s server-side cache on the query.
+export const infraPresenceResultAtom = makeQueryAtomFamily(infraPresence, {
+	staleTime: 300_000,
 })
 
 export const listHostsResultAtom = makeQueryAtomFamily(listHosts, {
@@ -403,6 +630,26 @@ export const workloadFacetsResultAtom = makeQueryAtomFamily(getWorkloadFacets, {
 	staleTime: 30_000,
 })
 
+export const listContainersResultAtom = makeQueryAtomFamily(listContainers, {
+	staleTime: 30_000,
+})
+
+export const containersSummaryResultAtom = makeQueryAtomFamily(containersSummary, {
+	staleTime: 30_000,
+})
+
+export const containerDetailSummaryResultAtom = makeQueryAtomFamily(containerDetailSummary, {
+	staleTime: 30_000,
+})
+
+export const containerInfraTimeseriesResultAtom = makeQueryAtomFamily(containerInfraTimeseries, {
+	staleTime: 30_000,
+})
+
+export const containerFacetsResultAtom = makeQueryAtomFamily(getContainerFacets, {
+	staleTime: 30_000,
+})
+
 // Cloudflare infrastructure page (/infra/cloudflare): per-zone HTTP edge
 // analytics + per-Worker invocation analytics from the direct integration.
 export const cloudflareZonesResultAtom = makeQueryAtomFamily(getCloudflareZones, {
@@ -418,10 +665,6 @@ export const cloudflareZoneDetailResultAtom = makeQueryAtomFamily(getCloudflareZ
 })
 
 export const cloudflareWorkersResultAtom = makeQueryAtomFamily(getCloudflareWorkers, {
-	staleTime: 30_000,
-})
-
-export const cloudflareZoneHostsResultAtom = makeQueryAtomFamily(getCloudflareZoneHosts, {
 	staleTime: 30_000,
 })
 
@@ -457,8 +700,21 @@ export const getServiceDetailOverviewResultAtom = makeQueryAtomFamily(getService
 	staleTime: 30_000,
 })
 
+// Releases page: per-commit rows + swimlane timeline in one fetch. The list
+// takes `namespaces`, so the org-global pin lands in its key; the detail is
+// scoped to one service and needs no pin.
+export const getReleasesResultAtom = makeQueryAtomFamily(getReleases, {
+	staleTime: 30_000,
+	globalNamespace: "top",
+})
+
+export const getReleaseDetailResultAtom = makeQueryAtomFamily(getReleaseDetail, {
+	staleTime: 30_000,
+})
+
 export const getOverviewTimeSeriesResultAtom = makeQueryAtomFamily(getOverviewTimeSeries, {
 	staleTime: 30_000,
+	globalNamespace: "top",
 })
 
 // Non-blocking exact pre-sampling throughput overlays. Keyed (via the encoded
@@ -471,7 +727,7 @@ export const getServiceDetailThroughputRefinementResultAtom = makeQueryAtomFamil
 
 export const getOverviewThroughputRefinementResultAtom = makeQueryAtomFamily(
 	getOverviewThroughputRefinement,
-	{ staleTime: 30_000 },
+	{ staleTime: 30_000, globalNamespace: "top" },
 )
 
 export const getCustomChartTimeSeriesResultAtom = makeQueryAtomFamily(getCustomChartTimeSeries, {
@@ -486,26 +742,31 @@ export const getQueryBuilderBreakdownResultAtom = makeQueryAtomFamily(getQueryBu
 	staleTime: 30_000,
 })
 
-export const getServiceMapResultAtom = makeQueryAtomFamily(getServiceMap, {
-	staleTime: 15_000,
+// The service-map family carries the page's heaviest queries — the bundle alone
+// fans out to five warehouse queries, over projections that prune poorly inside
+// a day partition. `staleTime` here is an IDLE TTL (see `Atom.setIdleTTL` above),
+// not a freshness window: a mounted atom never refetches on its own, so this only
+// governs how long a disposed atom survives for a back-navigation. At 15s,
+// stepping into a trace and returning re-ran the whole map. Service topology
+// moves slowly; 2 minutes covers a normal drill-down round trip.
+const SERVICE_MAP_IDLE_TTL = 120_000
+
+export const getServiceMapBundleResultAtom = makeQueryAtomFamily(getServiceMapBundle, {
+	staleTime: SERVICE_MAP_IDLE_TTL,
 })
 
 // Service-detail Dependencies tab bundle: service edges + DB edges + external
 // edges in one fetch (replaces the three separate *ForService atoms).
 export const getServiceDependenciesBundleResultAtom = makeQueryAtomFamily(getServiceDependenciesBundle, {
-	staleTime: 15_000,
-})
-
-export const getServiceMapDbEdgesResultAtom = makeQueryAtomFamily(getServiceMapDbEdges, {
-	staleTime: 15_000,
+	staleTime: SERVICE_MAP_IDLE_TTL,
 })
 
 export const getServiceMapCloudflareResultAtom = makeQueryAtomFamily(getServiceMapCloudflare, {
-	staleTime: 15_000,
+	staleTime: SERVICE_MAP_IDLE_TTL,
 })
 
 export const getServiceMapPlanetScaleResultAtom = makeQueryAtomFamily(getServiceMapPlanetScale, {
-	staleTime: 15_000,
+	staleTime: SERVICE_MAP_IDLE_TTL,
 })
 
 export const planetscaleInfraTimeseriesResultAtom = makeQueryAtomFamily(getPlanetScaleInfraTimeseries, {
@@ -529,10 +790,6 @@ export const getPlanetScaleBranchStatsResultAtom = makeQueryAtomFamily(getPlanet
 
 export const getServiceDbQuerySummaryResultAtom = makeQueryAtomFamily(getServiceDbQuerySummary, {
 	staleTime: 15_000,
-})
-
-export const getServicePlatformsResultAtom = makeQueryAtomFamily(getServicePlatforms, {
-	staleTime: 60_000,
 })
 
 export const getServiceWorkloadsResultAtom = makeQueryAtomFamily(getServiceWorkloads, {

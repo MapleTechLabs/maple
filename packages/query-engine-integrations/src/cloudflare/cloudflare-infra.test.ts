@@ -1,9 +1,8 @@
 import { describe, expect, it } from "vitest"
-import { compileCH } from "@maple-dev/clickhouse-builder"
+import { compileUnsafe } from "@maple-dev/effect-clickhouse"
 import {
 	cloudflareWorkerCountersSQL,
 	cloudflareWorkerLatencySQL,
-	cloudflareWorkerTimeseriesSQL,
 	cloudflareZoneCacheTimeseriesSQL,
 	cloudflareZoneCountersSQL,
 	cloudflareZoneLatencySQL,
@@ -22,7 +21,7 @@ const timeseriesParams = { ...baseParams, bucketSeconds: 300 }
 
 describe("cloudflareZoneCountersSQL", () => {
 	it("rolls up HTTP counters per zone with 5xx and served-by-cache breakdowns", () => {
-		const { sql } = compileCH(cloudflareZoneCountersSQL(), baseParams)
+		const { sql } = compileUnsafe(cloudflareZoneCountersSQL(), baseParams)
 		expect(sql).toContain("FROM metrics_sum")
 		expect(sql).toContain("OrgId = 'org_1'")
 		expect(sql).toContain(
@@ -39,14 +38,14 @@ describe("cloudflareZoneCountersSQL", () => {
 	})
 
 	it("escapes single quotes in orgId", () => {
-		const { sql } = compileCH(cloudflareZoneCountersSQL(), { ...baseParams, orgId: "org'evil" })
+		const { sql } = compileUnsafe(cloudflareZoneCountersSQL(), { ...baseParams, orgId: "org'evil" })
 		expect(sql).toContain("OrgId = 'org\\'evil'")
 	})
 })
 
 describe("cloudflareZoneLatencySQL", () => {
 	it("guards each percentile against empty-set NaN and reads all three quantiles", () => {
-		const { sql } = compileCH(cloudflareZoneLatencySQL(), baseParams)
+		const { sql } = compileUnsafe(cloudflareZoneLatencySQL(), baseParams)
 		expect(sql).toContain("FROM metrics_gauge")
 		expect(sql).toContain(
 			"MetricName IN ('cloudflare.http.edge.ttfb', 'cloudflare.http.origin.duration')",
@@ -54,7 +53,7 @@ describe("cloudflareZoneLatencySQL", () => {
 		expect(sql).toContain("quantile'] = '0.5'")
 		expect(sql).toContain("quantile'] = '0.95'")
 		expect(sql).toContain("quantile'] = '0.99'")
-		expect(sql).toContain("if(countIf(")
+		expect(sql).toContain("ifNull(ifNotFinite(avgIf(")
 		expect(sql).not.toContain("cloudflare.worker")
 		expect(sql).toContain("GROUP BY serviceName")
 		expect(sql).toContain("FORMAT JSON")
@@ -63,7 +62,7 @@ describe("cloudflareZoneLatencySQL", () => {
 
 describe("cloudflareZoneTimeseriesSQL", () => {
 	it("buckets zone counters by interval and orders for chart consumption", () => {
-		const { sql } = compileCH(cloudflareZoneTimeseriesSQL(), timeseriesParams)
+		const { sql } = compileUnsafe(cloudflareZoneTimeseriesSQL(), timeseriesParams)
 		expect(sql).toContain("toStartOfInterval(TimeUnix, INTERVAL 300 SECOND)")
 		expect(sql).toContain("http.status_class'] = '5xx'")
 		expect(sql).toContain("GROUP BY serviceName, bucket")
@@ -76,7 +75,7 @@ const detailParams = { ...timeseriesParams, serviceName: "cloudflare/example.com
 
 describe("cloudflareZoneStatusTimeseriesSQL", () => {
 	it("groups one zone's requests by bucket and status class", () => {
-		const { sql } = compileCH(cloudflareZoneStatusTimeseriesSQL(), detailParams)
+		const { sql } = compileUnsafe(cloudflareZoneStatusTimeseriesSQL(), detailParams)
 		expect(sql).toContain("ServiceName = 'cloudflare/example.com'")
 		expect(sql).toContain("MetricName = 'cloudflare.http.requests'")
 		expect(sql).toContain("http.status_class'] AS statusClass")
@@ -87,7 +86,7 @@ describe("cloudflareZoneStatusTimeseriesSQL", () => {
 
 describe("cloudflareZoneCacheTimeseriesSQL", () => {
 	it("groups one zone's requests by bucket and raw cache status", () => {
-		const { sql } = compileCH(cloudflareZoneCacheTimeseriesSQL(), detailParams)
+		const { sql } = compileUnsafe(cloudflareZoneCacheTimeseriesSQL(), detailParams)
 		expect(sql).toContain("ServiceName = 'cloudflare/example.com'")
 		expect(sql).toContain("cache.status'] AS cacheStatus")
 		expect(sql).toContain("GROUP BY bucket, cacheStatus")
@@ -97,11 +96,11 @@ describe("cloudflareZoneCacheTimeseriesSQL", () => {
 
 describe("cloudflareZoneLatencyTimeseriesSQL", () => {
 	it("buckets NaN-guarded percentiles for one zone", () => {
-		const { sql } = compileCH(cloudflareZoneLatencyTimeseriesSQL(), detailParams)
+		const { sql } = compileUnsafe(cloudflareZoneLatencyTimeseriesSQL(), detailParams)
 		expect(sql).toContain("FROM metrics_gauge")
 		expect(sql).toContain("ServiceName = 'cloudflare/example.com'")
 		expect(sql).toContain("quantile'] = '0.95'")
-		expect(sql).toContain("if(countIf(")
+		expect(sql).toContain("ifNull(ifNotFinite(avgIf(")
 		expect(sql).toContain("GROUP BY bucket")
 		expect(sql).toContain("FORMAT JSON")
 	})
@@ -109,7 +108,7 @@ describe("cloudflareZoneLatencyTimeseriesSQL", () => {
 
 describe("cloudflareWorkerCountersSQL", () => {
 	it("rolls up Worker invocations / errors / subrequests per script", () => {
-		const { sql } = compileCH(cloudflareWorkerCountersSQL(), baseParams)
+		const { sql } = compileUnsafe(cloudflareWorkerCountersSQL(), baseParams)
 		expect(sql).toContain("FROM metrics_sum")
 		expect(sql).toContain(
 			"MetricName IN ('cloudflare.worker.requests', 'cloudflare.worker.errors', 'cloudflare.worker.subrequests')",
@@ -123,23 +122,13 @@ describe("cloudflareWorkerCountersSQL", () => {
 
 describe("cloudflareWorkerLatencySQL", () => {
 	it("reads only the quantiles the poller emits for Workers (0.5 / 0.99)", () => {
-		const { sql } = compileCH(cloudflareWorkerLatencySQL(), baseParams)
+		const { sql } = compileUnsafe(cloudflareWorkerLatencySQL(), baseParams)
 		expect(sql).toContain("FROM metrics_gauge")
 		expect(sql).toContain("MetricName IN ('cloudflare.worker.duration', 'cloudflare.worker.cpu_time')")
 		expect(sql).toContain("quantile'] = '0.5'")
 		expect(sql).toContain("quantile'] = '0.99'")
 		expect(sql).not.toContain("'0.95'")
-		expect(sql).toContain("if(countIf(")
-		expect(sql).toContain("FORMAT JSON")
-	})
-})
-
-describe("cloudflareWorkerTimeseriesSQL", () => {
-	it("buckets Worker counters by interval", () => {
-		const { sql } = compileCH(cloudflareWorkerTimeseriesSQL(), timeseriesParams)
-		expect(sql).toContain("toStartOfInterval(TimeUnix, INTERVAL 300 SECOND)")
-		expect(sql).toContain("sumIf(Value, MetricName = 'cloudflare.worker.errors')")
-		expect(sql).toContain("GROUP BY serviceName, bucket")
+		expect(sql).toContain("ifNull(ifNotFinite(avgIf(")
 		expect(sql).toContain("FORMAT JSON")
 	})
 })

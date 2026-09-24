@@ -26,12 +26,12 @@
 		"@types/react": "catalog:react",
 		"@types/react-dom": "catalog:react",
 		"@vitejs/plugin-react": "^6.0.2",
-		"jsdom": "^29.1.1",
+		"@vitest/browser-playwright": "catalog:",
+		"playwright": "catalog:",
 		"tailwindcss": "catalog:tailwind",
 		"tw-animate-css": "catalog:tailwind",
 		"typescript": "catalog:tooling",
 		"vite": "catalog:",
-		"vite-tsconfig-paths": "^6.0.0",
 		"vitest": "catalog:"
 	}
 }

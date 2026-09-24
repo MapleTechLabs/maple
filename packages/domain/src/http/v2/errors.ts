@@ -1,336 +1,282 @@
 import { Schema } from "effect"
+import {
+	HttpErrorRecovery,
+	HttpTaggedError,
+	PublicHttpErrorType,
+	publicHttpErrorTypeForStatus,
+	type HttpErrorRetry,
+	type PublicHttpErrorTag,
+	type PublicHttpErrorStatus,
+} from "../error-policy"
+import { publicError } from "./public-error"
+import { v2WorkerUnavailableDefinition } from "./worker-unavailable"
 
 /**
- * v2 error envelope (see docs/api-v2.md): every error response body is
- * `{ "error": { "type", "code", "message", "param"?, "doc_url"? } }` with a
- * closed set of `type`s and stable machine-readable `code`s.
- *
- * These are `Schema.Error`s (not Tagged) so the wire body carries no
- * internal `_tag` — exactly the envelope, nothing else.
+ * Every v2 failure uses the same public body. Endpoint schemas narrow `_tag`
+ * and `type` to literals; the runtime value preserves that body unchanged.
  */
-
-export const V2ErrorType = Schema.Literals([
-	"invalid_request_error",
-	"authentication_error",
-	"permission_error",
-	"not_found_error",
-	"conflict_error",
-	"rate_limit_error",
-	"api_error",
-])
+export const V2ErrorType = PublicHttpErrorType
 export type V2ErrorType = Schema.Schema.Type<typeof V2ErrorType>
 
-interface ErrorExample {
-	readonly code: string
+export const V2ErrorRecovery = HttpErrorRecovery
+export type V2ErrorRecovery = Schema.Schema.Type<typeof V2ErrorRecovery>
+
+export const errorTypeForStatus = publicHttpErrorTypeForStatus
+
+interface V2ErrorDefinitionBase<
+	Tag extends PublicHttpErrorTag,
+	Status extends PublicHttpErrorStatus,
+	Code extends string,
+> {
+	readonly tag: Tag
+	readonly status: Status
+	readonly code: Code
+	readonly title: string
 	readonly message: string
-	readonly param?: string
+	readonly identifier: string
+	readonly retryAfterSeconds?: number
 }
 
-const errorBody = <const T extends V2ErrorType>(type: T, example: ErrorExample) =>
-	Schema.Struct({
-		type: Schema.Literal(type).annotate({
-			description:
-				"Error category — a closed enum (`invalid_request_error`, `authentication_error`, `permission_error`, `not_found_error`, `conflict_error`, `rate_limit_error`, `api_error`). Branch on `code` for specifics.",
-		}),
-		code: Schema.String.annotate({
-			description: "Stable, machine-readable error code. Codes are append-only; branch on this.",
-			examples: [example.code],
-		}),
-		message: Schema.String.annotate({
-			description:
-				"Human-readable explanation of what went wrong. For humans, not for programmatic branching.",
-			examples: [example.message],
-		}),
-		param: Schema.optionalKey(
-			Schema.String.annotate({
-				description: "The request parameter that caused the error, when applicable.",
-				...(example.param !== undefined ? { examples: [example.param] } : {}),
-			}),
-		),
-		doc_url: Schema.optionalKey(
-			Schema.String.annotate({
-				description: "Link to reference documentation for this error, when available.",
-				examples: ["https://api.maple.dev/v2/docs#errors"],
-			}),
-		),
-	})
+export type V2ErrorDefinitionOptions<
+	Tag extends PublicHttpErrorTag,
+	Status extends PublicHttpErrorStatus,
+	Code extends string,
+> = V2ErrorDefinitionBase<Tag, Status, Code> &
+	(
+		| {
+				readonly retry: "never"
+				readonly recovery: Exclude<V2ErrorRecovery, "retry">
+		  }
+		| {
+				readonly retry: Exclude<HttpErrorRetry, "never">
+				readonly recovery: "retry"
+		  }
+	)
 
-export class V2InvalidRequestError extends Schema.Error<V2InvalidRequestError>(
-	"@maple/http/v2/InvalidRequestError",
-)(
-	Schema.Struct({
-		error: errorBody("invalid_request_error", {
-			code: "parameter_invalid",
-			message: "Invalid request query: limit must be between 1 and 100.",
-			param: "limit",
-		}),
-	}).annotate({ identifier: "InvalidRequestError" }),
-	{
-		httpApiStatus: 400,
-		identifier: "InvalidRequestError",
-		title: "Invalid request error",
-		description:
-			"The request was malformed — a parameter is missing, of the wrong type, or out of range. HTTP 400.",
-	},
-) {}
-
-export class V2AuthenticationError extends Schema.Error<V2AuthenticationError>(
-	"@maple/http/v2/AuthenticationError",
-)(
-	Schema.Struct({
-		error: errorBody("authentication_error", {
-			code: "invalid_credentials",
-			message: "Invalid or missing credentials.",
-		}),
-	}).annotate({ identifier: "AuthenticationError" }),
-	{
-		httpApiStatus: 401,
-		identifier: "AuthenticationError",
-		title: "Authentication error",
-		description: "The Bearer token is missing, malformed, or invalid. HTTP 401.",
-	},
-) {}
-
-export class V2PermissionError extends Schema.Error<V2PermissionError>("@maple/http/v2/PermissionError")(
-	Schema.Struct({
-		error: errorBody("permission_error", {
-			code: "insufficient_scope",
-			message: 'This API key does not have the "api_keys:write" scope required for this request.',
-		}),
-	}).annotate({ identifier: "PermissionError" }),
-	{
-		httpApiStatus: 403,
-		identifier: "PermissionError",
-		title: "Permission error",
-		description:
-			"The credentials are valid but lack the required scope or org role for this operation. HTTP 403.",
-	},
-) {}
-
-export class V2NotFoundError extends Schema.Error<V2NotFoundError>("@maple/http/v2/NotFoundError")(
-	Schema.Struct({
-		error: errorBody("not_found_error", {
-			code: "api_key_not_found",
-			message: "No such api_key.",
-			param: "id",
-		}),
-	}).annotate({ identifier: "NotFoundError" }),
-	{
-		httpApiStatus: 404,
-		identifier: "NotFoundError",
-		title: "Not found error",
-		description: "No object exists for the given ID. HTTP 404.",
-	},
-) {}
-
-export class V2ConflictError extends Schema.Error<V2ConflictError>("@maple/http/v2/ConflictError")(
-	Schema.Struct({
-		error: errorBody("conflict_error", {
-			code: "resource_conflict",
-			message: "The object was modified concurrently; retry the request.",
-		}),
-	}).annotate({ identifier: "ConflictError" }),
-	{
-		httpApiStatus: 409,
-		identifier: "ConflictError",
-		title: "Conflict error",
-		description: "The request conflicts with the current state of the object. HTTP 409.",
-	},
-) {}
+export interface V2ErrorMakeOptions {
+	readonly param?: string
+	readonly retryAfterSeconds?: number
+	readonly retryAt?: string
+}
 
 /**
- * The request asked for more data than one response may carry.
+ * Define a boundary-born v2 error. Its value, exact schema, status, tag, and
+ * recovery metadata come from this one definition.
+ */
+export const defineV2Error = <
+	const Tag extends PublicHttpErrorTag,
+	const Status extends PublicHttpErrorStatus,
+	const Code extends string,
+>(
+	definition: V2ErrorDefinitionOptions<Tag, Status, Code>,
+) => {
+	const type = errorTypeForStatus(definition.status)
+	const retryPolicy =
+		definition.retry === "never"
+			? { retry: "never" as const, recovery: definition.recovery }
+			: { retry: definition.retry, recovery: "retry" as const }
+	class BoundaryError extends HttpTaggedError<BoundaryError>()(
+		definition.tag,
+		{
+			message: Schema.String,
+			param: Schema.optionalKey(Schema.String),
+			retryAfterSeconds: Schema.optionalKey(
+				Schema.Number.check(Schema.isInt(), Schema.isGreaterThan(0)),
+			),
+			retryAt: Schema.optionalKey(Schema.String),
+		},
+		{
+			status: definition.status,
+			code: definition.code,
+			title: definition.title,
+			...retryPolicy,
+			exposure: "public_message",
+			param: (error) => error.param,
+			retryAfterSeconds: (error) => error.retryAfterSeconds,
+			retryAt: (error) => error.retryAt,
+		},
+	) {}
+	const schema = publicError(BoundaryError, {
+		identifier: definition.identifier,
+		title: definition.title,
+	})
+
+	const make = (message: string = definition.message, options: V2ErrorMakeOptions = {}) => {
+		const retryAfterSeconds = options.retryAfterSeconds ?? definition.retryAfterSeconds
+		return new BoundaryError({
+			message,
+			...(!(retryAfterSeconds === undefined) ? { retryAfterSeconds } : undefined),
+			...(!(options.retryAt === undefined) ? { retryAt: options.retryAt } : undefined),
+			...(!(options.param === undefined) ? { param: options.param } : undefined),
+		})
+	}
+
+	return { ...definition, type, schema, make } as const
+}
+
+export const V2InvalidRequest = defineV2Error({
+	tag: "@maple/http/v2/InvalidRequestError",
+	status: 400,
+	code: "parameter_invalid",
+	title: "Invalid request",
+	message: "The request did not match the endpoint schema.",
+	retry: "never",
+	recovery: "fix_request",
+	identifier: "InvalidRequestError",
+})
+
+export const V2InvalidCredentials = defineV2Error({
+	tag: "@maple/http/v2/InvalidCredentialsError",
+	status: 401,
+	code: "invalid_credentials",
+	title: "Sign in required",
+	message: "Invalid or missing credentials.",
+	retry: "never",
+	recovery: "reauthenticate",
+	identifier: "InvalidCredentialsError",
+})
+
+export const V2InsufficientScope = defineV2Error({
+	tag: "@maple/http/v2/InsufficientScopeError",
+	status: 403,
+	code: "insufficient_scope",
+	title: "Permission required",
+	message: "The API key does not have the scope required for this request.",
+	retry: "never",
+	recovery: "request_access",
+	identifier: "InsufficientScopeError",
+})
+
+/**
+ * The caller named an organization (`x-maple-org-id`) it cannot prove
+ * membership of.
  *
- * Reuses the `invalid_request_error` type — the closed enum stays closed — but
- * keeps 413 so the distinction from an ordinary 400 survives: nothing about the
- * request is malformed, the window is simply too wide. It is a statement about
- * the size of the answer, so retrying it unchanged can only fail identically;
- * the message says what to narrow.
+ * Not `V2InsufficientPermissions`: that one says "only organization
+ * administrators can perform this operation", which would send a widget owner
+ * looking for an admin instead of unpinning the organization.
  */
-export class V2PayloadTooLargeError extends Schema.Error<V2PayloadTooLargeError>(
-	"@maple/http/v2/PayloadTooLargeError",
-)(
-	Schema.Struct({
-		error: errorBody("invalid_request_error", {
-			code: "range_too_large",
-			message:
-				"That part of the recording is too large to load in one request. Request a narrower chunk range.",
-			param: "to_chunk_seq",
-		}),
-	}).annotate({ identifier: "PayloadTooLargeError" }),
-	{
-		httpApiStatus: 413,
-		identifier: "PayloadTooLargeError",
-		title: "Payload too large error",
-		description:
-			"The requested range would exceed the endpoint's response budget. Narrow the range and retry. HTTP 413.",
-	},
-) {}
+export const V2OrganizationAccessDenied = defineV2Error({
+	tag: "@maple/http/v2/OrganizationAccessDeniedError",
+	status: 403,
+	code: "organization_access_denied",
+	title: "Organization not available",
+	message: "You are not a member of the requested organization.",
+	retry: "never",
+	recovery: "request_access",
+	identifier: "OrganizationAccessDeniedError",
+})
 
-export class V2RateLimitError extends Schema.Error<V2RateLimitError>("@maple/http/v2/RateLimitError")(
-	Schema.Struct({
-		error: errorBody("rate_limit_error", {
-			code: "rate_limited",
-			message: "Too many requests; slow down and retry after the interval in the Retry-After header.",
-		}),
-	}).annotate({ identifier: "RateLimitError" }),
-	{
-		httpApiStatus: 429,
-		identifier: "RateLimitError",
-		title: "Rate limit error",
-		description: "Too many requests in a given window. Back off and retry. HTTP 429.",
-	},
-) {}
+export const V2InsufficientPermissions = defineV2Error({
+	tag: "@maple/http/v2/InsufficientPermissionsError",
+	status: 403,
+	code: "insufficient_permissions",
+	title: "Permission required",
+	message: "Only organization administrators can perform this operation.",
+	retry: "never",
+	recovery: "request_access",
+	identifier: "InsufficientPermissionsError",
+})
 
-export class V2ApiError extends Schema.Error<V2ApiError>("@maple/http/v2/ApiError")(
-	Schema.Struct({
-		error: errorBody("api_error", {
-			code: "internal_error",
-			message: "An unexpected error occurred on our end.",
-		}),
-	}).annotate({ identifier: "ApiError" }),
-	{
-		httpApiStatus: 500,
-		identifier: "ApiError",
-		title: "API error",
-		description: "An unexpected server-side error. Safe to retry with backoff. HTTP 500.",
-	},
-) {}
+export const V2ParameterInvalid = defineV2Error({
+	tag: "@maple/http/v2/ParameterInvalidError",
+	status: 400,
+	code: "parameter_invalid",
+	title: "Invalid request",
+	message: "A request parameter is invalid.",
+	retry: "never",
+	recovery: "fix_request",
+	identifier: "ParameterInvalidError",
+})
 
-/**
- * `api_error` flavor for a misbehaving upstream provider (502) — the target of
- * an outbound call (e.g. a scrape target's discovery endpoint) rejected our
- * credentials or failed at the transport level. Distinct from 503 so consumers
- * can tell "the provider is misbehaving" from "Maple's storage is unavailable".
- */
-export class V2UpstreamError extends Schema.Error<V2UpstreamError>("@maple/http/v2/UpstreamError")(
-	Schema.Struct({
-		error: errorBody("api_error", {
-			code: "upstream_error",
-			message: "The upstream provider rejected the request.",
-		}),
-	}).annotate({ identifier: "UpstreamError" }),
-	{
-		httpApiStatus: 502,
-		identifier: "UpstreamError",
-		title: "Upstream error",
-		description:
-			"An upstream provider the operation depends on failed or rejected our credentials. Check the integration's connection before retrying. HTTP 502.",
-	},
-) {}
+export const V2ParameterMissing = defineV2Error({
+	tag: "@maple/http/v2/ParameterMissingError",
+	status: 400,
+	code: "parameter_missing",
+	title: "Missing request parameter",
+	message: "A required request parameter is missing.",
+	retry: "never",
+	recovery: "fix_request",
+	identifier: "ParameterMissingError",
+})
 
-/** `api_error` flavor for upstream/persistence unavailability (503). */
-export class V2ServiceUnavailableError extends Schema.Error<V2ServiceUnavailableError>(
-	"@maple/http/v2/ServiceUnavailableError",
-)(
-	Schema.Struct({
-		error: errorBody("api_error", {
-			code: "api_key_lookup_unavailable",
-			message: "The service is temporarily unavailable; retry after a short delay.",
-		}),
-	}).annotate({ identifier: "ServiceUnavailableError" }),
-	{
-		httpApiStatus: 503,
-		identifier: "ServiceUnavailableError",
-		title: "Service unavailable error",
-		description:
-			"A dependency (persistence or upstream) was temporarily unavailable. Retry with backoff. HTTP 503.",
-	},
-) {}
+export const V2TimeRangeInvalid = defineV2Error({
+	tag: "@maple/http/v2/TimeRangeInvalidError",
+	status: 400,
+	code: "invalid_time_range",
+	title: "Invalid time range",
+	message: "end_time must be after start_time.",
+	retry: "never",
+	recovery: "fix_request",
+	identifier: "TimeRangeInvalidError",
+})
 
-// Constructors — keep handler adapters one-liners.
+export const V2CursorInvalid = defineV2Error({
+	tag: "@maple/http/v2/CursorInvalidError",
+	status: 400,
+	code: "cursor_invalid",
+	title: "Invalid pagination cursor",
+	message: "Invalid pagination cursor.",
+	retry: "never",
+	recovery: "fix_request",
+	identifier: "CursorInvalidError",
+})
 
-export const invalidRequest = (code: string, message: string, param?: string) =>
-	new V2InvalidRequestError({
-		error: { type: "invalid_request_error", code, message, ...(param !== undefined ? { param } : {}) },
-	})
+export const V2CursorSortMismatch = defineV2Error({
+	tag: "@maple/http/v2/CursorSortMismatchError",
+	status: 400,
+	code: "cursor_sort_mismatch",
+	title: "Cursor does not match sort",
+	message: "Cursor does not match the selected sort.",
+	retry: "never",
+	recovery: "fix_request",
+	identifier: "CursorSortMismatchError",
+})
 
-export const authenticationError = (code: string, message: string) =>
-	new V2AuthenticationError({ error: { type: "authentication_error", code, message } })
+export const V2CallbackHostUnavailable = defineV2Error({
+	tag: "@maple/http/v2/CallbackHostUnavailableError",
+	status: 503,
+	code: "callback_host_unavailable",
+	title: "Integration setup unavailable",
+	message: "Integration setup is not available from this host.",
+	retry: "never",
+	recovery: "contact_support",
+	identifier: "CallbackHostUnavailableError",
+})
 
-export const permissionError = (code: string, message: string) =>
-	new V2PermissionError({ error: { type: "permission_error", code, message } })
+export const V2RateLimited = defineV2Error({
+	tag: "@maple/http/v2/RateLimitError",
+	status: 429,
+	code: "rate_limited",
+	title: "Too many requests",
+	message: "Too many requests. Retry after the interval in the Retry-After header.",
+	retry: "after",
+	recovery: "retry",
+	identifier: "RateLimitError",
+})
 
-/** `resource_missing` matches Stripe's code for a bad object ID. */
-export const notFound = (message: string, param?: string) =>
-	new V2NotFoundError({
-		error: {
-			type: "not_found_error",
-			code: "resource_missing",
-			message,
-			...(param !== undefined ? { param } : {}),
-		},
-	})
+export const V2ResponseSchemaFailure = defineV2Error({
+	tag: "@maple/http/v2/ResponseSchemaError",
+	status: 500,
+	code: "internal_error",
+	title: "Something went wrong",
+	message: "An unexpected error occurred on our end.",
+	retry: "never",
+	recovery: "contact_support",
+	identifier: "ResponseSchemaError",
+})
 
-/** Resource-specific 404 code for stable public branching. */
-export const resourceNotFound = (resource: string, message: string, param = "id") =>
-	new V2NotFoundError({
-		error: {
-			type: "not_found_error",
-			code: `${resource}_not_found`,
-			message,
-			param,
-		},
-	})
+export const V2UnexpectedFailure = defineV2Error({
+	tag: "@maple/http/v2/UnexpectedError",
+	status: 500,
+	code: "internal_error",
+	title: "Something went wrong",
+	message: "An unexpected error occurred on our end.",
+	retry: "never",
+	recovery: "contact_support",
+	identifier: "UnexpectedError",
+})
 
-export const conflict = (code: string, message: string) =>
-	new V2ConflictError({ error: { type: "conflict_error", code, message } })
-
-/**
- * The message crosses the public boundary verbatim: unlike the warehouse
- * errors, this one carries no database diagnostics — only the range the caller
- * asked for and the caps it exceeded — and it is the one error here where
- * telling the user exactly what to do is the whole value.
- */
-export const payloadTooLarge = (message: string, param?: string) =>
-	new V2PayloadTooLargeError({
-		error: {
-			type: "invalid_request_error",
-			code: "range_too_large",
-			message,
-			...(param !== undefined ? { param } : {}),
-		},
-	})
-
-export const rateLimited = () =>
-	new V2RateLimitError({
-		error: {
-			type: "rate_limit_error",
-			code: "rate_limited",
-			message: "Too many requests. Retry after 60 seconds.",
-		},
-	})
-
-export const investigationQuotaReached = (retryableAt: string) =>
-	new V2RateLimitError({
-		error: {
-			type: "rate_limit_error",
-			code: "investigation_daily_quota",
-			message: `Daily investigation quota reached. Retry after ${retryableAt}.`,
-		},
-	})
-
-export const upstreamError = (code: string, message: string) =>
-	new V2UpstreamError({ error: { type: "api_error", code, message } })
-
-export const apiError = () =>
-	new V2ApiError({
-		error: {
-			type: "api_error",
-			code: "internal_error",
-			message: "An unexpected error occurred on our end.",
-		},
-	})
-
-export const serviceUnavailable = (message: string) =>
-	new V2ServiceUnavailableError({ error: { type: "api_error", code: "service_unavailable", message } })
-
-/** Sanitized dependency failure with a stable operation-specific public code. */
-export const dependencyUnavailable = (code: string) =>
-	new V2ServiceUnavailableError({
-		error: {
-			type: "api_error",
-			code,
-			message: "A service required for this operation is temporarily unavailable; retry with backoff.",
-		},
-	})
+/** App bootstrap failed before the v2 HttpApi graph could handle the request. */
+export const V2WorkerUnavailable = defineV2Error({
+	...v2WorkerUnavailableDefinition,
+})

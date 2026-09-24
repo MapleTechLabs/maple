@@ -1,0 +1,171 @@
+import { getColumnJsonPath, getColumnType, getTinybirdType, isDatasourceDefinition } from "@tinybirdco/sdk"
+import * as Datasources from "@maple/domain/tinybird"
+
+// Live introspection of the `defineDatasource` exports in
+// packages/domain/src/tinybird/datasources.ts. This neutral catalog powers
+// both raw-SQL datasource scoping and the MCP discovery tool, keeping the
+// security allowlist and agent-visible schema derived from the same source.
+//
+// Type strings (`String`, `DateTime64(9)`, `LowCardinality(String)`,
+// `Map(LowCardinality(String), String)`) come straight from the SDK's
+// `getTinybirdType()`. Curated notes — enum casing, unit warnings, sort-key
+// hints — live in the TABLE_NOTES record below; the type system can't infer
+// them but they cause the most expensive agent mistakes.
+
+const TABLE_NOTES: Record<string, ReadonlyArray<string>> = {
+	logs: [
+		"`SeverityText` casing varies by SDK ('Error' from Effect services, 'ERROR' from OTel SDKs), so filter on the OTel level number instead: `SeverityNumber BETWEEN 17 AND 20` is ERROR, 13-16 WARN, 9-12 INFO, 5-8 DEBUG, 1-4 TRACE, 21-24 FATAL. Where you must use text, use `upper(SeverityText) = 'ERROR'`.",
+		"`SeverityNumber` follows OTel: 1-4 Trace, 5-8 Debug, 9-12 Info, 13-16 Warn, 17-20 Error, 21-24 Fatal.",
+		"`ResourceAttributes` and `LogAttributes` are `Map(LowCardinality(String), String)` — access with `LogAttributes['key']`; missing keys return '' (empty string), not NULL.",
+		"Use `TimestampTime` (DateTime) for `$__timeFilter(TimestampTime)` if you want sort-key-prefix-friendly filtering; `Timestamp` is DateTime64 (nanosecond precision).",
+		"Sorting key: `(OrgId, ServiceName, TimestampTime, Timestamp)` — adding `ServiceName = '…'` to the WHERE clause speeds queries dramatically.",
+	],
+	traces: [
+		"`StatusCode` values are Title Case: 'Ok', 'Error', 'Unset'. Filter with `StatusCode = 'Error'` (NOT `'ERROR'`).",
+		"`SpanKind` values are Title Case: 'Internal', 'Server', 'Client', 'Producer', 'Consumer'.",
+		"`Duration` is in NANOSECONDS (UInt64). Divide by 1e6 for milliseconds, 1e9 for seconds.",
+		"`SpanAttributes` and `ResourceAttributes` are `Map(LowCardinality(String), String)` — access with `SpanAttributes['http.route']`; missing keys return '' not NULL.",
+		"`SampleRate` defaults to 1.0; multiply counts by `SampleRate` for unbiased throughput estimates.",
+		"Sorting key starts with `(OrgId, ServiceName, Timestamp)` — filter on these first.",
+		"For service-level metrics (per-service throughput, latency), prefer `service_overview_spans` — it's pre-filtered to entry-point spans and ~10× smaller.",
+	],
+	ai_trace_index: [
+		"GenAI agent spans ONLY (every row carries a non-empty `VendorId`), with the `maple_ai.*` identity pre-extracted to plain columns. ALWAYS prefer this over `traces` + `mapContains(SpanAttributes, 'maple_ai.…')` for finding agent traces/sessions — the raw-traces scan reads the full attribute Map per span and times out on day-plus windows.",
+		"`SessionId` is '' on most rows: vendors stamp the session key only on turn-owning spans. Resolve a trace's session as `max(SessionId) GROUP BY TraceId`, and treat a trace whose max is '' as a sessionless single-trace session.",
+		"`DeploymentEnv`, `Model`, `AgentName` and `ToolName` are the span's environment and GenAI identity, coalesced across dialects at insert (`gen_ai.*`, Vercel AI SDK `ai.*`, OpenInference `llm.*`/`tool.*`). '' where the span carries no such fact — a chat span has no tool — and on rows materialized before migration 0026. Filter and facet on these here rather than on `trace_detail_spans` attributes.",
+		"`IsLlmCall`, `IsToolCall`, `IsError` (UInt8 flags), `Tokens`, `Cost` (Float64) are the span's kind, failure and reported usage; `SpanId`/`ParentSpanId`/`Duration` are its own. `Tokens` is the span's billed total under the reporter's own convention — a prompt figure that already contains its cached tokens (OpenAI, OpenRouter, Gemini) or a completion figure that contains its reasoning is NOT double counted, so it can read below `input + cache_read + output + reasoning` summed off the raw attributes. Sum per session here for calls, failures, tokens and cost — but a wrapper span often repeats its children's usage, so subtract a child reporter's tokens from its parent (`ParentSpanId = SpanId`) before summing, or the total doubles.",
+		"`VendorVersion` (LowCardinality String) is the framework's version beside `VendorId`, and `InputTokens`, `CacheReadTokens`, `CacheWriteTokens`, `OutputTokens`, `ReasoningTokens` (Float64) are the disjoint split of `Tokens` — '' / 0 on rows materialized before migration 0031.",
+		"`ErrorType` (LowCardinality String, `error.type`), `StatusMessage` and `ToolDescription` (`gen_ai.tool.description`, tool spans only) are the span's own failure reason and tool documentation, truncated at insert — '' on rows materialized before migration 0032. Group failures by `ErrorType` here rather than reading `trace_detail_spans` for it. `FailedToolCallResult` (String) is a failed tool call's result, where many frameworks put the error — '' on every other row — and `ErrorFingerprint` (UInt64, select it as `toString(ErrorFingerprint)`) groups failures by that result, else the status message, with volatile values redacted; 0 on rows that did not fail.",
+		"Holds only the agent spans, and only their identity — for every span of a detected trace, or for anything it does not carry (`StatusCode`, the tool call's arguments and result, `gen_ai.usage.*` per key), collect `TraceId`s here first, then read `trace_detail_spans` with `TraceId IN (…)` AND a `Timestamp` window.",
+		"Sorting key: `(OrgId, Timestamp, TraceId)`; filled forward by its MV, so windows predating the cluster's schema apply under-report.",
+	],
+	service_overview_spans: [
+		"Pre-materialized projection of entry-point spans only (Server/Consumer kinds + root spans). Use for per-service request count, error rate, p50/p95/p99 latency.",
+		"`Duration` is NANOSECONDS — divide by 1e6 for ms.",
+		"`StatusCode` is Title Case: 'Ok', 'Error', 'Unset'.",
+		"Does NOT include `SpanAttributes`/`ResourceAttributes` — query `traces` if you need attribute access.",
+	],
+	error_events: [
+		"Per-error-occurrence rows with the OTel `exception` event unwrapped — surfaces `ExceptionType`, `ExceptionMessage`, `Stacktrace`, and a stable `FingerprintHash` for grouping.",
+		"Use `FingerprintHash` to group occurrences into issues; `(OrgId, FingerprintHash, Timestamp)` is the sort key.",
+	],
+	metrics_sum: [
+		"Cumulative or delta counter metrics. Use `rate(Value) OVER (PARTITION BY MetricName ORDER BY TimeUnix)` for rate-of-change when `IsMonotonic=1`.",
+		"`Attributes` is a Map — filter with `Attributes['service.name']`.",
+		"Check `AggregationTemporality` before choosing an aggregation: delta rows (temporality 1) already carry the per-interval increment, so `sum(Value)` per bucket is exact and a rate/lag reconstruction would double-difference them. Only cumulative rows (temporality 2) need the window function above.",
+		"`maple_ingest_org_bytes_total` / `maple_ingest_org_items_total` are delta counters written under Maple's internal org, carrying `Attributes['org_id']` (the *tenant* org whose data was ingested) and `Attributes['signal']` ('logs' | 'traces' | 'metrics'). Bytes are the real decoded payload size metered to billing — divide by 1e9 for GB. Sum them; never rate them.",
+		"An `Attributes['otel.metric.overflow'] = 'true'` datapoint means the SDK exceeded its per-interval series limit and collapsed the excess — per-org attribution is incomplete for that interval, so surface it rather than silently including it in a total.",
+	],
+	metrics_gauge: ["Point-in-time numeric values. Aggregate with avg/min/max/last over time buckets."],
+	metrics_histogram: [
+		"Pre-aggregated histograms (bucket counts + sum + count). Reconstruct percentiles with `quantilesExact`/`quantileBFloat16` if needed.",
+	],
+	attribute_keys_hourly: [
+		"The time column is `Hour` (a top-of-hour DateTime), NOT `Timestamp`. Use `$__timeFilter(Hour)` and snap range bounds with `toStartOfHour`.",
+		"The count column is `UsageCount` (SimpleAggregateFunction(sum, UInt64)) — aggregate with `sum(UsageCount)`. There is no `Count` column.",
+		"There is NO `ServiceName` column: this rollup is per (org, scope, hour, key) only, so attribute keys cannot be split by service here. Query `traces` / `logs` directly for a per-service breakdown.",
+		"`AttributeScope` values are lowercase: 'span', 'resource', 'log', 'metric'. Filter with `AttributeScope = 'span'` (NOT 'Span').",
+		"Sorting key: `(OrgId, AttributeScope, Hour, AttributeKey)` — filtering on `AttributeScope` first is what makes this table fast.",
+	],
+	attribute_values_hourly: [
+		"Same shape as `attribute_keys_hourly` one level deeper, adding `AttributeValue`. Time column is `Hour`, count column is `UsageCount`, and there is no `ServiceName`.",
+		"`AttributeScope` values are lowercase: 'span', 'resource', 'log', 'metric'.",
+		"Sorting key: `(OrgId, AttributeScope, AttributeKey, Hour, AttributeValue)` — pin `AttributeKey` to look up one key's values cheaply.",
+	],
+	service_usage: [
+		"Hourly per-service rollup of STORED rows, 365-day TTL — far longer than the 30-day `logs`/`traces` retention, so it is the right table for long-range volume trends.",
+		"`Hour` is a top-of-hour DateTime. Snap both range bounds to their hour floor (`toStartOfHour`) or sub-hour windows return no rows at all; this necessarily over-reports at the window edges.",
+		"The `*SizeBytes` columns are STORAGE ESTIMATES, not measured bytes — the materialized views compute them as `length(Body) + 200` (logs), `length(SpanName) + 300` (spans) and flat per-point constants (metrics). They will NOT reconcile with an Autumn invoice and must never be presented as billed usage.",
+		"For real billed bytes use `metrics_sum` / `maple_ingest_org_bytes_total`, which records the decoded payload size the gateway actually metered. Counts here are also post-sampling and post-drop, i.e. what was stored, not what was accepted.",
+		"Metric counts are split across four columns by point type (`SumMetricCount`, `GaugeMetricCount`, `HistogramMetricCount`, `ExpHistogramMetricCount`) — add all four for a total metric-point count.",
+		"Has no `DeploymentEnv` dimension, so prod-vs-staging splits are impossible here; use `logs_aggregates_hourly` / `traces_aggregates_hourly` for that.",
+	],
+} satisfies Record<string, ReadonlyArray<string>>
+
+interface ColumnInfo {
+	readonly name: string
+	readonly type: string
+	readonly jsonPath?: string
+}
+
+export interface TableSummary {
+	readonly name: string
+	readonly description?: string
+	readonly columnCount: number
+}
+
+export interface TableInfo extends TableSummary {
+	readonly columns: ReadonlyArray<ColumnInfo>
+	readonly notes?: ReadonlyArray<string>
+	readonly sortingKey?: ReadonlyArray<string> | string
+	readonly partitionKey?: string
+}
+
+/**
+ * Datasources that raw SQL must never reach, even inside the caller's own org.
+ * The audit log records every member's activity and origin IP and is served
+ * only through the admin-gated `GET /v2/audit_log`; letting `run_sql` or a
+ * dashboard widget read it would bypass that gate (and let the log observe
+ * itself being read).
+ */
+const RAW_SQL_HIDDEN_DATASOURCES: ReadonlySet<string> = new Set(["audit_log"])
+
+function collectDatasources() {
+	// `Datasources` exports a mix of datasource definitions, type aliases, helper
+	// functions, and constant lookup tables. `isDatasourceDefinition` is the
+	// runtime filter; we cast to `unknown` first because the static union of all
+	// exports is too wide for TS to narrow with the predicate.
+	return (Object.values(Datasources) as ReadonlyArray<unknown>)
+		.filter(isDatasourceDefinition)
+		.filter((ds) => !RAW_SQL_HIDDEN_DATASOURCES.has(ds._name))
+}
+
+export function listWarehouseTables(): ReadonlyArray<TableSummary> {
+	return collectDatasources()
+		.map((ds) => ({
+			name: ds._name,
+			description: ds.options.description,
+			columnCount: Object.keys(ds._schema).length,
+		}))
+		.sort((a, b) => a.name.localeCompare(b.name))
+}
+
+/**
+ * Datasource names that carry an `OrgId` column — the allowlist used to scope a
+ * per-org raw-SQL read JWT. Derived live from the `defineDatasource` exports, so
+ * a new telemetry datasource is covered automatically; any datasource WITHOUT an
+ * `OrgId` column is excluded, making it unqueryable in raw SQL (fail-closed)
+ * rather than leaking cross-tenant rows.
+ */
+export function listOrgScopedDatasourceNames(): ReadonlyArray<string> {
+	return collectDatasources()
+		.filter((ds) => "OrgId" in ds._schema)
+		.map((ds) => ds._name)
+		.sort((a, b) => a.localeCompare(b))
+}
+
+export function describeWarehouseTable(name: string): TableInfo | null {
+	const ds = collectDatasources().find((d) => d._name === name)
+	if (!ds) return null
+
+	const columns: ColumnInfo[] = Object.entries(ds._schema).map(([colName, colDef]) => {
+		const validator = getColumnType(colDef)
+		const type = getTinybirdType(validator)
+		const jsonPath = getColumnJsonPath(colDef)
+		return jsonPath ? { name: colName, type, jsonPath } : { name: colName, type }
+	})
+
+	const engine = ds.options.engine as
+		| { sortingKey?: ReadonlyArray<string> | string; partitionKey?: string }
+		| undefined
+
+	return {
+		name: ds._name,
+		description: ds.options.description,
+		columnCount: columns.length,
+		columns,
+		notes: TABLE_NOTES[ds._name],
+		sortingKey: engine?.sortingKey,
+		partitionKey: engine?.partitionKey,
+	}
+}

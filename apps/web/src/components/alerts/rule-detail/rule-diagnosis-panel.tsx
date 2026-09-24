@@ -20,6 +20,7 @@ import {
 	type DiagnosisStageStatus,
 } from "@/lib/alerts/diagnosis"
 import { worstState } from "@/lib/alerts/rule-status"
+import { useTimezonePreference } from "@/hooks/use-timezone-preference"
 import { AlertSegmentedSelect } from "@/components/alerts/alert-segmented-select"
 
 const STATUS_ICON: Record<DiagnosisStageStatus, { className: string }> = {
@@ -27,7 +28,7 @@ const STATUS_ICON: Record<DiagnosisStageStatus, { className: string }> = {
 	warn: { className: "text-warning" },
 	fail: { className: "text-destructive" },
 	unknown: { className: "text-muted-foreground" },
-}
+} satisfies Record<DiagnosisStageStatus, { className: string }>
 
 /**
  * "Why isn't this firing? / Why is this failing?" — walks the evaluation
@@ -63,6 +64,8 @@ export function RuleDiagnosisPanel({
 	const [selectedGroup, setSelectedGroup] = useState<string | null>(null)
 	const activeGroup = selectedGroup ?? defaultGroupKey
 
+	const { effectiveTimezone } = useTimezonePreference()
+
 	const stages = useMemo(
 		() =>
 			buildDiagnosis({
@@ -73,9 +76,23 @@ export function RuleDiagnosisPanel({
 				destinations,
 				deliveryEvents,
 				now,
-				...(groupKeys.length > 0 && activeGroup != null ? { selectedGroupKey: activeGroup } : {}),
+				timeZone: effectiveTimezone,
+				...(groupKeys.length > 0 && activeGroup != null
+					? { selectedGroupKey: activeGroup }
+					: undefined),
 			}),
-		[rule, states, checks, openIncidents, destinations, deliveryEvents, now, groupKeys, activeGroup],
+		[
+			rule,
+			states,
+			checks,
+			openIncidents,
+			destinations,
+			deliveryEvents,
+			now,
+			effectiveTimezone,
+			groupKeys,
+			activeGroup,
+		],
 	)
 	const verdict = useMemo(() => diagnosisVerdict(stages), [stages])
 	const hasProblems = verdict.status !== "pass"
@@ -123,12 +140,17 @@ export function RuleDiagnosisPanel({
 				<div className="border-t px-4 py-2.5">
 					{groupKeys.length > 0 && (
 						<div className="mb-3 flex items-center gap-2">
-							<span className="text-xs text-muted-foreground">Group</span>
-							<AlertSegmentedSelect
-								value={activeGroup ?? groupKeys[0]!}
-								onChange={(value) => setSelectedGroup(value)}
-								options={groupKeys.slice(0, 8).map((key) => ({ value: key, label: key }))}
-							/>
+							<span className="shrink-0 text-xs text-muted-foreground">Group</span>
+							{/* Group keys are opaque ids (often UUID-long), so the track
+							    overflows its row — scroll it instead of clipping. */}
+							<div className="-my-1 min-w-0 flex-1 overflow-x-auto py-1">
+								<AlertSegmentedSelect
+									className="w-max"
+									value={activeGroup ?? groupKeys[0]!}
+									onChange={(value) => setSelectedGroup(value)}
+									options={groupKeys.slice(0, 8).map((key) => ({ value: key, label: key }))}
+								/>
+							</div>
 						</div>
 					)}
 					<ol className="space-y-1">

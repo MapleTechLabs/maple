@@ -2,12 +2,29 @@ import {
 	QUERY_BUILDER_METRIC_TYPES,
 	type QueryBuilderDataSource,
 	type QueryBuilderMetricType,
-} from "@/lib/query-builder/model"
+} from "@maple/query-engine/query-builder"
 import { type Operator, normalizeKey as sharedNormalizeKey } from "@maple/domain/where-clause"
+import { FUNNEL_POPULATION_FILTER_FIELDS, type FunnelPopulationFilterField } from "@maple/query-model"
+import { productEventsFilterField, productEventsFilterKey } from "@/lib/query-builder/funnel-filters"
 
 type WhereClauseAutocompleteContext = "key" | "operator" | "value" | "conjunction"
 
-export type WhereClauseAutocompleteScope = "default" | "trace_search"
+/**
+ * Which vocabulary the editor completes. `product_events` is the funnel
+ * widget's population filter (session dimensions); `product_event_attributes`
+ * is a funnel step's attribute filter, whose keys are the customer's own and
+ * are not suggested. Both take `=` only — the funnel query runs nothing else.
+ */
+export type WhereClauseAutocompleteScope =
+	| "default"
+	| "trace_search"
+	| "product_events"
+	| "product_event_attributes"
+
+const PRODUCT_EVENT_SCOPES: ReadonlyArray<WhereClauseAutocompleteScope> = [
+	"product_events",
+	"product_event_attributes",
+]
 
 export interface WhereClauseAutocompleteValues {
 	services?: string[]
@@ -24,6 +41,12 @@ export interface WhereClauseAutocompleteValues {
 	resourceAttributeValues?: string[]
 	/** Dashboard variable names — suggested as `$name` in every value position. */
 	variables?: string[]
+	/** Per-field values for the session dimensions (the web-analytics facets). */
+	productEventFacets?: Partial<Record<FunnelPopulationFilterField, string[]>>
+	/** `product_events` source: the event names, hosts and page paths seen in the window. */
+	eventNames?: string[]
+	hosts?: string[]
+	pagePaths?: string[]
 }
 
 export interface WhereClauseAutocompleteSuggestion {
@@ -92,8 +115,8 @@ const KEY_DEFINITIONS: Record<QueryBuilderDataSource, KeyDefinition[]> = {
 			description: "Filter by deployment environment",
 		},
 		{
-			label: "deployment.commit_sha",
-			insertText: "deployment.commit_sha",
+			label: "vcs.ref.head.revision",
+			insertText: "vcs.ref.head.revision",
 			description: "Filter by commit sha",
 		},
 		{
@@ -139,6 +162,34 @@ const KEY_DEFINITIONS: Record<QueryBuilderDataSource, KeyDefinition[]> = {
 			description: "Filter by a resource attribute",
 		},
 	],
+	product_events: [
+		{
+			label: "event.name",
+			insertText: "event.name",
+			description: "Event name, comma-separated for several",
+		},
+		{ label: "event.kind", insertText: "event.kind", description: "navigation | custom | screen" },
+		{ label: "source", insertText: "source", description: "browser | server | mobile | trace" },
+		{ label: "host", insertText: "host", description: "Site host the event fired on" },
+		{ label: "page.path", insertText: "page.path", description: "Page path the event fired on" },
+		{
+			label: "service.name",
+			insertText: "service.name",
+			description: "Emitting service (server events)",
+		},
+		{ label: "user.id", insertText: "user.id", description: "Identified user" },
+		{ label: "group.id", insertText: "group.id", description: "Group / organization id" },
+		{ label: "attr.<key>", insertText: "attr.", description: "Filter by a track() prop" },
+		{ label: "country", insertText: "country", description: "Session country code, e.g. DE" },
+		{ label: "referrer.host", insertText: "referrer.host", description: "Session referrer host" },
+		{ label: "utm.source", insertText: "utm.source", description: "Session utm_source" },
+		{ label: "utm.medium", insertText: "utm.medium", description: "Session utm_medium" },
+		{ label: "utm.campaign", insertText: "utm.campaign", description: "Session utm_campaign" },
+		{ label: "device.type", insertText: "device.type", description: "desktop | mobile | tablet" },
+		{ label: "browser", insertText: "browser", description: "Session browser name" },
+		{ label: "os", insertText: "os", description: "Session operating system" },
+		{ label: "visitor.type", insertText: "visitor.type", description: "new | returning" },
+	],
 	metrics: [
 		{
 			label: "service.name",
@@ -156,7 +207,29 @@ const KEY_DEFINITIONS: Record<QueryBuilderDataSource, KeyDefinition[]> = {
 			description: "Filter by a metric attribute",
 		},
 	],
-}
+} satisfies Record<QueryBuilderDataSource, KeyDefinition[]>
+
+const PRODUCT_EVENTS_KEY_DESCRIPTIONS = {
+	host: "Site the session was on",
+	pagePath: "Sessions that viewed this page",
+	referrerHost: "Referrer host, e.g. news.ycombinator.com",
+	country: "Country code, e.g. DE",
+	deviceType: "desktop | mobile | tablet",
+	browserName: "Browser name",
+	osName: "Operating system",
+	language: "Browser language",
+	utmSource: "utm_source of the session",
+	utmMedium: "utm_medium of the session",
+	utmCampaign: "utm_campaign of the session",
+	visitorType: "new | returning",
+} satisfies Record<FunnelPopulationFilterField, string>
+
+/** The funnel population filter's keys — one per `FunnelPopulationFilters` field, canonical spelling. */
+const PRODUCT_EVENTS_KEY_DEFINITIONS: KeyDefinition[] = FUNNEL_POPULATION_FILTER_FIELDS.map((field) => ({
+	label: productEventsFilterKey(field),
+	insertText: productEventsFilterKey(field),
+	description: PRODUCT_EVENTS_KEY_DESCRIPTIONS[field],
+}))
 
 const TRACE_SEARCH_KEY_DEFINITIONS: KeyDefinition[] = [
 	{
@@ -173,6 +246,11 @@ const TRACE_SEARCH_KEY_DEFINITIONS: KeyDefinition[] = [
 		label: "deployment.environment",
 		insertText: "deployment.environment",
 		description: "Filter by deployment environment",
+	},
+	{
+		label: "service.namespace",
+		insertText: "service.namespace",
+		description: "Filter by service namespace",
 	},
 	{
 		label: "http.method",
@@ -669,6 +747,40 @@ function buildVariableSuggestions(
 	}))
 }
 
+const PRODUCT_EVENT_KINDS = ["navigation", "custom", "screen"]
+const PRODUCT_EVENT_SOURCES = ["browser", "server", "mobile", "trace"]
+
+/** Values for the `product_events` source's own keys; `undefined` when the key is not one of them. */
+function buildProductEventValueSuggestions(
+	normalizedKey: string,
+	values: WhereClauseAutocompleteValues | undefined,
+): WhereClauseAutocompleteSuggestion[] | undefined {
+	const fixed = {
+		"event.name": uniqueValues(values?.eventNames ?? []),
+		event: uniqueValues(values?.eventNames ?? []),
+		"event.kind": PRODUCT_EVENT_KINDS,
+		kind: PRODUCT_EVENT_KINDS,
+		source: PRODUCT_EVENT_SOURCES,
+		host: uniqueValues(values?.hosts ?? []),
+		"page.path": uniqueValues(values?.pagePaths ?? []),
+		path: uniqueValues(values?.pagePaths ?? []),
+		"service.name": uniqueValues(values?.services ?? []),
+	} satisfies Record<string, string[]>
+	if (Object.hasOwn(fixed, normalizedKey)) {
+		const own: string[] = fixed[normalizedKey as keyof typeof fixed]
+		return own.map((value) => toStringValueSuggestion(value, normalizedKey))
+	}
+
+	const field = productEventsFilterField(normalizedKey)
+	if (field === undefined) return undefined
+	if (field === "visitorType") {
+		return ["new", "returning"].map((value) => toStringValueSuggestion(value, "visitor_type"))
+	}
+	return uniqueValues(values?.productEventFacets?.[field] ?? []).map((value) =>
+		toStringValueSuggestion(value, normalizedKey),
+	)
+}
+
 function buildValueSuggestions(
 	key: string | null,
 	dataSource: QueryBuilderDataSource,
@@ -676,6 +788,23 @@ function buildValueSuggestions(
 	scope: WhereClauseAutocompleteScope,
 ): WhereClauseAutocompleteSuggestion[] {
 	const normalizedKey = normalizeKey(key)
+
+	if (scope === "product_event_attributes") return []
+	if (scope === "product_events") {
+		const field = productEventsFilterField(normalizedKey)
+		if (field === undefined) return []
+		if (field === "visitorType") {
+			return ["new", "returning"].map((value) => toStringValueSuggestion(value, "visitor_type"))
+		}
+		return uniqueValues(values?.productEventFacets?.[field] ?? []).map((value) =>
+			toStringValueSuggestion(value, normalizedKey),
+		)
+	}
+
+	if (dataSource === "product_events") {
+		const eventValues = buildProductEventValueSuggestions(normalizedKey, values)
+		if (eventValues !== undefined) return eventValues
+	}
 
 	if (normalizedKey === "root_only") {
 		return [
@@ -724,15 +853,15 @@ function buildValueSuggestions(
 		"service.name": uniqueValues(values?.services ?? []),
 		"span.name": uniqueValues(values?.spanNames ?? []),
 		"deployment.environment": uniqueValues(values?.environments ?? []),
-		"deployment.commit_sha": uniqueValues(values?.commitShas ?? []),
+		"vcs.ref.head.revision": uniqueValues(values?.commitShas ?? []),
 		severity: uniqueValues(values?.severities ?? []),
 		...(scope === "trace_search"
 			? {
 					"http.method": uniqueValues(values?.httpMethods ?? []),
 					"http.status_code": uniqueValues(values?.httpStatusCodes ?? []),
 				}
-			: {}),
-	}
+			: undefined),
+	} satisfies Record<string, string[]>
 
 	const explicit = mappedValues[normalizedKey]
 	if (explicit) {
@@ -806,13 +935,19 @@ function buildSuggestions(
 		const query = parsed.query.toLowerCase()
 
 		// When typing attr., show dynamic attribute keys instead of static definitions
-		if (query.startsWith("attr.") && values?.attributeKeys && values.attributeKeys.length > 0) {
+		if (
+			!PRODUCT_EVENT_SCOPES.includes(scope) &&
+			query.startsWith("attr.") &&
+			values?.attributeKeys &&
+			values.attributeKeys.length > 0
+		) {
 			const attrSuggestions = buildAttributeKeySuggestions(values.attributeKeys)
 			return filterAndRankSuggestions(attrSuggestions, query, maxSuggestions)
 		}
 
 		// When typing resource., show dynamic resource attribute keys
 		if (
+			!PRODUCT_EVENT_SCOPES.includes(scope) &&
 			query.startsWith("resource.") &&
 			values?.resourceAttributeKeys &&
 			values.resourceAttributeKeys.length > 0
@@ -822,9 +957,13 @@ function buildSuggestions(
 		}
 
 		const keyDefinitions =
-			scope === "trace_search" && dataSource === "traces"
-				? TRACE_SEARCH_KEY_DEFINITIONS
-				: KEY_DEFINITIONS[dataSource]
+			scope === "product_events"
+				? PRODUCT_EVENTS_KEY_DEFINITIONS
+				: scope === "product_event_attributes"
+					? []
+					: scope === "trace_search" && dataSource === "traces"
+						? TRACE_SEARCH_KEY_DEFINITIONS
+						: KEY_DEFINITIONS[dataSource]
 
 		const keySuggestions = keyDefinitions.map((keyDef) =>
 			toSuggestion(
@@ -842,78 +981,88 @@ function buildSuggestions(
 	}
 
 	if (parsed.context === "operator") {
-		const operatorSuggestions: WhereClauseAutocompleteSuggestion[] = [
-			{
-				id: "operator:equal",
-				kind: "operator",
-				label: "=",
-				insertText: "=",
-				description: "Exact match",
-			},
-			{
-				id: "operator:not-equal",
-				kind: "operator",
-				label: "!=",
-				insertText: "!=",
-				description: "Not equal",
-			},
-			{
-				id: "operator:gt",
-				kind: "operator",
-				label: ">",
-				insertText: ">",
-				description: "Greater than",
-			},
-			{
-				id: "operator:lt",
-				kind: "operator",
-				label: "<",
-				insertText: "<",
-				description: "Less than",
-			},
-			{
-				id: "operator:gte",
-				kind: "operator",
-				label: ">=",
-				insertText: ">=",
-				description: "Greater than or equal",
-			},
-			{
-				id: "operator:lte",
-				kind: "operator",
-				label: "<=",
-				insertText: "<=",
-				description: "Less than or equal",
-			},
-			{
-				id: "operator:contains",
-				kind: "operator",
-				label: "contains",
-				insertText: "contains",
-				description: "Substring match",
-			},
-			{
-				id: "operator:not-contains",
-				kind: "operator",
-				label: "!contains",
-				insertText: "!contains",
-				description: "Substring does not match",
-			},
-			{
-				id: "operator:exists",
-				kind: "operator",
-				label: "exists",
-				insertText: "exists",
-				description: "Key exists",
-			},
-			{
-				id: "operator:not-exists",
-				kind: "operator",
-				label: "!exists",
-				insertText: "!exists",
-				description: "Key does not exist",
-			},
-		]
+		const operatorSuggestions: WhereClauseAutocompleteSuggestion[] = PRODUCT_EVENT_SCOPES.includes(scope)
+			? [
+					{
+						id: "operator:equal",
+						kind: "operator",
+						label: "=",
+						insertText: "=",
+						description: "Exact match",
+					},
+				]
+			: [
+					{
+						id: "operator:equal",
+						kind: "operator",
+						label: "=",
+						insertText: "=",
+						description: "Exact match",
+					},
+					{
+						id: "operator:not-equal",
+						kind: "operator",
+						label: "!=",
+						insertText: "!=",
+						description: "Not equal",
+					},
+					{
+						id: "operator:gt",
+						kind: "operator",
+						label: ">",
+						insertText: ">",
+						description: "Greater than",
+					},
+					{
+						id: "operator:lt",
+						kind: "operator",
+						label: "<",
+						insertText: "<",
+						description: "Less than",
+					},
+					{
+						id: "operator:gte",
+						kind: "operator",
+						label: ">=",
+						insertText: ">=",
+						description: "Greater than or equal",
+					},
+					{
+						id: "operator:lte",
+						kind: "operator",
+						label: "<=",
+						insertText: "<=",
+						description: "Less than or equal",
+					},
+					{
+						id: "operator:contains",
+						kind: "operator",
+						label: "contains",
+						insertText: "contains",
+						description: "Substring match",
+					},
+					{
+						id: "operator:not-contains",
+						kind: "operator",
+						label: "!contains",
+						insertText: "!contains",
+						description: "Substring does not match",
+					},
+					{
+						id: "operator:exists",
+						kind: "operator",
+						label: "exists",
+						insertText: "exists",
+						description: "Key exists",
+					},
+					{
+						id: "operator:not-exists",
+						kind: "operator",
+						label: "!exists",
+						insertText: "!exists",
+						description: "Key does not exist",
+					},
+				]
 
 		return filterAndRankSuggestions(operatorSuggestions, parsed.query, maxSuggestions)
 	}

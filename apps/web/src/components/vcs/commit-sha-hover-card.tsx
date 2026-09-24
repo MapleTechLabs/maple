@@ -2,7 +2,7 @@ import { formatRelativeFrom, formatRelativeShortFrom } from "@maple/ui/lib/time-
 import { type ReactNode, type RefObject, useEffect, useRef, useState } from "react"
 import { Link } from "@tanstack/react-router"
 
-import { MapleApiAtomClient } from "@/lib/services/common/atom-client"
+import { retainedQuery } from "@/lib/services/common/atom-client"
 import { Atom, Result, useAtomValue } from "@/lib/effect-atom"
 import type { VcsCommitDetailResponse } from "@maple/domain/http"
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@maple/ui/components/ui/hover-card"
@@ -11,7 +11,7 @@ import { CopyIndicator } from "@maple/ui/components/ui/copy-button"
 import { useCopy } from "@maple/ui/hooks/use-copy"
 import { cn } from "@maple/ui/lib/utils"
 
-// A full 40-hex git SHA. Telemetry `deployment.commit_sha` is unguarded OTel
+// A full 40-hex git SHA. Telemetry `vcs.ref.head.revision` is unguarded OTel
 // data, so a value may be a short SHA, a tag, or arbitrary text — those never
 // open a hover card (and never hit the backend); they render as plain children.
 const FULL_SHA = /^[0-9a-f]{40}$/i
@@ -155,11 +155,29 @@ const COMMIT_DETAIL_TTL_MS = 5 * 60_000
 // the SHA *string* is what actually lets the prefetch subscriber, the popup body,
 // the deploy-marker flags, and the commit-list rows share ONE fetch + cached result.
 export const commitQueryAtom = Atom.family((sha: string) =>
-	MapleApiAtomClient.query("integrations", "vcsCommitDetail", {
+	retainedQuery("integrations", "vcsCommitDetail", {
 		params: { sha },
 		timeToLive: COMMIT_DETAIL_TTL_MS,
 	}),
 )
+
+/**
+ * Bulk sibling of `commitQueryAtom`, for list views that render one deploy per
+ * row. One request per row also means one CORS *preflight* per row, so a table
+ * of N services used to cost 2N round trips to a worker pinned in us-east-1.
+ * Keyed on the sorted, deduped SHA list so a re-render with the same rows
+ * reuses the same atom (and its cached result).
+ */
+export const commitsQueryAtom = Atom.family((shasKey: string) =>
+	retainedQuery("integrations", "vcsCommitDetails", {
+		query: { shas: shasKey },
+		timeToLive: COMMIT_DETAIL_TTL_MS,
+	}),
+)
+
+/** Canonical `commitsQueryAtom` key for a set of SHAs (deduped + sorted). */
+export const commitsQueryKey = (shas: Iterable<string>): string =>
+	[...new Set(shas)].filter(isResolvableSha).sort().join(",")
 
 // Renders nothing — it exists only to mount (and thus run) the query early.
 function CommitPrefetch({ sha }: { sha: string }) {
@@ -193,7 +211,7 @@ function CommitHoverBody({ sha, compact = false }: { sha: string; compact?: bool
 }
 
 // A reference Maple can't resolve to a commit (short SHA, tag, arbitrary
-// `deployment.commit_sha` telemetry). Shown in the marker tooltip — which, unlike
+// `vcs.ref.head.revision` telemetry). Shown in the marker tooltip — which, unlike
 // the hover card, always renders a row for every commit in a bucket.
 function CommitPlain({ sha, compact = false }: { sha: string; compact?: boolean }) {
 	return (

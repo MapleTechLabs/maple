@@ -3,9 +3,10 @@
 import type { CSSProperties } from "react"
 
 import "@/components/dotmatrix-loader.css"
+import { useDotMatrixPhases, usePrefersReducedMotion } from "@/lib/dotmatrix-hooks"
 
 export type MatrixPattern = "diamond" | "full" | "outline" | "rose" | "cross" | "rings"
-type DotShape = "circle" | "square" | "diamond" | "hearts"
+export type DotMark = "circle" | "square" | "diamond" | "hearts"
 export type DotMatrixPhase = "idle" | "collapse" | "hoverRipple" | "loadingRipple"
 export type DotMatrixColorPreset =
 	| "solid-theme"
@@ -17,13 +18,10 @@ export type DotMatrixColorPreset =
 	| "grad-fire"
 	| "grad-prism"
 
-const DOT_MATRIX_COLOR_PRESETS: Record<
-	DotMatrixColorPreset,
-	{
-		fill: string
-		glow: string
-	}
-> = {
+/** Inline style carrying the `--dmx-*` custom properties the loader CSS reads. */
+type DmxVarStyle = CSSProperties & Record<`--dmx-${string}`, string | number>
+
+const DOT_MATRIX_COLOR_PRESETS = {
 	"solid-theme": {
 		fill: "var(--color-dot-on)",
 		glow: "var(--color-dot-on)",
@@ -56,9 +54,9 @@ const DOT_MATRIX_COLOR_PRESETS: Record<
 		fill: "linear-gradient(145deg, #12c2e9 0%, #c471ed 45%, #f64f59 100%)",
 		glow: "#9e7de8",
 	},
-}
+} satisfies Record<DotMatrixColorPreset, { fill: string; glow: string }>
 
-function resolveDmxColorTokens(
+export function resolveDmxColorTokens(
 	color: string,
 	colorPreset?: DotMatrixColorPreset,
 ): {
@@ -96,7 +94,7 @@ export interface DotMatrixCommonProps {
 	animated?: boolean
 	hoverAnimated?: boolean
 	dotClassName?: string
-	dotShape?: DotShape
+	dotMark?: DotMark
 	opacityBase?: number
 	opacityMid?: number
 	opacityPeak?: number
@@ -105,7 +103,7 @@ export interface DotMatrixCommonProps {
 	minSize?: number
 }
 
-interface DotAnimationContext {
+export interface DotAnimationContext {
 	index: number
 	row: number
 	col: number
@@ -118,171 +116,15 @@ interface DotAnimationContext {
 	reducedMotion: boolean
 }
 
-interface DotAnimationState {
+export interface DotAnimationState {
 	className?: string
 	style?: CSSProperties
 }
 
 export type DotAnimationResolver = (ctx: DotAnimationContext) => DotAnimationState
 
-function cx(...values: Array<string | undefined | null | false>): string {
+export function cx(...values: Array<string | undefined | null | false>): string {
 	return values.filter(Boolean).join(" ")
-}
-
-const MATRIX_SIZE = 5
-const CENTER = Math.floor(MATRIX_SIZE / 2)
-const RANGE = Array.from({ length: MATRIX_SIZE }, (_, index) => index)
-const MAX_RADIUS = Math.hypot(CENTER, CENTER)
-
-const FULL_INDEXES = RANGE.flatMap((row) => RANGE.map((col) => rowMajorIndex(row, col)))
-
-const DIAMOND_INDEXES = FULL_INDEXES.filter((index) => {
-	const { row, col } = indexToCoord(index)
-	return Math.abs(row - CENTER) + Math.abs(col - CENTER) <= 2
-})
-
-const OUTLINE_INDEXES = FULL_INDEXES.filter((index) => {
-	const { row, col } = indexToCoord(index)
-	return row === 0 || row === MATRIX_SIZE - 1 || col === 0 || col === MATRIX_SIZE - 1
-})
-
-const CROSS_INDEXES = FULL_INDEXES.filter((index) => {
-	const { row, col } = indexToCoord(index)
-	return row === CENTER || col === CENTER
-})
-
-const RINGS_INDEXES = FULL_INDEXES.filter((index) => {
-	const { row, col } = indexToCoord(index)
-	const radius = Math.hypot(row - CENTER, col - CENTER)
-	return Math.round(radius) === 1 || Math.round(radius) === 2
-})
-
-const ROSE_INDEXES = FULL_INDEXES.filter((index) => {
-	const { row, col } = indexToCoord(index)
-	const dx = col - CENTER
-	const dy = row - CENTER
-	const angle = Math.atan2(dy, dx)
-	const radius = Math.hypot(dx, dy)
-	const rose = Math.abs(Math.sin(3 * angle))
-	return rose > 0.6 && radius >= 1
-})
-
-const PATTERN_INDEXES: Record<MatrixPattern, number[]> = {
-	diamond: DIAMOND_INDEXES,
-	full: FULL_INDEXES,
-	outline: OUTLINE_INDEXES,
-	rose: ROSE_INDEXES,
-	cross: CROSS_INDEXES,
-	rings: RINGS_INDEXES,
-}
-
-function getPatternIndexes(pattern: MatrixPattern = "diamond"): number[] {
-	return PATTERN_INDEXES[pattern]
-}
-
-function rowMajorIndex(row: number, col: number): number {
-	return row * MATRIX_SIZE + col
-}
-
-function indexToCoord(index: number): { row: number; col: number } {
-	return {
-		row: Math.floor(index / MATRIX_SIZE),
-		col: index % MATRIX_SIZE,
-	}
-}
-
-function distanceFromCenter(index: number): number {
-	const { row, col } = indexToCoord(index)
-	return Math.hypot(row - CENTER, col - CENTER)
-}
-
-function polarAngle(index: number): number {
-	const { row, col } = indexToCoord(index)
-	return Math.atan2(row - CENTER, col - CENTER)
-}
-
-function normalizedRadius(index: number): number {
-	const { row, col } = indexToCoord(index)
-	return Math.hypot(row - CENTER, col - CENTER) / MAX_RADIUS
-}
-
-function manhattanDistance(index: number): number {
-	const { row, col } = indexToCoord(index)
-	return Math.abs(row - CENTER) + Math.abs(col - CENTER)
-}
-
-const N = MATRIX_SIZE
-const CELLS = N * N
-
-function buildOuterRingClockwiseOrderToIndexMap(): number[] {
-	const order = new Array<number>(CELLS).fill(-1)
-	const coords: Array<[number, number]> = [
-		[0, 0],
-		[0, 1],
-		[0, 2],
-		[0, 3],
-		[0, 4],
-		[1, 4],
-		[2, 4],
-		[3, 4],
-		[4, 4],
-		[4, 3],
-		[4, 2],
-		[4, 1],
-		[4, 0],
-		[3, 0],
-		[2, 0],
-		[1, 0],
-	]
-
-	for (let t = 0; t < coords.length; t += 1) {
-		const [row, col] = coords[t]!
-		order[rowMajorIndex(row, col)] = t
-	}
-
-	return order
-}
-
-function buildMiddleRingAntiClockwiseOrderToIndexMap(): number[] {
-	const order = new Array<number>(CELLS).fill(-1)
-	const coords: Array<[number, number]> = [
-		[1, 1],
-		[2, 1],
-		[3, 1],
-		[3, 2],
-		[3, 3],
-		[2, 3],
-		[1, 3],
-		[1, 2],
-	]
-
-	for (let t = 0; t < coords.length; t += 1) {
-		const [row, col] = coords[t]!
-		order[rowMajorIndex(row, col)] = t
-	}
-
-	return order
-}
-
-const OUTER_RING_CLOCKWISE_ORDER: readonly number[] = buildOuterRingClockwiseOrderToIndexMap()
-const MIDDLE_RING_ANTI_CLOCKWISE_ORDER: readonly number[] = buildMiddleRingAntiClockwiseOrderToIndexMap()
-
-export function outerRingClockwiseOrderValue(index: number): number {
-	return OUTER_RING_CLOCKWISE_ORDER[index]!
-}
-
-export function outerRingClockwiseNormFromIndex(index: number): number {
-	const order = outerRingClockwiseOrderValue(index)
-	return order >= 0 ? order / 15 : 0
-}
-
-export function middleRingAntiClockwiseOrderValue(index: number): number {
-	return MIDDLE_RING_ANTI_CLOCKWISE_ORDER[index]!
-}
-
-export function middleRingAntiClockwiseNormFromIndex(index: number): number {
-	const order = middleRingAntiClockwiseOrderValue(index)
-	return order >= 0 ? order / 7 : 0
 }
 
 const SOURCE_BASE_OPACITY = 0.08
@@ -308,7 +150,7 @@ function coerceOpacityDmx(value: number | undefined): number | undefined {
 	return Math.min(1, Math.max(0, value))
 }
 
-function remapOpacityToTriplet(
+export function remapOpacityToTriplet(
 	opacity: number,
 	opacityBase: number | undefined,
 	opacityMid: number | undefined,
@@ -348,13 +190,13 @@ function remapOpacityToTriplet(
 }
 
 /** Remapped opacity where bloom begins (weakest glow); scales linearly to full bloom at 1. */
-const DMX_BLOOM_OPACITY_MIN = 0.6
+export const DMX_BLOOM_OPACITY_MIN = 0.6
 
-function opacityToBloomLevel(remappedOpacity: number): number {
+export function opacityToBloomLevel(remappedOpacity: number): number {
 	return Math.max(0, Math.min(1, (remappedOpacity - DMX_BLOOM_OPACITY_MIN) / (1 - DMX_BLOOM_OPACITY_MIN)))
 }
 
-function remappedOpacityQualifiesForBloom(remappedOpacity: number): boolean {
+export function remappedOpacityQualifiesForBloom(remappedOpacity: number): boolean {
 	return remappedOpacity >= DMX_BLOOM_OPACITY_MIN
 }
 
@@ -365,12 +207,12 @@ function clampHalo(value: number | undefined): number {
 	return Math.min(1, Math.max(0, value))
 }
 
-function dmxBloomRootActive(bloom: boolean, halo: number | undefined): boolean {
+export function dmxBloomRootActive(bloom: boolean, halo: number | undefined): boolean {
 	return bloom || clampHalo(halo) > 0
 }
 
 /** Root class when `halo` > 0 — CSS widens drop-shadow falloff for a softer, more diffuse glow. */
-function dmxBloomHaloSpreadClass(halo: number | undefined): "dmx-bloom-halo" | false {
+export function dmxBloomHaloSpreadClass(halo: number | undefined): "dmx-bloom-halo" | false {
 	return clampHalo(halo) > 0 ? "dmx-bloom-halo" : false
 }
 
@@ -378,7 +220,7 @@ function dmxBloomHaloSpreadClass(halo: number | undefined): "dmx-bloom-halo" | f
  * Bloom level and dot class for one cell. `curveOpacity` is the loader’s logical opacity **before**
  * `remapOpacityToTriplet` (same as `bloom` uses today).
  */
-function dmxDotBloomParts(
+export function dmxDotBloomParts(
 	isActive: boolean,
 	curveOpacity: number,
 	bloom: boolean,
@@ -397,21 +239,6 @@ function dmxDotBloomParts(
 		level: fromBloom,
 		bloomDot: haloN > 0 || (bloom && remappedOpacityQualifiesForBloom(remapped)),
 	}
-}
-
-function getMatrix5Layout(
-	size: number,
-	dotSize: number,
-	cellPadding?: number,
-): { gap: number; matrixSpan: number } {
-	const n = MATRIX_SIZE
-	if (cellPadding != null) {
-		const g = Math.max(0, cellPadding)
-		const matrixSpan = dotSize * n + g * (n - 1)
-		return { gap: g, matrixSpan }
-	}
-	const g = Math.max(1, Math.floor((size - dotSize * n) / (n - 1)))
-	return { gap: g, matrixSpan: size }
 }
 
 function resolveDmxBoxOuterDim(options: { boxSize?: number; minSize?: number } | null | undefined): {
@@ -440,7 +267,94 @@ function clamp01Dmx(n: number | undefined) {
 	return Math.min(1, Math.max(0, n))
 }
 
-interface DotMatrixBaseProps extends DotMatrixCommonProps {
+export const MATRIX_SIZE_3 = 3
+
+const CENTER_3 = Math.floor(MATRIX_SIZE_3 / 2)
+const RANGE_3 = Array.from({ length: MATRIX_SIZE_3 }, (_, index) => index)
+const MAX_RADIUS_3 = Math.hypot(CENTER_3, CENTER_3)
+
+export const FULL_INDEXES_3 = RANGE_3.flatMap((row) => RANGE_3.map((col) => rowMajorIndex3(row, col)))
+
+export const OUTLINE_INDEXES_3 = FULL_INDEXES_3.filter((index) => {
+	const { row, col } = indexToCoord3(index)
+	return row === 0 || row === MATRIX_SIZE_3 - 1 || col === 0 || col === MATRIX_SIZE_3 - 1
+})
+
+export const DIAMOND_INDEXES_3 = FULL_INDEXES_3.filter((index) => {
+	const { row, col } = indexToCoord3(index)
+	return Math.abs(row - CENTER_3) + Math.abs(col - CENTER_3) <= 1
+})
+
+export const CROSS_INDEXES_3 = FULL_INDEXES_3.filter((index) => {
+	const { row, col } = indexToCoord3(index)
+	return row === CENTER_3 || col === CENTER_3
+})
+
+export const RINGS_INDEXES_3 = FULL_INDEXES_3.filter((index) => {
+	const { row, col } = indexToCoord3(index)
+	return Math.round(Math.hypot(row - CENTER_3, col - CENTER_3)) === 1
+})
+
+export const ROSE_INDEXES_3 = FULL_INDEXES_3.filter((index) => {
+	const { row, col } = indexToCoord3(index)
+	const dx = col - CENTER_3
+	const dy = row - CENTER_3
+	const angle = Math.atan2(dy, dx)
+	const radius = Math.hypot(dx, dy)
+	const rose = Math.abs(Math.sin(3 * angle))
+	return rose > 0.55 && radius >= 0.75
+})
+
+const PATTERN_INDEXES_3 = {
+	diamond: DIAMOND_INDEXES_3,
+	full: FULL_INDEXES_3,
+	outline: OUTLINE_INDEXES_3,
+	rose: ROSE_INDEXES_3,
+	cross: CROSS_INDEXES_3,
+	rings: RINGS_INDEXES_3,
+} satisfies Record<MatrixPattern, number[]>
+
+export function getPattern3Indexes(pattern: MatrixPattern = "full"): number[] {
+	return PATTERN_INDEXES_3[pattern]
+}
+
+export function rowMajorIndex3(row: number, col: number): number {
+	return row * MATRIX_SIZE_3 + col
+}
+
+export function indexToCoord3(index: number): { row: number; col: number } {
+	return {
+		row: Math.floor(index / MATRIX_SIZE_3),
+		col: index % MATRIX_SIZE_3,
+	}
+}
+
+export function distanceFromCenter3(index: number): number {
+	const { row, col } = indexToCoord3(index)
+	return Math.hypot(row - CENTER_3, col - CENTER_3)
+}
+
+export function manhattanDistance3(index: number): number {
+	const { row, col } = indexToCoord3(index)
+	return Math.abs(row - CENTER_3) + Math.abs(col - CENTER_3)
+}
+
+function getMatrix3Layout(
+	size: number,
+	dotSize: number,
+	cellPadding?: number,
+): { gap: number; matrixSpan: number } {
+	const n = MATRIX_SIZE_3
+	if (cellPadding != null) {
+		const g = Math.max(0, cellPadding)
+		const matrixSpan = dotSize * n + g * (n - 1)
+		return { gap: g, matrixSpan }
+	}
+	const g = Math.max(0, Math.floor((size - dotSize * n) / (n - 1)))
+	return { gap: g, matrixSpan: size }
+}
+
+interface DotMatrix3BaseProps extends DotMatrixCommonProps {
 	phase: DotMatrixPhase
 	reducedMotion?: boolean
 	onMouseEnter?: () => void
@@ -448,7 +362,7 @@ interface DotMatrixBaseProps extends DotMatrixCommonProps {
 	animationResolver?: DotAnimationResolver
 }
 
-export function DotMatrixBase({
+export function DotMatrix3Base({
 	size = 24,
 	dotSize = 3,
 	color = "currentColor",
@@ -456,8 +370,8 @@ export function DotMatrixBase({
 	speed = 1,
 	ariaLabel = "Loading",
 	className,
-	pattern = "diamond",
-	dotShape = "circle",
+	pattern = "full",
+	dotMark = "circle",
 	muted = false,
 	bloom = false,
 	halo = 0,
@@ -467,27 +381,27 @@ export function DotMatrixBase({
 	onMouseEnter,
 	onMouseLeave,
 	animationResolver,
-	opacityBase,
+	opacityBase = 0.06,
 	opacityMid,
 	opacityPeak,
-	cellPadding,
+	cellPadding = 1,
 	boxSize,
 	minSize,
-}: DotMatrixBaseProps) {
-	const patternIndexes = new Set(getPatternIndexes(pattern))
+}: DotMatrix3BaseProps) {
+	const patternIndexes = new Set(getPattern3Indexes(pattern))
 	const safeSpeed = speed > 0 ? speed : 1
 	const speedScale = 1 / safeSpeed
-	const { gap, matrixSpan } = getMatrix5Layout(size, dotSize, cellPadding)
+	const { gap, matrixSpan } = getMatrix3Layout(size, dotSize, cellPadding)
 	const { outerDim, useWrapper } = resolveDmxBoxOuterDim({ boxSize, minSize })
 	const scale = useWrapper && matrixSpan > 0 ? outerDim / matrixSpan : 1
-	const center = Math.floor(MATRIX_SIZE / 2)
+	const center = CENTER_3
 	const ob = clamp01Dmx(opacityBase)
 	const om = clamp01Dmx(opacityMid)
 	const op = clamp01Dmx(opacityPeak)
 	const unit = dotSize + gap
 	const { resolvedColor, dotFill } = resolveDmxColorTokens(color, colorPreset)
 
-	const dmxVarStyle = {
+	const dmxVarStyle: DmxVarStyle = {
 		width: matrixSpan,
 		height: matrixSpan,
 		"--dmx-speed": speedScale,
@@ -504,15 +418,21 @@ export function DotMatrixBase({
 					transformOrigin: "center center" as const,
 				}
 			: { minWidth: minSize, minHeight: minSize }),
-	} as unknown as CSSProperties
+	}
 
-	const dots = Array.from({ length: MATRIX_SIZE * MATRIX_SIZE }).map((_, index) => {
-		const { row, col } = indexToCoord(index)
+	const gridStyle = {
+		gap,
+		gridTemplateColumns: `repeat(${MATRIX_SIZE_3}, minmax(0, 1fr))`,
+		gridTemplateRows: `repeat(${MATRIX_SIZE_3}, minmax(0, 1fr))`,
+	}
+
+	const dots = Array.from({ length: MATRIX_SIZE_3 * MATRIX_SIZE_3 }).map((_, index) => {
+		const { row, col } = indexToCoord3(index)
 		const isActive = patternIndexes.has(index)
-		const distance = distanceFromCenter(index)
-		const angle = polarAngle(index)
-		const radiusNormalizedValue = normalizedRadius(index)
-		const manhattan = manhattanDistance(index)
+		const distance = distanceFromCenter3(index)
+		const angle = Math.atan2(row - center, col - center)
+		const radiusNormalizedValue = Math.hypot(row - center, col - center) / MAX_RADIUS_3
+		const manhattan = manhattanDistance3(index)
 		const deltaX = (col - center) * unit
 		const deltaY = (row - center) * unit
 
@@ -548,7 +468,7 @@ export function DotMatrixBase({
 				const parts = dmxDotBloomParts(true, 0, bloom, halo, ob, om, op)
 				if (parts.level > 0) {
 					stylePatch = {
-						...stylePatch,
+						...(stylePatch ?? {}),
 						["--dmx-bloom-level" as const]: parts.level,
 					} as CSSProperties & { "--dmx-bloom-level"?: number }
 				}
@@ -568,15 +488,14 @@ export function DotMatrixBase({
 			"--dmx-radius": radiusNormalizedValue,
 			"--dmx-manhattan": manhattan,
 			...stylePatch,
-			...(!isActive
-				? {
-						opacity: 0,
-						visibility: "hidden" as const,
-						pointerEvents: "none" as const,
-						animation: "none",
-					}
-				: {}),
 		} as CSSProperties
+
+		if (!isActive) {
+			dotStyle.opacity = 0
+			dotStyle.visibility = "hidden"
+			dotStyle.pointerEvents = "none"
+			dotStyle.animation = "none"
+		}
 
 		return (
 			<span
@@ -598,7 +517,8 @@ export function DotMatrixBase({
 		<div
 			className={cx(
 				"dmx-root",
-				`dmx-dot-shape-${dotShape}`,
+				"dmx-matrix-3",
+				`dmx-dot-shape-${dotMark}`,
 				muted && "dmx-muted",
 				dmxBloomRootActive(bloom, halo) && "dmx-bloom",
 				dmxBloomHaloSpreadClass(halo),
@@ -606,7 +526,7 @@ export function DotMatrixBase({
 			)}
 			style={dmxVarStyle}
 		>
-			<div className="dmx-grid" style={{ gap }}>
+			<div className="dmx-grid" style={gridStyle}>
 				{dots}
 			</div>
 		</div>
@@ -644,7 +564,8 @@ export function DotMatrixBase({
 			aria-label={ariaLabel}
 			className={cx(
 				"dmx-root",
-				`dmx-dot-shape-${dotShape}`,
+				"dmx-matrix-3",
+				`dmx-dot-shape-${dotMark}`,
 				muted && "dmx-muted",
 				dmxBloomRootActive(bloom, halo) && "dmx-bloom",
 				dmxBloomHaloSpreadClass(halo),
@@ -654,9 +575,55 @@ export function DotMatrixBase({
 			onMouseEnter={onMouseEnter}
 			onMouseLeave={onMouseLeave}
 		>
-			<div className="dmx-grid" style={{ gap }}>
+			<div className="dmx-grid" style={gridStyle}>
 				{dots}
 			</div>
 		</div>
 	)
+}
+
+type Dotm3x3ComponentProps = DotMatrixCommonProps
+
+export function createDotm3x3Component(
+	displayName: string,
+	animationResolver: DotAnimationResolver,
+	defaultSpeed = 1.15,
+) {
+	function Dotm3x3Component({
+		pattern = "full",
+		dotMark = "circle",
+		animated = true,
+		hoverAnimated = false,
+		speed = defaultSpeed,
+		...rest
+	}: Dotm3x3ComponentProps) {
+		const reducedMotion = usePrefersReducedMotion()
+		const {
+			phase: matrixPhase,
+			onMouseEnter,
+			onMouseLeave,
+		} = useDotMatrixPhases({
+			animated: Boolean(animated && !reducedMotion),
+			hoverAnimated: Boolean(hoverAnimated && !reducedMotion),
+			speed,
+		})
+
+		return (
+			<DotMatrix3Base
+				{...rest}
+				speed={speed}
+				pattern={pattern}
+				dotMark={dotMark}
+				animated={animated}
+				phase={matrixPhase}
+				onMouseEnter={onMouseEnter}
+				onMouseLeave={onMouseLeave}
+				reducedMotion={reducedMotion}
+				animationResolver={animationResolver}
+			/>
+		)
+	}
+
+	Dotm3x3Component.displayName = displayName
+	return Dotm3x3Component
 }

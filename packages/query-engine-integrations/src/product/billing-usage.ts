@@ -1,4 +1,3 @@
-// ---------------------------------------------------------------------------
 // Billing — daily ingested volume
 //
 // The billing page's spend chart is cumulative dollars by feature, which needs
@@ -10,21 +9,19 @@
 //     chart's totals reconcile with them rather than telling a second story.
 //
 //   `dailySessionCountQuery`  — browser sessions per UTC day, from
-//     `session_replays` (many rows per session — see the query). Kept as a
-//     separate query rather than a UNION branch: the two tables disagree on
-//     column types (byte sums are UInt64, the session count is UInt64 but the
-//     bucket column comes from DateTime64) and unifying them has bitten us with
-//     502s before.
+//     `session_replays` (several rows per session). Kept as a separate query rather
+//     than a UNION branch: the two tables disagree on column types (byte sums
+//     are UInt64, the session count is UInt64 but the bucket column comes from
+//     DateTime64) and unifying them has bitten us with 502s before.
 //
 // Day buckets are UTC, matching how the warehouse stores every timestamp. Byte
 // sums are UInt64 and arrive as JSON strings on BYO-ClickHouse, so both row
 // schemas are built from `CHNumber`.
-// ---------------------------------------------------------------------------
 
 import { Schema } from "effect"
-import * as CH from "@maple-dev/clickhouse-builder/expr"
-import { from, param, type CompiledQueryRowSchema } from "@maple-dev/clickhouse-builder"
-import { ServiceUsage, SessionReplays } from "@maple/query-engine/ch/tables"
+import * as CH from "@maple-dev/effect-clickhouse/expr"
+import { from, param, type CompiledQueryRowSchema } from "@maple-dev/effect-clickhouse"
+import { ProductEvents, ServiceUsage, SessionReplays } from "@maple/query-engine/ch/tables"
 import { CHNumber } from "@maple/query-engine/ch/schema"
 import { hourFloor } from "@maple/query-engine/ch/query-helpers"
 
@@ -37,13 +34,6 @@ export interface DailySignalVolumeOutput {
 	readonly traceBytes: number
 	readonly metricBytes: number
 }
-
-export const dailySignalVolumeRowSchema: CompiledQueryRowSchema<DailySignalVolumeOutput> = Schema.Struct({
-	day: Schema.String,
-	logBytes: CHNumber,
-	traceBytes: CHNumber,
-	metricBytes: CHNumber,
-})
 
 /**
  * Per-UTC-day log/trace/metric bytes for one org.
@@ -82,37 +72,16 @@ export interface DailySessionCountOutput {
 	readonly sessions: number
 }
 
-export const dailySessionCountRowSchema: CompiledQueryRowSchema<DailySessionCountOutput> = Schema.Struct({
-	day: Schema.String,
-	sessions: CHNumber,
-})
-
 /**
  * Per-UTC-day browser session count for one org.
  *
  * `session_replays` is PARTITION BY toDate(StartTime), so the window predicate
- * on `StartTime` prunes partitions. A session is counted on the day it started,
- * matching how the ingest gateway meters it to Autumn.
+ * on `StartTime` prunes partitions. A session is counted on the day it started.
  *
- * The count is `uniq(SessionId)` rather than `count()` for the same reason the
- * session facets use it (`session-replays.ts`): the SDK posts one metadata row
- * at session start, one per 60s heartbeat, and one at unload, and this is a
- * ReplacingMergeTree read without `FINAL` — so `count()` returns however many of
- * those rows a background merge has not collapsed yet. That made a 10-minute
- * session render as ~12 on the spend chart, and made the number move between
- * refreshes.
- *
- * Not yet `countIf(BillableStart = 1)`, which is what would reproduce the
- * invoice exactly. The billed unit is a visit — one visitor per 30-minute
- * window, spanning tabs and subdomains — so this series reads *higher* than the
- * bill by however many extra tabs and subdomains a visitor used. The reason to
- * wait: `BillableStart` defaults to 0, and rows posted by SDK bundles that
- * predate the field are billed by the gateway's legacy `Version = 1` fallback
- * while reading as 0 here. Switching now would under-report for every customer
- * on a pinned older SDK, which is a worse lie than over-reporting. Switch once
- * the field is broadly deployed; the mixed window is not distinguishable in the
- * warehouse, because the surviving row after a merge is the last one posted and
- * legacy sessions never stamped the flag on it.
+ * `uniq(SessionId)`, not `count()`: every heartbeat is a row until a merge
+ * collapses it, so `count()` rendered a 10-minute session as ~12. This counts
+ * sessions, which reads above the bill when a visitor used several tabs or
+ * subdomains inside one billed visit.
  */
 export function dailySessionCountQuery() {
 	return from(SessionReplays)
@@ -122,8 +91,46 @@ export function dailySessionCountQuery() {
 		}))
 		.where(($) => [
 			$.OrgId.eq(param.string("orgId")),
-			$.StartTime.gte(CH.toDateTime(param.dateTime("startTime"))),
-			$.StartTime.lte(CH.toDateTime(param.dateTime("endTime"))),
+			$.StartTime.gte(CH.toDateTime(param.dateTimeString("startTime"))),
+			$.StartTime.lte(CH.toDateTime(param.dateTimeString("endTime"))),
+		])
+		.groupBy("day")
+		.orderBy(["day", "asc"])
+		.format("JSON")
+}
+
+export interface DailyProductEventCountOutput {
+	readonly day: string
+	readonly events: number
+}
+
+export const dailyProductEventCountRowSchema: CompiledQueryRowSchema<DailyProductEventCountOutput> =
+	Schema.Struct({
+		day: Schema.String,
+		events: CHNumber,
+	})
+
+/**
+ * Per-UTC-day billable product events for one org.
+ *
+ * Mirrors what the ingest gateway meters as `product_events`: every directly
+ * posted row (`POST /v1/events`, `Kind` custom/screen) plus browser `track()`
+ * calls (`Kind = 'custom'` via `product_events_mv`). Page views are part of the
+ * session, billed under `browser_sessions`, so `Kind = 'navigation'` is
+ * excluded. `product_events` is PARTITION BY toDate(Timestamp) with Timestamp
+ * second in the sorting key, so the window predicate is a primary-index range.
+ */
+export function dailyProductEventCountQuery() {
+	return from(ProductEvents)
+		.select(($) => ({
+			day: CH.toStartOfInterval($.Timestamp, DAY_SECONDS),
+			events: CH.count(),
+		}))
+		.where(($) => [
+			$.OrgId.eq(param.string("orgId")),
+			$.Timestamp.gte(CH.toDateTime(param.dateTimeString("startTime"))),
+			$.Timestamp.lte(CH.toDateTime(param.dateTimeString("endTime"))),
+			$.Kind.neq("navigation"),
 		])
 		.groupBy("day")
 		.orderBy(["day", "asc"])

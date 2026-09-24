@@ -1,6 +1,5 @@
 import { rawSqlDisplayTypeFor, type RawSqlDisplayType } from "@maple/domain/http"
 
-// ---------------------------------------------------------------------------
 // Default ClickHouse SQL templates per Raw SQL display type.
 //
 // Used when the user toggles a widget into Raw SQL mode for the first time —
@@ -9,7 +8,6 @@ import { rawSqlDisplayTypeFor, type RawSqlDisplayType } from "@maple/domain/http
 //
 // The visualization → display-type mapping lives in the shared widget-type
 // table; it used to be duplicated here and in apps/api/src/mcp/lib/raw-sql-widget.ts.
-// ---------------------------------------------------------------------------
 
 export { rawSqlDisplayTypeFor as visualizationToDisplayType }
 
@@ -76,4 +74,4 @@ export const RAW_SQL_TEMPLATES: Record<RawSqlDisplayType, string> = {
 	hbar: HBAR_TEMPLATE,
 	histogram: HISTOGRAM_TEMPLATE,
 	heatmap: HEATMAP_TEMPLATE,
-}
+} satisfies Record<RawSqlDisplayType, string>

@@ -5,6 +5,7 @@ import { trackProduct } from "@/lib/analytics"
 import {
 	DEFAULT_QUICK_START_STATE,
 	quickStartAtomFamily,
+	resolveQuickStartStep,
 	STEP_IDS,
 	type QualifyAnswers,
 	type StepId,
@@ -30,7 +31,7 @@ export function useQuickStart(orgId?: string | null) {
 			trackProduct("onboarding_step_completed", { step: id })
 			setState((prev) => {
 				const currentIndex = STEP_IDS.indexOf(id)
-				const onThisStep = prev.activeStep === id
+				const onThisStep = resolveQuickStartStep(prev) === id
 				const nextStep =
 					onThisStep && currentIndex < STEP_IDS.length - 1
 						? STEP_IDS[currentIndex + 1]
@@ -70,13 +71,6 @@ export function useQuickStart(orgId?: string | null) {
 		[setState],
 	)
 
-	const setDemoDataRequested = useCallback(
-		(requested: boolean) => {
-			setState((prev) => ({ ...prev, demoDataRequested: requested }))
-		},
-		[setState],
-	)
-
 	const dismissChecklist = useCallback(() => {
 		setState((prev) => ({ ...prev, checklistDismissed: true }))
 	}, [setState])
@@ -87,10 +81,6 @@ export function useQuickStart(orgId?: string | null) {
 		},
 		[setState],
 	)
-
-	const dismissFirstActionHint = useCallback(() => {
-		setState((prev) => ({ ...prev, firstActionHintDismissed: true }))
-	}, [setState])
 
 	const dismiss = useCallback(() => {
 		setState((prev) => ({ ...prev, dismissed: true }))
@@ -113,7 +103,7 @@ export function useQuickStart(orgId?: string | null) {
 	const isComplete = completedCount === totalSteps
 
 	return {
-		activeStep: state.activeStep as StepId,
+		activeStep: resolveQuickStartStep(state),
 		setActiveStep,
 		completeStep,
 		uncompleteStep,
@@ -130,13 +120,9 @@ export function useQuickStart(orgId?: string | null) {
 		setSelectedFramework,
 		qualifyAnswers: state.qualifyAnswers,
 		setQualifyAnswers,
-		demoDataRequested: state.demoDataRequested,
-		setDemoDataRequested,
 		checklistDismissed: state.checklistDismissed,
 		dismissChecklist,
 		checklistExpanded: state.checklistExpanded,
 		setChecklistExpanded,
-		firstActionHintDismissed: state.firstActionHintDismissed,
-		dismissFirstActionHint,
 	}
 }

@@ -1,3 +1,4 @@
+// TEST-SEAM: This focused test replaces process-global modules that have no instance-level injection seam.
 import { clearSessionSink, resetConsentForTests, setConsent, track } from "@maple/browser-session"
 import { afterEach, describe, expect, it, vi } from "vitest"
 
@@ -19,8 +20,8 @@ vi.mock("@maple/browser-session/replay", () => ({
 	},
 }))
 
-import { resetSinkForTests } from "../../browser-session/src/events-sink"
-import { init } from "./init"
+import { resetSinkForTests } from "../../browser-session/src/events/events-sink"
+import { identify, init } from "./init"
 
 class MemoryStorage {
 	private readonly values = new Map<string, string>()
@@ -101,64 +102,6 @@ describe("lazy replay chunk", () => {
 	})
 })
 
-describe("sampling", () => {
-	const capturePosts = (): Array<{ url: string; body: string }> => {
-		const posts: Array<{ url: string; body: string }> = []
-		vi.stubGlobal("fetch", async (input: RequestInfo | URL, requestInit?: RequestInit) => {
-			posts.push({
-				url: typeof input === "string" ? input : input instanceof URL ? input.href : input.url,
-				body: typeof requestInit?.body === "string" ? requestInit.body : "",
-			})
-			return new Response(null, { status: 200 })
-		})
-		vi.stubGlobal("window", {
-			sessionStorage: new MemoryStorage(),
-			localStorage: new MemoryStorage(),
-			location: { href: "https://app.example.com/", host: "app.example.com" },
-		})
-		return posts
-	}
-
-	it("posts nothing at all at sampleRate 0 — no metadata row, so no charge", async () => {
-		const posts = capturePosts()
-		const handle = init({
-			ingestKey: "public-key",
-			serviceName: "test-web",
-			endpoint: "https://collector.test",
-			tracing: { enabled: false },
-			replay: { enabled: true, sampleRate: 0 },
-		})
-
-		track("should-not-ship")
-		await handle.shutdown()
-
-		expect(replay.start).not.toHaveBeenCalled()
-		// The metadata row is the billed unit; the event rows would be orphans
-		// without it. Neither may leave the page.
-		expect(posts.filter((post) => post.url.includes("/v1/sessionReplays/meta"))).toHaveLength(0)
-		expect(posts.filter((post) => post.url.endsWith("/v1/sessionEvents"))).toHaveLength(0)
-	})
-
-	it("still captures the session at sampleRate 1 with replay disabled", async () => {
-		const posts = capturePosts()
-		const handle = init({
-			ingestKey: "public-key",
-			serviceName: "test-web",
-			endpoint: "https://collector.test",
-			tracing: { enabled: false },
-			replay: { enabled: false, sampleRate: 1 },
-		})
-
-		track("keep-me")
-		await handle.shutdown()
-
-		// Turning off video is not a request to turn off analytics.
-		expect(replay.start).not.toHaveBeenCalled()
-		expect(posts.some((post) => post.url.includes("/v1/sessionReplays/meta"))).toBe(true)
-		expect(posts.some((post) => post.body.includes("keep-me"))).toBe(true)
-	})
-})
-
 describe("browser consent lifecycle", () => {
 	it("starts on grant, discards revoked buffers, and restarts with a new session", async () => {
 		const posts: Array<{ url: string; body: string }> = []
@@ -209,5 +152,43 @@ describe("browser consent lifecycle", () => {
 		expect(eventBodies).not.toContain("discard-me")
 		expect(eventBodies).toContain("keep-me")
 		expect(tracing.shutdown).toHaveBeenCalledTimes(1)
+	})
+})
+
+describe("per-session state", () => {
+	it("keeps a session's replay sampling decision across page loads", async () => {
+		stubBrowser()
+		const options = {
+			ingestKey: "public-key",
+			serviceName: "test-web",
+			endpoint: "https://collector.test",
+			tracing: { enabled: false },
+		}
+		const first = init({ ...options, replay: { sampleRate: 1 } })
+		await vi.waitFor(() => expect(replay.start).toHaveBeenCalledTimes(1))
+		await first.shutdown()
+
+		// A reload of the same session must not re-roll: a sample rate of 0
+		// would otherwise drop the rest of a session that is being recorded.
+		const second = init({ ...options, replay: { sampleRate: 0 } })
+		await vi.waitFor(() => expect(replay.start).toHaveBeenCalledTimes(2))
+		await second.shutdown()
+	})
+
+	it("applies an identify() made before init()", async () => {
+		stubBrowser()
+		identify({ id: "user_early", email: "early@example.com" })
+		const handle = init({
+			ingestKey: "public-key",
+			serviceName: "test-web",
+			endpoint: "https://collector.test",
+			tracing: { enabled: false },
+			replay: { sampleRate: 1 },
+			user: { id: "user_from_config" },
+		})
+		await vi.waitFor(() => expect(replay.start).toHaveBeenCalledTimes(1))
+		const [options] = replay.start.mock.calls[0] as [{ getIdentity: () => { id?: string } | undefined }]
+		expect(options.getIdentity()?.id).toBe("user_early")
+		await handle.shutdown()
 	})
 })

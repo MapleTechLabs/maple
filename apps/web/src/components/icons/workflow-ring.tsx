@@ -3,23 +3,27 @@ import type { WorkflowState } from "@maple/domain/http"
 
 export const WORKFLOW_LABEL: Record<WorkflowState, string> = {
 	triage: "Triage",
+	regressed: "Regressed",
 	todo: "Todo",
 	in_progress: "In progress",
 	in_review: "In review",
+	verifying: "Verifying",
 	done: "Done",
 	cancelled: "Cancelled",
 	wontfix: "Won't fix",
-}
+} satisfies Record<WorkflowState, string>
 
 const WORKFLOW_COLOR: Record<WorkflowState, string> = {
 	triage: "oklch(0.72 0.17 55)",
+	regressed: "oklch(0.58 0.20 25)",
 	todo: "oklch(0.60 0.02 286)",
 	in_progress: "oklch(0.75 0.15 85)",
 	in_review: "oklch(0.65 0.16 290)",
+	verifying: "oklch(0.68 0.13 190)",
 	done: "oklch(0.60 0.14 250)",
 	cancelled: "oklch(0.55 0.01 286)",
 	wontfix: "oklch(0.55 0.01 286)",
-}
+} satisfies Record<WorkflowState, string>
 
 interface WorkflowRingIconProps extends IconProps {
 	state: WorkflowState
@@ -84,6 +88,18 @@ function WorkflowRingIcon({ state, size = 14, className, ...props }: WorkflowRin
 			<svg {...common}>
 				<circle cx="12" cy="12" r="9" stroke={color} strokeWidth="2" />
 				<path d={describeArc(12, 12, 7, 0, 280)} fill={color} />
+			</svg>
+		)
+	}
+
+	// Nearly closed, but not closed: the fix is in and the window is running.
+	// Sits between `in_review` (280°) and the filled `done` circle, so the ring
+	// keeps reading as progress rather than as a separate symbol.
+	if (state === "verifying") {
+		return (
+			<svg {...common}>
+				<circle cx="12" cy="12" r="9" stroke={color} strokeWidth="2" />
+				<path d={describeArc(12, 12, 7, 0, 330)} fill={color} />
 			</svg>
 		)
 	}

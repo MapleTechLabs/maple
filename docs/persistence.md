@@ -1,118 +1,148 @@
 # Persistence Operations
 
-Maple stores dashboard persistence data in SQLite/libSQL and uses Drizzle migrations.
+Maple stores relational application state in PostgreSQL with a schema defined by Drizzle in
+`packages/db/src/schema/`.
 
-## Modes
+## Runtime modes
 
-- Local default: `MAPLE_DB_URL` unset, DB file at `apps/api/.data/maple.db`
-- Turso/libSQL remote: set `MAPLE_DB_URL` and `MAPLE_DB_AUTH_TOKEN`
+- **Production:** the PlanetScale Postgres `main` branch. Cloudflare Workers
+  connect through the `MAPLE_DB` Hyperdrive binding; the application never opens the direct
+  administrative connection.
+- **Wrangler development:** Docker Postgres on port 5499 through Hyperdrive's
+  `localConnectionString`.
+- **Non-Worker local entrypoints and tests:** embedded PGlite. `MAPLE_DB_URL` is a PGlite data
+  directory, or `memory://` for an ephemeral database. It is not a remote database URL.
+- **PR previews:** no application database while preview deploys are disabled. Routes that
+  need `Database` fail normally; DB-free routes such as health checks continue to work.
 
-## Migration Commands
+Application code keeps timestamps as epoch-millisecond numbers and converts at the Drizzle
+boundary — use `msToDate` / `dateToMs` from `packages/backend/src/platform/time.ts` rather than bare
+`new Date(ms)` / `.getTime()`, including inside Promise-land helpers.
 
-Run from repo root:
+## Connections on Workers
+
+One connection pool per invocation — request, cron tick, or Workflow run — created lazily on the first
+query and closed at the boundary. This is Cloudflare's documented Hyperdrive shape, and
+`makePgConnectionScope` (`packages/backend/src/platform/pg-connection-scope.ts`) is the only implementation
+of it: `withPgConnectionScope` installs a scope around each worker's request handler and cron tick, and
+`executeOnFreshPgClient` is the same scope one call long for entry points that have none.
+
+Workers tie TCP sockets to the invocation that opened them, so a connection may be reused freely
+within one but must never outlive it. Two settings carry hard-won history:
+
+The driver is node-postgres through `@effect/sql-pg`: one `pg.Pool` per invocation, built lazily
+by `createMaplePgPool` (`packages/db/src/client.ts`) and handed to `PgClient.fromPool` rather than
+`PgClient.make`, because `make` probes with `SELECT 1` at acquire. Two settings carry hard-won
+history:
+
+- **`max: 5`** — Cloudflare's documented value. `max` is a ceiling, not a reservation: the pool
+  opens a second socket only when a second statement is genuinely in flight. It was 1 for one day
+  on the theory that Postgres should hold at most one of the Worker's six outbound slots, which
+  serialized every statement in a cron tick behind one connection (`SELECT actors` p50 928ms →
+  5687ms at flat volume).
+- **A bounded dial** (10s, `connectionTimeoutMillis` on each `Client`, never on the `Pool`) —
+  unset, a stalled dial hangs for the whole invocation and lands with no `error.type` to classify.
+  On the pool the same option also times out waiting for a free client, so a fan-out wider than
+  `max` would fail against a healthy server. A dial that hits the bound carries no driver code and
+  lands as `error.type = ConnectionError` (`postgres-errors.ts` classifies code-less acquire
+  failures); a refused one carries the socket's own code (`ECONNREFUSED`). The bound is generous and single: a
+  2s cap alone once took production 5xx from 0.06% to 5.01%, and the retry ladder that followed
+  existed only to compensate for it.
+
+## Local development
+
+Start and migrate the Docker Postgres used by Wrangler:
 
 ```bash
-bun run db:migrate
+bun db:up
+bun db:migrate:local
 ```
 
-Generate new migration from schema changes:
+Persistent PGlite is created automatically for non-Worker local entrypoints under
+`apps/api/.data/pglite`. Set `MAPLE_DB_URL=memory://` when persistence is not wanted.
+
+## Authoring migrations
+
+Change the Drizzle schema, then generate the SQL and metadata together:
 
 ```bash
-bun run db:generate
+bun run --cwd packages/db db:generate
 ```
 
-Apply schema directly without migration files (development utility):
+Review the generated folder in `packages/db/drizzle/`: one `<timestamp>_<name>/` per migration
+holding `migration.sql` and the DDL `snapshot.json` (drizzle-kit v1 layout, no journal). The
+migrator orders folders by name and applies every folder the database has not recorded. A
+hand-authored migration (data backfill, publication change) still needs a folder with both
+files: run `drizzle-kit generate --custom --name <name>` to scaffold it rather than creating the
+folder by hand, so the snapshot chain stays intact.
+
+Useful local commands:
 
 ```bash
-bun run db:push
+bun run --cwd packages/db db:migrate
+bun run --cwd packages/db db:push
+bun run --cwd packages/db db:studio
 ```
 
-Open Drizzle Studio:
+`db:push` is a development utility only. Committed environments use migrations.
 
-```bash
-bun run db:studio
+## Deployment and tests
+
+The prd deploy applies migrations: `alchemy.run.ts` declares the instance's PlanetScale `main` branch
+(`maple` on `prd`, `maple-eu` on `prd-eu`) as `Planetscale.PostgresBranch` with `migrations` pointed
+at `packages/db/drizzle`, and the api, ai and
+alerting Workers carry its name in their env so they upload after it. Bookkeeping is alchemy's
+`__alchemy_migrations`; `drizzle.__drizzle_migrations` was copied in once and is frozen, so never run
+`drizzle-kit migrate` against prd. The deploy migrates as a temporary role that is dropped with
+`postgres` as its successor, so the tables it creates end up owned by `postgres` with no other grants.
+Every runtime role must therefore inherit `postgres` (`USAGE`, not mere membership, which only
+grants `SET ROLE`). Inheritance is fixed when PlanetScale creates the role and `GRANT postgres` is
+refused, so a role without it is replaced: mint the new one with `--inherited-roles postgres`, rotate
+the consumer's URL, then delete the old role. This must list no runtime credential (a personal dev
+credential may appear):
+
+```sql
+SELECT rolname FROM pg_roles WHERE rolname LIKE 'pscale\_api\_%' AND NOT pg_has_role(rolname, 'postgres', 'usage')
 ```
 
-## API Runtime Behavior
+The ingest gateway's credential is declared rather than minted: `Planetscale.PostgresRole` in
+`alchemy.run.ts` inherits `postgres`, its pooled 6432 URL is the fleet's `maple-pg-url` secret, and
+its id sits in the task env so a replaced role rolls the fleet onto the new secret before alchemy
+deletes the old role. `MAPLE_INGEST_PG_URL` in Infisical remains only for stages that deploy a fleet
+without a database branch (PR previews).
 
-`@maple/api` applies migrations on startup from its database layer (`runMigrations()` in
-`packages/db/src/migrate.ts` for the libSQL path; data migrations re-run on each Cloudflare
-D1 worker boot from `apps/api/src/services/DatabaseD1Live.ts`). There is no separate
-`db:migrate` step before `dev`/`start`.
+Electric's is declared too, on both instances: `Planetscale.PostgresRole("electric", { withReplication:
+true })`, whose direct 5432 URL is the task's `DATABASE_URL` (`docs/electric-sync.md`). `withReplication`
+rides Maple's alchemy patch until [alchemy-run/alchemy#1777](https://github.com/alchemy-run/alchemy/pull/1777)
+ships; alchemy renders every role URL with `sslmode=verify-full`, which neither ECS client accepts, so
+`pgUrlRequireSsl` in `@maple/infra/aws` rewrites it for both.
 
-## Two Migration Runners (read before authoring a migration)
+The EU instance's Worker credentials are declared the same way: `declareMapleDb` in `alchemy.run.ts`
+mints one role per consumer on `maple-eu` and a Hyperdrive config on each role's direct origin, and
+the Workers bind them from their props. No dashboard config and no hand-minted role exist there
+(`resolveDatabaseMode` is `"declared"`); the US prd keeps its dashboard-managed configs, bound by id.
 
-DDL migrations in `packages/db/drizzle/` are applied by **two different runners that decide
-what to run differently** — they must be kept in agreement:
+The deploy reads `PLANETSCALE_API_TOKEN_ID` / `PLANETSCALE_API_TOKEN` /
+`PLANETSCALE_ORGANIZATION` from Infisical prod; `bun dev` leaves the PlanetScale provider out.
 
-- **libSQL** (local dev, Turso, self-host) — `drizzle-orm/libsql/migrator` reads
-  `meta/_journal.json`, runs each entry whose `when` timestamp is greater than the newest
-  `created_at` already in `__drizzle_migrations`. **A `.sql` file that is not in the journal
-  is never applied here.**
-- **Cloudflare D1** (prod/staging) — alchemy's `migrationsDir` enumerates `**/*.sql` by
-  **directory listing** (sorted by numeric prefix), tracks applied files by **filename** in
-  `drizzle_migrations`, and ignores `_journal.json` entirely. It is **not** idempotent — a
-  duplicate `CREATE TABLE` will fail.
-
-Consequence: a `.sql` file present on disk but missing from `_journal.json` ships to D1/prod
-but silently never reaches libSQL/self-host. This exact drift happened with
-`0011_org_ingest_sampling_policies.sql`.
-
-**To author a DDL migration:** add the `.sql` file under `packages/db/drizzle/` (drizzle
-backtick DDL style) **and** append a `meta/_journal.json` entry whose `idx` is sequential and
-whose `tag` matches the filename. Keep `idx`, the tag number, and the filename aligned. Then
-update the head snapshot (below) so `db:generate` stays clean.
-
-## Snapshot State (`meta/*_snapshot.json`)
-
-Snapshots feed `drizzle-kit generate` **only** (they have zero runtime effect; neither runner
-reads them). The head snapshot — `meta/{lastIdx}_snapshot.json` — must equal the live
-`schema/`, otherwise `generate` emits a bogus catch-up migration. The chain was re-baselined
-at `0014_snapshot.json` (== `schema/`); intermediate `0011–0013` snapshots are intentionally
-absent (`generate` only diffs against the head). After any schema change, run `db:generate`
-and confirm it reports "No schema changes" before/after as expected.
-
-> Caveat: some historical schema state was reached via boot-time data-migration DDL (the
-> `alert_rules` reshape in `0013-alert-query-signal-types`), which `drizzle-kit` cannot see.
-> The head snapshot, not the `.sql` history, is the source of truth for `generate`.
-
-## Data Migrations (JSON-column rewrites)
-
-**Schema changes — including plain column adds/drops — are DDL and belong in a Drizzle
-migration `.sql` file under `packages/db/drizzle/` plus a matching `_journal.json` entry.**
-They are applied by `migrate()` on the libSQL path and by D1's `migrationsDir` on deploy.
-Do **not** express a DDL change as a boot-time data-migration script — that splits the work
-across two runners (`runMigrations()` and `DatabaseD1Live.ts`) that have to be kept in sync
-by hand, which has caused a column to ship to one path but not the other.
-
-The data-migration path below is reserved strictly for transforms a DDL migration _cannot_
-express — e.g. structurally rewriting a stored JSON blob (`dashboards.payloadJson`,
-`dashboardVersions.snapshotJson`). Those run as TypeScript scripts in
-`packages/db/src/migrations/`.
-
-- Each script is **idempotent** and guarded by the `_maple_data_migrations` bookkeeping
-  table (`id`, `applied_at`) — it short-circuits if its id is already recorded.
-- The libSQL path runs them inside `runMigrations()` (`packages/db/src/migrate.ts`), after
-  the DDL `migrate()`.
-- The Cloudflare D1 worker never calls `runMigrations()`, so each data migration is also
-  invoked once on worker boot from `DatabaseD1Live.ts`; the guard table makes every later
-  boot a single `SELECT`. **Anything added here must be added to both runners.**
-
-See `packages/db/src/migrations/0012-dashboard-widget-reshape.ts` for the reference shape.
-
-## Self-Host Note
-
-For file-based mode, mount/persist `apps/api/.data` in your runtime environment.
+PGlite applies the same bundled migrations while its layer is built. The test harness caches a
+fresh migrated PGlite snapshot and restores it per test, so integration tests exercise the
+PostgreSQL schema without a shared server.
 
 ## Tinybird Materialized Views and TTL Coupling
 
-Materialized view TTLs in `packages/domain/src/tinybird/materializations.ts` and their target datasources in `packages/domain/src/tinybird/datasources.ts` must match the source table TTL. Today all sources (`traces`, `logs`) and their MV targets are 90 days.
+Raw `traces` and `logs` are retained for 30 days. Projection targets that preserve one row per
+span or log use the same 30-day ceiling; aggregate targets intentionally retain rollups for 90 or
+365 days. The TTL belongs to the target datasource in
+`packages/domain/src/tinybird/datasources.ts`, not to the materialized-view definition.
 
 Two operational consequences:
 
 1. **Backfill ceiling.** When deploying a new MV with `POPULATE`, you can only backfill data the source table still has — anything aged past the source TTL is lost. Plan deploys before any TTL reduction.
 
-2. **TTL changes ship in lockstep.** If raw-table TTL changes (e.g., dropping `traces` to 30 days for cost), every MV target reading from it needs the same change in the same Tinybird deploy. A mismatched TTL leaves orphaned aggregate rows that never roll off.
+2. **TTL changes require a target audit.** Keep row-level projections in lockstep with their raw
+   source. Preserve the independently documented retention of hourly and error rollups unless the
+   product retention policy changes too.
 
 ### Cardinality pre-flight for `traces_aggregates_hourly_mv`
 

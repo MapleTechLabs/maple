@@ -1,6 +1,9 @@
 import type { Duration } from "effect"
+import { type MapleRegion, resolveIngestEndpoint, warnIfKeylessMapleIngest } from "@maple/browser-session"
 import { Effect, Layer } from "effect"
 import { Otlp } from "effect/unstable/observability"
+import { trySyncOrUndefined } from "../shared/try-sync.js"
+import { browserNavigator } from "./browser-globals.js"
 import { consentHttpClientLayer } from "./consent-http-client.js"
 import { type ClientReplayConfig, startClientSession } from "./replay-loader.js"
 import { withSessionLink } from "./session-link.js"
@@ -10,9 +13,15 @@ import { clearIdentity as clearIdentityUser, identify as identifyUser } from "./
 export interface MapleClientConfig {
 	/** The service name reported in traces, logs, and metrics. */
 	readonly serviceName: string
-	/** Maple ingest endpoint URL. */
-	readonly endpoint: string
-	/** Maple ingest key for authentication. */
+	/**
+	 * Region your Maple organization lives in: `"us"` (default,
+	 * `https://ingest.maple.dev`) or `"eu"` (`https://ingest.eu.maple.dev`).
+	 * Ignored when `endpoint` is set.
+	 */
+	readonly region?: MapleRegion | undefined
+	/** Maple ingest endpoint URL. Overrides `region`; use it for a proxy or self-hosted ingest. */
+	readonly endpoint?: string | undefined
+	/** Sent as `Authorization: Bearer …`, and nothing else; unset behind a proxy that adds it. */
 	readonly ingestKey?: string | undefined
 	/** Service version or commit SHA. */
 	readonly serviceVersion?: string | undefined
@@ -29,7 +38,7 @@ export interface MapleClientConfig {
 	 * Post session metadata rows for the standalone session so it appears in
 	 * Maple's Sessions UI (list entry + linked traces, no replay recording).
 	 * Default `true`; no-ops when `@maple-dev/browser` is on the page (it owns
-	 * the session rows), during SSR, or without an ingest key.
+	 * the session rows) or without a browser DOM.
 	 */
 	readonly emitSessionMeta?: boolean | undefined
 	/**
@@ -69,8 +78,8 @@ export interface MapleClientConfig {
  *
  * const TracerLive = Maple.layer({
  *   serviceName: "my-frontend",
- *   endpoint: "https://ingest.maple.dev",
  *   ingestKey: "maple_pk_...",
+ *   region: "eu", // omit for the US region
  * })
  *
  * const program = Effect.log("Hello!").pipe(Effect.withSpan("hello"))
@@ -80,17 +89,19 @@ export interface MapleClientConfig {
 export const layer = (config: MapleClientConfig) => {
 	const attributes: Record<string, unknown> = {
 		"maple.sdk.type": "client",
-	}
-	const g = globalThis as Record<string, any>
-	if (typeof g["navigator"] !== "undefined") {
-		const nav = g["navigator"]
-		if (nav.userAgent) attributes["browser.user_agent"] = nav.userAgent
+	} satisfies Record<string, unknown>
+	const nav = browserNavigator()
+	if (nav) {
+		// `user_agent.original` is the semconv key; `browser.user_agent` was
+		// deprecated in favour of it.
+		if (nav.userAgent) attributes["user_agent.original"] = nav.userAgent
 		if (nav.language) attributes["browser.language"] = nav.language
 	}
 	if (typeof Intl !== "undefined") {
-		try {
-			attributes["browser.timezone"] = Intl.DateTimeFormat().resolvedOptions().timeZone
-		} catch {}
+		// A locale-stripped build throws from `DateTimeFormat` rather than
+		// reporting an unknown zone.
+		const timezone = trySyncOrUndefined(() => Intl.DateTimeFormat().resolvedOptions().timeZone)
+		if (timezone) attributes["browser.timezone"] = timezone
 	}
 	if (config.environment) {
 		// Dual-emit: legacy key (pre-extracted by Tinybird MVs) + the canonical
@@ -98,12 +109,23 @@ export const layer = (config: MapleClientConfig) => {
 		attributes["deployment.environment"] = config.environment
 		attributes["deployment.environment.name"] = config.environment
 	}
-	if (config.serviceVersion) attributes["deployment.commit_sha"] = config.serviceVersion
+	// `serviceVersion` may be a semver release string, which belongs in
+	// `service.version` but not in `vcs.*` — only a SHA-shaped value is stamped.
+	if (config.serviceVersion && /^[0-9a-f]{7,40}$/i.test(config.serviceVersion)) {
+		attributes["vcs.ref.head.revision"] = config.serviceVersion
+	}
 	if (config.serviceNamespace) attributes["service.namespace"] = config.serviceNamespace
 	if (config.attributes) Object.assign(attributes, config.attributes)
 
+	const endpoint = resolveIngestEndpoint({ endpoints: [config.endpoint], regions: [config.region] })
+	warnIfKeylessMapleIngest({
+		logPrefix: "[MapleClientSDK]",
+		endpoint,
+		hasIngestKey: Boolean(config.ingestKey),
+		hint: "Pass `ingestKey`, or point `endpoint` at a proxy that adds it.",
+	})
 	const clientSessionConfig = {
-		endpoint: config.endpoint,
+		endpoint,
 		ingestKey: config.ingestKey,
 		serviceName: config.serviceName,
 		environment: config.environment,
@@ -114,7 +136,7 @@ export const layer = (config: MapleClientConfig) => {
 	} as const
 
 	const base = Otlp.layerJson({
-		baseUrl: config.endpoint,
+		baseUrl: endpoint,
 		resource: {
 			serviceName: config.serviceName,
 			serviceVersion: config.serviceVersion,

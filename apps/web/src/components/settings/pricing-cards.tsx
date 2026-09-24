@@ -5,8 +5,12 @@ import type { CatalogPlan, CatalogPlanItem } from "@maple/domain/http"
 import { Result, useAtomRefresh, useAtomValue } from "@/lib/effect-atom"
 import { billingCustomerAtom, billingPlansAtom } from "@/lib/services/atoms/billing-atoms"
 import { useBillingActions } from "@/hooks/use-billing-actions"
+import { displayError } from "@/lib/error-messages"
 import { getTrialStatus } from "@/lib/billing/plan-gating"
-import { formatCurrency } from "@/lib/billing/currency"
+import { buildCheckoutSuccessUrl } from "@/lib/billing/checkout-return"
+import { useCheckoutReturn } from "@/hooks/use-checkout-return"
+import { CheckoutConfirmingPanel, CheckoutTimedOutNotice } from "@/components/settings/checkout-return-panel"
+import { formatCurrency } from "@maple/domain/format"
 
 type Plan = CatalogPlan
 type PlanItem = CatalogPlanItem
@@ -45,6 +49,7 @@ import {
 	CodeIcon,
 	ShieldIcon,
 	PlayRotateClockwiseIcon,
+	GlobePointerIcon,
 } from "@/components/icons"
 import type { IconComponent } from "@/components/icons"
 
@@ -53,7 +58,8 @@ const FEATURE_ICONS: Record<string, IconComponent> = {
 	traces: PulseIcon,
 	metrics: ChartLineIcon,
 	browser_sessions: PlayRotateClockwiseIcon,
-}
+	product_events: GlobePointerIcon,
+} satisfies Record<string, IconComponent>
 
 // Display labels for the metered data rows, keyed by Autumn featureId (Autumn
 // returns the raw featureId — e.g. "browser_sessions" — when a feature has no
@@ -63,7 +69,14 @@ const DATA_FEATURE_LABELS: Record<string, string> = {
 	traces: "Traces",
 	metrics: "Metrics",
 	browser_sessions: "Browser Sessions",
-}
+	product_events: "Product Events",
+} satisfies Record<string, string>
+
+// Count-metered features and their plural unit — everything else is GB.
+const COUNT_UNITS: Record<string, string> = {
+	browser_sessions: "sessions",
+	product_events: "events",
+} satisfies Record<string, string>
 
 // Per-feature icons for the platform-feature rows, keyed by the `icon` strings
 // in lib/billing/plans.ts. Falls back to CircleCheckIcon for any unmapped key.
@@ -73,7 +86,7 @@ const PLATFORM_FEATURE_ICONS: Record<string, IconComponent> = {
 	bell: BellIcon,
 	code: CodeIcon,
 	shield: ShieldIcon,
-}
+} satisfies Record<string, IconComponent>
 
 const HIDDEN_FEATURE_IDS = new Set<string>(["ai_input_tokens", "ai_output_tokens"])
 
@@ -103,8 +116,7 @@ function getPlanPrice(plan: Plan): {
 function formatIncludedUsage(item: PlanItem): string {
 	if (item.unlimited) return "Unlimited"
 	if (item.included != null) {
-		// browser_sessions is metered by count, not bytes — everything else is GB.
-		const unit = item.featureId === "browser_sessions" ? "sessions" : "GB"
+		const unit = (item.featureId ? COUNT_UNITS[item.featureId] : undefined) ?? "GB"
 		return `${Number(item.included).toLocaleString()} ${unit}`
 	}
 	return ""
@@ -133,6 +145,7 @@ const ENTERPRISE_DATA_FEATURES = [
 	{ featureId: "traces", label: "Traces", value: "Custom" },
 	{ featureId: "metrics", label: "Metrics", value: "Custom" },
 	{ featureId: "browser_sessions", label: "Browser Sessions", value: "Custom" },
+	{ featureId: "product_events", label: "Product Events", value: "Custom" },
 ]
 
 function getScenario(plan: Plan): string {
@@ -204,6 +217,12 @@ export function PricingCards() {
 	const [loadingPlanId, setLoadingPlanId] = useState<string | null>(null)
 	const [confirmDialog, setConfirmDialog] = useState<CheckoutPreview | null>(null)
 	const [isAttaching, setIsAttaching] = useState(false)
+	const checkoutReturn = useCheckoutReturn()
+
+	// Back from Stripe with the plan not yet synced: never re-offer the plan the
+	// buyer just bought — that is how a trial user ends up clicking "Start trial"
+	// twice.
+	if (checkoutReturn === "confirming") return <CheckoutConfirmingPanel />
 
 	if (Result.isInitial(plansResult)) {
 		return (
@@ -241,7 +260,6 @@ export function PricingCards() {
 
 	const plans = plansResult.value.plans
 
-	// Filter out add-on and auto-enabled (free) plans for the main grid
 	const visiblePlans = plans.filter((p) => !p.addOn && !p.autoEnable)
 
 	async function handleCheckout(planId: string) {
@@ -267,8 +285,7 @@ export function PricingCards() {
 						: undefined,
 				})
 			} catch (err) {
-				const message = err instanceof Error ? err.message : "Something went wrong. Please try again."
-				toastManager.add({ title: message, type: "error" })
+				toastManager.add({ title: displayError(err).message, type: "error" })
 			} finally {
 				setLoadingPlanId(null)
 			}
@@ -278,19 +295,23 @@ export function PricingCards() {
 		// For new subscriptions, attach directly (redirects to checkout if needed)
 		setLoadingPlanId(planId)
 		try {
-			const result = await attach({ planId })
+			const result = await attach({ planId, successUrl: buildCheckoutSuccessUrl(window.location.href) })
 
 			if (result.paymentUrl) {
+				// Deliberately NOT clearing `loadingPlanId`: assigning `location.href`
+				// starts a navigation without stopping JS, so the old DOM stays on
+				// screen until Stripe answers. Re-enabling the button here left an
+				// inviting "Subscribe" on an apparently frozen page — and every extra
+				// click became a 409 we reported back as a failed purchase.
 				window.location.href = result.paymentUrl
 				return
 			}
 
 			toastManager.add({ title: "Plan updated successfully.", type: "success" })
 			refreshCustomer()
+			setLoadingPlanId(null)
 		} catch (err) {
-			const message = err instanceof Error ? err.message : "Something went wrong. Please try again."
-			toastManager.add({ title: message, type: "error" })
-		} finally {
+			toastManager.add({ title: displayError(err).message, type: "error" })
 			setLoadingPlanId(null)
 		}
 	}
@@ -299,7 +320,10 @@ export function PricingCards() {
 		if (!confirmDialog) return
 		setIsAttaching(true)
 		try {
-			const result = await attach({ planId: confirmDialog.planId })
+			const result = await attach({
+				planId: confirmDialog.planId,
+				successUrl: buildCheckoutSuccessUrl(window.location.href),
+			})
 			if (result.paymentUrl) {
 				window.location.href = result.paymentUrl
 				return
@@ -307,10 +331,9 @@ export function PricingCards() {
 			toastManager.add({ title: "Plan updated successfully.", type: "success" })
 			refreshCustomer()
 			setConfirmDialog(null)
+			setIsAttaching(false)
 		} catch (err) {
-			const message = err instanceof Error ? err.message : "Something went wrong. Please try again."
-			toastManager.add({ title: message, type: "error" })
-		} finally {
+			toastManager.add({ title: displayError(err).message, type: "error" })
 			setIsAttaching(false)
 		}
 	}
@@ -323,258 +346,17 @@ export function PricingCards() {
 		)
 	}
 
-	const enterprisePlanFeatures = getPlanFeatures("enterprise")
-
-	// Enterprise renders as a peer card in the grid, so the layout is always
-	// balanced: one paid plan + Enterprise = a clean two-up; a second paid plan
-	// would make it a three-up. Never a lone, full-width card.
-	const totalCards = visiblePlans.length + 1
-
 	return (
 		<div className="space-y-6">
-			{/* Plans + Enterprise share one grid so columns stay balanced */}
-			<div
-				className={cn(
-					"grid grid-cols-1 gap-4",
-					totalCards === 2 && "sm:grid-cols-2",
-					totalCards >= 3 && "sm:grid-cols-2 lg:grid-cols-3",
-				)}
-			>
-				{visiblePlans.map((plan) => {
-					const scenario = getScenario(plan)
-					const isActive = scenario === "active"
-					const isUpgrade = !isActive && scenario === "upgrade"
-					const { price, interval } = getPlanPrice(plan)
-					const features = getFeatureRows(plan)
-					const planFeatures = getPlanFeatures(getPlanSlug(plan))
-					const btn = getButtonConfig(plan)
-					const trialAvailable = plan.customerEligibility?.trialAvailable
-
-					return (
-						<Card
-							key={plan.id}
-							className={cn(
-								"flex flex-col transition-colors",
-								isActive && "bg-muted/40",
-								isUpgrade && "bg-muted/30 ring-1 ring-primary/30",
-							)}
-						>
-							<CardHeader>
-								<div className="flex items-center justify-between gap-2">
-									<CardTitle
-										className={cn(
-											"text-[10px] font-medium uppercase tracking-[0.14em]",
-											isUpgrade ? "text-primary" : "text-muted-foreground",
-										)}
-									>
-										{plan.name}
-									</CardTitle>
-									{isActive && isTrialing && daysRemaining != null ? (
-										<Badge variant="secondary" className="text-[10px] font-medium">
-											Trial · {daysRemaining}d left
-										</Badge>
-									) : isActive ? (
-										<Badge variant="secondary" className="text-[10px] font-medium">
-											Current
-										</Badge>
-									) : isUpgrade ? (
-										<Badge
-											variant="secondary"
-											className="text-[10px] font-medium text-primary"
-										>
-											Recommended
-										</Badge>
-									) : null}
-								</div>
-								<div className="mt-3 flex items-baseline gap-1">
-									<span className="text-3xl font-semibold tracking-tight tabular-nums">
-										{price}
-									</span>
-									{interval && (
-										<span className="text-muted-foreground text-xs font-medium uppercase tracking-wider ml-1">
-											{interval}
-										</span>
-									)}
-								</div>
-								<CardDescription className="mt-2 text-sm leading-relaxed text-muted-foreground">
-									{plan.description ?? getPlanDescription(getPlanSlug(plan))}
-								</CardDescription>
-							</CardHeader>
-
-							<CardContent className="flex flex-col gap-5 flex-1">
-								{features.length > 0 && (
-									<div>
-										<div className="text-muted-foreground/70 mb-3 text-[10px] font-medium uppercase tracking-[0.14em]">
-											Data included
-										</div>
-										<div className="space-y-2.5">
-											{features.map((feature) => {
-												const Icon = FEATURE_ICONS[feature.featureId]
-												return (
-													<div
-														key={feature.featureId}
-														className="flex items-center justify-between text-sm"
-													>
-														<div className="text-muted-foreground flex items-center gap-2.5">
-															{Icon && <Icon className="size-4 opacity-70" />}
-															<span className="font-medium">
-																{feature.label}
-															</span>
-														</div>
-														<div className="text-right">
-															<span className="font-semibold tabular-nums text-foreground">
-																{feature.value}
-															</span>
-															{feature.detail && (
-																<p className="text-muted-foreground/70 text-[10px] mt-0.5 font-medium">
-																	{feature.detail}
-																</p>
-															)}
-														</div>
-													</div>
-												)
-											})}
-										</div>
-									</div>
-								)}
-
-								<Separator className="bg-border/60" />
-
-								<div>
-									<div className="text-muted-foreground/70 mb-3 text-[10px] font-medium uppercase tracking-[0.14em]">
-										Platform features
-									</div>
-									<div className="space-y-2.5">
-										{planFeatures.map((feature) => {
-											const Icon =
-												PLATFORM_FEATURE_ICONS[feature.icon] ?? CircleCheckIcon
-											return (
-												<div
-													key={feature.label}
-													className="flex items-start gap-2.5 text-sm"
-												>
-													<Icon className="text-primary size-4 shrink-0 mt-0.5" />
-													<span className="text-muted-foreground leading-snug">
-														{feature.label}
-													</span>
-													{feature.value && (
-														<span className="font-semibold tabular-nums text-xs ml-auto shrink-0">
-															{feature.value}
-														</span>
-													)}
-												</div>
-											)
-										})}
-									</div>
-								</div>
-							</CardContent>
-
-							<CardFooter className="mt-auto flex-col gap-2 items-stretch">
-								<Button
-									variant={trialAvailable && !btn.disabled ? "default" : btn.variant}
-									disabled={btn.disabled || loadingPlanId === plan.id}
-									className="w-full font-medium"
-									onClick={() => handleCheckout(plan.id)}
-								>
-									{loadingPlanId === plan.id ? (
-										<Spinner className="size-4" />
-									) : trialAvailable && !btn.disabled ? (
-										`Start ${plan.freeTrial?.durationLength ?? TRIAL_DURATION_DAYS}-day trial`
-									) : isActive && isTrialing ? (
-										"Trialing"
-									) : (
-										btn.label
-									)}
-								</Button>
-								{trialAvailable && !btn.disabled && (
-									<p className="text-[11px] text-muted-foreground text-center tabular-nums">
-										$0 due today · Card required · Cancel anytime
-									</p>
-								)}
-							</CardFooter>
-						</Card>
-					)
-				})}
-				{/* Enterprise as a peer card, so the grid stays balanced */}
-				<Card className="flex flex-col border-primary/20 bg-primary/[0.02]">
-					<CardHeader>
-						<div className="flex items-center justify-between gap-2">
-							<CardTitle className="text-[10px] font-medium uppercase tracking-[0.14em] text-primary">
-								Enterprise
-							</CardTitle>
-						</div>
-						<div className="mt-3 flex items-baseline gap-1">
-							<span className="text-3xl font-semibold tracking-tight tabular-nums">Custom</span>
-						</div>
-						<CardDescription className="mt-2 text-sm leading-relaxed text-muted-foreground">
-							For high-volume teams with custom retention, compliance, and dedicated support.
-						</CardDescription>
-					</CardHeader>
-
-					<CardContent className="flex flex-col gap-5 flex-1">
-						<div>
-							<div className="text-muted-foreground/70 mb-3 text-[10px] font-medium uppercase tracking-[0.14em]">
-								Data included
-							</div>
-							<div className="space-y-2.5">
-								{ENTERPRISE_DATA_FEATURES.map((feature) => {
-									const Icon = FEATURE_ICONS[feature.featureId]
-									return (
-										<div
-											key={feature.featureId}
-											className="flex items-center justify-between text-sm"
-										>
-											<div className="text-muted-foreground flex items-center gap-2.5">
-												{Icon && <Icon className="size-4 opacity-70" />}
-												<span className="font-medium">{feature.label}</span>
-											</div>
-											<span className="font-semibold tabular-nums text-foreground">
-												{feature.value}
-											</span>
-										</div>
-									)
-								})}
-							</div>
-						</div>
-
-						<Separator className="bg-border/60" />
-
-						<div>
-							<div className="text-muted-foreground/70 mb-3 text-[10px] font-medium uppercase tracking-[0.14em]">
-								Platform features
-							</div>
-							<div className="space-y-2.5">
-								{enterprisePlanFeatures.map((feature) => {
-									const Icon = PLATFORM_FEATURE_ICONS[feature.icon] ?? CircleCheckIcon
-									return (
-										<div key={feature.label} className="flex items-start gap-2.5 text-sm">
-											<Icon className="text-primary size-4 shrink-0 mt-0.5" />
-											<span className="text-muted-foreground leading-snug">
-												{feature.label}
-											</span>
-											{feature.value && (
-												<span className="font-semibold tabular-nums text-xs ml-auto shrink-0">
-													{feature.value}
-												</span>
-											)}
-										</div>
-									)
-								})}
-							</div>
-						</div>
-					</CardContent>
-
-					<CardFooter className="mt-auto flex-col gap-2 items-stretch">
-						<Button
-							variant="outline"
-							className="w-full font-medium"
-							onClick={handleEnterpriseContact}
-						>
-							Talk to founder
-						</Button>
-					</CardFooter>
-				</Card>
-			</div>
+			{checkoutReturn === "timed_out" && <CheckoutTimedOutNotice />}
+			<PlanCards
+				plans={visiblePlans}
+				onCheckout={handleCheckout}
+				onEnterpriseContact={handleEnterpriseContact}
+				isTrialing={isTrialing}
+				daysRemaining={daysRemaining}
+				loadingPlanId={loadingPlanId}
+			/>
 
 			<Dialog
 				open={confirmDialog !== null}
@@ -633,6 +415,262 @@ export function PricingCards() {
 					</DialogFooter>
 				</DialogContent>
 			</Dialog>
+		</div>
+	)
+}
+
+export function PlanCards({
+	plans,
+	onCheckout,
+	onEnterpriseContact,
+	isTrialing = false,
+	daysRemaining,
+	loadingPlanId = null,
+}: {
+	plans: readonly Plan[]
+	onCheckout: (planId: string) => void
+	onEnterpriseContact: () => void
+	isTrialing?: boolean
+	daysRemaining?: number | null
+	loadingPlanId?: string | null
+}) {
+	const enterprisePlanFeatures = getPlanFeatures("enterprise")
+	const totalCards = plans.length + 1
+	return (
+		<div
+			className={cn(
+				"grid grid-cols-1 gap-4",
+				totalCards === 2 && "sm:grid-cols-2",
+				totalCards >= 3 && "sm:grid-cols-2 lg:grid-cols-3",
+			)}
+		>
+			{plans.map((plan) => {
+				const scenario = getScenario(plan)
+				const isActive = scenario === "active"
+				const isUpgrade = !isActive && scenario === "upgrade"
+				const { price, interval } = getPlanPrice(plan)
+				const features = getFeatureRows(plan)
+				const planFeatures = getPlanFeatures(getPlanSlug(plan))
+				const btn = getButtonConfig(plan)
+				const trialAvailable = plan.customerEligibility?.trialAvailable
+
+				return (
+					<Card
+						key={plan.id}
+						className={cn(
+							"flex flex-col transition-colors",
+							isActive && "bg-muted/40",
+							isUpgrade && "bg-muted/30 ring-1 ring-primary/30",
+						)}
+					>
+						<CardHeader>
+							<div className="flex items-center justify-between gap-2">
+								<CardTitle
+									className={cn(
+										"text-[10px] font-medium uppercase tracking-[0.14em]",
+										isUpgrade ? "text-primary" : "text-muted-foreground",
+									)}
+								>
+									{plan.name}
+								</CardTitle>
+								{isActive && isTrialing && daysRemaining != null ? (
+									<Badge variant="secondary" className="text-[10px] font-medium">
+										Trial · {daysRemaining}d left
+									</Badge>
+								) : isActive ? (
+									<Badge variant="secondary" className="text-[10px] font-medium">
+										Current
+									</Badge>
+								) : isUpgrade ? (
+									<Badge
+										variant="secondary"
+										className="text-[10px] font-medium text-primary"
+									>
+										Recommended
+									</Badge>
+								) : null}
+							</div>
+							<div className="mt-3 flex items-baseline gap-1">
+								<span className="text-3xl font-semibold tracking-tight tabular-nums">
+									{price}
+								</span>
+								{interval && (
+									<span className="text-muted-foreground text-xs font-medium uppercase tracking-wider ml-1">
+										{interval}
+									</span>
+								)}
+							</div>
+							<CardDescription className="mt-2 text-sm leading-relaxed text-muted-foreground">
+								{plan.description ?? getPlanDescription(getPlanSlug(plan))}
+							</CardDescription>
+						</CardHeader>
+
+						<CardContent className="flex flex-col gap-5 flex-1">
+							{features.length > 0 && (
+								<div>
+									<div className="text-muted-foreground/70 mb-3 text-[10px] font-medium uppercase tracking-[0.14em]">
+										Data included
+									</div>
+									<div className="space-y-2.5">
+										{features.map((feature) => {
+											const Icon = FEATURE_ICONS[feature.featureId]
+											return (
+												<div
+													key={feature.featureId}
+													className="flex items-center justify-between text-sm"
+												>
+													<div className="text-muted-foreground flex items-center gap-2.5">
+														{Icon && <Icon className="size-4 opacity-70" />}
+														<span className="font-medium">{feature.label}</span>
+													</div>
+													<div className="text-right">
+														<span className="font-semibold tabular-nums text-foreground">
+															{feature.value}
+														</span>
+														{feature.detail && (
+															<p className="text-muted-foreground/70 text-[10px] mt-0.5 font-medium">
+																{feature.detail}
+															</p>
+														)}
+													</div>
+												</div>
+											)
+										})}
+									</div>
+								</div>
+							)}
+
+							<Separator className="bg-border/60" />
+
+							<div>
+								<div className="text-muted-foreground/70 mb-3 text-[10px] font-medium uppercase tracking-[0.14em]">
+									Platform features
+								</div>
+								<div className="space-y-2.5">
+									{planFeatures.map((feature) => {
+										const Icon = PLATFORM_FEATURE_ICONS[feature.icon] ?? CircleCheckIcon
+										return (
+											<div
+												key={feature.label}
+												className="flex items-start gap-2.5 text-sm"
+											>
+												<Icon className="text-primary size-4 shrink-0 mt-0.5" />
+												<span className="text-muted-foreground leading-snug">
+													{feature.label}
+												</span>
+												{feature.value && (
+													<span className="font-semibold tabular-nums text-xs ml-auto shrink-0">
+														{feature.value}
+													</span>
+												)}
+											</div>
+										)
+									})}
+								</div>
+							</div>
+						</CardContent>
+
+						<CardFooter className="mt-auto flex-col gap-2 items-stretch">
+							<Button
+								variant={trialAvailable && !btn.disabled ? "default" : btn.variant}
+								disabled={btn.disabled || loadingPlanId === plan.id}
+								className="w-full font-medium"
+								onClick={() => onCheckout(plan.id)}
+							>
+								{loadingPlanId === plan.id ? (
+									<Spinner className="size-4" />
+								) : trialAvailable && !btn.disabled ? (
+									`Start ${plan.freeTrial?.durationLength ?? TRIAL_DURATION_DAYS}-day trial`
+								) : isActive && isTrialing ? (
+									"Trialing"
+								) : (
+									btn.label
+								)}
+							</Button>
+							{trialAvailable && !btn.disabled && (
+								<p className="text-[11px] text-muted-foreground text-center tabular-nums">
+									$0 due today · Card required · Cancel anytime
+								</p>
+							)}
+						</CardFooter>
+					</Card>
+				)
+			})}
+			{/* Enterprise as a peer card, so the grid stays balanced */}
+			<Card className="flex flex-col border-primary/20 bg-primary/[0.02]">
+				<CardHeader>
+					<div className="flex items-center justify-between gap-2">
+						<CardTitle className="text-[10px] font-medium uppercase tracking-[0.14em] text-primary">
+							Enterprise
+						</CardTitle>
+					</div>
+					<div className="mt-3 flex items-baseline gap-1">
+						<span className="text-3xl font-semibold tracking-tight tabular-nums">Custom</span>
+					</div>
+					<CardDescription className="mt-2 text-sm leading-relaxed text-muted-foreground">
+						For high-volume teams with custom retention, compliance, and dedicated support.
+					</CardDescription>
+				</CardHeader>
+
+				<CardContent className="flex flex-col gap-5 flex-1">
+					<div>
+						<div className="text-muted-foreground/70 mb-3 text-[10px] font-medium uppercase tracking-[0.14em]">
+							Data included
+						</div>
+						<div className="space-y-2.5">
+							{ENTERPRISE_DATA_FEATURES.map((feature) => {
+								const Icon = FEATURE_ICONS[feature.featureId]
+								return (
+									<div
+										key={feature.featureId}
+										className="flex items-center justify-between text-sm"
+									>
+										<div className="text-muted-foreground flex items-center gap-2.5">
+											{Icon && <Icon className="size-4 opacity-70" />}
+											<span className="font-medium">{feature.label}</span>
+										</div>
+										<span className="font-semibold tabular-nums text-foreground">
+											{feature.value}
+										</span>
+									</div>
+								)
+							})}
+						</div>
+					</div>
+
+					<Separator className="bg-border/60" />
+
+					<div>
+						<div className="text-muted-foreground/70 mb-3 text-[10px] font-medium uppercase tracking-[0.14em]">
+							Platform features
+						</div>
+						<div className="space-y-2.5">
+							{enterprisePlanFeatures.map((feature) => {
+								const Icon = PLATFORM_FEATURE_ICONS[feature.icon] ?? CircleCheckIcon
+								return (
+									<div key={feature.label} className="flex items-start gap-2.5 text-sm">
+										<Icon className="text-primary size-4 shrink-0 mt-0.5" />
+										<span className="text-muted-foreground leading-snug">
+											{feature.label}
+										</span>
+										{feature.value && (
+											<span className="font-semibold tabular-nums text-xs ml-auto shrink-0">
+												{feature.value}
+											</span>
+										)}
+									</div>
+								)
+							})}
+						</div>
+					</div>
+				</CardContent>
+
+				<CardFooter className="mt-auto flex-col gap-2 items-stretch">
+					<Button variant="outline" className="w-full font-medium" onClick={onEnterpriseContact}>
+						Talk to founder
+					</Button>
+				</CardFooter>
+			</Card>
 		</div>
 	)
 }

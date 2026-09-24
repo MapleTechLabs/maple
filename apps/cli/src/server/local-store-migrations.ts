@@ -1,3 +1,4 @@
+// SAFETY-FILE: JSON rows here come from fixed internal formats and are validated before domain use.
 // Generic local-store migration coordinator.
 //
 // The coordinator owns process safety, journaling, chain progression, staging,
@@ -8,7 +9,9 @@ import { randomUUID } from "node:crypto"
 import { existsSync, readFileSync, statfsSync } from "node:fs"
 import { lstat, readdir, readFile, stat } from "node:fs/promises"
 import { dirname, join, relative, resolve } from "node:path"
+import { Schema } from "effect"
 import { Chdb } from "./chdb"
+import { decodeJsonEachRow } from "./chdb-rows"
 import {
 	CURRENT_LOCAL_SCHEMA,
 	LEGACY_LOCAL_SCHEMA,
@@ -30,9 +33,31 @@ import {
 	type StoreMarker,
 	type StoreMarkerV2,
 } from "./store-version"
-import { durableJson, durableRename, ensurePrivateDirectory } from "./durable-files"
+import { durableJson, durableRename, ensurePrivateDirectory, syncTree } from "./durable-files"
 import { MAPLE_VERSION } from "../version"
+import { decodeMigrationJournal, type MigrationJournalSchema } from "./local-store-migrations/journal-schema"
 import { legacyToCurrentModule } from "./local-store-migrations/legacy-to-current"
+import { v1ToV2ErrorRollupModule } from "./local-store-migrations/v1-to-v2-error-rollup"
+import { v2ToV3ServiceMapIngestBridgeModule } from "./local-store-migrations/v2-to-v3-service-map-ingest-bridge"
+import { v3ToV4WebEventsModule } from "./local-store-migrations/v3-to-v4-web-events"
+import { v4ToV5ServiceOverviewMinutelyModule } from "./local-store-migrations/v4-to-v5-service-overview-minutely"
+import { v5ToV6ErrorEventsFingerprintHygieneModule } from "./local-store-migrations/v5-to-v6-error-events-fingerprint-hygiene"
+import { v6ToV7ErrorServiceVersionModule } from "./local-store-migrations/v6-to-v7-error-service-version"
+import { v7ToV8AppleCrashFramesModule } from "./local-store-migrations/v7-to-v8-apple-crash-frames"
+import { v8ToV9MvSweepModule } from "./local-store-migrations/v8-to-v9-mv-sweep"
+import { v9ToV10SemconvKeyRenamesModule } from "./local-store-migrations/v9-to-v10-semconv-key-renames"
+import { v10ToV11ProductEventsModule } from "./local-store-migrations/v10-to-v11-product-events"
+import { v11ToV12ServiceMapEdgeQuantilesModule } from "./local-store-migrations/v11-to-v12-service-map-edge-quantiles"
+import { v12ToV13ServiceOperationsDiscriminatorsModule } from "./local-store-migrations/v12-to-v13-service-operations-discriminators"
+import { v13ToV14AiTraceIndexModule } from "./local-store-migrations/v13-to-v14-ai-trace-index"
+import { v14ToV15CommitShaVcsRevisionModule } from "./local-store-migrations/v14-to-v15-commit-sha-vcs-revision"
+import { v15ToV16AiTraceIndexFilterColumnsModule } from "./local-store-migrations/v15-to-v16-ai-trace-index-filter-columns"
+import { v16ToV17AuditLogModule } from "./local-store-migrations/v16-to-v17-audit-log"
+import { v17ToV18ProductEventsFromTracesModule } from "./local-store-migrations/v17-to-v18-product-events-from-traces"
+import { v18ToV19AiTraceIndexUsageConventionsModule } from "./local-store-migrations/v18-to-v19-ai-trace-index-usage-conventions"
+import { v19ToV20ErrorEventsAttributeFallbackModule } from "./local-store-migrations/v19-to-v20-error-events-attribute-fallback"
+import { v20ToV21AiTraceIndexListColumnsModule } from "./local-store-migrations/v20-to-v21-ai-trace-index-list-columns"
+import { v21ToV22AiTraceIndexToolDetailColumnsModule } from "./local-store-migrations/v21-to-v22-ai-trace-index-tool-detail-columns"
 import type {
 	AnyLocalStoreMigrationModule,
 	LocalStoreMigration,
@@ -40,21 +65,14 @@ import type {
 	MigrationModuleContext,
 	MigrationPhase,
 	MigrationStepJournal,
-	MigrationStepStatus,
 } from "./local-store-migration-module"
 
 export {
 	type AnyLocalStoreMigrationModule,
 	type LocalStoreMigration,
-	type LocalStoreMigrationModule,
-	type MigrationDbOptions,
 	type MigrationModuleContext,
-	type MigrationOperation,
 	type MigrationPhase,
 	type MigrationStepJournal,
-	type MigrationStepStatus,
-	type StateDisposition,
-	type StateDispositionEntry,
 } from "./local-store-migration-module"
 
 export { legacyToCurrentModule } from "./local-store-migrations/legacy-to-current"
@@ -82,28 +100,7 @@ export interface MigrationPlan {
 	readonly checkpointDisposition: string
 }
 
-export interface MigrationJournal {
-	readonly formatVersion: 2
-	readonly migrationId: string
-	readonly phase: MigrationPhase
-	readonly chain: ReadonlyArray<MigrationStepJournal>
-	readonly currentStepIndex: number
-	readonly sourceDataDir: string
-	readonly sourceStoreId: string
-	readonly sourceChdb: string
-	readonly sourceFingerprint: string
-	readonly sourceDigest: string
-	readonly sourceVersion: number
-	readonly targetDataDir: string
-	readonly targetStoreId: string
-	readonly targetChdb: string
-	readonly targetFingerprint: string
-	readonly targetDigest: string
-	readonly targetVersion: number
-	readonly cutoffAt: string
-	readonly createdAt: string
-	readonly failure?: string
-}
+export type MigrationJournal = typeof MigrationJournalSchema.Type
 
 export interface MigrationResult {
 	readonly migrationId: string
@@ -117,7 +114,30 @@ export interface MigrationResult {
 	readonly copiedRows: Readonly<Record<string, number>>
 }
 
-export const localStoreMigrations: ReadonlyArray<AnyLocalStoreMigrationModule> = [legacyToCurrentModule]
+export const localStoreMigrations: ReadonlyArray<AnyLocalStoreMigrationModule> = [
+	legacyToCurrentModule,
+	v1ToV2ErrorRollupModule,
+	v2ToV3ServiceMapIngestBridgeModule,
+	v3ToV4WebEventsModule,
+	v4ToV5ServiceOverviewMinutelyModule,
+	v5ToV6ErrorEventsFingerprintHygieneModule,
+	v6ToV7ErrorServiceVersionModule,
+	v7ToV8AppleCrashFramesModule,
+	v8ToV9MvSweepModule,
+	v9ToV10SemconvKeyRenamesModule,
+	v10ToV11ProductEventsModule,
+	v11ToV12ServiceMapEdgeQuantilesModule,
+	v12ToV13ServiceOperationsDiscriminatorsModule,
+	v13ToV14AiTraceIndexModule,
+	v14ToV15CommitShaVcsRevisionModule,
+	v15ToV16AiTraceIndexFilterColumnsModule,
+	v16ToV17AuditLogModule,
+	v17ToV18ProductEventsFromTracesModule,
+	v18ToV19AiTraceIndexUsageConventionsModule,
+	v19ToV20ErrorEventsAttributeFallbackModule,
+	v20ToV21AiTraceIndexListColumnsModule,
+	v21ToV22AiTraceIndexToolDetailColumnsModule,
+]
 
 export const validateMigrationRegistry = (
 	registry: ReadonlyArray<AnyLocalStoreMigrationModule>,
@@ -166,6 +186,8 @@ export type MigrationResolutionErrorKind =
 	| "missing-path"
 	| "chdb-mismatch"
 
+// Migration planning is synchronous throw/catch code; this error does not enter an Effect failure channel.
+// oxlint-disable-next-line effecttsgo/extends-native-error
 export class MigrationResolutionError extends Error {
 	readonly kind: MigrationResolutionErrorKind
 	constructor(kind: MigrationResolutionErrorKind, message: string) {
@@ -310,8 +332,6 @@ export const migrationRootPath = (dataDir: string, migrationId: string): string 
 export const migrationHistoryPath = (dataDir: string, migrationId: string): string =>
 	join(migrationRootPath(dataDir, migrationId), "journal.json")
 
-const migrationIdPattern = /^[A-Za-z0-9._-]+$/
-
 const safeMigrationPath = (path: string, root: string, label: string): string => {
 	const absolute = resolve(path)
 	const relativePath = relative(resolve(root), absolute)
@@ -347,71 +367,6 @@ const assertJournalPaths = (dataDir: string, journal: MigrationJournal): void =>
 		final.to.digest !== journal.targetDigest
 	)
 		throw new Error("local migration journal final target does not match its chain")
-}
-
-const parsePhase = (value: unknown): MigrationPhase => {
-	if (
-		value !== "planned" &&
-		value !== "preflight-complete" &&
-		value !== "target-created" &&
-		value !== "copying" &&
-		value !== "copy-verified" &&
-		value !== "promotion-started" &&
-		value !== "promoted" &&
-		value !== "failed"
-	)
-		throw new Error(`invalid local migration phase: ${String(value)}`)
-	return value
-}
-
-const parseIdentity = (value: unknown, label: string): LocalSchemaIdentity => {
-	if (typeof value !== "object" || value === null || Array.isArray(value))
-		throw new Error(`migration journal ${label} identity is invalid`)
-	const identity = value as Record<string, unknown>
-	if (
-		!Number.isInteger(identity.version) ||
-		(identity.version as number) < 0 ||
-		typeof identity.fingerprint !== "string" ||
-		identity.fingerprint.length === 0 ||
-		typeof identity.digest !== "string" ||
-		typeof identity.chdb !== "string" ||
-		identity.chdb.length === 0
-	)
-		throw new Error(`migration journal ${label} identity is invalid`)
-	return {
-		version: identity.version as number,
-		fingerprint: identity.fingerprint,
-		digest: identity.digest,
-		chdb: identity.chdb,
-		...(typeof identity.manifestDigest === "string" ? { manifestDigest: identity.manifestDigest } : {}),
-		...(typeof identity.projectRevision === "string"
-			? { projectRevision: identity.projectRevision }
-			: {}),
-	}
-}
-
-const parseStep = (value: unknown, index: number): MigrationStepJournal => {
-	if (typeof value !== "object" || value === null || Array.isArray(value))
-		throw new Error(`migration journal step ${index} is invalid`)
-	const step = value as Record<string, unknown>
-	const status = step.status
-	if (
-		typeof step.id !== "string" ||
-		step.id.length === 0 ||
-		!Number.isInteger(step.moduleVersion) ||
-		(step.moduleVersion as number) < 1 ||
-		(status !== "pending" && status !== "running" && status !== "verified" && status !== "completed")
-	)
-		throw new Error(`migration journal step ${index} is invalid`)
-	return {
-		id: step.id,
-		moduleVersion: step.moduleVersion as number,
-		from: parseIdentity(step.from, `step ${index} from`),
-		to: parseIdentity(step.to, `step ${index} to`),
-		status: status as MigrationStepStatus,
-		...(step.state === undefined ? {} : { state: step.state }),
-		...(step.progress === undefined ? {} : { progress: step.progress }),
-	}
 }
 
 const sameJournalIdentity = (a: LocalSchemaIdentity, b: LocalSchemaIdentity): boolean =>
@@ -488,59 +443,9 @@ const assertJournalChainInvariants = (journal: MigrationJournal): void => {
 }
 
 const parseJournal = (value: unknown): MigrationJournal => {
-	if (typeof value !== "object" || value === null || Array.isArray(value))
-		throw new Error("migration journal is not an object")
-	const record = value as Record<string, unknown>
-	const requiredStrings = [
-		"migrationId",
-		"sourceDataDir",
-		"sourceStoreId",
-		"sourceChdb",
-		"sourceFingerprint",
-		"targetDataDir",
-		"targetStoreId",
-		"targetChdb",
-		"targetFingerprint",
-		"targetDigest",
-		"cutoffAt",
-		"createdAt",
-	] as const
-	for (const key of requiredStrings)
-		if (typeof record[key] !== "string" || record[key] === "")
-			throw new Error(`migration journal ${key} is invalid`)
-	for (const key of ["sourceVersion", "targetVersion", "currentStepIndex"] as const)
-		if (!Number.isInteger(record[key])) throw new Error(`migration journal ${key} is invalid`)
-	if (record.formatVersion !== 2)
-		throw new Error(`unsupported migration journal format ${String(record.formatVersion)}`)
-	if (!migrationIdPattern.test(record.migrationId as string))
-		throw new Error("migration journal id is unsafe")
-	if (!Array.isArray(record.chain) || record.chain.length === 0)
-		throw new Error("migration journal chain is invalid")
-	const chain = record.chain.map(parseStep)
-	if ((record.currentStepIndex as number) < 0 || (record.currentStepIndex as number) > chain.length)
+	const journal = decodeMigrationJournal(value)
+	if (journal.currentStepIndex > journal.chain.length)
 		throw new Error("migration journal currentStepIndex is invalid")
-	const journal: MigrationJournal = {
-		formatVersion: 2,
-		migrationId: record.migrationId as string,
-		phase: parsePhase(record.phase),
-		chain,
-		currentStepIndex: record.currentStepIndex as number,
-		sourceDataDir: resolve(record.sourceDataDir as string),
-		sourceStoreId: record.sourceStoreId as string,
-		sourceChdb: record.sourceChdb as string,
-		sourceFingerprint: record.sourceFingerprint as string,
-		sourceDigest: typeof record.sourceDigest === "string" ? record.sourceDigest : "",
-		sourceVersion: record.sourceVersion as number,
-		targetDataDir: resolve(record.targetDataDir as string),
-		targetStoreId: record.targetStoreId as string,
-		targetChdb: record.targetChdb as string,
-		targetFingerprint: record.targetFingerprint as string,
-		targetDigest: record.targetDigest as string,
-		targetVersion: record.targetVersion as number,
-		cutoffAt: record.cutoffAt as string,
-		createdAt: record.createdAt as string,
-		...(record.failure === undefined ? {} : { failure: String(record.failure) }),
-	}
 	assertJournalChainInvariants(journal)
 	for (const [index, step] of journal.chain.entries()) {
 		if (step.status === "verified" || step.status === "completed") {
@@ -647,12 +552,11 @@ const assertNoLiveServer = (dataDir: string): void => {
 	}
 }
 
-const parseJsonEachRow = <A>(value: string): A[] =>
-	value
-		.split("\n")
-		.map((line) => line.trim())
-		.filter((line) => line.length > 0)
-		.map((line) => JSON.parse(line) as A)
+/** Total bytes on disk. A `string | number` because the setting that unquotes
+ * 64-bit integers is not in force for every libchdb build this CLI supports. */
+const DiskUsageRow = Schema.Struct({ bytes: Schema.Union([Schema.String, Schema.Number]) })
+
+const decodeDiskUsageRows = decodeJsonEachRow(DiskUsageRow)
 
 const MIN_MIGRATION_FREE_BYTES = 128 * 1024 * 1024
 
@@ -739,7 +643,7 @@ const ensureMigrationCapacity = async (dataDir: string, session: MigrationDbSess
 	const rows = await session.use(
 		dataDir,
 		(db) =>
-			parseJsonEachRow<{ bytes: string | number }>(
+			decodeDiskUsageRows(
 				db.query(
 					"SELECT coalesce(sum(bytes_on_disk), 0) AS bytes FROM system.parts WHERE database = 'default' AND active = 1",
 				),
@@ -1007,6 +911,13 @@ export const promoteLocalStoreMigration = async (
 	await assertRealDirectory(targetData, "migration target")
 	const marker = validateTargetMarker(readMarker(journal.targetDataDir), "staging")
 	await assertRealFile(stagedMarker, "staged target marker")
+	// Cloned target contents were written with plain `fs.cp` and never fsynced;
+	// durableRename below only makes the DIRECTORY ENTRIES durable. Without this,
+	// a power loss after cutover can leave a durable active pointer naming a
+	// store whose file contents never reached stable storage. Runs before the
+	// renames so a crash-and-resume repeats it. Store trees carry
+	// engine-managed symlinks, hence allowSymlinks.
+	await syncTree(targetData, { allowSymlinks: true })
 
 	if (!sourceExists) {
 		await assertRealDirectory(activeData, "source data")
@@ -1062,10 +973,6 @@ const reconcilePromotion = async (dataDir: string, journal: MigrationJournal): P
 		)
 	return promoteLocalStoreMigration(dataDir, journal)
 }
-
-/** Filesystem-only promotion recovery seam used by fault-injection tests and
- * by the public coordinator after a process restart. */
-export const reconcileLocalStorePromotion = reconcilePromotion
 
 const moduleForStep = (
 	step: MigrationStepJournal,
@@ -1125,14 +1032,15 @@ const makeModuleContext = (
 		openSource: (fn, options = {}) => session.use(sourceDataDir, fn, { ...options, role: "source" }),
 		openTarget: (fn, options = {}) =>
 			session.use(journal.targetDataDir, fn, { ...options, role: "target" }),
+		closeStores: () => session.close(),
 		ensureCapacity: () =>
 			stepIndex === 0 ? ensureMigrationCapacity(dataDir, session) : Promise.resolve(),
 		saveStep: async (update) => {
 			const previous = current.chain[stepIndex]!
 			const nextStep: MigrationStepJournal = {
 				...previous,
-				...(update.state === undefined ? {} : { state: update.state }),
-				...(update.progress === undefined ? {} : { progress: update.progress }),
+				...(!(update.state === undefined) ? { state: update.state } : undefined),
+				...(!(update.progress === undefined) ? { progress: update.progress } : undefined),
 			}
 			current = {
 				...current,
@@ -1526,23 +1434,6 @@ export const runLocalStoreMigration = async (
 	if (isStoreDirty(dataDir))
 		throw new Error("source store was not cleanly closed; preserve it and retry after inspection")
 
-	if (journal === null) {
-		if (!plan || plan.chain.length === 0) throw new Error("store already has the current schema")
-		journal = createJournal(dataDir, plan, markerState!)
-		await ensurePrivateDirectory(migrationRootPath(dataDir, journal.migrationId))
-		await ensurePrivateDirectory(join(migrationRootPath(dataDir, journal.migrationId), "target"))
-		if (existsSync(journal.targetDataDir))
-			throw new Error(
-				"migration target directory already exists without a journal; refusing to reuse it",
-			)
-		await writeMigrationJournal(dataDir, journal)
-	} else {
-		assertJournalPaths(dataDir, journal)
-		journalModules(journal, localStoreMigrations)
-		if (markerState?.formatVersion === 2 && markerState.storeId !== journal.sourceStoreId)
-			throw new Error("unfinished local migration source store id does not match the active marker")
-	}
-
 	const operationId = randomUUID()
 	return withMigrationMaintenanceLock(dataDir, operationId, async () => {
 		assertNoLiveServer(dataDir)
@@ -1550,7 +1441,33 @@ export const runLocalStoreMigration = async (
 			throw new Error(
 				"source store became dirty before the migration lock was acquired; refusing to continue",
 			)
-		let current = (await readMigrationJournal(dataDir)) ?? journal!
+		// The canonical journal is created, validated, and written only UNDER the
+		// maintenance lock. The unlocked read above informed planning only: two
+		// concurrent `schema migrate --yes` runs would otherwise both observe "no
+		// journal", write competing journals with different migration ids, and
+		// leave one executing a transaction the other's journal describes.
+		let current = await readMigrationJournal(dataDir)
+		if (current === null) {
+			if (!plan || plan.chain.length === 0) throw new Error("store already has the current schema")
+			if (markerState === null)
+				throw new Error(
+					"the source store has no readable marker; unknown stores fail closed and cannot be migrated",
+				)
+			const created = createJournal(dataDir, plan, markerState)
+			await ensurePrivateDirectory(migrationRootPath(dataDir, created.migrationId))
+			await ensurePrivateDirectory(join(migrationRootPath(dataDir, created.migrationId), "target"))
+			if (existsSync(created.targetDataDir))
+				throw new Error(
+					"migration target directory already exists without a journal; refusing to reuse it",
+				)
+			await writeMigrationJournal(dataDir, created)
+			current = created
+		} else {
+			assertJournalPaths(dataDir, current)
+			journalModules(current, localStoreMigrations)
+			if (markerState?.formatVersion === 2 && markerState.storeId !== current.sourceStoreId)
+				throw new Error("unfinished local migration source store id does not match the active marker")
+		}
 		try {
 			const modules = journalModules(current, localStoreMigrations)
 			current = await executeMigrationChain(dataDir, current, modules, options.onProgress)

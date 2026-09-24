@@ -4,21 +4,22 @@ import { HttpRouter } from "effect/unstable/http"
 import { HttpApiBuilder } from "effect/unstable/httpapi"
 import { OrgId, UserId } from "@maple/domain/http"
 import { MapleApiV2 } from "@maple/domain/http/v2"
-import { API_CORS_OPTIONS } from "@/http/api-cors"
-import { Env } from "@/platform/Env"
-import { cleanupTestDbs, createTestDb, type TestDb } from "@/platform/test-pglite"
-import { ApiKeysService } from "@/services/org/ApiKeysService"
-import { AuthService } from "@/services/auth/AuthService"
-import { DashboardPersistenceService } from "@/services/dashboards/DashboardPersistenceService"
-import { ApiAuthorizationV2Layer } from "@/services/auth/ApiAuthorizationV2Layer"
-import { ApiV2RateLimiter, type ApiV2RateLimiterShape } from "@/services/auth/ApiV2RateLimiter"
-import { V2SchemaErrorsLive } from "./error-envelope"
+import { API_CORS_OPTIONS } from "@maple/backend/http/api-cors"
+import { Env } from "@maple/backend/platform/Env"
+import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
+import { ApiKeysService } from "@maple/backend/services/org/ApiKeysService"
+import { AuthService } from "@maple/backend/services/auth/AuthService"
+import { DashboardPersistenceService } from "@maple/backend/services/dashboards/DashboardPersistenceService"
+import { SharedDashboardService } from "@maple/backend/services/dashboards/SharedDashboardService"
+import { ApiAuthorizationV2Layer } from "@maple/backend/services/auth/ApiAuthorizationV2Layer"
+import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
+import { ApiV2RateLimiter, type RateLimiterApi } from "@maple/backend/services/auth/ApiV2RateLimiter"
+import { V2TransportErrorBoundaryLive } from "./error-envelope"
 import {
 	AlertsServiceStubLayer,
 	AllV2GroupLayersLive,
 	ConfigResourceServiceStubsLayer,
 	PlanetScaleServiceStubsLayer,
-	SlackIntegrationServiceStubLayer,
 	TelemetryServiceStubsLayer,
 } from "./v2-test-support"
 
@@ -47,26 +48,25 @@ const testConfig = () =>
 		}),
 	)
 
-const makeHarness = (
-	checkRateLimit: ApiV2RateLimiterShape["check"] = () => Effect.succeed("allowed" as const),
-) => {
+const makeHarness = (checkRateLimit: RateLimiterApi["check"] = () => Effect.succeed("allowed" as const)) => {
 	const testDb = createTestDb(createdDbs)
 	const envLive = Env.layer.pipe(Layer.provide(testConfig()))
 	const servicesLive = Layer.mergeAll(
 		ApiKeysService.layer,
 		AuthService.layer,
 		DashboardPersistenceService.layer,
+		SharedDashboardService.layer,
 	).pipe(Layer.provideMerge(Layer.mergeAll(envLive, testDb.layer)))
 
 	const routes = HttpApiBuilder.layer(MapleApiV2).pipe(
 		Layer.provide(AllV2GroupLayersLive),
-		Layer.provide(V2SchemaErrorsLive),
-		Layer.provide(SlackIntegrationServiceStubLayer),
+		Layer.provide(V2TransportErrorBoundaryLive),
 		Layer.provide(PlanetScaleServiceStubsLayer),
 		Layer.provide(AlertsServiceStubLayer),
 		Layer.provide(ConfigResourceServiceStubsLayer),
 		Layer.provide(TelemetryServiceStubsLayer),
 		Layer.provideMerge(ApiAuthorizationV2Layer),
+		Layer.provideMerge(AuditLogService.layerMemory),
 		Layer.provideMerge(Layer.succeed(ApiV2RateLimiter, { check: checkRateLimit })),
 		Layer.provideMerge(servicesLive),
 		Layer.provideMerge(HttpRouter.cors(API_CORS_OPTIONS)),
@@ -81,15 +81,23 @@ const makeHarness = (
 	const request = async (
 		method: string,
 		path: string,
-		options: { token?: string; body?: unknown; origin?: string } = {},
+		options: {
+			token?: string
+			body?: unknown
+			origin?: string
+			headers?: Record<string, string>
+		} = {},
 	) => {
 		const response = await handler(
 			new Request(`http://maple.test${path}`, {
 				method,
 				headers: {
-					...(options.token !== undefined ? { authorization: `Bearer ${options.token}` } : {}),
-					...(options.body !== undefined ? { "content-type": "application/json" } : {}),
-					...(options.origin !== undefined ? { origin: options.origin } : {}),
+					...(options.token !== undefined
+						? { authorization: `Bearer ${options.token}` }
+						: undefined),
+					...(options.body !== undefined ? { "content-type": "application/json" } : undefined),
+					...(options.origin !== undefined ? { origin: options.origin } : undefined),
+					...options.headers,
 				},
 				body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
 			}),
@@ -118,7 +126,9 @@ const makeHarness = (
 					name: scopes === undefined ? "root-key" : `scoped:${scopes.join(",")}`,
 					scopes,
 					kind,
-					...(options.metadataJson !== undefined ? { metadataJson: options.metadataJson } : {}),
+					...(options.metadataJson !== undefined
+						? { metadataJson: options.metadataJson }
+						: undefined),
 				})
 			}),
 		)
@@ -223,13 +233,43 @@ describe("v2 api_keys over HTTP", () => {
 		expect(response.status).toBe(429)
 		expect(response.body).toEqual({
 			error: {
+				_tag: "@maple/http/v2/RateLimitError",
 				type: "rate_limit_error",
 				code: "rate_limited",
-				message: "Too many requests. Retry after 60 seconds.",
+				title: "Too many requests",
+				message: "Too many requests. Retry after the interval in the Retry-After header.",
+				retryable: true,
+				recovery: "retry",
+				retry_after_seconds: 60,
 			},
 		})
 		expect(response.headers.get("retry-after")).toBe("60")
 		expect(response.headers.get("access-control-expose-headers")).toContain("Retry-After")
+		await harness.dispose()
+	})
+
+	// Without Access-Control-Max-Age, Chrome caches a preflight for only 5s, so
+	// nearly every browser call pays a second round trip to a worker pinned in
+	// us-east-1 before the real request is even sent. Those OPTIONS never reach
+	// our traces (the tracer is disabled for them), so only a test guards this.
+	it("caches CORS preflights so every request doesn't pay a second round trip", async () => {
+		const harness = makeHarness()
+		const response = await harness.request("OPTIONS", "/v2/api_keys", {
+			origin: "https://app.maple.dev",
+			headers: {
+				"access-control-request-method": "GET",
+				"access-control-request-headers": "authorization,content-type",
+			},
+		})
+
+		expect(response.headers.get("access-control-max-age")).toBe(String(API_CORS_OPTIONS.maxAge))
+		// `Authorization` must appear EXPLICITLY, not just via the `*` wildcard —
+		// the Fetch spec excludes it from the wildcard, and with only `*` browsers
+		// still allow the request but refuse to cache its preflight. Since every
+		// browser call to this API is authenticated, that silently reduced maxAge
+		// to a no-op. Verified in Chrome: 3 authenticated requests cost 3
+		// preflights with `*` alone and 1 with `Authorization` listed.
+		expect(response.headers.get("access-control-allow-headers")).toContain("Authorization")
 		await harness.dispose()
 	})
 
@@ -243,6 +283,54 @@ describe("v2 api_keys over HTTP", () => {
 		const response = await harness.request("GET", "/v2/api_keys", { token: sessionToken })
 		expect(response.status).toBe(200)
 		expect(rateLimitChecks).toBe(0)
+		await harness.dispose()
+	})
+
+	// `x-maple-org-id` names an organization explicitly instead of relying on the
+	// credential's own. This deployment is self-hosted, which has no membership
+	// directory to check a selection against — so the header is REJECTED rather
+	// than ignored. Silently ignoring it is the failure that would render one
+	// organization's data under another's name.
+	it("rejects an organization selection it cannot verify, in the v2 envelope", async () => {
+		const harness = makeHarness()
+		const sessionToken = await harness.bootstrapSession()
+
+		const { status, body } = await harness.request("GET", "/v2/api_keys", {
+			token: sessionToken,
+			headers: { "x-maple-org-id": "org_other" },
+		})
+
+		// 403, not the 401 a missing organization produces: the credential is fine.
+		expect(status).toBe(403)
+		expect((body as { error?: { code?: string } }).error?.code).toBe("organization_access_denied")
+		await harness.dispose()
+	})
+
+	it("serves the credential's own organization when the header names it", async () => {
+		const harness = makeHarness()
+		const sessionToken = await harness.bootstrapSession()
+
+		const { status } = await harness.request("GET", "/v2/api_keys", {
+			token: sessionToken,
+			// The free no-op, which is what lets a client send the header always.
+			headers: { "x-maple-org-id": "default" },
+		})
+
+		expect(status).toBe(200)
+		await harness.dispose()
+	})
+
+	it("rejects an organization selection made with an API key", async () => {
+		const harness = makeHarness()
+		const key = await harness.bootstrapKey()
+
+		const { status, body } = await harness.request("GET", "/v2/api_keys", {
+			token: key.secret,
+			headers: { "x-maple-org-id": "org_other" },
+		})
+
+		expect(status).toBe(403)
+		expect((body as { error?: { code?: string } }).error?.code).toBe("organization_access_denied")
 		await harness.dispose()
 	})
 
@@ -277,9 +365,13 @@ describe("v2 api_keys over HTTP", () => {
 		const { status, body } = await harness.request("GET", "/v2/api_keys", { token: key.secret })
 		expect(status).toBe(503)
 		expect(body.error).toEqual({
+			_tag: "@maple/http/errors/ApiKeyLookupPersistenceError",
 			type: "api_error",
 			code: "api_key_lookup_unavailable",
+			title: "Service temporarily unavailable",
 			message: "A service required for this operation is temporarily unavailable; retry with backoff.",
+			retryable: true,
+			recovery: "retry",
 		})
 		await harness.dispose()
 	})
@@ -297,14 +389,55 @@ describe("v2 api_keys over HTTP", () => {
 		})
 		expect(create.status).toBe(403)
 		expect(create.body.error).toEqual({
+			_tag: "@maple/http/v2/InsufficientScopeError",
 			type: "permission_error",
 			code: "insufficient_scope",
+			title: "Permission required",
 			message: 'This API key does not have the "api_keys:write" scope required for this request.',
+			retryable: false,
+			recovery: "request_access",
 		})
 
 		const writeKey = await harness.bootstrapKey(["api_keys:write"])
 		const listViaWrite = await harness.request("GET", "/v2/api_keys", { token: writeKey.secret })
 		expect(listViaWrite.status).toBe(200)
+		await harness.dispose()
+	})
+
+	// The scope check reads the router's matched route template, so a path the
+	// router normalizes (case, percent-encoding, duplicate slashes, path
+	// parameters) can no longer route to a handler while dodging the check.
+	it.each([
+		["/V2/api_keys", "uppercase segment"],
+		["/v2/%61pi_keys", "percent-encoded segment"],
+		["/v2//api_keys", "duplicate slash"],
+		["/v2/api_keys;x", "path parameter suffix"],
+		["/v2/api_keys/", "trailing slash"],
+	])("rejects %s (%s) for a read-only key", async (path) => {
+		const harness = makeHarness()
+		const readOnly = await harness.bootstrapKey(["api_keys:read"])
+
+		const created = await harness.request("POST", path, {
+			token: readOnly.secret,
+			body: { name: "nope" },
+		})
+		expect(created.status).toBe(403)
+		expect(created.body.error.code).toBe("insufficient_scope")
+		await harness.dispose()
+	})
+
+	// The mirror of the case above: a key that *does* hold the scope still
+	// reaches the handler through a normalized path, so the fix denies on scope
+	// rather than on the path shape.
+	it("still serves a normalized path to a key that holds the scope", async () => {
+		const harness = makeHarness()
+		const writeKey = await harness.bootstrapKey(["api_keys:write"])
+
+		const created = await harness.request("POST", "/V2//api_keys", {
+			token: writeKey.secret,
+			body: { name: "normalized" },
+		})
+		expect(created.status).toBe(200)
 		await harness.dispose()
 	})
 
@@ -375,9 +508,13 @@ describe("v2 api_keys over HTTP", () => {
 		})
 		expect(status).toBe(403)
 		expect(body.error).toEqual({
+			_tag: "@maple/http/v2/InsufficientPermissionsError",
 			type: "permission_error",
 			code: "insufficient_permissions",
+			title: "Permission required",
 			message: "Only org admins can create API keys",
+			retryable: false,
+			recovery: "request_access",
 		})
 		await harness.dispose()
 	})
@@ -420,6 +557,7 @@ describe("v2 api_keys over HTTP", () => {
 		expect(malformed.body.error.type).toBe("invalid_request_error")
 		expect(malformed.body.error.param).toBe("id")
 		expect(malformed.body.error.code).toBe("parameter_invalid")
+		expect(malformed.body.error._tag).toBe("@maple/http/v2/InvalidRequestError")
 
 		// valid key_ encoding of a UUID that doesn't exist
 		const { encodePublicId } = await import("@maple/domain/http/v2")

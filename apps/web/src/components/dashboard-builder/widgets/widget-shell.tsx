@@ -1,6 +1,6 @@
 import { useMemo, useState, type ReactNode } from "react"
 import { cn } from "@maple/ui/lib/utils"
-import { ChartLegendSlotContext, type ChartLegendItem } from "@maple/ui/components/ui/chart"
+import { PlotLegendSlotContext, type PlotLegendItem } from "@maple/ui/components/plot"
 import {
 	GripDotsIcon,
 	TrashIcon,
@@ -10,10 +10,14 @@ import {
 	ChatBubbleSparkleIcon,
 	BellIcon,
 	ClockIcon,
+	CircleInfoIcon,
+	ExternalLinkIcon,
+	CodeIcon,
 } from "@/components/icons"
 
 import { Card, CardContent, CardHeader, CardTitle, CardAction } from "@maple/ui/components/ui/card"
 import { Button } from "@maple/ui/components/ui/button"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@maple/ui/components/ui/tooltip"
 import {
 	DropdownMenu,
 	DropdownMenuTrigger,
@@ -22,17 +26,24 @@ import {
 	DropdownMenuSeparator,
 } from "@maple/ui/components/ui/dropdown-menu"
 import type { WidgetMode, WidgetDataState } from "@/components/dashboard-builder/types"
+import { useTimezonePreference } from "@/hooks/use-timezone-preference"
 import { useWidgetActions } from "@/components/dashboard-builder/widgets/widget-actions-context"
+import { MoveWidgetToSectionMenu } from "@/components/dashboard-builder/sections/move-widget-to-section-menu"
 import { useDashboardVariablesOptional } from "@/components/dashboard-builder/dashboard-variables-context"
 import {
 	useWidgetTimeRangeOverride,
 	widgetTimeRangeLabel,
 } from "@/components/dashboard-builder/widgets/widget-time-range-context"
-import { interpolateDisplayText } from "@/lib/dashboard-variables/interpolate"
+import { interpolateDisplayText } from "@maple/query-engine"
 
 interface WidgetShellProps {
 	title: string
 	mode: WidgetMode
+	/**
+	 * Short explanation of the metric, shown behind an info icon next to the
+	 * title. `href` turns the icon into a link to the fuller docs page.
+	 */
+	titleHint?: { text: string; href?: string }
 	/** Headline stat rendered at the top-right of the card header. */
 	headerValue?: ReactNode
 	/** Summary stat rendered below the card content. */
@@ -44,6 +55,7 @@ interface WidgetShellProps {
 export function WidgetShell({
 	title,
 	mode,
+	titleHint,
 	headerValue,
 	footer,
 	contentClassName,
@@ -57,12 +69,20 @@ export function WidgetShell({
 	const clone = ctx?.clone
 	const configure = ctx?.configure
 	const createAlert = ctx?.createAlert
+	const moveToSection = ctx?.moveToSection
+	const moveTargets = ctx?.moveTargets
+	const embed = ctx?.embed
 	const isEditable = mode === "edit"
-	// The menu is also shown in view mode when "Create alert" is available, so
-	// alerts can be spun off a chart without entering dashboard edit mode.
-	const showMenu = isEditable || createAlert != null
+	// The menu is also shown in view mode when "Create alert" or "Embed chart"
+	// is available, so neither needs dashboard edit mode.
+	const showMenu = isEditable || createAlert != null || embed != null
 	const [menuOpen, setMenuOpen] = useState(false)
-	const [legendItems, setLegendItems] = useState<ChartLegendItem[]>([])
+	const [legendItems, setLegendItems] = useState<readonly PlotLegendItem[]>([])
+	// One piece of state, two providers. The Recharts `ChartContainer` and the
+	// TanStack plot layer each publish through their own context — the plot layer
+	// declares its own so that importing it does not drag `recharts` into every
+	// ported chart's bundle — and a tile holds exactly one chart, so only one of
+	// them ever fires.
 	const legendSlot = useMemo(() => ({ setItems: setLegendItems }), [])
 
 	// Titles can reference dashboard variables ("Latency — $service"); render
@@ -74,14 +94,17 @@ export function WidgetShell({
 	// reader has no way to tell that one card on a 7-day board is showing the
 	// last 30 minutes.
 	const timeRangeOverride = useWidgetTimeRangeOverride()
-	const timeRangeLabel = timeRangeOverride ? widgetTimeRangeLabel(timeRangeOverride) : null
+	const { effectiveTimezone } = useTimezonePreference()
+	const timeRangeLabel = timeRangeOverride
+		? widgetTimeRangeLabel(timeRangeOverride, effectiveTimezone)
+		: null
 
 	return (
 		// `@container/widget` is the size anchor for every widget body. Tiles are
 		// sized by the grid, not the viewport — the nav sidebar collapse swings the
 		// canvas ~208px and the grid drops to 6 or 1 columns on narrow screens — so
 		// internals gate on the card's own width, never on `md:`/`lg:`.
-		<Card className="@container/widget h-full flex flex-col">
+		<Card className="group/card @container/widget h-full flex flex-col">
 			<CardHeader className="py-2.5">
 				<div className="flex min-w-0 items-center gap-2">
 					{isEditable && (
@@ -96,6 +119,45 @@ export function WidgetShell({
 					<CardTitle className="min-w-0 truncate text-xs font-semibold uppercase tracking-wider text-muted-foreground">
 						{displayTitle}
 					</CardTitle>
+					{titleHint && (
+						<Tooltip>
+							<TooltipTrigger
+								render={
+									titleHint.href ? (
+										// A link, not a button: the tooltip says what the metric is,
+										// the click goes to the page that says it properly. Hover
+										// tooltips are a bad place to put a link the reader has to
+										// travel to.
+										<a
+											href={titleHint.href}
+											target="_blank"
+											rel="noreferrer"
+											aria-label={`About ${displayTitle}`}
+											className="shrink-0 text-muted-foreground/60 hover:text-foreground"
+										/>
+									) : (
+										<span
+											aria-label={`About ${displayTitle}`}
+											className="shrink-0 text-muted-foreground/60"
+										/>
+									)
+								}
+							>
+								<CircleInfoIcon size={12} />
+							</TooltipTrigger>
+							<TooltipContent className="max-w-xs text-xs leading-relaxed">
+								{titleHint.text}
+								{titleHint.href && (
+									// Styled as the link it is: the whole icon is the anchor, so the
+									// tooltip has to say where a click lands.
+									<span className="mt-2 flex items-center gap-1 font-medium text-primary">
+										<span className="underline underline-offset-2">Read the docs</span>
+										<ExternalLinkIcon size={10} />
+									</span>
+								)}
+							</TooltipContent>
+						</Tooltip>
+					)}
 					{timeRangeLabel && (
 						<span
 							className="flex shrink-0 items-center gap-1 rounded-sm bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground"
@@ -104,11 +166,6 @@ export function WidgetShell({
 							<ClockIcon size={10} />
 							{timeRangeLabel}
 						</span>
-					)}
-					{headerValue != null && (
-						<div className="ml-auto shrink-0 font-mono font-semibold text-xs tabular-nums">
-							{headerValue}
-						</div>
 					)}
 					{legendItems.length >= 2 &&
 						(() => {
@@ -122,15 +179,26 @@ export function WidgetShell({
 								// Below ~380px the title alone fills the header row, so
 								// the legend is dropped entirely rather than squeezed to
 								// a row of unreadable truncated stubs.
-								<div className="hidden min-w-0 flex-1 items-center justify-end gap-x-3 overflow-hidden @min-[380px]/widget:flex">
+								<div className="ml-auto hidden min-w-0 flex-1 items-center justify-end gap-x-3 overflow-hidden @min-[380px]/widget:flex">
 									{visible.map((item) => (
 										<span
 											key={item.key}
 											className="flex min-w-0 shrink items-center gap-1.5 text-[10px] text-muted-foreground"
 										>
+											{/* A dashed outline, not a filled square, when the series is
+											    painted as a dashed stroke — an errors overlay drawn dashed
+											    in the plot and solid in the header would state something
+											    the chart does not. Mirrors `FixedMetricLegend`. */}
 											<span
-												className="size-2 shrink-0 rounded-[2px]"
-												style={{ backgroundColor: item.color }}
+												className={cn(
+													"size-2 shrink-0 rounded-[2px]",
+													item.dashed && "border border-dashed",
+												)}
+												style={
+													item.dashed
+														? { borderColor: item.color }
+														: { backgroundColor: item.color }
+												}
 											/>
 											<span className="truncate">{item.label}</span>
 										</span>
@@ -146,6 +214,20 @@ export function WidgetShell({
 								</div>
 							)
 						})()}
+					{headerValue != null && (
+						// LAST in the row, so the headline stat keeps the top-right corner.
+						// It used to come BEFORE the legend, which was invisible only because
+						// `legendItems` was permanently empty for every ported chart — the bug
+						// that restoring the legend slot fixed. With chips actually rendering,
+						// they landed to the right of the stat and took the corner.
+						//
+						// `ml-auto` stays on both: the legend's `flex-1` absorbs the free space
+						// when there is one, and this is what pushes the stat right when there
+						// is not.
+						<div className="ml-auto shrink-0 font-mono font-semibold text-xs tabular-nums">
+							{headerValue}
+						</div>
+					)}
 				</div>
 				{showMenu && (
 					<CardAction
@@ -163,7 +245,7 @@ export function WidgetShell({
 									</Button>
 								}
 							/>
-							<DropdownMenuContent align="end">
+							<DropdownMenuContent align="end" className="w-max">
 								{isEditable && configure && (
 									<DropdownMenuItem onClick={configure}>
 										<PencilIcon size={14} />
@@ -176,12 +258,40 @@ export function WidgetShell({
 										Clone
 									</DropdownMenuItem>
 								)}
+								{isEditable && moveToSection && moveTargets && (
+									<MoveWidgetToSectionMenu
+										sections={moveTargets}
+										current={ctx?.moveCurrent ?? null}
+										onMove={moveToSection}
+									/>
+								)}
 								{createAlert && (
 									<DropdownMenuItem onClick={createAlert}>
 										<BellIcon size={14} />
 										Create alert
 									</DropdownMenuItem>
 								)}
+								{embed &&
+									(embed.disabledReason ? (
+										// A disabled item swallows pointer events, so the tooltip
+										// hangs off a wrapper that still receives the hover.
+										<Tooltip>
+											<TooltipTrigger render={<div />}>
+												<DropdownMenuItem disabled>
+													<CodeIcon size={14} />
+													Embed chart
+												</DropdownMenuItem>
+											</TooltipTrigger>
+											<TooltipContent side="left">
+												{embed.disabledReason}
+											</TooltipContent>
+										</Tooltip>
+									) : (
+										<DropdownMenuItem onClick={embed.open}>
+											<CodeIcon size={14} />
+											Embed chart
+										</DropdownMenuItem>
+									))}
 								{isEditable && remove && (
 									<>
 										<DropdownMenuSeparator />
@@ -201,9 +311,7 @@ export function WidgetShell({
 			    (list/table/markdown) override with overflow-auto, which wins the
 			    tailwind-merge conflict. */}
 			<CardContent className={cn("overflow-hidden", contentClassName ?? "flex-1 min-h-0 p-2")}>
-				<ChartLegendSlotContext.Provider value={legendSlot}>
-					{children}
-				</ChartLegendSlotContext.Provider>
+				<PlotLegendSlotContext.Provider value={legendSlot}>{children}</PlotLegendSlotContext.Provider>
 			</CardContent>
 			{footer != null && (
 				<div className="shrink-0 px-3 pb-2.5 text-[11px] text-muted-foreground">{footer}</div>
@@ -225,6 +333,19 @@ interface WidgetFrameProps {
 	/** Summary line under the content. Only rendered once data is ready. */
 	footer?: ReactNode
 	children: ReactNode
+}
+
+/**
+ * "Nothing to draw here": the muted empty state every tile shows when its query
+ * ran fine and simply returned no rows. Shared with the chart widgets, which
+ * used to hand an empty result to a chart that then drew its sample data.
+ */
+export function WidgetEmptyState() {
+	return (
+		<div className="flex items-center justify-center h-full">
+			<span className="text-xs text-muted-foreground">No data in selected time range</span>
+		</div>
+	)
 }
 
 export function WidgetFrame({
@@ -253,23 +374,22 @@ export function WidgetFrame({
 				loadingSkeleton
 			) : dataState.status === "error" ? (
 				dataState.message === "No query data found in selected time range" ? (
-					<div className="flex items-center justify-center h-full">
-						<span className="text-xs text-muted-foreground">No data in selected time range</span>
-					</div>
-				) : dataState.kind === "range" ? (
+					<WidgetEmptyState />
+				) : dataState.kind === "range" || dataState.kind === "config" ? (
 					// A constraint, not a failure — muted like the empty state rather
-					// than destructive, since nothing is broken and the neighbouring
-					// charts on this dashboard are showing the full window fine.
+					// than destructive, since nothing is broken: the window is too wide
+					// for a list, or the tile simply isn't configured yet.
 					<div className="flex items-center justify-center h-full flex-col gap-1.5 px-3">
 						<span className="text-xs font-medium text-muted-foreground">
-							{dataState.title ?? "Range too wide"}
+							{dataState.title ??
+								(dataState.kind === "range" ? "Range too wide" : "Not configured")}
 						</span>
 						{dataState.message && (
 							<span className="text-[10px] text-muted-foreground/70 max-w-full text-center line-clamp-3">
 								{dataState.message}
 							</span>
 						)}
-						{narrowRange && (
+						{dataState.kind === "range" && narrowRange && (
 							<Button
 								variant="outline"
 								size="xs"

@@ -4,18 +4,22 @@ import { Schema } from "effect"
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
 import { MetricsBrowse, type MetricsBrowsePatch } from "@/components/metrics/metrics-browse"
 import { TimeRangeSearchFields, applyTimeRangeSearch } from "@/components/time-range-picker/search"
+import { sessionTimeRangeSearchMiddleware } from "@/components/time-range-picker/session-time-range"
 import { PageRefreshProvider } from "@/components/time-range-picker/page-refresh-context"
 import { TimeRangeHeaderControls } from "@/components/time-range-picker/time-range-header-controls"
+import {
+	QUERY_BUILDER_METRIC_TYPES,
+	type QueryBuilderMetricType,
+	toQueryBuilderMetricType,
+} from "@maple/query-model"
 
-const METRIC_TYPE_VALUES = ["sum", "gauge", "histogram", "exponential_histogram"] as const
-
-function asMetricType(value: string): (typeof METRIC_TYPE_VALUES)[number] | undefined {
-	return METRIC_TYPE_VALUES.find((type) => type === value)
+function asMetricType(value: string): QueryBuilderMetricType | undefined {
+	return toQueryBuilderMetricType(value) ?? undefined
 }
 
 const metricsSearchSchema = Schema.Struct({
 	q: Schema.optional(Schema.String),
-	type: Schema.optional(Schema.Literals(["sum", "gauge", "histogram", "exponential_histogram"])),
+	type: Schema.optional(Schema.Literals(QUERY_BUILDER_METRIC_TYPES)),
 	view: Schema.optional(Schema.Literals(["grid", "table"])),
 	...TimeRangeSearchFields,
 })
@@ -25,6 +29,7 @@ export type MetricsSearchParams = Schema.Schema.Type<typeof metricsSearchSchema>
 export const Route = createFileRoute("/metrics/")({
 	component: MetricsPage,
 	validateSearch: Schema.toStandardSchemaV1(metricsSearchSchema),
+	search: { middlewares: [sessionTimeRangeSearchMiddleware()] },
 })
 
 function MetricsPage() {
@@ -39,9 +44,9 @@ function MetricsPage() {
 		navigate({
 			search: (prev) => ({
 				...prev,
-				...("q" in patch ? { q: patch.q || undefined } : {}),
-				...("type" in patch ? { type: patch.type } : {}),
-				...("view" in patch ? { view: patch.view === "grid" ? undefined : patch.view } : {}),
+				...("q" in patch ? { q: patch.q || undefined } : undefined),
+				...("type" in patch ? { type: patch.type } : undefined),
+				...("view" in patch ? { view: patch.view === "grid" ? undefined : patch.view } : undefined),
 			}),
 			replace: true,
 		})
@@ -54,10 +59,7 @@ function MetricsPage() {
 				<DashboardLayout.Body>
 					<DashboardLayout.Content>
 						<DashboardLayout.Sticky>
-							<DashboardLayout.Header
-								title="Metrics"
-								description="Explore and analyze OpenTelemetry metrics from your services."
-							>
+							<DashboardLayout.Header title="Metrics">
 								<TimeRangeHeaderControls
 									startTime={search.startTime}
 									endTime={search.endTime}

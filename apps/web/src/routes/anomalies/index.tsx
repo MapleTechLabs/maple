@@ -1,4 +1,4 @@
-import { useCallback, useMemo } from "react"
+import { useCallback, useMemo, useState } from "react"
 import { createFileRoute, useNavigate } from "@tanstack/react-router"
 import { Result, useAtomRefresh } from "@/lib/effect-atom"
 import { Schema } from "effect"
@@ -6,8 +6,16 @@ import { Schema } from "effect"
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
 import { useIntervalRefresh } from "@/hooks/use-interval-refresh"
 import { useListNavigation } from "@/hooks/use-list-navigation"
-import { useRetainedRefreshableResultValue } from "@/hooks/use-retained-refreshable-result-value"
-import { AnomaliesFilterSidebar, type AnomalyFilters } from "@/components/anomalies/anomalies-filter-sidebar"
+import { useRefreshableAtomValue } from "@/hooks/use-refreshable-atom-value"
+import { AnomaliesFilterSidebar } from "@/components/anomalies/anomalies-filter-sidebar"
+import {
+	anomalyFilterChips,
+	hasAnomalyFilters,
+	matchesAnomalyFilters,
+	type AnomalyFilters,
+} from "@/lib/anomalies/anomaly-filters"
+import { ActiveFilterChips } from "@maple/ui/components/filters/active-filter-chips"
+import { ExcludedEmptyHint } from "@maple/ui/components/filters/excluded-empty-hint"
 import {
 	ANOMALY_GROUP_ORDER,
 	AnomalyGroup,
@@ -16,7 +24,10 @@ import {
 } from "@/components/anomalies/anomaly-group"
 import { AnomalyLiveIndicator } from "@/components/anomalies/anomaly-live-indicator"
 import { ListToolbar } from "@/components/common/list-toolbar"
-import { MapleApiAtomClient } from "@/lib/services/common/atom-client"
+import { retainedQueryV2 } from "@/lib/services/common/v2-atom-client"
+import { runMapleApiV2 } from "@/lib/collections/api-runner"
+import { anomalyIncidentFromV2 } from "@/lib/services/anomalies"
+import { toastManager } from "@maple/ui/components/ui/toast"
 import { Button } from "@maple/ui/components/ui/button"
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@maple/ui/components/ui/empty"
 import { ErrorState } from "@/components/common/error-state"
@@ -24,9 +35,16 @@ import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import type { AnomalyIncidentDocument, AnomalyIncidentId } from "@maple/domain/http"
 
 const LIVE_REFRESH_INTERVAL_MS = 15_000
-const INCIDENTS_PAGE_LIMIT = 500
+// v2 lists cap at 100; further pages arrive through the explicit "Load more".
+const INCIDENTS_PAGE_LIMIT = 100
 
 type StatusTab = "open" | "resolved" | "all"
+
+interface LoadedPages {
+	readonly key: StatusTab
+	readonly rows: ReadonlyArray<AnomalyIncidentDocument>
+	readonly nextCursor: string | null
+}
 
 const TOOLBAR_TABS: ReadonlyArray<{ value: StatusTab; label: string }> = [
 	{ value: "open", label: "Open" },
@@ -44,6 +62,14 @@ const searchSchema = Schema.Struct({
 	),
 	services: Schema.optional(Schema.Array(Schema.String)),
 	envs: Schema.optional(Schema.Array(Schema.String)),
+	excludedSeverity: Schema.optional(Schema.Array(Schema.Literals(["warning", "critical"]))),
+	excludedSignals: Schema.optional(
+		Schema.Array(
+			Schema.Literals(["error_rate", "latency_p95", "throughput", "error_spike", "log_volume"]),
+		),
+	),
+	excludedServices: Schema.optional(Schema.Array(Schema.String)),
+	excludedEnvs: Schema.optional(Schema.Array(Schema.String)),
 	live: Schema.optional(Schema.Boolean),
 })
 
@@ -61,14 +87,37 @@ function AnomaliesPage() {
 	const status: StatusTab = search.status ?? "open"
 	const live = search.live ?? status === "open"
 
-	const incidentsQueryAtom = MapleApiAtomClient.query("anomalies", "listIncidents", {
-		query: status === "all" ? { limit: INCIDENTS_PAGE_LIMIT } : { status, limit: INCIDENTS_PAGE_LIMIT },
-		reactivityKeys: ["anomalyIncidents"],
-	})
+	const listQuery = useMemo(
+		() => (status === "all" ? { limit: INCIDENTS_PAGE_LIMIT } : { status, limit: INCIDENTS_PAGE_LIMIT }),
+		[status],
+	)
+	// Memoized because `useRefreshableAtomValue` updates state during
+	// render when the Result identity changes: a fresh atom per render would
+	// feed it a fresh Result every time and never converge.
+	const incidentsQueryAtom = useMemo(
+		() =>
+			retainedQueryV2("anomalies", "listIncidents", {
+				query: listQuery,
+				reactivityKeys: ["anomalyIncidents"],
+			}),
+		[listQuery],
+	)
 	// Retain the previous list across tab switches so the page never collapses
 	// back to skeletons; live refresh ticks keep the same atom and never dim.
-	const incidentsResult = useRetainedRefreshableResultValue(incidentsQueryAtom)
-	const refreshIncidents = useAtomRefresh(incidentsQueryAtom)
+	const incidentsResult = useRefreshableAtomValue(incidentsQueryAtom)
+	const refreshFirstPage = useAtomRefresh(incidentsQueryAtom)
+
+	// Pages loaded past the first. Keyed by the tab they were fetched for, so a
+	// tab switch discards them without an effect; a refresh clears them outright,
+	// otherwise the live tick would leave stale rows below fresh ones.
+	const [loadedPages, setLoadedPages] = useState<LoadedPages | null>(null)
+	const [loadingMore, setLoadingMore] = useState(false)
+	const pages = loadedPages?.key === status ? loadedPages : null
+
+	const refreshIncidents = useCallback(() => {
+		setLoadedPages(null)
+		refreshFirstPage()
+	}, [refreshFirstPage])
 
 	useIntervalRefresh(refreshIncidents, {
 		intervalMs: LIVE_REFRESH_INTERVAL_MS,
@@ -81,8 +130,21 @@ function AnomaliesPage() {
 			signals: search.signals,
 			services: search.services,
 			envs: search.envs,
+			excludedSeverity: search.excludedSeverity,
+			excludedSignals: search.excludedSignals,
+			excludedServices: search.excludedServices,
+			excludedEnvs: search.excludedEnvs,
 		}),
-		[search.severity, search.signals, search.services, search.envs],
+		[
+			search.severity,
+			search.signals,
+			search.services,
+			search.envs,
+			search.excludedSeverity,
+			search.excludedSignals,
+			search.excludedServices,
+			search.excludedEnvs,
+		],
 	)
 
 	const updateFilter = useCallback(
@@ -101,42 +163,87 @@ function AnomaliesPage() {
 		})
 	}, [navigate])
 
-	const allIncidents = Result.isSuccess(incidentsResult) ? incidentsResult.value.incidents : []
+	const firstPage = Result.isSuccess(incidentsResult) ? incidentsResult.value : undefined
+	const allIncidents = useMemo(() => {
+		const firstPageIncidents = firstPage?.data.map(anomalyIncidentFromV2) ?? []
+		if (pages === null) return firstPageIncidents
+		const byId = new Map(firstPageIncidents.map((incident) => [incident.id, incident]))
+		for (const incident of pages.rows) if (!byId.has(incident.id)) byId.set(incident.id, incident)
+		return [...byId.values()]
+	}, [firstPage, pages])
+
+	const nextCursor = pages === null ? (firstPage?.next_cursor ?? null) : pages.nextCursor
+
+	const loadMore = useCallback(async () => {
+		if (nextCursor === null || loadingMore) return
+		setLoadingMore(true)
+		try {
+			const page = await runMapleApiV2((client) =>
+				client.anomalies.listIncidents({ query: { ...listQuery, cursor: nextCursor } }),
+			)
+			const rows = page.data.map(anomalyIncidentFromV2)
+			setLoadedPages((current) => ({
+				key: status,
+				rows: [...(current?.key === status ? current.rows : []), ...rows],
+				nextCursor: page.next_cursor,
+			}))
+		} catch {
+			toastManager.add({ title: "More anomalies could not be loaded", type: "error" })
+		} finally {
+			setLoadingMore(false)
+		}
+	}, [listQuery, loadingMore, nextCursor, status])
 
 	const filtered = useMemo(
-		() =>
-			allIncidents.filter(
-				(incident) =>
-					(filters.severity === undefined || filters.severity.includes(incident.severity)) &&
-					(filters.signals === undefined || filters.signals.includes(incident.signalType)) &&
-					(filters.services === undefined || filters.services.includes(incident.serviceName)) &&
-					(filters.envs === undefined || filters.envs.includes(incident.deploymentEnv)),
-			),
+		() => allIncidents.filter((incident) => matchesAnomalyFilters(incident, filters)),
 		[allIncidents, filters],
 	)
 
-	const hasActiveFilters =
-		filters.severity !== undefined ||
-		filters.signals !== undefined ||
-		filters.services !== undefined ||
-		filters.envs !== undefined
+	const hasActiveFilters = hasAnomalyFilters(filters)
 
+	const excludedChips = anomalyFilterChips(filters).filter((chip) => chip.negated)
+	const excludedValues = excludedChips.flatMap((chip) => chip.values)
+	const clearExclusions = () =>
+		navigate({
+			search: (prev) => ({
+				...prev,
+				...Object.fromEntries(excludedChips.map((chip) => [chip.param, undefined])),
+			}),
+		})
+
+	const activeFilterChips = anomalyFilterChips(filters).map((chip) => ({
+		id: chip.param,
+		label: chip.label,
+		values: chip.values,
+		negated: chip.negated,
+		onRemove: () => navigate({ search: (prev) => ({ ...prev, [chip.param]: undefined }) }),
+	}))
+
+	// Folded into the toolbar node rather than placed per-branch: the three Result branches each
+	// render `toolbar`, and a chip bar that appeared only on success would vanish on every refresh.
 	const toolbar = (
-		<ListToolbar
-			tabs={TOOLBAR_TABS}
-			active={status}
-			label="Filter anomalies"
-			countNoun={["anomaly", "anomalies"]}
-			totalCount={Result.isSuccess(incidentsResult) ? filtered.length : undefined}
-			onChange={(value) =>
-				navigate({
-					search: (prev) => ({
-						...prev,
-						status: value === "open" ? undefined : value,
-					}),
-				})
-			}
-		/>
+		<>
+			<ListToolbar
+				tabs={TOOLBAR_TABS}
+				active={status}
+				label="Filter anomalies"
+				countNoun={["anomaly", "anomalies"]}
+				totalCount={Result.isSuccess(incidentsResult) ? filtered.length : undefined}
+				onChange={(value) =>
+					navigate({
+						search: (prev) => ({
+							...prev,
+							status: value === "open" ? undefined : value,
+						}),
+					})
+				}
+			/>
+			<ActiveFilterChips
+				chips={activeFilterChips}
+				onClearAll={clearFilters}
+				className="mb-0 px-2 pb-2"
+			/>
+		</>
 	)
 
 	// The three Result branches share one shell. With the compound layout that's a
@@ -208,8 +315,13 @@ function AnomaliesPage() {
 				status={status}
 				hasActiveFilters={hasActiveFilters}
 				onClearFilters={clearFilters}
+				excludedValues={excludedValues}
+				onClearExclusions={clearExclusions}
 				toolbar={toolbar}
 				Shell={AnomaliesShell}
+				hasMore={nextCursor !== null}
+				loadingMore={loadingMore}
+				onLoadMore={loadMore}
 			/>
 		))
 		.render()
@@ -220,15 +332,26 @@ function AnomaliesPageBody({
 	status,
 	hasActiveFilters,
 	onClearFilters,
+	excludedValues,
+	onClearExclusions,
 	toolbar,
 	Shell,
+	hasMore,
+	loadingMore,
+	onLoadMore,
 }: {
 	incidents: ReadonlyArray<AnomalyIncidentDocument>
 	status: StatusTab
 	hasActiveFilters: boolean
 	onClearFilters: () => void
 	toolbar: React.ReactNode
+	/** Flattened active exclusions, for the empty state's hint. */
+	excludedValues: ReadonlyArray<string>
+	onClearExclusions: () => void
 	Shell: (props: { children: React.ReactNode }) => React.ReactElement
+	hasMore: boolean
+	loadingMore: boolean
+	onLoadMore: () => void
 }) {
 	const navigate = useNavigate({ from: Route.fullPath })
 
@@ -315,6 +438,13 @@ function AnomaliesPageBody({
 									Clear filters
 								</Button>
 							) : null}
+							{/* Named separately from "Clear filters": an inclusion is visible in what
+							    came back, an exclusion only in what did not. */}
+							<ExcludedEmptyHint
+								excluded={excludedValues}
+								onClear={onClearExclusions}
+								className="max-w-lg"
+							/>
 						</Empty>
 					</div>
 				) : (
@@ -328,6 +458,18 @@ function AnomaliesPageBody({
 								onFocus={setFocusedId}
 							/>
 						))}
+						{hasMore ? (
+							<div className="flex justify-center p-4">
+								<Button
+									variant="outline"
+									size="sm"
+									onClick={onLoadMore}
+									disabled={loadingMore}
+								>
+									{loadingMore ? "Loading…" : "Load more"}
+								</Button>
+							</div>
+						) : null}
 					</div>
 				)}
 			</div>

@@ -30,7 +30,7 @@ export const metrics = Command.make("metrics", {
 )
 
 export const query = Command.make("query", {
-	sql: Argument.string("sql").pipe(
+	sql: Argument.String("sql").pipe(
 		Argument.withDescription("Raw ClickHouse SQL to run against the local chDB store"),
 	),
 }).pipe(

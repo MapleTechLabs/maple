@@ -1,3 +1,4 @@
+import { warmAtoms } from "@effect-router/core"
 import * as React from "react"
 import { useNavigate, useRouterState, createFileRoute } from "@tanstack/react-router"
 import { Result, useAtomValue } from "@/lib/effect-atom"
@@ -7,10 +8,12 @@ import { TraceId } from "@maple/domain"
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
 import { useAppHotkey } from "@/hooks/use-app-hotkey"
 import { TraceReplayLink } from "@/components/replays/trace-replay-link"
+import { TraceLogsLink } from "@/components/traces/trace-logs-link"
 import { QueryErrorState } from "@/components/common/query-error-state"
 import { TraceViewTabs } from "@maple/ui/components/traces/trace-view-tabs"
 import { SpanDetailPanel } from "@/components/traces/span-detail-panel"
 import { TraceAnatomyStrip } from "@/components/traces/trace-anatomy-strip"
+import { TraceProductEvents } from "@/components/traces/trace-product-events"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@maple/ui/components/ui/resizable"
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@maple/ui/components/ui/sheet"
@@ -43,14 +46,14 @@ export const Route = createFileRoute("/traces/$traceId")({
 	validateSearch: Schema.toStandardSchemaV1(TraceDetailSearchSchema),
 	loaderDeps: ({ search }) => ({ t: search.t }),
 	loader: ({ context, params, deps }) => {
-		context.effectRegistry.mount(
+		warmAtoms(context.effectRegistry, [
 			getSpanHierarchyResultAtom({
 				data: {
 					traceId: Schema.decodeSync(TraceId)(params.traceId),
 					timestamp: deps.t,
 				},
 			}),
-		)
+		])
 	},
 })
 
@@ -126,7 +129,7 @@ function TraceDetailPage() {
 			</DashboardLayout.Root>
 		))
 		.onSuccess((data) => {
-			if (data.spans.length === 0) {
+			if (data.spans.length === 0 || data.traceStartTime === undefined) {
 				return (
 					<DashboardLayout.Root>
 						<DashboardLayout.Breadcrumbs
@@ -201,17 +204,26 @@ function TraceDetailPage() {
 				)
 			}
 
-			return <TraceDetailContent data={data} traceId={traceId} backToTracesHref={backToTracesHref} />
+			return (
+				<TraceDetailContent
+					data={data}
+					traceStartTime={data.traceStartTime}
+					traceId={traceId}
+					backToTracesHref={backToTracesHref}
+				/>
+			)
 		})
 		.render()
 }
 
 function TraceDetailContent({
 	data,
+	traceStartTime,
 	traceId,
 	backToTracesHref,
 }: {
 	data: SpanHierarchyResponse
+	traceStartTime: string
 	traceId: string
 	backToTracesHref: string
 }) {
@@ -234,6 +246,18 @@ function TraceDetailContent({
 		[search.spanId, navigate],
 	)
 
+	// The product-events panel knows a span id, not a `SpanNode`.
+	const handleSelectSpanId = React.useCallback(
+		(spanId: string) => {
+			if (search.spanId === spanId) return
+			navigate({
+				search: (prev: Record<string, unknown>) => ({ ...prev, spanId }),
+				replace: true,
+			})
+		},
+		[search.spanId, navigate],
+	)
+
 	const handleCloseSpanDetails = React.useCallback(() => {
 		navigate({
 			search: (prev: Record<string, unknown>) => ({ ...prev, spanId: undefined }),
@@ -247,16 +271,6 @@ function TraceDetailContent({
 
 	const services = React.useMemo(
 		() => [...new Set(data.spans.map((s: Span) => s.serviceName))],
-		[data.spans],
-	)
-
-	const traceStartTime = React.useMemo(
-		() =>
-			data.spans.length > 0
-				? data.spans.reduce((earliest, span) =>
-						new Date(span.startTime) < new Date(earliest.startTime) ? span : earliest,
-					).startTime
-				: new Date().toISOString(),
 		[data.spans],
 	)
 
@@ -278,7 +292,7 @@ function TraceDetailContent({
 	const rootSpan = data.rootSpans[0]
 	const rootHttpInfo = rootSpan ? getHttpInfo(rootSpan) : null
 	const deploymentEnv = rootSpan?.resourceAttributes?.["deployment.environment"]
-	const commitSha = rootSpan?.resourceAttributes?.["deployment.commit_sha"]
+	const commitSha = rootSpan?.resourceAttributes?.["vcs.ref.head.revision"]
 	const hasError = data.spans.some((s: Span) => {
 		if (s.statusCode === "Error") return true
 		const httpStatus = s.spanAttributes?.["http.status_code"]
@@ -313,6 +327,11 @@ function TraceDetailContent({
 							}
 						>
 							<div className="flex items-center gap-2">
+								<TraceLogsLink
+									traceId={traceId}
+									traceStartTime={traceStartTime}
+									totalDurationMs={data.totalDurationMs}
+								/>
 								<TraceReplayLink traceId={traceId} />
 							</div>
 						</DashboardLayout.Header>
@@ -327,6 +346,13 @@ function TraceDetailContent({
 								httpStatusCode={rootHttpInfo?.statusCode}
 								deploymentEnv={deploymentEnv}
 								commitSha={commitSha}
+							/>
+
+							<TraceProductEvents
+								traceId={traceId}
+								traceStartTime={traceStartTime}
+								totalDurationMs={data.totalDurationMs}
+								onSelectSpan={handleSelectSpanId}
 							/>
 
 							{isMobile ? (

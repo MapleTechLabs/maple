@@ -39,7 +39,7 @@ Every field accepted by `MapleBrowser.init`:
 
 | Option                         | Type      | Default                    | Description                                                                                                                                                                                                                                            |
 | ------------------------------ | --------- | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `ingestKey`                    | `string`  | —                          | **Required.** Public ingest key (`maple_pk_...`).                                                                                                                                                                                                      |
+| `ingestKey`                    | `string`  | —                          | Public ingest key (`maple_pk_...`), used only as the `Authorization` header. Omit it behind a proxy that adds auth; see [Auth via a proxy](#auth-via-a-proxy).                                                                                         |
 | `serviceName`                  | `string`  | —                          | **Required.** Service name reported on traces and stored on replay sessions.                                                                                                                                                                           |
 | `endpoint`                     | `string`  | `https://ingest.maple.dev` | Maple ingest base URL. Override for self-hosted / regional ingest.                                                                                                                                                                                     |
 | `serviceNamespace`             | `string`  | —                          | Logical group this service belongs to, emitted as the OTel `service.namespace` resource attribute on traces.                                                                                                                                           |
@@ -73,6 +73,14 @@ MapleBrowser.init({
 	privacy: { maskAllInputs: true, maskAllText: false },
 })
 ```
+
+### Auth via a proxy
+
+`ingestKey` only sets the `Authorization: Bearer` header. Without it, tracing and replay still run and
+send without the header, so a first-party proxy (to get past ad blockers, or to keep the key out of
+the bundle) can attach the key server-side: set `endpoint` to the proxy and leave `ingestKey` out.
+Keyless against Maple's hosted ingest cannot work (it answers 401), so that combination logs a
+warning.
 
 ## Sessions
 

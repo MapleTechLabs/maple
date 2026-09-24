@@ -1,3 +1,4 @@
+import { getOnboardingSetupHint } from "@/lib/onboarding-intent"
 import { useAuth } from "@clerk/clerk-react"
 import { useNavigate } from "@tanstack/react-router"
 import { toastManager } from "@maple/ui/components/ui/toast"
@@ -28,8 +29,7 @@ export function SetupChecklist() {
 
 function SetupChecklistCard() {
 	const { orgId } = useAuth()
-	const { dismissChecklist, checklistExpanded, setChecklistExpanded, demoDataRequested } =
-		useQuickStart(orgId)
+	const { dismissChecklist, checklistExpanded, setChecklistExpanded, qualifyAnswers } = useQuickStart(orgId)
 
 	const connection = useIngestConnection()
 
@@ -51,15 +51,9 @@ function SetupChecklistCard() {
 						<CodeIcon size={16} />
 					</div>
 					<div className="min-w-0">
-						<p className="text-sm font-medium">
-							{demoDataRequested
-								? "Demo data is in — now connect your real app"
-								: "Connect your app to see real data"}
-						</p>
+						<p className="text-sm font-medium">Connect your app to see real data</p>
 						<p className="text-xs text-muted-foreground">
-							{demoDataRequested
-								? "You're exploring sample services. Send your own telemetry to see your real stack."
-								: "Drop in the snippet and we'll auto-detect your first traces."}
+							{getOnboardingSetupHint(qualifyAnswers.intents)}
 						</p>
 					</div>
 				</button>
@@ -120,11 +114,11 @@ function FirstTraceCelebration({ serviceName, onDismiss }: { serviceName?: strin
 
 	return (
 		<Card className="mb-4 shrink-0 border-primary/40 bg-primary/[0.04] overflow-hidden">
-			<CardContent className="flex items-center gap-4 p-5">
+			<CardContent className="flex flex-wrap items-center gap-4 p-5">
 				<div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
 					<CircleCheckIcon size={20} />
 				</div>
-				<div className="flex-1 min-w-0">
+				<div className="min-w-0 flex-1 basis-40">
 					<p className="text-sm font-semibold tracking-tight">First trace received — you're live</p>
 					<p className="text-xs text-muted-foreground mt-0.5">
 						{serviceName
@@ -132,7 +126,11 @@ function FirstTraceCelebration({ serviceName, onDismiss }: { serviceName?: strin
 							: "We're seeing your telemetry. Jump in to explore."}
 					</p>
 				</div>
-				<Button size="sm" onClick={handleExplore} className="gap-2 shrink-0">
+				<Button
+					size="sm"
+					onClick={handleExplore}
+					className="gap-2 shrink-0 max-sm:order-last max-sm:w-full"
+				>
 					Explore your traces
 					<RocketIcon size={14} />
 				</Button>

@@ -22,6 +22,7 @@ export interface TracesSearchLike {
 	httpMethods?: string[]
 	httpStatusCodes?: string[]
 	deploymentEnvs?: string[]
+	namespaces?: string[]
 	startTime?: string
 	endTime?: string
 	rootOnly?: boolean
@@ -31,9 +32,11 @@ export interface TracesSearchLike {
 	serviceMatchMode?: FilterMatchMode
 	spanNameMatchMode?: FilterMatchMode
 	deploymentEnvMatchMode?: FilterMatchMode
+	namespaceMatchMode?: FilterMatchMode
 	excludedServices?: string[]
 	excludedSpanNames?: string[]
 	excludedDeploymentEnvs?: string[]
+	excludedNamespaces?: string[]
 	excludedHttpMethods?: string[]
 	excludedHttpStatusCodes?: string[]
 }
@@ -44,6 +47,7 @@ export interface ParsedWhereClauseFilters {
 	service?: string
 	spanName?: string
 	deploymentEnv?: string
+	namespace?: string
 	httpMethod?: string
 	httpStatusCode?: string
 	hasError?: true
@@ -56,6 +60,7 @@ export interface ParsedWhereClauseFilters {
 	excludedServices?: string[]
 	excludedSpanNames?: string[]
 	excludedDeploymentEnvs?: string[]
+	excludedNamespaces?: string[]
 	excludedHttpMethods?: string[]
 	excludedHttpStatusCodes?: string[]
 }
@@ -94,28 +99,25 @@ export function parseWhereClause(whereClause: string | undefined): {
 			}
 		}
 
-		// Handle attr.* and resource.* prefixes before Match
-		if (key.startsWith("attr.")) {
-			const attributeKey = key.slice(5).trim()
-			if (!attributeKey || parsed.attributeFilters.length >= 5) continue
-			parsed.attributeFilters.push({
+		// Attribute keys are case-sensitive, so they come from the key as typed.
+		const typedKey = (clause.rawKey ?? clause.key).trim()
+		function pushAttribute(target: AttributeFilterEntry[], attributeKey: string) {
+			if (!attributeKey || target.length >= 5) return
+			target.push({
 				key: attributeKey,
 				value: clause.value,
 				matchMode: isContains ? "contains" : undefined,
 				negated: isNegated || undefined,
 			})
+		}
+
+		if (key.startsWith("attr.")) {
+			pushAttribute(parsed.attributeFilters, typedKey.slice(5).trim())
 			continue
 		}
 
 		if (key.startsWith("resource.")) {
-			const resourceKey = key.slice(9).trim()
-			if (!resourceKey || parsed.resourceAttributeFilters.length >= 5) continue
-			parsed.resourceAttributeFilters.push({
-				key: resourceKey,
-				value: clause.value,
-				matchMode: isContains ? "contains" : undefined,
-				negated: isNegated || undefined,
-			})
+			pushAttribute(parsed.resourceAttributeFilters, typedKey.slice(9).trim())
 			continue
 		}
 
@@ -151,6 +153,14 @@ export function parseWhereClause(whereClause: string | undefined): {
 				}
 				setMatchMode("deploymentEnv")
 				return { ...parsed, deploymentEnv: clause.value }
+			}),
+			Match.when("service.namespace", () => {
+				if (isNegated) {
+					const current = parsed.excludedNamespaces ?? []
+					return { ...parsed, excludedNamespaces: [...current, clause.value] }
+				}
+				setMatchMode("namespace")
+				return { ...parsed, namespace: clause.value }
 			}),
 			Match.when("http.method", () => {
 				if (isNegated) {
@@ -200,7 +210,16 @@ export function parseWhereClause(whereClause: string | undefined): {
 				}
 				return { ...parsed, maxDurationMs: numeric }
 			}),
-			Match.orElse(() => parsed),
+			// Any other key is a span attribute (`request.id = "x"` means `attr.request.id`), as
+			// long as the operator is one an attribute filter can express.
+			Match.orElse(() => {
+				if (clause.operator === "=" || clause.operator === "!=" || isContains) {
+					pushAttribute(parsed.attributeFilters, typedKey)
+				} else {
+					hasIncompleteClauses = true
+				}
+				return parsed
+			}),
 		)
 	}
 
@@ -228,6 +247,10 @@ export function toWhereClause(filters: ParsedWhereClauseFilters): string | undef
 
 	if (filters.deploymentEnv) {
 		clauses.push(`deployment.environment ${op("deploymentEnv")} ${quoteValue(filters.deploymentEnv)}`)
+	}
+
+	if (filters.namespace) {
+		clauses.push(`service.namespace ${op("namespace")} ${quoteValue(filters.namespace)}`)
 	}
 
 	if (filters.httpMethod) {
@@ -275,6 +298,9 @@ export function toWhereClause(filters: ParsedWhereClauseFilters): string | undef
 	for (const v of filters.excludedDeploymentEnvs ?? []) {
 		clauses.push(`deployment.environment != ${quoteValue(v)}`)
 	}
+	for (const v of filters.excludedNamespaces ?? []) {
+		clauses.push(`service.namespace != ${quoteValue(v)}`)
+	}
 	for (const v of filters.excludedHttpMethods ?? []) {
 		clauses.push(`http.method != ${quoteValue(v)}`)
 	}
@@ -289,10 +315,65 @@ export function toWhereClause(filters: ParsedWhereClauseFilters): string | undef
 	return clauses.join(" AND ")
 }
 
+type ClauseFields = Omit<TracesSearchLike, "startTime" | "endTime" | "whereClause">
+
+/**
+ * The search params a clause owns, containing only the keys it actually sets.
+ * The key set is what tells `applyWhereClause` which params to drop when a
+ * later edit of the clause no longer produces them.
+ */
+function clauseFields(filters: ParsedWhereClauseFilters): ClauseFields {
+	const modes = filters.matchModes ?? {}
+	const fields: ClauseFields = {}
+
+	if (filters.service) {
+		fields.services = [filters.service]
+		fields.serviceMatchMode = modes.service
+	}
+	if (filters.spanName) {
+		fields.spanNames = [filters.spanName]
+		fields.spanNameMatchMode = modes.spanName
+	}
+	if (filters.deploymentEnv) {
+		fields.deploymentEnvs = [filters.deploymentEnv]
+		fields.deploymentEnvMatchMode = modes.deploymentEnv
+	}
+	if (filters.namespace) {
+		fields.namespaces = [filters.namespace]
+		fields.namespaceMatchMode = modes.namespace
+	}
+	if (filters.httpMethod) fields.httpMethods = [filters.httpMethod]
+	if (filters.httpStatusCode) fields.httpStatusCodes = [filters.httpStatusCode]
+	if (filters.hasError !== undefined) fields.hasError = filters.hasError
+	if (filters.rootOnly !== undefined) fields.rootOnly = filters.rootOnly
+	if (filters.minDurationMs !== undefined) fields.minDurationMs = filters.minDurationMs
+	if (filters.maxDurationMs !== undefined) fields.maxDurationMs = filters.maxDurationMs
+	if (filters.attributeFilters.length > 0) fields.attributeFilters = filters.attributeFilters
+	if (filters.resourceAttributeFilters.length > 0) {
+		fields.resourceAttributeFilters = filters.resourceAttributeFilters
+	}
+	if (filters.excludedServices?.length) fields.excludedServices = filters.excludedServices
+	if (filters.excludedSpanNames?.length) fields.excludedSpanNames = filters.excludedSpanNames
+	if (filters.excludedDeploymentEnvs?.length) {
+		fields.excludedDeploymentEnvs = filters.excludedDeploymentEnvs
+	}
+	if (filters.excludedNamespaces?.length) fields.excludedNamespaces = filters.excludedNamespaces
+	if (filters.excludedHttpMethods?.length) fields.excludedHttpMethods = filters.excludedHttpMethods
+	if (filters.excludedHttpStatusCodes?.length) {
+		fields.excludedHttpStatusCodes = filters.excludedHttpStatusCodes
+	}
+
+	return fields
+}
+
 /**
  * One-way transform: parses a where clause string and merges the parsed
  * filter values into the search params. Does NOT reverse-sync checkboxes
  * back into whereClause text.
+ *
+ * Params the previous clause contributed are dropped first, so removing a
+ * clause removes its filter from the URL instead of leaving it stuck there.
+ * Params the previous clause never set (sidebar selections) are kept.
  */
 export function applyWhereClause(search: TracesSearchLike, whereClause: string): TracesSearchLike {
 	const trimmed = whereClause.trim()
@@ -309,58 +390,33 @@ export function applyWhereClause(search: TracesSearchLike, whereClause: string):
 			httpMethods: undefined,
 			httpStatusCodes: undefined,
 			deploymentEnvs: undefined,
+			namespaces: undefined,
 			rootOnly: undefined,
 			attributeFilters: undefined,
 			resourceAttributeFilters: undefined,
 			serviceMatchMode: undefined,
 			spanNameMatchMode: undefined,
 			deploymentEnvMatchMode: undefined,
+			namespaceMatchMode: undefined,
 			excludedServices: undefined,
 			excludedSpanNames: undefined,
 			excludedDeploymentEnvs: undefined,
+			excludedNamespaces: undefined,
 			excludedHttpMethods: undefined,
 			excludedHttpStatusCodes: undefined,
 		}
 	}
 
-	const { filters } = parseWhereClause(trimmed)
-	const modes = filters.matchModes ?? {}
+	const carried: TracesSearchLike = { ...search }
+	if (search.whereClause) {
+		for (const key of Object.keys(clauseFields(parseWhereClause(search.whereClause).filters))) {
+			delete carried[key as keyof ClauseFields]
+		}
+	}
 
 	return {
-		...search,
+		...carried,
+		...clauseFields(parseWhereClause(trimmed).filters),
 		whereClause: trimmed,
-		services: filters.service ? [filters.service] : search.services,
-		spanNames: filters.spanName ? [filters.spanName] : search.spanNames,
-		hasError: filters.hasError ?? search.hasError,
-		minDurationMs: filters.minDurationMs ?? search.minDurationMs,
-		maxDurationMs: filters.maxDurationMs ?? search.maxDurationMs,
-		httpMethods: filters.httpMethod ? [filters.httpMethod] : search.httpMethods,
-		httpStatusCodes: filters.httpStatusCode ? [filters.httpStatusCode] : search.httpStatusCodes,
-		deploymentEnvs: filters.deploymentEnv ? [filters.deploymentEnv] : search.deploymentEnvs,
-		rootOnly: filters.rootOnly ?? search.rootOnly,
-		attributeFilters:
-			filters.attributeFilters.length > 0 ? filters.attributeFilters : search.attributeFilters,
-		resourceAttributeFilters:
-			filters.resourceAttributeFilters.length > 0
-				? filters.resourceAttributeFilters
-				: search.resourceAttributeFilters,
-		serviceMatchMode: filters.service ? modes.service : search.serviceMatchMode,
-		spanNameMatchMode: filters.spanName ? modes.spanName : search.spanNameMatchMode,
-		deploymentEnvMatchMode: filters.deploymentEnv ? modes.deploymentEnv : search.deploymentEnvMatchMode,
-		excludedServices: filters.excludedServices?.length
-			? filters.excludedServices
-			: search.excludedServices,
-		excludedSpanNames: filters.excludedSpanNames?.length
-			? filters.excludedSpanNames
-			: search.excludedSpanNames,
-		excludedDeploymentEnvs: filters.excludedDeploymentEnvs?.length
-			? filters.excludedDeploymentEnvs
-			: search.excludedDeploymentEnvs,
-		excludedHttpMethods: filters.excludedHttpMethods?.length
-			? filters.excludedHttpMethods
-			: search.excludedHttpMethods,
-		excludedHttpStatusCodes: filters.excludedHttpStatusCodes?.length
-			? filters.excludedHttpStatusCodes
-			: search.excludedHttpStatusCodes,
 	}
 }

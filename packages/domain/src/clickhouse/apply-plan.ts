@@ -1,3 +1,4 @@
+// SAFETY-FILE: JSON rows here come from fixed internal formats and are validated before domain use.
 /**
  * Apply-plan expansion: turn a migration's statements into an ordered list of
  * executable steps, splitting each {@link BackfillSpec} into time-windowed
@@ -7,6 +8,8 @@
  * step's `sql` in order; the Workflow additionally wraps each in a durable
  * `step.do(step.name, …)` for resumability + progress.
  */
+import { Option, Schema } from "effect"
+
 import {
 	compileBackfillChunk,
 	isBackfill,
@@ -54,15 +57,18 @@ const toChDateTime = (unixSeconds: number): string => {
 	return `${d.getUTCFullYear()}-${p(d.getUTCMonth() + 1)}-${p(d.getUTCDate())} ${p(d.getUTCHours())}:${p(d.getUTCMinutes())}:${p(d.getUTCSeconds())}`
 }
 
+const decodeJsonRow = Schema.decodeUnknownOption(
+	Schema.fromJsonString(Schema.Record(Schema.String, Schema.Unknown)),
+)
+
 const parseFirstRow = (text: string): Record<string, unknown> | null => {
 	for (const line of text.split("\n")) {
 		const trimmed = line.trim()
 		if (trimmed.length === 0) continue
-		try {
-			return JSON.parse(trimmed) as Record<string, unknown>
-		} catch {
-			// ignore — controlled query
-		}
+		// The query is ours and asks for JSONEachRow, so a line that does not decode
+		// is a warning or a blank the server interleaved — skip to the next one.
+		const row = decodeJsonRow(trimmed)
+		if (Option.isSome(row)) return row.value
 	}
 	return null
 }

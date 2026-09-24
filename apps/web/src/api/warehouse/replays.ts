@@ -1,15 +1,6 @@
-import { Clock, Effect, Schema } from "effect"
-import {
-	GetReplayRequest,
-	ListReplaysRequest,
-	ReplaysFacetsRequest,
-	ReplaysForTraceRequest,
-	SessionId,
-	SessionTranscriptRequest,
-	SessionTraceSummariesRequest,
-	TraceId,
-} from "@maple/domain/http"
-import { MapleApiAtomClient } from "@/lib/services/common/atom-client"
+import { Clock, Effect, Schema, type Types } from "effect"
+import { ReplaysFacetsRequest, SessionId, SessionTraceSummariesRequest, TraceId } from "@maple/domain/http"
+import { MapleInternalAtomClient } from "@/lib/services/common/internal-atom-client"
 import { MapleApiV2AtomClient } from "@/lib/services/common/v2-atom-client"
 import {
 	WarehouseDateTimeString,
@@ -18,10 +9,17 @@ import {
 	runWarehouseQueryV2,
 } from "@/api/warehouse/effect-utils"
 
+import {
+	V2SessionReplayNotFound,
+	type V2SessionReplaySearchParams,
+	type V2SessionReplayWindowQuery,
+	type V2SessionReplayCollectionQuery,
+	type V2SessionReplaysForTraceParams,
+} from "@maple/domain/http/v2"
+import { collectV2Pages } from "@/lib/services/common/v2-pagination"
+import { replayListItemFromV2, replayDetailFromV2, replayEventFromV2 } from "@/lib/services/session-replays"
+
 import { formatWarehouseDateTime } from "@maple/query-engine"
-// ---------------------------------------------------------------------------
-// List sessions
-// ---------------------------------------------------------------------------
 
 const ListReplaysInput = Schema.Struct({
 	startTime: Schema.optional(WarehouseDateTimeString),
@@ -39,6 +37,8 @@ const ListReplaysInput = Schema.Struct({
 	visitorId: Schema.optional(Schema.String),
 	hasErrors: Schema.optional(Schema.Boolean),
 	search: Schema.optional(Schema.String),
+	/** Exact page path the session navigated to at any point. */
+	pagePath: Schema.optional(Schema.String),
 	cursor: Schema.optional(Schema.String),
 	// Session-time range filters (ms) — duration is the stored wall-clock time,
 	// activeTime is computed server-side from session_events gaps.
@@ -47,7 +47,6 @@ const ListReplaysInput = Schema.Struct({
 	activeTimeMinMs: Schema.optional(Schema.Number),
 	activeTimeMaxMs: Schema.optional(Schema.Number),
 	limit: Schema.optional(Schema.Number),
-	offset: Schema.optional(Schema.Number),
 })
 export type ListReplaysInput = Schema.Schema.Type<typeof ListReplaysInput>
 
@@ -65,40 +64,41 @@ export const listReplays = Effect.fn("SessionReplays.listReplays")(function* ({
 }) {
 	const input = yield* decodeInput(ListReplaysInput, data ?? {}, "listReplays")
 	const fallback = defaultTimeRange(yield* Clock.currentTimeMillis)
-	const result = yield* runWarehouseQuery("listReplays", () =>
+	const result = yield* runWarehouseQueryV2("listReplays", () =>
 		Effect.gen(function* () {
-			const client = yield* MapleApiAtomClient
-			return yield* client.sessionReplays.listReplays({
-				payload: new ListReplaysRequest({
-					startTime: input.startTime ?? fallback.startTime,
-					endTime: input.endTime ?? fallback.endTime,
-					serviceName: input.serviceName,
-					browser: input.browser,
-					country: input.country,
-					deviceType: input.deviceType,
-					userId: input.userId,
-					userSearch: input.userSearch,
-					groupName: input.groupName,
-					visitorId: input.visitorId,
-					hasErrors: input.hasErrors,
-					search: input.search,
-					cursor: input.cursor,
-					durationMinMs: input.durationMinMs,
-					durationMaxMs: input.durationMaxMs,
-					activeTimeMinMs: input.activeTimeMinMs,
-					activeTimeMaxMs: input.activeTimeMaxMs,
-					limit: input.limit ?? 50,
-					offset: input.offset ?? 0,
-				}),
-			})
+			const client = yield* MapleApiV2AtomClient
+			const payload: Types.Mutable<V2SessionReplaySearchParams> = {
+				start_time: toIsoWindow(input.startTime ?? fallback.startTime),
+				end_time: toIsoWindow(input.endTime ?? fallback.endTime),
+				limit: input.limit ?? 50,
+			}
+			if (input.serviceName !== undefined) payload.service_name = input.serviceName
+			if (input.browser !== undefined) payload.browser = input.browser
+			if (input.country !== undefined) payload.country = input.country
+			if (input.deviceType !== undefined) payload.device_type = input.deviceType
+			if (input.userId !== undefined) payload.user_id = input.userId
+			if (input.userSearch !== undefined) payload.user_search = input.userSearch
+			if (input.groupName !== undefined) payload.group_name = input.groupName
+			if (input.visitorId !== undefined) payload.visitor_id = input.visitorId
+			if (input.hasErrors !== undefined) payload.has_errors = input.hasErrors
+			if (input.search !== undefined) payload.search = input.search
+			if (input.pagePath !== undefined) payload.page_path = input.pagePath
+			if (input.cursor !== undefined) payload.cursor = input.cursor
+			if (input.durationMinMs !== undefined) payload.duration_min_ms = input.durationMinMs
+			if (input.durationMaxMs !== undefined) payload.duration_max_ms = input.durationMaxMs
+			if (input.activeTimeMinMs !== undefined) payload.active_time_min_ms = input.activeTimeMinMs
+			if (input.activeTimeMaxMs !== undefined) payload.active_time_max_ms = input.activeTimeMaxMs
+			return yield* client.sessionReplays.search({ payload })
 		}),
 	)
-	return { data: result.data }
+	return {
+		data: result.data.map(replayListItemFromV2),
+		hasMore: result.has_more,
+		nextCursor: result.next_cursor,
+	}
 })
 
-// ---------------------------------------------------------------------------
 // List facets (filter sidebar option counts)
-// ---------------------------------------------------------------------------
 
 const ReplaysFacetsInput = Schema.Struct({
 	startTime: Schema.optional(WarehouseDateTimeString),
@@ -110,8 +110,10 @@ const ReplaysFacetsInput = Schema.Struct({
 	userId: Schema.optional(Schema.String),
 	userSearch: Schema.optional(Schema.String),
 	groupName: Schema.optional(Schema.String),
+	visitorId: Schema.optional(Schema.String),
 	hasErrors: Schema.optional(Schema.Boolean),
 	search: Schema.optional(Schema.String),
+	pagePath: Schema.optional(Schema.String),
 })
 export type ReplaysFacetsInput = Schema.Schema.Type<typeof ReplaysFacetsInput>
 
@@ -124,8 +126,8 @@ export const getReplaysFacets = Effect.fn("SessionReplays.facets")(function* ({
 	const fallback = defaultTimeRange(yield* Clock.currentTimeMillis)
 	const result = yield* runWarehouseQuery("replaysFacets", () =>
 		Effect.gen(function* () {
-			const client = yield* MapleApiAtomClient
-			return yield* client.sessionReplays.facets({
+			const client = yield* MapleInternalAtomClient
+			return yield* client.sessionReplaysInternal.facets({
 				payload: new ReplaysFacetsRequest({
 					startTime: input.startTime ?? fallback.startTime,
 					endTime: input.endTime ?? fallback.endTime,
@@ -136,8 +138,10 @@ export const getReplaysFacets = Effect.fn("SessionReplays.facets")(function* ({
 					userId: input.userId,
 					userSearch: input.userSearch,
 					groupName: input.groupName,
+					visitorId: input.visitorId,
 					hasErrors: input.hasErrors,
 					search: input.search,
+					pagePath: input.pagePath,
 				}),
 			})
 		}),
@@ -148,16 +152,15 @@ export const getReplaysFacets = Effect.fn("SessionReplays.facets")(function* ({
 		countries: result.countries,
 		devices: result.devices,
 		groups: result.groups,
+		pages: result.pages,
 		errorCount: result.errorCount,
+		totalSessions: result.totalSessions,
+		liveSessions: result.liveSessions,
 		durationBuckets: result.durationBuckets,
 		durationP50: result.durationP50,
 		durationP95: result.durationP95,
 	}
 })
-
-// ---------------------------------------------------------------------------
-// Session detail
-// ---------------------------------------------------------------------------
 
 const GetReplayInput = Schema.Struct({
 	sessionId: SessionId,
@@ -175,22 +178,23 @@ export const getReplay = Effect.fn("SessionReplays.getReplay")(function* ({
 	data: GetReplayInput
 }) {
 	const input = yield* decodeInput(GetReplayInput, data ?? {}, "getReplay")
-	const result = yield* runWarehouseQuery("getReplay", () =>
+	const dataResult = yield* runWarehouseQueryV2("getReplay", () =>
 		Effect.gen(function* () {
-			const client = yield* MapleApiAtomClient
-			return yield* client.sessionReplays.getReplay({
-				payload: new GetReplayRequest({
-					sessionId: input.sessionId,
-					windowStart: input.windowStart,
-					windowEnd: input.windowEnd,
-				}),
-			})
+			const client = yield* MapleApiV2AtomClient
+			return yield* client.sessionReplays
+				.retrieve({
+					params: { id: input.sessionId },
+					query: replayWindow(input),
+				})
+				.pipe(
+					Effect.map(replayDetailFromV2),
+					Effect.catchIf(Schema.is(V2SessionReplayNotFound.schema), () => Effect.succeed(null)),
+				)
 		}),
 	)
-	return { data: result.data }
+	return { data: dataResult }
 })
 
-// ---------------------------------------------------------------------------
 // Session event chunks — manifest first, then bounded ranges (v2)
 //
 // A session's rrweb payload is unbounded by construction: ingest accepts up to
@@ -199,13 +203,17 @@ export const getReplay = Effect.fn("SessionReplays.getReplay")(function* ({
 // blamed the database. So the player pulls the cheap manifest (timeline and
 // sizes, no payloads), then pulls payloads a range at a time.
 //
-// These are the only replay reads on v2 — the v1 group has no payload endpoint
-// precisely so the unbounded read cannot come back.
-// ---------------------------------------------------------------------------
+// All replay resource reads use v2; payload reads remain manifest-first and bounded.
 
 /** Warehouse `YYYY-MM-DD HH:mm:ss` → the ISO-8601 the v2 query params take. */
-const toIsoWindow = (value: string | undefined) =>
-	value === undefined ? undefined : new Date(`${value.replace(" ", "T")}Z`).toISOString()
+const toIsoWindow = (value: string) => new Date(`${value.replace(" ", "T")}Z`).toISOString()
+
+const replayWindow = (input: { windowStart?: string; windowEnd?: string }) => {
+	const query: Types.Mutable<V2SessionReplayWindowQuery> = {}
+	if (input.windowStart !== undefined) query.window_start = toIsoWindow(input.windowStart)
+	if (input.windowEnd !== undefined) query.window_end = toIsoWindow(input.windowEnd)
+	return query
+}
 
 const GetReplayManifestInput = Schema.Struct({
 	sessionId: SessionId,
@@ -227,14 +235,7 @@ export const getReplayManifest = Effect.fn("SessionReplays.getReplayManifest")(f
 			// the internal SessionId goes in as-is.
 			return yield* client.sessionReplays.manifest({
 				params: { id: input.sessionId },
-				query: {
-					...(toIsoWindow(input.windowStart) !== undefined
-						? { window_start: toIsoWindow(input.windowStart)! }
-						: {}),
-					...(toIsoWindow(input.windowEnd) !== undefined
-						? { window_end: toIsoWindow(input.windowEnd)! }
-						: {}),
-				},
+				query: replayWindow(input),
 			})
 		}),
 	)
@@ -272,12 +273,7 @@ export const getReplayEvents = Effect.fn("SessionReplays.getReplayEvents")(funct
 					// against the server's advertised cap, so paging within one would
 					// only add round-trips.
 					limit: Math.max(1, input.toChunkSeq - input.fromChunkSeq + 1),
-					...(toIsoWindow(input.windowStart) !== undefined
-						? { window_start: toIsoWindow(input.windowStart)! }
-						: {}),
-					...(toIsoWindow(input.windowEnd) !== undefined
-						? { window_end: toIsoWindow(input.windowEnd)! }
-						: {}),
+					...replayWindow(input),
 				},
 			})
 		}),
@@ -285,9 +281,7 @@ export const getReplayEvents = Effect.fn("SessionReplays.getReplayEvents")(funct
 	return { chunks: result.data }
 })
 
-// ---------------------------------------------------------------------------
 // Distilled session transcript (console / network / errors / nav / clicks)
-// ---------------------------------------------------------------------------
 
 const SessionTranscriptInput = Schema.Struct({
 	sessionId: SessionId,
@@ -302,24 +296,23 @@ export const getSessionTranscript = Effect.fn("SessionReplays.sessionTranscript"
 	data: SessionTranscriptInput
 }) {
 	const input = yield* decodeInput(SessionTranscriptInput, data ?? {}, "sessionTranscript")
-	const result = yield* runWarehouseQuery("sessionTranscript", () =>
+	const events = yield* runWarehouseQueryV2("sessionTranscript", () =>
 		Effect.gen(function* () {
-			const client = yield* MapleApiAtomClient
-			return yield* client.sessionReplays.sessionTranscript({
-				payload: new SessionTranscriptRequest({
-					sessionId: input.sessionId,
-					windowStart: input.windowStart,
-					windowEnd: input.windowEnd,
-				}),
-			})
+			const client = yield* MapleApiV2AtomClient
+			return yield* collectV2Pages((cursor) => {
+				const query: Types.Mutable<typeof V2SessionReplayCollectionQuery.Type> = {
+					...replayWindow(input),
+					limit: 100,
+				}
+				if (cursor !== undefined) query.cursor = cursor
+				return client.sessionReplays.transcript({ params: { id: input.sessionId }, query })
+			}).pipe(Effect.catchIf(Schema.is(V2SessionReplayNotFound.schema), () => Effect.succeed([])))
 		}),
 	)
-	return { data: result.data }
+	return { data: events.map(replayEventFromV2) }
 })
 
-// ---------------------------------------------------------------------------
 // Reverse correlation: replays observing a trace
-// ---------------------------------------------------------------------------
 
 const ReplaysForTraceInput = Schema.Struct({
 	traceId: TraceId,
@@ -335,24 +328,31 @@ export const getReplaysForTrace = Effect.fn("SessionReplays.replaysForTrace")(fu
 }) {
 	const input = yield* decodeInput(ReplaysForTraceInput, data ?? {}, "replaysForTrace")
 	const fallback = defaultTimeRange(yield* Clock.currentTimeMillis)
-	const result = yield* runWarehouseQuery("replaysForTrace", () =>
+	const replays = yield* runWarehouseQueryV2("replaysForTrace", () =>
 		Effect.gen(function* () {
-			const client = yield* MapleApiAtomClient
-			return yield* client.sessionReplays.replaysForTrace({
-				payload: new ReplaysForTraceRequest({
-					traceId: input.traceId,
-					startTime: input.startTime ?? fallback.startTime,
-					endTime: input.endTime ?? fallback.endTime,
-				}),
+			const client = yield* MapleApiV2AtomClient
+			return yield* collectV2Pages((cursor) => {
+				const payload: Types.Mutable<V2SessionReplaysForTraceParams> = {
+					trace_id: input.traceId,
+					start_time: toIsoWindow(input.startTime ?? fallback.startTime),
+					end_time: toIsoWindow(input.endTime ?? fallback.endTime),
+					limit: 100,
+				}
+				if (cursor !== undefined) payload.cursor = cursor
+				return client.sessionReplays.forTrace({ payload })
 			})
 		}),
 	)
-	return { data: result.data }
+	return {
+		data: replays.map((replay) => ({
+			sessionId: replay.id,
+			startTime: replay.start_time,
+			durationMs: replay.duration_ms,
+		})),
+	}
 })
 
-// ---------------------------------------------------------------------------
 // Per-trace summaries for a session's correlated traces (timeline bars)
-// ---------------------------------------------------------------------------
 
 const SessionTraceSummariesInput = Schema.Struct({
 	traceIds: Schema.Array(TraceId),
@@ -369,8 +369,8 @@ export const getSessionTraceSummaries = Effect.fn("SessionReplays.traceSummaries
 	const input = yield* decodeInput(SessionTraceSummariesInput, data ?? { traceIds: [] }, "traceSummaries")
 	const result = yield* runWarehouseQuery("traceSummaries", () =>
 		Effect.gen(function* () {
-			const client = yield* MapleApiAtomClient
-			return yield* client.sessionReplays.traceSummaries({
+			const client = yield* MapleInternalAtomClient
+			return yield* client.sessionReplaysInternal.traceSummaries({
 				payload: new SessionTraceSummariesRequest({
 					traceIds: input.traceIds,
 					windowStart: input.windowStart,

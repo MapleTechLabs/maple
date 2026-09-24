@@ -2,6 +2,16 @@ import { HttpApiEndpoint, HttpApiGroup } from "effect/unstable/httpapi"
 import { Schema } from "effect"
 import { Authorization } from "./current-tenant"
 import { IsoDateTimeString } from "../primitives"
+import {
+	OrgClickHouseSettingsEncryptionError,
+	OrgClickHouseSettingsForbiddenError,
+	OrgClickHouseSettingsPersistenceError,
+	OrgClickHouseSettingsUpstreamRejectedError,
+	OrgClickHouseSettingsUpstreamUnavailableError,
+	OrgClickHouseSettingsValidationError,
+} from "./org-clickhouse-settings-errors"
+
+export * from "./org-clickhouse-settings-errors"
 
 /**
  * Connection-level status for a per-org BYO ClickHouse row.
@@ -57,8 +67,6 @@ export class OrgClickHouseSettingsDeleteResponse extends Schema.Class<OrgClickHo
 )({
 	configured: Schema.Literal(false),
 }) {}
-
-// --- Schema diff & apply -----------------------------------------------------
 
 export const ClickHouseTableKind = Schema.Literals(["table", "materialized_view"])
 export type ClickHouseTableKind = Schema.Schema.Type<typeof ClickHouseTableKind>
@@ -166,6 +174,18 @@ export class OrgClickHouseApplySchemaStatus extends Schema.Class<OrgClickHouseAp
 	stepsTotal: Schema.NullOr(Schema.Number),
 	stepsDone: Schema.NullOr(Schema.Number),
 	appliedVersions: Schema.Array(Schema.Number),
+	/**
+	 * Non-gating (performance) migrations and optional features the run could
+	 * not apply. A "succeeded" run with entries here left work undone — e.g. a
+	 * dropped materialized view whose CREATE failed — and needs a re-apply, so
+	 * the status must say so rather than reporting an unqualified success.
+	 */
+	skipped: Schema.Array(
+		Schema.Struct({
+			id: Schema.String,
+			reason: Schema.String,
+		}),
+	),
 	errorMessage: Schema.NullOr(Schema.String),
 	startedAt: Schema.NullOr(Schema.Number),
 	finishedAt: Schema.NullOr(Schema.Number),
@@ -182,7 +202,7 @@ export class OrgClickHouseApplySchemaStatus extends Schema.Class<OrgClickHouseAp
  *     -e MAPLE_CLICKHOUSE_PASSWORD=$PASS \
  *     -v ./collector.yaml:/etc/otel/config.yaml \
  *     -p 4317:4317 -p 4318:4318 \
- *     ghcr.io/makisuo/maple/otel-collector-maple:latest
+ *     ghcr.io/mapletechlabs/maple/otel-collector-maple:latest
  *
  * The password is intentionally NOT inlined — the body references
  * `${env:MAPLE_CLICKHOUSE_PASSWORD}` so the file is safe to share.
@@ -197,52 +217,6 @@ export class OrgClickHouseCollectorConfigResponse extends Schema.Class<OrgClickH
 	/** Name of the env var the customer must set with the CH password. */
 	passwordEnvVar: Schema.String,
 }) {}
-
-// --- Errors ------------------------------------------------------------------
-
-export class OrgClickHouseSettingsForbiddenError extends Schema.TaggedError<OrgClickHouseSettingsForbiddenError>()(
-	"@maple/http/errors/OrgClickHouseSettingsForbiddenError",
-	{ message: Schema.String },
-	{ httpApiStatus: 403 },
-) {}
-
-export class OrgClickHouseSettingsValidationError extends Schema.TaggedError<OrgClickHouseSettingsValidationError>()(
-	"@maple/http/errors/OrgClickHouseSettingsValidationError",
-	{ message: Schema.String },
-	{ httpApiStatus: 400 },
-) {}
-
-export class OrgClickHouseSettingsPersistenceError extends Schema.TaggedError<OrgClickHouseSettingsPersistenceError>()(
-	"@maple/http/errors/OrgClickHouseSettingsPersistenceError",
-	{ message: Schema.String },
-	{ httpApiStatus: 503 },
-) {}
-
-export class OrgClickHouseSettingsEncryptionError extends Schema.TaggedError<OrgClickHouseSettingsEncryptionError>()(
-	"@maple/http/errors/OrgClickHouseSettingsEncryptionError",
-	{ message: Schema.String },
-	{ httpApiStatus: 500 },
-) {}
-
-export class OrgClickHouseSettingsUpstreamRejectedError extends Schema.TaggedError<OrgClickHouseSettingsUpstreamRejectedError>()(
-	"@maple/http/errors/OrgClickHouseSettingsUpstreamRejectedError",
-	{
-		message: Schema.String,
-		statusCode: Schema.NullOr(Schema.Number),
-	},
-	{ httpApiStatus: 400 },
-) {}
-
-export class OrgClickHouseSettingsUpstreamUnavailableError extends Schema.TaggedError<OrgClickHouseSettingsUpstreamUnavailableError>()(
-	"@maple/http/errors/OrgClickHouseSettingsUpstreamUnavailableError",
-	{
-		message: Schema.String,
-		statusCode: Schema.NullOr(Schema.Number),
-	},
-	{ httpApiStatus: 503 },
-) {}
-
-// --- API group ---------------------------------------------------------------
 
 export class OrgClickHouseSettingsApiGroup extends HttpApiGroup.make("orgClickHouseSettings")
 	.add(
@@ -306,6 +280,7 @@ export class OrgClickHouseSettingsApiGroup extends HttpApiGroup.make("orgClickHo
 				OrgClickHouseSettingsForbiddenError,
 				OrgClickHouseSettingsValidationError,
 				OrgClickHouseSettingsPersistenceError,
+				OrgClickHouseSettingsEncryptionError,
 			],
 		}),
 	)

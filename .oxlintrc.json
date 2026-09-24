@@ -1,25 +1,179 @@
 {
+	"$schema": "./node_modules/oxlint/configuration_schema.json",
+	"plugins": ["eslint", "unicorn", "typescript", "oxc", "react", "jsx-a11y"],
+	"jsPlugins": ["./scripts/oxlint-plugins/maple.mjs", "./scripts/oxlint-plugins/anti-slop/index.ts"],
+	"options": {
+		"reportUnusedDisableDirectives": "deny",
+		"respectEslintDisableDirectives": false
+	},
 	"rules": {
+		"anti-slop/no-chained-type-assertions": "error",
+		"anti-slop/no-conditional-empty-object-spread": "error",
+		"anti-slop/no-known-value-widening": "error",
+		"anti-slop/no-module-mocking": ["error", { "allowWithTestSeamComment": true }],
+		"anti-slop/no-object-parameters": "error",
+		"anti-slop/no-reflect-apply": "error",
+		"anti-slop/no-reflect-get": "error",
+		"anti-slop/no-runtime-typeof": [
+			"error",
+			{
+				"allowInTypeGuards": true,
+				"allowInBoundaryFunctions": true,
+				"checkUnknownOnly": true
+			}
+		],
+		"anti-slop/no-shape-in-symbol-names": "error",
+		"anti-slop/no-unknown-parameters": [
+			"error",
+			{ "allowInBoundaryFunctions": true, "allowWithBoundaryComment": true }
+		],
+		"anti-slop/no-unknown-returns": ["error", { "allowWithBoundaryComment": true }],
+		"anti-slop/no-unknown-type-aliases": "error",
+		"anti-slop/no-unsafe-dictionary-type": "error",
+		"anti-slop/no-widen-then-assert": "error",
+		"anti-slop/require-safety-comment-for-type-assertion": [
+			"error",
+			{ "check": "unsafe", "allowFileSafetyComment": true }
+		],
+		"maple/no-effect-die": "error",
+		"maple/no-ordie-compiled-query": "error",
+		"maple/no-raw-tool-layer": "error",
+		"maple/no-react-use-effect": "warn",
+		"maple/no-record-string-any": "error",
+		"maple/no-try-catch": "error",
+		"typescript/no-explicit-any": "warn",
+		"typescript/no-non-null-assertion": "error",
 		"no-alert": "error",
 		"oxc/approx-constant": "warn",
 		"no-plusplus": "off",
-		"require-yield": "off",
-		"no-restricted-imports": [
-			"warn",
-			{
-				"paths": [
-					{
-						"name": "react",
-						"importNames": ["useEffect"],
-						"message": "Do not use useEffect. Use useMountEffect for mount-only external sync, derive state inline, use event handlers, or use TanStack Query. See /no-use-effect. Bump to 'error' once all existing call sites are refactored."
-					}
-				]
-			}
-		]
+		"require-yield": "off"
 	},
 	"overrides": [
+		// Existing API burndown entries, relocated with their implementation.
 		{
-			"files": ["apps/api/src/**/*.ts", "apps/api/src/**/*.tsx"],
+			"files": [
+				"packages/backend/src/platform/Apns.ts",
+				"packages/backend/src/platform/CacheBackendLive.ts",
+				"packages/backend/src/platform/describe-cause.ts",
+				"packages/backend/src/services/alerts/AlertDeliveryDispatch.ts",
+				"packages/backend/src/services/alerts/AlertsService.ts",
+				"packages/backend/src/services/billing/autumn-tracker.ts",
+				"packages/backend/src/services/integrations/PlanetScaleDiscoveryService.ts",
+				"packages/backend/src/services/integrations/vcs/vendor/github/GithubProvider.ts",
+				"packages/backend/src/services/org/OrgClickHouseSettingsService.ts",
+				"packages/backend/src/services/product-events/svix.ts"
+			],
+			"rules": { "maple/no-try-catch": "off" }
+		},
+		// Existing API burndown entries, relocated with their implementation.
+		{
+			"files": [
+				"packages/backend/src/http/schema-error-detail.ts",
+				"packages/backend/src/services/alerts/AlertDestinationsService.ts",
+				"packages/backend/src/services/alerts/AlertsService.ts",
+				"packages/backend/src/services/alerts/AnomalyDetectionService.ts",
+				"packages/backend/src/services/alerts/anomaly/detection.ts",
+				"packages/backend/src/services/alerts/delivery/transports/email.ts",
+				"packages/backend/src/services/auth/CliDeviceAuthService.ts",
+				"packages/backend/src/services/auth/McpOAuthService.ts",
+				"packages/backend/src/services/auth/PlanetScaleOAuthService.ts",
+				"packages/backend/src/services/dashboards/ServiceMapRollupService.ts",
+				"packages/backend/src/services/dashboards/dashboard-changes.ts",
+				"packages/backend/src/services/digest/DigestService.ts",
+				"packages/backend/src/services/errors/ErrorIssueReadModelsService.ts",
+				"packages/backend/src/services/errors/ErrorIssueWorkflowService.ts",
+				"packages/backend/src/services/errors/ErrorsService.ts",
+				"packages/backend/src/services/errors/InvestigationService.ts",
+				"packages/backend/src/services/integrations/PlanetScaleConnectionService.ts",
+				"packages/backend/src/services/integrations/PlanetScaleService.ts",
+				"packages/backend/src/services/integrations/ScrapeTargetsService.ts",
+				"packages/backend/src/services/integrations/vcs/vendor/github/GithubProvider.ts",
+				"packages/backend/src/services/org/demo/fixtures.ts",
+				"packages/backend/src/services/push/LiveActivitiesService.ts",
+				"packages/backend/src/services/push/MobileDevicesService.ts"
+			],
+			"rules": { "typescript/no-non-null-assertion": "off" }
+		},
+		// The executor is the seam that decides a compile failure is a defect — the
+		// one place `Effect.orDie` around a compile is the intended behaviour rather
+		// than a call site restating it.
+		{
+			"files": ["packages/query-engine/src/execution/**"],
+			"rules": {
+				"maple/no-ordie-compiled-query": "off"
+			}
+		},
+		// A test asserts on a fixture it just built, so `!` there documents the fixture
+		// rather than hiding an unchecked value; and a test that drives a throwing
+		// boundary on purpose needs `try`/`catch` to observe it.
+		{
+			"files": [
+				"**/*.test.ts",
+				"**/*.test.tsx",
+				"**/*.spec.ts",
+				"**/*.spec.tsx",
+				"**/test/**",
+				"**/tests/**",
+				"**/__tests__/**",
+				"**/*test-support*"
+			],
+			"rules": {
+				"maple/no-effect-die": "off",
+				"maple/no-try-catch": "off",
+				"typescript/no-non-null-assertion": "off"
+			}
+		},
+		// The rule points at an Effect primitive, so it only applies where Effect is on
+		// the dependency list. These three ship to customers with no runtime deps at all
+		// (`@maple/browser` and `@maple/browser-session` are under a bundle-size budget),
+		// so `try`/`catch` is the only error handling they have.
+		{
+			"files": ["packages/browser/**", "packages/browser-session/**", "packages/clickhouse-cli/**"],
+			"rules": {
+				"maple/no-try-catch": "off"
+			}
+		},
+		// Burndown list, not a policy. `packages/*` and `lib/*` source is clean and
+		// gated for both rules; the apps and the one-shot ops scripts still hold
+		// ~460 `try`/`catch` blocks and ~500 non-null assertions between them.
+		// Drop entries from this list as each is converted rather than widening it.
+		{
+			"files": ["apps/**", "scripts/**", "**/scripts/**", "examples/**", "alchemy.run.ts"],
+			"rules": {
+				"maple/no-try-catch": "off",
+				"typescript/no-non-null-assertion": "off"
+			}
+		},
+		// "shape" is Electric's own protocol noun — `/v1/shape` is the endpoint this
+		// app proxies and `maple.electric.shape` is the span attribute naming which
+		// one. The rule is about `shape` as a stand-in for a domain role it could not
+		// name; here it IS the domain role.
+		{
+			"files": ["apps/electric-sync/**"],
+			"rules": {
+				"anti-slop/no-shape-in-symbol-names": "off"
+			}
+		},
+		// Standalone generic DSLs use `any` as a variance placeholder; Maple product code may not.
+		{
+			"files": ["lib/**"],
+			"rules": {
+				"anti-slop/no-unsafe-dictionary-type": "off",
+				"maple/no-record-string-any": "off",
+				"typescript/no-explicit-any": "off"
+			}
+		},
+		// Provider code is private outside its implementation, tests, and composition roots.
+		{
+			"files": ["apps/api/src/**/*.ts", "apps/api/src/**/*.tsx", "packages/backend/src/**/*.ts"],
+			"excludeFiles": [
+				"apps/api/src/vcs-sync-runtime.ts",
+				"apps/api/src/runtime/service-graph.ts",
+				"packages/backend/src/services/integrations/vcs/VcsProviderRegistry.ts",
+				"apps/api/src/routes/v1/integrations.http.ts",
+				"packages/backend/src/services/integrations/vcs/vendor/**",
+				"packages/backend/src/services/integrations/vcs/__tests__/**"
+			],
 			"rules": {
 				"no-restricted-imports": [
 					"error",
@@ -27,26 +181,30 @@
 						"patterns": [
 							{
 								"group": ["**/vendor/*", "**/vendor/*/**"],
-								"message": "VCS provider implementations under services/vcs/vendor/** are vendor-specific. Do NOT import them directly — go through the provider-agnostic VCS layer (VcsProviderRegistry, VcsSyncService, VcsCommitService, VcsProviderClient, …) so VCS features stay provider-agnostic. The only files allowed to reference vendor code are the composition roots (app.ts, vcs-sync-runtime.ts), the VcsProviderRegistry that wires providers, the GitHub OAuth/connect HTTP route, and tests — see the allowlist in .oxlintrc.json."
+								"message": "VCS provider implementations are private. Import through the provider-agnostic VCS services; only composition roots, provider tests, and the provider implementation may import vendor code."
 							}
 						]
 					}
 				]
 			}
-		},
-		{
-			"files": [
-				"apps/api/src/app.ts",
-				"apps/api/src/vcs-sync-runtime.ts",
-				"apps/api/src/services/vcs/VcsProviderRegistry.ts",
-				"apps/api/src/routes/integrations.http.ts",
-				"apps/api/src/services/vcs/vendor/**",
-				"apps/api/src/**/__tests__/**"
-			],
-			"rules": {
-				"no-restricted-imports": "off"
-			}
 		}
 	],
-	"ignorePatterns": [".context", "lib/llm"]
+	// Vendored third-party source is read as a unit and re-pulled wholesale from its upstream,
+	// so house rules that would be rewrites are not applied to it. The dot-matrix loader runtime
+	// comes from the `@dotmatrix` shadcn registry (see `registries` in `apps/web/components.json`);
+	// re-add a variant with `shadcn add`, don't hand-edit these.
+	"ignorePatterns": [
+		".agents/**",
+		".codex/**",
+		".context/**",
+		".deepsec/**",
+		".factory/**",
+		".impeccable/**",
+		".superset/**",
+		"apps/web/src/routeTree.gen.ts",
+		"apps/web/src/components/ui/dotm-*.tsx",
+		"apps/web/src/lib/dotmatrix-core.tsx",
+		"apps/web/src/lib/dotmatrix-hooks.ts",
+		"scripts/oxlint-plugins/anti-slop/**"
+	]
 }

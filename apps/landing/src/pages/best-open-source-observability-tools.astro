@@ -16,13 +16,13 @@ import {
 
 const pageTitle = "Best Open-Source Observability Tools in 2026";
 const pageDescription =
-    "A ranked roundup of open-source observability platforms — OpenTelemetry-native traces, logs, and metrics you can self-host. Compare Maple, Grafana, SigNoz, HyperDX, and more, with pros, cons, and licenses. Updated June 2026.";
+    "A ranked roundup of open-source observability platforms: OpenTelemetry-native traces, logs, and metrics you can self-host. Compare Maple, Grafana, SigNoz, HyperDX, and more, with pros, cons, and licenses. Updated June 2026.";
 
 const siteUrl = Astro.site?.toString().replace(/\/$/, "") ?? "https://maple.dev";
 const pageUrl = `${siteUrl}/best-open-source-observability-tools`;
 
 // Format-native schema only (ItemList for the listicle, FAQPage via FAQ.astro).
-// We deliberately don't pile on speculative markup — Ahrefs found schema had
+// We deliberately don't pile on speculative markup: Ahrefs found schema had
 // near-zero impact on AI citations.
 const itemListJsonLd = {
     "@context": "https://schema.org",
@@ -50,7 +50,7 @@ const itemListJsonLd = {
     <FeatureHero
         label="Guide"
         title="Best open-source observability tools in 2026"
-        subtitle="OpenTelemetry-native traces, logs, and metrics you can self-host — ranked, with pros, cons, licenses, and what each tool is best for."
+        subtitle="OpenTelemetry-native traces, logs, and metrics you can self-host, ranked, with pros, cons, licenses, and what each tool is best for."
     />
 
     <!-- Intro + methodology + last updated -->

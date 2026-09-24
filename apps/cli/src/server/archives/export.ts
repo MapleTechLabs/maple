@@ -1,3 +1,4 @@
+// SAFETY-FILE: JSON rows here come from fixed internal formats and are validated before domain use.
 import { createHash } from "node:crypto"
 import {
 	closeSync,
@@ -128,15 +129,6 @@ const parseCount = (text: string): number => {
 	return count
 }
 
-/**
- * Count the rows in `table` whose event time falls on a given UTC date using
- * toDate() equality (robust against the chDB toDateTime64 aggregate miscount).
- */
-export const countRowsForDay = (db: Chdb, signal: ArchiveSignal, rangeDate: string): number => {
-	const sql = `SELECT count() FROM ${signal.name} WHERE toDate(${signal.eventTimeColumn}, 'UTC') = '${rangeDate}'`
-	return parseCount(db.query(sql, "JSONEachRow"))
-}
-
 const sha256File = (path: string): string => {
 	const hash = createHash("sha256")
 	hash.update(readFileSync(path))
@@ -164,9 +156,7 @@ const assertSafePath = (path: string): void => {
 const hourPredicate = (signal: ArchiveSignal, rangeDate: string, hour: number): string =>
 	`toDate(${signal.eventTimeColumn}, 'UTC') = '${rangeDate}' AND toHour(${signal.eventTimeColumn}, 'UTC') = ${hour}`
 
-// ---------------------------------------------------------------------------
 // Schema comparison (blocker #4) — recursive, grounded in measured transforms.
-// ---------------------------------------------------------------------------
 
 /** A source column's name and type, captured before export for round-trip comparison. */
 export interface SourceColumn {
@@ -420,14 +410,10 @@ export const compareSchema = (
 	return parquetCols.map((c) => c.name)
 }
 
-// ---------------------------------------------------------------------------
 // Per-shard validation (H-1 reopen, H-A schema, H-B source count, H-D digest).
-// ---------------------------------------------------------------------------
 
-// ---------------------------------------------------------------------------
 // Per-shard validation: H-1 reopen, H-A schema, H-B source count, H-D multiset
 // digest, H-E explicit source-vs-Parquet nanosecond event-time bounds.
-// ---------------------------------------------------------------------------
 
 /**
  * The physical slice a shard covers: one part, a half-open `_part_offset` range,
@@ -589,10 +575,8 @@ export const measureShardBytes = (
 	return { uncompressed: Number(row?.uncompressed ?? 0), onDiskBytes: statSync(shardPath).size }
 }
 
-// ---------------------------------------------------------------------------
 // Sharding plan — enumerate each active MergeTree part and split its
 // _part_offset domain into half-open ranges (no ORDER BY; D-016).
-// ---------------------------------------------------------------------------
 
 /**
  * A planned shard: one part, a half-open `_part_offset` range, and the UTC

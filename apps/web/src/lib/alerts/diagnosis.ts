@@ -9,6 +9,7 @@ import { formatRelativeFrom } from "@maple/ui/lib/time-format"
 import type { AlertRuleStateRow } from "@/lib/collections/alerts"
 import { comparatorLabels, formatSignalValue } from "@/lib/alerts/form-utils"
 import { staleThresholdMs } from "@/lib/alerts/rule-status"
+import { formatTimestampInTimezone } from "@/lib/timezone-format"
 
 export type DiagnosisStageStatus = "pass" | "fail" | "warn" | "unknown"
 
@@ -35,6 +36,7 @@ export interface DiagnosisInput {
 	/** Delivery events pre-filtered to this rule, newest first. */
 	readonly deliveryEvents: ReadonlyArray<AlertDeliveryEventDocument>
 	readonly now: number
+	readonly timeZone: string
 	/** Grouped rules: diagnose one group; defaults to the worst one. */
 	readonly selectedGroupKey?: string
 }
@@ -54,7 +56,7 @@ const parseMs = (value: string | null | undefined): number | null => {
  * incident → notification. Pure so it can be unit-tested exhaustively.
  */
 export function buildDiagnosis(input: DiagnosisInput): DiagnosisStage[] {
-	const { rule, checks, openIncidents, destinations, deliveryEvents, now } = input
+	const { rule, checks, openIncidents, destinations, deliveryEvents, now, timeZone } = input
 
 	// Scope per-group evidence to the selected group (or the whole set when
 	// ungrouped / unselected).
@@ -104,19 +106,34 @@ export function buildDiagnosis(input: DiagnosisInput): DiagnosisStage[] {
 			summary: "Never evaluated — the scheduler has not picked this rule up yet",
 			evidence: ["New rules are evaluated within about a minute of being enabled."],
 		})
-	} else {
-		const referenceMs = evaluatedAt ?? scheduledAt!
-		const stale = now - referenceMs > staleThresholdMs(rule)
+	} else if (evaluatedAt == null && scheduledAt != null) {
+		// Scheduled is not evaluated. Presenting the schedule timestamp as "last
+		// evaluated" let a worker that claimed the rule and crashed before its
+		// first evaluation read as a passing stage — and, with every later stage
+		// unknown, as "Rule is healthy".
+		stages.push({
+			id: "evaluated",
+			label: "Evaluated recently",
+			status: "warn",
+			summary: `Scheduled ${relative(now, scheduledAt)} but no evaluation has completed yet`,
+			evidence: [
+				`Last scheduled: ${formatTimestampInTimezone(scheduledAt, { timeZone, withYear: true })}`,
+			],
+		})
+	} else if (evaluatedAt != null) {
+		const stale = now - evaluatedAt > staleThresholdMs()
 		stages.push({
 			id: "evaluated",
 			label: "Evaluated recently",
 			status: stale ? "warn" : "pass",
 			summary: stale
-				? `Last evaluated ${relative(now, referenceMs)} — expected roughly every minute`
-				: `Last evaluated ${relative(now, referenceMs)}`,
+				? `Last evaluated ${relative(now, evaluatedAt)} — expected roughly every minute`
+				: `Last evaluated ${relative(now, evaluatedAt)}`,
 			evidence: [
-				evaluatedAt != null ? `Last evaluation: ${new Date(evaluatedAt).toLocaleString()}` : null,
-				scheduledAt != null ? `Last scheduled: ${new Date(scheduledAt).toLocaleString()}` : null,
+				`Last evaluation: ${formatTimestampInTimezone(evaluatedAt, { timeZone, withYear: true })}`,
+				scheduledAt != null
+					? `Last scheduled: ${formatTimestampInTimezone(scheduledAt, { timeZone, withYear: true })}`
+					: null,
 			].filter((line): line is string => line != null),
 		})
 	}
@@ -329,7 +346,7 @@ export function buildDiagnosis(input: DiagnosisInput): DiagnosisStage[] {
 			evidence,
 			...(failures > 0
 				? { action: { label: "Review destinations", kind: "destinations" as const } }
-				: {}),
+				: undefined),
 		})
 	}
 

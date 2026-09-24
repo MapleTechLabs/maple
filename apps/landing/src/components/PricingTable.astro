@@ -8,28 +8,32 @@
  * offer: an amber claim plate on the left, the meter that backs it on the right.
  *
  * The chapter above (BillComparison) is a full-shell table of everyone else's
- * prices. This answers with yours, so it deliberately steps *in* to max-w-5xl —
+ * prices. This answers with yours, so it deliberately steps *in* to max-w-5xl , 
  * the width change is what says the argument ended and the offer begins. It
  * borrows that section's one signature, the amber-tinted "this is the answer"
  * column, and spends no other accent: the button is the only other amber thing
  * on the surface.
  *
  * Enterprise is a one-line rail below the card, not a peer. It keeps its
- * "From $2,000" anchor — that number is what makes $39 read as nothing — but a
+ * "From $2,000" anchor: that number is what makes $39 read as nothing: but a
  * "call us" card given equal weight costs self-serve conversion.
  */
-import * as m from "../paraglide/messages";
+import * as m from "../paraglide/messages.js";
+import { APP_SIGN_UP_URL } from "../lib/app-urls";
+import PixelIcon from "./icons/PixelIcon.astro";
+import RegionChip from "./RegionChip.astro";
 import {
     getOffer,
     money,
     platformFeatures,
+    rateBlock,
     rateLabel,
     volume,
     type Allotment,
 } from "../lib/pricing-offer";
 
 // The offer, the meter and the formatters live in `lib/pricing-offer.ts` so
-// `/pricing.md` — the agent-readable twin of this page — renders the same
+// `/pricing.md`: the agent-readable twin of this page: renders the same
 // numbers from the same Autumn call. Everything below is layout.
 const offer = await getOffer()
 const PLATFORM_FEATURES = platformFeatures()
@@ -42,14 +46,21 @@ const PLATFORM_FEATURES = platformFeatures()
 // this is a mono column, so "$0.30" (5 glyphs) and "$0.002" (6) push their
 // trailing "/ unit" one character apart and the rows read as misaligned. The
 // template gives the amount a fixed `ch` slot instead. Splitting on a sentinel
-// keeps every locale's own word order intact — ja renders "超過分 {rate} / セッション".
+// keeps every locale's own word order intact: ja renders "超過分 {rate} / セッション".
+// Events are quoted per block ("then $0.05 / 1,000 events"): the per-event rate
+// is a fraction of a cent and would render as "$0.000".
 const RATE_SLOT = "\u0000"
 const rowRate = (a: Allotment) => {
+    // Unlimited beta rows have no overage: the cell carries the beta note in
+    // "then" position; the (empty) amount slot trails it harmlessly.
+    if (a.unlimited) return { before: m.pricing_free_beta(), amount: "", after: "" }
     if (a.rate === undefined) return undefined
     const rendered =
         a.unit === "gb"
             ? m.pricing_rate_gb({ rate: RATE_SLOT })
-            : m.pricing_rate_session({ rate: RATE_SLOT })
+            : a.unit === "sessions"
+              ? m.pricing_rate_session({ rate: RATE_SLOT })
+              : m.pricing_rate_events({ rate: RATE_SLOT, block: rateBlock(a) })
     const [before, after = ""] = rendered.split(RATE_SLOT)
     return { before, amount: rateLabel(a.rate), after }
 }
@@ -101,7 +112,7 @@ const containerClass = variant === "home" ? "shell" : "mx-auto max-w-5xl px-6"
         )}
 
         <div class="mx-auto max-w-5xl">
-            {/* gap-px over bg-border draws the rule between rails — the table-rule
+            {/* gap-px over bg-border draws the rule between rails: the table-rule
                 vocabulary of the section above, without building a table. */}
             <div class="grid gap-px overflow-hidden rounded-xl border border-border bg-border md:grid-cols-[minmax(0,340px)_1fr]">
                 {/* The claim. */}
@@ -136,9 +147,12 @@ const containerClass = variant === "home" ? "shell" : "mx-auto max-w-5xl px-6"
                     </div>
 
                     <a
-                        href="https://app.maple.dev"
+                        href={APP_SIGN_UP_URL}
                         data-track="pricing_plan_selected"
                         data-track-plan={offer.name}
+                        data-track-label={offer.ctaLabel}
+                        data-track-destination={APP_SIGN_UP_URL}
+                        data-track-location="pricing_offer_card"
                         class="mt-8 flex h-11 w-full items-center justify-center rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
                     >
                         {offer.ctaLabel}
@@ -146,6 +160,13 @@ const containerClass = variant === "home" ? "shell" : "mx-auto max-w-5xl px-6"
                     {offer.hasTrial && offer.trialDuration && (
                         <p class="mt-3 text-pretty text-[11px] leading-relaxed text-fg-muted">
                             {m.pricing_trial_reassure({ duration: String(offer.trialDuration) })}
+                        </p>
+                    )}
+                    {/* The home page gets one line; /pricing gets the region band below. */}
+                    {variant === "home" && (
+                        <p class="mt-2 text-pretty text-[11px] leading-relaxed text-fg-muted">
+                            {m.pricing_regions_note()}{" "}
+                            <a href="/eu" class="text-fg underline underline-offset-2 transition-colors hover:text-primary">{m.pricing_regions_link()}</a>
                         </p>
                     )}
                 </div>
@@ -177,6 +198,9 @@ const containerClass = variant === "home" ? "shell" : "mx-auto max-w-5xl px-6"
                                     {a.featureId === "browser_sessions" && (
                                         <svg class="h-4 w-4 shrink-0 text-fg-muted" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square"><path d="M4 6L4 6.01"/><path d="M6 4L6 4.01"/><path d="M20.01 6L20 6"/><path d="M18.01 4L18 4"/><path d="M20.01 18L20 18"/><path d="M18.01 20L18 20"/><path d="M6.01001 20L6.00001 20"/><path d="M4.01001 18L4.00001 18"/><path d="M2 8L2 16"/><path d="M22 14L22 16"/><path d="M8 2L16 2"/><path d="M8 22L16 22"/><path d="M22 8V4"/><path d="M17 12.01V12"/><path d="M14 10H15"/><path d="M14 14H15"/><path d="M12 8H9L9 16L12 16"/></svg>
                                     )}
+                                    {a.featureId === "product_events" && (
+                                        <svg class="h-4 w-4 shrink-0 text-fg-muted" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square"><path d="M21 11H3"/><path d="M15 19L15 15L19 15"/><path d="M21.01 21H21"/><path d="M23.01 23H23"/><path d="M21 17H23V19"/><path d="M17 21V23H19"/><path d="M9 2L15 2"/><path d="M9 20L11 20"/><path d="M3 14V8"/><path d="M21 11V8"/><path d="M7.01 4L7 4"/><path d="M7.01 18L7 18"/><path d="M17.01 4L17 4"/><path d="M19.01 6L19 6"/><path d="M5.01 6L5 6"/><path d="M10.01 6L10 6"/><path d="M14.01 6L14 6"/><path d="M10.01 16L10 16"/><path d="M12.01 4L12 4"/><path d="M5.01 16L5 16"/><path d="M8 8V14"/><path d="M16 8V10"/></svg>
+                                    )}
                                     <span class="text-[12.5px] text-fg">{a.label}</span>
                                 </div>
                                 <div class="whitespace-nowrap pb-1 pt-3 text-right font-mono text-[12.5px] tabular-nums text-fg sm:border-b sm:border-border/60 sm:py-3">
@@ -186,7 +210,7 @@ const containerClass = variant === "home" ? "shell" : "mx-auto max-w-5xl px-6"
                                     three columns squeezed the label column hard enough
                                     to wrap "Browser Sessions" (and worse in ja/ko).
                                     From sm it's a real column, left-aligned so every
-                                    "then" starts on the same axis — right-aligning left
+                                    "then" starts on the same axis: right-aligning left
                                     it ragged. */}
                                 <div class="col-span-2 whitespace-nowrap border-b border-border/60 pb-3 text-right font-mono text-[11px] tabular-nums text-fg-muted sm:col-span-1 sm:py-3 sm:pl-6 sm:text-left sm:text-[11.5px]">
                                     {a.rate && (
@@ -203,7 +227,7 @@ const containerClass = variant === "home" ? "shell" : "mx-auto max-w-5xl px-6"
                         ))}
                     </div>
 
-                    {/* Everything the plan carries, as one run rather than a checklist —
+                    {/* Everything the plan carries, as one run rather than a checklist , 
                         a checklist implies some rows might have been withheld. It sits
                         with the allotments because both answer "what do I get". */}
                     <p class="mt-6 border-t border-border/60 pt-5 text-[12px] leading-relaxed text-fg-muted">
@@ -221,7 +245,39 @@ const containerClass = variant === "home" ? "shell" : "mx-auto max-w-5xl px-6"
                 </div>
             </div>
 
-            {/* Enterprise carries the amber accent too, so it can't be skimmed past —
+            {/* Where the data lives, stated at the point of purchase. /eu is
+                English-only, like /about: bare href, not a localized path. */}
+            {/* Wrapped so the page stylesheet's offer-card rule
+                (`.pricing-offer > div > div > .grid`) does not reach this grid. */}
+            {variant === "page" && (
+                <div class="mt-4"><div class="grid gap-px overflow-hidden rounded-xl border border-border bg-border md:grid-cols-3">
+                    <div class="bg-bg-elevated px-6 py-5">
+                        <span class="flex items-center gap-2 text-[10px] uppercase tracking-[0.18em] text-fg-muted"><PixelIcon name="location" class="size-3.5" />{m.pricing_region_eyebrow()}</span>
+                        <p class="mt-3 flex items-center gap-2 text-sm font-medium text-fg">
+                            <RegionChip region="us" />{m.pricing_region_us_name()}
+                        </p>
+                        <p class="mt-1 text-[12.5px] leading-relaxed text-fg-muted">{m.pricing_region_us_detail()}</p>
+                    </div>
+                    <div class="bg-bg-elevated px-6 py-5">
+                        <span class="flex items-center gap-2 text-[10px] uppercase tracking-[0.18em] text-fg-muted"><PixelIcon name="location" class="size-3.5" />{m.pricing_region_eyebrow()}</span>
+                        <p class="mt-3 flex items-center gap-2 text-sm font-medium text-fg">
+                            <RegionChip region="eu" />{m.pricing_region_eu_name()}
+                        </p>
+                        <p class="mt-1 text-[12.5px] leading-relaxed text-fg-muted">{m.pricing_region_eu_detail()}</p>
+                    </div>
+                    <div class="flex flex-col bg-bg-elevated px-6 py-5">
+                        <p class="flex items-center gap-2 text-sm font-medium text-fg">
+                            <PixelIcon name="tag" class="size-4 text-primary" />{m.pricing_region_same()}
+                        </p>
+                        <p class="mt-1 text-[12.5px] leading-relaxed text-fg-muted">{m.pricing_region_same_body()}</p>
+                        <a href="/eu" class="mt-3 text-[12.5px] text-primary transition-colors hover:text-fg">
+                            {m.pricing_region_link()} →
+                        </a>
+                    </div>
+                </div></div>
+            )}
+
+            {/* Enterprise carries the amber accent too, so it can't be skimmed past , 
                 but as border and text, never a filled button. The offer above owns the
                 only solid amber block on the surface, which is what keeps the trial the
                 primary action while this still reads as a real second door. */}

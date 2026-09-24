@@ -7,7 +7,7 @@ import type {
 	CatalogPlan,
 	DailySpendResponse,
 } from "@maple/domain/http"
-import { buildCumulativeSeries, buildSpendModel } from "./spend"
+import { buildCumulativeSeries, buildSpendModel, featureUnit, formatRateLabel } from "./spend"
 
 // Mock builders construct only the consumed subset of each domain schema, the
 // same approach cost-estimate.test.ts takes.
@@ -24,8 +24,10 @@ const startupPlan = {
 		{ featureId: "traces", included: 100, price: { amount: 0.3 } },
 		{ featureId: "metrics", included: 100, price: { amount: 0.3 } },
 		{ featureId: "browser_sessions", included: 5_000, price: { amount: 0.002 } },
+		// Quoted per 1,000 events: `amount` is the price of one billing block.
+		{ featureId: "product_events", included: 1_000_000, price: { amount: 0.05, billingUnits: 1_000 } },
 	],
-} as unknown as CatalogPlan
+} as CatalogPlan
 
 const buildCustomer = (
 	overrides: {
@@ -49,15 +51,16 @@ const buildCustomer = (
 			traces: { granted: 100 },
 			metrics: { granted: 100 },
 			browser_sessions: { granted: 5_000 },
+			product_events: { granted: 1_000_000 },
 		},
-	}) as unknown as BillingCustomer
+	}) as BillingCustomer
 
 const usage = {
 	logs: { sum: 390 },
 	traces: { sum: 140 },
 	metrics: { sum: 160 },
 	browser_sessions: { sum: 26_700 },
-} as unknown as BillingUsage["total"]
+} as BillingUsage["total"]
 
 const model = () => buildSpendModel({ customer: buildCustomer(), plans: [startupPlan], usage, nowMs: NOW })
 
@@ -69,13 +72,43 @@ describe("buildSpendModel", () => {
 		expect(result.baseCents).toBe(3_900)
 		expect(result.overageCents).toBe(16_040)
 		expect(result.spendCents).toBe(19_940)
-		// Overage extrapolates on elapsed time (28.5 of 31 days at noon on the
-		// 29th), the base fee stays flat. Fractional elapsed on purpose: rounding
-		// to whole days makes the projection jump at midnight.
-		expect(result.projectedCents).toBe(21_347)
+		// Usage extrapolates on elapsed time (28.5 of 31 days at noon on the
+		// 29th) and is then priced; the base fee stays flat. Fractional elapsed on
+		// purpose: rounding to whole days makes the projection jump at midnight.
+		expect(result.projectedCents).toBe(22_224)
 		expect(result.dayOfCycle).toBe(29)
 		expect(result.cycleDays).toBe(31)
 		expect(result.planName).toBe("Startup")
+	})
+
+	it("paces on this cycle's events when the balance still carries the trial", () => {
+		const day = 86_400_000
+		const paidStart = Date.UTC(2026, 6, 15)
+		const customer = buildCustomer({
+			subscriptions: [
+				{
+					planId: "startup",
+					status: "active",
+					addOn: false,
+					currentPeriodStart: paidStart,
+					currentPeriodEnd: paidStart + 30 * day,
+				},
+			],
+			// Autumn didn't reset the balance at conversion: 280 GB of it is trial.
+			balances: { logs: { granted: 100, usage: 320 } },
+		})
+		const result = buildSpendModel({
+			customer,
+			plans: [startupPlan],
+			usage: { logs: { sum: 40 } } as BillingUsage["total"],
+			nowMs: paidStart + 2 * day,
+		})
+		if (result === null) throw new Error("expected a model")
+
+		expect(result.dayOfCycle).toBe(3)
+		// 320 GB + 40 GB/2 days × 28 days = 880 GB, 780 GB over at $0.30.
+		// Pacing the whole balance over 2 days would have projected 4,800 GB.
+		expect(result.projectedCents).toBe(3_900 + 23_400)
 	})
 
 	it("names the top cost driver by overage dollars, not by volume", () => {
@@ -87,11 +120,40 @@ describe("buildSpendModel", () => {
 		expect(result.topDriver?.overageCents).toBe(8_700)
 	})
 
+	it("reads usage from the balance meter, not the event aggregate, when the feature has a balance", () => {
+		// Autumn's aggregate window is a rolling cycle-length ending now, so on day 9
+		// of a cycle it folds three weeks of the PREVIOUS cycle in. The balance's
+		// `usage` is what the invoice is built from.
+		const result = buildSpendModel({
+			customer: buildCustomer({
+				balances: {
+					metrics: { granted: 100, usage: 379.75 },
+					browser_sessions: { granted: 5_000, usage: 101_928 },
+				},
+			}),
+			plans: [startupPlan],
+			usage: {
+				metrics: { sum: 433.98 },
+				browser_sessions: { sum: 401_015 },
+				// No balance for this one: the aggregate is all we have.
+				product_events: { sum: 1_576 },
+			} as BillingUsage["total"],
+			nowMs: NOW,
+		})
+		if (result === null) throw new Error("expected a model")
+		const byId = Object.fromEntries(result.features.map((feature) => [feature.featureId, feature]))
+		expect(byId.metrics?.used).toBe(379.75)
+		expect(byId.metrics?.overageUnits).toBeCloseTo(279.75)
+		expect(byId.browser_sessions?.used).toBe(101_928)
+		expect(byId.browser_sessions?.overageUnits).toBe(96_928)
+		expect(byId.product_events?.used).toBe(1_576)
+	})
+
 	it("has no top driver while everything is within its allotment", () => {
 		const result = buildSpendModel({
 			customer: buildCustomer(),
 			plans: [startupPlan],
-			usage: { logs: { sum: 10 } } as unknown as BillingUsage["total"],
+			usage: { logs: { sum: 10 } } as BillingUsage["total"],
 			nowMs: NOW,
 		})
 		expect(result?.topDriver).toBeNull()
@@ -105,7 +167,7 @@ describe("buildSpendModel", () => {
 			addOn: true,
 			price: { amount: 99 },
 			items: [],
-		} as unknown as CatalogPlan
+		} as CatalogPlan
 
 		const result = buildSpendModel({
 			customer: buildCustomer({
@@ -141,6 +203,43 @@ describe("buildSpendModel", () => {
 		expect(result?.partial).toBe(true)
 	})
 
+	it("prices product events per event from a rate quoted per 1,000", () => {
+		const result = buildSpendModel({
+			customer: buildCustomer(),
+			plans: [startupPlan],
+			usage: { product_events: { sum: 1_400_000 } } as BillingUsage["total"],
+			nowMs: NOW,
+		})
+		if (result === null) throw new Error("expected a model")
+
+		const events = result.features.find((feature) => feature.featureId === "product_events")
+		if (events === undefined) throw new Error("expected product_events")
+		// 400,000 events over × $0.05 / 1,000 = $20 — NOT 400,000 × $0.05.
+		expect(events.overageUnits).toBe(400_000)
+		expect(events.overageCents).toBe(2_000)
+		expect(events.ratePerUnit).toBeCloseTo(0.00005, 10)
+		expect(events.billingUnits).toBe(1_000)
+		expect(result.topDriver?.featureId).toBe("product_events")
+	})
+
+	it("labels rates the way the price list quotes them", () => {
+		const result = model()
+		if (result === null) throw new Error("expected a model")
+		const labels = Object.fromEntries(
+			result.features.map((feature) => [feature.featureId, formatRateLabel(feature)]),
+		)
+		expect(labels).toEqual({
+			logs: "$0.30/GB",
+			traces: "$0.30/GB",
+			metrics: "$0.30/GB",
+			browser_sessions: "$0.002/session",
+			product_events: "$0.05/1,000 events",
+		})
+		expect(featureUnit("product_events")).toBe("events")
+		expect(featureUnit("browser_sessions")).toBe("sessions")
+		expect(featureUnit("logs")).toBe("GB")
+	})
+
 	it("falls back to the calendar month with no active subscription", () => {
 		const result = buildSpendModel({
 			customer: buildCustomer({ subscriptions: [] }),
@@ -165,7 +264,7 @@ describe("buildCumulativeSeries", () => {
 			})),
 			cycleStart: CYCLE_START,
 			cycleEnd: CYCLE_END,
-		}) as unknown as DailySpendResponse
+		}) as DailySpendResponse
 
 	// A model whose metered logs total equals the series' own sum, so these tests
 	// exercise the accrual walk itself rather than the scaling above it.
@@ -173,7 +272,7 @@ describe("buildCumulativeSeries", () => {
 		const result = buildSpendModel({
 			customer: buildCustomer(),
 			plans: [startupPlan],
-			usage: { logs: { sum: loggedGB } } as unknown as BillingUsage["total"],
+			usage: { logs: { sum: loggedGB } } as BillingUsage["total"],
 			nowMs: NOW,
 		})
 		if (result === null) throw new Error("expected a model")

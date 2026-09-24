@@ -1,6 +1,18 @@
-import { format } from "date-fns"
 import { formatWarehouseDateTime, resolveRelativeRangeToWarehouse } from "@maple/query-engine"
-import { normalizeTimestampInput } from "@/lib/timezone-format"
+import { getEffectiveTimezone } from "@/atoms/timezone-preference-atoms"
+import { formatTimestampInTimezone, normalizeTimestampInput } from "@/lib/timezone-format"
+
+/**
+ * Floor a resolved range to the cache-key snap grid, scaled to the window
+ * width. Apply this wherever a relative preset is resolved into the range that
+ * feeds a query — without it the key moves with the clock and the atom idle
+ * TTLs never get to fire. See `snapRangeForCache` in `@maple/query-engine`.
+ *
+ * Do *not* apply it where a preset is materialized into an absolute range the
+ * user sees and keeps (the picker writing to the URL) — that should record the
+ * instant they actually chose.
+ */
+export { snapRangeForCache } from "@maple/query-engine"
 
 /**
  * Format a Date as the ClickHouse/Tinybird `YYYY-MM-DD HH:mm:ss` shape.
@@ -33,25 +45,23 @@ export function isTimeRangeWithin(
 }
 
 /**
- * Resolve a relative shorthand ("15m", "7d", "3mo", "today") to an absolute
- * window.
- *
- * Delegates to the shared resolver so this app, the API, and the query engine
- * can't drift on what a shorthand means. The shared implementation reproduces
- * date-fns' local-calendar semantics — month-end clamping and local midnight
- * for "today" — so behaviour here is unchanged.
+ * Resolves shorthand on the selected zone's calendar: "today" and the day/week/
+ * month presets start at that zone's midnight, not the browser's. Pass the zone
+ * from `useTimezonePreference` inside React so the caller re-resolves when it
+ * changes; the default is a point-in-time read for code outside a component.
  */
-export function relativeToAbsolute(shorthand: string): { startTime: string; endTime: string } | null {
-	return resolveRelativeRangeToWarehouse(shorthand)
+export function relativeToAbsolute(
+	shorthand: string,
+	timeZone: string = getEffectiveTimezone(),
+): { startTime: string; endTime: string } | null {
+	return resolveRelativeRangeToWarehouse(shorthand, Date.now(), timeZone)
 }
 
 export function presetLabel(shorthand: string): string {
 	if (shorthand === "12mo") return "Last 1 year"
-	// Check PRESET_OPTIONS first for exact match
 	const preset = PRESET_OPTIONS.find((p) => p.value === shorthand)
 	if (preset) return preset.label
 
-	// Generate dynamically
 	const trimmed = shorthand.trim().toLowerCase()
 	if (trimmed === "today") return "Today"
 
@@ -67,13 +77,17 @@ export function presetLabel(shorthand: string): string {
 		d: ["day", "days"],
 		w: ["week", "weeks"],
 		mo: ["month", "months"],
-	}
+	} satisfies Record<string, [string, string]>
 
 	const [singular, plural] = unitLabels[unit] ?? [unit, unit]
 	return `Last ${amount} ${amount === 1 ? singular : plural}`
 }
 
-export function formatTimeRangeDisplay(startTime?: string, endTime?: string): string {
+export function formatTimeRangeDisplay(
+	startTime?: string,
+	endTime?: string,
+	timeZone: string = getEffectiveTimezone(),
+): string {
 	if (!startTime && !endTime) {
 		return "Last 12 hours"
 	}
@@ -91,7 +105,6 @@ export function formatTimeRangeDisplay(startTime?: string, endTime?: string): st
 	const days = Math.round(diffMs / (24 * 60 * 60 * 1000))
 	const weeks = Math.round(diffMs / (7 * 24 * 60 * 60 * 1000))
 
-	// Check if end time is approximately now (within 1 minute)
 	const isRelative = Math.abs(end.getTime() - Date.now()) < 60 * 1000
 
 	if (isRelative) {
@@ -102,7 +115,7 @@ export function formatTimeRangeDisplay(startTime?: string, endTime?: string): st
 		return `Last ${Math.round(days / 30)} month${Math.round(days / 30) !== 1 ? "s" : ""}`
 	}
 
-	return `${format(start, "MMM d, HH:mm")} - ${format(end, "MMM d, HH:mm")}`
+	return `${formatTimestampInTimezone(start, { timeZone, style: "range" })} - ${formatTimestampInTimezone(end, { timeZone, style: "range" })}`
 }
 
 export const PRESET_OPTIONS: TimePreset[] = [
@@ -194,17 +207,6 @@ export const QUICK_SELECT_OPTIONS: QuickSelectOption[] = [
 	{ label: "2mo", value: "2mo" },
 	{ label: "today", value: "today" },
 ]
-
-export function getTimezoneDisplay(): string {
-	const offset = new Date().getTimezoneOffset()
-	const hours = Math.abs(Math.floor(offset / 60))
-	const sign = offset <= 0 ? "+" : "-"
-	return `UTC${sign}${hours}`
-}
-
-export function getTimezoneAbbr(): string {
-	return Intl.DateTimeFormat().resolvedOptions().timeZone
-}
 
 const CACHE_SNAP_INTERVAL_S = 15
 

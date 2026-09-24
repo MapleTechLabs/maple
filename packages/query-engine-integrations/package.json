@@ -4,17 +4,19 @@
 	"type": "module",
 	"exports": {
 		".": "./src/index.ts",
+		"./ai": "./src/ai/index.ts",
 		"./cloudflare": "./src/cloudflare/index.ts",
 		"./planetscale": "./src/planetscale/index.ts",
 		"./product": "./src/product/index.ts",
-		"./catalog": "./src/catalog.ts"
+		"./benchmark": "./src/benchmark/index.ts"
 	},
 	"scripts": {
 		"test": "vitest run",
 		"typecheck": "tsc --noEmit"
 	},
 	"dependencies": {
-		"@maple-dev/clickhouse-builder": "workspace:*",
+		"@maple-dev/effect-clickhouse": "0.1.0",
+		"@maple/domain": "workspace:*",
 		"@maple/query-engine": "workspace:*",
 		"effect": "catalog:effect"
 	},

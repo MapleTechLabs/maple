@@ -1,14 +1,12 @@
 import * as React from "react"
 
-import type { BaseChartProps } from "../_shared/chart-types"
+import type { QueryBuilderHbarChartProps } from "../_shared/chart-types"
 import { cn } from "../../../lib/utils"
 import { formatNumber, formatValueByUnit } from "../../../lib/format"
-import { hbarSampleData } from "../_shared/sample-data"
 import { pickValueField, toBreakdownRows, type BreakdownRow } from "../_shared/breakdown-rows"
 import { resolveSeriesColors } from "../../../lib/semantic-series-colors"
 import { useContainerSize } from "../../../hooks/use-container-size"
 
-// ---------------------------------------------------------------------------
 // Ranked horizontal bars — the "top N by volume" panel.
 //
 // The funnel used to be the only row-per-category chart, so every ranking was
@@ -17,7 +15,6 @@ import { useContainerSize } from "../../../hooks/use-container-size"
 // bar, so four unrelated operations of equal size all render "100%". Here rows
 // are sorted by value and each percentage is a share of the **total**, which is
 // the only reading that sums to 100% across the panel.
-// ---------------------------------------------------------------------------
 
 interface Bar extends BreakdownRow {
 	color: string
@@ -40,15 +37,25 @@ function fmtPct(fraction: number): string {
 const ROW_GAP = 6
 const ROW_MIN_H = 18
 const ROW_FULL_H = ROW_MIN_H + ROW_GAP
+/**
+ * A short list stretches to fill the card rather than floating in it: rows
+ * grow up to this, and the bar thickens with them, so five operations in a
+ * tall panel read as five generous rows instead of a strip in a void.
+ */
+const ROW_MAX_H = 56
+const BAR_MIN_THICKNESS = 10
+const BAR_MAX_THICKNESS = 20
 /** A row with a real but tiny value still has to be visible. */
 const BAR_MIN_PCT = 0.02
 const MORE_ROW_H = 16
 
-export function QueryBuilderHbarChart({ data, className, unit }: BaseChartProps) {
-	const source: ReadonlyArray<Record<string, unknown>> =
-		Array.isArray(data) && data.length > 0
-			? data
-			: (hbarSampleData as ReadonlyArray<Record<string, unknown>>)
+// No sample-data fallback: substituting fixtures for real rows made every
+// misconfigured or mis-fed chart draw a plausible-looking picture instead of an
+// empty one. Gallery thumbnails pass their sample rows in explicitly via `data`.
+const EMPTY_ROWS: ReadonlyArray<Record<string, unknown>> = []
+
+export function QueryBuilderHbarChart({ data, className, unit }: QueryBuilderHbarChartProps) {
+	const source: ReadonlyArray<Record<string, unknown>> = Array.isArray(data) ? data : EMPTY_ROWS
 
 	const valueField = React.useMemo(() => pickValueField(source), [source])
 
@@ -75,14 +82,28 @@ export function QueryBuilderHbarChart({ data, className, unit }: BaseChartProps)
 		)
 	}, [source, valueField])
 
-	// Only the rows that fit the measured card are drawn, with a muted "+N more"
-	// footer when the list is cut — rows must never spill out of the card
-	// (MAP-49). Before the first measurement (height 0) render everything; the
-	// card clips and the next frame corrects.
+	// A list longer than the card scrolls inside it — rows never spill out of
+	// the card (MAP-49), and every row stays reachable. A "+N more" footer names
+	// what is still below the fold and goes away as the reader scrolls to it.
 	const maxRows = height > 0 ? Math.max(1, Math.floor((height - MORE_ROW_H) / ROW_FULL_H)) : bars.length
 	const truncated = bars.length > maxRows
-	const visibleBars = truncated ? bars.slice(0, maxRows) : bars
-	const hiddenCount = bars.length - visibleBars.length
+	const visibleBars = bars
+	const [scrollTop, setScrollTop] = React.useState(0)
+	const hiddenCount = truncated
+		? Math.max(0, bars.length - Math.floor((scrollTop + height - MORE_ROW_H + ROW_GAP) / ROW_FULL_H))
+		: 0
+	// Divide the measured height among the rows, bounded both ways.
+	const rowH =
+		height > 0 && !truncated
+			? Math.min(
+					ROW_MAX_H,
+					Math.max(ROW_MIN_H, (height - ROW_GAP * (visibleBars.length - 1)) / visibleBars.length),
+				)
+			: ROW_MIN_H
+	const barH = Math.round(
+		BAR_MIN_THICKNESS +
+			((BAR_MAX_THICKNESS - BAR_MIN_THICKNESS) * (rowH - ROW_MIN_H)) / (ROW_MAX_H - ROW_MIN_H),
+	)
 
 	const [hover, setHover] = React.useState<number | null>(null)
 
@@ -97,61 +118,75 @@ export function QueryBuilderHbarChart({ data, className, unit }: BaseChartProps)
 	return (
 		<div
 			ref={containerRef}
-			className={cn(
-				"flex h-full w-full flex-col overflow-hidden px-1 select-none",
-				truncated ? "justify-start" : "justify-center",
-				className,
-			)}
-			style={{ rowGap: ROW_GAP }}
+			className={cn("relative h-full w-full select-none", className)}
 			onPointerLeave={() => setHover(null)}
 		>
-			{visibleBars.map((bar, i) => {
-				const isHover = hover === i
-				const fade = hover !== null && !isHover ? 0.55 : 1
-				return (
-					<div
-						key={`${bar.name}-${i}`}
-						// Label / track / value: the value column is sized by its content
-						// and right-aligned, so the numbers line up down the panel however
-						// long the category names are.
-						className="grid min-h-0 shrink-0 items-center gap-2 text-[11px] leading-none"
-						style={{
-							gridTemplateColumns: "minmax(0, 38%) 1fr max-content",
-							minHeight: ROW_MIN_H,
-						}}
-						onPointerEnter={() => setHover(i)}
-					>
-						<span
-							className={cn(
-								"truncate",
-								bar.unnamed ? "italic text-muted-foreground" : "text-foreground/90",
-							)}
-							title={bar.name}
+			<div
+				className={cn(
+					"flex h-full w-full flex-col justify-start px-1",
+					truncated
+						? "overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+						: "overflow-hidden",
+				)}
+				style={{ rowGap: ROW_GAP, paddingBottom: truncated ? MORE_ROW_H : 0 }}
+				onScroll={(event) => setScrollTop(event.currentTarget.scrollTop)}
+				data-slot="hbar-rows"
+			>
+				{visibleBars.map((bar, i) => {
+					const isHover = hover === i
+					const fade = hover !== null && !isHover ? 0.55 : 1
+					return (
+						<div
+							key={`${bar.name}-${i}`}
+							// Label / track / value: the value column is sized by its content
+							// and right-aligned, so the numbers line up down the panel however
+							// long the category names are.
+							className="grid min-h-0 shrink-0 items-center gap-2 text-[11px] leading-none"
+							style={{
+								gridTemplateColumns: "minmax(0, 38%) 1fr max-content",
+								height: rowH,
+							}}
+							onPointerEnter={() => setHover(i)}
 						>
-							{bar.name}
-						</span>
-						<div className="relative h-2.5 w-full overflow-hidden rounded-[3px] bg-foreground/5">
+							<span
+								className={cn(
+									"truncate",
+									bar.unnamed ? "italic text-muted-foreground" : "text-foreground/90",
+								)}
+								title={bar.name}
+							>
+								{bar.name}
+							</span>
 							<div
-								className="absolute inset-y-0 left-0 rounded-[3px]"
-								style={{
-									width: `${bar.widthPct * 100}%`,
-									backgroundColor: bar.color,
-									opacity: fade,
-									transition: "opacity 140ms ease, width 220ms ease",
-								}}
-							/>
+								className="relative w-full overflow-hidden rounded-[3px] bg-foreground/5"
+								style={{ height: barH }}
+							>
+								<div
+									className="absolute inset-y-0 left-0 rounded-[3px]"
+									style={{
+										width: `${bar.widthPct * 100}%`,
+										backgroundColor: bar.color,
+										opacity: fade,
+										transition: "opacity 140ms ease, width 220ms ease",
+									}}
+								/>
+							</div>
+							<span className="shrink-0 text-right tabular-nums text-muted-foreground">
+								<span className="text-foreground/90">{fmtValue(bar.value, unit)}</span>
+								<span className="px-1 text-muted-foreground/50">·</span>
+								<span>{fmtPct(bar.pctOfTotal)}</span>
+							</span>
 						</div>
-						<span className="shrink-0 text-right tabular-nums text-muted-foreground">
-							<span className="text-foreground/90">{fmtValue(bar.value, unit)}</span>
-							<span className="px-1 text-muted-foreground/50">·</span>
-							<span>{fmtPct(bar.pctOfTotal)}</span>
-						</span>
-					</div>
-				)
-			})}
+					)
+				})}
+			</div>
 			{hiddenCount > 0 && (
-				<div className="shrink-0 pt-1 text-[10px] leading-none text-muted-foreground">
-					+{hiddenCount} more
+				<div
+					className="pointer-events-none absolute inset-x-0 bottom-0 flex items-end bg-gradient-to-t from-card via-card/90 to-transparent px-1 pt-4 text-[10px] leading-none text-muted-foreground"
+					style={{ height: MORE_ROW_H + 16 }}
+					data-slot="hbar-more"
+				>
+					<span className="pb-px">+{hiddenCount} more · scroll</span>
 				</div>
 			)}
 		</div>

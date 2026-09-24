@@ -6,6 +6,8 @@ import {
 	ErrorIncidentId,
 	ErrorIssueEventId,
 	ErrorIssueId,
+	ErrorIssuePullRequestId,
+	ErrorIssueVerificationId,
 	InvestigationId,
 	IsoDateTimeString,
 	IssueEscalationId,
@@ -14,18 +16,36 @@ import {
 	TraceId,
 	UserId,
 } from "../primitives"
+import { AuditedRead } from "./audit-log"
 import { Authorization } from "./current-tenant"
 import { AlertSeverity } from "./alerts"
+import {
+	PullRequestLinkSource,
+	PullRequestLinkState,
+	VerificationStatus,
+	VerificationVerdict,
+} from "./fix-verification"
+import { VcsProviderId } from "./vcs"
+import { HttpTaggedError } from "./error-policy"
 
-// ---------------------------------------------------------------------------
 // Workflow state machine literals
-// ---------------------------------------------------------------------------
 
 export const WorkflowState = Schema.Literals([
 	"triage",
+	// Set by the errors tick when a resolved issue starts firing again. Distinct
+	// from `triage` on purpose: reopening into `triage` erased the fact that the
+	// issue had ever been fixed, so the next person or agent to pick it up saw a
+	// brand-new bug and fixed it again. Ordered second so it surfaces near the top
+	// of the hub.
+	"regressed",
 	"todo",
 	"in_progress",
 	"in_review",
+	// A linked pull request has merged and the fix is being confirmed against real
+	// traffic. Machine-owned like `regressed`: entering it asserts an observation
+	// (a merge landed) rather than an intention, and the verification tick owns
+	// the exit. Ordered after `in_review` because that is where work flows from.
+	"verifying",
 	"done",
 	"cancelled",
 	"wontfix",
@@ -50,31 +70,127 @@ export type WorkflowState = Schema.Schema.Type<typeof WorkflowState>
  * nothing ever advances them through review, so requiring `in_review` first
  * left them with no way to be retired at all — by a human or by auto-resolve.
  *
- * `cancelled` stays terminal, and `done → triage` stays legal so the errors
- * tick's regression path can reopen a resolved issue when it recurs.
+ * `cancelled` stays terminal. `done → regressed` is the errors tick's reopen
+ * path; `done → triage` stays legal for a human who wants to re-triage a fixed
+ * issue by hand.
  */
 export const WORKFLOW_TRANSITIONS: Record<WorkflowState, ReadonlyArray<WorkflowState>> = {
 	triage: ["todo", "in_progress", "done", "cancelled", "wontfix"],
+	regressed: ["triage", "todo", "in_progress", "done", "cancelled", "wontfix"],
 	todo: ["triage", "in_progress", "done", "cancelled", "wontfix"],
-	in_progress: ["triage", "todo", "in_review", "done", "cancelled", "wontfix"],
-	in_review: ["triage", "in_progress", "done", "cancelled", "wontfix"],
-	done: ["triage", "in_progress", "cancelled", "wontfix"],
+	in_progress: ["triage", "todo", "in_review", "verifying", "done", "cancelled", "wontfix"],
+	in_review: ["triage", "in_progress", "verifying", "done", "cancelled", "wontfix"],
+	verifying: ["triage", "todo", "in_progress", "in_review", "done", "cancelled", "wontfix"],
+	// `done → verifying` is the merge path for an issue somebody already closed by
+	// hand: the merge is still worth confirming, and a verdict of "not fixed" is
+	// how it gets reopened without waiting for the next occurrence.
+	done: ["triage", "regressed", "in_progress", "verifying", "cancelled", "wontfix"],
 	cancelled: [],
 	wontfix: ["triage", "cancelled"],
+} satisfies Record<WorkflowState, ReadonlyArray<WorkflowState>>
+
+/**
+ * Every workflow state in canonical display order. The order the issue hub
+ * shows states in — groups, selects, and status menus — so a list of states
+ * reads the same everywhere.
+ */
+export const WORKFLOW_STATE_ORDER: ReadonlyArray<WorkflowState> = WorkflowState.literals
+
+/**
+ * States only the errors tick may move an issue into.
+ *
+ * `regressed` records something observed — a fixed issue started firing from a
+ * build that was not running when it was resolved. A human picking it from a
+ * menu would be asserting that observation rather than making it, and the
+ * evaluator would overwrite the claim on its next tick anyway. `verifying` is
+ * the same shape: it says a linked pull request merged and a verification window
+ * is running, which is a fact about the world rather than a decision, and the
+ * verification tick owns the exit. Both edges stay legal in
+ * {@link WORKFLOW_TRANSITIONS} because the ticks do travel them; it is the
+ * human-facing surfaces that filter them out.
+ */
+export const MACHINE_OWNED_WORKFLOW_STATES: ReadonlySet<WorkflowState> = new Set<WorkflowState>([
+	"regressed",
+	"verifying",
+])
+
+/**
+ * The states that *every* one of `from` can legally move to — the intersection
+ * of their rows in {@link WORKFLOW_TRANSITIONS}, in canonical order.
+ *
+ * This is what a menu should offer: for one issue it is that issue's row, and
+ * for a multi-issue selection it is the moves the server would accept for all
+ * of them, so a bulk action can never half-apply. A state with no outgoing
+ * moves (`cancelled`) contributes an empty row and therefore collapses the
+ * result to nothing, and an empty input yields nothing (nothing selected, no
+ * legal move). Machine-owned targets are excluded — see
+ * {@link MACHINE_OWNED_WORKFLOW_STATES}.
+ */
+export const allowedTransitionsForAll = (from: Iterable<WorkflowState>): ReadonlyArray<WorkflowState> => {
+	const rows = Array.from(from, (state) => WORKFLOW_TRANSITIONS[state])
+	if (rows.length === 0) return []
+	return WORKFLOW_STATE_ORDER.filter(
+		(target) => !MACHINE_OWNED_WORKFLOW_STATES.has(target) && rows.every((row) => row.includes(target)),
+	)
 }
 
-/** States from which no further transition is possible. */
-export const TERMINAL_WORKFLOW_STATES: ReadonlySet<WorkflowState> = new Set<WorkflowState>([
+/**
+ * States in which the work is over: the lease is dropped on arrival and the
+ * issue cannot be claimed.
+ *
+ * NOT "no further transition is possible", which is what the old name
+ * (`CLOSED_WORKFLOW_STATES`) claimed and what `done` plainly contradicts —
+ * `done` reopens to `regressed` on the errors tick, to `verifying` when a linked
+ * PR merges, and to `triage` for a human re-triaging by hand. `cancelled` is the
+ * only state with genuinely no outgoing moves.
+ */
+export const CLOSED_WORKFLOW_STATES: ReadonlySet<WorkflowState> = new Set<WorkflowState>([
 	"done",
 	"cancelled",
 ])
 
 /**
+ * The states to walk through to get an issue to `in_review`, from wherever it is.
+ *
+ * `triage → in_review` is deliberately NOT a legal edge — an issue nobody has
+ * picked up cannot be under review — and for months that meant `propose_fix` on
+ * an untriaged issue failed outright with "Illegal transition from 'triage' to
+ * 'in_review'". Agents do not read the state machine before acting; they land on
+ * an issue in `triage`, propose the fix they just wrote, and get an error. It
+ * fired 18 times in production in two days.
+ *
+ * So the route is computed instead of assumed: one hop where the matrix allows
+ * it, otherwise via `in_progress`, which is the same state a claim moves an
+ * issue into. Empty means `in_review` is unreachable and the caller should say
+ * so *before* writing anything.
+ */
+export const fixProposalRoute = (from: WorkflowState): ReadonlyArray<WorkflowState> => {
+	if (from === "in_review") return []
+	if (WORKFLOW_TRANSITIONS[from].includes("in_review")) return ["in_review"]
+	if (WORKFLOW_TRANSITIONS[from].includes("in_progress")) return ["in_progress", "in_review"]
+	return []
+}
+
+/** Whether {@link fixProposalRoute} can get `from` to `in_review` at all. */
+export const canReachInReview = (from: WorkflowState): boolean =>
+	from === "in_review" || fixProposalRoute(from).length > 0
+
+/**
  * Renders the matrix as the prose an LLM tool description needs, so the
  * description can never drift from the rules the server actually enforces.
+ *
+ * Machine-owned targets are omitted, because the only caller is agent-facing and
+ * every surface that lets a caller *pick* a state filters them out — see
+ * {@link MACHINE_OWNED_WORKFLOW_STATES}. Listing `in_review→verifying` in the
+ * `transition_error_issue` description while the tool rejected `verifying` was
+ * an instruction to make a call that could only fail.
  */
 export const describeWorkflowTransitions = (): string =>
 	Object.entries(WORKFLOW_TRANSITIONS)
+		.map(
+			([from, targets]) =>
+				[from, targets.filter((target) => !MACHINE_OWNED_WORKFLOW_STATES.has(target))] as const,
+		)
 		.filter(([, targets]) => targets.length > 0)
 		.map(([from, targets]) => `${from}→(${targets.join("|")})`)
 		.join("; ")
@@ -136,6 +252,11 @@ export const ErrorIssueEventType = Schema.Literals([
 	"ai_triage",
 	"anomaly_linked",
 	"severity_change",
+	"pr_linked",
+	"pr_unlinked",
+	"pr_merged",
+	"verification_started",
+	"verification_verdict",
 ]).annotate({
 	identifier: "@maple/ErrorIssueEventType",
 	title: "Error Issue Event Type",
@@ -154,9 +275,14 @@ export const ErrorIncidentReason = Schema.Literals(["first_seen", "regression", 
 })
 export type ErrorIncidentReason = Schema.Schema.Type<typeof ErrorIncidentReason>
 
-// ---------------------------------------------------------------------------
+/**
+ * Silence, in minutes, after which the error tick auto-resolves an open
+ * incident. Shared so the dashboard can explain the `resolved` status with the
+ * same number the evaluator applies.
+ */
+export const ERROR_INCIDENT_AUTO_RESOLVE_MINUTES = 30
+
 // Actor documents
-// ---------------------------------------------------------------------------
 
 export class ActorDocument extends Schema.Class<ActorDocument>("ActorDocument")({
 	id: ActorId,
@@ -172,9 +298,7 @@ export class ActorsListResponse extends Schema.Class<ActorsListResponse>("Actors
 	actors: Schema.Array(ActorDocument),
 }) {}
 
-// ---------------------------------------------------------------------------
 // Issue + event documents
-// ---------------------------------------------------------------------------
 
 export class ErrorIssueDocument extends Schema.Class<ErrorIssueDocument>("ErrorIssueDocument")({
 	id: ErrorIssueId,
@@ -199,9 +323,26 @@ export class ErrorIssueDocument extends Schema.Class<ErrorIssueDocument>("ErrorI
 	lastSeenAt: IsoDateTimeString,
 	occurrenceCount: Schema.Number,
 	resolvedAt: Schema.NullOr(IsoDateTimeString),
+	// Fix history. Carried on the document rather than left in the event log
+	// because the event log is not what a triaging human or agent reads first:
+	// with only `workflowState`, an issue that was fixed last week and came back
+	// looked exactly like one nobody had ever touched, so the same bug got
+	// investigated and fixed from scratch more than once.
+	lastResolvedAt: Schema.NullOr(IsoDateTimeString),
+	lastRegressedAt: Schema.NullOr(IsoDateTimeString),
+	regressionCount: Schema.Number,
+	/** Builds this issue was known to affect when it was last marked done. */
+	resolvedVersions: Schema.Array(Schema.String),
 	snoozeUntil: Schema.NullOr(IsoDateTimeString),
 	archivedAt: Schema.NullOr(IsoDateTimeString),
 	hasOpenIncident: Schema.Boolean,
+	// Activity rollups for list surfaces: is anyone talking about this issue,
+	// and where do its linked PRs stand — without a per-issue events fetch.
+	// Comment count includes agent notes; abandoned (closed-unmerged) PRs are
+	// deliberately not counted anywhere.
+	commentCount: Schema.Number,
+	openPullRequestCount: Schema.Number,
+	mergedPullRequestCount: Schema.Number,
 	// Postgres txid of the write, present only on mutation responses so the web's
 	// ElectricSQL error_issues collection can resolve optimistic state on the exact
 	// synced transaction. Absent on list/read responses.
@@ -233,6 +374,12 @@ export class ErrorIssueSampleTrace extends Schema.Class<ErrorIssueSampleTrace>("
 	durationMicros: Schema.Number,
 }) {}
 
+/** One deployment environment a fingerprint was observed in over the detail window. */
+export class ErrorIssueEnvironment extends Schema.Class<ErrorIssueEnvironment>("ErrorIssueEnvironment")({
+	name: Schema.String,
+	count: Schema.Number,
+}) {}
+
 export class ErrorIncidentDocument extends Schema.Class<ErrorIncidentDocument>("ErrorIncidentDocument")({
 	id: ErrorIncidentId,
 	issueId: ErrorIssueId,
@@ -251,6 +398,9 @@ export class ErrorIssueDetailResponse extends Schema.Class<ErrorIssueDetailRespo
 	timeseries: Schema.Array(ErrorIssueTimeseriesPoint),
 	sampleTraces: Schema.Array(ErrorIssueSampleTrace),
 	incidents: Schema.Array(ErrorIncidentDocument),
+	// Environments the fingerprint was seen in over the requested window. The
+	// issue row itself has none: one fingerprint spans environments.
+	environments: Schema.Array(ErrorIssueEnvironment),
 }) {}
 
 export class ErrorIncidentsListResponse extends Schema.Class<ErrorIncidentsListResponse>(
@@ -278,9 +428,7 @@ export class ErrorIssueEventsResponse extends Schema.Class<ErrorIssueEventsRespo
 	events: Schema.Array(ErrorIssueEventDocument),
 }) {}
 
-// ---------------------------------------------------------------------------
 // Request payloads
-// ---------------------------------------------------------------------------
 
 export class ErrorIssueTransitionRequest extends Schema.Class<ErrorIssueTransitionRequest>(
 	"ErrorIssueTransitionRequest",
@@ -332,15 +480,89 @@ export class ErrorIssueSetSeverityRequest extends Schema.Class<ErrorIssueSetSeve
 	note: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(2_000))),
 }) {}
 
+// Pull request links + fix verification
+
+export class ErrorIssuePullRequestDocument extends Schema.Class<ErrorIssuePullRequestDocument>(
+	"ErrorIssuePullRequestDocument",
+)({
+	id: ErrorIssuePullRequestId,
+	issueId: ErrorIssueId,
+	provider: VcsProviderId,
+	/** `owner/name`. */
+	repoFullName: Schema.String,
+	number: Schema.Number,
+	url: Schema.String,
+	title: Schema.NullOr(Schema.String),
+	authorLogin: Schema.NullOr(Schema.String),
+	state: PullRequestLinkState,
+	mergedAt: Schema.NullOr(IsoDateTimeString),
+	mergeCommitSha: Schema.NullOr(Schema.String),
+	linkSource: PullRequestLinkSource,
+	linkedByActor: Schema.NullOr(ActorDocument),
+	createdAt: IsoDateTimeString,
+}) {}
+
+export class ErrorIssuePullRequestsResponse extends Schema.Class<ErrorIssuePullRequestsResponse>(
+	"ErrorIssuePullRequestsResponse",
+)({
+	pullRequests: Schema.Array(ErrorIssuePullRequestDocument),
+	/**
+	 * The repository (`owner/name`) the attach-a-PR picker should open on, or null
+	 * when nothing in the org's connected repos points at this issue clearly enough
+	 * to guess. A default, never a fact: the user can always pick another, and an
+	 * ambiguous signal deliberately yields null rather than a plausible wrong repo.
+	 */
+	suggestedRepository: Schema.NullOr(Schema.String),
+}) {}
+
+export class ErrorIssueLinkPullRequestRequest extends Schema.Class<ErrorIssueLinkPullRequestRequest>(
+	"ErrorIssueLinkPullRequestRequest",
+)({
+	/** A full pull request URL. Parsed server-side — see `parsePullRequestUrl`. */
+	url: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(2_000)),
+}) {}
+
+/**
+ * A post-merge verification run, as the issue page renders it.
+ *
+ * `verifyAfter` and `baselineRatePerHour` travel together on purpose: the UI
+ * explains the wait ("~6h, because this fired ~3x/hour before the merge") and
+ * needs both halves to do it. A window with no explanation reads as arbitrary.
+ */
+export class ErrorIssueVerificationDocument extends Schema.Class<ErrorIssueVerificationDocument>(
+	"ErrorIssueVerificationDocument",
+)({
+	id: ErrorIssueVerificationId,
+	issueId: ErrorIssueId,
+	pullRequestId: ErrorIssuePullRequestId,
+	status: VerificationStatus,
+	mergedAt: IsoDateTimeString,
+	verifyAfter: IsoDateTimeString,
+	baselineVersions: Schema.Array(Schema.String),
+	baselineOccurrenceCount: Schema.Number,
+	baselineRatePerHour: Schema.Number,
+	postMergeOccurrenceCount: Schema.Number,
+	investigationId: Schema.NullOr(InvestigationId),
+	verdict: Schema.NullOr(VerificationVerdict),
+	verdictNote: Schema.NullOr(Schema.String),
+	attempt: Schema.Number,
+	createdAt: IsoDateTimeString,
+	updatedAt: IsoDateTimeString,
+}) {}
+
+export class ErrorIssueVerificationsResponse extends Schema.Class<ErrorIssueVerificationsResponse>(
+	"ErrorIssueVerificationsResponse",
+)({
+	verifications: Schema.Array(ErrorIssueVerificationDocument),
+}) {}
+
 export class RegisterAgentRequest extends Schema.Class<RegisterAgentRequest>("RegisterAgentRequest")({
 	name: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(100)),
 	model: Schema.optionalKey(Schema.String),
 	capabilities: Schema.optionalKey(Schema.Array(Schema.String)),
 }) {}
 
-// ---------------------------------------------------------------------------
 // Notification policy
-// ---------------------------------------------------------------------------
 
 export class ErrorNotificationPolicyDocument extends Schema.Class<ErrorNotificationPolicyDocument>(
 	"ErrorNotificationPolicyDocument",
@@ -376,9 +598,7 @@ export class ErrorNotificationPolicyUpsertRequest extends Schema.Class<ErrorNoti
 	severity: Schema.optionalKey(AlertSeverity),
 }) {}
 
-// ---------------------------------------------------------------------------
 // Escalation policy (severity → destination routing for triage outcomes)
-// ---------------------------------------------------------------------------
 
 export const EscalationConfidence = Schema.Literals(["low", "medium", "high"]).annotate({
 	identifier: "@maple/EscalationConfidence",
@@ -411,9 +631,7 @@ export class IssueEscalationPolicyUpsertRequest extends Schema.Class<IssueEscala
 	rules: Schema.optionalKey(Schema.Array(IssueEscalationPolicyRule)),
 }) {}
 
-// ---------------------------------------------------------------------------
 // Query schemas
-// ---------------------------------------------------------------------------
 
 /**
  * Keyset cursor for `listIssues`: the sort key of the last row of the previous
@@ -485,17 +703,23 @@ const IssueEventsQuery = Schema.Struct({
 	),
 })
 
-// ---------------------------------------------------------------------------
 // Errors
-// ---------------------------------------------------------------------------
 
-export class ErrorPersistenceError extends Schema.TaggedError<ErrorPersistenceError>()(
+export class ErrorPersistenceError extends HttpTaggedError<ErrorPersistenceError>()(
 	"@maple/http/errors/ErrorPersistenceError",
 	{
 		message: Schema.String,
 		cause: Schema.optionalKey(Schema.String),
 	},
-	{ httpApiStatus: 503 },
+	{
+		status: 503,
+		code: "error_issues_unavailable",
+		title: "Error issues are temporarily unavailable",
+		message: "Error issues are temporarily unavailable. Retry in a few seconds.",
+		retry: "backoff",
+		recovery: "retry",
+		exposure: "redacted",
+	},
 ) {}
 
 export const EscalationSkipReason = Schema.Literals([
@@ -567,6 +791,25 @@ export class ErrorValidationError extends Schema.TaggedError<ErrorValidationErro
 	{ httpApiStatus: 400 },
 ) {}
 
+export class ErrorIssuePullRequestInvalidError extends Schema.TaggedError<ErrorIssuePullRequestInvalidError>()(
+	"@maple/http/errors/ErrorIssuePullRequestInvalidError",
+	{
+		message: Schema.String,
+		/** Echoed back unparsed and explicitly named `raw` — it never became a link. */
+		rawUrl: Schema.String,
+	},
+	{ httpApiStatus: 400 },
+) {}
+
+export class ErrorIssuePullRequestNotFoundError extends Schema.TaggedError<ErrorIssuePullRequestNotFoundError>()(
+	"@maple/http/errors/ErrorIssuePullRequestNotFoundError",
+	{
+		message: Schema.String,
+		pullRequestId: ErrorIssuePullRequestId,
+	},
+	{ httpApiStatus: 404 },
+) {}
+
 export class ErrorForbiddenError extends Schema.TaggedError<ErrorForbiddenError>()(
 	"@maple/http/errors/ErrorForbiddenError",
 	{
@@ -575,20 +818,27 @@ export class ErrorForbiddenError extends Schema.TaggedError<ErrorForbiddenError>
 	{ httpApiStatus: 403 },
 ) {}
 
-export class ErrorIssueNotFoundError extends Schema.TaggedError<ErrorIssueNotFoundError>()(
+export class ErrorIssueNotFoundError extends HttpTaggedError<ErrorIssueNotFoundError>()(
 	"@maple/http/errors/ErrorIssueNotFoundError",
 	{
 		message: Schema.String,
-		resourceType: Schema.Literals(["issue", "incident"]),
-		resourceId: Schema.Union([ErrorIssueId, ErrorIncidentId]),
+		issueId: ErrorIssueId,
 	},
-	{ httpApiStatus: 404 },
+	{
+		status: 404,
+		code: "error_issue_not_found",
+		title: "Error issue not found",
+		message: "No such error issue.",
+		param: "id",
+		retry: "never",
+		recovery: "none",
+		exposure: "redacted",
+	},
 ) {
 	static forIssue(id: ErrorIssueId) {
 		return new ErrorIssueNotFoundError({
 			message: `No such error issue: '${id}'`,
-			resourceType: "issue",
-			resourceId: id,
+			issueId: id,
 		})
 	}
 }
@@ -624,9 +874,7 @@ export class ActorNotFoundError extends Schema.TaggedError<ActorNotFoundError>()
 	{ httpApiStatus: 404 },
 ) {}
 
-// ---------------------------------------------------------------------------
 // API group
-// ---------------------------------------------------------------------------
 
 export class ErrorsApiGroup extends HttpApiGroup.make("errors")
 	.add(
@@ -634,7 +882,7 @@ export class ErrorsApiGroup extends HttpApiGroup.make("errors")
 			query: IssueListQuery,
 			success: ErrorIssuesListResponse,
 			error: ErrorPersistenceError,
-		}),
+		}).annotate(AuditedRead, "telemetry.read"),
 	)
 	.add(
 		HttpApiEndpoint.get("getIssue", "/issues/:issueId", {
@@ -642,7 +890,7 @@ export class ErrorsApiGroup extends HttpApiGroup.make("errors")
 			query: IssueDetailQuery,
 			success: ErrorIssueDetailResponse,
 			error: [ErrorPersistenceError, ErrorIssueNotFoundError],
-		}),
+		}).annotate(AuditedRead, "telemetry.read"),
 	)
 	.add(
 		HttpApiEndpoint.post("transitionIssue", "/issues/:issueId/transitions", {
@@ -703,7 +951,17 @@ export class ErrorsApiGroup extends HttpApiGroup.make("errors")
 			params: { issueId: ErrorIssueId },
 			payload: ErrorIssueProposeFixRequest,
 			success: ErrorIssueDocument,
-			error: [ErrorPersistenceError, ErrorIssueNotFoundError, ErrorIssueTransitionError],
+			// `ErrorIssueLeaseConflictError`: proposing a fix takes the lease, so it
+			// can collide with whoever is already working the issue.
+			error: [
+				ErrorPersistenceError,
+				ErrorIssueNotFoundError,
+				ErrorIssueTransitionError,
+				ErrorIssueLeaseConflictError,
+				// A `prUrl` that is not a pull request URL is a 400, not a silent
+				// no-op that reports the fix as attached.
+				ErrorIssuePullRequestInvalidError,
+			],
 		}),
 	)
 	.add(
@@ -728,20 +986,20 @@ export class ErrorsApiGroup extends HttpApiGroup.make("errors")
 			query: IssueEventsQuery,
 			success: ErrorIssueEventsResponse,
 			error: [ErrorPersistenceError, ErrorIssueNotFoundError],
-		}),
+		}).annotate(AuditedRead, "telemetry.read"),
 	)
 	.add(
 		HttpApiEndpoint.get("listIssueIncidents", "/issues/:issueId/incidents", {
 			params: { issueId: ErrorIssueId },
 			success: ErrorIncidentsListResponse,
 			error: [ErrorPersistenceError, ErrorIssueNotFoundError],
-		}),
+		}).annotate(AuditedRead, "telemetry.read"),
 	)
 	.add(
 		HttpApiEndpoint.get("listOpenIncidents", "/incidents", {
 			success: ErrorIncidentsListResponse,
 			error: ErrorPersistenceError,
-		}),
+		}).annotate(AuditedRead, "telemetry.read"),
 	)
 	.add(
 		HttpApiEndpoint.post("registerAgent", "/agents", {
@@ -808,6 +1066,35 @@ export class ErrorsApiGroup extends HttpApiGroup.make("errors")
 			},
 			success: IssueEscalationAttemptsResponse,
 			error: ErrorPersistenceError,
+		}),
+	)
+	.add(
+		HttpApiEndpoint.get("listIssuePullRequests", "/issues/:issueId/pull-requests", {
+			params: { issueId: ErrorIssueId },
+			success: ErrorIssuePullRequestsResponse,
+			error: [ErrorPersistenceError, ErrorIssueNotFoundError],
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("linkIssuePullRequest", "/issues/:issueId/pull-requests", {
+			params: { issueId: ErrorIssueId },
+			payload: ErrorIssueLinkPullRequestRequest,
+			success: ErrorIssuePullRequestDocument,
+			error: [ErrorPersistenceError, ErrorIssueNotFoundError, ErrorIssuePullRequestInvalidError],
+		}),
+	)
+	.add(
+		HttpApiEndpoint.delete("unlinkIssuePullRequest", "/issues/:issueId/pull-requests/:pullRequestId", {
+			params: { issueId: ErrorIssueId, pullRequestId: ErrorIssuePullRequestId },
+			success: ErrorIssuePullRequestsResponse,
+			error: [ErrorPersistenceError, ErrorIssueNotFoundError, ErrorIssuePullRequestNotFoundError],
+		}),
+	)
+	.add(
+		HttpApiEndpoint.get("listIssueVerifications", "/issues/:issueId/verifications", {
+			params: { issueId: ErrorIssueId },
+			success: ErrorIssueVerificationsResponse,
+			error: [ErrorPersistenceError, ErrorIssueNotFoundError],
 		}),
 	)
 	.prefix("/api/errors")

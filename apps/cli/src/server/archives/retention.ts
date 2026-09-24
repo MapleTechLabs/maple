@@ -1,4 +1,6 @@
-import { createHash, randomBytes, randomUUID, timingSafeEqual } from "node:crypto"
+import { readRealFile, ensureLocalToken, localTokenMatches } from "../local-token"
+// SAFETY-FILE: JSON rows here come from fixed internal formats and are validated before domain use.
+import { createHash, randomUUID } from "node:crypto"
 import { existsSync, lstatSync, readFileSync } from "node:fs"
 import { mkdir, rm } from "node:fs/promises"
 import { dirname, join, resolve } from "node:path"
@@ -22,7 +24,6 @@ import {
 
 const LEDGER_FORMAT_VERSION = 1
 const EXPIRATION_FORMAT_VERSION = 3
-const TOKEN_BYTES = 32
 const SHA256 = /^[0-9a-f]{64}$/
 
 export interface RetiredSignalEvidence {
@@ -144,32 +145,15 @@ export const parseRetiredDayLedger = (value: unknown): RetiredDayLedger => {
 export const retiredDayLedgerPath = (dataDir: string): string => `${resolve(dataDir)}.retired-days.json`
 export const maintenanceTokenPath = (dataDir: string): string => `${resolve(dataDir)}.maintenance-token`
 
-const readRealFile = (path: string, label: string): string => {
-	const stat = lstatSync(path)
-	if (stat.isSymbolicLink() || !stat.isFile()) throw new Error(`${label} is not a real file: ${path}`)
-	return readFileSync(path, "utf8")
-}
-
 export const readRetiredDayLedger = (dataDir: string): RetiredDayLedger => {
 	const path = retiredDayLedgerPath(dataDir)
 	if (!existsSync(path)) return { formatVersion: LEDGER_FORMAT_VERSION, retiredDays: [] }
 	return parseRetiredDayLedger(JSON.parse(readRealFile(path, "retired-day ledger")) as unknown)
 }
 
-export const ensureMaintenanceToken = async (dataDir: string): Promise<string> => {
-	const path = maintenanceTokenPath(dataDir)
-	if (!existsSync(path)) await durableWrite(path, `${randomBytes(TOKEN_BYTES).toString("hex")}\n`)
-	const token = readRealFile(path, "maintenance token").trim()
-	if (!/^[0-9a-f]{64}$/.test(token)) throw new Error("maintenance token is malformed")
-	return token
-}
-
-export const maintenanceTokenMatches = (expected: string, supplied: string | null): boolean => {
-	if (supplied === null) return false
-	const left = Buffer.from(expected)
-	const right = Buffer.from(supplied)
-	return left.length === right.length && timingSafeEqual(left, right)
-}
+export const ensureMaintenanceToken = (dataDir: string): Promise<string> =>
+	ensureLocalToken(maintenanceTokenPath(dataDir), "maintenance token")
+export const maintenanceTokenMatches = localTokenMatches
 
 const eventDateKey: Readonly<Record<string, string>> = {
 	traces: "start_time",
@@ -178,7 +162,7 @@ const eventDateKey: Readonly<Record<string, string>> = {
 	metrics_gauge: "timestamp",
 	metrics_histogram: "timestamp",
 	metrics_exponential_histogram: "timestamp",
-}
+} satisfies Readonly<Record<string, string>>
 
 export class RetiredDayAuthority {
 	readonly #dataDir: string

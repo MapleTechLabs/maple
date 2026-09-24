@@ -18,8 +18,6 @@ use opentelemetry::{global, KeyValue};
 
 static METER: LazyLock<Meter> = LazyLock::new(|| global::meter("maple-ingest"));
 
-// --- Counters -------------------------------------------------------------
-
 static REQUESTS_TOTAL: LazyLock<Counter<u64>> = LazyLock::new(|| {
     METER
         .u64_counter("ingest_requests_total")
@@ -120,10 +118,69 @@ static SENTINEL_TOTAL: LazyLock<Counter<u64>> = LazyLock::new(|| {
         .build()
 });
 
+/// Requests abandoned by the gateway deadline. The signal that saturation is
+/// being shed rather than queued — before this existed the same condition was
+/// invisible in error rates because a hung request never fails.
+static REQUEST_TIMEOUTS_TOTAL: LazyLock<Counter<u64>> = LazyLock::new(|| {
+    METER
+        .u64_counter("ingest_request_timeouts_total")
+        .with_description("Requests abandoned after exceeding the gateway request timeout")
+        .build()
+});
+
+/// Frames dropped for exceeding `INGEST_QUEUE_MAX_AGE_SECS`. This is deliberate
+/// data loss and must be alertable: non-zero means a downstream target stalled
+/// long enough that the gateway chose to cut the backlog rather than let the
+/// accept path keep queueing behind it.
+static QUEUE_AGE_SHED_TOTAL: LazyLock<Counter<u64>> = LazyLock::new(|| {
+    METER
+        .u64_counter("ingest_queue_age_shed_total")
+        .with_description("Rows shed because their frame exceeded the lane's max queue age")
+        .build()
+});
+
 static WAL_SHARD_FULL_TOTAL: LazyLock<Counter<u64>> = LazyLock::new(|| {
     METER
         .u64_counter("ingest_wal_shard_full_total")
         .with_description("WAL appends rejected because the shard file was full")
+        .build()
+});
+
+static WAL_SEGMENTS_SEALED_TOTAL: LazyLock<Counter<u64>> = LazyLock::new(|| {
+    METER
+        .u64_counter("ingest_wal_segments_sealed_total")
+        .with_description("WAL segments closed at the size threshold and replaced by a new one")
+        .build()
+});
+
+static WAL_SHIPPED_BYTES_TOTAL: LazyLock<Counter<u64>> = LazyLock::new(|| {
+    METER
+        .u64_counter("ingest_wal_shipped_bytes_total")
+        .with_description("WAL segment bytes uploaded to the durability object store")
+        .build()
+});
+
+static WAL_SHIP_OUTCOMES_TOTAL: LazyLock<Counter<u64>> = LazyLock::new(|| {
+    METER
+        .u64_counter("ingest_wal_ship_outcomes_total")
+        .with_description(
+            "WAL segments that were not uploaded, by outcome: exported before the upload ran, \
+             dropped because the shipper queue was full, or failed",
+        )
+        .build()
+});
+
+static WAL_FRAMES_RECOVERED_TOTAL: LazyLock<Counter<u64>> = LazyLock::new(|| {
+    METER
+        .u64_counter("ingest_wal_frames_recovered_total")
+        .with_description("Frames re-committed from another task's orphaned WAL segments")
+        .build()
+});
+
+static WAL_RECLAIMED_BYTES_TOTAL: LazyLock<Counter<u64>> = LazyLock::new(|| {
+    METER
+        .u64_counter("ingest_wal_reclaimed_bytes_total")
+        .with_description("WAL bytes freed by deleting fully exported segments")
         .build()
 });
 
@@ -197,6 +254,13 @@ static METRICS_SUMMARY_DROPPED_TOTAL: LazyLock<Counter<u64>> = LazyLock::new(|| 
         .build()
 });
 
+static AUTUMN_ENTITLEMENT_DECISIONS_TOTAL: LazyLock<Counter<u64>> = LazyLock::new(|| {
+    METER
+        .u64_counter("autumn_entitlement_decisions_total")
+        .with_description("Autumn entitlement decisions, by cache outcome")
+        .build()
+});
+
 static AUTUMN_FLUSHES_TOTAL: LazyLock<Counter<u64>> = LazyLock::new(|| {
     METER
         .u64_counter("autumn_track_flushes_total")
@@ -204,23 +268,12 @@ static AUTUMN_FLUSHES_TOTAL: LazyLock<Counter<u64>> = LazyLock::new(|| {
         .build()
 });
 
-static BILLED_BROWSER_SESSIONS_TOTAL: LazyLock<Counter<u64>> = LazyLock::new(|| {
-    METER
-        .u64_counter("ingest_billed_browser_sessions_total")
-        .with_description("Browser sessions metered to Autumn, by how the SDK identified the visitor")
-        .build()
-});
-
-// --- Up/down counter ------------------------------------------------------
-
 static REQUESTS_IN_FLIGHT: LazyLock<UpDownCounter<i64>> = LazyLock::new(|| {
     METER
         .i64_up_down_counter("ingest_requests_in_flight")
         .with_description("In-flight ingest requests")
         .build()
 });
-
-// --- Gauges ---------------------------------------------------------------
 
 static ORG_REQUESTS_IN_FLIGHT: LazyLock<Gauge<u64>> = LazyLock::new(|| {
     METER
@@ -241,7 +294,7 @@ static WAL_SHARD_BYTES: LazyLock<Gauge<u64>> = LazyLock::new(|| {
     METER
         .u64_gauge("ingest_wal_shard_bytes")
         .with_unit("By")
-        .with_description("Current WAL shard file size")
+        .with_description("Bytes held by a WAL lane's segments on disk")
         .build()
 });
 
@@ -251,8 +304,6 @@ static AUTUMN_PENDING_GB: LazyLock<Gauge<f64>> = LazyLock::new(|| {
         .with_description("Unflushed Autumn usage accumulated in memory, in GB")
         .build()
 });
-
-// --- Histograms -----------------------------------------------------------
 
 static REQUEST_DURATION_SECONDS: LazyLock<Histogram<f64>> = LazyLock::new(|| {
     METER
@@ -291,6 +342,47 @@ static WAL_COMMIT_BYTES: LazyLock<Histogram<u64>> = LazyLock::new(|| {
         .u64_histogram("ingest_wal_commit_bytes")
         .with_unit("By")
         .with_description("Bytes committed per WAL append")
+        .build()
+});
+
+/// How long frames actually waited in their lane before export. The companion
+/// to `ingest_queue_age_shed_total`: this shows the backlog building, that one
+/// shows it being cut.
+static QUEUE_AGE_SECONDS: LazyLock<Histogram<f64>> = LazyLock::new(|| {
+    METER
+        .f64_histogram("ingest_queue_age_seconds")
+        .with_unit("s")
+        .with_description("Age of a frame when its export batch was assembled")
+        .build()
+});
+
+/// Split three ways on purpose. A WAL append is `lock -> write -> fsync`, and
+/// when `ingest.wal_commit` blows up these are the only numbers that say which
+/// of the three it was: lock wait dominating means the lane count is the ceiling
+/// (more lanes / more vCPU helps), fsync dominating means the device is the
+/// ceiling (more lanes just redistribute the same IO). Without this split the
+/// only way to tell them apart was to read the source.
+static WAL_APPEND_DURATION_SECONDS: LazyLock<Histogram<f64>> = LazyLock::new(|| {
+    METER
+        .f64_histogram("ingest_wal_append_duration_seconds")
+        .with_unit("s")
+        .with_description("Total WAL append latency: lock wait, write and fsync")
+        .build()
+});
+
+static WAL_LOCK_WAIT_DURATION_SECONDS: LazyLock<Histogram<f64>> = LazyLock::new(|| {
+    METER
+        .f64_histogram("ingest_wal_lock_wait_duration_seconds")
+        .with_unit("s")
+        .with_description("Time spent waiting for a WAL lane's append mutex")
+        .build()
+});
+
+static WAL_FSYNC_DURATION_SECONDS: LazyLock<Histogram<f64>> = LazyLock::new(|| {
+    METER
+        .f64_histogram("ingest_wal_fsync_duration_seconds")
+        .with_unit("s")
+        .with_description("Time spent in sync_data on a WAL segment")
         .build()
 });
 
@@ -350,8 +442,6 @@ static AUTUMN_FLUSH_DURATION_SECONDS: LazyLock<Histogram<f64>> = LazyLock::new(|
         .build()
 });
 
-// --- Facade ---------------------------------------------------------------
-
 /// A request entered the gateway; pair with [`request_finished`].
 pub fn request_started() {
     REQUESTS_IN_FLIGHT.add(1, &[]);
@@ -367,23 +457,23 @@ pub fn request_completed(signal: &str, status: &str, error_kind: &str, duration_
     REQUEST_DURATION_SECONDS.record(
         duration_secs,
         &[
-            KeyValue::new("signal", signal.to_string()),
-            KeyValue::new("status", status.to_string()),
+            KeyValue::new("signal", signal.to_owned()),
+            KeyValue::new("status", status.to_owned()),
         ],
     );
     REQUESTS_TOTAL.add(
         1,
         &[
-            KeyValue::new("signal", signal.to_string()),
-            KeyValue::new("status", status.to_string()),
-            KeyValue::new("error_kind", error_kind.to_string()),
+            KeyValue::new("signal", signal.to_owned()),
+            KeyValue::new("status", status.to_owned()),
+            KeyValue::new("error_kind", error_kind.to_owned()),
         ],
     );
 }
 
 /// Telemetry items accepted from a request payload.
 pub fn items_accepted(signal: &str, count: u64) {
-    ITEMS_TOTAL.add(count, &[KeyValue::new("signal", signal.to_string())]);
+    ITEMS_TOTAL.add(count, &[KeyValue::new("signal", signal.to_owned())]);
 }
 
 /// A request was rejected by a per-org limit (`reason` is `in_flight` or `queue_bytes`).
@@ -391,7 +481,7 @@ pub fn org_throttled(org_id: &str, reason: &'static str) {
     ORG_THROTTLED_TOTAL.add(
         1,
         &[
-            KeyValue::new("org_id", org_id.to_string()),
+            KeyValue::new("org_id", org_id.to_owned()),
             KeyValue::new("reason", reason),
         ],
     );
@@ -410,9 +500,9 @@ pub fn org_data_loss(org_id: &str, signal: &str, error_kind: &str) {
     ORG_DATA_LOSS_TOTAL.add(
         1,
         &[
-            KeyValue::new("org_id", org_id.to_string()),
-            KeyValue::new("signal", signal.to_string()),
-            KeyValue::new("error_kind", error_kind.to_string()),
+            KeyValue::new("org_id", org_id.to_owned()),
+            KeyValue::new("signal", signal.to_owned()),
+            KeyValue::new("error_kind", error_kind.to_owned()),
         ],
     );
 }
@@ -424,9 +514,9 @@ pub fn backpressure_shed(org_id: &str, destination: &str, signal: &str) {
     BACKPRESSURE_SHED_TOTAL.add(
         1,
         &[
-            KeyValue::new("org_id", org_id.to_string()),
-            KeyValue::new("destination", destination.to_string()),
-            KeyValue::new("signal", signal.to_string()),
+            KeyValue::new("org_id", org_id.to_owned()),
+            KeyValue::new("destination", destination.to_owned()),
+            KeyValue::new("signal", signal.to_owned()),
         ],
     );
 }
@@ -435,14 +525,14 @@ pub fn backpressure_shed(org_id: &str, destination: &str, signal: &str) {
 /// crossed it. Recording stops here; every later chunk lands in
 /// `replay_session_chunk_dropped`.
 pub fn replay_session_truncated(org_id: &str) {
-    REPLAY_SESSION_TRUNCATED_TOTAL.add(1, &[KeyValue::new("org_id", org_id.to_string())]);
+    REPLAY_SESSION_TRUNCATED_TOTAL.add(1, &[KeyValue::new("org_id", org_id.to_owned())]);
 }
 
 /// A chunk was rejected because its session had already been truncated. A high
 /// ratio against `replay_session_truncated` means one org keeps recording long
 /// after it stopped being stored — worth an SDK-side sampling conversation.
 pub fn replay_session_chunk_dropped(org_id: &str) {
-    REPLAY_SESSION_CHUNK_DROPPED_TOTAL.add(1, &[KeyValue::new("org_id", org_id.to_string())]);
+    REPLAY_SESSION_CHUNK_DROPPED_TOTAL.add(1, &[KeyValue::new("org_id", org_id.to_owned())]);
 }
 
 /// A replay chunk's payload could not be written to the blob store, so the
@@ -450,17 +540,17 @@ pub fn replay_session_chunk_dropped(org_id: &str) {
 /// every increment here is a permanent gap in a recording — this should sit at
 /// zero, and it is the signal to watch during the R2 cutover.
 pub fn replay_blob_put_failed(org_id: &str) {
-    REPLAY_BLOB_PUT_FAILED_TOTAL.add(1, &[KeyValue::new("org_id", org_id.to_string())]);
+    REPLAY_BLOB_PUT_FAILED_TOTAL.add(1, &[KeyValue::new("org_id", org_id.to_owned())]);
 }
 
 /// Current in-flight request count for an org.
 pub fn org_requests_in_flight(org_id: &str, value: u64) {
-    ORG_REQUESTS_IN_FLIGHT.record(value, &[KeyValue::new("org_id", org_id.to_string())]);
+    ORG_REQUESTS_IN_FLIGHT.record(value, &[KeyValue::new("org_id", org_id.to_owned())]);
 }
 
 /// A request used the sentinel test token.
 pub fn sentinel(signal: &str) {
-    SENTINEL_TOTAL.add(1, &[KeyValue::new("signal", signal.to_string())]);
+    SENTINEL_TOTAL.add(1, &[KeyValue::new("signal", signal.to_owned())]);
 }
 
 /// Ingest key resolution latency.
@@ -470,12 +560,12 @@ pub fn key_resolution_duration(duration_secs: f64) {
 
 /// Raw request body size.
 pub fn request_body_bytes(signal: &str, bytes: u64) {
-    REQUEST_BODY_BYTES.record(bytes, &[KeyValue::new("signal", signal.to_string())]);
+    REQUEST_BODY_BYTES.record(bytes, &[KeyValue::new("signal", signal.to_owned())]);
 }
 
 /// Decompressed request payload size.
 pub fn decoded_body_bytes(signal: &str, bytes: u64) {
-    DECODED_BODY_BYTES.record(bytes, &[KeyValue::new("signal", signal.to_string())]);
+    DECODED_BODY_BYTES.record(bytes, &[KeyValue::new("signal", signal.to_owned())]);
 }
 
 /// A Cloudflare Logpush batch was received.
@@ -483,28 +573,28 @@ pub fn cloudflare_batch(dataset: &str, is_validation: bool) {
     CLOUDFLARE_BATCHES_TOTAL.add(
         1,
         &[
-            KeyValue::new("dataset", dataset.to_string()),
+            KeyValue::new("dataset", dataset.to_owned()),
             KeyValue::new("validation", if is_validation { "true" } else { "false" }),
         ],
     );
     if is_validation {
-        CLOUDFLARE_VALIDATION_TOTAL.add(1, &[KeyValue::new("dataset", dataset.to_string())]);
+        CLOUDFLARE_VALIDATION_TOTAL.add(1, &[KeyValue::new("dataset", dataset.to_owned())]);
     }
 }
 
 /// A Cloudflare Logpush request failed authentication.
 pub fn cloudflare_auth_failure(dataset: &str) {
-    CLOUDFLARE_AUTH_FAILURES_TOTAL.add(1, &[KeyValue::new("dataset", dataset.to_string())]);
+    CLOUDFLARE_AUTH_FAILURES_TOTAL.add(1, &[KeyValue::new("dataset", dataset.to_owned())]);
 }
 
 /// A Cloudflare Logpush request failed parsing.
 pub fn cloudflare_parse_failure(dataset: &str) {
-    CLOUDFLARE_PARSE_FAILURES_TOTAL.add(1, &[KeyValue::new("dataset", dataset.to_string())]);
+    CLOUDFLARE_PARSE_FAILURES_TOTAL.add(1, &[KeyValue::new("dataset", dataset.to_owned())]);
 }
 
 /// Log records parsed from a Cloudflare Logpush batch.
 pub fn cloudflare_records(dataset: &str, count: u64) {
-    CLOUDFLARE_RECORDS_TOTAL.add(count, &[KeyValue::new("dataset", dataset.to_string())]);
+    CLOUDFLARE_RECORDS_TOTAL.add(count, &[KeyValue::new("dataset", dataset.to_owned())]);
 }
 
 /// A WAL append was rejected because the lane file is full. `shard` is the real
@@ -514,7 +604,7 @@ pub fn wal_shard_full(shard: usize, destination: &str) {
         1,
         &[
             KeyValue::new("shard", shard.to_string()),
-            KeyValue::new("destination", destination.to_string()),
+            KeyValue::new("destination", destination.to_owned()),
         ],
     );
 }
@@ -525,36 +615,166 @@ pub fn wal_commit_bytes(shard: usize, destination: &str, bytes: u64) {
         bytes,
         &[
             KeyValue::new("shard", shard.to_string()),
-            KeyValue::new("destination", destination.to_string()),
+            KeyValue::new("destination", destination.to_owned()),
         ],
     );
 }
 
-/// Current WAL lane file size.
+/// A request was abandoned by the gateway deadline. `route` is the matched route
+/// pattern, never a raw URI — one ingest route carries a path parameter, and a
+/// label per connector id is unbounded cardinality.
+pub fn request_timed_out(route: &str) {
+    REQUEST_TIMEOUTS_TOTAL.add(1, &[KeyValue::new("route", route.to_owned())]);
+}
+
+/// Age of a frame at the moment its export batch was assembled.
+pub fn queue_age(destination: &str, signal: &str, seconds: f64) {
+    QUEUE_AGE_SECONDS.record(
+        seconds,
+        &[
+            KeyValue::new("destination", destination.to_owned()),
+            KeyValue::new("signal", signal.to_owned()),
+        ],
+    );
+}
+
+/// Rows shed because their frame exceeded the lane's max queue age.
+pub fn queue_age_shed(org_id: &str, destination: &str, datasource: &str, rows: u64) {
+    QUEUE_AGE_SHED_TOTAL.add(
+        rows,
+        &[
+            KeyValue::new("org_id", org_id.to_owned()),
+            KeyValue::new("destination", destination.to_owned()),
+            KeyValue::new("datasource", datasource.to_owned()),
+        ],
+    );
+}
+
+/// The three phases of one WAL append, recorded together so their ratio is
+/// readable on a single dashboard. See `WAL_APPEND_DURATION_SECONDS`.
+pub fn wal_append_durations(
+    shard: usize,
+    destination: &str,
+    lock_wait_seconds: f64,
+    fsync_seconds: f64,
+    total_seconds: f64,
+) {
+    let labels = [
+        KeyValue::new("shard", shard.to_string()),
+        KeyValue::new("destination", destination.to_owned()),
+    ];
+    WAL_LOCK_WAIT_DURATION_SECONDS.record(lock_wait_seconds, &labels);
+    WAL_FSYNC_DURATION_SECONDS.record(fsync_seconds, &labels);
+    WAL_APPEND_DURATION_SECONDS.record(total_seconds, &labels);
+}
+
+/// Bytes a WAL lane currently holds on disk, exported prefix included.
 pub fn wal_shard_bytes(shard: usize, destination: &str, bytes: u64) {
     WAL_SHARD_BYTES.record(
         bytes,
         &[
             KeyValue::new("shard", shard.to_string()),
-            KeyValue::new("destination", destination.to_string()),
+            KeyValue::new("destination", destination.to_owned()),
+        ],
+    );
+}
+
+/// A lane sealed its active segment and opened the next one.
+pub fn wal_segment_sealed(shard: usize, destination: &str) {
+    WAL_SEGMENTS_SEALED_TOTAL.add(
+        1,
+        &[
+            KeyValue::new("shard", shard.to_string()),
+            KeyValue::new("destination", destination.to_owned()),
+        ],
+    );
+}
+
+/// A sealed WAL segment reached the durability object store.
+pub fn wal_segment_shipped(shard: usize, destination: &str, bytes: u64) {
+    WAL_SHIPPED_BYTES_TOTAL.add(
+        bytes,
+        &[
+            KeyValue::new("shard", shard.to_string()),
+            KeyValue::new("destination", destination.to_owned()),
+        ],
+    );
+}
+
+fn wal_ship_outcome(shard: usize, destination: &str, outcome: &'static str, detail: String) {
+    WAL_SHIP_OUTCOMES_TOTAL.add(
+        1,
+        &[
+            KeyValue::new("shard", shard.to_string()),
+            KeyValue::new("destination", destination.to_owned()),
+            KeyValue::new("outcome", outcome),
+            KeyValue::new("error.type", detail),
+        ],
+    );
+}
+
+/// The segment exported before its upload ran, so there was nothing to protect.
+/// The expected outcome for most segments in a healthy pipeline.
+pub fn wal_ship_skipped(shard: usize, destination: &str) {
+    wal_ship_outcome(shard, destination, "exported_first", String::new());
+}
+
+/// The shipper queue was full, so this segment stays local-only. Sustained
+/// non-zero means the object store cannot keep up with segment rotation.
+pub fn wal_ship_dropped(shard: usize, destination: &str) {
+    wal_ship_outcome(shard, destination, "queue_full", String::new());
+}
+
+/// An upload or delete against the object store failed.
+pub fn wal_ship_failed(shard: usize, destination: &str, error_kind: &str) {
+    wal_ship_outcome(shard, destination, "failed", error_kind.to_owned());
+}
+
+/// Frames re-committed from a dead task's orphaned segments.
+pub fn wal_frames_recovered(frames: u64) {
+    WAL_FRAMES_RECOVERED_TOTAL.add(frames, &[]);
+}
+
+/// Bytes freed by deleting segments the export cursor has moved past.
+pub fn wal_segments_reclaimed(shard: usize, destination: &str, reclaimed_bytes: u64) {
+    WAL_RECLAIMED_BYTES_TOTAL.add(
+        reclaimed_bytes,
+        &[
+            KeyValue::new("shard", shard.to_string()),
+            KeyValue::new("destination", destination.to_owned()),
         ],
     );
 }
 
 /// Current bytes queued for export for an org.
 pub fn org_queue_bytes(org_id: &str, bytes: u64) {
-    ORG_QUEUE_BYTES.record(bytes, &[KeyValue::new("org_id", org_id.to_string())]);
+    ORG_QUEUE_BYTES.record(bytes, &[KeyValue::new("org_id", org_id.to_owned())]);
 }
 
 /// Latency and exported-byte size of a completed WAL export batch.
-pub fn export_batch_completed(shard: usize, signal: &str, duration_secs: f64, exported_bytes: u64) {
-    EXPORT_BATCH_DURATION_SECONDS
-        .record(duration_secs, &[KeyValue::new("shard", shard.to_string())]);
+///
+/// `destination` separates the Tinybird and ClickHouse lanes of one shard, which
+/// otherwise drain into the same series.
+pub fn export_batch_completed(
+    shard: usize,
+    destination: &str,
+    signal: &str,
+    duration_secs: f64,
+    exported_bytes: u64,
+) {
+    EXPORT_BATCH_DURATION_SECONDS.record(
+        duration_secs,
+        &[
+            KeyValue::new("shard", shard.to_string()),
+            KeyValue::new("destination", destination.to_owned()),
+        ],
+    );
     WAL_EXPORTED_BYTES.record(
         exported_bytes,
         &[
-            KeyValue::new("signal", signal.to_string()),
+            KeyValue::new("signal", signal.to_owned()),
             KeyValue::new("shard", shard.to_string()),
+            KeyValue::new("destination", destination.to_owned()),
         ],
     );
 }
@@ -564,9 +784,9 @@ pub fn forward_response(signal: &str, upstream_status: &'static str, upstream_po
     FORWARD_RESPONSES_TOTAL.add(
         1,
         &[
-            KeyValue::new("signal", signal.to_string()),
+            KeyValue::new("signal", signal.to_owned()),
             KeyValue::new("upstream_status", upstream_status),
-            KeyValue::new("upstream_pool", upstream_pool.to_string()),
+            KeyValue::new("upstream_pool", upstream_pool.to_owned()),
         ],
     );
 }
@@ -576,60 +796,75 @@ pub fn forward_duration(signal: &str, upstream_pool: &str, duration_secs: f64) {
     FORWARD_DURATION_SECONDS.record(
         duration_secs,
         &[
-            KeyValue::new("signal", signal.to_string()),
-            KeyValue::new("upstream_pool", upstream_pool.to_string()),
+            KeyValue::new("signal", signal.to_owned()),
+            KeyValue::new("upstream_pool", upstream_pool.to_owned()),
         ],
     );
 }
 
 /// Native warehouse pipeline accept latency.
 pub fn native_accept_duration(signal: &str, duration_secs: f64) {
-    NATIVE_ACCEPT_DURATION_SECONDS.record(
-        duration_secs,
-        &[KeyValue::new("signal", signal.to_string())],
-    );
+    NATIVE_ACCEPT_DURATION_SECONDS
+        .record(duration_secs, &[KeyValue::new("signal", signal.to_owned())]);
 }
 
 /// Rows accepted by the native warehouse pipeline.
 pub fn native_rows(signal: &str, count: u64) {
-    NATIVE_ROWS_TOTAL.add(count, &[KeyValue::new("signal", signal.to_string())]);
+    NATIVE_ROWS_TOTAL.add(count, &[KeyValue::new("signal", signal.to_owned())]);
 }
 
 /// Rows dropped by sampling in the native pipeline.
 pub fn native_sampled_dropped(signal: &str, count: u64) {
-    NATIVE_SAMPLED_DROPPED_TOTAL.add(count, &[KeyValue::new("signal", signal.to_string())]);
+    NATIVE_SAMPLED_DROPPED_TOTAL.add(count, &[KeyValue::new("signal", signal.to_owned())]);
 }
 
 /// A successful Tinybird export: latency and exported row count.
-pub fn tinybird_export_succeeded(datasource: &str, duration_secs: f64, rows: u64) {
+///
+/// `destination` is always `tinybird`; the label is kept because the export
+/// path is per-lane and the dashboards query it.
+pub fn tinybird_export_succeeded(
+    destination: &str,
+    datasource: &str,
+    duration_secs: f64,
+    rows: u64,
+) {
     TINYBIRD_EXPORT_DURATION_SECONDS.record(
         duration_secs,
         &[
-            KeyValue::new("datasource", datasource.to_string()),
+            KeyValue::new("destination", destination.to_owned()),
+            KeyValue::new("datasource", datasource.to_owned()),
             KeyValue::new("status", "2xx"),
         ],
     );
-    TINYBIRD_EXPORT_ROWS_TOTAL.add(rows, &[KeyValue::new("datasource", datasource.to_string())]);
+    TINYBIRD_EXPORT_ROWS_TOTAL.add(
+        rows,
+        &[
+            KeyValue::new("destination", destination.to_owned()),
+            KeyValue::new("datasource", datasource.to_owned()),
+        ],
+    );
 }
 
 /// Rows dropped while exporting to Tinybird (`status` is an HTTP code or `retries_exhausted`).
-pub fn tinybird_export_dropped(datasource: &str, status: &str, rows: u64) {
+pub fn tinybird_export_dropped(destination: &str, datasource: &str, status: &str, rows: u64) {
     TINYBIRD_EXPORT_DROPPED_TOTAL.add(
         rows,
         &[
-            KeyValue::new("datasource", datasource.to_string()),
-            KeyValue::new("status", status.to_string()),
+            KeyValue::new("destination", destination.to_owned()),
+            KeyValue::new("datasource", datasource.to_owned()),
+            KeyValue::new("status", status.to_owned()),
         ],
     );
 }
 
 /// A Tinybird export attempt was retried (`status` is an HTTP code or `transport`).
-pub fn tinybird_export_retry(datasource: &str, status: &str) {
+pub fn tinybird_export_retry(destination: &str, datasource: &str, status: &str) {
     TINYBIRD_EXPORT_RETRIES_TOTAL.add(
         1,
         &[
-            KeyValue::new("datasource", datasource.to_string()),
-            KeyValue::new("status", status.to_string()),
+            KeyValue::new("destination", destination.to_owned()),
+            KeyValue::new("datasource", datasource.to_owned()),
+            KeyValue::new("status", status.to_owned()),
         ],
     );
 }
@@ -637,8 +872,8 @@ pub fn tinybird_export_retry(datasource: &str, status: &str) {
 /// A successful ClickHouse export: latency and exported row count.
 pub fn clickhouse_export_succeeded(datasource: &str, status: &str, duration_secs: f64, rows: u64) {
     let attrs = [
-        KeyValue::new("datasource", datasource.to_string()),
-        KeyValue::new("status", status.to_string()),
+        KeyValue::new("datasource", datasource.to_owned()),
+        KeyValue::new("status", status.to_owned()),
     ];
     CLICKHOUSE_EXPORT_DURATION_SECONDS.record(duration_secs, &attrs);
     CLICKHOUSE_EXPORT_ROWS_TOTAL.add(rows, &attrs);
@@ -649,8 +884,8 @@ pub fn clickhouse_export_dropped(datasource: &str, status: &str, rows: u64) {
     CLICKHOUSE_EXPORT_DROPPED_TOTAL.add(
         rows,
         &[
-            KeyValue::new("datasource", datasource.to_string()),
-            KeyValue::new("status", status.to_string()),
+            KeyValue::new("datasource", datasource.to_owned()),
+            KeyValue::new("status", status.to_owned()),
         ],
     );
 }
@@ -660,8 +895,8 @@ pub fn clickhouse_export_retry(datasource: &str, status: &str) {
     CLICKHOUSE_EXPORT_RETRIES_TOTAL.add(
         1,
         &[
-            KeyValue::new("datasource", datasource.to_string()),
-            KeyValue::new("status", status.to_string()),
+            KeyValue::new("datasource", datasource.to_owned()),
+            KeyValue::new("status", status.to_owned()),
         ],
     );
 }
@@ -671,28 +906,16 @@ pub fn metrics_summary_dropped() {
     METRICS_SUMMARY_DROPPED_TOTAL.add(1, &[]);
 }
 
-/// Browser sessions charged to an org, split by whether the visitor id survives
-/// the page load.
-///
-/// `visitor_persisted=false` means both the cookie and localStorage were blocked
-/// (Safari ITP, incognito, a cookie-blocking extension). Those visitors cannot
-/// hold a visit claim, so every page load they make re-claims and is charged
-/// again — the one over-count the per-visit model does not fix. This exists so
-/// the size of that tail is a number before anyone tries to price around it.
-pub fn billed_browser_sessions(count: u64, visitor_persisted: bool) {
-    if count == 0 {
-        return;
-    }
-    BILLED_BROWSER_SESSIONS_TOTAL.add(
-        count,
-        &[KeyValue::new("visitor_persisted", visitor_persisted)],
-    );
-}
-
 /// An Autumn usage-tracking flush cycle completed (`status` is `ok` or `error`).
 pub fn autumn_flush(status: &'static str, duration_secs: f64) {
     AUTUMN_FLUSH_DURATION_SECONDS.record(duration_secs, &[]);
     AUTUMN_FLUSHES_TOTAL.add(1, &[KeyValue::new("status", status)]);
+}
+
+/// An entitlement decision was served (`source` is `hit` or `miss`). The miss
+/// rate is what says whether the decision cache is doing its job.
+pub fn autumn_entitlement_decision(source: &'static str) {
+    AUTUMN_ENTITLEMENT_DECISIONS_TOTAL.add(1, &[KeyValue::new("source", source)]);
 }
 
 /// Unflushed Autumn usage currently held in memory, in GB.

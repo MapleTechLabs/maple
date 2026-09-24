@@ -2,9 +2,7 @@ import type { ManagedRuntime } from "effect"
 import { Effect, Fiber } from "effect"
 import { type EffectRouterContext, getCurrentNavigationSpan } from "./router.ts"
 
-// ---------------------------------------------------------------------------
 // Structural types for TanStack Router contexts
-// ---------------------------------------------------------------------------
 
 /**
  * Structural type matching TanStack Router's loader context.
@@ -44,9 +42,7 @@ interface RouterBeforeLoadContext {
 	readonly route?: { readonly fullPath: string; readonly id: string }
 }
 
-// ---------------------------------------------------------------------------
 // Public context types
-// ---------------------------------------------------------------------------
 
 interface EffectRouteContextBase {
 	readonly params: Record<string, string>
@@ -86,9 +82,7 @@ export type EffectBeforeLoadFn<A extends Record<string, unknown>, E = never> = (
 	ctx: EffectBeforeLoadContext,
 ) => Effect.Effect<A, E>
 
-// ---------------------------------------------------------------------------
 // effectLoader
-// ---------------------------------------------------------------------------
 
 /**
  * Wraps an Effect-returning function into a TanStack Router loader.
@@ -148,9 +142,7 @@ export function effectLoader<A, E = never>(
 	}
 }
 
-// ---------------------------------------------------------------------------
 // effectBeforeLoad
-// ---------------------------------------------------------------------------
 
 /**
  * Wraps an Effect-returning function into a TanStack Router beforeLoad hook.
@@ -208,9 +200,7 @@ export function effectBeforeLoad<A extends Record<string, unknown>, E = never>(
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Internal helpers
-// ---------------------------------------------------------------------------
 
 /**
  * Extracts the EffectRouterContext from the router context with a runtime
@@ -226,8 +216,8 @@ export function getEffectContext(context: Record<string, unknown>): EffectRouter
 			"effect-router: effectLoader/effectBeforeLoad requires a router created with createEffectRouter()",
 		)
 	}
-	// Safe after runtime guard validates all required keys exist
-	return context as unknown as EffectRouterContext
+	// SAFETY: the runtime guard above established every EffectRouterContext capability.
+	return context as typeof context & EffectRouterContext
 }
 
 /**

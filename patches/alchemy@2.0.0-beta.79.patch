@@ -1,0 +1,294 @@
+diff --git a/lib/AWS/AutoScaling/AutoScalingGroup.js b/lib/AWS/AutoScaling/AutoScalingGroup.js
+index f9255948..827bb867 100644
+--- a/lib/AWS/AutoScaling/AutoScalingGroup.js
++++ b/lib/AWS/AutoScaling/AutoScalingGroup.js
+@@ -246,7 +246,17 @@ export const AutoScalingGroupProvider = () => Provider.effect(AutoScalingGroup,
+                     TerminationPolicies: news.terminationPolicies,
+                     Tags: toTags(autoScalingGroupName, desiredTags),
+                 })
+-                    .pipe(Effect.catch((error) => error?._tag === "AlreadyExistsFault"
++                    .pipe(
++                // maple patch: a just-created instance profile takes a few seconds to
++                // reach EC2, and the launch template is rejected until it does.
++                Effect.retry({
++                    while: (error) => error?._tag === "ValidationError" &&
++                        /Invalid IAM Instance Profile/i.test(String(error?.message ?? error)),
++                    schedule: Schedule.max([
++                        Schedule.recurs(10),
++                        Schedule.exponential("1 second"),
++                    ]),
++                }), Effect.catch((error) => error?._tag === "AlreadyExistsFault"
+                     ? Effect.void
+                     : Effect.fail(error)));
+                 existing = yield* describeGroup(autoScalingGroupName).pipe(Effect.filterOrFail(Boolean, () => new Error(`Auto Scaling Group '${autoScalingGroupName}' was not readable after create`)), Effect.retry({
+@@ -265,7 +275,9 @@ export const AutoScalingGroupProvider = () => Provider.effect(AutoScalingGroup,
+                 AutoScalingGroupName: autoScalingGroupName,
+                 MinSize: news.minSize,
+                 MaxSize: news.maxSize,
+-                DesiredCapacity: news.desiredCapacity ?? news.minSize,
++                // maple patch: an unset desiredCapacity leaves the live value alone, so a
++            // redeploy does not undo ECS managed scaling.
++            DesiredCapacity: news.desiredCapacity,
+                 LaunchTemplate: launchTemplate,
+                 VPCZoneIdentifier: news.subnetIds.join(","),
+                 HealthCheckType: healthCheckType,
+diff --git a/lib/AWS/ECS/Service.js b/lib/AWS/ECS/Service.js
+index 66192e6f..800c8a5d 100644
+--- a/lib/AWS/ECS/Service.js
++++ b/lib/AWS/ECS/Service.js
+@@ -675,6 +675,8 @@ const transformServiceProps = (id, props) => Effect.gen(function* () {
+         return next;
+     }).pipe(Namespace.push(id));
+ });
++/** maple patch: whether the service's tasks get their own ENI. */
++const usesAwsvpc = (props) => (props?.networkMode ?? "awsvpc") === "awsvpc";
+ const composeManagedIngress = (id, props, lbProp) => Effect.gen(function* () {
+     const config = lbProp === true
+         ? {}
+@@ -978,7 +980,7 @@ const composeManagedIngress = (id, props, lbProp) => Effect.gen(function* () {
+             vpcId: network.vpcId,
+             port: spec.port,
+             protocol: spec.protocol,
+-            targetType: "ip",
++            targetType: usesAwsvpc(props) ? "ip" : "instance",
+             healthCheckPath: isNetworkTg
+                 ? wantsHttpCheck
+                     ? (health?.path ?? "/")
+@@ -1837,7 +1839,9 @@ export const ServiceProvider = () => Provider.effect(Service, Effect.gen(functio
+         platformVersion: news.platformVersion,
+         deploymentConfiguration: news.deploymentConfiguration,
+         healthCheckGracePeriodSeconds: toWireSeconds(news.healthCheckGracePeriod),
+-        networkConfiguration: networkConfigurationOf(network, securityGroups),
++        networkConfiguration: usesAwsvpc(news)
++            ? networkConfigurationOf(network, securityGroups)
++            : undefined,
+         capacityProviderStrategy: news.capacityProviderStrategy,
+         placementConstraints: news.placementConstraints,
+         placementStrategy: news.placementStrategy,
+diff --git a/src/AWS/AutoScaling/AutoScalingGroup.ts b/src/AWS/AutoScaling/AutoScalingGroup.ts
+index 5b40c650..2eb9162d 100644
+--- a/src/AWS/AutoScaling/AutoScalingGroup.ts
++++ b/src/AWS/AutoScaling/AutoScalingGroup.ts
+@@ -470,6 +470,17 @@ export const AutoScalingGroupProvider = () =>
+                 Tags: toTags(autoScalingGroupName, desiredTags),
+               } as any)
+               .pipe(
++                // maple patch: a just-created instance profile takes a few seconds to
++                // reach EC2, and the launch template is rejected until it does.
++                Effect.retry({
++                  while: (error: any) =>
++                    error?._tag === "ValidationError" &&
++                    /Invalid IAM Instance Profile/i.test(String(error?.message ?? error)),
++                  schedule: Schedule.max([
++                    Schedule.recurs(10),
++                    Schedule.exponential("1 second"),
++                  ]),
++                }),
+                 Effect.catch((error: any) =>
+                   error?._tag === "AlreadyExistsFault"
+                     ? Effect.void
+@@ -503,7 +514,9 @@ export const AutoScalingGroupProvider = () =>
+             AutoScalingGroupName: autoScalingGroupName,
+             MinSize: news.minSize,
+             MaxSize: news.maxSize,
+-            DesiredCapacity: news.desiredCapacity ?? news.minSize,
++            // maple patch: an unset desiredCapacity leaves the live value alone, so a
++            // redeploy does not undo ECS managed scaling.
++            DesiredCapacity: news.desiredCapacity,
+             LaunchTemplate: launchTemplate,
+             VPCZoneIdentifier: (news.subnetIds as string[]).join(","),
+             HealthCheckType: healthCheckType,
+diff --git a/src/AWS/ECS/Service.ts b/src/AWS/ECS/Service.ts
+index 47a9aadb..86ba487e 100644
+--- a/src/AWS/ECS/Service.ts
++++ b/src/AWS/ECS/Service.ts
+@@ -1658,6 +1658,11 @@ const transformServiceProps = (
+     }).pipe(Namespace.push(id));
+   });
+ 
++/** maple patch: whether the service's tasks get their own ENI. */
++const usesAwsvpc = (props: unknown) =>
++  ((props as { networkMode?: string } | undefined)?.networkMode ?? "awsvpc") ===
++  "awsvpc";
++
+ const composeManagedIngress = (
+   id: string,
+   props: ServiceProps,
+@@ -2071,7 +2076,9 @@ const composeManagedIngress = (
+           vpcId: network.vpcId as string,
+           port: spec.port as number,
+           protocol: spec.protocol,
+-          targetType: "ip",
++          // host/bridge tasks have no ENI of their own; the ALB reaches them
++          // through the container instance (maple patch).
++          targetType: usesAwsvpc(props) ? "ip" : "instance",
+           healthCheckPath: isNetworkTg
+             ? wantsHttpCheck
+               ? (health?.path ?? "/")
+@@ -3241,7 +3248,10 @@ export const ServiceProvider = () =>
+         healthCheckGracePeriodSeconds: toWireSeconds(
+           news.healthCheckGracePeriod,
+         ),
+-        networkConfiguration: networkConfigurationOf(network, securityGroups),
++        // ECS rejects an awsvpcConfiguration for host/bridge tasks (maple patch).
++        networkConfiguration: usesAwsvpc(news)
++          ? networkConfigurationOf(network, securityGroups)
++          : undefined,
+         capacityProviderStrategy: news.capacityProviderStrategy,
+         placementConstraints: news.placementConstraints,
+         placementStrategy: news.placementStrategy,
+diff --git a/lib/Planetscale/Postgres/PostgresRole.d.ts b/lib/Planetscale/Postgres/PostgresRole.d.ts
+index ed13227..75b0892 100644
+--- a/lib/Planetscale/Postgres/PostgresRole.d.ts
++++ b/lib/Planetscale/Postgres/PostgresRole.d.ts
+@@ -40,6 +40,14 @@ export interface PostgresRoleProps {
+      * another {@link PostgresRole} resource (whose `inheritedRoles` are reused).
+      */
+     inheritedRoles: InheritedRole[] | PostgresRole;
++    /**
++     * Give the role the REPLICATION attribute, for a logical-replication
++     * consumer (Electric, Debezium, a CDC pipeline). PlanetScale only grants
++     * it alongside `inheritedRoles: ["postgres"]`. Create-only: changing it
++     * replaces the role.
++     * @default false
++     */
++    withReplication?: boolean;
+     /**
+      * Successor role to reassign ownership to before dropping. Used during
+      * delete.
+@@ -85,6 +93,8 @@ export interface PostgresRoleAttributes {
+     connectionUrlPooled: Redacted.Redacted<string>;
+     /** Inherited roles. */
+     inheritedRoles: InheritedRole[];
++    /** Whether the role carries the REPLICATION attribute. */
++    withReplication: boolean;
+     /** The successor role used during delete. */
+     successor: string;
+     /** Resolved organization slug. */
+diff --git a/lib/Planetscale/Postgres/PostgresRole.js b/lib/Planetscale/Postgres/PostgresRole.js
+index 9b71a64..c5c8d86 100644
+--- a/lib/Planetscale/Postgres/PostgresRole.js
++++ b/lib/Planetscale/Postgres/PostgresRole.js
+@@ -37,6 +37,9 @@ export const PostgresRoleProvider = () => Provider.succeed(PostgresRole, {
+         if (!deepEqual(newRoles, oldRoles)) {
+             return { action: "replace" };
+         }
++        if ((news.withReplication ?? false) !== (output?.withReplication ?? false)) {
++            return { action: "replace" };
++        }
+         const oldName = output?.name ?? (yield* resolveName(id, olds?.name));
+         const newName = yield* resolveName(id, news.name);
+         if (newName !== oldName) {
+@@ -122,6 +125,7 @@ export const PostgresRoleProvider = () => Provider.succeed(PostgresRole, {
+                 database: databaseName,
+                 ttl: news.ttl,
+                 inherited_roles: inheritedRoles,
++                with_replication: news.withReplication,
+             });
+             if (!created.password) {
+                 return yield* Effect.die(`Planetscale did not return a password for Role "${desiredName}".`);
+@@ -236,6 +240,7 @@ const buildAttributes = (role, password, context) => {
+         privateHost: role.private_access_host_url,
+         privateConnectionServiceName: role.private_connection_service_name,
+         inheritedRoles: context.inheritedRoles,
++        withReplication: role.with_replication,
+         successor: context.successor,
+         organization: context.organization,
+         database: context.database,
+diff --git a/src/Planetscale/Postgres/PostgresRole.ts b/src/Planetscale/Postgres/PostgresRole.ts
+index 108799a..6904358 100644
+--- a/src/Planetscale/Postgres/PostgresRole.ts
++++ b/src/Planetscale/Postgres/PostgresRole.ts
+@@ -85,6 +85,15 @@ export interface PostgresRoleProps {
+    */
+   inheritedRoles: InheritedRole[] | PostgresRole;
+ 
++  /**
++   * Give the role the REPLICATION attribute, for a logical-replication
++   * consumer (Electric, Debezium, a CDC pipeline). PlanetScale only grants
++   * it alongside `inheritedRoles: ["postgres"]`. Create-only: changing it
++   * replaces the role.
++   * @default false
++   */
++  withReplication?: boolean;
++
+   /**
+    * Successor role to reassign ownership to before dropping. Used during
+    * delete.
+@@ -131,6 +140,8 @@ export interface PostgresRoleAttributes {
+   connectionUrlPooled: Redacted.Redacted<string>;
+   /** Inherited roles. */
+   inheritedRoles: InheritedRole[];
++  /** Whether the role carries the REPLICATION attribute. */
++  withReplication: boolean;
+   /** The successor role used during delete. */
+   successor: string;
+   /** Resolved organization slug. */
+@@ -212,6 +223,11 @@ export const PostgresRoleProvider = () =>
+       if (!deepEqual(newRoles, oldRoles)) {
+         return { action: "replace" } as const;
+       }
++      if (
++        (news.withReplication ?? false) !== (output?.withReplication ?? false)
++      ) {
++        return { action: "replace" } as const;
++      }
+       const oldName = output?.name ?? (yield* resolveName(id, olds?.name));
+       const newName = yield* resolveName(id, news.name);
+ 
+@@ -310,6 +326,7 @@ export const PostgresRoleProvider = () =>
+           database: databaseName,
+           ttl: news.ttl,
+           inherited_roles: inheritedRoles as SDKInheritedRole[],
++          with_replication: news.withReplication,
+         });
+         if (!created.password) {
+           return yield* Effect.die(
+@@ -502,6 +519,7 @@ const buildAttributes = (
+     id: string;
+     name: string;
+     expires_at: string | null;
++    with_replication: boolean;
+     access_host_url: string;
+     private_access_host_url: string;
+     private_connection_service_name: string;
+@@ -534,6 +552,7 @@ const buildAttributes = (
+     privateHost: role.private_access_host_url,
+     privateConnectionServiceName: role.private_connection_service_name,
+     inheritedRoles: context.inheritedRoles,
++    withReplication: role.with_replication,
+     successor: context.successor,
+     organization: context.organization,
+     database: context.database,
+diff --git a/lib/AWS/ECS/CapacityProvider.js b/lib/AWS/ECS/CapacityProvider.js
+index c274c91..51984f5 100644
+--- a/lib/AWS/ECS/CapacityProvider.js
++++ b/lib/AWS/ECS/CapacityProvider.js
+@@ -91,7 +91,7 @@ export const CapacityProviderProvider = () => Provider.effect(CapacityProvider,
+         read: Effect.fn(function* ({ id, olds, output }) {
+             const name = output?.name ?? (yield* toName(id, olds ?? {}));
+             const found = yield* describe(name);
+-            if (!found?.name || !found.capacityProviderArn) {
++            if (!found?.name || !found.capacityProviderArn || found.status === "INACTIVE") {
+                 return undefined;
+             }
+             const internalTags = yield* createInternalTags(id);
+diff --git a/src/AWS/ECS/CapacityProvider.ts b/src/AWS/ECS/CapacityProvider.ts
+index c1e65c2..c78d9c2 100644
+--- a/src/AWS/ECS/CapacityProvider.ts
++++ b/src/AWS/ECS/CapacityProvider.ts
+@@ -188,7 +188,13 @@ export const CapacityProviderProvider = () =>
+         read: Effect.fn(function* ({ id, olds, output }) {
+           const name = output?.name ?? (yield* toName(id, olds ?? {}));
+           const found = yield* describe(name);
+-          if (!found?.name || !found.capacityProviderArn) {
++          // A deleted provider stays describable as INACTIVE for a while; it
++          // cannot be updated, so it is not a provider we own.
++          if (
++            !found?.name ||
++            !found.capacityProviderArn ||
++            found.status === "INACTIVE"
++          ) {
+             return undefined;
+           }
+           const internalTags = yield* createInternalTags(id);

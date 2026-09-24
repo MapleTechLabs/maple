@@ -100,18 +100,23 @@ describe("local listener addresses", () => {
 })
 
 describe("browser origin policy", () => {
-	const requestUrl = new URL("http://srvmini2.lan:4418/local/query")
+	const requestUrl = new URL("http://node-a.example.test:4418/local/query")
 	const hostedOrigin = "https://local.maple.dev"
-	const browserHosts = ["srvmini2.lan", "127.0.0.1"]
+	const browserHosts = ["node-a.example.test", "127.0.0.1"]
 
 	it("allows non-browser clients, the advertised same-origin UI, and the hosted UI", () => {
 		strictEqual(isBrowserOriginAllowed(requestUrl, null, hostedOrigin, browserHosts), true)
 		strictEqual(
-			isBrowserOriginAllowed(requestUrl, "http://srvmini2.lan:4418", hostedOrigin, browserHosts),
+			isBrowserOriginAllowed(requestUrl, "http://node-a.example.test:4418", hostedOrigin, browserHosts),
 			true,
 		)
 		strictEqual(
-			isBrowserOriginAllowed(requestUrl, "https://srvmini2.lan:4418", hostedOrigin, browserHosts),
+			isBrowserOriginAllowed(
+				requestUrl,
+				"https://node-a.example.test:4418",
+				hostedOrigin,
+				browserHosts,
+			),
 			true,
 		)
 		strictEqual(isBrowserOriginAllowed(requestUrl, hostedOrigin, hostedOrigin, browserHosts), true)
@@ -171,7 +176,7 @@ describe("browser origin policy", () => {
 		deepStrictEqual(corsHeadersForAllowedOrigin(hostedOrigin), {
 			"access-control-allow-origin": hostedOrigin,
 			"access-control-allow-methods": "GET, POST, OPTIONS",
-			"access-control-allow-headers": "content-type, content-encoding",
+			"access-control-allow-headers": "content-type, content-encoding, authorization, x-maple-sdk",
 			"access-control-allow-private-network": "true",
 			vary: "Origin",
 		})
@@ -187,5 +192,28 @@ describe("browser origin policy", () => {
 			loopbackOrigin,
 		)
 		strictEqual(corsHeadersForAllowedOrigin(null), undefined)
+	})
+
+	it("allows the Authorization header browser SDKs send when an ingest key is set", () => {
+		// A page bundled for hosted Maple carries `Authorization: Bearer maple_pk_…`
+		// on every OTLP post. Omitting the header here failed preflight and blocked
+		// the page from reaching local mode at all.
+		strictEqual(
+			corsHeadersForAllowedOrigin("http://localhost:4501")
+				?.["access-control-allow-headers"].split(", ")
+				.includes("authorization"),
+			true,
+		)
+	})
+
+	it("allows the x-maple-sdk identity hint every browser SDK sends", () => {
+		// Same failure mode as `authorization`: a header the SDK always sends that
+		// preflight refuses blocks every request from that SDK, not just the header.
+		strictEqual(
+			corsHeadersForAllowedOrigin("http://localhost:4501")
+				?.["access-control-allow-headers"].split(", ")
+				.includes("x-maple-sdk"),
+			true,
+		)
 	})
 })

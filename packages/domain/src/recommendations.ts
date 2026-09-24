@@ -278,7 +278,7 @@ const KIND_RANK: Record<RecommendationKind, number> = {
 	rename: 0,
 	"double-emission": 1,
 	naming: 2,
-}
+} satisfies Record<RecommendationKind, number>
 
 /** camelCase, non-namespaced key (has an uppercase letter, no dot) — the clear naming violation. */
 function isCamelCaseNoDot(key: string): boolean {
@@ -378,10 +378,8 @@ export function detectAttributeRecommendations(
 	return out
 }
 
-// ---------------------------------------------------------------------------
 // Reconcile planning — pure decision logic for persisting recommendations as durable issues.
 // Kept separate from IO so it can be unit-tested without a warehouse or database.
-// ---------------------------------------------------------------------------
 
 export type RecommendationIssueStatus = "open" | "dismissed" | "applied" | "resolved"
 

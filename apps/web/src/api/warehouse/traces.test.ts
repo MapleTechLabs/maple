@@ -1,3 +1,4 @@
+// TEST-SEAM: This focused test replaces process-global modules that have no instance-level injection seam.
 import { describe, it } from "@effect/vitest"
 import { Effect } from "effect"
 import { beforeEach, expect, vi } from "vitest"
@@ -50,6 +51,9 @@ describe("tinybird traces attribute filter params", () => {
 				expect.objectContaining({
 					startTime: "2026-02-01 00:00:00",
 					endTime: "2026-02-01 01:00:00",
+					query: expect.objectContaining({
+						columns: expect.arrayContaining(["services"]),
+					}),
 				}),
 			)
 		}),
@@ -107,21 +111,24 @@ describe("tinybird traces attribute filter params", () => {
 					result: {
 						kind: "list",
 						source: "traces",
+						// Grouped (one-row-per-trace) shape — the default list mode.
 						data: [
 							{
 								traceId: "trace-1",
-								timestamp: "2026-02-01 00:00:00",
+								startTime: "2026-02-01 00:00:00",
+								endTime: "2026-02-01 00:00:02",
 								durationMs: 2000,
-								serviceName: "checkout",
-								spanName: "GET",
-								spanKind: "SPAN_KIND_SERVER",
-								statusCode: "Ok",
-								hasError: 0,
-								spanAttributes: {
+								spanCount: 12,
+								services: ["gateway", "checkout", "payments"],
+								rootSpanName: "GET",
+								rootSpanKind: "Server",
+								rootSpanStatusCode: "Ok",
+								rootSpanAttributes: {
 									"http.method": "GET",
 									"http.route": "/checkout",
 									"http.status_code": "200",
 								},
+								hasError: false,
 							},
 						],
 					},
@@ -136,10 +143,12 @@ describe("tinybird traces attribute filter params", () => {
 			})
 
 			expect(response.data[0]).toMatchObject({
+				services: ["gateway", "checkout", "payments"],
+				spanCount: 12,
 				rootSpanName: "GET",
 				rootSpan: {
 					name: "GET",
-					kind: "SPAN_KIND_SERVER",
+					kind: "Server",
 					statusCode: "Ok",
 					attributes: {
 						"http.method": "GET",

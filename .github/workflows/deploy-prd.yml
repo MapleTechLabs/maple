@@ -3,6 +3,10 @@ name: Deploy PRD (Cloudflare via Alchemy)
 # Gated on CI rather than `push: main`. Both used to fire on the same push with
 # separate concurrency groups, so a red CI still shipped to production.
 # `workflow_dispatch` stays as the manual escape hatch and skips the gate.
+#
+# One production deploy is one commit shipped to every instance. The steps
+# live in `deploy-prd-instance.yml`, called once per instance below; the
+# ingest binary is built once and shared by both.
 on:
     workflow_run:
         workflows: ["CI"]
@@ -19,50 +23,70 @@ permissions:
     id-token: write # Infisical OIDC machine-identity auth
 
 jobs:
-    deploy-prd:
-        runs-on: ubuntu-latest
-        timeout-minutes: 30
-        # On a workflow_run event `github.sha` is the default branch head, not the
-        # commit CI actually ran against — so pin everything to head_sha, both for
-        # what gets deployed and for the telemetry stamp.
+    # Separate job because it needs an arm64 runner — see the workflow itself.
+    # Same gate as deploy-prd: a superseded CI run has nothing to deploy, so it
+    # should not spend an arm64 runner compiling a binary nobody will ship.
+    ingest-binary:
         if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
-        environment: production
-        env:
-            INFISICAL_ENV_SLUG: prod
-            # Stamped onto deployed telemetry as `deployment.commit_sha` (server SDK
-            # reads COMMIT_SHA; web build reads VITE_COMMIT_SHA via Vite define).
-            COMMIT_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
-            VITE_COMMIT_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+        uses: ./.github/workflows/build-ingest-binary.yml
+
+    # On a workflow_run event `github.sha` is the default branch head, not the
+    # commit CI actually ran against — so pin everything to head_sha, both for
+    # what gets deployed and for the telemetry stamp.
+    deploy-prd:
+        needs: ingest-binary
+        if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+        uses: ./.github/workflows/deploy-prd-instance.yml
+        secrets: inherit
+        with:
+            region: us
+            commit-sha: ${{ github.event.workflow_run.head_sha || github.sha }}
+
+    # The EU instance (`prd-eu`, `*.eu.maple.dev`). Opt-in through the
+    # `MAPLE_DEPLOY_EU` repository variable until its accounts exist — the stack
+    # refuses to deploy `eu` without its Hyperdrive configs — after which it
+    # ships on every green CI run alongside `us`. Sequenced after `us` so a
+    # change that breaks the deploy stops at one instance.
+    deploy-prd-eu:
+        needs: [ingest-binary, deploy-prd]
+        if: ${{ vars.MAPLE_DEPLOY_EU == '1' && (github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success') }}
+        uses: ./.github/workflows/deploy-prd-instance.yml
+        secrets: inherit
+        with:
+            region: eu
+            commit-sha: ${{ github.event.workflow_run.head_sha || github.sha }}
+
+    # A skipped job does not fail its run, so with CI red this workflow reported
+    # SUCCESS while nothing deployed — which is how a broken `main` looked like a
+    # string of clean deploys for several commits, and why an Electric deploy
+    # nobody had noticed was never running took an hour to spot. This job always
+    # runs, so the run's conclusion says what actually happened.
+    #
+    # A *cancelled* CI run is not a broken main: CI cancels in-progress runs on
+    # `main` when a newer push lands, and the superseding commit's own run
+    # deploys both. Reporting that as "Fix main" made every back-to-back push
+    # look like a deploy failure.
+    deployment-gate:
+        needs: [deploy-prd, deploy-prd-eu]
+        if: ${{ always() }}
+        runs-on: ubuntu-latest
         steps:
-            - name: Checkout
-              uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
-              with:
-                  ref: ${{ github.event.workflow_run.head_sha || github.ref }}
-
-            - name: Setup mise (toolchain)
-              uses: jdx/mise-action@c37c93293d6b742fc901e1406b8f764f6fb19dac # v2.4.4
-
-            - name: Load deployment secrets from Infisical
-              uses: Infisical/secrets-action@77ab1f4ccd183a543cb5b42435fbd181189f4995 # v1.0.16
-              with:
-                  method: "oidc"
-                  identity-id: ${{ secrets.INFISICAL_MACHINE_IDENTITY_ID }}
-                  project-slug: ${{ vars.INFISICAL_PROJECT_SLUG }}
-                  env-slug: ${{ env.INFISICAL_ENV_SLUG }}
-                  export-type: "env"
-                  secret-path: "/"
-
-            - name: Install dependencies
-              run: bun install --frozen-lockfile
-
-            # NOTE: prod schema migrations are applied OUT OF BAND (manually, via
-            # `bun run migrate:prod` → `ps:apply-schema main`, against the direct 5432
-            # port), NOT by this workflow — so a deploy never touches the prod database
-            # and needs no MAPLE_PG_URL/admin credential. The worker binds to the
-            # pre-configured `maple-prd` Hyperdrive (see apps/api/alchemy.run.ts).
-            # apply-schema installs default privileges granting PUBLIC before it
-            # migrates, so new and rebuilt tables are readable by every consumer —
-            # including the ingest gateway, which reaches Postgres through PSBouncer as
-            # a role that does NOT inherit `postgres`.
-            - name: Deploy PRD stack with Alchemy
-              run: bun run alchemy:deploy:prd
+            - name: Report whether the deploy ran
+              env:
+                  CI_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+                  HEAD_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+              run: |
+                  result="${{ needs.deploy-prd.result }}"
+                  if [ "$result" = "skipped" ] && [ "$CI_CONCLUSION" = "cancelled" ]; then
+                      echo "::notice::Nothing to deploy: CI for $HEAD_SHA was cancelled, superseded by a newer push to main."
+                      exit 0
+                  fi
+                  if [ "$result" = "skipped" ]; then
+                      echo "::error::Nothing was deployed: CI did not pass for $HEAD_SHA. Fix main, then re-run."
+                      exit 1
+                  fi
+                  # A genuine deploy failure already fails its own job and reddens
+                  # the run; there is nothing to add here. The EU job is skipped
+                  # by design until MAPLE_DEPLOY_EU is set.
+                  echo "deploy-prd: $result"
+                  echo "deploy-prd-eu: ${{ needs.deploy-prd-eu.result }}"

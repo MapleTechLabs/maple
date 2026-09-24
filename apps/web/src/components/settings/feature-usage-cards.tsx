@@ -1,15 +1,22 @@
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { cn } from "@maple/ui/lib/utils"
 
-import { formatCurrency } from "@/lib/billing/currency"
-import { featureUnit, FEATURE_COLORS, type FeatureSpend, type SpendModel } from "@/lib/billing/spend"
+import { formatCurrency } from "@maple/domain/format"
+import {
+	featureUnit,
+	FEATURE_COLORS,
+	formatRateLabel,
+	SPEND_FEATURES,
+	type FeatureSpend,
+	type SpendModel,
+} from "@/lib/billing/spend"
 import { formatCount, formatUsage } from "@/lib/billing/usage"
 
 /**
  * One card per billable signal: how much was ingested, how much of it was
  * included, what the excess costs, and whether a cap is holding it back.
  *
- * These sit above the spend chart on purpose — they are the four things the
+ * These sit above the spend chart on purpose — they are the five things the
  * customer is billed for, and the chart is only their sum over time.
  */
 
@@ -18,8 +25,8 @@ const formatVolume = (featureId: string, value: number) =>
 
 export function FeatureUsageCardsSkeleton() {
 	return (
-		<div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-			{Array.from({ length: 4 }).map((_, i) => (
+		<div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+			{Array.from({ length: SPEND_FEATURES.length }).map((_, i) => (
 				<div key={i} className="border border-border/60 bg-card/40 p-4">
 					<Skeleton className="h-3 w-20" />
 					<Skeleton className="mt-3 h-6 w-32" />
@@ -34,15 +41,12 @@ export function FeatureUsageCardsSkeleton() {
 function FeatureCard({
 	feature,
 	currency,
-	cap,
-	paused,
+	overageCap,
 }: {
 	feature: FeatureSpend
 	currency: string
-	/** Configured per-cycle cap in the feature's unit, or null when uncapped. */
-	cap: number | null
-	/** True when this signal is currently rejected at the gateway by its cap. */
-	paused: boolean
+	/** Autumn-native paid overage cap, beyond the included allowance. */
+	overageCap: number | null
 }) {
 	const color = FEATURE_COLORS[feature.featureId]
 	const included = feature.unlimited ? null : feature.included
@@ -55,10 +59,15 @@ function FeatureCard({
 	// "you will be charged for this" and "we stopped accepting it".
 	const hardCapped = feature.overageAllowed === false && !feature.unlimited
 	const hasOverage = feature.overageUnits > 0 && !hardCapped
+	// A cap of 0 is "bill me nothing past the allotment", and it is only *reached*
+	// once there is overage to reject — `>= 0` alone flagged an org sitting at 10%
+	// of its included usage as CAP REACHED the moment it set the cap.
+	const nativeCapReached =
+		overageCap !== null && feature.overageUnits > 0 && feature.overageUnits >= overageCap
 
 	return (
 		// Fixed-height slots for the title and the headline, so the meter and the
-		// footer form one horizontal lane across all four cards. Height, not
+		// footer form one horizontal lane across all five cards. Height, not
 		// nowrap: "Browser Sessions" is allowed to wrap to two lines (truncating it
 		// to "Browse…" is worse), the slot just reserves the room whether it wraps
 		// or not — so a one-word card doesn't pull its meter up.
@@ -72,7 +81,7 @@ function FeatureCard({
 					/>
 					<span className="line-clamp-2 text-sm leading-[18px]">{feature.label}</span>
 				</div>
-				{cap === null ? (
+				{overageCap === null ? (
 					<span className="shrink-0 border border-border/60 px-1.5 py-0.5 font-mono text-[10px] leading-none text-muted-foreground">
 						NO CAP
 					</span>
@@ -80,12 +89,16 @@ function FeatureCard({
 					<span
 						className={cn(
 							"shrink-0 border px-1.5 py-0.5 font-mono text-[10px] leading-none",
-							paused
+							nativeCapReached
 								? "border-severity-error/50 text-severity-error"
 								: "border-primary/40 text-primary",
 						)}
 					>
-						{paused ? "CAPPED" : `CAP ${formatVolume(feature.featureId, cap)}`}
+						{nativeCapReached
+							? "CAP REACHED"
+							: overageCap === 0
+								? "NO OVERAGE"
+								: `+${formatVolume(feature.featureId, overageCap)} CAP`}
 					</span>
 				)}
 			</div>
@@ -131,13 +144,7 @@ function FeatureCard({
 					)}
 				</span>
 				<span className="font-mono tabular-nums text-muted-foreground/70">
-					{hardCapped
-						? "hard cap"
-						: feature.ratePerUnit === null
-							? "—"
-							: featureUnit(feature.featureId) === "GB"
-								? `$${feature.ratePerUnit.toFixed(2)}/GB`
-								: `$${feature.ratePerUnit}/session`}
+					{hardCapped ? "hard cap" : (formatRateLabel(feature) ?? "—")}
 				</span>
 			</div>
 		</div>
@@ -146,22 +153,19 @@ function FeatureCard({
 
 export function FeatureUsageCards({
 	model,
-	featureCaps,
-	pausedFeatures,
+	overageCaps,
 }: {
 	model: SpendModel
-	featureCaps: Readonly<Record<string, number | null>>
-	pausedFeatures: ReadonlyArray<string>
+	overageCaps: Readonly<Record<string, number | null>>
 }) {
 	return (
-		<div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+		<div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
 			{model.features.map((feature) => (
 				<FeatureCard
 					key={feature.featureId}
 					feature={feature}
 					currency={model.currency}
-					cap={featureCaps[feature.featureId] ?? null}
-					paused={pausedFeatures.includes(feature.featureId)}
+					overageCap={overageCaps[feature.featureId] ?? null}
 				/>
 			))}
 		</div>

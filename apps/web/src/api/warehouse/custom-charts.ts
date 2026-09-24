@@ -5,12 +5,14 @@ import {
 	type QuerySpec,
 	type TracesMetric,
 	formatWarehouseDateTime,
+	resolveThroughput,
 } from "@maple/query-engine"
 import { Clock, Effect, Schema } from "effect"
 
 import {
 	buildBucketTimeline,
 	computeBucketSeconds,
+	quantizeToMinute,
 	firstFullBucketIso,
 	toIsoBucket,
 	trimSparseLeadingBuckets,
@@ -24,6 +26,7 @@ import {
 	ServiceNamespace,
 	SpanName,
 } from "@maple/domain/http"
+import { TraceId } from "@maple/domain"
 import {
 	WarehouseDateTimeString,
 	decodeInput,
@@ -31,8 +34,9 @@ import {
 	invalidWarehouseInput,
 	runWarehouseQuery,
 } from "@/api/warehouse/effect-utils"
-import { MapleApiAtomClient } from "@/lib/services/common/atom-client"
+import { MapleInternalAtomClient } from "@/lib/services/common/internal-atom-client"
 import type { ServiceDetailTimeSeriesPoint, ServiceTimeSeriesPoint } from "@/api/warehouse/services"
+import { QUERY_BUILDER_DATA_SOURCES, QUERY_BUILDER_METRIC_TYPES } from "@maple/query-model"
 const dateTimeString = WarehouseDateTimeString
 
 const asMetricName = Schema.decodeUnknownSync(MetricName)
@@ -42,11 +46,12 @@ const asDeploymentEnv = Schema.decodeUnknownSync(DeploymentEnvironment)
 /**
  * Map the service list's synthetic `"unknown"` environment label back to the raw
  * empty-string `DeploymentEnv` value the warehouse actually stores (see
- * `coerceRow` in `services.ts`, which coerces `"" -> "unknown"` for display).
+ * `coerceServiceOverviewRow` in `@maple/query-engine`, which coerces
+ * `"" -> "unknown"` for display).
  * Without this, scoping a detail page to an `"unknown"` row would emit
  * `DeploymentEnv IN ('unknown')` and match nothing.
  */
-const toEnvFilter = (
+export const toEnvFilter = (
 	environments: ReadonlyArray<DeploymentEnvironment> | undefined,
 ): ReadonlyArray<DeploymentEnvironment> | undefined =>
 	environments?.map((e) => (e === "unknown" ? asDeploymentEnv("") : e))
@@ -220,8 +225,18 @@ const SharedFiltersSchema = Schema.Struct({
 	serviceName: Schema.optional(ServiceName),
 	spanName: Schema.optional(SpanName),
 	severity: Schema.optional(Schema.String),
+	// Logs-source multi-select and its exclusions. The scalars above stay for the widget builder,
+	// which binds one value per field.
+	serviceNames: Schema.optional(Schema.mutable(Schema.Array(ServiceName))),
+	severities: Schema.optional(Schema.mutable(Schema.Array(Schema.String))),
+	excludedServiceNames: Schema.optional(Schema.mutable(Schema.Array(ServiceName))),
+	excludedSeverities: Schema.optional(Schema.mutable(Schema.Array(Schema.String))),
+	excludedEnvironments: Schema.optional(Schema.mutable(Schema.Array(DeploymentEnvironment))),
+	excludedNamespaces: Schema.optional(Schema.mutable(Schema.Array(ServiceNamespace))),
+	// Logs-source only: the /logs volume chart scoped to one trace.
+	traceId: Schema.optional(TraceId),
 	metricName: Schema.optional(MetricName),
-	metricType: Schema.optional(Schema.Literals(["sum", "gauge", "histogram", "exponential_histogram"])),
+	metricType: Schema.optional(Schema.Literals(QUERY_BUILDER_METRIC_TYPES)),
 	rootSpansOnly: Schema.optional(Schema.Boolean),
 	environments: Schema.optional(Schema.mutable(Schema.Array(DeploymentEnvironment))),
 	namespaces: Schema.optional(Schema.mutable(Schema.Array(ServiceNamespace))),
@@ -253,7 +268,7 @@ const SharedFiltersSchema = Schema.Struct({
 })
 
 const CustomChartTimeSeriesInputSchema = Schema.Struct({
-	source: Schema.Literals(["traces", "logs", "metrics"]),
+	source: Schema.Literals(QUERY_BUILDER_DATA_SOURCES),
 	metric: Schema.String,
 	groupBy: Schema.optional(
 		Schema.Literals([
@@ -298,6 +313,10 @@ const metricsMetrics = new Set<MetricsMetric>(["avg", "sum", "min", "max", "coun
 const metricsBreakdownMetrics = new Set<"avg" | "sum" | "count">(["avg", "sum", "count"])
 
 function buildTimeseriesQuerySpec(data: CustomChartTimeSeriesDecoded): QuerySpec | string {
+	// The legacy chart route predates the query set; product events only lower through it.
+	if (data.source === "product_events") {
+		return "product_events is only available through the query builder"
+	}
 	if (data.source === "traces") {
 		if (!tracesMetrics.has(data.metric as TracesMetric)) {
 			return `Unknown trace metric: ${data.metric}`
@@ -348,8 +367,15 @@ function buildTimeseriesQuerySpec(data: CustomChartTimeSeriesDecoded): QuerySpec
 			filters: {
 				serviceName: data.filters?.serviceName,
 				severity: data.filters?.severity,
+				serviceNames: data.filters?.serviceNames,
+				severities: data.filters?.severities,
+				excludedServiceNames: data.filters?.excludedServiceNames,
+				excludedSeverities: data.filters?.excludedSeverities,
+				excludedEnvironments: data.filters?.excludedEnvironments,
+				excludedNamespaces: data.filters?.excludedNamespaces,
 				environments: data.filters?.environments,
 				namespaces: data.filters?.namespaces,
+				traceId: data.filters?.traceId,
 			},
 			bucketSeconds: data.bucketSeconds,
 		}
@@ -443,7 +469,7 @@ const getCustomChartTimeSeriesEffect = Effect.fn("QueryEngine.getCustomChartTime
 })
 
 const CustomChartBreakdownInputSchema = Schema.Struct({
-	source: Schema.Literals(["traces", "logs", "metrics"]),
+	source: Schema.Literals(QUERY_BUILDER_DATA_SOURCES),
 	metric: Schema.String,
 	groupBy: Schema.Literals(["service", "span_name", "status_code", "http_method", "severity", "attribute"]),
 	filters: Schema.optional(SharedFiltersSchema),
@@ -585,14 +611,18 @@ export function getCustomChartServiceDetail({ data }: { data: GetCustomChartServ
 	return getCustomChartServiceDetailEffect({ data })
 }
 
-function makeAllMetricsTimeseriesRequest(opts: {
+export function makeAllMetricsTimeseriesRequest(opts: {
 	startTime?: string
 	endTime?: string
 	bucketSeconds: number
 	serviceName?: ServiceName
 	rootSpansOnly?: boolean
 	environments?: ReadonlyArray<DeploymentEnvironment>
+	namespaces?: ReadonlyArray<ServiceNamespace>
 	commitShas?: ReadonlyArray<CommitSha>
+	excludedEnvironments?: ReadonlyArray<DeploymentEnvironment>
+	excludedNamespaces?: ReadonlyArray<ServiceNamespace>
+	excludedCommitShas?: ReadonlyArray<CommitSha>
 	groupBy?: string[]
 }) {
 	return new QueryEngineExecuteRequest({
@@ -608,7 +638,11 @@ function makeAllMetricsTimeseriesRequest(opts: {
 				serviceName: opts.serviceName,
 				rootSpansOnly: opts.rootSpansOnly ?? true,
 				environments: opts.environments,
+				namespaces: opts.namespaces,
 				commitShas: opts.commitShas,
+				excludedEnvironments: opts.excludedEnvironments,
+				excludedNamespaces: opts.excludedNamespaces,
+				excludedCommitShas: opts.excludedCommitShas,
 			},
 			bucketSeconds: opts.bucketSeconds,
 		},
@@ -625,25 +659,9 @@ interface AllMetricsPoint {
 	estimatedSpanCount: number
 }
 
-/**
- * Resolve the throughput value for a bucket, in priority order:
- *   1. SpanMetrics Connector — per-bucket `increase` of the monotonic `calls`
- *      counter (see `querySpanMetricsCalls`), exact pre-sampling counts.
- *   2. `sum(SampleRate)` from the query engine (per-row weighted sum).
- *   3. Raw traced count — when neither is available (no sampling configured).
- *
- * `?? rawCount` won't work as the fallback because `estimatedSpanCount` is
- * coerced to 0 when the column is missing; treat 0 as "no value" explicitly.
- */
-export function resolveThroughput(
-	rawCount: number,
-	estimatedSpanCount: number,
-	metricsThroughput: number | undefined,
-): number {
-	if (metricsThroughput != null && metricsThroughput > 0) return metricsThroughput
-	if (estimatedSpanCount > 0) return estimatedSpanCount
-	return rawCount
-}
+// Moved to `@maple/query-engine` (see `route-rows.ts`); re-exported so the
+// custom-chart callers keep their import.
+export { resolveThroughput }
 
 function extractAllMetricsSeries(response: QueryEngineExecuteResponse): Map<string, AllMetricsPoint> {
 	const map = new Map<string, AllMetricsPoint>()
@@ -751,7 +769,7 @@ function extractGroupedAllMetricsSeries(
 // timeseries response into filled `ServiceDetailTimeSeriesPoint`s. Used by both
 // the standalone chart fetch and the `serviceDetailOverview` bundle so the two
 // paths can't drift.
-function buildServiceDetailPoints(
+export function buildServiceDetailPoints(
 	allMetricsRes: QueryEngineExecuteResponse,
 	startTime: string | undefined,
 	endTime: string | undefined,
@@ -866,7 +884,7 @@ const getServiceDetailOverviewEffect = Effect.fn("QueryEngine.getServiceDetailOv
 
 	const result = yield* runWarehouseQuery("serviceDetailOverview", () =>
 		Effect.gen(function* () {
-			const client = yield* MapleApiAtomClient
+			const client = yield* MapleInternalAtomClient
 			return yield* client.queryEngine.serviceDetailOverview({
 				payload: new ServiceDetailOverviewRequest({
 					serviceName: input.serviceName,
@@ -896,6 +914,7 @@ const GetOverviewTimeSeriesInputSchema = Schema.Struct({
 	startTime: Schema.optional(dateTimeString),
 	endTime: Schema.optional(dateTimeString),
 	environments: Schema.optional(Schema.mutable(Schema.Array(DeploymentEnvironment))),
+	namespaces: Schema.optional(Schema.mutable(Schema.Array(ServiceNamespace))),
 })
 
 type GetOverviewTimeSeriesInput = (typeof GetOverviewTimeSeriesInputSchema)["Encoded"]
@@ -918,6 +937,7 @@ const getOverviewTimeSeriesEffect = Effect.fn("QueryEngine.getOverviewTimeSeries
 		bucketSeconds,
 		rootSpansOnly: true,
 		environments: input.environments,
+		namespaces: input.namespaces,
 	}
 
 	// Throughput renders from the sampling-aware `estimatedSpanCount`; exact
@@ -965,7 +985,11 @@ const GetCustomChartServiceSparklinesInputSchema = Schema.Struct({
 	startTime: Schema.optional(dateTimeString),
 	endTime: Schema.optional(dateTimeString),
 	environments: Schema.optional(Schema.mutable(Schema.Array(DeploymentEnvironment))),
+	namespaces: Schema.optional(Schema.mutable(Schema.Array(ServiceNamespace))),
 	commitShas: Schema.optional(Schema.mutable(Schema.Array(CommitSha))),
+	excludedEnvironments: Schema.optional(Schema.mutable(Schema.Array(DeploymentEnvironment))),
+	excludedNamespaces: Schema.optional(Schema.mutable(Schema.Array(ServiceNamespace))),
+	excludedCommitShas: Schema.optional(Schema.mutable(Schema.Array(CommitSha))),
 })
 
 type GetCustomChartServiceSparklinesInput = (typeof GetCustomChartServiceSparklinesInputSchema)["Encoded"]
@@ -982,14 +1006,28 @@ const getCustomChartServiceSparklinesEffect = Effect.fn("QueryEngine.getCustomCh
 			"getCustomChartServiceSparklines",
 		)
 
-		const bucketSeconds = computeBucketSeconds(input.startTime, input.endTime)
+		// Round to a whole minute so the request can be served by the
+		// service-overview rollup tiers instead of scanning raw `traces` — the
+		// finest tier is minute-grain, so a bucket that isn't a minute multiple has
+		// no rollup that can place a row inside it.
+		//
+		// Quantizing here rather than server-side is deliberate: this goes through
+		// the generic `/execute` route, and the timeline below is built from the
+		// same value. If the server rounded and the client didn't, the returned
+		// buckets would miss the client's timeline and every sparkline would render
+		// empty.
+		const bucketSeconds = quantizeToMinute(computeBucketSeconds(input.startTime, input.endTime))
 		const reqOpts = {
 			startTime: input.startTime,
 			endTime: input.endTime,
 			bucketSeconds,
 			rootSpansOnly: true,
 			environments: input.environments,
+			namespaces: input.namespaces,
 			commitShas: input.commitShas,
+			excludedEnvironments: input.excludedEnvironments,
+			excludedNamespaces: input.excludedNamespaces,
+			excludedCommitShas: input.excludedCommitShas,
 			groupBy: ["service"] as string[],
 		}
 
@@ -1039,7 +1077,6 @@ const getCustomChartServiceSparklinesEffect = Effect.fn("QueryEngine.getCustomCh
 	},
 )
 
-// ---------------------------------------------------------------------------
 // Throughput refinement — exact pre-sampling counts (SpanMetrics `calls`)
 //
 // The primary chart effects above resolve throughput from the sampling-aware
@@ -1049,7 +1086,6 @@ const getCustomChartServiceSparklinesEffect = Effect.fn("QueryEngine.getCustomCh
 // chart shows sampling is active (`samplingActive`), so unsampled services never
 // issue the expensive query at all. Env-scoped views also skip it: the counter
 // is service-level / all-environment and can't be filtered by `DeploymentEnv`.
-// ---------------------------------------------------------------------------
 
 export interface ThroughputRefinementPoint {
 	/** ISO bucket — matches `ServiceDetailTimeSeriesPoint.bucket`. */
@@ -1091,6 +1127,9 @@ const ThroughputRefinementShared = {
 	startTime: Schema.optional(dateTimeString),
 	endTime: Schema.optional(dateTimeString),
 	environments: Schema.optional(Schema.mutable(Schema.Array(DeploymentEnvironment))),
+	// The SpanMetrics calls MV can't be namespace-filtered, so a namespace scope
+	// skips the exact refinement the same way an environment scope does.
+	namespaces: Schema.optional(Schema.mutable(Schema.Array(ServiceNamespace))),
 	// The caller's sampling verdict, derived from the already-loaded primary
 	// chart. When false (or absent) the exact query is skipped — the estimate is
 	// already correct. Including it in the input makes it part of the atom key, so
@@ -1124,7 +1163,8 @@ const getServiceDetailThroughputRefinementEffect = Effect.fn(
 	)
 
 	const envScoped = (input.environments?.length ?? 0) > 0
-	if (!input.samplingActive || envScoped) {
+	const nsScoped = (input.namespaces?.length ?? 0) > 0
+	if (!input.samplingActive || envScoped || nsScoped) {
 		return { data: [] as ThroughputRefinementPoint[] }
 	}
 
@@ -1157,7 +1197,8 @@ const getOverviewThroughputRefinementEffect = Effect.fn("QueryEngine.getOverview
 		)
 
 		const envScoped = (input.environments?.length ?? 0) > 0
-		if (!input.samplingActive || envScoped) {
+		const nsScoped = (input.namespaces?.length ?? 0) > 0
+		if (!input.samplingActive || envScoped || nsScoped) {
 			return { data: [] as ThroughputRefinementPoint[] }
 		}
 

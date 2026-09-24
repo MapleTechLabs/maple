@@ -6,9 +6,8 @@
  *   bun scripts/tinybird-pr-branch.ts down  <pr-number>
  *   bun scripts/tinybird-pr-branch.ts sweep
  *
- * `up` creates (or reuses) an ephemeral Tinybird branch `pr_<n>` seeded with the
- * latest production partition (`--last-partition`), deploys this PR's project
- * schema into it, then exports the branch's TINYBIRD_HOST / TINYBIRD_TOKEN to
+ * `up` creates (or reuses) an EMPTY ephemeral Tinybird branch `pr_<n>`, deploys
+ * this PR's project schema into it, then exports the branch's TINYBIRD_HOST / TINYBIRD_TOKEN to
  * $GITHUB_ENV so the subsequent `alchemy:deploy:pr` binds the whole preview stack
  * (api/web/alerting/chat-agent + Rust ingest) to the branch instead of prod.
  *
@@ -22,10 +21,13 @@
  * scripts/planetscale-pr-branch.ts.
  *
  * Auth: the PARENT (prod) workspace host+token arrive via the incoming
- * TINYBIRD_HOST / TINYBIRD_TOKEN (Infisical `preview` environment). We use them to drive the
- * `tb` CLI for branch ops, then overwrite the same two vars with the branch's
- * values. `tb` is invoked flag-first (`--cloud --host --token`), matching
- * .github/workflows/tinybird-ci.yml — no `.tinyb` state needed.
+ * TINYBIRD_HOST / TINYBIRD_TOKEN (Infisical `dev` environment). They drive the
+ * `tb` CLI for branch ops, then the same two vars are overwritten with the
+ * branch's values. Every `tb` call is `--cloud --host --token`, never `--branch=`:
+ * the CLI resolves that flag through the user-workspaces endpoint, which lists
+ * branches only for a human login token, so under a workspace token every
+ * branch is "not found". Branch-scoped work runs `--cloud` with the branch's own
+ * admin token, read from the environments API.
  *
  * Branches share compute with production (Tinybird limitation), so `down` on PR
  * close is mandatory to avoid branch sprawl.
@@ -76,32 +78,29 @@ interface TbResult {
 }
 
 /**
- * Run a `tb` command with the right environment + auth flags prepended. Returns
- * the captured output; never throws (callers decide how to treat failures).
- *
- * `--cloud` and `--branch` are mutually exclusive environment flags, so:
- *  - workspace-level ops (branch create/rm) use `--cloud`;
- *  - branch-scoped ops (deploy, token) use `--branch=<name>` instead.
- * Auth flags (`--host`/`--token`) apply to both.
+ * Run a `tb` command against Tinybird Cloud as `auth`. Returns the captured
+ * output; never throws (callers decide how to treat failures).
  */
 const runTb = (
-	parent: { host: string; token: string },
+	auth: { host: string; token: string },
 	args: string[],
-	opts?: { branch?: string; secret?: boolean },
+	opts?: { secret?: boolean },
 ): TbResult => {
-	const envFlag = opts?.branch ? `--branch=${opts.branch}` : "--cloud"
-	const proc = spawnSync("tb", [envFlag, "--host", parent.host, "--token", parent.token, ...args], {
+	const proc = spawnSync("tb", ["--cloud", "--host", auth.host, "--token", auth.token, ...args], {
 		encoding: "utf8",
+		// tinybird.json resolves `${TINYBIRD_TOKEN}` while generating resources, so
+		// the env token has to match the workspace the command targets.
+		env: { ...process.env, TINYBIRD_HOST: auth.host, TINYBIRD_TOKEN: auth.token },
 	})
 	if (proc.error) {
 		fail(`Failed to invoke \`tb\` — is the Tinybird CLI installed? (${proc.error.message})`)
 	}
 	const stdout = (proc.stdout ?? "").trim()
 	const stderr = (proc.stderr ?? "").trim()
-	// Log the env flag + subcommand only — never the auth flags/token.
-	console.log(`$ tb ${envFlag} ${args.join(" ")}`)
-	// `secret` suppresses the captured output entirely — `token ls` prints raw
-	// token values, which must never reach the CI log.
+	// Log the subcommand only — never the auth flags/token.
+	console.log(`$ tb --cloud ${args.join(" ")}`)
+	// `secret` suppresses the captured output entirely, for anything that could
+	// print a token value.
 	if (!opts?.secret) {
 		if (stdout) console.log(stdout)
 		if (stderr) console.error(stderr)
@@ -118,51 +117,26 @@ const isNotFound = (result: TbResult): boolean =>
 	/not found|does not exist|no branch|unknown branch/i.test(`${result.stdout}\n${result.stderr}`)
 
 /**
- * Resolve the branch's admin token value directly from `tb token ls`, which prints
- * `name:` / `token:` line pairs. The branch mirrors the workspace's tokens with
- * fresh, branch-scoped values; we want the admin token (read + append).
- *
- * Parsing the value from `token ls` avoids `token copy`, which needs token-info
- * permissions the workspace token may lack. `token ls` can emit a trailing
- * "Forbidden" introspection warning yet still list the tokens and exit 0, so we
- * parse stdout regardless of exit status and only fail if no admin token is found.
- * `TB_BRANCH_ADMIN_TOKEN_NAME` pins an exact name if the default pick is wrong.
+ * The branch's admin token, from the environments API: each entry carries the
+ * branch's own `token`, and the workspace admin token may read the list.
+ * `tb token ls --branch=…` used to do this, but see the auth note above.
  */
-const resolveBranchAdminToken = (parent: { host: string; token: string }, branchName: string): string => {
-	const preferredName = process.env.TB_BRANCH_ADMIN_TOKEN_NAME?.trim()
-	const listed = runTb(parent, ["token", "ls"], { branch: branchName, secret: true })
-
-	const pairs: { name: string; token: string }[] = []
-	let currentName = ""
-	for (const raw of listed.stdout.split("\n")) {
-		const line = raw.trim()
-		const nameMatch = line.match(/^name:\s*(.+)$/)
-		if (nameMatch) {
-			currentName = nameMatch[1].trim()
-			continue
-		}
-		const tokenMatch = line.match(/^token:\s*(\S+)$/)
-		if (tokenMatch) {
-			pairs.push({ name: currentName, token: tokenMatch[1] })
-			currentName = ""
-		}
+const resolveBranchAdminToken = async (
+	parent: { host: string; token: string },
+	branchName: string,
+): Promise<string> => {
+	const response = await fetch(`${parent.host}/v1/environments`, {
+		headers: { Authorization: `Bearer ${parent.token}` },
+	})
+	if (!response.ok) {
+		fail(`Could not list Tinybird branches (HTTP ${response.status}).`)
 	}
-
-	if (pairs.length === 0) {
-		fail(`Could not parse any tokens from branch ${branchName} (\`tb token ls\` output unrecognized).`)
+	const parsed = (await response.json()) as { environments?: { name?: string; token?: string }[] }
+	const token = parsed.environments?.find((entry) => entry.name === branchName)?.token?.trim()
+	if (!token) {
+		fail(`Branch ${branchName} is not in the environments list, or has no token.`)
 	}
-
-	const pick =
-		(preferredName && pairs.find((p) => p.name === preferredName)) ||
-		pairs.find((p) => p.name.toLowerCase() === "workspace admin token") ||
-		pairs.find((p) => p.name.toLowerCase().includes("admin"))
-	if (!pick) {
-		fail(
-			`No admin token found in branch ${branchName}. ` +
-				`Set TB_BRANCH_ADMIN_TOKEN_NAME to the exact token name.`,
-		)
-	}
-	return pick.token
+	return token as string
 }
 
 const exportToGithubEnv = (vars: Record<string, string>): void => {
@@ -177,33 +151,40 @@ const exportToGithubEnv = (vars: Record<string, string>): void => {
 	appendFileSync(githubEnv, `${lines.join("\n")}\n`)
 }
 
-const up = (branchName: string): void => {
+const up = async (branchName: string): Promise<void> => {
 	const parent = { host: requireEnv("TINYBIRD_HOST"), token: requireEnv("TINYBIRD_TOKEN") }
 
-	// 1. Create the branch with the latest production partition. Idempotent across
-	//    `synchronize` events: a pre-existing branch is fine.
-	const created = runTb(parent, ["branch", "create", branchName, "--last-partition"])
+	// 1. Create the branch EMPTY. Idempotent across `synchronize` events: a
+	//    pre-existing branch is fine.
+	//
+	//    Deliberately no `--last-partition`: that attached the latest production
+	//    partition of every datasource, which put live customer telemetry in an
+	//    environment anyone with the preview URL can read, kept only until a
+	//    best-effort teardown removed it. A preview that needs rows seeds its own
+	//    — see docs/tinybird-pr-branches.md § Getting data in.
+	const created = runTb(parent, ["branch", "create", branchName])
 	if (created.exitCode !== 0 && !isAlreadyExists(created)) {
 		fail(`Failed to create Tinybird branch ${branchName}.`)
 	}
 
-	// 2. Deploy this PR's datasources/MVs into the branch. The branch is ephemeral,
+	// 2. The branch's admin token (read + append scopes): the deploy below runs as
+	//    the branch, and the workers bind to it afterwards.
+	const branch = { host: parent.host, token: await resolveBranchAdminToken(parent, branchName) }
+
+	// 3. Deploy this PR's datasources/MVs into the branch. The branch is ephemeral,
 	//    so destructive schema iteration is acceptable.
-	const deployed = runTb(parent, ["deploy", "--allow-destructive-operations"], { branch: branchName })
+	const deployed = runTb(branch, ["deploy", "--allow-destructive-operations"])
 	if (deployed.exitCode !== 0) {
 		fail(`Failed to deploy project schema to Tinybird branch ${branchName}.`)
 	}
 
-	// 3. Resolve the branch's admin token (read + append scopes) for the workers.
-	const branchToken = resolveBranchAdminToken(parent, branchName)
-
 	// Mask the token in CI logs before it can appear anywhere downstream.
-	console.log(`::add-mask::${branchToken}`)
+	console.log(`::add-mask::${branch.token}`)
 
 	// 4. Hand the branch creds to the rest of the workflow. The branch is reached on
 	//    the same regional host as its parent — the branch-scoped token does the
 	//    routing — so only the token changes.
-	exportToGithubEnv({ TINYBIRD_HOST: parent.host, TINYBIRD_TOKEN: branchToken })
+	exportToGithubEnv({ TINYBIRD_HOST: branch.host, TINYBIRD_TOKEN: branch.token })
 	console.log(`✓ Tinybird branch ${branchName} ready; preview stack will bind to it.`)
 }
 
@@ -307,7 +288,7 @@ const sweep = async (): Promise<void> => {
 
 const { subcommand, branchName } = parseArgs()
 if (subcommand === "up") {
-	up(branchName)
+	await up(branchName)
 } else if (subcommand === "sweep") {
 	await sweep()
 } else {

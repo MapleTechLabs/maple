@@ -1,9 +1,13 @@
 import * as React from "react"
+import { widgetTypeByVisualization } from "@maple/domain/http"
+import { dataSourceRawSql, dataSourceTransform, makeRawSqlDataSource } from "@maple/widgets/dashboard"
 
 import { Button } from "@maple/ui/components/ui/button"
 import { Tabs, TabsList, TabsTrigger } from "@maple/ui/components/ui/tabs"
 import { visualizationFor } from "@/components/dashboard-builder/widgets/types"
 import { QueryPanel } from "@/components/dashboard-builder/config/query-panel"
+import { FunnelQueryPanel } from "@/components/dashboard-builder/config/funnel-query-panel"
+import { PathsQueryPanel } from "@/components/dashboard-builder/config/paths-query-panel"
 import { MarkdownEditorPanel } from "@/components/dashboard-builder/config/markdown-editor-panel"
 import { FormulaPanel } from "@/components/dashboard-builder/config/formula-panel"
 import { WidgetSettingsBar } from "@/components/dashboard-builder/config/widget-settings-bar"
@@ -23,6 +27,10 @@ import { WidgetTimeRangeProvider } from "@/components/dashboard-builder/widgets/
 import { TimeRangePicker } from "@/components/time-range-picker/time-range-picker"
 import { useDashboardTimeRange } from "@/components/dashboard-builder/dashboard-providers"
 import { useWidgetData } from "@/hooks/use-widget-data"
+import { useWidgetMaxDataPoints } from "@/hooks/use-widget-max-data-points"
+import { resolveTimeRange } from "@/atoms/dashboard-time-range-atoms"
+import { toPanelType } from "@/lib/query-builder/panel-types"
+import { computeBucketSecondsForWidthRange, formatBucketSecondsShort } from "@maple/query-engine"
 import { useWidgetBuilder } from "@/hooks/use-widget-builder"
 import { useWidgetBuilderData } from "@/hooks/use-widget-builder-data"
 import {
@@ -30,13 +38,15 @@ import {
 	resetQueryForDataSource,
 	type QueryBuilderDataSource,
 	type QueryBuilderMetricType,
-} from "@/lib/query-builder/model"
+} from "@maple/query-engine/query-builder"
 import {
 	toSeriesFieldOptions,
 	buildWidgetDataSource,
 	buildWidgetDisplay,
 	inferDefaultUnitForQueries,
 } from "@/lib/query-builder/widget-builder-utils"
+import { isProductEventsFunnel } from "@/lib/query-builder/widget-builder-shared"
+import { reconcileFunnelSource } from "@/components/dashboard-builder/config/funnel-source"
 import { RAW_SQL_TEMPLATES, visualizationToDisplayType } from "@/lib/raw-sql/templates"
 
 export interface WidgetQueryBuilderPageHandle {
@@ -58,8 +68,15 @@ interface WidgetQueryBuilderPageProps {
 // Resolve the renderer through the same registry the canvas uses. Hand-rolling
 // the branches here meant pie, funnel, histogram, gauge and markdown previewed
 // as charts in the editor while rendering correctly once saved.
-const WidgetPreview = React.memo(function WidgetPreview({ widget }: { widget: DashboardWidget }) {
-	const { dataState } = useWidgetData(widget)
+const WidgetPreview = React.memo(function WidgetPreview({
+	widget,
+	maxDataPoints,
+}: {
+	widget: DashboardWidget
+	/** From the measured preview pane — see `useWidgetMaxDataPoints`. */
+	maxDataPoints: number
+}) {
+	const { dataState } = useWidgetData(widget, true, { maxDataPoints })
 	const Visualization = visualizationFor(widget.visualization)
 
 	// Same provider the canvas wraps a tile in, so the preview's secondary
@@ -75,16 +92,9 @@ const WidgetPreview = React.memo(function WidgetPreview({ widget }: { widget: Da
 type SourceMode = "builder" | "rawSql"
 
 function readRawSqlDraftFromWidget(widget: DashboardWidget): RawSqlDraft {
-	const params = (widget.dataSource.params ?? {}) as {
-		sql?: unknown
-		granularitySeconds?: unknown
-	}
-	if (widget.dataSource.endpoint === "raw_sql_chart" && typeof params.sql === "string") {
-		return {
-			sql: params.sql,
-			granularitySeconds:
-				typeof params.granularitySeconds === "number" ? params.granularitySeconds : null,
-		}
+	const rawSql = dataSourceRawSql(widget.dataSource)
+	if (rawSql !== null && rawSql.sql.length > 0) {
+		return { sql: rawSql.sql, granularitySeconds: rawSql.granularitySeconds ?? null }
 	}
 	const displayType = visualizationToDisplayType(widget.visualization, widget.display.chartId)
 	return { sql: RAW_SQL_TEMPLATES[displayType], granularitySeconds: null }
@@ -106,8 +116,8 @@ function buildRawSqlDataSource(
 	// Stat and gauge both render a scalar, so they need a reduceToValue transform
 	// for the widget to read `data[0].value`. If the user already set a transform
 	// on the widget, keep theirs; otherwise inject the default.
-	const existingTransform = widget.dataSource.transform
-	const needsScalar = visualization === "stat" || visualization === "gauge"
+	const existingTransform = dataSourceTransform(widget.dataSource)
+	const needsScalar = widgetTypeByVisualization(visualization)?.isScalar === true
 	const transform =
 		needsScalar && !existingTransform?.reduceToValue
 			? {
@@ -116,15 +126,14 @@ function buildRawSqlDataSource(
 				}
 			: existingTransform
 
-	return {
-		endpoint: "raw_sql_chart",
-		params: {
-			sql: draft.sql,
-			displayType,
-			...(draft.granularitySeconds != null ? { granularitySeconds: draft.granularitySeconds } : {}),
-		},
-		...(transform ? { transform } : {}),
-	}
+	return makeRawSqlDataSource({
+		sql: draft.sql,
+		displayType,
+		...(!(draft.granularitySeconds == null)
+			? { granularitySeconds: draft.granularitySeconds }
+			: undefined),
+		...(!(transform === undefined) ? { transform } : undefined),
+	})
 }
 
 export function WidgetQueryBuilderPage({
@@ -145,6 +154,8 @@ export function WidgetQueryBuilderPage({
 			addFormula,
 			removeFormula,
 			updateFormula,
+			updateFunnel,
+			updatePaths,
 			runPreview,
 		},
 		meta: { validationError, seriesFieldOptions },
@@ -162,9 +173,30 @@ export function WidgetQueryBuilderPage({
 		actions: { setTimeRange },
 	} = useDashboardTimeRange()
 
-	const initialMode: SourceMode = widget.dataSource.endpoint === "raw_sql_chart" ? "rawSql" : "builder"
-	const [mode, setMode] = React.useState<SourceMode>(initialMode)
+	const initialMode: SourceMode = dataSourceRawSql(widget.dataSource) !== null ? "rawSql" : "builder"
+	const [chosenMode, setMode] = React.useState<SourceMode>(initialMode)
+	// A paths widget has no SQL rendering and hides the source toggle, so a
+	// raw-SQL widget switched to Paths would otherwise be stuck building SQL.
+	const mode: SourceMode = state.visualization === "paths" ? "builder" : chosenMode
 	const initialModeRef = React.useRef<SourceMode>(initialMode)
+
+	// The preview pane's width drives its auto bucket exactly as a canvas tile's
+	// does, and the resulting width is echoed in the interval placeholder.
+	const previewRef = React.useRef<HTMLDivElement>(null)
+	const previewMaxDataPoints = useWidgetMaxDataPoints(
+		previewRef,
+		toPanelType(state.visualization, state.chartId),
+	)
+	const autoIntervalLabel = React.useMemo(() => {
+		// A widget-level range override wins for the preview, so it wins here too.
+		const range = state.timeRange ? resolveTimeRange(state.timeRange) : resolvedTime
+		if (!range) return undefined
+		return formatBucketSecondsShort(
+			computeBucketSecondsForWidthRange(range.startTime, range.endTime, {
+				maxDataPoints: previewMaxDataPoints,
+			}),
+		)
+	}, [state.timeRange, resolvedTime, previewMaxDataPoints])
 
 	const initialRawSqlDraft = React.useMemo(() => readRawSqlDraftFromWidget(widget), [widget])
 	const [rawSqlDraft, setRawSqlDraft] = React.useState<RawSqlDraft>(initialRawSqlDraft)
@@ -205,6 +237,14 @@ export function WidgetQueryBuilderPage({
 			markdownContent: state.markdownContent,
 			legendPosition: state.legendPosition,
 			seriesStatsEnabled: state.seriesStatsEnabled,
+			pointsMode: state.pointsMode,
+			// The funnel's View (bars / drop-off) and step labels are presentation
+			// too; its steps stay staged, since they are the query.
+			funnel: {
+				...stagedState.funnel,
+				variant: state.funnel.variant,
+				showStepPercent: state.funnel.showStepPercent,
+			},
 		}
 		return {
 			...widget,
@@ -336,15 +376,34 @@ export function WidgetQueryBuilderPage({
 				)
 				const nextUnit = inferDefaultUnitForQueries(queries)
 
-				return {
+				// On a funnel, "Product events" on query A means the step editor.
+				return reconcileFunnelSource({
 					...current,
 					queries,
 					unit: nextUnit ?? current.unit,
-				}
+				})
 			})
 		},
 		[setState],
 	)
+
+	// A funnel on Product events shows the step editor instead of the query
+	// panels; choosing another source from it brings the query set back,
+	// retargeted to that source.
+	const showFunnelPanel = isProductEventsFunnel(state)
+	const handleFunnelSourceChange = React.useCallback(
+		(source: Exclude<QueryBuilderDataSource, "product_events">) => {
+			updateFunnel((current) => ({ ...current, source: "query_set" }))
+			const first = state.queries[0]
+			if (first) handleDataSourceChange(first.id, source)
+		},
+		[handleDataSourceChange, state.queries, updateFunnel],
+	)
+	// Suggestions (event names, page paths, facets) follow the preview's window.
+	const suggestionWindow = React.useMemo(() => {
+		const range = state.timeRange ? resolveTimeRange(state.timeRange) : resolvedTime
+		return range ? { startTime: range.startTime, endTime: range.endTime } : undefined
+	}, [state.timeRange, resolvedTime])
 
 	// Gate on the EDITING state, not the saved widget — otherwise switching type
 	// in-editor leaves the toggle in the state the previous type wanted.
@@ -353,7 +412,9 @@ export function WidgetQueryBuilderPage({
 	// has a RawSqlDisplayType, so raw SQL isn't a sensible target for either.
 	const isList = state.visualization === "list"
 	const isMarkdown = state.visualization === "markdown"
-	const showSourceToggle = !isList && !isMarkdown
+	// Paths read product events only; neither a query set nor raw SQL applies.
+	const isPaths = state.visualization === "paths"
+	const showSourceToggle = !isList && !isMarkdown && !isPaths
 
 	return (
 		<div className="animate-in fade-in slide-in-from-bottom-2 duration-200 flex flex-1 min-h-0 -m-4">
@@ -386,8 +447,12 @@ export function WidgetQueryBuilderPage({
 					    donut) hold internal state between data swaps and ghost-render
 					    the previous slices on top of the new ones. */}
 					{/* Matches a default chart tile on the canvas (h:6 → 6*60 + 5*12). */}
-					<div className="h-[420px]">
-						<WidgetPreview key={mode} widget={previewWidget} />
+					<div ref={previewRef} className="h-[420px]">
+						<WidgetPreview
+							key={mode}
+							widget={previewWidget}
+							maxDataPoints={previewMaxDataPoints}
+						/>
 					</div>
 				</div>
 
@@ -441,6 +506,35 @@ export function WidgetQueryBuilderPage({
 										</Button>
 									</div>
 								</>
+							) : isPaths ? (
+								<>
+									<PathsQueryPanel
+										paths={state.paths}
+										onUpdate={updatePaths}
+										suggestionWindow={suggestionWindow}
+									/>
+									<div className="flex items-center gap-3">
+										<Button size="sm" onClick={runPreview} disabled={!!validationError}>
+											Run Preview
+										</Button>
+										<span className="text-[11px] text-muted-foreground ml-auto">A</span>
+									</div>
+								</>
+							) : showFunnelPanel ? (
+								<>
+									<FunnelQueryPanel
+										funnel={state.funnel}
+										onUpdate={updateFunnel}
+										onSourceChange={handleFunnelSourceChange}
+										suggestionWindow={suggestionWindow}
+									/>
+									<div className="flex items-center gap-3">
+										<Button size="sm" onClick={runPreview} disabled={!!validationError}>
+											Run Preview
+										</Button>
+										<span className="text-[11px] text-muted-foreground ml-auto">A</span>
+									</div>
+								</>
 							) : (
 								<>
 									{/* Query panels */}
@@ -466,6 +560,7 @@ export function WidgetQueryBuilderPage({
 												onDataSourceChange={(ds) =>
 													handleDataSourceChange(query.id, ds)
 												}
+												autoIntervalLabel={autoIntervalLabel}
 											/>
 										))}
 									</div>

@@ -6,7 +6,7 @@ import { useMemo } from "react"
 
 import { Result } from "@/lib/effect-atom"
 import { cloudflareZoneSecurityResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
-import { useRetainedRefreshableResultValue } from "@/hooks/use-retained-refreshable-result-value"
+import { useRefreshableAtomValue } from "@/hooks/use-refreshable-atom-value"
 import { formatNumber } from "@maple/ui/lib/format"
 import { ColumnHead, DataTable } from "../primitives/data-table"
 import { StackedBreakdownChart } from "./cloudflare-zone-detail-charts"
@@ -25,7 +25,7 @@ const ACTION_COLORS: Record<string, string> = {
 	log: "color-mix(in oklab, var(--muted-foreground) 40%, transparent)",
 	allow: "var(--severity-info)",
 	unknown: "color-mix(in oklab, var(--muted-foreground) 25%, transparent)",
-}
+} satisfies Record<string, string>
 
 const ACTION_ORDER = [
 	"block",
@@ -59,7 +59,7 @@ export function CloudflareZoneSecuritySection({
 }) {
 	// Retained: this section hides itself on an empty result, so a bare read made it disappear and
 	// reappear on every filter toggle, shifting everything below it.
-	const result = useRetainedRefreshableResultValue(
+	const result = useRefreshableAtomValue(
 		cloudflareZoneSecurityResultAtom({
 			data: { serviceName, startTime, endTime, bucketSeconds, ...filters },
 		}),
@@ -107,7 +107,7 @@ function SecurityTopTable({
 	return (
 		<DataTable.Root ariaLabel="Top security rules" waiting={waiting}>
 			<DataTable.Head>
-				<ColumnHead label="Rule" width="flex-1 min-w-[200px]" />
+				<ColumnHead label="Rule" width="w-0 flex-1 min-w-[200px]" />
 				<ColumnHead label="Source" width="w-[130px]" hidden="hidden md:flex" />
 				<ColumnHead label="Action" width="w-[130px]" />
 				<ColumnHead label="Host" width="w-[180px]" hidden="hidden lg:flex" />
@@ -119,7 +119,7 @@ function SecurityTopTable({
 
 			{rows.map((row) => (
 				<div key={`${row.source}:${row.action}:${row.ruleId}:${row.host}`} className={ROW_CLASS}>
-					<div className="min-w-[200px] flex-1 truncate font-mono text-[13px] text-foreground">
+					<div className="w-0 min-w-[200px] flex-1 truncate font-mono text-[13px] text-foreground">
 						{row.ruleId}
 					</div>
 					<div className="hidden w-[130px] truncate font-mono text-[12px] text-foreground/80 md:block">

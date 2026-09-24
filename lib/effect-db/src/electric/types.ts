@@ -1,5 +1,5 @@
-import type { GetExtensions, Row, ShapeStreamOptions } from "@electric-sql/client"
-import type { StandardSchemaV1 } from "@standard-schema/spec"
+import type { GetExtensions, Row, ShapeStreamOptions as SyncStreamOptions } from "@electric-sql/client"
+import type { StandardSchemaV1 } from "effect/StandardSchema"
 import type {
 	DeleteMutationFnParams,
 	InsertMutationFnParams,
@@ -111,7 +111,7 @@ export interface EffectElectricCollectionConfig<
 	/**
 	 * Configuration options for the ElectricSQL ShapeStream
 	 */
-	shapeOptions: ShapeStreamOptions<GetExtensions<T>>
+	shapeOptions: SyncStreamOptions<GetExtensions<T>>
 
 	/**
 	 * Function to extract the key from an item

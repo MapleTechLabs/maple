@@ -6,7 +6,7 @@
  *
  * PR-preview stages get an alchemy-managed Hyperdrive config named
  * `maple-db-pr-<n>` (packages/infra/src/cloudflare/stage.ts,
- * resolveHyperdriveName). `alchemy destroy --stage pr-<n>` deletes it on PR
+ * `resolveWorkerName("db", stage)`). `alchemy destroy --stage pr-<n>` deletes it on PR
  * close — but the close-event teardown is best-effort (see
  * cleanup-preview-orphans.yml), and worse than the other resources: close
  * runs execute the PR branch's OWN workflow/alchemy.run.ts version, and
@@ -20,7 +20,7 @@
  * There is no up/down here — alchemy owns the config's lifecycle; this script
  * exists only as the sweep safety net. Deletion is double-gated like the
  * sibling sweeps: the config name must match `maple-db-pr-<digits>` exactly
- * (prd `maple-prd`, stg `maple-db-stg`, and dev `maple-db-dev-<name>` can
+ * (prd `maple-prd` and dev `maple-db-dev-<name>` can
  * never match), AND the GitHub API must affirmatively report that PR closed —
  * unknown/open → keep. Deleting a config out from under a later alchemy
  * destroy of the same stage is fine: alchemy tolerates already-deleted

@@ -1,0 +1,163 @@
+---
+/**
+ * The pricing page's hero.
+ *
+ * Uses the shared palette and type in a compact pricing introduction, with three things the generic
+ * hero can't: the claims a buyer scans for before anything else ("no per-seat",
+ * "no per-host", "no per-series"), a second CTA that jumps straight to the
+ * estimator, and the rate card — every signal's rate and retention on one
+ * line, above the fold, before the offer card asks for a decision.
+ *
+ * Every number comes from `getOffer()`; nothing here is typed by hand.
+ */
+import { buttonVariants } from "@maple/ui/components/ui/button";
+import * as m from "../paraglide/messages.js";
+import { HeroCta } from "./HeroCta";
+import PixelIcon from "./icons/PixelIcon.astro";
+import RegionChip from "./RegionChip.astro";
+import { getOffer, money, rateBlock, rateLabel, volume, type Allotment } from "../lib/pricing-offer";
+
+const offer = await getOffer();
+
+// The hero quotes one included volume and one per-GB rate; the three GB
+// signals share both, so any of them is the source. Fall back to the first
+// allotment so a config drift renders a number rather than "undefined".
+const gbSignal = offer.allotments.find((a) => a.unit === "gb") ?? offer.allotments[0];
+const includedGB = gbSignal?.included ?? 0;
+const gbRate = gbSignal?.rate ?? 0;
+
+// Same sentence templates as the offer card so the two never disagree.
+const RATE_SLOT = "%RATE%";
+const rateSentence = (a: Allotment): string => {
+	if (a.unlimited) return m.pricing_free_beta();
+	if (a.rate === undefined) return "";
+	const rendered =
+		a.unit === "gb"
+			? m.pricing_rate_gb({ rate: RATE_SLOT })
+			: a.unit === "sessions"
+				? m.pricing_rate_session({ rate: RATE_SLOT })
+				: m.pricing_rate_events({ rate: RATE_SLOT, block: rateBlock(a) });
+	return rendered.replace(RATE_SLOT, rateLabel(a.rate));
+};
+
+const claims = [m.pricing_no_seat(), m.pricing_no_host(), m.pricing_no_series()];
+const RETENTION_DAYS = 30;
+---
+
+<section class="pricing-hero relative overflow-hidden">
+	<div class="pricing-hero__inner shell">
+		{/* Inside the shell so the artwork tracks the content column on wide screens
+		    instead of drifting to the viewport edge. */}
+		<img class="pricing-hero__illustration" src="/art/maple-pricing-trade-route.webp" width="1536" height="1024" alt="" decoding="async" />
+		<div class="mb-4">
+			<span
+				class="pricing-hero__label"
+			>
+				{m.page_pricing_label()}
+			</span>
+		</div>
+
+		<h1
+			class="max-w-3xl font-display text-3xl font-bold leading-tight tracking-tight text-fg sm:text-4xl md:text-5xl"
+		>
+			{m.pricing_hero_title().replace("usage-based", "usage‑based")}
+		</h1>
+
+		<p class="pricing-hero__lede">
+			{
+				m.pricing_hero_lede({
+					price: money(offer.price),
+					included: String(includedGB),
+					rate: rateLabel(gbRate),
+				})
+			}
+		</p>
+
+		{/* The three claims a buyer scans for. Plain rows, one check each. */}
+		<ul class="mt-6 flex flex-wrap gap-x-6 gap-y-2 text-[13px] text-fg">
+			{
+				claims.map((claim) => (
+					<li class="inline-flex items-center gap-2">
+						<svg
+							class="h-3.5 w-3.5 shrink-0 text-primary"
+							viewBox="0 0 24 24"
+							fill="none"
+							stroke="currentColor"
+							stroke-width="2.5"
+							stroke-linecap="square"
+						>
+							<path d="M20 6L9 17l-5-5" />
+						</svg>
+						{claim}
+					</li>
+				))
+			}
+			{/* Residency is the fourth thing EU buyers scan for; /eu is English-only, so a bare href. */}
+			<li>
+				<a href="/eu" class="inline-flex items-center gap-2 underline decoration-border underline-offset-4 transition-colors hover:decoration-primary">
+					<PixelIcon name="earth" class="h-3.5 w-3.5 shrink-0 text-primary" />
+					{m.pricing_region_claim()}
+					<span class="inline-flex gap-1 no-underline">
+						<RegionChip region="us" />
+						<RegionChip region="eu" />
+					</span>
+				</a>
+			</li>
+		</ul>
+
+		<div class="mt-8 flex flex-wrap items-center gap-3">
+			<HeroCta client:load className={buttonVariants({ size: "lg" })} />
+			<a href="#calculator" class={buttonVariants({ variant: "outline", size: "lg" })}>
+				{m.pricing_hero_estimate()}
+			</a>
+		</div>
+
+		{/* The rate card. One cell per metered signal: label, rate, then what's
+		    included. This is the whole price list; the offer card below repeats
+		    it only to attach the plan and the button. */}
+		<div class="pricing-rates">
+			<p class="text-[10px] font-medium uppercase tracking-[0.18em] text-fg-muted">
+				{m.pricing_rates_eyebrow()}
+			</p>
+			<div
+				class="pricing-rates__grid"
+			>
+				{
+					offer.allotments.map((a) => (
+						<div class="pricing-rates__cell">
+							<div class="text-[12.5px] text-fg">{a.label}</div>
+							<div class="pricing-rates__amount">
+								{a.unlimited ? (
+									<span class="font-mono text-2xl tabular-nums tracking-[-0.02em] text-fg">
+										{m.pricing_unlimited()}
+									</span>
+								) : (
+									<>
+										<span class="font-mono text-2xl tabular-nums tracking-[-0.02em] text-fg">
+											{a.rate === undefined ? "—" : rateLabel(a.rate)}
+										</span>
+										<span class="font-mono text-[11px] text-fg-muted">
+											{a.unit === "gb"
+												? "/ GB"
+												: a.unit === "sessions"
+													? "/ session"
+													: `/ ${rateBlock(a)} events`}
+										</span>
+									</>
+								)}
+							</div>
+							<div class="mt-2 text-[11.5px] text-fg-muted">
+								{a.unlimited
+									? rateSentence(a)
+									: m.pricing_rate_included({ amount: volume(a, a.included) })}
+							</div>
+						</div>
+					))
+				}
+			</div>
+			<p class="mt-4 max-w-[80ch] text-[12px] leading-relaxed text-fg-muted">
+				{m.pricing_rates_retention({ days: String(RETENTION_DAYS) })}
+			</p>
+		</div>
+	</div>
+</section>

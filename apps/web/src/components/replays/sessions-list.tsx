@@ -1,17 +1,30 @@
 import { formatRelativeTimeOrDate, toEpochMs } from "@maple/ui/lib/time-format"
-import { useCallback, useState } from "react"
+import { useCallback } from "react"
 import { useNavigate } from "@tanstack/react-router"
 import { useVirtualizer } from "@tanstack/react-virtual"
 import { cn } from "@maple/ui/lib/utils"
 import { EyeIcon } from "@/components/icons"
+import { useLiveClock } from "@/hooks/use-live-clock"
+import { usePageScrollMargin } from "@/hooks/use-page-scroll-margin"
+import { useTimezonePreference } from "@/hooks/use-timezone-preference"
+import { formatTimestampInTimezone } from "@/lib/timezone-format"
 import { browserIconFor, deviceIconFor } from "./session-icons"
-import { formatSessionDuration, gradientFor, hostFromUrl } from "./replay-format"
+import {
+	formatSessionDuration,
+	gradientFor,
+	hostFromUrl,
+	isSessionLive,
+	sessionDurationMs,
+} from "./replay-format"
 
 export interface SessionRow {
 	readonly sessionId: string
 	readonly startTime: string
 	readonly durationMs: number | null
 	readonly status: string
+	/** Heartbeat timestamp. Paired with `status` to decide live-ness — see
+	 *  `isSessionLive`; `status` on its own never stops saying `"active"`. */
+	readonly lastActivityAt: string | null
 	readonly userId: string | null
 	/** identify() identity. `""` on sessions that were never identified. */
 	readonly userName: string
@@ -33,9 +46,9 @@ export interface SessionRow {
 	readonly recorded: string
 }
 
-function absoluteTs(startTime: string): string {
+function absoluteTs(startTime: string, timeZone: string): string {
 	const parsed = toEpochMs(startTime)
-	return Number.isNaN(parsed) ? startTime : new Date(parsed).toLocaleString()
+	return Number.isNaN(parsed) ? startTime : formatTimestampInTimezone(parsed, { timeZone, withYear: true })
 }
 
 interface RowIdentity {
@@ -84,6 +97,23 @@ interface SessionsListProps {
 	/** p95 session duration (ms) from the facets query — sessions above it get a
 	 *  "long" chip beside their duration. No chip when unavailable. */
 	durationP95?: number
+	/** "Now" for the live-ness test, injectable so tests don't chase the clock.
+	 *  Left unset it comes from {@link useLiveClock}, which ticks so a pill stops
+	 *  claiming LIVE once its window closes even on a list nobody is touching.
+	 *  Either way it is sampled once per render, never per row: two rows in one
+	 *  frame must not disagree about what time it is. */
+	nowMs?: number
+}
+
+function observeReachEnd(element: HTMLDivElement, onReachEnd: () => void): () => void {
+	const observer = new IntersectionObserver(
+		(entries) => {
+			if (entries[0]?.isIntersecting) onReachEnd()
+		},
+		{ rootMargin: "400px 0px" },
+	)
+	observer.observe(element)
+	return () => observer.disconnect()
 }
 
 function SessionsSentinel({
@@ -93,16 +123,9 @@ function SessionsSentinel({
 	const elementRef = useCallback(
 		(element: HTMLDivElement | null) => {
 			if (!element) return
-			const observer = new IntersectionObserver(
-				(entries) => {
-					if (entries[0]?.isIntersecting && !loadingMore) onReachEnd?.()
-				},
-				{ rootMargin: "400px 0px" },
-			)
-			// React Doctor does not yet recognize React 19 callback-ref cleanup.
-			// oxlint-disable-next-line react-doctor/effect-needs-cleanup
-			observer.observe(element)
-			return () => observer.disconnect()
+			return observeReachEnd(element, () => {
+				if (!loadingMore) onReachEnd?.()
+			})
 		},
 		[loadingMore, onReachEnd],
 	)
@@ -117,16 +140,23 @@ export function SessionsList({
 	loadingMore = false,
 	isCapped = false,
 	durationP95,
+	nowMs,
 }: SessionsListProps) {
 	const navigate = useNavigate()
-	const [listElement, setListElement] = useState<HTMLDivElement | null>(null)
-	const scrollElement = listElement?.closest<HTMLDivElement>('[data-slot="page-scroll-area"]') ?? null
+	const { effectiveTimezone } = useTimezonePreference()
+	// Only sessions still reading `"active"` can cross the live boundary while
+	// the list sits open; a page of ended ones needs no timer at all.
+	const tickedNowMs = useLiveClock({
+		enabled: nowMs === undefined && sessions.some((session) => session.status === "active"),
+	})
+	const effectiveNowMs = nowMs ?? tickedNowMs
+	const { ref: listRef, getScrollElement, scrollMargin } = usePageScrollMargin()
 	const virtualizer = useVirtualizer({
 		count: sessions.length,
-		getScrollElement: () => scrollElement,
+		getScrollElement,
 		estimateSize: () => 65,
 		overscan: 8,
-		scrollMargin: listElement?.offsetTop ?? 0,
+		scrollMargin,
 	})
 	const virtualItems = virtualizer.getVirtualItems()
 
@@ -154,15 +184,12 @@ export function SessionsList({
 
 	return (
 		<div className="@container">
-			<div
-				ref={setListElement}
-				className="relative w-full"
-				style={{ height: virtualizer.getTotalSize() }}
-			>
+			<div ref={listRef} className="relative w-full" style={{ height: virtualizer.getTotalSize() }}>
 				{virtualItems.map((virtualRow) => {
 					const session = sessions[virtualRow.index]!
 					const id = identity(session)
-					const isActive = session.status === "active"
+					const isActive = isSessionLive(session, effectiveNowMs)
+					const durationMs = sessionDurationMs(session)
 					const isUnrecorded = session.recorded === "false"
 					const hasErrors = session.errorCount > 0
 					const BrowserIcon = browserIconFor(session.browserName)
@@ -224,9 +251,13 @@ export function SessionsList({
 										    anchors the top-right corner of the stacked row. */}
 										<span
 											className="ml-auto shrink-0 whitespace-nowrap text-xs text-muted-foreground @2xl:hidden"
-											title={absoluteTs(session.startTime)}
+											title={absoluteTs(session.startTime, effectiveTimezone)}
 										>
-											{formatRelativeTimeOrDate(session.startTime)}
+											{formatRelativeTimeOrDate(
+												session.startTime,
+												undefined,
+												effectiveTimezone,
+											)}
 										</span>
 									</div>
 									<div
@@ -269,12 +300,12 @@ export function SessionsList({
 								{/* Activity lane: duration (flagged when unusually long) + pages/clicks */}
 								<div className="hidden w-[13.5rem] shrink-0 items-baseline gap-2 overflow-hidden whitespace-nowrap @3xl:flex">
 									<span className="font-mono text-[13px] font-semibold tabular-nums">
-										{formatSessionDuration(session.durationMs)}
+										{formatSessionDuration(durationMs)}
 									</span>
 									{durationP95 != null &&
 										durationP95 > 0 &&
-										session.durationMs != null &&
-										session.durationMs > durationP95 && (
+										durationMs != null &&
+										durationMs > durationP95 && (
 											<span
 												className="shrink-0 self-center rounded-full bg-accent px-1.5 py-px text-[10px] font-medium text-accent-foreground"
 												title={`Longer than 95% of sessions in this view (p95: ${formatSessionDuration(durationP95)})`}
@@ -298,9 +329,13 @@ export function SessionsList({
 								<div className="hidden shrink-0 items-center gap-2 @2xl:flex">
 									<span
 										className="whitespace-nowrap text-xs text-muted-foreground"
-										title={absoluteTs(session.startTime)}
+										title={absoluteTs(session.startTime, effectiveTimezone)}
 									>
-										{formatRelativeTimeOrDate(session.startTime)}
+										{formatRelativeTimeOrDate(
+											session.startTime,
+											undefined,
+											effectiveTimezone,
+										)}
 									</span>
 									<span
 										className={cn(

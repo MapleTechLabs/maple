@@ -12,7 +12,7 @@
  * Every story here runs at least two real plates, so none falls back to the
  * inline layout (see `storyIsPinnable`).
  */
-import * as m from "../paraglide/messages"
+import * as m from "../paraglide/messages.js"
 import type { UseCase } from "./page-registry"
 
 export const useCases: UseCase[] = [
@@ -194,7 +194,7 @@ export const useCases: UseCase[] = [
 					src: "/screenshots/surface-map.webp",
 					width: 2560,
 					height: 1320,
-					alt: "A service neighbourhood showing API, database and cache dependencies with live request flow",
+					alt: "A service neighborhood showing API, database and cache dependencies with live request flow",
 				},
 			},
 			{

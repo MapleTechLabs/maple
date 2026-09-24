@@ -1,5 +1,4 @@
-import { Option, Schema } from "effect"
-import { fromBase64Url } from "@/lib/base64url"
+import { Schema } from "effect"
 import { narrowAlertSignal } from "@/components/ai-triage/breach"
 import { signalLabel, type AlertContext } from "./alert-context"
 
@@ -54,32 +53,6 @@ export interface InvestigationContext {
 	aiSuspectedCause?: string
 }
 
-/** Minimal identity carried in the `/investigations/$id?r=` param — the attached resource. */
-export interface InvestigationRef {
-	kind: InvestigationKind
-	id: string
-	issueId?: string
-}
-
-/** The compact base64url wire shape carried in `/investigations/$id?r=`. */
-const InvestigationRefWireSchema = Schema.Struct({
-	k: InvestigationKindSchema,
-	id: Schema.String,
-	i: Schema.optionalKey(Schema.String),
-})
-const decodeRefWire = Schema.decodeUnknownOption(InvestigationRefWireSchema)
-
-export const decodeInvestigationRef = (raw: string): InvestigationRef | undefined => {
-	try {
-		return Option.match(decodeRefWire(JSON.parse(fromBase64Url(raw))), {
-			onNone: () => undefined,
-			onSome: (w) => ({ kind: w.k, id: w.id, ...(w.i !== undefined ? { issueId: w.i } : {}) }),
-		})
-	} catch {
-		return undefined
-	}
-}
-
 /** Stable chat tab id. Alerts keep their legacy `alert-…` id so notification threads continue. */
 export const investigationTabId = (ctx: InvestigationContext): string => {
 	if (ctx.kind === "alert") return `alert-${ctx.refs?.incidentId ?? ctx.refs?.ruleId ?? ctx.id}`
@@ -116,10 +89,10 @@ export const alertContextToInvestigation = (alert: AlertContext): InvestigationC
 		refs: {
 			ruleId: alert.ruleId,
 			ruleName: alert.ruleName,
-			...(alert.incidentId ? { incidentId: alert.incidentId } : {}),
+			...(alert.incidentId ? { incidentId: alert.incidentId } : undefined),
 		},
-		...(alert.aiSummary ? { aiSummary: alert.aiSummary } : {}),
-		...(alert.aiSuspectedCause ? { aiSuspectedCause: alert.aiSuspectedCause } : {}),
+		...(alert.aiSummary ? { aiSummary: alert.aiSummary } : undefined),
+		...(alert.aiSuspectedCause ? { aiSuspectedCause: alert.aiSuspectedCause } : undefined),
 	}
 }
 
@@ -128,7 +101,7 @@ const KIND_NOUN: Record<InvestigationKind, string> = {
 	anomaly: "anomaly",
 	error: "error",
 	freeform: "question",
-}
+} satisfies Record<InvestigationKind, string>
 
 export const investigationNoun = (kind: InvestigationKind): string => KIND_NOUN[kind]
 

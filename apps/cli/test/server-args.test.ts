@@ -5,6 +5,7 @@ import {
 	defaultLocalUrl,
 	hostedDashboardUrl,
 	hostedUiOrigin,
+	isProcessAlive,
 	type DirtyStorePolicy,
 	resolveAdvertiseHost,
 	resolveBindHost,
@@ -30,7 +31,10 @@ describe("local server bind host", () => {
 
 	it("separates the bind address from the client-facing address", () => {
 		strictEqual(resolveAdvertiseHost(undefined, undefined, "0.0.0.0"), "127.0.0.1")
-		strictEqual(resolveAdvertiseHost(undefined, " srvmini2.lan ", "0.0.0.0"), "srvmini2.lan")
+		strictEqual(
+			resolveAdvertiseHost(undefined, " node-a.example.test ", "0.0.0.0"),
+			"node-a.example.test",
+		)
 		strictEqual(resolveAdvertiseHost(" 192.0.2.10 ", "ignored", "0.0.0.0"), "192.0.2.10")
 		strictEqual(resolveAdvertiseHost("  ", " [::1] ", "0.0.0.0"), "::1")
 	})
@@ -44,8 +48,8 @@ describe("local server bind host", () => {
 
 	it("marks custom hosted dashboards as loopback clients without discarding their URL", () => {
 		strictEqual(
-			hostedDashboardUrl("https://local-staging.maple.dev/preview?channel=next", 4418),
-			"https://local-staging.maple.dev/preview?channel=next&port=4418&maple-local-api=loopback",
+			hostedDashboardUrl("https://local-preview.maple.dev/preview?channel=next", 4418),
+			"https://local-preview.maple.dev/preview?channel=next&port=4418&maple-local-api=loopback",
 		)
 	})
 
@@ -70,13 +74,14 @@ describe("buildDetachedChildArgs", () => {
 			const args = buildDetachedChildArgs({
 				entry: "/repo/apps/cli/src/bin.ts",
 				host: "0.0.0.0",
-				advertiseHost: "srvmini2.lan",
+				advertiseHost: "node-a.example.test",
 				port: 4318,
 				dataDir: "/tmp/maple data",
 				offline: true,
 				chdbConfigFile: "/tmp/backup config.xml",
 				onDirtyStore: policy,
 				minimumRawTelemetryRetentionDays: 120,
+				checkpointInterval: "30m",
 			})
 			deepStrictEqual(args, [
 				"/repo/apps/cli/src/bin.ts",
@@ -84,13 +89,15 @@ describe("buildDetachedChildArgs", () => {
 				"--host",
 				"0.0.0.0",
 				"--advertise-host",
-				"srvmini2.lan",
+				"node-a.example.test",
 				"--port",
 				"4318",
 				"--data-dir",
 				"/tmp/maple data",
 				"--on-dirty-store",
 				policy,
+				"--checkpoint-interval",
+				"30m",
 				"--chdb-config-file",
 				"/tmp/backup config.xml",
 				"--minimum-raw-telemetry-retention-days",
@@ -115,6 +122,9 @@ describe("buildDetachedChildArgs", () => {
 				chdbConfigFile: undefined,
 				onDirtyStore: "fail",
 				minimumRawTelemetryRetentionDays: undefined,
+				// Not optional, unlike the flags below: an omitted cadence would come
+				// back as the default, so `off` has to survive the re-exec.
+				checkpointInterval: "off",
 			}),
 			[
 				"start",
@@ -128,7 +138,30 @@ describe("buildDetachedChildArgs", () => {
 				"/data",
 				"--on-dirty-store",
 				"fail",
+				"--checkpoint-interval",
+				"off",
 			],
 		)
+	})
+})
+
+describe("isProcessAlive", () => {
+	it("treats a PID file naming this very process as stale", () => {
+		// A container restarts `maple start` as PID 1 every time, and the PID file
+		// survives on the data volume — `kill(1, 0)` succeeding must not read as
+		// "already running" or the container never starts again.
+		strictEqual(isProcessAlive(process.pid), false)
+	})
+
+	it("never treats a non-positive PID as alive", () => {
+		// kill(0, 0) / kill(-n, 0) signal process groups and succeed for our own.
+		strictEqual(isProcessAlive(0), false)
+		strictEqual(isProcessAlive(-1), false)
+		strictEqual(isProcessAlive(Number.NaN), false)
+	})
+
+	it("still reports a real foreign process as alive", () => {
+		// The parent shell/runner is the one live process whose PID we can know.
+		strictEqual(isProcessAlive(process.ppid), true)
 	})
 })

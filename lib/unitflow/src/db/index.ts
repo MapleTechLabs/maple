@@ -1,5 +1,5 @@
 /**
- * TanStack DB adapter for unitflow — Maple addition, not part of upstream.
+ * TanStack DB adapter for unitflow.
  *
  * Bridges TanStack DB collections (framework-agnostic `@tanstack/db` layer)
  * into unitflow Stores: a collection becomes a read-only
@@ -10,8 +10,7 @@
  * emits no change events, only `loading → ready`).
  *
  * Mutations need no adapter: `Mutation.make` accepts any Effect handler, so a
- * model wraps its write (e.g. `@maple/effect-db`'s `optimisticAction`)
- * directly.
+ * model wraps its server write directly.
  */
 
 import {
@@ -22,7 +21,7 @@ import {
 	type InitialQueryBuilder,
 	type QueryBuilder,
 } from "@tanstack/db"
-import * as Data from "effect/Data"
+import * as Schema from "effect/Schema"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
 import * as Queue from "effect/Queue"
@@ -38,10 +37,10 @@ import * as Store from "../core/store.js"
  * - `load-timeout` — the collection sat in `loading` with no emissions for the
  *   configured `stuckTimeoutMs` (see {@link CollectionWatchOptions}).
  */
-export class CollectionError extends Data.TaggedError("unitflow/db/CollectionError")<{
-	readonly reason: "load-failed" | "cleaned-up" | "load-timeout"
-	readonly message: string
-}> {}
+export class CollectionError extends Schema.TaggedError<CollectionError>()("@unitflow/db/CollectionError", {
+	reason: Schema.Literals(["load-failed", "cleaned-up", "load-timeout"]),
+	message: Schema.String,
+}) {}
 
 /** The renderable state of a watched collection. */
 export type CollectionState<T> = AsyncResult.AsyncResult<ReadonlyArray<T>, CollectionError>

@@ -1,15 +1,29 @@
 import { Link, useNavigate } from "@tanstack/react-router"
 import { Fragment, useMemo } from "react"
 
-import type { AlertIncidentDocument } from "@maple/domain/http"
+import type { AlertIncidentDocument, AlertIncidentHoldReason } from "@maple/domain/http"
 
 import { AlertSeverityBadge } from "@/components/alerts/alert-severity-badge"
+import { AlertStatusBadge } from "@/components/alerts/alert-status-badge"
 import { sortIncidents, TagChips, TagGroupHeaderRow } from "@/components/alerts/overview/shared"
 import { formatSignalValue } from "@/lib/alerts/form-utils"
 import { groupByTag as groupItemsByTag } from "@/lib/alerts/tag-grouping"
 import { formatRelativeTime } from "@maple/ui/lib/time-format"
 import { Badge } from "@maple/ui/components/ui/badge"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@maple/ui/components/ui/table"
+
+const holdReasonTitle = (reason: AlertIncidentHoldReason): string => {
+	switch (reason) {
+		case "volume_collapsed":
+			return "The breach stopped appearing, but traffic dropped well below its usual level. Resolves when data returns or after a few windows."
+		case "no_data":
+			return "The breach stopped appearing because the service stopped reporting. Resolves when telemetry returns or after six hours."
+		case "sampling_changed":
+			return "The breach stopped appearing while sampling changed. Resolves when the signal settles or after six hours."
+		case "probe_failed":
+			return "Maple could not verify telemetry for this service. Resolves on the next successful check."
+	}
+}
 
 /**
  * Open incidents, severity-sorted, with tag inheritance from the owning rule.
@@ -59,12 +73,25 @@ export function ActiveIncidentsTable({
 					<span className="font-mono text-muted-foreground">{incident.groupKey ?? "all"}</span>
 				</TableCell>
 				<TableCell>
-					<span className="font-mono text-destructive">
-						{formatSignalValue(incident.signalType, incident.lastObservedValue)}
-					</span>
-					<span className="text-muted-foreground text-xs ml-1">
-						/ {formatSignalValue(incident.signalType, incident.threshold)}
-					</span>
+					{incident.holdReason != null ? (
+						<span title={holdReasonTitle(incident.holdReason)}>
+							<AlertStatusBadge state="held" />
+							{incident.heldSince ? (
+								<span className="text-muted-foreground text-xs ml-1">
+									{formatRelativeTime(incident.heldSince)}
+								</span>
+							) : null}
+						</span>
+					) : (
+						<>
+							<span className="font-mono text-destructive">
+								{formatSignalValue(incident.signalType, incident.lastObservedValue)}
+							</span>
+							<span className="text-muted-foreground text-xs ml-1">
+								/ {formatSignalValue(incident.signalType, incident.threshold)}
+							</span>
+						</>
+					)}
 				</TableCell>
 				<TableCell>{duration}</TableCell>
 				<TableCell>

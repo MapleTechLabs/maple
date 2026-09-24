@@ -23,7 +23,7 @@ export interface SessionFilters {
 export function useLocalSessions(filters: SessionFilters) {
 	return useInfiniteQuery({
 		queryKey: ["local", "sessions", filters],
-		initialPageParam: undefined as string | undefined,
+		initialPageParam: undefined as { startTime: string; sessionId: string } | undefined,
 		queryFn: async ({ pageParam }) => {
 			const { startTime, endTime } = boundsForRange(filters.range)
 			const compiled = CH.compile(
@@ -40,8 +40,14 @@ export function useLocalSessions(filters: SessionFilters) {
 			)
 			return executeLocalCompiledQuery(compiled)
 		},
-		getNextPageParam: (lastPage) =>
-			lastPage.length === PAGE_SIZE ? lastPage[lastPage.length - 1]?.startTime : undefined,
+		// (StartTime, SessionId), not StartTime alone: the SDK stamps start times
+		// from a JS `Date`, so they are only millisecond-resolution and two
+		// sessions sharing one is ordinary. A page boundary landing inside such a
+		// tie would drop every session on the far side of it.
+		getNextPageParam: (lastPage) => {
+			const last = lastPage.length === PAGE_SIZE ? lastPage[lastPage.length - 1] : undefined
+			return last ? { startTime: last.startTime, sessionId: last.sessionId } : undefined
+		},
 	})
 }
 

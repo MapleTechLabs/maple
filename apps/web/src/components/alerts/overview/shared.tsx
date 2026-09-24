@@ -22,7 +22,7 @@ const signalBadgeClass: Record<string, string> = {
 	throughput: "border-[var(--chart-throughput)]/30 text-[var(--chart-throughput)]",
 	builder_query: "border-muted-foreground/30 text-muted-foreground",
 	raw_query: "border-muted-foreground/30 text-muted-foreground",
-}
+} satisfies Record<string, string>
 
 export function SignalBadge({ signalType }: { signalType: string }) {
 	return (
@@ -111,7 +111,14 @@ export function NotifyChannels({
 			<TooltipTrigger render={<span className="inline-flex cursor-default items-center gap-1.5" />}>
 				<span className="flex items-center gap-1">
 					{shown.map((d) => (
-						<ProviderLogo key={d.id} type={d.type} size={28} bare className="flex items-center" />
+						<ProviderLogo
+							key={d.id}
+							type={d.type}
+							chatConnector={d.chatConnector}
+							size={28}
+							bare
+							className="flex items-center"
+						/>
 					))}
 				</span>
 				{extra > 0 && <span className="text-muted-foreground text-xs tabular-nums">+{extra}</span>}
@@ -122,7 +129,7 @@ export function NotifyChannels({
 }
 
 /** Critical before warning, then most-recently-triggered first. */
-const severityRank: Record<string, number> = { critical: 0, warning: 1 }
+const severityRank: Record<string, number> = { critical: 0, warning: 1 } satisfies Record<string, number>
 export function sortIncidents(incidents: readonly AlertIncidentDocument[]): AlertIncidentDocument[] {
 	return [...incidents].sort((a, b) => {
 		const bySeverity = (severityRank[a.severity] ?? 2) - (severityRank[b.severity] ?? 2)

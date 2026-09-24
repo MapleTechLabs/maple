@@ -8,7 +8,7 @@
 		"./formula-results": "./src/formula-results.ts",
 		"./traces-shared": "./src/traces-shared.ts",
 		"./query-builder": "./src/query-builder/model.ts",
-		"./sql": "./src/sql/index.ts",
+		"./query-set": "./src/query-set/index.ts",
 		"./ch": "./src/ch/index.ts",
 		"./profiles": "./src/profiles/index.ts",
 		"./caching": "./src/caching/index.ts",
@@ -17,7 +17,7 @@
 		"./registry": "./src/registry/index.ts",
 		"./observability": "./src/observability/index.ts",
 		"./local": "./src/local.ts",
-		"./sql-catalog": "./src/sql-catalog.ts",
+		"./benchmark": "./src/benchmark/index.ts",
 		"./ch/tables": "./src/ch/tables.ts",
 		"./ch/schema": "./src/ch/schema.ts",
 		"./ch/format": "./src/ch/queries/format.ts",
@@ -28,9 +28,10 @@
 		"typecheck": "tsc --noEmit"
 	},
 	"dependencies": {
-		"@maple-dev/clickhouse-builder": "workspace:*",
+		"@maple-dev/effect-clickhouse": "0.1.0",
 		"@maple/cache": "workspace:*",
 		"@maple/domain": "workspace:*",
+		"@maple/query-model": "workspace:*",
 		"effect": "catalog:effect"
 	},
 	"devDependencies": {

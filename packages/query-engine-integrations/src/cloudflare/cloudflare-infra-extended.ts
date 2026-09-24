@@ -1,8 +1,6 @@
-// ---------------------------------------------------------------------------
 // Cloudflare infrastructure page — extended datasets
 //
-// Companions to cloudflare-infra.ts for the poller's newer datasets: per-host
-// HTTP breakdowns (`server.address` attribute on `cloudflare.http.*`), firewall/WAF
+// Companions to cloudflare-infra.ts for the poller's newer datasets: firewall/WAF
 // events (`cloudflare.firewall.events`), authoritative-DNS analytics
 // (`cloudflare.dns.queries`), and the Workers-platform resources (Queues
 // gauges under `cloudflare-queue/{id}`, Durable Object counters on the
@@ -12,12 +10,9 @@
 // delta sums), point-in-time samples/percentiles in `metrics_gauge`, every
 // numeric output through CHNumber so BYO-ClickHouse string-encoded aggregates
 // decode identically to Tinybird numbers.
-// ---------------------------------------------------------------------------
 
-import { Schema } from "effect"
-import * as CH from "@maple-dev/clickhouse-builder/expr"
-import { from, param, type ColumnAccessor, type CompiledQueryRowSchema } from "@maple-dev/clickhouse-builder"
-import { CHNumber } from "@maple/query-engine/ch/schema"
+import * as CH from "@maple-dev/effect-clickhouse/expr"
+import { from, param, type ColumnAccessor } from "@maple-dev/effect-clickhouse"
 import { MetricsGauge, MetricsSum } from "@maple/query-engine/ch/tables"
 import { avgWhere, isoBucket } from "@maple/query-engine/ch/format"
 import {
@@ -30,102 +25,7 @@ import {
 
 // Same NaN guard as cloudflare-infra.ts.
 
-// ---------------------------------------------------------------------------
-// Per-host HTTP breakdown (single zone)
-// ---------------------------------------------------------------------------
-
-export interface CloudflareZoneHostBreakdownOutput {
-	/** Hostname (poller-capped: top N per window, tail folded into "other"). */
-	readonly host: string
-	readonly requests: number
-	readonly errors5xx: number
-	readonly cacheHits: number
-	readonly bytes: number
-}
-
-export interface CloudflareZoneHostTimeseriesOutput {
-	/** Bucket start, ISO-8601 UTC. */
-	readonly bucket: string
-	readonly host: string
-	readonly requests: number
-}
-
-export const cloudflareZoneHostBreakdownRowSchema: CompiledQueryRowSchema<CloudflareZoneHostBreakdownOutput> =
-	Schema.Struct({
-		host: Schema.String,
-		requests: CHNumber,
-		errors5xx: CHNumber,
-		cacheHits: CHNumber,
-		bytes: CHNumber,
-	})
-
-export const cloudflareZoneHostTimeseriesRowSchema: CompiledQueryRowSchema<CloudflareZoneHostTimeseriesOutput> =
-	Schema.Struct({
-		bucket: Schema.String,
-		host: Schema.String,
-		requests: CHNumber,
-	})
-
-const CACHE_SERVED_STATUSES = ["hit", "stale", "revalidated", "updating"] as const
-
-/** Host totals for one zone pseudo-service; rows predating the host attribute fold into "". */
-export function cloudflareZoneHostBreakdownSQL(opts: CloudflareFilterOpts = {}) {
-	return from(MetricsSum)
-		.select(($) => ({
-			host: cloudflareHostAttr($),
-			requests: CH.sumIf($.Value, $.MetricName.eq("cloudflare.http.requests")),
-			errors5xx: CH.sumIf(
-				$.Value,
-				$.MetricName.eq("cloudflare.http.requests").and(
-					$.Attributes.get("http.status_class").eq("5xx"),
-				),
-			),
-			cacheHits: CH.sumIf(
-				$.Value,
-				$.MetricName.eq("cloudflare.http.requests").and(
-					$.Attributes.get("cache.status").in_(...CACHE_SERVED_STATUSES),
-				),
-			),
-			bytes: CH.sumIf($.Value, $.MetricName.eq("cloudflare.http.bytes")),
-		}))
-		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
-			$.ServiceName.eq(param.string("serviceName")),
-			$.MetricName.in_("cloudflare.http.requests", "cloudflare.http.bytes"),
-			$.TimeUnix.gte(param.dateTime("startTime")),
-			$.TimeUnix.lte(param.dateTime("endTime")),
-			...cloudflareFilterConditions($, opts, CF_FILTERABLE[CF_METRIC.requests] ?? []),
-		])
-		.groupBy("host")
-		.orderBy(["requests", "desc"])
-		.limit(50)
-		.format("JSON")
-}
-
-/** Bucketed request counts per host for one zone pseudo-service. */
-export function cloudflareZoneHostTimeseriesSQL(opts: CloudflareFilterOpts = {}) {
-	return from(MetricsSum)
-		.select(($) => ({
-			bucket: isoBucket($.TimeUnix),
-			host: cloudflareHostAttr($),
-			requests: CH.sum($.Value),
-		}))
-		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
-			$.ServiceName.eq(param.string("serviceName")),
-			$.MetricName.eq("cloudflare.http.requests"),
-			$.TimeUnix.gte(param.dateTime("startTime")),
-			$.TimeUnix.lte(param.dateTime("endTime")),
-			...cloudflareFilterConditions($, opts, CF_FILTERABLE[CF_METRIC.requests] ?? []),
-		])
-		.groupBy("bucket", "host")
-		.orderBy(["bucket", "asc"], ["host", "asc"])
-		.format("JSON")
-}
-
-// ---------------------------------------------------------------------------
 // Firewall/WAF events (single zone)
-// ---------------------------------------------------------------------------
 
 export interface CloudflareZoneFirewallTimeseriesOutput {
 	readonly bucket: string
@@ -142,22 +42,6 @@ export interface CloudflareZoneFirewallTopOutput {
 	readonly events: number
 }
 
-export const cloudflareZoneFirewallTimeseriesRowSchema: CompiledQueryRowSchema<CloudflareZoneFirewallTimeseriesOutput> =
-	Schema.Struct({
-		bucket: Schema.String,
-		action: Schema.String,
-		events: CHNumber,
-	})
-
-export const cloudflareZoneFirewallTopRowSchema: CompiledQueryRowSchema<CloudflareZoneFirewallTopOutput> =
-	Schema.Struct({
-		source: Schema.String,
-		action: Schema.String,
-		ruleId: Schema.String,
-		host: Schema.String,
-		events: CHNumber,
-	})
-
 /** Bucketed security-event counts by action for one zone pseudo-service. */
 export function cloudflareZoneFirewallTimeseriesSQL(opts: CloudflareFilterOpts = {}) {
 	return from(MetricsSum)
@@ -170,8 +54,8 @@ export function cloudflareZoneFirewallTimeseriesSQL(opts: CloudflareFilterOpts =
 			$.OrgId.eq(param.string("orgId")),
 			$.ServiceName.eq(param.string("serviceName")),
 			$.MetricName.eq("cloudflare.firewall.events"),
-			$.TimeUnix.gte(param.dateTime("startTime")),
-			$.TimeUnix.lte(param.dateTime("endTime")),
+			$.TimeUnix.gte(param.dateTimeString("startTime")),
+			$.TimeUnix.lte(param.dateTimeString("endTime")),
 			...cloudflareFilterConditions($, opts, CF_FILTERABLE[CF_METRIC.firewallEvents] ?? []),
 		])
 		.groupBy("bucket", "action")
@@ -193,8 +77,8 @@ export function cloudflareZoneFirewallTopSQL(opts: CloudflareFilterOpts = {}) {
 			$.OrgId.eq(param.string("orgId")),
 			$.ServiceName.eq(param.string("serviceName")),
 			$.MetricName.eq("cloudflare.firewall.events"),
-			$.TimeUnix.gte(param.dateTime("startTime")),
-			$.TimeUnix.lte(param.dateTime("endTime")),
+			$.TimeUnix.gte(param.dateTimeString("startTime")),
+			$.TimeUnix.lte(param.dateTimeString("endTime")),
 			...cloudflareFilterConditions($, opts, CF_FILTERABLE[CF_METRIC.firewallEvents] ?? []),
 		])
 		.groupBy("source", "action", "ruleId", "host")
@@ -203,9 +87,7 @@ export function cloudflareZoneFirewallTopSQL(opts: CloudflareFilterOpts = {}) {
 		.format("JSON")
 }
 
-// ---------------------------------------------------------------------------
 // DNS analytics (single zone)
-// ---------------------------------------------------------------------------
 
 export interface CloudflareZoneDnsTimeseriesOutput {
 	readonly bucket: string
@@ -221,20 +103,6 @@ export interface CloudflareZoneDnsBreakdownOutput {
 	readonly nxdomain: number
 }
 
-export const cloudflareZoneDnsTimeseriesRowSchema: CompiledQueryRowSchema<CloudflareZoneDnsTimeseriesOutput> =
-	Schema.Struct({
-		bucket: Schema.String,
-		responseCode: Schema.String,
-		queries: CHNumber,
-	})
-
-export const cloudflareZoneDnsBreakdownRowSchema: CompiledQueryRowSchema<CloudflareZoneDnsBreakdownOutput> =
-	Schema.Struct({
-		queryName: Schema.String,
-		queries: CHNumber,
-		nxdomain: CHNumber,
-	})
-
 /** Bucketed DNS query counts by response code for one zone pseudo-service. */
 export function cloudflareZoneDnsTimeseriesSQL(opts: CloudflareFilterOpts = {}) {
 	return from(MetricsSum)
@@ -247,8 +115,8 @@ export function cloudflareZoneDnsTimeseriesSQL(opts: CloudflareFilterOpts = {}) 
 			$.OrgId.eq(param.string("orgId")),
 			$.ServiceName.eq(param.string("serviceName")),
 			$.MetricName.eq("cloudflare.dns.queries"),
-			$.TimeUnix.gte(param.dateTime("startTime")),
-			$.TimeUnix.lte(param.dateTime("endTime")),
+			$.TimeUnix.gte(param.dateTimeString("startTime")),
+			$.TimeUnix.lte(param.dateTimeString("endTime")),
 			...cloudflareFilterConditions($, opts, CF_FILTERABLE[CF_METRIC.dnsQueries] ?? []),
 		])
 		.groupBy("bucket", "responseCode")
@@ -268,8 +136,8 @@ export function cloudflareZoneDnsBreakdownSQL(opts: CloudflareFilterOpts = {}) {
 			$.OrgId.eq(param.string("orgId")),
 			$.ServiceName.eq(param.string("serviceName")),
 			$.MetricName.eq("cloudflare.dns.queries"),
-			$.TimeUnix.gte(param.dateTime("startTime")),
-			$.TimeUnix.lte(param.dateTime("endTime")),
+			$.TimeUnix.gte(param.dateTimeString("startTime")),
+			$.TimeUnix.lte(param.dateTimeString("endTime")),
 			...cloudflareFilterConditions($, opts, CF_FILTERABLE[CF_METRIC.dnsQueries] ?? []),
 		])
 		.groupBy("queryName")
@@ -278,9 +146,7 @@ export function cloudflareZoneDnsBreakdownSQL(opts: CloudflareFilterOpts = {}) {
 		.format("JSON")
 }
 
-// ---------------------------------------------------------------------------
 // Workers-platform resources (org-wide)
-// ---------------------------------------------------------------------------
 
 export interface CloudflareQueueGaugesOutput {
 	/** `cloudflare-queue/{queueId}`. */
@@ -301,22 +167,6 @@ export interface CloudflareDurableObjectCountersOutput {
 	readonly requests: number
 	readonly errors: number
 }
-
-export const cloudflareQueueGaugesRowSchema: CompiledQueryRowSchema<CloudflareQueueGaugesOutput> =
-	Schema.Struct({
-		serviceName: Schema.String,
-		backlogMessages: CHNumber,
-		backlogMessagesMax: CHNumber,
-		backlogBytes: CHNumber,
-		consumerConcurrency: CHNumber,
-	})
-
-export const cloudflareDurableObjectCountersRowSchema: CompiledQueryRowSchema<CloudflareDurableObjectCountersOutput> =
-	Schema.Struct({
-		serviceName: Schema.String,
-		requests: CHNumber,
-		errors: CHNumber,
-	})
 
 const QUEUE_GAUGE_METRIC_NAMES = [
 	"cloudflare.queue.backlog.messages",
@@ -340,8 +190,8 @@ export function cloudflareQueueGaugesSQL() {
 		.where(($) => [
 			$.OrgId.eq(param.string("orgId")),
 			$.MetricName.in_(...QUEUE_GAUGE_METRIC_NAMES),
-			$.TimeUnix.gte(param.dateTime("startTime")),
-			$.TimeUnix.lte(param.dateTime("endTime")),
+			$.TimeUnix.gte(param.dateTimeString("startTime")),
+			$.TimeUnix.lte(param.dateTimeString("endTime")),
 		])
 		.groupBy("serviceName")
 		.orderBy(["backlogMessagesMax", "desc"])
@@ -360,8 +210,8 @@ export function cloudflareDurableObjectCountersSQL() {
 		.where(($) => [
 			$.OrgId.eq(param.string("orgId")),
 			$.MetricName.in_("cloudflare.durable_object.requests", "cloudflare.durable_object.errors"),
-			$.TimeUnix.gte(param.dateTime("startTime")),
-			$.TimeUnix.lte(param.dateTime("endTime")),
+			$.TimeUnix.gte(param.dateTimeString("startTime")),
+			$.TimeUnix.lte(param.dateTimeString("endTime")),
 		])
 		.groupBy("serviceName")
 		.orderBy(["requests", "desc"])

@@ -1,0 +1,146 @@
+import {
+	AiTriagePersistenceError,
+	AiTriageSettingsDocument,
+	type AiTriageSettingsUpdateRequest,
+	AiTriageUsage,
+	AiTriageValidationError,
+	IsoDateTimeString,
+	type IssueSeverity,
+	type OrgId,
+	type UserId,
+} from "@maple/domain/http"
+import { aiTriageSettings, type AiTriageSettingsRow } from "@maple/db"
+import { eq } from "drizzle-orm"
+import { Clock, Context, Effect, Layer, Schema } from "effect"
+import { Database } from "@maple/backend/platform/DatabaseLive"
+import { makeDbExecute, makePersistenceErrorMapper } from "@maple/backend/platform/db-execute"
+import {
+	DEFAULT_MAX_PASSES_PER_DAY,
+	DEFAULT_MAX_RUNS_PER_DAY,
+	evaluateInvestigationQuota,
+	type InvestigationUsage,
+	selectInvestigationUsage,
+} from "@maple/backend/services/errors/investigation-quota"
+
+const decodeIsoSync = Schema.decodeUnknownSync(IsoDateTimeString)
+
+const makePersistenceError = makePersistenceErrorMapper(
+	AiTriagePersistenceError,
+	"Investigation settings persistence failure",
+)
+
+export interface AiTriageServiceApi {
+	readonly getSettings: (orgId: OrgId) => Effect.Effect<AiTriageSettingsDocument, AiTriagePersistenceError>
+	readonly updateSettings: (
+		orgId: OrgId,
+		userId: UserId,
+		request: AiTriageSettingsUpdateRequest,
+	) => Effect.Effect<AiTriageSettingsDocument, AiTriagePersistenceError | AiTriageValidationError>
+}
+
+export class AiTriageService extends Context.Service<AiTriageService, AiTriageServiceApi>()(
+	"@maple/api/services/AiTriageService",
+	{
+		make: Effect.gen(function* () {
+			const database = yield* Database
+
+			const dbExecute = makeDbExecute(database, "AiTriageService", makePersistenceError)
+
+			const loadSettingsRow = Effect.fn("AiTriageService.loadSettingsRow")(function* (orgId: OrgId) {
+				const rows = yield* dbExecute((db) =>
+					db.select().from(aiTriageSettings).where(eq(aiTriageSettings.orgId, orgId)).limit(1),
+				)
+				return rows[0]
+			})
+
+			const loadUsage = Effect.fn("AiTriageService.loadUsage")(function* (orgId: OrgId, nowMs: number) {
+				return yield* dbExecute((db) => selectInvestigationUsage(db, orgId, nowMs))
+			})
+
+			/** What a start spends: one agent, one pass. */
+			const probeCost = (_severity: IssueSeverity) => 1
+
+			/**
+			 * Pause state is asked of the same verdict the enqueue path uses, twice:
+			 * once as an ordinary incident and once as a critical. One probe cannot
+			 * answer both questions — with a reserve configured, a medium-severity
+			 * probe reports `*_reserved` whether the reserve is untouched or long gone,
+			 * so it can never say whether criticals are still starting.
+			 */
+			const settingsToDocument = (
+				row: AiTriageSettingsRow | undefined,
+				usage: InvestigationUsage,
+				nowMs: number,
+			): AiTriageSettingsDocument => {
+				const probe = (severity: IssueSeverity) =>
+					evaluateInvestigationQuota({
+						usage,
+						limits: row,
+						passCount: probeCost(severity),
+						nowMs,
+						severity,
+					})
+				const ordinary = probe("medium")
+				const priority = probe("critical")
+				// The ordinary probe is what the banner speaks for: it is refused first,
+				// and its dimension names the ceiling to raise. Reporting the priority
+				// probe's would send the reader to a number that was never the constraint.
+				const paused = ordinary.kind === "exceeded" ? ordinary : null
+				return new AiTriageSettingsDocument({
+					enabled: row?.enabled ?? false,
+					maxRunsPerDay: row?.maxRunsPerDay ?? DEFAULT_MAX_RUNS_PER_DAY,
+					maxPassesPerDay: row?.maxPassesPerDay ?? DEFAULT_MAX_PASSES_PER_DAY,
+					usage: new AiTriageUsage({ runs: usage.runs, passes: usage.passes }),
+					ordinaryPaused: ordinary.kind === "exceeded",
+					priorityPaused: priority.kind === "exceeded",
+					pausedDimension: paused?.dimension ?? null,
+					resumesAt:
+						paused === null ? null : decodeIsoSync(new Date(paused.retryableAtMs).toISOString()),
+					updatedAt: row?.updatedAt ? decodeIsoSync(row.updatedAt.toISOString()) : null,
+					updatedBy: row?.updatedBy ?? null,
+				})
+			}
+
+			const getSettings: AiTriageServiceApi["getSettings"] = Effect.fn("AiTriageService.getSettings")(
+				function* (orgId) {
+					yield* Effect.annotateCurrentSpan({ orgId })
+					const nowMs = yield* Clock.currentTimeMillis
+					const row = yield* loadSettingsRow(orgId)
+					return settingsToDocument(row, yield* loadUsage(orgId, nowMs), nowMs)
+				},
+			)
+
+			const updateSettings: AiTriageServiceApi["updateSettings"] = Effect.fn(
+				"AiTriageService.updateSettings",
+			)(function* (orgId, userId, request) {
+				yield* Effect.annotateCurrentSpan({ orgId })
+				const nowMs = yield* Clock.currentTimeMillis
+				const existing = yield* loadSettingsRow(orgId)
+				const next = {
+					enabled: request.enabled ?? existing?.enabled ?? false,
+					maxRunsPerDay:
+						request.maxRunsPerDay ?? existing?.maxRunsPerDay ?? DEFAULT_MAX_RUNS_PER_DAY,
+					maxPassesPerDay:
+						request.maxPassesPerDay ?? existing?.maxPassesPerDay ?? DEFAULT_MAX_PASSES_PER_DAY,
+					updatedAt: new Date(nowMs),
+					updatedBy: userId,
+				}
+				yield* dbExecute((db) =>
+					db
+						.insert(aiTriageSettings)
+						.values({ orgId, ...next })
+						.onConflictDoUpdate({ target: aiTriageSettings.orgId, set: next }),
+				)
+				return settingsToDocument(
+					yield* loadSettingsRow(orgId),
+					yield* loadUsage(orgId, nowMs),
+					nowMs,
+				)
+			})
+
+			return { getSettings, updateSettings } satisfies AiTriageServiceApi
+		}),
+	},
+) {
+	static readonly layer = Layer.effect(this, this.make)
+}

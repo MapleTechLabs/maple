@@ -79,15 +79,13 @@ const BUCKET_CACHE_NAMESPACE = "qe-ts-buckets"
 const CACHE_VERSION = 2 as const
 const EMPTY_BUCKETS: ReadonlyArray<CachedBucket> = []
 
-// --- Fingerprint helpers -------------------------------------------------
-
 const sha256Hex = async (input: string): Promise<string> => {
 	const bytes = new TextEncoder().encode(input)
 	const digest = await crypto.subtle.digest("SHA-256", bytes)
 	const view = new Uint8Array(digest)
 	let out = ""
-	for (let i = 0; i < view.length; i++) {
-		out += view[i]!.toString(16).padStart(2, "0")
+	for (const byte of view) {
+		out += byte.toString(16).padStart(2, "0")
 	}
 	return out
 }
@@ -100,8 +98,6 @@ export const generateFingerprint = async (
 	const canonical = canonicalJSON({ orgId, query, bucketSeconds })
 	return sha256Hex(canonical)
 }
-
-// --- Miss-range algorithm ------------------------------------------------
 
 /**
  * Walk sorted cached buckets and emit the gaps that must be fetched from
@@ -215,8 +211,6 @@ export const coalesceMissingRanges = (missing: ReadonlyArray<MissingRange>): Rea
 		return span ? [{ range: { startMs: span.startMs, endMs: span.endMs }, cachable }] : []
 	})
 }
-
-// --- Bucket merging ------------------------------------------------------
 
 /**
  * Group a flat point array by bucket window and emit cachable buckets only.
@@ -383,9 +377,7 @@ const isBucketCacheSegmentData = (
 	})
 }
 
-// --- Service -------------------------------------------------------------
-
-export interface BucketCacheServiceShape {
+export interface BucketCacheServiceApi {
 	readonly enabled: boolean
 	readonly getOrComputeBuckets: <E, R>(
 		request: BucketCacheRequest,
@@ -412,10 +404,10 @@ export interface BucketCacheServiceShape {
 	) => Effect.Effect<BucketCacheOutcome, E, R>
 }
 
-const enabledConfig = Config.boolean("QE_BUCKET_CACHE_ENABLED").pipe(Config.withDefault(true))
-const ttlSecondsConfig = Config.number("QE_BUCKET_CACHE_TTL_SECONDS").pipe(Config.withDefault(86400))
-const fluxSecondsConfig = Config.number("QE_BUCKET_CACHE_FLUX_SECONDS").pipe(Config.withDefault(60))
-const segmentBucketsConfig = Config.number("QE_BUCKET_CACHE_SEGMENT_BUCKETS").pipe(Config.withDefault(120))
+const enabledConfig = Config.Boolean("QE_BUCKET_CACHE_ENABLED").pipe(Config.withDefault(true))
+const ttlSecondsConfig = Config.Number("QE_BUCKET_CACHE_TTL_SECONDS").pipe(Config.withDefault(86400))
+const fluxSecondsConfig = Config.Number("QE_BUCKET_CACHE_FLUX_SECONDS").pipe(Config.withDefault(60))
+const segmentBucketsConfig = Config.Number("QE_BUCKET_CACHE_SEGMENT_BUCKETS").pipe(Config.withDefault(120))
 // A validated query contains at most 1,500 points, so 120-bucket segments
 // produce at most 13 reads. In practice 98% of prod requests read one or two
 // segments (measured 2026-08-04: 1 segment 70.2%, 2 segments 27.8%), so this
@@ -433,14 +425,14 @@ const segmentBucketsConfig = Config.number("QE_BUCKET_CACHE_SEGMENT_BUCKETS").pi
 // issued at concurrency 16 are still 13 simultaneous `cache.match()` calls. Six
 // is the ceiling that keeps every read in a connection slot instead of queueing
 // behind its own siblings and being abandoned at `EDGE_CACHE_READ_TIMEOUT_MS`.
-const readConcurrencyConfig = Config.number("QE_BUCKET_CACHE_READ_CONCURRENCY").pipe(Config.withDefault(6))
+const readConcurrencyConfig = Config.Number("QE_BUCKET_CACHE_READ_CONCURRENCY").pipe(Config.withDefault(6))
 // Cap how many missing sub-ranges fan out to the warehouse per cache miss. A
 // single cold dashboard request only ever splits into a few ranges, but
 // "unbounded" let a burst of concurrent misses multiply into a warehouse
 // stampede (the mechanism behind the eval-bucket-cache regression). Bound it.
-const fillConcurrencyConfig = Config.number("QE_BUCKET_CACHE_FILL_CONCURRENCY").pipe(Config.withDefault(4))
+const fillConcurrencyConfig = Config.Number("QE_BUCKET_CACHE_FILL_CONCURRENCY").pipe(Config.withDefault(4))
 
-export class BucketCacheService extends Context.Service<BucketCacheService, BucketCacheServiceShape>()(
+export class BucketCacheService extends Context.Service<BucketCacheService, BucketCacheServiceApi>()(
 	"@maple/api/lib/BucketCacheService",
 	{
 		make: Effect.gen(function* () {
@@ -565,7 +557,7 @@ export class BucketCacheService extends Context.Service<BucketCacheService, Buck
 					)
 					const fillRanges = coalesceMissingRanges(missing)
 					// One warm-up before the fan-out, not one route resolution per
-					// branch. See `prepare` on BucketCacheServiceShape for the trace
+					// branch. See `prepare` on BucketCacheServiceApi for the trace
 					// this came from. Only worth it above one range — see the doc there.
 					if (prepare !== undefined && fillRanges.length > 1) {
 						yield* prepare
@@ -577,9 +569,11 @@ export class BucketCacheService extends Context.Service<BucketCacheService, Buck
 							concurrency: fillConcurrency,
 						},
 					)
+					// `freshByRange` is the result of the same `fillRanges` fan-out, so the
+					// indexes line up; an empty range is the honest value if one ever does not.
 					const rangeResults = fillRanges.map((item, index) => ({
 						item,
-						points: freshByRange[index]!,
+						points: freshByRange[index] ?? [],
 					}))
 					const freshCachableBuckets = rangeResults.flatMap(({ item, points }) =>
 						item.cachable
@@ -711,7 +705,7 @@ export class BucketCacheService extends Context.Service<BucketCacheService, Buck
 				return yield* readOrCompute
 			})
 
-			return { enabled, getOrComputeBuckets } satisfies BucketCacheServiceShape
+			return { enabled, getOrComputeBuckets } satisfies BucketCacheServiceApi
 		}),
 	},
 ) {

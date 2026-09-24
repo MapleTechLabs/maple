@@ -1,11 +1,12 @@
 import * as React from "react"
+import * as ReactDOM from "react-dom"
 
 import { Textarea } from "@maple/ui/components/ui/textarea"
 import type {
 	WhereClauseAutocompleteScope,
 	WhereClauseAutocompleteValues,
 } from "@/lib/query-builder/where-clause-autocomplete"
-import type { QueryBuilderDataSource } from "@/lib/query-builder/model"
+import type { QueryBuilderDataSource } from "@maple/query-engine/query-builder"
 import { useAutocompleteContextOptional } from "@/hooks/use-autocomplete-context"
 import { useAutocompleteValuesContextOptional } from "@/hooks/use-autocomplete-values"
 import { useWhereClauseAutocomplete } from "@/hooks/use-where-clause-autocomplete"
@@ -27,9 +28,9 @@ interface WhereClauseEditorProps {
 	textareaClassName?: string
 	ariaLabel?: string
 	/**
-	 * Render syntax highlighting over the textarea. The overlay mirrors the
-	 * Textarea's default padding, so combine only with font/size classes in
-	 * `textareaClassName` — custom padding there would misalign the overlay.
+	 * Render syntax highlighting over the textarea (on by default). The overlay
+	 * mirrors the Textarea's wrapper (including `textareaClassName`) and its
+	 * inner padding, so wrapper-level font/size/padding classes stay aligned.
 	 */
 	highlight?: boolean
 }
@@ -48,7 +49,7 @@ export function WhereClauseEditor({
 	className,
 	textareaClassName,
 	ariaLabel,
-	highlight = false,
+	highlight = true,
 }: WhereClauseEditorProps) {
 	const textAreaRef = React.useRef<HTMLTextAreaElement | null>(null)
 	const highlightRef = React.useRef<HTMLDivElement | null>(null)
@@ -59,7 +60,6 @@ export function WhereClauseEditor({
 	)
 	const isHighlighting = highlight && value.length > 0
 
-	// Use context directly when available and no explicit props provided
 	const autocompleteCtx = useAutocompleteContextOptional()
 	const autocompleteValuesCtx = useAutocompleteValuesContextOptional()
 	const resolvedValues = values ?? autocompleteValuesCtx?.[dataSource]
@@ -110,6 +110,70 @@ export function WhereClauseEditor({
 			})
 		},
 		[applySuggestion, onChange],
+	)
+
+	// The suggestion list is portalled to the body: the editor is routinely
+	// embedded in scroll containers that clip (and, with `scrollFade`, mask) an
+	// absolutely positioned child — the dialog panel's ScrollArea being the worst
+	// offender. Anchor it to the textarea by hand instead.
+	const [listboxPosition, setListboxPosition] = React.useState<ListboxPosition | null>(null)
+
+	React.useLayoutEffect(() => {
+		if (!isOpen) {
+			setListboxPosition(null)
+			return
+		}
+
+		const measure = () => {
+			const textarea = textAreaRef.current
+			if (!textarea) return
+			setListboxPosition(computeListboxPosition(textarea.getBoundingClientRect()))
+		}
+
+		measure()
+
+		// The textarea is `resize-y` in most embeddings, and dragging it fires
+		// neither of the window events.
+		const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(() => measure())
+		if (observer && textAreaRef.current) observer.observe(textAreaRef.current)
+
+		window.addEventListener("resize", measure)
+		// Capture so ancestor scroll containers — not just the document — retarget.
+		window.addEventListener("scroll", measure, true)
+		return () => {
+			observer?.disconnect()
+			window.removeEventListener("resize", measure)
+			window.removeEventListener("scroll", measure, true)
+		}
+	}, [isOpen, suggestions.length])
+
+	const listbox = isOpen && (
+		<div
+			role="listbox"
+			aria-label="Where clause suggestions"
+			className="fixed z-[60] overflow-auto rounded-md border bg-popover text-popover-foreground shadow-md"
+			style={listboxPosition ?? undefined}
+		>
+			{suggestions.map((suggestion, index) => (
+				<button
+					key={suggestion.id}
+					type="button"
+					role="option"
+					aria-selected={index === activeIndex}
+					className={cn(
+						"flex w-full items-center justify-between px-2 py-1 text-left text-xs",
+						index === activeIndex ? "bg-accent text-accent-foreground" : "hover:bg-accent/60",
+					)}
+					onMouseDown={(event) => {
+						event.preventDefault()
+					}}
+					onClick={() => handleApplySuggestion(index)}
+				>
+					<span className="font-mono">{suggestion.label}</span>
+					<span className="text-[10px] uppercase text-muted-foreground">{suggestion.kind}</span>
+				</button>
+			))}
+		</div>
 	)
 
 	return (
@@ -189,56 +253,61 @@ export function WhereClauseEditor({
 				<div
 					ref={highlightRef}
 					aria-hidden
-					// Mirrors the Textarea's inner metrics: 1px border + the default
-					// px/py, plus the same wrapper font classes so wrapping matches.
+					// Mirrors the Textarea's two-layer box: the outer div takes the
+					// wrapper's 1px border, font classes and `textareaClassName` (which
+					// lands on the wrapper span, not the <textarea>), the inner div the
+					// <textarea>'s default padding — so wrapping and offsets match.
 					className={cn(
-						"pointer-events-none absolute inset-0 overflow-hidden rounded-lg border border-transparent px-[calc(--spacing(3)-1px)] py-[calc(--spacing(1.5)-1px)] text-base break-words whitespace-pre-wrap sm:text-sm",
+						"pointer-events-none absolute inset-0 overflow-hidden rounded-lg border border-transparent text-base sm:text-sm",
 						textareaClassName,
 					)}
 				>
-					{highlightTokens.map((token, index) => (
-						<span
-							// biome-ignore lint/suspicious/noArrayIndexKey: tokens are positional
-							key={index}
-							style={{ color: WHERE_CLAUSE_TOKEN_COLOR[token.type] }}
-						>
-							{token.text}
-						</span>
-					))}
+					<div className="px-[calc(--spacing(3)-1px)] py-[calc(--spacing(1.5)-1px)] break-words whitespace-pre-wrap">
+						{highlightTokens.map((token, index) => (
+							<span
+								// biome-ignore lint/suspicious/noArrayIndexKey: tokens are positional
+								key={index}
+								style={{ color: WHERE_CLAUSE_TOKEN_COLOR[token.type] }}
+							>
+								{token.text}
+							</span>
+						))}
+					</div>
 				</div>
 			)}
 
-			{isOpen && (
-				<div
-					role="listbox"
-					aria-label="Where clause suggestions"
-					className="absolute z-50 mt-1 max-h-52 w-full overflow-auto border bg-popover text-popover-foreground shadow-md"
-				>
-					{suggestions.map((suggestion, index) => (
-						<button
-							key={suggestion.id}
-							type="button"
-							role="option"
-							aria-selected={index === activeIndex}
-							className={cn(
-								"flex w-full items-center justify-between px-2 py-1 text-left text-xs",
-								index === activeIndex
-									? "bg-accent text-accent-foreground"
-									: "hover:bg-accent/60",
-							)}
-							onMouseDown={(event) => {
-								event.preventDefault()
-							}}
-							onClick={() => handleApplySuggestion(index)}
-						>
-							<span className="font-mono">{suggestion.label}</span>
-							<span className="text-[10px] uppercase text-muted-foreground">
-								{suggestion.kind}
-							</span>
-						</button>
-					))}
-				</div>
-			)}
+			{listbox && typeof document !== "undefined" && ReactDOM.createPortal(listbox, document.body)}
 		</div>
 	)
+}
+
+interface ListboxPosition {
+	left: number
+	width: number
+	maxHeight: number
+	top?: number
+	bottom?: number
+}
+
+/** Matches the previous `max-h-52`. */
+const LISTBOX_MAX_HEIGHT = 208
+const LISTBOX_GAP = 4
+/** Below this much room under the textarea, opening upward reads better. */
+const LISTBOX_MIN_SPACE_BELOW = 160
+
+function computeListboxPosition(rect: DOMRect): ListboxPosition {
+	const viewportHeight = window.innerHeight
+	const spaceBelow = viewportHeight - rect.bottom - LISTBOX_GAP
+	const spaceAbove = rect.top - LISTBOX_GAP
+	const flipUp = spaceBelow < LISTBOX_MIN_SPACE_BELOW && spaceAbove > spaceBelow
+	const available = flipUp ? spaceAbove : spaceBelow
+
+	return {
+		left: rect.left,
+		width: rect.width,
+		maxHeight: Math.max(0, Math.min(LISTBOX_MAX_HEIGHT, available - LISTBOX_GAP)),
+		...(flipUp
+			? { bottom: viewportHeight - rect.top + LISTBOX_GAP }
+			: { top: rect.bottom + LISTBOX_GAP }),
+	}
 }

@@ -1,4 +1,4 @@
-// ---------------------------------------------------------------------------
+// BOUNDARY: This module owns unparsed external values and narrows them before domain use.
 // Shared flush core (platform-agnostic)
 //
 // The buffer-drain → OTLP-encode → POST machinery shared by every flushable
@@ -6,8 +6,7 @@
 // resolution (env-lazy on Workers, env-auto-detect on Node, programmatic in the
 // browser) and its transport (plain `fetch` vs `fetch(keepalive)`); everything
 // downstream of a resolved endpoint lives here.
-// ---------------------------------------------------------------------------
-import { Redacted } from "effect"
+import { Effect, Redacted, Result } from "effect"
 import type { LogBuffer, LogRecord } from "./flushable-logger.js"
 import type { MetricBuffer } from "./flushable-metrics.js"
 import type { OtlpSpan, SpanBuffer } from "./flushable-tracer.js"
@@ -64,7 +63,10 @@ export interface FlushTransport {
 
 /**
  * Turn a resolved resource into ready-to-POST URLs + headers. Shared by all
- * presets; `userAgent` is the only per-preset difference.
+ * presets. `keyless` is each preset's answer to "no ingest key": the env-driven
+ * server and Cloudflare presets treat it as unconfigured and `"disable"`; the
+ * browser client's key is auth only, so it `"send"`s without `Authorization`
+ * for a proxy in front of the endpoint to complete.
  */
 export const buildResolved = (
 	r: ResourceInput,
@@ -73,10 +75,11 @@ export const buildResolved = (
 		readonly logsPath?: string | undefined
 		readonly metricsPath?: string | undefined
 		readonly userAgent: string
+		readonly keyless: "disable" | "send"
 	},
 ): Resolved => {
 	// `r.endpoint` is always defined in practice (every resolver falls back to
-	// DEFAULT_MAPLE_ENDPOINT, and the client requires it); guard anyway.
+	// the region's public ingest); guard anyway.
 	const base = r.endpoint ?? "https://ingest.maple.dev"
 	const baseUrl = base.endsWith("/") ? base.slice(0, -1) : base
 	const tracesUrl = `${baseUrl}${opts.tracesPath ?? "/v1/traces"}`
@@ -85,7 +88,11 @@ export const buildResolved = (
 	const headers: Record<string, string> = {
 		"content-type": "application/json",
 		"user-agent": opts.userAgent,
-	}
+		// Browsers refuse to let a page set `user-agent`, so the same
+		// `<sdk>/<version>` also rides a header they do allow. Ingest records it
+		// as `maple.sdk`; its CORS allow-list must include it (it does).
+		"x-maple-sdk": opts.userAgent,
+	} satisfies Record<string, string>
 	if (r.ingestKey) headers.authorization = `Bearer ${Redacted.value(r.ingestKey)}`
 	return {
 		tracesUrl,
@@ -94,7 +101,7 @@ export const buildResolved = (
 		resource: makeOtlpResource(r.resource),
 		scope: { name: r.resource.serviceName },
 		headers,
-		noOp: r.ingestKey === undefined,
+		noOp: r.ingestKey === undefined && opts.keyless === "disable",
 	}
 }
 
@@ -161,25 +168,66 @@ const flushSignal = async <A>(args: {
 	state.disabledUntil = 0
 	const batch = buffer.drain()
 	if (batch.length === 0) return
-	try {
-		await transport.post(url, headers, body(batch))
-	} catch (err) {
+	const posted = await Effect.runPromise(
+		Effect.result(
+			Effect.tryPromise({
+				try: () => transport.post(url, headers, body(batch)),
+				catch: (cause) => cause,
+			}),
+		),
+	)
+	if (Result.isFailure(posted)) {
 		buffer.restore(batch)
 		state.disabledUntil = Date.now() + COOLDOWN_MS
-		console.error(`${logPrefix} ${signal} flush failed; cooldown 60s:`, err)
+		console.error(`${logPrefix} ${signal} flush failed; cooldown 60s:`, posted.failure)
 	}
 }
 
-/** Serialize flush calls so concurrent timers/manual hooks cannot drain overlapping batches. */
+/**
+ * Wrap a flush body so it logs its failure rather than rejecting.
+ *
+ * Every flush is documented never to reject: they are fired as `void flush()`
+ * from auto-flush timers, `pagehide`/`visibilitychange` handlers, and
+ * `ctx.waitUntil`, where a rejection is an unhandled rejection — fatal under
+ * `--unhandled-rejections=strict` — caused purely by telemetry. `runFlush`
+ * already absorbs per-signal transport errors; this covers everything around it,
+ * chiefly resource resolution.
+ */
+export const guardFlush =
+	<Args extends ReadonlyArray<unknown>>(logPrefix: string, run: (...args: Args) => Promise<void>) =>
+	async (...args: Args): Promise<void> => {
+		const outcome = await Effect.runPromise(
+			Effect.result(Effect.tryPromise({ try: () => run(...args), catch: (cause) => cause })),
+		)
+		if (Result.isFailure(outcome)) console.error(`${logPrefix} flush failed:`, outcome.failure)
+	}
+
+/**
+ * Serialize drains. Workers may coalesce queued calls with identical arguments:
+ * every caller waits for that drain, and calls arriving DURING it queue a later
+ * drain so spans completed after the first snapshot cannot be stranded.
+ * Other presets retain one drain per call by default.
+ */
 export const makeSerializedFlush = <Args extends ReadonlyArray<unknown>>(
 	run: (...args: Args) => Promise<void>,
+	options?: { readonly coalesceSameArguments?: boolean },
 ): ((...args: Args) => Promise<void>) => {
 	let tail: Promise<void> = Promise.resolve()
+	let queued: { readonly args: Args; readonly promise: Promise<void> } | undefined
 	return (...args) => {
-		const next = tail.then(
-			() => run(...args),
-			() => run(...args),
+		const waiting = queued
+		if (
+			options?.coalesceSameArguments &&
+			waiting &&
+			args.length === waiting.args.length &&
+			args.every((value, index) => value === waiting.args[index])
 		)
+			return waiting.promise
+		const next: Promise<void> = tail.then(() => {
+			if (queued?.promise === next) queued = undefined
+			return run(...args)
+		})
+		queued = { args, promise: next }
 		tail = next.catch(() => undefined)
 		return next
 	}
@@ -203,7 +251,7 @@ export const runFlush = async (args: {
 	readonly metricsState: SignalState
 	readonly transport: FlushTransport
 	readonly logPrefix: string
-	readonly onNoOp: () => void
+	readonly onNoOp?: (() => void) | undefined
 }): Promise<void> => {
 	const {
 		resolved: r,
@@ -222,7 +270,7 @@ export const runFlush = async (args: {
 		spans.drain()
 		logs.drain()
 		metrics.drain()
-		onNoOp()
+		onNoOp?.()
 		return
 	}
 
@@ -288,7 +336,7 @@ const makeMetricsBody = (snapshots: ReadonlyArray<MetricSnapshot>, r: Resolved) 
 	for (const snapshot of snapshots) {
 		const base = {
 			name: snapshot.id,
-			...(snapshot.description ? { description: snapshot.description } : {}),
+			...(snapshot.description ? { description: snapshot.description } : undefined),
 		}
 		switch (snapshot.type) {
 			case "Counter":

@@ -1,29 +1,26 @@
 import { HttpApiBuilder } from "effect/unstable/httpapi"
 import type { ScrapeTargetResponse } from "@maple/domain/http"
-import {
-	CreateScrapeTargetRequest,
-	CurrentTenant,
-	type ScrapeTargetAuthError,
-	type ScrapeTargetEncryptionError,
-	type ScrapeTargetNotFoundError,
-	type ScrapeTargetPersistenceError,
-	type ScrapeTargetUpstreamError,
-	type ScrapeTargetValidationError,
-	UpdateScrapeTargetRequest,
-} from "@maple/domain/http"
+import { CreateScrapeTargetRequest, CurrentTenant, UpdateScrapeTargetRequest } from "@maple/domain/http"
 import {
 	MapleApiV2,
-	dependencyUnavailable,
-	invalidRequest,
 	paginateArray,
 	paginateOffsetQuery,
-	resourceNotFound,
 	timestamp,
-	upstreamError,
+	V2InsufficientPermissions,
 } from "@maple/domain/http/v2"
 import type { V2ScrapeTarget, V2ScrapeTargetCheck } from "@maple/domain/http/v2"
 import { Effect } from "effect"
-import { ScrapeTargetsService } from "@/services/integrations/ScrapeTargetsService"
+import { auditDiff, redactAuditUrl } from "@/routes/v2/audit-changes"
+import { recordHttpAudit } from "@maple/backend/services/audit/AuditLogService"
+import { ScrapeTargetsService } from "@maple/backend/services/integrations/ScrapeTargetsService"
+import { requireAdmin } from "@maple/backend/services/auth/auth"
+
+// Every write is admin-gated: a scrape target stores credentials and makes
+// Maple's infrastructure fetch an operator-chosen URL, so `probe` (which sends
+// the stored credential on demand) is a write, not a read. Reads stay on the
+// `scrape_targets:read` scope — they never expose the credential itself.
+const adminOnly = (action: string) => () =>
+	V2InsufficientPermissions.make(`Only org admins can ${action} scrape targets`)
 
 const toV2ScrapeTarget = (target: ScrapeTargetResponse): V2ScrapeTarget => ({
 	id: target.id,
@@ -47,91 +44,26 @@ const toV2ScrapeTarget = (target: ScrapeTargetResponse): V2ScrapeTarget => ({
 	updated_at: target.updatedAt,
 })
 
-/** Service tagged errors → v2 envelope errors (create: no 404 on the contract). */
-const mapCommonError =
-	(operation: string) =>
-	<A, R>(
-		effect: Effect.Effect<
-			A,
-			ScrapeTargetValidationError | ScrapeTargetPersistenceError | ScrapeTargetEncryptionError,
-			R
-		>,
-	) =>
-		effect.pipe(
-			Effect.catchTags({
-				"@maple/http/errors/ScrapeTargetValidationError": (error) =>
-					Effect.fail(invalidRequest("parameter_invalid", error.message)),
-				"@maple/http/errors/ScrapeTargetPersistenceError": () =>
-					Effect.fail(dependencyUnavailable(`scrape_target_${operation}_unavailable`)),
-				"@maple/http/errors/ScrapeTargetEncryptionError": () =>
-					Effect.fail(dependencyUnavailable(`scrape_target_${operation}_unavailable`)),
-			}),
-		)
-
-/** Service tagged errors → v2 envelope errors (endpoints with a 404). */
-const mapMutationError =
-	(operation: string) =>
-	<A, R>(
-		effect: Effect.Effect<
-			A,
-			| ScrapeTargetNotFoundError
-			| ScrapeTargetValidationError
-			| ScrapeTargetPersistenceError
-			| ScrapeTargetEncryptionError,
-			R
-		>,
-	) =>
-		effect.pipe(
-			Effect.catchTags({
-				"@maple/http/errors/ScrapeTargetNotFoundError": () =>
-					Effect.fail(resourceNotFound("scrape_target", "No such scrape target.")),
-				"@maple/http/errors/ScrapeTargetValidationError": (error) =>
-					Effect.fail(invalidRequest("parameter_invalid", error.message)),
-				"@maple/http/errors/ScrapeTargetPersistenceError": () =>
-					Effect.fail(dependencyUnavailable(`scrape_target_${operation}_unavailable`)),
-				"@maple/http/errors/ScrapeTargetEncryptionError": () =>
-					Effect.fail(dependencyUnavailable(`scrape_target_${operation}_unavailable`)),
-			}),
-		)
-
-/** Probe can additionally surface upstream/auth failures as 502s. */
-const mapProbeError = <A, R>(
-	effect: Effect.Effect<
-		A,
-		| ScrapeTargetNotFoundError
-		| ScrapeTargetPersistenceError
-		| ScrapeTargetEncryptionError
-		| ScrapeTargetAuthError
-		| ScrapeTargetUpstreamError,
-		R
-	>,
-) =>
-	effect.pipe(
-		Effect.catchTags({
-			"@maple/http/errors/ScrapeTargetNotFoundError": () =>
-				Effect.fail(resourceNotFound("scrape_target", "No such scrape target.")),
-			"@maple/http/errors/ScrapeTargetPersistenceError": () =>
-				Effect.fail(dependencyUnavailable("scrape_target_probe_unavailable")),
-			"@maple/http/errors/ScrapeTargetEncryptionError": () =>
-				Effect.fail(dependencyUnavailable("scrape_target_probe_unavailable")),
-			"@maple/http/errors/ScrapeTargetAuthError": () =>
-				Effect.fail(
-					upstreamError(
-						"scrape_target_probe_auth_failed",
-						"The scrape target rejected Maple's credentials.",
-					),
-				),
-			"@maple/http/errors/ScrapeTargetUpstreamError": () =>
-				Effect.fail(
-					upstreamError(
-						"scrape_target_probe_upstream_failed",
-						"The scrape target could not complete the probe.",
-					),
-				),
-		}),
-	)
-
-const mapPersistenceError = () => dependencyUnavailable("scrape_target_list_unavailable")
+/** Update-payload fields diffable through the wire shape; credentials never appear. */
+const targetAuditDiff = auditDiff({
+	fields: [
+		"name",
+		"url",
+		"organization",
+		"include_branches",
+		"exclude_branches",
+		"scrape_interval_seconds",
+		"labels_json",
+		"auth_type",
+		"service_name",
+		"enabled",
+	],
+	// Scrape URLs may carry tokens in userinfo/query — audit only scheme/host/path.
+	// Identical redacted values still mean the URL changed within the stripped part.
+	redact: { url: redactAuditUrl },
+	// Credentials are write-only: audit that they rotated, never their value.
+	writeOnly: ["auth_credentials"],
+})
 
 export const HttpV2ScrapeTargetsLive = HttpApiBuilder.group(MapleApiV2, "scrapeTargets", (handlers) =>
 	Effect.gen(function* () {
@@ -141,9 +73,7 @@ export const HttpV2ScrapeTargetsLive = HttpApiBuilder.group(MapleApiV2, "scrapeT
 			.handle("list", ({ query }) =>
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
-					const response = yield* service
-						.list(tenant.orgId)
-						.pipe(Effect.mapError(mapPersistenceError))
+					const response = yield* service.list(tenant.orgId)
 					const page = yield* paginateArray(response.targets.map(toV2ScrapeTarget), query)
 					return { object: "list" as const, ...page }
 				}),
@@ -151,105 +81,145 @@ export const HttpV2ScrapeTargetsLive = HttpApiBuilder.group(MapleApiV2, "scrapeT
 			.handle("retrieve", ({ params }) =>
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
-					const target = yield* service
-						.get(tenant.orgId, params.id)
-						.pipe(mapMutationError("retrieve"))
+					const target = yield* service.get(tenant.orgId, params.id)
+
 					return toV2ScrapeTarget(target)
 				}),
 			)
 			.handle("create", ({ payload }) =>
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
-					const created = yield* service
-						.create(
-							tenant.orgId,
-							new CreateScrapeTargetRequest({
-								name: payload.name,
-								...(payload.url !== undefined ? { url: payload.url } : {}),
-								...(payload.target_type !== undefined
-									? { targetType: payload.target_type }
-									: {}),
-								...(payload.organization !== undefined
-									? { organization: payload.organization }
-									: {}),
-								...(payload.include_branches !== undefined
-									? { includeBranches: payload.include_branches }
-									: {}),
-								...(payload.exclude_branches !== undefined
-									? { excludeBranches: payload.exclude_branches }
-									: {}),
-								...(payload.scrape_interval_seconds !== undefined
-									? { scrapeIntervalSeconds: payload.scrape_interval_seconds }
-									: {}),
-								...(payload.labels_json !== undefined
-									? { labelsJson: payload.labels_json }
-									: {}),
-								...(payload.auth_type !== undefined ? { authType: payload.auth_type } : {}),
-								...(payload.service_name !== undefined
-									? { serviceName: payload.service_name }
-									: {}),
-								...(payload.auth_credentials !== undefined
-									? { authCredentials: payload.auth_credentials }
-									: {}),
-								...(payload.enabled !== undefined ? { enabled: payload.enabled } : {}),
-							}),
-						)
-						.pipe(mapCommonError("create"))
+					yield* requireAdmin(tenant.roles, adminOnly("create"))
+					const created = yield* service.create(
+						tenant.orgId,
+						new CreateScrapeTargetRequest({
+							name: payload.name,
+							...(payload.url !== undefined ? { url: payload.url } : undefined),
+							...(payload.target_type !== undefined
+								? { targetType: payload.target_type }
+								: undefined),
+							...(payload.organization !== undefined
+								? { organization: payload.organization }
+								: undefined),
+							...(payload.include_branches !== undefined
+								? {
+										includeBranches: payload.include_branches,
+									}
+								: undefined),
+							...(payload.exclude_branches !== undefined
+								? {
+										excludeBranches: payload.exclude_branches,
+									}
+								: undefined),
+							...(payload.scrape_interval_seconds !== undefined
+								? {
+										scrapeIntervalSeconds: payload.scrape_interval_seconds,
+									}
+								: undefined),
+							...(payload.labels_json !== undefined
+								? { labelsJson: payload.labels_json }
+								: undefined),
+							...(payload.auth_type !== undefined
+								? { authType: payload.auth_type }
+								: undefined),
+							...(payload.service_name !== undefined
+								? { serviceName: payload.service_name }
+								: undefined),
+							...(payload.auth_credentials !== undefined
+								? {
+										authCredentials: payload.auth_credentials,
+									}
+								: undefined),
+							...(payload.enabled !== undefined ? { enabled: payload.enabled } : undefined),
+						}),
+					)
+
+					yield* recordHttpAudit("scrape_target.created", {
+						resourceId: created.id,
+						metadata: { name: created.name },
+					})
+
 					return toV2ScrapeTarget(created)
 				}),
 			)
 			.handle("update", ({ params, payload }) =>
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
-					const updated = yield* service
-						.update(
-							tenant.orgId,
-							params.id,
-							new UpdateScrapeTargetRequest({
-								...(payload.name !== undefined ? { name: payload.name } : {}),
-								...(payload.url !== undefined ? { url: payload.url } : {}),
-								...(payload.organization !== undefined
-									? { organization: payload.organization }
-									: {}),
-								...(payload.include_branches !== undefined
-									? { includeBranches: payload.include_branches }
-									: {}),
-								...(payload.exclude_branches !== undefined
-									? { excludeBranches: payload.exclude_branches }
-									: {}),
-								...(payload.scrape_interval_seconds !== undefined
-									? { scrapeIntervalSeconds: payload.scrape_interval_seconds }
-									: {}),
-								...(payload.labels_json !== undefined
-									? { labelsJson: payload.labels_json }
-									: {}),
-								...(payload.auth_type !== undefined ? { authType: payload.auth_type } : {}),
-								...(payload.service_name !== undefined
-									? { serviceName: payload.service_name }
-									: {}),
-								...(payload.auth_credentials !== undefined
-									? { authCredentials: payload.auth_credentials }
-									: {}),
-								...(payload.enabled !== undefined ? { enabled: payload.enabled } : {}),
-							}),
-						)
-						.pipe(mapMutationError("update"))
+					yield* requireAdmin(tenant.roles, adminOnly("update"))
+					const current = yield* service.get(tenant.orgId, params.id)
+					const updated = yield* service.update(
+						tenant.orgId,
+						params.id,
+						new UpdateScrapeTargetRequest({
+							...(payload.name !== undefined ? { name: payload.name } : undefined),
+							...(payload.url !== undefined ? { url: payload.url } : undefined),
+							...(payload.organization !== undefined
+								? { organization: payload.organization }
+								: undefined),
+							...(payload.include_branches !== undefined
+								? {
+										includeBranches: payload.include_branches,
+									}
+								: undefined),
+							...(payload.exclude_branches !== undefined
+								? {
+										excludeBranches: payload.exclude_branches,
+									}
+								: undefined),
+							...(payload.scrape_interval_seconds !== undefined
+								? {
+										scrapeIntervalSeconds: payload.scrape_interval_seconds,
+									}
+								: undefined),
+							...(payload.labels_json !== undefined
+								? { labelsJson: payload.labels_json }
+								: undefined),
+							...(payload.auth_type !== undefined
+								? { authType: payload.auth_type }
+								: undefined),
+							...(payload.service_name !== undefined
+								? { serviceName: payload.service_name }
+								: undefined),
+							...(payload.auth_credentials !== undefined
+								? {
+										authCredentials: payload.auth_credentials,
+									}
+								: undefined),
+							...(payload.enabled !== undefined ? { enabled: payload.enabled } : undefined),
+						}),
+					)
+
+					// Read-then-write with no CAS: a concurrent update can make `before`
+					// reflect a state this update never saw. Accepted for audit purposes.
+					yield* recordHttpAudit("scrape_target.updated", {
+						resourceId: updated.id,
+						changes: targetAuditDiff(
+							payload,
+							toV2ScrapeTarget(current),
+							toV2ScrapeTarget(updated),
+						),
+						metadata: { name: updated.name },
+					})
+
 					return toV2ScrapeTarget(updated)
 				}),
 			)
 			.handle("delete", ({ params }) =>
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
-					const deleted = yield* service
-						.delete(tenant.orgId, params.id)
-						.pipe(mapMutationError("delete"))
+					yield* requireAdmin(tenant.roles, adminOnly("delete"))
+					const deleted = yield* service.delete(tenant.orgId, params.id)
+					yield* recordHttpAudit("scrape_target.deleted", { resourceId: deleted.id })
+
 					return { id: deleted.id, object: "scrape_target" as const, deleted: true as const }
 				}),
 			)
 			.handle("probe", ({ params }) =>
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
-					const result = yield* service.probe(tenant.orgId, params.id).pipe(mapProbeError)
+					yield* requireAdmin(tenant.roles, adminOnly("probe"))
+					const result = yield* service.probe(tenant.orgId, params.id)
+
 					return {
 						object: "scrape_target.probe_result" as const,
 						success: result.success,
@@ -264,13 +234,16 @@ export const HttpV2ScrapeTargetsLive = HttpApiBuilder.group(MapleApiV2, "scrapeT
 					const page = yield* paginateOffsetQuery(query, ({ limit, offset }) =>
 						service
 							.listChecks(tenant.orgId, params.id, {
-								...(query.since !== undefined ? { startTime: Date.parse(query.since) } : {}),
-								...(query.until !== undefined ? { endTime: Date.parse(query.until) } : {}),
+								...(query.since !== undefined
+									? { startTime: Date.parse(query.since) }
+									: undefined),
+								...(query.until !== undefined
+									? { endTime: Date.parse(query.until) }
+									: undefined),
 								limit,
 								offset,
 							})
 							.pipe(
-								mapMutationError("list_checks"),
 								Effect.map(
 									(rows): ReadonlyArray<V2ScrapeTargetCheck> =>
 										rows.map((row) => ({

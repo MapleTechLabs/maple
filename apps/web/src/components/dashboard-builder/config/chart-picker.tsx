@@ -1,3 +1,4 @@
+// BOUNDARY: This module intentionally carries opaque values; callers decode them before domain use.
 import { useState } from "react"
 
 import {
@@ -16,10 +17,10 @@ import type {
 } from "@/components/dashboard-builder/types"
 import type { WidgetPresetDefinition } from "@/components/dashboard-builder/widgets/widget-definitions"
 import { widgetTypeList } from "@/components/dashboard-builder/widgets/types"
-import { createQueryDraft } from "@/lib/query-builder/model"
+import { createQueryDraft } from "@maple/query-engine/query-builder"
+import { makeQueryDataSource } from "@maple/widgets/dashboard"
 import { deriveDefaultWidgetTitle } from "@/lib/query-builder/widget-builder-utils"
 
-// ---------------------------------------------------------------------------
 // "Add widget".
 //
 // Every section but the first is a widget type's `presets` rendered with its
@@ -29,24 +30,26 @@ import { deriveDefaultWidgetTitle } from "@/lib/query-builder/widget-builder-uti
 //
 // Charts are the exception: line/bar/area have no presets because they are the
 // blank starting point, so their section offers the three chart styles directly.
-// ---------------------------------------------------------------------------
 
 const CHART_STYLES = [
 	{
 		chartId: "query-builder-bar",
-		previewChartId: "default-bar",
+		// The preview IS the chart the card creates. It used to be a separate
+		// Recharts demo entry (`default-bar`, a dotted-pattern bar nothing else
+		// rendered), so the thumbnail showed something no widget could produce.
+		previewChartId: "query-builder-bar",
 		label: "Bar Chart",
 		description: "Compare values across categories",
 	},
 	{
 		chartId: "query-builder-area",
-		previewChartId: "gradient-area",
+		previewChartId: "query-builder-area",
 		label: "Area Chart",
 		description: "Visualize trends over time",
 	},
 	{
 		chartId: "query-builder-line",
-		previewChartId: "dotted-line",
+		previewChartId: "query-builder-line",
 		label: "Line Chart",
 		description: "Track metrics over time",
 	},
@@ -57,8 +60,9 @@ const PRESET_SECTIONS = widgetTypeList
 	.filter((definition) => definition.presets.length > 0 && definition.PresetPreview)
 	.map((definition) => ({
 		id: definition.meta.panelType,
-		// "Pie" → "Pies", "Note" → "Notes".
-		label: `${definition.meta.label}s`,
+		// "Pie" → "Pies", "Note" → "Notes"; a label that is already plural
+		// ("Paths") stays as it is.
+		label: definition.meta.label.endsWith("s") ? definition.meta.label : `${definition.meta.label}s`,
 		presets: definition.presets,
 		Preview: definition.PresetPreview!,
 	}))
@@ -138,15 +142,12 @@ export function WidgetPicker({ open, onOpenChange, onSelect }: WidgetPickerProps
 		const draft = createQueryDraft(0)
 		const added = onSelect(
 			"chart",
-			{
-				endpoint: "custom_query_builder_timeseries",
-				params: {
-					queries: [draft],
-					formulas: [],
-					comparison: { mode: "none", includePercentChange: true },
-					debug: false,
-				},
-			},
+			makeQueryDataSource({
+				resultShape: "timeseries",
+				queries: [draft],
+				formulas: [],
+				comparison: { mode: "none", includePercentChange: true },
+			}),
 			// Derived title ("Error rate by service.name") so freshly added
 			// charts never render as "Untitled".
 			{ chartId, title: deriveDefaultWidgetTitle([draft]) },

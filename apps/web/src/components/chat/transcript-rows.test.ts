@@ -4,8 +4,9 @@ import { buildTranscriptRows, isToolOnlyMessage, toolPartsOf } from "./transcrip
 import type { UIMessage } from "@/components/ai-elements/types"
 
 const text = (id: string, role: "user" | "assistant", body: string): UIMessage =>
-	({ id, role, parts: [{ type: "text", text: body }] }) as unknown as UIMessage
+	({ id, role, parts: [{ type: "text", text: body }] }) as UIMessage
 
+// SAFETY: this fixture constructs the tool-only message variant consumed by buildTranscriptRows.
 const tools = (id: string, count: number, output: unknown = { ok: true }): UIMessage =>
 	({
 		id,
@@ -71,13 +72,14 @@ describe("buildTranscriptRows", () => {
 
 	it("never swallows a turn that carries a card of its own", () => {
 		// A diagnosis report is content, not plumbing — it must not disappear into a
-		// `Used N tools` header.
+		// tool group header.
 		const diagnosis = tools("m2", 1, { status: "diagnosis", report })
 		expect(isToolOnlyMessage(diagnosis)).toBe(false)
 		expect(kinds([tools("m1", 1), diagnosis, tools("m3", 1)])).toEqual(["message", "message", "message"])
 	})
 
 	it("does not merge a still-running burst differently from a settled one", () => {
+		// SAFETY: this fixture constructs the in-progress tool variant consumed by buildTranscriptRows.
 		const running = {
 			id: "m2",
 			role: "assistant",
@@ -88,7 +90,7 @@ describe("buildTranscriptRows", () => {
 	})
 
 	it("keeps user turns and empty assistant turns out of runs", () => {
-		const empty = { id: "m2", role: "assistant", parts: [] } as unknown as UIMessage
+		const empty = { id: "m2", role: "assistant", parts: [] } as UIMessage
 		expect(isToolOnlyMessage(empty)).toBe(false)
 		expect(isToolOnlyMessage(text("u", "user", "hi"))).toBe(false)
 	})
@@ -104,14 +106,14 @@ describe("sub-agent parts", () => {
 					type: "task",
 					toolCallId: `${id}-t`,
 					agent: "explore",
-					description: "trace checkout latency",
+					prompt: "trace checkout latency",
 					status: "completed",
 					messages: [],
 				},
 			],
-		}) as unknown as UIMessage
+		}) as UIMessage
 
-	it("is not tool-only, so it never disappears into a Used N tools header", () => {
+	it("is not tool-only, so it never disappears into a tool group header", () => {
 		// A sub-agent run is content: the reader delegated part of the investigation and should see
 		// that it happened, not have it folded away as plumbing.
 		expect(isToolOnlyMessage(task("m1"))).toBe(false)

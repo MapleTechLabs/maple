@@ -1,10 +1,21 @@
 import { HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/unstable/httpapi"
 import { Schema } from "effect"
-import { ActorType, IssueKind, IssueSeverity, IssueSeveritySource, WorkflowState } from "../errors"
+import {
+	ActorType,
+	ErrorIssueNotFoundError,
+	ErrorPersistenceError,
+	IssueKind,
+	IssueSeverity,
+	IssueSeveritySource,
+	WorkflowState,
+} from "../errors"
 import { SpanId, TraceId, UserId } from "../../primitives"
-import { AuthorizationV2, V2SchemaErrors } from "./auth"
+import { AuditedRead } from "../audit-log"
+import { AuthorizationV2 } from "./auth"
 import { ListOf, ListQuery, Timestamp } from "./envelopes"
-import { V2InvalidRequestError, V2NotFoundError, V2ServiceUnavailableError } from "./errors"
+import { V2CursorInvalid, V2CursorSortMismatch } from "./errors"
+import { publicErrors } from "./public-error"
+import { V2WarehouseReadErrors } from "./query-errors"
 import { ActorPublicId, ErrorIncidentPublicId, ErrorIssuePublicId } from "./resource-ids"
 
 export const V2ErrorIssueActor = Schema.Struct({
@@ -46,9 +57,20 @@ export const V2ErrorIssue = Schema.Struct({
 	last_seen_at: Timestamp,
 	occurrence_count: Schema.Number,
 	resolved_at: Schema.NullOr(Timestamp),
+	// Fix history, so a consumer can tell "never triaged" from "fixed before and
+	// came back" without replaying the event log.
+	last_resolved_at: Schema.NullOr(Timestamp),
+	last_regressed_at: Schema.NullOr(Timestamp),
+	regression_count: Schema.Number,
+	resolved_versions: Schema.Array(Schema.String),
 	snooze_until: Schema.NullOr(Timestamp),
 	archived_at: Schema.NullOr(Timestamp),
 	has_open_incident: Schema.Boolean,
+	// Activity rollups: comments include agent notes; closed-unmerged PRs are
+	// counted by neither PR field.
+	comment_count: Schema.Number,
+	open_pull_request_count: Schema.Number,
+	merged_pull_request_count: Schema.Number,
 }).annotate({
 	identifier: "ErrorIssue",
 	title: "Error issue",
@@ -72,6 +94,16 @@ export const V2ErrorIssueSampleTrace = Schema.Struct({
 }).annotate({ identifier: "ErrorIssueSampleTrace" })
 export type V2ErrorIssueSampleTrace = Schema.Schema.Type<typeof V2ErrorIssueSampleTrace>
 
+export const V2ErrorIssueEnvironment = Schema.Struct({
+	name: Schema.String,
+	count: Schema.Number,
+}).annotate({
+	identifier: "ErrorIssueEnvironment",
+	description:
+		"A deployment environment the issue was observed in over the requested window, with its occurrence count.",
+})
+export type V2ErrorIssueEnvironment = Schema.Schema.Type<typeof V2ErrorIssueEnvironment>
+
 export const V2ErrorIncident = Schema.Struct({
 	id: ErrorIncidentPublicId,
 	object: Schema.Literal("error_incident"),
@@ -90,10 +122,12 @@ export const V2ErrorIssueDetail = Schema.Struct({
 	timeseries: Schema.Array(V2ErrorIssueTimeseriesPoint),
 	sample_traces: Schema.Array(V2ErrorIssueSampleTrace),
 	incidents: Schema.Array(V2ErrorIncident),
+	environments: Schema.Array(V2ErrorIssueEnvironment),
 }).annotate({
 	identifier: "ErrorIssueDetail",
 	title: "Error issue detail",
-	description: "The issue resource with its requested timeseries window, sample traces, and incidents.",
+	description:
+		"The issue resource with its requested timeseries window, sample traces, incidents, and the environments it was seen in.",
 })
 export type V2ErrorIssueDetail = Schema.Schema.Type<typeof V2ErrorIssueDetail>
 
@@ -103,6 +137,13 @@ export const V2ErrorIssueListQuery = Schema.Struct({
 	severity: Schema.optional(Schema.Union([IssueSeverity, Schema.Literal("unset")])),
 	kind: Schema.optional(IssueKind),
 	service_name: Schema.optional(Schema.String),
+	// Comma-separated fingerprint hashes. The unified errors list ranks
+	// fingerprints by warehouse volume first, then asks for exactly those
+	// issues — the reverse of the usual "list issues, then look up volume".
+	// A repeated param would be the other idiom; a delimited string keeps the
+	// v2 query surface to plain scalars, and these hashes are decimal digits so
+	// the delimiter is never ambiguous.
+	fingerprint_hash: Schema.optional(Schema.String),
 	// Only issues observed in this deployment environment (resolved against the
 	// warehouse's error events, scoped by start_time/end_time when provided).
 	// Alert-kind issues carry no environment and are excluded when this is set.
@@ -148,14 +189,20 @@ const ErrorIssueServiceCountList = ListOf(V2ErrorIssueServiceCount).annotate({
 	identifier: "ErrorIssueServiceCountList",
 	title: "Error issue service count list",
 })
-const commonErrors = [V2InvalidRequestError, V2ServiceUnavailableError] as const
+
+const [errorIssueNotFound, errorPersistence] = publicErrors(ErrorIssueNotFoundError, ErrorPersistenceError)
 
 export class V2ErrorIssuesApiGroup extends HttpApiGroup.make("errorIssues")
 	.add(
 		HttpApiEndpoint.get("list", "/", {
 			query: V2ErrorIssueListQuery,
 			success: ErrorIssueList,
-			error: [...commonErrors],
+			error: [
+				V2CursorInvalid.schema,
+				V2CursorSortMismatch.schema,
+				errorPersistence,
+				...V2WarehouseReadErrors,
+			],
 		}).annotateMerge(
 			OpenApi.annotations({
 				identifier: "listErrorIssues",
@@ -169,7 +216,7 @@ export class V2ErrorIssuesApiGroup extends HttpApiGroup.make("errorIssues")
 		// Static path — must be registered before the `/:id` param route.
 		HttpApiEndpoint.get("serviceCounts", "/service_counts", {
 			success: ErrorIssueServiceCountList,
-			error: [...commonErrors],
+			error: errorPersistence,
 		}).annotateMerge(
 			OpenApi.annotations({
 				identifier: "listErrorIssueServiceCounts",
@@ -184,7 +231,7 @@ export class V2ErrorIssuesApiGroup extends HttpApiGroup.make("errorIssues")
 			params: { id: ErrorIssuePublicId },
 			query: V2ErrorIssueDetailQuery,
 			success: V2ErrorIssueDetail,
-			error: [...commonErrors, V2NotFoundError],
+			error: [errorIssueNotFound, errorPersistence, ...V2WarehouseReadErrors],
 		}).annotateMerge(
 			OpenApi.annotations({
 				identifier: "getErrorIssue",
@@ -196,7 +243,7 @@ export class V2ErrorIssuesApiGroup extends HttpApiGroup.make("errorIssues")
 	)
 	.prefix("/v2/error_issues")
 	.middleware(AuthorizationV2)
-	.middleware(V2SchemaErrors)
+	.annotate(AuditedRead, "telemetry.read")
 	.annotateMerge(
 		OpenApi.annotations({
 			title: "Error Issues",

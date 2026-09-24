@@ -84,14 +84,24 @@ describe("errorIssueFromV2", () => {
 			last_seen_at: "2026-07-15T01:00:00.000Z",
 			occurrence_count: 12,
 			resolved_at: null,
+			last_resolved_at: null,
+			last_regressed_at: null,
+			regression_count: 0,
+			resolved_versions: [],
 			snooze_until: null,
 			archived_at: null,
 			has_open_incident: true,
+			comment_count: 3,
+			open_pull_request_count: 1,
+			merged_pull_request_count: 2,
 		})
 		const adapted = errorIssueFromV2(issue)
 		expect(adapted.id).toBe(id)
 		expect(adapted.serviceName).toBe("checkout-api")
 		expect(adapted.hasOpenIncident).toBe(true)
+		expect(adapted.commentCount).toBe(3)
+		expect(adapted.openPullRequestCount).toBe(1)
+		expect(adapted.mergedPullRequestCount).toBe(2)
 		expect(appendUniqueErrorIssues([adapted], [adapted])).toEqual([adapted])
 	})
 })

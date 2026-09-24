@@ -4,6 +4,7 @@ import {
 	ErrorIssueDetailResponse,
 	ErrorIssueDocument,
 	ErrorIssueSampleTrace,
+	ErrorIssueEnvironment,
 	ErrorIssueTimeseriesPoint,
 	IsoDateTimeString,
 	type IssueKind,
@@ -30,11 +31,15 @@ export const buildErrorIssueListQuery = (filters: {
 	readonly kind?: IssueKind | "all"
 }): ErrorIssueListQuery => ({
 	limit: 100,
-	...(filters.workflowState === undefined || filters.workflowState === "all"
-		? {}
-		: { workflow_state: filters.workflowState }),
-	...(filters.severity === undefined || filters.severity === "all" ? {} : { severity: filters.severity }),
-	...(filters.kind === undefined || filters.kind === "all" ? {} : { kind: filters.kind }),
+	...(!(filters.workflowState === undefined || filters.workflowState === "all")
+		? {
+				workflow_state: filters.workflowState,
+			}
+		: undefined),
+	...(!(filters.severity === undefined || filters.severity === "all")
+		? { severity: filters.severity }
+		: undefined),
+	...(!(filters.kind === undefined || filters.kind === "all") ? { kind: filters.kind } : undefined),
 })
 
 export interface ServiceOpenIssuesScope {
@@ -60,13 +65,13 @@ export const buildServiceOpenIssuesQuery = (
 	// The env filter is resolved against the warehouse's error events, so it is
 	// inherently window-scoped — the page's time range rides along only when an
 	// environment is selected. The unfiltered panel stays all-time.
-	...(scope?.environment === undefined
-		? {}
-		: {
+	...(!(scope?.environment === undefined)
+		? {
 				deployment_environment: scope.environment === "unknown" ? "" : scope.environment,
-				...(scope.startTime ? { start_time: warehouseDateTimeToIso(scope.startTime) } : {}),
-				...(scope.endTime ? { end_time: warehouseDateTimeToIso(scope.endTime) } : {}),
-			}),
+				...(scope.startTime ? { start_time: warehouseDateTimeToIso(scope.startTime) } : undefined),
+				...(scope.endTime ? { end_time: warehouseDateTimeToIso(scope.endTime) } : undefined),
+			}
+		: undefined),
 })
 
 /** Append a fetched page while keeping the first occurrence of each issue ID. */
@@ -114,9 +119,16 @@ export const errorIssueFromV2 = (issue: V2ErrorIssue): ErrorIssueDocument =>
 		lastSeenAt: asIso(issue.last_seen_at),
 		occurrenceCount: issue.occurrence_count,
 		resolvedAt: asIsoOrNull(issue.resolved_at),
+		lastResolvedAt: asIsoOrNull(issue.last_resolved_at),
+		lastRegressedAt: asIsoOrNull(issue.last_regressed_at),
+		regressionCount: issue.regression_count,
+		resolvedVersions: issue.resolved_versions,
 		snoozeUntil: asIsoOrNull(issue.snooze_until),
 		archivedAt: asIsoOrNull(issue.archived_at),
 		hasOpenIncident: issue.has_open_incident,
+		commentCount: issue.comment_count,
+		openPullRequestCount: issue.open_pull_request_count,
+		mergedPullRequestCount: issue.merged_pull_request_count,
 	})
 
 export const errorIssueDetailFromV2 = (detail: V2ErrorIssueDetail): ErrorIssueDetailResponse =>
@@ -148,5 +160,8 @@ export const errorIssueDetailFromV2 = (detail: V2ErrorIssueDetail): ErrorIssueDe
 					resolvedAt: asIsoOrNull(incident.resolved_at),
 					occurrenceCount: incident.occurrence_count,
 				}),
+		),
+		environments: detail.environments.map(
+			(env) => new ErrorIssueEnvironment({ name: env.name, count: env.count }),
 		),
 	})

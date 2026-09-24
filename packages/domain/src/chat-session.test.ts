@@ -1,7 +1,17 @@
+import { Schema } from "effect"
 import { describe, expect, it } from "vitest"
+import { OrgId } from "./primitives"
 import {
+	ChatConnectorId,
+	ChatConversationKey,
 	ChatTurnTenant,
 	chatModeFromSessionId,
+	connectorSessionId,
+	connectorApprovalTenant,
+	connectorTurnTenant,
+	CONNECTOR_TENANT_USER_ID,
+	isConnectorSessionId,
+	originForTenant,
 	decodeChatTurnTenant,
 	encodeChatTurnTenant,
 	decodeChatEvent,
@@ -18,6 +28,43 @@ import {
 	ChatTurnRetryEvent,
 	type ChatEventInput,
 } from "./chat-session"
+import { type ChatSessionNamespace, type ChatSessionStub, chatSessionStub } from "./chat-session-stub"
+
+describe("chatSessionStub", () => {
+	const stub = {} as ChatSessionStub
+	const namespace = (label: string, seen: string[]): ChatSessionNamespace => ({
+		idFromName: (name) => `${label}:${name}`,
+		get: (id) => {
+			seen.push(String(id))
+			return stub
+		},
+		jurisdiction: (jurisdiction) => namespace(`${label}/${jurisdiction}`, seen),
+	})
+
+	it("addresses the object through the eu jurisdiction on the EU instance", () => {
+		const seen: string[] = []
+		expect(chatSessionStub({ ChatSession: namespace("ns", seen), MAPLE_REGION: "eu" }, "org_a:t")).toBe(
+			stub,
+		)
+		expect(seen).toEqual(["ns/eu:org_a:t"])
+	})
+
+	it("leaves the us instance, and an env with no region, on the plain namespace", () => {
+		const seen: string[] = []
+		chatSessionStub({ ChatSession: namespace("ns", seen), MAPLE_REGION: "us" }, "org_a:t")
+		chatSessionStub({ ChatSession: namespace("ns", seen) }, "org_a:t")
+		expect(seen).toEqual(["ns:org_a:t", "ns:org_a:t"])
+	})
+
+	it("is undefined without the binding", () => {
+		expect(chatSessionStub({ MAPLE_REGION: "eu" }, "org_a:t")).toBeUndefined()
+	})
+})
+
+const orgId = Schema.decodeSync(OrgId)
+/** A connector id, not a real one: the domain never learns which chat platform it answers in. */
+const connectorId = Schema.decodeSync(ChatConnectorId)("testchat")
+const conversationKey = Schema.decodeSync(ChatConversationKey)("c1")
 
 describe("chat session ids", () => {
 	it("round-trips org and tab", () => {
@@ -44,7 +91,33 @@ describe("chat session ids", () => {
 		expect(chatModeFromSessionId("o:alert-inc_1")).toBe("alert")
 		expect(chatModeFromSessionId("o:widget-fix-d1-w2")).toBe("widget-fix")
 		expect(chatModeFromSessionId("o:inv-123")).toBe("investigate")
-		expect(chatModeFromSessionId("o:dashboard-builder-1")).toBe("dashboard-builder")
+		// A connector thread is an ordinary chat conversation someone is answering in from
+		// elsewhere; what differs is the turn's origin, not the mode.
+		expect(chatModeFromSessionId("o:bot-testchat-c1")).toBe("default")
+	})
+
+	it("builds a connector conversation's session id, org and prefix intact", () => {
+		const id = connectorSessionId(orgId("org_abc"), connectorId, conversationKey)
+		expect(id).toBe("org_abc:bot-testchat-c1")
+		expect(isConnectorSessionId(id)).toBe(true)
+		expect(orgIdFromChatSessionId(id)).toBe("org_abc")
+		expect(isConnectorSessionId(makeChatSessionId("org_abc", "tab-1"))).toBe(false)
+	})
+
+	it("refuses an id or key that would blur the tab", () => {
+		// `-` is what the tab splits on, and nothing else escapes it — so both segments' charsets
+		// are what keeps `bot-<connectorId>-<conversationKey>` unambiguous.
+		const key = Schema.decodeUnknownSync(ChatConversationKey)
+		for (const bad of ["has-dash", "has space", "", "a".repeat(129)]) {
+			expect(() => key(bad), bad).toThrow()
+		}
+		expect(key("C123.g:4_x")).toBe("C123.g:4_x")
+
+		const id = Schema.decodeUnknownSync(ChatConnectorId)
+		for (const bad of ["two-words", "Upper", "9lead", "has_underscore", "", "a".repeat(33)]) {
+			expect(() => id(bad), bad).toThrow()
+		}
+		expect(id("testchat2")).toBe("testchat2")
 	})
 
 	it("recovers the investigation id only for investigate sessions", () => {
@@ -130,12 +203,6 @@ describe("chat event storage codec", () => {
 				reason: "Transport",
 				delayMs: 1_000,
 			},
-			{
-				type: "compaction",
-				messageId: "a1",
-				summary: "the user asked about checkout",
-				throughSeq: 12,
-			},
 			// Sub-agent events: the same members, tagged.
 			{
 				type: "turn-start",
@@ -190,5 +257,36 @@ describe("ChatTurnTenant", () => {
 		const decoded = decodeChatTurnTenant(structuredClone(encoded))
 		expect(decoded.orgId).toBe("org_1")
 		expect(decoded.authMode).toBe("self_hosted")
+	})
+
+	it("runs a connector turn as an org-level tenant, with no roles", () => {
+		const encoded = connectorTurnTenant(orgId("org_1"))
+
+		expect(encoded).toStrictEqual({
+			orgId: "org_1",
+			userId: CONNECTOR_TENANT_USER_ID,
+			roles: [],
+			authMode: "self_hosted",
+		})
+		// The prototype, not `structuredClone`: Node clones a class instance happily and only
+		// workerd raises `DataCloneError`, so the throw check above is the one that catches this
+		// and a green `structuredClone` here would prove nothing.
+		expect(Object.getPrototypeOf(encoded)).toBe(Object.prototype)
+	})
+
+	it("carries exactly one role more than the turn that proposed the change", () => {
+		// The difference between the two IS the approval gate. What that role then permits is
+		// `apply-tenant.test.ts`'s to pin, where the tenant is actually built.
+		expect(connectorTurnTenant(orgId("org_1")).roles).toStrictEqual([])
+		expect(connectorApprovalTenant(orgId("org_1")).roles).toStrictEqual(["org:admin"])
+	})
+})
+
+describe("originForTenant", () => {
+	it("reads Maple's own service token as an unattended pass, and everyone else as the app", () => {
+		const app = { orgId: "org_1", userId: "user_1", roles: [], authMode: "self_hosted" } as const
+		const pass = { ...app, userId: "internal-service" } as const
+		expect(originForTenant(app)).toStrictEqual({ kind: "app" })
+		expect(originForTenant(pass)).toStrictEqual({ kind: "autonomous" })
 	})
 })

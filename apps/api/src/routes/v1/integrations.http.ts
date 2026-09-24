@@ -3,6 +3,7 @@ import { HttpApiBuilder } from "effect/unstable/httpapi"
 import {
 	CloudflareDisconnectResponse,
 	CloudflareHyperdrivesResponse,
+	CloudflarePrimeResponse,
 	CloudflareStartConnectResponse,
 	CloudflareTopTrafficResponse,
 	CloudflareTopTrafficRow,
@@ -12,6 +13,9 @@ import {
 	GithubDeleteRepositoryResponse,
 	GithubDisconnectResponse,
 	GithubIntegrationStatus,
+	GithubSetPrReviewResponse,
+	GithubPrReviewConfigResponse,
+	GithubPrReviewsResponse,
 	GithubSetTrackedBranchResponse,
 	GithubStartConnectResponse,
 	HazelChannelsListResponse,
@@ -24,43 +28,45 @@ import {
 	IntegrationsUpstreamError,
 	IntegrationsValidationError,
 	MapleApi,
-	PlanetScaleDatabasesResponse,
-	PlanetScaleDisconnectResponse,
-	PlanetScaleEventsResponse,
-	PlanetScaleOrganizationsResponse,
-	PlanetScaleOrganizationSummary,
-	PlanetScaleQueryInsightsResponse,
-	PlanetScaleStartConnectResponse,
-	PlanetScaleWebhookConfigResponse,
 	RoleName,
 	UserId,
+	VCS_COMMIT_DETAILS_MAX_SHAS,
 	VcsCommitDetailResponse,
+	VCS_PULL_REQUESTS_DEFAULT_LIMIT,
+	VcsCommitDetailsResponse,
+	VcsPullRequestsResponse,
+	validateIntegrationReturnPath,
 } from "@maple/domain/http"
 import { cloudflareAnalyticsState } from "@maple/db"
 import { EdgeCacheService } from "@maple/cache"
-import { and, eq } from "drizzle-orm"
-import { Cause, Effect, Option, Schema } from "effect"
-import { Database } from "@/platform/DatabaseLive"
-import { Env } from "@/platform/Env"
-import { graphqlQuery } from "@/services/integrations/CloudflareApi"
-import { CloudflareAnalyticsService } from "@/services/integrations/CloudflareAnalyticsService"
-import { CloudflareOAuthService } from "@/services/auth/CloudflareOAuthService"
-import { abrCount } from "@/services/integrations/cloudflare-analytics/mapping"
+import { and, desc, eq, ne } from "drizzle-orm"
+import { Effect, Option, Schema } from "effect"
+import { Database } from "@maple/backend/platform/DatabaseLive"
+import { Env } from "@maple/backend/platform/Env"
+import { graphqlQuery } from "@maple/backend/services/integrations/CloudflareApi"
+import { CloudflareAnalyticsService } from "@maple/backend/services/integrations/CloudflareAnalyticsService"
+import { CloudflareOAuthService } from "@maple/backend/services/auth/CloudflareOAuthService"
+import { abrCount } from "@maple/backend/services/integrations/cloudflare-analytics/mapping"
 import {
 	decodeTopTrafficResponse,
 	HTTP_DATASET,
 	toGraphqlTime,
 	topTrafficFilterVariables,
 	topTrafficQuery,
-	type TopTrafficGroupShape,
-} from "@/services/integrations/cloudflare-analytics/queries"
-import { PlanetScaleConnectionService } from "@/services/integrations/PlanetScaleConnectionService"
-import { PlanetScaleService } from "@/services/integrations/PlanetScaleService"
-import { PLANETSCALE_CALLBACK_PATH, PlanetScaleOAuthService } from "@/services/auth/PlanetScaleOAuthService"
-import { GithubConnectService } from "@/services/integrations/vcs/vendor/github/GithubConnectService"
-import { VcsCommitService } from "@/services/integrations/vcs/VcsCommitService"
-import { HazelOAuthService } from "@/services/auth/HazelOAuthService"
-import { requireAdmin as requireAdminRole } from "@/services/auth/auth"
+	type TopTrafficGroupDefinition,
+} from "@maple/backend/services/integrations/cloudflare-analytics/queries"
+import { PlanetScaleConnectionService } from "@maple/backend/services/integrations/PlanetScaleConnectionService"
+import { PlanetScaleService } from "@maple/backend/services/integrations/PlanetScaleService"
+import {
+	PLANETSCALE_CALLBACK_PATH,
+	PlanetScaleOAuthService,
+} from "@maple/backend/services/auth/PlanetScaleOAuthService"
+import { GithubConnectService } from "@maple/backend/services/integrations/vcs/vendor/github/GithubConnectService"
+import { VcsCommitService } from "@maple/backend/services/integrations/vcs/VcsCommitService"
+import { VcsSourceService } from "@maple/backend/services/integrations/vcs/VcsSourceService"
+import { HazelOAuthService } from "@maple/backend/services/auth/HazelOAuthService"
+import { requireAdmin as requireAdminRole } from "@maple/backend/services/auth/auth"
+import { summarizeCause } from "@maple/backend/platform/describe-cause"
 
 const asExternalUserId = Schema.decodeUnknownSync(ExternalUserId)
 const asUserId = Schema.decodeUnknownSync(UserId)
@@ -72,6 +78,14 @@ const HAZEL_MESSAGE_TYPE = "maple:integration:hazel"
 const GITHUB_MESSAGE_TYPE = "maple:integration:github"
 const CLOUDFLARE_MESSAGE_TYPE = "maple:integration:cloudflare"
 const PLANETSCALE_MESSAGE_TYPE = "maple:integration:planetscale"
+
+/**
+ * How long `cloudflarePrime` spends on the post-connect poll. Long enough for zone discovery plus
+ * a first window on an ordinary account; whatever a slow or many-zoned one does not finish resumes
+ * on the next cron tick. It is deliberately NOT on the OAuth callback's critical path — see the
+ * callback handler.
+ */
+const CLOUDFLARE_PRIME_TIMEOUT = "20 seconds"
 
 const resolveRequestOrigin = (req: HttpServerRequest.HttpServerRequest): string => {
 	const headers = req.headers as Record<string, string | undefined>
@@ -108,11 +122,36 @@ const requireAdmin = (roles: ReadonlyArray<RoleName>) =>
 		() => new IntegrationsForbiddenError({ message: "Only org admins can manage integrations" }),
 	)
 
+/** Preserve v1's collapsed PlanetScale mutation errors while v2 exposes their exact tags. */
+const v1PlanetScaleScrapeTargetErrors = {
+	"@maple/http/errors/ScrapeTargetValidationError": (error: { readonly message: string }) =>
+		Effect.fail(new IntegrationsValidationError({ message: error.message })),
+	"@maple/http/errors/ScrapeTargetNotFoundError": (error: { readonly message: string }) =>
+		Effect.fail(new IntegrationsPersistenceError({ message: error.message })),
+	"@maple/http/errors/ScrapeTargetPersistenceError": (error: { readonly message: string }) =>
+		Effect.fail(new IntegrationsPersistenceError({ message: error.message })),
+	"@maple/http/errors/ScrapeTargetEncryptionError": (error: { readonly message: string }) =>
+		Effect.fail(new IntegrationsPersistenceError({ message: error.message })),
+	"@maple/http/errors/ScrapeTargetStoredConfigInvalidError": (error: { readonly message: string }) =>
+		Effect.fail(new IntegrationsPersistenceError({ message: error.message })),
+} as const
+
+const v1PlanetScaleScrapeTargetPersistenceError = {
+	"@maple/http/errors/ScrapeTargetPersistenceError": (error: { readonly message: string }) =>
+		Effect.fail(new IntegrationsPersistenceError({ message: error.message })),
+} as const
+
+const v1PlanetScaleStatusErrors = {
+	"@maple/http/errors/ScrapeTargetStoredConfigInvalidError": (error: { readonly message: string }) =>
+		Effect.fail(new IntegrationsPersistenceError({ message: error.message })),
+} as const
+
 export const HttpIntegrationsLive = HttpApiBuilder.group(MapleApi, "integrations", (handlers) =>
 	Effect.gen(function* () {
 		const hazel = yield* HazelOAuthService
 		const github = yield* GithubConnectService
 		const vcsCommits = yield* VcsCommitService
+		const vcsSource = yield* VcsSourceService
 		const cloudflare = yield* CloudflareOAuthService
 		const cloudflareAnalytics = yield* CloudflareAnalyticsService
 		const planetscale = yield* PlanetScaleConnectionService
@@ -266,19 +305,33 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleApi, "integrations
 						const startMs = Math.floor(payload.startTime / MINUTE) * MINUTE
 						const endMs = Math.max(Math.ceil(payload.endTime / MINUTE) * MINUTE, startMs + MINUTE)
 						const compute = Effect.gen(function* () {
-							const { accessToken } = yield* cloudflare.getValidAccessToken(tenant.orgId)
+							// The zone's state row also names the account that owns it, so the token
+							// is minted for the right connection when several accounts are connected.
 							const zoneRows = yield* database
 								.execute((db) =>
 									db
-										.select({ zoneId: cloudflareAnalyticsState.zoneId })
+										.select({
+											zoneId: cloudflareAnalyticsState.zoneId,
+											accountId: cloudflareAnalyticsState.accountId,
+										})
 										.from(cloudflareAnalyticsState)
 										.where(
 											and(
 												eq(cloudflareAnalyticsState.orgId, tenant.orgId),
 												eq(cloudflareAnalyticsState.dataset, HTTP_DATASET),
 												eq(cloudflareAnalyticsState.zoneName, payload.zoneName),
+												// A zone that moved between accounts (or belongs to one
+												// the grant no longer covers) leaves a disabled row
+												// behind; picking it would address the token to an
+												// account outside the grant and hard-fail the request.
+												eq(cloudflareAnalyticsState.enabled, true),
+												// "" is a pre-multi-account orphan (its org had no
+												// connection when the backfill ran) and names no
+												// account to address the token to.
+												ne(cloudflareAnalyticsState.accountId, ""),
 											),
 										)
+										.orderBy(desc(cloudflareAnalyticsState.updatedAt))
 										.limit(1),
 								)
 								.pipe(
@@ -292,14 +345,19 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleApi, "integrations
 											}),
 									),
 								)
-							const zoneId = zoneRows[0]?.zoneId
-							if (zoneId == null) {
+							const zoneRow = zoneRows[0]
+							if (zoneRow == null) {
 								return yield* Effect.fail(
 									new IntegrationsValidationError({
 										message: `Unknown Cloudflare zone: ${payload.zoneName}`,
 									}),
 								)
 							}
+							const zoneId = zoneRow.zoneId
+							const { accessToken } = yield* cloudflare.getValidAccessToken(
+								tenant.orgId,
+								zoneRow.accountId,
+							)
 							const result = yield* graphqlQuery(
 								accessToken,
 								{
@@ -345,7 +403,7 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleApi, "integrations
 								),
 							)
 							const zone = decoded.viewer.zones?.[0]
-							const keyOf = (group: TopTrafficGroupShape) =>
+							const keyOf = (group: TopTrafficGroupDefinition) =>
 								(payload.dimension === "host"
 									? group.dimensions.clientRequestHTTPHost
 									: group.dimensions.clientRequestPath) ?? "unknown"
@@ -430,188 +488,26 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleApi, "integrations
 						return new CloudflareDisconnectResponse(result)
 					}),
 				)
-				.handle("planetscaleStatus", () =>
-					Effect.gen(function* () {
-						const tenant = yield* CurrentTenant.Context
-						return yield* planetscale.getStatus(tenant.orgId)
-					}),
-				)
-				.handle("planetscaleStart", ({ payload }) =>
+				.handle("cloudflarePrime", () =>
 					Effect.gen(function* () {
 						const tenant = yield* CurrentTenant.Context
 						yield* requireAdmin(tenant.roles)
-						const req = yield* HttpServerRequest.HttpServerRequest
-						const result = yield* planetscaleOAuth.startConnect(tenant.orgId, tenant.userId, {
-							callbackUrl: resolvePlanetScaleCallbackUrl(req),
-							returnTo: payload.returnTo,
-						})
-						return new PlanetScaleStartConnectResponse(result)
-					}),
-				)
-				// Admin-gated: drives the org picker while pendingOrgSelection (and
-				// "change organization" re-binding), both admin-only flows.
-				.handle("planetscaleOrganizations", () =>
-					Effect.gen(function* () {
-						const tenant = yield* CurrentTenant.Context
-						yield* requireAdmin(tenant.roles)
-						const organizations = yield* planetscaleOAuth.listOrganizations(tenant.orgId)
-						return new PlanetScaleOrganizationsResponse({
-							organizations: organizations.map(
-								(org) => new PlanetScaleOrganizationSummary({ id: org.id, name: org.name }),
-							),
-						})
-					}),
-				)
-				.handle("planetscaleSelectOrganization", ({ payload }) =>
-					Effect.gen(function* () {
-						const tenant = yield* CurrentTenant.Context
-						yield* requireAdmin(tenant.roles)
-						return yield* planetscale.finalizeOrgSelection(tenant.orgId, payload)
-					}),
-				)
-				.handle("planetscaleSetMetricsToken", ({ payload }) =>
-					Effect.gen(function* () {
-						const tenant = yield* CurrentTenant.Context
-						yield* requireAdmin(tenant.roles)
-						return yield* planetscale.setMetricsToken(tenant.orgId, payload)
-					}),
-				)
-				.handle("planetscaleDisconnect", () =>
-					Effect.gen(function* () {
-						const tenant = yield* CurrentTenant.Context
-						yield* requireAdmin(tenant.roles)
-						const result = yield* planetscale.disconnect(tenant.orgId)
-						return new PlanetScaleDisconnectResponse(result)
-					}),
-				)
-				.handle("planetscaleWebhookConfig", () =>
-					Effect.gen(function* () {
-						const tenant = yield* CurrentTenant.Context
-						// Admin-only: the response carries the webhook HMAC secret.
-						yield* requireAdmin(tenant.roles)
-						const req = yield* HttpServerRequest.HttpServerRequest
-						const config = yield* planetscale.webhookConfig(tenant.orgId)
-						return new PlanetScaleWebhookConfigResponse({
-							configured: config.configured,
-							url: config.path === null ? null : `${resolveRequestOrigin(req)}${config.path}`,
-							secret: config.secret,
-						})
-					}),
-				)
-				.handle("planetscaleQueryInsights", ({ payload }) =>
-					Effect.gen(function* () {
-						const tenant = yield* CurrentTenant.Context
-						if (payload.endTime <= payload.startTime) {
-							return yield* Effect.fail(
-								new IntegrationsValidationError({
-									message: "endTime must be after startTime",
-								}),
-							)
-						}
-						const limit = Math.min(Math.max(Math.floor(payload.limit ?? 10), 1), 25)
-						// Minute-align so panel refreshes within the TTL share a cache entry
-						// (same shape as cloudflareTopTraffic above).
-						const MINUTE = 60_000
-						const startMs = Math.floor(payload.startTime / MINUTE) * MINUTE
-						const endMs = Math.max(Math.ceil(payload.endTime / MINUTE) * MINUTE, startMs + MINUTE)
-						const cached = yield* edgeCache.getOrCompute(
-							{
-								bucket: "ps-query-insights",
-								key: `${tenant.orgId}:${payload.database}:${payload.branch ?? ""}:${startMs}:${endMs}:${limit}`,
-								ttlSeconds: 60,
-								schema: PlanetScaleQueryInsightsResponse,
-							},
-							planetscaleInventory.queryInsights(tenant.orgId, {
-								database: payload.database,
-								branch: payload.branch,
-								startTime: startMs,
-								endTime: endMs,
-								limit,
+						// Discovery (the part that stops the integration looking empty) commits in
+						// the first seconds; the rest spends what call budget it has on the newest
+						// window. Timing out is an ordinary outcome, not a failure — the cron picks
+						// up where this left off, and a lease dropped by the timeout expires.
+						const summary = yield* Effect.timeoutOption(
+							cloudflareAnalytics.pollOrg(tenant.orgId),
+							CLOUDFLARE_PRIME_TIMEOUT,
+						)
+						// A prime that arrives before the callback committed the grant polls nothing.
+						// Reporting that plainly lets the dashboard retry rather than assume it ran.
+						return new CloudflarePrimeResponse({
+							connected: Option.match(summary, {
+								onNone: () => true,
+								onSome: (value) => value.skipped !== "not connected",
 							}),
-						)
-						return cached.value
-					}),
-				)
-				// No admin gate — the timeline is the same class of read as the inventory.
-				.handle("planetscaleEvents", ({ payload }) =>
-					Effect.gen(function* () {
-						const tenant = yield* CurrentTenant.Context
-						if (payload.endTime <= payload.startTime) {
-							return yield* Effect.fail(
-								new IntegrationsValidationError({
-									message: "endTime must be after startTime",
-								}),
-							)
-						}
-						const limit = Math.min(Math.max(Math.floor(payload.limit ?? 100), 1), 500)
-						const MINUTE = 60_000
-						const startMs = Math.floor(payload.startTime / MINUTE) * MINUTE
-						const endMs = Math.max(Math.ceil(payload.endTime / MINUTE) * MINUTE, startMs + MINUTE)
-						const categories = payload.categories ?? []
-						const cached = yield* edgeCache.getOrCompute(
-							{
-								bucket: "ps-events",
-								key: `${tenant.orgId}:${payload.database ?? ""}:${payload.branch ?? ""}:${startMs}:${endMs}:${categories.join(",")}:${limit}:${payload.cursor ?? ""}`,
-								// Shorter than query-insights' 60s: a deploy marker landing a
-								// minute after the deploy is the visible failure mode here.
-								ttlSeconds: 30,
-								schema: PlanetScaleEventsResponse,
-							},
-							planetscaleInventory
-								.listEvents(tenant.orgId, {
-									database: payload.database,
-									branch: payload.branch,
-									startTime: startMs,
-									endTime: endMs,
-									categories: categories.length > 0 ? categories : undefined,
-									limit,
-									cursor: payload.cursor,
-								})
-								.pipe(
-									Effect.map(
-										({ events, nextCursor }) =>
-											new PlanetScaleEventsResponse({
-												events: events.map((row) => ({
-													id: row.id,
-													databaseName: row.databaseName,
-													branchName: row.branchName,
-													category: row.category,
-													eventType: row.eventType,
-													state: row.state,
-													externalId: row.externalId,
-													title: row.title,
-													source: row.source,
-													actorLogin: row.actorLogin,
-													url: row.url,
-													occurredAt: row.occurredAt.getTime(),
-												})),
-												nextCursor,
-											}),
-									),
-								),
-						)
-						return cached.value
-					}),
-				)
-				// No admin gate — any org member may read the inventory (service map needs it).
-				.handle("planetscaleDatabases", () =>
-					Effect.gen(function* () {
-						const tenant = yield* CurrentTenant.Context
-						const [rows, connection] = yield* Effect.all([
-							planetscaleInventory.listDatabases(tenant.orgId),
-							planetscale.loadConnection(tenant.orgId),
-						])
-						return new PlanetScaleDatabasesResponse({
-							databases: rows.map((row) => ({
-								id: row.databaseId,
-								name: row.name,
-								kind: row.kind,
-								state: row.state,
-								region: row.region,
-								plan: row.plan,
-								branches: (row.branchesJson ?? []).map((branch) => ({ ...branch })),
-							})),
-							lastInventoryAt: connection?.lastInventoryAt?.getTime() ?? null,
+							complete: Option.isSome(summary),
 						})
 					}),
 				)
@@ -669,6 +565,45 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleApi, "integrations
 						return new GithubSetTrackedBranchResponse(result)
 					}),
 				)
+				.handle("githubSetPrReview", ({ params, payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						yield* requireAdmin(tenant.roles)
+						const result = yield* github.setPrReviewEnabled(
+							tenant.orgId,
+							params.repositoryId,
+							payload.enabled,
+						)
+						return new GithubSetPrReviewResponse(result)
+					}),
+				)
+				// Any member may read a repository's review settings and history; only admins change them.
+				.handle("githubGetPrReviewConfig", ({ params }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						const config = yield* github.getPrReviewConfig(tenant.orgId, params.repositoryId)
+						return new GithubPrReviewConfigResponse({ config })
+					}),
+				)
+				.handle("githubSetPrReviewConfig", ({ params, payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						yield* requireAdmin(tenant.roles)
+						const config = yield* github.setPrReviewConfig(
+							tenant.orgId,
+							params.repositoryId,
+							payload.config,
+						)
+						return new GithubPrReviewConfigResponse({ config })
+					}),
+				)
+				.handle("githubListPrReviews", ({ params }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						const reviews = yield* github.listPrReviews(tenant.orgId, params.repositoryId)
+						return new GithubPrReviewsResponse({ reviews })
+					}),
+				)
 				// No admin gate — any org member may resolve commit SHAs for hover cards.
 				.handle("vcsCommitDetail", ({ params }) =>
 					Effect.gen(function* () {
@@ -676,6 +611,48 @@ export const HttpIntegrationsLive = HttpApiBuilder.group(MapleApi, "integrations
 						const detail = yield* vcsCommits.resolveCommitDetail(tenant.orgId, params.sha)
 						return new VcsCommitDetailResponse(detail)
 					}),
+				)
+				.handle("vcsCommitDetails", ({ query }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						const shas = query.shas
+							.split(",")
+							.map((sha) => sha.trim())
+							.filter((sha) => sha.length > 0)
+							.slice(0, VCS_COMMIT_DETAILS_MAX_SHAS)
+						const details = yield* vcsCommits.resolveCommitDetails(tenant.orgId, shas)
+						return new VcsCommitDetailsResponse({
+							commits: details.map((detail) => new VcsCommitDetailResponse(detail)),
+						})
+					}),
+				)
+				.handle("vcsPullRequests", ({ query }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						yield* Effect.annotateCurrentSpan({
+							orgId: tenant.orgId,
+							"vcs.repository.full_name": query.repository,
+						})
+						const pullRequests = yield* vcsSource
+							.listPullRequests(tenant.orgId, query.repository, {
+								limit: query.limit ?? VCS_PULL_REQUESTS_DEFAULT_LIMIT,
+							})
+							.pipe(
+								// A repository this org has not connected is a client mistake, not
+								// an upstream one — the picker only ever offers connected repos, so
+								// reaching here means a hand-built request or a repo disconnected
+								// mid-session.
+								Effect.catchTag(
+									"@maple/api/vcs/VcsSourceRepositoryNotFoundError",
+									(error) => new IntegrationsValidationError({ message: error.message }),
+								),
+							)
+						yield* Effect.annotateCurrentSpan({ "result.rowCount": pullRequests.length })
+						return new VcsPullRequestsResponse({
+							repository: query.repository,
+							pullRequests,
+						})
+					}).pipe(Effect.withSpan("HttpIntegrations.vcsPullRequests")),
 				)
 		)
 	}),
@@ -715,7 +692,8 @@ const resolveDashboardTargetOrigin = (appBaseUrl: string): string =>
 		onSome: (parsed) => parsed.origin,
 	})
 
-const renderCallbackPage = (params: {
+/** Exported for the callback-page sink tests (`integrations-callback-page.test.ts`). */
+export const renderCallbackPage = (params: {
 	status: "success" | "error"
 	message: string
 	returnTo: string | null
@@ -725,7 +703,16 @@ const renderCallbackPage = (params: {
 	targetOrigin: string
 }) => {
 	const safeMessage = escapeHtml(params.message)
-	const safeReturn = params.returnTo ? escapeHtml(params.returnTo) : null
+	// The stored return value is a dashboard-relative path, but this page is served
+	// from the API origin — resolve it against the dashboard origin so the link works,
+	// and drop it entirely when it is not a plain relative path (a `javascript:` URL
+	// survives HTML escaping and would run here) or when the origin is unknown.
+	const returnPath = validateIntegrationReturnPath(params.returnTo)
+	const safeReturn =
+		returnPath !== null && params.targetOrigin !== "*"
+			? escapeHtml(`${params.targetOrigin}${returnPath}`)
+			: null
+	const blockedReturn = safeReturn === null && (params.returnTo ?? "").length > 0
 	const payload = escapeJsonInHtml(
 		JSON.stringify({
 			type: params.messageType,
@@ -808,6 +795,7 @@ const renderCallbackPage = (params: {
       .glyph svg { width: 1.25rem; height: 1.25rem; }
       h1 { font-size: 1rem; font-weight: 600; margin: 0 0 0.5rem; }
       p { font-size: 0.8125rem; line-height: 1.5; color: var(--muted-foreground); margin: 0; }
+      p.hint { margin-top: 0.75rem; opacity: 0.8; }
       a.button {
         display: inline-block;
         margin-top: 1.25rem;
@@ -835,14 +823,24 @@ const renderCallbackPage = (params: {
       <div class="glyph">${glyph}</div>
       <h1>${isSuccess ? `${params.label} connected` : `${params.label} connection failed`}</h1>
       <p>${safeMessage}</p>
-      ${safeReturn ? `<a class="button" href="${safeReturn}">Return to Maple</a>` : ""}
+      ${isSuccess ? "" : `<p class="hint">Close this window and try connecting again from Maple.</p>`}
+      ${
+			safeReturn
+				? `<a class="button" href="${safeReturn}">Return to Maple</a>`
+				: blockedReturn
+					? `<p class="hint" title="The return link was not a Maple dashboard path and was blocked.">Return link blocked — close this window and go back to Maple.</p>`
+					: ""
+		}
       <div class="wordmark">Maple</div>
     </main>
     <script>
       try {
         if (window.opener) {
           window.opener.postMessage(${payload}, ${targetOrigin});
-          setTimeout(function () { window.close(); }, 600);
+          // Only a success closes itself. A failure's message is the one place the actual
+          // cause is written out in full ("the OAuth app must grant offline_access", …) —
+          // closing it after half a second leaves the user with a toast and no detail.
+          ${isSuccess ? "setTimeout(function () { window.close(); }, 600);" : ""}
         }
       } catch (_) {}
     </script>
@@ -1179,11 +1177,17 @@ export const IntegrationsCallbackRouter = HttpRouter.use((router) =>
 						Effect.catchCause((cause) =>
 							Effect.logWarning("cloudflare post-connect state reset failed", {
 								orgId: result.orgId,
-								error: Cause.pretty(cause),
+								error: summarizeCause(cause),
 							}),
 						),
 					),
 				),
+				// The prime poll that fills the integration in (discovery + a first window)
+				// deliberately does NOT run here. It used to, and it held the callback response —
+				// so the popup sat blank for its whole budget after the user had already consented,
+				// long enough to read as a hang and be closed, which aborted the poll and left a
+				// lease behind. The dashboard calls `cloudflarePrime` instead, from a tab that
+				// stays open and already renders the "finding your zones" phase while it runs.
 				Effect.map((result) =>
 					htmlResponse(
 						cloudflareCallbackPage({
@@ -1280,6 +1284,10 @@ export const IntegrationsCallbackRouter = HttpRouter.use((router) =>
 					),
 				),
 				Effect.catchTags({
+					"@maple/http/errors/IntegrationsConfigurationError": () =>
+						Effect.succeed(
+							planetscaleErrorPage("PlanetScale integration is not configured in Maple"),
+						),
 					// Validation/upstream messages are our own sanitized strings — showing
 					// them turns "it failed" into something actionable.
 					"@maple/http/errors/IntegrationsValidationError": (error) =>

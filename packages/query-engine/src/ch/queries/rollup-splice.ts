@@ -1,4 +1,3 @@
-// ---------------------------------------------------------------------------
 // Rollup splice boundaries
 //
 // Several queries reconstruct a time window from two tiers: exact raw rows for
@@ -21,10 +20,11 @@
 //     unconditionally would drop it.
 //
 // The expressions are SQL strings rather than DSL nodes because they embed
-// `__PARAM_*__` placeholders that `compile()` substitutes later.
-// ---------------------------------------------------------------------------
+// param placeholders that `compile()` substitutes later.
 
-import * as CH from "@maple-dev/clickhouse-builder/expr"
+import * as CH from "@maple-dev/effect-clickhouse/expr"
+import { paramPlaceholder } from "@maple-dev/effect-clickhouse"
+import * as T from "@maple-dev/effect-clickhouse/types"
 
 /**
  * One tier boundary of a splice. `unit` names the bucket size; the rest are
@@ -32,7 +32,7 @@ import * as CH from "@maple-dev/clickhouse-builder/expr"
  */
 export interface SpliceGrain {
 	readonly unit: "HOUR" | "MINUTE"
-	/** `toDateTime(__PARAM_startTime__)` — the window start, unrounded. */
+	/** `toDateTime(<startTime placeholder>)` — the window start, unrounded. */
 	readonly startDt: string
 	readonly endDt: string
 	/** The window start rounded DOWN to a bucket boundary. */
@@ -44,8 +44,16 @@ export interface SpliceGrain {
 
 const makeGrain = (unit: "HOUR" | "MINUTE"): SpliceGrain => {
 	const floorFn = unit === "HOUR" ? "toStartOfHour" : "toStartOfMinute"
-	const startDt = "toDateTime(__PARAM_startTime__)"
-	const endDt = "toDateTime(__PARAM_endTime__)"
+	// `toDateTime` is strictly second-precision: a fractional bound fails here
+	// with `Cannot parse string '…000' as DateTime`, which is how
+	// `GET /v2/services` broke. Making this lenient was tried and reverted —
+	// it does not help. These queries also compare the same parameter directly
+	// against a `DateTime` column (`Timestamp >= <startTime placeholder>`), and that
+	// is a `TYPE_MISMATCH` for a fractional literal no matter how the floor
+	// arithmetic parses it. Precision has to be right at the caller; see
+	// `WindowPrecision` in apps/api/src/routes/v2/telemetry.http.ts.
+	const startDt = `toDateTime(${paramPlaceholder("dateTime", "startTime")})`
+	const endDt = `toDateTime(${paramPlaceholder("dateTime", "endTime")})`
 	const startFloor = `${floorFn}(${startDt})`
 	const endFloor = `${floorFn}(${endDt})`
 	return {
@@ -92,7 +100,7 @@ export function interiorConditions(
 	grain: SpliceGrain = hourGrain,
 ): readonly [CH.Condition, CH.Condition] {
 	return [
-		bucketColumn.gte(CH.rawExpr<string>(grain.firstFullBucket)),
-		bucketColumn.lt(CH.rawExpr<string>(grain.endFloor)),
+		bucketColumn.gte(CH.rawExpr(grain.firstFullBucket, T.dateTimeString)),
+		bucketColumn.lt(CH.rawExpr(grain.endFloor, T.dateTimeString)),
 	]
 }

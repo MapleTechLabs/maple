@@ -1,5 +1,5 @@
 # Build context: monorepo root (.)
-FROM oven/bun:1.3.11 AS base
+FROM oven/bun:1.4.0 AS base
 WORKDIR /app
 
 FROM base AS pruner
@@ -16,14 +16,15 @@ RUN bun install
 COPY --from=pruner /app/out/full/ ./
 
 # Build workspace dependencies that publish from dist/
-RUN bun run --cwd packages/browser build && \
-    bun run --cwd packages/effect-sdk build
+RUN bun run --cwd packages/effect-sdk build
 
 # Build-time env vars (baked into the SPA bundle)
 ARG VITE_API_BASE_URL
 ARG VITE_MAPLE_AUTH_MODE=self_hosted
+ARG VITE_ELECTRIC_SYNC_URL
 ENV VITE_API_BASE_URL=$VITE_API_BASE_URL
 ENV VITE_MAPLE_AUTH_MODE=$VITE_MAPLE_AUTH_MODE
+ENV VITE_ELECTRIC_SYNC_URL=$VITE_ELECTRIC_SYNC_URL
 
 RUN bun run --cwd apps/web build
 

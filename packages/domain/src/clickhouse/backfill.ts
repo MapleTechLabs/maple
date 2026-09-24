@@ -51,7 +51,9 @@ export const SOURCE_TIME_COLUMNS: Readonly<Record<string, string>> = {
 	metrics_exponential_histogram: "TimeUnix",
 	service_overview_spans: "Timestamp",
 	service_operations_minutely: "Minute",
-}
+	session_events: "Timestamp",
+	session_replays: "StartTime",
+} satisfies Readonly<Record<string, string>>
 
 const ident = (db: string, name: string): string => `\`${db}\`.\`${name}\``
 

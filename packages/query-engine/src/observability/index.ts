@@ -1,7 +1,7 @@
 export {
 	WarehouseExecutor,
 	type WarehouseExecutorError,
-	type WarehouseExecutorShape,
+	type WarehouseExecutorApi,
 } from "./WarehouseExecutor"
 export {
 	attributeIndexMode,
@@ -23,10 +23,15 @@ export { searchTraces } from "./search-traces"
 export { inspectTrace } from "./inspect-trace"
 export { spanDetail, type SpanDetailInput, type SpanDetailResult } from "./span-detail"
 export { findErrors } from "./find-errors"
-export { errorDetail, type ErrorDetailTrace, type ErrorDetailOutput } from "./error-detail"
+export {
+	errorDetail,
+	type ErrorDetailSpan,
+	type ErrorDetailTrace,
+	type ErrorDetailOutput,
+} from "./error-detail"
 export { diagnoseService } from "./diagnose-service"
 export { searchLogs } from "./search-logs"
-export { mineLogPatterns } from "./mine-log-patterns"
+export { mineLogPatterns, clusterLogPatterns, type ClusterableLogRow } from "./mine-log-patterns"
 export { exploreAttributeKeys, exploreAttributeValues } from "./explore-attributes"
 export { serviceMap } from "./service-map"
 export { findSlowTraces } from "./find-slow-traces"
@@ -45,3 +50,14 @@ export {
 	type SessionReplayDetailOutput,
 	type SessionTraceSummaryOutput,
 } from "./session-replays"
+export {
+	productEventsFunnel,
+	productEventsFunnelBreakdown,
+	productEventNames,
+	type ProductEventsFunnelInput,
+	type ProductEventsFunnelBreakdownInput,
+	type ProductEventNamesInput,
+	type ProductEventsFunnelOutput,
+	type ProductEventsFunnelBreakdownOutput,
+	type ProductEventNamesOutput,
+} from "./product-events"

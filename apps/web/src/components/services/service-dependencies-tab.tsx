@@ -1,7 +1,7 @@
 import { useMemo } from "react"
 import { cn } from "@maple/ui/lib/utils"
 import { Result } from "@/lib/effect-atom"
-import { useRetainedRefreshableResultValue } from "@/hooks/use-retained-refreshable-result-value"
+import { useRefreshableAtomValue } from "@/hooks/use-refreshable-atom-value"
 import { getServiceDependenciesBundleResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
 import { toSingleDeploymentEnv } from "@/lib/services/environments"
 import { latencyToneClass } from "@maple/ui/lib/latency-tone"
@@ -9,6 +9,7 @@ import { formatLatency } from "@maple/ui/lib/format"
 import { normalizeTimestampInput } from "@/lib/timezone-format"
 import { DependencyTable, type DependencyRow } from "./dependency-table"
 import type { DependencyKind } from "./dependency-type-badge"
+import { quoteWhereValue } from "@maple/domain/where-clause"
 
 interface ServiceDependenciesTabProps {
 	serviceName: string
@@ -50,10 +51,6 @@ function formatErrorRate(rate: number): string {
 	return "0%"
 }
 
-function escapeForWhereClause(value: string): string {
-	return value.replace(/'/g, "\\'")
-}
-
 export function ServiceDependenciesTab({
 	serviceName,
 	startTime,
@@ -67,7 +64,7 @@ export function ServiceDependenciesTab({
 	// a single round-trip (was three separate atoms). The atom key (incl. the
 	// derived deploymentEnv) matches ServiceDependencyStrip's, so switching from
 	// the Overview strip to this tab is a cache hit.
-	const bundleResult = useRetainedRefreshableResultValue(
+	const bundleResult = useRefreshableAtomValue(
 		getServiceDependenciesBundleResultAtom({
 			data: {
 				serviceName,
@@ -121,7 +118,7 @@ export function ServiceDependenciesTab({
 				p95DurationMs: Number(edge.p95DurationMs ?? 0),
 				hasSampling: Boolean(edge.hasSampling),
 				samplingWeight: Number(edge.samplingWeight ?? 1),
-				whereClause: `SpanKind = 'Client' AND server.address ILIKE '%${escapeForWhereClause(target)}%'`,
+				whereClause: `SpanKind = 'Client' AND server.address ILIKE ${quoteWhereValue(`%${target}%`)}`,
 			})
 		}
 
@@ -151,7 +148,7 @@ export function ServiceDependenciesTab({
 				p95DurationMs: Number(edge.p95DurationMs ?? 0),
 				hasSampling: Boolean(edge.hasSampling),
 				samplingWeight: Number(edge.samplingWeight ?? 1),
-				whereClause: `SpanKind = 'Client' AND db.system.name = '${escapeForWhereClause(target)}'`,
+				whereClause: `SpanKind = 'Client' AND db.system.name = ${quoteWhereValue(target)}`,
 			})
 		}
 
@@ -165,10 +162,10 @@ export function ServiceDependenciesTab({
 			const system = edge.targetSystem ? String(edge.targetSystem) : ""
 			const whereClause =
 				kind === "messaging"
-					? `SpanKind = 'Producer' AND messaging.destination = '${escapeForWhereClause(target)}'`
+					? `SpanKind = 'Producer' AND messaging.destination = ${quoteWhereValue(target)}`
 					: kind === "rpc"
-						? `SpanKind = 'Client' AND rpc.service = '${escapeForWhereClause(target)}'`
-						: `SpanKind = 'Client' AND (server.address = '${escapeForWhereClause(target)}' OR http.host = '${escapeForWhereClause(target)}')`
+						? `SpanKind = 'Client' AND rpc.service = ${quoteWhereValue(target)}`
+						: `SpanKind = 'Client' AND (server.address = ${quoteWhereValue(target)} OR http.host = ${quoteWhereValue(target)})`
 
 			out.push({
 				id: `${kind}:${target}`,
@@ -364,6 +361,6 @@ function labelFor(kind: DependencyKind, count: number): string {
 		http: ["external HTTP", "external HTTP"],
 		messaging: ["queue", "queues"],
 		rpc: ["RPC target", "RPC targets"],
-	}
+	} satisfies Record<DependencyKind, [singular: string, plural: string]>
 	return count === 1 ? map[kind][0] : map[kind][1]
 }

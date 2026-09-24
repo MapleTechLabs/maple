@@ -2,7 +2,7 @@ import { useMemo } from "react"
 import { createFileRoute, useNavigate } from "@tanstack/react-router"
 import { Schema } from "effect"
 import { Result, useAtomValue } from "@/lib/effect-atom"
-import { useRetainedRefreshableResultValue } from "@/hooks/use-retained-refreshable-result-value"
+import { useRefreshableAtomValue } from "@/hooks/use-refreshable-atom-value"
 
 import { Button } from "@maple/ui/components/ui/button"
 import {
@@ -71,9 +71,10 @@ import {
 	planetscaleEventsResultAtom,
 	planetscaleInfraTimeseriesResultAtom,
 } from "@/lib/services/atoms/warehouse-query-atoms"
-import { MapleApiV2AtomClient } from "@/lib/services/common/v2-atom-client"
+import { retainedQueryV2 } from "@/lib/services/common/v2-atom-client"
 import { useEffectiveTimeRange } from "@/hooks/use-effective-time-range"
 import { TimeRangeSearchFields, applyTimeRangeSearch } from "@/components/time-range-picker/search"
+import { sessionTimeRangeSearchMiddleware } from "@/components/time-range-picker/session-time-range"
 import { PageRefreshProvider } from "@/components/time-range-picker/page-refresh-context"
 import { TimeRangeHeaderControls } from "@/components/time-range-picker/time-range-header-controls"
 import type { PlanetScaleInfraTimeseriesRow } from "@/api/warehouse/planetscale-infra"
@@ -95,6 +96,7 @@ const planetscaleDbSearchSchema = Schema.Struct({
 export const Route = createFileRoute("/infra/planetscale/$dbName")({
 	component: PlanetScaleDatabasePage,
 	validateSearch: Schema.toStandardSchemaV1(planetscaleDbSearchSchema),
+	search: { middlewares: [sessionTimeRangeSearchMiddleware()] },
 })
 
 /** Stable empty fallbacks — a fresh `[]` per render busts every downstream memo. */
@@ -168,12 +170,12 @@ function PlanetScaleDatabasePage() {
 	}
 
 	const statusResult = useAtomValue(
-		MapleApiV2AtomClient.query("planetscaleIntegration", "status", {
+		retainedQueryV2("planetscaleIntegration", "status", {
 			reactivityKeys: ["planetscaleIntegration"],
 		}),
 	)
 	const inventoryResult = useAtomValue(
-		MapleApiV2AtomClient.query("planetscaleIntegration", "databases", {
+		retainedQueryV2("planetscaleIntegration", "databases", {
 			reactivityKeys: ["planetscaleIntegration"],
 		}),
 	)
@@ -189,7 +191,7 @@ function PlanetScaleDatabasePage() {
 	const neverCollected = status !== null && status.connected && metricsNeverCollected(status)
 	const setupSteps = status !== null ? derivePlanetScaleSetup(status, Date.now()).steps : []
 
-	const branchStatsResult = useRetainedRefreshableResultValue(
+	const branchStatsResult = useRefreshableAtomValue(
 		getPlanetScaleBranchStatsResultAtom({ data: { database: dbName, startTime, endTime } }),
 	)
 	const branchStats = Result.builder(branchStatsResult)
@@ -465,14 +467,14 @@ function PlanetScaleDatabaseData({
 	onSelectBranch: (branch: string | undefined) => void
 }) {
 	const bucketSeconds = chartBucketSeconds(startTime, endTime)
-	const timeseriesResult = useRetainedRefreshableResultValue(
+	const timeseriesResult = useRefreshableAtomValue(
 		planetscaleInfraTimeseriesResultAtom({
 			data: {
 				database,
 				startTime,
 				endTime,
 				bucketSeconds,
-				...(branch === undefined ? {} : { branch }),
+				...(!(branch === undefined) ? { branch } : undefined),
 			},
 		}),
 	)
@@ -484,13 +486,13 @@ function PlanetScaleDatabaseData({
 
 	// The lifecycle timeline: one fetch feeds both the chart markers and the feed
 	// below, so the two can never disagree about what happened.
-	const eventsResult = useRetainedRefreshableResultValue(
+	const eventsResult = useRefreshableAtomValue(
 		planetscaleEventsResultAtom({
 			data: {
 				database,
 				startTime: Date.parse(startTime),
 				endTime: Date.parse(endTime),
-				...(branch === undefined ? {} : { branch }),
+				...(!(branch === undefined) ? { branch } : undefined),
 			},
 		}),
 	)
@@ -531,7 +533,6 @@ function PlanetScaleDatabaseData({
 				buckets={buckets}
 				metric={LEAD_METRIC}
 				waiting={waiting}
-				syncId={`ps-${database}`}
 				scope={scope}
 				markers={markers}
 				emptyMessage={chartEmptyMessage}
@@ -543,7 +544,6 @@ function PlanetScaleDatabaseData({
 						buckets={buckets}
 						metric={metric}
 						waiting={waiting}
-						syncId={`ps-${database}`}
 						scope={scope}
 						markers={markers}
 						emptyMessage={chartEmptyMessage}

@@ -18,12 +18,13 @@
  * first three slugs and left four features with no inbound links at all. Each
  * slug below appears in at least two others' lists.
  */
-import * as m from "../paraglide/messages"
+import * as m from "../paraglide/messages.js"
 import type { Feature } from "./page-registry"
 
 export const features: Feature[] = [
 	{
 		slug: "distributed-tracing",
+		illustration: "/art/features/distributed-tracing.webp",
 		navLabel: m.nav_distributed_tracing,
 		navDesc: m.nav_desc_distributed_tracing,
 		seoTitle: m.feat_tracing_seo_title,
@@ -45,7 +46,7 @@ export const features: Feature[] = [
 				{ key: "views", value: "waterfall · flamegraph · flow" },
 				{ key: "attributes", value: "db.statement · http.status_code · exception.type" },
 				{ key: "joins.on", value: "trace_id · span_id" },
-				{ key: "sampling", value: "head · tail" },
+				{ key: "sampling", value: "head" },
 			],
 			title: m.feat_tracing_panel_title,
 			lede: m.feat_tracing_panel_lede,
@@ -72,6 +73,7 @@ export const features: Feature[] = [
 
 	{
 		slug: "browser-sessions",
+		illustration: "/art/features/browser-sessions.webp",
 		navLabel: m.nav_browser_sessions,
 		navDesc: m.nav_desc_browser_sessions,
 		seoTitle: m.feat_sessions_seo_title,
@@ -92,7 +94,7 @@ export const features: Feature[] = [
 				{ key: "records", value: "DOM · console · network · errors" },
 				{ key: "joins.on", value: "session_id · trace_id" },
 				{ key: "masking", value: "input · text · client-side" },
-				{ key: "sampling", value: "per org" },
+				{ key: "sampling", value: "SDK config · 0–1" },
 			],
 			title: m.feat_sessions_panel_title,
 			lede: m.feat_sessions_panel_lede,
@@ -119,6 +121,7 @@ export const features: Feature[] = [
 
 	{
 		slug: "log-management",
+		illustration: "/art/features/log-management.webp",
 		navLabel: m.nav_log_management,
 		navDesc: m.nav_desc_log_management,
 		seoTitle: m.feat_logs_seo_title,
@@ -166,6 +169,7 @@ export const features: Feature[] = [
 
 	{
 		slug: "metrics-dashboards",
+		illustration: "/art/features/metrics-dashboards.webp",
 		navLabel: m.nav_metrics_dashboards,
 		navDesc: m.nav_desc_metrics_dashboards,
 		seoTitle: m.feat_metrics_seo_title,
@@ -179,7 +183,7 @@ export const features: Feature[] = [
 				src: "/screenshots/surface-metrics.webp",
 				width: 2560,
 				height: 1320,
-				alt: "The metric explorer listing every metric with its type and cardinality",
+				alt: "The metric explorer listing every metric with its type, service and data point count",
 			},
 			facts: [
 				{ key: "signal", value: "metrics" },
@@ -212,6 +216,7 @@ export const features: Feature[] = [
 
 	{
 		slug: "service-catalog",
+		illustration: "/art/features/service-catalog.webp",
 		navLabel: m.nav_service_catalog,
 		navDesc: m.nav_desc_service_catalog,
 		seoTitle: m.feat_catalog_seo_title,
@@ -235,7 +240,7 @@ export const features: Feature[] = [
 				{ key: "nodes", value: "service · db · cache · external" },
 				{ key: "edges", value: "parent → child" },
 				{ key: "per.service", value: "p50 · p95 · p99 · error% · req/s" },
-				{ key: "colour", value: "16 hues · service identity" },
+				{ key: "color", value: "16 hues · service identity" },
 			],
 			title: m.feat_catalog_panel_title,
 			lede: m.feat_catalog_panel_lede,
@@ -262,6 +267,7 @@ export const features: Feature[] = [
 
 	{
 		slug: "error-tracking",
+		illustration: "/art/features/error-tracking.webp",
 		navLabel: m.nav_error_tracking,
 		navDesc: m.nav_desc_error_tracking,
 		seoTitle: m.feat_errors_seo_title,
@@ -279,11 +285,11 @@ export const features: Feature[] = [
 			},
 			facts: [
 				{ key: "groups.by", value: "exception.type + message" },
-				{ key: "normalises", value: "id · timestamp · host · port" },
+				{ key: "normalizes", value: "ids · hashes · hosts · emails" },
 				{ key: "per.issue", value: "first · last · count · services" },
 				{ key: "joins.on", value: "trace_id · span_id" },
-				{ key: "severity", value: "manual > detector > ai" },
-				{ key: "detector", value: "5 min" },
+				{ key: "severity", value: "manual > ai > detector" },
+				{ key: "groups", value: "every minute" },
 			],
 			title: m.feat_errors_panel_title,
 			lede: m.feat_errors_panel_lede,
@@ -307,6 +313,7 @@ export const features: Feature[] = [
 
 	{
 		slug: "alerts",
+		illustration: "/art/features/alerts.webp",
 		navLabel: m.nav_alerts,
 		navDesc: m.nav_desc_alerts,
 		seoTitle: m.feat_alerts_seo_title,
@@ -325,10 +332,10 @@ export const features: Feature[] = [
 			facts: [
 				{ key: "signals", value: "error_rate · p95 · p99 · apdex · throughput" },
 				{ key: "sources", value: "traces · logs · metrics · SQL" },
-				{ key: "evaluates", value: "every 60s" },
+				{ key: "evaluates", value: "every minute" },
 				{ key: "fires.after", value: "N consecutive breaches" },
 				{ key: "group.by", value: "service.name · attr.*" },
-				{ key: "routes.to", value: "slack · pagerduty · discord · email · webhook" },
+				{ key: "routes.to", value: "slack · discord · telegram · pagerduty · email · webhook" },
 			],
 			title: m.feat_alerts_panel_title,
 			lede: m.feat_alerts_panel_lede,
@@ -342,10 +349,10 @@ export const features: Feature[] = [
 		extraSections: [],
 		capTitle: m.feat_alerts_cap_title,
 		capabilities: [
-			{ op: "builder_query", title: m.feat_alerts_cap_1_title, body: m.feat_alerts_cap_1_body },
+			{ op: "query builder", title: m.feat_alerts_cap_1_title, body: m.feat_alerts_cap_1_body },
 			{ op: "preview", title: m.feat_alerts_cap_2_title, body: m.feat_alerts_cap_2_body },
 			{ op: "group by", title: m.feat_alerts_cap_3_title, body: m.feat_alerts_cap_3_body },
-			{ op: "alert_checks", title: m.feat_alerts_cap_4_title, body: m.feat_alerts_cap_4_body },
+			{ op: "check log", title: m.feat_alerts_cap_4_title, body: m.feat_alerts_cap_4_body },
 			{ op: "renotify 30m", title: m.feat_alerts_cap_5_title, body: m.feat_alerts_cap_5_body },
 		],
 		related: ["error-tracking", "metrics-dashboards", "distributed-tracing"],
@@ -355,6 +362,7 @@ export const features: Feature[] = [
 
 	{
 		slug: "ai-mcp-integration",
+		illustration: "/art/features/ai-mcp-integration.webp",
 		navLabel: m.nav_ai_mcp,
 		navDesc: m.nav_desc_ai_mcp,
 		seoTitle: m.feat_mcp_seo_title,
@@ -373,8 +381,8 @@ export const features: Feature[] = [
 			facts: [
 				{ key: "protocol", value: "MCP / HTTP" },
 				{ key: "clients", value: "Claude Code · any MCP client" },
-				{ key: "default", value: "read-only" },
-				{ key: "scope", value: "OrgId" },
+				{ key: "auth", value: "API key · OAuth" },
+				{ key: "scope", value: "one org per key" },
 				{ key: "reads", value: "traces · logs · metrics · sessions · issues" },
 				{ key: "writes", value: "issues · alert rules" },
 			],
@@ -394,7 +402,7 @@ export const features: Feature[] = [
 			{ op: "find_slow_traces()", title: m.feat_mcp_cap_2_title, body: m.feat_mcp_cap_2_body },
 			{ op: "read_source_file()", title: m.feat_mcp_cap_3_title, body: m.feat_mcp_cap_3_body },
 			{ op: "claim_error_issue()", title: m.feat_mcp_cap_4_title, body: m.feat_mcp_cap_4_body },
-			{ op: "OrgId filter", title: m.feat_mcp_cap_5_title, body: m.feat_mcp_cap_5_body },
+			{ op: "org scope", title: m.feat_mcp_cap_5_title, body: m.feat_mcp_cap_5_body },
 		],
 		related: ["error-tracking", "distributed-tracing", "service-catalog"],
 		relatedUseCases: ["api-performance"],
@@ -403,6 +411,7 @@ export const features: Feature[] = [
 
 	{
 		slug: "kubernetes-monitoring",
+		illustration: "/art/features/kubernetes-monitoring.webp",
 		navLabel: m.nav_kubernetes,
 		navDesc: m.nav_desc_kubernetes,
 		seoTitle: m.page_k8s_title,
@@ -424,7 +433,7 @@ export const features: Feature[] = [
 		capabilities: [
 			{ op: "helm install", title: m.page_k8s_helm, body: m.page_k8s_helm_desc },
 			{ op: "k8s.pod.name", title: m.page_k8s_correlation, body: m.page_k8s_correlation_desc },
-			{ op: "kube-state", title: m.page_k8s_kube_state, body: m.page_k8s_kube_state_desc },
+			{ op: "k8s_cluster", title: m.page_k8s_kube_state, body: m.page_k8s_kube_state_desc },
 			{ op: "/infra/kubernetes", title: m.page_k8s_views, body: m.page_k8s_views_desc },
 			{ op: "OTel Operator", title: m.page_k8s_operator, body: m.page_k8s_operator_desc },
 			{ op: "one endpoint", title: m.page_k8s_multi, body: m.page_k8s_multi_desc },

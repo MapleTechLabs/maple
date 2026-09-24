@@ -1,3 +1,4 @@
+// BOUNDARY: This module owns unparsed external values and narrows them before domain use.
 import { randomUUID } from "node:crypto"
 import { spawnSync } from "node:child_process"
 import { existsSync, lstatSync, readFileSync, rmSync, writeFileSync } from "node:fs"
@@ -9,6 +10,7 @@ import { HttpClient, HttpClientRequest } from "effect/unstable/http"
 import { CHDB_VERSION, MAPLE_VERSION } from "../version"
 import { serverUrl } from "../lib/local-address"
 import { Chdb } from "./chdb"
+import { sha256File } from "./checkpoint-digest"
 import {
 	type DurabilityFaults,
 	durableJson,
@@ -18,8 +20,12 @@ import {
 	syncDirectory,
 	syncTree,
 } from "./durable-files"
-import { SCHEMA_FINGERPRINT } from "./serve"
-import { CURRENT_LOCAL_SCHEMA } from "./schema-identity"
+import {
+	eventingControlSnapshotPath,
+	LocalEventingControlStore,
+	type EventingControlSnapshotValidation,
+} from "./eventing/control-store"
+import { CURRENT_LOCAL_SCHEMA, SCHEMA_FINGERPRINT } from "./schema-identity"
 import schemaSql from "./schema/local-schema.sql" with { type: "text" }
 import {
 	markStoreClosedDurable,
@@ -29,12 +35,12 @@ import {
 } from "./store-version"
 
 const STATE_FORMAT_VERSION = 1
-const MANIFEST_FORMAT_VERSION = 1
+const MANIFEST_FORMAT_VERSION = 2
 const OPERATION_FORMAT_VERSION = 1
 const RESTORE_TRANSACTION_FORMAT_VERSION = 1
 const RESET_TRANSACTION_FORMAT_VERSION = 1
 const CHECKPOINT_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
-const RESETTABLE_CHDB_ENTRIES = new Set(["data", "metadata", "status", "store", "tmp"])
+const RESETTABLE_LIVE_ENTRIES = new Set(["control", "data", "metadata", "status", "store", "tmp"])
 export const CHECKPOINT_REOPEN_PROBE_ENV = "MAPLE_INTERNAL_CHECKPOINT_REOPEN_DATA_DIR"
 
 const CheckpointUuid = Schema.String.check(Schema.isPattern(CHECKPOINT_ID))
@@ -84,8 +90,7 @@ const CheckpointValidationSchema = Schema.Struct({
 
 export type CheckpointValidation = Schema.Schema.Type<typeof CheckpointValidationSchema>
 
-const CheckpointManifestSchema = Schema.Struct({
-	formatVersion: Schema.Literal(MANIFEST_FORMAT_VERSION),
+const CheckpointManifestFields = {
 	checkpointId: CheckpointId,
 	operationId: CheckpointOperationId,
 	mapleVersion: Schema.String,
@@ -96,7 +101,27 @@ const CheckpointManifestSchema = Schema.Struct({
 	backupRelativePath: Schema.String,
 	backupBytes: NonNegativeInt,
 	validation: CheckpointValidationSchema,
+} as const
+
+const EventingControlSnapshotValidationSchema = Schema.Struct({
+	schemaVersion: NonNegativeInt,
+	projectionRevisions: NonNegativeInt,
+	projectionFailures: NonNegativeInt,
+	stagedEvents: NonNegativeInt,
+	readyEvents: NonNegativeInt,
 })
+
+const CheckpointManifestSchema = Schema.Union([
+	Schema.Struct({ formatVersion: Schema.Literal(1), ...CheckpointManifestFields }),
+	Schema.Struct({
+		formatVersion: Schema.Literal(MANIFEST_FORMAT_VERSION),
+		...CheckpointManifestFields,
+		controlRelativePath: Schema.String,
+		controlBytes: NonNegativeInt,
+		controlSha256: Schema.String.check(Schema.isPattern(/^[0-9a-f]{64}$/)),
+		controlValidation: EventingControlSnapshotValidationSchema,
+	}),
+])
 
 export type CheckpointManifest = Schema.Schema.Type<typeof CheckpointManifestSchema>
 
@@ -125,7 +150,7 @@ const RestoreTransactionPhase = Schema.Literals([
 	"markers-committed",
 ])
 const ResetTransactionPhase = Schema.Literals(["intent", "live-cleared", "markers-cleared"])
-const ResetTarget = Schema.Literals(["data", "metadata", "status", "store", "tmp"])
+const ResetTarget = Schema.Literals(["control", "data", "metadata", "status", "store", "tmp"])
 
 const CheckpointOperationSchema = Schema.Struct({
 	formatVersion: Schema.Literal(OPERATION_FORMAT_VERSION),
@@ -196,6 +221,34 @@ export class CheckpointCreateError extends Schema.TaggedError<CheckpointCreateEr
 	"@maple/cli/CheckpointCreateError",
 	{ ...checkpointErrorFields, checkpointId: CheckpointId },
 ) {}
+
+/**
+ * A checkpoint the CLI *correctly refuses to take*: the running server's chDB
+ * config carries no `<backups>` stanza, so `BACKUP DATABASE` cannot work.
+ *
+ * Its own tag, and never a `CheckpointCreateError`, because nothing failed —
+ * this is the CLI reporting an unmet precondition with an actionable fix, the
+ * same category as "maple is already running". It used to bill two error events
+ * per occurrence (an `Error` span on `CheckpointService.create`, plus the
+ * `ServerError` the command re-wrapped it into). `bin.ts` now recovers it via
+ * `recoverExpected`, which annotates `maple.cli.outcome`, prints the message and
+ * exits 1 with the root span `Ok`. The `expected` marker states that intent on
+ * the error itself rather than only in the recovery list.
+ */
+/** Kept verbatim — it is the whole remedy the user gets. */
+const MISSING_BACKUPS_CONFIG_MESSAGE =
+	"the running server's chDB config has no `<backups>` stanza, so it " +
+	"cannot take checkpoints. Restart `maple start` without " +
+	"`--chdb-config-file` to use the generated default, or add " +
+	"`<backups><allowed_disk>default</allowed_disk>" +
+	"<allowed_path>backups</allowed_path></backups>` to your config."
+
+export class CheckpointPreconditionError extends Schema.TaggedError<CheckpointPreconditionError>()(
+	"@maple/cli/CheckpointPreconditionError",
+	{ dataDir: Schema.String, message: Schema.String },
+) {
+	readonly expected = true
+}
 
 export class CheckpointRecoveryError extends Schema.TaggedError<CheckpointRecoveryError>()(
 	"@maple/cli/CheckpointRecoveryError",
@@ -314,8 +367,20 @@ const snapshotManifestPath = (dataDir: string, checkpointId: CheckpointId): stri
 const snapshotBackupDir = (dataDir: string, checkpointId: CheckpointId): string =>
 	join(checkpointSnapshotDir(dataDir, checkpointId), "backup")
 const snapshotBackupRelativePath = (checkpointId: CheckpointId): string => `snapshots/${checkpointId}/backup`
+const snapshotControlRelativePath = (checkpointId: CheckpointId): string =>
+	`snapshots/${checkpointId}/control.sqlite`
 const snapshotBackupSqlPath = (checkpointId: CheckpointId): string =>
 	`backups/${snapshotBackupRelativePath(checkpointId)}`
+
+const controlValidationMatches = (
+	left: EventingControlSnapshotValidation,
+	right: EventingControlSnapshotValidation,
+): boolean =>
+	left.schemaVersion === right.schemaVersion &&
+	left.projectionRevisions === right.projectionRevisions &&
+	left.projectionFailures === right.projectionFailures &&
+	left.stagedEvents === right.stagedEvents &&
+	left.readyEvents === right.readyEvents
 
 const assertContained = (root: string, candidate: string, label: string): string => {
 	const absoluteRoot = resolve(root)
@@ -432,23 +497,11 @@ const localQueryError = (status: number, detail: string, cause = detail): LocalQ
 		cause,
 	})
 
-export const postLoopbackLocalQuery = async (port: number, sql: string): Promise<unknown> => {
-	const response = await fetch(`http://127.0.0.1:${port}/local/query`, {
-		method: "POST",
-		headers: { "content-type": "application/json" },
-		body: JSON.stringify({ sql }),
-	})
-	if (!response.ok) {
-		const detail = await response.text().catch(() => "")
-		throw localQueryError(response.status, detail)
-	}
-	return response.json()
-}
-
 export const checkpointQueryUrl = (host: string, port: number): string =>
 	`${serverUrl(host, port)}/local/query`
 
-const postCheckpointBackup = (
+/** Exported for the timeout regression test only. */
+export const postCheckpointBackup = (
 	host: string,
 	port: number,
 	dataDir: string,
@@ -479,12 +532,13 @@ const postCheckpointBackup = (
 			try: () => JSON.parse(responseText) as unknown,
 			catch: (error) => localQueryError(response.status, errorMessage(error), errorCause(error)),
 		})
-	}).pipe(
-		Effect.timeout("30 seconds"),
-		Effect.catchTag("TimeoutError", () =>
-			Effect.fail(localQueryError(0, "local checkpoint backup timed out after 30 seconds")),
-		),
-	)
+	})
+	// Deliberately NO client-side timeout. The server runs BACKUP through a
+	// synchronous db.exec that cannot observe cancellation, so a timeout here
+	// unwound checkpoint creation and released the maintenance lock while chDB
+	// was still writing the snapshot — a retry would then quarantine/rename the
+	// directory a live BACKUP was writing into. A large store legitimately backs
+	// up for minutes; a dead server surfaces as a connection error instead.
 }
 
 export const isMissingBackupConfigurationError = (error: unknown): boolean => {
@@ -644,10 +698,24 @@ const validateRestoredDatabaseInFreshProcess = (
 	return parsed
 }
 
+/**
+ * How far a manifest is held to the running build.
+ *
+ * `"build"`: the checkpoint must be restorable by this binary — same chDB and
+ * same schema fingerprint. `"registry"`: only the registry's own integrity
+ * counts (ids, paths, sizes, digests). A checkpoint an older build wrote is
+ * still a sound registry entry that can sit as `previous` and be retired; held
+ * to `"build"` it poisoned the store instead — every `maple checkpoint` after a
+ * schema bump re-validated it and refused, and the same gate marked restore
+ * unsafe, so the only exit was `maple start --reset`.
+ */
+export type ManifestCompatibility = "build" | "registry"
+
 export const parseCheckpointManifest = (
 	value: unknown,
 	expectedCheckpointId?: CheckpointId,
 	expectedSourceDataDir?: string,
+	compatibility: ManifestCompatibility = "build",
 ): CheckpointManifest => {
 	let manifest: CheckpointManifest
 	try {
@@ -667,6 +735,13 @@ export const parseCheckpointManifest = (
 	if (manifest.backupRelativePath !== snapshotBackupRelativePath(manifest.checkpointId)) {
 		throw new Error("checkpoint backup path does not match its immutable ID")
 	}
+	if (
+		manifest.formatVersion === MANIFEST_FORMAT_VERSION &&
+		manifest.controlRelativePath !== snapshotControlRelativePath(manifest.checkpointId)
+	) {
+		throw new Error("checkpoint control-store path does not match its immutable ID")
+	}
+	if (compatibility === "registry") return manifest
 	if (manifest.chdbVersion !== CHDB_VERSION) {
 		throw new Error(
 			`checkpoint chDB version mismatch (checkpoint: ${manifest.chdbVersion}; build: ${CHDB_VERSION})`,
@@ -747,13 +822,52 @@ export const readCheckpointState = async (dataDir: string): Promise<CheckpointSt
 		)
 	}
 	await resolveCheckpoint(dataDir, state.current, state)
-	if (state.previous) await resolveCheckpoint(dataDir, state.previous, state)
+	// `previous` is only ever retired from here, never restored by this path, so
+	// one an older build wrote must not make the whole registry unreadable.
+	if (state.previous) await resolveCheckpoint(dataDir, state.previous, state, "registry")
 	return state
+}
+
+/**
+ * Whether `maple restore` has anything to restore, and if not, why.
+ *
+ * Checkpoints are only ever created by the explicit `maple checkpoint` command,
+ * so "none" is the ordinary state for a store nobody has checkpointed — not a
+ * fault. Recovery advice has to branch on it: telling someone to run
+ * `maple restore --yes` when no checkpoint exists sends them into a dead end
+ * where every suggested command fails.
+ */
+export type CheckpointAvailability =
+	| { readonly available: true; readonly checkpointId: CheckpointId }
+	| { readonly available: false; readonly reason: "none" }
+	| { readonly available: false; readonly reason: "unusable"; readonly detail: string }
+
+export const checkpointAvailability = async (dataDir: string): Promise<CheckpointAvailability> => {
+	try {
+		const state = await readCheckpointState(dataDir)
+		return { available: true, checkpointId: state.current }
+	} catch (error) {
+		const detail = errorMessage(error)
+		try {
+			// A present-but-unreadable state file, or stray checkpoint data beside a
+			// missing one, is a fault to surface rather than an empty registry.
+			if (
+				!existsSync(checkpointStatePath(dataDir)) &&
+				(await checkpointLikePaths(dataDir)).length === 0
+			) {
+				return { available: false, reason: "none" }
+			}
+		} catch {
+			// Fall through: an unreadable registry is itself "unusable".
+		}
+		return { available: false, reason: "unusable", detail }
+	}
 }
 
 const resolveCheckpointById = async (
 	dataDir: string,
 	checkpointId: CheckpointId,
+	compatibility: ManifestCompatibility = "build",
 ): Promise<ResolvedCheckpoint> => {
 	await assertCheckpointInfrastructureSafe(dataDir)
 	const snapshotDir = checkpointSnapshotDir(dataDir, checkpointId)
@@ -768,6 +882,7 @@ const resolveCheckpointById = async (
 		JSON.parse(await readFile(snapshotManifestPath(dataDir, checkpointId), "utf8")),
 		checkpointId,
 		dataDir,
+		compatibility,
 	)
 	const backupDir = snapshotBackupDir(dataDir, checkpointId)
 	await assertRealDirectory(backupDir, "checkpoint backup")
@@ -776,6 +891,24 @@ const resolveCheckpointById = async (
 		throw new Error(
 			`checkpoint backup size mismatch (manifest: ${manifest.backupBytes}; actual: ${actualBackupBytes})`,
 		)
+	}
+	const controlPath = eventingControlSnapshotPath(dataDir, checkpointId)
+	if (manifest.formatVersion === MANIFEST_FORMAT_VERSION) {
+		await assertNoSymlink(snapshotsRoot, controlPath)
+		await assertRealFile(controlPath, "checkpoint eventing control snapshot")
+		const controlBytes = (await stat(controlPath)).size
+		if (controlBytes !== manifest.controlBytes)
+			throw new Error(
+				`checkpoint control-store size mismatch (manifest: ${manifest.controlBytes}; actual: ${controlBytes})`,
+			)
+		const controlSha256 = await sha256File(controlPath)
+		if (controlSha256 !== manifest.controlSha256)
+			throw new Error("checkpoint control-store digest mismatch")
+		const controlValidation = LocalEventingControlStore.validateSnapshot(controlPath)
+		if (!controlValidationMatches(manifest.controlValidation, controlValidation))
+			throw new Error("checkpoint control-store validation does not match its manifest")
+	} else if (existsSync(controlPath)) {
+		throw new Error("legacy checkpoint contains an unsigned eventing control snapshot")
 	}
 	return {
 		checkpointId,
@@ -790,18 +923,14 @@ export const resolveCheckpoint = async (
 	dataDir: string,
 	selector: "current" | "previous" | CheckpointId = "current",
 	knownState?: CheckpointState,
+	compatibility: ManifestCompatibility = "build",
 ): Promise<ResolvedCheckpoint> => {
 	const state = knownState ?? (await readCheckpointState(dataDir))
 	const checkpointId =
 		selector === "current" ? state.current : selector === "previous" ? state.previous : selector
 	if (!checkpointId) throw new Error("no previous checkpoint is selected")
-	return resolveCheckpointById(dataDir, checkpointId)
+	return resolveCheckpointById(dataDir, checkpointId, compatibility)
 }
-
-export const readCheckpointManifest = async (
-	dataDir: string,
-	selector: "current" | "previous" | CheckpointId = "current",
-): Promise<CheckpointManifest> => (await resolveCheckpoint(dataDir, selector)).manifest
 
 const restoreResolvedInto = async (
 	resolvedCheckpoint: ResolvedCheckpoint,
@@ -823,6 +952,15 @@ const restoreResolvedInto = async (
 			`RESTORE DATABASE default FROM Disk('src', '${resolvedCheckpoint.backupSqlPath}') ` +
 				"SETTINGS allow_different_database_def=1",
 		)
+		if (resolvedCheckpoint.manifest.formatVersion === MANIFEST_FORMAT_VERSION) {
+			await LocalEventingControlStore.restoreSnapshot(
+				join(resolvedCheckpoint.snapshotDir, "control.sqlite"),
+				targetDataDir,
+			)
+		} else {
+			const controlStore = await LocalEventingControlStore.open(targetDataDir)
+			controlStore.close()
+		}
 		return { db, validation: validateRestoredDatabase(db) }
 	} catch (error) {
 		db?.close()
@@ -1101,8 +1239,9 @@ export const reconcileCheckpointOperations = async (
 			if (!["backup-complete", "manifest-complete"].includes(operation.phase)) {
 				throw new Error(`checkpoint operation phase ${operation.phase} cannot publish its snapshot`)
 			}
-			if (operation.baseCurrent) await resolveCheckpointById(dataDir, operation.baseCurrent)
-			if (operation.basePrevious) await resolveCheckpointById(dataDir, operation.basePrevious)
+			if (operation.baseCurrent) await resolveCheckpointById(dataDir, operation.baseCurrent, "registry")
+			if (operation.basePrevious)
+				await resolveCheckpointById(dataDir, operation.basePrevious, "registry")
 			const manifestComplete: CheckpointOperation = {
 				...operation,
 				phase: "manifest-complete",
@@ -1280,6 +1419,7 @@ export const assertCheckpointPinIdentity = async (
 	) {
 		throw new Error(`checkpoint pin identity mismatch: ${pinPath}`)
 	}
+	// SAFETY: the complete pin key set, identifiers, purpose, version, and timestamp were validated above.
 	return parsed as unknown as CheckpointPin
 }
 
@@ -1320,6 +1460,48 @@ export const withMaintenanceLock = async <A>(
 	}
 }
 
+/**
+ * The Effect boundary for promise-land work that takes the maintenance lock
+ * INTERNALLY — archive create/gc/reconcile/catalog, retention, and local-store
+ * migrations. Use it instead of a bare `Effect.tryPromise` at every such call.
+ *
+ * `Effect.tryPromise` is interruptible, and interruption ABANDONS the promise:
+ * the runtime marks the async resumed, aborts its signal and unwinds the fiber
+ * without waiting (see `callbackOptions` in effect's internal/effect.ts). Under
+ * `BunRuntime.runMain` a Ctrl-C therefore tore the process down while
+ * `withMaintenanceLock` was still mid-operation, so its `finally` never ran and
+ * `<dataDir>.maintenance.lock` survived with a plausible owner record. The next
+ * run only recovered because {@link acquireMaintenance} quarantines a provably
+ * dead PID — recovery by luck, one PID reuse away from a hard failure.
+ *
+ * `Effect.uninterruptible` fixes it without touching those modules: an interrupt
+ * arriving here is recorded on the fiber and NOT delivered, the fiber stays
+ * parked until the promise settles, the lock's `finally` releases, and the
+ * recorded interrupt fires as soon as interruptibility is restored. The work was
+ * never abortable — the promise ran to completion either way. All this changes
+ * is that Effect now waits for it instead of walking away mid-write.
+ *
+ * The cost is deliberate: Ctrl-C during a long operation is honoured when that
+ * operation finishes, not immediately. That is the correct trade for the only
+ * writer of a lock the next process must trust. A caller who truly cannot wait
+ * still has SIGKILL, which is the crash case the on-disk journals already
+ * reconcile. To make Ctrl-C prompt again, the promise bodies below would have to
+ * observe the `AbortSignal` that `try` already receives — until they do, an
+ * interruptible boundary would only delete the lock out from under work that
+ * keeps running.
+ */
+export const maintenanceOperation = <A, E>(options: {
+	readonly operation: string
+	readonly try: () => Promise<A>
+	readonly catch: (error: unknown) => E
+}): Effect.Effect<A, E> =>
+	Effect.tryPromise({ try: options.try, catch: options.catch }).pipe(
+		Effect.uninterruptible,
+		Effect.withSpan("CheckpointService.maintenanceOperation", {
+			attributes: { "maple.checkpoint.maintenance_operation": options.operation },
+		}),
+	)
+
 export const retireCheckpointIfEligible = async (
 	dataDir: string,
 	checkpointId: CheckpointId | null,
@@ -1339,7 +1521,7 @@ export const retireCheckpointIfEligible = async (
 		await assertRealDirectory(retirementRoot, "checkpoint retirement root")
 	}
 	if (!existsSync(retirement)) {
-		await resolveCheckpoint(dataDir, checkpointId, state)
+		await resolveCheckpoint(dataDir, checkpointId, state, "registry")
 		await ensurePrivateDirectory(retirement)
 		await durableJson(retirementIntent, {
 			formatVersion: 1,
@@ -1442,7 +1624,7 @@ const removeCompletedRetirement = async (
 	await faults.afterRetirementCleanupRemoval?.(cleanup)
 }
 
-export const createCheckpoint = Effect.fn("CheckpointService.create")(function* (options: CheckpointOptions) {
+const createCheckpointTraced = Effect.fn("CheckpointService.create")(function* (options: CheckpointOptions) {
 	const operationId = newCheckpointOperationId()
 	const checkpointId = newCheckpointId()
 	const createError = (error: unknown): CheckpointCreateError =>
@@ -1457,6 +1639,10 @@ export const createCheckpoint = Effect.fn("CheckpointService.create")(function* 
 		"maple.checkpoint.operation_id": operationId,
 		"maple.checkpoint.id": checkpointId,
 	})
+	// Settled into a value rather than left in the failure channel: `Effect.fn`
+	// derives this span's status from that channel, and a refused precondition
+	// must not close `CheckpointService.create` as `Error`. `createCheckpoint`
+	// below re-raises it once the span has closed, so callers still see a failure.
 	return yield* withMaintenance(options.dataDir, operationId, createError, () =>
 		Effect.gen(function* () {
 			const prepared = yield* Effect.tryPromise({
@@ -1471,10 +1657,13 @@ export const createCheckpoint = Effect.fn("CheckpointService.create")(function* 
 							"checkpoint state is missing while checkpoint data exists; refusing to infer selection",
 						)
 					}
+					// The registry has to be sound before it gains an entry, but neither
+					// existing checkpoint has to be restorable by this build: the new
+					// one supersedes `current`, and `previous` is about to be retired.
 					if (oldState) {
-						await resolveCheckpoint(options.dataDir, oldState.current, oldState)
+						await resolveCheckpoint(options.dataDir, oldState.current, oldState, "registry")
 						if (oldState.previous) {
-							await resolveCheckpoint(options.dataDir, oldState.previous, oldState)
+							await resolveCheckpoint(options.dataDir, oldState.previous, oldState, "registry")
 						}
 					}
 					for (const path of [
@@ -1508,15 +1697,18 @@ export const createCheckpoint = Effect.fn("CheckpointService.create")(function* 
 			})
 			yield* postCheckpointBackup(options.host, options.port, options.dataDir, checkpointId).pipe(
 				Effect.mapError((error) =>
-					createError(
-						isMissingBackupConfigurationError(error)
-							? new Error(
-									"checkpoints require the local server to be started with `--chdb-config-file` " +
-										"pointing at a ClickHouse backups config",
-									{ cause: error },
-								)
-							: error,
-					),
+					isMissingBackupConfigurationError(error)
+						? // `maple start` generates a backups-enabled config when
+							// `--chdb-config-file` is absent, so reaching this means the
+							// server was started with a custom config carrying no
+							// `<backups>` stanza — or with a build predating that default.
+							// An unmet precondition, not a failure: see
+							// `CheckpointPreconditionError`.
+							new CheckpointPreconditionError({
+								dataDir: resolve(options.dataDir),
+								message: MISSING_BACKUPS_CONFIG_MESSAGE,
+							})
+						: createError(error),
 				),
 			)
 			return yield* Effect.tryPromise({
@@ -1524,10 +1716,14 @@ export const createCheckpoint = Effect.fn("CheckpointService.create")(function* 
 					const { oldState, snapshot, startedAt } = prepared
 					let { operation } = prepared
 					await syncTree(snapshotBackupDir(options.dataDir, checkpointId))
+					const controlPath = eventingControlSnapshotPath(options.dataDir, checkpointId)
+					await assertNoSymlink(checkpointSnapshotsRoot(options.dataDir), controlPath)
+					await assertRealFile(controlPath, "checkpoint eventing control snapshot")
+					const controlValidation = LocalEventingControlStore.validateSnapshot(controlPath)
 					operation = { ...operation, phase: "backup-complete" }
 					await writeOperation(options.dataDir, operation, options.faults)
 					const provisionalManifest: CheckpointManifest = {
-						formatVersion: 1,
+						formatVersion: MANIFEST_FORMAT_VERSION,
 						checkpointId,
 						operationId,
 						mapleVersion: MAPLE_VERSION,
@@ -1537,6 +1733,10 @@ export const createCheckpoint = Effect.fn("CheckpointService.create")(function* 
 						sourceDataDir: resolve(options.dataDir),
 						backupRelativePath: snapshotBackupRelativePath(checkpointId),
 						backupBytes: await dirSize(snapshotBackupDir(options.dataDir, checkpointId)),
+						controlRelativePath: snapshotControlRelativePath(checkpointId),
+						controlBytes: (await stat(controlPath)).size,
+						controlSha256: await sha256File(controlPath),
+						controlValidation,
 						validation: {
 							validatedAt: startedAt,
 							traces: 0,
@@ -1600,8 +1800,26 @@ export const createCheckpoint = Effect.fn("CheckpointService.create")(function* 
 				catch: createError,
 			})
 		}),
+	).pipe(
+		Effect.catchTag("@maple/cli/CheckpointPreconditionError", (refusal) =>
+			Effect.as(Effect.annotateCurrentSpan({ "maple.checkpoint.refused": refusal._tag }), refusal),
+		),
 	)
 })
+
+/**
+ * Create a checkpoint, or refuse with an expected outcome.
+ *
+ * The refusal travels back through the span as a value (see the note inside
+ * `createCheckpointTraced`) and is turned back into a failure here, outside it —
+ * so the caller's control flow is unchanged while the span stays `Ok`.
+ */
+export const createCheckpoint = (options: CheckpointOptions) =>
+	createCheckpointTraced(options).pipe(
+		Effect.flatMap((outcome) =>
+			outcome instanceof CheckpointPreconditionError ? Effect.fail(outcome) : Effect.succeed(outcome),
+		),
+	)
 
 const parseResetTransaction = (value: unknown, expectedDataDir: string): ResetTransaction => {
 	const transaction = Schema.decodeUnknownSync(ResetTransactionSchema)(value)
@@ -1707,7 +1925,7 @@ const beginResetTransactionUnlocked = async (
 		const entries = await readdir(live, { withFileTypes: true })
 		for (const entry of entries) {
 			if (entry.name === "backups") continue
-			if (!RESETTABLE_CHDB_ENTRIES.has(entry.name)) {
+			if (!RESETTABLE_LIVE_ENTRIES.has(entry.name)) {
 				unknown.push(join(live, entry.name))
 				continue
 			}
@@ -1955,9 +2173,10 @@ export const reconcileCheckpointRecovery = Effect.fn("CheckpointService.reconcil
 })
 
 /**
- * Explicitly remove the live chDB store while preserving the checkpoint
- * registry below `<dataDir>/backups`. The maintenance lock serializes this
- * destructive operation with checkpoint, restore, and archive work.
+ * Explicitly remove the live chDB and eventing control stores while preserving
+ * the checkpoint registry below `<dataDir>/backups`. The maintenance lock
+ * serializes this destructive operation with checkpoint, restore, and archive
+ * work.
  */
 export const resetLiveStorePreservingCheckpoints = Effect.fn("CheckpointService.reset")(function* (
 	dataDir: string,

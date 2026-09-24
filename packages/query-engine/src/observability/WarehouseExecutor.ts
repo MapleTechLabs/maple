@@ -1,7 +1,7 @@
 import { Context, type Effect, type Option } from "effect"
 import type { WarehouseError } from "@maple/domain/http/warehouse-errors"
 import type { WarehouseQueryName } from "@maple/domain/warehouse-queries"
-import type { CompiledQuery } from "../ch"
+import type { CompiledQueryInput } from "../ch"
 import type { SqlQueryOptions } from "../profiles"
 
 /**
@@ -12,7 +12,7 @@ import type { SqlQueryOptions } from "../profiles"
  */
 export type WarehouseExecutorError = WarehouseError
 
-export interface WarehouseExecutorShape {
+export interface WarehouseExecutorApi {
 	/** The org ID for the current tenant — needed for raw SQL queries. */
 	readonly orgId: string
 
@@ -22,18 +22,24 @@ export interface WarehouseExecutorShape {
 		options?: SqlQueryOptions,
 	) => Effect.Effect<{ data: ReadonlyArray<T> }, WarehouseExecutorError>
 
-	/** Execute raw ClickHouse SQL. The SQL MUST include an OrgId filter. */
+	/**
+	 * Execute a compiled query. The SQL MUST include an OrgId filter.
+	 *
+	 * Takes the unrun `CH.compile` as readily as its result: a `QueryBuilderError`
+	 * from a query built out of Maple's own definitions is a defect, and this is
+	 * the one place that says so. See `CompiledQueryInput`.
+	 */
 	readonly compiledQuery: <T>(
-		compiled: CompiledQuery<T>,
+		compiled: CompiledQueryInput<T>,
 		options?: SqlQueryOptions,
 	) => Effect.Effect<ReadonlyArray<T>, WarehouseExecutorError>
 
 	readonly compiledQueryFirst: <T>(
-		compiled: CompiledQuery<T>,
+		compiled: CompiledQueryInput<T>,
 		options?: SqlQueryOptions,
 	) => Effect.Effect<Option.Option<T>, WarehouseExecutorError>
 }
 
-export class WarehouseExecutor extends Context.Service<WarehouseExecutor, WarehouseExecutorShape>()(
+export class WarehouseExecutor extends Context.Service<WarehouseExecutor, WarehouseExecutorApi>()(
 	"@maple/query-engine/observability/WarehouseExecutor",
 ) {}

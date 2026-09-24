@@ -1,4 +1,3 @@
-// ---------------------------------------------------------------------------
 // PlanetScale infrastructure page (/infra/planetscale)
 //
 // Bucketed timeseries over the scraped PlanetScale metrics for the database
@@ -11,12 +10,10 @@
 // on PlanetScale is routinely ~30 branches — mostly short-lived `pr-*` ones — so
 // the database-wide `max()` is dominated by whichever ephemeral branch spiked.
 // Scoping to a branch is what makes the chart mean anything.
-// ---------------------------------------------------------------------------
 
-import { Schema } from "effect"
-import * as CH from "@maple-dev/clickhouse-builder/expr"
-import { from, fromQuery, param, type CompiledQueryRowSchema } from "@maple-dev/clickhouse-builder"
-import { CHNumber } from "@maple/query-engine/ch/schema"
+import { finiteOrZero } from "@maple/query-engine/ch/format"
+import * as CH from "@maple-dev/effect-clickhouse/expr"
+import { from, fromQuery, param } from "@maple-dev/effect-clickhouse"
 import { MetricsGauge } from "@maple/query-engine/ch/tables"
 import {
 	CONNECTION_METRIC_NAMES,
@@ -48,17 +45,6 @@ export interface PlanetScaleInfraTimeseriesOutput {
 	readonly storageSamples: number
 }
 
-export const planetscaleInfraTimeseriesRowSchema: CompiledQueryRowSchema<PlanetScaleInfraTimeseriesOutput> =
-	Schema.Struct({
-		bucket: Schema.String,
-		connectionsAvg: CHNumber,
-		cpuMaxPercent: CHNumber,
-		memMaxPercent: CHNumber,
-		replicaLagMaxSeconds: CHNumber,
-		storageUsedPercent: CHNumber,
-		storageSamples: CHNumber,
-	})
-
 /**
  * Per-raw-timestamp collapse shared by both variants: connections are summed
  * across series (one per edge region/branch), while utilization, lag, and the
@@ -83,7 +69,7 @@ const bucketOuter = (inner: ReturnType<typeof timeseriesInner>) =>
 	fromQuery(inner, "points")
 		.select(($) => ({
 			bucket: CH.toStartOfInterval($.t, param.int("bucketSeconds")),
-			connectionsAvg: CH.avg($.totalConnections),
+			connectionsAvg: finiteOrZero(CH.avg($.totalConnections)),
 			cpuMaxPercent: CH.max_($.cpuMax),
 			memMaxPercent: CH.max_($.memMax),
 			replicaLagMaxSeconds: CH.max_($.lagMax),
@@ -114,8 +100,8 @@ export function planetscaleInfraTimeseriesSQL() {
 				CH.nullIf($.Attributes.get("planetscale_database_name"), ""),
 				$.Attributes.get("planetscale_database"),
 			).eq(param.string("database")),
-			$.TimeUnix.gte(param.dateTime("startTime")),
-			$.TimeUnix.lte(param.dateTime("endTime")),
+			$.TimeUnix.gte(param.dateTimeString("startTime")),
+			$.TimeUnix.lte(param.dateTimeString("endTime")),
 		])
 		.groupBy("t")
 
@@ -136,8 +122,8 @@ export function planetscaleBranchInfraTimeseriesSQL() {
 				CH.nullIf($.Attributes.get("planetscale_branch_name"), ""),
 				$.Attributes.get("planetscale_branch"),
 			).eq(param.string("branch")),
-			$.TimeUnix.gte(param.dateTime("startTime")),
-			$.TimeUnix.lte(param.dateTime("endTime")),
+			$.TimeUnix.gte(param.dateTimeString("startTime")),
+			$.TimeUnix.lte(param.dateTimeString("endTime")),
 		])
 		.groupBy("t")
 

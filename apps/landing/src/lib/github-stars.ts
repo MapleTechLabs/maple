@@ -1,4 +1,4 @@
-const REPO = "Makisuo/maple"
+const REPO = "MapleTechLabs/maple"
 
 let cached: Promise<number | null> | undefined
 
@@ -23,7 +23,7 @@ async function fetchStars(): Promise<number | null> {
 	try {
 		const headers: Record<string, string> = {
 			Accept: "application/vnd.github+json",
-		}
+		} satisfies Record<string, string>
 		const token = import.meta.env.GITHUB_TOKEN
 		if (token) {
 			headers.Authorization = `Bearer ${token}`

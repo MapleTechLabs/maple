@@ -1,5 +1,9 @@
+// BOUNDARY: Test doubles preserve opaque values so the consuming boundary can be exercised.
 import { describe, it } from "@effect/vitest"
-import { Effect, Exit, Option } from "effect"
+import { createHash } from "node:crypto"
+import { sha256File } from "../src/server/checkpoint-digest"
+import { Clock, Duration, Effect, Exit, Option } from "effect"
+import { HttpClient, HttpClientResponse } from "effect/unstable/http"
 import { deepStrictEqual, match, ok, rejects, strictEqual, throws } from "node:assert"
 import {
 	existsSync,
@@ -20,6 +24,7 @@ import {
 	type CheckpointId,
 	type CheckpointOperationId,
 	type CheckpointQuarantineId,
+	checkpointAvailability,
 	checkpointRoot,
 	checkpointSnapshotDir,
 	checkpointStatePath,
@@ -29,6 +34,7 @@ import {
 	newCheckpointOperationId,
 	newCheckpointQuarantineId,
 	parseCheckpointManifest,
+	postCheckpointBackup,
 	parseCheckpointState,
 	readCheckpointState,
 	reconcileCheckpointRecovery,
@@ -51,9 +57,10 @@ import {
 	syncDirectory,
 	syncTree,
 } from "../src/server/durable-files"
-import { SCHEMA_FINGERPRINT } from "../src/server/serve"
+import { SCHEMA_FINGERPRINT } from "../src/server/schema-identity"
 import { storeMarkerPath, storeOpenMarkerPath } from "../src/server/store-version"
 import { CHDB_VERSION, MAPLE_VERSION } from "../src/version"
+import { eventingControlSnapshotPath, LocalEventingControlStore } from "../src/server/eventing/control-store"
 
 const withDataDir = async (run: (dataDir: string) => Promise<void> | void): Promise<void> => {
 	const parent = mkdtempSync(join(tmpdir(), "maple-checkpoint-test-"))
@@ -103,14 +110,17 @@ const writeSnapshot = (
 	dataDir: string,
 	checkpointId: CheckpointId,
 	operationId = newCheckpointOperationId(),
+	overrides: Record<string, unknown> = {},
 ): void => {
 	const snapshot = checkpointSnapshotDir(dataDir, checkpointId)
 	mkdirSync(join(snapshot, "backup"), { recursive: true })
 	writeFileSync(join(snapshot, "backup", "data.bin"), "backup")
-	const value = manifest(checkpointId, operationId, dataDir)
-	value.backupBytes = 6
+	const value = { ...manifest(checkpointId, operationId, dataDir), backupBytes: 6, ...overrides }
 	writeFileSync(join(snapshot, "manifest.json"), `${JSON.stringify(value)}\n`)
 }
+
+// A manifest an older build wrote: structurally sound, not restorable here.
+const OLDER_BUILD_SCHEMA = { schemaFingerprint: "5642766fc2dced4f" }
 
 const writeState = (
 	dataDir: string,
@@ -305,7 +315,77 @@ describe("checkpoint IDs and strict parsers", () => {
 	})
 })
 
+describe("checkpoint snapshot hashing", () => {
+	it("hashes a multi-chunk snapshot while allowing the event loop to progress", async () => {
+		await withDataDir(async (dataDir) => {
+			const path = join(dataDir, "snapshot.bin")
+			const bytes = Buffer.alloc(2 * 1024 * 1024 + 17)
+			for (let index = 0; index < bytes.length; index++) bytes[index] = index % 251
+			writeFileSync(path, bytes)
+			const expected = createHash("sha256").update(bytes).digest("hex")
+			let yielded = false
+			const immediate = setImmediate(() => {
+				yielded = true
+			})
+			try {
+				strictEqual(await sha256File(path), expected)
+				ok(yielded, "snapshot hashing must yield while reading the file")
+			} finally {
+				clearImmediate(immediate)
+			}
+		})
+	})
+
+	it("hashes empty snapshots and propagates file-open/read failures", async () => {
+		await withDataDir(async (dataDir) => {
+			const path = join(dataDir, "empty.bin")
+			writeFileSync(path, "")
+			strictEqual(
+				await sha256File(path),
+				"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+			)
+			await rejects(sha256File(join(dataDir, "missing.bin")), /ENOENT/)
+			await rejects(sha256File(dataDir), /EISDIR/)
+		})
+	})
+})
+
 describe("checkpoint state resolution", () => {
+	it("binds a version-2 checkpoint to its eventing control snapshot", async () => {
+		await withDataDir(async (dataDir) => {
+			const checkpointId = newCheckpointId()
+			const operationId = newCheckpointOperationId()
+			const snapshot = checkpointSnapshotDir(dataDir, checkpointId)
+			mkdirSync(join(snapshot, "backup"), { recursive: true })
+			writeFileSync(join(snapshot, "backup", "data.bin"), "backup")
+
+			const store = await LocalEventingControlStore.open(dataDir)
+			const controlPath = eventingControlSnapshotPath(dataDir, checkpointId)
+			const controlValidation = await store.backupTo(controlPath)
+			store.close()
+			const controlBytes = readFileSync(controlPath)
+			writeFileSync(
+				join(snapshot, "manifest.json"),
+				`${JSON.stringify({
+					...manifest(checkpointId, operationId, dataDir),
+					formatVersion: 2,
+					backupBytes: 6,
+					controlRelativePath: `snapshots/${checkpointId}/control.sqlite`,
+					controlBytes: controlBytes.byteLength,
+					controlSha256: createHash("sha256").update(controlBytes).digest("hex"),
+					controlValidation,
+				})}\n`,
+			)
+			writeState(dataDir, checkpointId)
+			strictEqual((await resolveCheckpoint(dataDir)).manifest.formatVersion, 2)
+
+			const corrupted = Buffer.from(controlBytes)
+			corrupted[corrupted.length - 1] ^= 1
+			writeFileSync(controlPath, corrupted)
+			await rejects(resolveCheckpoint(dataDir), /digest mismatch|quick_check failed/)
+		})
+	})
+
 	it("resolves immutable current, previous, and explicit IDs", async () => {
 		await withDataDir(async (dataDir) => {
 			const current = newCheckpointId()
@@ -319,6 +399,42 @@ describe("checkpoint state resolution", () => {
 			strictEqual((await resolveCheckpoint(dataDir, "current")).checkpointId, current)
 			strictEqual((await resolveCheckpoint(dataDir, "previous")).checkpointId, previous)
 			strictEqual((await resolveCheckpoint(dataDir, previous)).checkpointId, previous)
+		})
+	})
+
+	it("keeps the registry readable when an older build wrote its previous checkpoint", async () => {
+		await withDataDir(async (dataDir) => {
+			const current = newCheckpointId()
+			const stale = newCheckpointId()
+			writeSnapshot(dataDir, current)
+			writeSnapshot(dataDir, stale, undefined, OLDER_BUILD_SCHEMA)
+			writeState(dataDir, current, stale)
+
+			// The registry, and restore of `current`, both still work.
+			strictEqual((await readCheckpointState(dataDir)).previous, stale)
+			deepStrictEqual(await checkpointAvailability(dataDir), { available: true, checkpointId: current })
+			// Restoring the stale one itself is still refused by the build gate.
+			await rejects(resolveCheckpoint(dataDir, "previous"), /checkpoint schema mismatch/)
+			strictEqual(
+				(await resolveCheckpoint(dataDir, "previous", undefined, "registry")).checkpointId,
+				stale,
+			)
+		})
+	})
+
+	it("reports a current checkpoint from an older build as unusable, not as absent", async () => {
+		await withDataDir(async (dataDir) => {
+			const stale = newCheckpointId()
+			writeSnapshot(dataDir, stale, undefined, OLDER_BUILD_SCHEMA)
+			writeState(dataDir, stale)
+			const availability = await checkpointAvailability(dataDir)
+			strictEqual(availability.available, false)
+			match(
+				availability.available === false && availability.reason === "unusable"
+					? availability.detail
+					: "",
+				/checkpoint schema mismatch/,
+			)
 		})
 	})
 
@@ -337,6 +453,29 @@ describe("checkpoint state resolution", () => {
 			rmSync(checkpointRoot(dataDir), { recursive: true })
 			mkdirSync(join(checkpointRoot(dataDir), "current"), { recursive: true })
 			await rejects(readCheckpointState(dataDir), /legacy preview/)
+		})
+	})
+
+	it("reports checkpoint availability so recovery advice can name a command that works", async () => {
+		await withDataDir(async (dataDir) => {
+			// Never checkpointed: the ordinary state, not a fault.
+			deepStrictEqual(await checkpointAvailability(dataDir), { available: false, reason: "none" })
+
+			const current = newCheckpointId()
+			writeSnapshot(dataDir, current)
+			writeState(dataDir, current, null)
+			deepStrictEqual(await checkpointAvailability(dataDir), { available: true, checkpointId: current })
+
+			// Present but unreadable state is "unusable", never silently "none".
+			writeFileSync(checkpointStatePath(dataDir), "{bad json")
+			const corrupt = await checkpointAvailability(dataDir)
+			strictEqual(corrupt.available, false)
+			strictEqual(corrupt.available === false ? corrupt.reason : undefined, "unusable")
+
+			// Snapshot data beside a missing state file is a fault too.
+			rmSync(checkpointStatePath(dataDir))
+			const orphaned = await checkpointAvailability(dataDir)
+			strictEqual(orphaned.available === false ? orphaned.reason : undefined, "unusable")
 		})
 	})
 
@@ -531,6 +670,25 @@ describe("checkpoint reconciliation and retention", () => {
 		}
 	})
 
+	it("retires a checkpoint an older build wrote instead of refusing every later checkpoint", async () => {
+		await withDataDir(async (dataDir) => {
+			const current = newCheckpointId()
+			const previous = newCheckpointId()
+			const stale = newCheckpointId()
+			writeSnapshot(dataDir, current)
+			writeSnapshot(dataDir, previous, undefined, OLDER_BUILD_SCHEMA)
+			writeSnapshot(dataDir, stale, undefined, OLDER_BUILD_SCHEMA)
+			writeState(dataDir, current, previous)
+			const state = await readCheckpointState(dataDir)
+
+			const retirement = await retireCheckpointIfEligible(dataDir, stale, state)
+
+			ok(!existsSync(checkpointSnapshotDir(dataDir, stale)))
+			ok(retirement !== null && existsSync(join(retirement, "complete.json")))
+			ok(existsSync(checkpointSnapshotDir(dataDir, previous)))
+		})
+	})
+
 	it("converges after every retirement cleanup and completed-operation boundary", async () => {
 		for (const boundary of [
 			"afterRetirementCleanupRename",
@@ -666,9 +824,11 @@ describe("live-store reset safety", () => {
 			writeSnapshot(dataDir, checkpointId)
 			writeState(dataDir, checkpointId)
 			mkdirSync(join(dataDir, "store"), { recursive: true })
+			mkdirSync(join(dataDir, "control"), { recursive: true })
 			mkdirSync(join(dataDir, "metadata"), { recursive: true })
 			mkdirSync(join(dataDir, "tmp"), { recursive: true })
 			writeFileSync(join(dataDir, "store", "part.bin"), "live")
+			writeFileSync(join(dataDir, "control", "eventing.sqlite"), "live")
 			writeFileSync(join(dataDir, "metadata", "table.sql"), "live")
 			writeFileSync(join(dataDir, "status"), "live")
 			writeFileSync(join(dataDir, "tmp", "scratch.bin"), "live")
@@ -680,6 +840,7 @@ describe("live-store reset safety", () => {
 			strictEqual((await readCheckpointState(dataDir)).current, checkpointId)
 			ok(existsSync(checkpointSnapshotDir(dataDir, checkpointId)))
 			ok(!existsSync(join(dataDir, "store")))
+			ok(!existsSync(join(dataDir, "control")))
 			ok(!existsSync(join(dataDir, "metadata")))
 			ok(!existsSync(join(dataDir, "status")))
 			ok(!existsSync(join(dataDir, "tmp")))
@@ -735,7 +896,7 @@ describe("live-store reset safety", () => {
 				const checkpointId = newCheckpointId()
 				writeSnapshot(dataDir, checkpointId)
 				writeState(dataDir, checkpointId)
-				for (const entry of ["data", "metadata", "store", "tmp"]) {
+				for (const entry of ["control", "data", "metadata", "store", "tmp"]) {
 					mkdirSync(join(dataDir, entry), { recursive: true })
 					writeFileSync(join(dataDir, entry, "live.bin"), "live")
 				}
@@ -757,7 +918,7 @@ describe("live-store reset safety", () => {
 				)
 				await Effect.runPromise(reconcileCheckpointRecovery(dataDir))
 
-				for (const entry of ["data", "metadata", "status", "store", "tmp"]) {
+				for (const entry of ["control", "data", "metadata", "status", "store", "tmp"]) {
 					ok(!existsSync(join(dataDir, entry)), `${boundary}: ${entry}`)
 				}
 				strictEqual((await readCheckpointState(dataDir)).current, checkpointId)
@@ -1048,3 +1209,48 @@ const throwsMessage = (run: () => unknown, expected: RegExp): void => {
 		match(error instanceof Error ? error.message : String(error), expected)
 	}
 }
+
+describe("checkpoint backup request has no client-side timeout", () => {
+	// The server executes BACKUP through a synchronous db.exec that cannot
+	// observe client cancellation. A client timeout unwound checkpoint creation
+	// and released the maintenance lock while the snapshot was still being
+	// written — so a legitimately slow BACKUP must be waited out, not raced.
+	//
+	// Simulated time: every Clock.sleep runs 1000x faster, so the removed 30s
+	// ceiling would fire at ~30ms real time while the stub server answers at
+	// ~600ms — the old code deterministically failed here with its TimeoutError.
+	const scaledClock: Clock.Clock = {
+		currentTimeMillisUnsafe: () => Date.now(),
+		currentTimeMillis: Effect.sync(() => Date.now()),
+		currentTimeNanosUnsafe: () => BigInt(Date.now()) * 1_000_000n,
+		currentTimeNanos: Effect.sync(() => BigInt(Date.now()) * 1_000_000n),
+		monotonicTimeNanosUnsafe: () => process.hrtime.bigint(),
+		monotonicTimeNanos: Effect.sync(() => process.hrtime.bigint()),
+		sleep: (duration) =>
+			Effect.promise(() => new Promise<void>((r) => setTimeout(r, Duration.toMillis(duration) / 1000))),
+	}
+
+	it("waits out a backup slower than the old 30s ceiling", async () => {
+		const root = mkdtempSync(join(tmpdir(), "maple-backup-timeout-"))
+		const dataDir = join(root, "data")
+		mkdirSync(dataDir, { recursive: true })
+		writeFileSync(`${dataDir}.maintenance-token`, "token\n")
+		const slowClient = HttpClient.make((request) =>
+			Effect.succeed(
+				HttpClientResponse.fromWeb(request, new Response('{"ok":true}', { status: 200 })),
+			).pipe(Effect.delay("10 minutes")),
+		)
+		try {
+			const exit = await Effect.runPromise(
+				postCheckpointBackup("127.0.0.1", 4318, dataDir, newCheckpointId()).pipe(
+					Effect.exit,
+					Effect.provideService(HttpClient.HttpClient, slowClient),
+					Effect.provideService(Clock.Clock, scaledClock),
+				),
+			)
+			ok(Exit.isSuccess(exit), `slow backup must succeed, got ${JSON.stringify(exit)}`)
+		} finally {
+			rmSync(root, { recursive: true, force: true })
+		}
+	})
+})

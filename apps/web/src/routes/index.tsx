@@ -12,12 +12,11 @@ import { TimeRangeHeaderControls } from "@/components/time-range-picker/time-ran
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@maple/ui/components/ui/select"
 import { formatErrorRate } from "@maple/ui/lib/format"
 import { useEffectiveTimeRange } from "@/hooks/use-effective-time-range"
-import { useRetainedRefreshableResultValue } from "@/hooks/use-retained-refreshable-result-value"
+import { useRefreshableAtomValue } from "@/hooks/use-refreshable-atom-value"
 import { ServiceUsageCards } from "@/components/dashboard/service-usage-cards"
 import { ServiceHealthOverview, ServiceHealthList } from "@/components/dashboard/service-health-section"
 import { MetricsGrid } from "@/components/dashboard/metrics-grid"
 import { SetupChecklist } from "@/components/dashboard/setup-checklist"
-import { FirstActionHint } from "@/components/dashboard/first-action-hint"
 import type { ChartLegendMode, ChartTooltipMode } from "@maple/ui/components/charts/_shared/chart-types"
 import {
 	getCustomChartTimeSeriesResultAtom,
@@ -29,9 +28,12 @@ import { mergeExactThroughput, type CustomChartTimeSeriesResponse } from "@/api/
 import type { ServiceDetailTimeSeriesPoint, ServicesFacetsResponse } from "@/api/warehouse/services"
 import { disabledResultAtom } from "@/lib/services/atoms/disabled-result-atom"
 import { TimeRangeSearchFields, applyTimeRangeSearch } from "@/components/time-range-picker/search"
+import { sessionTimeRangeSearchMiddleware } from "@/components/time-range-picker/session-time-range"
 import { isClerkAuthEnabled } from "@/lib/services/common/auth-mode"
 
 import { formatWarehouseDateTime } from "@maple/query-engine"
+import { snapRangeForCache } from "@/lib/time-utils"
+import { useGlobalNamespace } from "@/hooks/use-global-namespace"
 const dashboardSearchSchema = Schema.Struct({
 	environment: Schema.optional(Schema.String),
 	...TimeRangeSearchFields,
@@ -40,6 +42,7 @@ const dashboardSearchSchema = Schema.Struct({
 export const Route = createFileRoute("/")({
 	component: DashboardPage,
 	validateSearch: Schema.toStandardSchemaV1(dashboardSearchSchema),
+	search: { middlewares: [sessionTimeRangeSearchMiddleware()] },
 })
 
 interface OverviewChartConfig {
@@ -75,7 +78,10 @@ const OVERVIEW_CHARTS: OverviewChartConfig[] = [
 		chartId: "latency-line",
 		title: "Latency",
 		layout: { x: 0, y: 4, w: 6, h: 4 },
-		legend: "visible",
+		// No `legend` — every tile here is a `WidgetShell`, whose header hosts the
+		// series chips in the top-right. `"visible"` would move them under the plot
+		// (bottom-left) and shorten it, which is the dashboard-builder default for a
+		// standalone chart, not for a card with a header.
 		tooltip: "visible",
 	},
 	{
@@ -103,17 +109,21 @@ function DashboardPage() {
 	// matches the old probe's range, so demo-detection behavior is unchanged.
 	// `TinybirdDateTime` requires `YYYY-MM-DD HH:mm:ss` (no `T`, no millis), so
 	// we strip the ISO suffix instead of passing `.toISOString()` raw.
+	//
+	// Snapped to the cache grid: at second precision a bare `new Date()` minted a
+	// fresh atom key per mount, so the atom's 5-minute `staleTime` never fired.
+	// Snapping also lets this share one entry with the service map's identical
+	// 24h probe instead of each route querying facets for itself.
 	const facetsRange = useMemo(() => {
-		const end = new Date()
-		const start = new Date(end.getTime() - 24 * 60 * 60 * 1000)
-		return {
-			startTime: formatWarehouseDateTime(start.getTime()),
-			endTime: formatWarehouseDateTime(end.getTime()),
-		}
+		const end = Date.now()
+		return snapRangeForCache({
+			startTime: formatWarehouseDateTime(end - 24 * 60 * 60 * 1000),
+			endTime: formatWarehouseDateTime(end),
+		})
 	}, [])
 
 	const facetsAtom = getServicesFacetsResultAtom({ data: facetsRange })
-	const facetsResult = useRetainedRefreshableResultValue(facetsAtom)
+	const facetsResult = useRefreshableAtomValue(facetsAtom)
 	const refreshFacets = useAtomRefresh(facetsAtom)
 
 	const defaultPreset = useMemo(() => {
@@ -155,6 +165,7 @@ function DashboardContent({
 }) {
 	const search = Route.useSearch()
 	const navigate = useNavigate({ from: Route.fullPath })
+	const pinnedNamespace = useGlobalNamespace()
 
 	const { startTime: effectiveStartTime, endTime: effectiveEndTime } = useEffectiveTimeRange(
 		search.startTime,
@@ -220,7 +231,7 @@ function DashboardContent({
 	//
 	// On the eventual facets resolution the params may change (hint → real); the
 	// atom family re-keys (it's keyed by encoded params) and refetches, and
-	// `useRetainedRefreshableResultValue` keeps the prior value on screen
+	// `useRefreshableAtomValue` keeps the prior value on screen
 	// (`waiting`) so there's no flash to a spinner.
 	const canFetch = facetsReady || hint.seen
 
@@ -234,7 +245,7 @@ function DashboardContent({
 			})
 		: // eslint-disable-next-line @typescript-eslint/no-explicit-any
 			disabledResultAtom<{ data: ServiceDetailTimeSeriesPoint[] }, any>()
-	const overviewResult = useRetainedRefreshableResultValue(overviewAtom)
+	const overviewResult = useRefreshableAtomValue(overviewAtom)
 	const refreshOverview = useAtomRefresh(overviewAtom)
 
 	const logVolumeAtom = canFetch
@@ -248,12 +259,15 @@ function DashboardContent({
 					filters: {
 						serviceName: undefined,
 						environments: environmentFilter,
+						// Injected per-site — the custom-chart family is shared with
+						// dashboard widgets, which stay unscoped for now.
+						namespaces: pinnedNamespace !== null ? [pinnedNamespace] : undefined,
 					},
 				},
 			})
 		: // eslint-disable-next-line @typescript-eslint/no-explicit-any
 			disabledResultAtom<CustomChartTimeSeriesResponse, any>()
-	const logVolumeResult = useRetainedRefreshableResultValue(logVolumeAtom)
+	const logVolumeResult = useRefreshableAtomValue(logVolumeAtom)
 	const refreshLogVolume = useAtomRefresh(logVolumeAtom)
 
 	const isWaiting =
@@ -311,7 +325,7 @@ function DashboardContent({
 						0,
 					)
 					return { bucket: point.bucket, throughput: total }
-				}) as unknown as Record<string, unknown>[],
+				}) as Record<string, unknown>[],
 		)
 		.orElse(() => EMPTY_ARRAY)
 
@@ -345,21 +359,21 @@ function DashboardContent({
 			"error-rate": overviewError,
 			latency: overviewError,
 			"log-volume": logVolumeError,
-		}
+		} satisfies Record<string, { error: unknown; onRetry?: () => void } | undefined>
 
 		const loadingMap: Record<string, boolean> = {
 			throughput: isOverviewLoading,
 			"error-rate": isOverviewLoading,
 			latency: isOverviewLoading,
 			"log-volume": isLogVolumeLoading,
-		}
+		} satisfies Record<string, boolean>
 
 		const dataMap: Record<string, Record<string, unknown>[]> = {
 			throughput: overviewPoints,
 			"error-rate": overviewPoints,
 			latency: overviewPoints,
 			"log-volume": logPoints,
-		}
+		} satisfies Record<string, Record<string, unknown>[]>
 
 		const totalVolume = overviewPoints.reduce(
 			(sum, point) => sum + (typeof point.throughput === "number" ? point.throughput : 0),
@@ -427,10 +441,7 @@ function DashboardContent({
 			<DashboardLayout.Body>
 				<DashboardLayout.Content>
 					<DashboardLayout.Sticky>
-						<DashboardLayout.Header
-							title="Dashboard"
-							description="Observability overview for your services."
-						>
+						<DashboardLayout.Header title="Overview">
 							<div className="flex items-center gap-2">
 								<Select
 									items={environmentItems}
@@ -463,7 +474,6 @@ function DashboardContent({
 					<DashboardLayout.Scroll>
 						{isClerkAuthEnabled && (
 							<>
-								<FirstActionHint />
 								<SetupChecklist />
 							</>
 						)}

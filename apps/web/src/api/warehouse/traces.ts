@@ -14,7 +14,7 @@ import {
 	SpanHierarchyRequest,
 	SpanName,
 } from "@maple/domain/http"
-import { MapleApiAtomClient } from "@/lib/services/common/atom-client"
+import { MapleInternalAtomClient } from "@/lib/services/common/internal-atom-client"
 import { computeTraceTimeWindow } from "@/lib/trace-time-window"
 import {
 	WarehouseDateTimeString,
@@ -52,6 +52,8 @@ const ListTracesInputSchema = Schema.Struct({
 		Schema.Int.check(Schema.isGreaterThanOrEqualTo(1), Schema.isLessThanOrEqualTo(1000)),
 	),
 	offset: Schema.optional(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))),
+	sortBy: Schema.optional(Schema.Literals(["timestamp", "durationMs"])),
+	sortDir: Schema.optional(Schema.Literals(["asc", "desc"])),
 	startTime: Schema.optional(WarehouseDateTimeString),
 	endTime: Schema.optional(WarehouseDateTimeString),
 	// Every inclusion facet is multi-select in the sidebar, so each is an array
@@ -63,10 +65,10 @@ const ListTracesInputSchema = Schema.Struct({
 	httpStatusCodes: Schema.optional(Schema.Array(Schema.String)),
 	deploymentEnvs: Schema.optional(Schema.Array(DeploymentEnvironment)),
 	namespaces: Schema.optional(Schema.Array(ServiceNamespace)),
-	// Singular aliases, folded into the arrays by `oneOrMany`. Saved dashboard
-	// widgets store their `dataSource.params` verbatim, so a dashboard created
-	// before this change still sends `service: "api-gw"` — dropping these keys
-	// would silently stop it filtering.
+	// Singular aliases, folded into the arrays by `oneOrMany`. A curated-route
+	// widget's params bag reaches the server function verbatim (see
+	// `toWidgetRequest`), so a dashboard created before this change still sends
+	// `service: "api-gw"` — dropping these keys would silently stop it filtering.
 	service: Schema.optional(ServiceName),
 	spanName: Schema.optional(SpanName),
 	httpMethod: Schema.optional(Schema.String),
@@ -79,6 +81,15 @@ const ListTracesInputSchema = Schema.Struct({
 	attributeFilters: Schema.optional(Schema.Array(AttributeFilterInput)),
 	resourceAttributeFilters: Schema.optional(Schema.Array(AttributeFilterInput)),
 	rootOnly: Schema.optional(Schema.Boolean),
+	/**
+	 * Drop noise traces from the grouped list: single-span traces whose root is
+	 * not an entry-point kind (Server/Consumer) — mobile `ui.screen` breadcrumbs,
+	 * orphaned client spans, SDK self-flushes. Defaults on; ignored when
+	 * `rootOnly` is false (the span-level list has no trace structure to judge).
+	 */
+	hideNoise: Schema.optional(Schema.Boolean),
+	/** Keep only traces with at least this many spans (grouped list only). */
+	minSpanCount: Schema.optional(Schema.Int.check(Schema.isGreaterThanOrEqualTo(1))),
 	serviceMatchMode: ContainsMatchMode,
 	spanNameMatchMode: ContainsMatchMode,
 	deploymentEnvMatchMode: ContainsMatchMode,
@@ -98,6 +109,9 @@ const DEFAULT_LIMIT = 100
 const DEFAULT_OFFSET = 0
 
 const LIST_PROJECTED_COLUMNS = [
+	// Synthetic query-engine column: opt this list into the batched
+	// service_map_spans enrichment without charging every trace-list consumer.
+	"services",
 	"spanAttributes.http.method",
 	"spanAttributes.http.request.method",
 	"spanAttributes.http.route",
@@ -109,6 +123,7 @@ const LIST_PROJECTED_COLUMNS = [
 	"spanAttributes.url.path",
 	"spanAttributes.server.address",
 	"spanAttributes.net.peer.name",
+	"spanAttributes.screen.name",
 ] as const
 
 interface TraceRootSpanSummary {
@@ -121,6 +136,9 @@ interface TraceRootSpanSummary {
 
 export interface Trace {
 	traceId: TraceId
+	/** The span this row was built from — the root span unless `rootOnly` is off. */
+	spanId: string
+	isRootSpan: boolean
 	startTime: string
 	endTime: string
 	durationMs: number
@@ -136,6 +154,15 @@ export interface TracesResponse {
 	meta: {
 		limit: number
 		offset: number
+		/**
+		 * Rows the warehouse page actually produced before the noise filter ran.
+		 * Pagination must advance by pages, not by `data.length`: a filtered page
+		 * returns fewer rows than it consumed, and `scannedCount === limit` — not
+		 * a full `data` array — is what means "more pages exist".
+		 */
+		scannedCount: number
+		/** Noise traces dropped from this page (`scannedCount - data.length`). */
+		hiddenCount: number
 	}
 }
 
@@ -208,35 +235,52 @@ function buildResourceAttributeFilters(input: ListTracesDecoded): AttributeFilte
 	return filters
 }
 
+const PROJECTED_ATTR_KEYS = [
+	"http.method",
+	"http.request.method",
+	"http.route",
+	"http.target",
+	"http.status_code",
+	"http.response.status_code",
+	"http.url",
+	"url.full",
+	"url.path",
+	"server.address",
+	"net.peer.name",
+	"screen.name",
+] as const
+
 /** Transform a list row from tracesListQuery */
 function transformSpanListRow(row: Record<string, unknown>): Trace {
 	const spanAttrs = (row.spanAttributes ?? {}) as Record<string, string>
 	const rootSpanAttributes: Record<string, string> = {}
-	const PROJECTED_ATTR_KEYS = [
-		"http.method",
-		"http.request.method",
-		"http.route",
-		"http.target",
-		"http.status_code",
-		"http.response.status_code",
-		"http.url",
-		"url.full",
-		"url.path",
-		"server.address",
-		"net.peer.name",
-	] as const
 	for (const key of PROJECTED_ATTR_KEYS) {
 		if (spanAttrs[key]) rootSpanAttributes[key] = spanAttrs[key]
 	}
 
 	const timestamp = String(row.timestamp)
+	const serviceName = String(row.serviceName)
+	const services = Array.isArray(row.services)
+		? Array.from(
+				new Set(
+					row.services.flatMap((service) => {
+						const name = String(service)
+						return name ? [name] : []
+					}),
+				),
+			)
+		: serviceName
+			? [serviceName]
+			: []
 	return {
 		traceId: toTraceId(String(row.traceId)),
+		spanId: String(row.spanId),
+		isRootSpan: !row.parentSpanId,
 		startTime: timestamp,
 		endTime: timestamp,
 		durationMs: Number(row.durationMs),
 		spanCount: 1,
-		services: [String(row.serviceName)],
+		services,
 		rootSpan: {
 			name: String(row.spanName),
 			kind: String(row.spanKind),
@@ -251,6 +295,60 @@ function transformSpanListRow(row: Record<string, unknown>): Trace {
 		rootSpanName: String(row.spanName),
 		hasError: row.hasError === true || row.hasError === 1,
 	}
+}
+
+/** Transform a grouped row from the `groupByTrace` list (one row per TraceId). */
+function transformTraceListRow(row: Record<string, unknown>): Trace {
+	const rootSpanAttributes: Record<string, string> = {}
+	if (typeof row.rootSpanAttributes === "object" && row.rootSpanAttributes !== null) {
+		for (const [key, value] of Object.entries(row.rootSpanAttributes)) {
+			if (typeof value === "string" && value.length > 0) rootSpanAttributes[key] = value
+		}
+	}
+	const services = Array.isArray(row.services)
+		? row.services.flatMap((service) => {
+				const name = String(service)
+				return name ? [name] : []
+			})
+		: []
+	const rootSpanName = String(row.rootSpanName)
+	const rootSpanKind = String(row.rootSpanKind)
+	return {
+		traceId: toTraceId(String(row.traceId)),
+		// Grouped rows are whole traces — there is no single span to deep-link.
+		spanId: "",
+		isRootSpan: true,
+		startTime: String(row.startTime),
+		endTime: String(row.endTime),
+		durationMs: Number(row.durationMs),
+		spanCount: Number(row.spanCount),
+		services,
+		rootSpan: {
+			name: rootSpanName,
+			kind: rootSpanKind,
+			statusCode: String(row.rootSpanStatusCode),
+			attributes: rootSpanAttributes,
+			http: getHttpInfo({
+				spanName: rootSpanName,
+				spanAttributes: rootSpanAttributes,
+				spanKind: rootSpanKind,
+			}),
+		},
+		rootSpanName,
+		hasError: row.hasError === true || row.hasError === 1,
+	}
+}
+
+const ENTRY_POINT_KINDS = new Set(["Server", "Consumer"])
+
+/**
+ * A single-span trace whose root is not an entry point carries no structure and
+ * no request identity — mobile `ui.screen` breadcrumbs, orphaned client spans,
+ * SDK self-flush spans. Single-span SERVER traces stay: an inbound request with
+ * no children is thin but real.
+ */
+function isNoiseTrace(trace: Trace): boolean {
+	return trace.spanCount <= 1 && !ENTRY_POINT_KINDS.has(trace.rootSpan.kind)
 }
 
 export function listTraces({ data }: { data: ListTracesInput }) {
@@ -272,9 +370,14 @@ const listTracesEffect = Effect.fn("QueryEngine.listTraces")(function* ({ data }
 	if (input.namespaceMatchMode === "contains") matchModes.serviceNamespace = "contains"
 
 	const rootOnly = input.rootOnly ?? true
+	// The trace-grouped list only lists true roots; `rootOnly: false` is the
+	// explicit opt-out into the legacy per-span list (Datadog's "all spans" view).
+	const groupByTrace = rootOnly
+	const hideNoise = groupByTrace && (input.hideNoise ?? true)
 
 	if (input.services?.length) yield* Effect.annotateCurrentSpan("services", input.services.join(","))
 	yield* Effect.annotateCurrentSpan("rootOnly", rootOnly)
+	yield* Effect.annotateCurrentSpan("groupByTrace", groupByTrace)
 	yield* Effect.annotateCurrentSpan("limit", limit)
 
 	const request = new QueryEngineExecuteRequest({
@@ -283,11 +386,15 @@ const listTracesEffect = Effect.fn("QueryEngine.listTraces")(function* ({ data }
 		query: {
 			kind: "list" as const,
 			source: "traces" as const,
+			groupByTrace,
 			limit,
 			offset,
+			sortBy: input.sortBy,
+			sortDir: input.sortDir,
 			// Only project the span attributes the list UI actually renders
 			// (via transformSpanListRow → getHttpInfo). Avoids reading the full
 			// SpanAttributes / ResourceAttributes maps — large win on wide traces.
+			// The grouped path ignores this and ships its own fixed projection.
 			columns: LIST_PROJECTED_COLUMNS,
 			filters: {
 				serviceNames: oneOrMany(input.services, input.service),
@@ -323,11 +430,25 @@ const listTracesEffect = Effect.fn("QueryEngine.listTraces")(function* ({ data }
 		)
 	}
 
-	const traces = response.result.data.map(transformSpanListRow)
+	const scanned = groupByTrace
+		? response.result.data.map(transformTraceListRow)
+		: response.result.data.map(transformSpanListRow)
+
+	const minSpanCount = groupByTrace ? input.minSpanCount : undefined
+	const traces = scanned.filter(
+		(trace) =>
+			(!hideNoise || !isNoiseTrace(trace)) &&
+			(minSpanCount === undefined || trace.spanCount >= minSpanCount),
+	)
 
 	return {
 		data: traces,
-		meta: { limit, offset },
+		meta: {
+			limit,
+			offset,
+			scannedCount: scanned.length,
+			hiddenCount: scanned.length - traces.length,
+		},
 	}
 })
 
@@ -341,6 +462,9 @@ export interface SpanHierarchyResponse {
 	spans: Span[]
 	rootSpans: SpanNode[]
 	totalDurationMs: number
+	/** Earliest span start — anchors every position-in-trace bar. Absent when the
+	 *  trace returned no spans. */
+	traceStartTime: string | undefined
 }
 
 const GetSpanHierarchyInputSchema = Schema.Struct({
@@ -374,7 +498,7 @@ const getSpanHierarchyEffect = Effect.fn("QueryEngine.getSpanHierarchy")(functio
 
 	const result = yield* runWarehouseQuery("spanHierarchy", () =>
 		Effect.gen(function* () {
-			const client = yield* MapleApiAtomClient
+			const client = yield* MapleInternalAtomClient
 			return yield* client.queryEngine.spanHierarchy({
 				payload: new SpanHierarchyRequest({
 					traceId: input.traceId,
@@ -388,21 +512,26 @@ const getSpanHierarchyEffect = Effect.fn("QueryEngine.getSpanHierarchy")(functio
 	const spans = dedupeBySpanId(result.data.map((raw) => transformSpan(raw as SpanHierarchyRow)))
 	const rootSpans = buildSpanTree(spans)
 	const totalDurationMs = spans.length > 0 ? Math.max(...spans.map((span) => span.durationMs)) : 0
+	const traceStartTime =
+		spans.length === 0
+			? undefined
+			: spans.reduce((earliest, candidate) =>
+					new Date(candidate.startTime) < new Date(earliest.startTime) ? candidate : earliest,
+				).startTime
 
 	return {
 		traceId: input.traceId,
 		spans,
 		rootSpans,
 		totalDurationMs,
+		traceStartTime,
 	}
 })
 
-// ---------------------------------------------------------------------------
 // Span detail — full attribute maps for a single span, loaded on demand.
 // The hierarchy query intentionally returns only trimmed maps (the keys the
 // tree views render); the detail panel fetches the full maps lazily for the
 // one selected span.
-// ---------------------------------------------------------------------------
 
 const GetSpanDetailInputSchema = Schema.Struct({
 	traceId: TraceId,
@@ -436,7 +565,7 @@ const getSpanDetailEffect = Effect.fn("QueryEngine.getSpanDetail")(function* ({
 
 	const result = yield* runWarehouseQuery("spanDetail", () =>
 		Effect.gen(function* () {
-			const client = yield* MapleApiAtomClient
+			const client = yield* MapleInternalAtomClient
 			return yield* client.queryEngine.spanDetail({
 				payload: new SpanDetailRequest({
 					traceId: input.traceId,
@@ -487,10 +616,10 @@ const GetTracesFacetsInputSchema = Schema.Struct({
 	httpStatusCodes: Schema.optional(Schema.Array(Schema.String)),
 	deploymentEnvs: Schema.optional(Schema.Array(DeploymentEnvironment)),
 	namespaces: Schema.optional(Schema.Array(ServiceNamespace)),
-	// Singular aliases, folded into the arrays by `oneOrMany`. Saved dashboard
-	// widgets store their `dataSource.params` verbatim, so a dashboard created
-	// before this change still sends `service: "api-gw"` — dropping these keys
-	// would silently stop it filtering.
+	// Singular aliases, folded into the arrays by `oneOrMany`. A curated-route
+	// widget's params bag reaches the server function verbatim (see
+	// `toWidgetRequest`), so a dashboard created before this change still sends
+	// `service: "api-gw"` — dropping these keys would silently stop it filtering.
 	service: Schema.optional(ServiceName),
 	spanName: Schema.optional(SpanName),
 	httpMethod: Schema.optional(Schema.String),

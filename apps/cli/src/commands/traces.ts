@@ -8,16 +8,16 @@ import { resolveRangeChecked } from "../core/time"
 import * as Ops from "../core/operations"
 
 const spanName = Flag.optional(
-	Flag.string("span-name").pipe(Flag.withDescription("Filter by span name (substring, case-insensitive)")),
+	Flag.String("span-name").pipe(Flag.withDescription("Filter by span name (substring, case-insensitive)")),
 )
 const minDuration = Flag.optional(
-	Flag.integer("min-duration-ms").pipe(Flag.withDescription("Minimum duration in milliseconds")),
+	Flag.Int("min-duration-ms").pipe(Flag.withDescription("Minimum duration in milliseconds")),
 )
 const maxDuration = Flag.optional(
-	Flag.integer("max-duration-ms").pipe(Flag.withDescription("Maximum duration in milliseconds")),
+	Flag.Int("max-duration-ms").pipe(Flag.withDescription("Maximum duration in milliseconds")),
 )
 const httpMethod = Flag.optional(
-	Flag.string("http-method").pipe(Flag.withDescription("Filter by HTTP method (GET, POST, ...)")),
+	Flag.String("http-method").pipe(Flag.withDescription("Filter by HTTP method (GET, POST, ...)")),
 )
 
 export const traces = Command.make("traces", {
@@ -33,7 +33,7 @@ export const traces = Command.make("traces", {
 	limit: f.limit,
 	offset: f.offset,
 }).pipe(
-	Command.withDescription("Search traces/spans in local Maple"),
+	Command.withDescription("Search traces/spans"),
 	Command.withHandler(
 		Effect.fnUntraced(function* (a) {
 			const range = yield* resolveRangeChecked(a)
@@ -54,7 +54,7 @@ export const traces = Command.make("traces", {
 )
 
 export const trace = Command.make("trace", {
-	traceId: Argument.string("trace-id").pipe(Argument.withDescription("Trace ID to inspect")),
+	traceId: Argument.String("trace-id").pipe(Argument.withDescription("Trace ID to inspect")),
 }).pipe(
 	Command.withDescription("Inspect a trace: full span tree + correlated logs"),
 	Command.withHandler(

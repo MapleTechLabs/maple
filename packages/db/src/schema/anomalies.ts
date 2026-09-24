@@ -8,7 +8,9 @@ import {
 	primaryKey,
 	text,
 	timestamp,
+	uniqueIndex,
 } from "drizzle-orm/pg-core"
+import { sql } from "drizzle-orm"
 import type { AnomalyIncidentId, ErrorIssueId, OrgId, UserId } from "@maple/domain/primitives"
 import type {
 	AnomalyIncidentSeverity,
@@ -67,7 +69,11 @@ export const anomalyDetectorStates = pgTable(
 		primaryKey({ columns: [table.orgId, table.detectorKey] }),
 		// No standalone org_id index: the primary key already leads with org_id,
 		// so one was pure write amplification on ~130k upserts a day.
-		index("anomaly_detector_states_open_incident_idx").on(table.orgId, table.openIncidentId),
+		// Partial: every read of this index either equals a concrete incident id or
+		// asks for the open slice, and open rows are a small fraction of the table.
+		index("anomaly_detector_states_open_incident_idx")
+			.on(table.orgId, table.openIncidentId)
+			.where(sql`${table.openIncidentId} is not null`),
 		index("anomaly_detector_states_evaluated_idx").on(table.lastEvaluatedAt),
 	],
 )
@@ -114,10 +120,27 @@ export const anomalyIncidents = pgTable(
 		updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date" }).notNull(),
 	},
 	(table) => [
-		index("anomaly_incidents_org_status_idx").on(table.orgId, table.status),
+		// (org, status) plus the list ordering: listIncidents filters on the
+		// first two and orders by (last_triggered_at DESC, id DESC), so a
+		// backward index walk answers the page directly — SELECT
+		// anomaly_incidents was ~970ms p95 sorting the org's rows by hand.
+		// Replaces anomaly_incidents_org_status_idx, whose prefix this carries.
+		index("anomaly_incidents_org_status_triggered_idx").on(
+			table.orgId,
+			table.status,
+			table.lastTriggeredAt,
+			table.id,
+		),
 		index("anomaly_incidents_org_triggered_idx").on(table.orgId, table.lastTriggeredAt),
 		index("anomaly_incidents_org_detector_idx").on(table.orgId, table.detectorKey),
 		index("anomaly_incidents_org_issue_idx").on(table.orgId, table.errorIssueId),
+		// One open incident per detector: the org claim is a bare lastTickAt CAS
+		// with no renewal, so a tick that outruns ORG_LOCK_TTL_MS can overlap the
+		// next one — this turns the duplicate open into a no-op/loud conflict
+		// instead of two incidents, two triages, two pages.
+		uniqueIndex("anomaly_incidents_open_detector_idx")
+			.on(table.orgId, table.detectorKey)
+			.where(sql`${table.status} = 'open'`),
 	],
 )
 

@@ -1,29 +1,19 @@
 import { HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/unstable/httpapi"
 import { Schema } from "effect"
 import { SessionId, TraceId } from "../../primitives"
-import { AuthorizationV2, V2SchemaErrors } from "./auth"
-import { ListOf, ListQuery, Timestamp } from "./envelopes"
-import {
-	V2InvalidRequestError,
-	V2NotFoundError,
-	V2PayloadTooLargeError,
-	V2RateLimitError,
-	V2ServiceUnavailableError,
-	V2UpstreamError,
-} from "./errors"
+import { AuditedRead } from "../audit-log"
+import { AuthorizationV2 } from "./auth"
+import { wireExample, ListOf, ListQuery, Timestamp } from "./envelopes"
+import { defineV2Error, V2CursorInvalid, V2ParameterInvalid } from "./errors"
 import { PublicId, PublicIdPrefixes } from "./public-id"
-
-/** See api-keys.ts: examples are authored in wire (encoded) shape. */
-const wireExample = <A>(example: object): A => example as A
+import { V2WarehouseReadErrors } from "./query-errors"
 
 /** `srep_…` public ID ⇄ internal `SessionId` (free-form string). */
 export const SessionReplayPublicId = PublicId(PublicIdPrefixes.sessionReplay, SessionId)
 
 const EXAMPLE_ID = "srep_4yeq2Gm3r2drGjuAHorp"
 
-// ---------------------------------------------------------------------------
 // Resources
-// ---------------------------------------------------------------------------
 
 /** Fields shared by the list summary and the full detail object. */
 const sessionReplayBaseFields = {
@@ -40,6 +30,10 @@ const sessionReplayBaseFields = {
 		description: "Session wall-clock duration in ms, or `null`.",
 	}),
 	status: Schema.String.annotate({ description: "Session status (e.g. `active`, `ended`)." }),
+	last_activity_at: Schema.NullOr(Timestamp).annotate({
+		description:
+			"Last activity seen in the session, refreshed by the SDK's heartbeat, or `null` when only the session-start row has landed. Read it alongside `status` to tell a session that is happening now from one whose tab went away without sending an end row — that leaves `status` at `active` for the rest of the session's retention.",
+	}),
 	user_id: Schema.NullOr(Schema.String).annotate({
 		description: "The identified user, or `null` if anonymous.",
 	}),
@@ -58,6 +52,9 @@ const sessionReplayBaseFields = {
 	group_name: Schema.String.annotate({
 		description: 'The identified group\'s display name, or `""` if unknown.',
 	}),
+	visitor_id: Schema.String.annotate({ description: 'Persistent browser visitor ID, or "" when unknown.' }),
+	utm_source: Schema.String.annotate({ description: 'Acquisition source, or "" when absent.' }),
+	entry_path: Schema.String.annotate({ description: "Session entry pathname without query or hash." }),
 	url_initial: Schema.String.annotate({ description: "The first URL of the session." }),
 	browser_name: Schema.String.annotate({ description: "Browser name." }),
 	os_name: Schema.String.annotate({ description: "Operating system name." }),
@@ -70,7 +67,12 @@ const sessionReplayBaseFields = {
 	trace_count: Schema.Number.annotate({ description: "Number of correlated traces." }),
 } as const
 
-export const V2SessionReplayListItem = Schema.Struct(sessionReplayBaseFields).annotate({
+export const V2SessionReplayListItem = Schema.Struct({
+	...sessionReplayBaseFields,
+	recorded: Schema.NullOr(Schema.Boolean).annotate({
+		description: "Whether recording was enabled; null for sessions without a recording marker.",
+	}),
+}).annotate({
 	identifier: "SessionReplayListItem",
 	title: "Session replay",
 	description: "A recorded browser session — summary form returned by search.",
@@ -82,11 +84,15 @@ export const V2SessionReplayListItem = Schema.Struct(sessionReplayBaseFields).an
 			end_time: "2026-07-15T09:18:30.000Z",
 			duration_ms: 390000,
 			status: "ended",
+			last_activity_at: "2026-07-15T09:18:30.000Z",
 			user_id: "user_2abc",
 			user_name: "Ada Lovelace",
 			user_email: "ada@acme.com",
 			group_id: "acme",
 			group_name: "Acme Inc",
+			visitor_id: "visitor_123",
+			utm_source: "newsletter",
+			entry_path: "/dashboard",
 			url_initial: "https://app.example.com/dashboard",
 			browser_name: "Chrome",
 			os_name: "macOS",
@@ -97,6 +103,7 @@ export const V2SessionReplayListItem = Schema.Struct(sessionReplayBaseFields).an
 			click_count: 24,
 			error_count: 1,
 			trace_count: 12,
+			recorded: true,
 		}),
 	],
 })
@@ -104,6 +111,17 @@ export type V2SessionReplayListItem = Schema.Schema.Type<typeof V2SessionReplayL
 
 export const V2SessionReplay = Schema.Struct({
 	...sessionReplayBaseFields,
+	visitor_is_new: Schema.Boolean,
+	user_traits: Schema.String.annotate({ description: "Identify traits as a JSON-encoded string map." }),
+	referrer: Schema.String,
+	referrer_host: Schema.String,
+	utm_medium: Schema.String,
+	utm_campaign: Schema.String,
+	utm_term: Schema.String,
+	utm_content: Schema.String,
+	host: Schema.String,
+	exit_path: Schema.String,
+	language: Schema.String,
 	user_agent: Schema.String.annotate({ description: "The full user-agent string." }),
 	trace_ids: Schema.Array(TraceId).annotate({ description: "All trace IDs correlated to the session." }),
 	resource_attributes: Schema.String.annotate({
@@ -130,6 +148,9 @@ export const V2SessionReplay = Schema.Struct({
 			user_email: "ada@acme.com",
 			group_id: "acme",
 			group_name: "Acme Inc",
+			visitor_id: "visitor_123",
+			utm_source: "newsletter",
+			entry_path: "/dashboard",
 			url_initial: "https://app.example.com/dashboard",
 			browser_name: "Chrome",
 			os_name: "macOS",
@@ -140,6 +161,18 @@ export const V2SessionReplay = Schema.Struct({
 			click_count: 24,
 			error_count: 1,
 			trace_count: 12,
+			visitor_is_new: false,
+			user_traits: "{}",
+			referrer: "",
+			referrer_host: "",
+			utm_medium: "email",
+			utm_campaign: "launch",
+			utm_term: "",
+			utm_content: "",
+			host: "app.example.com",
+			exit_path: "/dashboard",
+			language: "en",
+			last_activity_at: "2026-07-15T09:18:30.000Z",
 			user_agent: "Mozilla/5.0 …",
 			trace_ids: [],
 			resource_attributes: "{}",
@@ -195,7 +228,7 @@ export const V2SessionReplayManifest = Schema.Struct({
 	}),
 	max_bytes_per_request: Schema.Number.annotate({
 		description:
-			"Server cap on the encoded size of one events response. A range whose payload exceeds this is refused with `range_too_large`.",
+			"Budget for one events request, in payload bytes. Sum the range's `byte_size` against this — a range exceeding it is refused with `range_too_large`.",
 	}),
 	truncated: Schema.Boolean.annotate({
 		description:
@@ -259,6 +292,9 @@ export const V2SessionTranscriptEvent = Schema.Struct({
 	net_duration_ms: Schema.NullOr(Schema.Number).annotate({
 		description: "Request duration in ms for network events, otherwise `null`.",
 	}),
+	attributes: Schema.String.annotate({
+		description: "Custom-event properties as a JSON-encoded string map.",
+	}),
 	error_stack: Schema.NullOr(Schema.String).annotate({
 		description: "Stack trace for error events, otherwise `null`.",
 	}),
@@ -283,9 +319,7 @@ export const V2SessionReplayRef = Schema.Struct({
 })
 export type V2SessionReplayRef = Schema.Schema.Type<typeof V2SessionReplayRef>
 
-// ---------------------------------------------------------------------------
 // Requests / queries
-// ---------------------------------------------------------------------------
 
 export const V2SessionReplaySearchParams = Schema.Struct({
 	start_time: Timestamp.annotate({ description: "Window start (ISO-8601). Required." }),
@@ -303,10 +337,22 @@ export const V2SessionReplaySearchParams = Schema.Struct({
 	group_name: Schema.optionalKey(
 		Schema.String.annotate({ description: "Filter by identified group (company / team) name." }),
 	),
+	visitor_id: Schema.optionalKey(
+		Schema.String.annotate({
+			description:
+				"Filter by browser visitor. Unlike `user_id` this survives sign-in, so it walks from an anonymous session to the identified sessions of the same browser.",
+		}),
+	),
 	has_errors: Schema.optionalKey(
 		Schema.Boolean.annotate({ description: "Only sessions with (or without) errors." }),
 	),
 	search: Schema.optionalKey(Schema.String.annotate({ description: "Free-text search over URL/user." })),
+	page_path: Schema.optionalKey(
+		Schema.String.annotate({
+			description:
+				"Only sessions that navigated to this exact page path (pathname only, no query string or fragment) at any point, not just on entry.",
+		}),
+	),
 	duration_min_ms: Schema.optionalKey(
 		Schema.Number.annotate({ description: "Minimum session duration in ms." }),
 	),
@@ -375,8 +421,29 @@ export const MAX_REPLAY_CHUNKS_PER_REQUEST = 40
  * over-wide range is refused by us — a `range_too_large` naming the range — and
  * never dies as a platform abort, which the transient-error classifier reads as
  * a flaky warehouse and retries before reporting the service as unavailable.
+ *
+ * This bounds the **encoded** warehouse response, which is not what a caller
+ * can measure — see `MAX_REPLAY_RANGE_PAYLOAD_BYTES` for the budget they get.
  */
 export const MAX_REPLAY_EVENTS_RESPONSE_BYTES = 8_000_000
+
+/**
+ * Payload budget for one events request — the number clients plan ranges
+ * against, and the one the manifest advertises as `max_bytes_per_request`.
+ *
+ * Deliberately below `MAX_REPLAY_EVENTS_RESPONSE_BYTES`, because the two count
+ * different things. A caller can only sum the manifest's `byte_size`, which is
+ * the raw payload; the response guard counts the JSON-encoded row, where the
+ * payload is a string field and every quote in it — and rrweb JSON is dense
+ * with them — costs a second byte. Measured on production chunks the encoded
+ * row runs 1.07–1.14x the payload, so budgeting a range against the encoded
+ * ceiling means a well-packed range fails the response guard by construction:
+ * a 413 on exactly the recordings big enough to need ranging, with
+ * `retry: never`, i.e. permanently unplayable.
+ *
+ * 6 MB leaves ~33% headroom over the worst ratio observed.
+ */
+export const MAX_REPLAY_RANGE_PAYLOAD_BYTES = 6_000_000
 
 /**
  * Hard ceiling on manifest rows. Well beyond reach: ingest caps a session at
@@ -424,13 +491,30 @@ export const V2SessionReplaysForTraceParams = Schema.Struct({
 })
 export type V2SessionReplaysForTraceParams = Schema.Schema.Type<typeof V2SessionReplaysForTraceParams>
 
-// Full warehouse outcome range — see the matching comment in ./telemetry.ts.
-const commonErrors = [
-	V2InvalidRequestError,
-	V2RateLimitError,
-	V2ServiceUnavailableError,
-	V2UpstreamError,
-] as const
+export const V2SessionReplayNotFound = defineV2Error({
+	tag: "@maple/http/v2/SessionReplayNotFoundError",
+	status: 404,
+	code: "session_replay_not_found",
+	title: "Session replay not found",
+	message: "No such session replay.",
+	retry: "never",
+	recovery: "none",
+	identifier: "SessionReplayNotFoundError",
+})
+
+export const V2SessionReplayRangeTooLarge = defineV2Error({
+	tag: "@maple/http/v2/SessionReplayRangeTooLargeError",
+	status: 413,
+	code: "range_too_large",
+	title: "Session replay range too large",
+	message:
+		"That part of the recording is too large to load in one request. Request a narrower chunk range.",
+	retry: "never",
+	recovery: "fix_request",
+	identifier: "SessionReplayRangeTooLargeError",
+})
+
+const commonErrors = [V2ParameterInvalid.schema, ...V2WarehouseReadErrors] as const
 
 const SessionReplayList = ListOf(V2SessionReplayListItem).annotate({
 	identifier: "SessionReplayList",
@@ -461,7 +545,7 @@ export class V2SessionReplaysApiGroup extends HttpApiGroup.make("sessionReplays"
 		HttpApiEndpoint.post("search", "/search", {
 			payload: V2SessionReplaySearchParams,
 			success: SessionReplayList,
-			error: [...commonErrors],
+			error: [...commonErrors, V2CursorInvalid.schema],
 		}).annotateMerge(
 			OpenApi.annotations({
 				identifier: "searchSessionReplays",
@@ -476,7 +560,7 @@ export class V2SessionReplaysApiGroup extends HttpApiGroup.make("sessionReplays"
 			params: { id: SessionReplayPublicId },
 			query: V2SessionReplayWindowQuery,
 			success: V2SessionReplay,
-			error: [...commonErrors, V2NotFoundError],
+			error: [...commonErrors, V2SessionReplayNotFound.schema],
 		}).annotateMerge(
 			OpenApi.annotations({
 				identifier: "getSessionReplay",
@@ -491,7 +575,7 @@ export class V2SessionReplaysApiGroup extends HttpApiGroup.make("sessionReplays"
 			params: { id: SessionReplayPublicId },
 			query: V2SessionReplayWindowQuery,
 			success: V2SessionReplayManifest,
-			error: [...commonErrors, V2NotFoundError],
+			error: [...commonErrors, V2SessionReplayNotFound.schema],
 		}).annotateMerge(
 			OpenApi.annotations({
 				identifier: "getSessionReplayManifest",
@@ -506,7 +590,7 @@ export class V2SessionReplaysApiGroup extends HttpApiGroup.make("sessionReplays"
 			params: { id: SessionReplayPublicId },
 			query: V2SessionReplayEventsQuery,
 			success: SessionReplayChunkList,
-			error: [...commonErrors, V2NotFoundError, V2PayloadTooLargeError],
+			error: [...commonErrors, V2SessionReplayNotFound.schema, V2SessionReplayRangeTooLarge.schema],
 		}).annotateMerge(
 			OpenApi.annotations({
 				identifier: "getSessionReplayEvents",
@@ -521,7 +605,7 @@ export class V2SessionReplaysApiGroup extends HttpApiGroup.make("sessionReplays"
 			params: { id: SessionReplayPublicId },
 			query: V2SessionReplayCollectionQuery,
 			success: SessionTranscriptList,
-			error: [...commonErrors, V2NotFoundError],
+			error: [...commonErrors, V2SessionReplayNotFound.schema],
 		}).annotateMerge(
 			OpenApi.annotations({
 				identifier: "getSessionReplayTranscript",
@@ -547,7 +631,7 @@ export class V2SessionReplaysApiGroup extends HttpApiGroup.make("sessionReplays"
 	)
 	.prefix("/v2/session_replays")
 	.middleware(AuthorizationV2)
-	.middleware(V2SchemaErrors)
+	.annotate(AuditedRead, "session_replay.read")
 	.annotateMerge(
 		OpenApi.annotations({
 			title: "Session Replays",

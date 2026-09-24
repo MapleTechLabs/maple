@@ -1,20 +1,23 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
-import { formatBackendError } from "@/lib/error-messages"
+import { displayError } from "@/lib/error-messages"
 import { Result, useAtomSet, useAtomValue } from "@/lib/effect-atom"
 import { Exit, Schema } from "effect"
 import { Fragment, useCallback, useMemo, useRef, useState } from "react"
 import { toastManager } from "@maple/ui/components/ui/toast"
 
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
-import { MapleApiV2AtomClient } from "@/lib/services/common/v2-atom-client"
+import { MapleApiV2AtomClient, retainedQueryV2 } from "@/lib/services/common/v2-atom-client"
 import { useAlertRuleChecks } from "@/hooks/use-alert-rule-checks"
+import { useTimezonePreference } from "@/hooks/use-timezone-preference"
 import { useEffectiveTimeRange } from "@/hooks/use-effective-time-range"
 import { TimeRangeHeaderControls } from "@/components/time-range-picker/time-range-header-controls"
 import { PageRefreshProvider } from "@/components/time-range-picker/page-refresh-context"
 import { TimeRangeSearchFields, applyTimeRangeSearch } from "@/components/time-range-picker/search"
+import { sessionTimeRangeSearchMiddleware } from "@/components/time-range-picker/session-time-range"
 import { LONG_RANGE_PRESET_OPTIONS, presetLabel, formatTimeRangeDisplay } from "@/lib/time-utils"
-import { normalizeTimestampInput } from "@/lib/timezone-format"
-import { AlertRuleChart, SIGNAL_SOURCE_LABEL, type SignalSource } from "@/components/alerts/alert-rule-chart"
+import { normalizeTimestampInput, formatTimestampInTimezone } from "@/lib/timezone-format"
+import { AlertRuleChart } from "@/components/alerts/alert-rule-chart"
+import { SIGNAL_SOURCE_LABEL, type SignalSource } from "@/lib/alerts/chart-series"
 import { AlertStatusBadge } from "@/components/alerts/alert-status-badge"
 import { AlertSeverityBadge } from "@/components/alerts/alert-severity-badge"
 import { AlertStatStrip } from "@/components/alerts/alert-stat-card"
@@ -75,11 +78,11 @@ type RuleDetailTab = (typeof tabValues)[number]
 const SIGNAL_SOURCE_DESCRIPTION: Record<SignalSource, string> = {
 	preview: "The rule's query, replayed now over the selected window.",
 	checks: "What the evaluator actually observed and stored, one point per check.",
-}
+} satisfies Record<SignalSource, string>
 
-function formatBucketRange(bucket: { start: number; end: number }): string {
+function formatBucketRange(bucket: { start: number; end: number }, timeZone: string): string {
 	const time = (ms: number) =>
-		new Date(ms).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })
+		new Date(ms).toLocaleTimeString(undefined, { timeZone, hour: "2-digit", minute: "2-digit" })
 	return `${time(bucket.start)}–${time(bucket.end)}`
 }
 
@@ -112,6 +115,7 @@ const RuleDetailSearch = Schema.Struct({
 export const Route = createFileRoute("/alerts/$ruleId")({
 	component: RuleDetailPage,
 	validateSearch: Schema.toStandardSchemaV1(RuleDetailSearch),
+	search: { middlewares: [sessionTimeRangeSearchMiddleware({ maxRangeSeconds: ONE_YEAR_SECONDS })] },
 })
 
 function RuleDetailPage() {
@@ -128,6 +132,7 @@ function RuleDetailContent() {
 	const ruleId = asAlertRuleId(ruleIdParam)
 	const search = Route.useSearch()
 	const navigate = useNavigate({ from: Route.fullPath })
+	const { effectiveTimezone } = useTimezonePreference()
 
 	// Page-level time window (24h default), shared by the chart, checks, and the
 	// header timeline strip — the standard services/errors wiring.
@@ -152,7 +157,7 @@ function RuleDetailContent() {
 	const ruleStates = useAlertRuleStates(ruleId)
 	const { result: destinationsResult } = useAlertDestinationsList()
 	const deliveryEventsResult = useAtomValue(
-		MapleApiV2AtomClient.query("alertDeliveries", "list", {
+		retainedQueryV2("alertDeliveries", "list", {
 			query: { limit: 100 },
 			reactivityKeys: ["alertDeliveryEvents"],
 		}),
@@ -363,7 +368,7 @@ function RuleDetailContent() {
 					type: "incident",
 					incident_kind: "alert",
 					incident_id: incident.id,
-					...(incident.errorIssueId ? { issue_id: incident.errorIssueId } : {}),
+					...(incident.errorIssueId ? { issue_id: incident.errorIssueId } : undefined),
 				} as never,
 				snapshot: {
 					title: rule.name,
@@ -433,7 +438,7 @@ function RuleDetailContent() {
 	// preset label (falling back to the same "24h" the header + data window use).
 	const rangeLabel =
 		search.startTime && search.endTime
-			? formatTimeRangeDisplay(search.startTime, search.endTime)
+			? formatTimeRangeDisplay(search.startTime, search.endTime, effectiveTimezone)
 			: presetLabel(search.timePreset ?? "24h")
 
 	// The rail always spans the whole window from server-side summary buckets,
@@ -489,7 +494,7 @@ function RuleDetailContent() {
 									<EmptyTitle>Failed to load alert rule</EmptyTitle>
 									<EmptyDescription>
 										{Result.builder(rulesResult)
-											.onError((error) => formatBackendError(error).description)
+											.onError((error) => displayError(error).message)
 											.orElse(() => undefined) ?? "Try refreshing or check API logs."}
 									</EmptyDescription>
 								</EmptyHeader>
@@ -591,7 +596,13 @@ function RuleDetailContent() {
 										<DashboardLayout.Title>{rule.name}</DashboardLayout.Title>
 										<AlertSeverityBadge severity={rule.severity} />
 										{isFiring ? (
-											<AlertStatusBadge state="firing" />
+											<AlertStatusBadge
+												state={
+													openRuleIncidents.every((i) => i.holdReason != null)
+														? "held"
+														: "firing"
+												}
+											/>
 										) : rule.enabled ? (
 											<AlertStatusBadge state="ok" />
 										) : (
@@ -885,7 +896,7 @@ function RuleDetailContent() {
 													</EmptyMedia>
 													<EmptyTitle>Failed to load checks</EmptyTitle>
 													<EmptyDescription>
-														{formatBackendError(error).description}
+														{displayError(error).message}
 													</EmptyDescription>
 												</EmptyHeader>
 												<Button
@@ -934,9 +945,7 @@ function RuleDetailContent() {
 												<CircleWarningIcon size={18} />
 											</EmptyMedia>
 											<EmptyTitle>Failed to load incidents</EmptyTitle>
-											<EmptyDescription>
-												{formatBackendError(error).description}
-											</EmptyDescription>
+											<EmptyDescription>{displayError(error).message}</EmptyDescription>
 										</EmptyHeader>
 										<Button
 											variant="outline"
@@ -1050,7 +1059,13 @@ function RuleDetailContent() {
 															<TableRow key={incident.id}>
 																<TableCell>
 																	<AlertStatusBadge
-																		state={isOpen ? "firing" : "resolved"}
+																		state={
+																			isOpen
+																				? incident.holdReason != null
+																					? "held"
+																					: "firing"
+																				: "resolved"
+																		}
 																	/>
 																</TableCell>
 																<TableCell>
@@ -1089,6 +1104,7 @@ function RuleDetailContent() {
 																<TableCell className="text-xs">
 																	{formatAlertDateTimeFull(
 																		incident.firstTriggeredAt,
+																		effectiveTimezone,
 																	)}
 																</TableCell>
 																<TableCell>
@@ -1263,6 +1279,7 @@ function ChecksPanel({
 	statusFilter: CheckStatusFilter
 	setStatusFilter: (v: CheckStatusFilter) => void
 }) {
+	const { effectiveTimezone } = useTimezonePreference()
 	const [extraChecks, setExtraChecks] = useState<ReadonlyArray<AlertCheckDocument>>([])
 	const [nextCursorOverride, setNextCursorOverride] = useState<string | null | undefined>(undefined)
 	const [loadingMore, setLoadingMore] = useState(false)
@@ -1347,7 +1364,7 @@ function ChecksPanel({
 						until,
 						limit: 100,
 						cursor: nextCursor,
-						...(statusFilter === "all" ? {} : { status: statusFilter }),
+						...(!(statusFilter === "all") ? { status: statusFilter } : undefined),
 					},
 				}),
 			)
@@ -1417,7 +1434,7 @@ function ChecksPanel({
 							<h3 className="text-sm font-semibold">All checks</h3>
 							{bucket != null && (
 								<Badge variant="secondary" className="gap-1.5 font-mono text-xs">
-									{formatBucketRange(bucket)}
+									{formatBucketRange(bucket, effectiveTimezone)}
 									<button
 										type="button"
 										onClick={onClearBucket}
@@ -1506,7 +1523,10 @@ function ChecksPanel({
 											className="font-mono text-xs"
 											title={`Evaluated in ${check.evaluationDurationMs}ms`}
 										>
-											{new Date(check.timestamp).toLocaleString()}
+											{formatTimestampInTimezone(check.timestamp, {
+												timeZone: effectiveTimezone,
+												withYear: true,
+											})}
 										</TableCell>
 										<TableCell>
 											<AlertStatusBadge

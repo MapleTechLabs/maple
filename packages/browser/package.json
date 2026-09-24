@@ -1,6 +1,6 @@
 {
 	"name": "@maple-dev/browser",
-	"version": "0.3.0",
+	"version": "0.9.0",
 	"description": "Maple browser SDK — OpenTelemetry tracing and rrweb session replay in one package. Every span and replay event shares a session id for trace↔replay correlation.",
 	"keywords": [
 		"maple",
@@ -10,36 +10,52 @@
 		"rum",
 		"session-replay"
 	],
+	"homepage": "https://github.com/MapleTechLabs/maple/tree/main/packages/browser#readme",
+	"bugs": {
+		"url": "https://github.com/MapleTechLabs/maple/issues"
+	},
 	"license": "MIT",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/MapleTechLabs/maple.git",
+		"directory": "packages/browser"
+	},
 	"files": [
 		"dist",
 		"README.md"
 	],
 	"type": "module",
+	"sideEffects": false,
 	"exports": {
 		".": {
 			"types": "./dist/index.d.mts",
 			"import": "./dist/index.mjs"
 		}
 	},
+	"publishConfig": {
+		"access": "public"
+	},
 	"scripts": {
 		"build": "tsdown",
 		"typecheck": "tsc --noEmit",
-		"test": "vitest run"
+		"test": "vitest run",
+		"size": "bun scripts/size.ts"
 	},
 	"dependencies": {
 		"@opentelemetry/api": "^1.9.0",
-		"@opentelemetry/exporter-trace-otlp-http": "^0.205.0",
-		"@opentelemetry/instrumentation": "^0.205.0",
-		"@opentelemetry/instrumentation-fetch": "^0.205.0",
-		"@opentelemetry/resources": "^2.0.0",
-		"@opentelemetry/sdk-trace-base": "^2.0.0",
-		"@opentelemetry/sdk-trace-web": "^2.0.0",
-		"@opentelemetry/semantic-conventions": "^1.36.0",
+		"@opentelemetry/exporter-trace-otlp-http": "^0.221.0",
+		"@opentelemetry/instrumentation": "^0.221.0",
+		"@opentelemetry/instrumentation-fetch": "^0.221.0",
+		"@opentelemetry/resources": "^2.10.0",
+		"@opentelemetry/sdk-trace-base": "^2.10.0",
+		"@opentelemetry/sdk-trace-web": "^2.10.0",
+		"@opentelemetry/semantic-conventions": "^1.43.0",
 		"rrweb": "^2.0.0-alpha.18"
 	},
 	"devDependencies": {
 		"@maple/browser-session": "workspace:*",
+		"@vitest/browser-playwright": "catalog:",
+		"playwright": "catalog:",
 		"tsdown": "^0.22.14",
 		"typescript": "^6.0.3",
 		"vitest": "catalog:"

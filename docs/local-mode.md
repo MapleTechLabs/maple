@@ -18,9 +18,10 @@ brew install Makisuo/tap/maple
 
 Homebrew downloads the matching release bundle, verifies its checksum, installs
 `maple` and `libchdb.so` together in the Homebrew Cellar, and links `maple` onto
-your PATH. macOS Apple Silicon and Linux (x86_64 & arm64) are supported. If
-Homebrew asks you to trust the third-party tap, run `brew trust Makisuo/tap`
-once and retry the install.
+your PATH. If Homebrew asks you to trust the third-party tap, run
+`brew trust Makisuo/tap` once and retry the install. The tap lives in
+`Makisuo/homebrew-tap`, not this repo, so its platform coverage is set there —
+Intel macOS currently installs via the manual installer below.
 
 Manual installer:
 
@@ -30,12 +31,21 @@ curl -fsSL https://maple.dev/cli/install | sh
 
 (`maple.dev/cli/install` is [scripts/install.sh](../scripts/install.sh) served by
 `apps/landing` — the build copies it to `public/cli/install`. The raw GitHub URL
-`https://raw.githubusercontent.com/Makisuo/maple/main/scripts/install.sh` works too.)
+`https://raw.githubusercontent.com/MapleTechLabs/maple/main/scripts/install.sh` works too.)
 
 The manual installer detects your OS/arch, downloads the matching bundle from
 the latest GitHub release, verifies its checksum, installs the two files into
 `~/.maple/bin`, clears the macOS Gatekeeper quarantine, and symlinks `maple`
-onto your PATH. Then:
+onto your PATH.
+
+Released targets: macOS (Apple Silicon & Intel) and Linux (x86_64 & arm64).
+Intel macOS builds on GitHub's `macos-15-intel` runner, which is the scarcest
+capacity in the pool — its tarball can land minutes after the others on a
+release. Each build job publishes independently, so the rest of the release is
+never held up. GitHub retires Intel macOS in Fall 2027; the target goes away
+with it.
+
+Then:
 
 ```bash
 maple start            # OTLP ingest + embedded ClickHouse on :4318; UI from local.maple.dev
@@ -261,6 +271,16 @@ entries in CI, and requires every historical identity to reach the current one
 through registered migration edges. Changing a schema digest or manifest
 therefore requires a new versioned entry and executable edge together.
 
+Everything that pairing demands except the DDL is derived from the new version
+number, so `bun run local-schema:bump <slug>` writes it: the retained snapshot,
+the version constant, the `schema-identity.ts` edit sites, the history entry's
+hashes, the registry entry, and the identities pinned in
+`apps/cli/test/local-store-migrations.test.ts` and the native probe. It
+scaffolds the edge from the previous module and leaves `apply` to be written.
+When the gate fails because the schema moved without a bump, it names that
+command; when a hand-bump left the history behind, it prints the entry to
+append.
+
 The Linux native probe `apps/cli/test/native-local-store-migration.sh` uses a
 native chDB setup helper to create a stopped historical raw-table fixture,
 applies the legacy marker, runs the public migration command, checks rebuilt
@@ -323,9 +343,9 @@ Because the remote UI auto-updates independently of the binary, keep the
 ([apps/cli/src/server/schema/local-schema.sql](../apps/cli/src/server/schema/local-schema.sql))
 backward compatible — a newer UI may run against an older binary.
 
-`MAPLE_LOCAL_UI_URL` overrides the default UI origin (e.g. point a binary at
-`https://local-staging.maple.dev` for testing). The startup link marks that
-custom origin as a hosted loopback client.
+`MAPLE_LOCAL_UI_URL` overrides the default UI origin (e.g. point a binary at a
+locally served build for testing). The startup link marks that custom origin as
+a hosted loopback client.
 
 `MAPLE_LOCAL_BIND_HOST` sets the `maple start` listening address and defaults to
 `127.0.0.1`; the `--host` flag overrides it for one invocation.
@@ -395,14 +415,39 @@ Env overrides: `MAPLE_API_URL`, `MAPLE_API_TOKEN`, `MAPLE_LOCAL_URL`,
 `MAPLE_LOCAL_BIND_HOST`, and `MAPLE_LOCAL_ADVERTISE_HOST`.
 
 **How queries route.** Local mode compiles the pipe → SQL client-side and POSTs
-it to `/local/query`. Remote mode POSTs `{ pipe, params }` to the API's
-`POST /api/tinybird/query`, where the server compiles it with the
-authenticated tenant's org id (the client never sends `org_id`). Both paths use
-the same `@maple/query-engine` dispatcher, so results are identical.
+it to `/local/query`. Remote mode does **not** compile pipes at all: it calls
+Maple's public v2 API (`/v2/traces/*`, `/v2/logs/*`, `/v2/services`,
+`/v2/service_map`, `/v2/metrics`) with the API key `maple auth login` stored,
+and maps each response into the same output type the local path produces. The
+branch lives in `apps/cli/src/core/operations.ts`; the v2 implementations are in
+`core/remote-ops.ts`.
 
-**`maple query "<sql>"` is local-only.** A generic raw-SQL passthrough against
-the multi-tenant cloud warehouse would let a client read other orgs' data, so
-in remote mode it returns a clear error. Every other command works in both modes.
+This replaced a generic `POST /api/tinybird/query` endpoint that let the client
+name a pipe and have the server compile it. That endpoint has been retired — a
+pipe name is an internal compiler detail, not a public contract, and shipping it
+as one meant every CLI binary pinned the server's query catalog.
+
+**Some commands are local-only.** Where v2 has no equivalent, the command fails
+with the reason rather than returning a narrower answer:
+
+| Command                            | Why it needs local mode                                                                                          |
+| ---------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| `maple query "<sql>"`              | A raw-SQL passthrough against the multi-tenant warehouse would let a client read other orgs' data.               |
+| `maple attributes keys` / `values` | v2 exposes no attribute-discovery surface (`/v2/attribute_mappings` is mapping config, not observed keys).       |
+| `maple slow-traces`                | `/v2/traces/search` filters by minimum duration but cannot order by it.                                          |
+| `maple top-ops`                    | Needs count, latency and error rate ranked together; `/v2/traces/breakdown` returns one aggregation per request. |
+| `maple traces --span-name`         | v2 search returns root-based summaries matched on an exact name, not spans matched by substring.                 |
+| `maple errors`                     | `/v2/error_issues` holds one issue per fingerprint, so it cannot report how many services an error spans.        |
+| `maple compare`                    | v2 has no window-comparison endpoint.                                                                            |
+| `maple diagnose`                   | Its error breakdown depends on the exception-type aggregates above.                                              |
+
+`maple error <fp>` **does** work remotely: `/v2/error_issues?fingerprint_hash=`
+resolves the hash to an issue, and the issue detail carries the timeseries and
+sample traces. It reads Maple's triage issues rather than raw error events, so a
+fingerprint no sweep has turned into an issue fails instead of showing traces.
+
+Remote mode also inherits v2's pagination: lists cap at 100 rows per page and
+seek by opaque cursor, so `--offset` is rejected rather than silently ignored.
 
 ### Seeding data
 

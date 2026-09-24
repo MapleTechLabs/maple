@@ -1,9 +1,11 @@
 import { useMemo, useState } from "react"
-import { createFileRoute, useNavigate } from "@tanstack/react-router"
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router"
 import { Exit, Schema } from "effect"
 import { Result, useAtomRefresh, useAtomSet, useAtomValue } from "@/lib/effect-atom"
+import { displayError } from "@/lib/error-messages"
 import type { V2Investigation } from "@maple/domain/http/v2"
-import { Button } from "@maple/ui/components/ui/button"
+import { Button, buttonVariants } from "@maple/ui/components/ui/button"
+import { cn } from "@maple/ui/lib/utils"
 import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyTitle } from "@maple/ui/components/ui/empty"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@maple/ui/components/ui/select"
 import { ToolbarSearch } from "@maple/ui/components/toolbar"
@@ -27,13 +29,15 @@ import {
 } from "@/components/investigations/investigation-table"
 import { InvestigateBar } from "@/components/investigations/investigate-bar"
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
-import { MapleApiV2AtomClient } from "@/lib/services/common/v2-atom-client"
+import { MapleApiV2AtomClient, retainedQueryV2 } from "@/lib/services/common/v2-atom-client"
+import { retainedInternalQuery } from "@/lib/services/common/internal-atom-client"
+import { useIsOrgAdmin } from "@/hooks/use-is-org-admin"
 
 type HubView = "active" | "history"
 
 const searchSchema = Schema.Struct({
 	view: Schema.optional(Schema.Literals(["active", "history"])),
-	kind: Schema.optional(Schema.Literals(["alert", "error", "anomaly", "question"])),
+	kind: Schema.optional(Schema.Literals(["alert", "error", "anomaly", "question", "verification"])),
 	sort: Schema.optional(Schema.Literals(["updated", "severity", "confidence"])),
 	dir: Schema.optional(Schema.Literals(["asc", "desc"])),
 	q: Schema.optional(Schema.String),
@@ -60,7 +64,8 @@ const KIND_FILTER_LABEL: Record<InvestigationKindKey | "all", string> = {
 	error: "Errors",
 	anomaly: "Anomalies",
 	question: "Questions",
-}
+	verification: "Fix checks",
+} satisfies Record<InvestigationKindKey | "all", string>
 
 const KIND_FILTER_VALUES = Object.keys(KIND_FILTER_LABEL) as ReadonlyArray<InvestigationKindKey | "all">
 
@@ -94,12 +99,25 @@ function InvestigationsHub() {
 	const isFiltered = query.trim().length > 0 || search.kind !== undefined
 
 	const [creating, setCreating] = useState(false)
-	const listQuery = MapleApiV2AtomClient.query("investigations", "list", {
+	const listQuery = retainedQueryV2("investigations", "list", {
 		query: { limit: PAGE_SIZE },
 		reactivityKeys: ["investigations"],
 	})
 	const result = useAtomValue(listQuery)
 	const refresh = useAtomRefresh(listQuery)
+	// The hub is where someone stands when they ask "why is nothing being
+	// investigated?", so the answer has to be here rather than three clicks away
+	// in settings.
+	// Non-admins cannot change these ceilings, so the action would be a dead end —
+	// the settings section renders nothing for them.
+	const isOrgAdmin = useIsOrgAdmin()
+	const budget = Result.builder(
+		useAtomValue(
+			retainedInternalQuery("aiTriage", "getSettings", { reactivityKeys: ["aiTriageSettings"] }),
+		),
+	)
+		.onSuccess((value) => value)
+		.orElse(() => null)
 	const create = useAtomSet(MapleApiV2AtomClient.mutation("investigations", "create"), {
 		mode: "promiseExit",
 	})
@@ -148,7 +166,8 @@ function InvestigationsHub() {
 		if (Exit.isSuccess(created)) {
 			void navigate({ to: "/investigations/$id", params: { id: created.value.id } })
 		} else {
-			toastManager.add({ title: "Investigation could not be started", type: "error" })
+			const { title, message } = displayError(created)
+			toastManager.add({ title, description: message, type: "error" })
 		}
 	}
 
@@ -251,11 +270,22 @@ function InvestigationsHub() {
 					) : (
 						<>
 							<DashboardLayout.Sticky>
+								{budget?.enabled && budget.ordinaryPaused ? (
+									<BudgetExhaustedNotice
+										priorityPaused={budget.priorityPaused}
+										dimension={budget.pausedDimension}
+										resumesAt={budget.resumesAt}
+										canEditSettings={isOrgAdmin}
+									/>
+								) : null}
 								<TriageStrip investigations={page} />
 								<InvestigateBar onSubmit={handleCreate} busy={creating} />
 							</DashboardLayout.Sticky>
 							<DashboardLayout.Scroll>
-								<div className="overflow-hidden rounded-xl border">
+								{/* `shrink-0`, or the flex column shrinks this below its
+								    content height and `overflow-hidden` clips the rows the
+								    scroller then thinks it doesn't need to scroll to. */}
+								<div className="shrink-0 overflow-hidden rounded-xl border">
 									{toolbar}
 									{Result.builder(result)
 										.onInitial(() => <InvestigationTableSkeleton />)
@@ -297,6 +327,69 @@ function InvestigationsHub() {
 }
 
 /* -------------------------------------------------------------------------------------------------
+ * Budget notice
+ * -----------------------------------------------------------------------------------------------*/
+
+/**
+ * Says why nothing new is starting.
+ *
+ * Not dismissible and not a toast: the condition lasts until UTC midnight and is
+ * the direct answer to the question that brings someone to this page.
+ *
+ * The copy distinguishes three states because they are three different outages,
+ * and the reassuring one is only true in the first. Telling an operator that
+ * urgent incidents are still covered while the whole ceiling is spent is worse
+ * than saying nothing — it sends them away from a real outage.
+ */
+function BudgetExhaustedNotice({
+	priorityPaused,
+	dimension,
+	resumesAt,
+	canEditSettings,
+}: {
+	priorityPaused: boolean
+	dimension: "runs" | "runs_reserved" | "passes" | "passes_reserved" | null
+	resumesAt: string | null
+	canEditSettings: boolean
+}) {
+	const resumes = resumesAt === null ? null : new Date(toEpochMs(resumesAt))
+	const resets =
+		resumes === null
+			? "."
+			: `; it resets ${resumes.toLocaleString(undefined, { timeStyle: "short", dateStyle: "medium" })}.`
+	// The runs ceiling counts investigations and the passes ceiling counts model
+	// work; naming the wrong one sends the reader to raise a number that was never
+	// the constraint.
+	const spent =
+		dimension === "runs" || dimension === "runs_reserved"
+			? "Today's investigation limit is reached"
+			: "Today's model budget is spent"
+	return (
+		<div className="mb-4 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg border border-warning/30 bg-warning/10 px-3 py-2 text-sm">
+			<span className="font-medium text-foreground">
+				{priorityPaused ? "Automatic triage paused" : "Automatic triage paused for routine incidents"}
+			</span>
+			<span className="text-muted-foreground">
+				{spent}
+				{resets}{" "}
+				{priorityPaused
+					? "Nothing new will start until then."
+					: "High and critical incidents still start."}
+			</span>
+			{canEditSettings ? (
+				<Link
+					to="/settings"
+					search={{ tab: "automation" }}
+					className={cn(buttonVariants({ size: "sm", variant: "ghost" }), "ml-auto")}
+				>
+					Raise the limit
+				</Link>
+			) : null}
+		</div>
+	)
+}
+
+/* -------------------------------------------------------------------------------------------------
  * Triage strip
  * -----------------------------------------------------------------------------------------------*/
 
@@ -317,10 +410,6 @@ function TriageStrip({ investigations }: { investigations: ReadonlyArray<V2Inves
 			(entry) => entry.status === "resolved" && toEpochMs(entry.updated_at) >= cutoff,
 		)
 
-		// Dispatched lenses, not the computed size: a single-pass run persists a
-		// size of 1 with zero lenses, so summing size reports lenses in flight for
-		// runs that never dispatched one.
-		const lensesInFlight = running.reduce((total, entry) => total + entry.lens_runs.length, 0)
 		const critical = review.filter(
 			(entry) => (entry.severity ?? entry.snapshot.severity) === "critical",
 		).length
@@ -332,12 +421,8 @@ function TriageStrip({ investigations }: { investigations: ReadonlyArray<V2Inves
 			.filter((ms): ms is number => ms !== null && Number.isFinite(ms) && ms >= 0)
 			.sort((a, b) => a - b)
 		const median = durations.length > 0 ? durations[Math.floor(durations.length / 2)]! : null
-		const avgLenses =
-			resolved.length > 0
-				? resolved.reduce((total, entry) => total + entry.lens_runs.length, 0) / resolved.length
-				: null
 
-		return { running, review, resolved, lensesInFlight, critical, median, avgLenses }
+		return { running, review, resolved, critical, median }
 	}, [investigations])
 
 	return (
@@ -353,7 +438,7 @@ function TriageStrip({ investigations }: { investigations: ReadonlyArray<V2Inves
 				detail={
 					stats.running.length === 0
 						? "nothing in flight"
-						: `${stats.lensesInFlight} ${stats.lensesInFlight === 1 ? "lens" : "lenses"} in flight`
+						: `${stats.running.length === 1 ? "an agent is" : "agents are"} gathering evidence`
 				}
 			/>
 			<TriageStat
@@ -376,11 +461,7 @@ function TriageStrip({ investigations }: { investigations: ReadonlyArray<V2Inves
 				valueTone="text-muted-foreground"
 				value={stats.resolved.length}
 				detail={
-					stats.median === null
-						? "none in the last day"
-						: `median ${formatDuration(stats.median)}${
-								stats.avgLenses === null ? "" : ` · ${stats.avgLenses.toFixed(1)} lenses`
-							}`
+					stats.median === null ? "none in the last day" : `median ${formatDuration(stats.median)}`
 				}
 			/>
 		</div>
@@ -447,9 +528,9 @@ function HubHero({ onSubmit, busy }: { onSubmit: (title: string) => void | Promi
 				Ask, and Maple goes and finds out.
 			</h1>
 			<p className="max-w-xl text-sm leading-6 text-muted-foreground">
-				It dispatches up to five agents, each attacking the problem from a different angle — deploys,
-				dependencies, saturation, traffic — then a validator ranks what they found and promotes one
-				answer.
+				One agent reads the traces, logs and metrics around it, tests the likely explanations —
+				deploys, dependencies, saturation, traffic — and comes back with a cause, the evidence for it,
+				and what it ruled out.
 			</p>
 			<InvestigateBar
 				onSubmit={onSubmit}

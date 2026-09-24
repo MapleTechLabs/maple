@@ -1,20 +1,10 @@
 import { Result, useAtomRefresh, useAtomValue } from "@/lib/effect-atom"
 import { useCallback, useState } from "react"
-import { useNavigate } from "@tanstack/react-router"
-import { XmarkIcon, MagnifierIcon } from "@/components/icons"
+import { getRouteApi } from "@tanstack/react-router"
 
 import { useEffectiveTimeRange } from "@/hooks/use-effective-time-range"
 import { useDebouncedCallback } from "@maple/ui/hooks/use-debounced-callback"
 import { FilterSection, SearchableFilterSection, serviceColorMap } from "@/components/filters/filter-section"
-import { Route } from "@/routes/logs"
-import { FILTER_SECTION_LABEL } from "@maple/ui/components/filters/filter-styles"
-import { Kbd } from "@maple/ui/components/ui/kbd"
-import {
-	InputGroup,
-	InputGroupAddon,
-	InputGroupButton,
-	InputGroupInput,
-} from "@maple/ui/components/ui/input-group"
 import { getLogsFacetsResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
 import {
 	FilterSidebarBody,
@@ -24,14 +14,21 @@ import {
 	FilterSidebarLoading,
 } from "@/components/filters/filter-sidebar"
 import { SEVERITY_COLORS } from "@maple/ui/lib/severity"
+import { PinnedNamespaceNotice } from "@/components/filters/pinned-namespace-notice"
+import { useGlobalNamespace } from "@/hooks/use-global-namespace"
+import { parseLogSearch } from "@/lib/logs/log-search-query"
+import { LogSearchInput } from "./log-search-input"
+
+const routeApi = getRouteApi("/logs/")
 
 function LoadingState() {
 	return <FilterSidebarLoading sectionCount={3} />
 }
 
 export function LogsFilterSidebar() {
-	const navigate = useNavigate({ from: Route.fullPath })
-	const search = Route.useSearch()
+	const navigate = routeApi.useNavigate()
+	const search = routeApi.useSearch()
+	const pinnedNamespace = useGlobalNamespace()
 	const { startTime: effectiveStartTime, endTime: effectiveEndTime } = useEffectiveTimeRange(
 		search.startTime,
 		search.endTime,
@@ -41,9 +38,18 @@ export function LogsFilterSidebar() {
 	const [searchText, setSearchText] = useState(search.search ?? "")
 
 	const debouncedNavigate = useDebouncedCallback((value: string) => {
-		const trimmed = value.trim() || undefined
+		// A pasted trace ID (or full W3C traceparent) becomes the trace filter —
+		// body search is ILIKE on the message text, where a 32-hex ID never matches.
+		const query = parseLogSearch(value)
+		if (query?.kind === "trace") {
+			setSearchText("")
+			navigate({
+				search: (prev) => ({ ...prev, search: undefined, traceId: query.traceId }),
+			})
+			return
+		}
 		navigate({
-			search: (prev) => ({ ...prev, search: trimmed }),
+			search: (prev) => ({ ...prev, search: query?.text }),
 		})
 	}, 300)
 
@@ -90,7 +96,12 @@ export function LogsFilterSidebar() {
 		(search.severities?.length ?? 0) > 0 ||
 		(search.deploymentEnvs?.length ?? 0) > 0 ||
 		(search.namespaces?.length ?? 0) > 0 ||
-		!!search.search
+		(search.excludedServices?.length ?? 0) > 0 ||
+		(search.excludedSeverities?.length ?? 0) > 0 ||
+		(search.excludedDeploymentEnvs?.length ?? 0) > 0 ||
+		(search.excludedNamespaces?.length ?? 0) > 0 ||
+		!!search.search ||
+		!!search.traceId
 
 	return Result.builder(facetsResult)
 		.onInitial(() => <LoadingState />)
@@ -107,42 +118,15 @@ export function LogsFilterSidebar() {
 				<FilterSidebarFrame waiting={result.waiting}>
 					<FilterSidebarHeader canClear={hasActiveFilters} onClear={clearAllFilters} />
 					<FilterSidebarBody>
-						<div className="pb-3">
-							<span className={`${FILTER_SECTION_LABEL} text-muted-foreground`}>Search</span>
-							<InputGroup className="mt-2">
-								<InputGroupAddon>
-									<MagnifierIcon />
-								</InputGroupAddon>
-								<InputGroupInput
-									size="sm"
-									value={searchText}
-									onChange={(e) => handleSearchChange(e.target.value)}
-									placeholder="Search log messages..."
-									data-shortcut-focus="search"
-								/>
-								{!searchText && (
-									<InputGroupAddon align="inline-end">
-										<Kbd>/</Kbd>
-									</InputGroupAddon>
-								)}
-								{searchText && (
-									<InputGroupAddon align="inline-end">
-										<InputGroupButton
-											aria-label="Clear search"
-											onClick={() => handleSearchChange("")}
-										>
-											<XmarkIcon />
-										</InputGroupButton>
-									</InputGroupAddon>
-								)}
-							</InputGroup>
-						</div>
+						<LogSearchInput value={searchText} onChange={handleSearchChange} />
 
 						<FilterSection
 							title="Severity"
 							options={facets.severities ?? []}
 							selected={search.severities ?? []}
 							onChange={(val) => updateFilter("severities", val)}
+							excluded={search.excludedSeverities ?? []}
+							onExcludedChange={(val) => updateFilter("excludedSeverities", val)}
 							colorMap={SEVERITY_COLORS}
 						/>
 
@@ -151,20 +135,30 @@ export function LogsFilterSidebar() {
 							options={facets.deploymentEnvs ?? []}
 							selected={search.deploymentEnvs ?? []}
 							onChange={(val) => updateFilter("deploymentEnvs", val)}
+							excluded={search.excludedDeploymentEnvs ?? []}
+							onExcludedChange={(val) => updateFilter("excludedDeploymentEnvs", val)}
 						/>
 
-						<SearchableFilterSection
-							title="Namespace"
-							options={facets.namespaces ?? []}
-							selected={search.namespaces ?? []}
-							onChange={(val) => updateFilter("namespaces", val)}
-						/>
+						{pinnedNamespace !== null ? (
+							<PinnedNamespaceNotice namespace={pinnedNamespace} />
+						) : (
+							<SearchableFilterSection
+								title="Namespace"
+								options={facets.namespaces ?? []}
+								selected={search.namespaces ?? []}
+								onChange={(val) => updateFilter("namespaces", val)}
+								excluded={search.excludedNamespaces ?? []}
+								onExcludedChange={(val) => updateFilter("excludedNamespaces", val)}
+							/>
+						)}
 
 						<SearchableFilterSection
 							title="Service"
 							options={facets.services ?? []}
 							selected={search.services ?? []}
 							onChange={(val) => updateFilter("services", val)}
+							excluded={search.excludedServices ?? []}
+							onExcludedChange={(val) => updateFilter("excludedServices", val)}
 							colorMap={serviceColorMap(facets.services ?? [])}
 						/>
 

@@ -35,6 +35,100 @@ export function collectAllCollapsibleIds(nodes: SpanNode[]): Set<string> {
 	return ids
 }
 
+/**
+ * Every ancestor of `spanId`, i.e. the set of ids that must be expanded for that
+ * span to be visible in the tree. Empty when the span is a root or is absent.
+ */
+export function collectAncestorIds(nodes: SpanNode[], spanId: string): Set<string> {
+	const nodeById = new Map<string, SpanNode>()
+	const index = (node: SpanNode) => {
+		nodeById.set(node.spanId, node)
+		node.children.forEach(index)
+	}
+	nodes.forEach(index)
+
+	return collectAncestorIdsFromIndex(nodeById, spanId)
+}
+
+function collectAncestorIdsFromIndex(nodeById: Map<string, SpanNode>, spanId: string): Set<string> {
+	const ancestors = new Set<string>()
+	let current = nodeById.get(spanId)
+	while (current?.parentSpanId) {
+		const parent = nodeById.get(current.parentSpanId)
+		if (!parent) break
+		ancestors.add(parent.spanId)
+		current = parent
+	}
+	return ancestors
+}
+
+/** Every descendant id of `node` that could itself be expanded (i.e. has children). */
+export function collectDescendantParentIds(node: SpanNode): string[] {
+	const ids: string[] = []
+	const visit = (n: SpanNode) => {
+		for (const child of n.children) {
+			if (child.children.length > 0) {
+				ids.push(child.spanId)
+				visit(child)
+			}
+		}
+	}
+	visit(node)
+	return ids
+}
+
+/**
+ * Expand the shallowest level that still has a collapsed parent, leaving everything above it
+ * untouched. Returns the same set when there is nothing left to open, so callers can skip the
+ * dispatch.
+ */
+export function computeExpandOneLevel(
+	expanded: Set<string>,
+	parentIdsByLevel: Map<number, Set<string>>,
+): Set<string> {
+	const levels = [...parentIdsByLevel.keys()].sort((a, b) => a - b)
+	for (const level of levels) {
+		const ids = parentIdsByLevel.get(level)
+		if (!ids) continue
+		let hasCollapsed = false
+		for (const id of ids) {
+			if (!expanded.has(id)) {
+				hasCollapsed = true
+				break
+			}
+		}
+		if (!hasCollapsed) continue
+		const next = new Set(expanded)
+		for (const id of ids) next.add(id)
+		return next
+	}
+	return expanded
+}
+
+/** Collapse the deepest level that still has an expanded parent. */
+export function computeCollapseOneLevel(
+	expanded: Set<string>,
+	parentIdsByLevel: Map<number, Set<string>>,
+): Set<string> {
+	const levels = [...parentIdsByLevel.keys()].sort((a, b) => b - a)
+	for (const level of levels) {
+		const ids = parentIdsByLevel.get(level)
+		if (!ids) continue
+		let hasExpanded = false
+		for (const id of ids) {
+			if (expanded.has(id)) {
+				hasExpanded = true
+				break
+			}
+		}
+		if (!hasExpanded) continue
+		const next = new Set(expanded)
+		for (const id of ids) next.delete(id)
+		return next
+	}
+	return expanded
+}
+
 export interface ComputeDefaultExpandedOptions {
 	/** Keep this span's ancestor chain expanded so it's never hidden by auto-collapse. */
 	keepVisibleSpanId?: string
@@ -84,12 +178,8 @@ export function computeDefaultExpandedSpanIds(
 
 	// Force the selected/deep-linked span's ancestor chain open.
 	if (opts.keepVisibleSpanId) {
-		let current = nodeById.get(opts.keepVisibleSpanId)
-		while (current?.parentSpanId) {
-			const parent = nodeById.get(current.parentSpanId)
-			if (!parent) break
-			expanded.add(parent.spanId)
-			current = parent
+		for (const id of collectAncestorIdsFromIndex(nodeById, opts.keepVisibleSpanId)) {
+			expanded.add(id)
 		}
 	}
 

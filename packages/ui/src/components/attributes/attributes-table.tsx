@@ -1,11 +1,17 @@
+// BOUNDARY: This module intentionally carries opaque values; callers decode them before domain use.
 "use client"
 
+import { Option } from "effect"
+
+import { trySync } from "../../lib/try-sync"
 import { ChevronRightIcon } from "../icons"
 import { cn } from "../../lib/utils"
 import { useCopy } from "../../hooks/use-copy"
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from "../ui/collapsible"
 import { groupAttributesByNamespace } from "../../lib/log-attributes"
+import { splitGenAiAttributes } from "../../lib/gen-ai"
 import { CollapsibleJsonValue } from "./json-value"
+import { GenAiSection } from "./gen-ai-section"
 import { useAttributesConfig } from "./context"
 
 /**
@@ -60,33 +66,46 @@ export function CopyableValue({
 export function tryParseJson(value: string): unknown | null {
 	const trimmed = value.trimStart()
 	if (trimmed[0] !== "{" && trimmed[0] !== "[") return null
-	try {
-		return JSON.parse(value)
-	} catch {
-		return null
-	}
+	return Option.getOrNull(trySync<unknown>(() => JSON.parse(value)))
 }
 
-function AttributeRow({
+export function AttributeRow({
 	attrKey,
 	value,
 	displayKey,
+	displayValue,
+	plainKey,
 }: {
 	attrKey: string
 	value: string
 	/** Label shown in the key column; defaults to `attrKey`. Copies still use the full `attrKey`. */
 	displayKey?: string
+	/**
+	 * Reading text for the value column; defaults to `value`, and a copy still
+	 * yields `value`. A display string that differs from the raw value has
+	 * already been formatted for reading, so it renders as text — that is what
+	 * separates a flattened `["stop"]` from a payload worth expanding.
+	 */
+	displayValue?: string
+	/** The key column holds a label rather than a key: drop the mono face. */
+	plainKey?: boolean
 }) {
-	const { renderValue } = useAttributesConfig()
-	const parsed = tryParseJson(value)
+	const { renderValue, onFilterByAttribute, canFilterAttribute } = useAttributesConfig()
+	const parsed = displayValue !== undefined && displayValue !== value ? null : tryParseJson(value)
 	// Only non-JSON values are overridable; JSON keeps its collapsible renderer.
 	const override = parsed === null ? renderValue?.(attrKey, value) : null
+	// A JSON blob is not a facet value — filtering on a serialized object would never match.
+	const filterable =
+		onFilterByAttribute !== undefined && parsed === null && (canFilterAttribute?.(attrKey) ?? true)
 	return (
-		<div className="grid grid-cols-[minmax(7rem,38%)_1fr] items-start gap-x-3 px-2 py-1 transition-colors hover:bg-muted/40">
+		<div className="group/attr grid grid-cols-[minmax(7rem,38%)_1fr] items-start gap-x-3 px-2 py-1 transition-colors hover:bg-muted/40">
 			<CopyableValue
 				value={attrKey}
 				label="attribute key"
-				className="font-mono text-[11px] leading-relaxed text-muted-foreground break-words"
+				className={cn(
+					"text-[11px] leading-relaxed text-muted-foreground break-words",
+					!plainKey && "font-mono",
+				)}
 			>
 				{displayKey ?? attrKey}
 			</CopyableValue>
@@ -97,11 +116,53 @@ function AttributeRow({
 					override
 				) : (
 					<CopyableValue value={value} label={attrKey}>
-						{value}
+						{displayValue ?? value}
 					</CopyableValue>
+				)}
+				{filterable && (
+					<span className="ml-2 inline-flex items-center gap-1 align-middle opacity-0 transition-opacity group-hover/attr:opacity-100 group-focus-within/attr:opacity-100">
+						<AttributeFilterAction
+							label={`Filter by ${attrKey} = ${value}`}
+							onClick={() => onFilterByAttribute({ attrKey, value, action: "include" })}
+						>
+							Filter
+						</AttributeFilterAction>
+						<AttributeFilterAction
+							label={`Exclude ${attrKey} = ${value}`}
+							onClick={() => onFilterByAttribute({ attrKey, value, action: "exclude" })}
+						>
+							Exclude
+						</AttributeFilterAction>
+					</span>
 				)}
 			</div>
 		</div>
+	)
+}
+
+/**
+ * The per-row hover verb, matching the facet sidebar's wording so the same two actions read the
+ * same wherever they appear.
+ */
+function AttributeFilterAction({
+	label,
+	onClick,
+	children,
+}: {
+	label: string
+	onClick: () => void
+	children: React.ReactNode
+}) {
+	return (
+		<button
+			type="button"
+			aria-label={label}
+			title={label}
+			onClick={onClick}
+			className="rounded-sm px-1 py-0.5 font-sans text-[10px] uppercase tracking-[0.06em] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+		>
+			{children}
+		</button>
 	)
 }
 
@@ -219,7 +280,13 @@ export function AttributesTable({ attributes, title, searchQuery, groupByNamespa
 	)
 }
 
-function partitionResourceAttributes(attrs: Record<string, string>) {
+/**
+ * Splits Maple's own attributes (the `maple_` namespace the gateway stamps —
+ * `maple_org_id`, `maple_ai.*`, …) out of whatever the instrumentation sent.
+ * They're useful when you go looking, and noise when you don't, so they get
+ * their own collapsed section instead of a row among the customer's own keys.
+ */
+function partitionInternalAttributes(attrs: Record<string, string>) {
 	const standard: Record<string, string> = {}
 	const internal: Record<string, string> = {}
 	for (const [key, value] of Object.entries(attrs)) {
@@ -232,26 +299,40 @@ function partitionResourceAttributes(attrs: Record<string, string>) {
 	return { standard, internal }
 }
 
-export function ResourceAttributesSection({
+/**
+ * An `AttributesTable` with the two namespaces that read better on their own
+ * lifted out: `gen_ai.*` into a labelled AI block above it, and `maple_` into a
+ * collapsed "Maple Internal" table beneath it. Use this anywhere a raw
+ * attribute map from the pipeline is shown — span, resource, or log — since any
+ * of them can carry either.
+ */
+export function AttributesSection({
 	attributes,
+	title,
 	searchQuery,
 	groupByNamespace,
-}: {
-	attributes: Record<string, string>
-	searchQuery?: string
-	groupByNamespace?: boolean
-}) {
-	const { standard, internal } = partitionResourceAttributes(attributes)
+}: AttributesTableProps) {
+	const { groups, rest } = splitGenAiAttributes(attributes)
+	const { standard, internal } = partitionInternalAttributes(rest)
 	const internalCount = Object.keys(internal).length
+
+	// An LLM or tool span often carries nothing BUT gen_ai.* keys; "No span
+	// attributes available" under a populated AI block would read as a
+	// contradiction, so the raw table only renders when it has rows to show —
+	// or when nothing at all does, where its empty line is the right message.
+	const showRawTable = Object.keys(standard).length > 0 || groups.length === 0
 
 	return (
 		<div className="space-y-2">
-			<AttributesTable
-				attributes={standard}
-				title="Resource Attributes"
-				searchQuery={searchQuery}
-				groupByNamespace={groupByNamespace}
-			/>
+			<GenAiSection groups={groups} searchQuery={searchQuery} />
+			{showRawTable && (
+				<AttributesTable
+					attributes={standard}
+					title={title}
+					searchQuery={searchQuery}
+					groupByNamespace={groupByNamespace}
+				/>
+			)}
 			{internalCount > 0 && (
 				<Collapsible>
 					<CollapsibleTrigger className="flex items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground transition-colors group">
@@ -273,5 +354,20 @@ export function ResourceAttributesSection({
 				</Collapsible>
 			)}
 		</div>
+	)
+}
+
+export function ResourceAttributesSection({
+	attributes,
+	searchQuery,
+	groupByNamespace,
+}: Omit<AttributesTableProps, "title">) {
+	return (
+		<AttributesSection
+			attributes={attributes}
+			title="Resource Attributes"
+			searchQuery={searchQuery}
+			groupByNamespace={groupByNamespace}
+		/>
 	)
 }

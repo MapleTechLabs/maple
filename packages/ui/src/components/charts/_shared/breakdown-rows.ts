@@ -1,11 +1,9 @@
-// ---------------------------------------------------------------------------
 // Shared normalization for the row-per-category charts (funnel, horizontal bar).
 //
 // They read `{name, value}` rows from the breakdown endpoint, but a mis-wired
 // widget can hand them timeseries rows instead, and a group value can be empty.
 // Both cases used to be handled inside the funnel only; the horizontal bar chart
 // needs exactly the same treatment, so it lives here rather than being copied.
-// ---------------------------------------------------------------------------
 
 export interface BreakdownRow {
 	name: string
@@ -42,8 +40,8 @@ export function toBreakdownRows(
 	valueField: string,
 ): BreakdownRow[] {
 	const first = source[0]
-	const isTimeseriesShaped = first != null && "bucket" in first && !("name" in first)
-	if (isTimeseriesShaped) {
+	const isTimeseriesData = first != null && "bucket" in first && !("name" in first)
+	if (isTimeseriesData) {
 		const totals = new Map<string, number>()
 		for (const row of source) {
 			for (const [key, value] of Object.entries(row)) {

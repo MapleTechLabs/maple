@@ -1,0 +1,128 @@
+import type { ReactNode } from "react"
+
+import { Badge } from "@maple/ui/components/ui/badge"
+import { formatRelativeTimeOrDate } from "@maple/ui/lib/time-format"
+
+import { traceSessionTraceId } from "@maple/domain/gen-ai"
+
+import { CopyableValue } from "@/components/attributes"
+import { CopyIcon } from "@/components/icons"
+import { DashboardLayout } from "@/components/layout/dashboard-layout"
+import { type SessionSummary } from "@maple/agent-sessions"
+import { vendorColor } from "@/lib/agent-sessions/vendor-color"
+import { vendorIcon } from "@/lib/agent-sessions/vendor-icon"
+import { vendorLabel } from "@/lib/agent-sessions/vendor-label"
+
+/**
+ * The page's heading: what ran, when, on what — the facts a reader needs to
+ * know which session this is before any view opens.
+ *
+ * The heading is the agent's name (or, unnamed, the framework's), never the
+ * session id or the opening prompt: the id says nothing to a human, and the
+ * first line of a prompt is usually a boilerplate instruction that reads as a
+ * title the session doesn't deserve. The prompt is the transcript's own first
+ * line and is not repeated here; the id stays as the last fact, shortened to
+ * its first characters, in full one click from the clipboard. Duration and
+ * framework are not facts here: the Overview's time bar states the clocks, and
+ * the vendor's mark beside the heading already says what ran.
+ */
+export function SessionHeader({ sessionId, summary }: { sessionId: string; summary: SessionSummary }) {
+	const heading = sessionIdentity(summary)
+	const VendorIcon = vendorIcon(summary.vendorIds[0] ?? "")
+	// A `trace:<id>` session is one Maple synthesized from a single trace: the
+	// id a reader wants in their clipboard is the trace id, not the prefix.
+	const traceId = traceSessionTraceId(sessionId)
+
+	return (
+		<div className="flex min-w-0 flex-col gap-2">
+			<div className="flex min-w-0 items-center gap-2">
+				<VendorIcon
+					size={18}
+					className="shrink-0"
+					style={{ color: vendorColor(summary.vendorIds[0] ?? "") }}
+					aria-hidden
+				/>
+				<DashboardLayout.Title title={heading}>{heading}</DashboardLayout.Title>
+				{summary.failed && <Badge variant="error">Failed</Badge>}
+			</div>
+
+			<dl className="flex flex-wrap items-baseline gap-x-4 gap-y-1 text-xs">
+				<Fact label="Started" title={new Date(summary.startMs).toLocaleString()}>
+					{formatRelativeTimeOrDate(summary.startMs)}
+				</Fact>
+				{summary.serviceNames.length > 0 && (
+					<Fact label="Service" title={summary.serviceNames.join(", ")} mono>
+						{firstPlusRest(summary.serviceNames)}
+					</Fact>
+				)}
+				<Fact label={traceId === undefined ? "Session ID" : "Trace ID"} title={traceId ?? sessionId}>
+					<CopyableValue
+						value={traceId ?? sessionId}
+						label={traceId === undefined ? "Session ID" : "Trace ID"}
+						className="inline-flex min-w-0 max-w-full items-center gap-1 font-mono"
+					>
+						<span className="min-w-0 truncate">{shortId(traceId ?? sessionId)}</span>
+						<CopyIcon size={11} className="shrink-0 text-muted-foreground" aria-hidden />
+					</CopyableValue>
+				</Fact>
+			</dl>
+		</div>
+	)
+}
+
+const PLACEHOLDER_AGENT_NAME = "default"
+
+/**
+ * What to call the session. A named agent is the best name there is; without
+ * one the framework stands in, and without even that the page says "Agent
+ * session" rather than parroting an unidentified vendor id.
+ *
+ * `default` is what an SDK stamps when the app named no agent, so it is treated
+ * as no name: a list of sessions all headed "default" identifies none of them.
+ */
+export function sessionIdentity(summary: Pick<SessionSummary, "agentNames" | "vendorIds">): string {
+	const vendorId = summary.vendorIds[0]
+	const framework = vendorId === undefined ? undefined : vendorLabel(vendorId)
+	const agentName = summary.agentNames.find((name) => name !== PLACEHOLDER_AGENT_NAME)
+	if (agentName !== undefined) return agentName
+	if (framework !== undefined && framework !== "Unidentified") return `${framework} session`
+	return "Agent session"
+}
+
+/** A session id is an emitter's string of any length; a 32-char (trace id sized)
+ *  prefix identifies it as well as the whole, and the whole is in the `title`
+ *  and the clipboard. */
+const ID_PREFIX_LENGTH = 32
+
+function shortId(id: string): string {
+	return id.length > ID_PREFIX_LENGTH ? `${id.slice(0, ID_PREFIX_LENGTH)}…` : id
+}
+
+function Fact({
+	label,
+	title,
+	mono,
+	children,
+}: {
+	label: string
+	title?: string
+	mono?: boolean
+	children: ReactNode
+}) {
+	return (
+		<div className="flex min-w-0 max-w-full items-baseline gap-1.5" title={title}>
+			<dt className="shrink-0 font-semibold text-[10px] text-muted-foreground uppercase tracking-[0.08em]">
+				{label}
+			</dt>
+			<dd className={mono ? "min-w-0 truncate font-mono" : "min-w-0 truncate"}>{children}</dd>
+		</div>
+	)
+}
+
+/** "claude-sonnet-5 +1": the first name, the rest as a count — the full list
+ *  goes in the `title`. */
+function firstPlusRest(names: readonly string[]): string {
+	const [first, ...rest] = names
+	if (first === undefined) return ""
+	return rest.length > 0 ? `${first} +${rest.length}` : first
+}

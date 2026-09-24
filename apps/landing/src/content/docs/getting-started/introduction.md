@@ -30,7 +30,7 @@ Ask questions about your system in natural language using Maple's MCP integratio
 ## Getting Started
 
 1. Sign up at [app.maple.dev](https://app.maple.dev) or self-host on your own infrastructure
-2. Point your OpenTelemetry SDK at Maple's ingest endpoint
+2. Point your OpenTelemetry SDK at Maple's ingest endpoint (`https://ingest.eu.maple.dev` for an organization in the EU region, see [Data regions](/docs/instrumentation#data-regions))
 3. Start exploring in the dashboard
 
 The fastest path: run **`maple-onboard`** in Claude Code (or Codex / Cursor with the skill installed) and it'll walk every service in the repo, install OpenTelemetry, wire traces / logs / metrics, and verify the bootstrap end-to-end.
@@ -39,7 +39,7 @@ The fastest path: run **`maple-onboard`** in Claude Code (or Codex / Cursor with
 maple-onboard
 ```
 
-Already instrumented? Run **`maple-audit`** instead — it reviews an existing OpenTelemetry setup against Maple's conventions, reports gaps per service, and fixes them. See the [maple-audit skill](https://github.com/Makisuo/maple/tree/main/skills/maple-audit).
+Already instrumented? Run **`maple-audit`** instead — it reviews an existing OpenTelemetry setup against Maple's conventions, reports gaps per service, and fixes them. See the [maple-audit skill](https://github.com/MapleTechLabs/maple/tree/main/skills/maple-audit).
 
 Or set up by hand. The recommended shape is to **inline the endpoint and ingest key in your bootstrap source** -- the ingest key is project-scoped and write-only (Sentry-DSN-shaped), so source-level configuration removes a class of "OTel didn't start because env vars weren't set" deploy failures. See the per-language guides for exact code.
 

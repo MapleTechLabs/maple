@@ -13,11 +13,10 @@ References verified on August 4, 2026:
 
 ## Where OpenRouter Is Called
 
-| Path                                  | Client                                | Surfaces                                                                                    |
-| ------------------------------------- | ------------------------------------- | ------------------------------------------------------------------------------------------- |
-| `apps/api/src/platform/Llm.ts`        | `@maple/llm` (`OpenRouter.configure`) | chat turns (`src/chat/turn-runner.ts`), AI triage (`src/workflows/AiTriageWorkflow.run.ts`) |
-| `apps/slack-agent/agent/agent.ts`     | `@openrouter/ai-sdk-provider`         | the Slack agent                                                                             |
-| `apps/api/src/mcp/__evals__/model.ts` | `@ai-sdk/openai-compatible`           | MCP evals in CI — **not** attributed or tagged                                              |
+| Path                                  | Client                                     | Surfaces                                                         |
+| ------------------------------------- | ------------------------------------------ | ---------------------------------------------------------------- |
+| `apps/ai/src/platform/Llm.ts`         | Effect AI (`@effect/ai-openrouter`)        | chat turns and autonomous investigation passes                   |
+| `apps/api/src/mcp/__evals__/model.ts` | `@ai-sdk/openai-compatible`                | MCP evals in CI — **not** attributed or tagged                   |
 
 `apps/api` can also run on Cloudflare Workers AI instead (`MAPLE_LLM_PROVIDER=workers-ai`). None of
 the attribution below applies on that path — the headers and tag fields are OpenRouter's, and
@@ -26,13 +25,13 @@ the attribution below applies on that path — the headers and tag fields are Op
 ## App Attribution
 
 `HTTP-Referer` is what creates the app page on openrouter.ai; a title on its own does nothing and
-usage without a referer never appears in the rankings. Both the API and the Slack agent send the
-same URL and title on purpose — the referer _is_ the app's identity, so a second value would mint a
-second app entry and split the rankings.
+usage without a referer never appears in the rankings. Every caller sends the same URL and title on
+purpose — the referer _is_ the app's identity, so a second value would mint a second app entry and
+split the rankings.
 
 | Header                           | Value               | Set at                                                                                              |
 | -------------------------------- | ------------------- | --------------------------------------------------------------------------------------------------- |
-| `HTTP-Referer`                   | `https://maple.dev` | `apps/api/src/platform/Llm.ts` (`OPENROUTER_APP_URL`), `apps/slack-agent/agent/agent.ts` (`appUrl`) |
+| `HTTP-Referer`                   | `https://maple.dev` | `apps/api/src/platform/Llm.ts` (`OPENROUTER_APP_URL`)                                               |
 | `X-Title` / `X-OpenRouter-Title` | `Maple`             | same, `OPENROUTER_APP_TITLE` / `appName`                                                            |
 
 Per-app analytics then live at https://openrouter.ai/apps.
@@ -44,15 +43,14 @@ and folds it into the OpenRouter request body as route defaults, so every `LLM.r
 `generate` / `stream` made with the returned model carries it without each call site threading it
 through.
 
-| Field              | Maple value                                                                                                | Where it shows up                                                                                                                                         |
-| ------------------ | ---------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `user`             | Maple org id                                                                                               | the `/activity` page, activity exports, and the `/generations` API. OpenRouter folds it into a hashed identity and never forwards it raw upstream.        |
-| `session_id`       | `<chat session id>` or `triage_<incidentKind>_<incidentId>`, truncated to OpenRouter's 256-character limit | groups the requests of one conversation or investigation, and makes OpenRouter route the whole session to a single provider so prompt caches actually hit |
-| `trace.trace_name` | `chat`, `ai-triage`, or `slack`                                                                            | forwarded to configured Broadcast destinations only — it does **not** appear in the OpenRouter dashboard                                                  |
+| Field              | Maple value                                                                                                                                                                 | Where it shows up                                                                                                                                         |
+| ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `user`             | Maple org id                                                                                                                                                                | the `/activity` page, activity exports, and the `/generations` API. OpenRouter folds it into a hashed identity and never forwards it raw upstream.        |
+| `session_id`       | the chat session id — `<orgId>:inv-<investigationId>` for an investigation's passes — truncated to OpenRouter's 256-character limit                                             | groups the requests of one conversation or investigation, and makes OpenRouter route the whole session to a single provider so prompt caches actually hit |
+| `trace.trace_name` | `chat` or `bot`                                                                                                                                                            | forwarded to configured Broadcast destinations only — it does **not** appear in the OpenRouter dashboard                                                  |
 
-The Slack agent sends a static `trace: { trace_name: "slack" }` via the provider's `extraBody`,
-since that process is a single surface. It does not send `user` or `session_id`; wiring the Slack
-team and thread through would need a per-request hook from `eve`.
+The same session id goes onto Maple's own model-call spans as `maple_ai.session.id`, so a call and
+its Broadcast mirror land in one agent session.
 
 ## Configure OpenRouter Broadcast To Maple
 

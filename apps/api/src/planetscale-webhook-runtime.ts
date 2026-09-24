@@ -1,40 +1,28 @@
-import type { MessageBatch } from "@cloudflare/workers-types"
-import * as MapleCloudflareSDK from "@maple-dev/effect-sdk/cloudflare"
-import { ANTICIPATED_ERROR_IDENTIFIERS } from "@maple/domain/anticipated-errors"
-import { WorkerConfigProviderLayer, WorkerEnvironment } from "@maple/effect-cloudflare"
-import { Effect, Layer, Schema } from "effect"
-import { layerPg } from "@/platform/DatabasePgLive"
-import type { Database, DatabaseError } from "@/platform/DatabaseLive"
+import { eventTelemetry } from "@maple/infra/worker-telemetry"
+import { Effect, Schema } from "effect"
+import type { Database, DatabaseError } from "@maple/backend/platform/DatabaseLive"
+import type { QueueBatch } from "@maple/backend/platform/queue-batch"
 import {
 	classifyPlanetScaleEvent,
 	deployRequestNumber,
 	insertPlanetScaleEvent,
 	planetScaleBranchName,
+	planetScaleWebhookPayloadFromEvent,
+	projectPlanetScaleWebhookEvent,
 	upsertPlanetScaleIssue,
-} from "./services/integrations/planetscale/webhook-events"
-import { PlanetScaleWebhookJob } from "./services/integrations/planetscale/PlanetScaleWebhookQueue"
+} from "@maple/backend/services/integrations/planetscale/webhook-events"
+import { PlanetScaleWebhookQueueMessage } from "@maple/backend/services/integrations/planetscale/PlanetScaleWebhookQueue"
 
-const telemetry = MapleCloudflareSDK.make({
-	serviceName: "maple-api",
-	serviceNamespace: "backend",
-	repositoryUrl: "https://github.com/Makisuo/maple",
-	anticipatedErrorIdentifiers: [...ANTICIPATED_ERROR_IDENTIFIERS],
-})
+/**
+ * Deliberately not `maple-api`: background work sharing the request-facing
+ * service's name skewed its percentiles (p99 32s, 2026-09-04). Provided by the
+ * Worker around the event; the layer below carries no tracer of its own.
+ */
+export const planetScaleWebhookTelemetry = eventTelemetry({ serviceName: "maple-planetscale-webhooks" })
 
-export const buildPlanetScaleWebhookLayer = (_env: Record<string, unknown>) => {
-	const DatabaseLive = layerPg.pipe(Layer.provide(WorkerEnvironment.layer))
-	return DatabaseLive.pipe(
-		Layer.provideMerge(telemetry.layer),
-		Layer.provideMerge(WorkerEnvironment.layer),
-		Layer.provideMerge(WorkerConfigProviderLayer),
-	)
-}
+const decodeJob = Schema.decodeUnknownEffect(PlanetScaleWebhookQueueMessage)
 
-export const flushPlanetScaleWebhookTelemetry = (env: Record<string, unknown>) => telemetry.flush(env)
-
-const decodeJob = Schema.decodeUnknownEffect(PlanetScaleWebhookJob)
-
-export const processPlanetScaleWebhookBatch = (batch: MessageBatch<unknown>) =>
+export const processPlanetScaleWebhookBatch = (batch: QueueBatch) =>
 	Effect.forEach(
 		batch.messages,
 		(message) =>
@@ -53,129 +41,176 @@ export const processPlanetScaleWebhookBatch = (batch: MessageBatch<unknown>) =>
 								}),
 							),
 						),
-					onSuccess: (job) => {
-						const classified = classifyPlanetScaleEvent(job.payload.event)
-						const annotateJob = Effect.annotateCurrentSpan({
-							orgId: job.orgId,
-							"maple.planetscale.connection_id": job.connectionId,
-							"maple.planetscale.webhook.event": job.payload.event,
-						})
-						if (classified.action !== "issue" && classified.action !== "timeline") {
-							return annotateJob.pipe(
-								Effect.flatMap(() =>
-									Effect.logInfo(
-										"PlanetScale webhook queue message no longer requires persistence",
-									),
-								),
-								Effect.annotateLogs({
-									orgId: job.orgId,
-									connectionId: job.connectionId,
-									event: job.payload.event,
-								}),
-								Effect.flatMap(() => Effect.sync(() => message.ack())),
-							)
-						}
-
-						const timestamp =
-							job.payload.timestamp != null && job.payload.timestamp > 0
-								? job.payload.timestamp * 1000
-								: job.receivedAt
-
-						const spec = classified.timeline
-						const timeline = insertPlanetScaleEvent({
-							orgId: job.orgId,
-							databaseName: job.payload.database ?? "unknown",
-							branchName:
-								spec.category === "deploy_request" ? "" : planetScaleBranchName(job.payload),
-							category: spec.category,
-							eventType: job.payload.event,
-							state: spec.state,
-							externalId:
-								spec.category === "deploy_request" ? deployRequestNumber(job.payload) : "",
-							title: spec.title(job.payload),
-							source: "webhook",
-							payload: job.payload.resource ?? null,
-							occurredAtMs: timestamp,
-							createdAtMs: job.receivedAt,
-						}).pipe(
-							Effect.withSpan("PlanetScaleWebhookQueue.persistTimelineEvent", {
-								attributes: {
-									orgId: job.orgId,
-									"maple.planetscale.webhook.event": job.payload.event,
-								},
-							}),
-						)
-
-						// Timeline first: a retry after a failed issue upsert then re-runs
-						// an idempotent insert rather than duplicating a chart marker.
-						const persist: Effect.Effect<
-							{ readonly issueId: string | null; readonly action: string },
-							DatabaseError,
-							Database
-						> =
-							classified.action === "timeline"
-								? timeline.pipe(Effect.as({ issueId: null, action: "timeline" }))
-								: timeline.pipe(
-										Effect.flatMap(() =>
-											upsertPlanetScaleIssue({
+					onSuccess: (job) =>
+						Effect.gen(function* () {
+							// Old jobs can remain in Cloudflare Queue across a deploy. Rebuild the
+							// event from the durable legacy fields instead of malformed-acking them.
+							const event =
+								"event" in job
+									? job.event
+									: yield* Effect.fromResult(
+											projectPlanetScaleWebhookEvent({
 												orgId: job.orgId,
+												connectionId: job.connectionId,
 												payload: job.payload,
-												severity: classified.severity,
-												title: classified.title,
-												description: classified.describe(job.payload),
-												timestamp,
+												receivedAt: job.receivedAt,
 											}),
+										)
+							const payload =
+								"event" in job
+									? yield* Effect.fromResult(
+											planetScaleWebhookPayloadFromEvent(
+												event,
+												job.orgId,
+												job.connectionId,
+											),
+										)
+									: job.payload
+							const classified = classifyPlanetScaleEvent(payload.event)
+							const annotateJob = Effect.annotateCurrentSpan({
+								orgId: job.orgId,
+								"maple.event.id": event.id,
+								"maple.event.type": event.type,
+								"maple.planetscale.connection_id": job.connectionId,
+								"maple.planetscale.webhook.event": payload.event,
+							})
+							if (classified.action !== "issue" && classified.action !== "timeline") {
+								return yield* annotateJob.pipe(
+									Effect.flatMap(() =>
+										Effect.logInfo(
+											"PlanetScale webhook queue message no longer requires persistence",
 										),
-										Effect.withSpan("PlanetScaleWebhookQueue.persistIssue", {
-											attributes: {
+									),
+									Effect.annotateLogs({
+										orgId: job.orgId,
+										connectionId: job.connectionId,
+										event: payload.event,
+									}),
+									Effect.flatMap(() => Effect.sync(() => message.ack())),
+								)
+							}
+
+							const timestamp =
+								payload.timestamp != null && payload.timestamp > 0
+									? payload.timestamp * 1000
+									: job.receivedAt
+
+							const spec = classified.timeline
+							const timeline = insertPlanetScaleEvent({
+								orgId: job.orgId,
+								databaseName: payload.database ?? "unknown",
+								branchName:
+									spec.category === "deploy_request" ? "" : planetScaleBranchName(payload),
+								category: spec.category,
+								eventType: payload.event,
+								state: spec.state,
+								externalId:
+									spec.category === "deploy_request" ? deployRequestNumber(payload) : "",
+								title: spec.title(payload),
+								source: "webhook",
+								payload: payload.resource ?? null,
+								occurredAtMs: timestamp,
+								createdAtMs: job.receivedAt,
+							}).pipe(
+								Effect.withSpan("PlanetScaleWebhookQueue.persistTimelineEvent", {
+									attributes: {
+										orgId: job.orgId,
+										"maple.planetscale.webhook.event": payload.event,
+									},
+								}),
+							)
+
+							// Timeline first: a retry after a failed issue upsert then re-runs
+							// an idempotent insert rather than duplicating a chart marker.
+							const persist: Effect.Effect<
+								{ readonly issueId: string | null; readonly action: string },
+								DatabaseError,
+								Database
+							> =
+								classified.action === "timeline"
+									? timeline.pipe(Effect.as({ issueId: null, action: "timeline" }))
+									: timeline.pipe(
+											Effect.flatMap(() =>
+												upsertPlanetScaleIssue({
+													orgId: job.orgId,
+													eventId: event.id,
+													payload,
+													severity: classified.severity,
+													title: classified.title,
+													description: classified.describe(payload),
+													timestamp,
+												}),
+											),
+											Effect.withSpan("PlanetScaleWebhookQueue.persistIssue", {
+												attributes: {
+													orgId: job.orgId,
+													"maple.planetscale.connection_id": job.connectionId,
+													"maple.planetscale.webhook.event": payload.event,
+												},
+											}),
+										)
+							return yield* annotateJob.pipe(
+								Effect.flatMap(() => persist),
+								Effect.matchEffect({
+									onFailure: (error) =>
+										Effect.logError("PlanetScale webhook persistence failed").pipe(
+											Effect.annotateLogs({
 												orgId: job.orgId,
-												"maple.planetscale.connection_id": job.connectionId,
-												"maple.planetscale.webhook.event": job.payload.event,
-											},
-										}),
-									)
-						return annotateJob.pipe(
-							Effect.flatMap(() => persist),
-							Effect.matchEffect({
-								onFailure: (error) =>
-									Effect.logError("PlanetScale webhook persistence failed").pipe(
+												connectionId: job.connectionId,
+												event: payload.event,
+												attempt: message.attempts,
+												error: error.message,
+											}),
+											Effect.flatMap(() => Effect.sync(() => message.retry())),
+											Effect.tap(() =>
+												Effect.annotateCurrentSpan({
+													"maple.planetscale.webhook.queue.outcome":
+														"database_retry",
+												}),
+											),
+										),
+									onSuccess: (result) =>
+										Effect.logInfo("PlanetScale webhook persisted").pipe(
+											Effect.annotateLogs({
+												orgId: job.orgId,
+												connectionId: job.connectionId,
+												event: payload.event,
+												issueId: result.issueId,
+												issueAction: result.action,
+											}),
+											Effect.flatMap(() => Effect.sync(() => message.ack())),
+											Effect.tap(() =>
+												Effect.annotateCurrentSpan({
+													"maple.planetscale.webhook.queue.outcome":
+														result.action === "timeline"
+															? "timeline_ack"
+															: "timeline_and_issue_ack",
+													"maple.planetscale.webhook.issue_action": result.action,
+												}),
+											),
+										),
+								}),
+							)
+						}).pipe(
+							Effect.catchTag(
+								"@maple/api/planetscale/PlanetScaleWebhookProjectionInvalid",
+								(error) =>
+									Effect.logWarning(error.message).pipe(
 										Effect.annotateLogs({
-											orgId: job.orgId,
-											connectionId: job.connectionId,
-											event: job.payload.event,
-											attempt: message.attempts,
-											error: error.message,
+											errorTag: error._tag,
+											cause: error.cause,
+											orgId: error.orgId,
+											connectionId: error.connectionId,
 										}),
-										Effect.flatMap(() => Effect.sync(() => message.retry())),
+										Effect.andThen(Effect.sync(() => message.ack())),
 										Effect.tap(() =>
 											Effect.annotateCurrentSpan({
-												"maple.planetscale.webhook.queue.outcome": "database_retry",
+												"maple.planetscale.webhook.queue.outcome": "malformed_ack",
 											}),
 										),
 									),
-								onSuccess: (result) =>
-									Effect.logInfo("PlanetScale webhook persisted").pipe(
-										Effect.annotateLogs({
-											orgId: job.orgId,
-											connectionId: job.connectionId,
-											event: job.payload.event,
-											issueId: result.issueId,
-											issueAction: result.action,
-										}),
-										Effect.flatMap(() => Effect.sync(() => message.ack())),
-										Effect.tap(() =>
-											Effect.annotateCurrentSpan({
-												"maple.planetscale.webhook.queue.outcome":
-													result.action === "timeline"
-														? "timeline_ack"
-														: "timeline_and_issue_ack",
-												"maple.planetscale.webhook.issue_action": result.action,
-											}),
-										),
-									),
-							}),
-						)
-					},
+							),
+						),
 				}),
 				Effect.withSpan("PlanetScaleWebhookQueue.processMessage", {
 					attributes: { "messaging.message.delivery_attempt": message.attempts },

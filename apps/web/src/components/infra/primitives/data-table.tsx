@@ -19,14 +19,6 @@ export const ROW_LINK_CLASS =
 	"group flex items-center gap-4 border-b border-border/40 px-4 py-3 transition-colors last:border-0 hover:bg-muted/40 focus-visible:bg-muted/40 focus-visible:outline-none"
 
 /**
- * Row className for tables whose rows *select* rather than navigate. Same chrome as
- * `ROW_LINK_CLASS` plus button resets; pair it with `aria-pressed` so the selected
- * row is announced, not just tinted.
- */
-export const ROW_BUTTON_CLASS =
-	"group flex w-full items-center gap-4 border-b border-border/40 px-4 py-3 text-left transition-colors last:border-0 hover:bg-muted/40 focus-visible:bg-muted/40 focus-visible:outline-none aria-pressed:bg-muted/40"
-
-/**
  * The three sort props a `ColumnHead` needs, as one spreadable object. Lets a
  * table declare its column list once and render it twice — interactive for the
  * table, inert for the skeleton — instead of duplicating the columns per state.
@@ -130,12 +122,16 @@ interface DataTableRootProps {
 	ariaLabel: string
 	waiting?: boolean
 	/**
-	 * Cap the row area at this pixel height and scroll inside it, with the column heads pinned.
+	 * Cap the row area at this height and scroll inside it, with the column heads pinned.
 	 * For lists whose length is the server's limit rather than a human number — 100 breakdown keys,
 	 * 500 zones — this keeps the table a fixed-size instrument instead of a page that grows past
 	 * everything below it. Omit for tables that are short by nature.
+	 *
+	 * A number is pixels. A CSS length is passed through, which is what a table inside a dialog
+	 * needs: its ceiling is the viewport, and a pixel figure measured at mount would be wrong
+	 * after the next resize.
 	 */
-	maxHeight?: number
+	maxHeight?: number | string
 	/** Surface the pinned header sits on. Defaults to the page background; pass `bg-card` inside a card. */
 	stickySurfaceClass?: string
 	children: React.ReactNode
@@ -158,10 +154,15 @@ function DataTableRoot({
 				aria-label={ariaLabel}
 			>
 				<div
-					className={cn(scrolls && "overflow-y-auto overscroll-contain")}
+					className={cn("overflow-x-auto", scrolls && "overflow-y-auto overscroll-contain")}
 					style={scrolls ? { maxHeight } : undefined}
 				>
-					{children}
+					{/* `min-w-fit` is what lets fixed-width columns scroll sideways instead of
+					    squishing on a phone. It measures every row's intrinsic width, so the
+					    flexible label column must be `w-0 flex-1 min-w-…` — without `w-0` one
+					    long untruncated name sets the width of the whole table and pushes the
+					    numeric columns off the edge on a desktop card. */}
+					<div className="min-w-fit">{children}</div>
 				</div>
 			</div>
 		</DataTableContext>

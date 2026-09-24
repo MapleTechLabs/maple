@@ -22,7 +22,7 @@ Self-managed Maple is a **per-org BYO** feature. Each org configures their own b
 - `backend = "tinybird"` — the existing path. Maple deploys its Tinybird project into the org's workspace via the sync workflow; queries route to that workspace.
 - `backend = "clickhouse"` — new. The org points Maple at a vanilla ClickHouse server they operate themselves. There is no sync workflow — schema lives in their CH instance and is applied via the CLI below.
 
-The Maple deployment itself still uses the env-level `TINYBIRD_HOST` / `TINYBIRD_TOKEN` for any org without a BYO row. API query routing does not require new env vars for ClickHouse-BYO; D1-backed direct ingest does require `MAPLE_INGEST_KEY_ENCRYPTION_KEY` so the ingest gateway can decrypt stored ClickHouse passwords.
+The Maple deployment itself still uses the env-level `TINYBIRD_HOST` / `TINYBIRD_TOKEN` for any org without a BYO row. API query routing does not require new env vars for ClickHouse-BYO; Postgres-backed direct ingest does require `MAPLE_INGEST_KEY_ENCRYPTION_KEY` so the ingest gateway can decrypt stored ClickHouse passwords.
 
 Env-level `CLICKHOUSE_URL` defaults to Tinybird's ClickHouse-compatible gateway for
 compatibility with existing deployments; raw SQL substitutes a per-org JWT and
@@ -30,6 +30,8 @@ removes Tinybird-restricted query settings. For a vanilla/self-managed server, s
 `CLICKHOUSE_PROVIDER=clickhouse`; Maple then preserves `CLICKHOUSE_PASSWORD` for raw
 SQL. Tinybird raw SQL also requires explicit `TINYBIRD_SIGNING_KEY` and
 `TINYBIRD_WORKSPACE_ID` values; Maple never derives either from the API token.
+Set `TINYBIRD_RAW_SQL_JWT_RPS_LIMIT` to a positive integer to add an optional
+Tinybird-enforced request ceiling; Maple gives each org an independent bucket.
 
 Env-level vanilla ClickHouse raw SQL is enabled only when `MAPLE_AUTH_MODE=self_hosted`,
 where the deployment is single-org. Hosted multi-org deployments fail closed unless
@@ -104,18 +106,37 @@ SELECT version, applied_at, description FROM _maple_schema_migrations ORDER BY v
 
 ## What gets created
 
-On a clean install, migration 0001 creates **20 tables** (datasources) and **22 materialized views**:
+On a clean install, migration 0001 creates **37 tables** (datasources) and **39 materialized views**.
+Migration 0001 re-exports the _generated_ snapshot, so these counts track
+`datasources.ts` / `materializations.ts` — regenerate with `bun run clickhouse:schema`
+and `bun run tinybird:manifest` after editing either, or CI's drift gate fails.
 
-- **Direct-ingest tables**: `traces`, `logs`, `metrics_sum`, `metrics_gauge`, `metrics_histogram`, `metrics_exponential_histogram`, `alert_checks`
-- **MV-populated tables**: `service_usage`, `service_map_spans`, `service_map_children`, `service_map_edges_hourly`, `service_overview_spans`, `error_spans`, `error_events`, `trace_list_mv`, `trace_detail_spans`, `attribute_keys_hourly`, `attribute_values_hourly`, `traces_aggregates_hourly`, `logs_aggregates_hourly`
-- **Materialized views**: 22 MVs that fan out from the direct-ingest tables to populate the MV-populated tables
+- **Direct-ingest tables** (12): `alert_checks`, `logs`, `metrics_exponential_histogram`,
+  `metrics_gauge`, `metrics_histogram`, `metrics_sum`, `service_address_resolutions_hourly`,
+  `service_map_edges_hourly_ingest`, `session_events`, `session_replay_events`,
+  `session_replays`, `traces`
+- **MV-populated tables** (25): `attribute_keys_hourly`, `attribute_values_hourly`,
+  `error_events`, `error_events_by_time`, `error_fingerprints_minutely`,
+  `logs_aggregates_hourly`, `metric_catalog`, `service_external_edges_hourly`,
+  `service_map_children`, `service_map_db_edges_hourly`,
+  `service_map_db_query_shapes_hourly`, `service_map_edges_hourly`, `service_map_spans`,
+  `service_operations_hourly`, `service_operations_minutely`, `service_overview_hourly`,
+  `service_overview_minutely`, `service_overview_spans`, `service_platforms_hourly`,
+  `service_usage`, `span_metrics_calls_hourly`, `trace_detail_spans`, `trace_list_mv`,
+  `traces_aggregates_hourly`, `web_events`
+- **Materialized views** (39): fan out from the direct-ingest tables to populate the
+  MV-populated tables. Several targets are fed by more than one MV — `service_usage` by
+  six, `attribute_values_hourly` / `attribute_keys_hourly` / `metric_catalog` by four each.
+
+See [`warehouse-rollups.md`](warehouse-rollups.md) for when a materialized view is the
+right answer and which tier a query should read.
 
 Every table is partitioned by date and carries a TTL, tiered by how raw the data is:
 
 | Retention    | Tables                                                                                                                         |
 | ------------ | ------------------------------------------------------------------------------------------------------------------------------ |
 | **30 days**  | `traces`, `trace_detail_spans`, `logs`, `service_map_spans`, `service_map_children`, `service_overview_spans`, `trace_list_mv` |
-| **90 days**  | `error_spans`, `error_events`, `error_events_by_time`, `metrics_*`, `attribute_*_hourly`, `metric_catalog`                     |
+| **90 days**  | `error_events`, `error_events_by_time`, `metrics_*`, `attribute_*_hourly`, `metric_catalog`                                    |
 | **365 days** | hourly rollups (`*_hourly`), `service_usage`, `alert_checks`                                                                   |
 
 Adjust by writing a follow-up migration if your retention requirements differ.
@@ -132,11 +153,11 @@ The maintained standalone path is **Option A: Maple's prebuilt OTel Collector im
 
 For orgs whose `org_clickhouse_settings` row has `sync_status = 'connected'` and `schema_version` equal to the bundled `clickHouseSchemaVersion` (the latest **ingest-required** ClickHouse migration version — emitted into the gateway as `SCHEMA_VERSION` by `scripts/generate-clickhouse-insert-mappings.ts`), the Rust ingest gateway routes accepted native-ingest frames directly to that org's ClickHouse HTTP endpoint. Non-ready orgs continue using the managed Tinybird path. Performance-only migrations set `requiredForIngest: false`, so an index rollout cannot un-ready an otherwise compatible org. Readiness also does **not** use the Tinybird-coupled `clickHouseProjectRevision`, so Tinybird-only changes cannot alter BYO-ClickHouse routing.
 
-D1-backed ingest deployments must set `MAPLE_INGEST_KEY_ENCRYPTION_KEY` before rolling out this mode; the gateway exits at startup without it because ClickHouse passwords are encrypted at rest with the same AES-256-GCM key format as private ingest keys.
+Postgres-backed ingest deployments must set `MAPLE_INGEST_KEY_ENCRYPTION_KEY` before rolling out this mode; the gateway exits at startup without it because ClickHouse passwords are encrypted at rest with the same AES-256-GCM key format as private ingest keys.
 
 Operational caveats:
 
-- **Readiness keys on the latest ingest-required migration, which only the API marks.** The `schema_version` stored in D1 is written to `clickHouseSchemaVersion` **only** by the API's `applySchema` workflow (or by `schemaDiff` self-heal, below). A credential re-save _preserves_ the prior value, and the standalone `clickhouse-cli` writes `_maple_schema_migrations` **on your CH server but never touches D1**. So an org whose ClickHouse schema was applied entirely via the CLI stays `schema_version`-stale and the gateway keeps routing to Tinybird, even though the cluster is fully migrated. Symptom: the dashboard (which reads CH whenever a settings row exists) shows collector-written data, but data sent through the public ingestor is invisible because it landed in Tinybird.
+- **Readiness keys on the latest ingest-required migration, which only the API marks.** The `schema_version` stored in Postgres is written to `clickHouseSchemaVersion` **only** by the API's `applySchema` workflow (or by `schemaDiff` self-heal, below). A credential re-save _preserves_ the prior value, and the standalone `clickhouse-cli` writes `_maple_schema_migrations` **on your CH server but never touches Maple's application database**. So an org whose ClickHouse schema was applied entirely via the CLI stays `schema_version`-stale and the gateway keeps routing to Tinybird, even though the cluster is fully migrated. Symptom: the dashboard (which reads CH whenever a settings row exists) shows collector-written data, but data sent through the public ingestor is invisible because it landed in Tinybird.
 - **Self-heal:** calling `schemaDiff` (e.g. opening `Settings → BYO Backend → ClickHouse`, or `POST /orgClickHouseSettings/schemaDiff`) re-stamps `schema_version` to `clickHouseSchemaVersion` whenever the live schema is fully in sync (every diff entry `up_to_date`). This is the supported way to mark a CLI-applied org ready without forcing an Apply that has nothing to migrate. The read path also annotates a `clickhouse.schemaDrift` span attribute (`OrgClickHouseSettingsService.resolveRuntimeConfig`) — alert on it to catch stale orgs.
 - ClickHouse-routed frames never fall back to Tinybird. After the configured export retry budget is exhausted, the batch is dropped, the WAL cursor advances, and `ingest_clickhouse_export_dropped_total` records the datasource and final drop reason. Alert on any non-zero increase in that counter.
 - Password-authenticated ClickHouse endpoints must use `https://`; the gateway drops passworded `http://` targets before attaching `X-ClickHouse-Key`.
@@ -146,7 +167,7 @@ Operational caveats:
 
 A custom build of `otelcol-contrib` with the `mapleexporter` baked in. The exporter writes JSON-each-row directly into Maple's `traces` / `logs` / `metrics_*` tables, no shim required.
 
-- **Image:** `ghcr.io/makisuo/maple/otel-collector-maple` (multi-arch — amd64 + arm64). Pin a tag (e.g. `0.1.5`); see [the package page](https://github.com/users/makisuo/packages/container/package/maple%2Fotel-collector-maple) for available versions.
+- **Image:** `ghcr.io/mapletechlabs/maple/otel-collector-maple` (multi-arch — amd64 + arm64). Pin a tag (e.g. `0.2.0`); see [the package page](https://github.com/orgs/MapleTechLabs/packages/container/package/maple%2Fotel-collector-maple) for available versions.
 - **Source:** [`packages/otel-collector-maple-exporter/`](../packages/otel-collector-maple-exporter/) — builder config in [`deploy/k8s-infra/builder-config.yaml`](../deploy/k8s-infra/builder-config.yaml), Dockerfile in [`deploy/k8s-infra/Dockerfile.otel-collector-maple`](../deploy/k8s-infra/Dockerfile.otel-collector-maple).
 
 #### Step 1: apply the schema
@@ -167,7 +188,7 @@ Or save credentials in the Maple UI under `Settings → BYO Backend → ClickHou
 **Kubernetes** — install the [`maple-otel`](../deploy/maple-otel/) Helm chart:
 
 ```bash
-helm install maple-otel oci://ghcr.io/makisuo/charts/maple-otel \
+helm install maple-otel oci://ghcr.io/mapletechlabs/charts/maple-otel \
   --namespace maple --create-namespace \
   --set maple.orgId=org_xxx \
   --set maple.clickhouse.endpoint=https://your-ch.example.com \
@@ -186,7 +207,7 @@ Apps then point `OTEL_EXPORTER_OTLP_ENDPOINT` at `http://maple-otel.maple.svc.cl
       -e MAPLE_CLICKHOUSE_PASSWORD=$CH_PASSWORD \
       -v ./collector.yaml:/etc/otel/config.yaml \
       -p 4317:4317 -p 4318:4318 \
-      ghcr.io/makisuo/maple/otel-collector-maple:0.1.5
+      ghcr.io/mapletechlabs/maple/otel-collector-maple:0.2.0
     ```
 
 The rendered YAML carries your `org_id`, ClickHouse URL/user/database, and the standard memory_limiter → k8sattributes → batch → maple pipeline. The password is referenced via `${env:MAPLE_CLICKHOUSE_PASSWORD}` so the file is safe to share.

@@ -1,64 +1,87 @@
-// Single source of truth for docs navigation ordering + the header category bar.
-// The sidebar (DocsSidebar), mobile nav (DocsMobileNav), index page, and the
-// header category bar (DocsCategoryNav) all read from here so group order and
-// icons never drift apart.
+// Single source of truth for docs navigation ordering. The sidebar
+// (DocsSidebar), the index page, prev/next and search all read from here so
+// section and group order never drift apart. Pure data — client islands import it.
 
-export const SDK_OVERVIEW_SLUG = "sdks/overview"
-
-/** Order of non-SDK ("universal") doc groups in the sidebar + index page. */
-export const UNIVERSAL_GROUP_ORDER = [
-	"Getting Started",
-	"Concepts",
-	"Session Replay",
-	"Infrastructure",
-	"Integrations",
-	"Alerting",
-	"Local Mode",
+/**
+ * The sidebar is split into sections so a reader sees one section's tree at a
+ * time: product surfaces, the "get data in" guides, the local binary, and the
+ * machine-facing references. Groups are listed in sidebar order; `icon` is a
+ * DocsCategoryIcon id, shared with the header strip.
+ */
+export const SECTIONS = [
+	{
+		id: "platform",
+		icon: "Dashboards",
+		label: "Platform",
+		blurb: "Concepts and every product surface.",
+		groups: [
+			"Getting Started",
+			"Concepts",
+			"Session Replay",
+			"Product Events",
+			"Agent Sessions",
+			"Dashboards",
+			"Alerting",
+			"Integrations",
+		],
+	},
+	{
+		id: "instrumentation",
+		icon: "Instrumentation",
+		label: "Instrumentation",
+		blurb: "Languages, frameworks, hosts and clusters.",
+		groups: ["Instrumentation", "Infrastructure"],
+	},
+	{
+		id: "local",
+		icon: "Local Mode",
+		label: "Local Mode",
+		blurb: "The whole product as one binary.",
+		groups: ["Local Mode"],
+	},
+	{
+		id: "reference",
+		icon: "Reference",
+		label: "Reference",
+		blurb: "REST API and the MCP server.",
+		groups: ["Reference"],
+	},
 ] as const
 
-/** Order of SDK-scoped groups (Effect SDK pages). */
-export const SDK_GROUP_ORDER = ["Effect SDK", "Platforms", "Instrumentation"] as const
+export type DocSection = (typeof SECTIONS)[number]
+export type DocGroup = DocSection["groups"][number]
 
-/**
- * Universal groups omitted from the sidebar's "General" section when a language
- * (SDK) is selected — e.g. "Getting Started" is redundant on a language page.
- * They remain reachable via the header category bar and on non-SDK pages.
- */
-export const SDK_HIDDEN_UNIVERSAL_GROUPS = new Set<string>(["Getting Started"])
+/** Doc groups in sidebar order (sections in order, groups within each). */
+export const GROUP_ORDER: readonly DocGroup[] = SECTIONS.flatMap((section) => section.groups)
 
-export type HeaderNavItem = {
-	/** Display label (also the icon id for `kind: "group"`). */
-	key: string
-	icon: string
-	kind: "group" | "sdks"
+export const isDocGroup = (group: string): group is DocGroup => GROUP_ORDER.some((known) => known === group)
+
+export const groupRank = (group: string): number => {
+	const i = GROUP_ORDER.findIndex((known) => known === group)
+	return i === -1 ? GROUP_ORDER.length : i
 }
 
-/**
- * Left-to-right order of the header category bar. Each `group` entry links to
- * the first page of its universal group; the `sdks` entry links to the SDK
- * overview. `icon` maps to a glyph in DocsCategoryIcon.
- */
-export const HEADER_NAV: HeaderNavItem[] = [
-	{ key: "Getting Started", icon: "Getting Started", kind: "group" },
-	{ key: "SDKs", icon: "sdks", kind: "sdks" },
-	{ key: "Concepts", icon: "Concepts", kind: "group" },
-	{ key: "Session Replay", icon: "Session Replay", kind: "group" },
-	{ key: "Infrastructure", icon: "Infrastructure", kind: "group" },
-	{ key: "Integrations", icon: "Integrations", kind: "group" },
-	{ key: "Alerting", icon: "Alerting", kind: "group" },
-	{ key: "Local Mode", icon: "Local Mode", kind: "group" },
-]
+/** The section a group belongs to; unknown groups fall into the first one. */
+export const sectionForGroup = (group: string): DocSection =>
+	SECTIONS.find((section) => section.groups.some((known) => known === group)) ?? SECTIONS[0]
 
-/** Group names (and the synthetic `sdks` key) that have a DocsCategoryIcon glyph. */
-const CATEGORY_ICON_KEYS = new Set<string>([
-	"Getting Started",
-	"Concepts",
-	"Session Replay",
-	"Infrastructure",
-	"Integrations",
-	"Alerting",
-	"Local Mode",
-	"sdks",
-])
+/** Slug of the instrumentation overview — the "SDKs" entry point everywhere. */
+export const INSTRUMENTATION_SLUG = "instrumentation"
 
-export const hasCategoryIcon = (name: string): boolean => CATEGORY_ICON_KEYS.has(name)
+/** One-line blurb per group for the docs index cards. */
+export const GROUP_BLURBS = {
+	"Getting Started": "What Maple is and the three steps to first data.",
+	Instrumentation: "Setup guides for every language, framework and runtime.",
+	Concepts: "How Maple reads OpenTelemetry data and what it expects from yours.",
+	"Session Replay": "Record browser sessions and play them back next to their traces.",
+	"Product Events": "Track signups, checkouts and plan starts from the browser, a span, or any backend.",
+	"Agent Sessions": "Trace AI agents: every model call, tool call and turn, grouped into sessions.",
+	Dashboards: "Build dashboards on your telemetry and embed their charts in your own product.",
+	Infrastructure: "Stream host, container and cluster metrics next to your services.",
+	Integrations: "Pull metrics and context from the services around your app.",
+	Alerting: "Route alerts to Slack, PagerDuty, Discord, Telegram or a webhook.",
+	"Local Mode": "The whole product as one binary on your machine.",
+	Reference: "The REST API and the MCP server for AI agents.",
+} satisfies Record<DocGroup, string>
+
+export const groupBlurb = (group: string): string => (isDocGroup(group) ? GROUP_BLURBS[group] : "")

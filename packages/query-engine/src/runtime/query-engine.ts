@@ -1,4 +1,4 @@
-// ---------------------------------------------------------------------------
+// BOUNDARY: This module intentionally carries opaque values; callers decode them before domain use.
 // Query Engine — lowering core
 //
 // Validation, QuerySpec → CH lowering, row shaping, and the alert evaluate /
@@ -6,7 +6,6 @@
 // app composes these via `QueryEngineService` (caching + Layer wiring) and
 // injects a concrete warehouse + tenant. Span names are preserved verbatim
 // ("QueryEngineService.*") so existing traces and dashboards keep matching.
-// ---------------------------------------------------------------------------
 
 import * as CH from "../ch"
 import {
@@ -19,24 +18,27 @@ import {
 	type TimeseriesPoint,
 } from "@maple/domain/query-engine"
 import {
-	QueryEngineExecutionError,
 	QueryEngineTimeoutError,
 	QueryEngineValidationError,
 	MAX_RAW_SQL_ALERT_GROUPS,
 	MAX_RAW_SQL_GROUP_KEY_LENGTH,
 	type RawSqlValidationError,
-	type WarehouseError,
+	type WarehouseQueryPathError,
+	type WarehouseReadError,
 } from "@maple/domain/http"
 import type { OrgId } from "@maple/domain"
 import { Array as Arr, Duration, Effect, Match, Option, Result, Schema } from "effect"
-import {
-	LOGS_BODY_SEARCH_SETTINGS,
-	type QueryProfileName,
-	type SqlQueryOptions,
-	type WarehouseQuerySettings,
-} from "../profiles"
+import type { QueryProfileName, SqlQueryOptions, WarehouseQuerySettings } from "../profiles"
 import { canonicalJSON } from "../canonical-json"
-import { computeBucketSeconds } from "../datetime"
+import { memoizeAlertBuckets } from "./alert-evaluation-scope"
+import {
+	alertWindowBucketSeconds,
+	BUCKET_POLICIES,
+	computeBucketSeconds,
+	formatWarehouseDateTime,
+	parseWarehouseDateTime,
+} from "../datetime"
+import { ENGINE_UNGROUPED_GROUP_KEY } from "../group-key"
 import {
 	MAX_BREAKDOWN_RANGE_SECONDS,
 	MAX_LIST_RANGE_SECONDS,
@@ -47,12 +49,36 @@ import {
 } from "../limits"
 import { attributeIndexMode, logBodySearchMode, type WarehouseCapabilities } from "../capabilities"
 import { makeExecuteRawSql } from "./raw-sql"
-import type { BucketGroupObs } from "./evaluate-bucket-codec"
+import {
+	logsCount,
+	logsQueryOptions,
+	logsTimeseries,
+	toLogsCountInput,
+	toLogsTimeseriesInput,
+} from "../registry/logs"
+import {
+	productEventsBreakdown,
+	productEventsList,
+	productEventsTimeseries,
+	toProductEventsTimeseriesInput,
+} from "../registry/product-events"
+import { runQueryDefinition } from "./query-definition-runner"
+import { resolveDirectRouteCachePolicy, type DirectRouteCachePolicyInput } from "./cache-policy"
+
+export {
+	makeDirectRouteCachePolicy,
+	makeTimeRangeCachePolicy,
+	resolveDirectRouteCachePolicy,
+	timeRangeCache,
+	type DirectRouteCachePolicy,
+	type DirectRouteCachePolicyInput,
+	type TimeRangeCachePayload,
+} from "./cache-policy"
 
 // Re-exported so `@maple/query-engine/runtime` consumers (apps/api) keep importing
 // `computeBucketSeconds` from here; the implementation now lives in the pure
 // `../datetime` module so the web app and the engine share one definition.
-export { computeBucketSeconds } from "../datetime"
+export { alertWindowBucketSeconds, computeBucketSeconds } from "../datetime"
 
 // Same arrangement for the range ceilings: they now live in the pure `../limits`
 // module so the MCP tools, the v2 API, and the web widget layer all bound
@@ -85,18 +111,23 @@ export interface QueryEngineWarehouse<T extends QueryTenant = QueryTenant> {
 		tenant: T,
 		sql: string,
 		options: { readonly profile: QueryProfileName; readonly context: string },
-	) => Effect.Effect<ReadonlyArray<Record<string, unknown>>, WarehouseError | RawSqlValidationError>
+	) => Effect.Effect<
+		ReadonlyArray<Record<string, unknown>>,
+		WarehouseQueryPathError | RawSqlValidationError
+	>
 	readonly compiledQuery: <Output>(
 		tenant: T,
-		compiled: CH.CompiledQuery<Output>,
+		compiled: CH.CompiledQueryInput<Output>,
 		options?: SqlQueryOptions,
-	) => Effect.Effect<ReadonlyArray<Output>, WarehouseError>
+	) => Effect.Effect<ReadonlyArray<Output>, WarehouseReadError>
 	/** Capability-aware execution; adapters may deliberately compile the baseline plan. */
 	readonly compiledQueryWithCapabilities: <Output>(
 		tenant: T,
-		compile: (capabilities: WarehouseCapabilities) => CH.CompiledQuery<Output>,
+		compile: (
+			capabilities: WarehouseCapabilities,
+		) => Effect.Effect<CH.CompiledQuery<Output>, CH.QueryBuilderError>,
 		options?: SqlQueryOptions,
-	) => Effect.Effect<ReadonlyArray<Output>, WarehouseError>
+	) => Effect.Effect<ReadonlyArray<Output>, WarehouseReadError>
 }
 
 export interface TimeRangeBounds {
@@ -151,9 +182,15 @@ export interface AlertEvaluateRequest {
 	readonly sampleCountStrategy: QueryEngineEvaluateRequest["sampleCountStrategy"] | null
 }
 
-export type QueryEngineDirectError = QueryEngineExecutionError | QueryEngineTimeoutError | WarehouseError
+export type QueryEngineDirectError = QueryEngineTimeoutError | WarehouseReadError
 
 export type QueryEngineRouteError = QueryEngineValidationError | QueryEngineDirectError
+
+/** Alert evaluation additionally accepts user-authored raw SQL. */
+export type QueryEngineEvaluationError =
+	| QueryEngineValidationError
+	| QueryEngineTimeoutError
+	| WarehouseQueryPathError
 
 const QUERY_ENGINE_TIMEOUT = Duration.seconds(30)
 
@@ -200,6 +237,61 @@ export const msToTinybirdDateTime = (ms: number): string => {
 }
 
 const CACHE_SNAP_S = 15
+const TRACE_SERVICE_PARTITION_BUFFER_MS = 24 * 60 * 60 * 1000
+
+// Re-exported so `@maple/query-engine/runtime` consumers keep one import site;
+// the definition is in the driver-free `../group-key` because the query-set merge
+// needs it too and runs in the browser.
+export { ENGINE_UNGROUPED_GROUP_KEY } from "../group-key"
+
+/**
+ * Bound the service-enrichment lookup to the daily partitions surrounding the
+ * rows already selected for this page. A one-day cushion covers traces that
+ * cross the requested range boundary without probing the full 30-day
+ * retention window of `service_map_spans`.
+ */
+function traceServicePartitionWindow(
+	rows: ReadonlyArray<{ readonly timestamp: unknown }>,
+	fallback: { readonly startTime: string; readonly endTime: string },
+): { readonly startTime: string; readonly endTime: string } {
+	const pageTimes = rows.map((row) => parseWarehouseDateTime(String(row.timestamp))).filter(Number.isFinite)
+
+	if (pageTimes.length === 0) return fallback
+
+	return {
+		startTime: formatWarehouseDateTime(Math.min(...pageTimes) - TRACE_SERVICE_PARTITION_BUFFER_MS),
+		endTime: formatWarehouseDateTime(Math.max(...pageTimes) + TRACE_SERVICE_PARTITION_BUFFER_MS),
+	}
+}
+
+/**
+ * `traceListQuery` ships its projected root-attribute map as a JSON string
+ * (`toJSONString` — Map columns can't survive an `argMin`). Decode defensively:
+ * a malformed value degrades to an empty map, never a thrown defect.
+ */
+const decodeProjectedAttributes = Schema.decodeUnknownOption(
+	Schema.fromJsonString(Schema.Record(Schema.String, Schema.Unknown)),
+)
+
+function parseProjectedAttributes(raw: unknown): Record<string, string> {
+	if (typeof raw !== "string" || raw.length === 0) return {}
+	const parsed = decodeProjectedAttributes(raw)
+	if (Option.isNone(parsed)) return {}
+	const out: Record<string, string> = {}
+	for (const [key, value] of Object.entries(parsed.value)) {
+		if (typeof value === "string" && value.length > 0) out[key] = value
+	}
+	return out
+}
+
+function servicesForTraceRow(
+	rowServiceName: string,
+	enrichedServices: readonly string[] | undefined,
+): string[] {
+	const services = [...(enrichedServices ?? [])]
+	if (rowServiceName && !services.includes(rowServiceName)) services.push(rowServiceName)
+	return services
+}
 
 /**
  * Snap a Tinybird datetime to a window. Used to align cache keys so that
@@ -293,42 +385,6 @@ const DIRECT_CACHE_SET_KEYS = new Set([
 	"services",
 	"spanNames",
 ])
-
-export interface DirectRouteCachePolicy {
-	/** Bump when response or key semantics change incompatibly. */
-	readonly version: number
-	readonly ttlSeconds: number
-	/** Time-key coalescing is independent from storage lifetime. */
-	readonly snapWindowSeconds: number
-}
-
-export type DirectRouteCachePolicyInput = number | DirectRouteCachePolicy
-
-export function makeDirectRouteCachePolicy(
-	options: {
-		readonly ttlSeconds?: number
-		readonly snapWindowSeconds?: number
-		readonly version?: number
-	} = {},
-): DirectRouteCachePolicy {
-	const ttlSeconds = Number.isFinite(options.ttlSeconds)
-		? Math.max(1, Math.floor(options.ttlSeconds!))
-		: CACHE_SNAP_S
-	const requestedSnap = options.snapWindowSeconds ?? ttlSeconds
-	const snapWindowSeconds = Number.isFinite(requestedSnap)
-		? Math.min(3600, Math.max(1, Math.floor(requestedSnap)))
-		: CACHE_SNAP_S
-	const version = Number.isFinite(options.version) ? Math.max(1, Math.floor(options.version!)) : 1
-	return { version, ttlSeconds, snapWindowSeconds }
-}
-
-export function resolveDirectRouteCachePolicy(
-	input: DirectRouteCachePolicyInput = CACHE_SNAP_S,
-): DirectRouteCachePolicy {
-	return typeof input === "number"
-		? makeDirectRouteCachePolicy({ ttlSeconds: input })
-		: makeDirectRouteCachePolicy(input)
-}
 
 function normalizeDirectCacheValue(value: unknown, snapWindowSeconds: number, parentKey?: string): unknown {
 	if (value == null) return value
@@ -516,6 +572,20 @@ const validateMetricsAttributeFilters = Effect.fn("QueryEngineService.validateMe
 	},
 )
 
+const validateProductEventsAttributeGrouping = Effect.fn(
+	"QueryEngineService.validateProductEventsAttributeGrouping",
+)(function* (query: QuerySpec): Effect.fn.Return<void, QueryEngineValidationError> {
+	if (query.source !== "product_events" || (query.kind !== "timeseries" && query.kind !== "breakdown"))
+		return
+	const groupBy = query.kind === "timeseries" ? (query.groupBy ?? []) : [query.groupBy]
+	if (!groupBy.includes("attribute")) return
+	if (query.filters?.groupByAttributeKey?.trim()) return
+	return yield* new QueryEngineValidationError({
+		message: "Invalid product events attribute grouping",
+		details: ["groupBy=attribute requires filters.groupByAttributeKey"],
+	})
+})
+
 const validatePointBudget = Effect.fn("QueryEngineService.validatePointBudget")(function* (
 	request: QueryEngineExecuteRequest,
 	range: TimeRangeBounds,
@@ -588,6 +658,11 @@ function hasNarrowingFilter(request: QueryEngineExecuteRequest): boolean {
 	if (Array.isArray(namespaces) && namespaces.length > 0) return true
 	const attributeFilters = filters.attributeFilters
 	if (Array.isArray(attributeFilters) && attributeFilters.length > 0) return true
+	// product_events: any row-side equality narrows the scan the way a service does.
+	for (const key of ["eventNames", "kinds", "sources", "hosts", "pagePaths", "userIds", "groupIds"]) {
+		const values = filters[key]
+		if (Array.isArray(values) && values.length > 0) return true
+	}
 	const resourceAttributeFilters = filters.resourceAttributeFilters
 	if (Array.isArray(resourceAttributeFilters) && resourceAttributeFilters.length > 0) return true
 	return false
@@ -639,13 +714,15 @@ function groupTimeSeriesRows<T extends { bucket: string | Date; groupName: strin
 
 	for (const row of rows) {
 		const bucket = normalizeBucket(row.bucket)
-		if (!bucketMap.has(bucket)) {
-			bucketMap.set(bucket, {})
+		let series = bucketMap.get(bucket)
+		if (series === undefined) {
+			series = {}
+			bucketMap.set(bucket, series)
 			if (!fillOptions) {
 				bucketOrder.push(bucket)
 			}
 		}
-		bucketMap.get(bucket)![row.groupName] = valueExtractor(row)
+		series[row.groupName] = valueExtractor(row)
 	}
 
 	if (fillOptions) {
@@ -656,9 +733,11 @@ function groupTimeSeriesRows<T extends { bucket: string | Date; groupName: strin
 		}
 	}
 
+	// Every ordered bucket was either seeded above or written while iterating
+	// rows; an empty series is the honest value for one that was neither.
 	return bucketOrder.map((bucket) => ({
 		bucket,
-		series: bucketMap.get(bucket)!,
+		series: bucketMap.get(bucket) ?? {},
 	}))
 }
 
@@ -685,14 +764,14 @@ function groupAllMetricsTimeSeriesRows<
 		error_rate: 0,
 		apdex: 0,
 		estimated_span_count: 0,
-	}
+	} satisfies Record<string, number>
 	const bucketMap = new Map<string, Record<string, number>>()
 	const bucketOrder: string[] = fillOptions
 		? buildBucketTimeline(fillOptions.startMs, fillOptions.endMs, fillOptions.bucketSeconds)
 		: []
-	const isGrouped = rows.some((row) => row.groupName !== "all")
+	const isGrouped = rows.some((row) => row.groupName !== ENGINE_UNGROUPED_GROUP_KEY)
 	const metricKey = (metric: string, groupName: string) =>
-		isGrouped ? `${metric}::${groupName || "all"}` : metric
+		isGrouped ? `${metric}::${groupName || ENGINE_UNGROUPED_GROUP_KEY}` : metric
 
 	for (const row of rows) {
 		const bucket = normalizeBucket(row.bucket)
@@ -722,16 +801,18 @@ function groupAllMetricsTimeSeriesRows<
 		}
 	}
 
+	// Every ordered bucket was either seeded above or written while iterating
+	// rows; an empty series is the honest value for one that was neither.
 	return bucketOrder.map((bucket) => ({
 		bucket,
-		series: bucketMap.get(bucket)!,
+		series: bucketMap.get(bucket) ?? {},
 	}))
 }
 
 function collapseMetricTimeseriesRows(
 	rows: ReadonlyArray<MetricTimeseriesRow>,
 	metric: Extract<QuerySpec, { metric: string }>["metric"],
-): Array<{ bucket: string; groupName: "all"; value: number }> {
+): Array<{ bucket: string; groupName: typeof ENGINE_UNGROUPED_GROUP_KEY; value: number }> {
 	const bucketMap = new Map<
 		string,
 		{
@@ -764,7 +845,7 @@ function collapseMetricTimeseriesRows(
 		.sort(([left], [right]) => left.localeCompare(right))
 		.map(([bucket, value]) => ({
 			bucket,
-			groupName: "all" as const,
+			groupName: ENGINE_UNGROUPED_GROUP_KEY,
 			value:
 				metric === "count"
 					? value.dataPointCount
@@ -786,6 +867,7 @@ const validateExecute = Effect.fn("QueryEngineService.validateExecute")(function
 	const range = yield* validateTimeRange(request)
 	yield* validateTraceAttributeFilters(request.query)
 	yield* validateMetricsAttributeFilters(request.query)
+	yield* validateProductEventsAttributeGrouping(request.query)
 	yield* validatePointBudget(request, range)
 	yield* validateListQuery(request, range)
 	yield* validateBreakdownQuery(request, range)
@@ -801,6 +883,7 @@ export const validateEvaluate = Effect.fn("QueryEngineService.validateEvaluate")
 	if (request.source.kind === "spec") {
 		yield* validateTraceAttributeFilters(request.source.query)
 		yield* validateMetricsAttributeFilters(request.source.query)
+		yield* validateProductEventsAttributeGrouping(request.source.query)
 	}
 	return range
 })
@@ -811,10 +894,10 @@ export const validateEvaluate = Effect.fn("QueryEngineService.validateEvaluate")
  * is `Effect.tapError`, not a transformation. Named explicitly so call sites
  * don't read like they're remapping errors.
  */
-const annotateWarehouseError = <A, R>(
-	effect: Effect.Effect<A, WarehouseError, R>,
+const annotateWarehouseError = <A, Error extends { readonly _tag: string; readonly message: string }, R>(
+	effect: Effect.Effect<A, Error, R>,
 	context: string,
-): Effect.Effect<A, WarehouseError, R> =>
+): Effect.Effect<A, Error, R> =>
 	effect.pipe(
 		Effect.tapError((error) =>
 			Effect.annotateCurrentSpan({
@@ -853,6 +936,9 @@ const executeCHQuery = Effect.fnUntraced(function* <
 		)
 	}
 
+	// Handed over unrun: the params come from a lowered `QuerySpec`, already
+	// validated against the request schema, so a compile failure is a bug in the
+	// lowering — which is exactly what the executor treats it as.
 	const compiled = CH.compile(query, params)
 	return yield* annotateWarehouseError(warehouse.compiledQuery(tenant, compiled, options), context)
 })
@@ -1008,8 +1094,12 @@ const applyAlertReducer = (
 }
 
 /** Map query engine source/scope to the MV's AttributeScope value. */
-function resolveAttributeScope(source: "traces" | "logs" | "metrics", scope?: "span" | "resource"): string {
+function resolveAttributeScope(
+	source: "traces" | "logs" | "metrics" | "product_events",
+	scope?: "span" | "resource",
+): string {
 	if (source === "metrics") return "metric"
+	if (source === "product_events") return "event"
 	if (source === "logs") return scope === "resource" ? "resource" : "log"
 	return scope === "resource" ? "resource" : "span"
 }
@@ -1051,22 +1141,7 @@ function extractTracesOpts(filters: Record<string, unknown> | undefined) {
 		excludedSpanNames: filters?.excludedSpanNames as readonly string[] | undefined,
 		excludedEnvironments: filters?.excludedEnvironments as readonly string[] | undefined,
 		excludedNamespaces: filters?.excludedNamespaces as readonly string[] | undefined,
-	}
-}
-
-function extractLogsOpts(filters: Record<string, unknown> | undefined) {
-	return {
-		serviceName: filters?.serviceName as string | undefined,
-		severity: filters?.severity as string | undefined,
-		minSeverity: filters?.minSeverity as number | undefined,
-		traceId: filters?.traceId as string | undefined,
-		spanId: filters?.spanId as string | undefined,
-		search: filters?.search as string | undefined,
-		environments: filters?.environments as string[] | undefined,
-		namespaces: filters?.namespaces as string[] | undefined,
-		matchModes: logsMatchModes(filters),
-		attributeFilters: filters?.attributeFilters as AttrFilterArray | undefined,
-		resourceAttributeFilters: filters?.resourceAttributeFilters as AttrFilterArray | undefined,
+		excludedCommitShas: filters?.excludedCommitShas as readonly string[] | undefined,
 	}
 }
 
@@ -1114,21 +1189,6 @@ function extractTracesFacetsOpts(filters: Record<string, unknown> | undefined): 
 	}
 }
 
-/**
- * Combine the deployment-env and service-namespace `contains` match modes into
- * the single `matchModes` object the logs queries expect.
- */
-function logsMatchModes(
-	filters: Record<string, unknown> | undefined,
-): { deploymentEnv?: "contains"; serviceNamespace?: "contains" } | undefined {
-	const deploymentEnv = filters?.deploymentEnvMatchMode as "contains" | undefined
-	const serviceNamespace = filters?.namespaceMatchMode as "contains" | undefined
-	return Match.value([deploymentEnv, serviceNamespace] as const).pipe(
-		Match.when([undefined, undefined], () => undefined),
-		Match.orElse(([deploymentEnv, serviceNamespace]) => ({ deploymentEnv, serviceNamespace })),
-	)
-}
-
 function extractTracesDurationStatsOpts(
 	filters: Record<string, unknown> | undefined,
 ): CH.TracesDurationStatsOpts {
@@ -1151,7 +1211,7 @@ function extractTracesDurationStatsOpts(
 	}
 }
 
-function shapeMetricsGroupRows<
+function signatureMetricsGroupRows<
 	T extends { bucket: string | Date; serviceName: string; attributeValue: string },
 >(
 	rows: ReadonlyArray<T>,
@@ -1164,7 +1224,7 @@ function shapeMetricsGroupRows<
 		return groupTimeSeriesRows(
 			rows.map((row) => ({
 				bucket: row.bucket,
-				groupName: "all" as const,
+				groupName: ENGINE_UNGROUPED_GROUP_KEY,
 				value: valueExtractor(row),
 			})),
 			(r) => r.value,
@@ -1189,14 +1249,40 @@ function shapeMetricsGroupRows<
 	)
 }
 
+/**
+ * Per-call routing overrides. Not part of the request contract: these are retry
+ * knobs a caller sets after a first attempt failed, never something a client
+ * sends.
+ */
+export interface QueryEngineExecuteOptions {
+	/**
+	 * Restricts which service-overview rollup tiers may answer a traces
+	 * timeseries. Set to `"hour"` to retry on a cluster missing migration 0015.
+	 */
+	readonly overviewTiers?: "hour" | "minute"
+}
+
+/**
+ * A ClickHouse cluster that has not applied migration 0015 answers any read of
+ * `service_overview_minutely` with `UNKNOWN_TABLE`, and the table name is always
+ * in the message. Matching the name rather than the error tag keeps this working
+ * across every layer the warehouse error is re-wrapped by on its way here.
+ */
+const isMissingServiceOverviewMinutely = (error: unknown): boolean => {
+	if (typeof error !== "object" || error === null) return false
+	const candidate = error as { readonly clickhouseType?: unknown; readonly message?: unknown }
+	if (typeof candidate.message === "string" && /service_overview_minutely/i.test(candidate.message)) {
+		return true
+	}
+	return candidate.clickhouseType === "UNKNOWN_TABLE"
+}
+
 export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEngineWarehouse<T>) =>
 	Effect.fn("QueryEngineService.execute")(function* (
 		tenant: T,
 		request: QueryEngineExecuteRequest,
-	): Effect.fn.Return<
-		QueryEngineExecuteResponse,
-		QueryEngineValidationError | QueryEngineExecutionError | WarehouseError
-	> {
+		options?: QueryEngineExecuteOptions,
+	): Effect.fn.Return<QueryEngineExecuteResponse, QueryEngineValidationError | WarehouseReadError> {
 		yield* Effect.annotateCurrentSpan("orgId", tenant.orgId)
 		yield* Effect.annotateCurrentSpan("query.source", request.query.source)
 		yield* Effect.annotateCurrentSpan("query.kind", request.query.kind)
@@ -1214,13 +1300,17 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 		}
 
 		const range = yield* validateExecute(request)
+		// Always a number. Only a timeseries query carries an explicit
+		// `bucketSeconds` or reports one on the span, but every timeseries branch
+		// below needs the value, and a `number | undefined` here meant each of them
+		// re-asserted the correlation the type system could not follow.
+		const isTimeseries = request.query.kind === "timeseries"
 		const bucketSeconds =
-			request.query.kind === "timeseries"
-				? (request.query.bucketSeconds ?? computeBucketSeconds(range.startMs, range.endMs))
-				: undefined
-		if (bucketSeconds) yield* Effect.annotateCurrentSpan("query.bucketSeconds", bucketSeconds)
+			(isTimeseries ? request.query.bucketSeconds : undefined) ??
+			computeBucketSeconds(range.startMs, range.endMs)
+		if (isTimeseries) yield* Effect.annotateCurrentSpan("query.bucketSeconds", bucketSeconds)
 
-		const fillOptions = bucketSeconds
+		const fillOptions = isTimeseries
 			? {
 					startMs: range.startMs,
 					endMs: range.endMs,
@@ -1233,29 +1323,61 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 			const opts = extractTracesOpts(request.query.filters as Record<string, unknown>)
 
 			if (tracesQuery.allMetrics) {
-				const rows = yield* executeCHQuery(
-					warehouse,
-					tenant,
-					(capabilities) =>
-						CH.tracesTimeseriesQuery({
-							...opts,
-							attributeIndexMode: attributeIndexMode(capabilities, "traces"),
-							metric: tracesQuery.metric,
-							allMetrics: true,
-							needsSampling: true,
-							groupBy: tracesQuery.groupBy as string[] | undefined,
-							apdexThresholdMs:
-								tracesQuery.metric === "apdex" ? tracesQuery.apdexThresholdMs : undefined,
-							bucketSeconds: bucketSeconds!,
-							seriesLimit: tracesQuery.seriesLimit,
-						}),
-					{
-						orgId: tenant.orgId,
-						startTime: request.startTime,
-						endTime: request.endTime,
-						bucketSeconds: bucketSeconds!,
-					},
-					"tracesAllMetricsTimeseries",
+				const runAllMetrics = (overviewTiers: "hour" | "minute" | undefined) =>
+					executeCHQuery(
+						warehouse,
+						tenant,
+						(capabilities) =>
+							CH.tracesTimeseriesQuery({
+								...opts,
+								attributeIndexMode: attributeIndexMode(capabilities, "traces"),
+								metric: tracesQuery.metric,
+								allMetrics: true,
+								needsSampling: true,
+								groupBy: tracesQuery.groupBy as string[] | undefined,
+								apdexThresholdMs:
+									tracesQuery.metric === "apdex" ? tracesQuery.apdexThresholdMs : undefined,
+								bucketSeconds,
+								seriesLimit: tracesQuery.seriesLimit,
+								overviewTiers,
+							}),
+						{
+							orgId: tenant.orgId,
+							startTime: request.startTime,
+							endTime: request.endTime,
+							bucketSeconds,
+						},
+						"tracesAllMetricsTimeseries",
+					)
+
+				// `service_overview_minutely` ships in a `requiredForIngest: false`
+				// migration, so a healthy BYO cluster can simply not have it yet — the
+				// org just hasn't re-applied schema. There is no global moment when
+				// every cluster has migrated, so the only correct response is to notice
+				// at query time and retry without that tier.
+				//
+				// The retry is not "read raw": it restricts to `"hour"`, which makes
+				// `canUseAnnualServiceOverview` reject any sub-hour bucket so the request
+				// falls through to the pre-existing raw route. The hourly tier must never
+				// answer a sub-hour bucket — an hour-floored row has no position inside
+				// the hour.
+				//
+				// This sits inside the runtime rather than beside the HTTP handler's
+				// other rollup fallbacks so the retry happens *before* the response
+				// cache: the value stored is the one that succeeded.
+				const rows = yield* runAllMetrics(options?.overviewTiers).pipe(
+					Effect.catch((error) => {
+						if (options?.overviewTiers === "hour" || !isMissingServiceOverviewMinutely(error)) {
+							return Effect.fail(error)
+						}
+						return Effect.gen(function* () {
+							yield* Effect.logWarning(
+								"service_overview_minutely is absent on this cluster; restricting to the hourly tier. Apply ClickHouse schema to restore the fast path.",
+							).pipe(Effect.annotateLogs({ orgId: tenant.orgId }))
+							yield* Effect.annotateCurrentSpan("query.rollup.fallback", true)
+							return yield* runAllMetrics("hour")
+						})
+					}),
 				)
 
 				return new QueryEngineExecuteResponse({
@@ -1279,14 +1401,14 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 						groupBy: tracesQuery.groupBy as string[] | undefined,
 						apdexThresholdMs:
 							tracesQuery.metric === "apdex" ? tracesQuery.apdexThresholdMs : undefined,
-						bucketSeconds: bucketSeconds!,
+						bucketSeconds,
 						seriesLimit: tracesQuery.seriesLimit,
 					}),
 				{
 					orgId: tenant.orgId,
 					startTime: request.startTime,
 					endTime: request.endTime,
-					bucketSeconds: bucketSeconds!,
+					bucketSeconds,
 				},
 				"tracesTimeseries",
 			)
@@ -1302,27 +1424,14 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 		}
 
 		if (request.query.source === "logs" && request.query.kind === "timeseries") {
-			const logsQuery = request.query
-			const opts = extractLogsOpts(request.query.filters as Record<string, unknown> | undefined)
-			const rows = yield* executeCHQuery(
-				warehouse,
-				tenant,
-				(capabilities) =>
-					CH.logsTimeseriesQuery({
-						...opts,
-						attributeIndexMode: attributeIndexMode(capabilities, "logs"),
-						bodySearchMode: logBodySearchMode(capabilities),
-						groupBy: logsQuery.groupBy as string[] | undefined,
-						bucketSeconds: bucketSeconds!,
-						seriesLimit: logsQuery.seriesLimit,
-					}),
-				{
-					orgId: tenant.orgId,
-					startTime: request.startTime,
-					endTime: request.endTime,
-					bucketSeconds: bucketSeconds!,
-				},
-				"logsTimeseries",
+			const rows = yield* annotateWarehouseError(
+				runQueryDefinition(
+					warehouse,
+					logsTimeseries,
+					tenant,
+					toLogsTimeseriesInput(request.startTime, request.endTime, request.query, bucketSeconds),
+				),
+				logsTimeseries.id,
 			)
 
 			return new QueryEngineExecuteResponse({
@@ -1330,6 +1439,31 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 					kind: "timeseries",
 					source: "logs",
 					data: groupTimeSeriesRows(rows, (row) => Number(row.count), fillOptions),
+				},
+			})
+		}
+
+		if (request.query.source === "product_events" && request.query.kind === "timeseries") {
+			const rows = yield* annotateWarehouseError(
+				runQueryDefinition(
+					warehouse,
+					productEventsTimeseries,
+					tenant,
+					toProductEventsTimeseriesInput(
+						request.startTime,
+						request.endTime,
+						request.query,
+						bucketSeconds,
+					),
+				),
+				productEventsTimeseries.id,
+			)
+
+			return new QueryEngineExecuteResponse({
+				result: {
+					kind: "timeseries",
+					source: "product_events",
+					data: groupTimeSeriesRows(rows, (row) => Number(row.value), fillOptions),
 				},
 			})
 		}
@@ -1342,14 +1476,14 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 				{
 					startTime: request.startTime,
 					endTime: request.endTime,
-					bucketSeconds: bucketSeconds!,
+					bucketSeconds,
 				},
 				{ value: "metricsTimeseries", rate: "metricsRateIncrease" },
 			)
 
 			if (execution.kind === "rate") {
 				const rateValueField = request.query.metric === "rate" ? "rateValue" : "increaseValue"
-				const data = shapeMetricsGroupRows(
+				const data = signatureMetricsGroupRows(
 					execution.rows,
 					(row) => Number(row[rateValueField]),
 					request.query.groupBy,
@@ -1385,7 +1519,7 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 							(row) => row.value,
 							fillOptions,
 						)
-					: shapeMetricsGroupRows(
+					: signatureMetricsGroupRows(
 							execution.rows,
 							(row) => Number(row[valueField]),
 							request.query.groupBy,
@@ -1503,7 +1637,7 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 
 		if (request.query.source === "logs" && request.query.kind === "breakdown") {
 			const logsQuery = request.query
-			const opts = extractLogsOpts(request.query.filters as Record<string, unknown> | undefined)
+			const opts = logsQueryOptions(request.query.filters)
 			const rows = yield* executeCHQuery(
 				warehouse,
 				tenant,
@@ -1531,20 +1665,43 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 			})
 		}
 
+		if (request.query.source === "product_events" && request.query.kind === "breakdown") {
+			const rows = yield* annotateWarehouseError(
+				runQueryDefinition(warehouse, productEventsBreakdown, tenant, {
+					startTime: request.startTime,
+					endTime: request.endTime,
+					query: request.query,
+				}),
+				productEventsBreakdown.id,
+			)
+
+			return new QueryEngineExecuteResponse({
+				result: {
+					kind: "breakdown",
+					source: "product_events",
+					data: rows.map((row) => ({ name: row.name, value: Number(row.value) })),
+				},
+			})
+		}
+
 		if (request.query.source === "metrics" && request.query.kind === "breakdown") {
 			const rows = yield* executeCHQuery(
 				warehouse,
 				tenant,
 				CH.metricsBreakdownQuery({
 					metricType: request.query.filters.metricType,
-					...(request.query.groupBy === "attribute" &&
-						request.query.filters.groupByAttributeKey && {
-							groupByAttributeKey: request.query.filters.groupByAttributeKey,
-						}),
+					...(request.query.groupBy === "attribute" && request.query.filters.groupByAttributeKey
+						? {
+								groupByAttributeKey: request.query.filters.groupByAttributeKey,
+							}
+						: undefined),
 					...(request.query.groupBy === "resource_attribute" &&
-						request.query.filters.groupByResourceAttributeKey && {
-							groupByResourceAttributeKey: request.query.filters.groupByResourceAttributeKey,
-						}),
+					request.query.filters.groupByResourceAttributeKey
+						? {
+								groupByResourceAttributeKey:
+									request.query.filters.groupByResourceAttributeKey,
+							}
+						: undefined),
 					resourceAttributeFilters: request.query.filters.resourceAttributeFilters,
 					limit: request.query.limit,
 				}),
@@ -1579,6 +1736,52 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 		if (request.query.source === "traces" && request.query.kind === "list") {
 			const tracesQuery = request.query
 			const opts = extractTracesOpts(request.query.filters as Record<string, unknown>)
+			const requestedColumns = (tracesQuery as { columns?: readonly string[] }).columns
+
+			if (tracesQuery.groupByTrace) {
+				const rows = yield* executeCHQuery(
+					warehouse,
+					tenant,
+					(capabilities) =>
+						CH.traceListQuery({
+							...opts,
+							// Stage 1 pins `ParentSpanId = ''` itself; the broader
+							// entry-point predicate would only widen the OR for nothing.
+							// (`rootOnly` compiles via `whenTrue`, so `false` = no clause.)
+							rootOnly: false,
+							attributeIndexMode: attributeIndexMode(capabilities, "traces"),
+							// The root-only predicate is as selective as the clamp's
+							// "indexed filter" tier, so grouped pages keep the 200 cap.
+							limit: Math.min(tracesQuery.limit ?? 25, 200),
+							offset: tracesQuery.offset,
+							sortBy: tracesQuery.sortBy,
+							sortDir: tracesQuery.sortDir,
+						}),
+					{ orgId: tenant.orgId, startTime: request.startTime, endTime: request.endTime },
+					"traceList",
+					"list",
+				)
+
+				return new QueryEngineExecuteResponse({
+					result: {
+						kind: "list",
+						source: "traces",
+						data: rows.map((row) => ({
+							traceId: row.traceId,
+							startTime: String(row.startTime),
+							endTime: String(row.endTime),
+							durationMs: Number(row.durationMicros) / 1000,
+							spanCount: Number(row.spanCount),
+							services: row.services.map(String),
+							rootSpanName: row.rootSpanName,
+							rootSpanKind: row.rootSpanKind,
+							rootSpanStatusCode: row.rootSpanStatusCode,
+							rootSpanAttributes: parseProjectedAttributes(row.rootSpanAttributes),
+							hasError: Number(row.hasError) === 1,
+						})),
+					},
+				})
+			}
 
 			// Graceful limit clamping: cap at 200, auto-reduce to 50 when no indexed filters
 			const hasIndexedFilter = !!(
@@ -1602,13 +1805,50 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 						limit: clampedLimit,
 						offset: tracesQuery.offset,
 						cursor: tracesQuery.cursor,
-						columns: (tracesQuery as { columns?: readonly string[] }).columns as
-							| string[]
-							| undefined,
+						sortBy: tracesQuery.sortBy,
+						sortDir: tracesQuery.sortDir,
+						columns: requestedColumns as string[] | undefined,
 					}),
 				{ orgId: tenant.orgId, startTime: request.startTime, endTime: request.endTime },
 				"tracesList",
 				"list",
+			)
+
+			const traceIds = Array.from(
+				new Set(rows.map((row) => String(row.traceId)).filter((traceId) => traceId.length > 0)),
+			)
+			const wantsTraceServices = requestedColumns?.includes("services") === true
+			const serviceRows: ReadonlyArray<CH.TraceServicesByTraceIdsOutput> =
+				wantsTraceServices && traceIds.length > 0
+					? yield* executeCHQuery(
+							warehouse,
+							tenant,
+							CH.traceServicesByTraceIdsQuery({ traceIds }),
+							{
+								orgId: tenant.orgId,
+								...traceServicePartitionWindow(rows, {
+									startTime: request.startTime,
+									endTime: request.endTime,
+								}),
+							},
+							"traceListServices",
+							"list",
+						).pipe(
+							Effect.catch((error) =>
+								Effect.logWarning(
+									"Trace-list service enrichment failed; using row services",
+								).pipe(
+									Effect.annotateLogs({
+										"error.tag": error._tag,
+										"error.message": error.message,
+									}),
+									Effect.as([] as ReadonlyArray<CH.TraceServicesByTraceIdsOutput>),
+								),
+							),
+						)
+					: []
+			const servicesByTraceId = new Map(
+				serviceRows.map((row) => [String(row.traceId), row.services.map(String)] as const),
 			)
 
 			return new QueryEngineExecuteResponse({
@@ -1619,15 +1859,96 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 						traceId: row.traceId,
 						timestamp: String(row.timestamp),
 						spanId: row.spanId,
+						// Empty for a root span. Lets the traces list tell a child-span row
+						// apart from a root one and deep-link `?spanId=` only for children.
+						parentSpanId: row.parentSpanId,
 						serviceName: row.serviceName,
 						spanName: row.spanName,
 						durationMs: Number(row.durationMs),
 						statusCode: row.statusCode,
 						spanKind: row.spanKind,
 						hasError: Number(row.hasError) === 1,
+						services: servicesForTraceRow(
+							String(row.serviceName),
+							servicesByTraceId.get(String(row.traceId)),
+						),
 						spanAttributes: row.spanAttributes ?? {},
 						resourceAttributes: row.resourceAttributes ?? {},
 					})),
+				},
+			})
+		}
+
+		if (request.query.source === "product_events" && request.query.kind === "list") {
+			const rows = yield* annotateWarehouseError(
+				runQueryDefinition(warehouse, productEventsList, tenant, {
+					startTime: request.startTime,
+					endTime: request.endTime,
+					query: request.query,
+				}),
+				productEventsList.id,
+			)
+
+			return new QueryEngineExecuteResponse({
+				result: {
+					kind: "list",
+					source: "product_events",
+					data: rows.map((row) => ({
+						timestamp: String(row.timestamp),
+						eventName: row.eventName,
+						kind: row.kind,
+						source: row.source,
+						host: row.host,
+						pagePath: row.pagePath,
+						url: row.url,
+						serviceName: row.serviceName,
+						userId: row.userId,
+						groupId: row.groupId,
+						visitorId: row.visitorId,
+						sessionId: row.sessionId,
+						traceId: row.traceId,
+						spanId: row.spanId,
+						attributes: row.attributes ?? {},
+					})),
+				},
+			})
+		}
+
+		if (request.query.source === "product_events" && request.query.kind === "attributeKeys") {
+			const rows = yield* executeCHQuery(
+				warehouse,
+				tenant,
+				CH.productEventAttributeKeysQuery({ limit: request.query.limit }),
+				{ orgId: tenant.orgId, startTime: request.startTime, endTime: request.endTime },
+				"attributeKeys:event",
+				"discovery",
+			)
+			return new QueryEngineExecuteResponse({
+				result: {
+					kind: "attributeKeys",
+					source: "product_events",
+					data: rows.map((row) => ({ key: row.attributeKey, count: Number(row.usageCount) })),
+				},
+			})
+		}
+
+		if (request.query.source === "product_events" && request.query.kind === "attributeValues") {
+			const rows = yield* executeCHQuery(
+				warehouse,
+				tenant,
+				CH.productEventAttributeValuesQuery({
+					attributeKey: request.query.attributeKey,
+					limit: request.query.limit,
+				}),
+				{ orgId: tenant.orgId, startTime: request.startTime, endTime: request.endTime },
+				"attributeValues:event",
+				"discovery",
+			)
+			return new QueryEngineExecuteResponse({
+				result: {
+					kind: "attributeValues",
+					source: "product_events",
+					data: rows.map((row) => ({ value: row.attributeValue, count: Number(row.usageCount) })),
 				},
 			})
 		}
@@ -1657,7 +1978,7 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 					orgId: tenant.orgId,
 					startTime: request.startTime,
 					endTime: request.endTime,
-					...(metricScoped ? { metricName: metricScoped.metricName } : {}),
+					...(metricScoped ? { metricName: metricScoped.metricName } : undefined),
 				},
 				metricScoped ? "attributeKeys:metric" : "attributeKeys",
 				"discovery",
@@ -1675,7 +1996,6 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 			})
 		}
 
-		// ---- Facets ----
 		if (request.query.kind === "facets") {
 			const baseParams = { orgId: tenant.orgId, startTime: request.startTime, endTime: request.endTime }
 
@@ -1706,18 +2026,19 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 			}
 
 			if (request.query.source === "logs") {
-				const filters = request.query.filters as Record<string, unknown> | undefined
+				const filters = request.query.filters
+				const options = logsQueryOptions(filters)
 				const facet = request.query.facet
 				const rows = yield* executeCHUnionQuery(
 					warehouse,
 					tenant,
 					CH.logsFacetsQuery(
 						{
-							serviceName: filters?.serviceName as string | undefined,
-							severity: filters?.severity as string | undefined,
-							environments: filters?.environments as readonly string[] | undefined,
-							namespaces: filters?.namespaces as readonly string[] | undefined,
-							matchModes: logsMatchModes(filters),
+							serviceName: options.serviceName,
+							severity: options.severity,
+							environments: options.environments,
+							namespaces: options.namespaces,
+							matchModes: options.matchModes,
 						},
 						facet,
 					),
@@ -1755,6 +2076,12 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 						services: filters?.services as string[] | undefined,
 						deploymentEnvs: filters?.deploymentEnvs as string[] | undefined,
 						fingerprintHashes: filters?.fingerprintHashes as string[] | undefined,
+						errorLabels: filters?.errorLabels as string[] | undefined,
+						serviceVersions: filters?.serviceVersions as string[] | undefined,
+						excludedServices: filters?.excludedServices as string[] | undefined,
+						excludedDeploymentEnvs: filters?.excludedDeploymentEnvs as string[] | undefined,
+						excludedErrorLabels: filters?.excludedErrorLabels as string[] | undefined,
+						excludedServiceVersions: filters?.excludedServiceVersions as string[] | undefined,
 					}),
 					baseParams,
 					"errorsFacets",
@@ -1799,7 +2126,6 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 			}
 		}
 
-		// ---- Stats ----
 		if (request.query.source === "traces" && request.query.kind === "stats") {
 			const opts = extractTracesDurationStatsOpts(
 				request.query.filters as Record<string, unknown> | undefined,
@@ -1828,7 +2154,6 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 			})
 		}
 
-		// ---- Attribute Values ----
 		if (request.query.kind === "attributeValues") {
 			// Per-metric scoping reads the raw metric table (see attributeKeys above).
 			const metricScoped =
@@ -1855,7 +2180,7 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 					orgId: tenant.orgId,
 					startTime: request.startTime,
 					endTime: request.endTime,
-					...(metricScoped ? { metricName: metricScoped.metricName } : {}),
+					...(metricScoped ? { metricName: metricScoped.metricName } : undefined),
 				},
 				metricScoped ? "attributeValues:metric-scoped" : `attributeValues:${request.query.scope}`,
 				"discovery",
@@ -1869,25 +2194,15 @@ export const makeQueryEngineExecute = <T extends QueryTenant>(warehouse: QueryEn
 			})
 		}
 
-		// ---- Count ----
 		if (request.query.source === "logs" && request.query.kind === "count") {
-			const filters = request.query.filters as Record<string, unknown> | undefined
-			const opts = extractLogsOpts(filters)
-			const rows = yield* executeCHQuery(
-				warehouse,
-				tenant,
-				(capabilities) =>
-					CH.logsCountQuery({
-						...opts,
-						attributeIndexMode: attributeIndexMode(capabilities, "logs"),
-						bodySearchMode: logBodySearchMode(capabilities),
-					}),
-				{ orgId: tenant.orgId, startTime: request.startTime, endTime: request.endTime },
-				"logsCount",
-				"discovery",
-				// Body search reads the wide Body column for the ILIKE filter —
-				// cap the read block size (see WarehouseQuerySettings.maxBlockSize).
-				filters?.search ? LOGS_BODY_SEARCH_SETTINGS : undefined,
+			const rows = yield* annotateWarehouseError(
+				runQueryDefinition(
+					warehouse,
+					logsCount,
+					tenant,
+					toLogsCountInput(request.startTime, request.endTime, request.query),
+				),
+				logsCount.id,
 			)
 			return new QueryEngineExecuteResponse({
 				result: {
@@ -1935,7 +2250,7 @@ const composeMetricsGroupKey = (
 	serviceName: string,
 	attributeValue: string,
 ): string => {
-	if (!groupBy || groupBy.length === 0 || groupBy.includes("none")) return "all"
+	if (!groupBy || groupBy.length === 0 || groupBy.includes("none")) return ENGINE_UNGROUPED_GROUP_KEY
 	const parts: string[] = []
 	for (const dim of groupBy) {
 		if (dim === "service") parts.push(serviceName || "")
@@ -1944,7 +2259,7 @@ const composeMetricsGroupKey = (
 		else if (dim === "attribute" || dim === "resource_attribute") parts.push(attributeValue || "")
 	}
 	const filtered = parts.filter((p) => p.length > 0)
-	if (filtered.length === 0) return "all"
+	if (filtered.length === 0) return ENGINE_UNGROUPED_GROUP_KEY
 	return filtered.join(" \u00b7 ")
 }
 
@@ -1978,17 +2293,21 @@ export interface AlertBucketRequest {
 	readonly endTime: string
 }
 
+/** One warehouse row's contribution to an alert evaluation. */
+export interface BucketGroupObs {
+	readonly bucket: string
+	readonly groupKey: string
+	readonly value: number | null
+	readonly sampleCount: number
+}
+
 /**
  * THE single alert lowering: run one alert source over one time range and emit
  * per-(bucket, group) observations.
  *
- * Everything downstream is a thin derivation of this — `evaluate` reduces the
- * buckets to a scalar per group (`reduceAlertBuckets`), `evaluateSeries` returns
- * them as-is for the preview chart, and the bucket cache stores them encoded via
- * `encodeEvalPoints` and re-fetches only the missing ranges. Because a cached
- * evaluation decodes back into the very same observations an uncached one
- * builds, the two agree for real timeseries data (where each (bucket, group) row
- * is unique).
+ * Everything downstream is a thin derivation of this: `evaluate` reduces the
+ * buckets to a scalar per group and `evaluateSeries` returns them as-is for the
+ * preview chart.
  *
  * Assumes a spec source is already validated as a supported timeseries query.
  */
@@ -2044,38 +2363,47 @@ export const computeAlertBuckets = Effect.fnUntraced(function* <T extends QueryT
 			const value = sampleCount > 0 ? tracesAggregateValueForMetric(query.metric, row) : null
 			obs.push({
 				bucket: normalizeBucket(row.bucket),
-				groupKey: row.groupName || "all",
+				groupKey: row.groupName || ENGINE_UNGROUPED_GROUP_KEY,
 				value,
 				sampleCount,
 			})
 		}
 	} else if (query.source === "logs") {
-		const opts = extractLogsOpts(query.filters as Record<string, unknown> | undefined)
-		const rows = yield* executeCHQuery(
-			warehouse,
-			tenant,
-			(capabilities) =>
-				CH.logsTimeseriesQuery({
-					...opts,
-					attributeIndexMode: attributeIndexMode(capabilities, "logs"),
-					bodySearchMode: logBodySearchMode(capabilities),
-					groupBy: query.groupBy as readonly string[] | undefined,
-					bucketSeconds,
-				}),
-			{
-				orgId: tenant.orgId,
-				startTime: request.startTime,
-				endTime: request.endTime,
-				bucketSeconds,
-			},
-			"logsAlertEval",
+		const rows = yield* annotateWarehouseError(
+			runQueryDefinition(
+				warehouse,
+				logsTimeseries,
+				tenant,
+				toLogsTimeseriesInput(request.startTime, request.endTime, query, bucketSeconds),
+			),
+			logsTimeseries.id,
 		)
 		for (const row of rows) {
 			const sampleCount = Number(row.count ?? 0)
 			obs.push({
 				bucket: normalizeBucket(row.bucket),
-				groupKey: row.groupName || "all",
+				groupKey: row.groupName || ENGINE_UNGROUPED_GROUP_KEY,
 				value: sampleCount > 0 ? sampleCount : null,
+				sampleCount,
+			})
+		}
+	} else if (query.source === "product_events") {
+		const rows = yield* annotateWarehouseError(
+			runQueryDefinition(
+				warehouse,
+				productEventsTimeseries,
+				tenant,
+				toProductEventsTimeseriesInput(request.startTime, request.endTime, query, bucketSeconds),
+			),
+			productEventsTimeseries.id,
+		)
+		for (const row of rows) {
+			// `value` may be a uniq; the sample count is the rows behind it.
+			const sampleCount = Number(row.eventCount ?? 0)
+			obs.push({
+				bucket: normalizeBucket(row.bucket),
+				groupKey: row.groupName || ENGINE_UNGROUPED_GROUP_KEY,
+				value: sampleCount > 0 ? Number(row.value ?? 0) : null,
 				sampleCount,
 			})
 		}
@@ -2118,7 +2446,7 @@ export const computeAlertBuckets = Effect.fnUntraced(function* <T extends QueryT
  *
  * `sampleCount` is forced to 0 whenever `value` is null so that
  * `hasData === sampleCount > 0` holds for raw rows exactly as it does for the
- * spec sources — the bucket codec derives `hasData` from the sample count alone,
+ * spec sources — downstream reduction derives `hasData` from the sample count alone,
  * so a `{value: null, samples: 1}` row would otherwise decode as "has data but
  * no scalar" rather than the no-data case the alert engine expects.
  */
@@ -2128,8 +2456,12 @@ const computeRawSqlBuckets = Effect.fnUntraced(function* <T extends QueryTenant>
 	source: Extract<AlertBucketSource, { kind: "raw_sql" }>,
 	range: { readonly startTime: string; readonly endTime: string },
 ) {
-	const executeRawSql = makeExecuteRawSql<T, WarehouseError | RawSqlValidationError>(warehouse)
-	const granularitySeconds = Math.max(source.windowMinutes * 60, 60)
+	const executeRawSql = makeExecuteRawSql<T, WarehouseQueryPathError | RawSqlValidationError>(warehouse)
+	// The same rule `prepareAlertEvaluation` applies to a spec source, and it has
+	// to stay the same rule: a raw-SQL rule whose `$__timeGroup` width disagreed
+	// with its evaluation bucket would reduce over a different window than the one
+	// it was saved with.
+	const granularitySeconds = alertWindowBucketSeconds(source.windowMinutes)
 
 	const { rows: rawRows } = yield* executeRawSql(tenant, {
 		sql: source.sql,
@@ -2164,23 +2496,14 @@ const computeRawSqlBuckets = Effect.fnUntraced(function* <T extends QueryTenant>
 	const seenGroups = new Set<string>()
 	for (const row of rows) {
 		const rawGroup = row.group
-		const groupKey = typeof rawGroup === "string" && rawGroup.length > 0 ? rawGroup : "all"
+		const groupKey =
+			typeof rawGroup === "string" && rawGroup.length > 0 ? rawGroup : ENGINE_UNGROUPED_GROUP_KEY
 		if (groupKey.length > MAX_RAW_SQL_GROUP_KEY_LENGTH) {
 			return yield* new QueryEngineValidationError({
 				message: "Invalid raw SQL alert query",
 				details: [
 					`Raw SQL alert group keys may contain at most ${MAX_RAW_SQL_GROUP_KEY_LENGTH} characters.`,
 				],
-			})
-		}
-		// `encodeEvalPoints` prefixes group keys with NUL-delimited markers and relies
-		// on real keys never containing NUL. That holds for CH-derived keys but not
-		// for arbitrary user SQL, so reject rather than let a crafted key collide
-		// with the codec's value/count namespaces.
-		if (groupKey.includes("\u0000")) {
-			return yield* new QueryEngineValidationError({
-				message: "Invalid raw SQL alert query",
-				details: ["Raw SQL alert group keys may not contain NUL characters."],
 			})
 		}
 		const numValue = row.value == null ? null : Number(row.value)
@@ -2237,7 +2560,7 @@ export const reduceAlertBuckets = (
 		else byGroup.set(o.groupKey, [entry])
 	}
 	if (byGroup.size === 0) {
-		byGroup.set("all", [{ value: null, sampleCount: 0, hasData: false }])
+		byGroup.set(ENGINE_UNGROUPED_GROUP_KEY, [{ value: null, sampleCount: 0, hasData: false }])
 	}
 	return reducePerGroupObservations(byGroup, reducer)
 }
@@ -2273,26 +2596,35 @@ const prepareAlertEvaluation = Effect.fnUntraced(function* (request: AlertEvalua
 
 	if (request.source.kind === "raw_sql") {
 		// One evaluation window is one bucket; a query using `$__timeGroup` lines
-		// its rows up on exactly that grid.
-		return Math.max(request.source.windowMinutes * 60, 60)
+		// its rows up on exactly that grid. Shared with `compileRulePlan`, which
+		// bakes the same width into a spec-backed rule's stored query — the two
+		// disagreeing would evaluate a different window than the rule was saved
+		// with.
+		return alertWindowBucketSeconds(request.source.windowMinutes)
 	}
 
 	const query = request.source.query
 	if (
 		query.kind !== "timeseries" ||
-		(query.source !== "traces" && query.source !== "metrics" && query.source !== "logs")
+		(query.source !== "traces" &&
+			query.source !== "metrics" &&
+			query.source !== "logs" &&
+			query.source !== "product_events")
 	) {
 		return yield* new QueryEngineValidationError({
 			message: "Unsupported alert evaluation query",
-			details: ["Alert evaluation supports traces, logs, and metrics timeseries queries only"],
+			details: [
+				"Alert evaluation supports traces, logs, metrics, and product-event timeseries queries only",
+			],
 		})
 	}
 
 	// Use the spec's bucketSeconds when present, otherwise auto-compute from the
-	// time range. Pinned to the historical 30-point target: the chart default is
-	// denser, but finer buckets would change per-bucket observation values (and
-	// `minimumSampleCount` behavior) for every rule that relies on auto sizing.
-	return query.bucketSeconds ?? computeBucketSeconds(startMs, endMs, { targetPoints: 30 })
+	// time range. `BUCKET_POLICIES.alert` pins the historical 30-point target: the
+	// chart default is denser, but finer buckets would change per-bucket
+	// observation values (and `minimumSampleCount` behavior) for every rule that
+	// relies on auto sizing.
+	return query.bucketSeconds ?? computeBucketSeconds(startMs, endMs, BUCKET_POLICIES.alert)
 })
 
 export const makeQueryEngineEvaluate = <T extends QueryTenant>(warehouse: QueryEngineWarehouse<T>) =>
@@ -2301,17 +2633,26 @@ export const makeQueryEngineEvaluate = <T extends QueryTenant>(warehouse: QueryE
 		request: AlertEvaluateRequest,
 	): Effect.fn.Return<
 		ReadonlyArray<GroupedAlertObservation>,
-		QueryEngineValidationError | QueryEngineExecutionError | WarehouseError
+		QueryEngineValidationError | WarehouseQueryPathError
 	> {
 		yield* Effect.annotateCurrentSpan("orgId", tenant.orgId)
 		const bucketSeconds = yield* prepareAlertEvaluation(request)
 
-		const obs = yield* computeAlertBuckets(
-			warehouse,
-			tenant,
-			{ source: request.source, startTime: request.startTime, endTime: request.endTime },
-			bucketSeconds,
-		)
+		const bucketRequest = {
+			source: request.source,
+			startTime: request.startTime,
+			endTime: request.endTime,
+		}
+		const load = computeAlertBuckets(warehouse, tenant, bucketRequest, bucketSeconds)
+		// Raw SQL may contain volatile functions. Keep its existing whole-result
+		// cache policy; only structured queries share buckets across reducers.
+		const obs = yield* request.source.kind === "spec"
+			? memoizeAlertBuckets(
+					warehouse,
+					canonicalJSON({ tenant, request: bucketRequest, bucketSeconds }),
+					load,
+				)
+			: load
 
 		const result = reduceAlertBuckets(obs, request.reducer)
 		yield* Effect.annotateCurrentSpan("result.groupCount", result.length)
@@ -2324,18 +2665,13 @@ export const makeQueryEngineEvaluate = <T extends QueryTenant>(warehouse: QueryE
  * rule preview chart: each bucket is one evaluation window, so the series is
  * exactly the sequence of observations the scheduler would have produced.
  *
- * Deliberately NOT routed through the bucket cache — preview requests are
- * ad-hoc form states and would only pollute it (see the eval-bucket-cache
- * regression note in QueryEngineService).
+ * Preview requests are ad-hoc form states and execute directly.
  */
 export const makeQueryEngineEvaluateSeries = <T extends QueryTenant>(warehouse: QueryEngineWarehouse<T>) =>
 	Effect.fn("QueryEngineService.evaluateSeries")(function* (
 		tenant: T,
 		request: AlertEvaluateRequest,
-	): Effect.fn.Return<
-		ReadonlyArray<BucketGroupObs>,
-		QueryEngineValidationError | QueryEngineExecutionError | WarehouseError
-	> {
+	): Effect.fn.Return<ReadonlyArray<BucketGroupObs>, QueryEngineValidationError | WarehouseQueryPathError> {
 		yield* Effect.annotateCurrentSpan("orgId", tenant.orgId)
 		const bucketSeconds = yield* prepareAlertEvaluation(request)
 

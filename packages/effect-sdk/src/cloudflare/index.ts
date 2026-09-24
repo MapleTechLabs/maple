@@ -1,4 +1,3 @@
-// ---------------------------------------------------------------------------
 // MapleCloudflareSDK — Cloudflare Workers OTLP telemetry
 //
 // Constructible at module scope (no env required); resolves env lazily on
@@ -22,6 +21,14 @@
 //     },
 //   }
 //
+// Runtimes that own a per-event scope — alchemy's Worker bridge, or anything
+// built on `HttpEffect.toHandled` — use `requestLayer` instead of calling
+// `flush` themselves: it is the same exporters plus a flush when the scope
+// closes, and it reads the env from alchemy's `WorkerEnvironment` service:
+//
+//   // alchemy, on the Worker's init Effect:
+//   Effect.provide(Telemetry.layer(telemetry.requestLayer))
+//
 // Errors during flush are swallowed and logged to `console.error`. After a
 // failure the exporter sleeps for 60 seconds (per signal) before retrying so
 // a broken collector doesn't get hammered.
@@ -29,12 +36,12 @@
 // The buffer-drain → encode → POST machinery is shared with the server/client
 // flushable presets via `../shared/flush-core.ts`; this module owns only the
 // Cloudflare-specific lazy `env` resolution.
-// ---------------------------------------------------------------------------
 
-import { Layer } from "effect"
+import { Context, Effect, Layer } from "effect"
 import {
 	buildResolved,
 	fetchTransport,
+	guardFlush,
 	makeSerializedFlush,
 	type Resolved,
 	runFlush,
@@ -43,7 +50,10 @@ import {
 import { type LogBuffer, makeLogBuffer } from "../shared/flushable-logger.js"
 import { makeMetricBuffer } from "../shared/flushable-metrics.js"
 import { makeSpanBuffer, type SpanBuffer } from "../shared/flushable-tracer.js"
+import { makeNoOpNotice } from "../shared/no-op-notice.js"
 import { resolveResourceFromEnv } from "../server/resource.js"
+import { SDK_VERSION } from "../version.js"
+import type { MapleRegion } from "@maple/browser-session/region"
 
 export interface Config {
 	/**
@@ -66,10 +76,15 @@ export interface Config {
 	readonly environment?: string | undefined
 	/**
 	 * Ingest endpoint URL (base, no path). Defaults to `env.MAPLE_ENDPOINT`,
-	 * then `env.OTEL_EXPORTER_OTLP_ENDPOINT`, then the public Maple ingest
-	 * (`https://ingest.maple.dev`).
+	 * then `env.OTEL_EXPORTER_OTLP_ENDPOINT`, then the region's public ingest
+	 * (`https://ingest.maple.dev`, or `https://ingest.eu.maple.dev` for `eu`).
 	 */
 	readonly endpoint?: string | undefined
+	/**
+	 * Region your Maple organization lives in: `"us"` (default) or `"eu"`.
+	 * Defaults to `env.MAPLE_REGION`. Any endpoint, set here or in env, wins.
+	 */
+	readonly region?: MapleRegion | undefined
 	/**
 	 * Maple ingest key. Defaults to `env.MAPLE_INGEST_KEY`. When unset, the
 	 * SDK runs in no-op mode (no flushes are attempted; buffers are drained
@@ -102,6 +117,16 @@ export interface Config {
 	readonly metricsPath?: string | undefined
 }
 
+/**
+ * The Worker's `env`, under alchemy's exact service key: Effect resolves a
+ * service by that string, so the value alchemy's Worker bridge provides to
+ * every event satisfies this tag without either side importing the other. A
+ * hand-written entry provides it with `Layer.succeed(WorkerEnvironment, env)`.
+ */
+export class WorkerEnvironment extends Context.Service<WorkerEnvironment, Record<string, unknown>>()(
+	"Cloudflare.Workers.WorkerEnvironment",
+) {}
+
 export interface Telemetry {
 	/**
 	 * Effect Layer that installs the OTLP tracer + Effect logger. Stable across
@@ -111,6 +136,15 @@ export interface Telemetry {
 	 * Tracer reference must be in the same runtime as your handler code).
 	 */
 	readonly layer: Layer.Layer<never>
+	/**
+	 * `layer` plus a flush when the scope it is built into closes — for
+	 * runtimes that own a per-event scope and close it after the response
+	 * (alchemy's Worker bridge registers the close with `ctx.waitUntil`). Reads
+	 * the env from {@link WorkerEnvironment}. Where the tracer ends the server
+	 * span on a deferred task, `flush` yields one macrotask first, so that span
+	 * is in the buffer before the drain.
+	 */
+	readonly requestLayer: Layer.Layer<never, never, WorkerEnvironment>
 	/**
 	 * Drain in-isolate buffers to the OTLP collector. Call inside
 	 * `ctx.waitUntil(telemetry.flush(env))` after sending the response.
@@ -130,7 +164,8 @@ const resolveOnce = (env: Record<string, unknown>, config: Config): Resolved => 
 		tracesPath: config.tracesPath,
 		logsPath: config.logsPath,
 		metricsPath: config.metricsPath,
-		userAgent: "maple-effect-sdk-cloudflare/0.0.0",
+		userAgent: `maple-effect-sdk-cloudflare/${SDK_VERSION}`,
+		keyless: "disable",
 	})
 }
 
@@ -154,44 +189,61 @@ export const make = (config: Config = {}): Telemetry => {
 	const metrics = makeMetricBuffer()
 
 	let resolved: Resolved | undefined = undefined
-	let noOpLogged = false
+	const noOpNotice = makeNoOpNotice("[MapleCloudflareSDK]", "set MAPLE_INGEST_KEY to enable")
 	const tracesState: SignalState = { disabledUntil: 0 }
 	const logsState: SignalState = { disabledUntil: 0 }
 	const metricsState: SignalState = { disabledUntil: 0 }
 
 	const layer = Layer.mergeAll(spans.tracerLayer, logs.loggerLayer, metrics.layer)
 
-	const flush = makeSerializedFlush(async (env: Record<string, unknown>): Promise<void> => {
-		if (resolved === undefined) {
-			resolved = resolveOnce(env, config)
-		}
+	// Never rejects: this runs inside `ctx.waitUntil`, where a rejection would
+	// surface as an unhandled Worker error caused purely by telemetry.
+	const flush = makeSerializedFlush(
+		guardFlush("[MapleCloudflareSDK]", async (env: Record<string, unknown>): Promise<void> => {
+			// Effect defers work onto the scheduler's next macrotask
+			// (`scheduleTask(task, 0)`) — including `HttpMiddleware.tracer`'s
+			// `span.end` and `withSpan` finalizers — while the drain below is
+			// synchronous. Flushing in the same task therefore misses exactly the
+			// spans the request just produced, and an isolated request (e.g. a lone
+			// webhook) can freeze the isolate before a later flush rescues them.
+			// Yield one macrotask so those tasks run first. This sits INSIDE the
+			// serialized body, so overlapping flushes still queue rather than
+			// interleave.
+			await new Promise<void>((resolve) => setTimeout(resolve, 0))
 
-		await runFlush({
-			resolved,
-			spans,
-			logs,
-			metrics,
-			tracesState,
-			logsState,
-			metricsState,
-			transport: fetchTransport,
-			logPrefix: "[MapleCloudflareSDK]",
-			onNoOp: () => {
-				if (!noOpLogged) {
-					noOpLogged = true
-					console.info(
-						"[MapleCloudflareSDK] no MAPLE_INGEST_KEY configured — telemetry disabled (set MAPLE_INGEST_KEY to enable)",
-					)
-				}
-			},
-		})
-	})
+			if (resolved === undefined) {
+				resolved = resolveOnce(env, config)
+			}
 
-	return { layer, flush }
+			await runFlush({
+				resolved,
+				spans,
+				logs,
+				metrics,
+				tracesState,
+				logsState,
+				metricsState,
+				transport: fetchTransport,
+				logPrefix: "[MapleCloudflareSDK]",
+				onNoOp: noOpNotice,
+			})
+		}),
+		{ coalesceSameArguments: true },
+	)
+
+	const requestLayer = Layer.mergeAll(
+		layer,
+		Layer.effectDiscard(
+			Effect.gen(function* () {
+				const env = yield* WorkerEnvironment
+				yield* Effect.addFinalizer(() => Effect.promise(() => flush(env)))
+			}),
+		),
+	)
+
+	return { layer, requestLayer, flush }
 }
 
-// ---------------------------------------------------------------------------
 // Convenience namespace export so call sites read as
 // `MapleCloudflareSDK.make({...})` when imported as a default.
-// ---------------------------------------------------------------------------
 export const MapleCloudflareSDK = { make }

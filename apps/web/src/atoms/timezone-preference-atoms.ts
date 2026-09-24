@@ -7,15 +7,27 @@ export const SYSTEM_VALUE = "__system__"
 
 const DEFAULT_TIMEZONE = "UTC"
 
+// Whether a zone name is one the runtime knows never changes, and asking is
+// not cheap — building a formatter and running it. Every timestamp the app
+// prints resolves its zone through here, which on a virtualized list is once
+// per row per render: unmemoized it was the single hottest frame in a
+// transcript scroll profile.
+const knownZones = new Map<string, boolean>()
+
 export function isValidIanaTimeZone(value: string): boolean {
 	if (value.trim().length === 0) return false
 
+	const known = knownZones.get(value)
+	if (known !== undefined) return known
+	let valid: boolean
 	try {
 		new Intl.DateTimeFormat("en-US", { timeZone: value }).format(new Date())
-		return true
+		valid = true
 	} catch {
-		return false
+		valid = false
 	}
+	knownZones.set(value, valid)
+	return valid
 }
 
 export function getBrowserTimeZone(): string {
@@ -71,3 +83,18 @@ export const timezonePreferenceAtom = Atom.kvs({
 	schema: Schema.String,
 	defaultValue: () => SYSTEM_VALUE,
 })
+
+/**
+ * The selected zone, read synchronously off storage — for code that runs
+ * outside React (a preset's `getRange`, a search middleware). Components use
+ * `useTimezonePreference`, which re-renders when the preference changes; this
+ * is a point-in-time read of the same key the atom writes through to. Falls
+ * back to the browser's zone where there is no storage to read (SSR, tests).
+ */
+export function getEffectiveTimezone(): string {
+	try {
+		return resolveEffectiveTimezone(normalizeStoredTimezoneValue(localStorage.getItem(TIMEZONE_STORAGE_KEY)))
+	} catch {
+		return getBrowserTimeZone()
+	}
+}

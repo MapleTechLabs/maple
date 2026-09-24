@@ -3,10 +3,12 @@ import { Schema } from "effect"
 import {
 	ChatHistoryResponse,
 	ChatSendResponse,
+	ChatEvent,
 	decodeChatEvent,
+	delegatedAgentOf,
 	makeChatSessionId,
-	type ChatEvent,
 	type ChatMessage as ChatSessionMessage,
+	type ChatTaskRef,
 	type ChatToolCall,
 } from "@maple/domain/chat-session"
 import type { ChatStatus, UIMessage, UIMessagePart } from "@/components/ai-elements/types"
@@ -87,32 +89,66 @@ const errorTextOf = (output: unknown): string => {
 	}
 }
 
-/** A `task` call's description, as the model supplied it. Untyped on the wire, so read defensively. */
-const taskDescriptionOf = (input: unknown): string => {
-	const raw = (input as { description?: unknown })?.description
-	return typeof raw === "string" ? raw : "sub-agent"
+/**
+ * The question a delegation was given, as the model wrote it.
+ *
+ * `prompt` is the field `buildDelegation` declares; `description` is what the single generic
+ * `task` tool took before there was one tool per sub-agent, and conversations recorded then still
+ * replay. Untyped on the wire either way, so both are read defensively.
+ */
+const taskPromptOf = (input: unknown): string => {
+	const record = input as { prompt?: unknown; description?: unknown } | null
+	if (typeof record?.prompt === "string" && record.prompt.trim()) return record.prompt
+	if (typeof record?.description === "string" && record.description.trim()) return record.description
+	return "sub-agent"
 }
 
+/**
+ * The answer a sub-agent returned, out of the delegation tool's result.
+ *
+ * The engine's shape is `{ output, budgetExhausted }`; the other two are what a tool result looks
+ * like everywhere else in this file, and cost nothing to accept. The answer is the *only* thing
+ * the parent conversation ever sees of a sub-agent's work — its tool calls stay in its own thread
+ * — so a card that dropped it left the reader with a run they could not check.
+ */
+const taskAnswerOf = (output: unknown): string | undefined => {
+	if (typeof output === "string") return output.trim() || undefined
+	if (output == null || typeof output !== "object") return undefined
+	const record = output as { output?: unknown; text?: unknown }
+	const value = typeof record.output === "string" ? record.output : record.text
+	return typeof value === "string" && value.trim() ? value : undefined
+}
+
+/** True when the sub-agent answered from what it had because it ran out of budget. */
+const taskBudgetExhausted = (output: unknown): boolean =>
+	output != null &&
+	typeof output === "object" &&
+	(output as { budgetExhausted?: unknown }).budgetExhausted === true
+
 function toolCallToPart(call: ChatToolCall): UIMessagePart {
-	// A sub-agent run renders as its own collapsible transcript, not a tool row.
-	if (call.task !== undefined) {
+	// A sub-agent run renders as its own card, not a tool row. Either signal is enough: the server
+	// attaches `task` once a child event has landed, and the tool's own name says so before that —
+	// which is what keeps a delegation whose child never got to speak from replaying as a tool row.
+	const agent = call.task?.agent ?? delegatedAgentOf(call.name)
+	if (agent !== undefined) {
 		return {
 			type: "task",
 			toolCallId: call.id,
-			agent: call.task.agent,
-			description: taskDescriptionOf(call.input),
-			status: call.task.status,
-			messages: call.task.messages.map((message) => ({
+			agent,
+			prompt: taskPromptOf(call.input),
+			status:
+				call.task?.status ??
+				(call.isError === true ? "error" : call.output === undefined ? "running" : "completed"),
+			answer: call.isError === true ? undefined : taskAnswerOf(call.output),
+			errorText: call.isError === true ? errorTextOf(call.output) : undefined,
+			budgetExhausted: taskBudgetExhausted(call.output),
+			messages: (call.task?.messages ?? []).map((message) => ({
 				id: message.id,
 				role: message.role,
-				parts: [
-					...(message.text
-						? [{ type: "text" as const, text: message.text, state: "done" as const }]
-						: []),
-					...message.toolCalls.map((sub) =>
-						toolCallToPart({ ...sub, proposed: undefined, task: undefined } as ChatToolCall),
-					),
-				],
+				parts: interleaveParts(
+					message.text,
+					message.toolCalls.map((sub) => ({ ...sub, task: undefined }) as ChatToolCall),
+				),
 			})),
 		}
 	}
@@ -149,22 +185,47 @@ function toolCallToPart(call: ChatToolCall): UIMessagePart {
 }
 
 /**
- * A materialized `ChatMessage` → `UIMessage`. Text and tool calls arrive as two
- * separate fields on the wire (`ChatMessage` doesn't record how they were
- * interleaved live), so a cold-loaded turn always renders as prose followed by
- * the tool calls it made — the same shape a merged tool-only run collapses to
- * anyway once it's read back (see `chat-transcript.tsx`'s `buildTranscriptRows`).
+ * Prose and tool calls, back in the order they happened.
+ *
+ * A `ChatMessage` stores the turn as two flat fields — one concatenated string and a list of
+ * calls — so the only record of the interleaving is each call's `textOffset`: how much prose
+ * had streamed when the model asked for it. Splitting the text at those offsets reproduces
+ * the live reading order, which is what makes a reloaded turn look like the one the reader
+ * watched instead of an essay with every tool call swept to the bottom.
+ *
+ * Offsets are clamped and forced non-decreasing: a retried step retracts prose the calls of
+ * earlier steps were already measured against, so an offset can outrun the text that survived.
+ * A call recorded before this field existed has no offset and lands after all the prose, which
+ * is exactly how those conversations have always rendered.
  */
-function historyMessageToUIMessage(message: ChatSessionMessage): UIMessage {
+function interleaveParts(text: string, calls: readonly ChatToolCall[]): UIMessagePart[] {
 	const parts: UIMessagePart[] = []
-	if (message.text) parts.push({ type: "text", text: message.text, state: "done" })
-	for (const call of message.toolCalls) parts.push(toolCallToPart(call))
-	return { id: message.id, role: message.role, parts }
+	let cursor = 0
+	for (const call of calls) {
+		const offset = Math.min(Math.max(call.textOffset ?? text.length, cursor), text.length)
+		const chunk = text.slice(cursor, offset)
+		if (chunk) parts.push({ type: "text", text: chunk, state: "done" })
+		cursor = offset
+		parts.push(toolCallToPart(call))
+	}
+	const tail = text.slice(cursor)
+	if (tail) parts.push({ type: "text", text: tail, state: "done" })
+	return parts
+}
+
+/** A materialized `ChatMessage` → `UIMessage`, re-interleaved by `interleaveParts`. */
+function historyMessageToUIMessage(message: ChatSessionMessage): UIMessage {
+	return {
+		id: message.id,
+		role: message.role,
+		parts: interleaveParts(message.text, message.toolCalls),
+		createdAt: message.createdAt,
+	}
 }
 
 function ensureAssistantMessage(messages: UIMessage[], messageId: string): UIMessage[] {
 	if (messages.some((m) => m.id === messageId)) return messages
-	return [...messages, { id: messageId, role: "assistant", parts: [] }]
+	return [...messages, { id: messageId, role: "assistant", parts: [], createdAt: Date.now() }]
 }
 
 function updateMessage(
@@ -214,23 +275,19 @@ function retractText(message: UIMessage, chars: number): UIMessage {
 	return { ...message, parts }
 }
 
-/** The sub-agent a `task` call named, read defensively off untyped wire input. */
-const subagentTypeOf = (input: unknown): string => {
-	const raw = (input as { subagent_type?: unknown })?.subagent_type
-	return typeof raw === "string" ? raw : "agent"
-}
-
 function addToolCall(message: UIMessage, event: Extract<ChatEvent, { type: "tool-call" }>): UIMessage {
 	const finalized = finalizeStreamingText(message)
-	// A `task` call opens a sub-agent card, which the child's own events then fill in. Its result
-	// still arrives as a normal `tool-result`, but the card shows the transcript, not the payload.
+	// A delegation opens a sub-agent card, which the child's own events then fill in. The agent is
+	// read off the tool name (`task_<agent>`) because that is the only thing the announcement
+	// carries: the `task` ref rides on the *child's* events, which arrive after this one.
+	const delegatedAgent = delegatedAgentOf(event.name)
 	const part: UIMessagePart =
-		event.name === "task"
+		delegatedAgent !== undefined
 			? {
 					type: "task",
 					toolCallId: event.callId,
-					agent: subagentTypeOf(event.input),
-					description: taskDescriptionOf(event.input),
+					agent: delegatedAgent,
+					prompt: taskPromptOf(event.input),
 					status: "running",
 					messages: [],
 				}
@@ -257,14 +314,11 @@ function addToolCall(message: UIMessage, event: Extract<ChatEvent, { type: "tool
  * Deny by default, matching the server's fold: an event whose parent message or task part is
  * missing is dropped rather than materialising a stray top-level message.
  */
-function applyTaskEvent(
-	messages: UIMessage[],
-	event: ChatEvent & { task: NonNullable<Extract<ChatEvent, { type: "text-delta" }>["task"]> },
-): UIMessage[] {
-	return updateMessage(messages, event.task.parentMessageId, (message) => ({
+function applyTaskEvent(messages: UIMessage[], event: ChatEvent, task: ChatTaskRef): UIMessage[] {
+	return updateMessage(messages, task.parentMessageId, (message) => ({
 		...message,
 		parts: message.parts.map((part) => {
-			if (part.type !== "task" || part.toolCallId !== event.task.id) return part
+			if (part.type !== "task" || part.toolCallId !== task.id) return part
 			return {
 				...part,
 				status:
@@ -285,16 +339,22 @@ function settleTaskResult(
 	messages: UIMessage[],
 	event: Extract<ChatEvent, { type: "tool-result" }>,
 ): UIMessage[] {
-	// The task tool's own result is the `<task_result>` wrapper, which the card does not render —
-	// the child's transcript is already there. Only an error is worth surfacing.
-	if (event.isError !== true) return messages
+	// The delegation's result is the sub-agent's written answer, and it is all the parent
+	// conversation ever sees of the run — the child's tool calls stayed in the child's thread. The
+	// card renders it, so a reader can check the work without reloading the conversation.
 	return updateMessage(messages, event.messageId, (message) => ({
 		...message,
-		parts: message.parts.map((part) =>
-			part.type === "task" && part.toolCallId === event.callId
-				? { ...part, status: "error" as const }
-				: part,
-		),
+		parts: message.parts.map((part) => {
+			if (part.type !== "task" || part.toolCallId !== event.callId) return part
+			if (event.isError === true) {
+				return { ...part, status: "error" as const, errorText: errorTextOf(event.output) }
+			}
+			return {
+				...part,
+				answer: taskAnswerOf(event.output),
+				budgetExhausted: taskBudgetExhausted(event.output),
+			}
+		}),
 	}))
 }
 
@@ -324,42 +384,43 @@ function settleToolCall(message: UIMessage, event: Extract<ChatEvent, { type: "t
 }
 
 /**
+ * The sub-agent task an event belongs to, if any. `user-message` is the one member that never
+ * carries one; every other event is task-scoped exactly when `task` is set.
+ */
+const taskOf = ChatEvent.matchOrElse({ "user-message": () => undefined }, (event) => event.task)
+
+/**
  * Fold one live `ChatEvent` into the transcript. `user-message` is a no-op: the
  * optimistic send already rendered it under the same id the server assigns (see
  * `sendMessage`), so replaying it here would either duplicate it or land on a
  * message that's already there — either way there's nothing new to show.
  */
 function applyChatEvent(messages: UIMessage[], event: ChatEvent): UIMessage[] {
-	// A sub-agent's event belongs to the `task` part that started it, never to this transcript.
-	if (event.type !== "user-message" && event.type !== "compaction" && event.task !== undefined) {
-		return applyTaskEvent(messages, event as Parameters<typeof applyTaskEvent>[1])
-	}
-	switch (event.type) {
-		case "user-message":
-			return messages
-		case "turn-start":
-			return ensureAssistantMessage(messages, event.messageId)
-		case "text-delta": {
-			const withMessage = ensureAssistantMessage(messages, event.messageId)
-			return updateMessage(withMessage, event.messageId, (m) => appendTextDelta(m, event.text))
+	return ChatEvent.matchOrElse(event, { "user-message": () => messages }, (event) => {
+		// A sub-agent's event belongs to the `task` part that started it, never to this transcript.
+		const task = event.task
+		if (task !== undefined) return applyTaskEvent(messages, event, task)
+		switch (event.type) {
+			case "turn-start":
+				return ensureAssistantMessage(messages, event.messageId)
+			case "text-delta": {
+				const withMessage = ensureAssistantMessage(messages, event.messageId)
+				return updateMessage(withMessage, event.messageId, (m) => appendTextDelta(m, event.text))
+			}
+			case "tool-call": {
+				const withMessage = ensureAssistantMessage(messages, event.messageId)
+				return updateMessage(withMessage, event.messageId, (m) => addToolCall(m, event))
+			}
+			case "tool-result":
+				return updateMessage(settleTaskResult(messages, event), event.messageId, (m) =>
+					settleToolCall(m, event),
+				)
+			case "turn-retry":
+				return updateMessage(messages, event.messageId, (m) => retractText(m, event.retractChars))
+			case "turn-end":
+				return updateMessage(messages, event.messageId, finalizeStreamingText)
 		}
-		case "tool-call": {
-			const withMessage = ensureAssistantMessage(messages, event.messageId)
-			return updateMessage(withMessage, event.messageId, (m) => addToolCall(m, event))
-		}
-		case "tool-result":
-			return updateMessage(settleTaskResult(messages, event), event.messageId, (m) =>
-				settleToolCall(m, event),
-			)
-		case "turn-retry":
-			return updateMessage(messages, event.messageId, (m) => retractText(m, event.retractChars))
-		// Model-facing bookkeeping. Only the server's `toLlmMessages` reads a compaction; the
-		// transcript the user scrolls back through is deliberately left intact.
-		case "compaction":
-			return messages
-		case "turn-end":
-			return updateMessage(messages, event.messageId, finalizeStreamingText)
-	}
+	})
 }
 
 /** Consecutive-failure budget for a dropped `events` stream before surfacing an error. */
@@ -534,13 +595,7 @@ export function useMapleChat({ tabId, context }: UseMapleChatOptions): UseMapleC
 							// task card, not the stream. Without this guard the first sub-agent to
 							// finish ended the parent's read loop, so the rest of the parent's answer
 							// only appeared on the next reconnect.
-							if (
-								event.type !== "user-message" &&
-								event.type !== "compaction" &&
-								event.task !== undefined
-							) {
-								continue
-							}
+							if (taskOf(event) !== undefined) continue
 							if (event.type === "turn-start") setStatus("streaming")
 							if (event.type === "turn-end") {
 								sawTurnEnd = true
@@ -654,7 +709,12 @@ export function useMapleChat({ tabId, context }: UseMapleChatOptions): UseMapleC
 			const localId = `local-${crypto.randomUUID()}`
 			setMessages((prev) => [
 				...prev,
-				{ id: localId, role: "user", parts: [{ type: "text", text: outgoing, state: "done" }] },
+				{
+					id: localId,
+					role: "user",
+					parts: [{ type: "text", text: outgoing, state: "done" }],
+					createdAt: Date.now(),
+				},
 			])
 			setStatus("submitted")
 			setError(undefined)

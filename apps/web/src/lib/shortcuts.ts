@@ -14,6 +14,7 @@ export const SHORTCUT_GROUPS = [
 	"Global",
 	"Search & Time",
 	"Lists & Tables",
+	"Agent Sessions",
 	"Session Replay",
 	"Chat",
 ] as const
@@ -97,12 +98,42 @@ const SHORTCUTS = {
 		label: "Toggle selection (issues)",
 		group: "Lists & Tables",
 	},
+	"issue.status": {
+		combo: "S",
+		label: "Change status of focused issue",
+		group: "Lists & Tables",
+	},
+	"issue.severity": {
+		combo: "P",
+		label: "Change severity of focused issue",
+		group: "Lists & Tables",
+	},
 	"list.clear": {
 		combo: "Escape",
 		label: "Clear focus / selection",
 		group: "Lists & Tables",
 		ignoreInputs: true,
 		preventDefault: false,
+	},
+	"session.viewOverview": {
+		combo: "1",
+		label: "Overview view",
+		group: "Agent Sessions",
+	},
+	"session.viewTrace": {
+		combo: "2",
+		label: "Traces view",
+		group: "Agent Sessions",
+	},
+	"session.viewFlow": {
+		combo: "3",
+		label: "Flow view",
+		group: "Agent Sessions",
+	},
+	"session.viewTranscript": {
+		combo: "4",
+		label: "Transcript view",
+		group: "Agent Sessions",
 	},
 	"replay.playPause": {
 		combo: "Space",

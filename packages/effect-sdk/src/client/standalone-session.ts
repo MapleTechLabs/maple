@@ -3,6 +3,7 @@
 // SDK's unsampled path (including idle rotation and cumulative counters).
 import { readSessionSink, startMetadataSession, type MetadataSessionHandle } from "@maple/browser-session"
 import { getCurrentIdentity } from "./user.js"
+import { CLIENT_SDK_HINT } from "../version.js"
 
 /** Trace ids observed per standalone session — attached to its ended row. */
 const observedBySession = new Map<string, Set<string>>()
@@ -77,11 +78,13 @@ export const noteStandaloneSpan = (sessionId: string, traceId: string): void => 
 export const setupStandaloneSession = (
 	options: StandaloneSessionOptions,
 ): MetadataSessionHandle | undefined => {
-	if (typeof window === "undefined" || !options.ingestKey || readSessionSink()) return undefined
+	if (typeof window === "undefined" || typeof document === "undefined" || readSessionSink())
+		return undefined
 	if (current) return leaseCurrent()
 	const handle = startMetadataSession({
 		endpoint: options.endpoint,
 		ingestKey: options.ingestKey,
+		sdk: CLIENT_SDK_HINT,
 		serviceName: options.serviceName,
 		environment: options.environment,
 		serviceVersion: options.serviceVersion,

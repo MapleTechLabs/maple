@@ -1,55 +1,184 @@
-import { readdirSync, readFileSync } from "node:fs"
+// SAFETY-FILE: JSON in this test is emitted by the fixture or unit under test before its fields are asserted.
+import { createHash } from "node:crypto"
+import { cpSync, mkdtempSync, rmSync } from "node:fs"
+import { readFileSync } from "node:fs"
+import { tmpdir } from "node:os"
 import { dirname, resolve } from "node:path"
-import { fileURLToPath } from "node:url"
 import { PGlite } from "@electric-sql/pglite"
+import { drizzle } from "drizzle-orm/pglite"
+import { migrate } from "drizzle-orm/pglite/migrator"
 import { describe, expect, it } from "vitest"
-import { readBundledMigrationsSql } from "./migrate"
+import { listBundledMigrations, readBundledMigrationsSql } from "./migrate"
 
-type MigrationJournal = {
-	readonly entries: ReadonlyArray<{
-		readonly idx: number
-		readonly tag: string
-		readonly when: number
-	}>
+/** The folder for a migration by its name (the part after the kit's timestamp prefix). */
+const migrationNamed = (name: string) => {
+	const matches = listBundledMigrations().filter((migration) => migration.name.endsWith(`_${name}`))
+	if (matches.length !== 1)
+		throw new Error(`expected exactly one migration named ${name}, found ${matches.length}`)
+	return matches[0]!
 }
 
-const readJournal = (): MigrationJournal => {
-	const path = resolve(dirname(fileURLToPath(import.meta.url)), "../drizzle/meta/_journal.json")
-	return JSON.parse(readFileSync(path, "utf8")) as MigrationJournal
-}
+const readMigrationSql = (name: string): string => readFileSync(migrationNamed(name).sqlPath, "utf8")
 
-const migrationsDir = () => resolve(dirname(fileURLToPath(import.meta.url)), "../drizzle")
-
-const readMigrationSqlBefore = (tag: string): string =>
-	readdirSync(migrationsDir())
-		.filter((file) => file.endsWith(".sql") && file < `${tag}.sql`)
-		.sort()
-		.map((file) => readFileSync(resolve(migrationsDir(), file), "utf8"))
+const readMigrationSqlBefore = (name: string): string => {
+	const stop = migrationNamed(name).name
+	return listBundledMigrations()
+		.filter((migration) => migration.name < stop)
+		.map((migration) => readFileSync(migration.sqlPath, "utf8"))
 		.join("\n")
+}
 
 describe("drizzle migrations", () => {
-	it("keeps journal timestamps increasing in migration order", () => {
-		const { entries } = readJournal()
+	it("keeps migration folders in a strictly increasing timestamp order", () => {
+		const migrations = listBundledMigrations()
+		expect(migrations.length).toBeGreaterThan(0)
 
-		for (let i = 0; i < entries.length; i++) {
-			expect(entries[i]!.idx).toBe(i)
-			if (i === 0) continue
-
-			// Drizzle only compares each journal timestamp against the highest
-			// created_at already recorded in the DB. A lower timestamp after a
-			// deployed migration is silently skipped on the next migrate.
+		for (let i = 1; i < migrations.length; i++) {
+			// The v1 migrator orders folders by name, and the kit derives the
+			// 14-digit prefix from the migration timestamp. A folder that sorts
+			// before an already-deployed one still applies (v1 applies every missing
+			// migration), but the replay order in fresh databases would differ from
+			// production's, which is how a dependency between two migrations hides.
 			expect(
-				entries[i]!.when,
-				`${entries[i]!.tag} must be newer than ${entries[i - 1]!.tag}`,
-			).toBeGreaterThan(entries[i - 1]!.when)
+				migrations[i]!.name.slice(0, 14) >= migrations[i - 1]!.name.slice(0, 14),
+				`${migrations[i]!.name} must not predate ${migrations[i - 1]!.name}`,
+			).toBe(true)
 		}
 	})
+
+	/**
+	 * Production's first v1 run: the table is still on the 0.x shape. The upgrade
+	 * must match every row by its second (0.x stored the journal's millis) or, for
+	 * a same-second pair, by hash, and apply nothing. The last rows use the
+	 * preflight's pre-upgrade INSERT, which has no `name` column to fill.
+	 */
+	const legacyTable = async (pg: PGlite) => {
+		await pg.exec(`
+			CREATE SCHEMA drizzle;
+			CREATE TABLE drizzle.__drizzle_migrations (id SERIAL PRIMARY KEY, hash text NOT NULL, created_at bigint);
+		`)
+		return listBundledMigrations().map((migration) => {
+			const stamp = migration.name.slice(0, 14)
+			return {
+				name: migration.name,
+				hash: createHash("sha256").update(readFileSync(migration.sqlPath)).digest("hex"),
+				millis: Date.UTC(
+					Number(stamp.slice(0, 4)),
+					Number(stamp.slice(4, 6)) - 1,
+					Number(stamp.slice(6, 8)),
+					Number(stamp.slice(8, 10)),
+					Number(stamp.slice(10, 12)),
+					Number(stamp.slice(12, 14)),
+				),
+			}
+		})
+	}
+
+	it("upgrades a 0.x migrations table in place without replaying anything", async () => {
+		const pg = new PGlite()
+		try {
+			const locals = await legacyTable(pg)
+			const preflightRecorded = 3
+			for (const [index, local] of locals.entries()) {
+				const createdAt =
+					index < locals.length - preflightRecorded ? local.millis + 437 : local.millis
+				await pg.query(
+					"INSERT INTO drizzle.__drizzle_migrations (hash, created_at) VALUES ($1, $2)",
+					[local.hash, createdAt],
+				)
+			}
+			const full = dirname(dirname(listBundledMigrations()[0]!.sqlPath))
+			// No schema exists, so replaying any migration would fail on a missing table.
+			await migrate(drizzle({ client: pg }), { migrationsFolder: full })
+
+			const rows = await pg.query<{ name: string | null }>(
+				"SELECT name FROM drizzle.__drizzle_migrations ORDER BY id",
+			)
+			expect(rows.rows.map((row) => row.name)).toEqual(locals.map((local) => local.name))
+			const tables = await pg.query<{ count: number }>(
+				"SELECT count(*)::int AS count FROM information_schema.tables WHERE table_schema = 'public'",
+			)
+			expect(tables.rows[0]?.count).toBe(0)
+		} finally {
+			await pg.close()
+		}
+	}, 30_000)
+
+	it("refuses a 0.x table with a row no folder matches and leaves it untouched", async () => {
+		const pg = new PGlite()
+		try {
+			const locals = await legacyTable(pg)
+			for (const local of locals)
+				await pg.query(
+					"INSERT INTO drizzle.__drizzle_migrations (hash, created_at) VALUES ($1, $2)",
+					[local.hash, local.millis],
+				)
+			await pg.query("INSERT INTO drizzle.__drizzle_migrations (hash, created_at) VALUES ($1, $2)", [
+				"0".repeat(64),
+				Date.UTC(2026, 0, 1),
+			])
+			const full = dirname(dirname(listBundledMigrations()[0]!.sqlPath))
+			await expect(migrate(drizzle({ client: pg }), { migrationsFolder: full })).rejects.toThrow()
+
+			const columns = await pg.query<{ column_name: string }>(
+				"SELECT column_name FROM information_schema.columns WHERE table_schema = 'drizzle' AND table_name = '__drizzle_migrations' ORDER BY ordinal_position",
+			)
+			expect(columns.rows.map((row) => row.column_name)).toEqual(["id", "hash", "created_at"])
+		} finally {
+			await pg.close()
+		}
+	}, 30_000)
+
+	it("upgrades a database at the incident-hold head to receipts and safely re-runs", async () => {
+		// A database migrated up to `alert_incident_hold` (production's head before
+		// this line of work), then migrated with the full folder: the receipts table
+		// and its predecessors land, a row written between the two runs survives a
+		// third run, and the migrations table ends up with one row per folder.
+		const directory = mkdtempSync(resolve(tmpdir(), "maple-receipts-upgrade-"))
+		const pg = new PGlite()
+		try {
+			const head = migrationNamed("alert_incident_hold").name
+			const migrations = listBundledMigrations()
+			const upTo = migrations.filter((migration) => migration.name <= head)
+			for (const migration of upTo) {
+				cpSync(dirname(migration.sqlPath), resolve(directory, migration.name), { recursive: true })
+			}
+			const db = drizzle({ client: pg })
+			await migrate(db, { migrationsFolder: directory })
+			const before = await pg.query<{ count: number }>(
+				"SELECT count(*)::int AS count FROM drizzle.__drizzle_migrations",
+			)
+			expect(before.rows[0]?.count).toBe(upTo.length)
+
+			const full = dirname(dirname(migrations[0]!.sqlPath))
+			await migrate(db, { migrationsFolder: full })
+			await pg.exec(
+				"INSERT INTO planetscale_issue_receipts (org_id, event_id, processed_at) VALUES ('org-upgrade', 'event-upgrade', now())",
+			)
+			await migrate(db, { migrationsFolder: full })
+			const receipts = await pg.query<{ event_id: string }>(
+				"SELECT event_id FROM planetscale_issue_receipts",
+			)
+			expect(receipts.rows).toEqual([{ event_id: "event-upgrade" }])
+			const after = await pg.query<{ count: number }>(
+				"SELECT count(*)::int AS count FROM drizzle.__drizzle_migrations",
+			)
+			expect(after.rows[0]?.count).toBe(migrations.length)
+			const holdColumns = await pg.query<{ column_name: string }>(
+				"SELECT column_name FROM information_schema.columns WHERE table_name = 'alert_incidents' AND column_name IN ('hold_reason', 'held_since') ORDER BY column_name",
+			)
+			expect(holdColumns.rows.map((row) => row.column_name)).toEqual(["held_since", "hold_reason"])
+		} finally {
+			await pg.close()
+			rmSync(directory, { recursive: true, force: true })
+		}
+	}, 30_000)
 
 	/**
 	 * A migration is only recorded in `drizzle.__drizzle_migrations` after the
 	 * whole file succeeds, so one that dies halfway leaves the branch with some of
 	 * its DDL applied and no record of it — and every retry replays from the top
-	 * and fails on what it already created. `0035` hit exactly that on `main`
+	 * and fails on what it already created. `planned_investigations` (0035) hit exactly that on `main`
 	 * (`42701 duplicate_column` on `lens_name`), and the only fixes that do not
 	 * involve hand-writing production state are idempotent DDL.
 	 *
@@ -58,15 +187,20 @@ describe("drizzle migrations", () => {
 	 * would pass for a file that says the words and still is not re-runnable.
 	 */
 	it("re-applies the idempotent migrations without error", async () => {
-		const idempotent = ["0035_planned_investigations"]
-		const pg = new PGlite()
-		await pg.exec(readBundledMigrationsSql())
+		const idempotent = ["planned_investigations"]
 
-		for (const tag of idempotent) {
-			const sql = readFileSync(resolve(migrationsDir(), `${tag}.sql`), "utf8")
-			await expect(pg.exec(sql), `${tag} must be re-runnable`).resolves.toBeDefined()
+		// Replayed at its own point in history: a later migration may legitimately
+		// drop what an earlier one added (drop_investigation_lanes drops the lane
+		// table planned_investigations extends), and what has to hold is that a
+		// half-applied branch converged at the time.
+		for (const name of idempotent) {
+			const pg = new PGlite()
+			await pg.exec(readMigrationSqlBefore(name))
+			const sql = readMigrationSql(name)
+			await pg.exec(sql)
+			await expect(pg.exec(sql), `${name} must be re-runnable`).resolves.toBeDefined()
+			await pg.close()
 		}
-		await pg.close()
 	}, 30_000)
 })
 
@@ -90,6 +224,9 @@ describe("bundled migrations", () => {
 		"alert_destinations",
 		// API-key live reads (0014_electric_publication_api_keys)
 		"api_keys",
+		// Investigation detail page (0037_electric_publication_investigations);
+		// its lane table was dropped again by 0058.
+		"investigations",
 	]
 
 	// Published by 0009/0011, then pruned by 0022 once their client collections were
@@ -153,9 +290,67 @@ describe("bundled migrations", () => {
 		}
 	}, 30_000)
 
+	const publishedTables = async (pg: PGlite) =>
+		(
+			await pg.query<{ tablename: string }>(
+				"select tablename from pg_publication_tables where pubname = 'electric_publication_default'",
+			)
+		).rows
+			.map((r) => r.tablename)
+			.sort()
+
+	const fullTables = async (pg: PGlite) =>
+		(
+			await pg.query<{ relname: string }>(
+				"select relname from pg_class where relkind = 'r' and relreplident = 'f' and relnamespace = 'public'::regnamespace",
+			)
+		).rows
+			.map((r) => r.relname)
+			.sort()
+
+	// The fresh EU database had an empty publication before the first migration ran,
+	// so 0009's CREATE PUBLICATION hit duplicate_object and its handler rolled back the
+	// whole block, REPLICA IDENTITY FULL included.
+	it("converges on the synced tables when the publication exists before any migration", async () => {
+		const pg = new PGlite()
+		try {
+			await pg.exec("CREATE PUBLICATION electric_publication_default")
+			await pg.exec(readBundledMigrationsSql())
+
+			expect(await publishedTables(pg)).toEqual([...SYNCED_TABLES].sort())
+			expect(await fullTables(pg)).toEqual([...SYNCED_TABLES].sort())
+		} finally {
+			await pg.close()
+		}
+	}, 30_000)
+
+	it("reconciles a drifted publication and re-runs as a no-op", async () => {
+		const pg = new PGlite()
+		try {
+			await pg.exec(readMigrationSqlBefore("electric_publication_reconcile"))
+			await pg.exec(`
+				ALTER PUBLICATION electric_publication_default DROP TABLE "dashboards";
+				ALTER TABLE "dashboards" REPLICA IDENTITY DEFAULT;
+				ALTER TABLE "error_issues" REPLICA IDENTITY FULL;
+				ALTER PUBLICATION electric_publication_default ADD TABLE "error_issues";
+			`)
+
+			const sql = readMigrationSql("electric_publication_reconcile")
+			await pg.exec(sql)
+			expect(await publishedTables(pg)).toEqual([...SYNCED_TABLES].sort())
+			expect(await fullTables(pg)).toEqual([...SYNCED_TABLES].sort())
+
+			await pg.exec(sql)
+			expect(await publishedTables(pg)).toEqual([...SYNCED_TABLES].sort())
+			expect(await fullTables(pg)).toEqual([...SYNCED_TABLES].sort())
+		} finally {
+			await pg.close()
+		}
+	}, 30_000)
+
 	it("deletes metric rules and removes retired destinations", async () => {
 		const pg = new PGlite()
-		await pg.exec(readMigrationSqlBefore("0026_windy_bromley"))
+		await pg.exec(readMigrationSqlBefore("windy_bromley"))
 
 		const now = "2026-07-31T00:00:00.000Z"
 		await pg.query(
@@ -216,7 +411,7 @@ describe("bundled migrations", () => {
 			[now],
 		)
 
-		await pg.exec(readFileSync(resolve(migrationsDir(), "0026_windy_bromley.sql"), "utf8"))
+		await pg.exec(readMigrationSql("windy_bromley"))
 
 		for (const table of [
 			"alert_delivery_events",
@@ -245,5 +440,62 @@ describe("bundled migrations", () => {
 				AND column_name IN ('metric_name', 'metric_type', 'metric_aggregation')`,
 		)
 		expect(columns.rows).toEqual([])
+	}, 30_000)
+
+	it("retires slack-bot destinations and drops slack_workspaces", async () => {
+		const pg = new PGlite()
+		await pg.exec(readMigrationSqlBefore("drop_legacy_slack"))
+
+		const now = "2026-09-24T00:00:00.000Z"
+		await pg.query(
+			`INSERT INTO alert_destinations (
+				id, org_id, name, type, config_json, secret_ciphertext, secret_iv, secret_tag,
+				created_at, updated_at, created_by, updated_by
+			) VALUES
+				('dest_slack', 'org_1', 'Slack', 'slack-bot', '{}', 'x', 'x', 'x', $1, $1, 'user_1', 'user_1'),
+				('dest_webhook', 'org_1', 'Webhook', 'webhook', '{}', 'x', 'x', 'x', $1, $1, 'user_1', 'user_1')`,
+			[now],
+		)
+		const rule = (id: string, enabled: boolean, destinationIds: ReadonlyArray<string>) =>
+			pg.query(
+				`INSERT INTO alert_rules (
+					id, org_id, name, enabled, severity, signal_type, comparator, threshold, window_minutes,
+					destination_ids_json, query_spec_json, reducer, no_data_behavior,
+					created_at, updated_at, created_by, updated_by
+				) VALUES ($1, 'org_1', $1, $2, 'warning', 'error_rate', 'gt', 0.1, 5, $3, '{}', 'max', 'skip',
+					$4, $4, 'user_1', 'user_1')`,
+				[id, enabled, JSON.stringify(destinationIds), now],
+			)
+		await rule("rule_mixed", true, ["dest_slack", "dest_webhook"])
+		await rule("rule_slack_only", true, ["dest_slack"])
+		await rule("rule_untouched", true, [])
+		await pg.query(
+			`INSERT INTO alert_delivery_events (
+				id, org_id, incident_id, rule_id, destination_id, delivery_key, event_type,
+				attempt_number, status, scheduled_at, payload_json, created_at, updated_at
+			) VALUES (
+				'delivery_slack', 'org_1', 'inc_1', 'rule_mixed', 'dest_slack',
+				'slack-delivery', 'trigger', 1, 'queued', $1, '{}', $1, $1
+			)`,
+			[now],
+		)
+
+		await pg.exec(readMigrationSql("drop_legacy_slack"))
+
+		const rules = await pg.query<{ id: string; enabled: boolean; destination_ids_json: string[] }>(
+			"SELECT id, enabled, destination_ids_json FROM alert_rules ORDER BY id",
+		)
+		expect(rules.rows).toEqual([
+			{ id: "rule_mixed", enabled: true, destination_ids_json: ["dest_webhook"] },
+			{ id: "rule_slack_only", enabled: false, destination_ids_json: [] },
+			// A rule the migration did not empty is left as it was.
+			{ id: "rule_untouched", enabled: true, destination_ids_json: [] },
+		])
+		const destinations = await pg.query<{ id: string }>("SELECT id FROM alert_destinations")
+		expect(destinations.rows).toEqual([{ id: "dest_webhook" }])
+		const deliveries = await pg.query("SELECT id FROM alert_delivery_events")
+		expect(deliveries.rows).toEqual([])
+		const table = await pg.query("SELECT to_regclass('public.slack_workspaces') AS name")
+		expect(table.rows).toEqual([{ name: null }])
 	}, 30_000)
 })

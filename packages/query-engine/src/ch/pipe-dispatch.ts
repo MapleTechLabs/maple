@@ -1,4 +1,3 @@
-// ---------------------------------------------------------------------------
 // Named-Query Registry (pipe dispatch)
 //
 // The single canonical mapping from a named query ("pipe") + flat params to
@@ -12,30 +11,83 @@
 // It is deliberately distinct from the structured camelCase `QuerySpec` filters
 // consumed by `QueryEngineService` — same output opts, different input formats,
 // so the two adapters are not duplicates.
-// ---------------------------------------------------------------------------
 
-import * as CH from "./index"
 import type { TracesMetric, AttributeFilter, MetricType } from "@maple/domain/query-engine"
+import { DEFAULT_ERROR_NAMESPACE_PREFIX, UNEXPECTED_IDENTITY_MARKERS } from "./queries/errors"
 import type { OrgId } from "@maple/domain"
-import { unsafeCompiledQuery, type CompiledQuery } from "@maple-dev/clickhouse-builder"
-import { Array as A, Match, Result, Schema } from "effect"
+import { compile, compileUnion, type CompiledQuery } from "@maple-dev/effect-clickhouse"
+import { rawCompiledQuery } from "./raw-sql"
+import { Array as A, Effect, Match, Result, Schema } from "effect"
+import type { QueryBuilderError } from "@maple-dev/effect-clickhouse"
 import {
 	attributeIndexMode,
 	baselineWarehouseCapabilities,
 	logBodySearchMode,
 	type WarehouseCapabilities,
 } from "../capabilities"
+import {
+	attributeKeysQuery,
+	metricAttributeValuesQuery,
+	metricScopedAttributeKeysQuery,
+	metricScopedAttributeValuesQuery,
+	resourceAttributeValuesQuery,
+	spanAttributeValuesQuery,
+} from "./queries/attribute-keys"
+import {
+	errorDetailTracesQuery,
+	errorIssueEnvironmentsQuery,
+	errorIssueSampleTracesQuery,
+	errorIssueTimeseriesQuery,
+	errorIssuesQuery,
+	errorsByTypeQuery,
+	errorsFacetsQuery,
+	errorsSummaryQuery,
+	errorsTimeseriesQuery,
+	spanHierarchyQuery,
+	tracesDurationStatsQuery,
+	tracesFacetsQuery,
+} from "./queries/errors"
+import { errorRateByServiceQuery, logsCountQuery, logsFacetsQuery, logsListQuery } from "./queries/logs"
+import { listMetricsQuery, metricsSummaryQuery } from "./queries/metrics"
+import { serviceDependenciesSQL } from "./queries/service-map"
+import {
+	serviceApdexTimeseriesQuery,
+	serviceOverviewQuery,
+	serviceOverviewRowSchema,
+	serviceReleasesTimelineQuery,
+	servicesFacetsQuery,
+	serviceUsageQuery,
+	serviceUsageRowSchema,
+} from "./queries/services"
+import { topOperationsQuery } from "./queries/top-operations"
+import {
+	slowTracesQuery,
+	spanSearchQuery,
+	tracesBreakdownQuery,
+	tracesRootListQuery,
+	tracesTimeseriesQuery,
+	type TracesBreakdownOpts,
+	type TracesTimeseriesOpts,
+} from "./queries/traces"
 
-type CompileTarget = Parameters<typeof CH.compile>[0]
+type CompileTarget = Parameters<typeof compile>[0]
 
 export type PipeCompiledQuery = CompiledQuery<unknown>
 
 type PipeParams = Record<string, unknown> & { org_id: OrgId }
 
-/** Erase the specific output type for the generic pipe dispatcher. */
-function eraseType<T>(compiled: CompiledQuery<T>): PipeCompiledQuery {
-	return compiled as CompiledQuery<unknown>
+/**
+ * Erase the specific output type for the generic pipe dispatcher.
+ *
+ * Compilation is Effect-returning now, so this carries the effect rather than
+ * the value — which is what lets every `Match.when` arm below stay a
+ * one-expression `eraseType(compile(...))`.
+ */
+function eraseType<T>(compiled: Effect.Effect<CompiledQuery<T>, QueryBuilderError>): PipeCompiled {
+	return compiled as PipeCompiled
 }
+
+type PipeCompiled = Effect.Effect<PipeCompiledQuery, QueryBuilderError>
 
 const METRIC_TYPES: ReadonlySet<string> = new Set(["sum", "gauge", "histogram", "exponential_histogram"])
 
@@ -47,19 +99,51 @@ function parseMetricType(value: string | undefined): MetricType | undefined {
  * Compiles a named pipe + params into a SQL string.
  * Returns undefined for unknown pipes (caller should handle gracefully).
  */
+/**
+ * Lower a named pipe + wire params to SQL.
+ *
+ * Effect-returning: the params come off the wire, so a value the query cannot
+ * encode is a condition the caller can report rather than a crash. This is the
+ * path where the typed failure earns its keep — every other compile in the
+ * product is built from Maple's own definitions.
+ */
 export function compilePipeQuery(
 	pipe: string,
 	params: PipeParams,
 	capabilities: WarehouseCapabilities = baselineWarehouseCapabilities(),
-): PipeCompiledQuery | undefined {
+): PipeCompiled | undefined {
 	const orgId = String(params.org_id)
 	const startTime = String(params.start_time ?? "2023-01-01 00:00:00")
 	const endTime = String(params.end_time ?? "2099-12-31 23:59:59")
 	const str = (key: string) => (params[key] != null ? String(params[key]) : undefined)
-	const int = (key: string, def?: number) => (params[key] != null ? Number(params[key]) : def)
+	// Overloaded rather than `def?: number`: with an optional default every
+	// defaulted call still typed as `number | undefined` and every call site paid
+	// for it with a `!`.
+	function int(key: string): number | undefined
+	function int(key: string, def: number): number
+	function int(key: string, def?: number): number | undefined {
+		return params[key] != null ? Number(params[key]) : def
+	}
 	const bool = (key: string) => params[key] === true || params[key] === "1" || params[key] === "true"
 
-	const compileCompare = <Fields extends Schema.Struct.Fields>(
+	/** A single-valued param as the one-element list the query filters take. */
+	const strList = (key: string): string[] | undefined => {
+		const value = str(key)
+		return value === undefined ? undefined : [value]
+	}
+
+	/** An `equals` attribute filter, present only when its key param is. */
+	const equalsFilter = (keyParam: string, valueParam: string) => {
+		const key = str(keyParam)
+		return key === undefined ? undefined : [{ key, value: str(valueParam), mode: "equals" as const }]
+	}
+
+	// The service-free constraint is `CompiledQueryRowSchema`'s, pushed one level
+	// up: a row schema decodes bytes off a socket, so it cannot ask for a service,
+	// and a struct is service-free exactly when its fields are.
+	const compileCompare = <
+		Fields extends Schema.Struct.Fields & Record<PropertyKey, Schema.Codec<any, any, never, never>>,
+	>(
 		query: CompileTarget,
 		ranges: {
 			currentStart: string
@@ -68,54 +152,60 @@ export function compilePipeQuery(
 			previousEnd: string
 		},
 		/**
-		 * The branch query's row schema. Taking a `Schema.Struct` rather than a
-		 * bare `Schema` is what makes the `period` field spreadable below — and
-		 * every `*RowSchema` export already is one. Without this the union
-		 * decoded nothing, so on a backend that quotes 64-bit integers every
-		 * count came back as a string. See ../schema.ts.
+		 * The branch query's row schema, required rather than optional: the union
+		 * is handwritten SQL, so nothing derives a schema for it, and without one
+		 * it decoded nothing — on a backend that quotes 64-bit integers every
+		 * count came back as a string. Taking a `Schema.Struct` rather than a bare
+		 * `Schema` is what makes the `period` field spreadable below, and every
+		 * `*RowSchema` export already is one. See ../schema.ts.
 		 */
-		rowSchema?: Schema.Struct<Fields>,
-	): PipeCompiledQuery => {
-		const current = CH.compile(
-			query,
-			{ orgId, startTime: ranges.currentStart, endTime: ranges.currentEnd },
-			{ skipFormat: true },
-		)
-		const previous = CH.compile(
-			query,
-			{ orgId, startTime: ranges.previousStart, endTime: ranges.previousEnd },
-			{ skipFormat: true },
-		)
-		return unsafeCompiledQuery({
-			sql:
-				`SELECT 'current' AS period, * FROM (\n${current.sql}\n)\n` +
-				`UNION ALL\n` +
-				`SELECT 'previous' AS period, * FROM (\n${previous.sql}\n)\n` +
-				`FORMAT JSON`,
-			reason: "param-varied-union",
-			note: "One builder over a current and a previous window; params are substituted once per compile, so a single CHQuery cannot carry both.",
-			// Both branches are the same builder over different windows, so the
-			// union is scoped exactly when the branch is.
-			tenantScope:
-				current.tenantScope === "org" && previous.tenantScope === "org" ? "org" : "cross-org",
-			// `period` is typed as a plain String, not a `"current" | "previous"`
-			// literal union. The value is produced by our own SELECT so it is
-			// always one of the two at runtime — but the row schema describes the
-			// WIRE type, and ClickHouse reports the column as String. The SQL
-			// catalog's analyzer sweep decodes a synthetic zero-value row built
-			// from DESCRIBE output, where a String column is `""`; a literal union
-			// rejects that and fails the gate.
-			rowSchema: rowSchema ? Schema.Struct({ period: Schema.String, ...rowSchema.fields }) : undefined,
+		rowSchema: Schema.Struct<Fields>,
+	): PipeCompiled =>
+		Effect.gen(function* () {
+			const current = yield* compile(
+				query,
+				{ orgId, startTime: ranges.currentStart, endTime: ranges.currentEnd },
+				{ skipFormat: true },
+			)
+			const previous = yield* compile(
+				query,
+				{ orgId, startTime: ranges.previousStart, endTime: ranges.previousEnd },
+				{ skipFormat: true },
+			)
+			return rawCompiledQuery({
+				sql:
+					`SELECT 'current' AS period, * FROM (\n${current.sql}\n)\n` +
+					`UNION ALL\n` +
+					`SELECT 'previous' AS period, * FROM (\n${previous.sql}\n)\n` +
+					`FORMAT JSON`,
+				reason: "param-varied-union",
+				justification:
+					"One builder over a current and a previous window; params are substituted once per compile, so a single CHQuery cannot carry both.",
+				// Both branches are the same builder over different windows, so the
+				// union is scoped exactly when the branch is.
+				tenantScope:
+					current.tenantScope === "single-tenant" && previous.tenantScope === "single-tenant"
+						? "single-tenant"
+						: "cross-tenant",
+				// `period` is typed as a plain String, not a `"current" | "previous"`
+				// literal union. The value is produced by our own SELECT so it is
+				// always one of the two at runtime — but the row schema describes the
+				// WIRE type, and ClickHouse reports the column as String. The SQL
+				// catalog's analyzer sweep decodes a synthetic zero-value row built
+				// from DESCRIBE output, where a String column is `""`; a literal union
+				// rejects that and fails the gate.
+				rowSchema: Schema.Struct({ period: Schema.String, ...rowSchema.fields }),
+			})
 		})
-	}
 
+	// Kept in four groups because Pipeable.pipe's typed overloads stop at 20 transformations.
+	// oxlint-disable-next-line effecttsgo/unnecessary-pipe-chain
 	return Match.value(pipe)
 		.pipe(
-			// ----- Traces -----
 			Match.when("list_traces", () =>
 				eraseType(
-					CH.compile(
-						CH.tracesRootListQuery({
+					compile(
+						tracesRootListQuery({
 							attributeIndexMode: attributeIndexMode(capabilities, "traces"),
 							limit: int("limit", 100),
 							offset: int("offset", 0),
@@ -125,7 +215,7 @@ export function compilePipeQuery(
 							errorsOnly: bool("has_error"),
 							minDurationMs: int("min_duration_ms"),
 							maxDurationMs: int("max_duration_ms"),
-							environments: str("deployment_env") ? [str("deployment_env")!] : undefined,
+							environments: strList("deployment_env"),
 							matchModes: {
 								serviceName:
 									str("service_match_mode") === "contains" ? "contains" : undefined,
@@ -133,24 +223,11 @@ export function compilePipeQuery(
 								deploymentEnv:
 									str("deployment_env_match_mode") === "contains" ? "contains" : undefined,
 							},
-							attributeFilters: str("attribute_filter_key")
-								? [
-										{
-											key: str("attribute_filter_key")!,
-											value: str("attribute_filter_value"),
-											mode: "equals" as const,
-										},
-									]
-								: undefined,
-							resourceAttributeFilters: str("resource_filter_key")
-								? [
-										{
-											key: str("resource_filter_key")!,
-											value: str("resource_filter_value"),
-											mode: "equals" as const,
-										},
-									]
-								: undefined,
+							attributeFilters: equalsFilter("attribute_filter_key", "attribute_filter_value"),
+							resourceAttributeFilters: equalsFilter(
+								"resource_filter_key",
+								"resource_filter_value",
+							),
 						}),
 						{ orgId, startTime, endTime },
 					),
@@ -163,8 +240,8 @@ export function compilePipeQuery(
 				// strongly recommended.
 				const narrowByTime = params.start_time != null && params.end_time != null
 				return eraseType(
-					CH.compile(
-						CH.spanHierarchyQuery({
+					compile(
+						spanHierarchyQuery({
 							traceId: String(params.trace_id),
 							spanId: str("span_id"),
 							narrowByTime,
@@ -175,8 +252,8 @@ export function compilePipeQuery(
 			}),
 			Match.when("traces_duration_stats", () =>
 				eraseType(
-					CH.compile(
-						CH.tracesDurationStatsQuery({
+					compile(
+						tracesDurationStatsQuery({
 							serviceName: str("service"),
 							spanName: str("span_name"),
 							hasError: bool("has_error"),
@@ -199,8 +276,8 @@ export function compilePipeQuery(
 			),
 			Match.when("traces_facets", () =>
 				eraseType(
-					CH.compileUnion(
-						CH.tracesFacetsQuery({
+					compileUnion(
+						tracesFacetsQuery({
 							serviceName: str("service"),
 							spanName: str("span_name"),
 							hasError: bool("has_error"),
@@ -235,8 +312,8 @@ export function compilePipeQuery(
 			),
 			Match.when("list_logs", () =>
 				eraseType(
-					CH.compile(
-						CH.logsListQuery({
+					compile(
+						logsListQuery({
 							attributeIndexMode: attributeIndexMode(capabilities, "logs"),
 							bodySearchMode: logBodySearchMode(capabilities),
 							serviceName: str("service"),
@@ -247,7 +324,7 @@ export function compilePipeQuery(
 							cursor: str("cursor"),
 							search: str("search"),
 							limit: int("limit", 50),
-							environments: str("deployment_env") ? [str("deployment_env")!] : undefined,
+							environments: strList("deployment_env"),
 							matchModes:
 								str("deployment_env_match_mode") === "contains"
 									? { deploymentEnv: "contains" }
@@ -259,8 +336,8 @@ export function compilePipeQuery(
 			),
 			Match.when("logs_count", () =>
 				eraseType(
-					CH.compile(
-						CH.logsCountQuery({
+					compile(
+						logsCountQuery({
 							attributeIndexMode: attributeIndexMode(capabilities, "logs"),
 							bodySearchMode: logBodySearchMode(capabilities),
 							serviceName: str("service"),
@@ -268,7 +345,7 @@ export function compilePipeQuery(
 							traceId: str("trace_id"),
 							spanId: str("span_id"),
 							search: str("search"),
-							environments: str("deployment_env") ? [str("deployment_env")!] : undefined,
+							environments: strList("deployment_env"),
 							matchModes:
 								str("deployment_env_match_mode") === "contains"
 									? { deploymentEnv: "contains" }
@@ -280,11 +357,11 @@ export function compilePipeQuery(
 			),
 			Match.when("logs_facets", () =>
 				eraseType(
-					CH.compileUnion(
-						CH.logsFacetsQuery({
+					compileUnion(
+						logsFacetsQuery({
 							serviceName: str("service"),
 							severity: str("severity"),
-							environments: str("deployment_env") ? [str("deployment_env")!] : undefined,
+							environments: strList("deployment_env"),
 							matchModes:
 								str("deployment_env_match_mode") === "contains"
 									? { deploymentEnv: "contains" }
@@ -295,26 +372,27 @@ export function compilePipeQuery(
 				),
 			),
 			Match.when("error_rate_by_service", () =>
-				eraseType(CH.compile(CH.errorRateByServiceQuery(), { orgId, startTime, endTime })),
+				eraseType(compile(errorRateByServiceQuery(), { orgId, startTime, endTime })),
 			),
 		)
 		.pipe(
 			Match.when("service_overview", () =>
 				eraseType(
-					CH.compile(
-						CH.serviceOverviewQuery({
+					compile(
+						serviceOverviewQuery({
 							environments: str("environments")?.split(",").filter(Boolean),
+							namespaces: str("namespaces")?.split(",").filter(Boolean),
 							commitShas: str("commit_shas")?.split(",").filter(Boolean),
 						}),
 						{ orgId, startTime, endTime },
-						{ rowSchema: CH.serviceOverviewRowSchema },
 					),
 				),
 			),
 			Match.when("service_overview_compare", () =>
 				compileCompare(
-					CH.serviceOverviewQuery({
+					serviceOverviewQuery({
 						environments: str("environments")?.split(",").filter(Boolean),
+						namespaces: str("namespaces")?.split(",").filter(Boolean),
 						commitShas: str("commit_shas")?.split(",").filter(Boolean),
 					}),
 					{
@@ -323,57 +401,66 @@ export function compilePipeQuery(
 						previousStart: str("previous_start_time") ?? startTime,
 						previousEnd: str("previous_end_time") ?? endTime,
 					},
-					CH.serviceOverviewRowSchema,
+					serviceOverviewRowSchema,
 				),
 			),
 			Match.when("services_facets", () =>
-				eraseType(CH.compileUnion(CH.servicesFacetsQuery(), { orgId, startTime, endTime })),
+				eraseType(compileUnion(servicesFacetsQuery(), { orgId, startTime, endTime })),
 			),
-			Match.when("service_releases_timeline", () =>
-				eraseType(
-					CH.compile(
-						CH.serviceReleasesTimelineQuery({ serviceName: String(params.service_name) }),
-						{ orgId, startTime, endTime, bucketSeconds: int("bucket_seconds", 300)! },
-						{ rowSchema: CH.serviceReleasesTimelineRowSchema },
+			Match.when("service_releases_timeline", () => {
+				const bucketSeconds = int("bucket_seconds", 300)
+				return eraseType(
+					compile(
+						serviceReleasesTimelineQuery({
+							serviceName: String(params.service_name),
+							bucketSeconds,
+						}),
+						{ orgId, startTime, endTime, bucketSeconds },
 					),
-				),
-			),
-			Match.when("service_apdex_time_series", () =>
-				eraseType(
-					CH.compile(
-						CH.serviceApdexTimeseriesQuery({
+				)
+			}),
+			Match.when("service_apdex_time_series", () => {
+				const bucketSeconds = int("bucket_seconds", 60)
+				return eraseType(
+					compile(
+						serviceApdexTimeseriesQuery({
 							serviceName: String(params.service_name),
 							apdexThresholdMs: int("apdex_threshold_ms", 500),
+							bucketSeconds,
 						}),
-						{ orgId, startTime, endTime, bucketSeconds: int("bucket_seconds", 60)! },
-						{ rowSchema: CH.serviceApdexTimeseriesRowSchema },
+						{ orgId, startTime, endTime, bucketSeconds },
 					),
-				),
-			),
+				)
+			}),
 			Match.when("get_service_usage", () =>
 				eraseType(
-					CH.compile(CH.serviceUsageQuery({ serviceName: str("service") }), {
-						orgId,
-						startTime,
-						endTime,
-					}),
+					compile(
+						serviceUsageQuery({
+							serviceName: str("service"),
+							serviceNames: str("services")?.split(",").filter(Boolean),
+						}),
+						{ orgId, startTime, endTime },
+					),
 				),
 			),
 			Match.when("get_service_usage_compare", () =>
 				compileCompare(
-					CH.serviceUsageQuery({ serviceName: str("service") }),
+					serviceUsageQuery({
+						serviceName: str("service"),
+						serviceNames: str("services")?.split(",").filter(Boolean),
+					}),
 					{
 						currentStart: str("current_start_time") ?? startTime,
 						currentEnd: str("current_end_time") ?? endTime,
 						previousStart: str("previous_start_time") ?? startTime,
 						previousEnd: str("previous_end_time") ?? endTime,
 					},
-					CH.serviceUsageRowSchema,
+					serviceUsageRowSchema,
 				),
 			),
 			Match.when("service_dependencies", () =>
 				eraseType(
-					CH.serviceDependenciesSQL(
+					serviceDependenciesSQL(
 						{ deploymentEnv: str("deployment_env") },
 						{ orgId, startTime, endTime },
 					),
@@ -381,15 +468,22 @@ export function compilePipeQuery(
 			),
 		)
 		.pipe(
-			// ----- Errors -----
 			Match.when("errors_by_type", () =>
 				eraseType(
-					CH.compile(
-						CH.errorsByTypeQuery({
+					compile(
+						errorsByTypeQuery({
 							rootOnly: bool("root_only"),
 							services: str("services")?.split(",").filter(Boolean),
 							deploymentEnvs: str("deployment_envs")?.split(",").filter(Boolean),
 							fingerprintHashes: str("fingerprint_hashes")?.split(",").filter(Boolean),
+							unexpectedIdentity:
+								str("identity") === "unexpected"
+									? {
+											namespacePrefix:
+												str("namespace_prefix") ?? DEFAULT_ERROR_NAMESPACE_PREFIX,
+											markerLabels: UNEXPECTED_IDENTITY_MARKERS,
+										}
+									: undefined,
 							limit: int("limit", 50),
 						}),
 						{ orgId, startTime, endTime },
@@ -398,19 +492,19 @@ export function compilePipeQuery(
 			),
 			Match.when("errors_timeseries", () =>
 				eraseType(
-					CH.compile(
-						CH.errorsTimeseriesQuery({
+					compile(
+						errorsTimeseriesQuery({
 							fingerprintHash: String(params.fingerprint_hash),
 							services: str("services")?.split(",").filter(Boolean),
 						}),
-						{ orgId, startTime, endTime, bucketSeconds: int("bucket_seconds", 3600)! },
+						{ orgId, startTime, endTime, bucketSeconds: int("bucket_seconds", 3600) },
 					),
 				),
 			),
 			Match.when("errors_facets", () =>
 				eraseType(
-					CH.compileUnion(
-						CH.errorsFacetsQuery({
+					compileUnion(
+						errorsFacetsQuery({
 							rootOnly: bool("root_only"),
 							services: str("services")?.split(",").filter(Boolean),
 							deploymentEnvs: str("deployment_envs")?.split(",").filter(Boolean),
@@ -422,8 +516,8 @@ export function compilePipeQuery(
 			),
 			Match.when("errors_summary", () =>
 				eraseType(
-					CH.compile(
-						CH.errorsSummaryQuery({
+					compile(
+						errorsSummaryQuery({
 							rootOnly: bool("root_only"),
 							services: str("services")?.split(",").filter(Boolean),
 							deploymentEnvs: str("deployment_envs")?.split(",").filter(Boolean),
@@ -435,8 +529,8 @@ export function compilePipeQuery(
 			),
 			Match.when("error_detail_traces", () =>
 				eraseType(
-					CH.compile(
-						CH.errorDetailTracesQuery({
+					compile(
+						errorDetailTracesQuery({
 							fingerprintHash: String(params.fingerprint_hash),
 							rootOnly: bool("root_only"),
 							services: str("services")?.split(",").filter(Boolean),
@@ -448,8 +542,8 @@ export function compilePipeQuery(
 			),
 			Match.when("error_issues", () =>
 				eraseType(
-					CH.compile(
-						CH.errorIssuesQuery({
+					compile(
+						errorIssuesQuery({
 							services: str("services")?.split(",").filter(Boolean),
 							deploymentEnvs: str("deployment_envs")?.split(",").filter(Boolean),
 							fingerprintHashes: str("fingerprint_hashes")?.split(",").filter(Boolean),
@@ -462,18 +556,18 @@ export function compilePipeQuery(
 			),
 			Match.when("error_issue_timeseries", () =>
 				eraseType(
-					CH.compile(CH.errorIssueTimeseriesQuery(), {
+					compile(errorIssueTimeseriesQuery(), {
 						orgId,
 						startTime,
 						endTime,
 						fingerprintHash: String(params.fingerprint_hash),
-						bucketSeconds: int("bucket_seconds", 3600)!,
+						bucketSeconds: int("bucket_seconds", 3600),
 					}),
 				),
 			),
 			Match.when("error_issue_sample_traces", () =>
 				eraseType(
-					CH.compile(CH.errorIssueSampleTracesQuery({ limit: int("limit", 25) }), {
+					compile(errorIssueSampleTracesQuery({ limit: int("limit", 25) }), {
 						orgId,
 						startTime,
 						endTime,
@@ -481,11 +575,20 @@ export function compilePipeQuery(
 					}),
 				),
 			),
-			// ----- Metrics -----
+			Match.when("error_issue_environments", () =>
+				eraseType(
+					compile(errorIssueEnvironmentsQuery({ limit: int("limit", 20) }), {
+						orgId,
+						startTime,
+						endTime,
+						fingerprintHash: String(params.fingerprint_hash),
+					}),
+				),
+			),
 			Match.when("list_metrics", () =>
 				eraseType(
-					CH.compile(
-						CH.listMetricsQuery({
+					compile(
+						listMetricsQuery({
 							serviceName: str("service"),
 							metricType: str("metric_type"),
 							search: str("search"),
@@ -498,7 +601,7 @@ export function compilePipeQuery(
 			),
 			Match.when("metrics_summary", () =>
 				eraseType(
-					CH.compile(CH.metricsSummaryQuery({ serviceName: str("service") }), {
+					compile(metricsSummaryQuery({ serviceName: str("service") }), {
 						orgId,
 						startTime,
 						endTime,
@@ -507,10 +610,9 @@ export function compilePipeQuery(
 			),
 		)
 		.pipe(
-			// ----- Attributes -----
 			Match.when("span_attribute_keys", () =>
 				eraseType(
-					CH.compile(CH.attributeKeysQuery({ scope: "span", limit: int("limit", 200) }), {
+					compile(attributeKeysQuery({ scope: "span", limit: int("limit", 200) }), {
 						orgId,
 						startTime,
 						endTime,
@@ -519,7 +621,7 @@ export function compilePipeQuery(
 			),
 			Match.when("resource_attribute_keys", () =>
 				eraseType(
-					CH.compile(CH.attributeKeysQuery({ scope: "resource", limit: int("limit", 200) }), {
+					compile(attributeKeysQuery({ scope: "resource", limit: int("limit", 200) }), {
 						orgId,
 						startTime,
 						endTime,
@@ -533,19 +635,16 @@ export function compilePipeQuery(
 				const metricType = parseMetricType(str("metric_type"))
 				if (metricName && metricType) {
 					return eraseType(
-						CH.compile(
-							CH.metricScopedAttributeKeysQuery({ metricType, limit: int("limit", 200) }),
-							{
-								orgId,
-								startTime,
-								endTime,
-								metricName,
-							},
-						),
+						compile(metricScopedAttributeKeysQuery({ metricType, limit: int("limit", 200) }), {
+							orgId,
+							startTime,
+							endTime,
+							metricName,
+						}),
 					)
 				}
 				return eraseType(
-					CH.compile(CH.attributeKeysQuery({ scope: "metric", limit: int("limit", 200) }), {
+					compile(attributeKeysQuery({ scope: "metric", limit: int("limit", 200) }), {
 						orgId,
 						startTime,
 						endTime,
@@ -554,8 +653,8 @@ export function compilePipeQuery(
 			}),
 			Match.when("span_attribute_values", () =>
 				eraseType(
-					CH.compile(
-						CH.spanAttributeValuesQuery({
+					compile(
+						spanAttributeValuesQuery({
 							attributeKey: String(params.attribute_key),
 							limit: int("limit", 50),
 						}),
@@ -565,8 +664,8 @@ export function compilePipeQuery(
 			),
 			Match.when("resource_attribute_values", () =>
 				eraseType(
-					CH.compile(
-						CH.resourceAttributeValuesQuery({
+					compile(
+						resourceAttributeValuesQuery({
 							attributeKey: String(params.attribute_key),
 							limit: int("limit", 50),
 						}),
@@ -579,8 +678,8 @@ export function compilePipeQuery(
 				const metricType = parseMetricType(str("metric_type"))
 				if (metricName && metricType) {
 					return eraseType(
-						CH.compile(
-							CH.metricScopedAttributeValuesQuery({
+						compile(
+							metricScopedAttributeValuesQuery({
 								metricType,
 								attributeKey: String(params.attribute_key),
 								limit: int("limit", 50),
@@ -590,8 +689,8 @@ export function compilePipeQuery(
 					)
 				}
 				return eraseType(
-					CH.compile(
-						CH.metricAttributeValuesQuery({
+					compile(
+						metricAttributeValuesQuery({
 							attributeKey: String(params.attribute_key),
 							limit: int("limit", 50),
 						}),
@@ -599,18 +698,17 @@ export function compilePipeQuery(
 					),
 				)
 			}),
-			// ----- Custom charts -----
 			Match.when("custom_traces_timeseries", () => {
 				const tsOpts = {
 					...pipeParamsToTracesTimeseriesOpts(params),
 					attributeIndexMode: attributeIndexMode(capabilities, "traces"),
 				}
 				return eraseType(
-					CH.compile(CH.tracesTimeseriesQuery(tsOpts), {
+					compile(tracesTimeseriesQuery(tsOpts), {
 						orgId,
 						startTime,
 						endTime,
-						bucketSeconds: int("bucket_seconds", 60)!,
+						bucketSeconds: int("bucket_seconds", 60),
 					}),
 				)
 			}),
@@ -619,14 +717,14 @@ export function compilePipeQuery(
 					...pipeParamsToTracesBreakdownOpts(params),
 					attributeIndexMode: attributeIndexMode(capabilities, "traces"),
 				}
-				return eraseType(CH.compile(CH.tracesBreakdownQuery(bdOpts), { orgId, startTime, endTime }))
+				return eraseType(compile(tracesBreakdownQuery(bdOpts), { orgId, startTime, endTime }))
 			}),
 			Match.when("top_operations", () =>
 				eraseType(
-					CH.compile(
-						CH.topOperationsQuery({
+					compile(
+						topOperationsQuery({
 							metric: (str("metric") ?? "count") as TracesMetric,
-							limit: int("limit", 20)!,
+							limit: int("limit", 20),
 						}),
 						{ orgId, startTime, endTime, serviceName: str("service_name") ?? "" },
 					),
@@ -634,8 +732,8 @@ export function compilePipeQuery(
 			),
 			Match.when("slow_traces", () =>
 				eraseType(
-					CH.compile(
-						CH.slowTracesQuery({
+					compile(
+						slowTracesQuery({
 							service: str("service"),
 							environment: str("deployment_env") ?? str("environment"),
 							limit: int("limit", 10),
@@ -655,8 +753,8 @@ export function compilePipeQuery(
 					? [...(passedFilters ?? []), { key: "http.method", value: httpMethod, mode: "equals" }]
 					: passedFilters
 				return eraseType(
-					CH.compile(
-						CH.spanSearchQuery({
+					compile(
+						spanSearchQuery({
 							serviceName: str("service"),
 							spanName: str("span_name"),
 							matchModes:
@@ -682,9 +780,7 @@ export function compilePipeQuery(
 		)
 }
 
-// ---------------------------------------------------------------------------
 // Attribute filter param helpers (numbered suffix pattern from Tinybird pipes)
-// ---------------------------------------------------------------------------
 
 const SUFFIXES = ["", "_2", "_3", "_4", "_5"] as const
 
@@ -715,9 +811,7 @@ function buildAttributeFiltersFromParams(
 	return filters.length > 0 ? filters : undefined
 }
 
-// ---------------------------------------------------------------------------
 // Parameter adapters — translate pipe-style params to typed query opts
-// ---------------------------------------------------------------------------
 
 /**
  * `errorsOnly` is tri-state in the query layer: `true` keeps only errored spans,
@@ -733,7 +827,7 @@ function errorsOnlyParam(raw: string | undefined): boolean | undefined {
 	return true
 }
 
-function pipeParamsToTracesTimeseriesOpts(params: PipeParams): CH.TracesTimeseriesOpts {
+function pipeParamsToTracesTimeseriesOpts(params: PipeParams): TracesTimeseriesOpts {
 	const str = (key: string) => (params[key] != null ? String(params[key]) : undefined)
 	const int = (key: string, def: number) => (params[key] != null ? Number(params[key]) : def)
 
@@ -757,19 +851,23 @@ function pipeParamsToTracesTimeseriesOpts(params: PipeParams): CH.TracesTimeseri
 
 		errorsOnly: errorsOnlyParam(str("errors_only")),
 		environments: str("environments")?.split(",").filter(Boolean),
+		namespaces: str("namespaces")?.split(",").filter(Boolean),
 		commitShas: str("commit_shas")?.split(",").filter(Boolean),
 		attributeFilters: buildAttributeFiltersFromParams(params, "attribute_filter"),
 		resourceAttributeFilters: buildAttributeFiltersFromParams(params, "resource_filter"),
 	}
 }
 
-function pipeParamsToTracesBreakdownOpts(params: PipeParams): CH.TracesBreakdownOpts {
+function pipeParamsToTracesBreakdownOpts(params: PipeParams): TracesBreakdownOpts {
 	const str = (key: string) => (params[key] != null ? String(params[key]) : undefined)
 	const int = (key: string, def: number) => (params[key] != null ? Number(params[key]) : def)
 
 	let groupBy = "service"
 	let groupByAttributeKey: string | undefined
-	if (str("group_by_service")) groupBy = "service"
+	if (str("group_by_all")) groupBy = "all"
+	else if (str("group_by_namespace")) groupBy = "namespace"
+	else if (str("group_by_environment")) groupBy = "environment"
+	else if (str("group_by_service")) groupBy = "service"
 	else if (str("group_by_span_name")) groupBy = "span_name"
 	else if (str("group_by_status_code")) groupBy = "status_code"
 	else if (str("group_by_http_method")) groupBy = "http_method"
@@ -791,6 +889,7 @@ function pipeParamsToTracesBreakdownOpts(params: PipeParams): CH.TracesBreakdown
 
 		errorsOnly: errorsOnlyParam(str("errors_only")),
 		environments: str("environments")?.split(",").filter(Boolean),
+		namespaces: str("namespaces")?.split(",").filter(Boolean),
 		commitShas: str("commit_shas")?.split(",").filter(Boolean),
 		attributeFilters: buildAttributeFiltersFromParams(params, "attribute_filter"),
 		resourceAttributeFilters: buildAttributeFiltersFromParams(params, "resource_filter"),

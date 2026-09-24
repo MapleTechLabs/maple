@@ -1,13 +1,26 @@
 import { HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/unstable/httpapi"
 import { Schema } from "effect"
 import { ScrapeAuthType, ScrapeIntervalSeconds, ScrapeTargetId, ScrapeTargetType } from "../../primitives"
-import { AuthorizationV2, V2SchemaErrors } from "./auth"
-import { ListOf, ListQuery, Timestamp } from "./envelopes"
-import { V2InvalidRequestError, V2NotFoundError, V2ServiceUnavailableError, V2UpstreamError } from "./errors"
+import {
+	IntegrationsConfigurationError,
+	IntegrationsNotConnectedError,
+	IntegrationsPersistenceError,
+	IntegrationsRevokedError,
+	IntegrationsUpstreamError,
+	IntegrationsValidationError,
+} from "../integrations"
+import {
+	ScrapeTargetEncryptionError,
+	ScrapeTargetNotFoundError,
+	ScrapeTargetPersistenceError,
+	ScrapeTargetStoredConfigInvalidError,
+	ScrapeTargetValidationError,
+} from "../scrape-targets"
+import { AuthorizationV2 } from "./auth"
+import { wireExample, ListOf, ListQuery, Timestamp } from "./envelopes"
+import { V2InsufficientPermissions, V2ParameterInvalid } from "./errors"
+import { publicErrors } from "./public-error"
 import { PublicId, PublicIdPrefixes } from "./public-id"
-
-/** See api-keys.ts: examples are authored in wire (encoded) shape. */
-const wireExample = <A>(example: object): A => example as A
 
 /** `scrp_…` public ID ⇄ internal `ScrapeTargetId` (raw UUID). */
 export const ScrapeTargetPublicId = PublicId(PublicIdPrefixes.scrapeTarget, ScrapeTargetId)
@@ -332,7 +345,22 @@ export const V2ScrapeTargetChecksQuery = Schema.Struct({
 })
 export type V2ScrapeTargetChecksQuery = Schema.Schema.Type<typeof V2ScrapeTargetChecksQuery>
 
-const commonErrors = [V2InvalidRequestError, V2ServiceUnavailableError] as const
+const [scrapeNotFound, scrapeValidation, scrapePersistence, scrapeEncryption, scrapeStoredConfigInvalid] =
+	publicErrors(
+		ScrapeTargetNotFoundError,
+		ScrapeTargetValidationError,
+		ScrapeTargetPersistenceError,
+		ScrapeTargetEncryptionError,
+		ScrapeTargetStoredConfigInvalidError,
+	)
+const planetScaleAccessTokenErrors = publicErrors(
+	IntegrationsNotConnectedError,
+	IntegrationsRevokedError,
+	IntegrationsUpstreamError,
+	IntegrationsPersistenceError,
+	IntegrationsValidationError,
+	IntegrationsConfigurationError,
+)
 
 const ScrapeTargetList = ListOf(V2ScrapeTarget).annotate({
 	identifier: "ScrapeTargetList",
@@ -351,7 +379,7 @@ export class V2ScrapeTargetsApiGroup extends HttpApiGroup.make("scrapeTargets")
 		HttpApiEndpoint.get("list", "/", {
 			query: ListQuery,
 			success: ScrapeTargetList,
-			error: [...commonErrors],
+			error: [V2ParameterInvalid.schema, scrapePersistence, scrapeStoredConfigInvalid],
 		}).annotateMerge(
 			OpenApi.annotations({
 				identifier: "listScrapeTargets",
@@ -365,13 +393,13 @@ export class V2ScrapeTargetsApiGroup extends HttpApiGroup.make("scrapeTargets")
 		HttpApiEndpoint.post("create", "/", {
 			payload: V2ScrapeTargetCreateParams,
 			success: V2ScrapeTarget,
-			error: [...commonErrors],
+			error: [V2InsufficientPermissions.schema, scrapeValidation, scrapePersistence, scrapeEncryption],
 		}).annotateMerge(
 			OpenApi.annotations({
 				identifier: "createScrapeTarget",
 				summary: "Create a scrape target",
 				description:
-					"Creates a scrape target. `prometheus` targets need a `url`; `planetscale` targets need an `organization` (the URL is derived). Requires the `scrape_targets:write` scope.",
+					"Creates a scrape target. `prometheus` targets need a `url`; `planetscale` targets need an `organization` (the URL is derived). Requires the `scrape_targets:write` scope and an org-admin caller.",
 			}),
 		),
 	)
@@ -379,7 +407,7 @@ export class V2ScrapeTargetsApiGroup extends HttpApiGroup.make("scrapeTargets")
 		HttpApiEndpoint.get("retrieve", "/:id", {
 			params: { id: ScrapeTargetPublicId },
 			success: V2ScrapeTarget,
-			error: [...commonErrors, V2NotFoundError],
+			error: [scrapeNotFound, scrapePersistence, scrapeStoredConfigInvalid],
 		}).annotateMerge(
 			OpenApi.annotations({
 				identifier: "getScrapeTarget",
@@ -394,13 +422,20 @@ export class V2ScrapeTargetsApiGroup extends HttpApiGroup.make("scrapeTargets")
 			params: { id: ScrapeTargetPublicId },
 			payload: V2ScrapeTargetUpdateParams,
 			success: V2ScrapeTarget,
-			error: [...commonErrors, V2NotFoundError],
+			error: [
+				V2InsufficientPermissions.schema,
+				scrapeNotFound,
+				scrapeValidation,
+				scrapePersistence,
+				scrapeEncryption,
+				scrapeStoredConfigInvalid,
+			],
 		}).annotateMerge(
 			OpenApi.annotations({
 				identifier: "updateScrapeTarget",
 				summary: "Update a scrape target",
 				description:
-					"Updates a target's configuration; omitted fields are unchanged. Requires the `scrape_targets:write` scope.",
+					"Updates a target's configuration; omitted fields are unchanged. Changing the scheme, host, or port of a target that stores credentials requires re-supplying `auth_credentials` in the same request — stored credentials are never carried to a new origin. Targets owned by an integration (`managed_by` set) are edited through that integration. Requires the `scrape_targets:write` scope and an org-admin caller.",
 			}),
 		),
 	)
@@ -408,13 +443,13 @@ export class V2ScrapeTargetsApiGroup extends HttpApiGroup.make("scrapeTargets")
 		HttpApiEndpoint.delete("delete", "/:id", {
 			params: { id: ScrapeTargetPublicId },
 			success: V2ScrapeTargetDeleteResponse,
-			error: [...commonErrors, V2NotFoundError],
+			error: [V2InsufficientPermissions.schema, scrapeNotFound, scrapeValidation, scrapePersistence],
 		}).annotateMerge(
 			OpenApi.annotations({
 				identifier: "deleteScrapeTarget",
 				summary: "Delete a scrape target",
 				description:
-					"Permanently deletes a scrape target and stops scraping it. Already-ingested metrics are unaffected. Requires the `scrape_targets:write` scope.",
+					"Permanently deletes a scrape target and stops scraping it. Already-ingested metrics are unaffected. Targets owned by an integration (`managed_by` set) are removed through that integration. Requires the `scrape_targets:write` scope and an org-admin caller.",
 			}),
 		),
 	)
@@ -422,13 +457,19 @@ export class V2ScrapeTargetsApiGroup extends HttpApiGroup.make("scrapeTargets")
 		HttpApiEndpoint.post("probe", "/:id/probe", {
 			params: { id: ScrapeTargetPublicId },
 			success: V2ScrapeTargetProbeResult,
-			error: [...commonErrors, V2NotFoundError, V2UpstreamError],
+			error: [
+				V2InsufficientPermissions.schema,
+				scrapeNotFound,
+				scrapePersistence,
+				scrapeEncryption,
+				...planetScaleAccessTokenErrors,
+			],
 		}).annotateMerge(
 			OpenApi.annotations({
 				identifier: "probeScrapeTarget",
 				summary: "Probe a scrape target",
 				description:
-					"Runs an on-demand scrape against the target and reports the outcome without waiting for the schedule. Requires the `scrape_targets:write` scope.",
+					"Runs an on-demand scrape against the target and reports the outcome without waiting for the schedule. Requires the `scrape_targets:write` scope and an org-admin caller.",
 			}),
 		),
 	)
@@ -437,7 +478,7 @@ export class V2ScrapeTargetsApiGroup extends HttpApiGroup.make("scrapeTargets")
 			params: { id: ScrapeTargetPublicId },
 			query: V2ScrapeTargetChecksQuery,
 			success: ScrapeTargetCheckList,
-			error: [...commonErrors, V2NotFoundError],
+			error: [V2ParameterInvalid.schema, scrapeNotFound, scrapePersistence],
 		}).annotateMerge(
 			OpenApi.annotations({
 				identifier: "listScrapeTargetChecks",
@@ -449,7 +490,6 @@ export class V2ScrapeTargetsApiGroup extends HttpApiGroup.make("scrapeTargets")
 	)
 	.prefix("/v2/scrape_targets")
 	.middleware(AuthorizationV2)
-	.middleware(V2SchemaErrors)
 	.annotateMerge(
 		OpenApi.annotations({
 			title: "Scrape Targets",

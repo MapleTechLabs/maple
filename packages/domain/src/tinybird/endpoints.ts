@@ -1,14 +1,10 @@
-// ---------------------------------------------------------------------------
 // Tinybird Endpoint Types
 //
 // Type-only definitions for query results. The actual SQL queries are compiled
 // by @maple/query-engine — these types exist solely for consumers that import
 // output/param shapes (apps/web, observability layer).
-// ---------------------------------------------------------------------------
 
-// ---------------------------------------------------------------------------
 // list_traces
-// ---------------------------------------------------------------------------
 
 export interface ListTracesOutput {
 	readonly traceId: string
@@ -16,13 +12,15 @@ export interface ListTracesOutput {
 	readonly endTime: string
 	readonly durationMicros: number
 	readonly spanCount: number
-	readonly services: string[]
+	readonly services: readonly string[]
 	readonly rootSpanName: string
 	readonly rootSpanKind: string
 	readonly rootSpanStatusCode: string
 	readonly rootHttpMethod: string
 	readonly rootHttpRoute: string
 	readonly rootHttpStatusCode: string
+	/** The root span's projected attribute map, JSON-encoded. */
+	readonly rootSpanAttributes: string
 	readonly hasError: number
 }
 
@@ -54,9 +52,7 @@ export interface ListTracesParams {
 	any_span_name_match_mode?: string
 }
 
-// ---------------------------------------------------------------------------
 // span_hierarchy
-// ---------------------------------------------------------------------------
 
 export interface SpanHierarchyOutput {
 	readonly traceId: string
@@ -80,9 +76,7 @@ export interface SpanHierarchyParams {
 	span_id?: string
 }
 
-// ---------------------------------------------------------------------------
 // list_logs
-// ---------------------------------------------------------------------------
 
 export interface ListLogsOutput {
 	readonly timestamp: string
@@ -92,6 +86,8 @@ export interface ListLogsOutput {
 	readonly body: string
 	readonly traceId: string
 	readonly spanId: string
+	/** Stable per-row identity (`hex(MD5(tuple(…)))`), the list's pagination cursor. */
+	readonly recordIdentity: string
 	readonly logAttributes: string
 	readonly resourceAttributes: string
 }
@@ -110,9 +106,7 @@ export interface ListLogsParams {
 	search?: string
 }
 
-// ---------------------------------------------------------------------------
 // logs_count
-// ---------------------------------------------------------------------------
 
 export interface LogsCountOutput {
 	readonly total: number
@@ -128,13 +122,13 @@ export interface LogsCountParams {
 	search?: string
 }
 
-// ---------------------------------------------------------------------------
 // logs_facets
-// ---------------------------------------------------------------------------
 
 export interface LogsFacetsOutput {
 	readonly severityText: string
 	readonly serviceName: string
+	readonly deploymentEnv: string
+	readonly namespace: string
 	readonly count: number
 	readonly facetType: string
 }
@@ -147,9 +141,7 @@ export interface LogsFacetsParams {
 	end_time?: string
 }
 
-// ---------------------------------------------------------------------------
 // error_rate_by_service
-// ---------------------------------------------------------------------------
 
 export interface ErrorRateByServiceOutput {
 	readonly serviceName: string
@@ -164,9 +156,7 @@ export interface ErrorRateByServiceParams {
 	end_time?: string
 }
 
-// ---------------------------------------------------------------------------
 // get_service_usage
-// ---------------------------------------------------------------------------
 
 export interface GetServiceUsageOutput {
 	readonly serviceName: string
@@ -188,13 +178,12 @@ export interface GetServiceUsageOutput {
 export interface GetServiceUsageParams {
 	org_id: string
 	service?: string
+	services?: string
 	start_time?: string
 	end_time?: string
 }
 
-// ---------------------------------------------------------------------------
 // get_service_usage_compare
-// ---------------------------------------------------------------------------
 
 export type GetServiceUsageComparedOutput = GetServiceUsageOutput & {
 	readonly period: "current" | "previous"
@@ -203,15 +192,16 @@ export type GetServiceUsageComparedOutput = GetServiceUsageOutput & {
 export interface GetServiceUsageCompareParams {
 	org_id: string
 	service?: string
+	/** Comma-separated. `service_usage` has no env/namespace column, so a scoped
+	 * caller passes its resolved service membership here instead. */
+	services?: string
 	current_start_time: string
 	current_end_time: string
 	previous_start_time: string
 	previous_end_time: string
 }
 
-// ---------------------------------------------------------------------------
 // list_metrics
-// ---------------------------------------------------------------------------
 
 export interface ListMetricsOutput {
 	readonly metricName: string
@@ -236,9 +226,7 @@ export interface ListMetricsParams {
 	search?: string
 }
 
-// ---------------------------------------------------------------------------
 // metrics_summary
-// ---------------------------------------------------------------------------
 
 export interface MetricsSummaryOutput {
 	readonly metricType: string
@@ -253,9 +241,7 @@ export interface MetricsSummaryParams {
 	end_time?: string
 }
 
-// ---------------------------------------------------------------------------
 // traces_facets
-// ---------------------------------------------------------------------------
 
 export interface TracesFacetsOutput {
 	readonly name: string
@@ -286,9 +272,7 @@ export interface TracesFacetsParams {
 	resource_filter_value_match_mode?: string
 }
 
-// ---------------------------------------------------------------------------
 // traces_duration_stats
-// ---------------------------------------------------------------------------
 
 export interface TracesDurationStatsOutput {
 	readonly minDurationMs: number
@@ -318,15 +302,25 @@ export interface TracesDurationStatsParams {
 	resource_filter_value_match_mode?: string
 }
 
-// ---------------------------------------------------------------------------
 // service_overview
-// ---------------------------------------------------------------------------
+
+/**
+ * One commit's slice of a (service, environment) row: `[sha, spanCount,
+ * errorCount, firstSeen]`. A positional tuple because that is how ClickHouse
+ * serializes `tuple(...)` in `FORMAT JSON` — a nested array, not an object.
+ */
+export type ServiceCommitTuple = readonly [
+	commitSha: string,
+	spanCount: number,
+	errorCount: number,
+	firstSeen: string,
+]
 
 export interface ServiceOverviewOutput {
 	readonly serviceName: string
+	/** The dominant namespace; the metrics beside it cover every namespace variant. */
 	readonly serviceNamespace: string
 	readonly environment: string
-	readonly commitSha: string
 	readonly throughput: number
 	readonly errorCount: number
 	readonly estimatedErrorCount: number
@@ -335,6 +329,14 @@ export interface ServiceOverviewOutput {
 	readonly p95LatencyMs: number
 	readonly p99LatencyMs: number
 	readonly estimatedSpanCount: number
+	readonly firstSeen: string
+	/**
+	 * Per-commit breakdown, sorted by span count descending and capped. Replaces
+	 * the former one-row-per-commit shape: rows are now collapsed to the
+	 * (service, environment) grain the UI renders, with quantiles merged in
+	 * ClickHouse rather than averaged in the client.
+	 */
+	readonly commits: readonly ServiceCommitTuple[]
 }
 
 export interface ServiceOverviewParams {
@@ -346,9 +348,7 @@ export interface ServiceOverviewParams {
 	commit_shas?: string
 }
 
-// ---------------------------------------------------------------------------
 // service_overview_compare
-// ---------------------------------------------------------------------------
 
 export type ServiceOverviewComparedOutput = ServiceOverviewOutput & {
 	readonly period: "current" | "previous"
@@ -361,12 +361,11 @@ export interface ServiceOverviewCompareParams {
 	previous_start_time: string
 	previous_end_time: string
 	environments?: string
+	namespaces?: string
 	commit_shas?: string
 }
 
-// ---------------------------------------------------------------------------
 // services_facets
-// ---------------------------------------------------------------------------
 
 export interface ServicesFacetsOutput {
 	readonly name: string
@@ -380,14 +379,13 @@ export interface ServicesFacetsParams {
 	end_time?: string
 }
 
-// ---------------------------------------------------------------------------
 // service_releases_timeline
-// ---------------------------------------------------------------------------
 
 export interface ServiceReleasesTimelineOutput {
 	readonly bucket: string
 	readonly commitSha: string
 	readonly count: number
+	readonly errorCount: number
 }
 
 export interface ServiceReleasesTimelineParams {
@@ -398,9 +396,7 @@ export interface ServiceReleasesTimelineParams {
 	bucket_seconds?: number
 }
 
-// ---------------------------------------------------------------------------
 // errors_by_type
-// ---------------------------------------------------------------------------
 
 export interface ErrorsByTypeOutput {
 	readonly fingerprintHash: string
@@ -422,11 +418,12 @@ export interface ErrorsByTypeParams {
 	limit?: number
 	exclude_spam_patterns?: string
 	root_only?: boolean
+	/** "unexpected" keeps only identities outside `namespace_prefix` plus the 5xx/unexpected-envelope markers. */
+	identity?: string
+	namespace_prefix?: string
 }
 
-// ---------------------------------------------------------------------------
 // errors_timeseries
-// ---------------------------------------------------------------------------
 
 export interface ErrorsTimeseriesOutput {
 	readonly bucket: string
@@ -443,18 +440,25 @@ export interface ErrorsTimeseriesParams {
 	exclude_spam_patterns?: string
 }
 
-// ---------------------------------------------------------------------------
 // error_detail_traces
-// ---------------------------------------------------------------------------
 
 export interface ErrorDetailTracesOutput {
 	readonly traceId: string
 	readonly startTime: string
 	readonly durationMicros: number
 	readonly spanCount: number
-	readonly services: string[]
+	readonly services: readonly string[]
 	readonly rootSpanName: string
 	readonly errorMessage: string
+	readonly errorSpanId: string
+	readonly errorSpanName: string
+	readonly errorServiceName: string
+	readonly errorModel: string
+	readonly errorToolName: string
+	readonly errorHttpMethod: string
+	readonly errorHttpRoute: string
+	readonly errorQueryContext: string
+	readonly errorType: string
 }
 
 export interface ErrorDetailTracesParams {
@@ -468,9 +472,7 @@ export interface ErrorDetailTracesParams {
 	root_only?: boolean
 }
 
-// ---------------------------------------------------------------------------
 // errors_facets
-// ---------------------------------------------------------------------------
 
 export interface ErrorsFacetsOutput {
 	readonly name: string
@@ -489,9 +491,7 @@ export interface ErrorsFacetsParams {
 	root_only?: boolean
 }
 
-// ---------------------------------------------------------------------------
 // errors_summary
-// ---------------------------------------------------------------------------
 
 export interface ErrorsSummaryOutput {
 	readonly totalErrors: number
@@ -512,9 +512,7 @@ export interface ErrorsSummaryParams {
 	root_only?: boolean
 }
 
-// ---------------------------------------------------------------------------
 // service_apdex_time_series
-// ---------------------------------------------------------------------------
 
 export interface ServiceApdexTimeSeriesOutput {
 	readonly bucket: string
@@ -533,9 +531,7 @@ export interface ServiceApdexTimeSeriesParams {
 	apdex_threshold_ms?: number
 }
 
-// ---------------------------------------------------------------------------
 // Alert aggregates
-// ---------------------------------------------------------------------------
 
 export interface AlertTracesAggregateOutput {
 	readonly count: number
@@ -632,9 +628,7 @@ export interface AlertLogsAggregateByServiceParams {
 	severity?: string
 }
 
-// ---------------------------------------------------------------------------
 // Custom charts
-// ---------------------------------------------------------------------------
 
 export interface CustomTracesTimeseriesOutput {
 	readonly bucket: string
@@ -691,6 +685,14 @@ export interface CustomTracesBreakdownParams {
 	service_name?: string
 	span_name?: string
 	limit?: number
+	/** Collapse to a single row for the whole window — the only shape that yields
+	 * a true org-wide quantile, since per-group quantiles cannot be merged. */
+	group_by_all?: string
+	/** True `service.namespace` / `deployment.environment` grain. Needed because
+	 * `service_overview`'s namespace column is a dominant-value `argMax`, not a
+	 * grouping key, so per-namespace totals cannot be summed out of it. */
+	group_by_namespace?: string
+	group_by_environment?: string
 	group_by_service?: string
 	group_by_span_name?: string
 	group_by_status_code?: string
@@ -698,6 +700,7 @@ export interface CustomTracesBreakdownParams {
 	group_by_attribute?: string
 	root_only?: boolean
 	environments?: string
+	namespaces?: string
 	commit_shas?: string
 	errors_only?: boolean
 	apdex_threshold_ms?: number
@@ -737,9 +740,7 @@ export interface CustomLogsBreakdownParams {
 	group_by_severity?: string
 }
 
-// ---------------------------------------------------------------------------
 // service_dependencies
-// ---------------------------------------------------------------------------
 
 export interface ServiceDependenciesOutput {
 	readonly sourceService: string
@@ -747,7 +748,8 @@ export interface ServiceDependenciesOutput {
 	readonly callCount: number
 	readonly errorCount: number
 	readonly avgDurationMs: number
-	readonly p95DurationMs: number
+	/** Slowest call in the window, not a percentile — the edge rollup stores a max. */
+	readonly maxDurationMs: number
 	readonly estimatedSpanCount: number
 }
 
@@ -758,9 +760,7 @@ export interface ServiceDependenciesParams {
 	deployment_env?: string
 }
 
-// ---------------------------------------------------------------------------
 // Attribute keys & values
-// ---------------------------------------------------------------------------
 
 export interface SpanAttributeKeysOutput {
 	readonly attributeKey: string

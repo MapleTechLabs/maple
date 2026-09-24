@@ -4,24 +4,20 @@ import { AiTriageIncidentKind } from "../ai-triage"
 import { IssueSeverity } from "../errors"
 import {
 	InvestigationConfidence,
-	InvestigationFanoutState,
+	InvestigationAgentUnavailableError,
+	InvestigationDataCorruptionError,
+	InvestigationNotFoundError,
+	InvestigationPersistenceError,
 	InvestigationSeededBy,
+	InvestigationStartFailedError,
 	InvestigationStatus,
-	LensId,
-	LensRunStatus,
-	LensVerdict,
 } from "../investigations"
 import { TraceId, UserId } from "../../primitives"
-import { AuthorizationV2, V2SchemaErrors } from "./auth"
-import { ListOf, ListQuery, Timestamp } from "./envelopes"
-import {
-	V2InvalidRequestError,
-	V2NotFoundError,
-	V2RateLimitError,
-	V2ServiceUnavailableError,
-	V2UpstreamError,
-} from "./errors"
+import { AuthorizationV2 } from "./auth"
+import { wireExample, ListOf, ListQuery, Timestamp } from "./envelopes"
+import { V2ParameterInvalid } from "./errors"
 import { encodePublicId, PublicIdPrefixes } from "./public-id"
+import { publicErrors } from "./public-error"
 import {
 	AlertIncidentPublicId,
 	AnomalyIncidentPublicId,
@@ -32,12 +28,7 @@ import {
 
 export { ErrorIssuePublicId, InvestigationPublicId } from "./resource-ids"
 
-/** See api-keys.ts: examples are authored in wire (encoded) shape. */
-const wireExample = <A>(example: object): A => example as A
-
-// ---------------------------------------------------------------------------
 // Subject (snake_case wire form of the internal InvestigationSubject union)
-// ---------------------------------------------------------------------------
 
 /** A page/entity context hint (structurally the web's AutoContext) — opaque JSON. */
 const InvestigationContextRef = Schema.Record(Schema.String, Schema.Unknown)
@@ -105,9 +96,36 @@ export const V2InvestigationFreeformSubject = Schema.Struct({
 	description: "An ad-hoc investigation into a user-supplied question with optional context.",
 })
 
+/**
+ * Read-only on purpose: a fix verification is opened by the verification tick
+ * when a linked pull request merges, never by a caller. It is absent from
+ * {@link V2InvestigationCreateSubject} for that reason.
+ */
+export const V2InvestigationFixVerificationSubject = Schema.Struct({
+	type: Schema.Literal("fix_verification").annotate({
+		description: 'Discriminator — always `"fix_verification"` for a post-merge fix check.',
+	}),
+	issue_id: ErrorIssuePublicId.annotate({
+		description: "The `iss_…` error issue whose fix is being verified.",
+	}),
+	pull_request_url: Schema.String.annotate({
+		description: "The merged pull request the verification is checking.",
+	}),
+	baseline_versions: Schema.Array(Schema.String).annotate({
+		description:
+			"Builds the issue was known to affect when the fix merged. An occurrence from a build outside this set means the fix did not work.",
+	}),
+	merged_at: Schema.String.annotate({ description: "When the pull request merged (ISO 8601)." }),
+}).annotate({
+	identifier: "InvestigationFixVerificationSubject",
+	title: "Fix verification subject",
+	description: "An investigation that checks whether a merged pull request actually stopped an error.",
+})
+
 export const V2InvestigationSubject = Schema.Union([
 	V2InvestigationIncidentSubject,
 	V2InvestigationFreeformSubject,
+	V2InvestigationFixVerificationSubject,
 ]).annotate({
 	identifier: "InvestigationSubject",
 	title: "Investigation subject",
@@ -136,21 +154,67 @@ const V2AiTriageEvidence = Schema.Struct({
 
 /** Snake-case v2 wire projection of the internal AI triage result. */
 const V2AiTriageResult = Schema.Struct({
+	/**
+	 * `optionalKey`, mirroring the internal report: reports stored before the
+	 * field existed still decode, and a client falls back to `summary`.
+	 */
+	headline: Schema.optionalKey(Schema.String).annotate({
+		description:
+			"One line naming the suspected cause, for list rows and headings. Absent on reports produced before the field existed.",
+	}),
 	summary: Schema.String,
 	suspectedCause: Schema.String,
-	severityAssessment: IssueSeverity,
+	/**
+	 * `optionalKey`, mirroring the internal report: a partial has no cause to
+	 * assess, and reports stored before the field became optional still decode.
+	 * A client reading a run's severity wants the investigation's own `severity`,
+	 * which is null on a partial by design.
+	 */
+	severityAssessment: Schema.optionalKey(IssueSeverity),
 	affectedScope: Schema.String,
 	evidence: Schema.Array(V2AiTriageEvidence),
 	suggestedActions: Schema.Array(Schema.String),
 	confidence: Schema.Literals(["high", "medium", "low"]),
+	/**
+	 * What was eliminated, and what could not be looked at.
+	 *
+	 * `ruled_out` has been stored on every report since it was added and was
+	 * never projected onto the wire, so no client has ever been able to see what
+	 * a run considered. On an `inconclusive` investigation these two ARE the
+	 * result — omitting them would ship a partial with its payload removed.
+	 *
+	 * `optionalKey` because every report stored before they existed still has to
+	 * decode.
+	 */
+	ruledOut: Schema.optionalKey(Schema.Array(Schema.String)),
+	unchecked: Schema.optionalKey(Schema.Array(Schema.String)),
 }).pipe(
 	Schema.encodeKeys({
 		suspectedCause: "suspected_cause",
 		severityAssessment: "severity_assessment",
 		affectedScope: "affected_scope",
 		suggestedActions: "suggested_actions",
+		ruledOut: "ruled_out",
 	}),
 )
+
+/** Snake-case v2 wire projection of a run's step tail. */
+const V2InvestigationProgress = Schema.Struct({
+	/**
+	 * How many steps the run has taken, which `steps.length` does not answer:
+	 * `steps` is a capped tail, so a long run reports more steps than it carries.
+	 */
+	stepCount: Schema.Number,
+	steps: Schema.Array(
+		Schema.Struct({
+			tool: Schema.String,
+			label: Schema.String,
+			at: Schema.Number,
+		}),
+	),
+	/** Epoch ms of the last step. What a reader checks to see the run is alive. */
+	updatedAt: Schema.Number,
+}).pipe(Schema.encodeKeys({ stepCount: "step_count", updatedAt: "updated_at" }))
 
 const V2InvestigationSnapshot = Schema.Struct({
 	title: Schema.String,
@@ -208,77 +272,7 @@ const V2InvestigationSnapshot = Schema.Struct({
 	}),
 )
 
-/**
- * One dispatched lens. `evidence` is deliberately NOT on the wire: nothing
- * renders it, and putting five evidence blocks on every list row would multiply
- * the trace-id decode surface for no gain. It is persisted and available to the
- * validator.
- */
-/**
- * Open decode for the catalogue tokens.
- *
- * `lens_runs` is documented as an evolving shape, and that promise was empty
- * while these were closed `Schema.Literals`: a server that learned a sixth lens
- * failed the decode for every deployed client, blanking the detail page and the
- * hub — and it made the client's own unknown-lens fallback unreachable. Decoding
- * openly is what makes the annotation true. The literal unions stay exported for
- * everything that writes these values.
- */
-const OpenLensId = Schema.Union([LensId, Schema.String])
-const OpenLensRunStatus = Schema.Union([LensRunStatus, Schema.String])
-const OpenLensVerdict = Schema.Union([LensVerdict, Schema.String])
-const OpenFanoutState = Schema.Union([InvestigationFanoutState, Schema.String])
-
-const V2InvestigationLensRun = Schema.Struct({
-	lensId: OpenLensId,
-	status: OpenLensRunStatus,
-	verdict: OpenLensVerdict,
-	claim: Schema.NullOr(Schema.String),
-	reason: Schema.NullOr(Schema.String),
-	progressNote: Schema.NullOr(Schema.String),
-	confidence: Schema.NullOr(InvestigationConfidence),
-	toolCount: Schema.Number,
-	elapsedSeconds: Schema.NullOr(Schema.Number),
-	/**
-	 * Label and question for this lane, written by the planner.
-	 *
-	 * On the wire because the ids are per-incident now: a client cannot map
-	 * `pool_exhaustion_payments_api` to readable copy from a static table, and the
-	 * server is the only place that knows what the lane was actually asked. Null
-	 * on lanes from before the planner, where `lens_id` still names a catalogue
-	 * entry the client has copy for.
-	 */
-	name: Schema.NullOr(Schema.String),
-	question: Schema.NullOr(Schema.String),
-	priority: Schema.NullOr(Schema.Number),
-	/** True when this lane ran out of clock rather than finishing. */
-	deadlineHit: Schema.Boolean,
-}).pipe(
-	Schema.encodeKeys({
-		lensId: "lens_id",
-		progressNote: "progress_note",
-		toolCount: "tool_count",
-		elapsedSeconds: "elapsed_seconds",
-		name: "lens_name",
-		question: "lens_question",
-		deadlineHit: "deadline_hit",
-	}),
-)
-
-const V2InvestigationValidator = Schema.Struct({
-	status: Schema.Union([Schema.Literals(["blocked", "ranked", "rejected_all"]), Schema.String]),
-	note: Schema.String,
-	elapsedSeconds: Schema.NullOr(Schema.Number),
-}).pipe(Schema.encodeKeys({ elapsedSeconds: "elapsed_seconds" }))
-
-const V2InvestigationFanout = Schema.Struct({
-	state: OpenFanoutState,
-	size: Schema.Number,
-})
-
-// ---------------------------------------------------------------------------
 // Resource
-// ---------------------------------------------------------------------------
 
 const investigationExample = {
 	id: "inv_YofPTrK9782DWwcnXhpcCw",
@@ -301,6 +295,7 @@ const investigationExample = {
 		incident_ended_at: null,
 	},
 	report: {
+		headline: "Deploy 4f21a shortened checkout-api's upstream timeout",
 		summary: "A deploy to checkout-api four minutes before the onset regressed the timeout budget.",
 		suspected_cause: "Deploy 4f21a shortened the upstream timeout below the p99 of the call it guards.",
 		severity_assessment: "high",
@@ -308,6 +303,22 @@ const investigationExample = {
 		evidence: [],
 		suggested_actions: ["Roll back deploy 4f21a."],
 		confidence: "high",
+		// Present on the example so the existing decode test exercises the two keys
+		// a partial result depends on. `ruled_out` in particular has been stored
+		// since it was added and was never projected onto the wire.
+		ruled_out: ["Downstream dependency: every callee stayed under 90ms in the window."],
+		unchecked: [],
+	},
+	// A diagnosed investigation, so the run is over and the feed is its record of
+	// how it got there. A running example would need a wall-clock `updated_at` to
+	// make sense, which an OpenAPI example cannot have.
+	progress: {
+		step_count: 9,
+		steps: [
+			{ tool: "diagnose_service", label: "Diagnose service · checkout-api", at: 1_763_020_800_000 },
+			{ tool: "inspect_trace", label: "Inspect trace · 7f3a9c04b1", at: 1_763_020_812_000 },
+		],
+		updated_at: 1_763_020_812_000,
 	},
 	model: "claude-opus-4-8",
 	severity: "high",
@@ -321,25 +332,6 @@ const investigationExample = {
 	started_at: "2026-07-15T09:12:05.000Z",
 	diagnosed_at: "2026-07-15T09:12:42.000Z",
 	updated_at: "2026-07-15T09:12:42.000Z",
-	lens_runs: [
-		{
-			lens_id: "deploy_correlation",
-			status: "reported",
-			verdict: "promoted",
-			claim: "A deploy to checkout-api landed four minutes before the onset.",
-			reason: "Promoted — the only candidate that explains both the onset delay and the recovery.",
-			progress_note: null,
-			confidence: "high",
-			tool_count: 4,
-			elapsed_seconds: 12.6,
-			lens_name: "Checkout-api 14:02 rollout",
-			lens_question: "Did the 14:02 checkout-api rollout introduce the timeout?",
-			priority: 1,
-			deadline_hit: false,
-		},
-	],
-	validator: { status: "ranked", note: "1 promoted · 0 merged · 0 ruled out", elapsed_seconds: 8.2 },
-	fanout: { state: "ranked", size: 1 },
 } as const
 
 export const V2Investigation = Schema.Struct({
@@ -357,6 +349,10 @@ export const V2Investigation = Schema.Struct({
 	snapshot: V2InvestigationSnapshot.annotate({
 		description:
 			"A display-ready snapshot captured when the investigation was opened, retained even after source telemetry expires.",
+	}),
+	progress: Schema.NullOr(V2InvestigationProgress).annotate({
+		description:
+			"What the pass is doing, or got as far as doing, as a capped tail of steps. `null` before the first step. Kept after the run ends.",
 	}),
 	report: Schema.NullOr(V2AiTriageResult).annotate({
 		description:
@@ -395,18 +391,6 @@ export const V2Investigation = Schema.Struct({
 		description: "When a diagnosis was first attached, or `null`.",
 	}),
 	updated_at: Timestamp.annotate({ description: "When the investigation was last updated." }),
-	lens_runs: Schema.Array(V2InvestigationLensRun).annotate({
-		description:
-			"One entry per dispatched lens, in dispatch order, for investigations that fanned out; empty for single-pass runs. Use its emptiness — not `fanout.size` — to tell whether a run fanned out. The lens catalogue is an evolving shape: treat `lens_id` as an open string, not a stability-committed enum.",
-	}),
-	validator: Schema.NullOr(V2InvestigationValidator).annotate({
-		description:
-			"The validator that ranked the lens candidates: `blocked` while lenses are still reporting, `ranked` once one was promoted, `rejected_all` when none held up. `null` for single-pass runs.",
-	}),
-	fanout: V2InvestigationFanout.annotate({
-		description:
-			"Fan-out bookkeeping. `state` is `none` for single-pass runs; `size` is how many lenses were dispatched.",
-	}),
 }).annotate({
 	identifier: "Investigation",
 	title: "Investigation",
@@ -416,9 +400,7 @@ export const V2Investigation = Schema.Struct({
 })
 export type V2Investigation = Schema.Schema.Type<typeof V2Investigation>
 
-// ---------------------------------------------------------------------------
 // Requests / queries
-// ---------------------------------------------------------------------------
 
 export const V2InvestigationCreateParams = Schema.Struct({
 	subject: V2InvestigationCreateSubject,
@@ -481,8 +463,26 @@ export const V2InvestigationsListQuery = Schema.Struct({
 })
 export type V2InvestigationsListQuery = Schema.Schema.Type<typeof V2InvestigationsListQuery>
 
-const commonErrors = [V2InvalidRequestError, V2ServiceUnavailableError] as const
-const startErrors = [...commonErrors, V2RateLimitError, V2UpstreamError] as const
+const [
+	investigationPersistence,
+	investigationNotFound,
+	investigationAgentUnavailable,
+	investigationStartFailed,
+	investigationDataCorruption,
+] = publicErrors(
+	InvestigationPersistenceError,
+	InvestigationNotFoundError,
+	InvestigationAgentUnavailableError,
+	InvestigationStartFailedError,
+	InvestigationDataCorruptionError,
+)
+
+const investigationStartErrors = [
+	investigationPersistence,
+	investigationAgentUnavailable,
+	investigationStartFailed,
+	investigationDataCorruption,
+] as const
 
 const InvestigationList = ListOf(V2Investigation).annotate({
 	identifier: "InvestigationList",
@@ -495,7 +495,7 @@ export class V2InvestigationsApiGroup extends HttpApiGroup.make("investigations"
 		HttpApiEndpoint.get("list", "/", {
 			query: V2InvestigationsListQuery,
 			success: InvestigationList,
-			error: [...commonErrors],
+			error: [V2ParameterInvalid.schema, investigationPersistence, investigationDataCorruption],
 		}).annotateMerge(
 			OpenApi.annotations({
 				identifier: "listInvestigations",
@@ -509,7 +509,7 @@ export class V2InvestigationsApiGroup extends HttpApiGroup.make("investigations"
 		HttpApiEndpoint.get("retrieve", "/:id", {
 			params: { id: InvestigationPublicId },
 			success: V2Investigation,
-			error: [...commonErrors, V2NotFoundError],
+			error: [investigationPersistence, investigationNotFound, investigationDataCorruption],
 		}).annotateMerge(
 			OpenApi.annotations({
 				identifier: "getInvestigation",
@@ -523,7 +523,7 @@ export class V2InvestigationsApiGroup extends HttpApiGroup.make("investigations"
 		HttpApiEndpoint.post("create", "/", {
 			payload: V2InvestigationCreateParams,
 			success: V2Investigation,
-			error: [...startErrors],
+			error: investigationStartErrors,
 		}).annotateMerge(
 			OpenApi.annotations({
 				identifier: "createInvestigation",
@@ -537,7 +537,7 @@ export class V2InvestigationsApiGroup extends HttpApiGroup.make("investigations"
 		HttpApiEndpoint.post("restart", "/:id/restart", {
 			params: { id: InvestigationPublicId },
 			success: V2Investigation,
-			error: [...startErrors, V2NotFoundError],
+			error: [investigationNotFound, ...investigationStartErrors],
 		}).annotateMerge(
 			OpenApi.annotations({
 				identifier: "restartInvestigation",
@@ -552,7 +552,7 @@ export class V2InvestigationsApiGroup extends HttpApiGroup.make("investigations"
 			params: { id: InvestigationPublicId },
 			payload: V2InvestigationStatusUpdateParams,
 			success: V2Investigation,
-			error: [...commonErrors, V2NotFoundError],
+			error: [investigationPersistence, investigationNotFound, investigationDataCorruption],
 		}).annotateMerge(
 			OpenApi.annotations({
 				identifier: "updateInvestigationStatus",
@@ -564,7 +564,6 @@ export class V2InvestigationsApiGroup extends HttpApiGroup.make("investigations"
 	)
 	.prefix("/v2/investigations")
 	.middleware(AuthorizationV2)
-	.middleware(V2SchemaErrors)
 	.annotateMerge(
 		OpenApi.annotations({
 			title: "Investigations",

@@ -9,9 +9,9 @@ import {
 	InputGroupButton,
 	InputGroupTextarea,
 } from "@maple/ui/components/ui/input-group"
-import { Spinner } from "@maple/ui/components/ui/spinner"
 import { cn } from "@maple/ui/lib/utils"
-import { CornerDownLeftIcon, SquareIcon, XmarkIcon } from "@/components/icons"
+import { ArrowUpIcon, SquareIcon, XmarkIcon } from "@/components/icons"
+import { DotLoader } from "./dot-loader"
 import { useCallback, useState } from "react"
 
 /**
@@ -100,8 +100,22 @@ export const PromptInputTextarea = ({
 
 export type PromptInputFooterProps = Omit<ComponentProps<typeof InputGroupAddon>, "align">
 
+/**
+ * The composer's bottom row. The submit button sits at the trailing edge, where every chat
+ * app puts it; anything that belongs on the left takes `mr-auto`.
+ */
 export const PromptInputFooter = ({ className, ...props }: PromptInputFooterProps) => (
-	<InputGroupAddon align="block-end" className={cn("justify-between gap-1", className)} {...props} />
+	<InputGroupAddon align="block-end" className={cn("justify-end gap-1", className)} {...props} />
+)
+
+/**
+ * One cell of the submit button's loader↔stop crossfade. Same shape as `CopyButton`'s layer stack:
+ * both glyphs occupy the single grid cell so the button never reflows, and the swap is scale +
+ * opacity rather than a swap of mounted nodes.
+ */
+const STOP_LAYER = cn(
+	"col-start-1 row-start-1 transition-[opacity,scale] duration-[160ms]",
+	"ease-[cubic-bezier(0.23,1,0.32,1)] motion-reduce:transition-none",
 )
 
 export type PromptInputSubmitProps = ComponentProps<typeof InputGroupButton> & {
@@ -114,7 +128,7 @@ export type PromptInputSubmitProps = ComponentProps<typeof InputGroupButton> & {
  * Send button, which becomes a stop button while a turn is running. An
  * investigation pass can spend a minute across a dozen tool calls, so being able
  * to call it off is the difference between a chat you can steer and one you wait
- * out. Without `onStop` it stays a spinner — the caller has nothing to cancel.
+ * out. Without `onStop` the loader is inert — the caller has nothing to cancel.
  */
 export const PromptInputSubmit = ({
 	className,
@@ -128,11 +142,35 @@ export const PromptInputSubmit = ({
 	const isGenerating = status === "submitted" || status === "streaming"
 	const canStop = isGenerating && onStop !== undefined
 
-	let Icon = <CornerDownLeftIcon className="size-4" />
+	let Icon = <ArrowUpIcon className="size-4" />
 	if (canStop) {
-		Icon = <SquareIcon className="size-3.5" />
+		// The loader is the resting state and the stop square is revealed on hover/focus, so the
+		// button reads as "a turn is running" at a glance without giving up the affordance that
+		// makes it worth having. Both layers are always mounted and cross-faded with CSS — no
+		// state, no remount, and nothing that re-enters React while the turn streams.
+		Icon = (
+			<span className="grid place-items-center">
+				<DotLoader
+					color="var(--primary-foreground)"
+					className={cn(
+						STOP_LAYER,
+						"group-hover/submit:scale-[0.92] group-hover/submit:opacity-0",
+						"group-focus-visible/submit:scale-[0.92] group-focus-visible/submit:opacity-0",
+					)}
+				/>
+				<SquareIcon
+					className={cn(
+						STOP_LAYER,
+						"size-3.5 scale-[0.92] opacity-0",
+						"group-hover/submit:scale-100 group-hover/submit:opacity-100",
+						"group-focus-visible/submit:scale-100 group-focus-visible/submit:opacity-100",
+					)}
+				/>
+			</span>
+		)
 	} else if (isGenerating) {
-		Icon = <Spinner />
+		// Nothing to cancel — the loader just reports that the turn is in flight.
+		Icon = <DotLoader color="var(--primary-foreground)" />
 	} else if (status === "error") {
 		Icon = <XmarkIcon className="size-4" />
 	}
@@ -140,7 +178,7 @@ export const PromptInputSubmit = ({
 	return (
 		<InputGroupButton
 			aria-label={canStop ? "Stop generating" : isGenerating ? "Sending" : "Submit"}
-			className={cn(className)}
+			className={cn("group/submit", className)}
 			size={size}
 			type={canStop ? "button" : "submit"}
 			variant={variant}

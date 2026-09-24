@@ -1,4 +1,6 @@
 import { Schema } from "effect"
+import { ALERT_REDUCERS } from "@maple/query-model"
+import { PublicHttpErrorBodySchema } from "./http/error-policy"
 import {
 	CommitSha,
 	DeploymentEnvironment,
@@ -82,12 +84,20 @@ export const TracesFilters = Schema.Struct({
 	excludedSpanNames: Schema.optional(Schema.Array(SpanName)),
 	excludedEnvironments: Schema.optional(Schema.Array(DeploymentEnvironment)),
 	excludedNamespaces: Schema.optional(Schema.Array(ServiceNamespace)),
+	excludedCommitShas: Schema.optional(Schema.Array(CommitSha)),
 })
 export type TracesFilters = Schema.Schema.Type<typeof TracesFilters>
 
 export const LogsFilters = Schema.Struct({
 	serviceName: Schema.optional(ServiceName),
 	severity: Schema.optional(Schema.String),
+	/**
+	 * Multi-value spellings of `serviceName` / `severity`, compiled to `IN (...)`. The scalar fields
+	 * stay for the dashboard DSL, MCP tools and alert rules that only ever select one; the array
+	 * wins when present. Same contract as `TracesFilters.serviceNames`.
+	 */
+	serviceNames: Schema.optional(Schema.Array(ServiceName)),
+	severities: Schema.optional(Schema.Array(Schema.String)),
 	minSeverity: Schema.optional(Schema.Number),
 	traceId: Schema.optional(TraceId),
 	spanId: Schema.optional(Schema.String),
@@ -98,6 +108,10 @@ export const LogsFilters = Schema.Struct({
 	namespaceMatchMode: Schema.optional(Schema.Literal("contains")),
 	attributeFilters: Schema.optional(Schema.Array(AttributeFilter)),
 	resourceAttributeFilters: Schema.optional(Schema.Array(AttributeFilter)),
+	excludedServiceNames: Schema.optional(Schema.Array(ServiceName)),
+	excludedSeverities: Schema.optional(Schema.Array(Schema.String)),
+	excludedEnvironments: Schema.optional(Schema.Array(DeploymentEnvironment)),
+	excludedNamespaces: Schema.optional(Schema.Array(ServiceNamespace)),
 })
 export type LogsFilters = Schema.Schema.Type<typeof LogsFilters>
 
@@ -106,6 +120,14 @@ export const ErrorsFilters = Schema.Struct({
 	services: Schema.optional(Schema.Array(ServiceName)),
 	deploymentEnvs: Schema.optional(Schema.Array(DeploymentEnvironment)),
 	fingerprintHashes: Schema.optional(Schema.Array(FingerprintHash)),
+	// The sidebar's "Error Type" facet, matched against the stored ErrorLabel.
+	errorLabels: Schema.optional(Schema.Array(Schema.String)),
+	// The sidebar's "Version" facet, matched against ServiceVersion.
+	serviceVersions: Schema.optional(Schema.Array(Schema.String)),
+	excludedServices: Schema.optional(Schema.Array(ServiceName)),
+	excludedDeploymentEnvs: Schema.optional(Schema.Array(DeploymentEnvironment)),
+	excludedErrorLabels: Schema.optional(Schema.Array(Schema.String)),
+	excludedServiceVersions: Schema.optional(Schema.Array(Schema.String)),
 })
 export type ErrorsFilters = Schema.Schema.Type<typeof ErrorsFilters>
 
@@ -120,8 +142,9 @@ export const MetricsFilters = Schema.Struct({
 	metricType: MetricType,
 	serviceName: Schema.optional(ServiceName),
 	// Metrics tables have no pre-extracted DeploymentEnv column, so this lowers to
-	// a predicate on `ResourceAttributes['deployment.environment']` (see
-	// `metricsTimeseriesQuery`). Same field name as TracesFilters/LogsFilters.
+	// a predicate on `DEPLOYMENT_ENV_SQL` over `ResourceAttributes` — either
+	// semconv spelling of the key (see `metricsTimeseriesQuery`). Same field name
+	// as TracesFilters/LogsFilters.
 	environments: Schema.optional(Schema.Array(DeploymentEnvironment)),
 	groupByAttributeKey: Schema.optional(Schema.String),
 	// Resource-attribute counterpart of `groupByAttributeKey` — groups by a
@@ -132,6 +155,67 @@ export const MetricsFilters = Schema.Struct({
 	resourceAttributeFilters: Schema.optional(Schema.Array(AttributeFilter)),
 })
 export type MetricsFilters = Schema.Schema.Type<typeof MetricsFilters>
+
+export const ProductEventsMetric = Schema.Literals(["count", "sessions", "persons", "users", "visitors"])
+export type ProductEventsMetric = Schema.Schema.Type<typeof ProductEventsMetric>
+
+export const PRODUCT_EVENTS_GROUP_BY = [
+	"event_name",
+	"kind",
+	"source",
+	"host",
+	"page_path",
+	"service",
+	"group",
+	"attribute",
+] as const
+export const ProductEventsGroupBy = Schema.Literals(PRODUCT_EVENTS_GROUP_BY)
+export type ProductEventsGroupBy = Schema.Schema.Type<typeof ProductEventsGroupBy>
+
+export const ProductEventKind = Schema.Literals(["navigation", "custom", "screen"])
+export type ProductEventKind = Schema.Schema.Type<typeof ProductEventKind>
+
+export const ProductEventSource = Schema.Literals(["browser", "server", "mobile", "trace"])
+export type ProductEventSource = Schema.Schema.Type<typeof ProductEventSource>
+
+/**
+ * Filters over `product_events`. The event-side fields lower to predicates on
+ * the row; the session-side fields (`referrerHost`, `country`, `utm*`, …) are
+ * `session_replays` dimensions and lower to a `SessionId` semi-join, the same
+ * one the `/analytics` page uses, so server rows with no session drop out
+ * whenever one of them is set.
+ */
+export const ProductEventsFilters = Schema.Struct({
+	eventNames: Schema.optional(Schema.Array(Schema.String)),
+	kinds: Schema.optional(Schema.Array(ProductEventKind)),
+	sources: Schema.optional(Schema.Array(ProductEventSource)),
+	hosts: Schema.optional(Schema.Array(Schema.String)),
+	pagePaths: Schema.optional(Schema.Array(Schema.String)),
+	serviceNames: Schema.optional(Schema.Array(Schema.String)),
+	userIds: Schema.optional(Schema.Array(Schema.String)),
+	groupIds: Schema.optional(Schema.Array(Schema.String)),
+	excludedEventNames: Schema.optional(Schema.Array(Schema.String)),
+	excludedKinds: Schema.optional(Schema.Array(ProductEventKind)),
+	excludedSources: Schema.optional(Schema.Array(ProductEventSource)),
+	excludedHosts: Schema.optional(Schema.Array(Schema.String)),
+	excludedPagePaths: Schema.optional(Schema.Array(Schema.String)),
+	excludedServiceNames: Schema.optional(Schema.Array(Schema.String)),
+	/** `track()` props, matched on the `Attributes` map. */
+	attributeFilters: Schema.optional(Schema.Array(AttributeFilter)),
+	/** Required when `groupBy` includes `attribute`. */
+	groupByAttributeKey: Schema.optional(Schema.String),
+	referrerHost: Schema.optional(Schema.String),
+	country: Schema.optional(Schema.String),
+	deviceType: Schema.optional(Schema.String),
+	browserName: Schema.optional(Schema.String),
+	osName: Schema.optional(Schema.String),
+	language: Schema.optional(Schema.String),
+	utmSource: Schema.optional(Schema.String),
+	utmMedium: Schema.optional(Schema.String),
+	utmCampaign: Schema.optional(Schema.String),
+	visitorType: Schema.optional(Schema.Literals(["new", "returning"])),
+})
+export type ProductEventsFilters = Schema.Schema.Type<typeof ProductEventsFilters>
 
 export const TracesTimeseriesQuery = Schema.Struct({
 	kind: Schema.Literal("timeseries"),
@@ -179,6 +263,17 @@ export const MetricsTimeseriesQuery = Schema.Struct({
 })
 export type MetricsTimeseriesQuery = Schema.Schema.Type<typeof MetricsTimeseriesQuery>
 
+export const ProductEventsTimeseriesQuery = Schema.Struct({
+	kind: Schema.Literal("timeseries"),
+	source: Schema.Literal("product_events"),
+	metric: ProductEventsMetric,
+	groupBy: Schema.optional(Schema.Array(Schema.Literals([...PRODUCT_EVENTS_GROUP_BY, "none"]))),
+	filters: Schema.optional(ProductEventsFilters),
+	bucketSeconds: Schema.optional(Schema.Number.check(Schema.isInt(), Schema.isGreaterThan(0))),
+	seriesLimit: Schema.optional(Schema.Number.check(Schema.isInt(), Schema.isGreaterThan(0))),
+})
+export type ProductEventsTimeseriesQuery = Schema.Schema.Type<typeof ProductEventsTimeseriesQuery>
+
 export const TracesBreakdownQuery = Schema.Struct({
 	kind: Schema.Literal("breakdown"),
 	source: Schema.Literal("traces"),
@@ -216,6 +311,18 @@ export const MetricsBreakdownQuery = Schema.Struct({
 })
 export type MetricsBreakdownQuery = Schema.Schema.Type<typeof MetricsBreakdownQuery>
 
+export const ProductEventsBreakdownQuery = Schema.Struct({
+	kind: Schema.Literal("breakdown"),
+	source: Schema.Literal("product_events"),
+	metric: ProductEventsMetric,
+	groupBy: ProductEventsGroupBy,
+	filters: Schema.optional(ProductEventsFilters),
+	limit: Schema.optional(
+		Schema.Number.check(Schema.isInt(), Schema.isGreaterThan(0), Schema.isLessThanOrEqualTo(100)),
+	),
+})
+export type ProductEventsBreakdownQuery = Schema.Schema.Type<typeof ProductEventsBreakdownQuery>
+
 // Batched preview series for the metrics-explorer browse grid: one query
 // returns a small timeseries per metric name (matched with `MetricName IN`),
 // so a page of sparkline cards costs one scan per metric type instead of one
@@ -232,19 +339,32 @@ export type MetricsSparklinesQuery = Schema.Schema.Type<typeof MetricsSparklines
 export const TracesListQuery = Schema.Struct({
 	kind: Schema.Literal("list"),
 	source: Schema.Literal("traces"),
+	/**
+	 * One row per TraceId (real span count, wall-clock duration, every
+	 * participating service) instead of one row per entry-point span. Grouped
+	 * rows have a different shape — see the `groupByTrace` branch of the list
+	 * dispatch. Ignores `cursor`; pages with `offset`.
+	 */
+	groupByTrace: Schema.optionalKey(Schema.Boolean),
 	filters: Schema.optional(TracesFilters),
 	columns: Schema.optional(Schema.Array(Schema.String)),
 	limit: Schema.optional(
 		Schema.Number.check(Schema.isInt(), Schema.isGreaterThan(0), Schema.isLessThanOrEqualTo(200)),
 	),
+	// Bound matches the web list's MAX_RETAINED_TRACES (2000): with server-side
+	// noise filtering the client pages by rows CONSUMED, so a 1000 cap would end
+	// pagination while far fewer rows are visible. Stage 1 only reads the three
+	// light sort columns, so a deep offset stays cheap.
 	offset: Schema.optional(
 		Schema.Number.check(
 			Schema.isInt(),
 			Schema.isGreaterThanOrEqualTo(0),
-			Schema.isLessThanOrEqualTo(1000),
+			Schema.isLessThanOrEqualTo(2000),
 		),
 	),
 	cursor: Schema.optional(Schema.String),
+	sortBy: Schema.optional(Schema.Literals(["timestamp", "durationMs"])),
+	sortDir: Schema.optional(Schema.Literals(["asc", "desc"])),
 })
 export type TracesListQuery = Schema.Schema.Type<typeof TracesListQuery>
 
@@ -259,9 +379,20 @@ export const LogsListQuery = Schema.Struct({
 })
 export type LogsListQuery = Schema.Schema.Type<typeof LogsListQuery>
 
+export const ProductEventsListQuery = Schema.Struct({
+	kind: Schema.Literal("list"),
+	source: Schema.Literal("product_events"),
+	filters: Schema.optional(ProductEventsFilters),
+	columns: Schema.optional(Schema.Array(Schema.String)),
+	limit: Schema.optional(
+		Schema.Number.check(Schema.isInt(), Schema.isGreaterThan(0), Schema.isLessThanOrEqualTo(200)),
+	),
+})
+export type ProductEventsListQuery = Schema.Schema.Type<typeof ProductEventsListQuery>
+
 export const AttributeKeysQuery = Schema.Struct({
 	kind: Schema.Literal("attributeKeys"),
-	source: Schema.Literals(["traces", "logs", "metrics"]),
+	source: Schema.Literals(["traces", "logs", "metrics", "product_events"]),
 	scope: Schema.optional(Schema.Literals(["span", "resource"])),
 	// Scope metrics-source discovery to a single metric (reads the raw metric
 	// table instead of the org-wide hourly rollup). Both fields must be set.
@@ -326,8 +457,8 @@ export type TracesStatsQuery = Schema.Schema.Type<typeof TracesStatsQuery>
 
 export const AttributeValuesQuery = Schema.Struct({
 	kind: Schema.Literal("attributeValues"),
-	source: Schema.Literals(["traces", "logs", "metrics"]),
-	scope: Schema.Literals(["span", "resource", "log", "metric"]),
+	source: Schema.Literals(["traces", "logs", "metrics", "product_events"]),
+	scope: Schema.Literals(["span", "resource", "log", "metric", "event"]),
 	attributeKey: Schema.String,
 	// Scope metrics-source discovery to a single metric (see AttributeKeysQuery).
 	metricName: Schema.optional(Schema.String),
@@ -349,12 +480,15 @@ export const QuerySpec = Schema.Union([
 	TracesTimeseriesQuery,
 	LogsTimeseriesQuery,
 	MetricsTimeseriesQuery,
+	ProductEventsTimeseriesQuery,
 	TracesBreakdownQuery,
 	LogsBreakdownQuery,
 	MetricsBreakdownQuery,
+	ProductEventsBreakdownQuery,
 	MetricsSparklinesQuery,
 	TracesListQuery,
 	LogsListQuery,
+	ProductEventsListQuery,
 	AttributeKeysQuery,
 	TracesFacetsQuery,
 	LogsFacetsQuery,
@@ -433,22 +567,22 @@ export type SparklineSeries = Schema.Schema.Type<typeof SparklineSeries>
 export const QueryEngineResult = Schema.Union([
 	Schema.Struct({
 		kind: Schema.Literal("timeseries"),
-		source: Schema.Literals(["traces", "logs", "metrics"]),
+		source: Schema.Literals(["traces", "logs", "metrics", "product_events"]),
 		data: Schema.Array(TimeseriesPoint),
 	}),
 	Schema.Struct({
 		kind: Schema.Literal("breakdown"),
-		source: Schema.Literals(["traces", "logs", "metrics"]),
+		source: Schema.Literals(["traces", "logs", "metrics", "product_events"]),
 		data: Schema.Array(BreakdownItem),
 	}),
 	Schema.Struct({
 		kind: Schema.Literal("list"),
-		source: Schema.Literals(["traces", "logs"]),
+		source: Schema.Literals(["traces", "logs", "product_events"]),
 		data: Schema.Array(ListRow),
 	}),
 	Schema.Struct({
 		kind: Schema.Literal("attributeKeys"),
-		source: Schema.Literals(["traces", "logs", "metrics"]),
+		source: Schema.Literals(["traces", "logs", "metrics", "product_events"]),
 		data: Schema.Array(AttributeKeyItem),
 	}),
 	Schema.Struct({
@@ -463,7 +597,7 @@ export const QueryEngineResult = Schema.Union([
 	}),
 	Schema.Struct({
 		kind: Schema.Literal("attributeValues"),
-		source: Schema.Literals(["traces", "logs", "metrics"]),
+		source: Schema.Literals(["traces", "logs", "metrics", "product_events"]),
 		data: Schema.Array(AttributeValueItem),
 	}),
 	Schema.Struct({
@@ -485,7 +619,63 @@ export class QueryEngineExecuteResponse extends Schema.Class<QueryEngineExecuteR
 	result: QueryEngineResult,
 }) {}
 
-export const QueryEngineAlertReducer = Schema.Literals(["identity", "sum", "avg", "min", "max"]).annotate({
+// The dashboard fans out one query per widget, and each used to be its own
+// POST — plus its own CORS preflight — against a worker pinned to us-east-1.
+// The batch endpoint collapses a render pass into a single round trip.
+
+/**
+ * Max queries per batch.
+ *
+ * Deliberately equal to the server's fan-out concurrency (`QE_BATCH_CONCURRENCY`
+ * in `apps/api/src/routes/query-engine-batch.ts`), so one batch is exactly ONE
+ * wave. That matters because delivery is currently all-or-nothing: the caller
+ * gets every result together, so a batch resolves at the speed of its slowest
+ * member. Per-query p95 is ~5s against a p50 of ~250-600ms, so the more queries
+ * share a batch, the likelier one tail query gates the whole render — a batch of
+ * 12 would run three waves and would very often be gated.
+ *
+ * Raise this only once `/execute-batch` streams its outcomes (per-query events
+ * settled as they complete), which removes the all-or-nothing coupling entirely.
+ */
+export const QUERY_ENGINE_BATCH_MAX = 4
+
+/** A per-item failure uses the same complete public body as a failed HTTP response. */
+export const QueryEngineBatchFailure = PublicHttpErrorBodySchema
+export type QueryEngineBatchFailure = Schema.Schema.Type<typeof QueryEngineBatchFailure>
+
+/**
+ * Per-item outcome. Deliberately part of the SUCCESS type: one failing widget
+ * must not fail the other queries sharing its request.
+ */
+export const QueryEngineBatchOutcome = Schema.Union([
+	Schema.Struct({ outcome: Schema.Literal("success"), result: QueryEngineResult }),
+	Schema.Struct({ outcome: Schema.Literal("failure"), error: QueryEngineBatchFailure }),
+])
+export type QueryEngineBatchOutcome = Schema.Schema.Type<typeof QueryEngineBatchOutcome>
+
+export class QueryEngineExecuteBatchRequest extends Schema.Class<QueryEngineExecuteBatchRequest>(
+	"QueryEngineExecuteBatchRequest",
+)({
+	requests: Schema.Array(QueryEngineExecuteRequest).check(
+		Schema.isMinLength(1),
+		Schema.isMaxLength(QUERY_ENGINE_BATCH_MAX),
+	),
+}) {}
+
+export class QueryEngineExecuteBatchResponse extends Schema.Class<QueryEngineExecuteBatchResponse>(
+	"QueryEngineExecuteBatchResponse",
+)({
+	/** Positionally aligned with the request's `requests`. */
+	results: Schema.Array(QueryEngineBatchOutcome),
+}) {}
+
+/**
+ * The alert-rule spelling of the shared reducer table in `@maple/query-model`.
+ * `ALERT_REDUCER_TO_SERIES_REDUCER` maps each of these onto the widget spelling
+ * (`STAT_AGGREGATES`); the two sets stay distinct because `"identity"` and
+ * `"first"` coincide only on a one-bucket window.
+ */
+export const QueryEngineAlertReducer = Schema.Literals(ALERT_REDUCERS).annotate({
 	identifier: "@maple/QueryEngineAlertReducer",
 })
 export type QueryEngineAlertReducer = Schema.Schema.Type<typeof QueryEngineAlertReducer>
@@ -494,6 +684,7 @@ export const QueryEngineSampleCountStrategy = Schema.Literals([
 	"trace_count",
 	"metric_data_points",
 	"log_count",
+	"product_event_count",
 ]).annotate({
 	identifier: "@maple/QueryEngineSampleCountStrategy",
 })
@@ -554,3 +745,30 @@ export class CompiledAlertQueryPlan extends Schema.Class<CompiledAlertQueryPlan>
 	sampleCountStrategy: Schema.NullOr(QueryEngineSampleCountStrategy),
 	noDataBehavior: QueryEngineNoDataBehavior,
 }) {}
+
+/**
+ * The value the web-analytics acquisition breakdowns (`referrerHost`, `utm*`)
+ * emit for a session whose column is empty — direct traffic for the referrer,
+ * an untagged visit for UTM — and the value a filter sends back to select that
+ * group.
+ *
+ * A sentinel rather than the raw `''` because the value has to survive a round
+ * trip as a filter through a URL search param, the HTTP payload and an MCP tool
+ * argument, and an empty string is dropped or defaulted at every one of those
+ * boundaries. Parenthesised so it cannot collide with a real hostname and reads
+ * as a marker wherever it shows up unlabelled.
+ */
+export const WEB_ANALYTICS_UNSET = "(none)"
+
+/**
+ * How far back "live" reaches: a session counts as happening now if it showed
+ * activity within this many seconds.
+ *
+ * Shared by every surface that renders live-ness — the analytics badge, the
+ * replay list's LIVE pill, the replay player's "still uploading" state — so the
+ * copy ("in the last 5 minutes") and the window the query applies cannot drift
+ * apart, and so two pages looking at one session cannot disagree about whether
+ * it is live. `Status` alone answers a different question: it stays `active`
+ * forever when a tab dies without sending its unload row.
+ */
+export const SESSION_LIVE_WINDOW_SECONDS = 300

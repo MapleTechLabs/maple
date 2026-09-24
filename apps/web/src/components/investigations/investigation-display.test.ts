@@ -7,6 +7,7 @@ import {
 	investigationKindKey,
 	investigationScope,
 	matchesQuery,
+	reportHeadline,
 	sortInvestigations,
 	splitDuration,
 } from "./investigation-display"
@@ -28,6 +29,7 @@ const make = (overrides: Partial<V2Investigation> = {}): V2Investigation =>
 			incidentEndedAt: null,
 		},
 		report: null,
+		progress: null,
 		model: null,
 		severity: "high",
 		confidence: "high",
@@ -107,7 +109,7 @@ describe("investigationScope", () => {
 
 /** Every lifecycle state has something to say — a blank cell was the old bug. */
 describe("investigationFinding", () => {
-	it("shows the suspected cause once a diagnosis lands", () => {
+	it("leads with the summary once a diagnosis lands, not the unbounded cause", () => {
 		const investigation = make({
 			report: {
 				summary: "Checkout is timing out",
@@ -121,12 +123,41 @@ describe("investigationFinding", () => {
 		} as Partial<V2Investigation>)
 		expect(investigationFinding(investigation)).toEqual({
 			kind: "cause",
-			text: "Retry budget exhausted",
+			text: "Checkout is timing out",
 		})
 	})
 
 	it("says a running pass is running, even if an older report is attached", () => {
 		expect(investigationFinding(make({ status: "investigating" })).kind).toBe("pending")
+	})
+
+	/**
+	 * Every running row printing the same three words reports liveness and nothing
+	 * else, and the hub is where several passes are watched at once.
+	 */
+	it("promotes a running pass's last step over the placeholder", () => {
+		const investigation = make({
+			status: "investigating",
+			progress: {
+				stepCount: 4,
+				steps: [
+					{ tool: "search_logs", label: "Search logs", at: 1 },
+					{ tool: "inspect_trace", label: "Inspect trace · 7f3a9c", at: 2 },
+				],
+				updatedAt: 2,
+			},
+		} as Partial<V2Investigation>)
+		expect(investigationFinding(investigation)).toEqual({
+			kind: "pending",
+			text: "Inspect trace · 7f3a9c",
+		})
+	})
+
+	it("falls back to the placeholder before the first step lands", () => {
+		expect(investigationFinding(make({ status: "investigating" }))).toEqual({
+			kind: "pending",
+			text: "Gathering evidence…",
+		})
 	})
 
 	it("surfaces the failure reason, which was on the wire and rendered nowhere", () => {
@@ -142,6 +173,68 @@ describe("investigationFinding", () => {
 
 	it("reports nothing to show when a resolved run has no report", () => {
 		expect(investigationFinding(make({ status: "resolved" }))).toEqual({ kind: "none" })
+	})
+
+	/**
+	 * `partial`, not `cause`. The hub is scanned rather than read, and a lead
+	 * nothing confirmed rendering identically to a promoted cause makes an
+	 * unconfirmed guess look like an answer.
+	 */
+	it("marks an inconclusive run as partial rather than as a cause", () => {
+		const investigation = make({
+			status: "inconclusive",
+			report: {
+				summary: "Nothing held up.",
+				suspectedCause: "Possibly the payments-api pool, unconfirmed",
+				severityAssessment: "low",
+				affectedScope: "checkout-api",
+				evidence: [],
+				suggestedActions: [],
+				confidence: "low",
+				ruledOut: ["Deploy: service.version unchanged"],
+			},
+		} as Partial<V2Investigation>)
+		expect(investigationFinding(investigation)).toEqual({
+			kind: "partial",
+			text: "Nothing held up.",
+		})
+	})
+
+	/** And it is never a `failure`: nothing broke, so the row must not read red. */
+	it("does not read an inconclusive run as a failure when it has no report", () => {
+		expect(investigationFinding(make({ status: "inconclusive", report: null })).kind).toBe("partial")
+	})
+})
+
+/** Three fields deep, because only the first is written to be a line. */
+describe("reportHeadline", () => {
+	const report = (overrides: Record<string, unknown>) =>
+		({
+			summary: "Checkout is timing out",
+			suspectedCause: "Retry budget exhausted, and the client retries synchronously",
+			affectedScope: "checkout-api",
+			evidence: [],
+			suggestedActions: [],
+			confidence: "high",
+			...overrides,
+		}) as NonNullable<V2Investigation["report"]>
+
+	it("prefers the one field prompted to be a line", () => {
+		expect(reportHeadline(report({ headline: "Retry budget exhausted" }))).toBe("Retry budget exhausted")
+	})
+
+	it("falls back to the summary for reports written before the field existed", () => {
+		expect(reportHeadline(report({}))).toBe("Checkout is timing out")
+	})
+
+	it("falls back again rather than returning a blank heading", () => {
+		expect(reportHeadline(report({ headline: "   ", summary: "" }))).toBe(
+			"Retry budget exhausted, and the client retries synchronously",
+		)
+	})
+
+	it("has nothing to say without a report", () => {
+		expect(reportHeadline(null)).toBeNull()
 	})
 })
 
@@ -167,9 +260,13 @@ describe("matchesQuery", () => {
 
 	it("matches what the row actually renders, case-insensitively", () => {
 		expect(matchesQuery(investigation, "TIMEOUT")).toBe(true)
-		expect(matchesQuery(investigation, "retry budget")).toBe(true)
 		expect(matchesQuery(investigation, "checkout-api")).toBe(true)
 		expect(matchesQuery(investigation, "kafka")).toBe(false)
+	})
+
+	/** The row prints the summary now, but the cause is what a person remembers. */
+	it("still matches the suspected cause the row no longer prints", () => {
+		expect(matchesQuery(investigation, "retry budget")).toBe(true)
 	})
 
 	it("matches everything on an empty query", () => {

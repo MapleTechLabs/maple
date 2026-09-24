@@ -1,4 +1,3 @@
-// ---------------------------------------------------------------------------
 // Active-org discovery queries
 //
 // Per-org cron loops (error-issue detector, anomaly detector) historically
@@ -8,53 +7,55 @@
 //
 // They are deliberately CROSS-ORG: there is no `OrgId.eq(...)` predicate, so a
 // single cheap scan of the small recent window / hourly MVs enumerates active
-// orgs at once. Each declares `.crossOrg()`, which is what lets them through
+// orgs at once. Each declares `.crossTenant()`, which is what lets them through
 // `WarehouseQueryService.crossOrgQuery` — the ordinary read path rejects a
-// query with no top-level tenant predicate. `.routing("ingest")` routes them to
+// query with no top-level tenant predicate. `.route("ingest")` routes them to
 // the managed Tinybird workspace (where all managed orgs' data lives);
 // BYO-ClickHouse orgs are invisible here and are gated separately by the caller
 // (always processed).
 //
 // The discovery window must be a SUPERSET of the per-org scan window so no
 // active org is missed for the tick.
-// ---------------------------------------------------------------------------
 
-import { from, param } from "@maple-dev/clickhouse-builder"
+import { from, param } from "@maple-dev/effect-clickhouse"
+import type { OrgId } from "@maple/domain"
 import { ErrorEventsByTime, LogsAggregatesHourly, TracesAggregatesHourly } from "../tables"
 
+/** The `OrgId` brand comes off the tables' branded `OrgId` column — the
+ *  derived row schema carries it, so no declared schema is needed. */
 export interface ActiveOrgsOutput {
-	readonly orgId: string
+	readonly orgId: OrgId
 }
 
 /** Orgs with any error events since `startTime` (gates the error-issue detector). */
 export function activeOrgsByErrorEventsQuery() {
 	return from(ErrorEventsByTime)
 		.select(($) => ({ orgId: $.OrgId }))
-		.where(($) => [$.Timestamp.gte(param.dateTime("startTime"))])
+		.where(($) => [$.Timestamp.gte(param.dateTimeSeconds("startTime"))])
 		.groupBy("orgId")
 		.format("JSON")
-		.routing("ingest")
-		.crossOrg()
+		.route("ingest")
+		.crossTenant()
 }
 
 /** Orgs with any span aggregates since `startTime` (gates the anomaly detector). */
 export function activeOrgsByTracesQuery() {
 	return from(TracesAggregatesHourly)
 		.select(($) => ({ orgId: $.OrgId }))
-		.where(($) => [$.Hour.gte(param.dateTime("startTime"))])
+		.where(($) => [$.Hour.gte(param.dateTimeSeconds("startTime"))])
 		.groupBy("orgId")
 		.format("JSON")
-		.routing("ingest")
-		.crossOrg()
+		.route("ingest")
+		.crossTenant()
 }
 
 /** Orgs with any log aggregates since `startTime` (gates the anomaly detector). */
 export function activeOrgsByLogsQuery() {
 	return from(LogsAggregatesHourly)
 		.select(($) => ({ orgId: $.OrgId }))
-		.where(($) => [$.Hour.gte(param.dateTime("startTime"))])
+		.where(($) => [$.Hour.gte(param.dateTimeSeconds("startTime"))])
 		.groupBy("orgId")
 		.format("JSON")
-		.routing("ingest")
-		.crossOrg()
+		.route("ingest")
+		.crossTenant()
 }

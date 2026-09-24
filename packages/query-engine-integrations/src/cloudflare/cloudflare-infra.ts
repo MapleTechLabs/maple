@@ -1,4 +1,3 @@
-// ---------------------------------------------------------------------------
 // Cloudflare infrastructure page
 //
 // Rollups and timeseries backing the /infra/cloudflare page: per-zone HTTP
@@ -12,12 +11,9 @@
 // Split by table because counters live in `metrics_sum` (5-min delta sums)
 // and pre-computed percentiles live in `metrics_gauge` (one row per
 // `quantile`). The API handlers merge the two by ServiceName.
-// ---------------------------------------------------------------------------
 
-import { Schema } from "effect"
-import * as CH from "@maple-dev/clickhouse-builder/expr"
-import { from, param, type ColumnAccessor, type CompiledQueryRowSchema } from "@maple-dev/clickhouse-builder"
-import { CHNumber } from "@maple/query-engine/ch/schema"
+import * as CH from "@maple-dev/effect-clickhouse/expr"
+import { from, param, type ColumnAccessor } from "@maple-dev/effect-clickhouse"
 import { MetricsGauge, MetricsSum } from "@maple/query-engine/ch/tables"
 import { avgWhere, isoBucket } from "@maple/query-engine/ch/format"
 import {
@@ -59,9 +55,7 @@ const CACHE_SERVED_STATUSES = ["hit", "stale", "revalidated", "updating"] as con
 // JSON `null` and would break row decoding — so guard each with
 // `if(countIf > 0, avgIf, 0)`. (Same guard as cloudflare-map.ts.)
 
-// ---------------------------------------------------------------------------
 // Zones
-// ---------------------------------------------------------------------------
 
 export interface CloudflareZoneCountersOutput {
 	readonly serviceName: string
@@ -98,47 +92,6 @@ export interface CloudflareZoneTimeseriesOutput {
 	readonly visits: number
 }
 
-/**
- * Row schema for {@link cloudflareZoneCountersSQL}. The `sumIf` aggregates use
- * {@link CHNumber} so a BYO-ClickHouse org's string-encoded numeric aggregates
- * decode identically to Tinybird's numbers — pass it as the `rowSchema` to
- * `CH.compile` so `decodeRows` coerces centrally instead of a `ParseError`
- * surfacing downstream. Mirror of `cloudflareUsageRowSchema`.
- */
-export const cloudflareZoneCountersRowSchema: CompiledQueryRowSchema<CloudflareZoneCountersOutput> =
-	Schema.Struct({
-		serviceName: Schema.String,
-		requests: CHNumber,
-		errors5xx: CHNumber,
-		cacheHits: CHNumber,
-		bytes: CHNumber,
-		visits: CHNumber,
-	})
-
-/** Row schema for {@link cloudflareZoneLatencySQL}. Same {@link CHNumber} coercion. */
-export const cloudflareZoneLatencyRowSchema: CompiledQueryRowSchema<CloudflareZoneLatencyOutput> =
-	Schema.Struct({
-		serviceName: Schema.String,
-		ttfbP50Ms: CHNumber,
-		ttfbP95Ms: CHNumber,
-		ttfbP99Ms: CHNumber,
-		originP50Ms: CHNumber,
-		originP95Ms: CHNumber,
-		originP99Ms: CHNumber,
-	})
-
-/** Row schema for {@link cloudflareZoneTimeseriesSQL}. Same {@link CHNumber} coercion. */
-export const cloudflareZoneTimeseriesRowSchema: CompiledQueryRowSchema<CloudflareZoneTimeseriesOutput> =
-	Schema.Struct({
-		serviceName: Schema.String,
-		bucket: Schema.String,
-		requests: CHNumber,
-		errors5xx: CHNumber,
-		cacheHits: CHNumber,
-		bytes: CHNumber,
-		visits: CHNumber,
-	})
-
 const zoneCounterColumns = ($: ColumnAccessor<typeof MetricsSum.columns>) => ({
 	requests: CH.sumIf($.Value, $.MetricName.eq("cloudflare.http.requests")),
 	errors5xx: CH.sumIf(
@@ -172,8 +125,8 @@ export function cloudflareZoneCountersSQL(opts: CloudflareFilterOpts = {}) {
 		.where(($) => [
 			$.OrgId.eq(param.string("orgId")),
 			$.MetricName.in_(...ZONE_COUNTER_METRIC_NAMES),
-			$.TimeUnix.gte(param.dateTime("startTime")),
-			$.TimeUnix.lte(param.dateTime("endTime")),
+			$.TimeUnix.gte(param.dateTimeString("startTime")),
+			$.TimeUnix.lte(param.dateTimeString("endTime")),
 			...httpCubeFilters($, opts),
 		])
 		.groupBy("serviceName")
@@ -209,8 +162,8 @@ export function cloudflareZoneLatencySQL() {
 		.where(($) => [
 			$.OrgId.eq(param.string("orgId")),
 			$.MetricName.in_(...ZONE_GAUGE_METRIC_NAMES),
-			$.TimeUnix.gte(param.dateTime("startTime")),
-			$.TimeUnix.lte(param.dateTime("endTime")),
+			$.TimeUnix.gte(param.dateTimeString("startTime")),
+			$.TimeUnix.lte(param.dateTimeString("endTime")),
 		])
 		.groupBy("serviceName")
 		.limit(500)
@@ -228,8 +181,8 @@ export function cloudflareZoneTimeseriesSQL(opts: CloudflareFilterOpts = {}) {
 		.where(($) => [
 			$.OrgId.eq(param.string("orgId")),
 			$.MetricName.in_(...ZONE_COUNTER_METRIC_NAMES),
-			$.TimeUnix.gte(param.dateTime("startTime")),
-			$.TimeUnix.lte(param.dateTime("endTime")),
+			$.TimeUnix.gte(param.dateTimeString("startTime")),
+			$.TimeUnix.lte(param.dateTimeString("endTime")),
 			...httpCubeFilters($, opts),
 		])
 		.groupBy("serviceName", "bucket")
@@ -237,13 +190,11 @@ export function cloudflareZoneTimeseriesSQL(opts: CloudflareFilterOpts = {}) {
 		.format("JSON")
 }
 
-// ---------------------------------------------------------------------------
 // Zone detail (single zone, scoped by ServiceName)
 //
 // The poller stores `http.status_class` and `cache.status` on every
 // `cloudflare.http.requests` row, so a single zone supports bucketed
 // breakdowns by either dimension plus a latency-percentile timeseries.
-// ---------------------------------------------------------------------------
 
 export interface CloudflareZoneStatusTimeseriesOutput {
 	/** Bucket start, ISO-8601 UTC. */
@@ -270,34 +221,6 @@ export interface CloudflareZoneLatencyTimeseriesOutput {
 	readonly originP99Ms: number
 }
 
-/** Row schema for {@link cloudflareZoneStatusTimeseriesSQL}. Same {@link CHNumber} coercion. */
-export const cloudflareZoneStatusTimeseriesRowSchema: CompiledQueryRowSchema<CloudflareZoneStatusTimeseriesOutput> =
-	Schema.Struct({
-		bucket: Schema.String,
-		statusClass: Schema.String,
-		requests: CHNumber,
-	})
-
-/** Row schema for {@link cloudflareZoneCacheTimeseriesSQL}. Same {@link CHNumber} coercion. */
-export const cloudflareZoneCacheTimeseriesRowSchema: CompiledQueryRowSchema<CloudflareZoneCacheTimeseriesOutput> =
-	Schema.Struct({
-		bucket: Schema.String,
-		cacheStatus: Schema.String,
-		requests: CHNumber,
-	})
-
-/** Row schema for {@link cloudflareZoneLatencyTimeseriesSQL}. Same {@link CHNumber} coercion. */
-export const cloudflareZoneLatencyTimeseriesRowSchema: CompiledQueryRowSchema<CloudflareZoneLatencyTimeseriesOutput> =
-	Schema.Struct({
-		bucket: Schema.String,
-		ttfbP50Ms: CHNumber,
-		ttfbP95Ms: CHNumber,
-		ttfbP99Ms: CHNumber,
-		originP50Ms: CHNumber,
-		originP95Ms: CHNumber,
-		originP99Ms: CHNumber,
-	})
-
 /** Bucketed request counts by HTTP status class for one zone pseudo-service. */
 export function cloudflareZoneStatusTimeseriesSQL(opts: CloudflareFilterOpts = {}) {
 	return from(MetricsSum)
@@ -310,8 +233,8 @@ export function cloudflareZoneStatusTimeseriesSQL(opts: CloudflareFilterOpts = {
 			$.OrgId.eq(param.string("orgId")),
 			$.ServiceName.eq(param.string("serviceName")),
 			$.MetricName.eq("cloudflare.http.requests"),
-			$.TimeUnix.gte(param.dateTime("startTime")),
-			$.TimeUnix.lte(param.dateTime("endTime")),
+			$.TimeUnix.gte(param.dateTimeString("startTime")),
+			$.TimeUnix.lte(param.dateTimeString("endTime")),
 			...httpCubeFilters($, opts),
 		])
 		.groupBy("bucket", "statusClass")
@@ -331,8 +254,8 @@ export function cloudflareZoneCacheTimeseriesSQL(opts: CloudflareFilterOpts = {}
 			$.OrgId.eq(param.string("orgId")),
 			$.ServiceName.eq(param.string("serviceName")),
 			$.MetricName.eq("cloudflare.http.requests"),
-			$.TimeUnix.gte(param.dateTime("startTime")),
-			$.TimeUnix.lte(param.dateTime("endTime")),
+			$.TimeUnix.gte(param.dateTimeString("startTime")),
+			$.TimeUnix.lte(param.dateTimeString("endTime")),
 			...httpCubeFilters($, opts),
 		])
 		.groupBy("bucket", "cacheStatus")
@@ -364,17 +287,15 @@ export function cloudflareZoneLatencyTimeseriesSQL() {
 			$.OrgId.eq(param.string("orgId")),
 			$.ServiceName.eq(param.string("serviceName")),
 			$.MetricName.in_(...ZONE_GAUGE_METRIC_NAMES),
-			$.TimeUnix.gte(param.dateTime("startTime")),
-			$.TimeUnix.lte(param.dateTime("endTime")),
+			$.TimeUnix.gte(param.dateTimeString("startTime")),
+			$.TimeUnix.lte(param.dateTimeString("endTime")),
 		])
 		.groupBy("bucket")
 		.orderBy(["bucket", "asc"])
 		.format("JSON")
 }
 
-// ---------------------------------------------------------------------------
 // Workers
-// ---------------------------------------------------------------------------
 
 export interface CloudflareWorkerCountersOutput {
 	readonly serviceName: string
@@ -394,42 +315,6 @@ export interface CloudflareWorkerLatencyOutput {
 	readonly durationP99Ms: number
 }
 
-export interface CloudflareWorkerTimeseriesOutput {
-	readonly serviceName: string
-	/** Bucket start, ISO-8601 UTC. */
-	readonly bucket: string
-	readonly requests: number
-	readonly errors: number
-}
-
-/** Row schema for {@link cloudflareWorkerCountersSQL}. Same {@link CHNumber} coercion. */
-export const cloudflareWorkerCountersRowSchema: CompiledQueryRowSchema<CloudflareWorkerCountersOutput> =
-	Schema.Struct({
-		serviceName: Schema.String,
-		requests: CHNumber,
-		errors: CHNumber,
-		subrequests: CHNumber,
-	})
-
-/** Row schema for {@link cloudflareWorkerLatencySQL}. Same {@link CHNumber} coercion. */
-export const cloudflareWorkerLatencyRowSchema: CompiledQueryRowSchema<CloudflareWorkerLatencyOutput> =
-	Schema.Struct({
-		serviceName: Schema.String,
-		cpuP50Ms: CHNumber,
-		cpuP99Ms: CHNumber,
-		durationP50Ms: CHNumber,
-		durationP99Ms: CHNumber,
-	})
-
-/** Row schema for {@link cloudflareWorkerTimeseriesSQL}. Same {@link CHNumber} coercion. */
-export const cloudflareWorkerTimeseriesRowSchema: CompiledQueryRowSchema<CloudflareWorkerTimeseriesOutput> =
-	Schema.Struct({
-		serviceName: Schema.String,
-		bucket: Schema.String,
-		requests: CHNumber,
-		errors: CHNumber,
-	})
-
 /** Counter rollup over `metrics_sum`, one row per Worker pseudo-service. */
 export function cloudflareWorkerCountersSQL() {
 	return from(MetricsSum)
@@ -442,8 +327,8 @@ export function cloudflareWorkerCountersSQL() {
 		.where(($) => [
 			$.OrgId.eq(param.string("orgId")),
 			$.MetricName.in_(...WORKER_COUNTER_METRIC_NAMES),
-			$.TimeUnix.gte(param.dateTime("startTime")),
-			$.TimeUnix.lte(param.dateTime("endTime")),
+			$.TimeUnix.gte(param.dateTimeString("startTime")),
+			$.TimeUnix.lte(param.dateTimeString("endTime")),
 		])
 		.groupBy("serviceName")
 		.orderBy(["requests", "desc"])
@@ -480,30 +365,10 @@ export function cloudflareWorkerLatencySQL() {
 		.where(($) => [
 			$.OrgId.eq(param.string("orgId")),
 			$.MetricName.in_(...WORKER_GAUGE_METRIC_NAMES),
-			$.TimeUnix.gte(param.dateTime("startTime")),
-			$.TimeUnix.lte(param.dateTime("endTime")),
+			$.TimeUnix.gte(param.dateTimeString("startTime")),
+			$.TimeUnix.lte(param.dateTimeString("endTime")),
 		])
 		.groupBy("serviceName")
 		.limit(500)
-		.format("JSON")
-}
-
-/** Bucketed counter timeseries over `metrics_sum`, one row per Worker × bucket. */
-export function cloudflareWorkerTimeseriesSQL() {
-	return from(MetricsSum)
-		.select(($) => ({
-			serviceName: $.ServiceName,
-			bucket: isoBucket($.TimeUnix),
-			requests: CH.sumIf($.Value, $.MetricName.eq("cloudflare.worker.requests")),
-			errors: CH.sumIf($.Value, $.MetricName.eq("cloudflare.worker.errors")),
-		}))
-		.where(($) => [
-			$.OrgId.eq(param.string("orgId")),
-			$.MetricName.in_(...WORKER_COUNTER_METRIC_NAMES),
-			$.TimeUnix.gte(param.dateTime("startTime")),
-			$.TimeUnix.lte(param.dateTime("endTime")),
-		])
-		.groupBy("serviceName", "bucket")
-		.orderBy(["serviceName", "asc"], ["bucket", "asc"])
 		.format("JSON")
 }
