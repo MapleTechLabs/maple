@@ -1102,16 +1102,17 @@ export const aiTraceIndexMv = defineMaterializedView("ai_trace_index_mv", {
  *
  * The row carries the call's identity (org, trace, session, vendor, service,
  * environment), its request id and its cost, and nothing else: no model, no
- * tokens, not a model call, tool call or failure, so every count, facet and
- * tool read is what it was without it. `SpanId` is prefixed so a count of
- * agent spans can leave it out (`genAiIsSpanCond`); `ParentSpanId` is `''`,
- * a key only a reporter with an empty `SpanId` reads, and index rows have
- * carried one since migration 0026.
+ * tokens, not a model call, tool call or failure, so no call, tool or failure
+ * count and no model, agent or tool facet moves with it. `SpanId` is prefixed
+ * so the agent-span count can leave it out (`genAiIsSpanCond`). `ParentSpanId`
+ * is `''`, the key the usage netting files root claims under, which only a
+ * reporter whose own `SpanId` is `''` looks up — no row since migration 0026.
  *
- * `Timestamp` is the event's own, which Claude Code emits as the call ends —
- * inside its trace's extent — and which partitions the row with the `logs`
- * block it came in. An event without a trace id (one emitted outside any
- * interaction, e.g. `prompt_suggestion`) has no trace to join and is left out.
+ * `Timestamp` is the event's own, stamped as the call ends and so inside its
+ * trace's extent, and it partitions the row with the `logs` block it came in.
+ * An event without a trace id (one emitted outside any interaction, such as a
+ * prompt suggestion) has no trace to join, and a cost that is not a finite
+ * positive number would sum to nothing or to `inf`; both are left out.
  */
 export const aiTraceIndexClaudeCodeCostMv = defineMaterializedView("ai_trace_index_claude_code_cost_mv", {
 	description:

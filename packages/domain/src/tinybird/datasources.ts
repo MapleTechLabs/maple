@@ -1121,7 +1121,7 @@ export type TraceDetailSpansRow = InferRow<typeof traceDetailSpans>
  */
 export const aiTraceIndex = defineDatasource("ai_trace_index", {
 	description:
-		"GenAI agent spans only (maple_ai.vendor.id stamped), pre-extracted to plain columns, plus a usage record per Claude Code api_request log event (SpanId 'usage:…', its cost). Detection/facet surface for the Agent Sessions pages. Populated by materialized views.",
+		"GenAI agent spans (maple_ai.vendor.id stamped), pre-extracted to plain columns, plus a usage record per Claude Code api_request log event (SpanId 'usage:…', its cost). Detection/facet surface for the Agent Sessions pages. Populated by materialized views.",
 	jsonPaths: false,
 	schema: {
 		OrgId: t.string().lowCardinality(),
