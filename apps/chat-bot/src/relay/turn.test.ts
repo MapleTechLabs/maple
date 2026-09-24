@@ -971,7 +971,12 @@ describe("settling an approval somebody clicked", () => {
 					toolName: "create_alert_rule",
 					summary: "name: checkout p95",
 					token: CALL_ID,
-					outcome: { approved: true, text: "Approved by Ada.\nCreated alert rule ar_1." },
+					outcome: {
+						approved: true,
+						decision: "Approved by Ada.",
+						text: "The change went through.",
+						url: null,
+					},
 				},
 			])
 		}),
@@ -994,7 +999,7 @@ describe("settling an approval somebody clicked", () => {
 
 			expect(agent.settlements[0]?.decision).toBe("deny")
 			expect(approvals(platform.calls.at(-1)?.blocks ?? [])[0]).toMatchObject({
-				outcome: { approved: false, text: "Declined by Ada. The tool did not run." },
+				outcome: { approved: false, decision: "Declined by Ada. The tool did not run.", text: "" },
 			})
 		}),
 	)

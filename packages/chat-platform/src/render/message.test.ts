@@ -388,9 +388,70 @@ describe("renderChatMessage", () => {
 				toolName: "create_alert_rule",
 				summary: "name: checkout p95",
 				token: "call_9",
-				outcome: { approved: true, text: "Approved by Ada.\nCreated alert rule." },
+				outcome: {
+					approved: true,
+					decision: "Approved by Ada.",
+					text: "The change went through.",
+					url: null,
+				},
 			},
 		])
+	})
+
+	it("says what a decided proposal did in a sentence, with a link, instead of the tool's report", () => {
+		const report = [
+			"Approved by Ada.",
+			"## Dashboard Created",
+			"ID: d_1",
+			"### Validation",
+			JSON.stringify({
+				__maple_ui: true,
+				tool: "create_dashboard",
+				data: { dashboard: { id: "d_1", name: "Checkout", widgetCount: 0 } },
+			}),
+		].join("\n")
+		const decided = (output: string, isError?: true) =>
+			renderChatMessage(
+				turn([
+					{ type: "turn-start", messageId: "a1" },
+					{
+						type: "tool-call",
+						messageId: "a1",
+						callId: "call_9",
+						name: "create_dashboard",
+						input: { name: "Checkout" },
+						proposed: true,
+					},
+					{
+						type: "tool-result",
+						messageId: "a1",
+						callId: "call_9",
+						output,
+						...(isError ? { isError } : undefined),
+					},
+				]),
+				context,
+			)[0]
+
+		expect(decided(report)).toMatchObject({
+			outcome: {
+				approved: true,
+				decision: "Approved by Ada.",
+				text: 'I created the dashboard "Checkout".',
+				url: "https://app.maple.dev/dashboards/d_1",
+			},
+		})
+		// A refusal has no payload to describe; its reason is the report's first line of prose.
+		expect(
+			decided("Approved by Ada, but it did not go through.\n## Refused\nThe name is taken.", true),
+		).toMatchObject({
+			outcome: {
+				approved: false,
+				decision: "Approved by Ada, but it did not go through.",
+				text: "The name is taken.",
+				url: null,
+			},
+		})
 	})
 
 	it("reads a declined proposal as decided, not as failed activity", () => {
@@ -422,7 +483,12 @@ describe("renderChatMessage", () => {
 				toolName: "delete_alert_rule",
 				summary: "id: ar_1",
 				token: "call_9",
-				outcome: { approved: false, text: "Declined by Ada. The tool did not run." },
+				outcome: {
+					approved: false,
+					decision: "Declined by Ada. The tool did not run.",
+					text: "",
+					url: null,
+				},
 			},
 		])
 	})
