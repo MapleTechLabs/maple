@@ -79,12 +79,13 @@ export interface ChatConversation {
 	readonly conversationKey: ChatConversationKey
 	readonly target: ChatTarget
 	/**
-	 * Whether the connector OPENED this conversation for the message, rather than answering in one
-	 * that was already there.
+	 * Whether this conversation is the bot's own: one the connector OPENED for the message, or a
+	 * thread somebody brought the bot into by mentioning it there — rather than a channel it merely
+	 * answers in.
 	 *
-	 * It is the difference between a space that exists because somebody asked Maple something and a
-	 * channel a team was already using, and the host records it: only in a conversation of the
-	 * bot's own is a message that never mentioned the bot still addressed to it.
+	 * It is the difference between a bounded exchange with Maple in it and a channel a team was
+	 * already using, and the host records it: only in a conversation of the bot's own is a message
+	 * that never mentioned the bot still addressed to it.
 	 */
 	readonly opened: boolean
 }

@@ -70,6 +70,16 @@ export const GatewayState = Schema.Struct({
 	awaitingAck: Schema.Boolean,
 	/** From READY. Without it there is no way to tell a mention from any other message. */
 	botUserId: Schema.optional(Schema.String),
+	/**
+	 * The intents the held session was identified with.
+	 *
+	 * A RESUME carries no intents: the session keeps the ones its IDENTIFY asked for, for as long
+	 * as it keeps being resumed — and a host that reconnects within the resume window after every
+	 * deploy resumes it indefinitely. A session identified before `INTENTS` changed would never
+	 * pick the change up, so one identified with anything else, or before this was recorded, is
+	 * identified fresh instead.
+	 */
+	intents: Schema.optional(Schema.Number),
 })
 export type GatewayState = Schema.Schema.Type<typeof GatewayState>
 
@@ -95,6 +105,10 @@ const resumeFrame = (state: GatewayState, config: ConnectorConfig): string =>
 		seq: state.sequence ?? null,
 	})
 
+/** Whether the held session can be resumed as it is, rather than identified fresh. */
+const resumable = (state: GatewayState): boolean =>
+	state.sessionId !== undefined && state.resumeUrl !== undefined && state.intents === INTENTS
+
 /** Forget the session so the next connect identifies fresh. */
 const withoutSession = (state: GatewayState): GatewayState => ({
 	...state,
@@ -104,7 +118,7 @@ const withoutSession = (state: GatewayState): GatewayState => ({
 })
 
 const connectUrl = (state: GatewayState): string =>
-	state.sessionId !== undefined && state.resumeUrl !== undefined
+	resumable(state) && state.resumeUrl !== undefined
 		? `${state.resumeUrl.replace(/\/+$/u, "")}/${GATEWAY_QUERY}`
 		: GATEWAY_URL
 
@@ -121,7 +135,7 @@ const onOpen = (state: GatewayState, now: number): SocketStep<GatewayState> => (
 /**
  * HELLO: adopt the interval and finish the handshake.
  *
- * A stored session resumes; otherwise this identifies. Discord asks for the
+ * A stored session identified with the current intents resumes; otherwise this identifies. Discord asks for the
  * FIRST heartbeat to be delayed by `interval * jitter` so that a fleet of
  * clients reconnecting together does not heartbeat in lockstep. A fixed half
  * interval serves that purpose for a single-socket bot and keeps the state
@@ -137,9 +151,10 @@ const onHello = (
 	const hello = decodeHello(payload)
 	if (Option.isNone(hello)) return { state, directive: reconnect }
 	const interval = hello.value.heartbeat_interval
-	const resuming = state.sessionId !== undefined
+	const resuming = resumable(state)
+	const next = resuming ? state : withoutSession(state)
 	return {
-		state: { ...state, heartbeatIntervalMs: interval, awaitingAck: false },
+		state: { ...next, heartbeatIntervalMs: interval, awaitingAck: false },
 		send: [resuming ? resumeFrame(state, config) : identifyFrame(config)],
 		heartbeatAt: now + Math.floor(interval / 2),
 	}
@@ -155,6 +170,9 @@ const onReady = (state: GatewayState, payload: unknown): SocketStep<GatewayState
 			sessionId: ready.value.session_id,
 			resumeUrl: ready.value.resume_gateway_url,
 			botUserId: ready.value.user.id,
+			// READY answers an IDENTIFY and nothing else (a RESUME answers RESUMED), and the only
+			// IDENTIFY this connector sends asks for `INTENTS`.
+			intents: INTENTS,
 		},
 	}
 }
