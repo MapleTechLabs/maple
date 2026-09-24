@@ -13,7 +13,7 @@ import {
 	buildSlackBlocksFromTemplate,
 	buildSlackFallbackText,
 } from "../../AlertDeliveryDispatch"
-import { slackAttachmentColor } from "../../alert-formatting"
+import { alertAccentColor } from "../../alert-formatting"
 import type { HttpTransport, ProviderAck, RenderInput, SecretConfigOf } from "../Transport"
 
 type Config = SecretConfigOf<"slack-bot">
@@ -103,7 +103,7 @@ export const makeSlackTransport = (deps: SlackTransportDeps): HttpTransport<Conf
 				// notification-preview one-liner instead.
 				attachments: [
 					{
-						color: slackAttachmentColor(context.eventType, context.severity),
+						color: alertAccentColor(context.eventType, context.severity),
 						fallback: templated?.title ?? buildSlackFallbackText(context),
 						blocks,
 					},

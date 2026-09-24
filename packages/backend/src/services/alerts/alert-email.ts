@@ -8,7 +8,7 @@ import {
 	formatObservedSummary,
 	formatSignalLabel,
 	formatWindow,
-	slackAttachmentColor,
+	alertAccentColor,
 	type TemplateRenderContext,
 } from "./alert-formatting"
 
@@ -42,7 +42,7 @@ export const buildAlertEmailContent = (
 				group: displayGroupKey(context.groupKey) ?? "all",
 				observedSummary: formatObservedSummary(context),
 				window: formatWindow(context.windowMinutes),
-				accentColor: slackAttachmentColor(context.eventType, context.severity),
+				accentColor: alertAccentColor(context.eventType, context.severity),
 				linkUrl,
 				chatUrl,
 			})

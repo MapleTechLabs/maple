@@ -7,7 +7,7 @@ import {
 	formatEventTypeLabel,
 	formatSeverityLabel,
 	severityEmoji,
-	slackAttachmentColor,
+	alertAccentColor,
 	truncate,
 } from "../../alert-formatting"
 import type { EffectTransport, RenderInput, SecretConfigOf } from "../Transport"
@@ -24,7 +24,7 @@ const MAX_TEMPLATED_BODY_CHARS = 1200
  * The alert as one neutral alert card, which the connector renders in its own dialect — and
  * which is where its mention-neutralising lives, so a rule named `@everyone` pings nobody.
  *
- * The same card the `slack-bot` destination posts: the event and rule as the title, what was
+ * The same card the legacy bot destination posts: the event and rule as the title, what was
  * observed against the threshold, severity and group as fields, the chart, both links as buttons,
  * and a footer carrying the sparkline, the incident and the time. A rule's own template, when it
  * has one, replaces the title and the summary and drops the fields, as it does there.
@@ -34,7 +34,7 @@ export const buildChatAlertBlocks = (input: RenderInput<Config>): ReadonlyArray<
 	const group = displayGroupKey(context.groupKey)
 	const card: Omit<ChatAlertBlock, "title" | "summary" | "fields"> = {
 		kind: "alert",
-		color: slackAttachmentColor(context.eventType, context.severity),
+		color: alertAccentColor(context.eventType, context.severity),
 		imageUrl: context.chartUrl ?? null,
 		imageAlt: `${context.ruleName} over the alert window`,
 		links: [
