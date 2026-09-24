@@ -142,7 +142,8 @@ describe("aiSessionPageQuery", () => {
 		const { sql } = compileUnsafe(aiSessionPageQuery(), params)
 		const { sessions: outer, traces: inner } = levels(sql)
 
-		expect(inner).toContain("count() AS agentSpanCount")
+		// Spans only: a usage record (`usage:<request id>`) is not one.
+		expect(inner).toContain("countIf(startsWith(SpanId, 'usage:') = 0) AS agentSpanCount")
 		expect(inner).toContain("groupUniqArrayIf(20)(ServiceName, ServiceName != '') AS serviceNames")
 		// One row per trace on this level, so `count()` is the trace count exactly.
 		expect(outer).toContain("count() AS traceCount")
@@ -214,7 +215,8 @@ describe("aiSessionPageQuery", () => {
 		// maple-slack-agent spans are different spans — the ordinary case, since a
 		// trace's spans come from several services. Neither name may appear in the
 		// index read's WHERE at all.
-		expect(sql.split("countIf(").length - 1).toBe(2)
+		// (A third `countIf` is the span count, which filters nothing.)
+		expect(sql.split("countIf(").length - 1).toBe(3)
 		expect(where).not.toContain("VendorId")
 		expect(where).not.toContain("ServiceName")
 		expect(sql).not.toContain("VendorId IN ('eve') AND ServiceName")

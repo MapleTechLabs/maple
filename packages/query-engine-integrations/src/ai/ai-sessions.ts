@@ -156,6 +156,7 @@ import {
 	MAPLE_NATIVE_TURN_ID_ATTR,
 	type AiGenAiField,
 } from "@maple/domain/gen-ai"
+import { genAiIsSpanCond } from "@maple/domain/tinybird/gen-ai-columns"
 import { aiFieldSourceKeys, aiSpanAttributeKeys } from "./ai-integrations"
 import {
 	childClaimsExpr,
@@ -534,7 +535,8 @@ const indexTraces = (opts: AiSessionFilterOpts, bounds: IndexBounds) => {
 				traceAgentEndNanos: CH.max_(
 					CH.toUnixTimestamp64Nano($.Timestamp).add(CH.toInt64($.Duration)),
 				),
-				agentSpanCount: CH.count(),
+				// Spans, not the usage records beside them (`genAiIsSpanCond`).
+				agentSpanCount: CH.countIf(genAiIsSpanCond($.SpanId)),
 				// Bounded per trace: a row is a list cell, and a trace that somehow
 				// names more models than that is not one the cell can show anyway.
 				serviceNames: CH.groupUniqArrayIf(MAX_NAMES_PER_TRACE)($.ServiceName, $.ServiceName.neq("")),

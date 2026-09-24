@@ -24,7 +24,11 @@ import {
 	MAPLE_AI_VENDOR_ID_ATTR,
 	MAPLE_AI_VENDOR_VERSION_ATTR,
 } from "@maple/domain/gen-ai"
-import { genAiErrorFingerprintText } from "@maple/domain/tinybird/gen-ai-columns"
+import {
+	CLAUDE_CODE_EVENTS_SCOPE,
+	CLAUDE_CODE_VENDOR_ID,
+	genAiErrorFingerprintText,
+} from "@maple/domain/tinybird/gen-ai-columns"
 import * as Integrations from "@maple/query-engine-integrations"
 import type { AiSessionPageOpts } from "@maple/query-engine-integrations"
 import { normalizeSqlForClickHouseClient } from "@maple/query-engine/execution"
@@ -398,6 +402,87 @@ const TOOL_FAILURE_ORG_SPANS: ReadonlyArray<SeedSpan> = [
 	TOOL_SUCCESS_SPAN,
 ]
 
+// Claude Code, under a fourth org. It prices a call only on its `api_request`
+// log event, never on the `claude_code.llm_request` span, so the cost view
+// writes the event to the index as a usage record keyed by the request id the
+// span carries as `gen_ai.response.id`.
+const CLAUDE_CODE_ORG_ID = "org_ai_trace_index_e2e_claude_code"
+const CLAUDE_CODE_TRACE = "aitraceindexe2e000000000000000009"
+const CLAUDE_CODE_SESSION_ID = "7b0c2f4e-claude-code-e2e"
+
+const CLAUDE_CODE_TURN_SPAN: SeedSpan = {
+	traceId: CLAUDE_CODE_TRACE,
+	spanId: "span-cc-turn",
+	name: "claude_code.interaction",
+	ms: BASE_MS + 300_000,
+	service: "claude-code",
+	status: "Ok",
+	attrs: {
+		[MAPLE_AI_VENDOR_ID_ATTR]: CLAUDE_CODE_VENDOR_ID,
+		[MAPLE_AI_SESSION_ID_ATTR]: CLAUDE_CODE_SESSION_ID,
+	},
+}
+
+// The model call: tokens, no cost — Claude Code puts none on the span.
+const CLAUDE_CODE_CALL_SPAN: SeedSpan = {
+	traceId: CLAUDE_CODE_TRACE,
+	spanId: "span-cc-call",
+	parentSpanId: "span-cc-turn",
+	name: "claude_code.llm_request",
+	ms: BASE_MS + 300_100,
+	service: "claude-code",
+	status: "Ok",
+	attrs: {
+		[MAPLE_AI_VENDOR_ID_ATTR]: CLAUDE_CODE_VENDOR_ID,
+		"gen_ai.system": "anthropic",
+		"gen_ai.request.model": "claude-opus-5-5",
+		"gen_ai.response.id": "req_cc_1",
+		"gen_ai.usage.input_tokens": "100",
+		"gen_ai.usage.output_tokens": "20",
+	},
+}
+
+interface SeedEvent {
+	readonly traceId: string
+	readonly scope: string
+	readonly attrs: Readonly<Record<string, string>>
+}
+
+const apiRequestEvent = (
+	attrs: Readonly<Record<string, string>>,
+	fields: Partial<Omit<SeedEvent, "attrs">> = {},
+): SeedEvent => ({
+	traceId: CLAUDE_CODE_TRACE,
+	scope: CLAUDE_CODE_EVENTS_SCOPE,
+	...fields,
+	attrs: { "event.name": "api_request", "session.id": CLAUDE_CODE_SESSION_ID, ...attrs },
+})
+
+// The call's own event. Seeded twice: a re-delivered batch is a second row,
+// and still one price.
+const PRICED_CALL_EVENT = apiRequestEvent({ request_id: "req_cc_1", cost_usd: "0.25" })
+// A call whose span never arrived: priced, and not a call.
+const SPANLESS_CALL_EVENT = apiRequestEvent({ request_id: "req_cc_2", cost_usd: "0.125" })
+// Each misses one clause of the write filter.
+const REJECTED_EVENTS: ReadonlyArray<SeedEvent> = [
+	apiRequestEvent({ request_id: "req_cc_3", cost_usd: "1" }, { scope: "com.anthropic.claude_code" }),
+	apiRequestEvent({ "event.name": "api_error", request_id: "req_cc_4", cost_usd: "1" }),
+	apiRequestEvent({ request_id: "req_cc_5", cost_usd: "1" }, { traceId: "" }),
+	apiRequestEvent({ request_id: "", cost_usd: "1" }),
+	apiRequestEvent({ "session.id": "", request_id: "req_cc_6", cost_usd: "1" }),
+	apiRequestEvent({ request_id: "req_cc_7", cost_usd: "one" }),
+	apiRequestEvent({ request_id: "req_cc_8", cost_usd: "inf" }),
+	apiRequestEvent({ request_id: "req_cc_9", cost_usd: "0" }),
+]
+const CLAUDE_CODE_EVENTS: ReadonlyArray<SeedEvent> = [
+	PRICED_CALL_EVENT,
+	PRICED_CALL_EVENT,
+	SPANLESS_CALL_EVENT,
+	...REJECTED_EVENTS,
+]
+// Emitted as the call ends, which is where Claude Code stamps the event.
+const CLAUDE_CODE_EVENT_MS = BASE_MS + 300_101
+
 const chMap = (attrs: Readonly<Record<string, string>>): string =>
 	`map(${Object.entries(attrs)
 		.flatMap(([key, value]) => [quote(key), quote(value)])
@@ -408,6 +493,8 @@ const seed = async (): Promise<void> => {
 		...SEED_SPANS.map((span) => [ORG_ID, span] as const),
 		[FOREIGN_ORG_ID, FOREIGN_SPAN] as const,
 		...TOOL_FAILURE_ORG_SPANS.map((span) => [TOOL_FAILURE_ORG_ID, span] as const),
+		[CLAUDE_CODE_ORG_ID, CLAUDE_CODE_TURN_SPAN] as const,
+		[CLAUDE_CODE_ORG_ID, CLAUDE_CODE_CALL_SPAN] as const,
 	]
 		.map(
 			([orgId, span]) =>
@@ -419,6 +506,17 @@ const seed = async (): Promise<void> => {
 		`INSERT INTO traces
 		 (OrgId, Timestamp, TraceId, SpanId, ParentSpanId, SpanName, SpanKind, ServiceName, Duration, StatusCode, StatusMessage, SampleRate, SpanAttributes, ResourceAttributes)
 		 VALUES\n${rows}`,
+		database,
+	)
+
+	const events = CLAUDE_CODE_EVENTS.map(
+		(event) =>
+			`(${quote(CLAUDE_CODE_ORG_ID)}, ${quote(chDateTime(CLAUDE_CODE_EVENT_MS))}, ${quote(chDateTime(CLAUDE_CODE_EVENT_MS).slice(0, 19))}, ${quote(event.traceId)}, 'span-cc-turn', 'claude-code', 'claude_code.api_request', ${quote(event.scope)}, ${chMap(event.attrs)})`,
+	).join("\n,")
+	await clickhouseExec(
+		`INSERT INTO logs
+		 (OrgId, Timestamp, TimestampTime, TraceId, SpanId, ServiceName, Body, ScopeName, LogAttributes)
+		 VALUES\n${events}`,
 		database,
 	)
 }
@@ -446,6 +544,7 @@ describe.skipIf(!clickhouseE2eEnabled)("ai_trace_index materialization", () => {
 	}, 30_000)
 
 	it("materializes exactly the vendor-stamped spans, column by column", async () => {
+		// Claude Code's org, which the log events also write to, has its own test.
 		const rows = await runJson(
 			`SELECT OrgId, toString(Timestamp) AS Timestamp, TraceId, SessionId, VendorId, ServiceName,
 			        DeploymentEnv, Model, AgentName, ToolName, SpanId, ParentSpanId, Duration,
@@ -453,7 +552,7 @@ describe.skipIf(!clickhouseE2eEnabled)("ai_trace_index materialization", () => {
 			        VendorVersion, InputTokens, CacheReadTokens, CacheWriteTokens, OutputTokens, ReasoningTokens,
 			        ErrorType, StatusMessage, ToolDescription,
 			        FailedToolCallResult, ErrorFingerprint != 0 AS HasErrorFingerprint
-			 FROM ai_trace_index ORDER BY Timestamp ASC`,
+			 FROM ai_trace_index WHERE OrgId != ${quote(CLAUDE_CODE_ORG_ID)} ORDER BY Timestamp ASC`,
 		)
 
 		/** The index row a seed span is expected to produce, by name — the
@@ -955,5 +1054,73 @@ describe.skipIf(!clickhouseE2eEnabled)("ai_trace_index materialization", () => {
 			["agent-service", 2],
 			["openrouter", 1],
 		])
+	})
+
+	it("prices Claude Code's calls from their api_request events, and counts them off the spans", async () => {
+		// One usage record per event that passes the write filter — the call's
+		// event twice, as delivered, and the spanless call's — and none for any
+		// event that misses a clause of it.
+		const records = await runJson(
+			`SELECT toString(Timestamp) AS Timestamp, TraceId, SessionId, VendorId, ServiceName, Model,
+			        SpanId, ParentSpanId, Duration, IsError, IsLlmCall, IsToolCall, Tokens, Cost, ResponseId
+			 FROM ai_trace_index
+			 WHERE OrgId = ${quote(CLAUDE_CODE_ORG_ID)} AND startsWith(SpanId, 'usage:')
+			 ORDER BY Cost DESC`,
+		)
+		const record = (requestId: string, cost: number) => ({
+			Timestamp: chTimestamp(CLAUDE_CODE_EVENT_MS),
+			TraceId: CLAUDE_CODE_TRACE,
+			SessionId: CLAUDE_CODE_SESSION_ID,
+			VendorId: CLAUDE_CODE_VENDOR_ID,
+			ServiceName: "claude-code",
+			Model: "",
+			SpanId: `usage:${requestId}`,
+			ParentSpanId: "",
+			Duration: 0,
+			IsError: 0,
+			IsLlmCall: 0,
+			IsToolCall: 0,
+			Tokens: 0,
+			Cost: cost,
+			ResponseId: requestId,
+		})
+		assert.deepStrictEqual(records, [
+			record("req_cc_1", 0.25),
+			record("req_cc_1", 0.25),
+			record("req_cc_2", 0.125),
+		])
+
+		const window = {
+			orgId: CLAUDE_CODE_ORG_ID,
+			startTime: chDateTime(BASE_MS - HOUR_MS),
+			endTime: chDateTime(BASE_MS + HOUR_MS),
+		}
+		const rank = async (opts: AiSessionPageOpts = {}) => {
+			const compiled = compileUnsafe(Integrations.aiSessionPageQuery(opts), window)
+			return Effect.runSync(compiled.decodeRows(await runJson(compiled.sql)))
+		}
+		// The call is priced once although its event arrived twice, by the event
+		// rather than the unpriced span that shares its request id; the spanless
+		// call adds its price and no call. One model call, its tokens the span's,
+		// and two agent spans — the usage records are not spans.
+		assert.deepStrictEqual(
+			(await rank()).map((row) => [
+				row.sessionId,
+				row.cost,
+				row.llmCalls,
+				row.totalTokens,
+				row.spanCount,
+				row.toolCalls,
+				row.errorAgentSpans,
+				row.models,
+				row.serviceNames,
+			]),
+			[[CLAUDE_CODE_SESSION_ID, 0.375, 1, 120, 2, 0, 0, ["claude-opus-5-5"], ["claude-code"]]],
+		)
+		// The cost sort and filter read the same sum.
+		assert.deepStrictEqual(
+			(await rank({ sortBy: "cost", sortDir: "desc", costMin: 0.3 })).map((row) => row.sessionId),
+			[CLAUDE_CODE_SESSION_ID],
+		)
 	})
 })

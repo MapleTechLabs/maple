@@ -517,6 +517,29 @@ export function genAiCostExpr(attrs: MapColumnLike): Expr<number> {
 	return CH.toFloat64OrZero(firstNonEmptyAttr(attrs, GENAI_COST_KEYS))
 }
 
+// Usage records — a model call's cost reported off its span
+//
+// Claude Code prices a call only on its `api_request` log event, never on the
+// `claude_code.llm_request` span, so `ai_trace_index_claude_code_cost_mv` writes
+// each such event to the index as a row of its own: `ResponseId` the event's
+// `request_id` (the value the span carries as `gen_ai.response.id`), `Cost` its
+// `cost_usd`, and no tokens, kind or failure. The session sums then take the
+// cost from it and everything else from the span. `SpanId` is the request id
+// under a prefix no OTel span id carries: never `''`, which the usage netting
+// keys root spans' claims by, and never a real span's id.
+
+/** Where Claude Code's log events are emitted. */
+export const CLAUDE_CODE_EVENTS_SCOPE = "com.anthropic.claude_code.events"
+
+/** The vendor id ingest stamps on Claude Code's spans (`apps/ingest/src/ai_session.rs`). */
+export const CLAUDE_CODE_VENDOR_ID = "claude_agent_sdk"
+
+export const AI_USAGE_RECORD_SPAN_ID_PREFIX = "usage:"
+
+/** The index row is a span, not a usage record — what a count of agent spans counts. */
+export const genAiIsSpanCond = (spanId: Expr<string>): Condition =>
+	CH.compileFnCall<number>("startsWith", spanId, CH.lit(AI_USAGE_RECORD_SPAN_ID_PREFIX)).eq(0)
+
 /** A flag column: `1` where the condition holds. */
 const flag = (cond: Condition): Expr<number> => CH.compileFnCall<number>("toUInt8", cond)
 
