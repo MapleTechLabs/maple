@@ -30,7 +30,7 @@ import {
 } from "@/components/alerts/channel-search"
 import { MapleApiAtomClient, retainedQuery } from "@/lib/services/common/atom-client"
 import { MapleApiV2AtomClient, retainedQueryV2 } from "@/lib/services/common/v2-atom-client"
-import { displayError, publicError } from "@/lib/error-messages"
+import { displayError } from "@/lib/error-messages"
 import { disabledResultAtom } from "@/lib/services/atoms/disabled-result-atom"
 import { Result, useAtomRefresh, useAtomSet, useAtomValue } from "@/lib/effect-atom"
 import type { HazelChannelsListResponse } from "@maple/domain/http"
