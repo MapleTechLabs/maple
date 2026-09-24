@@ -52,6 +52,9 @@ export const INTENTS = (1 << 0) | (1 << 9) | MESSAGE_CONTENT_INTENT
 /** Interaction types (`type` on an `INTERACTION_CREATE`). Only the component click matters here. */
 export const INTERACTION_MESSAGE_COMPONENT = 3
 
+/** Message flag 64: a follow-up only the person who clicked can see. */
+export const MESSAGE_FLAG_EPHEMERAL = 1 << 6
+
 /** Interaction callback type 6: acknowledge the click, leave the message as it is. */
 export const CALLBACK_DEFERRED_UPDATE_MESSAGE = 6
 
@@ -157,6 +160,7 @@ export const decodeMessageCreate = Schema.decodeUnknownOption(MessageCreate)
 
 export const InteractionCreate = Schema.Struct({
 	id: Schema.String,
+	application_id: Schema.String,
 	token: Schema.String,
 	type: Schema.Number,
 	guild_id: Schema.optionalKey(Schema.String),

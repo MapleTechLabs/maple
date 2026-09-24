@@ -107,6 +107,8 @@ export interface SlackMessageRequest extends SlackMessagePayload {
 	readonly channel: string
 	readonly thread_ts?: string
 	readonly ts?: string
+	/** `chat.postEphemeral`'s one extra argument: who alone sees it. */
+	readonly user?: string
 }
 
 /**
@@ -261,7 +263,10 @@ const alertAttachment = (block: ChatAlertBlock): SlackAttachment => {
 				: {
 						fields: block.fields.slice(0, MAX_FIELDS).map((field) => ({
 							type: "mrkdwn" as const,
-							text: clamp(`*${escapeMrkdwn(field.label)}*\n${toMrkdwn(field.value)}`, MAX_FIELD_CHARS),
+							text: clamp(
+								`*${escapeMrkdwn(field.label)}*\n${toMrkdwn(field.value)}`,
+								MAX_FIELD_CHARS,
+							),
 						})),
 					}),
 		},
@@ -296,7 +301,10 @@ const alertAttachment = (block: ChatAlertBlock): SlackAttachment => {
 	if (footer.length > 0) blocks.push(context(footer.join("  ·  ")))
 	return {
 		color: block.color,
-		fallback: clamp(escapeMrkdwn(`${block.title} · ${block.summary.replaceAll("**", "")}`), MAX_FALLBACK_CHARS),
+		fallback: clamp(
+			escapeMrkdwn(`${block.title} · ${block.summary.replaceAll("**", "")}`),
+			MAX_FALLBACK_CHARS,
+		),
 		blocks,
 	}
 }
@@ -335,18 +343,33 @@ export const renderSlackMessage = (blocks: ReadonlyArray<ChatBlock>): SlackMessa
 				}
 				break
 			case "approval": {
-				const summary = block.summary === "" ? "" : `\n${escapeMrkdwn(block.summary)}`
-				if (block.outcome !== null) {
-					// A decided proposal keeps its line and loses its buttons: Slack leaves a button
-					// clickable forever, and the click would only ever be answered "settled".
-					rendered.push(
-						section(
-							`*\`${escapeMrkdwn(block.toolName)}\`*${summary}\n${escapeMrkdwn(block.outcome.text)}`,
-						),
+				const { outcome } = block
+				if (outcome !== null) {
+					// A decided proposal loses its buttons: Slack leaves a button clickable forever, and
+					// the click would only ever be answered "settled". What it asked for gives way to
+					// what came of it, with who decided underneath.
+					const link = outcome.url === null ? "" : ` <${outcome.url}|Open in Maple>`
+					if (outcome.text === "") {
+						rendered.push(
+							section(
+								`*\`${escapeMrkdwn(block.toolName)}\`* ${escapeMrkdwn(outcome.decision)}${link}`,
+							),
+						)
+					} else {
+						rendered.push(section(`${escapeMrkdwn(outcome.text)}${link}`))
+						rendered.push(context(escapeMrkdwn(outcome.decision)))
+					}
+					// The top-level text is what a screen reader reads, so it carries the decision and link
+					// too — and, holding a link, it is mrkdwn, so what a tool recorded is escaped here as
+					// well: a dashboard named `<!channel>` must not page a workspace.
+					fallback.push(
+						outcome.text === ""
+							? `${escapeMrkdwn(block.toolName)}: ${escapeMrkdwn(outcome.decision)}${link}`
+							: `${escapeMrkdwn(outcome.text)}${link}\n${escapeMrkdwn(outcome.decision)}`,
 					)
-					fallback.push(`${block.toolName}: ${block.outcome.text}`)
 					break
 				}
+				const summary = block.summary === "" ? "" : `\n${escapeMrkdwn(block.summary)}`
 				rendered.push(section(`*Approve \`${escapeMrkdwn(block.toolName)}\`?*${summary}`))
 				const actions = approvalActions(block.token, block.toolName)
 				if (actions === null) rendered.push(section("This one has to be approved in Maple."))
