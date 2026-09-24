@@ -109,6 +109,7 @@ const configuredEnv = (stage: MapleStage, region: MapleRegion, domains: MapleDom
 		optionalPlain("MAPLE_LLM_PROVIDER"),
 		optionalPlain("MAPLE_TRIAGE_MODEL_OPENROUTER"),
 		optionalPlain("MAPLE_TRIAGE_MODEL_WORKERS_AI"),
+		optionalPlain("MAPLE_REVIEW_MODEL_OPENROUTER"),
 		optionalSecret("OPENROUTER_API_KEY"),
 		// The decision model (Jev) rides the same OpenRouter key, on OpenRouter's
 		// separate decisions endpoint. See `layerDecisionModel` in `@/platform/Llm`.
