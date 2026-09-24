@@ -108,9 +108,9 @@ describe("renderChangedFiles", () => {
 	})
 
 	it("keeps the budget between a floor and a ceiling", () => {
-		assert.equal(reviewCallBudget(0), 8)
-		assert.equal(reviewCallBudget(3), 15)
-		assert.equal(reviewCallBudget(100), 60)
+		assert.equal(reviewCallBudget(0), 40)
+		assert.equal(reviewCallBudget(3), 50)
+		assert.equal(reviewCallBudget(100), 500)
 	})
 })
 

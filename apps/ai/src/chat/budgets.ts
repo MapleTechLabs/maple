@@ -83,15 +83,15 @@ export const INVESTIGATION_BUDGET: AgentBudget = {
  * An unattended pull request review: read every hunk that adds code, check the warehouse where the
  * diff names a service or an attribute, file one report through `submit_review`.
  *
- * Smaller than an investigation because the diff bounds the work: the reviewer reads files it was
- * handed rather than searching telemetry for a cause. Sized before any review has run in prod, so
- * these are ceilings to tune from the internal org's first reviews, not measurements.
+ * Runaway guards, not a pace: a review that stops early files a partial report capped at 3/5, so
+ * the wall clock is what bounds a stuck run.
  */
 export const PR_REVIEW_BUDGET: AgentBudget = {
-	maxToolCalls: 80,
+	maxToolCalls: 500,
 	// Twice this plus the margin must stay under `TURN_STALE_MS`: a pass and its close-out.
 	maxDuration: "10 minutes",
-	tokenBudget: 800_000,
+	// Counts every re-sent prompt, cache reads included: 800k stopped a 9-file review after 18 calls.
+	tokenBudget: 20_000_000,
 	completionReserveTokens: 48_000,
 }
 

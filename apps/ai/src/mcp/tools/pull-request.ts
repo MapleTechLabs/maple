@@ -162,7 +162,7 @@ export const pathsInDiffAnswer = (answer: string): ReadonlyArray<string> =>
  * agent in the file list, because a number it is handed binds far better than a prompt rule.
  */
 export const reviewCallBudget = (reviewedFiles: number): number =>
-	Math.min(60, Math.max(8, 3 * reviewedFiles + 6))
+	Math.min(500, Math.max(40, 10 * reviewedFiles + 20))
 
 /** What `pr_changed_files` answers for one pull request's files. Shared with the local runner. */
 export const renderChangedFiles = (
