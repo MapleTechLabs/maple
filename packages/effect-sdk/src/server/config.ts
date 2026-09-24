@@ -18,6 +18,13 @@ export const endpoint = Effect.gen(function* () {
 	return yield* Config.option(Config.String("OTEL_EXPORTER_OTLP_ENDPOINT"))
 })
 
+/**
+ * Resolve the Maple region (`us` | `eu`) from `MAPLE_REGION`. Only consulted
+ * when no endpoint is configured anywhere; an unknown value warns and falls
+ * back to `us`.
+ */
+export const region = Config.option(Config.String("MAPLE_REGION"))
+
 /** Resolve the Maple ingest key from environment. */
 export const ingestKey = Config.option(Config.Redacted("MAPLE_INGEST_KEY"))
 

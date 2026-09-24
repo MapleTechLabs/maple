@@ -16,6 +16,7 @@
  *   dropping data from users who never intended to opt out. Apps can turn it on.
  */
 
+import { addUrlSanitizer, resetUrlSanitizersForTests } from "../platform/url-privacy"
 import { configureVisitorCookie } from "./visitor"
 
 export interface PrivacyOptions {
@@ -39,6 +40,13 @@ export interface PrivacyOptions {
 	readonly captureUserEmail?: boolean
 	/** Treat `navigator.doNotTrack` like GPC. Default false. */
 	readonly respectDoNotTrack?: boolean
+	/**
+	 * Rewrite every URL before it leaves the page (session entry/exit URLs,
+	 * event rows, network events, replay meta events, span attributes). Runs
+	 * after the built-in redaction of credential-shaped query and fragment
+	 * parameters (`token`, `code`, `access_token`, …).
+	 */
+	readonly sanitizeUrl?: (url: string) => string
 }
 
 type ConsentListener = (allowed: boolean) => void
@@ -110,6 +118,7 @@ export function configurePrivacy(options: PrivacyOptions | undefined): void {
 		crossSubdomainCookie: options?.crossSubdomainCookie,
 		cookieDomain: options?.cookieDomain,
 	})
+	if (options?.sanitizeUrl) addUrlSanitizer(options.sanitizeUrl)
 	updateEffectiveConsent(previous)
 }
 
@@ -167,4 +176,5 @@ export function resetConsentForTests(): void {
 	state.respectDoNotTrack = false
 	state.allowedSince = 0
 	state.listeners.clear()
+	resetUrlSanitizersForTests()
 }

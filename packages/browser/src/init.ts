@@ -1,4 +1,5 @@
 import {
+	claimReplaySample,
 	clearPendingEvents,
 	clearSessionSink,
 	configurePrivacy,
@@ -53,6 +54,13 @@ let active: MapleBrowserHandle | undefined
 // Same object the session lifecycle's `getIdentity` reads, so `identify()`
 // mutations are seen by later metadata rows.
 let activeConfig: ResolvedConfig | undefined
+/**
+ * An `identify()` made before `init()`, applied when it runs. Auth callbacks
+ * routinely resolve before the SDK is initialized; dropping the call meant the
+ * whole first session went anonymous. Wrapped so a pending *clear* (`undefined`)
+ * is distinguishable from no call at all.
+ */
+let pendingIdentity: { readonly input: IdentifyInput } | undefined
 
 /**
  * Initialize Maple browser telemetry. With consent gating enabled the returned
@@ -66,6 +74,9 @@ export function init(rawConfig: MapleBrowserConfig): MapleBrowserHandle {
 	}
 
 	const config = resolveConfig(rawConfig)
+	// Called after `init` was written, so it is the newer statement of who is here.
+	if (pendingIdentity) config.identity = normalizeIdentity(pendingIdentity.input)
+	pendingIdentity = undefined
 	activeConfig = config
 	configurePrivacy(config)
 	if (!hasConsent()) clearPendingEvents()
@@ -75,8 +86,7 @@ export function init(rawConfig: MapleBrowserConfig): MapleBrowserHandle {
 	// metadata-only session (Web Analytics counts them, and the server-side
 	// classifier is what labels them a bot there), but no rrweb chunk and no
 	// uploads. See `isLikelyBot`.
-	const recordReplay =
-		config.replayEnabled && !isLikelyBot(navigator.userAgent) && Math.random() < config.replaySampleRate
+	const replayEligible = config.replayEnabled && !isLikelyBot(navigator.userAgent)
 	let runtime: BrowserRuntime | undefined
 	let stopped = false
 	let rotateOnNextStart = false
@@ -91,6 +101,9 @@ export function init(rawConfig: MapleBrowserConfig): MapleBrowserHandle {
 		setVisitorTracking(config.persistVisitorId && mayPersistIdentifier())
 		const session = (rotateOnNextStart ? rotateSession() : undefined) ?? getSession()
 		rotateOnNextStart = false
+		// Rolled once per session and persisted on it, so a reload or the next
+		// page of a multi-page app records (or skips) the same session consistently.
+		const recordReplay = replayEligible && claimReplaySample(config.replaySampleRate)
 		publishSessionSink(session.id)
 		const sink = startEventSink(
 			{
@@ -234,8 +247,15 @@ export function init(rawConfig: MapleBrowserConfig): MapleBrowserHandle {
  *
  * Each call replaces the identity rather than merging — merging would leak a
  * signed-out user's email into whoever signs in next on a shared device.
+ *
+ * Safe before `init()`: the latest call is held and applied when `init()` runs,
+ * taking precedence over the `user` passed to it.
  */
 export function identify(input?: IdentifyInput): void {
-	if (typeof window === "undefined" || !activeConfig) return
+	if (typeof window === "undefined") return
+	if (!activeConfig) {
+		pendingIdentity = { input }
+		return
+	}
 	activeConfig.identity = normalizeIdentity(input)
 }

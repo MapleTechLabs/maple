@@ -2,7 +2,8 @@ import type { Duration } from "effect"
 import { Effect, Layer, Redacted } from "effect"
 import { FetchHttpClient } from "effect/unstable/http"
 import { Otlp } from "effect/unstable/observability"
-import { DEFAULT_MAPLE_ENDPOINT, type ResolvedResource, resolveResource } from "./resource.js"
+import type { MapleRegion } from "@maple/browser-session/region"
+import { MAPLE_INGEST_ENDPOINTS, type ResolvedResource, resolveResource } from "./resource.js"
 
 /**
  * Warn once about the one configuration that cannot work: no ingest key, and
@@ -17,7 +18,7 @@ let doomWarned = false
 const warnIfDoomed = (resolved: ResolvedResource): void => {
 	if (doomWarned) return
 	if (resolved.ingestKey !== undefined) return
-	if (resolved.endpoint !== DEFAULT_MAPLE_ENDPOINT) return
+	if (!MAPLE_INGEST_ENDPOINTS.includes(resolved.endpoint)) return
 	doomWarned = true
 	console.warn(
 		"[MapleServerSDK] exporting to the public Maple ingest without an ingest key — " +
@@ -50,9 +51,15 @@ export interface MapleConfig {
 	/**
 	 * Ingest endpoint URL. When omitted, falls back to `MAPLE_ENDPOINT` then
 	 * `OTEL_EXPORTER_OTLP_ENDPOINT` env vars (the latter is what the
-	 * maple-k8s-infra chart's operator injects into pods).
+	 * maple-k8s-infra chart's operator injects into pods), then to the
+	 * region's public ingest.
 	 */
 	readonly endpoint?: string | undefined
+	/**
+	 * Region your Maple organization lives in: `"us"` (default) or `"eu"`.
+	 * Falls back to `MAPLE_REGION`. Any endpoint, set here or in env, wins.
+	 */
+	readonly region?: MapleRegion | undefined
 	/** Maple ingest key. Overrides MAPLE_INGEST_KEY env var. */
 	readonly ingestKey?: string | undefined
 	/**

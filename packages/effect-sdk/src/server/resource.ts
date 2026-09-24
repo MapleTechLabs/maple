@@ -1,15 +1,20 @@
+import { type MapleRegion, resolveIngestEndpoint } from "@maple/browser-session/region"
 import { Effect, Option, Redacted } from "effect"
 import * as EnvConfig from "./config.js"
 import { getContainerAttributes } from "./container.js"
 import { getAutoPlatformAttributes } from "./platform.js"
 
 /**
- * Public Maple ingest endpoint. Used as the default when no endpoint is
- * configured via `config.endpoint`, `MAPLE_ENDPOINT`, or
- * `OTEL_EXPORTER_OTLP_ENDPOINT` — so end users only need to supply an ingest
- * key, not an URL.
+ * Public Maple ingest endpoints, one per region. The region's endpoint is used
+ * when no endpoint is configured via `config.endpoint`, `MAPLE_ENDPOINT`, or
+ * `OTEL_EXPORTER_OTLP_ENDPOINT`, so end users only need an ingest key (and,
+ * for an EU organization, `region: "eu"` or `MAPLE_REGION=eu`).
  */
 export const DEFAULT_MAPLE_ENDPOINT = "https://ingest.maple.dev"
+export const MAPLE_INGEST_ENDPOINTS: ReadonlyArray<string> = [
+	DEFAULT_MAPLE_ENDPOINT,
+	"https://ingest.eu.maple.dev",
+]
 
 const stringOrUndefined = (value: unknown): string | undefined =>
 	typeof value === "string" && value.length > 0 ? value : undefined
@@ -47,6 +52,7 @@ export interface ResourceConfigInput {
 	readonly serviceNamespace?: string | undefined
 	readonly environment?: string | undefined
 	readonly endpoint?: string | undefined
+	readonly region?: MapleRegion | undefined
 	readonly ingestKey?: string | undefined
 	readonly attributes?: Record<string, unknown> | undefined
 	readonly sdkType?: "server" | "cloudflare" | "client" | undefined
@@ -68,7 +74,7 @@ const isCommitSha = (value: string | undefined): value is string =>
 
 export interface ResolvedResource {
 	/**
-	 * Always resolves — `DEFAULT_MAPLE_ENDPOINT` is the final fallback, so this
+	 * Always resolves — the region's endpoint is the final fallback, so this
 	 * is deliberately NOT optional. Presets disable themselves on a missing
 	 * ingest key, never on a missing endpoint.
 	 */
@@ -101,7 +107,13 @@ export interface ResolvedResource {
  */
 export const resolveResource = Effect.fn("resolveResource")(function* (config: ResourceConfigInput) {
 	const envEndpoint = yield* EnvConfig.endpoint
-	const endpoint = config.endpoint ?? Option.getOrUndefined(envEndpoint) ?? DEFAULT_MAPLE_ENDPOINT
+	const envRegion = yield* EnvConfig.region
+	// Any explicit URL, programmatic or env, beats any region: a collector the
+	// k8s chart injects must not be bypassed by a region set in code.
+	const endpoint = resolveIngestEndpoint({
+		endpoints: [config.endpoint, Option.getOrUndefined(envEndpoint)],
+		regions: [config.region, Option.getOrUndefined(envRegion)],
+	})
 
 	const envIngestKey = yield* EnvConfig.ingestKey
 	const ingestKey = config.ingestKey ? Redacted.make(config.ingestKey) : Option.getOrUndefined(envIngestKey)
@@ -170,11 +182,14 @@ export const resolveResourceFromEnv = (
 	env: Record<string, unknown>,
 	config: ResourceConfigInput,
 ): ResolvedResource => {
-	const endpoint =
-		config.endpoint ??
-		stringOrUndefined(env.MAPLE_ENDPOINT) ??
-		stringOrUndefined(env.OTEL_EXPORTER_OTLP_ENDPOINT) ??
-		DEFAULT_MAPLE_ENDPOINT
+	const endpoint = resolveIngestEndpoint({
+		endpoints: [
+			config.endpoint,
+			stringOrUndefined(env.MAPLE_ENDPOINT),
+			stringOrUndefined(env.OTEL_EXPORTER_OTLP_ENDPOINT),
+		],
+		regions: [config.region, stringOrUndefined(env.MAPLE_REGION)],
+	})
 
 	const rawIngestKey = stringOrUndefined(env.MAPLE_INGEST_KEY)
 	const ingestKey = config.ingestKey
