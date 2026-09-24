@@ -163,7 +163,7 @@ describe("cloneScript", () => {
 		const script = cloneScript(checkout)
 		// `set -e` leaves the script the moment a clone fails, so only the trap
 		// guarantees the token is gone on every path out.
-		assert.include(script, `trap 'rm -f ${CREDENTIAL}' EXIT`)
+		assert.include(script, `trap 'rm -f ${CREDENTIAL}; rm -rf "\${m:-}"' EXIT`)
 		// The token reaches the container through the file API; a command's arguments
 		// are readable by the account the agent's own commands run as.
 		assert.notInclude(script, TOKEN)
@@ -184,11 +184,14 @@ describe("cloneScript", () => {
 /** The fake container with the Durable Object's mirror backup calls, recorded or failing. */
 const withMirror = (sandbox: SandboxLike, seen: string[], fail = false): SandboxLike => ({
 	...sandbox,
-	restoreMirror: async () => {
+	// Over RPC any argument is serialized, and an AbortSignal cannot be; the real call failed so.
+	restoreMirror: async (...args: ReadonlyArray<unknown>) => {
+		if (args.length > 0) throw new Error("AbortSignal serialization is not enabled.")
 		seen.push("restoreMirror")
 		if (fail) throw new Error("R2 is down")
 	},
-	backupMirror: async () => {
+	backupMirror: async (...args: ReadonlyArray<unknown>) => {
+		if (args.length > 0) throw new Error("AbortSignal serialization is not enabled.")
 		seen.push("backupMirror")
 		if (fail) throw new Error("R2 is down")
 	},
@@ -203,6 +206,18 @@ describe("cloneScript's mirror", () => {
 		assert.include(script, "clone --quiet --shared --no-checkout")
 		// The lock is released before the checkout, which is local work another commit need not wait on.
 		assert.isTrue(script.indexOf("exec 9>&-") < script.indexOf("checkout --quiet --detach"))
+	})
+
+	it("keeps the mirror and its lock out of the agent account's reach", () => {
+		const script = cloneScript(checkout)
+		assert.isTrue(script.indexOf("umask 022") < script.indexOf("fetch --quiet"))
+		assert.include(script, "chmod 600 '/workspace/maple-mirror.lock'")
+	})
+
+	it("drops the seed and its archive once the mirror is copied from it", () => {
+		const script = cloneScript(checkout)
+		assert.isTrue(script.indexOf('mv -T "$m"') < script.indexOf("fusermount3 -uz"))
+		assert.include(script, "/var/backups/*.sqsh")
 	})
 
 	it("starts the mirror from a restored seed when one is there", () => {

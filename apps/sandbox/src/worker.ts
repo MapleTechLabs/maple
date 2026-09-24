@@ -37,6 +37,11 @@ interface SandboxWorkerEnv {
 	readonly R2_ACCESS_KEY_ID?: string
 	readonly R2_SECRET_ACCESS_KEY?: string
 	readonly CLOUDFLARE_ACCOUNT_ID?: string
+	/**
+	 * `"true"` in local dev, where the SDK can neither presign R2 URLs nor mount FUSE: archives go
+	 * through the bucket binding and restores extract instead. Same archive format.
+	 */
+	readonly SANDBOX_BACKUP_LOCAL_BUCKET?: string
 }
 
 /** The SDK's own marker for a sessionless command, which is what every call here uses. */
@@ -48,20 +53,27 @@ const SESSIONLESS = "__DISABLE_SESSION__"
  */
 export class Sandbox extends SdkSandbox<SandboxWorkerEnv> {
 	private backupRunning = false
+	/**
+	 * The restore in flight. Two cold clones of different commits both ask; the SDK queues a second
+	 * restore, which starts by unmounting the seed the first clone is copying from.
+	 */
+	private restoring: Promise<void> | undefined
 
 	private mirrorHost(): MirrorBackupHost {
 		const env = this.env
+		const localBucket = env.SANDBOX_BACKUP_LOCAL_BUCKET === "true"
 		return {
 			configured:
 				env.BACKUP_BUCKET !== undefined &&
-				env.BACKUP_BUCKET_NAME !== undefined &&
-				env.R2_ACCESS_KEY_ID !== undefined &&
-				env.R2_SECRET_ACCESS_KEY !== undefined &&
-				env.CLOUDFLARE_ACCOUNT_ID !== undefined,
+				(localBucket ||
+					(env.BACKUP_BUCKET_NAME !== undefined &&
+						env.R2_ACCESS_KEY_ID !== undefined &&
+						env.R2_SECRET_ACCESS_KEY !== undefined &&
+						env.CLOUDFLARE_ACCOUNT_ID !== undefined)),
 			exec: (command) => this.execWithSessionToken(command, SESSIONLESS),
-			createBackup: (options) => this.createBackup(options),
+			createBackup: (options) => this.createBackup({ ...options, localBucket }),
 			restoreBackup: async (backup) => {
-				await this.restoreBackup(backup)
+				await this.restoreBackup({ ...backup, localBucket })
 			},
 			readBackup: async () =>
 				Option.flatMap(Option.fromNullishOr(await this.ctx.storage.get(MIRROR_BACKUP_KEY)), (value) =>
@@ -78,7 +90,7 @@ export class Sandbox extends SdkSandbox<SandboxWorkerEnv> {
 
 	/** Awaited by the clone path: the seed has to be in place before the clone script looks for it. */
 	async restoreMirror(): Promise<void> {
-		return Effect.runPromise(
+		this.restoring ??= Effect.runPromise(
 			restoreMirror(this.mirrorHost()).pipe(
 				Effect.tap((outcome) =>
 					Effect.logInfo("sandbox mirror restore").pipe(
@@ -87,7 +99,12 @@ export class Sandbox extends SdkSandbox<SandboxWorkerEnv> {
 				),
 				Effect.asVoid,
 			),
-		)
+			// Cleared after the assignment above even when the Effect finishes synchronously, which
+			// `Effect.ensuring` would not be: it would run first and leave a settled promise here.
+		).finally(() => {
+			this.restoring = undefined
+		})
+		return this.restoring
 	}
 
 	/**

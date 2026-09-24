@@ -117,7 +117,9 @@ const promise = <A>(run: () => Promise<A>, what: string) =>
 const optional = (run: (() => Promise<void>) | undefined, what: string) =>
 	run === undefined
 		? Effect.void
-		: promise(run, what).pipe(
+		: // Called with no argument: `tryPromise` hands its callback an AbortSignal, and an RPC
+			// method would try to send it to the Durable Object, which refuses to serialize one.
+			promise(() => run(), what).pipe(
 				Effect.catch((error) =>
 					Effect.logWarning("sandbox mirror backup call failed").pipe(
 						Effect.annotateLogs({ "maple.sandbox.call": what, "error.message": error.message }),
@@ -232,7 +234,10 @@ export const cloneScript = (checkout: SandboxCheckout): string => {
 		// `set -e` exits the moment a clone fails, so removal cannot be a later
 		// line in the script: the trap is what guarantees the token leaves disk
 		// on every path out.
-		`trap 'rm -f ${credential}' EXIT`,
+		// The temporary mirror is removed too, so a seed copy that fails midway leaves nothing behind.
+		`trap 'rm -f ${credential}; rm -rf "\${m:-}"' EXIT`,
+		// Nothing a fetch or clone writes may be writable by the agent's account.
+		"umask 022",
 		`id -u ${SANDBOX_RUN_AS_USER} >/dev/null 2>&1 || useradd --system --no-create-home --home-dir /tmp --shell /usr/sbin/nologin ${SANDBOX_RUN_AS_USER}`,
 		// Commands run as an account that does not own the tree, which git refuses to read without this.
 		`git config --system --replace-all safe.directory '*'`,
@@ -241,6 +246,8 @@ export const cloneScript = (checkout: SandboxCheckout): string => {
 		// Two commits of one repository clone at once, and the backup snapshot reads the
 		// mirror; one lock keeps each of them from seeing a fetch half-written.
 		`exec 9>${shellQuote(SANDBOX_MIRROR_LOCK)}`,
+		// Root's alone: the agent's account could otherwise hold it and stall every clone.
+		`chmod 600 ${shellQuote(SANDBOX_MIRROR_LOCK)}`,
 		"flock 9",
 		`if [ ! -d ${mirror}/objects ]; then`,
 		`  m=$(mktemp -d ${shellQuote(`${SANDBOX_MIRROR_DIR}.XXXXXX`)})`,
@@ -248,6 +255,11 @@ export const cloneScript = (checkout: SandboxCheckout): string => {
 		// Checkouts borrow the mirror's objects, so nothing may ever prune them.
 		`  git -C "$m" config gc.auto 0`,
 		`  mv -T "$m" ${mirror}`,
+		"  m=",
+		// The seed is a mount over a downloaded archive; once copied it only costs disk.
+		`  fusermount3 -uz ${shellQuote(SANDBOX_SEED_DIR)} 2>/dev/null || true`,
+		`  for d in /var/backups/mounts/*/lower; do fusermount3 -uz "$d" 2>/dev/null || true; done`,
+		`  rm -rf ${shellQuote(SANDBOX_SEED_DIR)} /var/backups/mounts /var/backups/*.sqsh 2>/dev/null || true`,
 		"fi",
 		// Every branch keeps `origin/*` in the checkout what a full clone gave, and the
 		// commit is pinned under its own ref so a force-pushed branch cannot orphan it.
@@ -279,7 +291,7 @@ export const cloneScript = (checkout: SandboxCheckout): string => {
  *
  * Hard links, taken under the mirror lock: git never rewrites an object or pack in place and
  * replaces refs by rename, so the copy stays exactly what the mirror was when the lock was held,
- * while the next fetch carries on. Exits 3 when there is no mirror to copy.
+ * while the next fetch carries on. Then repacked into one pack. Exits 3 when there is no mirror.
  */
 export const snapshotScript = (): string =>
 	[
@@ -287,6 +299,10 @@ export const snapshotScript = (): string =>
 		`test -d ${shellQuote(SANDBOX_MIRROR_DIR)}/objects || exit 3`,
 		`rm -rf ${shellQuote(SANDBOX_SNAPSHOT_DIR)}`,
 		`flock ${shellQuote(SANDBOX_MIRROR_LOCK)} cp -al ${shellQuote(SANDBOX_MIRROR_DIR)} ${shellQuote(SANDBOX_SNAPSHOT_DIR)}`,
+		// One pack per fetch would otherwise ride every archive into the next container and grow
+		// forever. Repacking the copy unlinks only the copy's names, so the live mirror is untouched
+		// and no lock is held while it runs.
+		`git -C ${shellQuote(SANDBOX_SNAPSHOT_DIR)} repack -a -d -q`,
 	].join("\n")
 
 /**

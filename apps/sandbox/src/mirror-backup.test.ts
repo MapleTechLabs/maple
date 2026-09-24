@@ -24,6 +24,7 @@ const fakeHost = (options: {
 	readonly stored?: { id: string; createdAt: number }
 	readonly exits?: ReadonlyArray<number>
 	readonly createFails?: boolean
+	readonly restoreFails?: string
 }): FakeHost => {
 	const store = new Map<string, StoredMirrorBackup>(
 		options.stored === undefined ? [] : [[MIRROR_BACKUP_KEY, new StoredMirrorBackup(options.stored)]],
@@ -45,6 +46,11 @@ const fakeHost = (options: {
 		},
 		restoreBackup: async (backup) => {
 			calls.push(`restore:${backup.id}->${backup.dir}`)
+			if (options.restoreFails !== undefined) {
+				const error = new Error("restore refused")
+				error.name = options.restoreFails
+				throw error
+			}
 		},
 		readBackup: async () =>
 			Option.fromNullishOr(store.get(MIRROR_BACKUP_KEY) as StoredMirrorBackup | undefined),
@@ -90,6 +96,30 @@ describe("restoreMirror", () => {
 			const host = fakeHost({ stored: { id: "backup-1", createdAt: hoursAgo(1) }, exits: [0] })
 			assert.strictEqual(yield* restoreMirror(host), "present")
 			assert.isFalse(host.calls.some((call) => call.startsWith("restore:")))
+		}),
+	)
+
+	it.effect("forgets a backup R2 no longer has, so the next cold container does not retry it", () =>
+		Effect.gen(function* () {
+			const host = fakeHost({
+				stored: { id: "backup-1", createdAt: hoursAgo(30) },
+				exits: [1],
+				restoreFails: "BackupNotFoundError",
+			})
+			assert.strictEqual(yield* restoreMirror(host), "expired")
+			assert.isFalse(host.store.has(MIRROR_BACKUP_KEY))
+		}),
+	)
+
+	it.effect("keeps the handle through any other restore failure", () =>
+		Effect.gen(function* () {
+			const host = fakeHost({
+				stored: { id: "backup-1", createdAt: hoursAgo(30) },
+				exits: [1],
+				restoreFails: "BackupRestoreError",
+			})
+			assert.isTrue(Exit.isFailure(yield* Effect.exit(restoreMirror(host))))
+			assert.isTrue(host.store.has(MIRROR_BACKUP_KEY))
 		}),
 	)
 

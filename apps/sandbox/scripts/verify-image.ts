@@ -217,6 +217,11 @@ console.log("\nthe mirror")
 			`( ${snapshotScript().replaceAll("\n", " && ")} ); echo "SNAPSHOT_EXIT=$?"`,
 			`git -C ${shellQuote(SANDBOX_SNAPSHOT_DIR)} fsck --connectivity-only >/dev/null 2>&1; echo "SNAPSHOT_FSCK=$?"`,
 			`echo "SNAPSHOT_HAS_SECOND=$(git -C ${shellQuote(SANDBOX_SNAPSHOT_DIR)} cat-file -t ${SECOND_SHA} 2>&1)"`,
+			`echo "SNAPSHOT_PACKS=$(ls ${shellQuote(SANDBOX_SNAPSHOT_DIR)}/objects/pack/*.pack | wc -l)"`,
+			`git -C ${shellQuote(SANDBOX_MIRROR_DIR)} fsck --connectivity-only >/dev/null 2>&1; echo "MIRROR_FSCK_AFTER=$?"`,
+			`echo "LOG_AFTER=$(git -C ${shellQuote(checkoutDir(SECOND_SHA))} log --oneline 2>/dev/null | wc -l)"`,
+			`echo "AGENT_LOCK=$(runuser -u ${SANDBOX_RUN_AS_USER} -- sh -c 'exec 8<${SANDBOX_MIRROR_DIR.replace(".git", ".lock")} && echo opened' 2>/dev/null || echo refused)"`,
+			`echo "AGENT_WRITE_MIRROR=$(runuser -u ${SANDBOX_RUN_AS_USER} -- sh -c 'touch ${SANDBOX_MIRROR_DIR}/objects/x && echo wrote' 2>/dev/null || echo refused)"`,
 			"echo LOGS_START; cat /tmp/clone-*.log; echo LOGS_END",
 		].join("\n"),
 	)
@@ -224,6 +229,18 @@ console.log("\nthe mirror")
 		new RegExp(`^${name}=(.*)$`, "m").exec(run.stdout)?.[1]?.trim() ?? "<missing>"
 	const logs = /LOGS_START\n([\s\S]*)\nLOGS_END/.exec(run.stdout)?.[1] ?? `${run.stdout}\n${run.stderr}`
 
+	check("the snapshot is repacked into one pack", field("SNAPSHOT_PACKS") === "1", field("SNAPSHOT_PACKS"))
+	check(
+		"repacking the snapshot leaves the live mirror intact",
+		field("MIRROR_FSCK_AFTER") === "0" && field("LOG_AFTER") === "2",
+		`${field("MIRROR_FSCK_AFTER")} ${field("LOG_AFTER")}`,
+	)
+	check(
+		`${SANDBOX_RUN_AS_USER} cannot open the mirror lock`,
+		field("AGENT_LOCK") === "refused",
+		field("AGENT_LOCK"),
+	)
+	check(`${SANDBOX_RUN_AS_USER} cannot write into the mirror`, field("AGENT_WRITE_MIRROR") === "refused")
 	check("the first commit clones through the mirror", field("FIRST_EXIT") === "0", logs)
 	check("the next commit fetches into the same mirror", field("SECOND_EXIT") === "0", logs)
 	check("there is exactly one mirror, and no scratch copy of it", field("MIRROR_COUNT") === "1")
@@ -270,6 +287,8 @@ console.log("\na restored backup")
 			SECOND_COMMIT,
 			cloneFor(secondCheckout, "RESTORED"),
 			`echo "FROM_SEED=$(test -e ${shellQuote(SANDBOX_MIRROR_DIR)}/SEEDED && echo yes || echo no)"`,
+			`echo "SEED_LEFT=$(test -e ${shellQuote(SANDBOX_SEED_DIR)} && echo yes || echo no)"`,
+			`echo "TEMP_MIRRORS=$(ls -d ${shellQuote(SANDBOX_MIRROR_DIR)}.* 2>/dev/null | wc -l)"`,
 			`echo "RESTORED_HEAD=$(git -C ${shellQuote(checkoutDir(SECOND_SHA))} rev-parse HEAD 2>&1)"`,
 			`echo "RESTORED_HISTORY=$(git -C ${shellQuote(checkoutDir(SECOND_SHA))} log --oneline 2>/dev/null | wc -l)"`,
 			"echo LOGS_START; cat /tmp/clone-*.log; echo LOGS_END",
@@ -281,6 +300,8 @@ console.log("\na restored backup")
 
 	check("a clone after a restore succeeds", field("RESTORED_EXIT") === "0", logs)
 	check("the mirror is built from the seed rather than from scratch", field("FROM_SEED") === "yes")
+	check("the seed is gone once copied, so the disk holds one mirror", field("SEED_LEFT") === "no")
+	check("no temporary mirror is left behind", field("TEMP_MIRRORS") === "0")
 	check(
 		"the new commit is fetched on top of it",
 		field("RESTORED_HEAD") === SECOND_SHA,

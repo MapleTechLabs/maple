@@ -75,6 +75,11 @@ const call = <A>(what: string, run: () => Promise<A>) =>
 
 const stored = (host: MirrorBackupHost) => call("read the backup handle", () => host.readBackup())
 
+/** The SDK's errors for an archive that no longer exists or is past its TTL. */
+const GONE: ReadonlySet<string> = new Set(["BackupNotFoundError", "BackupExpiredError"])
+
+const errorName = (cause: unknown): string => (cause instanceof Error ? cause.name : "")
+
 export type RestoreOutcome = "unconfigured" | "none" | "present" | "restored" | "expired"
 
 /**
@@ -96,9 +101,15 @@ export const restoreMirror = (host: MirrorBackupHost): Effect.Effect<RestoreOutc
 			),
 		)
 		if (present.exitCode === 0) return "present"
-		yield* call("restore the mirror", () =>
+		const gone = yield* call("restore the mirror", () =>
 			host.restoreBackup({ id: backup.value.id, dir: SANDBOX_SEED_DIR }),
 		).pipe(
+			Effect.as(false),
+			// R2 lost the archive or it aged out: forget it, or every cold container would try again.
+			Effect.catchIf(
+				(error) => GONE.has(errorName(error.cause)),
+				() => call("forget a missing backup", () => host.forgetBackup()).pipe(Effect.as(true)),
+			),
 			Effect.timeoutOrElse({
 				duration: MIRROR_RESTORE_TIMEOUT,
 				orElse: () =>
@@ -109,7 +120,7 @@ export const restoreMirror = (host: MirrorBackupHost): Effect.Effect<RestoreOutc
 					),
 			}),
 		)
-		return "restored"
+		return gone ? "expired" : "restored"
 	})
 
 export type BackupOutcome = "unconfigured" | "fresh" | "no-mirror" | "created"
