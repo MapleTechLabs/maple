@@ -105,7 +105,7 @@ pub struct SpanView<'a> {
 /// attributes onto the matching spans. Non-AI spans are left untouched (apart
 /// from the namespace strip, which only runs when a `maple_ai.*` key exists).
 pub fn stamp_trace_request(request: &mut ExportTraceServiceRequest) {
-    let mut tool_failures = Vec::new();
+    let mut tool_failures = claude_code::ToolFailures::new();
     for resource_spans in &mut request.resource_spans {
         let resource = resource_facts(
             resource_spans
@@ -156,7 +156,7 @@ pub fn stamp_trace_request(request: &mut ExportTraceServiceRequest) {
                 };
                 if classification.vendor == claude_code::VENDOR_ID {
                     if claude_code::is_phase(&span.name) {
-                        tool_failures.extend(claude_code::tool_failure(span));
+                        claude_code::note_tool_failure(span, &mut tool_failures);
                         continue;
                     }
                     claude_code::normalize(span);
@@ -1573,7 +1573,6 @@ mod tests {
                     ("output_tokens", "782"),
                     ("cache_read_tokens", "114514"),
                     ("cache_creation_tokens", "3549"),
-                    ("request_id", "req_1"),
                     ("ttft_ms", "934"),
                     ("success", "true"),
                 ],
@@ -1583,10 +1582,10 @@ mod tests {
         request.resource_spans[0].scope_spans[0].spans[1]
             .attributes
             .push(KeyValue {
-                key: "gen_ai.response.id".to_owned(),
+                key: "gen_ai.usage.output_tokens".to_owned(),
                 key_strindex: 0,
                 value: Some(AnyValue {
-                    value: Some(any_value::Value::StringValue("req_emitted".to_owned())),
+                    value: Some(any_value::Value::StringValue("900".to_owned())),
                 }),
             });
 
@@ -1607,7 +1606,6 @@ mod tests {
         for (key, value) in [
             ("gen_ai.operation.name", "chat"),
             ("gen_ai.usage.input_tokens", "2"),
-            ("gen_ai.usage.output_tokens", "782"),
             ("gen_ai.usage.cache_read.input_tokens", "114514"),
             ("gen_ai.usage.cache_creation.input_tokens", "3549"),
             ("gen_ai.response.time_to_first_chunk", "0.934"),
@@ -1617,13 +1615,13 @@ mod tests {
         // The emitter's own key wins, and is never written twice.
         assert_eq!(
             llm.iter()
-                .filter(|kv| kv.key == "gen_ai.response.id")
+                .filter(|kv| kv.key == "gen_ai.usage.output_tokens")
                 .count(),
             1
         );
         assert_eq!(
-            attr_value(llm, "gen_ai.response.id").as_deref(),
-            Some("req_emitted")
+            attr_value(llm, "gen_ai.usage.output_tokens").as_deref(),
+            Some("900")
         );
         assert!(attr_value(llm, "gen_ai.response.status").is_none());
 
@@ -1635,10 +1633,6 @@ mod tests {
         assert_eq!(
             attr_value(tool, "gen_ai.tool.name").as_deref(),
             Some("Bash")
-        );
-        assert_eq!(
-            attr_value(tool, "gen_ai.tool.call.id").as_deref(),
-            Some("toolu_1")
         );
         assert_eq!(
             attr_value(tool, "gen_ai.tool.call.arguments").as_deref(),

@@ -24,6 +24,8 @@
 //! fact a phase holds that its call does not, so it is folded onto the call's
 //! span in the same request ([`fold_tool_failures`]).
 
+use std::collections::HashMap;
+
 use opentelemetry_proto::tonic::collector::trace::v1::ExportTraceServiceRequest;
 use opentelemetry_proto::tonic::common::v1::{any_value, AnyValue, KeyValue};
 use opentelemetry_proto::tonic::trace::v1::Span;
@@ -44,25 +46,30 @@ pub(super) fn is_phase(span_name: &str) -> bool {
     span_name == TOOL_EXECUTION || span_name == TOOL_BLOCKED_ON_USER
 }
 
-/// A tool run that failed, keyed by the call it belongs to.
+/// A tool run that failed, keyed by the `tool_use_id` of the call it belongs to.
+pub(super) type ToolFailures = HashMap<String, ToolFailure>;
+
 pub(super) struct ToolFailure {
-    tool_use_id: String,
     error_class: Option<String>,
     error: Option<String>,
 }
 
-/// The failure a `claude_code.tool.execution` span records, if it records one.
-pub(super) fn tool_failure(span: &Span) -> Option<ToolFailure> {
+/// Record the failure a `claude_code.tool.execution` span holds, if it holds one.
+pub(super) fn note_tool_failure(span: &Span, failures: &mut ToolFailures) {
     if span.name != TOOL_EXECUTION || text(&span.attributes, "success").as_deref() != Some("false")
     {
-        return None;
+        return;
     }
-    Some(ToolFailure {
-        tool_use_id: text(&span.attributes, "tool_use_id")
-            .or_else(|| text(&span.attributes, "gen_ai.tool.call.id"))?,
-        error_class: text(&span.attributes, "error_class"),
-        error: text(&span.attributes, "error"),
-    })
+    let Some(id) = text(&span.attributes, "tool_use_id") else {
+        return;
+    };
+    failures.insert(
+        id,
+        ToolFailure {
+            error_class: text(&span.attributes, "error_class"),
+            error: text(&span.attributes, "error"),
+        },
+    );
 }
 
 /// Restate one stamped Claude Code span's native keys as `gen_ai.*`.
@@ -108,7 +115,6 @@ pub(super) fn normalize(span: &mut Span) {
                     "gen_ai.usage.cache_creation.input_tokens",
                     text(attrs, "cache_creation_tokens"),
                 );
-                add("gen_ai.response.id", text(attrs, "request_id"));
                 add(
                     "gen_ai.response.time_to_first_chunk",
                     text(attrs, "ttft_ms")
@@ -123,7 +129,6 @@ pub(super) fn normalize(span: &mut Span) {
             TOOL => {
                 add("gen_ai.operation.name", Some("execute_tool".to_owned()));
                 add("gen_ai.tool.name", text(attrs, "tool_name"));
-                add("gen_ai.tool.call.id", text(attrs, "tool_use_id"));
                 add("gen_ai.tool.call.arguments", tool_arguments(attrs));
                 add(
                     "gen_ai.tool.call.result",
@@ -153,10 +158,7 @@ fn tool_arguments(attrs: &[KeyValue]) -> Option<String> {
 /// request's own phase spans recorded. A phase exported in a different request
 /// from its call is missed; the batch processor ends both within milliseconds,
 /// so that is a batch boundary, not the common case.
-pub(super) fn fold_tool_failures(
-    request: &mut ExportTraceServiceRequest,
-    failures: &[ToolFailure],
-) {
+pub(super) fn fold_tool_failures(request: &mut ExportTraceServiceRequest, failures: &ToolFailures) {
     let spans = request
         .resource_spans
         .iter_mut()
@@ -167,7 +169,7 @@ pub(super) fn fold_tool_failures(
         let Some(id) = text(&span.attributes, "tool_use_id") else {
             continue;
         };
-        let Some(failure) = failures.iter().find(|failure| failure.tool_use_id == id) else {
+        let Some(failure) = failures.get(&id) else {
             continue;
         };
         if !has(&span.attributes, "error.type") {
