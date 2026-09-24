@@ -12,7 +12,6 @@ import {
 	DASHED_Y_GRID,
 	focusCrosshair,
 	linearYDomain,
-	minBarLength,
 	niceLinearDomain,
 	usePlotChromeColors,
 	useResolvedSeriesColors,
@@ -26,14 +25,7 @@ import { CHART_EMPTY_MESSAGE, bucketDate, makeBucketAxis } from "@/components/in
 import { useTimezonePreference } from "@/hooks/use-timezone-preference"
 import { errorRate, formatDurationNs, type ToolSeriesPoint } from "@/lib/agent-sessions/tool-analytics"
 
-import {
-	groupedBars,
-	seriesLines,
-	valueAt,
-	type ChartRow,
-	type ChartSeries,
-	type PlotCell,
-} from "./tool-chart-marks"
+import { seriesLines, valueAt, type ChartRow, type ChartSeries, type PlotCell } from "./tool-chart-marks"
 
 const PLOT_HEIGHT = 160
 
@@ -63,8 +55,7 @@ const formatOneDecimal = (value: number): string => value.toFixed(1)
  * rise together, and a selector makes that story something you have to
  * remember rather than see.
  *
- * Counts are bars; error rate and duration are lines, since they are readings
- * rather than amounts. The series arrives with every bucket of the window
+ * Lines, over a series that arrives with every bucket of the window
  * filled (`fillSeriesBuckets`), so a line drops to zero between bursts instead
  * of bridging the silence as if the reading held.
  *
@@ -106,20 +97,8 @@ export function ToolDetailCharts({
 	return (
 		<div className={cn("grid @min-[900px]/page:grid-cols-2", waiting && "opacity-60")}>
 			<Cell title="Tool calls" rows={rows} series={CALLS_SERIES} format={formatNumber} />
-			<Cell
-				title="Error rate"
-				rows={rows}
-				series={ERROR_RATE_SERIES}
-				format={formatErrorRate}
-				mark="line"
-			/>
-			<Cell
-				title="Duration"
-				rows={rows}
-				series={DURATION_SERIES}
-				format={formatDurationNs}
-				mark="line"
-			/>
+			<Cell title="Error rate" rows={rows} series={ERROR_RATE_SERIES} format={formatErrorRate} />
+			<Cell title="Duration" rows={rows} series={DURATION_SERIES} format={formatDurationNs} />
 			<Cell
 				title="Calls per session"
 				rows={rows}
@@ -142,18 +121,16 @@ function Cell({
 	rows,
 	series,
 	format,
-	mark = "bar",
 }: {
 	title: string
 	rows: ReadonlyArray<ChartRow>
 	series: ReadonlyArray<ChartSeries>
 	format: (value: number) => string
-	mark?: "bar" | "line"
 }) {
 	const focusStore = useMemo(() => createTooltipFocusStore(), [])
 	const { effectiveTimezone } = useTimezonePreference()
 	const chromeColors = usePlotChromeColors()
-	// Canvas strokes cannot read `var()`; the line marks take resolved colors.
+	// Canvas strokes cannot read `var()`; the lines take resolved colors.
 	const colorTokens = useMemo(() => new Map(series.map((entry) => [entry.key, entry.color])), [series])
 	const colors = useResolvedSeriesColors(colorTokens, chromeColors.border)
 
@@ -169,13 +146,9 @@ function Cell({
 	const definition = useMemo(() => {
 		const yDomain = niceLinearDomain(linearYDomain({ rows, keys: series.map((entry) => entry.key) }))
 		return defineChart({
-			marks:
-				mark === "line"
-					? [...seriesLines(rows, series, colors, chromeColors), focusCrosshair(chromeColors)]
-					: [groupedBars(rows, series, minBarLength(yDomain))],
+			marks: [...seriesLines(rows, series, colors, chromeColors), focusCrosshair(chromeColors)],
 			scales: {
-				// Bars are centred on the bucket and need the half-bucket padding.
-				x: mark === "line" ? axis.x : axis.xBand,
+				x: axis.x,
 				y: {
 					grid: DASHED_Y_GRID,
 					scale: scaleLinear().domain(yDomain),
@@ -201,7 +174,7 @@ function Cell({
 			focusRing: false,
 			tooltip: cursorTooltip(focusStore.anchor),
 		})
-	}, [rows, series, axis, format, focusStore, mark, colors, chromeColors])
+	}, [rows, series, axis, format, focusStore, colors, chromeColors])
 
 	const tooltipSeries = useMemo<PlotTooltipSeries<PlotCell>[]>(
 		() =>

@@ -12,7 +12,6 @@ import {
 	DASHED_Y_GRID,
 	focusCrosshair,
 	linearYDomain,
-	minBarLength,
 	niceLinearDomain,
 	usePlotChromeColors,
 	useResolvedSeriesColors,
@@ -35,14 +34,7 @@ import {
 	type ToolSeriesPoint,
 } from "@/lib/agent-sessions/tool-analytics"
 
-import {
-	groupedBars,
-	seriesLines,
-	valueAt,
-	type ChartRow,
-	type ChartSeries,
-	type PlotCell,
-} from "./tool-chart-marks"
+import { seriesLines, valueAt, type ChartRow, type ChartSeries, type PlotCell } from "./tool-chart-marks"
 
 const PLOT_HEIGHT = 220
 
@@ -85,10 +77,9 @@ interface ToolSeriesChartProps {
 /**
  * The selected metric over the window, for the whole scope.
  *
- * Counts (calls, sessions) are bars; error rate and duration are lines, since
- * they are readings rather than amounts. The series arrives with every bucket of
- * the window filled (`fillSeriesBuckets`), so a line drops to zero between
- * bursts instead of bridging the silence as if the reading held.
+ * Lines, over a series that arrives with every bucket of the window filled
+ * (`fillSeriesBuckets`), so a line drops to zero between bursts instead of
+ * bridging the silence as if the reading held.
  *
  * The series arrives already merged by the warehouse (`split: "none"`), never
  * folded here: a bucket's sessions do not add across tools and its percentiles
@@ -109,7 +100,6 @@ export function ToolSeriesChart({
 	const focusStore = useMemo(() => createTooltipFocusStore(), [])
 	const { effectiveTimezone } = useTimezonePreference()
 	const chromeColors = usePlotChromeColors()
-	const asLines = metric === "error_rate" || metric === "duration"
 
 	const plotted = useMemo<ReadonlyArray<ChartSeries>>(
 		() =>
@@ -118,7 +108,7 @@ export function ToolSeriesChart({
 				: [{ key: metric, label: toolMetricLabel(metric, percentile), color: "var(--primary)" }],
 		[metric, percentile],
 	)
-	// Canvas strokes cannot read `var()`; the line marks take resolved colors.
+	// Canvas strokes cannot read `var()`; the lines take resolved colors.
 	const colorTokens = useMemo(() => new Map(plotted.map((entry) => [entry.key, entry.color])), [plotted])
 	const colors = useResolvedSeriesColors(colorTokens, chromeColors.border)
 
@@ -163,12 +153,9 @@ export function ToolSeriesChart({
 	const definition = useMemo(() => {
 		const yDomain = niceLinearDomain(linearYDomain({ rows, keys: plotted.map((entry) => entry.key) }))
 		return defineChart({
-			marks: asLines
-				? [...seriesLines(rows, plotted, colors, chromeColors), focusCrosshair(chromeColors)]
-				: [groupedBars(rows, plotted, minBarLength(yDomain))],
+			marks: [...seriesLines(rows, plotted, colors, chromeColors), focusCrosshair(chromeColors)],
 			scales: {
-				// Bars are centred on the bucket and need the half-bucket padding.
-				x: asLines ? axis.x : axis.xBand,
+				x: axis.x,
 				y: {
 					grid: DASHED_Y_GRID,
 					scale: scaleLinear().domain(yDomain),
@@ -193,7 +180,7 @@ export function ToolSeriesChart({
 			focusRing: false,
 			tooltip: cursorTooltip(focusStore.anchor),
 		})
-	}, [rows, plotted, axis, metric, focusStore, asLines, colors, chromeColors])
+	}, [rows, plotted, axis, metric, focusStore, colors, chromeColors])
 
 	const title = toolChartTitle({
 		metric,

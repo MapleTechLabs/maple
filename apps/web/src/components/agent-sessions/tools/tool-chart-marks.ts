@@ -1,16 +1,12 @@
-// The marks both tool charts draw — the overview's scope chart and the detail
-// page's grid. Counts are grouped bars; readings (error rate, duration) are
-// lines, drawn over a series `fillSeriesBuckets` has zero-filled so a line
+// The lines both tool charts draw — the overview's scope chart and the detail
+// page's grid — over a series `fillSeriesBuckets` has zero-filled, so a line
 // drops to the baseline between bursts instead of bridging the silence.
 
-import { barY, d3Curve, group, lineY } from "@tanstack/charts"
+import { d3Curve, lineY } from "@tanstack/charts"
 import { curveMonotoneX } from "d3-shape"
 
 import { focusDot, type PlotChromeColors } from "@maple/ui/components/plot"
 
-const BAR_RADIUS = 2
-const MAX_BAR_THICKNESS = 48
-const DIMMED_FILL_OPACITY = 0.3
 const LINE_WIDTH = 1.5
 
 /** One series of a chart. `key` is the column it reads off the row. */
@@ -25,7 +21,7 @@ export interface ChartRow extends Record<string, string | number | Date | null> 
 	date: Date
 }
 
-/** A series at a bucket — one bar, or one vertex of a line. `row` carries the whole bucket for the tooltip. */
+/** A series at a bucket — one vertex of a line. `row` carries the whole bucket for the tooltip. */
 export interface PlotCell {
 	readonly row: ChartRow
 	readonly key: string
@@ -60,34 +56,5 @@ export function seriesLines(
 			}),
 			focusDot(cells, at, valueOf, color, chromeColors),
 		]
-	})
-}
-
-/**
- * Long-form bars: `barY` groups side by side off `z` within ONE mark. Grouped,
- * never stacked — the duration percentiles do not add. `lift` keeps one call
- * against a peak of hundreds from painting sub-pixel — see `minBarLength`.
- */
-export function groupedBars(
-	rows: ReadonlyArray<ChartRow>,
-	series: ReadonlyArray<ChartSeries>,
-	lift: (value: number | null) => number | null,
-) {
-	const cells = rows.flatMap((row) => series.map((entry) => ({ row, key: entry.key, color: entry.color })))
-	return barY(cells, {
-		x: (cell: PlotCell) => cell.row.date,
-		y: (cell: PlotCell) => lift(valueAt(cell.row, cell.key)),
-		z: (cell: PlotCell) => cell.key,
-		fill: (cell: PlotCell) => cell.color,
-		layout: group(),
-		radius: BAR_RADIUS,
-		maxThickness: MAX_BAR_THICKNESS,
-		// The hovered bucket keeps its fill and every other one dims.
-		states: [
-			{
-				when: (context: { matches: (match: "x") => boolean }) => !context.matches("x"),
-				style: { fillOpacity: DIMMED_FILL_OPACITY },
-			},
-		],
 	})
 }
