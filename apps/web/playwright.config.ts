@@ -60,6 +60,8 @@ export default defineConfig({
 			// from posting bench sessions into real ingest. The @cross-browser spec
 			// asserts zero blob and session-event uploads, which guards this staying true.
 			VITE_MAPLE_REPLAY: "off",
+			// Page views and clicks post session events on every load, replay or not.
+			VITE_MAPLE_CAPTURE: "off",
 		},
 	},
 })

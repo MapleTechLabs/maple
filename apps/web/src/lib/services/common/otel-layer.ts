@@ -43,19 +43,20 @@ const telemetry = MapleFlush.make({
 	// cap, idle-scheduled flush), so it is back on. The perf-bench build sets
 	// VITE_MAPLE_REPLAY=off — see playwright.config.ts.
 	replay: { enabled: import.meta.env.VITE_MAPLE_REPLAY !== "off" },
-	// Session rows are capture too, and no longer wait on an ingest key, so the
-	// bench build's switch turns them off as well.
-	emitSessionMeta: import.meta.env.VITE_MAPLE_REPLAY !== "off",
 	// In production the SDK probes its way to `.maple.dev` on its own, which is
 	// what makes a visit to the marketing site and the session that follows here
 	// resolve to one VisitorId. Local dev needs the override: browsers make
 	// `*.localhost` cookies host-only, so web.localhost and landing.localhost
 	// would each mint their own visitor.
-	...(import.meta.env.VITE_MAPLE_COOKIE_DOMAIN
-		? {
-				privacy: { cookieDomain: import.meta.env.VITE_MAPLE_COOKIE_DOMAIN },
-			}
-		: undefined),
+	//
+	// VITE_MAPLE_CAPTURE=off (the perf bench) asks for consent that never comes,
+	// so nothing is captured or sent: no spans, session rows or page views.
+	privacy: {
+		...(import.meta.env.VITE_MAPLE_COOKIE_DOMAIN
+			? { cookieDomain: import.meta.env.VITE_MAPLE_COOKIE_DOMAIN }
+			: undefined),
+		...(import.meta.env.VITE_MAPLE_CAPTURE === "off" ? { requireConsent: true } : undefined),
+	},
 })
 
 export const mapleOtelLayer = telemetry.layer
