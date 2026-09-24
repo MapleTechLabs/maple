@@ -4,7 +4,7 @@
  */
 import { describe, expect, it } from "vitest"
 import type { ChatActionToken } from "../../action-token"
-import type { ChatBlock } from "../../render/blocks"
+import type { ChatAlertBlock, ChatBlock } from "../../render/blocks"
 import {
 	APPROVE_ACTION,
 	DENY_ACTION,
@@ -19,6 +19,26 @@ import {
 const token = (value: string) => value as ChatActionToken
 
 const prose = (markdown: string): ChatBlock => ({ kind: "prose", markdown })
+
+const alert = (overrides: Partial<ChatAlertBlock> = {}): ChatAlertBlock => ({
+	kind: "alert",
+	color: "#e01e5a",
+	title: "\u{1F6A8} High error rate — Triggered",
+	summary: "**Error Rate** is **49.7%** — above the 5% threshold, measured over the last 5m.",
+	fields: [
+		{ label: "Severity", value: "\u{1F534} Critical" },
+		{ label: "Group", value: "`electric-sync`" },
+	],
+	imageUrl: null,
+	imageAlt: "High error rate over the alert window",
+	links: [
+		{ label: "Open in Maple", url: "https://app.maple.dev/alerts/1", primary: true },
+		{ label: "✨ Ask Maple AI", url: "https://app.maple.dev/chat", primary: false },
+	],
+	footer: ["\u{1F341} Maple Alerts", "`▁▁▇`", "Incident `inc_1`"],
+	sentAtMs: 1_700_000_000_000,
+	...overrides,
+})
 
 describe("slack message bodies", () => {
 	it("renders prose as a mrkdwn section and repeats it as the notification fallback", () => {
@@ -41,7 +61,7 @@ describe("slack message bodies", () => {
 
 	it("clamps a section rather than letting Slack refuse the message", () => {
 		const payload = renderSlackMessage([prose("x".repeat(MAX_SECTION_CHARS * 2))])
-		const block = payload.blocks[0]
+		const block = payload.blocks?.[0]
 		expect(block?.type === "section" && block.text.text.length).toBe(MAX_SECTION_CHARS)
 	})
 
@@ -50,7 +70,7 @@ describe("slack message bodies", () => {
 			Array.from({ length: MAX_BLOCKS + 10 }, (_, index) => prose(`line ${index}`)),
 		)
 		expect(payload.blocks).toHaveLength(MAX_BLOCKS)
-		const first = payload.blocks[0]
+		const first = payload.blocks?.[0]
 		expect(first?.type === "section" && first.text.text).toBe("line 0")
 	})
 })
@@ -67,7 +87,7 @@ describe("charts", () => {
 
 	it("shows a picture with the required alt text beside its summary", () => {
 		const payload = renderSlackMessage([chart("https://app.maple.dev/chart.png")])
-		expect(payload.blocks[1]).toEqual({
+		expect(payload.blocks?.[1]).toEqual({
 			type: "image",
 			image_url: "https://app.maple.dev/chart.png",
 			alt_text: "p99 latency over 24h, peaking at 2.1s",
@@ -77,7 +97,7 @@ describe("charts", () => {
 	it("falls back to the summary when there is no image, so the numbers are not lost", () => {
 		const payload = renderSlackMessage([chart(null)])
 		expect(payload.blocks).toHaveLength(1)
-		expect(payload.blocks[0]?.type).toBe("section")
+		expect(payload.blocks?.[0]?.type).toBe("section")
 	})
 
 	it("escapes a titleless chart's summary, which is model-authored like any other", () => {
@@ -91,7 +111,7 @@ describe("charts", () => {
 				imageUrl: null,
 			},
 		])
-		const block = payload.blocks[0]
+		const block = payload.blocks?.[0]
 		expect(block?.type === "section" && block.text.text).toBe(
 			"p99 for &lt;!channel&gt; &amp; &lt;@U0123&gt;",
 		)
@@ -101,7 +121,7 @@ describe("charts", () => {
 		const payload = renderSlackMessage([
 			chart(`https://app.maple.dev/${"x".repeat(MAX_IMAGE_URL_CHARS)}`),
 		])
-		expect(payload.blocks.some((block) => block.type === "image")).toBe(false)
+		expect(payload.blocks?.some((block) => block.type === "image")).toBe(false)
 	})
 })
 
@@ -116,7 +136,7 @@ describe("approvals", () => {
 
 	it("carries the action token on both buttons, unchanged", () => {
 		const payload = renderSlackMessage([approval("sess-1|call-1")])
-		const actions = payload.blocks[1]
+		const actions = payload.blocks?.[1]
 		expect(actions?.type === "actions" && actions.elements).toEqual([
 			{
 				type: "button",
@@ -143,18 +163,18 @@ describe("approvals", () => {
 				kind: "approval",
 				toolName: "create_dashboard",
 				summary: "Creates a dashboard called Checkout",
-				token: token("sess-1|call-1"),
+				token: token("call-1"),
 				outcome: { approved: true, text: "Ada approved this." },
 			},
 		])
-		expect(payload.blocks.some((block) => block.type === "actions")).toBe(false)
-		const block = payload.blocks[0]
+		expect(payload.blocks?.some((block) => block.type === "actions")).toBe(false)
+		const block = payload.blocks?.[0]
 		expect(block?.type === "section" && block.text.text).toContain("Ada approved this.")
 	})
 
 	it("says so rather than sending buttons Slack would reject the message over", () => {
 		const payload = renderSlackMessage([approval("x".repeat(MAX_BUTTON_VALUE_CHARS + 1))])
-		expect(payload.blocks.some((block) => block.type === "actions")).toBe(false)
+		expect(payload.blocks?.some((block) => block.type === "actions")).toBe(false)
 		expect(payload.text).toContain("Approve create_dashboard?")
 	})
 })
@@ -170,7 +190,7 @@ describe("the rest of the vocabulary", () => {
 				url: "https://app.maple.dev/traces/abc",
 			},
 		])
-		const block = payload.blocks[0]
+		const block = payload.blocks?.[0]
 		expect(block?.type === "section" && block.text.text).toBe(
 			"*Trace* <https://app.maple.dev/traces/abc|GET /checkout &amp; pay>\n2.1s",
 		)
@@ -186,19 +206,93 @@ describe("the rest of the vocabulary", () => {
 				],
 			},
 		])
-		expect(payload.blocks[0]).toEqual({
+		expect(payload.blocks?.[0]).toEqual({
 			type: "context",
 			elements: [{ type: "mrkdwn", text: "Searching traces… · Running a query…" }],
 		})
 	})
 
 	it("renders an error notice loudly and everything else quietly", () => {
-		expect(renderSlackMessage([{ kind: "notice", tone: "error", text: "it broke" }]).blocks[0]).toEqual({
-			type: "section",
-			text: { type: "mrkdwn", text: "*it broke*" },
-		})
-		expect(renderSlackMessage([{ kind: "notice", tone: "info", text: "thinking" }]).blocks[0]?.type).toBe(
-			"context",
+		expect(renderSlackMessage([{ kind: "notice", tone: "error", text: "it broke" }]).blocks?.[0]).toEqual(
+			{
+				type: "section",
+				text: { type: "mrkdwn", text: "*it broke*" },
+			},
 		)
+		expect(
+			renderSlackMessage([{ kind: "notice", tone: "info", text: "thinking" }]).blocks?.[0]?.type,
+		).toBe("context")
+	})
+
+	it("renders an alert as the coloured card, with no top-level text to duplicate it", () => {
+		const payload = renderSlackMessage([alert()])
+		expect(payload.text).toBeUndefined()
+		expect(payload.blocks).toBeUndefined()
+		expect(payload.attachments).toHaveLength(1)
+		const attachment = payload.attachments?.[0]
+		expect(attachment?.color).toBe("#e01e5a")
+		expect(attachment?.fallback).toContain("High error rate — Triggered")
+		expect(attachment?.blocks).toEqual([
+			{
+				type: "header",
+				text: { type: "plain_text", text: "\u{1F6A8} High error rate — Triggered", emoji: true },
+			},
+			{
+				type: "section",
+				text: {
+					type: "mrkdwn",
+					text: "*Error Rate* is *49.7%* — above the 5% threshold, measured over the last 5m.",
+				},
+				fields: [
+					{ type: "mrkdwn", text: "*Severity*\n\u{1F534} Critical" },
+					{ type: "mrkdwn", text: "*Group*\n`electric-sync`" },
+				],
+			},
+			{
+				type: "actions",
+				elements: [
+					{
+						type: "button",
+						text: { type: "plain_text", text: "Open in Maple", emoji: true },
+						action_id: "maple_link_0",
+						url: "https://app.maple.dev/alerts/1",
+						style: "primary",
+					},
+					{
+						type: "button",
+						text: { type: "plain_text", text: "✨ Ask Maple AI", emoji: true },
+						action_id: "maple_link_1",
+						url: "https://app.maple.dev/chat",
+					},
+				],
+			},
+			{
+				type: "context",
+				elements: [
+					{
+						type: "mrkdwn",
+						text: "\u{1F341} Maple Alerts  ·  `▁▁▇`  ·  Incident `inc_1`  ·  <!date^1700000000^{date_short_pretty} at {time}|2023-11-14T22:13:20.000Z>",
+					},
+				],
+			},
+		])
+	})
+
+	it("puts an alert's chart between the summary and the buttons", () => {
+		const blocks = renderSlackMessage([alert({ imageUrl: "https://charts.maple.dev/c.png" })])
+			.attachments?.[0]?.blocks
+		expect(blocks?.map((block) => block.type)).toEqual([
+			"header",
+			"section",
+			"image",
+			"actions",
+			"context",
+		])
+	})
+
+	it("keeps a mention in an alert's summary inert", () => {
+		const section = renderSlackMessage([alert({ summary: "<!channel> look" })]).attachments?.[0]
+			?.blocks[1]
+		expect(section?.type === "section" && section.text.text).toBe("&lt;!channel&gt; look")
 	})
 })

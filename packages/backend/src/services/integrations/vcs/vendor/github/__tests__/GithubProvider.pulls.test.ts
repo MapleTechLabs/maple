@@ -58,11 +58,16 @@ const apiPullRequest = (overrides: Record<string, unknown> = {}) => ({
 	...overrides,
 })
 
-const providerLayer = (responses: ReadonlyArray<Response>, requests: Array<string> = []) => {
+const providerLayer = (
+	responses: ReadonlyArray<Response>,
+	requests: Array<string> = [],
+	bodies: Array<string> = [],
+) => {
 	let next = 0
 	const http = Layer.succeed(GithubHttp, {
-		fetch: async (url) => {
+		fetch: async (url, init) => {
 			requests.push(url)
+			bodies.push(typeof init?.body === "string" ? init.body : "")
 			return responses[next++]!
 		},
 	} satisfies GithubHttpApi)
@@ -216,13 +221,28 @@ describe("GithubProvider publishing a review", () => {
 		reviewBody: comments.length === 0 ? null : "notes",
 		comments,
 	})
-	const checkRun = () => jsonResponse({ id: 1, html_url: "https://github.com/octo/shop/runs/1" }, 201)
+	const noRunningCheck = () => jsonResponse({ check_runs: [] })
+	const checkRun = () =>
+		jsonResponse({ id: 1, status: "completed", html_url: "https://github.com/octo/shop/runs/1" }, 201)
+	const files = (patches: Record<string, string | undefined>) =>
+		jsonResponse(
+			Object.entries(patches).map(([filename, patch]) => ({
+				filename,
+				status: "modified",
+				additions: 1,
+				deletions: 1,
+				...(patch === undefined ? undefined : { patch }),
+			})),
+		)
 	const written = (id: number) =>
 		jsonResponse({ id, html_url: `https://github.com/octo/shop/pull/612#issuecomment-${id}` }, 201)
 
 	it.effect("writes the summary comment even when there is nothing to say inline", () => {
 		const requests: Array<string> = []
-		const layer = providerLayer([tokenResponse(), checkRun(), jsonResponse([]), written(5)], requests)
+		const layer = providerLayer(
+			[tokenResponse(), noRunningCheck(), checkRun(), jsonResponse([]), written(5)],
+			requests,
+		)
 		return Effect.gen(function* () {
 			const provider = yield* GithubProvider
 			const published = yield* provider.publishPullRequestReview(INSTALLATION, REPO, publication())
@@ -231,6 +251,47 @@ describe("GithubProvider publishing a review", () => {
 			assert.isTrue(requests.at(-1)?.endsWith("/repos/octo/shop/issues/612/comments"))
 			// No review at all: the comment carries the result.
 			assert.isFalse(requests.some((url) => url.includes("/reviews")))
+		}).pipe(Effect.provide(layer))
+	})
+
+	it.effect("opens the check run as running, then completes that same run with the result", () => {
+		const requests: Array<string> = []
+		const bodies: Array<string> = []
+		const running = { id: 7, status: "in_progress", html_url: "https://github.com/octo/shop/runs/7" }
+		const layer = providerLayer(
+			[
+				tokenResponse(),
+				noRunningCheck(),
+				jsonResponse(running, 201),
+				jsonResponse({ check_runs: [running] }),
+				jsonResponse({ ...running, status: "completed" }),
+				jsonResponse([]),
+				written(5),
+			],
+			requests,
+			bodies,
+		)
+		return Effect.gen(function* () {
+			const provider = yield* GithubProvider
+			const started = yield* provider.writePullRequestCheck(INSTALLATION, REPO, {
+				name: "Maple / observability",
+				headSha: "abc123",
+				state: { status: "in_progress" },
+				title: "Reviewing",
+				summary: "Maple is reviewing `abc123`.",
+			})
+			assert.equal(started.url, "https://github.com/octo/shop/runs/7")
+			assert.include(requests[1]!, "/commits/abc123/check-runs?check_name=Maple%20%2F%20observability")
+			assert.isTrue(requests[2]!.endsWith("/repos/octo/shop/check-runs"))
+			assert.include(bodies[2]!, `"status":"in_progress"`)
+			assert.notInclude(bodies[2]!, "conclusion")
+
+			const published = yield* provider.publishPullRequestReview(INSTALLATION, REPO, publication())
+			assert.equal(published.checkRunUrl, "https://github.com/octo/shop/runs/7")
+			// The running one is moved on, not duplicated.
+			assert.isTrue(requests[4]!.endsWith("/repos/octo/shop/check-runs/7"))
+			assert.include(bodies[4]!, `"conclusion":"success"`)
+			assert.notInclude(bodies[4]!, "head_sha")
 		}).pipe(Effect.provide(layer))
 	})
 
@@ -281,6 +342,7 @@ describe("GithubProvider publishing a review", () => {
 		const layer = providerLayer(
 			[
 				tokenResponse(),
+				noRunningCheck(),
 				checkRun(),
 				jsonResponse([
 					{ id: 3, html_url: "x", body: "looks good to me", performed_via_github_app: null },
@@ -308,6 +370,7 @@ describe("GithubProvider publishing a review", () => {
 		const layer = providerLayer(
 			[
 				tokenResponse(),
+				noRunningCheck(),
 				checkRun(),
 				jsonResponse([
 					{
@@ -334,9 +397,11 @@ describe("GithubProvider publishing a review", () => {
 		const layer = providerLayer(
 			[
 				tokenResponse(),
+				noRunningCheck(),
 				checkRun(),
 				jsonResponse([]),
 				written(5),
+				files({ "a.ts": "@@ -999,1 +999,1 @@\n-old\n+new" }),
 				jsonResponse({ message: "Line could not be resolved" }, 422),
 			],
 			requests,
@@ -360,13 +425,16 @@ describe("GithubProvider publishing a review", () => {
 		const layer = providerLayer(
 			[
 				tokenResponse(),
+				noRunningCheck(),
 				checkRun(),
 				jsonResponse([]),
 				written(5),
+				files({ "a.ts": "@@ -1,2 +1,3 @@\n one\n+two\n three" }),
 				jsonResponse({
 					id: 8,
 					html_url: "https://github.com/octo/shop/pull/612#pullrequestreview-8",
 				}),
+				jsonResponse([{ id: 81, path: "a.ts", line: 3 }]),
 			],
 			requests,
 		)
@@ -375,10 +443,158 @@ describe("GithubProvider publishing a review", () => {
 			const published = yield* provider.publishPullRequestReview(
 				INSTALLATION,
 				REPO,
-				publication([{ path: "a.ts", line: 3, body: "add a span" }]),
+				publication([{ path: "a.ts", line: 3, body: "add a span", key: "finding-1" }]),
 			)
 			assert.equal(published.reviewUrl, "https://github.com/octo/shop/pull/612#pullrequestreview-8")
-			assert.isTrue(requests.at(-1)?.endsWith("/repos/octo/shop/pulls/612/reviews"))
+			assert.isTrue(requests.at(-2)?.endsWith("/repos/octo/shop/pulls/612/reviews"))
+			// The posted comment's id comes back under the key it was submitted with.
+			assert.deepEqual(published.inlineComments, [{ key: "finding-1", commentId: "81" }])
 		}).pipe(Effect.provide(layer))
+	})
+	it.effect("drops only the comments outside the diff and says so in the review", () => {
+		const requests: Array<string> = []
+		const bodies: Array<string> = []
+		const layer = providerLayer(
+			[
+				tokenResponse(),
+				noRunningCheck(),
+				checkRun(),
+				jsonResponse([]),
+				written(5),
+				files({ "a.ts": "@@ -1,2 +1,3 @@\n one\n+two\n three", "logo.png": undefined }),
+				jsonResponse({
+					id: 8,
+					html_url: "https://github.com/octo/shop/pull/612#pullrequestreview-8",
+				}),
+				jsonResponse([{ id: 81, path: "a.ts", line: 2 }]),
+			],
+			requests,
+			bodies,
+		)
+		return Effect.gen(function* () {
+			const provider = yield* GithubProvider
+			const published = yield* provider.publishPullRequestReview(
+				INSTALLATION,
+				REPO,
+				publication([
+					{ path: "a.ts", line: 40, body: "outside", key: "finding-0" },
+					{ path: "a.ts", line: 2, body: "inside", key: "finding-1" },
+					{ path: "logo.png", line: 1, body: "binary", key: "finding-2" },
+				]),
+			)
+			assert.deepEqual(published.inlineComments, [{ key: "finding-1", commentId: "81" }])
+			const review = JSON.parse(bodies.at(-2) ?? "{}")
+			assert.lengthOf(review.comments, 1)
+			assert.include(review.body, "2 findings sit outside this diff")
+		}).pipe(Effect.provide(layer))
+	})
+})
+
+describe("GithubProvider changes since an earlier review", () => {
+	const OLD = "1".repeat(40)
+	const NEW = "2".repeat(40)
+	const BASE = "3".repeat(40)
+	const comparison = (status: string, files: ReadonlyArray<Record<string, unknown>>) =>
+		jsonResponse({ status, files })
+	const changed = (filename: string, patch: string) => ({ filename, status: "modified", patch })
+	// The two base comparisons run concurrently, so answer by URL rather than by call order.
+	const routedLayer = (routes: Record<string, Response>, requests: Array<string>) =>
+		Layer.effect(GithubProvider, GithubProvider.make).pipe(
+			Layer.provide(
+				Layer.effect(GithubAppClient, GithubAppClient.make).pipe(
+					Layer.provide(
+						Layer.succeed(GithubHttp, {
+							fetch: async (url) => {
+								requests.push(url)
+								if (url.endsWith("/access_tokens")) return tokenResponse()
+								const range = new URL(url).pathname.split("/compare/")[1] ?? ""
+								return routes[range] ?? jsonResponse({ message: "Not Found" }, 404)
+							},
+						} satisfies GithubHttpApi),
+					),
+					Layer.provide(env),
+				),
+			),
+			Layer.provide(env),
+		)
+
+	it.effect("uses the forward comparison when the earlier head is an ancestor", () => {
+		const requests: Array<string> = []
+		const layer = providerLayer(
+			[tokenResponse(), comparison("ahead", [changed("src/a.ts", "@@ -1 +1 @@\n-x\n+y")])],
+			requests,
+		)
+		return Effect.gen(function* () {
+			const provider = yield* GithubProvider
+			const delta = yield* provider.fetchChangesSince(INSTALLATION, REPO, {
+				previousHead: OLD,
+				head: NEW,
+				base: BASE,
+			})
+			assert.deepStrictEqual(delta, { rewritten: false, paths: ["src/a.ts"] })
+			assert.include(requests[1]!, `/compare/${OLD}...${NEW}`)
+			assert.lengthOf(requests, 2)
+		}).pipe(Effect.provide(layer))
+	})
+
+	it.effect("after a rebase, reports only files whose own change differs, not the base's", () => {
+		const requests: Array<string> = []
+		const layer = routedLayer(
+			{
+				// The forward diff carries everything the new base moved.
+				[`${OLD}...${NEW}`]: comparison("diverged", [
+					changed("src/a.ts", "@@ -1 +1 @@\n-x\n+y"),
+					changed("base/moved.ts", "@@ -1 +1 @@\n-m\n+n"),
+				]),
+				[`${BASE}...${OLD}`]: comparison("ahead", [
+					changed("src/a.ts", "@@ -10,2 +10,2 @@\n-x\n+y"),
+					changed("src/b.ts", "@@ -1 +1 @@\n-p\n+q"),
+				]),
+				[`${BASE}...${NEW}`]: comparison("ahead", [
+					changed("src/a.ts", "@@ -30,2 +30,2 @@\n-x\n+y"),
+					changed("src/b.ts", "@@ -1 +1 @@\n-p\n+Q"),
+				]),
+			},
+			requests,
+		)
+		return Effect.gen(function* () {
+			const provider = yield* GithubProvider
+			const delta = yield* provider.fetchChangesSince(INSTALLATION, REPO, {
+				previousHead: OLD,
+				head: NEW,
+				base: BASE,
+			})
+			assert.deepStrictEqual(delta, { rewritten: true, paths: ["src/b.ts"] })
+			const compares = requests.filter((url) => url.includes("/compare/"))
+			assert.deepStrictEqual(
+				compares.map((url) => new URL(url).pathname.split("/compare/")[1]).sort(),
+				[`${BASE}...${NEW}`, `${BASE}...${OLD}`, `${OLD}...${NEW}`].sort(),
+			)
+		}).pipe(Effect.provide(layer))
+	})
+
+	it.effect("asks for everything when a rewritten history has no base, or a list is cut off", () => {
+		const full = Array.from({ length: 300 }, (_, i) => changed(`f${i}.ts`, "@@ -1 +1 @@\n-a\n+b"))
+		return Effect.gen(function* () {
+			const noBase = yield* Effect.gen(function* () {
+				const provider = yield* GithubProvider
+				return yield* provider.fetchChangesSince(INSTALLATION, REPO, {
+					previousHead: OLD,
+					head: NEW,
+					base: undefined,
+				})
+			}).pipe(Effect.provide(providerLayer([tokenResponse(), comparison("behind", [])])))
+			assert.deepStrictEqual(noBase, { rewritten: true, paths: undefined })
+
+			const cutOff = yield* Effect.gen(function* () {
+				const provider = yield* GithubProvider
+				return yield* provider.fetchChangesSince(INSTALLATION, REPO, {
+					previousHead: OLD,
+					head: NEW,
+					base: BASE,
+				})
+			}).pipe(Effect.provide(providerLayer([tokenResponse(), comparison("ahead", full)])))
+			assert.deepStrictEqual(cutOff, { rewritten: false, paths: undefined })
+		})
 	})
 })

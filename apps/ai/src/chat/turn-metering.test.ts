@@ -201,7 +201,7 @@ describe("meterTurn", () => {
 	})
 
 	it("gives up on a tracker that never answers, rather than holding the turn slot", async () => {
-		// `endTurn` waits on this finalizer, and a wedged slot is only reclaimed after 15 minutes.
+		// `endTurn` waits on this finalizer, and a wedged slot is only reclaimed after `TURN_STALE_MS`.
 		globalThis.fetch = () => new Promise<Response>(() => {})
 
 		const started = Date.now()

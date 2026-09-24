@@ -8,8 +8,8 @@ import { EdgeCacheServiceLive } from "@maple/backend/platform/CacheBackendLive"
  *     JSON-RPC over one POST rather than a set of typed endpoints.
  *   - `/api/chat/sessions/*` — the dashboard's chat transport, raw because
  *     `HttpApi` cannot model an open `text/event-stream`.
- *   - `/internal/chat/apply` — a typed `HttpApi` group, because re-running an
- *     approval-gated mutation is an ordinary request/response with a schema
+ *   - `/internal/chat/apply` — a typed `HttpApi` group, because deciding an
+ *     approval-gated proposal is an ordinary request/response with a schema
  *     worth pinning.
  *   - `/internal/triage/classify` — the decision model behind the investigation
  *     gate, typed for the same reason. Reached only over a service binding: api

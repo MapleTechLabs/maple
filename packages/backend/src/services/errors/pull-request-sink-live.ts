@@ -16,41 +16,46 @@ export const fixVerificationPullRequestHandler: PullRequestEventHandler<IssueFix
 	Effect.gen(function* () {
 		const verification = yield* IssueFixVerificationService
 		return {
+			// The review trigger's delayed copy of an event this handler already saw.
 			onPullRequestEvent: (orgId, job) =>
-				verification
-					.onPullRequestEvent({
-						orgId,
-						provider: job.provider,
-						externalRepoId: job.externalRepoId,
-						repoFullName: job.repoFullName,
-						number: job.number,
-						action: job.action,
-						url: job.url,
-						title: job.title,
-						body: job.body,
-						authorLogin: job.authorLogin,
-						merged: job.merged,
-						mergeCommitSha: job.mergeCommitSha,
-						mergedAtMs: job.mergedAtMs,
-					})
-					.pipe(
-						Effect.flatMap((outcome) =>
-							Effect.annotateCurrentSpan({
-								"vcs.pull_request.links_auto_created": outcome.linksAutoCreated,
-								"vcs.pull_request.links_updated": outcome.linksUpdated,
-								"vcs.pull_request.verifications_opened": outcome.verificationsOpened,
-							}),
-						),
-						Effect.catchTag("@maple/http/errors/ErrorPersistenceError", (error) =>
-							Effect.logError("[FixVerification] pull request event could not be applied").pipe(
-								Effect.annotateLogs({
-									orgId,
-									repoFullName: job.repoFullName,
-									number: job.number,
-									error: error.message,
-								}),
+				job.deferredReview === true
+					? Effect.void
+					: verification
+							.onPullRequestEvent({
+								orgId,
+								provider: job.provider,
+								externalRepoId: job.externalRepoId,
+								repoFullName: job.repoFullName,
+								number: job.number,
+								action: job.action,
+								url: job.url,
+								title: job.title,
+								body: job.body,
+								authorLogin: job.authorLogin,
+								merged: job.merged,
+								mergeCommitSha: job.mergeCommitSha,
+								mergedAtMs: job.mergedAtMs,
+							})
+							.pipe(
+								Effect.flatMap((outcome) =>
+									Effect.annotateCurrentSpan({
+										"vcs.pull_request.links_auto_created": outcome.linksAutoCreated,
+										"vcs.pull_request.links_updated": outcome.linksUpdated,
+										"vcs.pull_request.verifications_opened": outcome.verificationsOpened,
+									}),
+								),
+								Effect.catchTag("@maple/http/errors/ErrorPersistenceError", (error) =>
+									Effect.logError(
+										"[FixVerification] pull request event could not be applied",
+									).pipe(
+										Effect.annotateLogs({
+											orgId,
+											repoFullName: job.repoFullName,
+											number: job.number,
+											error: error.message,
+										}),
+									),
+								),
 							),
-						),
-					),
 		}
 	})

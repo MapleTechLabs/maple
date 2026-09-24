@@ -26,7 +26,7 @@ export const OrganizationFeatureFlags = Schema.Struct({
 	 */
 	releases: DisabledByDefaultFeatureFlag,
 	/**
-	 * Gates the pull request observability review: the per-repository switch in the GitHub
+	 * Gates the pull request review: the per-repository switch in the GitHub
 	 * integration, and the review trigger itself on the server, so merging the feature rolls it
 	 * out to no one until an organization is flagged.
 	 */

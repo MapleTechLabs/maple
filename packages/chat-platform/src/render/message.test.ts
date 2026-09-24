@@ -351,7 +351,7 @@ describe("renderChatMessage", () => {
 				kind: "approval",
 				toolName: "create_alert_rule",
 				summary: "name: checkout p95 · threshold: 1200",
-				token: "org_1:bot-42|call_9",
+				token: "call_9",
 				outcome: null,
 			},
 		])
@@ -387,7 +387,7 @@ describe("renderChatMessage", () => {
 				kind: "approval",
 				toolName: "create_alert_rule",
 				summary: "name: checkout p95",
-				token: "org_1:bot-42|call_9",
+				token: "call_9",
 				outcome: { approved: true, text: "Approved by Ada.\nCreated alert rule." },
 			},
 		])
@@ -421,7 +421,7 @@ describe("renderChatMessage", () => {
 				kind: "approval",
 				toolName: "delete_alert_rule",
 				summary: "id: ar_1",
-				token: "org_1:bot-42|call_9",
+				token: "call_9",
 				outcome: { approved: false, text: "Declined by Ada. The tool did not run." },
 			},
 		])

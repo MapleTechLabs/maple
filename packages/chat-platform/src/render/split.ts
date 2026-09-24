@@ -78,6 +78,13 @@ const blockWeight = (block: ChatBlock): number => {
 			)
 		case "notice":
 			return block.text.length
+		case "alert":
+			return (
+				block.title.length +
+				block.summary.length +
+				block.fields.reduce((total, field) => total + field.label.length + field.value.length, 0) +
+				block.footer.reduce((total, part) => total + part.length, 0)
+			)
 	}
 }
 

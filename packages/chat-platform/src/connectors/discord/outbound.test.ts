@@ -34,7 +34,7 @@ const stub = (attempts: ReadonlyArray<Attempt>) => {
 		seen,
 		layer: Layer.mergeAll(
 			Layer.succeed(HttpClient.HttpClient)(client),
-			Layer.succeed(ConnectorCredentials)(new Map([[BOT_TOKEN_CONFIG, "bot-token"]])),
+			Layer.succeed(ConnectorCredentials)(Effect.succeed(new Map([[BOT_TOKEN_CONFIG, "bot-token"]]))),
 		),
 	}
 }
@@ -184,10 +184,12 @@ describe("discord transport", () => {
 		}).pipe(Effect.provide(http.layer))
 	})
 
-	it.effect("takes a channel that will not hold a thread as the conversation itself", () => {
-		// What a mention already inside a thread answers with, and what a channel the bot may not
-		// start threads in answers with. Either way the mention's own channel is the conversation.
-		const http = stub([{ status: 400, body: '{"message":"Cannot start a thread here"}' }])
+	it.effect("takes a channel that will not hold a thread as the conversation, but not as its own", () => {
+		// What a channel the bot may not start threads in answers with.
+		const http = stub([
+			{ status: 403, body: '{"message":"Missing Permissions","code":50013}' },
+			{ status: 200, body: '{"id":"conv_1","type":0}' },
+		])
 		return Effect.gen(function* () {
 			const transport = yield* discordOutbound.transport
 			const conversation = yield* transport.conversation(mention)
@@ -199,6 +201,40 @@ describe("discord transport", () => {
 				// which is the whole risk of this fallback.
 				opened: false,
 			})
+			expect(http.seen[1].url).toBe("https://discord.com/api/v10/channels/conv_1")
+		}).pipe(Effect.provide(http.layer))
+	})
+
+	it.effect("takes a thread it was mentioned in as its own conversation", () => {
+		// What Discord answers for a thread started from a message that is already in one.
+		const http = stub([
+			{ status: 400, body: '{"message":"Cannot execute action on this channel type","code":50024}' },
+			{ status: 200, body: '{"id":"conv_1","type":11}' },
+		])
+		return Effect.gen(function* () {
+			const transport = yield* discordOutbound.transport
+			const conversation = yield* transport.conversation(mention)
+
+			expect(conversation).toEqual({
+				conversationKey: "conv_1",
+				target: { workspaceId: "guild_1", channelId: "conv_1" },
+				// The bot's own, so a follow-up in the thread is answered without a mention.
+				opened: true,
+			})
+		}).pipe(Effect.provide(http.layer))
+	})
+
+	it.effect("answers in the channel, mention-only, when its type cannot be read either", () => {
+		const http = stub([
+			{ status: 400, body: "{}" },
+			{ status: 500, body: "{}" },
+		])
+		return Effect.gen(function* () {
+			const transport = yield* discordOutbound.transport
+			const conversation = yield* transport.conversation(mention)
+
+			expect(conversation.opened).toBe(false)
+			expect(conversation.conversationKey).toBe("conv_1")
 		}).pipe(Effect.provide(http.layer))
 	})
 
@@ -270,7 +306,77 @@ describe("discord transport", () => {
 			const error = yield* Effect.flip(transport.edit({ target, messageId: "m1" }, []))
 
 			expect(error).toBeInstanceOf(ChatOutboundError)
-			expect(error).toMatchObject({ connectorId: "discord", operation: "edit", status: 403 })
+			expect(error).toMatchObject({
+				connectorId: "discord",
+				operation: "edit",
+				status: 403,
+				reason: "auth",
+			})
+		}).pipe(Effect.provide(http.layer))
+	})
+
+	it.effect("names a token it will not honour, and gives an outage no reason", () => {
+		const http = stub([
+			{ status: 401, body: '{"message":"401: Unauthorized"}' },
+			{ status: 502, body: "bad gateway" },
+		])
+		return Effect.gen(function* () {
+			const transport = yield* discordOutbound.transport
+			expect(yield* Effect.flip(transport.post(target, []))).toMatchObject({
+				reason: "auth",
+				status: 401,
+			})
+			const outage = yield* Effect.flip(transport.post(target, []))
+			expect(outage.status).toBe(502)
+			expect("reason" in outage).toBe(false)
+		}).pipe(Effect.provide(http.layer))
+	})
+
+	it.effect("encodes a channel id before it reaches the path", () => {
+		const http = stub([{ status: 200, body: CREATED }])
+		return Effect.gen(function* () {
+			const transport = yield* discordOutbound.transport
+			yield* transport.post({ workspaceId: "guild_1", channelId: "../guilds/guild_2" }, [])
+			expect(http.seen[0].url).toBe(
+				"https://discord.com/api/v10/channels/..%2Fguilds%2Fguild_2/messages",
+			)
+		}).pipe(Effect.provide(http.layer))
+	})
+
+	it.effect("names a channel that is gone and a message it would not take", () => {
+		const http = stub([
+			{ status: 404, body: '{"message":"Unknown Channel"}' },
+			{ status: 400, body: '{"message":"Invalid Form Body"}' },
+		])
+		return Effect.gen(function* () {
+			const transport = yield* discordOutbound.transport
+			expect(yield* Effect.flip(transport.post(target, []))).toMatchObject({ reason: "not_found" })
+			expect(yield* Effect.flip(transport.post(target, []))).toMatchObject({ reason: "rejected" })
+		}).pipe(Effect.provide(http.layer))
+	})
+
+	it.effect("lists a guild's text and announcement channels in the order Discord shows them", () => {
+		const http = stub([
+			{
+				status: 200,
+				body: JSON.stringify([
+					{ id: "c_voice", type: 2, name: "standup", position: 0 },
+					{ id: "c_news", type: 5, name: "announcements", position: 2 },
+					{ id: "c_category", type: 4, name: "Engineering", position: 0 },
+					{ id: "c_general", type: 0, name: "general", position: 1 },
+				]),
+			},
+		])
+		return Effect.gen(function* () {
+			const transport = yield* discordOutbound.transport
+			const channels = yield* transport.destinations("guild_1")
+
+			expect(channels).toEqual([
+				{ id: "c_general", name: "general", private: false },
+				{ id: "c_news", name: "announcements", private: false },
+			])
+			expect(http.seen[0].url).toBe("https://discord.com/api/v10/guilds/guild_1/channels")
+			expect(http.seen[0].headers["authorization"]).toBe("Bot bot-token")
 		}).pipe(Effect.provide(http.layer))
 	})
 })

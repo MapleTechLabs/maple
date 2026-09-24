@@ -9,7 +9,6 @@
  */
 import { describe, expect, it } from "@effect/vitest"
 import {
-	ChatSessionId,
 	decodeChatEventPayload,
 	encodeChatEventPayload,
 	type ChatEvent,
@@ -25,6 +24,7 @@ import {
 	chatActionControlId,
 	chatConnectorId,
 	ChatOutboundError,
+	ConnectorCredentials,
 	encodeChatActionToken,
 	type ChatBlock,
 	type ChatChartRef,
@@ -33,13 +33,15 @@ import {
 	type ChatOutbound,
 	type ChatTarget,
 	type InboundAction,
+	type InboundEvent,
 	type InboundMessage,
 	type InboundWorkspaceRemoved,
+	WORKSPACE_CREDENTIALS,
 } from "@maple/chat-platform"
 import { Context, Duration, Effect, Logger, Option, References, Schema, Tracer } from "effect"
 import { TestClock } from "effect/testing"
 import { ConversationNotRecorded, FOLLOW_UP_WINDOW_MS } from "./conversation.ts"
-import { relayInboundEvent, WorkspaceLookupFailed, type RelayPorts } from "./turn.ts"
+import { relayInboundEvent, relayWithWorkspace, WorkspaceLookupFailed, type RelayPorts } from "./turn.ts"
 
 const TESTCHAT = chatConnectorId("testchat")
 const ORG = Schema.decodeSync(OrgId)("org_1")
@@ -87,6 +89,7 @@ const chat = (earlier: ReadonlyArray<ChatHistoryMessage> | ChatOutboundError = [
 		outbound: {
 			connectorId: TESTCHAT,
 			limits: { maxMessageChars: 2000, minEditInterval: Duration.millis(10) },
+			requiredConfig: [],
 			transport: Effect.sync(() => ({
 				post: (target, blocks) =>
 					Effect.sync(() => {
@@ -121,6 +124,7 @@ const chat = (earlier: ReadonlyArray<ChatHistoryMessage> | ChatOutboundError = [
 							? Effect.fail(earlier)
 							: Effect.succeed(earlier)
 					}),
+				destinations: () => Effect.die("a turn asked where alerts can go"),
 			})),
 		},
 	}
@@ -313,6 +317,7 @@ const host = (
 							}),
 						)
 					: Effect.sync(() => void opened.add(conversation.conversationKey)),
+			recordTurn: () => Effect.void,
 		},
 	}
 }
@@ -854,10 +859,7 @@ describe("relaying a message that mentioned nobody", () => {
 
 const ADA = Schema.decodeSync(UserId)("user_ada")
 const CALL_ID = "call_9"
-const CONTROL = chatActionControlId(
-	"approve",
-	encodeChatActionToken(Schema.decodeSync(ChatSessionId)(SESSION_ID), CALL_ID),
-)
+const CONTROL = chatActionControlId("approve", encodeChatActionToken(CALL_ID))
 
 const click = (overrides: Partial<InboundAction> = {}): InboundAction => ({
 	type: "action",
@@ -968,7 +970,7 @@ describe("settling an approval somebody clicked", () => {
 					kind: "approval",
 					toolName: "create_alert_rule",
 					summary: "name: checkout p95",
-					token: `${SESSION_ID}|${CALL_ID}`,
+					token: CALL_ID,
 					outcome: { approved: true, text: "Approved by Ada.\nCreated alert rule ar_1." },
 				},
 			])
@@ -985,10 +987,7 @@ describe("settling an approval somebody clicked", () => {
 
 			yield* relayInboundEvent(
 				click({
-					actionToken: chatActionControlId(
-						"deny",
-						encodeChatActionToken(Schema.decodeSync(ChatSessionId)(SESSION_ID), CALL_ID),
-					),
+					actionToken: chatActionControlId("deny", encodeChatActionToken(CALL_ID)),
 				}),
 				deployment.ports,
 			)
@@ -1041,7 +1040,7 @@ describe("settling an approval somebody clicked", () => {
 
 			yield* relayInboundEvent(click(), deployment.ports)
 
-			expect(agent.settlements[0]?.actingUserId).toBe(ADA)
+			expect(agent.settlements[0]).toHaveProperty("actingUserId", ADA)
 		}),
 	)
 
@@ -1059,63 +1058,20 @@ describe("settling an approval somebody clicked", () => {
 		}),
 	)
 
-	it.effect("refuses a control naming a conversation in another organization", () =>
+	it.effect("settles in the conversation the click landed in, whatever the control was copied from", () =>
 		Effect.gen(function* () {
 			const platform = chat()
 			const agent = session([])
 			const deployment = host(platform.outbound, agent.stub)
 
-			const reason = yield* refusalReason(
-				relayInboundEvent(
-					click({
-						actionToken: chatActionControlId(
-							"approve",
-							encodeChatActionToken(
-								Schema.decodeSync(ChatSessionId)(`org_other:bot-${TESTCHAT}-${CONVERSATION}`),
-								CALL_ID,
-							),
-						),
-					}),
-					deployment.ports,
-				),
-			)
+			// A control is forgeable by design and names only a call, so the session is rebuilt from
+			// the workspace's org and the clicked conversation. A proposal raised elsewhere is not in
+			// this session's log, so it cannot be settled from here.
+			yield* relayInboundEvent(click({ channelId: "otherchannel" }), deployment.ports)
 
-			// The workspace's own org is the only one its members may change, however the control got
-			// into the channel. Asserted by REASON: every silent refusal looks the same otherwise, so
-			// this would stay green if the control simply stopped decoding.
-			expect(reason).toBe("foreign_session")
-			expect(agent.settlements).toEqual([])
-			expect(platform.calls).toEqual([])
-		}),
-	)
-
-	it.effect("refuses a control naming another conversation in the approver's own org", () =>
-		Effect.gen(function* () {
-			const platform = chat()
-			const agent = session([])
-			const deployment = host(platform.outbound, agent.stub)
-
-			// The same org, so the org check passes — and a control is forgeable by design. Without
-			// the conversation check an approver in one channel could settle a proposal raised in a
-			// channel they cannot read, and the settling edit would render that answer into theirs.
-			const reason = yield* refusalReason(
-				relayInboundEvent(
-					click({
-						actionToken: chatActionControlId(
-							"approve",
-							encodeChatActionToken(
-								Schema.decodeSync(ChatSessionId)(`${ORG}:bot-${TESTCHAT}-otherchannel`),
-								CALL_ID,
-							),
-						),
-					}),
-					deployment.ports,
-				),
-			)
-
-			expect(reason).toBe("foreign_session")
-			expect(agent.settlements).toEqual([])
-			expect(platform.calls).toEqual([])
+			expect(agent.settlements.map((settlement) => settlement.sessionId)).toEqual([
+				`${ORG}:bot-${TESTCHAT}-otherchannel`,
+			])
 		}),
 	)
 
@@ -1286,6 +1242,116 @@ describe("relaying everything else a connector reports", () => {
 			expect(deployment.forgotten).toEqual([WORKSPACE])
 			// Nobody is there to read a reply about it.
 			expect(platform.calls).toEqual([])
+		}),
+	)
+})
+
+describe("reading the workspace row", () => {
+	const NOW = Date.parse("2026-09-23T12:00:00.000Z")
+	const followUp: InboundMessage = {
+		...mention,
+		messageId: "message-2",
+		channelId: CONVERSATION,
+		mentionsBot: false,
+	}
+	const answered: ReadonlyArray<ChatMessage> = [
+		{
+			id: "a1",
+			role: "assistant",
+			text: "Checkout is slow.",
+			toolCalls: [],
+			createdAt: NOW - 60_000,
+			startSeq: 2,
+		},
+	]
+
+	/**
+	 * The event relayed the way `run.ts` relays it: one counted read (the database connection and
+	 * the decrypt), behind a connector that posts with the credential that read carries.
+	 */
+	const relay = (
+		event: InboundEvent,
+		stub: ChatSessionStub,
+		options?: { readonly opened?: ReadonlyArray<string>; readonly linked?: boolean },
+	) =>
+		Effect.gen(function* () {
+			const platform = chat()
+			const reads = { count: 0 }
+			const postedWith: Array<string | undefined> = []
+			const outbound: ChatOutbound<ConnectorCredentials> = {
+				...platform.outbound,
+				transport: Effect.gen(function* () {
+					const credentials = yield* ConnectorCredentials
+					const inner = yield* platform.outbound.transport
+					const using = <A, E>(effect: Effect.Effect<A, E>) =>
+						Effect.flatMap(credentials, (config) => {
+							postedWith.push(config.get(WORKSPACE_CREDENTIALS))
+							return effect
+						})
+					return {
+						...inner,
+						post: (target, blocks) => using(inner.post(target, blocks)),
+						edit: (ref, blocks) => using(inner.edit(ref, blocks)),
+					}
+				}),
+			}
+			yield* relayWithWorkspace(
+				event,
+				new Map(),
+				Effect.sync(() => {
+					reads.count += 1
+					return options?.linked === false
+						? Option.none()
+						: Option.some({ relay: { orgId: ORG }, credentials: "sealed" })
+				}),
+				(resolveWorkspace) => ({
+					...host(platform.outbound, stub, { opened: options?.opened ?? [] }).ports,
+					outbound,
+					resolveWorkspace,
+				}),
+			)
+			return { reads: reads.count, postedWith }
+		})
+
+	it.effect("reads nothing for a message it will not answer", () =>
+		Effect.gen(function* () {
+			const result = yield* relay(followUp, session([silentTurn], { transcript: answered }).stub)
+			expect(result).toEqual({ reads: 0, postedWith: [] })
+		}),
+	)
+
+	it.effect("reads it once for a follow-up in a conversation the bot owns", () =>
+		Effect.gen(function* () {
+			yield* TestClock.setTime(NOW)
+			const agent = session([silentTurn], { transcript: answered })
+			const result = yield* relay(followUp, agent.stub, { opened: [CONVERSATION] })
+			expect(agent.turns).toHaveLength(1)
+			expect(result.reads).toBe(1)
+		}),
+	)
+
+	it.effect("reads it once for a mention, and posts with the credential it carried", () =>
+		Effect.gen(function* () {
+			const result = yield* relay(mention, session([silentTurn]).stub)
+			expect(result.reads).toBe(1)
+			expect(result.postedWith.length).toBeGreaterThan(0)
+			expect(new Set(result.postedWith)).toEqual(new Set(["sealed"]))
+		}),
+	)
+
+	it.effect("posts with the deployment's config alone for a workspace nobody linked", () =>
+		Effect.gen(function* () {
+			const result = yield* relay(mention, session([silentTurn]).stub, { linked: false })
+			expect(result).toEqual({ reads: 1, postedWith: [undefined] })
+		}),
+	)
+
+	it.effect("reads it once for a click, and edits with the credential it carried", () =>
+		Effect.gen(function* () {
+			const agent = session([], { transcript: decidedTranscript("Approved by Ada.\nDone.") })
+			const result = yield* relay(click(), agent.stub)
+			expect(agent.settlements).toHaveLength(1)
+			expect(result).toEqual({ reads: 1, postedWith: ["sealed"] })
 		}),
 	)
 })

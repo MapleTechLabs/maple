@@ -17,7 +17,7 @@
  */
 import { chartCard, rankedCard, type ChartCard } from "./chart-card"
 import { renderNode, type AssetFetcher } from "./render"
-import type { ChartRanked, ChartTimeseries } from "@maple/domain/http"
+import type { ShareChartResponse } from "@maple/domain/http"
 import type { ApiTarget } from "../worker-env"
 
 /** The API has to answer before an image request is worth abandoning. */
@@ -83,42 +83,16 @@ export const chartRequestFromPath = (
 	return chartId.length === 0 || chartId.includes("/") ? undefined : { kind, chartId }
 }
 
-/**
- * The body an endpoint hands back, as it may actually arrive.
- *
- * `ShareChartResponse` is the contract; this is the contract plus the one way
- * reality departs from it. Nothing validates `response.json()` below, and
- * across a deploy an api that predates `series` sends only the flat `points` —
- * see `ChartTimeseries.points`. Saying so in the type is what makes the
- * fallback in {@link cardFor} a branch the compiler checks rather than an
- * assertion, and it goes away with the field it exists for.
- */
-interface TimeseriesBody extends Omit<ChartTimeseries, "series"> {
-	/** Absent on an api that predates it, where `points` carries the one series. */
-	readonly series?: ChartTimeseries["series"]
-}
-
-type ChartImageBody = ChartRanked | TimeseriesBody
-
-/**
- * The card to draw, or `undefined` for a chart with nothing in it.
- *
- * Exported for the deploy-skew test, which is the only thing that can prove
- * both response shapes still draw.
- */
-export const cardFor = (chart: ChartImageBody): ChartCard | undefined => {
+/** The card to draw, or `undefined` for a chart with nothing in it. */
+const cardFor = (chart: ShareChartResponse): ChartCard | undefined => {
 	if (chart.kind === "ranked") {
 		return chart.points.length === 0 ? undefined : rankedCard(chart)
 	}
-	// `?? points` reads an api that predates `series` — see
-	// `ChartTimeseries.points`, and delete both together.
-	const series =
-		chart.series ?? (chart.points === undefined ? [] : [{ name: chart.title, points: chart.points }])
-	return series.some((entry) => entry.points.length > 0)
+	return chart.series.some((entry) => entry.points.length > 0)
 		? chartCard(chart.title, {
 				kind: chart.kind,
 				unit: chart.unit,
-				series,
+				series: chart.series,
 				threshold: chart.threshold,
 				breachSide: chart.breachSide,
 			})
@@ -139,7 +113,7 @@ export const renderChartImage = async (
 ): Promise<Response> => {
 	const notFound = new Response(null, { status: 404 })
 
-	let chart: ChartImageBody
+	let chart: ShareChartResponse
 	try {
 		const response = await api.fetch(
 			new Request(new URL(request.kind.apiPath, api.baseUrl), {
@@ -150,7 +124,7 @@ export const renderChartImage = async (
 			}),
 		)
 		if (!response.ok) return notFound
-		chart = (await response.json()) as ChartImageBody
+		chart = (await response.json()) as ShareChartResponse
 	} catch {
 		return notFound
 	}

@@ -11,7 +11,7 @@ import type { ChatConversationKey } from "@maple/primitives"
 import type { Duration, Effect } from "effect"
 import { Context, Schema } from "effect"
 import { ChatConnectorId } from "./connector"
-import type { ConnectorConfig, InboundAction, InboundMessage } from "./ingress"
+import type { ConnectorConfig, ConnectorConfigKey, InboundAction, InboundMessage } from "./ingress"
 import type { ChatBlock } from "./render/blocks"
 
 /**
@@ -21,10 +21,15 @@ import type { ChatBlock } from "./render/blocks"
  * called — so it resolves the names the connector declared (`requiredConfig`) and supplies the map
  * under this one service. Two host-provided services then cover every connector's outbound half:
  * this and an HTTP client.
+ *
+ * An Effect rather than the map, run when a transport is about to call its platform: answering it
+ * can cost the host a database read and a decrypt, and most inbound events are never answered. The
+ * host memoizes it per event, so running it on every call is free.
  */
-export class ConnectorCredentials extends Context.Service<ConnectorCredentials, ConnectorConfig>()(
-	"@maple/chat-platform/ConnectorCredentials",
-) {}
+export class ConnectorCredentials extends Context.Service<
+	ConnectorCredentials,
+	Effect.Effect<ConnectorConfig>
+>()("@maple/chat-platform/ConnectorCredentials") {}
 
 /**
  * The entry under which the host puts the conversation's OWN stored credential into
@@ -74,12 +79,13 @@ export interface ChatConversation {
 	readonly conversationKey: ChatConversationKey
 	readonly target: ChatTarget
 	/**
-	 * Whether the connector OPENED this conversation for the message, rather than answering in one
-	 * that was already there.
+	 * Whether this conversation is the bot's own: one the connector OPENED for the message, or a
+	 * thread somebody brought the bot into by mentioning it there — rather than a channel it merely
+	 * answers in.
 	 *
-	 * It is the difference between a space that exists because somebody asked Maple something and a
-	 * channel a team was already using, and the host records it: only in a conversation of the
-	 * bot's own is a message that never mentioned the bot still addressed to it.
+	 * It is the difference between a bounded exchange with Maple in it and a channel a team was
+	 * already using, and the host records it: only in a conversation of the bot's own is a message
+	 * that never mentioned the bot still addressed to it.
 	 */
 	readonly opened: boolean
 }
@@ -110,6 +116,18 @@ export interface ChatThreadRequest {
 	/** The message the thread hangs off — a mention, a command, an alert. */
 	readonly anchorMessageId: string
 	readonly title: string
+}
+
+/**
+ * A channel in a linked workspace that the bot can post an alert to.
+ *
+ * `private` is what the connector could tell cheaply, not a promise: a channel reported as public
+ * may still refuse a bot that was never invited, and the post says so.
+ */
+export interface ChatDestination {
+	readonly id: string
+	readonly name: string
+	readonly private: boolean
 }
 
 export interface ChatOutboundLimits {
@@ -186,6 +204,16 @@ export interface ChatOutboundTransport {
 		target: ChatTarget,
 		options: { readonly limit: number; readonly before: string },
 	) => Effect.Effect<ReadonlyArray<ChatHistoryMessage>, ChatOutboundError>
+	/**
+	 * The channels in a linked workspace an alert can be posted to, for a person picking one.
+	 *
+	 * The workspace is the platform's own id, as {@link ChatTarget.workspaceId} carries it. What
+	 * counts as "can post to" is the connector's call — it lists what its platform will accept a
+	 * message in, which is narrower than every channel a workspace has.
+	 */
+	readonly destinations: (
+		workspaceId: string,
+	) => Effect.Effect<ReadonlyArray<ChatDestination>, ChatOutboundError>
 }
 
 /**
@@ -199,6 +227,14 @@ export interface ChatOutbound<R = never> {
 	/** Whose outbound this is — what a failure and a driver span name, without naming a vendor. */
 	readonly connectorId: ChatConnectorId
 	readonly limits: ChatOutboundLimits
+	/**
+	 * The deployment-wide configuration `transport` reads out of {@link ConnectorCredentials}.
+	 *
+	 * Declared so a host that posts without receiving anything — alert delivery — can resolve what
+	 * a connector needs without knowing its name. A per-workspace credential is not listed here: it
+	 * rides under {@link WORKSPACE_CREDENTIALS}.
+	 */
+	readonly requiredConfig: ReadonlyArray<ConnectorConfigKey>
 	readonly transport: Effect.Effect<ChatOutboundTransport, never, R>
 }
 
@@ -207,11 +243,19 @@ export class ChatOutboundError extends Schema.TaggedError<ChatOutboundError>()(
 	{
 		message: Schema.String,
 		connectorId: ChatConnectorId,
-		operation: Schema.Literals(["post", "edit", "typing", "thread", "history"]),
+		operation: Schema.Literals(["post", "edit", "typing", "thread", "history", "destinations"]),
 		/** The platform's HTTP status, where the failure had one. */
 		status: Schema.optionalKey(Schema.Finite),
+		/**
+		 * What the platform said was wrong, where it said so: the bot's grant (`auth`), the address
+		 * (`not_found`), or the message itself (`rejected`). Absent for a failure worth retrying —
+		 * a rate limit, an outage, a reply that could not be read.
+		 */
+		reason: Schema.optionalKey(Schema.Literals(["auth", "not_found", "rejected"])),
 		cause: Schema.optionalKey(Schema.Defect()),
 	},
 ) {}
 
 export type ChatOutboundOperation = ChatOutboundError["operation"]
+
+export type ChatOutboundFailureReason = NonNullable<ChatOutboundError["reason"]>

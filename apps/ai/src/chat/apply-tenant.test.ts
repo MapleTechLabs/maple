@@ -1,9 +1,9 @@
 /**
  * Whose authority an approved proposal runs under.
  *
- * This is the whole security model of approving a write from a chat platform, so each case is
- * pinned separately:
+ * This is the whole security model of approving a write, so each case is pinned separately:
  *
+ *   - a person in the app acts as themselves, with the tenant and roles the route authenticated;
  *   - a connector that cannot name the clicker acts as the org-level connector identity, which
  *     carries `org:admin` because there is no person whose roles could be read;
  *   - a connector that CAN name them acts as that Maple user, with the roles they hold in the org
@@ -18,6 +18,7 @@ import { CONNECTOR_TENANT_USER_ID, type ChatConnectorOrigin } from "@maple/domai
 import { ActorId, OrgId, UserId } from "@maple/domain/primitives"
 import { ErrorActorsService } from "@maple/backend/services/errors/ErrorActorsService"
 import { OrgMembershipService } from "@maple/backend/services/auth/OrgMembershipService"
+import { auditAttribution } from "@maple/backend/services/audit/audit-access"
 import { resolveTenant } from "./apply-proposal"
 
 const ORG = Schema.decodeSync(OrgId)("org_1")
@@ -74,6 +75,32 @@ const proposal = (actingUserId?: UserId) => ({
 })
 
 describe("whose authority an approval runs under", () => {
+	it.effect("runs an app approval as the caller, under their own roles, audited as them", () =>
+		Effect.gen(function* () {
+			const tenant = yield* resolveTenant(ORG, {
+				env: {},
+				sessionId: `${ORG}:tab-1`,
+				approver: { kind: "app" },
+				tenant: { orgId: ORG, userId: ADA, roles: [MEMBER], authMode: "clerk" },
+				tool: "create_alert_rule",
+				input: {},
+			}).pipe(
+				// Neither lookup is consulted: the route already authenticated the caller.
+				Effect.provide(Layer.mergeAll(memberships(die), noActors)),
+			)
+
+			assert.strictEqual(tenant.userId, ADA)
+			assert.deepStrictEqual(tenant.roles, [MEMBER])
+			assert.isUndefined(tenant.actorId)
+			assert.deepStrictEqual(tenant.turnOrigin, { kind: "app" })
+			// The entry reads exactly as the by-value route's did: the user, from the dashboard.
+			assert.deepStrictEqual(auditAttribution(tenant, undefined), {
+				actor: { type: "user", userId: ADA },
+				source: "dashboard",
+			})
+		}),
+	)
+
 	it.effect("gives a linked user their OWN roles, and grants nothing", () =>
 		Effect.gen(function* () {
 			const tenant = yield* resolveTenant(ORG, proposal(ADA)).pipe(

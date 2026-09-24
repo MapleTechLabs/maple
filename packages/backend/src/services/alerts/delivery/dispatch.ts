@@ -12,6 +12,7 @@ import type { AlertDeliveryFailure, OrgId } from "@maple/domain/http"
 import { Effect, Match } from "effect"
 import { renderTitleBody } from "../AlertDeliveryDispatch"
 import { discordTransport } from "./transports/discord"
+import { chatTransport } from "./transports/chat"
 import { emailTransport } from "./transports/email"
 import { hazelTransport } from "./transports/hazel"
 import { pagerDutyTransport } from "./transports/pagerduty"
@@ -19,19 +20,14 @@ import { makeSlackTransport } from "./transports/slack"
 import { telegramTransport } from "./transports/telegram"
 import { webhookTransport } from "./transports/webhook"
 import { runEffectTransport, runHttpTransport, type TransportRuntime } from "./runTransport"
-import type { RenderInput } from "./Transport"
+import type { EffectTransportDeps, RenderInput } from "./Transport"
 import type { DispatchContext, DispatchResult } from "./context"
 
-export interface DispatchDeps {
-	/**
-	 * Sends one email via the platform email channel (Cloudflare `EMAIL`
-	 * binding). Injected so this module stays dependency-free.
-	 */
-	readonly sendEmail: (
-		to: string,
-		subject: string,
-		html: string,
-	) => Effect.Effect<void, AlertDeliveryFailure>
+/**
+ * `sendEmail` (the platform email channel) and `postChatAlert` (a chat connector) come from
+ * {@link EffectTransportDeps}; injected so this module stays dependency-free.
+ */
+export interface DispatchDeps extends EffectTransportDeps {
 	/**
 	 * Resolves the decrypted Slack bot token for an org from its
 	 * `slack_workspaces` row. Only the `slack-bot` transport invokes it. Fails
@@ -68,6 +64,7 @@ export const dispatchDelivery = (
 			discord: (config) => runHttpTransport(discordTransport, input(config), runtime),
 			telegram: (config) => runHttpTransport(telegramTransport, input(config), runtime),
 			email: (config) => runEffectTransport(emailTransport, input(config), deps),
+			chat: (config) => runEffectTransport(chatTransport, input(config), deps),
 		}),
 	)
 }

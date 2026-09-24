@@ -20,6 +20,10 @@ import type { DispatchContext } from "./context"
  * `server.address` only — never `url.path`, and never `url.full`.
  */
 
+/** Chat posts must not happen for these destinations. */
+const failingChatPost = () =>
+	Effect.fail(new AlertDeliveryError({ message: "unexpected postChatAlert", destinationType: "chat" }))
+
 const DESTINATION_ID = Schema.decodeUnknownSync(AlertDestinationId)("7c6b5a49-3821-4e0f-9d8c-7b6a59483726")
 
 const HTTP_SPAN = "AlertDelivery.http"
@@ -67,6 +71,7 @@ const contextFor = (secretConfig: DispatchContext["secretConfig"]): DispatchCont
 })
 
 const deps = (token = "xoxb-token"): DispatchDeps => ({
+	postChatAlert: failingChatPost,
 	sendEmail: () =>
 		Effect.fail(new AlertDeliveryError({ message: "unexpected sendEmail", destinationType: "email" })),
 	resolveSlackBotToken: () => Effect.succeed(token),

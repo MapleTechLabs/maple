@@ -7,7 +7,7 @@
 import { type ChatTurnOrigin, prReviewSessionId } from "@maple/domain/chat-session"
 import { MAPLE_NATIVE_SESSION_ID_ATTR } from "@maple/domain/gen-ai"
 import { ChatConnectorId, ExternalUserId, OrgId, UserId } from "@maple/domain/primitives"
-import { Effect, Schema } from "effect"
+import { Effect, Result, Schema } from "effect"
 import { assert, describe, it } from "vitest"
 import {
 	buildDiagnosisCompletion,
@@ -20,6 +20,8 @@ import {
 } from "./tools"
 import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
 import { makeRecordingTracer } from "@maple/backend/testing/recording-tracer"
+import type { PrReviewSubmission } from "@maple/domain/http"
+import type { ReviewCoverage } from "./review-coverage"
 
 const orgId = Schema.decodeSync(OrgId)("org_test")
 const human = Schema.decodeSync(UserId)("user_test")
@@ -153,5 +155,75 @@ describe("buildReviewCompletion", () => {
 
 	it("gives a session that is not a review no review tool", () => {
 		assert.isUndefined(buildReview(INVESTIGATION_SESSION, { kind: "autonomous" }))
+	})
+
+	describe("with files unread", () => {
+		const coverage = (unread: ReadonlyArray<string>): ReviewCoverage => ({
+			observe: () => {},
+			unread: () => unread,
+		})
+		const recording = () => {
+			const filed: Array<unknown> = []
+			const submit: SubmitReview = (_org, _id, request) => Effect.sync(() => filed.push(request))
+			return { filed, submit }
+		}
+		const submitWith = (submit: SubmitReview, unread: ReadonlyArray<string>, partial = false) => {
+			const completion = buildReviewCompletion(
+				REVIEW_SESSION,
+				tenantFor(human),
+				{ kind: "autonomous" },
+				submit,
+				makeRunUsage(),
+				MODEL_NAME,
+				partial,
+				undefined,
+				coverage(unread),
+			)
+			assert.isDefined(completion)
+			return {
+				completion: completion!,
+				call: (submission: PrReviewSubmission) =>
+					Effect.runPromise(
+						Effect.result(completion!.handlers[SUBMIT_REVIEW](submission, {} as never)),
+					),
+			}
+		}
+		const CLEAN: PrReviewSubmission = { verdict: "clean", summary: "Adds a retry to the order client." }
+
+		it("refuses the first submission, naming the files, and records the second", async () => {
+			const { filed, submit } = recording()
+			const { completion, call } = submitWith(submit, ["src/b.ts"])
+
+			const first = await call(CLEAN)
+			assert.isTrue(Result.isFailure(first))
+			assert.include(Result.isFailure(first) ? first.failure.message : "", "src/b.ts")
+			assert.lengthOf(filed, 0)
+			assert.isFalse(completion.submitted())
+
+			const second = await call(CLEAN)
+			assert.isTrue(Result.isSuccess(second))
+			assert.lengthOf(filed, 1)
+			assert.isTrue(completion.submitted())
+		})
+
+		it("records straight away when every reviewed file was read", async () => {
+			const { filed, submit } = recording()
+			assert.isTrue(Result.isSuccess(await submitWith(submit, []).call(CLEAN)))
+			assert.lengthOf(filed, 1)
+		})
+
+		it("never holds a close-out or a not_applicable verdict", async () => {
+			const closeOut = recording()
+			assert.isTrue(Result.isSuccess(await submitWith(closeOut.submit, ["src/b.ts"], true).call(CLEAN)))
+			assert.lengthOf(closeOut.filed, 1)
+
+			const notApplicable = recording()
+			const result = await submitWith(notApplicable.submit, ["src/b.ts"]).call({
+				verdict: "not_applicable",
+				summary: "Only docs changed.",
+			})
+			assert.isTrue(Result.isSuccess(result))
+			assert.lengthOf(notApplicable.filed, 1)
+		})
 	})
 })

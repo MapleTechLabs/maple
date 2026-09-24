@@ -70,16 +70,19 @@ describe("slack authorize URL", () => {
 		assert.isNull(url.searchParams.get("user_scope"))
 	})
 
-	it("asks for the six scopes the connector actually uses", () => {
+	it("asks for the nine scopes the connector actually uses", () => {
 		assert.deepStrictEqual(
 			[...BOT_SCOPES],
 			[
 				"app_mentions:read",
 				"chat:write",
+				"chat:write.public",
 				"channels:history",
 				"groups:history",
 				"im:history",
 				"mpim:history",
+				"channels:read",
+				"groups:read",
 			],
 		)
 	})
