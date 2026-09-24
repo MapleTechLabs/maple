@@ -17,11 +17,11 @@ If a test fails, Maple surfaces the provider's own rejection reason in the toast
 
 ## Slack
 
-Install Maple's Slack app, then choose the channel where alerts should be delivered. Maple uses the
-installed bot connection; incoming-webhook destinations are not supported.
+Link your Slack workspace to Maple, then choose the channel where alerts should be delivered. Maple
+posts through the linked workspace's bot; incoming-webhook destinations are not supported.
 
-1. Open **Alerts → Settings** and choose **Add destination → Slack**.
-2. Install or reconnect the Maple Slack app when prompted.
+1. Open **Settings → Integrations → Slack** and connect your workspace.
+2. Open **Alerts → Settings**, choose **Add destination**, and pick the linked workspace.
 3. Pick a channel and save the destination.
 
 ## PagerDuty

@@ -1,5 +1,5 @@
 /**
- * Grainient — React Bits' grainy gradient swirl (reactbits.dev/backgrounds/grainient),
+ * Grainient: React Bits' grainy gradient swirl (reactbits.dev/backgrounds/grainient),
  * vendored for the /compare hero pairing.
  *
  * One full-screen triangle, one fragment shader, rendered through `ogl`
@@ -342,7 +342,7 @@ export default function Grainient({
 		const loop = (t: number) => {
 			syncProps()
 			// Paused (reduced motion): the clock holds, the frame still renders
-			// so a colour change shows.
+			// so a color change shows.
 			if (!propsRef.current.paused) u.iTime.value = (t - t0) * 0.001
 			renderer.render({ scene: mesh })
 			raf = requestAnimationFrame(loop)

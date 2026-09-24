@@ -10,10 +10,10 @@ import { AlertsService } from "@maple/backend/services/alerts/AlertsService"
 export function registerListAlertDestinationsTool(server: McpToolRegistrar) {
 	server.tool(
 		"list_alert_destinations",
-		"List the notification destinations alert rules can deliver to (Slack, Discord, PagerDuty, webhook, email, …) with their IDs, type, and delivery health. Pass these IDs as destination_ids to create_alert_rule / update_alert_rule.",
+		"List the notification destinations alert rules can deliver to (chat channels such as Slack, Discord, PagerDuty, webhook, email, …) with their IDs, type, and delivery health. Pass these IDs as destination_ids to create_alert_rule / update_alert_rule.",
 		Schema.Struct({
 			type: optionalStringParam(
-				"Filter by destination type: slack-bot, pagerduty, webhook, hazel-oauth, discord, telegram, email, chat",
+				"Filter by destination type: pagerduty, webhook, hazel-oauth, discord, telegram, email, chat",
 			),
 			enabled_only: optionalBooleanParam("Only return enabled destinations (default: false)"),
 		}),

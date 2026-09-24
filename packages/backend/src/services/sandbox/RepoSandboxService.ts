@@ -130,6 +130,11 @@ export interface RepoSandboxServiceApi {
 		target: RepositoryTarget,
 		options: ExecOptions,
 	) => Effect.Effect<SandboxCommandResult, SandboxError>
+	/**
+	 * Check the commit out ahead of the first tool that needs it. Succeeds once the checkout is
+	 * ready; a clone still running when the wait ends carries on in the container regardless.
+	 */
+	readonly prepare: (orgId: OrgId, target: RepositoryTarget) => Effect.Effect<void, SandboxError>
 }
 
 const limits = (timeoutSeconds: number) =>
@@ -311,7 +316,13 @@ export class RepoSandboxService extends Context.Service<RepoSandboxService, Repo
 				},
 			)
 
-			return { grep, listFiles, readFile, exec } satisfies RepoSandboxServiceApi
+			const prepare: RepoSandboxServiceApi["prepare"] = Effect.fn("RepoSandboxService.prepare")(
+				function* (orgId, target) {
+					yield* run(orgId, target, "true", [], undefined, SANDBOX_DEFAULT_TIMEOUT_SECONDS)
+				},
+			)
+
+			return { grep, listFiles, readFile, exec, prepare } satisfies RepoSandboxServiceApi
 		}),
 	},
 ) {

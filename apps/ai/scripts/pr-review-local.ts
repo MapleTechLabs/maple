@@ -31,11 +31,17 @@ import {
 	OrgId,
 	type PullRequestContext,
 	type PullRequestFile,
+	PrReviewId,
 	PullRequestFileStatus,
 	type SubmitPrReviewRequest,
 	UserId,
 } from "@maple/domain/http"
-import { buildPublication, buildReviewKickoff } from "@maple/backend/services/pr-review/PrReviewService"
+import {
+	buildPublication,
+	buildReviewKickoff,
+	PR_REVIEW_RULE_FILES,
+	type RepositoryRuleFile,
+} from "@maple/backend/services/pr-review/PrReviewService"
 import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
 import { Effect, Option, References, Schema } from "effect"
 import { AGENTS } from "@/chat/agents"
@@ -117,6 +123,22 @@ const parseArgs = (argv: ReadonlyArray<string>): Args => {
 }
 
 // Processes
+
+/**
+ * The rule files at the base, as production's kickoff states them. A file absent from the base is
+ * skipped; one present but unreadable makes the whole read `undefined`, as a failed read does in
+ * production, so the agent reads the rules itself instead of reviewing without them.
+ */
+const readRules = (dir: string, baseSha: string): ReadonlyArray<RepositoryRuleFile> | undefined => {
+	const files: Array<RepositoryRuleFile> = []
+	for (const path of PR_REVIEW_RULE_FILES) {
+		if (!run(["git", "cat-file", "-e", `${baseSha}:${path}`], dir).ok) continue
+		const shown = run(["git", "show", `${baseSha}:${path}`], dir)
+		if (!shown.ok) return undefined
+		files.push({ path, content: shown.stdout })
+	}
+	return files
+}
 
 const run = (cmd: ReadonlyArray<string>, cwd?: string) => {
 	const [bin = "", ...rest] = cmd
@@ -454,9 +476,9 @@ const fetchPullRequestContext = (args: Args, headSha: string): PullRequestContex
 	const checks = read(GhContextChecks, `${slug}/commits/${headSha}/check-runs?per_page=100`).check_runs
 	return {
 		commits: commits.map((commit) => ({ sha: commit.sha, message: commit.commit.message })),
-		// Maple's own summary comment is left out, as the production tool leaves out the App's.
+		// Maple's own review comments (one per review) are left out, as the production tool leaves out the App's.
 		comments: comments
-			.filter((comment) => !(comment.body ?? "").includes("<!-- maple-pr-review -->"))
+			.filter((comment) => !(comment.body ?? "").includes("<!-- maple-pr-review"))
 			.map((comment) => ({
 				author: comment.user?.login ?? "(deleted user)",
 				path: comment.path ?? null,
@@ -794,6 +816,7 @@ export const reviewLocally = async (
 		baseSha: pr.base.sha,
 		fork: pr.head.repo !== null && pr.head.repo.full_name.toLowerCase() !== repository.toLowerCase(),
 		body: pr.body,
+		rules: readRules(clone.dir, pr.base.sha),
 	})
 	const { executor, cleanup: removeWorktrees } = makeExecutor({
 		repository,
@@ -1002,6 +1025,8 @@ export const reviewLocally = async (
 
 	const report = submitted.report
 	const publication = buildPublication({
+		// Each run is its own review, so a posted run gets a comment of its own.
+		reviewId: Schema.decodeSync(PrReviewId)(randomUUID()),
 		repositoryUrl: `https://github.com/${repository}`,
 		number: args.number,
 		headSha: pr.head.sha,

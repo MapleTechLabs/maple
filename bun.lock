@@ -273,7 +273,7 @@
     "apps/sandbox": {
       "name": "@maple/sandbox",
       "dependencies": {
-        "@cloudflare/sandbox": "0.12.9",
+        "@cloudflare/sandbox": "0.12.10",
         "@maple/domain": "workspace:*",
         "@maple/infra": "workspace:*",
         "effect": "catalog:effect",
@@ -1190,7 +1190,7 @@
 
     "@cloudflare/kv-asset-handler": ["@cloudflare/kv-asset-handler@0.5.0", "", {}, "sha512-jxQYkj8dSIzc0cD6cMMNdOc1UVjqSqu8BZdor5s8cGjW2I8BjODt/kWPVdY+u9zj3ms75Q5qaZgnxUad83+eAg=="],
 
-    "@cloudflare/sandbox": ["@cloudflare/sandbox@0.12.9", "", { "dependencies": { "@cloudflare/containers": "^0.3.5", "aws4fetch": "^1.0.20", "capnweb": "^0.8.0", "hono": "^4.13.0" }, "peerDependencies": { "@openai/agents": "^0.3.3", "@opencode-ai/sdk": "^1.1.40", "@xterm/xterm": ">=5.0.0" }, "optionalPeers": ["@openai/agents", "@opencode-ai/sdk", "@xterm/xterm"] }, "sha512-JlCQ8adVaHT3TrZO13X6US2LJTyQ4YvoEZpfh5EewRqcxPfMHZNJPB/1dsRdiFqmtzpz+lMxGazSUa2H/g2IKg=="],
+    "@cloudflare/sandbox": ["@cloudflare/sandbox@0.12.10", "", { "dependencies": { "@cloudflare/containers": "^0.3.5", "aws4fetch": "^1.0.20", "capnweb": "^0.8.0", "hono": "^4.13.7" }, "peerDependencies": { "@openai/agents": "^0.3.3", "@opencode-ai/sdk": "^1.1.40", "@xterm/xterm": ">=5.0.0" }, "optionalPeers": ["@openai/agents", "@opencode-ai/sdk", "@xterm/xterm"] }, "sha512-245s6xEdR1v0Jti0YYd8ORWcTG/f/ksjJfpubvnbky0KxFC/ZDOpbpNKdtyiRBYZqmJGtEncYW7Cwge47tDrpg=="],
 
     "@cloudflare/unenv-preset": ["@cloudflare/unenv-preset@2.16.1", "", { "peerDependencies": { "unenv": "2.0.0-rc.24", "workerd": ">1.20260305.0 <2.0.0-0" }, "optionalPeers": ["workerd"] }, "sha512-ECxObrMfyTl5bhQf/lZCXwo5G6xX9IAUo+nDMKK4SZ8m4Jvvxp52vilxyySSWh2YTZz8+HQ07qGH/2rEom1vDw=="],
 

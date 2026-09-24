@@ -6,7 +6,7 @@ import {
 	rankChannels,
 	resolveSearchQuery,
 	scoreChannelName,
-} from "./slack-channel-search"
+} from "./channel-search"
 
 const channel = (name: string, is_member = true) => ({ name, is_member })
 const names = (list: ReadonlyArray<{ name: string }>) => list.map((c) => c.name)

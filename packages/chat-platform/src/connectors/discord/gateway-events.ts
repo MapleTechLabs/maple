@@ -142,6 +142,9 @@ const interactionCreate = (data: unknown): DispatchResult => {
 					id: member.user.id,
 					displayName: member.nick ?? member.user.global_name ?? member.user.username,
 				},
+				// The interaction's follow-up webhook: the one way to post something only the
+				// clicker sees, valid for fifteen minutes. See `discordOutbound.whisper`.
+				replyHandle: `${interaction.application_id}/${interaction.token}`,
 			},
 		],
 		requests: [acknowledgeInteraction(interaction.id, interaction.token)],

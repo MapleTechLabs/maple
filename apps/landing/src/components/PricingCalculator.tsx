@@ -94,7 +94,7 @@ export function PricingCalculator({
 	const savingsPct = competitorCost.total > 0 ? Math.round((savings / competitorCost.total) * 100) : 0
 
 	// A range input fires onChange per tick of the drag, so the event is emitted
-	// once the slider settles — one row per adjustment, not one per pixel.
+	// once the slider settles: one row per adjustment rather than one per pixel.
 	const settleTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
 	const trackSliderSettled = (key: string, value: number) => {
 		if (settleTimer.current) clearTimeout(settleTimer.current)
@@ -169,11 +169,8 @@ export function PricingCalculator({
 			<div className="grid grid-cols-1 gap-px border-t border-border bg-border md:grid-cols-2">
 				{/* Maple card */}
 				<div className="bg-bg-elevated p-6 md:p-8">
-					<div className="flex items-center justify-between mb-4">
+					<div className="mb-4">
 						<span className="text-[10px] uppercase tracking-wider text-primary">Maple</span>
-						<span className="rounded-full bg-primary/15 px-2 py-0.5 text-[10px] font-medium text-primary">
-							Recommended
-						</span>
 					</div>
 					<div className="mb-4 font-mono text-3xl font-medium tabular-nums tracking-[-0.02em] text-primary md:text-4xl">
 						{formatCurrency(mapleCost.total)}
@@ -238,12 +235,12 @@ export function PricingCalculator({
 								Save {formatCurrency(savings)}/month
 							</div>
 							<p className="text-sm text-fg-muted mt-1">
-								That's <span className="font-semibold text-primary">{savingsPct}% less</span>{" "}
-								than {config.name} — or{" "}
+								<span className="font-semibold text-primary">{savingsPct}% less</span> than{" "}
+								{config.name}, or{" "}
 								<span className="font-semibold text-primary">
 									{formatCurrency(savings * 12)}/year
 								</span>{" "}
-								back in your budget.
+								over twelve months.
 							</p>
 						</div>
 						<a

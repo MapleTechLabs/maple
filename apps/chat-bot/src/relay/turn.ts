@@ -17,6 +17,7 @@ import {
 	driveChatTurn,
 	WORKSPACE_CREDENTIALS,
 	type ChatActionRequest,
+	type ChatBlock,
 	type ChatChartRef,
 	type ChatConversation,
 	type ChatHistoryMessage,
@@ -145,9 +146,23 @@ const UNAVAILABLE_NOTICE = "Maple's agent can't be reached from here right now."
 /** The control outlived what it pointed at: a wiped conversation, or a build that changed the log. */
 const PROPOSAL_GONE_NOTICE = "That change isn't waiting for a decision any more."
 
-/** Where somebody goes to link their account — Maple's own page, which is where a session is. */
-const LINK_NOTICE = (appBaseUrl: string) =>
-	`Link your chat account to Maple before approving changes: ${appBaseUrl}/integrations`
+/**
+ * Why a click was refused, and the one step that fixes it. Bold on its first line, because it
+ * answers a button press and has to read as the answer rather than as another line of the thread.
+ * The link is Maple's own page, which is where a session is.
+ */
+const linkNotice = (connector: ChatConnectorId, appBaseUrl: string) => {
+	const platform = connector.charAt(0).toUpperCase() + connector.slice(1)
+	return [
+		{
+			kind: "prose" as const,
+			markdown: [
+				`**Link your ${platform} account to Maple to approve this.**`,
+				`A change you approve runs as your Maple user, with your permissions and your name on it, so Maple has to know which user you are. [Link your account](${appBaseUrl}/integrations), then press Approve again.`,
+			].join("\n"),
+		},
+	]
+}
 
 const decodeExternalUserId = Schema.decodeUnknownOption(ExternalUserId)
 
@@ -168,6 +183,36 @@ const say = (transport: ChatOutboundTransport, target: ChatTarget, text: string)
 		Effect.tapError((error) =>
 			Effect.logWarning("Chat notice could not be posted").pipe(
 				Effect.annotateLogs({ "error.type": error.operation }),
+			),
+		),
+		Effect.ignore,
+	)
+
+/**
+ * Answer a click where only the person who clicked sees it: every reply to a click is about them,
+ * and nobody else in the channel needs to read it. A platform that cannot says it in the open,
+ * because an unanswered click reads as a broken button.
+ */
+const tellClicker = (
+	transport: ChatOutboundTransport,
+	action: InboundAction,
+	blocks: ReadonlyArray<ChatBlock>,
+) =>
+	transport.whisper(action, blocks).pipe(
+		Effect.catch((error) =>
+			Effect.logWarning("Chat notice could not be shown privately").pipe(
+				Effect.annotateLogs({ "error.type": error.operation }),
+				Effect.andThen(
+					transport
+						.post(replyTarget(action), blocks)
+						.pipe(
+							Effect.tapError((error) =>
+								Effect.logWarning("Chat notice could not be posted").pipe(
+									Effect.annotateLogs({ "error.type": error.operation }),
+								),
+							),
+						),
+				),
 			),
 		),
 		Effect.ignore,
@@ -423,7 +468,7 @@ const settleAction = Effect.fn("chat_bot.settle_approval")(function* <R>(
 	// link, and one that cannot lets anyone in the conversation decide.
 	if (ports.supportsIdentity && linkedUserId === undefined) {
 		yield* Effect.annotateCurrentSpan({ "maple.chat.approval": "unlinked" })
-		return yield* say(transport, replyTarget(action), LINK_NOTICE(ports.appBaseUrl))
+		return yield* tellClicker(transport, action, linkNotice(action.connector, ports.appBaseUrl))
 	}
 	yield* Effect.annotateCurrentSpan({
 		"maple.chat.approval.as": linkedUserId === undefined ? "connector" : "user",
@@ -433,7 +478,7 @@ const settleAction = Effect.fn("chat_bot.settle_approval")(function* <R>(
 	if (session === undefined) {
 		yield* Effect.logError("No chat session binding on this deployment")
 		yield* Effect.annotateCurrentSpan({ "maple.chat.approval": "no_binding" })
-		return yield* say(transport, replyTarget(action), UNAVAILABLE_NOTICE)
+		return yield* tellClicker(transport, action, notice(UNAVAILABLE_NOTICE))
 	}
 
 	const outcome = yield* Effect.tryPromise({
@@ -460,7 +505,7 @@ const settleAction = Effect.fn("chat_bot.settle_approval")(function* <R>(
 			Effect.annotateLogs({ "error.type": summarizeCause(outcome.cause) }),
 		)
 		yield* Effect.annotateCurrentSpan({ "maple.chat.approval": "unreachable" })
-		return yield* say(transport, replyTarget(action), UNAVAILABLE_NOTICE)
+		return yield* tellClicker(transport, action, notice(UNAVAILABLE_NOTICE))
 	}
 	yield* Effect.annotateCurrentSpan({ "maple.chat.approval": outcome.value })
 
@@ -469,7 +514,7 @@ const settleAction = Effect.fn("chat_bot.settle_approval")(function* <R>(
 	// which for this one would mean editing the message after a decision that never happened.
 	switch (outcome.value) {
 		case "unknown":
-			return yield* say(transport, replyTarget(action), PROPOSAL_GONE_NOTICE)
+			return yield* tellClicker(transport, action, notice(PROPOSAL_GONE_NOTICE))
 		// Somebody got there first, or this click is the one that decided it. Both re-render from
 		// the transcript, which is idempotent and costs nothing but a read — and it is what lets a
 		// second click REPAIR a message whose first update failed, rather than leaving controls

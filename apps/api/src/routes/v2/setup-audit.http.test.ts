@@ -31,7 +31,6 @@ import {
 	makeWarehouseServiceStub,
 	Phase1ResourceStubsLayer,
 	PlanetScaleServiceStubsLayer,
-	SlackIntegrationServiceStubLayer,
 	TelemetryServiceStubsLayer,
 } from "./v2-test-support"
 import { compiledQueryOf } from "@maple/query-engine/execution"
@@ -144,7 +143,6 @@ const makeHarness = (warehouse: WarehouseQueryServiceApi = warehouseStub()) => {
 		Layer.provide(V2TransportErrorBoundaryLive),
 		Layer.provide(AlertsServiceStubLayer),
 		Layer.provide(Phase1ResourceStubsLayer),
-		Layer.provide(SlackIntegrationServiceStubLayer),
 		Layer.provide(PlanetScaleServiceStubsLayer),
 		Layer.provide(TelemetryServiceStubsLayer),
 		Layer.provide(warehouseLive),

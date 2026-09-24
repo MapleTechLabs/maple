@@ -64,7 +64,7 @@ const statusFailureMessage = (providerLabel: string, status: number, detail: str
  * `error.error.retryable` off whichever one it gets.
  *
  * A transport overrides this only when its provider disagrees with the HTTP
- * convention — see `slack-bot`, which reports channel failures as 200 + a body.
+ * convention — see `telegram`, which reports failures as 200 + a body.
  */
 export const failureForStatus = (
 	status: number,
@@ -118,7 +118,7 @@ const sendHttp = Effect.fn("AlertDelivery.http", { kind: "client" })(function* (
 
 	// Detached from `runtime` on purpose: `runtime.fetchFn(...)` is a METHOD
 	// call, so workerd's global `fetch` runs with `this === runtime` and throws
-	// "Illegal invocation". Only the unguarded transports (slack-bot, pagerduty)
+	// "Illegal invocation". Only the unguarded transports (pagerduty, telegram)
 	// hit it — the guarded ones already launder `fetch` through `safeFetch`,
 	// which calls it as a bare local.
 	const { fetchFn } = runtime
@@ -166,17 +166,13 @@ const sendHttp = Effect.fn("AlertDelivery.http", { kind: "client" })(function* (
 	return response
 })
 
-export const runHttpTransport = <Config, Prepared>(
-	transport: HttpTransport<Config, Prepared>,
+export const runHttpTransport = <Config>(
+	transport: HttpTransport<Config>,
 	input: RenderInput<Config>,
 	runtime: TransportRuntime,
 ): Effect.Effect<DispatchResult, AlertDeliveryFailure> =>
 	Effect.gen(function* () {
-		const prepared = transport.prepare
-			? yield* transport.prepare(input)
-			: // `void` for every transport that declares no prepare step.
-				(undefined as Prepared)
-		const spec = transport.render(input, prepared)
+		const spec = transport.render(input)
 		const response = yield* sendHttp(spec, transport, runtime)
 
 		if (!response.ok) {
@@ -201,8 +197,8 @@ export const runHttpTransport = <Config, Prepared>(
 			return yield* Effect.fail(failure)
 		}
 
-		// A 2xx is not proof of delivery for every provider — Slack answers 200
-		// with `{ ok: false, error }` — so a transport may claim the body.
+		// A 2xx is not proof of delivery for every provider — Telegram answers 200
+		// with `{ ok: false }` — so a transport may claim the body.
 		if (transport.interpret) {
 			const rawBody = yield* Effect.tryPromise({
 				try: () => response.text(),

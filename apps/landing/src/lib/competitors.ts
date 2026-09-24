@@ -7,7 +7,7 @@
  * not import `.astro` or `astro:i18n`.
  *
  * The shape is difference-first. A comparison is not a feature matrix with
- * two columns of checkmarks — those pages had eleven ✓/✓ rows out of sixteen
+ * two columns of checkmarks: those pages had eleven ✓/✓ rows out of sixteen
  * and buried the five that mattered. Each entry instead carries:
  *
  * - `differences`: rows where the two tools actually diverge, each cell a
@@ -35,7 +35,7 @@ export type Edge = "maple" | "competitor" | "even"
 export interface Source {
 	label: string
 	url: string
-	/** `YYYY-MM` — the month the claim was last checked against the page. */
+	/** `YYYY-MM`: the month the claim was last checked against the page. */
 	checked: string
 }
 
@@ -153,6 +153,8 @@ export interface Competitor {
 }
 
 const CHECKED = "2026-08"
+/** Pricing pages and the docs the price rows cite were re-read on 2026-09-25. */
+const CHECKED_PRICING = "2026-09"
 /** SigNoz and Axiom were added after the others and checked separately. */
 const CHECKED_SIGNOZ = "2026-09"
 const CHECKED_AXIOM = "2026-09"
@@ -322,21 +324,21 @@ export const competitors: Competitor[] = [
 			{ question: m.cmp_dd_faq_5_q, answer: m.cmp_dd_faq_5_a },
 		],
 		sources: [
-			{ label: "Datadog pricing", url: "https://www.datadoghq.com/pricing/", checked: CHECKED },
+			{ label: "Datadog pricing", url: "https://www.datadoghq.com/pricing/", checked: CHECKED_PRICING },
 			{
 				label: "Datadog: OpenTelemetry in Datadog",
 				url: "https://docs.datadoghq.com/opentelemetry/",
-				checked: CHECKED,
+				checked: CHECKED_PRICING,
 			},
 			{
 				label: "Datadog: Log Management pricing",
 				url: "https://www.datadoghq.com/pricing/?product=log-management",
-				checked: CHECKED,
+				checked: CHECKED_PRICING,
 			},
 			{
 				label: "Datadog: Bits AI and MCP Server",
 				url: "https://docs.datadoghq.com/bits_ai/mcp_server/",
-				checked: CHECKED,
+				checked: CHECKED_PRICING,
 			},
 			{
 				label: "Datadog integrations",
@@ -472,7 +474,7 @@ export const competitors: Competitor[] = [
 			{ question: m.cmp_gf_faq_5_q, answer: m.cmp_gf_faq_5_a },
 		],
 		sources: [
-			{ label: "Grafana Cloud pricing", url: "https://grafana.com/pricing/", checked: CHECKED },
+			{ label: "Grafana Cloud pricing", url: "https://grafana.com/pricing/", checked: CHECKED_PRICING },
 			{
 				label: "Grafana licensing (AGPL-3.0)",
 				url: "https://grafana.com/licensing/",
@@ -617,7 +619,7 @@ export const competitors: Competitor[] = [
 			{ question: m.cmp_nr_faq_5_q, answer: m.cmp_nr_faq_5_a },
 		],
 		sources: [
-			{ label: "New Relic pricing", url: "https://newrelic.com/pricing", checked: CHECKED },
+			{ label: "New Relic pricing", url: "https://newrelic.com/pricing", checked: CHECKED_PRICING },
 			{
 				label: "New Relic: OpenTelemetry",
 				url: "https://docs.newrelic.com/docs/opentelemetry/",
@@ -626,7 +628,7 @@ export const competitors: Competitor[] = [
 			{
 				label: "New Relic: data retention",
 				url: "https://docs.newrelic.com/docs/data-apis/manage-data/manage-data-retention/",
-				checked: CHECKED,
+				checked: CHECKED_PRICING,
 			},
 			{ label: "New Relic AI", url: "https://newrelic.com/platform/new-relic-ai", checked: CHECKED },
 			{
@@ -671,7 +673,7 @@ export const competitors: Competitor[] = [
 				topic: m.cmp_topic_retention,
 				maple: m.cmp_d0_retention_maple,
 				competitor: m.cmp_d0_retention_them,
-				edge: "maple",
+				edge: "competitor",
 				source: 0,
 			},
 			{
@@ -688,6 +690,14 @@ export const competitors: Competitor[] = [
 				maple: m.cmp_d0_ai_maple,
 				competitor: m.cmp_d0_ai_them,
 				edge: "even",
+			},
+			{
+				id: "synthetics",
+				topic: m.cmp_topic_synthetics,
+				maple: m.cmp_dd_synthetics_maple,
+				competitor: m.cmp_d0_synthetics_them,
+				edge: "competitor",
+				source: 0,
 			},
 			{
 				id: "promql",
@@ -727,7 +737,7 @@ export const competitors: Competitor[] = [
 			{ question: m.cmp_d0_faq_5_q, answer: m.cmp_d0_faq_5_a },
 		],
 		sources: [
-			{ label: "Dash0 pricing", url: "https://www.dash0.com/pricing", checked: CHECKED },
+			{ label: "Dash0 pricing", url: "https://www.dash0.com/pricing", checked: CHECKED_PRICING },
 			{ label: "Dash0 on GitHub", url: "https://github.com/dash0hq", checked: CHECKED },
 			{ label: "Dash0 documentation", url: "https://www.dash0.com/documentation", checked: CHECKED },
 		],

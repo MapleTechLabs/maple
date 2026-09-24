@@ -45,7 +45,7 @@ fix unnecessary real waits/repeated setup, split an oversized file, or update
 the measured per-file estimate. Do not simply increase the runtime budget.
 
 Bun-native CLI and otel-helper tests share unsharded lanes with each other, never
-with Vitest flags, and keep their original arguments; Rust and the standalone Slack agent retain their dedicated workflows.
+with Vitest flags, and keep their original arguments; Rust retains its dedicated workflow.
 The runtime budget still applies to the Bun lanes. If those suites grow beyond it,
 they need runner-specific splitting rather than Vitest flags.
 

@@ -250,7 +250,7 @@ What each kind of Worker keeps beside the module:
   second declaration replaces the first's registration, props included.
 - **Background telemetry** (`api`): queue batches and cron ticks run under their own SDK
   instance (`eventTelemetry` in `@maple/infra/worker-telemetry`, provided around the event)
-  so `maple-vcs-sync`, `maple-planetscale-webhooks` and `maple-slack-reconcile` keep their
+  so `maple-vcs-sync` and `maple-planetscale-webhooks` keep their
   own service names — background work sharing `maple-api` skewed its p99 to 32s
   (2026-09-04). The layer graphs those events build carry no tracer or logger of their own.
 - **Durable Object and Workflows** (`api`): alchemy's Effect-native forms, yielded from the init.

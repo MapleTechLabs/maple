@@ -159,6 +159,14 @@ export interface ChatOutboundTransport {
 		ref: ChatMessageRef,
 		blocks: ReadonlyArray<ChatBlock>,
 	) => Effect.Effect<void, ChatOutboundError>
+	/**
+	 * Say something only the person who pressed a control can see: a notice about them rather
+	 * than about the conversation, which nobody else in the channel needs to read.
+	 */
+	readonly whisper: (
+		action: InboundAction,
+		blocks: ReadonlyArray<ChatBlock>,
+	) => Effect.Effect<void, ChatOutboundError>
 	/** Show the bot as busy while the first message is still on its way. Best effort by nature. */
 	readonly typing: (target: ChatTarget) => Effect.Effect<void, ChatOutboundError>
 	/**
@@ -243,7 +251,15 @@ export class ChatOutboundError extends Schema.TaggedError<ChatOutboundError>()(
 	{
 		message: Schema.String,
 		connectorId: ChatConnectorId,
-		operation: Schema.Literals(["post", "edit", "typing", "thread", "history", "destinations"]),
+		operation: Schema.Literals([
+			"post",
+			"edit",
+			"whisper",
+			"typing",
+			"thread",
+			"history",
+			"destinations",
+		]),
 		/** The platform's HTTP status, where the failure had one. */
 		status: Schema.optionalKey(Schema.Finite),
 		/**

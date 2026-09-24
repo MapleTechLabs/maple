@@ -14,4 +14,3 @@ import { Effect } from "effect"
 export const vcsSyncModule = Effect.promise(() => import("../vcs-sync-runtime"))
 export const planetScaleWebhookModule = Effect.promise(() => import("../planetscale-webhook-runtime"))
 export const auditEventsModule = Effect.promise(() => import("../audit-events-runtime"))
-export const slackReconcileModule = Effect.promise(() => import("../slack-reconcile-runtime"))

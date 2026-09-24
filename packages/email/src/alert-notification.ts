@@ -10,7 +10,7 @@ import { escapeHtml, fill, preheaderPadding, truncate } from "./template"
 
 /**
  * All values are pre-formatted strings — the api layer formats via the same
- * helpers the Slack/Discord payload builders use, so channels never drift.
+ * helpers the chat/Discord payload builders use, so channels never drift.
  */
 export interface AlertNotificationProps {
 	ruleName: string

@@ -10,7 +10,7 @@
  * OTLP, Maple takes it.
  *
  * Every entry here has a shipping doc page, SDK, integration or channel behind
- * it — this is an inventory, not a roadmap. Marks are shared with the home
+ * it; this is an inventory rather than a roadmap. Marks are shared with the home
  * runtime band via `lib/brand-marks.ts`; the language marks are the same Astro
  * components the docs SDK picker uses. Every chip carries a mark: a naked text
  * chip in a row of marked ones reads as "we forgot", not "no logo exists".
@@ -138,8 +138,8 @@ const groups: { title: string; body: string; link: string; href: string; chips: 
 						<h3 class="text-[13px] font-medium text-fg">{g.title}</h3>
 						<p class="mt-2 text-[12.5px] leading-relaxed text-fg-muted">{g.body}</p>
 
-						{/* Marks carry their brand colour; the name is always printed too — a
-						    mark alone is ambiguous at 14px. */}
+						{/* Marks carry their brand color; the name is always printed too, since
+						    a mark alone is ambiguous at 14px. */}
 						<ul class="mt-5 flex flex-wrap gap-1.5">
 							{g.chips.map((c) => (
 								<li class="inline-flex h-7 items-center gap-1.5 rounded-md border border-border bg-bg-elevated px-2 text-[11.5px] text-fg">

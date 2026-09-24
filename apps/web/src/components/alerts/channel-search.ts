@@ -1,5 +1,5 @@
 /**
- * Ranking for the Slack channel picker.
+ * Ranking for the chat channel picker.
  *
  * The picker holds every channel a workspace has (tens of thousands is a real
  * shape), so search has to be both forgiving — people type `depaler` for
@@ -8,7 +8,7 @@
  * lowercased name, and the caller renders only the top {@link CHANNEL_RESULT_LIMIT}.
  */
 
-/** The shape this module needs; the wire type `V2SlackChannel` is a superset. */
+/** The shape this module needs; the picker maps each listed channel onto it. */
 export interface RankableChannel {
 	readonly name: string
 	readonly is_member: boolean
@@ -24,8 +24,8 @@ export interface PickableChannel extends RankableChannel {
 export const CHANNEL_RESULT_LIMIT = 50
 
 /**
- * Slack channel names are already lowercase, but the list also carries display
- * names from older workspaces, and users type `#` out of habit. Normalise both
+ * Channel names are usually lowercase, but a platform may list display names
+ * too, and users type `#` out of habit. Normalise both
  * sides the same way so neither can miss a match.
  */
 const normalize = (value: string): string => value.trim().toLowerCase().replace(/^#+/, "")

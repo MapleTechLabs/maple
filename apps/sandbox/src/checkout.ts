@@ -14,7 +14,11 @@
 import {
 	SANDBOX_COMMAND_ENV,
 	SANDBOX_MAX_CHECKOUTS,
+	SANDBOX_MIRROR_DIR,
+	SANDBOX_MIRROR_LOCK,
 	SANDBOX_RUN_AS_USER,
+	SANDBOX_SEED_DIR,
+	SANDBOX_SNAPSHOT_DIR,
 	SANDBOX_TRAILER,
 	SANDBOX_WORKSPACE_ROOT,
 	SandboxCheckout,
@@ -69,6 +73,13 @@ export interface SandboxLike {
 	 * which the unprivileged account can read.
 	 */
 	readonly writeFile: (path: string, content: string) => Promise<SandboxWriteResult>
+	/**
+	 * Restore the repository's last mirror backup before a cold container's first clone
+	 * (`mirror-backup.ts`). Absent where there is no backup store, as in tests.
+	 */
+	readonly restoreMirror?: () => Promise<void>
+	/** Ask for a fresh mirror backup if the last is stale. Returns before the archive is written. */
+	readonly backupMirror?: () => Promise<void>
 }
 
 export class SandboxCallError extends Schema.TaggedError<SandboxCallError>()(
@@ -98,6 +109,24 @@ const promise = <A>(run: () => Promise<A>, what: string) =>
 				cause,
 			}),
 	})
+
+/**
+ * A best-effort call into the mirror backup. Its failure costs a full fetch or a stale archive,
+ * never the command the caller asked for, so it is logged and dropped.
+ */
+const optional = (run: (() => Promise<void>) | undefined, what: string) =>
+	run === undefined
+		? Effect.void
+		: // Called with no argument: `tryPromise` hands its callback an AbortSignal, and an RPC
+			// method would try to send it to the Durable Object, which refuses to serialize one.
+			promise(() => run(), what).pipe(
+				Effect.catch((error) =>
+					Effect.logWarning("sandbox mirror backup call failed").pipe(
+						Effect.annotateLogs({ "maple.sandbox.call": what, "error.message": error.message }),
+					),
+				),
+				Effect.asVoid,
+			)
 
 /** A commit's checkout directory. */
 export const checkoutDir = (sha: string): string => `${SANDBOX_WORKSPACE_ROOT}/${sha}`
@@ -185,10 +214,17 @@ export const parseTrailer = (
 	return Option.some({ body, trailer: { exitCode, stdoutBytes, stderrBytes, isolation } })
 }
 
-/** The clone, as a single shell program run in the background. */
+/**
+ * The clone, as a single shell program run in the background.
+ *
+ * The container keeps one bare mirror of the repository, and every commit's checkout is a
+ * `--shared` clone of it: the first commit pays the whole history, later ones fetch only what
+ * the mirror lacks. A restored backup (`SANDBOX_SEED_DIR`) stands in for the first fetch.
+ */
 export const cloneScript = (checkout: SandboxCheckout): string => {
 	const dir = checkoutDir(checkout.sha)
 	const credential = sandboxCredentialPath(checkout.sha)
+	const mirror = shellQuote(SANDBOX_MIRROR_DIR)
 	// The token is read out of a root-only file by a credential helper rather than
 	// carried in the URL: this process's arguments are readable by the account the
 	// agent's own commands run as, and the two overlap by design.
@@ -198,18 +234,43 @@ export const cloneScript = (checkout: SandboxCheckout): string => {
 		// `set -e` exits the moment a clone fails, so removal cannot be a later
 		// line in the script: the trap is what guarantees the token leaves disk
 		// on every path out.
-		`trap 'rm -f ${credential}' EXIT`,
+		// The temporary mirror is removed too, so a seed copy that fails midway leaves nothing behind.
+		`trap 'rm -f ${credential}; rm -rf "\${m:-}"' EXIT`,
+		// Nothing a fetch or clone writes may be writable by the agent's account.
+		"umask 022",
 		`id -u ${SANDBOX_RUN_AS_USER} >/dev/null 2>&1 || useradd --system --no-create-home --home-dir /tmp --shell /usr/sbin/nologin ${SANDBOX_RUN_AS_USER}`,
 		// Commands run as an account that does not own the tree, which git refuses to read without this.
 		`git config --system --replace-all safe.directory '*'`,
 		`chmod 600 ${credential}`,
 		`mkdir -p ${shellQuote(SANDBOX_WORKSPACE_ROOT)}`,
-		`t=$(mktemp -d ${shellQuote(`${SANDBOX_WORKSPACE_ROOT}/.clone-XXXXXX`)})`,
-		`git -c ${shellQuote(`credential.helper=${helper}`)} clone --quiet --no-checkout ${shellQuote(checkout.remoteUrl)} "$t"`,
-		`git -C "$t" checkout --quiet --detach ${shellQuote(checkout.sha)}`,
-		// Nothing may leave the credential behind, in git's config or on disk.
-		`git -C "$t" config --unset-all credential.helper 2>/dev/null || true`,
+		// Two commits of one repository clone at once, and the backup snapshot reads the
+		// mirror; one lock keeps each of them from seeing a fetch half-written.
+		`exec 9>${shellQuote(SANDBOX_MIRROR_LOCK)}`,
+		// Root's alone: the agent's account could otherwise hold it and stall every clone.
+		`chmod 600 ${shellQuote(SANDBOX_MIRROR_LOCK)}`,
+		"flock 9",
+		`if [ ! -d ${mirror}/objects ]; then`,
+		`  m=$(mktemp -d ${shellQuote(`${SANDBOX_MIRROR_DIR}.XXXXXX`)})`,
+		`  if [ -d ${shellQuote(SANDBOX_SEED_DIR)}/objects ]; then cp -a ${shellQuote(SANDBOX_SEED_DIR)}/. "$m"/; else git init --quiet --bare "$m"; fi`,
+		// Checkouts borrow the mirror's objects, so nothing may ever prune them.
+		`  git -C "$m" config gc.auto 0`,
+		`  mv -T "$m" ${mirror}`,
+		"  m=",
+		// The seed is a mount over a downloaded archive; once copied it only costs disk.
+		`  fusermount3 -uz ${shellQuote(SANDBOX_SEED_DIR)} 2>/dev/null || true`,
+		`  for d in /var/backups/mounts/*/lower; do fusermount3 -uz "$d" 2>/dev/null || true; done`,
+		`  rm -rf ${shellQuote(SANDBOX_SEED_DIR)} /var/backups/mounts /var/backups/*.sqsh 2>/dev/null || true`,
+		"fi",
+		// Every branch keeps `origin/*` in the checkout what a full clone gave, and the
+		// commit is pinned under its own ref so a force-pushed branch cannot orphan it.
+		`git -C ${mirror} -c ${shellQuote(`credential.helper=${helper}`)} fetch --quiet --no-tags ${shellQuote(checkout.remoteUrl)} '+refs/heads/*:refs/heads/*' ${shellQuote(`+${checkout.sha}:refs/maple/${checkout.sha}`)}`,
 		`rm -f ${credential}`,
+		`chmod -R a+rX,go-w ${mirror}`,
+		`t=$(mktemp -d ${shellQuote(`${SANDBOX_WORKSPACE_ROOT}/.clone-XXXXXX`)})`,
+		`git clone --quiet --shared --no-checkout ${mirror} "$t"`,
+		"exec 9>&-",
+		`git -C "$t" remote set-url origin ${shellQuote(checkout.remoteUrl)}`,
+		`git -C "$t" checkout --quiet --detach ${shellQuote(checkout.sha)}`,
 		// Readable and traversable by the agent account, writable by nobody but root.
 		// `mktemp -d` creates the directory mode 700, so read and execute have to be
 		// added back — removing write alone would leave a tree nothing else can enter.
@@ -226,6 +287,25 @@ export const cloneScript = (checkout: SandboxCheckout): string => {
 }
 
 /**
+ * A point-in-time copy of the mirror for a backup to archive.
+ *
+ * Hard links, taken under the mirror lock: git never rewrites an object or pack in place and
+ * replaces refs by rename, so the copy stays exactly what the mirror was when the lock was held,
+ * while the next fetch carries on. Then repacked into one pack. Exits 3 when there is no mirror.
+ */
+export const snapshotScript = (): string =>
+	[
+		"set -e",
+		`test -d ${shellQuote(SANDBOX_MIRROR_DIR)}/objects || exit 3`,
+		`rm -rf ${shellQuote(SANDBOX_SNAPSHOT_DIR)}`,
+		`flock ${shellQuote(SANDBOX_MIRROR_LOCK)} cp -al ${shellQuote(SANDBOX_MIRROR_DIR)} ${shellQuote(SANDBOX_SNAPSHOT_DIR)}`,
+		// One pack per fetch would otherwise ride every archive into the next container and grow
+		// forever. Repacking the copy unlinks only the copy's names, so the live mirror is untouched
+		// and no lock is held while it runs.
+		`git -C ${shellQuote(SANDBOX_SNAPSHOT_DIR)} repack -a -d -q`,
+	].join("\n")
+
+/**
  * Make sure the commit is checked out, starting the clone if nobody has.
  *
  * `Option.none` means ready. Anything else is the answer the caller should
@@ -239,7 +319,11 @@ export const ensureCheckout = (
 		const dir = checkoutDir(checkout.sha)
 		const redact = (text: string) => boundMessage(redactSecret(text, checkout.token))
 		const present = yield* call(sandbox, `test -d ${shellQuote(`${dir}/.git`)}`)
-		if (present.exitCode === 0) return Option.none()
+		if (present.exitCode === 0) {
+			// Every ready checkout asks; the Durable Object answers from memory unless a day has passed.
+			yield* optional(sandbox.backupMirror, "backupMirror")
+			return Option.none()
+		}
 
 		const id = cloneProcessId(checkout.sha)
 		const running = yield* promise(() => sandbox.getProcess(id), "getProcess")
@@ -248,6 +332,8 @@ export const ensureCheckout = (
 			// handed to a command would sit in `/proc/<pid>/cmdline`, which the account
 			// the agent's own commands run as can read — and the clone overlaps them by
 			// design.
+			// Before the clone, which copies a restored seed into place instead of fetching everything.
+			yield* optional(sandbox.restoreMirror, "restoreMirror")
 			yield* promise(
 				() => sandbox.writeFile(sandboxCredentialPath(checkout.sha), checkout.token),
 				"writeFile",

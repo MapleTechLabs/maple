@@ -1,12 +1,12 @@
 ---
 /**
- * /local — Maple Local as a standalone product.
+ * /local: Maple Local as a standalone product.
  *
  * The page's one job: make it obvious that this is a free, complete
  * observability stack for local development that never needs an account or
- * the hosted service — a lighter replacement for the collector + Jaeger +
- * Prometheus + Loki + Grafana compose file, not "Maple Cloud, but on your
- * laptop". The hosted service appears exactly once, in LocalCTA, as an
+ * the hosted service: a lighter replacement for the collector + Jaeger +
+ * Prometheus + Loki + Grafana compose file rather than "Maple Cloud, but on
+ * your laptop". The hosted service appears exactly once, in LocalCTA, as an
  * optional bridge. Copy stays on outcomes; engine and runtime names live in
  * the docs.
  *
@@ -32,7 +32,7 @@ import Footer from "../components/Footer.astro";
 
 const pageTitle = "Maple Local | One-command observability stack for local development";
 const pageDescription =
-    "A free, standalone observability stack for local dev: traces, logs, metrics, errors, sessions, and a service map from one process on localhost. No Docker, no account, no cloud — an alternative to running a collector, Jaeger, Prometheus, Loki, and Grafana with docker compose.";
+    "A free, standalone observability stack for local development: traces, logs, metrics, errors, sessions, and a service map from one process on localhost.";
 
 /** The six views the local dashboard ships. */
 const surfaces = [
@@ -83,7 +83,7 @@ const faqs = [
     },
     {
         question: "Does it work without an internet connection?",
-        answer: "Yes. With `--offline` the binary serves everything, including the dashboard. The only other network call is a once-per-day check for a newer release, which Homebrew installs skip and which `MAPLE_NO_UPDATE_CHECK=1` disables.",
+        answer: "Yes. With `--offline` the binary serves everything, including the dashboard. The only other network call is a once-per-day check for a newer release. Homebrew installs skip it, and `MAPLE_NO_UPDATE_CHECK=1` disables it.",
     },
     {
         question: "What does it replace?",
@@ -106,7 +106,7 @@ const faqs = [
     <Nav />
     <LocalProductHero />
 
-    <!-- 01 — Replace the compose file. -->
+    <!-- 01: Replace the compose file. -->
     <section class="border-t border-border bg-bg">
         <div class="mx-auto max-w-6xl px-6 py-24 md:py-32">
             <div class="mb-12 max-w-2xl">
@@ -124,7 +124,7 @@ const faqs = [
         </div>
     </section>
 
-    <!-- 02 — Standalone by design. -->
+    <!-- 02: Standalone by design. -->
     <section class="border-t border-border bg-bg">
         <div class="mx-auto max-w-6xl px-6 py-24 md:py-32">
             <div class="mb-12 max-w-2xl">
@@ -133,9 +133,9 @@ const faqs = [
                     No account. No cloud. Nothing leaves your machine.
                 </h2>
                 <p class="mt-5 text-base leading-relaxed text-fg-muted">
-                    Maple Local is not a trial, a free tier, or a client for a hosted service. It is the
-                    complete product running on 127.0.0.1, and it stays complete whether or not you ever
-                    touch anything else Maple makes.
+                    Maple Local is the complete product running on 127.0.0.1. There is no trial and no
+                    hosted service behind it, and it stays complete whether or not you ever touch anything
+                    else Maple makes.
                 </p>
             </div>
             <LocalLoopback />
@@ -145,13 +145,13 @@ const faqs = [
         </div>
     </section>
 
-    <!-- 03 — The full product. -->
+    <!-- 03: The full product. -->
     <section class="border-t border-border bg-bg">
         <div class="mx-auto max-w-6xl px-6 py-24 md:py-32">
             <div class="mb-12 max-w-2xl">
                 <LocalEyebrow label="The dashboard" />
                 <h2 class="font-display text-3xl font-medium leading-[1.06] tracking-[-0.02em] text-fg md:text-4xl">
-                    The full product, not a trace viewer
+                    The full product, on your machine
                 </h2>
                 <p class="mt-5 text-base leading-relaxed text-fg-muted">
                     Six views, one dashboard, all reading your local store. The same screens you'd want
@@ -188,7 +188,7 @@ const faqs = [
         </div>
     </section>
 
-    <!-- 04 — Logs. -->
+    <!-- 04: Logs. -->
     <section class="border-t border-border bg-bg">
         <div class="mx-auto max-w-6xl px-6 py-24 md:py-32">
             <div class="grid gap-4">
@@ -201,15 +201,15 @@ const faqs = [
                     Search the stream, cluster the noise
                 </h3>
                 <p class="mt-5 text-base leading-relaxed text-fg-muted">
-                    Filter by service, severity, text, or trace ID — or run
+                    Filter by service, severity, text, or trace ID, or run
                     <code class="rounded bg-bg-elevated px-1.5 py-0.5 font-mono text-[0.85em] text-fg">log-patterns</code>
-                    to cluster lines into templates and surface the noisiest sources at a glance.
+                    to cluster lines into templates and rank the noisiest sources.
                 </p>
             </div>
         </div>
     </section>
 
-    <!-- 05 — Service map. -->
+    <!-- 05: Service map. -->
     <section class="border-t border-border bg-bg">
         <div class="mx-auto max-w-6xl px-6 py-24 md:py-32">
             <div class="grid items-start gap-12 lg:grid-cols-[1fr_minmax(0,340px)] lg:gap-16">
@@ -222,15 +222,15 @@ const faqs = [
                         See how your services call each other
                     </h3>
                     <p class="mt-5 max-w-md text-base leading-relaxed text-fg-muted">
-                        Dependency edges with call counts, error rates, and latency — reconstructed from the
-                        spans you've sent, entirely on your machine.
+                        Dependency edges with call counts, error rates, and latency, reconstructed from the
+                        spans you've sent, on your machine.
                     </p>
                 </div>
             </div>
         </div>
     </section>
 
-    <!-- 06 — The dev loop. -->
+    <!-- 06: The dev loop. -->
     <section class="border-t border-border bg-bg">
         <div class="mx-auto max-w-6xl px-6 py-24 md:py-32">
             <div class="mb-12 max-w-2xl">
@@ -240,7 +240,7 @@ const faqs = [
                 </h2>
                 <p class="mt-5 text-base leading-relaxed text-fg-muted">
                     The same binary is a query CLI. Every command runs against the local server and prints
-                    JSON by default — add
+                    JSON by default. Add
                     <code class="rounded bg-bg-elevated px-1.5 py-0.5 font-mono text-[0.85em] text-fg">--format table</code>
                     for an aligned table, or
                     <code class="rounded bg-bg-elevated px-1.5 py-0.5 font-mono text-[0.85em] text-fg">--debug</code>
@@ -266,7 +266,7 @@ const faqs = [
         </div>
     </section>
 
-    <!-- 07 — Install. -->
+    <!-- 07: Install. -->
     <section class="border-t border-border bg-bg">
         <div class="mx-auto max-w-6xl px-6 py-24 md:py-32">
             <div class="grid items-start gap-12 lg:grid-cols-[minmax(0,1fr)_minmax(0,440px)] lg:gap-16">

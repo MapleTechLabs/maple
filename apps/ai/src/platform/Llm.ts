@@ -29,8 +29,11 @@ export const DEFAULT_OPENROUTER_MODEL = "z-ai/glm-5.3-flash:nitro"
  * Default model for pull request reviews and replies, which run on their own model rather than the
  * triage default: glm-5.3-flash leaked 1.2% of its tool calls as text, which ended 8 of 14 early
  * reviews by 2026-09-24. Changing chat's model would have retuned investigations with it.
+ *
+ * `:nitro` routes to the fastest provider. Default routing picks the cheapest, which served a
+ * 12-call review at ~50 tok/s and took 13 minutes; `:nitro` measured ~190 tok/s at twice the price.
  */
-export const DEFAULT_REVIEW_MODEL = "deepseek/deepseek-v4.1-flash"
+export const DEFAULT_REVIEW_MODEL = "deepseek/deepseek-v4.1-flash:nitro"
 
 /**
  * Default decision model: TypeSafe's Jev, reached through OpenRouter.
@@ -52,8 +55,31 @@ export const DEFAULT_DECISION_MODEL = "~typesafe/jev-latest"
 const OPENROUTER_APP_URL = "https://maple.dev"
 const OPENROUTER_APP_TITLE = "Maple"
 
-/** OpenRouter's OpenAI-compatible API, which serves `/embeddings` alongside chat. */
-const OPENROUTER_API_URL = "https://openrouter.ai/api/v1"
+/**
+ * OpenRouter's API, which serves chat, `/embeddings` and the decisions endpoint. The EU instance
+ * goes through OpenRouter's in-region endpoint instead: requests are decrypted and served only by
+ * providers inside the EU, and a model with no EU provider is a 404 rather than a silent hop to the
+ * US. It needs a Business or Enterprise account; the key, body and model ids are unchanged.
+ */
+const OPENROUTER_API_URLS = {
+	us: "https://openrouter.ai/api/v1",
+	eu: "https://eu.openrouter.ai/api/v1",
+} as const satisfies Record<OpenRouterRegion, string>
+
+/** `us` is OpenRouter's global catalogue, not its US in-region endpoint, which serves fewer models. */
+type OpenRouterRegion = "us" | "eu"
+
+const openRouterRegion = (env: LlmEnv): OpenRouterRegion =>
+	readString(env, "MAPLE_REGION")?.toLowerCase() === "eu" ? "eu" : "us"
+
+export const openRouterApiUrl = (env: LlmEnv): string => OPENROUTER_API_URLS[openRouterRegion(env)]
+
+/**
+ * The EU catalogue is a subset (66 models on 2026-09-25) and serves none of the US defaults, so
+ * the EU instance runs chat, triage and reviews on one model that has an EU provider.
+ */
+const EU_DEFAULT_OPENROUTER_MODEL = "openai/gpt-6-luna"
+const EU_DEFAULT_REVIEW_MODEL = "openai/gpt-6-luna"
 
 /**
  * Default embedding model for the review's feedback filter. Changing it starts the filter from an
@@ -122,6 +148,8 @@ export interface LlmEnv extends Record<string, unknown> {
 	readonly CLOUDFLARE_ACCOUNT_ID?: string
 	readonly CLOUDFLARE_API_KEY?: string
 	readonly MAPLE_LLM_PROVIDER?: string
+	/** The instance this Worker runs in. `eu` sends every OpenRouter call to its EU endpoint. */
+	readonly MAPLE_REGION?: string
 	readonly MAPLE_TRIAGE_MODEL_OPENROUTER?: string
 	readonly MAPLE_TRIAGE_MODEL_WORKERS_AI?: string
 	/** OpenRouter model id for pull request reviews and replies, overriding {@link DEFAULT_REVIEW_MODEL}. */
@@ -175,6 +203,11 @@ const MODEL_LIMITS: Record<string, { readonly context: number; readonly output: 
 	"z-ai/glm-5.3-flash:nitro": { context: 1_000_000, output: 128_000 },
 	// OpenRouter's catalogue: context_length 1_048_576, max_completion_tokens 131_072.
 	"deepseek/deepseek-v4.1-flash": { context: 1_000_000, output: 128_000 },
+	"deepseek/deepseek-v4.1-flash:nitro": { context: 1_000_000, output: 128_000 },
+	// OpenRouter's catalogue: context_length 1_048_576, max_completion_tokens 131_072.
+	"xiaomi/mimo-v2.6-pro": { context: 1_000_000, output: 128_000 },
+	// The EU default. OpenRouter's EU catalogue: context_length 1_050_000, max_completion_tokens 128_000.
+	"openai/gpt-6-luna": { context: 1_000_000, output: 128_000 },
 	// Moonshot's own kimi-k2.6 is 262_144, but Cloudflare does not publish the window its Workers AI
 	// deployment actually serves. Held at the conservative default until someone measures it.
 	"@cf/moonshotai/kimi-k2.6": { context: 128_000, output: 8_000 },
@@ -372,7 +405,8 @@ export const resolveTriageModel = (env: LlmEnv, tags?: LlmCallTags): ResolvedMod
 			)
 		: openRouterModel(
 				env,
-				readString(env, "MAPLE_TRIAGE_MODEL_OPENROUTER") ?? DEFAULT_OPENROUTER_MODEL,
+				readString(env, "MAPLE_TRIAGE_MODEL_OPENROUTER") ??
+					(openRouterRegion(env) === "eu" ? EU_DEFAULT_OPENROUTER_MODEL : DEFAULT_OPENROUTER_MODEL),
 				"MAPLE_TRIAGE_REASONING_EFFORT",
 				// No default. This resolver serves chat, AI triage *and* the validator, so a number
 				// picked here would retune three stages with different shapes at once.
@@ -389,7 +423,8 @@ export const resolveReviewModel = (env: LlmEnv, tags?: LlmCallTags): ResolvedMod
 		? resolveTriageModel(env, tags)
 		: openRouterModel(
 				env,
-				readString(env, "MAPLE_REVIEW_MODEL_OPENROUTER") ?? DEFAULT_REVIEW_MODEL,
+				readString(env, "MAPLE_REVIEW_MODEL_OPENROUTER") ??
+					(openRouterRegion(env) === "eu" ? EU_DEFAULT_REVIEW_MODEL : DEFAULT_REVIEW_MODEL),
 				"MAPLE_TRIAGE_REASONING_EFFORT",
 				undefined,
 				tags,
@@ -467,6 +502,7 @@ export const layerLlm = (env: LlmEnv): Layer.Layer<LlmClients> => {
 	return Layer.mergeAll(
 		OpenRouterClient.layer({
 			apiKey: Redacted.make(readString(env, "OPENROUTER_API_KEY") ?? ""),
+			apiUrl: openRouterApiUrl(env),
 			transformClient: withPerCallFields,
 		}).pipe(Layer.provide(openRouterHttp.pipe(Layer.provide(http)))),
 		// The URL the shim already matches: `.../ai/v1/chat/completions`.
@@ -488,11 +524,16 @@ export const layerLlm = (env: LlmEnv): Layer.Layer<LlmClients> => {
 export const layerDecisionModel = (
 	env: LlmEnv,
 ): Layer.Layer<DecisionModel.DecisionModel, never, OpenRouterClient.OpenRouterClient> =>
-	OpenRouterDecisionModel.layer({ model: resolveDecisionModel(env) })
+	// The fallback only fills the layer: with no EU decision model the triage route never calls it.
+	OpenRouterDecisionModel.layer({ model: resolveDecisionModel(env) ?? DEFAULT_DECISION_MODEL })
 
-/** The decision model this deploy asks, so a verdict can record what answered it. */
-export const resolveDecisionModel = (env: LlmEnv): string =>
-	readString(env, "MAPLE_DECISION_MODEL") ?? DEFAULT_DECISION_MODEL
+/**
+ * The decision model this deploy asks, so a verdict can record what answered it. Undefined in the
+ * EU unless configured: Jev has no EU provider, and the gate reads no verdict as "investigate".
+ */
+export const resolveDecisionModel = (env: LlmEnv): string | undefined =>
+	readString(env, "MAPLE_DECISION_MODEL") ??
+	(openRouterRegion(env) === "eu" ? undefined : DEFAULT_DECISION_MODEL)
 
 /**
  * The embedder the PR review's feedback filter compares findings with, on OpenRouter whichever
@@ -518,7 +559,7 @@ export const layerFindingEmbedder = (env: LlmEnv): Layer.Layer<FindingEmbedder> 
 		})),
 	).pipe(
 		Layer.provide(
-			OpenAiClient.layer({ apiKey: Redacted.make(apiKey), apiUrl: OPENROUTER_API_URL }).pipe(
+			OpenAiClient.layer({ apiKey: Redacted.make(apiKey), apiUrl: openRouterApiUrl(env) }).pipe(
 				Layer.provide(openRouterHttp.pipe(Layer.provide(FetchHttpClient.layer))),
 			),
 		),

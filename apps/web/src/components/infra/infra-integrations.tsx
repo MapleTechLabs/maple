@@ -32,7 +32,7 @@ interface InfraSource {
 	readonly blurb: string
 }
 
-// Infra-producing catalog entries only. Slack/GitHub/Hazel are real integrations
+// Infra-producing catalog entries only. Chat/GitHub/Hazel are real integrations
 // but nothing they sync appears on this page, so they'd be noise here.
 const INFRA_SOURCES: ReadonlyArray<InfraSource> = [
 	{ id: "cloudflare", to: "/infra/cloudflare", blurb: "Zone traffic and Workers" },

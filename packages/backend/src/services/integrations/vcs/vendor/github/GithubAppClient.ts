@@ -1602,8 +1602,8 @@ export class GithubAppClient extends Context.Service<GithubAppClient>()(
 			})
 
 			/**
-			 * Create or edit the one comment carrying `marker`, so every later review of the pull
-			 * request updates the same comment. Only a comment this App wrote is edited: a person who
+			 * Create or edit the one comment carrying `marker`, so a later write with the same marker
+			 * updates the same comment. Only a comment this App wrote is edited: a person who
 			 * quoted the marker keeps their comment, and the App could not edit it anyway.
 			 */
 			const upsertIssueComment = Effect.fn("GithubAppClient.upsertIssueComment")(function* (

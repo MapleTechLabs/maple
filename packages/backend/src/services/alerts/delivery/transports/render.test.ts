@@ -1,13 +1,12 @@
 import type { AlertDestinationRow } from "@maple/db"
 import { AlertDestinationId } from "@maple/domain/http"
 import { assert, describe, it } from "@effect/vitest"
-import { Effect, Schema } from "effect"
+import { Schema } from "effect"
 import type { DispatchContext } from "../context"
 import type { HttpRequestSpec, RenderInput } from "../Transport"
 import { discordTransport } from "./discord"
 import { hazelTransport } from "./hazel"
 import { pagerDutyTransport } from "./pagerduty"
-import { makeSlackTransport } from "./slack"
 import { telegramTransport } from "./telegram"
 import { webhookTransport } from "./webhook"
 
@@ -89,13 +88,6 @@ describe("transport render: guard flags", () => {
 	 * is either an SSRF hole or a token leak into telemetry.
 	 */
 	const specs: ReadonlyArray<readonly [string, HttpRequestSpec]> = [
-		[
-			"slack-bot",
-			makeSlackTransport({ resolveSlackBotToken: () => Effect.succeed("t") }).render(
-				inputFor({ type: "slack-bot", channelId: "C1", channelName: "ops" }),
-				"xoxb-token",
-			),
-		],
 		["pagerduty", pagerDutyTransport.render(inputFor({ type: "pagerduty", integrationKey: "k" }))],
 		[
 			"webhook",
@@ -134,7 +126,7 @@ describe("transport render: guard flags", () => {
 
 	it("guards exactly the user-configured hosts", () => {
 		const guarded = specs.filter(([, spec]) => spec.guarded).map(([name]) => name)
-		// slack + pagerduty + telegram post to compile-time vendor constants: there
+		// pagerduty + telegram post to compile-time vendor constants: there
 		// is no attacker-controlled URL to validate, so the guard would only cost a
 		// redirect walk.
 		assert.deepStrictEqual(guarded, ["webhook", "discord", "hazel-oauth"])
@@ -160,20 +152,6 @@ describe("transport render: guard flags", () => {
 })
 
 describe("transport render: templates", () => {
-	it("slack-bot puts the template title in the header and the body in a section", () => {
-		const spec = makeSlackTransport({ resolveSlackBotToken: () => Effect.succeed("t") }).render(
-			inputFor({ type: "slack-bot", channelId: "C1", channelName: "ops" }, { templated: TEMPLATED }),
-			"xoxb-token",
-		)
-		const body = JSON.parse(spec.body)
-		const blocks = body.attachments[0].blocks
-		assert.strictEqual(blocks[0].text.text, "Custom title")
-		// Markdown is rewritten to Slack mrkdwn: **b** → *b*.
-		assert.strictEqual(blocks[1].text.text, "Custom *body*")
-		// The notification preview falls back to the template title.
-		assert.strictEqual(body.attachments[0].fallback, "Custom title")
-	})
-
 	it("discord uses the template title for both the content line and the embed", () => {
 		const spec = discordTransport.render(
 			inputFor(
@@ -243,10 +221,6 @@ describe("transport render: event types", () => {
 				discordTransport.render(
 					inputFor({ type: "discord", webhookUrl: "https://discord.com/api/w/1/tok" }, withEvent),
 				)
-				makeSlackTransport({ resolveSlackBotToken: () => Effect.succeed("t") }).render(
-					inputFor({ type: "slack-bot", channelId: "C1", channelName: "ops" }, withEvent),
-					"xoxb-token",
-				)
 			})
 		})
 	}
@@ -255,24 +229,13 @@ describe("transport render: event types", () => {
 /**
  * The sparkline is the one part of a renotify that differs from the message
  * before it, and it is the only trend that survives where an image cannot go —
- * a lock screen, a push preview, a plain-text client. Both providers carry it,
- * on both the default and the templated path, and all four of those used to be
- * separate literals that had already drifted apart once.
+ * a lock screen, a push preview, a plain-text client. Discord carries it on
+ * both the default and the templated path, which used to be separate literals
+ * that had already drifted apart once.
  */
 describe("transport render: sparkline", () => {
 	const SPARK = "▁▂▄▆█"
 	const withSpark = { ...context, sparkline: SPARK }
-
-	const slack = makeSlackTransport({ resolveSlackBotToken: () => Effect.succeed("t") })
-	const slackBody = (ctx: DispatchContext, templated: typeof TEMPLATED | null) =>
-		slack.render(
-			{
-				...inputFor({ type: "slack-bot" as const, channelId: "C1", channelName: "ops" }),
-				context: ctx,
-				templated,
-			},
-			"xoxb-token",
-		).body
 
 	const discordBody = (ctx: DispatchContext, templated: typeof TEMPLATED | null) =>
 		discordTransport.render({
@@ -280,14 +243,6 @@ describe("transport render: sparkline", () => {
 			context: ctx,
 			templated,
 		}).body
-
-	it("rides in the Slack context block on the default path", () => {
-		assert.include(slackBody(withSpark, null), SPARK)
-	})
-
-	it("rides in the Slack context block on the templated path too", () => {
-		assert.include(slackBody(withSpark, TEMPLATED), SPARK)
-	})
 
 	it("rides in the Discord footer on the default path", () => {
 		assert.include(discordBody(withSpark, null), SPARK)
@@ -300,17 +255,6 @@ describe("transport render: sparkline", () => {
 	const CHART_URL = "https://web.localhost/alerts/chart/eyJhIjoxfQ.s1g.png"
 	const withChart = { ...context, sparkline: SPARK, chartUrl: CHART_URL }
 
-	it("puts the chart in a Slack image block on both paths", () => {
-		for (const templated of [null, TEMPLATED]) {
-			const body = slackBody(withChart, templated)
-			assert.include(body, CHART_URL)
-			assert.include(body, '"type":"image"')
-			// alt text repeats the alert, since it is what a screen reader reads
-			// and what shows when the image will not load.
-			assert.include(body, "alt_text")
-		}
-	})
-
 	it("puts the chart in the Discord embed image on both paths", () => {
 		for (const templated of [null, TEMPLATED]) {
 			assert.include(discordBody(withChart, templated), CHART_URL)
@@ -318,15 +262,13 @@ describe("transport render: sparkline", () => {
 	})
 
 	it("keeps the sparkline even when the image is present", () => {
-		// The image block does not render on a lock screen or in a push preview;
+		// The embed image does not render on a lock screen or in a push preview;
 		// the sparkline is what travels there.
-		assert.include(slackBody(withChart, null), SPARK)
 		assert.include(discordBody(withChart, null), SPARK)
 	})
 
 	it("emits no image block when there is no chart URL", () => {
 		for (const templated of [null, TEMPLATED]) {
-			assert.notInclude(slackBody(withSpark, templated), '"type":"image"')
 			assert.notInclude(discordBody(withSpark, templated), '"image"')
 		}
 	})
@@ -339,10 +281,6 @@ describe("transport render: sparkline", () => {
 	 */
 	it("renders a complete message when there is no sparkline", () => {
 		for (const templated of [null, TEMPLATED]) {
-			const slackJson = slackBody(context, templated)
-			assert.notInclude(slackJson, "undefined")
-			assert.include(slackJson, "Maple Alerts")
-
 			const discordJson = discordBody(context, templated)
 			assert.notInclude(discordJson, "undefined")
 			assert.include(discordJson, "Maple Alerts")

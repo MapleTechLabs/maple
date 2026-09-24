@@ -102,6 +102,7 @@ const platform = (prefix = "m"): Platform => {
 						return ref
 					}),
 				edit: (ref, blocks) => Effect.sync(() => void calls.push({ verb: "edit", ref, blocks })),
+				whisper: () => Effect.die("a relayed turn answered a click"),
 				typing: () => Effect.void,
 				openThread: (request) => Effect.succeed(request.anchorMessageId),
 				conversation: () =>

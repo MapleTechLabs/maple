@@ -1,5 +1,5 @@
 import { feature, plan, reward } from "atmn"
-import { ONBOARDING_REWARD_PROMO_CODE } from "@maple/domain/onboarding-checklist"
+import { ONBOARDING_REWARD_ID } from "@maple/domain/onboarding-checklist"
 
 // Features
 export const logs = feature({
@@ -141,17 +141,18 @@ export const bringYourOwnCloudAddOn = plan({
 	],
 })
 
-// The onboarding checklist's reward: $30 off the next invoice, once, redeemed by
-// the API with the promo code (`ONBOARDING_REWARD_PROMO_CODE`, see
-// `OnboardingChecklistService.claim`). A `fixed_discount` is the closest thing the
+// The onboarding checklist's reward: $30 off the next invoice, once, applied by the
+// API as a discount on the org's subscription (`billing.update`, see
+// `OnboardingChecklistService.claim`). `rewards.redeem` only takes feature grants,
+// so a coupon cannot go through it. A `fixed_discount` is the closest thing the
 // config builder has to an invoice credit; the API-only `invoice_credits` reward
-// type would carry an unused remainder forward, this one does not. The claim
-// row in Postgres is what makes it once per org — the code itself is unlimited.
+// type would carry an unused remainder forward, this one does not. No promo code:
+// the claim row in Postgres is what makes it once per org, and a public code would
+// hand the discount to anyone at checkout.
 export const onboardingChecklistReward = reward({
-	id: "onboarding_checklist",
+	id: ONBOARDING_REWARD_ID,
 	name: "Onboarding checklist credit",
 	type: "fixed_discount",
 	value: 30,
 	duration: { type: "one_off" },
-	promoCodes: [{ code: ONBOARDING_REWARD_PROMO_CODE }],
 })

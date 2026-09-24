@@ -57,8 +57,8 @@ export type AlertDestination = Resource<
 
 /**
  * A notification channel (PagerDuty, webhook, Discord, Telegram, or
- * workspace-member email) that `Maple.AlertRule`s deliver to. Slack and Hazel
- * destinations use their installed integrations and are managed in Maple.
+ * workspace-member email) that `Maple.AlertRule`s deliver to. Chat-connector and
+ * Hazel destinations use integrations linked in Maple and are managed there.
  *
  * @example
  * ```typescript

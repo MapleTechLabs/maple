@@ -31,7 +31,9 @@ import {
 	type PrReviewSeverity,
 	type PrReviewSkipReason,
 	type PrReviewStatus,
+	PR_REVIEW_CONFIDENCE_LABEL,
 	PR_REVIEW_SCORE_PENALTY,
+	confidencePrReview,
 	scorePrReview,
 	type PullRequestCheckAnnotation,
 	type PullRequestEventJob,
@@ -53,7 +55,7 @@ import {
 	type PrReviewRow,
 } from "@maple/db"
 import { WorkerEnvironment } from "@maple/infra/worker-runtime"
-import { and, count, desc, eq, gt, gte, inArray, ne, or } from "drizzle-orm"
+import { and, count, desc, eq, gt, gte, inArray, ne, or, sql } from "drizzle-orm"
 import { Cause, Clock, Context, Effect, Exit, Layer, Option, Result, Schema } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
@@ -97,6 +99,18 @@ export const PR_REVIEW_PUSH_DEBOUNCE_SECONDS = 90
 /** Bounds on what the kickoff message carries; the agent fetches the rest through its tools. */
 const KICKOFF_BODY_CHARS = 4_000
 
+/** The files a repository states its rules in, read at the base and stated in this order. */
+export const PR_REVIEW_RULE_FILES = ["CLAUDE.md", "AGENTS.md", ".maple/review.md"] as const
+
+/** Rules beyond this are cut; the agent can still read the rest when a decision needs it. */
+const RULES_MAX_CHARS = 30_000
+
+/** A rule file as read at the base commit. */
+export interface RepositoryRuleFile {
+	readonly path: string
+	readonly content: string
+}
+
 const AGENT_UNAVAILABLE_ERROR = "agent_unavailable: the review agent is not configured; retry"
 const START_FAILED_ERROR = "start_failed: the review agent could not start a turn; retry"
 
@@ -133,6 +147,14 @@ export interface PrReviewServiceApi {
 		orgId: OrgId,
 		reviewId: PrReviewId,
 	) => Effect.Effect<Option.Option<PrReview>, PrReviewPersistenceError>
+	/** The repository and commit a review reads, so its checkout can start before the agent asks. */
+	readonly reviewTarget: (
+		orgId: OrgId,
+		reviewId: PrReviewId,
+	) => Effect.Effect<
+		Option.Option<{ readonly repository: string; readonly headSha: GitCommitSha }>,
+		PrReviewPersistenceError
+	>
 	/**
 	 * Record the agent's report and post it to the provider. The row is `completed` once the
 	 * report is stored, whether or not the provider accepted the post.
@@ -219,6 +241,11 @@ export const buildReviewKickoff = (input: {
 	readonly config?: PrReviewRepositoryConfig
 	/** For a later push: what changed since the last review, and which findings are still open. */
 	readonly followUp?: ReadonlyArray<string>
+	/**
+	 * The repository's rule files at the base; empty when it has none, absent when they could not
+	 * be read (the agent then reads them itself).
+	 */
+	readonly rules?: ReadonlyArray<RepositoryRuleFile>
 }): string => {
 	const body = (input.body ?? "").trim()
 	const quoted =
@@ -228,6 +255,7 @@ export const buildReviewKickoff = (input: {
 				? `${body.slice(0, KICKOFF_BODY_CHARS)}…`
 				: body
 	const lines = [
+		...renderRepositoryRules(input.repository, input.rules),
 		`Review pull request #${input.number} of ${input.repository}.`,
 		"",
 		`- URL: ${input.url}`,
@@ -245,6 +273,55 @@ export const buildReviewKickoff = (input: {
 		"Start with pr_changed_files. Read every hunk that adds code with pr_file_diff before you decide anything. Finish with submit_review.",
 	]
 	return wrapChatContext(lines.join("\n"), "")
+}
+
+/**
+ * The repository's rules, first in the kickoff and free of anything about this pull request: the
+ * system prompt and this block are then the same bytes for every review of the repository until
+ * its rules change, which is the prefix a provider's prompt cache keys on. A commit or a number in
+ * here would make every review a cache miss.
+ */
+const renderRepositoryRules = (
+	repository: string,
+	rules: ReadonlyArray<RepositoryRuleFile> | undefined,
+): ReadonlyArray<string> => {
+	if (rules === undefined) return []
+	if (rules.length === 0) {
+		return [
+			`${repository} has no ${PR_REVIEW_RULE_FILES.join(", ")} at the base. Do not look for them.`,
+			"",
+		]
+	}
+	let budget = RULES_MAX_CHARS
+	const lines = [
+		`The repository rules of ${repository}, read at the base branch. They bind this review; do not read these files again.`,
+		"",
+	]
+	const omitted: Array<string> = []
+	for (const rule of rules) {
+		if (budget <= 0) {
+			omitted.push(rule.path)
+			continue
+		}
+		const content = rule.content.trim()
+		const kept = content.length > budget ? content.slice(0, budget) : content
+		budget -= kept.length
+		lines.push(`<rules path="${rule.path}">`, kept)
+		if (kept.length < content.length) {
+			lines.push(
+				`[cut at ${kept.length} of ${content.length} characters; read the rest only if a decision needs it]`,
+			)
+		}
+		lines.push("</rules>", "")
+	}
+	// Named, so a file past the budget is still read rather than silently never known.
+	if (omitted.length > 0) {
+		lines.push(
+			`Also binding, left out for length: ${omitted.join(", ")}. Read them once at the base before any hunk.`,
+			"",
+		)
+	}
+	return lines
 }
 
 /** The repository's own settings, stated in the kickoff; the service enforces the same rules. */
@@ -303,66 +380,61 @@ const verdictTitle = (report: PrReviewReport, carried: CarriedFindings): string 
 	}
 }
 
-/** The hidden line the summary comment is found by, so a later review edits it in place. */
-export const PR_REVIEW_COMMENT_MARKER = "<!-- maple-pr-review -->"
+/**
+ * The hidden line one review's comment is found by. Keyed on the review, so its "reviewing" notice
+ * is replaced by its own result, and the next review of the pull request starts a comment of its own.
+ * `attempt` counts repeats of a finished review of the same head, which reuse its row.
+ */
+export const prReviewCommentMarker = (reviewId: PrReviewId, attempt = 0): string =>
+	`<!-- maple-pr-review ${reviewId} ${attempt} -->`
 
 /** Opens a notice and names the head it is about: `<!-- maple-pr-review:status reviewing <sha> -->`. */
 const STATUS_OPEN = "<!-- maple-pr-review:status"
 const STATUS_CLOSE = "<!-- /maple-pr-review:status -->"
-const STATUS_BLOCK = new RegExp(`${STATUS_OPEN}[^>]*-->[\\s\\S]*?${STATUS_CLOSE}`)
 
-/** What the summary comment says while no finished review has replaced it. */
+/** What a review's comment says before its result replaces it. */
 export type PrReviewStatusNotice =
 	| { readonly kind: "reviewing"; readonly headSha: string }
 	| { readonly kind: "failed"; readonly headSha: string }
+	| { readonly kind: "superseded"; readonly headSha: string }
 
 /**
- * The summary comment with a status notice on top, the way a review announces itself before it
- * has findings. An earlier review's summary stays underneath until the new one replaces the whole
- * comment; only the previous notice is swapped out.
+ * A review's comment while it has no result: the notice alone, under the review's marker.
  *
- * `undefined` leaves the comment alone: a failure only replaces its own head's "reviewing"
- * notice, so a late one cannot overwrite a finished summary or a newer head's notice.
+ * `undefined` leaves the comment alone: a failure or a supersede only replaces its own
+ * "reviewing" notice, so a late one cannot overwrite a summary that was already published.
  */
 export const withReviewStatus = (
 	existing: string | undefined,
+	marker: string,
 	notice: PrReviewStatusNotice,
 ): string | undefined => {
 	if (
-		notice.kind === "failed" &&
+		notice.kind !== "reviewing" &&
 		!(existing ?? "").includes(`${STATUS_OPEN} reviewing ${notice.headSha} -->`)
 	) {
 		return undefined
 	}
-	const previous = (existing ?? "").replace(PR_REVIEW_COMMENT_MARKER, "").replace(STATUS_BLOCK, "").trim()
 	const sha = `\`${notice.headSha.slice(0, 7)}\``
-	const lines =
-		notice.kind === "reviewing"
-			? [
-					"> [!NOTE]",
-					previous === ""
-						? `> **Maple is reviewing this pull request** at ${sha}. This comment updates with the review when it finishes.`
-						: `> **Maple is reviewing the new changes** at ${sha}. The summary below is from the previous review and updates when this one finishes.`,
-				]
-			: [
-					"> [!WARNING]",
-					`> The review of ${sha} could not finish. Comment \`@maple review\` to try again.`,
-				]
-	return clampSummary(
-		[
-			PR_REVIEW_COMMENT_MARKER,
-			`${STATUS_OPEN} ${notice.kind} ${notice.headSha} -->`,
-			...lines,
-			STATUS_CLOSE,
-			...(previous === "" ? [] : ["", previous]),
-		].join("\n"),
-	)
+	const lines = {
+		reviewing: [
+			"> [!NOTE]",
+			`> **Maple is reviewing this pull request** at ${sha}. This comment updates with the review when it finishes.`,
+		],
+		failed: [
+			"> [!WARNING]",
+			`> The review of ${sha} could not finish. Comment \`@maple review\` to try again.`,
+		],
+		superseded: [
+			"> [!NOTE]",
+			`> A newer push replaced ${sha} before its review finished. The latest commit is reviewed in a new comment.`,
+		],
+	}[notice.kind]
+	return [marker, `${STATUS_OPEN} ${notice.kind} ${notice.headSha} -->`, ...lines, STATUS_CLOSE].join("\n")
 }
 
-/** What the review's check run says before a result replaces it; `superseded` is check-only. */
-export const reviewCheckFor = (
-	notice: PrReviewStatusNotice | { readonly kind: "superseded"; readonly headSha: string },
-) => {
+/** What the review's check run says before a result replaces it. */
+export const reviewCheckFor = (notice: PrReviewStatusNotice) => {
 	const sha = `\`${notice.headSha.slice(0, 7)}\``
 	const run = { name: PR_REVIEW_CHECK_NAME, headSha: notice.headSha }
 	switch (notice.kind) {
@@ -414,63 +486,94 @@ export interface ReviewMarkdownInput {
 	readonly carried?: CarriedFindings
 }
 
+const bySeverity = <F extends { readonly severity: PrReviewSeverity }>(findings: ReadonlyArray<F>) =>
+	[...findings].sort((a, b) => SEVERITY_RANK[b.severity] - SEVERITY_RANK[a.severity])
+
+const escapeHtml = (value: string) =>
+	value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;")
+
 /**
- * The review as markdown: score, verdict, summary, findings linked to the exact lines, what earlier
- * reviews raised that is still open or now fixed, and what was reviewed. One renderer for the check
- * run and the pull request comment, so the two never disagree; the comment adds a heading.
+ * A fenced block whose fence is longer than any backtick run inside it, so code that itself holds
+ * a fence (a markdown file, a template string) cannot close the block early.
+ */
+const fenced = (content: string, info = ""): ReadonlyArray<string> => {
+	const longest = Math.max(0, ...(content.match(/`+/g) ?? []).map((run) => run.length))
+	const fence = "`".repeat(Math.max(3, longest + 1))
+	return [`${fence}${info}`, content, fence]
+}
+
+/** Text for inside `<summary>`, where GitHub renders no markdown: code spans become `<code>`. */
+const summaryHtml = (value: string) => escapeHtml(value).replace(/`([^`]+)`/g, "<code>$1</code>")
+
+const whereLabel = (finding: { readonly path: string; readonly line: number; readonly endLine?: number }) =>
+	`${finding.path}:${finding.line}${finding.endLine === undefined ? "" : `-${finding.endLine}`}`
+
+/**
+ * The review as markdown, most important first: the verdict line, the summary and what the change
+ * does, then each finding by severity as a collapsed entry whose title reads as the defect, what
+ * earlier reviews raised, and what the reviewer checked. One renderer for the check run and the
+ * pull request comment, so the two never disagree; the comment adds a heading.
  */
 export const renderReviewMarkdown = (input: ReviewMarkdownInput & { readonly heading: boolean }): string => {
 	const { report } = input
 	const carried = input.carried ?? NO_CARRIED
 	const { score, grade } = scorePrReview(report, carried.open)
-	const all = [...report.findings, ...carried.open]
-	const counts = (severity: PrReviewFinding["severity"]) =>
-		all.filter((finding) => finding.severity === severity).length
 	const lineUrl = (finding: { readonly path: string; readonly line: number; readonly endLine?: number }) =>
 		`${input.repositoryUrl.replace(/\/+$/, "")}/blob/${input.headSha}/${finding.path
 			.split("/")
 			.map(encodeURIComponent)
 			.join("/")}#L${finding.line}${finding.endLine === undefined ? "" : `-L${finding.endLine}`}`
 	const observable = report.coverage.filter((unit) => unit.instrumented).length
+	const counted = [...report.findings, ...carried.open]
+	const tally = (["critical", "warn", "info"] as const)
+		.map((severity) => {
+			const n = counted.filter((finding) => finding.severity === severity).length
+			if (n === 0) return undefined
+			const label = SEVERITY_LABEL[severity].toLowerCase()
+			return `${n} ${label}${n === 1 ? "" : "s"}`
+		})
+		.filter((part) => part !== undefined)
 
+	const confidence = confidencePrReview(report, carried.open, input.partial)
+
+	// The scorecard: the same four columns in the same order on every review, so a reader's eye
+	// lands on each score without reading. A value that does not apply is a dash, never a gap.
 	const lines: Array<string> = []
-	const hasCoverage = report.coverage.length > 0
-	if (input.heading) lines.push(`## Maple review: ${score}/100`, "")
+	if (input.heading) lines.push("## Maple review", "")
 	lines.push(
-		`**${gradeLabel(grade)}** · ${verdictTitle(report, carried)} · reviewed \`${input.headSha.slice(0, 7)}\``,
-		"",
-		`| Score | Critical | Warnings | Notes |${hasCoverage ? " Changes observable |" : ""}`,
-		`| --- | --- | --- | --- |${hasCoverage ? " --- |" : ""}`,
-		`| ${score}/100 | ${counts("critical")} | ${counts("warn")} | ${counts("info")} |${hasCoverage ? ` ${observable} of ${report.coverage.length} |` : ""}`,
+		"| Confidence | Quality | Open findings | Commit |",
+		"| --- | --- | --- | --- |",
+		`| ${
+			confidence === undefined
+				? "–"
+				: `**${confidence.confidence}/5** · ${PR_REVIEW_CONFIDENCE_LABEL[confidence.confidence]}`
+		} | **${score}/100** · ${gradeLabel(grade).toLowerCase()} | ${tally.length > 0 ? tally.join(", ") : "none"} | \`${input.headSha.slice(0, 7)}\` |`,
 		"",
 	)
-	if (input.partial) lines.push("_This review ended early; what follows is what it established._", "")
+	// An early end is already the warning below; the reason would only say it again.
+	if (confidence?.reason !== undefined && confidence.cappedBy !== "partial")
+		lines.push(`**Why ${confidence.confidence}/5:** ${confidence.reason}`, "")
+	if (input.partial) {
+		lines.push("> [!WARNING]", "> This review ended early; what follows is what it established.", "")
+	}
 	if (report.summary) lines.push(report.summary, "")
+	if (report.keyChanges !== undefined && report.keyChanges.length > 0) {
+		lines.push(...report.keyChanges.map((change) => `- ${change}`), "")
+	}
 	if (report.findings.length > 0) {
-		lines.push(
-			"### Findings",
-			"",
-			"| | Severity | Category | Where | Finding |",
-			"| --- | --- | --- | --- | --- |",
-		)
-		for (const finding of report.findings) {
-			const where = `${finding.path}:${finding.line}${finding.endLine === undefined ? "" : `-${finding.endLine}`}`
+		lines.push("### Findings", "")
+		for (const finding of bySeverity(report.findings)) {
+			const handle = finding.handle === undefined ? "" : `${finding.handle} · `
 			lines.push(
-				`| ${finding.handle ?? ""} | ${SEVERITY_LABEL[finding.severity]} | ${categoryLabel(finding)} | [\`${escapeCell(where)}\`](${lineUrl(finding)}) | ${escapeCell(finding.title)} |`,
+				`<details><summary><b>${SEVERITY_LABEL[finding.severity]}</b> · ${escapeHtml(handle)}${summaryHtml(finding.title)}</summary>`,
+				"",
+				`${categoryLabel(finding)} · [\`${whereLabel(finding)}\`](${lineUrl(finding)})`,
+				"",
 			)
-		}
-		lines.push("")
-		const detailed = report.findings.filter(
-			(finding) => finding.body || finding.suggestion || finding.replacement,
-		)
-		if (detailed.length > 0) {
-			lines.push("<details><summary>What to change</summary>", "")
-			for (const finding of detailed) {
-				lines.push(`**${finding.title}** (\`${finding.path}:${finding.line}\`)`, "")
-				if (finding.body) lines.push(finding.body, "")
-				if (finding.suggestion) lines.push("```", finding.suggestion, "```", "")
-				if (finding.replacement !== undefined) lines.push("```", finding.replacement, "```", "")
-			}
+			if (finding.body) lines.push(finding.body, "")
+			// A plain fence: `suggestion` blocks only apply inside an inline review comment.
+			const fix = finding.replacement ?? finding.suggestion
+			if (fix) lines.push(...fenced(fix), "")
 			lines.push("</details>", "")
 		}
 	}
@@ -478,27 +581,34 @@ export const renderReviewMarkdown = (input: ReviewMarkdownInput & { readonly hea
 		lines.push(
 			"### Still open from earlier reviews",
 			"",
-			"| | Severity | Category | Where | Finding |",
-			"| --- | --- | --- | --- | --- |",
+			...bySeverity(carried.open).map(
+				(finding) =>
+					`- **${SEVERITY_LABEL[finding.severity]}** · ${finding.handle} · ${escapeCell(finding.title)} · [\`${whereLabel(finding)}\`](${lineUrl(finding)})`,
+			),
+			"",
 		)
-		for (const finding of carried.open) {
-			lines.push(
-				`| ${finding.handle} | ${SEVERITY_LABEL[finding.severity]} | ${finding.category} | [\`${escapeCell(`${finding.path}:${finding.line}`)}\`](${lineUrl(finding)}) | ${escapeCell(finding.title)} |`,
-			)
-		}
-		lines.push("")
 	}
 	if (carried.resolved.length > 0) {
 		lines.push(
-			`### Fixed since the last review`,
+			"### Fixed since the last review",
 			"",
 			...carried.resolved.map((finding) => `- ~~${finding.handle} · ${escapeCell(finding.title)}~~`),
 			"",
 		)
 	}
+	const checked = report.checked ?? []
+	if (checked.length > 0) {
+		// A clean review stands on what was ruled out, so it is shown; beside findings it is backup.
+		const list = checked.map((item) => `- ${item}`)
+		if (report.findings.length === 0 && carried.open.length === 0) {
+			lines.push("### What was checked", "", ...list, "")
+		} else {
+			lines.push("<details><summary>What was checked</summary>", "", ...list, "", "</details>", "")
+		}
+	}
 	if (report.coverage.length > 0) {
 		lines.push(
-			"<details><summary>What was reviewed</summary>",
+			`<details><summary>Observability coverage: ${observable} of ${report.coverage.length} changes observable</summary>`,
 			"",
 			"| Change | Kind | Observable | Evidence |",
 			"| --- | --- | --- | --- |",
@@ -514,7 +624,7 @@ export const renderReviewMarkdown = (input: ReviewMarkdownInput & { readonly hea
 		? " Check ids refer to Maple's instrumentation audit."
 		: ""
 	lines.push(
-		`<sub>Score: 100, minus ${PR_REVIEW_SCORE_PENALTY.critical} per critical finding, ${PR_REVIEW_SCORE_PENALTY.warn} per warning and ${PR_REVIEW_SCORE_PENALTY.info} per note still open.${auditNote} Updated on every push; resolve a thread or reply "won't fix" to dismiss a finding.</sub>`,
+		`<sub>Updated on every push. Resolve a thread or reply "won't fix" to dismiss a finding, or mention @maple to ask about one. Confidence is the reviewer's judgement of merge risk, capped at 2 by a critical finding and 3 by a warning. Quality: 100, minus ${PR_REVIEW_SCORE_PENALTY.critical} per critical finding, ${PR_REVIEW_SCORE_PENALTY.warn} per warning and ${PR_REVIEW_SCORE_PENALTY.info} per note still open.${auditNote}</sub>`,
 	)
 	return lines.join("\n")
 }
@@ -523,9 +633,9 @@ export const renderReviewMarkdown = (input: ReviewMarkdownInput & { readonly hea
 export const renderCheckSummary = (input: ReviewMarkdownInput): string =>
 	clampSummary(renderReviewMarkdown({ ...input, heading: false }))
 
-/** The pull request comment: the marker line, then the review with its heading. */
-export const renderSummaryComment = (input: ReviewMarkdownInput): string =>
-	clampSummary(`${PR_REVIEW_COMMENT_MARKER}\n${renderReviewMarkdown({ ...input, heading: true })}`)
+/** The pull request comment: the review's marker line, then the review with its heading. */
+export const renderSummaryComment = (marker: string, input: ReviewMarkdownInput): string =>
+	clampSummary(`${marker}\n${renderReviewMarkdown({ ...input, heading: true })}`)
 
 const SUMMARY_CUT_NOTICE = "\n\n_Summary cut at GitHub's limit; the full review is stored in Maple._"
 
@@ -554,18 +664,44 @@ export const clampSummary = (summary: string): string => {
 /** GitHub caps a check run's `output.summary`, and a comment body, at 65,535; a little headroom under it. */
 const CHECK_SUMMARY_MAX_BYTES = 65_000
 
-// `suggestion` is a sketch in a plain fence; only `replacement`, exact code for the commented
-// range, becomes a ```suggestion block GitHub applies with one click.
+/**
+ * An inline comment: the defect as a bold claim, where it sits in the review's taxonomy, the
+ * reasoning, then the fix. `suggestion` is a sketch in a plain fence; only `replacement`, exact
+ * code for the commented range, becomes a ```suggestion block GitHub applies with one click. The
+ * closing prompt is the finding restated for a coding agent, so a fix can be handed off verbatim.
+ */
 const renderComment = (finding: PrReviewFinding): string => {
 	const lines = [
-		`**${finding.handle === undefined ? "" : `${finding.handle} · `}${finding.title}** · ${categoryLabel(finding)} · ${finding.severity}`,
+		`**${finding.title}**`,
 		"",
-		finding.body,
+		`<sub>${[finding.handle, SEVERITY_LABEL[finding.severity], categoryLabel(finding)].filter((part) => part !== undefined).join(" · ")}</sub>`,
 	]
-	if (finding.suggestion) lines.push("", "```", finding.suggestion, "```")
-	if (finding.replacement !== undefined) lines.push("", "```suggestion", finding.replacement, "```")
+	if (finding.body) lines.push("", finding.body)
+	if (finding.suggestion) lines.push("", ...fenced(finding.suggestion))
+	if (finding.replacement !== undefined) lines.push("", ...fenced(finding.replacement, "suggestion"))
+	lines.push(
+		"",
+		"<details><summary>Prompt for an AI agent</summary>",
+		"",
+		...fenced(agentPrompt(finding), "text"),
+		"",
+		"</details>",
+	)
 	return lines.join("\n")
 }
+
+const agentPrompt = (finding: PrReviewFinding): string =>
+	[
+		`In \`${whereLabel(finding)}\`: ${finding.title}.`,
+		...(finding.body ? ["", finding.body] : []),
+		...(finding.replacement !== undefined
+			? ["", "Replace those lines with:", "", finding.replacement]
+			: finding.suggestion
+				? ["", `Suggested fix: ${finding.suggestion}`]
+				: []),
+		"",
+		"Verify the problem exists at that location before changing it, and keep the fix to those lines.",
+	].join("\n")
 
 /** A finding with a replacement comments on its whole range, the lines the suggestion replaces. */
 const inlineComment = (finding: PrReviewFinding, key: string | undefined): PullRequestReviewComment => ({
@@ -578,12 +714,13 @@ const inlineComment = (finding: PrReviewFinding, key: string | undefined): PullR
 })
 
 /**
- * What the review posts: a check run with every finding as an annotation, one summary comment
- * that is always written (and edited in place on later pushes), and inline comments for new
+ * What the review posts: a check run with every finding as an annotation, a summary comment of
+ * its own that replaces its "reviewing" notice, and inline comments for new
  * findings at or above the repository's inline threshold (`warn` by default). `keys` maps a
  * finding's handle to the id the posted comment is recorded under.
  */
 export const buildPublication = (input: {
+	readonly reviewId: PrReviewId
 	readonly number: number
 	readonly headSha: GitCommitSha
 	readonly report: PrReviewReport
@@ -592,10 +729,13 @@ export const buildPublication = (input: {
 	readonly carried?: CarriedFindings
 	readonly minInlineSeverity?: PrReviewSeverity
 	readonly keys?: ReadonlyMap<string, string>
+	readonly commentAttempt?: number
 }): PullRequestReviewPublication => {
 	const { report } = input
+	const marker = prReviewCommentMarker(input.reviewId, input.commentAttempt)
 	const carried = input.carried ?? NO_CARRIED
 	const { score } = scorePrReview(report, carried.open)
+	const confidence = confidencePrReview(report, carried.open, input.partial)
 	const threshold = SEVERITY_RANK[input.minInlineSeverity ?? "warn"]
 	const annotations: Array<PullRequestCheckAnnotation> = report.findings.map((finding) => ({
 		path: finding.path,
@@ -625,12 +765,21 @@ export const buildPublication = (input: {
 		number: input.number,
 		headSha: input.headSha,
 		checkName: PR_REVIEW_CHECK_NAME,
-		title: `${score}/100 · ${verdictTitle(report, carried)}`,
+		// Fixed order, like the scorecard: a check list scans down one column.
+		title: [
+			`Confidence ${confidence === undefined ? "–" : `${confidence.confidence}/5`}`,
+			`Quality ${score}/100`,
+			verdictTitle(report, carried),
+		].join(" · "),
 		summary: renderCheckSummary(markdown),
-		// Never `failure`: the review informs, it does not block a merge.
-		conclusion: hasIssues ? "neutral" : "success",
+		// Never `failure`: the review informs, it does not block a merge. Green only for a review
+		// that finished, found nothing to address and is confident the change is safe.
+		conclusion:
+			hasIssues || input.partial || (confidence !== undefined && confidence.confidence <= 3)
+				? "neutral"
+				: "success",
 		annotations,
-		summaryComment: { marker: PR_REVIEW_COMMENT_MARKER, body: renderSummaryComment(markdown) },
+		summaryComment: { marker, body: renderSummaryComment(marker, markdown) },
 		// The summary lives in the comment; the review only carries the inline notes.
 		reviewBody:
 			comments.length === 0
@@ -881,12 +1030,59 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 			})
 
 			/**
-			 * Put a status notice on the pull request's summary comment and its check run, so the
+			 * The repository's rule files at the base, for the kickoff. Best effort: `undefined` when
+			 * any read fails, and the agent reads them itself as it did before.
+			 */
+			const repositoryRules = (orgId: OrgId, repo: VcsRepo, ref: string) =>
+				Effect.gen(function* () {
+					const target = yield* providerFor(orgId, repo)
+					if (Option.isNone(target)) return undefined
+					const { provider, installation, ref: repoRef } = target.value
+					const files = yield* Effect.forEach(
+						PR_REVIEW_RULE_FILES,
+						(path) => provider.fetchSourceFile(installation, repoRef, path, ref),
+						{ concurrency: "unbounded" },
+					)
+					return files.flatMap((file) =>
+						Option.isSome(file) ? [{ path: file.value.path, content: file.value.content }] : [],
+					)
+				}).pipe(
+					// The review starts without them rather than late.
+					Effect.timeout("5 seconds"),
+					Effect.withSpan("PrReviewService.repositoryRules"),
+					Effect.catchCause((cause) =>
+						Effect.logWarning(
+							"[PrReview] could not read the repository rules; the agent reads them",
+						).pipe(
+							Effect.annotateLogs({ orgId, cause: summarizeCause(cause) }),
+							Effect.as(undefined),
+						),
+					),
+				)
+
+			/** The marker of the review's current comment; 0 for a row that is gone. */
+			const commentAttemptOf = (orgId: OrgId, reviewId: PrReviewId) =>
+				database
+					.execute((db) =>
+						db
+							.select({ commentAttempt: prReviews.commentAttempt })
+							.from(prReviews)
+							.where(and(eq(prReviews.orgId, orgId), eq(prReviews.id, reviewId)))
+							.limit(1),
+					)
+					.pipe(
+						Effect.map((rows) => rows[0]?.commentAttempt ?? 0),
+						Effect.mapError(toPersistence),
+					)
+
+			/**
+			 * Put a status notice on the review's own comment and its check run, so the
 			 * review shows as running in CI. Best effort, each on its own: a review that cannot say
 			 * it started still runs, and its finished result replaces both anyway.
 			 */
 			const postReviewStatus = (
 				orgId: OrgId,
+				reviewId: PrReviewId,
 				repo: VcsRepo,
 				number: number,
 				notice: PrReviewStatusNotice,
@@ -895,6 +1091,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 					const target = yield* providerFor(orgId, repo)
 					if (Option.isNone(target)) return
 					const { provider, installation, ref } = target.value
+					const marker = prReviewCommentMarker(reviewId, yield* commentAttemptOf(orgId, reviewId))
 					const warn = (what: string) =>
 						Effect.catchCause((cause: Cause.Cause<unknown>) =>
 							Effect.logWarning(`[PrReview] could not post the review status ${what}`).pipe(
@@ -911,8 +1108,8 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 							provider
 								.writePullRequestSummaryComment(installation, ref, {
 									number,
-									marker: PR_REVIEW_COMMENT_MARKER,
-									body: (existing) => withReviewStatus(existing, notice),
+									marker,
+									body: (existing) => withReviewStatus(existing, marker, notice),
 								})
 								.pipe(warn("comment")),
 							provider
@@ -935,25 +1132,6 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 					Effect.withSpan("PrReviewService.postReviewStatus", {
 						attributes: { orgId, "maple.pr_review.status_notice": notice.kind },
 					}),
-				)
-
-			/** A replaced head's check run would otherwise show as running forever. Best effort. */
-			const closeSupersededCheck = (orgId: OrgId, repo: VcsRepo, headSha: string) =>
-				Effect.gen(function* () {
-					const target = yield* providerFor(orgId, repo)
-					if (Option.isNone(target)) return
-					const { provider, installation, ref } = target.value
-					yield* provider.writePullRequestCheck(
-						installation,
-						ref,
-						reviewCheckFor({ kind: "superseded", headSha }),
-					)
-				}).pipe(
-					Effect.catchCause((cause) =>
-						Effect.logWarning("[PrReview] could not close a superseded review's check run").pipe(
-							Effect.annotateLogs({ orgId, headSha, cause: summarizeCause(cause) }),
-						),
-					),
 				)
 
 			/**
@@ -1116,7 +1294,11 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 						finishedAt: msToDate(nowMs),
 						updatedAt: msToDate(nowMs),
 					})
-					yield* closeSupersededCheck(orgId, repo, row.headSha)
+					// Its comment and check run would otherwise say it is reviewing forever.
+					yield* postReviewStatus(orgId, row.id, repo, number, {
+						kind: "superseded",
+						headSha: row.headSha,
+					})
 				}
 				return rows.length
 			})
@@ -1152,6 +1334,9 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 								// A reclaimed skipped or completed row must not carry its old outcome forward.
 								skipReason: null,
 								publishError: null,
+								// A finished review asked for again is a new review, so it gets a new comment;
+								// a failed one retries in place and replaces its own failure notice.
+								commentAttempt: sql`case when ${prReviews.status} in ('completed', 'skipped') then ${prReviews.commentAttempt} + 1 else ${prReviews.commentAttempt} end`,
 								reportJson: null,
 								score: null,
 								startedAt: null,
@@ -1226,6 +1411,11 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 						),
 					),
 				)
+				const rules = yield* repositoryRules(
+					orgId,
+					repo,
+					job.baseSha ?? job.baseRef ?? repo.defaultBranch,
+				)
 				const text = buildReviewKickoff({
 					repository: repo.fullName,
 					number: job.number,
@@ -1243,9 +1433,10 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 					body: job.body,
 					config,
 					...(followUp === undefined ? undefined : { followUp }),
+					...(rules === undefined ? undefined : { rules }),
 				})
 				// Before the turn, so a fast turn's finished summary is never overwritten by this notice.
-				yield* postReviewStatus(orgId, repo, job.number, { kind: "reviewing", headSha })
+				yield* postReviewStatus(orgId, reviewId, repo, job.number, { kind: "reviewing", headSha })
 				const claimed = yield* Effect.exit(
 					Effect.tryPromise(() =>
 						stub.beginTurn({
@@ -1275,7 +1466,11 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 						updatedAt: msToDate(nowMs),
 					})
 					// Not ours to report when the turn already finished or a newer head took over.
-					if (failed) yield* postReviewStatus(orgId, repo, job.number, { kind: "failed", headSha })
+					if (failed)
+						yield* postReviewStatus(orgId, reviewId, repo, job.number, {
+							kind: "failed",
+							headSha,
+						})
 					yield* annotate("failed")
 					return { reviewId, outcome: "failed" as const }
 				}
@@ -1605,7 +1800,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 					(finding, i) => new PrReviewFinding({ ...finding, handle: handles[i] ?? "" }),
 				)
 				const hasIssues = [...findings, ...stillOpen].some((finding) => finding.severity !== "info")
-				const report = new PrReviewReport({
+				const settled = new PrReviewReport({
 					...request.report,
 					findings,
 					verdict: hasIssues
@@ -1614,6 +1809,20 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 							? "clean"
 							: request.report.verdict,
 				})
+				// Stored capped, so every reader of the row sees the confidence the comment shows.
+				const confidence = confidencePrReview(settled, stillOpen, request.partial === true)
+				const { confidenceReason: _reason, ...rest } = settled
+				const report =
+					confidence === undefined
+						? settled
+						: new PrReviewReport({
+								...rest,
+								confidence: confidence.confidence,
+								// An early end is shown as the review's warning; its capped reason would repeat it.
+								...(confidence.reason === undefined || confidence.cappedBy === "partial"
+									? undefined
+									: { confidenceReason: confidence.reason }),
+							})
 				const carried = { open: stillOpen, resolved }
 				const score = scorePrReview(report, stillOpen).score
 				yield* Effect.annotateCurrentSpan({
@@ -1621,6 +1830,8 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 					"maple.pr_review.id": reviewId,
 					"maple.pr_review.verdict": report.verdict,
 					"maple.pr_review.score": score,
+					"maple.pr_review.confidence": confidence?.confidence ?? 0,
+					"maple.pr_review.confidence_capped": confidence?.capped === true,
 					"maple.pr_review.findings": report.findings.length,
 					"maple.pr_review.repeated": repeated,
 					"maple.pr_review.suppressed": feedback.suppressed.length,
@@ -1719,6 +1930,8 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 				if (Option.isNone(repository) || Option.isNone(installation)) return
 				const repo = repository.value
 				const publication = buildPublication({
+					reviewId,
+					commentAttempt: yield* commentAttemptOf(orgId, reviewId),
 					repositoryUrl: repo.htmlUrl,
 					number: review.number,
 					headSha: review.headSha,
@@ -1834,14 +2047,29 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 						.getRepositoryById(orgId, review.value.repositoryId)
 						.pipe(Effect.mapError(toPersistence))
 					if (Option.isNone(repository)) return
-					yield* postReviewStatus(orgId, repository.value, review.value.number, {
+					yield* postReviewStatus(orgId, reviewId, repository.value, review.value.number, {
 						kind: "failed",
 						headSha: review.value.headSha,
 					})
 				},
 			)
 
+			const reviewTarget: PrReviewServiceApi["reviewTarget"] = Effect.fn(
+				"PrReviewService.reviewTarget",
+			)(function* (orgId, reviewId) {
+				const review = yield* getReview(orgId, reviewId)
+				if (Option.isNone(review)) return Option.none()
+				const repository = yield* repositories
+					.getRepositoryById(orgId, review.value.repositoryId)
+					.pipe(Effect.mapError(toPersistence))
+				return Option.map(repository, (repo) => ({
+					repository: repo.fullName,
+					headSha: review.value.headSha,
+				}))
+			})
+
 			return {
+				reviewTarget,
 				onPullRequestEvent,
 				reviewNow,
 				getReview,

@@ -8,16 +8,19 @@
  * class an image provides: it emits the Durable Object namespace, marks the class
  * container-backed in the script metadata, and provisions the application.
  */
+import { createHash } from "node:crypto"
 import {
 	MapleStack,
 	WorkersObservabilityDestinations,
 	assetWorkerObservability,
+	resolveStorageJurisdiction,
 	resolveWorkerName,
 	resolveWorkerPlacement,
 } from "@maple/infra/cloudflare"
 import { requireSecretEntry } from "@maple/infra/env"
 import * as Cloudflare from "alchemy/Cloudflare"
-import { Effect } from "effect"
+import * as Output from "alchemy/Output"
+import { Effect, Redacted } from "effect"
 import type { Sandbox } from "./src/worker.ts"
 
 /**
@@ -25,7 +28,72 @@ import type { Sandbox } from "./src/worker.ts"
  * to the account registry, so a bump is a real deploy step and not a silent
  * upstream change under a running fleet.
  */
-const SANDBOX_IMAGE = "docker.io/cloudflare/sandbox:0.12.9"
+const SANDBOX_IMAGE = "docker.io/cloudflare/sandbox:0.12.10"
+
+/**
+ * Where each repository's git mirror is archived between container lifetimes
+ * (`src/mirror-backup.ts`), with the S3 credentials the Sandbox SDK signs its
+ * transfers with. Customer source, so it follows the instance's storage
+ * jurisdiction and expires a day after the SDK's own 7-day TTL: the SDK marks an
+ * archive expired but never deletes it.
+ */
+const mirrorBackups = Effect.gen(function* () {
+	const { stage, region } = yield* MapleStack
+	const bucketName = resolveWorkerName("sandbox-mirrors", stage, region)
+	const jurisdiction = resolveStorageJurisdiction(region)
+	// Plan-time: it keys the token's resource and the endpoint.
+	const { accountId } = yield* yield* Cloudflare.CloudflareEnvironment
+	const bucket = yield* Cloudflare.R2.Bucket("sandbox-mirrors", {
+		name: bucketName,
+		jurisdiction,
+		lifecycleRules: [
+			{
+				id: "expire-mirror-backups",
+				enabled: true,
+				deleteObjectsTransition: { condition: { type: "Age", maxAge: 8 * 24 * 60 * 60 } },
+				// The SDK uploads large archives in parts; a container that sleeps mid-upload
+				// leaves parts no object expiry ever sees.
+				abortMultipartUploadsTransition: { condition: { type: "Age", maxAge: 24 * 60 * 60 } },
+			},
+		],
+		// A cache: every archive can be rebuilt by one clone, so a teardown may empty it.
+		forceDestroy: true,
+	})
+	// Bucket-scoped, like ingest's replay writer. Minting it needs the deploy token to
+	// carry account-level `API Tokens > Write`.
+	const token = yield* Cloudflare.ApiToken.AccountApiToken("sandbox-mirrors-rw", {
+		name: `${bucketName}-rw`,
+		accountId,
+		policies: [
+			{
+				effect: "allow",
+				permissionGroups: [
+					"Workers R2 Storage Bucket Item Read",
+					"Workers R2 Storage Bucket Item Write",
+				],
+				resources: {
+					[`com.cloudflare.edge.r2.bucket.${accountId}_${jurisdiction ?? "default"}_${bucketName}`]:
+						"*",
+				},
+			},
+		],
+	})
+	return {
+		BACKUP_BUCKET: bucket,
+		BACKUP_BUCKET_NAME: bucketName,
+		CLOUDFLARE_ACCOUNT_ID: accountId,
+		// A jurisdictional bucket answers only on its own S3 endpoint; the SDK derives the default one.
+		BACKUP_BUCKET_ENDPOINT:
+			jurisdiction === undefined
+				? `https://${accountId}.r2.cloudflarestorage.com`
+				: `https://${accountId}.${jurisdiction}.r2.cloudflarestorage.com`,
+		// R2 renders an API token as S3 credentials: key id = token id, secret = SHA-256 of its value.
+		R2_ACCESS_KEY_ID: Output.map(Output.asOutput(token.tokenId), (id) => Redacted.make(id)),
+		R2_SECRET_ACCESS_KEY: Output.map(Output.asOutput(token.value), (value) =>
+			Redacted.make(createHash("sha256").update(Redacted.value(value)).digest("hex")),
+		),
+	}
+})
 
 const props = Effect.gen(function* () {
 	if (globalThis.__ALCHEMY_RUNTIME__) return { main: `${import.meta.dirname}/src/worker.ts` }
@@ -69,6 +137,7 @@ const props = Effect.gen(function* () {
 			// deploy it, and without the token it answers 401 to every api call, which
 			// is a failure worth having at deploy time rather than at the first tool use.
 			...(yield* requireSecretEntry("SANDBOX_INTERNAL_SERVICE_TOKEN")),
+			...(yield* mirrorBackups),
 		},
 	}
 })

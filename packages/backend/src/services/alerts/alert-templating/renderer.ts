@@ -22,7 +22,7 @@ interface NotificationTemplateOverride {
 /**
  * Raw, user-supplied template config as stored on the rule / snapshotted into a
  * delivery payload. `overrides` is keyed by destination type
- * (`slack-bot`/`discord`/…); unset fields fall back override → top-level → default.
+ * (`discord`/`telegram`/…); unset fields fall back override → top-level → default.
  */
 export interface NotificationTemplateConfig {
 	readonly title?: string | null

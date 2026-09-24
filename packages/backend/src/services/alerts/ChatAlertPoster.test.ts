@@ -86,6 +86,7 @@ const makeConnector = (posted: Array<Posted>, hang = false): RegisteredChatConne
 									return { target, messageId: "message-1" }
 								}),
 				edit: unreachable,
+				whisper: unreachable,
 				typing: unreachable,
 				openThread: unreachable,
 				conversation: unreachable,

@@ -100,7 +100,7 @@ const outboundError = (extra: {
 }) => new ChatOutboundError({ message: "refused", connectorId: TESTCHAT, operation: "post", ...extra })
 
 describe("chat alert blocks", () => {
-	it("is the slack-bot card: title, summary, severity and group, chart, links, footer", () => {
+	it("is the alert card: title, summary, severity and group, chart, links, footer", () => {
 		const card = cardOf(buildChatAlertBlocks(inputFor()))
 		assert.strictEqual(card.title, "\u{1F6A8} Checkout error rate — Triggered")
 		assert.strictEqual(card.color, "#e01e5a")
@@ -126,7 +126,9 @@ describe("chat alert blocks", () => {
 	})
 
 	it("leaves the group out of an ungrouped rule", () => {
-		const card = cardOf(buildChatAlertBlocks(inputFor({ context: { ...context, groupKey: "__total__" } })))
+		const card = cardOf(
+			buildChatAlertBlocks(inputFor({ context: { ...context, groupKey: "__total__" } })),
+		)
 		assert.deepStrictEqual(
 			card.fields.map((field) => field.label),
 			["Severity"],
@@ -180,8 +182,6 @@ describe("chat through dispatchDelivery", () => {
 		return Effect.gen(function* () {
 			const result = yield* dispatchDelivery(context, "{}", fetchFn, 5_000, LINK, CHAT, {
 				sendEmail: () => Effect.die("the chat transport sent an email"),
-				resolveSlackBotToken: () =>
-					Effect.die("the chat transport resolved another integration's token"),
 				postChatAlert: (post) =>
 					Effect.sync(() => {
 						posts.push(post)

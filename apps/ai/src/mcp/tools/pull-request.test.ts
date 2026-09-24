@@ -10,7 +10,6 @@ import {
 	renderChangedFiles,
 	renderFileDiffs,
 	renderPullRequestContext,
-	reviewCallBudget,
 	reviewablePathsInListing,
 } from "./pull-request"
 
@@ -95,7 +94,7 @@ describe("renderChangedFiles", () => {
 		patch: "@@ -1 +1 @@\n+x",
 	})
 
-	it("states a call budget from the files that are actually reviewed", () => {
+	it("counts the files that are actually reviewed, with no call budget to pace against", () => {
 		const result = renderChangedFiles("octo/shop", 7, [
 			file("src/orders.ts"),
 			file("src/orders.test.ts"),
@@ -104,13 +103,7 @@ describe("renderChangedFiles", () => {
 		])
 		const text = result.content[0]?.text ?? ""
 		assert.include(text, "Files to review: 3.")
-		assert.include(text, `${reviewCallBudget(3)} tool calls`)
-	})
-
-	it("keeps the budget between a floor and a ceiling", () => {
-		assert.equal(reviewCallBudget(0), 8)
-		assert.equal(reviewCallBudget(3), 15)
-		assert.equal(reviewCallBudget(100), 60)
+		assert.notInclude(text, "tool calls")
 	})
 })
 

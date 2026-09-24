@@ -553,10 +553,16 @@ function ReviewRow({ review }: { review: PrReviewListItem }) {
 					{review.status === "skipped" && review.skipReason !== null ? (
 						<span>· {SKIP_LABELS[review.skipReason]}</span>
 					) : null}
-					{review.score !== null ? (
-						<span>
-							· <span className="text-foreground">{review.score}</span>/100
-						</span>
+					{/* Both scores or neither, in a fixed order, so the list scans down one column. */}
+					{review.status === "completed" ? (
+						<>
+							<span title="Confidence the change is safe to merge">
+								· confidence <span className="text-foreground">{review.confidence ?? "–"}</span>/5
+							</span>
+							<span title="Quality: 100 minus a fixed penalty per open finding">
+								· quality <span className="text-foreground">{review.score ?? "–"}</span>/100
+							</span>
+						</>
 					) : null}
 					{review.status === "completed" ? (
 						<span>
