@@ -297,16 +297,27 @@ const renderRepositoryRules = (
 		`The repository rules of ${repository}, read at the base branch. They bind this review; do not read these files again.`,
 		"",
 	]
+	const omitted: Array<string> = []
 	for (const rule of rules) {
+		if (budget <= 0) {
+			omitted.push(rule.path)
+			continue
+		}
 		const content = rule.content.trim()
-		const kept = content.length > budget ? content.slice(0, Math.max(0, budget)) : content
+		const kept = content.length > budget ? content.slice(0, budget) : content
 		budget -= kept.length
 		lines.push(`<rules path="${rule.path}">`, kept)
 		if (kept.length < content.length) {
 			lines.push(`[cut at ${kept.length} of ${content.length} characters; read the rest only if a decision needs it]`)
 		}
 		lines.push("</rules>", "")
-		if (budget <= 0) break
+	}
+	// Named, so a file past the budget is still read rather than silently never known.
+	if (omitted.length > 0) {
+		lines.push(
+			`Also binding, left out for length: ${omitted.join(", ")}. Read them once at the base before any hunk.`,
+			"",
+		)
 	}
 	return lines
 }
@@ -492,6 +503,16 @@ const bySeverity = <F extends { readonly severity: PrReviewSeverity }>(findings:
 const escapeHtml = (value: string) =>
 	value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;")
 
+/**
+ * A fenced block whose fence is longer than any backtick run inside it, so code that itself holds
+ * a fence (a markdown file, a template string) cannot close the block early.
+ */
+const fenced = (content: string, info = ""): ReadonlyArray<string> => {
+	const longest = Math.max(0, ...(content.match(/`+/g) ?? []).map((run) => run.length))
+	const fence = "`".repeat(Math.max(3, longest + 1))
+	return [`${fence}${info}`, content, fence]
+}
+
 /** Text for inside `<summary>`, where GitHub renders no markdown: code spans become `<code>`. */
 const summaryHtml = (value: string) => escapeHtml(value).replace(/`([^`]+)`/g, "<code>$1</code>")
 
@@ -564,7 +585,7 @@ export const renderReviewMarkdown = (input: ReviewMarkdownInput & { readonly hea
 			if (finding.body) lines.push(finding.body, "")
 			// A plain fence: `suggestion` blocks only apply inside an inline review comment.
 			const fix = finding.replacement ?? finding.suggestion
-			if (fix) lines.push("```", fix, "```", "")
+			if (fix) lines.push(...fenced(fix), "")
 			lines.push("</details>", "")
 		}
 	}
@@ -668,15 +689,13 @@ const renderComment = (finding: PrReviewFinding): string => {
 		`<sub>${[finding.handle, SEVERITY_LABEL[finding.severity], categoryLabel(finding)].filter((part) => part !== undefined).join(" · ")}</sub>`,
 	]
 	if (finding.body) lines.push("", finding.body)
-	if (finding.suggestion) lines.push("", "```", finding.suggestion, "```")
-	if (finding.replacement !== undefined) lines.push("", "```suggestion", finding.replacement, "```")
+	if (finding.suggestion) lines.push("", ...fenced(finding.suggestion))
+	if (finding.replacement !== undefined) lines.push("", ...fenced(finding.replacement, "suggestion"))
 	lines.push(
 		"",
 		"<details><summary>Prompt for an AI agent</summary>",
 		"",
-		"````text",
-		agentPrompt(finding),
-		"````",
+		...fenced(agentPrompt(finding), "text"),
 		"",
 		"</details>",
 	)

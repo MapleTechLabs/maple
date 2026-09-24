@@ -1213,6 +1213,21 @@ describe("buildPublication", () => {
 		assert.equal(conclusion(undefined, true), "neutral")
 	})
 
+	it("fences code that itself holds a fence with a longer fence", () => {
+		const replacement = "const doc = `\n```ts\nx\n```\n`"
+		const publication = buildPublication({
+			number: 1,
+			headSha: HEAD,
+			partial: false,
+			repositoryUrl: REPO_URL,
+			report: report([
+				{ path: "a.ts", line: 3, category: "correctness", severity: "warn", title: "t", body: "b", replacement },
+			]),
+		})
+		assert.include(publication.comments[0]!.body, `\`\`\`\`suggestion\n${replacement}\n\`\`\`\`\n`)
+		assert.include(publication.summaryComment.body, `\`\`\`\`\n${replacement}\n\`\`\`\``)
+	})
+
 	it("posts a replacement as a one-click suggestion over the lines it replaces", () => {
 		const publication = buildPublication({
 			number: 1,
@@ -1330,8 +1345,16 @@ describe("buildReviewKickoff", () => {
 		assert.notInclude(unread, "has no CLAUDE.md")
 	})
 
-	it("cuts rules past the budget and says where", () => {
-		const text = kickoff({ rules: [{ path: "CLAUDE.md", content: "x".repeat(40_000) }] })
+	it("cuts rules past the budget, says where, and names the files it left out", () => {
+		const text = kickoff({
+			rules: [
+				{ path: "CLAUDE.md", content: "x".repeat(40_000) },
+				{ path: "AGENTS.md", content: "Agents." },
+				{ path: ".maple/review.md", content: "Review." },
+			],
+		})
 		assert.include(text, "[cut at 30000 of 40000 characters")
+		assert.notInclude(text, '<rules path="AGENTS.md">')
+		assert.include(text, "Also binding, left out for length: AGENTS.md, .maple/review.md.")
 	})
 })
