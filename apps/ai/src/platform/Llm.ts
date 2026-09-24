@@ -175,6 +175,8 @@ const MODEL_LIMITS: Record<string, { readonly context: number; readonly output: 
 	"z-ai/glm-5.3-flash:nitro": { context: 1_000_000, output: 128_000 },
 	// OpenRouter's catalogue: context_length 1_048_576, max_completion_tokens 131_072.
 	"deepseek/deepseek-v4.1-flash": { context: 1_000_000, output: 128_000 },
+	// OpenRouter's catalogue: context_length 1_048_576, max_completion_tokens 131_072.
+	"xiaomi/mimo-v2.6-pro": { context: 1_000_000, output: 128_000 },
 	// Moonshot's own kimi-k2.6 is 262_144, but Cloudflare does not publish the window its Workers AI
 	// deployment actually serves. Held at the conservative default until someone measures it.
 	"@cf/moonshotai/kimi-k2.6": { context: 128_000, output: 8_000 },
