@@ -172,7 +172,9 @@ describe("AgentSessionsList", () => {
 			element?.classList.contains("rounded-full") === true && element.textContent === label
 		expect(view.getAllByText(chip("2 tools"))).toHaveLength(1)
 		expect(view.getAllByText(chip("1 turn"))).toHaveLength(1)
-		expect(view.getByText("18.4k")).toBeTruthy()
+		// Tokens split into what was sent in (fresh + cache) and what came out.
+		expect(view.getByText("16k")).toBeTruthy()
+		expect(view.getByText("2.4k")).toBeTruthy()
 		expect(view.getByText("maple-slack-agent")).toBeTruthy()
 	})
 
