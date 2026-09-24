@@ -51,8 +51,13 @@ const mirrorBackups = Effect.gen(function* () {
 				id: "expire-mirror-backups",
 				enabled: true,
 				deleteObjectsTransition: { condition: { type: "Age", maxAge: 8 * 24 * 60 * 60 } },
+				// The SDK uploads large archives in parts; a container that sleeps mid-upload
+				// leaves parts no object expiry ever sees.
+				abortMultipartUploadsTransition: { condition: { type: "Age", maxAge: 24 * 60 * 60 } },
 			},
 		],
+		// A cache: every archive can be rebuilt by one clone, so a teardown may empty it.
+		forceDestroy: true,
 	})
 	// Bucket-scoped, like ingest's replay writer. Minting it needs the deploy token to
 	// carry account-level `API Tokens > Write`.
