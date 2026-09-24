@@ -95,17 +95,18 @@ function logBodySearchCondition(body: CH.Expr<string>, opts: LogsQueryOpts): CH.
 }
 
 /**
- * Words bounded by a separator on both sides, split like ClickHouse
- * HasTokenImpl (ASCII punctuation/whitespace). Words with non-ASCII characters
- * are skipped: ClickHouse `lower()` only folds ASCII, so JS lowercasing would
- * produce a token the index never stored.
+ * Words bounded by a literal separator on both sides, split like ClickHouse
+ * HasTokenImpl (ASCII punctuation/whitespace). `%`, `_` and `\` are LIKE
+ * metacharacters in the unescaped `ILIKE`, not literal boundaries, so a word
+ * touching one is skipped. Words must be ASCII alphanumeric before lowercasing:
+ * ClickHouse `lower()` folds ASCII only, while JS maps e.g. the Kelvin sign to `k`.
  */
 const interiorSearchTokens = (search: string): ReadonlyArray<string> =>
 	search
-		.toLowerCase()
-		.split(/[ -/:-@[-`{-~\t\n\r]+/)
+		.split(/[\t\n\r !-$&-/:-@[\]^`{-~]+/)
 		.slice(1, -1)
-		.filter((token) => token.length > 0 && /^[\x21-\x7e]+$/.test(token))
+		.filter((token) => /^[A-Za-z0-9]+$/.test(token))
+		.map((token) => token.toLowerCase())
 
 /** Stable identity for log records that do not carry a native OTel record ID. */
 const logRecordIdentity = ($: ColumnAccessor<typeof Logs.columns>): CH.Expr<string> => {

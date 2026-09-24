@@ -171,19 +171,32 @@ describe("logsTimeseriesQuery", () => {
 		expect(bounded).toContain("hasToken(lower(Body), 'timeout')")
 
 		const punctuation = compileUnsafe(
-			logsCountQuery({ search: "a foo_bar baz", bodySearchMode: "tokenbf" }),
+			logsCountQuery({ search: "a foo.bar-baz qux", bodySearchMode: "tokenbf" }),
 			baseParams,
 		).sql
 		expect(punctuation).toContain("hasToken(lower(Body), 'foo')")
 		expect(punctuation).toContain("hasToken(lower(Body), 'bar')")
-		expect(punctuation).not.toContain("hasToken(lower(Body), 'baz')")
+		expect(punctuation).toContain("hasToken(lower(Body), 'baz')")
+		expect(punctuation).not.toContain("hasToken(lower(Body), 'qux')")
 
-		// ClickHouse lower() folds ASCII only, so non-ASCII words never pre-filter.
-		const unicode = compileUnsafe(
-			logsCountQuery({ search: "x Café y", bodySearchMode: "tokenbf" }),
+		// `_` and `%` are ILIKE wildcards, not literal boundaries: `a_foo_b`
+		// matches `axfooYb`, where `foo` is no token. Words touching them skip.
+		for (const search of ["a_foo_b", "a foo_bar baz", "x foo% y", "x %foo y"]) {
+			const sql = compileUnsafe(logsCountQuery({ search, bodySearchMode: "tokenbf" }), baseParams).sql
+			expect(sql).not.toContain("hasToken(")
+		}
+		const wildcardNeighbour = compileUnsafe(
+			logsCountQuery({ search: "a_b foo c", bodySearchMode: "tokenbf" }),
 			baseParams,
 		).sql
-		expect(unicode).not.toContain("hasToken(")
+		expect(wildcardNeighbour).toContain("hasToken(lower(Body), 'foo')")
+
+		// ClickHouse lower() folds ASCII only, so non-ASCII words never pre-filter,
+		// including the Kelvin sign that JS lowercases to an ASCII `k`.
+		for (const search of ["x Café y", "x \u212A y"]) {
+			const sql = compileUnsafe(logsCountQuery({ search, bodySearchMode: "tokenbf" }), baseParams).sql
+			expect(sql).not.toContain("hasToken(")
+		}
 	})
 
 	it("uses exact KV item candidates for text indexes and exact confirmation", () => {
