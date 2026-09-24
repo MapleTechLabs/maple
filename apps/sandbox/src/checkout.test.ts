@@ -181,7 +181,87 @@ describe("cloneScript", () => {
 	})
 })
 
+/** The fake container with the Durable Object's mirror backup calls, recorded or failing. */
+const withMirror = (sandbox: SandboxLike, seen: string[], fail = false): SandboxLike => ({
+	...sandbox,
+	restoreMirror: async () => {
+		seen.push("restoreMirror")
+		if (fail) throw new Error("R2 is down")
+	},
+	backupMirror: async () => {
+		seen.push("backupMirror")
+		if (fail) throw new Error("R2 is down")
+	},
+})
+
+describe("cloneScript's mirror", () => {
+	it("fetches into one shared mirror under a lock, and checks out a shared clone of it", () => {
+		const script = cloneScript(checkout)
+		assert.include(script, `flock 9`)
+		assert.include(script, "fetch --quiet --no-tags")
+		assert.include(script, `+${SHA}:refs/maple/${SHA}`)
+		assert.include(script, "clone --quiet --shared --no-checkout")
+		// The lock is released before the checkout, which is local work another commit need not wait on.
+		assert.isTrue(script.indexOf("exec 9>&-") < script.indexOf("checkout --quiet --detach"))
+	})
+
+	it("starts the mirror from a restored seed when one is there", () => {
+		const script = cloneScript(checkout)
+		assert.include(script, "maple-seed")
+		assert.include(script, "gc.auto 0")
+	})
+
+	it("fetches with the credential helper, never a token in the URL", () => {
+		const script = cloneScript(checkout)
+		assert.notInclude(script, TOKEN)
+		assert.isTrue(script.indexOf("credential.helper") < script.indexOf("fetch --quiet"))
+	})
+})
+
 describe("ensureCheckout", () => {
+	it.effect("restores the mirror backup before starting a cold clone", () =>
+		Effect.gen(function* () {
+			const seen: string[] = []
+			yield* ensureCheckout(
+				withMirror(fakeSandbox({ execs: [{ exitCode: 1 }], process: null }, seen), seen),
+				checkout,
+			)
+			assert.isTrue(seen.indexOf("restoreMirror") < seen.indexOf(`start:${cloneProcessId(SHA)}`))
+			assert.notInclude(seen, "backupMirror")
+		}),
+	)
+
+	it.effect("asks for a mirror backup once a checkout is ready", () =>
+		Effect.gen(function* () {
+			const seen: string[] = []
+			const result = yield* ensureCheckout(
+				withMirror(fakeSandbox({ execs: [{ exitCode: 0 }] }, seen), seen),
+				checkout,
+			)
+			assert.isTrue(Option.isNone(result))
+			assert.include(seen, "backupMirror")
+			assert.notInclude(seen, "restoreMirror")
+		}),
+	)
+
+	it.effect("carries on when the backup store fails, which only costs a full fetch", () =>
+		Effect.gen(function* () {
+			const seen: string[] = []
+			const cold = yield* ensureCheckout(
+				withMirror(fakeSandbox({ execs: [{ exitCode: 1 }], process: null }, seen), seen, true),
+				checkout,
+			)
+			assert.isTrue(Option.isSome(cold))
+			if (Option.isSome(cold)) assert.strictEqual(cold.value._tag, "SandboxRunCheckoutPending")
+			assert.include(seen, `start:${cloneProcessId(SHA)}`)
+			const ready = yield* ensureCheckout(
+				withMirror(fakeSandbox({ execs: [{ exitCode: 0 }] }, []), [], true),
+				checkout,
+			)
+			assert.isTrue(Option.isNone(ready))
+		}),
+	)
+
 	it.effect("does nothing when the commit is already checked out", () =>
 		Effect.gen(function* () {
 			const seen: string[] = []

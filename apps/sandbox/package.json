@@ -8,7 +8,7 @@
 		"typecheck": "tsc --noEmit"
 	},
 	"dependencies": {
-		"@cloudflare/sandbox": "0.12.9",
+		"@cloudflare/sandbox": "0.12.10",
 		"@maple/domain": "workspace:*",
 		"@maple/infra": "workspace:*",
 		"effect": "catalog:effect"

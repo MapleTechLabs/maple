@@ -133,6 +133,14 @@ export interface PrReviewServiceApi {
 		orgId: OrgId,
 		reviewId: PrReviewId,
 	) => Effect.Effect<Option.Option<PrReview>, PrReviewPersistenceError>
+	/** The repository and commit a review reads, so its checkout can start before the agent asks. */
+	readonly reviewTarget: (
+		orgId: OrgId,
+		reviewId: PrReviewId,
+	) => Effect.Effect<
+		Option.Option<{ readonly repository: string; readonly headSha: GitCommitSha }>,
+		PrReviewPersistenceError
+	>
 	/**
 	 * Record the agent's report and post it to the provider. The row is `completed` once the
 	 * report is stored, whether or not the provider accepted the post.
@@ -1841,7 +1849,22 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 				},
 			)
 
+			const reviewTarget: PrReviewServiceApi["reviewTarget"] = Effect.fn(
+				"PrReviewService.reviewTarget",
+			)(function* (orgId, reviewId) {
+				const review = yield* getReview(orgId, reviewId)
+				if (Option.isNone(review)) return Option.none()
+				const repository = yield* repositories
+					.getRepositoryById(orgId, review.value.repositoryId)
+					.pipe(Effect.mapError(toPersistence))
+				return Option.map(repository, (repo) => ({
+					repository: repo.fullName,
+					headSha: review.value.headSha,
+				}))
+			})
+
 			return {
+				reviewTarget,
 				onPullRequestEvent,
 				reviewNow,
 				getReview,

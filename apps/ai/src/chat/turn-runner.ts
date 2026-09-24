@@ -24,7 +24,7 @@ import { ChatMessage, type ChatTurnOrigin, type ChatTurnTenantEncoded } from "@m
 import type { InvestigationProgress } from "@maple/domain/http"
 import { workerEnvLayer } from "@maple/infra/worker-runtime"
 import { workerTelemetryConfig } from "@maple/infra/worker-telemetry"
-import { Cause, Effect, Layer, ManagedRuntime } from "effect"
+import { Cause, Effect, Layer, ManagedRuntime, Option } from "effect"
 import type { ChatSession } from "./ChatSession"
 import type { ChatTurnEvent } from "./events"
 import { withToolTranscript } from "./close-out"
@@ -318,6 +318,29 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 		const conversations = yield* PrReviewConversationService
 		const toolExecutor = yield* McpToolExecutor
 		const runTenant = yield* withConnectorActor(tenant, origin)
+		// Clone the commit while the model reads the diff, rather than when its first source tool
+		// asks and waits on it. A child of the turn: a clone still running when the turn ends
+		// carries on in the container.
+		if (prReviewId !== undefined) {
+			yield* reviews.reviewTarget(tenant.orgId, prReviewId).pipe(
+				Effect.flatMap(
+					Option.match({
+						onNone: () => Effect.void,
+						onSome: (target) =>
+							toolExecutor.prepareRepository(runTenant, {
+								repository: target.repository,
+								ref: target.headSha,
+							}),
+					}),
+				),
+				Effect.catch((error) =>
+					Effect.logInfo("Could not prepare the review's checkout").pipe(
+						Effect.annotateLogs({ sessionId: input.sessionId, error: error.message }),
+					),
+				),
+				Effect.forkChild,
+			)
+		}
 		const history = input.session.history()
 		const model = (
 			prReviewId === undefined && prReplyId === undefined ? resolveTriageModel : resolveReviewModel
