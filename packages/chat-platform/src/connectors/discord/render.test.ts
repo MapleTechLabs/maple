@@ -81,7 +81,7 @@ describe("renderDiscordMessage", () => {
 				kind: "approval",
 				toolName: "create_alert_rule",
 				summary: "name: checkout p95",
-				token: token("org_1:bot-42|call_9"),
+				token: token("call_9"),
 				outcome: null,
 			},
 		])
@@ -94,9 +94,9 @@ describe("renderDiscordMessage", () => {
 						type: 2,
 						style: 3,
 						label: "Run create_alert_rule",
-						custom_id: "approve:org_1:bot-42|call_9",
+						custom_id: "approve:call_9",
 					},
-					{ type: 2, style: 4, label: "Skip", custom_id: "deny:org_1:bot-42|call_9" },
+					{ type: 2, style: 4, label: "Skip", custom_id: "deny:call_9" },
 				],
 			},
 		])
@@ -108,7 +108,7 @@ describe("renderDiscordMessage", () => {
 				kind: "approval",
 				toolName: "create_alert_rule",
 				summary: "name: checkout p95",
-				token: token("org_1:bot-42|call_9"),
+				token: token("call_9"),
 				outcome: { approved: true, text: "Approved by Ada.\nCreated alert rule." },
 			},
 		])
@@ -127,7 +127,7 @@ describe("renderDiscordMessage", () => {
 				kind: "approval",
 				toolName: "create_alert_rule",
 				summary: "",
-				token: token(`org_1:bot-42|${"c".repeat(120)}`),
+				token: token("c".repeat(120)),
 				outcome: null,
 			},
 		])
@@ -141,7 +141,7 @@ describe("renderDiscordMessage", () => {
 			kind: "approval" as const,
 			toolName: `tool_${index}`,
 			summary: "",
-			token: token(`org_1:bot-42|call_${index}`),
+			token: token(`call_${index}`),
 			outcome: null,
 		}))
 		const payload = renderDiscordMessage(approvals)
@@ -200,7 +200,8 @@ describe("renderDiscordMessage", () => {
 				title: "\u{1F6A8} High error rate — Triggered",
 				url: "https://app.maple.dev/alerts/1",
 				color: 0xe01e5a,
-				description: "**Error Rate** is **49.7%** — above the 5% threshold, measured over the last 5m.",
+				description:
+					"**Error Rate** is **49.7%** — above the 5% threshold, measured over the last 5m.",
 				fields: [
 					{ name: "Severity", value: "\u{1F534} Critical", inline: true },
 					{ name: "Group", value: "`electric-sync`", inline: true },

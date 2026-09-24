@@ -163,7 +163,7 @@ describe("approvals", () => {
 				kind: "approval",
 				toolName: "create_dashboard",
 				summary: "Creates a dashboard called Checkout",
-				token: token("sess-1|call-1"),
+				token: token("call-1"),
 				outcome: { approved: true, text: "Ada approved this." },
 			},
 		])
@@ -213,13 +213,15 @@ describe("the rest of the vocabulary", () => {
 	})
 
 	it("renders an error notice loudly and everything else quietly", () => {
-		expect(renderSlackMessage([{ kind: "notice", tone: "error", text: "it broke" }]).blocks?.[0]).toEqual({
-			type: "section",
-			text: { type: "mrkdwn", text: "*it broke*" },
-		})
-		expect(renderSlackMessage([{ kind: "notice", tone: "info", text: "thinking" }]).blocks?.[0]?.type).toBe(
-			"context",
+		expect(renderSlackMessage([{ kind: "notice", tone: "error", text: "it broke" }]).blocks?.[0]).toEqual(
+			{
+				type: "section",
+				text: { type: "mrkdwn", text: "*it broke*" },
+			},
 		)
+		expect(
+			renderSlackMessage([{ kind: "notice", tone: "info", text: "thinking" }]).blocks?.[0]?.type,
+		).toBe("context")
 	})
 
 	it("renders an alert as the coloured card, with no top-level text to duplicate it", () => {
@@ -277,13 +279,20 @@ describe("the rest of the vocabulary", () => {
 	})
 
 	it("puts an alert's chart between the summary and the buttons", () => {
-		const blocks = renderSlackMessage([alert({ imageUrl: "https://charts.maple.dev/c.png" })]).attachments?.[0]
-			?.blocks
-		expect(blocks?.map((block) => block.type)).toEqual(["header", "section", "image", "actions", "context"])
+		const blocks = renderSlackMessage([alert({ imageUrl: "https://charts.maple.dev/c.png" })])
+			.attachments?.[0]?.blocks
+		expect(blocks?.map((block) => block.type)).toEqual([
+			"header",
+			"section",
+			"image",
+			"actions",
+			"context",
+		])
 	})
 
 	it("keeps a mention in an alert's summary inert", () => {
-		const section = renderSlackMessage([alert({ summary: "<!channel> look" })]).attachments?.[0]?.blocks[1]
+		const section = renderSlackMessage([alert({ summary: "<!channel> look" })]).attachments?.[0]
+			?.blocks[1]
 		expect(section?.type === "section" && section.text.text).toBe("&lt;!channel&gt; look")
 	})
 })

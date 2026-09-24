@@ -378,9 +378,8 @@ const relayMessage = Effect.fn("chat_bot.relay_turn")(function* <R>(
  *   2. resolve the workspace and decide whether this person may approve anything here;
  *   3. hand the SESSION the decision, which finds the proposal in its own log and runs it.
  *
- * Nothing the click carried reaches the tool. The control names a session and a call, the session
- * reads the tool's name and arguments out of the transcript, and a control naming a session in
- * another org is refused before the session is reached at all.
+ * Nothing the click carried reaches the tool. The control names only a call; the session is this
+ * conversation's, and it reads the tool's name and arguments out of its own transcript.
  */
 const settleAction = Effect.fn("chat_bot.settle_approval")(function* <R>(
 	action: InboundAction,
@@ -413,17 +412,12 @@ const settleAction = Effect.fn("chat_bot.settle_approval")(function* <R>(
 	// attribute to an org is not answerable to an auditor.
 	yield* Effect.annotateCurrentSpan({ orgId })
 
-	// The control names its own session, and the session it is allowed to name is THIS conversation's
-	// — rebuilt from the org that owns the workspace and the conversation the connector says the
-	// click landed in, neither of which came off the control.
-	//
-	// The org alone is not enough. A control is forgeable by design (see `action-token.ts`), so an
-	// approver in one channel could otherwise settle a proposal raised in a channel they cannot
-	// read, and the settling edit would then render that conversation's answer into theirs.
+	// The session is THIS conversation's — built from the org that owns the workspace and the
+	// conversation the connector says the click landed in, neither of which came off the control.
+	// A control is forgeable by design (see `action-token.ts`), so a call id naming a proposal in
+	// another conversation finds nothing here and is answered as gone.
 	const conversation = yield* transport.conversation(action)
-	if (request.sessionId !== connectorSessionId(orgId, action.connector, conversation.conversationKey)) {
-		return yield* Effect.annotateCurrentSpan({ "maple.chat.approval": "foreign_session" })
-	}
+	const sessionId = connectorSessionId(orgId, action.connector, conversation.conversationKey)
 
 	// See `ChatConnector.identity` for the policy: a connector that can name the clicker requires a
 	// link, and one that cannot lets anyone in the conversation decide.
@@ -435,7 +429,7 @@ const settleAction = Effect.fn("chat_bot.settle_approval")(function* <R>(
 		"maple.chat.approval.as": linkedUserId === undefined ? "connector" : "user",
 	})
 
-	const session = ports.chatSession(request.sessionId)
+	const session = ports.chatSession(sessionId)
 	if (session === undefined) {
 		yield* Effect.logError("No chat session binding on this deployment")
 		yield* Effect.annotateCurrentSpan({ "maple.chat.approval": "no_binding" })
@@ -443,10 +437,10 @@ const settleAction = Effect.fn("chat_bot.settle_approval")(function* <R>(
 	}
 
 	const outcome = yield* Effect.tryPromise({
-		catch: sessionUnreachable(request.sessionId, "The chat session did not accept a decision"),
+		catch: sessionUnreachable(sessionId, "The chat session did not accept a decision"),
 		try: () =>
 			session.settleProposal({
-				sessionId: request.sessionId,
+				sessionId: sessionId,
 				toolCallId: request.toolCallId,
 				decision: request.decision,
 				approver: {
@@ -485,7 +479,7 @@ const settleAction = Effect.fn("chat_bot.settle_approval")(function* <R>(
 		case "decided":
 			// A transcript that could not be re-read has already been logged; the decision stands
 			// either way, so the reader sees an unchanged message rather than a second failure.
-			return yield* showDecision(action, request, orgId, session, ports).pipe(Effect.ignore)
+			return yield* showDecision(action, request, orgId, sessionId, session, ports).pipe(Effect.ignore)
 		default:
 			return outcome.value satisfies never
 	}
@@ -501,6 +495,7 @@ const showDecision = Effect.fn("chat_bot.show_decision")(function* <R>(
 	action: InboundAction,
 	request: ChatActionRequest,
 	orgId: OrgId,
+	sessionId: ChatSessionId,
 	session: ChatSessionStub,
 	ports: RelayPorts<R>,
 ) {
@@ -508,7 +503,7 @@ const showDecision = Effect.fn("chat_bot.show_decision")(function* <R>(
 	// is confusing enough to be worth a line: the alternative is a silent degradation that looks
 	// exactly like the platform refusing the edit.
 	const history = yield* Effect.tryPromise({
-		catch: sessionUnreachable(request.sessionId, "The chat session did not answer with its history"),
+		catch: sessionUnreachable(sessionId, "The chat session did not answer with its history"),
 		try: () => session.history(),
 	}).pipe(
 		Effect.tapError((error) =>
@@ -528,7 +523,7 @@ const showDecision = Effect.fn("chat_bot.show_decision")(function* <R>(
 		request.toolCallId,
 		{
 			appBaseUrl: ports.appBaseUrl,
-			sessionId: request.sessionId,
+			sessionId: sessionId,
 			chartImageUrl: (ref) => ports.chartImageUrl(orgId, ref),
 		},
 		ports.outbound.limits.maxMessageChars,
