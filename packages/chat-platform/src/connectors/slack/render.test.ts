@@ -2,8 +2,9 @@
  * Blocks → a Slack body. The limits are the interesting part: Slack rejects a whole message over
  * one oversized field, so a turn that overruns one must still be a turn.
  */
+import { Option } from "effect"
 import { describe, expect, it } from "vitest"
-import type { ChatActionToken } from "../../action-token"
+import { decodeChatActionControlId, encodeChatActionToken, type ChatActionToken } from "../../action-token"
 import type { ChatAlertBlock, ChatBlock } from "../../render/blocks"
 import {
 	APPROVE_ACTION,
@@ -134,7 +135,7 @@ describe("approvals", () => {
 		outcome: null,
 	})
 
-	it("carries the action token on both buttons, unchanged", () => {
+	it("carries each button's decision and the action token as its value", () => {
 		const payload = renderSlackMessage([approval("sess-1|call-1")])
 		const actions = payload.blocks?.[1]
 		expect(actions?.type === "actions" && actions.elements).toEqual([
@@ -142,16 +143,27 @@ describe("approvals", () => {
 				type: "button",
 				text: { type: "plain_text", text: "Run create_dashboard" },
 				action_id: APPROVE_ACTION,
-				value: "sess-1|call-1",
+				value: "approve:sess-1|call-1",
 				style: "primary",
 			},
 			{
 				type: "button",
 				text: { type: "plain_text", text: "Skip" },
 				action_id: DENY_ACTION,
-				value: "sess-1|call-1",
+				value: "deny:sess-1|call-1",
 				style: "danger",
 			},
+		])
+	})
+
+	it("hands the host a value it reads back as each button's decision", () => {
+		// The host decodes the clicked button's value alone; `action_id` never reaches it.
+		const payload = renderSlackMessage([{ ...approval(""), token: encodeChatActionToken("call_1") }])
+		const actions = payload.blocks?.[1]
+		const values = actions?.type === "actions" ? actions.elements.map((button) => button.value) : []
+		expect(values.map((value) => Option.getOrUndefined(decodeChatActionControlId(value)))).toEqual([
+			{ decision: "approve", toolCallId: "call_1" },
+			{ decision: "deny", toolCallId: "call_1" },
 		])
 	})
 
