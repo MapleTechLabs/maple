@@ -29,8 +29,11 @@ export const DEFAULT_OPENROUTER_MODEL = "z-ai/glm-5.3-flash:nitro"
  * Default model for pull request reviews and replies, which run on their own model rather than the
  * triage default: glm-5.3-flash leaked 1.2% of its tool calls as text, which ended 8 of 14 early
  * reviews by 2026-09-24. Changing chat's model would have retuned investigations with it.
+ *
+ * `:nitro` routes to the fastest provider. Default routing picks the cheapest, which served a
+ * 12-call review at ~50 tok/s and took 13 minutes; `:nitro` measured ~190 tok/s at twice the price.
  */
-export const DEFAULT_REVIEW_MODEL = "deepseek/deepseek-v4.1-flash"
+export const DEFAULT_REVIEW_MODEL = "deepseek/deepseek-v4.1-flash:nitro"
 
 /**
  * Default decision model: TypeSafe's Jev, reached through OpenRouter.
@@ -175,6 +178,7 @@ const MODEL_LIMITS: Record<string, { readonly context: number; readonly output: 
 	"z-ai/glm-5.3-flash:nitro": { context: 1_000_000, output: 128_000 },
 	// OpenRouter's catalogue: context_length 1_048_576, max_completion_tokens 131_072.
 	"deepseek/deepseek-v4.1-flash": { context: 1_000_000, output: 128_000 },
+	"deepseek/deepseek-v4.1-flash:nitro": { context: 1_000_000, output: 128_000 },
 	// OpenRouter's catalogue: context_length 1_048_576, max_completion_tokens 131_072.
 	"xiaomi/mimo-v2.6-pro": { context: 1_000_000, output: 128_000 },
 	// Moonshot's own kimi-k2.6 is 262_144, but Cloudflare does not publish the window its Workers AI
