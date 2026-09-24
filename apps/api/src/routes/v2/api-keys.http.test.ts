@@ -21,7 +21,6 @@ import {
 	ConfigResourceServiceStubsLayer,
 	GoogleAnalyticsServiceStubsLayer,
 	PlanetScaleServiceStubsLayer,
-	SlackIntegrationServiceStubLayer,
 	TelemetryServiceStubsLayer,
 } from "./v2-test-support"
 
@@ -63,7 +62,6 @@ const makeHarness = (checkRateLimit: RateLimiterApi["check"] = () => Effect.succ
 	const routes = HttpApiBuilder.layer(MapleApiV2).pipe(
 		Layer.provide(AllV2GroupLayersLive),
 		Layer.provide(V2TransportErrorBoundaryLive),
-		Layer.provide(SlackIntegrationServiceStubLayer),
 		Layer.provide(PlanetScaleServiceStubsLayer),
 		Layer.provide(GoogleAnalyticsServiceStubsLayer),
 		Layer.provide(AlertsServiceStubLayer),

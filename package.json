@@ -66,7 +66,7 @@
 		"oxlint": "1.77.0",
 		"oxlint-tsgolint": "7.0.2001",
 		"portless": "^0.14.0",
-		"turbo": "^2.9.18",
+		"turbo": "^2.11.3",
 		"typescript": "catalog:tooling"
 	},
 	"overrides": {

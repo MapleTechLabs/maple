@@ -3,17 +3,19 @@ import { BLOCK_SELECTOR } from "../privacy-markers"
 import { markActivity, nextChunkSeq } from "../session/session"
 import type { IngestConfig } from "../platform/transport"
 import { gzip, postSessionBlob, warnDropped, type ChunkMeta } from "../platform/transport"
+import { scrubUrl } from "../platform/url-privacy"
 
 // rrweb event shape — typed loosely to avoid coupling to @rrweb/types across
 // alpha releases. We only read `type`, `timestamp`, and incremental `data`.
 interface RrwebEvent {
 	type: number
 	timestamp: number
-	data?: { source?: number; type?: number }
+	data?: { source?: number; type?: number; href?: unknown }
 }
 
 // rrweb enum values we rely on (stable across rrweb 1.x/2.x):
 const FULL_SNAPSHOT = 2 // EventType.FullSnapshot
+const META = 4 // EventType.Meta
 const INCREMENTAL = 3 // EventType.IncrementalSnapshot
 const SOURCE_MOUSE_INTERACTION = 2 // IncrementalSource.MouseInteraction
 const MOUSE_CLICK = 2 // MouseInteractions.Click
@@ -134,6 +136,10 @@ export function startRecording(config: IngestConfig, sessionId: string): Recorde
 			const active = markActivity()
 			if (active && active.id !== sessionId) return
 			const e = event as RrwebEvent
+			// The meta event carries the page URL the player shows in its address bar.
+			if (e.type === META && e.data && typeof e.data.href === "string") {
+				e.data.href = scrubUrl(e.data.href)
+			}
 			const isFullSnapshot = isCheckpoint === true || e.type === FULL_SNAPSHOT
 			if (
 				e.type === INCREMENTAL &&

@@ -42,7 +42,6 @@ import { PlanetScaleDiscoveryService } from "@maple/backend/services/integration
 import { PlanetScaleService } from "@maple/backend/services/integrations/PlanetScaleService"
 import { ScrapeTargetsService } from "@maple/backend/services/integrations/ScrapeTargetsService"
 import { ChatWorkspaceService } from "@maple/backend/services/integrations/ChatWorkspaceService"
-import { SlackIntegrationService } from "@maple/backend/services/integrations/SlackIntegrationService"
 import { TinybirdOrgTokenService } from "@maple/backend/services/integrations/TinybirdOrgTokenService"
 import { PlanetScaleWebhookQueue } from "@maple/backend/services/integrations/planetscale/PlanetScaleWebhookQueue"
 import { VcsCommitService } from "@maple/backend/services/integrations/vcs/VcsCommitService"
@@ -133,7 +132,6 @@ export const HttpServicesLive = Layer.mergeAll(
 	GithubConnectService.layer,
 	VcsCommitService.layer,
 	VcsSourceService.layer,
-	SlackIntegrationService.layer,
 	ChatWorkspaceService.layer,
 ).pipe(
 	Layer.provide(PullRequestLookupLive),

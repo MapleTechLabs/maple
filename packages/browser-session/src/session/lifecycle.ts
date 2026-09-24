@@ -10,6 +10,7 @@ import { getActiveSink } from "../events/events-sink"
 import type { ResolvedIdentity } from "../identity/identity"
 import { buildSessionMetaRow } from "../events/meta-row"
 import {
+	adoptReplayDecision,
 	entryContextOf,
 	getSession,
 	isSessionExpired,
@@ -203,6 +204,9 @@ export function startSessionLifecycle(
 		if (stopped || running) return
 		running = true
 		const record = liveRecord()
+		// A session minted by idle rotation mid-page has no sampling decision yet;
+		// it takes this page's mode so its later loads agree with it.
+		adoptReplayDecision(record.id, hooks.recorded)
 		rebaseCounts(record)
 		hooks.onStart?.(record)
 		post("active", false)

@@ -1,14 +1,12 @@
 import { describe, expect, it } from "@effect/vitest"
 import { Schema } from "effect"
 import { OpenApi } from "effect/unstable/httpapi"
-import { SlackBotAlertDestinationConfig, UpdateSlackBotAlertDestinationConfig } from "../alerts"
 import { MapleApiV2 } from "./api"
 import {
 	V2AlertDestinationCreateParams,
 	V2AlertDestinationMutationResponse,
 	V2AlertDestinationUpdateParams,
 } from "./alert-destinations"
-import { V2SlackChannel, V2SlackChannelList, V2SlackIntegrationStatus } from "./integrations"
 import { V2AnomalyIncident, V2AnomalyIncidentTimeseries, V2AnomalySettings } from "./anomalies"
 import { V2ApiKey, V2ApiKeyCreateParams, V2ApiKeyMutationResponse, V2ApiKeyWithSecret } from "./api-keys"
 import { V2Investigation } from "./investigations"
@@ -98,7 +96,6 @@ describe("MapleApiV2 OpenAPI", () => {
 			"DELETE /v2/integrations/chat_workspaces/{id}",
 			"DELETE /v2/integrations/google_analytics",
 			"DELETE /v2/integrations/planetscale",
-			"DELETE /v2/integrations/slack",
 			"DELETE /v2/mobile_devices/{token}",
 			"DELETE /v2/mobile_devices/{token}/live_activities/{incident_id}",
 			"DELETE /v2/scrape_targets/{id}",
@@ -145,8 +142,6 @@ describe("MapleApiV2 OpenAPI", () => {
 			"GET /v2/integrations/planetscale/databases",
 			"GET /v2/integrations/planetscale/organizations",
 			"GET /v2/integrations/planetscale/webhook_config",
-			"GET /v2/integrations/slack",
-			"GET /v2/integrations/slack/channels",
 			"GET /v2/investigations",
 			"GET /v2/investigations/{id}",
 			"GET /v2/logs/{id}",
@@ -206,7 +201,6 @@ describe("MapleApiV2 OpenAPI", () => {
 			"POST /v2/integrations/planetscale/metrics_token",
 			"POST /v2/integrations/planetscale/query_insights",
 			"POST /v2/integrations/planetscale/select_organization",
-			"POST /v2/integrations/slack/install",
 			"POST /v2/investigations",
 			"POST /v2/investigations/{id}/restart",
 			"POST /v2/investigations/{id}/status",
@@ -449,112 +443,6 @@ describe("MapleApiV2 OpenAPI", () => {
 		).not.toThrow()
 		expect(mutation.properties.txid.$ref).toBe("#/components/schemas/_maple_PostgresTransactionId")
 		expect(operation("post", "/v2/alerts/destinations").responses["200"]).toBeDefined()
-	})
-
-	it("documents the Slack integration schemas with decodable wire examples", () => {
-		const status = schemas["SlackIntegration"]
-		expect(status, "SlackIntegration component present").toBeDefined()
-		expect(status.examples).toHaveLength(1)
-		const decodedStatus = Schema.decodeUnknownSync(V2SlackIntegrationStatus)(status.examples[0])
-		expect(decodedStatus.object).toBe("slack_integration")
-		expect(decodedStatus.installed).toBe(true)
-		expect(decodedStatus.team_id).toBe("T0123ABCD")
-
-		const channel = schemas["SlackChannel"]
-		expect(channel, "SlackChannel component present").toBeDefined()
-		expect(channel.examples).toHaveLength(1)
-		const decodedChannel = Schema.decodeUnknownSync(V2SlackChannel)(channel.examples[0])
-		expect(decodedChannel.id).toBe("C0789CHAN")
-		expect(decodedChannel.is_private).toBe(false)
-
-		const list = schemas["SlackChannelList"]
-		expect(list, "SlackChannelList component present").toBeDefined()
-		expect(list.examples).toHaveLength(1)
-		const decodedList = Schema.decodeUnknownSync(V2SlackChannelList)(list.examples[0])
-		expect(decodedList.object).toBe("slack_integration.channel_list")
-		expect(decodedList.channels[0]?.id).toBe("C0789CHAN")
-	})
-
-	it("narrows the Slack operations to the errors their handlers can actually return", () => {
-		// Per-endpoint error lists replaced a shared `commonErrors` tuple: a wider
-		// list would document responses the API can never produce.
-		const declared = (method: string, path: string) =>
-			Object.keys(operation(method, path).responses).sort()
-
-		// 400/401/403/429/500/504 come from shared boundaries; 503 from the handlers.
-		expect(declared("get", "/v2/integrations/slack")).toEqual([
-			"200",
-			"400",
-			"401",
-			"403",
-			"429",
-			"500",
-			"503",
-			"504",
-		])
-		expect(declared("post", "/v2/integrations/slack/install")).toEqual([
-			"200",
-			"400",
-			"401",
-			"403",
-			"429",
-			"500",
-			"503",
-			"504",
-		])
-		expect(declared("delete", "/v2/integrations/slack")).toEqual([
-			"200",
-			"400",
-			"401",
-			"403",
-			"429",
-			"500",
-			"503",
-			"504",
-		])
-		// Only `channels` can 409 (not connected) or 502 (Slack rejected us).
-		expect(declared("get", "/v2/integrations/slack/channels")).toEqual([
-			"200",
-			"400",
-			"401",
-			"403",
-			"409",
-			"429",
-			"500",
-			"502",
-			"503",
-			"504",
-		])
-	})
-
-	it("documents the distinct scope and org-admin tags on Slack operations", () => {
-		// install / uninstall / channels all call `requireAdmin`: `channels`
-		// enumerates the workspace's channels, private ones included, so it is not
-		// something any org member may read.
-		const adminTags = [
-			"@maple/http/v2/InsufficientPermissionsError",
-			"@maple/http/v2/InsufficientScopeError",
-			// From `AuthorizationV2` itself, so every v2 operation carries it: a request
-			// can always name an organization (`x-maple-org-id`) the caller is not in.
-			"@maple/http/v2/OrganizationAccessDeniedError",
-		]
-		expect([...responseErrorTags("post", "/v2/integrations/slack/install", "403")].sort()).toEqual(
-			adminTags,
-		)
-		expect([...responseErrorTags("delete", "/v2/integrations/slack", "403")].sort()).toEqual(adminTags)
-		expect([...responseErrorTags("get", "/v2/integrations/slack/channels", "403")].sort()).toEqual(
-			adminTags,
-		)
-		expect(operation("get", "/v2/integrations/slack/channels").description).toContain("org-admin")
-
-		// `status` stays UNGATED — the dashboard's Slack card renders install state
-		// for every member, so its 403 comes from the scope middleware alone.
-		expect(responseErrorTags("get", "/v2/integrations/slack", "403")).toEqual([
-			"@maple/http/v2/InsufficientScopeError",
-			// From `AuthorizationV2` itself, so every v2 operation carries it: a request
-			// can always name an organization (`x-maple-org-id`) the caller is not in.
-			"@maple/http/v2/OrganizationAccessDeniedError",
-		])
 	})
 
 	it("gives every error response an exhaustive literal-tag union", () => {
@@ -947,72 +835,6 @@ describe("MapleApiV2 OpenAPI", () => {
 				"@maple/http/errors/AlertMemberDirectoryUnavailableError",
 			)
 		}
-	})
-
-	it("decodes slack-bot destination create/update params and rejects a blank channel_id", () => {
-		expect(schemas["AlertDestinationCreateSlackBot"], "create component present").toBeDefined()
-		expect(schemas["AlertDestinationUpdateSlackBot"], "update component present").toBeDefined()
-
-		const created = Schema.decodeUnknownSync(V2AlertDestinationCreateParams)({
-			type: "slack-bot",
-			name: "On-call Slack",
-			channel_id: "C0789CHAN",
-			channel_name: "incidents",
-			enabled: true,
-		})
-		expect(created.type).toBe("slack-bot")
-
-		// channel_name is optional on create.
-		const minimal = Schema.decodeUnknownSync(V2AlertDestinationCreateParams)({
-			type: "slack-bot",
-			name: "On-call Slack",
-			channel_id: "C0789CHAN",
-			enabled: true,
-		})
-		expect(minimal.type).toBe("slack-bot")
-
-		const updated = Schema.decodeUnknownSync(V2AlertDestinationUpdateParams)({
-			type: "slack-bot",
-			channel_name: "alerts",
-		})
-		expect(updated.type).toBe("slack-bot")
-
-		// channel_id was tightened to a non-empty optional string — an explicit
-		// blank must fail decoding instead of silently wiping the stored channel.
-		expect(() =>
-			Schema.decodeUnknownSync(V2AlertDestinationUpdateParams)({
-				type: "slack-bot",
-				channel_id: "",
-			}),
-		).toThrow()
-	})
-
-	it("decodes the internal slack-bot destination config schemas", () => {
-		const config = Schema.decodeUnknownSync(SlackBotAlertDestinationConfig)({
-			type: "slack-bot",
-			name: "Slack bot",
-			channelId: "C0789CHAN",
-			channelName: "incidents",
-			enabled: true,
-		})
-		expect(config.channelId).toBe("C0789CHAN")
-
-		const update = Schema.decodeUnknownSync(UpdateSlackBotAlertDestinationConfig)({
-			channelName: "alerts",
-		})
-		expect(update.channelName).toBe("alerts")
-
-		// Same tightening as the v2 params: a blank channelId must fail decoding.
-		expect(() =>
-			Schema.decodeUnknownSync(UpdateSlackBotAlertDestinationConfig)({ channelId: "" }),
-		).toThrow()
-		expect(() =>
-			Schema.decodeUnknownSync(SlackBotAlertDestinationConfig)({
-				type: "slack-bot",
-				name: "Slack bot",
-				channelId: "",
-			}),
-		).toThrow()
 	})
 
 	it("documents the public-ID and Scope primitives with examples", () => {

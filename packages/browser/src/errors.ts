@@ -9,7 +9,9 @@
 // Each error becomes a one-off span carrying an `exception` event and status
 // Error. That is the shape `error_events_mv` fingerprints on, so these arrive in
 // error tracking beside server-side errors rather than in a separate silo.
-import { SpanKind, SpanStatusCode, trace } from "@opentelemetry/api"
+import { scrubUrl } from "@maple/browser-session"
+import { SpanKind, SpanStatusCode } from "@opentelemetry/api"
+import { mapleTracer } from "./tracing"
 import { SDK_NAME, SDK_VERSION } from "./version"
 
 export interface CaptureExceptionOptions {
@@ -37,22 +39,49 @@ const asError = (value: unknown): Error => {
 }
 
 /**
- * Record an error that no span was watching. Safe before `init()` — without a
- * registered provider the OTel API hands back a no-op tracer and this does
- * nothing.
+ * Errors already reported, by identity. Module-level so the global handlers and
+ * `captureException` share it: a framework boundary that reports an error and
+ * then rethrows it would otherwise produce two issues for one crash.
  */
-export function captureException(error: unknown, options: CaptureExceptionOptions = {}): void {
+let reported = new WeakSet<object>()
+
+/** Whether this exact error object was already recorded. */
+const alreadyReported = (error: unknown): boolean =>
+	typeof error === "object" && error !== null && reported.has(error)
+
+/** Test seam. */
+export function resetReportedErrorsForTests(): void {
+	reported = new WeakSet()
+}
+
+/**
+ * Record `error` on a one-off span. The error is claimed only when the span is
+ * recording: before `init()` the tracer is a no-op, and claiming it then would
+ * swallow the same error reported again once tracing is live.
+ */
+function recordException(error: unknown, options: CaptureExceptionOptions): void {
 	const normalized = asError(error)
-	const span = trace.getTracer(SDK_NAME, SDK_VERSION).startSpan(options.name ?? "exception", {
+	const span = mapleTracer(SDK_NAME, SDK_VERSION).startSpan(options.name ?? "exception", {
 		kind: SpanKind.INTERNAL,
 		attributes: {
-			...(typeof location !== "undefined" ? { "url.full": location.href } : undefined),
+			...(typeof location !== "undefined" ? { "url.full": scrubUrl(location.href) } : undefined),
 			...options.attributes,
 		},
 	})
+	if (span.isRecording() && typeof error === "object" && error !== null) reported.add(error)
 	span.recordException(normalized)
 	span.setStatus({ code: SpanStatusCode.ERROR, message: normalized.message })
 	span.end()
+}
+
+/**
+ * Record an error that no span was watching. Safe before `init()`: without a
+ * registered provider the OTel API hands back a no-op tracer and this does
+ * nothing. Reporting the same error object twice records it once.
+ */
+export function captureException(error: unknown, options: CaptureExceptionOptions = {}): void {
+	if (alreadyReported(error)) return
+	recordException(error, options)
 }
 
 /**
@@ -66,15 +95,8 @@ export function setupErrorCapture(): () => void {
 
 	// One error must not become two issues. The same throw can reach both
 	// handlers (a rejected promise whose reason is later rethrown), and a host
-	// app's own boundary may report it through `captureException` as well.
-	const reported = new WeakSet<object>()
-	const seen = (error: unknown): boolean => {
-		if (typeof error !== "object" || error === null) return false
-		if (reported.has(error)) return true
-		reported.add(error)
-		return false
-	}
-
+	// app's own boundary may report it through `captureException` as well:
+	// `alreadyReported` is shared with that path.
 	const onError = (event: ErrorEvent): void => {
 		// A cross-origin script surfaces as a bare "Script error." with no error
 		// object and no usable frames. It fingerprints to one meaningless issue
@@ -82,8 +104,8 @@ export function setupErrorCapture(): () => void {
 		// not a noisier error tracker.
 		const error: unknown =
 			event.error ?? (event.message && event.filename ? new Error(event.message) : undefined)
-		if (error === undefined || seen(error)) return
-		captureException(error, {
+		if (error === undefined || alreadyReported(error)) return
+		recordException(error, {
 			name: "browser.uncaught_error",
 			attributes: {
 				"maple.exception.source": "window.onerror",
@@ -98,8 +120,8 @@ export function setupErrorCapture(): () => void {
 	}
 
 	const onUnhandledRejection = (event: PromiseRejectionEvent): void => {
-		if (seen(event.reason)) return
-		captureException(event.reason, {
+		if (alreadyReported(event.reason)) return
+		recordException(event.reason, {
 			name: "browser.unhandled_rejection",
 			attributes: { "maple.exception.source": "unhandledrejection" },
 		})

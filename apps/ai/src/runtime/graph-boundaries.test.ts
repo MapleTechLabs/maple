@@ -49,7 +49,6 @@ describe("AI runtime graph boundaries", () => {
 			"AiTriageService",
 			"DigestService",
 			"DemoService",
-			"SlackIntegrationService",
 		]) {
 			expect(imports.some((specifier) => specifier.endsWith(`/${routeOnlyService}`))).toBe(false)
 		}

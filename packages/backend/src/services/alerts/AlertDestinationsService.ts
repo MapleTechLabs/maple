@@ -39,7 +39,6 @@ import {
 	type OrgMember,
 	type OrgMembersServiceApi,
 } from "@maple/backend/services/org/OrgMembersService"
-import { SlackBotTokenResolver } from "@maple/backend/services/integrations/slack-bot-token"
 import { ChatAlertPoster, type ChatChannelChoice } from "./ChatAlertPoster"
 import { PAGERDUTY_ROUTING_KEY_PATTERN, verifyPagerDutyRoutingKey } from "./delivery/transports/pagerduty"
 import {
@@ -152,10 +151,6 @@ const buildPublicConfig = (
 ): DestinationPublicConfig =>
 	Match.value(request).pipe(
 		Match.discriminatorsExhaustive("type")({
-			"slack-bot": (r) => ({
-				summary: r.channelName?.trim() ? `#${r.channelName.trim()}` : "Slack channel",
-				channelLabel: r.channelName?.trim() ? `#${r.channelName.trim()}` : null,
-			}),
 			pagerduty: () => ({ summary: "PagerDuty Events API v2", channelLabel: null }),
 			webhook: (r) => ({ summary: summarizeWebhookUrl(r.url), channelLabel: null }),
 			"hazel-oauth": (r) => ({
@@ -181,11 +176,6 @@ const buildSecretConfig = (
 ): DestinationSecretConfig =>
 	Match.value(request).pipe(
 		Match.discriminatorsExhaustive("type")({
-			"slack-bot": (r) => ({
-				type: "slack-bot" as const,
-				channelId: r.channelId.trim(),
-				channelName: normalizeOptionalString(r.channelName),
-			}),
 			pagerduty: (r) => ({ type: "pagerduty" as const, integrationKey: r.integrationKey.trim() }),
 			webhook: (r) => ({
 				type: "webhook" as const,
@@ -341,7 +331,6 @@ export class AlertDestinationsService extends Context.Service<
 		const hazelOAuth = yield* HazelOAuthService
 		const email = yield* EmailService
 		const orgMembers = yield* OrgMembersService
-		const slackBotToken = yield* SlackBotTokenResolver
 		const chatAlertPoster = yield* ChatAlertPoster
 		const encryptionKey = yield* parseAlertDestinationEncryptionKey(
 			Redacted.value(env.MAPLE_INGEST_KEY_ENCRYPTION_KEY),
@@ -351,7 +340,6 @@ export class AlertDestinationsService extends Context.Service<
 			appBaseUrl: env.MAPLE_APP_BASE_URL,
 			runtime,
 			email,
-			resolveSlackBotToken: slackBotToken.resolve,
 			postChatAlert: chatAlertPoster.post,
 		})
 
@@ -483,7 +471,7 @@ export class AlertDestinationsService extends Context.Service<
 		const listTelegramChats: AlertDestinationsServiceApi["listTelegramChats"] = Effect.fn(
 			"AlertsService.listTelegramChats",
 		)(function* (roles, botToken) {
-			// Admin-gated for the same reason the Slack channel list is: it reads
+			// Admin-gated for the same reason a chat workspace's channel list is: it reads
 			// somebody's chat inventory, and it accepts an arbitrary token, so it
 			// must not be a probe any org member can drive.
 			yield* requireAdmin(roles)
@@ -606,33 +594,6 @@ export class AlertDestinationsService extends Context.Service<
 
 			const { nextPublicConfig, nextSecretConfig } = yield* Match.value(request).pipe(
 				Match.discriminatorsExhaustive("type")({
-					"slack-bot": (r) => {
-						const channelName = normalizeOptionalString(r.channelName)
-						return Effect.succeed({
-							nextPublicConfig: {
-								summary:
-									channelName != null ? `#${channelName}` : hydrated.publicConfig.summary,
-								channelLabel:
-									channelName != null
-										? `#${channelName}`
-										: hydrated.publicConfig.channelLabel,
-							} satisfies DestinationPublicConfig,
-							nextSecretConfig: {
-								type: "slack-bot" as const,
-								channelId:
-									normalizeOptionalString(r.channelId) ??
-									(hydrated.secretConfig.type === "slack-bot"
-										? hydrated.secretConfig.channelId
-										: ""),
-								channelName:
-									r.channelName === undefined
-										? hydrated.secretConfig.type === "slack-bot"
-											? hydrated.secretConfig.channelName
-											: null
-										: channelName,
-							} satisfies DestinationSecretConfig,
-						})
-					},
 					pagerduty: (r) =>
 						Effect.succeed({
 							nextPublicConfig: hydrated.publicConfig,
@@ -1028,7 +989,7 @@ export class AlertDestinationsService extends Context.Service<
 	}),
 }) {
 	static readonly layer = Layer.effect(this, this.make).pipe(
-		Layer.provide(Layer.mergeAll(SlackBotTokenResolver.layer, ChatAlertPoster.layer)),
+		Layer.provide(ChatAlertPoster.layer),
 		Layer.provide(Layer.mergeAll(EmailService.layer, HazelOAuthService.layer, OrgMembersService.layer)),
 	)
 }

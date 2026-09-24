@@ -24,7 +24,6 @@ import { GoogleAnalyticsService } from "@maple/backend/services/integrations/Goo
 import { PlanetScaleService } from "@maple/backend/services/integrations/PlanetScaleService"
 import { ScrapeTargetsService } from "@maple/backend/services/integrations/ScrapeTargetsService"
 import { ChatWorkspaceService } from "@maple/backend/services/integrations/ChatWorkspaceService"
-import { SlackIntegrationService } from "@maple/backend/services/integrations/SlackIntegrationService"
 import { OnboardingChecklistService } from "@maple/backend/services/org/OnboardingChecklistService"
 import { SetupAuditService } from "@maple/backend/services/org/SetupAuditService"
 import { SignalPresenceService } from "@maple/backend/services/org/SignalPresenceService"
@@ -40,11 +39,7 @@ import { HttpV2AttributeMappingsLive } from "./attribute-mappings.http"
 import { HttpV2DashboardsLive } from "./dashboards.http"
 import { HttpV2IngestKeysLive } from "./ingest-keys.http"
 import { HttpV2ChatIntegrationsLive } from "./integrations-chat.http"
-import {
-	HttpV2GoogleAnalyticsIntegrationsLive,
-	HttpV2PlanetScaleIntegrationsLive,
-	HttpV2SlackIntegrationsLive,
-} from "./integrations.http"
+import { HttpV2GoogleAnalyticsIntegrationsLive, HttpV2PlanetScaleIntegrationsLive } from "./integrations.http"
 import { HttpV2ErrorIssuesLive } from "./error-issues.http"
 import { HttpV2AnomaliesLive } from "./anomalies.http"
 import { HttpV2InvestigationsLive } from "./investigations.http"
@@ -126,7 +121,6 @@ const ChatWorkspaceServiceStubLayer = Layer.succeed(
 const v2GroupLayersExceptOnboardingChecklist = (chatWorkspace: Layer.Layer<ChatWorkspaceService>) =>
 	Layer.mergeAll(
 		HttpV2ApiKeysLive,
-		HttpV2SlackIntegrationsLive,
 		HttpV2ChatIntegrationsLive.pipe(Layer.provide(chatWorkspace)),
 		HttpV2PlanetScaleIntegrationsLive,
 		HttpV2GoogleAnalyticsIntegrationsLive,
@@ -401,20 +395,6 @@ export const GoogleAnalyticsServiceStubsLayer = Layer.mergeAll(
 		getValidAccessToken: die,
 		disconnect: die,
 		markConnectionRevoked: die,
-	}),
-)
-
-/** Inert SlackIntegrationService for harnesses that never touch the slack integration group. */
-export const SlackIntegrationServiceStubLayer = Layer.succeed(
-	SlackIntegrationService,
-	SlackIntegrationService.of({
-		startInstall: die,
-		completeInstall: die,
-		getStatus: die,
-		uninstall: die,
-		listChannels: die,
-		revokeByTeamId: die,
-		reconcileWorkspaces: die,
 	}),
 )
 

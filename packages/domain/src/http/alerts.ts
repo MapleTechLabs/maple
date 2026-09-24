@@ -19,7 +19,6 @@ import { QueryBuilderQueryDraftSchema } from "./query-engine"
 import { HttpTaggedError } from "./error-policy"
 
 export const AlertDestinationType = Schema.Literals([
-	"slack-bot",
 	"pagerduty",
 	"webhook",
 	"hazel-oauth",
@@ -176,18 +175,6 @@ export const AlertWindowMinutes = PositiveInt.pipe(
 	Schema.check(Schema.isLessThanOrEqualTo(MAX_ALERT_WINDOW_MINUTES)),
 )
 
-export class SlackBotAlertDestinationConfig extends Schema.Class<SlackBotAlertDestinationConfig>(
-	"SlackBotAlertDestinationConfig",
-)({
-	type: Schema.Literal("slack-bot"),
-	name: ChannelLabel,
-	// The Slack channel the installed bot posts to. No per-destination token —
-	// the bot token is resolved from the org's slack_workspaces row at dispatch.
-	channelId: NonEmptyString,
-	channelName: OptionalNonEmptyString,
-	enabled: Schema.optionalKey(Schema.Boolean),
-}) {}
-
 export class PagerDutyAlertDestinationConfig extends Schema.Class<PagerDutyAlertDestinationConfig>(
 	"PagerDutyAlertDestinationConfig",
 )({
@@ -278,7 +265,6 @@ export class EmailAlertDestinationConfig extends Schema.Class<EmailAlertDestinat
 }) {}
 
 export const AlertDestinationCreateRequest = Schema.Union([
-	SlackBotAlertDestinationConfig,
 	PagerDutyAlertDestinationConfig,
 	WebhookAlertDestinationConfig,
 	HazelOAuthAlertDestinationConfig,
@@ -288,15 +274,6 @@ export const AlertDestinationCreateRequest = Schema.Union([
 	ChatAlertDestinationConfig,
 ])
 export type AlertDestinationCreateRequest = Schema.Schema.Type<typeof AlertDestinationCreateRequest>
-
-export class UpdateSlackBotAlertDestinationConfig extends Schema.Class<UpdateSlackBotAlertDestinationConfig>(
-	"UpdateSlackBotAlertDestinationConfig",
-)({
-	name: OptionalNonEmptyString,
-	channelId: OptionalNonEmptyString,
-	channelName: OptionalNonEmptyString,
-	enabled: Schema.optionalKey(Schema.Boolean),
-}) {}
 
 export class UpdatePagerDutyAlertDestinationConfig extends Schema.Class<UpdatePagerDutyAlertDestinationConfig>(
 	"UpdatePagerDutyAlertDestinationConfig",
@@ -362,10 +339,6 @@ export class UpdateChatAlertDestinationConfig extends Schema.Class<UpdateChatAle
 }) {}
 
 export const AlertDestinationUpdateRequest = Schema.Union([
-	Schema.Struct({
-		type: Schema.Literal("slack-bot"),
-		...UpdateSlackBotAlertDestinationConfig.fields,
-	}),
 	Schema.Struct({
 		type: Schema.Literal("pagerduty"),
 		...UpdatePagerDutyAlertDestinationConfig.fields,
@@ -448,7 +421,7 @@ export class AlertDestinationsListResponse extends Schema.Class<AlertDestination
 /**
  * A single template string (title or body). Capped to keep stored configs and
  * rendered notifications bounded. Markdown is allowed in `body`; channels render
- * it per their own dialect (Slack mrkdwn, Discord markdown, plain text).
+ * it per their own dialect (Discord markdown, Telegram HTML, plain text).
  */
 const TemplateString = Schema.String.check(Schema.isMaxLength(4_000))
 
@@ -1008,7 +981,7 @@ const alertDeliveryErrorFields = {
 	destinationType: Schema.optionalKey(AlertDestinationType),
 	/** Provider HTTP status, when the failure came from a response. */
 	providerStatus: Schema.optionalKey(Schema.Number),
-	/** Provider-specific failure code, e.g. Slack's `not_in_channel`. */
+	/** Provider-specific failure code, e.g. a chat platform's `not_in_channel`. */
 	providerErrorCode: Schema.optionalKey(Schema.String),
 	cause: Schema.optionalKey(Schema.Defect()),
 }
@@ -1045,7 +1018,7 @@ export class AlertDeliveryAuthError extends HttpTaggedError<AlertDeliveryAuthErr
 
 /**
  * The target channel/endpoint is gone or unreachable as configured — a 404, a
- * deleted webhook, or a Slack channel the bot is not a member of. Retrying
+ * deleted webhook, or a chat channel the bot can no longer post to. Retrying
  * cannot fix it; the destination has to be pointed somewhere else.
  */
 export class AlertDeliveryTargetMissingError extends HttpTaggedError<AlertDeliveryTargetMissingError>()(

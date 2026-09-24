@@ -3,12 +3,13 @@ import { AlertDeliveryError, AlertDestinationId } from "@maple/domain/http"
 import { assert, describe, it } from "@effect/vitest"
 import { Effect, Schema } from "effect"
 import { makeRecordingTracer, spansNamed } from "@maple/backend/testing/recording-tracer"
-import { dispatchDelivery, type DispatchDeps } from "./dispatch"
+import { dispatchDelivery } from "./dispatch"
+import type { EffectTransportDeps } from "./Transport"
 import type { DispatchContext } from "./context"
 
 /**
  * The outbound provider call must be a **Client-kind span carrying
- * `peer.service`** — that pair is what draws Slack/PagerDuty/Discord/Hazel as
+ * `peer.service`** — that pair is what draws PagerDuty/Discord/Hazel/Telegram as
  * nodes on the service map and makes their latency and status attributable.
  * Before the transport registry existed, `dispatchDelivery` had no span at all
  * and no provider arm had one, so every provider dependency was invisible.
@@ -70,12 +71,11 @@ const contextFor = (secretConfig: DispatchContext["secretConfig"]): DispatchCont
 	sentAtMs: Date.parse("2026-06-02T00:00:00.000Z"),
 })
 
-const deps = (token = "xoxb-token"): DispatchDeps => ({
+const deps: EffectTransportDeps = {
 	postChatAlert: failingChatPost,
 	sendEmail: () =>
 		Effect.fail(new AlertDeliveryError({ message: "unexpected sendEmail", destinationType: "email" })),
-	resolveSlackBotToken: () => Effect.succeed(token),
-})
+}
 
 const respondWith =
 	(make: () => Response): typeof fetch =>
@@ -90,19 +90,11 @@ const dispatch = (context: DispatchContext, fetchFn: typeof fetch) =>
 		5_000,
 		"https://web.localhost/alerts",
 		"https://web.localhost/chat",
-		deps(),
+		deps,
 	)
 
 describe("AlertDelivery.http span", () => {
 	const cases = [
-		{
-			name: "slack-bot",
-			config: { type: "slack-bot", channelId: "C1", channelName: "incidents" } as const,
-			peerService: "slack",
-			host: "slack.com",
-			expectPath: "/api/chat.postMessage",
-			respond: () => new Response(JSON.stringify({ ok: true, ts: "1.2" }), { status: 200 }),
-		},
 		{
 			name: "pagerduty",
 			config: { type: "pagerduty", integrationKey: "k" } as const,
@@ -243,7 +235,7 @@ describe("AlertDelivery.http span", () => {
 				5_000,
 				"https://web.localhost/alerts",
 				"https://web.localhost/chat",
-				{ ...deps(), sendEmail: () => Effect.void },
+				{ ...deps, sendEmail: () => Effect.void },
 			).pipe(Effect.withTracer(tracer))
 
 			assert.deepStrictEqual(spansNamed(spans, HTTP_SPAN), [])

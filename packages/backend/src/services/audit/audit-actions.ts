@@ -83,7 +83,6 @@ export const AuditResources = {
 	google_analytics_integration: {
 		verbs: ["connect_started", "disconnected", "property_enabled", "property_disabled"],
 	},
-	slack_integration: { verbs: ["install_started", "uninstalled"] },
 	/**
 	 * Org membership, learned from Clerk's webhook — the web app changes members
 	 * in Clerk directly, so nothing reaches Maple's own API. The member is the

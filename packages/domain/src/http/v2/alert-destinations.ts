@@ -60,11 +60,11 @@ const MemberUserIdList = Schema.Array(UserId).check(
 const alertDestinationExample = {
 	id: "dest_oybbpTBhtSFGShMjjLiCrh",
 	object: "alert_destination",
-	name: "On-call Slack",
-	type: "slack-bot",
+	name: "On-call PagerDuty",
+	type: "pagerduty",
 	enabled: true,
-	summary: "Slack bot → #incidents",
-	channel_label: "#incidents",
+	summary: "PagerDuty Events API v2",
+	channel_label: null,
 	member_user_ids: null,
 	last_tested_at: "2026-07-15T09:12:00.000Z",
 	last_test_error: null,
@@ -82,12 +82,12 @@ export const V2AlertDestination = Schema.Struct({
 	}),
 	name: Schema.String.annotate({
 		description: "Human-readable label for the destination, shown in the dashboard and in rule editors.",
-		examples: ["On-call Slack"],
+		examples: ["On-call PagerDuty"],
 	}),
 	type: AlertDestinationType.annotate({
 		description:
-			"The delivery channel: `slack-bot`, `pagerduty`, `webhook`, `hazel-oauth`, `discord`, `telegram`, `email`, or `chat` (a channel in a chat workspace linked through a chat connector). Immutable after creation.",
-		examples: ["slack-bot"],
+			"The delivery channel: `pagerduty`, `webhook`, `hazel-oauth`, `discord`, `telegram`, `email`, or `chat` (a channel in a chat workspace linked through a chat connector). Immutable after creation.",
+		examples: ["pagerduty"],
 	}),
 	enabled: Schema.Boolean.annotate({
 		description:
@@ -97,11 +97,11 @@ export const V2AlertDestination = Schema.Struct({
 	summary: Schema.String.annotate({
 		description:
 			"Redacted, human-readable summary of the destination's configuration. Secrets (webhook URLs, integration keys, signing secrets) are write-only — they are never returned by the API.",
-		examples: ["Slack bot → #incidents"],
+		examples: ["PagerDuty Events API v2"],
 	}),
 	channel_label: Schema.NullOr(Schema.String).annotate({
 		description:
-			"Optional display label for the target channel — the channel name for Slack, the chat ID for Telegram — or `null`.",
+			"Optional display label for the target channel — the channel name for a chat destination, the chat ID for Telegram — or `null`.",
 		examples: ["#incidents"],
 	}),
 	member_user_ids: Schema.NullOr(Schema.Array(Schema.String)).annotate({
@@ -132,7 +132,7 @@ export const V2AlertDestination = Schema.Struct({
 	identifier: "AlertDestination",
 	title: "Alert Destination",
 	description:
-		"A notification channel that alert rules deliver to (Slack bot, PagerDuty, generic webhook, Hazel OAuth, Discord, Telegram, or workspace-member email). Channel secrets are write-only: responses carry a redacted `summary` instead.",
+		"A notification channel that alert rules deliver to (PagerDuty, generic webhook, Hazel OAuth, Discord, Telegram, workspace-member email, or a channel in a linked chat workspace). Channel secrets are write-only: responses carry a redacted `summary` instead.",
 	examples: [wireExample(alertDestinationExample)],
 })
 export type V2AlertDestination = Schema.Schema.Type<typeof V2AlertDestination>
@@ -157,24 +157,8 @@ const enabledField = Schema.optionalKey(
 
 const nameField = NonEmptyString.annotate({
 	description: "Human-readable label for the destination. Required, non-empty.",
-	examples: ["On-call Slack"],
+	examples: ["On-call PagerDuty"],
 })
-
-const V2SlackBotDestinationCreateParams = Schema.Struct({
-	type: Schema.Literal("slack-bot"),
-	name: nameField,
-	channel_id: NonEmptyString.annotate({
-		description: "The Slack channel id the bot posts to (e.g. `C0789CHAN`).",
-		examples: ["C0789CHAN"],
-	}),
-	channel_name: Schema.optionalKey(
-		NonEmptyString.annotate({
-			description: "Optional display name for the channel, e.g. `incidents`.",
-			examples: ["incidents"],
-		}),
-	),
-	enabled: enabledField,
-}).annotate({ identifier: "AlertDestinationCreateSlackBot", title: "Slack (bot) destination" })
 
 const V2PagerDutyDestinationCreateParams = Schema.Struct({
 	type: Schema.Literal("pagerduty"),
@@ -271,7 +255,6 @@ const V2ChatDestinationCreateParams = Schema.Struct({
 }).annotate({ identifier: "AlertDestinationCreateChat", title: "Chat connector destination" })
 
 export const V2AlertDestinationCreateParams = Schema.Union([
-	V2SlackBotDestinationCreateParams,
 	V2PagerDutyDestinationCreateParams,
 	V2WebhookDestinationCreateParams,
 	V2HazelOAuthDestinationCreateParams,
@@ -286,10 +269,9 @@ export const V2AlertDestinationCreateParams = Schema.Union([
 		"Request body for creating an alert destination, discriminated on `type`. Channel secrets are accepted here but never returned by any read endpoint.",
 	examples: [
 		wireExample({
-			type: "slack-bot",
-			name: "On-call Slack",
-			channel_id: "C0789CHAN",
-			channel_name: "incidents",
+			type: "pagerduty",
+			name: "On-call PagerDuty",
+			integration_key: "R0UT1NGK3Y0123456789ABCDEFGHIJKL",
 			enabled: true,
 		}),
 	],
@@ -301,13 +283,6 @@ const optionalNameField = Schema.optionalKey(
 )
 
 export const V2AlertDestinationUpdateParams = Schema.Union([
-	Schema.Struct({
-		type: Schema.Literal("slack-bot"),
-		name: optionalNameField,
-		channel_id: OptionalNonEmptyString,
-		channel_name: OptionalNonEmptyString,
-		enabled: Schema.optionalKey(Schema.Boolean),
-	}).annotate({ identifier: "AlertDestinationUpdateSlackBot", title: "Slack (bot) destination update" }),
 	Schema.Struct({
 		type: Schema.Literal("pagerduty"),
 		name: optionalNameField,
@@ -364,7 +339,7 @@ export const V2AlertDestinationUpdateParams = Schema.Union([
 	title: "Alert destination update parameters",
 	description:
 		"Request body for updating an alert destination. `type` must match the destination's existing (immutable) type and selects which config fields apply; omitted fields are left unchanged.",
-	examples: [wireExample({ type: "slack-bot", enabled: false })],
+	examples: [wireExample({ type: "pagerduty", enabled: false })],
 })
 export type V2AlertDestinationUpdateParams = Schema.Schema.Type<typeof V2AlertDestinationUpdateParams>
 
@@ -650,6 +625,6 @@ export class V2AlertDestinationsApiGroup extends HttpApiGroup.make("alertDestina
 		OpenApi.annotations({
 			title: "Alert Destinations",
 			description:
-				"Notification channels for alert rules — Slack bot, PagerDuty, generic webhooks, Hazel OAuth, Discord, Telegram, and workspace-member email. Create and manage destinations, then reference them from alert rules via `destination_ids`. Mutations are admin-only; channel secrets are write-only.",
+				"Notification channels for alert rules — PagerDuty, generic webhooks, Hazel OAuth, Discord, Telegram, workspace-member email, and channels in linked chat workspaces. Create and manage destinations, then reference them from alert rules via `destination_ids`. Mutations are admin-only; channel secrets are write-only.",
 		}),
 	) {}

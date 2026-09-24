@@ -208,12 +208,12 @@ describe("rowToAlertDestinationDocument", () => {
 	const base: AlertDestinationRow = {
 		id: DEST_ID,
 		org_id: "org_1",
-		name: "Ops Slack",
-		type: "slack-bot",
+		name: "Ops Telegram",
+		type: "telegram",
 		enabled: true,
 		// Only the public config the browser renders — no secrets (those live in
 		// the excluded encrypted columns, which the shape never projects).
-		config_json: { summary: "Slack channel #ops", channelLabel: "#ops" },
+		config_json: { summary: "Telegram chat -100123", channelLabel: "-100123" },
 		last_tested_at: "2026-07-04T00:00:00.000Z",
 		last_test_error: null,
 		created_at: "2026-06-01T00:00:00.000Z",
@@ -223,11 +223,11 @@ describe("rowToAlertDestinationDocument", () => {
 	it("maps a raw alert_destinations row and derives the public config", () => {
 		const doc = rowToAlertDestinationDocument(base)
 		assert.strictEqual(doc.id, DEST_ID)
-		assert.strictEqual(doc.name, "Ops Slack")
-		assert.strictEqual(doc.type, "slack-bot")
+		assert.strictEqual(doc.name, "Ops Telegram")
+		assert.strictEqual(doc.type, "telegram")
 		assert.strictEqual(doc.enabled, true)
-		assert.strictEqual(doc.summary, "Slack channel #ops")
-		assert.strictEqual(doc.channelLabel, "#ops")
+		assert.strictEqual(doc.summary, "Telegram chat -100123")
+		assert.strictEqual(doc.channelLabel, "-100123")
 		assert.strictEqual(doc.lastTestedAt, "2026-07-04T00:00:00.000Z")
 		assert.strictEqual(doc.lastTestError, null)
 		assert.strictEqual(doc.createdAt, "2026-06-01T00:00:00.000Z")

@@ -30,7 +30,6 @@ import {
 	makeWarehouseServiceStub,
 	Phase1ResourceStubsLayer,
 	PlanetScaleServiceStubsLayer,
-	SlackIntegrationServiceStubLayer,
 	TelemetryServiceStubsLayer,
 	V2GroupLayersExceptOnboardingChecklist,
 } from "./v2-test-support"
@@ -121,7 +120,6 @@ const makeHarness = (status: OnboardingChecklistEvaluation["status"]) => {
 		Layer.provide(V2TransportErrorBoundaryLive),
 		Layer.provide(AlertsServiceStubLayer),
 		Layer.provide(Phase1ResourceStubsLayer),
-		Layer.provide(SlackIntegrationServiceStubLayer),
 		Layer.provide(PlanetScaleServiceStubsLayer),
 		Layer.provide(GoogleAnalyticsServiceStubsLayer),
 		Layer.provide(TelemetryServiceStubsLayer),

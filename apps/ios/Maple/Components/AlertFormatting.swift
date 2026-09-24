@@ -161,15 +161,13 @@ extension AlertEventType {
 extension AlertDestinationType {
 	var label: String {
 		switch self {
-		case .slackBot: "Slack"
+		case .chat: "Chat"
 		case .pagerduty: "PagerDuty"
 		case .webhook: "Webhook"
 		case .hazelOauth: "Hazel"
 		case .discord: "Discord"
 		case .telegram: "Telegram"
 		case .email: "Email"
-		// The connector behind a chat destination is not on the incident wire.
-		case .chat: "Chat"
 		}
 	}
 }

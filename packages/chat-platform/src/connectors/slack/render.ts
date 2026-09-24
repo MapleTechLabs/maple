@@ -8,9 +8,12 @@
  * `text` at most 3000 characters, an `actions` block at most 25 elements, a button's `text` at most
  * 75 characters and its `value` at most 2000, a `context` block at most 10 elements, an `image`
  * block's `image_url` at most 3000 characters with a REQUIRED `alt_text` of at most 2000, and a
- * message's top-level `text` at most 40000.
+ * message's top-level `text` at most 40000. A `header`'s text is plain text of at most 150, a
+ * `section` carries at most 10 `fields` of at most 2000 each, and a link button's `url` is at most
+ * 3000.
  */
-import type { ChatBlock, ChatToolActivity } from "../../render/blocks"
+import { chatActionControlId, type ChatActionToken } from "../../action-token"
+import type { ChatAlertBlock, ChatBlock, ChatToolActivity } from "../../render/blocks"
 import { escapeMrkdwn, toMrkdwn } from "./mrkdwn"
 
 export interface SlackText {
@@ -18,9 +21,21 @@ export interface SlackText {
 	readonly text: string
 }
 
+export interface SlackPlainText {
+	readonly type: "plain_text"
+	readonly text: string
+	readonly emoji?: boolean
+}
+
+export interface SlackHeader {
+	readonly type: "header"
+	readonly text: SlackPlainText
+}
+
 export interface SlackSection {
 	readonly type: "section"
 	readonly text: SlackText
+	readonly fields?: ReadonlyArray<SlackText>
 }
 
 export interface SlackContext {
@@ -37,9 +52,12 @@ export interface SlackImage {
 
 export interface SlackButton {
 	readonly type: "button"
-	readonly text: { readonly type: "plain_text"; readonly text: string }
+	readonly text: SlackPlainText
 	readonly action_id: string
-	readonly value: string
+	/** The approval token. Absent on a link button, which is what the webhook drops a click on. */
+	readonly value?: string
+	/** A link button opens this and carries nothing back to Maple. */
+	readonly url?: string
 	/** Slack's two emphatic styles; anything else is the default grey. */
 	readonly style?: "primary" | "danger"
 }
@@ -49,16 +67,31 @@ export interface SlackActions {
 	readonly elements: ReadonlyArray<SlackButton>
 }
 
-export type SlackBlock = SlackSection | SlackContext | SlackImage | SlackActions
+export type SlackBlock = SlackHeader | SlackSection | SlackContext | SlackImage | SlackActions
+
+/**
+ * A legacy attachment, kept for the one thing Block Kit has no equivalent of: the coloured bar
+ * down the side of a message. An alert's blocks ride inside one.
+ */
+export interface SlackAttachment {
+	readonly color: string
+	/** What a notification preview shows, since the message carries no top-level `text`. */
+	readonly fallback: string
+	readonly blocks: ReadonlyArray<SlackBlock>
+}
 
 export interface SlackMessagePayload {
 	/**
 	 * The notification and accessibility fallback. Slack recommends it on every message that
 	 * carries blocks — it is what a push notification and a screen reader read — and it is the one
 	 * field a client with no Block Kit support shows.
+	 *
+	 * Absent on a message that is only attachments: beside one, Slack renders `text` as a duplicate
+	 * line above the bar, and the attachment's `fallback` does its job instead.
 	 */
-	readonly text: string
-	readonly blocks: ReadonlyArray<SlackBlock>
+	readonly text?: string
+	readonly blocks?: ReadonlyArray<SlackBlock>
+	readonly attachments?: ReadonlyArray<SlackAttachment>
 	/** Model-authored text should not turn a link into a preview card in somebody's channel. */
 	readonly unfurl_links: false
 	readonly unfurl_media: false
@@ -100,6 +133,10 @@ export const MAX_BUTTON_VALUE_CHARS = 2000
 export const MAX_IMAGE_URL_CHARS = 3000
 export const MAX_ALT_TEXT_CHARS = 2000
 export const MAX_FALLBACK_CHARS = 40000
+export const MAX_HEADER_CHARS = 150
+export const MAX_FIELDS = 10
+export const MAX_FIELD_CHARS = 2000
+export const MAX_LINK_BUTTONS = 5
 
 export const APPROVE_ACTION = "maple_approve"
 export const DENY_ACTION = "maple_deny"
@@ -127,23 +164,31 @@ const ENTITY_LABELS = {
 	log: "Log",
 } as const
 
-/** The status line: the phrase, then whether the call is still going or failed. */
+/**
+ * The status line: the phrase, then whether the call failed. The ellipsis stays once the call
+ * finishes: dropping it on completion only made the line jump, "Running a query…" to
+ * "Running a query".
+ */
 const toolLabel = (tool: ChatToolActivity): string => {
 	const detail = tool.detail === null ? "" : ` (${escapeMrkdwn(tool.detail)})`
-	const status = tool.status === "running" ? "…" : tool.status === "failed" ? " (failed)" : ""
+	const status = tool.status === "failed" ? "… (failed)" : "…"
 	return `${escapeMrkdwn(tool.label)}${detail}${status}`
 }
 
 /**
- * The two buttons, carrying the driver's action token in a button's `value`.
+ * The two buttons, carrying the driver's action control id in a button's `value`.
  *
- * A tool call id is assigned by the model provider, so the token's length is not ours to bound — but
- * Slack's 2000 characters is wide enough that a token which does not fit is a token that is wrong.
+ * The value is Maple's, not Slack's — the host reads the decision back off it, so the format is
+ * `chatActionControlId`'s, and `action_id` only keeps the two buttons distinct within the block.
+ * A tool call id is assigned by the model provider, so the length is not ours to bound — but
+ * Slack's 2000 characters is wide enough that a value which does not fit is a token that is wrong.
  * A pair that would not fit is dropped rather than sent, because Slack rejects the whole message
  * over one oversized value.
  */
-const approvalActions = (token: string, toolName: string): SlackActions | null => {
-	if (token.length > MAX_BUTTON_VALUE_CHARS) return null
+const approvalActions = (token: ChatActionToken, toolName: string): SlackActions | null => {
+	const approve = chatActionControlId("approve", token)
+	const deny = chatActionControlId("deny", token)
+	if (approve.length > MAX_BUTTON_VALUE_CHARS || deny.length > MAX_BUTTON_VALUE_CHARS) return null
 	return {
 		type: "actions",
 		elements: [
@@ -151,14 +196,14 @@ const approvalActions = (token: string, toolName: string): SlackActions | null =
 				type: "button",
 				text: { type: "plain_text", text: clamp(`Run ${toolName}`, MAX_BUTTON_TEXT_CHARS) },
 				action_id: APPROVE_ACTION,
-				value: token,
+				value: approve,
 				style: "primary",
 			},
 			{
 				type: "button",
 				text: { type: "plain_text", text: "Skip" },
 				action_id: DENY_ACTION,
-				value: token,
+				value: deny,
 				style: "danger",
 			},
 		],
@@ -193,9 +238,73 @@ const chartBlocks = (block: Extract<ChatBlock, { kind: "chart" }>): ReadonlyArra
 	]
 }
 
+/** `<!date^…>` renders the time in each reader's own timezone; the ISO string is its fallback. */
+const slackDate = (ms: number): string =>
+	`<!date^${Math.floor(ms / 1000)}^{date_short_pretty} at {time}|${new Date(ms).toISOString()}>`
+
+/**
+ * An alert as the card it has always been in Slack: a header, the summary with its facts as
+ * fields, the chart, the links as buttons and a small footer — all inside an attachment for the
+ * coloured bar.
+ */
+const alertAttachment = (block: ChatAlertBlock): SlackAttachment => {
+	const summary = toMrkdwn(block.summary)
+	const blocks: Array<SlackBlock> = [
+		{
+			type: "header",
+			text: { type: "plain_text", text: clamp(block.title, MAX_HEADER_CHARS), emoji: true },
+		},
+		{
+			...section(summary.trim() === "" ? EMPTY_TEXT : summary),
+			...(block.fields.length === 0
+				? undefined
+				: {
+						fields: block.fields.slice(0, MAX_FIELDS).map((field) => ({
+							type: "mrkdwn" as const,
+							text: clamp(`*${escapeMrkdwn(field.label)}*\n${toMrkdwn(field.value)}`, MAX_FIELD_CHARS),
+						})),
+					}),
+		},
+	]
+	if (block.imageUrl !== null && block.imageUrl.length <= MAX_IMAGE_URL_CHARS) {
+		blocks.push({
+			type: "image",
+			image_url: block.imageUrl,
+			alt_text: clamp(block.imageAlt === "" ? "Chart" : block.imageAlt, MAX_ALT_TEXT_CHARS),
+		})
+	}
+	// A link too long for a button is left out rather than sent: Slack rejects the whole message.
+	const links = block.links
+		.filter((link) => link.url.length <= MAX_IMAGE_URL_CHARS)
+		.slice(0, MAX_LINK_BUTTONS)
+	if (links.length > 0) {
+		blocks.push({
+			type: "actions",
+			elements: links.map((link, index) => ({
+				type: "button",
+				text: { type: "plain_text", text: clamp(link.label, MAX_BUTTON_TEXT_CHARS), emoji: true },
+				action_id: `maple_link_${index}`,
+				url: link.url,
+				...(link.primary ? { style: "primary" as const } : undefined),
+			})),
+		})
+	}
+	const footer = [
+		...block.footer.map(toMrkdwn),
+		...(block.sentAtMs === null ? [] : [slackDate(block.sentAtMs)]),
+	]
+	if (footer.length > 0) blocks.push(context(footer.join("  ·  ")))
+	return {
+		color: block.color,
+		fallback: clamp(escapeMrkdwn(`${block.title} · ${block.summary.replaceAll("**", "")}`), MAX_FALLBACK_CHARS),
+		blocks,
+	}
+}
+
 /** What one message's worth of blocks becomes. */
 export const renderSlackMessage = (blocks: ReadonlyArray<ChatBlock>): SlackMessagePayload => {
 	const rendered: Array<SlackBlock> = []
+	const attachments: Array<SlackAttachment> = []
 	/** The fallback text, built from the same content the blocks are. */
 	const fallback: Array<string> = []
 
@@ -253,6 +362,9 @@ export const renderSlackMessage = (blocks: ReadonlyArray<ChatBlock>): SlackMessa
 				)
 				fallback.push(block.text)
 				break
+			case "alert":
+				attachments.push(alertAttachment(block))
+				break
 			default:
 				// A block kind added to the neutral model but not to this dialect would otherwise
 				// render as nothing at all.
@@ -260,8 +372,12 @@ export const renderSlackMessage = (blocks: ReadonlyArray<ChatBlock>): SlackMessa
 		}
 	}
 
+	if (rendered.length === 0 && attachments.length > 0) {
+		return { attachments, unfurl_links: false, unfurl_media: false }
+	}
 	const text = fallback.join("\n\n").trim()
 	return {
+		...(attachments.length === 0 ? undefined : { attachments }),
 		text: clamp(text === "" ? EMPTY_TEXT : text, MAX_FALLBACK_CHARS),
 		// The cut is at the block level and keeps the FIRST blocks: a turn's answer opens with what
 		// it found, and the tail of a long one is its working.

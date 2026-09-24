@@ -23,7 +23,6 @@ import {
 	Phase1ResourceStubsLayer,
 	GoogleAnalyticsServiceStubsLayer,
 	PlanetScaleServiceStubsLayer,
-	SlackIntegrationServiceStubLayer,
 	TelemetryServiceStubsLayer,
 } from "./v2-test-support"
 
@@ -75,7 +74,6 @@ const makeHarness = () => {
 		Layer.provide(AlertsServiceStubLayer),
 		Layer.provide(ConfigResourceServiceStubsLayer),
 		Layer.provide(Phase1ResourceStubsLayer),
-		Layer.provide(SlackIntegrationServiceStubLayer),
 		Layer.provide(PlanetScaleServiceStubsLayer),
 		Layer.provide(GoogleAnalyticsServiceStubsLayer),
 		Layer.provide(TelemetryServiceStubsLayer),

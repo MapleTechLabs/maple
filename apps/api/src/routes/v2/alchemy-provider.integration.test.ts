@@ -2,7 +2,6 @@ import { LiveActivitiesService } from "@maple/backend/services/push/LiveActiviti
 import { MobileDevicesService } from "@maple/backend/services/push/MobileDevicesService"
 import { ApnsClient } from "@maple/backend/platform/Apns"
 import { MobilePushService } from "@maple/backend/services/push/MobilePushService"
-import { SlackBotTokenResolver } from "@maple/backend/services/integrations/slack-bot-token"
 import { ChatAlertPoster } from "@maple/backend/services/alerts/ChatAlertPoster"
 /**
  * Integration test for the `@maple-dev/alchemy` provider package
@@ -59,7 +58,6 @@ import {
 	makeWarehouseServiceStub,
 	GoogleAnalyticsServiceStubsLayer,
 	PlanetScaleServiceStubsLayer,
-	SlackIntegrationServiceStubLayer,
 	TelemetryServiceStubsLayer,
 } from "./v2-test-support"
 import { InvestigationService } from "@maple/backend/services/errors/InvestigationService"
@@ -136,7 +134,7 @@ const makeHarness = () => {
 		Layer.provide(Layer.mergeAll(envLive, testDb.layer, edgeCacheLive)),
 	)
 	const alertDestinationsLive = Layer.effect(AlertDestinationsService, AlertDestinationsService.make).pipe(
-		Layer.provide(Layer.mergeAll(SlackBotTokenResolver.layer, ChatAlertPoster.layer)),
+		Layer.provide(ChatAlertPoster.layer),
 		Layer.provide(
 			Layer.mergeAll(envLive, testDb.layer, runtimeLive, hazelOAuthLive, emailLive, orgMembersLive),
 		),
@@ -148,7 +146,7 @@ const makeHarness = () => {
 		Layer.provide(Layer.mergeAll(testDb.layer, runtimeLive)),
 	)
 	const alertsLive = Layer.effect(AlertsService, AlertsService.make).pipe(
-		Layer.provide(Layer.mergeAll(SlackBotTokenResolver.layer, ChatAlertPoster.layer)),
+		Layer.provide(ChatAlertPoster.layer),
 		Layer.provide(
 			Layer.effect(MobilePushService, MobilePushService.make).pipe(
 				Layer.provide(
@@ -190,7 +188,6 @@ const makeHarness = () => {
 		Layer.provide(ConfigResourceServiceStubsLayer),
 		Layer.provide(TelemetryServiceStubsLayer),
 		Layer.provide(V2TransportErrorBoundaryLive),
-		Layer.provide(SlackIntegrationServiceStubLayer),
 		Layer.provide(PlanetScaleServiceStubsLayer),
 		Layer.provide(GoogleAnalyticsServiceStubsLayer),
 		Layer.provideMerge(ApiAuthorizationV2Layer),

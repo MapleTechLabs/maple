@@ -50,12 +50,17 @@ const CONFIG = {
 	requireConsent: false,
 	captureUserEmail: true,
 	respectDoNotTrack: false,
+	propagateTraceHeaderCorsUrls: [],
+	sanitizeUrl: undefined,
 }
 
 function makeSpan() {
 	const attributes = new Map<string, unknown>()
 	const span = {
 		spanContext: () => ({ traceId: "0123456789abcdef0123456789abcdef" }),
+		get attributes() {
+			return Object.fromEntries(attributes)
+		},
 		setAttribute: (key: string, value: unknown) => {
 			attributes.set(key, value)
 			return span
@@ -65,6 +70,13 @@ function makeSpan() {
 }
 
 describe("TraceIdCollector", () => {
+	it("redacts credential-shaped parameters in URL attributes", () => {
+		const { attributes, span } = makeSpan()
+		span.setAttribute("url.full", "https://app.test/reset?token=secret&tab=2")
+		new TraceIdCollector().onStart(span)
+		expect(attributes.get("url.full")).toBe("https://app.test/reset?token=REDACTED&tab=2")
+	})
+
 	it("stamps future spans with the current identified user", () => {
 		const state: { userId: string | undefined } = { userId: undefined } satisfies {
 			userId: string | undefined

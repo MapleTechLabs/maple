@@ -6,7 +6,7 @@
  * time the fetch, check `!response.ok`, read the body, hand-concatenate
  * `"<Provider> delivery failed with <status>: <detail>"`. That sentence was
  * written out five separate times, and no arm had a span, so the outbound calls
- * to Slack/PagerDuty/Discord/Hazel were invisible.
+ * to PagerDuty/Discord/Hazel were invisible.
  *
  * Here each provider declares only what is genuinely provider-specific, and
  * `runHttpTransport` owns everything shared: the spans, the timeout, the SSRF
@@ -76,26 +76,15 @@ export interface ProviderAck {
 	readonly providerReference: string | null
 }
 
-/**
- * @typeParam Prepared - value produced by the optional effectful `prepare` step
- * and handed to `render`. `void` for every provider except `slack-bot`, which
- * resolves the org's bot token. The parameter is closed at the call site in
- * `dispatchDelivery`, so it never needs an existential in a union type.
- */
-export interface HttpTransport<Config, Prepared = void> {
+export interface HttpTransport<Config> {
 	readonly kind: "http"
 	readonly type: AlertDestinationType
 	/** Span `peer.service` — this is what draws the provider on the service map. */
 	readonly peerService: string
-	/** The noun in generated error messages: "Slack delivery failed with 500". */
+	/** The noun in generated error messages: "Discord delivery failed with 500". */
 	readonly providerLabel: string
-	/**
-	 * The only effectful step, and the only place a secret is fetched. Omitted
-	 * by every provider whose credentials are already in the secret config.
-	 */
-	readonly prepare?: (input: RenderInput<Config>) => Effect.Effect<Prepared, AlertDeliveryFailure>
 	/** PURE. The unit-testable heart of each provider. */
-	readonly render: (input: RenderInput<Config>, prepared: Prepared) => HttpRequestSpec
+	readonly render: (input: RenderInput<Config>) => HttpRequestSpec
 	/**
 	 * PURE. Give a non-2xx a better message than the generic one. Return null to
 	 * fall through to the runner's default. Only `hazel-oauth` implements this.
@@ -103,7 +92,7 @@ export interface HttpTransport<Config, Prepared = void> {
 	readonly describeStatus?: (status: number) => string | null
 	/**
 	 * PURE. For a provider that answers 200 and reports failure in the body.
-	 * Only `slack-bot` implements this — Slack returns `{ ok: false, error }`
+	 * Only `telegram` implements this — the Bot API returns `{ ok: false }`
 	 * with HTTP 200, so the body is the source of truth, not the status.
 	 */
 	readonly interpret?: (

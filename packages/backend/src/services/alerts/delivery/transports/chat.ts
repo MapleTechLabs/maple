@@ -1,4 +1,4 @@
-import type { ChatBlock } from "@maple/chat-platform"
+import type { ChatAlertBlock, ChatBlock } from "@maple/chat-platform"
 import { Effect } from "effect"
 import { buildSummaryLine } from "../../AlertDeliveryDispatch"
 import {
@@ -6,8 +6,8 @@ import {
 	eventTypeEmoji,
 	formatEventTypeLabel,
 	formatSeverityLabel,
-	formatWindow,
 	severityEmoji,
+	alertAccentColor,
 	truncate,
 } from "../../alert-formatting"
 import type { EffectTransport, RenderInput, SecretConfigOf } from "../Transport"
@@ -21,47 +21,56 @@ type Config = SecretConfigOf<"chat">
 const MAX_TEMPLATED_BODY_CHARS = 1200
 
 /**
- * The alert as neutral blocks: one prose block of standard markdown, which the connector renders
- * in its own dialect — and which is where its mention-neutralising lives, so a rule named
- * `@everyone` pings nobody.
+ * The alert as one neutral alert card, which the connector renders in its own dialect — and
+ * which is where its mention-neutralising lives, so a rule named `@everyone` pings nobody.
  *
- * The same facts the other chat providers surface: the event and rule, what was observed against
- * the threshold, severity, window and group, the sparkline, and both links. A rule's own template,
- * when it has one, replaces the title and summary.
+ * The same card the legacy bot destination posts: the event and rule as the title, what was
+ * observed against the threshold, severity and group as fields, the chart, both links as buttons,
+ * and a footer carrying the sparkline, the incident and the time. A rule's own template, when it
+ * has one, replaces the title and the summary and drops the fields, as it does there.
  */
 export const buildChatAlertBlocks = (input: RenderInput<Config>): ReadonlyArray<ChatBlock> => {
 	const { context, templated, linkUrl, chatUrl } = input
-	const links = `[Open in Maple](${linkUrl}) · [Ask Maple AI](${chatUrl})`
-	const sparkline = context.sparkline ? [`\`${context.sparkline}\``] : []
+	const group = displayGroupKey(context.groupKey)
+	const card: Omit<ChatAlertBlock, "title" | "summary" | "fields"> = {
+		kind: "alert",
+		color: alertAccentColor(context.eventType, context.severity),
+		imageUrl: context.chartUrl ?? null,
+		imageAlt: `${context.ruleName} over the alert window`,
+		links: [
+			{ label: "Open in Maple", url: linkUrl, primary: true },
+			{ label: "✨ Ask Maple AI", url: chatUrl, primary: false },
+		],
+		footer: [
+			"\u{1F341} Maple Alerts",
+			// Ahead of the incident: on a renotify it is the only part that differs from the last one.
+			...(context.sparkline ? [`\`${context.sparkline}\``] : []),
+			...(context.incidentId ? [`Incident \`${context.incidentId}\``] : []),
+		],
+		sentAtMs: context.sentAtMs ?? null,
+	}
 	if (templated) {
 		return [
 			{
-				kind: "prose",
-				markdown: [
-					`**${templated.title}**`,
-					truncate(templated.body, MAX_TEMPLATED_BODY_CHARS),
-					...sparkline,
-					links,
-				].join("\n\n"),
+				...card,
+				title: templated.title,
+				summary: truncate(templated.body, MAX_TEMPLATED_BODY_CHARS),
+				fields: [],
 			},
 		]
 	}
-	const group = displayGroupKey(context.groupKey)
-	const details = [
-		`**Severity** ${severityEmoji(context.severity)} ${formatSeverityLabel(context.severity)}`,
-		`**Window** ${formatWindow(context.windowMinutes)}`,
-		...(group == null ? [] : [`**Group** \`${group}\``]),
-	].join(" · ")
 	return [
 		{
-			kind: "prose",
-			markdown: [
-				`${eventTypeEmoji(context.eventType)} **${context.ruleName}** — ${formatEventTypeLabel(context.eventType)}`,
-				buildSummaryLine(context, (value) => `**${value}**`),
-				details,
-				...sparkline,
-				links,
-			].join("\n\n"),
+			...card,
+			title: `${eventTypeEmoji(context.eventType)} ${context.ruleName} — ${formatEventTypeLabel(context.eventType)}`,
+			summary: buildSummaryLine(context, (value) => `**${value}**`),
+			fields: [
+				{
+					label: "Severity",
+					value: `${severityEmoji(context.severity)} ${formatSeverityLabel(context.severity)}`,
+				},
+				...(group == null ? [] : [{ label: "Group", value: `\`${group}\`` }]),
+			],
 		},
 	]
 }

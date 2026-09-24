@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, vi } from "vitest"
 import { resolveConfig } from "./config"
 
 describe("resolveConfig", () => {
@@ -74,5 +74,30 @@ describe("resolveConfig", () => {
 			user: { id: "modern" },
 		})
 		expect(config.identity?.id).toBe("modern")
+	})
+
+	it("resolves the ingest endpoint from the region, with an explicit endpoint winning", () => {
+		expect(resolveConfig({ ingestKey: "k", serviceName: "s", region: "eu" }).endpoint).toBe(
+			"https://ingest.eu.maple.dev",
+		)
+		expect(resolveConfig({ ingestKey: "k", serviceName: "s", region: "us" }).endpoint).toBe(
+			"https://ingest.maple.dev",
+		)
+		expect(
+			resolveConfig({ ingestKey: "k", serviceName: "s", region: "eu", endpoint: "https://proxy.test/" })
+				.endpoint,
+		).toBe("https://proxy.test")
+	})
+
+	it("clamps an out-of-range sample rate instead of trusting it", () => {
+		const warn = vi.spyOn(console, "warn").mockImplementation(() => {})
+		expect(
+			resolveConfig({ ingestKey: "k", serviceName: "s", replay: { sampleRate: 5 } }).replaySampleRate,
+		).toBe(1)
+		expect(
+			resolveConfig({ ingestKey: "k", serviceName: "s", replay: { sampleRate: -1 } }).replaySampleRate,
+		).toBe(0)
+		expect(warn).toHaveBeenCalledTimes(2)
+		warn.mockRestore()
 	})
 })

@@ -44,11 +44,11 @@ import {
 	clampSummary,
 	PR_REVIEW_CHECK_NAME,
 	PR_REVIEW_COMMENT_MARKER,
-	PR_REVIEW_DAILY_CEILING,
 	PR_REVIEW_PUSH_DEBOUNCE_SECONDS,
 	PrReviewService,
 	renderCheckSummary,
 	renderSummaryComment,
+	withReviewStatus,
 } from "./PrReviewService"
 import { FindingEmbedder, type FindingEmbedderApi, PrReviewEmbeddingError } from "./FindingEmbedder"
 
@@ -99,10 +99,15 @@ const layerFor = (
 		/** Present: pushes are debounced through this queue, which records what it was sent. */
 		readonly queued?: Array<{ readonly job: VcsSyncJob; readonly delaySeconds: number | undefined }>
 		readonly embedder?: FindingEmbedderApi
+		/** Every body the summary comment was given, status notices and finished reviews alike. */
+		readonly comments?: Array<string>
+		/** Every check run state written before a result, as `<sha7>:<status or conclusion>`. */
+		readonly checks?: Array<string>
 	} = {},
 ) => {
 	// Only the one write is reached; every read dies so a test that strays says so loudly.
 	const unused = () => Effect.die("not used by the review service")
+	let comment: string | undefined
 	const provider: VcsProviderClient = {
 		id: "github",
 		webhookToJobs: unused,
@@ -129,8 +134,28 @@ const layerFor = (
 		resolveRef: unused,
 		fetchCloneCredentials: unused,
 		fetchSourceFile: unused,
+		writePullRequestSummaryComment: (_installation, _repo, input) =>
+			Effect.sync(() => {
+				const next = input.body(comment)
+				if (next !== undefined) {
+					comment = next
+					options.comments?.push(next)
+				}
+				return { url: "https://github.com/octo/repo/pull/612#issuecomment-1" }
+			}),
+		writePullRequestCheck: (_installation, _repo, input) =>
+			Effect.sync(() => {
+				options.checks?.push(
+					`${input.headSha.slice(0, 7)}:${input.state.status === "completed" ? input.state.conclusion : input.state.status}`,
+				)
+				return { url: "https://github.com/octo/repo/runs/1" }
+			}),
 		publishPullRequestReview: (_installation, _repo, publication) => {
 			options.published?.push(publication)
+			if (!options.publishFails) {
+				comment = publication.summaryComment.body
+				options.comments?.push(comment)
+			}
 			return options.publishFails
 				? Effect.fail(
 						new VcsRepoUnavailableError({
@@ -281,6 +306,47 @@ describe("PrReviewService.onPullRequestEvent", () => {
 		}).pipe(Effect.provide(layerFor(testDb, { begun })))
 	})
 
+	it.effect("says on the pull request that it is reviewing before the turn starts", () => {
+		const testDb = createTestDb(trackedDbs)
+		const comments: Array<string> = []
+		return Effect.gen(function* () {
+			yield* seed(true)
+			const reviews = yield* PrReviewService
+			yield* reviews.onPullRequestEvent(orgId, job())
+			assert.equal(comments.length, 1)
+			assert.isTrue(comments[0]!.startsWith(PR_REVIEW_COMMENT_MARKER))
+			assert.include(comments[0]!, "Maple is reviewing this pull request")
+			assert.include(comments[0]!, HEAD.slice(0, 7))
+		}).pipe(Effect.provide(layerFor(testDb, { comments })))
+	})
+
+	it.effect("shows the review as a running check on the head, and a neutral one when it fails", () => {
+		const testDb = createTestDb(trackedDbs)
+		const checks: Array<string> = []
+		return Effect.gen(function* () {
+			yield* seed(true)
+			const reviews = yield* PrReviewService
+			const outcome = yield* reviews.onPullRequestEvent(orgId, job())
+			assert.deepEqual(checks, [`${HEAD.slice(0, 7)}:in_progress`])
+			yield* reviews.failReview(orgId, outcome.reviewId!, "no review")
+			assert.deepEqual(checks, [`${HEAD.slice(0, 7)}:in_progress`, `${HEAD.slice(0, 7)}:neutral`])
+		}).pipe(Effect.provide(layerFor(testDb, { checks })))
+	})
+
+	it.effect("says so when the turn ends without a review", () => {
+		const testDb = createTestDb(trackedDbs)
+		const comments: Array<string> = []
+		return Effect.gen(function* () {
+			yield* seed(true)
+			const reviews = yield* PrReviewService
+			const outcome = yield* reviews.onPullRequestEvent(orgId, job())
+			yield* reviews.failReview(orgId, outcome.reviewId!, "no review")
+			assert.equal(comments.length, 2)
+			assert.include(comments[1]!, "could not finish")
+			assert.notInclude(comments[1]!, "is reviewing")
+		}).pipe(Effect.provide(layerFor(testDb, { comments })))
+	})
+
 	it.effect("does nothing for an organization outside the staged rollout, even with the switch on", () => {
 		const testDb = createTestDb(trackedDbs)
 		const begun: Array<Begun> = []
@@ -346,6 +412,7 @@ describe("PrReviewService.onPullRequestEvent", () => {
 		const testDb = createTestDb(trackedDbs)
 		const begun: Array<Begun> = []
 		const aborted: Array<string> = []
+		const checks: Array<string> = []
 		return Effect.gen(function* () {
 			yield* seed(true)
 			const reviews = yield* PrReviewService
@@ -360,7 +427,13 @@ describe("PrReviewService.onPullRequestEvent", () => {
 			assert.equal(Option.getOrThrow(superseded).status, "skipped")
 			assert.equal(Option.getOrThrow(superseded).skipReason, "superseded")
 			assert.equal(begun.length, 2)
-		}).pipe(Effect.provide(layerFor(testDb, { begun, aborted })))
+			// The replaced head's check stops showing as running; the new head's starts.
+			assert.deepEqual(checks, [
+				`${HEAD.slice(0, 7)}:in_progress`,
+				`${HEAD.slice(0, 7)}:skipped`,
+				`${HEAD_2.slice(0, 7)}:in_progress`,
+			])
+		}).pipe(Effect.provide(layerFor(testDb, { begun, aborted, checks })))
 	})
 
 	it.effect("records a review the agent could not start rather than losing it", () => {
@@ -430,23 +503,6 @@ describe("PrReviewService.onPullRequestEvent", () => {
 			assert.equal(begun.length, 1)
 			assert.include(begun[0]!.text, HEAD_2)
 		}).pipe(Effect.provide(layerFor(testDb, { begun, queued })))
-	})
-
-	it.effect("stops at the daily ceiling", () => {
-		const testDb = createTestDb(trackedDbs)
-		return Effect.gen(function* () {
-			yield* seed(true)
-			const reviews = yield* PrReviewService
-			for (let number = 1; number <= PR_REVIEW_DAILY_CEILING; number++) {
-				const outcome = yield* reviews.onPullRequestEvent(orgId, job({ number }))
-				assert.equal(outcome.outcome, "started", `review ${number}`)
-			}
-			const over = yield* reviews.onPullRequestEvent(
-				orgId,
-				job({ number: PR_REVIEW_DAILY_CEILING + 1 }),
-			)
-			assert.equal(over.skipReason, "quota")
-		}).pipe(Effect.provide(layerFor(testDb)))
 	})
 })
 
@@ -933,6 +989,27 @@ describe("PrReviewService.submitReview feedback filter", () => {
 			assert.equal(published[0]!.comments.length, 1)
 			assert.equal((yield* storedEmbeddings).length, 3)
 		}).pipe(Effect.provide(layerFor(testDb, { published })))
+	})
+})
+
+describe("withReviewStatus", () => {
+	it("keeps the previous review under the notice and swaps only the notice", () => {
+		const previous = `${PR_REVIEW_COMMENT_MARKER}\n## Maple review: 90/100\n\nOne warning.`
+		const reviewing = withReviewStatus(previous, { kind: "reviewing", headSha: HEAD_2 })
+		assert.include(reviewing, "reviewing the new changes")
+		assert.include(reviewing, "## Maple review: 90/100")
+		assert.equal(reviewing?.split(PR_REVIEW_COMMENT_MARKER).length, 2)
+		const failed = withReviewStatus(reviewing, { kind: "failed", headSha: HEAD_2 })
+		assert.include(failed, "could not finish")
+		assert.notInclude(failed, "reviewing the new changes")
+		assert.include(failed, "## Maple review: 90/100")
+	})
+
+	it("leaves a finished summary or another head's notice alone when a review fails late", () => {
+		const finished = `${PR_REVIEW_COMMENT_MARKER}\n## Maple review: 90/100`
+		assert.isUndefined(withReviewStatus(finished, { kind: "failed", headSha: HEAD }))
+		const newer = withReviewStatus(finished, { kind: "reviewing", headSha: HEAD_2 })
+		assert.isUndefined(withReviewStatus(newer, { kind: "failed", headSha: HEAD }))
 	})
 })
 

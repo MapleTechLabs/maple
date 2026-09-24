@@ -62,19 +62,88 @@ export function warnDropped(what: string, error: unknown): void {
 }
 
 /**
- * Largest body we will hand to a `keepalive` fetch.
+ * Combined budget for this SDK's in-flight `keepalive` bodies.
  *
- * The Fetch spec caps the *combined* inflight keepalive body at 64 KiB, and on
- * the way out we issue up to three of these at once (metadata row, final events
- * batch, last replay chunk). Over the budget the browser rejects the request
- * outright, so a normal request — which the page may or may not survive long
- * enough to finish — is strictly the better bet than a guaranteed rejection.
+ * The Fetch spec caps the *combined* in-flight keepalive body at 64 KiB per
+ * page, and the browser rejects a request that would cross it. On the way out
+ * up to three of our writes go at once (metadata row, final events batch, last
+ * replay chunk), so the budget has to be shared rather than checked per
+ * request. It stops short of 64 KiB because the OTLP trace exporter spends
+ * from the same page-wide allowance under its own accounting.
+ *
+ * Over the budget a write goes out as a normal request, which the page may or
+ * may not survive long enough to finish: strictly better than a guaranteed
+ * rejection.
  */
-const MAX_KEEPALIVE_BYTES = 48 * 1024
+const KEEPALIVE_BUDGET_BYTES = 48 * 1024
 
-/** Whether a body of `bytes` may still ride the keepalive budget. */
-export function keepaliveFor(requested: boolean, bytes: number): boolean {
-	return requested && bytes <= MAX_KEEPALIVE_BYTES
+/** On `globalThis`: two bundled SDK copies still share one page-wide allowance. */
+const KEEPALIVE_KEY = "__MAPLE_KEEPALIVE_INFLIGHT__"
+
+function keepaliveInflight(): { bytes: number } {
+	const owner = globalThis as Record<string, unknown>
+	const existing = owner[KEEPALIVE_KEY] as { bytes: number } | undefined
+	if (existing) return existing
+	const fresh = { bytes: 0 }
+	owner[KEEPALIVE_KEY] = fresh
+	return fresh
+}
+
+/**
+ * Reserve `bytes` of the shared keepalive budget. Returns the release function
+ * when the request may use `keepalive`, `undefined` when it must not.
+ */
+export function reserveKeepalive(requested: boolean, bytes: number): (() => void) | undefined {
+	if (!requested) return undefined
+	const inflight = keepaliveInflight()
+	if (inflight.bytes + bytes > KEEPALIVE_BUDGET_BYTES) return undefined
+	inflight.bytes += bytes
+	let released = false
+	return () => {
+		if (released) return
+		released = true
+		inflight.bytes = Math.max(0, inflight.bytes - bytes)
+	}
+}
+
+/** Test seam. */
+export function resetKeepaliveBudgetForTests(): void {
+	keepaliveInflight().bytes = 0
+}
+
+/** Body size in bytes: the keepalive limit counts bytes, and `string.length` counts UTF-16 units. */
+function byteLength(body: string | Uint8Array): number {
+	return typeof body === "string" ? new TextEncoder().encode(body).byteLength : body.byteLength
+}
+
+/**
+ * POST to ingest, spending the shared keepalive budget when `keepalive` is
+ * requested. Resolves with the status only: the response body is cancelled
+ * before the reservation is released, because the browser counts a keepalive
+ * request against the page-wide limit until its response body ends, not
+ * until headers arrive. Rejects exactly as `fetch` does; callers own the
+ * error policy.
+ */
+export async function postToIngest(
+	url: string,
+	headers: Record<string, string>,
+	body: string | Uint8Array,
+	keepalive: boolean,
+): Promise<{ readonly ok: boolean; readonly status: number }> {
+	const release = reserveKeepalive(keepalive, byteLength(body))
+	try {
+		const response = await fetch(url, {
+			method: "POST",
+			headers,
+			body: body as BodyInit,
+			keepalive: release !== undefined,
+		})
+		// Nothing reads ingest's body; ending it here is what ends the request.
+		await response.body?.cancel().catch(() => {})
+		return { ok: response.ok, status: response.status }
+	} finally {
+		release?.()
+	}
 }
 
 /**
@@ -115,15 +184,12 @@ export async function postSessionMeta(
 	keepalive = false,
 ): Promise<void> {
 	const body = `${JSON.stringify(row)}\n`
-	await fetch(`${config.endpoint}/v1/sessionReplays/meta`, {
-		method: "POST",
-		headers: {
-			...ingestHeaders(config),
-			"content-type": "application/x-ndjson",
-		},
+	await postToIngest(
+		`${config.endpoint}/v1/sessionReplays/meta`,
+		{ ...ingestHeaders(config), "content-type": "application/x-ndjson" },
 		body,
-		keepalive: keepaliveFor(keepalive, body.length),
-	}).catch((error) => {
+		keepalive,
+	).catch((error) => {
 		// Replay is best-effort; never throw into the host app.
 		warnDropped("metadata POST", error)
 	})
@@ -137,15 +203,12 @@ export async function postSessionEvents(
 ): Promise<void> {
 	if (rows.length === 0) return
 	const body = `${rows.map((row) => JSON.stringify(row)).join("\n")}\n`
-	await fetch(`${config.endpoint}/v1/sessionEvents`, {
-		method: "POST",
-		headers: {
-			...ingestHeaders(config),
-			"content-type": "application/x-ndjson",
-		},
+	await postToIngest(
+		`${config.endpoint}/v1/sessionEvents`,
+		{ ...ingestHeaders(config), "content-type": "application/x-ndjson" },
 		body,
-		keepalive: keepaliveFor(keepalive, body.length),
-	}).catch((error) => {
+		keepalive,
+	).catch((error) => {
 		warnDropped("events POST", error)
 	})
 }
@@ -176,9 +239,9 @@ export async function postSessionBlob(
 	keepalive = false,
 ): Promise<BlobPostOutcome> {
 	try {
-		const response = await fetch(`${config.endpoint}/v1/sessionReplays/blob`, {
-			method: "POST",
-			headers: {
+		const response = await postToIngest(
+			`${config.endpoint}/v1/sessionReplays/blob`,
+			{
 				...ingestHeaders(config),
 				"content-type": "application/octet-stream",
 				"x-maple-session-id": meta.sessionId,
@@ -187,9 +250,9 @@ export async function postSessionBlob(
 				"x-maple-event-count": String(meta.eventCount),
 				"x-maple-duration-ms": String(meta.durationMs),
 			},
-			body: gzipped as BodyInit,
-			keepalive: keepaliveFor(keepalive, gzipped.byteLength),
-		})
+			gzipped,
+			keepalive,
+		)
 		if (response.ok) return "accepted"
 		return response.status === SESSION_EXHAUSTED_STATUS ? "exhausted" : "rejected"
 	} catch (error) {

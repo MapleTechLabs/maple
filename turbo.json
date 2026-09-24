@@ -4,9 +4,40 @@
 	"globalPassThroughEnv": ["*"],
 	"concurrency": "15",
 	"tasks": {
+		// `globalPassThroughEnv: ["*"]` hands every variable to a task but hashes
+		// none, so any variable a bundler inlines must be named here. Without it the
+		// shared CI cache could serve a bundle built against another environment.
 		"build": {
 			"dependsOn": ["^build"],
+			"env": ["VITE_*", "PUBLIC_*"],
 			"outputs": ["dist/**", ".output/**"]
+		},
+		// Both bundlers also read the root `.env*` files and fold a few unprefixed
+		// variables into inlined values (vite.config.ts, astro.config.mjs), so those
+		// are part of the build's identity too.
+		"@maple/web#build": {
+			"dependsOn": ["^build"],
+			"inputs": ["$TURBO_DEFAULT$", "$TURBO_ROOT$/.env", "$TURBO_ROOT$/.env.*"],
+			"env": [
+				"VITE_*",
+				"PUBLIC_*",
+				"MAPLE_AUTH_MODE",
+				"CLERK_PUBLISHABLE_KEY",
+				"MAPLE_OTEL_PUBLIC_INGEST_KEY",
+				"PORTLESS_URL"
+			],
+			"outputs": ["dist/**", ".output/**"]
+		},
+		"@maple/landing#build": {
+			"dependsOn": ["^build"],
+			"inputs": ["$TURBO_DEFAULT$", "$TURBO_ROOT$/.env", "$TURBO_ROOT$/.env.*"],
+			"env": ["VITE_*", "PUBLIC_*", "MAPLE_OTEL_PUBLIC_INGEST_KEY", "PORTLESS_URL"],
+			"outputs": ["dist/**", ".output/**"]
+		},
+		// `cargo build --release` writes to target/, not dist/, so the generic
+		// outputs cached nothing and every unfiltered `turbo build` recompiled it.
+		"@maple/ingest#build": {
+			"outputs": ["target/release/maple-ingest"]
 		},
 		// Deliberately NOT `^typecheck`. Every package's typecheck is `tsc --noEmit`,
 		// which emits nothing a downstream task can consume, and no tsconfig here uses

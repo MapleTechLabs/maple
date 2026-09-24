@@ -104,7 +104,7 @@ export const renderChatMessage = (
 			kind: "approval",
 			toolName: call.name,
 			summary: summarizeToolInput(call.input),
-			token: encodeChatActionToken(context.sessionId, call.id),
+			token: encodeChatActionToken(call.id),
 			// `output` is optional on the wire, so its PRESENCE is what settles a proposal: a decision
 			// that produced no text is still a decision, and reading the value would call it open.
 			outcome: !("output" in call)

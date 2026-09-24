@@ -375,6 +375,55 @@ export interface VcsProviderClient {
 		| VcsRateLimitedError
 	>
 
+	/**
+	 * Show the review as a check run on the head: running while its turn works, completed when it
+	 * ends without a result. `publishPullRequestReview` completes the same run with the result.
+	 */
+	readonly writePullRequestCheck: (
+		installation: VcsInstallation,
+		repo: VcsRepositoryRef,
+		input: {
+			readonly name: string
+			readonly headSha: string
+			readonly state:
+				| { readonly status: "in_progress" }
+				| { readonly status: "completed"; readonly conclusion: "neutral" | "skipped" }
+			readonly title: string
+			readonly summary: string
+		},
+	) => Effect.Effect<
+		{ readonly url: string | null },
+		| VcsProviderError
+		| VcsInstallationGoneError
+		| VcsRepoUnavailableError
+		| VcsRepositoryBlockedError
+		| VcsRateLimitedError
+	>
+
+	/**
+	 * Write the review's summary comment, found by `marker` and edited in place, from the body
+	 * already there. How a review says it has started before it has anything else to say.
+	 * The read and the write are two requests, so the body function should only replace what it
+	 * recognises (see `withReviewStatus`).
+	 */
+	readonly writePullRequestSummaryComment: (
+		installation: VcsInstallation,
+		repo: VcsRepositoryRef,
+		input: {
+			readonly number: number
+			readonly marker: string
+			/** `undefined` leaves the comment as it is. */
+			readonly body: (existing: string | undefined) => string | undefined
+		},
+	) => Effect.Effect<
+		{ readonly url: string | null },
+		| VcsProviderError
+		| VcsInstallationGoneError
+		| VcsRepoUnavailableError
+		| VcsRepositoryBlockedError
+		| VcsRateLimitedError
+	>
+
 	/** Search source within one repository visible to this installation. */
 	readonly searchCode: (
 		installation: VcsInstallation,

@@ -441,4 +441,61 @@ describe("bundled migrations", () => {
 		)
 		expect(columns.rows).toEqual([])
 	}, 30_000)
+
+	it("retires slack-bot destinations and drops slack_workspaces", async () => {
+		const pg = new PGlite()
+		await pg.exec(readMigrationSqlBefore("drop_legacy_slack"))
+
+		const now = "2026-09-24T00:00:00.000Z"
+		await pg.query(
+			`INSERT INTO alert_destinations (
+				id, org_id, name, type, config_json, secret_ciphertext, secret_iv, secret_tag,
+				created_at, updated_at, created_by, updated_by
+			) VALUES
+				('dest_slack', 'org_1', 'Slack', 'slack-bot', '{}', 'x', 'x', 'x', $1, $1, 'user_1', 'user_1'),
+				('dest_webhook', 'org_1', 'Webhook', 'webhook', '{}', 'x', 'x', 'x', $1, $1, 'user_1', 'user_1')`,
+			[now],
+		)
+		const rule = (id: string, enabled: boolean, destinationIds: ReadonlyArray<string>) =>
+			pg.query(
+				`INSERT INTO alert_rules (
+					id, org_id, name, enabled, severity, signal_type, comparator, threshold, window_minutes,
+					destination_ids_json, query_spec_json, reducer, no_data_behavior,
+					created_at, updated_at, created_by, updated_by
+				) VALUES ($1, 'org_1', $1, $2, 'warning', 'error_rate', 'gt', 0.1, 5, $3, '{}', 'max', 'skip',
+					$4, $4, 'user_1', 'user_1')`,
+				[id, enabled, JSON.stringify(destinationIds), now],
+			)
+		await rule("rule_mixed", true, ["dest_slack", "dest_webhook"])
+		await rule("rule_slack_only", true, ["dest_slack"])
+		await rule("rule_untouched", true, [])
+		await pg.query(
+			`INSERT INTO alert_delivery_events (
+				id, org_id, incident_id, rule_id, destination_id, delivery_key, event_type,
+				attempt_number, status, scheduled_at, payload_json, created_at, updated_at
+			) VALUES (
+				'delivery_slack', 'org_1', 'inc_1', 'rule_mixed', 'dest_slack',
+				'slack-delivery', 'trigger', 1, 'queued', $1, '{}', $1, $1
+			)`,
+			[now],
+		)
+
+		await pg.exec(readMigrationSql("drop_legacy_slack"))
+
+		const rules = await pg.query<{ id: string; enabled: boolean; destination_ids_json: string[] }>(
+			"SELECT id, enabled, destination_ids_json FROM alert_rules ORDER BY id",
+		)
+		expect(rules.rows).toEqual([
+			{ id: "rule_mixed", enabled: true, destination_ids_json: ["dest_webhook"] },
+			{ id: "rule_slack_only", enabled: false, destination_ids_json: [] },
+			// A rule the migration did not empty is left as it was.
+			{ id: "rule_untouched", enabled: true, destination_ids_json: [] },
+		])
+		const destinations = await pg.query<{ id: string }>("SELECT id FROM alert_destinations")
+		expect(destinations.rows).toEqual([{ id: "dest_webhook" }])
+		const deliveries = await pg.query("SELECT id FROM alert_delivery_events")
+		expect(deliveries.rows).toEqual([])
+		const table = await pg.query("SELECT to_regclass('public.slack_workspaces') AS name")
+		expect(table.rows).toEqual([{ name: null }])
+	}, 30_000)
 })

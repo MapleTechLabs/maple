@@ -9,13 +9,24 @@
  * `custom_id` is 1–100 characters.
  */
 import { chatActionControlId, type ChatActionToken } from "../../action-token"
-import type { ChatBlock, ChatToolActivity } from "../../render/blocks"
+import type { ChatAlertBlock, ChatBlock, ChatToolActivity } from "../../render/blocks"
 
 /** https://discord.com/developers — Create/Edit Message JSON params, API v10. */
 export interface DiscordEmbed {
 	readonly title?: string
+	readonly url?: string
 	readonly description?: string
+	/** The bar down the side, as a 24-bit integer. */
+	readonly color?: number
+	readonly fields?: ReadonlyArray<{
+		readonly name: string
+		readonly value: string
+		readonly inline: boolean
+	}>
 	readonly image?: { readonly url: string }
+	readonly footer?: { readonly text: string }
+	/** ISO 8601; Discord shows it in each reader's own timezone. */
+	readonly timestamp?: string
 }
 
 export interface DiscordButton {
@@ -47,6 +58,10 @@ export const MAX_EMBEDS = 10
 export const MAX_ACTION_ROWS = 5
 const MAX_EMBED_TITLE_CHARS = 256
 const MAX_EMBED_DESCRIPTION_CHARS = 4096
+const MAX_EMBED_FIELDS = 25
+const MAX_FIELD_NAME_CHARS = 256
+const MAX_FIELD_VALUE_CHARS = 1024
+const MAX_FOOTER_CHARS = 2048
 /** Discord's limit across EVERY embed on a message, which the per-field clamps cannot enforce. */
 const MAX_EMBED_TOTAL_CHARS = 6000
 export const MAX_CUSTOM_ID_CHARS = 100
@@ -117,6 +132,17 @@ export const renderDiscordMessage = (blocks: ReadonlyArray<ChatBlock>): DiscordM
 			case "notice":
 				lines.push(block.tone === "error" ? `**${block.text}**` : `_${block.text}_`)
 				break
+			case "alert": {
+				const embed = alertEmbed(block)
+				const cost = embedCost(embed)
+				if (embeds.length < MAX_EMBEDS && embedChars + cost <= MAX_EMBED_TOTAL_CHARS) {
+					embeds.push(embed)
+					embedChars += cost
+					break
+				}
+				lines.push(`**${block.title}**\n${block.summary}`)
+				break
+			}
 			default:
 				// A block kind added to the neutral model but not to this dialect would otherwise
 				// render as nothing at all.
@@ -132,6 +158,44 @@ export const renderDiscordMessage = (blocks: ReadonlyArray<ChatBlock>): DiscordM
 		embeds,
 		components: rows,
 		allowed_mentions: { parse: [] },
+	}
+}
+
+/** What an embed spends of {@link MAX_EMBED_TOTAL_CHARS}: every text field Discord counts. */
+const embedCost = (embed: DiscordEmbed): number =>
+	(embed.title?.length ?? 0) +
+	(embed.description?.length ?? 0) +
+	(embed.footer?.text.length ?? 0) +
+	(embed.fields ?? []).reduce((total, field) => total + field.name.length + field.value.length, 0)
+
+/**
+ * An alert as the embed it has always been on Discord: the title linking into Maple, the summary,
+ * the facts as inline fields, the links, the chart and a footer — with the state as the bar colour.
+ */
+const alertEmbed = (block: ChatAlertBlock): DiscordEmbed => {
+	const primary = block.links.find((link) => link.primary) ?? block.links[0]
+	const links = block.links.map((link) => `[${link.label}](${link.url})`).join(" · ")
+	const fields = [
+		...block.fields.map((field) => ({ name: field.label, value: field.value, inline: true })),
+		...(links === "" ? [] : [{ name: "Links", value: links, inline: false }]),
+	]
+		.slice(0, MAX_EMBED_FIELDS)
+		.map((field) => ({
+			name: clamp(field.name, MAX_FIELD_NAME_CHARS),
+			value: clamp(field.value, MAX_FIELD_VALUE_CHARS),
+			inline: field.inline,
+		}))
+	// A footer is plain text on Discord, so inline code would show its backticks.
+	const footer = block.footer.map((part) => part.replaceAll("`", "")).join("  ·  ")
+	return {
+		title: clamp(block.title, MAX_EMBED_TITLE_CHARS),
+		...(primary === undefined ? undefined : { url: primary.url }),
+		color: Number.parseInt(block.color.slice(1), 16),
+		...(block.summary === "" ? undefined : { description: clamp(block.summary, MAX_EMBED_DESCRIPTION_CHARS) }),
+		fields,
+		...(block.imageUrl === null ? undefined : { image: { url: block.imageUrl } }),
+		...(footer === "" ? undefined : { footer: { text: clamp(footer, MAX_FOOTER_CHARS) } }),
+		...(block.sentAtMs === null ? undefined : { timestamp: new Date(block.sentAtMs).toISOString() }),
 	}
 }
 
@@ -151,10 +215,14 @@ const ENTITY_LABELS = {
 	log: "Log",
 } as const
 
-/** The status line: the phrase, then whether the call is still going or failed. */
+/**
+ * The status line: the phrase, then whether the call failed. The ellipsis stays once the call
+ * finishes: dropping it on completion only made the line jump, "Running a query…" to
+ * "Running a query".
+ */
 const toolLabel = (tool: ChatToolActivity): string => {
 	const detail = tool.detail === null ? "" : ` (${tool.detail})`
-	const status = tool.status === "running" ? "…" : tool.status === "failed" ? " (failed)" : ""
+	const status = tool.status === "failed" ? "… (failed)" : "…"
 	return `${tool.label}${detail}${status}`
 }
 
