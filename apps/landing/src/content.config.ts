@@ -1,4 +1,4 @@
-import { defineCollection, z } from "astro:content"
+import { defineCollection, reference, z } from "astro:content"
 import { glob } from "astro/loaders"
 import { LANGUAGE_IDS } from "./lib/docs-languages"
 
@@ -82,4 +82,25 @@ const logos = defineCollection({
 	}),
 })
 
-export const collections = { roadmap, docs, blog, changelog, logos }
+// Customer success stories, served under /customers. The customer's name, site
+// and brand mark come from its `logos` entry, so a story can't name a company
+// the logo band doesn't know.
+const customers = defineCollection({
+	loader: glob({ pattern: "**/*.{md,mdx}", base: "./src/content/customers" }),
+	schema: z.object({
+		title: z.string(),
+		description: z.string(),
+		date: z.coerce.date(),
+		customer: reference("logos"),
+		author: z.string().default("Maple Team"),
+		authorRole: z.string().optional(),
+		// Headline numbers for the stat strip on the card and the story page.
+		highlights: z.array(z.object({ value: z.string(), label: z.string() })).max(4).default([]),
+		cover: z.string().optional(),
+		coverAlt: z.string().optional(),
+		featured: z.boolean().default(false),
+		draft: z.boolean().default(false),
+	}),
+})
+
+export const collections = { roadmap, docs, blog, changelog, logos, customers }

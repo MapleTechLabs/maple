@@ -5,40 +5,41 @@ import Nav from "../../components/Nav.astro";
 import Footer from "../../components/Footer.astro";
 import BottomCTA from "../../components/BottomCTA.astro";
 import SeoHead from "../../components/SeoHead.astro";
-import PostCover from "../../components/blog/PostCover.astro";
-import PostCard from "../../components/blog/PostCard.astro";
+import StoryCard from "../../components/customers/StoryCard.astro";
 import ArticleEnhancements from "../../components/blog/ArticleEnhancements.astro";
 import TableOfContents from "../../components/TableOfContents.astro";
-import { CATEGORY_META, formatDate, isoDate, readingTime, getSortedPosts } from "../../lib/blog";
+import { formatDate, isoDate, readingTime } from "../../lib/blog";
+import { getSortedStories, getStoryCustomer } from "../../lib/customers";
+import { LOGOS } from "../../lib/customer-logos";
 import { MapleMark } from "@maple/ui/components/icons/maple-mark";
 
 export async function getStaticPaths() {
-    const posts = await getCollection("blog", ({ data }) => !data.draft || import.meta.env.DEV);
-    return posts.map((post) => ({
-        params: { slug: post.id },
-        props: { post },
+    const stories = await getCollection("customers", ({ data }) => !data.draft || import.meta.env.DEV);
+    return stories.map((story) => ({
+        params: { slug: story.id },
+        props: { story },
     }));
 }
 
-const { post } = Astro.props;
-const { title, description, date, author, authorRole, category, cover, coverAlt, featured } = post.data;
-const { Content, headings } = await render(post);
+const { story } = Astro.props;
+const { title, description, date, author, authorRole, highlights, cover, coverAlt } = story.data;
+const { Content, headings } = await render(story);
+const customer = await getStoryCustomer(story);
+const Logo = customer ? LOGOS[customer.id] : undefined;
 
-const minutes = readingTime(post.body);
-const catLabel = category ? CATEGORY_META[category].label : undefined;
+const minutes = readingTime(story.body);
 const hasToc = headings.some((h) => h.depth === 2);
 
-// "Read next" — newest other posts.
-const all = await getSortedPosts();
-const readNext = all.filter((p) => p.id !== post.id).slice(0, 3);
+const all = await getSortedStories();
+const readNext = all.filter((s) => s.id !== story.id).slice(0, 3);
 
-const pageTitle = `${title} — Maple Blog`;
+const pageTitle = `${title} | Maple Customers`;
 const canonicalUrl = Astro.site ? new URL(Astro.url.pathname, Astro.site).toString() : undefined;
 const absoluteCover = cover && Astro.site ? new URL(cover, Astro.site).toString() : undefined;
 
 const jsonLd = {
     "@context": "https://schema.org",
-    "@type": "BlogPosting",
+    "@type": "Article",
     headline: title,
     description,
     datePublished: isoDate(date),
@@ -49,8 +50,11 @@ const jsonLd = {
         name: "Maple",
         logo: { "@type": "ImageObject", url: "https://maple.dev/logo192.png" },
     },
-    ...((canonicalUrl) ? ({ mainEntityOfPage: canonicalUrl }) : undefined),
-    ...((absoluteCover) ? ({ image: absoluteCover }) : undefined),
+    ...(customer
+        ? { about: { "@type": "Organization", name: customer.data.name, ...(customer.data.href ? { url: customer.data.href } : undefined) } }
+        : undefined),
+    ...(canonicalUrl ? { mainEntityOfPage: canonicalUrl } : undefined),
+    ...(absoluteCover ? { image: absoluteCover } : undefined),
 };
 
 const backLink =
@@ -62,7 +66,6 @@ const backLink =
     <script type="application/ld+json" set:html={JSON.stringify(jsonLd)} />
     <Nav />
 
-    {/* Reading progress — a hairline of amber across the very top. */}
     <div
         data-read-progress
         class="fixed inset-x-0 top-0 z-[60] h-[2px] origin-left scale-x-0 bg-primary"
@@ -73,26 +76,21 @@ const backLink =
     <article class="relative pt-[19px]">
         <div class="mx-auto max-w-6xl px-6 pt-20 md:pt-24">
             <div class:list={["lg:grid lg:gap-16", hasToc && "lg:grid-cols-[minmax(0,1fr)_14rem]"]}>
-                {/* ── Main column: one centered reading measure ── */}
                 <div class="min-w-0">
                     <div class="mx-auto w-full max-w-[42rem]">
-                        <a href="/blog" class={backLink}>
-                            <span aria-hidden="true">←</span> all posts
+                        <a href="/customers" class={backLink}>
+                            <span aria-hidden="true">←</span> all customer stories
                         </a>
 
-                        <div class="mt-[22px] flex flex-wrap items-center gap-2 font-mono text-xs tabular-nums tracking-[0.02em] text-fg-muted">
-                            {featured && (
-                                <span class="border border-primary/40 px-1.5 py-0.5 text-[9px] uppercase tracking-[0.16em] text-primary">
-                                    featured
+                        <div class="mt-[22px] flex flex-wrap items-center gap-x-3 gap-y-2 font-mono text-xs tabular-nums tracking-[0.02em] text-fg-muted">
+                            {customer && (
+                                <span class="inline-flex items-center gap-2 text-fg">
+                                    {Logo && <Logo class="h-5 w-auto" />}
+                                    <span class="font-display text-sm font-semibold tracking-[-0.01em]">{customer.data.name}</span>
                                 </span>
                             )}
+                            <span aria-hidden="true" class="opacity-50">·</span>
                             <time datetime={isoDate(date)}>{formatDate(date)}</time>
-                            {catLabel && (
-                                <>
-                                    <span aria-hidden="true" class="opacity-50">·</span>
-                                    <span>{catLabel}</span>
-                                </>
-                            )}
                             <span aria-hidden="true" class="opacity-50">·</span>
                             <span>{minutes} min read</span>
                         </div>
@@ -108,19 +106,27 @@ const backLink =
                             {authorRole && <span class="text-fg-muted">{authorRole}</span>}
                         </div>
 
-                        {/* Cover banner — a step wider than the prose for presence. */}
-                        <div class="mt-10 overflow-hidden rounded-lg border border-border md:mt-12 xl:-mx-16">
-                            <PostCover
-                                title={title}
-                                category={category}
-                                cover={cover}
-                                coverAlt={coverAlt}
-                                variant="banner"
-                                drench={featured}
-                            />
-                        </div>
+                        {/* The numbers up front, a step wider than the prose. */}
+                        {highlights.length > 0 && (
+                            <ul
+                                class="m-0 mt-10 grid list-none grid-cols-2 gap-px overflow-hidden rounded-lg border border-border bg-border p-0 md:mt-12 md:grid-cols-4 xl:-mx-16"
+                                aria-label={customer ? `${customer.data.name} results` : "Results"}
+                            >
+                                {highlights.map((h) => (
+                                    <li class="flex flex-col gap-1.5 bg-card px-4 py-5 md:px-5">
+                                        <span class="font-display text-[clamp(22px,3vw,30px)] font-semibold leading-none tracking-[-0.02em] tabular-nums text-foreground">{h.value}</span>
+                                        <span class="text-xs leading-snug text-fg-muted">{h.label}</span>
+                                    </li>
+                                ))}
+                            </ul>
+                        )}
 
-                        {/* On this page: collapsible, small screens only */}
+                        {cover && (
+                            <div class="mt-10 overflow-hidden rounded-lg border border-border xl:-mx-16">
+                                <img src={cover} alt={coverAlt ?? `Cover image for ${title}`} loading="eager" decoding="async" class="block w-full" />
+                            </div>
+                        )}
+
                         {hasToc && (
                             <details class="group mt-10 border border-border lg:hidden">
                                 <summary class="flex cursor-pointer list-none items-center justify-between px-4 py-3 font-mono text-[10px] uppercase tracking-[0.14em] text-fg-muted [&::-webkit-details-marker]:hidden">
@@ -133,15 +139,13 @@ const backLink =
                             </details>
                         )}
 
-                        {/* Body */}
-                        {/* blog-content regrows the docs prose to essay scale (global.css) */}
                         <div class="docs-content blog-content mt-12 md:mt-14">
                             <Content />
                         </div>
 
                         <div class="mt-14 flex flex-wrap items-center justify-between gap-4 border-t border-border pt-5">
-                            <a href="/blog" class={backLink}>
-                                <span aria-hidden="true">←</span> back to all posts
+                            <a href="/customers" class={backLink}>
+                                <span aria-hidden="true">←</span> back to all customer stories
                             </a>
                             <button
                                 type="button"
@@ -155,7 +159,6 @@ const backLink =
                     </div>
                 </div>
 
-                {/* ── On this page (sticky TOC) ── */}
                 {hasToc && (
                     <aside class="hidden lg:block">
                         <TableOfContents headings={headings} maxDepth={2} class="sticky top-28 max-h-[calc(100vh-9rem)] overflow-y-auto" />
@@ -165,18 +168,17 @@ const backLink =
         </div>
     </article>
 
-    {/* ── Read next ── */}
     {readNext.length > 0 && (
         <section class="mt-16 border-t border-border pt-12">
             <div class="mx-auto max-w-6xl px-6">
                 <div class="mb-[22px] flex items-center gap-3">
                     <span class="font-mono text-xs text-primary">#</span>
                     <span class="h-px w-9 shrink-0 bg-border" aria-hidden="true"></span>
-                    <h2 class="m-0 font-display text-xl font-semibold tracking-[-0.015em] text-foreground">Read next</h2>
+                    <h2 class="m-0 font-display text-xl font-semibold tracking-[-0.015em] text-foreground">More customer stories</h2>
                 </div>
                 <div class="grid gap-5 [grid-template-columns:repeat(auto-fit,minmax(280px,1fr))]">
-                    {readNext.map((p) => (
-                        <PostCard post={p} />
+                    {readNext.map((s) => (
+                        <StoryCard story={s} />
                     ))}
                 </div>
             </div>

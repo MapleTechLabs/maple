@@ -1,0 +1,89 @@
+---
+import Layout from "../../layouts/Layout.astro";
+import Nav from "../../components/Nav.astro";
+import Footer from "../../components/Footer.astro";
+import BottomCTA from "../../components/BottomCTA.astro";
+import SeoHead from "../../components/SeoHead.astro";
+import StoryCard from "../../components/customers/StoryCard.astro";
+import { getSortedStories } from "../../lib/customers";
+
+const stories = await getSortedStories();
+const featured = stories.find((s) => s.data.featured) ?? stories[0];
+const rest = featured ? stories.filter((s) => s.id !== featured.id) : stories;
+
+const pageTitle = "Customers | Maple";
+const pageDescription =
+    "How engineering teams run production on Maple: what they changed, what it fixed, and the numbers behind it.";
+---
+
+<Layout title={pageTitle} description={pageDescription}>
+    <SeoHead title={pageTitle} description={pageDescription} />
+    <Nav />
+
+    {/* ── Header ─────────────────────────────────────────────── */}
+    <section class="relative overflow-hidden pt-[19px]">
+        <div
+            class="pointer-events-none absolute inset-0"
+            aria-hidden="true"
+            style="background-image: linear-gradient(to right, oklch(1 0 0 / 4%) 1px, transparent 1px), linear-gradient(to bottom, oklch(1 0 0 / 4%) 1px, transparent 1px); background-size: 60px 60px; mask-image: radial-gradient(ellipse 70% 60% at 30% 20%, black, transparent);"
+        >
+        </div>
+
+        <div class="relative mx-auto max-w-6xl px-6 pt-24 pb-10 md:pt-28 md:pb-14">
+            <div class="inline-flex items-center gap-2 font-mono text-[11px] tracking-[0.02em]">
+                <span class="text-fg-muted">~/maple/customers</span>
+                <span class="text-primary">$</span>
+                <span class="text-fg-muted">ls stories/</span>
+                <span class="inline-block h-[11px] w-[7px] bg-primary motion-safe:animate-pulse" aria-hidden="true"></span>
+            </div>
+
+            <h1 class="mt-5 m-0 font-display text-[clamp(34px,8vw,72px)] font-semibold leading-[0.95] tracking-[-0.035em] text-foreground">
+                Customers
+            </h1>
+
+            <p class="mt-[22px] max-w-[62ch] text-sm leading-[1.7] text-fg-muted">
+                How engineering teams run production on Maple: what they were fighting before, what
+                changed after they switched, and the numbers behind it.
+            </p>
+        </div>
+    </section>
+
+    {/* ── Stories ────────────────────────────────────────────── */}
+    <section class="relative pb-20 md:pb-28">
+        <div class="mx-auto max-w-6xl px-6">
+            {stories.length === 0 ? (
+                <div class="rounded-lg border border-border bg-card px-7 py-10 text-center">
+                    <div class="inline-flex justify-center gap-2 font-mono text-xs">
+                        <span class="text-fg-muted">~/maple/customers</span>
+                        <span class="text-primary">$</span>
+                        <span class="text-fg-muted">ls stories/</span>
+                    </div>
+                    <p class="mt-4 text-sm text-foreground">No stories published yet.</p>
+                    <div class="mt-3.5 inline-flex items-center gap-2.5 font-mono text-xs text-fg-muted">
+                        <a href="/blog" class="transition-colors hover:text-primary">read the blog</a>
+                        <span aria-hidden="true">·</span>
+                        <a href="/docs" class="transition-colors hover:text-primary">read the docs</a>
+                    </div>
+                </div>
+            ) : (
+                <>
+                    {featured && (
+                        <div class="mb-8 md:mb-12">
+                            <StoryCard story={featured} variant="featured" />
+                        </div>
+                    )}
+                    {rest.length > 0 && (
+                        <div class="grid gap-5 [grid-template-columns:repeat(auto-fit,minmax(300px,1fr))]">
+                            {rest.map((story) => (
+                                <StoryCard story={story} />
+                            ))}
+                        </div>
+                    )}
+                </>
+            )}
+        </div>
+    </section>
+
+    <BottomCTA />
+    <Footer />
+</Layout>

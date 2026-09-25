@@ -1,7 +1,7 @@
 ---
 import "../styles/global.css";
 import DocsSidebar from "../components/docs/DocsSidebar.astro";
-import DocsTableOfContents from "../components/docs/DocsTableOfContents.astro";
+import TableOfContents from "../components/TableOfContents.astro";
 import DocsPrevNext from "../components/docs/DocsPrevNext.astro";
 import DocsMobileNav from "../components/docs/DocsMobileNav.astro";
 import DocsSectionNav from "../components/docs/DocsSectionNav.astro";
@@ -119,7 +119,7 @@ const hasToc = !wide && headings.some((h) => h.depth >= 2 && h.depth <= 3);
                                     </svg>
                                 </summary>
                                 <div class="max-h-[60vh] overflow-y-auto border-t border-border px-4 pt-4 pb-4">
-                                    <DocsTableOfContents headings={headings} spy={false} />
+                                    <TableOfContents headings={headings} spy={false} showLabel={false} />
                                 </div>
                             </details>
                         )}
@@ -154,7 +154,7 @@ const hasToc = !wide && headings.some((h) => h.depth >= 2 && h.depth <= 3);
 
             {hasToc && (
                 <aside class="fixed top-24 right-0 bottom-0 hidden w-60 shrink-0 overflow-y-auto py-7 pr-6 pl-4 xl:block">
-                    <DocsTableOfContents headings={headings} />
+                    <TableOfContents headings={headings} />
                 </aside>
             )}
         </div>

@@ -1,0 +1,78 @@
+---
+import type { CustomerStory } from "../../lib/customers";
+import { getStoryCustomer } from "../../lib/customers";
+import { LOGOS } from "../../lib/customer-logos";
+import { formatDate, isoDate, readingTime } from "../../lib/blog";
+
+interface Props {
+    story: CustomerStory;
+    variant?: "card" | "featured";
+}
+
+const { story, variant = "card" } = Astro.props;
+const { title, description, date, highlights } = story.data;
+const customer = await getStoryCustomer(story);
+const Logo = customer ? LOGOS[customer.id] : undefined;
+const minutes = readingTime(story.body);
+const href = `/customers/${story.id}`;
+const isF = variant === "featured";
+---
+
+<a
+    href={href}
+    data-astro-prefetch
+    class:list={[
+        "group flex flex-col overflow-hidden rounded-lg border border-border bg-card transition-[border-color,transform] duration-200",
+        "hover:-translate-y-0.5 hover:border-primary/45 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring motion-reduce:transition-none motion-reduce:hover:translate-y-0",
+    ]}
+>
+    <div class:list={["flex flex-1 flex-col gap-3 p-[18px] pb-5", isF && "md:gap-4 md:p-9"]}>
+        {customer && (
+            <div class="flex items-center gap-2.5 text-fg">
+                {Logo && <Logo class="h-6 w-auto" />}
+                <span class="font-display text-sm font-semibold tracking-[-0.01em]">{customer.data.name}</span>
+            </div>
+        )}
+
+        <h3
+            class:list={[
+                "font-display font-semibold leading-[1.25] tracking-[-0.015em] text-balance text-foreground transition-colors group-hover:text-primary",
+                "line-clamp-2 text-[17px]",
+                isF && "md:line-clamp-3 md:text-[clamp(24px,2.6vw,34px)] md:leading-[1.1]",
+            ]}
+        >{title}</h3>
+
+        <p
+            class:list={[
+                "font-sans text-[13px] leading-[1.6] text-fg-muted line-clamp-3",
+                isF && "md:max-w-[62ch] md:text-sm md:line-clamp-4",
+            ]}
+        >{description}</p>
+
+        {highlights.length > 0 && (
+            <ul
+                class:list={[
+                    "m-0 mt-1 grid list-none grid-cols-2 gap-px overflow-hidden border border-border bg-border p-0",
+                    isF && "md:grid-cols-4",
+                ]}
+            >
+                {highlights.map((h) => (
+                    <li class="flex flex-col gap-1 bg-card px-3 py-2.5">
+                        <span class="font-mono text-[15px] tabular-nums text-foreground">{h.value}</span>
+                        <span class="text-[11px] leading-snug text-fg-muted">{h.label}</span>
+                    </li>
+                ))}
+            </ul>
+        )}
+
+        <div class="mt-auto flex items-center justify-between gap-3 pt-1.5 font-mono text-xs text-fg/70">
+            <span class="inline-flex items-center gap-[7px] transition-colors group-hover:text-primary">
+                read story
+                <span class="transition-transform duration-200 group-hover:translate-x-1 motion-reduce:transition-none" aria-hidden="true">→</span>
+            </span>
+            <span class="text-[11px] tabular-nums text-fg-muted">
+                <time datetime={isoDate(date)}>{formatDate(date)}</time> · {minutes} min read
+            </span>
+        </div>
+    </div>
+</a>

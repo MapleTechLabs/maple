@@ -6,6 +6,7 @@ import BottomCTA from "../../components/BottomCTA.astro";
 import Breadcrumb from "../../components/Breadcrumb.astro";
 import FAQ from "../../components/FAQ.astro";
 import SeoHead from "../../components/SeoHead.astro";
+import TableOfContents from "../../components/TableOfContents.astro";
 import LatencyClockDiagram from "../../components/guides/LatencyClockDiagram.astro";
 
 const pageTitle = "API Latency: Debug p99 with OpenTelemetry | Maple";
@@ -23,6 +24,7 @@ const toc = [
     ["sampling", "Account for sampling"],
     ["maple-example", "Debug the regression"],
 ] as const;
+const tocHeadings = toc.map(([slug, text]) => ({ depth: 2, slug, text }));
 
 const faqs = [
     {
@@ -115,21 +117,9 @@ const articleJsonLd = {
             </div>
         </nav>
 
-        <div class="mx-auto grid max-w-6xl gap-12 px-6 py-16 md:py-24 lg:grid-cols-[13rem_minmax(0,1fr)] lg:gap-16">
+        <div class="mx-auto grid max-w-6xl gap-12 px-6 py-16 md:py-24 lg:grid-cols-[14rem_minmax(0,1fr)] lg:gap-16">
             <aside class="hidden lg:block">
-                <nav aria-label="On this page" class="sticky top-28">
-                    <p class="font-mono text-[10px] uppercase tracking-[0.14em] text-fg-muted">On this page</p>
-                    <ol class="mt-4 space-y-3 border-l border-border">
-                        {toc.map(([id, label], index) => (
-                            <li>
-                                <a href={`#${id}`} class="-ml-px grid grid-cols-[1.7rem_1fr] border-l border-transparent pl-3 text-[12px] leading-snug text-fg-muted transition-colors hover:border-primary hover:text-fg">
-                                    <span class="font-mono text-[9px] text-fg-muted">{String(index + 1).padStart(2, "0")}</span>
-                                    <span>{label}</span>
-                                </a>
-                            </li>
-                        ))}
-                    </ol>
-                </nav>
+                <TableOfContents headings={tocHeadings} class="sticky top-28" />
             </aside>
 
             <article class="latency-guide min-w-0">
