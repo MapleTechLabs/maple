@@ -369,7 +369,7 @@ export const instrumentLanguageModel = <R>(
 	make: Effect.Effect<LanguageModel.LanguageModel, never, R>,
 	telemetry: ModelCallTelemetry,
 	/** Join streamed deltas (see `coalesceDeltas`); for models only unattended runs use. */
-	options: { readonly coalesceDeltas?: boolean } = {},
+	instrumentation: { readonly coalesceDeltas?: boolean } = {},
 ): Effect.Effect<LanguageModel.LanguageModel, never, R> =>
 	make.pipe(
 		Effect.map((service) => ({
@@ -400,7 +400,7 @@ export const instrumentLanguageModel = <R>(
 								}),
 								// After the idle timeout, which must keep seeing every raw delta.
 								(stream) =>
-									options.coalesceDeltas === true ? coalesceDeltas(stream) : stream,
+									instrumentation.coalesceDeltas === true ? coalesceDeltas(stream) : stream,
 								Stream.provideService(
 									Telemetry.CurrentSpanTransformer,
 									modelCallTransformer(telemetry, timing),
