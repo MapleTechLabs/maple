@@ -157,6 +157,13 @@ export interface WarehouseExecutorDeps {
 	 * Optional: hosts without per-org routing omit it and get no retry.
 	 */
 	readonly invalidateRoute?: (tenant: ExecutionTenant) => Effect.Effect<boolean>
+	/**
+	 * Let concurrent cold capability lookups for one route share a single probe.
+	 * Only for hosts where one executor serves one I/O context (the CLI): in a
+	 * Worker isolate a follower request must never await a probe another request
+	 * owns, so the default keeps every probe request-local.
+	 */
+	readonly coalesceCapabilityProbes?: boolean
 }
 
 /**

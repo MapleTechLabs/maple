@@ -297,4 +297,44 @@ describe("getHttpInfo", () => {
 			kind: "server",
 		})
 	})
+
+	// Both warehouses store the short spelling (`Client`, `Server`, `Internal`);
+	// matching only `SPAN_KIND_*` let a rewritten client span fall through to the
+	// name heuristic, which called it a server and dropped the host.
+	it.each(["Client", "CLIENT", "SPAN_KIND_CLIENT"])(
+		"reads the stored %s kind as a client span and keeps host+path",
+		(spanKind) => {
+			expect(
+				getHttpInfo({
+					spanName: "GET /v0/sql",
+					spanKind,
+					spanAttributes: {
+						"http.request.method": "GET",
+						"server.address": "api.tinybird.co",
+						"url.path": "/v0/sql",
+					},
+				}),
+			).toMatchObject({ kind: "client", route: "api.tinybird.co/v0/sql" })
+		},
+	)
+
+	it.each(["Server", "SPAN_KIND_SERVER"])("reads the stored %s kind as a server span", (spanKind) => {
+		expect(
+			getHttpInfo({
+				spanName: "http.client GET",
+				spanKind,
+				spanAttributes: {
+					"http.request.method": "GET",
+					"server.address": "api.tinybird.co",
+					"url.path": "/v1/spans",
+				},
+			}),
+		).toMatchObject({ kind: "server", route: "/v1/spans" })
+	})
+
+	it("falls back to the span name for a non-HTTP stored kind", () => {
+		expect(
+			getHttpInfo({ spanName: "http.client GET", spanKind: "Internal", spanAttributes: { "url.path": "/x" } }),
+		).toMatchObject({ kind: "client" })
+	})
 })

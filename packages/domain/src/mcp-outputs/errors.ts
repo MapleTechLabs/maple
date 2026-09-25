@@ -49,6 +49,15 @@ export const ErrorDetailOutput = Schema.Struct({
 	timeRange: OutputTimeRange,
 	/** A decimal UInt64 string, never an issue UUID. */
 	fingerprintHash: Schema.String,
+	/** What the fingerprint is, taken from its newest occurrence. */
+	error: Schema.optionalKey(
+		Schema.Struct({
+			label: Schema.String,
+			exceptionType: Schema.String,
+			message: Schema.String,
+			serviceName: Schema.String,
+		}),
+	),
 	traces: Schema.Array(ErrorDetailTrace),
 	/** Error count per bucket, when include_timeseries was set. */
 	timeseries: Schema.optionalKey(

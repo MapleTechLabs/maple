@@ -723,6 +723,91 @@ describe("makeWarehouseExecutor capability-aware compilation", () => {
 		}),
 	)
 
+	// The CLI opts in: a `logs` call runs list + count concurrently, and each ran
+	// the whole probe set (8 metadata queries for 2 real ones).
+	it.effect("shares one cold capability probe when the host opts in", () =>
+		Effect.gen(function* () {
+			let versionQueries = 0
+			let metadataQueries = 0
+			let releaseVersionQuery: (() => void) | undefined
+			let signalVersionQueryStarted: (() => void) | undefined
+			const versionQueryStarted = new Promise<void>((resolve) => {
+				signalVersionQueryStarted = resolve
+			})
+			const versionQueryGate = new Promise<void>((resolve) => {
+				releaseVersionQuery = resolve
+			})
+			const executor = makeWarehouseExecutor({
+				coalesceCapabilityProbes: true,
+				createClient: () =>
+					Effect.succeed({
+						sql: (statement) =>
+							Effect.tryPromise({
+								try: async () => {
+									const sql = statement.text
+									if (sql.includes("system.") || sql.includes("SELECT version()")) {
+										metadataQueries += 1
+									}
+									if (sql.includes("SELECT version()")) {
+										versionQueries += 1
+										signalVersionQueryStarted?.()
+										await versionQueryGate
+										return { data: [{ version: "26.2.1" }] }
+									}
+									return { data: [] }
+								},
+								catch: warehouseDriverFailure,
+							}),
+						insert: () => Effect.void,
+					}),
+				resolveRoute: () =>
+					Effect.succeed({
+						source: "managed" as const,
+						config: chdbConfig,
+						clientCacheKey: "local",
+					}),
+			})
+			const query = () =>
+				executor.compiledQueryWithCapabilities(
+					tenant,
+					() =>
+						Effect.succeed(
+							rawCompiledQuery<{ readonly c: number }>({
+								reason: "test-fixture",
+								justification:
+									"Synthetic SQL asserting executor/compile behaviour, not a product query.",
+								sql: "SELECT count() AS c FROM logs WHERE OrgId = 'org_test' FORMAT JSON",
+								tenantScope: "single-tenant",
+							}),
+						),
+					{ context: "capability-coalesced" },
+				)
+
+			const leader = yield* Effect.forkChild(query())
+			yield* Effect.promise(() => versionQueryStarted)
+			const follower = yield* Effect.forkChild(query())
+			// Give the follower a real window to issue a probe of its own; with the
+			// probe shared it never does, and the count stays at one.
+			yield* Effect.promise(
+				() =>
+					new Promise<void>((resolve) => {
+						const deadlineAt = Date.now() + 200
+						const poll = () => {
+							if (versionQueries >= 2 || Date.now() >= deadlineAt) resolve()
+							else globalThis.setTimeout(poll, 5)
+						}
+						poll()
+					}),
+			)
+			releaseVersionQuery?.()
+			yield* Fiber.join(leader)
+			yield* Fiber.join(follower)
+
+			assert.strictEqual(versionQueries, 1)
+			assert.strictEqual(metadataQueries, 4)
+		}),
+	)
+
 	it.effect("falls back to the conservative plan when metadata access is denied", () =>
 		Effect.gen(function* () {
 			const executed: string[] = []

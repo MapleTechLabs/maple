@@ -1,4 +1,4 @@
-import { Array as Arr, Effect, pipe } from "effect"
+import { Array as Arr, Effect, Order, pipe } from "effect"
 import type {
 	SpanAttributeKeysOutput,
 	SpanAttributeValuesOutput,
@@ -13,6 +13,8 @@ type AttributeKeyRow = SpanAttributeKeysOutput
 
 // Both value endpoints share: { attributeValue, usageCount }
 type AttributeValueRow = SpanAttributeValuesOutput | ResourceAttributeValuesOutput
+
+const byCountDesc = Order.mapInput(Order.flip(Order.Number), (r: AttributeKeyResult) => r.count)
 
 export const exploreAttributeKeys = Effect.fn("Observability.exploreAttributeKeys")(function* (
 	input: ExploreAttributesInput,
@@ -36,19 +38,29 @@ export const exploreAttributeKeys = Effect.fn("Observability.exploreAttributeKey
 	})
 
 	if (pipeName === "services_facets") {
-		// Different schema: { name, count, facetType }
+		// One row per (facetType, name) across environments, namespaces, commit
+		// SHAs and services, each capped by the pipe rather than by `limit`. The
+		// facet type prefixes the key (as the MCP tool spells it) so a bare
+		// "development" cannot pass for a service.
 		const result = yield* executor.query<{ name: string; count: number; facetType: string }>(
 			pipeName,
 			{
 				start_time: input.timeRange.startTime,
 				end_time: input.timeRange.endTime,
-				limit: input.limit ?? 50,
 			},
 			{ profile: "discovery" },
 		)
 		return pipe(
 			result.data,
-			Arr.map((d): AttributeKeyResult => ({ key: d.name, count: Number(d.count) })),
+			Arr.map(
+				(d): AttributeKeyResult => ({
+					key: `${d.facetType}:${d.name}`,
+					count: Number(d.count),
+					facetType: d.facetType,
+				}),
+			),
+			Arr.sort(byCountDesc),
+			Arr.take(input.limit ?? 50),
 		)
 	}
 

@@ -9,13 +9,16 @@ interface CapturedCalls {
 	pipeCalls: Array<{ pipe: string; params: Record<string, unknown> }>
 }
 
-const makeMockExecutor = (captured: CapturedCalls): WarehouseExecutorApi => ({
+const makeMockExecutor = (
+	captured: CapturedCalls,
+	rows: ReadonlyArray<Record<string, unknown>> = [],
+): WarehouseExecutorApi => ({
 	orgId: "org_test",
 	compiledQuery: (compiled) => compiledQueryOf(compiled).decodeRows([]).pipe(Effect.orDie),
 	compiledQueryFirst: (compiled) => compiledQueryOf(compiled).decodeFirstRow([]).pipe(Effect.orDie),
 	query: (pipe: string, params: Record<string, unknown>) => {
 		captured.pipeCalls.push({ pipe, params })
-		return Effect.succeed({ data: [] as ReadonlyArray<never> })
+		return Effect.succeed({ data: rows as ReadonlyArray<never> })
 	},
 })
 
@@ -77,6 +80,34 @@ describe("exploreAttributeKeys", () => {
 			)
 
 			assert.strictEqual(captured.pipeCalls[0]?.pipe, "metric_attribute_keys")
+		}),
+	)
+
+	// `services_facets` unions four facet types, 50 rows each; the facet type
+	// used to be dropped, so an environment named "development" read as a key
+	// indistinguishable from a service, and `limit` was never applied.
+	it.effect("labels services-source rows by facet type and applies the limit", () =>
+		Effect.gen(function* () {
+			const captured: CapturedCalls = { pipeCalls: [] }
+			const rows = [
+				{ name: "development", count: 40, facetType: "environment" },
+				{ name: "production", count: 90, facetType: "environment" },
+				{ name: "payments", count: 10, facetType: "namespace" },
+				{ name: "abc123", count: 5, facetType: "commit_sha" },
+				{ name: "api", count: 70, facetType: "service" },
+				{ name: "worker", count: 20, facetType: "service" },
+			]
+
+			const keys = yield* exploreAttributeKeys({ source: "services", timeRange, limit: 3 }).pipe(
+				Effect.provide(makeLayer(makeMockExecutor(captured, rows))),
+			)
+
+			assert.strictEqual(captured.pipeCalls[0]?.pipe, "services_facets")
+			assert.deepStrictEqual(keys, [
+				{ key: "environment:production", count: 90, facetType: "environment" },
+				{ key: "service:api", count: 70, facetType: "service" },
+				{ key: "environment:development", count: 40, facetType: "environment" },
+			])
 		}),
 	)
 })

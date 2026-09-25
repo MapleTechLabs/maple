@@ -6987,41 +6987,63 @@ SELECT
         ORDER BY bucket ASC, groupName ASC
         FORMAT JSON
 
--- pipe:error_detail_traces:default:baseline  [ce04a4f1]
+-- pipe:error_detail_traces:default:baseline  [358e1a30]
 SELECT
-          TraceId AS traceId,
-          min(Timestamp) AS startTime,
-          intDiv(max(Duration), 1000) AS durationMicros,
+          trace_detail_spans.TraceId AS traceId,
+          min(trace_detail_spans.Timestamp) AS startTime,
+          intDiv(max(trace_detail_spans.Duration), 1000) AS durationMicros,
           count() AS spanCount,
-          groupUniqArray(ServiceName) AS services,
-          anyIf(SpanName, ParentSpanId = '') AS rootSpanName,
-          anyIf(StatusMessage, StatusCode = 'Error') AS errorMessage,
-          anyIf(SpanId, StatusCode = 'Error') AS errorSpanId,
-          anyIf(SpanName, StatusCode = 'Error') AS errorSpanName,
-          anyIf(ServiceName, StatusCode = 'Error') AS errorServiceName,
-          anyIf(SpanAttributes['gen_ai.request.model'], StatusCode = 'Error') AS errorModel,
-          anyIf(SpanAttributes['gen_ai.tool.name'], StatusCode = 'Error') AS errorToolName,
-          anyIf(SpanAttributes['http.request.method'], StatusCode = 'Error') AS errorHttpMethod,
-          anyIf(SpanAttributes['http.route'], StatusCode = 'Error') AS errorHttpRoute,
-          anyIf(SpanAttributes['query.context'], StatusCode = 'Error') AS errorQueryContext,
-          anyIf(SpanAttributes['error.type'], StatusCode = 'Error') AS errorType
+          groupUniqArray(trace_detail_spans.ServiceName) AS services,
+          anyIf(trace_detail_spans.SpanName, trace_detail_spans.ParentSpanId = '') AS rootSpanName,
+          anyIf(trace_detail_spans.StatusMessage, trace_detail_spans.SpanId = occurrence.occurrenceSpanId) AS errorMessage,
+          anyIf(trace_detail_spans.SpanId, trace_detail_spans.SpanId = occurrence.occurrenceSpanId) AS errorSpanId,
+          anyIf(trace_detail_spans.SpanName, trace_detail_spans.SpanId = occurrence.occurrenceSpanId) AS errorSpanName,
+          anyIf(trace_detail_spans.ServiceName, trace_detail_spans.SpanId = occurrence.occurrenceSpanId) AS errorServiceName,
+          anyIf(trace_detail_spans.SpanAttributes['gen_ai.request.model'], trace_detail_spans.SpanId = occurrence.occurrenceSpanId) AS errorModel,
+          anyIf(trace_detail_spans.SpanAttributes['gen_ai.tool.name'], trace_detail_spans.SpanId = occurrence.occurrenceSpanId) AS errorToolName,
+          anyIf(trace_detail_spans.SpanAttributes['http.request.method'], trace_detail_spans.SpanId = occurrence.occurrenceSpanId) AS errorHttpMethod,
+          anyIf(trace_detail_spans.SpanAttributes['http.route'], trace_detail_spans.SpanId = occurrence.occurrenceSpanId) AS errorHttpRoute,
+          anyIf(trace_detail_spans.SpanAttributes['query.context'], trace_detail_spans.SpanId = occurrence.occurrenceSpanId) AS errorQueryContext,
+          anyIf(trace_detail_spans.SpanAttributes['error.type'], trace_detail_spans.SpanId = occurrence.occurrenceSpanId) AS errorType,
+          any(occurrence.occurrenceLabel) AS errorLabel,
+          any(occurrence.occurrenceExceptionType) AS exceptionType,
+          any(occurrence.occurrenceExceptionMessage) AS exceptionMessage
         FROM trace_detail_spans
-        WHERE OrgId = 'org_sql_catalog'
-          AND TraceId IN (SELECT
-          TraceId AS TraceId
-        FROM (SELECT
+        INNER JOIN (SELECT
           TraceId AS TraceId,
-          max(Timestamp) AS lastErrorSeen
+          max(Timestamp) AS lastErrorSeen,
+          argMax(SpanId, Timestamp) AS occurrenceSpanId,
+          argMax(ErrorLabel, Timestamp) AS occurrenceLabel,
+          argMax(ExceptionType, Timestamp) AS occurrenceExceptionType,
+          argMax(ExceptionMessage, Timestamp) AS occurrenceExceptionMessage
         FROM error_events
         WHERE OrgId = 'org_sql_catalog'
           AND FingerprintHash = toUInt64('11640393269246331608')
           AND Timestamp >= '2026-01-01 10:30:00'
           AND Timestamp <= '2026-01-03 14:15:00'
         GROUP BY TraceId
-        ORDER BY lastErrorSeen DESC
-        LIMIT 10) AS matching_traces)
+        ORDER BY lastErrorSeen DESC, TraceId DESC
+        LIMIT 10) AS occurrence ON trace_detail_spans.TraceId = occurrence.TraceId
+        WHERE trace_detail_spans.OrgId = 'org_sql_catalog'
+          AND trace_detail_spans.TraceId IN (SELECT
+          TraceId AS TraceId
+        FROM (SELECT
+          TraceId AS TraceId,
+          max(Timestamp) AS lastErrorSeen,
+          argMax(SpanId, Timestamp) AS occurrenceSpanId,
+          argMax(ErrorLabel, Timestamp) AS occurrenceLabel,
+          argMax(ExceptionType, Timestamp) AS occurrenceExceptionType,
+          argMax(ExceptionMessage, Timestamp) AS occurrenceExceptionMessage
+        FROM error_events
+        WHERE OrgId = 'org_sql_catalog'
+          AND FingerprintHash = toUInt64('11640393269246331608')
           AND Timestamp >= '2026-01-01 10:30:00'
           AND Timestamp <= '2026-01-03 14:15:00'
+        GROUP BY TraceId
+        ORDER BY lastErrorSeen DESC, TraceId DESC
+        LIMIT 10) AS matching_traces)
+          AND trace_detail_spans.Timestamp >= '2026-01-01 10:30:00'
+          AND trace_detail_spans.Timestamp <= '2026-01-03 14:15:00'
         GROUP BY traceId
         ORDER BY startTime DESC
         FORMAT JSON
@@ -7664,7 +7686,7 @@ SELECT
         OFFSET 0
         FORMAT JSON
 
--- pipe:list_traces:contains-match:baseline  [15600e4e]
+-- pipe:list_traces:contains-match:baseline  [40cb839e]
 SELECT
           TraceId AS traceId,
           Timestamp AS startTime,
@@ -7672,9 +7694,11 @@ SELECT
           intDiv(Duration, 1000) AS durationMicros,
           toUInt64(1) AS spanCount,
           [ServiceName] AS services,
+          SpanId AS rootSpanId,
           SpanName AS rootSpanName,
           SpanKind AS rootSpanKind,
           StatusCode AS rootSpanStatusCode,
+          StatusMessage AS rootSpanStatusMessage,
           SpanAttributes['http.method'] AS rootHttpMethod,
           SpanAttributes['http.route'] AS rootHttpRoute,
           SpanAttributes['http.status_code'] AS rootHttpStatusCode,
@@ -7686,7 +7710,6 @@ SELECT
           AND Timestamp <= '2026-01-03 14:15:00'
           AND positionCaseInsensitive(ServiceName, 'ap') > 0
           AND (SpanKind IN ('Server', 'Consumer') OR ParentSpanId = '')
-          AND StatusCode != 'Error'
           AND Timestamp >= (SELECT min(ts) FROM (SELECT
           Timestamp AS ts
         FROM traces
@@ -7695,14 +7718,13 @@ SELECT
           AND Timestamp <= '2026-01-03 14:15:00'
           AND positionCaseInsensitive(ServiceName, 'ap') > 0
           AND (SpanKind IN ('Server', 'Consumer') OR ParentSpanId = '')
-          AND StatusCode != 'Error'
         ORDER BY ts DESC
         LIMIT 100))
         ORDER BY startTime DESC
         LIMIT 100
         FORMAT JSON
 
--- pipe:list_traces:contains-match:bloom  [15600e4e]
+-- pipe:list_traces:contains-match:bloom  [40cb839e]
 SELECT
           TraceId AS traceId,
           Timestamp AS startTime,
@@ -7710,9 +7732,11 @@ SELECT
           intDiv(Duration, 1000) AS durationMicros,
           toUInt64(1) AS spanCount,
           [ServiceName] AS services,
+          SpanId AS rootSpanId,
           SpanName AS rootSpanName,
           SpanKind AS rootSpanKind,
           StatusCode AS rootSpanStatusCode,
+          StatusMessage AS rootSpanStatusMessage,
           SpanAttributes['http.method'] AS rootHttpMethod,
           SpanAttributes['http.route'] AS rootHttpRoute,
           SpanAttributes['http.status_code'] AS rootHttpStatusCode,
@@ -7724,7 +7748,6 @@ SELECT
           AND Timestamp <= '2026-01-03 14:15:00'
           AND positionCaseInsensitive(ServiceName, 'ap') > 0
           AND (SpanKind IN ('Server', 'Consumer') OR ParentSpanId = '')
-          AND StatusCode != 'Error'
           AND Timestamp >= (SELECT min(ts) FROM (SELECT
           Timestamp AS ts
         FROM traces
@@ -7733,14 +7756,13 @@ SELECT
           AND Timestamp <= '2026-01-03 14:15:00'
           AND positionCaseInsensitive(ServiceName, 'ap') > 0
           AND (SpanKind IN ('Server', 'Consumer') OR ParentSpanId = '')
-          AND StatusCode != 'Error'
         ORDER BY ts DESC
         LIMIT 100))
         ORDER BY startTime DESC
         LIMIT 100
         FORMAT JSON
 
--- pipe:list_traces:contains-match:text  [15600e4e]
+-- pipe:list_traces:contains-match:text  [40cb839e]
 SELECT
           TraceId AS traceId,
           Timestamp AS startTime,
@@ -7748,9 +7770,11 @@ SELECT
           intDiv(Duration, 1000) AS durationMicros,
           toUInt64(1) AS spanCount,
           [ServiceName] AS services,
+          SpanId AS rootSpanId,
           SpanName AS rootSpanName,
           SpanKind AS rootSpanKind,
           StatusCode AS rootSpanStatusCode,
+          StatusMessage AS rootSpanStatusMessage,
           SpanAttributes['http.method'] AS rootHttpMethod,
           SpanAttributes['http.route'] AS rootHttpRoute,
           SpanAttributes['http.status_code'] AS rootHttpStatusCode,
@@ -7762,7 +7786,6 @@ SELECT
           AND Timestamp <= '2026-01-03 14:15:00'
           AND positionCaseInsensitive(ServiceName, 'ap') > 0
           AND (SpanKind IN ('Server', 'Consumer') OR ParentSpanId = '')
-          AND StatusCode != 'Error'
           AND Timestamp >= (SELECT min(ts) FROM (SELECT
           Timestamp AS ts
         FROM traces
@@ -7771,14 +7794,13 @@ SELECT
           AND Timestamp <= '2026-01-03 14:15:00'
           AND positionCaseInsensitive(ServiceName, 'ap') > 0
           AND (SpanKind IN ('Server', 'Consumer') OR ParentSpanId = '')
-          AND StatusCode != 'Error'
         ORDER BY ts DESC
         LIMIT 100))
         ORDER BY startTime DESC
         LIMIT 100
         FORMAT JSON
 
--- pipe:list_traces:default:baseline  [845d8dde]
+-- pipe:list_traces:default:baseline  [81ae2912]
 SELECT
           TraceId AS traceId,
           Timestamp AS startTime,
@@ -7786,9 +7808,11 @@ SELECT
           intDiv(Duration, 1000) AS durationMicros,
           toUInt64(1) AS spanCount,
           [ServiceName] AS services,
+          SpanId AS rootSpanId,
           SpanName AS rootSpanName,
           SpanKind AS rootSpanKind,
           StatusCode AS rootSpanStatusCode,
+          StatusMessage AS rootSpanStatusMessage,
           SpanAttributes['http.method'] AS rootHttpMethod,
           SpanAttributes['http.route'] AS rootHttpRoute,
           SpanAttributes['http.status_code'] AS rootHttpStatusCode,
@@ -7799,7 +7823,6 @@ SELECT
           AND Timestamp >= '2026-01-01 10:30:00'
           AND Timestamp <= '2026-01-03 14:15:00'
           AND (SpanKind IN ('Server', 'Consumer') OR ParentSpanId = '')
-          AND StatusCode != 'Error'
           AND Timestamp >= (SELECT min(ts) FROM (SELECT
           Timestamp AS ts
         FROM traces
@@ -7807,14 +7830,13 @@ SELECT
           AND Timestamp >= '2026-01-01 10:30:00'
           AND Timestamp <= '2026-01-03 14:15:00'
           AND (SpanKind IN ('Server', 'Consumer') OR ParentSpanId = '')
-          AND StatusCode != 'Error'
         ORDER BY ts DESC
         LIMIT 100))
         ORDER BY startTime DESC
         LIMIT 100
         FORMAT JSON
 
--- pipe:list_traces:default:bloom  [845d8dde]
+-- pipe:list_traces:default:bloom  [81ae2912]
 SELECT
           TraceId AS traceId,
           Timestamp AS startTime,
@@ -7822,9 +7844,11 @@ SELECT
           intDiv(Duration, 1000) AS durationMicros,
           toUInt64(1) AS spanCount,
           [ServiceName] AS services,
+          SpanId AS rootSpanId,
           SpanName AS rootSpanName,
           SpanKind AS rootSpanKind,
           StatusCode AS rootSpanStatusCode,
+          StatusMessage AS rootSpanStatusMessage,
           SpanAttributes['http.method'] AS rootHttpMethod,
           SpanAttributes['http.route'] AS rootHttpRoute,
           SpanAttributes['http.status_code'] AS rootHttpStatusCode,
@@ -7835,7 +7859,6 @@ SELECT
           AND Timestamp >= '2026-01-01 10:30:00'
           AND Timestamp <= '2026-01-03 14:15:00'
           AND (SpanKind IN ('Server', 'Consumer') OR ParentSpanId = '')
-          AND StatusCode != 'Error'
           AND Timestamp >= (SELECT min(ts) FROM (SELECT
           Timestamp AS ts
         FROM traces
@@ -7843,14 +7866,13 @@ SELECT
           AND Timestamp >= '2026-01-01 10:30:00'
           AND Timestamp <= '2026-01-03 14:15:00'
           AND (SpanKind IN ('Server', 'Consumer') OR ParentSpanId = '')
-          AND StatusCode != 'Error'
         ORDER BY ts DESC
         LIMIT 100))
         ORDER BY startTime DESC
         LIMIT 100
         FORMAT JSON
 
--- pipe:list_traces:default:text  [845d8dde]
+-- pipe:list_traces:default:text  [81ae2912]
 SELECT
           TraceId AS traceId,
           Timestamp AS startTime,
@@ -7858,9 +7880,11 @@ SELECT
           intDiv(Duration, 1000) AS durationMicros,
           toUInt64(1) AS spanCount,
           [ServiceName] AS services,
+          SpanId AS rootSpanId,
           SpanName AS rootSpanName,
           SpanKind AS rootSpanKind,
           StatusCode AS rootSpanStatusCode,
+          StatusMessage AS rootSpanStatusMessage,
           SpanAttributes['http.method'] AS rootHttpMethod,
           SpanAttributes['http.route'] AS rootHttpRoute,
           SpanAttributes['http.status_code'] AS rootHttpStatusCode,
@@ -7871,7 +7895,6 @@ SELECT
           AND Timestamp >= '2026-01-01 10:30:00'
           AND Timestamp <= '2026-01-03 14:15:00'
           AND (SpanKind IN ('Server', 'Consumer') OR ParentSpanId = '')
-          AND StatusCode != 'Error'
           AND Timestamp >= (SELECT min(ts) FROM (SELECT
           Timestamp AS ts
         FROM traces
@@ -7879,14 +7902,13 @@ SELECT
           AND Timestamp >= '2026-01-01 10:30:00'
           AND Timestamp <= '2026-01-03 14:15:00'
           AND (SpanKind IN ('Server', 'Consumer') OR ParentSpanId = '')
-          AND StatusCode != 'Error'
         ORDER BY ts DESC
         LIMIT 100))
         ORDER BY startTime DESC
         LIMIT 100
         FORMAT JSON
 
--- pipe:list_traces:filtered:baseline  [5702a482]
+-- pipe:list_traces:filtered:baseline  [3ad9d1ec]
 SELECT
           TraceId AS traceId,
           Timestamp AS startTime,
@@ -7894,9 +7916,11 @@ SELECT
           intDiv(Duration, 1000) AS durationMicros,
           toUInt64(1) AS spanCount,
           [ServiceName] AS services,
+          SpanId AS rootSpanId,
           SpanName AS rootSpanName,
           SpanKind AS rootSpanKind,
           StatusCode AS rootSpanStatusCode,
+          StatusMessage AS rootSpanStatusMessage,
           SpanAttributes['http.method'] AS rootHttpMethod,
           SpanAttributes['http.route'] AS rootHttpRoute,
           SpanAttributes['http.status_code'] AS rootHttpStatusCode,
@@ -7936,7 +7960,7 @@ SELECT
         LIMIT 25
         FORMAT JSON
 
--- pipe:list_traces:filtered:bloom  [14239a36]
+-- pipe:list_traces:filtered:bloom  [2d366eb8]
 SELECT
           TraceId AS traceId,
           Timestamp AS startTime,
@@ -7944,9 +7968,11 @@ SELECT
           intDiv(Duration, 1000) AS durationMicros,
           toUInt64(1) AS spanCount,
           [ServiceName] AS services,
+          SpanId AS rootSpanId,
           SpanName AS rootSpanName,
           SpanKind AS rootSpanKind,
           StatusCode AS rootSpanStatusCode,
+          StatusMessage AS rootSpanStatusMessage,
           SpanAttributes['http.method'] AS rootHttpMethod,
           SpanAttributes['http.route'] AS rootHttpRoute,
           SpanAttributes['http.status_code'] AS rootHttpStatusCode,
@@ -7986,7 +8012,7 @@ SELECT
         LIMIT 25
         FORMAT JSON
 
--- pipe:list_traces:filtered:text  [2303278a]
+-- pipe:list_traces:filtered:text  [ff504ae4]
 SELECT
           TraceId AS traceId,
           Timestamp AS startTime,
@@ -7994,9 +8020,11 @@ SELECT
           intDiv(Duration, 1000) AS durationMicros,
           toUInt64(1) AS spanCount,
           [ServiceName] AS services,
+          SpanId AS rootSpanId,
           SpanName AS rootSpanName,
           SpanKind AS rootSpanKind,
           StatusCode AS rootSpanStatusCode,
+          StatusMessage AS rootSpanStatusMessage,
           SpanAttributes['http.method'] AS rootHttpMethod,
           SpanAttributes['http.route'] AS rootHttpRoute,
           SpanAttributes['http.status_code'] AS rootHttpStatusCode,
@@ -9594,7 +9622,7 @@ SELECT
         LIMIT 5000
         FORMAT JSON
 
--- pipe:span_search:default:baseline  [bfce1ab3]
+-- pipe:span_search:default:baseline  [2a040c47]
 SELECT
           TraceId AS traceId,
           SpanId AS spanId,
@@ -9610,21 +9638,19 @@ SELECT
         WHERE OrgId = 'org_sql_catalog'
           AND Timestamp >= '2026-01-01 10:30:00'
           AND Timestamp <= '2026-01-03 14:15:00'
-          AND StatusCode != 'Error'
           AND Timestamp >= (SELECT min(ts) FROM (SELECT
           Timestamp AS ts
         FROM traces
         WHERE OrgId = 'org_sql_catalog'
           AND Timestamp >= '2026-01-01 10:30:00'
           AND Timestamp <= '2026-01-03 14:15:00'
-          AND StatusCode != 'Error'
         ORDER BY ts DESC
         LIMIT 20))
         ORDER BY timestamp DESC
         LIMIT 20
         FORMAT JSON
 
--- pipe:span_search:default:bloom  [bfce1ab3]
+-- pipe:span_search:default:bloom  [2a040c47]
 SELECT
           TraceId AS traceId,
           SpanId AS spanId,
@@ -9640,21 +9666,19 @@ SELECT
         WHERE OrgId = 'org_sql_catalog'
           AND Timestamp >= '2026-01-01 10:30:00'
           AND Timestamp <= '2026-01-03 14:15:00'
-          AND StatusCode != 'Error'
           AND Timestamp >= (SELECT min(ts) FROM (SELECT
           Timestamp AS ts
         FROM traces
         WHERE OrgId = 'org_sql_catalog'
           AND Timestamp >= '2026-01-01 10:30:00'
           AND Timestamp <= '2026-01-03 14:15:00'
-          AND StatusCode != 'Error'
         ORDER BY ts DESC
         LIMIT 20))
         ORDER BY timestamp DESC
         LIMIT 20
         FORMAT JSON
 
--- pipe:span_search:default:text  [bfce1ab3]
+-- pipe:span_search:default:text  [2a040c47]
 SELECT
           TraceId AS traceId,
           SpanId AS spanId,
@@ -9670,14 +9694,12 @@ SELECT
         WHERE OrgId = 'org_sql_catalog'
           AND Timestamp >= '2026-01-01 10:30:00'
           AND Timestamp <= '2026-01-03 14:15:00'
-          AND StatusCode != 'Error'
           AND Timestamp >= (SELECT min(ts) FROM (SELECT
           Timestamp AS ts
         FROM traces
         WHERE OrgId = 'org_sql_catalog'
           AND Timestamp >= '2026-01-01 10:30:00'
           AND Timestamp <= '2026-01-03 14:15:00'
-          AND StatusCode != 'Error'
         ORDER BY ts DESC
         LIMIT 20))
         ORDER BY timestamp DESC
@@ -11968,10 +11990,11 @@ SELECT
           AND HasError = 1
 FORMAT JSON
 
--- spec:traces-list-grouped-attr-fallback:baseline  [6142bef1]
+-- spec:traces-list-grouped-attr-fallback:baseline  [6b9a4329]
 SELECT
           TraceId AS traceId,
           argMin(Timestamp, (if(ParentSpanId = '', 0, 1), Timestamp)) AS startTime,
+          toDateTime(argMin(Timestamp, (if(ParentSpanId = '', 0, 1), Timestamp))) AS startSecond,
           fromUnixTimestamp64Nano(max(toUnixTimestamp64Nano(Timestamp) + toInt64(Duration))) AS endTime,
           intDiv(max(toUnixTimestamp64Nano(Timestamp) + toInt64(Duration)) - min(toUnixTimestamp64Nano(Timestamp)), 1000) AS durationMicros,
           intDiv(argMin(Duration, (if(ParentSpanId = '', 0, 1), Timestamp)), 1000) AS rootDurationMicros,
@@ -12008,10 +12031,11 @@ SELECT
         LIMIT 50
         FORMAT JSON
 
--- spec:traces-list-grouped-attr-fallback:bloom  [a9a27f2b]
+-- spec:traces-list-grouped-attr-fallback:bloom  [b78292d3]
 SELECT
           TraceId AS traceId,
           argMin(Timestamp, (if(ParentSpanId = '', 0, 1), Timestamp)) AS startTime,
+          toDateTime(argMin(Timestamp, (if(ParentSpanId = '', 0, 1), Timestamp))) AS startSecond,
           fromUnixTimestamp64Nano(max(toUnixTimestamp64Nano(Timestamp) + toInt64(Duration))) AS endTime,
           intDiv(max(toUnixTimestamp64Nano(Timestamp) + toInt64(Duration)) - min(toUnixTimestamp64Nano(Timestamp)), 1000) AS durationMicros,
           intDiv(argMin(Duration, (if(ParentSpanId = '', 0, 1), Timestamp)), 1000) AS rootDurationMicros,
@@ -12048,10 +12072,11 @@ SELECT
         LIMIT 50
         FORMAT JSON
 
--- spec:traces-list-grouped-attr-fallback:text  [22bd2047]
+-- spec:traces-list-grouped-attr-fallback:text  [b34bb97f]
 SELECT
           TraceId AS traceId,
           argMin(Timestamp, (if(ParentSpanId = '', 0, 1), Timestamp)) AS startTime,
+          toDateTime(argMin(Timestamp, (if(ParentSpanId = '', 0, 1), Timestamp))) AS startSecond,
           fromUnixTimestamp64Nano(max(toUnixTimestamp64Nano(Timestamp) + toInt64(Duration))) AS endTime,
           intDiv(max(toUnixTimestamp64Nano(Timestamp) + toInt64(Duration)) - min(toUnixTimestamp64Nano(Timestamp)), 1000) AS durationMicros,
           intDiv(argMin(Duration, (if(ParentSpanId = '', 0, 1), Timestamp)), 1000) AS rootDurationMicros,
@@ -12088,10 +12113,11 @@ SELECT
         LIMIT 50
         FORMAT JSON
 
--- spec:traces-list-grouped-duration-sort:baseline  [3b6bcadc]
+-- spec:traces-list-grouped-duration-sort:baseline  [093a8beb]
 SELECT
           TraceId AS traceId,
           argMin(Timestamp, (if(ParentSpanId = '', 0, 1), Timestamp)) AS startTime,
+          toDateTime(argMin(Timestamp, (if(ParentSpanId = '', 0, 1), Timestamp))) AS startSecond,
           fromUnixTimestamp64Nano(max(toUnixTimestamp64Nano(Timestamp) + toInt64(Duration))) AS endTime,
           intDiv(max(toUnixTimestamp64Nano(Timestamp) + toInt64(Duration)) - min(toUnixTimestamp64Nano(Timestamp)), 1000) AS durationMicros,
           intDiv(argMin(Duration, (if(ParentSpanId = '', 0, 1), Timestamp)), 1000) AS rootDurationMicros,
@@ -12123,14 +12149,15 @@ SELECT
         LIMIT 50
         OFFSET 100))
         GROUP BY traceId
-        ORDER BY rootDurationMicros DESC, startTime DESC, traceId DESC
+        ORDER BY rootDurationMicros DESC, startSecond DESC, traceId DESC
         LIMIT 50
         FORMAT JSON
 
--- spec:traces-list-grouped:baseline  [da486ffd]
+-- spec:traces-list-grouped:baseline  [b3702242]
 SELECT
           TraceId AS traceId,
           argMin(Timestamp, (if(ParentSpanId = '', 0, 1), Timestamp)) AS startTime,
+          toDateTime(argMin(Timestamp, (if(ParentSpanId = '', 0, 1), Timestamp))) AS startSecond,
           fromUnixTimestamp64Nano(max(toUnixTimestamp64Nano(Timestamp) + toInt64(Duration))) AS endTime,
           intDiv(max(toUnixTimestamp64Nano(Timestamp) + toInt64(Duration)) - min(toUnixTimestamp64Nano(Timestamp)), 1000) AS durationMicros,
           intDiv(argMin(Duration, (if(ParentSpanId = '', 0, 1), Timestamp)), 1000) AS rootDurationMicros,
@@ -12161,14 +12188,15 @@ SELECT
         ORDER BY ts DESC, traceId DESC
         LIMIT 50))
         GROUP BY traceId
-        ORDER BY startTime DESC, traceId DESC
+        ORDER BY startSecond DESC, traceId DESC
         LIMIT 50
         FORMAT JSON
 
--- spec:traces-list-grouped:bloom  [da486ffd]
+-- spec:traces-list-grouped:bloom  [b3702242]
 SELECT
           TraceId AS traceId,
           argMin(Timestamp, (if(ParentSpanId = '', 0, 1), Timestamp)) AS startTime,
+          toDateTime(argMin(Timestamp, (if(ParentSpanId = '', 0, 1), Timestamp))) AS startSecond,
           fromUnixTimestamp64Nano(max(toUnixTimestamp64Nano(Timestamp) + toInt64(Duration))) AS endTime,
           intDiv(max(toUnixTimestamp64Nano(Timestamp) + toInt64(Duration)) - min(toUnixTimestamp64Nano(Timestamp)), 1000) AS durationMicros,
           intDiv(argMin(Duration, (if(ParentSpanId = '', 0, 1), Timestamp)), 1000) AS rootDurationMicros,
@@ -12199,14 +12227,15 @@ SELECT
         ORDER BY ts DESC, traceId DESC
         LIMIT 50))
         GROUP BY traceId
-        ORDER BY startTime DESC, traceId DESC
+        ORDER BY startSecond DESC, traceId DESC
         LIMIT 50
         FORMAT JSON
 
--- spec:traces-list-grouped:text  [da486ffd]
+-- spec:traces-list-grouped:text  [b3702242]
 SELECT
           TraceId AS traceId,
           argMin(Timestamp, (if(ParentSpanId = '', 0, 1), Timestamp)) AS startTime,
+          toDateTime(argMin(Timestamp, (if(ParentSpanId = '', 0, 1), Timestamp))) AS startSecond,
           fromUnixTimestamp64Nano(max(toUnixTimestamp64Nano(Timestamp) + toInt64(Duration))) AS endTime,
           intDiv(max(toUnixTimestamp64Nano(Timestamp) + toInt64(Duration)) - min(toUnixTimestamp64Nano(Timestamp)), 1000) AS durationMicros,
           intDiv(argMin(Duration, (if(ParentSpanId = '', 0, 1), Timestamp)), 1000) AS rootDurationMicros,
@@ -12237,7 +12266,7 @@ SELECT
         ORDER BY ts DESC, traceId DESC
         LIMIT 50))
         GROUP BY traceId
-        ORDER BY startTime DESC, traceId DESC
+        ORDER BY startSecond DESC, traceId DESC
         LIMIT 50
         FORMAT JSON
 

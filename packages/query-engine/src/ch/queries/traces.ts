@@ -1256,9 +1256,11 @@ export interface TracesRootListOutput {
 	readonly durationMicros: number
 	readonly spanCount: number
 	readonly services: readonly string[]
+	readonly rootSpanId: string
 	readonly rootSpanName: string
 	readonly rootSpanKind: string
 	readonly rootSpanStatusCode: string
+	readonly rootSpanStatusMessage: string
 	readonly rootHttpMethod: string
 	readonly rootHttpRoute: string
 	readonly rootHttpStatusCode: string
@@ -1444,9 +1446,11 @@ export function tracesRootListQuery(opts: TracesRootListOpts) {
 			durationMicros: CH.intDiv($.Duration, 1000),
 			spanCount: CH.toUInt64(CH.lit(1)),
 			services: CH.arrayOf($.ServiceName),
+			rootSpanId: $.SpanId,
 			rootSpanName: $.SpanName,
 			rootSpanKind: $.SpanKind,
 			rootSpanStatusCode: $.StatusCode,
+			rootSpanStatusMessage: $.StatusMessage,
 			rootHttpMethod: $.SpanAttributes.get("http.method"),
 			rootHttpRoute: $.SpanAttributes.get("http.route"),
 			rootHttpStatusCode: $.SpanAttributes.get("http.status_code"),
@@ -1492,6 +1496,8 @@ export interface TraceListOutput {
 	readonly traceId: string
 	/** Root span timestamp — the keyset cursor field, paired with `traceId`. */
 	readonly startTime: string
+	/** `startTime` truncated to the second: the page order on the `trace_list_mv` path. */
+	readonly startSecond: string
 	/** When the last span finished, so `endTime - startTime` is the duration below. */
 	readonly endTime: string
 	/** Wall-clock extent of the whole trace, not the root span's own duration. */
@@ -1670,7 +1676,8 @@ export function traceListQuery(opts: TraceListOpts) {
 	// An IIFE per arm rather than a `let` widened to `CHQuery<any, any, any>`:
 	// the two stage-1 pages read different tables but the same three columns, and
 	// inferring their union keeps the splice below typed.
-	const pageQuery = canUseTraceListMvStage1(opts)
+	const pagesOverMv = canUseTraceListMvStage1(opts)
+	const pageQuery = pagesOverMv
 		? (() => {
 				// `trace_list_mv` is sorted `(OrgId, Timestamp, TraceId)`, so this pages
 				// read-in-order instead of scanning the window. Its Timestamp is
@@ -1732,9 +1739,11 @@ export function traceListQuery(opts: TraceListOpts) {
 			const rootServiceName = argMin($.ServiceName, rootOrder)
 			const startNanos = CH.toUnixTimestamp64Nano($.Timestamp)
 			const endNanos = CH.max_(startNanos.add(CH.toInt64($.Duration)))
+			const startTime = argMin($.Timestamp, rootOrder)
 			return {
 				traceId: $.TraceId,
-				startTime: argMin($.Timestamp, rootOrder),
+				startTime,
+				startSecond: CH.toDateTime(startTime),
 				endTime: fromUnixTimestamp64Nano(endNanos),
 				durationMicros: CH.intDiv(endNanos.sub(CH.min_(startNanos)), 1000),
 				// Stage 1's duration sort key, re-derived so stage 2 can return the
@@ -1774,10 +1783,14 @@ export function traceListQuery(opts: TraceListOpts) {
 		])
 		.groupBy("traceId")
 
+	// The page must come back in stage 1's order, or its last row is not the
+	// stage-1 cut and the next cursor repeats traces. The MV pages whole seconds
+	// by TraceId, so within a second this orders by TraceId, not nanoseconds.
+	const startKey = pagesOverMv ? "startSecond" : "startTime"
 	return (
 		sortBy === "durationMs"
-			? aggregated.orderBy(["rootDurationMicros", sortDir], ["startTime", sortDir], ["traceId", "desc"])
-			: aggregated.orderBy(["startTime", sortDir], ["traceId", "desc"])
+			? aggregated.orderBy(["rootDurationMicros", sortDir], [startKey, sortDir], ["traceId", "desc"])
+			: aggregated.orderBy([startKey, sortDir], ["traceId", "desc"])
 	)
 		.limit(limit)
 		.format("JSON")

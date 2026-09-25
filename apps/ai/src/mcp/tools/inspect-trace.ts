@@ -22,11 +22,11 @@ export function registerInspectTraceTool(server: McpToolRegistrar) {
 	server.define({
 		name: "inspect_trace",
 		description:
-			"Span tree and logs for one trace: request flow, bottlenecks, error context. Large traces are bounded to an overview (errors and longest spans first); `inspect_span` gives one span's full attributes. Without `timestamp` only the last 24h is scanned.",
+			"Span tree and logs for one trace: request flow, bottlenecks, error context. Large traces are bounded to an overview (errors and longest spans first); `inspect_span` gives one span's full attributes. Without `timestamp` the last 24h is scanned first, then up to 30 days back if the trace is not found.",
 		parameters: Schema.Struct({
 			trace_id: P.text("The trace ID to inspect"),
 			timestamp: P.optionalTimestamp(
-				"Any timestamp from the trace (e.g. from search_traces). Narrows the scan to ±1h around it; required for traces older than 24h",
+				"Any timestamp from the trace (e.g. from search_traces). Narrows the scan to ±1h around it; required for traces older than 30 days, and faster for any trace older than 24h",
 			),
 			errors_only: P.optionalFlag(
 				"Render only error spans, their ancestors and the roots: the fastest way to read a large trace's failure without its healthy spans.",

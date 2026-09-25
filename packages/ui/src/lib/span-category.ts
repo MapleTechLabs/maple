@@ -19,7 +19,7 @@ import { getCloudPlatform } from "./cloud-platforms"
 import type { CloudPlatformInfo } from "./cloud-platforms"
 import { getHttpInfo } from "./http"
 import type { HttpInfo } from "./http"
-import { normalizeSpanKind, SPAN_KIND_LABELS } from "./span-kind"
+import { getSpanKindLabel, normalizeSpanKind, SPAN_KIND_LABELS } from "./span-kind"
 import type { Span } from "./types"
 
 export { SPAN_KIND_LABELS }
@@ -142,8 +142,9 @@ export function describeSpan(span: SpanCategoryInput): SpanDescription {
 		if (className) {
 			return { id: "function", label: "Function", Icon: PuzzlePieceIcon, accent: ACCENTS.function }
 		}
-		const kindLabel =
-			SPAN_KIND_LABELS[span.spanKind] ?? (span.spanKind.replace("SPAN_KIND_", "") || "Internal")
+		const kindLabel = spanKind
+			? getSpanKindLabel(spanKind)
+			: span.spanKind.replace(/^SPAN_KIND_/, "") || "Internal"
 		return { id: "internal", label: kindLabel, Icon: CodeIcon, accent: ACCENTS.internal }
 	})()
 
