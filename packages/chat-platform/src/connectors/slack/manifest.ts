@@ -40,4 +40,5 @@ export const slackManifest: ChatConnectorManifest = {
 	// so the same hue lifted to stay visible (the dashboard's `SLACK_ACCENT`).
 	accent: "light-dark(#4A154B, #AD51A7)",
 	settingsFields: [],
+	released: true,
 }
