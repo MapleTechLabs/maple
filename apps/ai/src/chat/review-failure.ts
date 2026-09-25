@@ -9,7 +9,7 @@ import {
 	ContextBudgetError,
 	ContextOverflowError,
 	ModelProtocolError,
-} from "@effect-agent/core/AgentError"
+} from "effect-agent/agent-error"
 import { PR_REVIEW_FAILURE_COPY, type PrReviewFailureReason } from "@maple/domain/http"
 import { Cause } from "effect"
 import { isAiError } from "effect/unstable/ai/AiError"
