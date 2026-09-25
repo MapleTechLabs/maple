@@ -56,6 +56,7 @@ use maple_ingest::otlp_json;
 use maple_ingest::r2::{replay_object_key, ReplayBlobStore};
 use maple_ingest::session_analytics::{
     derive_referrer_host, sanitize_product_event, sanitize_session_event, sanitize_session_meta,
+    take_billable_session_start,
 };
 use maple_ingest::telemetry::{
     AttributeMappingRule, ClickHouseBreakerConfig, ClickHouseTarget, ClickHouseTargetProvider,
@@ -3193,13 +3194,10 @@ async fn handle_replay_meta_inner(
     // NDJSON: one session-metadata object per line. The org_id is always taken
     // from the authenticated key, never from the client-supplied body.
     //
-    // Count session-start rows so we can meter one browser session per session to
-    // Autumn. The browser SDK posts a start row (`version: 1` / `status: "active"`)
-    // at session start and an end row (`version: 2`) at unload; counting only starts
-    // avoids double-counting. Caveat: an in-tab reload recreates the SDK session sink
-    // and re-posts a start row for the same SessionId, so reloads can slightly
-    // over-count — consistent with the at-least-once metering used for the
-    // logs/traces/metrics signals.
+    // Meter one browser session per visit to Autumn: the SDK claims a visit once
+    // per visitor per 30-minute idle window across tabs and subdomains, and marks
+    // the claiming session's rows `billable_start: 1`. See
+    // `take_billable_session_start` for the rule and its legacy-SDK fallback.
     let country = derive_country(headers, state.config.trust_proxy_geo);
     let mut rows: Vec<Vec<u8>> = Vec::new();
     let mut session_starts: u64 = 0;
@@ -3244,7 +3242,7 @@ async fn handle_replay_meta_inner(
         // LowCardinality columns. Clamp before it reaches the warehouse — the
         // SDK's own trimming ships in customer JavaScript.
         sanitize_session_meta(obj);
-        if obj.get("version").and_then(serde_json::Value::as_u64) == Some(1) {
+        if take_billable_session_start(obj) {
             session_starts += 1;
         }
         rows.push(

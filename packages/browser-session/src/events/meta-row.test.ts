@@ -240,3 +240,19 @@ describe("buildSessionMetaRow replay format marker", () => {
 		expect(attrs["maple.session.replay_format"]).toBe("rrweb")
 	})
 })
+
+describe("buildSessionMetaRow billable_start", () => {
+	// Wire contract with the ingest gateway (`take_billable_session_start`): an absent
+	// key there means "legacy SDK, bill on version 1", so it must always be sent.
+	it("always emits the key as 0 or 1", () => {
+		expect(
+			buildSessionMetaRow({ ...base, status: "active", recorded: false, billableStart: true })
+				.billable_start,
+		).toBe(1)
+		expect(
+			buildSessionMetaRow({ ...base, status: "active", recorded: false, billableStart: false })
+				.billable_start,
+		).toBe(0)
+		expect(buildSessionMetaRow({ ...base, status: "active", recorded: false }).billable_start).toBe(0)
+	})
+})
