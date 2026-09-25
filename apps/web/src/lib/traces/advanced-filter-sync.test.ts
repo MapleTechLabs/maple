@@ -142,6 +142,8 @@ describe("parseWhereClause", () => {
 		["service.name > 3", "service.name supports only =, != and contains; ignoring >"],
 		['service.name !contains "x"', "service.name supports only =, != and contains; ignoring !contains"],
 		["span.name exists", "span.name supports only =, != and contains; ignoring exists"],
+		['http.method contains "PO"', "http.method supports only = and !=; ignoring contains"],
+		['http.status_code > "400"', "http.status_code supports only = and !=; ignoring >"],
 		["has_error != true", "has_error supports only =; ignoring !="],
 		["min_duration_ms > 5", "min_duration_ms supports only =; ignoring >"],
 	])("warns instead of degrading %s into an exact match", (clause, warning) => {

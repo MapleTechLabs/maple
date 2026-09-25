@@ -100,14 +100,15 @@ const MATCH_MODE_OPERATORS = {
 	lte: ["<=", "<="],
 } as const satisfies Record<AttributeMatchMode, readonly [string, string]>
 
-const FIELD_KEYS = new Set([
+// Named fields whose search param has a substring match mode.
+const CONTAINS_FIELD_KEYS = new Set([
 	"service.name",
 	"span.name",
 	"deployment.environment",
 	"service.namespace",
-	"http.method",
-	"http.status_code",
 ])
+// HTTP method and status compile to an exact attribute match, so they take = and != only.
+const EQUALITY_FIELD_KEYS = new Set(["http.method", "http.status_code"])
 const SCALAR_KEYS = new Set(["has_error", "root_only", "min_duration_ms", "max_duration_ms"])
 
 /** The where-clause operator an attribute filter entry reads back as. */
@@ -189,12 +190,16 @@ export function parseWhereClause(whereClause: string | undefined): {
 			return parsed
 		}
 
-		// Named fields are columns with an include list, an exclude list and a
-		// substring mode. Any other operator would silently turn into an exact
-		// match on the value, so it is reported instead.
-		const isFieldOperator = clause.operator === "=" || isNegated || isContains
-		if (FIELD_KEYS.has(key) && !isFieldOperator) {
+		// Named fields have an include list and an exclude list, and some a substring
+		// mode. Any other operator would silently turn into an exact match on the
+		// value, so it is reported instead.
+		const isEqualityOperator = clause.operator === "=" || isNegated
+		if (CONTAINS_FIELD_KEYS.has(key) && !isEqualityOperator && !isContains) {
 			unsupported("=, != and contains")
+			continue
+		}
+		if (EQUALITY_FIELD_KEYS.has(key) && !isEqualityOperator) {
+			unsupported("= and !=")
 			continue
 		}
 		if (SCALAR_KEYS.has(key) && clause.operator !== "=") {
@@ -240,7 +245,6 @@ export function parseWhereClause(whereClause: string | undefined): {
 					const current = parsed.excludedHttpMethods ?? []
 					return { ...parsed, excludedHttpMethods: [...current, clause.value] }
 				}
-				setMatchMode("httpMethod")
 				return { ...parsed, httpMethod: clause.value }
 			}),
 			Match.when("http.status_code", () => {
@@ -248,7 +252,6 @@ export function parseWhereClause(whereClause: string | undefined): {
 					const current = parsed.excludedHttpStatusCodes ?? []
 					return { ...parsed, excludedHttpStatusCodes: [...current, clause.value] }
 				}
-				setMatchMode("httpStatusCode")
 				return { ...parsed, httpStatusCode: clause.value }
 			}),
 			Match.when("has_error", () => {
@@ -324,11 +327,11 @@ export function toWhereClause(filters: ParsedWhereClauseFilters): string | undef
 	}
 
 	if (filters.httpMethod) {
-		clauses.push(`http.method ${op("httpMethod")} ${quoteWhereValue(filters.httpMethod)}`)
+		clauses.push(`http.method = ${quoteWhereValue(filters.httpMethod)}`)
 	}
 
 	if (filters.httpStatusCode) {
-		clauses.push(`http.status_code ${op("httpStatusCode")} ${quoteWhereValue(filters.httpStatusCode)}`)
+		clauses.push(`http.status_code = ${quoteWhereValue(filters.httpStatusCode)}`)
 	}
 
 	if (filters.hasError === true) {
