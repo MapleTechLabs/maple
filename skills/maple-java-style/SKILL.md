@@ -5,7 +5,7 @@ description: "Java OpenTelemetry style for Maple: zero-code Java agent or manual
 
 # Maple Java style
 
-The fastest path is the OpenTelemetry Java Agent — it auto-instruments the JVM with zero code changes.
+The fastest path is the OpenTelemetry Java agent. It auto-instruments the JVM with no code changes.
 
 ## Zero-code: Java agent
 
@@ -13,7 +13,7 @@ The fastest path is the OpenTelemetry Java Agent — it auto-instruments the JVM
 curl -sLO https://github.com/open-telemetry/opentelemetry-java-instrumentation/releases/latest/download/opentelemetry-javaagent.jar
 ```
 
-Inline the endpoint and ingest key as JVM args (these are the agent's only configuration surface — they map straight onto the inline-key model):
+Inline the endpoint and ingest key as JVM system properties. The agent also reads `OTEL_*` env vars, but inline `-D` flags fit the inline-key model. The agent appends `/v1/traces`, `/v1/logs`, and `/v1/metrics` to the base endpoint:
 
 ```bash
 java \
@@ -26,13 +26,13 @@ java \
   -jar build/libs/app.jar
 ```
 
-Replace `MAPLE_TEST` with the project's real Maple ingest key once it's available. Keep the args inline (in `Procfile` / `Dockerfile` / `systemd` unit / `application.yml`) — don't move them behind unset env vars.
+Replace `MAPLE_TEST` with the project's real Maple ingest key once it exists. Keep the flags inline where the JVM is launched (`Procfile`, `Dockerfile`, `systemd` unit, or `JAVA_TOOL_OPTIONS`). Do not move them behind unset env vars. The agent does not read Spring's `application.yml`.
 
 The agent auto-instruments Spring (Boot, MVC, WebFlux), Servlet containers, Apache HttpClient, OkHttp, JDBC, R2DBC, Hibernate, Kafka, gRPC, AWS SDK, and many more.
 
 ## Manual SDK (when the agent isn't an option)
 
-For cases where the agent can't run (GraalVM native image, embedded JVM, sealed module path), use the SDK directly:
+Where the agent can't run (GraalVM native image, embedded JVM, sealed module path), use the SDK directly. Import `io.opentelemetry:opentelemetry-bom` and `io.opentelemetry.instrumentation:opentelemetry-instrumentation-bom-alpha` in `<dependencyManagement>` so the artifacts below resolve without explicit versions:
 
 ```xml
 <dependency>
@@ -61,8 +61,8 @@ public final class Telemetry {
     public static OpenTelemetrySdk init() {
         var headers = Map.of("authorization", "Bearer " + MAPLE_KEY);
         var resource = Resource.getDefault().merge(Resource.create(Attributes.builder()
-            .put(ServiceAttributes.SERVICE_NAME, "orders-api")
-            .put(DeploymentIncubatingAttributes.DEPLOYMENT_ENVIRONMENT_NAME,
+            .put("service.name", "orders-api")
+            .put("deployment.environment.name",
                 System.getenv().getOrDefault("DEPLOYMENT_ENV", "development"))
             .put("vcs.repository.url.full", "https://github.com/acme/orders-api")
             .put("vcs.ref.head.revision", System.getenv().getOrDefault("GITHUB_SHA", ""))
@@ -74,23 +74,25 @@ public final class Telemetry {
             .build();
         // … same shape for OtlpHttpLogRecordExporter and OtlpHttpMetricExporter
 
-        return OpenTelemetrySdk.builder()
+        var sdk = OpenTelemetrySdk.builder()
             .setTracerProvider(SdkTracerProvider.builder()
                 .addSpanProcessor(BatchSpanProcessor.builder(spanExporter).build())
                 .setResource(resource)
                 .build())
             .buildAndRegisterGlobal();
+        OpenTelemetryAppender.install(sdk); // Logback bridge, see Logs
+        return sdk;
     }
 }
 ```
 
 ## Logs
 
-Bridge the existing Logback / SLF4J / Log4j2 setup through OTLP — don't replace it. With the Java agent, log appenders are auto-bridged. With the manual SDK, add the `opentelemetry-logback-appender-1.0` (or the Log4j 2 equivalent) and configure it in `logback.xml` so existing logger calls carry `trace_id` / `span_id` and reach Maple.
+Bridge the existing Logback / SLF4J / Log4j2 setup through OTLP. Do not replace it. With the Java agent, Logback and Log4j2 are bridged automatically. With the manual SDK, add `opentelemetry-logback-appender-1.0` (or `opentelemetry-log4j-appender-2.17`), declare `io.opentelemetry.instrumentation.logback.appender.v1_0.OpenTelemetryAppender` in `logback.xml`, and call `OpenTelemetryAppender.install(sdk)` after building the SDK. Existing logger calls then carry `trace_id` / `span_id` and reach Maple.
 
 ## Bounded business spans
 
-Acquire the tracer at class scope; wrap operations the agent's auto-instrumentation can't see.
+Acquire the tracer at class scope. Wrap operations the agent's auto-instrumentation can't see.
 
 ```java
 private static final Tracer TRACER = GlobalOpenTelemetry.getTracer("orders.api");
@@ -114,4 +116,4 @@ public Order submit(String orderId, String tenantId) {
 
 ## Coexistence
 
-If the project already runs Datadog / New Relic / Honeycomb agents, leave them in place. The OpenTelemetry Java Agent coexists with most APMs (test the combination once before shipping). Don't strip an incumbent agent unless the user asks.
+If the project already runs a Datadog, New Relic, or Honeycomb agent, leave it in place. Two bytecode agents on one JVM can conflict, so test the combination once before shipping. Do not strip an incumbent agent unless the user asks.

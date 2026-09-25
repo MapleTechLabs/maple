@@ -5,7 +5,7 @@ description: "Effect-TS OpenTelemetry style for Maple via @maple-dev/effect-sdk:
 
 # Maple Effect style
 
-For Effect apps, use `@maple-dev/effect-sdk` — Maple's first-class Effect SDK. It wraps Effect's built-in `Otlp.layerJson` exporter and handles batching, shutdown, and resource attributes for you.
+For Effect apps, use `@maple-dev/effect-sdk`. It wraps Effect's built-in `Otlp.layerJson` exporter and handles batching, shutdown, and resource attributes.
 
 ## Install
 
@@ -13,11 +13,11 @@ For Effect apps, use `@maple-dev/effect-sdk` — Maple's first-class Effect SDK.
 npm install @maple-dev/effect-sdk effect
 ```
 
-For Effect 3, use `@maple-dev/effect-sdk@effect-v3` instead. Same API, different peer ranges.
+The current release requires Effect 4 (`effect >= 4.0.0-rc.113`). For Effect 3, install `@maple-dev/effect-sdk@effect-v3 effect @effect/platform @effect/opentelemetry`. The API and import paths are the same.
 
 ## Bootstrap
 
-Pick the entry point per runtime — they have different lifecycle requirements:
+Pick the entry point per runtime. Each has different lifecycle requirements:
 
 - **Server (Node.js, Bun, Deno):** background-export fiber, env-var auto-detection, graceful shutdown.
 - **Browser:** explicit config (no env vars), browser metadata baked in.
@@ -27,15 +27,13 @@ Pick the entry point per runtime — they have different lifecycle requirements:
 
 ```ts
 import { Maple } from "@maple-dev/effect-sdk"
-import { Effect, Layer } from "effect"
+import { Effect } from "effect"
 
 const TracerLive = Maple.layer({
 	serviceName: "orders-api",
 	endpoint: "https://ingest.maple.dev",
 	ingestKey: "MAPLE_TEST", // set by maple-onboard skill on pairing
-	attributes: {
-		"vcs.repository.url.full": "https://github.com/acme/orders-api",
-	},
+	repositoryUrl: "https://github.com/acme/orders-api",
 })
 
 const program = Effect.gen(function* () {
@@ -47,13 +45,13 @@ Effect.runPromise(program.pipe(Effect.provide(TracerLive)))
 
 The default import resolves to the server build under Node.js. Import `@maple-dev/effect-sdk/server` explicitly when needed.
 
-If `endpoint` is omitted, the server layer auto-detects it from `MAPLE_ENDPOINT` (falling back to `OTEL_EXPORTER_OTLP_ENDPOINT`, then the public Maple ingest). `Maple.layer` always exports — a missing ingest key does not disable it, which is what keeps keyless local-mode and self-hosted-collector setups working. Inline the key when you want telemetry to flow regardless of env (matches the rest of the maple-onboard inline-key pattern). `MapleFlush.make` and the Cloudflare `make()` differ: those no-op without a key.
+If `endpoint` is omitted, the server layer reads `MAPLE_ENDPOINT`, then `OTEL_EXPORTER_OTLP_ENDPOINT`, then falls back to the public ingest for the region (`https://ingest.maple.dev`, or `https://ingest.eu.maple.dev` with `region: "eu"` / `MAPLE_REGION=eu`). The key falls back to `MAPLE_INGEST_KEY`. `Maple.layer` always exports. A missing ingest key does not disable it, so keyless local-mode and self-hosted-collector setups keep working. Inline the key when telemetry must flow regardless of env (the maple-onboard inline-key pattern). `MapleFlush.make` and the Cloudflare `make()` differ: they no-op without a key.
 
-The server layer also auto-fills `vcs.ref.head.revision` from `COMMIT_SHA` / `RAILWAY_GIT_COMMIT_SHA` / `VERCEL_GIT_COMMIT_SHA` / `CF_PAGES_COMMIT_SHA` / `RENDER_GIT_COMMIT` (first match wins). For `vcs.repository.url.full`, use the `repositoryUrl` option or `MAPLE_REPOSITORY_URL` — don't hand-write the attribute.
+The server layer also auto-fills `vcs.ref.head.revision` from `COMMIT_SHA` / `RAILWAY_GIT_COMMIT_SHA` / `VERCEL_GIT_COMMIT_SHA` / `CF_PAGES_COMMIT_SHA` / `RENDER_GIT_COMMIT` (first match wins). For `vcs.repository.url.full`, use the `repositoryUrl` option or `MAPLE_REPOSITORY_URL`. Do not hand-write the attribute. The layer also dual-emits `deployment.environment` and `deployment.environment.name` from the `environment` option or `MAPLE_ENVIRONMENT`.
 
 ### Cloudflare Workers
 
-The Cloudflare entry point exports `make()`, not a `Maple` namespace. Build the telemetry object **once at module scope** — it buffers in-isolate and resolves `env` lazily on the first flush:
+The Cloudflare entry point exports `make()`, not a `Maple` namespace. Build the telemetry object **once at module scope**. It buffers in-isolate and resolves `env` lazily on the first flush:
 
 ```ts
 import * as MapleCloudflareSDK from "@maple-dev/effect-sdk/cloudflare"
@@ -79,7 +77,7 @@ export default {
 }
 ```
 
-The Cloudflare entry point requires `ctx.waitUntil(telemetry.flush(env))` so telemetry survives the isolate exit — note `flush` takes `env`. Forgetting the `waitUntil` is the most common reason traces don't show up from Workers.
+Call `ctx.waitUntil(telemetry.flush(env))` on every request so telemetry survives the isolate exit. `flush` takes `env`. A missing `waitUntil` is the most common reason Worker traces never arrive. When routes go through `HttpRouter.toWebHandler`, provide `telemetry.layer` to the layer you pass it (`Layer.provideMerge(telemetry.layer)`), not to a separate per-request runtime.
 
 ### Browser
 
@@ -93,31 +91,30 @@ const TracerLive = Maple.layer({
 })
 ```
 
-No env-var fallback in the browser entry point — config is always explicit.
+The browser entry point has no env-var fallback. Pass all config explicitly (add `region: "eu"` for EU organizations). It records session replays by default; opt out with `replay: { enabled: false }`.
 
 ## Custom spans
 
-Use `Effect.withSpan` to trace operations and `Effect.annotateCurrentSpan` for attributes — don't reach for the raw `@opentelemetry/api` tracer when an Effect-native primitive is available.
+Use `Effect.withSpan` to trace operations and `Effect.annotateCurrentSpan` for attributes. Do not reach for the raw `@opentelemetry/api` tracer when an Effect-native primitive exists.
 
 ```ts
 const processOrder = (orderId: string) =>
 	Effect.gen(function* () {
 		yield* Effect.annotateCurrentSpan("order.id", orderId)
-		yield* Effect.annotateCurrentSpan("peer.service", "payment-api")
 		const result = yield* chargePayment(orderId)
 		return result
 	}).pipe(Effect.withSpan("order.process"))
 ```
 
-Setting `peer.service` on outgoing calls makes them visible on Maple's service map.
+Maple's service map draws a service-to-service edge by joining a Client span to the downstream service's child Server span. `peer.service` does not draw edges. Make outgoing calls through Effect's `HttpClient`: it creates the Client span and injects `traceparent` by default. Calls to uninstrumented dependencies appear as external nodes keyed on `server.address`.
 
-`Effect.fail` and uncaught defects are recorded as exceptions and set the span status to ERROR automatically — you don't need to wrap with `try` / `catch` / `finally`.
+`Effect.fail` and uncaught defects end the span with status `Error` and an `exception` event. Do not wrap with `try` / `catch` / `finally`.
 
-`@maple/otel-helpers` `withSpan` is for non-Effect TypeScript code; in Effect code prefer the Effect-native span primitives.
+`@maple/otel-helpers` `withSpan` is for non-Effect TypeScript code. In Effect code, use the Effect-native span primitives.
 
 ## Logs
 
-`Effect.log` automatically includes trace context when called inside a span — no additional setup needed:
+`Effect.log` inside a span carries the trace context. No extra setup is needed:
 
 ```ts
 const program = Effect.gen(function* () {
@@ -131,13 +128,4 @@ Logs emitted inside spans are correlated with the active trace in the Maple dash
 
 ## Coexistence
 
-If the project already uses `@effect/opentelemetry` or `Otlp.layerJson` with a custom exporter (e.g. for Honeycomb, Datadog), keep it. `Maple.layer()` can compose alongside via `Layer.merge`:
-
-```ts
-const TracerLive = Layer.merge(
-	Maple.layer({ serviceName: "api", endpoint: "https://ingest.maple.dev", ingestKey: "MAPLE_TEST" }),
-	HoneycombLayer,
-)
-```
-
-Both vendors receive the same spans.
+If the project already exports through `@effect/opentelemetry` or `Otlp.layerJson` to another vendor (Honeycomb, Datadog), keep that exporter. Do not `Layer.merge` `Maple.layer()` with another tracer layer. Effect runs one `Tracer` service, so the last layer wins and the other vendor stops receiving spans. To ship to both, add Maple as a second destination inside the existing setup: a second OTLP span processor on the `@effect/opentelemetry` SDK, or a fan-out in the team's OpenTelemetry Collector. Ask the user before replacing the incumbent exporter.

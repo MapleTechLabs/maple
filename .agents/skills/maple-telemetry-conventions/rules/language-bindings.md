@@ -1,14 +1,14 @@
-# Language bindings — emit the same attributes everywhere
+# Language bindings: emit the same attributes everywhere
 
-The whole point of this skill is that **attribute keys are identical across languages**. Snippets below show how to emit the canonical `executeSql`-style annotation block in each language so any reader can copy the pattern into TS, Rust, or (forthcoming) Python.
+Attribute keys are identical across languages. The snippets below emit the canonical `executeSql`-style annotation block in TS, Rust, and (forward-looking) Python.
 
 ---
 
-## TypeScript — Effect + `@effect/opentelemetry`
+## TypeScript: Effect + `@maple-dev/effect-sdk`
 
-Maple's TS code wraps spans through Effect. Two patterns:
+Maple's TS code creates spans through Effect's tracer; `@maple-dev/effect-sdk` (`packages/effect-sdk`) installs the tracer and OTLP exporter. Two patterns:
 
-### Pattern A: `Effect.fn(name)` — declarative span on a function
+### Pattern A: `Effect.fn(name)`, a declarative span on a function
 
 ```typescript
 import { Effect } from "effect"
@@ -17,7 +17,7 @@ const executeQuery = Effect.fn("MyService.executeQuery")(function* (
     tenant: TenantContext,
     sql: string,
 ) {
-    // Span attributes — annotate the current span (created by Effect.fn).
+    // Annotate the current span (created by Effect.fn).
     yield* Effect.annotateCurrentSpan("orgId", tenant.orgId)
     yield* Effect.annotateCurrentSpan("tenant.userId", tenant.userId)
     yield* Effect.annotateCurrentSpan("db.system.name", "clickhouse")
@@ -30,9 +30,9 @@ const executeQuery = Effect.fn("MyService.executeQuery")(function* (
 })
 ```
 
-Status is set automatically: if the effect fails, the tracer records `Error`; on success, `Ok`. **Do not call `setStatus` manually.**
+Status is set automatically: a failed effect records `Error`, a successful one `Ok`. Do not set status manually. Pass `{ kind: "client" }` as the second argument to `Effect.fn` when the function makes a network call.
 
-### Pattern B: `Effect.withSpan(name, { attributes })` — wrap an inline effect
+### Pattern B: `Effect.withSpan(name, { attributes })`, wrapping an inline effect
 
 ```typescript
 yield* doWork.pipe(
@@ -46,21 +46,21 @@ yield* doWork.pipe(
 )
 ```
 
-Use this when you need attributes set at span-open time rather than via `annotateCurrentSpan` calls inside.
+Use this when attributes are known at span-open time instead of via `annotateCurrentSpan` calls inside.
 
-### Cloudflare Workers — `MapleCloudflareSDK`
+### Cloudflare Workers: `MapleCloudflareSDK`
 
-Workers get their tracer from `MapleCloudflareSDK` in `packages/effect-sdk/src/cloudflare/index.ts`. The setup configures the OTLP exporter and resource — once it's installed via `telemetry.layer`, you use the same `Effect.fn` / `Effect.annotateCurrentSpan` / `Effect.withSpan` API as elsewhere.
+Workers get their tracer from `MapleCloudflareSDK` in `packages/effect-sdk/src/cloudflare/index.ts`, which configures the OTLP exporter and resource. Maple's own Workers install it through `WorkerTelemetry` (`packages/infra/src/cloudflare/worker-telemetry.ts`). After that, use the same `Effect.fn` / `Effect.annotateCurrentSpan` / `Effect.withSpan` API as elsewhere.
 
 ### Canonical TS example
 
-The reference implementation is `apps/api/src/services/WarehouseQueryService.ts:441-510` (the `executeSql` function). Read it whenever you're unsure how to structure a new query span.
+The reference implementation is `executeSql` in `packages/query-engine/src/execution/executor.ts`. Read it when unsure how to structure a new query span.
 
 ---
 
-## Rust — `tracing` + `tracing-opentelemetry`
+## Rust: `tracing` + `tracing-opentelemetry`
 
-Rust code uses the `tracing` macro to declare spans and field names. Special field names (`otel.name`, `otel.kind`, `otel.status_code`) drive OTel semantics; the rest become custom attributes.
+Rust code declares spans and fields with `tracing` macros. The reserved fields (`otel.name`, `otel.kind`, `otel.status_code`, `otel.status_description`) drive OTel semantics; the rest become attributes.
 
 ### Pattern A: declarative span via `tracing::info_span!`
 
@@ -92,15 +92,16 @@ match result {
     Err(err) => {
         span_handle.record("http.response.status_code", err.status_code());
         span_handle.record("error.type", err.kind());
+        // Inbound handlers: use otel_status_for_rejection (see status-and-kind.md).
         span_handle.record("otel.status_code", "Error");
     }
 }
 ```
 
 Key idioms:
-- **Quote field names with dots** (`"http.request.method"`) — bare identifiers can't contain dots in Rust syntax.
-- **Declare empty fields up front** with `tracing::field::Empty` and `record` them later. This keeps the field list visible at the span declaration site.
-- **Use `%expr`** to record the `Display` impl, `?expr` for `Debug`. Use plain `field = value` for primitive types.
+- **Quote field names that contain dots** (`"http.request.method"`). The reserved `otel.*` fields are the exception: the macro accepts them bare.
+- **Declare empty fields up front** with `tracing::field::Empty` and `record` them later. `record` silently ignores a field the span did not declare, and the declaration site then lists every field.
+- **Use `%expr`** to record the `Display` impl and `?expr` for `Debug`. Use plain `field = value` for primitives.
 
 ### Pattern B: `#[instrument]` attribute macro
 
@@ -125,13 +126,13 @@ async fn resolve_connector(state: &AppState, connector_id: &str) -> Result<Resol
 
 ### Canonical Rust example
 
-`apps/ingest/src/main.rs:843-902` (Server-kind inbound signal handler), `:1132-1156` (Client-kind downstream forward).
+`handle_signal` in `apps/ingest/src/main.rs` (Server-kind inbound handler) and `forward_client_span` / `export_client_span` in `apps/ingest/src/otel.rs` (Client-kind outbound).
 
 ---
 
-## Python — forward-looking
+## Python: forward-looking
 
-There's no Python service in this repo today, but the conventions below are the ones to follow when adding one (e.g. a future Python ingest worker or tooling around `tinybird-sdk`).
+There is no Python service in this repo today. Follow these conventions when adding one.
 
 ```python
 from opentelemetry import trace
@@ -144,7 +145,7 @@ def execute_query(tenant, sql: str):
         "MyService.execute_query",
         kind=SpanKind.INTERNAL,
     ) as span:
-        # Same attribute keys as TS / Rust — do not invent Python-specific ones.
+        # Same attribute keys as TS / Rust. Do not invent Python-specific ones.
         span.set_attribute("orgId", tenant.org_id)
         span.set_attribute("tenant.userId", tenant.user_id)
         span.set_attribute("db.system.name", "clickhouse")
@@ -154,7 +155,7 @@ def execute_query(tenant, sql: str):
         try:
             result = run_query(sql)
             span.set_attribute("result.rowCount", len(result))
-            # On success, leave status alone — the SDK records Ok by default.
+            # On success, leave status alone: Maple stores it as Unset.
             return result
         except Exception as exc:
             span.set_status(Status(StatusCode.ERROR))
@@ -162,26 +163,26 @@ def execute_query(tenant, sql: str):
             raise
 ```
 
-### Python ↔ wire-string boundary
+### Python status
 
-Python's OTel SDK uses the enum `StatusCode.ERROR` and `StatusCode.OK` in code, but the SDK exports them as the wire strings `"Error"` and `"Ok"` (Title Case). So:
+Python's OTel SDK uses the enums `StatusCode.ERROR` / `StatusCode.OK`. The exporter encodes them as OTLP status codes, which Maple stores as `"Error"` / `"Ok"`. So:
 
-- ✅ `span.set_status(Status(StatusCode.ERROR))` — correct, SDK handles conversion
-- ❌ `span.set_attribute("otel.status_code", "ERROR")` — never set status as a custom attribute, and never use uppercase
+- Correct: `span.set_status(Status(StatusCode.ERROR))`. Call `span.set_status(Status(StatusCode.OK))` explicitly if the span must read `Ok`.
+- Wrong: `span.set_attribute("otel.status_code", "ERROR")`. That is a plain attribute, not the span status.
 
 ---
 
 ## Cross-language consistency table
 
-The same logical attribute must use the same key in every language. Watch out for these — they're the most-confused spots:
+The same logical attribute uses the same key in every language. These are the most-confused spots:
 
 | Concept | TypeScript | Rust | Python | Notes |
 |---|---|---|---|---|
-| Customer org ID (on span) | `orgId` | `maple.org_id` | `orgId` (or `maple.org_id` if mirroring ingest) | TS/Rust mismatch is intentional — preserved for dashboard filter compatibility |
-| User ID | `tenant.userId` | `tenant.user_id` is **wrong** — use `tenant.userId` | `tenant.userId` | Dotted-camelCase is canonical |
+| Customer org ID (on span) | `orgId` | `maple.org_id` | `orgId` (or `maple.org_id` if mirroring ingest) | TS/Rust mismatch is intentional, kept for dashboard filter compatibility |
+| User ID | `tenant.userId` | `tenant.userId` (not `tenant.user_id`) | `tenant.userId` | Dotted camelCase is canonical |
 | SQL statement | `db.query.text` | `db.query.text` | `db.query.text` | Same key everywhere (legacy spans: `db.statement`) |
 | SQL duration | `db.duration_ms` | `db.duration_ms` | `db.duration_ms` | Same key everywhere |
 | OTel HTTP method | `http.request.method` | `http.request.method` | `http.request.method` | Semconv 1.20+ keys everywhere (the legacy email-path exception is gone) |
 | OTel status code | (managed by Effect tracer) | `otel.status_code` field on `tracing` span | `span.set_status(Status(...))` | Title Case strings on the wire |
 
-When in doubt, grep the existing codebase for the key name. If it's used in TS and you're writing Rust, use the same spelling.
+When in doubt, grep the codebase for the key. If TS uses it and you're writing Rust, use the same spelling.
