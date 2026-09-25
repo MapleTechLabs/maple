@@ -1,6 +1,8 @@
 ---
 name: maple-otel-spec-review
 description: "Review a diff, PR, or specific file in this repo for OpenTelemetry *specification* compliance, grounded in the source-linked spec corpus at docs/otel-spec/ (snapshot v1.58.0). Triggers on requests like 'is this spec compliant', 'review this PR against the OTel spec', 'spec-review this diff', 'check my partial-success handling', 'are these retryable status codes right', 'does apps/ingest honor the OTLP spec', and on reviews of changes touching the OTLP server surface in apps/ingest (partial success, retryable set {429, 502, 503, 504}, protobuf Status bodies, gzip, OTLP/JSON encoding), self-instrumentation (apps/api tracer setup, apps/ingest/src/otel.rs, packages/effect-sdk), or consumers of span status / SeverityNumber / db.query.text (WarehouseQueryService, query-engine). Spec MUSTs and SHOULDs only. For Maple house conventions use maple-telemetry-conventions; for whole-project instrumentation audits use maple-audit; for general diff correctness use /code-review."
+metadata:
+  internal: true
 ---
 
 # OTel spec-compliance review

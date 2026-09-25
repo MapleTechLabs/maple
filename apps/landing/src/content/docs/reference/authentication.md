@@ -34,6 +34,8 @@ Each organization has exactly one public key and one private key. Both are shown
 - Use the **public key** (`maple_pk_…`, labeled **Client**) in browsers, mobile apps and anything else you ship to end users. It will be visible to anyone who inspects your app, which is expected. The worst someone can do with it is send data to your organization.
 - Use the **private key** (`maple_sk_…`, labeled **Server**) on servers, in the OpenTelemetry Collector and in CI. Keep it out of client bundles, so you can rotate the public key without touching your backend.
 
+The public key also works on servers. The [maple-onboard](https://github.com/MapleTechLabs/maple/tree/main/skills/maple-onboard) skill uses it everywhere so one key covers a repository; switch servers to the private key when you want to rotate the two separately.
+
 Send the key on every request, either as `Authorization: Bearer maple_pk_…` or as `x-maple-ingest-key: maple_pk_…`. The `Bearer` prefix is case-insensitive. The [Ingest API](/docs/reference/ingest#authentication) page has the details.
 
 To rotate a key, click **Regenerate** next to it in **Settings → Ingestion**, or call `POST /v2/ingest_keys/public/roll` or `POST /v2/ingest_keys/private/roll`. The old key stops working immediately, so deploy the new one first where you can.

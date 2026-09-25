@@ -45,8 +45,8 @@ import (
 )
 
 const (
-	mapleEndpoint = "ingest.maple.dev"
-	mapleKey      = "MAPLE_TEST" // set by maple-onboard skill on pairing
+	mapleEndpoint = "ingest.maple.dev" // EU: ingest.eu.maple.dev
+	mapleKey      = "MAPLE_TEST" // public ingest key (maple_pk_…), or MAPLE_TEST until the user has one
 )
 
 func Init(ctx context.Context) (shutdown func(context.Context) error, err error) {

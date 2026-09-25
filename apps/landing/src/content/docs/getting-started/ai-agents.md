@@ -118,7 +118,13 @@ Two open-source skills teach a coding agent how to set up OpenTelemetry for Mapl
 - [maple-onboard](https://github.com/MapleTechLabs/maple/tree/main/skills/maple-onboard) instruments every app and service in a repository: traces, logs and metrics, using the native OpenTelemetry SDK for each language.
 - [maple-audit](https://github.com/MapleTechLabs/maple/tree/main/skills/maple-audit) reviews an existing setup, reports gaps per service (missing service map edges, missing `service.version`, errors without exceptions) and fixes them.
 
-Add the skill folders to your agent's skills directory, then ask: *"Set up Maple in this repo"* or *"Audit my Maple instrumentation."* With the MCP server connected, the agent can confirm the first traces arrived and run `audit_setup` and `get_instrumentation_recommendations` against your live data.
+Install them together with the per-language guides they read:
+
+```bash
+bunx skills add MapleTechLabs/maple/skills --skill '*'
+```
+
+Then ask: *"Set up Maple in this repo. My ingest endpoint is https://ingest.maple.dev and my ingest key is maple_pk_…"* or *"Audit my Maple instrumentation."* EU organizations give `https://ingest.eu.maple.dev`. With the MCP server connected, the agent can confirm the first traces arrived and run `audit_setup` and `get_instrumentation_recommendations` against your live data.
 
 ## Stay in control
 
