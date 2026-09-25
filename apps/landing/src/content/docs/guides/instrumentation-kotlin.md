@@ -1,5 +1,5 @@
 ---
-title: "Kotlin Instrumentation"
+title: "Kotlin instrumentation"
 description: "Instrument a Kotlin JVM application (Ktor, Spring Boot) with OpenTelemetry and send traces, logs, and metrics to Maple."
 group: "Instrumentation"
 order: 11
@@ -234,15 +234,14 @@ inline fun <T> Tracer.span(name: String, block: (Span) -> T): T {
 
 fun processOrder(orderId: String) = tracer.span("process-order") { span ->
     span.setAttribute("order.id", orderId)
-    // Set peer.service when calling another service
-    span.setAttribute("peer.service", "payment-api")
+    span.setAttribute("payment.method", "card")
     chargePayment(orderId)
 }
 ```
 
 `makeCurrent()` binds the span to the current thread. In coroutines that switch threads, wrap the work in `withContext(Context.current().asContextElement())` from the `opentelemetry-extension-kotlin` library so the span follows the coroutine.
 
-Setting `peer.service` on outgoing calls makes them visible on Maple's [service map](/docs/concepts/otel-conventions#service-map).
+Service map edges come from instrumented client spans that propagate `traceparent` to an instrumented callee, not from attributes such as `peer.service`. See [Service map](/docs/explore/service-map).
 
 ## Log correlation
 

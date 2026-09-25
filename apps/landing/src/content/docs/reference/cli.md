@@ -1,5 +1,5 @@
 ---
-title: "CLI Reference"
+title: "CLI reference"
 description: "Every maple command, argument and flag, plus the local server's endpoints, environment variables and a troubleshooting guide."
 group: "Reference"
 order: 3
@@ -79,7 +79,7 @@ maple start -d --port 4400     # detached on a custom port
 maple start --host 0.0.0.0 --advertise-host maple.home.arpa --offline
 ```
 
-The default recovery policy is `fail`, so an unclean shutdown never silently deletes telemetry. What each policy does, and how reset and restore protect the store, is on [Checkpoints & archives](/docs/local-mode/checkpoints-and-archives).
+The default recovery policy is `fail`, so an unclean shutdown never silently deletes telemetry. What each policy does, and how reset and restore protect the store, is on [Checkpoints and archives](/docs/local-mode/checkpoints-and-archives).
 
 ### `maple stop`
 
@@ -127,7 +127,7 @@ maple restore --checkpoint-id 01234567-89ab-4cde-8fab-0123456789ab --yes
 
 ### `maple archive`
 
-Local mode only. Export whole UTC days of the six raw telemetry tables from a checkpoint into Parquet files, and manage those exports. How archives work is explained on [Checkpoints & archives](/docs/local-mode/checkpoints-and-archives#archives).
+Local mode only. Export whole UTC days of the six raw telemetry tables from a checkpoint into Parquet files, and manage those exports. How archives work is explained on [Checkpoints and archives](/docs/local-mode/checkpoints-and-archives#archives).
 
 | Subcommand | What it does |
 | --- | --- |
@@ -293,7 +293,7 @@ Run raw ClickHouse SQL against the local store, for anything the typed commands 
 maple query "SELECT ServiceName, count() FROM traces GROUP BY ServiceName ORDER BY 2 DESC"
 ```
 
-> **Local only.** Raw SQL against the hosted warehouse would let one client read other organisations' data, so `maple query` returns a clear error in remote mode. Every other command works in both modes.
+> **Local only.** Raw SQL against the hosted warehouse would let one client read other organizations' data, so `maple query` returns a clear error in remote mode. Every other command works in both modes.
 
 ## Analytics
 
@@ -424,7 +424,7 @@ OTLP bodies may be protobuf (the default) or JSON, optionally gzip-encoded. The 
 | `MAPLE_LIBCHDB` | _(auto)_ | Explicit path to `libchdb`. Otherwise resolved beside the binary, then `~/.maple/bin/libchdb.{so,dylib}` |
 | `MAPLE_API_URL` | `https://api.maple.dev` | Remote API base URL |
 | `MAPLE_API_TOKEN` | | Remote bearer token; overrides the stored credential |
-| `MAPLE_ORG_ID` | | Remote organisation override |
+| `MAPLE_ORG_ID` | | Remote organization override |
 | `MAPLE_DEBUG` | | `1` enables `--debug` |
 | `MAPLE_FORMAT` | `json` | `json` or `table`, same as `--format` |
 | `MAPLE_NO_UPDATE_CHECK` | | Any non-empty value disables the startup update check (the Homebrew wrapper sets it). The check runs at most once per 24 hours, only when stderr is a terminal |

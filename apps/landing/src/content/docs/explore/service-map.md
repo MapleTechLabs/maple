@@ -1,5 +1,5 @@
 ---
-title: "Service Map"
+title: "Service map"
 description: "A live graph of your services and the databases they call, drawn from trace context, with call volume, error rate, and latency on every node and edge."
 group: "Explore"
 order: 5

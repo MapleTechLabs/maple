@@ -189,7 +189,7 @@ After the rule exists, you can ask which of your Apdex rules would never fire, o
 
 ## Known limitations
 
-- **Apdex is computed on sampled spans.** Under uniform sampling the score stays representative. A sampler that keeps slow or failed traces preferentially, without reporting its sampling weight, drags the score down. See [Sampling & Throughput](/docs/concepts/sampling-throughput).
+- **Apdex is computed on sampled spans.** Under uniform sampling the score stays representative. A sampler that keeps slow or failed traces preferentially, without reporting its sampling weight, drags the score down. See [Sampling and throughput](/docs/concepts/sampling-throughput).
 - **One T per rule.** A service whose `/healthz` and `/reports/export` share a rule is being measured against a target that fits neither. Group by `attr.http.route`, or write separate rules.
 - **The score hides magnitude.** It counts frustrated requests without weighting how frustrated they were. Pair it with a p99 rule.
 

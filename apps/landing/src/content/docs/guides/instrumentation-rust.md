@@ -1,5 +1,5 @@
 ---
-title: "Rust Instrumentation"
+title: "Rust instrumentation"
 description: "Instrument a Rust application with OpenTelemetry and send traces, logs, and metrics to Maple."
 group: "Instrumentation"
 order: 9
@@ -216,14 +216,14 @@ The `#[instrument]` attribute opens a span for each call:
 ```rust
 use tracing::instrument;
 
-#[instrument(skip(payment_client), fields(order.id = %order_id, peer.service = "payment-api"))]
+#[instrument(skip(payment_client), fields(order.id = %order_id, payment.method = "card"))]
 async fn process_order(payment_client: &PaymentClient, order_id: String) -> Result<(), PaymentError> {
     payment_client.charge(&order_id).await?;
     Ok(())
 }
 ```
 
-Setting `peer.service` on outgoing calls makes them visible on Maple's [service map](/docs/concepts/otel-conventions#service-map).
+Service map edges come from instrumented client spans that propagate `traceparent` to an instrumented callee, not from attributes such as `peer.service`. See [Service map](/docs/explore/service-map).
 
 For a span around a block:
 

@@ -2,14 +2,14 @@
 title: "Hosts"
 description: "Send host CPU, memory, disk, network and load metrics to Maple with the OpenTelemetry Collector hostmetrics receiver, and read them on the Hosts page."
 group: "Infrastructure"
-order: 0
+order: 1
 ---
 
 The **Hosts** page (**Infrastructure → Hosts**) lists every machine that sends OpenTelemetry host metrics to Maple, with its CPU, memory, disk and load. Each host has a detail page with charts over time and its platform metadata.
 
 Hosts appear from the OpenTelemetry `hostmetrics` receiver. There are two ways to run it:
 
-- **Kubernetes.** The `maple-k8s-infra` Helm chart runs it on every node. Follow [Kubernetes Infrastructure](/docs/infrastructure/kubernetes) and your nodes appear here with no extra setup.
+- **Kubernetes.** The `maple-k8s-infra` Helm chart runs it on every node. Follow [Kubernetes infrastructure](/docs/infrastructure/kubernetes) and your nodes appear here with no extra setup.
 - **Any other Linux, macOS or Windows host.** Run the OpenTelemetry Collector with the `hostmetrics` receiver, as below.
 
 The [Docker agent](/docs/infrastructure/docker) collects per-container metrics, not host metrics. Its containers appear under **Infrastructure → Containers**.
@@ -110,6 +110,6 @@ Start the Collector and open **Infrastructure → Hosts**. The host appears with
 
 ## Next steps
 
-- [Kubernetes Infrastructure](/docs/infrastructure/kubernetes): nodes, pods and workloads.
-- [Docker Infrastructure](/docs/infrastructure/docker): per-container metrics and logs.
+- [Kubernetes infrastructure](/docs/infrastructure/kubernetes): nodes, pods and workloads.
+- [Docker infrastructure](/docs/infrastructure/docker): per-container metrics and logs.
 - [Metrics](/docs/explore/metrics): query any metric, including the `system.*` metrics above.

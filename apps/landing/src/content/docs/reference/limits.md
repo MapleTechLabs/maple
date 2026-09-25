@@ -5,7 +5,7 @@ group: "Reference"
 order: 10
 ---
 
-The limits Maple enforces, grouped by where you would hit them. Each links to the page that explains the behaviour in full.
+The limits Maple enforces, grouped by where you would hit them. Each links to the page that explains the behavior in full.
 
 ## Ingest
 
@@ -15,7 +15,7 @@ See [Ingest API](/docs/reference/ingest) for status codes and retry guidance.
 | ------------------- | ---------------------------------------- | ---------------------------- |
 | Request body        | 20 MiB, measured compressed              | `413`                        |
 | Request duration    | 30 seconds                               | `503`, retry after 5 s       |
-| Concurrent requests | 1,000 in flight per organisation         | `429`, retry after 1 s       |
+| Concurrent requests | 1,000 in flight per organization         | `429`, retry after 1 s       |
 | Compression         | gzip only                                | `415`                        |
 | Session replay      | 1 GiB of uncompressed data per recording | Recording stops at the limit |
 

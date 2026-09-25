@@ -12,7 +12,7 @@ order: 1
     <span class="text-[10px] uppercase tracking-wider px-2 py-1 border border-border text-fg-muted">Beta</span>
 </div>
 
-> **Using Effect?** The browser entry point of `@maple-dev/effect-sdk` has the same replay engine built in, with the recorder in a lazily loaded chunk. See [Session Replay & Sessions](/docs/sdks/effect-client#session-replay--sessions). Run replay from one SDK, not both.
+> **Using Effect?** The browser entry point of `@maple-dev/effect-sdk` has the same replay engine built in, with the recorder in a lazily loaded chunk. See [Session Replay & Sessions](/docs/sdks/effect-client#session-replay-and-sessions). Run replay from one SDK, not both.
 
 ## Install
 
@@ -337,9 +337,9 @@ Normal sessions are far below this. The limit stops a runaway recording, which i
 </script>
 ```
 
-### React, Vite, Next.js
+### React and Vite
 
-Initialize at the top of your client entry point (for example `main.tsx`, or a client-only module) so it runs once before the app renders:
+Initialize at the top of your client entry point so it runs once before the app renders:
 
 ```ts
 // src/maple.ts
@@ -361,7 +361,43 @@ import { App } from "./App"
 createRoot(document.getElementById("root")!).render(<App />)
 ```
 
-In Next.js, run the import from a client component mounted high in the tree (for example the root layout), because the SDK is browser-only.
+### Next.js
+
+Next.js exposes `NEXT_PUBLIC_*` variables through `process.env`, not `import.meta.env`. Initialize from a client component and render it in the root layout:
+
+```tsx
+// app/maple.tsx
+"use client"
+
+import { MapleBrowser } from "@maple-dev/browser"
+
+// init() is a no-op during server rendering, so module scope is safe here.
+MapleBrowser.init({
+	ingestKey: process.env.NEXT_PUBLIC_MAPLE_INGEST_KEY!,
+	serviceName: "acme-web",
+	environment: process.env.NODE_ENV,
+})
+
+export function Maple() {
+	return null
+}
+```
+
+```tsx
+// app/layout.tsx
+import { Maple } from "./maple"
+
+export default function RootLayout({ children }: { children: React.ReactNode }) {
+	return (
+		<html lang="en">
+			<body>
+				<Maple />
+				{children}
+			</body>
+		</html>
+	)
+}
+```
 
 ## Verify
 
@@ -389,4 +425,4 @@ Load a page with the SDK installed, click around for a few seconds, then leave t
 
 - [Replays](/docs/session-replay/replays): find and play back sessions.
 - [Product events](/docs/product-events/overview): funnels on `track()` and server-side events.
-- [Web Analytics](/docs/product-events/web-analytics): visitors, pages and referrers from the same SDK.
+- [Web analytics](/docs/product-events/web-analytics): visitors, pages and referrers from the same SDK.

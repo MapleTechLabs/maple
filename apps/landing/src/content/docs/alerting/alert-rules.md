@@ -24,13 +24,13 @@ You manage rules on the **Alerts** page. Creating, editing and deleting rules re
 
 The templates:
 
-| Template         | Signal      | Fires when          | Window |
-| ---------------- | ----------- | ------------------- | ------ |
-| High error rate  | Error rate  | above 5%            | 5 min  |
-| Slow P95 latency | P95         | above 1000 ms       | 5 min  |
-| Slow P99 latency | P99         | above 2000 ms       | 5 min  |
-| Low Apdex score  | Apdex       | below 0.8 (T 500ms) | 5 min  |
-| Throughput drop  | Throughput  | below 100           | 5 min  |
+| Template         | Signal      | Fires when          | Window | Also sets                                              |
+| ---------------- | ----------- | ------------------- | ------ | ------------------------------------------------------ |
+| High error rate  | Error rate  | above 5%            | 5 min  | **Group by** `service.name` when no scope is set       |
+| Slow P95 latency | P95         | above 1000 ms       | 5 min  |                                                        |
+| Slow P99 latency | P99         | above 2000 ms       | 5 min  |                                                        |
+| Low Apdex score  | Apdex       | below 0.8 (T 500ms) | 5 min  |                                                        |
+| Throughput drop  | Throughput  | below 100           | 5 min  | **Min samples** 0                                      |
 
 ## Signals
 
@@ -46,7 +46,7 @@ The signal kind is **Built-in**, **Query** or **Raw SQL**.
 | Apdex      | `apdex`           | Apdex score from 0 to 1, against the **Apdex target (ms)**. See [Apdex alerts](/docs/alerting/apdex-alerts). |
 | Throughput | `throughput`      | Estimated number of requests in the window.                                            |
 
-Counts and rates are weighted for sampling. See [Sampling & Throughput](/docs/concepts/sampling-throughput).
+Counts and rates are weighted for sampling. See [Sampling and throughput](/docs/concepts/sampling-throughput).
 
 A built-in signal only sees entry-point spans. A service that records a failure on a child span and still returns success from its entry point stays healthy on these signals. Use a **Query** or **Raw SQL** rule for that case.
 
@@ -88,6 +88,8 @@ Maple evaluates every enabled rule once a minute. Each check aggregates the last
 A skipped check counts neither as a breach nor as healthy. It leaves the breach and healthy counters where they were.
 
 A window with no data at all is skipped, with one exception: a **Throughput** rule with `<` or `<=` treats an empty window as zero, so traffic stopping entirely fires the rule.
+
+The **Min samples** check runs before the threshold comparison. For **Throughput** the sample count is the signal, so a drop rule with the blank form's default of 50 skips every window below 50 requests, including a full outage, and never fires. Set **Min samples** to 0 for throughput drop rules, as the **Throughput drop** template does.
 
 Short windows on low-traffic services are noisy, because a few slow or failed requests move the value a long way. Raise **Min samples** or widen the window for those services.
 

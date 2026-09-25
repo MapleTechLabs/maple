@@ -1,5 +1,5 @@
 ---
-title: "Node.js Instrumentation"
+title: "Node.js instrumentation"
 description: "Instrument a Node.js application with OpenTelemetry and send traces, logs, and metrics to Maple."
 group: "Instrumentation"
 order: 5
@@ -144,8 +144,7 @@ async function processOrder(orderId: string) {
 	return tracer.startActiveSpan("process-order", async (span) => {
 		try {
 			span.setAttribute("order.id", orderId)
-			// Set peer.service when calling another service
-			span.setAttribute("peer.service", "payment-api")
+			span.setAttribute("payment.method", "card")
 			return await chargePayment(orderId)
 		} catch (error) {
 			span.recordException(error as Error)
@@ -158,7 +157,7 @@ async function processOrder(orderId: string) {
 }
 ```
 
-Setting `peer.service` on outgoing calls makes them visible on Maple's [service map](/docs/concepts/otel-conventions#service-map).
+Service map edges come from instrumented client spans that propagate `traceparent` to an instrumented callee, not from attributes such as `peer.service`. See [Service map](/docs/explore/service-map).
 
 ## Log correlation
 
@@ -168,7 +167,7 @@ The auto-instrumentations include `pino`, `winston` and `bunyan` instrumentation
 
 ## Other Node.js frameworks
 
-- Next.js has its own guide: [Next.js Instrumentation](/docs/guides/instrumentation-nextjs).
+- Next.js has its own guide: [Next.js instrumentation](/docs/guides/instrumentation-nextjs).
 - For Effect applications, use the [Effect SDK](/docs/sdks/effect).
 
 ## Verify

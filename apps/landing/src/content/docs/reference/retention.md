@@ -17,8 +17,9 @@ Hosted Maple deletes data automatically once it passes its retention period. The
 | Session replays (recordings and their timeline events) | 30 days |
 | Product events | 365 days |
 | Error occurrences (the individual events behind error issues) | 90 days |
+| Hourly rollups of traces and logs (service overview, service map edges, trace and log aggregates) | 365 days |
 
-Pages and queries cannot reach data older than these periods, and some queries have shorter maximum time ranges. See [Limits](/docs/reference/limits#queries).
+Individual spans, log lines and data points cannot be read once they pass these periods. Charts built on hourly rollups, such as service overviews and the service map, can reach further back, up to the rollup's 365 days. Some queries have shorter maximum time ranges. See [Limits](/docs/reference/limits#queries).
 
 ## Error issues
 

@@ -2,7 +2,7 @@
 title: "Slack"
 description: "Add the Maple bot to a Slack workspace. Mention it in a channel to ask about your traces, logs, metrics, and errors, and use the same workspace as an alert destination."
 group: "Integrations"
-order: 4
+order: 5
 ---
 
 The Slack integration adds the Maple bot to a Slack workspace and links that workspace to your Maple organization. Mention the bot in a channel and it answers in a thread, using the same assistant as Maple's chat, with access to your organization's traces, logs, metrics, and errors. Once the workspace is linked, its channels are also available as [alert destinations](/docs/alerting/notification-destinations).

@@ -103,7 +103,7 @@ POST a signed JSON payload to any HTTP endpoint you control. Use it for custom r
 - Set an optional **signing secret** to receive an `x-maple-signature` HMAC-SHA256 header, so your endpoint can verify the payload came from Maple.
 - Your endpoint should respond with a `2xx` status. Any other status is a delivery failure and is shown on the destination.
 
-The payload, headers, signature verification and retry behaviour are in the [alert webhooks reference](/docs/reference/webhooks).
+The payload, headers, signature verification and retry behavior are in the [alert webhooks reference](/docs/reference/webhooks).
 
 ## Hazel
 

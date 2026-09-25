@@ -1,5 +1,5 @@
 ---
-title: "Laravel Instrumentation"
+title: "Laravel instrumentation"
 description: "Instrument a Laravel application with OpenTelemetry and send traces, logs, and metrics to Maple."
 group: "Instrumentation"
 order: 13
@@ -35,11 +35,7 @@ The package pulls in the OpenTelemetry PHP SDK and OTLP exporter, and registers 
 
 ## Configure
 
-The package reads the standard OpenTelemetry environment variables. Point them at Maple's ingest endpoint with your ingest key, as shown in the next section. The package exports traces, metrics and logs over OTLP by default.
-
-An ingest key can only write telemetry to your organization. It cannot read data or call the Maple API. Still keep it in `.env` or your secret store rather than in committed config.
-
-## Environment variables
+The package reads the standard OpenTelemetry environment variables and exports traces, metrics and logs over OTLP by default. Point them at Maple's ingest endpoint with your ingest key:
 
 ```env
 # .env
@@ -59,6 +55,8 @@ OTEL_RESOURCE_ATTRIBUTES="deployment.environment.name=production,vcs.repository.
 For an EU organization, use `https://ingest.eu.maple.dev`. The endpoint is the base URL; the exporters append `/v1/traces`, `/v1/metrics` and `/v1/logs`.
 
 The package applies `OTEL_EXPORTER_OTLP_HEADERS` to every signal. If you run an older release that ignores it, set `OTEL_EXPORTER_OTLP_TRACES_HEADERS`, `OTEL_EXPORTER_OTLP_METRICS_HEADERS` and `OTEL_EXPORTER_OTLP_LOGS_HEADERS` to the same value.
+
+An ingest key can only write telemetry to your organization. It cannot read data or call the Maple API. Still keep it in `.env` or your secret store rather than in committed config.
 
 ### `http/protobuf` or `http/json`
 
@@ -93,8 +91,7 @@ use Keepsuit\LaravelOpenTelemetry\Facades\Tracer;
 Tracer::newSpan('process-order')
     ->setAttributes([
         'order.id' => $orderId,
-        // Set peer.service when calling another service
-        'peer.service' => 'payment-api',
+        'payment.method' => 'card',
     ])
     ->measure(fn () => $this->chargePayment($orderId));
 ```
@@ -120,7 +117,7 @@ try {
 }
 ```
 
-Setting `peer.service` on outgoing calls makes them visible on Maple's [service map](/docs/concepts/otel-conventions#service-map). The facade also has `Tracer::traceId()`, `Tracer::activeSpan()` and `Tracer::propagationHeaders()` for correlating logs and propagating context by hand.
+Service map edges come from instrumented client spans that propagate `traceparent` to an instrumented callee, not from attributes such as `peer.service`. See [Service map](/docs/explore/service-map). The facade also has `Tracer::traceId()`, `Tracer::activeSpan()` and `Tracer::propagationHeaders()` for correlating logs and propagating context by hand.
 
 For custom metrics, use the `Meter` facade:
 
@@ -148,7 +145,15 @@ Logs then line up with the trace that produced them in Maple.
 
 ## Local mode and Docker (Laravel Sail)
 
-To send to [Maple Local](/docs/local-mode) running on your host, the exporter inside the Sail container must reach back to the host. Use `host.docker.internal` and the OTLP/HTTP port `4318`:
+To send to [Maple Local](/docs/local-mode) running on your host, the exporter inside the Sail container must reach back to the host. Maple Local binds `127.0.0.1` by default, which a container cannot reach, so start it on all interfaces:
+
+```bash
+maple start --host 0.0.0.0
+```
+
+A non-loopback bind exposes ingest, the UI and queries to your network without authentication, so do this only on a trusted network. See the [CLI reference](/docs/reference/cli#maple-start).
+
+Then point the exporter at `host.docker.internal` and the OTLP/HTTP port `4318`:
 
 ```env
 # .env (Sail container sending to Maple Local on the host)

@@ -61,7 +61,7 @@ const telemetry = MapleCloudflareSDK.make({
 	// anticipatedErrorIdentifiers: ["@my-app/http/NotFoundError"],
 })
 
-const handler = HttpRouter.toWebHandler(Routes.pipe(Layer.provideMerge(telemetry.layer)))
+const { handler } = HttpRouter.toWebHandler(Routes.pipe(Layer.provideMerge(telemetry.layer)))
 
 export default {
 	async fetch(req: Request, env: Env, ctx: ExecutionContext) {

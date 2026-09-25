@@ -17,7 +17,7 @@ The server entry point of `@maple-dev/effect-sdk` runs on Node.js, Bun, and Deno
 
 > Already installed the SDK? If not, see the [install instructions](/docs/sdks/effect#install).
 
-## Quick Start
+## Quick start
 
 ```typescript
 import { Maple } from "@maple-dev/effect-sdk"

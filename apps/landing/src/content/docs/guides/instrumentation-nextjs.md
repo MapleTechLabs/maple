@@ -1,5 +1,5 @@
 ---
-title: "Next.js Instrumentation"
+title: "Next.js instrumentation"
 description: "Instrument a Next.js application with @vercel/otel and send traces, logs, and metrics to Maple."
 group: "Instrumentation"
 order: 6
@@ -27,8 +27,8 @@ npm install @vercel/otel \
   @opentelemetry/sdk-trace-base \
   @opentelemetry/sdk-logs \
   @opentelemetry/sdk-metrics \
-  @opentelemetry/exporter-logs-otlp-http \
-  @opentelemetry/exporter-metrics-otlp-http
+  @opentelemetry/exporter-logs-otlp-proto \
+  @opentelemetry/exporter-metrics-otlp-proto
 ```
 
 `@vercel/otel` declares the other `@opentelemetry/*` packages as peer dependencies, so they are installed alongside it. It includes its own OTLP trace exporter. The log and metric exporters come from the standard OpenTelemetry packages.
@@ -42,8 +42,8 @@ Create `instrumentation.ts` in the project root, next to `next.config.ts`. If yo
 import { registerOTel, OTLPHttpProtoTraceExporter } from "@vercel/otel"
 import { BatchLogRecordProcessor } from "@opentelemetry/sdk-logs"
 import { PeriodicExportingMetricReader } from "@opentelemetry/sdk-metrics"
-import { OTLPLogExporter } from "@opentelemetry/exporter-logs-otlp-http"
-import { OTLPMetricExporter } from "@opentelemetry/exporter-metrics-otlp-http"
+import { OTLPLogExporter } from "@opentelemetry/exporter-logs-otlp-proto"
+import { OTLPMetricExporter } from "@opentelemetry/exporter-metrics-otlp-proto"
 
 const MAPLE_ENDPOINT = "https://ingest.maple.dev" // EU: https://ingest.eu.maple.dev
 const MAPLE_KEY = "YOUR_INGEST_KEY"
@@ -126,7 +126,7 @@ export async function processOrder(orderId: string) {
 	return tracer.startActiveSpan("process-order", async (span) => {
 		try {
 			span.setAttribute("order.id", orderId)
-			span.setAttribute("peer.service", "payment-api")
+			span.setAttribute("payment.method", "card")
 			return await chargePayment(orderId)
 		} catch (error) {
 			span.recordException(error as Error)
@@ -139,7 +139,7 @@ export async function processOrder(orderId: string) {
 }
 ```
 
-Setting `peer.service` on outgoing calls makes them visible on Maple's [service map](/docs/concepts/otel-conventions#service-map).
+Service map edges come from instrumented client spans that propagate `traceparent` to an instrumented callee, not from attributes such as `peer.service`. See [Service map](/docs/explore/service-map).
 
 ## Log correlation
 
