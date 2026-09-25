@@ -320,18 +320,48 @@
 .monument-story:hover .monument-story__arrow {
 	transform: translateX(2px);
 }
-/* Phones: the mark holds the left column, stat and link stack beside it. */
-@media (max-width: 639px) {
+/* The name only shows where the mark is dropped (stacked rail, below). */
+.monument-story__name {
+	display: none;
+}
+/* Stacked rail: the logos sit right above, so a second mark and a boxed card
+   read as clutter. The chip becomes a footnote to the logo row instead. */
+@media (max-width: 767px) {
 	.monument-story {
-		display: grid;
-		grid-template-columns: auto 1fr;
-		column-gap: 12px;
-		row-gap: 4px;
+		display: block;
+		width: 100%;
+		padding: 14px 0 0;
+		border: 0;
+		border-top: 1px solid color-mix(in oklab, var(--home-ink) 12%, transparent);
+		background: none;
+		font-size: 13px;
+		line-height: 1.5;
+	}
+	.monument-story:hover {
+		background: none;
+		border-color: color-mix(in oklab, var(--home-ink) 12%, transparent);
 	}
 	.monument-story__mark {
-		grid-row: span 2;
-		align-self: center;
-		height: 20px;
+		display: none;
+	}
+	.monument-story__name {
+		display: inline;
+		color: var(--home-ink);
+		font-weight: 600;
+	}
+	.monument-story__name::after {
+		content: "·";
+		margin-inline: 8px;
+		color: color-mix(in oklab, var(--home-ink) 45%, transparent);
+		font-weight: 400;
+	}
+	.monument-story__stat {
+		color: color-mix(in oklab, var(--home-ink) 85%, transparent);
+	}
+	.monument-story__cta {
+		display: flex;
+		width: fit-content;
+		margin-top: 6px;
 	}
 }
 @media (prefers-reduced-motion: reduce) {

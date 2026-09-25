@@ -89,6 +89,7 @@ const belt = [...oneCopy, ...oneCopy];
 				data-track-destination={`/customers/${story.id}`}
 			>
 				{StoryLogo && <StoryLogo class="monument-story__mark" />}
+				<span class="monument-story__name">{storyCustomer.data.name}</span>
 				{storyStat && (
 					<span class="monument-story__stat">
 						<strong>{storyStat.value}</strong> {storyStat.label}
