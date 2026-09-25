@@ -21,6 +21,11 @@ See [OpenTelemetry conventions](/docs/concepts/otel-conventions#logs) for severi
 
 The default time range is the last 12 hours. The chart at the top shows log volume by severity. Drag across it to zoom the time range to that window.
 
+<figure class="shot">
+  <img src="/screenshots/docs/logs-01-explorer.webp" alt="The Logs page filtered to the maple-chat service: a log volume chart by severity, a Service is maple-chat filter chip, and rows with time, service and message, next to a sidebar of severity, environment, namespace and service filters." loading="lazy" />
+  <figcaption>Logs filtered to one service. Drag across the volume chart to zoom into a window.</figcaption>
+</figure>
+
 The table has **Time**, **Service**, and **Message** columns. The toolbar above it has three controls:
 
 - **Columns**: pin attributes as extra columns. The picker lists attribute keys seen in the selected time range. Pinned columns are saved in the URL.

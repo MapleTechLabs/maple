@@ -15,6 +15,11 @@ The [Browser SDK](/docs/session-replay/browser-sdk) (`@maple-dev/browser`), or t
 
 The page opens on the last 7 days. The time range picker, the filters and the **Replays** button (which opens the same window on the Replays page) are in the header.
 
+<figure class="shot">
+  <img src="/screenshots/docs/web-analytics-01-overview.webp" alt="The Web Analytics page over the last 7 days: a live visitors badge, a note that 17% of sessions were bots and are excluded, eight headline metric tiles with sparklines, and a unique visitors and page views chart." loading="lazy" />
+  <figcaption>Web Analytics over the last 7 days. Bot sessions are excluded from every number.</figcaption>
+</figure>
+
 ### Live visitors
 
 The badge left of the time range counts visitors active in the last few minutes. It ignores the selected range and refreshes every 15 seconds.

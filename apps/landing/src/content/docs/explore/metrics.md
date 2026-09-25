@@ -28,6 +28,11 @@ The default time range is the last 24 hours.
 
 Four cards at the top count metrics by type: **Sum Metrics**, **Gauge Metrics**, **Histogram**, and **Exp Histogram**. Each shows its data point count and number of unique metrics. Click a card to filter the list to that type. Click it again to clear the filter.
 
+<figure class="shot">
+  <img src="/screenshots/docs/metrics-01-catalog.webp" alt="The Metrics page: four cards counting sum, gauge, histogram and exponential histogram metrics, a search box, and a grid of sparkline cards, one per metric, each labelled with its type and the services that emit it." loading="lazy" />
+  <figcaption>The metric catalog in grid view. Click a type card to filter the list.</figcaption>
+</figure>
+
 Type in **Search metrics...** to filter by metric name. Switch between **Grid view** (a sparkline card per metric, the default) and **Table view**. The table, headed **Available Metrics**, has these columns: **Metric Name** (with its description), **Type**, **Service**, **Points**, and **Last Seen**. Click **Load more** to page through long lists.
 
 Click a metric to open it.

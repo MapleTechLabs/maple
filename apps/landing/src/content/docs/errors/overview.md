@@ -121,6 +121,11 @@ An incident opens when an issue fires with no open incident. It resolves after 3
 
 The page opens with a stat strip: error count, share of all spans, and affected services and traces.
 
+<figure class="shot">
+  <img src="/screenshots/docs/errors-01-list.webp" alt="The Errors page on the Open tab: a stat strip with error count, share of spans, services and traces, then a list of issues with a 24-hour trend, event count, service, status and last seen time, next to service, environment and source filters." loading="lazy" />
+  <figcaption>The Errors page. Each row is an issue, with its trend over the last 24 hours.</figcaption>
+</figure>
+
 Tabs filter by state:
 
 | Tab          | States                                        |
@@ -147,6 +152,11 @@ The header shows the service, the error title, severity, state, and an **Open in
 - **Overview**: the **Culprit** (top stack frame) and **Fingerprint**; facts such as **Events · all time**, **First seen**, **Last seen**, and **Regressions**; an occurrence chart; and an **Incidents** table with each incident's status, reason (**First seen**, **Regression**, or **Manual**), and event count.
 - **Occurrences**: **Latest occurrences**, with time, service, message, and a link to each trace. Shown for issues from spans.
 - **Activity**: a timeline of state changes, claims, and comments. Add a comment with **Comment**. Markdown is supported.
+
+<figure class="shot">
+  <img src="/screenshots/docs/errors-02-issue.webp" alt="An issue page for @maple/cli/ServerError: the error message, culprit and fingerprint, event counts with first and last seen, an occurrences chart, a linked investigation, and a details panel with status, severity, priority, scope and pull requests." loading="lazy" />
+  <figcaption>An issue page. The right panel holds state, severity, lease and linked pull requests.</figcaption>
+</figure>
 
 The sidebar holds **Details** (status, severity, assignee), **Scope** (service, environment, issue ID), **Lease**, **Pull requests**, and **Fix verification**.
 

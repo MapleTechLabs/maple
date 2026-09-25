@@ -9,6 +9,11 @@ An **alert rule** watches one signal, checks it against a threshold every minute
 
 You manage rules on the **Alerts** page. Creating, editing and deleting rules requires the organization admin role.
 
+<figure class="shot">
+  <img src="/screenshots/docs/alert-rules-01-overview.webp" alt="The Alerts overview: counts of firing, needs-attention, healthy and disabled rules, then a table of rules with severity, status, a 24-hour check strip, last value and last evaluation time." loading="lazy" />
+  <figcaption>The Alerts overview. The strip in each row shows the last 24 hours of checks.</figcaption>
+</figure>
+
 ## Prerequisites
 
 - Telemetry arriving in Maple. Built-in signals read traces.
@@ -21,6 +26,11 @@ You manage rules on the **Alerts** page. Creating, editing and deleting rules re
 3. Fill in **Signal & threshold**, **Scope**, **Notifications** and **Details**, described below.
 4. Click **Test rule** to preview the rule against past data.
 5. Click **Create rule**.
+
+<figure class="shot">
+  <img src="/screenshots/docs/alert-rules-02-templates.webp" alt="The Start with a template dialog with six options: High error rate, Slow P95 latency, Slow P99 latency, Low Apdex score, Throughput drop and Start blank, plus From a dashboard chart." loading="lazy" />
+  <figcaption>The template picker that opens when you create a rule.</figcaption>
+</figure>
 
 The templates:
 

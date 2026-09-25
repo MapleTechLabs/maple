@@ -22,6 +22,11 @@ See [OpenTelemetry conventions](/docs/concepts/otel-conventions) for the full li
 
 The table has these columns: **Trace ID**, **Root Span** (with start time), **Services**, **Spans**, **Duration**, and **Status**. **Status** shows the HTTP status code when the root span has one, otherwise the span status. Sort by clicking **Duration**. The default order is newest first. More rows load as you scroll.
 
+<figure class="shot">
+  <img src="/screenshots/docs/traces-01-list.webp" alt="The Traces list with Trace ID, Root Span, Services, Spans, Duration and Status columns, and a filter sidebar with Has Error, Root Traces Only, environment, namespace, service and root span facets." loading="lazy" />
+  <figcaption>The trace list with its facet sidebar. Counts next to each facet value cover the selected time range.</figcaption>
+</figure>
+
 The default time range is the last 12 hours. Pick a preset from **Last 5 minutes** to **Last 1 month**, or set a custom range.
 
 Click a row to open the trace in a side sheet. Use **Previous trace** and **Next trace** (or the `K` and `J` keys) to step through the list, and **Open trace** to go to the full page. Cmd-click or Ctrl-click opens the full page directly.
@@ -73,6 +78,11 @@ Three views show the spans:
 - **Timeline** (default): spans on a time axis, with **Search spans…** and a color-by picker.
 - **Waterfall**: the span tree with a duration bar per span.
 - **Flow**: spans as a graph of nodes and edges, with repeated child spans combined into one card with a count.
+
+<figure class="shot">
+  <img src="/screenshots/docs/traces-02-timeline.webp" alt="A 148-span trace for GET /v2/widget_summary on the Timeline view: a duration header, a service breakdown bar, and nested spans for API key lookups, warehouse queries and SQL statements drawn on a time axis." loading="lazy" />
+  <figcaption>A trace on the Timeline view, with nested database and warehouse spans.</figcaption>
+</figure>
 
 Click a span to open the span panel. Press Esc to close it. The selected span is kept in the URL, so you can share a link to it.
 

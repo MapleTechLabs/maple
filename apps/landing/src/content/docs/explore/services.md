@@ -23,6 +23,11 @@ The default time range is the last 12 hours.
 
 The table has these columns: **Service**, **P50**, **P95**, **P99**, **Error Rate**, **Throughput**, and **Last deploy**. **Error Rate** and **Throughput** include a sparkline. Rows are grouped by environment, or by namespace when your services set one. Switch grouping with **Group services by**.
 
+<figure class="shot">
+  <img src="/screenshots/docs/services-01-list.webp" alt="The Services list grouped by namespace and environment, with P50, P95 and P99 latency, error rate and throughput sparklines, and the last deploy for each service. A filter sidebar on the left lists health, environment, namespace and commit SHA." loading="lazy" />
+  <figcaption>Services grouped by namespace and environment, each with latency percentiles, error rate, throughput and last deploy.</figcaption>
+</figure>
+
 A colored dot marks a service as degraded or unhealthy. Health comes from open alert incidents (**Alert firing**) and anomalies (**Anomaly**) on that service. A critical cause makes a service unhealthy. Any other cause makes it degraded. The footer counts services and how many are unhealthy or degraded.
 
 ### Filters
@@ -38,6 +43,11 @@ The header has an environment switcher (**All environments** or one environment)
 ### Overview
 
 Four charts: **Latency**, **Throughput** (requests per second), **Apdex**, and **Error Rate**. Deploys appear as commit markers on every chart.
+
+<figure class="shot">
+  <img src="/screenshots/docs/services-02-detail.webp" alt="The overview tab of the maple-api service: Latency, Throughput, Apdex and Error Rate charts over 12 hours with commit markers along the top, and a Top operations list below." loading="lazy" />
+  <figcaption>A service's Overview tab. The dashed markers on each chart are deploys.</figcaption>
+</figure>
 
 **Apdex** scores requests from 0 to 1 against a 500 ms target (T):
 

@@ -40,6 +40,11 @@ See [OpenTelemetry conventions](/docs/concepts/otel-conventions#service-map) for
 
 Service nodes show requests per second (**req/s** or **calls/s**), error percentage (**err%**), and average latency (**avg**). A badge shows the runtime platform, such as **Kubernetes**, **Cloudflare Workers**, **AWS Lambda**, or **Web (browser)**. With Kubernetes infrastructure monitoring set up, nodes also show a pod count.
 
+<figure class="shot">
+  <img src="/screenshots/docs/service-map-01-map.webp" alt="The Service Map in 2D: services grouped by namespace, each node showing requests per second, error percentage and average latency, with animated edges to databases such as Postgres, ClickHouse and Tinybird on the right." loading="lazy" />
+  <figcaption>The Service Map. Databases and external services sit to the right of the services that call them.</figcaption>
+</figure>
+
 Node color follows error rate. The legend shows **Healthy**, **Degraded** (above 1%), and **Error** (above 5%).
 
 Each edge shows its call count and, when above zero, its error percentage. Counts come from traced requests. When your SDK samples traces, counts are prefixed with `~` and the real rate may be higher. See [Sampling and throughput](/docs/concepts/sampling-throughput).
