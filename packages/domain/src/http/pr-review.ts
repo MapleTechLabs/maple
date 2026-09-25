@@ -44,8 +44,50 @@ export const PrReviewSkipReason = Schema.Literals([
 	"superseded",
 	"agent_unavailable",
 	"not_rolled_out",
+	/** A push to a pull request that already had its repository's `automaticReviewLimit` reviews. */
+	"automatic_limit",
 ]).annotate({ identifier: "@maple/PrReviewSkipReason", title: "Pull Request Review Skip Reason" })
 export type PrReviewSkipReason = Schema.Schema.Type<typeof PrReviewSkipReason>
+
+/**
+ * Why a review ended without a report, stored as the prefix of the row's `error`
+ * (`time_limit: ...`) and shown on the pull request in fixed words, never the raw cause.
+ */
+export const PrReviewFailureReason = Schema.Literals([
+	"agent_unavailable",
+	"start_failed",
+	"time_limit",
+	"step_limit",
+	"context_limit",
+	"stuck",
+	"model_error",
+	"agent_error",
+	"no_report",
+]).annotate({ identifier: "@maple/PrReviewFailureReason", title: "Pull Request Review Failure Reason" })
+export type PrReviewFailureReason = Schema.Schema.Type<typeof PrReviewFailureReason>
+
+/** What the pull request is told for each reason: one sentence, safe to show anyone who can read it. */
+export const PR_REVIEW_FAILURE_COPY = {
+	agent_unavailable: "The review agent is not available on this deployment.",
+	start_failed: "The review agent could not start.",
+	time_limit: "It ran out of time before it filed a report.",
+	step_limit: "It used up its tool-call or token allowance before it filed a report.",
+	context_limit: "The change did not fit in the model's context.",
+	stuck: "Its tool calls kept failing, so it was stopped.",
+	model_error: "The model provider returned an error.",
+	agent_error: "The review run failed with an error.",
+	no_report: "It ended without filing a report.",
+} as const satisfies Record<PrReviewFailureReason, string>
+
+const isFailureReason = Schema.is(PrReviewFailureReason)
+
+/** The reason a stored `error` names, or `undefined` for one written before reasons existed. */
+export const prReviewFailureReason = (
+	error: string | null | undefined,
+): PrReviewFailureReason | undefined => {
+	const code = error?.split(":", 1)[0]?.trim()
+	return isFailureReason(code) ? code : undefined
+}
 
 export const PrReviewVerdict = Schema.Literals(["clean", "issues", "not_applicable"]).annotate({
 	identifier: "@maple/PrReviewVerdict",
@@ -160,6 +202,11 @@ export class PrReviewRepositoryConfig extends Schema.Class<PrReviewRepositoryCon
 	/** Reviews this repository may start per UTC day. */
 	dailyLimit: Schema.optionalKey(Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 500 }))),
 	/**
+	 * Reviews one pull request may get from pushes; later pushes wait for `@maple review`. Every
+	 * review of the pull request counts, requested ones included. Absent means no limit.
+	 */
+	automaticReviewLimit: Schema.optionalKey(Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 50 }))),
+	/**
 	 * Whose votes decide which findings are suppressed before posting: every repository of the
 	 * organization (the default), this repository only, or nobody (`off`).
 	 */
@@ -187,6 +234,8 @@ export class PrReviewReport extends Schema.Class<PrReviewReport>("PrReviewReport
 	confidenceReason: Schema.optionalKey(Schema.String),
 	coverage: Schema.Array(PrReviewCoverageUnit),
 	findings: Schema.Array(PrReviewFinding),
+	/** Reviewed files whose diff the pass never read; set by the runner, never by the model. */
+	unreviewed: Schema.optionalKey(Schema.Array(Schema.String)),
 }) {}
 
 /**
@@ -293,6 +342,47 @@ const bulletsOf = (
 		.slice(0, max)
 		.map((item) => clip(item, MAX_BULLET))
 
+/**
+ * One submitted finding as a postable one, or `undefined` when it has no path and positive line,
+ * or is an observability finding without a check id from the audit.
+ */
+export const normalizePrReviewFinding = (raw: PrReviewFindingSubmission): PrReviewFinding | undefined => {
+	const path = raw.path?.trim()
+	const line = toNumber(raw.line)
+	const rawEndLine = toNumber(raw.endLine)
+	if (!path || line === undefined || line < 1) return undefined
+	// An id the audit does not have would be posted onto the pull request as if it did.
+	const rawCheckId = raw.checkId?.trim().toUpperCase()
+	const checkId = rawCheckId !== undefined && AUDIT_CHECK_ID.test(rawCheckId) ? rawCheckId : undefined
+	const category = isCategory(raw.category)
+		? raw.category
+		: checkId === undefined
+			? "correctness"
+			: "observability"
+	if (category === "observability" && checkId === undefined) return undefined
+	const startLine = Math.floor(line)
+	const endLine =
+		rawEndLine !== undefined && Math.floor(rawEndLine) > startLine ? Math.floor(rawEndLine) : undefined
+	return new PrReviewFinding({
+		path,
+		line: startLine,
+		...(endLine === undefined ? undefined : { endLine }),
+		category,
+		...(category === "observability" && checkId !== undefined ? { checkId } : undefined),
+		severity: isSeverity(raw.severity) ? raw.severity : "warn",
+		title: clip(raw.title?.trim() || "Review finding", 200),
+		body: clip(raw.body?.trim() || ""),
+		...(raw.suggestion?.trim() ? { suggestion: clip(raw.suggestion.trim()) } : undefined),
+		// Indentation is part of the code a suggestion commits, so only trailing newlines go.
+		...(typeof raw.replacement === "string" && raw.replacement.length <= MAX_TEXT
+			? { replacement: raw.replacement.replace(/\n+$/, "") }
+			: undefined),
+	})
+}
+
+/** Most findings one review keeps; the same cap applies to what `record_finding` saves. */
+export const PR_REVIEW_MAX_FINDINGS = MAX_FINDINGS
+
 export interface NormalizedPrReviewSubmission {
 	readonly report: PrReviewReport
 	/** Top-level keys the model supplied, for the span. */
@@ -319,41 +409,9 @@ export const normalizePrReviewSubmission = (submission: PrReviewSubmission): Nor
 	const rawFindings = listOf(submission.findings, decodeFindings)
 	const findings: Array<PrReviewFinding> = []
 	for (const raw of rawFindings) {
-		const path = raw.path?.trim()
-		const line = toNumber(raw.line)
-		const rawEndLine = toNumber(raw.endLine)
-		if (!path || line === undefined || line < 1) continue
-		// An id the audit does not have would be posted onto the pull request as if it did.
-		const rawCheckId = raw.checkId?.trim().toUpperCase()
-		const checkId = rawCheckId !== undefined && AUDIT_CHECK_ID.test(rawCheckId) ? rawCheckId : undefined
-		const category = isCategory(raw.category)
-			? raw.category
-			: checkId === undefined
-				? "correctness"
-				: "observability"
-		if (category === "observability" && checkId === undefined) continue
-		const startLine = Math.floor(line)
-		const endLine =
-			rawEndLine !== undefined && Math.floor(rawEndLine) > startLine
-				? Math.floor(rawEndLine)
-				: undefined
-		findings.push(
-			new PrReviewFinding({
-				path,
-				line: startLine,
-				...(endLine === undefined ? undefined : { endLine }),
-				category,
-				...(category === "observability" && checkId !== undefined ? { checkId } : undefined),
-				severity: isSeverity(raw.severity) ? raw.severity : "warn",
-				title: clip(raw.title?.trim() || "Review finding", 200),
-				body: clip(raw.body?.trim() || ""),
-				...(raw.suggestion?.trim() ? { suggestion: clip(raw.suggestion.trim()) } : undefined),
-				// Indentation is part of the code a suggestion commits, so only trailing newlines go.
-				...(typeof raw.replacement === "string" && raw.replacement.length <= MAX_TEXT
-					? { replacement: raw.replacement.replace(/\n+$/, "") }
-					: undefined),
-			}),
-		)
+		const finding = normalizePrReviewFinding(raw)
+		if (finding === undefined) continue
+		findings.push(finding)
 		if (findings.length >= MAX_FINDINGS) break
 	}
 	const coverage: Array<PrReviewCoverageUnit> = []

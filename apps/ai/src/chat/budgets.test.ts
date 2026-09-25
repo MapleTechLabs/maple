@@ -114,6 +114,12 @@ describe("agentPolicyFor", () => {
 		)
 	})
 
+	/** The review sees its clock and a warning at 80%; a chat turn keeps its cached prompt untouched. */
+	it("shows the review its run status, and no other agent", () => {
+		expect(agentPolicyFor(AGENTS["pr-review"]!, GLM_CONTEXT).runStatus).toBe("appended")
+		expect(agentPolicyFor(AGENTS.default!, GLM_CONTEXT).runStatus).toBe("off")
+	})
+
 	/** Crossing a budget must hand the run its closing call, never fail it outright. */
 	it("resolves an exhausted budget into a final answer", () => {
 		expect(agentPolicyFor(AGENTS.investigate!, GLM_CONTEXT).onExhaustion).toBe("final-answer")

@@ -17,8 +17,12 @@ import {
 	InvestigationDataCorruptionError,
 	InvestigationNotFoundError,
 	InvestigationPersistenceError,
+	normalizePrReviewFinding,
 	normalizePrReviewSubmission,
 	normalizeTriageSubmission,
+	PR_REVIEW_MAX_FINDINGS,
+	type PrReviewFinding,
+	PrReviewFindingSubmission,
 	PrReviewId,
 	PrReviewNotFoundError,
 	PrReviewEditSubmission,
@@ -26,6 +30,7 @@ import {
 	PrReviewReplyId,
 	type PrReviewReplyNotFoundError,
 	PrReviewReplySubmission,
+	PrReviewReport,
 	PrReviewSubmission,
 	type PrReviewVerdict,
 	SubmitDiagnosisRequest,
@@ -45,7 +50,9 @@ import {
 } from "../mcp/tools/llm-tools"
 import { toolHandlersWithContent } from "../platform/genai-spans"
 import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
+import { mergeSavedFindings } from "@maple/backend/services/pr-review/findings"
 import { type ReviewCoverage, unreadRefusal } from "./review-coverage"
+import { makeReviewLedger, type ReviewLedger } from "./review-ledger"
 
 const decodeInvestigationIdOption = Schema.decodeUnknownOption(InvestigationId)
 const decodePrReviewIdOption = Schema.decodeUnknownOption(PrReviewId)
@@ -62,6 +69,7 @@ export type SubmitDiagnosis = (
 
 export const SUBMIT_DIAGNOSIS = "submit_diagnosis"
 export const SUBMIT_REVIEW = "submit_review"
+export const RECORD_FINDING = "record_finding"
 
 export const SUBMIT_REPLY = "submit_reply"
 export const PROPOSE_EDIT = "propose_edit"
@@ -273,6 +281,55 @@ export const reviewTool = Tool.make(SUBMIT_REVIEW, {
 	failure: MapleToolFailure,
 })
 
+/** Same lenient finding shape `submit_review` takes, one at a time. */
+export const recordFindingTool = Tool.make(RECORD_FINDING, {
+	description:
+		"Save one finding the moment you have established it: path, new-side line, category, " +
+		"severity, title, body, and suggestion or replacement. Saved findings are posted with your " +
+		"review even if the pass stops before submit_review, and submit_review adds them for you, so " +
+		"never repeat one there or save the same issue twice. There is no way to edit or remove a " +
+		"saved finding: check it against the code before you save it.",
+	parameters: PrReviewFindingSubmission,
+	success: Schema.String,
+	failure: MapleToolFailure,
+})
+
+/** What the model reads back after a `record_finding` call. */
+const recordAnswer = (outcome: ReturnType<ReviewLedger["record"]>, count: number): string => {
+	switch (outcome) {
+		case "recorded":
+			return `Saved (${count} ${count === 1 ? "finding" : "findings"} so far). Do not repeat it in submit_review.`
+		case "repeat":
+			return `Not saved: it restates a finding already saved (${count} so far). Keep going.`
+		case "full":
+			return `Not saved: the review holds at most ${PR_REVIEW_MAX_FINDINGS} findings. Submit the review now.`
+	}
+}
+
+/**
+ * The review a turn files itself when its findings were saved but no `submit_review` landed: a
+ * partial with exactly those findings, so the deadline that stopped the pass does not lose them.
+ */
+export const savedFindingsRequest = (input: {
+	readonly findings: ReadonlyArray<PrReviewFinding>
+	readonly unreviewed: ReadonlyArray<string>
+	readonly modelName: string
+	readonly usage: RunUsage
+}): SubmitPrReviewRequest =>
+	new SubmitPrReviewRequest({
+		report: new PrReviewReport({
+			verdict: input.findings.some((finding) => finding.severity !== "info") ? "issues" : "clean",
+			summary: "",
+			coverage: [],
+			findings: input.findings,
+			...(input.unreviewed.length > 0 ? { unreviewed: input.unreviewed } : undefined),
+		}),
+		model: input.modelName,
+		inputTokens: input.usage.input,
+		outputTokens: input.usage.output,
+		partial: true,
+	})
+
 /**
  * The `submit_review` tool for a review session (`"<orgId>:pr-<id>"`), built like
  * {@link buildDiagnosisCompletion}: the review id rides on the session, so the agent never chooses
@@ -290,13 +347,15 @@ export const buildReviewCompletion = (
 	sessionAttributes?: Readonly<Record<string, string>>,
 	/** What this pass has read. The first submission with files unread is refused once. */
 	coverage?: ReviewCoverage,
+	/** Findings saved with `record_finding`; the turn's own, or this run's when none is passed. */
+	ledger: ReviewLedger = makeReviewLedger(),
 ) => {
 	const reviewId = prReviewForSession(sessionId)
 	if (reviewId === undefined) return undefined
 	// Only the unattended pass files a review. A follow-up in the session answers in prose: the
 	// row is already settled, and a second submission would be dropped while reporting success.
 	if (origin.kind !== "autonomous") return undefined
-	const toolkit = Toolkit.make(reviewTool)
+	const toolkit = Toolkit.make(reviewTool, recordFindingTool)
 	let submitted = false
 	let refusedUnread = false
 	// Once only: a second call with files still unread is the agent submitting anyway. A close-out
@@ -309,13 +368,18 @@ export const buildReviewCompletion = (
 	}
 	const record = (submission: PrReviewSubmission) =>
 		Effect.suspend(() => {
-			const { report, filled, droppedFindings, resolved } = normalizePrReviewSubmission(submission)
-			const unread = unreadToRefuse(report.verdict)
+			const normalized = normalizePrReviewSubmission(submission)
+			const { filled, droppedFindings, resolved } = normalized
+			const unread = unreadToRefuse(normalized.report.verdict)
 			if (unread.length > 0) {
 				return Effect.annotateCurrentSpan("maple.pr_review.unread_files", unread.length).pipe(
 					Effect.andThen(Effect.fail(new MapleToolFailure({ message: unreadRefusal(unread) }))),
 				)
 			}
+			const saved = ledger.findings()
+			const unreviewed =
+				normalized.report.verdict === "not_applicable" ? [] : (coverage?.unread() ?? [])
+			const report = withSavedFindings(normalized.report, saved, unreviewed)
 			return submitReview(
 				tenant.orgId,
 				reviewId,
@@ -334,6 +398,8 @@ export const buildReviewCompletion = (
 						"maple.pr_review.filled_count": filled.length,
 						"maple.pr_review.dropped_findings": droppedFindings,
 						"maple.pr_review.findings": report.findings.length,
+						"maple.pr_review.saved_findings": saved.length,
+						"maple.pr_review.unreviewed_files": unreviewed.length,
 						"maple.pr_review.verdict": report.verdict,
 						"maple.pr_review.resolved": resolved.length,
 					}),
@@ -349,13 +415,52 @@ export const buildReviewCompletion = (
 				),
 			)
 		})
+	const save = (raw: PrReviewFindingSubmission) =>
+		Effect.suspend(() => {
+			const finding = normalizePrReviewFinding(raw)
+			if (finding === undefined) {
+				return Effect.fail(
+					new MapleToolFailure({
+						message:
+							"Not saved: a finding needs a path and a positive new-side line from a hunk you read, and an observability finding needs its audit check id.",
+					}),
+				)
+			}
+			const outcome = ledger.record(finding)
+			return Effect.annotateCurrentSpan("maple.pr_review.record_outcome", outcome).pipe(
+				Effect.as(recordAnswer(outcome, ledger.findings().length)),
+			)
+		})
 	return {
 		tool: SUBMIT_REVIEW,
 		toolkit,
-		...toolHandlersWithContent(toolkit, { [SUBMIT_REVIEW]: record }, sessionAttributes),
+		...toolHandlersWithContent(
+			toolkit,
+			{ [SUBMIT_REVIEW]: record, [RECORD_FINDING]: save },
+			sessionAttributes,
+		),
 		autonomous: isAutonomousReviewTurn(sessionId, origin),
 		submitted: () => submitted,
 	} satisfies RunCompletion
+}
+
+/**
+ * A submitted report with the pass's saved findings folded in, most important kept when over the
+ * cap, and the reviewed files it never read. The verdict follows the merged findings.
+ */
+const withSavedFindings = (
+	report: PrReviewReport,
+	saved: ReadonlyArray<PrReviewFinding>,
+	unreviewed: ReadonlyArray<string>,
+): PrReviewReport => {
+	if (saved.length === 0 && unreviewed.length === 0) return report
+	const findings = mergeSavedFindings(saved, report.findings).slice(0, PR_REVIEW_MAX_FINDINGS)
+	return new PrReviewReport({
+		...report,
+		findings,
+		verdict: findings.some((finding) => finding.severity !== "info") ? "issues" : report.verdict,
+		...(unreviewed.length > 0 ? { unreviewed } : undefined),
+	})
 }
 
 /**

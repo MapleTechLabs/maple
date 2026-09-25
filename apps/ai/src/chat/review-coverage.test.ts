@@ -2,7 +2,7 @@
  * What a review pass has read. Fed the real renderers' answers, since the tracker reads them back.
  */
 import type { PullRequestFile } from "@maple/domain/http"
-import { renderFollowUp } from "@maple/backend/services/pr-review/findings"
+import { renderFollowUp, renderIgnoredPaths } from "@maple/backend/services/pr-review/findings"
 import { assert, describe, it } from "vitest"
 import { renderChangedFiles, renderFileDiffs } from "../mcp/tools/pull-request"
 import { makeReviewCoverage, unreadRefusal } from "./review-coverage"
@@ -33,6 +33,14 @@ describe("makeReviewCoverage", () => {
 		assert.deepEqual(coverage.unread(), ["src/b.ts"])
 		coverage.observe("pr_file_diff", diffs("src/b.ts"))
 		assert.deepEqual(coverage.unread(), [])
+	})
+
+	it("never owes a file the repository's settings ignore", () => {
+		const coverage = makeReviewCoverage(
+			`Review pull request #7.\n${renderIgnoredPaths(["src/b.ts", "*.test.ts"])}`,
+		)
+		coverage.observe("pr_changed_files", listing)
+		assert.deepEqual(coverage.unread(), ["src/a.ts"])
 	})
 
 	it("counts only pr_file_diff answers as reads", () => {

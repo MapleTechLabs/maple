@@ -31,6 +31,9 @@ import {
 	type PrReviewSkipReason,
 	type PrReviewStatus,
 	PR_REVIEW_CONFIDENCE_LABEL,
+	PR_REVIEW_FAILURE_COPY,
+	type PrReviewFailureReason,
+	prReviewFailureReason,
 	confidencePrReview,
 	scorePrReview,
 	type PullRequestCheckAnnotation,
@@ -76,6 +79,7 @@ import {
 	nextHandles,
 	pathIgnored,
 	renderFollowUp,
+	renderIgnoredPaths,
 	resolvedByHandle,
 	threadForFinding,
 	type TrackedFinding,
@@ -338,7 +342,7 @@ const renderConfigRules = (config: PrReviewRepositoryConfig | undefined): Readon
 		)
 	}
 	if (config.ignorePaths !== undefined && config.ignorePaths.length > 0)
-		lines.push(`Never review these paths: ${config.ignorePaths.join(", ")}.`, "")
+		lines.push(renderIgnoredPaths(config.ignorePaths), "")
 	if (config.categories !== undefined && config.categories.length > 0)
 		lines.push(`File findings only in these categories: ${config.categories.join(", ")}.`, "")
 	return lines
@@ -393,8 +397,12 @@ const STATUS_CLOSE = "<!-- /maple-pr-review:status -->"
 /** What a review's comment says before its result replaces it. */
 export type PrReviewStatusNotice =
 	| { readonly kind: "reviewing"; readonly headSha: string }
-	| { readonly kind: "failed"; readonly headSha: string }
+	| { readonly kind: "failed"; readonly headSha: string; readonly reason?: PrReviewFailureReason }
 	| { readonly kind: "superseded"; readonly headSha: string }
+
+/** "The review of `abc1234` could not finish. It ran out of time before it filed a report." */
+const failedSentence = (sha: string, reason: PrReviewFailureReason | undefined): string =>
+	`The review of ${sha} could not finish.${reason === undefined ? "" : ` ${PR_REVIEW_FAILURE_COPY[reason]}`}`
 
 /**
  * A review's comment while it has no result: the notice alone, under the review's marker.
@@ -421,7 +429,7 @@ export const withReviewStatus = (
 		],
 		failed: [
 			"> [!WARNING]",
-			`> The review of ${sha} could not finish. Comment \`@maple review\` to try again.`,
+			`> ${failedSentence(sha, notice.kind === "failed" ? notice.reason : undefined)} Comment \`@maple review\` to try again.`,
 		],
 		superseded: [
 			"> [!NOTE]",
@@ -449,7 +457,7 @@ export const reviewCheckFor = (notice: PrReviewStatusNotice) => {
 				...run,
 				state: { status: "completed" as const, conclusion: "neutral" as const },
 				title: "Review could not finish",
-				summary: `The review of ${sha} could not finish. Comment \`@maple review\` on the pull request to try again.`,
+				summary: `${failedSentence(sha, notice.reason)} Comment \`@maple review\` on the pull request to try again.`,
 			}
 		case "superseded":
 			return {
@@ -460,6 +468,15 @@ export const reviewCheckFor = (notice: PrReviewStatusNotice) => {
 			}
 	}
 }
+
+/** The check a push gets once its pull request has used the repository's automatic reviews. */
+const pausedCheckFor = (headSha: string, limit: number) => ({
+	name: PR_REVIEW_CHECK_NAME,
+	headSha,
+	state: { status: "completed" as const, conclusion: "skipped" as const },
+	title: "Automatic reviews paused",
+	summary: `This pull request has had ${limit} ${limit === 1 ? "review" : "reviews"}, the repository's limit for pushes. Comment \`@maple review\` on the pull request to review \`${headSha.slice(0, 7)}\`.`,
+})
 
 const SEVERITY_LABEL = {
 	critical: "Critical",
@@ -503,6 +520,30 @@ const summaryHtml = (value: string) => escapeHtml(value).replace(/`([^`]+)`/g, "
 
 const whereLabel = (finding: { readonly path: string; readonly line: number; readonly endLine?: number }) =>
 	`${finding.path}:${finding.line}${finding.endLine === undefined ? "" : `-${finding.endLine}`}`
+
+/** Unread files the summary names; the rest are counted. */
+const LISTED_UNREVIEWED = 30
+
+/**
+ * Every finding of the review as one block to paste into a coding agent, most severe first. It
+ * names the commit, since the branch may have moved by the time someone pastes it.
+ */
+const copyAllFindings = (findings: ReadonlyArray<PrReviewFinding>, headSha: string): string =>
+	[
+		`Findings from an automated review of commit ${headSha}. Verify each one against the current code before changing anything, fix only those that still apply, and keep each fix to the lines it names.`,
+		...bySeverity(findings).map((finding) =>
+			[
+				`${finding.handle === undefined ? "" : `${finding.handle} · `}${SEVERITY_LABEL[finding.severity]} · ${categoryLabel(finding)} · ${whereLabel(finding)}`,
+				finding.title,
+				...(finding.body ? [finding.body] : []),
+				...(finding.replacement !== undefined
+					? ["Replace those lines with:", finding.replacement]
+					: finding.suggestion
+						? [`Suggested fix: ${finding.suggestion}`]
+						: []),
+			].join("\n"),
+		),
+	].join("\n\n---\n\n")
 
 /**
  * The review as markdown, most important first: the confidence and what decides it, a short summary
@@ -603,6 +644,32 @@ export const renderReviewMarkdown = (input: ReviewMarkdownInput & { readonly hea
 			)
 		}
 		lines.push("", "</details>", "")
+	}
+	const unreviewed = report.unreviewed ?? []
+	if (unreviewed.length > 0) {
+		lines.push(
+			`<details><summary>Files not reviewed (${unreviewed.length})</summary>`,
+			"",
+			"The review ended before it read these diffs, so nothing above vouches for them.",
+			"",
+			...unreviewed.slice(0, LISTED_UNREVIEWED).map((path) => `- \`${path}\``),
+			...(unreviewed.length > LISTED_UNREVIEWED
+				? [`- and ${unreviewed.length - LISTED_UNREVIEWED} more`]
+				: []),
+			"",
+			"</details>",
+			"",
+		)
+	}
+	if (input.heading && report.findings.length > 0) {
+		lines.push(
+			`<details><summary>Copy all findings (${report.findings.length})</summary>`,
+			"",
+			...fenced(copyAllFindings(report.findings, input.headSha), "text"),
+			"",
+			"</details>",
+			"",
+		)
 	}
 	const auditNote = report.findings.some((finding) => finding.checkId !== undefined)
 		? " Check ids refer to Maple's instrumentation audit."
@@ -1116,6 +1183,21 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 					}),
 				)
 
+			/** Say on the head's checks that pushes no longer start reviews. Best effort, like every status. */
+			const postPausedCheck = (orgId: OrgId, repo: VcsRepo, headSha: GitCommitSha, limit: number) =>
+				Effect.gen(function* () {
+					const target = yield* providerFor(orgId, repo)
+					if (Option.isNone(target)) return
+					const { provider, installation, ref } = target.value
+					yield* provider.writePullRequestCheck(installation, ref, pausedCheckFor(headSha, limit))
+				}).pipe(
+					Effect.catchCause((cause) =>
+						Effect.logWarning("[PrReview] could not post the paused check").pipe(
+							Effect.annotateLogs({ orgId, cause: summarizeCause(cause) }),
+						),
+					),
+				)
+
 			/**
 			 * Read the pull request's threads once and record what people did with the findings: the
 			 * 👍 / 👎 on each inline comment, and the open ones a person dismissed. Answers the
@@ -1452,6 +1534,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 						yield* postReviewStatus(orgId, reviewId, repo, job.number, {
 							kind: "failed",
 							headSha,
+							reason: "start_failed",
 						})
 					yield* annotate("failed")
 					return { reviewId, outcome: "failed" as const }
@@ -1566,6 +1649,33 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 						nowMs,
 						config,
 					})
+				}
+				if (config.automaticReviewLimit !== undefined && !requested) {
+					const limit = config.automaticReviewLimit
+					const earlier = yield* database
+						.execute((db) =>
+							db
+								.select({ total: count() })
+								.from(prReviews)
+								.where(
+									and(
+										eq(prReviews.orgId, orgId),
+										eq(prReviews.repositoryId, repo.id),
+										eq(prReviews.number, job.number),
+										ne(prReviews.headSha, headSha),
+										inArray(prReviews.status, ["completed", "failed"]),
+									),
+								),
+						)
+						.pipe(Effect.mapError(toPersistence))
+					if (Number(earlier[0]?.total ?? 0) >= limit) {
+						yield* postPausedCheck(orgId, repo, headSha, limit)
+						yield* annotate("skipped", {
+							"maple.pr_review.skip_reason": "automatic_limit",
+							"maple.pr_review.automatic_limit": limit,
+						})
+						return skip("automatic_limit")
+					}
 				}
 				if (config.dailyLimit !== undefined) {
 					const repoToday = yield* database
@@ -2029,9 +2139,12 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 						.getRepositoryById(orgId, review.value.repositoryId)
 						.pipe(Effect.mapError(toPersistence))
 					if (Option.isNone(repository)) return
+					const reason = prReviewFailureReason(error)
+					yield* Effect.annotateCurrentSpan("maple.pr_review.failure_reason", reason ?? "unknown")
 					yield* postReviewStatus(orgId, reviewId, repository.value, review.value.number, {
 						kind: "failed",
 						headSha: review.value.headSha,
+						...(reason === undefined ? undefined : { reason }),
 					})
 				},
 			)

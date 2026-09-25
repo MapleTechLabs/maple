@@ -97,7 +97,10 @@ const similarTitles = (a: string, b: string) => {
  * nearly the same line, and a title saying the same thing. Anything looser is left to the reviewer,
  * which judges each earlier finding at the new head: a different bug next to an old one is new.
  */
-const restates = (finding: PrReviewFinding, tracked: TrackedFinding) =>
+const restates = (
+	finding: PrReviewFinding,
+	tracked: Pick<TrackedFinding, "path" | "category" | "line" | "title">,
+) =>
 	finding.path === tracked.path &&
 	finding.category === tracked.category &&
 	Math.abs(finding.line - tracked.line) <= SAME_ISSUE_LINES &&
@@ -115,6 +118,19 @@ export const withoutRepeats = (
 	const fresh = findings.filter((finding) => !blocking.some((known) => restates(finding, known)))
 	return { fresh, repeated: findings.length - fresh.length }
 }
+
+/**
+ * A review's findings: the ones `record_finding` saved during the pass, then the ones its
+ * `submit_review` adds, less any that restate a saved one. Saved come first and win, since the
+ * prompt tells the reviewer never to submit them again.
+ */
+export const mergeSavedFindings = (
+	saved: ReadonlyArray<PrReviewFinding>,
+	submitted: ReadonlyArray<PrReviewFinding>,
+): ReadonlyArray<PrReviewFinding> => [
+	...saved,
+	...submitted.filter((finding) => !saved.some((known) => restates(finding, known))),
+]
 
 /** `F1`, `F2`, ... continuing after every handle this pull request has used. */
 export const nextHandles = (used: ReadonlyArray<string>, count: number): ReadonlyArray<string> => {
@@ -201,6 +217,23 @@ export const followUpScope = (kickoff: string): ReadonlyArray<string> | undefine
 		}
 	}
 	return undefined
+}
+
+const IGNORED_PATHS = "Never review these paths: "
+
+/** The kickoff line naming the repository's ignored paths; {@link ignoredPathsInKickoff} reads it back. */
+export const renderIgnoredPaths = (patterns: ReadonlyArray<string>): string =>
+	`${IGNORED_PATHS}${patterns.join(", ")}.`
+
+/** The ignore patterns a kickoff states, so the coverage gate never asks for a file it excludes. */
+export const ignoredPathsInKickoff = (kickoff: string): ReadonlyArray<string> => {
+	const line = kickoff.split("\n").find((candidate) => candidate.startsWith(IGNORED_PATHS))
+	if (line === undefined) return []
+	return line
+		.slice(IGNORED_PATHS.length)
+		.replace(/\.$/, "")
+		.split(", ")
+		.filter((pattern) => pattern.trim() !== "")
 }
 
 const globToRegExp = (pattern: string): RegExp => {

@@ -51,8 +51,10 @@ import type { ChatTurnEvent } from "@/chat/events"
 import { withToolTranscript } from "@/chat/close-out"
 import { PR_REVIEW_TOOLS } from "@/chat/permissions"
 import { PR_REVIEW_CLOSE_OUT_PROMPT } from "@/chat/prompts"
+import { makeReviewCoverage } from "@/chat/review-coverage"
+import { makeReviewLedger } from "@/chat/review-ledger"
 import { runChatTurn } from "@/chat/run"
-import { makeRunUsage } from "@/chat/tools"
+import { makeRunUsage, savedFindingsRequest } from "@/chat/tools"
 import type { McpToolExecutorApi } from "@/mcp/dispatcher"
 import {
 	annotatePatch,
@@ -897,6 +899,8 @@ export const reviewLocally = async (
 		}
 	}
 
+	// Shared by the pass and its close-out, as in production.
+	const reviewState = { coverage: makeReviewCoverage(kickoff), ledger: makeReviewLedger() }
 	const pass = (turn: {
 		readonly text: string
 		readonly history: ReadonlyArray<ChatMessage>
@@ -916,6 +920,7 @@ export const reviewLocally = async (
 					submitted = request
 				}),
 			...(turn.closeOut === true ? { closeOut: true } : undefined),
+			review: reviewState,
 			...(promptOverride === undefined
 				? undefined
 				: { agent: { ...AGENTS["pr-review"], prompt: promptOverride } }),
@@ -986,6 +991,16 @@ export const reviewLocally = async (
 				]),
 			}),
 		)
+	}
+
+	// As production does: findings the pass saved are filed as a partial when no report landed.
+	if (submitted === undefined && reviewState.ledger.findings().length > 0) {
+		submitted = savedFindingsRequest({
+			findings: reviewState.ledger.findings(),
+			unreviewed: reviewState.coverage.unread(),
+			modelName: model.name,
+			usage,
+		})
 	}
 
 	removeWorktrees()

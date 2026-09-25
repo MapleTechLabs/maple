@@ -270,6 +270,9 @@ export const cloneScript = (checkout: SandboxCheckout): string => {
 		`git clone --quiet --shared --no-checkout ${mirror} "$t"`,
 		"exec 9>&-",
 		`git -C "$t" remote set-url origin ${shellQuote(checkout.remoteUrl)}`,
+		// A committed symlink is checked out as a file holding its target, so no command the agent
+		// runs can follow one out of the checkout; the index still records mode 120000.
+		`git -C "$t" config core.symlinks false`,
 		`git -C "$t" checkout --quiet --detach ${shellQuote(checkout.sha)}`,
 		// Readable and traversable by the agent account, writable by nobody but root.
 		// `mktemp -d` creates the directory mode 700, so read and execute have to be

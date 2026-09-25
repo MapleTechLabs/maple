@@ -21,7 +21,8 @@ import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
 import { type AgentDefinition, agentForSession, chatAgent } from "./agents"
 import { profileForTurn } from "./profiles"
 import { makeTextSanitizer, toChatEvents, type ChatTurnEvent } from "./events"
-import { makeReviewCoverage } from "./review-coverage"
+import { makeReviewCoverage, type ReviewCoverage } from "./review-coverage"
+import type { ReviewLedger } from "./review-ledger"
 import { buildReviewFanout } from "./review-fanout"
 import {
 	accumulateUsage,
@@ -99,6 +100,11 @@ export interface ChatRunInput {
 	readonly stageEdit?: StageEdit
 	/** This run is an autonomous pass's close-out: a report it files is a partial. */
 	readonly closeOut?: boolean
+	/**
+	 * A review turn's own state, shared by its pass and its close-out: what was read, and the
+	 * findings saved so far. Absent, a review run makes its own coverage and offers no `record_finding`.
+	 */
+	readonly review?: ReviewTurnState
 	/** The agent to run as; defaults to the session's. The local review runner passes a variant. */
 	readonly agent?: AgentDefinition
 	/** The message the user just sent, which is this run's input. */
@@ -109,6 +115,11 @@ export interface ChatRunInput {
 	/** False once the turn slot has been released, which stops the run writing into a moved-on session. */
 	readonly holdsTurn: () => boolean
 	readonly append: (event: ChatTurnEvent) => void
+}
+
+export interface ReviewTurnState {
+	readonly coverage: ReviewCoverage
+	readonly ledger: ReviewLedger
 }
 
 export interface ChatRunOutcome {
@@ -139,7 +150,7 @@ export const runChatTurn = (input: ChatRunInput) => {
 	// Per run, and fed by the Maple handlers the review_files children share, so a group a child
 	// read counts as read.
 	const coverage = isAutonomousReviewTurn(input.sessionId, input.origin)
-		? makeReviewCoverage(input.text)
+		? (input.review?.coverage ?? makeReviewCoverage(input.text))
 		: undefined
 	// A call's UI payload, held until its result event is written. Never part of what the model reads.
 	const uiByCall = new Map<string, ToolUiPayload>()
@@ -177,6 +188,7 @@ export const runChatTurn = (input: ChatRunInput) => {
 					input.closeOut === true,
 					agentSessionSpanAttributes(input.model.tags),
 					coverage,
+					input.review?.ledger,
 				)) ??
 		(input.submitReply === undefined || input.stageEdit === undefined
 			? undefined

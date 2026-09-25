@@ -62,6 +62,8 @@ const workerPolicy = AgentPolicy.make({
 	completionReserveTokens: 16_000,
 	toolConcurrency: 4,
 	onExhaustion: "final-answer",
+	// A worker sees its own clock too, so it answers inside its four minutes.
+	runStatus: "appended",
 })
 
 /**
