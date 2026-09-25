@@ -1,4 +1,4 @@
-# API CPU improvements — 2026-09-12
+# API CPU improvements (2026-09-12)
 
 Implemented locally against revision `79dfb6da9d`, with measurements after each logical change. No production deployment or production CPU profile was taken.
 

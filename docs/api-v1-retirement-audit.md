@@ -24,7 +24,7 @@ The executable inventory comes from [MapleApi](../packages/domain/src/http/api.t
 
 Already migrated: dashboard CRUD, alerts, API/ingest keys, attribute mappings, scrape targets, investigations, anomalies, audit, chat and PlanetScale controls. CLI remote telemetry uses [MapleApiV2](../apps/cli/src/core/v2-client.ts). The Alchemy provider's resource operations use `/v2` too; its service named `MapleApi` is not the legacy contract. Query-engine reads, authenticated billing, demo, digest, AI triage, replay facets/trace summaries, and AI-session dashboard operations already use `MapleInternalApi`.
 
-MCP issue tools call backend services directly. For example, [claim-error-issue.ts](../apps/api/src/mcp/tools/claim-error-issue.ts) calls `ErrorsService`, with identity resolved by [resolve-actor.ts](../apps/api/src/mcp/lib/resolve-actor.ts). Retiring an HTTP route does not authorize deleting the service or narrowing MCP authentication.
+MCP issue tools call backend services directly. For example, [claim-error-issue.ts](../apps/ai/src/mcp/tools/claim-error-issue.ts) calls `ErrorsService`, with identity resolved by [resolve-actor.ts](../apps/ai/src/mcp/lib/resolve-actor.ts). Retiring an HTTP route does not authorize deleting the service or narrowing MCP authentication.
 
 ## Findings that change the migration
 
@@ -63,7 +63,7 @@ These are separate reviewable changes; Hazel and organization deletion do not de
 
 ### 4. Split errors by consumer intent
 
-- Add stable v2 issue subresources for events, comments, transitions, severity, linked PRs, and verification results—the operations the dashboard currently uses. Add assignment/fix proposals/incident listing and notification-policy resources if these remain supported HTTP capabilities; otherwise explicitly retire their unused HTTP routes after the gate. Add assignee/archive list filters before claiming full list parity.
+- Add stable v2 issue subresources for events, comments, transitions, severity, linked PRs, and verification results: the operations the dashboard currently uses. Add assignment/fix proposals/incident listing and notification-policy resources if these remain supported HTTP capabilities; otherwise explicitly retire their unused HTTP routes after the gate. Add assignee/archive list filters before claiming full list parity.
 - Move dashboard claim/heartbeat/release and escalation-policy evaluation/history to dedicated `/internal` groups. Decide agent registration/listing and policy-management destinations from supported callers rather than copying all 26 operations wholesale. Existing MCP automation keeps using the shared services and its existing credential/actor resolution.
 - Preserve the lifecycle in [error-issue-lifecycle.md](error-issue-lifecycle.md): machine-owned states, lease ownership, human versus agent severity precedence, PR linking, and post-merge verification. New v2 mutation handlers must resolve the correct actor for both sessions and scoped API keys; blindly copying v1's `ensureUserActor` calls would misattribute agent actions.
 - Keep semantic tagged failures through the v2 envelope. Verify tenant isolation, role/scope refusals, conflicting leases, invalid transitions, duplicate mutation/retry behavior, activity pagination (the UI currently requests 200 events, above v2's 100-row cap), cache invalidation, and the issue's detail/bulk-action UI.

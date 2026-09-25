@@ -1,4 +1,4 @@
-# Legacy cleanup sweep — 2026-09-05
+# Legacy cleanup sweep (2026-09-05)
 
 Baseline: `0e8250f2f0` (`refactor: remove retired adapters and error-service facade`).
 
@@ -91,9 +91,11 @@ Keep this behavior consistent across local and remote commands.
 
 **Confirmed missed reuse; small-to-medium effort; behavior-risk.**
 
-[turn-runner.ts](../apps/api/src/chat/turn-runner.ts):357–360 creates a fresh runtime with
+Both files have since moved from `apps/api` to `apps/ai`; line numbers refer to the baseline.
+
+[turn-runner.ts](../apps/ai/src/chat/turn-runner.ts):357–360 creates a fresh runtime with
 `layerPg`, but line 480 runs the program without `withPgConnectionScope`.
-[ChatSession.ts](../apps/api/src/chat/ChatSession.ts):354,414–415 calls it as a plain promise;
+[ChatSession.ts](../apps/ai/src/chat/ChatSession.ts):354,414–415 calls it as a plain promise;
 there is no inherited Effect connection scope. Each tool database callback therefore uses
 `DatabasePgLive`'s fresh-client fallback.
 
