@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest"
+import { chatConnectorManifests } from "@maple/chat-platform/manifests"
 import { isChatConnectorEnabled, organizationFeatureFlagsFrom } from "./organization-feature-flags"
 
 describe("organizationFeatureFlagsFrom", () => {
@@ -66,5 +67,15 @@ describe("isChatConnectorEnabled", () => {
 		expect(isChatConnectorEnabled({}, "testchat")).toBe(false)
 		expect(isChatConnectorEnabled({ testchat_bot: false }, "testchat")).toBe(false)
 		expect(isChatConnectorEnabled(undefined, "testchat")).toBe(false)
+	})
+
+	it("enables a released connector without its key", () => {
+		for (const manifest of chatConnectorManifests.filter((m) => m.released)) {
+			expect(isChatConnectorEnabled({}, manifest.id)).toBe(true)
+			expect(isChatConnectorEnabled(undefined, manifest.id)).toBe(true)
+		}
+		for (const manifest of chatConnectorManifests.filter((m) => !m.released)) {
+			expect(isChatConnectorEnabled({}, manifest.id)).toBe(false)
+		}
 	})
 })
