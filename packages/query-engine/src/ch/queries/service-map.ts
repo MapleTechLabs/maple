@@ -1205,7 +1205,7 @@ export function serviceExternalEdgesSQL(
 				$.Timestamp.lte(param.dateTimeString("endTime")),
 				edgeCondition("Timestamp"),
 				CH.inList($.SpanKind, ["Client", "Producer"]),
-				attr("db.system.name").eq(""),
+				dbSystemExpr($).eq(""),
 				attr("server.address")
 					.neq("")
 					.or(attr("http.host").neq(""))

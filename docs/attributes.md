@@ -139,7 +139,7 @@ SELECT * FROM users  (span.kind=Client, db.system.name=postgresql, db.namespace=
 
 ### 3. External targets
 
-`Client` and `Producer` spans without `db.system.name` land in `service_external_edges_hourly` and show on the service's Dependencies tab. The target is the messaging destination (or `messaging.system`), then `rpc.service` (or `rpc.system`), then `server.address` → `http.host` → `url.authority`.
+`Client` and `Producer` spans with neither `db.system.name` nor the legacy `db.system` land in `service_external_edges_hourly` and show on the service's Dependencies tab. The target is the messaging destination (or `messaging.system`), then `rpc.service` (or `rpc.system`), then `server.address` → `http.host` → `url.authority`.
 
 Keep `service.name` spelling consistent across deployments of the same service. `users`, `Users` and `users-svc` become three separate nodes.
 

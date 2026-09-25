@@ -3257,7 +3257,7 @@ SELECT
         LIMIT 200
         FORMAT JSON
 
--- builder:service-map:serviceExternalEdgesSQL:default  [bf9cb394]
+-- builder:service-map:serviceExternalEdgesSQL:default  [24dbec22]
 SELECT
           sourceService AS sourceService,
           targetType AS targetType,
@@ -3307,7 +3307,7 @@ SELECT
           AND Timestamp <= '2026-01-03 14:15:00'
           AND (Timestamp < if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR) OR Timestamp >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))
           AND SpanKind IN ('Client', 'Producer')
-          AND SpanAttributes['db.system.name'] = ''
+          AND coalesce(nullIf(SpanAttributes['db.system.name'], ''), SpanAttributes['db.system']) = ''
           AND ((((((SpanAttributes['server.address'] != '' OR SpanAttributes['http.host'] != '') OR SpanAttributes['url.authority'] != '') OR coalesce(nullIf(SpanAttributes['messaging.destination.name'], ''), SpanAttributes['messaging.destination']) != '') OR SpanAttributes['messaging.system'] != '') OR SpanAttributes['rpc.service'] != '') OR SpanAttributes['rpc.system'] != '')
         GROUP BY sourceService, targetType, targetSystem, targetName
         HAVING targetName != ''
@@ -3326,7 +3326,7 @@ SELECT
         LIMIT 200
         FORMAT JSON
 
--- builder:service-map:serviceExternalEdgesSQL:env-scoped  [d8f6ef2b]
+-- builder:service-map:serviceExternalEdgesSQL:env-scoped  [47ea3201]
 SELECT
           sourceService AS sourceService,
           targetType AS targetType,
@@ -3377,7 +3377,7 @@ SELECT
           AND Timestamp <= '2026-01-03 14:15:00'
           AND (Timestamp < if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR) OR Timestamp >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))
           AND SpanKind IN ('Client', 'Producer')
-          AND SpanAttributes['db.system.name'] = ''
+          AND coalesce(nullIf(SpanAttributes['db.system.name'], ''), SpanAttributes['db.system']) = ''
           AND ((((((SpanAttributes['server.address'] != '' OR SpanAttributes['http.host'] != '') OR SpanAttributes['url.authority'] != '') OR coalesce(nullIf(SpanAttributes['messaging.destination.name'], ''), SpanAttributes['messaging.destination']) != '') OR SpanAttributes['messaging.system'] != '') OR SpanAttributes['rpc.service'] != '') OR SpanAttributes['rpc.system'] != '')
           AND coalesce(nullIf(ResourceAttributes['deployment.environment.name'], ''), ResourceAttributes['deployment.environment']) = 'production'
         GROUP BY sourceService, targetType, targetSystem, targetName

@@ -37,6 +37,7 @@ import { migration_0028_product_events_from_traces } from "./0028_product_events
 import { migration_0030_error_events_attribute_fallback } from "./0030_error_events_attribute_fallback"
 import { migration_0031_ai_trace_index_list_columns } from "./0031_ai_trace_index_list_columns"
 import { migration_0032_ai_trace_index_tool_detail_columns } from "./0032_ai_trace_index_tool_detail_columns"
+import { migration_0033_external_edges_legacy_db_system } from "./0033_external_edges_legacy_db_system"
 import { clickHouseSchemaVersion, latestMigrationVersion, migrations } from "./index"
 
 const backfills = migration_0004_service_namespace_projections.statements.filter(
@@ -53,10 +54,10 @@ describe("ClickHouse migrations", () => {
 	it("keeps migrations ordered by version", () => {
 		expect(migrations.map((m) => m.version)).toEqual([
 			1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27,
-			28, 29, 30, 31, 32,
+			28, 29, 30, 31, 32, 33,
 		])
-		expect(migrations.at(-1)).toBe(migration_0032_ai_trace_index_tool_detail_columns)
-		expect(latestMigrationVersion).toBe(32)
+		expect(migrations.at(-1)).toBe(migration_0033_external_edges_legacy_db_system)
+		expect(latestMigrationVersion).toBe(33)
 		// 0010 and 0014-0020 are read-path only and skipped by the ingest-gating
 		// version; 0021 is not — the gateway writes `session_events`' new identity
 		// columns and `product_events` directly, so a BYO-CH org must apply it
@@ -880,6 +881,27 @@ describe("migration 0032 — ai_trace_index tool detail columns", () => {
 		]) {
 			expect(create).toContain(` AS ${column}`)
 		}
+	})
+
+	it("does not backfill and does not gate ingest", () => {
+		expect(migration.requiredForIngest).toBe(false)
+		expect(migration.statements.some(isBackfill)).toBe(false)
+	})
+})
+
+describe("migration 0033: external edges exclude legacy db.system spans", () => {
+	const migration = migration_0033_external_edges_legacy_db_system
+
+	it("drops then recreates the view with the coalesced db-system exclusion", () => {
+		expect(migration.statements[0]).toBe("DROP VIEW IF EXISTS service_external_edges_hourly_mv")
+		const create = migration.statements[1]
+		expect(create).toContain("service_external_edges_hourly_mv TO service_external_edges_hourly AS")
+		// Same coalesce the db-edges MV selects on, so no span lands in both.
+		expect(create).toContain(
+			"AND coalesce(nullIf(SpanAttributes['db.system.name'], ''), SpanAttributes['db.system']) = ''",
+		)
+		expect(create).not.toContain("AND SpanAttributes['db.system.name'] = ''")
+		expect(migration.statements).toHaveLength(2)
 	})
 
 	it("does not backfill and does not gate ingest", () => {
