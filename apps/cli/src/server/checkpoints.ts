@@ -22,7 +22,9 @@ import {
 } from "./durable-files"
 import {
 	eventingControlSnapshotPath,
-	LocalEventingControlStore,
+	openControlStore,
+	restoreControlSnapshot,
+	validateControlSnapshot,
 	type EventingControlSnapshotValidation,
 } from "./eventing/control-store"
 import { CURRENT_LOCAL_SCHEMA, SCHEMA_FINGERPRINT } from "./schema-identity"
@@ -904,7 +906,7 @@ const resolveCheckpointById = async (
 		const controlSha256 = await sha256File(controlPath)
 		if (controlSha256 !== manifest.controlSha256)
 			throw new Error("checkpoint control-store digest mismatch")
-		const controlValidation = LocalEventingControlStore.validateSnapshot(controlPath)
+		const controlValidation = await Effect.runPromise(validateControlSnapshot(controlPath))
 		if (!controlValidationMatches(manifest.controlValidation, controlValidation))
 			throw new Error("checkpoint control-store validation does not match its manifest")
 	} else if (existsSync(controlPath)) {
@@ -953,13 +955,12 @@ const restoreResolvedInto = async (
 				"SETTINGS allow_different_database_def=1",
 		)
 		if (resolvedCheckpoint.manifest.formatVersion === MANIFEST_FORMAT_VERSION) {
-			await LocalEventingControlStore.restoreSnapshot(
-				join(resolvedCheckpoint.snapshotDir, "control.sqlite"),
-				targetDataDir,
+			await Effect.runPromise(
+				restoreControlSnapshot(join(resolvedCheckpoint.snapshotDir, "control.sqlite"), targetDataDir),
 			)
 		} else {
-			const controlStore = await LocalEventingControlStore.open(targetDataDir)
-			controlStore.close()
+			// A legacy checkpoint has no control snapshot: open and close to create an empty store.
+			await Effect.runPromise(Effect.scoped(Effect.asVoid(openControlStore(targetDataDir))))
 		}
 		return { db, validation: validateRestoredDatabase(db) }
 	} catch (error) {
@@ -1711,15 +1712,22 @@ const createCheckpointTraced = Effect.fn("CheckpointService.create")(function* (
 						: createError(error),
 				),
 			)
+			const controlPath = eventingControlSnapshotPath(options.dataDir, checkpointId)
+			yield* Effect.tryPromise({
+				try: async () => {
+					await syncTree(snapshotBackupDir(options.dataDir, checkpointId))
+					await assertNoSymlink(checkpointSnapshotsRoot(options.dataDir), controlPath)
+					await assertRealFile(controlPath, "checkpoint eventing control snapshot")
+				},
+				catch: createError,
+			})
+			const controlValidation = yield* validateControlSnapshot(controlPath).pipe(
+				Effect.mapError(createError),
+			)
 			return yield* Effect.tryPromise({
 				try: async () => {
 					const { oldState, snapshot, startedAt } = prepared
 					let { operation } = prepared
-					await syncTree(snapshotBackupDir(options.dataDir, checkpointId))
-					const controlPath = eventingControlSnapshotPath(options.dataDir, checkpointId)
-					await assertNoSymlink(checkpointSnapshotsRoot(options.dataDir), controlPath)
-					await assertRealFile(controlPath, "checkpoint eventing control snapshot")
-					const controlValidation = LocalEventingControlStore.validateSnapshot(controlPath)
 					operation = { ...operation, phase: "backup-complete" }
 					await writeOperation(options.dataDir, operation, options.faults)
 					const provisionalManifest: CheckpointManifest = {

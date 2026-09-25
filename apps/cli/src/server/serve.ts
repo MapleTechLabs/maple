@@ -3,7 +3,7 @@
 // SPA, all on one port, backed by an embedded chDB. Replaces the Rust
 // `apps/ingest/src/bin/local.rs`. `maple start` calls `startServer`.
 
-import { Effect, Predicate, Result, Schema, type Scope } from "effect"
+import { Effect, Layer, Predicate, Result, Schema, type Scope } from "effect"
 import * as ManagedRuntime from "effect/ManagedRuntime"
 import { gunzipSync } from "node:zlib"
 import { TelemetryLayer } from "../core/telemetry"
@@ -20,22 +20,14 @@ import {
 import { buildInsertStatements } from "./inserts"
 import {
 	eventingControlSnapshotPath,
-	EventConsumerConflictError,
-	EventConsumerLeaseError,
-	EventConsumerDeliveryGapError,
-	OutboxAdministrationInvalid,
-	EventConsumerInputError,
-	EventConsumerNotFoundError,
+	type EventConsumerFailure,
+	type EventingControlStoreError,
+	LocalEventingControlConfig,
 	LocalEventingControlStore,
+	writeControlSnapshot,
 } from "./eventing/control-store"
 import { ensureEventConsumerToken, eventConsumerTokenMatches } from "./eventing/consumer-auth"
-import {
-	LocalEventingRuntime,
-	ProjectionActivationConflict,
-	ProjectionActivationInvalid,
-	SourceOccurrenceCollision,
-} from "./eventing/runtime"
-import { makeEffectEventingTelemetry } from "./eventing/telemetry"
+import { LocalEventingRuntime, type LocalEventingRuntimeApi } from "./eventing/runtime"
 import { encodeLogs, encodeMetrics, encodeTraces, type EncodedBatch, OtlpFieldError } from "./otlp/encode"
 import {
 	decodeLogsRequest,
@@ -234,147 +226,143 @@ interface IngestResult {
 	readonly requestBytes: number
 }
 
+/** An ingest step that ends the request early; the carried result is the response. */
+class IngestStopped extends Schema.TaggedError<IngestStopped>()("@maple/cli/IngestStopped", {
+	message: Schema.String,
+	response: Schema.instanceOf(Response),
+	accepted: Schema.Number,
+	requestBytes: Schema.Number,
+}) {}
+
+const stopIngest = (response: Response, requestBytes: number, accepted = 0): IngestStopped =>
+	new IngestStopped({ message: `HTTP ${response.status}`, response, accepted, requestBytes })
+
 /**
  * A malformed field or an in-batch identity collision fails identically on every
  * retry, so it is a 400; OTLP exporters retry 503 and would resend the batch forever.
  */
-const projectionFailureStatus = (error: unknown): 400 | 503 =>
-	error instanceof OtlpFieldError || error instanceof SourceOccurrenceCollision ? 400 : 503
+const projectionFailure =
+	(signal: Signal, requestBytes: number, status: 400 | 503) =>
+	(error: { readonly message: string }): Effect.Effect<never, IngestStopped> =>
+		Effect.fail(stopIngest(text(`event projection ${signal}: ${error.message}`, status), requestBytes))
 
-async function ingest(
+const ingest = (
 	db: Pick<Chdb, "exec">,
 	authority: RetiredDayAuthority,
-	eventing: LocalEventingRuntime,
 	signal: Signal,
 	req: Request,
-): Promise<IngestResult> {
-	let raw: Uint8Array
-	try {
-		raw = new Uint8Array(await req.arrayBuffer())
-	} catch (error) {
-		// A client that hangs up mid-body rejects here. Unguarded, this became an
-		// Effect *defect* — no `error.type`, no 4xx suppression, and a span reading
-		// only "The connection was closed." It is a caller outcome, so 400 it.
-		return {
-			response: text(`read ${signal} body: ${describeThrown(error)}`, 400),
-			accepted: 0,
-			requestBytes: 0,
-		}
-	}
-	const requestBytes = raw.length
-	const contentType = req.headers.get("content-type") ?? ""
-	const contentEncoding = req.headers.get("content-encoding")
-	let decoded: unknown
-	try {
-		decoded = decodeOtlp(signal, raw, contentType, contentEncoding)
-	} catch (error) {
-		return {
-			response: text(`decode ${signal}: ${describeThrown(error)}`, 400),
-			accepted: 0,
-			requestBytes,
-		}
-	}
-	let evaluation: ReturnType<LocalEventingRuntime["evaluateOtlp"]>
-	try {
-		evaluation = eventing.evaluateOtlp(signal, decoded, (rangeDate) => authority.isRetired(rangeDate))
-	} catch (error) {
-		return {
-			response: text(
-				`event projection ${signal}: ${describeThrown(error)}`,
-				projectionFailureStatus(error),
+): Effect.Effect<IngestResult, never, LocalEventingRuntime> =>
+	Effect.gen(function* () {
+		const eventing = yield* LocalEventingRuntime
+		// A client that hangs up mid-body rejects here. It is a caller outcome, so 400 it.
+		const raw = yield* Effect.tryPromise({
+			try: async () => new Uint8Array(await req.arrayBuffer()),
+			catch: (error) => stopIngest(text(`read ${signal} body: ${describeThrown(error)}`, 400), 0),
+		})
+		const requestBytes = raw.length
+		const contentType = req.headers.get("content-type") ?? ""
+		const contentEncoding = req.headers.get("content-encoding")
+		const decoded = yield* Effect.try({
+			try: () => decodeOtlp(signal, raw, contentType, contentEncoding),
+			catch: (error) =>
+				stopIngest(text(`decode ${signal}: ${describeThrown(error)}`, 400), requestBytes),
+		})
+		const rejectProjection = (status: 400 | 503) => projectionFailure(signal, requestBytes, status)
+		const evaluation = yield* eventing
+			.evaluateOtlp(signal, decoded, (rangeDate) => authority.isRetired(rangeDate))
+			.pipe(
+				Effect.catchTags({
+					"@maple/cli/OtlpFieldError": rejectProjection(400),
+					"@maple/cli/eventing/SourceOccurrenceCollision": rejectProjection(400),
+					"@maple/cli/eventing/StagedOccurrenceUnrecoverable": rejectProjection(503),
+					"@maple/cli/eventing/SourceOccurrenceInvalid": rejectProjection(503),
+					"@maple/eventing-core/ProjectionInvalid": rejectProjection(503),
+					"@maple/cli/eventing/ControlStoreFailed": rejectProjection(503),
+				}),
+				Effect.catchDefect((defect) => rejectProjection(503)({ message: describeThrown(defect) })),
+			)
+		// A malformed field is the sender's fault, not ours: reject the batch with a
+		// 400 naming the field instead of silently storing a bad value.
+		let batches = yield* Effect.try({
+			try: () => encodeFor(signal, decoded),
+			catch: (error) =>
+				error instanceof OtlpFieldError
+					? stopIngest(text(`decode ${signal}: ${error.message}`, 400), requestBytes)
+					: stopIngest(text(`encode ${signal}: ${describeThrown(error)}`, 500), requestBytes),
+		})
+		const staged = yield* eventing.persistFailures(evaluation.failures).pipe(
+			Effect.andThen(
+				evaluation.events.length > 0
+					? eventing.stage(evaluation.events, evaluation.eventSourceFingerprints)
+					: Effect.succeed({ inserted: 0, deduplicated: 0, dropped: 0, eventIds: [] }),
 			),
-			accepted: 0,
-			requestBytes,
-		}
-	}
-	let batches: EncodedBatch[]
-	try {
-		batches = encodeFor(signal, decoded)
-	} catch (error) {
-		// A malformed field is the sender's fault, not ours — reject the batch
-		// with a 400 naming the field instead of silently storing a bad value.
-		const status = error instanceof OtlpFieldError ? 400 : 500
-		const stage = status === 400 ? "decode" : "encode"
-		return {
-			response: text(`${stage} ${signal}: ${describeThrown(error)}`, status),
-			accepted: 0,
-			requestBytes,
-		}
-	}
-	let stagedEventIds: readonly string[] = []
-	let droppedEvents = 0
-	try {
-		eventing.persistFailures(evaluation.failures)
-		if (evaluation.events.length > 0) {
-			const staged = eventing.stage(evaluation.events, evaluation.eventSourceFingerprints)
-			stagedEventIds = staged.eventIds
-			droppedEvents = staged.dropped
-		}
-	} catch (error) {
-		return {
-			response: text(
-				`event projection ${signal}: ${describeThrown(error)}`,
-				projectionFailureStatus(error),
-			),
-			accepted: 0,
-			requestBytes,
-		}
-	}
-	let rejected = 0
-	batches = batches.map((batch) => {
-		const filtered = authority.filterBatch(batch.datasource, batch.ndjson)
-		rejected += filtered.rejected
-		return { ...batch, ndjson: filtered.ndjson, rowCount: filtered.accepted }
-	})
-	let accepted = 0
-	for (const batch of batches) {
-		if (batch.rowCount === 0) continue
-		for (const statement of buildInsertStatements(batch.datasource, batch.ndjson)) {
-			try {
-				db.exec(statement.sql)
-			} catch (error) {
-				return {
-					response: text(`chDB insert (${batch.datasource}): ${describeThrown(error)}`, 500),
-					accepted,
-					requestBytes,
-				}
+			Effect.catchTag("@maple/cli/eventing/ControlStoreFailed", rejectProjection(503)),
+			Effect.catchDefect((defect) => rejectProjection(503)({ message: describeThrown(defect) })),
+		)
+		let rejected = 0
+		batches = batches.map((batch) => {
+			const filtered = authority.filterBatch(batch.datasource, batch.ndjson)
+			rejected += filtered.rejected
+			return { ...batch, ndjson: filtered.ndjson, rowCount: filtered.accepted }
+		})
+		let accepted = 0
+		for (const batch of batches) {
+			if (batch.rowCount === 0) continue
+			for (const statement of buildInsertStatements(batch.datasource, batch.ndjson)) {
+				const inserted = Result.try(() => db.exec(statement.sql))
+				if (Result.isFailure(inserted))
+					return yield* stopIngest(
+						text(`chDB insert (${batch.datasource}): ${describeThrown(inserted.failure)}`, 500),
+						requestBytes,
+						accepted,
+					)
+				accepted += statement.rowCount
 			}
-			accepted += statement.rowCount
 		}
-	}
-	try {
-		const readyEventIds = [...evaluation.recoveredEventIds, ...stagedEventIds]
-		if (readyEventIds.length > 0) eventing.markReady(readyEventIds)
-	} catch (error) {
-		return {
-			response: text(`event outbox readiness ${signal}: ${describeThrown(error)}`, 503),
-			accepted,
-			requestBytes,
+		const readyEventIds = [...evaluation.recoveredEventIds, ...staged.eventIds]
+		const readinessFailed = (message: string) =>
+			Effect.fail(
+				stopIngest(text(`event outbox readiness ${signal}: ${message}`, 503), requestBytes, accepted),
+			)
+		if (readyEventIds.length > 0)
+			yield* eventing.markReady(readyEventIds).pipe(
+				Effect.catchTag("@maple/cli/eventing/ControlStoreFailed", (error) =>
+					readinessFailed(error.message),
+				),
+				Effect.catchDefect((defect) => readinessFailed(describeThrown(defect))),
+			)
+		const droppedEvents = staged.dropped
+		const errorMessage = rejected > 0 ? "telemetry from permanently retired UTC days was rejected" : ""
+		if (contentType.includes("json")) {
+			const rejectedField =
+				signal === "traces"
+					? { rejectedSpans: rejected }
+					: signal === "logs"
+						? { rejectedLogRecords: rejected }
+						: { rejectedDataPoints: rejected }
+			const response = json(rejected > 0 ? { partialSuccess: { ...rejectedField, errorMessage } } : {})
+			if (droppedEvents > 0) response.headers.set("x-maple-eventing-dropped", String(droppedEvents))
+			return { response, accepted, requestBytes }
 		}
-	}
-	const errorMessage = rejected > 0 ? "telemetry from permanently retired UTC days was rejected" : ""
-	if (contentType.includes("json")) {
-		const rejectedField =
-			signal === "traces"
-				? { rejectedSpans: rejected }
-				: signal === "logs"
-					? { rejectedLogRecords: rejected }
-					: { rejectedDataPoints: rejected }
-		const response = json(rejected > 0 ? { partialSuccess: { ...rejectedField, errorMessage } } : {})
+		const response = new Response(encodeExportResponse(signal, rejected, errorMessage), {
+			status: 200,
+			headers: { "content-type": "application/x-protobuf" },
+		})
 		if (droppedEvents > 0) response.headers.set("x-maple-eventing-dropped", String(droppedEvents))
-		return {
-			response,
-			accepted,
-			requestBytes,
-		}
-	}
-	const response = new Response(encodeExportResponse(signal, rejected, errorMessage), {
-		status: 200,
-		headers: { "content-type": "application/x-protobuf" },
-	})
-	if (droppedEvents > 0) response.headers.set("x-maple-eventing-dropped", String(droppedEvents))
-	return { response, accepted, requestBytes }
-}
+		return { response, accepted, requestBytes }
+	}).pipe(
+		Effect.catchTag("@maple/cli/IngestStopped", ({ response, accepted, requestBytes }) =>
+			Effect.succeed({ response, accepted, requestBytes }),
+		),
+		// Anything thrown outside a mapped step keeps its old meaning: a 500 with a real message.
+		Effect.catchDefect((defect) =>
+			Effect.succeed({
+				response: text(`ingest ${signal}: ${describeThrown(defect)}`, 500),
+				accepted: 0,
+				requestBytes: 0,
+			}),
+		),
+	)
 
 /**
  * Strip a trailing `FORMAT <ident>` clause (optionally followed by `;`) and
@@ -468,9 +456,12 @@ function serveAsset(assets: AssetResolver, pathname: string): Response {
 const MAX_DB_QUERY_TEXT = 16 * 1024
 const truncateSql = (sql: string) => (sql.length > MAX_DB_QUERY_TEXT ? sql.slice(0, MAX_DB_QUERY_TEXT) : sql)
 
-/** Runs a request's span effect on the server's tracing runtime (see
- *  `startServer`). The effect always succeeds with a `Response`. */
-type SpanRunner = <A>(effect: Effect.Effect<A>) => Promise<A>
+/** The services every request effect may use; `startServer` builds them into one runtime. */
+type RequestServices = LocalEventingRuntime | LocalEventingControlStore
+
+/** Runs a request's effect on the server's tracing runtime (see `startServer`).
+ *  The effect always succeeds with a `Response`. */
+type SpanRunner = <A>(effect: Effect.Effect<A, never, RequestServices>) => Promise<A>
 
 // A rejected 5xx ingest/query response, surfaced through the Effect error
 // channel. `message` carries the handler's descriptive body so the span records
@@ -478,12 +469,6 @@ type SpanRunner = <A>(effect: Effect.Effect<A>) => Promise<A>
 // hand back to the client in `recoverResponse`. (Failing with a bare `Response`
 // recorded an empty `{}` — a `Response` has no enumerable own fields — which lost
 // the cause entirely and bucketed every failure under one "Error" fingerprint.)
-/** A rejection out of `ingest`, carried as a typed failure so it becomes a 500
- *  with a real message rather than an untyped defect. */
-class IngestFailed extends Schema.TaggedError<IngestFailed>()("@maple/cli/IngestFailed", {
-	message: Schema.String,
-}) {}
-
 class IngestRejected extends Schema.TaggedError<IngestRejected>()("@maple/cli/IngestRejected", {
 	response: Schema.instanceOf(Response),
 	status: Schema.Number,
@@ -508,87 +493,60 @@ const recordServerResponse = (response: Response): Effect.Effect<Response, Inges
 		return response
 	})
 
-const recoverResponse = (self: Effect.Effect<Response, IngestRejected>): Effect.Effect<Response> =>
+const recoverResponse = <R>(
+	self: Effect.Effect<Response, IngestRejected, R>,
+): Effect.Effect<Response, never, R> =>
 	Effect.match(self, { onFailure: (error) => error.response, onSuccess: (response) => response })
 
 /** OTLP-ingest request as a `Server`-kind span, mirroring the Rust gateway
  *  (`apps/ingest`): `maple.signal`, item count, request size, HTTP semconv. */
 const ingestSpan = (
-	runSpan: SpanRunner,
 	db: Chdb,
 	authority: RetiredDayAuthority,
-	eventing: LocalEventingRuntime,
 	signal: Signal,
 	req: Request,
-): Promise<Response> =>
-	runSpan(
-		recoverResponse(
-			Effect.gen(function* () {
-				// `Effect.promise` is for promises that cannot reject, and `ingest`
-				// can: it awaits the request body and drives chDB. A rejection there
-				// became a DEFECT, which `recoverResponse`'s `Effect.match` does not
-				// catch — so it escaped as an untyped, unlabelled span error instead of
-				// the 500 the caller should have received.
-				const { response, accepted, requestBytes } = yield* Effect.tryPromise({
-					try: () => ingest(db, authority, eventing, signal, req),
-					catch: (error): IngestFailed => new IngestFailed({ message: describeThrown(error) }),
-				}).pipe(
-					Effect.catchTag("@maple/cli/IngestFailed", (error) =>
-						Effect.succeed({
-							response: text(`ingest ${signal}: ${error.message}`, 500),
-							accepted: 0,
-							requestBytes: 0,
-						}),
-					),
-				)
-				yield* Effect.annotateCurrentSpan({
-					"http.request.body.size": requestBytes,
-					"maple.ingest.item_count": accepted,
-					"http.response.status_code": response.status,
-				})
-				return yield* recordServerResponse(response)
-			}).pipe(
-				Effect.withSpan(`POST /v1/${signal}`, {
-					kind: "server",
-					attributes: {
-						"maple.signal": signal,
-						"http.request.method": "POST",
-						"http.route": `/v1/${signal}`,
-					},
-				}),
-			),
+): Effect.Effect<Response, never, LocalEventingRuntime> =>
+	recoverResponse(
+		Effect.gen(function* () {
+			const { response, accepted, requestBytes } = yield* ingest(db, authority, signal, req)
+			yield* Effect.annotateCurrentSpan({
+				"http.request.body.size": requestBytes,
+				"maple.ingest.item_count": accepted,
+				"http.response.status_code": response.status,
+			})
+			return yield* recordServerResponse(response)
+		}).pipe(
+			Effect.withSpan(`POST /v1/${signal}`, {
+				kind: "server",
+				attributes: {
+					"maple.signal": signal,
+					"http.request.method": "POST",
+					"http.route": `/v1/${signal}`,
+				},
+			}),
 		),
 	)
 
 /** `/local/query` request as a `Server`-kind span with the canonical DB attrs. */
-const querySpan = (
-	runSpan: SpanRunner,
-	db: Chdb,
-	authority: RetiredDayAuthority,
-	req: Request,
-): Promise<Response> =>
-	runSpan(
-		recoverResponse(
-			Effect.gen(function* () {
-				const { response, rowCount, durationMs, sql } = yield* Effect.promise(() =>
-					handleQuery(db, authority, req),
-				)
-				yield* Effect.annotateCurrentSpan({
-					"db.system.name": "clickhouse",
-					"db.duration_ms": durationMs,
-					"result.rowCount": rowCount,
-					"http.response.status_code": response.status,
-					...(sql
-						? { "db.query.text": truncateSql(sql), "db.query.length": sql.length }
-						: undefined),
-				})
-				return yield* recordServerResponse(response)
-			}).pipe(
-				Effect.withSpan("POST /local/query", {
-					kind: "server",
-					attributes: { "http.request.method": "POST", "http.route": "/local/query" },
-				}),
-			),
+const querySpan = (db: Chdb, authority: RetiredDayAuthority, req: Request): Effect.Effect<Response> =>
+	recoverResponse(
+		Effect.gen(function* () {
+			const { response, rowCount, durationMs, sql } = yield* Effect.promise(() =>
+				handleQuery(db, authority, req),
+			)
+			yield* Effect.annotateCurrentSpan({
+				"db.system.name": "clickhouse",
+				"db.duration_ms": durationMs,
+				"result.rowCount": rowCount,
+				"http.response.status_code": response.status,
+				...(sql ? { "db.query.text": truncateSql(sql), "db.query.length": sql.length } : undefined),
+			})
+			return yield* recordServerResponse(response)
+		}).pipe(
+			Effect.withSpan("POST /local/query", {
+				kind: "server",
+				attributes: { "http.request.method": "POST", "http.route": "/local/query" },
+			}),
 		),
 	)
 
@@ -613,15 +571,39 @@ export class RequestQuiescenceGate {
 		}
 	}
 
+	#drain(): Promise<void> {
+		return this.#active > 0
+			? new Promise<void>((resolve) => this.#drained.push(resolve))
+			: Promise.resolve()
+	}
+
 	async exclusive<A>(work: () => Promise<A>): Promise<A> {
 		if (this.#closed) throw MaintenanceInProgressError.create()
 		this.#closed = true
 		try {
-			if (this.#active > 0) await new Promise<void>((resolve) => this.#drained.push(resolve))
+			await this.#drain()
 			return await work()
 		} finally {
 			this.#closed = false
 		}
+	}
+
+	/** `exclusive` for Effect work; closing is uninterruptible and reopening always runs. */
+	exclusiveEffect<A, E, R>(
+		work: Effect.Effect<A, E, R>,
+	): Effect.Effect<A, E | MaintenanceInProgressError, R> {
+		return Effect.acquireUseRelease(
+			Effect.suspend(() => {
+				if (this.#closed) return Effect.fail(MaintenanceInProgressError.create())
+				this.#closed = true
+				return Effect.void
+			}),
+			() => Effect.promise(() => this.#drain()).pipe(Effect.andThen(work)),
+			() =>
+				Effect.sync(() => {
+					this.#closed = false
+				}),
+		)
 	}
 }
 
@@ -646,57 +628,83 @@ class RequestBodyTooLargeError extends Schema.TaggedError<RequestBodyTooLargeErr
 	}
 }
 
-const readBoundedJson = async (req: Request, maximumBytes: number): Promise<unknown> => {
-	const contentLength = req.headers.get("content-length")
-	if (contentLength !== null && /^[0-9]+$/.test(contentLength)) {
-		const declared = Number(contentLength)
-		if (!Number.isSafeInteger(declared) || declared > maximumBytes)
-			throw RequestBodyTooLargeError.create(maximumBytes)
-	}
-	if (req.body === null) return Schema.decodeUnknownSync(Schema.fromJsonString(Schema.Unknown))("")
-	const reader = req.body.getReader()
-	const chunks: Uint8Array[] = []
-	let total = 0
-	try {
-		while (true) {
-			const { done, value } = await reader.read()
-			if (done) break
-			total += value.byteLength
-			if (total > maximumBytes) {
-				await reader.cancel()
-				throw RequestBodyTooLargeError.create(maximumBytes)
-			}
-			chunks.push(value)
+/** The body could not be read or is not JSON. */
+class RequestBodyInvalidError extends Schema.TaggedError<RequestBodyInvalidError>()(
+	"@maple/cli/RequestBodyInvalid",
+	{ message: Schema.String, cause: Schema.Defect() },
+) {}
+
+const bodyInvalid = (cause: unknown): RequestBodyInvalidError =>
+	new RequestBodyInvalidError({ message: describeThrown(cause), cause })
+
+const decodeJsonBody = (body: string): Effect.Effect<unknown, RequestBodyInvalidError> =>
+	Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Unknown))(body).pipe(Effect.mapError(bodyInvalid))
+
+const readBoundedJson = (
+	req: Request,
+	maximumBytes: number,
+): Effect.Effect<unknown, RequestBodyTooLargeError | RequestBodyInvalidError> =>
+	Effect.gen(function* () {
+		const contentLength = req.headers.get("content-length")
+		if (contentLength !== null && /^[0-9]+$/.test(contentLength)) {
+			const declared = Number(contentLength)
+			if (!Number.isSafeInteger(declared) || declared > maximumBytes)
+				return yield* RequestBodyTooLargeError.create(maximumBytes)
 		}
-	} finally {
-		reader.releaseLock()
-	}
-	const bytes = new Uint8Array(total)
-	let offset = 0
-	for (const chunk of chunks) {
-		bytes.set(chunk, offset)
-		offset += chunk.byteLength
-	}
-	return Schema.decodeUnknownSync(Schema.fromJsonString(Schema.Unknown))(new TextDecoder().decode(bytes))
-}
+		const body = req.body
+		if (body === null) return yield* decodeJsonBody("")
+		const bytes = yield* Effect.acquireUseRelease(
+			Effect.sync(() => body.getReader()),
+			(reader) =>
+				Effect.gen(function* () {
+					const chunks: Uint8Array[] = []
+					let total = 0
+					while (true) {
+						const { done, value } = yield* Effect.tryPromise({
+							try: () => reader.read(),
+							catch: bodyInvalid,
+						})
+						if (done) break
+						total += value.byteLength
+						if (total > maximumBytes) {
+							yield* Effect.tryPromise({ try: () => reader.cancel(), catch: bodyInvalid })
+							return yield* RequestBodyTooLargeError.create(maximumBytes)
+						}
+						chunks.push(value)
+					}
+					const bytes = new Uint8Array(total)
+					let offset = 0
+					for (const chunk of chunks) {
+						bytes.set(chunk, offset)
+						offset += chunk.byteLength
+					}
+					return bytes
+				}),
+			(reader) => Effect.sync(() => reader.releaseLock()),
+		)
+		return yield* decodeJsonBody(new TextDecoder().decode(bytes))
+	})
 
-const recoverMaintenanceError = (error: unknown, fallback: Response): Response => {
-	if (error instanceof MaintenanceInProgressError) return text(error.message, 409)
-	if (error instanceof RequestBodyTooLargeError) return text(error.message, 413)
-	return fallback
-}
-const invalidJsonResponse = (error: unknown): Response =>
-	recoverMaintenanceError(error, text("invalid JSON body", 400))
+/** The 409 and 413 a maintenance request reports on purpose; any other body failure is a 400. */
+const recoverBodyFailure = <R>(
+	self: Effect.Effect<Response, RequestBodyTooLargeError | RequestBodyInvalidError, R>,
+): Effect.Effect<Response, never, R> =>
+	self.pipe(
+		Effect.catchTags({
+			"@maple/cli/RequestBodyTooLarge": (error) => Effect.succeed(text(error.message, 413)),
+			"@maple/cli/RequestBodyInvalid": () => Effect.succeed(text("invalid JSON body", 400)),
+		}),
+	)
 
-const admitted = async (gate: RequestQuiescenceGate, work: () => Promise<Response>): Promise<Response> => {
-	const leave = gate.enter()
-	if (!leave) return text("server maintenance in progress", 503)
-	try {
-		return await work()
-	} finally {
-		leave()
-	}
-}
+const admitted = <R>(
+	gate: RequestQuiescenceGate,
+	work: Effect.Effect<Response, never, R>,
+): Effect.Effect<Response, never, R> =>
+	Effect.acquireUseRelease(
+		Effect.sync(() => gate.enter()),
+		(leave) => (leave ? work : Effect.succeed(text("server maintenance in progress", 503))),
+		(leave) => Effect.sync(() => leave?.()),
+	)
 
 const handleRetirement = async (
 	db: Chdb,
@@ -749,47 +757,64 @@ const MAX_CHECKPOINT_BODY_BYTES = 4 * 1024
 const MAX_PROJECTION_BODY_BYTES = 512 * 1024
 const MAX_CONSUMER_BODY_BYTES = 16 * 1024
 
+/** The chDB half of a checkpoint backup failed. */
+class CheckpointBackupFailed extends Schema.TaggedError<CheckpointBackupFailed>()(
+	"@maple/cli/CheckpointBackupFailed",
+	{ message: Schema.String, cause: Schema.Defect() },
+) {}
+
 /** Typed, authenticated replacement for sending BACKUP through /local/query. */
-const handleCheckpointBackup = async (
+const handleCheckpointBackup = (
 	db: Chdb,
-	controlStore: LocalEventingControlStore,
 	dataDir: string,
 	gate: RequestQuiescenceGate,
 	token: string,
 	req: Request,
-): Promise<Response> => {
+): Effect.Effect<Response, never, LocalEventingControlStore> => {
 	if (!maintenanceTokenMatches(token, req.headers.get("x-maple-maintenance-token")))
-		return text("maintenance authorization required", 403)
-	let body: unknown
-	try {
-		body = await readBoundedJson(req, MAX_CHECKPOINT_BODY_BYTES)
-	} catch (error) {
-		return invalidJsonResponse(error)
-	}
-	const decoded = Schema.decodeUnknownResult(
-		Schema.Struct({
-			checkpointId: Schema.String.check(Schema.isPattern(CHECKPOINT_ID)),
-		}),
-		{ onExcessProperty: "error" },
-	)(body)
-	if (Result.isFailure(decoded)) return text("invalid checkpoint fields", 400)
-	const record = decoded.success
-	try {
-		const checkpointId = record.checkpointId.toLowerCase()
-		const controlBytes = await gate.exclusive(async () => {
-			// Both captures are synchronous: no request can mutate either database between them.
-			const bytes = controlStore.captureSnapshot()
-			db.exec(`BACKUP DATABASE default TO Disk('default', 'backups/snapshots/${checkpointId}/backup')`)
-			return bytes
-		})
-		const control = await LocalEventingControlStore.writeSnapshot(
+		return Effect.succeed(text("maintenance authorization required", 403))
+	return Effect.gen(function* () {
+		const body = yield* readBoundedJson(req, MAX_CHECKPOINT_BODY_BYTES)
+		const decoded = Schema.decodeUnknownResult(
+			Schema.Struct({
+				checkpointId: Schema.String.check(Schema.isPattern(CHECKPOINT_ID)),
+			}),
+			{ onExcessProperty: "error" },
+		)(body)
+		if (Result.isFailure(decoded)) return text("invalid checkpoint fields", 400)
+		const checkpointId = decoded.success.checkpointId.toLowerCase()
+		const controlStore = yield* LocalEventingControlStore
+		// The gate has drained every admitted request, so neither database changes between captures.
+		const controlBytes = yield* gate.exclusiveEffect(
+			controlStore.captureSnapshot.pipe(
+				Effect.tap(() =>
+					Effect.try({
+						try: () =>
+							db.exec(
+								`BACKUP DATABASE default TO Disk('default', 'backups/snapshots/${checkpointId}/backup')`,
+							),
+						catch: (cause) =>
+							new CheckpointBackupFailed({ message: describeThrown(cause), cause }),
+					}),
+				),
+			),
+		)
+		const control = yield* writeControlSnapshot(
 			eventingControlSnapshotPath(dataDir, checkpointId),
 			controlBytes,
 		)
 		return json({ checkpointId, control })
-	} catch (error) {
-		return recoverMaintenanceError(error, text(`checkpoint backup failed: ${describeThrown(error)}`, 400))
-	}
+	}).pipe(
+		Effect.catchTags({
+			"@maple/cli/MaintenanceInProgress": (error) => Effect.succeed(text(error.message, 409)),
+			"@maple/cli/RequestBodyTooLarge": (error) => Effect.succeed(text(error.message, 413)),
+			"@maple/cli/RequestBodyInvalid": () => Effect.succeed(text("invalid JSON body", 400)),
+			"@maple/cli/CheckpointBackupFailed": (error) =>
+				Effect.succeed(text(`checkpoint backup failed: ${error.message}`, 400)),
+			"@maple/cli/eventing/ControlStoreFailed": (error) =>
+				Effect.succeed(text(`checkpoint backup failed: ${error.message}`, 400)),
+		}),
+	)
 }
 
 const eventingAuthorized = (token: string, req: Request): Response | null =>
@@ -797,233 +822,235 @@ const eventingAuthorized = (token: string, req: Request): Response | null =>
 		? null
 		: text("maintenance authorization required", 403)
 
-const handleProjectionActivation = async (
-	eventing: LocalEventingRuntime,
+const handleProjectionActivation = (
 	gate: RequestQuiescenceGate,
 	token: string,
 	req: Request,
-): Promise<Response> => {
+): Effect.Effect<Response, never, LocalEventingRuntime> => {
 	const unauthorized = eventingAuthorized(token, req)
-	if (unauthorized) return unauthorized
-	let body: unknown
-	try {
-		body = await readBoundedJson(req, MAX_PROJECTION_BODY_BYTES)
-	} catch (error) {
-		return invalidJsonResponse(error)
-	}
-	let activation
-	try {
+	if (unauthorized) return Effect.succeed(unauthorized)
+	return Effect.gen(function* () {
+		const eventing = yield* LocalEventingRuntime
+		const body = yield* readBoundedJson(req, MAX_PROJECTION_BODY_BYTES)
 		// Recursive schema validation and full registry compilation happen while
 		// normal ingest/query admission remains open.
-		activation = eventing.prepareActivation(body)
-	} catch (error) {
-		return text(`invalid event projection: ${describeThrown(error)}`, 400)
-	}
-	try {
-		await gate.exclusive(async () => eventing.commitActivation(activation))
-		return json({ active: eventing.listActive() })
-	} catch (error) {
-		if (error instanceof ProjectionActivationConflict) return text(error.message, 409)
-		if (error instanceof ProjectionActivationInvalid) return text(error.message, 400)
-		return recoverMaintenanceError(
-			error,
-			text(`event projection activation failed: ${describeThrown(error)}`, 500),
+		const activation = yield* eventing.prepareActivation(body).pipe(Effect.result)
+		if (Result.isFailure(activation))
+			return text(`invalid event projection: ${activation.failure.message}`, 400)
+		return yield* gate.exclusiveEffect(eventing.commitActivation(activation.success)).pipe(
+			Effect.andThen(eventing.listActive),
+			Effect.map((active) => json({ active })),
+			Effect.catchTags({
+				"@maple/cli/eventing/ProjectionActivationConflict": (error) =>
+					Effect.succeed(text(error.message, 409)),
+				"@maple/cli/MaintenanceInProgress": (error) => Effect.succeed(text(error.message, 409)),
+				"@maple/cli/eventing/ControlStoreFailed": (error) =>
+					Effect.succeed(text(`event projection activation failed: ${error.message}`, 500)),
+			}),
+			Effect.catchDefect((defect) =>
+				Effect.succeed(text(`event projection activation failed: ${describeThrown(defect)}`, 500)),
+			),
 		)
-	}
+	}).pipe(recoverBodyFailure)
 }
 
-const eventConsumerErrorResponse = (error: unknown): Response => {
-	if (error instanceof EventConsumerDeliveryGapError)
-		return json(
-			{
-				error: error._tag,
-				message: error.message,
-				consumerId: error.consumerId,
-				generation: error.generation,
-				droppedEvents: error.droppedEvents,
-			},
-			409,
-		)
-	if (error instanceof OutboxAdministrationInvalid || error instanceof EventConsumerInputError)
-		return text(error.message, 400)
-	if (error instanceof EventConsumerNotFoundError) return text(error.message, 404)
-	if (error instanceof EventConsumerConflictError || error instanceof EventConsumerLeaseError)
-		return text(error.message, 409)
-	return text(`event consumer operation failed: ${describeThrown(error)}`, 500)
-}
+const recoverEventConsumerFailure = <R>(
+	self: Effect.Effect<Response, EventConsumerFailure, R>,
+): Effect.Effect<Response, never, R> =>
+	self.pipe(
+		Effect.catchTags({
+			"@maple/cli/eventing/EventConsumerDeliveryGap": (error) =>
+				Effect.succeed(
+					json(
+						{
+							error: error._tag,
+							message: error.message,
+							consumerId: error.consumerId,
+							generation: error.generation,
+							droppedEvents: error.droppedEvents,
+						},
+						409,
+					),
+				),
+			"@maple/cli/eventing/EventConsumerInputInvalid": (error) =>
+				Effect.succeed(text(error.message, 400)),
+			"@maple/cli/eventing/EventConsumerNotFound": (error) => Effect.succeed(text(error.message, 404)),
+			"@maple/cli/eventing/EventConsumerConflict": (error) => Effect.succeed(text(error.message, 409)),
+			"@maple/cli/eventing/EventConsumerLeaseConflict": (error) =>
+				Effect.succeed(text(error.message, 409)),
+			"@maple/cli/eventing/ControlStoreFailed": (error) =>
+				Effect.succeed(text(`event consumer operation failed: ${error.message}`, 500)),
+		}),
+		Effect.catchDefect((defect) =>
+			Effect.succeed(text(`event consumer operation failed: ${describeThrown(defect)}`, 500)),
+		),
+	)
 
 const ConsumerIdSchema = Schema.String.check(Schema.isPattern(/^[a-z][a-z0-9._-]{0,63}$/))
 
-const handleConsumerRegistration = async (
-	eventing: LocalEventingRuntime,
+/** Decodes a bounded consumer body, then runs the store call under ordinary admission. */
+const consumerRequest = <A, S extends Schema.Top & { readonly DecodingServices: never }>(
+	gate: RequestQuiescenceGate,
+	req: Request,
+	schema: S,
+	invalidMessage: string,
+	run: (eventing: LocalEventingRuntimeApi, decoded: S["Type"]) => Effect.Effect<A, EventConsumerFailure>,
+	status = 200,
+): Effect.Effect<Response, never, LocalEventingRuntime> =>
+	Effect.gen(function* () {
+		const eventing = yield* LocalEventingRuntime
+		const body = yield* readBoundedJson(req, MAX_CONSUMER_BODY_BYTES)
+		const decoded = Schema.decodeUnknownResult(schema, { onExcessProperty: "error" })(body)
+		if (Result.isFailure(decoded)) return text(invalidMessage, 400)
+		return yield* admitted(
+			gate,
+			run(eventing, decoded.success).pipe(
+				Effect.map((result) => json(result, status)),
+				recoverEventConsumerFailure,
+			),
+		)
+	}).pipe(recoverBodyFailure)
+
+const handleConsumerRegistration = (
 	gate: RequestQuiescenceGate,
 	maintenanceToken: string,
 	req: Request,
-): Promise<Response> => {
-	const unauthorized = eventingAuthorized(maintenanceToken, req)
-	if (unauthorized) return unauthorized
-	let body: unknown
-	try {
-		body = await readBoundedJson(req, MAX_CONSUMER_BODY_BYTES)
-	} catch (error) {
-		return invalidJsonResponse(error)
-	}
-	const decoded = Schema.decodeUnknownResult(
-		Schema.Struct({ consumerId: ConsumerIdSchema, startAt: Schema.Literals(["beginning", "latest"]) }),
-		{ onExcessProperty: "error" },
-	)(body)
-	if (Result.isFailure(decoded)) return text("invalid event consumer registration fields", 400)
-	const { consumerId, startAt } = decoded.success
-	return admitted(gate, async () => {
-		try {
-			return json(eventing.registerConsumer(consumerId, startAt), 201)
-		} catch (error) {
-			return eventConsumerErrorResponse(error)
-		}
+): Effect.Effect<Response, never, LocalEventingRuntime> =>
+	Effect.suspend(() => {
+		const unauthorized = eventingAuthorized(maintenanceToken, req)
+		if (unauthorized) return Effect.succeed(unauthorized)
+		return consumerRequest(
+			gate,
+			req,
+			Schema.Struct({
+				consumerId: ConsumerIdSchema,
+				startAt: Schema.Literals(["beginning", "latest"]),
+			}),
+			"invalid event consumer registration fields",
+			(eventing, { consumerId, startAt }) => eventing.registerConsumer(consumerId, startAt),
+			201,
+		)
 	})
-}
 
-const handleConsumerDisable = async (
-	eventing: LocalEventingRuntime,
+const handleConsumerDisable = (
 	gate: RequestQuiescenceGate,
 	maintenanceToken: string,
 	req: Request,
-): Promise<Response> => {
-	const unauthorized = eventingAuthorized(maintenanceToken, req)
-	if (unauthorized) return unauthorized
-	let body: unknown
-	try {
-		body = await readBoundedJson(req, MAX_CONSUMER_BODY_BYTES)
-	} catch (error) {
-		return invalidJsonResponse(error)
-	}
-	const decoded = Schema.decodeUnknownResult(Schema.Struct({ consumerId: ConsumerIdSchema }), {
-		onExcessProperty: "error",
-	})(body)
-	if (Result.isFailure(decoded)) return text("invalid event consumer disable fields", 400)
-	const { consumerId } = decoded.success
-	return admitted(gate, async () => {
-		try {
-			return json(eventing.disableConsumer(consumerId))
-		} catch (error) {
-			return eventConsumerErrorResponse(error)
-		}
+): Effect.Effect<Response, never, LocalEventingRuntime> =>
+	Effect.suspend(() => {
+		const unauthorized = eventingAuthorized(maintenanceToken, req)
+		if (unauthorized) return Effect.succeed(unauthorized)
+		return consumerRequest(
+			gate,
+			req,
+			Schema.Struct({ consumerId: ConsumerIdSchema }),
+			"invalid event consumer disable fields",
+			(eventing, { consumerId }) => eventing.disableConsumer(consumerId),
+		)
 	})
-}
 
-const handleConsumerClaim = async (
-	eventing: Pick<LocalEventingRuntime, "claimReady">,
+const consumerUnauthorized = (consumerToken: string, req: Request): Response | null =>
+	eventConsumerTokenMatches(consumerToken, req.headers.get("x-maple-event-consumer-token"))
+		? null
+		: text("event consumer authorization required", 403)
+
+const handleConsumerClaim = (
 	gate: RequestQuiescenceGate,
 	consumerToken: string,
 	req: Request,
-): Promise<Response> => {
-	if (!eventConsumerTokenMatches(consumerToken, req.headers.get("x-maple-event-consumer-token")))
-		return text("event consumer authorization required", 403)
-	let body: unknown
-	try {
-		body = await readBoundedJson(req, MAX_CONSUMER_BODY_BYTES)
-	} catch (error) {
-		return invalidJsonResponse(error)
-	}
-	const decoded = Schema.decodeUnknownResult(
-		Schema.Struct({
-			consumerId: ConsumerIdSchema,
-			limit: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 1000 })),
-			leaseSeconds: Schema.Int.check(Schema.isBetween({ minimum: 5, maximum: 300 })),
-		}),
-		{ onExcessProperty: "error" },
-	)(body)
-	if (Result.isFailure(decoded)) return text("invalid event consumer claim fields", 400)
-	const { consumerId, limit, leaseSeconds } = decoded.success
-	return admitted(gate, async () => {
-		try {
-			return json(eventing.claimReady(consumerId, limit, leaseSeconds))
-		} catch (error) {
-			return eventConsumerErrorResponse(error)
-		}
+): Effect.Effect<Response, never, LocalEventingRuntime> =>
+	Effect.suspend(() => {
+		const unauthorized = consumerUnauthorized(consumerToken, req)
+		if (unauthorized) return Effect.succeed(unauthorized)
+		return consumerRequest(
+			gate,
+			req,
+			Schema.Struct({
+				consumerId: ConsumerIdSchema,
+				limit: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 1000 })),
+				leaseSeconds: Schema.Int.check(Schema.isBetween({ minimum: 5, maximum: 300 })),
+			}),
+			"invalid event consumer claim fields",
+			(eventing, { consumerId, limit, leaseSeconds }) =>
+				eventing.claimReady(consumerId, limit, leaseSeconds),
+		)
 	})
-}
 
-const handleConsumerAcknowledgement = async (
-	eventing: LocalEventingRuntime,
+const handleConsumerAcknowledgement = (
 	gate: RequestQuiescenceGate,
 	consumerToken: string,
 	req: Request,
-): Promise<Response> => {
-	if (!eventConsumerTokenMatches(consumerToken, req.headers.get("x-maple-event-consumer-token")))
-		return text("event consumer authorization required", 403)
-	let body: unknown
-	try {
-		body = await readBoundedJson(req, MAX_CONSUMER_BODY_BYTES)
-	} catch (error) {
-		return invalidJsonResponse(error)
-	}
-	const decoded = Schema.decodeUnknownResult(
-		Schema.Struct({
-			consumerId: ConsumerIdSchema,
-			leaseToken: Schema.String.check(Schema.isPattern(/^[0-9a-f]{64}$/)),
-			throughSequence: Schema.Int.check(Schema.isGreaterThanOrEqualTo(1)),
-		}),
-		{ onExcessProperty: "error" },
-	)(body)
-	if (Result.isFailure(decoded)) return text("invalid event consumer acknowledgement fields", 400)
-	const { consumerId, leaseToken, throughSequence } = decoded.success
-	return admitted(gate, async () => {
-		try {
-			return json(eventing.acknowledgeClaim(consumerId, leaseToken, throughSequence))
-		} catch (error) {
-			return eventConsumerErrorResponse(error)
-		}
+): Effect.Effect<Response, never, LocalEventingRuntime> =>
+	Effect.suspend(() => {
+		const unauthorized = consumerUnauthorized(consumerToken, req)
+		if (unauthorized) return Effect.succeed(unauthorized)
+		return consumerRequest(
+			gate,
+			req,
+			Schema.Struct({
+				consumerId: ConsumerIdSchema,
+				leaseToken: Schema.String.check(Schema.isPattern(/^[0-9a-f]{64}$/)),
+				throughSequence: Schema.Int.check(Schema.isGreaterThanOrEqualTo(1)),
+			}),
+			"invalid event consumer acknowledgement fields",
+			(eventing, { consumerId, leaseToken, throughSequence }) =>
+				eventing.acknowledgeClaim(consumerId, leaseToken, throughSequence),
+		)
 	})
-}
 
-const handleOutboxAdministration = async (
-	eventing: Pick<LocalEventingRuntime, "abandonEvents" | "acceptDeliveryGap">,
+const handleOutboxAdministration = (
 	gate: RequestQuiescenceGate,
 	token: string,
 	req: Request,
 	action: "abandon" | "accept-gap",
-): Promise<Response> => {
+): Effect.Effect<Response, never, LocalEventingRuntime> => {
 	const unauthorized = eventingAuthorized(token, req)
-	if (unauthorized) return unauthorized
-	let body: unknown
-	try {
-		body = await readBoundedJson(req, MAX_PROJECTION_BODY_BYTES)
-	} catch (error) {
-		return invalidJsonResponse(error)
-	}
-	if (action === "abandon") {
+	if (unauthorized) return Effect.succeed(unauthorized)
+	return Effect.gen(function* () {
+		const eventing = yield* LocalEventingRuntime
+		const body = yield* readBoundedJson(req, MAX_PROJECTION_BODY_BYTES)
+		if (action === "abandon") {
+			const decoded = Schema.decodeUnknownResult(
+				Schema.Struct({
+					eventIds: Schema.Array(Schema.NonEmptyString.check(Schema.isMaxLength(256))).check(
+						Schema.isMinLength(1),
+						Schema.isMaxLength(1000),
+					),
+				}),
+				{ onExcessProperty: "error" },
+			)(body)
+			if (Result.isFailure(decoded)) return text("invalid outbox abandonment fields", 400)
+			return yield* gate.exclusiveEffect(eventing.abandonEvents(decoded.success.eventIds)).pipe(
+				Effect.map((result) => json(result)),
+				Effect.catchTags({
+					"@maple/cli/MaintenanceInProgress": (error) => Effect.succeed(text(error.message, 409)),
+					"@maple/cli/eventing/OutboxAdministrationInvalid": (error) =>
+						Effect.succeed(text(error.message, 400)),
+					"@maple/cli/eventing/ControlStoreFailed": (error) =>
+						Effect.succeed(text(`event consumer operation failed: ${error.message}`, 500)),
+				}),
+				Effect.catchDefect((defect) =>
+					Effect.succeed(text(`event consumer operation failed: ${describeThrown(defect)}`, 500)),
+				),
+			)
+		}
 		const decoded = Schema.decodeUnknownResult(
 			Schema.Struct({
-				eventIds: Schema.Array(Schema.NonEmptyString.check(Schema.isMaxLength(256))).check(
-					Schema.isMinLength(1),
-					Schema.isMaxLength(1000),
-				),
+				consumerId: ConsumerIdSchema,
+				generation: Schema.Int.check(Schema.isGreaterThan(0)),
 			}),
 			{ onExcessProperty: "error" },
 		)(body)
-		if (Result.isFailure(decoded)) return text("invalid outbox abandonment fields", 400)
-		try {
-			return json(await gate.exclusive(async () => eventing.abandonEvents(decoded.success.eventIds)))
-		} catch (error) {
-			return recoverMaintenanceError(error, eventConsumerErrorResponse(error))
-		}
-	}
-	const decoded = Schema.decodeUnknownResult(
-		Schema.Struct({
-			consumerId: ConsumerIdSchema,
-			generation: Schema.Int.check(Schema.isGreaterThan(0)),
-		}),
-		{ onExcessProperty: "error" },
-	)(body)
-	if (Result.isFailure(decoded)) return text("invalid delivery gap acknowledgement fields", 400)
-	return admitted(gate, async () => {
-		try {
-			return json(eventing.acceptDeliveryGap(decoded.success.consumerId, decoded.success.generation))
-		} catch (error) {
-			return eventConsumerErrorResponse(error)
-		}
-	})
+		if (Result.isFailure(decoded)) return text("invalid delivery gap acknowledgement fields", 400)
+		const { consumerId, generation } = decoded.success
+		return yield* admitted(
+			gate,
+			eventing.acceptDeliveryGap(consumerId, generation).pipe(
+				Effect.map((gap) => json(gap)),
+				recoverEventConsumerFailure,
+			),
+		)
+	}).pipe(recoverBodyFailure)
 }
 
 const decodeOutboxQuery = Schema.decodeUnknownResult(
@@ -1039,30 +1066,44 @@ const decodeOutboxQuery = Schema.decodeUnknownResult(
 	{ onExcessProperty: "error" },
 )
 
+/** A read the store could not serve is a 500 naming the read. */
+const readFailed =
+	(label: string) =>
+	<R>(self: Effect.Effect<Response, EventingControlStoreError, R>): Effect.Effect<Response, never, R> =>
+		self.pipe(
+			Effect.catchTag("@maple/cli/eventing/ControlStoreFailed", (error) =>
+				Effect.succeed(text(`${label} failed: ${error.message}`, 500)),
+			),
+			Effect.catchDefect((defect) =>
+				Effect.succeed(text(`${label} failed: ${describeThrown(defect)}`, 500)),
+			),
+		)
+
 const handleEventingRead = (
-	eventing: LocalEventingRuntime,
 	token: string,
 	req: Request,
 	url: URL,
-): Response => {
+): Effect.Effect<Response, never, LocalEventingRuntime> => {
 	const unauthorized = eventingAuthorized(token, req)
-	if (unauthorized) return unauthorized
-	if (url.pathname === "/local/eventing/health") return json(eventing.health())
-	if (url.pathname === "/local/eventing/projections") return json(eventing.listActive())
-	if (url.pathname === "/local/eventing/consumers") return json(eventing.listConsumers())
-	if (url.pathname === "/local/eventing/outbox") {
-		const query = decodeOutboxQuery(Object.fromEntries(url.searchParams))
-		if (Result.isFailure(query)) return text(`invalid outbox query: ${query.failure.message}`, 400)
-		const { state = "ready", limit = 100, after = 0 } = query.success
-		try {
-			return json(
-				state === "ready" ? eventing.listReady(limit, after) : eventing.listStaged(limit, after),
-			)
-		} catch (error) {
-			return text(`outbox read failed: ${describeThrown(error)}`, 500)
+	if (unauthorized) return Effect.succeed(unauthorized)
+	return Effect.gen(function* () {
+		const eventing = yield* LocalEventingRuntime
+		if (url.pathname === "/local/eventing/health")
+			return yield* eventing.health.pipe(Effect.map(json), readFailed("eventing health read"))
+		if (url.pathname === "/local/eventing/projections")
+			return yield* eventing.listActive.pipe(Effect.map(json), readFailed("projection read"))
+		if (url.pathname === "/local/eventing/consumers")
+			return yield* eventing.listConsumers.pipe(Effect.map(json), readFailed("consumer read"))
+		if (url.pathname === "/local/eventing/outbox") {
+			const query = decodeOutboxQuery(Object.fromEntries(url.searchParams))
+			if (Result.isFailure(query)) return text(`invalid outbox query: ${query.failure.message}`, 400)
+			const { state = "ready", limit = 100, after = 0 } = query.success
+			return yield* (
+				state === "ready" ? eventing.listReady(limit, after) : eventing.listStaged(limit, after)
+			).pipe(Effect.map(json), readFailed("outbox read"))
 		}
-	}
-	return text("not found", 404)
+		return text("not found", 404)
+	})
 }
 
 /** The `Bun.serve` fetch handler, closed over the chDB connection. Each ingest
@@ -1077,8 +1118,6 @@ const makeFetch =
 		gate: RequestQuiescenceGate,
 		maintenanceToken: string,
 		consumerToken: string,
-		controlStore: LocalEventingControlStore,
-		eventing: LocalEventingRuntime,
 	) =>
 	async (req: Request): Promise<Response> => {
 		const url = new URL(req.url)
@@ -1092,53 +1131,40 @@ const makeFetch =
 		if (url.pathname === "/health") return respond(text("OK"))
 		if (req.method === "POST") {
 			if (url.pathname === "/v1/traces")
-				return respond(
-					await admitted(gate, () => ingestSpan(runSpan, db, authority, eventing, "traces", req)),
-				)
+				return respond(await runSpan(admitted(gate, ingestSpan(db, authority, "traces", req))))
 			if (url.pathname === "/v1/logs")
-				return respond(
-					await admitted(gate, () => ingestSpan(runSpan, db, authority, eventing, "logs", req)),
-				)
+				return respond(await runSpan(admitted(gate, ingestSpan(db, authority, "logs", req))))
 			if (url.pathname === "/v1/metrics")
-				return respond(
-					await admitted(gate, () => ingestSpan(runSpan, db, authority, eventing, "metrics", req)),
-				)
+				return respond(await runSpan(admitted(gate, ingestSpan(db, authority, "metrics", req))))
 			if (url.pathname === "/local/query")
-				return respond(await admitted(gate, () => querySpan(runSpan, db, authority, req)))
+				return respond(await runSpan(admitted(gate, querySpan(db, authority, req))))
 			if (url.pathname === "/local/eventing/outbox/abandon")
 				return respond(
-					await handleOutboxAdministration(eventing, gate, maintenanceToken, req, "abandon"),
+					await runSpan(handleOutboxAdministration(gate, maintenanceToken, req, "abandon")),
 				)
 			if (url.pathname === "/local/eventing/consumers/accept-gap")
 				return respond(
-					await handleOutboxAdministration(eventing, gate, maintenanceToken, req, "accept-gap"),
+					await runSpan(handleOutboxAdministration(gate, maintenanceToken, req, "accept-gap")),
 				)
 			if (url.pathname === "/local/checkpoint/backup")
 				return respond(
-					await handleCheckpointBackup(
-						db,
-						controlStore,
-						options.dataDir,
-						gate,
-						maintenanceToken,
-						req,
-					),
+					await runSpan(handleCheckpointBackup(db, options.dataDir, gate, maintenanceToken, req)),
 				)
 			if (url.pathname === "/local/eventing/projections")
-				return respond(await handleProjectionActivation(eventing, gate, maintenanceToken, req))
+				return respond(await runSpan(handleProjectionActivation(gate, maintenanceToken, req)))
 			if (url.pathname === "/local/eventing/consumers")
-				return respond(await handleConsumerRegistration(eventing, gate, maintenanceToken, req))
+				return respond(await runSpan(handleConsumerRegistration(gate, maintenanceToken, req)))
 			if (url.pathname === "/local/eventing/consumers/disable")
-				return respond(await handleConsumerDisable(eventing, gate, maintenanceToken, req))
+				return respond(await runSpan(handleConsumerDisable(gate, maintenanceToken, req)))
 			if (url.pathname === "/local/eventing/claims")
-				return respond(await handleConsumerClaim(eventing, gate, consumerToken, req))
+				return respond(await runSpan(handleConsumerClaim(gate, consumerToken, req)))
 			if (url.pathname === "/local/eventing/acks")
-				return respond(await handleConsumerAcknowledgement(eventing, gate, consumerToken, req))
+				return respond(await runSpan(handleConsumerAcknowledgement(gate, consumerToken, req)))
 			if (url.pathname === "/local/retention/retire")
 				return respond(await handleRetirement(db, authority, gate, maintenanceToken, req))
 		}
 		if (req.method === "GET" && url.pathname.startsWith("/local/eventing/"))
-			return respond(handleEventingRead(eventing, maintenanceToken, req, url))
+			return respond(await runSpan(handleEventingRead(maintenanceToken, req, url)))
 		if (req.method === "GET" && options.assets) return respond(serveAsset(options.assets, url.pathname))
 		return respond(text("not found", 404))
 	}
@@ -1178,44 +1204,28 @@ export const startServer = (
 			configFile: options.configFile,
 			rawTelemetryRetentionDays: retention.effective,
 		})
-		// The request handler and synchronous eventing store share one telemetry
-		// runtime; eventing observations contain only bounded operation labels.
-		const telemetry = yield* Effect.acquireRelease(
-			Effect.sync(() => ManagedRuntime.make(TelemetryLayer)),
+		// Request spans, eventing metrics, and the eventing services share one runtime;
+		// disposing it closes the control store (WAL checkpoint) and flushes telemetry.
+		const eventingLayer = Layer.mergeAll(
+			LocalEventingRuntime.layer,
+			LocalEventingControlStore.layer,
+		).pipe(Layer.provide(Layer.succeed(LocalEventingControlConfig, { dataDir: options.dataDir })))
+		const runtime = yield* Effect.acquireRelease(
+			Effect.sync(() => ManagedRuntime.make(Layer.mergeAll(TelemetryLayer, eventingLayer))),
 			(rt) => Effect.promise(() => rt.dispose()),
 		)
-		const eventingTelemetry = makeEffectEventingTelemetry((effect) => {
-			telemetry.runFork(effect)
-		})
-		const controlStore = yield* Effect.acquireRelease(
-			Effect.tryPromise({
-				try: () => LocalEventingControlStore.open(options.dataDir, undefined, eventingTelemetry),
-				catch: (error) =>
+		yield* runtime.contextEffect.pipe(
+			Effect.mapError(
+				(error) =>
 					new EventingStartupError({
 						cause: error,
-						message: `failed to open local eventing control store: ${describeThrown(error)}`,
+						message:
+							error._tag === "@maple/cli/eventing/ControlStoreFailed"
+								? `failed to open local eventing control store: ${error.message}`
+								: `failed to compile local event projections: ${error.message}`,
 					}),
-			}),
-			(store) =>
-				Effect.try({
-					try: () => store.close(),
-					catch: (cause) =>
-						new EventingStartupError({
-							message: "failed to close eventing control store",
-							cause,
-						}),
-				}).pipe(
-					Effect.catchTag("@maple/cli/eventing/StartupFailed", (error) => Effect.logError(error)),
-				),
+			),
 		)
-		const eventing = yield* Effect.try({
-			try: () => new LocalEventingRuntime(controlStore, eventingTelemetry),
-			catch: (error) =>
-				new EventingStartupError({
-					cause: error,
-					message: `failed to compile local event projections: ${describeThrown(error)}`,
-				}),
-		})
 		// `CREATE ... IF NOT EXISTS` does not repair a table whose physical
 		// definition was altered out of band. Inspect the opened store before the
 		// listener is bound; a mismatch fails startup rather than allowing new
@@ -1274,16 +1284,17 @@ export const startServer = (
 					message: `failed to load maintenance token: ${error instanceof Error ? error.message : String(error)}`,
 				}),
 		})
-		const consumerToken = yield* Effect.tryPromise({
-			try: () => ensureEventConsumerToken(options.dataDir),
-			catch: (error) =>
-				new EventingStartupError({
-					cause: error,
-					message: `failed to load event consumer token: ${describeThrown(error)}`,
-				}),
-		})
+		const consumerToken = yield* ensureEventConsumerToken(options.dataDir).pipe(
+			Effect.mapError(
+				(error) =>
+					new EventingStartupError({
+						cause: error,
+						message: `failed to load event consumer token: ${error.message}`,
+					}),
+			),
+		)
 		const gate = new RequestQuiescenceGate()
-		const runSpan: SpanRunner = (effect) => telemetry.runPromise(effect)
+		const runSpan: SpanRunner = (effect) => runtime.runPromise(effect)
 		const server = yield* Effect.acquireRelease(
 			Effect.try({
 				try: () =>
@@ -1298,8 +1309,6 @@ export const startServer = (
 							gate,
 							maintenanceToken,
 							consumerToken,
-							controlStore,
-							eventing,
 						),
 					}),
 				catch: (error) =>
