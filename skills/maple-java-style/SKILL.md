@@ -56,7 +56,7 @@ Where the agent can't run (GraalVM native image, embedded JVM, sealed module pat
 ```java
 public final class Telemetry {
     private static final String MAPLE_ENDPOINT = "https://ingest.maple.dev"; // EU: https://ingest.eu.maple.dev
-    private static final String MAPLE_KEY = "MAPLE_TEST"; // set by maple-onboard skill on pairing
+    private static final String MAPLE_KEY = "MAPLE_TEST"; // public ingest key (maple_pk_…), or MAPLE_TEST until the user has one
 
     public static OpenTelemetrySdk init() {
         var headers = Map.of("authorization", "Bearer " + MAPLE_KEY);

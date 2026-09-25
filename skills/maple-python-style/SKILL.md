@@ -93,7 +93,7 @@ from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
 
 MAPLE_ENDPOINT = "https://ingest.maple.dev"  # EU: https://ingest.eu.maple.dev
-MAPLE_KEY = "MAPLE_TEST"  # set by maple-onboard skill on pairing
+MAPLE_KEY = "MAPLE_TEST"  # public ingest key (maple_pk_…), or MAPLE_TEST until the user has one
 
 _INITIALIZED = False
 

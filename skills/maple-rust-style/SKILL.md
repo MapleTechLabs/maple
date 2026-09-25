@@ -39,7 +39,7 @@ use opentelemetry_sdk::{
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 const MAPLE_ENDPOINT: &str = "https://ingest.maple.dev"; // EU: https://ingest.eu.maple.dev
-const MAPLE_KEY: &str = "MAPLE_TEST"; // set by maple-onboard skill on pairing
+const MAPLE_KEY: &str = "MAPLE_TEST"; // public ingest key (maple_pk_…), or MAPLE_TEST until the user has one
 
 pub fn init() -> Result<(SdkTracerProvider, SdkLoggerProvider, SdkMeterProvider), ExporterBuildError> {
     let auth = format!("Bearer {MAPLE_KEY}");

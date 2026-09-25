@@ -12,7 +12,7 @@ For Next.js apps, use the framework entrypoint, `instrumentation.ts` with `@verc
 import { registerOTel } from "@vercel/otel"
 
 const MAPLE_ENDPOINT = "https://ingest.maple.dev" // EU: https://ingest.eu.maple.dev
-const MAPLE_KEY = "MAPLE_TEST" // set by maple-onboard skill on pairing
+const MAPLE_KEY = "MAPLE_TEST" // public ingest key (maple_pk_…), or MAPLE_TEST until the user has one
 
 export function register() {
 	registerOTel({
@@ -32,7 +32,7 @@ export function register() {
 
 Do not replace this with a custom `NodeSDK` bootstrap unless the repo is not a standard Next/Vercel app or already has a custom provider to extend.
 
-For JavaScript/TypeScript LLM providers, use provider instrumentation instead of manual child spans. For Anthropic, add OpenInference in the same bootstrap and keep call sites native. This example uses `@vercel/otel@2.x`. If the installed types are v1, use `logRecordProcessor` (singular).
+For JavaScript/TypeScript LLM providers, use provider instrumentation instead of manual child spans. For Anthropic, add OpenInference in the same bootstrap and keep call sites native. This example uses `@vercel/otel@2.x`. If the installed types are v1, use `logRecordProcessor` (singular). Current `@opentelemetry/sdk-logs` takes `new BatchLogRecordProcessor({ exporter })`; older releases took the exporter as the first argument, and the wrong form silently drops every log. Check the installed `.d.ts`.
 
 ```ts
 import Anthropic from "@anthropic-ai/sdk"
@@ -62,12 +62,12 @@ export function register() {
 			headers: { authorization: `Bearer ${MAPLE_KEY}` },
 		},
 		logRecordProcessors: [
-			new BatchLogRecordProcessor(
-				new OTLPLogExporter({
+			new BatchLogRecordProcessor({
+				exporter: new OTLPLogExporter({
 					url: `${MAPLE_ENDPOINT}/v1/logs`,
 					headers: { authorization: `Bearer ${MAPLE_KEY}` },
 				}),
-			),
+			}),
 		],
 	})
 }

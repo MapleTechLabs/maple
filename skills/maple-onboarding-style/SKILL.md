@@ -67,7 +67,7 @@ MAPLE_KEY      = "maple_pk_…"                 # public ingest key, or "MAPLE_T
 
 If the repo can call telemetry init from multiple paths, guard provider/exporter setup so repeated imports, tests, reloads, or framework callbacks do not install duplicate processors or log handlers. For a single-entrypoint app that starts cleanly, keep this simple.
 
-Include standard resource attributes when values are available: `service.name`, `service.version`, `deployment.environment.name`, and the VCS attributes below.
+Set these resource attributes on every service: `service.name` (the app's own name, e.g. its package name without the scope), `service.version` (the package.json version, a release tag, or the commit SHA), `deployment.environment.name`, and the VCS attributes below.
 
 ## VCS resource attributes
 
@@ -88,6 +88,8 @@ Use `vcs.repository.url.full` and `vcs.ref.head.revision` exactly as named. Thes
 ## LLM calls
 
 If the app uses LLMs, first look for provider instrumentation that already captures model/provider/token/error spans. In JavaScript/TypeScript, prefer OpenInference packages such as `@arizeai/openinference-instrumentation-anthropic` or `@arizeai/openinference-instrumentation-openai` for supported SDKs. Keep the real provider call native and readable.
+
+In Node, `getNodeAutoInstrumentations()` already includes `@opentelemetry/instrumentation-openai` (OTel `gen_ai.*` spans for the `openai` SDK). Use it for OpenAI and don't add OpenInference's OpenAI package as well, or every call is recorded twice. Check each instrumentation's supported SDK range against the installed SDK version: a mismatch installs cleanly and records nothing. Under ESM, OpenInference instrumentations need `manuallyInstrument(<the SDK module>)`.
 
 ```ts
 const response = await client.messages.create({
@@ -114,7 +116,7 @@ llmInputTokens.add(inputTokens, {
 
 Name them `llm.tokens.input` / `llm.tokens.output` with unit `{token}`. Use histograms for latency/duration distributions.
 
-**Cost.** Maple does not price tokens. It shows LLM cost only when a span carries `gen_ai.usage.cost` (USD); without it, Agent Sessions shows token counts and no cost. Set `gen_ai.usage.cost` on the LLM span when the provider returns the billed amount (OpenRouter returns `usage.cost` when the request sets `usage: { include: true }`), or when the app already computes cost for billing or quotas. Don't add a price table just for telemetry: prices change and a stale table reports wrong numbers. No `llm.cost_usd`-style metrics.
+**Cost.** Maple does not price tokens. It shows LLM cost only when a span carries `gen_ai.usage.cost` (USD); without it, Agent Sessions shows token counts and no cost. Set `gen_ai.usage.cost` when the provider returns the billed amount (OpenRouter returns `usage.cost` when the request sets `usage: { include: true }`; adding that flag is in scope), or when the app already computes cost for billing or quotas. Put it on the span that makes the call when your code owns that span. When an instrumentation owns it, the span has ended before your code sees the response, so put the cost on the span that wraps the turn: it counts toward the session's cost, though not toward the per-model breakdown. Don't add a price table just for telemetry: prices change and a stale table reports wrong numbers. No `llm.cost_usd`-style metrics.
 
 **Conversations.** Agent Sessions groups traces into one session by `maple_ai.session.id`. For a plain app (direct SDK calls, OpenInference, hand-written `gen_ai.*` spans), set `maple_ai.session.id` to the conversation or thread id on the span that wraps each turn, and `gen_ai.conversation.id` to the same value. Without it every trace is its own session. Agent frameworks that Maple recognizes (OpenAI Agents SDK, Mastra, Pydantic AI, Google ADK, CrewAI, …) emit their own session key; don't add one there. Use an opaque id, never an email or user name.
 
@@ -124,6 +126,6 @@ If the app has OpenAI, Anthropic, and Google callers, instrument all three.
 
 ## Smoke checks
 
-Add a durable smoke path when the repo has a natural place for it: README, TESTING guide, script, npm command, pytest, or checked-in command note.
+Add a durable smoke path when the repo has a natural place for it: README, TESTING guide, script, npm command, pytest, or checked-in command note. If it has none, skip it; the Step 4 run is enough.
 
 The smoke should explicitly prove startup/import with the OTel bootstrap loaded so provider setup, exporter construction, log bridging, and framework instrumentation initialize without errors. Then, where practical, exercise an actual instrumented span/log/metric or OTLP export attempt. A generic health route only proves the server responds; prefer an operation that crosses the instrumentation you added.

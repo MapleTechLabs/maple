@@ -30,7 +30,7 @@ The agent auto-instruments Ktor, Spring Boot (MVC, WebFlux), kotlinx.coroutines 
 
 ```kotlin
 val MAPLE_ENDPOINT = "https://ingest.maple.dev" // EU: https://ingest.eu.maple.dev
-val MAPLE_KEY = "MAPLE_TEST" // set by maple-onboard skill on pairing
+val MAPLE_KEY = "MAPLE_TEST" // public ingest key (maple_pk_…), or MAPLE_TEST until the user has one
 
 fun initTelemetry(): OpenTelemetrySdk {
     val headers = mapOf("authorization" to "Bearer $MAPLE_KEY")
