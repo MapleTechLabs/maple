@@ -89,7 +89,7 @@
 
 	"k8s_eyebrow": "06 \u00b7 Kubernetes",
 	"k8s_title": "The pod behind the slow span",
-	"k8s_lede": "Install a Helm chart and cluster metrics start flowing. A slow request takes you straight to the pod that served it.",
+	"k8s_lede": "Install a Helm chart and cluster metrics start flowing. Opt a namespace in, and a slow request takes you straight to the pod that served it.",
 	"k8s_link_feature": "Kubernetes monitoring \u2192",
 	"k8s_link_helm": "Read the Helm chart",
 	"k8s_col_namespace": "Namespace",
@@ -344,7 +344,7 @@
 
 	"page_k8s_correlation_eyebrow": "Span → pod",
 	"page_k8s_correlation_title": "From a slow span to the exact pod",
-	"page_k8s_correlation_lede": "Every span is tagged with its pod, node and namespace, so a slow trace already knows where it ran.",
+	"page_k8s_correlation_lede": "In opted-in namespaces, every span is tagged with its pod, node and namespace, so a slow trace already knows where it ran.",
 	"page_k8s_correlation_trace_label": "Trace: 7af1c204",
 	"page_k8s_correlation_waterfall": "Waterfall",
 	"page_k8s_correlation_pod_label": "Pod attribution",
