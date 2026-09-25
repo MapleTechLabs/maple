@@ -28,7 +28,7 @@ using OpenTelemetry.Metrics;
 using OpenTelemetry.Resources;
 using OpenTelemetry.Trace;
 
-const string MapleEndpoint = "https://ingest.maple.dev";
+const string MapleEndpoint = "https://ingest.maple.dev"; // EU: https://ingest.eu.maple.dev
 const string MapleKey = "MAPLE_TEST"; // set by maple-onboard skill on pairing
 
 var builder = WebApplication.CreateBuilder(args);

@@ -38,7 +38,7 @@ These are span **fields**, not attributes, and both spellings are load-bearing o
 | STAT-03 | Outbound network calls (HTTP clients, DB drivers, queue producers) are `Client`/`Producer` kind spans, not `Internal`. Auto-instrumentation usually gets this right; hand-rolled spans often don't.        | warn     | The service map only draws edges from `Client`/`Producer` spans; an `Internal` call is invisible in the map.  |
 | STAT-04 | Inbound request handlers produce `Server` (or `Consumer`) spans.                                                                                                                                          | warn     | Route rendering, throughput attribution, Apdex.                                                              |
 
-Fix: `maple-onboarding-style` + per-language style skill ("record exceptions" pattern; in TS/JS `withSpan` from `@maple/otel-helpers` handles status + exception recording).
+Fix: `maple-onboarding-style` + per-language style skill ("record exceptions" pattern; in TS/JS `withSpan` from `@maple-dev/otel-helpers` handles status + exception recording).
 
 ## SPAN: Trace coverage
 
@@ -164,7 +164,7 @@ Only applies when the project calls an LLM provider (OpenAI, Anthropic, Google, 
 
 | Id     | Check                                                                                                                                                                            | Severity | Feature affected                                                |
 | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------- | --------------------------------------------------------------------- |
-| LLM-01 | LLM calls are observed by provider instrumentation (OpenInference packages) or carry `gen_ai.*` attributes (`gen_ai.provider.name`, `gen_ai.request.model`, token usage).              | info     | LLM usage/cost views; Maple computes estimated cost from these centrally. |
-| LLM-02 | No app-side pricing tables or `llm.cost_usd`-style cost math; no duplicate token counters where provider instrumentation already captures usage; no invented parallel `llm.*` keys.    | info     | Cost belongs in Maple's central pricing layer; duplicates skew totals.     |
+| LLM-01 | LLM calls are observed by provider instrumentation (OpenInference packages) or carry `gen_ai.*` attributes (`gen_ai.provider.name`, `gen_ai.request.model`, token usage).              | info     | Agent Sessions' model and token views. |
+| LLM-02 | Cost, when recorded, is the provider's billed amount on `gen_ai.usage.cost`; no `llm.cost_usd`-style metrics; no duplicate token counters where provider instrumentation already captures usage; no invented parallel `llm.*` keys. | info     | Maple never prices tokens, so `gen_ai.usage.cost` is its only cost source; duplicates skew totals. |
 
-Fix: `maple-onboarding-style` "LLM metrics".
+Fix: `maple-onboarding-style` "LLM calls".

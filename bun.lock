@@ -506,12 +506,13 @@
       },
     },
     "lib/otel-helpers": {
-      "name": "@maple/otel-helpers",
+      "name": "@maple-dev/otel-helpers",
       "version": "0.1.0",
       "devDependencies": {
         "@opentelemetry/api": "^1.9.0",
         "@types/bun": "^1.3.11",
         "@types/node": "catalog:tooling",
+        "tsdown": "^0.22.14",
         "typescript": "catalog:tooling",
       },
       "peerDependencies": {
@@ -1536,6 +1537,8 @@
 
     "@maple-dev/effect-sdk": ["@maple-dev/effect-sdk@workspace:packages/effect-sdk"],
 
+    "@maple-dev/otel-helpers": ["@maple-dev/otel-helpers@workspace:lib/otel-helpers"],
+
     "@maple-examples/alchemy": ["@maple-examples/alchemy@workspace:examples/alchemy-maple"],
 
     "@maple-examples/effect-todo": ["@maple-examples/effect-todo@workspace:examples/effect-todo"],
@@ -1591,8 +1594,6 @@
     "@maple/landing": ["@maple/landing@workspace:apps/landing"],
 
     "@maple/local-ui": ["@maple/local-ui@workspace:apps/local-ui"],
-
-    "@maple/otel-helpers": ["@maple/otel-helpers@workspace:lib/otel-helpers"],
 
     "@maple/primitives": ["@maple/primitives@workspace:packages/primitives"],
 

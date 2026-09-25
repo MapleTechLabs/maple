@@ -1,7 +1,7 @@
-# @maple/otel-helpers
+# @maple-dev/otel-helpers
 
 Tiny helpers around the native `@opentelemetry/api`, intended to be paired with
-the [`maple-onboard` skill](../../skills/maple-onboard/SKILL.md). One export:
+the [`maple-onboard` skill](https://github.com/MapleTechLabs/maple/tree/main/skills/maple-onboard). One export:
 `withSpan` — wrap a bounded business operation in an active span without
 expanding the function body into `tracer.startActiveSpan(...)` plus
 `try` / `catch` / `finally`.
@@ -9,7 +9,7 @@ expanding the function body into `tracer.startActiveSpan(...)` plus
 ## Install
 
 ```bash
-npm install @maple/otel-helpers @opentelemetry/api
+npm install @maple-dev/otel-helpers @opentelemetry/api
 ```
 
 `@opentelemetry/api` is a peer dependency.
@@ -18,7 +18,7 @@ npm install @maple/otel-helpers @opentelemetry/api
 
 ```ts
 import { trace } from "@opentelemetry/api"
-import { withSpan } from "@maple/otel-helpers"
+import { withSpan } from "@maple-dev/otel-helpers"
 
 const tracer = trace.getTracer("orders")
 

@@ -22,7 +22,7 @@ import { resourceFromAttributes } from "@opentelemetry/resources"
 // ESM apps only: lets auto-instrumentation patch `import`ed modules. Omit for CommonJS.
 register("@opentelemetry/instrumentation/hook.mjs", import.meta.url)
 
-const MAPLE_ENDPOINT = "https://ingest.maple.dev"
+const MAPLE_ENDPOINT = "https://ingest.maple.dev" // EU: https://ingest.eu.maple.dev
 const MAPLE_KEY = "MAPLE_TEST" // set by maple-onboard skill on pairing
 
 const headers = { authorization: `Bearer ${MAPLE_KEY}` }
@@ -79,11 +79,11 @@ For TypeScript projects, use the loader the repo already uses (`tsx`, `ts-node/e
 
 ## Route handlers and business operations
 
-Use the native API. Use `withSpan` from `@maple/otel-helpers` for bounded operations. Its signature is `withSpan(name, fn, { tracer })`; it ends the span and records exceptions and `Error` status on throw.
+Use the native API. Use `withSpan` from `@maple-dev/otel-helpers` for bounded operations. Its signature is `withSpan(name, fn, { tracer })`; it ends the span and records exceptions and `Error` status on throw.
 
 ```ts
 import { trace, metrics } from "@opentelemetry/api"
-import { withSpan } from "@maple/otel-helpers"
+import { withSpan } from "@maple-dev/otel-helpers"
 
 const tracer = trace.getTracer("orders.api")
 const meter = metrics.getMeter("orders.api")

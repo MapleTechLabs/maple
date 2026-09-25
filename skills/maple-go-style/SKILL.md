@@ -45,7 +45,7 @@ import (
 )
 
 const (
-	mapleEndpoint = "ingest.maple.dev"
+	mapleEndpoint = "ingest.maple.dev" // EU: ingest.eu.maple.dev
 	mapleKey      = "MAPLE_TEST" // set by maple-onboard skill on pairing
 )
 

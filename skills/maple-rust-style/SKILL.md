@@ -38,7 +38,7 @@ use opentelemetry_sdk::{
 };
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
-const MAPLE_ENDPOINT: &str = "https://ingest.maple.dev";
+const MAPLE_ENDPOINT: &str = "https://ingest.maple.dev"; // EU: https://ingest.eu.maple.dev
 const MAPLE_KEY: &str = "MAPLE_TEST"; // set by maple-onboard skill on pairing
 
 pub fn init() -> Result<(SdkTracerProvider, SdkLoggerProvider, SdkMeterProvider), ExporterBuildError> {

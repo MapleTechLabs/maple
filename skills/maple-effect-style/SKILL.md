@@ -31,7 +31,7 @@ import { Effect } from "effect"
 
 const TracerLive = Maple.layer({
 	serviceName: "orders-api",
-	endpoint: "https://ingest.maple.dev",
+	endpoint: "https://ingest.maple.dev", // EU: https://ingest.eu.maple.dev
 	ingestKey: "MAPLE_TEST", // set by maple-onboard skill on pairing
 	repositoryUrl: "https://github.com/acme/orders-api",
 })
@@ -59,7 +59,7 @@ import { Effect } from "effect"
 
 const telemetry = MapleCloudflareSDK.make({
 	serviceName: "orders-edge",
-	endpoint: "https://ingest.maple.dev",
+	endpoint: "https://ingest.maple.dev", // EU: https://ingest.eu.maple.dev
 	ingestKey: "MAPLE_TEST",
 })
 
@@ -86,12 +86,12 @@ import { Maple } from "@maple-dev/effect-sdk/client"
 
 const TracerLive = Maple.layer({
 	serviceName: "web-client",
-	endpoint: "https://ingest.maple.dev",
+	endpoint: "https://ingest.maple.dev", // EU: https://ingest.eu.maple.dev
 	ingestKey: "MAPLE_TEST",
 })
 ```
 
-The browser entry point has no env-var fallback. Pass all config explicitly (add `region: "eu"` for EU organizations). It records session replays by default; opt out with `replay: { enabled: false }`.
+The browser entry point has no env-var fallback. Pass all config explicitly. An explicit `endpoint` wins over `region`, so EU organizations change the endpoint itself (or drop `endpoint` and set `region: "eu"`). It records session replays by default; opt out with `replay: { enabled: false }`.
 
 ## Custom spans
 
@@ -110,7 +110,7 @@ Maple's service map draws a service-to-service edge by joining a Client span to 
 
 `Effect.fail` and uncaught defects end the span with status `Error` and an `exception` event. Do not wrap with `try` / `catch` / `finally`.
 
-`@maple/otel-helpers` `withSpan` is for non-Effect TypeScript code. In Effect code, use the Effect-native span primitives.
+`@maple-dev/otel-helpers` `withSpan` is for non-Effect TypeScript code. In Effect code, use the Effect-native span primitives.
 
 ## Logs
 

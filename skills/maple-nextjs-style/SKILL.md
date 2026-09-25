@@ -1,6 +1,6 @@
 ---
 name: maple-nextjs-style
-description: "Next.js / Vercel OpenTelemetry style for Maple: instrumentation.ts, @vercel/otel bootstrap, native @opentelemetry/api call sites, inline endpoint + ingest key, no raw NodeSDK replacement."
+description: "Next.js / Vercel OpenTelemetry style for Maple: instrumentation.ts, @vercel/otel bootstrap, native @opentelemetry/api call sites, inline endpoint + ingest key, no raw NodeSDK replacement, @maple-dev/browser on the client."
 ---
 
 # Maple Next.js style
@@ -11,7 +11,7 @@ For Next.js apps, use the framework entrypoint, `instrumentation.ts` with `@verc
 // instrumentation.ts
 import { registerOTel } from "@vercel/otel"
 
-const MAPLE_ENDPOINT = "https://ingest.maple.dev"
+const MAPLE_ENDPOINT = "https://ingest.maple.dev" // EU: https://ingest.eu.maple.dev
 const MAPLE_KEY = "MAPLE_TEST" // set by maple-onboard skill on pairing
 
 export function register() {
@@ -79,16 +79,16 @@ Use native OTel APIs where auto-instrumentation is blind.
 
 ```ts
 import { trace, metrics } from "@opentelemetry/api"
-import { withSpan } from "@maple/otel-helpers"
+import { withSpan } from "@maple-dev/otel-helpers"
 
 const tracer = trace.getTracer("my-next-app")
 const meter = metrics.getMeter("my-next-app")
-const generated = meter.createCounter("mug.copy.generated")
+const generated = meter.createCounter("replies.generated")
 
 export async function POST(request: Request) {
-	const tenantId = request.headers.get("x-tenant-id") ?? "tenant_demo"
+	const tenantId = request.headers.get("x-tenant-id") ?? "unknown"
 	return withSpan(
-		"mug.copy.generate",
+		"reply.generate",
 		async (span) => {
 			span.setAttribute("tenant.id", tenantId)
 			generated.add(1, { "tenant.id": tenantId, outcome: "success" })
@@ -99,9 +99,9 @@ export async function POST(request: Request) {
 }
 ```
 
-For TypeScript route handlers, use `@maple/otel-helpers` `withSpan` for bounded business spans. Add `@maple/otel-helpers` to `package.json` if it is missing; this is required whenever the package can be installed. It keeps span lifecycle and error handling out of the handler body and avoids a large indentation diff. Do not expand the whole route into `tracer.startActiveSpan(...)` plus `try` / `catch` / `finally` unless the helper cannot be added or the span has a true cross-callback lifecycle.
+For TypeScript route handlers, use `@maple-dev/otel-helpers` `withSpan` for bounded business spans. Add `@maple-dev/otel-helpers` to `package.json` if it is missing. It keeps span lifecycle and error handling out of the handler body and avoids a large indentation diff. Do not expand the whole route into `tracer.startActiveSpan(...)` plus `try` / `catch` / `finally` unless the helper cannot be added or the span has a true cross-callback lifecycle.
 
-If a route has an LLM call and OpenInference / provider instrumentation supports that SDK, do not wrap the provider call. Leave `client.messages.create(...)` / equivalent in place and put business context on the active product span or structured log. Do not duplicate provider/model/token attributes in route-level spans, logs, or metrics when OpenInference already reports them. Do not calculate LLM cost in route handlers; Maple derives estimated cost in the UI/query layer from OpenInference provider/model/token attributes. For Anthropic in Next.js/ESM, keep the instrumentation instance and `manuallyInstrument(Anthropic)` call at module scope so it runs once and before route code.
+If a route has an LLM call and OpenInference / provider instrumentation supports that SDK, do not wrap the provider call. Leave `client.messages.create(...)` / equivalent in place and put business context on the active product span or structured log. Do not duplicate provider/model/token attributes in route-level spans, logs, or metrics when OpenInference already reports them. Maple does not price tokens; see `maple-onboarding-style` "LLM calls" for cost and conversation grouping. For Anthropic in Next.js/ESM, keep the instrumentation instance and `manuallyInstrument(Anthropic)` call at module scope so it runs once and before route code.
 
 Match the `@vercel/otel` logs option to the installed version: `@vercel/otel@1.x` takes `logRecordProcessor` (singular), `@vercel/otel@2.x` takes `logRecordProcessors` (plural). For normal Next.js / Vercel apps, do not guard `registerOTel(...)` behind `NEXT_RUNTIME`; Next calls `instrumentation.ts` in the appropriate runtime and `@vercel/otel` handles its own runtime differences.
 
@@ -115,16 +115,41 @@ const logger = logs.getLogger("my-next-app")
 logger.emit({
 	severityNumber: SeverityNumber.INFO,
 	severityText: "INFO",
-	body: "generated mug copy",
+	body: "generated reply",
 	attributes: {
 		"tenant.id": tenantId,
 		"gen_ai.provider.name": "anthropic",
 		"gen_ai.request.model": model,
-		"app.gen_ai.use_case": "web.mug_copy",
+		"app.gen_ai.use_case": "support.reply",
 		outcome: "success",
 	},
 })
 ```
+
+## Client side
+
+The browser half of the app uses `@maple-dev/browser` from a client component rendered in the root layout. `init()` is a no-op during server rendering, so module scope is safe.
+
+```tsx
+// app/maple.tsx
+"use client"
+
+import { MapleBrowser } from "@maple-dev/browser"
+
+MapleBrowser.init({
+	ingestKey: "MAPLE_TEST", // public key (maple_pk_…) only, never maple_sk_
+	serviceName: "my-next-app-web",
+	region: "us", // "eu" for EU organizations
+	environment: process.env.NODE_ENV,
+	serviceVersion: process.env.NEXT_PUBLIC_VERCEL_GIT_COMMIT_SHA,
+})
+
+export function Maple() {
+	return null
+}
+```
+
+Render `<Maple />` inside `<body>` in `app/layout.tsx` (Pages Router: import `./maple` from `pages/_app.tsx`). Give it a different `serviceName` from the server so browser and server spans stay distinguishable. Same-origin `fetch` calls to route handlers carry `traceparent`, so browser and server spans join one trace.
 
 ## Configuration and smoke
 
