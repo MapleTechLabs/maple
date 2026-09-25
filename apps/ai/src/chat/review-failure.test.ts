@@ -1,7 +1,7 @@
 /**
  * The words a failed review's pull request is shown come from the run's typed cause, never its text.
  */
-import { AgentPolicyError, ContextBudgetError } from "@effect-agent/core/AgentError"
+import { AgentPolicyError, ContextBudgetError, ModelProtocolError } from "@effect-agent/core/AgentError"
 import { prReviewFailureReason } from "@maple/domain/http"
 import { Cause } from "effect"
 import { assert, describe, it } from "vitest"
@@ -29,6 +29,20 @@ describe("reviewFailureReason", () => {
 		)
 		assert.equal(reviewFailureReason(overflow), "context_limit")
 		assert.equal(reviewFailureReason(Cause.die("boom")), "agent_error")
+	})
+})
+
+describe("reviewFailureReason over a combined cause", () => {
+	it("reports the typed limit even when a generic failure comes first", () => {
+		const combined = Cause.combine(Cause.die("boom"), policy("duration"))
+		assert.equal(reviewFailureReason(combined), "time_limit")
+	})
+
+	it("reads the engine's event ceiling as a step limit", () => {
+		const events = Cause.fail(
+			ModelProtocolError.make({ message: "Run exceeded the 65536-event buffer limit" }),
+		)
+		assert.equal(reviewFailureReason(events), "step_limit")
 	})
 })
 

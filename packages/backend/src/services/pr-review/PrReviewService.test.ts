@@ -398,6 +398,15 @@ describe("PrReviewService.onPullRequestEvent", () => {
 			// Asking by name still reviews it.
 			const asked = yield* reviews.reviewNow(orgId, job({ action: "synchronize", headSha: HEAD_2 }))
 			assert.equal(asked.outcome, "started")
+
+			// A redelivered push of that head is a duplicate: pausing it would overwrite its check.
+			const checksBefore = checks.length
+			const redelivered = yield* reviews.onPullRequestEvent(
+				orgId,
+				job({ action: "synchronize", headSha: HEAD_2 }),
+			)
+			assert.equal(redelivered.skipReason, "duplicate")
+			assert.equal(checks.length, checksBefore)
 		}).pipe(Effect.provide(layerFor(testDb, { checks })))
 	})
 

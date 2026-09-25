@@ -444,6 +444,11 @@ export const buildReviewCompletion = (
 	} satisfies RunCompletion
 }
 
+const SEVERITY_RANK = { critical: 2, warn: 1, info: 0 } as const satisfies Record<
+	PrReviewFinding["severity"],
+	number
+>
+
 /**
  * A submitted report with the pass's saved findings folded in, most important kept when over the
  * cap, and the reviewed files it never read. The verdict follows the merged findings.
@@ -454,7 +459,10 @@ const withSavedFindings = (
 	unreviewed: ReadonlyArray<string>,
 ): PrReviewReport => {
 	if (saved.length === 0 && unreviewed.length === 0) return report
-	const findings = mergeSavedFindings(saved, report.findings).slice(0, PR_REVIEW_MAX_FINDINGS)
+	// Stable, so saved findings stay ahead of submitted ones of the same severity.
+	const findings = [...mergeSavedFindings(saved, report.findings)]
+		.sort((a, b) => SEVERITY_RANK[b.severity] - SEVERITY_RANK[a.severity])
+		.slice(0, PR_REVIEW_MAX_FINDINGS)
 	return new PrReviewReport({
 		...report,
 		findings,

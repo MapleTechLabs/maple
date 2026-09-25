@@ -1652,6 +1652,24 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 				}
 				if (config.automaticReviewLimit !== undefined && !requested) {
 					const limit = config.automaticReviewLimit
+					// A head that already has a row is a redelivery or a retry, handled below; pausing
+					// it would overwrite that review's own check.
+					const existingHead = yield* database
+						.execute((db) =>
+							db
+								.select({ id: prReviews.id })
+								.from(prReviews)
+								.where(
+									and(
+										eq(prReviews.orgId, orgId),
+										eq(prReviews.repositoryId, repo.id),
+										eq(prReviews.number, job.number),
+										eq(prReviews.headSha, headSha),
+									),
+								)
+								.limit(1),
+						)
+						.pipe(Effect.mapError(toPersistence))
 					const earlier = yield* database
 						.execute((db) =>
 							db
@@ -1668,7 +1686,7 @@ export class PrReviewService extends Context.Service<PrReviewService, PrReviewSe
 								),
 						)
 						.pipe(Effect.mapError(toPersistence))
-					if (Number(earlier[0]?.total ?? 0) >= limit) {
+					if (existingHead[0] === undefined && Number(earlier[0]?.total ?? 0) >= limit) {
 						yield* postPausedCheck(orgId, repo, headSha, limit)
 						yield* annotate("skipped", {
 							"maple.pr_review.skip_reason": "automatic_limit",

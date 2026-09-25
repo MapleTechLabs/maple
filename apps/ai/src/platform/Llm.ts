@@ -344,11 +344,12 @@ const instrumentedModel = <R>(
 	name: string,
 	make: Effect.Effect<LanguageModel.LanguageModel, never, R>,
 	telemetry: ModelCallTelemetry,
+	options: { readonly coalesceDeltas?: boolean } = {},
 ): Layer.Layer<ModelServices, never, R> =>
 	AiModel.make(
 		"openrouter",
 		name,
-		Layer.effect(LanguageModel.LanguageModel, instrumentLanguageModel(make, telemetry)),
+		Layer.effect(LanguageModel.LanguageModel, instrumentLanguageModel(make, telemetry, options)),
 	)
 
 const openRouterModel = (
@@ -358,6 +359,8 @@ const openRouterModel = (
 	fallbackEffort: ReasoningEffort | undefined,
 	tags: LlmCallTags | undefined,
 	overridableLimits = true,
+	/** Nobody watches the run stream, so its deltas are joined; see `coalesceDeltas`. */
+	unattended = false,
 ): ResolvedModel => {
 	const effort = readReasoningEffort(env, effortKey) ?? fallbackEffort
 	return {
@@ -371,6 +374,7 @@ const openRouterModel = (
 				...(effort === undefined || effort === "off" ? undefined : { reasoningLevel: effort }),
 				sessionAttributes: agentSessionSpanAttributes(tags),
 			},
+			{ coalesceDeltas: unattended },
 		),
 		limits: limitsFor(env, name, overridableLimits),
 		tags,
@@ -429,6 +433,7 @@ export const resolveReviewModel = (env: LlmEnv, tags?: LlmCallTags): ResolvedMod
 				undefined,
 				tags,
 				false,
+				true,
 			)
 
 /**
