@@ -2,7 +2,7 @@
 title: "PlanetScale"
 description: "Connect a PlanetScale organization to Maple. Maple discovers every database branch's metrics endpoint, scrapes connections, WAL size, and pod CPU, and adds your databases to the service map."
 group: "Integrations"
-order: 2
+order: 3
 ---
 
 PlanetScale publishes Prometheus metrics per database branch behind a [service-discovery API](https://planetscale.com/docs/vitess/integrations/prometheus). One organization endpoint returns the current list of branch metrics targets, and that list changes as branches are created and deleted. You connect the organization once. Maple runs the discovery call, scrapes every branch it returns, and refreshes the branch list every 10 minutes.

@@ -2,7 +2,7 @@
 title: "WarpStream"
 description: "Monitor WarpStream clusters in Maple. Scrape Agent /metrics endpoints directly, or pull consumer lag, request latency, and object-store health from WarpStream's hosted Prometheus endpoint."
 group: "Integrations"
-order: 1
+order: 2
 ---
 
 WarpStream exposes Prometheus metrics in two places. Every Agent serves a local `/metrics` endpoint, and the WarpStream control plane offers a hosted, authenticated Prometheus endpoint per virtual cluster. Both work with [Maple's Prometheus scraping](/docs/integrations/prometheus). Pick the one that matches your network topology.

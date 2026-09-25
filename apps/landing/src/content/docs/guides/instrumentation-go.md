@@ -1,5 +1,5 @@
 ---
-title: "Go Instrumentation"
+title: "Go instrumentation"
 description: "Instrument a Go application with OpenTelemetry and send traces, logs, and metrics to Maple."
 group: "Instrumentation"
 order: 8
@@ -222,8 +222,7 @@ func processOrder(ctx context.Context, orderID string) error {
 
 	span.SetAttributes(
 		attribute.String("order.id", orderID),
-		// Set peer.service when calling another service
-		attribute.String("peer.service", "payment-api"),
+		attribute.String("payment.method", "card"),
 	)
 
 	if err := chargePayment(ctx, orderID); err != nil {
@@ -235,7 +234,7 @@ func processOrder(ctx context.Context, orderID string) error {
 }
 ```
 
-Setting `peer.service` on outgoing calls makes them visible on Maple's [service map](/docs/concepts/otel-conventions#service-map). Always pass `ctx` down the call chain so child spans link to their parent.
+Service map edges come from instrumented client spans that propagate `traceparent` to an instrumented callee, not from attributes such as `peer.service`. See [Service map](/docs/explore/service-map). Always pass `ctx` down the call chain so child spans link to their parent.
 
 ## Log correlation
 

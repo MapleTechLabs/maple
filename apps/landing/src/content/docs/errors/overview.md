@@ -23,7 +23,7 @@ If none of these are set, the error is labeled **Unknown Error**. Record excepti
 
 HTTP 4xx spans are skipped unless they carry real exception data. A span with status `Error` and a 400 to 499 status code is ignored when it has no exception event, no `exception.type` attribute, and an `error.type` that is empty or equal to the status code. 5xx spans are always kept.
 
-See [Errors and exceptions](/docs/concepts/otel-conventions#errors--exceptions) for the attributes to set.
+See [Errors and exceptions](/docs/concepts/otel-conventions#errors-and-exceptions) for the attributes to set.
 
 ## How errors are grouped
 
@@ -39,7 +39,7 @@ The environment is not part of the fingerprint, so the same bug in staging and p
 
 A fingerprint becomes an issue after 3 occurrences. Until then it notifies nobody. A fingerprint that stays below 3 occurrences for 24 hours is dropped.
 
-Besides errors from spans, two other sources open issues. The **Source** filter names them:
+Issues come from three sources. The **Source** filter names them:
 
 - **Exceptions**: fingerprinted errors from spans.
 - **Alert rules**: opened by an [alert rule](/docs/alerting/alert-rules), one per rule and group.

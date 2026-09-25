@@ -1,5 +1,5 @@
 ---
-title: "Web Analytics"
+title: "Web analytics"
 description: "What the Web Analytics page shows: visitors, sessions, page views, referrers, devices, countries and custom events from the Maple browser SDK, and what data each part needs."
 group: "Product Events"
 order: 4

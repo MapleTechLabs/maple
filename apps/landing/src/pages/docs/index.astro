@@ -1,42 +1,87 @@
 ---
-// /docs — the front door. Three questions, in order: where do I start, how do
-// I get my language in, and what else is documented. Everything is read from
-// the collection so a new page shows up here without touching this file.
+// /docs, the front door. Three questions, in order: where do I start, how do
+// I get my language in, and how do I do a common task. The sidebar is the full
+// list of pages, so this page doesn't repeat it.
 import { getCollection } from "astro:content";
 import DocsLayout from "../../layouts/DocsLayout.astro";
 import DocsCategoryIcon from "../../components/docs/DocsCategoryIcon.astro";
 import LanguageLogo from "../../components/docs/LanguageLogo.astro";
 import BrandMarkIcon from "../../components/BrandMarkIcon.astro";
 import { LANGUAGES } from "../../lib/docs-languages";
-import { INSTRUMENTATION_SLUG, groupBlurb, groupRank } from "../../lib/docs-nav";
+import { INSTRUMENTATION_SLUG } from "../../lib/docs-nav";
 
 const allDocs = await getCollection("docs", ({ data }) => !data.draft);
-type Doc = (typeof allDocs)[number];
-const byOrder = (a: Doc, b: Doc) => a.data.order - b.data.order || a.data.title.localeCompare(b.data.title);
 const bySlug = (slug: string) => allDocs.find((d) => d.id === slug);
 
 // Each card carries the glyph of the surface it opens, matching the sidebar
-// and section strip (DocsCategoryIcon ids).
+// and section strip (DocsCategoryIcon ids). Blurbs are written to fit three
+// lines; page descriptions are longer and get cut off mid-word.
 const START_HERE = [
-    { slug: "getting-started/introduction", icon: "Getting Started" },
-    { slug: INSTRUMENTATION_SLUG, icon: "Instrumentation" },
-    { slug: "local-mode", icon: "Local Mode" },
-    { slug: "reference/mcp", icon: "MCP" },
-].flatMap(({ slug, icon }) => {
+    { slug: "getting-started/quickstart", icon: "Getting Started", blurb: "Send your first trace in about five minutes." },
+    { slug: INSTRUMENTATION_SLUG, icon: "Instrumentation", blurb: "Setup guides for every language, framework and runtime." },
+    { slug: "local-mode", icon: "Local Mode", blurb: "Run all of Maple as one binary on your machine. No account needed." },
+    { slug: "reference/mcp", icon: "MCP", blurb: "Connect Claude, Cursor and other agents to your telemetry." },
+].flatMap(({ slug, icon, blurb }) => {
     const doc = bySlug(slug);
-    return doc ? [{ doc, icon }] : [];
+    return doc ? [{ doc, icon, blurb }] : [];
 });
 
-// Every group except the two the page already covers above.
-const HIDDEN_GROUPS = new Set<string>(["Getting Started", "Instrumentation"]);
-const topics = [...new Set(allDocs.map((d) => d.data.group))]
-    .filter((g) => !HIDDEN_GROUPS.has(g))
-    .sort((a, b) => groupRank(a) - groupRank(b) || a.localeCompare(b))
-    .map((group) => ({
-        group,
-        blurb: groupBlurb(group),
-        docs: allDocs.filter((d) => d.data.group === group).sort(byOrder),
-    }));
+// Task entry points instead of a copy of the sidebar. A link whose page is
+// missing is dropped at build, so a rename can't ship a dead row.
+const TASKS: { title: string; icon: string; links: { label: string; href: string }[] }[] = [
+    {
+        title: "Get data in",
+        icon: "Instrumentation",
+        links: [
+            { label: "Send your first trace", href: "getting-started/quickstart" },
+            { label: "Instrument a service", href: INSTRUMENTATION_SLUG },
+            { label: "Collect host and container metrics", href: "infrastructure/hosts" },
+            { label: "Record browser sessions", href: "session-replay/browser-sdk" },
+            { label: "Track product events", href: "product-events/overview" },
+        ],
+    },
+    {
+        title: "Find a problem",
+        icon: "Explore",
+        links: [
+            { label: "Search traces", href: "explore/traces" },
+            { label: "Search logs", href: "explore/logs" },
+            { label: "Triage errors", href: "errors/overview" },
+            { label: "Read the service map", href: "explore/service-map" },
+            { label: "Trace AI agents", href: "agent-sessions/overview" },
+        ],
+    },
+    {
+        title: "Get alerted",
+        icon: "Alerting",
+        links: [
+            { label: "Create an alert rule", href: "alerting/alert-rules" },
+            { label: "Work an incident", href: "alerting/incidents" },
+            { label: "Send alerts to Slack, email or a webhook", href: "alerting/notification-destinations" },
+            { label: "Build a dashboard", href: "dashboards/build-dashboards" },
+            { label: "Connect GitHub, Cloudflare or PlanetScale", href: "integrations/github" },
+        ],
+    },
+    {
+        title: "Automate",
+        icon: "Reference",
+        links: [
+            { label: "Call the REST API", href: "reference/api" },
+            { label: "Query with SQL", href: "reference/sql" },
+            { label: "Use the CLI", href: "reference/cli" },
+            { label: "Receive alert webhooks", href: "reference/webhooks" },
+            { label: "Check limits and retention", href: "reference/limits" },
+        ],
+    },
+].map((task) => ({
+    ...task,
+    links: task.links.flatMap((link) => {
+        const [slug, hash] = link.href.split("#");
+        return bySlug(slug) ? [{ label: link.label, href: `/docs/${slug}${hash ? `#${hash}` : ""}` }] : [];
+    }),
+}));
+
+const introduction = bySlug("getting-started/introduction");
 ---
 
 <DocsLayout
@@ -51,7 +96,12 @@ const topics = [...new Set(allDocs.map((d) => d.data.group))]
         <header>
             <h1 class="text-[34px] font-semibold leading-[1.1] tracking-[-0.03em] text-fg md:text-[40px]">Documentation</h1>
             <p class="mt-4 max-w-[58ch] text-[16px] leading-[1.6] text-pretty text-fg-muted">
-                Maple is an OpenTelemetry-native observability platform for traces, logs, metrics, errors and sessions. Point any OTel SDK at it and start exploring; these pages cover the how.
+                Maple is an OpenTelemetry-native observability platform for traces, logs, metrics, errors and sessions. Point any OTel SDK at it and start exploring.
+                {introduction && (
+                    <>
+                        New here? Read the <a href={`/docs/${introduction.id}`} class="text-fg underline decoration-border underline-offset-4 transition-colors hover:text-primary hover:decoration-primary">introduction</a>.
+                    </>
+                )}
             </p>
         </header>
 
@@ -59,7 +109,7 @@ const topics = [...new Set(allDocs.map((d) => d.data.group))]
         <section class="mt-10" aria-labelledby="start-here">
             <h2 id="start-here" class="font-mono text-[10px] font-medium uppercase tracking-[0.18em] text-fg-muted">Start here</h2>
             <div class="hairline-grid mt-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
-                {START_HERE.map(({ doc, icon }) => (
+                {START_HERE.map(({ doc, icon, blurb }) => (
                     <a href={`/docs/${doc.id}`} class="cell group flex flex-col p-5 transition-colors hover:bg-bg-elevated">
                         <span class="flex items-center justify-between">
                             <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-border bg-bg-elevated text-primary transition-colors group-hover:border-primary/40" aria-hidden="true">
@@ -78,7 +128,7 @@ const topics = [...new Set(allDocs.map((d) => d.data.group))]
                             </svg>
                         </span>
                         <span class="mt-4 block text-[14px] font-medium text-fg">{doc.data.title}</span>
-                        <p class="mt-1.5 text-[13px] leading-relaxed text-fg-muted line-clamp-3">{doc.data.description}</p>
+                        <p class="mt-1.5 text-[13px] leading-relaxed text-fg-muted">{blurb}</p>
                     </a>
                 ))}
             </div>
@@ -114,30 +164,26 @@ const topics = [...new Set(allDocs.map((d) => d.data.group))]
             </div>
         </section>
 
-        {/* ── Browse by topic ─────────────────────────────────── */}
-        <section class="mt-12" aria-labelledby="topics">
-            <h2 id="topics" class="font-mono text-[10px] font-medium uppercase tracking-[0.18em] text-fg-muted">Browse by topic</h2>
-            <div class="hairline-grid mt-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
-                {topics.map(({ group, blurb, docs }) => (
+        {/* ── Common tasks ────────────────────────────────────── */}
+        <section class="mt-12" aria-labelledby="tasks">
+            <h2 id="tasks" class="font-mono text-[10px] font-medium uppercase tracking-[0.18em] text-fg-muted">Common tasks</h2>
+            <div class="hairline-grid mt-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
+                {TASKS.map(({ title, icon, links }) => (
                     <div class="cell p-5">
                         <h3 class="flex items-center gap-2 text-[14px] font-medium text-fg">
-                            <DocsCategoryIcon name={group} class="h-3.5 w-3.5 shrink-0 text-primary/80" />
-                            {group}
-                            <span class="ml-auto font-mono text-[10px] font-normal tabular-nums text-fg-muted/70" aria-label={`${docs.length} pages`}>
-                                {docs.length}
-                            </span>
+                            <DocsCategoryIcon name={icon} class="h-3.5 w-3.5 shrink-0 text-primary/80" />
+                            {title}
                         </h3>
-                        {blurb && <p class="mt-1.5 text-[13px] leading-relaxed text-fg-muted">{blurb}</p>}
                         {/* Full-width rows with a chevron: these must read as links at
                             rest, not as a bullet list that happens to be clickable. */}
                         <ul class="-mx-2 mt-3 space-y-px">
-                            {docs.map((doc) => (
+                            {links.map((link) => (
                                 <li>
                                     <a
-                                        href={`/docs/${doc.id}`}
+                                        href={link.href}
                                         class="group/link flex items-center justify-between gap-3 rounded-md px-2 py-1.5 text-[13.5px] text-fg/85 transition-colors hover:bg-bg-elevated hover:text-fg focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary"
                                     >
-                                        <span class="truncate">{doc.data.title}</span>
+                                        <span>{link.label}</span>
                                         <svg
                                             class="h-3.5 w-3.5 shrink-0 text-fg-muted/60 transition-[color,transform] duration-200 group-hover/link:translate-x-0.5 group-hover/link:text-primary motion-reduce:transition-none"
                                             viewBox="0 0 24 24"
@@ -164,7 +210,9 @@ const topics = [...new Set(allDocs.map((d) => d.data.group))]
                 Every page is also plain markdown: append <code class="rounded bg-bg-elevated px-1.5 py-0.5 text-fg">.md</code> to its URL, or start from
                 <a href="/llms.txt" class="text-fg transition-colors hover:text-primary">/llms.txt</a>.
             </p>
-            <p class="flex items-center gap-3">
+            <p class="flex flex-wrap items-center gap-3">
+                <a href="/changelog" class="text-fg transition-colors hover:text-primary">Changelog</a>
+                <a href="/pricing" class="text-fg transition-colors hover:text-primary">Pricing</a>
                 <a href="https://github.com/MapleTechLabs/maple" class="text-fg transition-colors hover:text-primary">GitHub</a>
                 <a href="https://github.com/MapleTechLabs/maple/issues" class="text-fg transition-colors hover:text-primary">Report a docs issue</a>
             </p>

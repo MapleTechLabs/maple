@@ -2,7 +2,7 @@
 title: "Agent Sessions"
 description: "An AI agent conversation as one session: every turn, model call and tool call with its cost, timing and failures, built from OpenTelemetry GenAI traces. What Maple records, and how to connect an agent in any language or framework."
 group: "Agent Sessions"
-order: 0
+order: 1
 navLabel: "Overview"
 ---
 
@@ -32,7 +32,7 @@ Your service exports OTLP to `https://ingest.maple.dev` (`https://ingest.eu.mapl
 
 ### Step 2: emit GenAI spans
 
-There are two ways to get there. If your agent runs on a [framework Maple recognises](#frameworks-maple-recognises-automatically), turn on that framework's OpenTelemetry export. Otherwise, emit the **OpenTelemetry GenAI semantic conventions** directly. We recommend this path: every framework integration is normalised into these conventions anyway, and they work in every language.
+There are two ways to get there. If your agent runs on a [framework Maple recognizes](#frameworks-maple-recognizes-automatically), turn on that framework's OpenTelemetry export. Otherwise, emit the **OpenTelemetry GenAI semantic conventions** directly. We recommend this path: every framework integration is normalized into these conventions anyway, and they work in every language.
 
 The conventions live at [opentelemetry.io/docs/specs/semconv/gen-ai](https://opentelemetry.io/docs/specs/semconv/gen-ai/). The pages you will actually use:
 
@@ -66,11 +66,11 @@ You do not need all of these. The first two rows make a session; the rest make i
 
 Retrieval, memory, embeddings and evaluation attributes from the conventions are stored and shown on the span, but do not change how the session is built.
 
-## Frameworks Maple recognises automatically
+## Frameworks Maple recognizes automatically
 
-If your agent runs on one of these, use the framework's own OpenTelemetry exporter or the instrumentation listed and point it at Maple. Maple recognises the framework at ingest, normalises its attribute dialect into the `gen_ai.*` fields above, and takes the session id from wherever that framework keeps it.
+If your agent runs on one of these, use the framework's own OpenTelemetry exporter or the instrumentation listed and point it at Maple. Maple recognizes the framework at ingest, normalizes its attribute dialect into the `gen_ai.*` fields above, and takes the session id from wherever that framework keeps it.
 
-| Framework                        | Instrumentation Maple recognises                    | Session id                                                |
+| Framework                        | Instrumentation Maple recognizes                    | Session id                                                |
 | -------------------------------- | --------------------------------------------------- | --------------------------------------------------------- |
 | Vercel AI SDK                    | The SDK's `experimental_telemetry`                  | One per trace                                             |
 | OpenAI Agents SDK                | OpenInference `openai_agents` instrumentation       | `session.id` or `gen_ai.conversation.id`                  |
@@ -130,13 +130,13 @@ Cost and the assistant's reply text are only on Claude Code's log events (`api_r
 
 For the frameworks that give you one session per trace, stamp `gen_ai.conversation.id` on every span of the conversation (a span processor is the usual place) and Maple groups them into one session.
 
-Two dialects that are not frameworks are recognised as well: any **OpenInference** emitter (`openinference.span.kind`, `llm.*`, `input.value`) and any **OpenLLMetry / Traceloop** emitter (`traceloop.*`, `llm.*`). Their spans land as sessions without a framework name attached.
+Two dialects that are not frameworks are recognized as well: any **OpenInference** emitter (`openinference.span.kind`, `llm.*`, `input.value`) and any **OpenLLMetry / Traceloop** emitter (`traceloop.*`, `llm.*`). Their spans land as sessions without a framework name attached.
 
 **Don't see yours?** Send us the framework and a sample trace at [support@maple.dev](mailto:support@maple.dev) or on [Discord](https://discord.gg/BnXjKuwJqP). Adding a framework is a detection rule and a dialect map on our side, not a new SDK, so it is usually quick. In the meantime, anything that emits `gen_ai.operation.name` already works through the generic path above.
 
 ## A session, step by step
 
-One conversation from a support agent instrumented with the OpenTelemetry GenAI conventions: the customer asks to change a delivery address, gives one in Paris, and ends up cancelling the order. This is what Maple recorded.
+One conversation from a support agent instrumented with the OpenTelemetry GenAI conventions: the customer asks to change a delivery address, gives one in Paris, and ends up canceling the order. This is what Maple recorded.
 
 <figure class="shot">
   <img src="/screenshots/docs/agent-sessions-02-overview.webp" alt="A session's overview page: a time breakdown bar, a findings list with a failed tool call, a tools table with calls, failures and a timeline, and a right column with cost by model and token buckets." loading="lazy" />
@@ -151,7 +151,7 @@ The overview splits the wall clock into model time, tool time and idle, and roll
 </figure>
 
 <figure class="shot">
-  <img src="/screenshots/docs/agent-sessions-05-trace.webp" alt="The trace view of a session: three turns, each with an invoke_agent span, chat spans labelled with their model and token counts, and execute_tool spans, on a time axis with the idle gaps between turns removed. One tool span is marked with its error type." loading="lazy" />
+  <img src="/screenshots/docs/agent-sessions-05-trace.webp" alt="The trace view of a session: three turns, each with an invoke_agent span, chat spans labeled with their model and token counts, and execute_tool spans, on a time axis with the idle gaps between turns removed. One tool span is marked with its error type." loading="lazy" />
   <figcaption>The trace. Spans grouped by turn, 2m 10s of idle cut from the axis, the failed tool span flagged with its <code>error.type</code>.</figcaption>
 </figure>
 
@@ -190,7 +190,7 @@ A tool span needs `gen_ai.operation.name` of `execute_tool`, `gen_ai.tool.name`,
 
 ## When it does not look right
 
-- **Every turn is its own session.** No span carried a session id Maple recognises. Add `gen_ai.conversation.id` to every span of the conversation, or check the framework table for the key your framework is expected to emit.
+- **Every turn is its own session.** No span carried a session id Maple recognizes. Add `gen_ai.conversation.id` to every span of the conversation, or check the framework table for the key your framework is expected to emit.
 - **The transcript is empty.** Message content is not on the spans. Most official instrumentations leave it off by default, and some only ever write it to log events, which Maple does not read. If content is on the spans and still missing, check that the attribute holds a JSON array of `{role, parts}` objects rather than a plain string.
 - **The framework shows as "Unidentified".** The spans carry `gen_ai.*` attributes but no fingerprint of a known framework. Sessions, transcripts and tool pages all work; only the framework facet is missing. Tell us which framework it is and we will add the rule.
 - **Token totals look too high or too low.** Providers disagree on whether cached and reasoning tokens are included in the input and output counts. Maple resolves that per `gen_ai.provider.name`, so if the provider name is missing or unexpected, set it and the totals correct themselves.

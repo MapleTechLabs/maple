@@ -1,5 +1,5 @@
 ---
-title: "Java Instrumentation"
+title: "Java instrumentation"
 description: "Instrument a Java application with OpenTelemetry and send traces, logs, and metrics to Maple."
 group: "Instrumentation"
 order: 10
@@ -193,8 +193,7 @@ public void processOrder(String orderId) {
     Span span = tracer.spanBuilder("process-order").startSpan();
     try (Scope scope = span.makeCurrent()) {
         span.setAttribute("order.id", orderId);
-        // Set peer.service when calling another service
-        span.setAttribute("peer.service", "payment-api");
+        span.setAttribute("payment.method", "card");
         chargePayment(orderId);
     } catch (Exception e) {
         span.recordException(e);
@@ -206,7 +205,7 @@ public void processOrder(String orderId) {
 }
 ```
 
-Setting `peer.service` on outgoing calls makes them visible on Maple's [service map](/docs/concepts/otel-conventions#service-map). With the agent, `opentelemetry-api` is the only dependency this code needs.
+Service map edges come from instrumented client spans that propagate `traceparent` to an instrumented callee, not from attributes such as `peer.service`. See [Service map](/docs/explore/service-map). With the agent, `opentelemetry-api` is the only dependency this code needs.
 
 ## Log correlation
 

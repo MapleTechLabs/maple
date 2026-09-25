@@ -13,7 +13,7 @@ The [Browser SDK](/docs/session-replay/browser-sdk) initialized with replay enab
 
 ## Find a session
 
-The toolbar shows how many sessions match and how many are **live** (still recording). Use the time range picker to change the window, and **Search by URL…** to find sessions that visited a page. The **Analytics** button opens [Web Analytics](/docs/product-events/web-analytics) for the same window.
+The toolbar shows how many sessions match and how many are **live** (still recording). Use the time range picker to change the window, and **Search by URL…** to find sessions that visited a page. The **Analytics** button opens [Web analytics](/docs/product-events/web-analytics) for the same window.
 
 The sidebar narrows the list:
 
@@ -79,5 +79,5 @@ Load a page with the SDK installed, click around, then close the tab. Open **Rep
 ## Next steps
 
 - [Browser SDK](/docs/session-replay/browser-sdk)
-- [Web Analytics](/docs/product-events/web-analytics)
+- [Web analytics](/docs/product-events/web-analytics)
 - [Traces](/docs/explore/traces)

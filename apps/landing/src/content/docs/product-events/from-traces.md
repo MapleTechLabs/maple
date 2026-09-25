@@ -26,12 +26,13 @@ span.setAttributes({
 With the Effect SDK the same keys go through `Effect.annotateCurrentSpan`:
 
 ```ts
-yield *
-	Effect.annotateCurrentSpan({
+const startPlan = Effect.gen(function* () {
+	yield* Effect.annotateCurrentSpan({
 		"maple.product_event.name": "plan_started",
 		"maple.product_event.user_id": user.id,
 		"maple.product_event.group_id": org.id,
 	})
+}).pipe(Effect.withSpan("start-plan"))
 ```
 
 Any OpenTelemetry SDK works, in any language. The contract is a set of attribute keys on the span.

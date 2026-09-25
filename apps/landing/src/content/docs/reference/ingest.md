@@ -114,7 +114,7 @@ Checks run roughly in the order below, so a request fails on the first one it tr
 | `503` | `ingest_encode_failed` | `@maple/ingest/PayloadEncodeFailed` | The batch could not be encoded for storage. Resending the same batch fails the same way | No. Contact support |
 | `500` | `ingest_internal_error` | `@maple/ingest/InternalError` | Unexpected gateway error | No. Contact support |
 
-OpenTelemetry SDKs and the Collector already retry `429` and `503` with backoff, and drop on other `4xx` codes. That is the right behaviour for every code above except `ingest_encode_failed`, which an exporter retries even though it cannot succeed.
+OpenTelemetry SDKs and the Collector already retry `429` and `503` with backoff, and drop on other `4xx` codes. That is the right behavior for every code above except `ingest_encode_failed`, which an exporter retries even though it cannot succeed.
 
 ## Batching
 

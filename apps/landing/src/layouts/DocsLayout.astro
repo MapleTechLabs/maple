@@ -27,7 +27,7 @@ interface Props {
 const { title, description, headings, currentSlug, image = "/og-docs.png", mdHref, editHref, wide = false } = Astro.props;
 const stars = await getGitHubStars();
 
-const pageTitle = currentSlug ? `${title} — Maple Docs` : "Maple Docs";
+const pageTitle = currentSlug ? `${title} · Maple Docs` : "Maple Docs";
 const canonicalUrl = new URL(Astro.url.pathname, Astro.site).toString();
 const absoluteImage = image.startsWith("http") ? image : new URL(image, Astro.site).toString();
 const hasToc = !wide && headings.some((h) => h.depth >= 2 && h.depth <= 3);

@@ -1,8 +1,8 @@
 ---
-title: "Sampling & Throughput Estimation"
+title: "Sampling and throughput estimation"
 description: "How Maple weights sampled spans at ingest so throughput, error rate and service map call counts reflect the traffic you actually served."
 group: "Concepts"
-navLabel: "Sampling & Throughput"
+navLabel: "Sampling and throughput"
 order: 2
 ---
 

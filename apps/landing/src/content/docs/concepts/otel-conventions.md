@@ -1,5 +1,5 @@
 ---
-title: "OpenTelemetry Conventions"
+title: "OpenTelemetry conventions"
 description: "Maple's expected OpenTelemetry attributes, status codes, span kinds, and data model conventions."
 group: "Concepts"
 order: 1
@@ -26,7 +26,7 @@ The bare minimum every span needs. `service.name` is the primary axis Maple grou
 | `service.namespace`   | `payments`             | Logical grouping above `service.name`. Hidden from log chips.                                               |
 | `service.instance.id` | UUID per process       | Distinguishes replicas of the same service. Hidden from log chips.                                          |
 
-## Deployment & version tracking
+## Deployment and version tracking
 
 Tag every span with these and you get per-environment and per-version slices across the services table, service map, and per-service overview.
 
@@ -47,7 +47,7 @@ export OTEL_RESOURCE_ATTRIBUTES="deployment.environment.name=production,vcs.repo
 
 In the search bar, `env`, `environment`, and `commit_sha` are short aliases. See [Filter aliases](#filter-aliases) below.
 
-## Span Status Codes
+## Span status codes
 
 Maple stores span status codes as title-case strings. Maple's ingest converts the OTLP status enum on the way in:
 
@@ -63,7 +63,7 @@ Title case matters when you filter or write queries. `StatusCode = 'Error'` matc
 
 Only spans with status `Error` appear in error analytics.
 
-## Span Kinds
+## Span kinds
 
 | Kind         | Description                          | How Maple Uses It                                                                                         |
 | ------------ | ------------------------------------ | --------------------------------------------------------------------------------------------------------- |
@@ -75,7 +75,7 @@ Only spans with status `Error` appear in error analytics.
 
 `Client` spans get a small outgoing-arrow icon in HTTP labels and render their route as `host+path` so the destination is visible. `Server` spans render path-only. The [service map](#service-map) and a service's dependencies are built only from `Client` and `Producer` spans. A network call left on `Internal` does not appear on either.
 
-## HTTP Attributes
+## HTTP attributes
 
 The most heavily instrumented namespace. Maple extracts three fields into indexed columns at write time, then renders method, route, and status code in trace rows.
 
@@ -116,7 +116,7 @@ Filtering on these scans a small column instead of doing a per-row map lookup. T
 
 In log chips, the same key scores 95, just below `exception.*`. See [Attribute prominence scoring](#appendix-attribute-prominence-scoring).
 
-### Route extraction & fallback chain
+### Route extraction and fallback chain
 
 For full HTTP info, Maple tries each source in order until one matches:
 
@@ -129,7 +129,7 @@ If none of the route attributes are set, Maple falls back to the route in the sp
 
 So `url.full` (e.g. `https://api.stripe.com/v1/charges`) on a `Client` span is enough for route rendering. Emitting `http.route` is still preferred, because it's a semantic path (`/api/users/:id`) instead of a high-cardinality URL.
 
-## Service Map
+## Service map
 
 The [service map](/docs/explore/service-map) draws a node for each service and each database, and an edge for the calls between them. Calls to external HTTP hosts, message queues and RPC services are not drawn on the map. They are listed on the service's **Dependencies** tab. Four rules make sure your spans show up correctly.
 
@@ -200,7 +200,7 @@ Maple detects a cache span when `cache.system` or `cache.result` is present. Whe
 | `cache.operation`        | `GET`, `SET`, `DELETE` | Drives the operation pill color.                                              |
 | `cache.lookup_performed` | `true` \| `false`      | Whether a lookup was actually executed (string, not bool).                    |
 
-## Errors & exceptions
+## Errors and exceptions
 
 Drives the error banner in the log detail panel and the highest-priority chip on every log row.
 
@@ -236,7 +236,7 @@ Promotes user/customer context to the log chips so it's visible at a glance on e
 
 ## Logs
 
-### Severity Levels
+### Severity levels
 
 `SeverityText` drives the per-row text color in the log list and the trace detail timeline.
 
@@ -251,11 +251,11 @@ Promotes user/customer context to the log chips so it's visible at a glance on e
 
 `ERROR` and `FATAL` severities also show the error banner at the top of the log detail panel.
 
-### Trace Correlation
+### Trace correlation
 
 Logs are automatically correlated with traces when `TraceId` and `SpanId` fields are present. Most OTel SDKs inject these fields when a span is active.
 
-## Kubernetes & infrastructure
+## Kubernetes and infrastructure
 
 Kubernetes resource attributes power the service map's pod-count badges and the Infrastructure pages. The `maple-k8s-infra` Helm chart sets most of these for you via the OTel operator and the `k8sattributes` processor.
 
@@ -289,7 +289,7 @@ Resource attributes normally stay out of log chips. These are the exceptions, al
 | `k8s.kubelet.version` | Display in node metadata panel.                                               |
 | `container.runtime`   | Display in K8s node metadata (containerd, cri-o, etc.).                       |
 
-## Cloud & platform badges
+## Cloud and platform badges
 
 These set the platform badge and runtime icon next to a service on the service map. SDKs running on common platforms detect most of them automatically. The keys are listed here so self-instrumenters can match.
 
@@ -340,7 +340,7 @@ These are stored on the row but skipped from the log attribute chips because the
 
 The data is still queryable. You can filter or group by these in the search bar. They just don't appear in the row's attribute chips.
 
-## Appendix: Attribute prominence scoring
+## Appendix: attribute prominence scoring
 
 Each log row shows every attribute that isn't hidden as a chip, ordered by score. Higher score comes first.
 
@@ -369,24 +369,7 @@ Resource attributes appear in chips only if they're in the promoted set (`deploy
 
 Maple accepts OTLP metrics at `/v1/metrics`: sums (counters), gauges, histograms, and exponential histograms. Summary data points are not supported and are dropped at ingest.
 
-For accurate RED (Rate, Error, Duration) metrics alongside sampled traces, use the OpenTelemetry Collector [SpanMetrics Connector](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/connector/spanmetrics):
-
-```yaml
-connectors:
-    spanmetrics:
-        namespace: span.metrics
-
-service:
-    pipelines:
-        traces:
-            receivers: [otlp]
-            exporters: [otlp/maple, spanmetrics]
-        metrics:
-            receivers: [spanmetrics]
-            exporters: [otlp/maple]
-```
-
-This derives metrics from every span before sampling reduces the trace volume. See [Sampling & Throughput Estimation](/docs/concepts/sampling-throughput) for details.
+For exact RED (rate, error, duration) metrics alongside sampled traces, derive metrics from every span with the Collector's SpanMetrics connector before sampling. See [Exact counts with SpanMetrics](/docs/concepts/sampling-throughput#exact-counts-with-spanmetrics).
 
 ## Data retention
 

@@ -1,5 +1,5 @@
 ---
-title: "Python Instrumentation"
+title: "Python instrumentation"
 description: "Instrument a Python application with OpenTelemetry and send traces, logs, and metrics to Maple."
 group: "Instrumentation"
 order: 7
@@ -181,8 +181,7 @@ tracer = trace.get_tracer("my-app")
 def process_order(order_id: str):
     with tracer.start_as_current_span("process-order") as span:
         span.set_attribute("order.id", order_id)
-        # Set peer.service when calling another service
-        span.set_attribute("peer.service", "payment-api")
+        span.set_attribute("payment.method", "card")
 
         try:
             return charge_payment(order_id)
@@ -192,7 +191,7 @@ def process_order(order_id: str):
             raise
 ```
 
-Setting `peer.service` on outgoing calls makes them visible on Maple's [service map](/docs/concepts/otel-conventions#service-map).
+Service map edges come from instrumented client spans that propagate `traceparent` to an instrumented callee, not from attributes such as `peer.service`. See [Service map](/docs/explore/service-map).
 
 ## Log correlation
 

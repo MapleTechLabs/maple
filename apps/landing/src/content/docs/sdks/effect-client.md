@@ -15,7 +15,7 @@ The browser entry point of `@maple-dev/effect-sdk` runs in single-page apps and 
 
 > Already installed the SDK? If not, see the [install instructions](/docs/sdks/effect#install).
 
-## Quick Start
+## Quick start
 
 ```typescript
 import { Maple } from "@maple-dev/effect-sdk/client"
@@ -36,7 +36,7 @@ Effect.runPromise(program.pipe(Effect.provide(TracerLive)))
 
 Import from `/client` explicitly. Bundlers that apply the `node` export condition, such as the server side of a framework build, resolve the bare `@maple-dev/effect-sdk` import to the server build.
 
-## Auto-Captured Browser Attributes
+## Auto-captured browser attributes
 
 The client layer reads `globalThis.navigator` and `Intl.DateTimeFormat` to fill in resource attributes:
 
@@ -47,7 +47,7 @@ The client layer reads `globalThis.navigator` and `Intl.DateTimeFormat` to fill 
 
 Attributes you pass in the `attributes` option are merged on top of these.
 
-## Session Replay & Sessions
+## Session replay and sessions
 
 The browser presets (`Maple.layer` and `MapleFlush.make`) record **rrweb session replays by default**, without a separate browser SDK. Every span carries a `session.id`, the session appears in [Sessions](/docs/session-replay/browser-sdk) with its linked traces, and the recording plays back next to them.
 
@@ -122,11 +122,11 @@ With `requireConsent`, `Maple.layer` does not export metrics, because it cannot 
 
 Anything in your bundle is visible to every visitor. Use the **Public key** (`maple_pk_…`) from **Settings → Ingestion**, which the page marks for browser and client-side SDKs. Never ship the private key (`maple_sk_…`) in client code. Ingest keys can only write telemetry; they cannot read data back out.
 
-## Bundle Size
+## Bundle size
 
 The `/client` entry point leaves out the Node-only resource detector and platform helpers, so the base bundle ships the OTLP JSON exporter and Effect's tracer and logger primitives (about 13 kB). The replay engine, rrweb included, sits behind a dynamic import in a separate chunk (about 360 kB). It is only fetched when replay is enabled _and_ the session is sampled, so apps that set `replay: { enabled: false }` never download it. `effect` is a peer dependency; if your app already uses Effect on the client, the SDK adds only its own layer code.
 
-## Configuration Reference
+## Configuration reference
 
 See the full [configuration table](/docs/sdks/effect#configuration-reference) on the Effect SDK page. In the browser, `serviceName` is required and every other option is optional.
 

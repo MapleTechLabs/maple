@@ -41,7 +41,7 @@ The SDK ships three entry points, each with its own page:
 - [**Browser**](/docs/sdks/effect-client): single-page apps. Configuration passed in code, browser metadata added to resource attributes, session replay.
 - [**Cloudflare Workers**](/docs/sdks/effect-cloudflare): short-lived isolates. In-isolate buffering, `flush()` in `ctx.waitUntil`, configuration read from the Worker `env` on first flush.
 
-## Custom Spans
+## Custom spans
 
 Use `Effect.withSpan` to trace operations. Add attributes with `Effect.annotateCurrentSpan`:
 
@@ -51,15 +51,15 @@ import { Effect } from "effect"
 const processOrder = (orderId: string) =>
 	Effect.gen(function* () {
 		yield* Effect.annotateCurrentSpan("order.id", orderId)
-		yield* Effect.annotateCurrentSpan("peer.service", "payment-api")
+		yield* Effect.annotateCurrentSpan("payment.method", "card")
 		const result = yield* chargePayment(orderId)
 		return result
 	}).pipe(Effect.withSpan("process-order"))
 ```
 
-Setting `peer.service` on outgoing calls makes them visible on Maple's [service map](/docs/concepts/otel-conventions#service-map).
+Service map edges come from instrumented client spans that propagate `traceparent` to an instrumented callee, not from attributes such as `peer.service`. See [Service map](/docs/explore/service-map).
 
-## Log Correlation
+## Log correlation
 
 `Effect.log` includes the trace context when called inside a span, with no extra setup:
 
@@ -73,7 +73,7 @@ const program = Effect.gen(function* () {
 
 Logs emitted inside spans are correlated with the active trace in the Maple dashboard.
 
-## Configuration Reference
+## Configuration reference
 
 Options for `Maple.layer()` on the server and browser entry points, and for `make()` on the Cloudflare entry point. The Cloudflare-only options are on the [Cloudflare page](/docs/sdks/effect-cloudflare#cloudflare-specific-config).
 
@@ -89,7 +89,7 @@ Options for `Maple.layer()` on the server and browser entry points, and for `mak
 | `repositoryUrl`         | `string`                  | server, Cloudflare | Repository URL, emitted as `vcs.repository.url.full`. Falls back to `MAPLE_REPOSITORY_URL`, then GitHub Actions or Vercel git metadata                                                                    |
 | `attributes`            | `Record<string, unknown>` | all                | Extra resource attributes. They take precedence over `OTEL_RESOURCE_ATTRIBUTES` entries with the same key                                                                                                |
 | `privacy`               | `PrivacyOptions`          | browser            | Consent gating, visitor-id storage and email capture. See [Privacy](/docs/sdks/effect-client#privacy)                                                                                                    |
-| `replay`                | `ClientReplayConfig`      | browser            | Session replay settings. See [Session Replay & Sessions](/docs/sdks/effect-client#session-replay--sessions)                                                                                              |
+| `replay`                | `ClientReplayConfig`      | browser            | Session replay settings. See [Session Replay & Sessions](/docs/sdks/effect-client#session-replay-and-sessions)                                                                                              |
 | `emitSessionMeta`       | `boolean`                 | browser            | Post session metadata rows for sessions without a recording. Default `true`                                                                                                                              |
 | `maxBatchSize`          | `number`                  | server, browser    | Max telemetry items per export batch                                                                                                                                                                     |
 | `loggerExportInterval`  | `Duration.Input`          | server, browser    | Export interval for logs                                                                                                                                                                                 |

@@ -31,8 +31,8 @@ Use the EU hosts (`ingest.eu.maple.dev`, `api.eu.maple.dev`) for an EU organizat
 
 Each organization has exactly one public key and one private key. Both are shown under **Settings → Ingestion**, and both have the same permission: they can send traces, logs, metrics, product events and session replays to your organization. Neither can read data.
 
-- Use the **public key** (`maple_pk_…`, labelled **Client**) in browsers, mobile apps and anything else you ship to end users. It will be visible to anyone who inspects your app, which is expected. The worst someone can do with it is send data to your organization.
-- Use the **private key** (`maple_sk_…`, labelled **Server**) on servers, in the OpenTelemetry Collector and in CI. Keep it out of client bundles, so you can rotate the public key without touching your backend.
+- Use the **public key** (`maple_pk_…`, labeled **Client**) in browsers, mobile apps and anything else you ship to end users. It will be visible to anyone who inspects your app, which is expected. The worst someone can do with it is send data to your organization.
+- Use the **private key** (`maple_sk_…`, labeled **Server**) on servers, in the OpenTelemetry Collector and in CI. Keep it out of client bundles, so you can rotate the public key without touching your backend.
 
 Send the key on every request, either as `Authorization: Bearer maple_pk_…` or as `x-maple-ingest-key: maple_pk_…`. The `Bearer` prefix is case-insensitive. The [Ingest API](/docs/reference/ingest#authentication) page has the details.
 

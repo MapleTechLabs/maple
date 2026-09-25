@@ -1,5 +1,5 @@
 ---
-title: "Checkpoints & archives"
+title: "Checkpoints and archives"
 description: "How Maple Local protects your telemetry: automatic restore points, what happens after an unclean shutdown, reset and restore, and Parquet archives for long-term history."
 group: "Local Mode"
 order: 2
@@ -80,7 +80,7 @@ If the server did not close the store cleanly, the next `maple start` applies th
 | `restore-checkpoint` | Roll back to the current checkpoint and move the dirty store into `backups/quarantine` |
 | `wipe` | Discard the live data and start empty. Checkpoints are untouched |
 
-A detached start (`-d`) passes the policy to the background process unchanged. A store whose schema the binary does not recognise also refuses to start until you reset it or run [`maple schema migrate`](/docs/reference/cli#maple-schema).
+A detached start (`-d`) passes the policy to the background process unchanged. A store whose schema the binary does not recognize also refuses to start until you reset it or run [`maple schema migrate`](/docs/reference/cli#maple-schema).
 
 ## Reset
 

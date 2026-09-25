@@ -1,13 +1,13 @@
 ---
-title: "Docker Infrastructure"
+title: "Docker infrastructure"
 description: "Run the Maple Docker agent as a single container to stream per-container CPU, memory, network, block I/O and logs, and correlate them with your app's traces."
 group: "Infrastructure"
-order: 2
+order: 3
 ---
 
 Maple's Docker agent is a single OpenTelemetry Collector container with read-only access to the Docker socket. Once it runs, **Infrastructure → Containers** lists every container on the host, spans and logs that carry container identity gain an **Infrastructure** tab, and the **Docker Containers** dashboard template fills in.
 
-Running Kubernetes? Use [Kubernetes Infrastructure](/docs/infrastructure/kubernetes) instead. The Helm chart covers pods, nodes and workloads across the cluster. For host-level CPU, memory and disk, see [Hosts](/docs/infrastructure/hosts).
+Running Kubernetes? Use [Kubernetes infrastructure](/docs/infrastructure/kubernetes) instead. The Helm chart covers pods, nodes and workloads across the cluster. For host-level CPU, memory and disk, see [Hosts](/docs/infrastructure/hosts).
 
 The agent collects:
 
