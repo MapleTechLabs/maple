@@ -93,7 +93,8 @@ export function splitSections(
 	const sections: SearchSection[] = []
 	const introLines: string[] = []
 	let current: { heading: string; anchor: string; lines: string[] } | null = null
-	let inFence = false
+	// Opening fence marker; only a same-character marker at least as long closes it.
+	let fence: string | null = null
 	let cursor = 0
 
 	const flush = () => {
@@ -106,8 +107,12 @@ export function splitSections(
 	}
 
 	for (const line of md.split("\n")) {
-		if (line.trim().startsWith("```")) inFence = !inFence
-		const match = inFence ? null : /^(#{2,3})\s+(.+?)\s*#*\s*$/.exec(line)
+		const marker = /^\s*(`{3,}|~{3,})/.exec(line)?.[1]
+		if (marker) {
+			if (!fence) fence = marker
+			else if (marker[0] === fence[0] && marker.length >= fence.length) fence = null
+		}
+		const match = fence || marker ? null : /^(#{2,3})\s+(.+?)\s*#*\s*$/.exec(line)
 		if (!match) {
 			;(current ? current.lines : introLines).push(line)
 			continue

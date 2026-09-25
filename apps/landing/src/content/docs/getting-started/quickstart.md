@@ -50,11 +50,11 @@ Using another language? Pick its guide from [Instrument your application](/docs/
 
 ### curl, no SDK
 
-To check the key and endpoint before touching your app, post one span as OTLP JSON:
+To check the key and endpoint before touching your app, post one span as OTLP JSON. Run it in the shell from step 3 so it uses your region's endpoint:
 
 ```bash
 NOW=$(date +%s)
-curl -i https://ingest.maple.dev/v1/traces \
+curl -i "${OTEL_EXPORTER_OTLP_ENDPOINT}/v1/traces" \
   -H "Authorization: Bearer YOUR_INGEST_KEY" \
   -H "Content-Type: application/json" \
   -d '{
