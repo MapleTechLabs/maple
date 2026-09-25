@@ -275,6 +275,22 @@ export const LOCAL_SCHEMA_HISTORY: ReadonlyArray<LocalSchemaHistoryEntry> = Obje
 		manifestDigest: "b1f8e56de0f33d42c366a3176b87f1ad17bf8d363008165d4b5ae11b18bb4f05",
 		projectRevision: "ed74788ef292834069e0ea6ee3b22d68fc604fb66cb54d2d551db67ce8d20b3a",
 	}),
+	Object.freeze({
+		// v23 adds `ai_trace_index_claude_code_cost_mv` (ClickHouse migration
+		// 0033), a view from `logs` into `ai_trace_index` that writes each Claude
+		// Code `api_request` event's cost as a usage record. No part is rewritten
+		// and no row moves; events ingested before it stay unpriced in the index
+		// until raw retention ages them out.
+		//
+		// projectRevision is carried forward deliberately — it is a hardcoded
+		// constant that no longer tracks the generator's header, and the identity
+		// this gate compares is the fingerprint/digest pair.
+		version: 23,
+		fingerprint: "44e03cce849c3a61",
+		digest: "44e03cce849c3a611f8e6f54d991e46ed8b00ff177fbbdae0970b2c54686786a",
+		manifestDigest: "ea3821836f1b1138f413b3268aaedeb69a91dd6bb790018a616668bfdd054a53",
+		projectRevision: "ed74788ef292834069e0ea6ee3b22d68fc604fb66cb54d2d551db67ce8d20b3a",
+	}),
 ] as const)
 
 /** Immutable SQLite control DDL identities, checked by clickhouse:schema:check. */

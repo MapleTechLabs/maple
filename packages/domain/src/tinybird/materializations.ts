@@ -50,6 +50,9 @@ import { MAPLE_AI_SESSION_ID_ATTR, MAPLE_AI_VENDOR_ID_ATTR, MAPLE_AI_VENDOR_VERS
 import { PRODUCT_EVENTS_TRACE_FILTER, PRODUCT_EVENTS_TRACE_PROJECTION_SQL } from "./product-event-attributes"
 import { DEPLOYMENT_ENV_SQL, MESSAGING_DESTINATION_SQL } from "./semconv-renames"
 import {
+	AI_USAGE_RECORD_SPAN_ID_PREFIX,
+	CLAUDE_CODE_EVENTS_SCOPE,
+	CLAUDE_CODE_VENDOR_ID,
 	GENAI_AGENT_NAME_SQL,
 	GENAI_CACHE_READ_TOKENS_SQL,
 	GENAI_CACHE_WRITE_TOKENS_SQL,
@@ -1084,6 +1087,80 @@ export const aiTraceIndexMv = defineMaterializedView("ai_trace_index_mv", {
           ${GENAI_ERROR_FINGERPRINT_SQL} AS ErrorFingerprint
         FROM traces
         WHERE SpanAttributes['${MAPLE_AI_VENDOR_ID_ATTR}'] != ''
+      `,
+		}),
+	],
+})
+
+/**
+ * Writes the cost of every Claude Code model call to `ai_trace_index`: one row
+ * per `api_request` log event, the only place Claude Code prices a call (see
+ * "Usage records" in `gen-ai-columns.ts`). Read by everything that reads the
+ * index; the session sums (`sessionUsageSum`) merge the row with its
+ * `claude_code.llm_request` span by `ResponseId`, taking the larger cost (the
+ * event's) and the larger tokens (the span's).
+ *
+ * The row carries the call's identity (org, trace, session, vendor, service,
+ * environment), its request id and its cost, and nothing else: no model, no
+ * tokens, not a model call, tool call or failure, so no call, tool or failure
+ * count and no model, agent or tool facet moves with it. `SpanId` is prefixed
+ * so the agent-span count can leave it out (`genAiIsSpanCond`). `ParentSpanId`
+ * is `''`, the key the usage netting files root claims under, which only a
+ * reporter whose own `SpanId` is `''` looks up — no row since migration 0026.
+ *
+ * `Timestamp` is the event's own, stamped as the call ends and so inside its
+ * trace's extent, and it partitions the row with the `logs` block it came in.
+ * An event without a trace id (one emitted outside any interaction, such as a
+ * prompt suggestion) has no trace to join, and a cost that is not a finite
+ * positive number would sum to nothing or to `inf`; both are left out.
+ */
+export const aiTraceIndexClaudeCodeCostMv = defineMaterializedView("ai_trace_index_claude_code_cost_mv", {
+	description:
+		"Populates ai_trace_index with the cost of each Claude Code model call, from its api_request log event: one row per event, keyed by the request id its llm_request span carries as gen_ai.response.id, with no tokens and no call.",
+	datasource: aiTraceIndex,
+	nodes: [
+		node({
+			name: "ai_trace_index_claude_code_cost_mv_node",
+			sql: `
+        SELECT
+          OrgId,
+          Timestamp,
+          TraceId,
+          LogAttributes['session.id'] AS SessionId,
+          '${CLAUDE_CODE_VENDOR_ID}' AS VendorId,
+          ServiceName,
+          ${DEPLOYMENT_ENV_SQL} AS DeploymentEnv,
+          '' AS Model,
+          '' AS AgentName,
+          '' AS ToolName,
+          concat('${AI_USAGE_RECORD_SPAN_ID_PREFIX}', LogAttributes['request_id']) AS SpanId,
+          '' AS ParentSpanId,
+          0 AS Duration,
+          0 AS IsError,
+          0 AS IsLlmCall,
+          0 AS IsToolCall,
+          0 AS Tokens,
+          toFloat64OrZero(LogAttributes['cost_usd']) AS Cost,
+          LogAttributes['request_id'] AS ResponseId,
+          '' AS VendorVersion,
+          0 AS InputTokens,
+          0 AS CacheReadTokens,
+          0 AS CacheWriteTokens,
+          0 AS OutputTokens,
+          0 AS ReasoningTokens,
+          '' AS ErrorType,
+          '' AS StatusMessage,
+          '' AS ToolDescription,
+          '' AS FailedToolCallResult,
+          0 AS ErrorFingerprint
+        FROM logs
+        WHERE ScopeName = '${CLAUDE_CODE_EVENTS_SCOPE}'
+          AND LogAttributes['event.name'] = 'api_request'
+          AND TraceId != ''
+          AND LogAttributes['request_id'] != ''
+          AND LogAttributes['session.id'] != ''
+          AND isFinite(toFloat64OrZero(LogAttributes['cost_usd']))
+          AND toFloat64OrZero(LogAttributes['cost_usd']) > 0
       `,
 		}),
 	],

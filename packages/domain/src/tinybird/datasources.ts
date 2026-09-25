@@ -1114,10 +1114,14 @@ export type TraceDetailSpansRow = InferRow<typeof traceDetailSpans>
  * Session ids live only on the turn-owning spans, so `SessionId` is '' for most
  * rows — resolution to a session key stays per-TRACE at read time, exactly as
  * documented in `query-engine-integrations/src/ai/ai-sessions.ts`.
+ *
+ * Migration 0033 adds a second writer, `ai_trace_index_claude_code_cost_mv`:
+ * a usage record per Claude Code `api_request` log event, which carries the
+ * call's cost and nothing a span-shaped read would count.
  */
 export const aiTraceIndex = defineDatasource("ai_trace_index", {
 	description:
-		"GenAI agent spans only (maple_ai.vendor.id stamped), pre-extracted to plain columns. Detection/facet surface for the Agent Sessions pages. Populated by materialized view.",
+		"GenAI agent spans (maple_ai.vendor.id stamped), pre-extracted to plain columns, plus a usage record per Claude Code api_request log event (SpanId 'usage:…', its cost). Detection/facet surface for the Agent Sessions pages. Populated by materialized views.",
 	jsonPaths: false,
 	schema: {
 		OrgId: t.string().lowCardinality(),
@@ -1184,6 +1188,12 @@ export const aiTraceIndex = defineDatasource("ai_trace_index", {
 		sortingKey: ["OrgId", "Timestamp", "TraceId"],
 		ttl: "toDate(Timestamp) + INTERVAL 30 DAY",
 	}),
+	// A new materialized view into this datasource makes Tinybird rebuild it,
+	// and without a forward query it refills it by re-running every view that
+	// writes here over its source — `traces` included, the backfill that
+	// crashed a deploy (see `aiTraceIndexMv`). `SELECT *` copies the live rows
+	// instead, so nothing is replayed.
+	forwardQuery: `SELECT *`,
 })
 
 export type AiTraceIndexRow = InferRow<typeof aiTraceIndex>

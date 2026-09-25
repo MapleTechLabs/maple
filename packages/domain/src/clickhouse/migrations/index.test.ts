@@ -37,7 +37,14 @@ import { migration_0028_product_events_from_traces } from "./0028_product_events
 import { migration_0030_error_events_attribute_fallback } from "./0030_error_events_attribute_fallback"
 import { migration_0031_ai_trace_index_list_columns } from "./0031_ai_trace_index_list_columns"
 import { migration_0032_ai_trace_index_tool_detail_columns } from "./0032_ai_trace_index_tool_detail_columns"
+import { migration_0033_ai_trace_index_claude_code_cost } from "./0033_ai_trace_index_claude_code_cost"
 import { clickHouseSchemaVersion, latestMigrationVersion, migrations } from "./index"
+import {
+	AI_USAGE_RECORD_SPAN_ID_PREFIX,
+	CLAUDE_CODE_EVENTS_SCOPE,
+	CLAUDE_CODE_VENDOR_ID,
+	GENAI_RESPONSE_ID_KEYS,
+} from "../../tinybird/gen-ai-columns"
 
 const backfills = migration_0004_service_namespace_projections.statements.filter(
 	isBackfill,
@@ -53,10 +60,10 @@ describe("ClickHouse migrations", () => {
 	it("keeps migrations ordered by version", () => {
 		expect(migrations.map((m) => m.version)).toEqual([
 			1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27,
-			28, 29, 30, 31, 32,
+			28, 29, 30, 31, 32, 33,
 		])
-		expect(migrations.at(-1)).toBe(migration_0032_ai_trace_index_tool_detail_columns)
-		expect(latestMigrationVersion).toBe(32)
+		expect(migrations.at(-1)).toBe(migration_0033_ai_trace_index_claude_code_cost)
+		expect(latestMigrationVersion).toBe(33)
 		// 0010 and 0014-0020 are read-path only and skipped by the ingest-gating
 		// version; 0021 is not — the gateway writes `session_events`' new identity
 		// columns and `product_events` directly, so a BYO-CH org must apply it
@@ -89,6 +96,8 @@ describe("ClickHouse migrations", () => {
 		// 0031 and 0032 widen the same MV-populated ai_trace_index again.
 		expect(migration_0031_ai_trace_index_list_columns.requiredForIngest).toBe(false)
 		expect(migration_0032_ai_trace_index_tool_detail_columns.requiredForIngest).toBe(false)
+		// 0033 adds a view from `logs` into the same index.
+		expect(migration_0033_ai_trace_index_claude_code_cost.requiredForIngest).toBe(false)
 	})
 
 	it("recreates both error-events MVs with the span-attribute exception fallback", () => {
@@ -885,5 +894,47 @@ describe("migration 0032 — ai_trace_index tool detail columns", () => {
 	it("does not backfill and does not gate ingest", () => {
 		expect(migration.requiredForIngest).toBe(false)
 		expect(migration.statements.some(isBackfill)).toBe(false)
+	})
+})
+
+describe("migration 0033 — Claude Code cost into ai_trace_index", () => {
+	const [create, ...rest] = migration_0033_ai_trace_index_claude_code_cost.statements
+
+	it("writes a usage record per priced api_request event, keyed as the read side expects", () => {
+		expect(rest).toEqual([])
+		expect(create).toMatch(
+			/^CREATE MATERIALIZED VIEW IF NOT EXISTS ai_trace_index_claude_code_cost_mv TO ai_trace_index AS/,
+		)
+		// The write filter: Claude Code's event scope and event name exactly, a
+		// trace, a request id and a session to join, and a finite positive price.
+		expect(create).toContain(`WHERE ScopeName = '${CLAUDE_CODE_EVENTS_SCOPE}'`)
+		for (const predicate of [
+			"LogAttributes['event.name'] = 'api_request'",
+			"TraceId != ''",
+			"LogAttributes['request_id'] != ''",
+			"LogAttributes['session.id'] != ''",
+			"isFinite(toFloat64OrZero(LogAttributes['cost_usd']))",
+			"toFloat64OrZero(LogAttributes['cost_usd']) > 0",
+		]) {
+			expect(create).toContain(`AND ${predicate}`)
+		}
+		// The read side: the session sums merge the record with its span by
+		// `ResponseId` (the span's `gen_ai.response.id`, the same request id), and
+		// the span count leaves it out by its `SpanId` prefix.
+		expect(GENAI_RESPONSE_ID_KEYS[0]).toBe("gen_ai.response.id")
+		expect(create).toContain("LogAttributes['request_id'] AS ResponseId")
+		expect(create).toContain(
+			`concat('${AI_USAGE_RECORD_SPAN_ID_PREFIX}', LogAttributes['request_id']) AS SpanId`,
+		)
+		expect(create).toContain(`'${CLAUDE_CODE_VENDOR_ID}' AS VendorId`)
+		// Cost and nothing a count reads.
+		for (const zero of ["Tokens", "IsLlmCall", "IsToolCall", "IsError"]) {
+			expect(create).toContain(`0 AS ${zero},`)
+		}
+	})
+
+	it("does not backfill and does not gate ingest", () => {
+		expect(migration_0033_ai_trace_index_claude_code_cost.requiredForIngest).toBe(false)
+		expect(migration_0033_ai_trace_index_claude_code_cost.statements.some(isBackfill)).toBe(false)
 	})
 })

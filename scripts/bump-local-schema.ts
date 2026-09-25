@@ -230,9 +230,12 @@ const plannedIdentity: PlannedWrite = plan(`${SERVER_DIR}/schema-identity.ts`, [
 	],
 ])
 
+// The local schema history's own close, not the control history's after it.
+const HISTORY_CLOSE = "] as const)\n\n/** Immutable SQLite control DDL"
+
 const plannedHistory: PlannedWrite = plan(`${SERVER_DIR}/local-schema-history.ts`, [
 	[
-		"] as const)",
+		HISTORY_CLOSE,
 		`\tObject.freeze({
 		// TODO(v${to}): what changed, whether any part is rewritten or any row
 		// moves, and what this edge does NOT backfill.
@@ -246,7 +249,7 @@ const plannedHistory: PlannedWrite = plan(`${SERVER_DIR}/local-schema-history.ts
 		manifestDigest: "${identity.manifestDigest}",
 		projectRevision: "${identity.projectRevision}",
 	}),
-] as const)`,
+${HISTORY_CLOSE}`,
 	],
 ])
 
