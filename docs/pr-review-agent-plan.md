@@ -235,7 +235,7 @@ The full path (webhook → trigger → Durable Object → GitHub post) is covere
 - **Warehouse-grounded checks** (signal presence, attribute spelling, operation coverage) are
   prompt prose today; local runs cannot exercise them.
 - **Open work:** fingerprint dedupe of findings across pushes, an abandoned-row sweep next to
-  `sweepAbandonedInvestigations`, fan-out for large PRs through `@effect-agent/capabilities`
+  `sweepAbandonedInvestigations`, fan-out for large PRs through `effect-agent/subagent`
   `Subagent` once it is published at the engine's version, a reviews list, and per-repository
   config (path excludes, check-only, a required-check mode).
 
@@ -259,7 +259,7 @@ one product behind the same `prreview` rollout flag. Observability is one lens o
   own comments excluded), and the head's checks, failing first.
 - **Large pull requests.** Past 12 reviewable files the pass calls `review_files` per group of
   related files, in parallel. Each group runs a child `pr-review-worker` agent through
-  `@effect-agent/capabilities` `Subagent`: the parent's own read-only toolkit (the grant is exactly
+  `effect-agent/subagent` `Subagent`: the parent's own read-only toolkit (the grant is exactly
   those tools, depth one), 16 calls and 4 minutes each, at most 8 children and 4 at a time, reserved
   from the parent's budget. The child answers findings one per line; the parent verifies and files.
 - **Quality gate.** `bun run --cwd apps/ai review:eval mine` blames each `fix:` commit's changed

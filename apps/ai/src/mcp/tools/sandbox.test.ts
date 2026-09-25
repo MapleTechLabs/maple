@@ -6,7 +6,7 @@ import {
 	SandboxImplementation,
 	SandboxSpawnError,
 	type SandboxError,
-} from "@effect-agent/sandbox/Sandbox"
+} from "effect-agent/sandbox"
 import {
 	SandboxExecOutput,
 	SandboxGrepOutput,

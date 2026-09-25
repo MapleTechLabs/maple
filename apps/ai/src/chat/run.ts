@@ -7,10 +7,9 @@
  */
 import { evaluatePermission } from "@maple/domain/permission"
 import type { ChatMessage, ChatTurnOrigin } from "@maple/domain/chat-session"
-import * as AgentRuntime from "@effect-agent/engine/AgentRuntime"
-import { ThreadHistory } from "@effect-agent/engine/ThreadHistory"
-import { IdGenerator } from "@effect-agent/core/IdGenerator"
-import { ThreadId } from "@effect-agent/core/Identifiers"
+import * as AgentRuntime from "effect-agent/agent-runtime"
+import * as ThreadHistory from "effect-agent/thread-history"
+import { ThreadId } from "effect-agent/identifiers"
 import { Effect, Layer, Schema, Stream } from "effect"
 import { Prompt, Toolkit } from "effect/unstable/ai"
 import type { McpToolExecutorApi } from "../mcp/dispatcher"
@@ -216,9 +215,7 @@ export const runChatTurn = (input: ChatRunInput) => {
 		maple.layer,
 		...(completion === undefined ? [] : [completion.layer]),
 		// The children run the parent's own tool handlers, so those are provided into the fan-out.
-		...(fanout === undefined
-			? []
-			: [fanout.layer.pipe(Layer.provide(Layer.mergeAll(maple.layer, IdGenerator.layer)))]),
+		...(fanout === undefined ? [] : [fanout.layer.pipe(Layer.provide(maple.layer))]),
 	)
 
 	// Declared but never *required*: see `buildDiagnosisCompletion`. A call still settles the run.
@@ -291,11 +288,11 @@ export const runChatTurn = (input: ChatRunInput) => {
 			}),
 		),
 		// One provide, so the run's services share a lifetime. `ChatSession` is the history owner,
-		// which is why the engine's is transient. A run is an entry point: the Durable Object
+		// which is why the engine's lives only for this provide. A run is an entry point: the Durable Object
 		// invocation owns this scope and nothing outside it composes these layers. The model's own
 		// client stays in the requirements channel, where the Durable Object's runtime answers it.
 		// oxlint-disable-next-line effecttsgo/strict-effect-provide
-		Effect.provide(Layer.mergeAll(handlers, ThreadHistory.layerTransient, IdGenerator.layer)),
+		Effect.provide(Layer.mergeAll(handlers, ThreadHistory.layer)),
 	)
 }
 

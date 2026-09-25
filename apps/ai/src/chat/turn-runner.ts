@@ -65,22 +65,16 @@ import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import { trackTokenUsage } from "@maple/backend/services/billing/autumn-tracker"
 
 /**
- * The engine's per-response-part bookkeeping, which is named and therefore traced.
+ * The engine's per-step bookkeeping, which is named and therefore traced.
  *
- * `AgentRuntime.ownModelResponsePart` is an `Effect.fn` on the hot path: one zero-duration span per
- * streamed delta. A model that streams a delta per reasoning token turns one investigation into
- * thousands of spans carrying nothing. Measured on the internal org 2026-09-18: 472,523 spans on
- * this service for 71 investigations, about 6,655 each, 99.8% of them this one name.
+ * Until effect-agent beta.104 this list also held `AgentRuntime.ownModelResponsePart`, one span per
+ * streamed delta: 99.8% of this service's spans on 2026-09-18, evicting the run's real spans from
+ * the SDK's 10,000-span buffer. Upstream removed it; these are the zero-content leftovers.
  *
- * Dropping them is a correctness fix before it is a cost one. The SDK's span buffer holds 10,000
- * and discards silently past that, so the deltas were evicting the spans that say what the run
- * actually did. Two hours that day exported exactly 10,000 spans and no `chat.turn` at all.
- *
- * Named one by one rather than by an `AgentRuntime.` prefix: `AgentRuntime.run` and
- * `AgentRuntime.model` are the run, and `dropSpanNames` matches on prefix.
+ * Named one by one rather than by an `AgentRuntime.` prefix: `AgentRuntime.model` is the model
+ * call, and `dropSpanNames` matches on prefix.
  */
 const ENGINE_BOOKKEEPING_SPANS = [
-	"AgentRuntime.ownModelResponsePart",
 	"AgentRuntime.estimateContextTokens",
 	"AgentRuntime.nextContextEstimate",
 	"AgentRuntime.decodeEventJson",

@@ -10,7 +10,7 @@ import {
 	IntegrationsUpstreamError,
 } from "@maple/domain/http"
 import { SandboxRunCheckoutPending, SandboxRunUnavailable } from "@maple/domain/sandbox"
-import type { SandboxError } from "@effect-agent/sandbox/Sandbox"
+import type { SandboxError } from "effect-agent/sandbox"
 import {
 	VcsSourceFileNotFoundError,
 	VcsSourceRefNotFoundError,

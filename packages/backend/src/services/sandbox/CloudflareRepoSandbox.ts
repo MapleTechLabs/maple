@@ -34,7 +34,7 @@ import {
 	type SandboxError,
 	type SandboxEvent,
 	type SandboxRequest,
-} from "@effect-agent/sandbox/Sandbox"
+} from "effect-agent/sandbox"
 import { Duration, Effect, Layer, Option, Schedule, Schema, Stream } from "effect"
 import { SandboxClient } from "@maple/backend/sandbox/client"
 import {

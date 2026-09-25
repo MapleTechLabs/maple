@@ -6,7 +6,7 @@
  * clear, so raising the model's window or swapping the model cannot quietly disable one again.
  */
 import { describe, expect, it } from "vitest"
-import { AgentPolicy } from "@effect-agent/core/AgentPolicy"
+import { AgentPolicy } from "effect-agent/agent-policy"
 import * as Duration from "effect/Duration"
 import { AGENTS, agentPolicyFor } from "./agents"
 import {

@@ -13,7 +13,7 @@ import {
 	SandboxUnsupportedRequestError,
 	type SandboxError,
 	type SandboxEvent,
-} from "@effect-agent/sandbox/Sandbox"
+} from "effect-agent/sandbox"
 import { Context, Duration, Effect, Layer, Stream } from "effect"
 import {
 	NETWORK_DISABLED,
