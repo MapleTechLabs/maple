@@ -78,7 +78,7 @@ export interface DailySessionCountOutput {
  * `session_replays` is PARTITION BY toDate(StartTime), so the window predicate
  * on `StartTime` prunes partitions. A session is counted on the day it started.
  *
- * `uniq(SessionId)`, not `count()`: every heartbeat is a row until a merge
+ * `uniqExact(SessionId)`, not `count()`: every heartbeat is a row until a merge
  * collapses it, so `count()` rendered a 10-minute session as ~12. This counts
  * sessions, which reads above the bill when a visitor used several tabs or
  * subdomains inside one billed visit.
@@ -87,7 +87,7 @@ export function dailySessionCountQuery() {
 	return from(SessionReplays)
 		.select(($) => ({
 			day: CH.toStartOfInterval($.StartTime, DAY_SECONDS),
-			sessions: CH.uniq($.SessionId),
+			sessions: CH.uniqExact($.SessionId),
 		}))
 		.where(($) => [
 			$.OrgId.eq(param.string("orgId")),

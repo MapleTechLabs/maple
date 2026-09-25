@@ -1907,7 +1907,7 @@ SELECT
 -- builder:billing-usage:dailySessionCountQuery:default
 SELECT
           toStartOfInterval(StartTime, INTERVAL 86400 SECOND) AS day,
-          uniq(SessionId) AS sessions
+          uniqExact(SessionId) AS sessions
         FROM session_replays
         WHERE OrgId = 'org_sql_catalog'
           AND StartTime >= toDateTime('2026-01-01 10:30:00')
