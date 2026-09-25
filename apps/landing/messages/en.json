@@ -297,7 +297,7 @@
 	"page_k8s_title": "Kubernetes Monitoring | Maple",
 	"page_k8s_desc": "Monitor Kubernetes clusters with OpenTelemetry. A Helm chart collects kubelet, host, and cluster-state metrics. Spans from instrumented pods arrive with pod, node, and namespace attached.",
 	"page_k8s_heading": "Your cluster and your traces, together",
-	"page_k8s_subtitle": "Install one Helm chart. Cluster metrics flow in, and spans arrive tagged with their pod, node and namespace.",
+	"page_k8s_subtitle": "Install one Helm chart. Cluster metrics flow in, and spans from pods in opted-in namespaces arrive tagged with their pod, node and namespace.",
 	"page_k8s_helm": "A simple Helm chart",
 	"page_k8s_helm_desc": "A small chart you can read in full. Collects pod, node and cluster metrics, and receives OTLP from your apps.",
 	"page_k8s_correlation": "Pods linked to spans",
