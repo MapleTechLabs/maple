@@ -63,6 +63,8 @@ describe("classifyChangedFile", () => {
 		assert.equal(classifyChangedFile("apps/api/src/routes/orders.test.ts"), "test")
 		assert.equal(classifyChangedFile("packages/domain/src/__tests__/x.ts"), "test")
 		assert.equal(classifyChangedFile("apps/web/src/routeTree.gen.ts"), "generated")
+		assert.equal(classifyChangedFile("packages/query-engine/src/__sql_baseline__/catalog.sql"), "generated")
+		assert.equal(classifyChangedFile("apps/web/src/__snapshots__/chart.test.tsx.snap"), "generated")
 		assert.equal(classifyChangedFile("bun.lock"), "lockfile")
 		assert.equal(classifyChangedFile("docs/api-v2.md"), "docs")
 		assert.equal(classifyChangedFile("README.md"), "docs")

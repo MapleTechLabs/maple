@@ -2,14 +2,16 @@
  * How often the reviewer catches a bug that shipped, measured on this repository's own history.
  *
  *   bun run --cwd apps/ai review:eval mine [--since 2026-08-01] [--ref origin/main] [--limit 40]
- *   bun run --cwd apps/ai review:eval run [--model id] [--prompt-file p] [--cases id,id]
+ *   bun run --cwd apps/ai review:eval run [--model id] [--prompt-file p] [--cases id,id] [--allow-exec]
  *
  * `mine` walks `fix:` commits, blames the lines each one changed back to the squash-merged pull
  * request that wrote them, and prints candidates. A person keeps the real bugs in
  * `pr-review-eval/corpus.json`. `run` reviews every corpus pull request with `review:local` and
  * counts a case located when a finding lands on a line the fix later changed; whether that finding
  * names the bug is for a person to read in `hits`. Unmatched findings are
- * not false positives by definition; read them in each run's `review.md`.
+ * not false positives by definition; read them in each run's `review.md`. A case with `range`
+ * reviews that local `base..head` instead of the pull request's current head, for a bug fixed
+ * inside the same pull request. `--allow-exec` is passed through to `review:local`.
  */
 import { spawnSync } from "node:child_process"
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs"
@@ -38,6 +40,8 @@ interface EvalCase {
 	readonly bug: string
 	readonly fix: { readonly sha: string; readonly subject: string }
 	readonly locations: ReadonlyArray<Location>
+	/** `base..head` to review instead of the pull request, when the bug never reached its final head. */
+	readonly range?: string
 }
 
 interface Finding {
@@ -60,6 +64,10 @@ const flags = (argv: ReadonlyArray<string>): Map<string, string> => {
 	for (let i = 0; i < argv.length; i++) {
 		const arg = argv[i] ?? ""
 		if (!arg.startsWith("--")) continue
+		if (arg === "--allow-exec") {
+			out.set("allow-exec", "true")
+			continue
+		}
 		const value = argv[i + 1]
 		// A flag without an operand is an error, never a reason to swallow the next flag.
 		if (value === undefined || value.startsWith("--")) {
@@ -219,13 +227,14 @@ const runEval = async (argv: ReadonlyArray<string>) => {
 		console.log(`\n=== ${evalCase.id}: ${evalCase.bug}`)
 		const dir = await reviewLocally([
 			REPOSITORY,
-			String(evalCase.number),
+			...(evalCase.range === undefined ? [String(evalCase.number)] : ["--range", evalCase.range]),
 			"--repo-dir",
 			REPO_ROOT,
 			"--out",
 			join(out, "runs"),
 			...(model === undefined ? [] : ["--model", model]),
 			...(opts.has("prompt-file") ? ["--prompt-file", opts.get("prompt-file") ?? ""] : []),
+			...(opts.has("allow-exec") ? ["--allow-exec"] : []),
 		])
 		if (dir === undefined) {
 			results.push({ id: evalCase.id, submitted: false })

@@ -11,13 +11,15 @@
  * renderers production uses, over the pull request fetched with your `gh` login.
  *
  * What is local: the source tools read a clone on disk at the head commit through git instead of
- * the sandbox container, `sandbox_exec` accepts only read-only git, and the telemetry tools answer
+ * the sandbox container, `sandbox_exec` accepts only read-only git (plus `node`/`bun` with
+ * `--allow-exec`), and the telemetry tools answer
  * that no warehouse is attached. Nothing is posted to GitHub; the run writes `review.md`,
  * `transcript.md` and `report.json` under `scripts/.pr-review-runs/`.
  *
  * Flags: `--repo-dir <path>` (a clone of the repository; default: this checkout when it is the same
  * repository, else a cached clone), `--model <openrouter id>`, `--prompt-file <path>` (replaces the
- * system prompt), `--out <dir>`.
+ * system prompt), `--out <dir>`, `--allow-exec` (lets `sandbox_exec` run `node` and `bun` in the
+ * commit's worktree, as production's sandbox does; this runs model-written code on your machine).
  */
 import { spawnSync } from "node:child_process"
 import { randomUUID } from "node:crypto"
@@ -77,11 +79,13 @@ interface Args {
 	readonly post: boolean
 	/** Review a local `base..head` range instead of a pull request; nothing is fetched from GitHub. */
 	readonly range: string | undefined
+	/** Let `sandbox_exec` run `node` and `bun`, which production's sandbox offers. Off by default. */
+	readonly allowExec: boolean
 }
 
 const usage = () => {
 	console.error(
-		"usage: review:local <owner/repo> <number> | <pull request url> [--repo-dir p] [--model id] [--prompt-file p] [--out dir] [--post] | <owner/repo> --range base..head --repo-dir p",
+		"usage: review:local <owner/repo> <number> | <pull request url> [--repo-dir p] [--model id] [--prompt-file p] [--out dir] [--post] [--allow-exec] | <owner/repo> --range base..head --repo-dir p",
 	)
 	process.exit(2)
 }
@@ -91,8 +95,8 @@ const parseArgs = (argv: ReadonlyArray<string>): Args => {
 	const positional: Array<string> = []
 	for (let i = 0; i < argv.length; i++) {
 		const arg = argv[i] ?? ""
-		if (arg === "--post") {
-			flags.set("post", "true")
+		if (arg === "--post" || arg === "--allow-exec") {
+			flags.set(arg.slice(2), "true")
 		} else if (arg.startsWith("--")) {
 			const value = argv[i + 1]
 			if (value === undefined) usage()
@@ -119,6 +123,7 @@ const parseArgs = (argv: ReadonlyArray<string>): Args => {
 		out: resolve(flags.get("out") ?? join(SCRIPT_DIR, ".pr-review-runs")),
 		post: flags.get("post") === "true",
 		range,
+		allowExec: flags.get("allow-exec") === "true",
 	}
 }
 
@@ -149,6 +154,19 @@ const run = (cmd: ReadonlyArray<string>, cwd?: string) => {
 		stdout: proc.stdout ?? "",
 		stderr: proc.stderr ?? "",
 	}
+}
+
+/** A model-written script: no inherited secrets, a wall-clock limit like the sandbox's. */
+const runScript = (cmd: ReadonlyArray<string>, cwd: string) => {
+	const [bin = "", ...rest] = cmd
+	const proc = spawnSync(bin, rest, {
+		cwd,
+		encoding: "utf8",
+		timeout: 30_000,
+		maxBuffer: 8 * 1024 * 1024,
+		env: { PATH: process.env.PATH ?? "", HOME: cwd },
+	})
+	return { code: proc.status, stdout: proc.stdout ?? "", stderr: proc.stderr ?? "" }
 }
 
 const must = (cmd: ReadonlyArray<string>, cwd?: string): string => {
@@ -501,6 +519,7 @@ const makeExecutor = (input: {
 	readonly context: PullRequestContext | undefined
 	readonly dir: string
 	readonly headSha: string
+	readonly allowExec: boolean
 }): { readonly executor: McpToolExecutorApi; readonly cleanup: () => void } => {
 	const git = (args: ReadonlyArray<string>) => run(["git", ...args], input.dir)
 	// `sandbox_exec` runs where production runs it: inside a checkout of the commit, so a bare
@@ -659,6 +678,18 @@ const makeExecutor = (input: {
 			case "sandbox_exec": {
 				const command = str(params.command)
 				const args = params.args ?? []
+				if (input.allowExec && (command === "node" || command === "bun")) {
+					const ref = refOf(params)
+					if (typeof ref !== "string") return ref
+					const result = runScript([command, ...args], worktreeAt(ref))
+					return text([
+						`Exit: ${result.code ?? -1}`,
+						"```",
+						result.stdout.slice(0, 48_000),
+						result.stderr.slice(0, 2_000),
+						"```",
+					])
+				}
 				if (command !== "git" || !READ_ONLY_GIT.has(args[0] ?? "") || args.some(unsafeGitArg)) {
 					return failure(
 						`The local runner only executes read-only git (${[...READ_ONLY_GIT].join(", ")}).`,
@@ -825,6 +856,7 @@ export const reviewLocally = async (
 		context: args.range === undefined ? fetchPullRequestContext(args, pr.head.sha) : undefined,
 		dir: clone.dir,
 		headSha: pr.head.sha,
+		allowExec: args.allowExec,
 	})
 
 	const tools: Array<ToolRecord> = []
