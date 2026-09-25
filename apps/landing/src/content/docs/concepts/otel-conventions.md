@@ -34,13 +34,13 @@ Send telemetry to Maple using standard OTLP HTTP endpoints:
 
 Include your ingest key in the request headers:
 
-```
+```text
 Authorization: Bearer YOUR_INGEST_KEY
 ```
 
 Alternatively, use the `x-maple-ingest-key` header:
 
-```
+```text
 x-maple-ingest-key: YOUR_INGEST_KEY
 ```
 
@@ -173,7 +173,7 @@ Maple draws an edge when a `Client` or `Producer` span in one service has a chil
 
 Instrumented HTTP and RPC clients do both for you.
 
-```
+```text
 api:    GET /v1/users  (span.kind=Client, span_id=a1)
 users:  GET /v1/users  (span.kind=Server, parent_span_id=a1)
                             └──> draws an edge api → users
@@ -185,7 +185,7 @@ users:  GET /v1/users  (span.kind=Server, parent_span_id=a1)
 
 Set `db.system.name` and `db.namespace` on database `Client` spans. The legacy `db.system` spelling is also accepted. Maple keys each database node on the pair, so services that call the same database share one node.
 
-```
+```text
 SELECT * FROM users  (span.kind=Client, db.system.name=postgresql, db.namespace=users_db)
                             └──> draws an edge api → postgresql users_db
 ```
@@ -426,14 +426,11 @@ This derives metrics from every span before sampling reduces the trace volume. S
 
 ## Data Retention
 
-| Signal          | Retention |
-| --------------- | --------- |
-| Traces and logs | 30 days   |
-| Metrics         | 90 days   |
+Retention depends on your plan: 7 days on Starter, 30 days on Startup, and custom on Enterprise. See [Pricing](/pricing) for current plan details.
 
 ## Environment Variable Reference
 
-The recommended setup is to **inline the endpoint and ingest key directly in your bootstrap source**. The ingest key is write-only and scoped to your organization. Source-level configuration also removes deploy failures where OTel never starts because an env var wasn't set. The per-language guides show this shape.
+On servers, pass the endpoint and your private ingest key (`maple_sk_...`) to the exporter from a secret or environment variable at runtime. Never commit the private key to source control. Browser and mobile apps use the public key (`maple_pk_...`), which is safe to ship.
 
 If your existing setup uses the standard OpenTelemetry environment variables, those are also supported:
 
