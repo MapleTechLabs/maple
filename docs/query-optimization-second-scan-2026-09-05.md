@@ -1,4 +1,4 @@
-# Query optimization: second scan — 2026-09-05
+# Query optimization: second scan (2026-09-05)
 
 **The strongest new SQL candidate is the timeseries series cap:** a window-ranking experiment read approximately **50% fewer bytes** and used **30–54% less mean server time**, with matching results in four populated cases. The broader scan also found substantial repeated trace-alert work and raw-alert authentication failures. Switching service facets to the existing minute tier increased reads and is not recommended from this evidence.
 

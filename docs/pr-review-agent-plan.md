@@ -43,11 +43,12 @@ superseded row is dropped.
 ### The agent (`apps/ai`)
 
 - **Mode.** `pr-review` is a `ChatMode` with tab prefix `pr-`. Its `AGENTS` entry carries
-  `PR_REVIEW_SYSTEM_PROMPT`, `PR_REVIEW_BUDGET` (60 tool calls, 8 minutes, 800k tokens, 48k
-  completion reserve) and `autonomousPermission: PR_REVIEW_RULESET`, which `profileForTurn` uses
-  for the unattended pass only.
+  `PR_REVIEW_SYSTEM_PROMPT`, `PR_REVIEW_BUDGET` (`apps/ai/src/chat/budgets.ts`: 500 tool calls,
+  10 minutes, 64M tokens, 48k completion reserve, sized as runaway guards since #1053) and
+  `autonomousPermission: PR_REVIEW_RULESET`, which `profileForTurn` uses for the unattended pass
+  only.
 - **Tools.** `PR_REVIEW_RULESET` denies everything and allows the names in `PR_REVIEW_TOOLS`:
-  `pr_changed_files`, `pr_file_diff`, the four `sandbox_*` tools, `list_source_repositories`,
+  `pr_changed_files`, `pr_context`, `pr_file_diff`, the four `sandbox_*` tools, `list_source_repositories`,
   `search_source_code`, `read_source_file`, and the read-only telemetry tools `list_services`,
   `get_service_top_operations`, `explore_attributes`, `search_traces`, `service_map`,
   `list_metrics`, `audit_setup` and `get_instrumentation_recommendations`. `permissions.test.ts`
@@ -55,8 +56,8 @@ superseded row is dropped.
 - **Diff tools.** `pr_changed_files` and `pr_file_diff` are internal tools
   (`apps/ai/src/mcp/tools/pull-request.ts`) over GitHub's pull request files endpoint, so they work
   locally, on previews and for fork PRs, where the prd-only sandbox does not. `pr_changed_files`
-  classifies each file (source, test, generated, docs, config, infra, tooling) and states the call
-  budget, `reviewCallBudget`: two calls per reviewable file plus four, between 6 and 40.
+  classifies each file (source, test, generated, docs, config, infra, tooling) and counts the
+  reviewable ones. It no longer states a call budget: `reviewCallBudget` was removed after #1053.
   `pr_file_diff` takes up to 20 `paths` per call and annotates new-side line numbers, so a finding
   cites a line GitHub accepts.
 - **Completion.** `submit_review` is offered only to the review's unattended pass; a person's
@@ -65,9 +66,9 @@ superseded row is dropped.
   `normalizePrReviewSubmission` drops any finding without a path or a positive line, and any
   observability finding without a check id from the `maple-audit` grammar (`SPAN-03`,
   `REN-DUAL`). It derives the verdict: `issues` exactly when a warn or critical finding survives,
-  otherwise the model's `not_applicable` or `clean`. A pass that stops without submitting gets the shared close-out turn
-  (`withToolTranscript` in `apps/ai/src/chat/close-out.ts`), which sees the tool calls and results
-  the pass gathered.
+  otherwise the model's `not_applicable` or `clean`. A pass that stops without submitting gets the
+  shared close-out turn (`withToolTranscript` in `apps/ai/src/chat/close-out.ts`), which sees the
+  tool calls and results the pass gathered.
 - **Billing.** The turn is metered with source `review` and an idempotency key of the review id
   and the turn.
 
@@ -100,22 +101,30 @@ needs work (50+) or poor. A single warning scores 90 but grades good, so the hea
 gap excellent. The score is computed from the findings rather than asked of the model, so the same
 gaps always score the same, and it is stored in `pr_reviews.score`.
 
+The headline is now a confidence level from 1 to 5 (`confidencePrReview`, same file), from "do not
+merge" to "safe to merge". It starts from the quality score, deducts for missing tests, a high-risk
+area and unobservable new work, and is capped by findings. The quality score is shown beneath it.
+
 ### Publishing to GitHub
 
 `PrReviewService.submitReview` stores the report, then calls
 `VcsProviderClient.publishPullRequestReview`, which posts, in order:
 
-1. **A check run** named `Maple / review` on the head SHA, titled `<score>/100 · <verdict>`,
-   concluding `neutral` for gaps and `success` otherwise, never `failure`. An installation that
-   has not granted `checks: write` answers 403, and the review is posted without the check run. A
-   rate-limited 403, which carries a retry time, fails the publish instead.
-2. **One summary comment**, always, found again by its hidden `<!-- maple-pr-review -->` line and
-   authored by the App, and edited in place on later pushes. It carries the score, grade, verdict,
-   counts, summary, findings linked to their lines at the head SHA, what to change, and the
-   coverage table. The comment and the check summary share `renderReviewMarkdown`.
-3. **A `COMMENT` review** with the findings above `info` inline, only when there are any. GitHub
-   refuses the whole review with a 422 when one line is outside the diff; the inline notes are then
-   dropped, since the summary comment already carries every finding.
+1. **A check run** named `Maple / review` on the head SHA, titled `Confidence <n>/5 · <verdict>`.
+   It concludes `success` only when the review finished, left nothing to address and did not
+   rate confidence 3 or lower; otherwise `neutral`, never `failure`. An installation that has not granted
+   `checks: write` answers 403, and the review is posted without the check run. A rate-limited
+   403, which carries a retry time, fails the publish instead.
+2. **One summary comment per review**, always, authored by the App and found again by its hidden
+   `<!-- maple-pr-review <reviewId> <attempt> -->` line (`prReviewCommentMarker`). A "reviewing"
+   notice is replaced by that review's result; the next review of the pull request starts its own
+   comment (#1051). It carries the confidence, verdict, counts, summary, findings linked to their
+   lines at the head SHA, what to change, and the coverage table. The comment and the check
+   summary share `renderReviewMarkdown`.
+3. **A `COMMENT` review** with the findings at or above the repository's inline threshold (`warn`
+   by default) inline, only when there are any. GitHub refuses the whole review with a 422 when
+   one line is outside the diff; the inline notes are then dropped, since the summary comment
+   already carries every finding.
 
 The publisher takes the PR identity from the `pr_reviews` row bound at trigger time, never from
 tool arguments, so text in a diff cannot redirect where the review is posted. A refused post lands
@@ -139,7 +148,8 @@ The trigger (`PrReviewService.onPullRequestEvent`) and `submitReview` spans carr
 `maple.pr_review.id`, `.outcome`, `.skip_reason`, `.started_today`, `.superseded`, `.verdict`,
 `.score`, `.findings`, `.coverage`, `.partial`, `.published` and `.stale_submission`, and the sink
 handler records `.trigger`. The `submit_review` tool span adds `.filled_fields`, `.filled_count`
-and `.dropped_findings`, and the turn records `.closed_out` when the runner had to close it out. The publish span carries `vcs.pull_request.check_run_id`, `.comment_id`,
+and `.dropped_findings`, and the turn records `.closed_out` when the runner had to close it out.
+The publish span carries `vcs.pull_request.check_run_id`, `.comment_id`,
 `.review_id`, `.check_run_skipped` and `.review_comments_rejected`. The turn itself is an ordinary
 chat session, so Agent Sessions shows its transcript.
 
@@ -214,9 +224,9 @@ Cost baseline from the first iteration (2026-09-22, `z-ai/glm-5.3-flash:nitro`):
 | #977 (3 files, web)                  | 374k input tokens, 23 calls | 52k, 5 calls, correct `100/100`        |
 | Gap fixture (1 file, 4 planted gaps) |                             | 42k, 5 calls, all four found, `60/100` |
 
-What moved it: `pr_changed_files` states a call budget (`reviewCallBudget`), the prompt reads the
-repository's conventions before the diffs and verifies only what a finding depends on, and
-`tooling` files are not reviewed.
+What moved it: `pr_changed_files` stated a call budget (`reviewCallBudget`, since removed), the
+prompt reads the repository's conventions before the diffs and verifies only what a finding
+depends on, and `tooling` files are not reviewed.
 
 `--prompt-file` replaces the system prompt for that run (an `agent` override on `ChatRunInput`), so
 a prompt change can be compared against the committed one before it is edited in.
@@ -225,6 +235,10 @@ The full path (webhook → trigger → Durable Object → GitHub post) is covere
 `PrReviewService.test.ts` and needs a deployed stage with the App installed to run live.
 
 ## Limits and what is next
+
+Status (2026-09-25): the full review agent below shipped fan-out for large pull requests, finding
+dedupe across pushes, a reviews list and per-repository config. The abandoned-row sweep is still
+open.
 
 - **Sandbox is prd only.** Local and preview runs use the API diff tools and `read_source_file`.
   Fork PRs get the API path only; deep context needs `git fetch origin refs/pull/N/head` in
@@ -258,10 +272,10 @@ one product behind the same `prreview` rollout flag. Observability is one lens o
 - **Context.** One `pr_context` call: commits, what people and other bots already said (the App's
   own comments excluded), and the head's checks, failing first.
 - **Large pull requests.** Past 12 reviewable files the pass calls `review_files` per group of
-  related files, in parallel. Each group runs a child `pr-review-worker` agent through
-  `effect-agent/subagent` `Subagent`: the parent's own read-only toolkit (the grant is exactly
-  those tools, depth one), 16 calls and 4 minutes each, at most 8 children and 4 at a time, reserved
-  from the parent's budget. The child answers findings one per line; the parent verifies and files.
+  related files, in parallel (`apps/ai/src/chat/review-fanout.ts`). Each group of up to 12 files
+  runs a child `pr-review-worker` agent through `effect-agent/subagent` `Subagent`: the parent's
+  own read-only toolkit (the grant is exactly those tools, depth one), 100 calls and 4 minutes
+  each, at most 12 children and 4 at a time, reserved from the parent's budget. The child answers findings one per line; the parent verifies and files.
 - **Quality gate.** `bun run --cwd apps/ai review:eval mine` blames each `fix:` commit's changed
   lines back to the squash-merged PR that wrote them; a person keeps the real bugs in
   `apps/ai/scripts/pr-review-eval/corpus.json`. `review:eval run --model <id>` reviews every case and
@@ -336,4 +350,4 @@ Permissions: `Pull requests: Read and write`, `Checks: Read and write`, `Content
 
 - Failed-check log tails in `pr_context` need `actions: read`.
 - Fork pull requests use the API diff path only; the sandbox cannot fetch `refs/pull/N/head` yet.
-- The eval corpus has five cases; widen it with `review:eval mine` before comparing models.
+- The eval corpus is small; widen it with `review:eval mine` before comparing models.

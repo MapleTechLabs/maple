@@ -17,7 +17,7 @@ there is no per-org routing anywhere, because each instance knows exactly one re
   deploy-time axis: `MapleRegion` in `packages/infra/src/aws/stage.ts` maps `eu` to eu-central-1
   and its own CIDR, resource names take a region suffix with `us` unsuffixed, and the root
   `alchemy.run.ts` reads `MAPLE_REGION` and guards it against `AWS_REGION`.
-- The Cloudflare half of the stack does not honour the region: `resolveWorkerName` and
+- The Cloudflare half of the stack does not honor the region: `resolveWorkerName` and
   `resolveMapleDomains` in `packages/infra/src/cloudflare/stage.ts` know only stage, and
   `CLOUDFLARE_WORKER_PLACEMENT` is a constant `aws:us-east-1`.
 - Every Worker binds one `MAPLE_DB` Hyperdrive, one Tinybird host, one replay bucket. There is no
@@ -52,8 +52,8 @@ callback, both on `api.maple.dev`, so an EU install lands on the US API (whose d
 connect session for it) and EU repositories' push and pull request events are delivered to the US.
 
 The sandbox clones the customer's repository, so it deploys per instance from day one:
-`stageDeploysSandbox` already gates it to prd, and the EU deploy is prd with `MAPLE_REGION=eu`, so the only work is the region-suffixed name. Cloudflare's Sandbox container
-has no jurisdiction setting, so it sits under the same best-effort placement as the Workers.
+`stageDeploysSandbox` already gates it to prd, and the EU deploy is prd (stage `prd-eu`), so the
+only work is the region-suffixed name. Cloudflare's Sandbox container has no jurisdiction setting, so it sits under the same best-effort placement as the Workers.
 
 ## Why `app.eu.maple.dev` and not a shared app
 
@@ -77,9 +77,8 @@ across regions because there is no routing.
    connection, the two declared Hyperdrive configs (`originConnectionLimit: 8` each, raise with
    the cluster), the gateway through PSBouncer and a few admin slots, so 50 or more. The size
    first chosen gave 25 and Electric crash-looped on `too_many_connections`. That is all: the
-   deploy adopts
-   its `main` branch and applies the migrations, and declares on it the gateway's role, Electric's
-   replication role, one role per Worker consumer and a Hyperdrive config on each
+   deploy adopts its `main` branch, applies the migrations, and declares on it the gateway's role,
+   Electric's replication role, one role per Worker consumer and a Hyperdrive config on each
    (`declareMapleDb` in `alchemy.run.ts`).
    The same PlanetScale service token serves both instances; `prod-eu` carries it under the
    same names.
@@ -122,7 +121,7 @@ across regions because there is no routing.
     Until the EU GitHub App exists, remove its keys from `prod-eu`: connecting then fails
     up front with "not configured" instead of sending the user through a flow that cannot finish.
 
-## Phase 1. The stack honours the region on Cloudflare (built)
+## Phase 1. The stack honors the region on Cloudflare (built)
 
 Built on the `worktree-eu-region` branch; `docs/infra.md` § Regions is the reference.
 
@@ -234,7 +233,6 @@ Taken 2026-09-16:
 2. Regional Services: not available; EU Workers run on best-effort placement, with the DO-hosted
    request path as the upgrade if a customer requires a hard execution guarantee.
 3. AI features off on `eu` at launch. Turned back on 2026-09-25 over OpenRouter's EU endpoint (Phase 4).
-
 4. Sandbox deploys per instance from day one.
 
 ## Order and size

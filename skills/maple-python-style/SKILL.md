@@ -5,6 +5,10 @@ description: "Python OpenTelemetry style for Maple: module-scope tracers/meters,
 
 # Maple Python style
 
+```bash
+pip install opentelemetry-sdk opentelemetry-exporter-otlp-proto-http opentelemetry-instrumentation-logging
+```
+
 Acquire OTel objects at module scope.
 
 ```python
@@ -19,7 +23,7 @@ orders_submitted = meter.create_counter("orders.submitted", unit="1")
 
 ## Bounded work
 
-Prefer decorators for functions with clear boundaries.
+Use decorators for functions with clear boundaries. The decorator works on both sync and `async def` functions.
 
 ```python
 @tracer.start_as_current_span("order.submit")
@@ -64,15 +68,16 @@ If logs are claimed as OTLP-forwarded, configure all of:
 - `set_logger_provider(logger_provider)` from `opentelemetry._logs`
 - Log correlation for existing records, e.g. `LoggingInstrumentor().instrument(set_logging_format=True)`
 
-Preserve existing `logging.basicConfig`, console / file handlers, and log levels. The user's logger keeps working — you're adding an OTLP handler underneath so log lines carry `trace_id` / `span_id` and reach Maple.
+Preserve existing `logging.basicConfig`, console / file handlers, and log levels. The user's logger keeps working. The OTLP handler sits underneath so log lines carry `trace_id` / `span_id` and reach Maple.
 
 ## Init behavior
 
-Inline the endpoint and ingest key directly in the init module — don't read them from env. The ingest key is project-scoped + write-only (Sentry DSN shaped), so source-level configuration is the right default; env indirection just adds a class of "OTel didn't start because env wasn't set" deploy failures.
+Inline the endpoint and ingest key in the init module. Do not read them from env. The ingest key is project-scoped and write-only (shaped like a Sentry DSN), so source-level configuration is the default. Env indirection adds "OTel didn't start because env wasn't set" deploy failures.
 
 ```python
 # telemetry.py
 import logging
+import os
 
 from opentelemetry import _logs, metrics, trace
 from opentelemetry.exporter.otlp.proto.http._log_exporter import OTLPLogExporter
@@ -150,7 +155,7 @@ Counters:
 - `llm.tokens.output`
 - requests/events/jobs/errors
 
-Use semantic units when the SDK supports them: token counters use `unit="tokens"`. Do not add app-side `llm.cost_usd` pricing metrics for normal LLM calls; Maple estimates cost centrally from provider/model/token data.
+Use UCUM units: token counters use `unit="{token}"`. Do not add app-side `llm.cost_usd` pricing metrics for normal LLM calls; Maple estimates cost centrally from provider/model/token data.
 
 Histograms:
 
@@ -162,7 +167,7 @@ Avoid raw high-cardinality values in metric attributes. Prefer tenant/org/projec
 
 ## FastAPI
 
-Use the native instrumentation rather than replacing request handling with manual middleware.
+Use the native instrumentation (`pip install opentelemetry-instrumentation-fastapi`). Do not replace request handling with manual middleware.
 
 ```python
 from fastapi import FastAPI

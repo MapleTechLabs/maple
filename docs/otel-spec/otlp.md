@@ -2,13 +2,13 @@
 
 OTLP (OpenTelemetry Protocol) is the wire format OpenTelemetry SDKs and collectors use to send traces, metrics, and logs. It defines the transports (gRPC, HTTP/protobuf, HTTP/JSON), the protobuf message schemas (`Resource` → `Scope*` → `Span`/`Metric`/`LogRecord`), the request/response contract (including partial-success semantics), and retry/backpressure rules a compliant server must implement.
 
-> **Relevance to Maple:** Maple's Rust ingest gateway (`apps/ingest`) is an **OTLP server** — it receives OTLP/HTTP (binary protobuf and JSON) from customer SDKs/collectors and must implement the server-side MUSTs below: correct status codes, partial-success vs full-failure semantics, `Retry-After`/throttling signals, and JSON encoding rules (hex trace/span IDs, camelCase, numeric enums, stringified int64). Getting these wrong causes silent data loss or client retry storms. Maple is also an OTLP **client** for self-observability (`apps/ingest` and the API self-instrument via `@effect/opentelemetry`/OTLP exporters) — the exporter env-var section governs that config. Our dummy-data script (`scripts/ingest-dummy.ts`, `bun run ingest:dummy`) hand-constructs OTLP/JSON and depends on the JSON encoding rules (camelCase + hex IDs); see also the root `CLAUDE.md` self-observability section for the loop-prevention rules layered on top of this transport.
+> **Relevance to Maple:** Maple's Rust ingest gateway (`apps/ingest`) is an **OTLP server**. It receives OTLP/HTTP (binary protobuf and JSON) from customer SDKs and collectors, plus OTLP/gRPC when `INGEST_OTLP_GRPC_PORT` is set. It must implement the server-side MUSTs below: correct status codes, partial-success vs full-failure semantics, `Retry-After`/throttling signals, and the JSON encoding rules (hex trace/span IDs, lowerCamelCase, numeric enums, stringified int64). Getting these wrong causes silent data loss or client retry storms. Maple is also an OTLP **client** for self-observability: the ingest gateway exports through the Rust OpenTelemetry SDK, and the API through `@maple-dev/effect-sdk` (`packages/effect-sdk`). The exporter env-var section governs that config. The dev script `scripts/ingest-dummy-traces.ts` hand-builds OTLP/JSON and depends on the JSON encoding rules. The API traces itself through ingest; see the "Self-tracing" rule in the root `CLAUDE.md` for the loop prevention layered on top of this transport.
 
 ---
 
 ## Stability
 
-Per the OTLP spec (v1.10.0): OTLP is **Stable** for the **trace, metric, and log** signals. The **profiles** signal is **Development** status (entered public Alpha in March 2026 per the OpenTelemetry blog); its default HTTP path is versioned accordingly (`/v1development/profiles`, not `/v1/profiles`), and its proto messages/fields are explicitly excluded from stability guarantees until promoted.
+Per the OTLP spec (v1.10.0): OTLP is **Stable** for the **trace, metric, and log** signals. The **profiles** signal is **Development** (public Alpha since March 2026, per the OpenTelemetry blog). Its default HTTP path is versioned to match (`/v1development/profiles`, not `/v1/profiles`), and its proto messages and fields carry no stability guarantees until promoted.
 
 Source: https://opentelemetry.io/docs/specs/otlp/ · https://opentelemetry.io/blog/2026/profiles-alpha/
 
@@ -91,7 +91,7 @@ Source: https://github.com/open-telemetry/opentelemetry-proto/blob/main/opentele
 ### Full success
 
 - **gRPC:** server responds with the appropriate `Export<Signal>ServiceResponse` and **"MUST leave the `partial_success` field unset in case of a successful response."**
-- **HTTP:** **"On success, the server MUST respond with `HTTP 200 OK`."** The response body **"MUST be a Protobuf-encoded `Export<signal>ServiceResponse` message"** (even for a JSON request — response encoding for HTTP is always the ordinary protobuf-JSON/binary mapping, matching the request's encoding).
+- **HTTP:** **"On success, the server MUST respond with `HTTP 200 OK`."** The response body **"MUST be a Protobuf-encoded `Export<signal>ServiceResponse` message"**. The server MUST respond with the same `Content-Type` it received, so a JSON request gets a JSON-encoded response.
 
 ### Partial success (server MUST rules)
 
@@ -103,7 +103,7 @@ Applicability: **"If the request is only partially accepted (i.e. when the serve
 
 Warnings-only case: **"Servers MAY also use the `partial_success` field to convey warnings/suggestions to clients even when the server fully accepts the request. In such cases, the `rejected_<signal>` field MUST have a value of `0`."**
 
-Client behavior: **"The client MUST NOT retry the request when it receives a partial success response where the `partial_success` is populated"** — partial success is a terminal outcome, not a retry signal, regardless of which items were rejected.
+Client behavior: **"The client MUST NOT retry the request when it receives a partial success response where the `partial_success` is populated"**. Partial success is terminal, whichever items were rejected.
 
 Degenerate case: a `partial_success` with `rejected_* == 0` and empty `error_message` is defined as equivalent to the field being unset (full success).
 
@@ -111,14 +111,14 @@ Source: https://opentelemetry.io/docs/specs/otlp/ · https://github.com/open-tel
 
 ### When to use partial success vs full failure (server MUST)
 
-- If **any** part of the request is decodable and acceptable, respond `200 OK` + partial success describing what was rejected and why — do not fail the whole request just because some items were bad.
+- If **any** part of the request is decodable and acceptable, respond `200 OK` + partial success describing what was rejected and why. Do not fail the whole request because some items were bad.
 - If the request **cannot be decoded at all**, or is invalid such that nothing in it can be processed, and the failure is permanent: **"the server MUST respond with `HTTP 400 Bad Request`"** (full failure, no partial success). The client **"MUST NOT retry"** on a 400.
 
 ---
 
 ## Failure handling
 
-### gRPC status codes — retryable matrix
+### gRPC status codes: retryable matrix
 
 | gRPC code           | Retryable?                                              |
 | ------------------- | ------------------------------------------------------- |
@@ -145,7 +145,7 @@ Source: https://opentelemetry.io/docs/specs/otlp/ · https://github.com/open-tel
 - Backoff: **"When retrying, the client SHOULD implement an exponential backoff strategy."**
 - gRPC backpressure signal: **"To signal backpressure when using gRPC transport, the server SHOULD return an error with code `Unavailable` and MAY supply additional details via status using `RetryInfo`."**
 
-### HTTP status codes — retryable matrix
+### HTTP status codes: retryable matrix
 
 | HTTP status             | Retryable? | Notes                                                                     |
 | ----------------------- | ---------- | ------------------------------------------------------------------------- |
@@ -157,7 +157,7 @@ Source: https://opentelemetry.io/docs/specs/otlp/ · https://github.com/open-tel
 | 504 Gateway Timeout     | **Yes**    |                                                                           |
 | other 4xx/5xx           | **No**     | **"All other `4xx` or `5xx` response status codes MUST NOT be retried."** |
 
-- Error body: **"The response body for all `HTTP 4xx` and `HTTP 5xx` responses MUST be a Protobuf-encoded `Status` message that describes the problem."** — this applies regardless of whether the request was binary or JSON encoded.
+- Error body: **"The response body for all `HTTP 4xx` and `HTTP 5xx` responses MUST be a Protobuf-encoded `Status` message that describes the problem."** It is encoded with the request's `Content-Type` (binary protobuf or JSON).
 - Bad data: **"If the processing of the request fails because the request contains data that cannot be decoded or is otherwise invalid and such failure is permanent, then the server MUST respond with `HTTP 400 Bad Request`."**
 
 ### Throttling / backpressure (server SHOULD)
@@ -168,7 +168,7 @@ Source: https://opentelemetry.io/docs/specs/otlp/ · https://github.com/open-tel
 
 ### Duplicate data (known limitation, informational)
 
-**"In edge cases (e.g. on reconnections, network interruptions, etc) the client has no way of knowing if recently sent data was delivered if no acknowledgement was received yet. The client will typically choose to re-send such data to guarantee delivery, which may result in duplicate data on the server side."** — downstream consumers (Tinybird MVs, dashboards) should tolerate duplicate spans/log records/data points; OTLP does not guarantee exactly-once delivery.
+**"In edge cases (e.g. on reconnections, network interruptions, etc) the client has no way of knowing if recently sent data was delivered if no acknowledgement was received yet. The client will typically choose to re-send such data to guarantee delivery, which may result in duplicate data on the server side."** OTLP does not guarantee exactly-once delivery, so downstream consumers (Tinybird MVs, dashboards) should tolerate duplicate spans, log records, and data points.
 
 ### Empty envelopes
 
@@ -178,15 +178,15 @@ Source: https://opentelemetry.io/docs/specs/otlp/
 
 ---
 
-## JSON encoding (OTLP/HTTP JSON) — deviations from standard protobuf JSON
+## JSON encoding (OTLP/HTTP JSON): deviations from standard protobuf JSON
 
-OTLP/HTTP JSON starts from the proto3 standard JSON mapping but overrides it in ways that matter for anyone hand-constructing or parsing OTLP JSON (e.g. Maple's ingest-dummy script):
+OTLP/HTTP JSON starts from the proto3 standard JSON mapping but overrides it in ways that matter to anyone hand-building or parsing OTLP JSON (e.g. `scripts/ingest-dummy-traces.ts`):
 
 | Aspect                         | Standard protobuf JSON                   | **OTLP/JSON rule**                                                                                                                                                     |
 | ------------------------------ | ---------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `trace_id`/`span_id` (`bytes`) | base64                                   | **Case-insensitive hex-encoded string.** Example: `{"traceId": "5B8EFFF798038103D269B633813FC60C"}`                                                                    |
-| Field names                    | configurable                             | **lowerCamelCase only** — original (snake_case) field names are **not valid**. Example: `droppedAttributesCount`, not `dropped_attributes_count`                       |
-| Enums                          | name string OR number, receiver's choice | **Numbers only — enum name strings MUST NOT be used.** Example: `{"kind": 2}`, not `{"kind": "SPAN_KIND_SERVER"}`                                                      |
+| Field names                    | configurable                             | **lowerCamelCase only**; original (snake_case) field names are **not valid**. Example: `droppedAttributesCount`, not `dropped_attributes_count`                       |
+| Enums                          | name string OR number, receiver's choice | **Numbers only; enum name strings MUST NOT be used.** Example: `{"kind": 2}`, not `{"kind": "SPAN_KIND_SERVER"}`                                                      |
 | `int64`/`uint64`               | string                                   | Same as standard: **encoded as decimal strings**; **"either numbers or strings are accepted when decoding"**                                                           |
 | Unknown fields                 | mapping-defined                          | **"OTLP/JSON receivers MUST ignore message fields with unknown names and MUST unmarshal the message as if the unknown field was not present"** (forward compatibility) |
 
@@ -258,7 +258,7 @@ message KeyValue {
 }
 ```
 
-`ArrayValue`/`KeyValueList` let `AnyValue` recurse arbitrarily (arrays of any value, maps of any value), which is how OTel represents nested/structured attributes over a flat protobuf wire format.
+`ArrayValue`/`KeyValueList` let `AnyValue` recurse (arrays of any value, maps of any value). This is how OTel carries nested attributes over protobuf.
 
 ### `Span` (trace.proto)
 
@@ -301,7 +301,7 @@ message Status {
 }
 ```
 
-> Note for Maple: `Status.code` on the wire is the numeric enum (`0`/`1`/`2` — `Unset`/`Ok`/`Error`); the project's own data convention (per root `CLAUDE.md`) renders these as title-case strings (`"Ok"`, `"Error"`, `"Unset"`) once ingested — that's a Maple display/storage convention, not an OTLP wire rule.
+> Note for Maple: `Status.code` on the wire is the numeric enum (`0`/`1`/`2` = `Unset`/`Ok`/`Error`). Maple stores and displays these as Title case strings (`"Ok"`, `"Error"`, `"Unset"`, per root `CLAUDE.md`). That is a Maple storage convention, not an OTLP wire rule.
 
 ### `LogRecord` (logs.proto)
 
@@ -321,11 +321,11 @@ message LogRecord {
 }
 ```
 
-`SeverityNumber` is a 1–24 numeric scale (`UNSPECIFIED=0`, then `TRACE`(1-4)/`DEBUG`(5-8)/`INFO`(9-12)/`WARN`(13-16)/`ERROR`(17-20)/`FATAL`(21-24) tiers, each tier having 4 numbered sub-levels e.g. `TRACE2`).
+`SeverityNumber` is a 1-24 numeric scale: `UNSPECIFIED=0`, then `TRACE`(1-4), `DEBUG`(5-8), `INFO`(9-12), `WARN`(13-16), `ERROR`(17-20), `FATAL`(21-24). Each tier has four numbered sub-levels (e.g. `TRACE2`).
 
 ### Dropped-count fields (uniform pattern across all signals)
 
-Every repeated collection that the SDK may have truncated carries a paired `dropped_*_count: uint32` sibling — `dropped_attributes_count` (Resource, InstrumentationScope, Span, LogRecord, metric data points), `dropped_events_count`/`dropped_links_count` (Span only). `0` always means "nothing was dropped," never "field not applicable."
+Every repeated collection that the SDK may have truncated carries a paired `dropped_*_count: uint32` sibling: `dropped_attributes_count` (Resource, InstrumentationScope, Span, LogRecord, metric data points), `dropped_events_count`/`dropped_links_count` (Span only). `0` always means "nothing was dropped," never "field not applicable."
 
 ### `flags` fields
 
@@ -337,7 +337,7 @@ Source: https://github.com/open-telemetry/opentelemetry-proto/blob/main/opentele
 
 ## Exporter configuration (`OTEL_EXPORTER_OTLP_*`)
 
-All options are defined generically and per-signal (`TRACES`/`METRICS`/`LOGS`); **"Each configuration option MUST be overridable by a signal specific option"** — signal-specific always wins over the generic one.
+All options are defined generically and per-signal (`TRACES`/`METRICS`/`LOGS`); **"Each configuration option MUST be overridable by a signal specific option"**. The signal-specific value always wins over the generic one.
 
 | Env var (generic → per-signal suffix pattern)                                               | Default                                                        | Values / format                                                                                                                           |
 | ------------------------------------------------------------------------------------------- | -------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
@@ -351,10 +351,10 @@ All options are defined generically and per-signal (`TRACES`/`METRICS`/`LOGS`); 
 | `OTEL_EXPORTER_OTLP_CLIENT_CERTIFICATE` → `_TRACES_CLIENT_CERTIFICATE` / etc.               | none                                                           | PEM file path (mTLS client cert/chain)                                                                                                    |
 | `OTEL_EXPORTER_OTLP_CLIENT_KEY` → `_TRACES_CLIENT_KEY` / etc.                               | none                                                           | PEM file path (mTLS client private key)                                                                                                   |
 
-### Endpoint path-appending rule — generic vs per-signal
+### Endpoint path-appending rule: generic vs per-signal
 
 - **Generic `OTEL_EXPORTER_OTLP_ENDPOINT` (HTTP):** the base URL, with the signal path appended: `v1/traces`, `v1/metrics`, `v1/logs`.
-- **Per-signal endpoint (e.g. `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`):** **"the URL MUST be used as-is without any modification. The only exception is that if a URL contains no path part, the root path `/` MUST be used."** — i.e. per-signal endpoints are NOT auto-suffixed with `/v1/traces`; you must include the full path yourself, or the request goes to `/`.
+- **Per-signal endpoint (e.g. `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`):** **"the URL MUST be used as-is without any modification. The only exception is that if a URL contains no path part, the root path `/` MUST be used."** Per-signal endpoints are NOT suffixed with `/v1/traces`. Include the full path yourself, or the request goes to `/`.
 - **Precedence:** **"The per-signal endpoint configuration options take precedence and can be used to override this behavior (the URL is used as-is for them, without any modifications)."**
 
 ### Protocol defaults / SDK requirements
@@ -371,7 +371,7 @@ Source: https://opentelemetry.io/docs/specs/otel/protocol/exporter/
 
 ## Key references
 
-- OTLP specification (main spec — transports, request/response, retries, throttling): https://opentelemetry.io/docs/specs/otlp/
+- OTLP specification (main spec: transports, request/response, retries, throttling): https://opentelemetry.io/docs/specs/otlp/
 - OTLP/JSON encoding deviations: https://opentelemetry.io/docs/specs/otlp/#json-protobuf-encoding
 - Exporter configuration (env vars): https://opentelemetry.io/docs/specs/otel/protocol/exporter/
 - opentelemetry-proto repo (all `.proto` sources): https://github.com/open-telemetry/opentelemetry-proto

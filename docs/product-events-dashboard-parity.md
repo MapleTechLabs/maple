@@ -1,11 +1,15 @@
-# Product events as a first-class dashboard source — plan
+# Product events as a first-class dashboard source: plan
 
 Status: **phases 1 through 5 built 2026-09-13** on `feat/product-events-query-source`
-(PR #877). Verified end to end against a seeded local Tinybird: the Top Events, Events by Page and
-Recent Events tiles, a four-step person-stitched funnel built in the step editor, and an alert rule
-prefilled from a product-event widget all ran through the real stack. Phase 6 (deleting the last
-funnel special cases: `FunnelSource: "query_set"`, `isProductEventsFunnel` as a gate) is still open;
-so is the `SignalEmptyState` wiring, which cannot be exercised on an org that has events.
+(PR #877, merged to `main`). Verified end to end against a seeded local Tinybird: the Top Events,
+Events by Page and Recent Events tiles, a four-step person-stitched funnel built in the step
+editor, and an alert rule prefilled from a product-event widget all ran through the real stack.
+Phase 6 (deleting the last funnel special cases: `FunnelSource: "query_set"`,
+`isProductEventsFunnel` as a gate) is still open. The `SignalEmptyState` wiring is built
+(`ProductEventsAbsentHint` in `query-panel.tsx`) but unverified, since it cannot be exercised on
+an org that has events. The phase-1 query-set builders landed in
+`packages/query-engine/src/ch/queries/product-events-explore.ts`; the funnel queries stay in
+`product-events.ts`.
 
 ## Where it stood before this PR
 
@@ -62,7 +66,7 @@ path uses the row's own `if(UserId != '', UserId, VisitorId)` for `uniq(persons)
 Each phase is independently shippable and typechecks on its own. Order matters: every later phase
 hangs off the `QuerySpec` arms from phase 1.
 
-### Phase 1 — the engine: `product_events` as a `QuerySpec` source
+### Phase 1: the engine, `product_events` as a `QuerySpec` source
 
 **Domain (`packages/domain/src/query-engine.ts`)**
 
@@ -116,7 +120,7 @@ hangs off the `QuerySpec` arms from phase 1.
 `web-analytics-parity.clickhouse.e2e.test.ts` case asserting the timeseries `count` for
 `kind = navigation` equals `webAnalyticsPageviewsTimeseriesQuery` on the seeded data.
 
-### Phase 2 — the draft: `product_events` in the query builder model
+### Phase 2: the draft, `product_events` in the query builder model
 
 - `packages/query-model/src/query-draft.ts`: add `"product_events"` to
   `QUERY_BUILDER_DATA_SOURCES`; `ProductEventsQueryDraftSchema` = base fields +
@@ -137,7 +141,7 @@ hangs off the `QuerySpec` arms from phase 1.
 - `packages/backend/src/dashboard-templates/helpers.ts`: accept the new source in `makeQuerySpec`.
 - Tests in `model.test.ts`: clause parsing table, group-by resolution, aggregation guard.
 
-### Phase 3 — the builder UI
+### Phase 3: the builder UI
 
 - `query-panel-shell.tsx`: delete the `QueryPanelSource = QueryBuilderDataSource | "product_events"`
   special case. `product_events` is now a `QueryBuilderDataSource`; `QUERY_BUILDER_PANEL_SOURCES`
@@ -168,7 +172,7 @@ hangs off the `QuerySpec` arms from phase 1.
   render `SignalEmptyState` for `product_events` under the panel, as the explorers do.
 - `auto-contexts.ts`: `/analytics` already maps; nothing to do.
 
-### Phase 4 — alerts
+### Phase 4: alerts
 
 - `packages/backend/src/services/alerts/AlertRuleModel.ts`: `sampleCountStrategy` gains
   `"product_event_count"`; the evaluator (`makeQueryEngineEvaluate` /
@@ -180,7 +184,7 @@ hangs off the `QuerySpec` arms from phase 1.
 - Alert templates: one "Signups dropped" example under `alert-templates/` is enough to prove the
   path; don't build a catalogue.
 
-### Phase 5 — agents and public surfaces
+### Phase 5: agents and public surfaces
 
 - `apps/ai/src/mcp/tools/query-data.ts`: `source` accepts `product_events`; new params
   `event_name`, `event_kind`, `host`, `page_path`; `metric` doc lists the five aggregations;
@@ -195,7 +199,7 @@ hangs off the `QuerySpec` arms from phase 1.
 - v2 public API: `packages/domain/src/http/v2/telemetry-signals.ts` already lists the signal.
   No new v2 endpoint; product events are queried through the same widget/query-set routes.
 
-### Phase 6 — retire the special case
+### Phase 6: retire the special case
 
 - `product_events_funnel` route and `makeProductEventsFunnelDataSource` STAY: a funnel is a
   different query shape (windowFunnel + identity join), not a count. What goes is every place that

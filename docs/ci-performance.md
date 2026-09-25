@@ -49,7 +49,7 @@ with Vitest flags, and keep their original arguments; Rust retains its dedicated
 The runtime budget still applies to the Bun lanes. If those suites grow beyond it,
 they need runner-specific splitting rather than Vitest flags.
 
-The file-count projection is a capacity model; the measured fivefold suite run
+The file-count projection is a capacity model. The measured fivefold suite run
 below validates the test setup separately. More shards
 consume more runner setup time and require available organization concurrency;
 [GitHub schedules matrix jobs according to runner availability](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#jobsjob_idstrategymatrix).
@@ -78,7 +78,8 @@ The isolation tests verify that one database's DDL and session settings do not
 leak into another, and that a cache hit does not rewrite the fixture.
 
 UI defaults to Node, with explicit `@vitest-environment jsdom` directives on the
-DOM suites. Pure calculations no longer initialize a browser environment.
+DOM suites. Pure calculations no longer initialize a browser environment. (Superseded:
+DOM suites now run in Chromium, see [Native browser tests](#native-browser-tests).)
 
 The measurements below use the same worker count before and after. They exclude
 installation/build time and GitHub queueing, and are single paired runs rather
@@ -137,8 +138,8 @@ the existing abort-signal guard. Vitest 5's default mock cleanup is retained.
 
 Execution evals now install the shared PGlite global setup too. Collection was
 validated with a placeholder credential and an unmatched test-name filter:
-all 44 cases collected without running model calls. Browser tests still use
-jsdom; Browser Mode is a separate migration to a real browser provider.
+all 44 cases collected without running model calls. Browser tests still used
+jsdom at this point; the move to Browser Mode is described below.
 
 The optimization comparisons above were measured on Vitest 4.1.10. They are
 not measurements of the version upgrade itself.
