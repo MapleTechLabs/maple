@@ -79,30 +79,31 @@ For TypeScript projects, use the loader the repo already uses (`tsx`, `ts-node/e
 
 ## Route handlers and business operations
 
-Use the native API. Use `withSpan` from `@maple-dev/otel-helpers` for bounded operations. Its signature is `withSpan(name, fn, { tracer })`; it ends the span and records exceptions and `Error` status on throw.
+Use the native API: `tracer.startActiveSpan` with `try` / `catch` / `finally` for bounded operations, as in `maple-onboarding-style`.
 
 ```ts
-import { trace, metrics } from "@opentelemetry/api"
-import { withSpan } from "@maple-dev/otel-helpers"
+import { metrics, SpanStatusCode, trace } from "@opentelemetry/api"
 
 const tracer = trace.getTracer("orders.api")
 const meter = metrics.getMeter("orders.api")
 const submitted = meter.createCounter("orders.submitted")
 
 app.post("/orders", async (req, res) => {
-	await withSpan(
-		"order.submit",
-		async (span) => {
-			span.setAttributes({
-				"tenant.id": req.headers["x-tenant-id"] as string,
-				"order.id": req.body.id,
-			})
+	const tenantId = req.headers["x-tenant-id"] as string
+	await tracer.startActiveSpan("order.submit", async (span) => {
+		try {
+			span.setAttributes({ "tenant.id": tenantId, "order.id": req.body.id })
 			await chargeOrder(req.body)
-			submitted.add(1, { "tenant.id": req.headers["x-tenant-id"] as string })
+			submitted.add(1, { "tenant.id": tenantId })
 			res.json({ ok: true })
-		},
-		{ tracer },
-	)
+		} catch (err) {
+			span.recordException(err as Error)
+			span.setStatus({ code: SpanStatusCode.ERROR, message: (err as Error).message })
+			throw err
+		} finally {
+			span.end()
+		}
+	})
 })
 ```
 

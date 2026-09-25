@@ -505,20 +505,6 @@
         "react": ">=19.0.0",
       },
     },
-    "lib/otel-helpers": {
-      "name": "@maple-dev/otel-helpers",
-      "version": "0.1.0",
-      "devDependencies": {
-        "@opentelemetry/api": "^1.9.0",
-        "@types/bun": "^1.3.11",
-        "@types/node": "catalog:tooling",
-        "tsdown": "^0.22.14",
-        "typescript": "catalog:tooling",
-      },
-      "peerDependencies": {
-        "@opentelemetry/api": ">=1.9.0",
-      },
-    },
     "lib/safe-fetch": {
       "name": "@maple/safe-fetch",
       "dependencies": {
@@ -1536,8 +1522,6 @@
     "@maple-dev/effect-clickhouse-http": ["@maple-dev/effect-clickhouse-http@workspace:lib/effect-clickhouse-http"],
 
     "@maple-dev/effect-sdk": ["@maple-dev/effect-sdk@workspace:packages/effect-sdk"],
-
-    "@maple-dev/otel-helpers": ["@maple-dev/otel-helpers@workspace:lib/otel-helpers"],
 
     "@maple-examples/alchemy": ["@maple-examples/alchemy@workspace:examples/alchemy-maple"],
 

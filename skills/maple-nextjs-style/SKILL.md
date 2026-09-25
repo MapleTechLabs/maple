@@ -78,8 +78,7 @@ export function register() {
 Use native OTel APIs where auto-instrumentation is blind.
 
 ```ts
-import { trace, metrics } from "@opentelemetry/api"
-import { withSpan } from "@maple-dev/otel-helpers"
+import { metrics, SpanStatusCode, trace } from "@opentelemetry/api"
 
 const tracer = trace.getTracer("my-next-app")
 const meter = metrics.getMeter("my-next-app")
@@ -87,19 +86,23 @@ const generated = meter.createCounter("replies.generated")
 
 export async function POST(request: Request) {
 	const tenantId = request.headers.get("x-tenant-id") ?? "unknown"
-	return withSpan(
-		"reply.generate",
-		async (span) => {
+	return tracer.startActiveSpan("reply.generate", async (span) => {
+		try {
 			span.setAttribute("tenant.id", tenantId)
 			generated.add(1, { "tenant.id": tenantId, outcome: "success" })
 			return Response.json({ ok: true })
-		},
-		{ tracer },
-	)
+		} catch (err) {
+			span.recordException(err as Error)
+			span.setStatus({ code: SpanStatusCode.ERROR, message: (err as Error).message })
+			throw err
+		} finally {
+			span.end()
+		}
+	})
 }
 ```
 
-For TypeScript route handlers, use `@maple-dev/otel-helpers` `withSpan` for bounded business spans. Add `@maple-dev/otel-helpers` to `package.json` if it is missing. It keeps span lifecycle and error handling out of the handler body and avoids a large indentation diff. Do not expand the whole route into `tracer.startActiveSpan(...)` plus `try` / `catch` / `finally` unless the helper cannot be added or the span has a true cross-callback lifecycle.
+For TypeScript route handlers, wrap the business operation in `tracer.startActiveSpan(...)` with `try` / `catch` / `finally` (the shape in `maple-onboarding-style`). `@vercel/otel` already gives every request a span, so span the operation that matters rather than every handler by reflex. Don't hide the pattern behind a local helper.
 
 If a route has an LLM call and OpenInference / provider instrumentation supports that SDK, do not wrap the provider call. Leave `client.messages.create(...)` / equivalent in place and put business context on the active product span or structured log. Do not duplicate provider/model/token attributes in route-level spans, logs, or metrics when OpenInference already reports them. Maple does not price tokens; see `maple-onboarding-style` "LLM calls" for cost and conversation grouping. For Anthropic in Next.js/ESM, keep the instrumentation instance and `manuallyInstrument(Anthropic)` call at module scope so it runs once and before route code.
 

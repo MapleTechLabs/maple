@@ -38,7 +38,7 @@ These are span **fields**, not attributes, and both spellings are load-bearing o
 | STAT-03 | Outbound network calls (HTTP clients, DB drivers, queue producers) are `Client`/`Producer` kind spans, not `Internal`. Auto-instrumentation usually gets this right; hand-rolled spans often don't.        | warn     | The service map only draws edges from `Client`/`Producer` spans; an `Internal` call is invisible in the map.  |
 | STAT-04 | Inbound request handlers produce `Server` (or `Consumer`) spans.                                                                                                                                          | warn     | Route rendering, throughput attribution, Apdex.                                                              |
 
-Fix: `maple-onboarding-style` + per-language style skill ("record exceptions" pattern; in TS/JS `withSpan` from `@maple-dev/otel-helpers` handles status + exception recording).
+Fix: `maple-onboarding-style` + per-language style skill ("record exceptions" pattern; in TS/JS, `startActiveSpan` whose `catch` records the exception and sets status and whose `finally` ends the span).
 
 ## SPAN: Trace coverage
 
@@ -54,7 +54,7 @@ These checks ask whether everything that should be traced is traced. Read the co
 
 Static heuristics for SPAN-01/02: compare the dependency manifest (HTTP frameworks, DB drivers, queue clients, LLM SDKs) against the instrumentation registered in the bootstrap; grep entry points for job/consumer handlers with no `startActiveSpan`/`withSpan`/decorator in their call path.
 
-Fix: `maple-onboard` Step 3 + `maple-onboarding-style` (span naming, attributes, `withSpan`); per-language style skill for the auto-instrumentation package list.
+Fix: `maple-onboard` Step 3 + `maple-onboarding-style` (span naming, attributes, the business-span pattern); per-language style skill for the auto-instrumentation package list.
 
 ## MAP: Service-map attribution
 

@@ -110,7 +110,7 @@ Maple's service map draws a service-to-service edge by joining a Client span to 
 
 `Effect.fail` and uncaught defects end the span with status `Error` and an `exception` event. Do not wrap with `try` / `catch` / `finally`.
 
-`@maple-dev/otel-helpers` `withSpan` is for non-Effect TypeScript code. In Effect code, use the Effect-native span primitives.
+In Effect code, use the Effect-native span primitives, not the raw `@opentelemetry/api` tracer.
 
 ## Logs
 

@@ -11,7 +11,7 @@ Prefer native OpenTelemetry APIs and the framework's documented bootstrap over c
 
 Before editing, read the applicable companion skills:
 
-- `maple-onboarding-style` for the cross-language rules: `withSpan`, resource attributes, signal quality, LLM calls, smoke checks.
+- `maple-onboarding-style` for the cross-language rules: the business-span pattern, resource attributes, signal quality, LLM calls, smoke checks.
 - `maple-nextjs-style` for Next.js / Vercel apps.
 - `maple-nodejs-style` for plain Node servers (Express, Fastify, Hono, Bun).
 - `maple-python-style` for Python services (FastAPI, Django, Flask).
@@ -60,7 +60,7 @@ Print the list before you start so the user can correct it, then continue withou
 - Expo / React Native: `@opentelemetry/sdk-trace-web` with an OTLP HTTP exporter.
 - Python: `opentelemetry-sdk` + `opentelemetry-instrumentation-*`. Go: `go.opentelemetry.io/otel`.
 
-No broad wrapper APIs. Avoid reusable helpers like `sendMapleSpan`, `recordCounter`, `recordLog`, `startTelemetrySpan`, or `withTelemetry`. Acquire native tracers/meters/loggers at module scope and use the SDK's own APIs directly. The one exception is TypeScript/JavaScript business spans: add `@maple-dev/otel-helpers` and use its `withSpan` (see `maple-onboarding-style`).
+No broad wrapper APIs. Avoid reusable helpers like `sendMapleSpan`, `recordCounter`, `recordLog`, `startTelemetrySpan`, or `withTelemetry`. Acquire native tracers/meters/loggers at module scope and use the SDK's own APIs directly. In TypeScript/JavaScript that means `tracer.startActiveSpan` with `try` / `catch` / `finally` (see `maple-onboarding-style`).
 
 Wire all three signals on servers: traces, logs, metrics. **Logs go through OTLP, not just stdout.** Set up the OTel log bridge for the language so app logs (with their existing log levels and structured fields) carry the active `trace_id` / `span_id` automatically. The user's existing logger keeps working; you only add an OTLP handler/processor underneath. Browser frontends get traces and errors (plus replay) from `@maple-dev/browser`.
 
@@ -107,7 +107,7 @@ Wrap **every critical business operation** with an active span. Auto-instrumente
 
 - Naming: `domain.verb` (`order.process`, `payment.charge`, `email.send`, `agent.run`, `job.<type>`).
 - Attributes: entity IDs (order.id, user.id, workspace.id, tenant.id), counts, key boolean branch outcomes.
-- Record exceptions and set `Error` status on failure paths. In TS/JS, `withSpan` does both and keeps the body flat.
+- Record exceptions and set `Error` status on failure paths, and always end the span (`finally` in TS/JS).
 - For Python functions with clear boundaries, prefer `@tracer.start_as_current_span("operation.name")`. Use a context manager when a decorator does not fit. Do not use detached `start_span()` + manual `end()` for bounded work.
 - Skip trivial getters, pure transforms, and internal helpers: anything with no real latency or failure mode.
 - **Never put PII in attributes** (emails, passwords, tokens, full request bodies).

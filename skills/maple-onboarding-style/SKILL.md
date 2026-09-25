@@ -1,38 +1,42 @@
 ---
 name: maple-onboarding-style
-description: "General OpenTelemetry onboarding style for Maple: native APIs, withSpan, signal quality, inline keys, VCS resource attributes, LLM calls, and smoke checks."
+description: "General OpenTelemetry onboarding style for Maple: native APIs, the business-span pattern, signal quality, inline keys, VCS resource attributes, LLM calls, and smoke checks."
 ---
 
 # Maple OTel onboarding style
 
 Use native OpenTelemetry APIs. Do not invent helper APIs.
 
-## withSpan for TypeScript/JavaScript
+## Business spans in TypeScript/JavaScript
 
-For bounded business spans in TypeScript/JavaScript, add `@maple-dev/otel-helpers` to `package.json` and use its `withSpan`. It replaces expanding a whole function into `tracer.startActiveSpan(...)` plus `try` / `catch` / `finally`: it ends the span, and on throw records the exception, sets `Error` status, and rethrows. If the package can't be installed (offline, a private registry without it), write the `startActiveSpan` form instead; do not hand-roll a local `withSpan`. Do not use `withSpan` to wrap provider SDK calls that OpenInference / provider instrumentation already observes.
+Use `tracer.startActiveSpan` with `try` / `catch` / `finally`: record the exception and set `Error` status before rethrowing, and end the span in `finally`. The callback form keeps the span active for everything inside it, in browsers too, and keeps the function sync or async as it was. Don't hide this behind a local helper (`withSpan`, `traced`, …). Don't add spans around provider SDK calls that OpenInference / provider instrumentation already observes.
 
 Do:
 
 ```ts
-import { trace, metrics } from "@opentelemetry/api"
-import { withSpan } from "@maple-dev/otel-helpers"
+import { metrics, SpanStatusCode, trace } from "@opentelemetry/api"
 
 const tracer = trace.getTracer("orders.api")
 const meter = metrics.getMeter("orders.api")
 const ordersSubmitted = meter.createCounter("orders.submitted")
 
-await withSpan(
-	"order.submit",
-	async (span) => {
-		span.setAttributes({
-			"tenant.id": tenantId,
-			"order.id": orderId,
-			outcome: "success",
-		})
-		ordersSubmitted.add(1, { "tenant.id": tenantId, outcome: "success" })
-	},
-	{ tracer },
-)
+export async function submitOrder(tenantId: string, orderId: string) {
+	return tracer.startActiveSpan("order.submit", async (span) => {
+		try {
+			span.setAttributes({ "tenant.id": tenantId, "order.id": orderId })
+			const receipt = await chargeOrder(orderId)
+			ordersSubmitted.add(1, { "tenant.id": tenantId, outcome: "success" })
+			return receipt
+		} catch (err) {
+			span.recordException(err as Error)
+			span.setStatus({ code: SpanStatusCode.ERROR, message: (err as Error).message })
+			ordersSubmitted.add(1, { "tenant.id": tenantId, outcome: "failure" })
+			throw err
+		} finally {
+			span.end()
+		}
+	})
+}
 ```
 
 Do not:
