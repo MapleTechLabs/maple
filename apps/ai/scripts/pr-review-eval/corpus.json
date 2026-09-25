@@ -124,6 +124,44 @@
 					]
 				}
 			]
+		},
+		{
+			"id": "pr1057-like-wildcards",
+			"number": 1057,
+			"range": "48ddd6752ab54b6f3cdb31e36b84259126ca49b4..6356ccfa9b8bb47930157fdbf5746e145b41307d",
+			"bug": "interiorSearchTokens splits on `_` and `%`, which are wildcards in the ILIKE the search is pasted into, so `a_foo_b` adds hasToken('foo') and drops the ILIKE match `axfooYb`.",
+			"fix": {
+				"sha": "e2f7fdbe772057171298455074d95356db4693df",
+				"subject": "fix(logs): treat LIKE wildcards and non-ASCII folds as unsafe token boundaries"
+			},
+			"locations": [
+				{
+					"path": "packages/query-engine/src/ch/queries/logs.ts",
+					"lines": [
+						106,
+						106
+					]
+				}
+			]
+		},
+		{
+			"id": "pr1057-lowercase-before-ascii-filter",
+			"number": 1057,
+			"range": "48ddd6752ab54b6f3cdb31e36b84259126ca49b4..6356ccfa9b8bb47930157fdbf5746e145b41307d",
+			"bug": "interiorSearchTokens lowercases before its ASCII filter, so the Kelvin sign `K` folds to ASCII `k`, passes, and hasToken('k') drops a row ClickHouse's ASCII-only lower() still ILIKE-matches.",
+			"fix": {
+				"sha": "e2f7fdbe772057171298455074d95356db4693df",
+				"subject": "fix(logs): treat LIKE wildcards and non-ASCII folds as unsafe token boundaries"
+			},
+			"locations": [
+				{
+					"path": "packages/query-engine/src/ch/queries/logs.ts",
+					"lines": [
+						105,
+						108
+					]
+				}
+			]
 		}
 	]
 }
