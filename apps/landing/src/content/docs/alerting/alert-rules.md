@@ -87,9 +87,9 @@ Maple evaluates every enabled rule once a minute. Each check aggregates the last
 
 A skipped check counts neither as a breach nor as healthy. It leaves the breach and healthy counters where they were.
 
-A window with no data at all is skipped, with one exception: a **Throughput** rule with `<` or `<=` treats an empty window as zero, so traffic stopping entirely fires the rule.
+A window with no data at all is skipped, with one exception: a **Throughput** rule with `<` or `<=` treats an empty window as zero.
 
-The **Min samples** check runs before the threshold comparison. For **Throughput** the sample count is the signal, so a drop rule with the blank form's default of 50 skips every window below 50 requests, including a full outage, so it cannot fire for those windows. Set **Min samples** to 0 for throughput drop rules, as the **Throughput drop** template does.
+The **Min samples** check runs before the threshold comparison, and that zero still counts as zero samples. For **Throughput** the sample count is the signal, so a drop rule with the blank form's default of 50 skips every window below 50 requests, including a full outage, and cannot fire for those windows. Set **Min samples** to 0 for throughput drop rules, as the **Throughput drop** template does. Then traffic stopping entirely fires the rule.
 
 Short windows on low-traffic services are noisy, because a few slow or failed requests move the value a long way. Raise **Min samples** or widen the window for those services.
 
