@@ -163,7 +163,7 @@ If the user asks "where do I put the key in production?", the answer is "you alr
 
 ## Step 6: Drive Maple MCP install
 
-Skip this if the Maple MCP tools are already available. Otherwise suggest installing the Maple MCP server so the agent (Claude Code, Codex, Cursor, etc.) can query telemetry directly the next time the user is debugging: search logs, pull traces, and check error rates from the chat without switching to the dashboard. Use `<mcp>` for the region from Step 0.
+Skip this if the Maple MCP tools are already available and connected to `<mcp>` for the region from Step 0 (check the configured server URL; a server in the other region answers `401` or reads another organization). Otherwise suggest installing the Maple MCP server so the agent (Claude Code, Codex, Cursor, etc.) can query telemetry directly the next time the user is debugging: search logs, pull traces, and check error rates from the chat without switching to the dashboard. Use `<mcp>` for the region from Step 0.
 
 For **Claude Code**, offer to run it for them:
 
