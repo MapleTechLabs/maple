@@ -778,6 +778,12 @@ export class GithubConnectService extends Context.Service<GithubConnectService, 
 						? undefined
 						: { reviewDrafts: config.reviewDrafts }),
 					...(config.dailyLimit === undefined ? undefined : { dailyLimit: config.dailyLimit }),
+					...(config.automaticReviewLimit === undefined
+						? undefined
+						: { automaticReviewLimit: config.automaticReviewLimit }),
+					...(config.feedbackScope === undefined
+						? undefined
+						: { feedbackScope: config.feedbackScope }),
 				})
 				yield* asPersistence(repo.setPrReviewConfig(orgId, repositoryId, cleaned))
 				yield* Effect.annotateCurrentSpan({

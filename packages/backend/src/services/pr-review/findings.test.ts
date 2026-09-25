@@ -3,9 +3,12 @@ import { assert, describe, it } from "vitest"
 import {
 	dismissedFindings,
 	followUpScope,
+	ignoredPathsInKickoff,
+	mergeSavedFindings,
 	nextHandles,
 	pathIgnored,
 	renderFollowUp,
+	renderIgnoredPaths,
 	resolvedByHandle,
 	type TrackedFinding,
 	withoutRepeats,
@@ -214,5 +217,39 @@ describe("followUpScope", () => {
 		assert.deepEqual(followUpScope(kickoff([])), [])
 		assert.isUndefined(followUpScope(kickoff(undefined)))
 		assert.isUndefined(followUpScope("Review pull request #7 of octo/shop."))
+	})
+})
+
+describe("ignoredPathsInKickoff", () => {
+	it("reads back the patterns the kickoff states", () => {
+		const kickoff = ["Review pull request #7.", renderIgnoredPaths(["generated/", "*.pb.go"]), ""].join(
+			"\n",
+		)
+		assert.deepEqual(ignoredPathsInKickoff(kickoff), ["generated/", "*.pb.go"])
+		assert.deepEqual(ignoredPathsInKickoff("Review pull request #7."), [])
+	})
+})
+
+describe("mergeSavedFindings", () => {
+	const finding = (line: number, title: string) =>
+		new PrReviewFinding({
+			path: "src/a.ts",
+			line,
+			category: "correctness",
+			severity: "warn",
+			title,
+			body: "",
+		})
+
+	it("keeps saved findings first and drops a submitted restatement of one", () => {
+		const saved = [finding(10, "`charge` runs twice on retry")]
+		const merged = mergeSavedFindings(saved, [
+			finding(11, "`charge` runs twice on a retry"),
+			finding(40, "Tenant filter missing from `listKeys`"),
+		])
+		assert.deepEqual(
+			merged.map((item) => item.line),
+			[10, 40],
+		)
 	})
 })

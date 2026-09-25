@@ -8,8 +8,10 @@ import { assert, describe, it } from "vitest"
 import {
 	confidencePrReview,
 	mentionsReviewer,
+	normalizePrReviewFinding,
 	normalizePrReviewSubmission,
 	parseReplyCommand,
+	prReviewFailureReason,
 	PrReviewReport,
 	scorePrReview,
 } from "./pr-review"
@@ -402,5 +404,21 @@ describe("confidencePrReview", () => {
 		assert.equal(high.confidence, 5)
 		const low = normalizePrReviewSubmission({ verdict: "clean", summary: "s", confidence: 0.2 }).report
 		assert.equal(low.confidence, 1)
+	})
+})
+
+describe("normalizePrReviewFinding", () => {
+	it("posts one finding as submit_review would, and refuses one it cannot anchor", () => {
+		assert.equal(normalizePrReviewFinding({ path: "src/a.ts", line: "12", title: "Bug" })?.line, 12)
+		assert.isUndefined(normalizePrReviewFinding({ path: "src/a.ts", line: 0 }))
+		assert.isUndefined(normalizePrReviewFinding({ path: "src/a.ts", line: 3, category: "observability" }))
+	})
+})
+
+describe("prReviewFailureReason", () => {
+	it("reads the reason an error starts with, and nothing from older errors", () => {
+		assert.equal(prReviewFailureReason("time_limit: It ran out of time."), "time_limit")
+		assert.isUndefined(prReviewFailureReason("no_review: the agent ended its pass"))
+		assert.isUndefined(prReviewFailureReason(null))
 	})
 })

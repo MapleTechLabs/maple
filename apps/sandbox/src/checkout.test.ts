@@ -174,6 +174,12 @@ describe("cloneScript", () => {
 		assert.include(script, "chmod -R a+rX,go-w")
 	})
 
+	it("checks symlinks out as plain files, before the checkout, so none can be followed", () => {
+		const script = cloneScript(checkout)
+		assert.include(script, `config core.symlinks false`)
+		assert.isTrue(script.indexOf("core.symlinks false") < script.indexOf("checkout --quiet --detach"))
+	})
+
 	it("evicts the oldest checkouts, scratch directories included, so the disk cannot fill", () => {
 		const script = cloneScript(checkout)
 		assert.include(script, "tail -n +4")

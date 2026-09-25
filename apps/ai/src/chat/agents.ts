@@ -152,6 +152,7 @@ export const agentPolicyFor = (agent: AgentDefinition, contextTokens?: number): 
 		// more without tools, to answer from what it found rather than stopping on a wall of tool
 		// rows. This is also what makes `tokenBudget` a deadline rather than a way to lose a run.
 		onExhaustion: "final-answer",
+		...(budget.runStatus === true ? { runStatus: "appended" as const } : undefined),
 		...(contextTokens === undefined ? undefined : { contextTokenLimit: liveContextLimit(contextTokens) }),
 	})
 }

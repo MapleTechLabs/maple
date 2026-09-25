@@ -63,6 +63,12 @@ export interface AgentBudget {
 	 * which is smaller than any prompt this agent sends and would let research run to the last token.
 	 */
 	readonly completionReserveTokens: number
+	/**
+	 * Append the engine's `<run-status>` line (elapsed time, calls used, a warning at 80% of any
+	 * limit) to each model call, so an unattended pass submits before its deadline rather than after.
+	 * Only on the outgoing prompt, after the cached prefix.
+	 */
+	readonly runStatus?: boolean
 }
 
 /**
@@ -91,6 +97,7 @@ export const PR_REVIEW_BUDGET: AgentBudget = {
 	maxDuration: "10 minutes",
 	tokenBudget: 64_000_000,
 	completionReserveTokens: 48_000,
+	runStatus: true,
 }
 
 /** An answer on a pull request: narrower than a review, with room to read and to stage a fix. */

@@ -47,6 +47,7 @@ import { MapleApiAtomClient, retainedQuery } from "@/lib/services/common/atom-cl
 const INSTRUCTIONS_MAX = 4_000
 const IGNORE_PATH_MAX = 200
 const DAILY_LIMIT_MAX = 500
+const AUTOMATIC_LIMIT_MAX = 50
 /** How often the review list refetches while a review is queued or running. */
 const REVIEWS_POLL_MS = 5_000
 
@@ -86,6 +87,7 @@ const SKIP_LABELS = {
 	superseded: "a newer push was reviewed",
 	agent_unavailable: "reviewer unavailable",
 	not_rolled_out: "not enabled for this organization",
+	automatic_limit: "pull request limit reached",
 } satisfies Record<PrReviewSkipReason, string>
 
 const configKey = (repo: GithubRepoSummary) => `githubPrReviewConfig:${repo.id}`
@@ -163,6 +165,7 @@ interface FormState {
 	readonly minInlineSeverity: PrReviewSeverity
 	readonly reviewDrafts: boolean
 	readonly dailyLimit: string
+	readonly automaticReviewLimit: string
 	readonly feedbackScope: PrReviewFeedbackScope
 }
 
@@ -173,6 +176,8 @@ const stateFromConfig = (config: PrReviewRepositoryConfig): FormState => ({
 	minInlineSeverity: config.minInlineSeverity ?? "warn",
 	reviewDrafts: config.reviewDrafts ?? false,
 	dailyLimit: config.dailyLimit === undefined ? "" : String(config.dailyLimit),
+	automaticReviewLimit:
+		config.automaticReviewLimit === undefined ? "" : String(config.automaticReviewLimit),
 	feedbackScope: config.feedbackScope ?? "organization",
 })
 
@@ -182,6 +187,7 @@ const sameState = (a: FormState, b: FormState) =>
 	a.minInlineSeverity === b.minInlineSeverity &&
 	a.reviewDrafts === b.reviewDrafts &&
 	a.dailyLimit === b.dailyLimit &&
+	a.automaticReviewLimit === b.automaticReviewLimit &&
 	a.feedbackScope === b.feedbackScope &&
 	a.categories.length === b.categories.length &&
 	a.categories.every((category) => b.categories.includes(category))
@@ -205,6 +211,12 @@ const validate = (state: FormState): string | null => {
 		if (!Number.isInteger(value) || value < 1 || value > DAILY_LIMIT_MAX)
 			return `Daily limit must be a whole number from 1 to ${DAILY_LIMIT_MAX}.`
 	}
+	const perPullRequest = state.automaticReviewLimit.trim()
+	if (perPullRequest !== "") {
+		const value = Number(perPullRequest)
+		if (!Number.isInteger(value) || value < 1 || value > AUTOMATIC_LIMIT_MAX)
+			return `Reviews per pull request must be a whole number from 1 to ${AUTOMATIC_LIMIT_MAX}.`
+	}
 	return null
 }
 
@@ -213,6 +225,7 @@ const configFromState = (state: FormState) => {
 	const instructions = state.instructions.trim()
 	const ignorePaths = parseIgnorePaths(state.ignorePaths)
 	const limit = state.dailyLimit.trim()
+	const perPullRequest = state.automaticReviewLimit.trim()
 	return new PrReviewRepositoryConfig({
 		...(instructions === "" ? undefined : { instructions }),
 		...(ignorePaths.length === 0 ? undefined : { ignorePaths }),
@@ -223,6 +236,7 @@ const configFromState = (state: FormState) => {
 		...(state.minInlineSeverity === "warn" ? undefined : { minInlineSeverity: state.minInlineSeverity }),
 		...(state.reviewDrafts ? { reviewDrafts: true } : undefined),
 		...(limit === "" ? undefined : { dailyLimit: Number(limit) }),
+		...(perPullRequest === "" ? undefined : { automaticReviewLimit: Number(perPullRequest) }),
 		...(state.feedbackScope === "organization" ? undefined : { feedbackScope: state.feedbackScope }),
 	})
 }
@@ -371,6 +385,24 @@ function ConfigForm({ repo, config }: { repo: GithubRepoSummary; config: PrRevie
 					/>
 					<p className="text-xs text-muted-foreground">
 						Reviews per UTC day. The organization limit still applies.
+					</p>
+				</div>
+
+				<div className="flex flex-col gap-1.5">
+					<Label htmlFor={`${id}-per-pr`}>Reviews per pull request</Label>
+					<Input
+						id={`${id}-per-pr`}
+						type="number"
+						inputMode="numeric"
+						min={1}
+						max={AUTOMATIC_LIMIT_MAX}
+						step={1}
+						placeholder="No limit"
+						value={state.automaticReviewLimit}
+						onChange={(event) => update({ automaticReviewLimit: event.target.value })}
+					/>
+					<p className="text-xs text-muted-foreground">
+						After this many, pushes stop starting reviews. Comment @maple review to run one.
 					</p>
 				</div>
 
@@ -557,7 +589,8 @@ function ReviewRow({ review }: { review: PrReviewListItem }) {
 					{review.status === "completed" ? (
 						<>
 							<span title="Confidence the change is safe to merge">
-								· confidence <span className="text-foreground">{review.confidence ?? "–"}</span>/5
+								· confidence{" "}
+								<span className="text-foreground">{review.confidence ?? "–"}</span>/5
 							</span>
 							<span title="Quality: 100 minus a fixed penalty per open finding">
 								· quality <span className="text-foreground">{review.score ?? "–"}</span>/100

@@ -12,6 +12,8 @@ import {
 	type PullRequestReviewPublication,
 	type PullRequestReviewThread,
 	type VcsSyncJob,
+	PR_REVIEW_FAILURE_COPY,
+	PrReviewFinding,
 	PrReviewId,
 	PrReviewReport,
 	PrReviewRepositoryConfig,
@@ -347,6 +349,65 @@ describe("PrReviewService.onPullRequestEvent", () => {
 			assert.include(comments[1]!, "could not finish")
 			assert.notInclude(comments[1]!, "is reviewing")
 		}).pipe(Effect.provide(layerFor(testDb, { comments })))
+	})
+
+	it.effect("names why the review stopped, in fixed words, and nothing for an error it cannot read", () => {
+		const testDb = createTestDb(trackedDbs)
+		const comments: Array<string> = []
+		return Effect.gen(function* () {
+			yield* seed(true)
+			const reviews = yield* PrReviewService
+			const timedOut = yield* reviews.onPullRequestEvent(orgId, job())
+			yield* reviews.failReview(orgId, timedOut.reviewId!, "time_limit: raw engine text; retry")
+			assert.include(comments.at(-1)!, PR_REVIEW_FAILURE_COPY.time_limit)
+			assert.notInclude(comments.at(-1)!, "raw engine text")
+
+			const unknown = yield* reviews.onPullRequestEvent(orgId, job({ headSha: HEAD_2 }))
+			yield* reviews.failReview(orgId, unknown.reviewId!, "no review")
+			assert.include(comments.at(-1)!, "could not finish. Comment `@maple review`")
+		}).pipe(Effect.provide(layerFor(testDb, { comments })))
+	})
+
+	it.effect("stops pushes starting reviews at the pull request's limit, and says so on the check", () => {
+		const testDb = createTestDb(trackedDbs)
+		const checks: Array<string> = []
+		return Effect.gen(function* () {
+			const repositoryId = yield* seed(true)
+			const repo = yield* VcsRepository
+			yield* repo.setPrReviewConfig(
+				orgId,
+				repositoryId,
+				new PrReviewRepositoryConfig({ automaticReviewLimit: 1 }),
+			)
+			const reviews = yield* PrReviewService
+			const first = yield* reviews.onPullRequestEvent(orgId, job())
+			yield* reviews.submitReview(
+				orgId,
+				first.reviewId!,
+				new SubmitPrReviewRequest({ report: report([]) }),
+			)
+
+			const pushed = yield* reviews.onPullRequestEvent(
+				orgId,
+				job({ action: "synchronize", headSha: HEAD_2 }),
+			)
+			assert.equal(pushed.outcome, "skipped")
+			assert.equal(pushed.skipReason, "automatic_limit")
+			assert.include(checks, `${HEAD_2.slice(0, 7)}:skipped`)
+
+			// Asking by name still reviews it.
+			const asked = yield* reviews.reviewNow(orgId, job({ action: "synchronize", headSha: HEAD_2 }))
+			assert.equal(asked.outcome, "started")
+
+			// A redelivered push of that head is a duplicate: pausing it would overwrite its check.
+			const checksBefore = checks.length
+			const redelivered = yield* reviews.onPullRequestEvent(
+				orgId,
+				job({ action: "synchronize", headSha: HEAD_2 }),
+			)
+			assert.equal(redelivered.skipReason, "duplicate")
+			assert.equal(checks.length, checksBefore)
+		}).pipe(Effect.provide(layerFor(testDb, { checks })))
 	})
 
 	it.effect("replaces its own notice with the result, and a new head's review gets a new comment", () => {
@@ -1162,6 +1223,37 @@ describe("buildPublication", () => {
 			publication.summaryComment.body,
 			"## Maple review\n\n**Confidence 4/5** · likely safe to merge\n<sub>quality 100/100 · no findings · 0/1 new units observable</sub>",
 		)
+	})
+
+	it("lists the files it never read, and gives every finding in one block to copy", () => {
+		const input = {
+			report: new PrReviewReport({
+				...report([
+					new PrReviewFinding({
+						path: "src/orders.ts",
+						line: 42,
+						category: "correctness",
+						severity: "warn",
+						title: "`retryFetch` re-sends POSTs",
+						body: "A timeout charges twice.",
+						handle: "F1",
+					}),
+				]),
+				unreviewed: ["src/b.ts", "src/c.ts"],
+			}),
+			partial: true,
+			headSha: HEAD,
+			repositoryUrl: REPO_URL,
+		}
+		const comment = renderSummaryComment(prReviewCommentMarker(UNKNOWN_REVIEW), input)
+		assert.include(comment, "Files not reviewed (2)")
+		assert.include(comment, "- `src/c.ts`")
+		assert.include(comment, "Copy all findings (1)")
+		assert.include(comment, `automated review of commit ${HEAD}`)
+		assert.include(comment, "F1 · Warning · correctness · src/orders.ts:42")
+		// The check run carries each finding as an annotation already.
+		assert.notInclude(renderCheckSummary(input), "Copy all findings")
+		assert.include(renderCheckSummary(input), "Files not reviewed (2)")
 	})
 
 	it("links each finding to its line at the reviewed commit", () => {
