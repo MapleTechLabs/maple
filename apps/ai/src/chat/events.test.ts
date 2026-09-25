@@ -7,7 +7,10 @@
  * the browser and the iOS app both see.
  */
 import { assert, describe, it } from "vitest"
-import { toChatEvents, type AdapterContext } from "./events"
+import type { ChatEvent } from "@maple/domain/chat-session"
+import { makeChatTranscript } from "@maple/domain/chat-transcript"
+import { APPROVAL_REQUIRED, type ToolUiPayload } from "../mcp/tools/llm-tools"
+import { makeTextSanitizer, toChatEvents, type AdapterContext } from "./events"
 
 /**
  * Engine events are structural here on purpose.
@@ -18,7 +21,12 @@ import { toChatEvents, type AdapterContext } from "./events"
 const event = (tag: string, fields: Record<string, unknown> = {}): never =>
 	({ _tag: tag, ...fields }) as never
 
-const base: AdapterContext = { messageId: "msg-1" }
+/**
+ * One sanitizer across these cases, which is safe only because every one of them writes prose that
+ * passes straight through and leaves it empty. A case that ends mid-tag belongs in the sanitizer's
+ * own describe below, with a sanitizer of its own.
+ */
+const base: AdapterContext = { messageId: "msg-1", sanitizer: makeTextSanitizer() }
 
 describe("toChatEvents", () => {
 	it("opens the assistant message on RunStarted", () => {
@@ -35,6 +43,17 @@ describe("toChatEvents", () => {
 
 	it("drops an empty text delta rather than logging it", () => {
 		assert.deepEqual(toChatEvents(event("TextDelta", { text: "" }), base), [])
+	})
+
+	it("delivers the tail a tag never claimed before the turn ends", () => {
+		const ending: AdapterContext = { messageId: "msg-1", sanitizer: makeTextSanitizer() }
+		assert.deepEqual(toChatEvents(event("TextDelta", { text: "latency <" }), ending), [
+			{ type: "text-delta", messageId: "msg-1", text: "latency " },
+		])
+		assert.deepEqual(toChatEvents(event("RunCompleted", { finishReason: "stop" }), ending), [
+			{ type: "text-delta", messageId: "msg-1", text: "<" },
+			{ type: "turn-end", messageId: "msg-1", reason: "stop" },
+		])
 	})
 
 	it("announces a declared call with its arguments", () => {
@@ -79,6 +98,20 @@ describe("toChatEvents", () => {
 		assert.notProperty(call, "proposed")
 	})
 
+	it("carries the tool's phrase, and leaves it off for a tool without one", () => {
+		const labelOf = (name: string) => (name === "run_sql" ? "Running a query" : undefined)
+		const [labelled] = toChatEvents(
+			event("ToolCallDeclared", { toolCallId: "c", toolName: "run_sql", parameters: {} }),
+			{ ...base, labelOf },
+		)
+		assert.deepInclude(labelled, { label: "Running a query" })
+		const [bare] = toChatEvents(
+			event("ToolCallDeclared", { toolCallId: "c", toolName: "submit_diagnosis", parameters: {} }),
+			{ ...base, labelOf },
+		)
+		assert.notProperty(bare, "label")
+	})
+
 	it("distinguishes a failed tool result from a successful one", () => {
 		assert.deepEqual(
 			toChatEvents(event("ToolCallSucceeded", { toolCallId: "c", result: "rows" }), base),
@@ -87,6 +120,57 @@ describe("toChatEvents", () => {
 		assert.deepEqual(toChatEvents(event("ToolCallFailed", { toolCallId: "c", message: "nope" }), base), [
 			{ type: "tool-result", messageId: "msg-1", callId: "c", output: "nope", isError: true },
 		])
+	})
+
+	it("carries a call's UI payload beside the model's text, once", () => {
+		const ui: ToolUiPayload = { __maple_ui: true, tool: "list_services", data: { services: [] } }
+		const pending = new Map([["c", ui]])
+		const context: AdapterContext = {
+			...base,
+			uiOf: (callId) => {
+				const found = pending.get(callId)
+				pending.delete(callId)
+				return found
+			},
+		}
+		assert.deepEqual(
+			toChatEvents(event("ToolCallSucceeded", { toolCallId: "c", result: "rows" }), context),
+			[{ type: "tool-result", messageId: "msg-1", callId: "c", output: { text: "rows", ui } }],
+		)
+		assert.deepEqual(
+			toChatEvents(event("ToolCallSucceeded", { toolCallId: "c", result: "rows" }), context),
+			[{ type: "tool-result", messageId: "msg-1", callId: "c", output: "rows" }],
+		)
+	})
+
+	it("leaves a proposal open, and ends its turn as finished rather than failed", () => {
+		const context: AdapterContext = {
+			messageId: "msg-1",
+			isProposed: (name) => name === "create_dashboard",
+			sanitizer: makeTextSanitizer(),
+		}
+		const refusal = {
+			errorTag: APPROVAL_REQUIRED,
+			message: "create_dashboard requires user approval and was not executed.",
+		}
+		// The sequence the engine emits for a gated call (see `run-tool-failures.test.ts`).
+		const chat = [
+			event("RunStarted"),
+			event("ToolCallDeclared", { toolCallId: "c", toolName: "create_dashboard", parameters: {} }),
+			event("ToolCallFailed", { toolCallId: "c", toolName: "create_dashboard", ...refusal }),
+			event("RunFailed", refusal),
+		].flatMap((engine) => toChatEvents(engine, context))
+		const transcript = makeChatTranscript()
+		chat.forEach((wire, index) => transcript.add({ ...wire, seq: index + 1 } as ChatEvent, 0))
+
+		assert.deepEqual(
+			chat.map((wire) => wire.type),
+			["turn-start", "tool-call", "turn-end"],
+		)
+		assert.deepInclude(chat.at(-1), { reason: "stop" })
+		const [call] = transcript.messages[0]?.toolCalls ?? []
+		assert.deepInclude(call, { id: "c", proposed: true })
+		assert.notProperty(call, "output")
 	})
 
 	describe("terminal reasons", () => {
@@ -198,5 +282,88 @@ describe("toChatEvents", () => {
 		]) {
 			assert.deepEqual(toChatEvents(event(tag), base), [], `${tag} must not reach the transcript`)
 		}
+	})
+})
+
+/**
+ * Markup the model wrote into `content`, which a channel would print verbatim.
+ *
+ * Every case arrives in chunks, because that is how a delta stream delivers one: a tag split
+ * across two deltas is what a per-delta regex gets wrong, and the reason this keeps state at all.
+ */
+describe("makeTextSanitizer", () => {
+	const stripped = (chunks: ReadonlyArray<string>) => {
+		const sanitizer = makeTextSanitizer()
+		const text = chunks.map(sanitizer.strip).join("")
+		return { text, leaked: sanitizer.leaked() }
+	}
+
+	it("passes ordinary prose through, chunk for chunk", () => {
+		assert.equal(stripped(["check", "out is ", "timing out."]).text, "checkout is timing out.")
+	})
+
+	it("drops an inline thinking block whose tag arrives split across deltas", () => {
+		assert.equal(stripped(["Before <th", "ink>hid", "den</thi", "nk> after"]).text, "Before  after")
+	})
+
+	it("drops every thinking spelling a model might reach for", () => {
+		for (const [open, close] of [
+			["<think>", "</think>"],
+			["<thinking>", "</thinking>"],
+			["◁think▷", "◁/think▷"],
+			["<|begin_of_thought|>", "<|end_of_thought|>"],
+		]) {
+			assert.equal(stripped([`A${open}h`, `idden${close}B`]).text, "AB", open)
+		}
+	})
+
+	it("drops a tool call written as text and names the tag once", () => {
+		const call = "<tool_call>search_errors<arg_key>service</arg_key></tool_call>"
+		const { text, leaked } = stripped(["Errors are up.", call.slice(0, 9), call.slice(9)])
+
+		assert.equal(text, "Errors are up.")
+		assert.equal(leaked, "<tool_call>")
+	})
+
+	it("takes the rest of the turn with a block the model never closes", () => {
+		const { text, leaked } = stripped(["The answer. <tool_call>search", "_errors<arg_key>svc"])
+
+		assert.equal(text, "The answer. ")
+		assert.equal(leaked, "<tool_call>")
+	})
+
+	it("reports nothing for a turn that only ever wrote prose", () => {
+		assert.equal(stripped(["1 < 2 and 2 > 1"]).leaked, undefined)
+	})
+
+	it("keeps a tag the model quoted, rather than eating the reply that explains it", () => {
+		const { text, leaked } = stripped(["I never write `<tool", "_call>` in a reply. Here is why."])
+
+		assert.equal(text, "I never write `<tool_call>` in a reply. Here is why.")
+		assert.equal(leaked, undefined)
+	})
+
+	it("releases a held tail at the end of the turn, because the tag never came", () => {
+		const sanitizer = makeTextSanitizer()
+		assert.equal(sanitizer.strip("errors under 1%, latency <"), "errors under 1%, latency ")
+		assert.equal(sanitizer.flush(), "<")
+	})
+
+	it("flushes nothing out of a block the turn ended inside", () => {
+		const sanitizer = makeTextSanitizer()
+		sanitizer.strip("The answer. <tool_call>search_err")
+		assert.equal(sanitizer.flush(), "")
+	})
+
+	it("cannot splice two halves of a tag together across a block it removed", () => {
+		// The halves on either side of the removed block would read as `<think>` concatenated.
+		assert.equal(stripped(["a<th<tool_call>x</tool_call>ink> b"]).text, "aink> b")
+	})
+
+	it("holds back a tail that could still become a tag, and releases it when it cannot", () => {
+		const sanitizer = makeTextSanitizer()
+		// `<t` could still grow into `<think>` or `<tool_call>`, so it waits for the next delta.
+		assert.equal(sanitizer.strip("a < b and c <t"), "a < b and c ")
+		assert.equal(sanitizer.strip("ables"), "<tables")
 	})
 })

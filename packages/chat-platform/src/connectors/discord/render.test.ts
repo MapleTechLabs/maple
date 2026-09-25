@@ -1,9 +1,29 @@
 import { describe, expect, it } from "vitest"
-import type { ChatBlock } from "../../render/blocks"
+import type { ChatAlertBlock, ChatBlock } from "../../render/blocks"
 import type { ChatActionToken } from "../../action-token"
 import { EMPTY_CONTENT, MAX_ACTION_ROWS, MAX_CONTENT_CHARS, renderDiscordMessage } from "./render"
 
 const token = (value: string) => value as ChatActionToken
+
+const alert = (overrides: Partial<ChatAlertBlock> = {}): ChatAlertBlock => ({
+	kind: "alert",
+	color: "#e01e5a",
+	title: "\u{1F6A8} High error rate — Triggered",
+	summary: "**Error Rate** is **49.7%** — above the 5% threshold, measured over the last 5m.",
+	fields: [
+		{ label: "Severity", value: "\u{1F534} Critical" },
+		{ label: "Group", value: "`electric-sync`" },
+	],
+	imageUrl: null,
+	imageAlt: "High error rate over the alert window",
+	links: [
+		{ label: "Open in Maple", url: "https://app.maple.dev/alerts/1", primary: true },
+		{ label: "✨ Ask Maple AI", url: "https://app.maple.dev/chat", primary: false },
+	],
+	footer: ["\u{1F341} Maple Alerts", "`▁▁▇`", "Incident `inc_1`"],
+	sentAtMs: 1_700_000_000_000,
+	...overrides,
+})
 
 const chart = (imageUrl: string | null): ChatBlock => ({
 	kind: "chart",
@@ -25,14 +45,14 @@ describe("renderDiscordMessage", () => {
 				detail: "p95 1.20s",
 				url: "https://app.maple.dev/services/checkout",
 			},
-			{ kind: "activity", tools: [{ name: "find_errors", status: "running", detail: null }] },
+			{ kind: "activity", tools: [{ label: "Looking for errors", status: "running", detail: null }] },
 		])
 
 		expect(payload.content).toBe(
 			[
 				"Checkout is slow.",
 				"> **Service** [checkout](https://app.maple.dev/services/checkout)\n> p95 1.20s",
-				"Tools: `find_errors`…",
+				"Looking for errors…",
 			].join("\n\n"),
 		)
 		// Nothing the model writes may notify a server.
@@ -61,7 +81,8 @@ describe("renderDiscordMessage", () => {
 				kind: "approval",
 				toolName: "create_alert_rule",
 				summary: "name: checkout p95",
-				token: token("org_1:bot-42|call_9"),
+				token: token("call_9"),
+				outcome: null,
 			},
 		])
 
@@ -73,12 +94,36 @@ describe("renderDiscordMessage", () => {
 						type: 2,
 						style: 3,
 						label: "Run create_alert_rule",
-						custom_id: "approve:org_1:bot-42|call_9",
+						custom_id: "approve:call_9",
 					},
-					{ type: 2, style: 4, label: "Skip", custom_id: "deny:org_1:bot-42|call_9" },
+					{ type: 2, style: 4, label: "Skip", custom_id: "deny:call_9" },
 				],
 			},
 		])
+	})
+
+	it("takes the buttons off a proposal somebody decided, and says what came of it", () => {
+		const payload = renderDiscordMessage([
+			{
+				kind: "approval",
+				toolName: "create_alert_rule",
+				summary: "name: checkout p95",
+				token: token("call_9"),
+				outcome: {
+					approved: true,
+					decision: "Approved by Ada.",
+					text: 'I created the alert rule "checkout p95".',
+					url: "https://app.maple.dev/alerts/ar_1",
+				},
+			},
+		])
+
+		// Discord leaves a component clickable forever, so the row has to go rather than be styled
+		// as spent.
+		expect(payload.components).toEqual([])
+		expect(payload.content).toBe(
+			'I created the alert rule "checkout p95". [Open in Maple](https://app.maple.dev/alerts/ar_1)\n-# Approved by Ada.',
+		)
 	})
 
 	it("drops the buttons rather than sending a custom id Discord would reject", () => {
@@ -87,7 +132,8 @@ describe("renderDiscordMessage", () => {
 				kind: "approval",
 				toolName: "create_alert_rule",
 				summary: "",
-				token: token(`org_1:bot-42|${"c".repeat(120)}`),
+				token: token("c".repeat(120)),
+				outcome: null,
 			},
 		])
 
@@ -100,7 +146,8 @@ describe("renderDiscordMessage", () => {
 			kind: "approval" as const,
 			toolName: `tool_${index}`,
 			summary: "",
-			token: token(`org_1:bot-42|call_${index}`),
+			token: token(`call_${index}`),
+			outcome: null,
 		}))
 		const payload = renderDiscordMessage(approvals)
 
@@ -148,5 +195,31 @@ describe("renderDiscordMessage", () => {
 		])
 		expect(payload.content).toHaveLength(MAX_CONTENT_CHARS)
 		expect(payload.content.endsWith("…")).toBe(true)
+	})
+
+	it("renders an alert as a coloured embed, with the links as a field", () => {
+		const payload = renderDiscordMessage([alert({ imageUrl: "https://charts.maple.dev/c.png" })])
+		expect(payload.content).toBe("")
+		expect(payload.embeds).toEqual([
+			{
+				title: "\u{1F6A8} High error rate — Triggered",
+				url: "https://app.maple.dev/alerts/1",
+				color: 0xe01e5a,
+				description:
+					"**Error Rate** is **49.7%** — above the 5% threshold, measured over the last 5m.",
+				fields: [
+					{ name: "Severity", value: "\u{1F534} Critical", inline: true },
+					{ name: "Group", value: "`electric-sync`", inline: true },
+					{
+						name: "Links",
+						value: "[Open in Maple](https://app.maple.dev/alerts/1) · [✨ Ask Maple AI](https://app.maple.dev/chat)",
+						inline: false,
+					},
+				],
+				image: { url: "https://charts.maple.dev/c.png" },
+				footer: { text: "\u{1F341} Maple Alerts  ·  ▁▁▇  ·  Incident inc_1" },
+				timestamp: "2023-11-14T22:13:20.000Z",
+			},
+		])
 	})
 })

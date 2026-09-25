@@ -1,13 +1,13 @@
 /**
- * PairGrainient — the grainy gradient behind one cell of the /compare logo
- * pairing, in that side's brand colour.
+ * PairGrainient: the grainy gradient behind one cell of the /compare logo
+ * pairing, in that side's brand color.
  *
  * Wraps React Bits' `Grainient` with Maple's tokens. The three stops are the
- * brand colour, the brand colour pulled toward the page ground, and the
+ * brand color, the brand color pulled toward the page ground, and the
  * ground itself, so the swirl is one hue fading into the page rather than a
  * poster. Motion is slow and stops under `prefers-reduced-motion`.
  *
- * Mounted `client:only` — a WebGL canvas has no useful server render, and the
+ * Mounted `client:only`: a WebGL canvas has no useful server render, and the
  * `.pair-cell` flat tint underneath is the ground until it appears.
  */
 import { useState } from "react"
@@ -38,9 +38,9 @@ const towardGround = (color: string, keep: number): string => {
 }
 
 interface Props {
-	/** Brand colour as a hex literal, e.g. "#632CA6". */
+	/** Brand color as a hex literal, e.g. "#632CA6". */
 	color: string
-	/** How much of the brand colour survives at the brightest stop, 0–1. */
+	/** How much of the brand color survives at the brightest stop, 0–1. */
 	strength?: number
 }
 

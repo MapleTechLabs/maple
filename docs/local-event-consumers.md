@@ -1,27 +1,30 @@
 # Maple Local event consumer protocol
 
-Status: version 1 durable downstream-consumer boundary for the Maple Local event outbox.
+Status: version 1 of the durable downstream-consumer boundary for the Maple Local event outbox.
+Routes live in `apps/cli/src/server/serve.ts`; state lives in
+`apps/cli/src/server/eventing/control-store.ts`.
 
 This protocol lets a local consumer deliver ready Maple CloudEvents without destructive reads or a
-second delivery database. It is intentionally transport-neutral: Maple does not select a downstream
-transport, store downstream credentials, or choose delivery destinations.
+second delivery database. It is transport-neutral. Maple does not pick a downstream transport, store
+downstream credentials, or choose delivery destinations.
 
 ## Credentials
 
-Maple creates two independent 32-byte hexadecimal credentials beside the configured data directory:
+Maple creates two independent random 32-byte credentials (64 hex characters) beside the configured
+data directory:
 
 - `<dataDir>.maintenance-token` administers projection and consumer configuration.
 - `<dataDir>.event-consumer-token` permits only claim and acknowledgement requests.
 
-Both files must be real regular files. The consumer token is sent in
-`x-maple-event-consumer-token`; it does not grant access to projection configuration, outbox
-inspection, checkpoints, or retention controls. The existing maintenance token is sent in
-`x-maple-maintenance-token` and cannot be substituted for the consumer token.
+Both files must be regular files, not symlinks. The consumer token goes in
+`x-maple-event-consumer-token`. It grants no access to projection configuration, outbox inspection,
+checkpoints, or retention controls. The maintenance token goes in `x-maple-maintenance-token` and
+cannot stand in for the consumer token. A wrong or missing consumer token returns `403`.
 
 ## Consumer administration
 
-Consumer IDs match `^[a-z][a-z0-9._-]{0,63}$` and are unique. Disabled IDs remain reserved so an
-operator cannot accidentally replace one consumer's durable position with an unrelated process.
+Consumer IDs match `^[a-z][a-z0-9._-]{0,63}$` and are unique. Disabled IDs stay reserved, so an
+operator cannot accidentally hand one consumer's durable position to an unrelated process.
 
 Register a consumer with the maintenance credential:
 
@@ -33,13 +36,13 @@ X-Maple-Maintenance-Token: <maintenance token>
 {"consumerId":"automation","startAt":"beginning"}
 ```
 
-`startAt` is exact:
+`startAt` takes one of two values:
 
 - `beginning` starts immediately before the earliest ready event still retained for the tenant.
 - `latest` atomically skips every ready event visible at registration and receives later events.
 
-Successful registration returns `201` and the consumer record. Reusing any existing or disabled ID
-returns `409`. `GET /local/eventing/consumers` lists records under maintenance authorization.
+Registration returns `201` and the consumer record. Reusing an existing or disabled ID returns
+`409`. `GET /local/eventing/consumers` lists records under maintenance authorization.
 
 Disable a consumer explicitly:
 
@@ -51,12 +54,12 @@ X-Maple-Maintenance-Token: <maintenance token>
 {"consumerId":"automation"}
 ```
 
-Disabling clears any active lease and removes that cursor from the retention quorum. It does not
-delete the audit record or permit the ID to be reused.
+Disabling clears any active lease and removes the cursor from the retention quorum. The record
+stays, and the ID cannot be reused.
 
 ## Claim and acknowledgement
 
-Claim between 1 and 1,000 ready events for a lease of 5 through 300 seconds:
+Claim 1 to 1,000 ready events with a lease of 5 to 300 seconds:
 
 ```http
 POST /local/eventing/claims
@@ -89,13 +92,13 @@ A non-empty response has this shape:
 }
 ```
 
-The real `event` member is the complete validated CloudEvent. An empty claim returns null lease
-fields and an empty event array. Only a SHA-256 hash of the lease token is stored. A second claim
-while the lease is live returns `409`; at or after expiry it returns the same unacknowledged prefix,
-possibly with a new token.
+The `event` member (abbreviated above) is the complete validated CloudEvent. An empty claim returns
+null lease fields, a null `throughSequence`, and an empty `events` array. Maple stores only a SHA-256
+hash of the lease token. A second claim while the lease is live returns `409`. At or after expiry, a claim
+restarts after the last acknowledged sequence and issues a new lease token.
 
-After every event in the claimed batch has been accepted by the downstream system, acknowledge the
-exact `throughSequence` returned by the claim:
+Once the downstream system has accepted every event in the batch, acknowledge the exact
+`throughSequence` from the claim:
 
 ```http
 POST /local/eventing/acks
@@ -105,26 +108,36 @@ X-Maple-Event-Consumer-Token: <consumer token>
 {"consumerId":"automation","leaseToken":"<claim token>","throughSequence":42}
 ```
 
-Partial, extended, expired, missing, and wrong-token acknowledgements return `409`. Success returns:
+Partial, extended, expired, missing, and wrong-token acknowledgements return `409`. Success
+returns:
 
 ```json
 { "consumerId": "automation", "acknowledgedThrough": 42, "prunedEvents": 0 }
 ```
 
-Claims are at-least-once. A consumer crash after a downstream send and before acknowledgement causes
-re-delivery after lease expiry. A consumer must therefore use the immutable Maple CloudEvent `id` as
-its downstream idempotency key whenever the destination supports one.
+Claims are at-least-once. If a consumer crashes after a downstream send and before
+acknowledgement, the batch is re-delivered after lease expiry. Consumers must use the immutable
+Maple CloudEvent `id` as the downstream idempotency key whenever the destination supports one.
 
 ## Retention, capacity, and checkpoints
 
-Ready events are eligible for pruning only through the lowest acknowledged sequence among all active
-consumers for the tenant. Maple retains the newest 1,000 otherwise-prunable ready events by default.
-Disabled consumers do not block pruning; staged events are never pruned by consumer acknowledgement.
-If no consumer is active, acknowledgement retention performs no deletion.
+Ready events can be pruned only up to the lowest acknowledged sequence among the tenant's active
+consumers. By default Maple keeps the newest 1,000 otherwise-prunable ready events. Disabled
+consumers do not block pruning. Consumer acknowledgement never prunes staged events. With no active
+consumer, acknowledgement retention deletes nothing.
 
-The outbox defaults to 10,000 events and 256 MiB of canonical event JSON. Transactional counters enforce both caps without scanning every event for each ingest. If a new projection cannot fit, Maple drops that projection and continues warehouse ingestion. Existing staged and ready events remain intact. The OTLP response includes `x-maple-eventing-dropped` with the number of dropped projection attempts. Health includes a durable `deliveryGap` with a generation, cumulative dropped-event count, and last-drop time. Repeated overflow retries can count the same source occurrence more than once; this is a loss indicator, not a count of unique missing facts.
+The outbox defaults to 10,000 events and 256 MiB of canonical event JSON. Transactional counters
+enforce both caps without scanning every event on each ingest. If a new projected event does not fit,
+Maple drops it and continues warehouse ingestion. Existing staged and ready events stay intact. The
+OTLP response carries `x-maple-eventing-dropped` with the number of dropped projection attempts.
+Health includes a durable `deliveryGap` with a generation, a cumulative dropped-event count, and the
+last drop time. Repeated overflow retries can count the same source occurrence more than once. Treat
+the count as a loss indicator, not a count of unique missing facts.
 
-A consumer with an unaccepted gap receives HTTP 409 with the `EventConsumerDeliveryGap` error, current generation and dropped count. Existing leases can still be acknowledged. After investigating the gap, an operator may explicitly accept the current generation for a consumer:
+A consumer with an unaccepted gap gets HTTP `409` with a JSON body: `error`
+(`@maple/cli/eventing/EventConsumerDeliveryGap`), `message`, `consumerId`, `generation`, and
+`droppedEvents`. Existing leases can still be acknowledged. After investigating the gap, an operator
+can accept the current generation for a consumer:
 
 ```http
 POST /local/eventing/consumers/accept-gap
@@ -134,9 +147,12 @@ X-Maple-Maintenance-Token: <maintenance token>
 {"consumerId":"automation","generation":1}
 ```
 
-A stale generation is rejected. Acceptance resumes delivery of retained events; it does not recover missing events. A new `latest` consumer intentionally skips existing history, including previous gaps. A `beginning` consumer must accept any recorded gap before claiming.
+A stale generation is rejected. Acceptance resumes delivery of retained events. It does not recover
+missing events. A new `latest` consumer skips existing history, including earlier gaps. A
+`beginning` consumer must accept any recorded gap before claiming.
 
-To free stranded or unwanted events, inspect the outbox first, then explicitly abandon 1–1,000 distinct event IDs:
+To free stranded or unwanted events, inspect the outbox first, then abandon 1 to 1,000 distinct
+event IDs:
 
 ```http
 POST /local/eventing/outbox/abandon
@@ -146,10 +162,18 @@ X-Maple-Maintenance-Token: <maintenance token>
 {"eventIds":["sha256:..."]}
 ```
 
-Abandonment drains admitted requests, validates every ID belongs to this tenant, and atomically deletes the selected staged or ready records. Any missing ID rejects the entire batch. It records another delivery gap and clears tenant leases, so consumers cannot acknowledge a deleted batch. Consumers must accept the new generation before claiming again. This operation loses delivery history deliberately; ordinary inspection and acknowledgement never abandon staged records. Reconcile or replay source facts separately when needed.
+Abandonment drains admitted requests, checks that every ID belongs to this tenant, and atomically
+deletes the selected staged or ready records. One missing ID rejects the whole batch. Abandonment
+records another delivery gap and clears the tenant's leases, so no consumer can acknowledge a deleted
+batch. Consumers must accept the new generation before claiming again. This operation discards
+delivery history on purpose. Ordinary inspection and acknowledgement never abandon staged records.
+Reconcile or replay source facts separately when needed.
 
-The initial eventing control schema is version 1. Its version and DDL digest are recorded in the local schema gate. Snapshot validation rejects staged source-backed rows with missing or malformed fingerprints.
+The eventing control schema is version 1 (`LOCAL_CONTROL_SCHEMA_VERSION` in
+`apps/cli/src/server/local-schema-version.ts`). Its DDL digest is recorded in
+`LOCAL_CONTROL_SCHEMA_HISTORY` (`apps/cli/src/server/local-schema-history.ts`). Snapshot validation rejects staged source-backed rows
+with missing or malformed fingerprints.
 
-Consumer cursors and leases are part of the same SQLite backup as projection and outbox state.
-Consumer mutations enter the server admission gate, so checkpoint exclusivity cannot capture a
-half-applied claim or acknowledgement.
+Consumer cursors and leases are in the same SQLite backup as projection and outbox state. Consumer
+mutations pass through the server admission gate, so a checkpoint cannot capture a half-applied claim
+or acknowledgement.

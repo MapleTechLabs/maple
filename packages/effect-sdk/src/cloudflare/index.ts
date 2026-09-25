@@ -53,6 +53,7 @@ import { makeSpanBuffer, type SpanBuffer } from "../shared/flushable-tracer.js"
 import { makeNoOpNotice } from "../shared/no-op-notice.js"
 import { resolveResourceFromEnv } from "../server/resource.js"
 import { SDK_VERSION } from "../version.js"
+import type { MapleRegion } from "@maple/browser-session/region"
 
 export interface Config {
 	/**
@@ -75,10 +76,15 @@ export interface Config {
 	readonly environment?: string | undefined
 	/**
 	 * Ingest endpoint URL (base, no path). Defaults to `env.MAPLE_ENDPOINT`,
-	 * then `env.OTEL_EXPORTER_OTLP_ENDPOINT`, then the public Maple ingest
-	 * (`https://ingest.maple.dev`).
+	 * then `env.OTEL_EXPORTER_OTLP_ENDPOINT`, then the region's public ingest
+	 * (`https://ingest.maple.dev`, or `https://ingest.eu.maple.dev` for `eu`).
 	 */
 	readonly endpoint?: string | undefined
+	/**
+	 * Region your Maple organization lives in: `"us"` (default) or `"eu"`.
+	 * Defaults to `env.MAPLE_REGION`. Any endpoint, set here or in env, wins.
+	 */
+	readonly region?: MapleRegion | undefined
 	/**
 	 * Maple ingest key. Defaults to `env.MAPLE_INGEST_KEY`. When unset, the
 	 * SDK runs in no-op mode (no flushes are attempted; buffers are drained
@@ -159,6 +165,7 @@ const resolveOnce = (env: Record<string, unknown>, config: Config): Resolved => 
 		logsPath: config.logsPath,
 		metricsPath: config.metricsPath,
 		userAgent: `maple-effect-sdk-cloudflare/${SDK_VERSION}`,
+		keyless: "disable",
 	})
 }
 

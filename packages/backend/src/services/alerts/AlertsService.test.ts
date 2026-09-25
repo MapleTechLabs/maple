@@ -3,7 +3,7 @@ import { LiveActivitiesService } from "@maple/backend/services/push/LiveActiviti
 import { MobileDevicesService } from "@maple/backend/services/push/MobileDevicesService"
 import { ApnsClient } from "@maple/backend/platform/Apns"
 import { MobilePushService } from "@maple/backend/services/push/MobilePushService"
-import { SlackBotTokenResolver } from "@maple/backend/services/integrations/slack-bot-token"
+import { ChatAlertPoster } from "./ChatAlertPoster"
 // SAFETY-FILE: JSON in this test is emitted by the fixture or unit under test before its fields are asserted.
 // BOUNDARY: Test doubles preserve opaque values so the consuming boundary can be exercised.
 import { afterEach, assert, describe, it } from "@effect/vitest"
@@ -16,6 +16,8 @@ import {
 	AlertRecipientSelectionError,
 	type AlertDestinationId,
 	AlertRulePreviewRequest,
+	ChatConnectorId,
+	ChatWorkspaceId,
 	AlertRuleUpsertRequest,
 	OrgId,
 	WarehouseQueryError,
@@ -52,7 +54,6 @@ import {
 	type TestDb,
 } from "@maple/backend/platform/test-pglite"
 import { Database } from "@maple/backend/platform/DatabaseLive"
-import { decryptAes256Gcm } from "@maple/backend/platform/Crypto"
 import { InvestigationService } from "@maple/backend/services/errors/InvestigationService"
 import { compiledQueryOf } from "@maple/query-engine/execution"
 
@@ -245,6 +246,7 @@ const makeLayer = (
 	warehouseStub: WarehouseQueryServiceApi,
 	runtimeOverrides?: Partial<AlertRuntimeApi>,
 	emailStub?: (typeof EmailService)["Service"],
+	chatAlertPoster: Layer.Layer<ChatAlertPoster, never, Database | Env> = ChatAlertPoster.layer,
 ) => {
 	const configLive = makeConfig()
 	const envLive = Env.layer.pipe(Layer.provide(configLive))
@@ -272,7 +274,7 @@ const makeLayer = (
 		Layer.provide(Layer.mergeAll(envLive, databaseLive, edgeCacheLive)),
 	)
 	const alertDestinationsLive = Layer.effect(AlertDestinationsService, AlertDestinationsService.make).pipe(
-		Layer.provide(SlackBotTokenResolver.layer),
+		Layer.provide(chatAlertPoster),
 		Layer.provide(
 			Layer.mergeAll(envLive, databaseLive, runtimeLive, hazelOAuthLive, emailLive, orgMembersLive),
 		),
@@ -285,7 +287,7 @@ const makeLayer = (
 	)
 
 	const alertsLive = Layer.effect(AlertsService, AlertsService.make).pipe(
-		Layer.provide(SlackBotTokenResolver.layer),
+		Layer.provide(chatAlertPoster),
 		Layer.provide(
 			Layer.effect(MobilePushService, MobilePushService.make).pipe(
 				Layer.provide(
@@ -2457,6 +2459,83 @@ describe("AlertsService", () => {
 		)
 	})
 
+	it.effect("names only a channel the workspace lists, on create and on a channel change", () => {
+		const testDb = createTestDb(trackedDbs)
+		const workspaceId = Schema.decodeUnknownSync(ChatWorkspaceId)("33333333-3333-4333-8333-333333333333")
+		const orgId = asOrgId("org_chat_dest")
+		const userId = asUserId("user_chat")
+		// The workspace's listing, as the real poster reads it from the connector: a channel not in
+		// it — say one in another org's guild, reachable with a shared bot token — is refused.
+		const listed = new Map([
+			["channel-1", "incidents"],
+			["channel-2", "oncall"],
+		])
+		const lookups: Array<string> = []
+		const poster = Layer.succeed(ChatAlertPoster, {
+			post: () => Effect.die("no alert is posted here"),
+			findChannel: (_orgId, _workspaceId, channelId) =>
+				Effect.suspend(() => {
+					lookups.push(channelId)
+					const channelName = listed.get(channelId)
+					return channelName === undefined
+						? Effect.fail(new AlertValidationError({ message: "not listed", details: [] }))
+						: Effect.succeed({
+								connector: Schema.decodeUnknownSync(ChatConnectorId)("testchat"),
+								workspaceName: "Acme Engineering",
+								channelName,
+							})
+				}),
+		})
+		const request = { type: "chat" as const, name: "Incidents", workspaceId, channelId: "channel-1" }
+		return Effect.gen(function* () {
+			const alerts = yield* AlertsService
+			const foreign = yield* alerts
+				.createDestination(orgId, userId, adminRoles, { ...request, channelId: "their-channel" })
+				.pipe(Effect.flip)
+			assert.instanceOf(foreign, AlertValidationError)
+
+			const destination = yield* alerts.createDestination(orgId, userId, adminRoles, request)
+			// Connector and channel name come from the lookup, never the request.
+			assert.strictEqual(destination.chatConnector, "testchat")
+			assert.strictEqual(destination.chatWorkspaceId, workspaceId)
+			assert.strictEqual(destination.summary, "Acme Engineering")
+			assert.strictEqual(destination.channelLabel, "#incidents")
+
+			const refused = yield* alerts
+				.updateDestination(orgId, userId, adminRoles, destination.id, {
+					type: "chat",
+					channelId: "their-channel",
+				})
+				.pipe(Effect.flip)
+			assert.instanceOf(refused, AlertValidationError)
+
+			const renamed = yield* alerts.updateDestination(orgId, userId, adminRoles, destination.id, {
+				type: "chat",
+				name: "Renamed",
+			})
+			assert.strictEqual(renamed.channelLabel, "#incidents")
+
+			const moved = yield* alerts.updateDestination(orgId, userId, adminRoles, destination.id, {
+				type: "chat",
+				channelId: "channel-2",
+			})
+			assert.strictEqual(moved.channelLabel, "#oncall")
+			assert.strictEqual(moved.chatWorkspaceId, workspaceId)
+			// A rename checks nothing; every channel that would be stored was checked.
+			assert.deepStrictEqual(lookups, ["their-channel", "channel-1", "their-channel", "channel-2"])
+		}).pipe(
+			Effect.provide(
+				makeLayer(
+					testDb,
+					makeWarehouseStub({ tracesAggregateRows: emptyWarehouseRows }),
+					undefined,
+					undefined,
+					poster,
+				),
+			),
+		)
+	})
+
 	it.effect("skips PagerDuty validation on update when the key is left blank", () => {
 		const testDb = createTestDb(trackedDbs)
 		let calls = 0
@@ -2488,96 +2567,6 @@ describe("AlertsService", () => {
 					fetch: fetchImpl,
 				}),
 			),
-		)
-	})
-
-	it.effect("slack-bot update merges channel fields into the stored secret config", () => {
-		const testDb = createTestDb(trackedDbs)
-		// Mirrors MAPLE_INGEST_KEY_ENCRYPTION_KEY in makeConfig() above.
-		const secretKey = Buffer.alloc(32, 5)
-		return Effect.gen(function* () {
-			const alerts = yield* AlertsService
-			const orgId = asOrgId("org_slackbot_update")
-			const userId = asUserId("user_slackbot_update")
-
-			const created = yield* alerts.createDestination(orgId, userId, adminRoles, {
-				type: "slack-bot",
-				name: "Slack bot",
-				enabled: true,
-				channelId: "C111ORIG",
-				channelName: "alerts",
-			})
-			assert.strictEqual(created.type, "slack-bot")
-			assert.strictEqual(created.summary, "#alerts")
-
-			const readSecret = Effect.fn(function* () {
-				const row = yield* Effect.promise(() =>
-					queryFirstRow<{ secret_ciphertext: string; secret_iv: string; secret_tag: string }>(
-						testDb,
-						"select secret_ciphertext, secret_iv, secret_tag from alert_destinations where id = $1",
-						[created.id],
-					),
-				)
-				assert.isDefined(row)
-				const json = yield* decryptAes256Gcm(
-					{ ciphertext: row!.secret_ciphertext, iv: row!.secret_iv, tag: row!.secret_tag },
-					secretKey,
-					(message) => new AlertValidationError({ message, details: [] }),
-				)
-				return JSON.parse(json) as { type: string; channelId: string; channelName: string | null }
-			})
-
-			// A name-only update (channelId + channelName undefined) keeps both
-			// stored channel fields untouched.
-			const renamed = yield* alerts.updateDestination(orgId, userId, adminRoles, created.id, {
-				type: "slack-bot",
-				name: "Renamed bot",
-			})
-			assert.strictEqual(renamed.name, "Renamed bot")
-			assert.strictEqual(renamed.summary, "#alerts")
-			assert.deepStrictEqual(yield* readSecret(), {
-				type: "slack-bot",
-				channelId: "C111ORIG",
-				channelName: "alerts",
-			})
-
-			// A provided channelName replaces the stored one; the omitted channelId
-			// survives.
-			const relabeled = yield* alerts.updateDestination(orgId, userId, adminRoles, created.id, {
-				type: "slack-bot",
-				channelName: "incidents",
-			})
-			assert.strictEqual(relabeled.summary, "#incidents")
-			assert.strictEqual(relabeled.channelLabel, "#incidents")
-			assert.deepStrictEqual(yield* readSecret(), {
-				type: "slack-bot",
-				channelId: "C111ORIG",
-				channelName: "incidents",
-			})
-
-			// A blank channelId falls back to the stored value instead of wiping it.
-			yield* alerts.updateDestination(orgId, userId, adminRoles, created.id, {
-				type: "slack-bot",
-				channelId: "   ",
-			})
-			assert.deepStrictEqual(yield* readSecret(), {
-				type: "slack-bot",
-				channelId: "C111ORIG",
-				channelName: "incidents",
-			})
-
-			// A real channelId replaces the stored one; channelName stays.
-			yield* alerts.updateDestination(orgId, userId, adminRoles, created.id, {
-				type: "slack-bot",
-				channelId: "C222NEXT",
-			})
-			assert.deepStrictEqual(yield* readSecret(), {
-				type: "slack-bot",
-				channelId: "C222NEXT",
-				channelName: "incidents",
-			})
-		}).pipe(
-			Effect.provide(makeLayer(testDb, makeWarehouseStub({ tracesAggregateRows: emptyWarehouseRows }))),
 		)
 	})
 

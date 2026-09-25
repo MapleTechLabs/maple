@@ -5,6 +5,7 @@ import { isClerkAuthEnabled } from "@/lib/services/common/auth-mode"
 import {
 	DISABLED_ORGANIZATION_FEATURE_FLAGS,
 	ENABLED_ORGANIZATION_FEATURE_FLAGS,
+	isChatConnectorEnabled,
 	organizationFeatureFlagsFrom,
 	type OrganizationFeatureFlags,
 } from "@/lib/organization-feature-flags"
@@ -81,3 +82,23 @@ const SELF_HOSTED_STATE: OrganizationFeatureFlagsState = {
 export const useOrganizationFeatureFlags: () => OrganizationFeatureFlagsState = isClerkAuthEnabled
 	? useClerkOrganizationFeatureFlags
 	: useSelfHostedOrganizationFeatureFlags
+
+export type ChatConnectorGate = (connectorId: string) => boolean
+
+/** Clerk mode: staged off until the organization's metadata has actually answered. */
+function useClerkChatConnectorGate(): ChatConnectorGate {
+	const { organization, isLoaded } = useOrganization()
+	const metadata = organization?.publicMetadata
+	return useMemo<ChatConnectorGate>(
+		() => (connectorId) => isLoaded && isChatConnectorEnabled(metadata, connectorId),
+		[metadata, isLoaded],
+	)
+}
+
+/** Self-hosted: nothing to stage and nothing to load. Touches no Clerk hook. */
+const SELF_HOSTED_GATE: ChatConnectorGate = () => true
+
+/** Whether a chat connector is staged on for this org — the three rules above, keyed by id. */
+export const useChatConnectorGate: () => ChatConnectorGate = isClerkAuthEnabled
+	? useClerkChatConnectorGate
+	: () => SELF_HOSTED_GATE

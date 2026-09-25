@@ -51,7 +51,7 @@ export interface ResolvedTimeRange {
  * for bounds the agent didn't supply.
  *
  * Both bounds are {@link WarehouseDateTime}, so this function has no parsing to
- * do and no malformed case to handle: `optionalTimeParam` decoded and
+ * do and no malformed case to handle: `P.timeWindow` decoded and
  * canonicalized them at the tool's parameter boundary, or the call didn't
  * typecheck. That is the whole reason the brand exists — a tool cannot reach
  * this function with a raw string it forgot to validate.
@@ -106,17 +106,4 @@ export function rangeExceededMessage(
 		`Requested ${formatHours(range.requestedHours)}, maximum supported range is ${cap}.`,
 		`Narrow start_time/end_time to ${cap} or less. For wider trends use \`query_data\` with a timeseries query, which aggregates instead of scanning raw rows.`,
 	].join(" ")
-}
-
-/**
- * Standard MCP error result for an over-wide range. Returned directly by tools.
- */
-export function rangeExceededResult(
-	range: Pick<ResolvedTimeRange, "maxHours" | "requestedHours">,
-	toolName: string,
-) {
-	return {
-		content: [{ type: "text" as const, text: rangeExceededMessage(range, toolName) }],
-		isError: true as const,
-	}
 }

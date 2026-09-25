@@ -1,15 +1,15 @@
 ---
 /**
- * ComparePair — the two marks, side by side, in the hero's right-hand column.
+ * ComparePair: the two marks, side by side, in the hero's right-hand column.
  *
  * The hero copy takes half the row and left the other half to the dot grid.
  * This fills it with the one thing a comparison page can show at a glance:
  * who is being compared. Two hairline cells, each mark in its own brand
- * colour (a vs-pairing is the one place two brand colours belong together),
- * the name, and the vendor's domain as a literal — no claim, no tagline.
- * Each cell is washed in its side's colour: a flat tint from `.pair-cell`
+ * color (a vs-pairing is the one place two brand colors belong together),
+ * the name, and the vendor's domain as a literal: no claim, no tagline.
+ * Each cell is washed in its side's color: a flat tint from `.pair-cell`
  * under a grainy gradient canvas (`PairGrainient`, React Bits' Grainient) in the same
- * hue — the page's one animated moment.
+ * hue: the page's one animated moment.
  */
 import { MapleMark } from "@maple/ui/components/icons/maple-mark";
 import BrandMarkIcon from "../BrandMarkIcon.astro";
@@ -22,7 +22,7 @@ interface Props {
 }
 
 const { competitor } = Astro.props;
-// The vendor's brand colour drives its cell's dither; near-black marks tint
+// The vendor's brand color drives its cell's dither; near-black marks tint
 // with the muted foreground so the field stays visible on the dark ground.
 const vendorColor = markTint(brandMark(competitor.mark));
 const MAPLE_AMBER = "#e8872a"; // --primary on the dark theme, as hex

@@ -3,7 +3,7 @@ import { execFileSync } from "node:child_process"
 import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { OrgId } from "@maple/domain/http"
-import { Sandbox, SandboxExited, SandboxOutput, SandboxStarted } from "@effect-agent/sandbox/Sandbox"
+import { Sandbox, SandboxExited, SandboxOutput, SandboxStarted } from "effect-agent/sandbox"
 import { Duration, Effect, Layer, Schema, Stream } from "effect"
 import { gitPathspec, RepoSandboxService } from "./RepoSandboxService"
 import { IMPLEMENTATION } from "./CloudflareRepoSandbox"
@@ -109,6 +109,15 @@ describe("gitPathspec", () => {
 })
 
 describe("the git commands the tools build, against a real repository", () => {
+	it.effect("prepares a checkout with a command that reads and prints nothing", () => {
+		const seen: string[][] = []
+		return Effect.gen(function* () {
+			const service = yield* RepoSandboxService
+			yield* service.prepare(ORG, { repository: "octo/shop", ref: "main" })
+			assert.deepStrictEqual(seen, [["true"]])
+		}).pipe(Effect.provide(RepoSandboxService.layer.pipe(Layer.provide(localSandbox(makeRepo(), seen)))))
+	})
+
 	it.effect("greps with flags this git actually has", () =>
 		Effect.gen(function* () {
 			const service = yield* RepoSandboxService
@@ -117,6 +126,27 @@ describe("the git commands the tools build, against a real repository", () => {
 			// is 129, which is how `--max-count` shipped broken.
 			assert.isAtMost(result.exitCode, 1, result.stderr)
 			assert.include(result.stdout, "src/checkout.ts:2:")
+		}).pipe(Effect.provide(overRepo())),
+	)
+
+	it.effect("reads the pattern as extended regex, the dialect models write", () =>
+		Effect.gen(function* () {
+			const service = yield* RepoSandboxService
+			// Under basic regex the bar is literal and `\(` opens a group that never closes,
+			// so both of these found nothing or failed outright.
+			const alternation = yield* service.grep(
+				ORG,
+				{ repository: "octo/shop" },
+				{ pattern: "no such text|card declined" },
+			)
+			assert.isAtMost(alternation.exitCode, 1, alternation.stderr)
+			assert.include(alternation.stdout, "src/checkout.ts:2:")
+			const escaped = yield* service.grep(
+				ORG,
+				{ repository: "octo/shop" },
+				{ pattern: "declined\\(|card" },
+			)
+			assert.isAtMost(escaped.exitCode, 1, escaped.stderr)
 		}).pipe(Effect.provide(overRepo())),
 	)
 

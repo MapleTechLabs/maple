@@ -105,7 +105,13 @@ export type McpToolSurface =
 	| "mcp"
 	/** The in-process AI chat agent (`chat/turn-runner.ts`). */
 	| "chat"
-	/** Agent workflow passes (`workflows/agent-pass.ts`). */
+	/**
+	 * The chat-platform bot, which runs the same agent engine as `chat` but answers into a channel
+	 * anyone in it can post to. Its own surface rather than `chat` precisely so it is *not* an
+	 * internal one: see `INTERNAL_SURFACES` in `apps/ai/src/mcp/tools/types.ts`.
+	 */
+	| "bot"
+	/** Retired agent workflow passes. Kept so already-audited rows stay readable. */
 	| "workflow"
 	/** Retired worker-to-worker internal RPC. Kept so already-audited rows stay readable. */
 	| "rpc"

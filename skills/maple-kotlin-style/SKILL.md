@@ -22,9 +22,9 @@ java \
   -jar build/libs/app.jar
 ```
 
-Replace `MAPLE_TEST` with the project's real Maple ingest key once available. Keep these flags inline (in `Procfile` / `Dockerfile` / `application.yml`) — don't move them behind unset env vars.
+Replace `MAPLE_TEST` with the project's real Maple ingest key once it exists. Keep these flags inline where the JVM is launched (`Procfile`, `Dockerfile`, or `JAVA_TOOL_OPTIONS`). Do not move them behind unset env vars. The agent does not read `application.yml`.
 
-The agent auto-instruments Ktor, Spring Boot (MVC, WebFlux), Coroutines, Exposed, R2DBC, Kafka, gRPC, OkHttp, AWS SDK, and many more.
+The agent auto-instruments Ktor, Spring Boot (MVC, WebFlux), kotlinx.coroutines context propagation, JDBC (so Exposed), R2DBC, Kafka, gRPC, OkHttp, AWS SDK, and more.
 
 ## Manual SDK (Ktor, no agent)
 
@@ -36,8 +36,8 @@ fun initTelemetry(): OpenTelemetrySdk {
     val headers = mapOf("authorization" to "Bearer $MAPLE_KEY")
     val resource = Resource.getDefault().merge(Resource.create(
         Attributes.builder()
-            .put(ServiceAttributes.SERVICE_NAME, "orders-api")
-            .put(DeploymentIncubatingAttributes.DEPLOYMENT_ENVIRONMENT_NAME,
+            .put("service.name", "orders-api")
+            .put("deployment.environment.name",
                 System.getenv("DEPLOYMENT_ENV") ?: "development")
             .put("vcs.repository.url.full", "https://github.com/acme/orders-api")
             .put("vcs.ref.head.revision", System.getenv("GITHUB_SHA") ?: "")
@@ -57,7 +57,7 @@ fun initTelemetry(): OpenTelemetrySdk {
 }
 ```
 
-Add the equivalent log + metric exporters in the same builder.
+Add the equivalent log and metric exporters in the same builder. Resolve versions through `io.opentelemetry:opentelemetry-bom`.
 
 ## Bounded business spans
 
@@ -70,7 +70,7 @@ suspend fun submitOrder(orderId: String, tenantId: String) {
         .setAttribute("order.id", orderId)
         .startSpan()
     try {
-        span.makeCurrent().use {
+        withContext(span.asContextElement()) {
             chargeOrder(orderId)
         }
     } catch (e: Exception) {
@@ -83,12 +83,12 @@ suspend fun submitOrder(orderId: String, tenantId: String) {
 }
 ```
 
-For coroutines, use the `kotlinx-coroutines-extension` (`opentelemetry-kotlin-extension`) so context propagates across `withContext` boundaries.
+`asContextElement()` comes from `io.opentelemetry:opentelemetry-extension-kotlin` (`import io.opentelemetry.extension.kotlin.asContextElement`). Do not call `span.makeCurrent()` in a `suspend` function: the scope is thread-local and leaks or is lost when the coroutine resumes on another thread.
 
 ## Logs
 
-Bridge whatever the project uses (Logback, SLF4J, Log4j2). With the agent, log appenders are auto-bridged. With the manual SDK, add `opentelemetry-logback-appender-1.0` (or Log4j 2 equivalent) and configure it in `logback.xml` so existing logger calls carry `trace_id` / `span_id` and reach Maple. Don't replace the user's existing logger.
+Bridge whatever the project uses (Logback, SLF4J, Log4j2). With the agent, Logback and Log4j2 are bridged automatically. With the manual SDK, add `opentelemetry-logback-appender-1.0` (or `opentelemetry-log4j-appender-2.17`), declare its appender in `logback.xml`, and call `OpenTelemetryAppender.install(sdk)` after building the SDK. Existing logger calls then carry `trace_id` / `span_id` and reach Maple. Do not replace the user's existing logger.
 
 ## Coexistence
 
-If the project runs Datadog / New Relic / Honeycomb, leave them in place. Test the combination once before shipping.
+If the project runs a Datadog, New Relic, or Honeycomb agent, leave it in place. Two bytecode agents on one JVM can conflict, so test the combination once before shipping.

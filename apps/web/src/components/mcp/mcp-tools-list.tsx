@@ -121,14 +121,19 @@ export function McpToolsList() {
 				</div>
 			</CardHeader>
 			<CardContent>
-				<div className="space-y-3">
+				<dl className="grid grid-cols-1 sm:grid-cols-[max-content_1fr] sm:gap-x-6 divide-y divide-border/60">
 					{MCP_TOOLS.map((tool) => (
-						<div key={tool.name} className="flex gap-3">
-							<code className="text-xs font-medium shrink-0 pt-0.5">{tool.name}</code>
-							<p className="text-muted-foreground text-xs">{tool.description}</p>
+						<div
+							key={tool.name}
+							className="grid grid-cols-subgrid sm:col-span-2 gap-y-1 py-2.5 first:pt-0 last:pb-0"
+						>
+							<dt>
+								<code className="font-mono text-xs font-medium">{tool.name}</code>
+							</dt>
+							<dd className="text-muted-foreground text-xs leading-relaxed">{tool.description}</dd>
 						</div>
 					))}
-				</div>
+				</dl>
 			</CardContent>
 		</Card>
 	)

@@ -21,6 +21,10 @@ describe("MCP expected failures", () => {
 			"@maple/mcp/decode-error",
 			"@maple/mcp/errors/McpAuthInvalidError",
 			"@maple/mcp/errors/McpAuthMissingError",
+			"@maple/mcp/errors/McpInvalidInputError",
+			"@maple/mcp/errors/McpNotReadyError",
+			"@maple/mcp/errors/McpQueryBudgetError",
+			"@maple/mcp/errors/McpUnavailableError",
 		])
 	})
 

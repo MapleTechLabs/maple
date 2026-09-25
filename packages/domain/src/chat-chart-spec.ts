@@ -1,6 +1,7 @@
 // BOUNDARY: This module reads a model-authored ```chart fence and narrows it
 // before it becomes a plot.
 import { Option, Schema } from "effect"
+import type { ChartUnit } from "@maple/widgets/chart/static-chart"
 
 /**
  * The chart a model may draw inside a reply, and the schema that decides whether a fence holds
@@ -103,6 +104,153 @@ export function normalizeUnit(unit: string | undefined): string {
 	const lower = unit.trim().toLowerCase()
 	if (KNOWN_UNITS.has(lower)) return lower
 	return UNIT_ALIASES.get(lower) ?? "number"
+}
+
+/**
+ * The same unit as the *static* renderer names them, plus the factor its values
+ * need to be in it.
+ *
+ * `@maple/widgets`' image renderer knows five units where
+ * `formatValueByUnit` knows nine, so the four it does not carry are converted
+ * rather than dropped: a chart labelled `s` keeps reading in seconds because
+ * the formatter scales milliseconds back up, and one labelled `ratio` keeps
+ * reading as a percentage because 0–1 is scaled onto the renderer's 0–100
+ * `percent`. Dropping to plain numbers instead would strip the axis suffix off
+ * exactly the charts that need it most.
+ */
+export function staticChartUnit(unit: string | undefined): {
+	readonly unit: ChartUnit
+	readonly scale: number
+} {
+	switch (normalizeUnit(unit)) {
+		case "bytes":
+			return { unit: "bytes", scale: 1 }
+		case "duration_ms":
+			return { unit: "duration_ms", scale: 1 }
+		case "duration_ns":
+			return { unit: "duration_ms", scale: 1 / 1_000_000 }
+		case "duration_s":
+			return { unit: "duration_ms", scale: 1000 }
+		case "duration_us":
+			return { unit: "duration_ms", scale: 1 / 1000 }
+		case "percent_100":
+			return { unit: "percent", scale: 1 }
+		// `normalizeUnit` reserves a bare `percent` for the 0–1 aliases.
+		case "percent":
+			return { unit: "percent", scale: 100 }
+		case "requests_per_sec":
+			return { unit: "requests_per_sec", scale: 1 }
+		default:
+			return { unit: "number", scale: 1 }
+	}
+}
+
+const FENCE_OPEN = /^\s{0,3}(`{3,})\s*([^\s`]*)/
+const CHART_FENCE_INFO = "chart"
+
+/**
+ * A reply cut into the prose between its charts and the charts themselves.
+ *
+ * `closed` is false for a fence whose closing line has not arrived — a reply
+ * still streaming. It is always the last part, so a consumer may drop it
+ * without shifting anything before it.
+ */
+export type ChartFencePart =
+	| { readonly kind: "text"; readonly value: string }
+	| { readonly kind: "chart"; readonly value: string; readonly closed: boolean }
+
+/**
+ * A reply, split at its ```chart fences, in the order they appear in it.
+ *
+ * **Position is the identity of a chart.** A reply can hold several, nothing
+ * numbers them, and the image URL for one has to name it somehow. Order of
+ * appearance is the one answer every consumer can reach independently, so it is
+ * the contract — and the reason this is one function rather than one per
+ * surface. Two implementations of it disagreed once: counting only the fences
+ * that *parsed* renumbered every chart after a malformed one, so a reader got
+ * the wrong plot under the right words.
+ *
+ * Counted on the way in, therefore, before anything asks whether the payload is
+ * a chart at all. A caller that cannot draw the Nth fence skips it; it does not
+ * renumber the rest.
+ *
+ * A line scan rather than a regex over the whole reply: a fence is a line
+ * construct, fences nest, a chart payload can legitimately contain a line of
+ * backticks, and a regex that pairs the wrong two of them silently reindexes
+ * everything after it. Fences that are not charts keep their own lines and pass
+ * through as prose, so splitting a reply and rejoining it loses nothing.
+ */
+export function splitChartFences(text: string): ReadonlyArray<ChartFencePart> {
+	const parts: Array<ChartFencePart> = []
+	let prose: Array<string> = []
+	let open: { readonly ticks: number; readonly isChart: boolean } | undefined
+	let body: Array<string> = []
+
+	const flushProse = () => {
+		parts.push({ kind: "text", value: prose.join("\n") })
+		prose = []
+	}
+
+	for (const line of text.split("\n")) {
+		const fence = FENCE_OPEN.exec(line)
+		const ticks = fence?.[1]?.length ?? 0
+		const info = fence?.[2] ?? ""
+
+		if (open === undefined) {
+			if (ticks === 0) {
+				prose.push(line)
+				continue
+			}
+			open = { ticks, isChart: info === CHART_FENCE_INFO }
+			if (open.isChart) {
+				flushProse()
+				body = []
+			} else prose.push(line)
+			continue
+		}
+
+		// A closing fence is at least as long as the one that opened it and
+		// carries no info string of its own.
+		if (ticks >= open.ticks && info === "") {
+			if (open.isChart) parts.push({ kind: "chart", value: body.join("\n"), closed: true })
+			else prose.push(line)
+			open = undefined
+			continue
+		}
+		if (open.isChart) body.push(line)
+		else prose.push(line)
+	}
+
+	if (open?.isChart === true) parts.push({ kind: "chart", value: body.join("\n"), closed: false })
+	else flushProse()
+	return parts
+}
+
+/**
+ * Whether a fence is still open at the end of this text.
+ *
+ * The same line scan, for the one question a caller about to CUT a reply has. Counting backtick
+ * runs instead gets it wrong in both directions: a fence opened with four ticks holds lines of
+ * three as payload, and prose can name ``` mid-line without opening anything.
+ */
+export function hasOpenFence(text: string): boolean {
+	let open: number | undefined
+	for (const line of text.split("\n")) {
+		const fence = FENCE_OPEN.exec(line)
+		const ticks = fence?.[1]?.length ?? 0
+		if (open === undefined) {
+			if (ticks > 0) open = ticks
+			continue
+		}
+		// A closing fence is at least as long as the one that opened it and carries no info string.
+		if (ticks >= open && (fence?.[2] ?? "") === "") open = undefined
+	}
+	return open !== undefined
+}
+
+/** Every ```chart fence in a reply, in the order they appear in it. */
+export function chartFences(text: string): ReadonlyArray<string> {
+	return splitChartFences(text).flatMap((part) => (part.kind === "chart" ? [part.value] : []))
 }
 
 /**

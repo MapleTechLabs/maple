@@ -1,4 +1,4 @@
-import { SlackBotTokenResolver } from "@maple/backend/services/integrations/slack-bot-token"
+import { ChatAlertPoster } from "./ChatAlertPoster"
 import { afterEach, assert, describe, it } from "@effect/vitest"
 import { ConfigProvider, Effect, Layer, Schema } from "effect"
 import { AlertDestinationId, OrgId } from "@maple/domain/http"
@@ -66,7 +66,7 @@ describe("NotificationDispatcher.dispatch", () => {
 			execute: () => Effect.fail(new DatabaseError({ message: "connection reset", cause: null })),
 		})
 		const layer = Layer.effect(NotificationDispatcher, NotificationDispatcher.make).pipe(
-			Layer.provide(SlackBotTokenResolver.layer),
+			Layer.provide(ChatAlertPoster.layer),
 			Layer.provide(Layer.succeed(EmailService, emailStub)),
 			Layer.provideMerge(failingDb),
 			Layer.provideMerge(Env.layer),
@@ -86,7 +86,7 @@ describe("NotificationDispatcher.dispatch", () => {
 	it.effect("still reports a genuinely absent destination as missing", () => {
 		const testDb = createTestDb(createdDbs)
 		const layer = Layer.effect(NotificationDispatcher, NotificationDispatcher.make).pipe(
-			Layer.provide(SlackBotTokenResolver.layer),
+			Layer.provide(ChatAlertPoster.layer),
 			Layer.provide(Layer.succeed(EmailService, emailStub)),
 			Layer.provideMerge(testDb.layer),
 			Layer.provideMerge(Env.layer),

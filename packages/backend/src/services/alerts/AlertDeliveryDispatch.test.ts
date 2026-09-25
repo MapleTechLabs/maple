@@ -1,9 +1,7 @@
 import type { AlertDestinationRow } from "@maple/db"
 import {
-	AlertDeliveryAuthError,
 	AlertDeliveryError,
 	AlertDeliveryRejectedError,
-	AlertDeliveryTargetMissingError,
 	AlertDestinationId,
 	UNGROUPED_GROUP_KEY,
 } from "@maple/domain/http"
@@ -13,17 +11,20 @@ import { TestClock } from "effect/testing"
 import {
 	buildAlertChatUrl,
 	buildDiscordEmbedsFromTemplate,
-	buildSlackBlocks,
-	buildSlackBlocksFromTemplate,
-	buildSlackFallbackText,
+	buildSummaryLine,
 	buildTemplateContext,
 	type DispatchContext,
 } from "./AlertDeliveryDispatch"
-import { dispatchDelivery, type DispatchDeps } from "./delivery/dispatch"
+import { dispatchDelivery } from "./delivery/dispatch"
+import type { EffectTransportDeps } from "./delivery/Transport"
 import type { TemplateRenderContext } from "./alert-formatting"
 import { resolveSignalDisplay } from "./alert-signal-display"
 import { renderTemplate } from "./alert-templating/renderer"
 import { DEFAULT_BODY_TEMPLATE, DEFAULT_TITLE_TEMPLATE } from "./alert-templating/defaultTemplates"
+
+/** Chat posts must not happen for these destinations. */
+const failingChatPost = () =>
+	Effect.fail(new AlertDeliveryError({ message: "unexpected postChatAlert", destinationType: "chat" }))
 
 const baseContext: TemplateRenderContext = {
 	ruleId: "rule_1" as TemplateRenderContext["ruleId"],
@@ -62,17 +63,11 @@ const LINK = "https://web.localhost/alerts"
 const CHAT = "https://web.localhost/chat?mode=alert"
 const DESTINATION_ID = Schema.decodeUnknownSync(AlertDestinationId)("7c6b5a49-3821-4e0f-9d8c-7b6a59483726")
 
-/** Slack-token resolver that must not be invoked for non-slack-bot destinations. */
-const failingSlackToken = () =>
-	Effect.fail(
-		new AlertDeliveryError({ message: "unexpected resolveSlackBotToken", destinationType: "slack-bot" }),
-	)
-
 /** Dispatch deps for non-email destinations — email sends must not happen. */
-const noEmailDeps: DispatchDeps = {
+const noEmailDeps: EffectTransportDeps = {
+	postChatAlert: failingChatPost,
 	sendEmail: () =>
 		Effect.fail(new AlertDeliveryError({ message: "unexpected sendEmail", destinationType: "email" })),
-	resolveSlackBotToken: failingSlackToken,
 }
 
 describe("buildAlertChatUrl (Ask Maple AI link)", () => {
@@ -146,85 +141,8 @@ describe("buildTemplateContext", () => {
 	})
 })
 
-describe("buildSlackBlocks (default format)", () => {
-	type HeaderBlock = { type: string; text: { text: string } }
-	type SectionBlock = { type: string; text: { text: string }; fields: Array<{ text: string }> }
-	type ContextBlock = { type: string; elements: Array<{ text: string }> }
-
-	it("leads with a truncated header and a human-readable summary sentence", () => {
-		const blocks = buildSlackBlocks(baseContext, LINK, CHAT)
-		const header = blocks[0] as HeaderBlock
-		const section = blocks[1] as SectionBlock
-		assert.strictEqual(header.type, "header")
-		assert.include(header.text.text, "Checkout error rate")
-		assert.strictEqual(section.type, "section")
-		assert.include(section.text.text, "*Error Rate* is *8%*")
-		assert.include(section.text.text, "above the 5% threshold")
-		assert.include(section.text.text, "last 5m")
-	})
-
-	it("truncates an over-long default header to Slack's 150-char limit", () => {
-		const blocks = buildSlackBlocks({ ...baseContext, ruleName: "x".repeat(300) }, LINK, CHAT)
-		const header = blocks[0] as HeaderBlock
-		assert.isAtMost(header.text.text.length, 150)
-	})
-
-	it("pairs the severity color with an emoji + capitalized label", () => {
-		const blocks = buildSlackBlocks(baseContext, LINK, CHAT)
-		const section = blocks[1] as SectionBlock
-		assert.isTrue(section.fields.some((f) => f.text.includes("\u{1F534} Critical")))
-	})
-
-	/**
-	 * Regression: an ungrouped rule stores `UNGROUPED_GROUP_KEY` ("__total__")
-	 * as its group key — a storage sentinel, not a group anyone named — and it
-	 * was rendering verbatim as a `Group` field reading `__total__`.
-	 */
-	it("treats the ungrouped sentinel as no grouping at all", () => {
-		const fields = (
-			buildSlackBlocks({ ...baseContext, groupKey: UNGROUPED_GROUP_KEY }, LINK, CHAT)[1] as SectionBlock
-		).fields
-		assert.isFalse(
-			fields.some((field) => field.text.startsWith("*Group*")),
-			"the ungrouped sentinel must not render a Group field",
-		)
-		for (const field of fields) assert.notInclude(field.text, "__total__")
-	})
-
-	it("omits the group field when the rule has no grouping, escapes it when present", () => {
-		const without = (buildSlackBlocks(baseContext, LINK, CHAT)[1] as SectionBlock).fields
-		assert.isFalse(without.some((f) => f.text.startsWith("*Group*")))
-		const withGroup = (
-			buildSlackBlocks({ ...baseContext, groupKey: "checkout<v2>" }, LINK, CHAT)[1] as SectionBlock
-		).fields
-		const group = withGroup.find((f) => f.text.startsWith("*Group*"))
-		assert.isDefined(group)
-		assert.include(group!.text, "checkout&lt;v2&gt;")
-	})
-
-	it("phrases a resolve event as recovery and includes a local-time timestamp", () => {
-		const blocks = buildSlackBlocks({ ...baseContext, eventType: "resolve" }, LINK, CHAT)
-		const section = blocks[1] as SectionBlock
-		assert.include(section.text.text, "back within its threshold")
-		const context = blocks.at(-1) as ContextBlock
-		assert.strictEqual(context.type, "context")
-		// <!date^…> renders in each viewer's local timezone; ISO fallback for exports.
-		assert.include(context.elements[0]!.text, "<!date^1780358400^")
-		assert.include(context.elements[0]!.text, "2026-06-02T00:00:00.000Z")
-	})
-
-	it("phrases a range breach as inside the band and carries both bounds", () => {
-		const section = buildSlackBlocks(rangeContext, LINK, CHAT)[1] as SectionBlock
-		assert.include(section.text.text, "*Error Rate* is *8%*")
-		assert.include(section.text.text, "inside the 1%–5% range")
-		// A resolve on the same rule reports the full band it is back within.
-		const resolved = buildSlackBlocks(
-			{ ...rangeContext, eventType: "resolve" },
-			LINK,
-			CHAT,
-		)[1] as SectionBlock
-		assert.include(resolved.text.text, "back within its threshold (between 1% and 5%)")
-	})
+describe("buildSummaryLine", () => {
+	const bold = (context: TemplateRenderContext) => buildSummaryLine(context, (value) => `*${value}*`)
 
 	/**
 	 * Regression: a query-driven rule used to render its query-kind enum as the
@@ -232,138 +150,39 @@ describe("buildSlackBlocks (default format)", () => {
 	 * "*builder_query* is *1041923*".
 	 */
 	it("names what a builder_query rule measures instead of its query kind", () => {
-		const section = buildSlackBlocks(
-			{
-				...baseContext,
-				ruleName: "Slow DB queries",
-				signalType: "builder_query",
-				signalDisplay: { label: "p95(duration)", unit: "ms" },
-				threshold: 500000,
-				value: 1041923,
-			},
-			LINK,
-			CHAT,
-		)[1] as SectionBlock
-		assert.include(section.text.text, "*p95(duration)* is *1,041,923ms*")
-		assert.include(section.text.text, "above the 500,000ms threshold")
-		assert.notInclude(section.text.text, "builder_query")
+		const line = bold({
+			...baseContext,
+			ruleName: "Slow DB queries",
+			signalType: "builder_query",
+			signalDisplay: { label: "p95(duration)", unit: "ms" },
+			threshold: 500000,
+			value: 1041923,
+		})
+		assert.include(line, "*p95(duration)* is *1,041,923ms*")
+		assert.include(line, "above the 500,000ms threshold")
+		assert.notInclude(line, "builder_query")
 	})
 
 	it("resolves a metrics rule's name from its stored draft, end to end", () => {
-		const section = buildSlackBlocks(
-			{
-				...baseContext,
-				ruleName: "DB duration",
+		const line = bold({
+			...baseContext,
+			ruleName: "DB duration",
+			signalType: "builder_query",
+			signalDisplay: resolveSignalDisplay({
 				signalType: "builder_query",
-				signalDisplay: resolveSignalDisplay({
-					signalType: "builder_query",
-					queryBuilderDraft: {
-						id: "q1",
-						name: "Query A",
-						dataSource: "metrics",
-						aggregation: "sum",
-						metricName: "db.query.duration",
-					},
-				}),
-				threshold: 500000,
-				value: 1041923,
-			},
-			LINK,
-			CHAT,
-		)[1] as SectionBlock
-		assert.include(section.text.text, "*sum(db.query.duration)* is *1,041,923*")
-		assert.include(section.text.text, "above the 500,000 threshold")
-	})
-
-	it("styles buttons per Slack guidance — no danger style on navigation links", () => {
-		const blocks = buildSlackBlocks(baseContext, LINK, CHAT)
-		const actions = blocks.find((b) => (b as { type: string }).type === "actions") as {
-			elements: Array<{ style?: string }>
-		}
-		assert.isDefined(actions)
-		assert.isFalse(actions.elements.some((e) => e.style === "danger"))
-	})
-})
-
-describe("buildSlackFallbackText", () => {
-	it("is a complete one-line summary for notification previews, with mrkdwn escaped", () => {
-		const text = buildSlackFallbackText({ ...baseContext, ruleName: "Errors <prod> & staging" })
-		assert.include(text, "\u{1F6A8}")
-		assert.include(text, "Errors &lt;prod&gt; &amp; staging")
-		assert.include(text, "Triggered")
-		assert.include(text, "Error Rate 8% > 5%")
-	})
-
-	it("spells out both bounds for a range rule", () => {
-		const text = buildSlackFallbackText(rangeContext)
-		assert.include(text, "Error Rate 8% between 1% and 5%")
-	})
-})
-
-describe("buildSlackBlocksFromTemplate", () => {
-	it("renders a header + mrkdwn section + actions, converting markdown links", () => {
-		const blocks = buildSlackBlocksFromTemplate(
-			"My Title",
-			"**bold** and [link](https://x.test)",
-			baseContext,
-			LINK,
-			CHAT,
-		)
-		const header = blocks[0] as { type: string; text: { text: string } }
-		const section = blocks[1] as { type: string; text: { type: string; text: string } }
-		assert.strictEqual(header.type, "header")
-		assert.strictEqual(header.text.text, "My Title")
-		assert.strictEqual(section.type, "section")
-		assert.strictEqual(section.text.type, "mrkdwn")
-		// **bold** → *bold*, [link](url) → <url|link>
-		assert.strictEqual(section.text.text, "*bold* and <https://x.test|link>")
-		assert.isTrue(blocks.some((b) => (b as { type: string }).type === "actions"))
-	})
-
-	it("truncates an over-long Slack header", () => {
-		const long = "x".repeat(200)
-		const blocks = buildSlackBlocksFromTemplate(long, "body", baseContext, LINK, CHAT)
-		const header = blocks[0] as { text: { text: string } }
-		assert.isAtMost(header.text.text.length, 150)
-	})
-
-	// The body is author-controlled text rendered into a message the slack-bot
-	// destination can post to ANY public channel (`chat:write.public`), so every
-	// `<…>` the author typed must land as literal text.
-	describe("mrkdwn injection", () => {
-		const sectionText = (body: string): string =>
-			(
-				buildSlackBlocksFromTemplate("T", body, baseContext, LINK, CHAT)[1] as {
-					text: { text: string }
-				}
-			).text.text
-
-		it("neutralizes @channel broadcasts and hand-written deceptive links", () => {
-			const text = sectionText("<!channel> see <https://evil.test|Open in Maple>")
-			assert.strictEqual(text, "&lt;!channel&gt; see &lt;https://evil.test|Open in Maple&gt;")
-			// Nothing the author typed survives as markup.
-			assert.notInclude(text, "<!channel>")
-			assert.notInclude(text, "<https://evil.test")
+				queryBuilderDraft: {
+					id: "q1",
+					name: "Query A",
+					dataSource: "metrics",
+					aggregation: "sum",
+					metricName: "db.query.duration",
+				},
+			}),
+			threshold: 500000,
+			value: 1041923,
 		})
-
-		it("neutralizes the other broadcast mentions too", () => {
-			for (const broadcast of ["<!here>", "<!everyone>"]) {
-				const text = sectionText(`heads up ${broadcast}`)
-				assert.notInclude(text, broadcast)
-				assert.include(text, "&lt;!")
-			}
-		})
-
-		it("percent-encodes a pipe in a markdown link target so the URL cannot pose as the label", () => {
-			assert.strictEqual(sectionText("[t](https://x.test/a|b)"), "<https://x.test/a%7Cb|t>")
-		})
-
-		it("still renders the links this module builds itself", () => {
-			assert.strictEqual(
-				sectionText("**bold** [Open](https://web.localhost/alerts?a=1&b=2)"),
-				"*bold* <https://web.localhost/alerts?a=1&amp;b=2|Open>",
-			)
-		})
+		assert.include(line, "*sum(db.query.duration)* is *1,041,923*")
+		assert.include(line, "above the 500,000 threshold")
 	})
 })
 
@@ -448,116 +267,35 @@ describe("dispatchDelivery", () => {
 		}),
 	)
 
-	const slackBotContext: DispatchContext = {
-		...pagerdutyContext,
-		destination: { ...destinationRow, name: "Slack bot", type: "slack-bot" },
-		publicConfig: { summary: "#incidents", channelLabel: "#incidents" },
-		secretConfig: { type: "slack-bot", channelId: "C0789CHAN", channelName: "incidents" },
-	}
-
-	const slackTokenDeps = (token = "xoxb-test-token"): DispatchDeps => ({
-		sendEmail: () =>
-			Effect.fail(
-				new AlertDeliveryError({ message: "unexpected sendEmail", destinationType: "email" }),
-			),
-		resolveSlackBotToken: () => Effect.succeed(token),
-	})
-
-	it.effect("slack-bot: posts to chat.postMessage with the resolved bot token + channel", () =>
-		Effect.gen(function* () {
-			const calls: Array<{ url: string; auth: string | null; body: unknown }> = []
-			const fetchFn: typeof fetch = async (input, init) => {
-				calls.push({
-					url: String(input),
-					auth: new Headers(init?.headers).get("authorization"),
-					body: JSON.parse(String(init?.body)),
-				})
-				return new Response(JSON.stringify({ ok: true, ts: "1700000000.000100" }), { status: 200 })
-			}
-
-			const result = yield* dispatchDelivery(
-				slackBotContext,
-				"{}",
-				fetchFn,
-				5_000,
-				LINK,
-				CHAT,
-				slackTokenDeps(),
-			)
-
-			assert.strictEqual(calls.length, 1)
-			assert.strictEqual(calls[0]!.url, "https://slack.com/api/chat.postMessage")
-			assert.strictEqual(calls[0]!.auth, "Bearer xoxb-test-token")
-			assert.strictEqual((calls[0]!.body as { channel: string }).channel, "C0789CHAN")
-			// No top-level text — Slack would render it as a duplicate line above
-			// the attachment; the notification preview rides in `fallback`.
-			assert.isUndefined((calls[0]!.body as { text?: string }).text)
-			// Blocks are wrapped in a colored attachment so the severity bar renders.
-			const attachments = (
-				calls[0]!.body as {
-					attachments: Array<{ color: string; fallback: string; blocks: unknown[] }>
-				}
-			).attachments
-			assert.lengthOf(attachments, 1)
-			assert.match(attachments[0]!.color, /^#[0-9a-f]{6}$/)
-			assert.include(attachments[0]!.fallback, "Test alert")
-			assert.isArray(attachments[0]!.blocks)
-			assert.strictEqual(result.providerReference, "1700000000.000100")
-			assert.strictEqual(result.responseCode, 200)
-		}),
-	)
-
-	it.effect("slack-bot: calls fetch detached from the runtime object", () =>
+	it.effect("calls an unguarded transport's fetch detached from the runtime object", () =>
 		Effect.gen(function* () {
 			// Regression: the unguarded transports used to call `runtime.fetchFn(...)`,
 			// a method call that hands workerd's global `fetch` a `this` of the
-			// runtime object — "Illegal invocation", every Slack delivery dead.
+			// runtime object — "Illegal invocation", every such delivery dead.
 			// A `function` (not an arrow) is what makes `this` observable here.
 			let called = false
 			let receiver: typeof globalThis | undefined
 			const fetchFn: typeof fetch = function (this: typeof globalThis | undefined) {
 				called = true
 				receiver = this
-				return Promise.resolve(
-					new Response(JSON.stringify({ ok: true, ts: "1700000000.000100" }), { status: 200 }),
-				)
+				return Promise.resolve(new Response("{}", { status: 202 }))
 			}
 
-			yield* dispatchDelivery(slackBotContext, "{}", fetchFn, 5_000, LINK, CHAT, slackTokenDeps())
+			yield* dispatchDelivery(pagerdutyContext, "{}", fetchFn, 5_000, LINK, CHAT, noEmailDeps)
 
 			assert.isTrue(called)
 			assert.isUndefined(receiver)
 		}),
 	)
 
-	it.effect("slack-bot: surfaces a not_in_channel logical error with an actionable message", () =>
-		Effect.gen(function* () {
-			const fetchFn: typeof fetch = async () =>
-				new Response(JSON.stringify({ ok: false, error: "not_in_channel" }), { status: 200 })
-
-			const error = yield* Effect.flip(
-				dispatchDelivery(slackBotContext, "{}", fetchFn, 5_000, LINK, CHAT, slackTokenDeps()),
-			)
-
-			// Slack reports this as HTTP 200 + `ok:false`, so only the transport can
-			// classify it. Someone has to re-invite the bot; retrying cannot.
-			assert.instanceOf(error, AlertDeliveryTargetMissingError)
-			assert.isFalse(error.error.retryable)
-			assert.strictEqual(error.destinationType, "slack-bot")
-			assert.strictEqual(error.providerErrorCode, "not_in_channel")
-			assert.include(error.message, "not_in_channel")
-			assert.include(error.message, "invite the Maple bot")
-		}),
-	)
-
-	it.effect("slack-bot: a hung fetch times out via the Clock and fails typed", () =>
+	it.effect("a hung fetch times out via the Clock and fails typed", () =>
 		Effect.gen(function* () {
 			// Never settles — only the Clock-driven timeoutOrElse can end this.
 			const fetchFn: typeof fetch = () => new Promise<Response>(() => {})
 
 			const fiber = yield* Effect.forkChild(
 				Effect.flip(
-					dispatchDelivery(slackBotContext, "{}", fetchFn, 5_000, LINK, CHAT, slackTokenDeps()),
+					dispatchDelivery(pagerdutyContext, "{}", fetchFn, 5_000, LINK, CHAT, noEmailDeps),
 				),
 				{ startImmediately: true },
 			)
@@ -565,12 +303,12 @@ describe("dispatchDelivery", () => {
 			const error = yield* Fiber.join(fiber)
 
 			assert.instanceOf(error, AlertDeliveryError)
-			assert.strictEqual(error.destinationType, "slack-bot")
+			assert.strictEqual(error.destinationType, "pagerduty")
 			assert.include(error.message, "timed out after 5000ms")
 		}),
 	)
 
-	it.effect("slack-bot: the delivery timeout aborts the underlying request", () =>
+	it.effect("the delivery timeout aborts the underlying request", () =>
 		Effect.gen(function* () {
 			// A timeout that leaves the POST running is a duplicate page in waiting:
 			// the queue retries while the "timed-out" request still delivers.
@@ -587,7 +325,7 @@ describe("dispatchDelivery", () => {
 
 			const fiber = yield* Effect.forkChild(
 				Effect.flip(
-					dispatchDelivery(slackBotContext, "{}", fetchFn, 5_000, LINK, CHAT, slackTokenDeps()),
+					dispatchDelivery(pagerdutyContext, "{}", fetchFn, 5_000, LINK, CHAT, noEmailDeps),
 				),
 				{ startImmediately: true },
 			)
@@ -635,144 +373,6 @@ describe("dispatchDelivery", () => {
 		}),
 	)
 
-	it.effect("slack-bot: an auth error code is terminal, not retried forever", () =>
-		Effect.gen(function* () {
-			const fetchFn: typeof fetch = async () =>
-				new Response(JSON.stringify({ ok: false, error: "invalid_auth" }), { status: 200 })
-
-			const error = yield* Effect.flip(
-				dispatchDelivery(slackBotContext, "{}", fetchFn, 5_000, LINK, CHAT, slackTokenDeps()),
-			)
-
-			// Slack reports auth failure as HTTP 200 + `ok:false`. Retrying replays
-			// the same dead token; only classifying it terminal lets the failure
-			// streak disable the destination and surface it in the setup audit.
-			assert.instanceOf(error, AlertDeliveryAuthError)
-			assert.isFalse(error.error.retryable)
-			assert.strictEqual(error.providerErrorCode, "invalid_auth")
-		}),
-	)
-
-	it.effect("slack-bot: an archived channel is a missing target", () =>
-		Effect.gen(function* () {
-			const fetchFn: typeof fetch = async () =>
-				new Response(JSON.stringify({ ok: false, error: "is_archived" }), { status: 200 })
-
-			const error = yield* Effect.flip(
-				dispatchDelivery(slackBotContext, "{}", fetchFn, 5_000, LINK, CHAT, slackTokenDeps()),
-			)
-
-			assert.instanceOf(error, AlertDeliveryTargetMissingError)
-			assert.isFalse(error.error.retryable)
-			assert.strictEqual(error.providerErrorCode, "is_archived")
-		}),
-	)
-
-	it.effect("slack-bot: a permanently rejected payload is not retryable", () =>
-		Effect.gen(function* () {
-			const fetchFn: typeof fetch = async () =>
-				new Response(JSON.stringify({ ok: false, error: "invalid_blocks" }), { status: 200 })
-
-			const error = yield* Effect.flip(
-				dispatchDelivery(slackBotContext, "{}", fetchFn, 5_000, LINK, CHAT, slackTokenDeps()),
-			)
-
-			assert.instanceOf(error, AlertDeliveryRejectedError)
-			assert.isFalse(error.error.retryable)
-			assert.strictEqual(error.providerErrorCode, "invalid_blocks")
-		}),
-	)
-
-	it.effect("slack-bot: an unrecognized error code stays retryable", () =>
-		Effect.gen(function* () {
-			const fetchFn: typeof fetch = async () =>
-				new Response(JSON.stringify({ ok: false, error: "fatal_error" }), { status: 200 })
-
-			const error = yield* Effect.flip(
-				dispatchDelivery(slackBotContext, "{}", fetchFn, 5_000, LINK, CHAT, slackTokenDeps()),
-			)
-
-			// Mis-classifying transient as terminal costs a destination its
-			// enablement; unknown codes err on the retry side.
-			assert.instanceOf(error, AlertDeliveryError)
-			assert.isTrue(error.error.retryable)
-			assert.strictEqual(error.providerErrorCode, "fatal_error")
-		}),
-	)
-
-	it.effect("slack-bot: a non-JSON 200 response fails typed", () =>
-		Effect.gen(function* () {
-			const fetchFn: typeof fetch = async () => new Response("gateway says hi", { status: 200 })
-
-			const error = yield* Effect.flip(
-				dispatchDelivery(slackBotContext, "{}", fetchFn, 5_000, LINK, CHAT, slackTokenDeps()),
-			)
-
-			assert.instanceOf(error, AlertDeliveryError)
-			assert.strictEqual(error.destinationType, "slack-bot")
-			assert.include(error.message, "non-JSON response")
-		}),
-	)
-
-	it.effect("slack-bot: a JSON payload that fails the response schema fails typed", () =>
-		Effect.gen(function* () {
-			// Valid JSON, but `ok` is a string — SlackPostMessageResponseSchema rejects it.
-			const fetchFn: typeof fetch = async () =>
-				new Response(JSON.stringify({ ok: "yes", ts: 123 }), { status: 200 })
-
-			const error = yield* Effect.flip(
-				dispatchDelivery(slackBotContext, "{}", fetchFn, 5_000, LINK, CHAT, slackTokenDeps()),
-			)
-
-			assert.instanceOf(error, AlertDeliveryError)
-			assert.strictEqual(error.destinationType, "slack-bot")
-			assert.include(error.message, "unexpected response payload")
-		}),
-	)
-
-	it.effect("slack-bot: an HTTP-level failure surfaces the status and body", () =>
-		Effect.gen(function* () {
-			const fetchFn: typeof fetch = async () => new Response("upstream exploded", { status: 500 })
-
-			const error = yield* Effect.flip(
-				dispatchDelivery(slackBotContext, "{}", fetchFn, 5_000, LINK, CHAT, slackTokenDeps()),
-			)
-
-			assert.instanceOf(error, AlertDeliveryError)
-			assert.strictEqual(error.destinationType, "slack-bot")
-			assert.include(error.message, "Slack delivery failed with 500")
-			assert.include(error.message, "upstream exploded")
-		}),
-	)
-
-	it.effect("slack-bot: fails when the org has no active Slack installation", () =>
-		Effect.gen(function* () {
-			const fetchFn: typeof fetch = async () => {
-				throw new Error("fetch must not be called when token resolution fails")
-			}
-			const deps: DispatchDeps = {
-				sendEmail: () =>
-					Effect.fail(
-						new AlertDeliveryError({ message: "unexpected sendEmail", destinationType: "email" }),
-					),
-				resolveSlackBotToken: () =>
-					Effect.fail(
-						new AlertDeliveryError({
-							message: "Slack is not connected for this organization",
-							destinationType: "slack-bot",
-						}),
-					),
-			}
-
-			const error = yield* Effect.flip(
-				dispatchDelivery(slackBotContext, "{}", fetchFn, 5_000, LINK, CHAT, deps),
-			)
-
-			assert.instanceOf(error, AlertDeliveryError)
-			assert.include(error.message, "Slack is not connected")
-		}),
-	)
-
 	const failingFetch: typeof fetch = async () => {
 		throw new Error("fetch must not be called for email dispatch")
 	}
@@ -792,18 +392,12 @@ describe("dispatchDelivery", () => {
 	it.effect("email: sends one email per recipient with the built-in format", () =>
 		Effect.gen(function* () {
 			const sent: Array<{ to: string; subject: string; html: string }> = []
-			const deps: DispatchDeps = {
+			const deps: EffectTransportDeps = {
+				postChatAlert: failingChatPost,
 				sendEmail: (to, subject, html) =>
 					Effect.sync(() => {
 						sent.push({ to, subject, html })
 					}),
-				resolveSlackBotToken: () =>
-					Effect.fail(
-						new AlertDeliveryError({
-							message: "resolveSlackBotToken not available in this test",
-							destinationType: "slack-bot",
-						}),
-					),
 			}
 
 			const result = yield* dispatchDelivery(emailContext, "{}", failingFetch, 5_000, LINK, CHAT, deps)
@@ -824,7 +418,8 @@ describe("dispatchDelivery", () => {
 
 	it.effect("email: surfaces a send failure as an email delivery error", () =>
 		Effect.gen(function* () {
-			const deps: DispatchDeps = {
+			const deps: EffectTransportDeps = {
+				postChatAlert: failingChatPost,
 				sendEmail: () =>
 					Effect.fail(
 						new AlertDeliveryError({
@@ -832,7 +427,6 @@ describe("dispatchDelivery", () => {
 							destinationType: "email",
 						}),
 					),
-				resolveSlackBotToken: failingSlackToken,
 			}
 
 			const error = yield* Effect.flip(
@@ -848,7 +442,8 @@ describe("dispatchDelivery", () => {
 	it.effect("email: succeeds with annotation when only some members fail", () =>
 		Effect.gen(function* () {
 			const sent: string[] = []
-			const deps: DispatchDeps = {
+			const deps: EffectTransportDeps = {
+				postChatAlert: failingChatPost,
 				sendEmail: (to) =>
 					to === "oncall@acme.test"
 						? Effect.fail(
@@ -860,7 +455,6 @@ describe("dispatchDelivery", () => {
 						: Effect.sync(() => {
 								sent.push(to)
 							}),
-				resolveSlackBotToken: failingSlackToken,
 			}
 
 			const result = yield* dispatchDelivery(emailContext, "{}", failingFetch, 5_000, LINK, CHAT, deps)
@@ -874,7 +468,8 @@ describe("dispatchDelivery", () => {
 
 	it.effect("email: fails with the first member error when every member fails", () =>
 		Effect.gen(function* () {
-			const deps: DispatchDeps = {
+			const deps: EffectTransportDeps = {
+				postChatAlert: failingChatPost,
 				sendEmail: () =>
 					Effect.fail(
 						new AlertDeliveryError({
@@ -882,7 +477,6 @@ describe("dispatchDelivery", () => {
 							destinationType: "email",
 						}),
 					),
-				resolveSlackBotToken: failingSlackToken,
 			}
 
 			const error = yield* Effect.flip(

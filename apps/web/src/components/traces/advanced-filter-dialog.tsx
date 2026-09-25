@@ -11,10 +11,11 @@ import {
 } from "@maple/ui/components/ui/dialog"
 import { Button } from "@maple/ui/components/ui/button"
 import { Kbd } from "@maple/ui/components/ui/kbd"
-import { MagnifierIcon } from "@/components/icons"
+import { CircleWarningIcon, MagnifierIcon } from "@/components/icons"
 import { WhereClauseEditor } from "@/components/query-builder/where-clause-editor"
 import { useAutocompleteValuesContextOptional } from "@/hooks/use-autocomplete-values"
 import { useAppHotkey } from "@/hooks/use-app-hotkey"
+import { parseWhereClause } from "@/lib/traces/advanced-filter-sync"
 
 interface AdvancedFilterDialogProps {
 	initialValue: string
@@ -68,6 +69,8 @@ export function AdvancedFilterDialog({ initialValue, onApply }: AdvancedFilterDi
 	}
 
 	const hasActiveFilter = initialValue.trim().length > 0
+	// Clauses the trace list cannot apply are named here rather than silently dropped.
+	const warnings = React.useMemo(() => parseWhereClause(value).warnings, [value])
 
 	return (
 		<Dialog open={open} onOpenChange={setOpen}>
@@ -110,6 +113,16 @@ export function AdvancedFilterDialog({ initialValue, onApply }: AdvancedFilterDi
 						textareaClassName="font-mono text-sm leading-relaxed resize-y min-h-[200px] max-h-[40vh]"
 						ariaLabel="Advanced traces where clause"
 					/>
+					{warnings.length > 0 && (
+						<div className="mt-2 flex gap-2 border border-warning/30 bg-warning/10 p-2 text-xs text-warning-foreground">
+							<CircleWarningIcon size={14} className="mt-0.5 shrink-0" />
+							<ul className="space-y-1">
+								{warnings.map((warning) => (
+									<li key={warning}>{warning}</li>
+								))}
+							</ul>
+						</div>
+					)}
 				</DialogPanel>
 				<DialogFooter>
 					<div className="flex w-full items-center justify-between sm:justify-between">

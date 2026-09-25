@@ -175,8 +175,8 @@ export class V2OnboardingChecklistApiGroup extends HttpApiGroup.make("onboarding
 				identifier: "claimOnboardingReward",
 				summary: "Claim the onboarding reward",
 				description:
-					"Re-verifies every step and the window, then applies the credit to the org's billing balance. Idempotent: a second call after a successful claim returns the claimed checklist without applying the credit again. " +
-					"Answers `409 onboarding_reward_not_claimable` while steps remain or once the window has closed. Requires an org-admin role and the `onboarding:write` scope.",
+					"Re-verifies every step and the window, then applies the credit as a one-off discount on the org's next invoice. Idempotent: a second call after a successful claim returns the claimed checklist without applying the credit again. " +
+					"Answers `409 onboarding_reward_not_claimable` while steps remain, once the window has closed, or while the org has no active plan. Requires an org-admin role and the `onboarding:write` scope.",
 			}),
 		),
 	)

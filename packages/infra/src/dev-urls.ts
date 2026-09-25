@@ -3,6 +3,7 @@ export const DEV_APPS = [
 	"api",
 	"ai",
 	"alerting",
+	"chat-bot",
 	"electric-sync",
 	"web",
 	"landing",

@@ -17,11 +17,11 @@ If a test fails, Maple surfaces the provider's own rejection reason in the toast
 
 ## Slack
 
-Install Maple's Slack app, then choose the channel where alerts should be delivered. Maple uses the
-installed bot connection; incoming-webhook destinations are not supported.
+Link your Slack workspace to Maple, then choose the channel where alerts should be delivered. Maple
+posts through the linked workspace's bot; incoming-webhook destinations are not supported.
 
-1. Open **Alerts → Settings** and choose **Add destination → Slack**.
-2. Install or reconnect the Maple Slack app when prompted.
+1. Open **Settings → Integrations → Slack** and connect your workspace.
+2. Open **Alerts → Settings**, choose **Add destination**, and pick the linked workspace.
 3. Pick a channel and save the destination.
 
 ## PagerDuty
@@ -105,6 +105,8 @@ POST a signed JSON payload to any HTTP endpoint you control — useful for custo
 - Maple sends a JSON body describing the rule, the observed value, and links back into the dashboard.
 - Set an optional **signing secret** to receive an `x-maple-signature` HMAC-SHA256 header so your endpoint can verify the payload came from Maple.
 - Your endpoint should respond with a `2xx` status; any other status is treated as a delivery failure and surfaced on the destination.
+
+The full payload, headers, signature verification and retry behaviour are in the [alert webhooks reference](/docs/reference/webhooks).
 
 ## Hazel
 

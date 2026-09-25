@@ -1,0 +1,1 @@
+ALTER TABLE "pr_reviews" ADD COLUMN "comment_attempt" integer DEFAULT 0 NOT NULL;

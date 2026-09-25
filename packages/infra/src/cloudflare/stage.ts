@@ -1,4 +1,21 @@
+import {
+	DEFAULT_MAPLE_REGION,
+	isMapleRegion,
+	MAPLE_REGIONS,
+	type MapleRegion,
+	regionSuffix,
+} from "../region.ts"
+
 export type MapleStage = { kind: "prd" } | { kind: "pr"; prNumber: number } | { kind: "dev"; name: string }
+
+/** What one `alchemy deploy` is: a stage of one geographic instance. */
+export interface MapleDeployment {
+	readonly stage: MapleStage
+	readonly region: MapleRegion
+}
+
+/** The alchemy stage suffix that selects the EU instance; absent means `us`. */
+const REGION_STAGE_SUFFIX_RE = /-(eu)$/
 
 const PR_STAGE_RE = /^pr-(\d+)$/
 /** Names of the removed staging stage, in the spellings someone would actually type. */
@@ -21,9 +38,63 @@ export interface MapleDomains {
 	electric?: string
 	/** Auto-updating local-mode dashboard SPA (the `maple` binary points users here by default). */
 	local?: string
+	/**
+	 * The chat-bot Worker (`apps/chat-bot`).
+	 *
+	 * It exists for exactly one reason: a chat platform that delivers its events as signed HTTP
+	 * requests needs a URL to deliver them TO, and that URL is configured once inside a vendor's
+	 * app and re-approved by every workspace when it changes. So it is a stable custom domain
+	 * rather than a `workers.dev` URL, which carries the Cloudflare account subdomain.
+	 *
+	 * Only production instances get one. A dev stage reaches the same route through portless, and
+	 * a PR preview has no chat app of its own to point at it.
+	 */
+	chat?: string
 }
 
-export const CLOUDFLARE_WORKER_PLACEMENT = { region: "aws:us-east-1" } as const
+/**
+ * Where a Worker's requests are steered to run. A placement hint is best
+ * effort — Cloudflare may run the script elsewhere when the pinned location is
+ * unhealthy — so it is not, on its own, a residency guarantee; the storage
+ * behind an instance (Tinybird, Postgres, R2 and the Durable Objects, see
+ * {@link resolveStorageJurisdiction}) is what is hard-pinned. The contractual
+ * execution guarantee, Regional Services, is an Enterprise add-on the account
+ * does not carry. `us` pins to us-east-1 so the Workers sit beside the
+ * production database and the Tinybird workspace; `eu` to eu-central-1 for the
+ * same reason on the EU instance.
+ */
+export function resolveWorkerPlacement(region: MapleRegion = DEFAULT_MAPLE_REGION): {
+	readonly region: "aws:us-east-1" | "aws:eu-central-1"
+} {
+	switch (region) {
+		case "us":
+			return { region: "aws:us-east-1" }
+		case "eu":
+			return { region: "aws:eu-central-1" }
+	}
+}
+
+/**
+ * The R2 / Durable Object jurisdiction for an instance's storage, or
+ * `undefined` for the non-jurisdictional default. Unlike placement this IS a
+ * hard guarantee on every Cloudflare plan: a jurisdictional bucket or object
+ * is stored and served only from data centres in that jurisdiction.
+ * Jurisdiction is fixed at creation — an existing bucket cannot move — which is
+ * why the EU instance gets new resources rather than relocated ones.
+ */
+export function resolveStorageJurisdiction(region: MapleRegion): "eu" | undefined {
+	return region === "eu" ? "eu" : undefined
+}
+
+/**
+ * Whether an instance hosts the apps that are shared across regions and hold
+ * no customer data: the marketing site and the local-mode dashboard SPA. One
+ * `maple.dev` exists, so only the `us` instance deploys them; the EU instance
+ * deploys the product Workers alone.
+ */
+export function regionHostsSharedApps(region: MapleRegion): boolean {
+	return region === DEFAULT_MAPLE_REGION
+}
 
 const PRD_DOMAINS: MapleDomains = {
 	web: "app.maple.dev",
@@ -33,6 +104,22 @@ const PRD_DOMAINS: MapleDomains = {
 	electric: "electric.maple.dev",
 	landing: "maple.dev",
 	local: "local.maple.dev",
+	chat: "chat.maple.dev",
+}
+
+/**
+ * The EU instance's production hostnames, all under `eu.maple.dev` so the
+ * region is the hostname: no application code routes on it, and a request to
+ * an EU hostname cannot reach a US resource because the EU Workers are bound
+ * to none. No landing or local-ui — see {@link regionHostsSharedApps}.
+ */
+const PRD_DOMAINS_EU: MapleDomains = {
+	web: "app.eu.maple.dev",
+	api: "api.eu.maple.dev",
+	ingest: "ingest.eu.maple.dev",
+	sync: "sync.eu.maple.dev",
+	electric: "electric.eu.maple.dev",
+	chat: "chat.eu.maple.dev",
 }
 
 export function parseMapleStage(stage: string): MapleStage {
@@ -74,6 +161,37 @@ export function parseMapleStage(stage: string): MapleStage {
 	)
 }
 
+/**
+ * The alchemy stage string names both the stage and the instance: `prd`,
+ * `prd-eu`, `pr-12`, `dev_makisuo`, `dev_makisuo-eu`. The region rides on the
+ * stage rather than on an env var because alchemy keys its state store by
+ * stage — `prd` and `prd-eu` are therefore two independent stacks that can
+ * never plan against each other's resources, and nothing has to remember to
+ * set a second variable in lockstep. A `-eu` suffix always means the region:
+ * a dev stage cannot be named `*-eu` and mean the US.
+ *
+ * PR previews are US-only (`pr-12-eu` is rejected): a preview has no database
+ * and reviews code, not residency, and a second preview fleet per PR is real
+ * money for nothing.
+ */
+export function parseMapleDeployment(raw: string): MapleDeployment {
+	const normalized = raw.trim().toLowerCase()
+	const match = normalized.match(REGION_STAGE_SUFFIX_RE)
+	const suffix = match?.[1]
+	const region: MapleRegion = suffix !== undefined && isMapleRegion(suffix) ? suffix : DEFAULT_MAPLE_REGION
+	const stage = parseMapleStage(match ? normalized.slice(0, -match[0].length) : normalized)
+	if (stage.kind === "pr" && region !== DEFAULT_MAPLE_REGION) {
+		throw new Error(
+			`PR previews deploy to the ${DEFAULT_MAPLE_REGION} instance only; "${raw}" asks for "${region}".`,
+		)
+	}
+	return { stage, region }
+}
+
+export function formatMapleDeployment({ stage, region }: MapleDeployment): string {
+	return `${formatMapleStage(stage)}${regionSuffix(region)}`
+}
+
 export function formatMapleStage(stage: MapleStage): string {
 	switch (stage.kind) {
 		case "prd":
@@ -96,11 +214,17 @@ export function resolveDeploymentEnvironment(stage: MapleStage): string {
 	}
 }
 
-export function resolveMapleDomains(stage: MapleStage): MapleDomains {
+export function resolveMapleDomains(
+	stage: MapleStage,
+	region: MapleRegion = DEFAULT_MAPLE_REGION,
+): MapleDomains {
 	switch (stage.kind) {
 		case "prd":
-			return PRD_DOMAINS
+			return region === "eu" ? PRD_DOMAINS_EU : PRD_DOMAINS
 		case "pr":
+			if (region !== DEFAULT_MAPLE_REGION) {
+				throw new Error(`PR previews have no ${region} hostnames; see parseMapleDeployment.`)
+			}
 			// Give PR previews stable, secret-free URLs. The default workers.dev URL
 			// embeds the Cloudflare account subdomain, which Infisical masks as a
 			// secret — GitHub then refuses to set the environment URL. Custom domains
@@ -121,12 +245,27 @@ export function resolveMapleDomains(stage: MapleStage): MapleDomains {
 	}
 }
 
-export type MapleDatabaseMode = "ref" | "managed" | "none"
+/**
+ * Every regional instance's dashboard URL, so the web app can send an organization that lives
+ * elsewhere to its own region. Only prd has more than one instance; other stages get none.
+ */
+export function resolveRegionAppUrls(stage: MapleStage): Partial<Record<MapleRegion, string>> {
+	if (stage.kind !== "prd") return {}
+	return Object.fromEntries(
+		MAPLE_REGIONS.map((region) => [region, `https://${resolveMapleDomains(stage, region).web}`]),
+	)
+}
+
+export type MapleDatabaseMode = "ref" | "declared" | "managed" | "none"
 
 /**
  * How a stage reaches the application database.
  *
- * - `"ref"` — bind a dashboard-managed Hyperdrive config by ID (prd).
+ * - `"ref"` — bind a dashboard-managed Hyperdrive config by ID (the US prd).
+ * - `"declared"` — the deploy declares the database roles and their Hyperdrive
+ *   configs on the instance's branch, one per consumer, and the Workers bind
+ *   them from their props (the EU prd; `resolvePlanetscaleDatabase` names the
+ *   database). Both prd modes adopt the branch and apply the migrations.
  * - `"managed"` — alchemy creates a Hyperdrive whose origin is pushed from
  *   `MAPLE_PG_URL` (dev stages, against the docker-compose Postgres).
  * - `"none"` — no `MAPLE_DB` binding at all. `DatabasePgLive` then fails every
@@ -139,15 +278,28 @@ export type MapleDatabaseMode = "ref" | "managed" | "none"
  * and restore the PlanetScale/Electric steps in
  * `.github/workflows/deploy-pr-preview.yml` (the scripts are kept, dormant).
  */
-export function resolveDatabaseMode(stage: MapleStage): MapleDatabaseMode {
+export function resolveDatabaseMode(
+	stage: MapleStage,
+	region: MapleRegion = DEFAULT_MAPLE_REGION,
+): MapleDatabaseMode {
 	switch (stage.kind) {
 		case "prd":
-			return "ref"
+			return region === DEFAULT_MAPLE_REGION ? "ref" : "declared"
 		case "pr":
 			return "none"
 		case "dev":
 			return "managed"
 	}
+}
+
+/** Whether the deploy adopts the instance's PlanetScale branch and applies the migrations. */
+export function stageMigratesDatabase(mode: MapleDatabaseMode): boolean {
+	return mode === "ref" || mode === "declared"
+}
+
+/** The instance's PlanetScale database, created by hand and adopted by name; everything on it is declared. */
+export function resolvePlanetscaleDatabase(region: MapleRegion = DEFAULT_MAPLE_REGION): string {
+	return `maple${regionSuffix(region)}`
 }
 
 /**
@@ -166,13 +318,13 @@ export function stageDeploysSandbox(stage: MapleStage): boolean {
 }
 
 /** Which worker is binding `MAPLE_DB`. prd gives each its own Hyperdrive config — see docs/infra.md. */
-export type MapleDbConsumer = "api" | "ai" | "alerting"
+export type MapleDbConsumer = "api" | "ai" | "alerting" | "chat-bot"
 
 /**
  * Dashboard-managed Hyperdrive configs, bound by ID; deploys never see the
- * database credentials. Stages returning undefined get an alchemy-managed
- * Hyperdrive from MAPLE_PG_URL or no database — `resolveDatabaseMode` decides.
- * Config IDs are not secrets.
+ * database credentials. The `"ref"` mode's half of `MapleDb`, so only the US
+ * prd answers; every other stage gets its config from the deploy (`"declared"`,
+ * `"managed"`) or none — `resolveDatabaseMode` decides. Config IDs are not secrets.
  */
 export function resolveHyperdriveRefId(stage: MapleStage, consumer: MapleDbConsumer): string | undefined {
 	switch (stage.kind) {
@@ -184,6 +336,8 @@ export function resolveHyperdriveRefId(stage: MapleStage, consumer: MapleDbConsu
 			// before maple-ai serves prd traffic — the agents are the heaviest
 			// Postgres readers after alerting, and sharing api's pool is how the
 			// api's connections got starved before alerting got its own.
+			// `chat-bot` shares it on different grounds: one row per mention is
+			// not a pool's worth of traffic.
 			return consumer === "alerting"
 				? "f473167201af4d2cae494f9989f1d742" // `maple-alerting-prd`
 				: "ad4c487838594b89810b23e5fb14e129" // `maple-prd`
@@ -193,13 +347,24 @@ export function resolveHyperdriveRefId(stage: MapleStage, consumer: MapleDbConsu
 	}
 }
 
-export function resolveWorkerName(base: string, stage: MapleStage): string {
+/**
+ * Physical Worker (and bucket, and Hyperdrive) name. The region suffix sits
+ * right after the base, mirroring `resolveAwsResourceName`, so `maple-api`,
+ * `maple-api-eu`, `maple-api-eu-dev-makisuo` read the same in both consoles.
+ * `us` carries no suffix — see `MapleRegion`.
+ */
+export function resolveWorkerName(
+	base: string,
+	stage: MapleStage,
+	region: MapleRegion = DEFAULT_MAPLE_REGION,
+): string {
+	const suffix = regionSuffix(region)
 	switch (stage.kind) {
 		case "prd":
-			return `maple-${base}`
+			return `maple-${base}${suffix}`
 		case "pr":
-			return `maple-${base}-pr-${stage.prNumber}`
+			return `maple-${base}${suffix}-pr-${stage.prNumber}`
 		case "dev":
-			return `maple-${base}-dev-${stage.name}`
+			return `maple-${base}${suffix}-dev-${stage.name}`
 	}
 }

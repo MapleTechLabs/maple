@@ -21,7 +21,7 @@ vi.mock("@maple/browser-session/replay", () => ({
 }))
 
 import { resetSinkForTests } from "../../browser-session/src/events/events-sink"
-import { init } from "./init"
+import { identify, init } from "./init"
 
 class MemoryStorage {
 	private readonly values = new Map<string, string>()
@@ -152,5 +152,43 @@ describe("browser consent lifecycle", () => {
 		expect(eventBodies).not.toContain("discard-me")
 		expect(eventBodies).toContain("keep-me")
 		expect(tracing.shutdown).toHaveBeenCalledTimes(1)
+	})
+})
+
+describe("per-session state", () => {
+	it("keeps a session's replay sampling decision across page loads", async () => {
+		stubBrowser()
+		const options = {
+			ingestKey: "public-key",
+			serviceName: "test-web",
+			endpoint: "https://collector.test",
+			tracing: { enabled: false },
+		}
+		const first = init({ ...options, replay: { sampleRate: 1 } })
+		await vi.waitFor(() => expect(replay.start).toHaveBeenCalledTimes(1))
+		await first.shutdown()
+
+		// A reload of the same session must not re-roll: a sample rate of 0
+		// would otherwise drop the rest of a session that is being recorded.
+		const second = init({ ...options, replay: { sampleRate: 0 } })
+		await vi.waitFor(() => expect(replay.start).toHaveBeenCalledTimes(2))
+		await second.shutdown()
+	})
+
+	it("applies an identify() made before init()", async () => {
+		stubBrowser()
+		identify({ id: "user_early", email: "early@example.com" })
+		const handle = init({
+			ingestKey: "public-key",
+			serviceName: "test-web",
+			endpoint: "https://collector.test",
+			tracing: { enabled: false },
+			replay: { sampleRate: 1 },
+			user: { id: "user_from_config" },
+		})
+		await vi.waitFor(() => expect(replay.start).toHaveBeenCalledTimes(1))
+		const [options] = replay.start.mock.calls[0] as [{ getIdentity: () => { id?: string } | undefined }]
+		expect(options.getIdentity()?.id).toBe("user_early")
+		await handle.shutdown()
 	})
 })

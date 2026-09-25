@@ -48,6 +48,8 @@ const replaysSearchSchema = Schema.Struct({
 	activeMin: Schema.optional(Schema.Union([Schema.Number, NumberFromStringParam])),
 	activeMax: Schema.optional(Schema.Union([Schema.Number, NumberFromStringParam])),
 	q: Schema.optional(Schema.String),
+	/** Page path visited anywhere in the session, from the sidebar facet. */
+	page: Schema.optional(Schema.String),
 	...TimeRangeSearchFields,
 })
 
@@ -90,6 +92,7 @@ function ReplaysPage() {
 			search.visitorId,
 			search.hasErrors,
 			search.q,
+			search.page,
 			search.durationMin,
 			search.durationMax,
 			search.activeMin,

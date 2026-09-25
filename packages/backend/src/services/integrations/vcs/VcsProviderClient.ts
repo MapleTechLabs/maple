@@ -3,6 +3,12 @@ import type {
 	BranchUpsertInput,
 	CommitUpsertInput,
 	GitCommitSha,
+	PullRequestContext,
+	PullRequestFile,
+	PullRequestHead,
+	PullRequestReviewThread,
+	PullRequestReviewPublication,
+	PullRequestReviewPublished,
 	PullRequestSummary,
 	RepoUpsertInput,
 	VcsCommitFetch,
@@ -26,6 +32,14 @@ import type {
 // (GithubProvider, GithubAppClient, GitHub schemas) is provider-specific and
 // never imports the vcs_* tables. The registry is the only place a provider id
 // is wired to an implementation.
+
+/** What changed on a pull request since an earlier reviewed head. */
+export interface PullRequestDelta {
+	/** Paths whose change differs, or undefined when it cannot be told and everything needs a look. */
+	readonly paths: ReadonlyArray<string> | undefined
+	/** The earlier head is no longer in the branch's history: a rebase or a force-push. */
+	readonly rewritten: boolean
+}
 
 export interface VcsWebhookRequest {
 	readonly headers: Record<string, string | undefined>
@@ -168,6 +182,241 @@ export interface VcsProviderClient {
 		number: number,
 	) => Effect.Effect<
 		Option.Option<PullRequestSummary>,
+		| VcsProviderError
+		| VcsInstallationGoneError
+		| VcsRepoUnavailableError
+		| VcsRepositoryBlockedError
+		| VcsRateLimitedError
+	>
+
+	/** Every file of one pull request's diff, with the provider's unified patch where it gives one. */
+	readonly fetchPullRequestFiles: (
+		installation: VcsInstallation,
+		repo: VcsRepositoryRef,
+		number: number,
+	) => Effect.Effect<
+		ReadonlyArray<PullRequestFile>,
+		| VcsProviderError
+		| VcsInstallationGoneError
+		| VcsRepoUnavailableError
+		| VcsRepositoryBlockedError
+		| VcsRateLimitedError
+	>
+
+	/** Every review thread on a pull request, to follow the reviewer's own findings. */
+	readonly fetchReviewThreads: (
+		installation: VcsInstallation,
+		repo: VcsRepositoryRef,
+		number: number,
+	) => Effect.Effect<
+		ReadonlyArray<PullRequestReviewThread>,
+		| VcsProviderError
+		| VcsInstallationGoneError
+		| VcsRepoUnavailableError
+		| VcsRepositoryBlockedError
+		| VcsRateLimitedError
+	>
+
+	/** Reply on a finding's thread, then resolve it: a later head fixed it. */
+	readonly resolveReviewThread: (
+		installation: VcsInstallation,
+		repo: VcsRepositoryRef,
+		input: {
+			readonly number: number
+			readonly threadId: string
+			readonly commentId: string
+			readonly reply: string
+		},
+	) => Effect.Effect<
+		void,
+		| VcsProviderError
+		| VcsInstallationGoneError
+		| VcsRepoUnavailableError
+		| VcsRepositoryBlockedError
+		| VcsRateLimitedError
+	>
+
+	/**
+	 * What a pull request changed between an earlier head and this one. Safe across a rebase or
+	 * force-push: when the earlier head is no longer an ancestor, each head's diff against the base
+	 * is compared file by file, so the base branch's own changes are never reported.
+	 */
+	readonly fetchChangesSince: (
+		installation: VcsInstallation,
+		repo: VcsRepositoryRef,
+		input: {
+			readonly previousHead: string
+			readonly head: string
+			/** The pull request's current base; without it a rewritten history cannot be compared. */
+			readonly base: string | undefined
+		},
+	) => Effect.Effect<
+		PullRequestDelta,
+		| VcsProviderError
+		| VcsInstallationGoneError
+		| VcsRepoUnavailableError
+		| VcsRepositoryBlockedError
+		| VcsRateLimitedError
+	>
+
+	/** A pull request's head and base, read fresh: a comment event does not carry them. */
+	readonly fetchPullRequestHead: (
+		installation: VcsInstallation,
+		repo: VcsRepositoryRef,
+		number: number,
+	) => Effect.Effect<
+		PullRequestHead,
+		| VcsProviderError
+		| VcsInstallationGoneError
+		| VcsRepoUnavailableError
+		| VcsRepositoryBlockedError
+		| VcsRateLimitedError
+	>
+
+	/** Post the reviewer's answer: in the conversation, or under a review thread's first comment. */
+	readonly postPullRequestReply: (
+		installation: VcsInstallation,
+		repo: VcsRepositoryRef,
+		input: { readonly number: number; readonly body: string; readonly threadRootId?: string },
+	) => Effect.Effect<
+		{ readonly url: string },
+		| VcsProviderError
+		| VcsInstallationGoneError
+		| VcsRepoUnavailableError
+		| VcsRepositoryBlockedError
+		| VcsRateLimitedError
+	>
+
+	/** A reaction on a comment, to acknowledge a mention before the answer is ready. */
+	readonly reactToComment: (
+		installation: VcsInstallation,
+		repo: VcsRepositoryRef,
+		input: {
+			readonly surface: "conversation" | "review_thread"
+			readonly commentId: string
+			readonly content: "eyes" | "+1" | "confused"
+		},
+	) => Effect.Effect<
+		void,
+		| VcsProviderError
+		| VcsInstallationGoneError
+		| VcsRepoUnavailableError
+		| VcsRepositoryBlockedError
+		| VcsRateLimitedError
+	>
+
+	/** A person's permission on the repository: `admin`, `maintain`, `write`, `triage`, `read`, `none`. */
+	readonly fetchCommenterPermission: (
+		installation: VcsInstallation,
+		repo: VcsRepositoryRef,
+		login: string,
+	) => Effect.Effect<
+		string,
+		| VcsProviderError
+		| VcsInstallationGoneError
+		| VcsRepoUnavailableError
+		| VcsRepositoryBlockedError
+		| VcsRateLimitedError
+	>
+
+	/**
+	 * One commit of whole-file contents on top of `parentSha`, fast-forwarding `branch` to it. The
+	 * only write that changes code. Never forced: a branch that moved fails rather than overwrites.
+	 */
+	readonly commitFiles: (
+		installation: VcsInstallation,
+		repo: VcsRepositoryRef,
+		input: {
+			readonly branch: string
+			readonly parentSha: string
+			readonly message: string
+			readonly files: ReadonlyArray<{ readonly path: string; readonly content: string }>
+		},
+	) => Effect.Effect<
+		{ readonly sha: string; readonly htmlUrl: string | null },
+		| VcsProviderError
+		| VcsInstallationGoneError
+		| VcsRepoUnavailableError
+		| VcsRepositoryBlockedError
+		| VcsRateLimitedError
+	>
+
+	/** Commits, existing discussion and head checks of one pull request, for the reviewer. */
+	readonly fetchPullRequestContext: (
+		installation: VcsInstallation,
+		repo: VcsRepositoryRef,
+		number: number,
+	) => Effect.Effect<
+		PullRequestContext,
+		| VcsProviderError
+		| VcsInstallationGoneError
+		| VcsRepoUnavailableError
+		| VcsRepositoryBlockedError
+		| VcsRateLimitedError
+	>
+
+	/**
+	 * Post one review's outcome onto the pull request: a check run on the head
+	 * commit, and a comment-only review when there is anything to say inline.
+	 * The only write on this port. Needs the App's `checks: write` and
+	 * `pull_requests: write`; an installation that has not accepted them fails
+	 * repository-scoped, which the review records rather than retries.
+	 */
+	readonly publishPullRequestReview: (
+		installation: VcsInstallation,
+		repo: VcsRepositoryRef,
+		publication: PullRequestReviewPublication,
+	) => Effect.Effect<
+		PullRequestReviewPublished,
+		| VcsProviderError
+		| VcsInstallationGoneError
+		| VcsRepoUnavailableError
+		| VcsRepositoryBlockedError
+		| VcsRateLimitedError
+	>
+
+	/**
+	 * Show the review as a check run on the head: running while its turn works, completed when it
+	 * ends without a result. `publishPullRequestReview` completes the same run with the result.
+	 */
+	readonly writePullRequestCheck: (
+		installation: VcsInstallation,
+		repo: VcsRepositoryRef,
+		input: {
+			readonly name: string
+			readonly headSha: string
+			readonly state:
+				| { readonly status: "in_progress" }
+				| { readonly status: "completed"; readonly conclusion: "neutral" | "skipped" }
+			readonly title: string
+			readonly summary: string
+		},
+	) => Effect.Effect<
+		{ readonly url: string | null },
+		| VcsProviderError
+		| VcsInstallationGoneError
+		| VcsRepoUnavailableError
+		| VcsRepositoryBlockedError
+		| VcsRateLimitedError
+	>
+
+	/**
+	 * Write a review's summary comment, found by `marker` and edited in place, from the body
+	 * already there. How a review says it has started before it has anything else to say.
+	 * The read and the write are two requests, so the body function should only replace what it
+	 * recognises (see `withReviewStatus`).
+	 */
+	readonly writePullRequestSummaryComment: (
+		installation: VcsInstallation,
+		repo: VcsRepositoryRef,
+		input: {
+			readonly number: number
+			readonly marker: string
+			/** `undefined` leaves the comment as it is. */
+			readonly body: (existing: string | undefined) => string | undefined
+		},
+	) => Effect.Effect<
+		{ readonly url: string | null },
 		| VcsProviderError
 		| VcsInstallationGoneError
 		| VcsRepoUnavailableError

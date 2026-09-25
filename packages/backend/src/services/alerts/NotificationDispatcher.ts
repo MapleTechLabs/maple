@@ -20,7 +20,7 @@ import {
 	type EnrichedDestinationSecretConfig,
 } from "./AlertDestinationHydration"
 import { parseBase64Aes256GcmKey } from "@maple/backend/platform/Crypto"
-import { SlackBotTokenResolver } from "@maple/backend/services/integrations/slack-bot-token"
+import { ChatAlertPoster } from "./ChatAlertPoster"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import { EmailService } from "@maple/backend/platform/EmailService"
 import { Env } from "@maple/backend/platform/Env"
@@ -107,12 +107,12 @@ export interface NotificationDestinationResult {
 const make: Effect.Effect<
 	NotificationDispatcherApi,
 	NotificationDispatchError,
-	Database | Env | EmailService | SlackBotTokenResolver
+	Database | Env | EmailService | ChatAlertPoster
 > = Effect.gen(function* () {
 	const database = yield* Database
 	const env = yield* Env
 	const email = yield* EmailService
-	const slackBotToken = yield* SlackBotTokenResolver
+	const chatAlertPoster = yield* ChatAlertPoster
 
 	const encryptionKey = yield* parseBase64Aes256GcmKey(
 		Redacted.value(env.MAPLE_INGEST_KEY_ENCRYPTION_KEY),
@@ -213,7 +213,7 @@ const make: Effect.Effect<
 			DELIVERY_TIMEOUT_MS,
 			request.linkUrl,
 			chatUrl,
-			{ sendEmail, resolveSlackBotToken: slackBotToken.resolve },
+			{ sendEmail, postChatAlert: chatAlertPoster.post },
 		).pipe(Effect.tapError(() => Effect.annotateCurrentSpan({ "maple.delivery.outcome": "failed" })))
 		yield* Effect.annotateCurrentSpan({
 			"maple.delivery.outcome": "delivered",
@@ -346,11 +346,10 @@ export class NotificationDispatcher extends Context.Service<
 	NotificationDispatcher,
 	NotificationDispatcherApi
 >()("@maple/api/services/NotificationDispatcher", { make }) {
-	// The resolver is self-provided (it needs only Database + Env, which every
-	// caller already supplies) so wiring stays unchanged in app.ts and the
-	// alerting worker.
+	// The chat poster is self-provided (it needs only what every caller already
+	// supplies) so wiring stays unchanged in app.ts and the alerting worker.
 	static readonly layer = Layer.effect(this, this.make).pipe(
-		Layer.provide(SlackBotTokenResolver.layer),
+		Layer.provide(ChatAlertPoster.layer),
 		Layer.provide(EmailService.layer),
 	)
 }

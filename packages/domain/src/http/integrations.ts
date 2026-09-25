@@ -3,6 +3,7 @@ import { Schema } from "effect"
 import { ExternalUserId, ScrapeTargetId, UserId } from "../primitives"
 import { Authorization } from "./current-tenant"
 import { HttpTaggedError } from "./error-policy"
+import { PrReviewListItem, PrReviewRepositoryConfig } from "./pr-review"
 import {
 	GitCommitSha,
 	PullRequestSummary,
@@ -333,8 +334,7 @@ export class CloudflarePrimeResponse extends Schema.Class<CloudflarePrimeRespons
 //      mounted for external callers. This is their wire contract, frozen.
 //   2. `PlanetScaleConnectionService` / `PlanetScaleService`, whose method
 //      signatures they are — the v2 handlers map them to the snake_case/ISO
-//      wire format at the boundary, the same way the Slack handlers map
-//      `SlackInstallStatus`.
+//      wire format at the boundary.
 //
 // So (1) can be deleted once no customer is calling it, and (2) will keep these
 // alive afterwards as plain service types. Do not reshape them to match v2:
@@ -675,6 +675,8 @@ export class GithubRepoSummary extends Schema.Class<GithubRepoSummary>("GithubRe
 	trackedBranch: Schema.NullOr(Schema.String),
 	// All branches the repo knows about (names only) — the picker's options.
 	branches: Schema.Array(GithubBranchSummary),
+	/** Maple reviews this repository's pull requests for observability gaps. Off by default. */
+	prReviewEnabled: Schema.Boolean,
 }) {}
 
 /**
@@ -748,6 +750,36 @@ export class GithubSetTrackedBranchResponse extends Schema.Class<GithubSetTracke
 	// True when the change enqueued a historical backfill of the new branch.
 	backfillQueued: Schema.Boolean,
 }) {}
+
+export class GithubSetPrReviewRequest extends Schema.Class<GithubSetPrReviewRequest>(
+	"GithubSetPrReviewRequest",
+)({
+	enabled: Schema.Boolean,
+}) {}
+
+export class GithubSetPrReviewResponse extends Schema.Class<GithubSetPrReviewResponse>(
+	"GithubSetPrReviewResponse",
+)({
+	enabled: Schema.Boolean,
+}) {}
+
+export class GithubPrReviewConfigRequest extends Schema.Class<GithubPrReviewConfigRequest>(
+	"GithubPrReviewConfigRequest",
+)({
+	config: PrReviewRepositoryConfig,
+}) {}
+
+export class GithubPrReviewConfigResponse extends Schema.Class<GithubPrReviewConfigResponse>(
+	"GithubPrReviewConfigResponse",
+)({
+	config: PrReviewRepositoryConfig,
+}) {}
+
+export class GithubPrReviewsResponse extends Schema.Class<GithubPrReviewsResponse>("GithubPrReviewsResponse")(
+	{
+		reviews: Schema.Array(PrReviewListItem),
+	},
+) {}
 
 /**
  * A single resolved commit, for the dashboard's commit-SHA hover card. Provider-
@@ -915,9 +947,30 @@ export class IntegrationsPersistenceError extends HttpTaggedError<IntegrationsPe
 	},
 ) {}
 
+/**
+ * Named neither a connector nor a workspace Maple knows about — the id in the
+ * path does not resolve. One error for both because they answer the same way:
+ * the caller has to name something that exists.
+ */
+export class IntegrationsNotFoundError extends HttpTaggedError<IntegrationsNotFoundError>()(
+	"@maple/http/errors/IntegrationsNotFoundError",
+	{
+		message: Schema.String,
+	},
+	{
+		status: 404,
+		code: "integration_not_found",
+		title: "Integration not found",
+		retry: "never",
+		recovery: "fix_request",
+		exposure: "public_message",
+	},
+) {}
+
 export type IntegrationHttpError =
 	| IntegrationsForbiddenError
 	| IntegrationsConfigurationError
+	| IntegrationsNotFoundError
 	| IntegrationsNotConnectedError
 	| IntegrationsRevokedError
 	| IntegrationsValidationError
@@ -1086,6 +1139,58 @@ export class IntegrationsApiGroup extends HttpApiGroup.make("integrations")
 			},
 			payload: GithubSetTrackedBranchRequest,
 			success: GithubSetTrackedBranchResponse,
+			error: [IntegrationsForbiddenError, IntegrationsValidationError, IntegrationsPersistenceError],
+		}),
+	)
+	.add(
+		// Per-repository opt-in to the pull request review. Admin only,
+		// like every other write on the integration.
+		HttpApiEndpoint.put("githubSetPrReview", "/github/repositories/:repositoryId/pr-review", {
+			params: {
+				repositoryId: VcsRepositoryId,
+			},
+			payload: GithubSetPrReviewRequest,
+			success: GithubSetPrReviewResponse,
+			error: [IntegrationsForbiddenError, IntegrationsValidationError, IntegrationsPersistenceError],
+		}),
+	)
+	.add(
+		// A repository's review settings. Read by any member, written by admins.
+		HttpApiEndpoint.get(
+			"githubGetPrReviewConfig",
+			"/github/repositories/:repositoryId/pr-review/config",
+			{
+				params: { repositoryId: VcsRepositoryId },
+				success: GithubPrReviewConfigResponse,
+				error: [
+					IntegrationsForbiddenError,
+					IntegrationsValidationError,
+					IntegrationsPersistenceError,
+				],
+			},
+		),
+	)
+	.add(
+		HttpApiEndpoint.put(
+			"githubSetPrReviewConfig",
+			"/github/repositories/:repositoryId/pr-review/config",
+			{
+				params: { repositoryId: VcsRepositoryId },
+				payload: GithubPrReviewConfigRequest,
+				success: GithubPrReviewConfigResponse,
+				error: [
+					IntegrationsForbiddenError,
+					IntegrationsValidationError,
+					IntegrationsPersistenceError,
+				],
+			},
+		),
+	)
+	.add(
+		// The repository's most recent reviews, newest first.
+		HttpApiEndpoint.get("githubListPrReviews", "/github/repositories/:repositoryId/pr-reviews", {
+			params: { repositoryId: VcsRepositoryId },
+			success: GithubPrReviewsResponse,
 			error: [IntegrationsForbiddenError, IntegrationsValidationError, IntegrationsPersistenceError],
 		}),
 	)

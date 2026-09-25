@@ -4,13 +4,12 @@ export default defineConfig({
 	test: {
 		environment: "node",
 		include: ["src/**/*.test.ts"],
-		// Worker threads rather than the default forked processes. Measured on the
-		// full suite at CI's 4 workers: 42.4s vs 45.2s wall, and 248s vs 292s of
-		// user CPU — the saving is process startup and the per-worker module
-		// registry, which threads share. `isolate` stays on: turning it off cut
-		// import time by 60% but pushed test time up further and came out slower
-		// overall (34.7s vs 29.9s at full local parallelism).
-		pool: "threads",
+		// Forked processes, not worker threads. Threads measured ~3s faster on the
+		// full suite, but on Linux CI the one process hosting every thread grew past
+		// the runner's 16 GB over ~140 files of PGlite instances and was SIGKILLed
+		// (exit 137, main on 2026-09-21); a fork hands its memory back at exit.
+		// `isolate` stays on: turning it off measured slower overall.
+		pool: "forks",
 		// Builds the post-migration PGlite data directory that createTestDb boots
 		// from. See test/pglite-snapshot.ts — without it every test pays a full
 		// initdb inside WASM.

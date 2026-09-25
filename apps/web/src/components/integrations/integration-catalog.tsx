@@ -11,15 +11,26 @@ import {
 	HazelIcon,
 	PlanetScaleIcon,
 	PrometheusIcon,
-	SlackIcon,
 	WarpStreamIcon,
 } from "@/components/icons"
+import { Option, Schema } from "effect"
+import { ChatConnectorId } from "@maple/domain/primitives"
+import { chatConnectorManifests } from "@maple/chat-platform/manifests"
+import type { ChatConnectorManifest } from "@maple/chat-platform/manifests"
 import { PLANETSCALE_COLOR } from "@/components/infra/planetscale/metrics"
+import { useChatConnectorGate } from "@/hooks/use-organization-feature-flags"
 import { formatRelativeTime } from "@maple/ui/lib/time-format"
 import { Result, useAtomValue } from "@/lib/effect-atom"
 import { retainedQuery } from "@/lib/services/common/atom-client"
 import { retainedQueryV2 } from "@/lib/services/common/v2-atom-client"
 import { scrapeTargetsListAtom } from "@/lib/services/atoms/scrape-target-atoms"
+
+/**
+ * A chat connector's catalog id. The connector half is data from
+ * `@maple/chat-platform/manifests`, so the catalog gains a chat platform
+ * without this file learning its name.
+ */
+export type ChatIntegrationId = `chat-${string}`
 
 export type IntegrationId =
 	| "cloudflare"
@@ -28,7 +39,48 @@ export type IntegrationId =
 	| "warpstream"
 	| "hazel"
 	| "github"
-	| "slack"
+	| ChatIntegrationId
+
+const decodeConnectorId = Schema.decodeUnknownOption(ChatConnectorId)
+
+export const chatIntegrationId = (connector: string): ChatIntegrationId => `chat-${connector}`
+
+/**
+ * The connector behind a chat catalog id, or `null` for every other entry.
+ * Decoded rather than sliced: the id arrives from a URL, and the branded value
+ * is what the API client's path parameter takes.
+ */
+export const chatConnectorOf = (id: IntegrationId): ChatConnectorId | null =>
+	id.startsWith("chat-") ? Option.getOrNull(decodeConnectorId(id.slice("chat-".length))) : null
+
+/**
+ * Renders a manifest's icon data — one `<svg>` for every chat connector. Paths
+ * keep their brand fills unless `monochrome`, which paints every path in
+ * `currentColor` for surfaces that own the color (a filled button, a dim backer).
+ */
+export const chatConnectorIcon = (
+	icon: ChatConnectorManifest["icon"],
+	monochrome = false,
+): React.ComponentType<{ size?: number; className?: string }> =>
+	function ChatConnectorGlyph({ size = 24, className }) {
+		return (
+			<svg
+				xmlns="http://www.w3.org/2000/svg"
+				viewBox={icon.viewBox}
+				width={size}
+				height={size}
+				className={className}
+				fill="currentColor"
+				aria-hidden="true"
+			>
+				{icon.paths.map((path, index) => (
+					// Path data carries no id of its own, and the array is a module
+					// constant — the index is stable for the lifetime of the app.
+					<path key={index} d={path.d} fill={monochrome ? undefined : path.fill} />
+				))}
+			</svg>
+		)
+	}
 
 /**
  * Third-party brand accents for the icon-plate wash — no app token applies.
@@ -37,34 +89,6 @@ export type IntegrationId =
 export const GITHUB_ACCENT = "#181717"
 export const HAZEL_ACCENT = "#F46F0F"
 export const CLOUDFLARE_ACCENT = "#F38020"
-
-/**
- * Slack's deep aubergine — the brand's identity color, and the light-theme value.
- * It is oklch(0.267), i.e. *darker* than the dark `--card` (oklch 0.224), so every
- * accent consumer collapses on the dark canvas: the 16% plate wash below lands at
- * 1.01:1 against the card, and the destination picker's 1.5px selected ring at
- * 1.23:1. On light it is 14:1 against the card — keep it there.
- */
-export const SLACK_ACCENT_ON_LIGHT = "#4A154B"
-/**
- * Dark-canvas stand-in: the same aubergine hue lifted onto the dark canvas —
- * oklch(0.58 0.16 330) against the brand's oklch(0.267 0.107 328), so it still
- * reads as Slack purple rather than a new brand color. It takes the selected ring
- * to 3.68:1 (over the 3:1 bar for non-text UI) and the wash to ΔL 0.042 in oklab,
- * 6× the aubergine's 0.007 and two thirds of the GitHub neutral fallback's 0.065.
- *
- * Not the mark's sky blue (#36C5F0), tempting as its 8.5:1 ring is: `accent` also
- * paints the destination dialog's save button, which hard-codes white label text —
- * the blue drops that to 2.0:1, while this holds 4.65:1.
- */
-export const SLACK_ACCENT_ON_DARK = "#AD51A7"
-/**
- * `light-dark()` resolves against the `color-scheme` the theme hook pins on the
- * root element, so one constant covers both canvases wherever a raw brand color
- * is expected. Consumers must combine it with `color-mix()`, never hex-alpha
- * concatenation.
- */
-export const SLACK_ACCENT = `light-dark(${SLACK_ACCENT_ON_LIGHT}, ${SLACK_ACCENT_ON_DARK})`
 
 export interface CatalogEntry {
 	readonly id: IntegrationId
@@ -78,8 +102,23 @@ export interface CatalogEntry {
 	 * vanish on the card at `accent` (e.g. GitHub's near-black). The wash still uses `accent`.
 	 */
 	readonly iconClassName?: string
+	/** `icon` in `currentColor`, for a multicolor mark on a surface that owns the color. */
+	readonly monoIcon?: React.ComponentType<{ size?: number; className?: string }>
 	readonly docsUrl?: string
 }
+
+/**
+ * Chat connectors, straight from their manifests: name, description, mark and
+ * accent are the connector's own data, so this file lists none of them.
+ */
+const CHAT_ENTRIES: ReadonlyArray<CatalogEntry> = chatConnectorManifests.map((manifest) => ({
+	id: chatIntegrationId(manifest.id),
+	name: manifest.name,
+	description: manifest.description,
+	icon: chatConnectorIcon(manifest.icon),
+	monoIcon: chatConnectorIcon(manifest.icon, true),
+	accent: manifest.accent,
+}))
 
 const CATALOG: ReadonlyArray<CatalogEntry> = [
 	{
@@ -136,28 +175,22 @@ const CATALOG: ReadonlyArray<CatalogEntry> = [
 		iconClassName: "text-foreground",
 		docsUrl: "https://maple.dev/docs/integrations/github",
 	},
-	{
-		id: "slack",
-		name: "Slack",
-		description:
-			"Install the Maple Slack app — ask Maple questions, create dashboards, and route alerts to channels.",
-		icon: SlackIcon,
-		// Theme-aware by construction (see SLACK_ACCENT). The `iconClassName` escape
-		// hatch GitHub uses can't help here: Slack's mark is multicolor, so tinting
-		// the glyph via className does nothing — the accent itself has to move.
-		accent: SLACK_ACCENT,
-		docsUrl: "https://maple.dev/docs/integrations/slack",
-	},
+	...CHAT_ENTRIES,
 ]
 
 /**
- * The three shown up front on an empty hub. Every other entry serves a specific
- * piece of infrastructure and only matters to the orgs running it, so it waits
- * behind "Discover more integrations" rather than padding the first screen.
+ * The ones shown up front on an empty hub: Cloudflare, GitHub and every chat
+ * connector. Every other entry serves a specific piece of infrastructure and only
+ * matters to the orgs running it, so it waits behind "Discover more integrations"
+ * rather than padding the first screen.
  *
  * Order is the order they appear in.
  */
-const RECOMMENDED: ReadonlyArray<IntegrationId> = ["cloudflare", "github", "slack"]
+const RECOMMENDED: ReadonlyArray<IntegrationId> = [
+	"cloudflare",
+	"github",
+	...CHAT_ENTRIES.map((entry) => entry.id),
+]
 
 export const catalogEntry = (id: IntegrationId): CatalogEntry => CATALOG.find((entry) => entry.id === id)!
 
@@ -169,12 +202,27 @@ export const catalogEntry = (id: IntegrationId): CatalogEntry => CATALOG.find((e
 export const isIntegrationId = (value: string): value is IntegrationId =>
 	CATALOG.some((entry) => entry.id === value)
 
+/**
+ * Whether an entry belongs in this organization's catalog. Chat connectors roll
+ * out per org, so they are hidden until the org's flag says otherwise — and
+ * while Clerk is still answering, which keeps a tile from flashing in.
+ */
+export function useIsIntegrationVisible(): (id: IntegrationId) => boolean {
+	const chatConnectorGate = useChatConnectorGate()
+	return (id) => {
+		const connector = chatConnectorOf(id)
+		return connector === null || chatConnectorGate(connector)
+	}
+}
+
 interface CardStatus {
 	readonly label: string
 	readonly variant: "success" | "warning" | "error" | "outline"
 }
 
 const NOT_CONNECTED: CardStatus = { label: "Not connected", variant: "outline" }
+/** Shipped, but this deployment holds no credentials for it. */
+const NOT_CONFIGURED: CardStatus = { label: "Not configured", variant: "outline" }
 // Status query failed — distinct from "Not connected" so a fetch error doesn't
 // masquerade as a disconnected integration.
 const STATUS_UNAVAILABLE: CardStatus = { label: "Status unavailable", variant: "outline" }
@@ -205,10 +253,8 @@ export function useIntegrationStatuses(): Partial<Record<IntegrationId, CardStat
 			reactivityKeys: ["githubIntegrationStatus"],
 		}),
 	)
-	const slackResult = useAtomValue(
-		retainedQueryV2("slackIntegration", "status", {
-			reactivityKeys: ["slackIntegration"],
-		}),
+	const chatResult = useAtomValue(
+		retainedQueryV2("chatIntegration", "connectors", { reactivityKeys: ["chatIntegration"] }),
 	)
 
 	const cloudflare: CardStatus | null = Result.builder(cloudflareAccountResult)
@@ -275,15 +321,30 @@ export function useIntegrationStatuses(): Partial<Record<IntegrationId, CardStat
 		.onInitial(() => null)
 		.orElse(() => STATUS_UNAVAILABLE)
 
-	const slack: CardStatus | null = Result.builder(slackResult)
-		.onSuccess(
-			(status): CardStatus =>
-				status.installed
-					? { label: status.team_name ?? "Connected", variant: "success" }
-					: NOT_CONNECTED,
-		)
-		.onInitial(() => null)
-		.orElse(() => STATUS_UNAVAILABLE)
+	const chat = Object.fromEntries(
+		chatConnectorManifests.map((manifest) => [
+			chatIntegrationId(manifest.id),
+			Result.builder(chatResult)
+				.onSuccess((response): CardStatus => {
+					const connector = response.data.find((entry) => entry.id === manifest.id)
+					const workspaces = connector?.workspaces ?? []
+					if (workspaces.length === 0) {
+						// A deployment without the connector's credentials cannot link
+						// anything — say so rather than implying a connect that will fail.
+						return connector?.available === false ? NOT_CONFIGURED : NOT_CONNECTED
+					}
+					return {
+						label:
+							workspaces.length === 1
+								? (workspaces[0]?.name ?? "Connected")
+								: `${workspaces.length} workspaces`,
+						variant: "success",
+					}
+				})
+				.onInitial((): CardStatus | null => null)
+				.orElse(() => STATUS_UNAVAILABLE),
+		]),
+	)
 
 	return {
 		cloudflare,
@@ -293,7 +354,7 @@ export function useIntegrationStatuses(): Partial<Record<IntegrationId, CardStat
 		warpstream: { label: "Via Prometheus", variant: "outline" },
 		hazel,
 		github,
-		slack,
+		...chat,
 	}
 }
 
@@ -425,10 +486,8 @@ export function useIntegrationOverviews(): Record<IntegrationId, IntegrationOver
 			reactivityKeys: ["githubIntegrationStatus"],
 		}),
 	)
-	const slackResult = useAtomValue(
-		retainedQueryV2("slackIntegration", "status", {
-			reactivityKeys: ["slackIntegration"],
-		}),
+	const chatResult = useAtomValue(
+		retainedQueryV2("chatIntegration", "connectors", { reactivityKeys: ["chatIntegration"] }),
 	)
 
 	const cloudflare: IntegrationOverview = Result.builder(cloudflareResult)
@@ -595,24 +654,32 @@ export function useIntegrationOverviews(): Record<IntegrationId, IntegrationOver
 		.onInitial(() => null)
 		.orElse(() => UNAVAILABLE)
 
-	const slack: IntegrationOverview = Result.builder(slackResult)
-		.onSuccess(
-			(status): IntegrationOverview =>
-				status.installed
-					? {
-							kind: "connected",
-							health: "healthy",
-							stateLabel: "Healthy",
-							context: status.team_name ?? null,
-							stat: "Alerts & agent ready",
-							// Slack has no sync loop — messages are push-per-alert/query.
-							lastSyncLabel: null,
-							issue: null,
-						}
-					: CONNECT,
-		)
-		.onInitial(() => null)
-		.orElse(() => UNAVAILABLE)
+	const chat = Object.fromEntries(
+		chatConnectorManifests.map((manifest) => [
+			chatIntegrationId(manifest.id),
+			Result.builder(chatResult)
+				.onSuccess((response): IntegrationOverview => {
+					const workspaces =
+						response.data.find((entry) => entry.id === manifest.id)?.workspaces ?? []
+					if (workspaces.length === 0) return CONNECT
+					return {
+						kind: "connected",
+						health: "healthy",
+						stateLabel: "Healthy",
+						context:
+							workspaces.length === 1
+								? (workspaces[0]?.name ?? null)
+								: plural(workspaces.length, "workspace"),
+						stat: "Alerts & agent ready",
+						// No sync loop — the bot is push-per-message.
+						lastSyncLabel: null,
+						issue: null,
+					}
+				})
+				.onInitial((): IntegrationOverview => null)
+				.orElse(() => UNAVAILABLE),
+		]),
+	)
 
 	return {
 		cloudflare,
@@ -622,7 +689,7 @@ export function useIntegrationOverviews(): Record<IntegrationId, IntegrationOver
 		warpstream: SET_UP,
 		hazel,
 		github,
-		slack,
+		...chat,
 	}
 }
 
@@ -834,21 +901,23 @@ function DiscoverMore({
 
 export function IntegrationCatalog({ onSelect }: { onSelect: (id: IntegrationId) => void }) {
 	const overviews = useIntegrationOverviews()
+	const isVisible = useIsIntegrationVisible()
+	const catalog = CATALOG.filter((entry) => isVisible(entry.id))
 
-	const connected = CATALOG.flatMap((entry) => {
+	const connected = catalog.flatMap((entry) => {
 		const overview = overviews[entry.id]
 		return overview !== null && (overview.kind === "connected" || overview.kind === "unavailable")
 			? [{ entry, overview }]
 			: []
 	})
-	const available = CATALOG.flatMap((entry) => {
+	const available = catalog.flatMap((entry) => {
 		const overview = overviews[entry.id]
 		return overview !== null && overview.kind === "available" ? [{ entry, overview }] : []
 	})
-	const loading = CATALOG.filter((entry) => overviews[entry.id] === null)
+	const loading = catalog.filter((entry) => overviews[entry.id] === null)
 
 	// Nothing connected yet, and nothing still resolving that could change that:
-	// lead with the three broadly useful integrations so the hub opens on a
+	// lead with the broadly useful integrations so the hub opens on a
 	// choice rather than a catalog. A partially loaded hub isn't empty — wait.
 	const showRecommended = connected.length === 0 && loading.length === 0
 	const recommended = showRecommended

@@ -2,13 +2,13 @@ import { HttpApiBuilder } from "effect/unstable/httpapi"
 import type { AlertDestinationDocument, AlertDestinationUpdateRequest } from "@maple/domain/http"
 import { auditDiff } from "./audit-changes"
 import {
+	ChatAlertDestinationConfig,
 	CurrentTenant,
 	DiscordAlertDestinationConfig,
 	EmailAlertDestinationConfig,
 	HazelOAuthAlertDestinationConfig,
 	AlertDestinationNotFoundError,
 	PagerDutyAlertDestinationConfig,
-	SlackBotAlertDestinationConfig,
 	TelegramAlertDestinationConfig,
 	WebhookAlertDestinationConfig,
 } from "@maple/domain/http"
@@ -33,6 +33,8 @@ const toV2Destination = (doc: AlertDestinationDocument): V2AlertDestination => (
 	summary: doc.summary,
 	channel_label: doc.channelLabel,
 	member_user_ids: doc.memberUserIds,
+	...(doc.chatConnector === undefined ? undefined : { chat_connector: doc.chatConnector }),
+	...(doc.chatWorkspaceId === undefined ? undefined : { chat_workspace_id: doc.chatWorkspaceId }),
 	last_tested_at: doc.lastTestedAt,
 	last_test_error: doc.lastTestError,
 	created_at: doc.createdAt,
@@ -46,14 +48,6 @@ const toV2DestinationMutation = (doc: AlertDestinationDocument): V2AlertDestinat
 
 const toCreateRequest = (params: V2AlertDestinationCreateParams) => {
 	switch (params.type) {
-		case "slack-bot":
-			return new SlackBotAlertDestinationConfig({
-				type: "slack-bot",
-				name: params.name,
-				channelId: params.channel_id,
-				...(params.channel_name !== undefined ? { channelName: params.channel_name } : undefined),
-				...(params.enabled !== undefined ? { enabled: params.enabled } : undefined),
-			})
 		case "pagerduty":
 			return new PagerDutyAlertDestinationConfig({
 				type: "pagerduty",
@@ -108,6 +102,14 @@ const toCreateRequest = (params: V2AlertDestinationCreateParams) => {
 				memberUserIds: params.member_user_ids,
 				...(params.enabled !== undefined ? { enabled: params.enabled } : undefined),
 			})
+		case "chat":
+			return new ChatAlertDestinationConfig({
+				type: "chat",
+				name: params.name,
+				workspaceId: params.workspace_id,
+				channelId: params.channel_id,
+				...(params.enabled !== undefined ? { enabled: params.enabled } : undefined),
+			})
 	}
 }
 
@@ -117,13 +119,6 @@ const toUpdateRequest = (params: V2AlertDestinationUpdateParams): AlertDestinati
 		...(params.enabled !== undefined ? { enabled: params.enabled } : undefined),
 	}
 	switch (params.type) {
-		case "slack-bot":
-			return {
-				type: "slack-bot",
-				...shared,
-				...(params.channel_id !== undefined ? { channelId: params.channel_id } : undefined),
-				...(params.channel_name !== undefined ? { channelName: params.channel_name } : undefined),
-			}
 		case "pagerduty":
 			return {
 				type: "pagerduty",
@@ -190,6 +185,12 @@ const toUpdateRequest = (params: V2AlertDestinationUpdateParams): AlertDestinati
 					? { memberUserIds: params.member_user_ids }
 					: undefined),
 			}
+		case "chat":
+			return {
+				type: "chat",
+				...shared,
+				...(params.channel_id !== undefined ? { channelId: params.channel_id } : undefined),
+			}
 	}
 }
 
@@ -216,6 +217,7 @@ export const destinationAuditDiff = auditDiff({
 		"channel_id",
 		"channel_name",
 		"chat_id",
+		"workspace_id",
 		"hazel_organization_id",
 		"hazel_organization_name",
 		"hazel_organization_logo_url",

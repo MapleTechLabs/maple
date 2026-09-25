@@ -13,7 +13,7 @@ import {
 	SandboxUnsupportedRequestError,
 	type SandboxError,
 	type SandboxEvent,
-} from "@effect-agent/sandbox/Sandbox"
+} from "effect-agent/sandbox"
 import { Context, Duration, Effect, Layer, Stream } from "effect"
 import {
 	NETWORK_DISABLED,
@@ -130,6 +130,11 @@ export interface RepoSandboxServiceApi {
 		target: RepositoryTarget,
 		options: ExecOptions,
 	) => Effect.Effect<SandboxCommandResult, SandboxError>
+	/**
+	 * Check the commit out ahead of the first tool that needs it. Succeeds once the checkout is
+	 * ready; a clone still running when the wait ends carries on in the container regardless.
+	 */
+	readonly prepare: (orgId: OrgId, target: RepositoryTarget) => Effect.Effect<void, SandboxError>
 }
 
 const limits = (timeoutSeconds: number) =>
@@ -228,6 +233,9 @@ export class RepoSandboxService extends Context.Service<RepoSandboxService, Repo
 						// so per-file capping is not available; the output bound and the
 						// tool's own line cap are what keep a result readable.
 						"-I",
+						// Extended regex: models write `a|b` and `\(`, which basic regex reads as
+						// a literal bar and an unbalanced group.
+						"--extended-regexp",
 						...(options.caseSensitive === false ? ["--ignore-case"] : []),
 						...(options.contextLines ? ["--context", String(options.contextLines)] : []),
 						"-e",
@@ -308,7 +316,13 @@ export class RepoSandboxService extends Context.Service<RepoSandboxService, Repo
 				},
 			)
 
-			return { grep, listFiles, readFile, exec } satisfies RepoSandboxServiceApi
+			const prepare: RepoSandboxServiceApi["prepare"] = Effect.fn("RepoSandboxService.prepare")(
+				function* (orgId, target) {
+					yield* run(orgId, target, "true", [], undefined, SANDBOX_DEFAULT_TIMEOUT_SECONDS)
+				},
+			)
+
+			return { grep, listFiles, readFile, exec, prepare } satisfies RepoSandboxServiceApi
 		}),
 	},
 ) {

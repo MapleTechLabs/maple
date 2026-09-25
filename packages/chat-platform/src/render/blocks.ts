@@ -47,7 +47,8 @@ export interface ChatEntityBlock {
 }
 
 export interface ChatToolActivity {
-	readonly name: string
+	/** What the call is doing, as a phrase (`Running a query`) — never the tool's raw name. */
+	readonly label: string
 	readonly status: "running" | "done" | "failed"
 	/** A sub-agent's progress, for a `task_*` call. */
 	readonly detail: string | null
@@ -62,6 +63,29 @@ export interface ChatActivityBlock {
 	readonly tools: ReadonlyArray<ChatToolActivity>
 }
 
+/**
+ * What came of a proposal, once somebody decided it — read out of the `tool-result` the session
+ * recorded (see `approval-outcome.ts`), never that result verbatim.
+ */
+export interface ChatApprovalOutcome {
+	readonly approved: boolean
+	/** Who decided: `Approved by Ada.` */
+	readonly decision: string
+	/** What came of it, as one sentence in the bot's voice. Empty when there is nothing to add. */
+	readonly text: string
+	/** Where the change can be seen in Maple. */
+	readonly url: string | null
+}
+
+/**
+ * How much of a decided proposal's result a channel is worth showing; the rest is in Maple.
+ *
+ * A ceiling rather than a guideline: the cutting charges every approval for it whether or not the
+ * proposal has been decided, so deciding one can never move its block into a different platform
+ * message from the one that carried the controls.
+ */
+export const MAX_APPROVAL_OUTCOME_CHARS = 200
+
 /** A mutation the agent paused on. The tool has NOT run; someone has to say yes. */
 export interface ChatApprovalBlock {
 	readonly kind: "approval"
@@ -69,6 +93,15 @@ export interface ChatApprovalBlock {
 	/** The call's arguments, in a sentence a reader can act on without reading JSON. */
 	readonly summary: string
 	readonly token: ChatActionToken
+	/**
+	 * Null while the proposal is still open, which is also when a connector gives it controls.
+	 *
+	 * A settled proposal keeps its block rather than disappearing: a reader coming back to the
+	 * thread needs to see what was asked for as well as what came of it — and keeping the block
+	 * count fixed is what lets the settling edit address the same platform message that carried the
+	 * controls.
+	 */
+	readonly outcome: ChatApprovalOutcome | null
 }
 
 export interface ChatNoticeBlock {
@@ -78,6 +111,44 @@ export interface ChatNoticeBlock {
 	readonly text: string
 }
 
+export interface ChatAlertField {
+	readonly label: string
+	/** Standard markdown. */
+	readonly value: string
+}
+
+export interface ChatAlertLink {
+	readonly label: string
+	readonly url: string
+	/** The one action the alert leads with, where the platform can emphasise a button. */
+	readonly primary: boolean
+}
+
+/**
+ * A notification Maple posts on its own — an alert firing or resolving — rather than a turn.
+ *
+ * A card rather than prose because an alert read in a busy channel needs what a card gives: the
+ * state as a colour bar, the facts as labelled fields, and the links as buttons.
+ */
+export interface ChatAlertBlock {
+	readonly kind: "alert"
+	/** `#rrggbb`: the state and severity, as the bar beside the card. */
+	readonly color: string
+	/** Plain text, emoji included. Never parsed as markup. */
+	readonly title: string
+	/** Standard markdown: what happened, in a sentence — or a rule's own templated body. */
+	readonly summary: string
+	readonly fields: ReadonlyArray<ChatAlertField>
+	readonly imageUrl: string | null
+	/** What the image shows, for a screen reader and for a platform that will not load it. */
+	readonly imageAlt: string
+	readonly links: ReadonlyArray<ChatAlertLink>
+	/** Standard markdown fragments, shown small under the card and joined by the connector. */
+	readonly footer: ReadonlyArray<string>
+	/** When it was sent, epoch ms, for a connector that can show it in each reader's own timezone. */
+	readonly sentAtMs: number | null
+}
+
 export type ChatBlock =
 	| ChatProseBlock
 	| ChatChartBlock
@@ -85,6 +156,7 @@ export type ChatBlock =
 	| ChatActivityBlock
 	| ChatApprovalBlock
 	| ChatNoticeBlock
+	| ChatAlertBlock
 
 /** Which chart, for the port that mints an image of it. */
 export interface ChatChartRef {

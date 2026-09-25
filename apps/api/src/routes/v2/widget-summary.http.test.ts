@@ -36,7 +36,6 @@ import {
 	ConfigResourceServiceStubsLayer,
 	makeWarehouseServiceStub,
 	PlanetScaleServiceStubsLayer,
-	SlackIntegrationServiceStubLayer,
 } from "./v2-test-support"
 import { compiledQueryOf } from "@maple/query-engine/execution"
 
@@ -189,7 +188,6 @@ const makeHarness = (options: {
 		Layer.provide(AllV2GroupLayersLive),
 		Layer.provide(readsLive),
 		Layer.provide(V2TransportErrorBoundaryLive),
-		Layer.provide(SlackIntegrationServiceStubLayer),
 		Layer.provide(PlanetScaleServiceStubsLayer),
 		Layer.provide(AlertsServiceStubLayer),
 		Layer.provide(ConfigResourceServiceStubsLayer),

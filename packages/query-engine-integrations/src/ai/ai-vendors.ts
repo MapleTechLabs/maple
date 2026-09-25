@@ -15,9 +15,8 @@ import { MAPLE_NATIVE_TURN_ID_ATTR, type MutableAiGenAiValues } from "@maple/dom
 /**
  * Vercel AI SDK — the `ai.*` dialect.
  *
- * Current AI SDK versions emit canonical `gen_ai.*` attributes (production
- * spans from `apps/slack-agent`, which runs the SDK through eve, carry
- * `gen_ai.operation.name`, `gen_ai.usage.*` and friends), so these keys serve
+ * Current AI SDK versions emit canonical `gen_ai.*` attributes
+ * (`gen_ai.operation.name`, `gen_ai.usage.*` and friends), so these keys serve
  * older versions. All of them appear verbatim in the installed `ai` package's
  * telemetry code.
  *
@@ -58,10 +57,9 @@ const vercelAiSdkIntegration: AiIntegration = {
 		toolCallArguments: ["ai.toolCall.args"],
 		toolCallResult: ["ai.toolCall.result"],
 		toolDefinitions: ["ai.prompt.tools"],
-		// `ai.telemetry.functionId` is the name the app gave the traced call. In
-		// this org's spans it carries the same value the sibling `invoke_agent`
-		// span puts in `gen_ai.agent.name` (`slack-agent`), which is the only
-		// agent identity an older-SDK span has.
+		// `ai.telemetry.functionId` is the name the app gave the traced call —
+		// typically the same value a sibling `invoke_agent` span puts in
+		// `gen_ai.agent.name`, and the only agent identity an older-SDK span has.
 		agentName: ["ai.telemetry.functionId"],
 	},
 }

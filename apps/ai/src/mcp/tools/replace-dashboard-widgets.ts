@@ -1,98 +1,101 @@
-import { McpQueryError, requiredStringParam, validationError, type McpToolRegistrar } from "./types"
-import { Effect, Result, Schema } from "effect"
-import { DashboardWidgetSchema } from "@maple/domain/http"
-import { createDualContent } from "../lib/structured-output"
+import { McpInvalidInputError, type McpToolRegistrar } from "./types"
+import { Effect, Schema } from "effect"
+import { DashboardWidgetSchema, WidgetLayoutSchema } from "@maple/domain/http"
+import { ReplaceDashboardWidgetsOutput } from "@maple/domain/mcp-outputs"
 import {
 	defaultSizeForVisualization,
 	findNextWidgetPosition,
 	generateWidgetId,
+	jsonText,
+	legacyWidgetDataSourceHint,
+	toDashboardRow,
 	withDashboardMutation,
 	type DashboardWidget,
 } from "../lib/dashboard-mutations"
 import {
 	collectBlockingBuilderWarnings,
-	formatValidationSummary,
 	inspectWidgetsAfterMutation,
+	validationDoc,
 } from "../lib/inspect-widget"
 import { CurrentMcpTenant } from "../lib/query-warehouse"
 import { validateWidgetRenderability } from "../lib/validate-widget-renderability"
 import { resolvePanelType } from "../lib/panel-type"
 import { withScalarReduction } from "../lib/raw-sql-widget"
+import * as P from "../lib/params"
+import { doc } from "../lib/tool-doc"
 
 const TOOL = "replace_dashboard_widgets"
 
-const decodeWidget = Schema.decodeUnknownEffect(DashboardWidgetSchema)
-const decodeJson = Schema.decodeUnknownResult(Schema.fromJsonString(Schema.Unknown))
+/** A widget as this tool takes it: `id` and `layout` may be left for the tool to fill in. */
+const WidgetInput = Schema.Struct({
+	...DashboardWidgetSchema.fields,
+	id: Schema.optionalKey(Schema.String),
+	layout: Schema.optionalKey(WidgetLayoutSchema),
+})
+
+const legacyWidgetsHint = (value: unknown): string | undefined => {
+	if (!Array.isArray(value)) return undefined
+	for (const [index, widget] of value.entries()) {
+		const hint = legacyWidgetDataSourceHint(widget)
+		if (hint !== undefined) return `widgets_json[${index}]: ${hint}`
+	}
+	return undefined
+}
+
+const invalid = (message: string, example?: string) =>
+	new McpInvalidInputError({
+		message,
+		parameter: "widgets_json",
+		...(example === undefined ? undefined : { example }),
+	})
 
 export function registerReplaceDashboardWidgetsTool(server: McpToolRegistrar) {
-	server.tool(
-		TOOL,
-		"Replace ALL widgets on a dashboard in one atomic, validated write — the safe middle ground between many incremental `add/update_dashboard_widget` calls and the corruption-prone full `dashboard_json` replace. Pass `widgets_json`: a JSON array of widget objects (same shape as `widgets[]` from get_dashboard). Each widget's query is validated BEFORE anything is persisted — if any widget references a filter/groupBy the engine can't honor, NOTHING is saved and the offending clauses are returned. Per-widget conveniences: `id` is auto-generated when omitted, and `layout` is auto-placed on a 12-column grid when omitted (so you can pass just `{ visualization, dataSource, display }`). Dashboard metadata (name, description, tags, time range) is left untouched. Returns an automatic validation summary; fix any `suspicious`/`broken` widgets and call again.",
-		Schema.Struct({
-			dashboard_id: requiredStringParam(
-				"ID of the dashboard whose widgets to replace (use list_dashboards to find IDs)",
-			),
-			widgets_json: requiredStringParam(
-				'JSON array of widget objects: [{ id?, visualization, dataSource, display, layout?, timeRange? }, ...]. `id` and `layout` are optional (auto-generated/auto-placed). `timeRange` pins one widget to its own window (`{"type":"relative","value":"30m"}` or `{"type":"absolute","startTime":"...","endTime":"..."}`); omit it and the widget follows the dashboard range, which is right for almost every widget. This REPLACES the entire widget list.',
+	server.define({
+		name: TOOL,
+		description:
+			"Replace every widget on a dashboard in one validated write. Every widget's query is checked first; if any has a clause the engine cannot honor, nothing is saved and the offending clauses are returned. " +
+			"Use it for a rewrite of the whole board; use add/update_dashboard_widget for one widget, and update_dashboard's dashboard_json only to restore a saved document. Dashboard metadata is untouched. The result carries a validation verdict per widget.",
+		parameters: Schema.Struct({
+			dashboard_id: P.text("Dashboard ID (ids from list_dashboards)"),
+			widgets_json: jsonText(
+				Schema.Array(WidgetInput),
+				"The complete new widget list as JSON text, each the shape of a get_dashboard widgets[] entry: [{ id?, visualization, dataSource, display, layout?, timeRange? }, ...]. " +
+					"`visualization` is the stored value (chart, stat, ...), not panel_type. id is generated and layout auto-placed on the 12-column grid when omitted. " +
+					'timeRange pins one widget to its own window ({"type":"relative","value":"30m"} or absolute startTime/endTime); leave it out for the dashboard\'s range.',
+				legacyWidgetsHint,
 			),
 		}),
-		Effect.fn("McpTool.replaceDashboardWidgets")(function* ({ dashboard_id, widgets_json }) {
-			const parseResult = decodeJson(widgets_json)
-			if (Result.isFailure(parseResult)) {
-				return validationError(
-					`widgets_json is not valid JSON: ${String(parseResult.failure)}`,
+		output: ReplaceDashboardWidgetsOutput,
+		hints: { readOnly: false, destructive: true, idempotent: false },
+		phrases: ["Replacing widgets"],
+		handler: Effect.fn("McpTool.replaceDashboardWidgets")(function* ({
+			dashboard_id,
+			widgets_json: parsed,
+		}) {
+			if (parsed.length === 0) {
+				return yield* invalid(
+					"widgets_json must contain at least one widget. To clear individual widgets use remove_dashboard_widget.",
 					'[{ "visualization": "stat", "dataSource": { ... }, "display": { ... } }]',
 				)
 			}
-			const parsed = parseResult.success
-			if (!Array.isArray(parsed)) {
-				return validationError("widgets_json must be a JSON array of widget objects.")
-			}
-			if (parsed.length === 0) {
-				return validationError(
-					"widgets_json must contain at least one widget. To clear individual widgets use remove_dashboard_widget.",
-				)
-			}
 
-			// Enrich each raw widget (auto id + auto layout) then decode. Layouts
-			// are auto-placed against the widgets accumulated so far, matching the
-			// single-widget add path.
+			// Fill in each widget's id and layout. Layouts are auto-placed against the widgets
+			// accumulated so far, matching the single-widget add path.
 			const widgets: DashboardWidget[] = []
 			const repairedScalarIds: string[] = []
-			for (let i = 0; i < parsed.length; i++) {
-				const obj = parsed[i]
-				if (obj === null || typeof obj !== "object") {
-					return validationError(`widgets_json[${i}] is not an object.`)
-				}
-				const rec = obj as Record<string, unknown>
-				const visualization = typeof rec.visualization === "string" ? rec.visualization : "chart"
-				const candidate: Record<string, unknown> = {
-					...rec,
-					id: typeof rec.id === "string" && rec.id.length > 0 ? rec.id : generateWidgetId(),
-				} satisfies Record<string, unknown>
-				if (candidate.layout === undefined) {
-					const size = defaultSizeForVisualization(visualization)
-					const position = findNextWidgetPosition(widgets, size.w)
-					candidate.layout = { ...position, w: size.w, h: size.h }
-				}
+			for (const input of parsed) {
+				const id = input.id !== undefined && input.id.length > 0 ? input.id : generateWidgetId()
+				const layout =
+					input.layout ??
+					(() => {
+						const size = defaultSizeForVisualization(input.visualization)
+						return { ...findNextWidgetPosition(widgets, size.w), w: size.w, h: size.h }
+					})()
+				const decoded: DashboardWidget = { ...input, id, layout }
 
-				const decoded = yield* decodeWidget(candidate).pipe(
-					Effect.mapError(
-						(cause) =>
-							new McpQueryError({
-								message: `widgets_json[${i}] is not a valid widget: ${String(cause)}`,
-								pipeName: TOOL,
-								cause,
-							}),
-					),
-				)
-
-				// Repair a scalar with no reduction, exactly as the single-widget
-				// paths do. Without this the batch tool was the strictest of the
-				// three: `add` injects the default and `update` repairs, but a
-				// get_dashboard -> replace_dashboard_widgets round trip over a board
-				// holding one legacy stat failed outright and saved nothing — and
-				// this is the tool the docs recommend over incremental calls.
+				// Repair a scalar with no reduction, exactly as the single-widget paths do, so a
+				// get_dashboard -> replace_dashboard_widgets round trip over a board holding one
+				// legacy stat does not fail outright.
 				const panel = resolvePanelType({
 					visualization: decoded.visualization,
 					chartId: decoded.display.chartId,
@@ -110,7 +113,7 @@ export function registerReplaceDashboardWidgetsTool(server: McpToolRegistrar) {
 			const seenIds = new Set<string>()
 			for (const w of widgets) {
 				if (seenIds.has(w.id)) {
-					return validationError(
+					return yield* invalid(
 						`Duplicate widget id "${w.id}" in widgets_json. Each widget needs a unique id (or omit id to auto-generate).`,
 					)
 				}
@@ -125,14 +128,13 @@ export function registerReplaceDashboardWidgetsTool(server: McpToolRegistrar) {
 				),
 			).pipe(Effect.map((nested) => nested.flat()))
 			if (blocking.length > 0) {
-				return validationError(
-					`Some widgets have clauses the engine can't honor — NOTHING was saved:\n- ${blocking.join("\n- ")}\n\nFix and retry. Span/resource attributes work automatically but cap at 5 attr filters; logs/metrics accept only a fixed set of filter/groupBy keys.`,
+				return yield* invalid(
+					`Some widgets have clauses the engine can't honor; NOTHING was saved:\n- ${blocking.join("\n- ")}\n\nFix and retry. Span/resource attributes work automatically but cap at 5 attr filters; logs/metrics accept only a fixed set of filter/groupBy keys.`,
 				)
 			}
 
-			// Same all-or-nothing guard for shapes the renderer can't draw. This is
-			// a batch of freshly-authored widgets, not a restore, so fatal issues
-			// block here exactly as they do on the single-widget add path.
+			// Same all-or-nothing guard for shapes the renderer can't draw: a batch of
+			// freshly-authored widgets, not a restore, so fatal issues block here.
 			const renderIssues = widgets.map((widget) => ({
 				widget,
 				issues: validateWidgetRenderability({ widget }),
@@ -141,24 +143,16 @@ export function registerReplaceDashboardWidgetsTool(server: McpToolRegistrar) {
 				issues.fatal.map((message) => `[${widget.id}] ${message}`),
 			)
 			if (fatalRenderIssues.length > 0) {
-				return validationError(
-					`Some widgets cannot render as configured — NOTHING was saved:\n- ${fatalRenderIssues.join("\n- ")}`,
+				return yield* invalid(
+					`Some widgets cannot render as configured; NOTHING was saved:\n- ${fatalRenderIssues.join("\n- ")}`,
 				)
 			}
 			const renderWarnings = renderIssues.flatMap(({ widget, issues }) =>
 				issues.warnings.map((message) => `[${widget.id}] ${message}`),
 			)
 
-			const result = yield* withDashboardMutation(dashboard_id, TOOL, () => Effect.succeed(widgets))
+			const dashboard = yield* withDashboardMutation(dashboard_id, TOOL, () => Effect.succeed(widgets))
 
-			if (!result.ok) {
-				return {
-					isError: true,
-					content: [{ type: "text" as const, text: result.notFound }],
-				}
-			}
-
-			const { dashboard } = result
 			const tenant = yield* CurrentMcpTenant
 			const validation = yield* inspectWidgetsAfterMutation({
 				tenant,
@@ -167,45 +161,42 @@ export function registerReplaceDashboardWidgetsTool(server: McpToolRegistrar) {
 				validate: true,
 			})
 
-			const lines = [
-				`## Widgets Replaced`,
-				`Dashboard: ${dashboard.name} (${dashboard.id})`,
-				`Total widgets: ${dashboard.widgets.length}`,
-				`Updated: ${dashboard.updatedAt.slice(0, 19)}`,
-			]
-			if (repairedScalarIds.length > 0) {
-				lines.push(
-					"",
-					`Note: ${repairedScalarIds.length} scalar widget(s) had no \`transform.reduceToValue\` and were given \`{ field: "value", aggregate: "first" }\` — a stat/gauge renders \`[object Object]\` without one: ${repairedScalarIds.join(", ")}`,
-				)
-			}
-
-			if (renderWarnings.length > 0) {
-				lines.push("", "### Render warnings", ...renderWarnings.map((warning) => `- ${warning}`))
-			}
-			const validationBlock = formatValidationSummary(validation, true)
-			if (validationBlock) {
-				lines.push("", validationBlock)
-			}
-
+			const row = toDashboardRow(dashboard)
 			return {
-				content: createDualContent(lines.join("\n"), {
-					tool: TOOL,
-					data: {
-						dashboard: {
-							id: dashboard.id,
-							name: dashboard.name,
-							description: dashboard.description,
-							tags: dashboard.tags ? [...dashboard.tags] : [],
-							widgetCount: dashboard.widgets.length,
-							createdAt: dashboard.createdAt,
-							updatedAt: dashboard.updatedAt,
-						},
-						widgetIds: widgets.map((w) => w.id),
-						...(validation.ran && { validation }),
-					},
-				}),
+				dashboard: { ...row, tags: row.tags ?? [] },
+				widgetIds: widgets.map((w) => w.id),
+				...(validation.ran ? { validation } : undefined),
+				repairedScalarIds,
+				renderWarnings,
 			}
 		}),
-	)
+		render: (output) => {
+			const validation =
+				output.validation === undefined
+					? { blocks: [], next: [] }
+					: validationDoc(output.validation, { single: true, dashboardId: output.dashboard.id })
+			return {
+				title: "Widgets Replaced",
+				blocks: [
+					doc.fields([
+						["Dashboard", `${output.dashboard.name} (${output.dashboard.id})`],
+						["Total widgets", output.dashboard.widgetCount],
+						["Updated", output.dashboard.updatedAt.slice(0, 19)],
+					]),
+					...(output.repairedScalarIds.length > 0
+						? [
+								doc.text(
+									`Note: ${output.repairedScalarIds.length} scalar widget(s) had no \`transform.reduceToValue\` and were given \`{ field: "value", aggregate: "first" }\`. A stat/gauge renders \`[object Object]\` without one: ${output.repairedScalarIds.join(", ")}`,
+								),
+							]
+						: []),
+					...(output.renderWarnings.length > 0
+						? [doc.heading("Render warnings"), doc.list(output.renderWarnings)]
+						: []),
+					...validation.blocks,
+				],
+				next: validation.next,
+			}
+		},
+	})
 }

@@ -2,7 +2,13 @@ import { describe, expect, it } from "vitest"
 import { SpanId } from "@maple/domain"
 import type { SpanNode } from "@maple/query-engine/observability"
 import { Schema } from "effect"
-import { renderTraceOverview, type TraceOverviewLog } from "./render-trace"
+import {
+	buildTraceOverview,
+	renderTraceOverview,
+	type TraceOverviewInput,
+	type TraceOverviewLog,
+} from "./render-trace"
+import { renderToolDoc } from "./tool-doc"
 
 const decodeSpanId = Schema.decodeSync(SpanId)
 
@@ -32,11 +38,16 @@ const base = {
 	logs: [] as TraceOverviewLog[],
 }
 
+/** The overview the handler builds, and the text the tool renders from it. */
+const render = (input: TraceOverviewInput) => {
+	const overview = buildTraceOverview(input)
+	return { overview, text: renderToolDoc(renderTraceOverview(overview)) }
+}
+
 describe("renderTraceOverview", () => {
 	it("renders every span with a copyable span id and no truncation note for small traces", () => {
 		const spans = [span("root", { children: [span("child-1"), span("child-2")] })]
-		const { lines, overview } = renderTraceOverview({ ...base, spanCount: 3, spans, budget: 100 })
-		const text = lines.join("\n")
+		const { text, overview } = render({ ...base, spanCount: 3, spans, budget: 100 })
 
 		expect(overview.truncated).toBe(false)
 		expect(text).not.toContain("Showing")
@@ -55,16 +66,15 @@ describe("renderTraceOverview", () => {
 			}),
 		]
 		const totalSpanCount = 1 + 1 + 20 + 1
-		const { lines, overview } = renderTraceOverview({
+		const { text, overview } = render({
 			...base,
 			spanCount: totalSpanCount,
 			spans,
 			budget: 5,
 		})
-		const text = lines.join("\n")
 
 		expect(overview.truncated).toBe(true)
-		expect(text).toContain(`Showing ${overview.renderedCount} of ${totalSpanCount} spans`)
+		expect(text).toContain(`Showing ${overview.renderedSpanCount} of ${totalSpanCount} spans`)
 		// The error span is always kept and labelled.
 		expect(text).toContain("span=err")
 		expect(text).toContain("[Error]")
@@ -90,8 +100,7 @@ describe("renderTraceOverview", () => {
 				spanId: "",
 			},
 		]
-		const { lines } = renderTraceOverview({ ...base, spanCount: 1, spans, logs, budget: 100 })
-		const text = lines.join("\n")
+		const { text } = render({ ...base, spanCount: 1, spans, logs, budget: 100 })
 
 		expect(text).toContain("Related Logs (2):")
 		expect(text).toContain("● ") // ERROR marker
@@ -106,15 +115,14 @@ describe("renderTraceOverview errorsOnly", () => {
 				children: [span("ok"), span("bad", { statusCode: "Error", statusMessage: "boom" })],
 			}),
 		]
-		const { lines, overview } = renderTraceOverview({
+		const { text, overview } = render({
 			...base,
 			spanCount: 3,
 			spans,
 			budget: 100,
 			options: { errorsOnly: true },
 		})
-		const text = lines.join("\n")
-		expect(overview.renderedCount).toBe(2)
+		expect(overview.renderedSpanCount).toBe(2)
 		expect(text).toContain("error spans and their ancestors only")
 		expect(text).toContain("bad")
 		expect(text).not.toContain("ok —")

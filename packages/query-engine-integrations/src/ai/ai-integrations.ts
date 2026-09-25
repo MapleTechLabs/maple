@@ -272,7 +272,9 @@ export const aiSpanAttributeKeys: readonly string[] = [
  */
 export const aiFieldSourceKeys = (field: AiGenAiField): readonly string[] => [
 	...new Set(
-		[genAiIntegration, ...resolvedIntegrations.values()].flatMap((integration) => integration.sources[field]),
+		[genAiIntegration, ...resolvedIntegrations.values()].flatMap(
+			(integration) => integration.sources[field],
+		),
 	),
 ]
 
@@ -297,11 +299,16 @@ const collectPromptVariables = (attributes: Record<string, string>): Record<stri
 }
 
 /**
- * A core field is plain OTel semconv that every HTTP client span carries, so
- * mapping one is not evidence that this span is an AI span.
+ * Fields whose presence is not evidence that a span is an AI span. A core field
+ * is plain OTel semconv every HTTP client span carries. A tool call id says
+ * which call a span belongs to, not that the span is one — Claude Code stamps
+ * it on the run and the permission wait of a call whose own span carries the
+ * name, and read as signal each phase became a tool call of its own.
  */
+export const AI_NON_SIGNAL_FIELDS: ReadonlySet<AiGenAiField> = new Set([...AI_CORE_FIELDS, "toolCallId"])
+
 const hasAiSignal = (values: MutableAiGenAiValues): boolean =>
-	Object.keys(values).some((field) => !AI_CORE_FIELDS.has(field as AiGenAiField))
+	Object.keys(values).some((field) => !AI_NON_SIGNAL_FIELDS.has(field as AiGenAiField))
 
 export const mapAiSpan = (row: AiSessionSpansOutput): AiAgentSpan => {
 	// Span attributes only, envelope and source keys alike. The gateway strips

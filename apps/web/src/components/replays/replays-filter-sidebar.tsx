@@ -47,6 +47,8 @@ interface ReplaysFacets {
 	/** Identified groups (company / team). Empty for orgs that never call
 	 *  `identify()` with a group — the section hides itself then. */
 	readonly groups: ReadonlyArray<ReplaysFacetItem>
+	/** Page paths visited anywhere in a session, by sessions that reached them. */
+	readonly pages: ReadonlyArray<ReplaysFacetItem>
 	readonly errorCount: number
 	/** Session-length distribution: `name` is the bucket floor in ms. */
 	readonly durationBuckets: ReadonlyArray<ReplaysFacetItem>
@@ -100,7 +102,10 @@ export function ReplaysFilterSidebar({ facetsResult }: ReplaysFilterSidebarProps
 
 	// Single-value params: take the last toggled option (switching dimensions
 	// replaces the prior value; unchecking the only one clears it).
-	const setSingle = (key: "service" | "browser" | "country" | "deviceType" | "group", values: string[]) => {
+	const setSingle = (
+		key: "service" | "browser" | "country" | "deviceType" | "group" | "page",
+		values: string[],
+	) => {
 		navigate({
 			search: (prev) => ({ ...prev, [key]: values.at(-1) ?? undefined }),
 		})
@@ -142,6 +147,7 @@ export function ReplaysFilterSidebar({ facetsResult }: ReplaysFilterSidebarProps
 		!!search.userId ||
 		!!search.user ||
 		!!search.group ||
+		!!search.page ||
 		search.hasErrors === true ||
 		search.durationMin != null ||
 		search.durationMax != null ||
@@ -157,6 +163,7 @@ export function ReplaysFilterSidebar({ facetsResult }: ReplaysFilterSidebarProps
 			const countries = withSelected(facets.countries, search.country)
 			const devices = withSelected(facets.devices, search.deviceType)
 			const groups = withSelected(facets.groups, search.group)
+			const pages = withSelected(facets.pages, search.page)
 
 			const hasFacets =
 				services.length > 0 ||
@@ -164,6 +171,7 @@ export function ReplaysFilterSidebar({ facetsResult }: ReplaysFilterSidebarProps
 				countries.length > 0 ||
 				devices.length > 0 ||
 				groups.length > 0 ||
+				pages.length > 0 ||
 				facets.errorCount > 0
 
 			return (
@@ -199,6 +207,16 @@ export function ReplaysFilterSidebar({ facetsResult }: ReplaysFilterSidebarProps
 							maxValue={search.activeMax}
 							onRangeChange={setActiveRange}
 							presets={ACTIVE_TIME_PRESETS}
+						/>
+
+						{/* Every page a session reached, not just where it landed — the toolbar
+						    search covers the entry URL. Top 200 by sessions; the search box
+						    filters that list. */}
+						<SearchableFilterSection
+							title="Page visited"
+							options={pages}
+							selected={search.page ? [search.page] : []}
+							onChange={(vals) => setSingle("page", vals)}
 						/>
 
 						<SearchableFilterSection

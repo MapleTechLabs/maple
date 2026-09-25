@@ -21,6 +21,7 @@ import {
 	type AlertEventType,
 	type AlertSeverity,
 	type AlertSignalType,
+	type ChatWorkspaceId,
 	type QueryBuilderQueryDraftPayload,
 } from "@maple/domain/http"
 import type {
@@ -94,7 +95,7 @@ export type RuleFormState = {
 	/**
 	 * Custom notification message. Empty strings mean "use the built-in format".
 	 * `title` + Markdown `body` support `{{ variable }}` substitution; channels
-	 * render them per their dialect (Slack Block Kit, Discord embed, …).
+	 * render them per their dialect (chat blocks, Discord embed, …).
 	 */
 	notificationTitle: string
 	notificationBody: string
@@ -414,14 +415,6 @@ export type DestinationFormState = {
 	enabled: boolean
 	/** Discord incoming-webhook URL. */
 	webhookUrl: string
-	/**
-	 * Slack (bot) destination: the channel the installed Maple bot posts to.
-	 * `slackChannelId` is the Slack channel id (`C0789CHAN`), `slackChannelName`
-	 * its display name (`incidents`). No webhook/secret — the bot token is
-	 * resolved from the org's Slack workspace at dispatch.
-	 */
-	slackChannelId: string
-	slackChannelName: string
 	integrationKey: string
 	url: string
 	signingSecret: string
@@ -435,19 +428,26 @@ export type DestinationFormState = {
 	hazelChannelName: string
 	/** Selected workspace-member recipients (email type only). */
 	memberUserIds: string[]
+	/**
+	 * Chat connector destination: the linked workspace (fixed once created), the
+	 * connector that owns it (for its mark), and the channel picked from it.
+	 */
+	/** Branded as it arrives — from the connector list or the stored destination — so never decoded here. */
+	chatWorkspaceId: ChatWorkspaceId | null
+	chatConnector: string
+	chatChannelId: string
+	chatChannelName: string
 }
 
 export const MAX_EMAIL_MEMBER_RECIPIENTS = 10
 
-/** Defaults to `slack-bot` — the tile the dialog lists first. */
-export function defaultDestinationForm(type: AlertDestinationType = "slack-bot"): DestinationFormState {
+/** Defaults to `discord` — the tile the dialog lists first. */
+export function defaultDestinationForm(type: AlertDestinationType = "discord"): DestinationFormState {
 	return {
 		type,
 		name: "",
 		enabled: true,
 		webhookUrl: "",
-		slackChannelId: "",
-		slackChannelName: "",
 		integrationKey: "",
 		url: "",
 		signingSecret: "",
@@ -459,6 +459,10 @@ export function defaultDestinationForm(type: AlertDestinationType = "slack-bot")
 		hazelChannelId: "",
 		hazelChannelName: "",
 		memberUserIds: [],
+		chatWorkspaceId: null,
+		chatConnector: "",
+		chatChannelId: "",
+		chatChannelName: "",
 	}
 }
 
@@ -468,11 +472,6 @@ export function destinationToFormState(destination: AlertDestinationDocument): D
 		name: destination.name,
 		enabled: destination.enabled,
 		webhookUrl: "",
-		// slack-bot hydrates `channelLabel` as `#name`; keep the current channel
-		// visible on edit (its id isn't returned — an empty id keeps the stored one).
-		slackChannelId: "",
-		slackChannelName:
-			destination.type === "slack-bot" ? (destination.channelLabel?.replace(/^#/, "") ?? "") : "",
 		integrationKey: "",
 		url: "",
 		signingSecret: "",
@@ -486,21 +485,18 @@ export function destinationToFormState(destination: AlertDestinationDocument): D
 		hazelChannelId: "",
 		hazelChannelName: "",
 		memberUserIds: destination.memberUserIds != null ? [...destination.memberUserIds] : [],
+		// The stored channel's id isn't returned, its `#name` is — kept so the current
+		// channel stays visible on edit (an empty id keeps the stored one).
+		chatWorkspaceId: destination.chatWorkspaceId ?? null,
+		chatConnector: destination.chatConnector ?? "",
+		chatChannelId: "",
+		chatChannelName:
+			destination.type === "chat" ? (destination.channelLabel?.replace(/^#/, "") ?? "") : "",
 	}
 }
 
 export function buildDestinationCreateParamsV2(form: DestinationFormState): V2AlertDestinationCreateParams {
 	switch (form.type) {
-		case "slack-bot": {
-			const channelName = form.slackChannelName.trim()
-			return {
-				type: "slack-bot",
-				name: form.name.trim(),
-				enabled: form.enabled,
-				channel_id: form.slackChannelId.trim(),
-				...(channelName ? { channel_name: channelName } : undefined),
-			}
-		}
 		case "pagerduty":
 			return {
 				type: "pagerduty",
@@ -555,6 +551,17 @@ export function buildDestinationCreateParamsV2(form: DestinationFormState): V2Al
 				enabled: form.enabled,
 				member_user_ids: form.memberUserIds.map((userId) => asUserId(userId)),
 			}
+		case "chat":
+			// Unreachable from the dialog: its save stays disabled until a workspace is picked.
+			if (form.chatWorkspaceId === null) throw new Error("A chat destination needs a linked workspace")
+			// No channel name: the server reads it from the workspace's own listing.
+			return {
+				type: "chat",
+				name: form.name.trim(),
+				enabled: form.enabled,
+				workspace_id: form.chatWorkspaceId,
+				channel_id: form.chatChannelId.trim(),
+			}
 	}
 }
 
@@ -565,17 +572,6 @@ export function buildDestinationCreateParamsV2(form: DestinationFormState): V2Al
 export function buildDestinationUpdateParamsV2(form: DestinationFormState): V2AlertDestinationUpdateParams {
 	const name = form.name.trim()
 	switch (form.type) {
-		case "slack-bot": {
-			const channelId = form.slackChannelId.trim()
-			const channelName = form.slackChannelName.trim()
-			return {
-				type: "slack-bot",
-				enabled: form.enabled,
-				...(name ? { name } : undefined),
-				...(channelId ? { channel_id: channelId } : undefined),
-				...(channelName ? { channel_name: channelName } : undefined),
-			}
-		}
 		case "pagerduty": {
 			const integrationKey = form.integrationKey.trim()
 			return {
@@ -649,6 +645,16 @@ export function buildDestinationUpdateParamsV2(form: DestinationFormState): V2Al
 						}
 					: undefined),
 			}
+		case "chat": {
+			// Editing keeps the stored channel until a new one is picked.
+			const channelId = form.chatChannelId.trim()
+			return {
+				type: "chat",
+				enabled: form.enabled,
+				...(name ? { name } : undefined),
+				...(channelId ? { channel_id: channelId } : undefined),
+			}
+		}
 	}
 }
 

@@ -1,17 +1,30 @@
 import {
 	type IdentifyInput,
 	type MapleIdentity,
+	type MapleRegion,
 	normalizeIdentity,
 	type ResolvedIdentity,
+	resolveIngestEndpoint,
+	warnIfKeylessMapleIngest,
 } from "@maple/browser-session"
 
 /** Public configuration for `MapleBrowser.init`. */
 export interface MapleBrowserConfig {
-	/** Public ingest key (`maple_pk_...`). */
-	readonly ingestKey: string
+	/**
+	 * Public ingest key (`maple_pk_...`), sent as `Authorization: Bearer …` and
+	 * nothing else. Leave it unset when a proxy at `endpoint` adds auth: tracing
+	 * and replay still run, sending without the header.
+	 */
+	readonly ingestKey?: string
 	/** Service name reported on traces and stored on replay sessions. */
 	readonly serviceName: string
-	/** Maple ingest base URL. Defaults to `https://ingest.maple.dev`. */
+	/**
+	 * Region your Maple organization lives in: `"us"` (default,
+	 * `https://ingest.maple.dev`) or `"eu"` (`https://ingest.eu.maple.dev`).
+	 * Ingest keys belong to one region. Ignored when `endpoint` is set.
+	 */
+	readonly region?: MapleRegion
+	/** Maple ingest base URL. Overrides `region`; use it for a proxy or self-hosted ingest. */
 	readonly endpoint?: string
 	/**
 	 * Logical group this service belongs to, emitted as the OTel
@@ -47,6 +60,13 @@ export interface MapleBrowserConfig {
 		 * the page's global error handlers, or the same crash lands twice.
 		 */
 		readonly captureErrors?: boolean
+		/**
+		 * Cross-origin URLs whose `fetch()` requests carry the W3C `traceparent`
+		 * header, so the browser span and your backend's span join one trace.
+		 * Same-origin requests always carry it. Your API must allow the
+		 * `traceparent` header in CORS. Example: `[/^https:\/\/api\.example\.com\//]`.
+		 */
+		readonly propagateTraceHeaderCorsUrls?: ReadonlyArray<string | RegExp>
 	}
 	readonly replay?: {
 		/** Default true. */
@@ -87,11 +107,19 @@ export interface MapleBrowserConfig {
 		readonly captureUserEmail?: boolean
 		/** Treat `navigator.doNotTrack` like Global Privacy Control. Default false. */
 		readonly respectDoNotTrack?: boolean
+		/**
+		 * Rewrite every URL before it leaves the page: session entry and exit
+		 * URLs, event rows, network events, replay meta events, and span
+		 * attributes. Runs after the built-in redaction, which already replaces
+		 * the values of credential-shaped query and fragment parameters
+		 * (`token`, `code`, `access_token`, `password`, …).
+		 */
+		readonly sanitizeUrl?: (url: string) => string
 	}
 }
 
 export interface ResolvedConfig {
-	readonly ingestKey: string
+	readonly ingestKey: string | undefined
 	readonly serviceName: string
 	readonly endpoint: string
 	readonly serviceNamespace: string | undefined
@@ -102,6 +130,7 @@ export interface ResolvedConfig {
 	readonly tracingEnabled: boolean
 	readonly tracingInstrumentFetch: boolean
 	readonly tracingCaptureErrors: boolean
+	readonly propagateTraceHeaderCorsUrls: ReadonlyArray<string | RegExp>
 	readonly replayEnabled: boolean
 	readonly replaySampleRate: number
 	readonly maskAllInputs: boolean
@@ -112,9 +141,8 @@ export interface ResolvedConfig {
 	readonly requireConsent: boolean
 	readonly captureUserEmail: boolean
 	readonly respectDoNotTrack: boolean
+	readonly sanitizeUrl: ((url: string) => string) | undefined
 }
-
-const DEFAULT_ENDPOINT = "https://ingest.maple.dev"
 
 /**
  * Resolve the identity from either the new `user` object or the legacy
@@ -127,11 +155,38 @@ export function resolveIdentity(config: {
 	return normalizeIdentity((config.user ?? config.userId) as IdentifyInput)
 }
 
+/**
+ * A sample rate outside 0–1 (or not a number) is a typo, not a policy. Clamp it
+ * and say so, rather than recording everyone or no one without a word.
+ */
+function resolveSampleRate(raw: number | undefined): number {
+	if (raw === undefined) return 1
+	if (typeof raw !== "number" || Number.isNaN(raw)) {
+		console.warn(
+			`[maple] replay.sampleRate must be a number between 0 and 1; got ${String(raw)}. Using 1.`,
+		)
+		return 1
+	}
+	if (raw < 0 || raw > 1) {
+		const clamped = Math.min(1, Math.max(0, raw))
+		console.warn(`[maple] replay.sampleRate must be between 0 and 1; got ${raw}. Using ${clamped}.`)
+		return clamped
+	}
+	return raw
+}
+
 export function resolveConfig(config: MapleBrowserConfig): ResolvedConfig {
+	const endpoint = resolveIngestEndpoint({ endpoints: [config.endpoint], regions: [config.region] })
+	warnIfKeylessMapleIngest({
+		logPrefix: "[maple]",
+		endpoint,
+		hasIngestKey: Boolean(config.ingestKey),
+		hint: "Pass `ingestKey`, or point `endpoint` at a proxy that adds it.",
+	})
 	return {
 		ingestKey: config.ingestKey,
 		serviceName: config.serviceName,
-		endpoint: (config.endpoint ?? DEFAULT_ENDPOINT).replace(/\/$/, ""),
+		endpoint,
 		serviceNamespace: config.serviceNamespace,
 		serviceVersion: config.serviceVersion,
 		environment: config.environment,
@@ -139,8 +194,9 @@ export function resolveConfig(config: MapleBrowserConfig): ResolvedConfig {
 		tracingEnabled: config.tracing?.enabled ?? true,
 		tracingInstrumentFetch: config.tracing?.instrumentFetch ?? true,
 		tracingCaptureErrors: config.tracing?.captureErrors ?? true,
+		propagateTraceHeaderCorsUrls: config.tracing?.propagateTraceHeaderCorsUrls ?? [],
 		replayEnabled: config.replay?.enabled ?? true,
-		replaySampleRate: config.replay?.sampleRate ?? 1,
+		replaySampleRate: resolveSampleRate(config.replay?.sampleRate),
 		maskAllInputs: config.privacy?.maskAllInputs ?? true,
 		maskAllText: config.privacy?.maskAllText ?? false,
 		persistVisitorId: config.privacy?.persistVisitorId ?? true,
@@ -149,5 +205,6 @@ export function resolveConfig(config: MapleBrowserConfig): ResolvedConfig {
 		requireConsent: config.privacy?.requireConsent ?? false,
 		captureUserEmail: config.privacy?.captureUserEmail ?? true,
 		respectDoNotTrack: config.privacy?.respectDoNotTrack ?? false,
+		sanitizeUrl: config.privacy?.sanitizeUrl,
 	}
 }

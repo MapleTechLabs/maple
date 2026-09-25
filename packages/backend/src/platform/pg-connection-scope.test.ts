@@ -411,7 +411,8 @@ const failedDbSpan = (behaviour: "stall" | "hangup") =>
 		const { spans, tracer } = makeRecordingTracer()
 		const scope = makePgConnectionScope(server.url, undefined, {
 			// The production factory, with the dial bound shortened for the test.
-			openClient: (options) => makeMaplePgClient(server.url, { ...options, connectTimeoutSeconds: 0.3 }),
+			openClient: (options) =>
+				makeMaplePgClient(server.url, { ...options, connectTimeoutSeconds: 0.3 }),
 		})
 		const exit = yield* Effect.exit(
 			withPgConnectionScopeOf(
@@ -472,7 +473,9 @@ describe("pgConnectionScopeFrom", () => {
 			const { spans, tracer } = makeRecordingTracer()
 			const rec = recorder()
 			// Build a real database the way the Workflow seams do, without dialing.
-			const owning = makePgConnectionScope("postgres://unused", undefined, { openClient: rec.openClient })
+			const owning = makePgConnectionScope("postgres://unused", undefined, {
+				openClient: rec.openClient,
+			})
 			const owned = yield* owning.run((db) => Effect.succeed(db))
 			const scope = pgConnectionScopeFrom(owned)
 

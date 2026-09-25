@@ -5,6 +5,10 @@ import {
 	IntegrationsUpstreamError,
 	isInstallationProcessable,
 	type OrgId,
+	type PullRequestContext,
+	type PullRequestFile,
+	type PullRequestReviewPublication,
+	type PullRequestReviewPublished,
 	type PullRequestSummary,
 	type VcsInstallation,
 	type VcsRepo,
@@ -88,6 +92,24 @@ export interface VcsSourceServiceApi {
 		repository: string,
 		number: number,
 	) => Effect.Effect<Option.Option<PullRequestSummary>, VcsRepositoryScopedError>
+	/** Every file of one pull request's diff. The reviewer's view of what changed. */
+	readonly listPullRequestFiles: (
+		orgId: OrgId,
+		repository: string,
+		number: number,
+	) => Effect.Effect<ReadonlyArray<PullRequestFile>, VcsRepositoryScopedError>
+	/** Commits, existing discussion and head checks of one pull request. */
+	readonly getPullRequestContext: (
+		orgId: OrgId,
+		repository: string,
+		number: number,
+	) => Effect.Effect<PullRequestContext, VcsRepositoryScopedError>
+	/** Post a review's outcome onto its pull request. The only write this service makes. */
+	readonly publishPullRequestReview: (
+		orgId: OrgId,
+		repository: string,
+		publication: PullRequestReviewPublication,
+	) => Effect.Effect<PullRequestReviewPublished, VcsRepositoryScopedError>
 	readonly searchCode: (
 		orgId: OrgId,
 		repository: string,
@@ -238,6 +260,78 @@ export class VcsSourceService extends Context.Service<VcsSourceService, VcsSourc
 				)
 			})
 
+			const listPullRequestFiles: VcsSourceServiceApi["listPullRequestFiles"] = Effect.fn(
+				"VcsSourceService.listPullRequestFiles",
+			)(function* (orgId, repositoryName, number) {
+				yield* Effect.annotateCurrentSpan({
+					orgId,
+					"vcs.repository.full_name": repositoryName,
+					"vcs.pull_request.number": number,
+				})
+				const { installation, repository } = yield* resolveRepository(orgId, repositoryName)
+				const provider = yield* asUpstream(providers.resolve(repository.provider))
+				const files = yield* asUpstream(
+					provider.fetchPullRequestFiles(
+						installation,
+						{
+							externalRepoId: repository.externalRepoId,
+							owner: repository.owner,
+							name: repository.name,
+						},
+						number,
+					),
+				)
+				yield* Effect.annotateCurrentSpan({ "result.rowCount": files.length })
+				return files
+			})
+
+			const getPullRequestContext: VcsSourceServiceApi["getPullRequestContext"] = Effect.fn(
+				"VcsSourceService.getPullRequestContext",
+			)(function* (orgId, repositoryName, number) {
+				yield* Effect.annotateCurrentSpan({
+					orgId,
+					"vcs.repository.full_name": repositoryName,
+					"vcs.pull_request.number": number,
+				})
+				const { installation, repository } = yield* resolveRepository(orgId, repositoryName)
+				const provider = yield* asUpstream(providers.resolve(repository.provider))
+				return yield* asUpstream(
+					provider.fetchPullRequestContext(
+						installation,
+						{
+							externalRepoId: repository.externalRepoId,
+							owner: repository.owner,
+							name: repository.name,
+						},
+						number,
+					),
+				)
+			})
+
+			const publishPullRequestReview: VcsSourceServiceApi["publishPullRequestReview"] = Effect.fn(
+				"VcsSourceService.publishPullRequestReview",
+			)(function* (orgId, repositoryName, publication) {
+				yield* Effect.annotateCurrentSpan({
+					orgId,
+					"vcs.repository.full_name": repositoryName,
+					"vcs.pull_request.number": publication.number,
+					"vcs.ref.head.revision": publication.headSha,
+				})
+				const { installation, repository } = yield* resolveRepository(orgId, repositoryName)
+				const provider = yield* asUpstream(providers.resolve(repository.provider))
+				return yield* asUpstream(
+					provider.publishPullRequestReview(
+						installation,
+						{
+							externalRepoId: repository.externalRepoId,
+							owner: repository.owner,
+							name: repository.name,
+						},
+						publication,
+					),
+				)
+			})
+
 			const searchCode: VcsSourceServiceApi["searchCode"] = Effect.fn("VcsSourceService.searchCode")(
 				function* (orgId, repositoryName, query, opts) {
 					yield* Effect.annotateCurrentSpan({
@@ -346,6 +440,9 @@ export class VcsSourceService extends Context.Service<VcsSourceService, VcsSourc
 				listRepositories,
 				listPullRequests,
 				fetchPullRequest,
+				listPullRequestFiles,
+				getPullRequestContext,
+				publishPullRequestReview,
 				searchCode,
 				readFile,
 				resolveCheckout,

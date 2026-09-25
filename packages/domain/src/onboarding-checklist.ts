@@ -12,8 +12,8 @@ import { HttpTaggedError } from "./http/error-policy"
 /** How long after org creation the reward stays claimable. */
 export const ONBOARDING_REWARD_WINDOW_MS = 24 * 60 * 60 * 1000
 export const ONBOARDING_REWARD_AMOUNT_USD = 30
-/** Promo code of the Autumn reward the API redeems; defined in `apps/api/autumn.config.ts`. */
-export const ONBOARDING_REWARD_PROMO_CODE = "ONBOARD30"
+/** Id of the Autumn reward the API applies to the org's subscription; defined in `apps/api/autumn.config.ts`. */
+export const ONBOARDING_REWARD_ID = "onboarding_checklist"
 
 export const ONBOARDING_CHECKLIST_STEP_IDS = [
 	"send_telemetry",
@@ -147,7 +147,12 @@ export class OnboardingChecklistUnavailableError extends HttpTaggedError<Onboard
 	},
 ) {}
 
-export const OnboardingRewardNotClaimableReason = Schema.Literals(["incomplete", "expired", "in_progress"])
+export const OnboardingRewardNotClaimableReason = Schema.Literals([
+	"incomplete",
+	"expired",
+	"in_progress",
+	"no_subscription",
+])
 export type OnboardingRewardNotClaimableReason = Schema.Schema.Type<typeof OnboardingRewardNotClaimableReason>
 
 export class OnboardingRewardNotClaimableError extends HttpTaggedError<OnboardingRewardNotClaimableError>()(

@@ -2,8 +2,13 @@
 // buffered traces, logs, and metric snapshots. Transport uses keepalive fetch:
 // unlike sendBeacon it can carry the ingest key's Authorization header.
 
-import { hasConsent, onConsentChange } from "@maple/browser-session"
-import { makeNoOpNotice } from "../shared/no-op-notice.js"
+import {
+	hasConsent,
+	type MapleRegion,
+	onConsentChange,
+	resolveIngestEndpoint,
+	warnIfKeylessMapleIngest,
+} from "@maple/browser-session"
 import { SDK_VERSION } from "../version.js"
 import { Layer, Redacted } from "effect"
 import {
@@ -35,9 +40,19 @@ const browserInstanceId =
 export interface MapleClientFlushableConfig {
 	/** Service name reported in traces, logs, and metrics. */
 	readonly serviceName: string
-	/** Maple ingest endpoint URL. */
-	readonly endpoint: string
-	/** Maple ingest key. When unset, the preset runs in no-op mode. */
+	/**
+	 * Region your Maple organization lives in: `"us"` (default,
+	 * `https://ingest.maple.dev`) or `"eu"` (`https://ingest.eu.maple.dev`).
+	 * Ignored when `endpoint` is set.
+	 */
+	readonly region?: MapleRegion | undefined
+	/** Maple ingest endpoint URL. Overrides `region`; use it for a proxy or self-hosted ingest. */
+	readonly endpoint?: string | undefined
+	/**
+	 * Sent as `Authorization: Bearer …`, and nothing else. When unset, telemetry,
+	 * replay and session rows still send, headerless, for a proxy in front of
+	 * `endpoint` to authenticate.
+	 */
 	readonly ingestKey?: string | undefined
 	/** Service version or commit SHA. */
 	readonly serviceVersion?: string | undefined
@@ -85,7 +100,7 @@ export interface MapleClientFlushableConfig {
 	 * Post session metadata rows for the standalone session so it appears in
 	 * Maple's Sessions UI (list entry + linked traces, no replay recording).
 	 * Default `true`; no-ops when `@maple-dev/browser` is on the page (it owns
-	 * the session rows), without a browser DOM, or without an ingest key.
+	 * the session rows) or without a browser DOM.
 	 */
 	readonly emitSessionMeta?: boolean | undefined
 	/**
@@ -195,8 +210,15 @@ export const make = (config: MapleClientFlushableConfig): FlushableTelemetry => 
 	]
 	const anticipatedIdentifiers =
 		anticipatedErrorIdentifiers.length > 0 ? new Set(anticipatedErrorIdentifiers) : undefined
+	const endpoint = resolveIngestEndpoint({ endpoints: [config.endpoint], regions: [config.region] })
+	warnIfKeylessMapleIngest({
+		logPrefix: "[MapleClientSDK]",
+		endpoint,
+		hasIngestKey: Boolean(config.ingestKey),
+		hint: "Pass `ingestKey`, or point `endpoint` at a proxy that adds it.",
+	})
 	const clientSession = startClientSession({
-		endpoint: config.endpoint,
+		endpoint,
 		ingestKey: config.ingestKey,
 		serviceName: config.serviceName,
 		environment: config.environment,
@@ -228,7 +250,7 @@ export const make = (config: MapleClientFlushableConfig): FlushableTelemetry => 
 	// `process.env`, no server `resolveResource` (keeps this out of the client
 	// bundle).
 	const resource: ResourceInput = {
-		endpoint: config.endpoint,
+		endpoint,
 		ingestKey: config.ingestKey ? Redacted.make(config.ingestKey) : undefined,
 		resource: {
 			serviceName: config.serviceName,
@@ -241,12 +263,12 @@ export const make = (config: MapleClientFlushableConfig): FlushableTelemetry => 
 		logsPath: config.logsPath,
 		metricsPath: config.metricsPath,
 		userAgent: `maple-effect-sdk-client/${SDK_VERSION}`,
+		keyless: "send",
 	})
 
 	const tracesState: SignalState = { disabledUntil: 0 }
 	const logsState: SignalState = { disabledUntil: 0 }
 	const metricsState: SignalState = { disabledUntil: 0 }
-	const noOpNotice = makeNoOpNotice("[MapleClientSDK]", "pass `ingestKey` to enable")
 
 	// Never rejects — fired from `pagehide`/`visibilitychange` handlers and the
 	// auto-flush timer as `void flush()`.
@@ -268,7 +290,6 @@ export const make = (config: MapleClientFlushableConfig): FlushableTelemetry => 
 				metricsState,
 				transport: keepaliveTransport,
 				logPrefix: "[MapleClientSDK]",
-				onNoOp: noOpNotice,
 			})
 		}),
 	)

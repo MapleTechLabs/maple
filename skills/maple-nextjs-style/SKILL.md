@@ -5,7 +5,7 @@ description: "Next.js / Vercel OpenTelemetry style for Maple: instrumentation.ts
 
 # Maple Next.js style
 
-For Next.js apps, prefer the framework entrypoint.
+For Next.js apps, use the framework entrypoint, `instrumentation.ts` with `@vercel/otel`.
 
 ```ts
 // instrumentation.ts
@@ -30,9 +30,9 @@ export function register() {
 }
 ```
 
-Do not replace this with a custom `NodeSDK` bootstrap unless the repo is not a normal Next/Vercel app or already has a custom provider that must be extended.
+Do not replace this with a custom `NodeSDK` bootstrap unless the repo is not a standard Next/Vercel app or already has a custom provider to extend.
 
-For JavaScript/TypeScript LLM providers, prefer provider instrumentation over manual child spans. For Anthropic, add OpenInference in the same bootstrap and keep call sites native. This example uses `@vercel/otel@2.x`; if the installed types are v1, use `logRecordProcessor` singular instead.
+For JavaScript/TypeScript LLM providers, use provider instrumentation instead of manual child spans. For Anthropic, add OpenInference in the same bootstrap and keep call sites native. This example uses `@vercel/otel@2.x`. If the installed types are v1, use `logRecordProcessor` (singular).
 
 ```ts
 import Anthropic from "@anthropic-ai/sdk"
@@ -99,11 +99,11 @@ export async function POST(request: Request) {
 }
 ```
 
-For TypeScript route handlers, use `@maple/otel-helpers` `withSpan` for bounded business spans and add `@maple/otel-helpers` to `package.json` when it is not already present. This is required when the package can be installed. It keeps span lifecycle / error handling out of the handler body and avoids a large indentation diff. Do not expand the whole route into `tracer.startActiveSpan(...)` plus `try` / `catch` / `finally` unless the helper cannot be added or the span has a true cross-callback lifecycle.
+For TypeScript route handlers, use `@maple/otel-helpers` `withSpan` for bounded business spans. Add `@maple/otel-helpers` to `package.json` if it is missing; this is required whenever the package can be installed. It keeps span lifecycle and error handling out of the handler body and avoids a large indentation diff. Do not expand the whole route into `tracer.startActiveSpan(...)` plus `try` / `catch` / `finally` unless the helper cannot be added or the span has a true cross-callback lifecycle.
 
 If a route has an LLM call and OpenInference / provider instrumentation supports that SDK, do not wrap the provider call. Leave `client.messages.create(...)` / equivalent in place and put business context on the active product span or structured log. Do not duplicate provider/model/token attributes in route-level spans, logs, or metrics when OpenInference already reports them. Do not calculate LLM cost in route handlers; Maple derives estimated cost in the UI/query layer from OpenInference provider/model/token attributes. For Anthropic in Next.js/ESM, keep the instrumentation instance and `manuallyInstrument(Anthropic)` call at module scope so it runs once and before route code.
 
-Match the `@vercel/otel` logs option to the installed package/types: `@vercel/otel@1.x` uses `logRecordProcessor` singular, while `@vercel/otel@2.x` uses `logRecordProcessors` plural. For normal Next.js / Vercel apps, do not guard `registerOTel(...)` behind `NEXT_RUNTIME`; Next calls `instrumentation.ts` in the appropriate runtime and `@vercel/otel` handles its own runtime differences.
+Match the `@vercel/otel` logs option to the installed version: `@vercel/otel@1.x` takes `logRecordProcessor` (singular), `@vercel/otel@2.x` takes `logRecordProcessors` (plural). For normal Next.js / Vercel apps, do not guard `registerOTel(...)` behind `NEXT_RUNTIME`; Next calls `instrumentation.ts` in the appropriate runtime and `@vercel/otel` handles its own runtime differences.
 
 `console.info` is not OTLP log export. If there is no existing logger bridge, use `@opentelemetry/api-logs` for production log records. Remove pre-existing `console.*` calls that duplicate the same structured OTel log event:
 
@@ -128,6 +128,6 @@ logger.emit({
 
 ## Configuration and smoke
 
-Inline the endpoint and ingest key in `instrumentation.ts` — pass them explicitly to `registerOTel`. Don't rely on `OTEL_EXPORTER_OTLP_*` env vars: the Maple ingest key is project-scoped + write-only and inline config sidesteps Vercel's env-propagation quirks during preview builds.
+Inline the endpoint and ingest key in `instrumentation.ts` and pass them explicitly to `registerOTel`. Do not rely on `OTEL_EXPORTER_OTLP_*` env vars. The Maple ingest key is project-scoped and write-only, and inline config avoids Vercel's env-propagation quirks in preview builds.
 
-Smoke checks should use tools already in the repo, e.g. `npm run typecheck` or `npm run build`, plus a real app request where practical. Do not invent fragile inline Node scripts that import TypeScript source files directly, and do not assume `ts-node` exists unless it is already installed.
+Smoke-check with tools already in the repo (`npm run typecheck`, `npm run build`), plus a real app request where practical. Do not invent fragile inline Node scripts that import TypeScript source files directly, and do not assume `ts-node` exists unless it is already installed.

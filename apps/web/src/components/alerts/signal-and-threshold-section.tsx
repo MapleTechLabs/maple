@@ -23,7 +23,6 @@ import {
 	BracketsCurlyIcon,
 	ChartLineIcon,
 	ChevronDownIcon,
-	CircleWarningIcon,
 	CirclePercentageIcon,
 	FireIcon,
 	PulseIcon,
@@ -38,7 +37,6 @@ import {
 } from "@/lib/alerts/form-utils"
 import { Result, useAtomValue } from "@/lib/effect-atom"
 import {
-	buildTimeseriesQuerySpec,
 	resetAggregationForMetricType,
 	resetQueryForDataSource,
 	type QueryBuilderDataSource,
@@ -586,7 +584,6 @@ function useAlertMetricSelectionOptions(query: QueryBuilderQueryDraft) {
 
 function AlertQueryPanel({ form, onChange, autocompleteValues }: SignalAndThresholdSectionProps) {
 	const query = form.queryBuilderDraft
-	const warnings = useMemo(() => buildTimeseriesQuerySpec(query).warnings, [query])
 	const { metricSelectionOptions, setMetricSearch } = useAlertMetricSelectionOptions(query)
 
 	const updateQuery = (updater: (query: QueryBuilderQueryDraft) => QueryBuilderQueryDraft) => {
@@ -632,16 +629,6 @@ function AlertQueryPanel({ form, onChange, autocompleteValues }: SignalAndThresh
 				showHeaderActions={false}
 				showVisibilityToggle={false}
 			/>
-			{warnings.length > 0 && (
-				<div className="flex gap-2 border border-warning/30 bg-warning/10 p-2 text-xs text-warning-foreground">
-					<CircleWarningIcon size={14} className="mt-0.5 shrink-0" />
-					<ul className="space-y-1">
-						{warnings.map((warning) => (
-							<li key={warning}>{warning}</li>
-						))}
-					</ul>
-				</div>
-			)}
 		</div>
 	)
 }

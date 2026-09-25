@@ -61,6 +61,7 @@ const NULLABLE_NARROWED_ALLOWLIST: ReadonlySet<string> = new Set([
 	// The branch's own `WHERE DurationMs > 0` excludes the nulls.
 	"builder:session-replays:sessionReplaysFacetsQuery:default:name",
 	"builder:session-replays:sessionReplaysFacetsQuery:identity-filtered:name",
+	"builder:session-replays:sessionReplaysFacetsQuery:page-visited:name",
 ])
 
 const database = uniqueDatabase("maple_query_benchmark_e2e")

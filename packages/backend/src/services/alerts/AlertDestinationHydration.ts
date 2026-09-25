@@ -1,4 +1,5 @@
 import type { AlertDestinationRow } from "@maple/db"
+import { ChatConnectorId, ChatWorkspaceId } from "@maple/domain/http"
 import { Effect, Schema } from "effect"
 import { decryptAes256Gcm } from "@maple/backend/platform/Crypto"
 
@@ -17,16 +18,12 @@ export const DestinationPublicConfigSchema = Schema.Struct({
 	hazelChannelId: Schema.optionalKey(Schema.String),
 	hazelChannelName: Schema.optionalKey(Schema.String),
 	memberUserIds: Schema.optionalKey(Schema.Array(Schema.String)),
+	/** `chat` only: which connector draws the row, and the workspace an edit lists channels from. */
+	chatConnector: Schema.optionalKey(ChatConnectorId),
+	chatWorkspaceId: Schema.optionalKey(ChatWorkspaceId),
 })
 
 const DestinationSecretConfigSchema = Schema.Union([
-	Schema.Struct({
-		type: Schema.Literal("slack-bot"),
-		// No secret token here — the bot token is resolved from the org's
-		// slack_workspaces row at dispatch time. Only the target channel is stored.
-		channelId: Schema.String,
-		channelName: Schema.NullOr(Schema.String),
-	}),
 	Schema.Struct({
 		type: Schema.Literal("pagerduty"),
 		integrationKey: Schema.String,
@@ -54,6 +51,14 @@ const DestinationSecretConfigSchema = Schema.Union([
 		type: Schema.Literal("telegram"),
 		botToken: Schema.String,
 		chatId: Schema.String,
+	}),
+	Schema.Struct({
+		type: Schema.Literal("chat"),
+		// The `chat_workspaces` row id — no token here either: the connector's credential is
+		// opened from that row, scoped to the destination's org, at dispatch time.
+		workspaceId: ChatWorkspaceId,
+		channelId: Schema.String,
+		channelName: Schema.String,
 	}),
 	Schema.Struct({
 		type: Schema.Literal("email"),

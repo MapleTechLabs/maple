@@ -277,6 +277,86 @@ describe("GithubProvider.webhookToJobs", () => {
 		}).pipe(Effect.provide(providerLayer())),
 	)
 
+	interface CommentOverrides {
+		readonly body?: string
+		readonly user?: { readonly login: string; readonly type: string }
+	}
+	const threadFields = { in_reply_to_id: 800, path: "src/a.ts", line: 4 }
+	const commentBody = (
+		event: "issue_comment" | "pull_request_review_comment",
+		overrides: CommentOverrides = {},
+	) =>
+		JSON.stringify({
+			action: "created",
+			...(event === "issue_comment"
+				? {
+						issue: {
+							number: 612,
+							html_url: "https://github.com/octo/repo/pull/612",
+							pull_request: { url: "u" },
+						},
+					}
+				: { pull_request: { number: 612 } }),
+			comment: {
+				id: 901,
+				body: "@maple why a lock?",
+				html_url: "https://github.com/octo/repo/pull/612#c901",
+				user: { login: "octocat", type: "User" },
+				author_association: "MEMBER",
+				...(event === "pull_request_review_comment" ? threadFields : undefined),
+				...overrides,
+			},
+			repository: { id: 7, full_name: "octo/repo" },
+			installation: { id: 42 },
+		})
+
+	it.effect("maps a mention in a review thread to a pull-request-comment job under the thread's root", () =>
+		Effect.gen(function* () {
+			const provider = yield* GithubProvider
+			const body = commentBody("pull_request_review_comment")
+			const jobs = yield* provider.webhookToJobs({
+				headers: {
+					"x-github-event": "pull_request_review_comment",
+					"x-hub-signature-256": sign(body),
+				},
+				rawBody: body,
+			})
+			const job = jobs[0]!
+			assert.strictEqual(job.kind, "pull-request-comment")
+			if (job.kind !== "pull-request-comment") return
+			assert.strictEqual(job.surface, "review_thread")
+			assert.strictEqual(job.threadRootId, "800")
+			assert.strictEqual(job.commentId, "901")
+			assert.strictEqual(job.path, "src/a.ts")
+			assert.strictEqual(job.authorAssociation, "MEMBER")
+		}).pipe(Effect.provide(providerLayer())),
+	)
+
+	it.effect("drops comments that do not mention the reviewer, come from a bot, or are on an issue", () =>
+		Effect.gen(function* () {
+			const provider = yield* GithubProvider
+			const map = (event: "issue_comment" | "pull_request_review_comment", body: string) =>
+				provider.webhookToJobs({
+					headers: { "x-github-event": event, "x-hub-signature-256": sign(body) },
+					rawBody: body,
+				})
+			assert.lengthOf(yield* map("issue_comment", commentBody("issue_comment")), 1)
+			assert.lengthOf(yield* map("issue_comment", commentBody("issue_comment", { body: "lgtm" })), 0)
+			assert.lengthOf(
+				yield* map(
+					"issue_comment",
+					commentBody("issue_comment", { user: { login: "maplelabsapp[bot]", type: "Bot" } }),
+				),
+				0,
+			)
+			const onIssue = JSON.stringify({
+				...JSON.parse(commentBody("issue_comment")),
+				issue: { number: 3, html_url: "https://github.com/octo/repo/issues/3" },
+			})
+			assert.lengthOf(yield* map("issue_comment", onIssue), 0)
+		}).pipe(Effect.provide(providerLayer())),
+	)
+
 	it.effect("distinguishes a pull request closed without merging", () =>
 		Effect.gen(function* () {
 			const provider = yield* GithubProvider
@@ -326,6 +406,36 @@ describe("GithubProvider.webhookToJobs", () => {
 			if (job.kind !== "pull-request-event") return assert.fail("expected a pull-request job")
 			assert.strictEqual(job.body, "Fixes maple-issue:abc")
 			assert.strictEqual(job.title, "Fix the checkout crash")
+		}).pipe(Effect.provide(providerLayer())),
+	)
+
+	it.effect("carries the head and base commits the review runs against", () =>
+		Effect.gen(function* () {
+			const provider = yield* GithubProvider
+			const body = pullRequestBody({
+				action: "ready_for_review",
+				pull_request: {
+					merged: false,
+					merged_at: null,
+					draft: false,
+					head: { sha: SHA.toUpperCase(), ref: "feat/x", repo: { full_name: "fork/repo" } },
+					base: { sha: "not a sha", ref: "main" },
+				},
+			})
+			const jobs = yield* provider.webhookToJobs({
+				headers: { "x-github-event": "pull_request", "x-hub-signature-256": sign(body) },
+				rawBody: body,
+			})
+			const job = jobs[0]!
+			if (job.kind !== "pull-request-event") return assert.fail("expected a pull-request job")
+			assert.strictEqual(job.action, "ready_for_review")
+			// Normalized to lowercase by the brand; a malformed base is dropped, not fatal.
+			assert.strictEqual(job.headSha, SHA)
+			assert.strictEqual(job.baseSha, undefined)
+			assert.strictEqual(job.headRef, "feat/x")
+			assert.strictEqual(job.baseRef, "main")
+			assert.strictEqual(job.draft, false)
+			assert.strictEqual(job.headRepoFullName, "fork/repo")
 		}).pipe(Effect.provide(providerLayer())),
 	)
 

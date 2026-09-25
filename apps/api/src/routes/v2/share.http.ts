@@ -21,7 +21,7 @@
 import { HttpApiBuilder } from "effect/unstable/httpapi"
 import { HttpServerRequest } from "effect/unstable/http"
 import {
-	AlertChartResponse,
+	ChartTimeseries,
 	AlertRuleId,
 	OrgId,
 	SHARE_NOT_FOUND_MESSAGE,
@@ -38,7 +38,9 @@ import {
 } from "@maple/domain/http"
 import { MapleApiV2 } from "@maple/domain/http/v2"
 import { MAX_LIST_RANGE_SECONDS, MAX_QUERY_RANGE_SECONDS } from "@maple/query-engine"
-import { hashShareToken, shareOgId, verifyAlertChartId, verifyShareOgId } from "@maple/db"
+import { hashShareToken, shareOgId, verifyAlertChartId, verifyChatChartId, verifyShareOgId } from "@maple/db"
+import { chatSessionStub } from "@maple/domain/chat-session-stub"
+import { WorkerEnvironment } from "@maple/infra/worker-runtime"
 import { redactForShare } from "@maple/widgets/dashboard"
 import { Effect, Option, Redacted, Schema } from "effect"
 import { Env } from "@maple/backend/platform/Env"
@@ -50,6 +52,8 @@ import {
 	shareTokenRateLimitKey,
 } from "@maple/backend/services/auth/ApiV2RateLimiter"
 import { loadChartSeries } from "@maple/backend/services/alerts/alert-chart-series"
+import { chatChartFrom, chatChartSession } from "@maple/backend/services/chat/chat-chart"
+import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import { systemTenant } from "@maple/backend/services/alerts/system-tenant"
 import { WarehouseQueryService } from "@maple/backend/services/warehouse/WarehouseQueryService"
 import { DashboardPersistenceService } from "@maple/backend/services/dashboards/DashboardPersistenceService"
@@ -117,6 +121,28 @@ export const HttpV2SharePublicLive = HttpApiBuilder.group(MapleApiV2, "sharePubl
 		 */
 		const enforceOgRateLimit = Effect.fn("share.ogRateLimit")(function* (shareKey: string) {
 			const outcome = yield* rateLimiter.check(shareOgRateLimitKey(shareKey.slice(0, 24)))
+			if (outcome === "limited") {
+				return yield* Effect.fail(
+					new ShareRateLimitedError({
+						message: "This shared dashboard is receiving too many requests. Try again shortly.",
+					}),
+				)
+			}
+		})
+
+		/**
+		 * The bucket a signed chart id falls in: its **signature**, not its head.
+		 *
+		 * A chart id is `<base64url payload>.<signature>` and every payload starts
+		 * with the org, so the first 24 characters of two charts in one org are the
+		 * same string. Keying on those put every chart image an org had posted into
+		 * one bucket — and, because this runs before verification, let anyone who
+		 * knew an org id fill that bucket with ids that never verify. The signature
+		 * is a digest of the whole payload, so it differs from the first character.
+		 */
+		const enforceChartRateLimit = Effect.fn("share.chartRateLimit")(function* (chartId: string) {
+			const signature = chartId.slice(chartId.indexOf(".") + 1)
+			const outcome = yield* rateLimiter.check(shareOgRateLimitKey(signature.slice(0, 24)))
 			if (outcome === "limited") {
 				return yield* Effect.fail(
 					new ShareRateLimitedError({
@@ -418,13 +444,55 @@ export const HttpV2SharePublicLive = HttpApiBuilder.group(MapleApiV2, "sharePubl
 					return new ShareOgCardResponse(org === undefined ? described : { ...described, org })
 				}),
 			)
+			.handle("chatChart", ({ payload }) =>
+				Effect.gen(function* () {
+					const hmacKey = yield* requireHmacKey
+					// Keyed on the id as presented, before verification, for the same
+					// reason as `ogCard`: otherwise the cheap way to hammer this is to
+					// send ids that never reach a bucket.
+					yield* enforceChartRateLimit(payload.chartId)
+
+					const claims = verifyChatChartId(payload.chartId, hmacKey)
+					if (claims === undefined) return yield* notFound
+
+					// The id's org and its session id's org have to agree before this
+					// reaches for a conversation at all — `chatChartSession` is what
+					// hands back the id to address, so the check cannot be stepped past.
+					const sessionId = chatChartSession(claims)
+					if (sessionId === null) return yield* notFound
+
+					// The conversation's own Durable Object, bound cross-script. No
+					// binding — an `alchemy dev` stack without the ai Worker — reads as
+					// no such chart, like every other reason this can fail.
+					const workerEnv = yield* Effect.serviceOption(WorkerEnvironment)
+					if (Option.isNone(workerEnv)) return yield* notFound
+					const stub = chatSessionStub(workerEnv.value, sessionId)
+					if (stub === undefined) return yield* notFound
+
+					// The uniform not-found is the answer, not the diagnosis: a cross-script
+					// binding error and an evicted isolate are operator problems, and
+					// answering both with a silent 404 would leave nothing to find them by.
+					const messages = yield* Effect.tryPromise(() => stub.history()).pipe(
+						Effect.catchCause((cause) =>
+							Effect.logWarning("Chat chart transcript unavailable").pipe(
+								Effect.annotateLogs({ cause: summarizeCause(cause) }),
+								Effect.andThen(notFound),
+							),
+						),
+					)
+					const chart = chatChartFrom(messages, claims)
+					if (chart === null) return yield* notFound
+
+					return chart
+				}),
+			)
 			.handle("alertChart", ({ payload }) =>
 				Effect.gen(function* () {
 					const hmacKey = yield* requireHmacKey
 					// Keyed on the id as presented, before verification, for the same
 					// reason as `ogCard`: otherwise the cheap way to hammer this is to
 					// send ids that never reach a bucket.
-					yield* enforceOgRateLimit(payload.chartId)
+					yield* enforceChartRateLimit(payload.chartId)
 
 					const claims = verifyAlertChartId(payload.chartId, hmacKey)
 					if (claims === undefined) return yield* notFound
@@ -458,11 +526,15 @@ export const HttpV2SharePublicLive = HttpApiBuilder.group(MapleApiV2, "sharePubl
 					// picture to draw, and the uniform not-found is the honest reply.
 					if (series === null) return yield* notFound
 
-					return new AlertChartResponse({
+					// One series, because that is what a rule measures. The card puts
+					// its latest value in the header rather than drawing a legend for
+					// a chart with nothing to tell apart.
+					const points = series.points.map((point) => [point[0], point[1]] as const)
+					return new ChartTimeseries({
+						kind: "area",
 						title: claims.title,
 						unit: claims.unit,
-						kind: "area",
-						points: series.points.map((point) => [point[0], point[1]] as const),
+						series: [{ name: claims.title, points }],
 						threshold: claims.threshold,
 						breachSide: claims.breachSide,
 					})

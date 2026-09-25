@@ -11,7 +11,7 @@ import { ListWidget } from "@/components/dashboard-builder/widgets/list-widget"
 import { listPresets } from "@/components/dashboard-builder/widgets/widget-definitions"
 import type { WidgetTypeDefinition } from "@/components/dashboard-builder/widgets/widget-type-registry"
 import { createQueryDraft, type QueryBuilderQueryDraft } from "@maple/query-engine/query-builder"
-import { buildListEndpointParams, parsePositiveNumber } from "@/lib/query-builder/widget-builder-shared"
+import { buildListLogsParams, parsePositiveNumber } from "@/lib/query-builder/widget-builder-shared"
 import { rowsPresetPreview } from "@/components/dashboard-builder/widgets/types/preset-preview"
 
 /**
@@ -90,10 +90,7 @@ export const listWidgetType: WidgetTypeDefinition = {
 
 		// Logs without rich filtering fall back to the simple list_logs endpoint.
 		if (state.listDataSource === "logs") {
-			return makeRouteDataSource(
-				"list_logs",
-				buildListEndpointParams(state.listDataSource, state.listWhereClause, limit),
-			)
+			return makeRouteDataSource("list_logs", buildListLogsParams(state.listWhereClause, limit).params)
 		}
 
 		// Traces and product events go through the query engine, which supports

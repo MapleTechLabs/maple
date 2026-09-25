@@ -1,37 +1,49 @@
-import {
-	McpQueryError,
-	optionalBooleanParam,
-	optionalNumberParam,
-	optionalStringParam,
-	requiredStringParam,
-	type McpToolRegistrar,
-} from "./types"
-import { Effect, Match, Option, Schema } from "effect"
-import { createDualContent } from "../lib/structured-output"
+import { McpInvalidInputError, type McpToolRegistrar } from "./types"
+import { Effect, Schema } from "effect"
+import { CreateAlertRuleOutput } from "@maple/domain/mcp-outputs"
 import { toMcpHttpError } from "../lib/map-http-error"
 import { CurrentMcpTenant } from "../lib/query-warehouse"
 import { AlertRulesService } from "@maple/backend/services/alerts/AlertRulesService"
-import { AlertRuleUpsertRequest } from "@maple/domain/http"
+import {
+	AlertRuleUpsertRequest,
+	QueryBuilderQueryDraftSchema,
+	type AlertComparator,
+	type AlertSignalType,
+} from "@maple/domain/http"
+import {
+	ALERT_COMPARATORS,
+	ALERT_REDUCERS,
+	ALERT_SEVERITIES,
+	ALERT_SIGNAL_TYPES,
+	renderRuleWrite,
+	ruleWriteInputErrors,
+	toAlertRuleRow,
+} from "../lib/alert-rules"
+import * as P from "../lib/params"
 
 const decodeAlertRuleRequest = Schema.decodeUnknownEffect(AlertRuleUpsertRequest)
-const decodeJsonValue = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Unknown))
-
-const splitCsv = (value: string): string[] =>
-	value
-		.split(",")
-		.map((entry) => entry.trim())
-		.filter((entry) => entry.length > 0)
 
 // Template definitions
 
 interface AlertTemplate {
-	signalType: string
-	comparator: string
-	defaultThreshold: number
-	defaults: Record<string, unknown>
+	readonly signalType: AlertSignalType
+	readonly comparator: AlertComparator
+	readonly defaultThreshold: number
+	readonly groupBy?: ReadonlyArray<string>
+	readonly apdexThresholdMs?: number
 }
 
-const ALERT_TEMPLATES: Record<string, AlertTemplate> = {
+const TEMPLATE_NAMES = [
+	"high_error_rate",
+	"slow_p95",
+	"slow_p99",
+	"low_apdex",
+	"throughput_drop",
+	"custom",
+] as const
+type TemplateName = Exclude<(typeof TEMPLATE_NAMES)[number], "custom">
+
+const ALERT_TEMPLATES = {
 	high_error_rate: {
 		signalType: "error_rate",
 		comparator: "gt",
@@ -39,345 +51,251 @@ const ALERT_TEMPLATES: Record<string, AlertTemplate> = {
 		// Group per service by default. Ungrouped, the rule evaluates one org-wide
 		// ratio whose denominator is every root span in the org — a service can be
 		// failing outright and still not move a 5% threshold.
-		defaults: { groupBy: ["service.name"] },
+		groupBy: ["service.name"],
 	},
-	slow_p95: {
-		signalType: "p95_latency",
-		comparator: "gt",
-		defaultThreshold: 1000,
-		defaults: {},
-	},
-	slow_p99: {
-		signalType: "p99_latency",
-		comparator: "gt",
-		defaultThreshold: 2000,
-		defaults: {},
-	},
-	low_apdex: {
-		signalType: "apdex",
-		comparator: "lt",
-		defaultThreshold: 0.8,
-		defaults: { apdexThresholdMs: 500 },
-	},
-	throughput_drop: {
-		signalType: "throughput",
-		comparator: "lt",
-		defaultThreshold: 100,
-		defaults: {},
-	},
-} satisfies Record<string, AlertTemplate>
+	slow_p95: { signalType: "p95_latency", comparator: "gt", defaultThreshold: 1000 },
+	slow_p99: { signalType: "p99_latency", comparator: "gt", defaultThreshold: 2000 },
+	low_apdex: { signalType: "apdex", comparator: "lt", defaultThreshold: 0.8, apdexThresholdMs: 500 },
+	throughput_drop: { signalType: "throughput", comparator: "lt", defaultThreshold: 100 },
+} satisfies Record<TemplateName, AlertTemplate>
 
-interface CreateAlertRuleParams {
-	name: string
-	severity?: string
-	signal_type?: string
-	comparator?: string
-	threshold?: number
-	window_minutes?: number
-	destination_ids: string
-	template?: string
-	service_names?: string
-	environments?: string
-	enabled?: boolean
-	group_by?: string
-	minimum_sample_count?: number
-	consecutive_breaches?: number
-	consecutive_healthy?: number
-	renotify_interval_minutes?: number
-	apdex_threshold_ms?: number
-	query_builder_draft?: string
-	raw_query_sql?: string
-	raw_query_reducer?: string
-	notification_title?: string
-	notification_body?: string
-}
+const Parameters = Schema.Struct({
+	name: P.text("Rule name"),
+	destination_ids: P.list(
+		"Destination IDs to notify (use list_alert_destinations to find IDs). Pass an empty list for none.",
+	),
+	template: P.optionalOneOf(
+		TEMPLATE_NAMES,
+		"Preset for signal_type, comparator and threshold; signal_type and comparator you pass are ignored, threshold overrides. " +
+			"high_error_rate: error_rate > 0.05, grouped by service.name unless services is set. slow_p95: p95_latency > 1000 ms. slow_p99: p99_latency > 2000 ms. " +
+			"low_apdex: apdex < 0.8 with apdex_threshold_ms 500. throughput_drop: throughput < 100 rpm. " +
+			"Omit (or pass custom) to set the three yourself.",
+	),
+	severity: P.optionalOneOf(ALERT_SEVERITIES, "Alert severity (default: warning)"),
+	threshold: P.optionalNumber(
+		"The value compared against. Units: error_rate and apdex are 0-1 ratios, latency is milliseconds, throughput is requests per minute. Overrides the template's.",
+	),
+	window_minutes: P.optionalNumber("Evaluation window in minutes (default: 5)"),
+	services: P.optionalList("Service names to scope the alert to"),
+	environments: P.optionalList(
+		"Deployment environments to scope the alert to (e.g. 'production'). Omit for all environments. Ignored for builder_query / raw_query, which filter inside their own query.",
+	),
+	enabled: P.optionalFlag("Whether the rule evaluates (default true)"),
+	// Custom-mode params (used when template is 'custom' or omitted)
+	signal_type: P.optionalOneOf(
+		ALERT_SIGNAL_TYPES,
+		"What the rule measures. builder_query takes query_builder_draft, raw_query takes raw_query_sql. " +
+			// Load-bearing caveat, not filler: without it an agent will happily create a
+			// rule that can never fire. Compressed, not dropped.
+			"All other signals are computed over ROOT spans only: a service that fails on child spans but returns success from its entry point " +
+			"(cron jobs, workers; audit_setup STAT-04 lists them) reads healthy at any threshold. Use raw_query there or rely on error-issue notifications.",
+	),
+	comparator: P.optionalOneOf(
+		ALERT_COMPARATORS,
+		"How the observed value is compared with threshold (breach when `value <comparator> threshold`). Ignored when a template is set.",
+	),
+	group_by: P.optionalList(
+		"Evaluate one value per group. Built-in tokens: service.name, span.name, status.code, http.method, severity; attribute keys as attr.<key> (e.g. attr.http.route).",
+	),
+	minimum_sample_count: P.optionalNumber("Minimum sample count before evaluating (default: 0)"),
+	consecutive_breaches: P.optionalNumber("Consecutive breaches before alerting (default: 1)"),
+	consecutive_healthy: P.optionalNumber("Consecutive healthy evaluations before resolving (default: 1)"),
+	renotify_interval_minutes: P.optionalNumber("Re-notification interval in minutes (default: 60)"),
+	apdex_threshold_ms: P.optionalNumber(
+		"Response time counted as satisfactory, in ms. Required for signal_type=apdex.",
+	),
+	query_builder_draft: P.optionalJson(
+		QueryBuilderQueryDraftSchema,
+		"The query to evaluate, in the query-builder draft shape dashboard custom-query widgets use ({ id, name, dataSource, aggregation, whereClause, groupBy, ... }). Required for signal_type=builder_query.",
+	),
+	raw_query_sql: P.optionalText(
+		"ClickHouse SQL returning a numeric `value` column and optional `group` / `samples` columns. Must reference $__orgFilter and $__timeFilter(col); $__startTime, $__endTime and $__interval_s are also available. Required for signal_type=raw_query.",
+	),
+	raw_query_reducer: P.optionalOneOf(
+		ALERT_REDUCERS,
+		"How several raw_query rows collapse into one value (default identity: the single row's value).",
+	),
+	notification_title: P.optionalText(
+		"Custom notification title template. Supports {{ variable }} substitution, e.g. " +
+			'"{{ event.emoji }} {{ rule.name }}: {{ event.label }}". Omit for the built-in format. ' +
+			"Variables: rule.name, severity, signal.label, comparator.label, threshold, value, observed.summary, group, window, links.app, links.chat.",
+	),
+	notification_body: P.optionalText(
+		"Custom notification body template (Markdown). Supports {{ variable }} substitution and " +
+			'{{#if key}}…{{/if}} blocks, e.g. "*Severity:* {{ severity }}\\n*Observed:* {{ observed.summary }}". Omit for the built-in format.',
+	),
+})
 
-function buildAlertRuleRequest(
-	params: CreateAlertRuleParams,
-): { request: Record<string, unknown> } | { error: string } {
-	const destinationIds = splitCsv(params.destination_ids)
-
-	// Resolve template or use raw params
-	let signalType = params.signal_type
-	let comparator = params.comparator
-	let threshold = params.threshold
-	let windowMinutes = params.window_minutes ?? 5
-	let templateDefaults: Record<string, unknown> = {}
-
-	if (params.template && params.template !== "custom") {
-		const tmpl = ALERT_TEMPLATES[params.template]
-		if (!tmpl) {
-			return {
-				error: `Unknown template "${params.template}". Available: ${Object.keys(ALERT_TEMPLATES).join(", ")}, custom`,
-			}
-		}
-		signalType = tmpl.signalType
-		comparator = tmpl.comparator
-		threshold = params.threshold ?? tmpl.defaultThreshold
-		templateDefaults = tmpl.defaults
-	}
-
-	if (!signalType)
-		return {
-			error: 'signal_type is required (or use a template).\n\nExample:\n  signal_type="error_rate" comparator="gt" threshold=0.05\n  OR template="high_error_rate"',
-		}
-	if (!comparator)
-		return {
-			error: 'comparator is required (or use a template). Values: gt (>), gte (>=), lt (<), lte (<=).\n\nExample:\n  comparator="gt" threshold=0.05',
-		}
-	if (threshold === undefined)
-		return {
-			error: "threshold is required (or use a template).\n\nExample:\n  threshold=0.05 (for 5% error rate)",
-		}
-
-	// Signal-type-specific validation. Each branch either rejects with an error
-	// or, for builder_query, parses the draft JSON. Non-special signal types
-	// (error_rate, p95_latency, …) fall through with no extra checks.
-	const signalValidation = Match.value(signalType).pipe(
-		Match.when("apdex", (): { error: string } | { draft?: unknown } => {
-			if (!params.apdex_threshold_ms && !templateDefaults.apdexThresholdMs) {
-				return {
-					error: 'signal_type=apdex requires apdex_threshold_ms (milliseconds defining satisfactory response time).\n\nExample:\n  signal_type="apdex" apdex_threshold_ms=500 comparator="lt" threshold=0.8',
-				}
-			}
-			return {}
+const invalid = (message: string, parameter: string, example?: string) =>
+	Effect.fail(
+		new McpInvalidInputError({
+			message,
+			parameter,
+			...(example === undefined ? undefined : { example }),
 		}),
-		Match.when("builder_query", (): { error: string } | { draft?: unknown } => {
-			if (!params.query_builder_draft) {
-				return {
-					error: 'signal_type=builder_query requires query_builder_draft: a JSON string of a query-builder draft (the same shape dashboard custom-query widgets use). Example draft: {"id":"a","name":"A","dataSource":"traces","aggregation":"error_rate","whereClause":"","groupBy":["none"]}',
-				}
-			}
-			const parsed = decodeJsonValue(params.query_builder_draft)
-			if (Option.isNone(parsed)) {
-				return { error: "query_builder_draft must be valid JSON" }
-			}
-			return { draft: parsed.value }
-		}),
-		Match.when("raw_query", (): { error: string } | { draft?: unknown } => {
-			if (!params.raw_query_sql) {
-				return {
-					error: "signal_type=raw_query requires raw_query_sql: ClickHouse SQL returning a numeric `value` column (optional `group`, `samples` columns). Must reference $__orgFilter and $__timeFilter(col); may also use $__startTime, $__endTime, and $__interval_s.",
-				}
-			}
-			if (!params.raw_query_sql.includes("$__orgFilter")) {
-				return { error: "raw_query_sql must reference $__orgFilter for org scoping" }
-			}
-			if (!params.raw_query_sql.includes("$__timeFilter(")) {
-				return { error: "raw_query_sql must reference $__timeFilter(...) to bound alert reads" }
-			}
-			return {}
-		}),
-		Match.orElse((): { error: string } | { draft?: unknown } => ({})),
 	)
 
-	if ("error" in signalValidation) {
-		return { error: signalValidation.error }
+/** The upsert request the params describe, before the domain schema checks it. */
+const buildAlertRuleRequest = Effect.fnUntraced(function* (params: typeof Parameters.Type) {
+	const template: AlertTemplate | undefined =
+		params.template === undefined || params.template === "custom"
+			? undefined
+			: ALERT_TEMPLATES[params.template]
+	const signalType = template?.signalType ?? params.signal_type
+	const comparator = template?.comparator ?? params.comparator
+	const threshold = params.threshold ?? template?.defaultThreshold
+
+	if (signalType === undefined) {
+		return yield* invalid(
+			"signal_type is required (or use a template).",
+			"signal_type",
+			'signal_type="error_rate" comparator="gt" threshold=0.05, or template="high_error_rate"',
+		)
+	}
+	if (comparator === undefined) {
+		return yield* invalid(
+			"comparator is required (or use a template). Values: gt (>), gte (>=), lt (<), lte (<=).",
+			"comparator",
+			'comparator="gt" threshold=0.05',
+		)
+	}
+	if (threshold === undefined) {
+		return yield* invalid(
+			"threshold is required (or use a template).",
+			"threshold",
+			"threshold=0.05 (for 5% error rate)",
+		)
 	}
 
-	const queryBuilderDraft = signalValidation.draft
+	const apdexThresholdMs = params.apdex_threshold_ms ?? template?.apdexThresholdMs
+	if (signalType === "apdex" && !apdexThresholdMs) {
+		return yield* invalid(
+			"signal_type=apdex requires apdex_threshold_ms (milliseconds defining satisfactory response time).",
+			"apdex_threshold_ms",
+			'signal_type="apdex" apdex_threshold_ms=500 comparator="lt" threshold=0.8',
+		)
+	}
+	if (signalType === "builder_query" && params.query_builder_draft === undefined) {
+		return yield* invalid(
+			"signal_type=builder_query requires query_builder_draft: a query-builder draft (the same shape dashboard custom-query widgets use).",
+			"query_builder_draft",
+			'{"id":"a","name":"A","dataSource":"traces","aggregation":"error_rate","whereClause":"","groupBy":["none"]}',
+		)
+	}
+	if (signalType === "raw_query") {
+		if (params.raw_query_sql === undefined) {
+			return yield* invalid(
+				"signal_type=raw_query requires raw_query_sql: ClickHouse SQL returning a numeric `value` column (optional `group`, `samples` columns). Must reference $__orgFilter and $__timeFilter(col); may also use $__startTime, $__endTime, and $__interval_s.",
+				"raw_query_sql",
+			)
+		}
+		if (!params.raw_query_sql.includes("$__orgFilter")) {
+			return yield* invalid(
+				"raw_query_sql must reference $__orgFilter for org scoping",
+				"raw_query_sql",
+			)
+		}
+		if (!params.raw_query_sql.includes("$__timeFilter(")) {
+			return yield* invalid(
+				"raw_query_sql must reference $__timeFilter(...) to bound alert reads",
+				"raw_query_sql",
+			)
+		}
+	}
 
-	const request: Record<string, unknown> = {
+	const services = params.services !== undefined && params.services.length > 0 ? params.services : undefined
+	const groupBy = params.group_by !== undefined && params.group_by.length > 0 ? params.group_by : undefined
+	// A template's groupBy is a default, not an assertion. Grouping and an explicit
+	// service scope are mutually exclusive, so an inherited groupBy must step aside
+	// for a caller-supplied service; an explicit group_by is left to be rejected on its own terms.
+	const effectiveGroupBy = groupBy ?? (services === undefined ? template?.groupBy : undefined)
+
+	return {
 		name: params.name,
 		severity: params.severity ?? "warning",
 		signalType,
 		comparator,
 		threshold,
-		windowMinutes,
-		destinationIds,
-		...templateDefaults,
-	} satisfies Record<string, unknown>
-
-	if (params.enabled !== undefined) request.enabled = params.enabled
-	if (params.service_names) request.serviceNames = splitCsv(params.service_names)
-	if (params.environments) request.environments = splitCsv(params.environments)
-	if (params.group_by) {
-		const dimensions = String(params.group_by)
-			.split(",")
-			.map((s) => s.trim())
-			.filter((s) => s.length > 0)
-		if (dimensions.length > 0) request.groupBy = dimensions
+		windowMinutes: params.window_minutes ?? 5,
+		destinationIds: params.destination_ids,
+		...(params.enabled === undefined ? undefined : { enabled: params.enabled }),
+		...(services === undefined ? undefined : { serviceNames: services }),
+		...(params.environments === undefined || params.environments.length === 0
+			? undefined
+			: { environments: params.environments }),
+		...(effectiveGroupBy === undefined ? undefined : { groupBy: effectiveGroupBy }),
+		...(params.minimum_sample_count === undefined
+			? undefined
+			: { minimumSampleCount: params.minimum_sample_count }),
+		...(params.consecutive_breaches === undefined
+			? undefined
+			: { consecutiveBreachesRequired: params.consecutive_breaches }),
+		...(params.consecutive_healthy === undefined
+			? undefined
+			: { consecutiveHealthyRequired: params.consecutive_healthy }),
+		...(params.renotify_interval_minutes === undefined
+			? undefined
+			: { renotifyIntervalMinutes: params.renotify_interval_minutes }),
+		...(apdexThresholdMs === undefined ? undefined : { apdexThresholdMs }),
+		...(params.query_builder_draft === undefined
+			? undefined
+			: { queryBuilderDraft: params.query_builder_draft }),
+		...(params.raw_query_sql === undefined ? undefined : { rawQuerySql: params.raw_query_sql }),
+		...(params.raw_query_reducer === undefined
+			? undefined
+			: { rawQueryReducer: params.raw_query_reducer }),
+		// {{ variable }} substitution; omit both for the built-in format.
+		...(params.notification_title === undefined && params.notification_body === undefined
+			? undefined
+			: {
+					notificationTemplate: {
+						...(params.notification_title === undefined
+							? undefined
+							: { title: params.notification_title }),
+						...(params.notification_body === undefined
+							? undefined
+							: { body: params.notification_body }),
+					},
+				}),
 	}
-	// A template's groupBy is a default, not an assertion. Grouping and an explicit
-	// service scope are mutually exclusive, so an inherited groupBy must step aside
-	// for a caller-supplied service — an explicit group_by is left alone to be
-	// rejected on its own terms.
-	if (params.service_names && !params.group_by) delete request.groupBy
-	if (params.minimum_sample_count !== undefined) request.minimumSampleCount = params.minimum_sample_count
-	if (params.consecutive_breaches !== undefined)
-		request.consecutiveBreachesRequired = params.consecutive_breaches
-	if (params.consecutive_healthy !== undefined)
-		request.consecutiveHealthyRequired = params.consecutive_healthy
-	if (params.renotify_interval_minutes !== undefined)
-		request.renotifyIntervalMinutes = params.renotify_interval_minutes
-
-	// Apdex-specific fields
-	if (params.apdex_threshold_ms !== undefined) request.apdexThresholdMs = params.apdex_threshold_ms
-
-	// Query-specific fields
-	if (queryBuilderDraft !== undefined) request.queryBuilderDraft = queryBuilderDraft
-	if (params.raw_query_sql) request.rawQuerySql = params.raw_query_sql
-	if (params.raw_query_reducer) request.rawQueryReducer = params.raw_query_reducer
-
-	// Notification message template ({{ variable }} substitution; omit for the
-	// built-in format). title + Markdown body.
-	const notificationTemplate: Record<string, string> = {}
-	if (params.notification_title) notificationTemplate.title = params.notification_title
-	if (params.notification_body) notificationTemplate.body = params.notification_body
-	if (Object.keys(notificationTemplate).length > 0) {
-		request.notificationTemplate = notificationTemplate
-	}
-
-	return { request }
-}
-
-const comparatorLabel: Record<string, string> = {
-	gt: ">",
-	gte: ">=",
-	lt: "<",
-	lte: "<=",
-} satisfies Record<string, string>
+})
 
 export function registerCreateAlertRuleTool(server: McpToolRegistrar) {
-	server.tool(
-		"create_alert_rule",
+	server.define({
+		name: "create_alert_rule",
 		// The template names live on the `template` parameter, with their thresholds;
 		// repeating them here cost tokens twice for one fact.
-		"Create an alert rule — from a `template` for common cases, or template='custom' for full control. " +
-			"Use list_alert_rules to find destination_ids.",
-		Schema.Struct({
-			name: requiredStringParam("Rule name"),
-			destination_ids: requiredStringParam(
-				"Comma-separated destination IDs to notify (use list_alert_rules to find IDs)",
-			),
-			template: optionalStringParam(
-				"Template to auto-fill signal_type, comparator, and threshold. " +
-					"high_error_rate: error_rate > 0.05 (5%). slow_p95: p95_latency > 1s. slow_p99: p99_latency > 2s. " +
-					"low_apdex: apdex < 0.8. throughput_drop: throughput < 100rpm. " +
-					"Use 'custom' for full control over signal_type/comparator/threshold. Default: custom.",
-			),
-			severity: optionalStringParam("Alert severity: warning or critical (default: warning)"),
-			threshold: optionalNumberParam(
-				"Threshold value (overrides template default). E.g. 0.05 for 5% error rate, 1000 for 1s latency",
-			),
-			window_minutes: optionalNumberParam("Evaluation window in minutes (default: 5)"),
-			service_names: optionalStringParam("Comma-separated service names to scope the alert to"),
-			environments: optionalStringParam(
-				"Comma-separated deployment environments to scope the alert to (e.g. 'production'). Omit for all environments. Ignored for builder_query / raw_query, which filter inside their own query.",
-			),
-			enabled: optionalBooleanParam("Whether the rule is enabled (default: true)"),
-			// Custom-mode params (used when template is 'custom' or omitted)
-			signal_type: optionalStringParam(
-				"Signal type (for custom): error_rate, p95_latency, p99_latency, apdex, throughput, builder_query, raw_query. Use builder_query with a metrics draft for custom metrics. " +
-					// Load-bearing caveat, not filler: without it an agent will happily create a
-					// rule that can never fire. Compressed, not dropped.
-					"NOTE: all except builder_query/raw_query are computed over ROOT spans only, so a service that fails on child spans but returns success from its entry point " +
-					"(common in cron jobs and workers — audit_setup STAT-04 lists them) reads as healthy at any threshold. Use raw_query there, or rely on error-issue notifications.",
-			),
-			comparator: optionalStringParam(
-				"Comparison operator (for custom): gt (>), gte (>=), lt (<), lte (<=)",
-			),
-			group_by: optionalStringParam(
-				"Comma-separated dimensions to evaluate the alert per-group. Built-in tokens: service.name, span.name, status.code, http.method, severity. Attribute keys (traces/metrics): attr.<key>. Examples: 'service.name', 'service.name,attr.http.route'.",
-			),
-			minimum_sample_count: optionalNumberParam("Minimum sample count before evaluating (default: 0)"),
-			consecutive_breaches: optionalNumberParam("Consecutive breaches before alerting (default: 1)"),
-			consecutive_healthy: optionalNumberParam(
-				"Consecutive healthy evaluations before resolving (default: 1)",
-			),
-			renotify_interval_minutes: optionalNumberParam(
-				"Re-notification interval in minutes (default: 60)",
-			),
-			apdex_threshold_ms: optionalNumberParam(
-				"Apdex threshold in milliseconds (required when signal_type=apdex)",
-			),
-			query_builder_draft: optionalStringParam(
-				"JSON string of a query-builder draft (required when signal_type=builder_query). Same shape as dashboard custom-query widgets: { id, name, dataSource, aggregation, whereClause, groupBy, ... }.",
-			),
-			raw_query_sql: optionalStringParam(
-				"ClickHouse SQL returning a numeric `value` column, optional `group`/`samples` columns (required when signal_type=raw_query). Must reference $__orgFilter and $__timeFilter(col); supports $__startTime, $__endTime, and $__interval_s.",
-			),
-			raw_query_reducer: optionalStringParam(
-				"How to collapse raw_query result rows into one value: identity, sum, avg, min, max (default: identity).",
-			),
-			notification_title: optionalStringParam(
-				"Custom notification title template. Supports {{ variable }} substitution, e.g. " +
-					'"{{ event.emoji }} {{ rule.name }} — {{ event.label }}". Omit for the built-in format. ' +
-					"Variables: rule.name, severity, signal.label, comparator.label, threshold, value, observed.summary, group, window, links.app, links.chat.",
-			),
-			notification_body: optionalStringParam(
-				"Custom notification body template (Markdown). Supports {{ variable }} substitution and " +
-					'{{#if key}}…{{/if}} blocks, e.g. "*Severity:* {{ severity }}\\n*Observed:* {{ observed.summary }}". Omit for the built-in format.',
-			),
-		}),
-		Effect.fn("McpTool.createAlertRule")(function* (params) {
-			const built = buildAlertRuleRequest(params)
-			if ("error" in built) {
-				return {
-					isError: true,
-					content: [{ type: "text" as const, text: built.error }],
-				}
-			}
-
-			const decoded = yield* decodeAlertRuleRequest(built.request).pipe(
+		description:
+			"Create an alert rule. Pick a `template` for the common cases; otherwise pass signal_type, comparator and threshold yourself. " +
+			"Use list_alert_destinations for destination_ids.",
+		parameters: Parameters,
+		aliases: { service_names: "services" },
+		output: CreateAlertRuleOutput,
+		hints: { readOnly: false, destructive: false, idempotent: false },
+		phrases: ["Creating an alert rule"],
+		handler: Effect.fn("McpTool.createAlertRule")(function* (params) {
+			const request = yield* buildAlertRuleRequest(params)
+			const decoded = yield* decodeAlertRuleRequest(request).pipe(
 				Effect.mapError(
-					(error) =>
-						new McpQueryError({
-							message: `Invalid alert rule: ${String(error)}`,
-							pipeName: "create_alert_rule",
-							cause: error,
-						}),
+					(error) => new McpInvalidInputError({ message: `Invalid alert rule: ${String(error)}` }),
 				),
 			)
 
 			const tenant = yield* CurrentMcpTenant
 			const alerts = yield* AlertRulesService
 
-			const rule = yield* alerts
-				.createRule(tenant.orgId, tenant.userId, tenant.roles, decoded)
-				.pipe(Effect.mapError(toMcpHttpError("create_alert_rule")))
-
-			const lines: string[] = [
-				`## Alert Rule Created`,
-				`ID: ${rule.id}`,
-				`Name: ${rule.name}`,
-				`Severity: ${rule.severity}`,
-				`Signal: ${rule.signalType}`,
-				`Condition: ${comparatorLabel[rule.comparator] ?? rule.comparator} ${rule.threshold}`,
-				`Window: ${rule.windowMinutes}m`,
-				`Enabled: ${rule.enabled ? "Yes" : "No"}`,
-				`Destinations: ${rule.destinationIds.length}`,
-			]
-
-			if (rule.serviceNames.length > 0) {
-				lines.splice(3, 0, `Service Names: ${rule.serviceNames.join(", ")}`)
-			}
-			if (rule.environments.length > 0) {
-				lines.push(`Environments: ${rule.environments.join(", ")}`)
-			}
-
-			return {
-				content: createDualContent(lines.join("\n"), {
-					tool: "create_alert_rule",
-					data: {
-						rule: {
-							id: rule.id,
-							name: rule.name,
-							enabled: rule.enabled,
-							severity: rule.severity,
-							serviceNames: [...rule.serviceNames],
-							environments: [...rule.environments],
-							signalType: rule.signalType,
-							comparator: rule.comparator,
-							threshold: rule.threshold,
-							windowMinutes: rule.windowMinutes,
-							destinationIds: [...rule.destinationIds],
-							createdAt: rule.createdAt,
-							updatedAt: rule.updatedAt,
-						},
-					},
+			const rule = yield* alerts.createRule(tenant.orgId, tenant.userId, tenant.roles, decoded).pipe(
+				Effect.catchTags(ruleWriteInputErrors),
+				Effect.catchTags({
+					"@maple/http/errors/AlertForbiddenError": (error) =>
+						Effect.fail(toMcpHttpError("create_alert_rule")(error)),
+					"@maple/http/errors/AlertPersistenceError": (error) =>
+						Effect.fail(toMcpHttpError("create_alert_rule")(error)),
 				}),
-			}
+			)
+
+			return { rule: toAlertRuleRow(rule) }
 		}),
-	)
+		render: (output) => renderRuleWrite("Alert Rule Created", output.rule),
+	})
 }

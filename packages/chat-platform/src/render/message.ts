@@ -8,23 +8,63 @@
  *
  * The parsers are `@maple/domain`'s, shared with the web transcript, so the two surfaces cannot
  * disagree about what counts as a chart or a card.
+ *
+ * What the two surfaces DO disagree about is how much of a turn to show. Web draws the whole
+ * interleaving — every tool call, and the prose the model wrote between them. A channel gets one
+ * line while the turn runs and the answer once it has finished; see {@link ChatRenderOptions}.
  */
 import { parseAnnotations, type AnnotationSegment } from "@maple/domain/chat-annotations"
-import { normalizeUnit, parseChartSpec, type ChartSpec } from "@maple/domain/chat-chart-spec"
+import {
+	chartFences,
+	hasOpenFence,
+	normalizeUnit,
+	parseChartSpec,
+	splitChartFences,
+	type ChartSpec,
+} from "@maple/domain/chat-chart-spec"
 import { delegatedAgentOf, type ChatMessage, type ChatToolCall } from "@maple/domain/chat-session"
 import { formatDuration, formatNumber } from "@maple/domain/format"
 import { encodeChatActionToken } from "../action-token"
-import type { ChatBlock, ChatEntityBlock, ChatRenderContext, ChatToolActivity } from "./blocks"
+import { approvalOutcome } from "./approval-outcome"
+import { type ChatBlock, type ChatEntityBlock, type ChatRenderContext, type ChatToolActivity } from "./blocks"
 
+/**
+ * @param running The turn is still going, so a status line stands in for the answer it has not
+ * reached. Default false renders the finished message, which is what every cold re-render — a
+ * settling edit, a `history()` replay — wants without having to say so.
+ */
 export const renderChatMessage = (
 	message: ChatMessage,
 	context: ChatRenderContext,
+	running = false,
 ): ReadonlyArray<ChatBlock> => {
 	const blocks: Array<ChatBlock> = []
-	let chartIndex = 0
 
-	for (const part of splitChartFences(message.text)) {
+	// The calls that ran. A proposed one has not, so it neither reports progress nor cuts the prose
+	// that explains it — it has a block of its own further down.
+	const calls = message.toolCalls.filter((call) => call.proposed !== true)
+
+	// The latest one only, and only while the turn runs. A reader in a channel wants to know the
+	// bot is still working, not to keep a list of everything it touched on the way to an answer
+	// that is now sitting right under it.
+	const latest = running ? calls[calls.length - 1] : undefined
+	if (latest !== undefined) blocks.push({ kind: "activity", tools: [toolActivity(latest)] })
+
+	const start = answerOffset(message.text, calls, running)
+	// Whatever renders a chart's image numbers every fence in the WHOLE message, so prose dropped
+	// ahead of the answer still counts towards the index of a chart inside it. A fence left open
+	// across the cut is counted by this scan too, exactly as the whole-message scan counts it.
+	let chartIndex = chartFences(message.text.slice(0, start)).length
+
+	for (const part of splitChartFences(visibleText(message.text, calls, start))) {
 		if (part.kind === "chart") {
+			// Counted before it is judged. The image endpoint numbers the fences it
+			// finds, not the ones that turned out to be charts, so skipping the index
+			// of a malformed one here would put every later chart under the wrong plot.
+			const index = chartIndex++
+			// A fence still arriving is held back entirely, so a half-written chart shows
+			// as nothing until the next edit rather than as JSON.
+			if (!part.closed) continue
 			const spec = parseChartSpec(part.value)
 			// Model output that is not a chart after all stays visible as the fence it was, so a bad
 			// payload is debuggable rather than silently missing — the same call web makes.
@@ -32,7 +72,6 @@ export const renderChatMessage = (
 				pushProse(blocks, `${CHART_FENCE}\n${part.value}\n${FENCE}`)
 				continue
 			}
-			const index = chartIndex++
 			blocks.push({
 				kind: "chart",
 				spec,
@@ -54,16 +93,18 @@ export const renderChatMessage = (
 		}
 	}
 
-	const activity = message.toolCalls.filter((call) => call.proposed !== true).map(toolActivity)
-	if (activity.length > 0) blocks.push({ kind: "activity", tools: activity })
-
 	for (const call of message.toolCalls) {
 		if (call.proposed !== true) continue
 		blocks.push({
 			kind: "approval",
 			toolName: call.name,
 			summary: summarizeToolInput(call.input),
-			token: encodeChatActionToken(context.sessionId, call.id),
+			token: encodeChatActionToken(call.id),
+			// `output` is optional on the wire, so its PRESENCE is what settles a proposal: a decision
+			// that produced no text is still a decision, and reading the value would call it open.
+			outcome: !("output" in call)
+				? null
+				: approvalOutcome(call.output, call.isError === true, context),
 		})
 	}
 
@@ -76,49 +117,6 @@ const FENCE = "```"
 const pushProse = (blocks: Array<ChatBlock>, markdown: string): void => {
 	const trimmed = markdown.trim()
 	if (trimmed.length > 0) blocks.push({ kind: "prose", markdown: trimmed })
-}
-
-interface TextPart {
-	readonly kind: "text" | "chart"
-	readonly value: string
-}
-
-/**
- * Cut the ```chart fences out of a reply, keeping the order of what is left.
- *
- * Fences are numbered in order of appearance from zero, and that rule is shared, not local:
- * whatever renders a chart's image counts the same fences the same way, or a turn with two charts
- * shows each of them the other's plot.
- *
- * Line-based rather than a regular expression over the whole text: a fence is a line construct,
- * and the streaming case — an opener whose body has not finished arriving — has to be recognised
- * by "no closing line yet" rather than by a match that simply fails. Such a fence is held back
- * entirely, so a half-written chart shows as nothing until the next edit rather than as JSON.
- */
-const splitChartFences = (text: string): Array<TextPart> => {
-	const parts: Array<TextPart> = []
-	let prose: Array<string> = []
-	let chart: Array<string> | null = null
-
-	for (const line of text.split("\n")) {
-		if (chart === null) {
-			if (line.trim() === CHART_FENCE) {
-				parts.push({ kind: "text", value: prose.join("\n") })
-				prose = []
-				chart = []
-			} else prose.push(line)
-			continue
-		}
-		if (line.trim() === FENCE) {
-			parts.push({ kind: "chart", value: chart.join("\n") })
-			chart = null
-			continue
-		}
-		chart.push(line)
-	}
-
-	if (chart === null) parts.push({ kind: "text", value: prose.join("\n") })
-	return parts
 }
 
 /** What the plot would have shown, for a platform that has no image of it. */
@@ -202,11 +200,72 @@ const joinDetail = (parts: ReadonlyArray<string | null>): string | null => {
 	return present.length === 0 ? null : present.join(" · ")
 }
 
+/**
+ * The text from the cut on, with a blank line wherever a tool call interrupted the model.
+ *
+ * Usually one segment, because the cut lands on the last call. Two paths can leave a boundary
+ * inside the range anyway: {@link answerOffset}'s fallback, when the final segment is empty, and a
+ * retry's stale offset, which can sit after a later call's. Model text carries no separator of its
+ * own, so concatenating across a boundary runs two sentences together — "…at 40%.Two signatures."
+ *
+ * A boundary inside an unclosed fence is not a place to break: splitting one would stop it parsing
+ * and put a chart's payload in the channel as prose, under an index that no longer matches the
+ * whole-message numbering the image endpoint uses.
+ */
+const visibleText = (text: string, calls: ReadonlyArray<ChatToolCall>, start: number): string => {
+	const bounds = [...new Set(calls.map((call) => call.textOffset ?? text.length))]
+		.filter((at) => at > start && at < text.length)
+		.sort((left, right) => left - right)
+	const segments: Array<string> = []
+	let segment = ""
+	let from = start
+	for (const at of [...bounds, text.length]) {
+		segment += text.slice(from, at)
+		from = at
+		if (hasOpenFence(segment)) continue
+		segments.push(segment.trim())
+		segment = ""
+	}
+	segments.push(segment.trim())
+	return segments.filter((piece) => piece.length > 0).join("\n\n")
+}
+
+/**
+ * Where the prose worth showing starts.
+ *
+ * A turn's text is cut into segments by its tool calls' `textOffset`s, and every segment before
+ * the last call is the model talking its way towards an answer. Web re-interleaves all of it,
+ * which is what a transcript is for; a channel shows one segment, because the rest reads as a
+ * colleague thinking out loud between other people's messages.
+ *
+ * Calls are read in the order they were made, never sorted by offset: a `turn-retry` can leave a
+ * retracted attempt's call holding an offset past the end of the text it took back, and the answer
+ * belongs after the call the model actually made last rather than after that stale one. `slice`
+ * clamps, so such an offset simply cuts nothing. A call recorded before offsets existed defaults
+ * to the end of the text, as web does, so an old prose-then-calls turn still renders whole.
+ */
+const answerOffset = (text: string, calls: ReadonlyArray<ChatToolCall>, running: boolean): number => {
+	const offsets = calls.map((call) => call.textOffset ?? text.length)
+	// Still running: the segment after the last call so far, which may yet be the answer. The next
+	// call is what turns it into narration, and re-rendering is what retracts it.
+	if (running) return offsets[offsets.length - 1] ?? 0
+	// Finished: the last segment that says anything. Normally that is the one after the final call,
+	// but a turn that stopped without answering has nothing there, and the closest it came to an
+	// answer is the segment before.
+	for (let index = offsets.length - 1; index >= 0; index--) {
+		if (text.slice(offsets[index]).trim().length > 0) return offsets[index]
+	}
+	return 0
+}
+
+/** The phrase the session recorded, or the tool's name in words for a call that has none. */
+const toolLabel = (call: ChatToolCall): string => call.label ?? `Using ${call.name.replaceAll("_", " ")}`
+
 const toolActivity = (call: ChatToolCall): ChatToolActivity => {
 	const agent = delegatedAgentOf(call.name)
 	if (call.task !== undefined) {
 		return {
-			name: agent ?? call.name,
+			label: agent === undefined ? toolLabel(call) : `Delegating to ${agent}`,
 			status:
 				call.task.status === "running"
 					? "running"
@@ -219,7 +278,7 @@ const toolActivity = (call: ChatToolCall): ChatToolActivity => {
 	return {
 		// `output` is optional on the wire, so its PRESENCE is what settles a call — a tool that
 		// answered with nothing has an output, and reading the value would call it still running.
-		name: call.name,
+		label: toolLabel(call),
 		status: !("output" in call) ? "running" : call.isError === true ? "failed" : "done",
 		detail: null,
 	}

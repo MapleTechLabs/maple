@@ -10,7 +10,15 @@
  * a cross-script reference to it. Keeping the shape in one place is what makes
  * that reference structurally safe.
  */
-import type { ChatEvent, ChatEventInput, ChatMessage, ChatTurnTenantEncoded } from "./chat-session"
+import type {
+	ChatEvent,
+	ChatEventInput,
+	ChatMessage,
+	ChatProposalOutcome,
+	ChatProposalSettlement,
+	ChatTurnOrigin,
+	ChatTurnTenantEncoded,
+} from "./chat-session"
 
 /**
  * The `ChatSession` Durable Object's RPC surface, and how to reach it off a Worker env.
@@ -38,7 +46,35 @@ export interface ChatSessionStub {
 		readonly messageId: string
 		readonly text: string
 		readonly tenant: ChatTurnTenantEncoded
-	}) => Promise<{ cursor: number; messageId: string } | undefined>
+		/** Who is driving the turn, stated by whoever raised it. */
+		readonly origin: ChatTurnOrigin
+	}) => Promise<
+		| {
+				cursor: number
+				messageId: string
+				/**
+				 * The assistant message this turn writes, which is not the user message's id.
+				 *
+				 * Every event the turn emits carries it, so a caller that renders the turn itself — a
+				 * chat connector relaying it into a channel — needs it to tell this turn's events from
+				 * a replayed earlier one's. A caller that folds the whole transcript does not.
+				 */
+				turnMessageId: string
+		  }
+		| undefined
+	>
+	/**
+	 * Apply or decline a mutation the agent proposed, and record the outcome as that call's
+	 * `tool-result`.
+	 *
+	 * By reference: the caller names the call, and the session reads the tool's name and arguments
+	 * out of its own log. A caller that could name them would be a second way to run a mutating
+	 * tool, reachable by anyone who can reach this object.
+	 *
+	 * The object is the single writer, so the second click on the same control is answered
+	 * `"settled"` rather than racing the first one's execution.
+	 */
+	readonly settleProposal: (input: ChatProposalSettlement) => Promise<ChatProposalOutcome>
 	readonly holdsTurn: (messageId: string) => Promise<boolean>
 	readonly endTurn: (messageId: string) => Promise<void>
 	readonly abort: () => Promise<void>
@@ -47,6 +83,8 @@ export interface ChatSessionStub {
 export interface ChatSessionNamespace {
 	readonly idFromName: (name: string) => unknown
 	readonly get: (id: unknown) => ChatSessionStub
+	/** A namespace restricted to one jurisdiction; ids minted through it are stored only there. */
+	readonly jurisdiction?: (jurisdiction: "eu") => ChatSessionNamespace
 }
 
 export const isChatSessionNamespace = (value: unknown): value is ChatSessionNamespace =>
@@ -55,12 +93,23 @@ export const isChatSessionNamespace = (value: unknown): value is ChatSessionName
 	typeof (value as { get?: unknown }).get === "function" &&
 	typeof (value as { idFromName?: unknown }).idFromName === "function"
 
-/** Resolve the `ChatSession` binding (the Durable Object's alchemy name) off a worker env record, or `undefined` if it is missing. */
+/**
+ * Resolve the `ChatSession` binding (the Durable Object's alchemy name) off a worker env record,
+ * or `undefined` if it is missing.
+ *
+ * On the EU instance (`MAPLE_REGION=eu`, a value the stack derives and the environment cannot
+ * override) the object is addressed through the namespace's `eu` jurisdiction, so the session's
+ * transcript — spans, logs and the agent's reasoning over them — is stored only in EU data
+ * centres. Jurisdiction is a property of the id, so it has to be applied here, where ids are
+ * minted, and not on the binding.
+ */
 export const chatSessionStub = (
 	env: Record<string, unknown>,
 	sessionId: string,
 ): ChatSessionStub | undefined => {
-	const namespace = env.ChatSession
-	if (!isChatSessionNamespace(namespace)) return undefined
+	const bound = env.ChatSession
+	if (!isChatSessionNamespace(bound)) return undefined
+	const namespace =
+		env.MAPLE_REGION === "eu" && bound.jurisdiction !== undefined ? bound.jurisdiction("eu") : bound
 	return namespace.get(namespace.idFromName(sessionId))
 }

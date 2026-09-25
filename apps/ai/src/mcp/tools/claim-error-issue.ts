@@ -1,85 +1,91 @@
-import {
-	McpQueryError,
-	optionalNumberParam,
-	requiredStringParam,
-	validationError,
-	type McpToolRegistrar,
-} from "./types"
-import { Effect, Option, Schema } from "effect"
-import { createDualContent } from "../lib/structured-output"
+import { McpInvalidInputError, McpQueryError, type McpToolRegistrar } from "./types"
+import { Effect, Schema } from "effect"
+import { ClaimErrorIssueOutput } from "@maple/domain/mcp-outputs"
 import { CurrentMcpTenant } from "../lib/query-warehouse"
 import { resolveActorId } from "../lib/resolve-actor"
+import * as P from "../lib/params"
+import { doc } from "../lib/tool-doc"
+import {
+	issueIdParam,
+	issueNotFound,
+	leaseConflict,
+	persistenceFailed,
+	transitionRefused,
+} from "./error-issue-shared"
 import { ErrorsService } from "@maple/backend/services/errors/ErrorsService"
-import { ErrorIssueId } from "@maple/domain/http"
 
-const decodeIssueId = Schema.decodeUnknownOption(ErrorIssueId)
+const MIN_LEASE_SECONDS = 60
+const MAX_LEASE_SECONDS = 7200
 
 export function registerClaimErrorIssueTool(server: McpToolRegistrar) {
-	server.tool(
-		"claim_error_issue",
-		"Claim a lease on an error issue so other agents don't duplicate work. Issues in 'triage' or 'todo' auto-transition to 'in_progress' on claim. The lease (default 30 min) renews automatically whenever you act on the issue — transition it, comment, or set its severity — and is released when you move it to a terminal state or call release_error_issue.",
-		Schema.Struct({
-			issue_id: requiredStringParam("The error issue ID (from list_error_issues)"),
-			lease_duration_seconds: optionalNumberParam(
-				"Lease TTL in seconds (60..7200). Default: 1800 (30 min).",
+	server.define({
+		name: "claim_error_issue",
+		description:
+			"Take a lease on an error issue so other agents do not duplicate the work. Issues in `triage`, `regressed` or `todo` move to `in_progress` on claim. The lease renews whenever you act on the issue (transition it, comment, set its severity, propose a fix) and ends when the issue reaches `done` or `cancelled` or you call release_error_issue. Claiming an issue another agent holds fails.",
+		parameters: Schema.Struct({
+			issue_id: issueIdParam(),
+			lease_duration_seconds: P.optionalNumber(
+				`How long the lease lasts without activity, ${MIN_LEASE_SECONDS} to ${MAX_LEASE_SECONDS} seconds (default 1800)`,
 			),
 		}),
-		Effect.fn("McpTool.claimErrorIssue")(function* ({ issue_id, lease_duration_seconds }) {
+		output: ClaimErrorIssueOutput,
+		// Not idempotent: claiming again moves the lease expiry.
+		hints: { readOnly: false, destructive: false, idempotent: false },
+		phrases: ["Claiming an issue"],
+		handler: Effect.fn("McpTool.claimErrorIssue")(function* (params) {
 			const tenant = yield* CurrentMcpTenant
-			const decodedIssueId = decodeIssueId(issue_id)
-			if (Option.isNone(decodedIssueId)) {
-				return validationError(
-					`Invalid issue_id: '${issue_id}'. Must be a UUID from list_error_issues.`,
-				)
-			}
-			if (
-				lease_duration_seconds !== undefined &&
-				(lease_duration_seconds < 60 || lease_duration_seconds > 7200)
-			) {
-				return validationError(
-					`Invalid lease_duration_seconds: ${lease_duration_seconds}. Must be between 60 and 7200.`,
-				)
+			const seconds = params.lease_duration_seconds
+			if (seconds !== undefined && (seconds < MIN_LEASE_SECONDS || seconds > MAX_LEASE_SECONDS)) {
+				return yield* new McpInvalidInputError({
+					message: `Invalid lease_duration_seconds: ${seconds}. Must be between ${MIN_LEASE_SECONDS} and ${MAX_LEASE_SECONDS}.`,
+					parameter: "lease_duration_seconds",
+				})
 			}
 
 			const actorId = yield* resolveActorId(tenant)
 			const errors = yield* ErrorsService
-			const leaseMs = lease_duration_seconds !== undefined ? lease_duration_seconds * 1000 : undefined
-
-			const issue = yield* errors.claimIssue(tenant.orgId, actorId, decodedIssueId.value, leaseMs).pipe(
-				Effect.mapError(
-					(error) =>
-						new McpQueryError({
-							message: error.message,
-							pipeName: "claim_error_issue",
-							cause: error,
-						}),
-				),
-			)
-
-			const lines = [
-				`## Error issue claimed`,
-				`- ID: ${issue.id}`,
-				`- State: ${issue.workflowState}`,
-				`- Lease expires: ${issue.leaseExpiresAt ?? "—"}`,
-				`- Holder: ${issue.leaseHolder?.agentName ?? issue.leaseHolder?.userId ?? actorId}`,
-			]
+			const issue = yield* errors
+				.claimIssue(
+					tenant.orgId,
+					actorId,
+					params.issue_id,
+					seconds === undefined ? undefined : seconds * 1000,
+				)
+				.pipe(
+					Effect.catchTags({
+						"@maple/http/errors/ErrorIssueNotFoundError": issueNotFound,
+						"@maple/http/errors/ErrorIssueLeaseConflictError": leaseConflict,
+						"@maple/http/errors/ErrorIssueTransitionError": transitionRefused("issue_id"),
+						"@maple/http/errors/ErrorPersistenceError": persistenceFailed("claim_error_issue"),
+					}),
+				)
 
 			if (!issue.leaseHolder || !issue.leaseExpiresAt || !issue.claimedAt) {
-				return validationError("Claim succeeded but lease fields were not populated on the issue.")
+				return yield* new McpQueryError({
+					message: "Claim succeeded but lease fields were not populated on the issue.",
+					pipeName: "claim_error_issue",
+				})
 			}
 
 			return {
-				content: createDualContent(lines.join("\n"), {
-					tool: "claim_error_issue",
-					data: {
-						id: issue.id,
-						workflowState: issue.workflowState,
-						leaseHolderActorId: issue.leaseHolder.id,
-						leaseExpiresAt: issue.leaseExpiresAt,
-						claimedAt: issue.claimedAt,
-					},
-				}),
+				id: issue.id,
+				workflowState: issue.workflowState,
+				leaseHolderActorId: issue.leaseHolder.id,
+				leaseExpiresAt: issue.leaseExpiresAt,
+				claimedAt: issue.claimedAt,
+				holder: issue.leaseHolder.agentName ?? issue.leaseHolder.userId ?? actorId,
 			}
 		}),
-	)
+		render: (output) => ({
+			title: "Error issue claimed",
+			blocks: [
+				doc.fields([
+					["ID", output.id],
+					["State", output.workflowState],
+					["Lease expires", output.leaseExpiresAt],
+					["Holder", output.holder],
+				]),
+			],
+		}),
+	})
 }

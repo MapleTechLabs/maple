@@ -8,7 +8,7 @@ import {
 	formatObservedSummary,
 	formatSignalLabel,
 	formatWindow,
-	slackAttachmentColor,
+	alertAccentColor,
 	type TemplateRenderContext,
 } from "./alert-formatting"
 
@@ -19,7 +19,7 @@ export interface AlertEmailContent {
 
 /**
  * Render the alert notification email from the same pre-formatted values the
- * Slack/Discord payload builders use, so channels never drift. Custom
+ * chat/Discord payload builders use, so channels never drift. Custom
  * notification templates are not consulted for email — HTML email can't safely
  * render arbitrary user Markdown, so email always uses the built-in format.
  */
@@ -42,7 +42,7 @@ export const buildAlertEmailContent = (
 				group: displayGroupKey(context.groupKey) ?? "all",
 				observedSummary: formatObservedSummary(context),
 				window: formatWindow(context.windowMinutes),
-				accentColor: slackAttachmentColor(context.eventType, context.severity),
+				accentColor: alertAccentColor(context.eventType, context.severity),
 				linkUrl,
 				chatUrl,
 			})

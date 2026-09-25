@@ -18,7 +18,10 @@ import { expect } from "vitest"
 import {
 	DEFAULT_DECISION_MODEL,
 	layerDecisionModel,
+	DEFAULT_REVIEW_MODEL,
 	layerLlm,
+	resolveDecisionModel,
+	resolveReviewModel,
 	resolveTriageModel,
 	type LlmCallTags,
 	type LlmEnv,
@@ -190,6 +193,61 @@ describe("reasoning effort", () => {
 			expect(captured.body).not.toHaveProperty("reasoning")
 		}),
 	)
+})
+
+describe("resolveReviewModel", () => {
+	it.effect("sends the review model, not the triage one", () =>
+		Effect.gen(function* () {
+			const env = { ...openRouterEnv, MAPLE_TRIAGE_MODEL_OPENROUTER: "z-ai/glm-5.3-flash:nitro" }
+			const request = yield* captureRequest(env, tags, resolveReviewModel)
+			expect(request.body.model).toBe(DEFAULT_REVIEW_MODEL)
+			const overridden = yield* captureRequest(
+				{ ...env, MAPLE_REVIEW_MODEL_OPENROUTER: "anthropic/claude-sonnet-5" },
+				tags,
+				resolveReviewModel,
+			)
+			expect(overridden.body.model).toBe("anthropic/claude-sonnet-5")
+		}),
+	)
+
+	it("reads its window from the table, never the triage overrides", () => {
+		const model = resolveReviewModel({ ...openRouterEnv, MAPLE_TRIAGE_MODEL_CONTEXT: "64000" })
+		expect(model.limits.context).toBe(1_000_000)
+	})
+
+	it("reviews on the triage model when agents run on Workers AI", () => {
+		const env = { ...openRouterEnv, MAPLE_LLM_PROVIDER: "workers-ai" }
+		expect(resolveReviewModel(env).name).toBe(resolveTriageModel(env).name)
+	})
+})
+
+describe("EU in-region routing", () => {
+	const euEnv: LlmEnv = { ...openRouterEnv, MAPLE_REGION: "eu" }
+
+	it.effect("sends the EU instance's calls to OpenRouter's EU endpoint, on an EU-served model", () =>
+		Effect.gen(function* () {
+			const request = yield* captureRequest(euEnv, tags)
+			expect(request.url).toBe("https://eu.openrouter.ai/api/v1/chat/completions")
+			expect(request.body.model).toBe("openai/gpt-6-luna")
+			const review = yield* captureRequest(euEnv, tags, resolveReviewModel)
+			expect(review.body.model).toBe("openai/gpt-6-luna")
+		}),
+	)
+
+	it.effect("leaves the US instance on the global endpoint", () =>
+		Effect.gen(function* () {
+			const request = yield* captureRequest({ ...openRouterEnv, MAPLE_REGION: "us" }, tags)
+			expect(request.url).toBe("https://openrouter.ai/api/v1/chat/completions")
+		}),
+	)
+
+	it("asks no decision model in the EU unless one is configured", () => {
+		expect(resolveDecisionModel(euEnv)).toBeUndefined()
+		expect(resolveDecisionModel({ ...euEnv, MAPLE_DECISION_MODEL: "typesafe/jev-1.13" })).toBe(
+			"typesafe/jev-1.13",
+		)
+		expect(resolveDecisionModel(openRouterEnv)).toBe(DEFAULT_DECISION_MODEL)
+	})
 })
 
 describe("resolveTriageModel — context limits", () => {
@@ -617,7 +675,8 @@ describe("layerDecisionModel — Jev over OpenRouter", () => {
 					criteria: { billing: "Charges and refunds", technical: "Bugs and outages" },
 				},
 			})
-		}))
+		}),
+	)
 
 	it.live("carries the same app attribution as a model call", () =>
 		Effect.gen(function* () {
@@ -625,7 +684,8 @@ describe("layerDecisionModel — Jev over OpenRouter", () => {
 
 			assert.strictEqual(captured.headers["http-referer"], "https://maple.dev")
 			assert.strictEqual(captured.headers["x-title"], "Maple")
-		}))
+		}),
+	)
 
 	it.live("takes the model id from the environment", () =>
 		Effect.gen(function* () {
@@ -635,5 +695,6 @@ describe("layerDecisionModel — Jev over OpenRouter", () => {
 			})
 
 			assert.strictEqual(captured.body.model, "typesafe/jev-1.13")
-		}))
+		}),
+	)
 })

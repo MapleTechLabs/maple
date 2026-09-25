@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import {
+	adoptReplayDecision,
+	claimReplaySample,
 	getSession,
 	getSessionId,
 	isNewVisitorSession,
@@ -8,6 +10,9 @@ import {
 	nextMetaVersion,
 	onSessionRotate,
 	peekSession,
+	resetSessionStorageStateForTests,
+	resetTabLeaseForTests,
+	resolveBillable,
 } from "./session"
 import { resetVisitorCacheForTests } from "../identity/visitor"
 
@@ -15,11 +20,23 @@ import { resetVisitorCacheForTests } from "../identity/visitor"
 // rotation logic can be exercised under Node with a controllable clock.
 class FakeStorage {
 	private store = new Map<string, string>()
+	/** Reads keep working while writes throw: the quota-exhaustion shape. */
+	writesThrow = false
 	getItem(key: string): string | null {
 		return this.store.has(key) ? this.store.get(key)! : null
 	}
 	setItem(key: string, value: string): void {
+		if (this.writesThrow) throw new DOMException("quota", "QuotaExceededError")
 		this.store.set(key, value)
+	}
+	removeItem(key: string): void {
+		this.store.delete(key)
+	}
+	key(index: number): string | null {
+		return [...this.store.keys()][index] ?? null
+	}
+	get length(): number {
+		return this.store.size
 	}
 	clear(): void {
 		this.store.clear()
@@ -36,6 +53,7 @@ beforeEach(() => {
 	vi.setSystemTime(new Date("2026-05-22T12:00:00Z"))
 	storage = new FakeStorage()
 	resetVisitorCacheForTests()
+	resetSessionStorageStateForTests()
 	vi.stubGlobal("window", {
 		sessionStorage: storage,
 		localStorage: new FakeStorage(),
@@ -358,5 +376,99 @@ describe("stored record validation", () => {
 		const session = getSession()
 		expect(session.id).toBe("sess-future")
 		expect(session).not.toHaveProperty("somethingFromTheFuture")
+	})
+})
+
+describe("duplicated tabs", () => {
+	const TAB_NONCE_KEY = "__MAPLE_TAB_NONCE__"
+	const owner = globalThis as Record<string, unknown>
+
+	afterEach(() => {
+		resetTabLeaseForTests()
+		delete owner[TAB_NONCE_KEY]
+	})
+
+	/** Another tab with a copy of this tab's sessionStorage and its own nonce. */
+	const becomeDuplicateTab = (): void => {
+		resetTabLeaseForTests()
+		owner[TAB_NONCE_KEY] = "other-tab"
+	}
+
+	it("starts its own session instead of sharing the copied one", () => {
+		const original = getSession()
+		nextChunkSeq()
+		becomeDuplicateTab()
+		const duplicate = getSession()
+		expect(duplicate.id).not.toBe(original.id)
+		expect(nextChunkSeq()).toBe(0)
+	})
+
+	it("keeps the session when the other tab's lease has aged out", () => {
+		const original = getSession()
+		vi.advanceTimersByTime(3 * MINUTE)
+		becomeDuplicateTab()
+		expect(getSession().id).toBe(original.id)
+	})
+
+	it("keeps the session for another SDK copy in the same tab", () => {
+		const original = getSession()
+		resetTabLeaseForTests()
+		expect(getSession().id).toBe(original.id)
+	})
+})
+
+describe("replay sampling", () => {
+	it("rolls once per session and keeps the answer", () => {
+		getSession()
+		expect(claimReplaySample(1)).toBe(true)
+		expect(claimReplaySample(0)).toBe(true)
+	})
+
+	it("lets a running page pin a rotated session to its mode", () => {
+		const session = getSession()
+		adoptReplayDecision(session.id, false)
+		expect(claimReplaySample(1)).toBe(false)
+		adoptReplayDecision(session.id, true)
+		expect(claimReplaySample(1)).toBe(false)
+	})
+})
+
+describe("quota exhaustion", () => {
+	it("keeps nextMetaVersion advancing when reads work but writes throw", () => {
+		// Pinned at 1, every heartbeat was billed as a new session.
+		getSession()
+		storage.writesThrow = true
+		expect([nextMetaVersion(), nextMetaVersion(), nextMetaVersion()]).toEqual([1, 2, 3])
+	})
+
+	it("hands control back to storage once writes recover", () => {
+		getSession()
+		storage.writesThrow = true
+		nextMetaVersion()
+		nextMetaVersion()
+		storage.writesThrow = false
+
+		expect(nextMetaVersion()).toBe(3)
+		expect(JSON.parse(storage.getItem(STORAGE_KEY)!).metaVersion).toBe(3)
+	})
+})
+
+describe("resolveBillable", () => {
+	it("claims once and reads the persisted verdict back after a reload", () => {
+		const { id } = getSession()
+		const claim = vi.fn(() => true)
+
+		expect(resolveBillable(id, claim)).toBe(true)
+		resetSessionStorageStateForTests()
+		expect(resolveBillable(id, claim)).toBe(true)
+		expect(claim).toHaveBeenCalledTimes(1)
+		expect(JSON.parse(storage.getItem(STORAGE_KEY)!).billable).toBe(true)
+	})
+
+	it("never claims for a session that is not the stored one", () => {
+		getSession()
+		const claim = vi.fn(() => true)
+		expect(resolveBillable("someone-else", claim)).toBe(false)
+		expect(claim).not.toHaveBeenCalled()
 	})
 })

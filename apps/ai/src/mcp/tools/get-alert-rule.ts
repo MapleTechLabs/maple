@@ -1,26 +1,25 @@
-import { requiredStringParam, type McpToolRegistrar } from "./types"
+import type { McpToolRegistrar } from "./types"
 import { toMcpHttpError } from "../lib/map-http-error"
-import { formatNextSteps } from "../lib/next-steps"
 import { Effect, Schema } from "effect"
-import { createDualContent } from "../lib/structured-output"
+import { GetAlertRuleOutput } from "@maple/domain/mcp-outputs"
 import { CurrentMcpTenant } from "../lib/query-warehouse"
 import { AlertRulesService } from "@maple/backend/services/alerts/AlertRulesService"
-
-const comparatorLabel: Record<string, string> = {
-	gt: ">",
-	gte: ">=",
-	lt: "<",
-	lte: "<=",
-} satisfies Record<string, string>
+import { formatCondition, ruleNotFound, toAlertRuleRow } from "../lib/alert-rules"
+import * as P from "../lib/params"
+import { doc, type DocBlock } from "../lib/tool-doc"
 
 export function registerGetAlertRuleTool(server: McpToolRegistrar) {
-	server.tool(
-		"get_alert_rule",
-		"Get full configuration details of a specific alert rule including thresholds, service filters, evaluation settings, and notification destinations. Use list_alert_rules to find rule IDs.",
-		Schema.Struct({
-			rule_id: requiredStringParam("Alert rule ID"),
+	server.define({
+		name: "get_alert_rule",
+		description:
+			"Get full configuration details of a specific alert rule including thresholds, service filters, evaluation settings, and notification destinations. Use list_alert_rules to find rule IDs.",
+		parameters: Schema.Struct({
+			rule_id: P.text("Alert rule ID"),
 		}),
-		Effect.fn("McpTool.getAlertRule")(function* ({ rule_id }) {
+		output: GetAlertRuleOutput,
+		hints: { readOnly: true },
+		phrases: ["Reading an alert rule"],
+		handler: Effect.fn("McpTool.getAlertRule")(function* (params) {
 			const tenant = yield* CurrentMcpTenant
 			const alerts = yield* AlertRulesService
 
@@ -28,146 +27,120 @@ export function registerGetAlertRuleTool(server: McpToolRegistrar) {
 				.listRules(tenant.orgId)
 				.pipe(Effect.mapError(toMcpHttpError("get_alert_rule")))
 
-			const rule = result.rules.find((r) => r.id === rule_id)
+			const rule = result.rules.find((r) => r.id === params.rule_id)
+			if (!rule) return yield* ruleNotFound(params.rule_id)
 
-			if (!rule) {
-				return {
-					isError: true,
-					content: [
-						{
-							type: "text" as const,
-							text: `Alert rule not found: ${rule_id}. Use list_alert_rules to find available rule IDs.`,
-						},
-					],
-				}
+			return {
+				rule: {
+					...toAlertRuleRow(rule),
+					excludeServiceNames: [...rule.excludeServiceNames],
+					groupBy: rule.groupBy ? [...rule.groupBy] : null,
+					minimumSampleCount: rule.minimumSampleCount,
+					consecutiveBreachesRequired: rule.consecutiveBreachesRequired,
+					consecutiveHealthyRequired: rule.consecutiveHealthyRequired,
+					renotifyIntervalMinutes: rule.renotifyIntervalMinutes,
+					apdexThresholdMs: rule.apdexThresholdMs,
+					queryBuilderDraft: rule.queryBuilderDraft,
+					rawQuerySql: rule.rawQuerySql,
+					rawQueryReducer: rule.rawQueryReducer,
+					thresholdUpper: rule.thresholdUpper,
+					notificationTitle: rule.notificationTemplate?.title ?? null,
+					notificationBody: rule.notificationTemplate?.body ?? null,
+					lastEvaluationError: rule.lastEvaluationError,
+					lastEvaluatedAt: rule.lastEvaluatedAt,
+				},
 			}
-
-			const lines: string[] = [
-				`## Alert Rule: ${rule.name}`,
-				`ID: ${rule.id}`,
-				`Status: ${rule.enabled ? "Enabled" : "Disabled"}`,
-				`Severity: ${rule.severity}`,
-				`Signal: ${rule.signalType}`,
-				`Condition: ${comparatorLabel[rule.comparator] ?? rule.comparator} ${rule.threshold}`,
-				`Window: ${rule.windowMinutes}m`,
-				``,
+		}),
+		render: ({ rule }) => {
+			const blocks: Array<DocBlock> = [
+				doc.fields([
+					["ID", rule.id],
+					["Status", rule.enabled ? "Enabled" : "Disabled"],
+					["Severity", rule.severity],
+					["Signal", rule.signalType],
+					["Condition", formatCondition(rule)],
+					["Window", `${rule.windowMinutes}m`],
+					["Last evaluated", rule.lastEvaluatedAt ?? undefined],
+					["Last evaluation error", rule.lastEvaluationError ?? undefined],
+				]),
+				doc.heading("Scope"),
+				doc.fields([
+					[
+						"Service Names",
+						rule.serviceNames.length > 0 ? rule.serviceNames.join(", ") : "All services",
+					],
+					[
+						"Exclude",
+						rule.excludeServiceNames.length > 0 ? rule.excludeServiceNames.join(", ") : undefined,
+					],
+					[
+						"Environments",
+						rule.environments.length > 0 ? rule.environments.join(", ") : "All environments",
+					],
+					[
+						"Group By",
+						rule.groupBy && rule.groupBy.length > 0 ? rule.groupBy.join(", ") : undefined,
+					],
+				]),
+				doc.heading("Evaluation"),
+				doc.fields([
+					["Minimum Sample Count", rule.minimumSampleCount],
+					["Consecutive Breaches Required", rule.consecutiveBreachesRequired],
+					["Consecutive Healthy Required", rule.consecutiveHealthyRequired],
+					["Renotify Interval", `${rule.renotifyIntervalMinutes}m`],
+				]),
 			]
 
-			// Scope
-			lines.push(`### Scope`)
-			if (rule.serviceNames.length > 0) {
-				lines.push(`Service Names: ${rule.serviceNames.join(", ")}`)
-			} else {
-				lines.push(`Service Names: All services`)
-			}
-			if (rule.excludeServiceNames.length > 0) {
-				lines.push(`Exclude: ${rule.excludeServiceNames.join(", ")}`)
-			}
-			lines.push(
-				rule.environments.length > 0
-					? `Environments: ${rule.environments.join(", ")}`
-					: `Environments: All environments`,
-			)
-			if (rule.groupBy && rule.groupBy.length > 0) {
-				lines.push(`Group By: ${rule.groupBy.join(", ")}`)
-			}
-			lines.push(``)
-
-			// Evaluation
-			lines.push(`### Evaluation`)
-			lines.push(`Minimum Sample Count: ${rule.minimumSampleCount}`)
-			lines.push(`Consecutive Breaches Required: ${rule.consecutiveBreachesRequired}`)
-			lines.push(`Consecutive Healthy Required: ${rule.consecutiveHealthyRequired}`)
-			lines.push(`Renotify Interval: ${rule.renotifyIntervalMinutes}m`)
-			lines.push(``)
-
-			// Signal-specific fields
 			if (rule.apdexThresholdMs) {
-				lines.push(`### Apdex Configuration`)
-				lines.push(`Apdex Threshold: ${rule.apdexThresholdMs}ms`)
-				lines.push(``)
+				blocks.push(
+					doc.heading("Apdex Configuration"),
+					doc.fields([["Apdex Threshold", `${rule.apdexThresholdMs}ms`]]),
+				)
 			}
 
 			if (rule.signalType === "builder_query" && rule.queryBuilderDraft) {
-				lines.push(`### Query Builder`)
-				lines.push(`Data Source: ${rule.queryBuilderDraft.dataSource}`)
-				lines.push(`Aggregation: ${rule.queryBuilderDraft.aggregation}`)
-				if (rule.queryBuilderDraft.whereClause) {
-					lines.push(`Where: ${rule.queryBuilderDraft.whereClause}`)
-				}
-				lines.push(``)
+				blocks.push(
+					doc.heading("Query Builder"),
+					doc.fields([
+						["Data Source", rule.queryBuilderDraft.dataSource],
+						["Aggregation", rule.queryBuilderDraft.aggregation],
+						["Where", rule.queryBuilderDraft.whereClause || undefined],
+					]),
+				)
 			}
 
 			if (rule.signalType === "raw_query" && rule.rawQuerySql) {
-				lines.push(`### Raw SQL Query`)
-				lines.push("```sql")
-				lines.push(rule.rawQuerySql)
-				lines.push("```")
-				if (rule.rawQueryReducer) lines.push(`Reducer: ${rule.rawQueryReducer}`)
-				lines.push(``)
+				blocks.push(doc.heading("Raw SQL Query"), doc.code("sql", rule.rawQuerySql))
+				if (rule.rawQueryReducer) blocks.push(doc.fields([["Reducer", rule.rawQueryReducer]]))
 			}
 
-			// Notifications
-			lines.push(`### Notifications`)
-			if (rule.destinationIds.length > 0) {
-				lines.push(`Destination IDs: ${rule.destinationIds.join(", ")}`)
-			} else {
-				lines.push(`No notification destinations configured.`)
-			}
-
-			// Message template
-			const template = rule.notificationTemplate
-			if (template && (template.title || template.body)) {
-				lines.push(``)
-				lines.push(`### Message Template`)
-				if (template.title) lines.push(`Title: ${template.title}`)
-				if (template.body) {
-					lines.push(`Body:`)
-					lines.push("```")
-					lines.push(template.body)
-					lines.push("```")
-				}
-			}
-
-			lines.push(
-				formatNextSteps([
-					"`list_alert_incidents` — see triggered alerts for this rule",
-					'`get_incident_timeline rule_id="<id>"` — inspect incident history for this rule',
-				]),
+			blocks.push(
+				doc.heading("Notifications"),
+				doc.text(
+					rule.destinationIds.length > 0
+						? `Destination IDs: ${rule.destinationIds.join(", ")}`
+						: "No notification destinations configured.",
+				),
 			)
 
-			return {
-				content: createDualContent(lines.join("\n"), {
-					tool: "get_alert_rule",
-					data: {
-						rule: {
-							id: rule.id,
-							name: rule.name,
-							enabled: rule.enabled,
-							severity: rule.severity,
-							serviceNames: [...rule.serviceNames],
-							excludeServiceNames: [...rule.excludeServiceNames],
-							environments: [...rule.environments],
-							groupBy: rule.groupBy ? [...rule.groupBy] : null,
-							signalType: rule.signalType,
-							comparator: rule.comparator,
-							threshold: rule.threshold,
-							windowMinutes: rule.windowMinutes,
-							minimumSampleCount: rule.minimumSampleCount,
-							consecutiveBreachesRequired: rule.consecutiveBreachesRequired,
-							consecutiveHealthyRequired: rule.consecutiveHealthyRequired,
-							renotifyIntervalMinutes: rule.renotifyIntervalMinutes,
-							apdexThresholdMs: rule.apdexThresholdMs,
-							queryBuilderDraft: rule.queryBuilderDraft,
-							rawQuerySql: rule.rawQuerySql,
-							rawQueryReducer: rule.rawQueryReducer,
-							destinationIds: [...rule.destinationIds],
-							createdAt: rule.createdAt,
-							updatedAt: rule.updatedAt,
-						},
-					},
-				}),
+			if (rule.notificationTitle || rule.notificationBody) {
+				blocks.push(doc.heading("Message Template"))
+				if (rule.notificationTitle) blocks.push(doc.fields([["Title", rule.notificationTitle]]))
+				if (rule.notificationBody) blocks.push(doc.text("Body:"), doc.code("", rule.notificationBody))
 			}
-		}),
-	)
+
+			return {
+				title: `Alert Rule: ${rule.name}`,
+				blocks,
+				next: [
+					doc.next(
+						"list_alert_checks",
+						{ rule_id: rule.id },
+						"recent evaluations: observed values and near-misses",
+					),
+					doc.next("get_incident_timeline", { rule_id: rule.id }, "incident history for this rule"),
+				],
+			}
+		},
+	})
 }

@@ -1,19 +1,10 @@
 import type { RegionName } from "@distilled.cloud/aws/Region"
 import type { MapleStage } from "../cloudflare/stage.ts"
+import { DEFAULT_MAPLE_REGION, type MapleRegion, regionSuffix } from "../region.ts"
 
-/**
- * Geographic instance a deployment belongs to.
- *
- * Orthogonal to `MapleStage`: stage is prd/pr/dev, region is which
- * geographic instance. A full EU instance is `region: "eu"` at every stage,
- * with its OWN Tinybird workspace, application database, and ingest fleet —
- * telemetry that lands in `eu` must never transit `us`, which is the whole
- * point of having one.
- *
- * `us` is deliberately the unsuffixed default so adding `eu` later renames
- * nothing (a rename destroys and recreates every resource).
- */
-export type MapleRegion = "us" | "eu"
+// The region itself lives in `../region.ts`, shared with the Cloudflare half;
+// re-exported here so existing `@maple/infra/aws` imports keep resolving.
+export * from "../region.ts"
 
 /**
  * The AWS regions Maple deploys into, as the literal union the AWS client
@@ -21,19 +12,6 @@ export type MapleRegion = "us" | "eu"
  * into an AWS `Region` override without a cast at the call site.
  */
 export type AwsRegionName = Extract<RegionName, "us-east-1" | "eu-central-1">
-
-export const DEFAULT_MAPLE_REGION: MapleRegion = "us"
-
-export function parseMapleRegion(value: string | undefined): MapleRegion {
-	const normalized = value?.trim().toLowerCase()
-	if (!normalized) {
-		return DEFAULT_MAPLE_REGION
-	}
-	if (normalized === "us" || normalized === "eu") {
-		return normalized
-	}
-	throw new Error(`Unsupported Maple region "${value}". Expected "us" or "eu".`)
-}
 
 /**
  * AWS region backing each Maple region.
@@ -83,7 +61,7 @@ export function resolveAwsResourceName(
 	stage: MapleStage,
 	region: MapleRegion = DEFAULT_MAPLE_REGION,
 ): string {
-	const suffix = region === DEFAULT_MAPLE_REGION ? "" : `-${region}`
+	const suffix = regionSuffix(region)
 	switch (stage.kind) {
 		case "prd":
 			return `maple-${base}${suffix}`
@@ -152,6 +130,51 @@ export interface IngestTaskSize {
 export function resolveIngestTaskSize(stage: MapleStage): IngestTaskSize {
 	return stage.kind === "prd" ? { cpu: 1024, memory: 2048 } : { cpu: 512, memory: 1024 }
 }
+
+/**
+ * Which fleets run the gateway. Both can run at once, each behind its own ALB,
+ * which is how a fleet cutover works: bring the new one up beside the old,
+ * flip the proxied `ingest` CNAME, then drop the old one.
+ */
+export interface IngestFleets {
+	fargate: boolean
+	ec2: boolean
+}
+
+/**
+ * Parses `MAPLE_INGEST_FLEETS` (`fargate`, `ec2`, or `fargate,ec2`). Unset is
+ * EC2 only, where prd has run since the 2026-09-21 cutover; the variable is
+ * only set to bring Fargate back beside it.
+ */
+export function parseIngestFleets(value: string | undefined): IngestFleets {
+	const requested = (value ?? "")
+		.split(",")
+		.map((fleet) => fleet.trim())
+		.filter((fleet) => fleet !== "")
+	if (requested.length === 0) return { fargate: false, ec2: true }
+	const unknown = requested.filter((fleet) => fleet !== "fargate" && fleet !== "ec2")
+	if (unknown.length > 0) {
+		throw new Error(
+			`MAPLE_INGEST_FLEETS: unknown fleet(s) "${unknown.join(", ")}" (expected fargate, ec2)`,
+		)
+	}
+	return { fargate: requested.includes("fargate"), ec2: requested.includes("ec2") }
+}
+
+/**
+ * EC2 instance type for the gateway: Graviton3 with a 118 GB local NVMe
+ * instance store, which holds the WAL. The `d` is the point: the WAL fsyncs
+ * every frame, and instance-store fsync is tens of microseconds where Fargate's
+ * network-backed ephemeral storage is milliseconds.
+ */
+export const INGEST_EC2_INSTANCE_TYPE = "c7gd.large"
+
+/**
+ * Task size on the EC2 fleet, every stage. One task per instance (host
+ * networking binds the port), so it claims the c7gd.large's 2 vCPU and most of
+ * its ~3.7 GiB registered memory, leaving room for a per-host monitoring daemon.
+ */
+export const INGEST_EC2_TASK_SIZE: IngestTaskSize = { cpu: 2048, memory: 3072 }
 
 /**
  * Whether a stage gets an AWS ingest deployment at all.
@@ -281,4 +304,15 @@ export function stageDeploysElectric(stage: MapleStage): boolean {
  */
 export function resolveElectricTaskSize(stage: MapleStage): IngestTaskSize {
 	return stage.kind === "prd" ? { cpu: 512, memory: 1024 } : { cpu: 256, memory: 512 }
+}
+
+/**
+ * `ELECTRIC_DB_POOL_SIZE` per instance, or `undefined` for Electric's default of 20.
+ *
+ * Electric opens this many pooled connections plus a replication and a lock connection.
+ * The EU cluster runs at `max_connections=25`, shared with two Hyperdrive configs capped
+ * at 8 each, so its pool is 4 (1 admin, 3 snapshot). Drop this once the cluster is raised.
+ */
+export function resolveElectricDbPoolSize(region: MapleRegion): number | undefined {
+	return region === "eu" ? 4 : undefined
 }

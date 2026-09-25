@@ -3929,7 +3929,7 @@ SELECT
         LIMIT 40
         FORMAT JSON
 
--- builder:session-replays:sessionReplaysFacetsQuery:default  [71b59c28]
+-- builder:session-replays:sessionReplaysFacetsQuery:default  [779fa2ec]
 SELECT
           ServiceName AS name,
           uniq(SessionId) AS count,
@@ -3994,6 +3994,26 @@ SELECT
         GROUP BY name
         ORDER BY count DESC
         LIMIT 50
+UNION ALL
+SELECT
+          PagePath AS name,
+          uniq(SessionId) AS count,
+          'page' AS facetType
+        FROM product_events
+        WHERE OrgId = 'org_sql_catalog'
+          AND Timestamp >= '2026-01-01 10:30:00'
+          AND Timestamp <= '2026-01-03 14:15:00'
+          AND Kind = 'navigation'
+          AND PagePath != ''
+          AND SessionId IN (SELECT
+          SessionId AS SessionId
+        FROM session_replays
+        WHERE OrgId = 'org_sql_catalog'
+          AND StartTime >= '2026-01-01 10:30:00'
+          AND StartTime <= '2026-01-03 14:15:00')
+        GROUP BY name
+        ORDER BY count DESC
+        LIMIT 200
 UNION ALL
 SELECT
           toString(toUInt64(round(pow(2, floor(log2(greatest(DurationMs, 1000) / 1000) * 2) / 2) * 1000))) AS name,
@@ -4056,7 +4076,7 @@ SELECT
           AND ErrorCount > 0
 FORMAT JSON
 
--- builder:session-replays:sessionReplaysFacetsQuery:identity-filtered  [39ba1eb6]
+-- builder:session-replays:sessionReplaysFacetsQuery:identity-filtered  [a8b7429b]
 SELECT
           ServiceName AS name,
           uniq(SessionId) AS count,
@@ -4132,6 +4152,28 @@ SELECT
         LIMIT 50
 UNION ALL
 SELECT
+          PagePath AS name,
+          uniq(SessionId) AS count,
+          'page' AS facetType
+        FROM product_events
+        WHERE OrgId = 'org_sql_catalog'
+          AND Timestamp >= '2026-01-01 10:30:00'
+          AND Timestamp <= '2026-01-03 14:15:00'
+          AND Kind = 'navigation'
+          AND PagePath != ''
+          AND SessionId IN (SELECT
+          SessionId AS SessionId
+        FROM session_replays
+        WHERE OrgId = 'org_sql_catalog'
+          AND StartTime >= '2026-01-01 10:30:00'
+          AND StartTime <= '2026-01-03 14:15:00'
+          AND GroupName = 'Acme Inc'
+          AND (UserName ILIKE '%ada%' OR UserEmail ILIKE '%ada%'))
+        GROUP BY name
+        ORDER BY count DESC
+        LIMIT 200
+UNION ALL
+SELECT
           toString(toUInt64(round(pow(2, floor(log2(greatest(DurationMs, 1000) / 1000) * 2) / 2) * 1000))) AS name,
           uniq(SessionId) AS count,
           'durationBucket' AS facetType
@@ -4201,6 +4243,241 @@ SELECT
           AND StartTime <= '2026-01-03 14:15:00'
           AND GroupName = 'Acme Inc'
           AND (UserName ILIKE '%ada%' OR UserEmail ILIKE '%ada%')
+          AND ErrorCount > 0
+FORMAT JSON
+
+-- builder:session-replays:sessionReplaysFacetsQuery:page-visited  [e0e1c243]
+SELECT
+          ServiceName AS name,
+          uniq(SessionId) AS count,
+          'service' AS facetType
+        FROM session_replays
+        WHERE OrgId = 'org_sql_catalog'
+          AND StartTime >= '2026-01-01 10:30:00'
+          AND StartTime <= '2026-01-03 14:15:00'
+          AND SessionId IN (SELECT
+          SessionId AS SessionId
+        FROM product_events
+        WHERE OrgId = 'org_sql_catalog'
+          AND Timestamp >= '2026-01-01 10:30:00'
+          AND Timestamp <= '2026-01-03 14:15:00'
+          AND Kind = 'navigation'
+          AND PagePath = '/pricing')
+          AND ServiceName != ''
+        GROUP BY name
+        ORDER BY count DESC
+        LIMIT 50
+UNION ALL
+SELECT
+          BrowserName AS name,
+          uniq(SessionId) AS count,
+          'browser' AS facetType
+        FROM session_replays
+        WHERE OrgId = 'org_sql_catalog'
+          AND StartTime >= '2026-01-01 10:30:00'
+          AND StartTime <= '2026-01-03 14:15:00'
+          AND SessionId IN (SELECT
+          SessionId AS SessionId
+        FROM product_events
+        WHERE OrgId = 'org_sql_catalog'
+          AND Timestamp >= '2026-01-01 10:30:00'
+          AND Timestamp <= '2026-01-03 14:15:00'
+          AND Kind = 'navigation'
+          AND PagePath = '/pricing')
+          AND BrowserName != ''
+        GROUP BY name
+        ORDER BY count DESC
+        LIMIT 50
+UNION ALL
+SELECT
+          Country AS name,
+          uniq(SessionId) AS count,
+          'country' AS facetType
+        FROM session_replays
+        WHERE OrgId = 'org_sql_catalog'
+          AND StartTime >= '2026-01-01 10:30:00'
+          AND StartTime <= '2026-01-03 14:15:00'
+          AND SessionId IN (SELECT
+          SessionId AS SessionId
+        FROM product_events
+        WHERE OrgId = 'org_sql_catalog'
+          AND Timestamp >= '2026-01-01 10:30:00'
+          AND Timestamp <= '2026-01-03 14:15:00'
+          AND Kind = 'navigation'
+          AND PagePath = '/pricing')
+          AND Country != ''
+        GROUP BY name
+        ORDER BY count DESC
+        LIMIT 50
+UNION ALL
+SELECT
+          DeviceType AS name,
+          uniq(SessionId) AS count,
+          'device' AS facetType
+        FROM session_replays
+        WHERE OrgId = 'org_sql_catalog'
+          AND StartTime >= '2026-01-01 10:30:00'
+          AND StartTime <= '2026-01-03 14:15:00'
+          AND SessionId IN (SELECT
+          SessionId AS SessionId
+        FROM product_events
+        WHERE OrgId = 'org_sql_catalog'
+          AND Timestamp >= '2026-01-01 10:30:00'
+          AND Timestamp <= '2026-01-03 14:15:00'
+          AND Kind = 'navigation'
+          AND PagePath = '/pricing')
+          AND DeviceType != ''
+        GROUP BY name
+        ORDER BY count DESC
+        LIMIT 50
+UNION ALL
+SELECT
+          GroupName AS name,
+          uniq(SessionId) AS count,
+          'group' AS facetType
+        FROM session_replays
+        WHERE OrgId = 'org_sql_catalog'
+          AND StartTime >= '2026-01-01 10:30:00'
+          AND StartTime <= '2026-01-03 14:15:00'
+          AND SessionId IN (SELECT
+          SessionId AS SessionId
+        FROM product_events
+        WHERE OrgId = 'org_sql_catalog'
+          AND Timestamp >= '2026-01-01 10:30:00'
+          AND Timestamp <= '2026-01-03 14:15:00'
+          AND Kind = 'navigation'
+          AND PagePath = '/pricing')
+          AND GroupName != ''
+        GROUP BY name
+        ORDER BY count DESC
+        LIMIT 50
+UNION ALL
+SELECT
+          PagePath AS name,
+          uniq(SessionId) AS count,
+          'page' AS facetType
+        FROM product_events
+        WHERE OrgId = 'org_sql_catalog'
+          AND Timestamp >= '2026-01-01 10:30:00'
+          AND Timestamp <= '2026-01-03 14:15:00'
+          AND Kind = 'navigation'
+          AND PagePath != ''
+          AND SessionId IN (SELECT
+          SessionId AS SessionId
+        FROM session_replays
+        WHERE OrgId = 'org_sql_catalog'
+          AND StartTime >= '2026-01-01 10:30:00'
+          AND StartTime <= '2026-01-03 14:15:00')
+        GROUP BY name
+        ORDER BY count DESC
+        LIMIT 200
+UNION ALL
+SELECT
+          toString(toUInt64(round(pow(2, floor(log2(greatest(DurationMs, 1000) / 1000) * 2) / 2) * 1000))) AS name,
+          uniq(SessionId) AS count,
+          'durationBucket' AS facetType
+        FROM session_replays
+        WHERE OrgId = 'org_sql_catalog'
+          AND StartTime >= '2026-01-01 10:30:00'
+          AND StartTime <= '2026-01-03 14:15:00'
+          AND SessionId IN (SELECT
+          SessionId AS SessionId
+        FROM product_events
+        WHERE OrgId = 'org_sql_catalog'
+          AND Timestamp >= '2026-01-01 10:30:00'
+          AND Timestamp <= '2026-01-03 14:15:00'
+          AND Kind = 'navigation'
+          AND PagePath = '/pricing')
+          AND DurationMs > 0
+        GROUP BY name
+        LIMIT 40
+UNION ALL
+SELECT
+          'p50' AS name,
+          toUInt64(ifNull(ifNotFinite(round(quantile(0.5)(assumeNotNull(DurationMs))), 0), 0)) AS count,
+          'durationStat' AS facetType
+        FROM session_replays
+        WHERE OrgId = 'org_sql_catalog'
+          AND StartTime >= '2026-01-01 10:30:00'
+          AND StartTime <= '2026-01-03 14:15:00'
+          AND SessionId IN (SELECT
+          SessionId AS SessionId
+        FROM product_events
+        WHERE OrgId = 'org_sql_catalog'
+          AND Timestamp >= '2026-01-01 10:30:00'
+          AND Timestamp <= '2026-01-03 14:15:00'
+          AND Kind = 'navigation'
+          AND PagePath = '/pricing')
+          AND DurationMs > 0
+UNION ALL
+SELECT
+          'p95' AS name,
+          toUInt64(ifNull(ifNotFinite(round(quantile(0.95)(assumeNotNull(DurationMs))), 0), 0)) AS count,
+          'durationStat' AS facetType
+        FROM session_replays
+        WHERE OrgId = 'org_sql_catalog'
+          AND StartTime >= '2026-01-01 10:30:00'
+          AND StartTime <= '2026-01-03 14:15:00'
+          AND SessionId IN (SELECT
+          SessionId AS SessionId
+        FROM product_events
+        WHERE OrgId = 'org_sql_catalog'
+          AND Timestamp >= '2026-01-01 10:30:00'
+          AND Timestamp <= '2026-01-03 14:15:00'
+          AND Kind = 'navigation'
+          AND PagePath = '/pricing')
+          AND DurationMs > 0
+UNION ALL
+SELECT
+          'total' AS name,
+          uniq(SessionId) AS count,
+          'total' AS facetType
+        FROM session_replays
+        WHERE OrgId = 'org_sql_catalog'
+          AND StartTime >= '2026-01-01 10:30:00'
+          AND StartTime <= '2026-01-03 14:15:00'
+          AND SessionId IN (SELECT
+          SessionId AS SessionId
+        FROM product_events
+        WHERE OrgId = 'org_sql_catalog'
+          AND Timestamp >= '2026-01-01 10:30:00'
+          AND Timestamp <= '2026-01-03 14:15:00'
+          AND Kind = 'navigation'
+          AND PagePath = '/pricing')
+UNION ALL
+SELECT
+          'live' AS name,
+          uniqIf(SessionId, (Status = 'active' AND coalesce(LastActivityAt, StartTime) >= toDateTime('2026-01-03 14:15:00') - INTERVAL 300 SECOND)) AS count,
+          'live' AS facetType
+        FROM session_replays
+        WHERE OrgId = 'org_sql_catalog'
+          AND StartTime >= '2026-01-01 10:30:00'
+          AND StartTime <= '2026-01-03 14:15:00'
+          AND SessionId IN (SELECT
+          SessionId AS SessionId
+        FROM product_events
+        WHERE OrgId = 'org_sql_catalog'
+          AND Timestamp >= '2026-01-01 10:30:00'
+          AND Timestamp <= '2026-01-03 14:15:00'
+          AND Kind = 'navigation'
+          AND PagePath = '/pricing')
+UNION ALL
+SELECT
+          'error' AS name,
+          uniq(SessionId) AS count,
+          'error' AS facetType
+        FROM session_replays
+        WHERE OrgId = 'org_sql_catalog'
+          AND StartTime >= '2026-01-01 10:30:00'
+          AND StartTime <= '2026-01-03 14:15:00'
+          AND SessionId IN (SELECT
+          SessionId AS SessionId
+        FROM product_events
+        WHERE OrgId = 'org_sql_catalog'
+          AND Timestamp >= '2026-01-01 10:30:00'
+          AND Timestamp <= '2026-01-03 14:15:00'
+          AND Kind = 'navigation'
+          AND PagePath = '/pricing')
           AND ErrorCount > 0
 FORMAT JSON
 
@@ -4319,6 +4596,51 @@ SELECT
         GROUP BY sessionId) AS a ON s.sessionId = a.sessionId
         WHERE s.durationMs >= 1000
           AND coalesce(a.activeTimeMs, 0) >= 500
+        ORDER BY startTime DESC, sessionId DESC
+        LIMIT 50
+        OFFSET 0
+        FORMAT JSON
+
+-- builder:session-replays:sessionReplaysListQuery:page-visited  [b1544b86]
+SELECT
+          SessionId AS sessionId,
+          argMax(StartTime, Version) AS startTime,
+          argMax(EndTime, Version) AS endTime,
+          argMax(DurationMs, Version) AS durationMs,
+          argMax(Status, Version) AS status,
+          argMax(LastActivityAt, Version) AS lastActivityAt,
+          argMax(UserId, Version) AS userId,
+          argMax(UserName, Version) AS userName,
+          argMax(UserEmail, Version) AS userEmail,
+          argMax(GroupId, Version) AS groupId,
+          argMax(GroupName, Version) AS groupName,
+          argMax(VisitorId, Version) AS visitorId,
+          argMax(UtmSource, Version) AS utmSource,
+          argMax(EntryPath, Version) AS entryPath,
+          argMax(UrlInitial, Version) AS urlInitial,
+          argMax(BrowserName, Version) AS browserName,
+          argMax(OsName, Version) AS osName,
+          argMax(DeviceType, Version) AS deviceType,
+          argMax(Country, Version) AS country,
+          argMax(ServiceName, Version) AS serviceName,
+          argMax(PageViews, Version) AS pageViews,
+          argMax(ClickCount, Version) AS clickCount,
+          argMax(ErrorCount, Version) AS errorCount,
+          length(argMax(TraceIds, Version)) AS traceCount,
+          argMax(ResourceAttributes['maple.session.recorded'], Version) AS recorded
+        FROM session_replays
+        WHERE OrgId = 'org_sql_catalog'
+          AND StartTime >= '2026-01-01 10:30:00'
+          AND StartTime <= '2026-01-03 14:15:00'
+          AND SessionId IN (SELECT
+          SessionId AS SessionId
+        FROM product_events
+        WHERE OrgId = 'org_sql_catalog'
+          AND Timestamp >= '2026-01-01 10:30:00'
+          AND Timestamp <= '2026-01-03 14:15:00'
+          AND Kind = 'navigation'
+          AND PagePath = '/pricing')
+        GROUP BY sessionId
         ORDER BY startTime DESC, sessionId DESC
         LIMIT 50
         OFFSET 0
@@ -7222,7 +7544,7 @@ SELECT
           AND ServiceName = 'api'
           AND SeverityText IN ('ERROR', 'Error', 'error')
           AND TraceId = '0af7651916cd43dd8448eb211c80319c'
-          AND Body ILIKE '%connection refused%'
+          AND Body ILIKE '%upstream connection refused by peer%'
           AND Timestamp >= (SELECT min(ts) FROM (SELECT
           Timestamp AS ts
         FROM logs
@@ -7234,14 +7556,14 @@ SELECT
           AND ServiceName = 'api'
           AND SeverityText IN ('ERROR', 'Error', 'error')
           AND TraceId = '0af7651916cd43dd8448eb211c80319c'
-          AND Body ILIKE '%connection refused%'
+          AND Body ILIKE '%upstream connection refused by peer%'
         ORDER BY ts DESC
         LIMIT 50))
         ORDER BY timestamp DESC, serviceName ASC, traceId ASC, spanId ASC, recordIdentity ASC
         LIMIT 50
         FORMAT JSON
 
--- pipe:list_logs:searched:bloom  [d1878c6d]
+-- pipe:list_logs:searched:bloom  [49bc0599]
 SELECT
           Timestamp AS timestamp,
           SeverityText AS severityText,
@@ -7262,7 +7584,7 @@ SELECT
           AND ServiceName = 'api'
           AND SeverityText IN ('ERROR', 'Error', 'error')
           AND TraceId = '0af7651916cd43dd8448eb211c80319c'
-          AND ((hasToken(lower(Body), 'connection') AND hasToken(lower(Body), 'refused')) AND Body ILIKE '%connection refused%')
+          AND (((hasToken(lower(Body), 'connection') AND hasToken(lower(Body), 'refused')) AND hasToken(lower(Body), 'by')) AND Body ILIKE '%upstream connection refused by peer%')
           AND Timestamp >= (SELECT min(ts) FROM (SELECT
           Timestamp AS ts
         FROM logs
@@ -7274,7 +7596,7 @@ SELECT
           AND ServiceName = 'api'
           AND SeverityText IN ('ERROR', 'Error', 'error')
           AND TraceId = '0af7651916cd43dd8448eb211c80319c'
-          AND ((hasToken(lower(Body), 'connection') AND hasToken(lower(Body), 'refused')) AND Body ILIKE '%connection refused%')
+          AND (((hasToken(lower(Body), 'connection') AND hasToken(lower(Body), 'refused')) AND hasToken(lower(Body), 'by')) AND Body ILIKE '%upstream connection refused by peer%')
         ORDER BY ts DESC
         LIMIT 50))
         ORDER BY timestamp DESC, serviceName ASC, traceId ASC, spanId ASC, recordIdentity ASC
@@ -7302,7 +7624,7 @@ SELECT
           AND ServiceName = 'api'
           AND SeverityText IN ('ERROR', 'Error', 'error')
           AND TraceId = '0af7651916cd43dd8448eb211c80319c'
-          AND (hasAllTokens(lower(Body), 'connection refused') AND Body ILIKE '%connection refused%')
+          AND (hasAllTokens(lower(Body), 'connection refused by') AND Body ILIKE '%upstream connection refused by peer%')
           AND Timestamp >= (SELECT min(ts) FROM (SELECT
           Timestamp AS ts
         FROM logs
@@ -7314,7 +7636,7 @@ SELECT
           AND ServiceName = 'api'
           AND SeverityText IN ('ERROR', 'Error', 'error')
           AND TraceId = '0af7651916cd43dd8448eb211c80319c'
-          AND (hasAllTokens(lower(Body), 'connection refused') AND Body ILIKE '%connection refused%')
+          AND (hasAllTokens(lower(Body), 'connection refused by') AND Body ILIKE '%upstream connection refused by peer%')
         ORDER BY ts DESC
         LIMIT 50))
         ORDER BY timestamp DESC, serviceName ASC, traceId ASC, spanId ASC, recordIdentity ASC

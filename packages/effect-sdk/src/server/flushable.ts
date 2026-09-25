@@ -31,6 +31,7 @@ import { makeSpanBuffer, type SpanBuffer } from "../shared/flushable-tracer.js"
 import { makeNoOpNotice } from "../shared/no-op-notice.js"
 import { SDK_VERSION } from "../version.js"
 import { resolveResource } from "./resource.js"
+import type { MapleRegion } from "@maple/browser-session/region"
 
 /** Default auto-flush cadence (ms), matching `Otlp.layerJson`'s 5s export interval. */
 const DEFAULT_AUTO_FLUSH_MS = 5_000
@@ -55,6 +56,11 @@ export interface MapleFlushableConfig {
 	 * `OTEL_EXPORTER_OTLP_ENDPOINT`, then the public Maple ingest.
 	 */
 	readonly endpoint?: string | undefined
+	/**
+	 * Region your Maple organization lives in: `"us"` (default) or `"eu"`.
+	 * Falls back to `MAPLE_REGION`. Any endpoint, set here or in env, wins.
+	 */
+	readonly region?: MapleRegion | undefined
 	/** Maple ingest key. Falls back to `MAPLE_INGEST_KEY`. When unset, runs in no-op mode. */
 	readonly ingestKey?: string | undefined
 	/** Additional resource attributes (highest precedence). */
@@ -144,6 +150,7 @@ export const make = (config: MapleFlushableConfig = {}): FlushableTelemetry => {
 					logsPath: config.logsPath,
 					metricsPath: config.metricsPath,
 					userAgent: `maple-effect-sdk-server/${SDK_VERSION}`,
+					keyless: "disable",
 				}),
 			)
 			resolvedPromise = pending

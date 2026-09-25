@@ -8,7 +8,8 @@
 	"exports": {
 		".": "./src/index.ts",
 		"./replay": "./src/session/replay-session.ts",
-		"./props": "./src/events/props.ts"
+		"./props": "./src/events/props.ts",
+		"./region": "./src/platform/region.ts"
 	},
 	"scripts": {
 		"typecheck": "tsc --noEmit",
@@ -19,7 +20,8 @@
 		"rrweb": "^2.0.0-alpha.18"
 	},
 	"devDependencies": {
-		"jsdom": "^29.1.1",
+		"@vitest/browser-playwright": "catalog:",
+		"playwright": "catalog:",
 		"typescript": "catalog:tooling",
 		"vitest": "catalog:"
 	}

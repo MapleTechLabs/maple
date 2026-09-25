@@ -21,7 +21,7 @@ import { PlanetScaleConnectionService } from "@maple/backend/services/integratio
 import { PlanetScaleOAuthService } from "@maple/backend/services/auth/PlanetScaleOAuthService"
 import { PlanetScaleService } from "@maple/backend/services/integrations/PlanetScaleService"
 import { ScrapeTargetsService } from "@maple/backend/services/integrations/ScrapeTargetsService"
-import { SlackIntegrationService } from "@maple/backend/services/integrations/SlackIntegrationService"
+import { ChatWorkspaceService } from "@maple/backend/services/integrations/ChatWorkspaceService"
 import { OnboardingChecklistService } from "@maple/backend/services/org/OnboardingChecklistService"
 import { SetupAuditService } from "@maple/backend/services/org/SetupAuditService"
 import { SignalPresenceService } from "@maple/backend/services/org/SignalPresenceService"
@@ -36,7 +36,8 @@ import { HttpV2ApiKeysLive } from "./api-keys.http"
 import { HttpV2AttributeMappingsLive } from "./attribute-mappings.http"
 import { HttpV2DashboardsLive } from "./dashboards.http"
 import { HttpV2IngestKeysLive } from "./ingest-keys.http"
-import { HttpV2PlanetScaleIntegrationsLive, HttpV2SlackIntegrationsLive } from "./integrations.http"
+import { HttpV2ChatIntegrationsLive } from "./integrations-chat.http"
+import { HttpV2PlanetScaleIntegrationsLive } from "./integrations.http"
 import { HttpV2ErrorIssuesLive } from "./error-issues.http"
 import { HttpV2AnomaliesLive } from "./anomalies.http"
 import { HttpV2InvestigationsLive } from "./investigations.http"
@@ -86,88 +87,128 @@ export const OnboardingChecklistServiceStubLayer = Layer.succeed(OnboardingCheck
 	claim: () => Effect.die("onboarding checklist is not exercised by this harness"),
 })
 
+const die = () => Effect.die(new Error("This service is not available in this test harness"))
+
+/** Inert ChatWorkspaceService — see the chat group's entry in the bundle below. */
+const ChatWorkspaceServiceStubLayer = Layer.succeed(
+	ChatWorkspaceService,
+	ChatWorkspaceService.of({
+		list: die,
+		beginInstall: die,
+		completeInstall: die,
+		beginLink: die,
+		completeLink: die,
+		unlink: die,
+		updateSettings: die,
+		uninstall: die,
+		listDestinations: die,
+		resolve: die,
+	}),
+)
+
 /**
  * Every v2 group except the onboarding checklist, which its own route test
  * supplies with a recording service. Everything else builds on the full
  * bundle below.
+ *
+ * The chat group's service is a parameter: the inert stub is provided here
+ * rather than by every harness, because nothing but the chat route test calls
+ * those endpoints and a group left unimplemented would stop the whole API layer
+ * from building.
  */
-export const V2GroupLayersExceptOnboardingChecklist = Layer.mergeAll(
-	HttpV2ApiKeysLive,
-	HttpV2SlackIntegrationsLive,
-	HttpV2PlanetScaleIntegrationsLive,
-	HttpV2DashboardsLive,
-	HttpV2AlertDeliveriesLive,
-	HttpV2AlertRulesLive,
-	HttpV2AlertDestinationsLive,
-	HttpV2AlertIncidentsLive,
-	HttpV2IngestKeysLive,
-	HttpV2ErrorIssuesLive,
-	HttpV2AttributeMappingsLive,
-	// Real service, no stub: it needs only the Database every harness already
-	// provides. The member directory IS stubbed — the route asks it for display
-	// names, and every harness would otherwise reach for Clerk.
-	HttpV2AuditLogLive.pipe(
-		Layer.provide(Layer.merge(AuditLogService.layerMemory, OrgMembersServiceStubLayer)),
-	),
-	HttpV2ScrapeTargetsLive,
-	HttpV2InstrumentationRecommendationsLive,
-	HttpV2InstrumentationAuditLive,
-	HttpV2TelemetrySignalsLive,
-	HttpV2InvestigationsLive,
-	HttpV2AnomaliesLive,
-	HttpV2OrganizationLive,
-	// Real services, no stubs: they need only the Database every harness already
-	// provides, and their own route tests are the only places that call them.
-	HttpV2MobileDevicesLive.pipe(
-		Layer.provide(Layer.mergeAll(MobileDevicesService.layer, LiveActivitiesService.layer)),
-	),
-	HttpV2SessionReplaysLive,
-	HttpV2TracesLive,
-	HttpV2LogsLive,
-	HttpV2MetricsLive,
-	HttpV2ServicesLive,
-	HttpV2ServiceMapLive,
-	HttpV2EnvironmentsLive,
-	HttpV2WidgetSummaryLive,
-	HttpV2WidgetCredentialsLive,
-	// The share group's own dependencies are satisfied here rather than by every
-	// harness: most v2 route tests never touch the share endpoints, and threading
-	// inert services through two dozen call sites to register a group they never
-	// call is churn with no assertion behind it.
-	HttpV2SharePublicLive.pipe(
-		Layer.provide(
-			Layer.succeed(DashboardWidgetDataService, {
-				variableOptions: () => Effect.succeed({}),
-				resolve: () => Effect.die("share widget data is not exercised by v2 route harnesses"),
-			}),
+const v2GroupLayersExceptOnboardingChecklist = (chatWorkspace: Layer.Layer<ChatWorkspaceService>) =>
+	Layer.mergeAll(
+		HttpV2ApiKeysLive,
+		HttpV2ChatIntegrationsLive.pipe(Layer.provide(chatWorkspace)),
+		HttpV2PlanetScaleIntegrationsLive,
+		HttpV2DashboardsLive,
+		HttpV2AlertDeliveriesLive,
+		HttpV2AlertRulesLive,
+		HttpV2AlertDestinationsLive,
+		HttpV2AlertIncidentsLive,
+		HttpV2IngestKeysLive,
+		HttpV2ErrorIssuesLive,
+		HttpV2AttributeMappingsLive,
+		// Real service, no stub: it needs only the Database every harness already
+		// provides. The member directory IS stubbed — the route asks it for display
+		// names, and every harness would otherwise reach for Clerk.
+		HttpV2AuditLogLive.pipe(
+			Layer.provide(Layer.merge(AuditLogService.layerMemory, OrgMembersServiceStubLayer)),
 		),
-		Layer.provide(
-			// A directory with nobody in it, which is the self-hosted shape: the
-			// preview card carries no byline and everything else about it still
-			// renders. The share tests assert exactly that.
-			Layer.succeed(OrganizationService, {
-				retrieve: (orgId) =>
-					Effect.succeed({ id: orgId, name: null, slug: null, imageUrl: null, createdAtMs: null }),
-				delete: () => Effect.die("organization deletion is not exercised by v2 route harnesses"),
-			}),
+		HttpV2ScrapeTargetsLive,
+		HttpV2InstrumentationRecommendationsLive,
+		HttpV2InstrumentationAuditLive,
+		HttpV2TelemetrySignalsLive,
+		HttpV2InvestigationsLive,
+		HttpV2AnomaliesLive,
+		HttpV2OrganizationLive,
+		// Real services, no stubs: they need only the Database every harness already
+		// provides, and their own route tests are the only places that call them.
+		HttpV2MobileDevicesLive.pipe(
+			Layer.provide(Layer.mergeAll(MobileDevicesService.layer, LiveActivitiesService.layer)),
 		),
-	),
+		HttpV2SessionReplaysLive,
+		HttpV2TracesLive,
+		HttpV2LogsLive,
+		HttpV2MetricsLive,
+		HttpV2ServicesLive,
+		HttpV2ServiceMapLive,
+		HttpV2EnvironmentsLive,
+		HttpV2WidgetSummaryLive,
+		HttpV2WidgetCredentialsLive,
+		// The share group's own dependencies are satisfied here rather than by every
+		// harness: most v2 route tests never touch the share endpoints, and threading
+		// inert services through two dozen call sites to register a group they never
+		// call is churn with no assertion behind it.
+		HttpV2SharePublicLive.pipe(
+			Layer.provide(
+				Layer.succeed(DashboardWidgetDataService, {
+					variableOptions: () => Effect.succeed({}),
+					resolve: () => Effect.die("share widget data is not exercised by v2 route harnesses"),
+				}),
+			),
+			Layer.provide(
+				// A directory with nobody in it, which is the self-hosted shape: the
+				// preview card carries no byline and everything else about it still
+				// renders. The share tests assert exactly that.
+				Layer.succeed(OrganizationService, {
+					retrieve: (orgId) =>
+						Effect.succeed({
+							id: orgId,
+							name: null,
+							slug: null,
+							imageUrl: null,
+							createdAtMs: null,
+						}),
+					create: () => Effect.die("organization creation is not exercised by v2 route harnesses"),
+					chooseRegion: () =>
+						Effect.die("organization regions are not exercised by v2 route harnesses"),
+					delete: () => Effect.die("organization deletion is not exercised by v2 route harnesses"),
+				}),
+			),
+		),
+	)
+
+export const V2GroupLayersExceptOnboardingChecklist = v2GroupLayersExceptOnboardingChecklist(
+	ChatWorkspaceServiceStubLayer,
 )
 
-export const AllV2GroupLayersLive = Layer.mergeAll(
-	V2GroupLayersExceptOnboardingChecklist,
-	HttpV2OnboardingChecklistLive.pipe(Layer.provide(OnboardingChecklistServiceStubLayer)),
-).pipe(
-	// Mutation handlers across the groups record audit entries; the real service
-	// needs only the Database every harness already provides.
-	Layer.provide(AuditLogService.layerMemory),
-)
+/** Every v2 group, with the chat group served by the given service. */
+export const allV2GroupLayersWithChat = (chatWorkspace: Layer.Layer<ChatWorkspaceService>) =>
+	Layer.mergeAll(
+		v2GroupLayersExceptOnboardingChecklist(chatWorkspace),
+		HttpV2OnboardingChecklistLive.pipe(Layer.provide(OnboardingChecklistServiceStubLayer)),
+	).pipe(
+		// Mutation handlers across the groups record audit entries; the real service
+		// needs only the Database every harness already provides.
+		Layer.provide(AuditLogService.layerMemory),
+	)
+
+export const AllV2GroupLayersLive = allV2GroupLayersWithChat(ChatWorkspaceServiceStubLayer)
 
 export const ApiV2RateLimiterAllowAllLayer = Layer.succeed(ApiV2RateLimiter, {
 	check: () => Effect.succeed("allowed" as const),
 })
-
-const die = () => Effect.die(new Error("This service is not available in this test harness"))
 
 /** Synchronous stub for non-Effect-returning service methods (e.g. `asExecutor`). */
 const dieSync = (): never => {
@@ -229,6 +270,8 @@ export const Phase1ResourceStubsLayer = Layer.mergeAll(
 		collectActorDocs: die,
 	}),
 	Layer.succeed(OrganizationService, {
+		create: die,
+		chooseRegion: die,
 		retrieve: die,
 		delete: die,
 	}),
@@ -330,22 +373,6 @@ export const PlanetScaleServiceStubsLayer = Layer.mergeAll(
 	// A real edge cache over the in-memory backend: `getOrCompute` must actually
 	// round-trip so the cached wire shape is exercised, and nothing here needs KV.
 	EdgeCacheService.layer.pipe(Layer.provide(MemoryCacheBackendLive)),
-)
-
-/** Inert SlackIntegrationService for harnesses that never touch the slack integration group. */
-export const SlackIntegrationServiceStubLayer = Layer.succeed(
-	SlackIntegrationService,
-	SlackIntegrationService.of({
-		startInstall: die,
-		completeInstall: die,
-		getStatus: die,
-		uninstall: die,
-		listChannels: die,
-		resolveForBot: die,
-		orgIdForTeam: die,
-		revokeByTeamId: die,
-		reconcileWorkspaces: die,
-	}),
 )
 
 const alertDestinationStubs = {

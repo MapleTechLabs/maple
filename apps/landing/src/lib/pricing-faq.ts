@@ -7,7 +7,7 @@
  * page read the catalog. Answers that quote a number take it from `getOffer()`
  * so the FAQ can't disagree with the offer card above it.
  *
- * Messages are called inside the function, not at module scope — Paraglide
+ * Messages are called inside the function, not at module scope: Paraglide
  * resolves the locale per render (see `pricing-offer.ts`).
  */
 import * as m from "../paraglide/messages.js"
@@ -41,5 +41,6 @@ export async function pricingFaq(): Promise<FaqItem[]> {
 		{ question: m.faq_trial_q(), answer: m.faq_trial_a() },
 		{ question: m.faq_otel_q(), answer: m.faq_otel_a() },
 		{ question: m.faq_selfhost_q(), answer: m.faq_selfhost_a() },
+		{ question: m.faq_region_q(), answer: m.faq_region_a() },
 	]
 }

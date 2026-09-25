@@ -50,7 +50,7 @@ import { ScrapeTargetPublicId } from "./scrape-targets"
 // So `connect` still mints a `/api/...` callback URL and `webhook_config` still
 // reports a `/api/...` receiver URL. That is the intended end state, not debt.
 //
-// Scope family is `integrations`, shared with Slack: families are derived from
+// Scope family is `integrations`, shared with chat: families are derived from
 // the first path segment under `/v2`, so the split across two contract files is
 // purely about file size.
 

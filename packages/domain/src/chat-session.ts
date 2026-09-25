@@ -15,7 +15,16 @@
  * turn lifecycle. `apps/api/src/chat/events.ts` is the only place the two are mapped.
  */
 import { Option, Schema } from "effect"
-import { ActorId, AuthMode, OrgId, RoleName, UserId } from "./primitives"
+import {
+	ActorId,
+	AuthMode,
+	ChatConnectorId,
+	ChatConversationKey,
+	ExternalUserId,
+	OrgId,
+	RoleName,
+	UserId,
+} from "./primitives"
 
 // Session addressing
 
@@ -52,7 +61,40 @@ export const investigationIdFromChatSessionId = (sessionId: string): string | un
 	return tab.startsWith("inv-") ? tab.slice("inv-".length) : undefined
 }
 
-export const ChatMode = Schema.Literals(["default", "alert", "widget-fix", "investigate"])
+/** The chat session a pull request review runs on: `<orgId>:pr-<reviewId>`. */
+export const prReviewSessionId = (orgId: string, reviewId: string): string => `${orgId}:pr-${reviewId}`
+
+/** Recover the pull-request review id from a `pr-<id>` tab. `undefined` for other modes. */
+export const prReviewIdFromChatSessionId = (sessionId: string): string | undefined => {
+	const tab = tabIdFromChatSessionId(sessionId)
+	return tab.startsWith("pr-") ? tab.slice("pr-".length) : undefined
+}
+
+/** The chat session a reply to a pull request comment runs on: `<orgId>:prr-<replyId>`. */
+export const prReplySessionId = (orgId: string, replyId: string): string => `${orgId}:prr-${replyId}`
+
+/** Recover the reply id from a `prr-<id>` tab. `undefined` for other modes. */
+export const prReplyIdFromChatSessionId = (sessionId: string): string | undefined => {
+	const tab = tabIdFromChatSessionId(sessionId)
+	return tab.startsWith("prr-") ? tab.slice("prr-".length) : undefined
+}
+
+/**
+ * What a conversation *is* — its persona and its budget.
+ *
+ * Deliberately not who drives a turn: that is {@link ChatTurnOrigin}, and fusing the two would
+ * mean a new mode, a new agent record and a new prompt every time a conversation became reachable
+ * from somewhere new. A connector-driven thread is an ordinary chat-mode conversation that a
+ * connector is answering in, and it stays free to be anchored on an alert later.
+ */
+export const ChatMode = Schema.Literals([
+	"default",
+	"alert",
+	"widget-fix",
+	"investigate",
+	"pr-review",
+	"pr-reply",
+])
 export type ChatMode = Schema.Schema.Type<typeof ChatMode>
 
 /** Mode is derived from the tab-id prefix, never sent by the client. */
@@ -61,8 +103,32 @@ export const chatModeFromSessionId = (sessionId: string): ChatMode => {
 	if (tab.startsWith("alert-")) return "alert"
 	if (tab.startsWith("widget-fix-")) return "widget-fix"
 	if (tab.startsWith("inv-")) return "investigate"
+	if (tab.startsWith("prr-")) return "pr-reply"
+	if (tab.startsWith("pr-")) return "pr-review"
 	return "default"
 }
+
+const CONNECTOR_TAB_PREFIX = "bot-"
+
+/** Whether this session's transcript belongs to a connector thread rather than the Maple app. */
+export const isConnectorSessionId = (sessionId: string): boolean =>
+	tabIdFromChatSessionId(sessionId).startsWith(CONNECTOR_TAB_PREFIX)
+
+// Owned by `./primitives` so the engine and the connector packages cannot drift apart.
+export { ChatConnectorId, ChatConversationKey } from "./primitives"
+
+/**
+ * The session a connector conversation lives in.
+ *
+ * The connector supplies `conversationKey`, because only it knows what makes a conversation
+ * unique on its platform — a thread, a channel, a channel and thread together. Its charset
+ * excludes `-`, and a connector id cannot contain one either, so the tab splits unambiguously.
+ */
+export const connectorSessionId = (
+	orgId: OrgId,
+	connectorId: ChatConnectorId,
+	conversationKey: ChatConversationKey,
+): ChatSessionId => makeChatSessionId(orgId, `${CONNECTOR_TAB_PREFIX}${connectorId}-${conversationKey}`)
 
 // Durable transcript
 
@@ -106,6 +172,8 @@ export class ChatTaskState extends Schema.Class<ChatTaskState>("@maple/ChatTaskS
 export class ChatToolCall extends Schema.Class<ChatToolCall>("@maple/ChatToolCall")({
 	id: Schema.String,
 	name: Schema.String,
+	/** The phrase its `tool-call` event carried, when it carried one. */
+	label: Schema.optionalKey(Schema.String),
 	input: Schema.Unknown,
 	/** Present once the tool settled. */
 	output: Schema.optionalKey(Schema.Unknown),
@@ -223,6 +291,8 @@ const eventFields = {
 		input: Schema.Unknown,
 		/** Approval-gated mutation: the tool did not run, this is a proposal. */
 		proposed: Schema.optionalKey(Schema.Boolean),
+		/** What the call is doing, for a reader (`Running a query`); absent for a tool with no phrase. */
+		label: Schema.optionalKey(Schema.String),
 		...task,
 	},
 	"tool-result": {
@@ -402,6 +472,156 @@ export type ChatTurnTenantEncoded = (typeof ChatTurnTenant)["Encoded"]
 
 export const encodeChatTurnTenant = Schema.encodeSync(ChatTurnTenant)
 export const decodeChatTurnTenant = Schema.decodeSync(ChatTurnTenant)
+
+/**
+ * Who drives this turn, stated rather than inferred.
+ *
+ * The second axis of a turn, beside {@link ChatMode}: the mode says what the conversation is, the
+ * origin says who is pushing it forward. They are independent — a person can follow up inside an
+ * investigation, and a connector answers in what is otherwise an ordinary chat conversation — and
+ * every behaviour that used to be recovered from a sentinel user id hangs off this instead. A
+ * sentinel is an identity being asked a question it cannot answer: `internal-service` is a claim
+ * about *how* the turn was raised, wearing the shape of *who* raised it.
+ *
+ * Set server-side by whoever calls `beginTurn`, which is reachable only from Maple's own Workers.
+ * A `Struct` union, not a `Class` one, for the same structured-clone reason as
+ * {@link ChatTurnTenant}.
+ */
+export const ChatTurnOrigin = Schema.Union([
+	/** A signed-in person in the Maple app. */
+	Schema.Struct({ kind: Schema.Literal("app") }),
+	/** An investigation's own unattended pass, which has no reader at all. */
+	Schema.Struct({ kind: Schema.Literal("autonomous") }),
+	/**
+	 * Someone addressing Maple from a chat platform. The identity is the platform's, not Maple's:
+	 * there is no user row behind `externalUserId`, and `displayName` is what that platform shows.
+	 * The engine reads only `kind`; the rest is what the audit model will attribute a turn by.
+	 */
+	Schema.Struct({
+		kind: Schema.Literal("connector"),
+		connectorId: ChatConnectorId,
+		workspaceId: Schema.String,
+		externalUserId: ExternalUserId,
+		displayName: Schema.String,
+	}),
+])
+/**
+ * Plain data on both sides, so it crosses the Durable Object boundary as itself — every field is
+ * a string, so unlike {@link ChatTurnTenant} there is nothing to rebuild on arrival.
+ */
+export type ChatTurnOrigin = (typeof ChatTurnOrigin)["Encoded"]
+
+/**
+ * The user id a connector turn's tenant carries.
+ *
+ * `TenantContext` requires one and no Maple user stands behind a connector turn, so this is a
+ * placeholder to satisfy that type — **nothing branches on it**. Every behavioural question is
+ * answered by {@link ChatTurnOrigin}.
+ */
+export const CONNECTOR_TENANT_USER_ID = Schema.decodeSync(UserId)("chat-connector")
+
+/**
+ * The turn identity a connector Worker hands `beginTurn`, already encoded for the DO hop.
+ *
+ * No roles: a connector turn proposes mutations rather than performing them, so the only reader of
+ * roles — the authorization check inside a mutating tool — is reached by the apply path, under
+ * whoever approved the proposal, not by the turn that wrote it.
+ */
+export const connectorTurnTenant = (orgId: OrgId): ChatTurnTenantEncoded =>
+	encodeChatTurnTenant({
+		orgId,
+		userId: CONNECTOR_TENANT_USER_ID,
+		roles: [],
+		authMode: "self_hosted",
+	})
+
+const ORG_ADMIN_ROLE = Schema.decodeSync(RoleName)("org:admin")
+
+/**
+ * The identity an approved proposal runs under **on a connector that cannot say who clicked**.
+ * See `ChatConnector.identity` for the three-case approval policy this is half of.
+ *
+ * The role is granted at apply time only — the turn that WROTE the proposal carried none, which is
+ * what makes the approval gate mean anything. Deliberately beside {@link connectorTurnTenant}:
+ * the two are one rule read together.
+ */
+export const connectorApprovalTenant = (orgId: OrgId): ChatTurnTenantEncoded =>
+	encodeChatTurnTenant({
+		orgId,
+		userId: CONNECTOR_TENANT_USER_ID,
+		roles: [ORG_ADMIN_ROLE],
+		authMode: "self_hosted",
+	})
+
+/** Which connector, and who on it — the member of {@link ChatTurnOrigin} an approval carries. */
+export type ChatConnectorOrigin = Extract<ChatTurnOrigin, { readonly kind: "connector" }>
+
+/**
+ * What a click on an approval control asks for.
+ *
+ * Through a schema because the decision is read back off an untrusted control id: the members are
+ * derived from one declaration, so a third one cannot be added to the type while the parser that
+ * matches them silently keeps looking for two.
+ */
+export const ChatProposalDecision = Schema.Literals(["approve", "deny"])
+export type ChatProposalDecision = Schema.Schema.Type<typeof ChatProposalDecision>
+
+/** Every decision there is, for a caller that has to match a wire value against them. */
+export const CHAT_PROPOSAL_DECISIONS = ChatProposalDecision.literals
+
+/** Who decided a proposal, and whose authority an approval runs under. */
+export type ChatProposalApproval =
+	| {
+			/** A signed-in person in the Maple app. */
+			readonly approver: Extract<ChatTurnOrigin, { readonly kind: "app" }>
+			/** Who the route authenticated, with the roles they hold: the change runs as them. */
+			readonly tenant: ChatTurnTenantEncoded
+	  }
+	| {
+			readonly approver: ChatConnectorOrigin
+			/**
+			 * The Maple user the approver's chat account is linked to, resolved by the host from its own
+			 * database — never from anything the click carried.
+			 *
+			 * Present means the change runs as that user, under the roles they hold in the org at that
+			 * moment. Absent means the connector cannot prove who clicked, and the org-level connector
+			 * identity acts instead ({@link connectorApprovalTenant}).
+			 */
+			readonly actingUserId?: UserId
+	  }
+
+/** How a recorded decision names who made it. */
+export const decidedBy = (approver: ChatProposalApproval["approver"]): string =>
+	approver.kind === "app" ? "in Maple" : `by ${approver.displayName}`
+
+/** Everything the session needs to settle a proposal: which call, which way, and who said so. */
+export type ChatProposalSettlement = ChatProposalApproval & {
+	/** `"<orgId>:<tabId>"`. A Durable Object cannot recover its own name, exactly as for `beginTurn`. */
+	readonly sessionId: string
+	readonly toolCallId: string
+	readonly decision: ChatProposalDecision
+}
+
+/**
+ * What settling answered.
+ *
+ * A bare string because that is all the caller can act on: it re-reads the transcript for what the
+ * decision actually produced. `"settled"` is the second click on the same control — someone else
+ * got there first, or the same person clicked twice — and is a no-op by design.
+ */
+export type ChatProposalOutcome = "unknown" | "settled" | "decided"
+
+/**
+ * The origin of a turn raised through Maple's own HTTP surface.
+ *
+ * That route authenticates a signed-in person and Maple's own service token alike, and the only
+ * thing that distinguishes them is the user id the auth layer stamped on the caller — so the read
+ * lives here rather than in the route, and an unattended pass cannot become attended by being
+ * restarted from a different place.
+ */
+export const originForTenant = (tenant: ChatTurnTenantEncoded): ChatTurnOrigin => ({
+	kind: tenant.userId === "internal-service" ? "autonomous" : "app",
+})
 
 // Requests
 

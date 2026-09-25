@@ -6,9 +6,19 @@
  * clear, so raising the model's window or swapping the model cannot quietly disable one again.
  */
 import { describe, expect, it } from "vitest"
-import { AgentPolicy } from "@effect-agent/core/AgentPolicy"
+import { AgentPolicy } from "effect-agent/agent-policy"
+import * as Duration from "effect/Duration"
 import { AGENTS, agentPolicyFor } from "./agents"
-import { CHAT_BUDGET, INVESTIGATION_BUDGET, liveContextLimit, MAX_LIVE_CONTEXT_TOKENS } from "./budgets"
+import {
+	CHAT_BUDGET,
+	INVESTIGATION_BUDGET,
+	liveContextLimit,
+	MAX_LIVE_CONTEXT_TOKENS,
+	PR_REPLY_BUDGET,
+	PR_REVIEW_BUDGET,
+	type AgentBudget,
+} from "./budgets"
+import { TURN_STALE_MS } from "./ChatSession"
 
 /** The window `z-ai/glm-5.3-flash:nitro` reports, which is what made this a bug. */
 const GLM_CONTEXT = 1_000_000
@@ -45,10 +55,25 @@ describe("liveContextLimit", () => {
 })
 
 describe("agent budgets", () => {
-	/** An attended reply used to inherit the investigation's ten-minute, hundred-call rail. */
-	it("gives a chat turn a smaller budget than an investigation", () => {
-		expect(CHAT_BUDGET.maxToolCalls).toBeLessThan(INVESTIGATION_BUDGET.maxToolCalls)
-		expect(CHAT_BUDGET.tokenBudget).toBeLessThan(INVESTIGATION_BUDGET.tokenBudget)
+	/**
+	 * A chat turn hit a 600k rail at 23 tool calls, and a review hit 800k at 18: tokens count every
+	 * re-sent prompt, so the step cap or the wall clock must bind first on every agent.
+	 */
+	it("lets every turn reach its step cap at a full live context", () => {
+		for (const budget of [CHAT_BUDGET, INVESTIGATION_BUDGET, PR_REVIEW_BUDGET, PR_REPLY_BUDGET]) {
+			expect(budget.tokenBudget).toBeGreaterThanOrEqual(budget.maxToolCalls * MAX_LIVE_CONTEXT_TOKENS)
+		}
+	})
+
+	/** Past `TURN_STALE_MS` the session abandons the turn, so every turn's own deadline comes first. */
+	it("stops every turn before the stale-claim watchdog would", () => {
+		const ms = (budget: AgentBudget) => Duration.toMillis(budget.maxDuration)
+		const margin = 5 * 60 * 1000
+		expect(ms(CHAT_BUDGET) + margin).toBeLessThanOrEqual(TURN_STALE_MS)
+		// An unattended pass that ends without its report gets a close-out run under the same budget.
+		for (const budget of [INVESTIGATION_BUDGET, PR_REVIEW_BUDGET, PR_REPLY_BUDGET]) {
+			expect(2 * ms(budget) + margin).toBeLessThanOrEqual(TURN_STALE_MS)
+		}
 	})
 
 	/** p95 turn was 1.16M tokens: the budget is meant to catch the tail, not ordinary work. */
@@ -87,6 +112,12 @@ describe("agentPolicyFor", () => {
 		expect(agentPolicyFor(AGENTS.investigate!, GLM_CONTEXT).contextTokenLimit).toBe(
 			liveContextLimit(GLM_CONTEXT),
 		)
+	})
+
+	/** The review sees its clock and a warning at 80%; a chat turn keeps its cached prompt untouched. */
+	it("shows the review its run status, and no other agent", () => {
+		expect(agentPolicyFor(AGENTS["pr-review"]!, GLM_CONTEXT).runStatus).toBe("appended")
+		expect(agentPolicyFor(AGENTS.default!, GLM_CONTEXT).runStatus).toBe("off")
 	})
 
 	/** Crossing a budget must hand the run its closing call, never fail it outright. */

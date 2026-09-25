@@ -2,10 +2,9 @@
  * The rulesets Maple's chat agents run under.
  *
  * `MUTATING_TOOL_NAMES` stays exactly where it is and keeps its shape: it seeds `DEFAULT_RULESET`
- * here, and it remains the allowlist floor for `POST /internal/chat/apply`. That is the whole migration
- * story — the mirror in `apps/slack-agent/agent/lib/approval.ts` needs no change, and the
- * equivalence is pinned by a test in `apps/api/src/mcp/tools/mutating.test.ts` so day-one behaviour
- * cannot drift by accident.
+ * here, and it remains the allowlist floor for applying an approval. The equivalence is pinned
+ * by a test in `apps/api/src/mcp/tools/mutating.test.ts` so day-one behaviour cannot drift by
+ * accident.
  */
 import { PermissionRule, type PermissionRuleset } from "@maple/domain/permission"
 import { MUTATING_TOOL_NAMES } from "../mcp/tools/mutating"
@@ -44,15 +43,42 @@ export const READ_ONLY_RULESET: PermissionRuleset = [
 ]
 
 /**
- * The ruleset one *turn* runs under, which is not always its agent's.
+ * What the pull request reviewer may call, by name.
  *
- * An investigation session has two kinds of turn in it. The autonomous pass runs unattended and
- * cannot obtain an approval, so the nineteen mutating tools are dead weight to it: nineteen
- * schemas on every model call, and a wasted call plus a repeated-failure slot if it tries one. The
- * follow-up conversation in the same session is a person asking Maple to act, and that is exactly
- * when the approval gate is the point.
- *
- * `READ_ONLY_RULESET` has existed and been tested since the gate was written; nothing used it.
+ * The diff tools, the sandbox and source tools for context, and the read-only telemetry tools the
+ * rubric needs: whether the touched service reports at all, which operations it already has spans
+ * for, and whether an attribute key the diff introduces exists in the org's data under another
+ * spelling. Nothing that writes, and nothing that reads alerts, dashboards or issues: a review has
+ * no use for them and every unused schema is prompt the model pays for on each call.
  */
-export const rulesetForTurn = (agent: { readonly permission: PermissionRuleset }, autonomous: boolean) =>
-	autonomous ? READ_ONLY_RULESET : agent.permission
+export const PR_REVIEW_TOOLS: ReadonlyArray<string> = [
+	"pr_changed_files",
+	"pr_context",
+	"pr_file_diff",
+	"sandbox_grep",
+	"sandbox_list_files",
+	"sandbox_read_file",
+	"sandbox_exec",
+	"list_source_repositories",
+	"search_source_code",
+	"read_source_file",
+	"list_services",
+	"get_service_top_operations",
+	"explore_attributes",
+	"search_traces",
+	"service_map",
+	"list_metrics",
+	"audit_setup",
+	"get_instrumentation_recommendations",
+]
+
+/** A reply reads what a review reads; its only writes are its own completion tools. */
+export const PR_REPLY_RULESET: PermissionRuleset = [
+	new PermissionRule({ tool: "*", action: "deny" }),
+	...[...PR_REVIEW_TOOLS].sort().map((tool) => new PermissionRule({ tool, action: "allow" })),
+]
+
+export const PR_REVIEW_RULESET: PermissionRuleset = [
+	new PermissionRule({ tool: "*", action: "deny" }),
+	...[...PR_REVIEW_TOOLS].sort().map((tool) => new PermissionRule({ tool, action: "allow" })),
+]

@@ -113,6 +113,12 @@ export type AlertDeliveryEventId = Schema.Schema.Type<typeof AlertDeliveryEventI
 export const MobileDeviceId = MapleUuidId("@maple/MobileDeviceId", "Mobile Device ID")
 export type MobileDeviceId = Schema.Schema.Type<typeof MobileDeviceId>
 
+export const ChatWorkspaceId = MapleUuidId("@maple/ChatWorkspaceId", "Chat Workspace ID")
+export type ChatWorkspaceId = Schema.Schema.Type<typeof ChatWorkspaceId>
+
+export const ChatIdentityId = MapleUuidId("@maple/ChatIdentityId", "Chat Identity ID")
+export type ChatIdentityId = Schema.Schema.Type<typeof ChatIdentityId>
+
 export const ErrorIssueId = MapleUuidId("@maple/ErrorIssueId", "Error Issue ID")
 export type ErrorIssueId = Schema.Schema.Type<typeof ErrorIssueId>
 
@@ -300,3 +306,38 @@ export type WidgetId = Schema.Schema.Type<typeof WidgetId>
 
 export const ChartId = MapleId("@maple/ChartId", "Chart ID")
 export type ChartId = Schema.Schema.Type<typeof ChartId>
+
+/**
+ * Which chat connector a conversation reached Maple through.
+ *
+ * Opaque: Maple's core runs one agent, and everything that differs between one chat platform and
+ * the next belongs to that platform's connector rather than to a literal here. Lowercase
+ * alphanumeric, bounded, and no `-`, because it is one dash-separated segment of a chat session's
+ * tab id.
+ */
+export const ChatConnectorId = Schema.String.check(
+	Schema.isMinLength(1),
+	Schema.isMaxLength(32),
+	Schema.isPattern(/^[a-z][a-z0-9]*$/),
+).pipe(
+	Schema.brand("@maple/ChatConnectorId"),
+	Schema.annotate({ identifier: "@maple/ChatConnectorId", title: "Chat Connector ID" }),
+)
+export type ChatConnectorId = Schema.Schema.Type<typeof ChatConnectorId>
+
+/**
+ * What a connector calls one conversation — a thread, a channel, or both joined however it likes.
+ *
+ * Only the connector knows what makes a conversation unique on its platform, so the value is its
+ * own. The charset is what a session tab id can carry unambiguously: no `-`, since that is what
+ * the tab splits on, and bounded because the session id names a Durable Object.
+ */
+export const ChatConversationKey = Schema.String.check(
+	Schema.isMinLength(1),
+	Schema.isMaxLength(128),
+	Schema.isPattern(/^[A-Za-z0-9_.:]+$/),
+).pipe(
+	Schema.brand("@maple/ChatConversationKey"),
+	Schema.annotate({ identifier: "@maple/ChatConversationKey", title: "Chat Conversation Key" }),
+)
+export type ChatConversationKey = Schema.Schema.Type<typeof ChatConversationKey>

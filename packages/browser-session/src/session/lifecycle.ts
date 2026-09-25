@@ -10,6 +10,7 @@ import { getActiveSink } from "../events/events-sink"
 import type { ResolvedIdentity } from "../identity/identity"
 import { buildSessionMetaRow } from "../events/meta-row"
 import {
+	adoptReplayDecision,
 	entryContextOf,
 	getSession,
 	isSessionExpired,
@@ -17,8 +18,10 @@ import {
 	noteCounts,
 	onSessionRotate,
 	peekSession,
+	resolveBillable,
 	type SessionRecord,
 } from "./session"
+import { claimVisit, touchVisit } from "../identity/visit"
 import { getVisitorId, isVisitorIdPersisted } from "../identity/visitor"
 
 /**
@@ -29,7 +32,7 @@ import { getVisitorId, isVisitorIdPersisted } from "../identity/visitor"
  * posted at session start, whose counters are all zero and therefore read as a
  * bounce. 60s is the floor worth using: the table is a ReplacingMergeTree, so
  * every heartbeat is an unmerged part until the next merge. Billing meters only
- * `version == 1` rows, so heartbeats do not double-bill.
+ * `billable_start == 1 && version == 1` rows, so heartbeats do not double-bill.
  */
 const HEARTBEAT_INTERVAL_MS = 60_000
 
@@ -165,6 +168,12 @@ export function startSessionLifecycle(
 	const post = (status: "active" | "ended", keepalive: boolean): void => {
 		const record = liveRecord()
 		const counts = countsFor(record)
+		const visitorId = getVisitorId()
+		// Tracking off means no visitor id and no persisted claim: billing falls
+		// back to one charge per session record, as before visits existed.
+		const persistVisit = visitorId !== undefined
+		const billableStart = resolveBillable(record.id, () => claimVisit(Date.now(), persistVisit))
+		touchVisit(record.lastActivityAt, persistVisit)
 		hooks.post(
 			buildSessionMetaRow({
 				sessionId: record.id,
@@ -176,7 +185,7 @@ export function startSessionLifecycle(
 				captureUserEmail: options.captureUserEmail,
 				environment: options.environment,
 				serviceVersion: options.serviceVersion,
-				visitorId: getVisitorId(),
+				visitorId,
 				// Off the record being posted rather than re-read from storage: the
 				// record already carries it, and the two can only disagree.
 				visitorIsNew: record.visitorIsNew === true,
@@ -188,6 +197,7 @@ export function startSessionLifecycle(
 				errorCount: counts.errorCount,
 				traceIds: status === "ended" ? options.getTraceIds?.(record.id) : undefined,
 				recorded: hooks.recorded,
+				billableStart,
 			}),
 			keepalive,
 		)
@@ -203,6 +213,9 @@ export function startSessionLifecycle(
 		if (stopped || running) return
 		running = true
 		const record = liveRecord()
+		// A session minted by idle rotation mid-page has no sampling decision yet;
+		// it takes this page's mode so its later loads agree with it.
+		adoptReplayDecision(record.id, hooks.recorded)
 		rebaseCounts(record)
 		hooks.onStart?.(record)
 		post("active", false)

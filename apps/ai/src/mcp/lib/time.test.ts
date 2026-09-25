@@ -2,8 +2,11 @@ import { warehouseDateTime, type WarehouseDateTime } from "@maple/query-engine"
 import { Schema } from "effect"
 import { describe, expect, it } from "vitest"
 import { toInputSchema } from "../tools/registry"
-import { optionalTimeParam } from "../tools/types"
-import { rangeExceededResult, resolveTimeRange } from "./time"
+import { WarehouseTimeInput } from "@maple/query-engine"
+import { rangeExceededMessage, resolveTimeRange } from "./time"
+
+const optionalTimeParam = (description: string) =>
+	Schema.optional(WarehouseTimeInput).annotate({ description })
 
 /**
  * Tools receive their bounds already decoded by `optionalTimeParam`, so the
@@ -132,12 +135,9 @@ describe("resolveTimeRange", () => {
 	})
 })
 
-describe("rangeExceededResult", () => {
+describe("rangeExceededMessage", () => {
 	it("reports what was asked for, the cap, and the way forward", () => {
-		const result = rangeExceededResult({ maxHours: 24 * 7, requestedHours: 24 * 30 }, "search_traces")
-
-		expect(result.isError).toBe(true)
-		const text = result.content[0].text
+		const text = rangeExceededMessage({ maxHours: 24 * 7, requestedHours: 24 * 30 }, "search_traces")
 		expect(text).toContain("search_traces")
 		expect(text).toContain("Requested 30 days")
 		expect(text).toContain("maximum supported range is 7 days")
@@ -145,8 +145,7 @@ describe("rangeExceededResult", () => {
 	})
 
 	it("formats sub-day caps as hours", () => {
-		const text = rangeExceededResult({ maxHours: 6, requestedHours: 48 }, "mine_log_patterns").content[0]
-			.text
+		const text = rangeExceededMessage({ maxHours: 6, requestedHours: 48 }, "mine_log_patterns")
 		expect(text).toContain("Requested 2 days")
 		expect(text).toContain("maximum supported range is 6 hours")
 	})

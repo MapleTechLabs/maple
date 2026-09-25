@@ -24,9 +24,10 @@
  */
 import {
 	ApiWorker,
-	CLOUDFLARE_WORKER_PLACEMENT,
 	MapleStack,
+	resolveRegionAppUrls,
 	resolveWorkerName,
+	resolveWorkerPlacement,
 } from "@maple/infra/cloudflare"
 import { plainFrom } from "@maple/infra/env"
 import * as Cloudflare from "alchemy/Cloudflare"
@@ -36,10 +37,10 @@ import { Effect } from "effect"
 const rootDir = new URL("..", import.meta.url).pathname
 
 const props = Effect.gen(function* () {
-	const { stage, domains, urls } = yield* MapleStack
+	const { stage, region, domains, urls } = yield* MapleStack
 	const api = yield* ApiWorker
 	return {
-		name: resolveWorkerName("web", stage),
+		name: resolveWorkerName("web", stage, region),
 		rootDir,
 		// The deployed entry. A vite source owns the Worker entry, so the Effect
 		// implementation this class used to take as a third argument moved into
@@ -58,7 +59,7 @@ const props = Effect.gen(function* () {
 			include: ["**/*", "../../packages/*/src/**", "../../lib/*/src/**"],
 			lockfile: true,
 		},
-		placement: CLOUDFLARE_WORKER_PLACEMENT,
+		placement: resolveWorkerPlacement(region),
 		workersDev: true,
 		domain: domains.web,
 		env: {
@@ -74,6 +75,10 @@ const props = Effect.gen(function* () {
 			VITE_API_BASE_URL: urls.api,
 			VITE_INGEST_URL: urls.ingest,
 			VITE_ELECTRIC_SYNC_URL: urls.electricSync,
+			// Which instance this dashboard is, and where the others are: an organization that
+			// lives in another region is sent there rather than served here.
+			VITE_MAPLE_REGION: region,
+			VITE_MAPLE_REGION_APP_URLS: JSON.stringify(resolveRegionAppUrls(stage)),
 			VITE_MAPLE_AUTH_MODE: yield* plainFrom(
 				["VITE_MAPLE_AUTH_MODE", "MAPLE_AUTH_MODE"],
 				"self_hosted",

@@ -1,5 +1,5 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import { IntegrationsValidationError, type VcsSyncJob } from "@maple/domain/http"
+import { IntegrationsValidationError, PrReviewRepositoryConfig, type VcsSyncJob } from "@maple/domain/http"
 import { Effect, Layer, Option } from "effect"
 import { TestClock } from "effect/testing"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
@@ -7,6 +7,8 @@ import { GithubAppClient } from "@maple/backend/services/integrations/vcs/vendor
 import { GithubConnectService } from "@maple/backend/services/integrations/vcs/vendor/github/GithubConnectService"
 import type { GithubHttp } from "@maple/backend/services/integrations/vcs/vendor/github/GithubHttp"
 import { OAuthStateRepository } from "@maple/backend/services/auth/OAuthStateRepository"
+import { OrganizationFeatureFlagsService } from "@maple/backend/services/org/OrganizationFeatureFlagsService"
+import { DISABLED_ORGANIZATION_FEATURE_FLAGS } from "@maple/domain/organization-feature-flags"
 import { VcsRepository } from "@maple/backend/services/integrations/vcs/VcsRepository"
 import { VcsSyncQueue } from "@maple/backend/services/integrations/vcs/VcsSyncQueue"
 import {
@@ -63,7 +65,12 @@ const connectResponders = (...rest: Array<() => Response>) => [
 
 // Wire GithubConnectService over an in-memory PGlite (real repo + state repo), a
 // real GithubAppClient backed by the stubbed GithubHttp, and a recording queue.
-const connectLayer = (testDb: TestDb, http: Layer.Layer<GithubHttp>, sent: Array<VcsSyncJob>) => {
+const connectLayer = (
+	testDb: TestDb,
+	http: Layer.Layer<GithubHttp>,
+	sent: Array<VcsSyncJob>,
+	featureFlags: Layer.Layer<OrganizationFeatureFlagsService> = OrganizationFeatureFlagsService.allEnabled,
+) => {
 	const env = testEnv(GITHUB_APP_CONFIG)
 	const data = Layer.mergeAll(
 		VcsRepository.layer,
@@ -75,7 +82,7 @@ const connectLayer = (testDb: TestDb, http: Layer.Layer<GithubHttp>, sent: Array
 		Layer.provide(env),
 	)
 	const service = Layer.effect(GithubConnectService, GithubConnectService.make).pipe(
-		Layer.provide(Layer.mergeAll(env, githubAppClient, data)),
+		Layer.provide(Layer.mergeAll(env, githubAppClient, data, featureFlags)),
 	)
 	return Layer.mergeAll(service, data)
 }
@@ -572,6 +579,92 @@ describe("GithubConnectService", () => {
 			assert.ok(Option.isSome(yield* repo.findCommitBySha(orgId, decodeGitCommitSha(SHA))))
 		}).pipe(Effect.provide(connectLayer(testDb, http, sent)))
 	})
+
+	const connectedRepo = (svc: GithubConnectService["Service"], repo: VcsRepository["Service"]) =>
+		Effect.gen(function* () {
+			const orgId = asOrgId("org_test")
+			const { state } = yield* svc.startConnect(orgId, asUserId("user_1"), {
+				callbackUrl: "https://tunnel.example/cb",
+			})
+			yield* svc.completeConnect("42", state, TEST_CODE)
+			yield* upsertReposFor(repo, "42", [
+				{
+					externalRepoId: "7",
+					owner: "octo",
+					name: "repo",
+					fullName: "octo/repo",
+					defaultBranch: "main",
+					htmlUrl: "https://github.com/octo/repo",
+					isPrivate: true,
+					isArchived: false,
+				},
+			])
+			return { orgId, repository: yield* repoFor(repo, orgId, "7") }
+		})
+
+	it.effect("setPrReviewEnabled turns reviews on for a flagged organization", () => {
+		const testDb = createTestDb(trackedDbs)
+		const sent: Array<VcsSyncJob> = []
+		return Effect.gen(function* () {
+			const svc = yield* GithubConnectService
+			const repo = yield* VcsRepository
+			const { orgId, repository } = yield* connectedRepo(svc, repo)
+			assert.strictEqual(repository.prReviewEnabled, false)
+			const result = yield* svc.setPrReviewEnabled(orgId, repository.id, true)
+			assert.strictEqual(result.enabled, true)
+			assert.strictEqual((yield* repoFor(repo, orgId, "7")).prReviewEnabled, true)
+		}).pipe(Effect.provide(connectLayer(testDb, scriptedHttp(connectResponders()), sent)))
+	})
+
+	it.effect("setPrReviewConfig keeps every setting the form sends", () => {
+		const testDb = createTestDb(trackedDbs)
+		const sent: Array<VcsSyncJob> = []
+		return Effect.gen(function* () {
+			const svc = yield* GithubConnectService
+			const repo = yield* VcsRepository
+			const { orgId, repository } = yield* connectedRepo(svc, repo)
+			yield* svc.setPrReviewConfig(
+				orgId,
+				repository.id,
+				new PrReviewRepositoryConfig({
+					dailyLimit: 20,
+					automaticReviewLimit: 3,
+					feedbackScope: "off",
+				}),
+			)
+			const stored = yield* svc.getPrReviewConfig(orgId, repository.id)
+			assert.strictEqual(stored.dailyLimit, 20)
+			assert.strictEqual(stored.automaticReviewLimit, 3)
+			assert.strictEqual(stored.feedbackScope, "off")
+		}).pipe(Effect.provide(connectLayer(testDb, scriptedHttp(connectResponders()), sent)))
+	})
+
+	it.effect(
+		"setPrReviewEnabled refuses an organization outside the staged rollout, but still turns off",
+		() => {
+			const testDb = createTestDb(trackedDbs)
+			const sent: Array<VcsSyncJob> = []
+			return Effect.gen(function* () {
+				const svc = yield* GithubConnectService
+				const repo = yield* VcsRepository
+				const { orgId, repository } = yield* connectedRepo(svc, repo)
+				const refused = yield* svc.setPrReviewEnabled(orgId, repository.id, true).pipe(Effect.exit)
+				assert.ok(findError(refused) instanceof IntegrationsValidationError)
+				assert.strictEqual((yield* repoFor(repo, orgId, "7")).prReviewEnabled, false)
+				const off = yield* svc.setPrReviewEnabled(orgId, repository.id, false)
+				assert.strictEqual(off.enabled, false)
+			}).pipe(
+				Effect.provide(
+					connectLayer(
+						testDb,
+						scriptedHttp(connectResponders()),
+						sent,
+						OrganizationFeatureFlagsService.fixed(DISABLED_ORGANIZATION_FEATURE_FLAGS),
+					),
+				),
+			)
+		},
+	)
 
 	it.effect(
 		"setTrackedBranch validates the branch, no-ops on the current one, and wipes+resyncs on change",

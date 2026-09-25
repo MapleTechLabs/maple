@@ -13,7 +13,7 @@ import type { AlertDestinationRow } from "@maple/db"
 import { Effect, Result } from "effect"
 import { parseBase64Aes256GcmKey } from "@maple/backend/platform/Crypto"
 import type { EmailServiceApi } from "@maple/backend/platform/EmailService"
-import type { SlackBotTokenResolverApi } from "@maple/backend/services/integrations/slack-bot-token"
+import type { ChatAlertPosterApi } from "./ChatAlertPoster"
 import { buildAlertChatUrl, type DispatchContext as DeliveryDispatchContext } from "./AlertDeliveryDispatch"
 import { dispatchDelivery as dispatchDeliveryImpl } from "./delivery/dispatch"
 import type { DispatchResult } from "./delivery/context"
@@ -62,7 +62,7 @@ export const makeAlertDestinationDelivery = (options: {
 	readonly appBaseUrl: string
 	readonly runtime: AlertRuntimeApi
 	readonly email: EmailServiceApi
-	readonly resolveSlackBotToken: SlackBotTokenResolverApi["resolve"]
+	readonly postChatAlert: ChatAlertPosterApi["post"]
 }) => {
 	const hydrateDestination = Effect.fn("AlertsService.hydrateDestination")(function* (
 		row: AlertDestinationRow,
@@ -127,7 +127,7 @@ export const makeAlertDestinationDelivery = (options: {
 			options.runtime.deliveryTimeoutMs(),
 			context.linkUrl,
 			composeChatUrl(context),
-			{ sendEmail, resolveSlackBotToken: options.resolveSlackBotToken },
+			{ sendEmail, postChatAlert: options.postChatAlert },
 		)
 
 	const buildPayloadValue = (context: AlertDeliveryPayloadContext, tenantId: string) =>

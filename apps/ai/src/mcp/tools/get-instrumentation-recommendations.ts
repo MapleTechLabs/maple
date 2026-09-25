@@ -1,23 +1,16 @@
-import {
-	McpQueryError,
-	optionalBooleanParam,
-	optionalStringParam,
-	validationError,
-	type McpToolRegistrar,
-} from "./types"
-import { formatNumber, formatTable } from "../lib/format"
-import { formatNextSteps } from "../lib/next-steps"
+import { McpQueryError, type McpToolRegistrar } from "./types"
+import { formatNumber } from "../lib/format"
 import { Effect, Option, Schema } from "effect"
-import { createDualContent } from "../lib/structured-output"
+import { GetInstrumentationRecommendationsOutput } from "@maple/domain/mcp-outputs"
 import { CurrentMcpTenant } from "../lib/query-warehouse"
 import { toMcpQueryError } from "../lib/map-warehouse-error"
 import { resolveTimeRange } from "../lib/time"
+import * as P from "../lib/params"
+import { doc, type DocBlock } from "../lib/tool-doc"
 import { RecommendationIssueService } from "@maple/backend/services/errors/RecommendationIssueService"
-import { RecommendationIssueStatus, type RecommendationIssueKind } from "@maple/domain/http"
+import type { RecommendationIssueKind } from "@maple/domain/http"
 import { exploreAttributeKeys } from "@maple/query-engine/observability"
 import { provideWarehouseExecutorFromTenant } from "@maple/backend/services/warehouse/WarehouseQueryService"
-
-const decodeStatus = Schema.decodeUnknownOption(RecommendationIssueStatus)
 
 export type RecommendationSeverity = "warn" | "info"
 
@@ -90,42 +83,34 @@ export const deriveCoverageGaps = (
 // log records missing TraceId correlation.
 
 export function registerGetInstrumentationRecommendationsTool(server: McpToolRegistrar) {
-	server.tool(
-		"get_instrumentation_recommendations",
-		"Audit instrumentation quality for the org: lists detected span attribute issues reconciled against live data " +
-			"(deprecated semconv keys to rename, double-emitted old+new keys, non-conforming names) plus org-wide " +
-			"resource-attribute coverage gaps (deployment environment, vcs.*, service.version). Renames can be fixed at " +
-			"the SDK or by accepting the matching Recommendation Issue in Maple Settings → Ingestion (creates an ingest " +
-			"attribute mapping); double-emission and naming issues must be fixed at the SDK. Used by the maple-audit skill.",
-		Schema.Struct({
-			status: optionalStringParam(
-				"Filter issues by status: open, dismissed, applied, resolved, or all (default: open)",
+	server.define({
+		name: "get_instrumentation_recommendations",
+		description:
+			"Span attribute issues found in the org's live data (deprecated semconv keys to rename, keys emitted under " +
+			"both old and new names, non-conforming names) plus org-wide resource attribute gaps (deployment " +
+			"environment, vcs.*, service.version). Each issue says whether an ingest mapping can fix it or only the " +
+			"SDK can. Use `audit_setup` for the whole setup; this is its attribute detail.",
+		parameters: Schema.Struct({
+			status: P.optionalOneOf(
+				["open", "dismissed", "applied", "resolved", "all"],
+				"Only issues in this status (default open)",
 			),
-			include_coverage: optionalBooleanParam(
-				"Set to false to skip the resource-attribute coverage section (default: included)",
+			include_coverage: P.optionalFlag(
+				"Include the resource attribute coverage section (default true)",
 			),
 		}),
-		Effect.fn("McpTool.getInstrumentationRecommendations")(function* ({ status, include_coverage }) {
+		output: GetInstrumentationRecommendationsOutput,
+		hints: { readOnly: true },
+		phrases: ["Checking instrumentation"],
+		handler: Effect.fn("McpTool.getInstrumentationRecommendations")(function* ({
+			status,
+			include_coverage,
+		}) {
 			const tenant = yield* CurrentMcpTenant
-			yield* Effect.annotateCurrentSpan({
-				orgId: tenant.orgId,
-				status: status ?? "open",
-			})
+			const statusFilter = status ?? "open"
+			yield* Effect.annotateCurrentSpan({ orgId: tenant.orgId, status: statusFilter })
 
-			let statusFilter: RecommendationIssueStatus | undefined = "open"
-			if (status === "all") {
-				statusFilter = undefined
-			} else if (status) {
-				const decoded = decodeStatus(status)
-				if (Option.isNone(decoded)) {
-					return validationError(
-						`Invalid status: '${status}'. Must be one of: open, dismissed, applied, resolved, all.`,
-					)
-				}
-				statusFilter = decoded.value
-			}
-
-			// Reconciles live span keys against persisted issues — calling this tool refreshes
+			// Reconciles live span keys against persisted issues: calling this tool refreshes
 			// usage counts and auto-resolves fixed issues, same as the dashboard settings page.
 			const service = yield* RecommendationIssueService
 			const reconciled = yield* service.listReconciled(tenant).pipe(
@@ -140,7 +125,7 @@ export function registerGetInstrumentationRecommendationsTool(server: McpToolReg
 			)
 
 			const issues = reconciled.issues.filter(
-				(issue) => statusFilter === undefined || issue.status === statusFilter,
+				(issue) => statusFilter === "all" || issue.status === statusFilter,
 			)
 			yield* Effect.annotateCurrentSpan("result.rowCount", issues.length)
 
@@ -161,95 +146,105 @@ export function registerGetInstrumentationRecommendationsTool(server: McpToolReg
 					)
 				: Option.none()
 
-			const coverageGaps = Option.isSome(resourceKeysOpt)
-				? deriveCoverageGaps(resourceKeysOpt.value)
-				: []
-
-			const lines: string[] = [
-				`## Instrumentation Recommendations`,
-				`Status filter: ${status ?? "open"} · ${issues.length} issue${issues.length === 1 ? "" : "s"}`,
-				``,
-			]
-
-			if (issues.length === 0) {
-				lines.push("No attribute issues detected in the last 24h of span data.")
-			} else {
-				lines.push(
-					formatTable(
-						["#", "Kind", "Severity", "Key", "Canonical", "Usage (24h)", "Status", "Fix via"],
-						issues.map((issue) => [
-							`#${issue.number}`,
-							issue.kind,
-							kindToSeverity(issue.kind),
-							issue.sourceKey,
-							issue.canonicalKey ?? "—",
-							formatNumber(issue.usageCount),
-							issue.status,
-							issue.kind === "rename" ? "SDK or ingest mapping" : "SDK only",
-						]),
-					),
-				)
-			}
-
-			if (wantCoverage) {
-				lines.push(``, `### Resource attribute coverage (last 24h)`)
-				if (Option.isNone(resourceKeysOpt)) {
-					lines.push("Coverage check unavailable — warehouse query failed.")
-				} else if (coverageGaps.length === 0) {
-					lines.push("All recommended resource attributes are arriving. ✓")
-				} else {
-					lines.push(
-						formatTable(
-							["Check", "Missing attribute", "Severity", "Impact"],
-							coverageGaps.map((gap) => [gap.checkId, gap.attribute, gap.severity, gap.reason]),
-						),
-					)
-				}
-			}
-
-			const nextSteps: string[] = [
-				`\`explore_attributes source="traces" scope="resource"\` — see every resource attribute key arriving`,
-			]
-			if (issues.some((issue) => issue.kind === "rename")) {
-				nextSteps.push(
-					"Rename issues: fix at the SDK (preferred) or accept the issue in Maple Settings → Ingestion to create an ingest attribute mapping",
-				)
-			}
-			if (issues.some((issue) => issue.kind === "double-emission")) {
-				nextSteps.push(
-					"Double-emission issues: standardize on the canonical key at the SDK — a mapping can't merge keys",
-				)
-			}
-			lines.push(formatNextSteps(nextSteps))
-
 			return {
-				content: createDualContent(lines.join("\n"), {
-					tool: "get_instrumentation_recommendations",
-					data: {
-						issues: issues.map((issue) => ({
-							id: issue.id,
-							number: issue.number,
-							recommendationKey: issue.recommendationKey,
-							kind: issue.kind,
-							severity: kindToSeverity(issue.kind),
-							sourceKey: issue.sourceKey,
-							canonicalKey: issue.canonicalKey ?? null,
-							status: issue.status,
-							usageCount: issue.usageCount,
-							applyableAsMapping: issue.kind === "rename",
-							openedAt: issue.openedAt,
-							updatedAt: issue.updatedAt,
-						})),
-						coverage: {
-							available: Option.isSome(resourceKeysOpt),
-							included: wantCoverage,
-							timeRange: { start: range.st, end: range.et },
-							gaps: coverageGaps,
-						},
-						total: issues.length,
-					},
-				}),
+				issues: issues.map((issue) => ({
+					id: issue.id,
+					number: issue.number,
+					recommendationKey: issue.recommendationKey,
+					kind: issue.kind,
+					severity: kindToSeverity(issue.kind),
+					sourceKey: issue.sourceKey,
+					canonicalKey: issue.canonicalKey ?? null,
+					status: issue.status,
+					usageCount: issue.usageCount,
+					applyableAsMapping: issue.kind === "rename",
+					openedAt: issue.openedAt,
+					updatedAt: issue.updatedAt,
+				})),
+				coverage: {
+					available: Option.isSome(resourceKeysOpt),
+					included: wantCoverage,
+					timeRange: { start: range.st, end: range.et },
+					gaps: Option.isSome(resourceKeysOpt) ? deriveCoverageGaps(resourceKeysOpt.value) : [],
+				},
+				total: issues.length,
+				statusFilter,
 			}
 		}),
-	)
+		render: (output) => {
+			const { issues, coverage } = output
+			const coverageBlocks: Array<DocBlock> = !coverage.included
+				? []
+				: [
+						doc.heading("Resource attribute coverage (last 24h)"),
+						!coverage.available
+							? doc.text("Coverage check unavailable: the warehouse query failed.")
+							: coverage.gaps.length === 0
+								? doc.text("All recommended resource attributes are arriving.")
+								: doc.table(
+										["Check", "Missing attribute", "Severity", "Impact"],
+										coverage.gaps.map((gap) => [
+											gap.checkId,
+											gap.attribute,
+											gap.severity,
+											gap.reason,
+										]),
+									),
+					]
+			const guidance = [
+				...(issues.some((issue) => issue.kind === "rename")
+					? [
+							"Rename issues: fix at the SDK (preferred) or accept the issue in Maple Settings → Ingestion to create an ingest attribute mapping.",
+						]
+					: []),
+				...(issues.some((issue) => issue.kind === "double-emission")
+					? [
+							"Double-emission issues: standardize on the canonical key at the SDK; a mapping can't merge keys.",
+						]
+					: []),
+			]
+			return {
+				title: "Instrumentation Recommendations",
+				scope: [
+					["Status filter", output.statusFilter ?? "open"],
+					["Issues", String(output.total)],
+				],
+				blocks: [
+					issues.length === 0
+						? doc.text("No attribute issues detected in the last 24h of span data.")
+						: doc.table(
+								[
+									"#",
+									"Kind",
+									"Severity",
+									"Key",
+									"Canonical",
+									"Usage (24h)",
+									"Status",
+									"Fix via",
+								],
+								issues.map((issue) => [
+									`#${issue.number}`,
+									issue.kind,
+									issue.severity,
+									issue.sourceKey,
+									issue.canonicalKey ?? "—",
+									formatNumber(issue.usageCount),
+									issue.status,
+									issue.applyableAsMapping ? "SDK or ingest mapping" : "SDK only",
+								]),
+							),
+					...coverageBlocks,
+					...(guidance.length === 0 ? [] : [doc.list(guidance)]),
+				],
+				next: [
+					doc.next(
+						"explore_attributes",
+						{ source: "traces", scope: "resource" },
+						"see every resource attribute key arriving",
+					),
+				],
+			}
+		},
+	})
 }

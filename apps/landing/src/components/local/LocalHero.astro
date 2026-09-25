@@ -1,6 +1,6 @@
 ---
 /**
- * LocalHero — terminal showcase for the Maple Local overview page.
+ * LocalHero: terminal showcase for the Maple Local overview page.
  *
  * Renders inside the docs `.docs-content` article column (below the auto
  * page title), so it leads with a one-line install + the real `maple start`
@@ -77,7 +77,7 @@ const stats = [
 <script>
 	import { bindCopyButtons } from "../../lib/copy-to-clipboard";
 	// Progressive enhancement: wire copy buttons. Without JS the command is still
-	// fully visible and selectable — the button just does nothing.
+	// fully visible and selectable; the button just does nothing.
 	bindCopyButtons({ hostSelector: ".lh__cmd[data-copy]", buttonSelector: ".lh__copy" });
 </script>
 

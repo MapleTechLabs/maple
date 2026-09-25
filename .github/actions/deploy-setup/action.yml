@@ -18,6 +18,13 @@ inputs:
     aws-role-arn:
         description: The deploy role to assume over OIDC.
         required: true
+    aws-region:
+        description: >-
+            The AWS region the deploy's ECS resources live in — `resolveAwsRegion`
+            for the instance (us-east-1 for us, eu-central-1 for eu). The stack
+            refuses an AWS_REGION that disagrees with its stage.
+        required: false
+        default: us-east-1
     ingest-binary:
         description: >-
             Download the `maple-ingest` artifact the build-ingest-binary job
@@ -56,7 +63,7 @@ runs:
           uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6.2.3
           with:
               role-to-assume: ${{ inputs.aws-role-arn }}
-              aws-region: us-east-1
+              aws-region: ${{ inputs.aws-region }}
 
         - uses: ./.github/actions/bun-install
 

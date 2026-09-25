@@ -1,21 +1,25 @@
 # Database query observability
 
-Maple gives every database call first-class treatment using the standard
+Maple treats database calls as first-class using the standard
 [OpenTelemetry database semantic conventions](https://opentelemetry.io/docs/specs/semconv/db/database-spans/).
-If your services are instrumented with an OTel-aware database client — which most
-SDKs enable automatically — you get, with **no extra configuration**:
+If your services use an OTel-aware database client (most SDKs enable one
+automatically), you get the following with **no extra configuration**:
 
 - **Query timing inline in every trace.** A database call's client span shows up
-  in the waterfall like any other span, and its detail panel renders a database
-  summary block (system, namespace, table, operation, rows returned, server)
-  derived from the `db.*` attributes.
-- **A cross-service Queries surface.** Every distinct query _shape_ (the query
-  with literals normalized to `?`) is aggregated across services with call
-  volume, error rate, and p50/p95/p99 latency, so you can find your slowest and
-  busiest queries and drill straight to sample traces.
+  in the waterfall like any other span. Its detail panel renders a database
+  summary block (system, namespace, table, operation, rows returned, batch size,
+  server, error outcome) derived from the `db.*` attributes
+  (`packages/ui/src/lib/cloud-platforms/database.ts`).
+- **Query shapes per database.** Selecting a database node on the service map
+  opens a detail panel with "Query Activity" and "Top Query Shapes". Every
+  distinct query _shape_ (the query with literals normalized to `?`) is
+  aggregated across the calling services with call volume, error rate, and
+  p50/p95 latency, plus a sample statement. The shapes come from the
+  `service_map_db_query_shapes_hourly` rollup, with the in-progress hour read
+  from raw traces.
 
-This works for **any** database — PostgreSQL, MySQL, ClickHouse, Redis, MongoDB,
-and more — because it reads only the vendor-neutral semantic conventions.
+This works for **any** database (PostgreSQL, MySQL, ClickHouse, Redis, MongoDB,
+and more) because it reads only the vendor-neutral semantic conventions.
 
 ## Attributes Maple reads
 
@@ -33,37 +37,38 @@ and more — because it reads only the vendor-neutral semantic conventions.
 
 Query text is grouped by _shape_: literals are stripped to `?` and `IN (...)`
 lists are collapsed, so `WHERE id = 1` and `WHERE id = 2` are the same shape.
+The shared SQL lives in `packages/domain/src/tinybird/db-query-shape-sql.ts`.
 Prefer emitting parameterized `db.query.text` (the OTel spec says parameterized
 text should **not** be sanitized) so shapes stay clean.
 
 ## Correlating server-side query logs with traces (SQLCommenter)
 
-The client span above captures the query _as the caller sees it_ — duration and
-the query text — but it cannot see server-side detail such as memory used or
-rows/bytes scanned. To bridge that gap, tag your queries with **SQLCommenter**,
-the OpenTelemetry-standard way to propagate trace context into the database by
-appending a comment to the query:
+The client span captures the query _as the caller sees it_: duration and query
+text. It cannot see server-side detail such as memory used or rows/bytes
+scanned. **SQLCommenter** is the OpenTelemetry-standard way to bridge that gap.
+It propagates trace context into the database by appending a comment to the
+query:
 
 ```sql
 SELECT * FROM events WHERE ts > ? /*traceparent='00-<trace_id>-<span_id>-01'*/
 ```
 
-Most OTel database instrumentations can inject this for you (it is opt-in — see
-your SDK's SQLCommenter / "DB statement comment" option). Because the database
-records the full query text — comment included — in its query log, Maple can
-read that log back (see the ClickHouse integration) and stitch each server-side
-query to the exact client span that issued it, nesting it as a child in the
-trace.
+Most OTel database instrumentations can inject this comment (it is opt-in; see
+your SDK's SQLCommenter or "DB statement comment" option). The database then
+records the full query text, comment included, in its query log, so a reader of
+that log can match each server-side query to the client span that issued it.
 
-> Note: SQLCommenter comments are low-cardinality-unfriendly for MySQL prepared
-> statements, Oracle, and SQL Server; consult the OTel guidance before enabling
+Maple does not read database query logs today. An earlier SQLCommenter parser in
+`@maple/domain` was removed in the repo restructure (#328) because nothing used it.
+
+> Note: SQLCommenter comments can defeat statement caching for MySQL prepared
+> statements, Oracle, and SQL Server. Consult the OTel guidance before enabling
 > it broadly on those engines.
 
-## Resource allocation (ClickHouse)
+## Resource allocation (not built)
 
-Server-side **resource allocation** — peak memory, rows/bytes read, CPU time,
-ProfileEvents — is not available from client spans. For ClickHouse, connect your
-cluster via the ClickHouse integration: Maple polls `system.query_log`, forwards
-each sampled query into Maple as a span (nested under your app's trace via the
-SQLCommenter `traceparent` above) plus aggregate metrics, so query timing and
-resource allocation land alongside your existing traces and dashboards.
+Server-side **resource allocation** (peak memory, rows/bytes read, CPU time,
+ProfileEvents) is not available from client spans. The original plan was a
+ClickHouse integration that polls `system.query_log`, forwards each sampled
+query as a span nested under the app's trace via the SQLCommenter `traceparent`,
+and emits aggregate metrics. That poller does not exist yet.

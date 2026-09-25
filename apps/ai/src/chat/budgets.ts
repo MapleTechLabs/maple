@@ -37,24 +37,22 @@ export const REPEATED_TOOL_CALLS = 5
 /**
  * What one kind of turn may spend.
  *
- * Per agent, because the two kinds of turn are not the same work and used to share one budget: a
- * one-line chat reply was given the autonomous investigation's 100-call, ten-minute rail, so a
- * conversation could hold a person waiting for ten minutes over a question that wanted two tool
- * calls.
+ * Per agent, because the kinds of turn are not the same work: an unattended pass needs rails that
+ * force it to conclude, while an attended chat turn has a person who can stop it.
  */
 export interface AgentBudget {
 	/** Hard cap on tool calls, and on assistant turns, so a turn can never be stopped for thinking more often than it called a tool. */
 	readonly maxToolCalls: number
-	/** Wall clock. Held well under `ChatSession`'s 15-minute `TURN_STALE_MS` so the deadline that stops a turn is the turn's own. */
+	/** Wall clock. Held under `ChatSession`'s `TURN_STALE_MS` so the deadline that stops a turn is the turn's own. */
 	readonly maxDuration: Duration.Input
 	/**
-	 * Total tokens, input plus output, the run may consume.
+	 * Total tokens, input plus output, the run may consume: a runaway backstop, never a pace.
 	 *
-	 * Unset until 2026-09-20, which meant nothing bounded a run's spend at all: `maxToolCalls` was
-	 * never reached (max 54 of 100) and `maxDuration` stopped only the truly stuck, so the long tail
-	 * ran to 2.06M tokens. Crossing it flips the run to its final answer rather than failing it,
-	 * which is the behaviour worth having: a run that has burned this much is not going to improve,
-	 * and what we want from it is the diagnosis it already has evidence for.
+	 * The engine counts every re-sent prompt, cache reads included, so this grows with the square of
+	 * the run's length and says little about spend. Sized at 800k it stopped a 9-file review after 18
+	 * calls (2026-09-24), and the close-out then reported the diff as unread. Every budget therefore
+	 * clears `maxToolCalls` calls at a full `MAX_LIVE_CONTEXT_TOKENS` prompt, so tokens never bind
+	 * before the call cap or the wall clock does.
 	 */
 	readonly tokenBudget: number
 	/**
@@ -65,27 +63,62 @@ export interface AgentBudget {
 	 * which is smaller than any prompt this agent sends and would let research run to the last token.
 	 */
 	readonly completionReserveTokens: number
+	/**
+	 * Append the engine's `<run-status>` line (elapsed time, calls used, a warning at 80% of any
+	 * limit) to each model call, so an unattended pass submits before its deadline rather than after.
+	 * Only on the outgoing prompt, after the cached prefix.
+	 */
+	readonly runStatus?: boolean
 }
 
 /**
  * An autonomous investigation: a long evidence-gathering pass that must end on `submit_diagnosis`.
  *
- * `maxToolCalls` stays a runaway guard rather than a budget the model should pace against, which is
- * why it sits far above the 54 calls the worst observed run made. `tokenBudget` sits just above the
- * p95 turn, so roughly one run in twenty is asked to conclude and the rest are untouched.
+ * Runaway guards only, far above the 54 calls the worst observed run made; the wall clock is what
+ * ends a stuck pass. A run cost about $0.04 at 79% cache reads (2026-09-19), so a long one is cheap.
  */
 export const INVESTIGATION_BUDGET: AgentBudget = {
-	maxToolCalls: 100,
+	maxToolCalls: 200,
 	maxDuration: "10 minutes",
-	tokenBudget: 1_200_000,
+	tokenBudget: 25_600_000,
 	completionReserveTokens: 64_000,
 }
 
-/** An attended chat turn: someone is watching it, so the ceilings are what a person will wait for. */
+/**
+ * An unattended pull request review: read every hunk that adds code, check the warehouse where the
+ * diff names a service or an attribute, file one report through `submit_review`.
+ *
+ * Runaway guards, not a pace: a review that stops early files a partial report, so the wall clock
+ * is what bounds a stuck run and nothing else should end one that is still reading.
+ */
+export const PR_REVIEW_BUDGET: AgentBudget = {
+	maxToolCalls: 500,
+	// Twice this plus the margin must stay under `TURN_STALE_MS`: a pass and its close-out.
+	maxDuration: "10 minutes",
+	tokenBudget: 64_000_000,
+	completionReserveTokens: 48_000,
+	runStatus: true,
+}
+
+/** An answer on a pull request: narrower than a review, with room to read and to stage a fix. */
+export const PR_REPLY_BUDGET: AgentBudget = {
+	maxToolCalls: 200,
+	maxDuration: "6 minutes",
+	tokenBudget: 25_600_000,
+	completionReserveTokens: 32_000,
+}
+
+/**
+ * An attended chat turn, in the app or through a chat connector.
+ *
+ * Generous on purpose: a real investigation in chat hit the old 40-call, 600k-token rail around
+ * its 23rd tool call. Someone is watching and can stop it, so the step cap binds rather than
+ * tokens: `tokenBudget` clears `maxToolCalls` calls at a full `MAX_LIVE_CONTEXT_TOKENS` prompt.
+ */
 export const CHAT_BUDGET: AgentBudget = {
-	maxToolCalls: 40,
-	maxDuration: "5 minutes",
-	tokenBudget: 600_000,
+	maxToolCalls: 120,
+	maxDuration: "15 minutes",
+	tokenBudget: 16_000_000,
 	completionReserveTokens: 32_000,
 }
 

@@ -25,7 +25,7 @@ const PLANETSCALE_PROVIDER = "planetscale"
  * callback is a raw router route, not an API group (docs/api-v2.md), and this
  * exact path is registered in the PlanetScale OAuth app. Owned here rather than
  * by either route module so the v2 `connect` handler and the v1 callback
- * registration cannot drift apart — same arrangement as `SLACK_CALLBACK_PATH`.
+ * registration cannot drift apart.
  */
 export const PLANETSCALE_CALLBACK_PATH = "/api/integrations/planetscale/callback"
 

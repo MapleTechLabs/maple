@@ -4,7 +4,7 @@
  *
  * Transport — which provider gets which request, how it is sent, how failures
  * are classified — lives in `./delivery`. This module is pure: everything here
- * is a value in, a value out, which is what makes the Slack/Discord block
+ * is a value in, a value out, which is what makes the Discord/Telegram
  * output assertable without any HTTP stub.
  */
 import type {
@@ -28,7 +28,6 @@ import {
 	formatSignalMetric,
 	formatThresholdSummary,
 	formatWindow,
-	severityEmoji,
 	signalDisplayOf,
 	truncate,
 	type TemplateRenderContext,
@@ -101,17 +100,9 @@ export const buildAlertChatUrl = (baseUrl: string, context: ChatUrlContext): str
 }
 
 /**
- * Escape Slack mrkdwn control characters in dynamic text (Slack parses `<...>`
- * as link/mention syntax). Required by https://docs.slack.dev/messaging/formatting-message-text
- * for any user-controlled value interpolated into mrkdwn.
- */
-const escapeSlackMrkdwn = (value: string): string =>
-	value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
-
-/**
- * One human-readable sentence describing what happened — the message lead, per
- * Slack's Block Kit guidance (header as subject line, then a short clear
- * sentence, with details relegated to fields/context).
+ * One human-readable sentence describing what happened — the message lead
+ * (title as subject line, then a short clear sentence, with details relegated
+ * to fields/footer).
  */
 type SummaryLineContext = Pick<
 	DispatchContext,
@@ -128,12 +119,12 @@ type SummaryLineContext = Pick<
 /**
  * Parameterized over `em` (the provider's emphasis marker) rather than
  * duplicated per provider: the three-branch wording is the part that would
- * drift, and `*bold*` is the only thing Slack and Telegram disagree on here.
+ * drift, and emphasis is the only thing the providers disagree on here.
  * Telegram passes the identity — it escapes the finished line and puts its bold
  * in the title, because `comparatorBreachPhrase` embeds `<`/`>` comparators
  * that HTML mode would otherwise read as tags.
  */
-const buildSummaryLine = (context: SummaryLineContext, em: (value: string) => string): string => {
+export const buildSummaryLine = (context: SummaryLineContext, em: (value: string) => string): string => {
 	const signal = formatSignalLabel(context)
 	const observed = formatSignalMetric(context.value, signalDisplayOf(context))
 	const window = formatWindow(context.windowMinutes)
@@ -147,115 +138,12 @@ const buildSummaryLine = (context: SummaryLineContext, em: (value: string) => st
 	return `${em(signal)} is ${em(observed)} — ${comparatorBreachPhrase(context)}, measured over the last ${window}.`
 }
 
-const buildSlackSummaryLine = (context: SummaryLineContext): string =>
-	buildSummaryLine(context, (value) => `*${value}*`)
-
-const buildSlackActionsBlock = (linkUrl: string, chatUrl: string) => ({
-	type: "actions",
-	elements: [
-		{
-			type: "button",
-			text: { type: "plain_text", text: "Open in Maple", emoji: true },
-			url: linkUrl,
-			style: "primary",
-		},
-		{
-			type: "button",
-			text: { type: "plain_text", text: "✨ Ask Maple AI", emoji: true },
-			url: chatUrl,
-		},
-	],
-})
-
-/**
- * Footer: brand + incident reference + a `<!date^…>` timestamp so Slack renders
- * the fire time in each viewer's local timezone (ISO fallback for exports).
- */
-const buildSlackContextBlock = (context: Pick<DispatchContext, "sentAtMs" | "incidentId" | "sparkline">) => {
-	const parts = ["\u{1F341} Maple Alerts"]
-	// Ahead of the incident id and the timestamp: on a renotify this is the only
-	// part of the message that differs from the last one, and it is the answer
-	// to the question the reader actually has — better or worse than before?
-	if (context.sparkline) parts.push(`\`${context.sparkline}\``)
-	if (context.incidentId) parts.push(`Incident \`${escapeSlackMrkdwn(context.incidentId)}\``)
-	if (context.sentAtMs != null) {
-		const seconds = Math.floor(context.sentAtMs / 1000)
-		const iso = new Date(context.sentAtMs).toISOString()
-		parts.push(`<!date^${seconds}^{date_short_pretty} at {time}|${iso}>`)
-	}
-	return { type: "context", elements: [{ type: "mrkdwn", text: parts.join("  ·  ") }] }
-}
-
-/**
- * The `Group` field, present only when the rule is actually grouped. An
- * ungrouped rule has no group to report — showing its `__total__` storage
- * sentinel is worse than showing nothing.
- */
-const groupField = (groupKey: string | null) => {
-	const group = displayGroupKey(groupKey)
-	return group == null ? [] : [{ type: "mrkdwn", text: `*Group*\n\`${escapeSlackMrkdwn(group)}\`` }]
-}
-
-/**
- * The chart, as a Slack image block.
- *
- * `alt_text` is not decoration: it is what a screen reader announces and what
- * shows if the image will not load, so it repeats the numbers rather than
- * naming the picture. Returns nothing when there is no chart, so the caller
- * spreads an empty list and the message shape is otherwise unchanged.
- */
-const slackChartBlocks = (context: Pick<DispatchContext, "chartUrl" | "ruleName">) =>
-	context.chartUrl
-		? [
-				{
-					type: "image",
-					image_url: context.chartUrl,
-					alt_text: truncate(`${context.ruleName} over the alert window`, 2000),
-				},
-			]
-		: []
-
-export const buildSlackBlocks = (context: TemplateRenderContext, linkUrl: string, chatUrl: string) => [
-	{
-		type: "header",
-		text: {
-			type: "plain_text",
-			text: truncate(
-				`${eventTypeEmoji(context.eventType)} ${context.ruleName} — ${formatEventTypeLabel(context.eventType)}`,
-				150,
-			),
-			emoji: true,
-		},
-	},
-	{
-		type: "section",
-		text: { type: "mrkdwn", text: buildSlackSummaryLine(context) },
-		fields: [
-			{
-				type: "mrkdwn",
-				text: `*Severity*\n${severityEmoji(context.severity)} ${formatSeverityLabel(context.severity)}`,
-			},
-			...groupField(context.groupKey),
-		],
-	},
-	...slackChartBlocks(context),
-	buildSlackActionsBlock(linkUrl, chatUrl),
-	buildSlackContextBlock(context),
-]
-
-/**
- * Notification-preview fallback (`text` alongside blocks): a complete one-line
- * summary, since push/desktop previews render only this string.
- */
-export const buildSlackFallbackText = (context: TemplateRenderContext): string =>
-	`${eventTypeEmoji(context.eventType)} ${escapeSlackMrkdwn(context.ruleName)} — ${formatEventTypeLabel(context.eventType)} · ${formatSignalLabel(context)} ${formatObservedSummary(context)}`
-
 /**
  * Discord has no context block, so the sparkline rides in the footer — the one
  * line that is small enough not to compete with the numbers above it. Shared by
  * both embed builders: they had drifted apart once already.
  */
-/** Discord renders `embed.image` full width under the fields — the same slot Slack's image block occupies. */
+/** Discord renders `embed.image` full width under the fields. */
 const discordImage = (context: Pick<DispatchContext, "chartUrl">) =>
 	context.chartUrl ? { image: { url: context.chartUrl } } : {}
 
@@ -340,8 +228,8 @@ export const buildTelegramText = (context: DispatchContext): string => {
  * Minimal Markdown -> Telegram HTML transform for user-authored templates:
  * `**b**` -> `<b>b</b>`, `[t](url)` -> `<a href="url">t</a>`.
  *
- * Escaped BEFORE the rewrites, exactly as {@link markdownToSlackMrkdwn} is, so
- * only the tags this function builds itself reach Telegram. Link targets are
+ * Escaped BEFORE the rewrites, so only the tags this function builds itself
+ * reach Telegram. Link targets are
  * restricted to http/https: Telegram also resolves `tg://` URLs, which would
  * let a template author aim a button at an arbitrary in-app action.
  */
@@ -416,27 +304,6 @@ export const buildTemplateContext = (
 }
 
 /**
- * Minimal Markdown → Slack mrkdwn transform: `**b**`→`*b*`, `[t](url)`→`<url|t>`.
- *
- * The body is a user-authored notification template, so it is escaped BEFORE the
- * rewrites: every `<…>` the author typed becomes literal text, which neutralizes
- * `<!channel>`/`<!here>`/`<!everyone>` broadcasts (the slack-bot destination holds
- * `chat:write.public` and can post to any public channel) and hand-written
- * deceptive links like `<https://evil.test|Open in Maple>`. Only the `<…>` this
- * function builds itself reaches Slack as markup. Slack decodes `&amp;`/`&lt;`/
- * `&gt;` for display, so legitimate text and `&`-bearing URLs survive intact.
- */
-const markdownToSlackMrkdwn = (markdown: string): string =>
-	escapeSlackMrkdwn(markdown)
-		.replace(/\*\*([^*]+)\*\*/g, "*$1*")
-		.replace(
-			/\[([^\]]+)\]\(([^)]+)\)/g,
-			// `|` would otherwise end the link target and let the rest of the URL pose
-			// as the label.
-			(_match, text: string, url: string) => `<${url.replaceAll("|", "%7C")}|${text}>`,
-		)
-
-/**
  * Resolve + render the effective title/body for a destination. Returns `null`
  * when the rule has no custom template (caller falls back to the hardcoded
  * formatter) or when rendering fails for any reason — templating must never
@@ -461,29 +328,6 @@ export const renderTitleBody = (
 		return null
 	}
 }
-
-export const buildSlackBlocksFromTemplate = (
-	title: string,
-	body: string,
-	context: Pick<
-		DispatchContext,
-		"eventType" | "sentAtMs" | "incidentId" | "sparkline" | "chartUrl" | "ruleName"
-	>,
-	linkUrl: string,
-	chatUrl: string,
-) => [
-	{
-		type: "header",
-		text: { type: "plain_text", text: truncate(title, 150), emoji: true },
-	},
-	{
-		type: "section",
-		text: { type: "mrkdwn", text: markdownToSlackMrkdwn(body) },
-	},
-	...slackChartBlocks(context),
-	buildSlackActionsBlock(linkUrl, chatUrl),
-	buildSlackContextBlock(context),
-]
 
 export const buildDiscordEmbedsFromTemplate = (
 	title: string,

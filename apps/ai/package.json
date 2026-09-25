@@ -6,15 +6,14 @@
 		"eval": "vitest run --config vitest.eval.config.ts",
 		"eval:check": "bun run scripts/eval-runtime-check.ts",
 		"eval:widgets": "bun run scripts/grade-widget-eval.ts",
+		"review:local": "bun --env-file=../../.env.local scripts/pr-review-local.ts",
+		"review:eval": "bun --env-file=../../.env.local scripts/pr-review-eval.ts",
 		"mcp:docs": "bun run scripts/generate-dashboard-skill.ts",
 		"measure-tokens": "bun run scripts/measure-token-cost.ts",
 		"test": "vitest run",
 		"typecheck": "tsc --noEmit"
 	},
 	"dependencies": {
-		"@effect-agent/core": "0.1.0-beta.85",
-		"@effect-agent/engine": "0.1.0-beta.85",
-		"@effect-agent/sandbox": "0.1.0-beta.85",
 		"@effect/ai-openai-compat": "catalog:effect",
 		"@effect/ai-openrouter": "catalog:effect",
 		"@maple-dev/effect-sdk": "workspace:*",
@@ -26,7 +25,8 @@
 		"@maple/query-engine-integrations": "workspace:*",
 		"@maple/query-model": "workspace:*",
 		"@maple/widgets": "workspace:*",
-		"effect": "catalog:effect"
+		"effect": "catalog:effect",
+		"effect-agent": "0.1.0-beta.142"
 	},
 	"devDependencies": {
 		"@ai-sdk/openai-compatible": "^2.0.48",

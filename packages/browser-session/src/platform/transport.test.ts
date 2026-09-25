@@ -1,7 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import {
 	gzip,
-	keepaliveFor,
+	postToIngest,
+	reserveKeepalive,
+	resetKeepaliveBudgetForTests,
 	postSessionBlob,
 	postSessionEvents,
 	postSessionMeta,
@@ -21,19 +23,48 @@ const CONFIG = {
 const lastInit = (fetchMock: ReturnType<typeof vi.fn>): RequestInit =>
 	fetchMock.mock.calls.at(-1)?.[1] as RequestInit
 
-describe("keepaliveFor", () => {
+describe("reserveKeepalive", () => {
+	beforeEach(() => resetKeepaliveBudgetForTests())
+
 	it("passes small bodies through", () => {
-		expect(keepaliveFor(true, 1_024)).toBe(true)
+		expect(reserveKeepalive(true, 1_024)).toBeTypeOf("function")
 	})
 
-	it("drops keepalive past the shared 64KiB budget", () => {
+	it("drops keepalive past the budget", () => {
 		// The browser rejects an over-budget keepalive request outright, so a
 		// normal request the page may not outlive is still the better bet.
-		expect(keepaliveFor(true, 64 * 1024)).toBe(false)
+		expect(reserveKeepalive(true, 64 * 1024)).toBeUndefined()
+	})
+
+	it("shares one budget across concurrent writes", () => {
+		const first = reserveKeepalive(true, 30 * 1024)
+		expect(first).toBeTypeOf("function")
+		expect(reserveKeepalive(true, 30 * 1024)).toBeUndefined()
+		first?.()
+		expect(reserveKeepalive(true, 30 * 1024)).toBeTypeOf("function")
 	})
 
 	it("never turns keepalive on for a caller that didn't ask", () => {
-		expect(keepaliveFor(false, 1)).toBe(false)
+		expect(reserveKeepalive(false, 1)).toBeUndefined()
+	})
+
+	it("ends a still-open response body before releasing the reservation", async () => {
+		let cancelled = false
+		const body = new ReadableStream({
+			cancel() {
+				cancelled = true
+			},
+		})
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(async () => new Response(body, { status: 202 })),
+		)
+		const result = await postToIngest("https://ingest.test/x", {}, "x".repeat(40 * 1024), true)
+		expect(result.ok).toBe(true)
+		expect(cancelled).toBe(true)
+		// Released once the body ended, so the next unload write gets the whole budget.
+		expect(reserveKeepalive(true, 40 * 1024)).toBeTypeOf("function")
+		vi.unstubAllGlobals()
 	})
 })
 
@@ -58,6 +89,14 @@ describe("transport", () => {
 		const init = lastInit(fetchMock)
 		expect((init.headers as Record<string, string>).Authorization).toBe("Bearer k")
 		expect(init.body).toBe(`${JSON.stringify({ session_id: "s1", status: "ended" })}\n`)
+	})
+
+	it("posts without Authorization when no ingest key is set, for a proxy to add", async () => {
+		await postSessionMeta({ ...CONFIG, ingestKey: undefined }, { session_id: "s1" })
+
+		const headers = lastInit(fetchMock).headers as Record<string, string>
+		expect(headers).not.toHaveProperty("Authorization")
+		expect(headers["x-maple-sdk"]).toBe(CONFIG.sdk)
 	})
 
 	it("drops keepalive on an oversized metadata row rather than losing it", async () => {

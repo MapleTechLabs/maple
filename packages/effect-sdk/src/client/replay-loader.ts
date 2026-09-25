@@ -1,6 +1,7 @@
 // Replay bootstrap for the Effect client SDK. rrweb stays behind a dynamic
 // import, while the consent-aware controller itself is always lightweight.
 import {
+	claimReplaySample,
 	clearPendingEvents,
 	clearSessionSink,
 	configurePrivacy,
@@ -70,21 +71,19 @@ const noOpHandle: ClientSessionHandle = { stop: () => Promise.resolve() }
 export const startClientSession = (config: ClientSessionConfig): ClientSessionHandle => {
 	configurePrivacy(config.privacy)
 	if (!hasConsent()) clearPendingEvents()
-	const ingestKey = config.ingestKey
 	// React Native exposes window without a browser DOM or Web Crypto.
-	if (typeof window === "undefined" || typeof document === "undefined" || !ingestKey || readSessionSink())
+	if (typeof window === "undefined" || typeof document === "undefined" || readSessionSink())
 		return noOpHandle
 
 	const engineConfig = {
 		endpoint: config.endpoint.replace(/\/$/, ""),
-		ingestKey,
+		ingestKey: config.ingestKey,
 		sdk: CLIENT_SDK_HINT,
 		maskAllInputs: config.replay?.maskAllInputs ?? true,
 		maskAllText: config.replay?.maskAllText ?? false,
 		getIdentity: getCurrentIdentity,
 	}
 	const replayEnabled = (config.replay?.enabled ?? true) && typeof document !== "undefined"
-	const sampled = replayEnabled && Math.random() < (config.replay?.sampleRate ?? 1)
 	let runtime: Runtime | undefined
 	let stopped = false
 	let generation = 0
@@ -115,6 +114,9 @@ export const startClientSession = (config: ClientSessionConfig): ClientSessionHa
 		setVisitorTracking((config.privacy?.persistVisitorId ?? true) && mayPersistIdentifier())
 		const session = (rotateOnNextStart ? rotateSession() : undefined) ?? getSession()
 		rotateOnNextStart = false
+		// Rolled once per session and persisted on it, so every page load of a
+		// session records (or skips) it consistently.
+		const sampled = replayEnabled && claimReplaySample(config.replay?.sampleRate ?? 1)
 		const next: Runtime = { sink: startEventSink(engineConfig, session.id) }
 		runtime = next
 		const ownGeneration = ++generation
@@ -127,7 +129,7 @@ export const startClientSession = (config: ClientSessionConfig): ClientSessionHa
 					}
 					next.replay = startReplaySession({
 						endpoint: config.endpoint,
-						ingestKey,
+						ingestKey: config.ingestKey,
 						sdk: CLIENT_SDK_HINT,
 						serviceName: config.serviceName,
 						environment: config.environment,

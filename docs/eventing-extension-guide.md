@@ -1,21 +1,18 @@
 # Extending Maple's signal-to-event system
 
-This guide walks through adding either of the two main eventing extensions:
+This guide covers the two eventing extensions:
 
 - a **source adapter**, which turns an authenticated source payload into typed,
   normalized signals; or
 - a **semantic projector**, which turns matching signals into versioned factual
   events.
 
-You can add one or both, depending on what the source already provides.
+Add one or both, depending on what the source already provides.
 
-First, one important naming point: an eventing extension is a compile-time
-registered module. It is not a runtime-loaded plugin, and projection
-configuration cannot introduce executable code.
-
-The host decides which adapters and projectors are installed. An operator can
-then activate installed projectors through bounded, durable projection
-revisions.
+An eventing extension is a compile-time registered module, not a runtime-loaded
+plugin. Projection configuration cannot introduce executable code. The host
+decides which adapters and projectors are installed. An operator then activates
+installed projectors through bounded, durable projection revisions.
 
 The contracts in `@maple/eventing-core` are host-neutral. Hosted Maple and Maple
 Local can install the same source and projector definitions while using
@@ -57,17 +54,15 @@ The host is responsible for:
 - authorizing consumers, delivering events, retrying work, and performing side
   effects.
 
-That last boundary matters: projectors never perform I/O. Sending a message,
-calling a provider, mutating source state, or deciding what action to take
-belongs to a consumer after the event has crossed the durable boundary.
+Projectors never perform I/O. Sending a message, calling a provider, mutating
+source state, or deciding what action to take belongs to a consumer, after the
+event has crossed the durable boundary.
 
 ## Do you need a new source adapter?
 
-A useful rule of thumb is to reuse an installed source kind whenever it already
-preserves the fact you need.
-
-For example, when a semantic fact already arrives in an OTLP log, you will
-usually need only:
+Reuse an installed source kind whenever it already preserves the fact you need.
+For example, when a semantic fact already arrives in an OTLP log, you usually
+need only:
 
 1. a new projector; and
 2. projection configuration that selects the relevant logs.
@@ -77,9 +72,9 @@ You do not need another OTLP decoder.
 Add a source adapter when the source has its own authenticated payload, identity
 contract, or field vocabulary. A provider webhook is the usual example.
 
-A new adapter should not decode the same request a second time just for
-eventing. The host should decode once, authenticate once, and pass the
-already-decoded value to the adapter.
+A new adapter must not decode the same request a second time for eventing. The
+host decodes once, authenticates once, and passes the decoded value to the
+adapter.
 
 Before writing the implementation, settle the following contracts:
 
@@ -101,11 +96,9 @@ rather than pretend the source offers retry-safe identity or time.
 
 ## Complete example
 
-The following example takes a build-system message that the host has already
-authenticated and runtime-decoded, normalizes it, and projects successful builds
+This provider-neutral example takes a build-system message that the host has
+already authenticated and decoded, normalizes it, and projects successful builds
 into a versioned factual event.
-
-The example is deliberately provider-neutral.
 
 ### 1. Define the source and normalize its messages
 
@@ -177,18 +170,15 @@ export const BUILD_SOURCE: SignalSourceAdapter<BuildMessage, BuildContext> = {
 Authentication is intentionally absent from `normalize`. The host must verify
 the message before calling the adapter.
 
-Normalization must also be deterministic. Given the same source occurrence, it
-should produce the same normalized signal. It must not call `Date.now()`,
-generate a UUID, query a database, make a network request, or depend on mutable
-host state.
+Normalization must be deterministic: the same source occurrence produces the
+same normalized signal. It must not call `Date.now()`, generate a UUID, query a
+database, make a network request, or depend on mutable host state.
 
 ### 2. Define the projector's runtime codecs
 
 Projector configuration and projector output both cross trust boundaries, so
-each needs a runtime decoder.
-
-The output decoder is especially important: it makes `dataschema` an enforced
-contract rather than a hopeful annotation.
+each needs a runtime decoder. The output decoder is what turns `dataschema` into
+an enforced contract.
 
 ```ts
 import { type JsonValue, type SignalProjector } from "@maple/eventing-core"
@@ -240,18 +230,17 @@ export const BUILD_COMPLETED_PROJECTOR: SignalProjector<Schema.Schema.Type<typeo
 }
 ```
 
-The selector should normally stop incompatible statuses from reaching this
-projector. The explicit check is still useful: if the projection configuration
-and implementation ever drift apart, the projector fails closed instead of
-emitting a misleading event.
+The selector should normally keep other statuses away from this projector. The
+explicit check covers drift between projection configuration and
+implementation: the projector fails closed instead of emitting a misleading
+event. `evaluate` catches the throw and reports it as a projection failure.
 
 ### 3. Register the code and compile a projection
 
-Registration installs trusted code. A projection revision selects that
-installed code and supplies bounded data configuration.
-
-That distinction is the core safety model: configuration chooses among
-registered behavior, but it cannot introduce new executable behavior.
+Registration installs trusted code. A projection revision selects installed
+code and supplies bounded data configuration. This is the safety model:
+configuration chooses among registered behavior and cannot add executable
+behavior.
 
 ```ts
 import {
@@ -326,11 +315,11 @@ const result = compiled.evaluate(signal, acceptedAt)
 `acceptedAt` is host control metadata used for `activeFrom` gating. It is not
 part of the source fact.
 
-Do not put a changing acceptance timestamp into source identity, normalized
-event content, or projector output. Otherwise, a retry could produce different
-durable bytes for the same source occurrence.
+Keep a changing acceptance timestamp out of source identity, normalized event
+content, and projector output. Otherwise a retry could produce different durable
+bytes for the same source occurrence.
 
-`evaluate` is pure: it returns results but does not persist them.
+`evaluate` is pure. It returns results and persists nothing.
 
 The host must then:
 
@@ -341,37 +330,43 @@ The host must then:
 4. on retry, recover the original staged events rather than reevaluating the
    occurrence under a newer projection revision.
 
-That last step is important. A projection may be edited or disabled between the
-first attempt and a retry. Recovery must complete the original durable
-obligation, not quietly replace it with whatever the current registry would
-produce.
+A projection may be edited or disabled between the first attempt and a retry.
+Recovery must complete the original durable obligation. It must not substitute
+whatever the current registry would produce.
 
-Maple Local implements this with its SQLite eventing control store and the chDB
-commit seam. A hosted implementation may use a database transaction or another
-durable outbox, as long as it provides the same ordering and recovery guarantees.
+Maple Local implements this with its SQLite eventing control store
+(`apps/cli/src/server/eventing/control-store.ts`) and the chDB commit seam. A
+hosted implementation may use a database transaction or another durable outbox,
+as long as it gives the same ordering and recovery guarantees.
 
 ## Registering an extension in a host
 
 ### Maple Local
 
-Maple Local already normalizes OTLP logs in `apps/cli/src/server/eventing`.
+Maple Local normalizes OTLP logs (source kind `otel.log`) in
+`apps/cli/src/server/eventing/otlp.ts`.
 
-When the new fact is already carried by those logs, the usual path is:
+When those logs already carry the new fact:
 
-1. register the projector in the `ProjectorRegistry` supplied to
-   `LocalEventingRuntime`; and
+1. register the projector in a `ProjectorRegistry` and pass it as the third
+   constructor argument of `LocalEventingRuntime`
+   (`apps/cli/src/server/eventing/runtime.ts`). `apps/cli/src/server/serve.ts`
+   constructs the runtime and currently passes no registry, so Local ships with
+   no projectors installed; and
 2. activate a durable projection revision through the authenticated
-   configuration boundary.
+   `POST /local/eventing/projections` endpoint.
 
-A genuinely new Local source requires a little more wiring:
+A new Local source needs more wiring:
 
 1. authenticate and decode its ingest request;
 2. pass the decoded value to a `SignalSourceAdapter`;
-3. register the adapter definition in the Local composition root; and
+3. register the adapter definition in the `SignalSourceRegistry` that the
+   `LocalEventingRuntime` constructor builds (today it registers only
+   `OTLP_LOG_ADAPTER`); and
 4. preserve the existing stage → warehouse commit → ready ordering.
 
 Do not bypass `LocalEventingRuntime` by writing directly to the outbox. That
-would skip the shared identity, collision, activation, and recovery rules.
+skips the shared identity, collision, activation, and recovery rules.
 
 ### Hosted Maple
 
@@ -385,12 +380,12 @@ A hosted source should:
 
 The PlanetScale webhook composition in
 [`packages/backend/src/services/integrations/planetscale/webhook-events.ts`](../packages/backend/src/services/integrations/planetscale/webhook-events.ts)
-is the current reference implementation. Provider verification stays outside
-the projector, while the normalized fact uses the shared registry and
-CloudEvent contracts.
+is the reference implementation. Provider verification stays outside the
+projector. The normalized fact uses the shared registry and CloudEvent
+contracts.
 
-A hosted implementation does not need to use Maple Local's SQLite store. It
-does, however, need equivalent guarantees for:
+A hosted implementation does not need Maple Local's SQLite store. It does need
+equivalent guarantees for:
 
 - tenant isolation;
 - idempotent staging;
@@ -400,16 +395,16 @@ does, however, need equivalent guarantees for:
 
 ## Versioning without surprises
 
-There are four separate kinds of versioning here. They solve different
-problems, so do not collapse them into one number.
+There are four separate kinds of versioning. They solve different problems;
+do not collapse them into one number.
 
 ### Source kind
 
 `sourceKind` identifies the normalized fields, identity rules, and source
 contract.
 
-Keep changes backward compatible. When you need an incompatible normalized
-contract, introduce a new source kind.
+Keep changes backward compatible. An incompatible normalized contract needs a
+new source kind.
 
 ### Projector version
 
@@ -438,12 +433,12 @@ Create a new projection revision whenever you change:
 - the projector ID or version; or
 - projector configuration.
 
-Projection revisions are immutable and monotonic. A rollback is not an edit to
-an older revision; it is a new revision that restores the earlier behavior.
+Projection revisions are immutable and monotonic. A rollback is a new revision
+that restores the earlier behavior, never an edit to an older revision.
 
 ## Schemas and fixtures
 
-Every public or cross-runtime event contract should include the following:
+Every public or cross-runtime event contract should include:
 
 1. A closed runtime decoder for projector output.
 2. A matching, versioned JSON Schema in the package that owns the event.
@@ -451,15 +446,15 @@ Every public or cross-runtime event contract should include the following:
 4. A deterministic complete-event fixture with its expected canonical event ID.
 5. Schema-generation and drift checks in the package test suite.
 
-The shared schemas and fixtures in `packages/eventing-core` define the common
-selector, envelope, and event-identity behavior.
-
-Source-specific payload schemas should stay with the module that owns their
-meaning.
+The shared schemas (`packages/eventing-core/schemas`) and fixtures
+(`packages/eventing-core/fixtures`) define the common selector, envelope, and
+event-identity behavior. `bun run --cwd packages/eventing-core schemas:check`
+detects drift. Source-specific payload schemas stay with the module that owns
+their meaning.
 
 ## Required tests
 
-An extension is not complete until its tests demonstrate all of the following:
+An extension is complete when its tests show all of the following:
 
 - Authentication or signature verification happens before normalization.
 - Normalization is bounded.
@@ -484,13 +479,16 @@ An extension is not complete until its tests demonstrate all of the following:
 For pure contract examples, start with
 [`packages/eventing-core/src/registry.test.ts`](../packages/eventing-core/src/registry.test.ts).
 
-For durability examples, see the Local runtime and control-store tests under
-[`apps/cli/test`](../apps/cli/test).
+For durability examples, see the `local-eventing-*.test.ts` files under
+[`apps/cli/test`](../apps/cli/test), such as
+[`local-eventing-runtime.test.ts`](../apps/cli/test/local-eventing-runtime.test.ts)
+and
+[`local-eventing-control-store.test.ts`](../apps/cli/test/local-eventing-control-store.test.ts).
 
 ## Review checklist
 
-Before registering an extension, reviewers should be able to answer yes to each
-of these:
+Before an extension is registered, reviewers should answer yes to each of
+these:
 
 - Is the source authenticated before adapter code runs?
 - Is occurrence identity stable across retries and rebatching?

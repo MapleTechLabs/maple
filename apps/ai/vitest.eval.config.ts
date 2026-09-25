@@ -14,6 +14,8 @@ export default defineConfig({
 	test: {
 		environment: "node",
 		include: ["src/**/*.eval.ts"],
+		// Execution evals use the same migrated database fixture as unit tests.
+		globalSetup: ["../../packages/backend/test/global-setup.ts"],
 		// LLM round-trips are slow; give each eval generous headroom.
 		testTimeout: 60_000,
 		hookTimeout: 60_000,

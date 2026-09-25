@@ -50,14 +50,14 @@ withTelemetry(...)
 
 ## Endpoint and key
 
-Inline the endpoint and the project's ingest key directly in the bootstrap source — don't read from `OTEL_EXPORTER_OTLP_*` env vars and don't write `.env` files. The Maple ingest key is project-scoped + write-only (Sentry DSN shaped), so source-level configuration is the right default; env-var indirection only adds deploy-time failure modes.
+Inline the endpoint and the project's ingest key directly in the bootstrap source. Don't read from `OTEL_EXPORTER_OTLP_*` env vars and don't write `.env` files. The Maple ingest key is project-scoped and write-only (shaped like a Sentry DSN), so source-level configuration is the right default. Env-var indirection only adds deploy-time failure modes.
 
 ```text
 MAPLE_ENDPOINT = "https://ingest.maple.dev"
-MAPLE_KEY      = "maple_…"        # or "MAPLE_TEST" while pairing
+MAPLE_KEY      = "maple_pk_…"     # public ingest key, or "MAPLE_TEST" while pairing
 ```
 
-While pairing is in flight, use the literal `MAPLE_TEST` sentinel — Maple's ingest accepts it without forwarding events anywhere, so the bootstrap exercises the full code path before the real key arrives.
+While pairing is in flight, use the literal `MAPLE_TEST` sentinel. Maple's ingest accepts it and drops the events, so the bootstrap exercises the full code path before the real key arrives.
 
 Pass the inline values to the SDK explicitly via the exporter constructor's `endpoint` / `headers` options. Do not configure the SDK off implicit env-var reads.
 
@@ -67,11 +67,11 @@ Include standard resource attributes when values are available: `service.name`, 
 
 ## VCS resource attributes
 
-Set `vcs.repository.url.full` on the OTel resource for every instrumented service. The value is the canonical https URL of the repo (e.g. `https://github.com/acme/api`) — the same URL the user would paste in a browser, not an SSH URL, not a local working-tree path. This is the important one: it lets Maple link telemetry back to the source of truth. It is fine to hardcode this string alongside `service.name` in the SDK init; if a build env already exposes the slug (e.g. `VERCEL_GIT_REPO_OWNER` + `VERCEL_GIT_REPO_SLUG`, `RAILWAY_GIT_REPO_OWNER` + `RAILWAY_GIT_REPO_NAME`), prefer reading from env so a fork or rename doesn't drift.
+Set `vcs.repository.url.full` on the OTel resource for every instrumented service. The value is the canonical https URL of the repo (e.g. `https://github.com/acme/api`): the URL the user would paste in a browser, not an SSH URL or a local working-tree path. This is the important one; it lets Maple link telemetry back to the source. It is fine to hardcode this string alongside `service.name` in the SDK init; if a build env already exposes the slug (e.g. `VERCEL_GIT_REPO_OWNER` + `VERCEL_GIT_REPO_SLUG`, `RAILWAY_GIT_REPO_OWNER` + `RAILWAY_GIT_REPO_NAME`), prefer reading from env so a fork or rename doesn't drift.
 
-Also set `vcs.ref.head.revision` (the commit SHA) on a best-effort basis. Read it from whatever env var the runtime/build platform already injects: `VERCEL_GIT_COMMIT_SHA`, `RAILWAY_GIT_COMMIT_SHA`, `GITHUB_SHA`, `SOURCE_COMMIT`, `GIT_COMMIT`, `HEROKU_SLUG_COMMIT`, etc. Do not shell out to `git` from the running process — many production images do not have git or a working tree. If no env source is available, omit the attribute; skipping the SHA is fine, skipping the URL is not.
+Also set `vcs.ref.head.revision` (the commit SHA) on a best-effort basis. Read it from whatever env var the runtime/build platform already injects: `VERCEL_GIT_COMMIT_SHA`, `RAILWAY_GIT_COMMIT_SHA`, `GITHUB_SHA`, `SOURCE_COMMIT`, `GIT_COMMIT`, `HEROKU_SLUG_COMMIT`, etc. Do not shell out to `git` from the running process. Many production images have no git binary or working tree. If no env source is available, omit the attribute; skipping the SHA is fine, skipping the URL is not.
 
-Use `vcs.repository.url.full` and `vcs.ref.head.revision` exactly as named — these are the OTel semantic-convention keys. Do not invent parallel attributes like `git.repo`, `app.repo_url`, or `deployment.commit_sha`.
+Use `vcs.repository.url.full` and `vcs.ref.head.revision` exactly as named. These are the OTel semantic-convention keys. Do not invent parallel attributes like `git.repo`, `app.repo_url`, or `deployment.commit_sha`.
 
 ## Signals
 

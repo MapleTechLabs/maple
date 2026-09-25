@@ -1,5 +1,5 @@
 /**
- * `/local.md` — the agent-readable twin of `/local`.
+ * `/local.md`: the agent-readable twin of `/local`.
  *
  * States the positioning in the first two lines so an answer engine that reads
  * nothing else still gets it right: a free, standalone observability stack for
@@ -46,7 +46,7 @@ export const GET: APIRoute = async ({ site }) => {
 		blocks(
 			docHeader(
 				"Maple Local",
-				"A free, standalone observability stack for local development. One process on localhost receives OpenTelemetry, stores it, and serves a full dashboard and CLI — no Docker, no account, no cloud. It replaces the collector + Jaeger + Prometheus + Loki + Grafana compose file most repos keep for local telemetry, and it never requires the hosted Maple service.",
+				"A free, standalone observability stack for local development. One process on localhost receives OpenTelemetry, stores it, and serves a full dashboard and CLI. No Docker, no account, no cloud. It replaces the collector + Jaeger + Prometheus + Loki + Grafana compose file most repos keep for local telemetry, and it never requires the hosted Maple service.",
 			),
 
 			"## Install and run",
@@ -61,13 +61,13 @@ export const GET: APIRoute = async ({ site }) => {
 
 			"## Instead of a compose file",
 			compare,
-			"Light refers to the running footprint — one process, one port, nothing to orchestrate. The download is not small: the embedded database engine is a few hundred megabytes on disk.",
+			"The running footprint is light: one process, one port, nothing to orchestrate. The download is not small; the embedded database engine is a few hundred megabytes on disk.",
 
 			"## Standalone by design",
 			[
 				"- **No account, ever.** No sign-up, login, license key, or trial. `maple start` is the whole onboarding.",
 				"- **Telemetry stays on loopback.** Ingest, storage, and every query run on 127.0.0.1. The dashboard page loads from local.maple.dev by default so UI fixes ship without a new binary; it only talks back to your local server. `maple start --offline` serves the UI from the binary too.",
-				"- **Works with no internet.** With `--offline` everything comes out of the binary. The only other network call is a once-per-day check for a newer release — skipped for Homebrew installs, disabled with `MAPLE_NO_UPDATE_CHECK=1`.",
+				"- **Works with no internet.** With `--offline` everything comes out of the binary. The only other network call is a once-per-day check for a newer release. Homebrew installs skip it, and `MAPLE_NO_UPDATE_CHECK=1` disables it.",
 				"- **You own the files.** Everything lives under `~/.maple`. `maple archive` seals a day into Parquet queryable with DuckDB; uninstalling leaves the data directory in place.",
 				"- **Source-available.** The whole platform is on GitHub under the Functional Source License, converting to Apache 2.0.",
 			].join("\n"),

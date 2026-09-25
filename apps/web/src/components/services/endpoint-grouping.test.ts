@@ -49,8 +49,20 @@ describe("groupEndpoints", () => {
 			endpoint("POST", "/graphql"),
 			endpoint("GET", "/metrics"),
 		])
-		expect(stems(groups)).toEqual(["ungrouped"])
-		expect(groups[0]?.endpoints).toHaveLength(3)
+		expect(stems(groups)).toEqual(["ungrouped", "ungrouped", "ungrouped"])
+		expect(groups.every((g) => g.endpoints.length === 1)).toBe(true)
+	})
+
+	it("lets a busy loose endpoint outrank a group", () => {
+		const groups = groupEndpoints([
+			endpoint("POST", "/v2/webhooks/stripe", 200),
+			endpoint("POST", "/v2/webhooks/github", 200),
+			endpoint("POST", "/query", 900),
+			endpoint("GET", "/health", 50),
+		])
+		expect(stems(groups)).toEqual(["ungrouped", "/v2/webhooks", "ungrouped"])
+		expect(groups[0]?.endpoints[0]?.route).toBe("/query")
+		expect(groups[2]?.endpoints[0]?.route).toBe("/health")
 	})
 
 	it("collapses routes carrying raw identifiers into one unrouted group", () => {
@@ -64,7 +76,20 @@ describe("groupEndpoints", () => {
 		expect(groups[1]?.endpoints).toHaveLength(2)
 	})
 
-	it("sorts groups by combined traffic and leaves by their own", () => {
+	it("ranks a group by its leading endpoint, not by the sum of its members", () => {
+		const groups = groupEndpoints([
+			endpoint("POST", "/v2/webhooks/stripe", 300),
+			endpoint("POST", "/v2/webhooks/github", 300),
+			endpoint("POST", "/v2/webhooks/linear", 300),
+			endpoint("POST", "/query", 500),
+			endpoint("GET", "/v2/subs/{id}", 100),
+			endpoint("GET", "/v2/subs/{id}/checkout", 400),
+		])
+		expect(stems(groups)).toEqual(["ungrouped", "/v2/subs/{id}", "/v2/webhooks"])
+		expect(groups[0]?.totals.estimatedSpanCount).toBe(500)
+	})
+
+	it("sorts groups by their busiest endpoint and leaves by their own", () => {
 		const groups = groupEndpoints([
 			endpoint("POST", "/v2/webhooks/stripe", 900),
 			endpoint("POST", "/v2/webhooks/github", 900),
@@ -87,6 +112,36 @@ describe("groupEndpoints", () => {
 		)
 		expect(stems(groups)).toEqual(["/v2/subs/{id}", "/v2/webhooks"])
 		expect(groups[1]?.endpoints.map((e) => e.route)).toEqual([
+			"/v2/webhooks/github",
+			"/v2/webhooks/stripe",
+		])
+	})
+
+	it("orders groups and leaves by the chosen column, keeping collapsed buckets last", () => {
+		const groups = groupEndpoints(
+			[
+				endpoint("POST", "/v2/webhooks/stripe", 900, 90),
+				endpoint("POST", "/v2/webhooks/github", 900, 0),
+				endpoint("GET", "/v2/subs/{id}", 100, 0),
+				endpoint("GET", "/v2/subs/{id}/checkout", 700, 7),
+				endpoint("GET", "/wp-login.php", 50, 50),
+			],
+			"errorRate",
+		)
+		expect(stems(groups)).toEqual(["/v2/webhooks", "/v2/subs/{id}", "probes"])
+		expect(groups[0]?.endpoints.map((e) => e.route)).toEqual([
+			"/v2/webhooks/stripe",
+			"/v2/webhooks/github",
+		])
+		const ascending = groupEndpoints(
+			[
+				endpoint("POST", "/v2/webhooks/stripe", 900, 90),
+				endpoint("POST", "/v2/webhooks/github", 900, 0),
+			],
+			"errorRate",
+			"asc",
+		)
+		expect(ascending[0]?.endpoints.map((e) => e.route)).toEqual([
 			"/v2/webhooks/github",
 			"/v2/webhooks/stripe",
 		])
@@ -139,6 +194,14 @@ describe("leafLabel", () => {
 
 	it("keeps the whole route when there is no stem", () => {
 		expect(leafLabel("/healthz", "")).toEqual({ head: "", tail: "/healthz" })
+	})
+
+	it("splits an ungrouped route at its last segment without an ellipsis", () => {
+		expect(leafLabel("/api/chat/stream", "")).toEqual({ head: "/api/chat", tail: "/stream" })
+	})
+
+	it("prints the root route as itself rather than an index", () => {
+		expect(leafLabel("/", "")).toEqual({ head: "", tail: "/" })
 	})
 })
 

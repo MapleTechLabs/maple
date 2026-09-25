@@ -1,4 +1,4 @@
-# Frequent-query optimization review — 2026-09-05
+# Frequent-query optimization review (2026-09-05)
 
 **Prioritize metric-specific trace alert queries.** The tested count/error-rate variants read **51–74% fewer bytes** and used **10–24% less mean server time**. The returned values consumed by alert evaluation matched. End-to-end p95 did not improve consistently, so this is evidence of reduced warehouse work, not a demonstrated latency improvement for every alert.
 

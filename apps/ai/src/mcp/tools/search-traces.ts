@@ -1,182 +1,220 @@
-import {
-	optionalBooleanParam,
-	optionalNumberParam,
-	optionalStringParam,
-	optionalTimeParam,
-	validationError,
-	type McpToolRegistrar,
-} from "./types"
+import { McpInvalidInputError, type McpToolRegistrar } from "./types"
 import { warehouseToMcpHandlers } from "../lib/map-warehouse-error"
-import { withTenantExecutor } from "../lib/query-warehouse"
-import { resolveTimeRange, rangeExceededResult, MCP_SEARCH_MAX_HOURS } from "../lib/time"
-import { clampLimit, clampOffset } from "../lib/limits"
-import { formatDurationFromMs, formatTable } from "../lib/format"
-import { formatNextSteps } from "../lib/next-steps"
-import { Array as Arr, Effect, Schema, pipe } from "effect"
-import { createDualContent } from "../lib/structured-output"
+import { CurrentMcpTenant, withTenantExecutor } from "../lib/query-warehouse"
+import { MCP_SEARCH_MAX_HOURS } from "../lib/time"
+import { formatDurationFromMs, truncate } from "../lib/format"
+import * as P from "../lib/params"
+import { doc } from "../lib/tool-doc"
+import { Effect, Schema } from "effect"
+import { SearchTracesOutput } from "@maple/domain/mcp-outputs"
 import { searchTraces } from "@maple/query-engine/observability"
-import { CurrentMcpTenant } from "../lib/query-warehouse"
+
+const WINDOW = P.timeWindow({ defaultHours: 6, maxHours: MCP_SEARCH_MAX_HOURS })
 
 export function registerSearchTracesTool(server: McpToolRegistrar) {
-	server.tool(
-		"search_traces",
-		"Search traces by service, duration, error status, HTTP method, span name, or custom attributes. When span_name is provided, searches at the span level (not just root spans) for accurate results. Use inspect_trace on interesting trace_ids. Use explore_attributes to discover attribute keys.",
-		Schema.Struct({
-			start_time: optionalTimeParam("Start of time range (YYYY-MM-DD HH:mm:ss)"),
-			end_time: optionalTimeParam("End of time range (YYYY-MM-DD HH:mm:ss)"),
-			service: optionalStringParam(
-				"Filter by service name (searches all spans in the trace, not just root)",
+	server.define({
+		name: "search_traces",
+		description:
+			"Find traces, newest first, by service, duration, error status, HTTP method, span name, or one span attribute. Without `span_name` the filters apply to each trace's entry span and one row per trace comes back; with `span_name` every span is searched and each row is a matching span. For the slowest traces ranked by duration with percentiles, use find_slow_traces. explore_attributes lists attribute keys and values.",
+		parameters: Schema.Struct({
+			...WINDOW.fields,
+			service: P.service(
+				"Only this service (exact `service.name`), matched on the entry span, or on every span when `span_name` is set",
 			),
-			has_error: optionalBooleanParam("Filter traces with errors only"),
-			min_duration_ms: optionalNumberParam("Minimum duration in milliseconds"),
-			max_duration_ms: optionalNumberParam("Maximum duration in milliseconds"),
-			http_method: optionalStringParam("Filter by HTTP method (GET, POST, etc.)"),
-			span_name: optionalStringParam(
-				"Filter by span name (searches all spans, substring match, case-insensitive)",
+			has_error: P.optionalFlag("Only spans with status Error"),
+			min_duration_ms: P.optionalNumber("Minimum duration in milliseconds"),
+			max_duration_ms: P.optionalNumber("Maximum duration in milliseconds"),
+			http_method: P.optionalText("Only spans with this HTTP method"),
+			span_name: P.optionalText(
+				"Case-insensitive substring of the span name. Switches the search to span level",
 			),
-			trace_id: optionalStringParam("Find a specific trace by ID"),
-			attribute_key: optionalStringParam("Filter by span attribute key (e.g. user.id, request.id)"),
-			attribute_value: optionalStringParam("Filter by span attribute value (requires attribute_key)"),
-			root_only: optionalBooleanParam(
-				"Only match root spans for service/span_name filters (default: false, searches all spans)",
+			trace_id: P.optionalText("Only this trace"),
+			attribute_key: P.optionalText(
+				"Span attribute to filter on (e.g. user.id). Alone, requires the attribute to exist",
 			),
-			offset: optionalNumberParam(
-				"Offset for pagination (default 0). Use nextOffset from previous response.",
-			),
-			limit: optionalNumberParam("Max results (default 20)"),
+			attribute_value: P.optionalText("Exact value for `attribute_key`"),
+			root_only: P.optionalFlag("With `span_name`, still match entry spans only instead of every span"),
+			offset: P.offset({ max: 10_000 }),
+			limit: P.limit({ default: 20, max: 200, noun: "traces" }),
 		}),
-		Effect.fn("McpTool.searchTraces")(function* (params) {
-			const range = resolveTimeRange(params.start_time, params.end_time, {
-				maxHours: MCP_SEARCH_MAX_HOURS,
-			})
-			const { st, et } = range
-			if (range.exceeded) return rangeExceededResult(range, "search_traces")
-			const lim = clampLimit(params.limit, { defaultValue: 20, max: 200 })
-			const off = clampOffset(params.offset, { max: 10_000 })
+		aliases: P.SERVICE_ALIASES,
+		output: SearchTracesOutput,
+		hints: { readOnly: true },
+		phrases: ["Searching traces", "Looking through traces"],
+		handler: Effect.fn("McpTool.searchTraces")(function* (params) {
+			const { st, et } = yield* WINDOW.resolve(params, "search_traces")
 
 			const tenant = yield* CurrentMcpTenant
 			yield* Effect.annotateCurrentSpan({
 				orgId: tenant.orgId,
 				service: params.service ?? "all",
 				hasError: params.has_error ?? false,
-				limit: lim,
-				offset: off,
+				limit: params.limit,
+				offset: params.offset,
 			})
 
-			if (params.attribute_value && !params.attribute_key) {
-				return validationError(
-					"`attribute_value` requires `attribute_key`. Use explore_attributes to discover available keys.",
-					'attribute_key="user.id" attribute_value="abc123"',
-				)
+			if (params.attribute_value !== undefined && params.attribute_key === undefined) {
+				return yield* new McpInvalidInputError({
+					message:
+						"`attribute_value` requires `attribute_key`. Use explore_attributes to discover available keys.",
+					parameter: "attribute_value",
+					example: 'attribute_key="user.id" attribute_value="abc123"',
+				})
 			}
 
+			const rootOnly = params.root_only ?? false
 			const result = yield* withTenantExecutor(
 				searchTraces({
 					timeRange: { startTime: st, endTime: et },
-					service: params.service ?? undefined,
-					spanName: params.span_name ?? undefined,
+					service: params.service,
+					spanName: params.span_name,
 					spanNameMatchMode: params.span_name ? "contains" : undefined,
-					hasError: params.has_error ?? undefined,
-					minDurationMs: params.min_duration_ms ?? undefined,
-					maxDurationMs: params.max_duration_ms ?? undefined,
-					httpMethod: params.http_method ?? undefined,
-					traceId: params.trace_id ?? undefined,
+					hasError: params.has_error,
+					minDurationMs: params.min_duration_ms,
+					maxDurationMs: params.max_duration_ms,
+					httpMethod: params.http_method,
+					traceId: params.trace_id,
 					attributeFilters: params.attribute_key
 						? [{ key: params.attribute_key, value: params.attribute_value ?? "" }]
 						: undefined,
-					rootOnly: params.root_only ?? false,
-					limit: lim,
-					offset: off,
+					rootOnly,
+					limit: params.limit,
+					offset: params.offset,
 				}),
 			).pipe(Effect.catchTags(warehouseToMcpHandlers("search_traces")))
 
 			const spans = result.spans
 			yield* Effect.annotateCurrentSpan("result.rowCount", spans.length)
-			if (spans.length === 0) {
-				return {
-					content: [
-						{ type: "text" as const, text: `No traces found matching filters (${st} — ${et})` },
-					],
-				}
-			}
-
 			const hasMore = result.pagination.hasMore
-			const isSpanLevel = !!(params.span_name && !params.root_only)
-
-			const lines: string[] = [
-				`## ${isSpanLevel ? "Matching Spans" : "Traces"} (showing ${off + 1}–${off + spans.length})`,
-				`Time range: ${st} — ${et}`,
-				``,
-			]
-
-			const headers = isSpanLevel
-				? ["Trace ID", "Span Name", "Service", "Duration", "Status"]
-				: ["Trace ID", "Root Span", "Duration", "Service", "Error"]
-
-			const rows = pipe(
-				spans,
-				Arr.map((s) =>
-					isSpanLevel
-						? [
-								s.traceId.slice(0, 12) + "...",
-								s.spanName.length > 40 ? s.spanName.slice(0, 37) + "..." : s.spanName,
-								s.serviceName,
-								formatDurationFromMs(s.durationMs),
-								s.statusCode === "Error" ? "Error" : "",
-							]
-						: [
-								s.traceId.slice(0, 12) + "...",
-								s.spanName.length > 30 ? s.spanName.slice(0, 27) + "..." : s.spanName,
-								formatDurationFromMs(s.durationMs),
-								s.serviceName,
-								s.statusCode === "Error" ? "Yes" : "",
-							],
-				),
-			)
-
-			lines.push(formatTable(headers, rows))
-
-			if (hasMore) {
-				const nextOffset = off + spans.length
-				lines.push(
-					``,
-					`More results available. Call again with offset=${nextOffset} for the next page.`,
-				)
-			}
-
-			const nextSteps = pipe(
-				spans,
-				Arr.take(3),
-				Arr.map((s) => `\`inspect_trace trace_id="${s.traceId}"\` — full span tree`),
-			)
-			lines.push(formatNextSteps(nextSteps))
 
 			return {
-				content: createDualContent(lines.join("\n"), {
-					tool: "search_traces",
-					data: {
-						timeRange: { start: st, end: et },
-						pagination: {
-							offset: off,
-							limit: lim,
-							hasMore,
-							...(hasMore && { nextOffset: off + spans.length }),
-						},
-						traces: pipe(
-							spans,
-							Arr.map((s) => ({
-								traceId: s.traceId,
-								rootSpanName: s.spanName,
-								durationMs: s.durationMs,
-								spanCount: 1,
-								services: [s.serviceName],
-								hasError: s.statusCode === "Error",
-								resourceAttributes: s.resourceAttributes,
-							})),
-						),
-					},
-				}),
+				timeRange: { start: st, end: et },
+				pagination: {
+					offset: params.offset,
+					limit: params.limit,
+					hasMore,
+					...(hasMore ? { nextOffset: params.offset + spans.length } : undefined),
+				},
+				traces: spans.map((s) => ({
+					traceId: s.traceId,
+					rootSpanName: s.spanName,
+					durationMs: s.durationMs,
+					spanCount: 1,
+					services: [s.serviceName],
+					hasError: s.statusCode === "Error",
+					resourceAttributes: s.resourceAttributes,
+				})),
+				filters: {
+					...(params.service === undefined ? undefined : { service: params.service }),
+					...(params.has_error === undefined ? undefined : { hasError: params.has_error }),
+					...(params.min_duration_ms === undefined
+						? undefined
+						: { minDurationMs: params.min_duration_ms }),
+					...(params.max_duration_ms === undefined
+						? undefined
+						: { maxDurationMs: params.max_duration_ms }),
+					...(params.http_method === undefined ? undefined : { httpMethod: params.http_method }),
+					...(params.span_name === undefined ? undefined : { spanName: params.span_name }),
+					...(params.trace_id === undefined ? undefined : { traceId: params.trace_id }),
+					...(params.attribute_key === undefined
+						? undefined
+						: { attributeKey: params.attribute_key }),
+					...(params.attribute_value === undefined
+						? undefined
+						: { attributeValue: params.attribute_value }),
+					rootOnly,
+				},
+				spanLevel: params.span_name !== undefined && !rootOnly,
 			}
 		}),
-	)
+		render: (output) => {
+			const { filters, pagination } = output
+			const noun = output.spanLevel ? "matching spans" : "traces"
+			const scope: ReadonlyArray<readonly [string, string | undefined]> = [
+				["Time range", `${output.timeRange.start} to ${output.timeRange.end}`],
+				["Service", filters.service],
+				["Span name", filters.spanName],
+				[
+					"Offset",
+					pagination === undefined || pagination.offset === 0
+						? undefined
+						: String(pagination.offset),
+				],
+			]
+			const title = output.spanLevel ? "Matching Spans" : "Traces"
+			if (output.traces.length === 0) {
+				return {
+					title,
+					scope,
+					blocks: [],
+					empty: {
+						message: `No ${noun} found matching the filters in this window.`,
+						hints: [
+							"Widen start_time/end_time, or drop filters.",
+							"span_name is a case-insensitive substring; explore_attributes lists attribute keys and values.",
+						],
+					},
+				}
+			}
+			const nextOffset = pagination?.nextOffset
+			return {
+				title,
+				scope,
+				blocks: [
+					output.spanLevel
+						? doc.table(
+								["Trace ID", "Span Name", "Service", "Duration", "Status"],
+								output.traces.map((t) => [
+									t.traceId,
+									truncate(t.rootSpanName, 40),
+									t.services.join(", "),
+									formatDurationFromMs(t.durationMs),
+									t.hasError ? "Error" : "",
+								]),
+							)
+						: doc.table(
+								["Trace ID", "Root Span", "Duration", "Service", "Error"],
+								output.traces.map((t) => [
+									t.traceId,
+									truncate(t.rootSpanName, 30),
+									formatDurationFromMs(t.durationMs),
+									t.services.join(", "),
+									t.hasError ? "Yes" : "",
+								]),
+							),
+				],
+				...(nextOffset === undefined
+					? undefined
+					: {
+							truncation: {
+								shown: output.traces.length,
+								noun,
+								next: doc.next(
+									"search_traces",
+									{
+										start_time: output.timeRange.start,
+										end_time: output.timeRange.end,
+										service: filters.service,
+										has_error: filters.hasError,
+										min_duration_ms: filters.minDurationMs,
+										max_duration_ms: filters.maxDurationMs,
+										http_method: filters.httpMethod,
+										span_name: filters.spanName,
+										trace_id: filters.traceId,
+										attribute_key: filters.attributeKey,
+										attribute_value: filters.attributeValue,
+										root_only: filters.rootOnly ? true : undefined,
+										limit: pagination?.limit,
+										offset: nextOffset,
+									},
+									"the next page",
+								),
+							},
+						}),
+				next: output.traces
+					.slice(0, 3)
+					.map((t) => doc.next("inspect_trace", { trace_id: t.traceId }, "full span tree")),
+			}
+		},
+	})
 }

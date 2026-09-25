@@ -3,12 +3,12 @@ import { Badge } from "@maple/ui/components/ui/badge"
 import { formatNumber } from "@maple/ui/lib/format"
 
 interface MetricsListProps {
-	summary: Array<{
+	summary: ReadonlyArray<{
 		metricType: string
 		metricCount: number
 		dataPointCount: number
 	}>
-	metrics: Array<{
+	metrics: ReadonlyArray<{
 		metricName: string
 		metricType: string
 		serviceName: string

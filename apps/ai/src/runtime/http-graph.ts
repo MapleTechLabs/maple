@@ -8,8 +8,8 @@ import { EdgeCacheServiceLive } from "@maple/backend/platform/CacheBackendLive"
  *     JSON-RPC over one POST rather than a set of typed endpoints.
  *   - `/api/chat/sessions/*` — the dashboard's chat transport, raw because
  *     `HttpApi` cannot model an open `text/event-stream`.
- *   - `/internal/chat/apply` — a typed `HttpApi` group, because re-running an
- *     approval-gated mutation is an ordinary request/response with a schema
+ *   - `/internal/chat/apply` — a typed `HttpApi` group, because deciding an
+ *     approval-gated proposal is an ordinary request/response with a schema
  *     worth pinning.
  *   - `/internal/triage/classify` — the decision model behind the investigation
  *     gate, typed for the same reason. Reached only over a service binding: api
@@ -38,6 +38,7 @@ import { AuthService } from "@maple/backend/services/auth/AuthService"
 import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
 import { McpToolRateLimiter } from "@maple/backend/services/auth/McpToolRateLimiter"
 import { SessionAuthorizationLayer } from "@maple/backend/services/auth/SessionAuthorizationLayer"
+import { OrganizationRegionService } from "@maple/backend/services/org/OrganizationRegionService"
 import { V1ErrorBoundaryLive } from "@maple/backend/http/error-boundary"
 import type { AiPortsLayer } from "../worker/bindings"
 
@@ -108,6 +109,7 @@ export const AiAuthLive = Layer.mergeAll(SessionAuthorizationLayer).pipe(
 	Layer.provideMerge(AuthService.layer),
 	Layer.provideMerge(McpToolRateLimiter.layer),
 	Layer.provideMerge(ApiKeysService.layer),
+	Layer.provideMerge(OrganizationRegionService.layer),
 	// Denied attempts and audited reads are recorded from inside the auth layers.
 	Layer.provideMerge(AuditLogService.layer.pipe(Layer.provide(Env.layer))),
 	Layer.provideMerge(Layer.mergeAll(Env.layer, EdgeCacheServiceLive)),

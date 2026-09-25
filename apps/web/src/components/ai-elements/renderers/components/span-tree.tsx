@@ -10,12 +10,12 @@ interface SpanNode {
 	durationMs: number
 	statusCode: string
 	statusMessage: string
-	children: SpanNode[]
+	children: ReadonlyArray<SpanNode>
 }
 
 interface SpanTreeProps {
 	traceId: string
-	spans: SpanNode[]
+	spans: ReadonlyArray<SpanNode>
 }
 
 function SpanNode({ span, isLast, depth }: { span: SpanNode; isLast: boolean; depth: number }) {

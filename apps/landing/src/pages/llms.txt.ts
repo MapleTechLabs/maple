@@ -1,5 +1,5 @@
 /**
- * `/llms.txt` — the index that makes the `.md` twins discoverable.
+ * `/llms.txt`: the index that makes the `.md` twins discoverable.
  *
  * `public/robots.txt` already opts every AI crawler in by name; this tells them
  * where the machine-readable copy of the site lives. One section per content
@@ -29,7 +29,7 @@ export const GET: APIRoute = ({ site }) => {
 	const body = [
 		"# Maple",
 		"",
-		"> Maple is an open-source observability platform for traces, logs, and metrics, built on OpenTelemetry and backed by ClickHouse. Send OTLP from any instrumented app — no proprietary agents.",
+		"> Maple is an open-source observability platform for traces, logs, and metrics, built on OpenTelemetry. Send OTLP from any instrumented app; there are no proprietary agents.",
 		"",
 		"For AI agents and automation, use the resources below.",
 		"",
@@ -45,9 +45,16 @@ export const GET: APIRoute = ({ site }) => {
 
 		"## Pricing",
 		"",
-		"Plans, included volume, and per-GB overage for logs, traces, metrics, and browser sessions.",
+		"One plan: $39 a month with 100 GB each of logs, traces and metrics included, then $0.30 per GB per signal; 5,000 browser sessions included, then $0.002 per session; product events free during beta.",
 		"",
 		...both("Pricing", "/pricing"),
+		"",
+
+		"## Data regions",
+		"",
+		"Maple Cloud runs in the United States and the European Union (Frankfurt). An organization picks its region at creation; its telemetry is stored and processed there. Same price in both.",
+		"",
+		...both("EU hosting", "/eu"),
 		"",
 
 		"## Changelog",
@@ -67,7 +74,7 @@ export const GET: APIRoute = ({ site }) => {
 
 		"## Features",
 		"",
-		`One page per capability — tracing, session replay, logs, metrics, service catalog, error tracking, MCP, Kubernetes. ${CONVENTION("feature")}`,
+		`One page per capability: tracing, session replay, logs, metrics, service catalog, error tracking, MCP, Kubernetes. ${CONVENTION("feature")}`,
 		"",
 		...features.map((feature) => `- [${feature.navLabel()}](${url(`/features/${feature.slug}.md`)})`),
 		"",
@@ -106,8 +113,8 @@ export const GET: APIRoute = ({ site }) => {
 		"",
 		`REST API for the Maple observability platform, base URL \`${API_ORIGIN}/v2\`. Bearer auth with a Maple API key (\`maple_ak_…\`); JSON in and out; every error is a \`{ "error": { "_tag", "type", "code", "message" } }\` envelope; 600 requests/minute per key with \`Retry-After\` on 429.`,
 		"",
-		`- [Maple API guide](${url(`${SITE_PATHS.apiDocs}.md`)}) — authentication, conventions, errors, rate limits`,
-		`- [OpenAPI 3.1 specification (JSON)](${url(SITE_PATHS.openapi)}) — every operation has an operationId, description, typed parameters and response schemas`,
+		`- [Maple API guide](${url(`${SITE_PATHS.apiDocs}.md`)}): authentication, conventions, errors, rate limits`,
+		`- [OpenAPI 3.1 specification (JSON)](${url(SITE_PATHS.openapi)}): every operation has an operationId, description, typed parameters and response schemas`,
 		`- [Interactive API reference](${API_ORIGIN}${API_PATHS.reference})`,
 		`- [Same spec served by the API](${API_ORIGIN}${API_PATHS.openapi})`,
 		"",
@@ -116,14 +123,14 @@ export const GET: APIRoute = ({ site }) => {
 		"",
 		`Maple exposes its API to AI agents as a hosted Model Context Protocol server over Streamable HTTP at \`${API_ORIGIN}${API_PATHS.mcp}\`. Authenticate with a Maple API key as a Bearer token, or let the client complete the OAuth flow advertised at \`${API_ORIGIN}${API_PATHS.oauthResource}\`.`,
 		"",
-		`- [MCP server guide](${url(`${SITE_PATHS.mcpDocs}.md`)}) — connecting Claude, Cursor, and other clients; available tools`,
-		`- [MCP server manifest (server.json)](${url(SITE_PATHS.mcpManifest)}) — also at ${url(SITE_PATHS.mcpServerJson)} and ${API_ORIGIN}${API_PATHS.mcpManifest}`,
+		`- [MCP server guide](${url(`${SITE_PATHS.mcpDocs}.md`)}): connecting Claude, Cursor, and other clients; available tools`,
+		`- [MCP server manifest (server.json)](${url(SITE_PATHS.mcpManifest)}), also at ${url(SITE_PATHS.mcpServerJson)} and ${API_ORIGIN}${API_PATHS.mcpManifest}`,
 		`- [AI & MCP feature page](${url("/features/ai-mcp-integration.md")})`,
 		"",
 
 		"## Command line tool",
 		"",
-		"The official `maple` binary is a standalone observability stack for local development: one process on localhost that receives OpenTelemetry and serves a full dashboard and query CLI — no account, no Docker, no hosted service required. It replaces the collector + Jaeger + Prometheus + Loki + Grafana compose stack. The same CLI can optionally talk to a hosted workspace.",
+		"The official `maple` binary is a standalone observability stack for local development: one process on localhost that receives OpenTelemetry and serves a full dashboard and query CLI. No account, no Docker, and no hosted service required. It replaces the collector + Jaeger + Prometheus + Loki + Grafana compose stack. The same CLI can optionally talk to a hosted workspace.",
 		"",
 		`- [Maple Local (Markdown)](${url("/local.md")})`,
 		`- [Maple Local (HTML)](${url("/local")})`,
@@ -144,7 +151,7 @@ export const GET: APIRoute = ({ site }) => {
 
 		"## Brand",
 		"",
-		"Logo, wordmark, colours, and type, with a downloadable kit. Use the artwork as it is rather than redrawing it.",
+		"Logo, wordmark, colors, and type, with a downloadable kit. Use the artwork as it is rather than redrawing it.",
 		"",
 		...both("Brand assets", "/brand"),
 		`- [Brand kit archive](${url("/brand/maple-brand-kit.zip")})`,

@@ -69,9 +69,12 @@ const BOT_TOKENS = ["bot/", "bot;", "bot)", "crawler", "spider", "+http", "headl
  * corrupt replay-chunk uploads, and every chunk they did manage to upload spent
  * a customer's replay quota on a session nobody will ever watch.
  *
- * Deliberately does not consult `navigator.webdriver`: it is set by Playwright
- * and Puppeteer, so keying on it would silently stop recording in customers'
- * own end-to-end suites — exactly the runs where they check replay works.
+ * Deliberately does not consult `navigator.webdriver`: it is set by every
+ * Playwright and Puppeteer run, headed or not. The `headless` token does match
+ * the old headless shell's `HeadlessChrome` UA, which production crawlers use
+ * too (see the test cases), so an e2e suite that wants replay recorded runs
+ * headed, or sets an explicit `userAgent` without `headless` in it. Chrome's
+ * new headless mode can still report `HeadlessChrome/`, so it is not enough.
  */
 export function isLikelyBot(ua: string): boolean {
 	const lower = ua.toLowerCase()

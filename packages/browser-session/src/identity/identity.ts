@@ -74,8 +74,8 @@ function normalizeTraits(traits: Readonly<Record<string, TraitValue>> | undefine
 		if (!warnedAboutTraitKeys && looksLikeId(key)) {
 			warnedAboutTraitKeys = true
 			console.warn(
-				`[maple] identity trait key "${key}" looks like an id. Trait keys share a ClickHouse ` +
-					"dictionary — put ids in the value, or in id/groupId, not the key.",
+				`[maple] identity trait key "${key}" looks like an id. A key per user widens every ` +
+					"session row's trait map; put ids in the value, or in id/groupId, not the key.",
 			)
 		}
 		out[key] = value

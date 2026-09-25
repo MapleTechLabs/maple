@@ -3,7 +3,6 @@
 	"private": true,
 	"workspaces": [
 		"apps/*",
-		"!apps/slack-agent",
 		"packages/*",
 		"lib/*",
 		"examples/*"
@@ -21,20 +20,18 @@
 		"bench:queries": "bun apps/api/scripts/bench-queries.ts",
 		"ch:test": "CLICKHOUSE_E2E=1 CLICKHOUSE_E2E_URL=http://127.0.0.1:8123 bun run --cwd apps/api test scripts/query-bench/catalog.clickhouse.e2e.test.ts && CLICKHOUSE_E2E=1 CLICKHOUSE_E2E_URL=http://127.0.0.1:8123 bun run --cwd packages/backend test src/services/warehouse/WarehouseQueryService.clickhouse.e2e.test.ts src/services/warehouse/web-analytics-parity.clickhouse.e2e.test.ts",
 		"db:migrate:local": "DATABASE_URL=postgres://maple:maple@localhost:5499/maple bun run --cwd packages/db db:migrate",
-		"migrate:prod": "bun run --cwd packages/db ps:apply-schema main",
 		"backup:restore-test": "bun run --cwd packages/db db:restore-test",
 		"format": "oxfmt",
 		"format:check": "oxfmt --check",
-		"lint": "oxlint -c .oxlintrc.effect.json --quiet alchemy.run.ts scripts apps packages lib examples && bun run lint:slack-agent",
-		"lint:slack-agent": "oxlint -c .oxlintrc.json --quiet apps/slack-agent",
+		"lint": "oxlint -c .oxlintrc.effect.json --quiet alchemy.run.ts scripts apps packages lib examples",
 		"lint:audit": "oxlint -c .oxlintrc.effect.json alchemy.run.ts scripts apps packages lib examples",
 		"lint:fix": "oxlint -c .oxlintrc.effect.json --fix alchemy.run.ts scripts apps packages lib examples",
 		"alchemy:build-deps": "turbo build --filter=@maple-dev/effect-sdk --filter=@maple-dev/alchemy --filter=@maple-dev/browser",
 		"alchemy:deploy": "bun run alchemy:build-deps && alchemy deploy --yes",
-		"alchemy:deploy:prd": "bun run alchemy:build-deps && alchemy deploy --yes --adopt --stage prd",
+		"alchemy:deploy:prd": "bun run alchemy:build-deps && alchemy deploy --yes --adopt --stage ${MAPLE_STAGE:-prd}",
 		"alchemy:deploy:pr": "bun run alchemy:build-deps && alchemy deploy --yes --adopt --stage pr-${PR_NUMBER}",
-		"alchemy:destroy": "alchemy destroy --yes",
-		"alchemy:destroy:pr": "alchemy destroy --yes --stage pr-${PR_NUMBER}",
+		"alchemy:destroy": "bun run alchemy:build-deps && alchemy destroy --yes",
+		"alchemy:destroy:pr": "bun run alchemy:build-deps && alchemy destroy --yes --stage pr-${PR_NUMBER}",
 		"test": "turbo test",
 		"tinybird:manifest": "bun run ./scripts/generate-tinybird-project-manifest.ts",
 		"tinybird:manifest:check": "bun run ./scripts/generate-tinybird-project-manifest.ts --check",
@@ -49,10 +46,12 @@
 		"knip:fix": "bun run --cwd apps/landing sync:i18n && knip --fix --allow-remove-files",
 		"typecheck": "turbo typecheck && tsc -p tsconfig.alchemy.json"
 	},
-	"dependencies": {},
+	"dependencies": {
+		"pg": "^8.23.0"
+	},
 	"devDependencies": {
 		"@cloudflare/workers-types": "catalog:alchemy",
-		"@effect/platform-node": "4.0.0-rc.116",
+		"@effect/platform-node": "4.0.0-rc.117",
 		"@effect/tsgo": "0.36.4",
 		"@effect/vitest": "catalog:effect",
 		"@maple/alchemy-portless": "workspace:*",
@@ -67,17 +66,19 @@
 		"oxlint": "1.77.0",
 		"oxlint-tsgolint": "7.0.2001",
 		"portless": "^0.14.0",
-		"turbo": "^2.9.18",
+		"turbo": "^2.11.3",
 		"typescript": "catalog:tooling"
 	},
 	"overrides": {
-		"@effect/sql-d1": "4.0.0-rc.116",
-		"@effect/sql-sqlite-do": "4.0.0-rc.116"
+		"@effect/sql-d1": "4.0.0-rc.117",
+		"@effect/sql-sqlite-do": "4.0.0-rc.117"
 	},
 	"packageManager": "bun@1.4.0",
 	"catalog": {
 		"vite": "^8.0.16",
-		"vitest": "^4.1.9"
+		"vitest": "^5.0.1",
+		"@vitest/browser-playwright": "^5.0.1",
+		"playwright": "^1.62.1"
 	},
 	"catalogs": {
 		"alchemy": {
@@ -89,13 +90,13 @@
 			"@tanstack/charts-scales": "0.18.0"
 		},
 		"effect": {
-			"@effect/ai-openai-compat": "4.0.0-rc.116",
-			"@effect/ai-openrouter": "4.0.0-rc.116",
-			"@effect/atom-react": "4.0.0-rc.116",
+			"@effect/ai-openai-compat": "4.0.0-rc.117",
+			"@effect/ai-openrouter": "4.0.0-rc.117",
+			"@effect/atom-react": "4.0.0-rc.117",
 			"@effect/language-service": "^0.87.2",
-			"@effect/platform-bun": "4.0.0-rc.116",
-			"@effect/vitest": "4.0.0-rc.116",
-			"effect": "4.0.0-rc.116"
+			"@effect/platform-bun": "4.0.0-rc.117",
+			"@effect/vitest": "4.0.0-rc.117",
+			"effect": "4.0.0-rc.117"
 		},
 		"react": {
 			"@types/react": "^19.2.14",
@@ -124,9 +125,10 @@
 		}
 	},
 	"patchedDependencies": {
-		"@effect/ai-openrouter@4.0.0-rc.116": "patches/@effect%2Fai-openrouter@4.0.0-rc.116.patch",
-		"@effect/vitest@4.0.0-rc.116": "patches/@effect%2Fvitest@4.0.0-rc.116.patch",
-		"effect@4.0.0-rc.116": "patches/effect@4.0.0-rc.116.patch",
-		"@maple-dev/effect-clickhouse@0.1.0": "patches/@maple-dev%2Feffect-clickhouse@0.1.0.patch"
+		"@effect/ai-openrouter@4.0.0-rc.117": "patches/@effect%2Fai-openrouter@4.0.0-rc.117.patch",
+		"@effect/vitest@4.0.0-rc.117": "patches/@effect%2Fvitest@4.0.0-rc.117.patch",
+		"effect@4.0.0-rc.117": "patches/effect@4.0.0-rc.117.patch",
+		"@maple-dev/effect-clickhouse@0.1.0": "patches/@maple-dev%2Feffect-clickhouse@0.1.0.patch",
+		"alchemy@2.0.0-beta.79": "patches/alchemy@2.0.0-beta.79.patch"
 	}
 }

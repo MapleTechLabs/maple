@@ -12,7 +12,7 @@ interface CloudflareIconProps extends IconProps {
 
 /**
  * The Cloudflare mark. Rendered in brand orange by default (the convention for
- * brand marks here — see `slack.tsx`, `clickhouse.tsx`), which means the fill is
+ * brand marks here — see `telegram.tsx`, `clickhouse.tsx`), which means the fill is
  * fixed and `className`/`color` cannot tint it. Pass `monochrome` when the glyph
  * has to inherit its surface's text color.
  *

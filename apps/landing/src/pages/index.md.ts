@@ -19,7 +19,7 @@ export const GET: APIRoute = ({ site }) => {
 
 	return markdown(
 		blocks(
-			docHeader("Maple — Open-source observability for traces, logs, and metrics", m.page_home_desc()),
+			docHeader("Maple: open-source observability for traces, logs, and metrics", m.page_home_desc()),
 			`${m.hero_title()} ${m.hero_title_sub()} ${m.hero_title_accent()} ${m.hero_subtitle()}`,
 
 			"## What Maple is",
@@ -30,20 +30,21 @@ export const GET: APIRoute = ({ site }) => {
 				`- **${m.faq_home_price_q()}** ${m.faq_home_price_a()}`,
 				`- **${m.faq_home_agents_q()}** ${m.faq_home_agents_a()}`,
 				`- **${m.faq_selfhost_q()}** ${m.faq_selfhost_a()}`,
+				`- **${m.faq_region_q()}** ${m.faq_region_a()} [EU hosting](${url("/eu.md")})`,
 			].join("\n"),
 
 			`## ${m.how_heading()}`,
 			[
-				`1. **${m.how_step1_title()}** — ${m.how_step1_desc()}`,
-				`2. **${m.how_step2_title()}** — ${m.how_step2_desc()}`,
-				`3. **${m.how_step3_title()}** — ${m.how_step3_desc()}`,
+				`1. **${m.how_step1_title()}**: ${m.how_step1_desc()}`,
+				`2. **${m.how_step2_title()}**: ${m.how_step2_desc()}`,
+				`3. **${m.how_step3_title()}**: ${m.how_step3_desc()}`,
 			].join("\n"),
 
 			"## Features",
 			features
 				.map(
 					(feature) =>
-						`- [${feature.navLabel()}](${url(`${featurePath("en", feature.slug)}.md`)}) — ${feature.navDesc()}`,
+						`- [${feature.navLabel()}](${url(`${featurePath("en", feature.slug)}.md`)}): ${feature.navDesc()}`,
 				)
 				.join("\n"),
 
@@ -51,7 +52,7 @@ export const GET: APIRoute = ({ site }) => {
 			useCases
 				.map(
 					(useCase) =>
-						`- [${useCase.navLabel()}](${url(`${useCasePath("en", useCase.slug)}.md`)}) — ${useCase.navDesc()}`,
+						`- [${useCase.navLabel()}](${url(`${useCasePath("en", useCase.slug)}.md`)}): ${useCase.navDesc()}`,
 				)
 				.join("\n"),
 
@@ -59,9 +60,9 @@ export const GET: APIRoute = ({ site }) => {
 			[
 				`- [Documentation](${url("/docs.md")}) · [single-file docs](${url(SITE_PATHS.llmsFull)})`,
 				`- [Pricing](${url("/pricing.md")})`,
-				`- [Maple API](${url(`${SITE_PATHS.apiDocs}.md`)}) — base URL \`${apiUrl(API_PATHS.reference).replace(API_PATHS.reference, "")}\`, [interactive reference](${apiUrl(API_PATHS.reference)}), [OpenAPI 3.1](${url(SITE_PATHS.openapi)})`,
-				`- [MCP server](${url(`${SITE_PATHS.mcpDocs}.md`)}) — \`${apiUrl(API_PATHS.mcp)}\` (Streamable HTTP), [manifest](${url(SITE_PATHS.mcpManifest)})`,
-				`- [Command line tool](${url("/docs/local-mode/cli-reference.md")}) — \`curl -fsSL ${url("/cli/install")} | sh\` or \`brew install Makisuo/tap/maple\``,
+				`- [Maple API](${url(`${SITE_PATHS.apiDocs}.md`)}): base URL \`${apiUrl(API_PATHS.reference).replace(API_PATHS.reference, "")}\`, [interactive reference](${apiUrl(API_PATHS.reference)}), [OpenAPI 3.1](${url(SITE_PATHS.openapi)})`,
+				`- [MCP server](${url(`${SITE_PATHS.mcpDocs}.md`)}): \`${apiUrl(API_PATHS.mcp)}\` (Streamable HTTP), [manifest](${url(SITE_PATHS.mcpManifest)})`,
+				`- [Command line tool](${url("/docs/local-mode/cli-reference.md")}): \`curl -fsSL ${url("/cli/install")} | sh\` or \`brew install Makisuo/tap/maple\``,
 				`- [Source code](${GITHUB_URL})`,
 				`- [Site index for agents](${url(SITE_PATHS.llmsTxt)})`,
 			].join("\n"),

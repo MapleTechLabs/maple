@@ -9,11 +9,12 @@ import { Headers, HttpMiddleware } from "effect/unstable/http"
 // a live bearer credential in telemetry. There is no per-attribute lever, so the
 // auto server span is suppressed for them; each callback handler carries its own
 // span with safe attributes instead (see `integrations.*OAuthCallback` and
-// `slack.oauthCallback`). The second alternative must stay in sync with
-// `SLACK_CALLBACK_PATH` — the Slack app install redirects there.
+// `ChatOAuth.callback`). The second alternative must stay in sync with the chat
+// connector callback paths in `routes/v1/chat-integration.http.ts`.
 // `/oauth/authorize` is deliberately NOT here: its query carries no bearer
 // credential, and `/oauth/token` + `/oauth/revoke` are POSTs (secrets in the body).
-const OAUTH_CALLBACK_PATH = /^(?:\/api\/integrations\/[^/]+\/callback|\/oauth\/slack\/callback)(?:\?|$)/
+const OAUTH_CALLBACK_PATH =
+	/^(?:\/api\/integrations\/[^/]+\/callback|\/oauth\/chat\/[^/]+(?:\/identity)?\/callback)(?:\?|$)/
 
 // The `TracerDisabledWhen` filter and the header-redaction list — both
 // references `HttpMiddleware.tracer` reads regardless of which Tracer is

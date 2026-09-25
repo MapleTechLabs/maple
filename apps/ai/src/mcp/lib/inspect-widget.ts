@@ -46,6 +46,8 @@ import {
 } from "@maple/widgets/dashboard"
 import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
 import { summarizeCause } from "@maple/backend/platform/describe-cause"
+import { doc, type DocBlock, type NextCall } from "./tool-doc"
+import type { WidgetInspectionSummary as WidgetInspectionSummaryOutput } from "@maple/domain/mcp-outputs"
 
 // `RAW_SQL_ENDPOINT` and `QUERY_SHAPE_ENDPOINTS` are used here as LABELS, not as
 // dispatch keys — dispatch goes through `dataSourceRawSql` / `dataSourceQuerySet`,
@@ -319,8 +321,11 @@ export interface RawSqlInspectionData {
 	timeRange: InspectWidgetTimeRange
 }
 
+/** One widget's inspection: `inspect_chart_data`'s output before the tool adds which dashboard it read. */
+export type WidgetInspection = Omit<InspectChartDataData, "outcome" | "dashboardId" | "dashboardName">
+
 export type InspectionOutcome =
-	| { kind: "supported"; data: InspectChartDataData }
+	| { kind: "supported"; data: WidgetInspection }
 	| { kind: "raw_sql"; data: RawSqlInspectionData }
 	| { kind: "unsupported"; endpoint: string }
 	| {
@@ -736,7 +741,7 @@ export const inspectWidget = Effect.fn("inspectWidget")(
 			"Inspection only checks the requested time window; the dashboard UI may auto-extend to a wider window if data is sparse.",
 		)
 
-		const data: InspectChartDataData = {
+		const data: WidgetInspection = {
 			widget: {
 				id: widget.id,
 				...(widget.display.title !== undefined ? { title: widget.display.title } : undefined),
@@ -964,54 +969,78 @@ export const inspectWidgetsAfterMutation = Effect.fn("inspectWidgetsAfterMutatio
 )
 
 /**
- * Format a `WidgetInspectionSummary` into a markdown block for inclusion in
- * tool responses. For single-widget mutations (add/update), collapses to a
- * compact one-liner plus flags when not `looks_healthy`.
+ * A `WidgetInspectionSummary` as doc blocks for a mutation tool's result, plus the calls that
+ * re-check what it flagged. Single-widget mutations (add/update) collapse to a verdict line.
  */
-export function formatValidationSummary(summary: WidgetInspectionSummary, isSingleWidget: boolean): string {
-	if (!summary.ran) return ""
+export function validationDoc(
+	summary: typeof WidgetInspectionSummaryOutput.Type,
+	options: { readonly single: boolean; readonly dashboardId: string },
+): { readonly blocks: ReadonlyArray<DocBlock>; readonly next: ReadonlyArray<NextCall> } {
+	if (!summary.ran) return { blocks: [], next: [] }
 
-	if (isSingleWidget && summary.inspected.length === 1) {
-		const entry = summary.inspected[0]
-		const flagPart = entry.flags.length > 0 ? `  (${entry.flags.join(", ")})` : ""
-		const notePart = entry.note ? `\n${entry.note}` : ""
+	const next = summary.inspected
+		.filter((entry) => entry.verdict === "suspicious" || entry.verdict === "broken")
+		.slice(0, 3)
+		.map((entry) =>
+			doc.next(
+				"inspect_chart_data",
+				{ dashboard_id: options.dashboardId, widget_id: entry.widgetId },
+				`re-check "${entry.title ?? entry.widgetId}" after fixing it with update_dashboard_widget`,
+			),
+		)
+
+	const single = options.single && summary.inspected.length === 1 ? summary.inspected[0] : undefined
+	if (single !== undefined) {
+		const flagPart = single.flags.length > 0 ? `  (${single.flags.join(", ")})` : ""
 		const lines = [
-			`### Validation: ${entry.verdict.toUpperCase()}`,
-			`${verdictIcon(entry.verdict)} "${entry.title ?? entry.widgetId}" — ${entry.verdict}${flagPart}${notePart}`,
+			`${verdictIcon(single.verdict)} "${single.title ?? single.widgetId}": ${single.verdict}${flagPart}`,
 		]
-		if (entry.verdict === "suspicious" || entry.verdict === "broken") {
+		if (single.note) lines.push(single.note)
+		if (single.verdict === "suspicious" || single.verdict === "broken") {
 			lines.push(
-				"Fix the widget via update_dashboard_widget and re-run — the chart will not render meaningfully as-is.",
+				"Fix the widget via update_dashboard_widget and re-run. The chart will not render meaningfully as-is.",
 			)
 		}
-		return lines.join("\n")
+		return {
+			blocks: [doc.heading(`Validation: ${single.verdict.toUpperCase()}`), doc.text(lines.join("\n"))],
+			next,
+		}
 	}
 
-	const header = `### Validation: ${summary.healthyCount} healthy, ${summary.suspiciousCount} suspicious, ${summary.brokenCount} broken (${summary.skippedCount} skipped)`
-	const lines: string[] = [header]
+	const blocks: Array<DocBlock> = [
+		doc.heading(
+			`Validation: ${summary.healthyCount} healthy, ${summary.suspiciousCount} suspicious, ${summary.brokenCount} broken (${summary.skippedCount} skipped)`,
+		),
+	]
 	if (summary.timeRange) {
-		lines.push(
-			`Time range: ${summary.timeRange.startTime} → ${summary.timeRange.endTime} (source: ${summary.timeRange.source})`,
+		blocks.push(
+			doc.text(
+				`Time range: ${summary.timeRange.startTime} to ${summary.timeRange.endTime} (source: ${summary.timeRange.source})`,
+			),
 		)
 	}
-	for (const entry of summary.inspected) {
-		const flagPart = entry.flags.length > 0 ? `  (${entry.flags.join(", ")})` : ""
-		const notePart = entry.note ? ` — ${entry.note}` : ""
-		lines.push(
-			`- ${verdictIcon(entry.verdict)} ${entry.widgetId} "${entry.title ?? ""}" — ${entry.verdict}${flagPart}${notePart}`,
-		)
-	}
+	blocks.push(
+		doc.list(
+			summary.inspected.map((entry) => {
+				const flagPart = entry.flags.length > 0 ? `  (${entry.flags.join(", ")})` : ""
+				const notePart = entry.note ? `: ${entry.note}` : ""
+				return `${verdictIcon(entry.verdict)} ${entry.widgetId} "${entry.title ?? ""}": ${entry.verdict}${flagPart}${notePart}`
+			}),
+		),
+	)
+	const notes: Array<string> = []
 	if (summary.capped) {
-		lines.push(
-			`Note: widget list capped at ${summary.inspected.length}; inspect remaining widgets manually with inspect_chart_data.`,
+		notes.push(
+			`Widget list capped at ${summary.inspected.length}; inspect remaining widgets manually with inspect_chart_data.`,
 		)
 	}
 	if (summary.brokenCount > 0 || summary.suspiciousCount > 0) {
-		lines.push(
-			`Fix suspicious/broken widgets via update_dashboard_widget. Skipped widgets use predefined endpoints; verify with query_data if needed.`,
+		notes.push(
+			"Fix suspicious/broken widgets via update_dashboard_widget. Skipped widgets use predefined endpoints; verify with query_data if needed.",
 		)
 	}
-	return lines.join("\n")
+	if (notes.length > 0) blocks.push(doc.text(notes.join("\n")))
+	return { blocks, next }
 }
 
 function verdictIcon(verdict: WidgetInspectionVerdict): string {

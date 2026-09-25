@@ -57,6 +57,21 @@ describe("traceFilterChips", () => {
 		})
 	})
 
+	it("names the operator of exists and comparison attribute filters", () => {
+		const chips = traceFilterChips({
+			attributeFilters: [
+				{ key: "user.id", value: "", matchMode: "exists", negated: true },
+				{ key: "retry.count", value: "3", matchMode: "gt" },
+				{ key: "http.route", value: "/api", matchMode: "contains" },
+			],
+		})
+		expect(chips.map((c) => [c.label, c.values, c.negated])).toEqual([
+			["user.id", ["set"], true],
+			["retry.count", ["> 3"], false],
+			["http.route contains", ["/api"], false],
+		])
+	})
+
 	it("ignores params present but empty", () => {
 		expect(traceFilterChips({ services: [], excludedServices: [] })).toEqual([])
 	})
