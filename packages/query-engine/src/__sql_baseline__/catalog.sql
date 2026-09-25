@@ -7544,7 +7544,7 @@ SELECT
           AND ServiceName = 'api'
           AND SeverityText IN ('ERROR', 'Error', 'error')
           AND TraceId = '0af7651916cd43dd8448eb211c80319c'
-          AND Body ILIKE '%connection refused%'
+          AND Body ILIKE '%upstream connection refused by peer%'
           AND Timestamp >= (SELECT min(ts) FROM (SELECT
           Timestamp AS ts
         FROM logs
@@ -7556,14 +7556,14 @@ SELECT
           AND ServiceName = 'api'
           AND SeverityText IN ('ERROR', 'Error', 'error')
           AND TraceId = '0af7651916cd43dd8448eb211c80319c'
-          AND Body ILIKE '%connection refused%'
+          AND Body ILIKE '%upstream connection refused by peer%'
         ORDER BY ts DESC
         LIMIT 50))
         ORDER BY timestamp DESC, serviceName ASC, traceId ASC, spanId ASC, recordIdentity ASC
         LIMIT 50
         FORMAT JSON
 
--- pipe:list_logs:searched:bloom  [d1878c6d]
+-- pipe:list_logs:searched:bloom  [49bc0599]
 SELECT
           Timestamp AS timestamp,
           SeverityText AS severityText,
@@ -7584,7 +7584,7 @@ SELECT
           AND ServiceName = 'api'
           AND SeverityText IN ('ERROR', 'Error', 'error')
           AND TraceId = '0af7651916cd43dd8448eb211c80319c'
-          AND ((hasToken(lower(Body), 'connection') AND hasToken(lower(Body), 'refused')) AND Body ILIKE '%connection refused%')
+          AND (((hasToken(lower(Body), 'connection') AND hasToken(lower(Body), 'refused')) AND hasToken(lower(Body), 'by')) AND Body ILIKE '%upstream connection refused by peer%')
           AND Timestamp >= (SELECT min(ts) FROM (SELECT
           Timestamp AS ts
         FROM logs
@@ -7596,7 +7596,7 @@ SELECT
           AND ServiceName = 'api'
           AND SeverityText IN ('ERROR', 'Error', 'error')
           AND TraceId = '0af7651916cd43dd8448eb211c80319c'
-          AND ((hasToken(lower(Body), 'connection') AND hasToken(lower(Body), 'refused')) AND Body ILIKE '%connection refused%')
+          AND (((hasToken(lower(Body), 'connection') AND hasToken(lower(Body), 'refused')) AND hasToken(lower(Body), 'by')) AND Body ILIKE '%upstream connection refused by peer%')
         ORDER BY ts DESC
         LIMIT 50))
         ORDER BY timestamp DESC, serviceName ASC, traceId ASC, spanId ASC, recordIdentity ASC
@@ -7624,7 +7624,7 @@ SELECT
           AND ServiceName = 'api'
           AND SeverityText IN ('ERROR', 'Error', 'error')
           AND TraceId = '0af7651916cd43dd8448eb211c80319c'
-          AND (hasAllTokens(lower(Body), 'connection refused') AND Body ILIKE '%connection refused%')
+          AND (hasAllTokens(lower(Body), 'connection refused by') AND Body ILIKE '%upstream connection refused by peer%')
           AND Timestamp >= (SELECT min(ts) FROM (SELECT
           Timestamp AS ts
         FROM logs
@@ -7636,7 +7636,7 @@ SELECT
           AND ServiceName = 'api'
           AND SeverityText IN ('ERROR', 'Error', 'error')
           AND TraceId = '0af7651916cd43dd8448eb211c80319c'
-          AND (hasAllTokens(lower(Body), 'connection refused') AND Body ILIKE '%connection refused%')
+          AND (hasAllTokens(lower(Body), 'connection refused by') AND Body ILIKE '%upstream connection refused by peer%')
         ORDER BY ts DESC
         LIMIT 50))
         ORDER BY timestamp DESC, serviceName ASC, traceId ASC, spanId ASC, recordIdentity ASC

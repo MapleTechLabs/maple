@@ -232,7 +232,7 @@ export const pipeFixtures: ReadonlyArray<PipeFixture> = [
 	{
 		pipe: "list_logs",
 		label: "searched",
-		params: { search: "connection refused", severity: "ERROR", service: "api", trace_id: TRACE_ID },
+		params: { search: "upstream connection refused by peer", severity: "ERROR", service: "api", trace_id: TRACE_ID },
 		allCapabilities: true,
 	},
 	{ pipe: "logs_count", label: "default", params: {}, allCapabilities: true },
