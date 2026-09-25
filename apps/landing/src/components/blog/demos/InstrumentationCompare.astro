@@ -8,6 +8,7 @@
  * Scoped classes throughout — see TraceComparison.astro.
  */
 import { Code } from "astro:components";
+import { codeTheme } from "../../../lib/code-theme.mjs";
 
 const LAZY_CODE = `// "we have tracing": the SDK is installed, nothing more
 app.post("/api/checkout", async (req, res) => {
@@ -107,7 +108,7 @@ const panels = [
 				<p class="icmp__panelcap">{p.label}</p>
 				<div class="icmp__cols">
 					<div class:list={["icmp__codeframe", `icmp__codeframe--${p.id}`]}>
-						<Code code={p.code} lang="ts" theme="vitesse-dark" wrap />
+						<Code code={p.code} lang="ts" theme={codeTheme} wrap />
 					</div>
 					<aside class="icmp__span">
 						<div class="icmp__spanhead">

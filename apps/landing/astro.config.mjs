@@ -5,6 +5,7 @@ import { defineConfig } from "astro/config"
 import { transformerNotationDiff, transformerNotationHighlight } from "@shikijs/transformers"
 import { unified } from "@astrojs/markdown-remark"
 import rehypeTableWrap from "./src/lib/rehype-table-wrap.mjs"
+import { codeTheme } from "./src/lib/code-theme.mjs"
 import mdx from "@astrojs/mdx"
 import { paraglideVitePlugin } from "@inlang/paraglide-js"
 import react from "@astrojs/react"
@@ -97,7 +98,7 @@ export default defineConfig({
 		// configured below. Revisit when the transformer story lands there.
 		processor: unified({ rehypePlugins: [rehypeTableWrap] }),
 		shikiConfig: {
-			theme: "vitesse-dark",
+			theme: codeTheme,
 			wrap: true,
 			// Line classes only ("diff add" / "highlighted"); the colors live in
 			// global.css under .blog-content.
