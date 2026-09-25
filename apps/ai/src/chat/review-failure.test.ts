@@ -1,7 +1,7 @@
 /**
  * The words a failed review's pull request is shown come from the run's typed cause, never its text.
  */
-import { AgentPolicyError, ContextBudgetError, ModelProtocolError } from "@effect-agent/core/AgentError"
+import { AgentPolicyError, ContextBudgetError, ModelProtocolError } from "effect-agent/agent-error"
 import { prReviewFailureReason } from "@maple/domain/http"
 import { Cause } from "effect"
 import { assert, describe, it } from "vitest"
