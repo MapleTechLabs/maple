@@ -1,37 +1,29 @@
-import { optionalBooleanParam, optionalStringParam, type McpToolRegistrar } from "./types"
-import { formatTable } from "../lib/format"
+import type { McpToolRegistrar } from "./types"
 import { toMcpHttpError } from "../lib/map-http-error"
-import { formatNextSteps } from "../lib/next-steps"
 import { Effect, Schema } from "effect"
-import { createDualContent } from "../lib/structured-output"
+import { ListAlertRulesOutput } from "@maple/domain/mcp-outputs"
 import { CurrentMcpTenant } from "../lib/query-warehouse"
 import { AlertRulesService } from "@maple/backend/services/alerts/AlertRulesService"
-
-const comparatorLabel: Record<string, string> = {
-	gt: ">",
-	gte: ">=",
-	lt: "<",
-	lte: "<=",
-} satisfies Record<string, string>
+import { ALERT_SEVERITIES, ALERT_SIGNAL_TYPES, formatCondition, toAlertRuleRow } from "../lib/alert-rules"
+import * as P from "../lib/params"
+import { doc } from "../lib/tool-doc"
 
 export function registerListAlertRulesTool(server: McpToolRegistrar) {
-	server.tool(
-		"list_alert_rules",
-		"List configured alert rules with their severity, signal type, and condition. Use list_alert_incidents to see triggered alerts.",
-		Schema.Struct({
-			service_names: optionalStringParam("Filter rules by one or more comma-separated service names"),
-			signal_type: optionalStringParam(
-				"Filter by signal type: error_rate, p95_latency, p99_latency, apdex, throughput, metric, query",
-			),
-			severity: optionalStringParam("Filter by severity: warning, critical"),
-			enabled_only: optionalBooleanParam("Only return enabled rules (default: false)"),
+	server.define({
+		name: "list_alert_rules",
+		description:
+			"List configured alert rules with severity, signal type and condition. Use list_alert_incidents for what has fired.",
+		parameters: Schema.Struct({
+			services: P.optionalList("Only rules scoped to any of these services"),
+			signal_type: P.optionalOneOf(ALERT_SIGNAL_TYPES, "Only rules on this signal type"),
+			severity: P.optionalOneOf(ALERT_SEVERITIES, "Only rules with this severity"),
+			enabled_only: P.optionalFlag("Only enabled rules"),
 		}),
-		Effect.fn("McpTool.listAlertRules")(function* ({
-			service_names,
-			signal_type,
-			severity,
-			enabled_only,
-		}) {
+		aliases: { service_names: "services" },
+		output: ListAlertRulesOutput,
+		hints: { readOnly: true },
+		phrases: ["Listing alert rules", "Checking alert rules"],
+		handler: Effect.fn("McpTool.listAlertRules")(function* (params) {
 			const tenant = yield* CurrentMcpTenant
 			const alerts = yield* AlertRulesService
 
@@ -39,86 +31,82 @@ export function registerListAlertRulesTool(server: McpToolRegistrar) {
 				.listRules(tenant.orgId)
 				.pipe(Effect.mapError(toMcpHttpError("list_alert_rules")))
 
-			let rules = result.rules
-
-			if (service_names) {
-				const filters = service_names
-					.split(",")
-					.map((s) => s.trim())
-					.filter((s) => s.length > 0)
-				rules = rules.filter((r) =>
-					filters.some((serviceName) => r.serviceNames.includes(serviceName)),
-				)
-			}
-			if (signal_type) {
-				rules = rules.filter((r) => r.signalType === signal_type)
-			}
-			if (severity) {
-				rules = rules.filter((r) => r.severity === severity)
-			}
-			if (enabled_only) {
-				rules = rules.filter((r) => r.enabled)
-			}
+			const services =
+				params.services !== undefined && params.services.length > 0 ? params.services : undefined
+			const rules = result.rules.filter(
+				(r) =>
+					(services === undefined ||
+						services.some((service) => r.serviceNames.includes(service))) &&
+					(params.signal_type === undefined || r.signalType === params.signal_type) &&
+					(params.severity === undefined || r.severity === params.severity) &&
+					(params.enabled_only !== true || r.enabled),
+			)
 
 			yield* Effect.annotateCurrentSpan({
 				orgId: tenant.orgId,
-				signalType: signal_type ?? "all",
-				severity: severity ?? "all",
+				signalType: params.signal_type ?? "all",
+				severity: params.severity ?? "all",
 				"result.rowCount": rules.length,
 			})
 
-			const lines: string[] = [
-				`## Alert Rules`,
-				`Total: ${rules.length} rule${rules.length !== 1 ? "s" : ""}`,
-				``,
-			]
-
-			if (rules.length === 0) {
-				lines.push("No alert rules found.")
-			} else {
-				const headers = ["Name", "Severity", "Signal", "Condition", "Enabled", "Destinations"]
-				const rows = rules.map((r) => [
-					r.name,
-					r.severity,
-					r.signalType,
-					`${comparatorLabel[r.comparator] ?? r.comparator} ${r.threshold}`,
-					r.enabled ? "Yes" : "No",
-					String(r.destinationIds.length),
-				])
-				lines.push(formatTable(headers, rows))
-			}
-
-			lines.push(
-				formatNextSteps([
-					"`list_alert_incidents` — see triggered alerts",
-					'`create_alert_rule template="high_error_rate"` — create a new rule from template',
-				]),
-			)
-
 			return {
-				content: createDualContent(lines.join("\n"), {
-					tool: "list_alert_rules",
-					data: {
-						rules: rules.map((r) => ({
-							id: r.id,
-							name: r.name,
-							enabled: r.enabled,
-							severity: r.severity,
-							serviceNames: [...r.serviceNames],
-							environments: [...r.environments],
-							signalType: r.signalType,
-							comparator: r.comparator,
-							threshold: r.threshold,
-							windowMinutes: r.windowMinutes,
-							destinationIds: [...r.destinationIds],
-							createdAt: r.createdAt,
-							updatedAt: r.updatedAt,
-						})),
-						total: rules.length,
-					},
-				}),
+				rules: rules.map(toAlertRuleRow),
+				total: rules.length,
+				...(services === undefined ? undefined : { services: [...services] }),
+				...(params.signal_type === undefined ? undefined : { signalType: params.signal_type }),
+				...(params.severity === undefined ? undefined : { severity: params.severity }),
+				...(params.enabled_only === undefined ? undefined : { enabledOnly: params.enabled_only }),
 			}
 		}),
-		{ phrases: ["Listing alert rules", "Checking alert rules"] },
-	)
+		render: (output) => ({
+			title: "Alert Rules",
+			scope: [
+				["Services", output.services?.join(", ")],
+				["Signal", output.signalType],
+				["Severity", output.severity],
+				["Enabled only", output.enabledOnly === true ? "yes" : undefined],
+			],
+			...(output.rules.length === 0
+				? {
+						empty: {
+							message: "No alert rules found.",
+							hints: [
+								"Drop the filters to see every rule, or create one with create_alert_rule.",
+							],
+						},
+					}
+				: undefined),
+			blocks:
+				output.rules.length === 0
+					? []
+					: [
+							doc.text(`Total: ${output.total} rule${output.total !== 1 ? "s" : ""}`),
+							doc.table(
+								["ID", "Name", "Severity", "Signal", "Condition", "Enabled", "Destinations"],
+								output.rules.map((r) => [
+									r.id,
+									r.name,
+									r.severity,
+									r.signalType,
+									formatCondition(r),
+									r.enabled ? "Yes" : "No",
+									String(r.destinationIds.length),
+								]),
+							),
+						],
+			next: [
+				...output.rules
+					.slice(0, 1)
+					.map((r) =>
+						doc.next("get_alert_rule", { rule_id: r.id }, `full configuration of "${r.name}"`),
+					),
+				doc.next("list_alert_incidents", {}, "see triggered alerts"),
+				doc.next(
+					"list_alert_destinations",
+					{},
+					'find destination IDs, then create_alert_rule template="high_error_rate" for a new rule',
+				),
+			],
+		}),
+	})
 }

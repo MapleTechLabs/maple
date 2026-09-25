@@ -110,6 +110,20 @@ Effect (`drizzle-orm/effect-postgres`): queries are `yield*`ed, `db.transaction`
   ```
 - `@/` resolves to each app's source. `src/routeTree.gen.ts` is generated.
 
+## MCP tools
+
+Every tool is `server.define({ parameters, output, hints, handler, render })`
+(`apps/ai/src/mcp/tools/types.ts`); the registry owns decode, aliases, errors, output encoding and
+rendering. `registry.contract.test.ts` enforces it across the catalog.
+
+- Parameters come from `apps/ai/src/mcp/lib/params.ts` (`P.timeWindow`, `P.service`, `P.limit`,
+  `P.oneOf`...): one spelling per concept, retired names only as `aliases`.
+- Output is an Effect Schema in `packages/domain/src/mcp-outputs/` (`outputSchema` /
+  `structuredContent`, and the chat UI's payload). The model reads `render(output)`, a `ToolDoc`
+  whose `next` calls the registry validates.
+- Failures are typed (`McpInvalidInputError`, `McpNotReadyError`, `McpUnavailableError`,
+  `McpQueryBudgetError`, `McpQueryError`); no `isError` literals in tools.
+
 ## Repository sandbox
 
 Internal-only agent tools (`sandbox_*`, `apps/ai/src/mcp/tools/sandbox.ts`) run commands against a

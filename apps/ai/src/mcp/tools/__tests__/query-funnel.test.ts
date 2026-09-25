@@ -1,46 +1,49 @@
-import { describe, expect, it } from "@effect/vitest"
+import { afterAll, beforeAll, describe, expect, it } from "@effect/vitest"
 import { Context, Effect, Option, Schema } from "effect"
 import { WarehouseExecutor, productEventsFunnel } from "@maple/query-engine/observability"
 import { CH } from "@maple/query-engine"
-import type { McpToolRequirements } from "../runtime-requirements"
-import type { McpToolRegistrar, McpToolResult } from "../types"
-import { registerQueryFunnelTool } from "../query-funnel"
-import { registerListProductEventsTool } from "../list-product-events"
+import { ListProductEventsOutput, QueryFunnelOutput } from "@maple/domain/mcp-outputs"
+import type { McpToolResult } from "../types"
 import { mapleToolCatalog, toInputSchema } from "../registry"
 import { compiledQueryOf } from "@maple/query-engine/execution"
+import { installFakeWarehouse, restoreWarehouse, type FixtureRule } from "../../__evals__/fake-warehouse"
+import { makeEvalRuntime, markdown, runToolDirect, type EvalRuntime } from "../../__evals__/eval-runtime"
 
-// Capture the handler the tool registers so its validation paths can be driven
-// directly. Those return before any service is read, so an empty context is
-// enough — the same trick `dispatcher.test.ts` uses.
-type ToolInput = Record<string, string | number | undefined>
+// Both tools run through the registry the way a client reaches them, against a fake warehouse
+// that answers the funnel read with two steps and the event-name read with one custom event.
+const fixtures: FixtureRule[] = [
+	// The breakdown read names the attribute it groups by.
+	{
+		match: (sql) => /windowFunnel/i.test(sql) && sql.includes("'plan'"),
+		rows: [{ group: "pro", step: 1, count: 10 }],
+	},
+	{
+		match: (sql) => /windowFunnel/i.test(sql),
+		rows: [
+			{ step: 1, count: 100 },
+			{ step: 2, count: 40 },
+		],
+	},
+	{
+		match: (sql) => /product_events/i.test(sql),
+		rows: [{ eventName: "signup_completed", kind: "custom", count: 12, sessions: 10, persons: 9 }],
+	},
+]
 
-const captureTool = (register: (server: McpToolRegistrar) => void) => {
-	let captured:
-		| {
-				name: string
-				schema: Schema.Top
-				handler: (params: ToolInput) => Effect.Effect<McpToolResult, unknown, unknown>
-		  }
-		| undefined
-	register({
-		tool: (name, _description, schema, handler) => {
-			// SAFETY: the tests below pass inputs shaped by each tool's own Struct;
-			// the registrar erases the parameter type, so it is re-widened here.
-			captured = { name, schema, handler: (params) => handler(params as never) }
-		},
-	})
-	if (!captured) throw new Error("tool did not register")
-	return captured
-}
+let rt: EvalRuntime
 
-const run = (effect: Effect.Effect<McpToolResult, unknown, unknown>) =>
-	Effect.runPromise(
-		(effect as Effect.Effect<McpToolResult, unknown, McpToolRequirements>).pipe(
-			Effect.provide(Context.empty() as Context.Context<McpToolRequirements>),
-		),
-	)
+beforeAll(() => {
+	installFakeWarehouse(fixtures)
+	rt = makeEvalRuntime()
+})
 
-const text = (result: McpToolResult) => result.content.map((c) => ("text" in c ? c.text : "")).join("\n")
+afterAll(async () => {
+	restoreWarehouse()
+	await rt.dispose()
+})
+
+const call = (name: string, params: Record<string, unknown>) =>
+	runToolDirect(rt, name, params) as Promise<McpToolResult>
 
 describe("query_funnel / list_product_events registration", () => {
 	it("both tools are in the catalog with object input schemas", () => {
@@ -55,67 +58,108 @@ describe("query_funnel / list_product_events registration", () => {
 		const definition = mapleToolCatalog.find((d) => d.name === "query_funnel")!
 		expect(toInputSchema(definition.schema).required).toEqual(["steps_json"])
 	})
+
+	it("list_product_events has only optional parameters", () => {
+		const definition = mapleToolCatalog.find((d) => d.name === "list_product_events")!
+		expect(toInputSchema(definition.schema).required ?? []).toEqual([])
+	})
 })
 
 describe("query_funnel validation", () => {
-	const tool = captureTool(registerQueryFunnelTool)
-
-	it("rejects malformed steps_json with the example", async () => {
-		const result = await run(tool.handler({ steps_json: "not json" }))
+	it("rejects malformed steps_json as a parameter error", async () => {
+		const result = await call("query_funnel", { steps_json: "not json" })
 		expect(result.isError).toBe(true)
-		expect(text(result)).toContain("Invalid steps_json")
-		expect(text(result)).toContain('"kind":"page"')
+		expect(markdown(result)).toContain("Invalid parameters for `query_funnel`")
+		expect(markdown(result)).toContain("steps_json")
 	})
 
 	it("rejects a step of an unknown kind", async () => {
-		const result = await run(
-			tool.handler({ steps_json: JSON.stringify([{ kind: "click", target: "#buy" }]) }),
-		)
+		const result = await call("query_funnel", {
+			steps_json: JSON.stringify([{ kind: "click", target: "#buy" }]),
+		})
 		expect(result.isError).toBe(true)
-		expect(text(result)).toContain("Invalid steps_json")
+		expect(markdown(result)).toContain("steps_json")
 	})
 
-	it("rejects an empty step list", async () => {
-		const result = await run(tool.handler({ steps_json: "[]" }))
+	it("rejects an empty step list with the example", async () => {
+		const result = await call("query_funnel", { steps_json: "[]" })
 		expect(result.isError).toBe(true)
-		expect(text(result)).toContain("at least one step")
+		expect(markdown(result)).toContain("at least one step")
+		expect(markdown(result)).toContain('"kind":"page"')
 	})
 
 	it("rejects a session step past step 1 before touching the warehouse", async () => {
-		const result = await run(
-			tool.handler({
-				steps_json: JSON.stringify([
-					{ kind: "event", eventName: "signup_completed" },
-					{ kind: "session", dimension: "utmSource", value: "twitter" },
-				]),
-			}),
-		)
+		const result = await call("query_funnel", {
+			steps_json: JSON.stringify([
+				{ kind: "event", eventName: "signup_completed" },
+				{ kind: "session", dimension: "utmSource", value: "twitter" },
+			]),
+		})
 		expect(result.isError).toBe(true)
-		expect(text(result)).toContain("only valid as step 1")
+		expect(markdown(result)).toContain("only valid as step 1")
 	})
 
 	it("rejects an unknown key_by and a non-positive window", async () => {
 		const steps = JSON.stringify([{ kind: "event", eventName: "x" }])
-		const keyBy = await run(tool.handler({ steps_json: steps, key_by: "account" }))
+		const keyBy = await call("query_funnel", { steps_json: steps, key_by: "account" })
 		expect(keyBy.isError).toBe(true)
-		expect(text(keyBy)).toContain("key_by must be one of")
+		expect(markdown(keyBy)).toContain("`key_by`")
 
-		const window = await run(tool.handler({ steps_json: steps, window_seconds: 0 }))
+		const window = await call("query_funnel", { steps_json: steps, window_seconds: 0 })
 		expect(window.isError).toBe(true)
-		expect(text(window)).toContain("window_seconds")
+		expect(markdown(window)).toContain("window_seconds")
 	})
 
 	it("rejects a breakdown_by outside the vocabulary but accepts attribute:<key>", async () => {
 		const steps = JSON.stringify([{ kind: "event", eventName: "x" }])
-		const bad = await run(tool.handler({ steps_json: steps, breakdown_by: "plan" }))
+		const bad = await call("query_funnel", { steps_json: steps, breakdown_by: "plan" })
 		expect(bad.isError).toBe(true)
-		expect(text(bad)).toContain("breakdown_by must be one of")
-		// `attribute:plan` passes validation and proceeds to the tenant lookup,
-		// which the empty context cannot satisfy — that failure is the proof it
-		// got past the vocabulary check.
-		await expect(
-			run(tool.handler({ steps_json: steps, breakdown_by: "attribute:plan" })),
-		).rejects.toThrow()
+		expect(markdown(bad)).toContain("breakdown_by must be one of")
+		const good = await call("query_funnel", { steps_json: steps, breakdown_by: "attribute:plan" })
+		expect(good.isError).toBeUndefined()
+		expect(markdown(good)).toContain("### By attribute:plan")
+	})
+
+	it("takes the steps as an array as well as JSON text", async () => {
+		const result = await call("query_funnel", { steps_json: [{ kind: "page", pagePath: "/pricing" }] })
+		expect(result.isError).toBeUndefined()
+	})
+})
+
+describe("query_funnel output", () => {
+	it("decodes with its output schema and renders the conversion", async () => {
+		const steps = [
+			{ kind: "page", pagePath: "/pricing" },
+			{ kind: "event", eventName: "signup_completed" },
+		]
+		const result = await call("query_funnel", { steps_json: JSON.stringify(steps) })
+		const output = Schema.decodeUnknownSync(QueryFunnelOutput)(result.structuredContent)
+		expect(output.steps.map((step) => step.count)).toEqual([100, 40])
+		expect(output.conversion).toBeCloseTo(0.4)
+		expect(output.definition).toEqual(steps)
+		const text = markdown(result)
+		expect(text).toContain("## Funnel (2 steps, by person")
+		expect(text).toContain("**Conversion: 40.00%**")
+		// The breakdown suggestion repeats the funnel, so it decodes against this tool's schema.
+		expect(text).toContain("`query_funnel steps_json=")
+		expect(text).toContain('breakdown_by="utmSource"')
+	})
+})
+
+describe("list_product_events output", () => {
+	it("decodes with its output schema and suggests a funnel over the custom events", async () => {
+		const result = await call("list_product_events", {})
+		const output = Schema.decodeUnknownSync(ListProductEventsOutput)(result.structuredContent)
+		expect(output.events[0]?.eventName).toBe("signup_completed")
+		const text = markdown(result)
+		expect(text).toContain("| signup_completed | custom |")
+		expect(text).toContain("`query_funnel steps_json=")
+	})
+
+	it("rejects an unknown kind as a parameter error", async () => {
+		const result = await call("list_product_events", { kind: "pageview" })
+		expect(result.isError).toBe(true)
+		expect(markdown(result)).toContain("`kind`")
 	})
 })
 
@@ -182,12 +226,4 @@ describe("productEventsFunnel (observability helper)", () => {
 			expect((failed as CH.ProductEventsFunnelError).reason).toBe("NoSteps")
 		}),
 	)
-})
-
-describe("list_product_events registration shape", () => {
-	it("registers with only optional parameters", () => {
-		const tool = captureTool(registerListProductEventsTool)
-		expect(tool.name).toBe("list_product_events")
-		expect(toInputSchema(tool.schema).required ?? []).toEqual([])
-	})
 })

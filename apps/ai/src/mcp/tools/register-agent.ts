@@ -1,62 +1,56 @@
-import {
-	McpQueryError,
-	optionalStringParam,
-	requiredStringParam,
-	validationError,
-	type McpToolRegistrar,
-} from "./types"
-import { Effect, Option, Schema } from "effect"
-import { createDualContent } from "../lib/structured-output"
+import { McpInvalidInputError, McpUnavailableError, type McpToolRegistrar } from "./types"
+import { Effect, Schema } from "effect"
+import { RegisterAgentOutput } from "@maple/domain/mcp-outputs"
 import { CurrentMcpTenant } from "../lib/query-warehouse"
+import * as P from "../lib/params"
+import { doc } from "../lib/tool-doc"
+import { persistenceFailed, validationFailed } from "./error-issue-shared"
 import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
 import { ErrorActorsService } from "@maple/backend/services/errors/ErrorActorsService"
 
-const decodeStringArray = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Array(Schema.String)))
-
-const parseCapabilities = (raw: string | undefined): ReadonlyArray<string> => {
-	if (!raw) return []
-	return Option.getOrElse(decodeStringArray(raw), () => [])
-}
-
 export function registerRegisterAgentTool(server: McpToolRegistrar) {
-	server.tool(
-		"register_agent",
-		"Register an LLM agent with the error-issue system so it can claim and transition issues. Must be called from a human session (not an agent API key). Returns an actor ID to pin via API-key metadata.",
-		Schema.Struct({
-			name: requiredStringParam("Unique agent name within the org (1..100 chars)"),
-			model: optionalStringParam("Model identifier, e.g. 'claude-opus-4.7'"),
-			capabilities_json: optionalStringParam(
+	server.define({
+		name: "register_agent",
+		description:
+			"Register an LLM agent with the error-issue system so it can claim and transition issues. Must be called from a human session (not an agent API key). Returns an actor ID to pin via API-key metadata.",
+		parameters: Schema.Struct({
+			name: P.text("Unique agent name within the org (1..100 chars)"),
+			model: P.optionalText("Model identifier, e.g. 'claude-opus-4.7'"),
+			capabilities_json: P.optionalJson(
+				Schema.Array(Schema.String),
 				'JSON array of capability tags, e.g. ["auto-triage","patch-proposer"]',
 			),
 		}),
-		Effect.fn("McpTool.registerAgent")(function* ({ name, model, capabilities_json }) {
+		output: RegisterAgentOutput,
+		hints: { readOnly: false, destructive: false, idempotent: false },
+		phrases: ["Registering an agent"],
+		handler: Effect.fn("McpTool.registerAgent")(function* (params) {
 			const tenant = yield* CurrentMcpTenant
 			if (tenant.actorId) {
-				return validationError(
-					"register_agent must be called from a human session, not an agent API key.",
-				)
+				return yield* new McpUnavailableError({
+					message: "register_agent must be called from a human session, not an agent API key.",
+					capability: "human_session",
+				})
 			}
-			if (name.trim().length === 0) {
-				return validationError("Agent name must not be empty.")
+			if (params.name.trim().length === 0) {
+				return yield* new McpInvalidInputError({
+					message: "Agent name must not be empty.",
+					parameter: "name",
+				})
 			}
 
 			const actors = yield* ErrorActorsService
-			const capabilities = parseCapabilities(capabilities_json)
 			const actor = yield* actors
 				.registerAgent(tenant.orgId, tenant.userId, {
-					name,
-					model,
-					capabilities,
+					name: params.name,
+					model: params.model,
+					capabilities: params.capabilities_json ?? [],
 				})
 				.pipe(
-					Effect.mapError(
-						(error) =>
-							new McpQueryError({
-								message: error.message,
-								pipeName: "register_agent",
-								cause: error,
-							}),
-					),
+					Effect.catchTags({
+						"@maple/http/errors/ErrorValidationError": validationFailed("name"),
+						"@maple/http/errors/ErrorPersistenceError": persistenceFailed("register_agent"),
+					}),
 				)
 
 			const audit = yield* AuditLogService
@@ -66,31 +60,32 @@ export function registerRegisterAgentTool(server: McpToolRegistrar) {
 				source: "mcp",
 				action: "agent.registered",
 				resourceId: actor.id,
-				metadata: { name: actor.agentName ?? name },
+				metadata: { name: actor.agentName ?? params.name },
 			})
 
-			const lines = [
-				`## Agent registered`,
-				`- Actor ID: ${actor.id}`,
-				`- Name: ${actor.agentName ?? name}`,
-				actor.model ? `- Model: ${actor.model}` : null,
-				capabilities.length > 0 ? `- Capabilities: ${capabilities.join(", ")}` : null,
-				``,
-				`Next: pin this actor to an API key by storing { "agentActorId": "${actor.id}" } in the key's metadata, or pass \`x-maple-agent-id: ${actor.id}\` on tool requests.`,
-			].filter((l): l is string => l !== null)
-
 			return {
-				content: createDualContent(lines.join("\n"), {
-					tool: "register_agent",
-					data: {
-						id: actor.id,
-						agentName: actor.agentName,
-						model: actor.model,
-						capabilities: actor.capabilities,
-					},
-				}),
+				id: actor.id,
+				agentName: actor.agentName ?? params.name,
+				model: actor.model,
+				capabilities: actor.capabilities,
 			}
 		}),
-		{ phrases: ["Registering an agent"] },
-	)
+		render: (output) => ({
+			title: "Agent registered",
+			blocks: [
+				doc.fields([
+					["Actor ID", output.id],
+					["Name", output.agentName ?? undefined],
+					["Model", output.model ?? undefined],
+					[
+						"Capabilities",
+						output.capabilities.length > 0 ? output.capabilities.join(", ") : undefined,
+					],
+				]),
+				doc.text(
+					`Pin this actor to an API key by storing { "agentActorId": "${output.id}" } in the key's metadata, or pass \`x-maple-agent-id: ${output.id}\` on tool requests.`,
+				),
+			],
+		}),
+	})
 }

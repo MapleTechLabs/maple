@@ -162,19 +162,28 @@ const textOf = (item: unknown): string | null =>
 		? (item as { text: string }).text
 		: null
 
-/** A JSON blob carrying the UI marker, possibly one paragraph of a joined string. */
+const MARKER_PREFIX = `{"${STRUCTURED_MARKER}":true`
+
+/**
+ * Where a legacy joined string's UI blob starts. It was always the last block, but the join was
+ * a single newline for a while, so it can sit on the same paragraph as the report's last line.
+ */
+const markerStart = (text: string): number => {
+	const index = text.lastIndexOf(MARKER_PREFIX)
+	return index > 0 && text[index - 1] !== "\n" ? -1 : index
+}
+
+/** A JSON blob carrying the UI marker, at the end of a joined string. */
 function parseStructuredFromText(text: string): StructuredToolOutput | null {
-	for (const chunk of text.split("\n\n")) {
-		const trimmed = chunk.trim()
-		if (!trimmed.startsWith("{")) continue
-		try {
-			const parsed: unknown = JSON.parse(trimmed)
-			if (isStructured(parsed)) return parsed
-		} catch {
-			// Not JSON — ordinary report text.
-		}
+	const start = markerStart(text)
+	if (start === -1) return null
+	try {
+		const parsed: unknown = JSON.parse(text.slice(start).trim())
+		return isStructured(parsed) ? parsed : null
+	} catch {
+		// Not JSON (or cut off by truncation): ordinary report text.
+		return null
 	}
-	return null
 }
 
 export function extractOutputText(output: unknown): string | null {
@@ -202,11 +211,10 @@ export function extractOutputText(output: unknown): string | null {
 }
 
 /** Drop the UI payload from a legacy joined string so it isn't shown as raw JSON. */
-const stripStructuredChunks = (text: string): string =>
-	text
-		.split("\n\n")
-		.filter((chunk) => parseStructuredFromText(chunk) === null)
-		.join("\n\n")
+const stripStructuredChunks = (text: string): string => {
+	const start = markerStart(text)
+	return start === -1 ? text : text.slice(0, start).trimEnd()
+}
 
 // Component
 

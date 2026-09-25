@@ -628,10 +628,10 @@ const makeExecutor = (input: {
 					? failure(`Only pull request #${input.number} is available in this run.`)
 					: input.context === undefined
 						? text(["A local range run has no pull request, so there is no context to read."])
-						: renderPullRequestContext(input.number, input.context)
+						: renderPullRequestContext(input.repository, input.number, input.context)
 			case "pr_file_diff":
 				return num(params.number) === input.number
-					? renderFileDiffs(input.files, [
+					? renderFileDiffs(input.repository, input.number, input.files, [
 							...(params.paths ?? []),
 							...(str(params.path) === undefined ? [] : [str(params.path) ?? ""]),
 						])

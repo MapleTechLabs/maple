@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
 import { Effect, Exit, Schema } from "effect"
 import { mapleToolCatalog, mapleToolPhrase, toInputSchema } from "./registry"
-import { optionalNumberParam } from "./types"
+import * as P from "../lib/params"
 
 const jsonOf = (schema: unknown): string => JSON.stringify(schema)
 
@@ -67,8 +67,8 @@ describe("toInputSchema nullable-union collapse", () => {
 	})
 })
 
-describe("optionalNumberParam", () => {
-	const schema = Schema.Struct({ p: optionalNumberParam("a duration in ms") })
+describe("P.optionalNumber", () => {
+	const schema = Schema.Struct({ p: P.optionalNumber("a duration in ms") })
 	const decode = (p: unknown) => Effect.runSyncExit(Schema.decodeUnknownEffect(schema)({ p }))
 	const accepts = (p: unknown) => {
 		const exit = decode(p)
@@ -79,10 +79,10 @@ describe("optionalNumberParam", () => {
 	// on all ~30 numeric parameters, because JSON cannot carry a non-finite number.
 	// A model reading a "number or string" type reasonably sent "1500" — which the
 	// decoder then rejected. `Schema.Finite` has no non-finite branch to encode.
-	it("publishes a clean number/string union with no non-finite enum branch", () => {
-		const properties = toInputSchema(schema).properties as Record<string, Record<string, unknown>>
-		expect(properties.p?.anyOf).toEqual([{ type: "number" }, { type: "string" }])
-		expect(properties.p?.description).toBe("a duration in ms")
+	it("publishes a plain number, though numeric strings are still accepted", () => {
+		expect(toInputSchema(schema).properties).toEqual({
+			p: { type: "number", description: "a duration in ms" },
+		})
 	})
 
 	it("publishes no non-finite enum branch on any tool in the catalog", () => {

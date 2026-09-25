@@ -1,10 +1,10 @@
 import { Effect } from "effect"
-import { type WarehouseError, WarehouseSchemaDriftError } from "@maple/domain"
+import { type WarehouseError, WarehouseQuotaExceededError, WarehouseSchemaDriftError } from "@maple/domain"
 import {
 	warehouseHandlers,
 	warehouseReadHandlers,
 } from "@maple/backend/services/warehouse/warehouse-error-handlers"
-import { McpQueryError } from "../tools/types"
+import { McpQueryBudgetError, McpQueryError } from "../tools/types"
 
 export { warehouseHandlers, warehouseReadHandlers }
 
@@ -25,14 +25,32 @@ const SCHEMA_DRIFT_HINT =
 export const warehouseErrorText = (error: WarehouseError): string =>
 	error instanceof WarehouseSchemaDriftError ? `${error.message}${SCHEMA_DRIFT_HINT}` : error.message
 
+const BUDGET_GUIDANCE = {
+	max_execution_time:
+		"The query ran past its time limit. Narrow start_time/end_time, filter by service or another attribute, " +
+		"or aggregate with `query_data` instead of scanning raw rows.",
+	max_memory_usage:
+		"The query needed more memory than it is allowed. Add filters, or group by fewer and lower-cardinality keys.",
+	max_threads: "The query needed more parallelism than it is allowed. Scan less data.",
+} satisfies Record<WarehouseQuotaExceededError["setting"], string>
+
 /**
  * Curry the pipe label so call sites read as
  * `Effect.mapError(toMcpQueryError("service_overview"))`.
+ *
+ * A budget breach gets its own error with guidance: the raw text is the vendor's ("Upgrade your
+ * plan for higher capacity"), which no model can act on.
  */
 export const toMcpQueryError =
 	(pipe: string) =>
-	(error: WarehouseError): McpQueryError =>
-		new McpQueryError({ message: warehouseErrorText(error), pipeName: pipe, cause: error })
+	(error: WarehouseError): McpQueryError | McpQueryBudgetError =>
+		error instanceof WarehouseQuotaExceededError
+			? new McpQueryBudgetError({
+					message: BUDGET_GUIDANCE[error.setting],
+					pipeName: pipe,
+					setting: error.setting,
+				})
+			: new McpQueryError({ message: warehouseErrorText(error), pipeName: pipe, cause: error })
 
 /**
  * `Effect.catchTags` handler map that converts every warehouse error tag into an

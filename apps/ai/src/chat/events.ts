@@ -10,7 +10,7 @@
  */
 import type { ChatEvent, ChatTaskRef } from "@maple/domain/chat-session"
 import type * as RunEvent from "@effect-agent/core/RunEvent"
-import { APPROVAL_REQUIRED } from "../mcp/tools/llm-tools"
+import { APPROVAL_REQUIRED, type ToolUiPayload } from "../mcp/tools/llm-tools"
 
 /** Events the session log accepts. `seq` belongs to the Durable Object, which owns the ordering. */
 type WithoutSeq<T> = T extends unknown ? Omit<T, "seq"> : never
@@ -32,6 +32,11 @@ export interface AdapterContext {
 	readonly isProposed?: (toolName: string) => boolean
 	/** What a declared call is doing, for a reader; undefined for a tool that has no phrase. */
 	readonly labelOf?: (toolName: string) => string | undefined
+	/**
+	 * The typed payload a successful call produced for the UI to render, taken once. The model's
+	 * result stays text; the payload rides on the wire event beside it as `{ text, ui }`.
+	 */
+	readonly uiOf?: (toolCallId: string) => ToolUiPayload | undefined
 	/** One {@link makeTextSanitizer} per run: the state it keeps spans deltas. */
 	readonly sanitizer: TextSanitizer
 }
@@ -264,15 +269,17 @@ export const toChatEvents = (
 					...optionalLabel(context.labelOf?.(event.toolName)),
 				}),
 			]
-		case "ToolCallSucceeded":
+		case "ToolCallSucceeded": {
+			const ui = context.uiOf?.(event.toolCallId)
 			return [
 				tagged(context, {
 					type: "tool-result",
 					messageId: context.messageId,
 					callId: event.toolCallId,
-					output: event.result,
+					output: ui === undefined ? event.result : { text: event.result, ui },
 				}),
 			]
+		}
 		case "ToolCallFailed":
 			// The gate's refusal is not the proposal's result. Recorded as one, it read as a decision
 			// everywhere a result settles a proposal: no connector drew the buttons, and every

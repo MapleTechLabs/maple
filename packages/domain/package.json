@@ -19,6 +19,7 @@
 		"./llm": "./src/llm.ts",
 		"./mcp-manifest": "./src/mcp-manifest.ts",
 		"./mcp-tool-contract": "./src/mcp-tool-contract.ts",
+		"./mcp-outputs": "./src/mcp-outputs/index.ts",
 		"./permission": "./src/permission.ts",
 		"./primitives": "./src/primitives.ts",
 		"./query-engine": "./src/query-engine.ts",

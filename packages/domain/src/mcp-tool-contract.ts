@@ -8,10 +8,21 @@
  */
 import { Schema } from "effect"
 
+/** MCP tool annotations, spelled as the protocol spells them. */
+export interface McpToolAnnotations {
+	readonly readOnlyHint: boolean
+	readonly destructiveHint: boolean
+	readonly idempotentHint: boolean
+	readonly openWorldHint: boolean
+}
+
 export interface McpToolDescriptor {
 	readonly name: string
 	readonly description: string
 	readonly inputSchema: Record<string, unknown>
+	/** The JSON Schema `structuredContent` conforms to. */
+	readonly outputSchema?: Record<string, unknown>
+	readonly annotations?: McpToolAnnotations
 }
 
 export class McpToolNotFoundError extends Schema.TaggedError<McpToolNotFoundError>()(

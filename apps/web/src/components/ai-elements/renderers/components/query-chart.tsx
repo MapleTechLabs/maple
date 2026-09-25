@@ -5,7 +5,7 @@ import { QueryBuilderAreaChart } from "@maple/ui/components/charts"
 import type { RendererComponentProps } from "./types"
 
 interface QueryChartProps {
-	data: Array<{ bucket: string; series: Record<string, number> }>
+	data: ReadonlyArray<{ bucket: string; series: Readonly<Record<string, number>> }>
 	metric: string
 	unit: string
 	source: string

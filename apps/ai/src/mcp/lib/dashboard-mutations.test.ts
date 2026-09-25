@@ -17,10 +17,11 @@ import { DashboardPersistenceService } from "@maple/backend/services/dashboards/
 import { SharedDashboardService } from "@maple/backend/services/dashboards/SharedDashboardService"
 import { Env } from "@maple/backend/platform/Env"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
-import { decodeDataSourceJson, decodeWidgetJson, withDashboardMutation } from "./dashboard-mutations"
+import { dataSourceJson, widgetJson, withDashboardMutation } from "./dashboard-mutations"
 import { CurrentMcpTenant } from "./query-warehouse"
 import { registerUpdateDashboardTool } from "../tools/update-dashboard"
-import type { McpToolError, McpToolRegistrar, McpToolResult } from "../tools/types"
+import type { McpToolError, McpToolRegistrar } from "../tools/types"
+import type { McpToolRequirements } from "../tools/runtime-requirements"
 
 const trackedDbs: TestDb[] = []
 
@@ -112,13 +113,8 @@ const grouped = (): DashboardDocument =>
 		updatedAt: NOW,
 	})
 
-type ToolHandler = (params: {
-	dashboard_id: string
-	name?: string
-	description?: string
-	time_range?: string
-	dashboard_json?: string
-}) => Effect.Effect<McpToolResult, McpToolError, never>
+// BOUNDARY: the handler is driven with raw tool arguments, decoded by the tool's own schema.
+type ToolHandler = (params: unknown) => Effect.Effect<unknown, McpToolError, McpToolRequirements>
 
 describe("dashboard mutations on tag-less / description-less dashboards", () => {
 	it.effect("withDashboardMutation adds a widget without crashing on the absent tags key", () => {
@@ -128,11 +124,11 @@ describe("dashboard mutations on tag-less / description-less dashboards", () => 
 		return Effect.gen(function* () {
 			yield* DashboardPersistenceService.upsert(asOrgId(ORG), asUserId("seed-user"), seed())
 
-			const result = yield* withDashboardMutation(DASHBOARD, "update_dashboard_widget", (widgets) =>
+			const dashboard = yield* withDashboardMutation(DASHBOARD, "update_dashboard_widget", (widgets) =>
 				Effect.succeed([...widgets, widget("w-new")]),
 			)
 
-			assert.strictEqual(result.ok, true)
+			assert.strictEqual(dashboard.widgets.length, 1)
 
 			const listed = yield* DashboardPersistenceService.list(asOrgId(ORG))
 			assert.strictEqual(listed.dashboards.length, 1)
@@ -155,10 +151,9 @@ describe("dashboard mutations on tag-less / description-less dashboards", () => 
 		return Effect.gen(function* () {
 			yield* DashboardPersistenceService.upsert(asOrgId(ORG), asUserId("seed-user"), grouped())
 
-			const result = yield* withDashboardMutation(DASHBOARD, "add_dashboard_widget", (widgets) =>
+			yield* withDashboardMutation(DASHBOARD, "add_dashboard_widget", (widgets) =>
 				Effect.succeed([...widgets, { ...widget("w-new"), sectionId: "sec-1", tabId: "tab-1" }]),
 			)
-			assert.strictEqual(result.ok, true)
 
 			const [stored] = (yield* DashboardPersistenceService.list(asOrgId(ORG))).dashboards
 			assert.isDefined(stored)
@@ -185,8 +180,13 @@ describe("dashboard mutations on tag-less / description-less dashboards", () => 
 
 		let handler: ToolHandler | null = null
 		const registrar: McpToolRegistrar = {
-			tool: (_name, _description, _schema, h) => {
-				handler = h as ToolHandler
+			tool: () => {},
+			define: (spec) => {
+				handler = (params) =>
+					Schema.decodeUnknownEffect(spec.parameters)(params).pipe(
+						Effect.orDie,
+						Effect.flatMap(spec.handler),
+					)
 			},
 		}
 		registerUpdateDashboardTool(registrar)
@@ -196,9 +196,7 @@ describe("dashboard mutations on tag-less / description-less dashboards", () => 
 		return Effect.gen(function* () {
 			yield* DashboardPersistenceService.upsert(asOrgId(ORG), asUserId("seed-user"), seed())
 
-			const result = yield* invoke({ dashboard_id: DASHBOARD, name: "Renamed" })
-
-			assert.notStrictEqual(result.isError, true)
+			yield* invoke({ dashboard_id: DASHBOARD, name: "Renamed" })
 
 			const listed = yield* DashboardPersistenceService.list(asOrgId(ORG))
 			assert.strictEqual(listed.dashboards[0]!.name, "Renamed")
@@ -212,8 +210,11 @@ describe("dashboard mutations on tag-less / description-less dashboards", () => 
 // it is that the failure now NAMES the v3 replacement instead of dumping four
 // per-arm decode errors.
 describe("legacy v2 payloads get a corrective error", () => {
+	// The parameter schemas the widget tools publish; a failure is what the registry reports.
 	const decodeErrorOf = (json: string) =>
-		Effect.flip(decodeDataSourceJson(json, "test")).pipe(Effect.map((error) => error.message))
+		Effect.flip(Schema.decodeUnknownEffect(dataSourceJson("test"))(json)).pipe(
+			Effect.map((error) => error.message),
+		)
 
 	it.effect("markdown_static → kind: static", () =>
 		Effect.gen(function* () {
@@ -258,7 +259,7 @@ describe("legacy v2 payloads get a corrective error", () => {
 	it.effect("a whole widget carrying a v2 dataSource gets the same hint", () =>
 		Effect.gen(function* () {
 			const error = yield* Effect.flip(
-				decodeWidgetJson(
+				Schema.decodeUnknownEffect(widgetJson("test"))(
 					JSON.stringify({
 						id: "w1",
 						visualization: "markdown",
@@ -266,7 +267,6 @@ describe("legacy v2 payloads get a corrective error", () => {
 						display: {},
 						layout: { x: 0, y: 0, w: 4, h: 5 },
 					}),
-					"test",
 				),
 			)
 			assert.include(error.message, '{"kind":"static"}')
@@ -275,7 +275,7 @@ describe("legacy v2 payloads get a corrective error", () => {
 
 	it.effect("a valid v3 source still decodes untouched", () =>
 		Effect.gen(function* () {
-			const source = yield* decodeDataSourceJson('{"kind":"static"}', "test")
+			const source = yield* Schema.decodeUnknownEffect(dataSourceJson("test"))('{"kind":"static"}')
 			assert.deepStrictEqual(source, { kind: "static" })
 		}),
 	)
@@ -284,7 +284,7 @@ describe("legacy v2 payloads get a corrective error", () => {
 		Effect.gen(function* () {
 			const message = yield* decodeErrorOf('{"kind":"raw_sql"}')
 			assert.notInclude(message, "legacy v2")
-			assert.include(message, "Invalid data_source_json")
+			assert.include(message, "sql")
 		}),
 	)
 })

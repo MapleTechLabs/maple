@@ -1,12 +1,13 @@
-import { optionalNumberParam, optionalStringParam, requiredStringParam, type McpToolRegistrar } from "./types"
+import type { McpToolRegistrar } from "./types"
 import { warehouseReadHandlers, warehouseToMcpHandlers } from "../lib/map-warehouse-error"
 import { CurrentMcpTenant, withTenantExecutor } from "../lib/query-warehouse"
-import { clampLimit } from "../lib/limits"
 import { truncate } from "../lib/format"
-import { formatNextSteps } from "../lib/next-steps"
+import * as P from "../lib/params"
+import { doc, type DocBlock } from "../lib/tool-doc"
 import { Effect, Schema } from "effect"
-import { createDualContent } from "../lib/structured-output"
 import { hasAiSignal, renderAiSpan } from "../lib/render-ai-span"
+import { InspectSpanOutput } from "@maple/domain/mcp-outputs"
+import { parseWarehouseDateTime } from "@maple/query-engine"
 import { spanDetail } from "@maple/query-engine/observability"
 import { AI_SESSION_SPANS_MAX_SPANS, GetAiSessionSpansRequest, TraceIdHex } from "@maple/domain/http"
 import {
@@ -30,64 +31,81 @@ const TRACE_TOO_LARGE_NOTE =
  */
 const isTraceIdHex = Schema.is(TraceIdHex)
 
-export function registerInspectSpanTool(server: McpToolRegistrar) {
-	server.tool(
-		"inspect_span",
-		"Get the full attribute set for a single span (use after `inspect_trace`, which shows only a trimmed set of attributes per span). Pass the `span_id` shown in the trace tree. Pass `timestamp` (any timestamp from the trace) to prune ClickHouse partitions. For an AI agent span (an LLM call, a tool execution, an agent invocation) it also decodes the messages the span captured and the tool calls it made or executed, with each call's result resolved from the rest of its trace.",
-		Schema.Struct({
-			trace_id: requiredStringParam("The trace ID the span belongs to"),
-			span_id: requiredStringParam("The span ID to inspect (from `inspect_trace` output)"),
-			timestamp: optionalStringParam(
-				"ISO-8601 timestamp of the span (e.g. from `search_traces` results). Narrows the ClickHouse scan to a ±1h window, and saves an AI span the extra lookup that resolves its trace's bounds.",
-			),
-			payload_chars: optionalNumberParam(
-				"AI spans only: characters of each captured message and payload to show (default 2000, max 20000)",
-			),
-		}),
-		Effect.fn("McpTool.inspectSpan")(function* ({ trace_id, span_id, timestamp, payload_chars }) {
-			yield* Effect.annotateCurrentSpan({ traceId: trace_id, spanId: span_id })
+type Output = typeof InspectSpanOutput.Type
 
-			const timestampHint = timestamp ? new Date(timestamp) : undefined
-			if (timestampHint && Number.isNaN(timestampHint.getTime())) {
-				return {
-					content: [
-						{
-							type: "text" as const,
-							text: `Invalid timestamp: ${timestamp}. Expected ISO-8601 (e.g. 2026-04-15T14:30:00Z).`,
-						},
-					],
-				}
-			}
+const attributeBlocks = (label: string, attrs: Output["attributes"]): Array<DocBlock> => {
+	const entries = Object.entries(attrs).sort(([a], [b]) => a.localeCompare(b))
+	if (entries.length === 0) return []
+	return [
+		doc.heading(`${label} (${entries.length})`),
+		doc.list(entries.map(([k, v]) => `\`${k}\`: ${truncate(v, 500)}`)),
+	]
+}
+
+const aiBlocks = (output: Output): Array<DocBlock> => {
+	const ai = output.ai
+	if (ai === undefined) return []
+	switch (ai._tag) {
+		case "decoded":
+			return [doc.text(ai.markdown)]
+		case "partial":
+			return [
+				doc.text(
+					ai.hasMore
+						? `This is an AI agent span, but only the first ${ai.readSpans} spans of trace ${output.traceId} were read and it is not among them, so its messages and tool calls are not decoded below. ${TRACE_TOO_LARGE}`
+						: "This is an AI agent span, but it is not in the AI index yet, so its messages and tool calls are not decoded below; the raw attributes below are complete.",
+				),
+			]
+		case "undecoded":
+			return [doc.text(`AI decode skipped: ${ai.reason}`)]
+	}
+}
+
+export function registerInspectSpanTool(server: McpToolRegistrar) {
+	server.define({
+		name: "inspect_span",
+		description:
+			"Full attribute set for one span; `inspect_trace` shows only a trimmed set per span. For an AI agent span (an LLM call, a tool execution, an agent invocation) it also decodes the captured messages and the tool calls it made or executed, with each call's result resolved from the rest of the trace.",
+		parameters: Schema.Struct({
+			trace_id: P.text("The trace ID the span belongs to"),
+			span_id: P.text("The span ID to inspect (from `inspect_trace` output)"),
+			timestamp: P.optionalTimestamp(
+				"Timestamp of the span (e.g. from search_traces). Narrows the scan to ±1h and saves an AI span the lookup that resolves its trace's bounds",
+			),
+			payload_chars: P.limit({
+				default: 2_000,
+				max: 20_000,
+				description: "Max characters per captured message or payload (AI spans only)",
+			}),
+		}),
+		output: InspectSpanOutput,
+		hints: { readOnly: true },
+		phrases: ["Inspecting a span", "Reading span details"],
+		handler: Effect.fn("McpTool.inspectSpan")(function* ({
+			trace_id,
+			span_id,
+			timestamp,
+			payload_chars,
+		}) {
+			yield* Effect.annotateCurrentSpan({ traceId: trace_id, spanId: span_id })
+			const timestampMs = timestamp === undefined ? undefined : parseWarehouseDateTime(timestamp)
+			const timestampHint = timestampMs === undefined ? undefined : new Date(timestampMs)
 
 			const result = yield* withTenantExecutor(
 				spanDetail({ traceId: trace_id, spanId: span_id, timestampHint }),
 			).pipe(Effect.catchTags(warehouseToMcpHandlers("span_detail")))
 
-			if (!result.found) {
-				const hint = timestampHint
-					? ""
-					: " Pass `timestamp` from the trace if the span is older than the default scan window."
-				return {
-					content: [
-						{
-							type: "text" as const,
-							text: `Span ${span_id} not found in trace ${trace_id}.${hint}`,
-						},
-					],
-				}
-			}
-
 			// The decoded view needs the whole trace, not this span alone: the
 			// results of the tool calls a model span requested are captured on the
 			// tool spans that ran them.
-			const isAiSpan = hasAiSignal(result.spanAttributes)
+			const isAiSpan = result.found && hasAiSignal(result.spanAttributes)
 			const ai =
 				isAiSpan && isTraceIdHex(trace_id)
 					? yield* decodeAiSpan({
 							traceId: trace_id,
 							spanId: span_id,
-							timestampMs: timestampHint?.getTime(),
-							payloadChars: clampLimit(payload_chars, { defaultValue: 2_000, max: 20_000 }),
+							timestampMs,
+							payloadChars: payload_chars,
 						})
 					: undefined
 			yield* Effect.annotateCurrentSpan({
@@ -95,68 +113,79 @@ export function registerInspectSpanTool(server: McpToolRegistrar) {
 				"maple.ai.decode": ai?._tag ?? "none",
 			})
 
-			const renderAttrs = (label: string, attrs: Record<string, string>): string[] => {
-				const entries = Object.entries(attrs).sort(([a], [b]) => a.localeCompare(b))
-				if (entries.length === 0) return []
-				return [
-					``,
-					`### ${label} (${entries.length})`,
-					...entries.map(([k, v]) => `- \`${k}\`: ${truncate(String(v), 500)}`),
-				]
+			return {
+				traceId: trace_id,
+				spanId: span_id,
+				found: result.found,
+				attributes: result.spanAttributes,
+				resourceAttributes: result.resourceAttributes,
+				...(ai === undefined ? undefined : { ai }),
+				...(timestamp === undefined ? undefined : { timestamp }),
 			}
-
-			const lines: string[] = [
-				`## Span ${span_id} (trace ${trace_id})`,
-				...(ai?._tag === "decoded" ? ai.lines : []),
-				...(ai?._tag === "partial"
-					? [
-							``,
-							ai.hasMore
-								? `This is an AI agent span, but only the first ${ai.readSpans} spans of trace ${trace_id} were read and it is not among them, so its messages and tool calls are not decoded below. ${TRACE_TOO_LARGE}`
-								: `This is an AI agent span, but it is not in the AI index yet, so its messages and tool calls are not decoded below; the raw attributes below are complete.`,
-						]
-					: []),
-				...(ai?._tag === "undecoded" ? [``, `AI decode skipped: ${ai.reason}`] : []),
-				...renderAttrs("Span attributes", result.spanAttributes),
-				...renderAttrs("Resource attributes", result.resourceAttributes),
-			]
-
-			if (
-				Object.keys(result.spanAttributes).length === 0 &&
-				Object.keys(result.resourceAttributes).length === 0
-			) {
-				lines.push(``, `This span has no attributes recorded.`)
+		}),
+		render: (output) => {
+			const title = `Span ${output.spanId} (trace ${output.traceId})`
+			if (!output.found) {
+				return {
+					title,
+					blocks: [],
+					empty: {
+						message: `Span ${output.spanId} not found in trace ${output.traceId}.`,
+						hints:
+							output.timestamp === undefined
+								? [
+										"Pass `timestamp` from the trace if the span is older than the default scan window.",
+									]
+								: ["Check the span id against `inspect_trace` output."],
+					},
+					next: [
+						doc.next(
+							"inspect_trace",
+							{ trace_id: output.traceId, timestamp: output.timestamp },
+							"see the full span tree",
+						),
+					],
+				}
 			}
-
-			lines.push(
-				formatNextSteps([
-					`\`inspect_trace trace_id="${trace_id}"\` — see the full span tree`,
-					`\`search_logs trace_id="${trace_id}" span_id="${span_id}"\` — logs for this span`,
+			const noAttributes =
+				Object.keys(output.attributes).length === 0 &&
+				Object.keys(output.resourceAttributes).length === 0
+			const ai = output.ai
+			return {
+				title,
+				...(output.timestamp === undefined ? undefined : { scope: [["Around", output.timestamp]] }),
+				blocks: [
+					...aiBlocks(output),
+					...attributeBlocks("Span attributes", output.attributes),
+					...attributeBlocks("Resource attributes", output.resourceAttributes),
+					...(noAttributes ? [doc.text("This span has no attributes recorded.")] : []),
+				],
+				next: [
+					doc.next(
+						"inspect_trace",
+						{ trace_id: output.traceId, timestamp: output.timestamp },
+						"see the full span tree",
+					),
+					doc.next(
+						"search_logs",
+						{ trace_id: output.traceId, span_id: output.spanId },
+						"logs for this span",
+					),
 					// A vendor that exposed no session key still has a session: the
 					// trace itself, under the id the session model synthesises for it.
 					...(ai?._tag === "decoded"
 						? [
-								`\`get_agent_session session_id="${ai.sessionId ?? `trace:${trace_id}`}"\` — the agent session this span ran in`,
+								doc.next(
+									"get_agent_session",
+									{ session_id: ai.sessionId ?? `trace:${output.traceId}` },
+									"the agent session this span ran in",
+								),
 							]
 						: []),
-				]),
-			)
-
-			return {
-				content: createDualContent(lines.join("\n"), {
-					tool: "inspect_span",
-					data: {
-						traceId: trace_id,
-						spanId: span_id,
-						found: result.found,
-						attributes: result.spanAttributes,
-						resourceAttributes: result.resourceAttributes,
-					},
-				}),
+				],
 			}
-		}),
-		{ phrases: ["Inspecting a span", "Reading span details"] },
-	)
+		},
+	})
 }
 
 const undecoded = (reason: string) => Effect.succeed({ _tag: "undecoded" as const, reason })
@@ -223,9 +252,12 @@ const decodeAiSpan = Effect.fn("decodeAiSpan")(
 		}
 		// A trace read that ended on a cursor decodes this span in full, but the
 		// results of the calls it made can be on a span past the page.
+		const decoded = renderAiSpan(span, page.data, opts.payloadChars, page.nextCursor !== undefined)
 		return {
 			_tag: "decoded" as const,
-			...renderAiSpan(span, page.data, opts.payloadChars, page.nextCursor !== undefined),
+			// The leading blank line kept the section apart in the old line-joined text.
+			markdown: decoded.lines.join("\n").trim(),
+			...(decoded.sessionId === undefined ? undefined : { sessionId: decoded.sessionId }),
 		}
 	},
 	Effect.catchTags({
