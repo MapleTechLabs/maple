@@ -17,6 +17,7 @@
 import { getCollection } from "astro:content";
 import * as m from "../paraglide/messages.js";
 import { LOGOS } from "../lib/customer-logos";
+import { getSortedStories, getStoryCustomer } from "../lib/customers";
 
 interface Props {
 	variant?: "section" | "rail";
@@ -30,6 +31,12 @@ const entries = (await getCollection("logos"))
 
 const base = entries.map((e) => ({ id: e.id, name: e.data.name, href: e.data.href }));
 
+// The rail points at the featured (else newest) customer story, when one is
+// published. English-only, like /blog: a bare href, not l().
+const stories = await getSortedStories();
+const story = stories.find((s) => s.data.featured) ?? stories[0];
+const storyCustomer = story ? await getStoryCustomer(story) : undefined;
+
 // The customer set is small, so repeat it until one "copy" is wide enough to
 // fill a large viewport, then duplicate that copy so the -50% translate loops
 // seamlessly. Only the first real pass is announced to assistive tech.
@@ -40,6 +47,7 @@ const belt = [...oneCopy, ...oneCopy];
 
 {
 	variant === "rail" ? (
+		<div class="flex flex-col gap-3">
 		<div class="flex flex-wrap items-center gap-x-7 gap-y-3">
 			<p class="w-full text-[10px] uppercase tracking-[0.2em] text-fg-muted sm:w-auto sm:mr-1">
 				{m.customers_eyebrow()}
@@ -68,6 +76,18 @@ const belt = [...oneCopy, ...oneCopy];
 					<span class="inline-flex items-center gap-3 text-fg-muted">{inner}</span>
 				);
 			})}
+		</div>
+		{story && storyCustomer && (
+			<a
+				href={`/customers/${story.id}`}
+				data-track="cta_click"
+				data-track-location="hero_customer_story"
+				class="group inline-flex w-fit items-center gap-1.5 text-[13px] text-fg transition-colors hover:text-primary"
+			>
+				{m.customers_story_link({ name: storyCustomer.data.name })}
+				<span class="transition-transform group-hover:translate-x-0.5 motion-reduce:transition-none" aria-hidden="true">→</span>
+			</a>
+		)}
 		</div>
 	) : (
 		<Fragment>

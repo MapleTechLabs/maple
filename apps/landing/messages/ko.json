@@ -61,6 +61,7 @@
 	"hero_subtitle": "트레이스, 로그, 메트릭, 세션 리플레이를 1초 안에 쿼리하세요. 월 $39에 각 시그널 100 GB 포함. 호스트별 또는 좌석별 요금은 없습니다.",
 
 	"customers_eyebrow": "\ub2e4\uc74c \ud300\ub4e4\uc774 \uc2e0\ub8b0\ud569\ub2c8\ub2e4",
+	"customers_story_link": "{name}\uc758 Maple \ub3c4\uc785 \uc0ac\ub840 \ubcf4\uae30",
 	"ingest_stats_label": "\uc218\uc9d1\ub41c \ud2b8\ub808\uc774\uc2a4 / \uc6d4",
 	"stat_github": "GitHub",
 	"sov_eyebrow": "05 · 주권",

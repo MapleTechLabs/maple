@@ -61,6 +61,7 @@
 	"hero_subtitle": "トレース、ログ、メトリクス、セッションリプレイを1秒未満でクエリ。月額$39に各シグナル100 GBを含みます。ホスト単位・シート単位の料金はありません。",
 
 	"customers_eyebrow": "\u6b21\u306e\u30c1\u30fc\u30e0\u306b\u4fe1\u983c\u3055\u308c\u3066\u3044\u307e\u3059",
+	"customers_story_link": "{name} \u306e\u5c0e\u5165\u4e8b\u4f8b\u3092\u8aad\u3080",
 	"ingest_stats_label": "\u53d6\u308a\u8fbc\u3093\u3060\u30c8\u30ec\u30fc\u30b9 / \u6708",
 	"stat_github": "GitHub",
 	"sov_eyebrow": "05 · ソブリンティ",
