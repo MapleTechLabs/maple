@@ -1483,8 +1483,9 @@
    Same specificity as the docs rules — SOURCE ORDER decides, so this
    block must stay below the .docs-content block.
 
-   The page centers one ~42rem reading column, so the measure lives on
-   the column, not on per-element max-widths. Running prose switches to
+   The page centers one 38rem reading column (about 65 characters a line
+   at 18px), so the measure lives on the column, not on per-element
+   max-widths. Running prose switches to
    proportional Geist — the reserved long-form voice — while headings'
    siblings (code, meta, captions, demos) keep the mono terminal voice.
    ────────────────────────────────────────────────────────────── */
@@ -1492,7 +1493,11 @@
 .blog-content ul,
 .blog-content ol {
 	font-family: var(--font-display);
-	@apply text-[17px] leading-[1.75] mb-5 text-fg/80;
+	@apply text-[18px] leading-[1.7] mb-6;
+	/* Solid, not alpha: translucent text on the warm dark ground renders thin
+	   and gray. A touch over regular weight offsets the antialiased smoothing. */
+	color: color-mix(in oklab, var(--foreground) 90%, var(--background));
+	font-weight: 430;
 }
 
 .blog-content ul,
@@ -1502,7 +1507,7 @@
 
 /* Lede: the opening paragraph carries the post in, one size up. */
 .blog-content > p:first-child {
-	@apply text-[19px] leading-[1.7] text-fg/90;
+	@apply text-[20px] leading-[1.65] text-fg;
 }
 
 .blog-content h2 {
@@ -1565,7 +1570,7 @@
    blocks break out; anything nested inside a demo stays put. */
 @media (min-width: 80rem) {
 	.blog-content > :is(figure, pre) {
-		margin-inline: -4rem;
+		margin-inline: -5rem;
 	}
 }
 

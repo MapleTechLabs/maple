@@ -16,27 +16,13 @@
  */
 import { getCollection } from "astro:content";
 import * as m from "../paraglide/messages.js";
-import HazelLogo from "./icons/HazelLogo.astro";
-import SakuraLogo from "./icons/SakuraLogo.astro";
-import GymscoreLogo from "./icons/GymscoreLogo.astro";
-import SuperwallLogo from "./icons/SuperwallLogo.astro";
-import EffectLogomark from "./icons/EffectLogomark.astro";
+import { LOGOS } from "../lib/customer-logos";
 
 interface Props {
 	variant?: "section" | "rail";
 }
 
 const { variant = "section" } = Astro.props;
-
-// Entry id (filename) → brand mark. Add a new customer by dropping a
-// src/content/logos/<id>.md file and registering its logo component here.
-const LOGOS: Record<string, typeof HazelLogo>  = {
-	hazel: HazelLogo,
-	sakura: SakuraLogo,
-	gymscore: GymscoreLogo,
-	superwall: SuperwallLogo,
-	effect: EffectLogomark,
-} satisfies Record<string, typeof HazelLogo>;
 
 const entries = (await getCollection("logos"))
 	.filter((e) => LOGOS[e.id])
