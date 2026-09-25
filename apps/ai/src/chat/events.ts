@@ -9,7 +9,7 @@
  * variant should make this file fail to compile, not silently vanish from the transcript.
  */
 import type { ChatEvent, ChatTaskRef } from "@maple/domain/chat-session"
-import type * as RunEvent from "@effect-agent/core/RunEvent"
+import type * as RunEvent from "effect-agent/run-event"
 import { APPROVAL_REQUIRED, type ToolUiPayload } from "../mcp/tools/llm-tools"
 
 /** Events the session log accepts. `seq` belongs to the Durable Object, which owns the ordering. */

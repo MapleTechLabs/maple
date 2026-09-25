@@ -6,11 +6,11 @@
  * own read-only toolkit (the grant is exactly its tools, depth one), its own bounded budget reserved
  * from the parent's, and plain-text output the parent verifies before filing anything.
  */
-import * as Agent from "@effect-agent/core/Agent"
-import { AgentPolicy } from "@effect-agent/core/AgentPolicy"
-import * as Subagent from "@effect-agent/capabilities/Subagent"
-import { SubagentReservationsMemoryLive } from "@effect-agent/capabilities/SubagentReservations"
-import * as Output from "@effect-agent/engine/Output"
+import * as Agent from "effect-agent/agent"
+import { AgentPolicy } from "effect-agent/agent-policy"
+import * as Subagent from "effect-agent/subagent"
+import { SubagentReservationsMemoryLive } from "effect-agent/subagent-reservations"
+import * as Output from "effect-agent/output"
 import { Effect, Layer, Schema } from "effect"
 import { type Tool, Toolkit } from "effect/unstable/ai"
 import type { ResolvedModel } from "../platform/Llm"
@@ -125,7 +125,7 @@ export const buildReviewFanout = <Tools extends Record<string, Tool.Any>>(
 	})
 	return {
 		toolkit: Toolkit.make(delegation.tool),
-		layer: Subagent.SubagentRuntime.layer(delegation, model.layer).pipe(
+		layer: Subagent.layer(delegation, model.layer).pipe(
 			Layer.provideMerge(SubagentReservationsMemoryLive),
 		),
 	}

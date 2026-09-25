@@ -6,7 +6,7 @@
  * decision to run anything at all. Everything below crosses a service binding
  * as JSON, so it is data only.
  *
- * The `SandboxRun*` names are deliberate: `@effect-agent/sandbox` has its own
+ * The `SandboxRun*` names are deliberate: `effect-agent/sandbox` has its own
  * `SandboxExited` and friends, and both sets meet in the api's port. Distinct
  * names keep a `switch` on one from silently reading like the other.
  */

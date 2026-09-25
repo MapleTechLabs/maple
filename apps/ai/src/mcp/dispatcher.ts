@@ -4,7 +4,7 @@ import { WarehouseQueryService } from "@maple/backend/services/warehouse/Warehou
 import { VcsSourceService } from "@maple/backend/services/integrations/vcs/VcsSourceService"
 import { SandboxClient } from "@maple/backend/sandbox/client"
 import { CloudflareRepoSandboxLive } from "@maple/backend/services/sandbox/CloudflareRepoSandbox"
-import type { SandboxError } from "@effect-agent/sandbox/Sandbox"
+import type { SandboxError } from "effect-agent/sandbox"
 import { RepoSandboxService, type RepositoryTarget } from "@maple/backend/services/sandbox/RepoSandboxService"
 
 import { AlertsService } from "@maple/backend/services/alerts/AlertsService"

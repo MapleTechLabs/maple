@@ -18,9 +18,9 @@
  * the wire and the mode is derived from it server-side. Every mode names an agent, by
  * construction; `agents.test.ts` fails if one is ever added without one.
  */
-import * as Agent from "@effect-agent/core/Agent"
-import { AgentPolicy } from "@effect-agent/core/AgentPolicy"
-import * as Output from "@effect-agent/engine/Output"
+import * as Agent from "effect-agent/agent"
+import { AgentPolicy } from "effect-agent/agent-policy"
+import * as Output from "effect-agent/output"
 import { Schema } from "effect"
 import type { Toolkit } from "effect/unstable/ai"
 import { chatModeFromSessionId, type ChatMode } from "@maple/domain/chat-session"
