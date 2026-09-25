@@ -8,6 +8,11 @@ navLabel: "Build dashboards"
 
 A dashboard is a grid of widgets that query your telemetry over one time range. Each widget is a chart, a single number, a table, a list, a funnel or a note, built with the query builder or with SQL. Dashboards live on the **Dashboards** page.
 
+<figure class="shot">
+  <img src="/screenshots/docs/dashboards-02-query-engine.webp" alt="A dashboard named Query Engine: four stat tiles for total queries, error rate, end-to-end P95 and warehouse SQL P95, then line charts of query latency percentiles and bar charts of query throughput by source and kind." loading="lazy" />
+  <figcaption>A dashboard mixing stat tiles, latency percentiles and stacked throughput charts.</figcaption>
+</figure>
+
 ## Create a dashboard
 
 On **Dashboards**, pick one of three starting points:
@@ -15,6 +20,11 @@ On **Dashboards**, pick one of three starting points:
 - **Create Dashboard** opens an empty dashboard named "Untitled Dashboard". Click the name to rename it.
 - **Browse templates** opens **Start from a template**. See [Templates](#templates).
 - **Import** loads a dashboard from a JSON file exported from Maple.
+
+<figure class="shot">
+  <img src="/screenshots/docs/dashboards-01-list.webp" alt="The Dashboards list with a search box, All and Favorites tabs, tag and sort filters, and rows showing each dashboard's name, description, widget count, data sources and last update, next to Browse templates, Import and Create Dashboard buttons." loading="lazy" />
+  <figcaption>The Dashboards list, with Browse templates, Import and Create Dashboard in the header.</figcaption>
+</figure>
 
 A new dashboard opens in edit mode. Click **Add Widget** to add the first widget.
 

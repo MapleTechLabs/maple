@@ -7,6 +7,11 @@ order: 1
 
 Maple is an observability platform built on OpenTelemetry. Your applications send traces, logs and metrics over OTLP, the protocol every OpenTelemetry SDK already speaks, and Maple stores them and lets you query, chart and alert on them. There is no proprietary agent to install.
 
+<figure class="shot">
+  <img src="/screenshots/docs/introduction-01-overview.webp" alt="Maple's Overview page for a production environment over the last 24 hours: an All clear alert strip, service health counts, totals for logs, traces, metrics and data size, and request volume and error rate charts." loading="lazy" />
+  <figcaption>The Overview page: service health, signal totals, and request volume at a glance.</figcaption>
+</figure>
+
 ## What's in Maple
 
 - [Traces](/docs/explore/traces): search spans and open a trace to see every span in it.
