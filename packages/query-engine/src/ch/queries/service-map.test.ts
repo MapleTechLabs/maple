@@ -75,9 +75,13 @@ describe("serviceExternalEdgesSQL", () => {
 		expect(sql).toContain("Timestamp >= toStartOfHour(toDateTime('2024-01-02 00:00:00'))")
 	})
 
-	it("excludes db.system.name from the raw-traces branch (DB edges are a separate MV)", () => {
+	it("excludes DB spans from the raw-traces branch with the same coalesce the DB edges select on", () => {
 		const { sql } = Effect.runSync(serviceExternalEdgesSQL({ serviceName: "artifacts-api" }, baseParams))
-		expect(sql).toContain("SpanAttributes['db.system.name'] = ''")
+		// A span with only the legacy `db.system` is a DB edge, so it must not also be external.
+		expect(sql).toContain(
+			"coalesce(nullIf(SpanAttributes['db.system.name'], ''), SpanAttributes['db.system']) = ''",
+		)
+		expect(sql).not.toContain("SpanAttributes['db.system.name'] = ''")
 	})
 
 	it("applies messaging > rpc > http precedence in the multiIf", () => {

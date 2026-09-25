@@ -589,7 +589,7 @@ export type ServiceMapDbQuerySignaturesHourlyRow = InferRow<typeof serviceMapDbQ
  * page's Dependencies tab (and, eventually, external nodes on the service map).
  *
  * One row per (OrgId, Hour, ServiceName, TargetType, TargetSystem, TargetName,
- * DeploymentEnv) — captures Client/Producer spans WITHOUT `db.system.name`
+ * DeploymentEnv): captures Client/Producer spans with no database system
  * (those are in `service_map_db_edges_hourly`), keyed by what they're talking to:
  *
  *   - http       — `server.address` / `http.host` / `url.authority`
@@ -607,7 +607,7 @@ export type ServiceMapDbQuerySignaturesHourlyRow = InferRow<typeof serviceMapDbQ
  */
 export const serviceExternalEdgesHourly = defineDatasource("service_external_edges_hourly", {
 	description:
-		"Pre-aggregated hourly service-to-external-target edges (http / messaging / rpc) for the service-detail Dependencies tab. Captures Client/Producer spans WITHOUT db.system.name. Populated by materialized view.",
+		"Pre-aggregated hourly service-to-external-target edges (http / messaging / rpc) for the service-detail Dependencies tab. Captures Client/Producer spans with no database system (db.system.name or legacy db.system). Populated by materialized view.",
 	jsonPaths: false,
 	schema: {
 		OrgId: t.string().lowCardinality(),
