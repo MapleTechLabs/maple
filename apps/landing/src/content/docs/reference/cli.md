@@ -1,13 +1,13 @@
 ---
 title: "CLI Reference"
 description: "Every maple command, argument and flag, plus the local server's endpoints, environment variables and a troubleshooting guide."
-group: "Local Mode"
-order: 2
+group: "Reference"
+order: 3
 ---
 
 The `maple` binary is one CLI with two backends: the local server it starts itself (`maple start`) and a hosted Maple workspace (`maple auth login`). Every query command runs against whichever backend is [resolved](#auth-and-configuration) for that invocation. Output is JSON by default, clean enough to pipe into `jq` or an agent.
 
-New here? Start with the [Maple Local](/docs/local-mode) walkthrough. This page is the complete surface.
+New here? Start with the [Maple Local](/docs/local-mode) walkthrough, or [use the CLI with hosted Maple](#using-the-cli-with-hosted-maple). This page is the complete surface.
 
 ## Command index
 
@@ -60,7 +60,7 @@ Start the local ingest and query server.
 
 | Flag | Default | Description |
 | --- | --- | --- |
-| `--host <address>` | `127.0.0.1` | Bind address. Anything but loopback exposes every route without authentication |
+| `--host <address>` | `127.0.0.1` | Bind address. Anything but loopback exposes the UI, OTLP ingest and raw SQL to the network without authentication (see [Server endpoints](#server-endpoints)) |
 | `--advertise-host <host>` | the bind address | Hostname printed for clients and used by the bundled UI |
 | `--port <int>` | `4318` | Port for OTLP ingest, the query API and the bundled UI |
 | `--data-dir <path>` | `~/.maple/data` | Embedded ClickHouse data directory |
@@ -112,12 +112,12 @@ If the server was started with a custom host, port or data directory, pass the s
 
 ### `maple restore`
 
-Restore the local store from the last promoted checkpoint. Refuses to run while a server owns the store. The existing store is moved aside, never deleted.
+Restore the local store from the current checkpoint. Refuses to run while a server owns the store. The existing store is moved into `<data-dir>/backups/quarantine`, never deleted.
 
 | Flag | Default | Description |
 | --- | --- | --- |
 | `--data-dir <path>` | `~/.maple/data` | Store to restore |
-| `--checkpoint-id <uuid>` | selected current | Restore one specific checkpoint instead |
+| `--checkpoint-id <uuid>` | the current checkpoint | Restore one specific checkpoint instead |
 | `--yes`, `-y` | `false` | Skip the confirmation prompt |
 
 ```bash
@@ -127,19 +127,25 @@ maple restore --checkpoint-id 01234567-89ab-4cde-8fab-0123456789ab --yes
 
 ### `maple archive`
 
-Local mode only. Export sealed UTC days of the six raw telemetry tables from a checkpoint into portable Parquet, and manage those exports. The subcommands, and the archive model behind them, are documented on [Checkpoints & archives](/docs/local-mode/checkpoints-and-archives#archives).
+Local mode only. Export whole UTC days of the six raw telemetry tables from a checkpoint into Parquet files, and manage those exports. How archives work is explained on [Checkpoints & archives](/docs/local-mode/checkpoints-and-archives#archives).
 
 | Subcommand | What it does |
 | --- | --- |
-| `archive create <YYYY-MM-DD> <signal>` | Seal one day of one signal into a validated Parquet generation |
-| `archive list` | List active generations, or print their shard paths for DuckDB |
-| `archive verify` | Stream and SHA-256 verify the active shards |
-| `archive expire <YYYY-MM-DD>` | Expire one complete archived day across all six signals |
-| `archive retire-live <YYYY-MM-DD>` | Remove a fully archived and verified day from the live tables |
-| `archive gc` | Reclaim superseded generations |
-| `archive reconcile` | Finish an interrupted create or gc |
-| `archive rebuild <signal>` | Rebuild a signal's catalog from its manifests |
-| `archive calibrate` | Tune export settings against a pinned checkpoint |
+| `archive create <YYYY-MM-DD> <signal>` | Export one day of one signal. `--checkpoint-id` picks the checkpoint; `--config` loads tuning from `archive calibrate --write-config` |
+| `archive list [--output summary\|paths\|json] [--signal <name>]` | List archived days. `paths` prints Parquet file paths for DuckDB and needs `--signal` |
+| `archive verify [--signal <name>]` | Re-check the SHA-256 of every archived file |
+| `archive expire <YYYY-MM-DD> --apply` | Delete one archived day across all six signals |
+| `archive retire-live <YYYY-MM-DD> --apply` | Delete a day from the live store once all six signals are archived and verified. The day must be at least `--sealing-lag-hours` (default `24`) past UTC midnight |
+| `archive gc [--keep <n>]` | Delete replaced copies of re-exported days, keeping the newest `n` per signal and day (default `1`) |
+| `archive reconcile` | Finish an interrupted `create` or `gc` without exporting again |
+| `archive rebuild <signal>` | Rebuild a signal's `catalog.jsonl` from its manifests |
+| `archive calibrate <YYYY-MM-DD>` | Measure export settings on a sample of one day and optionally write them with `--write-config` |
+
+Signals: `logs`, `traces`, `metrics_sum`, `metrics_gauge`, `metrics_histogram`, `metrics_exponential_histogram`.
+
+Common flags: `--data-dir` (default `~/.maple/data`), `--archive-dir` (default `~/.maple/archive`) and `--scratch-root` (default `~/.maple/scratch`). `expire` and `retire-live` change nothing unless you pass `--apply`. `gc` and `reconcile` act by default; pass `--dry-run` to print the plan without changing anything.
+
+`archive calibrate-run` and `archive calibrate-session` also appear in `--help`. They are internal helpers that `archive calibrate` runs itself; do not call them directly.
 
 ### `maple schema`
 
@@ -327,6 +333,21 @@ Compare service health between two windows, for regression detection. Give **eit
 | `--previous-start <ts>` / `--previous-end <ts>` | The baseline window |
 | `--env <name>` | Filter by deployment environment |
 
+## Using the CLI with hosted Maple
+
+The query commands also work against a hosted Maple organization. Sign in once:
+
+```bash
+maple auth login                                   # US organizations
+maple auth login --api-url https://api.eu.maple.dev # EU organizations
+maple use remote                                   # optional: stop auto-detecting
+maple services --since 1h
+```
+
+`maple auth login` opens your browser, and you approve the CLI for one organization. The CLI then holds an [API key](/docs/reference/authentication#api-keys) with full access that expires after 90 days. It appears under **Settings → API Keys** with the description "Created by maple auth login". Run `maple auth login` again when it expires, and `maple auth logout` to revoke it.
+
+Every command except `maple query` works in remote mode. The server commands (`start`, `stop`, `reset`, `checkpoint`, `restore`, `archive`, `schema`) always act on the local store. Which region your organization is in is on [Regions](/docs/reference/regions).
+
 ## Auth and configuration
 
 ### `maple auth login`
@@ -367,16 +388,26 @@ Pin the default backend so commands stop auto-detecting, or `auto` to clear the 
 
 ## Server endpoints
 
-`maple start` binds `127.0.0.1` by default. `--host` or `MAPLE_LOCAL_BIND_HOST` may select another address, which exposes every route below without application authentication. With `--offline` the bundled UI is also served over `GET`.
+`maple start` binds `127.0.0.1` by default. `--host` or `MAPLE_LOCAL_BIND_HOST` can select another address. Every route below is then reachable from the network.
 
-| Method | Path | Purpose |
-| --- | --- | --- |
-| `GET` | `/health` | Liveness probe, returns `OK`. Used by mode auto-detect |
-| `POST` | `/v1/traces` | OTLP traces ingest, responds `{ "accepted": <rowCount> }` |
-| `POST` | `/v1/logs` | OTLP logs ingest |
-| `POST` | `/v1/metrics` | OTLP metrics ingest |
-| `POST` | `/local/query` | Run SQL: `{ "sql": "..." }` in, a bare JSON array of rows out |
-| `OPTIONS` | `*` | CORS and private-network preflight, for the configured hosted UI origin only |
+| Method | Path | Auth | Purpose |
+| --- | --- | --- | --- |
+| `GET` | `/health` | None | Liveness probe, returns `OK`. Used by mode auto-detect |
+| `POST` | `/v1/traces` | None | OTLP traces ingest, responds `{ "accepted": <rowCount> }` |
+| `POST` | `/v1/logs` | None | OTLP logs ingest |
+| `POST` | `/v1/metrics` | None | OTLP metrics ingest |
+| `POST` | `/local/query` | None | Run SQL: `{ "sql": "..." }` in, a bare JSON array of rows out |
+| `GET` | any other path | None | The bundled UI, with `--offline` only |
+| `OPTIONS` | `*` | None | CORS and private-network preflight, for the configured hosted UI origin only |
+| `POST` | `/local/checkpoint/backup` | Maintenance token | Take a checkpoint. `maple checkpoint` calls this |
+| `POST` | `/local/retention/retire` | Maintenance token | Delete one UTC day from the live tables. `maple archive retire-live --apply` calls this |
+| `GET` | `/local/eventing/health`, `/projections`, `/consumers`, `/outbox` | Maintenance token | Read local event projection and consumer state |
+| `POST` | `/local/eventing/projections`, `/consumers`, `/consumers/disable`, `/consumers/accept-gap`, `/outbox/abandon` | Maintenance token | Administer local event projections and consumers |
+| `POST` | `/local/eventing/claims`, `/local/eventing/acks` | Event consumer token | Claim and acknowledge local events |
+
+**None** means no credential is checked. On a non-loopback bind, anyone who can reach the port can read all local telemetry through `/local/query` and write to it through OTLP.
+
+The maintenance token is sent in `x-maple-maintenance-token` and the event consumer token in `x-maple-event-consumer-token`. `maple start` creates them on first run as `<data-dir>.maintenance-token` and `<data-dir>.event-consumer-token` (mode `0600`). Anyone who can read those files can call the token routes, including `/local/retention/retire`, which deletes data. The event routes are described in the [local event consumers design doc](https://github.com/MapleTechLabs/maple/blob/main/docs/local-event-consumers.md).
 
 OTLP bodies may be protobuf (the default) or JSON, optionally gzip-encoded. The `/local/query` handler owns the output format: it strips any trailing `FORMAT <ident>`, appends `FORMAT JSONEachRow`, and wraps the rows into a JSON array, so clients POST their compiled SQL verbatim.
 
@@ -396,7 +427,16 @@ OTLP bodies may be protobuf (the default) or JSON, optionally gzip-encoded. The 
 | `MAPLE_ORG_ID` | | Remote organisation override |
 | `MAPLE_DEBUG` | | `1` enables `--debug` |
 | `MAPLE_FORMAT` | `json` | `json` or `table`, same as `--format` |
-| `MAPLE_NO_UPDATE_CHECK` | | `1` disables the startup update check (the Homebrew wrapper sets this) |
+| `MAPLE_NO_UPDATE_CHECK` | | Any non-empty value disables the startup update check (the Homebrew wrapper sets it). The check runs at most once per 24 hours, only when stderr is a terminal |
+
+**CLI telemetry.** The CLI sends its own traces, logs and metrics (service `maple-cli`) to Maple by default. See [What connects to the internet](/docs/local-mode#what-connects-to-the-internet) for what is recorded.
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `MAPLE_TELEMETRY` | on | `off` disables the CLI's own telemetry entirely. Any other value leaves it on |
+| `MAPLE_INGEST_KEY` | a key built into the binary | Ingest key used for the CLI's own telemetry |
+| `MAPLE_ENDPOINT` | `https://ingest.maple.dev` | Where the CLI's own telemetry is sent. Takes precedence over `OTEL_EXPORTER_OTLP_ENDPOINT`, which is also read. If you export `OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4318` for your app in the same shell, the CLI's telemetry goes to your local server too |
+| `MAPLE_ENVIRONMENT` | `ci` when `CI` is set, otherwise `cli` | `deployment.environment` reported on the CLI's own telemetry |
 
 **Install script** (`scripts/install.sh`):
 

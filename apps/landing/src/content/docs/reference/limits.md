@@ -2,7 +2,7 @@
 title: "Limits"
 description: "Every limit in one place: ingest request size and concurrency, query time ranges, raw SQL, alert rules, event fields, and API and MCP rate limits."
 group: "Reference"
-order: 6
+order: 10
 ---
 
 The limits Maple enforces, grouped by where you would hit them. Each links to the page that explains the behaviour in full.
@@ -75,8 +75,8 @@ See [SQL reference](/docs/reference/sql).
 
 | Surface                          | Limit                               | Over the limit                      |
 | -------------------------------- | ----------------------------------- | ----------------------------------- |
-| [Maple API](/docs/api) (`/v2`)   | 600 requests per 60 seconds per key | `429`, `Retry-After: 60`            |
-| [MCP server](/docs/mcp) requests | 120 per 10 seconds per key or user  | Rejected; retry after a few seconds |
+| [Maple API](/docs/reference/api) (`/v2`)   | 600 requests per 60 seconds per key | `429`, `Retry-After: 60`            |
+| [MCP server](/docs/reference/mcp) requests | 120 per 10 seconds per key or user  | `429`, `Retry-After: 10`            |
 | API list pages                   | `limit` 1 to 100, default 20        | `400`                               |
 
 Rate limits are counted per edge location, so treat them as approximate rather than an exact global budget.

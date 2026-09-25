@@ -2,7 +2,7 @@
 title: "Apdex alerts"
 description: "How to set up an Apdex alert in Maple: pick the target latency T, choose the score worth paging for, scope and tune the rule, and create the same rule over the API."
 group: "Alerting"
-order: 1
+order: 3
 ---
 
 A p95 latency alert tells you that 5% of requests were slower than some number. It does not tell you whether that was 5 requests or 50,000, and it says nothing about the requests that failed outright.
@@ -24,7 +24,7 @@ A p95 latency alert tells you that 5% of requests were slower than some number. 
 
 ## The score in one line
 
-Apdex compresses a latency distribution into a single number between <span class="hl-bad">0</span> and <span class="hl-ok">1</span>: the share of requests that were fast enough to keep a user happy. You set one target time, <span class="hl-t">T</span>. Requests under <span class="hl-t">T</span> are <span class="hl-ok">satisfied</span> and score a point, requests under <span class="hl-t">4T</span> are <span class="hl-warn">tolerating</span> and score half, and everything slower — plus everything that failed, at any speed — is <span class="hl-bad">frustrated</span> and scores nothing.
+Apdex compresses a latency distribution into a single number between <span class="hl-bad">0</span> and <span class="hl-ok">1</span>: the share of requests that were fast enough to keep a user happy. You set one target time, <span class="hl-t">T</span>. Requests under <span class="hl-t">T</span> are <span class="hl-ok">satisfied</span> and score a point, requests under <span class="hl-t">4T</span> are <span class="hl-warn">tolerating</span> and score half, and everything slower is <span class="hl-bad">frustrated</span> and scores nothing. A request that failed is frustrated too, at any speed.
 
 <div class="my-6 rounded-lg border border-border p-5 text-center not-prose" style="background: color-mix(in oklab, var(--bg-elevated) 55%, transparent)">
   <div class="font-mono text-[15px] text-fg">Apdex = (satisfied + 0.5 × tolerating) / total</div>
@@ -68,7 +68,7 @@ Pick T as the latency at which your users stop perceiving the response as immedi
 
 > **Two ways to pick a T that tells you nothing.** Setting T to your current p95 guarantees a score near 0.95 forever. Setting it so tight that a healthy week already reads 0.6 buries every threshold you might pick inside your normal noise.
 
-The honest way to choose is to open the service's Apdex chart in Maple, set T, and check that a healthy week reads somewhere in the 0.9 to 1.0 band. That leaves the 0.8 line meaningful.
+To choose, open the service's Apdex chart in Maple, set T, and check that a healthy week reads somewhere in the 0.9 to 1.0 band. That leaves the 0.8 line meaningful.
 
 ## Choosing the threshold you defend
 
@@ -91,11 +91,11 @@ The honest way to choose is to open the service's Apdex chart in Maple, set T, a
   </div>
 </div>
 
-0.8 is a convention, not a law. The number that matters is where your service sits when it is healthy, and how far it has to fall before you would want to be woken up.
+0.8 is a common convention. Set the threshold from where your service sits when it is healthy, and how far it has to fall before you would want to be woken up.
 
 ## Setting up an Apdex alert in Maple
 
-Maple computes Apdex over the entry-point spans of a service, which is to say the server and consumer spans and the trace roots, not every internal span. That is the same set of requests the service's Apdex chart draws, so a rule you build here matches what you saw on the chart that sent you looking.
+Maple computes Apdex over the entry-point spans of a service: server spans, consumer spans and trace roots. The service's Apdex chart draws the same set of requests, so a rule you build here matches the chart.
 
 ### 1. Start from the Low Apdex score template
 
@@ -112,48 +112,38 @@ The rule builder opens on **Start with a template**. Pick <span class="hl-t">Low
 
 <span class="hl-t">Apdex target (ms)</span> is your T: requests under it count as <span class="hl-ok">fully satisfied</span>, and the <span class="hl-bad">frustrated</span> line follows automatically at 4T. Then set **Condition** to `<` and **Threshold** to the score worth paging for, typically `0.8`.
 
-The panel also states the measurement boundary: built-in signals read entry-point (root) spans only. A service that swallows failures on child spans and returns success from its entry point stays healthy here at any threshold, which is what **Raw SQL** rules are for.
+The panel also states the measurement boundary: built-in signals read entry-point spans only. A service that swallows failures on child spans and returns success from its entry point stays healthy here at any threshold. Use a **Query** or **Raw SQL** rule for that case.
 
 <figure class="shot">
   <img src="/screenshots/docs/apdex-02-signal.webp" alt="The Signal & threshold panel with the Apdex chip selected, Apdex target 500 ms, condition less-than, threshold 0.8 and severity Warning." loading="lazy" />
   <figcaption>Apdex target 500&nbsp;ms, condition <code>&lt;</code>, threshold 0.8. (The decimal comma is the browser's locale, not a Maple setting.)</figcaption>
 </figure>
 
-### 3. Scope it, and group it if one rule covers many services
+### 3. Scope it
 
-Leave **Services** empty to watch everything, or name the ones you own. **Environments** works the same way. A **Group by** of `service.name` or `attr.http.route` evaluates each group on its own, so you get one incident per offender instead of one blended average that never quite breaches.
+One T fits one class of traffic. If a rule covers many services or routes, set **Group by** to `service.name` or `attr.http.route` so each group is scored on its own and opens its own incident. Scope, grouping and the other fields shared by every signal are described in [Alert rules](/docs/alerting/alert-rules#scope).
 
 <figure class="shot">
   <img src="/screenshots/docs/apdex-03-scope.webp" alt="The Scope panel of the rule builder, with Services, Environments, Group by and Exclude services fields." loading="lazy" />
   <figcaption>Scope and grouping. Empty means every service and every environment.</figcaption>
 </figure>
 
-### 4. Window, severity, destinations
+### 4. Window, timing, destinations
 
-Five minutes is the default evaluation **window** and works for most services. Anything from one minute up to 24 hours is allowed, but short windows on low-traffic services are noisy, because a handful of slow requests moves the ratio a long way.
-
-**Evaluation timing** collapses to a summary line (`5min · 2× · renotify 30min`) until you open it. The three fields under it are what keep an Apdex rule from paging you at 3am; [Tuning the rule so it pages you less](#tuning-the-rule-so-it-pages-you-less) below says what each one does.
+Five minutes is the default window. Short windows on low-traffic services are noisy for Apdex in particular, because a handful of slow requests moves the ratio a long way. Keep **Min samples** at 50 or higher, and raise it on low-traffic services, so a service with 4 requests at 3am cannot post a score of 0.5 and page someone.
 
 <figure class="shot">
   <img src="/screenshots/docs/apdex-04-timing.webp" alt="The severity toggle set to Warning, and the expanded evaluation timing row: window 5 minutes, 2 breaches to fire, 2 healthy checks to resolve, minimum 50 samples, renotify every 30 minutes." loading="lazy" />
   <figcaption>Severity and evaluation timing. The defaults shown are the ones the template sets.</figcaption>
 </figure>
 
-Pick a **Severity**, attach your [notification destinations](/docs/alerting/notification-destinations), and save.
+An Apdex rule skips windows with no requests, so a service that goes quiet overnight does not read as a score of 0. The other timing fields (**Breaches to fire**, **Healthy to resolve**, **Renotify (min)**) work as on every rule. See [Evaluation timing](/docs/alerting/alert-rules#evaluation-timing).
 
-Maple evaluates alert rules every minute. Each check aggregates the window you configured, so a five-minute window is a rolling five minutes re-scored every 60 seconds.
-
-### Tuning the rule so it pages you less
-
-Three fields do most of the work of keeping an Apdex rule quiet without making it blind:
-
-- **Minimum sample count** (default 50) skips the check when the window did not see enough requests. Without it, a service with 4 requests at 3am can post an Apdex of 0.5 and page someone. Raise it on low-traffic services.
-- **Consecutive breaches required** (default 2) makes a rule wait for two bad checks in a row before opening an incident. **Consecutive healthy required** does the same on the way out, so an incident does not flap closed on a single good minute.
-- **No-data behavior** decides what an empty window means. `skip` leaves the rule silent, which is what you want for Apdex. `zero` treats no traffic as a score of 0, which will page you every night.
+Pick a **Severity**, attach your [notification destinations](/docs/alerting/notification-destinations), click **Test rule** to replay the rule over the past week, and save.
 
 ### Creating the same rule over the API
 
-Every field in the form is a field on the API. Apdex rules require `apdex_threshold_ms`:
+Every field in the form is a field on the API. `apdex_threshold_ms` is T in milliseconds. It defaults to 500 when omitted.
 
 ```bash
 curl -X POST https://api.maple.dev/v2/alerts/rules \
@@ -171,27 +161,36 @@ curl -X POST https://api.maple.dev/v2/alerts/rules \
     "severity": "critical",
     "minimum_sample_count": 50,
     "consecutive_breaches_required": 2,
-    "no_data_behavior": "skip",
     "destination_ids": ["dest_oybbpTBhtSFGShMjjLiCrh"]
   }'
 ```
 
-`POST /v2/alerts/rules/preview` accepts the same body and returns what the rule would have done over a past window, which is the cheapest way to find out that your threshold is too tight before it wakes anyone. See the [API reference](/docs/api) for the full schema.
+To see what the rule would have done over a past range before it can wake anyone, send the same object as `rule` to `POST /v2/alerts/rules/preview`, with `start_time` and `end_time`:
+
+```json
+{
+	"rule": { "name": "Checkout Apdex below 0.8", "signal_type": "apdex", "apdex_threshold_ms": 500, "comparator": "lt", "threshold": 0.8, "window_minutes": 5, "service_names": ["checkout"], "severity": "critical", "destination_ids": ["dest_oybbpTBhtSFGShMjjLiCrh"] },
+	"start_time": "2026-07-08T00:00:00.000Z",
+	"end_time": "2026-07-15T00:00:00.000Z"
+}
+```
+
+See [Alert rules](/docs/alerting/alert-rules#create-a-rule-over-the-api) and the [API reference](/docs/reference/api) for the full schema.
 
 ### Or hand it to an agent
 
-If you already talk to your telemetry through an AI assistant, you can skip the form. Connect Maple's [MCP server](/docs/mcp) to Claude, Cursor, or any MCP client, then ask for the rule in plain language:
+You can also create the rule from an AI assistant. Connect Maple's [MCP server](/docs/reference/mcp) to any MCP client, then ask for the rule in plain language:
 
 > Create an Apdex alert on the checkout service. Target 500ms, page me when the score drops below 0.8, and send it to the on-call Slack channel.
 
-The agent builds the same rule you would have built by hand, under the same constraints: it cannot save an Apdex alert without a target, and it only ever sees your own organisation's data.
+The agent builds the same rule you would build by hand. It cannot save an Apdex rule without a target, and it only sees your own organization's data.
 
-The connection stays useful after the rule exists. Ask which of your Apdex rules would never fire, or why one paged last night, and the agent can read the rule's history to answer. The [MCP page](/docs/mcp) has the setup steps.
+After the rule exists, you can ask which of your Apdex rules would never fire, or why one paged last night. The agent reads the rule's checks and incidents to answer.
 
 ## Known limitations
 
-- **Apdex is computed on sampled spans.** If you sample at 10%, the score is the ratio measured across the requests you kept. That stays representative under uniform sampling, but a sampling policy that keeps slow or failed traces preferentially will drag the score down relative to reality.
+- **Apdex is computed on sampled spans.** Under uniform sampling the score stays representative. A sampler that keeps slow or failed traces preferentially, without reporting its sampling weight, drags the score down. See [Sampling & Throughput](/docs/concepts/sampling-throughput).
 - **One T per rule.** A service whose `/healthz` and `/reports/export` share a rule is being measured against a target that fits neither. Group by `attr.http.route`, or write separate rules.
 - **The score hides magnitude.** It counts frustrated requests without weighting how frustrated they were. Pair it with a p99 rule.
 
-More on the score itself — the formula, a worked example, what counts as a good score, and how it compares to p95 and p99 — is in the [What is Apdex?](/guides/what-is-apdex) guide.
+The [What is Apdex?](/guides/what-is-apdex) guide covers the formula, a worked example, what counts as a good score, and how Apdex compares to p95 and p99.

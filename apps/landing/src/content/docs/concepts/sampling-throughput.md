@@ -1,90 +1,74 @@
 ---
 title: "Sampling & Throughput Estimation"
-description: "How Maple detects trace sampling and extrapolates throughput metrics."
+description: "How Maple weights sampled spans at ingest so throughput, error rate and service map call counts reflect the traffic you actually served."
 group: "Concepts"
 navLabel: "Sampling & Throughput"
 order: 2
 ---
 
-Maple automatically detects trace sampling and extrapolates throughput metrics so you see realistic request rates even when only a fraction of traces are collected.
+When you sample traces, the spans Maple receives are a fraction of the requests your services handled. Maple gives every span a weight at ingest and sums those weights, so request rates, error rates and service map call counts estimate the traffic before sampling.
 
 ## What is trace sampling?
 
-Distributed tracing at scale generates a large volume of spans. Sampling reduces this volume by only exporting a subset of traces:
+Sampling reduces span volume by exporting only a subset of traces.
 
-- **Head sampling** -- a decision made at the start of a trace (e.g. "keep 10% of traces"). The OTel SDK or Collector makes the choice before any spans are processed.
-- **Tail sampling** -- a decision made after the full trace completes, typically based on latency, errors, or other attributes.
+- **Head sampling** decides at the start of a trace, for example "keep 10% of traces". The OpenTelemetry SDK or Collector makes the choice before any spans are exported.
+- **Tail sampling** decides after the trace completes, usually based on latency, errors or other attributes.
 
-Both approaches reduce storage and processing costs, but mean the raw span count no longer reflects actual throughput.
+Both cut storage and processing cost. Both also mean the raw span count no longer equals the number of requests.
 
-## How Maple detects sampling
+## How each span gets its weight
 
-OpenTelemetry propagates a `TraceState` header on every span. When probability-based sampling is active, the `TraceState` contains a `th` (threshold) key:
+At ingest, Maple stores a `SampleRate` on every span: the number of requests that span stands for. It resolves the value from three sources, in this order:
 
-```
-tracestate: ot=th:e668
-```
+1. **`SampleRate` span attribute.** If the span carries a `SampleRate` attribute of 1 or more (for example, set by your Collector), Maple uses it as is.
+2. **W3C threshold in `tracestate`.** When OpenTelemetry probability sampling is active, the span's `tracestate` carries an `ot` entry with a `th` (rejection threshold) key, such as `ot=th:e668`. Maple converts the threshold to a weight of `1 / acceptance probability`. The weight is capped at 10000 (an acceptance probability of 0.01%).
+3. **Default of 1.** A span with neither is treated as unsampled.
 
-Maple's Tinybird queries read this value directly from the `TraceState` column:
+No configuration is needed. If your SDK or Collector sets `th` in `tracestate`, or sets a `SampleRate` attribute, Maple picks it up.
 
-```sql
-countIf(TraceState LIKE '%th:%')                            AS sampledSpanCount,
-countIf(TraceState = '' OR TraceState NOT LIKE '%th:%')     AS unsampledSpanCount,
-anyIf(extract(TraceState, 'th:([0-9a-f]+)'), TraceState LIKE '%th:%') AS dominantThreshold
-```
-
-No manual configuration is needed -- if your OTel SDK or Collector sets the `th` value, Maple picks it up automatically.
+For example, `th:e668` means about 90% of traces were rejected, so about 10% were kept and each kept span has a `SampleRate` of about 10.
 
 ## How throughput is calculated
 
-The threshold hex value encodes the rejection probability. Maple converts it to an acceptance probability and a corresponding weight:
-
-```typescript
-// threshold "e668" -> ~90% rejection -> ~10% acceptance -> weight ~10
-const thresholdInt = parseInt(thresholdHex, 16)
-const maxInt = Math.pow(16, thresholdHex.length)
-const rejectionRate = thresholdInt / maxInt
-const acceptanceProbability = 1 - rejectionRate
-const weight = 1 / acceptanceProbability
-```
-
-Then:
-
-- **No sampling detected** (no `th` in `TraceState`): spans are counted as-is.
-- **Sampling detected**: sampled span count is multiplied by the weight, then added to unsampled spans.
+Throughput is the sum of the weights, divided by the length of the window:
 
 ```
-estimatedTotal = (sampledSpanCount * weight) + unsampledSpanCount
-throughput     = estimatedTotal / durationSeconds
+estimated requests = sum(SampleRate)
+throughput         = estimated requests / window seconds
 ```
 
-For example, with 10% sampling (`weight = 10`) and 500 sampled root spans over 60 seconds:
+With 10% sampling (`SampleRate = 10`) and 500 sampled entry-point spans over 60 seconds, the estimate is 5,000 requests, or about 83 requests per second.
+
+Because the weight is stored on each span, **mixed sampling rates add up correctly**. Take 100 spans in one bucket: 99 kept at 50% (weight 2) and 1 kept at 1/8192 (weight 8192). The estimate is `99 × 2 + 1 × 8192 = 8390` requests. The same holds when different services, or different deployments of one service, sample at different rates.
+
+## How error rate is calculated
+
+Error rate uses the same weights. Each error span counts for its `SampleRate`, and so does each span in the denominator:
 
 ```
-estimatedTotal = 500 * 10 = 5000
-throughput     = 5000 / 60 = ~83 req/s
+error rate = sumIf(SampleRate, StatusCode = 'Error') / sum(SampleRate)
 ```
+
+A tail sampler that keeps every error but only 1% of successful requests would make a raw error count look far too high. Weighting each span by its own `SampleRate` corrects for that, as long as the sampler reports the weight it used.
+
+Service map edges use the same weighting for call counts between services.
 
 ## UI indicators
 
-When sampling is detected for a service:
+When a service has sampled spans in the selected window:
 
-- **Tilde prefix (`~`)** -- throughput values are prefixed with `~` to indicate the number is an estimate, not an exact count. This appears in the services table, service map nodes, and service map edges.
-- **Secondary "traced" line** -- the services table shows a smaller line below the estimated throughput with the actual traced rate (e.g. `~8.3 traced`), so you can see both values.
-- **Tooltip** -- hovering the throughput cell shows the sampling rate and extrapolation factor (e.g. "Estimated from 10% sampled traces (x10 extrapolation)").
+- **Tilde prefix (`~`).** Throughput is prefixed with `~` to mark it as an estimate. This appears in the services table and on service map nodes and edges.
+- **Traced rate.** The services table shows the rate of spans actually received under the estimate, for example `~8.3 traced`.
+- **Tooltip.** Hovering the throughput cell shows the sampling rate and the extrapolation factor, for example "Estimated from 10% sampled traces (x10 extrapolation)".
 
 ## Limitations
 
-- **Dominant threshold** -- Maple uses `any()` (an arbitrary pick) to select the threshold value per service per time window. If the sampling rate changes mid-window, the value used may not perfectly represent all spans in that window.
-- **Edge throughput** -- service-to-service call counts on the service map are also extrapolated from sampled traces using the same method. The edge label shows `~` when sampling is active.
-- **Error rate is not extrapolated** -- error rate is computed as `errorCount / spanCount` from the spans Maple actually receives. This ratio is generally representative, but could skew if sampling is correlated with error status.
-- **Mixed sampling rates** -- if different services use different sampling rates, each service's throughput is extrapolated independently using its own threshold. Cross-service edges use the threshold from the edge's span data.
+**The estimate is only as good as the weight.** If a sampler drops spans without recording `th` in `tracestate` or a `SampleRate` attribute, Maple counts the surviving spans at weight 1 and underestimates throughput.
 
-## For best results
+## Exact counts with SpanMetrics
 
-If you need 100%-accurate RED metrics (Rate, Errors, Duration) alongside sampled traces, use the **OpenTelemetry Collector SpanMetrics Connector**. It derives metrics from every span before sampling is applied, giving you exact counts regardless of trace sampling configuration.
-
-- [SpanMetrics Connector docs](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/connector/spanmetricsconnector)
+For exact RED metrics (rate, errors, duration) next to sampled traces, use the OpenTelemetry Collector [SpanMetrics Connector](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/connector/spanmetricsconnector). It derives metrics from every span before sampling, so the counts do not depend on the sampling configuration.
 
 A typical Collector pipeline:
 
@@ -104,4 +88,4 @@ service:
             exporters: [otlp]
 ```
 
-This way, your metrics pipeline sees every request while your traces pipeline can sample aggressively.
+The metrics pipeline sees every request while the traces pipeline samples as aggressively as you like.

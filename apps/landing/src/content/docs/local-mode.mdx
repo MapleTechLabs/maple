@@ -12,7 +12,7 @@ import InstallTabs from "../../components/local/InstallTabs.astro"
 
 <LocalHero />
 
-Maple Local is the full product running on your machine, free, for local development. Point any OpenTelemetry exporter at `localhost`, open the dashboard, and explore traces, logs, metrics, errors, sessions and a service map. It is not a client for the hosted service: nothing here needs an account, and nothing leaves your machine.
+Maple Local is the full product running on your machine, free, for local development. Point any OpenTelemetry exporter at `localhost`, open the dashboard, and explore traces, logs, metrics, errors, sessions and a service map. It is not a client for the hosted service and needs no account. Your telemetry is stored and queried on your machine. The CLI does make a few network calls of its own by default, listed in [What connects to the internet](#what-connects-to-the-internet).
 
 ## What you get
 
@@ -20,10 +20,10 @@ Maple Local is the full product running on your machine, free, for local develop
 | --- | --- |
 | **OTLP/HTTP ingest** | `POST /v1/{traces,logs,metrics}` on port `4318`, protobuf or JSON, gzip optional. Any OTel SDK works unchanged. |
 | **Dashboard** | The same Maple UI, either auto-updating from `local.maple.dev` or bundled in the binary for offline use. |
-| **CLI** | `maple services`, `maple traces`, `maple errors` and twenty more, printing JSON you can pipe into `jq` or an agent. |
+| **CLI** | `maple services`, `maple traces`, `maple errors` and 14 more query commands, printing JSON you can pipe into `jq` or an agent. |
 | **Raw SQL** | `maple query "<sql>"` against the embedded store when the typed commands don't cover it. |
 
-Data lives in `~/.maple/data` and survives restarts. The server writes a restore point every 30 minutes, so a crash costs at most that much telemetry.
+Data lives in `~/.maple/data` and survives restarts. See [Your data](#your-data) for retention and restore points.
 
 ## 1. Install
 
@@ -37,7 +37,7 @@ Homebrew is the easiest path on macOS and Linux. The install script works anywhe
 
 ```bash
 maple start            # ingest + embedded ClickHouse + query API on :4318
-maple start --offline  # …and serve the dashboard from the binary (no internet)
+maple start --offline  # …and serve the dashboard from the binary
 maple start -d         # …detached; logs to ~/.maple/maple.log, stop with `maple stop`
 ```
 
@@ -53,7 +53,7 @@ The flags you are likely to touch:
 | `--background`, `-d` | off | You want it out of the way; `maple stop` ends it |
 | `--reset` | off | A new binary refuses an old store; wipes live data, keeps checkpoints |
 
-Everything else, including bind and advertise hosts, checkpoint cadence and recovery policy, is in the [CLI reference](/docs/local-mode/cli-reference#maple-start).
+Everything else, including bind and advertise hosts, checkpoint cadence and recovery policy, is in the [CLI reference](/docs/reference/cli#maple-start).
 
 ## 3. Send telemetry
 
@@ -89,7 +89,9 @@ Bind to all interfaces and print a hostname the other browser will actually use:
 maple start --host 0.0.0.0 --advertise-host maple.home.arpa --offline
 ```
 
-This exposes every route without authentication: the UI, raw SQL, health and OTLP ingest. Use it only on a network you trust, or behind TLS with browser-managed auth such as a session cookie. The bundled UI does not attach API keys to its requests.
+Anyone who can reach the port can then use the UI, run raw SQL through `/local/query`, and send OTLP data. None of these routes check credentials. The maintenance routes (checkpoint, day retirement and the local event routes) require a token that `maple start` writes beside the data directory with mode `0600` (`<data-dir>.maintenance-token`, and `<data-dir>.event-consumer-token` for event consumers). They are only as safe as those files. `/local/retention/retire` deletes a day of live data. The full route list is in the [CLI reference](/docs/reference/cli#server-endpoints).
+
+Use a non-loopback bind only on a network you trust, or behind TLS with browser-managed auth such as a session cookie. The bundled UI does not attach API keys to its requests.
 
 ## Query from the terminal
 
@@ -104,16 +106,27 @@ maple query "SELECT count() FROM traces"
 
 <LocalCommandGrid />
 
-Most query commands share the same filters: `--since` (`30m`, `1h`, `24h`, `7d`) or absolute `--start`/`--end`, `--service`/`-s`, `--env`/`-e`, and `--limit`/`-n`. The [CLI reference](/docs/local-mode/cli-reference) has every command, argument and flag.
+Most query commands share the same filters: `--since` (`30m`, `1h`, `24h`, `7d`) or absolute `--start`/`--end`, `--service`/`-s`, `--env`/`-e`, and `--limit`/`-n`. The [CLI reference](/docs/reference/cli) has every command, argument and flag.
 
 ## Your data
 
-- **Where it lives.** `~/.maple/data`, or whatever `--data-dir` you passed. Logs and traces are kept for 30 days, metrics for 90.
-- **Restore points.** The running server refreshes a checkpoint every 30 minutes (`--checkpoint-interval`, `off` to disable). `maple checkpoint` takes one on demand; `maple restore` brings the store back to the last good one and quarantines the current store rather than deleting it.
+- **Where it lives.** `~/.maple/data`, or whatever `--data-dir` you passed.
+- **Retention.** Logs and traces are kept for 30 days, metrics for 90. `maple start --minimum-raw-telemetry-retention-days <n>` raises the floor for raw logs, traces and metrics (90 to 3,650 days). Hosted retention is on [Retention](/docs/reference/retention).
+- **Restore points.** The running server takes a checkpoint on a timer, and `maple restore` rolls the store back to one. Cadence, restore and unclean-shutdown behaviour are on [Checkpoints & archives](/docs/local-mode/checkpoints-and-archives).
 - **Starting over.** `maple reset` clears live data and keeps checkpoints. `maple start --reset` does the same in one step after an incompatible upgrade.
-- **Keeping history.** `maple archive` exports sealed days as Parquet you can open in DuckDB, so the hot store stays small without losing anything.
+- **Keeping history.** `maple archive` exports whole days as Parquet files you can open in DuckDB. See [Archives](/docs/local-mode/checkpoints-and-archives#archives).
 
-Details, including what happens after an unclean shutdown, are on [Checkpoints & archives](/docs/local-mode/checkpoints-and-archives).
+## What connects to the internet
+
+Your telemetry and query results stay on your machine. These calls go out by default:
+
+| Call | When | Turn it off |
+| --- | --- | --- |
+| The CLI's own traces, logs and metrics, sent to `https://ingest.maple.dev` with an ingest key built into the binary | Every command, and every request `maple start` handles | `MAPLE_TELEMETRY=off` |
+| Release check against the GitHub releases API | At most once per 24 hours, only in an interactive terminal | `MAPLE_NO_UPDATE_CHECK=1` (Homebrew installs set it) |
+| The dashboard page from `local.maple.dev` | When you open the dashboard | `maple start --offline` |
+
+The CLI's own telemetry describes the CLI, not your data. It reports the service name `maple-cli`, the command, its duration and errors. For each OTLP request `maple start` handles it records the signal, the body size and the number of items, never the payload. For each `/local/query` request it records the SQL text (up to 16 KB), which can include service names or filter values you typed. `MAPLE_INGEST_KEY`, `MAPLE_ENDPOINT` and `MAPLE_ENVIRONMENT` redirect or relabel this export; see [Environment variables](/docs/reference/cli#environment-variables).
 
 ## One CLI, two backends
 
@@ -125,7 +138,7 @@ maple whoami         # which backend a command would hit right now
 maple use local      # pin it; `maple use auto` restores detection
 ```
 
-Per command, an explicit `--local` or `--remote` wins, then the pinned default, then auto-detect: a stored login means remote, otherwise the CLI probes the local server. Everything except `maple query` works against both. Raw SQL stays local because the hosted warehouse is shared between organisations.
+Per command, an explicit `--local` or `--remote` wins, then the pinned default, then auto-detect: a stored login means remote, otherwise the CLI probes the local server. Everything except `maple query` works against both. Raw SQL stays local because the hosted warehouse is shared between organisations. See [Using the CLI with hosted Maple](/docs/reference/cli#using-the-cli-with-hosted-maple).
 
 ## Under the hood
 

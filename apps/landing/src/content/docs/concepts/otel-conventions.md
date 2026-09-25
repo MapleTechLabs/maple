@@ -5,46 +5,15 @@ group: "Concepts"
 order: 1
 ---
 
-Maple is fully compatible with the OpenTelemetry Protocol (OTLP). This document describes the conventions and attributes that Maple uses to power its dashboards, service maps, and analytics.
+Maple accepts telemetry over the OpenTelemetry Protocol (OTLP). This page describes the attributes and conventions Maple reads to build its dashboards, service map and analytics.
 
 Maple stores every OTel attribute you send verbatim. A curated set gets special treatment: pre-extracted into indexed columns at ingest, exposed as short filter aliases, rendered as colored badges, used to draw the service map, or ranked higher in the log attribute chips. Most of these follow the [OpenTelemetry semantic conventions](https://opentelemetry.io/docs/specs/semconv/). If your SDK emits standard attributes, you usually don't need to do anything extra.
 
 > **Audit with Claude Code:** `maple-audit` reviews an existing setup against these conventions per service, with severities, and fixes the gaps. See the [maple-audit skill](https://github.com/MapleTechLabs/maple/tree/main/skills/maple-audit).
 
-## Ingest Endpoints
+## Sending data
 
-Send telemetry to Maple using standard OTLP HTTP endpoints:
-
-| Signal  | Endpoint      |
-| ------- | ------------- |
-| Traces  | `/v1/traces`  |
-| Logs    | `/v1/logs`    |
-| Metrics | `/v1/metrics` |
-
-**Base URL:** `https://ingest.maple.dev` (EU organizations: `https://ingest.eu.maple.dev`). See [Data regions](/docs/instrumentation#data-regions).
-
-**Content types:**
-
-- `application/x-protobuf` (recommended)
-- `application/json`
-
-**Compression:** gzip supported via `Content-Encoding: gzip` header.
-
-## Authentication
-
-Include your ingest key in the request headers:
-
-```text
-Authorization: Bearer YOUR_INGEST_KEY
-```
-
-Alternatively, use the `x-maple-ingest-key` header:
-
-```text
-x-maple-ingest-key: YOUR_INGEST_KEY
-```
-
-Find your keys under **Settings → Ingestion** in the dashboard. Use the public key (`maple_pk_...`) in browsers and mobile apps, and the private key (`maple_sk_...`) on servers. See the [Ingest API reference](/docs/reference/ingest) for details.
+This page covers what to put on your telemetry. Endpoints, authentication headers, content types and the standard `OTEL_*` environment variables are in the [Ingest API reference](/docs/reference/ingest). To set up an SDK, start at [Instrument your application](/docs/instrumentation).
 
 ## Service identity
 
@@ -99,12 +68,12 @@ Only spans with status `Error` appear in error analytics.
 | Kind         | Description                          | How Maple Uses It                                                                                         |
 | ------------ | ------------------------------------ | --------------------------------------------------------------------------------------------------------- |
 | `"Server"`   | Incoming request handler             | Throughput and error rate calculations. Callee side of a service map edge. Renders path-only HTTP routes. |
-| `"Client"`   | Outgoing request to another service  | Caller side of a service map edge; database and external nodes. Renders host+path HTTP routes.            |
-| `"Producer"` | Async message producer               | Caller side of a service map edge; messaging nodes.                                                       |
+| `"Client"`   | Outgoing request to another service  | Caller side of a service map edge; database nodes; external dependencies. Renders host+path HTTP routes.  |
+| `"Producer"` | Async message producer               | Caller side of a service map edge; messaging dependencies.                                                |
 | `"Consumer"` | Async message consumer               | Throughput calculations. Callee side of a `Producer` edge.                                                |
 | `"Internal"` | Default, synchronous in-process work | Trace detail view.                                                                                        |
 
-`Client` spans get a small outgoing-arrow icon in HTTP labels and render their route as `host+path` so the destination is visible. `Server` spans render path-only. The [Service Map](#service-map) builds edges and dependency nodes only from `Client` and `Producer` spans. A network call left on `Internal` does not appear on the map.
+`Client` spans get a small outgoing-arrow icon in HTTP labels and render their route as `host+path` so the destination is visible. `Server` spans render path-only. The [service map](#service-map) and a service's dependencies are built only from `Client` and `Producer` spans. A network call left on `Internal` does not appear on either.
 
 ## HTTP Attributes
 
@@ -158,11 +127,11 @@ For full HTTP info, Maple tries each source in order until one matches:
 
 If none of the route attributes are set, Maple falls back to the route in the span name.
 
-So `url.full` (e.g. `https://api.stripe.com/v1/charges`) on a `Client` span lights up route rendering automatically. Emitting `http.route` is still preferred, because it's a semantic path (`/api/users/:id`) instead of a high-cardinality URL.
+So `url.full` (e.g. `https://api.stripe.com/v1/charges`) on a `Client` span is enough for route rendering. Emitting `http.route` is still preferred, because it's a semantic path (`/api/users/:id`) instead of a high-cardinality URL.
 
 ## Service Map
 
-The map renders nodes for services and their dependencies, and edges for the calls between them. Four rules make sure your spans show up correctly.
+The [service map](/docs/explore/service-map) draws a node for each service and each database, and an edge for the calls between them. Calls to external HTTP hosts, message queues and RPC services are not drawn on the map. They are listed on the service's **Dependencies** tab. Four rules make sure your spans show up correctly.
 
 ### 1. Service-to-service edges
 
@@ -179,7 +148,7 @@ users:  GET /v1/users  (span.kind=Server, parent_span_id=a1)
                             └──> draws an edge api → users
 ```
 
-`peer.service` does not draw edges. If the callee is not instrumented, or the caller drops `traceparent`, no edge is drawn. The call shows up at most as an external node (see rule 3).
+`peer.service` does not draw edges. If the callee is not instrumented, or the caller drops `traceparent`, no edge is drawn. The call shows up at most as an external dependency on the caller's **Dependencies** tab (see rule 3).
 
 ### 2. Database nodes
 
@@ -190,13 +159,13 @@ SELECT * FROM users  (span.kind=Client, db.system.name=postgresql, db.namespace=
                             └──> draws an edge api → postgresql users_db
 ```
 
-Without `db.system.name`, the call renders as a generic external host. Without `db.namespace`, Maple falls back to the legacy `db.name`, then to the host (`server.address`). With none of these set, every database behind that driver collapses into one node.
+Without `db.system.name`, the call is treated as an external HTTP or other dependency, not a database. Without `db.namespace`, Maple falls back to the legacy `db.name`, then to the host (`server.address`). With none of these set, every database behind that driver collapses into one node.
 
 ### 3. External dependencies
 
-Other outbound `Client` and `Producer` spans become external nodes. Maple picks the key in this order:
+Other outbound `Client` and `Producer` spans become external dependencies. They are listed on the calling service's **Dependencies** tab, not drawn on the map. Maple names each one from these attributes:
 
-| Call type   | Attributes                                       | Node name                                  |
+| Call type   | Attributes                                       | Dependency name                            |
 | ----------- | ------------------------------------------------ | ------------------------------------------ |
 | Messaging   | `messaging.system`, `messaging.destination.name` | Destination name, or the system if missing |
 | RPC         | `rpc.system`, `rpc.service`                      | `rpc.service`, or the system if missing    |
@@ -206,7 +175,7 @@ HTTP client instrumentation sets `server.address` automatically.
 
 ### 4. Pick canonical names
 
-Keep `db.system.name`, `messaging.system`, and `rpc.system` values spelled the same across services. If one service emits `db.system.name=postgresql` and another emits `PostgreSQL`, they become separate nodes. Use the OpenTelemetry well-known values where one exists.
+Keep `db.system.name`, `messaging.system`, and `rpc.system` values spelled the same across services. If one service emits `db.system.name=postgresql` and another emits `PostgreSQL`, they become separate database nodes. Use the OpenTelemetry well-known values where one exists.
 
 ## Database queries
 
@@ -252,8 +221,8 @@ For gRPC and other RPC frameworks.
 
 | Attribute              | What Maple does with it                                                      |
 | ---------------------- | ---------------------------------------------------------------------------- |
-| `rpc.system`           | Names RPC dependency nodes on the service map when `rpc.service` is missing. |
-| `rpc.service`          | Scored 68 in log chips; toned `info`. Names RPC nodes on the service map.    |
+| `rpc.system`           | Names RPC dependencies when `rpc.service` is missing.                        |
+| `rpc.service`          | Scored 68 in log chips; toned `info`. Names RPC dependencies.                |
 | `rpc.method`           | Scored 68; toned `info`.                                                     |
 | `rpc.grpc.status_code` | Scored 90 (just below HTTP status). Non-zero values are toned `error` (red). |
 
@@ -335,12 +304,7 @@ These set the platform badge and runtime icon next to a service on the service m
 
 A service with `k8s.pod.name` or `k8s.deployment.name` gets the Kubernetes badge. Cloudflare takes precedence over Lambda, and Lambda over Kubernetes.
 
-`nodejs`, `bun`, `deno`, `workerd`, `rust`, `python` (or `cpython`), `ruby`, and the JVM
-(`jvm`, `java`, or the OTel-canonical `OpenJDK Runtime Environment`) render as their logo next to
-the service name. `go`, `dotnet`, `php`, and anything unrecognized render as a short text chip
-instead, since their logos are wordmarks that don't survive being drawn at icon size. A runtime the
-platform badge already implies (`workerd` on a Cloudflare service) is dropped rather than shown
-twice.
+`nodejs`, `bun`, `deno`, `workerd`, `rust`, `python` (or `cpython`), `ruby`, and the JVM (`jvm`, `java`, or the OTel-canonical `OpenJDK Runtime Environment`) render as their logo next to the service name. `go`, `dotnet`, `php`, and anything unrecognized render as a short text chip, because their logos are wordmarks that are unreadable at icon size. A runtime the platform badge already implies (`workerd` on a Cloudflare service) is not shown a second time.
 
 Common aliases are folded together (`node`/`nodejs`, `go`/`golang`). Keep the value consistent across services on the same runtime anyway. An unlisted variant falls through to the text chip, and one fleet ends up wearing two different marks.
 
@@ -424,24 +388,6 @@ service:
 
 This derives metrics from every span before sampling reduces the trace volume. See [Sampling & Throughput Estimation](/docs/concepts/sampling-throughput) for details.
 
-## Data Retention
+## Data retention
 
-Retention depends on your plan: 7 days on Starter, 30 days on Startup, and custom on Enterprise. See [Pricing](/pricing) for current plan details.
-
-## Environment Variable Reference
-
-On servers, pass the endpoint and your private ingest key (`maple_sk_...`) to the exporter from a secret or environment variable at runtime. Never commit the private key to source control. Browser and mobile apps use the public key (`maple_pk_...`), which is safe to ship.
-
-If your existing setup uses the standard OpenTelemetry environment variables, those are also supported:
-
-```bash
-# Required
-export OTEL_EXPORTER_OTLP_ENDPOINT="https://ingest.maple.dev"   # https://ingest.eu.maple.dev for EU orgs
-export OTEL_EXPORTER_OTLP_HEADERS="Authorization=Bearer YOUR_INGEST_KEY"
-export OTEL_SERVICE_NAME="my-service"
-
-# Recommended
-export OTEL_RESOURCE_ATTRIBUTES="deployment.environment.name=production,vcs.repository.url.full=https://github.com/acme/api,vcs.ref.head.revision=abc123"
-```
-
-These variables are supported by all official OpenTelemetry SDKs.
+How long each signal is kept depends on your plan. See [Retention](/docs/reference/retention).

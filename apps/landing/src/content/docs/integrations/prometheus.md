@@ -1,46 +1,57 @@
 ---
 title: "Prometheus Scraping"
-description: "Pull metrics from any Prometheus-compatible endpoint with Maple's managed scrape agent — no collector to run, credentials stored server-side, scrape health built in."
+description: "Point Maple at any Prometheus exposition endpoint. Maple scrapes it on a schedule, converts the samples to OpenTelemetry metrics, and records the health of every scrape."
 group: "Integrations"
 order: 0
 ---
 
-Maple includes a managed Prometheus scrape agent: point it at any endpoint that serves the Prometheus exposition format and Maple polls it on your schedule, converts the samples to OpenTelemetry metrics, and ingests them like any other OTLP traffic. There is nothing to deploy on your side — no Prometheus server, no collector, no `remote_write` pipeline.
+Maple can scrape any endpoint that serves the Prometheus or OpenMetrics text format. You add the endpoint as a scrape target. Maple polls it at the interval you choose, converts the samples to OpenTelemetry metrics, and ingests them like your own OTLP traffic. Scraped metrics appear in the [metrics explorer](/docs/explore/metrics), dashboards, and alert rules, and each target keeps a history of its scrapes.
 
-Scraped metrics land in the metrics explorer and dashboards under the service name you choose, are billed and routed exactly like your own OTLP traffic, and carry an `up`-style check history so you can see scrape health per target.
+## Prerequisites
 
-## Adding a scrape target
+- An endpoint reachable from the public internet that serves `/metrics` in the Prometheus exposition format.
 
-Open **Integrations → Prometheus** in the Maple dashboard and click **Add Target**.
+## Add a scrape target
 
-| Field               | Notes                                                                                                                                                                                                            |
-| ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Source**          | `Prometheus endpoint` for a plain exposition URL, or a managed integration like [PlanetScale](/docs/integrations/planetscale).                                                                                   |
-| **Name**            | Display name; also the default service name.                                                                                                                                                                     |
-| **Service Name**    | Optional. Metrics appear under this service in the explorer and service views.                                                                                                                                   |
-| **URL**             | The full endpoint URL, e.g. `https://myapp.com:9090/metrics`. Must be reachable from Maple — loopback, private-range, and cloud-metadata addresses are rejected.                                                 |
-| **Scrape Interval** | 5–300 seconds (default 15).                                                                                                                                                                                      |
-| **Authentication**  | `None`, `Bearer Token` (`Authorization: Bearer …`), or `Basic Auth` (username + password). Credentials are encrypted at rest and never leave Maple's API — the scrape agent fetches through a server-side proxy. |
+Open **Integrations → Prometheus** in Maple and click **Add Target**. The **Add Scrape Target** dialog has these fields:
 
-Targets can also be managed programmatically via the REST API at `/v2/scrape_targets` (create, update, delete, probe, and check history endpoints) using the same fields.
+| Field                         | Notes                                                                                                                              |
+| ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| **Name**                      | Display name. Used as the service name when **Service Name** is empty.                                                             |
+| **Service Name**              | Optional. Sets `service.name` on the resource and the `job` attribute on every data point.                                         |
+| **URL**                       | Full endpoint URL, for example `https://myapp.com:9090/metrics`. Loopback, private-range, and cloud-metadata addresses are rejected. |
+| **Scrape Interval (seconds)** | 5 to 300. Default 15.                                                                                                              |
+| **Authentication**            | **None**, **Bearer Token** (sent as `Authorization: Bearer …`), or **Basic Auth** (**Username** and **Password**).                 |
 
-## Testing and health
+Credentials are encrypted at rest. The scraper receives the decrypted auth header from Maple's API for each run and sends it directly to your endpoint. Requests carry the user agent `maple-prometheus-scraper`.
 
-- **Test** runs an immediate probe against the endpoint and reports success or the exact failure (HTTP status, timeout, TLS error).
-- Every scheduled scrape is recorded: the target's detail panel shows an `up`/`down` check history with duration and sample counts, mirroring Prometheus's own scrape metadata.
-- A failed scrape never advances the "last successful scrape" timestamp, so data gaps stay visible next to the error message.
+Each request times out after the scrape interval minus one second, capped at 60 seconds.
+
+You can also manage targets through the [REST API](/docs/reference/api) under `/v2/scrape_targets`, with endpoints to create, update, delete, probe, and list checks. The API accepts one extra field, `labels_json`: a JSON object of labels added to every sample (for example `{"cluster": "prod"}`). The keys `job` and `instance`, and any key starting with `maple_` or `__`, are reserved and rejected.
 
 ## How the data looks
 
-- Counters, gauges, histograms, and summaries are converted to their OTLP equivalents; metric names are preserved as-is.
-- Each series carries `job` (the target name) and `instance` (the scraped host) plus any **labels** you configure on the target (a JSON object of extra attributes — useful for `cluster`, `env`, or team tags). The keys `job`, `instance`, and `maple_*`/`__*` prefixes are reserved.
-- Metrics are queryable in dashboards, alerts, and the metrics explorer like any OTLP metric.
+- Metric names are kept as they appear in the exposition.
+- Counters become cumulative monotonic sums. Gauges and untyped metrics become gauges. Histograms become OTLP histograms with the original bucket bounds.
+- Summaries become three series: `<name>_sum` as a cumulative sum, `<name>_count` as a cumulative monotonic sum, and the quantiles as a gauge named `<name>` with a `quantile` attribute. Summary samples that are not finite numbers (such as a `NaN` quantile with no observations yet) are dropped.
+- Every data point carries `job` (the service name) and `instance` (the host of the target URL), plus the target's labels and the sample's own labels.
 
-## Network reachability
+## Verify
 
-The scrape happens from Maple's infrastructure, so the endpoint must be reachable from the internet (or via the hosted/control-plane metrics endpoint many vendors provide). For exporters that only listen inside a private network, either expose them through an authenticated gateway or run an OpenTelemetry Collector inside the network with a `prometheus` receiver and an OTLP exporter pointed at Maple's ingest endpoint.
+1. On the target row, click **Test**. Maple runs an immediate scrape and reports success or the exact failure: HTTP status, timeout, TLS or connection error.
+2. Wait one scrape interval. The status badge changes from **No checks** to **Up**, and the row shows **Last scrape** with a relative time.
+3. Open the target to see its check history. Each run lists **Time**, **State**, **Duration**, and **Samples**.
+4. Search for one of your metric names in the [metrics explorer](/docs/explore/metrics).
 
-## Ready-made integrations
+## Troubleshooting
 
-- [WarpStream](/docs/integrations/warpstream) — scrape agent metrics directly or use WarpStream's hosted Prometheus endpoint.
-- [PlanetScale](/docs/integrations/planetscale) — a first-class source type: Maple discovers every database branch's metrics endpoint automatically via PlanetScale's service-discovery API.
+- **Status is Down.** Open the target. The error message and a **How to fix** hint explain the failure. A failed scrape never advances the last successful scrape time, so the data gap stays visible next to the error.
+- **The URL is rejected.** The endpoint resolves to a loopback, private, or metadata address. Expose it through an authenticated public endpoint, or use the collector option below.
+- **401 or 403.** Check the authentication type and credentials. Basic Auth sends the username and password exactly as entered.
+- **The endpoint is only reachable inside your network.** Run an OpenTelemetry Collector inside the network with a `prometheus` receiver and an OTLP exporter pointed at Maple's [ingest endpoint](/docs/reference/ingest).
+
+## Next steps
+
+- [WarpStream](/docs/integrations/warpstream): scrape WarpStream Agents or the hosted Prometheus endpoint.
+- [PlanetScale](/docs/integrations/planetscale): branch metrics discovered automatically.
+- [Alert rules](/docs/alerting/alert-rules): alert on a scraped metric.

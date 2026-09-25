@@ -2,7 +2,7 @@
 title: "Alert webhooks"
 description: "The webhook destination contract: request headers, the JSON payload for each event, verifying the HMAC signature, retries, and idempotency."
 group: "Reference"
-order: 5
+order: 8
 ---
 
 A webhook [notification destination](/docs/alerting/notification-destinations#webhook) sends every alert event to a URL you own. This page is the contract your endpoint can rely on.
@@ -127,7 +127,7 @@ The signature covers the body only, and the body carries no delivery timestamp y
 
 Alert events are attempted up to **5 times**, about 1, 2, 4 and 8 minutes apart, with every retry carrying the same body and `x-maple-delivery-key`. **Send test** is attempted once.
 
-After **3 consecutive non-retryable failures**, the destination is disabled and the reason is shown on it under **Alerts → Settings**. Fix the endpoint and re-enable it; a successful delivery resets the count.
+After **3 consecutive non-retryable failures**, the destination is disabled and the reason is shown on it under **Alerts → Destinations**. Fix the endpoint and re-enable it; a successful delivery resets the count.
 
 ## Endpoint checklist
 

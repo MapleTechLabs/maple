@@ -7,39 +7,51 @@ navLabel: "Node.js"
 sdk: "node"
 ---
 
-This guide covers instrumenting a Node.js application to send traces and logs to Maple using the OpenTelemetry SDK.
+This guide sets up the OpenTelemetry Node.js SDK so your application sends traces, logs and metrics to Maple, with automatic instrumentation for HTTP servers, frameworks and database clients.
 
-> **Run this with Claude Code:** `maple-onboard` walks every service in the repo, installs OpenTelemetry, and verifies the bootstrap end-to-end. See the [maple-onboard skill](https://github.com/MapleTechLabs/maple/tree/main/skills/maple-onboard). Already instrumented? `maple-audit` reviews the existing setup against Maple's conventions and fixes gaps — see the [maple-audit skill](https://github.com/MapleTechLabs/maple/tree/main/skills/maple-audit).
+To have a coding agent do this setup, use the [maple-onboard](https://github.com/MapleTechLabs/maple/tree/main/skills/maple-onboard) skill, and [maple-audit](https://github.com/MapleTechLabs/maple/tree/main/skills/maple-audit) to check an existing setup.
 
 ## Prerequisites
 
-- Node.js 18+
-- A Maple project with an API key (or use the `MAPLE_TEST` placeholder while pairing -- see below)
+- Node.js 18.19+ or 20.6+ (the versions that support `node --import`)
+- An ingest key from **Settings → Ingestion** in Maple. Use the private key (`maple_sk_…`) for server applications.
 
-## Install Dependencies
+## Install
 
 ```bash
-npm install @opentelemetry/sdk-node \
+npm install @opentelemetry/api \
+  @opentelemetry/sdk-node \
   @opentelemetry/auto-instrumentations-node \
-  @opentelemetry/exporter-trace-otlp-http \
-  @opentelemetry/exporter-logs-otlp-http
+  @opentelemetry/instrumentation \
+  @opentelemetry/resources \
+  @opentelemetry/sdk-logs \
+  @opentelemetry/sdk-metrics \
+  @opentelemetry/exporter-trace-otlp-proto \
+  @opentelemetry/exporter-logs-otlp-proto \
+  @opentelemetry/exporter-metrics-otlp-proto
 ```
 
-## Configure the SDK
+## Configure
 
-Create a `tracing.ts` file that initializes the SDK before your application code. **Inline the endpoint and ingest key** -- the key is project-scoped and write-only (Sentry-DSN-shaped), so source-level configuration removes a class of "OTel didn't start because env vars weren't set" deploy failures.
+Create `tracing.mjs` next to your entry point. It starts the SDK before any of your application code loads.
 
-```typescript
-// tracing.ts
+```javascript
+// tracing.mjs
+import { register } from "node:module"
 import { NodeSDK } from "@opentelemetry/sdk-node"
 import { getNodeAutoInstrumentations } from "@opentelemetry/auto-instrumentations-node"
-import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-http"
-import { OTLPLogExporter } from "@opentelemetry/exporter-logs-otlp-http"
-import { SimpleLogRecordProcessor } from "@opentelemetry/sdk-logs"
 import { resourceFromAttributes } from "@opentelemetry/resources"
+import { BatchLogRecordProcessor } from "@opentelemetry/sdk-logs"
+import { PeriodicExportingMetricReader } from "@opentelemetry/sdk-metrics"
+import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-proto"
+import { OTLPLogExporter } from "@opentelemetry/exporter-logs-otlp-proto"
+import { OTLPMetricExporter } from "@opentelemetry/exporter-metrics-otlp-proto"
 
-const MAPLE_ENDPOINT = "https://ingest.maple.dev"
-const MAPLE_KEY = "MAPLE_TEST" // replace with your real key from Settings → API Keys
+// Lets the instrumentations patch ES modules. CommonJS apps can drop this line.
+register("@opentelemetry/instrumentation/hook.mjs", import.meta.url)
+
+const MAPLE_ENDPOINT = "https://ingest.maple.dev" // EU: https://ingest.eu.maple.dev
+const MAPLE_KEY = "YOUR_INGEST_KEY"
 
 const headers = { authorization: `Bearer ${MAPLE_KEY}` }
 
@@ -48,50 +60,80 @@ const sdk = new NodeSDK({
 		"service.name": "my-node-app",
 		"deployment.environment.name": process.env.NODE_ENV || "development",
 		"vcs.repository.url.full": "https://github.com/acme/my-node-app",
-		"vcs.ref.head.revision":
-			process.env.RAILWAY_GIT_COMMIT_SHA ?? process.env.GITHUB_SHA ?? process.env.GIT_COMMIT,
+		"vcs.ref.head.revision": process.env.GITHUB_SHA ?? process.env.GIT_COMMIT,
 	}),
-	traceExporter: new OTLPTraceExporter({
-		url: `${MAPLE_ENDPOINT}/v1/traces`,
-		headers,
-	}),
+	traceExporter: new OTLPTraceExporter({ url: `${MAPLE_ENDPOINT}/v1/traces`, headers }),
 	logRecordProcessors: [
-		new SimpleLogRecordProcessor(new OTLPLogExporter({ url: `${MAPLE_ENDPOINT}/v1/logs`, headers })),
+		new BatchLogRecordProcessor(new OTLPLogExporter({ url: `${MAPLE_ENDPOINT}/v1/logs`, headers })),
+	],
+	metricReaders: [
+		new PeriodicExportingMetricReader({
+			exporter: new OTLPMetricExporter({ url: `${MAPLE_ENDPOINT}/v1/metrics`, headers }),
+		}),
 	],
 	instrumentations: [getNodeAutoInstrumentations()],
 })
 
 sdk.start()
+
+process.on("SIGTERM", () => {
+	sdk.shutdown().finally(() => process.exit(0))
+})
 ```
 
-> **`MAPLE_TEST` placeholder:** While you're pairing your editor with Maple, the literal string `MAPLE_TEST` is accepted by the ingest gateway and discarded -- so the bootstrap can run end-to-end before you've created your first key. Once you have a real key, search-replace `MAPLE_TEST` in the file above with it.
+The example puts the endpoint and key in source. An ingest key can only write telemetry to your organization. It cannot read data or call the Maple API. Keeping it in source means the SDK always starts with a complete configuration, so a deploy that is missing an environment variable cannot silently turn telemetry off. To keep the key out of source, use [environment variables](#environment-variables) instead.
 
-Run your application with the tracing file loaded first:
+Load the file before your application:
 
 ```bash
-node --import ./tracing.ts app.ts
+node --import ./tracing.mjs app.js
 ```
 
-> If you're using TypeScript directly, run with a loader like [tsx](https://github.com/privatenumber/tsx): `node --import tsx/esm --import ./tracing.ts app.ts`
+For a TypeScript entry point run through [tsx](https://tsx.is), load tsx first:
 
-## Auto-Instrumentation
+```bash
+node --import tsx --import ./tracing.mjs app.ts
+```
 
-`getNodeAutoInstrumentations()` automatically instruments common libraries including HTTP, Express, Fastify, pg, MySQL, Redis, and many more.
+## Environment variables
 
-To disable specific instrumentations:
+The SDK can take its whole configuration from the standard OpenTelemetry variables. With them set, you do not need `tracing.mjs`: the `register` entry point of the auto-instrumentations package starts the SDK and reads the variables.
 
-```typescript
+```bash
+export OTEL_SERVICE_NAME="my-node-app"
+export OTEL_EXPORTER_OTLP_ENDPOINT="https://ingest.maple.dev"
+export OTEL_EXPORTER_OTLP_PROTOCOL="http/protobuf"
+export OTEL_EXPORTER_OTLP_HEADERS="Authorization=Bearer YOUR_INGEST_KEY"
+export OTEL_TRACES_EXPORTER="otlp"
+export OTEL_METRICS_EXPORTER="otlp"
+export OTEL_LOGS_EXPORTER="otlp"
+export OTEL_RESOURCE_ATTRIBUTES="deployment.environment.name=production,vcs.repository.url.full=https://github.com/acme/my-node-app"
+
+node --require @opentelemetry/auto-instrumentations-node/register app.js
+```
+
+For an ES module app, also pass `--experimental-loader=@opentelemetry/instrumentation/hook.mjs` so the instrumentations can patch ES modules.
+
+`OTEL_EXPORTER_OTLP_ENDPOINT` takes the base URL. The exporters append `/v1/traces`, `/v1/logs` and `/v1/metrics` themselves.
+
+## Auto-instrumentation
+
+`getNodeAutoInstrumentations()` enables the OpenTelemetry instrumentations for common libraries, including `http`, Express, Fastify, `pg`, `mysql2`, `ioredis` and many more. Each incoming request becomes a server span, and each outgoing HTTP call or database query becomes a child span.
+
+To turn off instrumentations you do not want:
+
+```javascript
 instrumentations: [
-  getNodeAutoInstrumentations({
-    "@opentelemetry/instrumentation-fs": { enabled: false },
-    "@opentelemetry/instrumentation-dns": { enabled: false },
-  }),
+	getNodeAutoInstrumentations({
+		"@opentelemetry/instrumentation-fs": { enabled: false },
+		"@opentelemetry/instrumentation-dns": { enabled: false },
+	}),
 ],
 ```
 
-## Custom Spans
+## Custom spans
 
-Create custom spans to trace specific operations in your code:
+Wrap your own operations in spans:
 
 ```typescript
 import { trace, SpanStatusCode } from "@opentelemetry/api"
@@ -104,8 +146,7 @@ async function processOrder(orderId: string) {
 			span.setAttribute("order.id", orderId)
 			// Set peer.service when calling another service
 			span.setAttribute("peer.service", "payment-api")
-			const result = await chargePayment(orderId)
-			return result
+			return await chargePayment(orderId)
 		} catch (error) {
 			span.recordException(error as Error)
 			span.setStatus({ code: SpanStatusCode.ERROR, message: (error as Error).message })
@@ -119,28 +160,35 @@ async function processOrder(orderId: string) {
 
 Setting `peer.service` on outgoing calls makes them visible on Maple's [service map](/docs/concepts/otel-conventions#service-map).
 
-## Log Correlation
+## Log correlation
 
-The OpenTelemetry log SDK automatically includes trace context (`TraceId`, `SpanId`) with log records emitted during an active span. This enables correlated log views in Maple.
+Log records emitted through the OpenTelemetry log SDK during an active span carry its trace and span IDs, so Maple links each log line to its trace.
 
-For structured logging with pino, use `pino-opentelemetry-transport` to bridge pino logs to the OTel log SDK.
+The auto-instrumentations include `pino`, `winston` and `bunyan` instrumentations that add the active trace context to each log record. Pino and bunyan records are also sent through the log exporter configured above. Winston needs the `@opentelemetry/winston-transport` package for that.
 
-## Next.js
+## Other Node.js frameworks
 
-Using Next.js? See the dedicated [Next.js Instrumentation](/docs/guides/instrumentation-nextjs) guide -- it walks through `@vercel/otel` and the App Router / Pages Router specifics.
-
-## Effect
-
-If you're using Effect, see the dedicated [Effect SDK](/docs/sdks/effect) -- it's the official Maple library for Effect apps.
+- Next.js has its own guide: [Next.js Instrumentation](/docs/guides/instrumentation-nextjs).
+- For Effect applications, use the [Effect SDK](/docs/sdks/effect).
 
 ## Verify
 
-1. Start your application
-2. Generate some traffic (send a request, trigger an operation)
-3. Open the Maple dashboard and check that traces appear in the traces view
+1. Start your application and send it a few requests.
+2. In Maple, open **Explore → Traces**. The SDK sends spans in batches every 5 seconds by default, and metrics every 60 seconds.
+3. Each request should show up as one trace with a single root server span, named after the method and route (for example `GET /api/orders`), and child spans for the queries and outgoing calls it made.
 
-If traces aren't appearing, verify:
+Your service also appears on the **Services** page once its first spans arrive.
 
-- The ingest endpoint URL is correct
-- Your API key is valid
-- Your application can reach `ingest.maple.dev` (or your self-hosted URL)
+## Troubleshooting
+
+- **`401` responses.** The key is wrong, was copied from the other region, or the header is malformed. The header must be `Authorization: Bearer YOUR_INGEST_KEY`. In `OTEL_EXPORTER_OTLP_HEADERS` it is written `Authorization=Bearer YOUR_INGEST_KEY`. See [Ingest API status codes](/docs/reference/ingest#status-codes).
+- **Wrong protocol or path.** Maple accepts OTLP over HTTP. Use the `-proto` (or `-http`) exporters, not `-grpc`. Endpoints set in code need the full signal path (`/v1/traces`); `OTEL_EXPORTER_OTLP_ENDPOINT` takes only the base URL.
+- **Network.** From the machine running the app, run `curl -i https://ingest.maple.dev/v1/traces -X POST`. Any HTTP status code means the host can reach Maple. A timeout or DNS error means a firewall or proxy is blocking outbound HTTPS.
+- **Nothing exported.** `tracing.mjs` must load before the modules it instruments, so use `--import` rather than importing it from your app. A process that exits right away can lose its last batch; call `sdk.shutdown()` before exit, as the `SIGTERM` handler above does. Set `OTEL_LOG_LEVEL=debug` to print export errors to the console.
+
+## Next steps
+
+- [Explore traces](/docs/explore/traces)
+- [Track errors](/docs/errors/overview)
+- [Create alert rules](/docs/alerting/alert-rules)
+- [OpenTelemetry conventions](/docs/concepts/otel-conventions)

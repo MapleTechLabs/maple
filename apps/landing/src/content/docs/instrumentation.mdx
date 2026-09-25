@@ -1,6 +1,6 @@
 ---
 title: "Instrument your application"
-description: "Setup guides for every language, framework and runtime Maple supports — pick yours and ship traces, logs and metrics in minutes."
+description: "Setup guides for every language, framework and runtime Maple supports."
 group: "Instrumentation"
 order: 0
 navLabel: "Overview"
@@ -9,7 +9,7 @@ navLabel: "Overview"
 import GuideFilter from "../../components/docs/GuideFilter.astro"
 import GuideGrid from "../../components/docs/GuideGrid.astro"
 
-Maple ingests OpenTelemetry, so any OTLP exporter works unmodified. Each guide below walks through installing the SDK, pointing it at `https://ingest.maple.dev` with your ingest key, and verifying the first trace arrives. Prefer to skip the reading? Run `maple-onboard` in Claude Code and it instruments every service in the repo for you — see [Getting started](/docs/getting-started/introduction#getting-started).
+Maple ingests OpenTelemetry over OTLP/HTTP, so any OTLP exporter works without a Maple-specific plugin. Each guide below installs the SDK, points it at the ingest endpoint with an ingest key from **Settings → Ingestion**, and checks that the first trace arrives. The [maple-onboard](https://github.com/MapleTechLabs/maple/tree/main/skills/maple-onboard) skill can do the same setup from a coding agent.
 
 <GuideFilter />
 
@@ -63,10 +63,11 @@ Maple ingests OpenTelemetry, so any OTLP exporter works unmodified. Each guide b
 
 ## Anything that speaks OTLP
 
-If your language or framework is not listed, point its OpenTelemetry SDK (or an OpenTelemetry Collector) at the ingest endpoint with the standard environment variables. Ingest keys are project-scoped and write-only, so inlining them in your bootstrap source is fine too.
+If your language or framework is not listed, point its OpenTelemetry SDK (or an OpenTelemetry Collector) at the ingest endpoint with the standard environment variables. Ingest keys are scoped to one organization and can only write telemetry, so you can also inline the key in your bootstrap source.
 
 ```bash
 export OTEL_EXPORTER_OTLP_ENDPOINT="https://ingest.maple.dev"
+export OTEL_EXPORTER_OTLP_PROTOCOL="http/protobuf"
 export OTEL_EXPORTER_OTLP_HEADERS="Authorization=Bearer YOUR_INGEST_KEY"
 export OTEL_SERVICE_NAME="my-service"
 ```
@@ -82,6 +83,6 @@ Maple Cloud runs in two regions. An organization's region is chosen during onboa
 | United States | `https://app.maple.dev` | `https://ingest.maple.dev` |
 | European Union (Frankfurt) | `https://app.eu.maple.dev` | `https://ingest.eu.maple.dev` |
 
-Every guide on this site uses the US endpoint. For an EU organization, replace `ingest.maple.dev` with `ingest.eu.maple.dev` and nothing else changes. See [EU hosting](/eu) for what the EU region covers.
+Every guide on this site uses the US endpoint. For an EU organization, replace `ingest.maple.dev` with `ingest.eu.maple.dev` and nothing else changes. See [Regions](/docs/reference/regions) for details and [EU hosting](/eu) for what the EU region covers.
 
 Missing a guide for your stack? [Open an issue](https://github.com/MapleTechLabs/maple/issues) and tell us what you run.

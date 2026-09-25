@@ -79,11 +79,11 @@ const faqs = [
     },
     {
         question: "Does any of my telemetry leave my machine?",
-        answer: "No. Ingest, storage, and every query run on 127.0.0.1. By default the dashboard page is loaded from local.maple.dev so UI fixes ship without a new binary, but it only ever talks back to your local server; your data is never sent there. Run `maple start --offline` to serve the UI from the binary as well.",
+        answer: "No. Ingest, storage, and every query run on 127.0.0.1. By default the dashboard page is loaded from local.maple.dev so UI fixes ship without a new binary, but it only ever talks back to your local server; your data is never sent there. Run `maple start --offline` to serve the UI from the binary as well. The CLI does report its own usage and errors to Maple, including the text of queries you run through it. Set `MAPLE_TELEMETRY=off` to turn that off.",
     },
     {
         question: "Does it work without an internet connection?",
-        answer: "Yes. With `--offline` the binary serves everything, including the dashboard. The only other network call is a once-per-day check for a newer release. Homebrew installs skip it, and `MAPLE_NO_UPDATE_CHECK=1` disables it.",
+        answer: "Yes. With `--offline` the binary serves everything, including the dashboard. The CLI reports its own usage and errors unless you set `MAPLE_TELEMETRY=off`, and checks for a newer release once a day. Homebrew installs skip the check, and `MAPLE_NO_UPDATE_CHECK=1` disables it.",
     },
     {
         question: "What does it replace?",
@@ -130,7 +130,7 @@ const faqs = [
             <div class="mb-12 max-w-2xl">
                 <LocalEyebrow label="Standalone by design" />
                 <h2 class="font-display text-3xl font-medium leading-[1.06] tracking-[-0.02em] text-fg md:text-4xl">
-                    No account. No cloud. Nothing leaves your machine.
+                    No account. No cloud. Your telemetry stays on your machine.
                 </h2>
                 <p class="mt-5 text-base leading-relaxed text-fg-muted">
                     Maple Local is the complete product running on 127.0.0.1. There is no trial and no

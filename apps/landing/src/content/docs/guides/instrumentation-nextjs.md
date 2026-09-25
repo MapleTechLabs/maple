@@ -7,39 +7,46 @@ navLabel: "Next.js"
 sdk: "nextjs"
 ---
 
-This guide covers instrumenting a Next.js application -- App Router, Pages Router, route handlers, and middleware -- using `@vercel/otel` and shipping traces and logs to Maple.
+This guide sets up OpenTelemetry in a Next.js application with `@vercel/otel`, so the spans Next.js emits for requests, rendering, route handlers and middleware reach Maple, along with your logs and metrics. It works with the App Router and the Pages Router.
 
-> **Run this with Claude Code:** `maple-onboard` walks every service in the repo, installs OpenTelemetry, and verifies the bootstrap end-to-end. See the [maple-onboard skill](https://github.com/MapleTechLabs/maple/tree/main/skills/maple-onboard). Already instrumented? `maple-audit` reviews the existing setup against Maple's conventions and fixes gaps — see the [maple-audit skill](https://github.com/MapleTechLabs/maple/tree/main/skills/maple-audit).
+To have a coding agent do this setup, use the [maple-onboard](https://github.com/MapleTechLabs/maple/tree/main/skills/maple-onboard) skill, and [maple-audit](https://github.com/MapleTechLabs/maple/tree/main/skills/maple-audit) to check an existing setup.
 
 ## Prerequisites
 
-- Next.js 13.4+ (the instrumentation hook landed in `experimental.instrumentationHook`; it is enabled by default in 15.x)
-- Node.js 18+
-- A Maple project with an API key (or use the `MAPLE_TEST` placeholder while pairing -- see below)
+- Next.js 13.4 or later. On 13.4 and 14, the instrumentation hook needs a config flag (see below). From Next.js 15 it is on by default.
+- An ingest key from **Settings → Ingestion** in Maple. Use the private key (`maple_sk_…`): `instrumentation.ts` runs on the server.
 
-## Install Dependencies
+## Install
 
 ```bash
 npm install @vercel/otel \
   @opentelemetry/api \
+  @opentelemetry/api-logs \
+  @opentelemetry/instrumentation \
+  @opentelemetry/resources \
+  @opentelemetry/sdk-trace-base \
   @opentelemetry/sdk-logs \
-  @opentelemetry/exporter-logs-otlp-http
+  @opentelemetry/sdk-metrics \
+  @opentelemetry/exporter-logs-otlp-http \
+  @opentelemetry/exporter-metrics-otlp-http
 ```
 
-`@vercel/otel` bundles the trace exporter, span processor, and runtime detection. The standalone `@opentelemetry/sdk-logs` and `@opentelemetry/exporter-logs-otlp-http` packages are only needed if you want OpenTelemetry log records alongside traces.
+`@vercel/otel` declares the other `@opentelemetry/*` packages as peer dependencies, so they are installed alongside it. It includes its own OTLP trace exporter. The log and metric exporters come from the standard OpenTelemetry packages.
 
-## Configure the SDK
+## Configure
 
-Create an `instrumentation.ts` file at the **project root** (not inside `app/` or `src/`). Next.js calls `register()` exactly once on cold start of every runtime. **Inline the endpoint and ingest key** -- the key is project-scoped and write-only (Sentry-DSN-shaped), so source-level configuration sidesteps Vercel's env-propagation quirks during preview builds.
+Create `instrumentation.ts` in the project root, next to `next.config.ts`. If your project keeps its code in `src/`, put the file at `src/instrumentation.ts` instead. Next.js calls `register()` once when each server runtime starts.
 
 ```typescript
 // instrumentation.ts
-import { registerOTel } from "@vercel/otel"
+import { registerOTel, OTLPHttpProtoTraceExporter } from "@vercel/otel"
+import { BatchLogRecordProcessor } from "@opentelemetry/sdk-logs"
+import { PeriodicExportingMetricReader } from "@opentelemetry/sdk-metrics"
 import { OTLPLogExporter } from "@opentelemetry/exporter-logs-otlp-http"
-import { SimpleLogRecordProcessor } from "@opentelemetry/sdk-logs"
+import { OTLPMetricExporter } from "@opentelemetry/exporter-metrics-otlp-http"
 
-const MAPLE_ENDPOINT = "https://ingest.maple.dev"
-const MAPLE_KEY = "MAPLE_TEST" // replace with your real key from Settings → API Keys
+const MAPLE_ENDPOINT = "https://ingest.maple.dev" // EU: https://ingest.eu.maple.dev
+const MAPLE_KEY = "YOUR_INGEST_KEY"
 
 const headers = { authorization: `Bearer ${MAPLE_KEY}` }
 
@@ -51,22 +58,29 @@ export function register() {
 			"vcs.repository.url.full": "https://github.com/acme/my-next-app",
 			"vcs.ref.head.revision": process.env.VERCEL_GIT_COMMIT_SHA,
 		},
-		traceExporter: {
+		traceExporter: new OTLPHttpProtoTraceExporter({
 			url: `${MAPLE_ENDPOINT}/v1/traces`,
 			headers,
-		},
-		logRecordProcessor: new SimpleLogRecordProcessor(
-			new OTLPLogExporter({ url: `${MAPLE_ENDPOINT}/v1/logs`, headers }),
-		),
+		}),
+		logRecordProcessors: [
+			new BatchLogRecordProcessor(new OTLPLogExporter({ url: `${MAPLE_ENDPOINT}/v1/logs`, headers })),
+		],
+		metricReaders: [
+			new PeriodicExportingMetricReader({
+				exporter: new OTLPMetricExporter({ url: `${MAPLE_ENDPOINT}/v1/metrics`, headers }),
+			}),
+		],
 	})
 }
 ```
 
-> **`MAPLE_TEST` placeholder:** While you're pairing your editor with Maple, the literal string `MAPLE_TEST` is accepted by the ingest gateway and discarded -- so the bootstrap can run end-to-end before you've created your first key. Once you have a real key, search-replace `MAPLE_TEST` in the file above with it.
+`traceExporter` takes an exporter instance. `OTLPHttpProtoTraceExporter` is exported by `@vercel/otel` and sends OTLP over HTTP with protobuf encoding. It also runs in the Edge runtime.
 
-## Enable the Instrumentation Hook
+The example puts the endpoint and key in source. An ingest key can only write telemetry to your organization. It cannot read data or call the Maple API. Keeping it in source means the SDK always starts with a complete configuration, so a deploy that is missing an environment variable cannot silently turn telemetry off. To keep the key out of source, use [environment variables](#environment-variables) instead.
 
-On Next.js 13.4–14, opt in via `next.config.ts`. Skip this on 15+ (it's the default).
+### Next.js 13.4 and 14
+
+Enable the instrumentation hook in `next.config.ts`. Skip this on Next.js 15 and later.
 
 ```typescript
 // next.config.ts
@@ -75,19 +89,33 @@ export default {
 }
 ```
 
-## Auto-Instrumented Signals
+## Environment variables
 
-`@vercel/otel` automatically captures spans for:
+When you leave out `traceExporter`, `@vercel/otel` configures an OTLP trace exporter from the standard environment variables. Set them in your hosting provider's project settings:
 
-- **Pages and route handlers** -- every request to an App Router page, Pages Router page, or route handler gets an HTTP server span with method, status code, route, and duration
-- **Server Components** -- rendering and data fetching in RSCs are wrapped in spans
-- **Middleware** -- `middleware.ts` execution including redirects and rewrites
-- **Outgoing fetch calls** -- `fetch()` from server code is instrumented and propagates trace context to downstream services
-- **Database clients** -- Prisma, Drizzle, and other instrumented clients pick up the active span automatically
+```bash
+OTEL_SERVICE_NAME="my-next-app"
+OTEL_EXPORTER_OTLP_ENDPOINT="https://ingest.maple.dev"
+OTEL_EXPORTER_OTLP_PROTOCOL="http/protobuf"
+OTEL_EXPORTER_OTLP_HEADERS="Authorization=Bearer YOUR_INGEST_KEY"
+OTEL_RESOURCE_ATTRIBUTES="deployment.environment.name=production,vcs.repository.url.full=https://github.com/acme/my-next-app"
+```
 
-## Custom Spans
+`instrumentation.ts` then only needs `registerOTel({ serviceName: "my-next-app" })`. The log and metric exporters from the Configure step read `OTEL_EXPORTER_OTLP_ENDPOINT` and `OTEL_EXPORTER_OTLP_HEADERS` too, so you can construct them without a `url` or `headers`.
 
-Wrap business logic in custom spans to make it visible in the trace tree:
+## Auto-instrumentation
+
+Next.js emits spans for its own work, and `@vercel/otel` exports them:
+
+- **Requests:** a root server span for every request to a page or route handler, named after the method and route.
+- **Rendering:** spans for App Router rendering, Pages Router `getServerSideProps`, and route handler execution.
+- **`fetch`:** outgoing `fetch()` calls from server code get client spans, and the trace context is propagated to the service you call.
+
+Set `NEXT_OTEL_VERBOSE=1` to get more spans from Next.js internals. Next.js does not produce metrics of its own, so the metric reader exports the metrics you record with the `@opentelemetry/api` meter.
+
+## Custom spans
+
+Wrap business logic in custom spans to make it visible in the trace:
 
 ```typescript
 import { trace, SpanStatusCode } from "@opentelemetry/api"
@@ -99,8 +127,7 @@ export async function processOrder(orderId: string) {
 		try {
 			span.setAttribute("order.id", orderId)
 			span.setAttribute("peer.service", "payment-api")
-			const result = await chargePayment(orderId)
-			return result
+			return await chargePayment(orderId)
 		} catch (error) {
 			span.recordException(error as Error)
 			span.setStatus({ code: SpanStatusCode.ERROR, message: (error as Error).message })
@@ -114,24 +141,32 @@ export async function processOrder(orderId: string) {
 
 Setting `peer.service` on outgoing calls makes them visible on Maple's [service map](/docs/concepts/otel-conventions#service-map).
 
-## Log Correlation
+## Log correlation
 
-Logs emitted during an active server span automatically include `TraceId` and `SpanId`, so a click in Maple's logs view jumps straight to the producing trace. If you're using a structured logger (pino, winston) on the server, configure it to emit OTel log records via the same `OTLPLogExporter` you wired into `registerOTel`.
+Log records emitted through the OpenTelemetry log SDK during an active server span carry its trace and span IDs, so Maple links each log line to its trace. To send logs from pino or winston, bridge the logger to the OpenTelemetry log SDK that `registerOTel` configured above.
 
-## Edge Runtime
+## Edge runtime
 
-The Edge runtime supports `@vercel/otel` with the same `instrumentation.ts` file. Span and log records are flushed at the end of each request because Edge isolates terminate quickly -- there's no long-lived batch processor.
+`instrumentation.ts` runs in the Edge runtime as well as in Node.js. The trace exporter works in both. The metric reader exports on a 60-second timer, so metrics are only reliable from the Node.js runtime.
 
 ## Verify
 
-1. Deploy or `next dev` your application
-2. Hit a page or API route to generate traffic
-3. Open the Maple dashboard and check that traces appear in the traces view -- you should see one root HTTP span per request, with nested fetch and database spans
+1. Run `next dev` or deploy, then open a page or call a route handler a few times.
+2. In Maple, open **Explore → Traces**. Spans are sent in batches every 5 seconds by default.
+3. Each request should show up as one trace with a single root server span named after the method and route (for example `GET /dashboard`), with rendering and `fetch` spans nested under it.
 
-If traces aren't appearing, verify:
+Your service also appears on the **Services** page once its first spans arrive.
 
-- The ingest endpoint URL is correct
-- Your API key is valid
-- `instrumentation.ts` is at the project root, not in `app/` or `src/`
-- On 13.4–14: `experimental.instrumentationHook` is enabled in `next.config.ts`
-- Your application can reach `ingest.maple.dev` (or your self-hosted URL)
+## Troubleshooting
+
+- **`401` responses.** The key is wrong, was copied from the other region, or the header is malformed. The header must be `Authorization: Bearer YOUR_INGEST_KEY`. In `OTEL_EXPORTER_OTLP_HEADERS` it is written `Authorization=Bearer YOUR_INGEST_KEY`. See [Ingest API status codes](/docs/reference/ingest#status-codes).
+- **Wrong protocol or path.** Maple accepts OTLP over HTTP. Endpoints set in code need the full signal path (`/v1/traces`); `OTEL_EXPORTER_OTLP_ENDPOINT` takes only the base URL.
+- **Network.** From the machine running the app, run `curl -i https://ingest.maple.dev/v1/traces -X POST`. Any HTTP status code means the host can reach Maple. A timeout or DNS error means a firewall or proxy is blocking outbound HTTPS.
+- **Nothing exported.** Check that `instrumentation.ts` is in the project root, or in `src/` for a `src` layout, and not inside `app/` or `pages/`. On Next.js 13.4 and 14, check that `experimental.instrumentationHook` is set.
+
+## Next steps
+
+- [Explore traces](/docs/explore/traces)
+- [Track errors](/docs/errors/overview)
+- [Create alert rules](/docs/alerting/alert-rules)
+- [OpenTelemetry conventions](/docs/concepts/otel-conventions)
