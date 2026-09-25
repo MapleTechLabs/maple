@@ -1,4 +1,5 @@
 import type { TracesSearchParams } from "@/routes/traces/index"
+import { attributeFilterOperator } from "@/lib/traces/advanced-filter-sync"
 
 /**
  * One facet, in both polarities, as the sidebar spells it. `label` has to match the section title
@@ -36,24 +37,40 @@ export interface TraceFilterChipDescriptor {
 
 function attributeChips(search: ChipSearch, param: AttributeParam): TraceFilterChipDescriptor[] {
 	const prefix = param === "resourceAttributeFilters" ? "resource." : ""
-	return (search[param] ?? []).map((entry) => ({
-		id: `${param}:${entry.key}:${entry.value}:${entry.negated ? "not" : "is"}`,
-		label: `${prefix}${entry.key}${entry.matchMode === "contains" ? " contains" : ""}`,
-		values: [entry.value],
-		negated: entry.negated === true,
-		remove: (s) => {
-			const rest = (s[param] ?? []).filter(
-				(other) =>
-					!(
-						other.key === entry.key &&
-						other.value === entry.value &&
-						other.negated === entry.negated &&
-						other.matchMode === entry.matchMode
-					),
-			)
-			return { ...s, [param]: rest.length > 0 ? rest : undefined }
-		},
-	}))
+	return (search[param] ?? []).map((entry) => {
+		const text = attributeChipText(prefix, entry)
+		return {
+			id: `${param}:${entry.key}:${entry.value}:${entry.negated ? "not" : "is"}${entry.matchMode ? `:${entry.matchMode}` : ""}`,
+			label: text.label,
+			values: [text.value],
+			negated: entry.negated === true,
+			remove: (s) => {
+				const rest = (s[param] ?? []).filter(
+					(other) =>
+						!(
+							other.key === entry.key &&
+							other.value === entry.value &&
+							other.negated === entry.negated &&
+							other.matchMode === entry.matchMode
+						),
+				)
+				return { ...s, [param]: rest.length > 0 ? rest : undefined }
+			},
+		}
+	})
+}
+
+type AttributeEntry = NonNullable<ChipSearch["attributeFilters"]>[number]
+
+// The chip reads "<label> is|is not <value>", so the operator goes wherever that sentence stays readable.
+function attributeChipText(prefix: string, entry: AttributeEntry): { label: string; value: string } {
+	const label = `${prefix}${entry.key}`
+	if (entry.matchMode === "contains") return { label: `${label} contains`, value: entry.value }
+	if (entry.matchMode === "exists") return { label, value: "set" }
+	if (entry.matchMode) {
+		return { label, value: `${attributeFilterOperator({ matchMode: entry.matchMode })} ${entry.value}` }
+	}
+	return { label, value: entry.value }
 }
 
 /**

@@ -31,7 +31,7 @@ const SortDirParam = Schema.optional(Schema.Literals(["asc", "desc"]))
 const AttributeFilterParam = Schema.Struct({
 	key: Schema.String,
 	value: Schema.String,
-	matchMode: Schema.optional(Schema.Literals(["contains"])),
+	matchMode: Schema.optional(Schema.Literals(["contains", "exists", "gt", "gte", "lt", "lte"])),
 	negated: Schema.optional(Schema.Union([Schema.Boolean, BooleanFromStringParam])),
 })
 
