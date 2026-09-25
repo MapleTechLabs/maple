@@ -61,7 +61,7 @@
 	"hero_subtitle": "Query your traces, logs, metrics, and session replay in under a second. $39/month includes 100 GB of each signal. No per-host or per-seat fees.",
 
 	"customers_eyebrow": "Trusted by teams at",
-	"customers_story_link": "Read how {name} runs on Maple",
+	"customers_story_cta": "Read the story",
 	"ingest_stats_label": "traces ingested / month",
 	"stat_github": "on GitHub",
 	"sov_eyebrow": "05 · Sovereignty",

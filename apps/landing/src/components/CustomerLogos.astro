@@ -36,6 +36,8 @@ const base = entries.map((e) => ({ id: e.id, name: e.data.name, href: e.data.hre
 const stories = await getSortedStories();
 const story = stories.find((s) => s.data.featured) ?? stories[0];
 const storyCustomer = story ? await getStoryCustomer(story) : undefined;
+const StoryLogo = storyCustomer ? LOGOS[storyCustomer.id] : undefined;
+const storyStat = story?.data.highlights[0];
 
 // The customer set is small, so repeat it until one "copy" is wide enough to
 // fill a large viewport, then duplicate that copy so the -50% translate loops
@@ -80,12 +82,22 @@ const belt = [...oneCopy, ...oneCopy];
 		{story && storyCustomer && (
 			<a
 				href={`/customers/${story.id}`}
+				class="monument-story"
+				aria-label={`${storyCustomer.data.name}: ${storyStat ? `${storyStat.value} ${storyStat.label}. ` : ""}${m.customers_story_cta()}`}
 				data-track="cta_click"
 				data-track-location="hero_customer_story"
-				class="group inline-flex w-fit items-center gap-1.5 text-[13px] text-fg transition-colors hover:text-primary"
+				data-track-destination={`/customers/${story.id}`}
 			>
-				{m.customers_story_link({ name: storyCustomer.data.name })}
-				<span class="transition-transform group-hover:translate-x-0.5 motion-reduce:transition-none" aria-hidden="true">→</span>
+				{StoryLogo && <StoryLogo class="monument-story__mark" />}
+				{storyStat && (
+					<span class="monument-story__stat">
+						<strong>{storyStat.value}</strong> {storyStat.label}
+					</span>
+				)}
+				<span class="monument-story__cta">
+					{m.customers_story_cta()}
+					<span class="monument-story__arrow" aria-hidden="true">→</span>
+				</span>
 			</a>
 		)}
 		</div>

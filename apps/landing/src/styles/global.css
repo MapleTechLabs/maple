@@ -1483,7 +1483,7 @@
    Same specificity as the docs rules — SOURCE ORDER decides, so this
    block must stay below the .docs-content block.
 
-   The page centers one 38rem reading column (about 65 characters a line
+   The page centers one 42rem reading column (about 72 characters a line
    at 18px), so the measure lives on the column, not on per-element
    max-widths. Running prose switches to
    proportional Geist — the reserved long-form voice — while headings'
@@ -1570,7 +1570,7 @@
    blocks break out; anything nested inside a demo stays put. */
 @media (min-width: 80rem) {
 	.blog-content > :is(figure, pre) {
-		margin-inline: -5rem;
+		margin-inline: -4rem;
 	}
 }
 
