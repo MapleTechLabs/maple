@@ -130,7 +130,7 @@ Cost and the assistant's reply text are only on Claude Code's log events (`api_r
 
 For the frameworks that give you one session per trace, stamp `gen_ai.conversation.id` on every span of the conversation (a span processor is the usual place) and Maple groups them into one session.
 
-Two dialects that are not frameworks are recognized as well: any **OpenInference** emitter (`openinference.span.kind`, `llm.*`, `input.value`) and any **OpenLLMetry / Traceloop** emitter (`traceloop.*`, `llm.*`). Their spans land as sessions without a framework name attached.
+Two dialects that are not frameworks are recognized as well: any **OpenInference** emitter (`openinference.span.kind`, `llm.*`, `input.value`) and any **OpenLLMetry / Traceloop** emitter (`traceloop.*`, `llm.*`). Their spans land as sessions without a framework name attached: one per trace, or one per conversation when the spans carry `gen_ai.conversation.id`.
 
 **Don't see yours?** Send us the framework and a sample trace at [support@maple.dev](mailto:support@maple.dev) or on [Discord](https://discord.gg/BnXjKuwJqP). Adding a framework is a detection rule and a dialect map on our side, not a new SDK, so it is usually quick. In the meantime, anything that emits `gen_ai.operation.name` already works through the generic path above.
 
@@ -190,7 +190,7 @@ A tool span needs `gen_ai.operation.name` of `execute_tool`, `gen_ai.tool.name`,
 
 ## When it does not look right
 
-- **Every turn is its own session.** No span carried a session id Maple recognizes. Add `gen_ai.conversation.id` to every span of the conversation, or check the framework table for the key your framework is expected to emit.
+- **Every turn is its own session.** No span carried a session id Maple recognizes. If the framework table lists a session key for your framework, check that its spans carry it; otherwise add `gen_ai.conversation.id` to every span of the conversation.
 - **The transcript is empty.** Message content is not on the spans. Most official instrumentations leave it off by default, and some only ever write it to log events, which Maple does not read. If content is on the spans and still missing, check that the attribute holds a JSON array of `{role, parts}` objects rather than a plain string.
 - **The framework shows as "Unidentified".** The spans carry `gen_ai.*` attributes but no fingerprint of a known framework. Sessions, transcripts and tool pages all work; only the framework facet is missing. Tell us which framework it is and we will add the rule.
 - **Token totals look too high or too low.** Providers disagree on whether cached and reasoning tokens are included in the input and output counts. Maple resolves that per `gen_ai.provider.name`, so if the provider name is missing or unexpected, set it and the totals correct themselves.
