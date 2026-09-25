@@ -1,5 +1,5 @@
 ---
-title: "C# / .NET Instrumentation"
+title: "C# / .NET instrumentation"
 description: "Instrument a .NET application with OpenTelemetry and send traces, logs, and metrics to Maple."
 group: "Instrumentation"
 order: 12
@@ -147,8 +147,7 @@ public class OrderService
     {
         using var activity = ActivitySource.StartActivity("process-order");
         activity?.SetTag("order.id", orderId);
-        // Set peer.service when calling another service
-        activity?.SetTag("peer.service", "payment-api");
+        activity?.SetTag("payment.method", "card");
 
         try
         {
@@ -173,7 +172,7 @@ Register the source name so its activities are exported:
 )
 ```
 
-Setting `peer.service` on outgoing calls makes them visible on Maple's [service map](/docs/concepts/otel-conventions#service-map).
+Service map edges come from instrumented client spans that propagate `traceparent` to an instrumented callee, not from attributes such as `peer.service`. See [Service map](/docs/explore/service-map).
 
 ## Log correlation
 

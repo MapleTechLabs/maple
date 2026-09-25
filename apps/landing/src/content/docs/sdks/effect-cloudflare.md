@@ -15,13 +15,13 @@ The `/cloudflare` entry point of `@maple-dev/effect-sdk` is built for Cloudflare
 
 > Already installed the SDK? If not, see the [install instructions](/docs/sdks/effect#install).
 
-## Why Workers Are Different
+## Why Workers are different
 
 - **No background fiber.** Spans, logs and metrics accumulate in memory inside the isolate and are only sent when you call `flush()`.
 - **Configuration on first flush.** You can call `make()` at module scope without `env`. The SDK reads the endpoint, ingest key and resource attributes from `env` on the first `flush(env)` call.
 - **Manual lifecycle.** `ctx.waitUntil(telemetry.flush(env))` keeps the isolate alive long enough to send the batch after the response is returned.
 
-## Quick Start
+## Quick start
 
 ```typescript
 import * as MapleCloudflareSDK from "@maple-dev/effect-sdk/cloudflare"
@@ -31,7 +31,7 @@ import { Routes } from "./routes"
 
 const telemetry = MapleCloudflareSDK.make({ serviceName: "my-worker" })
 
-const handler = HttpRouter.toWebHandler(Routes.pipe(Layer.provideMerge(telemetry.layer)))
+const { handler } = HttpRouter.toWebHandler(Routes.pipe(Layer.provideMerge(telemetry.layer)))
 
 export default {
 	async fetch(req: Request, env: Env, ctx: ExecutionContext) {

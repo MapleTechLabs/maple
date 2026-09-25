@@ -1,8 +1,8 @@
 ---
-title: "Prometheus Scraping"
+title: "Prometheus scraping"
 description: "Point Maple at any Prometheus exposition endpoint. Maple scrapes it on a schedule, converts the samples to OpenTelemetry metrics, and records the health of every scrape."
 group: "Integrations"
-order: 0
+order: 1
 ---
 
 Maple can scrape any endpoint that serves the Prometheus or OpenMetrics text format. You add the endpoint as a scrape target. Maple polls it at the interval you choose, converts the samples to OpenTelemetry metrics, and ingests them like your own OTLP traffic. Scraped metrics appear in the [metrics explorer](/docs/explore/metrics), dashboards, and alert rules, and each target keeps a history of its scrapes.

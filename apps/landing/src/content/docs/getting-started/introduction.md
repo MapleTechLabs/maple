@@ -13,16 +13,18 @@ Maple is an observability platform built on OpenTelemetry. Your applications sen
 - [Logs](/docs/explore/logs): search logs and jump from a log line to the trace that produced it.
 - [Metrics](/docs/explore/metrics): browse and chart the metrics your services export.
 - [Services](/docs/explore/services): throughput, error rate and latency per service.
-- [Service Map](/docs/explore/service-map): the calls between your services, built from trace data.
+- [Service map](/docs/explore/service-map): the calls between your services, built from trace data.
 - [Errors](/docs/errors/overview): exceptions grouped into issues that you can assign and track to done.
 - [Alerts](/docs/alerting/alert-rules): rules on any signal, with notifications to your destinations.
 - [Dashboards](/docs/dashboards/build-dashboards): charts and tables built from queries.
 - [Replays](/docs/session-replay/replays): recordings of browser sessions, linked to their traces.
-- [Web Analytics](/docs/product-events/web-analytics): page views and visitors from the browser SDK.
+- [Web analytics](/docs/product-events/web-analytics): page views and visitors from the browser SDK.
 - [Agent Sessions](/docs/agent-sessions/overview): AI agent conversations, with every model call and tool call.
 - Infrastructure: [Hosts](/docs/infrastructure/hosts), [Kubernetes](/docs/infrastructure/kubernetes), [Containers](/docs/infrastructure/docker), [Cloudflare](/docs/integrations/cloudflare) and [PlanetScale](/docs/integrations/planetscale).
 
 ## Getting started
+
+For a copy-paste walkthrough, including a curl command that sends a test span without an SDK, follow the [Quickstart](/docs/getting-started/quickstart). The short version:
 
 1. Sign up at [app.maple.dev](https://app.maple.dev). During onboarding you pick the region your organization lives in (US or EU).
 2. Open **Settings → Ingestion** and copy an ingest key. Use the private key (`maple_sk_…`) for server applications and the public key (`maple_pk_…`) for browser code.
@@ -62,3 +64,9 @@ If you use a coding agent, the [maple-onboard](https://github.com/MapleTechLabs/
 - [Laravel](/docs/guides/instrumentation-laravel): Eloquent, queues, HTTP client
 
 The attributes Maple reads for the service map, error grouping and throughput are listed in [OpenTelemetry conventions](/docs/concepts/otel-conventions).
+
+## Next steps
+
+- [Quickstart](/docs/getting-started/quickstart): your first trace in about five minutes.
+- [Instrument your application](/docs/instrumentation): every language and framework guide.
+- [OpenTelemetry conventions](/docs/concepts/otel-conventions): the attributes Maple reads.

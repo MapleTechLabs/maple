@@ -44,7 +44,7 @@ What the EU region covers is described on [EU hosting](/eu).
 | [`maple` CLI](/docs/reference/cli#using-the-cli-with-hosted-maple) | `maple auth login` | `maple auth login --api-url https://api.eu.maple.dev` |
 | [MCP clients](/docs/reference/mcp) | `https://api.maple.dev/mcp` | `https://api.eu.maple.dev/mcp` |
 
-In the Maple SDKs an explicit endpoint always wins over `region`. For `@maple-dev/effect-sdk` on a server that means `MAPLE_ENDPOINT`, then `OTEL_EXPORTER_OTLP_ENDPOINT`, then `MAPLE_REGION`. An unrecognised region value logs a warning and falls back to US.
+In the Maple SDKs an explicit endpoint always wins over `region`. For `@maple-dev/effect-sdk` on a server that means `MAPLE_ENDPOINT`, then `OTEL_EXPORTER_OTLP_ENDPOINT`, then `MAPLE_REGION`. An unrecognized region value logs a warning and falls back to US.
 
 ## Related
 

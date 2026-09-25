@@ -2,7 +2,7 @@
 title: "GitHub"
 description: "Install the Maple GitHub App to sync repositories and commit history, resolve commit SHAs in your telemetry, and give the MCP server read access to your source code."
 group: "Integrations"
-order: 3
+order: 4
 ---
 
 The Maple GitHub App syncs your repositories and their commit history into Maple. You install the app, choose which repositories to share, and pick one branch to track per repository. Maple backfills the last 90 days of commits on that branch and keeps it current through GitHub webhooks.

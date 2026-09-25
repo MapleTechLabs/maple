@@ -1,13 +1,13 @@
 ---
-title: "Kubernetes Infrastructure"
+title: "Kubernetes infrastructure"
 description: "Deploy Maple's Kubernetes infrastructure collector with Helm to stream host, kubelet and cluster metrics, and wire the service map's Infrastructure tab to your workloads."
 group: "Infrastructure"
-order: 1
+order: 2
 ---
 
 The `maple-k8s-infra` Helm chart collects host, kubelet and cluster metrics from your Kubernetes cluster over OpenTelemetry and sends them to Maple. Once it runs, the **Infrastructure** pages list your nodes, pods and workloads, and each service on the service map gains a pod-count badge and an Infrastructure tab.
 
-Running plain Docker hosts instead of, or alongside, Kubernetes? See [Docker Infrastructure](/docs/infrastructure/docker). A single-container agent covers per-container metrics and logs. For hosts outside Kubernetes, see [Hosts](/docs/infrastructure/hosts).
+Running plain Docker hosts instead of, or alongside, Kubernetes? See [Docker infrastructure](/docs/infrastructure/docker). A single-container agent covers per-container metrics and logs. For hosts outside Kubernetes, see [Hosts](/docs/infrastructure/hosts).
 
 The chart uses a split-collector architecture:
 
@@ -67,7 +67,17 @@ kubectl -n maple rollout status deployment/maple-k8s-infra-cluster
 
 ### EU organizations
 
-The chart defaults to the US ingest endpoint (`https://ingest.maple.dev`). EU organizations add:
+The chart and the install script default to the US ingest endpoint (`https://ingest.maple.dev`). With the install script, set `MAPLE_INGEST_ENDPOINT`:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/MapleTechLabs/maple/main/deploy/k8s-infra/install.sh | \
+  MAPLE_INGEST_KEY=YOUR_INGEST_KEY \
+  MAPLE_CLUSTER_NAME=production \
+  MAPLE_INGEST_ENDPOINT=https://ingest.eu.maple.dev \
+  bash
+```
+
+With Helm, add:
 
 ```bash
   --set-string maple.ingest.endpoint=https://ingest.eu.maple.dev

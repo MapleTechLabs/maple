@@ -84,7 +84,7 @@ The body is identical for every destination's webhook, regardless of the rule's 
 
 ### Error issue notifications
 
-A destination listed in your organisation's error notification policy (set with the `update_error_notification_policy` MCP tool or the API) also receives error issue events: a new issue, a regression, a resolve, and optionally workflow changes and claims. They carry the same headers and a smaller body: `eventType`, `incidentId`, `incidentStatus`, `dedupeKey`, `rule`, `observed`, `linkUrl`, `chatUrl` and `sentAt`, without `event`, `template` or `chart`. Here `rule.id` is the issue ID, `rule.name` reads `<ExceptionType> in <service>`, and `observed.value` is the occurrence count. `dedupeKey` starts with `error:`.
+A destination listed in your organization's error notification policy (set with the `update_error_notification_policy` MCP tool or the API) also receives error issue events: a new issue, a regression, a resolve, and optionally workflow changes and claims. They carry the same headers and a smaller body: `eventType`, `incidentId`, `incidentStatus`, `dedupeKey`, `rule`, `observed`, `linkUrl`, `chatUrl` and `sentAt`, without `event`, `template` or `chart`. Here `rule.id` is the issue ID, `rule.name` reads `<ExceptionType> in <service>`, and `observed.value` is the occurrence count. `dedupeKey` starts with `error:`.
 
 Issues escalated by triage arrive with `eventType: "escalation"` in the body and an extra `escalation` object describing the issue. The `x-maple-event-type` header on these reads `trigger`, so branch on the body's `eventType`.
 

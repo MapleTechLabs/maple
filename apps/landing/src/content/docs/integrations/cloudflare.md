@@ -2,7 +2,7 @@
 title: "Cloudflare"
 description: "Connect a Cloudflare account with OAuth. Maple polls zone traffic, Workers, security, DNS, Queues, and Durable Objects analytics every 5 minutes and shows them under Infrastructure and on the service map."
 group: "Integrations"
-order: 5
+order: 6
 ---
 
 The Cloudflare integration connects one or more Cloudflare accounts to Maple through OAuth. Maple polls Cloudflare's GraphQL Analytics API every 5 minutes and stores the results as OpenTelemetry metrics. You get zone traffic, cache, and latency; Workers invocations, errors, and CPU time; firewall and DNS activity; and Queues and Durable Objects stats. The data appears under **Infrastructure → Cloudflare**, on the service map, and in the [metrics explorer](/docs/explore/metrics). You do not need to set up Logpush or run an agent.

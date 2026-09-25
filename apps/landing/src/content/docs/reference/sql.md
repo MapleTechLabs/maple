@@ -18,13 +18,13 @@ GROUP BY bucket
 ORDER BY bucket
 ```
 
-Every query **must** contain `$__orgFilter`. It expands to your organisation's filter, and a query without it is rejected before it runs. Access is also enforced by the credentials the query runs with, so the macro is a correctness check rather than your only protection.
+Every query **must** contain `$__orgFilter`. It expands to your organization's filter, and a query without it is rejected before it runs. Access is also enforced by the credentials the query runs with, so the macro is a correctness check rather than your only protection.
 
 ## Macros
 
 | Macro                | Expands to                                                    |
 | -------------------- | ------------------------------------------------------------- |
-| `$__orgFilter`       | Your organisation filter. Required.                           |
+| `$__orgFilter`       | Your organization filter. Required.                           |
 | `$__timeFilter(col)` | `col >= <start> AND col <= <end>` for the selected time range |
 | `$__timeGroup(col)`  | `toStartOfInterval(col, INTERVAL <bucket> SECOND)`            |
 | `$__startTime`       | The range start, as a `DateTime`                              |

@@ -9,13 +9,13 @@ navLabel: "Overview"
 import GuideFilter from "../../components/docs/GuideFilter.astro"
 import GuideGrid from "../../components/docs/GuideGrid.astro"
 
-Maple ingests OpenTelemetry over OTLP/HTTP, so any OTLP exporter works without a Maple-specific plugin. Each guide below installs the SDK, points it at the ingest endpoint with an ingest key from **Settings → Ingestion**, and checks that the first trace arrives. The [maple-onboard](https://github.com/MapleTechLabs/maple/tree/main/skills/maple-onboard) skill can do the same setup from a coding agent.
+Maple ingests OpenTelemetry over OTLP/HTTP, so any OTLP exporter works without a Maple-specific plugin. Each guide below installs the SDK, points it at the ingest endpoint with an ingest key from **Settings → Ingestion**, and checks that the first trace arrives. New to Maple? The [Quickstart](/docs/getting-started/quickstart) gets a first trace in about five minutes. The [maple-onboard](https://github.com/MapleTechLabs/maple/tree/main/skills/maple-onboard) skill can do the same setup from a coding agent.
 
 <GuideFilter />
 
 <section data-guide-section="javascript">
 
-## JavaScript & TypeScript
+## JavaScript and TypeScript
 
 <GuideGrid section="javascript" />
 
@@ -31,7 +31,7 @@ Maple ingests OpenTelemetry over OTLP/HTTP, so any OTLP exporter works without a
 
 <section data-guide-section="jvm">
 
-## Java & Kotlin
+## Java and Kotlin
 
 <GuideGrid section="jvm" />
 
@@ -39,7 +39,7 @@ Maple ingests OpenTelemetry over OTLP/HTTP, so any OTLP exporter works without a
 
 <section data-guide-section="other">
 
-## Go, Rust, .NET & PHP
+## Go, Rust, .NET and PHP
 
 <GuideGrid section="other" />
 
@@ -47,7 +47,7 @@ Maple ingests OpenTelemetry over OTLP/HTTP, so any OTLP exporter works without a
 
 <section data-guide-section="frontend">
 
-## Frontend & product analytics
+## Frontend and product analytics
 
 <GuideGrid section="frontend" />
 
@@ -55,7 +55,7 @@ Maple ingests OpenTelemetry over OTLP/HTTP, so any OTLP exporter works without a
 
 <section data-guide-section="infrastructure">
 
-## Infrastructure & data sources
+## Infrastructure and data sources
 
 <GuideGrid section="infrastructure" />
 
@@ -63,7 +63,7 @@ Maple ingests OpenTelemetry over OTLP/HTTP, so any OTLP exporter works without a
 
 ## Anything that speaks OTLP
 
-If your language or framework is not listed, point its OpenTelemetry SDK (or an OpenTelemetry Collector) at the ingest endpoint with the standard environment variables. Ingest keys are scoped to one organization and can only write telemetry, so you can also inline the key in your bootstrap source.
+If your language or framework is not listed, point its OpenTelemetry SDK (or an OpenTelemetry Collector) at the ingest endpoint with the standard environment variables. Ingest keys are scoped to one organization and can only write telemetry. Only the public key (`maple_pk_…`) is safe to ship in client code; keep the private key (`maple_sk_…`) in an environment variable or a secret store. See [Authentication](/docs/reference/authentication).
 
 ```bash
 export OTEL_EXPORTER_OTLP_ENDPOINT="https://ingest.maple.dev"
