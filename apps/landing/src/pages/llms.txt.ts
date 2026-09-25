@@ -137,7 +137,7 @@ export const GET: APIRoute = ({ site }) => {
 		`- Homebrew: \`brew install Makisuo/tap/maple\``,
 		`- Install script: \`curl -fsSL ${url("/cli/install")} | sh\` ([source](${url("/cli/install")}))`,
 		`- [Releases on GitHub](${GITHUB_URL}/releases)`,
-		`- [CLI reference](${url("/docs/local-mode/cli-reference.md")})`,
+		`- [CLI reference](${url("/docs/reference/cli.md")})`,
 		"",
 
 		"## SDKs and instrumentation",

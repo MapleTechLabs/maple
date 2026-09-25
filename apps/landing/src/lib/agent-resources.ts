@@ -24,8 +24,8 @@ export const SITE_PATHS = {
 	openapi: "/openapi.json",
 	mcpManifest: "/.well-known/mcp.json",
 	mcpServerJson: "/.well-known/mcp/server.json",
-	apiDocs: "/docs/api",
-	mcpDocs: "/docs/mcp",
+	apiDocs: "/docs/reference/api",
+	mcpDocs: "/docs/reference/mcp",
 	about: "/about",
 	contact: "/contact",
 } as const

@@ -7,112 +7,126 @@ navLabel: "Python"
 sdk: "python"
 ---
 
-This guide covers instrumenting a Python application to send traces and logs to Maple using the OpenTelemetry SDK.
+This guide sets up the OpenTelemetry Python SDK so your application sends traces, logs and metrics to Maple, with instrumentation for FastAPI, Django, Flask and common client libraries.
 
-> **Run this with Claude Code:** `maple-onboard` walks every service in the repo, installs OpenTelemetry, and verifies the bootstrap end-to-end. See the [maple-onboard skill](https://github.com/MapleTechLabs/maple/tree/main/skills/maple-onboard). Already instrumented? `maple-audit` reviews the existing setup against Maple's conventions and fixes gaps — see the [maple-audit skill](https://github.com/MapleTechLabs/maple/tree/main/skills/maple-audit).
+To have a coding agent do this setup, use the [maple-onboard](https://github.com/MapleTechLabs/maple/tree/main/skills/maple-onboard) skill, and [maple-audit](https://github.com/MapleTechLabs/maple/tree/main/skills/maple-audit) to check an existing setup.
 
 ## Prerequisites
 
-- Python 3.8+
-- A Maple project with an API key (or use the `MAPLE_TEST` placeholder while pairing -- see below)
+- Python 3.9+
+- An ingest key from **Settings → Ingestion** in Maple. Use the private key (`maple_sk_…`) for server applications.
 
-## Install Dependencies
+## Install
 
 ```bash
-pip install opentelemetry-sdk \
-  opentelemetry-exporter-otlp-proto-http \
-  opentelemetry-instrumentation
+pip install opentelemetry-sdk opentelemetry-exporter-otlp-proto-http
 ```
 
-## Configure the SDK
+## Configure
 
-Create a `tracing.py` module to initialize the SDK. **Inline the endpoint and ingest key** -- the key is project-scoped and write-only (Sentry-DSN-shaped), so source-level configuration removes a class of "OTel didn't start because env vars weren't set" deploy failures.
+Create a `telemetry.py` module that sets up traces, metrics and logs:
 
 ```python
-# tracing.py
+# telemetry.py
+import logging
 import os
-from opentelemetry import trace
+
+from opentelemetry import metrics, trace
+from opentelemetry._logs import set_logger_provider
+from opentelemetry.exporter.otlp.proto.http._log_exporter import OTLPLogExporter
+from opentelemetry.exporter.otlp.proto.http.metric_exporter import OTLPMetricExporter
+from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
+from opentelemetry.sdk._logs import LoggerProvider, LoggingHandler
+from opentelemetry.sdk._logs.export import BatchLogRecordProcessor
+from opentelemetry.sdk.metrics import MeterProvider
+from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
+from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
-from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
-from opentelemetry.sdk.resources import Resource
 
-MAPLE_ENDPOINT = "https://ingest.maple.dev"
-MAPLE_KEY = "MAPLE_TEST"  # replace with your real key from Settings → API Keys
+MAPLE_ENDPOINT = "https://ingest.maple.dev"  # EU: https://ingest.eu.maple.dev
+MAPLE_KEY = "YOUR_INGEST_KEY"
+HEADERS = {"authorization": f"Bearer {MAPLE_KEY}"}
 
 resource = Resource.create({
     "service.name": "my-python-app",
     "deployment.environment.name": os.getenv("DEPLOYMENT_ENV", "development"),
     "vcs.repository.url.full": "https://github.com/acme/my-python-app",
-    "vcs.ref.head.revision": os.getenv("RAILWAY_GIT_COMMIT_SHA")
-        or os.getenv("GITHUB_SHA")
-        or os.getenv("GIT_COMMIT", ""),
+    "vcs.ref.head.revision": os.getenv("GITHUB_SHA") or os.getenv("GIT_COMMIT", ""),
 })
 
-provider = TracerProvider(resource=resource)
-exporter = OTLPSpanExporter(
-    endpoint=f"{MAPLE_ENDPOINT}/v1/traces",
-    headers={"authorization": f"Bearer {MAPLE_KEY}"},
+# Traces
+tracer_provider = TracerProvider(resource=resource)
+tracer_provider.add_span_processor(
+    BatchSpanProcessor(OTLPSpanExporter(endpoint=f"{MAPLE_ENDPOINT}/v1/traces", headers=HEADERS))
 )
-provider.add_span_processor(BatchSpanProcessor(exporter))
-trace.set_tracer_provider(provider)
+trace.set_tracer_provider(tracer_provider)
+
+# Metrics
+metric_reader = PeriodicExportingMetricReader(
+    OTLPMetricExporter(endpoint=f"{MAPLE_ENDPOINT}/v1/metrics", headers=HEADERS)
+)
+metrics.set_meter_provider(MeterProvider(resource=resource, metric_readers=[metric_reader]))
+
+# Logs: records from the standard logging module go to Maple
+logger_provider = LoggerProvider(resource=resource)
+logger_provider.add_log_record_processor(
+    BatchLogRecordProcessor(OTLPLogExporter(endpoint=f"{MAPLE_ENDPOINT}/v1/logs", headers=HEADERS))
+)
+set_logger_provider(logger_provider)
+logging.getLogger().addHandler(LoggingHandler(logger_provider=logger_provider))
 ```
 
-> **`MAPLE_TEST` placeholder:** While you're pairing your editor with Maple, the literal string `MAPLE_TEST` is accepted by the ingest gateway and discarded -- so the bootstrap can run end-to-end before you've created your first key. Once you have a real key, search-replace `MAPLE_TEST` in the file above with it.
+The example puts the endpoint and key in source. An ingest key can only write telemetry to your organization. It cannot read data or call the Maple API. Keeping it in source means the SDK always starts with a complete configuration, so a deploy that is missing an environment variable cannot silently turn telemetry off. To keep the key out of source, use [environment variables](#environment-variables) instead.
 
-Import this module early in your application startup, before other modules that need tracing:
+Import the module first thing at startup, before the modules you want traced:
 
 ```python
-import tracing  # Initialize OpenTelemetry first
+import telemetry  # noqa: F401  (sets up OpenTelemetry)
 from myapp import create_app
 
 app = create_app()
 ```
 
-## Auto-Instrumentation
+## Environment variables
 
-The easiest way to instrument common libraries is with the auto-instrumentation CLI.
-
-First, install instrumentations for your installed packages:
+Without any code, the `opentelemetry-instrument` wrapper configures the SDK from the standard environment variables and instruments every supported library it finds. Install the distro and exporter, then install the instrumentation packages that match your dependencies:
 
 ```bash
+pip install opentelemetry-distro opentelemetry-exporter-otlp-proto-http
 opentelemetry-bootstrap -a install
 ```
 
-Then run your application with the `opentelemetry-instrument` wrapper:
+Set the variables and start your app through the wrapper:
 
 ```bash
+export OTEL_SERVICE_NAME="my-python-app"
+export OTEL_EXPORTER_OTLP_ENDPOINT="https://ingest.maple.dev"
+export OTEL_EXPORTER_OTLP_PROTOCOL="http/protobuf"
+export OTEL_EXPORTER_OTLP_HEADERS="Authorization=Bearer YOUR_INGEST_KEY"
+export OTEL_TRACES_EXPORTER="otlp"
+export OTEL_METRICS_EXPORTER="otlp"
+export OTEL_LOGS_EXPORTER="otlp"
+export OTEL_PYTHON_LOGGING_AUTO_INSTRUMENTATION_ENABLED="true"
+export OTEL_RESOURCE_ATTRIBUTES="deployment.environment.name=production,vcs.repository.url.full=https://github.com/acme/my-python-app"
+
 opentelemetry-instrument python app.py
 ```
 
-This automatically instruments libraries like Flask, Django, requests, SQLAlchemy, psycopg2, redis, and many more.
+`OTEL_EXPORTER_OTLP_PROTOCOL` matters here: the distro defaults to gRPC, which needs a different exporter package. `OTEL_PYTHON_LOGGING_AUTO_INSTRUMENTATION_ENABLED` attaches the log exporter to the standard `logging` module. Use either this path or `telemetry.py`, not both.
 
-Alternatively, install specific instrumentation packages for finer control:
+## Auto-instrumentation
 
-```bash
-pip install opentelemetry-instrumentation-flask \
-  opentelemetry-instrumentation-requests \
-  opentelemetry-instrumentation-sqlalchemy
-```
+With `telemetry.py`, install the instrumentation package for each library you use and enable it in code. Each incoming request becomes a server span, and outgoing HTTP calls and database queries become child spans.
 
-```python
-from opentelemetry.instrumentation.flask import FlaskInstrumentor
-from opentelemetry.instrumentation.requests import RequestsInstrumentor
-
-FlaskInstrumentor().instrument()
-RequestsInstrumentor().instrument()
-```
-
-## FastAPI
-
-FastAPI has a dedicated instrumentation package that traces every route as a span:
+### FastAPI
 
 ```bash
 pip install opentelemetry-instrumentation-fastapi
 ```
 
 ```python
-import tracing  # Initialize OpenTelemetry first
+import telemetry  # noqa: F401
 from fastapi import FastAPI
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 
@@ -120,27 +134,43 @@ app = FastAPI()
 FastAPIInstrumentor.instrument_app(app)
 ```
 
-If you also use `httpx` or `requests` for outgoing calls, install the matching instrumentation packages -- they propagate trace context automatically so downstream services connect to the parent trace.
-
-## Django
+### Django
 
 ```bash
 pip install opentelemetry-instrumentation-django
 ```
 
 ```python
-# settings.py or top of wsgi.py
-import tracing  # Initialize OpenTelemetry first
+# manage.py and wsgi.py / asgi.py, before Django loads
+import telemetry  # noqa: F401
 from opentelemetry.instrumentation.django import DjangoInstrumentor
 
 DjangoInstrumentor().instrument()
 ```
 
-The Django instrumentation creates a span per HTTP request and integrates with the ORM through `opentelemetry-instrumentation-dbapi`-backed packages (`opentelemetry-instrumentation-psycopg2`, `opentelemetry-instrumentation-sqlite3`, etc.).
+Database queries need the instrumentation for your driver, for example `opentelemetry-instrumentation-psycopg2` or `opentelemetry-instrumentation-sqlite3`.
 
-## Custom Spans
+### Flask and HTTP clients
 
-Create custom spans to trace specific operations:
+```bash
+pip install opentelemetry-instrumentation-flask \
+  opentelemetry-instrumentation-requests \
+  opentelemetry-instrumentation-httpx
+```
+
+```python
+from opentelemetry.instrumentation.flask import FlaskInstrumentor
+from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor
+from opentelemetry.instrumentation.requests import RequestsInstrumentor
+
+FlaskInstrumentor().instrument_app(app)
+RequestsInstrumentor().instrument()
+HTTPXClientInstrumentor().instrument()
+```
+
+The HTTP client instrumentations propagate trace context, so the services you call join the same trace.
+
+## Custom spans
 
 ```python
 from opentelemetry import trace
@@ -155,8 +185,7 @@ def process_order(order_id: str):
         span.set_attribute("peer.service", "payment-api")
 
         try:
-            result = charge_payment(order_id)
-            return result
+            return charge_payment(order_id)
         except Exception as e:
             span.record_exception(e)
             span.set_status(StatusCode.ERROR, str(e))
@@ -165,66 +194,36 @@ def process_order(order_id: str):
 
 Setting `peer.service` on outgoing calls makes them visible on Maple's [service map](/docs/concepts/otel-conventions#service-map).
 
-## Log Correlation
+## Log correlation
 
-Send logs to Maple with trace correlation by adding the OTel log exporter:
-
-```bash
-pip install opentelemetry-exporter-otlp-proto-http
-```
-
-```python
-from opentelemetry.sdk._logs import LoggerProvider
-from opentelemetry.sdk._logs.export import BatchLogRecordProcessor
-from opentelemetry.exporter.otlp.proto.http._log_exporter import OTLPLogExporter
-from opentelemetry._logs import set_logger_provider
-
-logger_provider = LoggerProvider(resource=resource)
-logger_provider.add_log_record_processor(
-    BatchLogRecordProcessor(
-        OTLPLogExporter(
-            endpoint="https://ingest.maple.dev/v1/logs",
-            headers={"Authorization": "Bearer YOUR_API_KEY"},
-        )
-    )
-)
-set_logger_provider(logger_provider)
-```
-
-To bridge Python's standard `logging` module to OTel:
+`telemetry.py` attaches a `LoggingHandler` to the root logger. Records logged during an active span carry its trace and span IDs, so Maple links each log line to its trace:
 
 ```python
 import logging
-from opentelemetry.sdk._logs import LoggingHandler
 
-handler = LoggingHandler(logger_provider=logger_provider)
-logging.getLogger().addHandler(handler)
-
-# Now standard logging calls include trace context
-logging.info("Order processed successfully")
+logging.getLogger(__name__).warning("Payment retry for order %s", order_id)
 ```
 
-## Environment Variables
-
-As an alternative to programmatic configuration, set standard OTel environment variables:
-
-```bash
-export OTEL_EXPORTER_OTLP_ENDPOINT="https://ingest.maple.dev"
-export OTEL_EXPORTER_OTLP_HEADERS="Authorization=Bearer YOUR_API_KEY"
-export OTEL_SERVICE_NAME="my-python-app"
-export OTEL_RESOURCE_ATTRIBUTES="deployment.environment.name=production,vcs.repository.url.full=https://github.com/acme/my-python-app"
-```
-
-Then use `opentelemetry-instrument` to run your app with auto-instrumentation and these settings applied automatically.
+The root logger's level still applies. Python defaults it to `WARNING`, so call `logging.basicConfig(level=logging.INFO)` or set the level yourself to send `INFO` records.
 
 ## Verify
 
-1. Start your application
-2. Generate some traffic (send a request, trigger an operation)
-3. Open the Maple dashboard and check that traces appear in the traces view
+1. Start your application and send it a few requests.
+2. In Maple, open **Explore → Traces**. The SDK sends spans in batches every 5 seconds by default, and metrics every 60 seconds.
+3. Each request should show up as one trace with a single root server span, named after the method and route (for example `GET /api/orders`), and child spans for the queries and outgoing calls it made.
 
-If traces aren't appearing, verify:
+Your service also appears on the **Services** page once its first spans arrive.
 
-- The ingest endpoint URL is correct
-- Your API key is valid
-- Your application can reach `ingest.maple.dev` (or your self-hosted URL)
+## Troubleshooting
+
+- **`401` responses.** The key is wrong, was copied from the other region, or the header is malformed. The header must be `Authorization: Bearer YOUR_INGEST_KEY`. In `OTEL_EXPORTER_OTLP_HEADERS` it is written `Authorization=Bearer YOUR_INGEST_KEY`. See [Ingest API status codes](/docs/reference/ingest#status-codes).
+- **Wrong protocol or path.** Maple accepts OTLP over HTTP. Use `opentelemetry-exporter-otlp-proto-http`, and set `OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf` when using `opentelemetry-instrument`. Endpoints set in code need the full signal path (`/v1/traces`); `OTEL_EXPORTER_OTLP_ENDPOINT` takes only the base URL.
+- **Network.** From the machine running the app, run `curl -i https://ingest.maple.dev/v1/traces -X POST`. Any HTTP status code means the host can reach Maple. A timeout or DNS error means a firewall or proxy is blocking outbound HTTPS.
+- **Nothing exported.** Import `telemetry` before the framework. With gunicorn or uWSGI worker processes, set up the SDK in each worker (for example in gunicorn's `post_fork` hook), because batch processor threads do not survive a fork. A short script can exit before its batch is sent; call `tracer_provider.shutdown()`, `logger_provider.shutdown()` and the meter provider's `shutdown()` before exit.
+
+## Next steps
+
+- [Explore traces](/docs/explore/traces)
+- [Track errors](/docs/errors/overview)
+- [Create alert rules](/docs/alerting/alert-rules)
+- [OpenTelemetry conventions](/docs/concepts/otel-conventions)

@@ -2,7 +2,7 @@
 title: "SQL reference"
 description: "Query your telemetry with ClickHouse SQL: the tables and columns you can read, the required macros, result shapes for each chart type, and limits."
 group: "Reference"
-order: 4
+order: 7
 ---
 
 SQL widgets on dashboards, raw-SQL alert rules, and the MCP `run_sql` tool all run ClickHouse SQL against the same tables Maple's own pages read. This page lists what you can query and the rules a query has to follow.
@@ -41,7 +41,7 @@ WHERE $__orgFilter AND $__timeFilter(Timestamp) AND ServiceName IN ($service)
 
 ## Tables
 
-The main tables are below. Run `describe_warehouse_tables` from the [MCP server](/docs/mcp) for the full list with every column and its type.
+The main tables are below. Run `describe_warehouse_tables` from the [MCP server](/docs/reference/mcp) for the full list with every column and its type.
 
 | Table                           | One row per                                 | Time column |
 | ------------------------------- | ------------------------------------------- | ----------- |
@@ -156,6 +156,6 @@ Your query is wrapped in an outer `LIMIT`, so `WITH TOTALS`, `LIMIT BY` and `WIT
 
 ## Related
 
-- [Maple MCP server](/docs/mcp): `run_sql` and `describe_warehouse_tables`
+- [Maple MCP server](/docs/reference/mcp): `run_sql` and `describe_warehouse_tables`
 - [OpenTelemetry conventions](/docs/concepts/otel-conventions): which attributes land in which column
 - [Limits](/docs/reference/limits)
