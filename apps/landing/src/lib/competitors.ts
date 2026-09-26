@@ -158,6 +158,7 @@ const CHECKED_PRICING = "2026-09"
 /** SigNoz and Axiom were added after the others and checked separately. */
 const CHECKED_SIGNOZ = "2026-09"
 const CHECKED_AXIOM = "2026-09"
+const CHECKED_BETTER_STACK = "2026-09"
 
 const MAPLE_EXPORTER = `  otlphttp/maple:
     endpoint: https://ingest.maple.dev
@@ -1102,6 +1103,184 @@ export const competitors: Competitor[] = [
 			},
 			{ label: "Axiom Trust Center", url: "https://trust.axiom.co/", checked: CHECKED_AXIOM },
 			{ label: "Axiom for Vercel", url: "https://axiom.co/vercel", checked: CHECKED_AXIOM },
+		],
+		locales: ["en", "ja", "ko"],
+	},
+	{
+		slug: "better-stack",
+		name: "Better Stack",
+		vendor: "better-stack",
+		mark: "betterstack",
+		site: "betterstack.com",
+		navLabel: m.nav_vs_better_stack,
+		navDesc: m.nav_desc_vs_better_stack,
+		seoTitle: m.cmp_bs_seo_title,
+		seoDescription: m.cmp_bs_seo_desc,
+		heroTitle: m.cmp_bs_hero_title,
+		heroLede: m.cmp_bs_hero_lede,
+		differences: [
+			{
+				id: "source",
+				topic: m.cmp_topic_source,
+				maple: m.cmp_bs_source_maple,
+				competitor: m.cmp_bs_source_them,
+				edge: "maple",
+			},
+			{
+				id: "selfhost",
+				topic: m.cmp_topic_selfhost,
+				maple: m.cmp_bs_selfhost_maple,
+				competitor: m.cmp_bs_selfhost_them,
+				edge: "maple",
+				source: 0,
+			},
+			{
+				id: "local",
+				topic: m.cmp_topic_local,
+				maple: m.cmp_bs_local_maple,
+				competitor: m.cmp_bs_local_them,
+				edge: "maple",
+			},
+			{
+				id: "pricing",
+				topic: m.cmp_topic_pricing,
+				maple: m.cmp_bs_pricing_maple,
+				competitor: m.cmp_bs_pricing_them,
+				edge: "even",
+				source: 0,
+			},
+			{
+				id: "seats",
+				topic: m.cmp_topic_seats,
+				maple: m.cmp_bs_seats_maple,
+				competitor: m.cmp_bs_seats_them,
+				edge: "even",
+				source: 0,
+			},
+			{
+				id: "errors",
+				topic: m.cmp_topic_errors,
+				maple: m.cmp_bs_errors_maple,
+				competitor: m.cmp_bs_errors_them,
+				edge: "even",
+				source: 2,
+			},
+			{
+				id: "ai",
+				topic: m.cmp_topic_ai,
+				maple: m.cmp_bs_ai_maple,
+				competitor: m.cmp_bs_ai_them,
+				edge: "even",
+				source: 3,
+			},
+			{
+				id: "volume-pricing",
+				topic: m.cmp_topic_volume_pricing,
+				maple: m.cmp_bs_volume_pricing_maple,
+				competitor: m.cmp_bs_volume_pricing_them,
+				edge: "competitor",
+				source: 0,
+			},
+			{
+				id: "retention",
+				topic: m.cmp_topic_retention,
+				maple: m.cmp_bs_retention_maple,
+				competitor: m.cmp_bs_retention_them,
+				edge: "competitor",
+				source: 0,
+			},
+			{
+				id: "synthetics",
+				topic: m.cmp_topic_synthetics,
+				maple: m.cmp_dd_synthetics_maple,
+				competitor: m.cmp_bs_synthetics_them,
+				edge: "competitor",
+				source: 0,
+			},
+			{
+				id: "oncall",
+				topic: m.cmp_topic_oncall,
+				maple: m.cmp_gf_oncall_maple,
+				competitor: m.cmp_bs_oncall_them,
+				edge: "competitor",
+				source: 0,
+			},
+			{
+				id: "status-pages",
+				topic: m.cmp_topic_status_pages,
+				maple: m.cmp_bs_status_pages_maple,
+				competitor: m.cmp_bs_status_pages_them,
+				edge: "competitor",
+				source: 0,
+			},
+			{
+				id: "promql",
+				topic: m.cmp_topic_promql,
+				maple: m.cmp_sn_promql_maple,
+				competitor: m.cmp_bs_promql_them,
+				edge: "competitor",
+				source: 0,
+			},
+			{
+				id: "compliance",
+				topic: m.cmp_topic_compliance,
+				maple: m.cmp_bs_compliance_maple,
+				competitor: m.cmp_bs_compliance_them,
+				edge: "competitor",
+				source: 4,
+			},
+		],
+		parity: [...CORE_PARITY, m.cmp_parity_replay, m.cmp_parity_otel],
+		migration: [
+			{ title: m.cmp_bs_mig_1_title, body: m.cmp_bs_mig_1_body },
+			{ title: m.cmp_bs_mig_2_title, body: m.cmp_bs_mig_2_body },
+			{ title: m.cmp_bs_mig_3_title, body: m.cmp_bs_mig_3_body },
+		],
+		migrationDiff: collectorDiff(
+			"otlphttp/betterstack",
+			`  otlphttp/betterstack:
+    endpoint: https://\${env:BETTERSTACK_INGESTING_HOST}
+    headers:
+      Authorization: Bearer \${env:BETTERSTACK_SOURCE_TOKEN}`,
+		),
+		faqs: [
+			{ question: m.cmp_bs_faq_1_q, answer: m.cmp_bs_faq_1_a },
+			{ question: m.cmp_bs_faq_2_q, answer: m.cmp_bs_faq_2_a },
+			{ question: m.cmp_bs_faq_3_q, answer: m.cmp_bs_faq_3_a },
+			{ question: m.cmp_bs_faq_4_q, answer: m.cmp_bs_faq_4_a },
+			{ question: m.cmp_bs_faq_5_q, answer: m.cmp_bs_faq_5_a },
+		],
+		sources: [
+			{
+				label: "Better Stack pricing",
+				url: "https://betterstack.com/pricing",
+				checked: CHECKED_BETTER_STACK,
+			},
+			{
+				label: "Better Stack: OpenTelemetry",
+				url: "https://betterstack.com/docs/logs/open-telemetry/",
+				checked: CHECKED_BETTER_STACK,
+			},
+			{
+				label: "Better Stack: error tracking",
+				url: "https://betterstack.com/docs/errors/start/",
+				checked: CHECKED_BETTER_STACK,
+			},
+			{
+				label: "Better Stack: MCP server",
+				url: "https://betterstack.com/docs/getting-started/integrations/mcp/",
+				checked: CHECKED_BETTER_STACK,
+			},
+			{
+				label: "Better Stack security",
+				url: "https://betterstack.com/security",
+				checked: CHECKED_BETTER_STACK,
+			},
+			{
+				label: "Better Stack: incoming webhooks",
+				url: "https://betterstack.com/docs/uptime/incoming-webhooks/",
+				checked: CHECKED_BETTER_STACK,
+			},
 		],
 		locales: ["en", "ja", "ko"],
 	},
