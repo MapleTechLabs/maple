@@ -32,12 +32,14 @@ import {
 	ArrowRightIcon,
 	CloudflareIcon,
 	CubeIcon,
-	ExternalLinkIcon,
 	MagnifierIcon,
 	NetworkNodesIcon,
 	PlanetScaleIcon,
 	XmarkIcon,
 } from "@/components/icons"
+import { DocsLink } from "@/components/common/docs-link"
+import { SignalEmptyStateView } from "@/components/common/signal-empty-state"
+import { useSignalPresence } from "@/hooks/use-signal-presence"
 import {
 	getPlanetScaleBranchStatsResultAtom,
 	getServiceDbQuerySummaryResultAtom,
@@ -600,6 +602,7 @@ function ServiceInfraEmptyState() {
 			<pre className="text-[10px] bg-muted px-2 py-1.5 rounded font-mono text-foreground overflow-x-auto">
 				kubectl label namespace &lt;ns&gt; maple.io/instrument=true
 			</pre>
+			<DocsLink page="kubernetes" />
 		</div>
 	)
 }
@@ -633,6 +636,7 @@ function GhostNode({ x, y, color }: { x: number; y: number; color: string }) {
 // map's own language — the dotted Background grid plus a faint geometric service
 // graph — so it reads as "the map, empty," not a blank void.
 function ServiceMapEmptyState() {
+	const tracesPresence = useSignalPresence("traces")
 	return (
 		<div className="relative flex h-full items-center justify-center overflow-hidden">
 			{/* Dotted grid: the live map's <Background variant={Dots} gap={16} size={1}>,
@@ -679,32 +683,33 @@ function ServiceMapEmptyState() {
 					<GhostNode x={352} y={64} color="var(--service-5)" />
 				</svg>
 
-				<Empty className="flex-none bg-transparent py-0">
-					<EmptyHeader>
-						<EmptyMedia variant="icon">
-							<NetworkNodesIcon size={18} />
-						</EmptyMedia>
-						<EmptyTitle>No service map yet</EmptyTitle>
-						<EmptyDescription>
-							Maple builds this map from cross-service spans in your traces. Once your services
-							report calls to each other, they&rsquo;ll appear here as a connected graph.
-						</EmptyDescription>
-					</EmptyHeader>
-					<EmptyContent>
-						<a
-							href="https://maple.dev/docs/getting-started/introduction"
-							target="_blank"
-							rel="noopener noreferrer"
-							className="inline-flex items-center gap-1.5 text-foreground underline underline-offset-2 transition-colors hover:no-underline"
-						>
-							Set up instrumentation
-							<ExternalLinkIcon size={12} />
-						</a>
-						<p className="text-xs text-muted-foreground/70">
-							Seeing this with active services? Try widening the time range.
-						</p>
-					</EmptyContent>
-				</Empty>
+				{/* Traces arriving with no edges means context is not propagated; no traces means setup. */}
+				{tracesPresence.status === "present" ? (
+					<Empty className="flex-none bg-transparent py-0">
+						<EmptyHeader>
+							<EmptyMedia variant="icon">
+								<NetworkNodesIcon size={18} />
+							</EmptyMedia>
+							<EmptyTitle>No service calls in this window</EmptyTitle>
+							<EmptyDescription>
+								Traces are arriving, but no service calls another one yet. Propagate trace
+								context on outgoing HTTP calls so both sides share a trace.
+							</EmptyDescription>
+						</EmptyHeader>
+						<EmptyContent>
+							<DocsLink page="serviceMap" />
+						</EmptyContent>
+					</Empty>
+				) : (
+					<SignalEmptyStateView
+						signal="traces"
+						presence={tracesPresence}
+						noun="service calls"
+						purpose="The service map draws which services call each other, from the spans they send."
+						guideDocs="serviceMap"
+						className="flex-none bg-transparent py-0"
+					/>
+				)}
 			</div>
 		</div>
 	)
@@ -810,8 +815,10 @@ function DbQueryActivityChart({
 
 	if (volumeRows.length === 0) {
 		return (
-			<div className="flex h-44 items-center justify-center rounded-md border border-dashed border-border/60 bg-muted/10 text-xs text-muted-foreground">
+			<div className="flex h-44 flex-col items-center justify-center gap-1.5 rounded-md border border-dashed border-border/60 bg-muted/10 px-4 text-center text-xs text-muted-foreground">
 				No database query spans in this window
+				<span>Database nodes need spans with db.system.</span>
+				<DocsLink page="otelConventions" />
 			</div>
 		)
 	}

@@ -67,6 +67,7 @@ import { formatRelativeTime } from "@maple/ui/lib/time-format"
 import { diagnoseScrapeError } from "@/lib/scrape-error-diagnosis"
 import { scheduledStatusFromChecks, scheduledStatusFromRollup } from "@/lib/scrape-target-status"
 import { catalogEntry } from "../integrations/integration-catalog"
+import { DocsLink } from "@/components/common/docs-link"
 import {
 	IntegrationEmpty,
 	IntegrationEmptyCard,
@@ -420,6 +421,7 @@ export function ScrapeTargetsSection({
 								<PlusIcon size={16} />
 								Add Target
 							</Button>
+							<DocsLink page="prometheus" />
 							<IntegrationEmptyFooter>{copy.emptyFooter}</IntegrationEmptyFooter>
 						</IntegrationEmptyCard>
 					</IntegrationEmpty>
@@ -1005,7 +1007,7 @@ export function ScrapeTargetChecksTable({
 	if (checks.length === 0) {
 		return (
 			<div className="rounded-md border bg-background/35 px-3 py-6 text-center text-xs text-muted-foreground">
-				No scheduled checks recorded yet.
+				The first scrape runs shortly after you save. Use Test to check the endpoint now.
 			</div>
 		)
 	}

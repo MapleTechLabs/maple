@@ -150,6 +150,10 @@ export function DependencyTable({ serviceName, rows, startTime, endTime, timePre
 									className="py-12 text-center text-xs text-muted-foreground"
 								>
 									No downstream dependencies in this window.
+									<span className="mt-1 block text-muted-foreground/70">
+										Outgoing calls show up when client spans carry peer.service or
+										server.address.
+									</span>
 								</TableCell>
 							</TableRow>
 						) : (
@@ -295,8 +299,11 @@ export function DependencyTable({ serviceName, rows, startTime, endTime, timePre
 				</div>
 				<div className="overflow-hidden rounded-lg border bg-card">
 					{sorted.length === 0 ? (
-						<div className="py-12 text-center text-xs text-muted-foreground">
+						<div className="px-4 py-12 text-center text-xs text-muted-foreground">
 							No downstream dependencies in this window.
+							<span className="mt-1 block text-muted-foreground/70">
+								Outgoing calls show up when client spans carry peer.service or server.address.
+							</span>
 						</div>
 					) : (
 						sorted.map((row) => {

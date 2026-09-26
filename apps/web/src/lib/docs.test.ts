@@ -1,9 +1,7 @@
 import { expect, it } from "vitest"
-import { SIGNAL_COPY } from "./signal-empty-state"
+import { DOCS } from "./docs"
 
-it("points every signal at a docs page that exists", async () => {
-	// Docs links rot silently — nothing in a build notices a 404. Resolving each path against the
-	// landing content collection makes a renamed doc fail in the PR that renames it.
+it("points every docs link at a page that exists", async () => {
 	const { readdir } = await import("node:fs/promises")
 	const { resolve } = await import("node:path")
 
@@ -17,7 +15,7 @@ it("points every signal at a docs page that exists", async () => {
 	// Guards the guard: a wrong contentRoot would make every assertion below vacuously pass.
 	expect(slugs.size).toBeGreaterThan(5)
 
-	for (const [signal, copy] of Object.entries(SIGNAL_COPY)) {
-		expect(slugs.has(copy.docs), `${signal} → ${copy.docs}`).toBe(true)
+	for (const [page, path] of Object.entries(DOCS)) {
+		expect(slugs.has(path), `${page} → ${path}`).toBe(true)
 	}
 })

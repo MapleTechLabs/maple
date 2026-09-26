@@ -37,6 +37,7 @@ import {
 	EmptyTitle,
 } from "@maple/ui/components/ui/empty"
 import { SearchInput } from "@maple/ui/components/ui/search-input"
+import { DocsLink, EmptyActions } from "@/components/common/docs-link"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import {
 	AlertWarningIcon,
@@ -270,10 +271,19 @@ export function ApiKeysSection() {
 								</EmptyDescription>
 							</EmptyHeader>
 							<EmptyContent>
-								<Button size="sm" onClick={() => setCreateOpen(true)} disabled={!isAdmin}>
-									<PlusIcon data-icon="inline-start" size={14} />
-									Create key
-								</Button>
+								<EmptyActions>
+									{isAdmin ? (
+										<Button size="sm" onClick={() => setCreateOpen(true)}>
+											<PlusIcon data-icon="inline-start" size={14} />
+											Create key
+										</Button>
+									) : (
+										<span className="text-muted-foreground text-sm">
+											Only org admins can create API keys.
+										</span>
+									)}
+									<DocsLink page="authentication" />
+								</EmptyActions>
 							</EmptyContent>
 						</Empty>
 					) : visibleKeys.length === 0 ? (
@@ -290,9 +300,19 @@ export function ApiKeysSection() {
 								<EmptyDescription>
 									{needle.length > 0
 										? `Nothing in ${VIEW_LABELS[activeView]} matches "${search.trim()}".`
-										: "Keys show up here once they reach this state."}
+										: activeView === "active"
+											? "Every key has expired or been revoked. Create a new key to keep integrations working."
+											: "Keys show up here once they reach this state."}
 								</EmptyDescription>
 							</EmptyHeader>
+							{needle.length === 0 && activeView === "active" && isAdmin && (
+								<EmptyContent>
+									<Button size="sm" onClick={() => setCreateOpen(true)}>
+										<PlusIcon data-icon="inline-start" size={14} />
+										Create key
+									</Button>
+								</EmptyContent>
+							)}
 						</Empty>
 					) : (
 						<div className="divide-border divide-y">

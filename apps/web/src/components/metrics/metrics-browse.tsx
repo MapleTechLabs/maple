@@ -64,6 +64,7 @@ export function MetricsBrowse({
 	}
 
 	const deferredSearch = React.useDeferredValue(q)
+	const handleClearFilters = () => onPatch({ q: "", type: undefined })
 
 	return (
 		<div className="space-y-6">
@@ -116,6 +117,7 @@ export function MetricsBrowse({
 					startTime={effectiveStartTime}
 					endTime={effectiveEndTime}
 					onOpenMetric={onOpenMetric}
+					onClearFilters={handleClearFilters}
 				/>
 			) : (
 				<div>
@@ -125,6 +127,7 @@ export function MetricsBrowse({
 						search={deferredSearch}
 						metricType={type}
 						onOpenMetric={onOpenMetric}
+						onClearFilters={handleClearFilters}
 						startTime={effectiveStartTime}
 						endTime={effectiveEndTime}
 					/>

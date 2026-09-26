@@ -11,6 +11,7 @@ import type { PodSortKey, SortDirection } from "@/api/warehouse/infra"
 import { OptionalStringArrayParam } from "@/lib/search-params"
 import { QueryErrorState } from "@/components/common/query-error-state"
 import { FolderIcon, MagnifierIcon } from "@/components/icons"
+import { InfraSetupEmpty } from "@/components/infra/infra-empty-state"
 import { KubernetesShell } from "@/components/infra/kubernetes/kubernetes-shell"
 import { PodPeekSheet } from "@/components/infra/kubernetes/pod-peek-sheet"
 import { PodsFilterSidebarView, type PodFilters } from "@/components/infra/k8s-filter-sidebar"
@@ -315,6 +316,19 @@ function PodsPage() {
 						const page = response.data
 						const total = response.totalCount
 
+						if (page.length === 0 && !hasAnyNarrowing && endedPods === 0) {
+							return (
+								<InfraSetupEmpty
+									icon={<FolderIcon size={16} />}
+									title="No pods reporting yet"
+									description="Install the Maple Kubernetes Helm chart so the kubelet stats receiver can start collecting per-pod CPU and memory metrics."
+									installTab="kubernetes"
+									actionLabel="Install the Helm chart"
+									docs="kubernetes"
+								/>
+							)
+						}
+
 						if (page.length === 0 && !hasAnyNarrowing) {
 							return (
 								<Empty className="py-16">
@@ -322,26 +336,18 @@ function PodsPage() {
 										<EmptyMedia variant="icon">
 											<FolderIcon size={16} />
 										</EmptyMedia>
-										<EmptyTitle>
-											{endedPods > 0
-												? "Nothing running right now"
-												: "No pods reporting yet"}
-										</EmptyTitle>
+										<EmptyTitle>Nothing running right now</EmptyTitle>
 										<EmptyDescription>
-											{endedPods > 0
-												? `Every pod that reported in this window has since ended. Open the Ended scope to see the ${endedPods.toLocaleString()} that ran.`
-												: "Install the Maple Kubernetes Helm chart so the kubelet stats receiver can start collecting per-pod CPU and memory metrics."}
+											{`Every pod that reported in this window has since ended. Open the Ended scope to see the ${endedPods.toLocaleString()} that ran.`}
 										</EmptyDescription>
 									</EmptyHeader>
-									{endedPods > 0 ? (
-										<Button
-											variant="outline"
-											size="sm"
-											onClick={() => patchSearch({ scope: "ended" })}
-										>
-											Show ended pods
-										</Button>
-									) : null}
+									<Button
+										variant="outline"
+										size="sm"
+										onClick={() => patchSearch({ scope: "ended" })}
+									>
+										Show ended pods
+									</Button>
 								</Empty>
 							)
 						}
@@ -377,7 +383,7 @@ function PodsPage() {
 											<EmptyTitle>No pods match these filters</EmptyTitle>
 											<EmptyDescription>
 												{scope
-													? `Nothing is ${SCOPE_LABEL[scope]} in this window — which is good news.`
+													? `Nothing is ${SCOPE_LABEL[scope]} in this window, which is good news.`
 													: "Try a different name, or clear the filters to see the whole fleet."}
 											</EmptyDescription>
 										</EmptyHeader>

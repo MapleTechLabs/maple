@@ -10,6 +10,7 @@ import {
 	EmptyTitle,
 } from "@maple/ui/components/ui/empty"
 
+import { DocsLink, EmptyActions } from "@/components/common/docs-link"
 import { PlanetScaleIcon } from "@/components/icons"
 
 export function PlanetScaleNotConnected() {
@@ -22,17 +23,19 @@ export function PlanetScaleNotConnected() {
 				<EmptyTitle>Connect PlanetScale to see database health</EmptyTitle>
 				<EmptyDescription>
 					Authorize your PlanetScale organization with one click and Maple tracks every
-					branch&apos;s health — connections, CPU, memory, replication lag — with nothing to
-					install.
+					branch&apos;s health (connections, CPU, memory, replication lag) with nothing to install.
 				</EmptyDescription>
 			</EmptyHeader>
 			<EmptyContent>
-				<Button
-					size="sm"
-					render={<Link to="/integrations" search={{ integration: "planetscale" }} />}
-				>
-					Connect PlanetScale
-				</Button>
+				<EmptyActions>
+					<Button
+						size="sm"
+						render={<Link to="/integrations" search={{ integration: "planetscale" }} />}
+					>
+						Connect PlanetScale
+					</Button>
+					<DocsLink page="planetscale" />
+				</EmptyActions>
 			</EmptyContent>
 		</Empty>
 	)

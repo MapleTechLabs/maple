@@ -6,6 +6,7 @@ import { getChartById } from "@maple/ui/components/charts/registry"
 import { ChartSkeleton } from "@maple/ui/components/charts/_shared/chart-skeleton"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { QueryErrorState } from "@/components/common/query-error-state"
+import { DocsLink } from "@/components/common/docs-link"
 import { MetricQueryControls, type MetricQueryPatch } from "./metric-query-controls"
 import { MetricBreakdown, appendWhereFilter } from "./metric-breakdown"
 import { MetricGraduationActions } from "./metric-graduation-actions"
@@ -176,6 +177,9 @@ export function MetricDetail({ metricName, state, startTime, endTime, onPatch }:
 							{startTime} and {endTime}. Widen the time range, or check that the service
 							emitting it is still running.
 						</p>
+						<span className="mt-3">
+							<DocsLink page="metrics" />
+						</span>
 					</div>
 				)
 			}

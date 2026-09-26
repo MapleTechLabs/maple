@@ -16,6 +16,7 @@ import {
 	type IconComponent,
 } from "@/components/icons"
 import { setupAuditAtom } from "@/lib/services/atoms/audit-atoms"
+import { DocsLink, EmptyActions } from "@/components/common/docs-link"
 import type { SettingsTab } from "@/components/settings/settings-nav"
 import { formatRelativeTime } from "@maple/ui/lib/time-format"
 
@@ -207,13 +208,16 @@ function Report({ audit }: { audit: V2SetupAudit }) {
 						and come back.
 					</p>
 				</div>
-				<Link
-					to="/settings"
-					search={{ tab: "ingestion" }}
-					className={buttonVariants({ variant: "outline", size: "sm" })}
-				>
-					Go to Ingestion
-				</Link>
+				<EmptyActions>
+					<Link
+						to="/settings"
+						search={{ tab: "ingestion" }}
+						className={buttonVariants({ variant: "outline", size: "sm" })}
+					>
+						Go to Ingestion
+					</Link>
+					<DocsLink page="quickstart" />
+				</EmptyActions>
 			</div>
 		)
 	}

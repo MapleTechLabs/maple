@@ -58,6 +58,7 @@ import {
 	recommendationIssuesListAtom,
 } from "@/lib/services/atoms/ingestion-atoms"
 import { AttributeKeyAutocomplete } from "./attribute-key-autocomplete"
+import { DocsLink, EmptyActions } from "@/components/common/docs-link"
 
 const MONO = "font-mono text-[0.92em] text-muted-foreground"
 const COL_HEADER = "text-muted-foreground/70 font-mono text-[10px] uppercase tracking-[0.12em]"
@@ -281,14 +282,17 @@ export function AttributeMappingsSection() {
 								</EmptyMedia>
 								<EmptyTitle>No attribute mappings yet</EmptyTitle>
 								<EmptyDescription>
-									Add a rule to rename or promote span attribute keys as telemetry is
-									ingested.
+									Mappings rename span attribute keys that do not follow OpenTelemetry
+									names, so dashboards and alerts find them. Rules apply to new spans only.
 								</EmptyDescription>
 							</EmptyHeader>
-							<Button size="sm" onClick={openAddDialog}>
-								<PlusIcon size={14} />
-								Add mapping
-							</Button>
+							<EmptyActions>
+								<Button size="sm" onClick={openAddDialog}>
+									<PlusIcon size={14} />
+									Add mapping
+								</Button>
+								<DocsLink page="otelConventions" />
+							</EmptyActions>
 						</Empty>
 					) : (
 						<div>

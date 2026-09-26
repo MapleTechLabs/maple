@@ -3,6 +3,7 @@ import { Badge } from "@maple/ui/components/ui/badge"
 import { Button } from "@maple/ui/components/ui/button"
 import { cn } from "@maple/ui/lib/utils"
 
+import { DocsLink } from "@/components/common/docs-link"
 import { GithubIcon, PlusIcon, TrashIcon } from "@/components/icons"
 import { AttachPullRequestDialog } from "./attach-pull-request-dialog"
 
@@ -63,10 +64,13 @@ export function IssuePullRequestsPanel({
 			</header>
 
 			{pullRequests.length === 0 ? (
-				<p className="px-4 py-3 text-xs text-muted-foreground">
-					Attach the pull request that fixes this. When it merges, Maple watches for the error to
-					come back and closes this issue if it doesn&apos;t.
-				</p>
+				<div className="space-y-2 px-4 py-3">
+					<p className="text-xs text-muted-foreground">
+						Attach the pull request that fixes this. When it merges, Maple watches for the error
+						to come back and closes this issue if it doesn&apos;t.
+					</p>
+					<DocsLink page="github">GitHub integration docs</DocsLink>
+				</div>
 			) : (
 				<ul className="divide-y">
 					{pullRequests.map((pr) => {

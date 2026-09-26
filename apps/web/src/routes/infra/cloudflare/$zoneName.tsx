@@ -1,11 +1,13 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router"
+import { Link, createFileRoute, useNavigate } from "@tanstack/react-router"
 import { Schema } from "effect"
 import { Result } from "@/lib/effect-atom"
 
+import { Button } from "@maple/ui/components/ui/button"
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@maple/ui/components/ui/empty"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
+import { DocsLink, EmptyActions } from "@/components/common/docs-link"
 import { QueryErrorState } from "@/components/common/query-error-state"
 import { CloudflareIcon } from "@/components/icons"
 import { HeroChip, PageHero } from "@/components/infra/primitives/page-hero"
@@ -262,6 +264,12 @@ function ZoneDetailContent({
 								traffic is landing.
 							</EmptyDescription>
 						</EmptyHeader>
+						<EmptyActions>
+							<Button variant="outline" size="sm" render={<Link to="/infra/cloudflare" />}>
+								Back to zones
+							</Button>
+							<DocsLink page="cloudflare" />
+						</EmptyActions>
 					</Empty>
 				)
 			}

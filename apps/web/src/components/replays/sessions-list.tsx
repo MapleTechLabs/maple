@@ -3,7 +3,7 @@ import { useCallback } from "react"
 import { useNavigate } from "@tanstack/react-router"
 import { useVirtualizer } from "@tanstack/react-virtual"
 import { cn } from "@maple/ui/lib/utils"
-import { EyeIcon } from "@/components/icons"
+import { SignalEmptyState } from "@/components/common/signal-empty-state"
 import { useLiveClock } from "@/hooks/use-live-clock"
 import { usePageScrollMargin } from "@/hooks/use-page-scroll-margin"
 import { useTimezonePreference } from "@/hooks/use-timezone-preference"
@@ -97,6 +97,9 @@ interface SessionsListProps {
 	/** p95 session duration (ms) from the facets query — sessions above it get a
 	 *  "long" chip beside their duration. No chip when unavailable. */
 	durationP95?: number
+	/** True when any filter or search narrows the list, so the empty state says so. */
+	filtered?: boolean
+	onClearFilters?: () => void
 	/** "Now" for the live-ness test, injectable so tests don't chase the clock.
 	 *  Left unset it comes from {@link useLiveClock}, which ticks so a pill stops
 	 *  claiming LIVE once its window closes even on a list nobody is touching.
@@ -140,6 +143,8 @@ export function SessionsList({
 	loadingMore = false,
 	isCapped = false,
 	durationP95,
+	filtered = false,
+	onClearFilters,
 	nowMs,
 }: SessionsListProps) {
 	const navigate = useNavigate()
@@ -161,25 +166,7 @@ export function SessionsList({
 	const virtualItems = virtualizer.getVirtualItems()
 
 	if (sessions.length === 0) {
-		return (
-			<div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-border px-6 py-20 text-center">
-				<div className="mb-4 grid size-12 place-items-center rounded-full bg-muted text-muted-foreground">
-					<EyeIcon className="size-6" />
-				</div>
-				<p className="text-sm font-medium">No sessions recorded yet</p>
-				<p className="mt-1.5 max-w-md text-sm text-muted-foreground">
-					Install{" "}
-					<code className="rounded bg-muted px-1.5 py-0.5 font-mono text-[0.8em]">
-						@maple-dev/browser
-					</code>{" "}
-					and call{" "}
-					<code className="rounded bg-muted px-1.5 py-0.5 font-mono text-[0.8em]">
-						MapleBrowser.init()
-					</code>{" "}
-					to start capturing what your users see.
-				</p>
-			</div>
-		)
+		return <SignalEmptyState signal="sessions" filtered={filtered} onClearFilters={onClearFilters} />
 	}
 
 	return (
@@ -358,7 +345,7 @@ export function SessionsList({
 
 			{isCapped && (
 				<p className="py-3 text-sm text-muted-foreground">
-					Showing first {sessions.length.toLocaleString()} sessions — narrow filters to continue
+					Showing first {sessions.length.toLocaleString()} sessions. Narrow filters to continue.
 				</p>
 			)}
 

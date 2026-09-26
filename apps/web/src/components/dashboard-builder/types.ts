@@ -121,9 +121,10 @@ export type WidgetMode = "view" | "edit"
  */
 /**
  * `config` is a tile that is not finished being configured (no metric picked
- * yet) — like `range`, a constraint rendered muted, not a failure.
+ * yet, every query off, no data source): like `range`, rendered muted, not a failure.
+ * `empty` is a query that ran fine and returned no rows.
  */
-type WidgetErrorKind = "decode" | "runtime" | "range" | "config"
+type WidgetErrorKind = "decode" | "runtime" | "range" | "config" | "empty"
 export type WidgetDataState =
 	| { status: "loading" }
 	| { status: "error"; title?: string; message?: string; kind?: WidgetErrorKind }

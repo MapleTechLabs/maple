@@ -18,7 +18,7 @@ import { AlertWarningIcon, CircleWarningIcon } from "@/components/icons"
 import { formatRelativeTime } from "@maple/ui/lib/time-format"
 
 /** Metrics scraping is off. Said the same way wherever a metric would have been. */
-export const METRICS_PAUSED_MESSAGE = "Branch metrics are paused — add a metrics token to collect them."
+export const METRICS_PAUSED_MESSAGE = "Branch metrics are paused. Add a metrics token to collect them."
 
 /** Short form for a table cell subline or a stat rail, where the Alert already carries the fix. */
 export const METRICS_PAUSED_SHORT = "metrics paused"
@@ -92,7 +92,7 @@ export function PlanetScaleInventoryNotice({
 			<AlertDescription>
 				{failing
 					? "The database and branch list may be out of date. Metrics are unaffected."
-					: `The database and branch list may be out of date — last refreshed ${
+					: `The database and branch list may be out of date. Last refreshed ${
 							lastInventoryAt === null ? "never" : formatRelativeTime(lastInventoryAt)
 						}.`}
 			</AlertDescription>

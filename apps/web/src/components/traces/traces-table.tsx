@@ -30,6 +30,11 @@ import { useListNavigation } from "@/hooks/use-list-navigation"
 import { useIsMobile } from "@maple/ui/hooks/use-media-query"
 import { TracePeekSheet } from "@/components/traces/trace-peek-sheet"
 import { peekParamsFor, resolvePeek } from "@/lib/traces/peek"
+import {
+	applyTimeRangeSearch,
+	canWidenTimeRange,
+	WIDEN_TIME_PRESET,
+} from "@/components/time-range-picker/search"
 
 type TraceSortKey = NonNullable<TracesSearchParams["sortBy"]>
 type TraceSortDir = NonNullable<TracesSearchParams["sortDir"]>
@@ -58,6 +63,11 @@ interface TracesTableViewProps {
 	/** Flattened active exclusions, for the empty state's hint. */
 	excludedValues: ReadonlyArray<string>
 	clearExclusions: () => void
+	/** Any facet, attribute, where-clause or error/duration filter is narrowing the list. */
+	filtered: boolean
+	clearFilters: () => void
+	/** Absent when the range is already wide or custom. */
+	onWidenRange?: () => void
 }
 
 /**
@@ -237,6 +247,9 @@ function TracesTableView({
 	onSortChange,
 	excludedValues,
 	clearExclusions,
+	filtered,
+	clearFilters,
+	onWidenRange,
 }: TracesTableViewProps) {
 	const { effectiveTimezone } = useTimezonePreference()
 	const scrollContainerRef = React.useRef<HTMLDivElement>(null)
@@ -414,9 +427,10 @@ function TracesTableView({
 				<div className="rounded-md border">
 					<SignalEmptyState
 						signal="traces"
-						filtered={excludedValues.length > 0}
-						// No `onClearFilters`: the hint below carries its own clear action, and it
-						// names the excluded values, which a generic button cannot.
+						filtered={filtered}
+						onClearFilters={clearFilters}
+						onWidenRange={onWidenRange}
+						// The hint names the excluded values, which the generic clear button cannot.
 						detail={
 							<ExcludedEmptyHint
 								excluded={excludedValues}
@@ -580,6 +594,29 @@ export function TracesTable({ filters }: TracesTableProps) {
 			search: (prev) => removeTraceFilterChips(prev, excludedChips),
 		})
 
+	const search: TracesSearchParams = filters ?? {}
+	const filtered =
+		traceFilterChips(search).length > 0 ||
+		Boolean(search.whereClause?.trim()) ||
+		search.hasError === true ||
+		search.minDurationMs !== undefined ||
+		search.maxDurationMs !== undefined ||
+		search.minSpanCount !== undefined
+	const clearFilters = () =>
+		navigateTraces({
+			search: (prev) => ({
+				...removeTraceFilterChips(prev, traceFilterChips(prev)),
+				whereClause: undefined,
+				hasError: undefined,
+				minDurationMs: undefined,
+				maxDurationMs: undefined,
+				minSpanCount: undefined,
+			}),
+		})
+	const canWiden = canWidenTimeRange(search, "12h")
+	const widenRange = () =>
+		navigateTraces({ search: (prev) => applyTimeRangeSearch(prev, { presetValue: WIDEN_TIME_PRESET }) })
+
 	const onShowNoise = React.useCallback(() => {
 		navigateTraces({ search: (prev) => ({ ...prev, hideNoise: false }) })
 	}, [navigateTraces])
@@ -675,6 +712,9 @@ export function TracesTable({ filters }: TracesTableProps) {
 				onSortChange={onSortChange}
 				excludedValues={excludedValues}
 				clearExclusions={clearExclusions}
+				filtered={filtered}
+				clearFilters={clearFilters}
+				onWidenRange={canWiden ? widenRange : undefined}
 			/>
 		))
 		.render()

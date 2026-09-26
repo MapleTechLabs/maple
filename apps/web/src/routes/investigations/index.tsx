@@ -13,8 +13,11 @@ import { toastManager } from "@maple/ui/components/ui/toast"
 import { formatDuration } from "@maple/ui/lib/format"
 import { toEpochMs } from "@maple/ui/lib/time-format"
 
+import { DocsLink } from "@/components/common/docs-link"
 import { ErrorState } from "@/components/common/error-state"
 import { ListToolbar } from "@/components/common/list-toolbar"
+import { ConnectionIcon } from "@/components/icons"
+import { useSignalPresence } from "@/hooks/use-signal-presence"
 
 import {
 	investigationKindKey,
@@ -519,6 +522,7 @@ const HERO_SUGGESTIONS = [
  * page becomes the invitation instead.
  */
 function HubHero({ onSubmit, busy }: { onSubmit: (title: string) => void | Promise<void>; busy: boolean }) {
+	const tracePresence = useSignalPresence("traces")
 	return (
 		<div className="mx-auto flex min-h-full w-full max-w-2xl flex-col justify-center gap-5 py-16">
 			<span className="text-[10px] font-medium uppercase tracking-[0.12em] text-primary">
@@ -528,10 +532,24 @@ function HubHero({ onSubmit, busy }: { onSubmit: (title: string) => void | Promi
 				Ask, and Maple goes and finds out.
 			</h1>
 			<p className="max-w-xl text-sm leading-6 text-muted-foreground">
-				One agent reads the traces, logs and metrics around it, tests the likely explanations —
-				deploys, dependencies, saturation, traffic — and comes back with a cause, the evidence for it,
+				One agent reads the traces, logs and metrics around it, tests the likely explanations
+				(deploys, dependencies, saturation, traffic) and comes back with a cause, the evidence for it,
 				and what it ruled out.
 			</p>
+			{tracePresence.status === "absent" && (
+				<div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-muted-foreground">
+					<span>Investigations read your telemetry. Send traces first.</span>
+					<Button
+						size="sm"
+						className="gap-2"
+						render={<Link to="/settings" search={{ tab: "ingestion" }} />}
+					>
+						<ConnectionIcon size={14} />
+						Set up tracing
+					</Button>
+					<DocsLink page="instrumentation">Setup guide</DocsLink>
+				</div>
+			)}
 			<InvestigateBar
 				onSubmit={onSubmit}
 				busy={busy}
@@ -555,11 +573,19 @@ function HubHero({ onSubmit, busy }: { onSubmit: (title: string) => void | Promi
 					</li>
 				))}
 			</ul>
-			<p className="flex items-baseline gap-2 text-sm text-muted-foreground">
-				<span aria-hidden className="size-1.5 shrink-0 translate-y-[-2px] rounded-full bg-primary" />
-				Maple also opens an investigation on its own whenever an incident fires — you will find those
-				here too.
-			</p>
+			<div className="flex flex-wrap items-baseline gap-x-4 gap-y-2 text-sm text-muted-foreground">
+				<p className="flex items-baseline gap-2">
+					<span
+						aria-hidden
+						className="size-1.5 shrink-0 translate-y-[-2px] rounded-full bg-primary"
+					/>
+					When an alert rule fires, Maple opens an investigation on its own. Those land here too.
+				</p>
+				<Link to="/alerts/create" className="text-foreground underline-offset-4 hover:underline">
+					Create an alert rule
+				</Link>
+				<DocsLink page="incidents" />
+			</div>
 		</div>
 	)
 }
@@ -599,10 +625,13 @@ function HubEmptyState({
 				</EmptyTitle>
 				<EmptyDescription>
 					{view === "active"
-						? "Start one above, or open an issue and choose Start investigation. Maple also opens one automatically when an incident fires."
-						: "Investigations you resolve — and any that fail — stay here for reference."}
+						? "Start one above, or open an issue and choose Start investigation. When an alert rule fires, Maple opens one on its own."
+						: "Investigations you resolve, and any that fail, stay here for reference."}
 				</EmptyDescription>
 			</EmptyHeader>
+			<EmptyContent>
+				<DocsLink page="incidents" />
+			</EmptyContent>
 		</Empty>
 	)
 }

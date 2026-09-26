@@ -213,7 +213,7 @@ export function SessionTranscript({
 		return (
 			<p className="px-2.5 py-8 text-center text-muted-foreground text-sm">
 				{query.trim() === ""
-					? "No AI activity in this session — its spans are HTTP and database work, which the transcript excludes. The Traces view shows them."
+					? "No AI activity in this session. Its spans are HTTP and database work, which the transcript excludes. The Traces view shows them."
 					: "No blocks match this filter."}
 			</p>
 		)

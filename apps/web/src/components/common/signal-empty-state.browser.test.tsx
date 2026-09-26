@@ -70,3 +70,30 @@ it("uses the page's noun for the heading but the signal's noun for the timestamp
 	expect(screen.getByText("No services in this time range")).toBeTruthy()
 	expect(screen.getByText(/Maple last received traces/)).toBeTruthy()
 })
+
+it("links the page's guide even when the window is only quiet", async () => {
+	await renderState({ signal: "traces", presence: { status: "present", lastSeen: Date.now() - 60_000 } })
+
+	const docs = screen.getByRole("link", { name: /Read the docs/ })
+	expect(docs.getAttribute("href")).toBe("https://maple.dev/docs/explore/traces")
+})
+
+it("lets a page built on a signal describe itself, keeping the signal's setup advice", async () => {
+	await renderState({
+		signal: "traces",
+		noun: "errors",
+		purpose: "Errors groups failed spans into issues.",
+		guideDocs: "errors",
+		presence: { status: "absent", lastSeen: null },
+	})
+
+	expect(
+		screen.getByText(/Errors groups failed spans into issues\. They come from an OpenTelemetry SDK/),
+	).toBeTruthy()
+	expect(screen.getByRole("link", { name: /Setup guide/ }).getAttribute("href")).toBe(
+		"https://maple.dev/docs/instrumentation",
+	)
+	expect(screen.getByRole("link", { name: /Read the docs/ }).getAttribute("href")).toBe(
+		"https://maple.dev/docs/errors/overview",
+	)
+})

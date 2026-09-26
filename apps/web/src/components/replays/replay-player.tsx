@@ -4,6 +4,7 @@ import "@rrweb/replay/dist/style.css"
 import { Button } from "@maple/ui/components/ui/button"
 import { cn } from "@maple/ui/lib/utils"
 import { displayError } from "@/lib/error-messages"
+import { DocsLink } from "@/components/common/docs-link"
 import { type DisplayMarker, type IdleBand, useReplayPlayer } from "./replay-player-context"
 import {
 	GlobeIcon,
@@ -144,8 +145,11 @@ export function ReplaySurface({
 						)}
 						{status === "unrecorded" && (
 							<PlayerMessage>
-								This session wasn’t recorded. Replay is off or unsampled for this app — its
+								This session wasn’t recorded. Replay is off or unsampled for this app. Its
 								traces and events are still below.
+								<span className="mt-2 flex justify-center">
+									<DocsLink page="sessionReplay" />
+								</span>
 							</PlayerMessage>
 						)}
 					</div>

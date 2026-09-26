@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react"
-import { createFileRoute } from "@tanstack/react-router"
+import { createFileRoute, Link } from "@tanstack/react-router"
 import { Result, useAtomValue } from "@/lib/effect-atom"
 
 import { Button } from "@maple/ui/components/ui/button"
@@ -19,6 +19,7 @@ import { FleetGrid } from "@/components/infra/fleet-grid"
 import { HostTable, HostTableLoading, type HostRow } from "@/components/infra/host-table"
 import { HostSummaryCards, HostSummaryCardsLoading } from "@/components/infra/host-summary-cards"
 import { InfraIntegrations } from "@/components/infra/infra-integrations"
+import { InfraSetupEmpty } from "@/components/infra/infra-empty-state"
 import { InstallHostModal } from "@/components/infra/install-modal"
 import { deriveHostStatus, type HostStatus } from "@/components/infra/format"
 import { PageHero } from "@/components/infra/primitives/page-hero"
@@ -89,23 +90,21 @@ function InfraPage() {
 
 									if (hosts.length === 0 && !search.trim()) {
 										return (
-											<Empty className="py-16">
-												<EmptyHeader>
-													<EmptyMedia variant="icon">
-														<ServerIcon size={16} />
-													</EmptyMedia>
-													<EmptyTitle>No hosts reporting yet</EmptyTitle>
-													<EmptyDescription>
-														Install the Maple infrastructure agent on a host,
-														container, or Kubernetes cluster to start collecting
-														CPU, memory, disk, and network metrics.
-													</EmptyDescription>
-												</EmptyHeader>
-												<Button onClick={() => setInstallOpen(true)}>
-													<PlusIcon size={14} />
-													Add host
-												</Button>
-											</Empty>
+											<InfraSetupEmpty
+												icon={<ServerIcon size={16} />}
+												title="No hosts reporting yet"
+												description="Hosts lists every machine sending CPU, memory, disk and network metrics. Run the OpenTelemetry Collector with the hostmetrics receiver on a host, or install the Helm chart to report every Kubernetes node."
+												installTab="hosts"
+												actionLabel="Add host"
+												docs="hosts"
+											>
+												<Link
+													to="/infra/discover"
+													className="text-muted-foreground text-sm underline-offset-4 hover:text-foreground hover:underline"
+												>
+													See all collectors
+												</Link>
+											</InfraSetupEmpty>
 										)
 									}
 
@@ -127,7 +126,11 @@ function InfraPage() {
 							<InfraIntegrations />
 						</div>
 
-						<InstallHostModal open={installOpen} onOpenChange={setInstallOpen} />
+						<InstallHostModal
+							open={installOpen}
+							onOpenChange={setInstallOpen}
+							defaultTab="hosts"
+						/>
 					</DashboardLayout.Scroll>
 				</DashboardLayout.Content>
 			</DashboardLayout.Body>
@@ -259,6 +262,25 @@ function FleetView({
 								Try a different name, or clear the search to see all hosts.
 							</EmptyDescription>
 						</EmptyHeader>
+						<Button variant="outline" size="sm" onClick={() => onSearchChange("")}>
+							Clear search
+						</Button>
+					</Empty>
+				) : statusFilter !== "all" && filtered.length === 0 ? (
+					<Empty className="py-12">
+						<EmptyHeader>
+							<EmptyMedia variant="icon">
+								<ServerIcon size={16} />
+							</EmptyMedia>
+							<EmptyTitle>No hosts with this status in this window.</EmptyTitle>
+							<EmptyDescription>
+								Active hosts reported in the last minute, idle ones in the last 5 minutes,
+								ended ones longer ago.
+							</EmptyDescription>
+						</EmptyHeader>
+						<Button variant="outline" size="sm" onClick={() => onStatusFilterChange("all")}>
+							Show all hosts
+						</Button>
 					</Empty>
 				) : (
 					<HostTable hosts={filtered} waiting={waiting} />

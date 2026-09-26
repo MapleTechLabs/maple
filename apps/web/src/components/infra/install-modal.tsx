@@ -22,23 +22,26 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@maple/ui/components/u
 
 import { EyeIcon } from "@/components/icons"
 import { CopyButton } from "@maple/ui/components/ui/copy-button"
+import { docsUrl } from "@/lib/docs"
 import { ingestUrl } from "@/lib/services/common/ingest-url"
 import { retainedQueryV2 } from "@/lib/services/common/v2-atom-client"
 
 // The endpoint the chart and the agent image default to. The EU region is not it.
 const CHART_DEFAULT_INGEST_URL = "https://ingest.maple.dev"
 
-const DOCS_URLS = {
-	kubernetes: "https://maple.dev/docs/infrastructure/kubernetes",
-	docker: "https://maple.dev/docs/infrastructure/docker",
-} as const
+const INSTALL_TABS = ["kubernetes", "docker", "hosts"] as const
 
-type InstallTab = keyof typeof DOCS_URLS
+/** Each tab is also the `DocsPage` key of its install guide. */
+export type InstallTab = (typeof INSTALL_TABS)[number]
+
+function isInstallTab(value: unknown): value is InstallTab {
+	return INSTALL_TABS.some((tab) => tab === value)
+}
 
 interface InstallModalProps {
 	open: boolean
 	onOpenChange: (open: boolean) => void
-	/** Which collector tab opens first — the containers page opens on Docker. */
+	/** Which collector tab opens first: the containers page opens on Docker. */
 	defaultTab?: InstallTab
 }
 
@@ -87,13 +90,59 @@ function dockerCommand(token: string) {
 	return lines.join("\n")
 }
 
+// The hostmetrics config from the hosts docs. It reads the key from the environment, so it
+// carries no secret. The three `*.utilization` metrics are off by default and the page needs them.
+const HOST_CONFIG = `receivers:
+    hostmetrics:
+        collection_interval: 30s
+        scrapers:
+            cpu:
+                metrics:
+                    system.cpu.utilization:
+                        enabled: true
+            load: {}
+            memory:
+                metrics:
+                    system.memory.utilization:
+                        enabled: true
+            filesystem:
+                metrics:
+                    system.filesystem.utilization:
+                        enabled: true
+            network: {}
+
+processors:
+    resourcedetection:
+        detectors: [env, system]
+    batch: {}
+
+exporters:
+    otlphttp/maple:
+        endpoint: ${ingestUrl}
+        compression: gzip
+        headers:
+            x-maple-ingest-key: \${env:MAPLE_INGEST_KEY}
+
+service:
+    pipelines:
+        metrics:
+            receivers: [hostmetrics]
+            processors: [resourcedetection, batch]
+            exporters: [otlphttp/maple]`
+
+function hostCommand(token: string) {
+	return `MAPLE_INGEST_KEY=${token} otelcol-contrib --config config.yaml`
+}
+
 interface SnippetPanelProps {
 	loading: boolean
 	snippet: string
 	displaySnippet: string
 	rows: number
 	revealed: boolean
-	onToggleReveal: () => void
+	/** Omit for snippets that carry no key: the reveal toggle is then hidden. */
+	onToggleReveal?: () => void
+	copyLabel?: string
 }
 
 function SnippetPanel({
@@ -103,6 +152,7 @@ function SnippetPanel({
 	rows,
 	revealed,
 	onToggleReveal,
+	copyLabel = "Install command",
 }: SnippetPanelProps) {
 	if (loading) return <Skeleton className="h-36 w-full" />
 	return (
@@ -115,17 +165,19 @@ function SnippetPanel({
 				className="font-mono text-xs tracking-wide select-all leading-relaxed"
 			/>
 			<InputGroupAddon align="block-end">
-				<InputGroupButton
-					onClick={onToggleReveal}
-					aria-label={revealed ? "Hide key" : "Reveal key"}
-					title={revealed ? "Hide key" : "Reveal key"}
-				>
-					<EyeIcon size={14} />
-					{revealed ? "Hide key" : "Reveal key"}
-				</InputGroupButton>
+				{onToggleReveal ? (
+					<InputGroupButton
+						onClick={onToggleReveal}
+						aria-label={revealed ? "Hide key" : "Reveal key"}
+						title={revealed ? "Hide key" : "Reveal key"}
+					>
+						<EyeIcon size={14} />
+						{revealed ? "Hide key" : "Reveal key"}
+					</InputGroupButton>
+				) : null}
 				<CopyButton
 					value={snippet}
-					label="Install command"
+					label={copyLabel}
 					idleLabel="Copy"
 					render={<InputGroupButton />}
 					className="ml-auto"
@@ -164,6 +216,8 @@ export function InstallHostModal({ open, onOpenChange, defaultTab = "kubernetes"
 		() => (revealed || !token ? dockerSnippet : dockerCommand(maskToken(token))),
 		[revealed, dockerSnippet, token],
 	)
+	const hostSnippet = token ? hostCommand(token) : ""
+	const hostDisplay = revealed || !token ? hostSnippet : hostCommand(maskToken(token))
 
 	return (
 		<Dialog
@@ -183,23 +237,29 @@ export function InstallHostModal({ open, onOpenChange, defaultTab = "kubernetes"
 				<DialogHeader>
 					<DialogTitle>Install a collector</DialogTitle>
 					<DialogDescription>
-						Pick where your workloads run. Both paths embed your org's ingest key and start
+						Pick where your workloads run. Each path uses your org's ingest key and starts
 						reporting within about a minute.
 					</DialogDescription>
 				</DialogHeader>
 
 				<DialogPanel className="space-y-4 min-w-0">
-					<Tabs value={tab} onValueChange={(v) => setTab(v as InstallTab)}>
+					<Tabs
+						value={tab}
+						onValueChange={(v) => {
+							if (isInstallTab(v)) setTab(v)
+						}}
+					>
 						<TabsList>
 							<TabsTrigger value="kubernetes">Kubernetes</TabsTrigger>
 							<TabsTrigger value="docker">Docker</TabsTrigger>
+							<TabsTrigger value="hosts">Host</TabsTrigger>
 						</TabsList>
 						<TabsContent value="kubernetes" className="space-y-4 pt-3">
 							<p className="text-muted-foreground text-xs">
 								The Maple Helm chart deploys a DaemonSet for per-node host + kubelet metrics
 								and a single-replica deployment for cluster-wide signals. Run the command
 								against your cluster. For production, prefer an existing Secret over an inline
-								value — see the docs.
+								value. See the docs.
 							</p>
 							<SnippetPanel
 								loading={loading}
@@ -213,7 +273,7 @@ export function InstallHostModal({ open, onOpenChange, defaultTab = "kubernetes"
 						<TabsContent value="docker" className="space-y-4 pt-3">
 							<p className="text-muted-foreground text-xs">
 								The Maple Docker agent runs as a single container with read-only access to the
-								Docker socket and streams per-container CPU, memory, network, and block I/O —
+								Docker socket and streams per-container CPU, memory, network, and block I/O,
 								plus container logs via the mounted log directory (drop that mount to skip
 								logs). It also accepts app OTLP on 4317/4318.
 							</p>
@@ -222,6 +282,31 @@ export function InstallHostModal({ open, onOpenChange, defaultTab = "kubernetes"
 								snippet={dockerSnippet}
 								displaySnippet={dockerDisplay}
 								rows={customEndpoint ? 10 : 9}
+								revealed={revealed}
+								onToggleReveal={() => setRevealed((v) => !v)}
+							/>
+						</TabsContent>
+						<TabsContent value="hosts" className="space-y-4 pt-3">
+							<p className="text-muted-foreground text-xs">
+								For any Linux, macOS or Windows machine outside Kubernetes. Install the
+								OpenTelemetry Collector Contrib distribution (
+								<code className="font-mono">otelcol-contrib</code>), save this as{" "}
+								<code className="font-mono">config.yaml</code>, then start it with the command
+								below. On Kubernetes, the Helm chart already reports every node.
+							</p>
+							<SnippetPanel
+								loading={false}
+								snippet={HOST_CONFIG}
+								displaySnippet={HOST_CONFIG}
+								rows={12}
+								revealed={false}
+								copyLabel="Collector config"
+							/>
+							<SnippetPanel
+								loading={loading}
+								snippet={hostSnippet}
+								displaySnippet={hostDisplay}
+								rows={1}
 								revealed={revealed}
 								onToggleReveal={() => setRevealed((v) => !v)}
 							/>
@@ -243,7 +328,7 @@ export function InstallHostModal({ open, onOpenChange, defaultTab = "kubernetes"
 						variant="outline"
 						render={
 							<a
-								href={DOCS_URLS[tab]}
+								href={docsUrl(tab)}
 								target="_blank"
 								rel="noopener noreferrer"
 								aria-label="View docs"

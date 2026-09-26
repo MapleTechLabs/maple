@@ -5,6 +5,7 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "@maple/ui/components/ui/t
 import { cn } from "@maple/ui/lib/utils"
 import { formatRelativeTime } from "@maple/ui/lib/time-format"
 import { formatTimestampInTimezone } from "@/lib/timezone-format"
+import { DocsLink } from "@/components/common/docs-link"
 import { useTimezonePreference } from "@/hooks/use-timezone-preference"
 
 interface IssueIncidentsTableProps {
@@ -35,6 +36,7 @@ export function IssueIncidentsTable({ incidents }: IssueIncidentsTableProps) {
 					<EmptyTitle>No incidents yet</EmptyTitle>
 					<EmptyDescription>Incidents open on first-seen or regression events.</EmptyDescription>
 				</EmptyHeader>
+				<DocsLink page="errors" />
 			</Empty>
 		)
 	}

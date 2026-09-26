@@ -31,6 +31,7 @@ import { Result, useAtomValue } from "@/lib/effect-atom"
 import { AlertsOverviewModel, type AlertsOverviewReady } from "@/lib/models/alerts-overview-model"
 import { unitflowRuntime } from "@/lib/models/runtime"
 import { retainedQuery } from "@/lib/services/common/atom-client"
+import { Button } from "@maple/ui/components/ui/button"
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@maple/ui/components/ui/empty"
 import { ErrorState } from "@/components/common/error-state"
 import {
@@ -355,6 +356,23 @@ const AlertsOverviewContent = memo(function AlertsOverviewContent({
 								Try a different search term, creator, tag, or health filter.
 							</EmptyDescription>
 						</EmptyHeader>
+						<Button
+							variant="outline"
+							size="sm"
+							onClick={() => {
+								setSearchQuery("")
+								navigate({
+									search: (prev) => ({
+										...prev,
+										tags: undefined,
+										createdBy: undefined,
+										status: undefined,
+									}),
+								})
+							}}
+						>
+							Clear filters
+						</Button>
 					</Empty>
 				) : (
 					<RulesOverviewTable

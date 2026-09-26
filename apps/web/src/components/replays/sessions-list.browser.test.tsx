@@ -4,7 +4,8 @@ import { cleanup, render } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { SessionsList, type SessionRow } from "./sessions-list"
 
-vi.mock("@tanstack/react-router", () => ({ useNavigate: () => vi.fn() }))
+// Link is only imported for the empty state's setup CTA, which these tests never render.
+vi.mock("@tanstack/react-router", () => ({ useNavigate: () => vi.fn(), Link: () => null }))
 
 const session: SessionRow = {
 	sessionId: "session-1",

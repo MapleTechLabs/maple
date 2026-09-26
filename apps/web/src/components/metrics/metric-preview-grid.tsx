@@ -3,7 +3,7 @@ import * as React from "react"
 import { Result, useAtomValue } from "@/lib/effect-atom"
 import { Button } from "@maple/ui/components/ui/button"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
-import { Empty, EmptyHeader, EmptyTitle, EmptyDescription } from "@maple/ui/components/ui/empty"
+import { SignalEmptyState } from "@/components/common/signal-empty-state"
 import { QueryErrorState } from "@/components/common/query-error-state"
 import { MetricPreviewCard, type MetricPreviewEntry } from "./metric-preview-card"
 import type { ListMetricsInput, Metric, MetricSparklinePoint } from "@/api/warehouse/metrics"
@@ -26,6 +26,7 @@ interface MetricPreviewGridProps {
 	startTime: string
 	endTime: string
 	onOpenMetric: (metric: Metric) => void
+	onClearFilters: () => void
 }
 
 /** Collapses per-(metric, service) catalog rows into one grid entry per metric. */
@@ -58,6 +59,7 @@ export function MetricPreviewGrid({
 	startTime,
 	endTime,
 	onOpenMetric,
+	onClearFilters,
 }: MetricPreviewGridProps) {
 	const [visiblePages, setVisiblePages] = React.useState(1)
 
@@ -87,14 +89,11 @@ export function MetricPreviewGrid({
 
 			if (entries.length === 0) {
 				return (
-					<Empty>
-						<EmptyHeader>
-							<EmptyTitle>No metrics found</EmptyTitle>
-							<EmptyDescription>
-								No metrics matched your filters in the selected time range.
-							</EmptyDescription>
-						</EmptyHeader>
-					</Empty>
+					<SignalEmptyState
+						signal="metrics"
+						filtered={search !== "" || Boolean(metricType)}
+						onClearFilters={onClearFilters}
+					/>
 				)
 			}
 

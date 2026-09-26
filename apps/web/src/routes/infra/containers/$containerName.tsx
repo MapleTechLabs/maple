@@ -1,9 +1,10 @@
 import { useState } from "react"
 import { DetailRail } from "@maple/ui/components/detail-rail"
-import { createFileRoute } from "@tanstack/react-router"
+import { createFileRoute, Link } from "@tanstack/react-router"
 import { Result, useAtomRefresh, useAtomValue } from "@/lib/effect-atom"
 import { Schema } from "effect"
 
+import { Button } from "@maple/ui/components/ui/button"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@maple/ui/components/ui/select"
 import { Card, CardContent, CardHeader, CardTitle } from "@maple/ui/components/ui/card"
 import { cn } from "@maple/ui/lib/utils"
@@ -165,8 +166,29 @@ function ContainerDetailPage() {
 									/>
 								</StatRail>
 							) : (
-								<div className="rounded-md border border-dashed px-4 py-12 text-center text-sm text-muted-foreground">
-									No metrics arrived for this container in the selected window.
+								<div className="flex flex-col items-center gap-3 rounded-md border border-dashed px-4 py-12 text-center text-sm text-muted-foreground">
+									<p>
+										This container sent no metrics in the selected window. It may have
+										stopped earlier: try a wider range, or go back to the containers list.
+									</p>
+									<div className="flex flex-wrap items-center justify-center gap-2">
+										{preset === "7d" ? null : (
+											<Button
+												variant="outline"
+												size="sm"
+												onClick={() => setPreset("7d")}
+											>
+												Show last 7 days
+											</Button>
+										)}
+										<Button
+											variant="outline"
+											size="sm"
+											render={<Link to="/infra/containers" />}
+										>
+											Back to containers
+										</Button>
+									</div>
 								</div>
 							)}
 

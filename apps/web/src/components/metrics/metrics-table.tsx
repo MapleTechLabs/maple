@@ -7,7 +7,7 @@ import { Result, useAtomValue } from "@/lib/effect-atom"
 
 import { Button } from "@maple/ui/components/ui/button"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@maple/ui/components/ui/table"
-import { Empty, EmptyHeader, EmptyTitle, EmptyDescription } from "@maple/ui/components/ui/empty"
+import { SignalEmptyState } from "@/components/common/signal-empty-state"
 import { Badge } from "@maple/ui/components/ui/badge"
 import { MetricTypeBadge } from "./metric-type-badge"
 import { type Metric, type ListMetricsInput } from "@/api/warehouse/metrics"
@@ -19,6 +19,7 @@ interface MetricsTableProps {
 	search: string
 	metricType: ListMetricsInput["metricType"] | null
 	onOpenMetric: (metric: Metric) => void
+	onClearFilters: () => void
 	startTime?: string
 	endTime?: string
 }
@@ -60,7 +61,14 @@ const PAGE_SIZE = 100
 // to detect more pages, so the displayed cap is 999.
 const MAX_LIMIT = 1000
 
-export function MetricsTable({ search, metricType, onOpenMetric, startTime, endTime }: MetricsTableProps) {
+export function MetricsTable({
+	search,
+	metricType,
+	onOpenMetric,
+	onClearFilters,
+	startTime,
+	endTime,
+}: MetricsTableProps) {
 	const [limit, setLimit] = useState(PAGE_SIZE)
 	const requestLimit = Math.min(limit + 1, MAX_LIMIT)
 
@@ -102,14 +110,11 @@ export function MetricsTable({ search, metricType, onOpenMetric, startTime, endT
 	const waiting = !Result.isSuccess(metricsResult) || metricsResult.waiting
 
 	return metrics.length === 0 ? (
-		<Empty>
-			<EmptyHeader>
-				<EmptyTitle>No metrics found</EmptyTitle>
-				<EmptyDescription>
-					No metrics matched your filters in the selected time range.
-				</EmptyDescription>
-			</EmptyHeader>
-		</Empty>
+		<SignalEmptyState
+			signal="metrics"
+			filtered={search !== "" || Boolean(metricType)}
+			onClearFilters={onClearFilters}
+		/>
 	) : (
 		<div className={`space-y-4 ${waiting ? "opacity-60" : ""}`}>
 			<div className="rounded-md border overflow-auto">

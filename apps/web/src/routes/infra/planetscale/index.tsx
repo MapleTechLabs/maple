@@ -1,11 +1,13 @@
 import { useMemo } from "react"
-import { createFileRoute, useNavigate } from "@tanstack/react-router"
+import { Link, createFileRoute, useNavigate } from "@tanstack/react-router"
 import { Schema } from "effect"
 import { Result, useAtomValue } from "@/lib/effect-atom"
 import { useRefreshableAtomValue } from "@/hooks/use-refreshable-atom-value"
 
+import { Button } from "@maple/ui/components/ui/button"
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@maple/ui/components/ui/empty"
 
+import { DocsLink, EmptyActions } from "@/components/common/docs-link"
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
 import { QueryErrorState } from "@/components/common/query-error-state"
 import { PlanetScaleIcon } from "@/components/icons"
@@ -105,7 +107,7 @@ function PlanetScalePage() {
 							<div className="space-y-6">
 								<PageHero
 									title="PlanetScale"
-									description="Database health from your PlanetScale organization — connections, CPU, memory, storage, and replication lag for every branch."
+									description="Database health from your PlanetScale organization: connections, CPU, memory, storage, and replication lag for every branch."
 								/>
 								{Result.builder(statusResult)
 									.onInitial(() => (
@@ -290,6 +292,18 @@ function PlanetScaleData({
 									read_databases permission.
 								</EmptyDescription>
 							</EmptyHeader>
+							<EmptyActions>
+								<Button
+									variant="outline"
+									size="sm"
+									render={
+										<Link to="/integrations" search={{ integration: "planetscale" }} />
+									}
+								>
+									Check the connection
+								</Button>
+								<DocsLink page="planetscale" />
+							</EmptyActions>
 						</Empty>
 					) : (
 						<PlanetScaleDatabaseTable

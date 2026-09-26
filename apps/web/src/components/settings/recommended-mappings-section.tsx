@@ -22,6 +22,7 @@ import {
 	recommendationIssuesListAtom,
 } from "@/lib/services/atoms/ingestion-atoms"
 import { formatNumber } from "@maple/ui/lib/format"
+import { DocsLink } from "@/components/common/docs-link"
 import { formatRelativeTime } from "@maple/ui/lib/time-format"
 
 type IssueKind = V2Recommendation["kind"]
@@ -217,11 +218,14 @@ export function RecommendedMappingsSection() {
 			</div>
 
 			{rows.length === 0 ? (
-				<p className="text-muted-foreground border-t px-4 py-8 text-center text-sm">
-					{tab === "open"
-						? "No open recommendations — your span attributes look healthy."
-						: "Nothing here yet."}
-				</p>
+				<div className="text-muted-foreground flex flex-col items-center gap-2 border-t px-4 py-8 text-center text-sm">
+					<p>
+						{tab === "open"
+							? "No open recommendations. Your span attributes look healthy."
+							: "Applied and dismissed recommendations show up here."}
+					</p>
+					{tab === "open" && <DocsLink page="otelConventions" />}
+				</div>
 			) : (
 				rows.map((issue) => {
 					const kindTag = KIND_TAG[issue.kind]

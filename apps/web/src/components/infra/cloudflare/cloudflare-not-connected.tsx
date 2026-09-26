@@ -10,6 +10,7 @@ import {
 	EmptyTitle,
 } from "@maple/ui/components/ui/empty"
 
+import { DocsLink, EmptyActions } from "@/components/common/docs-link"
 import { CloudflareIcon } from "@/components/icons"
 
 interface CloudflareNotConnectedProps {
@@ -35,14 +36,20 @@ export function CloudflareNotConnected({ variant }: CloudflareNotConnectedProps)
 				</EmptyTitle>
 				<EmptyDescription>
 					{variant === "not-connected"
-						? "Connect your Cloudflare account and Maple will continuously ingest zone HTTP analytics and Workers invocation metrics — no agents or Logpush setup required."
+						? "Connect your Cloudflare account and Maple will continuously ingest zone HTTP analytics and Workers invocation metrics. No agents or Logpush setup required."
 						: "Your Cloudflare connection is missing the analytics read scopes. Reconnect to grant them and analytics polling will start automatically."}
 				</EmptyDescription>
 			</EmptyHeader>
 			<EmptyContent>
-				<Button size="sm" render={<Link to="/integrations" />}>
-					{variant === "not-connected" ? "Connect Cloudflare" : "Reconnect Cloudflare"}
-				</Button>
+				<EmptyActions>
+					<Button
+						size="sm"
+						render={<Link to="/integrations" search={{ integration: "cloudflare" }} />}
+					>
+						{variant === "not-connected" ? "Connect Cloudflare" : "Reconnect Cloudflare"}
+					</Button>
+					<DocsLink page="cloudflare" />
+				</EmptyActions>
 			</EmptyContent>
 		</Empty>
 	)

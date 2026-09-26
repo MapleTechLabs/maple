@@ -635,7 +635,7 @@ function InactiveShell() {
 					</EmptyMedia>
 					<EmptyTitle>Recommendation not found</EmptyTitle>
 					<EmptyDescription>
-						This recommendation isn't in your list anymore — it may have resolved on its own.
+						This recommendation isn't in your list anymore. It may have resolved on its own.
 					</EmptyDescription>
 				</EmptyHeader>
 				<EmptyContent>

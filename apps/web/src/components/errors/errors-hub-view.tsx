@@ -8,9 +8,12 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { cn } from "@maple/ui/lib/utils"
 
 import { CircleCheckIcon, HistoryIcon, MagnifierIcon } from "@/components/icons"
+import { DocsLink } from "@/components/common/docs-link"
 import { ErrorState } from "@/components/common/error-state"
 import { ListToolbar } from "@/components/common/list-toolbar"
+import { SignalEmptyStateView } from "@/components/common/signal-empty-state"
 import { useAppHotkey } from "@/hooks/use-app-hotkey"
+import { useSignalPresence } from "@/hooks/use-signal-presence"
 import { useListNavigation } from "@/hooks/use-list-navigation"
 import {
 	HUB_SORTS,
@@ -213,8 +216,8 @@ const EMPTY_COPY = {
 	},
 	all: {
 		icon: CircleCheckIcon,
-		title: "No errors here",
-		description: "Nothing has been recorded. If a filter is on, clearing it shows everything.",
+		title: "No errors recorded",
+		description: "Your services are sending traces and none have failed.",
 	},
 	resolved: {
 		icon: HistoryIcon,
@@ -222,6 +225,9 @@ const EMPTY_COPY = {
 		description: "Errors you close land here, so you can check whether a fix held.",
 	},
 } satisfies Record<HubView, { icon: typeof CircleCheckIcon; title: string; description: string }>
+
+const ERRORS_PURPOSE =
+	"Errors groups failed spans and exception logs into issues you can triage, assign and resolve."
 
 export interface ErrorsHubViewProps {
 	/** `loading` draws row skeletons, `failed` the retry card. Both keep the
@@ -531,7 +537,31 @@ function HubEmpty({
 	// Likewise a sidebar filter: an all-clear under one would be a claim about
 	// errors the filter is hiding.
 	const narrowed = filtered || onClearFilters !== undefined
-	const Icon = narrowed ? MagnifierIcon : empty.icon
+	const presence = useSignalPresence("traces")
+
+	// An all-clear is only true once traces arrive. Before that, the empty list means setup.
+	if (!narrowed && presence.status === "absent") {
+		return (
+			<SignalEmptyStateView
+				signal="traces"
+				presence={presence}
+				noun="errors"
+				purpose={ERRORS_PURPOSE}
+				guideDocs="errors"
+				className="py-12"
+			/>
+		)
+	}
+
+	// Presence unreadable: state the fact, claim no all-clear, give no setup advice.
+	const unknown = !narrowed && presence.status === "unknown"
+	const Icon = narrowed ? MagnifierIcon : unknown ? HistoryIcon : empty.icon
+	const title = !unknown
+		? empty.title
+		: view === "all"
+			? "No errors found"
+			: `No ${VIEW_LABEL[view].toLowerCase()} errors`
+	const description = unknown ? ERRORS_PURPOSE : empty.description
 
 	return (
 		<Empty className="py-12">
@@ -544,16 +574,17 @@ function HubEmpty({
 						? `No ${SEVERITY_FILTER_LABEL[severity].toLowerCase()} errors here`
 						: narrowed
 							? "Nothing matches these filters"
-							: empty.title}
+							: title}
 				</EmptyTitle>
 				<EmptyDescription>
 					{filtered
 						? `Nothing in ${VIEW_LABEL[view]} matches that severity. Other severities may have plenty.`
 						: narrowed
 							? `No ${VIEW_LABEL[view].toLowerCase()} errors match the sidebar filters. Clear them to see everything.`
-							: empty.description}
+							: description}
 				</EmptyDescription>
 			</EmptyHeader>
+			{view === "all" && !narrowed ? <DocsLink page="errors" /> : null}
 			{filtered || onClearFilters !== undefined || view !== "all" ? (
 				<div className="flex flex-wrap items-center justify-center gap-2">
 					{filtered ? (

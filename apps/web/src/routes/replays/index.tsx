@@ -127,6 +127,35 @@ function ReplaysPage() {
 		navigate({ search: (prev) => ({ ...prev, visitorId: value }) })
 	}
 
+	const hasActiveFilters = [
+		search.service,
+		search.browser,
+		search.country,
+		search.deviceType,
+		search.userId,
+		search.user,
+		search.group,
+		search.visitorId,
+		search.hasErrors,
+		search.q,
+		search.page,
+		search.durationMin,
+		search.durationMax,
+		search.activeMin,
+		search.activeMax,
+	].some((value) => value !== undefined && value !== "" && value !== false)
+
+	// Keeps the time range: clearing filters should not also move the window.
+	const handleClearFilters = () => {
+		navigate({
+			search: (prev) => ({
+				startTime: prev.startTime,
+				endTime: prev.endTime,
+				timePreset: prev.timePreset,
+			}),
+		})
+	}
+
 	const sessions = allData
 	// Every header number comes off the facets query, which counts the whole
 	// window under the current filters. They used to be mixed: "sessions" and
@@ -276,6 +305,8 @@ function ReplaysPage() {
 										loadingMore={isFetchingNextPage}
 										onReachEnd={fetchNextPage}
 										durationP95={durationP95}
+										filtered={hasActiveFilters}
+										onClearFilters={handleClearFilters}
 									/>
 								))
 								.render()}

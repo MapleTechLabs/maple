@@ -20,6 +20,7 @@ import type { ChatConnectorManifest } from "@maple/chat-platform/manifests"
 import { PLANETSCALE_COLOR } from "@/components/infra/planetscale/metrics"
 import { useChatConnectorGate } from "@/hooks/use-organization-feature-flags"
 import { formatRelativeTime } from "@maple/ui/lib/time-format"
+import { docsUrl } from "@/lib/docs"
 import { Result, useAtomValue } from "@/lib/effect-atom"
 import { retainedQuery } from "@/lib/services/common/atom-client"
 import { retainedQueryV2 } from "@/lib/services/common/v2-atom-client"
@@ -124,28 +125,28 @@ const CATALOG: ReadonlyArray<CatalogEntry> = [
 	{
 		id: "cloudflare",
 		name: "Cloudflare",
-		description:
-			"Connect your Cloudflare account via OAuth — the foundation for one-click Workers telemetry.",
+		description: "Connect your Cloudflare account via OAuth to collect zone and Workers analytics.",
 		icon: CloudflareIcon,
 		accent: CLOUDFLARE_ACCENT,
+		docsUrl: docsUrl("cloudflare"),
 	},
 	{
 		id: "prometheus",
 		name: "Prometheus",
-		description: "Scrape any Prometheus-compatible endpoint on a schedule — no collector required.",
+		description: "Scrape any Prometheus-compatible endpoint on a schedule. No collector required.",
 		icon: PrometheusIcon,
 		accent: "#E6522C",
-		docsUrl: "https://maple.dev/docs/integrations/prometheus",
+		docsUrl: docsUrl("prometheus"),
 	},
 	{
 		id: "planetscale",
 		name: "PlanetScale",
 		description:
-			"Authorize your organization with one click — Maple tracks every database branch automatically.",
+			"Authorize your organization with one click. Maple tracks every database branch automatically.",
 		icon: PlanetScaleIcon,
 		// PlanetScale's mark is monochrome — neutral wash that works in both themes.
 		accent: PLANETSCALE_COLOR,
-		docsUrl: "https://maple.dev/docs/integrations/planetscale",
+		docsUrl: docsUrl("planetscale"),
 	},
 	{
 		id: "warpstream",
@@ -154,13 +155,13 @@ const CATALOG: ReadonlyArray<CatalogEntry> = [
 		icon: WarpStreamIcon,
 		// WarpStream's brand crimson (fill of the official mark).
 		accent: "#E52344",
-		docsUrl: "https://maple.dev/docs/integrations/warpstream",
+		docsUrl: docsUrl("warpstream"),
 	},
 	{
 		id: "hazel",
 		name: "Hazel",
 		description:
-			"Forward Maple alerts into a Hazel workspace via OAuth — pick destinations per notification.",
+			"Forward Maple alerts into a Hazel workspace via OAuth. Pick destinations per notification.",
 		icon: HazelIcon,
 		accent: HAZEL_ACCENT,
 		docsUrl: "https://hazel.sh/docs/integrations/maple",
@@ -173,7 +174,7 @@ const CATALOG: ReadonlyArray<CatalogEntry> = [
 		accent: GITHUB_ACCENT,
 		// GitHub's mark is near-black — render the glyph in the foreground token so it reads on the card.
 		iconClassName: "text-foreground",
-		docsUrl: "https://maple.dev/docs/integrations/github",
+		docsUrl: docsUrl("github"),
 	},
 	...CHAT_ENTRIES,
 ]

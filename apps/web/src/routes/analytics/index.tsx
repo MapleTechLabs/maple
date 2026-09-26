@@ -9,6 +9,9 @@ import { Tabs, TabsList, TabsTrigger } from "@maple/ui/components/ui/tabs"
 
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
 import { QueryErrorState } from "@/components/common/query-error-state"
+import { DocsLink } from "@/components/common/docs-link"
+import { SignalEmptyState } from "@/components/common/signal-empty-state"
+import { useSignalPresence } from "@/hooks/use-signal-presence"
 import { PageHero } from "@/components/infra/primitives/page-hero"
 import { PlayRotateClockwiseIcon } from "@/components/icons"
 import { chartBucketSeconds } from "@/components/infra/chart-utils"
@@ -157,6 +160,8 @@ function WebAnalyticsPage() {
 	)
 
 	const chips = activeFilterChips(filters)
+	// An org that never sent browser data gets the on-ramp, not a strip of zeroes.
+	const sessionsPresence = useSignalPresence("sessions")
 
 	return (
 		<PageRefreshProvider timePreset={search.timePreset ?? DEFAULT_PRESET}>
@@ -261,6 +266,13 @@ function WebAnalyticsPage() {
 										endTime={endTime}
 										filters={filters}
 										onToggleFilter={onToggleFilter}
+									/>
+								) : sessionsPresence.status === "absent" && chips.length === 0 ? (
+									<SignalEmptyState
+										signal="sessions"
+										noun="visits"
+										purpose="Web analytics counts visitors, pages and referrers from the browser SDK."
+										guideDocs="webAnalytics"
 									/>
 								) : (
 									<AnalyticsContent
@@ -503,7 +515,14 @@ function AnalyticsContent({
 							renderIcon: multiSite
 								? (row) => <Favicon host={row.secondary ?? ""} />
 								: undefined,
-							emptyMessage: "No page views in the selected window.",
+							emptyMessage: (
+								<>
+									No page views in the selected window.
+									<span className="mt-2 flex justify-center">
+										<DocsLink page="webAnalytics" />
+									</span>
+								</>
+							),
 						},
 						{
 							tab: "Entries",
@@ -594,8 +613,15 @@ function AnalyticsContent({
 							noun: "event",
 							nounPlural: "events",
 							viewsLabel: "Events",
-							emptyMessage:
-								'No custom events in the selected window. Send one with track("name", props) from the browser SDK.',
+							emptyMessage: (
+								<>
+									No custom events in the selected window. Send one with track("name",
+									props) from the browser SDK.
+									<span className="mt-2 flex justify-center">
+										<DocsLink page="productEventsApi" />
+									</span>
+								</>
+							),
 						},
 					]
 

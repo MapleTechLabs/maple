@@ -2,11 +2,13 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router"
 import { Schema } from "effect"
 import { Result, useAtomValue } from "@/lib/effect-atom"
 
+import { Button } from "@maple/ui/components/ui/button"
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@maple/ui/components/ui/empty"
 
 import { OptionalStringArrayParam } from "@/lib/search-params"
 import { QueryErrorState } from "@/components/common/query-error-state"
 import { MagnifierIcon, ServerIcon } from "@/components/icons"
+import { InfraSetupEmpty } from "@/components/infra/infra-empty-state"
 import { KubernetesShell } from "@/components/infra/kubernetes/kubernetes-shell"
 import { NodeTable, NodeTableLoading } from "@/components/infra/node-table"
 import { deriveHostStatus, type HostStatus } from "@/components/infra/format"
@@ -134,18 +136,14 @@ function NodesPage() {
 
 					if (nodes.length === 0 && !hasStructuredFilter) {
 						return (
-							<Empty className="py-16">
-								<EmptyHeader>
-									<EmptyMedia variant="icon">
-										<ServerIcon size={16} />
-									</EmptyMedia>
-									<EmptyTitle>No nodes reporting yet</EmptyTitle>
-									<EmptyDescription>
-										Install the Maple Kubernetes Helm chart so the kubelet stats receiver
-										can start collecting per-node metrics.
-									</EmptyDescription>
-								</EmptyHeader>
-							</Empty>
+							<InfraSetupEmpty
+								icon={<ServerIcon size={16} />}
+								title="No nodes reporting yet"
+								description="Install the Maple Kubernetes Helm chart so the kubelet stats receiver can start collecting per-node metrics."
+								installTab="kubernetes"
+								actionLabel="Install the Helm chart"
+								docs="kubernetes"
+							/>
 						)
 					}
 
@@ -199,9 +197,16 @@ function NodesPage() {
 											<EmptyDescription>
 												{q
 													? `Nothing named “${searchText}” in this scope.`
-													: "Nothing in this scope right now — which is good news."}
+													: "Nothing in this scope right now, which is good news."}
 											</EmptyDescription>
 										</EmptyHeader>
+										<Button
+											variant="outline"
+											size="sm"
+											onClick={() => patchSearch({ q: undefined, status: undefined })}
+										>
+											{q ? "Clear search" : "Show all nodes"}
+										</Button>
 									</Empty>
 								) : (
 									<NodeTable

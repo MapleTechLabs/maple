@@ -10,6 +10,8 @@ import {
 	ServerIcon,
 } from "@/components/icons"
 import type { IconProps } from "@/components/icons/icon"
+import { DocsLink } from "@/components/common/docs-link"
+import { useSignalPresence } from "@/hooks/use-signal-presence"
 
 interface Tone {
 	Glyph: ComponentType<IconProps>
@@ -70,6 +72,7 @@ export function ChatEmptyState({
 	suggestions: readonly string[]
 	onSelect: (suggestion: string) => void
 }) {
+	const tracePresence = useSignalPresence("traces")
 	return (
 		<div className="flex w-full min-w-0 max-w-xl flex-col px-4">
 			<div className="flex flex-col items-center gap-2.5 text-center">
@@ -83,8 +86,14 @@ export function ChatEmptyState({
 				</span>
 				<h3 className="font-medium text-base tracking-tight">Maple AI</h3>
 				<p className="max-w-sm text-muted-foreground text-sm">
-					Answers from your live telemetry — traces, logs, errors and services.
+					Answers from your live telemetry: traces, logs, errors and services.
 				</p>
+				{tracePresence.status === "absent" && (
+					<p className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-muted-foreground text-sm">
+						Maple AI answers from your telemetry. Send some first.
+						<DocsLink page="instrumentation">Setup guide</DocsLink>
+					</p>
+				)}
 			</div>
 
 			<div className="mt-6 overflow-hidden rounded-xl border border-border/60 bg-gradient-to-b from-card/70 to-card/20">
@@ -116,8 +125,11 @@ export function ChatEmptyState({
 			</div>
 
 			<p className="mt-3 text-center text-muted-foreground/60 text-xs">
-				Or just start typing — your keystrokes land in the composer.
+				Or just start typing. Your keystrokes land in the composer.
 			</p>
+			<div className="mt-4 flex justify-center">
+				<DocsLink page="aiAgents">Use Maple from your editor</DocsLink>
+			</div>
 		</div>
 	)
 }

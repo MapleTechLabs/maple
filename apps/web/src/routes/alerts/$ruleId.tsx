@@ -6,6 +6,7 @@ import { Fragment, useCallback, useMemo, useRef, useState } from "react"
 import { toastManager } from "@maple/ui/components/ui/toast"
 
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
+import { DocsLink, EmptyActions } from "@/components/common/docs-link"
 import { MapleApiV2AtomClient, retainedQueryV2 } from "@/lib/services/common/v2-atom-client"
 import { useAlertRuleChecks } from "@/hooks/use-alert-rule-checks"
 import { useTimezonePreference } from "@/hooks/use-timezone-preference"
@@ -1032,10 +1033,23 @@ function RuleDetailContent() {
 													</EmptyMedia>
 													<EmptyTitle>No incidents</EmptyTitle>
 													<EmptyDescription>
-														This rule hasn't triggered any incidents in the
-														selected filter.
+														{stateFilter === "all"
+															? "This rule has not fired. It opens an incident when the threshold is crossed."
+															: `This rule has no ${stateFilter} incidents.`}
 													</EmptyDescription>
 												</EmptyHeader>
+												<EmptyActions>
+													{stateFilter !== "all" && (
+														<Button
+															variant="outline"
+															size="sm"
+															onClick={() => setStateFilter("all")}
+														>
+															Show all incidents
+														</Button>
+													)}
+													<DocsLink page="incidents" />
+												</EmptyActions>
 											</Empty>
 										) : (
 											<Table>
@@ -1404,6 +1418,7 @@ function ChecksPanel({
 						wait for the scheduler to record the next check.
 					</EmptyDescription>
 				</EmptyHeader>
+				<DocsLink page="alertRules" />
 			</Empty>
 		)
 	}

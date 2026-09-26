@@ -1,6 +1,7 @@
 import { useMemo } from "react"
 import { createFileRoute, useNavigate } from "@tanstack/react-router"
 import { Schema } from "effect"
+import { Button } from "@maple/ui/components/ui/button"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { ActiveFilterChips } from "@maple/ui/components/filters/active-filter-chips"
 import { formatNumber } from "@maple/ui/lib/format"
@@ -12,6 +13,7 @@ import { useRefreshableAtomValue } from "@/hooks/use-refreshable-atom-value"
 import { getReleasesResultAtom } from "@/lib/services/atoms/warehouse-query-atoms"
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
 import { QueryErrorState } from "@/components/common/query-error-state"
+import { DocsLink } from "@/components/common/docs-link"
 import {
 	TimeRangeSearchFields,
 	applyTimeRangeSearch,
@@ -157,6 +159,7 @@ function ReleasesSkeleton() {
 }
 
 function ReleasesContent({ search }: { search: ReleasesSearchParams }) {
+	const navigate = useNavigate({ from: Route.fullPath })
 	const atom = getReleasesResultAtom({ data: releasesQueryInput(search) })
 	const result = useRefreshableAtomValue(atom)
 	const refresh = useAtomRefresh(atom)
@@ -194,11 +197,15 @@ function ReleasesContent({ search }: { search: ReleasesSearchParams }) {
 			<div className="flex flex-col items-center gap-1 rounded-md border bg-card px-4 py-12 text-center text-sm text-muted-foreground">
 				<span>No releases detected in this window.</span>
 				<span className="text-xs text-muted-foreground/70">
-					Release tracking needs spans to carry the{" "}
+					Releases compare errors and latency before and after each deploy. Release tracking needs
+					spans to carry the{" "}
 					<code className="rounded bg-muted px-1 py-px font-mono text-[11px]">
 						vcs.ref.head.revision
 					</code>{" "}
 					resource attribute.
+				</span>
+				<span className="mt-2">
+					<DocsLink page="github" />
 				</span>
 			</div>
 		)
@@ -245,8 +252,15 @@ function ReleasesContent({ search }: { search: ReleasesSearchParams }) {
 				environments={search.environments}
 			/>
 			{visibleGroups.length === 0 ? (
-				<div className="rounded-md border bg-card px-4 py-8 text-center text-sm text-muted-foreground">
+				<div className="flex flex-col items-center gap-3 rounded-md border bg-card px-4 py-8 text-center text-sm text-muted-foreground">
 					No releases match the health filter.
+					<Button
+						variant="outline"
+						size="sm"
+						onClick={() => navigate({ search: (prev) => ({ ...prev, impact: undefined }) })}
+					>
+						Clear filter
+					</Button>
 				</div>
 			) : (
 				<ReleasesTable

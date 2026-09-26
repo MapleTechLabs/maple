@@ -10,6 +10,7 @@ import { useAppHotkey } from "@/hooks/use-app-hotkey"
 import { TraceReplayLink } from "@/components/replays/trace-replay-link"
 import { TraceLogsLink } from "@/components/traces/trace-logs-link"
 import { QueryErrorState } from "@/components/common/query-error-state"
+import { DocsLink } from "@/components/common/docs-link"
 import { TraceViewTabs } from "@maple/ui/components/traces/trace-view-tabs"
 import { SpanDetailPanel } from "@/components/traces/span-detail-panel"
 import { TraceAnatomyStrip } from "@/components/traces/trace-anatomy-strip"
@@ -156,6 +157,9 @@ function TraceDetailPage() {
 										>
 											Back to Traces
 										</a>
+										<span className="mt-3">
+											<DocsLink page="retention">How long traces are kept</DocsLink>
+										</span>
 									</div>
 								</DashboardLayout.Scroll>
 							</DashboardLayout.Content>

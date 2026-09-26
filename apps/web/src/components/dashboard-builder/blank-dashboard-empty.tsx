@@ -11,6 +11,7 @@ import {
 } from "@maple/ui/components/ui/empty"
 
 import { ChartBarIcon, ChartBarTrendUpIcon, PlusIcon, TextWrapIcon } from "@/components/icons"
+import { DocsLink } from "@/components/common/docs-link"
 
 /**
  * The board's own shape, drawn small: three dashed tiles in the same proportions
@@ -60,7 +61,7 @@ export function BlankDashboardEmpty({
 			<EmptyHeader>
 				<EmptyTitle>Nothing on this board yet</EmptyTitle>
 				<EmptyDescription>
-					Widgets read from the traces, logs, metrics and errors you already send — charts, single
+					Widgets read from the traces, logs, metrics and errors you already send: charts, single
 					stats, tables and markdown notes.
 				</EmptyDescription>
 			</EmptyHeader>
@@ -78,12 +79,13 @@ export function BlankDashboardEmpty({
 					>
 						Start from a template
 					</Button>
+					<DocsLink page="dashboards" />
 				</div>
 				{/* Templates instantiate into a *new* board, so say so here rather than
 				    letting the button read as "fill this one in for me". */}
 				<p className="text-muted-foreground font-mono text-[11px]">
 					{readOnly
-						? "Read-only — you can’t add widgets to this dashboard."
+						? "Read-only. You can’t add widgets to this dashboard."
 						: "Templates create a new dashboard from this org’s data."}
 				</p>
 			</EmptyContent>
