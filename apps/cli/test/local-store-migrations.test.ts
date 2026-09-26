@@ -1,4 +1,3 @@
-import { v7ToV8AppleCrashFramesModule } from "../src/server/local-store-migrations/v7-to-v8-apple-crash-frames"
 import { describe, expect, it } from "vitest"
 import {
 	CURRENT_LOCAL_SCHEMA,
@@ -35,8 +34,10 @@ import {
 	abandonLocalStoreMigrationPreservingSource,
 	executeMigrationModule,
 	executeMigrationChain,
+	formatMigrationPlan,
 	identityFromMarker,
 	legacyToCurrentModule,
+	localStoreMigrations,
 	migrationJournalPath,
 	migrationHistoryPath,
 	migrationRootPath,
@@ -56,7 +57,13 @@ import {
 	type LocalSchemaManifest,
 	withRawTelemetryRetentionFloor,
 } from "../src/server/schema-manifest"
-import { ensureStoreMarkerDurable, readMarker, storeMarkerPath } from "../src/server/store-version"
+import {
+	ensureStoreMarkerDurable,
+	isStoreDirty,
+	readMarker,
+	storeMarkerPath,
+	storeOpenMarkerPath,
+} from "../src/server/store-version"
 import { durableJson } from "../src/server/durable-files"
 import {
 	__testables as legacyTestables,
@@ -67,10 +74,20 @@ import {
 	type CopyProgress,
 	type RawReplayProgress,
 } from "../src/server/local-store-migrations/legacy-to-current"
-import { v10ToV11ProductEventsModule } from "../src/server/local-store-migrations/v10-to-v11-product-events"
+import { LOCAL_SCHEMA_HISTORY } from "../src/server/local-schema-history"
+import { LOCAL_STORE_STEPS } from "../src/server/local-store-migrations/steps"
+import { stepStatements } from "../src/server/local-store-migrations/step-executor"
 import { mkdir, mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+
+// Steps are table rows now; the decoding tests below exercise their compiled modules.
+const [v7ToV8AppleCrashFramesModule] = localStoreMigrations.filter(
+	(migration) => migration.id === "local-0007-to-0008-apple-crash-frames",
+)
+const [v10ToV11ProductEventsModule] = localStoreMigrations.filter(
+	(migration) => migration.id === "local-0010-to-0011-product-events",
+)
 
 describe("current local schema identity", () => {
 	it("matches the generated v22 revision and keeps the issue-297 identity frozen", () => {
@@ -483,6 +500,76 @@ describe("local migration registry", () => {
 			prepareTarget: true,
 		})
 		expect(verifiedEvents).toEqual([])
+	})
+
+	it("walks the step table as the one registered chain, each row bound to its frozen identities", () => {
+		// Pinned in order; local-schema:bump appends the new id after the previous tip.
+		const expected = [
+			"local-0000-to-0001-raw-replay",
+			"local-0001-to-0002-error-rollup",
+			"local-0002-to-0003-service-map-ingest-bridge",
+			"local-0003-to-0004-web-events",
+			"local-0004-to-0005-service-overview-minutely",
+			"local-0005-to-0006-error-events-fingerprint-hygiene",
+			"local-0006-to-0007-error-service-version",
+			"local-0007-to-0008-apple-crash-frames",
+			"local-0008-to-0009-mv-sweep",
+			"local-0009-to-0010-semconv-key-renames",
+			"local-0010-to-0011-product-events",
+			"local-0011-to-0012-service-map-edge-quantiles",
+			"local-0012-to-0013-service-operations-discriminators",
+			"local-0013-to-0014-ai-trace-index",
+			"local-0014-to-0015-commit-sha-vcs-revision",
+			"local-0015-to-0016-ai-trace-index-filter-columns",
+			"local-0016-to-0017-audit-log",
+			"local-0017-to-0018-product-events-from-traces",
+			"local-0018-to-0019-ai-trace-index-usage-conventions",
+			"local-0019-to-0020-error-events-attribute-fallback",
+			"local-0020-to-0021-ai-trace-index-list-columns",
+			"local-0021-to-0022-ai-trace-index-tool-detail-columns",
+		]
+		const versions = (id: string) => {
+			const match = /^local-(\d{4})-to-(\d{4})-[a-z0-9]+(-[a-z0-9]+)*$/.exec(id)
+			return { from: Number(match?.[1]), to: Number(match?.[2]) }
+		}
+		expect(localStoreMigrations.map((migration) => migration.id)).toEqual(expected)
+		expect(LOCAL_STORE_STEPS.map((step) => step.id)).toEqual(expected.slice(1))
+		expect(resolveMigrationChain(LEGACY_LOCAL_SCHEMA, CURRENT_LOCAL_SCHEMA)).toEqual(localStoreMigrations)
+		for (const [index, step] of LOCAL_STORE_STEPS.entries()) {
+			const migration = localStoreMigrations[index + 1]
+			expect({ id: step.id, from: step.from, to: step.to }).toEqual({
+				id: step.id,
+				...versions(step.id),
+			})
+			expect(step.to).toBe(step.from + 1)
+			expect(step.from).toBe(index + 1)
+			expect(migration?.moduleVersion).toBe(1)
+			for (const [identity, version] of [
+				[migration?.from, step.from],
+				[migration?.to, step.to],
+			] as const) {
+				const entry = LOCAL_SCHEMA_HISTORY[version]
+				expect(identity).toMatchObject({
+					version,
+					fingerprint: entry?.fingerprint,
+					digest: entry?.digest,
+					chdb: CURRENT_LOCAL_SCHEMA.chdb,
+				})
+			}
+			const operationIds = migration?.operations.map((operation) => operation.id) ?? []
+			expect(operationIds[0]).toBe(`clone-v${step.from}-store`)
+			expect(operationIds.at(-1)).toBe(`verify-v${step.to}-schema`)
+			expect(migration?.dispositions[0]?.name).toBe("local store")
+			// Every count check compares against a key the source measured.
+			const measured = new Set(step.counts?.measure.map(([key]) => key))
+			for (const check of step.counts?.checks ?? []) expect(measured.has(check.key)).toBe(true)
+			// Every statement is idempotent, so a resumed apply lands where it left off.
+			for (const statement of stepStatements([
+				...(step.beforeBootstrap ?? []),
+				...(step.afterBootstrap ?? []),
+			]))
+				expect(statement).toMatch(/IF (NOT )?EXISTS|^DELETE FROM |^INSERT INTO /)
+		}
 	})
 
 	it("exposes retention-aware dispositions and rollback limits", () => {
@@ -968,6 +1055,75 @@ describe("durable migration recovery", () => {
 		} finally {
 			await rm(root, { recursive: true, force: true })
 		}
+	})
+
+	it("sets the migration aside when it died with the source open, leaving the source to start's recovery", async () => {
+		const root = await mkdtemp(join(tmpdir(), "maple-migration-abandon-dirty-source-"))
+		const dataDir = join(root, "data")
+		const migrationId = "fixture-dirty-source-abandon"
+		const targetDataDir = join(migrationRootPath(dataDir, migrationId), "target", "data")
+		const journal: MigrationJournal = {
+			formatVersion: 2,
+			migrationId,
+			phase: "failed",
+			chain: [
+				{
+					id: legacyToCurrentModule.id,
+					moduleVersion: legacyToCurrentModule.moduleVersion,
+					from: LEGACY_LOCAL_SCHEMA,
+					to: LOCAL_SCHEMA_V1,
+					status: "running",
+					state: { module: legacyToCurrentModule.id, version: 1 },
+					progress: { sourceInventory: {}, copied: {} },
+				},
+			],
+			currentStepIndex: 0,
+			sourceDataDir: dataDir,
+			sourceStoreId: "source-id",
+			sourceChdb: CURRENT_LOCAL_SCHEMA.chdb,
+			sourceFingerprint: LEGACY_LOCAL_SCHEMA.fingerprint,
+			sourceDigest: LEGACY_LOCAL_SCHEMA.digest,
+			sourceVersion: LEGACY_LOCAL_SCHEMA.version,
+			targetDataDir,
+			targetStoreId: "target-id",
+			targetChdb: LOCAL_SCHEMA_V1.chdb,
+			targetFingerprint: LOCAL_SCHEMA_V1.fingerprint,
+			targetDigest: LOCAL_SCHEMA_V1.digest,
+			targetVersion: LOCAL_SCHEMA_V1.version,
+			cutoffAt: "2026-01-01T00:00:00.000Z",
+			createdAt: "2026-01-01T00:00:00.000Z",
+		}
+		try {
+			await mkdir(join(dataDir, "store"), { recursive: true })
+			await Bun.write(join(dataDir, "store", "part.bin"), "live")
+			await durableJson(storeMarkerPath(dataDir), {
+				chdb: CURRENT_LOCAL_SCHEMA.chdb,
+				maple: "test",
+				createdAt: journal.createdAt,
+				schema: LEGACY_SCHEMA_FINGERPRINT,
+			})
+			// The sentinel a killed migration leaves on the source it had open.
+			await Bun.write(storeOpenMarkerPath(dataDir), "999\n")
+			await durableJson(migrationJournalPath(dataDir), journal)
+			expect(isStoreDirty(dataDir)).toBe(true)
+
+			const quarantine = await abandonLocalStoreMigrationPreservingSource(dataDir)
+
+			expect(quarantine).not.toBeNull()
+			expect(await Bun.file(migrationJournalPath(dataDir)).exists()).toBe(false)
+			expect(await Bun.file(join(quarantine!, "journal.json")).exists()).toBe(true)
+			// The source is untouched and still dirty, for `maple start` to recover.
+			expect(await Bun.file(join(dataDir, "store", "part.bin")).text()).toBe("live")
+			expect(isStoreDirty(dataDir)).toBe(true)
+		} finally {
+			await rm(root, { recursive: true, force: true })
+		}
+	})
+
+	it("says a store with the current schema is up to date instead of printing an empty plan", () => {
+		expect(formatMigrationPlan(planMigration(CURRENT_LOCAL_SCHEMA))).toBe(
+			`schema is up to date (v${CURRENT_LOCAL_SCHEMA.version})\n`,
+		)
 	})
 })
 
