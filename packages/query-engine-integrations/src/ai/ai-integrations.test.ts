@@ -319,6 +319,16 @@ describe("non-AI spans", () => {
 		expect(mapped.isAiSpan).toBe(false)
 	})
 
+	it("does not treat a tool call id alone as AI signal", () => {
+		// Claude Code's `claude_code.tool.execution` phase: the call id says which
+		// call the span belongs to; the call's own span is the tool call.
+		const phase = mapAiSpan(
+			row({ "gen_ai.tool.call.id": "toolu_1" }, { spanName: "claude_code.tool.execution" }),
+		)
+		expect(phase.genAi.toolCallId).toBe("toolu_1")
+		expect(phase.isAiSpan).toBe(false)
+	})
+
 	it("does not treat a gateway's routing metadata as AI signal", () => {
 		// `span.metadata.*` is any instrumentation's to stamp. The attempt fields
 		// are decoded for the span that has them, but they do not make it an AI

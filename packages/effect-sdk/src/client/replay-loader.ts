@@ -71,14 +71,13 @@ const noOpHandle: ClientSessionHandle = { stop: () => Promise.resolve() }
 export const startClientSession = (config: ClientSessionConfig): ClientSessionHandle => {
 	configurePrivacy(config.privacy)
 	if (!hasConsent()) clearPendingEvents()
-	const ingestKey = config.ingestKey
 	// React Native exposes window without a browser DOM or Web Crypto.
-	if (typeof window === "undefined" || typeof document === "undefined" || !ingestKey || readSessionSink())
+	if (typeof window === "undefined" || typeof document === "undefined" || readSessionSink())
 		return noOpHandle
 
 	const engineConfig = {
 		endpoint: config.endpoint.replace(/\/$/, ""),
-		ingestKey,
+		ingestKey: config.ingestKey,
 		sdk: CLIENT_SDK_HINT,
 		maskAllInputs: config.replay?.maskAllInputs ?? true,
 		maskAllText: config.replay?.maskAllText ?? false,
@@ -130,7 +129,7 @@ export const startClientSession = (config: ClientSessionConfig): ClientSessionHa
 					}
 					next.replay = startReplaySession({
 						endpoint: config.endpoint,
-						ingestKey,
+						ingestKey: config.ingestKey,
 						sdk: CLIENT_SDK_HINT,
 						serviceName: config.serviceName,
 						environment: config.environment,

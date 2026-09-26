@@ -25,11 +25,13 @@ import {
 import { parseArchiveActivePointer, type ArchiveGenerationManifest } from "../src/server/archives/manifest"
 import {
 	assertArchiveScratchFreeSpace,
-	appendCatalog,
+	assertNoArchiveShrink,
+	assertRangeWithinRetention,
 	createArchiveGeneration,
 	promoteGeneration,
 	reconcileArchiveGeneration,
 	selectActiveGeneration,
+	ttlDaysFromDefinition,
 } from "../src/server/archives/generation"
 import {
 	advancePhase,
@@ -776,29 +778,34 @@ describe("archive generation promotion", () => {
 	}
 })
 
-describe("archive catalog append", () => {
-	it("appends one line per generation and survives a rebuild from manifests", async () => {
-		await withArchive(async (archiveDir) => {
-			const g1 = randomUUID()
-			await appendCatalog(archiveDir, "traces", manifest(g1, "traces", 10))
-			const g2 = randomUUID()
-			await appendCatalog(archiveDir, "traces", manifest(g2, "traces", 20))
-			const catalog = readFileSync(catalogPath(archiveDir, "traces"), "utf8").trim().split("\n")
-			strictEqual(catalog.length, 2)
-			const first = JSON.parse(catalog[0]!) as { generationId: string; archivedRowCount: number }
-			const second = JSON.parse(catalog[1]!) as { generationId: string; archivedRowCount: number }
-			strictEqual(first.generationId, g1)
-			strictEqual(first.archivedRowCount, 10)
-			strictEqual(second.generationId, g2)
-			strictEqual(second.archivedRowCount, 20)
-		})
+describe("archive create refusals", () => {
+	it("reads the retention of a bundled or a ClickHouse-rendered TTL clause", () => {
+		strictEqual(ttlDaysFromDefinition("TTL toDate(Timestamp) + INTERVAL 30 DAY"), 30)
+		strictEqual(
+			ttlDaysFromDefinition(
+				"MergeTree PARTITION BY toDate(TimeUnix) ORDER BY (ServiceName) TTL toDate(TimeUnix) + toIntervalDay(90) SETTINGS index_granularity = 8192",
+			),
+			90,
+		)
+		strictEqual(ttlDaysFromDefinition("MergeTree ORDER BY x"), null)
 	})
 
-	it("creates the catalog on first append when none exists", async () => {
-		await withArchive(async (archiveDir) => {
-			const g = randomUUID()
-			await appendCatalog(archiveDir, "logs", manifest(g, "logs", 5))
-			ok(existsSync(catalogPath(archiveDir, "logs")))
-		})
+	it("refuses a UTC day at or past its TTL expiry and accepts one still inside it", () => {
+		const expiry = Date.parse("2026-07-01T00:00:00.000Z")
+		throws(
+			() => assertRangeWithinRetention("traces", "2026-06-01", 30, expiry),
+			/past its 30-day retention/,
+		)
+		assertRangeWithinRetention("traces", "2026-06-01", 30, expiry - 1)
+		assertRangeWithinRetention("traces", "2026-06-01", null, expiry + 1)
+	})
+
+	it("refuses to let fewer rows supersede the active generation unless explicitly allowed", () => {
+		throws(() => assertNoArchiveShrink("logs", "2026-06-01", 100, 0, false), /--allow-shrink/)
+		throws(() => assertNoArchiveShrink("logs", "2026-06-01", 100, 99, false), /100 rows with 99/)
+		assertNoArchiveShrink("logs", "2026-06-01", 100, 0, true)
+		assertNoArchiveShrink("logs", "2026-06-01", 100, 100, false)
+		assertNoArchiveShrink("logs", "2026-06-01", 100, 101, false)
+		assertNoArchiveShrink("logs", "2026-06-01", null, 0, false)
 	})
 })

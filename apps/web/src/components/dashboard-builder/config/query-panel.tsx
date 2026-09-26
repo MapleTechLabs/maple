@@ -20,10 +20,12 @@ import { SignalEmptyState } from "@/components/common/signal-empty-state"
 import { useSignalPresence } from "@/hooks/use-signal-presence"
 import { WhereClauseEditor } from "@/components/query-builder/where-clause-editor"
 import { useMetricScopedAutocomplete } from "@/hooks/use-metric-scoped-autocomplete"
+import { CircleWarningIcon } from "@/components/icons"
 import type { WhereClauseAutocompleteValues } from "@/lib/query-builder/where-clause-autocomplete"
 import {
 	AGGREGATIONS_BY_SOURCE,
 	QUERY_BUILDER_METRIC_TYPES,
+	buildTimeseriesQuerySpec,
 	getMetricsAggregations,
 	type QueryBuilderAddOnKey,
 	type QueryBuilderDataSource,
@@ -118,6 +120,8 @@ export function QueryPanel({
 			: AGGREGATIONS_BY_SOURCE[query.dataSource]
 
 	const isMetrics = query.dataSource === "metrics"
+	// Clauses the builder could not apply as written, so they never silently change the chart.
+	const warnings = useMemo(() => buildTimeseriesQuerySpec(query).warnings, [query])
 
 	const metricValue =
 		isMetrics && query.metricName && query.metricType
@@ -182,6 +186,17 @@ export function QueryPanel({
 			)}
 
 			{query.dataSource === "product_events" && <ProductEventsAbsentHint />}
+
+			{warnings.length > 0 && (
+				<div className="flex gap-2 border border-warning/30 bg-warning/10 p-2 text-xs text-warning-foreground">
+					<CircleWarningIcon size={14} className="mt-0.5 shrink-0" />
+					<ul className="space-y-1">
+						{warnings.map((warning) => (
+							<li key={warning}>{warning}</li>
+						))}
+					</ul>
+				</div>
+			)}
 
 			{/* Add-on toggle bar */}
 			<AddOnToggleBar

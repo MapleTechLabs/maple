@@ -144,6 +144,11 @@ export function NavBarInner({ locale = "en", stars, signedIn }: NavBarProps & { 
 		{ href: l("/compare/dash0"), label: () => m.nav_vs_dash0(), desc: () => m.nav_desc_vs_dash0() },
 		{ href: l("/compare/signoz"), label: () => m.nav_vs_signoz(), desc: () => m.nav_desc_vs_signoz() },
 		{ href: l("/compare/axiom"), label: () => m.nav_vs_axiom(), desc: () => m.nav_desc_vs_axiom() },
+		{
+			href: l("/compare/better-stack"),
+			label: () => m.nav_vs_better_stack(),
+			desc: () => m.nav_desc_vs_better_stack(),
+		},
 	]
 
 	const mobileGroups: { title: string; links: MenuLink[] }[] = [

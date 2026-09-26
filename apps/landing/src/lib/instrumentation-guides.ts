@@ -139,13 +139,13 @@ export const GUIDE_SECTIONS: readonly GuideSection[] = [
 			{
 				name: "Kubernetes",
 				hint: "Helm collector · host, kubelet, cluster metrics",
-				href: "/docs/guides/kubernetes-infrastructure",
+				href: "/docs/infrastructure/kubernetes",
 				icon: { mark: "kubernetes" },
 			},
 			{
 				name: "Docker",
 				hint: "Single-container agent · per-container stats and logs",
-				href: "/docs/guides/docker-infrastructure",
+				href: "/docs/infrastructure/docker",
 				icon: { mark: "docker" },
 			},
 			{

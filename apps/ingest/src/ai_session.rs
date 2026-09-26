@@ -22,21 +22,23 @@
 //! (like `maple_org_id`) and `maple.*` belongs to the SDKs, so the two can
 //! never collide again.
 //!
+//! One vendor's dialect is restated as well as stamped: Claude Code's native
+//! keys become the `gen_ai.*` keys every reader keys on, and the phases of its
+//! tool calls are left unstamped — see `ai_session/claude_code.rs`.
+//!
 //! Detection is ordered first-match over the vendor predicates below; the
 //! session ID is the first non-empty session-granularity attribute for the
-//! matched vendor. Vendors without a session-level identifier (their
-//! instrumentation only emits run/user-scoped IDs, or nothing) get no
-//! `maple_ai.session.id`.
+//! matched vendor. A vendor with no session-level key of its own (its
+//! instrumentation only emits run/user-scoped IDs, or nothing) and every
+//! unknown-tier bucket read the OTel GenAI key, `gen_ai.conversation.id`,
+//! which the public docs give any emitter as the way to group its traces.
 //!
 //! One vendor is not a framework: `maple` matches any span carrying a
 //! `maple_ai.session.id` attribute. That is the one key an emitter both writes
-//! and reads back — the gateway strips it and re-stamps it verbatim. It is
-//! Maple's own native convention — `apps/api`'s chat and investigation agents
-//! emit it — and doubles as the
-//! documented opt-in for a generic OTel GenAI emitter that no framework
-//! predicate recognises, which would otherwise land in the unknown tier where
-//! no session is ever stamped. It sits first because it is the only predicate
-//! that expresses deliberate intent rather than a fingerprint.
+//! and reads back: the gateway strips it and re-stamps it verbatim. It is
+//! Maple's own native convention, emitted by the chat and investigation agents
+//! in `apps/ai`, and it sits first because it is the only predicate that
+//! expresses deliberate intent rather than a fingerprint.
 //!
 //! # Performance shape
 //!
@@ -56,6 +58,8 @@
 use opentelemetry_proto::tonic::collector::trace::v1::ExportTraceServiceRequest;
 use opentelemetry_proto::tonic::common::v1::{any_value, AnyValue, KeyValue};
 use opentelemetry_proto::tonic::trace::v1::span::Event;
+
+mod claude_code;
 
 pub const ATTR_NAMESPACE: &str = "maple_ai.";
 pub const VENDOR_ID_ATTR: &str = "maple_ai.vendor.id";
@@ -99,6 +103,7 @@ pub struct SpanView<'a> {
 /// attributes onto the matching spans. Non-AI spans are left untouched (apart
 /// from the namespace strip, which only runs when a `maple_ai.*` key exists).
 pub fn stamp_trace_request(request: &mut ExportTraceServiceRequest) {
+    let mut tool_failures = claude_code::ToolFailures::new();
     for resource_spans in &mut request.resource_spans {
         let resource = resource_facts(
             resource_spans
@@ -147,6 +152,13 @@ pub fn stamp_trace_request(request: &mut ExportTraceServiceRequest) {
                 let Some(classification) = classification else {
                     continue;
                 };
+                if classification.vendor == claude_code::VENDOR_ID {
+                    if claude_code::is_phase(&span.name) {
+                        claude_code::note_tool_failure(span, &mut tool_failures);
+                        continue;
+                    }
+                    claude_code::normalize(span);
+                }
                 // One reserve, not up to three doubling reallocs that each
                 // copy every existing KeyValue.
                 span.attributes.reserve(3);
@@ -162,6 +174,9 @@ pub fn stamp_trace_request(request: &mut ExportTraceServiceRequest) {
                 }
             }
         }
+    }
+    if !tool_failures.is_empty() {
+        claude_code::fold_tool_failures(request, &tool_failures);
     }
 }
 
@@ -810,6 +825,10 @@ struct Vendor {
     session_keys: &'static [&'static str],
 }
 
+/// The session key of a dialect with none of its own: the OTel GenAI
+/// conversation id, which the docs tell every emitter to set.
+const CONVERSATION_ID_ONLY: &[&str] = &["gen_ai.conversation.id"];
+
 /// Ordered: first match wins. `maple` leads because its key is an explicit
 /// opt-in rather than a framework fingerprint (see the module doc). Then
 /// vendors with a dedicated instrumentation scope; the three detected purely
@@ -848,7 +867,7 @@ static VENDORS: &[Vendor] = &[
     Vendor {
         id: "haystack",
         detect: detect_haystack,
-        session_keys: &[],
+        session_keys: CONVERSATION_ID_ONLY,
     },
     Vendor {
         id: "langchain",
@@ -858,7 +877,7 @@ static VENDORS: &[Vendor] = &[
     Vendor {
         id: "litellm",
         detect: detect_litellm,
-        session_keys: &[],
+        session_keys: CONVERSATION_ID_ONLY,
     },
     Vendor {
         id: "openrouter",
@@ -868,7 +887,7 @@ static VENDORS: &[Vendor] = &[
     Vendor {
         id: "llamaindex",
         detect: detect_llamaindex,
-        session_keys: &[],
+        session_keys: CONVERSATION_ID_ONLY,
     },
     Vendor {
         id: "mastra",
@@ -908,7 +927,7 @@ static VENDORS: &[Vendor] = &[
     Vendor {
         id: "semantic_kernel",
         detect: detect_semantic_kernel,
-        session_keys: &[],
+        session_keys: CONVERSATION_ID_ONLY,
     },
     Vendor {
         id: "smolagents",
@@ -923,7 +942,7 @@ static VENDORS: &[Vendor] = &[
     Vendor {
         id: "effect_ai",
         detect: detect_effect_ai,
-        session_keys: &[],
+        session_keys: CONVERSATION_ID_ONLY,
     },
     Vendor {
         id: "spring_ai",
@@ -933,15 +952,30 @@ static VENDORS: &[Vendor] = &[
     Vendor {
         id: "vercel_ai_sdk",
         detect: detect_vercel_ai_sdk,
-        session_keys: &["ai.settings.context.eve.session.id"],
+        session_keys: &[
+            "ai.settings.context.eve.session.id",
+            "gen_ai.conversation.id",
+        ],
     },
 ];
 
 /// Generic AI-dialect buckets, consulted only when no vendor matched. Ordered.
-static UNKNOWN_TIER: &[(&str, DetectFn)] = &[
-    ("unknown:genai", detect_unknown_genai),
-    ("unknown:openinference", detect_unknown_openinference),
-    ("unknown:other", detect_unknown_other),
+static UNKNOWN_TIER: &[Vendor] = &[
+    Vendor {
+        id: "unknown:genai",
+        detect: detect_unknown_genai,
+        session_keys: CONVERSATION_ID_ONLY,
+    },
+    Vendor {
+        id: "unknown:openinference",
+        detect: detect_unknown_openinference,
+        session_keys: CONVERSATION_ID_ONLY,
+    },
+    Vendor {
+        id: "unknown:other",
+        detect: detect_unknown_other,
+        session_keys: CONVERSATION_ID_ONLY,
+    },
 ];
 
 fn classify_from_facts(
@@ -971,27 +1005,18 @@ fn run_predicates(
         span_name,
         ev,
     };
-    for vendor in VENDORS {
-        if (vendor.detect)(&ctx) {
-            let session_id = vendor
-                .session_keys
-                .iter()
-                .find_map(|key| session_value(span_attrs, key));
-            return Some(AiClassification {
-                vendor: vendor.id,
-                session_id,
-            });
-        }
-    }
-    for (id, detect) in UNKNOWN_TIER {
-        if detect(&ctx) {
-            return Some(AiClassification {
-                vendor: id,
-                session_id: None,
-            });
-        }
-    }
-    None
+    let vendor = VENDORS
+        .iter()
+        .chain(UNKNOWN_TIER)
+        .find(|vendor| (vendor.detect)(&ctx))?;
+    let session_id = vendor
+        .session_keys
+        .iter()
+        .find_map(|key| session_value(span_attrs, key));
+    Some(AiClassification {
+        vendor: vendor.id,
+        session_id,
+    })
 }
 
 /// Session-key lookup, only reached on matched AI spans. Stringifies scalar
@@ -1410,6 +1435,54 @@ mod tests {
     }
 
     #[test]
+    fn sessionless_vendors_fall_back_to_the_conversation_id() {
+        for (scope, span_name, vendor) in [
+            ("haystack", "haystack.pipeline.run", "haystack"),
+            ("litellm", "completion", "litellm"),
+            ("llamaindex.opentelemetry.tracer", "query", "llamaindex"),
+            (
+                "semantic_kernel.functions",
+                "chat.completions",
+                "semantic_kernel",
+            ),
+            ("", "LanguageModel.generateText", "effect_ai"),
+        ] {
+            classified(
+                scope,
+                span_name,
+                &[("gen_ai.conversation.id", "conv-7")],
+                &[],
+                vendor,
+                Some("conv-7"),
+            );
+        }
+        classified(
+            "ai",
+            "ai.generateText",
+            &[
+                ("ai.model.id", "gpt-5"),
+                ("gen_ai.conversation.id", "conv-7"),
+            ],
+            &[],
+            "vercel_ai_sdk",
+            Some("conv-7"),
+        );
+        // An eve turn keeps its own session key ahead of the fallback.
+        classified(
+            "ai",
+            "ai.generateText",
+            &[
+                ("ai.model.id", "gpt-5"),
+                ("gen_ai.conversation.id", "conv-7"),
+                ("ai.settings.context.eve.session.id", "e-1"),
+            ],
+            &[],
+            "vercel_ai_sdk",
+            Some("e-1"),
+        );
+    }
+
+    #[test]
     fn vendor_matched_but_session_key_absent_or_empty() {
         classified(
             "openinference.instrumentation.dspy",
@@ -1496,6 +1569,209 @@ mod tests {
         );
         // span.type alone, without the claude-code service, is not enough.
         assert!(classify("", "anything", &[("span.type", "llm_request")], &[]).is_none());
+    }
+
+    fn claude_request(spans: Vec<Span>) -> ExportTraceServiceRequest {
+        ExportTraceServiceRequest {
+            resource_spans: vec![ResourceSpans {
+                resource: Some(Resource {
+                    attributes: attrs(&[("service.name", "claude-code")]),
+                    ..Default::default()
+                }),
+                scope_spans: vec![ScopeSpans {
+                    scope: Some(InstrumentationScope {
+                        name: "com.anthropic.claude_code.tracing".to_owned(),
+                        ..Default::default()
+                    }),
+                    spans,
+                    ..Default::default()
+                }],
+                ..Default::default()
+            }],
+        }
+    }
+
+    fn claude_span(name: &str, pairs: &[(&str, &str)]) -> Span {
+        Span {
+            name: name.to_owned(),
+            attributes: attrs(pairs),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn claude_code_spans_are_restated_as_gen_ai() {
+        let mut tool = claude_span(
+            "claude_code.tool",
+            &[
+                ("session.id", "cc-9"),
+                ("tool_name", "Bash"),
+                ("tool_use_id", "toolu_1"),
+                ("full_command", "ls -la"),
+            ],
+        );
+        tool.events.push(Event {
+            name: "tool.output".to_owned(),
+            attributes: attrs(&[("output", "a\nb"), ("bash_command", "ls -la")]),
+            ..Default::default()
+        });
+        let mut request = claude_request(vec![
+            claude_span(
+                "claude_code.interaction",
+                &[("session.id", "cc-9"), ("user_prompt", "fix the bug")],
+            ),
+            claude_span(
+                "claude_code.llm_request",
+                &[
+                    ("session.id", "cc-9"),
+                    ("gen_ai.system", "anthropic"),
+                    ("input_tokens", "2"),
+                    ("output_tokens", "782"),
+                    ("cache_read_tokens", "114514"),
+                    ("cache_creation_tokens", "3549"),
+                    ("ttft_ms", "934"),
+                    ("success", "true"),
+                ],
+            ),
+            tool,
+        ]);
+        request.resource_spans[0].scope_spans[0].spans[1]
+            .attributes
+            .push(KeyValue {
+                key: "gen_ai.usage.output_tokens".to_owned(),
+                key_strindex: 0,
+                value: Some(AnyValue {
+                    value: Some(any_value::Value::StringValue("900".to_owned())),
+                }),
+            });
+
+        stamp_trace_request(&mut request);
+        let spans = &request.resource_spans[0].scope_spans[0].spans;
+
+        let interaction = &spans[0].attributes;
+        assert_eq!(
+            attr_value(interaction, "gen_ai.operation.name").as_deref(),
+            Some("invoke_agent")
+        );
+        assert_eq!(
+            attr_value(interaction, "gen_ai.input.messages").as_deref(),
+            Some(r#"[{"parts":[{"content":"fix the bug","type":"text"}],"role":"user"}]"#)
+        );
+
+        let llm = &spans[1].attributes;
+        for (key, value) in [
+            ("gen_ai.operation.name", "chat"),
+            ("gen_ai.usage.input_tokens", "2"),
+            ("gen_ai.usage.cache_read.input_tokens", "114514"),
+            ("gen_ai.usage.cache_creation.input_tokens", "3549"),
+            ("gen_ai.response.time_to_first_chunk", "0.934"),
+        ] {
+            assert_eq!(attr_value(llm, key).as_deref(), Some(value), "{key}");
+        }
+        // The emitter's own key wins, and is never written twice.
+        assert_eq!(
+            llm.iter()
+                .filter(|kv| kv.key == "gen_ai.usage.output_tokens")
+                .count(),
+            1
+        );
+        assert_eq!(
+            attr_value(llm, "gen_ai.usage.output_tokens").as_deref(),
+            Some("900")
+        );
+        assert!(attr_value(llm, "gen_ai.response.status").is_none());
+
+        let tool = &spans[2].attributes;
+        assert_eq!(
+            attr_value(tool, "gen_ai.operation.name").as_deref(),
+            Some("execute_tool")
+        );
+        assert_eq!(
+            attr_value(tool, "gen_ai.tool.name").as_deref(),
+            Some("Bash")
+        );
+        assert_eq!(
+            attr_value(tool, "gen_ai.tool.call.arguments").as_deref(),
+            Some(r#"{"command":"ls -la"}"#)
+        );
+        assert_eq!(
+            attr_value(tool, "gen_ai.tool.call.result").as_deref(),
+            Some(r#"{"bash_command":"ls -la","output":"a\nb"}"#)
+        );
+    }
+
+    #[test]
+    fn claude_code_redacted_prompt_and_failed_request() {
+        let mut request = claude_request(vec![
+            claude_span("claude_code.interaction", &[("user_prompt", "<REDACTED>")]),
+            claude_span(
+                "claude_code.llm_request",
+                &[("success", "false"), ("error", "overloaded")],
+            ),
+        ]);
+        stamp_trace_request(&mut request);
+        let spans = &request.resource_spans[0].scope_spans[0].spans;
+        assert!(attr_value(&spans[0].attributes, "gen_ai.input.messages").is_none());
+        assert_eq!(
+            attr_value(&spans[1].attributes, "gen_ai.response.status").as_deref(),
+            Some("failed")
+        );
+    }
+
+    #[test]
+    fn claude_code_tool_phases_are_unstamped_and_fold_their_failure() {
+        let mut request = claude_request(vec![
+            claude_span(
+                "claude_code.tool",
+                &[
+                    ("session.id", "cc-9"),
+                    ("tool_name", "mcp__x"),
+                    ("tool_use_id", "toolu_2"),
+                ],
+            ),
+            claude_span(
+                "claude_code.tool.execution",
+                &[
+                    ("session.id", "cc-9"),
+                    ("gen_ai.tool.call.id", "toolu_2"),
+                    ("tool_use_id", "toolu_2"),
+                    ("success", "false"),
+                    ("error", "Syntax error"),
+                    ("error_class", "McpToolCallError"),
+                ],
+            ),
+            claude_span(
+                "claude_code.tool.blocked_on_user",
+                &[("session.id", "cc-9"), ("decision", "accept")],
+            ),
+        ]);
+        stamp_trace_request(&mut request);
+        let spans = &request.resource_spans[0].scope_spans[0].spans;
+
+        for phase in &spans[1..] {
+            assert!(
+                !phase
+                    .attributes
+                    .iter()
+                    .any(|kv| kv.key.starts_with(ATTR_NAMESPACE)),
+                "{} must not be stamped as agent work",
+                phase.name
+            );
+            assert!(attr_value(&phase.attributes, "gen_ai.operation.name").is_none());
+        }
+        let tool = &spans[0].attributes;
+        assert_eq!(
+            attr_value(tool, VENDOR_ID_ATTR).as_deref(),
+            Some("claude_agent_sdk")
+        );
+        assert_eq!(
+            attr_value(tool, "error.type").as_deref(),
+            Some("McpToolCallError")
+        );
+        assert_eq!(
+            attr_value(tool, "gen_ai.tool.call.result").as_deref(),
+            Some(r#"{"error":"Syntax error"}"#)
+        );
     }
 
     #[test]
@@ -1640,15 +1916,16 @@ mod tests {
 
     #[test]
     fn maple_session_key_lifts_a_generic_genai_span_out_of_the_unknown_tier() {
-        // Without the key this exact span is `unknown:genai` with no session
-        // (see `unknown_tier_buckets`); the key is the opt-in that makes it
-        // groupable.
+        // Without the key this exact span is `unknown:genai` under its
+        // conversation id (see `unknown_tier_groups_by_the_conversation_id`);
+        // the key claims it for `maple`, and its value wins.
         classified(
             "",
             "chat openai/gpt-5.6-luna",
             &[
                 ("gen_ai.operation.name", "chat"),
                 ("gen_ai.usage.input_tokens", "123"),
+                ("gen_ai.conversation.id", "thread-1"),
                 ("maple_ai.session.id", "org_1:inv-abc"),
             ],
             &[],
@@ -1724,6 +2001,56 @@ mod tests {
             &[("ai.model.id", "m")],
             &[],
             "unknown:other",
+            None,
+        );
+    }
+
+    #[test]
+    fn unknown_tier_groups_by_the_conversation_id() {
+        // The generic path the docs describe: no framework predicate matches,
+        // and the OTel GenAI key still files the span under a session.
+        classified(
+            "",
+            "chat gpt-5",
+            &[
+                ("gen_ai.operation.name", "chat"),
+                ("gen_ai.conversation.id", "conv-9"),
+            ],
+            &[],
+            "unknown:genai",
+            Some("conv-9"),
+        );
+        classified(
+            "",
+            "llm",
+            &[
+                ("openinference.span.kind", "LLM"),
+                ("gen_ai.conversation.id", "conv-9"),
+            ],
+            &[],
+            "unknown:openinference",
+            Some("conv-9"),
+        );
+        classified(
+            "",
+            "task",
+            &[
+                ("traceloop.workflow.name", "w"),
+                ("gen_ai.conversation.id", "conv-9"),
+            ],
+            &[],
+            "unknown:other",
+            Some("conv-9"),
+        );
+        classified(
+            "",
+            "chat gpt-5",
+            &[
+                ("gen_ai.operation.name", "chat"),
+                ("gen_ai.conversation.id", ""),
+            ],
+            &[],
+            "unknown:genai",
             None,
         );
     }

@@ -26,11 +26,12 @@ export const MAPLE_AI_SESSION_ID_ATTR = "maple_ai.session.id"
  * Prefix of the session id Maple synthesizes for a GenAI trace that carries no
  * {@link MAPLE_AI_SESSION_ID_ATTR}.
  *
- * The gateway stamps the session id only where the vendor exposes a session key
- * — haystack, litellm, llamaindex, semantic_kernel and effect_ai never do, and
- * the `unknown:*` buckets never do — so those traces have no session to belong
- * to. Each one IS its own session: `trace:<TraceId>`, with the single trace as
- * the whole context. The prefix is what keeps the two id spaces apart, and it
+ * The gateway stamps the session id only where the span carries a session key.
+ * haystack, litellm, llamaindex, semantic_kernel, effect_ai and the `unknown:*`
+ * buckets have none of their own and read only `gen_ai.conversation.id`, so a
+ * trace whose emitter never sets it has no session to belong to. Each one IS
+ * its own session: `trace:<TraceId>`, with the single trace as the whole
+ * context. The prefix is what keeps the two id spaces apart, and it
  * is a colon-bearing shape no framework's own key is: read the id back with
  * {@link traceSessionTraceId} rather than testing the prefix by hand.
  */

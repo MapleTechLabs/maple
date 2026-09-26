@@ -22,7 +22,6 @@
 		"@clerk/backend": "^3.16.12",
 		"@distilled.cloud/cloudflare": "1.0.0-rc.12",
 		"@distilled.cloud/core": "1.0.0-rc.12",
-		"@effect-agent/sandbox": "0.1.0-beta.85",
 		"@maple-dev/effect-clickhouse": "0.1.0",
 		"@maple-dev/effect-clickhouse-http": "workspace:*",
 		"@maple/alerting-core": "workspace:*",
@@ -42,7 +41,8 @@
 		"@tinybirdco/sdk": "catalog:tinybird",
 		"alchemy": "catalog:alchemy",
 		"drizzle-orm": "1.0.0-rc.5-5935859",
-		"effect": "catalog:effect"
+		"effect": "catalog:effect",
+		"effect-agent": "0.1.0-beta.142"
 	},
 	"devDependencies": {
 		"@cloudflare/workers-types": "catalog:alchemy",

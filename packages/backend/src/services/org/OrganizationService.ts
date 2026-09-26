@@ -42,6 +42,7 @@ import {
 	googleAnalyticsLedger,
 	googleAnalyticsState,
 	liveActivities,
+	orgSupportChannels,
 	mcpOAuthAuthorizations,
 	mcpOAuthRefreshTokens,
 	mobileDevices,
@@ -147,6 +148,8 @@ const ORG_SCOPED_TABLES = [
 	// third-party property and account names belonging to an org that is gone, so they go.
 	googleAnalyticsState,
 	googleAnalyticsLedger,
+	// Nothing secret, but the channel belongs to the org; a recreated org starts fresh.
+	orgSupportChannels,
 ] as const
 
 /**

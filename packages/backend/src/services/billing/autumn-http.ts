@@ -2,7 +2,7 @@
 import { Context, Effect, Layer, Option, Redacted, Schema } from "effect"
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/unstable/http"
 import { BillingNotConfiguredError, BillingUpstreamError } from "@maple/domain/http"
-import type { UpdateBillingControlsRequest } from "@maple/domain/http"
+import type { BillingLimitType, UpdateBillingUsageAlert } from "@maple/domain/http"
 import { Env } from "@maple/backend/platform/Env"
 import { AUTUMN_API_VERSION } from "./autumn-api"
 
@@ -238,6 +238,24 @@ const callAutumn = (
 
 type AutumnCall = Effect.Effect<AutumnResult, AutumnTransportFailure>
 
+/** One spend limit on the wire. `featureId` is a plain string so caps on features we don't model survive a merge. */
+export interface AutumnSpendLimitInput {
+	readonly featureId: string
+	readonly enabled: boolean
+	readonly limitType?: BillingLimitType
+	readonly overageLimit?: number
+}
+
+/**
+ * Autumn REPLACES each list it is given (`customers.update` assigns
+ * `spend_limits` / `usage_alerts` wholesale), so a list must be the full desired
+ * set. An omitted list is left untouched.
+ */
+export interface AutumnBillingControlsUpdate {
+	readonly spendLimits?: ReadonlyArray<AutumnSpendLimitInput>
+	readonly usageAlerts?: ReadonlyArray<UpdateBillingUsageAlert>
+}
+
 export interface AutumnClientApi {
 	readonly getOrCreateCustomer: (
 		customerId: string,
@@ -292,7 +310,7 @@ export interface AutumnClientApi {
 	 */
 	readonly updateCustomerBillingControls: (
 		orgId: string,
-		controls: UpdateBillingControlsRequest,
+		controls: AutumnBillingControlsUpdate,
 	) => AutumnCall
 }
 
@@ -317,7 +335,7 @@ const callUpdateBillingControls = (
 	secretKey: string | undefined,
 	apiUrl: string,
 	orgId: string,
-	controls: UpdateBillingControlsRequest,
+	controls: AutumnBillingControlsUpdate,
 ): Effect.Effect<AutumnResult, AutumnTransportFailure> =>
 	secretKey === undefined
 		? // A missing key is OUR deployment fault, not Autumn's. This used to answer
@@ -335,19 +353,27 @@ const callUpdateBillingControls = (
 					{
 						customer_id: orgId,
 						billing_controls: {
-							spend_limits: controls.spendLimits.map((limit) => ({
-								feature_id: limit.featureId,
-								enabled: limit.enabled,
-								limit_type: limit.limitType,
-								overage_limit: limit.overageLimit,
-							})),
-							usage_alerts: controls.usageAlerts.map((alert) => ({
-								feature_id: alert.featureId,
-								enabled: alert.enabled,
-								threshold: alert.threshold,
-								threshold_type: alert.thresholdType,
-								...(alert.name ? { name: alert.name } : undefined),
-							})),
+							...(controls.spendLimits !== undefined
+								? {
+										spend_limits: controls.spendLimits.map((limit) => ({
+											feature_id: limit.featureId,
+											enabled: limit.enabled,
+											limit_type: limit.limitType,
+											overage_limit: limit.overageLimit,
+										})),
+									}
+								: undefined),
+							...(controls.usageAlerts !== undefined
+								? {
+										usage_alerts: controls.usageAlerts.map((alert) => ({
+											feature_id: alert.featureId,
+											enabled: alert.enabled,
+											threshold: alert.threshold,
+											threshold_type: alert.thresholdType,
+											...(alert.name ? { name: alert.name } : undefined),
+										})),
+									}
+								: undefined),
 						},
 					},
 				).pipe(Effect.mapError(toBillingUpstreamError))

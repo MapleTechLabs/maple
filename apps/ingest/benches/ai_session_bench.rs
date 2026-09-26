@@ -110,6 +110,21 @@ fn vercel_span_attrs() -> Vec<KeyValue> {
     ])
 }
 
+/// Hand-written GenAI semconv that no framework predicate recognises: the
+/// unknown tier's session lookup, with the conversation id last.
+fn generic_genai_span_attrs() -> Vec<KeyValue> {
+    attrs(&[
+        ("gen_ai.operation.name", "chat"),
+        ("gen_ai.provider.name", "openai"),
+        ("gen_ai.request.model", "gpt-5"),
+        ("gen_ai.response.model", "gpt-5"),
+        ("gen_ai.usage.input_tokens", "812"),
+        ("gen_ai.usage.output_tokens", "96"),
+        ("gen_ai.response.finish_reasons", "[\"stop\"]"),
+        ("gen_ai.conversation.id", "conv-5c2b1e0a"),
+    ])
+}
+
 fn claude_span_attrs() -> Vec<KeyValue> {
     attrs(&[
         ("span.type", "llm_request"),
@@ -174,6 +189,12 @@ fn bench_classify(c: &mut Criterion) {
             "com.anthropic.claude_code",
             "claude_code.llm_request",
             claude_span_attrs(),
+        ),
+        (
+            "generic_genai_span",
+            "support-agent",
+            "chat gpt-5",
+            generic_genai_span_attrs(),
         ),
     ];
 

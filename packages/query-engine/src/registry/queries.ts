@@ -47,6 +47,8 @@ import type {
 	WebAnalyticsPagesRequest,
 	WebAnalyticsEventsRequest,
 	WebAnalyticsBreakdownsRequest,
+	WebAnalyticsAiReferralsRequest,
+	WebAnalyticsAiCrawlersRequest,
 } from "@maple/domain/http"
 import { Match } from "effect"
 import { SESSION_LIVE_WINDOW_SECONDS } from "@maple/domain/query-engine"
@@ -971,6 +973,67 @@ const webAnalyticsBreakdownsDef = (useProductEvents: boolean) => ({
 
 export const webAnalyticsBreakdowns = defineQuery(webAnalyticsBreakdownsDef(true))
 export const webAnalyticsBreakdownsRaw = defineQuery(webAnalyticsBreakdownsDef(false))
+
+const webAnalyticsAiReferralsDef = (useProductEvents: boolean) => ({
+	id: "webAnalyticsAiReferrals" as const,
+	profile: "aggregation" as const,
+	cache: timeRangeCache,
+	compile: (payload: WebAnalyticsAiReferralsRequest, orgId: string) =>
+		CH.compile(
+			CH.webAnalyticsAiReferralsQuery({
+				...webAnalyticsFilters(payload, useProductEvents),
+				bucketSeconds: payload.bucketSeconds,
+			}),
+			{ orgId, startTime: payload.startTime, endTime: payload.endTime },
+		),
+})
+
+export const webAnalyticsAiReferrals = defineQuery(webAnalyticsAiReferralsDef(true))
+export const webAnalyticsAiReferralsRaw = defineQuery(webAnalyticsAiReferralsDef(false))
+
+// The three crawler reads share one request; each is a small scan of `ai_crawler_requests`.
+const aiCrawlerWindow = (payload: WebAnalyticsAiCrawlersRequest, orgId: string) => ({
+	orgId,
+	startTime: payload.startTime,
+	endTime: payload.endTime,
+})
+
+export const webAnalyticsAiCrawlers = defineQuery({
+	id: "webAnalyticsAiCrawlers",
+	profile: "aggregation",
+	cache: timeRangeCache,
+	compile: (payload: WebAnalyticsAiCrawlersRequest, orgId: string) =>
+		CH.compile(
+			CH.webAnalyticsAiCrawlersQuery({ host: payload.host, pagePath: payload.pagePath }),
+			aiCrawlerWindow(payload, orgId),
+		),
+})
+
+export const webAnalyticsAiCrawlerFormats = defineQuery({
+	id: "webAnalyticsAiCrawlerFormats",
+	profile: "aggregation",
+	cache: timeRangeCache,
+	compile: (payload: WebAnalyticsAiCrawlersRequest, orgId: string) =>
+		CH.compile(
+			CH.webAnalyticsAiCrawlerFormatsQuery({ host: payload.host, pagePath: payload.pagePath }),
+			aiCrawlerWindow(payload, orgId),
+		),
+})
+
+export const webAnalyticsAiCrawledPages = defineQuery({
+	id: "webAnalyticsAiCrawledPages",
+	profile: "aggregation",
+	cache: timeRangeCache,
+	compile: (payload: WebAnalyticsAiCrawlersRequest, orgId: string) =>
+		CH.compile(
+			CH.webAnalyticsAiCrawledPagesQuery({
+				host: payload.host,
+				pagePath: payload.pagePath,
+				limit: payload.pagesLimit,
+			}),
+			aiCrawlerWindow(payload, orgId),
+		),
+})
 
 export const podFacets = defineQuery({
 	id: "podFacets",

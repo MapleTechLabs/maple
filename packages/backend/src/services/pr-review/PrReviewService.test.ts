@@ -12,6 +12,8 @@ import {
 	type PullRequestReviewPublication,
 	type PullRequestReviewThread,
 	type VcsSyncJob,
+	PR_REVIEW_FAILURE_COPY,
+	PrReviewFinding,
 	PrReviewId,
 	PrReviewReport,
 	PrReviewRepositoryConfig,
@@ -41,13 +43,14 @@ import { VcsRepository } from "@maple/backend/services/integrations/vcs/VcsRepos
 import { VcsSyncQueue } from "@maple/backend/services/integrations/vcs/VcsSyncQueue"
 import {
 	buildPublication,
+	buildReviewKickoff,
 	clampSummary,
 	PR_REVIEW_CHECK_NAME,
-	PR_REVIEW_COMMENT_MARKER,
 	PR_REVIEW_PUSH_DEBOUNCE_SECONDS,
 	PrReviewService,
 	renderCheckSummary,
 	renderSummaryComment,
+	prReviewCommentMarker,
 	withReviewStatus,
 } from "./PrReviewService"
 import { FindingEmbedder, type FindingEmbedderApi, PrReviewEmbeddingError } from "./FindingEmbedder"
@@ -99,7 +102,7 @@ const layerFor = (
 		/** Present: pushes are debounced through this queue, which records what it was sent. */
 		readonly queued?: Array<{ readonly job: VcsSyncJob; readonly delaySeconds: number | undefined }>
 		readonly embedder?: FindingEmbedderApi
-		/** Every body the summary comment was given, status notices and finished reviews alike. */
+		/** Every body a summary comment was given, status notices and finished reviews alike. */
 		readonly comments?: Array<string>
 		/** Every check run state written before a result, as `<sha7>:<status or conclusion>`. */
 		readonly checks?: Array<string>
@@ -107,7 +110,8 @@ const layerFor = (
 ) => {
 	// Only the one write is reached; every read dies so a test that strays says so loudly.
 	const unused = () => Effect.die("not used by the review service")
-	let comment: string | undefined
+	// One comment per marker, the way the provider finds them.
+	const commentsByMarker = new Map<string, string>()
 	const provider: VcsProviderClient = {
 		id: "github",
 		webhookToJobs: unused,
@@ -136,9 +140,9 @@ const layerFor = (
 		fetchSourceFile: unused,
 		writePullRequestSummaryComment: (_installation, _repo, input) =>
 			Effect.sync(() => {
-				const next = input.body(comment)
+				const next = input.body(commentsByMarker.get(input.marker))
 				if (next !== undefined) {
-					comment = next
+					commentsByMarker.set(input.marker, next)
 					options.comments?.push(next)
 				}
 				return { url: "https://github.com/octo/repo/pull/612#issuecomment-1" }
@@ -153,8 +157,8 @@ const layerFor = (
 		publishPullRequestReview: (_installation, _repo, publication) => {
 			options.published?.push(publication)
 			if (!options.publishFails) {
-				comment = publication.summaryComment.body
-				options.comments?.push(comment)
+				commentsByMarker.set(publication.summaryComment.marker, publication.summaryComment.body)
+				options.comments?.push(publication.summaryComment.body)
 			}
 			return options.publishFails
 				? Effect.fail(
@@ -312,9 +316,9 @@ describe("PrReviewService.onPullRequestEvent", () => {
 		return Effect.gen(function* () {
 			yield* seed(true)
 			const reviews = yield* PrReviewService
-			yield* reviews.onPullRequestEvent(orgId, job())
+			const outcome = yield* reviews.onPullRequestEvent(orgId, job())
 			assert.equal(comments.length, 1)
-			assert.isTrue(comments[0]!.startsWith(PR_REVIEW_COMMENT_MARKER))
+			assert.isTrue(comments[0]!.startsWith(prReviewCommentMarker(outcome.reviewId!)))
 			assert.include(comments[0]!, "Maple is reviewing this pull request")
 			assert.include(comments[0]!, HEAD.slice(0, 7))
 		}).pipe(Effect.provide(layerFor(testDb, { comments })))
@@ -344,6 +348,97 @@ describe("PrReviewService.onPullRequestEvent", () => {
 			assert.equal(comments.length, 2)
 			assert.include(comments[1]!, "could not finish")
 			assert.notInclude(comments[1]!, "is reviewing")
+		}).pipe(Effect.provide(layerFor(testDb, { comments })))
+	})
+
+	it.effect("names why the review stopped, in fixed words, and nothing for an error it cannot read", () => {
+		const testDb = createTestDb(trackedDbs)
+		const comments: Array<string> = []
+		return Effect.gen(function* () {
+			yield* seed(true)
+			const reviews = yield* PrReviewService
+			const timedOut = yield* reviews.onPullRequestEvent(orgId, job())
+			yield* reviews.failReview(orgId, timedOut.reviewId!, "time_limit: raw engine text; retry")
+			assert.include(comments.at(-1)!, PR_REVIEW_FAILURE_COPY.time_limit)
+			assert.notInclude(comments.at(-1)!, "raw engine text")
+
+			const unknown = yield* reviews.onPullRequestEvent(orgId, job({ headSha: HEAD_2 }))
+			yield* reviews.failReview(orgId, unknown.reviewId!, "no review")
+			assert.include(comments.at(-1)!, "could not finish. Comment `@maple review`")
+		}).pipe(Effect.provide(layerFor(testDb, { comments })))
+	})
+
+	it.effect("stops pushes starting reviews at the pull request's limit, and says so on the check", () => {
+		const testDb = createTestDb(trackedDbs)
+		const checks: Array<string> = []
+		return Effect.gen(function* () {
+			const repositoryId = yield* seed(true)
+			const repo = yield* VcsRepository
+			yield* repo.setPrReviewConfig(
+				orgId,
+				repositoryId,
+				new PrReviewRepositoryConfig({ automaticReviewLimit: 1 }),
+			)
+			const reviews = yield* PrReviewService
+			const first = yield* reviews.onPullRequestEvent(orgId, job())
+			yield* reviews.submitReview(
+				orgId,
+				first.reviewId!,
+				new SubmitPrReviewRequest({ report: report([]) }),
+			)
+
+			const pushed = yield* reviews.onPullRequestEvent(
+				orgId,
+				job({ action: "synchronize", headSha: HEAD_2 }),
+			)
+			assert.equal(pushed.outcome, "skipped")
+			assert.equal(pushed.skipReason, "automatic_limit")
+			assert.include(checks, `${HEAD_2.slice(0, 7)}:skipped`)
+
+			// Asking by name still reviews it.
+			const asked = yield* reviews.reviewNow(orgId, job({ action: "synchronize", headSha: HEAD_2 }))
+			assert.equal(asked.outcome, "started")
+
+			// A redelivered push of that head is a duplicate: pausing it would overwrite its check.
+			const checksBefore = checks.length
+			const redelivered = yield* reviews.onPullRequestEvent(
+				orgId,
+				job({ action: "synchronize", headSha: HEAD_2 }),
+			)
+			assert.equal(redelivered.skipReason, "duplicate")
+			assert.equal(checks.length, checksBefore)
+		}).pipe(Effect.provide(layerFor(testDb, { checks })))
+	})
+
+	it.effect("replaces its own notice with the result, and a new head's review gets a new comment", () => {
+		const testDb = createTestDb(trackedDbs)
+		const comments: Array<string> = []
+		return Effect.gen(function* () {
+			yield* seed(true)
+			const reviews = yield* PrReviewService
+			const first = yield* reviews.onPullRequestEvent(orgId, job())
+			yield* reviews.submitReview(
+				orgId,
+				first.reviewId!,
+				new SubmitPrReviewRequest({
+					report: report([]),
+					model: "test-model",
+					inputTokens: 1,
+					outputTokens: 1,
+				}),
+			)
+			const second = yield* reviews.onPullRequestEvent(
+				orgId,
+				job({ action: "synchronize", headSha: HEAD_2 }),
+			)
+			const [notice, result, next] = comments
+			assert.equal(comments.length, 3)
+			assert.isTrue(notice!.startsWith(prReviewCommentMarker(first.reviewId!)))
+			assert.isTrue(result!.startsWith(`${prReviewCommentMarker(first.reviewId!)}\n## Maple review`))
+			assert.notInclude(result!, "is reviewing")
+			assert.isTrue(next!.startsWith(prReviewCommentMarker(second.reviewId!)))
+			assert.include(next!, "Maple is reviewing this pull request")
+			assert.notInclude(next!, "## Maple review")
 		}).pipe(Effect.provide(layerFor(testDb, { comments })))
 	})
 
@@ -434,6 +529,53 @@ describe("PrReviewService.onPullRequestEvent", () => {
 				`${HEAD_2.slice(0, 7)}:in_progress`,
 			])
 		}).pipe(Effect.provide(layerFor(testDb, { begun, aborted, checks })))
+	})
+
+	it.effect("a repeat asked for on a reviewed head posts a new comment and keeps the earlier one", () => {
+		const testDb = createTestDb(trackedDbs)
+		const comments: Array<string> = []
+		return Effect.gen(function* () {
+			yield* seed(true)
+			const reviews = yield* PrReviewService
+			const first = yield* reviews.onPullRequestEvent(orgId, job())
+			yield* reviews.submitReview(
+				orgId,
+				first.reviewId!,
+				new SubmitPrReviewRequest({
+					report: report([]),
+					model: "test-model",
+					inputTokens: 1,
+					outputTokens: 1,
+				}),
+			)
+			const repeat = yield* reviews.reviewNow(orgId, job())
+			// The same row, reclaimed: only the comment it writes to is new.
+			assert.equal(repeat.reviewId, first.reviewId)
+			const [, result, notice] = comments
+			assert.equal(comments.length, 3)
+			assert.isTrue(result!.startsWith(`${prReviewCommentMarker(first.reviewId!, 0)}\n## Maple review`))
+			assert.isTrue(notice!.startsWith(prReviewCommentMarker(first.reviewId!, 1)))
+			assert.include(notice!, "Maple is reviewing this pull request")
+		}).pipe(Effect.provide(layerFor(testDb, { comments })))
+	})
+
+	it.effect("closes a superseded review's comment instead of leaving it reviewing", () => {
+		const testDb = createTestDb(trackedDbs)
+		const comments: Array<string> = []
+		return Effect.gen(function* () {
+			yield* seed(true)
+			const reviews = yield* PrReviewService
+			const first = yield* reviews.onPullRequestEvent(orgId, job())
+			const second = yield* reviews.onPullRequestEvent(
+				orgId,
+				job({ action: "synchronize", headSha: HEAD_2 }),
+			)
+			const ofFirst = comments.filter((body) => body.startsWith(prReviewCommentMarker(first.reviewId!)))
+			assert.equal(ofFirst.length, 2)
+			assert.include(ofFirst[1]!, "A newer push replaced")
+			assert.notInclude(ofFirst[1]!, "is reviewing")
+			assert.isTrue(comments.at(-1)!.startsWith(prReviewCommentMarker(second.reviewId!)))
+		}).pipe(Effect.provide(layerFor(testDb, { comments })))
 	})
 
 	it.effect("records a review the agent could not start rather than losing it", () => {
@@ -548,7 +690,7 @@ describe("PrReviewService.submitReview", () => {
 			assert.equal(stored.checkRunUrl, "https://github.com/octo/repo/runs/1")
 			assert.equal(stored.commentUrl, "https://github.com/octo/repo/pull/612#issuecomment-1")
 			assert.equal(stored.score, 90)
-			assert.equal(publication.summaryComment.marker, PR_REVIEW_COMMENT_MARKER)
+			assert.equal(publication.summaryComment.marker, prReviewCommentMarker(started.reviewId!))
 			assert.include(publication.summaryComment.body, "90/100")
 			assert.isNotNull(stored.reviewUrl)
 			assert.isNull(stored.publishError)
@@ -593,8 +735,8 @@ describe("PrReviewService.submitReview", () => {
 				}),
 			)
 			assert.deepEqual(
-				published[0]!.comments.map((comment) => comment.body.slice(0, 8)),
-				["**F1 · o", "**F2 · u"],
+				published[0]!.comments.map((comment) => comment.body.match(/<sub>(F\d+) · /)?.[1]),
+				["F1", "F2"],
 			)
 
 			const second = yield* reviews.onPullRequestEvent(
@@ -625,7 +767,8 @@ describe("PrReviewService.submitReview", () => {
 			)
 			assert.include(publication.summaryComment.body, "### Still open from earlier reviews")
 			assert.include(publication.summaryComment.body, "~~F1 · off by one~~")
-			assert.equal(publication.title, "80/100 · 2 issues to address")
+			// Two warnings (quality 80) and an unobservable route.
+			assert.equal(publication.title, "Confidence 2/5 · 2 issues to address")
 			assert.deepEqual(resolvedThreads, ["T1:Fixed in `2222222`."])
 			const stored = Option.getOrThrow(yield* reviews.getReview(orgId, second.reviewId!))
 			assert.deepEqual(
@@ -993,29 +1136,41 @@ describe("PrReviewService.submitReview feedback filter", () => {
 })
 
 describe("withReviewStatus", () => {
-	it("keeps the previous review under the notice and swaps only the notice", () => {
-		const previous = `${PR_REVIEW_COMMENT_MARKER}\n## Maple review: 90/100\n\nOne warning.`
-		const reviewing = withReviewStatus(previous, { kind: "reviewing", headSha: HEAD_2 })
-		assert.include(reviewing, "reviewing the new changes")
-		assert.include(reviewing, "## Maple review: 90/100")
-		assert.equal(reviewing?.split(PR_REVIEW_COMMENT_MARKER).length, 2)
-		const failed = withReviewStatus(reviewing, { kind: "failed", headSha: HEAD_2 })
+	const MARKER = prReviewCommentMarker(UNKNOWN_REVIEW)
+
+	it("writes the review's own comment with the notice alone", () => {
+		const reviewing = withReviewStatus(undefined, MARKER, { kind: "reviewing", headSha: HEAD }) ?? ""
+		assert.isTrue(reviewing.startsWith(`${MARKER}\n`))
+		assert.include(reviewing, "Maple is reviewing this pull request")
+		assert.equal(withReviewStatus(reviewing, MARKER, { kind: "reviewing", headSha: HEAD }), reviewing)
+		const failed = withReviewStatus(reviewing, MARKER, { kind: "failed", headSha: HEAD })
 		assert.include(failed, "could not finish")
-		assert.notInclude(failed, "reviewing the new changes")
-		assert.include(failed, "## Maple review: 90/100")
+		assert.notInclude(failed, "is reviewing")
 	})
 
-	it("leaves a finished summary or another head's notice alone when a review fails late", () => {
-		const finished = `${PR_REVIEW_COMMENT_MARKER}\n## Maple review: 90/100`
-		assert.isUndefined(withReviewStatus(finished, { kind: "failed", headSha: HEAD }))
-		const newer = withReviewStatus(finished, { kind: "reviewing", headSha: HEAD_2 })
-		assert.isUndefined(withReviewStatus(newer, { kind: "failed", headSha: HEAD }))
+	it("closes its own notice when a newer push replaces the review", () => {
+		const reviewing = withReviewStatus(undefined, MARKER, { kind: "reviewing", headSha: HEAD })
+		const superseded = withReviewStatus(reviewing, MARKER, { kind: "superseded", headSha: HEAD })
+		assert.include(superseded, "A newer push replaced")
+		assert.notInclude(superseded, "is reviewing")
+	})
+
+	it("leaves a finished summary alone when a review fails or is superseded late", () => {
+		const finished = renderSummaryComment(MARKER, {
+			report: report([]),
+			partial: false,
+			headSha: HEAD,
+			repositoryUrl: REPO_URL,
+		})
+		assert.isUndefined(withReviewStatus(finished, MARKER, { kind: "failed", headSha: HEAD }))
+		assert.isUndefined(withReviewStatus(finished, MARKER, { kind: "superseded", headSha: HEAD }))
 	})
 })
 
 describe("buildPublication", () => {
 	it("posts every finding as an annotation but comments only above info", () => {
 		const publication = buildPublication({
+			reviewId: UNKNOWN_REVIEW,
 			number: 1,
 			headSha: HEAD,
 			partial: false,
@@ -1047,12 +1202,13 @@ describe("buildPublication", () => {
 		assert.equal(publication.annotations[1]!.level, "notice")
 		assert.equal(publication.conclusion, "neutral")
 		assert.include(publication.reviewBody ?? "", "1 inline note")
-		// 100 - 10 (warn) - 2 (note)
-		assert.equal(publication.title, "88/100 · 1 issue to address")
+		// Quality 88 reads 4, less half a point for the unobservable route.
+		assert.equal(publication.title, "Confidence 3/5 · 1 issue to address")
 	})
 
 	it("always writes the summary comment, even with nothing to say inline", () => {
 		const publication = buildPublication({
+			reviewId: UNKNOWN_REVIEW,
 			number: 1,
 			headSha: HEAD,
 			partial: false,
@@ -1062,13 +1218,46 @@ describe("buildPublication", () => {
 		assert.equal(publication.conclusion, "success")
 		assert.isNull(publication.reviewBody)
 		assert.equal(publication.comments.length, 0)
-		assert.isTrue(publication.summaryComment.body.startsWith(PR_REVIEW_COMMENT_MARKER))
-		assert.include(publication.summaryComment.body, "## Maple review: 100/100")
-		assert.include(publication.summaryComment.body, "**Excellent**")
+		assert.isTrue(publication.summaryComment.body.startsWith(prReviewCommentMarker(UNKNOWN_REVIEW)))
+		assert.include(
+			publication.summaryComment.body,
+			"## Maple review\n\n**Confidence 4/5** · likely safe to merge\n<sub>quality 100/100 · no findings · 0/1 new units observable</sub>",
+		)
+	})
+
+	it("lists the files it never read, and gives every finding in one block to copy", () => {
+		const input = {
+			report: new PrReviewReport({
+				...report([
+					new PrReviewFinding({
+						path: "src/orders.ts",
+						line: 42,
+						category: "correctness",
+						severity: "warn",
+						title: "`retryFetch` re-sends POSTs",
+						body: "A timeout charges twice.",
+						handle: "F1",
+					}),
+				]),
+				unreviewed: ["src/b.ts", "src/c.ts"],
+			}),
+			partial: true,
+			headSha: HEAD,
+			repositoryUrl: REPO_URL,
+		}
+		const comment = renderSummaryComment(prReviewCommentMarker(UNKNOWN_REVIEW), input)
+		assert.include(comment, "Files not reviewed (2)")
+		assert.include(comment, "- `src/c.ts`")
+		assert.include(comment, "Copy all findings (1)")
+		assert.include(comment, `automated review of commit ${HEAD}`)
+		assert.include(comment, "F1 · Warning · correctness · src/orders.ts:42")
+		// The check run carries each finding as an annotation already.
+		assert.notInclude(renderCheckSummary(input), "Copy all findings")
+		assert.include(renderCheckSummary(input), "Files not reviewed (2)")
 	})
 
 	it("links each finding to its line at the reviewed commit", () => {
-		const comment = renderSummaryComment({
+		const comment = renderSummaryComment(prReviewCommentMarker(UNKNOWN_REVIEW), {
 			report: report([
 				{
 					path: "src/a b.ts",
@@ -1086,9 +1275,10 @@ describe("buildPublication", () => {
 			repositoryUrl: `${REPO_URL}/`,
 		})
 		assert.include(comment, `(${REPO_URL}/blob/${HEAD}/src/a%20b.ts#L4-L6)`)
-		assert.include(comment, "| 75/100 | 1 | 0 | 0 | 0 of 1 |")
-		assert.include(comment, "<summary>What to change</summary>")
-		assert.include(comment, "minus 25 per critical finding")
+		assert.include(comment, "**Confidence 2/5** · risky as written")
+		assert.include(comment, "<sub>quality 75/100 · 1 critical · 0/1 new units observable</sub>")
+		assert.include(comment, "Observability coverage: 0 of 1 changes observable")
+		assert.include(comment, "<details><summary><b>Critical</b> · gap</summary>")
 	})
 
 	it("renders the coverage table and the check ids into the summary", () => {
@@ -1109,12 +1299,139 @@ describe("buildPublication", () => {
 			repositoryUrl: REPO_URL,
 		})
 		assert.include(summary, "| POST /orders | entrypoint | no | no withSpan |")
-		assert.include(summary, "| observability · SPAN-03 |")
+		assert.include(summary, "observability · SPAN-03 · [`a.ts:1`]")
 		assert.include(summary, "ended early")
+	})
+
+	it("lists findings most severe first, with code spans readable inside the collapsed title", () => {
+		const comment = renderSummaryComment(prReviewCommentMarker(UNKNOWN_REVIEW), {
+			report: new PrReviewReport({
+				...report([
+					{ path: "a.ts", line: 1, category: "tests", severity: "info", title: "note", body: "" },
+					{
+						path: "b.ts",
+						line: 2,
+						category: "security",
+						severity: "critical",
+						title: "`listKeys` skips the <tenant> filter",
+						body: "b",
+					},
+				]),
+				keyChanges: ["`listKeys` reads from the new table"],
+			}),
+			partial: false,
+			headSha: HEAD,
+			repositoryUrl: REPO_URL,
+		})
+		assert.isBelow(comment.indexOf("<b>Critical</b>"), comment.indexOf("<b>Note</b>"))
+		assert.include(comment, "<code>listKeys</code> skips the &lt;tenant&gt; filter</summary>")
+		assert.include(comment, "Adds one route.\n\n- `listKeys` reads from the new table")
+		assert.include(comment, "1 critical · 1 note")
+	})
+
+	it("folds what was checked away, with findings or without", () => {
+		const render = (findings: PrReviewReport["findings"]) =>
+			renderSummaryComment(prReviewCommentMarker(UNKNOWN_REVIEW), {
+				report: new PrReviewReport({
+					...report(findings),
+					checked: ["OrgId is filtered (`q.ts:4`)"],
+				}),
+				partial: false,
+				headSha: HEAD,
+				repositoryUrl: REPO_URL,
+			})
+		assert.include(
+			render([]),
+			"<details><summary>What was checked</summary>\n\n- OrgId is filtered (`q.ts:4`)",
+		)
+		assert.include(
+			render([
+				{ path: "a.ts", line: 1, category: "correctness", severity: "warn", title: "t", body: "b" },
+			]),
+			"<details><summary>What was checked</summary>",
+		)
+	})
+
+	it("shows the confidence and reason, held down by what the findings allow", () => {
+		const render = (findings: PrReviewReport["findings"], partial = false) =>
+			renderSummaryComment(prReviewCommentMarker(UNKNOWN_REVIEW), {
+				report: new PrReviewReport({
+					...report(findings),
+					coverage: [],
+					tests: "covered",
+					risk: "low",
+					confidence: 5,
+					confidenceReason: "Small change, verified end to end.",
+				}),
+				partial,
+				headSha: HEAD,
+				repositoryUrl: REPO_URL,
+			})
+		assert.include(
+			render([]),
+			"**Confidence 5/5** · safe to merge\nSmall change, verified end to end.\n<sub>quality 100/100 · no findings · tests covered · risk low</sub>",
+		)
+		const critical = render([
+			{ path: "a.ts", line: 1, category: "correctness", severity: "critical", title: "t", body: "b" },
+		])
+		assert.include(
+			critical,
+			"**Confidence 2/5** · risky as written\nHeld at 2 because a critical finding is open.",
+		)
+		assert.notInclude(critical, "verified end to end")
+		const partial = render([], true)
+		assert.include(partial, "**Confidence 3/5** · needs attention\n<sub>")
+		// The early end is the warning; a reason saying so again is left out.
+		assert.notInclude(partial, "Held at")
+		assert.include(partial, "ended early")
+	})
+
+	it("is green only for a finished review that is confident the change is safe", () => {
+		const conclusion = (confidence: number | undefined, partial = false) =>
+			buildPublication({
+				reviewId: UNKNOWN_REVIEW,
+				number: 1,
+				headSha: HEAD,
+				partial,
+				repositoryUrl: REPO_URL,
+				report: new PrReviewReport({
+					...report([]),
+					...(confidence === undefined ? undefined : { confidence }),
+				}),
+			}).conclusion
+		assert.equal(conclusion(5), "success")
+		assert.equal(conclusion(4), "success")
+		assert.equal(conclusion(3), "neutral")
+		assert.equal(conclusion(undefined, true), "neutral")
+	})
+
+	it("fences code that itself holds a fence with a longer fence", () => {
+		const replacement = "const doc = `\n```ts\nx\n```\n`"
+		const publication = buildPublication({
+			reviewId: UNKNOWN_REVIEW,
+			number: 1,
+			headSha: HEAD,
+			partial: false,
+			repositoryUrl: REPO_URL,
+			report: report([
+				{
+					path: "a.ts",
+					line: 3,
+					category: "correctness",
+					severity: "warn",
+					title: "t",
+					body: "b",
+					replacement,
+				},
+			]),
+		})
+		assert.include(publication.comments[0]!.body, `\`\`\`\`suggestion\n${replacement}\n\`\`\`\`\n`)
+		assert.include(publication.summaryComment.body, `\`\`\`\`\n${replacement}\n\`\`\`\``)
 	})
 
 	it("posts a replacement as a one-click suggestion over the lines it replaces", () => {
 		const publication = buildPublication({
+			reviewId: UNKNOWN_REVIEW,
 			number: 1,
 			headSha: HEAD,
 			partial: false,
@@ -1136,7 +1453,8 @@ describe("buildPublication", () => {
 		assert.equal(comment.startLine, 3)
 		assert.equal(comment.line, 4)
 		assert.include(comment.body, "```suggestion\nfor (let i = 0; i <= n; i++) {\n\tvisit(i)\n```")
-		assert.include(comment.body, "correctness · warn")
+		assert.include(comment.body, "<sub>Warning · correctness</sub>")
+		assert.include(comment.body, "In `a.ts:3-4`: off by one.")
 		assert.notInclude(publication.summaryComment.body, "instrumentation audit")
 	})
 
@@ -1188,5 +1506,57 @@ describe("buildPublication", () => {
 		const astral = clampSummary("😀".repeat(30_000))
 		assert.isTrue(astral.startsWith("😀"))
 		assert.isAtMost(new TextEncoder().encode(astral).byteLength, 65_535)
+	})
+})
+
+describe("buildReviewKickoff", () => {
+	const kickoff = (overrides: Partial<Parameters<typeof buildReviewKickoff>[0]>) =>
+		buildReviewKickoff({
+			repository: "acme/shop",
+			number: 7,
+			url: "https://github.com/acme/shop/pull/7",
+			title: "Add retries",
+			authorLogin: "ada",
+			headRef: "feat/retry",
+			baseRef: "main",
+			headSha: HEAD,
+			baseSha: undefined,
+			fork: false,
+			body: "Retries GETs.",
+			...overrides,
+		})
+	const rules = [
+		{ path: "CLAUDE.md", content: "Use Effect.\n" },
+		{ path: ".maple/review.md", content: "No console.log." },
+	]
+
+	it("states the rules first, so every review of the repository shares one cacheable prefix", () => {
+		const first = kickoff({ rules })
+		const second = kickoff({ rules, number: 8, headSha: HEAD_2, title: "Other", body: "Other." })
+		const prefix = first.slice(0, first.indexOf("Review pull request #7"))
+		assert.include(prefix, '<rules path="CLAUDE.md">\nUse Effect.\n</rules>')
+		assert.include(prefix, '<rules path=".maple/review.md">')
+		assert.notInclude(prefix, HEAD)
+		assert.isTrue(second.startsWith(prefix))
+	})
+
+	it("says when the repository has no rules, and says nothing when they could not be read", () => {
+		assert.include(kickoff({ rules: [] }), "has no CLAUDE.md, AGENTS.md, .maple/review.md at the base")
+		const unread = kickoff({})
+		assert.notInclude(unread, "<rules")
+		assert.notInclude(unread, "has no CLAUDE.md")
+	})
+
+	it("cuts rules past the budget, says where, and names the files it left out", () => {
+		const text = kickoff({
+			rules: [
+				{ path: "CLAUDE.md", content: "x".repeat(40_000) },
+				{ path: "AGENTS.md", content: "Agents." },
+				{ path: ".maple/review.md", content: "Review." },
+			],
+		})
+		assert.include(text, "[cut at 30000 of 40000 characters")
+		assert.notInclude(text, '<rules path="AGENTS.md">')
+		assert.include(text, "Also binding, left out for length: AGENTS.md, .maple/review.md.")
 	})
 })

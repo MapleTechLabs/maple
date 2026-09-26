@@ -59,6 +59,41 @@ describe("tinybird traces attribute filter params", () => {
 		}),
 	)
 
+	it.effect("forwards exists and comparison attribute filters with their mode, not as equality", () =>
+		Effect.gen(function* () {
+			yield* listTraces({
+				data: {
+					startTime: "2026-02-01 00:00:00",
+					endTime: "2026-02-01 01:00:00",
+					attributeFilters: [
+						{ key: "user.id", value: "", matchMode: "exists" },
+						{ key: "retry.count", value: "3", matchMode: "gt" },
+					],
+					resourceAttributeFilters: [
+						{ key: "k8s.pod.name", value: "", matchMode: "exists", negated: true },
+					],
+				},
+			})
+
+			expect(executeQueryEngineMock).toHaveBeenCalledWith(
+				"queryEngine.listTraces",
+				expect.objectContaining({
+					query: expect.objectContaining({
+						filters: expect.objectContaining({
+							attributeFilters: [
+								{ key: "user.id", mode: "exists", negated: undefined },
+								{ key: "retry.count", value: "3", mode: "gt", negated: undefined },
+							],
+							resourceAttributeFilters: [
+								{ key: "k8s.pod.name", mode: "exists", negated: true },
+							],
+						}),
+					}),
+				}),
+			)
+		}),
+	)
+
 	it.effect("forwards filter params to traces_facets and traces_duration_stats", () =>
 		Effect.gen(function* () {
 			yield* getTracesFacets({

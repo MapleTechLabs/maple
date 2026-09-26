@@ -1,11 +1,11 @@
 // One-shot "telemetry disabled" notice.
 //
-// All three presets (server layer, server/client flushable, Cloudflare) disable
+// The env-driven presets (server layer, server flushable, Cloudflare) disable
 // themselves on the same condition — no ingest key resolved — and each needs to
 // say so exactly once, so a developer running locally sees why nothing arrives
 // instead of silently believing telemetry works. Sharing the wording keeps that
-// message identical across presets; only the enable hint differs, because the
-// key comes from env on the server and from config in the browser.
+// message identical across presets. The browser client never disables: its key
+// is auth only (see `buildResolved`'s `keyless`).
 
 export const makeNoOpNotice = (logPrefix: string, enableHint: string): (() => void) => {
 	let logged = false

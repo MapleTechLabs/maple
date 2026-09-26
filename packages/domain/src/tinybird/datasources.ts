@@ -1189,6 +1189,34 @@ export const aiTraceIndex = defineDatasource("ai_trace_index", {
 export type AiTraceIndexRow = InferRow<typeof aiTraceIndex>
 
 /**
+ * AI crawler requests: Server spans whose user agent names a published AI
+ * fetcher (GPTBot, ClaudeBot, PerplexityBot, ...), for the Web Analytics AI tab.
+ * One row per span, so read requests as `uniq(TraceId)`: a proxied request has several.
+ */
+export const aiCrawlerRequests = defineDatasource("ai_crawler_requests", {
+	description:
+		"Server spans from AI crawlers (GPTBot, ClaudeBot, PerplexityBot, ...) with the crawler, host, path and HTTP status pre-extracted. Web Analytics AI tab. Populated by materialized view.",
+	jsonPaths: false,
+	schema: {
+		OrgId: t.string().lowCardinality(),
+		Timestamp: t.dateTime64(9),
+		TraceId: t.string(),
+		ServiceName: t.string().lowCardinality(),
+		Crawler: t.string().lowCardinality(),
+		Host: t.string().lowCardinality(),
+		Path: t.string(),
+		HttpStatus: t.uint16(),
+	},
+	engine: engine.mergeTree({
+		partitionKey: "toDate(Timestamp)",
+		sortingKey: ["OrgId", "Timestamp", "TraceId"],
+		ttl: "toDate(Timestamp) + INTERVAL 30 DAY",
+	}),
+})
+
+export type AiCrawlerRequestsRow = InferRow<typeof aiCrawlerRequests>
+
+/**
  * OpenTelemetry sum/counter metrics datasource
  */
 export const metricsSum = defineDatasource("metrics_sum", {

@@ -273,6 +273,102 @@
 .monument-proof a:focus-visible {
 	outline-color: var(--home-orange);
 }
+/* Customer story chip under the trusted-by logos: the customer's mark, its
+   headline result, and the way in. Flat, like the announce chip up top. */
+.monument-story {
+	display: inline-flex;
+	flex-wrap: wrap;
+	align-items: center;
+	align-self: flex-start;
+	gap: 6px 12px;
+	padding: 9px 14px;
+	border: 1px solid color-mix(in oklab, var(--home-ink) 16%, transparent);
+	background: color-mix(in oklab, var(--background) 72%, transparent);
+	font-size: 12px;
+	line-height: 1.3;
+	text-shadow: none;
+	transition:
+		border-color 150ms ease,
+		background-color 150ms ease;
+}
+.monument-story:hover {
+	border-color: color-mix(in oklab, var(--home-orange) 55%, transparent);
+	background: color-mix(in oklab, var(--home-orange) 8%, var(--background));
+}
+.monument-story__mark {
+	height: 16px;
+	width: auto;
+}
+.monument-story__stat {
+	color: color-mix(in oklab, var(--home-ink) 78%, transparent);
+}
+.monument-story__stat strong {
+	margin-right: 2px;
+	color: var(--home-ink);
+	font-weight: 650;
+}
+.monument-story__cta {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	color: var(--home-orange);
+	font-weight: 500;
+}
+.monument-story__arrow {
+	transition: transform 150ms ease;
+}
+.monument-story:hover .monument-story__arrow {
+	transform: translateX(2px);
+}
+/* The name only shows where the mark is dropped (stacked rail, below). */
+.monument-story__name {
+	display: none;
+}
+/* Stacked rail: the logos sit right above, so a second mark and a boxed card
+   read as clutter. The chip becomes a footnote to the logo row instead. */
+@media (max-width: 767px) {
+	.monument-story {
+		display: block;
+		width: 100%;
+		padding: 14px 0 0;
+		border: 0;
+		border-top: 1px solid color-mix(in oklab, var(--home-ink) 12%, transparent);
+		background: none;
+		font-size: 13px;
+		line-height: 1.5;
+	}
+	.monument-story:hover {
+		background: none;
+		border-color: color-mix(in oklab, var(--home-ink) 12%, transparent);
+	}
+	.monument-story__mark {
+		display: none;
+	}
+	.monument-story__name {
+		display: inline;
+		color: var(--home-ink);
+		font-weight: 600;
+	}
+	.monument-story__name::after {
+		content: "·";
+		margin-inline: 8px;
+		color: color-mix(in oklab, var(--home-ink) 45%, transparent);
+		font-weight: 400;
+	}
+	.monument-story__stat {
+		color: color-mix(in oklab, var(--home-ink) 85%, transparent);
+	}
+	.monument-story__cta {
+		display: flex;
+		width: fit-content;
+		margin-top: 6px;
+	}
+}
+@media (prefers-reduced-motion: reduce) {
+	.monument-story__arrow {
+		transition: none;
+	}
+}
 .monument-product {
 	padding-block: 75px 90px;
 	background: var(--home-pale);

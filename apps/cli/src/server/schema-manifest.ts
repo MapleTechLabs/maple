@@ -443,3 +443,12 @@ export const comparePhysicalSchema = (
 	}
 	return mismatches
 }
+
+/** Retention in days from a TTL clause, e.g. `toDate(Timestamp) + INTERVAL 30 DAY`
+ * or the `toIntervalDay(30)` form ClickHouse renders back. */
+export const ttlDaysFromDefinition = (definition: string): number | null => {
+	const match =
+		definition.match(/\bTTL\b[\s\S]*?\bINTERVAL\s+(\d+)\s+DAY\b/i) ??
+		definition.match(/\bTTL\b[\s\S]*?\btoIntervalDay\((\d+)\)/i)
+	return match?.[1] === undefined ? null : Number(match[1])
+}

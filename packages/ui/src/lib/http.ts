@@ -1,4 +1,5 @@
 import { Match, Option, pipe } from "effect"
+import { normalizeSpanKind } from "./span-kind"
 
 export const HTTP_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"] as const
 type HttpMethod = (typeof HTTP_METHODS)[number]
@@ -14,7 +15,7 @@ export interface HttpInfo {
 export interface HttpSpanInput {
 	spanName: string
 	spanAttributes?: Record<string, string>
-	/** OTel SPAN_KIND_* — authoritative client/server signal when present. */
+	/** OTel span kind in either stored spelling (`Client`, `SPAN_KIND_CLIENT`); authoritative when present. */
 	spanKind?: string
 }
 
@@ -124,9 +125,9 @@ export function getHttpInfo({ spanName, spanAttributes, spanKind }: HttpSpanInpu
 
 	// A real OTel span.kind is authoritative. Fall back to the name/url.full heuristic
 	// only when the kind is absent or non-HTTP (INTERNAL/PRODUCER/CONSUMER).
-	const kind: "client" | "server" = Match.value(spanKind).pipe(
-		Match.when("SPAN_KIND_CLIENT", () => "client" as const),
-		Match.when("SPAN_KIND_SERVER", () => "server" as const),
+	const kind: "client" | "server" = Match.value(normalizeSpanKind(spanKind)).pipe(
+		Match.when("CLIENT", () => "client" as const),
+		Match.when("SERVER", () => "server" as const),
 		Match.orElse(() => (spanName.startsWith("http.client ") ? "client" : "server")),
 	)
 	// server spans can legitimately emit url.full too, but if they do we still want to

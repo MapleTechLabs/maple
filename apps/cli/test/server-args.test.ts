@@ -1,8 +1,18 @@
 import { describe, it } from "@effect/vitest"
 import { deepStrictEqual, strictEqual, throws } from "node:assert"
+import { homedir } from "node:os"
+import { join } from "node:path"
 import {
 	buildDetachedChildArgs,
+	commandScope,
+	defaultDataDir,
 	defaultLocalUrl,
+	ingestedSince,
+	mapleCommand,
+	parseElapsedSeconds,
+	prettyPath,
+	shellWord,
+	startedBeforeWrite,
 	hostedDashboardUrl,
 	hostedUiOrigin,
 	isProcessAlive,
@@ -148,7 +158,7 @@ describe("buildDetachedChildArgs", () => {
 describe("isProcessAlive", () => {
 	it("treats a PID file naming this very process as stale", () => {
 		// A container restarts `maple start` as PID 1 every time, and the PID file
-		// survives on the data volume — `kill(1, 0)` succeeding must not read as
+		// survives on the data volume, so `kill(1, 0)` succeeding must not read as
 		// "already running" or the container never starts again.
 		strictEqual(isProcessAlive(process.pid), false)
 	})
@@ -163,5 +173,82 @@ describe("isProcessAlive", () => {
 	it("still reports a real foreign process as alive", () => {
 		// The parent shell/runner is the one live process whose PID we can know.
 		strictEqual(isProcessAlive(process.ppid), true)
+	})
+})
+
+describe("recovery hints keep the user's target", () => {
+	it("adds nothing for the default store, port and host", () => {
+		const scope = commandScope({
+			dataDir: defaultDataDir(),
+			port: 4318,
+			host: process.env.MAPLE_LOCAL_BIND_HOST ?? "127.0.0.1",
+		})
+		strictEqual(mapleCommand("reset --yes", scope), "maple reset --yes")
+		strictEqual(mapleCommand("start --reset", scope), "maple start --reset")
+	})
+
+	it("echoes a non-default data dir into every command, and port/host only where accepted", () => {
+		const scope = commandScope({
+			dataDir: join(homedir(), ".maple", "data-b"),
+			port: 4391,
+			host: "0.0.0.0",
+		})
+		strictEqual(mapleCommand("reset --yes", scope), "maple reset --yes --data-dir ~/.maple/data-b")
+		strictEqual(mapleCommand("restore --yes", scope), "maple restore --yes --data-dir ~/.maple/data-b")
+		strictEqual(mapleCommand("stop", scope), "maple stop --data-dir ~/.maple/data-b")
+		strictEqual(
+			mapleCommand("start --reset", scope),
+			"maple start --reset --data-dir ~/.maple/data-b --port 4391 --host 0.0.0.0",
+		)
+		strictEqual(
+			mapleCommand("schema abandon --yes", scope),
+			"maple schema abandon --yes --data-dir ~/.maple/data-b",
+		)
+	})
+
+	it("quotes paths a shell would split", () => {
+		strictEqual(shellWord("/tmp/plain-dir"), "/tmp/plain-dir")
+		strictEqual(shellWord("/tmp/maple data"), "'/tmp/maple data'")
+		strictEqual(shellWord("/tmp/it's"), "'/tmp/it'\\''s'")
+		strictEqual(
+			mapleCommand("stop", commandScope({ dataDir: "/tmp/maple data" })),
+			"maple stop --data-dir '/tmp/maple data'",
+		)
+	})
+})
+
+describe("PID identity", () => {
+	it("parses ps etime in every shape", () => {
+		strictEqual(parseElapsedSeconds("00:07\n"), 7)
+		strictEqual(parseElapsedSeconds(" 12:34"), 754)
+		strictEqual(parseElapsedSeconds("01:02:03"), 3723)
+		strictEqual(parseElapsedSeconds("2-00:00:01"), 172_801)
+		strictEqual(parseElapsedSeconds(""), undefined)
+		strictEqual(parseElapsedSeconds("garbage"), undefined)
+	})
+
+	it("only a process started before the write can own the file", () => {
+		strictEqual(startedBeforeWrite(1_000, 5_000), true)
+		strictEqual(startedBeforeWrite(6_500, 5_000), true) // etime resolution slack
+		strictEqual(startedBeforeWrite(60_000, 5_000), false) // PID reused later
+	})
+})
+
+describe("checkpoint refresh skip", () => {
+	it("refreshes only when something was ingested since the last checkpoint", () => {
+		strictEqual(ingestedSince(null, 1_000), false)
+		strictEqual(ingestedSince(999, 1_000), false)
+		strictEqual(ingestedSince(1_000, 1_000), true)
+		strictEqual(ingestedSince(undefined, 1_000), true) // status unknown: take it
+	})
+})
+
+describe("prettyPath", () => {
+	it("collapses the home directory only at a path boundary", () => {
+		strictEqual(prettyPath("/home/bob", "/home/bob"), "~")
+		strictEqual(prettyPath("/home/bob/.maple/data", "/home/bob"), "~/.maple/data")
+		// A sibling that merely shares the prefix names a different directory.
+		strictEqual(prettyPath("/home/bobby/data", "/home/bob"), "/home/bobby/data")
+		strictEqual(prettyPath("/rootfs/maple", "/root"), "/rootfs/maple")
 	})
 })

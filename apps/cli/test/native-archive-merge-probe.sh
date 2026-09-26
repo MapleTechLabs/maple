@@ -43,9 +43,11 @@ trap cleanup EXIT
 
 fail() { echo "FAIL: $*" >&2; exit 1; }
 
+# /local/query is read-only unless the request carries the maintenance token.
 query() {
 	curl --fail-with-body -sS "http://127.0.0.1:$PORT/local/query" \
 		-H 'content-type: application/json' \
+		-H "x-maple-maintenance-token: $(cat "$DATA.maintenance-token")" \
 		--data "$(jq -nc --arg sql "$1" '{sql:$sql}')" 2>&1
 }
 

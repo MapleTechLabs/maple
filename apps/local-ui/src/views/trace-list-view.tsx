@@ -1,15 +1,10 @@
 import { HttpSpanLabel } from "@maple/ui/components/traces/http-span-label"
-import { NetworkNodesIcon } from "@maple/ui/components/icons"
 import { Badge } from "@maple/ui/components/ui/badge"
 import { Button } from "@maple/ui/components/ui/button"
 import { Spinner } from "@maple/ui/components/ui/spinner"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@maple/ui/components/ui/table"
 import { formatDuration } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
-import { useLocalTraces, type TraceFilters } from "../hooks/use-local-traces"
-import { useLocalTraceFacets } from "../hooks/use-local-trace-facets"
-import { useQueryParams } from "../lib/router"
-import { DEFAULT_RANGE } from "../lib/time"
 import { DurationRangeFilter } from "@maple/ui/components/filters/duration-range-filter"
 import {
 	FilterSection,
@@ -21,8 +16,15 @@ import {
 	FilterSidebarFrame,
 	FilterSidebarHeader,
 } from "@maple/ui/components/filters/filter-sidebar"
+import { useLocalTraces, type TraceFilters, type TraceRow } from "../hooks/use-local-traces"
+import { useLocalTraceFacets } from "../hooks/use-local-trace-facets"
+import { useRange } from "../hooks/use-range"
+import { useTimeWindow } from "../hooks/use-time-window"
+import { hrefFor, useQueryParams } from "../lib/router"
+import { formatLocalDateTime, formatRelativeTime, formatUtcTitle, WIDEST_RANGE } from "../lib/time"
 import { PageShell } from "../components/page-shell"
-import { parseAttributes } from "@maple/ui/lib/span-tree"
+import { LinkRow, RowLink } from "../components/row-link"
+import { SignalEmptyState } from "../components/signal-empty-state"
 import {
 	Toolbar,
 	ToolbarSearch,
@@ -31,11 +33,7 @@ import {
 	TimeRangeSelect,
 	RefreshButton,
 } from "../components/toolbar"
-import { EmptyState, ErrorState, ListSkeleton } from "../components/view-states"
-
-interface TraceListViewProps {
-	onSelectTrace: (traceId: string) => void
-}
+import { ErrorState, ListSkeleton } from "../components/view-states"
 
 /** Parse a URL param as a non-negative integer; anything else means "unset". */
 function parseNonNegativeInt(raw: string | null): number | undefined {
@@ -44,13 +42,26 @@ function parseNonNegativeInt(raw: string | null): number | undefined {
 	return Number.isFinite(parsed) && parsed >= 0 ? Math.round(parsed) : undefined
 }
 
-export function TraceListView({ onSelectTrace }: TraceListViewProps) {
+const FILTER_KEYS = [
+	"service",
+	"span",
+	"errors",
+	"method",
+	"status",
+	"env",
+	"ns",
+	"minDur",
+	"maxDur",
+] as const
+
+export function TraceListView() {
 	const [query, setParams] = useQueryParams()
-	const range = query.get("range") || DEFAULT_RANGE
+	const [range, setRange] = useRange()
+	const timeWindow = useTimeWindow(range)
+	const spanScope = query.get("scope") === "spans"
 	const search = query.get("q") || undefined
 
 	const filters: TraceFilters = {
-		range,
 		search,
 		service: query.get("service") || undefined,
 		span: query.get("span") || undefined,
@@ -61,45 +72,45 @@ export function TraceListView({ onSelectTrace }: TraceListViewProps) {
 		ns: query.get("ns") || undefined,
 		minDurationMs: parseNonNegativeInt(query.get("minDur")),
 		maxDurationMs: parseNonNegativeInt(query.get("maxDur")),
+		scope: spanScope ? "spans" : "root",
 	}
 
-	const facets = useLocalTraceFacets(filters)
-	const { data, isPending, isError, error, refetch, fetchNextPage, hasNextPage, isFetchingNextPage } =
-		useLocalTraces(filters)
-	const rows = data?.pages.flat() ?? []
+	const facets = useLocalTraceFacets(filters, timeWindow.bounds, !spanScope)
+	const traces = useLocalTraces(filters, timeWindow.bounds)
+	const rows = traces.data?.pages.flat() ?? []
 
-	const hasActiveFilters =
-		!!filters.service ||
-		!!filters.span ||
-		!!filters.method ||
-		!!filters.status ||
-		!!filters.env ||
-		!!filters.ns ||
-		filters.minDurationMs != null ||
-		filters.maxDurationMs != null ||
-		filters.errorsOnly === true
+	const activeFilterCount = FILTER_KEYS.filter((key) => query.get(key)).length
+	const clearFilters = () =>
+		setParams({ ...Object.fromEntries(FILTER_KEYS.map((key) => [key, null])), q: null, scope: null })
 
 	// Single-select facet adapter: the list query takes one value per dimension.
 	const facetSelect = (key: string) => (vals: string[]) => setParams({ [key]: vals.at(-1) ?? null })
 
-	const sidebar = (
+	const sidebar = spanScope ? (
+		<FilterSidebarFrame className="w-56 shrink-0 px-4">
+			<FilterSidebarHeader title="Span search" canClear onClear={clearFilters} />
+			<FilterSidebarBody>
+				<p className="py-1 text-xs text-muted-foreground">
+					Matching any span in a trace, not only its root. Root-span facets are off in this mode.
+				</p>
+				<SingleCheckboxFilter
+					title="Errored spans only"
+					checked={filters.errorsOnly === true}
+					onChange={(checked) => setParams({ errors: checked ? "1" : null })}
+				/>
+				<Button
+					variant="outline"
+					size="sm"
+					className="mt-2 w-full"
+					onClick={() => setParams({ scope: null })}
+				>
+					Filter root spans instead
+				</Button>
+			</FilterSidebarBody>
+		</FilterSidebarFrame>
+	) : (
 		<FilterSidebarFrame className="w-56 shrink-0 px-4" waiting={facets.isFetching}>
-			<FilterSidebarHeader
-				canClear={hasActiveFilters}
-				onClear={() =>
-					setParams({
-						service: null,
-						span: null,
-						errors: null,
-						method: null,
-						status: null,
-						env: null,
-						ns: null,
-						minDur: null,
-						maxDur: null,
-					})
-				}
-			/>
+			<FilterSidebarHeader canClear={activeFilterCount > 0} onClear={clearFilters} />
 			<FilterSidebarBody>
 				<SingleCheckboxFilter
 					title="Errors only"
@@ -161,113 +172,164 @@ export function TraceListView({ onSelectTrace }: TraceListViewProps) {
 
 	const toolbar = (
 		<Toolbar>
-			<ToolbarSearch
-				query={search ?? ""}
-				onSearch={(value) => setParams({ q: value ?? null })}
-				placeholder="Filter by span name…"
-			/>
-			<ToolbarStats>
-				<ToolbarStat value={rows.length} label={hasNextPage ? "traces+" : "traces"} />
-				<RefreshButton />
-				<TimeRangeSelect value={range} onChange={(next) => setParams({ range: next })} />
+			{spanScope ? (
+				<SpanScopeBanner
+					service={filters.service}
+					span={filters.span}
+					onExit={() => setParams({ scope: null })}
+				/>
+			) : null}
+			{spanScope && filters.span ? null : (
+				<ToolbarSearch
+					query={search ?? ""}
+					onSearch={(value) => setParams({ q: value ?? null })}
+					placeholder={spanScope ? "Filter by any span name…" : "Filter by span name…"}
+					className="min-w-48 flex-1"
+				/>
+			)}
+			<ToolbarStats className="shrink-0">
+				<ToolbarStat value={rows.length} label={traces.hasNextPage ? "traces+" : "traces"} />
+				<RefreshButton advance={timeWindow.advance} since={traces.dataUpdatedAt} />
+				<TimeRangeSelect value={range} onChange={setRange} />
 			</ToolbarStats>
 		</Toolbar>
 	)
 
 	return (
-		<PageShell sidebar={sidebar} toolbar={toolbar}>
-			{isPending ? (
+		<PageShell sidebar={sidebar} toolbar={toolbar} activeFilterCount={activeFilterCount}>
+			{traces.isPending ? (
 				<ListSkeleton variant="table" />
-			) : isError ? (
-				<ErrorState label="traces" error={error} onRetry={() => refetch()} />
+			) : traces.isError ? (
+				<ErrorState label="traces" error={traces.error} onRetry={() => traces.refetch()} />
 			) : rows.length === 0 ? (
-				<EmptyState
-					icon={<NetworkNodesIcon />}
-					title={hasActiveFilters || search ? "No matching traces" : "No traces yet"}
-					hint={
-						hasActiveFilters || search
-							? "Try widening the time range or clearing filters."
-							: "Send OTLP spans to the local ingest endpoint to get started."
-					}
+				<SignalEmptyState
+					signal="traces"
+					filtered={activeFilterCount > 0 || !!search}
+					onClearFilters={clearFilters}
+					range={range}
+					onWidenRange={() => setRange(WIDEST_RANGE)}
 				/>
 			) : (
-				<>
+				<div className={cn(traces.isPlaceholderData && "opacity-60 transition-opacity")}>
 					<Table>
 						<TableHeader>
 							<TableRow>
 								<TableHead className="w-[40%]">Trace</TableHead>
-								<TableHead>Service</TableHead>
+								<TableHead>Services</TableHead>
 								<TableHead className="text-right">Duration</TableHead>
 								<TableHead className="text-right">Spans</TableHead>
-								<TableHead>Time</TableHead>
+								<TableHead className="text-right">Started</TableHead>
 							</TableRow>
 						</TableHeader>
 						<TableBody>
 							{rows.map((row) => (
-								<TableRow
-									key={row.traceId}
-									className={cn("cursor-pointer", row.hasError && "bg-destructive/5")}
-									onClick={() => onSelectTrace(row.traceId)}
-								>
-									<TableCell className="min-w-0">
-										<div className="flex items-center gap-2">
-											{row.hasError ? (
-												<span className="size-1.5 shrink-0 rounded-full bg-destructive" />
-											) : null}
-											<HttpSpanLabel
-												spanName={row.rootSpanName}
-												spanKind={row.rootSpanKind}
-												spanAttributes={parseAttributes(row.rootSpanAttributes)}
-												className="min-w-0"
-											/>
-										</div>
-									</TableCell>
-									<TableCell className="text-muted-foreground">
-										<div className="flex flex-wrap gap-1">
-											{row.services.slice(0, 3).map((svc) => (
-												<Badge
-													key={svc}
-													variant="secondary"
-													className="font-mono text-[10px]"
-												>
-													{svc}
-												</Badge>
-											))}
-											{row.services.length > 3 ? (
-												<Badge variant="secondary" className="font-mono text-[10px]">
-													+{row.services.length - 3}
-												</Badge>
-											) : null}
-										</div>
-									</TableCell>
-									<TableCell className="text-right font-mono tabular-nums">
-										{formatDuration(row.durationMicros / 1000)}
-									</TableCell>
-									<TableCell className="text-right font-mono tabular-nums text-muted-foreground">
-										{row.spanCount}
-									</TableCell>
-									<TableCell className="font-mono text-xs text-muted-foreground">
-										{row.startTime}
-									</TableCell>
-								</TableRow>
+								<TraceListRow key={row.traceId} row={row} query={query} />
 							))}
 						</TableBody>
 					</Table>
 
-					{hasNextPage ? (
+					{traces.hasNextPage ? (
 						<div className="flex justify-center p-4">
 							<Button
 								variant="outline"
 								size="sm"
-								onClick={() => fetchNextPage()}
-								disabled={isFetchingNextPage}
+								onClick={() => traces.fetchNextPage()}
+								disabled={traces.isFetchingNextPage}
 							>
-								{isFetchingNextPage ? <Spinner className="size-4" /> : "Load more"}
+								{traces.isFetchingNextPage ? <Spinner className="size-4" /> : "Load more"}
 							</Button>
 						</div>
 					) : null}
-				</>
+				</div>
 			)}
 		</PageShell>
+	)
+}
+
+function SpanScopeBanner({
+	service,
+	span,
+	onExit,
+}: {
+	service: string | undefined
+	span: string | undefined
+	onExit: () => void
+}) {
+	return (
+		<div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-1 text-sm">
+			<span className="text-muted-foreground">Traces containing a span</span>
+			{service ? (
+				<>
+					<span className="text-muted-foreground">from</span>
+					<Badge variant="outline" className="font-mono text-xs">
+						{service}
+					</Badge>
+				</>
+			) : null}
+			{span ? (
+				<>
+					<span className="text-muted-foreground">named</span>
+					<Badge variant="outline" className="max-w-64 truncate font-mono text-xs" title={span}>
+						{span}
+					</Badge>
+				</>
+			) : null}
+			<Button variant="ghost" size="xs" onClick={onExit}>
+				Root spans only
+			</Button>
+		</div>
+	)
+}
+
+function TraceListRow({ row, query }: { row: TraceRow; query: URLSearchParams }) {
+	const href = hrefFor(`/traces/${encodeURIComponent(row.traceId)}`, query)
+	return (
+		<LinkRow className={cn(row.hasError && "bg-destructive/5")}>
+			<TableCell className="min-w-0">
+				<RowLink
+					href={href}
+					label={`Trace ${row.rootSpanName || row.traceId}`}
+					className="flex items-center gap-2"
+				>
+					{row.hasError ? (
+						<span className="size-1.5 shrink-0 rounded-full bg-destructive">
+							<span className="sr-only">Errored</span>
+						</span>
+					) : null}
+					<HttpSpanLabel
+						spanName={row.rootSpanName}
+						spanKind={row.rootSpanKind}
+						spanAttributes={row.rootSpanAttributes}
+						className="min-w-0"
+					/>
+				</RowLink>
+			</TableCell>
+			<TableCell className="text-muted-foreground">
+				<div className="flex flex-wrap gap-1">
+					{row.services.slice(0, 3).map((svc) => (
+						<Badge key={svc} variant="secondary" className="font-mono text-[10px]">
+							{svc}
+						</Badge>
+					))}
+					{row.services.length > 3 ? (
+						<Badge variant="secondary" className="font-mono text-[10px]">
+							+{row.services.length - 3}
+						</Badge>
+					) : null}
+				</div>
+			</TableCell>
+			<TableCell className="text-right font-mono tabular-nums">
+				{formatDuration(row.durationMs)}
+			</TableCell>
+			<TableCell className="text-right font-mono tabular-nums text-muted-foreground">
+				{row.spanCount ?? "-"}
+			</TableCell>
+			<TableCell
+				className="text-right text-xs whitespace-nowrap text-muted-foreground"
+				title={`${formatLocalDateTime(row.startTime)} (${formatUtcTitle(row.startTime)})`}
+			>
+				{formatRelativeTime(row.startTime)}
+			</TableCell>
+		</LinkRow>
 	)
 }

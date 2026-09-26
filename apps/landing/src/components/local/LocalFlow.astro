@@ -1,6 +1,6 @@
 ---
 /**
- * LocalFlow — a compact left-to-right data-flow strip showing how telemetry
+ * LocalFlow: a compact left-to-right data-flow strip showing how telemetry
  * moves through local mode: OTLP exporter → ingest → embedded chDB → query API
  * → dashboard / CLI. Reuses the dot-grid motif and global.css tokens.
  */
@@ -39,7 +39,7 @@ const nodes = [
 		background: var(--bg-deep);
 		overflow: hidden;
 	}
-	/* Subtle dot grid, faded to the right — echoes the docs index / service map. */
+	/* Subtle dot grid, faded to the right; echoes the docs index / service map. */
 	.lf::before {
 		content: "";
 		position: absolute;

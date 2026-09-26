@@ -6,6 +6,7 @@
 	"sideEffects": false,
 	"exports": {
 		".": "./src/index.ts",
+		"./ai-traffic": "./src/ai-traffic.ts",
 		"./anticipated-errors": "./src/anticipated-errors.ts",
 		"./billing": "./src/billing.ts",
 		"./billing-tax-ids": "./src/billing-tax-ids.ts",
@@ -19,6 +20,7 @@
 		"./llm": "./src/llm.ts",
 		"./mcp-manifest": "./src/mcp-manifest.ts",
 		"./mcp-tool-contract": "./src/mcp-tool-contract.ts",
+		"./mcp-outputs": "./src/mcp-outputs/index.ts",
 		"./permission": "./src/permission.ts",
 		"./primitives": "./src/primitives.ts",
 		"./query-engine": "./src/query-engine.ts",
@@ -27,6 +29,7 @@
 		"./sandbox": "./src/sandbox.ts",
 		"./onboarding-checklist": "./src/onboarding-checklist.ts",
 		"./setup-audit": "./src/setup-audit.ts",
+		"./support-channel": "./src/support-channel.ts",
 		"./system-agents": "./src/system-agents.ts",
 		"./tinybird-project-sync": "./src/tinybird/project-sync.ts",
 		"./warehouse-queries": "./src/warehouse-queries.ts",

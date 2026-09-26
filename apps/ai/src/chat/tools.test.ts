@@ -13,6 +13,8 @@ import {
 	buildDiagnosisCompletion,
 	buildReviewCompletion,
 	makeRunUsage,
+	RECORD_FINDING,
+	savedFindingsRequest,
 	SUBMIT_DIAGNOSIS,
 	SUBMIT_REVIEW,
 	type SubmitDiagnosis,
@@ -20,8 +22,14 @@ import {
 } from "./tools"
 import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
 import { makeRecordingTracer } from "@maple/backend/testing/recording-tracer"
-import type { PrReviewSubmission } from "@maple/domain/http"
+import {
+	PrReviewFinding,
+	type PrReviewFindingSubmission,
+	type PrReviewSubmission,
+	type SubmitPrReviewRequest,
+} from "@maple/domain/http"
 import type { ReviewCoverage } from "./review-coverage"
+import { makeReviewLedger } from "./review-ledger"
 
 const orgId = Schema.decodeSync(OrgId)("org_test")
 const human = Schema.decodeSync(UserId)("user_test")
@@ -225,5 +233,112 @@ describe("buildReviewCompletion", () => {
 			assert.isTrue(Result.isSuccess(result))
 			assert.lengthOf(notApplicable.filed, 1)
 		})
+	})
+})
+
+describe("record_finding", () => {
+	const REVIEW_SESSION = prReviewSessionId(orgId, "7f1d3c2e-9a4b-4c8d-8e2f-1a2b3c4d5e6f")
+	const RETRY: PrReviewFindingSubmission = {
+		path: "src/orders.ts",
+		line: 42,
+		category: "correctness",
+		severity: "warn",
+		title: "`retryFetch` re-sends POSTs that are not idempotent",
+		body: "A timeout after the server committed charges the order twice.",
+	}
+	const setup = (unread: ReadonlyArray<string> = [], partial = false) => {
+		const filed: Array<SubmitPrReviewRequest> = []
+		const ledger = makeReviewLedger()
+		const completion = buildReviewCompletion(
+			REVIEW_SESSION,
+			tenantFor(human),
+			{ kind: "autonomous" },
+			(_org, _id, request) => Effect.sync(() => filed.push(request)),
+			makeRunUsage(),
+			MODEL_NAME,
+			partial,
+			undefined,
+			{ observe: () => {}, unread: () => unread },
+			ledger,
+		)
+		assert.isDefined(completion)
+		const handlers = completion!.handlers
+		return {
+			filed,
+			ledger,
+			save: (finding: PrReviewFindingSubmission) =>
+				Effect.runPromise(Effect.result(handlers[RECORD_FINDING](finding, {} as never))),
+			submit: (submission: PrReviewSubmission) =>
+				Effect.runPromise(Effect.result(handlers[SUBMIT_REVIEW](submission, {} as never))),
+		}
+	}
+
+	it("saves a finding and adds it to the submitted report, dropping a restatement", async () => {
+		const { filed, ledger, save, submit } = setup()
+		assert.isTrue(Result.isSuccess(await save(RETRY)))
+		assert.lengthOf(ledger.findings(), 1)
+
+		const result = await submit({
+			verdict: "clean",
+			summary: "Adds a retry to the order client.",
+			findings: [
+				{ ...RETRY, line: 43, title: "`retryFetch` re-sends POSTs which are not idempotent" },
+				{ path: "src/orders.ts", line: 90, severity: "info", title: "Unused `backoff` import" },
+			],
+		})
+		assert.isTrue(Result.isSuccess(result))
+		const report = filed[0]!.report
+		assert.deepStrictEqual(
+			report.findings.map((finding) => finding.line),
+			[42, 90],
+		)
+		// A saved warn makes the review one with issues, whatever the submission called it.
+		assert.equal(report.verdict, "issues")
+	})
+
+	it("answers a repeat without saving it twice", async () => {
+		const { ledger, save } = setup()
+		await save(RETRY)
+		const again = await save({ ...RETRY, line: 44 })
+		assert.isTrue(Result.isSuccess(again))
+		assert.include(Result.isSuccess(again) ? String(again.success) : "", "restates")
+		assert.lengthOf(ledger.findings(), 1)
+	})
+
+	it("refuses a finding it could not post", async () => {
+		const { ledger, save } = setup()
+		const result = await save({ ...RETRY, line: null })
+		assert.isTrue(Result.isFailure(result))
+		assert.lengthOf(ledger.findings(), 0)
+	})
+
+	it("names the reviewed files a close-out never read on its report", async () => {
+		const { filed, submit } = setup(["src/b.ts", "src/c.ts"], true)
+		assert.isTrue(Result.isSuccess(await submit({ verdict: "clean", summary: "Partial." })))
+		assert.deepStrictEqual(filed[0]!.report.unreviewed, ["src/b.ts", "src/c.ts"])
+	})
+})
+
+describe("savedFindingsRequest", () => {
+	it("files saved findings as a partial with the unread files", () => {
+		const request = savedFindingsRequest({
+			findings: [
+				new PrReviewFinding({
+					path: "src/a.ts",
+					line: 3,
+					category: "security",
+					severity: "critical",
+					title: "Tenant filter missing from `listKeys`",
+					body: "",
+				}),
+			],
+			unreviewed: ["src/b.ts"],
+			modelName: MODEL_NAME,
+			usage: makeRunUsage(),
+		})
+		assert.isTrue(request.partial)
+		assert.equal(request.report.verdict, "issues")
+		assert.deepStrictEqual(request.report.unreviewed, ["src/b.ts"])
+		assert.lengthOf(request.report.findings, 1)
 	})
 })

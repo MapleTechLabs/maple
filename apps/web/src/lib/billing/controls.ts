@@ -13,11 +13,9 @@ export const spendLimitFor = (
 	customer?.billingControls?.spendLimits?.find((limit) => limit.featureId === featureId && limit.enabled)
 
 /**
- * Upsert one feature's overage cap. A disabled entry is deliberate: the billing
- * provider removes a cap only when that feature is explicitly disabled. The
- * usage-alert list is left empty on purpose — a provider usage alert is
- * delivered to Maple's own webhook endpoint, so it is not a control a customer
- * can act on, and an empty list upserts nothing.
+ * Upsert one feature's overage cap; the API merges it over the other features'
+ * caps. A disabled entry removes the cap. Usage alerts are omitted so the ones
+ * an org already has are left untouched.
  */
 export const updateFeatureControls = ({
 	featureId,
@@ -34,7 +32,6 @@ export const updateFeatureControls = ({
 				...(!(overageLimit === null) ? { limitType: "absolute" as const, overageLimit } : undefined),
 			}),
 		],
-		usageAlerts: [],
 	})
 
 /** Maximum invoice when every paid feature has a cap; null means unbounded. */

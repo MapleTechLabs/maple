@@ -2,7 +2,6 @@ import { lazy, Suspense, useState } from "react"
 import { useMountEffect } from "@/hooks/use-mount-effect"
 import { useMapleOrganizationId } from "@/hooks/use-maple-organization"
 import { isDialogOpen, isEditableTarget } from "@maple/ui/lib/keyboard"
-import { aiChatEnabled } from "@/lib/region"
 
 const OPEN_CHAT_EVENT = "maple:open-chat-sheet"
 
@@ -36,10 +35,6 @@ export function openGlobalChat() {
  * history restores from the durable stream on reopen, same as AlertChatSheet.
  */
 export function GlobalChatSheet() {
-	return aiChatEnabled ? <GlobalChatSheetInner /> : null
-}
-
-function GlobalChatSheetInner() {
 	const [open, setOpen] = useState(false)
 	const orgId = useMapleOrganizationId()
 

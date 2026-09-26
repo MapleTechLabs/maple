@@ -30,6 +30,17 @@ describe("tool output", () => {
 			expect(extractOutputText(joined)).toBe(report)
 		})
 
+		it("recovers the payload from a single-newline join, after a next-steps list", () => {
+			const joined = `${report}\n\n**Suggested next steps:**\n- a\n${JSON.stringify(ui)}`
+			expect(extractStructuredData(joined)).toEqual(ui)
+			expect(extractOutputText(joined)).toBe(`${report}\n\n**Suggested next steps:**\n- a`)
+		})
+
+		it("shows the text when truncation cut the payload off", () => {
+			const cut = `${report}\n${JSON.stringify(ui).slice(0, 20)}`
+			expect(extractStructuredData(cut)).toBeNull()
+		})
+
 		it("leaves a plain string alone", () => {
 			expect(extractStructuredData("no data")).toBeNull()
 			expect(extractOutputText("no data")).toBe("no data")

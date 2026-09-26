@@ -49,7 +49,7 @@ export const GET: APIRoute = ({ props, site }) => {
 			docHeader(feature.heroTitle(), feature.heroLede()),
 			facts,
 			`## ${feature.capTitle()}`,
-			...feature.capabilities.map((cap) => `### ${cap.op} — ${cap.title()}\n\n${cap.body()}`),
+			...feature.capabilities.map((cap) => `### ${cap.op}: ${cap.title()}\n\n${cap.body()}`),
 			related,
 		),
 	)

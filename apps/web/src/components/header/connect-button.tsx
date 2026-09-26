@@ -13,12 +13,12 @@ import { Separator } from "@maple/ui/components/ui/separator"
 import { ArrowRightIcon, ChatBubbleSparkleIcon, ConnectionIcon } from "@/components/icons"
 import { CopyableField } from "@maple/ui/components/ui/copyable-field"
 import { ConnectCredentials } from "@/components/ingest/connect-credentials"
+import { ONBOARD_SKILL_COMMAND } from "@/components/ingest/onboard-skill"
 import { ConnectionStatusPill } from "@/components/ingest/connection-status"
 import { useIngestConnection } from "@/components/ingest/use-ingest-connection"
 import { CopyButton } from "@maple/ui/components/ui/copy-button"
 import { mcpUrl } from "@/lib/services/common/mcp-url"
 
-const ONBOARD_SKILL_COMMAND = "bunx skills add MapleTechLabs/maple/skills/maple-onboard"
 const MCP_ENDPOINT = `${mcpUrl}/mcp`
 
 export function ConnectButton() {

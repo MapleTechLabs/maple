@@ -1,8 +1,12 @@
 # SST Fork Workflow
 
-Maple runs against a local fork of `anomalyco/sst` so we can add features to the SST platform (the TypeScript component library under `platform/src/components/`) before they land upstream, and open PRs back to upstream from the same branches.
+> Status (2026-09-25): obsolete. Maple no longer depends on SST: the root `package.json` has no
+> `sst` dependency and there is no `sst.config.ts`. Infrastructure is declared with alchemy
+> (`alchemy.run.ts`, see `docs/infra.md`). Kept as a record of the fork workflow.
 
-The SST CLI is a Go binary shipped as a prebuilt in the `sst` npm package. At runtime it extracts the platform source into `.sst/platform/` and runs it via Pulumi. We don't rebuild the Go binary — we just swap out the extracted platform source with a symlink to our fork. That means any edit in the fork is live in maple on the next `bun sst …` invocation, with no rebuild step.
+Maple ran against a local fork of `anomalyco/sst`. This let us add features to the SST platform (the TypeScript component library under `platform/src/components/`) before they landed upstream, and open PRs back to upstream from the same branches.
+
+The SST CLI is a Go binary shipped prebuilt in the `sst` npm package. At runtime it extracts the platform source into `.sst/platform/` and runs it via Pulumi. We don't rebuild the Go binary. We replace the extracted platform source with a symlink to our fork, so any edit in the fork is live in maple on the next `bun sst …` invocation.
 
 ## Layout
 
@@ -14,9 +18,9 @@ The SST CLI is a Go binary shipped as a prebuilt in the `sst` npm package. At ru
 
 ## Branches
 
-- `dev` — tracks `upstream/dev`. Do not commit local patches here; this is the baseline you branch off for upstream PRs.
-- `local-4.7.3` — local testing branch, based on the `v4.7.3` tag with our local-only patches cherry-picked on top. This is the branch you have checked out when running maple so the SST CLI sees the exact baseline it expects, plus our patches.
-- `feat/*` — one branch per upstream PR, branched from `dev`.
+- `dev`: tracks `upstream/dev`. Do not commit local patches here. This is the baseline you branch off for upstream PRs.
+- `local-4.7.3`: local testing branch, based on the `v4.7.3` tag with our local-only patches cherry-picked on top. Keep it checked out when running maple, so the SST CLI sees the exact baseline it expects plus our patches.
+- `feat/*`: one branch per upstream PR, branched from `dev`.
 
 When `v4.7.3` == `upstream/dev` (as it was at setup time), `dev` and `local-4.7.3` have the same content modulo the local patches. They diverge once upstream cuts a new release.
 
@@ -29,7 +33,7 @@ Assume you're already on `local-4.7.3` in the fork.
 cd ~/Documents/GitHub/sst
 $EDITOR platform/src/components/cloudflare/worker.ts
 
-# 2. Test in maple — no rebuild, the symlink reflects the edit immediately
+# 2. Test in maple. No rebuild: the symlink reflects the edit immediately
 cd ~/Documents/GitHub/maple
 bun sst diff --stage <scratch-stage>
 ```
@@ -44,11 +48,11 @@ Do this whenever you want the latest `anomalyco/sst:dev`, typically before start
 cd ~/Documents/GitHub/sst
 git fetch upstream
 git checkout dev
-git merge --ff-only upstream/dev   # fast-forward only — dev should have no local commits
+git merge --ff-only upstream/dev   # fast-forward only: dev should have no local commits
 git push origin dev                 # keep Makisuo/sst:dev in sync with upstream
 ```
 
-If `git merge --ff-only` fails, someone (probably past-you) committed directly to `dev`. Move those commits to a feature branch with `git branch -f feat/whatever dev && git reset --hard upstream/dev`, then retry.
+If `git merge --ff-only` fails, someone committed directly to `dev`. Move those commits to a feature branch with `git branch -f feat/whatever dev && git reset --hard upstream/dev`, then retry.
 
 ## Rebasing `local-4.7.3` onto a newer release
 
@@ -62,7 +66,7 @@ git rebase v4.7.4                   # replays local patches onto the new tag
 git branch -m local-4.7.3 local-4.7.4
 ```
 
-Then bump maple: `bun update sst` in `~/Documents/GitHub/maple`, and **re-create the symlink** (SST wipes `.sst/platform/` on version mismatch — see Recovery below).
+Then bump maple: `bun update sst` in `~/Documents/GitHub/maple`, and **re-create the symlink**. SST wipes `.sst/platform/` on version mismatch (see Recovery below).
 
 ## Adding a new feature + opening an upstream PR
 
@@ -107,7 +111,7 @@ git checkout local-4.7.3
 git cherry-pick feat/<short-name>
 ```
 
-After upstream merges and you rebase `local-4.7.3` onto the next release tag, drop the cherry-picked commit — it's already included via upstream.
+After upstream merges and you rebase `local-4.7.3` onto the next release tag, drop the cherry-picked commit. Upstream already includes it.
 
 ### Style notes for upstream PRs
 
@@ -115,7 +119,7 @@ From reading merged PRs on `anomalyco/sst`:
 
 - Titles are imperative and prose-style, no `feat:` / `fix:` prefix. "Add X", "Support X", "Fix X". Backticks around code identifiers are fine.
 - Commit messages match the PR title; squash-merges on the upstream side rewrite them anyway.
-- PR bodies are conversational — what the change does, why it's needed, any API-design decisions, and a short test plan. Don't pad with boilerplate.
+- PR bodies are conversational: what the change does, why it's needed, any API-design decisions, and a short test plan. Don't pad with boilerplate.
 - Reference PR #6744 as a recent example of the expected length and voice.
 
 ## Recovery: symlink was wiped
@@ -146,6 +150,6 @@ The Go CLI expects the platform source to match the version it was built from. I
 
 - A new component file that references a Go RPC method the CLI doesn't know about
 - A new provider dep added to `platform/package.json` that isn't in the installed `.sst/platform/node_modules`
-- Changes to the `dist/` layout (generated artifacts) — we don't symlink `dist/`, but component code that references a new `dist/` helper will fail
+- Changes to the `dist/` layout (generated artifacts). We don't symlink `dist/`, so component code that references a new `dist/` helper will fail
 
-The `local-<version>` branch exists to avoid this: it pins local patches to the exact baseline the installed CLI expects. Only rebase it forward when you bump `sst` in maple.
+The `local-<version>` branch exists to avoid this. It pins local patches to the exact baseline the installed CLI expects. Only rebase it forward when you bump `sst` in maple.

@@ -956,6 +956,7 @@ export class VcsRepository extends Context.Service<VcsRepository>()("@maple/api/
 					skipReason: row.skipReason ?? null,
 					verdict: row.reportJson?.verdict ?? null,
 					score: row.score ?? null,
+					confidence: row.reportJson?.confidence ?? null,
 					findings: row.reportJson?.findings?.length ?? 0,
 					commentUrl: row.commentUrl ?? null,
 					publishError: row.publishError ?? null,

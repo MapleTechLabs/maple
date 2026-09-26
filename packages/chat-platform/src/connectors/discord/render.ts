@@ -114,13 +114,20 @@ export const renderDiscordMessage = (blocks: ReadonlyArray<ChatBlock>): DiscordM
 				if (block.tools.length > 0) lines.push(block.tools.map(toolLabel).join(" · "))
 				break
 			case "approval": {
-				const detail = block.summary === "" ? "" : `\n${block.summary}`
-				if (block.outcome !== null) {
-					// A decided proposal keeps its line and loses its buttons: Discord leaves a
-					// component clickable forever, and the click would only be answered "settled".
-					lines.push(`**\`${block.toolName}\`**${detail}\n${block.outcome.text}`)
+				const { outcome } = block
+				if (outcome !== null) {
+					// A decided proposal loses its buttons: Discord leaves a component clickable
+					// forever, and the click would only be answered "settled". What it asked for gives
+					// way to what came of it, with who decided underneath.
+					const link = outcome.url === null ? "" : ` [Open in Maple](${outcome.url})`
+					lines.push(
+						outcome.text === ""
+							? `**\`${block.toolName}\`** ${outcome.decision}${link}`
+							: `${outcome.text}${link}\n-# ${outcome.decision}`,
+					)
 					break
 				}
+				const detail = block.summary === "" ? "" : `\n${block.summary}`
 				lines.push(`**Approve \`${block.toolName}\`?**${detail}`)
 				// Each approval is one action row, and a message carries at most five of them — a sixth
 				// would be rejected along with the whole turn.
@@ -191,7 +198,9 @@ const alertEmbed = (block: ChatAlertBlock): DiscordEmbed => {
 		title: clamp(block.title, MAX_EMBED_TITLE_CHARS),
 		...(primary === undefined ? undefined : { url: primary.url }),
 		color: Number.parseInt(block.color.slice(1), 16),
-		...(block.summary === "" ? undefined : { description: clamp(block.summary, MAX_EMBED_DESCRIPTION_CHARS) }),
+		...(block.summary === ""
+			? undefined
+			: { description: clamp(block.summary, MAX_EMBED_DESCRIPTION_CHARS) }),
 		fields,
 		...(block.imageUrl === null ? undefined : { image: { url: block.imageUrl } }),
 		...(footer === "" ? undefined : { footer: { text: clamp(footer, MAX_FOOTER_CHARS) } }),

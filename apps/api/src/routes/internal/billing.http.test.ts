@@ -173,6 +173,33 @@ describe("AutumnClient.updateCustomerBillingControls", () => {
 			},
 		})
 	})
+
+	// The provider replaces any list it is sent, so an omitted list must stay off
+	// the wire: `usage_alerts: []` would wipe the org's existing alerts.
+	it("omits usage_alerts from the body when the caller doesn't send them", async () => {
+		let body: string | undefined
+		const fetch = (async (_input, init) => {
+			body = await new Response(init?.body).text()
+			return new Response(JSON.stringify({ id: ORG }), { status: 200 })
+		}) as typeof globalThis.fetch
+
+		await Effect.runPromise(
+			Effect.gen(function* () {
+				const autumn = yield* AutumnClient
+				return yield* autumn
+					.updateCustomerBillingControls(ORG, {
+						spendLimits: [
+							{ featureId: "logs", enabled: true, limitType: "absolute", overageLimit: 250 },
+						],
+					})
+					.pipe(Effect.provideService(FetchHttpClient.Fetch, fetch))
+			}).pipe(Effect.provide(autumnClientLayer)),
+		)
+
+		assert.deepStrictEqual(JSON.parse(body ?? "{}").billing_controls, {
+			spend_limits: [{ feature_id: "logs", enabled: true, limit_type: "absolute", overage_limit: 250 }],
+		})
+	})
 })
 
 describe("readCustomerCached", () => {

@@ -12,8 +12,8 @@ import Breadcrumb from "../../components/Breadcrumb.astro";
 import { integrations } from "../../lib/integrations";
 
 const integration = integrations.python;
-const pageTitle = "Python Observability with OpenTelemetry — Maple";
-const pageDescription = "Instrument your Python application with zero code changes using OpenTelemetry auto-instrumentation. Supports Flask, FastAPI, Django, and dozens of popular libraries.";
+const pageTitle = "Python Observability with OpenTelemetry | Maple";
+const pageDescription = "Instrument a Python application with OpenTelemetry auto-instrumentation and send traces to Maple. Flask, FastAPI, Django, SQLAlchemy, requests and dozens of other libraries are covered without code changes.";
 
 const howToJsonLd = {
     "@context": "https://schema.org",
@@ -36,7 +36,7 @@ const howToJsonLd = {
     <FeatureHero
         label="Python"
         title="Python observability with OpenTelemetry"
-        subtitle="Instrument your Python application with zero code changes using OpenTelemetry auto-instrumentation. Supports Flask, FastAPI, Django, and dozens of popular libraries out of the box."
+        subtitle="Install the OpenTelemetry distro, bootstrap the instrumentations for the libraries you already use, and run your app under opentelemetry-instrument. Flask, FastAPI, Django, SQLAlchemy, requests and dozens of other libraries are traced without code changes."
     />
 
     <QuickStartCode steps={integration.steps} />

@@ -5,14 +5,18 @@
 import { assert, describe, it } from "vitest"
 import {
 	annotatePatch,
+	changedFilesOutput,
 	classifyChangedFile,
+	fileDiffsDoc,
+	fileDiffsOutput,
 	pathsInDiffAnswer,
 	renderChangedFiles,
 	renderFileDiffs,
 	renderPullRequestContext,
-	reviewCallBudget,
 	reviewablePathsInListing,
 } from "./pull-request"
+import { Schema } from "effect"
+import { PrChangedFilesOutput, PrFileDiffOutput } from "@maple/domain/mcp-outputs"
 
 describe("annotatePatch", () => {
 	it("numbers additions and context on the new side and leaves deletions unnumbered", () => {
@@ -64,6 +68,8 @@ describe("classifyChangedFile", () => {
 		assert.equal(classifyChangedFile("apps/api/src/routes/orders.test.ts"), "test")
 		assert.equal(classifyChangedFile("packages/domain/src/__tests__/x.ts"), "test")
 		assert.equal(classifyChangedFile("apps/web/src/routeTree.gen.ts"), "generated")
+		assert.equal(classifyChangedFile("packages/query-engine/src/__sql_baseline__/catalog.sql"), "generated")
+		assert.equal(classifyChangedFile("apps/web/src/__snapshots__/chart.test.tsx.snap"), "generated")
 		assert.equal(classifyChangedFile("bun.lock"), "lockfile")
 		assert.equal(classifyChangedFile("docs/api-v2.md"), "docs")
 		assert.equal(classifyChangedFile("README.md"), "docs")
@@ -95,7 +101,7 @@ describe("renderChangedFiles", () => {
 		patch: "@@ -1 +1 @@\n+x",
 	})
 
-	it("states a call budget from the files that are actually reviewed", () => {
+	it("counts the files that are actually reviewed, with no call budget to pace against", () => {
 		const result = renderChangedFiles("octo/shop", 7, [
 			file("src/orders.ts"),
 			file("src/orders.test.ts"),
@@ -104,13 +110,7 @@ describe("renderChangedFiles", () => {
 		])
 		const text = result.content[0]?.text ?? ""
 		assert.include(text, "Files to review: 3.")
-		assert.include(text, `${reviewCallBudget(3)} tool calls`)
-	})
-
-	it("keeps the budget between a floor and a ceiling", () => {
-		assert.equal(reviewCallBudget(0), 8)
-		assert.equal(reviewCallBudget(3), 15)
-		assert.equal(reviewCallBudget(100), 60)
+		assert.notInclude(text, "tool calls")
 	})
 })
 
@@ -127,7 +127,9 @@ describe("renderFileDiffs", () => {
 	})
 
 	it("returns several files in one answer", () => {
-		const text = renderFileDiffs([file("a.ts"), file("b.ts")], ["a.ts", "b.ts"]).content[0]?.text ?? ""
+		const text =
+			renderFileDiffs("octo/shop", 7, [file("a.ts"), file("b.ts")], ["a.ts", "b.ts"]).content[0]
+				?.text ?? ""
 		assert.include(text, "## a.ts")
 		assert.include(text, "## b.ts")
 		assert.notInclude(text, "Not included")
@@ -137,6 +139,8 @@ describe("renderFileDiffs", () => {
 		const paths = ["a.ts", "b.ts", "c.ts", "d.ts"]
 		const text =
 			renderFileDiffs(
+				"octo/shop",
+				7,
 				paths.map((path) => file(path, 3_000)),
 				paths,
 			).content[0]?.text ?? ""
@@ -147,7 +151,8 @@ describe("renderFileDiffs", () => {
 	})
 
 	it("reports a path the pull request does not change, and keeps going", () => {
-		const text = renderFileDiffs([file("a.ts")], ["nope.ts", "a.ts"]).content[0]?.text ?? ""
+		const text =
+			renderFileDiffs("octo/shop", 7, [file("a.ts")], ["nope.ts", "a.ts"]).content[0]?.text ?? ""
 		assert.include(text, "'nope.ts' is not a file this pull request changes")
 		assert.include(text, "## a.ts")
 	})
@@ -155,7 +160,7 @@ describe("renderFileDiffs", () => {
 
 describe("renderPullRequestContext", () => {
 	it("lists failing checks first and clips long comments", () => {
-		const result = renderPullRequestContext(7, {
+		const result = renderPullRequestContext("octo/shop", 7, {
 			commits: [{ sha: "abcdef1234567890", message: "feat: add orders\n\nbody" }],
 			comments: [{ author: "octo", path: "src/a.ts", line: 3, body: "x".repeat(1_000) }],
 			checks: [
@@ -208,6 +213,8 @@ describe("reading the answers back", () => {
 			patch: `@@ -1,0 +1,1400 @@\n${`+${"x".repeat(60)}\n`.repeat(1400)}`,
 		}
 		const answer = renderFileDiffs(
+			"octo/shop",
+			7,
 			[file("src/a.ts"), big, file("src/c.ts")],
 			["src/a.ts", "src/missing.ts", "src/big.ts", "src/c.ts"],
 		).content[0]!.text
@@ -216,5 +223,49 @@ describe("reading the answers back", () => {
 		// The unknown path shows nothing, and the deferred one is named without its diff.
 		assert.deepEqual(shown, ["src/a.ts", "src/c.ts"])
 		assert.include(answer, "request them in one more call: src/big.ts")
+	})
+})
+
+describe("the typed outputs", () => {
+	const file = (path: string, size = 10) => ({
+		path,
+		previousPath: null,
+		status: "modified" as const,
+		additions: size,
+		deletions: 0,
+		patch: ["@@ -1,0 +1," + size + " @@", ...Array.from({ length: size }, (_, i) => `+line ${i}`)].join(
+			"\n",
+		),
+	})
+
+	it("encode through their schemas", () => {
+		const listing = changedFilesOutput("octo/shop", 7, [file("src/a.ts"), file("bun.lock")])
+		const decoded = Schema.decodeUnknownSync(PrChangedFilesOutput)(
+			Schema.encodeUnknownSync(PrChangedFilesOutput)(listing),
+		)
+		assert.deepEqual(
+			decoded.files.map((entry) => entry.kind),
+			["source", "lockfile"],
+		)
+		const diffs = fileDiffsOutput("octo/shop", 7, [file("src/a.ts")], ["src/a.ts", "nope.ts"])
+		const decodedDiffs = Schema.decodeUnknownSync(PrFileDiffOutput)(
+			Schema.encodeUnknownSync(PrFileDiffOutput)(diffs),
+		)
+		assert.deepEqual(decodedDiffs.notChanged, ["nope.ts"])
+	})
+
+	it("offers the deferred diffs as one typed next call", () => {
+		const paths = ["a.ts", "b.ts", "c.ts", "d.ts"]
+		const rendered = fileDiffsDoc(
+			fileDiffsOutput(
+				"octo/shop",
+				7,
+				paths.map((path) => file(path, 3_000)),
+				paths,
+			),
+		)
+		const next = rendered.next?.[0]
+		assert.equal(next?.tool, "pr_file_diff")
+		assert.deepEqual(next?.args, { repository: "octo/shop", number: 7, paths: ["c.ts", "d.ts"] })
 	})
 })

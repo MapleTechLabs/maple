@@ -1,10 +1,10 @@
 import {
 	consentAllowedSince,
 	hasConsent,
+	ingestHeaders,
 	readSessionSink,
 	recordTraceId,
 	scrubUrl,
-	SDK_HINT_HEADER,
 	sdkHint,
 } from "@maple/browser-session"
 import { context, propagation, ProxyTracerProvider, type Tracer, trace } from "@opentelemetry/api"
@@ -148,11 +148,9 @@ export function setupTracing(config: ResolvedConfig): () => Promise<void> {
 	const exporter = new ConsentSpanExporter(
 		new OTLPTraceExporter({
 			url: `${config.endpoint}/v1/traces`,
-			headers: {
-				Authorization: `Bearer ${config.ingestKey}`,
-				// Ingest records this as `maple.sdk`; a page cannot set `user-agent`.
-				[SDK_HINT_HEADER]: sdkHint(SDK_NAME, SDK_VERSION),
-			},
+			// The same auth + `x-maple-sdk` headers as every session write; a page
+			// cannot set `user-agent`, so ingest reads the SDK from the latter.
+			headers: ingestHeaders({ ingestKey: config.ingestKey, sdk: sdkHint(SDK_NAME, SDK_VERSION) }),
 		}),
 	)
 

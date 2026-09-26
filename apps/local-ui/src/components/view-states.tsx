@@ -1,6 +1,5 @@
-// Shared loading / empty / error placeholders so every view reads the same way.
-// Built on the @maple/ui `Empty` compound + `Skeleton` so local mode matches the
-// main web app's states exactly.
+// Shared loading / empty / error placeholders so every view reads the same way,
+// built on the @maple/ui `Empty` compound + `Skeleton`.
 
 import type { ReactNode } from "react"
 import {
@@ -16,9 +15,9 @@ import { Separator } from "@maple/ui/components/ui/separator"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@maple/ui/components/ui/tabs"
 import { CircleWarningIcon, ConnectionIcon } from "@maple/ui/components/icons"
-import { LOCAL_OTLP_ENDPOINT, localApiBase } from "../lib/constants"
-import { DOCS_CLI_REFERENCE, DOCS_LOCAL_MODE_INSTALL, INSTALL_METHODS } from "../lib/links"
 import { CopyableField } from "@maple/ui/components/ui/copyable-field"
+import { DEFAULT_LOCAL_PORT, isHostedUi, LOCAL_OTLP_ENDPOINT, localServerPort } from "../lib/constants"
+import { DOCS_CLI_REFERENCE, DOCS_LOCAL_MODE_INSTALL, INSTALL_METHODS } from "../lib/links"
 
 export function EmptyState({ icon, title, hint }: { icon?: ReactNode; title: string; hint?: ReactNode }) {
 	return (
@@ -62,25 +61,28 @@ export function ErrorState({
 	)
 }
 
+/** The command that starts a server on the port this page expects. */
+export function startCommand(port: string): string {
+	return port === DEFAULT_LOCAL_PORT ? "maple start" : `maple start --port ${port}`
+}
+
 /**
- * Shown in place of the views when the local `maple` binary is unreachable —
- * the connection gate in `App` swaps to this instead of leaving an infinite
- * skeleton. Tells the user how to start the backend; the gate keeps polling, so
- * it auto-recovers (and "Try again" forces an immediate probe).
+ * Shown in place of the views when nothing answers on the expected port. The
+ * status poll keeps running, so it recovers on its own; "Try again" probes now.
  */
 export function DisconnectedState({ onRetry }: { onRetry: () => void }) {
-	// `?port=` only matters in remote mode (the UI on local.maple.dev reaching
-	// loopback); on same-origin/dev `localApiBase()` is "" and the port is fixed.
-	const isRemote = localApiBase() !== ""
+	const hosted = isHostedUi()
+	const port = localServerPort()
 	return (
-		<Empty className="h-full">
+		<Empty className="h-full overflow-auto">
 			<EmptyMedia variant="icon">
 				<ConnectionIcon className="text-muted-foreground" />
 			</EmptyMedia>
 			<EmptyHeader>
 				<EmptyTitle>Can’t reach Maple Local</EmptyTitle>
 				<EmptyDescription>
-					Start your local Maple backend and this view connects automatically.
+					Nothing is answering on port {port}. Start the local server and this page connects on its
+					own.
 				</EmptyDescription>
 			</EmptyHeader>
 			<EmptyContent className="w-full max-w-md items-stretch gap-3 text-left">
@@ -91,18 +93,18 @@ export function DisconnectedState({ onRetry }: { onRetry: () => void }) {
 				<span className="text-left text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
 					Already installed?
 				</span>
-				<CopyableField label="Start Maple" value="maple start" />
+				<CopyableField label="Start Maple" value={startCommand(port)} />
 				<CopyableField label="Expecting" value={LOCAL_OTLP_ENDPOINT} />
-				<p className="text-left text-xs text-muted-foreground">
-					Make sure <code className="rounded bg-muted px-1">maple start</code> is running.
-					{isRemote ? (
-						<>
-							{" "}
-							On a different port? Append{" "}
-							<code className="rounded bg-muted px-1">?port=&lt;n&gt;</code> to the URL.
-						</>
-					) : null}
-				</p>
+				{hosted ? (
+					<p className="text-left text-xs text-muted-foreground">
+						This page runs on local.maple.dev and talks to your machine directly, so your browser
+						may ask to allow access to devices on your local network: allow it. Running on another
+						port? Add <code className="rounded bg-muted px-1">?port=&lt;n&gt;</code> to the URL.
+						To skip the prompt, run{" "}
+						<code className="rounded bg-muted px-1">maple start --offline</code> and open the URL
+						it prints.
+					</p>
+				) : null}
 				<div className="flex items-center justify-between gap-2">
 					<Button variant="outline" size="sm" onClick={onRetry}>
 						Try again
@@ -118,11 +120,45 @@ export function DisconnectedState({ onRetry }: { onRetry: () => void }) {
 	)
 }
 
+/** The server answered but turned this page away (403 origin rejected, 400, ...). */
+export function RejectedState({
+	rejection,
+	onRetry,
+}: {
+	rejection: { status: number; detail: string }
+	onRetry: () => void
+}) {
+	const originRejected = rejection.status === 403
+	return (
+		<Empty className="h-full">
+			<EmptyMedia variant="icon">
+				<CircleWarningIcon className="text-destructive" />
+			</EmptyMedia>
+			<EmptyHeader>
+				<EmptyTitle>Maple Local refused this page ({rejection.status})</EmptyTitle>
+				<EmptyDescription>
+					{originRejected
+						? "The server only accepts the dashboard it was started for. Open the URL that maple start printed, or restart it without a custom UI origin."
+						: "The server rejected the status request."}
+				</EmptyDescription>
+			</EmptyHeader>
+			<EmptyContent className="w-full max-w-md items-stretch gap-3">
+				{rejection.detail ? (
+					<pre className="whitespace-pre-wrap break-all rounded-md border bg-muted/40 px-3 py-2 text-left font-mono text-[11px]">
+						{rejection.detail}
+					</pre>
+				) : null}
+				<Button variant="outline" size="sm" className="self-center" onClick={onRetry}>
+					Try again
+				</Button>
+			</EmptyContent>
+		</Empty>
+	)
+}
+
 /**
- * Homebrew / install-script commands for the `maple` binary — the disconnected
- * screen is the one place where the user may not have the CLI at all, so the
- * install path lives right next to "start it". Commands mirror the landing
- * page's install tabs (see `lib/links.ts`).
+ * Homebrew / install-script commands for the `maple` binary; the disconnected
+ * screen is where the user may not have the CLI at all.
  */
 function InstallCommands() {
 	return (
@@ -157,9 +193,8 @@ function DocsLink({ href, children }: { href: string; children: ReactNode }) {
 }
 
 /**
- * Content-shaped loading placeholder. `table` for the trace/log row lists,
- * `card` for the session card stack — keeps every loading state on the same
- * skeleton vocabulary instead of a bare spinner.
+ * Content-shaped loading placeholder: `table` for row lists, `card` for the
+ * card stacks.
  */
 export function ListSkeleton({ rows = 8, variant = "table" }: { rows?: number; variant?: "table" | "card" }) {
 	return (

@@ -1,7 +1,26 @@
-import { describe, expect, it, vi } from "vitest"
+import { resetKeylessWarningsForTests } from "@maple/browser-session"
+import { afterEach, describe, expect, it, vi } from "vitest"
 import { resolveConfig } from "./config"
 
 describe("resolveConfig", () => {
+	afterEach(() => {
+		resetKeylessWarningsForTests()
+		vi.restoreAllMocks()
+	})
+
+	it("treats the ingest key as auth only: keyless behind a proxy is silent", () => {
+		const warn = vi.spyOn(console, "warn").mockImplementation(() => {})
+		const proxied = resolveConfig({ serviceName: "s", endpoint: "https://telemetry.example.com" })
+		expect(proxied.ingestKey).toBeUndefined()
+		expect(proxied.tracingEnabled).toBe(true)
+		expect(proxied.replayEnabled).toBe(true)
+		expect(warn).not.toHaveBeenCalled()
+
+		// Keyless against the hosted ingest is the one setup that cannot work.
+		resolveConfig({ serviceName: "s" })
+		expect(warn).toHaveBeenCalledTimes(1)
+	})
+
 	it("applies defaults and strips the endpoint's trailing slash", () => {
 		const config = resolveConfig({
 			ingestKey: "maple_pk_x",

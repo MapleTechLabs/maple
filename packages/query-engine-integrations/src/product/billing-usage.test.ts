@@ -71,7 +71,8 @@ describe("dailySessionCountQuery", () => {
 		expect(sql).toContain("FROM session_replays")
 		expect(sql).toContain("OrgId = 'org_123'")
 		expect(sql).toContain("toStartOfInterval(StartTime, INTERVAL 86400 SECOND) AS day")
-		expect(sql).toContain("count() AS sessions")
+		expect(sql).toContain("uniqExact(SessionId) AS sessions")
+		expect(sql).not.toContain("count()")
 		expect(sql).toContain("GROUP BY day")
 	})
 

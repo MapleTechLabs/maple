@@ -7,7 +7,7 @@
  * page read the catalog. Answers that quote a number take it from `getOffer()`
  * so the FAQ can't disagree with the offer card above it.
  *
- * Messages are called inside the function, not at module scope — Paraglide
+ * Messages are called inside the function, not at module scope: Paraglide
  * resolves the locale per render (see `pricing-offer.ts`).
  */
 import * as m from "../paraglide/messages.js"

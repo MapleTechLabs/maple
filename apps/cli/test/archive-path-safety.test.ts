@@ -16,7 +16,7 @@ import {
 	rangeRoot,
 	shardsRoot,
 } from "../src/server/archives/paths"
-import { appendCatalog, promoteGeneration } from "../src/server/archives/generation"
+import { promoteGeneration } from "../src/server/archives/generation"
 import { rebuildCatalog, listActiveGenerations } from "../src/server/archives/listing"
 import { type ArchiveGenerationManifest } from "../src/server/archives/manifest"
 import { CHDB_VERSION, MAPLE_VERSION } from "../src/version"
@@ -169,17 +169,6 @@ describe("archive path safety — symlink escapes (C-1)", () => {
 				),
 			)
 			ok(!existsSync(join(outside, "traces-out", "2026-06-01", "active.json")))
-		})
-	})
-
-	it("appendCatalog refuses a symlinked catalog and leaves the outside target untouched", async () => {
-		await withArchive(async (archiveDir, outside) => {
-			const sentinel = join(outside, "catalog-sentinel.jsonl")
-			writeFileSync(sentinel, "preserve")
-			mkdirSync(signalRootPath(archiveDir, "traces"), { recursive: true })
-			symlinkSync(sentinel, catalogPath(archiveDir, "traces"))
-			await rejects(appendCatalog(archiveDir, "traces", manifest(randomUUID())), /symlink|real file/)
-			strictEqual(readFileSync(sentinel, "utf8"), "preserve")
 		})
 	})
 

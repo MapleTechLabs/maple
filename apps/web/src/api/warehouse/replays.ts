@@ -37,6 +37,8 @@ const ListReplaysInput = Schema.Struct({
 	visitorId: Schema.optional(Schema.String),
 	hasErrors: Schema.optional(Schema.Boolean),
 	search: Schema.optional(Schema.String),
+	/** Exact page path the session navigated to at any point. */
+	pagePath: Schema.optional(Schema.String),
 	cursor: Schema.optional(Schema.String),
 	// Session-time range filters (ms) — duration is the stored wall-clock time,
 	// activeTime is computed server-side from session_events gaps.
@@ -80,6 +82,7 @@ export const listReplays = Effect.fn("SessionReplays.listReplays")(function* ({
 			if (input.visitorId !== undefined) payload.visitor_id = input.visitorId
 			if (input.hasErrors !== undefined) payload.has_errors = input.hasErrors
 			if (input.search !== undefined) payload.search = input.search
+			if (input.pagePath !== undefined) payload.page_path = input.pagePath
 			if (input.cursor !== undefined) payload.cursor = input.cursor
 			if (input.durationMinMs !== undefined) payload.duration_min_ms = input.durationMinMs
 			if (input.durationMaxMs !== undefined) payload.duration_max_ms = input.durationMaxMs
@@ -110,6 +113,7 @@ const ReplaysFacetsInput = Schema.Struct({
 	visitorId: Schema.optional(Schema.String),
 	hasErrors: Schema.optional(Schema.Boolean),
 	search: Schema.optional(Schema.String),
+	pagePath: Schema.optional(Schema.String),
 })
 export type ReplaysFacetsInput = Schema.Schema.Type<typeof ReplaysFacetsInput>
 
@@ -137,6 +141,7 @@ export const getReplaysFacets = Effect.fn("SessionReplays.facets")(function* ({
 					visitorId: input.visitorId,
 					hasErrors: input.hasErrors,
 					search: input.search,
+					pagePath: input.pagePath,
 				}),
 			})
 		}),
@@ -147,6 +152,7 @@ export const getReplaysFacets = Effect.fn("SessionReplays.facets")(function* ({
 		countries: result.countries,
 		devices: result.devices,
 		groups: result.groups,
+		pages: result.pages,
 		errorCount: result.errorCount,
 		totalSessions: result.totalSessions,
 		liveSessions: result.liveSessions,

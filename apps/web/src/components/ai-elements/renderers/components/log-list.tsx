@@ -3,7 +3,7 @@ import { SeverityBadge } from "@maple/ui/components/logs/severity-badge"
 import { normalizeTimestampInput } from "@/lib/timezone-format"
 
 interface LogListProps {
-	logs: Array<{
+	logs: ReadonlyArray<{
 		timestamp: string
 		severityText: string
 		serviceName: string

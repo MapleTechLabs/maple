@@ -2,7 +2,7 @@
  * What a review pass has read. Fed the real renderers' answers, since the tracker reads them back.
  */
 import type { PullRequestFile } from "@maple/domain/http"
-import { renderFollowUp } from "@maple/backend/services/pr-review/findings"
+import { renderFollowUp, renderIgnoredPaths } from "@maple/backend/services/pr-review/findings"
 import { assert, describe, it } from "vitest"
 import { renderChangedFiles, renderFileDiffs } from "../mcp/tools/pull-request"
 import { makeReviewCoverage, unreadRefusal } from "./review-coverage"
@@ -18,7 +18,7 @@ const file = (path: string): PullRequestFile => ({
 
 const FILES = [file("src/a.ts"), file("src/b.ts"), file("src/a.test.ts"), file("docs/a.md")]
 const listing = renderChangedFiles("octo/shop", 7, FILES).content[0]!.text
-const diffs = (...paths: Array<string>) => renderFileDiffs(FILES, paths).content[0]!.text
+const diffs = (...paths: Array<string>) => renderFileDiffs("octo/shop", 7, FILES, paths).content[0]!.text
 
 describe("makeReviewCoverage", () => {
 	it("owes nothing before the file list is read", () => {
@@ -33,6 +33,14 @@ describe("makeReviewCoverage", () => {
 		assert.deepEqual(coverage.unread(), ["src/b.ts"])
 		coverage.observe("pr_file_diff", diffs("src/b.ts"))
 		assert.deepEqual(coverage.unread(), [])
+	})
+
+	it("never owes a file the repository's settings ignore", () => {
+		const coverage = makeReviewCoverage(
+			`Review pull request #7.\n${renderIgnoredPaths(["src/b.ts", "*.test.ts"])}`,
+		)
+		coverage.observe("pr_changed_files", listing)
+		assert.deepEqual(coverage.unread(), ["src/a.ts"])
 	})
 
 	it("counts only pr_file_diff answers as reads", () => {

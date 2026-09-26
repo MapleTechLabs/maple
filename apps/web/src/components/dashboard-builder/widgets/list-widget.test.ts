@@ -84,6 +84,7 @@ import { listTraces } from "@/api/warehouse/traces"
 import { listLogs } from "@/api/warehouse/logs"
 import { serverFunctionMap } from "@/components/dashboard-builder/data-source-registry"
 import { resolveFieldPath } from "@/lib/resolve-field-path"
+import { buildListLogsParams, listWhereClauseWarnings } from "@/lib/query-builder/widget-builder-shared"
 
 // 1. Verify listTraces works with exactly the params a list widget sends
 describe("list widget data flow", () => {
@@ -283,85 +284,82 @@ describe("widgetFetchAtom simulation", () => {
 	)
 })
 
-// 5. Test buildWidgetDataSource for list
-describe("buildWidgetDataSource for list", () => {
-	// Import dynamically to avoid circular dependency issues
-	it.effect("produces correct data source from list state", () =>
+// 5. Logs list widget where clause → list_logs params
+describe("buildListLogsParams", () => {
+	it("lowers = and != on the logs columns to the include and exclude params", () => {
+		const { params, warnings } = buildListLogsParams(
+			'service.name = "api" AND severity != "DEBUG" AND severity != "TRACE" AND service.name != "noisy"',
+			50,
+		)
+		expect(warnings).toEqual([])
+		expect(params).toEqual({
+			limit: 50,
+			service: "api",
+			excludedSeverities: ["DEBUG", "TRACE"],
+			excludedServices: ["noisy"],
+		})
+	})
+
+	it("lowers contains on environment and namespace to their substring match modes", () => {
+		const { params, warnings } = buildListLogsParams(
+			'deployment.environment contains "prod" AND service.namespace = "payments" AND body contains "timeout"',
+			25,
+		)
+		expect(warnings).toEqual([])
+		expect(params).toEqual({
+			limit: 25,
+			deploymentEnv: "prod",
+			deploymentEnvMatchMode: "contains",
+			namespace: "payments",
+			search: "timeout",
+		})
+	})
+
+	it.each([
+		[
+			'service.name contains "api"',
+			"Logs list filter service.name supports only = and !=; ignoring contains",
+		],
+		['severity > "WARN"', "Logs list filter severity supports only = and !=; ignoring >"],
+		[
+			'deployment.environment !contains "dev"',
+			"Logs list filter deployment.environment supports only =, != and contains; ignoring !contains",
+		],
+		['body != "x"', "Logs list filter body supports only = and contains; ignoring !="],
+		["attr.userId exists", "Unsupported logs list filter ignored: attr.userId"],
+	])("warns instead of widening %s into an equality match", (clause, warning) => {
+		const { params, warnings } = buildListLogsParams(clause, 10)
+		expect(params).toEqual({ limit: 10 })
+		expect(warnings).toEqual([warning])
+	})
+
+	it.effect("produces params list_logs accepts", () =>
 		Effect.gen(function* () {
-			// Simulate what widget-query-builder-page does
-			const {
-				parseWhereClause,
-				normalizeKey: normKey,
-				parseBoolean: parseBool,
-			} = yield* Effect.promise(() => import("@maple/domain/where-clause"))
-
-			function buildListEndpointParams(
-				dataSource: "traces" | "logs",
-				whereClause: string,
-				limit: number,
-			): Record<string, unknown> {
-				const { clauses } = parseWhereClause(whereClause)
-				const params: Record<string, unknown> = { limit } satisfies Record<string, unknown>
-				if (dataSource === "traces") {
-					for (const clause of clauses) {
-						const key = normKey(clause.key)
-						if (key === "service.name") params.service = clause.value
-						else if (key === "span.name") params.spanName = clause.value
-						else if (key === "has_error") {
-							const b = parseBool(clause.value)
-							if (b != null) params.hasError = b
-						}
-					}
-				} else {
-					for (const clause of clauses) {
-						const key = normKey(clause.key)
-						if (key === "service.name") params.service = clause.value
-						else if (key === "severity") params.severity = clause.value
-					}
-				}
-				return params
-			}
-
-			// Test with empty where clause
-			const params1 = buildListEndpointParams("traces", "", 50)
-			assert.deepStrictEqual(params1, { limit: 50 })
-
-			// Test with service filter
-			const params2 = buildListEndpointParams("traces", 'service.name = "api-gw"', 25)
-			assert.deepStrictEqual(params2, { limit: 25, service: "api-gw" })
-
-			// Test with has_error filter
-			const params3 = buildListEndpointParams("traces", "has_error = true", 25)
-			assert.deepStrictEqual(params3, { limit: 25, hasError: true })
-
-			// Test logs
-			const params4 = buildListEndpointParams("logs", 'severity = "ERROR"', 50)
-			assert.deepStrictEqual(params4, { limit: 50, severity: "ERROR" })
-
-			// All of these should work with listTraces/listLogs
-			for (const [fn, p] of [
-				[
-					serverFunctionMap.list_traces,
-					{ ...params1, startTime: "2026-03-28 00:00:00", endTime: "2026-03-28 23:59:59" },
-				],
-				[
-					serverFunctionMap.list_traces,
-					{ ...params2, startTime: "2026-03-28 00:00:00", endTime: "2026-03-28 23:59:59" },
-				],
-				[
-					serverFunctionMap.list_traces,
-					{ ...params3, startTime: "2026-03-28 00:00:00", endTime: "2026-03-28 23:59:59" },
-				],
-				[
-					serverFunctionMap.list_logs,
-					{ ...params4, startTime: "2026-03-28 00:00:00", endTime: "2026-03-28 23:59:59" },
-				],
-			] as const) {
-				const result = yield* fn({ data: p })
-				expect(result).toHaveProperty("data")
-			}
+			const { params } = buildListLogsParams(
+				'service.name != "noisy" AND severity = "ERROR" AND deployment.environment contains "prod"',
+				50,
+			)
+			const result = yield* serverFunctionMap.list_logs({
+				data: { ...params, startTime: "2026-03-28 00:00:00", endTime: "2026-03-28 23:59:59" },
+			})
+			expect(result).toHaveProperty("data")
 		}),
 	)
+})
+
+describe("listWhereClauseWarnings", () => {
+	it("reports trace clauses the query-engine list cannot apply as written", () => {
+		expect(listWhereClauseWarnings("traces", 'service.name = "api" AND attr.userId exists')).toEqual([])
+		expect(listWhereClauseWarnings("traces", "service.name > 3")).toEqual([
+			"Traces filter service.name supports only =, != and contains; ignoring >",
+		])
+	})
+
+	it("reports logs clauses list_logs cannot express", () => {
+		expect(listWhereClauseWarnings("logs", 'attr.userId = "u1"')).toEqual([
+			"Unsupported logs list filter ignored: attr.userId",
+		])
+	})
 })
 
 // 6. resolveFieldPath tests

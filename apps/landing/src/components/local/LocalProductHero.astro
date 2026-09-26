@@ -1,12 +1,12 @@
 ---
 /**
- * LocalProductHero — hero for the /local product page.
+ * LocalProductHero: hero for the /local product page.
  *
  * Positions Maple Local as a standalone dev tool: a replacement for the local
- * compose stack, not a mode of the hosted product. Headline + install command
+ * compose stack rather than a mode of the hosted product. Headline + install command
  * on the left; on the right the real `maple start` banner streams in line by
  * line, which is the one animated moment the page keeps. No glow, grain, or
- * badge pulses — the terminal is the atmosphere.
+ * badge pulses; the terminal is the atmosphere.
  */
 const INSTALL = "brew install Makisuo/tap/maple";
 
@@ -42,8 +42,8 @@ const facts = ["1 process", "1 port", "0 containers", "0 accounts"];
 
 				<p class="mt-6 max-w-[54ch] text-base leading-relaxed text-fg-muted">
 					Point any OpenTelemetry exporter at localhost and see traces, logs, metrics, errors, sessions,
-					and a service map while you build. One process instead of a compose file. No containers, no
-					account, no cloud — and nothing to sign up for, ever.
+					and a service map while you build. One process instead of a compose file, with no containers
+					and no account to create.
 				</p>
 
 				<div class="lph__install mt-8" data-copy={INSTALL}>

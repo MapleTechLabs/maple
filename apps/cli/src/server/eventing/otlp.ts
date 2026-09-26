@@ -18,7 +18,8 @@ const AnyValueSchema: Schema.Codec<AnyValue> = Schema.suspend(() =>
 		stringValue: Schema.optionalKey(Schema.String),
 		boolValue: Schema.optionalKey(Schema.Boolean),
 		intValue: Schema.optionalKey(NumberOrString),
-		doubleValue: Schema.optionalKey(Schema.Number),
+		// Proto3 JSON may carry doubles as strings, as the warehouse encoder accepts.
+		doubleValue: Schema.optionalKey(NumberOrString),
 		bytesValue: Schema.optionalKey(Schema.String),
 		value: Schema.optionalKey(Schema.String),
 		arrayValue: Schema.optionalKey(
@@ -72,7 +73,7 @@ const LogsRequestSchema = Schema.Struct({
 })
 const decodeLogsRequest = (request: unknown) => {
 	const decoded = Schema.decodeUnknownResult(LogsRequestSchema)(request ?? {})
-	if (Result.isFailure(decoded)) throw new OtlpFieldError(`invalid OTLP logs: ${decoded.failure.message}`)
+	if (Result.isFailure(decoded)) throw OtlpFieldError.of(`invalid OTLP logs: ${decoded.failure.message}`)
 	return decoded.success
 }
 
@@ -147,20 +148,20 @@ interface ValueBudget {
 
 const assertStringBound = (value: string, label: string): string => {
 	if (Buffer.byteLength(value, "utf8") > MAX_STRING_BYTES)
-		throw new OtlpFieldError(`${label} exceeds ${MAX_STRING_BYTES} UTF-8 bytes`)
+		throw OtlpFieldError.of(`${label} exceeds ${MAX_STRING_BYTES} UTF-8 bytes`)
 	return value
 }
 
 const int64 = (value: string | number, label: string): string => {
 	if (typeof value === "number" && !Number.isSafeInteger(value))
-		throw new OtlpFieldError(
+		throw OtlpFieldError.of(
 			`${label} must encode int64 as a decimal string when outside safe integer range`,
 		)
 	const decimal = String(value)
-	if (!/^-?(?:0|[1-9][0-9]*)$/.test(decimal)) throw new OtlpFieldError(`${label} is not an int64`)
+	if (!/^-?(?:0|[1-9][0-9]*)$/.test(decimal)) throw OtlpFieldError.of(`${label} is not an int64`)
 	const parsed = BigInt(decimal)
 	if (parsed < -(1n << 63n) || parsed > (1n << 63n) - 1n)
-		throw new OtlpFieldError(`${label} is outside the int64 range`)
+		throw OtlpFieldError.of(`${label} is outside the int64 range`)
 	return decimal
 }
 
@@ -171,8 +172,14 @@ const anyValueScalar = (value: AnyValue | undefined, label: string): SignalScala
 	if (value.boolValue !== undefined) return { type: "boolean", value: value.boolValue }
 	if (value.intValue !== undefined) return { type: "int64", value: int64(value.intValue, label) }
 	if (value.doubleValue !== undefined) {
-		if (!Number.isFinite(value.doubleValue)) throw new OtlpFieldError(`${label} must be finite`)
-		return { type: "float64", value: value.doubleValue }
+		const double =
+			typeof value.doubleValue === "number"
+				? value.doubleValue
+				: value.doubleValue.trim() === ""
+					? Number.NaN
+					: Number(value.doubleValue)
+		if (!Number.isFinite(double)) throw OtlpFieldError.of(`${label} must be finite`)
+		return { type: "float64", value: double }
 	}
 	return null
 }
@@ -184,8 +191,8 @@ const anyValueJson = (
 	budget: ValueBudget = { nodes: 0 },
 ): JsonValue | null => {
 	budget.nodes += 1
-	if (budget.nodes > MAX_VALUE_NODES) throw new OtlpFieldError(`${label} exceeds value node limit`)
-	if (depth > MAX_VALUE_DEPTH) throw new OtlpFieldError(`${label} exceeds value depth limit`)
+	if (budget.nodes > MAX_VALUE_NODES) throw OtlpFieldError.of(`${label} exceeds value node limit`)
+	if (depth > MAX_VALUE_DEPTH) throw OtlpFieldError.of(`${label} exceeds value depth limit`)
 	const scalar = anyValueScalar(value, label)
 	if (scalar) return scalar.value
 	if (!value) return null
@@ -213,7 +220,7 @@ interface NormalizedAttributes {
 
 const attributes = (values: readonly KeyValue[] | undefined, label: string): NormalizedAttributes => {
 	if ((values?.length ?? 0) > MAX_ATTRIBUTES)
-		throw new OtlpFieldError(`${label} exceeds ${MAX_ATTRIBUTES} attributes`)
+		throw OtlpFieldError.of(`${label} exceeds ${MAX_ATTRIBUTES} attributes`)
 	const scalars = new Map<string, SignalScalar>()
 	const data: Record<string, JsonValue> = Object.create(null)
 	for (const [index, entry] of (values ?? []).entries()) {
@@ -242,7 +249,7 @@ const nanosToTimestamp = (nanos: bigint): string => {
 	const milliseconds = Number(seconds) * 1_000
 	const date = new Date(milliseconds)
 	if (!Number.isFinite(milliseconds) || Number.isNaN(date.getTime()))
-		throw new OtlpFieldError("OTLP timestamp is outside the supported date range")
+		throw OtlpFieldError.of("OTLP timestamp is outside the supported date range")
 	return `${date.toISOString().slice(0, 19)}.${fraction.toString().padStart(9, "0")}Z`
 }
 
@@ -375,7 +382,7 @@ const normalizeLogRecord = (
 		},
 	}
 	if (Buffer.byteLength(canonicalJson(data), "utf8") > MAX_DATA_BYTES)
-		throw new OtlpFieldError(`normalized log event exceeds ${MAX_DATA_BYTES} UTF-8 bytes`)
+		throw OtlpFieldError.of(`normalized log event exceeds ${MAX_DATA_BYTES} UTF-8 bytes`)
 	const source = sourceUri(resource, record)
 	const occurrenceId = sourceOccurrenceId(record)
 	const subject = stringAttribute(record, "event.subject") ?? stringAttribute(record, "cloudevents.subject")

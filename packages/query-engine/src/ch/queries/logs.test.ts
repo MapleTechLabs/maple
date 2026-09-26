@@ -127,42 +127,76 @@ describe("logsTimeseriesQuery", () => {
 		expect(compileUnsafe(exact, baseParams).sql).toContain("SeverityText = 'Error'")
 	})
 
-	it("uses text-index candidates for multi-token body search and retains exact semantics", () => {
+	it("uses text-index candidates for interior body-search words and retains exact semantics", () => {
 		const { sql } = compileUnsafe(
 			logsTimeseriesQuery({
-				search: "Connection Timeout",
+				search: "failed to connect to upstream",
 				bodySearchMode: "text",
 			}),
 			baseParams,
 		)
 
-		expect(sql).toContain("hasAllTokens(lower(Body), 'connection timeout')")
-		expect(sql).toContain("Body ILIKE '%Connection Timeout%'")
+		expect(sql).toContain("hasAllTokens(lower(Body), 'to connect to')")
+		expect(sql).toContain("Body ILIKE '%failed to connect to upstream%'")
 	})
 
-	it("uses portable token bloom candidates but leaves partial-word searches scan-only", () => {
+	it("indexes only interior words, since the first and last can be partial words in the body", () => {
 		const indexed = compileUnsafe(
-			logsCountQuery({ search: "Connection Timeout", bodySearchMode: "tokenbf" }),
+			logsCountQuery({ search: "failed to connect upstream", bodySearchMode: "tokenbf" }),
 			baseParams,
 		).sql
-		expect(indexed).toContain("hasToken(lower(Body), 'connection')")
-		expect(indexed).toContain("hasToken(lower(Body), 'timeout')")
-		expect(indexed).toContain("Body ILIKE '%Connection Timeout%'")
+		expect(indexed).toContain("hasToken(lower(Body), 'to')")
+		expect(indexed).toContain("hasToken(lower(Body), 'connect')")
+		expect(indexed).not.toContain("hasToken(lower(Body), 'failed')")
+		expect(indexed).not.toContain("hasToken(lower(Body), 'upstream')")
+		expect(indexed).toContain("Body ILIKE '%failed to connect upstream%'")
 
-		const partial = compileUnsafe(
-			logsCountQuery({ search: "time", bodySearchMode: "tokenbf" }),
+		// `Reconnection timeouts` contains `connection timeout`; a whole-token
+		// check on either word would drop it.
+		for (const search of ["Connection Timeout", "time", "foo_bar"]) {
+			const sql = compileUnsafe(logsCountQuery({ search, bodySearchMode: "tokenbf" }), baseParams).sql
+			expect(sql).not.toContain("hasToken(")
+			expect(sql).toContain(`Body ILIKE '%${search}%'`)
+		}
+		for (const search of ["Connection Timeout", "foo_bar"]) {
+			const sql = compileUnsafe(logsCountQuery({ search, bodySearchMode: "text" }), baseParams).sql
+			expect(sql).not.toContain("hasAllTokens(")
+		}
+
+		// Separators at the edges bound the neighbouring word.
+		const bounded = compileUnsafe(
+			logsCountQuery({ search: " timeout ", bodySearchMode: "tokenbf" }),
 			baseParams,
 		).sql
-		expect(partial).not.toContain("hasToken(")
-		expect(partial).toContain("Body ILIKE '%time%'")
+		expect(bounded).toContain("hasToken(lower(Body), 'timeout')")
 
 		const punctuation = compileUnsafe(
-			logsCountQuery({ search: "foo_bar baz", bodySearchMode: "tokenbf" }),
+			logsCountQuery({ search: "a foo.bar-baz qux", bodySearchMode: "tokenbf" }),
 			baseParams,
 		).sql
 		expect(punctuation).toContain("hasToken(lower(Body), 'foo')")
 		expect(punctuation).toContain("hasToken(lower(Body), 'bar')")
 		expect(punctuation).toContain("hasToken(lower(Body), 'baz')")
+		expect(punctuation).not.toContain("hasToken(lower(Body), 'qux')")
+
+		// `_` and `%` are ILIKE wildcards, not literal boundaries: `a_foo_b`
+		// matches `axfooYb`, where `foo` is no token. Words touching them skip.
+		for (const search of ["a_foo_b", "a foo_bar baz", "x foo% y", "x %foo y"]) {
+			const sql = compileUnsafe(logsCountQuery({ search, bodySearchMode: "tokenbf" }), baseParams).sql
+			expect(sql).not.toContain("hasToken(")
+		}
+		const wildcardNeighbour = compileUnsafe(
+			logsCountQuery({ search: "a_b foo c", bodySearchMode: "tokenbf" }),
+			baseParams,
+		).sql
+		expect(wildcardNeighbour).toContain("hasToken(lower(Body), 'foo')")
+
+		// ClickHouse lower() folds ASCII only, so non-ASCII words never pre-filter,
+		// including the Kelvin sign that JS lowercases to an ASCII `k`.
+		for (const search of ["x Café y", "x \u212A y"]) {
+			const sql = compileUnsafe(logsCountQuery({ search, bodySearchMode: "tokenbf" }), baseParams).sql
+			expect(sql).not.toContain("hasToken(")
+		}
 	})
 
 	it("uses exact KV item candidates for text indexes and exact confirmation", () => {

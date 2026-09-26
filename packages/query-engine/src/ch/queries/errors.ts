@@ -3,12 +3,13 @@
 // DSL-based query definitions for error aggregation and timeseries.
 
 import { finiteOrZero } from "./format"
+import { edgeCondition, interiorConditions } from "./rollup-splice"
 import * as CH from "@maple-dev/effect-clickhouse/expr"
 // From the root, not `/expr`: these overloads take a `CHQuery`, keeping the
 // subquery's params, table names and column types checked.
 import { exists, inSubquery } from "@maple-dev/effect-clickhouse"
 import { param } from "@maple-dev/effect-clickhouse"
-import { from, fromQuery, type CHQuery, type ColumnAccessor } from "@maple-dev/effect-clickhouse"
+import { from, fromQuery, fromUnion, type CHQuery, type ColumnAccessor } from "@maple-dev/effect-clickhouse"
 import type { ColumnDefs } from "@maple-dev/effect-clickhouse/types"
 import * as T from "@maple-dev/effect-clickhouse/types"
 import { unionAll, type CHUnionQuery } from "@maple-dev/effect-clickhouse"
@@ -177,9 +178,14 @@ export interface ErrorsByTypeOutput {
 	readonly sampleMessage: string
 	readonly count: number
 	readonly affectedServicesCount: number
+	/** Up to three of the services that raised it, sorted; `affectedServicesCount` has the total. */
+	readonly serviceNames: readonly string[]
 	readonly firstSeen: string
 	readonly lastSeen: string
 }
+
+/** How many service names a by-type row carries; enough to name a small blast radius. */
+const ERRORS_BY_TYPE_SERVICE_NAMES = 3
 
 export function errorsByTypeQuery(opts: ErrorsByTypeOpts) {
 	return from(errorEventsTableForRecentScan(opts))
@@ -189,6 +195,9 @@ export function errorsByTypeQuery(opts: ErrorsByTypeOpts) {
 			sampleMessage: CH.any_($.StatusMessage),
 			count: CH.count(),
 			affectedServicesCount: CH.uniq($.ServiceName),
+			serviceNames: CH.arraySort(
+				CH.groupUniqArrayIf(ERRORS_BY_TYPE_SERVICE_NAMES)($.ServiceName, $.ServiceName.neq("")),
+			),
 			firstSeen: CH.min_($.Timestamp),
 			lastSeen: CH.max_($.Timestamp),
 		}))
@@ -965,17 +974,33 @@ export function errorsSummaryQuery(opts: ErrorsSummaryOpts) {
 		)
 	}
 
+	// The hourly usage rollup only answers whole hours inside the window; the
+	// partial hours at each end come from raw spans. Reading the rollup alone
+	// made any window shorter than an hour report 0 spans and a 0% error rate.
+	const wholeHours = from(ServiceUsage)
+		.select(($) => ({
+			bucketSpans: CH.sum($.TraceCount),
+		}))
+		.where(($) => [
+			$.OrgId.eq(param.string("orgId")),
+			...interiorConditions($.Hour),
+			opts.services?.length ? CH.inList($.ServiceName, opts.services) : undefined,
+		])
+	const partialHours = from(Traces)
+		.select(() => ({
+			bucketSpans: CH.count(),
+		}))
+		.where(($) => [
+			$.OrgId.eq(param.string("orgId")),
+			$.Timestamp.gte(param.dateTimeString("startTime")),
+			$.Timestamp.lte(param.dateTimeString("endTime")),
+			edgeCondition("Timestamp"),
+			opts.services?.length ? CH.inList($.ServiceName, opts.services) : undefined,
+		])
 	return buildResult(
-		from(ServiceUsage)
-			.select(($) => ({
-				totalSpans: CH.sum($.TraceCount),
-			}))
-			.where(($) => [
-				$.OrgId.eq(param.string("orgId")),
-				$.Hour.gte(param.dateTimeSeconds("startTime")),
-				$.Hour.lte(param.dateTimeSeconds("endTime")),
-				opts.services?.length ? CH.inList($.ServiceName, opts.services) : undefined,
-			]),
+		fromUnion(unionAll(wholeHours, partialHours), "usage").select(($) => ({
+			totalSpans: CH.sum($.bucketSpans),
+		})),
 	)
 }
 
@@ -1258,6 +1283,7 @@ export interface ErrorDetailTracesOpts {
 	fingerprintHash: string
 	rootOnly?: boolean
 	services?: readonly string[]
+	deploymentEnvs?: readonly string[]
 	limit?: number
 }
 
@@ -1278,19 +1304,27 @@ export interface ErrorDetailTracesOutput {
 	readonly errorHttpRoute: string
 	readonly errorQueryContext: string
 	readonly errorType: string
+	/** The fingerprint's own occurrence in this trace, as `error_events` recorded it. */
+	readonly errorLabel: string
+	readonly exceptionType: string
+	readonly exceptionMessage: string
 }
 
 export function errorDetailTracesQuery(opts: ErrorDetailTracesOpts) {
 	const limit = opts.limit ?? 10
 
-	// Subquery: find distinct matching error TraceIds. Order by the most
-	// recent Timestamp per trace so the LIMIT selects the N most recently
-	// errored traces — ordering by TraceId would return arbitrary ID-sorted
-	// rows that omit the most recent matches when the result is truncated.
-	const errorSub = from(ErrorEvents)
+	// One row per matching trace, ranked by its most recent occurrence so the
+	// LIMIT keeps the N most recently errored traces. Each row names the span
+	// that occurrence belongs to: a trace usually carries other failing spans
+	// (the callers the error propagated through), and those are not this error.
+	const occurrences = from(ErrorEvents)
 		.select(($) => ({
 			TraceId: $.TraceId,
 			lastErrorSeen: CH.max_($.Timestamp),
+			occurrenceSpanId: CH.argMax($.SpanId, $.Timestamp),
+			occurrenceLabel: CH.argMax($.ErrorLabel, $.Timestamp),
+			occurrenceExceptionType: CH.argMax($.ExceptionType, $.Timestamp),
+			occurrenceExceptionMessage: CH.argMax($.ExceptionMessage, $.Timestamp),
 		}))
 		.where(($) => [
 			$.OrgId.eq(param.string("orgId")),
@@ -1299,41 +1333,48 @@ export function errorDetailTracesQuery(opts: ErrorDetailTracesOpts) {
 			$.Timestamp.lte(param.dateTimeSeconds("endTime")),
 			CH.whenTrue(!!opts.rootOnly, () => $.ParentSpanId.eq("")),
 			opts.services?.length ? CH.inList($.ServiceName, opts.services) : undefined,
+			opts.deploymentEnvs?.length ? CH.inList($.DeploymentEnv, opts.deploymentEnvs) : undefined,
 		])
 		.groupBy("TraceId")
-		.orderBy(["lastErrorSeen", "desc"])
+		// The TraceId tiebreak keeps both reads of this subquery (the IN set and
+		// the join) on the same traces when occurrences share a second.
+		.orderBy(["lastErrorSeen", "desc"], ["TraceId", "desc"])
 		.limit(limit)
 
-	// Outer query: fetch all spans for the matching traces. Use an IN-filtered
-	// small subquery instead of an INNER JOIN so ClickHouse can apply the
-	// trace-detail projection's (OrgId, TraceId, SpanId) sort key while reading
-	// `trace_detail_spans`.
+	// The `IN` filter is what bounds the `trace_detail_spans` read to these
+	// traces through its `(OrgId, TraceId, SpanId)` sort key; the join only
+	// carries each trace's occurrence span id across to pick the error span.
 	return from(TraceDetailSpans)
-		.select(($) => ({
-			traceId: $.TraceId,
-			startTime: CH.min_($.Timestamp),
-			durationMicros: CH.intDiv(CH.max_($.Duration), 1000),
-			spanCount: CH.count(),
-			services: CH.groupUniqArray($.ServiceName),
-			rootSpanName: CH.anyIf($.SpanName, $.ParentSpanId.eq("")),
-			// The failing span, not an arbitrary one: `any(StatusMessage)` used to pick whichever span
-			// ClickHouse read first, which for most traces is a healthy span with an empty message.
-			errorMessage: CH.anyIf($.StatusMessage, $.StatusCode.eq("Error")),
-			errorSpanId: CH.anyIf($.SpanId, $.StatusCode.eq("Error")),
-			errorSpanName: CH.anyIf($.SpanName, $.StatusCode.eq("Error")),
-			errorServiceName: CH.anyIf($.ServiceName, $.StatusCode.eq("Error")),
-			errorModel: CH.anyIf($.SpanAttributes.get("gen_ai.request.model"), $.StatusCode.eq("Error")),
-			errorToolName: CH.anyIf($.SpanAttributes.get("gen_ai.tool.name"), $.StatusCode.eq("Error")),
-			errorHttpMethod: CH.anyIf($.SpanAttributes.get("http.request.method"), $.StatusCode.eq("Error")),
-			errorHttpRoute: CH.anyIf($.SpanAttributes.get("http.route"), $.StatusCode.eq("Error")),
-			errorQueryContext: CH.anyIf($.SpanAttributes.get("query.context"), $.StatusCode.eq("Error")),
-			errorType: CH.anyIf($.SpanAttributes.get("error.type"), $.StatusCode.eq("Error")),
-		}))
+		.innerJoinQuery(occurrences, "occurrence", (span, occurrence) => span.TraceId.eq(occurrence.TraceId))
+		.select(($) => {
+			const isOccurrence = $.SpanId.eq($.occurrence.occurrenceSpanId)
+			return {
+				traceId: $.TraceId,
+				startTime: CH.min_($.Timestamp),
+				durationMicros: CH.intDiv(CH.max_($.Duration), 1000),
+				spanCount: CH.count(),
+				services: CH.groupUniqArray($.ServiceName),
+				rootSpanName: CH.anyIf($.SpanName, $.ParentSpanId.eq("")),
+				errorMessage: CH.anyIf($.StatusMessage, isOccurrence),
+				errorSpanId: CH.anyIf($.SpanId, isOccurrence),
+				errorSpanName: CH.anyIf($.SpanName, isOccurrence),
+				errorServiceName: CH.anyIf($.ServiceName, isOccurrence),
+				errorModel: CH.anyIf($.SpanAttributes.get("gen_ai.request.model"), isOccurrence),
+				errorToolName: CH.anyIf($.SpanAttributes.get("gen_ai.tool.name"), isOccurrence),
+				errorHttpMethod: CH.anyIf($.SpanAttributes.get("http.request.method"), isOccurrence),
+				errorHttpRoute: CH.anyIf($.SpanAttributes.get("http.route"), isOccurrence),
+				errorQueryContext: CH.anyIf($.SpanAttributes.get("query.context"), isOccurrence),
+				errorType: CH.anyIf($.SpanAttributes.get("error.type"), isOccurrence),
+				errorLabel: CH.any_($.occurrence.occurrenceLabel),
+				exceptionType: CH.any_($.occurrence.occurrenceExceptionType),
+				exceptionMessage: CH.any_($.occurrence.occurrenceExceptionMessage),
+			}
+		})
 		.where(($) => [
 			$.OrgId.eq(param.string("orgId")),
 			inSubquery(
 				$.TraceId,
-				fromQuery(errorSub, "matching_traces").select(($$) => ({ TraceId: $$.TraceId })),
+				fromQuery(occurrences, "matching_traces").select(($$) => ({ TraceId: $$.TraceId })),
 			),
 			$.Timestamp.gte(param.dateTimeString("startTime")),
 			$.Timestamp.lte(param.dateTimeString("endTime")),

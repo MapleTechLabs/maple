@@ -26,6 +26,7 @@ import {
 	errorEventsByTime,
 	errorFingerprintsMinutely,
 	aiTraceIndex,
+	aiCrawlerRequests,
 	traceDetailSpans,
 	traceListMv,
 	attributeKeysHourly,
@@ -49,6 +50,13 @@ import {
 import { MAPLE_AI_SESSION_ID_ATTR, MAPLE_AI_VENDOR_ID_ATTR, MAPLE_AI_VENDOR_VERSION_ATTR } from "../gen-ai"
 import { PRODUCT_EVENTS_TRACE_FILTER, PRODUCT_EVENTS_TRACE_PROJECTION_SQL } from "./product-event-attributes"
 import { DEPLOYMENT_ENV_SQL, MESSAGING_DESTINATION_SQL } from "./semconv-renames"
+import {
+	AI_CRAWLER_INDEX_SQL,
+	AI_CRAWLER_NAME_SQL,
+	REQUEST_HOST_SQL,
+	REQUEST_PATH_SQL,
+	RESPONSE_STATUS_SQL,
+} from "./ai-crawler-columns"
 import {
 	GENAI_AGENT_NAME_SQL,
 	GENAI_CACHE_READ_TOKENS_SQL,
@@ -1084,6 +1092,37 @@ export const aiTraceIndexMv = defineMaterializedView("ai_trace_index_mv", {
           ${GENAI_ERROR_FINGERPRINT_SQL} AS ErrorFingerprint
         FROM traces
         WHERE SpanAttributes['${MAPLE_AI_VENDOR_ID_ATTR}'] != ''
+      `,
+		}),
+	],
+})
+
+/**
+ * Populates `ai_crawler_requests` with Server spans whose user agent names an AI
+ * crawler from `AI_CRAWLERS`. Spans without a request path are skipped: they
+ * cannot be attributed to a page (the ingest gateway's own spans are the bulk).
+ */
+export const aiCrawlerRequestsMv = defineMaterializedView("ai_crawler_requests_mv", {
+	description:
+		"Populates ai_crawler_requests with Server spans whose user agent names an AI crawler, pre-extracting the crawler, request host, path and HTTP status.",
+	datasource: aiCrawlerRequests,
+	nodes: [
+		node({
+			name: "ai_crawler_requests_mv_node",
+			sql: `
+        SELECT
+          OrgId,
+          Timestamp,
+          TraceId,
+          ServiceName,
+          ${AI_CRAWLER_NAME_SQL} AS Crawler,
+          ${REQUEST_HOST_SQL} AS Host,
+          ${REQUEST_PATH_SQL} AS Path,
+          ${RESPONSE_STATUS_SQL} AS HttpStatus
+        FROM traces
+        WHERE SpanKind = 'Server'
+          AND ${AI_CRAWLER_INDEX_SQL} > 0
+          AND ${REQUEST_PATH_SQL} != ''
       `,
 		}),
 	],

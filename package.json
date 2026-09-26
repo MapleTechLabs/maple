@@ -51,7 +51,7 @@
 	},
 	"devDependencies": {
 		"@cloudflare/workers-types": "catalog:alchemy",
-		"@effect/platform-node": "4.0.0-rc.116",
+		"@effect/platform-node": "4.0.0-rc.117",
 		"@effect/tsgo": "0.36.4",
 		"@effect/vitest": "catalog:effect",
 		"@maple/alchemy-portless": "workspace:*",
@@ -70,8 +70,8 @@
 		"typescript": "catalog:tooling"
 	},
 	"overrides": {
-		"@effect/sql-d1": "4.0.0-rc.116",
-		"@effect/sql-sqlite-do": "4.0.0-rc.116"
+		"@effect/sql-d1": "4.0.0-rc.117",
+		"@effect/sql-sqlite-do": "4.0.0-rc.117"
 	},
 	"packageManager": "bun@1.4.0",
 	"catalog": {
@@ -90,13 +90,13 @@
 			"@tanstack/charts-scales": "0.18.0"
 		},
 		"effect": {
-			"@effect/ai-openai-compat": "4.0.0-rc.116",
-			"@effect/ai-openrouter": "4.0.0-rc.116",
-			"@effect/atom-react": "4.0.0-rc.116",
+			"@effect/ai-openai-compat": "4.0.0-rc.117",
+			"@effect/ai-openrouter": "4.0.0-rc.117",
+			"@effect/atom-react": "4.0.0-rc.117",
 			"@effect/language-service": "^0.87.2",
-			"@effect/platform-bun": "4.0.0-rc.116",
-			"@effect/vitest": "4.0.0-rc.116",
-			"effect": "4.0.0-rc.116"
+			"@effect/platform-bun": "4.0.0-rc.117",
+			"@effect/vitest": "4.0.0-rc.117",
+			"effect": "4.0.0-rc.117"
 		},
 		"react": {
 			"@types/react": "^19.2.14",
@@ -125,9 +125,9 @@
 		}
 	},
 	"patchedDependencies": {
-		"@effect/ai-openrouter@4.0.0-rc.116": "patches/@effect%2Fai-openrouter@4.0.0-rc.116.patch",
-		"@effect/vitest@4.0.0-rc.116": "patches/@effect%2Fvitest@4.0.0-rc.116.patch",
-		"effect@4.0.0-rc.116": "patches/effect@4.0.0-rc.116.patch",
+		"@effect/ai-openrouter@4.0.0-rc.117": "patches/@effect%2Fai-openrouter@4.0.0-rc.117.patch",
+		"@effect/vitest@4.0.0-rc.117": "patches/@effect%2Fvitest@4.0.0-rc.117.patch",
+		"effect@4.0.0-rc.117": "patches/effect@4.0.0-rc.117.patch",
 		"@maple-dev/effect-clickhouse@0.1.0": "patches/@maple-dev%2Feffect-clickhouse@0.1.0.patch",
 		"alchemy@2.0.0-beta.79": "patches/alchemy@2.0.0-beta.79.patch"
 	}

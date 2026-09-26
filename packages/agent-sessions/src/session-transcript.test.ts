@@ -124,6 +124,30 @@ describe("buildTranscript — turn shape", () => {
 		expect(rows.every((row) => !("span" in row) || row.span.spanId !== "agent")).toBe(true)
 	})
 
+	// Claude Code records the prompt on its `interaction` span and never on the
+	// model calls beneath it.
+	it("opens the turn with a prompt only the agent anchor captured", () => {
+		const spans = [
+			agentSpan({
+				spanId: "agent",
+				startMs: 0,
+				durationMs: 10 * SECOND,
+				genAi: {
+					inputMessages: [
+						{ role: "user", parts: [{ type: "text", content: "fix the flaky test" }] },
+					],
+				},
+			}),
+			llmSpan({ spanId: "l1", parentSpanId: "agent", startMs: SECOND, durationMs: SECOND }),
+			toolSpan({ spanId: "t1", parentSpanId: "agent", startMs: 3 * SECOND, durationMs: SECOND }),
+		]
+
+		const rows = transcript(spans)
+		// The note is the capture banner: the model call itself captured nothing.
+		expect(kinds(rows)).toEqual(["note", "turn", "user", "structure", "tool"])
+		expect(findRow(rows, "user").text).toBe("fix the flaky test")
+	})
+
 	// A conversation-id partition can anchor a turn on the model call that opened
 	// it, and that call's reply IS the turn — only an agent anchor is redundant.
 	it("keeps a model-call anchor's own reply", () => {

@@ -11,13 +11,17 @@
  * renderers production uses, over the pull request fetched with your `gh` login.
  *
  * What is local: the source tools read a clone on disk at the head commit through git instead of
- * the sandbox container, `sandbox_exec` accepts only read-only git, and the telemetry tools answer
+ * the sandbox container, `sandbox_exec` accepts only read-only git (plus `node`/`bun` with
+ * `--allow-exec`), and the telemetry tools answer
  * that no warehouse is attached. Nothing is posted to GitHub; the run writes `review.md`,
  * `transcript.md` and `report.json` under `scripts/.pr-review-runs/`.
  *
  * Flags: `--repo-dir <path>` (a clone of the repository; default: this checkout when it is the same
  * repository, else a cached clone), `--model <openrouter id>`, `--prompt-file <path>` (replaces the
- * system prompt), `--out <dir>`.
+ * system prompt), `--out <dir>`, `--allow-exec` (lets `sandbox_exec` run `node` and `bun` in the
+ * commit's worktree, as production's sandbox does; this runs model-written code on your machine).
+ * `--historical` disables execution and reads outside the selected head's ancestry.
+ * `--number <n>` preserves the PR identity when replaying a local range.
  */
 import { spawnSync } from "node:child_process"
 import { randomUUID } from "node:crypto"
@@ -31,20 +35,29 @@ import {
 	OrgId,
 	type PullRequestContext,
 	type PullRequestFile,
+	PrReviewId,
 	PullRequestFileStatus,
 	type SubmitPrReviewRequest,
 	UserId,
 } from "@maple/domain/http"
-import { buildPublication, buildReviewKickoff } from "@maple/backend/services/pr-review/PrReviewService"
+import {
+	buildPublication,
+	buildReviewKickoff,
+	PR_REVIEW_RULE_FILES,
+	type RepositoryRuleFile,
+} from "@maple/backend/services/pr-review/PrReviewService"
 import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
 import { Effect, Option, References, Schema } from "effect"
 import { AGENTS } from "@/chat/agents"
 import type { ChatTurnEvent } from "@/chat/events"
 import { withToolTranscript } from "@/chat/close-out"
 import { PR_REVIEW_TOOLS } from "@/chat/permissions"
+import { normalizeArguments, argumentNotices } from "@/mcp/lib/decode-issues"
 import { PR_REVIEW_CLOSE_OUT_PROMPT } from "@/chat/prompts"
+import { makeReviewCoverage } from "@/chat/review-coverage"
+import { makeReviewLedger } from "@/chat/review-ledger"
 import { runChatTurn } from "@/chat/run"
-import { makeRunUsage } from "@/chat/tools"
+import { makeRunUsage, savedFindingsRequest } from "@/chat/tools"
 import type { McpToolExecutorApi } from "@/mcp/dispatcher"
 import {
 	annotatePatch,
@@ -71,11 +84,14 @@ interface Args {
 	readonly post: boolean
 	/** Review a local `base..head` range instead of a pull request; nothing is fetched from GitHub. */
 	readonly range: string | undefined
+	/** Let `sandbox_exec` run `node` and `bun`, which production's sandbox offers. Off by default. */
+	readonly allowExec: boolean
+	readonly historical?: boolean
 }
 
 const usage = () => {
 	console.error(
-		"usage: review:local <owner/repo> <number> | <pull request url> [--repo-dir p] [--model id] [--prompt-file p] [--out dir] [--post] | <owner/repo> --range base..head --repo-dir p",
+		"usage: review:local <owner/repo> <number> | <pull request url> [--repo-dir p] [--model id] [--prompt-file p] [--out dir] [--post] [--allow-exec] | <owner/repo> --range base..head --repo-dir p",
 	)
 	process.exit(2)
 }
@@ -85,8 +101,8 @@ const parseArgs = (argv: ReadonlyArray<string>): Args => {
 	const positional: Array<string> = []
 	for (let i = 0; i < argv.length; i++) {
 		const arg = argv[i] ?? ""
-		if (arg === "--post") {
-			flags.set("post", "true")
+		if (arg === "--post" || arg === "--allow-exec" || arg === "--historical") {
+			flags.set(arg.slice(2), "true")
 		} else if (arg.startsWith("--")) {
 			const value = argv[i + 1]
 			if (value === undefined) usage()
@@ -97,7 +113,8 @@ const parseArgs = (argv: ReadonlyArray<string>): Args => {
 	const fromUrl = /github\.com\/([^/]+)\/([^/]+)\/pull\/(\d+)/.exec(positional[0] ?? "")
 	const [owner, repo] = fromUrl ? [fromUrl[1], fromUrl[2]] : (positional[0] ?? "").split("/")
 	const range = flags.get("range")
-	const number = range === undefined ? Number(fromUrl ? fromUrl[3] : positional[1]) : 1
+	const number =
+		range === undefined ? Number(fromUrl ? fromUrl[3] : positional[1]) : Number(flags.get("number") ?? 1)
 	if (!owner || !repo || !Number.isInteger(number) || number < 1) usage()
 	if (range !== undefined && (!flags.has("repo-dir") || !/^[^\s.][^\s]*\.\.[^\s.][^\s]*$/.test(range))) {
 		console.error("--range takes base..head and needs --repo-dir, the clone the range lives in")
@@ -113,10 +130,28 @@ const parseArgs = (argv: ReadonlyArray<string>): Args => {
 		out: resolve(flags.get("out") ?? join(SCRIPT_DIR, ".pr-review-runs")),
 		post: flags.get("post") === "true",
 		range,
+		allowExec: flags.get("allow-exec") === "true",
+		historical: flags.has("historical"),
 	}
 }
 
 // Processes
+
+/**
+ * The rule files at the base, as production's kickoff states them. A file absent from the base is
+ * skipped; one present but unreadable makes the whole read `undefined`, as a failed read does in
+ * production, so the agent reads the rules itself instead of reviewing without them.
+ */
+const readRules = (dir: string, baseSha: string): ReadonlyArray<RepositoryRuleFile> | undefined => {
+	const files: Array<RepositoryRuleFile> = []
+	for (const path of PR_REVIEW_RULE_FILES) {
+		if (!run(["git", "cat-file", "-e", `${baseSha}:${path}`], dir).ok) continue
+		const shown = run(["git", "show", `${baseSha}:${path}`], dir)
+		if (!shown.ok) return undefined
+		files.push({ path, content: shown.stdout })
+	}
+	return files
+}
 
 const run = (cmd: ReadonlyArray<string>, cwd?: string) => {
 	const [bin = "", ...rest] = cmd
@@ -127,6 +162,19 @@ const run = (cmd: ReadonlyArray<string>, cwd?: string) => {
 		stdout: proc.stdout ?? "",
 		stderr: proc.stderr ?? "",
 	}
+}
+
+/** A model-written script: no inherited secrets, a wall-clock limit like the sandbox's. */
+const runScript = (cmd: ReadonlyArray<string>, cwd: string) => {
+	const [bin = "", ...rest] = cmd
+	const proc = spawnSync(bin, rest, {
+		cwd,
+		encoding: "utf8",
+		timeout: 30_000,
+		maxBuffer: 8 * 1024 * 1024,
+		env: { PATH: process.env.PATH ?? "", HOME: cwd },
+	})
+	return { code: proc.status, stdout: proc.stdout ?? "", stderr: proc.stderr ?? "" }
 }
 
 const must = (cmd: ReadonlyArray<string>, cwd?: string): string => {
@@ -454,9 +502,9 @@ const fetchPullRequestContext = (args: Args, headSha: string): PullRequestContex
 	const checks = read(GhContextChecks, `${slug}/commits/${headSha}/check-runs?per_page=100`).check_runs
 	return {
 		commits: commits.map((commit) => ({ sha: commit.sha, message: commit.commit.message })),
-		// Maple's own summary comment is left out, as the production tool leaves out the App's.
+		// Maple's own review comments (one per review) are left out, as the production tool leaves out the App's.
 		comments: comments
-			.filter((comment) => !(comment.body ?? "").includes("<!-- maple-pr-review -->"))
+			.filter((comment) => !(comment.body ?? "").includes("<!-- maple-pr-review"))
 			.map((comment) => ({
 				author: comment.user?.login ?? "(deleted user)",
 				path: comment.path ?? null,
@@ -472,13 +520,15 @@ const fetchPullRequestContext = (args: Args, headSha: string): PullRequestContex
 	}
 }
 
-const makeExecutor = (input: {
+export const makeExecutor = (input: {
 	readonly repository: string
 	readonly number: number
 	readonly files: ReadonlyArray<PullRequestFile>
 	readonly context: PullRequestContext | undefined
 	readonly dir: string
 	readonly headSha: string
+	readonly allowExec: boolean
+	readonly historical?: boolean
 }): { readonly executor: McpToolExecutorApi; readonly cleanup: () => void } => {
 	const git = (args: ReadonlyArray<string>) => run(["git", ...args], input.dir)
 	// `sandbox_exec` runs where production runs it: inside a checkout of the commit, so a bare
@@ -498,6 +548,12 @@ const makeExecutor = (input: {
 		if (ref === undefined) return input.headSha
 		if (unsafeRef(ref)) return failure("ref must be a branch, tag, or commit SHA")
 		const resolved = git(["rev-parse", "--verify", "--quiet", `${ref}^{commit}`])
+		if (
+			input.historical &&
+			resolved.ok &&
+			!git(["merge-base", "--is-ancestor", resolved.stdout.trim(), input.headSha]).ok
+		)
+			return failure("Historical replay cannot read commits after or outside this head.")
 		return resolved.ok
 			? resolved.stdout.trim()
 			: failure(`No ref '${ref}' exists in ${input.repository}.`)
@@ -529,6 +585,10 @@ const makeExecutor = (input: {
 	}
 	const grep = (params: LocalToolParams, pattern: string | undefined, fixed: boolean): McpToolResult => {
 		if (pattern === undefined) return failure("pattern must be 1-512 characters")
+		if (params.glob !== undefined && /[{}]/.test(params.glob))
+			return failure(
+				"The local runner does not support brace globs; use separate *.ts and *.tsx searches or omit glob.",
+			)
 		const ref = refOf(params)
 		if (typeof ref !== "string") return ref
 		const context = Math.min(5, Math.max(0, num(params.context_lines) ?? 0))
@@ -587,10 +647,10 @@ const makeExecutor = (input: {
 					? failure(`Only pull request #${input.number} is available in this run.`)
 					: input.context === undefined
 						? text(["A local range run has no pull request, so there is no context to read."])
-						: renderPullRequestContext(input.number, input.context)
+						: renderPullRequestContext(input.repository, input.number, input.context)
 			case "pr_file_diff":
 				return num(params.number) === input.number
-					? renderFileDiffs(input.files, [
+					? renderFileDiffs(input.repository, input.number, input.files, [
 							...(params.paths ?? []),
 							...(str(params.path) === undefined ? [] : [str(params.path) ?? ""]),
 						])
@@ -635,8 +695,24 @@ const makeExecutor = (input: {
 				])
 			}
 			case "sandbox_exec": {
+				if (input.historical)
+					return failure(
+						"Execution is disabled in historical replay; use pinned source reads and diffs.",
+					)
 				const command = str(params.command)
 				const args = params.args ?? []
+				if (input.allowExec && (command === "node" || command === "bun")) {
+					const ref = refOf(params)
+					if (typeof ref !== "string") return ref
+					const result = runScript([command, ...args], worktreeAt(ref))
+					return text([
+						`Exit: ${result.code ?? -1}`,
+						"```",
+						result.stdout.slice(0, 48_000),
+						result.stderr.slice(0, 2_000),
+						"```",
+					])
+				}
 				if (command !== "git" || !READ_ONLY_GIT.has(args[0] ?? "") || args.some(unsafeGitArg)) {
 					return failure(
 						`The local runner only executes read-only git (${[...READ_ONLY_GIT].join(", ")}).`,
@@ -658,13 +734,27 @@ const makeExecutor = (input: {
 		}
 	}
 	const executor: McpToolExecutorApi = {
+		// The local clone is already prepared before the turn starts.
+		prepareRepository: () => Effect.void,
+		prepareConnectedRepositories: () => Effect.void,
 		execute: (_tenant, name, raw) =>
-			Effect.sync(() =>
-				dispatch(
+			Effect.sync(() => {
+				const normalized = normalizeArguments(raw, Object.keys(LocalToolParams.fields))
+				const result = dispatch(
 					name,
-					Option.getOrElse(decodeParams(raw), () => ({})),
-				),
-			),
+					Option.getOrElse(decodeParams(normalized.args), () => ({})),
+				)
+				return {
+					...result,
+					content: [
+						...argumentNotices(normalized, name).map((notice) => ({
+							type: "text" as const,
+							text: notice,
+						})),
+						...result.content,
+					],
+				}
+			}),
 	}
 	const cleanup = () => {
 		for (const path of worktrees.values()) run(["git", "worktree", "remove", "--force", path], input.dir)
@@ -751,7 +841,7 @@ const newSideLines = (file: PullRequestFile | undefined): Map<number, string> =>
 export const reviewLocally = async (
 	argv: ReadonlyArray<string>,
 	injected: { readonly model?: ResolvedModel } = {},
-): Promise<string | undefined> => {
+): Promise<string> => {
 	const args = parseArgs(argv)
 	if (injected.model === undefined && !process.env.OPENROUTER_API_KEY) {
 		console.error(
@@ -759,7 +849,6 @@ export const reviewLocally = async (
 		)
 		process.exit(1)
 	}
-	if (args.model !== undefined) process.env.MAPLE_REVIEW_MODEL_OPENROUTER = args.model
 	const promptOverride = args.promptFile === undefined ? undefined : readFileSync(args.promptFile, "utf8")
 	const repository = `${args.owner}/${args.repo}`
 
@@ -780,6 +869,7 @@ export const reviewLocally = async (
 		authMode: "self_hosted",
 	}
 	const env = { ...process.env }
+	if (args.model !== undefined) env.MAPLE_REVIEW_MODEL_OPENROUTER = args.model
 	const model =
 		injected.model ?? resolveReviewModel(env, { surface: "chat", orgId, sessionId, turnId: messageId })
 	const kickoff = buildReviewKickoff({
@@ -794,6 +884,7 @@ export const reviewLocally = async (
 		baseSha: pr.base.sha,
 		fork: pr.head.repo !== null && pr.head.repo.full_name.toLowerCase() !== repository.toLowerCase(),
 		body: pr.body,
+		rules: readRules(clone.dir, pr.base.sha),
 	})
 	const { executor, cleanup: removeWorktrees } = makeExecutor({
 		repository,
@@ -802,6 +893,8 @@ export const reviewLocally = async (
 		context: args.range === undefined ? fetchPullRequestContext(args, pr.head.sha) : undefined,
 		dir: clone.dir,
 		headSha: pr.head.sha,
+		allowExec: args.allowExec,
+		historical: args.historical,
 	})
 
 	const tools: Array<ToolRecord> = []
@@ -842,6 +935,8 @@ export const reviewLocally = async (
 		}
 	}
 
+	// Shared by the pass and its close-out, as in production.
+	const reviewState = { coverage: makeReviewCoverage(kickoff), ledger: makeReviewLedger() }
 	const pass = (turn: {
 		readonly text: string
 		readonly history: ReadonlyArray<ChatMessage>
@@ -861,6 +956,7 @@ export const reviewLocally = async (
 					submitted = request
 				}),
 			...(turn.closeOut === true ? { closeOut: true } : undefined),
+			review: reviewState,
 			...(promptOverride === undefined
 				? undefined
 				: { agent: { ...AGENTS["pr-review"], prompt: promptOverride } }),
@@ -933,6 +1029,16 @@ export const reviewLocally = async (
 		)
 	}
 
+	// As production does: findings the pass saved are filed as a partial when no report landed.
+	if (submitted === undefined && reviewState.ledger.findings().length > 0) {
+		submitted = savedFindingsRequest({
+			findings: reviewState.ledger.findings(),
+			unreviewed: reviewState.coverage.unread(),
+			modelName: model.name,
+			usage,
+		})
+	}
+
 	removeWorktrees()
 
 	// Output
@@ -997,11 +1103,13 @@ export const reviewLocally = async (
 			),
 		)
 		console.log(`\n\nNo review submitted (${endReason}). Transcript: ${join(dir, "transcript.md")}`)
-		return undefined
+		return dir
 	}
 
 	const report = submitted.report
 	const publication = buildPublication({
+		// Each run is its own review, so a posted run gets a comment of its own.
+		reviewId: Schema.decodeSync(PrReviewId)(randomUUID()),
 		repositoryUrl: `https://github.com/${repository}`,
 		number: args.number,
 		headSha: pr.head.sha,

@@ -29,7 +29,7 @@ import {
 	ToolAnalyticsSearchFields,
 	type ToolAnalyticsSearch,
 } from "@/lib/agent-sessions/tool-search"
-import type { ToolErrorRow } from "@/lib/agent-sessions/tool-analytics"
+import { fillSeriesBuckets, type ToolErrorRow } from "@/lib/agent-sessions/tool-analytics"
 import { errorTrendBucket } from "@/lib/agent-sessions/tool-error-display"
 import { toolAnalyticsSelection } from "@/lib/agent-sessions/use-tool-analytics"
 import {
@@ -201,7 +201,7 @@ function ToolDetailBody({
 		.orElse(() => undefined)
 
 	const seriesData = Result.builder(series)
-		.onSuccess((value) => value.data)
+		.onSuccess((value) => fillSeriesBuckets(value.data, range.startMs, range.endMs, bucketSeconds))
 		.orElse(() => [])
 	// Rows, and what state produced them. An empty array from a read that has not
 	// answered (or that failed) is not "no failed calls" — the panels say which.

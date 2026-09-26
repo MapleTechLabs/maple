@@ -1,81 +1,100 @@
-import {
-	optionalBooleanParam,
-	optionalNumberParam,
-	optionalStringParam,
-	optionalTimeParam,
-	type McpToolRegistrar,
-} from "./types"
+import { Effect, Schema } from "effect"
+import { SearchSessionsOutput } from "@maple/domain/mcp-outputs"
+import { searchSessions } from "@maple/query-engine/observability"
+import type { McpToolRegistrar } from "./types"
 import { warehouseToMcpHandlers } from "../lib/map-warehouse-error"
 import { withTenantExecutor, CurrentMcpTenant } from "../lib/query-warehouse"
-import { resolveTimeRange, rangeExceededResult, MCP_SEARCH_MAX_HOURS } from "../lib/time"
-import { clampLimit, clampOffset } from "../lib/limits"
-import { formatTable, truncate } from "../lib/format"
-import { formatNextSteps } from "../lib/next-steps"
-import { Array as Arr, Effect, Schema, pipe } from "effect"
-import { createDualContent } from "../lib/structured-output"
-import { searchSessions } from "@maple/query-engine/observability"
+import { MCP_SEARCH_MAX_HOURS } from "../lib/time"
+import { truncate } from "../lib/format"
+import * as P from "../lib/params"
+import { doc } from "../lib/tool-doc"
+
+const WINDOW = P.timeWindow({ defaultHours: 6, maxHours: MCP_SEARCH_MAX_HOURS })
+
+type Filters = typeof SearchSessionsOutput.Type.filters
+
+/** The filters as the parameters that set them, so a next page repeats the call. */
+const filterArgs = (filters: Filters) => ({
+	user_id: filters.userId,
+	user_search: filters.userSearch,
+	group_name: filters.groupName,
+	service: filters.service,
+	browser: filters.browser,
+	country: filters.country,
+	device_type: filters.deviceType,
+	has_errors: filters.hasErrors,
+	duration_min_ms: filters.durationMinMs,
+	duration_max_ms: filters.durationMaxMs,
+	active_min_ms: filters.activeMinMs,
+	active_max_ms: filters.activeMaxMs,
+	event_type: filters.eventType,
+	level: filters.level,
+	http_status_min: filters.httpStatusMin,
+	url_contains: filters.urlContains,
+	message_contains: filters.messageContains,
+	trace_id: filters.traceId,
+})
 
 export function registerSearchSessionsTool(server: McpToolRegistrar) {
-	server.tool(
-		"search_sessions",
-		"Browser session replays (end-user web sessions), not AI agent sessions — for those use `list_agent_sessions`. List and filter browser session replays. Filter by WHO (user_id — the app's end-user id; user_search — their name or email; group_name — their company/team), by client (browser, country, device_type), by whether the session errored (has_errors), by how long it lasted (duration/active bounds), and/or by WHAT HAPPENED inside it (event_type, level, http_status_min, url_contains, message_contains, trace_id). Returns each session's metadata including the end-user id. All filters are ANDed. Follow up with `get_session_transcript` to read a session's events or `get_session_traces` to see the backend traces it produced.",
-		Schema.Struct({
-			start_time: optionalTimeParam("Start of time range (YYYY-MM-DD HH:mm:ss)"),
-			end_time: optionalTimeParam("End of time range (YYYY-MM-DD HH:mm:ss)"),
+	server.define({
+		name: "search_sessions",
+		description:
+			"Find browser session replays (end-user web sessions). Not AI agent sessions: those are `list_agent_sessions`. Filter by who (user_id, user_search, group_name), by client, by whether the session errored, by how long it lasted, or by what happened inside it (an event type, console level, HTTP status, URL, message or trace id). All filters are ANDed. Then `get_session_transcript` reads a session's events and `get_session_traces` lists the backend traces it produced.",
+		parameters: Schema.Struct({
+			...WINDOW.fields,
 			// Session metadata filters (who / where / how long)
-			user_id: optionalStringParam("Exact match on the session's end-user id (e.g. 4632)"),
-			user_search: optionalStringParam(
+			user_id: P.optionalText("Exact match on the session's end-user id (e.g. 4632)"),
+			user_search: P.optionalText(
 				"Case-insensitive substring match on the identified user's name or email (e.g. ada, @acme.com)",
 			),
-			group_name: optionalStringParam(
+			group_name: P.optionalText(
 				"Exact match on the identified group (company / team) name (e.g. Acme Inc)",
 			),
-			service: optionalStringParam("Exact match on the session's service name"),
-			browser: optionalStringParam("Exact match on browser name (e.g. Chrome)"),
-			country: optionalStringParam("Exact match on country"),
-			device_type: optionalStringParam("Exact match on device type (e.g. desktop, mobile)"),
-			has_errors: optionalBooleanParam("Only sessions with at least one recorded error"),
-			duration_min_ms: optionalNumberParam("Only sessions at least this long (ms)"),
-			duration_max_ms: optionalNumberParam("Only sessions at most this long (ms)"),
-			active_min_ms: optionalNumberParam(
+			service: P.service(),
+			browser: P.optionalText("Exact match on browser name (e.g. Chrome)"),
+			country: P.optionalText("Only sessions from this country (two-letter ISO code, e.g. DE)"),
+			device_type: P.optionalText("Exact match on device type (e.g. desktop, mobile)"),
+			has_errors: P.optionalFlag("Only sessions with at least one recorded error"),
+			duration_min_ms: P.optionalNumber("Only sessions at least this long (ms)"),
+			duration_max_ms: P.optionalNumber("Only sessions at most this long (ms)"),
+			active_min_ms: P.optionalNumber(
 				"Only sessions with at least this much active (non-idle) time (ms)",
 			),
-			active_max_ms: optionalNumberParam("Only sessions with at most this much active time (ms)"),
+			active_max_ms: P.optionalNumber("Only sessions with at most this much active time (ms)"),
 			// In-session event refinement (what happened)
-			event_type: optionalStringParam(
-				"Match sessions that contain this event type: navigation, click, input, console, network, or error",
+			event_type: P.optionalOneOf(
+				["navigation", "click", "input", "console", "network", "error"],
+				"Match sessions that contain this event type",
 			),
-			level: optionalStringParam("Console/error level to match (e.g. error, warn)"),
-			http_status_min: optionalNumberParam(
+			level: P.optionalText("Console/error level to match (e.g. error, warn)"),
+			http_status_min: P.optionalNumber(
 				"Match sessions with a network request status >= this (e.g. 500)",
 			),
-			url_contains: optionalStringParam("Substring match on an in-session event/page URL"),
-			message_contains: optionalStringParam("Substring match on an in-session console/error message"),
-			trace_id: optionalStringParam("Only sessions that observed this trace id"),
-			offset: optionalNumberParam("Offset for pagination (default 0)"),
-			limit: optionalNumberParam("Max results (default 25)"),
+			url_contains: P.optionalText("Substring match on an in-session event/page URL"),
+			message_contains: P.optionalText("Substring match on an in-session console/error message"),
+			trace_id: P.optionalText("Only sessions that observed this trace id"),
+			offset: P.offset({ max: 10_000 }),
+			limit: P.limit({ default: 25, max: 200, noun: "sessions" }),
 		}),
-		Effect.fn("McpTool.searchSessions")(function* (params) {
-			const range = resolveTimeRange(params.start_time, params.end_time, {
-				maxHours: MCP_SEARCH_MAX_HOURS,
-			})
-			const { st, et } = range
-			if (range.exceeded) return rangeExceededResult(range, "search_sessions")
-			const lim = clampLimit(params.limit, { defaultValue: 25, max: 200 })
-			const off = clampOffset(params.offset, { max: 10_000 })
+		aliases: P.SERVICE_ALIASES,
+		output: SearchSessionsOutput,
+		hints: { readOnly: true },
+		phrases: ["Searching sessions"],
+		handler: Effect.fn("McpTool.searchSessions")(function* (params) {
+			const { st, et } = yield* WINDOW.resolve(params, "search_sessions")
+			const lim = params.limit
+			const off = params.offset
 
-			// Whether any in-session event predicate is active — drives the Matches
-			// column and the "narrowed by event" note. Uses `!= null` (not truthiness)
-			// to match the query layer's `needsEventFilter` in session-replays.ts:
-			// otherwise a zero-valued predicate like `http_status_min=0` would apply the
-			// INNER JOIN in SQL while the display silently dropped the Matches column.
-			const hasEventFilter =
-				params.event_type != null ||
-				params.level != null ||
-				params.http_status_min != null ||
-				params.url_contains != null ||
-				params.message_contains != null ||
-				params.trace_id != null
+			// Whether any in-session event predicate is active: drives the Matches column. Uses
+			// `!== undefined` to match the query layer's `needsEventFilter`, so `http_status_min=0`
+			// applies the INNER JOIN in SQL and the column alike.
+			const eventFiltered =
+				params.event_type !== undefined ||
+				params.level !== undefined ||
+				params.http_status_min !== undefined ||
+				params.url_contains !== undefined ||
+				params.message_contains !== undefined ||
+				params.trace_id !== undefined
 
 			const tenant = yield* CurrentMcpTenant
 			yield* Effect.annotateCurrentSpan({
@@ -90,42 +109,103 @@ export function registerSearchSessionsTool(server: McpToolRegistrar) {
 				searchSessions({
 					startTime: st,
 					endTime: et,
-					userId: params.user_id ?? undefined,
-					userSearch: params.user_search ?? undefined,
-					groupName: params.group_name ?? undefined,
-					serviceName: params.service ?? undefined,
-					browser: params.browser ?? undefined,
-					country: params.country ?? undefined,
-					deviceType: params.device_type ?? undefined,
-					hasErrors: params.has_errors ?? undefined,
-					durationMinMs: params.duration_min_ms ?? undefined,
-					durationMaxMs: params.duration_max_ms ?? undefined,
-					activeTimeMinMs: params.active_min_ms ?? undefined,
-					activeTimeMaxMs: params.active_max_ms ?? undefined,
-					eventType: params.event_type ?? undefined,
-					eventLevel: params.level ?? undefined,
-					eventMinStatus: params.http_status_min ?? undefined,
-					eventUrlSearch: params.url_contains ?? undefined,
-					eventMessageSearch: params.message_contains ?? undefined,
-					eventTraceId: params.trace_id ?? undefined,
+					userId: params.user_id,
+					userSearch: params.user_search,
+					groupName: params.group_name,
+					serviceName: params.service,
+					browser: params.browser,
+					country: params.country,
+					deviceType: params.device_type,
+					hasErrors: params.has_errors,
+					durationMinMs: params.duration_min_ms,
+					durationMaxMs: params.duration_max_ms,
+					activeTimeMinMs: params.active_min_ms,
+					activeTimeMaxMs: params.active_max_ms,
+					eventType: params.event_type,
+					eventLevel: params.level,
+					eventMinStatus: params.http_status_min,
+					eventUrlSearch: params.url_contains,
+					eventMessageSearch: params.message_contains,
+					eventTraceId: params.trace_id,
 					limit: lim,
 					offset: off,
 				}),
 			).pipe(Effect.catchTags(warehouseToMcpHandlers("search_sessions")))
 
 			yield* Effect.annotateCurrentSpan("result.rowCount", sessions.length)
-			if (sessions.length === 0) {
-				return {
-					content: [
-						{ type: "text" as const, text: `No sessions matched the filters (${st} — ${et}).` },
-					],
-				}
-			}
 
-			// ClickHouse serializes 64-bit integer aggregates (`length()`, `count()`)
-			// as JSON strings while the Tinybird path returns numbers; coerce every
-			// numeric at the edge (same as get_session_traces / the http handler).
+			const hasMore = sessions.length === lim
+			return {
+				timeRange: { start: st, end: et },
+				// ClickHouse serializes 64-bit integer aggregates as JSON strings while Tinybird returns
+				// numbers; coerce every numeric at the edge.
+				sessions: sessions.map((s) => ({
+					sessionId: s.sessionId,
+					userId: s.userId,
+					userName: s.userName,
+					userEmail: s.userEmail,
+					groupId: s.groupId,
+					groupName: s.groupName,
+					startTime: s.startTime,
+					durationMs: s.durationMs != null ? Number(s.durationMs) : null,
+					status: s.status,
+					browserName: s.browserName,
+					osName: s.osName,
+					deviceType: s.deviceType,
+					country: s.country,
+					serviceName: s.serviceName,
+					pageViews: Number(s.pageViews),
+					clickCount: Number(s.clickCount),
+					errorCount: Number(s.errorCount),
+					traceCount: Number(s.traceCount),
+					urlInitial: truncate(s.urlInitial, 256),
+					...(eventFiltered ? { matchCount: Number(s.matchCount ?? 0) } : undefined),
+				})),
+				pagination: {
+					offset: off,
+					limit: lim,
+					hasMore,
+					...(hasMore ? { nextOffset: off + lim } : undefined),
+				},
+				filters: {
+					...(params.user_id === undefined ? undefined : { userId: params.user_id }),
+					...(params.user_search === undefined ? undefined : { userSearch: params.user_search }),
+					...(params.group_name === undefined ? undefined : { groupName: params.group_name }),
+					...(params.service === undefined ? undefined : { service: params.service }),
+					...(params.browser === undefined ? undefined : { browser: params.browser }),
+					...(params.country === undefined ? undefined : { country: params.country }),
+					...(params.device_type === undefined ? undefined : { deviceType: params.device_type }),
+					...(params.has_errors === undefined ? undefined : { hasErrors: params.has_errors }),
+					...(params.duration_min_ms === undefined
+						? undefined
+						: { durationMinMs: params.duration_min_ms }),
+					...(params.duration_max_ms === undefined
+						? undefined
+						: { durationMaxMs: params.duration_max_ms }),
+					...(params.active_min_ms === undefined
+						? undefined
+						: { activeMinMs: params.active_min_ms }),
+					...(params.active_max_ms === undefined
+						? undefined
+						: { activeMaxMs: params.active_max_ms }),
+					...(params.event_type === undefined ? undefined : { eventType: params.event_type }),
+					...(params.level === undefined ? undefined : { level: params.level }),
+					...(params.http_status_min === undefined
+						? undefined
+						: { httpStatusMin: params.http_status_min }),
+					...(params.url_contains === undefined ? undefined : { urlContains: params.url_contains }),
+					...(params.message_contains === undefined
+						? undefined
+						: { messageContains: params.message_contains }),
+					...(params.trace_id === undefined ? undefined : { traceId: params.trace_id }),
+				},
+				eventFiltered,
+			}
+		}),
+		render: (output) => {
+			const { sessions, pagination, eventFiltered } = output
 			const headers = [
+				"Session",
 				"User",
 				"Started",
 				"Duration",
@@ -135,80 +215,74 @@ export function registerSearchSessionsTool(server: McpToolRegistrar) {
 				"Errors",
 				"Entry URL",
 			]
-			if (hasEventFilter) headers.push("Matches")
-
-			const rows = sessions.map((s) => {
-				const errorCount = Number(s.errorCount)
-				const device = [s.osName, s.deviceType].filter(Boolean).join(" / ")
-				const row = [
-					// Same fallback chain as the web list: a name is more useful to an agent
-					// summarizing sessions than an opaque id.
-					s.userName || s.userEmail || s.userId || "Anonymous",
-					s.startTime,
-					s.durationMs != null ? `${Math.round(Number(s.durationMs))}ms` : "—",
-					s.browserName || "—",
-					device || "—",
-					s.country || "—",
-					errorCount > 0 ? String(errorCount) : "",
-					truncate(s.urlInitial, 60),
-				]
-				if (hasEventFilter) row.push(String(Number(s.matchCount ?? 0)))
-				return row
-			})
-
-			const lines: string[] = [
-				`## Sessions (showing ${off + 1}–${off + sessions.length})`,
-				`Time range: ${st} — ${et}`,
-				``,
-				formatTable(headers, rows),
-			]
-
-			const nextSteps = pipe(
-				sessions,
-				Arr.take(3),
-				Arr.map(
-					(s) =>
-						`\`get_session_transcript session_id="${s.sessionId}"\` — read ${
-							s.userId ? `${s.userId}'s` : "the"
-						} session`,
-				),
-			)
-			lines.push(formatNextSteps(nextSteps))
-
+			const window = { start_time: output.timeRange.start, end_time: output.timeRange.end }
 			return {
-				content: createDualContent(lines.join("\n"), {
-					tool: "search_sessions",
-					data: {
-						timeRange: { start: st, end: et },
-						sessions: pipe(
-							sessions,
-							Arr.map((s) => ({
-								sessionId: s.sessionId,
-								userId: s.userId,
-								userName: s.userName,
-								userEmail: s.userEmail,
-								groupId: s.groupId,
-								groupName: s.groupName,
-								startTime: s.startTime,
-								durationMs: s.durationMs != null ? Number(s.durationMs) : null,
-								status: s.status,
-								browserName: s.browserName,
-								osName: s.osName,
-								deviceType: s.deviceType,
-								country: s.country,
-								serviceName: s.serviceName,
-								pageViews: Number(s.pageViews),
-								clickCount: Number(s.clickCount),
-								errorCount: Number(s.errorCount),
-								traceCount: Number(s.traceCount),
-								urlInitial: truncate(s.urlInitial, 256),
-								...(hasEventFilter ? { matchCount: Number(s.matchCount ?? 0) } : undefined),
-							})),
+				title: "Browser sessions",
+				scope: [
+					["Time range", `${output.timeRange.start} to ${output.timeRange.end}`],
+					["Rows", pagination.offset > 0 ? `from ${pagination.offset + 1}` : undefined],
+				],
+				...(sessions.length === 0
+					? {
+							empty: {
+								message: "No browser sessions matched the filters.",
+								hints: ["Widen start_time/end_time, or drop some filters (they are ANDed)."],
+							},
+						}
+					: undefined),
+				blocks:
+					sessions.length === 0
+						? []
+						: [
+								doc.table(
+									eventFiltered ? [...headers, "Matches"] : headers,
+									sessions.map((s) => {
+										const device = [s.osName, s.deviceType].filter(Boolean).join(" / ")
+										const row = [
+											// The id every follow-up call takes; the Next list only names the first rows.
+											s.sessionId,
+											// Same fallback chain as the web list: a name beats an opaque id.
+											s.userName || s.userEmail || s.userId || "Anonymous",
+											s.startTime,
+											s.durationMs !== null ? `${Math.round(s.durationMs)}ms` : "—",
+											s.browserName || "—",
+											device || "—",
+											s.country || "—",
+											s.errorCount > 0 ? String(s.errorCount) : "",
+											truncate(s.urlInitial, 60),
+										]
+										return eventFiltered ? [...row, String(s.matchCount ?? 0)] : row
+									}),
+								),
+							],
+				...(pagination.nextOffset === undefined
+					? undefined
+					: {
+							truncation: {
+								shown: sessions.length,
+								noun: "sessions",
+								next: doc.next(
+									"search_sessions",
+									{
+										...window,
+										...filterArgs(output.filters),
+										limit: pagination.limit,
+										offset: pagination.nextOffset,
+									},
+									"next page",
+								),
+							},
+						}),
+				next: sessions
+					.slice(0, 3)
+					.map((s) =>
+						doc.next(
+							"get_session_transcript",
+							{ session_id: s.sessionId },
+							`read ${s.userId ? `${s.userId}'s` : "the"} session`,
 						),
-					},
-				}),
+					),
 			}
-		}),
-		{ phrases: ["Searching sessions"] },
-	)
+		},
+	})
 }

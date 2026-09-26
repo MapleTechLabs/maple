@@ -58,7 +58,7 @@ const protectedResourceMetadata = (origin: string) => ({
 	authorization_servers: [origin],
 	bearer_methods_supported: ["header"],
 	scopes_supported: [MCP_OAUTH_SCOPE],
-	resource_documentation: "https://maple.dev/docs/mcp",
+	resource_documentation: "https://maple.dev/docs/reference/mcp",
 })
 
 const toWebRequest = Effect.fn("McpOAuthRouter.toWebRequest")(function* () {

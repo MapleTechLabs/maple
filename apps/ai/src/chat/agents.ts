@@ -18,9 +18,9 @@
  * the wire and the mode is derived from it server-side. Every mode names an agent, by
  * construction; `agents.test.ts` fails if one is ever added without one.
  */
-import * as Agent from "@effect-agent/core/Agent"
-import { AgentPolicy } from "@effect-agent/core/AgentPolicy"
-import * as Output from "@effect-agent/engine/Output"
+import * as Agent from "effect-agent/agent"
+import { AgentPolicy } from "effect-agent/agent-policy"
+import * as Output from "effect-agent/output"
 import { Schema } from "effect"
 import type { Toolkit } from "effect/unstable/ai"
 import { chatModeFromSessionId, type ChatMode } from "@maple/domain/chat-session"
@@ -152,6 +152,7 @@ export const agentPolicyFor = (agent: AgentDefinition, contextTokens?: number): 
 		// more without tools, to answer from what it found rather than stopping on a wall of tool
 		// rows. This is also what makes `tokenBudget` a deadline rather than a way to lose a run.
 		onExhaustion: "final-answer",
+		...(budget.runStatus === true ? { runStatus: "appended" as const } : undefined),
 		...(contextTokens === undefined ? undefined : { contextTokenLimit: liveContextLimit(contextTokens) }),
 	})
 }

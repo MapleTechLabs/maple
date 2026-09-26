@@ -1,0 +1,192 @@
+---
+import { getCollection, render } from "astro:content";
+import Layout from "../../layouts/Layout.astro";
+import Nav from "../../components/Nav.astro";
+import Footer from "../../components/Footer.astro";
+import BottomCTA from "../../components/BottomCTA.astro";
+import SeoHead from "../../components/SeoHead.astro";
+import StoryCard from "../../components/customers/StoryCard.astro";
+import ArticleEnhancements from "../../components/blog/ArticleEnhancements.astro";
+import TableOfContents from "../../components/TableOfContents.astro";
+import { formatDate, isoDate, readingTime } from "../../lib/blog";
+import { getSortedStories, getStoryCustomer } from "../../lib/customers";
+import { LOGOS } from "../../lib/customer-logos";
+import { MapleMark } from "@maple/ui/components/icons/maple-mark";
+
+export async function getStaticPaths() {
+    const stories = await getCollection("customers", ({ data }) => !data.draft || import.meta.env.DEV);
+    return stories.map((story) => ({
+        params: { slug: story.id },
+        props: { story },
+    }));
+}
+
+const { story } = Astro.props;
+const { title, description, date, author, authorRole, highlights, cover, coverAlt } = story.data;
+const { Content, headings } = await render(story);
+const customer = await getStoryCustomer(story);
+const Logo = customer ? LOGOS[customer.id] : undefined;
+
+const minutes = readingTime(story.body);
+const hasToc = headings.some((h) => h.depth === 2);
+
+const all = await getSortedStories();
+const readNext = all.filter((s) => s.id !== story.id).slice(0, 3);
+
+const pageTitle = `${title} | Maple Customers`;
+const canonicalUrl = Astro.site ? new URL(Astro.url.pathname, Astro.site).toString() : undefined;
+const absoluteCover = cover && Astro.site ? new URL(cover, Astro.site).toString() : undefined;
+
+const jsonLd = {
+    "@context": "https://schema.org",
+    "@type": "Article",
+    headline: title,
+    description,
+    datePublished: isoDate(date),
+    dateModified: isoDate(date),
+    author: { "@type": "Person", name: author, ...(authorRole ? { jobTitle: authorRole } : undefined) },
+    publisher: {
+        "@type": "Organization",
+        name: "Maple",
+        logo: { "@type": "ImageObject", url: "https://maple.dev/logo192.png" },
+    },
+    ...(customer
+        ? { about: { "@type": "Organization", name: customer.data.name, ...(customer.data.href ? { url: customer.data.href } : undefined) } }
+        : undefined),
+    ...(canonicalUrl ? { mainEntityOfPage: canonicalUrl } : undefined),
+    ...(absoluteCover ? { image: absoluteCover } : undefined),
+};
+
+const backLink =
+    "inline-flex items-center gap-1.5 font-mono text-xs text-fg-muted transition-colors hover:text-primary";
+---
+
+<Layout title={pageTitle} description={description} image={cover} ogType="article">
+    <SeoHead title={pageTitle} description={description} />
+    <script type="application/ld+json" set:html={JSON.stringify(jsonLd)} />
+    <Nav />
+
+    <div
+        data-read-progress
+        class="fixed inset-x-0 top-0 z-[60] h-[2px] origin-left scale-x-0 bg-primary"
+        aria-hidden="true"
+    >
+    </div>
+
+    <article class="relative pt-[19px]">
+        <div class="mx-auto max-w-6xl px-6 pt-20 md:pt-24">
+            <div class:list={["lg:grid lg:gap-16", hasToc && "lg:grid-cols-[minmax(0,1fr)_14rem]"]}>
+                <div class="min-w-0">
+                    <div class="mx-auto w-full max-w-[42rem]">
+                        <a href="/customers" class={backLink}>
+                            <span aria-hidden="true">←</span> all customer stories
+                        </a>
+
+                        <div class="mt-[22px] flex flex-wrap items-center gap-x-3 gap-y-2 font-mono text-xs tabular-nums tracking-[0.02em] text-fg-muted">
+                            {customer && (
+                                <span class="inline-flex items-center gap-2 text-fg">
+                                    {Logo && <Logo class="h-5 w-auto" />}
+                                    <span class="font-display text-sm font-semibold tracking-[-0.01em]">{customer.data.name}</span>
+                                </span>
+                            )}
+                            <span aria-hidden="true" class="opacity-50">·</span>
+                            <time datetime={isoDate(date)}>{formatDate(date)}</time>
+                            <span aria-hidden="true" class="opacity-50">·</span>
+                            <span>{minutes} min read</span>
+                        </div>
+
+                        <h1 class="mt-3.5 font-display text-[clamp(30px,4.5vw,44px)] font-semibold leading-[1.08] tracking-[-0.025em] text-balance text-foreground">
+                            {title}
+                        </h1>
+                        <p class="mt-5 font-display text-[17px] leading-[1.65] text-pretty text-fg-muted">{description}</p>
+
+                        <div class="mt-6 flex items-center gap-2.5 font-mono text-xs text-fg/80">
+                            <MapleMark size={22} className="text-primary" aria-hidden="true" />
+                            <span>{author}</span>
+                            {authorRole && <span class="text-fg-muted">{authorRole}</span>}
+                        </div>
+
+                        {/* The numbers up front, a step wider than the prose. */}
+                        {highlights.length > 0 && (
+                            <ul
+                                class="m-0 mt-10 grid list-none grid-cols-2 gap-px overflow-hidden rounded-lg border border-border bg-border p-0 md:mt-12 md:grid-cols-4 xl:-mx-16"
+                                aria-label={customer ? `${customer.data.name} results` : "Results"}
+                            >
+                                {highlights.map((h) => (
+                                    <li class="flex flex-col gap-1.5 bg-card px-4 py-5 md:px-5">
+                                        <span class="font-display text-[clamp(22px,3vw,30px)] font-semibold leading-none tracking-[-0.02em] tabular-nums text-foreground">{h.value}</span>
+                                        <span class="text-xs leading-snug text-fg-muted">{h.label}</span>
+                                    </li>
+                                ))}
+                            </ul>
+                        )}
+
+                        {cover && (
+                            <div class="mt-10 overflow-hidden rounded-lg border border-border xl:-mx-16">
+                                <img src={cover} alt={coverAlt ?? `Cover image for ${title}`} loading="eager" decoding="async" class="block w-full" />
+                            </div>
+                        )}
+
+                        {hasToc && (
+                            <details class="group mt-10 border border-border lg:hidden">
+                                <summary class="flex cursor-pointer list-none items-center justify-between px-4 py-3 font-mono text-[10px] uppercase tracking-[0.14em] text-fg-muted [&::-webkit-details-marker]:hidden">
+                                    On this page
+                                    <span class="transition-transform group-open:rotate-180" aria-hidden="true">▾</span>
+                                </summary>
+                                <div class="border-t border-border px-4 py-3.5">
+                                    <TableOfContents headings={headings} maxDepth={2} spy={false} showLabel={false} />
+                                </div>
+                            </details>
+                        )}
+
+                        <div class="docs-content blog-content mt-12 md:mt-14">
+                            <Content />
+                        </div>
+
+                        <div class="mt-14 flex flex-wrap items-center justify-between gap-4 border-t border-border pt-5">
+                            <a href="/customers" class={backLink}>
+                                <span aria-hidden="true">←</span> back to all customer stories
+                            </a>
+                            <button
+                                type="button"
+                                data-copy-link
+                                class="inline-flex cursor-pointer items-center gap-1.5 border-0 bg-transparent p-0 font-mono text-xs text-fg-muted transition-colors hover:text-primary"
+                            >
+                                <span data-copy-label>copy link</span>
+                                <span aria-hidden="true">⌁</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                {hasToc && (
+                    <aside class="hidden lg:block">
+                        <TableOfContents headings={headings} maxDepth={2} class="sticky top-28 max-h-[calc(100vh-9rem)] overflow-y-auto" />
+                    </aside>
+                )}
+            </div>
+        </div>
+    </article>
+
+    {readNext.length > 0 && (
+        <section class="mt-16 border-t border-border pt-12">
+            <div class="mx-auto max-w-6xl px-6">
+                <div class="mb-[22px] flex items-center gap-3">
+                    <span class="font-mono text-xs text-primary">#</span>
+                    <span class="h-px w-9 shrink-0 bg-border" aria-hidden="true"></span>
+                    <h2 class="m-0 font-display text-xl font-semibold tracking-[-0.015em] text-foreground">More customer stories</h2>
+                </div>
+                <div class="grid gap-5 [grid-template-columns:repeat(auto-fit,minmax(280px,1fr))]">
+                    {readNext.map((s) => (
+                        <StoryCard story={s} />
+                    ))}
+                </div>
+            </div>
+        </section>
+    )}
+
+    <BottomCTA />
+    <Footer />
+
+    <ArticleEnhancements />
+</Layout>

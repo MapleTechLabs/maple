@@ -16,13 +16,18 @@ import type { TenantContext } from "@maple/backend/services/auth/AuthService"
 import { AlertDestinationsService } from "@maple/backend/services/alerts/AlertDestinationsService"
 import { AlertRulesService } from "@maple/backend/services/alerts/AlertRulesService"
 import { AutumnClient } from "@maple/backend/services/billing/autumn-http"
-import { CUSTOMER_CACHE_BUCKET, classifyAutumn, decodeUpstream } from "@maple/backend/services/billing/autumn-client"
+import {
+	CUSTOMER_CACHE_BUCKET,
+	classifyAutumn,
+	decodeUpstream,
+} from "@maple/backend/services/billing/autumn-client"
 import { VcsRepository } from "@maple/backend/services/integrations/vcs/VcsRepository"
 import { ApiKeysService } from "@maple/backend/services/org/ApiKeysService"
 import { OnboardingService } from "@maple/backend/services/org/OnboardingService"
 import { OrgMembersService } from "@maple/backend/services/org/OrgMembersService"
 import { OrganizationService } from "@maple/backend/services/org/OrganizationService"
 import { SignalPresenceService } from "@maple/backend/services/org/SignalPresenceService"
+import { SupportChannelService } from "@maple/backend/services/support/SupportChannelService"
 
 export type OnboardingChecklistReport = OnboardingChecklistEvaluation
 
@@ -83,6 +88,7 @@ const make = Effect.gen(function* () {
 	const members = yield* OrgMembersService
 	const apiKeys = yield* ApiKeysService
 	const autumn = yield* AutumnClient
+	const supportChannel = yield* SupportChannelService
 
 	const unavailable = <A, E>(operation: string, effect: Effect.Effect<A, E>) =>
 		effect.pipe(
@@ -155,8 +161,19 @@ const make = Effect.gen(function* () {
 		tenant: TenantContext,
 	) {
 		const orgId = tenant.orgId
-		return yield* Effect.all(
+		const { channel, ...inputs } = yield* Effect.all(
 			{
+				channel: degrade(
+					orgId,
+					"join_slack_channel",
+					{ available: false, created: false },
+					supportChannel.retrieve(orgId).pipe(
+						Effect.map((view) => ({
+							available: view.status !== "unavailable",
+							created: view.status === "active",
+						})),
+					),
+				),
 				telemetryPresent: degrade(
 					orgId,
 					"send_telemetry",
@@ -216,6 +233,11 @@ const make = Effect.gen(function* () {
 			},
 			{ concurrency: "unbounded" },
 		)
+		return {
+			...inputs,
+			supportChannelAvailable: channel.available,
+			supportChannelCreated: channel.created,
+		}
 	})
 
 	const read = Effect.fn("OnboardingChecklistService.read")(function* (tenant: TenantContext) {
@@ -350,6 +372,7 @@ export class OnboardingChecklistService extends Context.Service<
 				OrgMembersService.layer,
 				ApiKeysService.layer,
 				AutumnClient.layer,
+				SupportChannelService.layer,
 			),
 		),
 	)

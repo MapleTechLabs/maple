@@ -5,7 +5,7 @@
  * tool answer the run dispatches, including the ones its `review_files` children dispatch through
  * the same handlers. `submit_review` consults it once before recording.
  */
-import { followUpScope } from "@maple/backend/services/pr-review/findings"
+import { followUpScope, ignoredPathsInKickoff, pathIgnored } from "@maple/backend/services/pr-review/findings"
 import { pathsInDiffAnswer, reviewablePathsInListing } from "../mcp/tools/pull-request"
 
 export interface ReviewCoverage {
@@ -15,10 +15,15 @@ export interface ReviewCoverage {
 	readonly unread: () => ReadonlyArray<string>
 }
 
-/** `kickoff` is the pass's first message: a later push's kickoff narrows which files are due. */
+/**
+ * `kickoff` is the pass's first message: a later push's kickoff narrows which files are due, and a
+ * path the repository's settings ignore is never due, since the kickoff tells the reviewer to skip it.
+ */
 export const makeReviewCoverage = (kickoff: string): ReviewCoverage => {
 	const scope = followUpScope(kickoff)
-	const inScope = scope === undefined ? () => true : (path: string) => scope.includes(path)
+	const ignored = ignoredPathsInKickoff(kickoff)
+	const inScope = (path: string) =>
+		(scope === undefined || scope.includes(path)) && !pathIgnored(path, ignored)
 	const due = new Set<string>()
 	const read = new Set<string>()
 	return {

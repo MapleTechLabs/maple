@@ -176,12 +176,25 @@ describe("approvals", () => {
 				toolName: "create_dashboard",
 				summary: "Creates a dashboard called Checkout",
 				token: token("call-1"),
-				outcome: { approved: true, text: "Ada approved this." },
+				outcome: {
+					approved: true,
+					decision: "Approved by Ada.",
+					text: 'I created the dashboard "Checkout".',
+					url: "https://app.maple.dev/dashboards/d_1",
+				},
 			},
 		])
 		expect(payload.blocks?.some((block) => block.type === "actions")).toBe(false)
-		const block = payload.blocks?.[0]
-		expect(block?.type === "section" && block.text.text).toContain("Ada approved this.")
+		expect(payload.blocks?.[0]).toMatchObject({
+			type: "section",
+			text: {
+				text: 'I created the dashboard "Checkout". <https://app.maple.dev/dashboards/d_1|Open in Maple>',
+			},
+		})
+		expect(payload.blocks?.[1]).toMatchObject({
+			type: "context",
+			elements: [{ text: "Approved by Ada." }],
+		})
 	})
 
 	it("says so rather than sending buttons Slack would reject the message over", () => {

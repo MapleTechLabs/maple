@@ -109,7 +109,12 @@ describe("renderDiscordMessage", () => {
 				toolName: "create_alert_rule",
 				summary: "name: checkout p95",
 				token: token("call_9"),
-				outcome: { approved: true, text: "Approved by Ada.\nCreated alert rule." },
+				outcome: {
+					approved: true,
+					decision: "Approved by Ada.",
+					text: 'I created the alert rule "checkout p95".',
+					url: "https://app.maple.dev/alerts/ar_1",
+				},
 			},
 		])
 
@@ -117,7 +122,7 @@ describe("renderDiscordMessage", () => {
 		// as spent.
 		expect(payload.components).toEqual([])
 		expect(payload.content).toBe(
-			"**`create_alert_rule`**\nname: checkout p95\nApproved by Ada.\nCreated alert rule.",
+			'I created the alert rule "checkout p95". [Open in Maple](https://app.maple.dev/alerts/ar_1)\n-# Approved by Ada.',
 		)
 	})
 

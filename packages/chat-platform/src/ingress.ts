@@ -134,6 +134,12 @@ export const InboundAction = Schema.Struct({
 	 */
 	actionToken: Schema.String,
 	actor: InboundActor,
+	/**
+	 * What the connector answers the clicker privately with, where its platform needs more than
+	 * the click's address to do that (an interaction's follow-up webhook). Opaque to the host, and a
+	 * short-lived credential: it goes back to the connector and nowhere else, logs included.
+	 */
+	replyHandle: Schema.optionalKey(Schema.String),
 })
 export type InboundAction = Schema.Schema.Type<typeof InboundAction>
 

@@ -13,6 +13,7 @@ import Nav from "../../components/Nav.astro";
 import Footer from "../../components/Footer.astro";
 import BottomCTA from "../../components/BottomCTA.astro";
 import SeoHead from "../../components/SeoHead.astro";
+import TableOfContents from "../../components/TableOfContents.astro";
 import { getSortedReleases } from "../../lib/changelog";
 import { formatDate, isoDate, readingTime } from "../../lib/blog";
 
@@ -34,8 +35,7 @@ const { title, description, date, breaking, cover, coverAlt } = release.data;
 const { Content, headings } = await render(release);
 
 const minutes = readingTime(release.body);
-const toc = headings.filter((h) => h.depth === 2);
-const hasToc = toc.length > 0;
+const hasToc = headings.some((h) => h.depth === 2);
 
 const pageTitle = `${title} — Maple changelog`;
 const canonicalUrl = Astro.site ? new URL(`/changelog/${release.id}`, Astro.site).toString() : undefined;
@@ -81,7 +81,7 @@ const backLink =
 
     <article class="relative pt-[19px]">
         <div class="mx-auto max-w-6xl px-6 pt-20 md:pt-24">
-            <div class:list={["lg:grid lg:gap-16", hasToc && "lg:grid-cols-[minmax(0,1fr)_13rem]"]}>
+            <div class:list={["lg:grid lg:gap-16", hasToc && "lg:grid-cols-[minmax(0,1fr)_14rem]"]}>
                 {/* ── Main column ── */}
                 <div class="min-w-0">
                     <a href="/changelog" class={backLink}>
@@ -184,24 +184,7 @@ const backLink =
                 {/* ── In this release (sticky TOC) ── */}
                 {hasToc && (
                     <aside class="hidden lg:block">
-                        <nav aria-label="In this release" class="sticky top-28">
-                            <p class="mb-3 font-mono text-[10px] uppercase tracking-[0.14em] text-fg-muted">
-                                In this release
-                            </p>
-                            <ul class="space-y-2.5 border-l border-border">
-                                {toc.map((h) => (
-                                    <li>
-                                        <a
-                                            href={`#${h.slug}`}
-                                            data-toc-link
-                                            class="-ml-px block border-l border-transparent pl-3.5 text-[13px] leading-snug text-fg-muted transition-colors hover:text-foreground data-[active=true]:border-primary data-[active=true]:text-foreground"
-                                        >
-                                            {h.text}
-                                        </a>
-                                    </li>
-                                ))}
-                            </ul>
-                        </nav>
+                        <TableOfContents headings={headings} maxDepth={2} label="In this release" class="sticky top-28 max-h-[calc(100vh-9rem)] overflow-y-auto" />
                     </aside>
                 )}
             </div>
@@ -211,32 +194,4 @@ const backLink =
     <BottomCTA />
     <Footer />
 
-    {hasToc && (
-        <script is:inline>
-            (() => {
-                const links = Array.from(document.querySelectorAll("[data-toc-link]"));
-                if (!links.length) return;
-                const byId = new Map(links.map((l) => [decodeURIComponent(l.getAttribute("href").slice(1)), l]));
-                const heads = Array.from(document.querySelectorAll(".docs-content h2[id]"));
-                if (!heads.length) return;
-                const setActive = (id) => {
-                    links.forEach((l) => l.removeAttribute("data-active"));
-                    const a = byId.get(id);
-                    if (a) a.setAttribute("data-active", "true");
-                };
-                const obs = new IntersectionObserver(
-                    (entries) => {
-                        const visible = entries.filter((e) => e.isIntersecting);
-                        if (visible.length) {
-                            visible.sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top);
-                            setActive(visible[0].target.id);
-                        }
-                    },
-                    { rootMargin: "-80px 0px -70% 0px", threshold: 0 },
-                );
-                heads.forEach((h) => obs.observe(h));
-                setActive(heads[0].id);
-            })();
-        </script>
-    )}
 </Layout>

@@ -1,14 +1,14 @@
 ---
 /**
- * LocalStackCompare — the "replace the compose file" argument, made visible.
+ * LocalStackCompare: the "replace the compose file" argument, made visible.
  *
  * One ruled plate, read left to right: what each part of a local telemetry
  * stack is for, the container that usually does it (name, port, config), and
  * the single `maple start` cell that covers every row at once. The Maple cell
- * spans the full height on purpose — that span is the whole argument, so it is
+ * spans the full height on purpose; that span is the whole argument, so it is
  * drawn rather than described. The last row counts both sides.
  *
- * The tools on the left are named factually — they are good software, and this
+ * The tools on the left are named factually. They are good software, and this
  * page never says otherwise. What we claim is only the shape: five containers
  * versus one process.
  */
@@ -90,7 +90,7 @@ const mapleStats = [
 </div>
 
 <p class="mt-5 max-w-[66ch] text-[13px] leading-relaxed text-fg-muted">
-	Light describes the running footprint: one process, one port, nothing to orchestrate before your app
+	The running footprint is light: one process, one port, nothing to orchestrate before your app
 	starts. The download itself is not small; the embedded database engine is a few hundred megabytes on
 	disk.
 </p>
@@ -167,7 +167,7 @@ const mapleStats = [
 		color: var(--foreground);
 	}
 
-	/* The usual stack: container, port, config — three aligned columns per row */
+	/* The usual stack: container, port, config, three aligned columns per row */
 	.lsc__cell {
 		grid-column: 2 / span 3;
 		display: grid;

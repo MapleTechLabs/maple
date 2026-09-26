@@ -61,6 +61,7 @@ const recorder = (maxMessageChars = 500): Recorder => {
 						return ref
 					}),
 				edit: (ref, blocks) => Effect.sync(() => void calls.push({ verb: "edit", ref, blocks })),
+				whisper: () => Effect.die("the driver answered a click"),
 				typing: (typingTarget) => Effect.sync(() => void typing.push(typingTarget.channelId)),
 				// A platform where a thread is just replies to a message opens one without any I/O.
 				openThread: (request) => Effect.succeed(request.anchorMessageId),

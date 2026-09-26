@@ -146,6 +146,21 @@ fn clamp_string_field(
     }
 }
 
+/// Whether one session metadata row bills a browser session, removing the
+/// `billable_start` marker from the row (the warehouse has no column for it).
+///
+/// Only `version == 1` rows bill, so heartbeats and unload rows never re-bill.
+/// `billable_start: 0` is a second tab or subdomain inside a visit already
+/// charged. An absent key is an SDK predating visits: customers pin SDK
+/// versions, so it keeps the old `version == 1` rule rather than going unbilled.
+pub fn take_billable_session_start(obj: &mut serde_json::Map<String, serde_json::Value>) -> bool {
+    let marker = obj.remove("billable_start");
+    if obj.get("version").and_then(serde_json::Value::as_u64) != Some(1) {
+        return false;
+    }
+    marker.is_none_or(|value| value.as_u64() == Some(1))
+}
+
 /// Clamp the client-supplied fields of one session metadata row in place.
 ///
 /// Every column touched here is written from the request body. The
@@ -487,6 +502,39 @@ pub fn sanitize_product_event(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn meta_row(json: &str) -> serde_json::Map<String, serde_json::Value> {
+        match serde_json::from_str(json).expect("valid JSON") {
+            serde_json::Value::Object(map) => map,
+            other => panic!("expected an object, got {other}"),
+        }
+    }
+
+    #[test]
+    fn only_the_first_row_of_a_claimed_visit_bills() {
+        let mut first = meta_row(r#"{"version":1,"billable_start":1}"#);
+        assert!(take_billable_session_start(&mut first));
+        assert!(!first.contains_key("billable_start"));
+
+        // The marker is sticky on heartbeats and the unload row; `version` gates it.
+        assert!(!take_billable_session_start(&mut meta_row(
+            r#"{"version":2,"billable_start":1}"#
+        )));
+        // A second tab or subdomain inside a visit already charged.
+        let mut second_tab = meta_row(r#"{"version":1,"billable_start":0}"#);
+        assert!(!take_billable_session_start(&mut second_tab));
+        assert!(!second_tab.contains_key("billable_start"));
+    }
+
+    #[test]
+    fn a_row_without_the_marker_keeps_the_version_rule() {
+        assert!(take_billable_session_start(&mut meta_row(
+            r#"{"version":1}"#
+        )));
+        assert!(!take_billable_session_start(&mut meta_row(
+            r#"{"version":2}"#
+        )));
+    }
 
     #[test]
     fn referrer_host_is_normalized_and_defaults_empty() {

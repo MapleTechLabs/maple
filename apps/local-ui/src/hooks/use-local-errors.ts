@@ -1,9 +1,8 @@
-import { keepPreviousData, useQuery } from "@tanstack/react-query"
+import { keepPreviousData, skipToken, useQuery } from "@tanstack/react-query"
 import { CH } from "@maple/query-engine"
 import { Option } from "effect"
-import { executeLocalCompiledFirstRow, executeLocalCompiledQuery } from "@/lib/query"
-import { LOCAL_ORG_ID } from "../lib/constants"
-import { boundsForRange } from "../lib/time"
+import { boundsKey, executeLocalCompiledFirstRow, executeLocalCompiledQuery, localParams } from "@/lib/query"
+import type { TimeBounds } from "../lib/time"
 
 export interface ErrorsFilters {
 	/** Exact service name match. */
@@ -12,52 +11,53 @@ export interface ErrorsFilters {
 	env?: string
 	/** Restrict to root-span errors. */
 	rootOnly?: boolean
-	/** Time-range preset key (see `TIME_RANGES`). */
-	range?: string
 }
 
-function commonOpts(filters: ErrorsFilters) {
+function sharedFilters(filters: ErrorsFilters) {
 	return {
-		rootOnly: filters.rootOnly,
 		services: filters.service ? [filters.service] : undefined,
 		deploymentEnvs: filters.env ? [filters.env] : undefined,
 	}
 }
 
 /** Headline stats for the errors view (error_events × service_usage). */
-export function useLocalErrorsSummary(filters: ErrorsFilters) {
+export function useLocalErrorsSummary(filters: ErrorsFilters, bounds: TimeBounds) {
 	return useQuery({
-		queryKey: ["local", "errors", "summary", filters],
+		queryKey: ["local", "errors", "summary", filters, boundsKey(bounds)],
 		placeholderData: keepPreviousData,
-		queryFn: async (): Promise<CH.ErrorsSummaryOutput | null> => {
-			const { startTime, endTime } = boundsForRange(filters.range)
+		queryFn: async ({ signal }): Promise<CH.ErrorsSummaryOutput | null> => {
 			const row = await executeLocalCompiledFirstRow(
-				CH.compile(CH.errorsSummaryQuery(commonOpts(filters)), {
-					orgId: LOCAL_ORG_ID,
-					startTime,
-					endTime,
-				}),
+				CH.compile(
+					CH.errorsSummaryQuery({ ...sharedFilters(filters), rootOnly: filters.rootOnly }),
+					localParams(bounds),
+				),
+				signal,
 			)
 			return Option.getOrNull(row)
 		},
 	})
 }
 
+/** A fingerprint-grouped error type; `serviceNames` names up to three of its services. */
+export type ErrorTypeRow = CH.ErrorsByTypeOutput
+
 /** Fingerprint-grouped error types, most frequent first. */
-export function useLocalErrorsByType(filters: ErrorsFilters) {
+export function useLocalErrorsByType(filters: ErrorsFilters, bounds: TimeBounds) {
 	return useQuery({
-		queryKey: ["local", "errors", "by-type", filters],
+		queryKey: ["local", "errors", "by-type", filters, boundsKey(bounds)],
 		placeholderData: keepPreviousData,
-		queryFn: async (): Promise<ReadonlyArray<CH.ErrorsByTypeOutput>> => {
-			const { startTime, endTime } = boundsForRange(filters.range)
-			return executeLocalCompiledQuery(
-				CH.compile(CH.errorsByTypeQuery({ ...commonOpts(filters), limit: 50 }), {
-					orgId: LOCAL_ORG_ID,
-					startTime,
-					endTime,
-				}),
-			)
-		},
+		queryFn: ({ signal }): Promise<ReadonlyArray<ErrorTypeRow>> =>
+			executeLocalCompiledQuery(
+				CH.compile(
+					CH.errorsByTypeQuery({
+						...sharedFilters(filters),
+						rootOnly: filters.rootOnly,
+						limit: 50,
+					}),
+					localParams(bounds),
+				),
+				signal,
+			),
 	})
 }
 
@@ -66,19 +66,21 @@ export interface ErrorsFacets {
 	environments: Array<{ name: string; count: number }>
 }
 
-/** Service + environment facet counts for the sidebar (UNION query). */
-export function useLocalErrorsFacets(filters: ErrorsFilters) {
+/**
+ * Service + environment facets. Each section counts under the other filters
+ * but not its own (the query drops a dimension's own filter from its branch).
+ */
+export function useLocalErrorsFacets(filters: ErrorsFilters, bounds: TimeBounds) {
 	return useQuery({
-		queryKey: ["local", "errors", "facets", filters],
+		queryKey: ["local", "errors", "facets", filters, boundsKey(bounds)],
 		placeholderData: keepPreviousData,
-		queryFn: async (): Promise<ErrorsFacets> => {
-			const { startTime, endTime } = boundsForRange(filters.range)
+		queryFn: async ({ signal }): Promise<ErrorsFacets> => {
 			const rows = await executeLocalCompiledQuery(
-				CH.compileUnion(CH.errorsFacetsQuery({ rootOnly: filters.rootOnly }), {
-					orgId: LOCAL_ORG_ID,
-					startTime,
-					endTime,
-				}),
+				CH.compileUnion(
+					CH.errorsFacetsQuery({ ...sharedFilters(filters), rootOnly: filters.rootOnly }),
+					localParams(bounds),
+				),
+				signal,
 			)
 			const pick = (facetType: string) =>
 				rows
@@ -89,24 +91,37 @@ export function useLocalErrorsFacets(filters: ErrorsFilters) {
 	})
 }
 
-/** Most recently errored traces for one fingerprint (expanded row). */
-export function useLocalErrorTraces(fingerprintHash: string | undefined, filters: ErrorsFilters) {
+/** Most recently errored traces for one fingerprint (expanded row), under the view's filters. */
+export function useLocalErrorTraces(
+	fingerprintHash: string | undefined,
+	filters: ErrorsFilters,
+	bounds: TimeBounds,
+) {
 	return useQuery({
-		queryKey: ["local", "errors", "traces", fingerprintHash, filters],
-		enabled: !!fingerprintHash,
-		queryFn: async (): Promise<ReadonlyArray<CH.ErrorDetailTracesOutput>> => {
-			const { startTime, endTime } = boundsForRange(filters.range)
-			return executeLocalCompiledQuery(
-				CH.compile(
-					CH.errorDetailTracesQuery({
-						fingerprintHash: fingerprintHash!,
-						rootOnly: filters.rootOnly,
-						services: filters.service ? [filters.service] : undefined,
-						limit: 10,
-					}),
-					{ orgId: LOCAL_ORG_ID, startTime, endTime },
-				),
-			)
-		},
+		queryKey: [
+			"local",
+			"errors",
+			"traces",
+			fingerprintHash,
+			filters.rootOnly,
+			filters.service,
+			filters.env,
+			boundsKey(bounds),
+		],
+		queryFn: fingerprintHash
+			? ({ signal }): Promise<ReadonlyArray<CH.ErrorDetailTracesOutput>> =>
+					executeLocalCompiledQuery(
+						CH.compile(
+							CH.errorDetailTracesQuery({
+								fingerprintHash,
+								rootOnly: filters.rootOnly,
+								...sharedFilters(filters),
+								limit: 10,
+							}),
+							localParams(bounds),
+						),
+						signal,
+					)
+			: skipToken,
 	})
 }

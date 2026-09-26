@@ -667,6 +667,11 @@ function walkLane(
 		// AGENT anchor, though: a conversation-id partition can anchor a turn on
 		// the model call that opened it, and that call's reply is the turn.
 		if (span.spanId === scope.context.turn.anchor.spanId && scope.context.categoryOf(span) === "agent") {
+			// Its captured prompt is the one thing it says that the header does
+			// not: an emitter that records the user's message on the turn span
+			// (Claude Code's `interaction`) and never on the model calls under it
+			// would otherwise have no user row at all.
+			rows.push(...userRows(scope.context.messagesOf(span), span, scope))
 			const inner = walkLane(children.get(span.spanId) ?? [], children, scope)
 			rows.push(...inner.rows)
 			addWork(counts, inner.counts)

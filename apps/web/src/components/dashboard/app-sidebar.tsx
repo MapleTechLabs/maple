@@ -1,10 +1,11 @@
-import { memo, useMemo } from "react"
-import { Link, useRouterState } from "@tanstack/react-router"
+import { memo, useMemo, useState } from "react"
+import { Link, useNavigate, useRouterState } from "@tanstack/react-router"
 import { useUser, useClerk } from "@clerk/clerk-react"
 import {
 	CircleQuestionIcon,
 	DiscordIcon,
 	EnvelopeIcon,
+	SlackIcon,
 	GearIcon,
 	GridSquareCirclePlusIcon,
 	KeyboardIcon,
@@ -25,6 +26,7 @@ import {
 } from "@/components/dashboard/nav-items"
 import { openCommandPalette, showKeyboardShortcuts } from "@/components/command-palette/global-shortcuts"
 import { OrgSwitcher } from "@/components/dashboard/org-switcher"
+import { SupportChannelDialog } from "@/components/support/support-channel-dialog"
 import { UserAvatar, userInitials } from "@/components/dashboard/user-avatar"
 import { ThemeToggle } from "@/components/dashboard/theme-toggle"
 import {
@@ -607,48 +609,75 @@ function SettingsRow({ currentPath }: { currentPath: string }) {
 
 /** Support stops scrolling away by leaving SidebarContent entirely. */
 function SupportMenu() {
+	const [slackOpen, setSlackOpen] = useState(false)
+	// `?support=slack_channel` opens the dialog on any page; the onboarding checklist links to it.
+	const slackDeepLinked = useRouterState({
+		select: (s) => new URLSearchParams(s.location.searchStr).get("support") === "slack_channel",
+	})
+	const navigate = useNavigate()
+	const onSlackOpenChange = (open: boolean) => {
+		setSlackOpen(open)
+		if (!open && slackDeepLinked) {
+			const params = new URLSearchParams(window.location.search)
+			params.delete("support")
+			const query = params.toString()
+			void navigate({ href: `${window.location.pathname}${query ? `?${query}` : ""}`, replace: true })
+		}
+	}
 	return (
-		<DropdownMenu>
-			<DropdownMenuTrigger
-				render={
-					<SidebarMenuButton
-						className="size-8 w-8 shrink-0 justify-center p-0 group-data-[collapsible=icon]:w-full"
-						tooltip="Support"
-					/>
-				}
-			>
-				<CircleQuestionIcon size={16} />
-				<span className="sr-only">Support</span>
-			</DropdownMenuTrigger>
-			<DropdownMenuContent align="end" side="top" sideOffset={4}>
-				<DropdownMenuGroup>
-					<DropdownMenuItem
-						render={
-							<a
-								aria-label="Community Discord"
-								href="https://discord.gg/BnXjKuwJqP"
-								rel="noopener noreferrer"
-								target="_blank"
-							/>
-						}
-					>
-						<DiscordIcon size={16} />
-						Community Discord
-					</DropdownMenuItem>
-					<DropdownMenuItem
-						render={<a aria-label="Email Support" href="mailto:support@maple.dev" />}
-					>
-						<EnvelopeIcon size={16} />
-						Email Support
-					</DropdownMenuItem>
-					<DropdownMenuItem onClick={showKeyboardShortcuts}>
-						<KeyboardIcon size={16} />
-						Keyboard shortcuts
-						<DropdownMenuShortcut>?</DropdownMenuShortcut>
-					</DropdownMenuItem>
-				</DropdownMenuGroup>
-			</DropdownMenuContent>
-		</DropdownMenu>
+		<>
+			<DropdownMenu>
+				<DropdownMenuTrigger
+					render={
+						<SidebarMenuButton
+							className="size-8 w-8 shrink-0 justify-center p-0 group-data-[collapsible=icon]:w-full"
+							tooltip="Support"
+						/>
+					}
+				>
+					<CircleQuestionIcon size={16} />
+					<span className="sr-only">Support</span>
+				</DropdownMenuTrigger>
+				<DropdownMenuContent align="end" side="top" sideOffset={4}>
+					<DropdownMenuGroup>
+						{/* The channel is created in Maple's Slack for a Clerk org; self-hosted has neither. */}
+						{isClerkAuthEnabled ? (
+							<DropdownMenuItem onClick={() => setSlackOpen(true)}>
+								<SlackIcon size={16} />
+								Shared Slack channel
+							</DropdownMenuItem>
+						) : null}
+						<DropdownMenuItem
+							render={
+								<a
+									aria-label="Community Discord"
+									href="https://discord.gg/BnXjKuwJqP"
+									rel="noopener noreferrer"
+									target="_blank"
+								/>
+							}
+						>
+							<DiscordIcon size={16} />
+							Community Discord
+						</DropdownMenuItem>
+						<DropdownMenuItem
+							render={<a aria-label="Email Support" href="mailto:support@maple.dev" />}
+						>
+							<EnvelopeIcon size={16} />
+							Email Support
+						</DropdownMenuItem>
+						<DropdownMenuItem onClick={showKeyboardShortcuts}>
+							<KeyboardIcon size={16} />
+							Keyboard shortcuts
+							<DropdownMenuShortcut>?</DropdownMenuShortcut>
+						</DropdownMenuItem>
+					</DropdownMenuGroup>
+				</DropdownMenuContent>
+			</DropdownMenu>
+			{isClerkAuthEnabled ? (
+				<SupportChannelDialog open={slackOpen || slackDeepLinked} onOpenChange={onSlackOpenChange} />
+			) : null}
+		</>
 	)
 }
 

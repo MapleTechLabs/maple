@@ -103,7 +103,7 @@ The scopes deliberately **do not** include `users:read` — see "Who may approve
    A red "Your URL didn't respond" is almost always the signing secret, not the route.
 3. **Link the workspace to a Maple organization.** In Maple: Settings → Integrations → Slack →
    Connect, which runs the install flow and writes the `chat_workspaces` row (Slack's own consent
-   screen adds the bot at the same time). The card is behind the org's `slack_bot` rollout flag.
+   screen adds the bot at the same time). The card is shown to every org (`released` in `manifest.ts`).
 4. **Invite the bot to a channel** (`/invite @Maple`) and **mention it**: `@Maple why is checkout
 slow?`. It answers in a thread on that message and edits one message there as the answer streams.
    A reply in that thread continues the same conversation; a mention in another channel starts a

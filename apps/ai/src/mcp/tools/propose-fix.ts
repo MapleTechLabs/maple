@@ -1,97 +1,91 @@
-import {
-	McpQueryError,
-	optionalStringParam,
-	requiredStringParam,
-	validationError,
-	type McpToolRegistrar,
-} from "./types"
-import { Effect, Option, Schema } from "effect"
-import { createDualContent } from "../lib/structured-output"
+import { McpInvalidInputError, type McpToolRegistrar } from "./types"
+import { Effect, Schema } from "effect"
+import { ProposeFixOutput } from "@maple/domain/mcp-outputs"
 import { CurrentMcpTenant } from "../lib/query-warehouse"
 import { resolveActorId } from "../lib/resolve-actor"
+import * as P from "../lib/params"
+import { doc } from "../lib/tool-doc"
+import {
+	issueIdParam,
+	issueNotFound,
+	leaseConflict,
+	persistenceFailed,
+	transitionRefused,
+} from "./error-issue-shared"
 import { ErrorsService } from "@maple/backend/services/errors/ErrorsService"
-import { ErrorIssueId } from "@maple/domain/http"
-
-const decodeIssueId = Schema.decodeUnknownOption(ErrorIssueId)
-
-const decodeStringArray = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Array(Schema.String)))
-
-const parseArtifactList = (raw: string | undefined): ReadonlyArray<string> => {
-	if (!raw) return []
-	return Option.getOrElse(decodeStringArray(raw), () => [])
-}
 
 export function registerProposeFixTool(server: McpToolRegistrar) {
-	server.tool(
-		"propose_fix",
-		[
-			"Record a fix you are proposing for an error issue — a patch summary, optionally a PR URL and supporting artifacts — and move the issue to `in_review`.",
-			"Claims the issue for you and walks it there from wherever it is, so you do not need `claim_error_issue` or `transition_error_issue` first; it fails if another agent already holds the issue, or if `pr_url` is not a GitHub pull request URL.",
-			"Passing `pr_url` also links the PR, so this is the only tool you need when you have just opened one; use `link_pull_request` for a PR that already exists and needs no new proposal.",
-			"Once a linked PR merges, Maple watches the error for a window sized by its severity and rate, then closes the issue itself if it stopped. Do not transition to `done` by hand.",
+	server.define({
+		name: "propose_fix",
+		description: [
+			"Record a proposed fix for an error issue and move it to `in_review`.",
+			"Claims the issue and walks it there from wherever it is, so no claim_error_issue or transition_error_issue call is needed first; it fails if another agent holds the issue.",
+			"Pass `pr_url` when you have just opened the PR: it is linked, and once it merges Maple verifies the fix against traffic and closes the issue itself. Use link_pull_request for a PR that already exists and needs no new proposal.",
+			"Do not move the issue to `done` by hand.",
 		].join(" "),
-		Schema.Struct({
-			issue_id: requiredStringParam("The error issue ID (from list_error_issues)"),
-			patch_summary: requiredStringParam("Short description of the proposed fix (1..4000 chars)"),
-			pr_url: optionalStringParam("Link to PR, diff, or patch"),
-			artifacts_json: optionalStringParam("JSON array of artifact URLs (logs, traces, analysis docs)"),
+		parameters: Schema.Struct({
+			issue_id: issueIdParam(),
+			patch_summary: P.text("What the fix changes and why, in a few sentences"),
+			pr_url: P.optionalText(
+				"The GitHub pull request URL for the fix, e.g. https://github.com/owner/repo/pull/123. Anything else is rejected",
+			),
+			artifacts_json: P.optionalJson(
+				Schema.Array(Schema.String),
+				"JSON array of URLs backing the proposal (logs, traces, analysis docs)",
+			),
 		}),
-		Effect.fn("McpTool.proposeFix")(function* ({ issue_id, patch_summary, pr_url, artifacts_json }) {
+		output: ProposeFixOutput,
+		hints: { readOnly: false, destructive: false, idempotent: false, openWorld: true },
+		phrases: ["Drafting a fix"],
+		handler: Effect.fn("McpTool.proposeFix")(function* (params) {
 			const tenant = yield* CurrentMcpTenant
-			const decodedIssueId = decodeIssueId(issue_id)
-			if (Option.isNone(decodedIssueId)) {
-				return validationError(
-					`Invalid issue_id: '${issue_id}'. Must be a UUID from list_error_issues.`,
-				)
-			}
-			if (patch_summary.trim().length === 0) {
-				return validationError("patch_summary must not be empty.")
+			if (params.patch_summary.trim().length === 0) {
+				return yield* new McpInvalidInputError({
+					message: "patch_summary must not be empty.",
+					parameter: "patch_summary",
+				})
 			}
 
 			const actorId = yield* resolveActorId(tenant)
 			const errors = yield* ErrorsService
-			const artifacts = parseArtifactList(artifacts_json)
 			const issue = yield* errors
-				.proposeFix(tenant.orgId, actorId, decodedIssueId.value, {
-					patchSummary: patch_summary,
-					prUrl: pr_url,
-					artifacts,
+				.proposeFix(tenant.orgId, actorId, params.issue_id, {
+					patchSummary: params.patch_summary,
+					prUrl: params.pr_url,
+					artifacts: params.artifacts_json ?? [],
 				})
 				.pipe(
-					Effect.mapError(
-						(error) =>
-							new McpQueryError({
-								message: error.message,
-								pipeName: "propose_fix",
-								cause: error,
-							}),
-					),
+					Effect.catchTags({
+						"@maple/http/errors/ErrorIssueNotFoundError": issueNotFound,
+						"@maple/http/errors/ErrorIssueLeaseConflictError": leaseConflict,
+						"@maple/http/errors/ErrorIssueTransitionError": transitionRefused("issue_id"),
+						"@maple/http/errors/ErrorIssuePullRequestInvalidError": (error) =>
+							Effect.fail(
+								new McpInvalidInputError({ message: error.message, parameter: "pr_url" }),
+							),
+						"@maple/http/errors/ErrorPersistenceError": persistenceFailed("propose_fix"),
+					}),
 				)
 
-			// Say what happens next, because "State: in_review" does not convey that
-			// nobody should touch the issue again until the PR merges.
-			const lines = [
-				`## Fix proposed`,
-				`- Issue: ${issue.id}`,
-				`- State: ${issue.workflowState}`,
-				`- Held by you until you release it or the issue closes`,
-				pr_url ? `- PR: ${pr_url}` : null,
-				pr_url
-					? `- When that PR merges, Maple verifies the fix against real traffic and closes the issue if the error stopped. Don't transition it to 'done' yourself.`
-					: `- No PR attached, so nothing will verify this fix. Call link_pull_request when you open one.`,
-			].filter((l): l is string => l !== null)
-
-			return {
-				content: createDualContent(lines.join("\n"), {
-					tool: "propose_fix",
-					data: {
-						issueId: issue.id,
-						workflowState: issue.workflowState,
-						prUrl: pr_url ?? null,
-					},
-				}),
-			}
+			return { issueId: issue.id, workflowState: issue.workflowState, prUrl: params.pr_url ?? null }
 		}),
-		{ phrases: ["Drafting a fix"] },
-	)
+		// Say what happens next: "State: in_review" does not convey that nobody should touch
+		// the issue again until the PR merges.
+		render: (output) => ({
+			title: "Fix proposed",
+			blocks: [
+				doc.fields([
+					["Issue", output.issueId],
+					["State", output.workflowState],
+					["Held by", "you, until you release it or the issue closes"],
+					["PR", output.prUrl ?? undefined],
+				]),
+				doc.text(
+					output.prUrl === null
+						? "No PR attached, so nothing will verify this fix. Call link_pull_request when you open one."
+						: "When that PR merges, Maple verifies the fix against real traffic and closes the issue if the error stopped. Don't transition it to 'done' yourself.",
+				),
+			],
+		}),
+	})
 }

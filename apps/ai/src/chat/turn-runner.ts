@@ -21,21 +21,25 @@
 import * as MapleCloudflareSDK from "@maple-dev/effect-sdk/cloudflare"
 import { MCP_ANTICIPATED_ERROR_IDENTIFIERS } from "../mcp/expected-failures"
 import { ChatMessage, type ChatTurnOrigin, type ChatTurnTenantEncoded } from "@maple/domain/chat-session"
-import type { InvestigationProgress } from "@maple/domain/http"
+import type { InvestigationProgress, PrReviewFailureReason } from "@maple/domain/http"
 import { workerEnvLayer } from "@maple/infra/worker-runtime"
 import { workerTelemetryConfig } from "@maple/infra/worker-telemetry"
-import { Cause, Effect, Layer, ManagedRuntime } from "effect"
+import { Cause, Effect, Layer, ManagedRuntime, Option } from "effect"
 import type { ChatSession } from "./ChatSession"
 import type { ChatTurnEvent } from "./events"
 import { withToolTranscript } from "./close-out"
 import { CLOSE_OUT_PROMPT, PR_REPLY_CLOSE_OUT_PROMPT, PR_REVIEW_CLOSE_OUT_PROMPT } from "./prompts"
 import { makeProgressRecorder, parseToolInput } from "./progress"
+import { makeReviewCoverage } from "./review-coverage"
+import { reviewFailureError, reviewFailureReason } from "./review-failure"
+import { makeReviewLedger } from "./review-ledger"
 import {
 	investigationForSession,
 	isAutonomousTurn,
 	makeRunUsage,
 	prReplyForSession,
 	prReviewForSession,
+	savedFindingsRequest,
 	SUBMIT_DIAGNOSIS,
 } from "./tools"
 
@@ -61,22 +65,16 @@ import { summarizeCause } from "@maple/backend/platform/describe-cause"
 import { trackTokenUsage } from "@maple/backend/services/billing/autumn-tracker"
 
 /**
- * The engine's per-response-part bookkeeping, which is named and therefore traced.
+ * The engine's per-step bookkeeping, which is named and therefore traced.
  *
- * `AgentRuntime.ownModelResponsePart` is an `Effect.fn` on the hot path: one zero-duration span per
- * streamed delta. A model that streams a delta per reasoning token turns one investigation into
- * thousands of spans carrying nothing. Measured on the internal org 2026-09-18: 472,523 spans on
- * this service for 71 investigations, about 6,655 each, 99.8% of them this one name.
+ * Until effect-agent beta.104 this list also held `AgentRuntime.ownModelResponsePart`, one span per
+ * streamed delta: 99.8% of this service's spans on 2026-09-18, evicting the run's real spans from
+ * the SDK's 10,000-span buffer. Upstream removed it; these are the zero-content leftovers.
  *
- * Dropping them is a correctness fix before it is a cost one. The SDK's span buffer holds 10,000
- * and discards silently past that, so the deltas were evicting the spans that say what the run
- * actually did. Two hours that day exported exactly 10,000 spans and no `chat.turn` at all.
- *
- * Named one by one rather than by an `AgentRuntime.` prefix: `AgentRuntime.run` and
- * `AgentRuntime.model` are the run, and `dropSpanNames` matches on prefix.
+ * Named one by one rather than by an `AgentRuntime.` prefix: `AgentRuntime.model` is the model
+ * call, and `dropSpanNames` matches on prefix.
  */
 const ENGINE_BOOKKEEPING_SPANS = [
-	"AgentRuntime.ownModelResponsePart",
 	"AgentRuntime.estimateContextTokens",
 	"AgentRuntime.nextContextEstimate",
 	"AgentRuntime.decodeEventJson",
@@ -124,7 +122,6 @@ const NO_DIAGNOSIS_MESSAGE = "Maple ended this investigation without a diagnosis
 /** What the row records when the pass and its close-out both ended in prose or on an error. */
 const NO_DIAGNOSIS_ERROR = "no_diagnosis: the agent ended its pass without submitting a diagnosis; retry"
 const NO_REVIEW_MESSAGE = "Maple ended this review without a report."
-const NO_REVIEW_ERROR = "no_review: the agent ended its pass without submitting a review; retry"
 const NO_REPLY_MESSAGE = "Maple ended this answer without posting it."
 const NO_REPLY_ERROR = "no_reply: the agent ended its pass without submitting an answer"
 
@@ -318,6 +315,34 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 		const conversations = yield* PrReviewConversationService
 		const toolExecutor = yield* McpToolExecutor
 		const runTenant = yield* withConnectorActor(tenant, origin)
+		// Clone the commit while the model reads the diff, rather than when its first source tool
+		// asks and waits on it. A child of the turn: a clone still running when the turn ends
+		// carries on in the container.
+		if (prReviewId !== undefined) {
+			yield* reviews.reviewTarget(tenant.orgId, prReviewId).pipe(
+				Effect.flatMap(
+					Option.match({
+						onNone: () => Effect.void,
+						onSome: (target) =>
+							toolExecutor.prepareRepository(runTenant, {
+								repository: target.repository,
+								ref: target.headSha,
+							}),
+					}),
+				),
+				Effect.catch((error) =>
+					Effect.logInfo("Could not prepare the review's checkout").pipe(
+						Effect.annotateLogs({ sessionId: input.sessionId, error: error.message }),
+					),
+				),
+				Effect.forkChild,
+			)
+		}
+		// An investigation picks its commit from telemetry mid-pass, so warm the repositories it
+		// could read instead: the deployed commit then clones from a filled mirror in seconds.
+		if (investigationId !== undefined) {
+			yield* toolExecutor.prepareConnectedRepositories(runTenant).pipe(Effect.forkChild)
+		}
 		const history = input.session.history()
 		const model = (
 			prReviewId === undefined && prReplyId === undefined ? resolveTriageModel : resolveReviewModel
@@ -331,6 +356,13 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 		const text = latest?.role === "user" ? latest.text : ""
 		const prior = latest?.role === "user" ? spoken.slice(0, -1) : spoken
 		const autonomous = isAutonomousTurn(input.sessionId, origin)
+		// One per review turn: the close-out sees what the pass read and keeps what it saved.
+		const review =
+			prReviewId !== undefined && autonomous
+				? { coverage: makeReviewCoverage(text), ledger: makeReviewLedger() }
+				: undefined
+		// Why the pass, or else its close-out, stopped; the first reason is the one the PR is told.
+		let failure: PrReviewFailureReason | undefined
 		const holdsTurn = () => input.session.holdsTurn(input.messageId)
 		// An autonomous pass ends when the runner says so, not when a run does: a run that stopped
 		// in prose or died on a model error gets one close-out turn first, so its terminal is held
@@ -353,6 +385,7 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 				submitReply: conversations.submitReply,
 				stageEdit: conversations.stageEdit,
 				...(turn.closeOut === true ? { closeOut: true } : undefined),
+				...(review === undefined ? undefined : { review }),
 				text: turn.text,
 				history: turn.history,
 				usage,
@@ -389,7 +422,10 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 				Effect.catchCause((cause) =>
 					Cause.hasInterruptsOnly(cause)
 						? Effect.failCause(cause)
-						: Effect.logWarning("Autonomous pass failed; closing it out").pipe(
+						: Effect.sync(() => {
+								failure ??= reviewFailureReason(cause)
+							}).pipe(
+								Effect.andThen(Effect.logWarning("Autonomous pass failed; closing it out")),
 								Effect.annotateLogs({
 									sessionId: input.sessionId,
 									messageId: input.messageId,
@@ -414,6 +450,8 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 		const first = yield* recoverAutonomousFailure(run({ text, history: prior }))
 		observability.compactions = first.compactions
 		let submitted = first.submitted
+		// Exhausted rather than failed: the engine's final answer ended in prose, not a report.
+		if (!submitted && held?.reason === "max-steps") failure ??= "step_limit"
 		if (!submitted && holdsTurn()) {
 			held = undefined
 			const closeOut = yield* recoverAutonomousFailure(
@@ -463,10 +501,35 @@ export const runChatSessionTurn = async (input: RunChatSessionTurnInput): Promis
 						),
 					)
 			}
+			// Findings the pass saved are posted as a partial rather than lost with the report.
+			const saved = review?.ledger.findings() ?? []
+			if (!submitted && prReviewId !== undefined && review !== undefined && saved.length > 0) {
+				submitted = yield* reviews
+					.submitReview(
+						tenant.orgId,
+						prReviewId,
+						savedFindingsRequest({
+							findings: saved,
+							unreviewed: review.coverage.unread(),
+							modelName: model.name,
+							usage,
+						}),
+					)
+					.pipe(
+						Effect.as(true),
+						Effect.catchCause((cause) =>
+							Effect.logError("Could not file the saved findings", cause).pipe(
+								Effect.as(false),
+							),
+						),
+					)
+				yield* Effect.annotateCurrentSpan("maple.pr_review.filed_saved_findings", submitted)
+			}
 			if (!submitted && prReviewId !== undefined) {
 				observability.failureReason = "NoReview"
+				yield* Effect.annotateCurrentSpan("maple.pr_review.failure_reason", failure ?? "no_report")
 				yield* reviews
-					.failReview(tenant.orgId, prReviewId, NO_REVIEW_ERROR)
+					.failReview(tenant.orgId, prReviewId, reviewFailureError(failure ?? "no_report"))
 					.pipe(
 						Effect.catchCause((cause) =>
 							Effect.logError("Could not record the failed review", cause),

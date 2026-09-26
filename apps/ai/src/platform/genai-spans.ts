@@ -26,6 +26,7 @@ import type * as Prompt from "effect/unstable/ai/Prompt"
 import * as Telemetry from "effect/unstable/ai/Telemetry"
 import * as Tool from "effect/unstable/ai/Tool"
 import type * as Toolkit from "effect/unstable/ai/Toolkit"
+import { coalesceDeltas } from "./coalesce-deltas"
 
 /**
  * Per-attribute size budgets, in JSON characters.
@@ -367,6 +368,8 @@ const idleTimeout = (): AiError.AiError =>
 export const instrumentLanguageModel = <R>(
 	make: Effect.Effect<LanguageModel.LanguageModel, never, R>,
 	telemetry: ModelCallTelemetry,
+	/** Join streamed deltas (see `coalesceDeltas`); for models only unattended runs use. */
+	instrumentation: { readonly coalesceDeltas?: boolean } = {},
 ): Effect.Effect<LanguageModel.LanguageModel, never, R> =>
 	make.pipe(
 		Effect.map((service) => ({
@@ -395,6 +398,9 @@ export const instrumentLanguageModel = <R>(
 									duration: MODEL_STREAM_IDLE_TIMEOUT,
 									orElse: () => Stream.fail(idleTimeout()),
 								}),
+								// After the idle timeout, which must keep seeing every raw delta.
+								(stream) =>
+									instrumentation.coalesceDeltas === true ? coalesceDeltas(stream) : stream,
 								Stream.provideService(
 									Telemetry.CurrentSpanTransformer,
 									modelCallTransformer(telemetry, timing),

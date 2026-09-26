@@ -53,7 +53,13 @@ export const HttpTriageLive = HttpApiBuilder.group(MapleAiApi, "triage", (handle
 			}
 
 			const env = yield* WorkerEnvironment
-			return yield* classifyIncident({ request: payload, model: resolveDecisionModel(env) }).pipe(
+			const model = resolveDecisionModel(env)
+			if (model === undefined) {
+				return yield* new IncidentTriageModelError({
+					message: "no decision model is served in this region",
+				})
+			}
+			return yield* classifyIncident({ request: payload, model }).pipe(
 				Effect.mapError((error) => new IncidentTriageModelError({ message: error.message })),
 			)
 		}),

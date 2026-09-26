@@ -6,12 +6,7 @@
  * pointed at another organization's repository.
  */
 import type { OrgId } from "@maple/domain/http"
-import {
-	NetworkDisabled,
-	SandboxImplementation,
-	SandboxMount,
-	SandboxRuntime,
-} from "@effect-agent/sandbox/Sandbox"
+import { NetworkDisabled, SandboxImplementation, SandboxMount, SandboxRuntime } from "effect-agent/sandbox"
 import { Option, Schema } from "effect"
 
 export const REPO_SANDBOX_RUNTIME = new SandboxRuntime({

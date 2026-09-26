@@ -240,6 +240,42 @@ describe("DigestService.runDigestTick", () => {
 		}).pipe(Effect.provide(layer))
 	})
 
+	it.effect("sends nothing to an org that ingested no data this week", () => {
+		const { sends, layer } = makeHarness({})
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(TICK_MS)
+			const id = yield* seedSub({ email: "a@example.com" })
+
+			const digest = yield* DigestService
+			const result = yield* digest.runDigestTick()
+
+			assert.deepStrictEqual(sends, [])
+			assert.strictEqual(result.sentCount, 0)
+			assert.strictEqual(result.errorCount, 0)
+
+			// Claimed for the day so later ticks don't re-query, but never marked sent.
+			const row = yield* getSub(id)
+			assert.strictEqual(row.lastSentAt, null)
+			assert.strictEqual(row.lastAttemptedAt?.getTime(), TICK_MS)
+		}).pipe(Effect.provide(layer))
+	})
+
+	it.effect("sends nothing to an org that only had data the previous week", () => {
+		const { sends, layer } = makeHarness({
+			service_overview_compare: [overview({ serviceName: "checkout-api", period: "previous" })],
+		})
+		return Effect.gen(function* () {
+			yield* TestClock.setTime(TICK_MS)
+			yield* seedSub({ email: "a@example.com" })
+
+			const digest = yield* DigestService
+			const result = yield* digest.runDigestTick()
+
+			assert.deepStrictEqual(sends, [])
+			assert.strictEqual(result.sentCount, 0)
+		}).pipe(Effect.provide(layer))
+	})
+
 	it.effect("a second tick the same day sends nothing", () => {
 		const { sends, layer } = makeHarness()
 		return Effect.gen(function* () {

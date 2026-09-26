@@ -1,4 +1,4 @@
-import { Cause, Clock, Duration, Effect, HashMap, Option, Ref, Schedule, Schema } from "effect"
+import { Cause, Clock, Deferred, Duration, Effect, HashMap, Option, Ref, Schedule, Schema } from "effect"
 import { trackOutboundSlot } from "@maple/cache"
 import {
 	MAX_RAW_SQL_RESULT_BYTES,
@@ -161,6 +161,33 @@ const clientTimeoutMs = (
 export const makeWarehouseExecutor = (deps: WarehouseExecutorDeps): WarehouseQueryServiceApi => {
 	const clientCache = Ref.makeUnsafe(HashMap.empty<string, CachedClient>())
 	const capabilitiesCache = Ref.makeUnsafe(HashMap.empty<string, CachedCapabilities>())
+	const inflightProbes = Ref.makeUnsafe(HashMap.empty<string, Deferred.Deferred<WarehouseCapabilities>>())
+
+	/**
+	 * Run `probe` once per key however many callers miss the cache together
+	 * (`deps.coalesceCapabilityProbes`). The probe runs detached, so a caller
+	 * that is interrupted stops waiting without cancelling it for the others.
+	 */
+	const coalesceProbe = (key: string, probe: Effect.Effect<WarehouseCapabilities>) =>
+		Effect.gen(function* () {
+			const mine = yield* Deferred.make<WarehouseCapabilities>()
+			const leader = yield* Ref.modify(inflightProbes, (current) => {
+				const existing = HashMap.get(current, key)
+				return Option.isSome(existing)
+					? [existing.value, current]
+					: [mine, HashMap.set(current, key, mine)]
+			})
+			if (leader === mine) {
+				yield* Effect.forkDetach(
+					probe.pipe(
+						Effect.exit,
+						Effect.flatMap((exit) => Deferred.done(mine, exit)),
+						Effect.ensuring(Ref.update(inflightProbes, HashMap.remove(key))),
+					),
+				)
+			}
+			return yield* Deferred.await(leader)
+		})
 
 	const getCachedOrCreateClient = (
 		cacheKey: string,
@@ -338,7 +365,8 @@ WHERE name = 'enable_full_text_index'`,
 		// Deferred between capability probes: its leader can own Cloudflare I/O
 		// that a follower request is forbidden to await. The completed
 		// capabilities are plain data and remain safe to cache across requests.
-		const capabilities = yield* inspectCapabilities(
+		// Hosts outside a Worker opt in to sharing via `coalesceCapabilityProbes`.
+		const probe = inspectCapabilities(
 			getCachedOrCreateClient(resolved.clientCacheKey, resolved.config, nowMs),
 			!dialect.stripTinybirdRestrictedSettings,
 		).pipe(
@@ -366,6 +394,9 @@ WHERE name = 'enable_full_text_index'`,
 				},
 			}),
 		)
+		const capabilities = yield* deps.coalesceCapabilityProbes
+			? coalesceProbe(resolved.clientCacheKey, probe)
+			: probe
 		yield* Effect.annotateCurrentSpan({
 			"maple.query.capabilities.cache": "miss",
 			"maple.query.capabilities.metadata_available": capabilities.metadataAvailable,
@@ -489,7 +520,11 @@ WHERE name = 'enable_full_text_index'`,
 			resolved.clientCacheKey,
 			resolved.config,
 			yield* Clock.currentTimeMillis,
-		).pipe(Effect.mapError((error) => mapWarehouseError(pipe, error, execution === "raw" ? "caller" : "maple")))
+		).pipe(
+			Effect.mapError((error) =>
+				mapWarehouseError(pipe, error, execution === "raw" ? "caller" : "maple"),
+			),
+		)
 		const attemptTimeoutMs = clientTimeoutMs(options?.profile, settings?.maxExecutionTime)
 		const retryAttempts = yield* Ref.make(0)
 		// A caller-supplied budget wins: a trusted query that knows its own response

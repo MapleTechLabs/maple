@@ -34,7 +34,7 @@ import {
 	type SandboxError,
 	type SandboxEvent,
 	type SandboxRequest,
-} from "@effect-agent/sandbox/Sandbox"
+} from "effect-agent/sandbox"
 import { Duration, Effect, Layer, Option, Schedule, Schema, Stream } from "effect"
 import { SandboxClient } from "@maple/backend/sandbox/client"
 import {
@@ -217,8 +217,9 @@ export const toEvents = (
 		case "SandboxRunUnavailable":
 			// All three mean the command never started. The contract reserves
 			// `SandboxExitError` for a process that ran, and says an exit is never
-			// fabricated, so none of these may borrow it.
-			return Effect.fail(spawnError(request.command, response.message))
+			// fabricated, so none of these may borrow it. The answer rides as the cause
+			// so a caller can tell a clone still running from one that failed.
+			return Effect.fail(spawnError(request.command, response.message, response))
 	}
 }
 
@@ -300,6 +301,7 @@ export const makeCloudflareRepoSandbox = (deps: CloudflareRepoSandboxDeps): Sand
 					return yield* spawnError(
 						request.command,
 						`The checkout of ${checkout.fullName} at ${checkout.sha} is still being cloned after ${Duration.toSeconds(CHECKOUT_WAIT)}s. The clone continues in the background: gather other evidence first and come back to this repository later rather than calling again immediately.`,
+						answered.value,
 					)
 				return Stream.fromIterable(yield* toEvents(request, answered.value))
 			}),

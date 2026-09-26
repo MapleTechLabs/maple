@@ -13,6 +13,7 @@ import { start, stop, reset, checkpoint, restore } from "./commands/server"
 import { schema } from "./commands/schema"
 import { archive } from "./commands/archive"
 import { update } from "./commands/update"
+import { OutputFormatSetting } from "./lib/output"
 
 // One CLI, two backends. Every query command bottoms out at the shared
 // `WarehouseExecutor`; the active mode (local chDB vs remote warehouse) is
@@ -38,11 +39,8 @@ export const cli = Command.make("maple").pipe(
 			Flag.withDescription("Print compiled SQL and per-query timing to stderr"),
 			Flag.withDefault(false),
 		),
-		format: Flag.Literals("format", ["json", "table"]).pipe(
-			Flag.withDescription("Output format for query results (default: json)"),
-			Flag.withDefault("json" as const),
-		),
 	}),
+	Command.withGlobalFlags([OutputFormatSetting]),
 	Command.withSubcommands([
 		// Server (local mode)
 		start,

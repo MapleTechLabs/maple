@@ -1773,6 +1773,75 @@ export class WebAnalyticsBreakdownsResponse extends Schema.Class<WebAnalyticsBre
 	}),
 }) {}
 
+// Web Analytics AI tab: referrals under the page's filters, crawls under host/path only.
+
+export class WebAnalyticsAiReferralsRequest extends Schema.Class<WebAnalyticsAiReferralsRequest>(
+	"WebAnalyticsAiReferralsRequest",
+)({
+	startTime: TinybirdDateTime,
+	endTime: TinybirdDateTime,
+	bucketSeconds: Schema.optional(BucketSeconds),
+	...WebAnalyticsFilterFields,
+}) {}
+
+export class WebAnalyticsAiReferralsResponse extends Schema.Class<WebAnalyticsAiReferralsResponse>(
+	"WebAnalyticsAiReferralsResponse",
+)({
+	data: Schema.Array(
+		Schema.Struct({
+			bucket: Schema.String,
+			/** An `AI_PRODUCTS` id from `@maple/domain/ai-traffic`. */
+			product: Schema.String,
+			sessions: Schema.Number,
+		}),
+	),
+}) {}
+
+export class WebAnalyticsAiCrawlersRequest extends Schema.Class<WebAnalyticsAiCrawlersRequest>(
+	"WebAnalyticsAiCrawlersRequest",
+)({
+	startTime: TinybirdDateTime,
+	endTime: TinybirdDateTime,
+	host: Schema.optional(Schema.String),
+	pagePath: Schema.optional(Schema.String),
+	pagesLimit: Schema.optional(RowLimit),
+}) {}
+
+export class WebAnalyticsAiCrawlersResponse extends Schema.Class<WebAnalyticsAiCrawlersResponse>(
+	"WebAnalyticsAiCrawlersResponse",
+)({
+	data: Schema.Struct({
+		crawlers: Schema.Array(
+			Schema.Struct({
+				/** An `AI_CRAWLERS` name from `@maple/domain/ai-traffic`. */
+				crawler: Schema.String,
+				requests: Schema.Number,
+				failedRequests: Schema.Number,
+				pages: Schema.Number,
+				lastSeen: Schema.String,
+			}),
+		),
+		formats: Schema.Array(
+			Schema.Struct({
+				format: Schema.Literals(["markdown", "llms", "html", "other"]),
+				requests: Schema.Number,
+				failedRequests: Schema.Number,
+				pages: Schema.Number,
+				crawlers: Schema.Array(Schema.String),
+			}),
+		),
+		pages: Schema.Array(
+			Schema.Struct({
+				host: Schema.String,
+				path: Schema.String,
+				requests: Schema.Number,
+				crawlers: Schema.Array(Schema.String),
+				lastSeen: Schema.String,
+			}),
+		),
+	}),
+}) {}
+
 // Product events — funnels
 //
 // Step-based conversion funnels over `product_events` (browser page views and
@@ -2930,6 +2999,20 @@ export class QueryEngineApiGroup extends HttpApiGroup.make("queryEngine")
 		HttpApiEndpoint.post("webAnalyticsBreakdowns", "/web-analytics-breakdowns", {
 			payload: WebAnalyticsBreakdownsRequest,
 			success: WebAnalyticsBreakdownsResponse,
+			error: queryEngineEndpointErrors,
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("webAnalyticsAiReferrals", "/web-analytics-ai-referrals", {
+			payload: WebAnalyticsAiReferralsRequest,
+			success: WebAnalyticsAiReferralsResponse,
+			error: queryEngineEndpointErrors,
+		}),
+	)
+	.add(
+		HttpApiEndpoint.post("webAnalyticsAiCrawlers", "/web-analytics-ai-crawlers", {
+			payload: WebAnalyticsAiCrawlersRequest,
+			success: WebAnalyticsAiCrawlersResponse,
 			error: queryEngineEndpointErrors,
 		}),
 	)

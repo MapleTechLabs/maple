@@ -30,11 +30,11 @@ const counts = Object.fromEntries(
 ) as Record<StatusKey, number>
 const shippedCount = counts.shipped
 
-// "Now / Next / Later" lanes — lead with momentum, not the shipped wall.
+// "Now / Next / Later" lanes lead; the shipped ledger follows.
 const lanes: { key: StatusKey; kicker: string; blurb: string }[] = [
 	{ key: "in-progress", kicker: "Now", blurb: "Being built right now." },
 	{ key: "planned", kicker: "Next", blurb: "Committed and queued up." },
-	{ key: "exploring", kicker: "Later", blurb: "On the radar — scoping." },
+	{ key: "exploring", kicker: "Later", blurb: "On the radar, still being scoped." },
 ]
 
 // Shipped ledger, newest shipments first.
@@ -129,7 +129,7 @@ const shippedItems = sorted
 										<span class={`font-mono text-[10px] uppercase tracking-wider px-1.5 py-0.5 border ${categoryStyles[item.data.category] ?? "border-border text-fg-muted"}`}>
 											{item.data.category}
 										</span>
-										<span class="font-mono text-[10px] text-fg-muted">{item.data.quarter}</span>
+										{item.data.quarter && <span class="font-mono text-[10px] text-fg-muted">{item.data.quarter}</span>}
 									</div>
 									<h3 class="text-sm font-semibold text-fg leading-snug mb-1.5">{item.data.title}</h3>
 									<p class="text-[13px] text-fg-muted leading-relaxed">{item.data.description}</p>

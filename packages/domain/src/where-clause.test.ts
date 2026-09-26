@@ -290,6 +290,27 @@ describe("parseWhereClause", () => {
 	})
 })
 
+describe("parseWhereClause operator coverage", () => {
+	// Consumers switch on `operator`; each one the grammar accepts must reach them with the
+	// key as typed, so a case-sensitive attribute key survives.
+	it.each([
+		["attr.userId = 1", "=", "1"],
+		["attr.userId != 1", "!=", "1"],
+		["attr.userId > 1", ">", "1"],
+		["attr.userId < 1", "<", "1"],
+		["attr.userId >= 1", ">=", "1"],
+		["attr.userId <= 1", "<=", "1"],
+		['attr.userId contains "a"', "contains", "a"],
+		['attr.userId !contains "a"', "!contains", "a"],
+		["attr.userId exists", "exists", ""],
+		["attr.userId !exists", "!exists", ""],
+	])("%s", (expression, operator, value) => {
+		const result = parseWhereClause(expression)
+		expect(result.warnings).toEqual([])
+		expect(result.clauses).toEqual([{ key: "attr.userid", rawKey: "attr.userId", operator, value }])
+	})
+})
+
 describe("quoteWhereValue", () => {
 	it("picks the quote the value does not contain, so the parser reads it back verbatim", () => {
 		for (const value of ["plain", "it's", 'say "hi"', "%a_b%", "back\\slash"]) {
@@ -297,6 +318,13 @@ describe("quoteWhereValue", () => {
 			expect(result.warnings).toEqual([])
 			expect(result.clauses[0]?.value).toBe(value)
 		}
+	})
+
+	it("has no escape character: a backslash-escaped quote is not read back as a quote", () => {
+		const escaped = parseWhereClause('k = "say \\"hi\\""')
+		expect(escaped.clauses.map((clause) => clause.value)).not.toContain('say "hi"')
+		const quoted = parseWhereClause(`k = ${quoteWhereValue('say "hi"')}`)
+		expect(quoted.clauses[0]?.value).toBe('say "hi"')
 	})
 
 	it("leaves a value carrying both quote kinds for the parser to reject, never altered", () => {

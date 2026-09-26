@@ -7,6 +7,8 @@ import BottomCTA from "../../components/BottomCTA.astro";
 import SeoHead from "../../components/SeoHead.astro";
 import PostCover from "../../components/blog/PostCover.astro";
 import PostCard from "../../components/blog/PostCard.astro";
+import ArticleEnhancements from "../../components/blog/ArticleEnhancements.astro";
+import TableOfContents from "../../components/TableOfContents.astro";
 import { CATEGORY_META, formatDate, isoDate, readingTime, getSortedPosts } from "../../lib/blog";
 import { MapleMark } from "@maple/ui/components/icons/maple-mark";
 
@@ -24,7 +26,7 @@ const { Content, headings } = await render(post);
 
 const minutes = readingTime(post.body);
 const catLabel = category ? CATEGORY_META[category].label : undefined;
-const toc = headings.filter((h) => h.depth >= 2 && h.depth <= 3);
+const hasToc = headings.some((h) => h.depth === 2);
 
 // "Read next" — newest other posts.
 const all = await getSortedPosts();
@@ -53,7 +55,6 @@ const jsonLd = {
 
 const backLink =
     "inline-flex items-center gap-1.5 font-mono text-xs text-fg-muted transition-colors hover:text-primary";
-const hasToc = toc.length > 0;
 ---
 
 <Layout title={pageTitle} description={description} image={cover} ogType="article">
@@ -71,7 +72,7 @@ const hasToc = toc.length > 0;
 
     <article class="relative pt-[19px]">
         <div class="mx-auto max-w-6xl px-6 pt-20 md:pt-24">
-            <div class:list={["lg:grid lg:gap-16", hasToc && "lg:grid-cols-[minmax(0,1fr)_13rem]"]}>
+            <div class:list={["lg:grid lg:gap-16", hasToc && "lg:grid-cols-[minmax(0,1fr)_14rem]"]}>
                 {/* ── Main column: one centered reading measure ── */}
                 <div class="min-w-0">
                     <div class="mx-auto w-full max-w-[42rem]">
@@ -119,22 +120,16 @@ const hasToc = toc.length > 0;
                             />
                         </div>
 
-                        {/* On this page — collapsible, small screens only */}
+                        {/* On this page: collapsible, small screens only */}
                         {hasToc && (
                             <details class="group mt-10 border border-border lg:hidden">
                                 <summary class="flex cursor-pointer list-none items-center justify-between px-4 py-3 font-mono text-[10px] uppercase tracking-[0.14em] text-fg-muted [&::-webkit-details-marker]:hidden">
                                     On this page
                                     <span class="transition-transform group-open:rotate-180" aria-hidden="true">▾</span>
                                 </summary>
-                                <ul class="m-0 list-none space-y-2.5 border-t border-border px-4 py-3.5">
-                                    {toc.map((h) => (
-                                        <li class:list={[h.depth === 3 && "pl-4"]}>
-                                            <a href={`#${h.slug}`} class="font-mono text-[13px] leading-snug text-fg-muted transition-colors hover:text-foreground">
-                                                {h.text}
-                                            </a>
-                                        </li>
-                                    ))}
-                                </ul>
+                                <div class="border-t border-border px-4 py-3.5">
+                                    <TableOfContents headings={headings} maxDepth={2} spy={false} showLabel={false} />
+                                </div>
                             </details>
                         )}
 
@@ -163,32 +158,7 @@ const hasToc = toc.length > 0;
                 {/* ── On this page (sticky TOC) ── */}
                 {hasToc && (
                     <aside class="hidden lg:block">
-                        <nav aria-label="On this page" class="sticky top-28">
-                            <p class="mb-3 font-mono text-[10px] uppercase tracking-[0.14em] text-fg-muted">On this page</p>
-                            <ul class="space-y-2.5 border-l border-border">
-                                {toc.map((h) => (
-                                    <li>
-                                        <a
-                                            href={`#${h.slug}`}
-                                            data-toc-link
-                                            class:list={[
-                                                "-ml-px block border-l border-transparent pl-3.5 text-[13px] leading-snug text-fg-muted transition-colors hover:text-foreground data-[active=true]:border-primary data-[active=true]:text-foreground",
-                                                h.depth === 3 && "pl-6",
-                                            ]}
-                                        >
-                                            {h.text}
-                                        </a>
-                                    </li>
-                                ))}
-                            </ul>
-                            <a
-                                href="#top"
-                                data-back-to-top
-                                class="mt-5 inline-flex items-center gap-1.5 font-mono text-[11px] text-fg-muted transition-colors hover:text-primary"
-                            >
-                                <span aria-hidden="true">↑</span> back to top
-                            </a>
-                        </nav>
+                        <TableOfContents headings={headings} maxDepth={2} class="sticky top-28 max-h-[calc(100vh-9rem)] overflow-y-auto" />
                     </aside>
                 )}
             </div>
@@ -216,68 +186,5 @@ const hasToc = toc.length > 0;
     <BottomCTA />
     <Footer />
 
-    <script is:inline>
-        (() => {
-            const article = document.querySelector("article");
-            const heads = Array.from(document.querySelectorAll(".docs-content h2[id], .docs-content h3[id]"));
-
-            /* Section permalinks — hover-revealed "#" on every heading. */
-            for (const h of heads) {
-                const a = document.createElement("a");
-                a.className = "heading-anchor";
-                a.href = `#${h.id}`;
-                a.textContent = "#";
-                a.setAttribute("aria-label", `Link to “${h.textContent.trim()}”`);
-                h.appendChild(a);
-            }
-
-            /* Reading progress across the article body. */
-            const bar = document.querySelector("[data-read-progress]");
-            const onScroll = () => {
-                if (!bar || !article) return;
-                const rect = article.getBoundingClientRect();
-                const total = rect.height - window.innerHeight;
-                const read = total > 0 ? Math.min(1, Math.max(0, -rect.top / total)) : 0;
-                // Tailwind's scale-x-0 is the CSS `scale` property, so drive that.
-                bar.style.scale = `${read} 1`;
-            };
-
-            /* TOC active state — the last heading above the reading line wins,
-               so scrolling back up hands the highlight back correctly. */
-            const links = Array.from(document.querySelectorAll("[data-toc-link]"));
-            const byId = new Map(links.map((l) => [decodeURIComponent(l.getAttribute("href").slice(1)), l]));
-            const setActive = () => {
-                if (!links.length || !heads.length) return;
-                const line = 96;
-                let current = heads[0];
-                for (const h of heads) {
-                    if (h.getBoundingClientRect().top <= line) current = h;
-                    else break;
-                }
-                links.forEach((l) => l.removeAttribute("data-active"));
-                const a = byId.get(current.id);
-                if (a) a.setAttribute("data-active", "true");
-            };
-
-            let raf = 0;
-            const onFrame = () => {
-                raf = 0;
-                onScroll();
-                setActive();
-            };
-            addEventListener("scroll", () => { if (!raf) raf = requestAnimationFrame(onFrame); }, { passive: true });
-            onFrame();
-
-            /* Copy-link with inline confirmation. */
-            const copy = document.querySelector("[data-copy-link]");
-            const label = document.querySelector("[data-copy-label]");
-            copy?.addEventListener("click", () => {
-                navigator.clipboard.writeText(location.origin + location.pathname).then(() => {
-                    if (!label) return;
-                    label.textContent = "copied";
-                    setTimeout(() => { label.textContent = "copy link"; }, 1600);
-                });
-            });
-        })();
-    </script>
+    <ArticleEnhancements />
 </Layout>

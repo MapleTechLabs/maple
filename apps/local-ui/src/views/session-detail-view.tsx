@@ -21,19 +21,21 @@ import {
 	useLocalSessionTraces,
 	useLocalSessionTranscript,
 } from "../hooks/use-local-session-detail"
-import { formatRelativeTime } from "../lib/time"
+import { hrefFor } from "../lib/router"
+import { formatLocalDateTime, formatRelativeTime, formatUtcTitle, parseClickHouseDateTime } from "../lib/time"
 import { formatSessionDuration, gradientFor, hostFromUrl, isMobileDevice } from "@maple/ui/lib/replay-format"
 import { ErrorState } from "../components/view-states"
 import { RefreshButton } from "../components/toolbar"
 
 interface SessionDetailViewProps {
 	sessionId: string
+	backLabel: string
 	onBack: () => void
-	onSelectTrace: (traceId: string) => void
 }
 
-export function SessionDetailView({ sessionId, onBack, onSelectTrace }: SessionDetailViewProps) {
-	const { data: session, isPending, isError, error } = useLocalSessionDetail(sessionId)
+export function SessionDetailView({ sessionId, backLabel, onBack }: SessionDetailViewProps) {
+	const detail = useLocalSessionDetail(sessionId)
+	const { data: session, isPending, isError, error } = detail
 	const traceIds = session?.traceIds ?? []
 	const traces = useLocalSessionTraces(traceIds)
 	const transcript = useLocalSessionTranscript(sessionId)
@@ -48,12 +50,12 @@ export function SessionDetailView({ sessionId, onBack, onSelectTrace }: SessionD
 			<div className="flex shrink-0 items-center gap-3 border-b px-4 py-2">
 				<Button variant="ghost" size="sm" onClick={onBack} className="gap-1.5">
 					<ArrowLeftIcon size={14} />
-					Sessions
+					{backLabel}
 				</Button>
 				<span className="truncate font-mono text-xs text-muted-foreground" title={sessionId}>
 					{sessionId}
 				</span>
-				<RefreshButton className="ml-auto" />
+				<RefreshButton className="ml-auto" since={detail.dataUpdatedAt} />
 			</div>
 
 			<div className="min-h-0 flex-1 overflow-auto">
@@ -62,7 +64,7 @@ export function SessionDetailView({ sessionId, onBack, onSelectTrace }: SessionD
 						<Spinner />
 					</div>
 				) : isError ? (
-					<ErrorState label="session" error={error} />
+					<ErrorState label="session" error={error} onRetry={() => detail.refetch()} />
 				) : !session ? (
 					<div className="flex h-full items-center justify-center text-sm text-muted-foreground">
 						Session not found.
@@ -88,7 +90,10 @@ export function SessionDetailView({ sessionId, onBack, onSelectTrace }: SessionD
 										{session.browserName || "Unknown"}
 										{session.osName ? ` · ${session.osName}` : ""}
 									</span>
-									<span className="inline-flex items-center gap-1.5">
+									<span
+										className="inline-flex items-center gap-1.5"
+										title={`${formatLocalDateTime(session.startTime)} (${formatUtcTitle(session.startTime)})`}
+									>
 										<ClockIcon className="size-3.5 opacity-60" />
 										started {formatRelativeTime(session.startTime)}
 									</span>
@@ -142,9 +147,10 @@ export function SessionDetailView({ sessionId, onBack, onSelectTrace }: SessionD
 										<ul className="space-y-1.5">
 											{(traces.data ?? []).map((trace) => (
 												<li key={trace.traceId}>
-													<button
-														type="button"
-														onClick={() => onSelectTrace(trace.traceId)}
+													<a
+														href={hrefFor(
+															`/traces/${encodeURIComponent(trace.traceId)}`,
+														)}
 														className="group flex w-full items-center gap-2 rounded-lg border px-2.5 py-2 text-left transition-colors hover:border-primary/40 hover:bg-accent/40"
 													>
 														<span
@@ -172,7 +178,7 @@ export function SessionDetailView({ sessionId, onBack, onSelectTrace }: SessionD
 															size={14}
 															className="shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100"
 														/>
-													</button>
+													</a>
 												</li>
 											))}
 										</ul>
@@ -206,15 +212,10 @@ export function SessionDetailView({ sessionId, onBack, onSelectTrace }: SessionD
 
 // Transcript
 
-function parseChTime(value: string | null | undefined): number {
-	if (!value) return NaN
-	return Date.parse(`${value.replace(" ", "T")}Z`)
-}
-
 function offsetLabel(startTime: string, ts: string): string {
-	const start = parseChTime(startTime)
-	const at = parseChTime(ts)
-	if (Number.isNaN(start) || Number.isNaN(at)) return ""
+	const start = parseClickHouseDateTime(startTime)
+	const at = parseClickHouseDateTime(ts)
+	if (start === null || at === null) return ""
 	const deltaMs = Math.max(0, at - start)
 	if (deltaMs < 1000) return `+${deltaMs}ms`
 	return `+${(deltaMs / 1000).toFixed(1)}s`
@@ -289,7 +290,7 @@ function Transcript({
 function TranscriptBody({ event }: { event: SessionTranscriptOutput }) {
 	switch (event.type) {
 		case "navigation":
-			return <p className="truncate text-xs text-muted-foreground">{event.url || "—"}</p>
+			return <p className="truncate text-xs text-muted-foreground">{event.url || "-"}</p>
 		case "click":
 			return (
 				<p className="truncate text-xs text-muted-foreground">
@@ -309,7 +310,7 @@ function TranscriptBody({ event }: { event: SessionTranscriptOutput }) {
 				<p className="truncate text-xs text-muted-foreground">
 					<span className="font-medium text-foreground">{event.netMethod}</span> {event.netUrl}
 					<span className={cn("ml-1.5 tabular-nums", event.netStatus >= 400 && "text-destructive")}>
-						{event.netStatus || "—"} · {Math.round(event.netDurationMs)}ms
+						{event.netStatus || "-"} · {Math.round(event.netDurationMs)}ms
 					</span>
 				</p>
 			)
@@ -390,7 +391,7 @@ function Field({
 		<div className={cn("min-w-0", className)}>
 			<dt className="text-xs text-muted-foreground">{label}</dt>
 			<dd className="truncate" title={title ?? value}>
-				{value || "—"}
+				{value || "-"}
 			</dd>
 		</div>
 	)

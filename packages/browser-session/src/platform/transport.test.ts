@@ -91,6 +91,14 @@ describe("transport", () => {
 		expect(init.body).toBe(`${JSON.stringify({ session_id: "s1", status: "ended" })}\n`)
 	})
 
+	it("posts without Authorization when no ingest key is set, for a proxy to add", async () => {
+		await postSessionMeta({ ...CONFIG, ingestKey: undefined }, { session_id: "s1" })
+
+		const headers = lastInit(fetchMock).headers as Record<string, string>
+		expect(headers).not.toHaveProperty("Authorization")
+		expect(headers["x-maple-sdk"]).toBe(CONFIG.sdk)
+	})
+
 	it("drops keepalive on an oversized metadata row rather than losing it", async () => {
 		// Realistic shape: 32-hex-char trace ids, the field that used to grow
 		// without bound over a long session.

@@ -17,15 +17,18 @@
 import { execFileSync, spawnSync } from "node:child_process"
 import {
 	SANDBOX_COMMAND_ENV,
+	SANDBOX_MIRROR_DIR,
 	SANDBOX_RUN_AS_USER,
+	SANDBOX_SEED_DIR,
+	SANDBOX_SNAPSHOT_DIR,
 	SANDBOX_WORKSPACE_ROOT,
 	SandboxCheckout,
 	sandboxCredentialPath,
 	shellQuote,
 } from "@maple/domain/sandbox"
-import { checkoutDir, cloneScript, parseTrailer, wrapCommand } from "../src/checkout.ts"
+import { checkoutDir, cloneScript, parseTrailer, snapshotScript, wrapCommand } from "../src/checkout.ts"
 
-const IMAGE = "docker.io/cloudflare/sandbox:0.12.9"
+const IMAGE = "docker.io/cloudflare/sandbox:0.12.10"
 const TOKEN = "ghs_a_secret_that_must_never_land_on_disk"
 const ISOLATION_EXPECTED = process.env.MAPLE_SANDBOX_NO_CAPS ? "unavailable" : "isolated"
 
@@ -49,6 +52,28 @@ const FIXTURE = [
 	// A bare origin the clone can reach with no network.
 	"git clone --quiet --bare /work/src /origin.git",
 ].join("\n")
+
+/** A second commit on `main`, pushed to the origin: what the next pull request review checks out. */
+const SECOND_COMMIT = [
+	"export GIT_AUTHOR_NAME=Test GIT_AUTHOR_EMAIL=t@example.com",
+	"export GIT_COMMITTER_NAME=Test GIT_COMMITTER_EMAIL=t@example.com",
+	"export GIT_AUTHOR_DATE='2026-01-02T00:00:00+0000' GIT_COMMITTER_DATE='2026-01-02T00:00:00+0000'",
+	"cd /work/src",
+	"printf 'b\n' >> README.md",
+	"git commit --quiet -am second",
+	"git push --quiet /origin.git main",
+	"cd /",
+].join("\n")
+
+/** Run the real clone script for `target` inside the current container, reporting its exit. */
+const cloneFor = (target: SandboxCheckout, label: string) =>
+	[
+		`printf '%s' ${shellQuote(TOKEN)} > ${sandboxCredentialPath(target.sha)}`,
+		"(",
+		cloneScript(target),
+		`) > /tmp/clone-${label}.log 2>&1`,
+		`echo "${label}_EXIT=$?"`,
+	].join("\n")
 
 let failures = 0
 const check = (name: string, ok: boolean, detail = "") => {
@@ -118,9 +143,11 @@ if (execFileSync("docker", ["image", "ls", "-q", LOCAL_TAG], { encoding: "utf8" 
 // so one throwaway container builds the fixture and reports its hash. The build is
 // deterministic, so every later container rebuilds the same commit — and if it
 // ever stops being, the clone fails rather than checking out something else.
-const probe = inImage(`set -e\n${FIXTURE}\ngit -C /work/src rev-parse HEAD`)
-const SHA = probe.stdout.trim().split("\n").at(-1) ?? ""
-if (!/^[0-9a-f]{40}$/.test(SHA)) {
+const probe = inImage(
+	`set -e\n${FIXTURE}\ngit -C /work/src rev-parse HEAD\n${SECOND_COMMIT}\ngit -C /work/src rev-parse HEAD`,
+)
+const [SHA = "", SECOND_SHA = ""] = probe.stdout.trim().split("\n").slice(-2)
+if (!/^[0-9a-f]{40}$/.test(SHA) || !/^[0-9a-f]{40}$/.test(SECOND_SHA)) {
 	console.error(`could not build the fixture repository:\n${probe.stdout}\n${probe.stderr}`)
 	process.exit(1)
 }
@@ -133,6 +160,7 @@ const checkout = new SandboxCheckout({
 	remoteUrl: "file:///origin.git",
 	token: TOKEN,
 })
+const secondCheckout = new SandboxCheckout({ ...checkout, sha: SECOND_SHA })
 
 console.log("the clone script")
 {
@@ -160,6 +188,126 @@ console.log("the clone script")
 	check("the token is nowhere on disk", field("TOKEN_ON_DISK") === "", field("TOKEN_ON_DISK"))
 	check("no credential helper is left in the checkout's config", field("HELPER") === "")
 	check("no scratch directory is left behind", field("SCRATCH") === "0")
+}
+
+console.log("\nthe mirror")
+{
+	const second = checkoutDir(SECOND_SHA)
+	const run = inImage(
+		[
+			"set -e",
+			FIXTURE,
+			"set +e",
+			cloneFor(checkout, "FIRST"),
+			SECOND_COMMIT,
+			cloneFor(secondCheckout, "SECOND"),
+			`echo "MIRROR_COUNT=$(ls -d ${shellQuote(SANDBOX_MIRROR_DIR)}* 2>/dev/null | wc -l)"`,
+			`echo "SECOND_HEAD=$(git -C ${shellQuote(second)} rev-parse HEAD 2>&1)"`,
+			`echo "SECOND_HISTORY=$(git -C ${shellQuote(second)} log --oneline 2>/dev/null | wc -l)"`,
+			`echo "ORIGIN_MAIN=$(git -C ${shellQuote(second)} rev-parse origin/main 2>&1)"`,
+			`echo "BORROWS=$(cat ${shellQuote(second)}/.git/objects/info/alternates 2>&1)"`,
+			`echo "PINNED=$(git -C ${shellQuote(SANDBOX_MIRROR_DIR)} for-each-ref --format='%(refname)' refs/maple | wc -l)"`,
+			`echo "MIRROR_GC=$(git -C ${shellQuote(SANDBOX_MIRROR_DIR)} config gc.auto)"`,
+			`echo "MIRROR_REMOTES=$(git -C ${shellQuote(SANDBOX_MIRROR_DIR)} remote | wc -l)"`,
+			`echo "TOKEN_ON_DISK=$(grep -rlF ${shellQuote(TOKEN)} / --exclude-dir=proc --exclude-dir=sys 2>/dev/null | head -n 3)"`,
+			// The agent account reads history through the mirror it borrows objects from.
+			`echo "AGENT_LOG=$(cd ${shellQuote(second)} && runuser -u ${SANDBOX_RUN_AS_USER} -- git log --oneline 2>&1 | wc -l)"`,
+			`echo "AGENT_BLAME=$(cd ${shellQuote(second)} && runuser -u ${SANDBOX_RUN_AS_USER} -- git blame README.md 2>&1 | wc -l)"`,
+			// The backup snapshot: a complete repository, and a hard-link copy rather than a second one.
+			`( ${snapshotScript().replaceAll("\n", " && ")} ); echo "SNAPSHOT_EXIT=$?"`,
+			`git -C ${shellQuote(SANDBOX_SNAPSHOT_DIR)} fsck --connectivity-only >/dev/null 2>&1; echo "SNAPSHOT_FSCK=$?"`,
+			`echo "SNAPSHOT_HAS_SECOND=$(git -C ${shellQuote(SANDBOX_SNAPSHOT_DIR)} cat-file -t ${SECOND_SHA} 2>&1)"`,
+			`echo "SNAPSHOT_PACKS=$(ls ${shellQuote(SANDBOX_SNAPSHOT_DIR)}/objects/pack/*.pack | wc -l)"`,
+			`git -C ${shellQuote(SANDBOX_MIRROR_DIR)} fsck --connectivity-only >/dev/null 2>&1; echo "MIRROR_FSCK_AFTER=$?"`,
+			`echo "LOG_AFTER=$(git -C ${shellQuote(checkoutDir(SECOND_SHA))} log --oneline 2>/dev/null | wc -l)"`,
+			`echo "AGENT_LOCK=$(runuser -u ${SANDBOX_RUN_AS_USER} -- sh -c 'exec 8<${SANDBOX_MIRROR_DIR.replace(".git", ".lock")} && echo opened' 2>/dev/null || echo refused)"`,
+			`echo "AGENT_WRITE_MIRROR=$(runuser -u ${SANDBOX_RUN_AS_USER} -- sh -c 'touch ${SANDBOX_MIRROR_DIR}/objects/x && echo wrote' 2>/dev/null || echo refused)"`,
+			"echo LOGS_START; cat /tmp/clone-*.log; echo LOGS_END",
+		].join("\n"),
+	)
+	const field = (name: string) =>
+		new RegExp(`^${name}=(.*)$`, "m").exec(run.stdout)?.[1]?.trim() ?? "<missing>"
+	const logs = /LOGS_START\n([\s\S]*)\nLOGS_END/.exec(run.stdout)?.[1] ?? `${run.stdout}\n${run.stderr}`
+
+	check("the snapshot is repacked into one pack", field("SNAPSHOT_PACKS") === "1", field("SNAPSHOT_PACKS"))
+	check(
+		"repacking the snapshot leaves the live mirror intact",
+		field("MIRROR_FSCK_AFTER") === "0" && field("LOG_AFTER") === "2",
+		`${field("MIRROR_FSCK_AFTER")} ${field("LOG_AFTER")}`,
+	)
+	check(
+		`${SANDBOX_RUN_AS_USER} cannot open the mirror lock`,
+		field("AGENT_LOCK") === "refused",
+		field("AGENT_LOCK"),
+	)
+	check(`${SANDBOX_RUN_AS_USER} cannot write into the mirror`, field("AGENT_WRITE_MIRROR") === "refused")
+	check("the first commit clones through the mirror", field("FIRST_EXIT") === "0", logs)
+	check("the next commit fetches into the same mirror", field("SECOND_EXIT") === "0", logs)
+	check("there is exactly one mirror, and no scratch copy of it", field("MIRROR_COUNT") === "1")
+	check("the next commit is checked out", field("SECOND_HEAD") === SECOND_SHA, field("SECOND_HEAD"))
+	check("its checkout has the whole history", field("SECOND_HISTORY") === "2", field("SECOND_HISTORY"))
+	check(
+		"origin/main is there, as a full clone had it",
+		field("ORIGIN_MAIN") === SECOND_SHA,
+		field("ORIGIN_MAIN"),
+	)
+	check("the checkout borrows the mirror's objects", field("BORROWS").startsWith(SANDBOX_MIRROR_DIR))
+	check("each reviewed commit is pinned in the mirror", field("PINNED") === "2", field("PINNED"))
+	check("the mirror never garbage-collects what checkouts borrow", field("MIRROR_GC") === "0")
+	check("the mirror keeps no remote, so no URL is stored", field("MIRROR_REMOTES") === "0")
+	check("the token is nowhere on disk", field("TOKEN_ON_DISK") === "", field("TOKEN_ON_DISK"))
+	check(
+		`${SANDBOX_RUN_AS_USER} can read history through the mirror`,
+		field("AGENT_LOG") === "2",
+		field("AGENT_LOG"),
+	)
+	check(
+		`${SANDBOX_RUN_AS_USER} can blame through the mirror`,
+		field("AGENT_BLAME") === "2",
+		field("AGENT_BLAME"),
+	)
+	check("the snapshot is taken", field("SNAPSHOT_EXIT") === "0", run.stderr)
+	check("the snapshot is a complete repository", field("SNAPSHOT_FSCK") === "0", field("SNAPSHOT_FSCK"))
+	check("the snapshot holds the latest commit", field("SNAPSHOT_HAS_SECOND") === "commit")
+}
+
+console.log("\na restored backup")
+{
+	// What `restoreBackup` leaves behind: the earlier mirror at the seed path, and no mirror.
+	const run = inImage(
+		[
+			"set -e",
+			FIXTURE,
+			"set +e",
+			cloneFor(checkout, "FIRST"),
+			`( ${snapshotScript().replaceAll("\n", " && ")} )`,
+			`mv ${shellQuote(SANDBOX_SNAPSHOT_DIR)} ${shellQuote(SANDBOX_SEED_DIR)}`,
+			`touch ${shellQuote(SANDBOX_SEED_DIR)}/SEEDED`,
+			`rm -rf ${shellQuote(SANDBOX_MIRROR_DIR)} ${shellQuote(SANDBOX_WORKSPACE_ROOT)}`,
+			SECOND_COMMIT,
+			cloneFor(secondCheckout, "RESTORED"),
+			`echo "FROM_SEED=$(test -e ${shellQuote(SANDBOX_MIRROR_DIR)}/SEEDED && echo yes || echo no)"`,
+			`echo "SEED_LEFT=$(test -e ${shellQuote(SANDBOX_SEED_DIR)} && echo yes || echo no)"`,
+			`echo "TEMP_MIRRORS=$(ls -d ${shellQuote(SANDBOX_MIRROR_DIR)}.* 2>/dev/null | wc -l)"`,
+			`echo "RESTORED_HEAD=$(git -C ${shellQuote(checkoutDir(SECOND_SHA))} rev-parse HEAD 2>&1)"`,
+			`echo "RESTORED_HISTORY=$(git -C ${shellQuote(checkoutDir(SECOND_SHA))} log --oneline 2>/dev/null | wc -l)"`,
+			"echo LOGS_START; cat /tmp/clone-*.log; echo LOGS_END",
+		].join("\n"),
+	)
+	const field = (name: string) =>
+		new RegExp(`^${name}=(.*)$`, "m").exec(run.stdout)?.[1]?.trim() ?? "<missing>"
+	const logs = /LOGS_START\n([\s\S]*)\nLOGS_END/.exec(run.stdout)?.[1] ?? `${run.stdout}\n${run.stderr}`
+
+	check("a clone after a restore succeeds", field("RESTORED_EXIT") === "0", logs)
+	check("the mirror is built from the seed rather than from scratch", field("FROM_SEED") === "yes")
+	check("the seed is gone once copied, so the disk holds one mirror", field("SEED_LEFT") === "no")
+	check("no temporary mirror is left behind", field("TEMP_MIRRORS") === "0")
+	check(
+		"the new commit is fetched on top of it",
+		field("RESTORED_HEAD") === SECOND_SHA,
+		field("RESTORED_HEAD"),
+	)
+	check("history survives the restore", field("RESTORED_HISTORY") === "2", field("RESTORED_HISTORY"))
 }
 
 console.log("\nthe command wrapper")

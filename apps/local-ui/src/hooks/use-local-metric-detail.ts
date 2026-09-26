@@ -1,54 +1,34 @@
-import { keepPreviousData, useQuery } from "@tanstack/react-query"
-import { Option } from "effect"
+import { keepPreviousData, skipToken, useQuery } from "@tanstack/react-query"
 import { HARD_SERIES_LIMIT } from "@maple/ui/components/plot"
 import { CH } from "@maple/query-engine"
-import { executeLocalCompiledQuery } from "@/lib/query"
-import { LOCAL_ORG_ID } from "../lib/constants"
-import { boundsForRange } from "../lib/time"
-import { bucketSecondsForRange, type MetricEntry } from "./use-local-metrics"
+import { boundsKey, executeLocalCompiledQuery, localParams } from "@/lib/query"
+import type { SeriesPoint } from "../lib/chart-series"
+import type { ChartWindow, TimeBounds } from "../lib/time"
+import { isCounter, isMetricType, type MetricType } from "../lib/units"
+import { foldCatalogRows, type MetricEntry } from "./use-local-metrics"
 
 /** Catalog row(s) for one metric, aggregated across services. */
-export function useLocalMetricEntry(metricName: string, range: string | undefined) {
+export function useLocalMetricEntry(metricName: string, bounds: TimeBounds) {
 	return useQuery({
-		queryKey: ["local", "metrics", "entry", metricName, range],
+		queryKey: ["local", "metrics", "entry", metricName, boundsKey(bounds)],
 		placeholderData: keepPreviousData,
-		queryFn: async (): Promise<MetricEntry | null> => {
-			const { startTime, endTime } = boundsForRange(range)
-			const compiled = CH.compile(CH.listMetricsQuery({ search: metricName, limit: 50 }), {
-				orgId: LOCAL_ORG_ID,
-				startTime,
-				endTime,
-			})
-			const rows = (await executeLocalCompiledQuery(compiled)).filter(
+		queryFn: async ({ signal }): Promise<MetricEntry | null> => {
+			const compiled = CH.compile(
+				CH.listMetricsQuery({ search: metricName, limit: 50 }),
+				localParams(bounds),
+			)
+			const rows = (await executeLocalCompiledQuery(compiled, signal)).filter(
 				(r) => r.metricName === metricName,
 			)
-			if (rows.length === 0) return null
-			const first = rows[0]!
-			return {
-				metricName,
-				metricType: first.metricType,
-				metricUnit: first.metricUnit,
-				metricDescription: first.metricDescription,
-				serviceNames: [...new Set(rows.map((r) => r.serviceName))],
-				dataPointCount: rows.reduce((sum, r) => sum + Number(r.dataPointCount), 0),
-				lastSeen: rows.reduce((max, r) => (r.lastSeen > max ? r.lastSeen : max), first.lastSeen),
-				isMonotonic: Number(first.isMonotonic) === 1,
-			}
+			return foldCatalogRows(rows).entries[0] ?? null
 		},
 	})
 }
 
-export interface MetricSeriesPoint {
-	bucket: string
-	groupName: string
-	value: number
-}
-
 /**
  * The detail chart draws at most `HARD_SERIES_LIMIT` lines, so cap the series
- * in the query — a high-cardinality install would otherwise fetch and pivot
+ * in the query: a high-cardinality install would otherwise fetch and pivot
  * every service's series only for the chart to drop all but 60 of them.
- * Exported through the compile helpers below so the cap is testable.
  */
 const SERIES_CAP = { groupBy: ["service"], seriesLimit: HARD_SERIES_LIMIT }
 
@@ -58,61 +38,62 @@ export const compileMetricRateTimeseriesQuery = (
 ) => CH.compile(CH.metricsTimeseriesRateQuery({ ...opts, ...SERIES_CAP }), params)
 
 export const compileMetricValueTimeseriesQuery = (
-	opts: { metricType: CH.MetricsTimeseriesOpts["metricType"] },
+	opts: { metricType: MetricType },
 	params: Parameters<typeof CH.compile>[1],
 ) => CH.compile(CH.metricsTimeseriesQuery({ ...opts, ...SERIES_CAP }), params)
 
 /**
- * Detail timeseries, one series per service. Monotonic counters plot the true
- * per-second rate (window-CTE query); gauges/histograms plot the average value.
+ * Detail timeseries, one series per service. Counters plot the true
+ * per-second rate (window-CTE query); everything else plots the average value.
  */
-export function useLocalMetricTimeseries(entry: MetricEntry | null | undefined, range: string | undefined) {
-	const metricName = entry?.metricName
-	const isRate = entry?.metricType === "sum" && entry.isMonotonic
+export function useLocalMetricTimeseries(
+	entry: MetricEntry | null | undefined,
+	bounds: TimeBounds,
+	window: ChartWindow,
+) {
 	return useQuery({
-		queryKey: ["local", "metrics", "timeseries", metricName, entry?.metricType, isRate, range],
-		enabled: entry != null,
+		queryKey: [
+			"local",
+			"metrics",
+			"timeseries",
+			entry?.metricName,
+			entry?.metricType,
+			entry?.isMonotonic,
+			window.bucketSeconds,
+			boundsKey(bounds),
+		],
 		placeholderData: keepPreviousData,
-		queryFn: (): Promise<ReadonlyArray<MetricSeriesPoint>> =>
-			Option.match(Option.fromNullishOr(entry), {
-				// Unreachable: `enabled` gates the query on the entry existing.
-				onNone: () => Promise.resolve([]),
-				onSome: async (metric) => {
-					const { startTime, endTime } = boundsForRange(range)
-					const bucketSeconds = bucketSecondsForRange(range)
-					const params = {
-						orgId: LOCAL_ORG_ID,
-						startTime,
-						endTime,
-						bucketSeconds,
-						metricName: metric.metricName,
-					}
-					if (isRate) {
+		queryFn: entry
+			? async ({ signal }): Promise<ReadonlyArray<SeriesPoint>> => {
+					const { bucketSeconds } = window
+					const params = { ...localParams(bounds), bucketSeconds, metricName: entry.metricName }
+					if (isCounter(entry)) {
 						const rows = await executeLocalCompiledQuery(
 							compileMetricRateTimeseriesQuery(
-								{ metricName: metric.metricName, bucketSeconds },
+								{ metricName: entry.metricName, bucketSeconds },
 								params,
 							),
+							signal,
 						)
 						return rows.map((r) => ({
 							bucket: r.bucket,
-							groupName: r.groupName,
+							series: r.groupName || "value",
 							value: Number(r.rateValue),
 						}))
 					}
+					const metricType = entry.metricType
+					if (!isMetricType(metricType)) return []
 					const rows = await executeLocalCompiledQuery(
-						compileMetricValueTimeseriesQuery(
-							{ metricType: metric.metricType as CH.MetricsTimeseriesOpts["metricType"] },
-							params,
-						),
+						compileMetricValueTimeseriesQuery({ metricType }, params),
+						signal,
 					)
 					return rows.map((r) => ({
 						bucket: r.bucket,
-						groupName: r.groupName,
+						series: r.groupName || "value",
 						value: Number(r.avgValue),
 					}))
-				},
-			}),
+				}
+			: skipToken,
 	})
 }
 
@@ -124,29 +105,28 @@ export interface MetricBreakdownRow {
 }
 
 /** Per-service breakdown for the detail page's table. */
-export function useLocalMetricBreakdown(entry: MetricEntry | null | undefined, range: string | undefined) {
-	const metricName = entry?.metricName
+export function useLocalMetricBreakdown(entry: MetricEntry | null | undefined, bounds: TimeBounds) {
+	const metricType = entry?.metricType
 	return useQuery({
-		queryKey: ["local", "metrics", "breakdown", metricName, entry?.metricType, range],
-		enabled: entry != null,
+		queryKey: ["local", "metrics", "breakdown", entry?.metricName, metricType, boundsKey(bounds)],
 		placeholderData: keepPreviousData,
-		queryFn: async (): Promise<ReadonlyArray<MetricBreakdownRow>> => {
-			const { startTime, endTime } = boundsForRange(range)
-			const rows = await executeLocalCompiledQuery(
-				CH.compile(
-					CH.metricsBreakdownQuery({
-						metricType: entry!.metricType as CH.MetricsBreakdownOpts["metricType"],
-						limit: 20,
-					}),
-					{ orgId: LOCAL_ORG_ID, startTime, endTime, metricName: metricName! },
-				),
-			)
-			return rows.map((r) => ({
-				name: r.name,
-				avgValue: Number(r.avgValue),
-				sumValue: Number(r.sumValue),
-				count: Number(r.count),
-			}))
-		},
+		queryFn:
+			entry && metricType && isMetricType(metricType)
+				? async ({ signal }): Promise<ReadonlyArray<MetricBreakdownRow>> => {
+						const rows = await executeLocalCompiledQuery(
+							CH.compile(CH.metricsBreakdownQuery({ metricType, limit: 20 }), {
+								...localParams(bounds),
+								metricName: entry.metricName,
+							}),
+							signal,
+						)
+						return rows.map((r) => ({
+							name: r.name,
+							avgValue: Number(r.avgValue),
+							sumValue: Number(r.sumValue),
+							count: Number(r.count),
+						}))
+					}
+				: skipToken,
 	})
 }

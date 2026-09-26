@@ -12,15 +12,15 @@ interface Props {
     ogType?: "website" | "article";
     /**
      * Locales this page actually exists in. hreflang is advertised for these
-     * only — the default keeps every page announcing all three, which is what
+     * only; the default keeps every page announcing all three, which is what
      * every caller relied on before this prop existed.
      */
     alternates?: readonly string[];
     /**
      * Path of this page's markdown twin (`/pricing.md`), when it has one.
      * Advertised as `rel="alternate"` so an agent can find the machine-readable
-     * copy without guessing the suffix. English-only — the twins are not
-     * localized — so locale routes leave it unset.
+     * copy without guessing the suffix. English-only (the twins are not
+     * localized), so locale routes leave it unset.
      */
     mdHref?: string;
 }
@@ -28,7 +28,7 @@ interface Props {
 const {
     bodyClass,
     themeColor = "#171410",
-    title = "Open Source Observability for Traces, Logs & Metrics — Maple",
+    title = "Open-source observability for traces, logs, and metrics | Maple",
     description = "Open-source observability platform for traces, logs, and metrics. Built on OpenTelemetry.",
     image = "/og-image.png",
     ogType = "website",
@@ -40,7 +40,7 @@ const currentLocale = Astro.currentLocale ?? "en";
 const localeMap: Record<string, string>  = { en: "en_US", ja: "ja_JP", ko: "ko_KR" } satisfies Record<string, string>;
 const ogLocale = localeMap[currentLocale] ?? "en_US";
 
-// Build path without locale prefix — used for both hreflang and the canonical.
+// Build path without locale prefix, used for both hreflang and the canonical.
 const pathWithoutLocale = Astro.url.pathname
     .replace(/^\/(ja|ko)(\/|$)/, "/")
     .replace(/\/+/g, "/");
@@ -122,22 +122,22 @@ const absoluteImage = image.startsWith("http")
              chunks the new build no longer has. The island then never hydrates:
              on desktop the product mega-menu stops opening, and on mobile the
              hamburger is the only route into the nav, so the nav is gone. The
-             SSR'd anchors (Log in, the CTA, the logo) keep working — Astro
-             renders islands to HTML first — but anything behind a handler does
+             SSR'd anchors (Log in, the CTA, the logo) keep working, since Astro
+             renders islands to HTML first, but anything behind a handler does
              not.
 
              `astro-island` already retries the import once, after a second, with
              a cache-busting param, so it recovers from a merely cold chunk on its
              own. What it cannot fix is a document that points at files the deploy
              deleted: the retry 404s too, and it gives up. That second failure is
-             what `astro:hydration-error` reports — a cancelable, bubbling event
+             what `astro:hydration-error` reports: a cancelable, bubbling event
              the runtime dispatches immediately before its console.error, which is
              exactly the line we see in production replays.
 
              So this only ever runs after Astro's own retry has failed, and the
              one thing left that can help is refetching the HTML. One reload per
              session, cleared once a page hydrates cleanly, so a genuinely missing
-             chunk degrades to today's behaviour instead of a refresh loop. -->
+             chunk degrades to today's behavior instead of a refresh loop. -->
         <script is:inline>
             (function () {
                 var KEY = 'chunk-reloaded';

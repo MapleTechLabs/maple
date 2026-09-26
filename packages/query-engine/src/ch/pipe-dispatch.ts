@@ -125,6 +125,9 @@ export function compilePipeQuery(
 		return params[key] != null ? Number(params[key]) : def
 	}
 	const bool = (key: string) => params[key] === true || params[key] === "1" || params[key] === "true"
+	// `has_error` feeds a tri-state filter where `false` means "exclude errors";
+	// the pipe flag only ever asks for errors, so absent or falsy means no filter.
+	const hasError = errorsOnlyParam(str("has_error"))
 
 	/** A single-valued param as the one-element list the query filters take. */
 	const strList = (key: string): string[] | undefined => {
@@ -212,7 +215,7 @@ export function compilePipeQuery(
 							cursor: str("cursor"),
 							serviceName: str("service"),
 							spanName: str("span_name"),
-							errorsOnly: bool("has_error"),
+							errorsOnly: hasError,
 							minDurationMs: int("min_duration_ms"),
 							maxDurationMs: int("max_duration_ms"),
 							environments: strList("deployment_env"),
@@ -256,7 +259,7 @@ export function compilePipeQuery(
 						tracesDurationStatsQuery({
 							serviceName: str("service"),
 							spanName: str("span_name"),
-							hasError: bool("has_error"),
+							hasError,
 							minDurationMs: int("min_duration_ms"),
 							maxDurationMs: int("max_duration_ms"),
 							httpMethod: str("http_method"),
@@ -280,7 +283,7 @@ export function compilePipeQuery(
 						tracesFacetsQuery({
 							serviceName: str("service"),
 							spanName: str("span_name"),
-							hasError: bool("has_error"),
+							hasError,
 							minDurationMs: int("min_duration_ms"),
 							maxDurationMs: int("max_duration_ms"),
 							httpMethod: str("http_method"),
@@ -761,7 +764,7 @@ export function compilePipeQuery(
 								str("span_name_match_mode") === "contains"
 									? { spanName: "contains" }
 									: undefined,
-							errorsOnly: bool("has_error"),
+							errorsOnly: hasError,
 							minDurationMs: int("min_duration_ms"),
 							maxDurationMs: int("max_duration_ms"),
 							attributeFilters,

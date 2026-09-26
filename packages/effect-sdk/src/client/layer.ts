@@ -1,5 +1,5 @@
 import type { Duration } from "effect"
-import { type MapleRegion, resolveIngestEndpoint } from "@maple/browser-session"
+import { type MapleRegion, resolveIngestEndpoint, warnIfKeylessMapleIngest } from "@maple/browser-session"
 import { Effect, Layer } from "effect"
 import { Otlp } from "effect/unstable/observability"
 import { trySyncOrUndefined } from "../shared/try-sync.js"
@@ -21,7 +21,7 @@ export interface MapleClientConfig {
 	readonly region?: MapleRegion | undefined
 	/** Maple ingest endpoint URL. Overrides `region`; use it for a proxy or self-hosted ingest. */
 	readonly endpoint?: string | undefined
-	/** Maple ingest key for authentication. */
+	/** Sent as `Authorization: Bearer …`, and nothing else; unset behind a proxy that adds it. */
 	readonly ingestKey?: string | undefined
 	/** Service version or commit SHA. */
 	readonly serviceVersion?: string | undefined
@@ -38,7 +38,7 @@ export interface MapleClientConfig {
 	 * Post session metadata rows for the standalone session so it appears in
 	 * Maple's Sessions UI (list entry + linked traces, no replay recording).
 	 * Default `true`; no-ops when `@maple-dev/browser` is on the page (it owns
-	 * the session rows), without a browser DOM, or without an ingest key.
+	 * the session rows) or without a browser DOM.
 	 */
 	readonly emitSessionMeta?: boolean | undefined
 	/**
@@ -118,6 +118,12 @@ export const layer = (config: MapleClientConfig) => {
 	if (config.attributes) Object.assign(attributes, config.attributes)
 
 	const endpoint = resolveIngestEndpoint({ endpoints: [config.endpoint], regions: [config.region] })
+	warnIfKeylessMapleIngest({
+		logPrefix: "[MapleClientSDK]",
+		endpoint,
+		hasIngestKey: Boolean(config.ingestKey),
+		hint: "Pass `ingestKey`, or point `endpoint` at a proxy that adds it.",
+	})
 	const clientSessionConfig = {
 		endpoint,
 		ingestKey: config.ingestKey,

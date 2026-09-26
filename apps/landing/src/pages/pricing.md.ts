@@ -1,5 +1,5 @@
 /**
- * `/pricing.md` — the agent-readable twin of `/pricing`.
+ * `/pricing.md`: the agent-readable twin of `/pricing`.
  *
  * Reads the same `getOffer()` the page does, so the two can't disagree. The
  * meter becomes a table, the FAQ becomes `###` sections, and the enterprise
@@ -20,7 +20,7 @@ import {
 import * as m from "../paraglide/messages.js"
 import { pricingFaq } from "../lib/pricing-faq"
 
-/** "GB", "session", or "1,000 events" — the block the rate is quoted per. */
+/** "GB", "session", or "1,000 events": the block the rate is quoted per. */
 const unitLabel = (a: Allotment) =>
 	a.unit === "gb" ? "GB" : a.unit === "sessions" ? "session" : `${rateBlock(a)} events`
 
@@ -35,7 +35,7 @@ export const GET: APIRoute = async () => {
 			a.unlimited
 				? m.pricing_free_beta()
 				: a.rate === undefined
-					? "—"
+					? "n/a"
 					: `${rateLabel(a.rate)} / ${unitLabel(a)}`,
 		]),
 	)
@@ -96,7 +96,7 @@ export const GET: APIRoute = async () => {
 			claims.map((c) => `- ${c}`).join("\n"),
 			m.pricing_rates_retention({ days: String(RETENTION_DAYS) }),
 
-			`## ${offer.name} — ${money(offer.price)}${offer.interval ?? ""}`,
+			`## ${offer.name}: ${money(offer.price)}${offer.interval ?? ""}`,
 			m.pricing_everything_included(),
 			meter,
 			`No per-host, per-seat or per-query fees: $0 ${m.pricing_zero_host()}, $0 ${m.pricing_zero_seat()}, $0 ${m.pricing_zero_query()}.`,
@@ -104,19 +104,19 @@ export const GET: APIRoute = async () => {
 			trial,
 			"Start at [app.maple.dev](https://app.maple.dev).",
 
-			`## ${m.pricing_enterprise()} — ${m.pricing_enterprise_price()}`,
+			`## ${m.pricing_enterprise()}: ${m.pricing_enterprise_price()}`,
 			m.pricing_enterprise_rail(),
 			"Talk to a founder: [cal.com/david-granzin](https://cal.com/david-granzin/30min?overlayCalendar=true).",
 
 			`## ${m.stack_heading()}`,
 			m.stack_lede(),
 			blocks(
-				`- **${m.stack_apm_title()}** — Effect, Node.js, Next.js, Python, Go, Rust, Java, C#, Kotlin, Laravel, and any OpenTelemetry SDK. ${m.stack_apm_body()}`,
-				`- **${m.stack_frontend_title()}** — ${m.stack_chip_browser()}, ${m.stack_chip_ios()}. ${m.stack_frontend_body()}`,
-				`- **${m.stack_infra_title()}** — ${m.stack_chip_collector()}, Kubernetes, Docker, Prometheus, Cloudflare. ${m.stack_infra_body()}`,
-				`- **${m.stack_cloud_title()}** — Cloudflare, PlanetScale, GitHub, WarpStream, Hazel. ${m.stack_cloud_body()}`,
-				`- **${m.stack_alerts_title()}** — Slack, PagerDuty, Discord, Telegram, ${m.stack_chip_email()}, ${m.stack_chip_webhooks()}, Hazel.`,
-				`- **${m.stack_agents_title()}** — ${m.stack_chip_claude_code()}, ${m.stack_chip_cursor()}, ${m.stack_chip_any_mcp()}. ${m.stack_agents_body()}`,
+				`- **${m.stack_apm_title()}**: Effect, Node.js, Next.js, Python, Go, Rust, Java, C#, Kotlin, Laravel, and any OpenTelemetry SDK. ${m.stack_apm_body()}`,
+				`- **${m.stack_frontend_title()}**: ${m.stack_chip_browser()}, ${m.stack_chip_ios()}. ${m.stack_frontend_body()}`,
+				`- **${m.stack_infra_title()}**: ${m.stack_chip_collector()}, Kubernetes, Docker, Prometheus, Cloudflare. ${m.stack_infra_body()}`,
+				`- **${m.stack_cloud_title()}**: Cloudflare, PlanetScale, GitHub, WarpStream, Hazel. ${m.stack_cloud_body()}`,
+				`- **${m.stack_alerts_title()}**: Slack, Discord, Telegram, PagerDuty, ${m.stack_chip_email()}, ${m.stack_chip_webhooks()}, Hazel.`,
+				`- **${m.stack_agents_title()}**: ${m.stack_chip_claude_code()}, ${m.stack_chip_cursor()}, ${m.stack_chip_any_mcp()}. ${m.stack_agents_body()}`,
 			),
 			`${m.stack_otel_title()}: ${m.stack_otel_body()}`,
 

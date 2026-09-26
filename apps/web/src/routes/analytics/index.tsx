@@ -2,10 +2,10 @@ import { useState } from "react"
 import { Link, createFileRoute, useNavigate } from "@tanstack/react-router"
 import { Schema } from "effect"
 import { Result } from "@/lib/effect-atom"
-import { formatWarehouseDateTime, parseWarehouseDateTime } from "@maple/query-engine"
 
 import { Button } from "@maple/ui/components/ui/button"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
+import { Tabs, TabsList, TabsTrigger } from "@maple/ui/components/ui/tabs"
 
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
 import { QueryErrorState } from "@/components/common/query-error-state"
@@ -27,6 +27,8 @@ import {
 	AnalyticsMetricStripLoading,
 } from "@/components/analytics/analytics-metric-strip"
 import { AnalyticsTrafficChart } from "@/components/analytics/analytics-traffic-chart"
+import { AnalyticsAiTab } from "@/components/analytics/ai/analytics-ai-tab"
+import { previousWindow } from "@/components/analytics/previous-window"
 import { Favicon } from "@/components/analytics/row-icon"
 import {
 	ANALYTICS_METRICS,
@@ -60,10 +62,17 @@ import { sessionTimeRangeSearchMiddleware } from "@/components/time-range-picker
 import { PageRefreshProvider } from "@/components/time-range-picker/page-refresh-context"
 import { TimeRangeHeaderControls } from "@/components/time-range-picker/time-range-header-controls"
 
+const ANALYTICS_TABS = ["overview", "ai"] as const
+type AnalyticsTab = (typeof ANALYTICS_TABS)[number]
+
 const analyticsSearchSchema = Schema.Struct({
 	...analyticsFilterSearchFields,
 	...TimeRangeSearchFields,
+	// A loose string so a stale or mistyped `?tab=` falls back to Overview instead of failing validation.
+	tab: Schema.optional(Schema.String),
 })
+
+const decodeTab = (value: unknown): AnalyticsTab => ANALYTICS_TABS.find((tab) => tab === value) ?? "overview"
 
 const DEFAULT_PRESET = "7d"
 const PAGES_LIMIT = 100
@@ -86,6 +95,15 @@ function WebAnalyticsPage() {
 		search.timePreset ?? DEFAULT_PRESET,
 	)
 	const filters = filtersFromSearch(search)
+	const activeTab = decodeTab(search.tab)
+
+	const onTabChange = (value: unknown) => {
+		const next = decodeTab(value)
+		navigate({
+			replace: true,
+			search: (prev) => ({ ...prev, tab: next === "overview" ? undefined : next }),
+		})
+	}
 
 	const handleTimeChange = (
 		range: { startTime?: string; endTime?: string; presetValue?: string },
@@ -106,14 +124,15 @@ function WebAnalyticsPage() {
 		onFilterChange(key, toggleFilterValue(filters[key], value))
 	}
 
-	// Clearing filters keeps the time range: that is what you are looking at,
-	// the filters are how narrowly.
+	// Clearing filters keeps the time range and the tab: that is what you are
+	// looking at, the filters are how narrowly.
 	const onClearFilters = () => {
 		navigate({
 			search: {
 				startTime: search.startTime,
 				endTime: search.endTime,
 				timePreset: search.timePreset,
+				tab: search.tab,
 			},
 		})
 	}
@@ -157,6 +176,22 @@ function WebAnalyticsPage() {
 						<DashboardLayout.Sticky>
 							<DashboardLayout.Header>
 								<div className="flex flex-wrap items-center gap-2">
+									<Tabs value={activeTab} onValueChange={onTabChange}>
+										<TabsList variant="default" className="h-7 gap-0 p-0.5">
+											<TabsTrigger
+												value="overview"
+												className="h-6 px-2.5 text-xs font-medium"
+											>
+												Overview
+											</TabsTrigger>
+											<TabsTrigger
+												value="ai"
+												className="h-6 px-2.5 text-xs font-medium"
+											>
+												AI
+											</TabsTrigger>
+										</TabsList>
+									</Tabs>
 									{/* Ahead of the range controls, because it is the one number
 									    on the page they do not govern: "right now" is its own
 									    window, and the filters still narrow it. */}
@@ -199,7 +234,11 @@ function WebAnalyticsPage() {
 							<div className="space-y-6">
 								<PageHero
 									title="Web Analytics"
-									description="Who visited your sites, what they read, and where they came from — from the same browser SDK that records sessions."
+									description={
+										activeTab === "ai"
+											? "Which AI assistants send you visitors, and which of their crawlers read your pages."
+											: "Who visited your sites, what they read, and where they came from — from the same browser SDK that records sessions."
+									}
 									meta={
 										chips.length > 0 ? (
 											<div className="flex flex-wrap items-center gap-1.5">
@@ -224,14 +263,23 @@ function WebAnalyticsPage() {
 										) : undefined
 									}
 								/>
-								<AnalyticsContent
-									startTime={startTime}
-									endTime={endTime}
-									filters={filters}
-									breakdownsResult={breakdownsResult}
-									eventsResult={eventsResult}
-									onToggleFilter={onToggleFilter}
-								/>
+								{activeTab === "ai" ? (
+									<AnalyticsAiTab
+										startTime={startTime}
+										endTime={endTime}
+										filters={filters}
+										onToggleFilter={onToggleFilter}
+									/>
+								) : (
+									<AnalyticsContent
+										startTime={startTime}
+										endTime={endTime}
+										filters={filters}
+										breakdownsResult={breakdownsResult}
+										eventsResult={eventsResult}
+										onToggleFilter={onToggleFilter}
+									/>
+								)}
 							</div>
 						</DashboardLayout.Scroll>
 					</DashboardLayout.Content>
@@ -258,21 +306,6 @@ function pairedCompanion(
 	if (!metric.companion) return undefined
 	const companion = findMetric(metric.companion)
 	return isMetricAvailable(companion, source) ? companion : undefined
-}
-
-/**
- * The window immediately before this one, of the same length — the baseline the
- * KPI deltas are measured against. "Last 7 days" compares against the 7 days
- * before it, which is what makes a delta answer "is this better than usual".
- */
-function previousWindow(startTime: string, endTime: string) {
-	const start = parseWarehouseDateTime(startTime)
-	const end = parseWarehouseDateTime(endTime)
-	const span = end - start
-	return {
-		startTime: formatWarehouseDateTime(start - span),
-		endTime: startTime,
-	}
 }
 
 function AnalyticsContent({

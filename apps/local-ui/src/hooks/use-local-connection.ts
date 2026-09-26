@@ -1,33 +1,31 @@
-// Derives the app's connection status from the existing ingest-pulse poll —
-// no extra network traffic (React Query dedupes by queryKey). Drives the
-// App-level gate that swaps the views for a "how to connect" screen when the
-// local binary is unreachable, instead of leaving an infinite skeleton.
+// The app-level connection gate, derived from the server-status poll (no
+// extra traffic: React Query dedupes by key). Only a server that is really
+// gone swaps the views out; a busy one keeps them and says so in the header.
 
-import { useLocalIngestPulse } from "./use-local-ingest-pulse"
+import { MISSES_BEFORE_DOWN, useLocalServerStatus } from "./use-local-server-status"
 
-type LocalConnectionStatus = "connecting" | "connected" | "disconnected"
+export type LocalConnectionStatus = "connecting" | "connected" | "disconnected" | "rejected"
 
 export interface LocalConnection {
-	status: LocalConnectionStatus
-	/** Force an immediate probe instead of waiting for the next 5s poll. */
-	retry: () => void
+	readonly status: LocalConnectionStatus
+	/** The server's refusal, when `status` is `rejected`. */
+	readonly rejection: { readonly status: number; readonly detail: string } | null
+	/** Force an immediate probe instead of waiting for the next poll. */
+	readonly retry: () => void
 }
 
-/**
- * Map the ingest-pulse query state onto a connection status:
- *   - `isError`        → the probe round-trip failed (refused or timed out).
- *   - `data` present   → a probe has succeeded at least once. We key on the
- *                        response *existing*, not on `lastSeenMs`, so a reachable
- *                        but idle backend (`{ lastSeenMs: null }`) reads as
- *                        connected — never disconnected.
- *   - otherwise        → first probe hasn't resolved yet.
- */
 export function useLocalConnection(): LocalConnection {
-	const { isError, data, refetch } = useLocalIngestPulse()
-	const status: LocalConnectionStatus = isError
-		? "disconnected"
-		: data !== undefined
-			? "connected"
-			: "connecting"
-	return { status, retry: () => void refetch() }
+	const { data, isError, refetch } = useLocalServerStatus()
+	const retry = () => void refetch()
+	if (!data) return { status: isError ? "disconnected" : "connecting", rejection: null, retry }
+	switch (data.reachability) {
+		case "refused":
+			// One refused probe can be a restart in progress; two in a row is down.
+			if (data.misses >= MISSES_BEFORE_DOWN) return { status: "disconnected", rejection: null, retry }
+			return { status: data.hasConnected ? "connected" : "connecting", rejection: null, retry }
+		case "rejected":
+			return { status: "rejected", rejection: data.rejection, retry }
+		default:
+			return { status: "connected", rejection: null, retry }
+	}
 }

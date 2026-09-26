@@ -7,21 +7,21 @@
  */
 import { evaluatePermission } from "@maple/domain/permission"
 import type { ChatMessage, ChatTurnOrigin } from "@maple/domain/chat-session"
-import * as AgentRuntime from "@effect-agent/engine/AgentRuntime"
-import { ThreadHistory } from "@effect-agent/engine/ThreadHistory"
-import { IdGenerator } from "@effect-agent/core/IdGenerator"
-import { ThreadId } from "@effect-agent/core/Identifiers"
+import * as AgentRuntime from "effect-agent/agent-runtime"
+import * as ThreadHistory from "effect-agent/thread-history"
+import { ThreadId } from "effect-agent/identifiers"
 import { Effect, Layer, Schema, Stream } from "effect"
 import { Prompt, Toolkit } from "effect/unstable/ai"
 import type { McpToolExecutorApi } from "../mcp/dispatcher"
-import { ApprovalRequired } from "../mcp/tools/llm-tools"
+import { ApprovalRequired, type ToolUiPayload } from "../mcp/tools/llm-tools"
 import { mapleToolPhrase } from "../mcp/tools/registry"
 import { agentSessionSpanAttributes, type ResolvedModel } from "../platform/Llm"
 import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
 import { type AgentDefinition, agentForSession, chatAgent } from "./agents"
 import { profileForTurn } from "./profiles"
 import { makeTextSanitizer, toChatEvents, type ChatTurnEvent } from "./events"
-import { makeReviewCoverage } from "./review-coverage"
+import { makeReviewCoverage, type ReviewCoverage } from "./review-coverage"
+import type { ReviewLedger } from "./review-ledger"
 import { buildReviewFanout } from "./review-fanout"
 import {
 	accumulateUsage,
@@ -99,6 +99,11 @@ export interface ChatRunInput {
 	readonly stageEdit?: StageEdit
 	/** This run is an autonomous pass's close-out: a report it files is a partial. */
 	readonly closeOut?: boolean
+	/**
+	 * A review turn's own state, shared by its pass and its close-out: what was read, and the
+	 * findings saved so far. Absent, a review run makes its own coverage and offers no `record_finding`.
+	 */
+	readonly review?: ReviewTurnState
 	/** The agent to run as; defaults to the session's. The local review runner passes a variant. */
 	readonly agent?: AgentDefinition
 	/** The message the user just sent, which is this run's input. */
@@ -109,6 +114,11 @@ export interface ChatRunInput {
 	/** False once the turn slot has been released, which stops the run writing into a moved-on session. */
 	readonly holdsTurn: () => boolean
 	readonly append: (event: ChatTurnEvent) => void
+}
+
+export interface ReviewTurnState {
+	readonly coverage: ReviewCoverage
+	readonly ledger: ReviewLedger
 }
 
 export interface ChatRunOutcome {
@@ -139,8 +149,10 @@ export const runChatTurn = (input: ChatRunInput) => {
 	// Per run, and fed by the Maple handlers the review_files children share, so a group a child
 	// read counts as read.
 	const coverage = isAutonomousReviewTurn(input.sessionId, input.origin)
-		? makeReviewCoverage(input.text)
+		? (input.review?.coverage ?? makeReviewCoverage(input.text))
 		: undefined
+	// A call's UI payload, held until its result event is written. Never part of what the model reads.
+	const uiByCall = new Map<string, ToolUiPayload>()
 	const maple = buildChatToolkit(
 		input.toolExecutor,
 		input.tenant,
@@ -148,6 +160,7 @@ export const runChatTurn = (input: ChatRunInput) => {
 		profile.surface,
 		agentSessionSpanAttributes(input.model.tags),
 		coverage?.observe,
+		(toolCallId, ui) => uiByCall.set(toolCallId, ui),
 	)
 	// One completion per session kind. The session id decides which, so a review session can never
 	// be handed the diagnosis tool or the other way round.
@@ -174,6 +187,7 @@ export const runChatTurn = (input: ChatRunInput) => {
 					input.closeOut === true,
 					agentSessionSpanAttributes(input.model.tags),
 					coverage,
+					input.review?.ledger,
 				)) ??
 		(input.submitReply === undefined || input.stageEdit === undefined
 			? undefined
@@ -201,9 +215,7 @@ export const runChatTurn = (input: ChatRunInput) => {
 		maple.layer,
 		...(completion === undefined ? [] : [completion.layer]),
 		// The children run the parent's own tool handlers, so those are provided into the fan-out.
-		...(fanout === undefined
-			? []
-			: [fanout.layer.pipe(Layer.provide(Layer.mergeAll(maple.layer, IdGenerator.layer)))]),
+		...(fanout === undefined ? [] : [fanout.layer.pipe(Layer.provide(maple.layer))]),
 	)
 
 	// Declared but never *required*: see `buildDiagnosisCompletion`. A call still settles the run.
@@ -239,6 +251,11 @@ export const runChatTurn = (input: ChatRunInput) => {
 					messageId: input.messageId,
 					isProposed,
 					labelOf: mapleToolPhrase,
+					uiOf: (toolCallId) => {
+						const ui = uiByCall.get(toolCallId)
+						uiByCall.delete(toolCallId)
+						return ui
+					},
 					sanitizer,
 				})) {
 					input.append(chat)
@@ -271,11 +288,11 @@ export const runChatTurn = (input: ChatRunInput) => {
 			}),
 		),
 		// One provide, so the run's services share a lifetime. `ChatSession` is the history owner,
-		// which is why the engine's is transient. A run is an entry point: the Durable Object
+		// which is why the engine's lives only for this provide. A run is an entry point: the Durable Object
 		// invocation owns this scope and nothing outside it composes these layers. The model's own
 		// client stays in the requirements channel, where the Durable Object's runtime answers it.
 		// oxlint-disable-next-line effecttsgo/strict-effect-provide
-		Effect.provide(Layer.mergeAll(handlers, ThreadHistory.layerTransient, IdGenerator.layer)),
+		Effect.provide(Layer.mergeAll(handlers, ThreadHistory.layer)),
 	)
 }
 

@@ -1,53 +1,55 @@
 # Span attribute reference
 
-The canonical list of custom span attribute keys Maple emits, grouped by namespace. **Use these exact spellings in every language** — Title Case status, dotted-lowercase keys (with the documented camelCase exceptions for the tenant block).
+The main custom span attribute keys Maple emits, grouped by namespace. Use these exact spellings in every language: Title Case status, dotted-lowercase keys, and the documented camelCase exceptions in the tenant block. The list is not exhaustive (`maple.*` alone has well over a hundred keys), so grep for an existing key before inventing one.
 
 Columns:
-- **Key** — exact attribute name to emit
-- **Type** — JSON type (`string`, `int`, `bool`)
-- **Set at** — file:line that proves the convention (canonical example)
-- **Meaning** — one-line description
+- **Key**: exact attribute name to emit
+- **Type**: JSON type (`string`, `int`, `bool`)
+- **Set at**: file that sets it (the canonical example)
+- **Meaning**: one-line description
 
 ---
 
-## ⭐ `WarehouseQueryService.executeSql` — canonical span
+## `WarehouseQueryService.executeSql`: the canonical span
 
-Every SQL execution against Tinybird or ClickHouse emits these. When you add a new attribute to a query path, prefer extending this block over inventing a parallel set.
+Every SQL execution against Tinybird or ClickHouse emits these. When you add an attribute to a query path, extend this block instead of inventing a parallel set.
 
-Source: `packages/query-engine/src/execution/executor.ts` (`executeSql`)
+Source: `packages/query-engine/src/execution/executor.ts` (`executeSql`), wired into `WarehouseQueryService` in `packages/backend/src/services/warehouse/WarehouseQueryService.ts`.
 
 | Key | Type | Set at | Meaning |
 |---|---|---|---|
-| `orgId` | string | `executor.ts` | Tenant org UUID (camelCase — historical, do not rename) |
+| `orgId` | string | `executor.ts` | Tenant org UUID (camelCase, historical; do not rename) |
 | `tenant.userId` | string | `executor.ts` | User ID within the tenant |
 | `tenant.authMode` | string | `executor.ts` | `"api_key"` / `"user_login"` / etc. |
 | `clientSource` | string | `executor.ts` | `"org_override"` or `"managed"` (which config resolved) |
 | `db.client` | string | `executor.ts` | `"clickhouse"` or `"tinybird-sdk"` |
 | `db.system.name` | string | `executor.ts` | `"clickhouse"` or `"tinybird"` (legacy spans: `db.system`) |
+| `peer.service` | string | `executor.ts` | `"tinybird"`, `"clickhouse"`, or `"chdb"` (from `BackendDialect` in `backend.ts`) |
+| `db.namespace` | string | `backend.ts` (`warehouseTargetAttributes`) | ClickHouse database name; omitted when empty |
+| `server.address` | string | `backend.ts` (`warehouseTargetAttributes`) | Warehouse host; omitted when empty |
 | `db.query.text` | string | `executor.ts` | Full compiled SQL, truncated to 16 KB (legacy spans: `db.statement`) |
-| `db.query.length` | int | `executor.ts` | Pre-truncation byte length (legacy: `db.statement.length`) |
+| `db.query.length` | int | `executor.ts` | Pre-truncation length (legacy: `db.statement.length`) |
 | `db.query.truncated` | bool | `executor.ts` | Whether SQL was capped at 16 KB (legacy: `db.statement.truncated`) |
-| `db.query.fingerprint` | string | `executor.ts` | 32-bit FNV-1a hash with literals + numbers normalized (legacy: `db.statement.fingerprint`) |
-| `db.duration_ms` | int | `executor.ts` | Execution time in ms (emitted on both success and error tap) |
-| `db.total_duration_ms` | int | `executor.ts` | Total execution-span duration including config resolution and client setup |
+| `db.query.fingerprint` | string | `executor.ts` | 32-bit FNV-1a hash with literals and numbers normalized (legacy: `db.statement.fingerprint`) |
+| `db.duration_ms` | int | `executor.ts` | Warehouse execution time in ms (success and error paths) |
+| `db.total_duration_ms` | int | `executor.ts` | Whole span duration, including config resolution and client setup |
 | `db.retry.attempts` | int | `executor.ts` | Retries actually performed (not total attempts) |
-| `query.pipe` | string | `executor.ts` | Original pipe name resolved by `query()` |
-| `query.context` | string | `executor.ts` | Semantic call-site label (e.g. `"errorsByType"`, `"spanHierarchy"`). Set via `SqlQueryOptions.context`. |
-| `query.profile` | string | `executor.ts` | Execution profile (e.g. `"list"`, `"analytics"`). Set via `SqlQueryOptions.profile`. |
+| `query.pipe` | string | `executor.ts` | Pipe name passed to the executor |
+| `query.context` | string | `executor.ts` | Semantic call-site label (e.g. `"errorsByType"`, `"spanHierarchy"`). Set via `SqlQueryOptions.context`; falls back to the pipe name. |
+| `query.profile` | string | `executor.ts` | Execution profile (e.g. `"list"`, `"analytics"`). Set via `SqlQueryOptions.profile`; only emitted when set. |
+| `query.routing` | string | `executor.ts` | Legacy `"ingest"` marker, dual-emitted with `warehouse.route` |
 | `ch.settings` | string (JSON) | `executor.ts` | JSON-encoded ClickHouse settings applied to the query |
 | `result.rowCount` | int | `executor.ts` | Number of rows returned |
 | `db.response.returned_rows` | int | `executor.ts` | OTel spelling of `result.rowCount`, success only |
 | `db.operation.name` | string | `executor.ts` | Leading SQL verb (`SELECT`, `INSERT`) from `summarizeSql` |
-| `db.collection.name` | string | `executor.ts` | First table named by the statement; the datasource for `ingest` |
-| `db.query.summary` | string | `executor.ts` | `{operation} {collection}` — identical to what the shape rollup derives when absent |
-| `db.operation.batch.size` | int | `executor.ts` | Rows in an `ingest` batch |
-| `error.type` | string | `executor.ts` | Failure only: ClickHouse exception type (`UNKNOWN_TABLE`), else its code, else the error tag |
-| `db.response.status_code` | string | `executor.ts` | Failure only: the ClickHouse error code, else the upstream HTTP status |
+| `db.collection.name` | string | `executor.ts` | First table named by the statement |
+| `db.query.summary` | string | `executor.ts` | `{operation} {collection}`, identical to what the shape rollup derives when absent |
+| `error.type` | string | `errors.ts` (`warehouseFailureAttributes`) | Failure only: ClickHouse exception type (`UNKNOWN_TABLE`), else its code, else the error tag |
+| `db.response.status_code` | string | `errors.ts` (`warehouseFailureAttributes`) | Failure only: the ClickHouse error code, else the upstream HTTP status |
 
-`executeSql` is the **one** `Client` span per logical warehouse operation, retries included, as the
-OTel database conventions ask. The drivers run on `warehouseHttpClient(...)`, which disables the
-Effect `HttpClient` tracer for their round-trips — do not let an `http.client POST` span reappear
-under it.
+`executeSql` is the one `Client` span per logical warehouse operation, retries included, as the OTel database conventions ask. The `Client` kind is load-bearing: the service-map DB-edge MV only counts `Client`/`Producer` spans. The drivers run on `warehouseHttpClient(...)` (`packages/query-engine/src/execution/driver-http.ts`), which disables the Effect `HttpClient` tracer for their round-trips. Do not let an `http.client POST` span reappear under it.
+
+The sibling `WarehouseQueryService.ingest` span (same file) sets `datasource`, `orgId`, `rowCount`, `db.operation.name = "INSERT"`, `db.collection.name`, `db.query.summary`, and `db.operation.batch.size`.
 
 ## `warehouse.*` group
 
@@ -59,24 +61,21 @@ Routing metadata emitted by the shared executor for API and local-CLI queries.
 | `warehouse.route` | string | Route purpose: `read`, `raw`, or `ingest` |
 | `warehouse.config_source` | string | Config source: `managed`, `org-byo`, or `org-jwt` |
 
-The historical `clientSource` and `db.client` attributes remain on the same
-canonical span. `clientSource` maps `org-byo` to `org_override`; other sources
-map to `managed`. `db.client` records the concrete driver family
-(`tinybird-sdk` or `clickhouse`).
+The historical `clientSource` and `db.client` attributes remain on the same span. `clientSource` maps `org-byo` to `org_override` and every other source to `managed`. `db.client` records the driver family (`tinybird-sdk` or `clickhouse`).
 
-**Rule:** When adding a new query, always pass a `context` string to `SqlQueryOptions` — it becomes filterable as `query.context` in trace search. Don't invent new keys when one of `query.*` fits.
+**Rule:** When adding a query, always pass a `context` string in `SqlQueryOptions`. It becomes filterable as `query.context` in trace search. Don't invent new keys when a `query.*` key fits.
 
 ---
 
 ## `db.*` group (general)
 
-Beyond `executeSql`, the same `db.system.name` / `db.duration_ms` keys appear wherever Maple talks to a warehouse. Add any new DB-related attrs under `db.*` — never under `database.*` or `clickhouse.*`.
+Beyond `executeSql`, the same `db.system.name` / `db.duration_ms` keys appear wherever Maple talks to a warehouse. Put new DB-related attributes under `db.*`, never under `database.*` or `clickhouse.*`.
 
 ---
 
 ## `query.*` group (DSL query metadata)
 
-Used by `packages/query-engine` and `apps/api/src/services/QueryEngineService.ts` for the higher-level DSL surface (not raw SQL).
+Used by `packages/query-engine/src/runtime/query-engine.ts` for the higher-level DSL surface (not raw SQL).
 
 | Key | Type | Meaning |
 |---|---|---|
@@ -98,9 +97,9 @@ Used by `packages/query-engine` and `apps/api/src/services/QueryEngineService.ts
 
 | Key | Type | Set at | Meaning |
 |---|---|---|---|
-| `result.rowCount` | int | `WarehouseQueryService.ts:507` | Rows returned by a query |
-| `result.groupCount` | int | QueryEngineService | Distinct groups in a breakdown |
-| `result.renderedSpanCount` | int | `inspect-trace.ts` | Spans retained after trace-overview rendering limits |
+| `result.rowCount` | int | `executor.ts` | Rows returned by a query |
+| `result.groupCount` | int | `query-engine.ts` | Distinct groups in a breakdown |
+| `result.renderedSpanCount` | int | `apps/ai/src/mcp/tools/inspect-trace.ts` | Spans retained after trace-overview rendering limits |
 
 ---
 
@@ -108,31 +107,33 @@ Used by `packages/query-engine` and `apps/api/src/services/QueryEngineService.ts
 
 | Key | Type | Set at | Meaning |
 |---|---|---|---|
-| `tenant.userId` | string | `WarehouseQueryService.ts:449` | User ID within the tenant |
-| `tenant.authMode` | string | `WarehouseQueryService.ts:450` | Authentication mode |
+| `tenant.userId` | string | `executor.ts` | User ID within the tenant |
+| `tenant.authMode` | string | `executor.ts` | Authentication mode |
 
-**Naming inconsistency to preserve:** `orgId` is camelCase, `tenant.userId` is dotted-lowercase. This is historical — `orgId` predates the `tenant.*` namespace and renaming it would break existing trace search filters and dashboard queries. Do not unify them.
+**Naming inconsistency to preserve:** `orgId` is camelCase, `tenant.userId` is dotted. `orgId` predates the `tenant.*` namespace, and renaming it would break existing trace search filters and dashboard queries. Do not unify them.
 
 ---
 
 ## `cache.*` group
 
-Emitted by `BucketCacheService` (timeseries cache) and the EdgeCache wrappers. Used to debug cache hit ratios and pinpoint dedup behavior.
+Emitted by the bucket cache and the query-engine cache wrappers. Use them to debug hit ratios and segment behavior.
 
-Source: `apps/api/src/services/BucketCacheService.ts`, `apps/api/src/services/QueryEngineService.ts`
+Source: `packages/query-engine/src/caching/bucket-cache.ts`, `packages/backend/src/services/warehouse/QueryEngineService.ts`
 
 | Key | Type | Set at | Meaning |
 |---|---|---|---|
-| `cache.fingerprint` | string | `BucketCacheService.ts:314` | First 12 chars of cache key fingerprint |
-| `cache.hit` | bool | `QueryEngineService.ts:1694, 1806, 1830` | Cache hit or miss |
-| `cache.ttlSeconds` | int | `QueryEngineService.ts:1695` | TTL of cached entry |
-| `cache.bucketsHit` | int | `QueryEngineService.ts:1745` | Matching buckets from cache (bucket cache) |
-| `cache.bucketsMissed` | int | `QueryEngineService.ts:1746` | Missing buckets (bucket cache) |
-| `cache.missingRangeCount` | int | `BucketCacheService.ts:456`, `QueryEngineService.ts:1747` | Count of contiguous missing time ranges |
-| `cache.existingBucketCount` | int | `BucketCacheService.ts:457` | Pre-existing buckets in cache |
-| `cache.bucketSeconds` | int | `BucketCacheService.ts:477` | Bucket size for this cache request |
-| `cache.rangeMs` | int | `BucketCacheService.ts:478` | Request time-range span in ms |
-| `cache.dedup.waited` | bool | `BucketCacheService.ts:366` | Whether this request waited on an in-flight peer |
+| `cache.fingerprint` | string | `bucket-cache.ts` | First 12 chars of the cache key fingerprint |
+| `cache.bucketSeconds` | int | `bucket-cache.ts` | Bucket size for this cache request |
+| `cache.rangeMs` | int | `bucket-cache.ts` | Request time range in ms |
+| `cache.requestedBuckets` | int | `bucket-cache.ts` | Buckets the request covers |
+| `cache.bucketsHit` | int | `bucket-cache.ts`, `QueryEngineService.ts` | Buckets served from cache |
+| `cache.bucketsMissed` | int | `bucket-cache.ts`, `QueryEngineService.ts` | Buckets that had to be queried |
+| `cache.missingRangeCount` | int | `bucket-cache.ts`, `QueryEngineService.ts` | Count of contiguous missing time ranges |
+| `cache.warehouse_query_count` | int | `bucket-cache.ts` | Warehouse queries issued to fill misses |
+| `cache.segments_hit` / `_missed` / `_timed_out` / `_skipped` / `_errored` | int | `bucket-cache.ts` | Per-segment outcomes |
+| `cache.hit` | bool | `QueryEngineService.ts` | Cache hit or miss |
+| `cache.ttlSeconds` | int | `QueryEngineService.ts` | TTL of the cached entry |
+| `cache.path` | string | `QueryEngineService.ts` | `"blob"` or `"bucket"` |
 
 ---
 
@@ -140,99 +141,100 @@ Source: `apps/api/src/services/BucketCacheService.ts`, `apps/api/src/services/Qu
 
 Emitted by `EmailService` for outbound transactional email.
 
-Source: `apps/api/src/lib/EmailService.ts`
+Source: `packages/backend/src/platform/EmailService.ts`
 
-| Key | Type | Set at | Meaning |
-|---|---|---|---|
-| `email.subject` | string | `EmailService.ts:59` | Subject line |
-| `email.provider` | string | `EmailService.ts:60` | `"cloudflare"` (Cloudflare Email Service Workers binding) |
-| `email.message_id` | string | `EmailService.ts:103` | Provider message id returned after a successful send |
+| Key | Type | Meaning |
+|---|---|---|
+| `email.subject` | string | Subject line |
+| `email.provider` | string | `"cloudflare"` (Cloudflare Email Service Workers binding) |
+| `email.message_id` | string | Provider message id returned after a successful send |
 
 ---
 
 ## `maple.*` vendor namespace
 
-All `maple.*` keys are reserved for Maple-specific metadata that has no OTel semconv equivalent.
+`maple.*` is reserved for Maple-specific metadata with no OTel semconv equivalent. Entity ids follow `maple.<entity>.id` (`maple.dashboard.id`, `maple.alert.rule_id`, `maple.investigation.id`, `maple.share.id`). Other live sub-namespaces include `maple.query.*`, `maple.chat.*`, `maple.pr_review.*`, `maple.mcp.*`, `maple.session.*`, and `maple.webhook.*`.
 
 ### API entity attributes
 
 | Key | Type | Set at | Meaning |
 |---|---|---|---|
-| `maple.api_key.id` | string | `ApiKeysService.ts` | API key entity involved in an operation. |
-| `maple.api_key.last_used_memo_hit` | bool | `ApiKeysService.ts` | Whether a last-used write was skipped by the per-isolate memo. |
-| `maple.dashboard.id` | string | `DashboardPersistenceService.ts` | Dashboard entity involved in an operation. |
-| `maple.dashboard.version_id` | string | `DashboardPersistenceService.ts` | Dashboard history version involved in an operation. |
-| `maple.ingest_attribute_mapping.id` | string | `IngestAttributeMappingService.ts` | Ingest attribute mapping involved in an operation. |
-| `maple.organization.member.requested_count` | int | `OrgMembersService.ts` | Number of member ids requested for resolution. |
+| `maple.api_key.id` | string | `ApiKeysService.ts` | API key entity involved in an operation |
+| `maple.api_key.last_used_memo_hit` | bool | `ApiKeysService.ts` | Whether a last-used write was skipped by the per-isolate memo |
+| `maple.dashboard.id` | string | `DashboardPersistenceService.ts` | Dashboard entity involved in an operation |
+| `maple.dashboard.version_id` | string | `DashboardPersistenceService.ts` | Dashboard history version involved in an operation |
+| `maple.ingest_attribute_mapping.id` | string | `IngestAttributeMappingService.ts` | Ingest attribute mapping involved in an operation |
+| `maple.organization.member.requested_count` | int | `OrgMembersService.ts` | Number of member ids requested for resolution |
+
+These services live under `packages/backend/src/services/`.
 
 ### Ingest gateway
 
-Custom domain attributes for the Rust ingest gateway.
+Custom attributes on the Rust ingest gateway's spans. Sources: `apps/ingest/src/main.rs` (`handle_signal` inbound span, `handle_cloudflare_logpush` inbound span) and `apps/ingest/src/otel.rs` (`forward_client_span`, `export_client_span`, `grpc_server_span`).
 
-Source: `apps/ingest/src/main.rs:843-861` (inbound signal span), `:920-937` (Cloudflare logpush), `:1132-1145` (downstream forward).
-
-### `maple.signal`
+#### `maple.signal`
 - **Type:** string (`"traces"`, `"logs"`, `"metrics"`)
-- **Set at:** `apps/ingest/src/main.rs:853, 930, 1143, 1308`
-- **Meaning:** Which OTel signal this request carries.
+- **Meaning:** Which OTel signal the request carries.
 
-### `maple.org_id`
+#### `maple.org_id`
 - **Type:** string
-- **Set at:** `apps/ingest/src/main.rs:854, 931, 1203`
-- **Meaning:** Resolved organization ID from the ingest key.
-- **⚠ Note:** In Rust this is `maple.org_id` (vendor-namespaced). In TypeScript (`WarehouseQueryService.ts:448`) it's `orgId` (camelCase, no namespace). Both are intentional — trace search filters in dashboards already expect both spellings.
+- **Meaning:** Organization ID resolved from the ingest key.
+- **Note:** Rust uses `maple.org_id` (vendor-namespaced). TypeScript uses `orgId` (camelCase, no namespace). Both are intentional; keep both.
 
-### `maple.ingest.*` sub-namespace
+#### `maple.ingest.*` sub-namespace
 
-| Key | Type | Set at | Meaning |
-|---|---|---|---|
-| `maple.ingest.key_type` | string | `main.rs:855` | `"public"` / `"private"` / `"sentinel"` / `"connector"` |
-| `maple.ingest.self_managed` | bool | `main.rs:856, 935, 1204` | Org using self-managed Tinybird |
-| `maple.ingest.payload_format` | string | `main.rs:857` | `"otlp_json"` / `"otlp_protobuf"` / `"cloudflare_json"` |
-| `maple.ingest.content_encoding` | string | `main.rs:858` | `"gzip"` / `"deflate"` / `""` |
-| `maple.ingest.decoded_bytes` | int | `main.rs:859` | Size after decompression |
-| `maple.ingest.item_count` | int | `main.rs:860, 936, 950` | Spans / logs / metrics in the payload |
-| `maple.ingest.upstream_pool` | string | `main.rs:1144, 1309` | `"shared"` / `"self_managed"` (downstream collector pool) |
+| Key | Type | Meaning |
+|---|---|---|
+| `maple.ingest.key_type` | string | `"public"` / `"private"` / `"connector"` / `"sentinel"` |
+| `maple.ingest.self_managed` | bool | Org has a connected BYO ClickHouse (`org_clickhouse_settings.sync_status = 'connected'`) |
+| `maple.ingest.destination` | string | Export destination: `"tinybird"` or `"clickhouse"` |
+| `maple.ingest.payload_format` | string | `"json"` / `"protobuf"` |
+| `maple.ingest.content_encoding` | string | Request `Content-Encoding`, or `"identity"` when absent |
+| `maple.ingest.decoded_bytes` | int | Size after decompression |
+| `maple.ingest.item_count` | int | Spans / logs / metrics in the payload |
+| `maple.ingest.reject_reason` | string | Why a request or stage was rejected (always recorded, even when status stays `Ok`) |
+| `maple.ingest.upstream_pool` | string | Downstream collector pool; always `"shared"` today |
+| `maple.ingest.sampling_ratio` | float | Per-org trace sample ratio applied at ingest |
 
-### `maple.cloudflare.*` sub-namespace
+#### `maple.cloudflare.*` sub-namespace
 
-| Key | Type | Set at | Meaning |
-|---|---|---|---|
-| `maple.cloudflare.connector_id` | string | `main.rs:932` | Cloudflare Logpush connector UUID |
-| `maple.cloudflare.dataset` | string | `main.rs:933` | `"http_requests"` (only value today) |
-| `maple.cloudflare.is_validation` | bool | `main.rs:934, 951` | Whether this is a Cloudflare validation ping |
+| Key | Type | Meaning |
+|---|---|---|
+| `maple.cloudflare.connector_id` | string | Cloudflare Logpush connector UUID |
+| `maple.cloudflare.dataset` | string | `"http_requests"` (only value today) |
+| `maple.cloudflare.is_validation` | bool | Whether this is a Cloudflare validation ping |
 
 ---
 
 ## HTTP semconv (ingest gateway)
 
-The Rust ingest gateway emits the canonical OTel HTTP semconv keys on its Server-kind and Client-kind spans. **Use these exact keys; do not invent `http.method` (legacy) or `http.url` in new code.**
+The Rust ingest gateway emits the stable OTel HTTP semconv keys on its Server-kind and Client-kind spans. Use these exact keys. Do not write `http.method` (legacy) or `http.url` in new code.
 
-| Key | Direction | Set at | Meaning |
-|---|---|---|---|
-| `http.request.method` | both | `main.rs:848, 925, 1137, 1302` | Always `"POST"` for ingest |
-| `http.route` | server | `main.rs:849, 926` | Logical route (`"/v1/traces"`, `"/v1/logpush/cloudflare/http_requests/{connector_id}"`) |
-| `http.request.body.size` | both | `main.rs:850, 927, 1138, 1303` | Request body size in bytes |
-| `http.response.status_code` | both | `main.rs:851, 873, 893, 928, 948, 976, 1139, 1304` | Final HTTP status code |
-| `error.type` | server, client | `main.rs:852, 894, 929, 977, 1142, 1307` | Error category: `"validation"` / `"auth"` / `"upstream"` / `"decode"` / `"forward"` etc. |
-| `url.full` | client | `main.rs:1140, 1305` | Full downstream collector URL |
-| `server.address` | client | `main.rs:1141, 1306` | Downstream collector host |
+| Key | Direction | Meaning |
+|---|---|---|
+| `http.request.method` | both | Always `"POST"` for ingest |
+| `http.route` | server | Logical route (`"/v1/traces"`, `"/v1/logpush/cloudflare/http_requests/{connector_id}"`) |
+| `http.request.body.size` | both | Request body size in bytes |
+| `http.response.status_code` | both | Final HTTP status code |
+| `error.type` | both | Error category: `"auth"`, `"billing"`, `"throttle"`, `"payload_too_large"`, `"decode"`, `"enrich"`, etc. |
+| `url.full` | client | Full downstream collector URL |
+| `server.address` | client | Downstream collector host |
 
-The Rust `tracing` macro reserves field names with dots only when quoted: `"http.request.method" = "POST"`. The Rust ingest gateway also uses `otel.name`, `otel.kind`, `otel.status_code` field names — see `rules/status-and-kind.md`.
+In a Rust `tracing` macro, field names that contain dots must be quoted: `"http.request.method" = "POST"`. The gateway also uses the reserved `otel.name`, `otel.kind`, `otel.status_code`, and `otel.status_description` fields. See `rules/status-and-kind.md`.
 
 ---
 
 ## Misc attributes (call-site-specific)
 
-These appear on individual span functions but are not part of a reusable namespace. Inventoried here so you don't accidentally invent parallel keys.
+These appear on individual spans but do not form a reusable namespace. They are listed so you don't invent parallel keys.
 
 | Key | Type | Where | Meaning |
 |---|---|---|---|
-| `datasource` | string | `WarehouseQueryService.ts:571` | Datasource being ingested into |
-| `rowCount` | int | `WarehouseQueryService.ts:573` | Rows in ingest payload |
-| `pipe` | string | `WarehouseQueryService.ts:517` | Pipe name (legacy `query()` method) |
+| `datasource` | string | `executor.ts` (`ingest`) | Datasource being ingested into |
+| `rowCount` | int | `executor.ts` (`ingest`) | Rows in the ingest payload |
+| `pipe` | string | `executor.ts` (`query`) | Pipe name on the legacy `query()` method |
 | `attributeKey` | string | attribute-explore routes | Attribute key being browsed |
-| `service` | string | many routes | Service name from query params (note: not `service.name` — that's a resource attribute) |
+| `service` | string | many routes | Service name from query params (not `service.name`, which is a resource attribute) |
 | `spanId` | string | trace detail | Span being inspected |
 | `traceId` | string | trace detail | Trace being inspected |
 | `userId` | string | various | User ID context |
@@ -240,4 +242,4 @@ These appear on individual span functions but are not part of a reusable namespa
 | `rootOnly` | bool | trace queries | Filter to root spans only |
 | `incidentCount`, `issueCount`, `errorCount`, `serviceCount`, `orgCount`, `eventCount`, `sentCount`, `totalRequests`, `totalErrors`, `resultCount` | int | various | Result-shape counters on enclosing routes |
 
-**Rule:** Prefer extending an existing namespace (`query.*`, `result.*`, `cache.*`) over adding a new bare key. New bare keys make trace search harder.
+**Rule:** Extend an existing namespace (`query.*`, `result.*`, `cache.*`, `maple.*`) instead of adding a new bare key. Bare keys make trace search harder.

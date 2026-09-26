@@ -1,7 +1,14 @@
 import { describe, it } from "@effect/vitest"
 import { strict as assert } from "node:assert"
 import { Effect, Layer, Tracer } from "effect"
-import { FetchHttpClient } from "effect/unstable/http"
+import {
+	FetchHttpClient,
+	HttpClient,
+	HttpClientError,
+	type HttpClientRequest,
+	HttpClientResponse,
+} from "effect/unstable/http"
+import { LocalServerUnreachableError, ReadOnlyQueryError } from "../lib/errors"
 import { Mode } from "./mode"
 import { rawQuery } from "./operations"
 
@@ -50,4 +57,57 @@ describe("rawQuery instrumentation", () => {
 			assert.strictEqual(typeof span.attributes.get("db.duration_ms"), "number")
 		}),
 	)
+})
+
+describe("rawQuery failures", () => {
+	const modeLayer = Layer.succeed(Mode, {
+		resolve: Effect.succeed({ _tag: "local" as const, baseUrl: "http://127.0.0.1:4318" }),
+	})
+	const run = (
+		respond: (
+			request: HttpClientRequest.HttpClientRequest,
+		) => Effect.Effect<Response, HttpClientError.HttpClientError>,
+	) =>
+		Effect.runPromise(
+			Effect.flip(rawQuery("CREATE TABLE t (a Int8) ENGINE = Memory")).pipe(
+				Effect.provide(
+					Layer.merge(
+						modeLayer,
+						Layer.succeed(
+							HttpClient.HttpClient,
+							HttpClient.make((request) =>
+								Effect.map(respond(request), (response) =>
+									HttpClientResponse.fromWeb(request, response),
+								),
+							),
+						),
+					),
+				),
+			),
+		)
+
+	// The server refuses writes; the user sees why, not a warehouse error.
+	it("maps the read-only refusal to its reason", async () => {
+		const error = await run(() =>
+			Effect.succeed(new Response("read-only query endpoint: CREATE is not allowed", { status: 400 })),
+		)
+		assert.ok(error instanceof ReadOnlyQueryError)
+		assert.equal(error.message, "maple query is read-only: CREATE is not allowed")
+	})
+
+	it("names the URL it could not reach", async () => {
+		const error = await run((request) =>
+			Effect.fail(
+				new HttpClientError.HttpClientError({
+					reason: new HttpClientError.TransportError({
+						request,
+						description: "connection refused",
+					}),
+				}),
+			),
+		)
+		assert.ok(error instanceof LocalServerUnreachableError)
+		assert.match(error.message, /http:\/\/127\.0\.0\.1:4318/)
+		assert.match(error.hint ?? "", /MAPLE_LOCAL_URL/)
+	})
 })

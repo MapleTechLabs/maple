@@ -1,5 +1,5 @@
 ---
-title: "Error Tracking"
+title: "Error tracking"
 status: "shipped"
 category: "traces"
 quarter: "Q1 2026"

@@ -13,7 +13,7 @@ execution, HTTP, files and printing use the published `ch-bench` CLI. See the
 
 `run` accepts a TypeScript suite directly and recompiles it on each invocation.
 `doctor`, `export`, `schema`, `--json`, per-case verification, and multi-metric
-`--budgets` are also available through `bun run bench:queries`. Comparisons now
+`--budgets` are also available through `bun run bench:queries`. Comparisons
 always return a nonzero exit code for a failed gate; `--fail-on-regression` remains
 accepted. Artifacts from generic commands default to `.bench/` under the working
 directory; pass `--out apps/api/scripts/.bench/...` for Maple evidence.
@@ -21,7 +21,7 @@ No benchmark code is added to the query engine's root barrel or production paths
 
 This replaces the previous `@maple/query-engine/sql-catalog` and
 `@maple/query-engine-integrations/catalog` entry points. The core fixtures and
-coverage checks now live in `packages/query-engine/src/benchmark/`; integration
+coverage checks live in `packages/query-engine/src/benchmark/`; integration
 fixtures live in `packages/query-engine-integrations/src/benchmark/`. The shared
 `apps/api/scripts/query-bench/catalog.ts` composes them for both the CLI and the
 ClickHouse analyzer sweep. Decoder, tenant-scope, routing, and SQL snapshot checks
@@ -206,6 +206,8 @@ the change. It does not automatically recommend an index or materialized view.
 ```sh
 # Run in the standalone effect-clickhouse repository:
 bun run test
+
+# Run in this repository:
 bun run --cwd packages/query-engine test -- src/benchmark/catalog.test.ts
 bun run --cwd packages/query-engine-integrations test -- src/benchmark/catalog.test.ts
 bun run --cwd packages/query-engine typecheck
@@ -214,7 +216,7 @@ bun run --cwd apps/api bench:typecheck
 # Real migrations, all catalog cases through the analyzer, and a populated CLI
 # run/compare/inspect test. Uses its own temporary database, removed afterward.
 CLICKHOUSE_E2E=1 CLICKHOUSE_E2E_URL=http://127.0.0.1:8123 \
-  bun run --cwd apps/api test -- src/services/warehouse/query-benchmark.clickhouse.e2e.test.ts
+  bun run --cwd apps/api test -- scripts/query-bench/catalog.clickhouse.e2e.test.ts
 ```
 
 The live test inserts 50,000 spans across two tenants, verifies 40,000 belong to

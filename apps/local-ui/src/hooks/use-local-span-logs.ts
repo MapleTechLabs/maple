@@ -1,29 +1,44 @@
-import { useQuery } from "@tanstack/react-query"
+import { skipToken, useQuery } from "@tanstack/react-query"
 import { CH } from "@maple/query-engine"
-import { executeLocalCompiledQuery } from "@/lib/query"
-import { LOCAL_ORG_ID } from "../lib/constants"
-import { toClickHouseDateTime } from "../lib/time"
+import { executeLocalCompiledQuery, localParams } from "@/lib/query"
 import { normalizeLog, type LocalLog } from "../lib/log-shape"
+import { boundsForRange, parseClickHouseDateTime, toClickHouseDateTime, WIDEST_RANGE } from "../lib/time"
+
+const HOUR_MS = 60 * 60 * 1000
 
 /**
- * Logs emitted within a single span, newest first. Powers the "Logs" tab of the
- * span detail panel. The list query needs time bounds, so we span the full
- * history (epoch → now+1h) — the `(TraceId, SpanId)` filter keeps the scan tiny
- * on local data regardless of window width.
+ * Logs emitted within one span, newest first (the span detail's Logs tab).
+ * Bounded to the span's own window ±1h: its logs cannot drift further, and an
+ * unbounded scan reads every partition on each span click.
  */
-export function useLocalSpanLogs(traceId: string | undefined, spanId: string | undefined) {
+export function useLocalSpanLogs(
+	traceId: string | undefined,
+	spanId: string | undefined,
+	spanStartTime: string,
+	spanDurationMs: number,
+) {
 	return useQuery<ReadonlyArray<LocalLog>>({
-		queryKey: ["local", "span-logs", traceId, spanId],
-		enabled: !!traceId && !!spanId,
-		queryFn: async () => {
-			const startTime = toClickHouseDateTime(0)
-			const endTime = toClickHouseDateTime(Date.now() + 60 * 60 * 1000)
-			const compiled = CH.compile(
-				CH.logsListQuery({ traceId: traceId!, spanId: spanId!, limit: 100 }),
-				{ orgId: LOCAL_ORG_ID, startTime, endTime },
-			)
-			const rows = await executeLocalCompiledQuery(compiled)
-			return rows.map(normalizeLog)
-		},
+		queryKey: ["local", "span-logs", traceId, spanId, spanStartTime, spanDurationMs],
+		queryFn:
+			traceId && spanId
+				? async ({ signal }) => {
+						const startMs = parseClickHouseDateTime(spanStartTime)
+						const bounds =
+							startMs === null
+								? boundsForRange(WIDEST_RANGE)
+								: {
+										startTime: toClickHouseDateTime(startMs - HOUR_MS),
+										endTime: toClickHouseDateTime(
+											startMs + Math.max(0, spanDurationMs) + HOUR_MS,
+										),
+									}
+						const compiled = CH.compile(
+							CH.logsListQuery({ traceId, spanId, limit: 100 }),
+							localParams(bounds),
+						)
+						const rows = await executeLocalCompiledQuery(compiled, signal)
+						return rows.map(normalizeLog)
+					}
+				: skipToken,
 	})
 }

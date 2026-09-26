@@ -1,10 +1,10 @@
 /**
- * `/brand.md` — the markdown twin of the brand page.
+ * `/brand.md`: the markdown twin of the brand page.
  *
  * This is the twin most likely to be fetched by something that is not a person:
- * "what colour is Maple's brand, and where do I get the logo" is a question an
+ * "what color is Maple's brand, and where do I get the logo" is a question an
  * agent gets asked while writing a README or a slide. So the asset table gives
- * absolute URLs — a relative path is useless once the file has been copied out
+ * absolute URLs; a relative path is useless once the file has been copied out
  * of here, which is the entire point of the twin.
  */
 import type { APIRoute } from "astro"
@@ -16,12 +16,12 @@ export const GET: APIRoute = ({ site }) => {
 	const assets = [
 		[
 			"Lockup, primary",
-			"amber mark, ink type — light grounds",
+			"amber mark, ink type, light grounds",
 			"/brand/wordmark/maple-lockup-primary.svg",
 		],
 		[
 			"Lockup, reversed",
-			"amber mark, bone type — dark grounds",
+			"amber mark, bone type, dark grounds",
 			"/brand/wordmark/maple-lockup-reversed.svg",
 		],
 		["Lockup, mono ink", "single fill", "/brand/wordmark/maple-lockup-ink.svg"],
@@ -30,15 +30,15 @@ export const GET: APIRoute = ({ site }) => {
 		["Mark, amber", "the default bare mark", "/brand/logo/maple-mark-amber.svg"],
 		["Mark, ink", "light grounds", "/brand/logo/maple-mark-ink.svg"],
 		["Mark, white", "dark grounds and photography", "/brand/logo/maple-mark-white.svg"],
-		["Soot tile", "amber on ink — app icon, favicon", "/brand/logo/maple-mark-soot.svg"],
-		["Fired tile", "ink on amber — Maple Local", "/brand/logo/maple-mark-fired.svg"],
+		["Soot tile", "amber on ink, app icon and favicon", "/brand/logo/maple-mark-soot.svg"],
+		["Fired tile", "ink on amber, Maple Local", "/brand/logo/maple-mark-fired.svg"],
 	]
 
 	return markdown(
 		blocks(
 			docHeader(
 				"Maple brand assets",
-				"The Maple logo, wordmark, colours, and type. Free to use without asking; please use the artwork as it is rather than redrawing it.",
+				"The Maple logo, wordmark, colors, and type. Free to use without asking; please use the artwork as it is rather than redrawing it.",
 			),
 
 			"## Brand kit",
@@ -49,9 +49,9 @@ export const GET: APIRoute = ({ site }) => {
 				["Asset", "Use", "URL"],
 				assets.map(([name, use, path]) => [name!, use!, url(path!)]),
 			),
-			"Each `.svg` has PNG siblings — append `-256`, `-512`, or `-1024` before the extension.",
+			"Each `.svg` has PNG siblings: append `-256`, `-512`, or `-1024` before the extension.",
 
-			"## Colour",
+			"## Color",
 			"The brand is one warm amber at hue 59 on a near-black that leans brown rather than blue. For artwork, hex is authoritative; for interface code, the oklch token in `packages/ui/src/styles/tokens.css` is.",
 			table(
 				["Name", "Value", "Use"],
@@ -66,16 +66,16 @@ export const GET: APIRoute = ({ site }) => {
 			),
 
 			"## Type",
-			"Geist for headings, Geist Mono for body copy — the monospace body is deliberate, not a code-block rule. The wordmark is Geist Medium at -0.02em tracking, shipped as outlines so it needs no font installed. Both faces are under the SIL Open Font License.",
+			"Geist for headings, Geist Mono for body copy. The monospace body is the product's default text face rather than a code-block rule. The wordmark is Geist Medium at -0.02em tracking, shipped as outlines so it needs no font installed. Both faces are under the SIL Open Font License.",
 
 			"## Usage",
 			blocks(
 				'- **Don\'t fill the mark with a gradient.** The eyes and the notch beside the trunk are knockouts in one `fill-rule="evenodd"` path, so a gradient reaches them at a different value and they stop reading as eyes.',
 				"- **Don't put the rounded tile inside your own chrome.** The tile exists to survive a browser tab strip; on a surface that already has an edge it is a box around a box. Use the bare mark.",
 				'- **Don\'t rebuild the wordmark** by setting "Maple" in another face next to the mark. Use the outlined lockup.',
-				"- **Don't stretch, rotate, or recolour.** Scale uniformly and pick a colourway above; if none clears your ground, use mono white or mono ink.",
+				"- **Don't stretch, rotate, or recolor.** Scale uniformly and pick a colorway above; if none clears your ground, use mono white or mono ink.",
 				"- **Do keep clear space** of at least half the mark's width on every side.",
-				"- **Do respect the 16px floor** for the bare mark — below that its eyes antialias into a blob, so use the tile instead.",
+				"- **Do respect the 16px floor** for the bare mark. Below that its eyes antialias into a blob, so use the tile instead.",
 			),
 
 			"## Terms",
@@ -86,7 +86,7 @@ export const GET: APIRoute = ({ site }) => {
 			),
 
 			"## Contact",
-			"Anything the kit doesn't cover — a partner lockup, a different ratio, or permission for one of the don'ts above: hello@maple.dev",
+			"Anything the kit doesn't cover (a partner lockup, a different ratio, or permission for one of the don'ts above): hello@maple.dev",
 
 			`HTML version: ${url("/brand")}`,
 		),

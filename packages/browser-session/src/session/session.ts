@@ -1,11 +1,10 @@
 import { claimNewVisitor } from "../identity/visitor"
 import { isStringRecord, parseJsonObject } from "../platform/json"
 import { scrubUrl } from "../platform/url-privacy"
+import { IDLE_TIMEOUT_MS } from "./idle"
 
 const STORAGE_KEY = "maple.session"
 
-/** Rotate the session after this much inactivity (PostHog's default). */
-const IDLE_TIMEOUT_MS = 30 * 60_000
 /** Hard cap on a single session's lifetime regardless of activity. */
 const MAX_SESSION_MS = 24 * 60 * 60_000
 /**
@@ -46,6 +45,12 @@ export interface SessionRecord {
 	 * used versions 1 (active) and 2 (ended), so the absent case resumes at 2.
 	 */
 	metaVersion?: number
+	/**
+	 * Whether this session won its visit claim (`identity/visit.ts`). Settled on
+	 * the first metadata row and persisted, so a reload never re-claims and every
+	 * row of the session reports the same `billable_start`.
+	 */
+	billable?: boolean
 
 	// All optional: `readRecord`'s validator deliberately still accepts records
 	// written by older SDKs, which have none of these.
@@ -132,6 +137,10 @@ function parseSessionRecord(raw: string): SessionRecord | undefined {
 		if (typeof value.visitorIsNew !== "boolean") return undefined
 		record.visitorIsNew = value.visitorIsNew
 	}
+	if (value.billable !== undefined) {
+		if (typeof value.billable !== "boolean") return undefined
+		record.billable = value.billable
+	}
 	if (value.replaySampled !== undefined) {
 		if (typeof value.replaySampled !== "boolean") return undefined
 		record.replaySampled = value.replaySampled
@@ -154,6 +163,12 @@ const UTM_KEYS = ["utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_c
 
 /** In-memory fallback when sessionStorage is unavailable (private mode). */
 let ephemeral: SessionRecord | undefined
+/**
+ * Set while sessionStorage writes throw. On quota exhaustion reads still work,
+ * so the stored copy is a frozen snapshot: `metaVersion` pinned at 1 billed
+ * every heartbeat as a new session. Keep this separate from the read try/catch.
+ */
+let writesFailed = false
 
 export type SessionRotationListener = (previous: SessionRecord, next: SessionRecord) => void
 const rotationListeners = new Set<SessionRotationListener>()
@@ -206,6 +221,7 @@ function freshRecord(now: number): SessionRecord {
 }
 
 function readRecord(): SessionRecord | undefined {
+	if (writesFailed && ephemeral) return ephemeral
 	try {
 		const raw = window.sessionStorage.getItem(STORAGE_KEY)
 		if (!raw) return undefined
@@ -221,8 +237,11 @@ function writeRecord(record: SessionRecord): void {
 	ephemeral = record
 	try {
 		window.sessionStorage.setItem(STORAGE_KEY, JSON.stringify(record))
+		// Cleared, not latched: once another tab frees quota the durable copy leads again.
+		writesFailed = false
 	} catch {
-		// Private mode / storage disabled — the ephemeral copy is the source of truth.
+		// Private mode / storage disabled / quota: the ephemeral copy is the source of truth.
+		writesFailed = true
 	}
 	claimTab(record.id)
 }
@@ -350,6 +369,12 @@ function ownedByAnotherTab(record: SessionRecord, now: number): boolean {
 	} catch {
 		return false
 	}
+}
+
+/** Test seam: drop the in-memory record and its write-failure latch. */
+export function resetSessionStorageStateForTests(): void {
+	ephemeral = undefined
+	writesFailed = false
 }
 
 /** Test seam: forget this tab's lease state. */
@@ -492,6 +517,20 @@ export function noteCounts(counts: { clickCount?: number; errorCount?: number })
 		clickCount: counts.clickCount ?? record.clickCount ?? 0,
 		errorCount: counts.errorCount ?? record.errorCount ?? 0,
 	})
+}
+
+/**
+ * Whether `sessionId` is the session charged for its visit. `claim` runs once,
+ * on the first row, and the answer is persisted so heartbeats, reloads and the
+ * `ended` row all agree with it.
+ */
+export function resolveBillable(sessionId: string, claim: () => boolean): boolean {
+	const record = readRecord()
+	if (!record || record.id !== sessionId) return false
+	if (record.billable !== undefined) return record.billable
+	const billable = claim()
+	writeRecord({ ...record, billable })
+	return billable
 }
 
 /**

@@ -1,4 +1,4 @@
-# Query optimization implementation — 2026-09-05
+# Query optimization implementation (2026-09-05)
 
 Implemented the measured trace-alert and series-cap optimizations from the [first review](query-optimization-review-2026-09-05.md) and [second scan](query-optimization-second-scan-2026-09-05.md), plus scheduler-scoped bucket reuse. Replaying the actual modified builders against populated historical windows reduced alert reads by **51–74%** and capped-timeseries reads by **about 50%**.
 

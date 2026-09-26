@@ -6,7 +6,7 @@ import { describe, expect, it } from "@effect/vitest"
 import { Effect, Fiber, Layer } from "effect"
 import { TestClock } from "effect/testing"
 import { HttpClient, HttpClientResponse, type HttpClientRequest } from "effect/unstable/http"
-import type { InboundMessage } from "../../ingress"
+import type { InboundAction, InboundMessage } from "../../ingress"
 import { ConnectorCredentials, WORKSPACE_CREDENTIALS } from "../../outbound"
 import { encodeSlackCredentials } from "./credentials"
 import { SLACK_CONNECTOR_ID } from "./id"
@@ -83,6 +83,31 @@ describe("slack transport", () => {
 				channel: "C1",
 				thread_ts: "1700000000.000100",
 				text: "hello",
+			})
+		}).pipe(Effect.provide(http.layer))
+	})
+
+	it.effect("answers a click with a message only the clicker sees, in the thread it landed in", () => {
+		const http = stub([{ status: 200, body: '{"ok":true,"message_ts":"1700000000.000300"}' }])
+		const click: InboundAction = {
+			type: "action",
+			connector: SLACK_CONNECTOR_ID,
+			workspaceId: "T1",
+			channelId: "C1",
+			threadId: "1700000000.000100",
+			messageId: "1700000000.000200",
+			actionToken: "approval:abc",
+			actor: { id: "U2", displayName: "Ada" },
+		}
+		return Effect.gen(function* () {
+			const transport = yield* slackOutbound.transport
+			yield* transport.whisper(click, [{ kind: "prose", markdown: "only you" }])
+
+			expect(http.seen[0].url).toBe("https://slack.com/api/chat.postEphemeral")
+			expect(sentBody(http.seen[0])).toMatchObject({
+				channel: "C1",
+				user: "U2",
+				thread_ts: "1700000000.000100",
 			})
 		}).pipe(Effect.provide(http.layer))
 	})

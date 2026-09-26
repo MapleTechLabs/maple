@@ -1,8 +1,8 @@
 ---
-title: "One-Click Self-Hosting Setup"
+title: "Self-hosting setup"
 status: "planned"
 category: "platform"
-quarter: "Q2 2026"
-description: "Simplified self-hosting with a single command deployment. Railway template, Docker Compose, and automated configuration out of the box."
+quarter: ""
+description: "Simplified self-hosting with a single-command deployment and automated configuration."
 order: 10
 ---

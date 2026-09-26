@@ -1,0 +1,99 @@
+---
+title: "How Superwall gave its engineers and its agents the same view of production"
+description: "I built Maple to fix observability at Superwall. Three months in, agents read our production telemetry, p99 went from tens of seconds to under one, errors are down 90%+, and every engineer can debug production."
+date: 2026-09-25
+author: "David Granzin"
+authorRole: "Founder of Maple, engineer at Superwall"
+customer: superwall
+highlights:
+  - value: "<1s"
+    label: "p99 across services, down from tens of seconds"
+  - value: "80B+"
+    label: "traces, logs, and metrics a month"
+  - value: "90%+"
+    label: "fewer errors"
+  - value: "$1000s"
+    label: "saved on compute every month"
+---
+
+A quick disclosure first: I'm not a neutral party here. I work at Superwall, and I started Maple because the observability tools we used at Superwall kept letting me down and slowing us down. So read this as an engineer's account rather than a testimonial: I got fed up with my tools, built a new one, and then had to prove it on the system that made me build it.
+
+Superwall has now run exclusively on Maple for three months, sending it more than 80 billion traces, logs, and metrics a month. Over those three months we took p99 latency across our services from tens of seconds to under a second, cut our error count by more than 90%, and took thousands of dollars a month off our compute bill. Most of that came from one change: our coding agents could finally read our production telemetry.
+
+> "I have no idea how [we] lived without Maple for so long."
+>
+> **Brian Anglin**, CTO, Superwall
+
+## Where our old tools broke down
+
+Superwall powers paywalls for thousands of mobile apps. Every time one of those apps launches, our SDK talks to our backend: config fetches, paywall rules, experiment assignment, events, transactions. That adds up to more than 40 billion requests and over 3.5 petabytes of traffic a month, and all of it needs to be fast, because the paywall sits directly in front of the purchase.
+
+At that volume, our old observability setup broke down in ways that will sound familiar:
+
+- **We sampled because we had to.** Keeping every trace cost too much, so we kept a fraction. The request a customer emailed us about usually wasn't in it.
+- **Questions were slow to answer.** Getting from "p99 on config fetches went up" to "this query, for these apps, since this deploy" meant clicking through several tools and guessing.
+- **Errors were just noise.** We had plenty of error alerts and very little idea which ones mattered, so everyone learned to ignore them.
+- **The tools weren't built for the questions we had.** They were good at showing us that something was wrong. They were bad at helping us debug why: which requests, for whom, and since when, which is the only part that helps you fix anything.
+
+The one that finally pushed me was our configuration API. Every paywall for more than 500 million end users depends on it, and it had intermittent errors and timeouts we struggled to pin down. We'd see the spikes but couldn't reliably tell which requests failed, which apps were hit, or where the time went.
+
+We had plenty of data and no good way to work with it, least of all in an agent-native way. Engineers couldn't get from a spike to a cause, agents couldn't see production at all, and nothing told us that our own instrumentation was why so many questions went unanswered.
+
+## Building it, then betting on it
+
+Maple started as a side project to fix exactly that. I wanted one platform where engineers and agents could both debug production and, most importantly, where the observability itself kept getting better. Maple keeps every trace, log, and metric, so nobody has to sample. It gives an engineer or an agent the same fast path from a symptom to a cause. And it points out where your instrumentation is missing or wrong, so each incident leaves you able to see more than the last one did.
+
+Then came the harder part: moving my employer's production traffic onto it. We ran both side by side for two months, then switched fully to Maple. When Superwall is on fire, Maple is what we look at.
+
+## Agents that can see production
+
+This is the part I didn't fully expect when I started.
+
+Most observability tools are built for a person clicking through a UI. That's fine until you work the way our team works now: exclusively with coding agents. The agent can read the repo, run the tests, and write the fix, but it has no idea what production is doing. So you end up as the go-between: copying trace IDs, screenshotting charts, pasting log lines into chat.
+
+Maple ships an MCP server, so an agent can query production directly: find the slowest traces for an endpoint, open a specific trace, look up an error issue and the requests behind it, compare this week against last week. The answers come back in a form the model can reason about, not a picture of a chart.
+
+Here is the loop we use most:
+
+1. An engineer asks their agent why config fetches got slower since yesterday.
+2. The agent pulls the slow traces from Maple, sees that one database span dominates, and checks which apps are affected.
+3. It opens the code behind that span, finds the query, and proposes a fix with the evidence attached.
+4. After the deploy, it checks Maple again to confirm that the latency actually dropped.
+
+Errors work the same way. An agent claims an error issue, works out the root cause from the traces, opens a pull request, and links it back to the issue. The engineer reviews the result instead of doing the hunting.
+
+That loop is where most of the results below came from. We removed the step where a person had to translate production into something the agent could use, and the backlog of "we should really look at that" now shrinks every day instead of growing.
+
+It reached well beyond engineering, too. Our support team uses the same setup to answer customer questions from production data:
+
+> "I can really say that it's a life saver for support. The MCP is really good. I just set it up and let Claude do its thing, and it helps a TON."
+>
+> **Armin Dervisagic**, Support Engineer, Superwall
+
+## Three months later
+
+**Unsampled, at Superwall's scale.** All 40+ billion requests a month, across more than 3.5 petabytes of traffic, land in Maple with nothing sampled out. When a developer reports that a paywall didn't load for one user in one app, we find that user's exact request instead of a statistical cousin of it.
+
+**P99 from tens of seconds to under a second.** Maple didn't make our code faster; our engineers did. What changed was that they could finally see where the time went. Once the full traces were in front of us, the problems were obvious: request waterfalls where each call waited on the one before it, work that ran one step at a time when it could have run in parallel, and fetches that pulled far more data, far more often, than they needed to. None of it was exotic. We just hadn't been able to look. We cut the waterfalls, parallelized the work, and made fetching more efficient. P99 latency across our services went from an average in the tens of seconds to under a second across the board, and p95 dropped by more than 80%.
+
+Here is a typical one. In August, a change to our entitlements endpoint, which apps call to check what a user has paid for, pushed its p95 from about 80ms to about 145ms. The trace in Maple showed exactly where the time went: most of the new cost was a single lookup that missed its cache for the long tail of apps, and the rest ran after the database read instead of alongside it. We cached the lookup and started that work before the read, so the two overlap instead of adding up. The fix was written with a coding agent, starting from Maple's breakdown of the slow spans.
+
+**Thousands of dollars a month off our compute bill.** Faster code turned out to be cheaper code. The same traces that showed us where requests spent their time also showed us where our servers did: redundant work, oversized batches, and services doing far more than the request needed. Tightening those up let us run the same traffic on less compute.
+
+**Error count down more than 90%.** Maple groups errors into issues with a fingerprint, a first-seen and last-seen time, and the traces behind them. That turned a wall of alerts into a short, ranked list. Most of our "errors" turned out to be a handful of root causes repeated millions of times. Fixing the handful made most of the noise disappear, and the alerts that are left are ones people actually respond to.
+
+**Our instrumentation gets better every week.** Maple kept showing us where our own telemetry was wrong. One of our internal data services never opened a span for the request itself, so a request that ran five database statements showed up as five unrelated traces, with no endpoint, no status, and no total duration. We wrapped every internal request in a server span, and those five fragments became one trace you can read top to bottom. In another service, expected and harmless skips were being recorded as errored spans, which made its span error rate look about 14 times worse than it really was. Once we fixed that, the errors on that service pointed at real failures again.
+
+**Every engineer can debug production now.** Before Maple, debugging production leaned on the few people who knew the old tools well. Everyone else waited for them or guessed. Now any engineer on the team can go from a report to the exact failing request on their own. That changed how we ship: people merge with more confidence because they know they'll see a break quickly and understand why, and fixes go out the same day. We ship a lot faster than we did three months ago, and longer term, the bigger win is that everyone can own their code in production.
+
+## What Superwall gave back
+
+Having Superwall as a user from the start shaped Maple more than anything else. Most observability tools start small and learn to scale later, usually painfully. I didn't get that option. From the first weeks, Maple had to take in tens of billions of events a month, keep all of them, and still answer a query in seconds. That forced decisions early, in how we ingest, store, and query data, that would have been much harder to retrofit, and it's why Maple holds up at high volume today.
+
+Dogfooding on your own employer's production is also a good way to find out where your product falls short, and we found plenty. Every rough edge Superwall hit became a Maple issue, and most of Maple's performance work this year came from Superwall's query patterns. Superwall made Maple better at least as much as the other way around.
+
+## If you run something similar
+
+If you have high-volume mobile or API traffic, you're sampling because you can't afford not to, and your agents are blind to production, that's the problem Maple was built for: one place where your engineers and your agents debug production, and where the instrumentation gets better after every incident. It's OpenTelemetry end to end, so if you already export OpenTelemetry, you point it at Maple instead of re-instrumenting.
+
+You can [start with Maple here](https://maple.dev). And if you want to see how Superwall set things up, I'm happy to show you. I'm usually the one on call.

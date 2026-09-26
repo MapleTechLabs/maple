@@ -8,6 +8,7 @@ import type { ReactNode } from "react"
 import { cleanup, fireEvent, render, within } from "@testing-library/react"
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest"
 import { sessionLinkWindow } from "@maple/agent-sessions"
+import { userEvent } from "vitest/browser"
 import { AgentSessionsList, type AgentSessionRow } from "./agent-sessions-list"
 
 const navigate = vi.fn()
@@ -172,8 +173,36 @@ describe("AgentSessionsList", () => {
 			element?.classList.contains("rounded-full") === true && element.textContent === label
 		expect(view.getAllByText(chip("2 tools"))).toHaveLength(1)
 		expect(view.getAllByText(chip("1 turn"))).toHaveLength(1)
-		expect(view.getByText("18.4k")).toBeTruthy()
+		// Tokens split into what was sent in (fresh + cache) and what came out.
+		expect(view.getByText("16k")).toBeTruthy()
+		expect(view.getByText("2.4k")).toBeTruthy()
 		expect(view.getByText("maple-slack-agent")).toBeTruthy()
+	})
+
+	it("names a side's bucket in the tokens tooltip even when it is the only one", async () => {
+		const view = renderList(
+			<AgentSessionsList
+				{...sort}
+				sessions={[
+					{
+						...session,
+						totalTokens: 6_000,
+						inputTokens: 0,
+						cacheReadTokens: 5_000,
+						reasoningTokens: 0,
+						outputTokens: 1_000,
+					},
+				]}
+			/>,
+		)
+		await userEvent.hover(view.getByText("5k"))
+		const tooltip = await vi.waitFor(() => {
+			const content = document.querySelector('[data-slot="tooltip-popup"]')
+			if (!content) throw new Error("tooltip not open")
+			return content
+		})
+		expect(tooltip.textContent).toContain("Cache read: 5,000")
+		expect(tooltip.textContent).toContain("Response: 1,000")
 	})
 
 	it("draws the framework's mark in its brand color", () => {

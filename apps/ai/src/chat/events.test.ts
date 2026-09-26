@@ -9,7 +9,7 @@
 import { assert, describe, it } from "vitest"
 import type { ChatEvent } from "@maple/domain/chat-session"
 import { makeChatTranscript } from "@maple/domain/chat-transcript"
-import { APPROVAL_REQUIRED } from "../mcp/tools/llm-tools"
+import { APPROVAL_REQUIRED, type ToolUiPayload } from "../mcp/tools/llm-tools"
 import { makeTextSanitizer, toChatEvents, type AdapterContext } from "./events"
 
 /**
@@ -120,6 +120,27 @@ describe("toChatEvents", () => {
 		assert.deepEqual(toChatEvents(event("ToolCallFailed", { toolCallId: "c", message: "nope" }), base), [
 			{ type: "tool-result", messageId: "msg-1", callId: "c", output: "nope", isError: true },
 		])
+	})
+
+	it("carries a call's UI payload beside the model's text, once", () => {
+		const ui: ToolUiPayload = { __maple_ui: true, tool: "list_services", data: { services: [] } }
+		const pending = new Map([["c", ui]])
+		const context: AdapterContext = {
+			...base,
+			uiOf: (callId) => {
+				const found = pending.get(callId)
+				pending.delete(callId)
+				return found
+			},
+		}
+		assert.deepEqual(
+			toChatEvents(event("ToolCallSucceeded", { toolCallId: "c", result: "rows" }), context),
+			[{ type: "tool-result", messageId: "msg-1", callId: "c", output: { text: "rows", ui } }],
+		)
+		assert.deepEqual(
+			toChatEvents(event("ToolCallSucceeded", { toolCallId: "c", result: "rows" }), context),
+			[{ type: "tool-result", messageId: "msg-1", callId: "c", output: "rows" }],
+		)
 	})
 
 	it("leaves a proposal open, and ends its turn as finished rather than failed", () => {

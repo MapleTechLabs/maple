@@ -127,7 +127,7 @@ function MetricTile({
  * would be the loudest thing on a page whose accent is already doing the
  * selection rail, the sparklines and the row tints.
  */
-function Delta({ delta, invert }: { delta: number; invert?: boolean }) {
+export function Delta({ delta, invert }: { delta: number; invert?: boolean }) {
 	const rose = delta > 0
 	const flat = Math.abs(delta) < 0.001
 	const good = invert ? !rose : rose

@@ -2,11 +2,11 @@
  * Scaffold a local-store schema version bump.
  *
  * Everything the append-only gate demands except the DDL itself is a pure
- * function of one integer: the snapshot copy, the version constant, four edit
- * sites in `schema-identity.ts`, the history entry's four hashes, the migration
- * registry, and the pinned literals in both the bun test and the native probe.
- * This script writes all of them, then leaves the migration edge's `apply` for
- * a human — which is the only part that was ever real work.
+ * function of one integer: the snapshot copy, the version constant, three edit
+ * sites in `schema-identity.ts`, the history entry's four hashes, a new row in
+ * the step table, and the pinned literals in both the bun test and the native
+ * probe. This script writes all of them, then leaves the row's operations to a
+ * human, which is the only part that was ever real work.
  *
  * Run it AFTER `bun run clickhouse:schema` has regenerated the local DDL, so
  * `schema/local-schema.sql` already holds the schema being bumped to.
@@ -15,13 +15,12 @@
  *   bun run local-schema:bump --control
  */
 import { execFileSync } from "node:child_process"
-import { existsSync, readFileSync, readdirSync, writeFileSync } from "node:fs"
-import { join } from "node:path"
+import { existsSync, readFileSync, writeFileSync } from "node:fs"
 import { buildLocalSchemaManifest } from "../apps/cli/src/server/schema-manifest"
 import { schemaDigest, schemaFingerprint } from "../apps/cli/src/server/store-version"
 
 const SERVER_DIR = "apps/cli/src/server"
-const MIGRATIONS_DIR = `${SERVER_DIR}/local-store-migrations`
+const STEPS_FILE = `${SERVER_DIR}/local-store-migrations/steps.ts`
 const SCHEMA_DIR = `${SERVER_DIR}/schema`
 const TEST_FILE = "apps/cli/test/local-store-migrations.test.ts"
 const NATIVE_PROBE = "apps/cli/test/native-local-store-migration.sh"
@@ -66,13 +65,6 @@ const plan = (path: string, edits: ReadonlyArray<readonly [string | RegExp, stri
 	return { path, content: source }
 }
 
-const pascal = (slug: string): string =>
-	slug
-		.split("-")
-		.filter((part) => part.length > 0)
-		.map((part) => part[0]!.toUpperCase() + part.slice(1))
-		.join("")
-
 const pad = (version: number): string => String(version).padStart(4, "0")
 
 // ---------------------------------------------------------------------------
@@ -105,9 +97,7 @@ const from = Number(versionMatch[1])
 const to = from + 1
 
 const snapshotPath = `${SCHEMA_DIR}/local-schema-v${to}.sql`
-const modulePath = `${MIGRATIONS_DIR}/v${from}-to-v${to}-${slug}.ts`
 if (existsSync(snapshotPath)) fail(`${snapshotPath} already exists; v${to} looks already bumped`)
-if (existsSync(modulePath)) fail(`${modulePath} already exists`)
 
 // The identity is computed from the generated DDL directly rather than through
 // `schema-identity.ts`, which cannot even be imported until the v{to} snapshot
@@ -133,75 +123,34 @@ if (historySource.includes(`fingerprint: "${identity.fingerprint}"`))
 	)
 
 // ---------------------------------------------------------------------------
-// The previous migration module is the template: it is always the closest
-// example of the shape, and it never drifts the way a checked-in one would.
+// The new row in the step table. Only the operations need a human: the clone,
+// the v{to} bootstrap and the raw-row verification are the executor's.
 // ---------------------------------------------------------------------------
 
-const previousModuleFile = readdirSync(MIGRATIONS_DIR).find((name) =>
-	name.startsWith(`v${from - 1}-to-v${from}-`),
-)
-if (!previousModuleFile) fail(`no v${from - 1} -> v${from} migration module to derive the new edge from`)
-const previousSlug = previousModuleFile.replace(`v${from - 1}-to-v${from}-`, "").replace(/\.ts$/, "")
-const previousModuleId = `local-${pad(from - 1)}-to-${pad(from)}-${previousSlug}`
+const stepsSource = read(STEPS_FILE)
+const previousModuleId = new RegExp(`id: "(local-${pad(from - 1)}-to-${pad(from)}-[a-z0-9-]+)"`).exec(
+	stepsSource,
+)?.[1]
+if (!previousModuleId) fail(`no v${from - 1} -> v${from} row in ${STEPS_FILE} to follow`)
 const moduleId = `local-${pad(from)}-to-${pad(to)}-${slug}`
-const previousExport = `v${from - 1}ToV${from}${pascal(previousSlug)}Module`
-const newExport = `v${from}ToV${to}${pascal(slug)}Module`
+if (stepsSource.includes(`"${moduleId}"`)) fail(`${moduleId} is already in ${STEPS_FILE}`)
 
-// `from - 1 -> from` and `from -> to` must be remapped in one pass; done in two
-// passes the first rewrite's output would be caught by the second.
-const versionMap = new Map([
-	[from - 1, from],
-	[from, to],
-])
-const remap = (value: string): number => versionMap.get(Number(value)) ?? Number(value)
-// `v<n> -> v<m>` prose is all-or-nothing. The previous module's own edge label
-// remaps; a back-reference to an OLDER edge ("the ordering v11 -> v12 needed")
-// has only its right half in the map, and remapping that half alone invents an
-// edge that never existed.
-const derivedModule = read(join(MIGRATIONS_DIR, previousModuleFile))
-	.replace(
-		/LOCAL_SCHEMA_V(\d+)|([vV])(\d+)ToV(\d+)|local-(\d{4})-to-(\d{4})-|v(\d+) -> v(\d+)|\bv(\d+)\b/g,
-		(match, a, prefix, b, c, d, e, pairLeft, pairRight, f) => {
-			if (a !== undefined) return `LOCAL_SCHEMA_V${remap(a)}`
-			if (b !== undefined) return `${prefix}${remap(b)}ToV${remap(c)}`
-			if (d !== undefined) return `local-${pad(remap(d))}-to-${pad(remap(e))}-`
-			if (pairLeft !== undefined)
-				return versionMap.has(Number(pairLeft)) && versionMap.has(Number(pairRight))
-					? `v${remap(pairLeft)} -> v${remap(pairRight)}`
-					: match
-			if (f !== undefined) return `v${remap(f)}`
-			return match
-		},
-	)
-	.replaceAll(previousSlug, slug)
-	.replaceAll(pascal(previousSlug), pascal(slug))
-	// The registry's own description is edge-specific prose; carrying the
-	// previous edge's forward silently would mislabel the migration in the CLI.
-	// A replacer function, not a replacement string: `--description` is free-form
-	// text, and a `$&` or `$1` in it would otherwise be expanded as a pattern.
-	.replace(
-		/(\tmoduleVersion: \d+,\n\tdescription:\s*)"(?:[^"\\]|\\.)*"/,
-		(_match, prefix: string) =>
-			`${prefix}${JSON.stringify(description ?? `TODO(v${from} -> v${to}): what this edge does, in one line`)}`,
-	)
-
-const todoBanner = `// TODO(v${from} -> v${to}): derived from ${previousModuleFile}. Version plumbing, the
-// module id and the registry entry are already correct. Still to write by hand:
-//   1. the doc comment below — what changes, and what is NOT backfilled
-//   2. \`apply\` — the DDL for this edge, plus any view drops it needs
-//   3. \`preflight\`/\`verify\` row counts for the tables this edge touches
-//   4. \`operations\` and \`dispositions\` descriptions
-// \`verify\` asserts the v${to} manifest, so leaving \`apply\` unedited fails the
-// native migration probe rather than shipping a wrong edge.
+const STEPS_ANCHOR = "\t// local-schema:bump appends the next step above this line.\n"
+const newRow = `\t{
+\t\t// TODO(v${from} -> v${to}): what changes, and what is NOT backfilled. Fill beforeBootstrap
+\t\t// with the ADD COLUMN / view drops an IF NOT EXISTS bootstrap cannot do, then the
+\t\t// plan line and dispositions. The v${to} physical verify fails an unfinished row.
+\t\tid: "${moduleId}",
+\t\tfrom: ${from},
+\t\tto: ${to},
+\t\tdescription: ${JSON.stringify(description ?? `TODO(v${from} -> v${to}): what this edge does, in one line`)},
+\t\tclonedBefore: "any DDL runs",
+\t\tbeforeBootstrap: [],
+\t\tplan: [["TODO-v${to}-change", "TODO(v${from} -> v${to}): what the v${to} bootstrap changes"]],
+\t\tverifies: "Verify the v${to} physical schema and the retained raw telemetry counts",
+\t\tdispositions: [],
+\t},
 `
-
-const plannedModule: PlannedWrite = {
-	path: modulePath,
-	content: derivedModule.replace(
-		/^(\/\*\*\n \* The local mirror of ClickHouse migration)/m,
-		`${todoBanner}\n$1`,
-	),
-}
 
 // ---------------------------------------------------------------------------
 // The mechanical edits
@@ -220,24 +169,23 @@ const plannedIdentity: PlannedWrite = plan(`${SERVER_DIR}/schema-identity.ts`, [
 		`import schemaV${from}Sql from "./schema/local-schema-v${from}.sql" with { type: "text" }\nimport schemaV${to}Sql from "./schema/local-schema-v${to}.sql" with { type: "text" }`,
 	],
 	[`\tschemaV${from}Sql,\n]`, `\tschemaV${from}Sql,\n\tschemaV${to}Sql,\n]`],
+	// The test pins CURRENT_LOCAL_SCHEMA to this constant; steps look versions up by number.
 	[
-		`export const LOCAL_SCHEMA_V${from}_MANIFEST = snapshotAt(${from}).manifest`,
-		`export const LOCAL_SCHEMA_V${from}_MANIFEST = snapshotAt(${from}).manifest\nexport const LOCAL_SCHEMA_V${to}_SQL = snapshotAt(${to}).sql\nexport const LOCAL_SCHEMA_V${to}_MANIFEST = snapshotAt(${to}).manifest`,
-	],
-	[
-		`export const LOCAL_SCHEMA_V${from} = identityAt(${from})`,
-		`export const LOCAL_SCHEMA_V${from} = identityAt(${from})\nexport const LOCAL_SCHEMA_V${to} = identityAt(${to})`,
+		`export const LOCAL_SCHEMA_V${from} = localSchemaIdentity(${from})`,
+		`export const LOCAL_SCHEMA_V${from} = localSchemaIdentity(${from})\nexport const LOCAL_SCHEMA_V${to} = localSchemaIdentity(${to})`,
 	],
 ])
 
+// The control-schema history below it closes the same way, so the anchor includes its heading.
+const HISTORY_ANCHOR = "] as const)\n\n/** Immutable SQLite control DDL identities"
 const plannedHistory: PlannedWrite = plan(`${SERVER_DIR}/local-schema-history.ts`, [
 	[
-		"] as const)",
+		HISTORY_ANCHOR,
 		`\tObject.freeze({
 		// TODO(v${to}): what changed, whether any part is rewritten or any row
 		// moves, and what this edge does NOT backfill.
 		//
-		// projectRevision is carried forward deliberately — it is a hardcoded
+		// projectRevision is carried forward deliberately: it is a hardcoded
 		// constant that no longer tracks the generator's header, and the identity
 		// this gate compares is the fingerprint/digest pair.
 		version: ${identity.version},
@@ -246,17 +194,11 @@ const plannedHistory: PlannedWrite = plan(`${SERVER_DIR}/local-schema-history.ts
 		manifestDigest: "${identity.manifestDigest}",
 		projectRevision: "${identity.projectRevision}",
 	}),
-] as const)`,
+${HISTORY_ANCHOR}`,
 	],
 ])
 
-const plannedRegistry: PlannedWrite = plan(`${SERVER_DIR}/local-store-migrations.ts`, [
-	[
-		`import { ${previousExport} } from "./local-store-migrations/${previousModuleFile.replace(/\.ts$/, "")}"`,
-		`import { ${previousExport} } from "./local-store-migrations/${previousModuleFile.replace(/\.ts$/, "")}"\nimport { ${newExport} } from "./local-store-migrations/v${from}-to-v${to}-${slug}"`,
-	],
-	[`\t${previousExport},\n]`, `\t${previousExport},\n\t${newExport},\n]`],
-])
+const plannedSteps: PlannedWrite = plan(STEPS_FILE, [[STEPS_ANCHOR, `${newRow}${STEPS_ANCHOR}`]])
 
 const plannedTest: PlannedWrite = plan(TEST_FILE, [
 	[`\tLOCAL_SCHEMA_V${from},\n`, `\tLOCAL_SCHEMA_V${from},\n\tLOCAL_SCHEMA_V${to},\n`],
@@ -279,7 +221,7 @@ const plannedTest: PlannedWrite = plan(TEST_FILE, [
 		`{ ...CURRENT_LOCAL_SCHEMA, version: ${to}, fingerprint: "future", digest: SCHEMA_DIGEST }`,
 		`{ ...CURRENT_LOCAL_SCHEMA, version: ${to + 1}, fingerprint: "future", digest: SCHEMA_DIGEST }`,
 	],
-	// Both resolved-chain assertions end at the previous tip.
+	// Every pinned chain list (both resolved chains and the table walk) ends at the previous tip.
 	[new RegExp(`(\\t+)"${previousModuleId}",\\n`), `$1"${previousModuleId}",\n$1"${moduleId}",\n`],
 ])
 
@@ -292,20 +234,19 @@ const plannedProbe: PlannedWrite = plan(NATIVE_PROBE, [
 
 // Every anchor matched, so the bump is now committed to disk in one go.
 const writes: ReadonlyArray<PlannedWrite> = [
-	plannedModule,
 	// The retained snapshot is the generated DDL, verbatim.
 	{ path: snapshotPath, content: currentSql },
 	plannedVersion,
 	plannedIdentity,
 	plannedHistory,
-	plannedRegistry,
+	plannedSteps,
 	plannedTest,
 	plannedProbe,
 ]
 for (const write of writes) writeFileSync(write.path, write.content)
 
 try {
-	execFileSync("git", ["add", "--intent-to-add", snapshotPath, modulePath], { stdio: "ignore" })
+	execFileSync("git", ["add", "--intent-to-add", snapshotPath], { stdio: "ignore" })
 } catch {
 	// A bump outside a git checkout is still a valid bump.
 }
@@ -313,13 +254,13 @@ try {
 console.log(`bumped local schema v${from} -> v${to} (${identity.fingerprint})
 
   ${snapshotPath}
-  ${modulePath}  <- write the DDL here
+  ${STEPS_FILE}  <- fill in the ${moduleId} row
 
 edited: local-schema-version.ts, schema-identity.ts, local-schema-history.ts,
-        local-store-migrations.ts, ${TEST_FILE}, ${NATIVE_PROBE}
+        ${TEST_FILE}, ${NATIVE_PROBE}
 
 next:
-  1. write \`apply\` and the doc comments in the new module (see its TODO banner)
+  1. write the row's beforeBootstrap operations, plan line and dispositions (see its TODO)
   2. bun run clickhouse:schema:check
   3. bun run --cwd apps/cli test
 `)

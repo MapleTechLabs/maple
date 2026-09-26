@@ -5,15 +5,24 @@ Related work: [issue #222](https://github.com/MapleTechLabs/maple/issues/222),
 
 Audience: Maple maintainers and implementers of hosted or Maple Local runtimes
 
+Status (2026-09-25): slices 1, 2, 3 and 5 shipped. `packages/eventing-core`
+landed in #363, the Local runtime lives in `apps/cli/src/server/eventing`,
+PlanetScale uses
+`packages/backend/src/services/integrations/planetscale/webhook-events.ts`, and
+alert lifecycle events come from `packages/alerting-core`. The slice 4 example
+exists only as test fixtures; Maple Local installs no projector by default.
+Slice 6 (replay) is not implemented. "Settled implementation choices" describes
+the shipped behavior.
+
 Implementers adding a source adapter or semantic projector should also read
-[`eventing-extension-guide.md`](./eventing-extension-guide.md), which provides a
+[`eventing-extension-guide.md`](./eventing-extension-guide.md). It has a
 complete compile-time extension example, host wiring patterns, and review and
 test checklists.
 
 ## Decision summary
 
-Maple will treat immediate, per-occurrence event generation as an ingest concern,
-not as a scheduled warehouse-query concern.
+Maple treats immediate, per-occurrence event generation as an ingest concern.
+Scheduled warehouse queries do not generate these events.
 
 - Each accepted OTLP record or provider webhook is decoded and normalized into a
   typed signal once.
@@ -32,15 +41,15 @@ not as a scheduled warehouse-query concern.
   projections.
 
 The configurable matching model is a small, structured, typed predicate tree. It
-is not arbitrary SQL and it is not a new textual expression language. The live
-runtime evaluates the tree in memory. A warehouse adapter may lower the supported
-subset to parameterized ClickHouse expressions for explicit historical replay,
-but SQL behavior does not define the predicate semantics.
+is neither SQL nor a textual expression language. The live runtime evaluates the
+tree in memory. A warehouse adapter may lower the supported subset to
+parameterized ClickHouse expressions for explicit historical replay. SQL
+behavior does not define the predicate semantics.
 
 ## Problem
 
-Maple currently contains several mechanisms that are related but not expressed
-through one event boundary:
+Before this design, Maple had several related mechanisms with no shared event
+boundary:
 
 - hosted alert rules periodically query telemetry, update incident lifecycle
   state, and request deliveries;
@@ -49,15 +58,14 @@ through one event boundary:
 - future automation needs individual facts, such as a source record being
   observed, to become events that agents or other consumers can act on.
 
-Using the alert scheduler for the last case would give it the wrong semantics.
-A windowed query answers a question about a set of stored records and normally
-produces one aggregate observation. It cannot faithfully represent every
-individual occurrence without cursors, overlap windows, late-arrival handling,
-and deduplication.
+The alert scheduler has the wrong semantics for the last case. A windowed query
+answers a question about a set of stored records and normally produces one
+aggregate observation. It cannot represent every individual occurrence without
+cursors, overlap windows, late-arrival handling, and deduplication.
 
-The current Local `logs` table has no ingestion sequence or native event ID. Its
-sort key is designed for observability queries, and arbitrary OTLP attributes are
-stored as strings. Repeatedly querying that table once per rule would therefore:
+The Local `logs` table has no ingestion sequence or native event ID. Its sort
+key is designed for observability queries, and arbitrary OTLP attributes are
+stored as strings. Querying that table once per rule would:
 
 - compete with ingest, UI queries, checkpoints, retention, and archive work;
 - miss late records or repeatedly rediscover records unless a second deduplication
@@ -65,8 +73,8 @@ stored as strings. Repeatedly querying that table once per rule would therefore:
 - require casts that cannot always recover the source value's original type;
 - turn an embedded analytical database into an inefficient message queue.
 
-The event layer is still useful. It belongs in front of chDB for live signals,
-with chDB retained behind it for analytics and aggregate alert evaluation.
+The event layer belongs in front of chDB for live signals. chDB stays behind it
+for analytics and aggregate alert evaluation.
 
 ## Goals
 
@@ -350,24 +358,26 @@ selector to:
 - no regular expressions, functions, arithmetic, joins, or user code.
 
 These bounds keep evaluation predictable and leave room for indexing active
-projections by source kind and simple discriminating fields. `SignalScalar`
-describes normalized source data and does not inherit the literal-only 1,024-code-point
-limit; the OTLP adapter accepts source strings up to its separate 16 KiB bound.
-The literal limit is normative in Unicode code points: both the shared decoder
-and the generated JSON Schema enforce a maximum of 1,024. Since a Unicode code
-point requires at most four UTF-8 bytes, this also bounds literals to 4 KiB.
-ASCII literals are therefore limited to 1,024 characters, not 4,096. The shared
-multibyte conformance vectors verify the same boundary.
+projections by source kind and simple discriminating fields. The 1,024-code-point
+limit applies to selector literals only. `SignalScalar` describes normalized
+source data, and the OTLP adapter accepts source strings up to its separate
+16 KiB bound.
 
-The generated predicate schema describes two additional mandatory checks:
-consumers must enforce the depth and total-node budgets before recursive
-validation. These whole-tree limits are not expressed by its JSON Schema
-validation keywords, so a successful JSON Schema validation alone is insufficient
-for selector acceptance. The shared decoder performs an iterative preflight.
-Count each predicate occurrence, including repeated subtrees; JavaScript callers
-may reuse a subtree object, and it counts the same as the duplicated JSON value.
-Actual cycles fail the bounded preflight. Field declarations and operator/type
-compatibility also require the semantic validation described above.
+The literal limit is normative in Unicode code points. The shared decoder and
+the generated JSON Schema both enforce a maximum of 1,024. A code point needs at
+most four UTF-8 bytes, so literals are also bounded to 4 KiB. ASCII literals are
+limited to 1,024 characters, not 4,096. The shared multibyte conformance vectors
+check the same boundary.
+
+The generated predicate schema describes two more mandatory checks: consumers
+must enforce the depth and total-node budgets before recursive validation. JSON
+Schema validation keywords cannot express these whole-tree limits, so passing
+JSON Schema validation alone does not make a selector acceptable. The shared
+decoder runs an iterative preflight. It counts each predicate occurrence,
+including repeated subtrees. A JavaScript caller may reuse a subtree object; it
+counts the same as the duplicated JSON value. Actual cycles fail the bounded
+preflight. Field declarations and operator/type compatibility also need the
+semantic validation described above.
 
 ### Signal projection
 
@@ -393,14 +403,14 @@ retroactive: the new revision sees signals accepted after the runtime atomically
 installs its compiled registry snapshot. Historical processing requires an
 explicit replay operation.
 
-Replaying the exact latest revision is a no-op only while its enabled/disabled
-state still matches the active pointer. Replaying an older revision is a stale
-revision conflict; an intentional rollback is a new monotonic revision that
-copies the earlier configuration.
+Resubmitting the exact latest revision is a no-op only while its
+enabled/disabled state still matches the active pointer. Resubmitting an older
+revision is a stale revision conflict. An intentional rollback is a new
+monotonic revision that copies the earlier configuration.
 
 The configuration record is data. Source adapters and projector implementations
-are registered code. This is how matching remains configurable without making
-authentication, provider semantics, or executable code user-supplied.
+are registered code. Matching stays configurable while authentication, provider
+semantics, and executable code stay out of user hands.
 
 For example, an installed source adapter and projector can use this neutral
 contract:
@@ -479,12 +489,17 @@ Produced events use CloudEvents 1.0 structured representation:
 	"tenantid": "...",
 	"projectionid": "...",
 	"projectionrevision": 3,
+	"projectorid": "example.record",
+	"projectorversion": 1,
 	"data": {}
 }
 ```
 
-Names above are illustrative until the repository reserves its canonical event
-type and schema namespace.
+Type and schema names above are the neutral fixture names (see "Settled
+implementation choices"). `MapleCloudEventSchema` in
+`packages/eventing-core/src/model.ts` is the canonical envelope. It requires
+`projectorid` and `projectorversion` and allows optional `sourceoccurrenceid`
+and `identityquality` extensions.
 
 The event ID is deterministic when stable occurrence identity exists:
 
@@ -497,9 +512,10 @@ occurrence ID, projection ID, and the decimal projection revision. Encode each
 field as UTF-8, prefix it with its byte length as an unsigned four-byte big-endian
 integer, concatenate, and hash. The `sha256:` prefix is outside the hash.
 
-The hash input uses a canonical length-delimited encoding, not string
-concatenation. Projector version and output schema version are already fixed by
-the immutable projection revision and must be recorded with the event.
+The length prefixes make the encoding unambiguous, unlike plain string
+concatenation. The immutable projection revision already fixes the projector
+version and output schema version; the envelope records both. The reference
+implementation is `makeEventId` in `packages/eventing-core/src/event.ts`.
 
 Sensitive source details belong in `data`, under the projector's explicit schema
 and redaction policy. They must not be copied into CloudEvents context attributes,
@@ -526,10 +542,8 @@ zero, one, or several different factual events.
 
 ### Maple Local OTLP ingest
 
-Maple Local already decodes an OTLP request and then passes the decoded payload
-to the warehouse encoder. The event seam belongs between those operations.
-
-The implementation should refactor decoding/normalization so that:
+Maple Local decodes an OTLP request and then passes the decoded payload to the
+warehouse encoder. The event seam sits between those operations:
 
 1. the OTLP request is parsed once;
 2. typed record values remain available to the matcher;
@@ -542,87 +556,95 @@ The implementation should refactor decoding/normalization so that:
 When no projection matches, the path adds only bounded predicate work before the
 existing chDB insert.
 
-When the outbox reaches its event or byte cap, new projections are dropped while
-warehouse ingestion continues. Maple preserves existing staged and ready events,
-reports the dropped projection count, and records a durable delivery gap that an
-operator must accept before consumers resume claiming. Infrastructure failures
-while persisting eventing state remain retryable ingest failures. A retry of a
-staged occurrence recovers its original event IDs and canonical bytes. Durable
-OTLP log projection requires `timeUnixNano` or `observedTimeUnixNano`; server
-receipt time is never incorporated into durable identity or event content.
-OTLP permits both timestamp fields to be absent or zero; those records remain
-accepted by the warehouse path but are skipped by durable event projection.
-The same isolation applies to eventing-specific normalization bounds: an
-oversized attribute map or nested value makes only that source occurrence
-ineligible for projection and records a bounded normalization failure. The
-existing warehouse encoder still decides independently whether the OTLP record
-is valid for storage, so enabling a projection does not narrow ingest. Before
-full event normalization, Maple performs a tolerant, bounded extraction of the
-stable source URI and source-issued occurrence ID. An ineligible occurrence
-that matches an existing staged obligation fails ingest rather than silently
-acknowledging a changed retry and stranding the earlier event.
+When the outbox reaches its event or byte cap, new projections are dropped and
+warehouse ingestion continues. Maple keeps existing staged and ready events,
+reports the dropped projection count, and records a durable delivery gap. An
+operator must accept the gap before consumers resume claiming. Infrastructure
+failures while persisting eventing state remain retryable ingest failures. A
+retry of a staged occurrence recovers its original event IDs and canonical
+bytes.
 
-Staging and chDB insertion are not one transaction. A process crash after the
-chDB insert but before the OTLP acknowledgement can still cause a duplicate raw
-telemetry row on retry; that is already possible with at-least-once OTLP
-delivery. The staged/ready outbox protocol prevents an event from becoming
-dispatchable before the ingest attempt reaches its warehouse commit point.
-Staged rows retain the source occurrence identity and original projection
-revision plus a bounded hash of the normalized source content. On redelivery,
-Maple recovers those exact event IDs and does not reevaluate that occurrence
+Durable OTLP log projection requires `timeUnixNano` or `observedTimeUnixNano`.
+Server receipt time never enters durable identity or event content. OTLP
+permits both timestamp fields to be absent or zero. The warehouse path still
+accepts those records; durable event projection skips them.
+
+Eventing-specific normalization bounds are isolated the same way. An oversized
+attribute map or nested value makes only that source occurrence ineligible for
+projection and records a bounded normalization failure. The warehouse encoder
+still decides independently whether the OTLP record is valid for storage, so
+enabling a projection does not narrow ingest. Before full event normalization,
+Maple does a tolerant, bounded extraction of the stable source URI and
+source-issued occurrence ID. If an ineligible occurrence matches an existing
+staged obligation, ingest fails. Acknowledging it would accept a changed retry
+and strand the earlier event.
+
+Staging and chDB insertion are not one transaction. A crash after the chDB
+insert and before the OTLP acknowledgement can cause a duplicate raw telemetry
+row on retry. At-least-once OTLP delivery already allows that. The staged/ready
+outbox protocol keeps an event from becoming dispatchable before the ingest
+attempt reaches its warehouse commit point.
+
+Staged rows keep the source occurrence identity, the original projection
+revision, and a bounded hash of the normalized source content. On redelivery,
+Maple recovers those exact event IDs. It does not reevaluate the occurrence
 against a newer or disabled projection snapshot. Recovery requires the source
-hash to match; reuse of the same source identity with changed content fails as a
-collision and leaves the staged event non-ready. Within one ingest batch, two
-records that reuse the same tenant, source kind, source URI, and source-issued
-occurrence ID must also have the same normalized source hash. Maple checks that
-source tuple for every normalized occurrence before selectors divide it into
-zero, one, or several projected event IDs. A projection-ineligible record that
-reuses a normalized tuple makes the batch ambiguous and is rejected before any
-event is staged. The fingerprint contract orders field keys by explicit
-JavaScript code-unit order, not locale collation, so checkpoint recovery is
-independent of host locale.
+hash to match. Reusing a source identity with changed content fails as a
+collision and leaves the staged event non-ready.
 
-The initial control schema is version 1 and includes source fingerprints.
+Within one ingest batch, two records with the same tenant, source kind, source
+URI, and source-issued occurrence ID must also have the same normalized source
+hash. Maple checks that tuple for every normalized occurrence before selectors
+split it into zero, one, or several projected event IDs. A
+projection-ineligible record that reuses a normalized tuple makes the batch
+ambiguous; Maple rejects it before staging any event. The fingerprint orders
+field keys by JavaScript code-unit order, not locale collation, so checkpoint
+recovery does not depend on host locale.
+
+The control schema (`LOCAL_CONTROL_SCHEMA_VERSION = 1` in
+`apps/cli/src/server/local-schema-version.ts`) includes source fingerprints.
 Opening a store or validating a snapshot rejects staged source-backed rows with
 missing or malformed fingerprints. Restore verifies the control snapshot against
 its checkpoint manifest, validates it, and copies it through a private scratch
 store before installing the restored data directory. Invalid snapshots fail
 before restore readiness or the live-directory swap. The checkpoint artifact
-remains unchanged.
+stays unchanged.
 
-If atomic exactly-once storage across both systems later becomes a requirement,
-the correct addition is a durable ingress journal before both writes. chDB
-polling does not solve that problem.
+If atomic exactly-once storage across both systems becomes a requirement, add a
+durable ingress journal before both writes. chDB polling does not solve that
+problem.
 
 ### Provider webhooks
 
 Provider authentication runs before normalization. The hosted PlanetScale route
-acknowledges test, ignore, and log dispositions inline. Events requiring issue or
-timeline persistence are projected and queued before acknowledgement. Their
-canonical CloudEvent and routing metadata form the durable queue body. When the
-provider omits its timestamp, projection uses the request's `receivedAt` value.
-The complete serialized job is measured against a 120 KiB cap before send;
-oversized queue bodies receive a deterministic `413` rather than a retryable
-queue failure. During rolling upgrades, consumers accept the new event-only body
-and the payload-only body already produced by upstream. Legacy payload-only jobs
-are projected using their stored `receivedAt` when their timestamp is absent.
+(`apps/api/src/routes/v1/planetscale-webhook.http.ts`) acknowledges test,
+ignore, and log dispositions inline. Events that need issue or timeline
+persistence are projected and queued before acknowledgement. The canonical
+CloudEvent and routing metadata form the durable queue body. When the provider
+omits its timestamp, projection uses the request's `receivedAt` value. The
+complete serialized job is checked against a 120 KiB cap
+(`MAX_PLANETSCALE_WEBHOOK_QUEUE_BYTES`) before send. An oversized body gets a
+deterministic `413`, not a retryable queue failure. During rolling upgrades,
+consumers accept both the new event-only body and the legacy payload-only body
+(`LegacyPlanetScaleWebhookJob`). Legacy jobs without a provider timestamp are
+projected with their stored `receivedAt`.
 
-Current queue jobs are decoded as one relational contract: the event tenant,
-source, embedded connection, type, schema, and timestamp must agree with the
-bounded routing fields. Unsupported or contradictory jobs are terminally
-acknowledged as poison messages. Health-event issue mutations use a durable
-`(org_id, event_id)` receipt inserted in the same PostgreSQL transaction as the
-issue mutation; timeline insertion remains independently idempotent. A retry
-after a failure between those phases therefore completes the issue once without
-duplicating its occurrence count or history. Transactions also take a scoped
-lock for `(org_id, issue fingerprint)` before claiming the receipt. Concurrent,
-distinct events for the same issue are therefore all counted, while only one
-transition reopens a resolved issue.
+Current queue jobs decode as one relational contract: the event tenant, source,
+embedded connection, type, schema, and timestamp must agree with the bounded
+routing fields. Unsupported or contradictory jobs are acknowledged as poison
+messages and not retried. Health-event issue mutations insert a durable
+`(org_id, event_id)` receipt in the same PostgreSQL transaction as the issue
+mutation. Timeline insertion is independently idempotent. A retry after a
+failure between those phases completes the issue once, without duplicating its
+occurrence count or history. Each transaction takes
+`pg_advisory_xact_lock` on `(org_id, issue fingerprint)` before claiming the
+receipt. Concurrent distinct events for the same issue are all counted, and only
+one transition reopens a resolved issue.
 
 The provider source adapter supplies the strongest available delivery or event
 identity. It then uses the same selector, projector, event ID, and outbox
-contracts as OTLP. Provider-specific response behavior does not live in the core;
-it can be migrated behind consumers of the emitted event types.
+contracts as OTLP. Provider-specific response behavior stays out of the core
+and can move behind consumers of the emitted event types.
 
 ### Query-driven alerts
 
@@ -636,7 +658,7 @@ Scheduled alert rules retain their existing execution model:
 5. the host persists it through the common event outbox.
 
 This path queries chDB or the hosted warehouse because its input is an aggregate
-over time. It does not reuse the ingest-time signal selector, and the ingest-time
+over time. It does not reuse the ingest-time signal selector. The ingest-time
 path does not impersonate an alert incident.
 
 ### Historical replay
@@ -659,15 +681,14 @@ compiler emits parameterized expressions through existing query-building
 facilities; it never interpolates field names or literals supplied directly by a
 user.
 
-Current Local OTLP attribute maps store strings, so arbitrary typed attributes
-will generally be `coerced`, not `exact`. Replay event IDs are guaranteed to
+Local OTLP attribute maps store strings, so arbitrary typed attributes are
+generally `coerced`, not `exact`. Replay event IDs are guaranteed to
 deduplicate against live events only when the warehouse retained the same stable
 source occurrence ID.
 
 ## Processing and delivery guarantees
 
-The architecture uses precise, layered guarantees rather than the blanket phrase
-"exactly once".
+Each boundary has its own guarantee. None of them is "exactly once".
 
 | Boundary                               | Guarantee                                                                                                      |
 | -------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
@@ -675,7 +696,7 @@ The architecture uses precise, layered guarantees rather than the blanket phrase
 | One accepted batch                     | One evaluation against one immutable projection-registry snapshot.                                             |
 | Projection with source-stable identity | Effectively-once event creation through deterministic ID plus unique outbox insertion.                         |
 | Projection with derived identity       | Best-effort deduplication; identical real occurrences may collapse and re-encoded retries may diverge.         |
-| Projection with no identity            | At-least-once event creation only; durable automation should reject this configuration by default.             |
+| Projection with no identity            | No event. `makeCloudEvent` rejects `identityQuality: "none"`, so the host records a projection failure.        |
 | Outbox to consumer                     | At least once with an event ID/idempotency key; consumer-side external effects are outside this specification. |
 | chDB telemetry row                     | Existing OTLP semantics; duplicate storage remains possible after ambiguous failures.                          |
 
@@ -755,14 +776,15 @@ The physical Local store is an implementation decision, but it must provide:
 
 ## Package and host ownership
 
-The intended ownership is:
+Ownership:
 
-- `packages/eventing-core` (new): language-neutral schemas, selector validation,
-  the reference TypeScript evaluator, projector registry contracts, canonical
-  event identity, and conformance fixtures. No database, network, scheduler, or
-  global clock dependencies.
-- `packages/alerting-core` (new): aggregate alert evaluation and incident
-  lifecycle. It remains distinct and later emits through an eventing-core port.
+- `packages/eventing-core` (`@maple/eventing-core`): language-neutral schemas,
+  selector validation, the reference TypeScript evaluator, projector registry
+  contracts, canonical event identity, and conformance fixtures. No database,
+  network, scheduler, or global clock dependencies.
+- `packages/alerting-core` (`@maple/alerting-core`): aggregate alert evaluation
+  and incident lifecycle. It stays distinct and builds lifecycle CloudEvents
+  with `makeCloudEvent` from eventing-core.
 - `packages/domain`: public/API schemas when projection CRUD becomes public.
 - `apps/cli`: Maple Local OTLP source adapter, compiled-registry lifecycle,
   durable Local ports, ingest staging, and optional replay adapter.
@@ -771,8 +793,9 @@ The intended ownership is:
 - `apps/ingest`: a future Rust OTLP adapter only when hosted per-signal projection
   is required.
 
-The canonical JSON schemas and fixture corpus, rather than TypeScript source
-types, define cross-language behavior. A Rust implementation must pass the same
+The canonical JSON schemas (`packages/eventing-core/schemas`) and fixture corpus
+(`packages/eventing-core/fixtures`) define cross-language behavior. TypeScript
+source types do not. A Rust implementation must pass the same
 valid/invalid selector cases, typed comparison cases, canonical event-ID vectors,
 and projection fixtures before it can claim compatibility.
 
@@ -839,8 +862,8 @@ when those optional host operations run.
 
 ## Compatibility and migration
 
-This design extends rather than replaces the host-neutral alert-core extraction
-already on the issue-222 branch.
+This design extends the host-neutral alert-core extraction from the issue-222
+branch. It does not replace it.
 
 1. Existing hosted aggregate alerts continue using their scheduler, query,
    lifecycle, and delivery behavior while the event contract is introduced.
@@ -865,7 +888,7 @@ sort key.
 
 ## Implementation slices for the next goal
 
-### Slice 1 — Contract and evaluator
+### Slice 1: Contract and evaluator
 
 - Add `packages/eventing-core`.
 - Define runtime schemas for typed values, fields, predicates, projection specs,
@@ -874,21 +897,21 @@ sort key.
 - Add canonical JSON and event-ID test vectors.
 - Add complexity-limit and hostile-input tests.
 
-### Slice 2 — Local durable control state
+### Slice 2: Local durable control state
 
 - Select and document the Local transactional store.
 - Implement projection revision and outbox ports, migrations, recovery, and
   backup/restore hooks.
 - Expose headless health inspection before UI work.
 
-### Slice 3 — Local ingest seam
+### Slice 3: Local ingest seam
 
 - Refactor OTLP normalization to preserve typed values without decoding twice.
 - Load and atomically swap compiled projection snapshots.
 - Stage matching events, insert telemetry, mark events ready, and acknowledge.
 - Prove that the live path executes no chDB `SELECT` and adds no scheduler.
 
-### Slice 4 — Example extension: source record to durable Maple event
+### Slice 4: Example extension: source record to durable Maple event
 
 - Define a source adapter's OTLP field contract and stable occurrence identity.
 - Register its field catalog and a pure semantic projector outside the core.
@@ -899,14 +922,14 @@ sort key.
 This slice stops at the outbox. Transport and agent-action behavior are
 downstream concerns using the produced typed event.
 
-### Slice 5 — Existing producer convergence
+### Slice 5: Existing producer convergence
 
 - Adapt PlanetScale webhook inputs to the source/projector contracts.
 - Project alert lifecycle intents into CloudEvents.
 - Preserve existing provider and alert behavior with parity fixtures before
   switching consumers.
 
-### Slice 6 — Optional replay
+### Slice 6: Optional replay
 
 - Add per-field replay capability declarations.
 - Implement bounded dry-run and explicit emission modes.
@@ -937,18 +960,18 @@ The first usable implementation is complete when all of the following are true:
 
 ## Settled implementation choices
 
-The TypeScript reference implementation settles the remaining host choices as
-follows:
+The TypeScript reference implementation settles the remaining host choices:
 
 - Maple Local stores projection revisions, failures, and the staged/ready outbox
-  in SQLite at `<dataDir>/control/eventing.sqlite`, using WAL and `synchronous =
-FULL`. While ingest is quiesced, backup first completes and verifies a blocking
-  `wal_checkpoint(TRUNCATE)` so the serialized database contains every committed
-  control-store transaction rather than only the main SQLite file. A version-2
-  Maple checkpoint contains `control.sqlite` beside the chDB
-  backup and binds its byte count, SHA-256 digest, schema version, and row counts
-  in the checkpoint manifest. Version-1 checkpoints remain readable and restore
-  an empty control store.
+  in SQLite at `<dataDir>/control/eventing.sqlite`, with WAL and
+  `synchronous = FULL` (`apps/cli/src/server/eventing/control-store.ts`). While
+  ingest is quiesced, backup first runs and verifies a blocking
+  `wal_checkpoint(TRUNCATE)`, so the serialized database holds every committed
+  control-store transaction and not only the main SQLite file. A version-2
+  Maple checkpoint stores `control.sqlite` beside the chDB backup (under
+  `<dataDir>/backups/snapshots/<checkpointId>/`). Its manifest binds the file's
+  byte count, SHA-256 digest, schema version, and row counts. Version-1
+  checkpoints remain readable and restore an empty control store.
 - The reference OTLP extension example uses a LogRecord event name such as
   `example.record.observed`. An installed adapter defines its own accepted stable
   occurrence identifiers, field catalog, validation rules, and semantic
@@ -959,12 +982,12 @@ FULL`. While ingest is quiesced, backup first completes and verifies a blocking
   event type and schema names; neutral fixtures use
   `dev.maple.example.record.observed.v1` with
   `urn:maple:event-schema:example-record:v1`.
-- Attribute strings are limited to 16 KiB, source/event identities to 256
-  characters (long stable inputs are represented by a SHA-256 URN), each
-  attribute namespace to 256 entries,
-  nested values to depth 8 and 1,024 nodes, normalized source data to 256 KiB,
-  and a canonical outbox CloudEvent to 256 KiB. Secret-like attribute names are
-  excluded from the projection field and data views.
+- Limits (`apps/cli/src/server/eventing/otlp.ts`, `MAX_CLOUD_EVENT_BYTES` in
+  eventing-core): attribute strings 16 KiB; source and event identities 256
+  characters (longer stable inputs become a SHA-256 URN); 256 entries per
+  attribute namespace; nested values depth 8 and 1,024 nodes; normalized source
+  data 256 KiB; canonical outbox CloudEvent 256 KiB. Secret-like attribute names
+  are excluded from the projection field and data views.
 - The Local TypeScript path is the reference live implementation. Hosted Rust
   ingest remains a later adapter and must pass the shared schemas and fixture
   corpus before claiming parity.
@@ -973,64 +996,97 @@ FULL`. While ingest is quiesced, backup first completes and verifies a blocking
   projector before queueing. Test, ignore, and log dispositions are acknowledged
   inline. The dedicated Cloudflare Queue carries
   `dev.maple.planetscale.webhook.received.v1` without duplicating the provider
-  payload. Consumers support the new event-only body and the existing upstream
-  payload-only body during rolling upgrades. Missing timestamps use `receivedAt`;
-  legacy jobs use the value stored in their queue body, so queue retries retain
+  payload. Consumers support the new event-only body and the legacy
+  payload-only body during rolling upgrades. Missing timestamps use `receivedAt`.
+  Legacy jobs use the value stored in their queue body, so queue retries keep
   the same projected identity.
 - Hosted query-alert delivery rows remain that producer's durable outbox. Their
-  payload now includes an additive deterministic
-  `dev.maple.alert.lifecycle.{trigger,resolve,renotify,test}.v1` CloudEvent while
-  retaining every legacy top-level delivery field. Retry creation preserves the
-  originally stored JSON, including the CloudEvent ID and future additive fields,
-  instead of round-tripping it through a lossy legacy schema.
-- Historical replay execution remains deliberately unimplemented in this
-  change. Field catalogs already declare `exact`, `coerced`, or `unavailable`,
-  but Local's current arbitrary attribute maps have lost source scalar type and
-  its warehouse rows do not furnish a native occurrence ID. A later bounded,
-  operator-invoked replay adapter must require explicit coercion acknowledgement
-  and pass live-evaluator conformance tests; the live path never falls back to a
-  chDB poller in the meantime.
+  payload includes an additive deterministic
+  `dev.maple.alert.lifecycle.{trigger,resolve,renotify,test}.v1` CloudEvent and
+  keeps every legacy top-level delivery field. Retry creation preserves the
+  originally stored JSON, including the CloudEvent ID and future additive
+  fields. It does not round-trip the payload through a lossy legacy schema.
+- Historical replay is not implemented. Field catalogs already declare `exact`,
+  `coerced`, or `unavailable`. Local's arbitrary attribute maps have lost the
+  source scalar type, and its warehouse rows carry no native occurrence ID. A
+  later bounded, operator-invoked replay adapter must require explicit coercion
+  acknowledgement and pass live-evaluator conformance tests. Until then the live
+  path never falls back to a chDB poller.
 - Projector failures with a source occurrence ID are idempotent per projection
-  revision. Local retains a bounded newest 10,000 failure rows per tenant and
-  exposes the count through the authenticated headless health endpoint. A
-  projector failure does not retry a valid telemetry occurrence forever;
-  infrastructure failure to persist required state remains retryable.
+  revision. Local keeps the newest 10,000 failure rows per tenant and exposes
+  the count through the authenticated headless health endpoint. A projector
+  failure does not retry a valid telemetry occurrence forever. Failure to
+  persist required state remains retryable.
 
 Maple Local activates immutable revisions with authenticated
 `POST /local/eventing/projections`. The same maintenance credential protects
 `GET /local/eventing/projections`, `/local/eventing/health`,
-`/local/eventing/outbox`, and consumer administration. Ready records receive a separate, append-only
-readiness `sequence` on their first staged-to-ready transition;
-`?after=<sequence>&limit=<n>` therefore cannot skip an older staged event that is
-recovered after newer events were already read. `?state=staged` uses the original
-staging sequence for bounded inspection of records stranded before the chDB
-commit point. The Local store defaults to at most 10,000 events and 256 MiB of
-canonical event JSON. When either cap would be exceeded, new projections are dropped while warehouse ingestion continues. A durable delivery gap blocks subsequent consumer claims until an operator accepts its generation. Existing records remain intact; the maintenance-only abandon API can explicitly remove stranded records. Inspection remains non-destructive. Named downstream
-consumers use the separate [Maple Local event consumer protocol](./local-event-consumers.md) for
-leased, at-least-once claims and exact whole-batch acknowledgement. Ready-event pruning advances only
-through the slowest active consumer and retains a bounded acknowledged tail; staged events are never
-pruned by delivery acknowledgement.
+`/local/eventing/outbox`, and consumer administration (routes in
+`apps/cli/src/server/serve.ts`).
 
-Re-delivery is the safe recovery operation: it locates staged rows by stable
-source occurrence, preserves their original projection snapshot, and promotes
-those exact event IDs only after the warehouse write succeeds. Maple never blindly
-promotes an old staged record because, after a crash, the control store alone
-cannot prove whether the corresponding chDB write committed. Activation requires
-authentication, a bounded request body, structural budget validation, and full
-registry compilation before acquiring global quiescence. Only the projection
-revision commit and immutable runtime-registry swap occur while ingest is
-quiesced, so invalid credentials, incomplete bodies, and expensive validation do
-not close admission and every ingest request still observes exactly one registry
-version. Concurrent maintenance requests receive an intentional conflict response.
+A ready record gets a separate, append-only readiness `sequence` on its first
+staged-to-ready transition. `?after=<sequence>&limit=<n>` therefore cannot skip
+an older staged event that is recovered after newer events were read.
+`?state=staged` uses the original staging sequence for bounded inspection of
+records stranded before the chDB commit point.
+
+The Local store defaults to at most 10,000 events and 256 MiB of canonical event
+JSON. When either cap would be exceeded, new projections are dropped and
+warehouse ingestion continues. A durable delivery gap blocks consumer claims
+until an operator accepts its generation. Existing records stay intact. The
+maintenance-only abandon API can explicitly remove stranded records. Inspection
+is non-destructive.
+
+Named downstream consumers use the separate
+[Maple Local event consumer protocol](./local-event-consumers.md) for leased,
+at-least-once claims and exact whole-batch acknowledgement. Ready-event pruning
+advances only through the slowest active consumer and keeps a bounded
+acknowledged tail. Delivery acknowledgement never prunes staged events.
+
+Re-delivery is the safe recovery operation. It locates staged rows by stable
+source occurrence, keeps their original projection snapshot, and promotes those
+exact event IDs only after the warehouse write succeeds. Maple never blindly
+promotes an old staged record: after a crash, the control store alone cannot
+prove whether the matching chDB write committed.
+
+Activation runs authentication, a bounded request body read, structural budget
+validation, and full registry compilation before acquiring global quiescence.
+Only the projection revision commit and the immutable runtime-registry swap run
+while ingest is quiesced. Invalid credentials, incomplete bodies, and expensive
+validation therefore never close admission, and every ingest request sees
+exactly one registry version. Concurrent maintenance requests get a `409`
+conflict.
 
 ## Compatibility and delivery notes
 
-The initial Local adapter projects OTLP logs only; traces and metrics continue through ordinary warehouse ingestion. Alert webhook and Hazel payloads gain an additive `event` CloudEvent envelope (including `tenantid`, typically about 1 KB). Alert event identities are deterministic for a scheduled tick; retries reuse the retained payload and identity.
+The Local adapter projects OTLP logs only (`otel.log`). Traces and metrics go
+through ordinary warehouse ingestion. Alert webhook and Hazel payloads carry an
+additive `event` CloudEvent envelope (including `tenantid`, typically about
+1 KB). Alert event identities are deterministic for a scheduled tick. Retries
+reuse the retained payload and identity.
 
-Checkpoint format v2 includes the control database. Older CLIs cannot list or restore v2 checkpoints and their reset command rejects data directories containing `control/`. Restore a v1 checkpoint with the new CLI to recover warehouse data with an empty control store; projection definitions and consumer positions are not present in v1.
+Checkpoint format v2 includes the control database. Older CLIs cannot list or
+restore v2 checkpoints, and their reset command rejects data directories
+containing `control/`. Restoring a v1 checkpoint with the new CLI recovers
+warehouse data with an empty control store. v1 checkpoints contain no
+projection definitions or consumer positions.
 
-A checkpoint drains admitted operations, captures immutable SQLite bytes, and runs the synchronous chDB backup before reopening admission. The bytes are written and verified after admission resumes. chDB’s native backup blocks the JavaScript event loop, so this does not promise query availability during the native backup; it avoids holding admission closed during the subsequent asynchronous control archive write. Taking unrelated snapshots with a time gap could restore acknowledged delivery state ahead of the warehouse, so that gap is not accepted.
+A checkpoint drains admitted operations, captures immutable SQLite bytes, and
+runs the synchronous chDB backup before reopening admission. The SQLite bytes
+are written and verified after admission resumes. chDB's native backup blocks
+the JavaScript event loop, so queries may stall during it. The design only
+avoids holding admission closed during the later asynchronous control
+archive write. Separate snapshots taken with a time gap could restore
+acknowledged delivery state ahead of the warehouse, so the design rejects that
+approach.
 
-Deploy `0059_planetscale_issue_receipts` after main's onboarding and incident-hold migrations and before deploying the consumer. Its receipt insert shares the issue transaction and requires the table to exist.
+The receipt table comes from migration
+`packages/db/drizzle/20260917223420_planetscale_issue_receipts`. The receipt
+insert shares the issue transaction and requires the table to exist.
 
-PlanetScale issue receipts are retained for 90 days after processing and swept hourly in batches of at most 5,000. Replays after that window may apply issue mutations again. Receipts intentionally survive issue deletion within the window, so redelivery is skipped instead of recreating a deleted issue.
+PlanetScale issue receipts are kept for 90 days after processing. The API
+worker's hourly retention cron sweeps them in batches of at most 5,000
+(`packages/backend/src/services/integrations/planetscale-event-retention.ts`).
+Replays after that window may apply issue mutations again. Receipts survive
+issue deletion within the window, so redelivery is skipped instead of
+recreating a deleted issue.

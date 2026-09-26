@@ -1,113 +1,149 @@
 # Tinybird MV pre-extracted columns
 
-Some span and resource attributes get **extracted into typed columns** at write time by Tinybird materialized views. These columns are first-class: they're indexed, can be used in `WHERE` / `GROUP BY` without a Map lookup, and drive dashboard widgets directly. Everything else stays in the `SpanAttributes` / `ResourceAttributes` Map columns.
+Some span and resource attributes are extracted into typed columns at write time by Tinybird materialized views. These columns are first-class: they sit in sorting keys and projections, work in `WHERE` / `GROUP BY` without a Map lookup, and drive dashboard widgets directly. Everything else stays in the `SpanAttributes` / `ResourceAttributes` Map columns.
 
-This file is the inventory — when you write a query that filters on one of these keys, prefer the column name. When you add a new MV column, follow the source-attribute consistency rule at the bottom.
+This file is the inventory. When a query filters on one of these keys, use the column. When you add an MV column, follow the source-spelling rule at the bottom.
 
-Source: `packages/domain/src/tinybird/materializations.ts`
+Source: `packages/domain/src/tinybird/materializations.ts` (search for the MV name). Read `docs/warehouse-rollups.md` before adding an MV.
 
 ---
 
 ## `service_map_spans_mv`
 
-Lightweight projection of trace spans for the service dependency map.
+Projection of `Client`/`Producer`/`Server`/`Consumer` spans for the service map. The parent side of the edge join.
 
-| Column | Extracted from | Line |
-|---|---|---|
-| `PeerService` | `SpanAttributes['peer.service']` | `materializations.ts:246` |
-| `DeploymentEnv` | `DEPLOYMENT_ENV_SQL` | `materializations.ts:247` |
+| Column | Extracted from |
+|---|---|
+| `DeploymentEnv` | `DEPLOYMENT_ENV_SQL` |
+
+No attribute decides the edge. The downstream service comes from the join (see `service_map_edges_hourly` below).
 
 ## `service_map_children_mv`
 
-Spans with a parent, for child-of-edge analysis in the service map.
+`Server`/`Consumer` spans that have a parent. The child side of the edge join.
 
-| Column | Extracted from | Line |
-|---|---|---|
-| `DeploymentEnv` | `DEPLOYMENT_ENV_SQL` | `materializations.ts:315` |
+| Column | Extracted from |
+|---|---|
+| `DeploymentEnv` | `DEPLOYMENT_ENV_SQL` |
 
-## `service_map_edges_hourly_mv`
+## `service_map_edges_hourly` (not an MV extraction)
 
-Pre-aggregated client-to-peer edges. Pre-filters to spans with `peer.service != ''`.
+Hourly service-to-service edges. `ServiceMapRollupService` (`packages/backend/src/services/dashboards/ServiceMapRollupService.ts`) fills it on a schedule by joining each `Client`/`Producer` span to its child `Server`/`Consumer` span (`serviceMapEdgeJoinQuery` in `packages/query-engine/src/ch/queries/service-map.ts`). An incremental MV cannot express that cross-span join. `service_map_edges_hourly_ingest_mv` only forwards the rollup's rows from the Null ingest source into the aggregate target.
 
-| Column | Extracted from | Line |
-|---|---|---|
-| `TargetService` | `SpanAttributes['peer.service']` | `materializations.ts:341` |
-| `DeploymentEnv` | `DEPLOYMENT_ENV_SQL` | `materializations.ts:342` |
+| Column | Derived from |
+|---|---|
+| `SourceService` | parent span's `ServiceName` |
+| `TargetService` | child span's `ServiceName` |
 
-## `service_overview_spans_mv`
+## `service_map_db_edges_hourly_mv`
 
-Hourly service-overview rollup.
+Hourly service-to-database edges from `Client`/`Producer` spans with a database system set.
 
-| Column | Extracted from | Line |
-|---|---|---|
-| `DeploymentEnv` | `DEPLOYMENT_ENV_SQL` | `materializations.ts:277` |
-| `CommitSha` | `ResourceAttributes['vcs.ref.head.revision']` | `materializations.ts:278` (see file for the field) |
+| Column | Extracted from |
+|---|---|
+| `DbSystem` | `DB_SYSTEM_ATTR_SQL`: `db.system.name`, fallback `db.system` |
+| `DbNamespace` | `DB_NAMESPACE_ATTR_SQL`: `db.namespace` -> `db.name` -> `server.address` -> `net.peer.name` ('' when none) |
+| `DeploymentEnv` | `DEPLOYMENT_ENV_SQL` |
+
+Both fragments live in `packages/domain/src/tinybird/db-query-shape-sql.ts`. `service_map_db_query_shapes_hourly_mv` uses the same `DbSystem` / `DbNamespace` expressions.
+
+## `service_external_edges_hourly_mv`
+
+Hourly edges from `Client`/`Producer` spans without `db.system.name` to external targets (the service-detail Dependencies tab).
+
+| Column | Extracted from |
+|---|---|
+| `TargetType` | `messaging` if a messaging destination or `messaging.system` is set, else `rpc` if `rpc.service`/`rpc.system` is set, else `http` |
+| `TargetSystem` | `messaging.system` or `rpc.system` ('' for http) |
+| `TargetName` | messaging destination (`MESSAGING_DESTINATION_SQL`), `rpc.service`, or for http `server.address` -> `http.host` -> `url.authority` |
+| `DeploymentEnv` | `DEPLOYMENT_ENV_SQL` |
+
+## `service_overview_spans_mv`, `service_overview_hourly_mv`, `service_overview_minutely_mv`
+
+Service-overview projection and rollups over entry-point spans.
+
+| Column | Extracted from |
+|---|---|
+| `DeploymentEnv` | `DEPLOYMENT_ENV_SQL` |
+| `CommitSha` | `ResourceAttributes['vcs.ref.head.revision']` |
+| `ServiceNamespace` | `ResourceAttributes['service.namespace']` |
 
 ## `service_platforms_hourly_mv`
 
-Per-service hosting-platform attributes for the service map's runtime-icon resolver. Pre-aggregates as `max()` of each attribute.
+Per-service hosting-platform attributes for the service map's runtime-icon and platform-badge resolver. Each column is `max()` of the attribute, so any non-empty value in the hour wins.
 
-| Column | Extracted from | Line |
-|---|---|---|
-| `DeploymentEnv` | `DEPLOYMENT_ENV_SQL` | `materializations.ts:414` |
-| `K8sCluster` | `max(ResourceAttributes['k8s.cluster.name'])` | `materializations.ts:415` |
-| `K8sPodName` | `max(ResourceAttributes['k8s.pod.name'])` | `materializations.ts:416` |
-| `K8sDeploymentName` | `max(ResourceAttributes['k8s.deployment.name'])` | `materializations.ts:417` |
-| `CloudPlatform` | `max(ResourceAttributes['cloud.platform'])` | `materializations.ts:418` |
-| `CloudProvider` | `max(ResourceAttributes['cloud.provider'])` | `materializations.ts:419` |
+| Column | Extracted from |
+|---|---|
+| `DeploymentEnv` | `DEPLOYMENT_ENV_SQL` |
+| `K8sCluster` | `ResourceAttributes['k8s.cluster.name']` |
+| `K8sPodName` | `ResourceAttributes['k8s.pod.name']` |
+| `K8sDeploymentName` | `ResourceAttributes['k8s.deployment.name']` |
+| `K8sStatefulSetName` | `ResourceAttributes['k8s.statefulset.name']` |
+| `K8sDaemonSetName` | `ResourceAttributes['k8s.daemonset.name']` |
+| `K8sNamespaceName` | `ResourceAttributes['k8s.namespace.name']` |
+| `CloudPlatform` | `ResourceAttributes['cloud.platform']` |
+| `CloudProvider` | `ResourceAttributes['cloud.provider']` |
+| `FaasName` | `ResourceAttributes['faas.name']` |
+| `MapleSdkType` | `ResourceAttributes['maple.sdk.type']` |
+| `ProcessRuntimeName` | `ResourceAttributes['process.runtime.name']` |
 
-Additionally extracts (see file): `faas.name`, `sdk.type`, `process.runtime.name`.
+## `error_events_mv` / `error_events_by_time_mv`
 
-## `error_events_mv`
+Built from `traces WHERE StatusCode = 'Error'` with one shared `SELECT`. Unwraps the first OTel `exception` event from the `EventsName` / `EventsAttributes` arrays.
 
-Unwraps the first OTel `exception` event from `EventsName` / `EventsAttributes` Maps.
+| Column | Extracted from |
+|---|---|
+| `ExceptionType` | first `exception` event's `exception.type`, with fallbacks (see the file) |
+| `ExceptionMessage` | first `exception` event's `exception.message` |
+| `ExceptionStacktrace` | first `exception` event's `exception.stacktrace` |
+| `TopFrame` | computed from the stacktrace |
+| `FingerprintHash` | `cityHash64` of org, service, type, top-3 normalized frames, and message signature |
+| `DeploymentEnv` | `DEPLOYMENT_ENV_SQL` |
 
-| Column | Extracted from | Line |
-|---|---|---|
-| `ExceptionType` | first `exception` event's `exception.type` (fallback `StatusMessage`) | `materializations.ts:496-498` |
-| `ExceptionMessage` | first `exception` event's `exception.message` | `materializations.ts:498` |
-| `ExceptionStacktrace` | first `exception` event's `exception.stacktrace` | `materializations.ts:499` |
-| `TopFrame` | (computed from stacktrace) | `materializations.ts` |
-| `FingerprintHash` | cityHash64 of grouping keys | `materializations.ts:489` |
-| `DeploymentEnv` | `DEPLOYMENT_ENV_SQL` | `materializations.ts:525` |
+The fingerprint normalization is mirrored in `packages/domain/src/tinybird/fingerprint.ts`. Read `docs/error-issue-lifecycle.md` before changing it.
 
-## `trace_list_mv`
+## `trace_list_mv_mv` (target `trace_list_mv`)
 
-Trace list optimized for the trace search UI. Pre-filters to entry-point spans.
+Trace list for the trace search UI, pre-filtered to entry-point spans.
 
-| Column | Extracted from | Line |
-|---|---|---|
-| `HttpMethod` | `SpanAttributes['http.method']` (fallback `http.request.method`) | `materializations.ts:596` |
-| `HttpRoute` | `SpanAttributes['http.route']` (fallbacks `url.path`, `http.target`) | `materializations.ts:597` |
-| `HttpStatusCode` | `SpanAttributes['http.status_code']` (fallback `http.response.status_code`) | `materializations.ts:598` |
-| `DeploymentEnv` | `DEPLOYMENT_ENV_SQL` | `materializations.ts:599` |
+| Column | Extracted from |
+|---|---|
+| `HttpMethod` | `SpanAttributes['http.method']`, fallback `http.request.method` |
+| `HttpRoute` | `SpanAttributes['http.route']`, fallbacks `url.path`, `http.target` |
+| `HttpStatusCode` | `SpanAttributes['http.status_code']`, fallback `http.response.status_code` |
+| `DeploymentEnv` | `DEPLOYMENT_ENV_SQL` |
+| `ServiceNamespace` | `ResourceAttributes['service.namespace']` |
 
 ## `traces_aggregates_hourly_mv`
 
 Hourly trace-shape rollup.
 
-| Column | Extracted from | Line |
-|---|---|---|
-| `DeploymentEnv` | `DEPLOYMENT_ENV_SQL` | `materializations.ts:778` |
+| Column | Extracted from |
+|---|---|
+| `DeploymentEnv` | `DEPLOYMENT_ENV_SQL` |
 
-Plus dimension keys pre-aggregated on the trace itself: `ServiceName`, `SpanName`, `SpanKind`, `StatusCode`, `IsEntryPoint`.
+It also groups by `ServiceName`, `SpanName`, `SpanKind`, `StatusCode`, and `IsEntryPoint`.
 
-## `logs_aggregates_hourly_mv` (referenced)
+## `logs_aggregates_hourly_mv`
 
-Same pattern — extracts `DeploymentEnv` through `DEPLOYMENT_ENV_SQL`. See `materializations.ts:809`.
+Extracts `DeploymentEnv` through `DEPLOYMENT_ENV_SQL` and `ServiceNamespace` from `ResourceAttributes['service.namespace']`.
+
+## Other MVs
+
+`service_operations_*`, `ai_trace_index_mv`, `span_metrics_calls_hourly_mv`, and the attribute key/value catalogs also extract columns. Read their `SELECT` in `materializations.ts` before filtering on them.
 
 ---
 
-## Cardinal rule — consistent source spellings
+## Cardinal rule: consistent source spellings
 
-**If you add a new pre-extracted MV column, also emit the source attribute with that exact spelling.** Don't introduce a parallel spelling that the MV won't match.
+**If you add a pre-extracted MV column, emit the source attribute with exactly that spelling.** Don't introduce a parallel spelling the MV won't match.
 
-Example: if you add a new MV column `HttpUserAgent` that extracts `SpanAttributes['http.user_agent']`, every service emitting spans **must** use `http.user_agent` as the attribute key. Don't have one service emit `http.user_agent` and another `userAgent` — only one will populate the column.
+Example: if a new MV column `HttpUserAgent` extracts `SpanAttributes['user_agent.original']`, every service must emit `user_agent.original`. If one service emits `user_agent.original` and another `userAgent`, only one populates the column.
 
-Corollary: every MV here extracts `DeploymentEnv` through the shared `DEPLOYMENT_ENV_SQL` fragment (`packages/domain/src/tinybird/semconv-renames.ts`), which coalesces `deployment.environment.name` over the deprecated `deployment.environment` — as `MESSAGING_DESTINATION_SQL` does for `messaging.destination(.name)` in the external-edge rollup. A bare lookup on either key alone silently materializes an empty environment for half the instrumentation in the wild. See `rules/resource-attributes.md`.
+Corollary: every MV extracts `DeploymentEnv` through the shared `DEPLOYMENT_ENV_SQL` fragment (`packages/domain/src/tinybird/semconv-renames.ts`), which coalesces `deployment.environment.name` over the deprecated `deployment.environment`. `MESSAGING_DESTINATION_SQL` does the same for `messaging.destination(.name)` in the external-edge MV. A bare lookup on either key alone materializes an empty environment for half the instrumentation in the wild. See `rules/resource-attributes.md`.
 
 ## When NOT to extract into a column
 
-- **Low cardinality keys you'll never group by** — just leave them in the Map.
-- **Per-request user data that changes per span** — leave it in `SpanAttributes`. The Map column is queryable; extraction is for fields the dashboard hits on every request.
-- **Anything still being designed** — pre-extraction is a one-way door once you've backfilled. Wait until the attribute name is stable.
+- **Keys you will never filter or group by.** Leave them in the Map.
+- **Per-request data that varies per span.** Leave it in `SpanAttributes`. The Map column is queryable; extraction is for fields dashboards hit on every request.
+- **Anything still being designed.** Pre-extraction is a one-way door once backfilled. Wait until the attribute name is stable.

@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto"
-import { constants } from "node:fs"
+import { closeSync, constants, fsyncSync, openSync, renameSync, writeSync } from "node:fs"
 import { chmod, lstat, mkdir, open, readdir, rename, rm } from "node:fs/promises"
 import { dirname, join } from "node:path"
+import { Effect, Schema } from "effect"
 
 export interface DurabilityFaults {
 	readonly beforeFileSync?: (path: string) => void | Promise<void>
@@ -123,6 +124,64 @@ export const durableRename = async (
 	await syncDirectory(dirname(from), faults)
 	if (dirname(to) !== dirname(from)) await syncDirectory(dirname(to), faults)
 }
+
+/** A synchronous durable write or rename failed; thrown by the sync helpers below. */
+export class DurableFileError extends Schema.TaggedError<DurableFileError>()("@maple/cli/DurableFileError", {
+	path: Schema.String,
+	message: Schema.String,
+	cause: Schema.Defect(),
+}) {}
+
+const durableFileError =
+	(path: string, action: string) =>
+	(cause: unknown): DurableFileError =>
+		new DurableFileError({
+			path,
+			message: `could not ${action} ${path}: ${cause instanceof Error ? cause.message : String(cause)}`,
+			cause,
+		})
+
+const syncDirectoryNow = (path: string): Effect.Effect<void, DurableFileError> =>
+	Effect.acquireUseRelease(
+		Effect.try({ try: () => openSync(path, constants.O_RDONLY), catch: durableFileError(path, "open") }),
+		(fd) => Effect.try({ try: () => fsyncSync(fd), catch: durableFileError(path, "fsync") }),
+		(fd) => Effect.sync(() => closeSync(fd)),
+	).pipe(
+		Effect.catchIf(
+			(error) => isUnsupportedDirectorySyncError(error.cause),
+			() => Effect.void,
+		),
+	)
+
+/**
+ * Synchronous create-or-truncate whose bytes and directory entry are fsynced
+ * before it returns, for callers that cannot await (the chDB open path). The
+ * target's existence is the signal, so no temp-file rename is needed.
+ */
+export const durableWriteFileSync = (path: string, bytes: string): void =>
+	Effect.runSync(
+		Effect.acquireUseRelease(
+			Effect.try({ try: () => openSync(path, "w", 0o600), catch: durableFileError(path, "open") }),
+			(fd) =>
+				Effect.try({
+					try: () => {
+						writeSync(fd, bytes)
+						fsyncSync(fd)
+					},
+					catch: durableFileError(path, "write"),
+				}),
+			(fd) => Effect.sync(() => closeSync(fd)),
+		).pipe(Effect.andThen(syncDirectoryNow(dirname(path)))),
+	)
+
+/** Synchronous {@link durableRename}; throws a {@link DurableFileError} on failure. */
+export const durableRenameSync = (from: string, to: string): void =>
+	Effect.runSync(
+		Effect.try({ try: () => renameSync(from, to), catch: durableFileError(from, "rename") }).pipe(
+			Effect.andThen(syncDirectoryNow(dirname(from))),
+			Effect.andThen(dirname(to) === dirname(from) ? Effect.void : syncDirectoryNow(dirname(to))),
+		),
+	)
 
 export const syncTree = async (
 	path: string,

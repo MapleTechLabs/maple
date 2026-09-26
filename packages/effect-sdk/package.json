@@ -1,6 +1,6 @@
 {
 	"name": "@maple-dev/effect-sdk",
-	"version": "0.8.2",
+	"version": "0.9.0",
 	"description": "Maple observability SDK for Effect applications",
 	"keywords": [
 		"effect",

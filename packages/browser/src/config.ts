@@ -5,12 +5,17 @@ import {
 	normalizeIdentity,
 	type ResolvedIdentity,
 	resolveIngestEndpoint,
+	warnIfKeylessMapleIngest,
 } from "@maple/browser-session"
 
 /** Public configuration for `MapleBrowser.init`. */
 export interface MapleBrowserConfig {
-	/** Public ingest key (`maple_pk_...`). */
-	readonly ingestKey: string
+	/**
+	 * Public ingest key (`maple_pk_...`), sent as `Authorization: Bearer …` and
+	 * nothing else. Leave it unset when a proxy at `endpoint` adds auth: tracing
+	 * and replay still run, sending without the header.
+	 */
+	readonly ingestKey?: string
 	/** Service name reported on traces and stored on replay sessions. */
 	readonly serviceName: string
 	/**
@@ -114,7 +119,7 @@ export interface MapleBrowserConfig {
 }
 
 export interface ResolvedConfig {
-	readonly ingestKey: string
+	readonly ingestKey: string | undefined
 	readonly serviceName: string
 	readonly endpoint: string
 	readonly serviceNamespace: string | undefined
@@ -171,13 +176,17 @@ function resolveSampleRate(raw: number | undefined): number {
 }
 
 export function resolveConfig(config: MapleBrowserConfig): ResolvedConfig {
-	if (!config.ingestKey) {
-		console.warn("[maple] MapleBrowser.init() has no ingestKey; ingest will reject every request.")
-	}
+	const endpoint = resolveIngestEndpoint({ endpoints: [config.endpoint], regions: [config.region] })
+	warnIfKeylessMapleIngest({
+		logPrefix: "[maple]",
+		endpoint,
+		hasIngestKey: Boolean(config.ingestKey),
+		hint: "Pass `ingestKey`, or point `endpoint` at a proxy that adds it.",
+	})
 	return {
 		ingestKey: config.ingestKey,
 		serviceName: config.serviceName,
-		endpoint: resolveIngestEndpoint({ endpoints: [config.endpoint], regions: [config.region] }),
+		endpoint,
 		serviceNamespace: config.serviceNamespace,
 		serviceVersion: config.serviceVersion,
 		environment: config.environment,

@@ -88,11 +88,7 @@ export const runToolDirect = async (
 	)
 }
 
-/**
- * The markdown a tool rendered — the FIRST text block only. `createDualContent`
- * writes the `__maple_ui` mirror as a second block, and joining both lets a
- * markdown assertion pass on the structured payload alone.
- */
+/** The markdown a tool rendered: its one text block. Typed output is on `structuredContent`. */
 export const markdown = (result: unknown): string => {
 	const content = (result as { readonly content?: ReadonlyArray<{ readonly text?: string }> }).content
 	return content?.[0]?.text ?? ""

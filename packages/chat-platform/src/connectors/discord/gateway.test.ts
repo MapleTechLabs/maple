@@ -417,6 +417,7 @@ describe("component clicks", () => {
 	const interaction = (overrides: Record<string, unknown> = {}) =>
 		dispatch("INTERACTION_CREATE", {
 			id: "6000000000000000006",
+			application_id: "7000000000000000007",
 			token: "interaction-token",
 			type: 3,
 			guild_id: "3000000000000000003",
@@ -440,6 +441,8 @@ describe("component clicks", () => {
 				// An identity only: whether they may approve is whether they linked this account
 				// to a Maple user, which Discord cannot answer and is never asked.
 				actor: { id: "4000000000000000004", displayName: "Ada" },
+				// The interaction's follow-up webhook, which is how only the clicker is answered.
+				replyHandle: "7000000000000000007/interaction-token",
 			},
 		])
 	})

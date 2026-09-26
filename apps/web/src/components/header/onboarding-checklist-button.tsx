@@ -249,7 +249,7 @@ export function OnboardingChecklistPanel({
 
 			<ol className="space-y-0.5 p-2">
 				{checklist.steps.map((step, index) => (
-					<StepRow key={step.id} step={step} index={index + 1} />
+					<StepRow key={step.id} step={step} index={index + 1} onNavigate={onClose} />
 				))}
 			</ol>
 
@@ -307,12 +307,21 @@ function OptionalTag() {
 	)
 }
 
-function StepRow({ step, index }: { step: V2OnboardingChecklistStep; index: number }) {
+function StepRow({
+	step,
+	index,
+	onNavigate,
+}: {
+	step: V2OnboardingChecklistStep
+	index: number
+	/** Closes the popover, which would otherwise sit over a dialog the step opens. */
+	onNavigate: () => void
+}) {
 	if (step.completed) {
 		return (
 			<li className="flex items-center gap-3 rounded-md px-2 py-2 text-sm text-muted-foreground">
 				<CircleCheckIcon size={18} className="shrink-0 text-primary" />
-				<span className="min-w-0 flex-1 truncate line-through decoration-muted-foreground/40">
+				<span className="min-w-0 flex-1 leading-snug line-through decoration-muted-foreground/40">
 					{step.title}
 				</span>
 				{step.optional && <OptionalTag />}
@@ -325,6 +334,7 @@ function StepRow({ step, index }: { step: V2OnboardingChecklistStep; index: numb
 			<Link
 				to={pathname}
 				search={search as never}
+				onClick={onNavigate}
 				className="group flex items-center gap-3 rounded-md px-2 py-2 text-sm text-foreground outline-none transition-colors hover:bg-muted/60 focus-visible:ring-2 focus-visible:ring-ring"
 			>
 				<span
@@ -333,7 +343,7 @@ function StepRow({ step, index }: { step: V2OnboardingChecklistStep; index: numb
 				>
 					{index}
 				</span>
-				<span className="min-w-0 flex-1 truncate">{step.title}</span>
+				<span className="min-w-0 flex-1 leading-snug">{step.title}</span>
 				{step.optional && <OptionalTag />}
 				<ArrowRightIcon
 					size={14}

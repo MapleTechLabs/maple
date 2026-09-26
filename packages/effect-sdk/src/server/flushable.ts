@@ -150,6 +150,7 @@ export const make = (config: MapleFlushableConfig = {}): FlushableTelemetry => {
 					logsPath: config.logsPath,
 					metricsPath: config.metricsPath,
 					userAgent: `maple-effect-sdk-server/${SDK_VERSION}`,
+					keyless: "disable",
 				}),
 			)
 			resolvedPromise = pending

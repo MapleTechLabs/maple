@@ -5,6 +5,7 @@ import {
 	AGGREGATIONS_BY_SOURCE,
 	buildBreakdownQuerySpec,
 	buildTimeseriesQuerySpec,
+	formatFiltersAsWhereClause,
 	GROUP_BY_TOKENS,
 	resolveGroupBy,
 } from "./model"
@@ -97,6 +98,133 @@ describe("buildTimeseriesQuerySpec where-clause → attribute filters", () => {
 	})
 })
 
+describe("traces structured keys honor the operator", () => {
+	function tracesFilters(whereClause: string) {
+		const result = buildTimeseriesQuerySpec(tracesDraft({ whereClause }))
+		return {
+			warnings: result.warnings,
+			filters: (result.query as { filters?: Record<string, unknown> } | null)?.filters,
+		}
+	}
+
+	it("lowers != on columns to the excluded lists, not an exact match", () => {
+		const { warnings, filters } = tracesFilters(
+			'service.name != "a" AND service.name != "b" AND span.name != "GET /health" AND deployment.environment != "dev,staging" AND vcs.ref.head.revision != "abc"',
+		)
+		expect(warnings).toEqual([])
+		expect(filters).toEqual({
+			excludedServiceNames: ["a", "b"],
+			excludedSpanNames: ["GET /health"],
+			excludedEnvironments: ["dev", "staging"],
+			excludedCommitShas: ["abc"],
+		})
+	})
+
+	it("lowers contains on columns to a substring match mode", () => {
+		const { warnings, filters } = tracesFilters(
+			'service.name contains "check" AND span.name contains "GET" AND deployment.environment contains "prod"',
+		)
+		expect(warnings).toEqual([])
+		expect(filters).toEqual({
+			serviceName: "check",
+			spanName: "GET",
+			environments: ["prod"],
+			matchModes: { serviceName: "contains", spanName: "contains", deploymentEnv: "contains" },
+		})
+	})
+
+	it("drops a stale match mode when a later = replaces the value", () => {
+		const { filters } = tracesFilters('service.name contains "check" AND service.name = "api"')
+		expect(filters).toEqual({ serviceName: "api" })
+	})
+
+	it.each([
+		['service.name !contains "x"', "service.name", "!contains"],
+		["service.name > 3", "service.name", ">"],
+		["span.name exists", "span.name", "exists"],
+		['vcs.ref.head.revision contains "ab"', "vcs.ref.head.revision", "contains"],
+		["has_error != true", "has_error", "!="],
+		["root_only exists", "root_only", "exists"],
+		["min_duration_ms > 5", "min_duration_ms", ">"],
+	])("warns instead of compiling %s to an exact match", (clause, key, operator) => {
+		const { warnings, filters } = tracesFilters(clause)
+		expect(filters).toBeUndefined()
+		expect(warnings).toHaveLength(1)
+		expect(warnings[0]).toContain(key)
+		expect(warnings[0]).toContain(`ignoring ${operator}`)
+	})
+
+	it("lowers min/max_duration_ms to the duration bounds", () => {
+		const { warnings, filters } = tracesFilters("min_duration_ms = 250 AND max_duration_ms = 1000")
+		expect(warnings).toEqual([])
+		expect(filters).toEqual({ minDurationMs: 250, maxDurationMs: 1000 })
+		expect(tracesFilters("min_duration_ms = slow").warnings).toEqual([
+			"Invalid min_duration_ms value ignored: slow",
+		])
+	})
+
+	it("keeps attribute key case as typed on attr.*, resource.* and bare keys", () => {
+		const { filters } = tracesFilters('attr.userId = "u1" AND resource.K8s.Pod = "p" AND tenantId exists')
+		expect(filters).toEqual({
+			attributeFilters: [
+				{ key: "userId", mode: "equals", value: "u1" },
+				{ key: "tenantId", mode: "exists" },
+			],
+			resourceAttributeFilters: [{ key: "K8s.Pod", mode: "equals", value: "p" }],
+		})
+	})
+
+	it("round-trips the new fields through formatFiltersAsWhereClause", () => {
+		const whereClause =
+			'service.name contains "check" AND min_duration_ms = 250 AND span.name != "GET /health" AND attr.msg = \'say "hi"\''
+		const { filters } = tracesFilters(whereClause)
+		const formatted = formatFiltersAsWhereClause({ filters })
+		expect(formatted).toBe(
+			'service.name contains "check" AND min_duration_ms = 250 AND span.name != "GET /health" AND attr.msg = \'say "hi"\'',
+		)
+		expect(tracesFilters(formatted).filters).toEqual(filters)
+	})
+})
+
+describe("logs where clauses", () => {
+	function logsFilters(whereClause: string) {
+		const result = buildTimeseriesQuerySpec(tracesDraft({ dataSource: "logs", whereClause }))
+		return {
+			warnings: result.warnings,
+			filters: (result.query as { filters?: Record<string, unknown> } | null)?.filters,
+		}
+	}
+
+	it("lowers the keys the autocomplete offers, in both polarities", () => {
+		const { warnings, filters } = logsFilters(
+			'service.name != "noisy" AND severity = "ERROR" AND severity != "DEBUG" AND attr.userId exists AND resource.host.name contains "web"',
+		)
+		expect(warnings).toEqual([])
+		expect(filters).toEqual({
+			severity: "ERROR",
+			excludedServiceNames: ["noisy"],
+			excludedSeverities: ["DEBUG"],
+			attributeFilters: [{ key: "userId", mode: "exists" }],
+			resourceAttributeFilters: [{ key: "host.name", mode: "contains", value: "web" }],
+		})
+	})
+
+	it("warns on an operator a column cannot take", () => {
+		const { warnings, filters } = logsFilters('service.name contains "api" AND severity > "WARN"')
+		expect(filters).toBeUndefined()
+		expect(warnings).toEqual([
+			"Logs filter service.name supports only = and !=; ignoring contains",
+			"Logs filter severity supports only = and !=; ignoring >",
+		])
+	})
+
+	it("still warns on unknown keys", () => {
+		expect(logsFilters('http.route = "/"').warnings).toEqual([
+			"Unsupported logs filter ignored: http.route",
+		])
+	})
+})
+
 describe("buildTimeseriesQuerySpec series limit", () => {
 	function seriesLimitOf(overrides: Partial<QueryBuilderQueryDraftPayload>) {
 		const result = buildTimeseriesQuerySpec(tracesDraft(overrides))
@@ -181,6 +309,18 @@ describe("metrics resource.* support", () => {
 			filters: (result.query as { filters?: Record<string, unknown> } | null)?.filters,
 		}
 	}
+
+	it("warns instead of turning != on service.name into an exact match", () => {
+		const { warnings, filters } = metricsFiltersOf({ whereClause: 'service.name != "api"' })
+		expect(filters?.serviceName).toBeUndefined()
+		expect(warnings).toEqual(["Metrics filter service.name supports only =; ignoring !="])
+	})
+
+	it("keeps attribute key case as typed", () => {
+		const { filters } = metricsFiltersOf({ whereClause: 'attr.Route = "/" AND resource.Host.Name = "h"' })
+		expect(filters?.attributeFilters).toEqual([{ key: "Route", mode: "equals", value: "/" }])
+		expect(filters?.resourceAttributeFilters).toEqual([{ key: "Host.Name", mode: "equals", value: "h" }])
+	})
 
 	it("resource.<key> where clauses become resourceAttributeFilters", () => {
 		const { warnings, filters } = metricsFiltersOf({

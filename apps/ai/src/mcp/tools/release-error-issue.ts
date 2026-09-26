@@ -1,79 +1,64 @@
-import {
-	McpQueryError,
-	optionalStringParam,
-	requiredStringParam,
-	validationError,
-	type McpToolRegistrar,
-} from "./types"
-import { Effect, Option, Schema } from "effect"
-import { createDualContent } from "../lib/structured-output"
+import type { McpToolRegistrar } from "./types"
+import { Effect, Schema } from "effect"
+import { ReleaseErrorIssueOutput } from "@maple/domain/mcp-outputs"
 import { CurrentMcpTenant } from "../lib/query-warehouse"
 import { resolveActorId } from "../lib/resolve-actor"
+import * as P from "../lib/params"
+import { doc } from "../lib/tool-doc"
+import {
+	SELECTABLE_STATES,
+	issueIdParam,
+	issueNotFound,
+	leaseConflict,
+	persistenceFailed,
+	transitionRefused,
+} from "./error-issue-shared"
 import { ErrorIssueWorkflowService } from "@maple/backend/services/errors/ErrorIssueWorkflowService"
-import { ErrorIssueId, WorkflowState } from "@maple/domain/http"
-
-const decodeIssueId = Schema.decodeUnknownOption(ErrorIssueId)
-const decodeWorkflowState = Schema.decodeUnknownOption(WorkflowState)
 
 export function registerReleaseErrorIssueTool(server: McpToolRegistrar) {
-	server.tool(
-		"release_error_issue",
-		"Release the lease on an error issue you previously claimed, optionally transitioning it to another workflow state (default: 'todo').",
-		Schema.Struct({
-			issue_id: requiredStringParam("The error issue ID (from list_error_issues)"),
-			transition_to: optionalStringParam("Workflow state to land in after release (default: 'todo')"),
-			note: optionalStringParam("Optional reasoning / context"),
+	server.define({
+		name: "release_error_issue",
+		description:
+			"Give up the lease you hold on an error issue, optionally moving it to another workflow state. Without `transition_to`, an `in_progress` issue goes back to `todo` and any other state is kept. Fails if another agent holds the lease.",
+		parameters: Schema.Struct({
+			issue_id: issueIdParam(),
+			transition_to: P.optionalOneOf(
+				SELECTABLE_STATES,
+				"Workflow state to leave the issue in. Default: `todo` if the issue is `in_progress`, otherwise unchanged",
+			),
+			note: P.optionalText("Reasoning or context, stored on the release event"),
 		}),
-		Effect.fn("McpTool.releaseErrorIssue")(function* ({ issue_id, transition_to, note }) {
+		output: ReleaseErrorIssueOutput,
+		hints: { readOnly: false, destructive: false, idempotent: false },
+		phrases: ["Releasing an issue"],
+		handler: Effect.fn("McpTool.releaseErrorIssue")(function* (params) {
 			const tenant = yield* CurrentMcpTenant
-			const decodedIssueId = decodeIssueId(issue_id)
-			if (Option.isNone(decodedIssueId)) {
-				return validationError(
-					`Invalid issue_id: '${issue_id}'. Must be a UUID from list_error_issues.`,
-				)
-			}
-			let typedState: WorkflowState | undefined
-			if (transition_to) {
-				const decoded = decodeWorkflowState(transition_to)
-				if (Option.isNone(decoded)) {
-					return validationError(
-						`Invalid transition_to: '${transition_to}'. Must be a valid workflow state.`,
-					)
-				}
-				typedState = decoded.value
-			}
-
 			const actorId = yield* resolveActorId(tenant)
 			const workflow = yield* ErrorIssueWorkflowService
 			const issue = yield* workflow
-				.releaseIssue(tenant.orgId, actorId, decodedIssueId.value, {
-					transitionTo: typedState,
-					note,
+				.releaseIssue(tenant.orgId, actorId, params.issue_id, {
+					transitionTo: params.transition_to,
+					note: params.note,
 				})
 				.pipe(
-					Effect.mapError(
-						(error) =>
-							new McpQueryError({
-								message: error.message,
-								pipeName: "release_error_issue",
-								cause: error,
-							}),
-					),
+					Effect.catchTags({
+						"@maple/http/errors/ErrorIssueNotFoundError": issueNotFound,
+						"@maple/http/errors/ErrorIssueLeaseConflictError": leaseConflict,
+						"@maple/http/errors/ErrorIssueTransitionError": transitionRefused("transition_to"),
+						"@maple/http/errors/ErrorPersistenceError": persistenceFailed("release_error_issue"),
+					}),
 				)
 
-			const lines = [`## Error issue released`, `- ID: ${issue.id}`, `- State: ${issue.workflowState}`]
-
-			return {
-				content: createDualContent(lines.join("\n"), {
-					tool: "release_error_issue",
-					data: {
-						id: issue.id,
-						workflowState: issue.workflowState,
-						previousLeaseHolderActorId: actorId,
-					},
-				}),
-			}
+			return { id: issue.id, workflowState: issue.workflowState, previousLeaseHolderActorId: actorId }
 		}),
-		{ phrases: ["Releasing an issue"] },
-	)
+		render: (output) => ({
+			title: "Error issue released",
+			blocks: [
+				doc.fields([
+					["ID", output.id],
+					["State", output.workflowState],
+				]),
+			],
+		}),
+	})
 }

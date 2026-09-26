@@ -5,7 +5,43 @@ import {
 	serviceMapEdgesRollupSQL,
 	serviceMapResolutionsExistingHoursSQL,
 	serviceMapResolutionsRollupSQL,
+	serviceMapHourSet,
+	serviceMapResolutionRepairHours,
+	serviceMapRollupCandidateHours,
+	serviceMapRollupHourParams,
+	serviceMapRollupMissingHours,
+	serviceMapRollupWindowParams,
 } from "./service-map-rollup"
+
+describe("service-map rollup hour planning", () => {
+	const hour = 3_600_000
+	const base = Date.UTC(2024, 0, 1, 0)
+	const candidates = serviceMapRollupCandidateHours(base, base + 3 * hour)
+
+	it("lists completed hour starts oldest first, excluding the current hour", () => {
+		expect(candidates).toEqual([base, base + hour, base + 2 * hour])
+	})
+
+	it("splits candidates into missing hours and sealed hours needing resolution repair", () => {
+		const sealed = serviceMapHourSet([{ hourTs: base / 1000 }, { hourTs: (base + hour) / 1000 }])
+		const resolved = serviceMapHourSet([{ hourTs: base / 1000 }])
+		expect(serviceMapRollupMissingHours(candidates, sealed)).toEqual([base + 2 * hour])
+		expect(serviceMapResolutionRepairHours(candidates, sealed, resolved)).toEqual([base + hour])
+	})
+
+	it("formats hour and window bounds as warehouse datetimes", () => {
+		expect(serviceMapRollupHourParams("org_1", base)).toEqual({
+			orgId: "org_1",
+			hourStart: "2024-01-01 00:00:00",
+			hourEnd: "2024-01-01 01:00:00",
+		})
+		expect(serviceMapRollupWindowParams("org_1", base, base + 3 * hour)).toEqual({
+			orgId: "org_1",
+			startTime: "2024-01-01 00:00:00",
+			endTime: "2024-01-01 03:00:00",
+		})
+	})
+})
 
 const hourParams = {
 	orgId: "org_1",

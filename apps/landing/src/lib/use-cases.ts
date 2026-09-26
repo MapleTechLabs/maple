@@ -194,7 +194,7 @@ export const useCases: UseCase[] = [
 					src: "/screenshots/surface-map.webp",
 					width: 2560,
 					height: 1320,
-					alt: "A service neighbourhood showing API, database and cache dependencies with live request flow",
+					alt: "A service neighborhood showing API, database and cache dependencies with live request flow",
 				},
 			},
 			{

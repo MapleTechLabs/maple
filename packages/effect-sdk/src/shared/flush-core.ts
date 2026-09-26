@@ -63,7 +63,10 @@ export interface FlushTransport {
 
 /**
  * Turn a resolved resource into ready-to-POST URLs + headers. Shared by all
- * presets; `userAgent` is the only per-preset difference.
+ * presets. `keyless` is each preset's answer to "no ingest key": the env-driven
+ * server and Cloudflare presets treat it as unconfigured and `"disable"`; the
+ * browser client's key is auth only, so it `"send"`s without `Authorization`
+ * for a proxy in front of the endpoint to complete.
  */
 export const buildResolved = (
 	r: ResourceInput,
@@ -72,10 +75,11 @@ export const buildResolved = (
 		readonly logsPath?: string | undefined
 		readonly metricsPath?: string | undefined
 		readonly userAgent: string
+		readonly keyless: "disable" | "send"
 	},
 ): Resolved => {
 	// `r.endpoint` is always defined in practice (every resolver falls back to
-	// DEFAULT_MAPLE_ENDPOINT, and the client requires it); guard anyway.
+	// the region's public ingest); guard anyway.
 	const base = r.endpoint ?? "https://ingest.maple.dev"
 	const baseUrl = base.endsWith("/") ? base.slice(0, -1) : base
 	const tracesUrl = `${baseUrl}${opts.tracesPath ?? "/v1/traces"}`
@@ -97,7 +101,7 @@ export const buildResolved = (
 		resource: makeOtlpResource(r.resource),
 		scope: { name: r.resource.serviceName },
 		headers,
-		noOp: r.ingestKey === undefined,
+		noOp: r.ingestKey === undefined && opts.keyless === "disable",
 	}
 }
 
@@ -247,7 +251,7 @@ export const runFlush = async (args: {
 	readonly metricsState: SignalState
 	readonly transport: FlushTransport
 	readonly logPrefix: string
-	readonly onNoOp: () => void
+	readonly onNoOp?: (() => void) | undefined
 }): Promise<void> => {
 	const {
 		resolved: r,
@@ -266,7 +270,7 @@ export const runFlush = async (args: {
 		spans.drain()
 		logs.drain()
 		metrics.drain()
-		onNoOp()
+		onNoOp?.()
 		return
 	}
 

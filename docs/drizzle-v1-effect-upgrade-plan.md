@@ -1,5 +1,10 @@
 # Drizzle 1.0 + Effect driver upgrade plan
 
+Status (2026-09-25): shipped in #904 (`drizzle-orm@1.0.0-rc.5-5935859`, `@effect/sql-pg`). The
+client now uses `PgClient.make` (`packages/db/src/client.ts`), prd migrations apply in the alchemy
+deploy (#939, which also removed `migrate:prod`), and #970 removed `ps:migrations-preflight`. The plan below
+is kept as written.
+
 Written 2026-09-15 against `main` (`0bfb54137c`). Maple is on `drizzle-orm@0.45.2` /
 `drizzle-kit@0.31.10` with the `postgres-js` driver on Workers and `pglite` in vitest, on
 `effect@4.0.0-rc.112`.
@@ -37,7 +42,7 @@ Split the work so the ORM major and the driver swap never land in the same deplo
 3. **Phase B, the Effect driver (4 to 6 days).** Rebuild `DatabaseLive` and the connection
    scope over `PgClient` + `PgDrizzle`, then sweep the call sites to `yield*`. Needs drizzle
    `>= 1.0.0-rc.5`: either the tagged rc.5 once it is cut, or the `1.0.0-rc.5-5935859` snapshot
-   now. Pinning a commit-suffixed snapshot in prod is the owner's call; the kit in that snapshot
+   now. Pinning a commit-suffixed snapshot in prod is the owner's call. The kit in that snapshot
    reads the converted folder unchanged, so bumping from rc.4 is a manifest change only.
 
 Gate B on A having soaked in prod for at least a week, because A already moves the migration

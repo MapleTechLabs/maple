@@ -1,4 +1,6 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest"
+import { Schema } from "effect"
+import { InspectSpanOutput, InspectTraceOutput, SearchLogsOutput } from "@maple/domain/mcp-outputs"
 import { installFakeWarehouse, restoreWarehouse, type FixtureRule } from "./fake-warehouse"
 import { makeEvalRuntime, markdown, runToolDirect, type EvalRuntime } from "./eval-runtime"
 import {
@@ -88,6 +90,8 @@ const regressionFixtures: FixtureRule[] = [
 	},
 	// Large trace (> budget) → bounded overview. Fallback for any other span tree.
 	{ match: (sql) => sql.includes("trace_detail_spans"), rows: makeLargeTraceSpans() },
+	// search_logs' total, read alongside the page.
+	{ match: (sql) => /\bfrom\s+logs\b/i.test(sql) && /\bAS\s+total\b/i.test(sql), rows: [{ total: 3 }] },
 	{ match: (sql) => /\bfrom\s+logs\b/i.test(sql), rows: makeTraceLogs() },
 ]
 
@@ -133,6 +137,11 @@ describe("inspect_trace bounded-overview rendering", () => {
 		expect(text).toContain("more spans")
 		// Full span ids remain available for inspect_span pivots.
 		expect(text).toContain("span=")
+		// The structured tree is the bounded overview, not the full trace.
+		const output = Schema.decodeUnknownSync(InspectTraceOutput)(result.structuredContent)
+		expect(output.truncated).toBe(true)
+		expect(output.totalSpanCount).toBe(LARGE_TRACE_SPAN_COUNT)
+		expect(output.omitted.length).toBeGreaterThan(0)
 	})
 })
 
@@ -270,7 +279,7 @@ describe("inspect_span drill-down", () => {
 		expect(text).not.toContain("### AI agent span")
 	})
 
-	it("clips the decoded payloads to payload_chars, and ignores an unusable one", async () => {
+	it("clips the decoded payloads to payload_chars, clamping an out-of-range one", async () => {
 		const clipped = markdown(
 			await runToolDirect(rt, "inspect_span", {
 				trace_id: AI_SPAN_TRACE_ID,
@@ -279,15 +288,68 @@ describe("inspect_span drill-down", () => {
 			}),
 		)
 		expect(clipped).toContain("w… (24 bytes total)")
-		// Zero is not a payload budget: the clamp falls back to the default.
-		const defaulted = markdown(
+		// Below the minimum clamps to it, like every limit, rather than failing the call.
+		const clamped = markdown(
 			await runToolDirect(rt, "inspect_span", {
 				trace_id: AI_SPAN_TRACE_ID,
 				span_id: AI_SPAN_SPAN_ID,
 				payload_chars: 0,
 			}),
 		)
+		expect(clamped).toContain("w… (24 bytes total)")
+		const defaulted = markdown(
+			await runToolDirect(rt, "inspect_span", { trace_id: AI_SPAN_TRACE_ID, span_id: AI_SPAN_SPAN_ID }),
+		)
 		expect(defaulted).toContain("why is checkout failing?")
+	})
+
+	it("returns its output as structuredContent, decoded view included", async () => {
+		const result = await runToolDirect(rt, "inspect_span", {
+			trace_id: AI_SPAN_TRACE_ID,
+			span_id: AI_SPAN_SPAN_ID,
+		})
+		const output = Schema.decodeUnknownSync(InspectSpanOutput)(result.structuredContent)
+		expect(output.found).toBe(true)
+		expect(output.ai?._tag).toBe("decoded")
+		expect(output.attributes["gen_ai.request.model"]).toBeDefined()
+	})
+
+	it("rejects a timestamp that is not a timestamp as a parameter error", async () => {
+		const result = await runToolDirect(rt, "inspect_span", {
+			trace_id: SPAN_DETAIL_TRACE_ID,
+			span_id: SPAN_DETAIL_SPAN_ID,
+			timestamp: "2026-08-47:53",
+		})
+		expect(result.isError).toBe(true)
+		expect(markdown(result)).toContain("`timestamp`")
+	})
+})
+
+describe("search_logs paging", () => {
+	// A full page names the call for the next one, with the window and filters repeated so the
+	// page after is the same search.
+	it("offers the next page as a call that repeats the search", async () => {
+		const result = await runToolDirect(rt, "search_logs", {
+			start_time: "2026-06-02 09:00:00",
+			end_time: "2026-06-02 11:00:00",
+			severity: "ERROR",
+			limit: 1,
+		})
+		const text = markdown(result)
+		expect(text).toContain("checkout failed: downstream db error")
+		expect(text).toContain("Showing 1 of 3 logs.")
+		expect(text).toContain(
+			'`search_logs start_time="2026-06-02 09:00:00" end_time="2026-06-02 11:00:00" severity="ERROR" limit=1 offset=1`',
+		)
+		const output = Schema.decodeUnknownSync(SearchLogsOutput)(result.structuredContent)
+		expect(output.pagination?.nextOffset).toBe(1)
+		expect(output.filters?.severity).toBe("ERROR")
+	})
+
+	it("refuses a severity outside the levels", async () => {
+		const result = await runToolDirect(rt, "search_logs", { severity: "LOUD" })
+		expect(result.isError).toBe(true)
+		expect(markdown(result)).toContain("`severity`")
 	})
 })
 
@@ -334,6 +396,7 @@ describe("agent-recoverable error messages", () => {
 			await runToolDirect(rt, "error_detail", { fingerprint: "11640295108927840024" }),
 		)
 		expect(text).not.toMatch(/Invalid fingerprint/i)
+		expect(text).not.toContain("__maple_ui")
 	})
 
 	// query_data: 22 failures, 100% of that tool's errors — all a token that is

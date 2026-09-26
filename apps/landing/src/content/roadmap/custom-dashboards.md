@@ -1,5 +1,5 @@
 ---
-title: "Custom Dashboard Builder"
+title: "Custom dashboard builder"
 status: "shipped"
 category: "metrics"
 quarter: "Q1 2026"

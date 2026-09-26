@@ -87,8 +87,8 @@ jobs:
                         - 'packages/browser-session/**'
                         - 'scripts/build-local-binary.sh'
                         - 'scripts/gen-ui-embed.ts'
-                      # The seven archive probes test the CLI's own on-disk archive
-                      # format — crash recovery, merge, GC, calibration. The `cli`
+                      # The archive probes test the CLI's own on-disk archive
+                      # format: crash recovery, merge, GC, retention. The `cli`
                       # closure above is the right gate for "does the bundle still
                       # build and open a store", which `local-checkpoint-native`
                       # answers in one job. It is the wrong gate for these: measured
@@ -170,8 +170,6 @@ jobs:
                   apps/cli/test/native-archive-smoke.sh
                   apps/cli/test/native-archive-crash-recovery-probe.sh
                   apps/cli/test/native-archive-adversarial-probe.sh
-                  apps/cli/test/native-archive-calibrate-crash-probe.sh
-                  apps/cli/test/native-archive-calibrate-probe.sh
                   apps/cli/test/native-archive-gc-probe.sh
                   apps/cli/test/native-archive-merge-probe.sh
                   apps/cli/test/native-retention-probe.sh
@@ -615,7 +613,7 @@ jobs:
         if: ${{ needs.changes.outputs.archive == 'true' }}
         runs-on: ubuntu-latest
         timeout-minutes: 20
-        # The three long probes get a leg each. The five short ones (7-27s each)
+        # The two long probes get a leg each. The four short ones (7-27s each)
         # share one: alone, each paid ~50s of install and bundle build for seconds
         # of work, and the extra legs queued behind the org's concurrency limit.
         # Each entry is `script:tmp-dir:KEEP_ROOT`; adversarial leaves KEEP_ROOT
@@ -626,8 +624,6 @@ jobs:
                 include:
                     - leg: crash-recovery
                       probes: native-archive-crash-recovery-probe.sh:maple-native-archive-recovery:1
-                    - leg: calibrate
-                      probes: native-archive-calibrate-probe.sh:maple-native-archive-calibration:1
                     - leg: gc
                       probes: native-archive-gc-probe.sh:maple-native-archive-gc:1
                     - leg: quick
@@ -635,7 +631,6 @@ jobs:
                           native-archive-smoke.sh:maple-native-archive:1
                           native-archive-adversarial-probe.sh:maple-native-archive-adversarial:
                           native-archive-merge-probe.sh:maple-native-archive-merge:1
-                          native-archive-calibrate-crash-probe.sh:maple-native-archive-calibration-crash:1
                           native-retention-probe.sh:maple-native-retention:1
         steps:
             - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
@@ -644,7 +639,7 @@ jobs:
 
             - uses: ./.github/actions/bun-install
 
-            # Only the two calibrate probes run without DuckDB; installing it is ~2s.
+            # Every leg runs a probe that reads archives with DuckDB; installing it is ~2s.
             - name: Install pinned DuckDB CLI
               run: |
                   curl -fsSL --retry 5 --retry-delay 5 --retry-all-errors \

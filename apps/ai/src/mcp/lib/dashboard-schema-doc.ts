@@ -14,9 +14,9 @@ import { makeQueryDraft } from "@maple/backend/dashboard-templates/helpers"
 /**
  * The agent-facing description of what a dashboard widget can be.
  *
- * Every table below is *derived* from the definitions the runtime enforces —
- * `PANEL_TYPES`, `WIDGET_UNITS`, `AGGREGATIONS_BY_SOURCE`, `GROUP_BY_TOKENS`,
- * `WIDGET_DATA_SOURCE_KINDS` — and every JSON example is produced by CALLING the
+ * Every table below is *derived* from the definitions the runtime enforces
+ * (`PANEL_TYPES`, `WIDGET_UNITS`, `AGGREGATIONS_BY_SOURCE`, `GROUP_BY_TOKENS`,
+ * `WIDGET_DATA_SOURCE_KINDS`), and every JSON example is produced by CALLING the
  * v3 constructors in `@maple/widgets/dashboard` rather than being typed out.
  *
  * That is the whole point. The previous documentation was hand-written prose in
@@ -27,7 +27,7 @@ import { makeQueryDraft } from "@maple/backend/dashboard-templates/helpers"
  * schema rejects, and `dashboard-schema-doc.test.ts` decodes each one to prove
  * it.
  *
- * The prose that remains — the raw-SQL SELECT shapes, the whereClause grammar —
+ * The prose that remains (the raw-SQL SELECT shapes, the whereClause grammar)
  * is genuine hand-written knowledge with no machine-readable source, and is
  * marked as such where it appears.
  */
@@ -59,10 +59,10 @@ const panelTypesSection = (): string => {
 		if (meta.isScalar) notes.push("needs `transform.reduceToValue`")
 		if (meta.rawSqlDisplayType === undefined) notes.push("**no raw-SQL support**")
 		return `| \`${meta.panelType}\` | ${meta.label} | \`${meta.visualization}\` | ${
-			meta.chartId ? `\`${meta.chartId}\`` : "—"
-		} | ${meta.rawSqlDisplayType ? `\`${meta.rawSqlDisplayType}\`` : "—"} | ${
+			meta.chartId ? `\`${meta.chartId}\`` : "-"
+		} | ${meta.rawSqlDisplayType ? `\`${meta.rawSqlDisplayType}\`` : "-"} | ${
 			meta.defaultLayout.w
-		}×${meta.defaultLayout.h} | ${notes.join("; ") || "—"} |`
+		}×${meta.defaultLayout.h} | ${notes.join("; ") || "-"} |`
 	})
 
 	return [
@@ -74,7 +74,7 @@ const panelTypesSection = (): string => {
 		"line/bar/area into `chart` and then needs a `display.chartId` to tell them apart. The two",
 		"columns below are what `panel_type` resolves to, and are what you write directly when",
 		"authoring an assembled widget rather than calling `add_dashboard_widget`. A panel whose",
-		"`chartId` is `—` takes none: the `visualization` alone identifies it.",
+		"`chartId` is `-` takes none: the `visualization` alone identifies it.",
 		"",
 		"| panel_type | Label | `visualization` | `display.chartId` | Raw-SQL type | Default w×h | Requirements |",
 		"|---|---|---|---|---|---|---|",
@@ -82,20 +82,20 @@ const panelTypesSection = (): string => {
 		"",
 		"### Choosing one",
 		"",
-		"- **line / area / bar** — a value over time. `area` and `bar` accept `display.stacked`; `line` does not.",
-		"- **hbar** — a ranked “top N by volume”. Each row is labelled with its share of the **total**.",
-		"- **funnel** — sequential stages with a drop-off. Labels each bar as a share of the *largest*,",
+		"- **line / area / bar**: a value over time. `area` and `bar` accept `display.stacked`; `line` does not.",
+		"- **hbar**: a ranked “top N by volume”. Each row is labelled with its share of the **total**.",
+		"- **funnel**: sequential stages with a drop-off. Labels each bar as a share of the *largest*,",
 		"  so an unranked breakdown of four equal things reads “100%” four times. Use `hbar` for that.",
 		'  `display.funnel.variant: "dropoff"` draws the same funnel as one column per step with the',
 		"  loss between steps, the median time between them, and where the leavers went.",
-		"- **paths** — what people do in the steps after (or before) one event or page, as a flow.",
+		"- **paths**: what people do in the steps after (or before) one event or page, as a flow.",
 		"  Defined by `display.paths` alone; no query set.",
-		"- **pie** — composition, few slices. Collapses a long tail into “Other”.",
-		"- **stat / gauge** — one number. A gauge adds an arc; set `display.gauge.min`/`max` to match the unit.",
-		"- **table** — rows and columns; set `display.columns` for headers and per-column units.",
-		"- **list** — recent traces/logs. Configured by `display.listDataSource`, never by SQL.",
-		"- **heatmap / histogram** — a distribution. A histogram over traces can bucket raw values client-side.",
-		"- **markdown** — a static note. Takes no query at all.",
+		"- **pie**: composition, few slices. Collapses a long tail into “Other”.",
+		"- **stat / gauge**: one number. A gauge adds an arc; set `display.gauge.min`/`max` to match the unit.",
+		"- **table**: rows and columns; set `display.columns` for headers and per-column units.",
+		"- **list**: recent traces/logs. Configured by `display.listDataSource`, never by SQL.",
+		"- **heatmap / histogram**: a distribution. A histogram over traces can bucket raw values client-side.",
+		"- **markdown**: a static note. Takes no query at all.",
 	].join("\n")
 }
 
@@ -176,7 +176,7 @@ const exampleFunnelWidget = () => {
  * sections describe `add_dashboard_widget`'s *parameters*, but
  * `update_dashboard_widget`, `replace_dashboard_widgets` and `dashboard_json` all
  * take a whole widget object, and nothing showed one. Each agent inferred the
- * envelope — `visualization` + `display.chartId` + `layout` — correctly but said
+ * envelope (`visualization` + `display.chartId` + `layout`) correctly but said
  * it was guessing.
  */
 const exampleWidget = () => ({
@@ -200,11 +200,11 @@ const dataSourcesSection = (): string =>
 			(kind) => `\`${kind}\``,
 		).join(", ")}. Every arm requires its \`kind\`.`,
 		"",
-		'> **If you have seen `{ "endpoint": …, "params": … }` anywhere — that is the retired v2 shape',
+		'> **If you have seen `{ "endpoint": …, "params": … }` anywhere, that is the retired v2 shape',
 		"> and it will not decode.** A `query` source spreads `queries`/`formulas` at the TOP LEVEL,",
 		"> not under `params`, and requires `resultShape`.",
 		"",
-		'### `kind: "query"` — the query builder',
+		'### `kind: "query"`: the query builder',
 		"",
 		"`resultShape` is required and is one of `timeseries` (a value over time), `breakdown`",
 		"(one row per group) or `list` (raw rows). Optional: `formulas`, `comparison`, `limit`,",
@@ -212,7 +212,7 @@ const dataSourcesSection = (): string =>
 		"",
 		json(exampleQuerySource()),
 		"",
-		'### `kind: "raw_sql"` — your own ClickHouse SQL',
+		'### `kind: "raw_sql"`: your own ClickHouse SQL',
 		"",
 		json(
 			makeRawSqlDataSource({
@@ -221,11 +221,11 @@ const dataSourcesSection = (): string =>
 			}),
 		),
 		"",
-		'### `kind: "static"` — a markdown note, no request',
+		'### `kind: "static"`: a markdown note, no request',
 		"",
 		json(makeStaticDataSource()),
 		"",
-		'### `kind: "route"` — a curated built-in panel',
+		'### `kind: "route"`: a curated built-in panel',
 		"",
 		'`{ "kind": "route", "endpoint": "service_overview", "params": { … } }`. These back the',
 		"prebuilt panels; you rarely author one by hand.",
@@ -235,7 +235,7 @@ const dataSourcesSection = (): string =>
 		"A `stat` or `gauge` reads `data[0].value`. Without `transform.reduceToValue` it renders",
 		'`[object Object]`. `add_dashboard_widget` injects `{ field: "value", aggregate: "first" }`',
 		"when you omit it; set it explicitly to choose a different reducer. Valid aggregates:",
-		"`sum`, `first`, `count`, `avg`, `max`, `min` — **there is no `last`**.",
+		"`sum`, `first`, `count`, `avg`, `max`, `min`: **there is no `last`**.",
 		"",
 		"Which one depends on what the query returns, because the query is bucketed over time and",
 		"the reducer collapses those buckets into one number:",
@@ -243,14 +243,14 @@ const dataSourcesSection = (): string =>
 		"- **A rate or a count** (`count`, a metrics `rate`) → `sum`, for a window total.",
 		"- **A latency percentile or an average** (`p95_duration`, `avg_duration`, a gauge metric)",
 		"  → `avg` for the typical value over the window, or `max` for the worst bucket. **Not**",
-		"  `sum` — adding percentiles together is meaningless, and it is the common wrong choice.",
+		"  `sum`: adding percentiles together is meaningless, and it is the common wrong choice.",
 		"- **A current reading**, where only the newest bucket matters → `first`.",
 		"",
 		json(exampleScalarSource()),
 		"",
 		"### The breakdown shape",
 		"",
-		'`resultShape: "breakdown"` returns one row per group instead of a series over time — the',
+		'`resultShape: "breakdown"` returns one row per group instead of a series over time, the',
 		"shape `pie`, `hbar`, `funnel` and `heatmap` need. It requires a group-by, and `limit` caps",
 		"the rows (honoured for 1–100).",
 		"",
@@ -260,23 +260,23 @@ const dataSourcesSection = (): string =>
 		"",
 		"A funnel widget has two modes. Without `display.funnel.steps` it draws a group-by breakdown",
 		"as descending stages (the shape above). With them it is a **conversion funnel over product",
-		"events** — page views, `track()` events and server-side events, stitched per person — and",
+		"events** (page views, `track()` events and server-side events, stitched per person), and",
 		"the query set is not used at all. Set the definition on `display_json.funnel` and",
 		'`add_dashboard_widget` derives the data source (`kind: "route"`,',
 		'`endpoint: "product_events_funnel"`) for you; do not pass `data_source_json`.',
 		"",
-		'- `steps` — 1–10, in order. `{ kind: "event", eventName, attributeEquals? }`,',
-		'  `{ kind: "page", pagePath, host? }`, or — **step 1 only** —',
+		'- `steps`: 1–10, in order. `{ kind: "event", eventName, attributeEquals? }`,',
+		'  `{ kind: "page", pagePath, host? }`, or (**step 1 only**)',
 		'  `{ kind: "session", dimension, value }` with `dimension` one of `referrerHost`,',
 		"  `utmSource`, `utmMedium`, `utmCampaign`, `country`, `host`.",
-		"- `keyBy` — `person` (default; user id, else the visitor's linked user, else the visitor),",
+		"- `keyBy`: `person` (default; user id, else the visitor's linked user, else the visitor),",
 		"  `visitor`, `user`, or `session`.",
-		"- `windowSeconds` — the whole chain must complete within this many seconds of step 1",
+		"- `windowSeconds`: the whole chain must complete within this many seconds of step 1",
 		"  (default 86400). Must be positive.",
-		"- `breakdownBy` — split the funnel by a session dimension (`referrerHost`, `utmSource`,",
+		"- `breakdownBy`: split the funnel by a session dimension (`referrerHost`, `utmSource`,",
 		"  `utmMedium`, `utmCampaign`, `country`, `host`) or `attribute:<key>`; the widget draws one",
 		"  bar per group per step for the top 6 groups by step-1 count.",
-		"- `filters` — the population filter: only persons with a session matching these",
+		"- `filters`: the population filter: only persons with a session matching these",
 		"  dimensions take part. `{ host?, pagePath?, referrerHost?, country?, deviceType?,",
 		"  browserName?, osName?, language?, utmSource?, utmMedium?, utmCampaign?,",
 		'  visitorType?: "new" | "returning" }`. They are spread FLAT into the derived route params.',
@@ -297,27 +297,27 @@ const dataSourcesSection = (): string =>
 		"",
 		'### Paths (`panel_type: "paths"` + `display.paths`)',
 		"",
-		'A flow of what people did in the hops after — or, with `direction: "before"`, before —',
+		'A flow of what people did in the hops after (or, with `direction: "before"`, before)',
 		"one anchor. Product events only; there is no query set. Set the definition on",
 		'`display_json.paths` and `add_dashboard_widget` derives the data source (`kind: "route"`,',
 		'`endpoint: "product_events_paths"`); do not pass `data_source_json`.',
 		"",
-		'- `anchor` — required. `{ kind: "event", eventName, attributeEquals? }` or',
+		'- `anchor`: required. `{ kind: "event", eventName, attributeEquals? }` or',
 		'  `{ kind: "page", pagePath, host? }`. A session step cannot anchor a sequence.',
-		'- `direction` — `"after"` (default) or `"before"`.',
-		"- `depth` — hops to draw, 1–5 (default 3). `branches` — nodes named per step, 1–10",
+		'- `direction`: `"after"` (default) or `"before"`.',
+		"- `depth`: hops to draw, 1–5 (default 3). `branches`: nodes named per step, 1–10",
 		"  (default 4); the rest fold into an *Other* node. A sequence that stops short ends in",
 		"  an *Ended* node.",
 		"- `keyBy`, `windowSeconds` (how far from the anchor a hop may be, default 86400) and",
-		"  `filters` — as for funnels.",
-		'- `include` — `"all"` (default), `"events"` or `"pages"`. `exclude` — names (event names',
+		"  `filters`: as for funnels.",
+		'- `include`: `"all"` (default), `"events"` or `"pages"`. `exclude`: names (event names',
 		'  or page paths) dropped before sequencing, e.g. `["heartbeat", "/"]`.',
 		"",
 		"### A complete widget",
 		"",
 		"The sections above describe `add_dashboard_widget`'s parameters, which it assembles into a",
 		"widget for you. `update_dashboard_widget`, `replace_dashboard_widgets` and `dashboard_json`",
-		"take the assembled object instead — this is its shape. `timeRange` and `sectionId`/`tabId`",
+		"take the assembled object instead. This is its shape. `timeRange` and `sectionId`/`tabId`",
 		"are the only other top-level keys, both optional.",
 		"",
 		json(exampleWidget()),
@@ -375,15 +375,15 @@ const queriesSection = (): string => {
 		"metric-only fields belong solely to `metrics` queries; do not add them to trace or log",
 		"queries:",
 		"",
-		"- `metricName` — required; discover real names with `list_metrics`.",
-		`- \`metricType\` — required, one of ${QUERY_BUILDER_METRIC_TYPES.map((type) => `\`${type}\``).join(", ")}. Anything else fails to decode.`,
-		`- \`signalSource\` — optional, one of ${QUERY_BUILDER_SIGNAL_SOURCES.map((source) => `\`${source}\``).join(", ")}. Omit it unless you know you need \`meter\`.`,
-		"- `isMonotonic` — optional; `false` marks a Sum as an UpDownCounter, which changes the",
+		"- `metricName`: required; discover real names with `list_metrics`.",
+		`- \`metricType\`: required, one of ${QUERY_BUILDER_METRIC_TYPES.map((type) => `\`${type}\``).join(", ")}. Anything else fails to decode.`,
+		`- \`signalSource\`: optional, one of ${QUERY_BUILDER_SIGNAL_SOURCES.map((source) => `\`${source}\``).join(", ")}. Omit it unless you know you need \`meter\`.`,
+		"- `isMonotonic`: optional; `false` marks a Sum as an UpDownCounter, which changes the",
 		"  aggregations that make sense (`rate`/`increase` assume a monotonic counter).",
 		"",
 		"### `addOns` is required, and all five keys must be present",
 		"",
-		"`addOns: { groupBy, having, orderBy, limit, legend }` — every key, every time. A missing",
+		"`addOns: { groupBy, having, orderBy, limit, legend }`: every key, every time. A missing",
 		"one fails to decode. Each flag gates whether the matching field is read at all, which is",
 		"why `groupBy` without `addOns.groupBy: true` silently does nothing.",
 		"",
@@ -395,7 +395,7 @@ const queriesSection = (): string => {
 		"",
 		`On traces only, setting \`valueField: "attr.<key>"\` switches the query to numeric-attribute`,
 		`mode, where the aggregation is one of ${TRACES_NUMERIC_AGGREGATIONS.map((fn) => `\`${fn}\``).join(", ")}.`,
-		"This is the **only** place a bare `p50`/`p95`/`p99` is valid — latency percentiles are",
+		"This is the **only** place a bare `p50`/`p95`/`p99` is valid; latency percentiles are",
 		"spelled `p95_duration`. Metrics never accept percentiles.",
 		"",
 		"### Group-by tokens",
@@ -412,9 +412,9 @@ const queriesSection = (): string => {
 		"",
 		"### `whereClause` is a custom grammar, not SQL",
 		"",
-		"Operators — the only ones: `=`, `!=`, `>`, `<`, `>=`, `<=`, `contains`, `!contains`,",
+		"Operators (the only ones): `=`, `!=`, `>`, `<`, `>=`, `<=`, `contains`, `!contains`,",
 		"`exists`, `!exists`. Clauses join with ` AND `; there is no `OR` and no parentheses.",
-		"Values use double quotes. **There is no `IS NULL` / `IS NOT NULL`** — write `<key> exists`",
+		"Values use double quotes. **There is no `IS NULL` / `IS NOT NULL`**: write `<key> exists`",
 		"or `<key> !exists`. `exists` means present *and* non-empty, because attributes live in",
 		"ClickHouse `Map` columns where a missing key reads back as `''`.",
 		"",
@@ -427,7 +427,7 @@ const queriesSection = (): string => {
 		"",
 		"`formulas: [{ id, name, expression, legend }]` references queries by `name` (`A / B`), and",
 		"is valid on the **timeseries** shape only. Marking a query `hidden: true` is UI-only in raw",
-		'JSON — also add `transform.hideSeries.baseNames: ["A"]` or the auxiliary series renders at',
+		'JSON, so also add `transform.hideSeries.baseNames: ["A"]` or the auxiliary series renders at',
 		"full scale and flattens the axis.",
 	].join("\n")
 }
@@ -441,7 +441,7 @@ const displaySection = (): string =>
 		"| Key | Applies to | Notes |",
 		"|---|---|---|",
 		"| `title`, `description` | all | |",
-		"| `unit` | all | See the `units` section — read it before choosing a percent token. |",
+		"| `unit` | all | See the `units` section: read it before choosing a percent token. |",
 		"| `thresholds` | stat, gauge, charts | `[{ value, color, label? }]`; highest matching value wins. |",
 		"| `prefix`, `suffix` | stat, gauge | Wrap the formatted value. |",
 		"| `chartPresentation.legend` | charts | `visible` \\| `hidden` \\| `right`. |",
@@ -454,12 +454,12 @@ const displaySection = (): string =>
 		"| `columns` | table, list | `[{ field, header, unit?, width?, align?, hidden? }]`. |",
 		"| `listDataSource`, `listWhereClause`, `listLimit`, `listRootOnly` | list | |",
 		"| `pie` | pie | `{ donut, innerRadius, showLabels, showPercent }`. |",
-		"| `gauge` | gauge | `{ min, max }` — defaults to 0–100, which is wrong for a `percent` unit. |",
+		"| `gauge` | gauge | `{ min, max }`: defaults to 0–100, which is wrong for a `percent` unit. |",
 		"| `histogram` | histogram | `{ bucketCount, bucketWidth, logScaleY }`. |",
 		"| `heatmap` | heatmap | `{ colorScale, scaleType }`. |",
-		'| `funnel` | funnel | `{ showStepPercent, variant?, steps?, keyBy?, windowSeconds?, breakdownBy?, filters? }` — with `steps` it is a product-event funnel (see Data sources); `variant: "dropoff"` is the drop-off view. |',
-		"| `paths` | paths | `{ anchor, direction?, depth?, branches?, keyBy?, windowSeconds?, include?, exclude?, filters? }` — the whole definition (see Data sources). |",
-		"| `markdown` | markdown | `{ content }` — the note body. |",
+		'| `funnel` | funnel | `{ showStepPercent, variant?, steps?, keyBy?, windowSeconds?, breakdownBy?, filters? }`: with `steps` it is a product-event funnel (see Data sources); `variant: "dropoff"` is the drop-off view. |',
+		"| `paths` | paths | `{ anchor, direction?, depth?, branches?, keyBy?, windowSeconds?, include?, exclude?, filters? }`: the whole definition (see Data sources). |",
+		"| `markdown` | markdown | `{ content }`: the note body. |",
 		"| `sparkline` | stat | `{ enabled, dataSource? }`; embeds a full nested data source. |",
 		"",
 		"### Stored but not rendered",
@@ -486,7 +486,7 @@ const rawSqlSection = (): string =>
 		"## Raw SQL widgets",
 		"",
 		"Pass `sql` to `add_dashboard_widget` and the tool builds the data source for you.",
-		"**Call `describe_warehouse_tables` first** — a hallucinated table or column silently",
+		"**Call `describe_warehouse_tables` first**: a hallucinated table or column silently",
 		"produces an empty chart.",
 		"",
 		"### Macros",
@@ -498,27 +498,27 @@ const rawSqlSection = (): string =>
 		"",
 		"### Conventions that catch everyone",
 		"",
-		"- Columns are PascalCase (`ServiceName`, `Timestamp`) — never snake_case.",
+		"- Columns are PascalCase (`ServiceName`, `Timestamp`), never snake_case.",
 		"- `StatusCode` / `SeverityText` / `SpanKind` values are **Title Case** (`'Error'`, not `'ERROR'`).",
 		"  Wrong casing runs fine and matches zero rows.",
 		"- Span `Duration` is **nanoseconds**. Divide by `1e6` for ms.",
-		"- `SpanAttributes['key']` — square brackets. A missing key returns `''`, not NULL.",
+		"- `SpanAttributes['key']`: square brackets. A missing key returns `''`, not NULL.",
 		"- One statement only; writes are rejected; every query is wrapped in `LIMIT 1001`.",
 		"",
 		"### What to SELECT, per panel type",
 		"",
 		"The renderer is opinionated. Wrong aliases give an empty chart or `[object Object]`.",
 		"",
-		"- **line / area / bar** — a DateTime bucket as the FIRST column (alias `bucket`) plus one or",
+		"- **line / area / bar**: a DateTime bucket as the FIRST column (alias `bucket`) plus one or",
 		"  more **numeric** columns; each becomes a series named after the column. **String columns",
-		"  are dropped**, so multi-series must be pivoted in SQL with `countIf(...)` — tall form",
+		"  are dropped**, so multi-series must be pivoted in SQL with `countIf(...)`; tall form",
 		"  (`bucket, ServiceName, count()`) collapses to one aggregate line.",
-		"- **stat / gauge** — one scalar aliased `value`.",
-		"- **pie / funnel / hbar** — a string column aliased `name` plus a numeric column. Cap at ~8–10 rows.",
-		"- **heatmap** — three columns aliased `x`, `y`, `value`; string-cast numeric `x`/`y`.",
-		"- **histogram** — one numeric column aliased `value`, one row per observation; add `LIMIT 5000`.",
-		"- **table** — any rows; columns render in order, so use `AS` for readable headers.",
-		"- **list** — not supported. A list is configured by `display.listDataSource`.",
+		"- **stat / gauge**: one scalar aliased `value`.",
+		"- **pie / funnel / hbar**: a string column aliased `name` plus a numeric column. Cap at ~8–10 rows.",
+		"- **heatmap**: three columns aliased `x`, `y`, `value`; string-cast numeric `x`/`y`.",
+		"- **histogram**: one numeric column aliased `value`, one row per observation; add `LIMIT 5000`.",
+		"- **table**: any rows; columns render in order, so use `AS` for readable headers.",
+		"- **list**: not supported. A list is configured by `display.listDataSource`.",
 		"",
 		"```sql",
 		"SELECT toStartOfInterval(Timestamp, INTERVAL $__interval_s SECOND) AS bucket,",
@@ -532,7 +532,7 @@ const rawSqlSection = (): string =>
 		"",
 		"`granularity_seconds` only matters if the SQL references `$__interval_s`. Either use",
 		"`toStartOfInterval(…, INTERVAL $__interval_s SECOND)` with it, or a fixed `toStartOf*`",
-		"without it — mixing them means the setting silently does nothing.",
+		"without it; mixing them means the setting silently does nothing.",
 	].join("\n")
 
 const SECTION_RENDERERS = {
@@ -547,7 +547,7 @@ const SECTION_RENDERERS = {
 const SECTION_SUMMARIES = {
 	panel_types: "The 14 panel types, what each persists as, and which need a group-by or a reduction.",
 	data_sources: "The four `kind` arms of a widget data source, with a decodable example of each.",
-	units: "The unit vocabulary — and the percent-vs-percent_100 scale rule.",
+	units: "The unit vocabulary, and the percent-vs-percent_100 scale rule.",
 	queries: "Aggregations and group-by tokens per source, the whereClause grammar, formulas.",
 	display: "Display config keys per panel type, including the ones that are stored but inert.",
 	raw_sql: "Macros, ClickHouse conventions, and the SELECT shape each panel type expects.",
@@ -563,7 +563,7 @@ export const renderDashboardSchemaIndex = (): string =>
 		"",
 		'Call this tool again with `section: "<name>"` for any of:',
 		"",
-		...DASHBOARD_SCHEMA_SECTIONS.map((section) => `- \`${section}\` — ${SECTION_SUMMARIES[section]}`),
+		...DASHBOARD_SCHEMA_SECTIONS.map((section) => `- \`${section}\`: ${SECTION_SUMMARIES[section]}`),
 		"",
 		"Two things to read before authoring anything:",
 		"",

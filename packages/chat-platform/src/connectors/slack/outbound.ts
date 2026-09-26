@@ -42,6 +42,7 @@ import {
 	API_HOST,
 	CHANNEL_HISTORY_URL,
 	CONVERSATIONS_LIST_URL,
+	POST_EPHEMERAL_URL,
 	POST_MESSAGE_URL,
 	THREAD_REPLIES_URL,
 	UPDATE_MESSAGE_URL,
@@ -345,6 +346,17 @@ export const slackOutbound: ChatOutbound<HttpClient.HttpClient | ConnectorCreden
 				}
 				return { target, messageId: result.ts } satisfies ChatMessageRef
 			}),
+
+			/** `chat.postEphemeral`: shown to the one user, in the thread the click landed in. */
+			whisper: (action: InboundAction, blocks: ReadonlyArray<ChatBlock>) =>
+				send(
+					"whisper",
+					"chat.postEphemeral",
+					jsonRequest(POST_EPHEMERAL_URL, {
+						...body(action.channelId, blocks, action.threadId),
+						user: action.actor.id,
+					}),
+				).pipe(Effect.asVoid),
 
 			edit: (ref: ChatMessageRef, blocks: ReadonlyArray<ChatBlock>) =>
 				// `chat.update` addresses the message by its own `ts`; a thread is not named again.

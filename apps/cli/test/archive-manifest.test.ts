@@ -11,7 +11,6 @@ import {
 	rangeRoot,
 } from "../src/server/archives/paths"
 import { parseArchiveActivePointer, parseArchiveGenerationManifest } from "../src/server/archives/manifest"
-import { TUNING_CONFIG_FORMAT_VERSION } from "../src/server/archives/config"
 import { CHDB_VERSION, MAPLE_VERSION } from "../src/version"
 import { SCHEMA_FINGERPRINT } from "../src/server/schema-identity"
 import { randomUUID } from "node:crypto"
@@ -268,18 +267,18 @@ describe("archive manifest tuningConfig identity", () => {
 		strictEqual(parsed.tuningConfig!.configName, "phase3b-tuning.json")
 	})
 
-	it("preserves a current format-3 calibration config identity", () => {
+	it("preserves a format-3 calibration config identity from before calibration was removed", () => {
 		const generationId = randomUUID()
 		const manifest = validGenerationManifest({
 			generationId,
 			tuningConfig: {
-				formatVersion: TUNING_CONFIG_FORMAT_VERSION,
+				formatVersion: 3,
 				configName: "new-tuning.json",
 				sha256: "d".repeat(64),
 			},
 		})
 		const parsed = parseArchiveGenerationManifest(manifest, "traces", "2026-06-01", generationId)
-		strictEqual(parsed.tuningConfig!.formatVersion, TUNING_CONFIG_FORMAT_VERSION)
+		strictEqual(parsed.tuningConfig!.formatVersion, 3)
 	})
 
 	it("accepts null tuningConfig (no config loaded)", () => {

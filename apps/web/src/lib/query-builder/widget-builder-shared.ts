@@ -1,4 +1,5 @@
 import {
+	buildTimeseriesQuerySpec,
 	createQueryDraft,
 	formatFiltersAsWhereClause,
 	formulaLabel,
@@ -9,6 +10,7 @@ import {
 	type QueryBuilderQueryDraft,
 } from "@maple/query-engine/query-builder"
 import type { ListColumnDraft, ListDataSource } from "@/lib/query-builder/list-widget-config"
+import type { ListLogsInput } from "@/api/warehouse/logs"
 import type {
 	TimeRange,
 	ValueUnit,
@@ -31,7 +33,7 @@ import {
 import type { FunnelStepDraft } from "@/lib/query-builder/funnel-filters"
 import { DEFAULT_FUNNEL_KEY_BY, DEFAULT_FUNNEL_WINDOW_SECONDS } from "@/components/funnels/definition"
 import type { HeatmapColorScale, HeatmapScaleType } from "@maple/domain/http"
-import { normalizeKey, parseBoolean, parseWhereClause as parseWhereClauses } from "@maple/domain/where-clause"
+import { normalizeKey, parseWhereClause as parseWhereClauses } from "@maple/domain/where-clause"
 
 // Shared widget-builder vocabulary.
 //
@@ -525,56 +527,97 @@ export function legacyQueryDraft(params: Record<string, unknown>): QueryBuilderQ
 		: { ...fallbackBase, dataSource: "traces" }
 }
 
-export function buildListEndpointParams(
-	dataSource: ListDataSource,
+/** A `list_logs` column filter: a scalar for `=`, a list for `!=`, and an optional substring mode. */
+interface ListLogsField {
+	readonly include: "service" | "severity" | "deploymentEnv" | "namespace"
+	readonly exclude:
+		| "excludedServices"
+		| "excludedSeverities"
+		| "excludedDeploymentEnvs"
+		| "excludedNamespaces"
+	readonly matchMode?: "deploymentEnvMatchMode" | "namespaceMatchMode"
+}
+
+const LIST_LOGS_FIELDS = new Map<string, ListLogsField>([
+	["service.name", { include: "service", exclude: "excludedServices" }],
+	["severity", { include: "severity", exclude: "excludedSeverities" }],
+	[
+		"deployment.environment",
+		{ include: "deploymentEnv", exclude: "excludedDeploymentEnvs", matchMode: "deploymentEnvMatchMode" },
+	],
+	[
+		"service.namespace",
+		{ include: "namespace", exclude: "excludedNamespaces", matchMode: "namespaceMatchMode" },
+	],
+])
+
+/**
+ * `list_logs` params for a logs list widget's where clause. The endpoint has
+ * column filters only, so an operator or key it cannot express is reported in
+ * `warnings` and left out rather than widened into an equality match.
+ */
+export function buildListLogsParams(
 	whereClause: string,
 	limit: number,
-): Record<string, unknown> {
-	const { clauses } = parseWhereClauses(whereClause)
+): { params: ListLogsInput; warnings: string[] } {
+	const parsed = parseWhereClauses(whereClause)
+	const warnings = parsed.warnings.map((warning) => warning.message)
 	// NOTE: startTime/endTime are injected by useWidgetData from the dashboard
 	// time range — do NOT include them here or they'll clash with interpolation.
-	const params: Record<string, unknown> = { limit } satisfies Record<string, unknown>
+	const included: Partial<Record<ListLogsField["include"] | "search", string>> = {}
+	const excluded: Partial<Record<ListLogsField["exclude"], string[]>> = {}
+	const matchModes: Partial<Record<NonNullable<ListLogsField["matchMode"]>, "contains">> = {}
 
-	if (dataSource === "traces") {
-		const attributeFilters: Array<{ key: string; value: string; matchMode?: string }> = []
-		const resourceAttributeFilters: Array<{ key: string; value: string; matchMode?: string }> = []
+	for (const clause of parsed.clauses) {
+		const key = normalizeKey(clause.key)
+		const typedKey = clause.rawKey ?? clause.key
 
-		for (const clause of clauses) {
-			const key = normalizeKey(clause.key)
-			if (key === "service.name") params.service = clause.value
-			else if (key === "span.name") params.spanName = clause.value
-			else if (key === "has_error") {
-				const b = parseBoolean(clause.value)
-				if (b != null) params.hasError = b
-			} else if (key === "root_only") {
-				const b = parseBoolean(clause.value)
-				if (b != null) params.rootOnly = b
-			} else if (key === "deployment.environment") params.deploymentEnv = clause.value
-			else if (key.startsWith("attr.")) {
-				attributeFilters.push({
-					key: key.slice(5),
-					value: clause.operator !== "exists" ? clause.value : "",
-					matchMode: clause.operator === "contains" ? "contains" : undefined,
-				})
-			} else if (key.startsWith("resource.")) {
-				resourceAttributeFilters.push({
-					key: key.slice(9),
-					value: clause.operator !== "exists" ? clause.value : "",
-					matchMode: clause.operator === "contains" ? "contains" : undefined,
-				})
-			}
+		if (key === "search" || key === "body") {
+			// Body search is a substring match, which is what both spellings mean.
+			if (clause.operator === "=" || clause.operator === "contains") included.search = clause.value
+			else
+				warnings.push(
+					`Logs list filter ${typedKey} supports only = and contains; ignoring ${clause.operator}`,
+				)
+			continue
 		}
 
-		if (attributeFilters.length > 0) params.attributeFilters = attributeFilters
-		if (resourceAttributeFilters.length > 0) params.resourceAttributeFilters = resourceAttributeFilters
-	} else {
-		for (const clause of clauses) {
-			const key = normalizeKey(clause.key)
-			if (key === "service.name") params.service = clause.value
-			else if (key === "severity") params.severity = clause.value
-			else if (key === "search" || key === "body") params.search = clause.value
+		const field = LIST_LOGS_FIELDS.get(key)
+		if (!field) {
+			warnings.push(`Unsupported logs list filter ignored: ${typedKey}`)
+			continue
+		}
+
+		if (clause.operator === "=" || (clause.operator === "contains" && field.matchMode)) {
+			included[field.include] = clause.value
+			if (field.matchMode) {
+				if (clause.operator === "contains") matchModes[field.matchMode] = "contains"
+				else delete matchModes[field.matchMode]
+			}
+		} else if (clause.operator === "!=") {
+			excluded[field.exclude] = [...(excluded[field.exclude] ?? []), clause.value]
+		} else {
+			const supported = field.matchMode ? "=, != and contains" : "= and !="
+			warnings.push(
+				`Logs list filter ${typedKey} supports only ${supported}; ignoring ${clause.operator}`,
+			)
 		}
 	}
 
-	return params
+	return { params: { limit, ...included, ...excluded, ...matchModes }, warnings }
+}
+
+/**
+ * Clauses a list widget's filter cannot apply as written. Logs go through
+ * `list_logs`; the other sources through the query engine's list spec, which
+ * shares the chart builder's clause lowering.
+ */
+export function listWhereClauseWarnings(dataSource: ListDataSource, whereClause: string): string[] {
+	if (dataSource === "logs") return buildListLogsParams(whereClause, 1).warnings
+	return buildTimeseriesQuerySpec({
+		...createQueryDraft(0),
+		dataSource,
+		whereClause,
+		aggregation: "count",
+	}).warnings
 }

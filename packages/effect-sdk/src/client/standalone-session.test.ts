@@ -27,6 +27,7 @@ interface MetaPost {
 	readonly url: string
 	readonly row: MetaRowView
 	readonly keepalive: boolean | undefined
+	readonly authorization: string | null
 }
 
 const setupFetch = () => {
@@ -35,7 +36,12 @@ const setupFetch = () => {
 	globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
 		const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url
 		if (url.includes("/v1/sessionReplays/meta") && typeof init?.body === "string") {
-			metaPosts.push({ url, row: JSON.parse(init.body.trim()), keepalive: init?.keepalive })
+			metaPosts.push({
+				url,
+				row: JSON.parse(init.body.trim()),
+				keepalive: init?.keepalive,
+				authorization: new Headers(init.headers).get("authorization"),
+			})
 		}
 		return new Response(null, { status: 200 })
 	}) as typeof fetch
@@ -220,17 +226,26 @@ describe("standalone session emission (client)", () => {
 		expect(metaPosts.length).toBe(0)
 	})
 
-	it("posts nothing during SSR or without an ingest key", async () => {
+	it("posts nothing during SSR", async () => {
 		const { metaPosts, restore: r } = setupFetch()
 		restore = r
 
 		make(baseConfig) // node: no window
 
-		stubBrowser()
-		make({ ...baseConfig, ingestKey: undefined }) // window but no key
-
 		await new Promise((resolve) => setTimeout(resolve, 0))
 		expect(metaPosts.length).toBe(0)
+	})
+
+	it("posts without Authorization when no ingest key is set, for a proxy to add", async () => {
+		const { metaPosts, restore: r } = setupFetch()
+		restore = r
+		stubBrowser()
+
+		make({ ...baseConfig, ingestKey: undefined })
+
+		await new Promise((resolve) => setTimeout(resolve, 0))
+		expect(metaPosts.map((post) => post.row.status)).toEqual(["active"])
+		expect(metaPosts[0]!.authorization).toBeNull()
 	})
 
 	it("attaches observed trace ids to the ended row and rotates sessions", async () => {

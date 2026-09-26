@@ -3,6 +3,8 @@ import { installFakeWarehouse, restoreWarehouse, type FixtureRule } from "../../
 import { makeEvalRuntime, markdown, runToolDirect, type EvalRuntime } from "../../__evals__/eval-runtime"
 import { mapleToolCatalog, toInputSchema } from "../registry"
 import type { McpToolResult } from "../types"
+import { Schema } from "effect"
+import { GetAgentToolErrorOutput, GetAgentToolsOverviewOutput } from "@maple/domain/mcp-outputs"
 import { TREND_BUCKETS } from "../../lib/agent-tool-analytics"
 import { AI_TOOL_ERROR_PAYLOAD_MAX } from "@maple/query-engine-integrations/ai"
 
@@ -293,6 +295,24 @@ it.each(REJECTED)("rejects %s with a message naming the fix", async (_case, name
 	for (const phrase of phrases) expect(markdown(result)).toContain(phrase)
 })
 
+describe("structured output", () => {
+	it("decodes both tools' structuredContent with their output schemas", async () => {
+		const overview = await call(OVERVIEW, { ...WINDOW, tool: "search_docs" })
+		const decoded = Schema.decodeUnknownSync(GetAgentToolsOverviewOutput)(overview.structuredContent)
+		expect(decoded.failureGroups?.groups[0]?.trend).toHaveLength(TREND_BUCKETS)
+		const detail = await call(ERROR_DETAIL, {
+			...WINDOW,
+			tool: "search_docs",
+			fingerprint: FINGERPRINT,
+			payload_chars: 100,
+		})
+		const group = Schema.decodeUnknownSync(GetAgentToolErrorOutput)(detail.structuredContent)
+		// The output carries the payload as the answer shows it, and its true size.
+		expect(group.samples[0]?.arguments).toHaveLength(100)
+		expect(group.samples[0]?.argumentsBytes).toBe(LONG_ARGUMENTS_BYTES)
+	})
+})
+
 describe("get_agent_tools_overview rendering", () => {
 	it("renders totals with deltas, the session share, a breakdown in ms and the tool's description", async () => {
 		executedSql.length = 0
@@ -317,7 +337,9 @@ describe("get_agent_tools_overview rendering", () => {
 			"900.0ms",
 		])
 		// The follow-up names the worst error rate, not the busiest tool.
-		expect(rendered).toContain('`get_agent_tools_overview tool="search_docs"`')
+		expect(rendered).toMatch(
+			/`get_agent_tools_overview start_time="[^"]+" end_time="[^"]+" tool="search_docs"`/,
+		)
 		// No tool selected: no failure groups were read, so none are rendered.
 		expect(rendered).not.toContain("### Failure groups")
 	})
@@ -359,7 +381,10 @@ describe("get_agent_tools_overview failure groups", () => {
 		expected[11] = 4
 		expected[15] = 5
 		expect(group[9]).toBe(expected.join(","))
-		expect(rendered).toContain(`\`get_agent_tool_error tool="search_docs" fingerprint="${FINGERPRINT}"\``)
+		// The follow-up keeps the window, so it opens the same group the table shows.
+		expect(rendered).toContain(
+			`\`get_agent_tool_error tool="search_docs" fingerprint="${FINGERPRINT}" start_time="${WINDOW.start_time}" end_time="${WINDOW.end_time}"\``,
+		)
 	})
 
 	// The grid aligns its start DOWN to the bucket lattice, so a window starting
@@ -437,7 +462,7 @@ describe("get_agent_tool_error rendering", () => {
 
 	it("clamps payload_chars to its default and its ceiling", async () => {
 		// The clip appends one ellipsis to the characters it kept.
-		expect(clippedArguments(await render(ERROR_DETAIL, { ...GROUP, payload_chars: 0 }))).toHaveLength(801)
+		expect(clippedArguments(await render(ERROR_DETAIL, GROUP))).toHaveLength(801)
 		// The ceiling is the read's own cap, and the payload the read already cut
 		// still renders with the ellipsis its byte total implies.
 		expect(
@@ -449,14 +474,14 @@ describe("get_agent_tool_error rendering", () => {
 		// The real path is a join miss: the index has the call, the payload read
 		// returns no row for its span.
 		const rendered = await renderWith(payloadsAre([]), ERROR_DETAIL, GROUP)
-		expect(rendered).toContain("(not available — the span was not retained)")
+		expect(rendered).toContain("(not available: the span was not retained)")
 	})
 
 	it("tells a payload the span left empty from one it never carried", async () => {
 		const rows = payloadRows.map((row) => ({ ...row, arguments: "", argumentsBytes: 0 }))
 		const rendered = await renderWith(payloadsAre(rows), ERROR_DETAIL, GROUP)
 		expect(rendered).toContain("(empty)")
-		expect(rendered).not.toContain("(not available — the span was not retained)")
+		expect(rendered).not.toContain("(not available: the span was not retained)")
 	})
 
 	it("fences a sample payload that carries a code fence of its own", async () => {

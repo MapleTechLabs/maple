@@ -29,8 +29,8 @@ import { retainedQueryV2 } from "@/lib/services/common/v2-atom-client"
 const CHART_DEFAULT_INGEST_URL = "https://ingest.maple.dev"
 
 const DOCS_URLS = {
-	kubernetes: "https://maple.dev/docs/guides/kubernetes-infrastructure",
-	docker: "https://maple.dev/docs/guides/docker-infrastructure",
+	kubernetes: "https://maple.dev/docs/infrastructure/kubernetes",
+	docker: "https://maple.dev/docs/infrastructure/docker",
 } as const
 
 type InstallTab = keyof typeof DOCS_URLS

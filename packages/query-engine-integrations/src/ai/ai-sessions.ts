@@ -14,8 +14,9 @@
 // the framework happened to label.
 //
 // A trace can carry no session id at all and still be an agent run: several
-// vendors (haystack, litellm, llamaindex, semantic_kernel, effect_ai) expose no
-// session key, and the `unknown:*` buckets never do. Those traces used to be
+// vendors (haystack, litellm, llamaindex, semantic_kernel, effect_ai) and the
+// `unknown:*` buckets have no session key of their own, and get one only from
+// an emitter that sets `gen_ai.conversation.id`. Those traces used to be
 // invisible here. They are now sessions of one trace, keyed
 // `trace:<TraceId>` (`MAPLE_AI_TRACE_SESSION_PREFIX`) — the same page, with the
 // single trace as the whole context. That is why detection keys on the VENDOR

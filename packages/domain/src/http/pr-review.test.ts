@@ -5,7 +5,16 @@
  * incident that made it so), which moves every guarantee a reader relies on into this function.
  */
 import { assert, describe, it } from "vitest"
-import { mentionsReviewer, normalizePrReviewSubmission, parseReplyCommand, scorePrReview } from "./pr-review"
+import {
+	confidencePrReview,
+	mentionsReviewer,
+	normalizePrReviewFinding,
+	normalizePrReviewSubmission,
+	parseReplyCommand,
+	prReviewFailureReason,
+	PrReviewReport,
+	scorePrReview,
+} from "./pr-review"
 
 describe("normalizePrReviewSubmission", () => {
 	it("keeps a finding that names a file and a new-side line", () => {
@@ -37,6 +46,20 @@ describe("normalizePrReviewSubmission", () => {
 		assert.equal(finding.severity, "warn")
 	})
 
+	it("keeps key changes and checks as trimmed bullets, however the list arrived", () => {
+		const { report } = normalizePrReviewSubmission({
+			verdict: "clean",
+			summary: "Adds a retry.",
+			keyChanges: ["- `retryFetch` retries GETs twice", "  ", "* Adds a jittered backoff"],
+			checked: JSON.stringify(["POSTs are not retried (`client.ts:40`)"]),
+		})
+		assert.deepEqual(report.keyChanges, ["`retryFetch` retries GETs twice", "Adds a jittered backoff"])
+		assert.deepEqual(report.checked, ["POSTs are not retried (`client.ts:40`)"])
+		const bare = normalizePrReviewSubmission({ verdict: "clean", summary: "x", keyChanges: [] }).report
+		assert.isUndefined(bare.keyChanges)
+		assert.isUndefined(bare.checked)
+	})
+
 	it("reads a list the model sent as its JSON text", () => {
 		// glm-5.3-flash sent `findings` as a string in prod; a strict decode ended the review early.
 		const { report } = normalizePrReviewSubmission({
@@ -49,10 +72,9 @@ describe("normalizePrReviewSubmission", () => {
 			["kept"],
 		)
 		assert.equal(report.coverage[0]?.unit, "GET /a")
-		assert.deepEqual(
-			normalizePrReviewSubmission({ findings: "not json", resolved: '["f2"]' }).resolved,
-			["F2"],
-		)
+		assert.deepEqual(normalizePrReviewSubmission({ findings: "not json", resolved: '["f2"]' }).resolved, [
+			"F2",
+		])
 		assert.equal(normalizePrReviewSubmission({ findings: "not json" }).report.findings.length, 0)
 	})
 
@@ -276,5 +298,127 @@ describe("lenient numbers and booleans", () => {
 			normalizePrReviewSubmission({ findings: [{ path: "a.ts", line: "x" }] }).report.findings,
 			0,
 		)
+	})
+})
+
+describe("confidencePrReview", () => {
+	const finding = (
+		severity: "critical" | "warn" | "info",
+		category: "correctness" | "security" = "correctness",
+	) => ({
+		path: "a.ts",
+		line: 1,
+		category,
+		severity,
+		title: "t",
+		body: "b",
+	})
+	const reportWith = (
+		findings: ReadonlyArray<ReturnType<typeof finding>>,
+		extra: {
+			readonly confidence?: number
+			readonly tests?: "covered" | "partial" | "missing" | "not_needed"
+			readonly risk?: "low" | "medium" | "high"
+			readonly verdict?: "clean" | "issues" | "not_applicable"
+			readonly unobservable?: boolean
+		} = {},
+	) =>
+		new PrReviewReport({
+			verdict: extra.verdict ?? "clean",
+			summary: "s",
+			coverage:
+				extra.unobservable === true
+					? [{ unit: "cron", kind: "background", instrumented: false, evidence: "no span" }]
+					: [],
+			findings,
+			...(extra.tests === undefined ? undefined : { tests: extra.tests }),
+			...(extra.risk === undefined ? undefined : { risk: extra.risk }),
+			...(extra.confidence === undefined
+				? undefined
+				: { confidence: extra.confidence, confidenceReason: "why" }),
+		})
+	const score = (...args: Parameters<typeof reportWith>) =>
+		confidencePrReview(reportWith(...args))?.confidence
+
+	it("reads 5 for a clean, tested, contained change and ignores notes", () => {
+		assert.equal(score([], { tests: "covered", risk: "low" }), 5)
+		assert.equal(score([], { tests: "not_needed", risk: "low" }), 5)
+		assert.equal(score([finding("info")], { tests: "covered", risk: "low" }), 5)
+		assert.isUndefined(confidencePrReview(reportWith([], { verdict: "not_applicable" })))
+	})
+
+	it("takes off for untested behavior, a risky area and unobservable work", () => {
+		assert.equal(score([], { tests: "partial", risk: "low" }), 4)
+		assert.equal(score([], { tests: "covered", risk: "medium" }), 4)
+		assert.equal(score([], { tests: "missing", risk: "low" }), 4)
+		assert.equal(score([], { tests: "missing", risk: "high" }), 3)
+		assert.equal(score([], { tests: "covered", risk: "low", unobservable: true }), 4)
+	})
+
+	it("folds the findings' quality score in", () => {
+		assert.equal(score([finding("warn")], { tests: "covered", risk: "low" }), 4)
+		assert.equal(score([finding("warn"), finding("warn")], { tests: "covered", risk: "low" }), 3)
+		assert.equal(score([finding("warn")], { tests: "missing", risk: "high" }), 2)
+	})
+
+	it("caps on a critical, a security warning or an early end, and says why", () => {
+		const one = confidencePrReview(reportWith([finding("critical")], { tests: "covered", risk: "low" }))
+		assert.equal(one?.confidence, 2)
+		assert.equal(one?.reason, "Held at 2 because a critical finding is open.")
+		assert.equal(one?.cappedBy, "critical")
+		assert.equal(
+			confidencePrReview(reportWith([finding("critical")]), [finding("critical")])?.confidence,
+			1,
+		)
+		assert.equal(score([finding("warn", "security")]), 3)
+		assert.equal(confidencePrReview(reportWith([]), [], true)?.confidence, 3)
+	})
+
+	it("lets the reviewer lower the number by one point, never raise it", () => {
+		assert.equal(score([], { confidence: 1 }), 4)
+		assert.equal(score([], { confidence: 4 }), 4)
+		assert.equal(score([finding("warn"), finding("warn")], { confidence: 5 }), 3)
+		assert.equal(confidencePrReview(reportWith([], { confidence: 4 }))?.reason, "why")
+	})
+
+	it("keeps a known test or risk signal and drops an unknown one", () => {
+		const kept = normalizePrReviewSubmission({ summary: "s", tests: " Partial ", risk: "HIGH" }).report
+		assert.equal(kept.tests, "partial")
+		assert.equal(kept.risk, "high")
+		const dropped = normalizePrReviewSubmission({ summary: "s", tests: "some", risk: null }).report
+		assert.isUndefined(dropped.tests)
+		assert.isUndefined(dropped.risk)
+	})
+
+	it("lists what went into the number", () => {
+		assert.deepEqual(
+			confidencePrReview(
+				reportWith([finding("warn")], { tests: "not_needed", risk: "medium", unobservable: true }),
+			)?.factors,
+			["1 warning", "tests not needed", "risk medium", "0/1 new units observable"],
+		)
+	})
+
+	it("normalizes a quoted or out-of-range number from the model", () => {
+		const high = normalizePrReviewSubmission({ verdict: "clean", summary: "s", confidence: "9" }).report
+		assert.equal(high.confidence, 5)
+		const low = normalizePrReviewSubmission({ verdict: "clean", summary: "s", confidence: 0.2 }).report
+		assert.equal(low.confidence, 1)
+	})
+})
+
+describe("normalizePrReviewFinding", () => {
+	it("posts one finding as submit_review would, and refuses one it cannot anchor", () => {
+		assert.equal(normalizePrReviewFinding({ path: "src/a.ts", line: "12", title: "Bug" })?.line, 12)
+		assert.isUndefined(normalizePrReviewFinding({ path: "src/a.ts", line: 0 }))
+		assert.isUndefined(normalizePrReviewFinding({ path: "src/a.ts", line: 3, category: "observability" }))
+	})
+})
+
+describe("prReviewFailureReason", () => {
+	it("reads the reason an error starts with, and nothing from older errors", () => {
+		assert.equal(prReviewFailureReason("time_limit: It ran out of time."), "time_limit")
+		assert.isUndefined(prReviewFailureReason("no_review: the agent ended its pass"))
+		assert.isUndefined(prReviewFailureReason(null))
 	})
 })

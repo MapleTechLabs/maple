@@ -316,10 +316,17 @@ export const whoami = Command.make("whoami", {}).pipe(
 			const defaultMode = Option.getOrElse(config.defaultMode, () => "auto" as const)
 			const resolved = yield* mode.resolve.pipe(
 				Effect.map((m) => ({ ok: true as const, m })),
-				Effect.catch((error) => Effect.succeed({ ok: false as const, message: error.message })),
+				Effect.catch((error) =>
+					Effect.succeed({ ok: false as const, message: error.message, hint: error.hint }),
+				),
 			)
 			if (!resolved.ok) {
-				yield* printJson({ mode: "none", defaultMode, message: resolved.message })
+				yield* printJson({
+					mode: "none",
+					defaultMode,
+					message: resolved.message,
+					...(resolved.hint === undefined ? undefined : { hint: resolved.hint }),
+				})
 				return
 			}
 			yield* printJson(

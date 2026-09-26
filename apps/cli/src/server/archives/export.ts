@@ -679,150 +679,6 @@ export const planHourShards = (
 }
 
 /**
- * Return the `_part_offset` of the `n`th (1-indexed) matching row at or after
- * `offsetLo` in one part/hour, ordered ascending by `_part_offset`. Used to
- * build EXACT physical windows: a window `[offsetLo, nthOffset + 1)` contains
- * exactly `n` matching rows (the offset is the physical position, so the
- * half-open range includes it). Returns `null` if fewer than `n` matching rows
- * remain. Grounded in the same frozen-merge enumeration as the export.
- *
- * This is the row-exact bound that a SQL `LIMIT` cannot provide (ClickHouse
- * `count()` ignores LIMIT on the aggregate, so the export and the validation
- * re-count would diverge). Bounding via `_part_offset` keeps both on the
- * identical predicate.
- */
-const nthMatchingOffset = (
-	db: Chdb,
-	signal: ArchiveSignal,
-	rangeDate: string,
-	hour: number,
-	part: string,
-	offsetLo: number,
-	n: number,
-): number | null => {
-	const pred =
-		`${hourPredicate(signal, rangeDate, hour)} ` +
-		`AND _part = '${sqlLiteral(part)}' ` +
-		`AND _part_offset >= ${offsetLo}`
-	// The nth matching row ordered by _part_offset. LIMIT 1 OFFSET (n-1) selects
-	// exactly that row's offset. readRows yields one row with field "off".
-	const rows = readRows(
-		db.query(
-			`SELECT _part_offset AS off FROM ${signal.name} WHERE ${pred} ` +
-				`ORDER BY _part_offset ASC LIMIT 1 OFFSET ${n - 1} FORMAT JSONEachRow`,
-			"JSONEachRow",
-		),
-	)
-	if (rows.length === 0) return null
-	return Number(rows[0]!.off)
-}
-
-/**
- * Count the matching rows at or after `offsetLo` in one part/hour. Used to know
- * a part's remaining capacity when building windows.
- */
-const countMatchingFrom = (
-	db: Chdb,
-	signal: ArchiveSignal,
-	rangeDate: string,
-	hour: number,
-	part: string,
-	offsetLo: number,
-): number => {
-	const pred =
-		`${hourPredicate(signal, rangeDate, hour)} ` +
-		`AND _part = '${sqlLiteral(part)}' ` +
-		`AND _part_offset >= ${offsetLo}`
-	return parseCount(db.query(`SELECT count() FROM ${signal.name} WHERE ${pred}`, "JSONEachRow"))
-}
-
-/**
- * Build a deterministic, EXACT calibration sample plan covering exactly
- * `sampleRows` matching rows starting at `startRow` (0-indexed) in the day's
- * ordered (hour, part, `_part_offset`) sequence. Training uses `startRow=0`;
- * held-out validation uses `startRow=sampleRows` for a provably disjoint window.
- *
- * Each emitted {@link ShardPlan.range} is a half-open `_part_offset` window
- * whose matching-row count is determined AUTHORITATIVELY (via
- * {@link nthMatchingOffset}), not estimated. The last window in a part is
- * truncated at the exact offset of the final included row, so the writer's
- * actual exported total equals the planned total exactly. A part with a single
- * matching row is one window; a part never crosses its offset domain.
- *
- * The caller passes `expectedTotalRows` to {@link exportShardPlans}, which
- * asserts `Σ validated.rowCount === expectedTotalRows` after export.
- *
- * Returns `{ plansByHour, totalRows }` where `totalRows` is the exact planned
- * count (may be less than `sampleRows` if the day has fewer matching rows
- * starting at `startRow`).
- */
-export const planCalibrationShards = (
-	db: Chdb,
-	signal: ArchiveSignal,
-	rangeDate: string,
-	settings: ExportSettings,
-	sampleRows: number,
-	startRow = 0,
-): { plansByHour: Map<number, ShardPlan[]>; totalRows: number } => {
-	const rowsPerShard = Math.max(1, settings.maxShardRows)
-	const plansByHour = new Map<number, ShardPlan[]>()
-	// Skip `startRow` matching rows across the day, then collect `sampleRows`.
-	let toSkip = startRow
-	let budget = sampleRows
-	let cumulative = 0
-	for (const hour of HOURS_IN_DAY) {
-		if (budget <= 0) break
-		const parts = enumeratePartsForHour(db, signal, rangeDate, hour)
-		const hourPlans: ShardPlan[] = []
-		for (const p of parts) {
-			if (budget <= 0) break
-			// Advance past any rows to skip within this part. The part's matching
-			// rows may be fewer than the remaining skip; consume what we can.
-			let cursor = p.offsetMin
-			if (toSkip > 0) {
-				const partMatching = countMatchingFrom(db, signal, rangeDate, hour, p.part, cursor)
-				if (partMatching <= toSkip) {
-					// The entire part is skipped.
-					toSkip -= partMatching
-					continue
-				}
-				// Skip `toSkip` rows within this part: the window start is the offset
-				// AFTER the toSkip-th matching row.
-				const afterSkip = nthMatchingOffset(db, signal, rangeDate, hour, p.part, cursor, toSkip)
-				if (afterSkip === null) {
-					toSkip = 0
-				} else {
-					cursor = afterSkip + 1
-					toSkip = 0
-				}
-			}
-			// Now collect windows of up to rowsPerShard matching rows each, until the
-			// part or the budget is exhausted.
-			while (budget > 0) {
-				const remainingInPart = countMatchingFrom(db, signal, rangeDate, hour, p.part, cursor)
-				if (remainingInPart === 0) break
-				const take = Math.min(rowsPerShard, remainingInPart, budget)
-				// The exact offset of the `take`-th matching row at/after cursor.
-				const nthOff = nthMatchingOffset(db, signal, rangeDate, hour, p.part, cursor, take)
-				if (nthOff === null) break
-				const hiExclusive = nthOff + 1
-				hourPlans.push({
-					hour,
-					range: { part: p.part, offsetLo: cursor, offsetHiExclusive: hiExclusive },
-					matchingRows: take,
-				})
-				cumulative += take
-				budget -= take
-				cursor = hiExclusive
-				if (take < rowsPerShard) break // part boundary reached within this shard
-			}
-		}
-		if (hourPlans.length > 0) plansByHour.set(hour, hourPlans)
-	}
-	return { plansByHour, totalRows: cumulative }
-}
-
-/**
  * Export one signal for a sealed UTC day as bounded Parquet shards under
  * `shardsDir`. Flow:
  *
@@ -871,8 +727,7 @@ export const exportSignalShards = (
 		}
 		const shards = exportShardPlans(db, signal, rangeDate, shardsDir, settings, sourceSchema, plansByHour)
 		// Per-hour re-count over the WHOLE hour: detects concurrent data loss/gain
-		// even though merges are frozen. This full-day guard lives only in the
-		// production path; calibration intentionally subsets hours.
+		// even though merges are frozen.
 		for (const [hour, preExportRows] of hourRowCounts) {
 			const liveTotal = countHourRows(db, signal, rangeDate, hour)
 			if (liveTotal !== preExportRows) {
@@ -889,19 +744,16 @@ export const exportSignalShards = (
 }
 
 /**
- * The shared write→measure→refine→validate→name pipeline, parameterized by a
- * pre-built per-hour shard plan. Production ({@link exportSignalShards}) builds
- * the full-day plan; calibration ({@link planCalibrationShards}) builds a
- * deterministic sample capped at `sampleRows`. Both execute the IDENTICAL
- * pipeline, so `maxShardRows`/`maxShardBytes` bisection and reopen validation
- * (count/schema/digest/UTC-time) apply identically. This is the single
- * writer/validator: calibration does not duplicate it.
+ * The write→measure→refine→validate→name pipeline over a pre-built per-hour
+ * shard plan ({@link exportSignalShards} builds the full-day plan), applying
+ * `maxShardRows`/`maxShardBytes` bisection and reopen validation
+ * (count/schema/digest/UTC-time).
  *
  * `plansByHour` maps each UTC hour to its ordered shard plans. A per-hour
  * sequential counter names that hour's shards `HH-NNNN.parquet`. The caller
  * must have already issued `SYSTEM STOP MERGES` and captured `sourceSchema`.
  */
-export const exportShardPlans = (
+const exportShardPlans = (
 	db: Chdb,
 	signal: ArchiveSignal,
 	rangeDate: string,
@@ -909,7 +761,6 @@ export const exportShardPlans = (
 	settings: ExportSettings,
 	sourceSchema: ReadonlyArray<SourceColumn>,
 	plansByHour: ReadonlyMap<number, ReadonlyArray<ShardPlan>>,
-	expectedTotalRows?: number,
 ): WrittenShard[] => {
 	assertSafePath(shardsDir)
 	const shards: WrittenShard[] = []
@@ -946,11 +797,11 @@ export const exportShardPlans = (
 			rmSync(candidate)
 			if (width <= 1 || matching === 1) {
 				// A single matching row whose size alone exceeds the bound: the one
-				// genuinely impossible case. Fail distinctly, not "recalibrate".
+				// genuinely impossible case. Fail distinctly.
 				throw new Error(
 					`archive single row exceeds maxShardBytes uncompressed (${uncompressed} > ${settings.maxShardBytes}) ` +
 						`in ${signal.name} hour ${hour} part ${range.part} offset ${range.offsetLo}; ` +
-						`raise maxShardBytes or recalibrate to a wider row budget`,
+						`raise maxShardBytes`,
 				)
 			}
 			const mid = range.offsetLo + Math.floor(width / 2)
@@ -1011,22 +862,6 @@ export const exportShardPlans = (
 			const nextSeq = () => seq++
 			for (const plan of plans) {
 				exportRange(plan.hour, plan.range, nextSeq)
-			}
-		}
-		// The calibration planner builds EXACT physical windows whose cumulative
-		// matching rows equal `expectedTotalRows`. Byte bisection splits ranges
-		// but preserves the total row count (each bisected half's rows sum to the
-		// parent's), so the writer's actual exported total must equal the planned
-		// total exactly. Assert it so a planning/writer divergence fails closed
-		// rather than silently exporting the wrong number of rows.
-		if (expectedTotalRows !== undefined) {
-			const actualTotal = shards.reduce((sum, s) => sum + s.rowCount, 0)
-			if (actualTotal !== expectedTotalRows) {
-				throw new Error(
-					`calibration export row-count mismatch: writer exported ${actualTotal} rows ` +
-						`but the planned exact window total was ${expectedTotalRows} ` +
-						`(signal ${signal.name} ${rangeDate}); the sampleRows bound was not honored`,
-				)
 			}
 		}
 		return shards

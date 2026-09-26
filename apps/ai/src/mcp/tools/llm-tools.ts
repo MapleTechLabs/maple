@@ -12,7 +12,7 @@
  * The tenant is provided per call rather than ambiently so an agent can never widen its own scope:
  * every tool executes under exactly the org the run was started for.
  */
-import { Cause, Effect, Schema } from "effect"
+import { Cause, Effect, Option, Schema } from "effect"
 import { Tool, Toolkit } from "effect/unstable/ai"
 import type { McpToolExecutorApi } from "../dispatcher"
 import type { McpToolSurface } from "@maple/domain/mcp-manifest"
@@ -21,15 +21,55 @@ import { truncateToolOutput } from "./tool-output"
 import { toolHandlersWithContent } from "../../platform/genai-spans"
 import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
 
+const UI_MARKER = "__maple_ui"
+
+/** A tool's typed output in the shape the chat UI's renderers take. */
+export interface ToolUiPayload {
+	readonly [UI_MARKER]: true
+	readonly tool: string
+	readonly data: Schema.Json
+}
+
+const LegacyUiBlock = Schema.fromJsonString(
+	Schema.Struct({ [UI_MARKER]: Schema.Literal(true), tool: Schema.String, data: Schema.Json }),
+)
+const decodeLegacyUiBlock = Schema.decodeUnknownOption(LegacyUiBlock)
+
+const isLegacyUiBlock = (text: string): boolean => text.startsWith(`{"${UI_MARKER}":true`)
+
 /**
- * Serialize an MCP tool result for the model. Maple's tools already return model-facing text blocks,
- * so this is a join rather than a re-encode.
+ * The model's text and the UI's payload, split. The payload is never shown to a model: it doubled
+ * every result it rode along on, and half of all tool results carried one.
+ */
+export const splitToolResult = (
+	name: string,
+	result: {
+		readonly content: ReadonlyArray<{ readonly text: string }>
+		readonly structuredContent?: Schema.Json
+	},
+): { readonly text: string; readonly ui: ToolUiPayload | undefined } => {
+	const legacy = result.content.find((block) => isLegacyUiBlock(block.text))
+	const ui: ToolUiPayload | undefined =
+		result.structuredContent !== undefined
+			? { [UI_MARKER]: true, tool: name, data: result.structuredContent }
+			: legacy === undefined
+				? undefined
+				: Option.getOrUndefined(decodeLegacyUiBlock(legacy.text))
+	const text = result.content
+		.filter((block) => !isLegacyUiBlock(block.text))
+		.map((block) => block.text)
+		.join("\n\n")
+	return { text, ui }
+}
+
+/**
+ * Serialize an MCP tool result for the model: its text blocks only.
  *
  * Bounded here, at creation, and never again — see `./tool-output.ts` for why that matters more than
  * the token saving. A warehouse query with no `limit` used to enter the transcript whole.
  */
 export const toolResultText = (result: { content: ReadonlyArray<{ text: string }> }): string =>
-	truncateToolOutput(result.content.map((block) => block.text).join("\n")).text
+	truncateToolOutput(splitToolResult("", result).text).text
 
 /**
  * Capped, because "one line" is a convention the error's author never agreed to: a ClickHouse syntax
@@ -86,6 +126,8 @@ export interface BuildMapleToolsOptions {
 	readonly sessionAttributes?: Readonly<Record<string, string>>
 	/** Sees every successful answer this build dispatches; a review pass tracks what it read here. */
 	readonly onAnswer?: (tool: string, answer: string) => void
+	/** Receives each successful call's UI payload, keyed by the call it belongs to. */
+	readonly onUi?: (toolCallId: string, ui: ToolUiPayload) => void
 }
 
 /**
@@ -184,19 +226,24 @@ export const buildMapleToolkit = (
 	const handlers = Object.fromEntries(
 		definitions.map((definition) => {
 			const gated = options.gate?.(definition.name) ?? false
-			const dispatch = (params: unknown) =>
+			const dispatch = (params: unknown, toolCallId: string | undefined) =>
 				executor.execute(tenant, definition.name, params, options.surface).pipe(
 					// A tool that dies (unknown tool, tenant error) fails like one that reported an error.
 					// Caught before the `flatMap`, so a reported error is not wrapped a second time.
 					Effect.catchCause((cause) => fail(`Tool failed: ${summarizeToolFailure(cause)}`)),
-					Effect.flatMap((result) =>
-						result.isError
-							? fail(toolResultText(result))
-							: Effect.succeed(toolResultText(result)),
-					),
+					Effect.flatMap((result) => {
+						const { text, ui } = splitToolResult(definition.name, result)
+						const bounded = truncateToolOutput(text).text
+						if (result.isError) return fail(bounded)
+						if (ui !== undefined && toolCallId !== undefined) options.onUi?.(toolCallId, ui)
+						return Effect.succeed(bounded)
+					}),
 					Effect.tap((answer) => Effect.sync(() => options.onAnswer?.(definition.name, answer))),
 				)
-			const handle = (params: unknown): Effect.Effect<string, typeof ToolFailure.Type> => {
+			const handle = (
+				params: unknown,
+				toolCallId: string | undefined,
+			): Effect.Effect<string, typeof ToolFailure.Type> => {
 				if (gated) {
 					return Effect.fail(
 						new ApprovalRequired({
@@ -210,14 +257,24 @@ export const buildMapleToolkit = (
 							"exact arguments in this turn. Read the result you already have, or call it differently.",
 					)
 				}
-				return dispatch(params)
+				return dispatch(params, toolCallId)
 			}
-			return [definition.name, (params: unknown) => Effect.suspend(() => handle(params))]
+			return [
+				definition.name,
+				(params: unknown, context: { readonly toolCallId?: string | undefined }) =>
+					Effect.suspend(() => handle(params, context.toolCallId)),
+			]
 		}) as ReadonlyArray<
 			// A dynamic tool's shape is known only at runtime, so the model's arguments arrive
 			// unparsed and the handler parses them.
-			// oxlint-disable-next-line anti-slop/no-unknown-parameters
-			readonly [string, (params: unknown) => Effect.Effect<string, MapleToolFailure | ApprovalRequired>]
+			readonly [
+				string,
+				(
+					// oxlint-disable-next-line anti-slop/no-unknown-parameters
+					params: unknown,
+					context: { readonly toolCallId?: string | undefined },
+				) => Effect.Effect<string, MapleToolFailure | ApprovalRequired>,
+			]
 		>,
 	)
 	// Registered as one map, so a tool added to the catalogue cannot arrive without its span content.

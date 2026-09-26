@@ -43,10 +43,12 @@ if ! command -v duckdb >/dev/null 2>&1; then
 	fail "duckdb is required on PATH for this smoke"
 fi
 
+# /local/query is read-only unless the request carries the maintenance token.
 query() {
 	local sql="$1"
 	curl --fail-with-body -sS "http://127.0.0.1:$PORT/local/query" \
 		-H 'content-type: application/json' \
+		-H "x-maple-maintenance-token: $(cat "$DATA.maintenance-token")" \
 		--data "$(jq -nc --arg sql "$sql" '{sql:$sql}')"
 }
 

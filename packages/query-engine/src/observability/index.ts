@@ -25,6 +25,7 @@ export { spanDetail, type SpanDetailInput, type SpanDetailResult } from "./span-
 export { findErrors } from "./find-errors"
 export {
 	errorDetail,
+	type ErrorDetailIdentity,
 	type ErrorDetailSpan,
 	type ErrorDetailTrace,
 	type ErrorDetailOutput,

@@ -4,7 +4,7 @@ import type { McpToolNotFoundError } from "@maple/domain/mcp-tool-contract"
 import { ActorId } from "@maple/domain/primitives"
 import { McpToolExecutor, listMcpTools } from "./dispatcher"
 import { MCP_ANTICIPATED_ERROR_IDENTIFIERS } from "./expected-failures"
-import { mapleToolCatalog, mapleToolCatalogFor, toInputSchema } from "./tools/registry"
+import { mapleToolCatalog, mapleToolCatalogFor, toInputSchema, toOutputSchema } from "./tools/registry"
 import type { McpToolRuntimeRequirements } from "./tools/runtime-requirements"
 import type { TenantContext } from "@maple/backend/services/auth/tenant-context"
 import { AuditLogService, makeMemoryAuditLog } from "@maple/backend/services/audit/AuditLogService"
@@ -68,13 +68,31 @@ describe("MCP dispatcher", () => {
 	it.effect("publishes the same names, descriptions, and schemas used by HTTP MCP", () =>
 		Effect.gen(function* () {
 			const descriptors = yield* listMcpTools
-			expect(descriptors).toEqual(
+			expect(
+				descriptors.map(({ name, description, inputSchema }) => ({ name, description, inputSchema })),
+			).toEqual(
 				mapleToolCatalogFor("mcp").map((definition) => ({
 					name: definition.name,
 					description: definition.description,
 					inputSchema: toInputSchema(definition.schema),
 				})),
 			)
+		}),
+	)
+
+	it.effect("publishes an output schema and annotations for every tool declared with define", () =>
+		Effect.gen(function* () {
+			const byName = new Map((yield* listMcpTools).map((descriptor) => [descriptor.name, descriptor]))
+			for (const definition of mapleToolCatalogFor("mcp")) {
+				const descriptor = byName.get(definition.name)
+				if (definition.outputSchema === undefined) continue
+				expect(descriptor?.outputSchema, definition.name).toEqual(
+					toOutputSchema(definition.outputSchema),
+				)
+				expect(descriptor?.annotations?.readOnlyHint, definition.name).toBe(
+					definition.hints?.readOnly,
+				)
+			}
 		}),
 	)
 

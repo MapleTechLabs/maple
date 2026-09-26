@@ -5,9 +5,13 @@
 // looked up carries AI signal, so an agent reaches an LLM call's conversation
 // with the span id it already has — no second tool, and no second vocabulary.
 
-import { AI_CORE_FIELDS, AI_PROMPT_VARIABLE_PREFIX } from "@maple/domain/gen-ai"
+import { AI_PROMPT_VARIABLE_PREFIX } from "@maple/domain/gen-ai"
 import type { AiSessionSpan } from "@maple/domain/http"
-import { aiFieldSourceKeys, aiSpanAttributeKeys } from "@maple/query-engine-integrations/ai"
+import {
+	AI_NON_SIGNAL_FIELDS,
+	aiFieldSourceKeys,
+	aiSpanAttributeKeys,
+} from "@maple/query-engine-integrations/ai"
 import { sessionToolResults, spanMessages, spanToolCalls } from "@maple/agent-sessions"
 import { clipPayload, spanCategoryLabel } from "./agent-sessions"
 import type { SpanMessage } from "@maple/agent-sessions"
@@ -19,12 +23,11 @@ const INPUT_HISTORY_KEPT = 6
 /**
  * The attribute keys that mark a span as an AI span, as the span mapper reads
  * them: the union over every integration (the vendor stamp that would pick one
- * integration is itself one of the keys being looked for), minus the plain
- * semconv keys `AI_CORE_FIELDS` names — every ordinary HTTP client span carries
- * `error.type` and `server.address`, and neither is evidence of an LLM call.
+ * integration is itself one of the keys being looked for), minus the keys of
+ * `AI_NON_SIGNAL_FIELDS` — the mapper's own rule, so the two cannot disagree.
  */
 const AI_SIGNAL_KEYS: ReadonlySet<string> = (() => {
-	const core = new Set([...AI_CORE_FIELDS].flatMap((field) => aiFieldSourceKeys(field)))
+	const core = new Set([...AI_NON_SIGNAL_FIELDS].flatMap((field) => aiFieldSourceKeys(field)))
 	return new Set(aiSpanAttributeKeys.filter((key) => !core.has(key)))
 })()
 

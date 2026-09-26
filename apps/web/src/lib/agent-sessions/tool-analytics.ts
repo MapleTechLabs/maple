@@ -192,6 +192,35 @@ export function formatToolCount(value: number): string {
 	return Math.abs(value) >= 1_000_000 ? formatNumber(value) : Math.round(value).toLocaleString()
 }
 
+/**
+ * A merged (`split: "none"`) series with every bucket of the window present,
+ * the ones the warehouse skipped as zeros.
+ *
+ * Agent sessions are bursty, so most buckets hold no calls and the read omits
+ * them. A line drawn through only the buckets that exist bridges hours of
+ * silence as if the reading held; zeros bring it back to the baseline. The grid
+ * is `toStartOfInterval`'s — multiples of the bucket since the epoch. An empty
+ * series stays empty so the charts still say "no data".
+ */
+export function fillSeriesBuckets(
+	points: ReadonlyArray<ToolSeriesPoint>,
+	startMs: number,
+	endMs: number,
+	bucketSeconds: number,
+): ReadonlyArray<ToolSeriesPoint> {
+	const first = points[0]
+	if (first === undefined) return points
+	const stepMs = bucketSeconds * 1000
+	const byBucket = new Map(points.map((point) => [point.bucket, point]))
+	const filled: ToolSeriesPoint[] = []
+	for (let bucket = Math.floor(startMs / stepMs) * stepMs; bucket < endMs; bucket += stepMs) {
+		filled.push(byBucket.get(bucket) ?? { ...EMPTY_MEASURES, bucket, seriesKey: first.seriesKey })
+		byBucket.delete(bucket)
+	}
+	// Anything off the grid is still a reading; keep it rather than drop it.
+	return [...filled, ...byBucket.values()].toSorted((a, b) => a.bucket - b.bucket)
+}
+
 /** `errors / calls`, or 0 for a row that never ran. */
 export function errorRate(measures: Pick<ToolMeasures, "calls" | "errors">): number {
 	return measures.calls > 0 ? measures.errors / measures.calls : 0

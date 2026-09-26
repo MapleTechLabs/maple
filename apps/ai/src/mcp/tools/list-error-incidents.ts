@@ -1,107 +1,110 @@
-import { McpQueryError, optionalStringParam, validationError, type McpToolRegistrar } from "./types"
-import { formatTable } from "../lib/format"
-import { Effect, Option, Schema } from "effect"
-import { createDualContent } from "../lib/structured-output"
+import type { McpToolRegistrar } from "./types"
+import { Effect, Schema } from "effect"
+import { ListErrorIncidentsOutput } from "@maple/domain/mcp-outputs"
 import { CurrentMcpTenant } from "../lib/query-warehouse"
+import { doc } from "../lib/tool-doc"
+import { issueIdParam, issueNotFound, persistenceFailed } from "./error-issue-shared"
 import { ErrorIssueReadModelsService } from "@maple/backend/services/errors/ErrorIssueReadModelsService"
-import { ErrorIssueId } from "@maple/domain/http"
-
-const decodeIssueId = Schema.decodeUnknownOption(ErrorIssueId)
 
 export function registerListErrorIncidentsTool(server: McpToolRegistrar) {
-	server.tool(
-		"list_error_incidents",
-		"List error incidents — time-bounded flare-ups under an error issue. Each issue can have many incidents: a 'first_seen' incident when the issue opens, then 'regression' incidents if new occurrences arrive after the issue was resolved. Incidents auto-resolve after the issue is silent for ~30 min.",
-		Schema.Struct({
-			issue_id: optionalStringParam(
-				"Optional: narrow to incidents for this issue ID. If omitted, returns org-wide open incidents.",
+	server.define({
+		name: "list_error_incidents",
+		description:
+			"List error incidents: time-bounded flare-ups under an error issue. Each issue can have many incidents: a 'first_seen' incident when the issue opens, then 'regression' incidents if new occurrences arrive after the issue was resolved. Incidents auto-resolve after the issue is silent for ~30 min.",
+		parameters: Schema.Struct({
+			issue_id: Schema.optional(
+				issueIdParam(
+					"Optional: narrow to incidents for this issue ID. If omitted, returns org-wide open incidents.",
+				),
 			),
 		}),
-		Effect.fn("McpTool.listErrorIncidents")(function* ({ issue_id }) {
+		output: ListErrorIncidentsOutput,
+		hints: { readOnly: true },
+		phrases: ["Listing error incidents"],
+		handler: Effect.fn("McpTool.listErrorIncidents")(function* (params) {
 			const tenant = yield* CurrentMcpTenant
 			yield* Effect.annotateCurrentSpan({
 				orgId: tenant.orgId,
-				issueId: issue_id ?? "all",
+				issueId: params.issue_id ?? "all",
 			})
 			const readModels = yield* ErrorIssueReadModelsService
 
-			let issueId: ErrorIssueId | undefined
-			if (issue_id) {
-				const decoded = decodeIssueId(issue_id)
-				if (Option.isNone(decoded)) {
-					return validationError(
-						`Invalid issue_id: '${issue_id}'. Must be a UUID from list_error_issues.`,
-					)
-				}
-				issueId = decoded.value
-			}
-
-			const result = issueId
-				? yield* readModels.listIssueIncidents(tenant.orgId, issueId).pipe(
-						Effect.mapError(
-							(error) =>
-								new McpQueryError({
-									message: error.message,
-									pipeName: "list_error_incidents",
-									cause: error,
-								}),
-						),
-					)
-				: yield* readModels.listOpenIncidents(tenant.orgId).pipe(
-						Effect.mapError(
-							(error) =>
-								new McpQueryError({
-									message: error.message,
-									pipeName: "list_error_incidents",
-									cause: error,
-								}),
-						),
-					)
+			const result =
+				params.issue_id === undefined
+					? yield* readModels
+							.listOpenIncidents(tenant.orgId)
+							.pipe(
+								Effect.catchTag(
+									"@maple/http/errors/ErrorPersistenceError",
+									persistenceFailed("list_error_incidents"),
+								),
+							)
+					: yield* readModels.listIssueIncidents(tenant.orgId, params.issue_id).pipe(
+							Effect.catchTags({
+								"@maple/http/errors/ErrorIssueNotFoundError": issueNotFound,
+								"@maple/http/errors/ErrorPersistenceError":
+									persistenceFailed("list_error_incidents"),
+							}),
+						)
 
 			const incidents = result.incidents
-			const openCount = incidents.filter((i) => i.status === "open").length
-
-			const lines: string[] = [
-				`## Error Incidents`,
-				`Total: ${incidents.length} (${openCount} open)`,
-				``,
-			]
-
-			if (incidents.length === 0) {
-				lines.push("No incidents found.")
-			} else {
-				const headers = ["Issue", "Status", "Reason", "Events", "Opened", "Last triggered"]
-				const rows = incidents.map((i) => [
-					i.issueId.slice(0, 8),
-					i.status,
-					i.reason,
-					String(i.occurrenceCount),
-					i.firstTriggeredAt.slice(0, 19),
-					i.lastTriggeredAt.slice(0, 19),
-				])
-				lines.push(formatTable(headers, rows))
-			}
-
 			return {
-				content: createDualContent(lines.join("\n"), {
-					tool: "list_error_incidents",
-					data: {
-						incidents: incidents.map((i) => ({
-							id: i.id,
-							issueId: i.issueId,
-							status: i.status,
-							reason: i.reason,
-							firstTriggeredAt: i.firstTriggeredAt,
-							lastTriggeredAt: i.lastTriggeredAt,
-							resolvedAt: i.resolvedAt,
-							occurrenceCount: i.occurrenceCount,
-						})),
-						total: incidents.length,
-						openCount,
-					},
-				}),
+				incidents: incidents.map((i) => ({
+					id: i.id,
+					issueId: i.issueId,
+					status: i.status,
+					reason: i.reason,
+					firstTriggeredAt: i.firstTriggeredAt,
+					lastTriggeredAt: i.lastTriggeredAt,
+					resolvedAt: i.resolvedAt,
+					occurrenceCount: i.occurrenceCount,
+				})),
+				total: incidents.length,
+				openCount: incidents.filter((i) => i.status === "open").length,
+				...(params.issue_id === undefined ? undefined : { issueId: params.issue_id }),
 			}
 		}),
-		{ phrases: ["Listing error incidents"] },
-	)
+		render: (output) => ({
+			title: "Error Incidents",
+			scope: [["Issue", output.issueId ?? "all, open only"]],
+			...(output.total === 0
+				? {
+						empty: {
+							message:
+								output.issueId === undefined
+									? "No open incidents in this org."
+									: "No incidents found for this issue.",
+						},
+					}
+				: undefined),
+			blocks:
+				output.total === 0
+					? []
+					: [
+							doc.text(`Total: ${output.total} (${output.openCount} open)`),
+							// Full issue id: a prefix cannot be passed to the issue tools.
+							doc.table(
+								["Issue", "Status", "Reason", "Events", "Opened", "Last triggered"],
+								output.incidents.map((i) => [
+									i.issueId,
+									i.status,
+									i.reason,
+									String(i.occurrenceCount),
+									i.firstTriggeredAt.slice(0, 19),
+									i.lastTriggeredAt.slice(0, 19),
+								]),
+							),
+						],
+			next:
+				output.issueId === undefined && output.incidents[0] !== undefined
+					? [
+							doc.next(
+								"list_error_issue_events",
+								{ issue_id: output.incidents[0].issueId },
+								"history of the first incident's issue",
+							),
+						]
+					: [],
+		}),
+	})
 }

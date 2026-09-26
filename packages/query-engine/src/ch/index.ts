@@ -33,6 +33,7 @@ export {
 	tracesRootListQuery,
 	traceListQuery,
 	traceServicesByTraceIdsQuery,
+	traceSpanStatsByTraceIdsQuery,
 	traceSummariesQuery,
 	slowTracesQuery,
 	spanSearchQuery,
@@ -48,6 +49,8 @@ export {
 	type TracesRootListOutput,
 	type TraceListOutput,
 	type TraceServicesByTraceIdsOutput,
+	type TraceSpanStatsByTraceIdsOpts,
+	type TraceSpanStatsByTraceIdsOutput,
 	type TraceSummariesOpts,
 	type TraceSummaryOutput,
 	type SlowTracesOpts,
@@ -180,6 +183,23 @@ export {
 	type WebAnalyticsBreakdownsOutput,
 	type ProductEventsFilters,
 } from "./queries/web-analytics"
+
+// Queries: Web Analytics AI tab (AI referrals and AI crawler fetches)
+export {
+	webAnalyticsAiReferralsQuery,
+	webAnalyticsAiCrawlersQuery,
+	webAnalyticsAiCrawlerFormatsQuery,
+	webAnalyticsAiCrawledPagesQuery,
+	aiReferralProductExpr,
+	aiContentFormatExpr,
+	type WebAnalyticsAiReferralsOpts,
+	type WebAnalyticsAiReferralsOutput,
+	type WebAnalyticsAiCrawlerFilters,
+	type WebAnalyticsAiCrawlersOutput,
+	type WebAnalyticsAiCrawlerFormatsOutput,
+	type WebAnalyticsAiCrawledPagesOpts,
+	type WebAnalyticsAiCrawledPagesOutput,
+} from "./queries/web-analytics-ai"
 
 // Queries — Product events (funnels over `product_events`)
 export {
@@ -420,6 +440,14 @@ export {
 	serviceMapEdgesExistingHoursSQL,
 	serviceMapResolutionsExistingHoursSQL,
 	serviceMapResolutionsRollupSQL,
+	SERVICE_MAP_ROLLUP_HOUR_MS,
+	SERVICE_MAP_ROLLUP_LOOKBACK_HOURS,
+	serviceMapRollupCandidateHours,
+	serviceMapHourSet,
+	serviceMapRollupMissingHours,
+	serviceMapResolutionRepairHours,
+	serviceMapRollupHourParams,
+	serviceMapRollupWindowParams,
 	type ServiceMapEdgesRollupParams,
 	type ServiceMapEdgesHourlyOutput,
 	type ServiceMapEdgesExistingHour,

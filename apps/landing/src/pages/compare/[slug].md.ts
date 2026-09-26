@@ -1,12 +1,12 @@
 /**
- * `/compare/<slug>.md` — the comparison registry, serialized.
+ * `/compare/<slug>.md`: the comparison registry, serialized.
  *
  * English-only and un-prefixed, like every other twin: an endpoint runs
  * outside Paraglide's per-render locale storage, so the thunks resolve to the
  * source locale, which is what we want.
  *
- * Same order as the HTML page — differences, price, migration, FAQ,
- * sources — and the same numbers: the receipts are priced with the functions
+ * Same order as the HTML page (differences, price, migration, FAQ,
+ * sources) and the same numbers: the receipts are priced with the functions
  * the page and the calculator use, so the three can't disagree.
  */
 import type { APIRoute, GetStaticPaths } from "astro"

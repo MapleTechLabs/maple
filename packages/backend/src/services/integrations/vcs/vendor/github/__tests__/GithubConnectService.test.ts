@@ -1,5 +1,5 @@
 import { afterEach, assert, describe, it } from "@effect/vitest"
-import { IntegrationsValidationError, type VcsSyncJob } from "@maple/domain/http"
+import { IntegrationsValidationError, PrReviewRepositoryConfig, type VcsSyncJob } from "@maple/domain/http"
 import { Effect, Layer, Option } from "effect"
 import { TestClock } from "effect/testing"
 import { cleanupTestDbs, createTestDb, type TestDb } from "@maple/backend/platform/test-pglite"
@@ -613,6 +613,29 @@ describe("GithubConnectService", () => {
 			const result = yield* svc.setPrReviewEnabled(orgId, repository.id, true)
 			assert.strictEqual(result.enabled, true)
 			assert.strictEqual((yield* repoFor(repo, orgId, "7")).prReviewEnabled, true)
+		}).pipe(Effect.provide(connectLayer(testDb, scriptedHttp(connectResponders()), sent)))
+	})
+
+	it.effect("setPrReviewConfig keeps every setting the form sends", () => {
+		const testDb = createTestDb(trackedDbs)
+		const sent: Array<VcsSyncJob> = []
+		return Effect.gen(function* () {
+			const svc = yield* GithubConnectService
+			const repo = yield* VcsRepository
+			const { orgId, repository } = yield* connectedRepo(svc, repo)
+			yield* svc.setPrReviewConfig(
+				orgId,
+				repository.id,
+				new PrReviewRepositoryConfig({
+					dailyLimit: 20,
+					automaticReviewLimit: 3,
+					feedbackScope: "off",
+				}),
+			)
+			const stored = yield* svc.getPrReviewConfig(orgId, repository.id)
+			assert.strictEqual(stored.dailyLimit, 20)
+			assert.strictEqual(stored.automaticReviewLimit, 3)
+			assert.strictEqual(stored.feedbackScope, "off")
 		}).pipe(Effect.provide(connectLayer(testDb, scriptedHttp(connectResponders()), sent)))
 	})
 

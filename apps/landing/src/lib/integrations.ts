@@ -38,16 +38,16 @@ import { registerOTel } from "@vercel/otel";
 import { OTLPLogExporter } from "@opentelemetry/exporter-logs-otlp-http";
 import { SimpleLogRecordProcessor } from "@opentelemetry/sdk-logs";
 
+const MAPLE_ENDPOINT = "https://ingest.maple.dev";
+const headers = { authorization: "Bearer your-api-key" };
+
 export function register() {
   registerOTel({
     serviceName: "my-next-app",
-    attributes: { environment: "production" },
-    traceExporter: { url: "https://ingest.maple.dev/v1/traces" },
+    attributes: { "deployment.environment.name": "production" },
+    traceExporter: { url: \`\${MAPLE_ENDPOINT}/v1/traces\`, headers },
     logRecordProcessor: new SimpleLogRecordProcessor(
-      new OTLPLogExporter({
-        url: "https://ingest.maple.dev/v1/logs",
-        headers: { Authorization: "Bearer your-api-key" },
-      })
+      new OTLPLogExporter({ url: \`\${MAPLE_ENDPOINT}/v1/logs\`, headers })
     ),
   });
 }`,
@@ -73,13 +73,14 @@ export function register() {
 				description: "Traces for Next.js middleware execution including redirects and rewrites.",
 			},
 			{
-				title: "Database queries",
-				description: "Automatic instrumentation of Prisma, Drizzle, and other database clients.",
+				title: "Log correlation",
+				description:
+					"Log records exported over OTLP carry the trace and span id of the request that wrote them.",
 			},
 			{
 				title: "External API calls",
 				description:
-					"Outgoing HTTP requests traced with fetch instrumentation and context propagation.",
+					"Outgoing fetch requests traced with context propagation. Add database client instrumentations through the instrumentations option.",
 			},
 		],
 	},
@@ -88,36 +89,26 @@ export function register() {
 		slug: "python",
 		language: "python",
 		description:
-			"Instrument your Python application with zero code changes using OpenTelemetry auto-instrumentation. Supports Flask, FastAPI, Django, and dozens of popular libraries out of the box.",
+			"Instrument a Python application with OpenTelemetry auto-instrumentation. Flask, FastAPI, Django, SQLAlchemy, requests and dozens of other libraries are traced without code changes.",
 		steps: [
 			{
-				title: "Install dependencies",
-				code: `pip install opentelemetry-sdk \\
-  opentelemetry-exporter-otlp-proto-http \\
-  opentelemetry-instrumentation`,
+				title: "Install the distro and bootstrap instrumentations",
+				code: `pip install opentelemetry-distro opentelemetry-exporter-otlp
+
+# Installs an instrumentation package for every supported library in your environment
+opentelemetry-bootstrap -a install`,
 				language: "bash",
 			},
 			{
-				title: "Configure tracing",
-				code: `# tracing.py
-from opentelemetry import trace
-from opentelemetry.sdk.trace import TracerProvider
-from opentelemetry.sdk.trace.export import BatchSpanProcessor
-from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
+				title: "Run under opentelemetry-instrument",
+				code: `export OTEL_SERVICE_NAME="my-python-app"
+export OTEL_EXPORTER_OTLP_PROTOCOL="http/protobuf"
+export OTEL_EXPORTER_OTLP_ENDPOINT="https://ingest.maple.dev"
+export OTEL_EXPORTER_OTLP_HEADERS="Authorization=Bearer your-api-key"
+export OTEL_RESOURCE_ATTRIBUTES="deployment.environment.name=production"
 
-provider = TracerProvider()
-exporter = OTLPSpanExporter(
-    endpoint="https://ingest.maple.dev/v1/traces",
-    headers={"Authorization": "Bearer your-api-key"},
-)
-provider.add_span_processor(BatchSpanProcessor(exporter))
-trace.set_tracer_provider(provider)
-
-# Create a tracer and send a test span
-tracer = trace.get_tracer("quickstart")
-with tracer.start_as_current_span("hello-maple"):
-    print("Trace sent!")`,
-				language: "python",
+opentelemetry-instrument python app.py`,
+				language: "bash",
 			},
 		],
 		signals: [
@@ -165,7 +156,7 @@ with tracer.start_as_current_span("hello-maple"):
 			},
 			{
 				title: "Configure tracing",
-				code: `// tracing.ts — run with: node --import ./tracing.ts app.ts
+				code: `// tracing.ts (run with: node --import ./tracing.ts app.ts)
 import { NodeSDK } from "@opentelemetry/sdk-node";
 import { getNodeAutoInstrumentations } from "@opentelemetry/auto-instrumentations-node";
 import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-http";
@@ -218,9 +209,9 @@ sdk.start();`,
 					"Full client and server gRPC tracing with service name, method, and status attributes.",
 			},
 			{
-				title: "File system operations",
+				title: "Logs with trace context",
 				description:
-					"Spans for file reads, writes, and directory operations with path and size metadata.",
+					"Log records exported over OTLP carry the trace and span id of the request that wrote them.",
 			},
 		],
 	},

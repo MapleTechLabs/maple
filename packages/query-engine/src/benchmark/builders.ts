@@ -97,9 +97,10 @@ const webAnalyticsVariants = (
 	name: string,
 	label: string,
 	compile: (useProductEvents: boolean) => CompiledQuery<unknown>,
+	module = "web-analytics",
 ): ReadonlyArray<BuilderFixture> => [
-	{ module: "web-analytics", name, label, compile: () => compile(false) },
-	{ module: "web-analytics", name, label: `${label}-rollup`, compile: () => compile(true) },
+	{ module, name, label, compile: () => compile(false) },
+	{ module, name, label: `${label}-rollup`, compile: () => compile(true) },
 ]
 
 const webAnalyticsFixtures: ReadonlyArray<BuilderFixture> = [
@@ -192,6 +193,56 @@ const webAnalyticsFixtures: ReadonlyArray<BuilderFixture> = [
 			window,
 		),
 	),
+]
+
+const webAnalyticsAiFixtures: ReadonlyArray<BuilderFixture> = [
+	...webAnalyticsVariants(
+		"webAnalyticsAiReferralsQuery",
+		"default",
+		(useProductEvents) =>
+			CH.compileUnsafe(
+				CH.webAnalyticsAiReferralsQuery({ bucketSeconds: 3600, useProductEvents }),
+				window,
+			),
+		"web-analytics-ai",
+	),
+	// A page filter reaches session_replays through the navigation semi-join.
+	...webAnalyticsVariants(
+		"webAnalyticsAiReferralsQuery",
+		"filtered",
+		(useProductEvents) =>
+			CH.compileUnsafe(
+				CH.webAnalyticsAiReferralsQuery({
+					...WEB_ANALYTICS_ALL_FILTERS,
+					bucketSeconds: 3600,
+					useProductEvents,
+				}),
+				window,
+			),
+		"web-analytics-ai",
+	),
+	{
+		module: "web-analytics-ai",
+		name: "webAnalyticsAiCrawlersQuery",
+		label: "default",
+		compile: () => CH.compileUnsafe(CH.webAnalyticsAiCrawlersQuery({}), window),
+	},
+	{
+		module: "web-analytics-ai",
+		name: "webAnalyticsAiCrawlerFormatsQuery",
+		label: "url-filtered",
+		compile: () =>
+			CH.compileUnsafe(
+				CH.webAnalyticsAiCrawlerFormatsQuery({ host: "maple.dev", pagePath: "/pricing" }),
+				window,
+			),
+	},
+	{
+		module: "web-analytics-ai",
+		name: "webAnalyticsAiCrawledPagesQuery",
+		label: "default",
+		compile: () => CH.compileUnsafe(CH.webAnalyticsAiCrawledPagesQuery({ limit: 50 }), window),
+	},
 ]
 
 // Product-event funnel fixtures. The funnel SQL has four independent axes —
@@ -563,6 +614,13 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 			),
 	},
 	{
+		// The product_events semi-join behind the "Page visited" filter.
+		module: "session-replays",
+		name: "sessionReplaysListQuery",
+		label: "page-visited",
+		compile: () => CH.compileUnsafe(CH.sessionReplaysListQuery({ pagePath: "/pricing" }), window),
+	},
+	{
 		module: "session-replays",
 		name: "sessionReplaysFacetsQuery",
 		label: "default",
@@ -579,6 +637,13 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 				CH.sessionReplaysFacetsQuery({ userSearch: "ada", groupName: "Acme Inc" }),
 				window,
 			),
+	},
+	{
+		// A selected page narrows every other branch and is excluded from its own.
+		module: "session-replays",
+		name: "sessionReplaysFacetsQuery",
+		label: "page-visited",
+		compile: () => CH.compileUnionUnsafe(CH.sessionReplaysFacetsQuery({ pagePath: "/pricing" }), window),
 	},
 	{
 		module: "session-replays",
@@ -672,6 +737,7 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 	},
 
 	...webAnalyticsFixtures,
+	...webAnalyticsAiFixtures,
 
 	// Error fixtures reached through ErrorsService, v2 telemetry, and observability.
 	{
@@ -1360,6 +1426,18 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 		compile: () =>
 			CH.compileUnsafe(
 				CH.traceServicesByTraceIdsQuery({
+					traceIds: [TRACE_ID, "4bf92f3577b34da6a3ce929d0e0e4736"],
+				}),
+				window,
+			),
+	},
+	{
+		module: "traces",
+		name: "traceSpanStatsByTraceIdsQuery",
+		label: "page-enrichment",
+		compile: () =>
+			CH.compileUnsafe(
+				CH.traceSpanStatsByTraceIdsQuery({
 					traceIds: [TRACE_ID, "4bf92f3577b34da6a3ce929d0e0e4736"],
 				}),
 				window,

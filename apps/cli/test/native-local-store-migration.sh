@@ -142,7 +142,7 @@ grep -q "local store migrated" "$ROOT/migrate.out" || fail "native migration did
 # must be bumped in lockstep with LOCAL_SCHEMA_VERSION and the matching
 # LOCAL_SCHEMA_V<n>.fingerprint in apps/cli/src/server/schema-identity.ts;
 # leaving it on the previous version is what makes this step fail after a bump.
-jq -e '.formatVersion == 2 and .activation == "active" and .schemaVersion == 22 and .schema == "ffa6bcb08863f58f"' \
+jq -e '.formatVersion == 2 and .activation == "active" and .schemaVersion == 23 and .schema == "03160af2211aeeed"' \
 	"$ROOT/maple-store-version.json" >/dev/null || fail "native migration wrote the wrong active identity"
 
 step "reopening promoted store in a fresh server"
@@ -167,7 +167,9 @@ step "verifying the service-map ingress bridge"
 bounded 60 "service-map ingress bridge probe" \
 	env MAPLE_LIBCHDB="$LIBCHDB" bun "$REPO_ROOT/apps/cli/test/native-service-map-ingest-bridge-probe.ts" "$DATA" "$CONFIG"
 
-rollback="$(sed -n 's/^.*rollback *//p' "$ROOT/migrate.out" | tail -1)"
+# Anchor on the `rollback` field label: the reclaim hint below it also mentions
+# the rollback source.
+rollback="$(sed -n 's/^[[:space:]]*rollback[[:space:]][[:space:]]*//p' "$ROOT/migrate.out" | tail -1)"
 [[ -n "$rollback" && -d "$rollback" ]] || fail "native migration did not retain a rollback source"
 [[ -f "$(dirname "$rollback")/maple-store-version.json" ]] || fail "native rollback marker was not retained"
 echo "PASS: native historical migration, rebuilt aggregates, v3 materialization triggers, fresh reopen, and rollback retention"

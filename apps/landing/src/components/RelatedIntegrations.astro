@@ -6,9 +6,9 @@ interface Props {
 const { current } = Astro.props;
 
 const integrations = [
-    { slug: "nextjs", label: "Next.js", description: "Auto-instrument your Next.js app with zero config" },
+    { slug: "nextjs", label: "Next.js", description: "Auto-instrument routes, server components, and middleware" },
     { slug: "python", label: "Python", description: "Trace Django, Flask, and FastAPI services" },
-    { slug: "nodejs", label: "Node.js", description: "Full-stack observability for Node.js backends" },
+    { slug: "nodejs", label: "Node.js", description: "Auto-instrument Express, Fastify, and database clients" },
 ];
 
 const filtered = integrations.filter(i => i.slug !== current).slice(0, 3);

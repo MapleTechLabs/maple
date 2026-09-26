@@ -165,6 +165,7 @@ const resolveOnce = (env: Record<string, unknown>, config: Config): Resolved => 
 		logsPath: config.logsPath,
 		metricsPath: config.metricsPath,
 		userAgent: `maple-effect-sdk-cloudflare/${SDK_VERSION}`,
+		keyless: "disable",
 	})
 }
 

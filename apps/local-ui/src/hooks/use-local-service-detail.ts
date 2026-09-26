@@ -1,65 +1,44 @@
-import { keepPreviousData, useQuery } from "@tanstack/react-query"
+import { keepPreviousData, skipToken, useQuery } from "@tanstack/react-query"
 import { CH } from "@maple/query-engine"
-import { executeLocalCompiledQuery } from "@/lib/query"
-import { LOCAL_ORG_ID } from "../lib/constants"
-import { boundsForRange } from "../lib/time"
-import { bucketSecondsForRange } from "./use-local-metrics"
+import { boundsKey, executeLocalCompiledQuery, localParams } from "@/lib/query"
+import type { SeriesPoint } from "../lib/chart-series"
+import { parseClickHouseDateTime, type ChartWindow, type TimeBounds } from "../lib/time"
+import { toCatalogEntry, type ServiceCatalogEntry } from "./use-local-service-catalog"
 
-export interface ServiceOverviewStats {
-	spanCount: number
-	errorCount: number
-	errorRate: number
-	p50LatencyMs: number
-	p95LatencyMs: number
-	p99LatencyMs: number
-	environments: string[]
-	namespaces: string[]
+export interface ServiceOverview {
+	readonly stats: ServiceCatalogEntry
+	/** Earliest entry-point span in the window, which is where the chart starts. */
+	readonly firstSeenMs: number | null
 }
 
-/** Golden-signal header stats for one service (entry-point spans only). */
-export function useLocalServiceOverview(serviceName: string, range: string | undefined) {
+/**
+ * Golden-signal header stats for one service. Percentiles come from the
+ * catalog query, which merges the per-environment t-digests: averaging each
+ * environment's p95 is not a p95.
+ */
+export function useLocalServiceOverview(serviceName: string, bounds: TimeBounds) {
 	return useQuery({
-		queryKey: ["local", "services", "overview", serviceName, range],
+		queryKey: ["local", "services", "overview", serviceName, boundsKey(bounds)],
 		placeholderData: keepPreviousData,
-		queryFn: async (): Promise<ServiceOverviewStats | null> => {
-			const { startTime, endTime } = boundsForRange(range)
-			const rows = await executeLocalCompiledQuery(
-				CH.compile(CH.serviceOverviewQuery({ serviceName }), {
-					orgId: LOCAL_ORG_ID,
-					startTime,
-					endTime,
-				}),
-			)
-			if (rows.length === 0) return null
-			let spanCount = 0
-			let errorCount = 0
-			// The overview groups by (namespace, env, commit); merge the slices and
-			// approximate latency percentiles with a span-weighted average.
-			let p50 = 0
-			let p95 = 0
-			let p99 = 0
-			const environments = new Set<string>()
-			const namespaces = new Set<string>()
-			for (const row of rows) {
-				const slice = Number(row.estimatedSpanCount) || Number(row.spanCount)
-				spanCount += slice
-				errorCount += Number(row.estimatedErrorCount) || Number(row.errorCount)
-				p50 += Number(row.p50LatencyMs) * slice
-				p95 += Number(row.p95LatencyMs) * slice
-				p99 += Number(row.p99LatencyMs) * slice
-				if (row.environment) environments.add(row.environment)
-				if (row.serviceNamespace) namespaces.add(row.serviceNamespace)
-			}
-			return {
-				spanCount,
-				errorCount,
-				errorRate: spanCount > 0 ? errorCount / spanCount : 0,
-				p50LatencyMs: spanCount > 0 ? p50 / spanCount : 0,
-				p95LatencyMs: spanCount > 0 ? p95 / spanCount : 0,
-				p99LatencyMs: spanCount > 0 ? p99 / spanCount : 0,
-				environments: [...environments].sort(),
-				namespaces: [...namespaces].sort(),
-			}
+		queryFn: async ({ signal }): Promise<ServiceOverview | null> => {
+			const params = localParams(bounds)
+			const [catalogRows, overviewRows] = await Promise.all([
+				executeLocalCompiledQuery(
+					CH.compile(CH.serviceCatalogQuery({ serviceName, limit: 1 }), params),
+					signal,
+				),
+				executeLocalCompiledQuery(
+					CH.compile(CH.serviceOverviewQuery({ serviceName }), params),
+					signal,
+				),
+			])
+			const row = catalogRows[0]
+			if (!row) return null
+			const firstSeenMs = overviewRows.reduce<number | null>((earliest, overview) => {
+				const ms = parseClickHouseDateTime(overview.firstSeen)
+				return ms !== null && (earliest === null || ms < earliest) ? ms : earliest
+			}, null)
+			return { stats: toCatalogEntry(row, 0), firstSeenMs }
 		},
 	})
 }
@@ -67,51 +46,60 @@ export function useLocalServiceOverview(serviceName: string, range: string | und
 export type ServiceOperationRow = CH.ServiceOperationsSummaryOutput
 
 /** Top operations table for the service detail page. */
-export function useLocalServiceOperations(serviceName: string, range: string | undefined) {
+export function useLocalServiceOperations(serviceName: string, bounds: TimeBounds) {
 	return useQuery({
-		queryKey: ["local", "services", "operations", serviceName, range],
+		queryKey: ["local", "services", "operations", serviceName, boundsKey(bounds)],
 		placeholderData: keepPreviousData,
-		queryFn: async (): Promise<ReadonlyArray<ServiceOperationRow>> => {
-			const { startTime, endTime } = boundsForRange(range)
-			return executeLocalCompiledQuery(
-				CH.compile(CH.serviceOperationsSummaryQuery({ serviceName, limit: 25 }), {
-					orgId: LOCAL_ORG_ID,
-					startTime,
-					endTime,
-				}),
-			)
-		},
+		queryFn: ({ signal }): Promise<ReadonlyArray<ServiceOperationRow>> =>
+			executeLocalCompiledQuery(
+				CH.compile(CH.serviceOperationsSummaryQuery({ serviceName, limit: 25 }), localParams(bounds)),
+				signal,
+			),
 	})
-}
-
-export interface OperationSeriesPoint {
-	bucket: string
-	spanName: string
-	count: number
 }
 
 /** Per-bucket throughput for the top operations (drives the detail chart). */
 export function useLocalServiceOperationsTimeseries(
 	serviceName: string,
 	spanNames: ReadonlyArray<string>,
-	range: string | undefined,
+	bounds: TimeBounds,
+	window: ChartWindow,
 ) {
+	const { bucketSeconds } = window
 	return useQuery({
-		queryKey: ["local", "services", "operations-ts", serviceName, spanNames, range],
-		enabled: spanNames.length > 0,
+		queryKey: [
+			"local",
+			"services",
+			"operations-ts",
+			serviceName,
+			spanNames,
+			bucketSeconds,
+			boundsKey(bounds),
+		],
 		placeholderData: keepPreviousData,
-		queryFn: async (): Promise<ReadonlyArray<OperationSeriesPoint>> => {
-			const { startTime, endTime } = boundsForRange(range)
-			const bucketSeconds = bucketSecondsForRange(range)
-			const rows = await executeLocalCompiledQuery(
-				CH.compile(CH.serviceOperationsTimeseriesQuery({ serviceName, spanNames, bucketSeconds }), {
-					orgId: LOCAL_ORG_ID,
-					startTime,
-					endTime,
-					bucketSeconds,
-				}),
-			)
-			return rows.map((r) => ({ bucket: r.bucket, spanName: r.spanName, count: Number(r.count) }))
-		},
+		queryFn:
+			spanNames.length === 0
+				? skipToken
+				: async ({ signal }): Promise<ReadonlyArray<SeriesPoint>> => {
+						const rows = await executeLocalCompiledQuery(
+							CH.compile(
+								CH.serviceOperationsTimeseriesQuery({
+									serviceName,
+									spanNames,
+									bucketSeconds,
+								}),
+								{
+									...localParams(bounds),
+									bucketSeconds,
+								},
+							),
+							signal,
+						)
+						return rows.map((r) => ({
+							bucket: r.bucket,
+							series: r.spanName,
+							value: Number(r.count),
+						}))
+					},
 	})
 }

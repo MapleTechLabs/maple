@@ -38,7 +38,7 @@ import {
 } from "../../outbound"
 import type { ChatBlock } from "../../render/blocks"
 import { API_BASE, API_HOST, BOT_TOKEN_CONFIG } from "./api"
-import { User } from "./gateway-payloads"
+import { MESSAGE_FLAG_EPHEMERAL, User } from "./gateway-payloads"
 import { DISCORD_CONNECTOR_ID } from "./id"
 import { renderDiscordMessage } from "./render"
 
@@ -352,6 +352,33 @@ export const discordOutbound: ChatOutbound<HttpClient.HttpClient | ConnectorCred
 					),
 				)
 				return { target, messageId: created.id }
+			}),
+
+			/**
+			 * A follow-up on the click's own interaction, flagged ephemeral. Discord has no other way
+			 * to show one person a message, and the click is what made the interaction.
+			 */
+			whisper: Effect.fn("Discord.whisper")(function* (
+				action: InboundAction,
+				blocks: ReadonlyArray<ChatBlock>,
+			) {
+				// `<application id>/<interaction token>`, as the gateway half wrote it.
+				const [applicationId, interactionToken] = action.replyHandle?.split("/") ?? []
+				if (applicationId === undefined || interactionToken === undefined) {
+					return yield* failed("whisper", "This click carried no interaction to answer privately")
+				}
+				yield* send(
+					"whisper",
+					"/webhooks/{application_id}/{interaction_token}",
+					HttpClientRequest.post(
+						`${API_BASE}/webhooks/${encodeURIComponent(applicationId)}/${encodeURIComponent(interactionToken)}`,
+					).pipe(
+						HttpClientRequest.bodyJsonUnsafe({
+							...renderDiscordMessage(blocks),
+							flags: MESSAGE_FLAG_EPHEMERAL,
+						}),
+					),
+				)
 			}),
 
 			edit: (ref: ChatMessageRef, blocks: ReadonlyArray<ChatBlock>) =>

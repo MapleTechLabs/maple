@@ -12,5 +12,12 @@ export class ArchiveError extends Schema.TaggedError<ArchiveError>()("@maple/cli
 	cause: Schema.optional(Schema.String),
 }) {}
 
+/** An archive create the CLI correctly refuses: the export would shrink the
+ * active generation, or the day is past its retention and may be partial. */
+export class ArchiveCreateRefusedError extends Schema.TaggedError<ArchiveCreateRefusedError>()(
+	"@maple/cli/ArchiveCreateRefusedError",
+	{ reason: Schema.Literals(["shrink", "retention"]), message: Schema.String },
+) {}
+
 /** Render an expected archive failure without Effect's diagnostic cause stack. */
 export const archiveErrorMessage = (error: ArchiveError): string => `${error.message}\n`

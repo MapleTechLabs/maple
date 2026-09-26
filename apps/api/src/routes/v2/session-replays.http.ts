@@ -148,6 +148,9 @@ const HttpV2SessionReplaysGroup = HttpApiBuilder.group(MapleApiV2, "sessionRepla
 								? { hasErrors: payload.has_errors }
 								: undefined),
 							...(payload.search !== undefined ? { search: payload.search } : undefined),
+							...(payload.page_path !== undefined
+								? { pagePath: payload.page_path }
+								: undefined),
 							...(payload.duration_min_ms !== undefined
 								? {
 										durationMinMs: payload.duration_min_ms,

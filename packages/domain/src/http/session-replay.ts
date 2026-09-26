@@ -37,6 +37,8 @@ export class ListReplaysRequest extends Schema.Class<ListReplaysRequest>("ListRe
 	visitorId: Schema.optional(Schema.String),
 	hasErrors: Schema.optional(Schema.Boolean),
 	search: Schema.optional(Schema.String),
+	/** Exact page path (no query/hash) the session navigated to at any point. */
+	pagePath: Schema.optional(Schema.String),
 	/**
 	 * Keyset cursor: the `StartTime` of the last row of the previous page.
 	 *
@@ -128,6 +130,7 @@ export class ReplaysFacetsRequest extends Schema.Class<ReplaysFacetsRequest>("Re
 	visitorId: Schema.optional(Schema.String),
 	hasErrors: Schema.optional(Schema.Boolean),
 	search: Schema.optional(Schema.String),
+	pagePath: Schema.optional(Schema.String),
 }) {}
 
 export const ReplayFacetItem = Schema.Struct({
@@ -143,6 +146,8 @@ export class ReplaysFacetsResponse extends Schema.Class<ReplaysFacetsResponse>("
 	/** Identified groups (company / team), by session count. Empty for orgs that
 	 *  never call `identify()` with a group — the sidebar hides the section then. */
 	groups: Schema.Array(ReplayFacetItem),
+	/** Page paths visited, by sessions that reached them (top 200). */
+	pages: Schema.Array(ReplayFacetItem),
 	/** Distinct sessions with at least one recorded error, within the current filter. */
 	errorCount: Schema.Number,
 	/** Every session in the window under the current filters — the header's own

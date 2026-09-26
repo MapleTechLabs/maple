@@ -161,6 +161,7 @@ const unreachable = () => Effect.die("the destination listing reached another tr
 const listingTransport: ChatOutboundTransport = {
 	post: unreachable,
 	edit: unreachable,
+	whisper: unreachable,
 	typing: unreachable,
 	openThread: unreachable,
 	conversation: unreachable,

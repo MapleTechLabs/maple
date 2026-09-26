@@ -609,3 +609,43 @@ describe("the model-call span", () => {
 		}),
 	)
 })
+
+describe("delta joining", () => {
+	const deltas = Stream.fromIterable<AiResponse.StreamPartEncoded>([
+		{ type: "text-start", id: "t" },
+		{ type: "text-delta", id: "t", delta: "Looks " },
+		{ type: "text-delta", id: "t", delta: "safe" },
+		{ type: "text-delta", id: "t", delta: "." },
+		{ type: "text-end", id: "t" },
+	])
+	const partsSeen = (coalesceDeltas: boolean) =>
+		Effect.gen(function* () {
+			const provider = LanguageModel.make({
+				generateText: () => Effect.succeed([]),
+				streamText: () => deltas,
+			})
+			const model = Layer.effect(
+				LanguageModel.LanguageModel,
+				instrumentLanguageModel(
+					provider,
+					{ providerName: "fake", sessionAttributes: {} },
+					{ coalesceDeltas },
+				),
+			)
+			const parts = yield* LanguageModel.streamText({ prompt: "hi" }).pipe(
+				Stream.runCollect,
+				Effect.provide(model),
+			)
+			return parts.filter((part) => part.type === "text-delta")
+		})
+
+	/** The request's own `options` once shadowed this setting, and nothing was ever joined. */
+	it.effect("joins a model's deltas when the model is built to, and only then", () =>
+		Effect.gen(function* () {
+			const joined = yield* partsSeen(true)
+			assert.lengthOf(joined, 1)
+			assert.strictEqual(joined[0]!.type === "text-delta" ? joined[0]!.delta : "", "Looks safe.")
+			assert.lengthOf(yield* partsSeen(false), 3)
+		}),
+	)
+})

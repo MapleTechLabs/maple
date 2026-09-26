@@ -66,8 +66,12 @@ const mention: InboundMessage = {
 
 interface Chat {
 	readonly outbound: ChatOutbound
-	/** Every post and edit, in order. */
-	readonly calls: Array<{ verb: "post" | "edit"; ref: ChatMessageRef; blocks: ReadonlyArray<ChatBlock> }>
+	/** Every post, edit and private reply, in order. */
+	readonly calls: Array<{
+		verb: "post" | "edit" | "whisper"
+		ref: ChatMessageRef
+		blocks: ReadonlyArray<ChatBlock>
+	}>
 	readonly threads: Array<string>
 	/** What the relay asked for the model's context, if it asked at all. */
 	readonly historyCalls: Array<{ channelId: string; limit: number; before: string }>
@@ -77,7 +81,10 @@ interface Chat {
  * `earlier` is what this platform says was written in the conversation before the message — or a
  * failure, for a bot that may not read the history it is answering in.
  */
-const chat = (earlier: ReadonlyArray<ChatHistoryMessage> | ChatOutboundError = []): Chat => {
+const chat = (
+	earlier: ReadonlyArray<ChatHistoryMessage> | ChatOutboundError = [],
+	options: { readonly whisper?: "fails" } = {},
+): Chat => {
 	const calls: Chat["calls"] = []
 	const threads: Array<string> = []
 	const historyCalls: Chat["historyCalls"] = []
@@ -98,6 +105,22 @@ const chat = (earlier: ReadonlyArray<ChatHistoryMessage> | ChatOutboundError = [
 						return ref
 					}),
 				edit: (ref, blocks) => Effect.sync(() => void calls.push({ verb: "edit", ref, blocks })),
+				whisper: (action, blocks) =>
+					options.whisper === "fails"
+						? Effect.fail(
+								new ChatOutboundError({
+									message: "no interaction to answer",
+									connectorId: TESTCHAT,
+									operation: "whisper",
+								}),
+							)
+						: Effect.sync(() => {
+								const ref = {
+									target: { workspaceId: action.workspaceId, channelId: action.channelId },
+									messageId: action.messageId,
+								}
+								calls.push({ verb: "whisper", ref, blocks })
+							}),
 				typing: () => Effect.void,
 				openThread: (request) => Effect.succeed(request.anchorMessageId),
 				conversation: (event) =>
@@ -971,7 +994,12 @@ describe("settling an approval somebody clicked", () => {
 					toolName: "create_alert_rule",
 					summary: "name: checkout p95",
 					token: CALL_ID,
-					outcome: { approved: true, text: "Approved by Ada.\nCreated alert rule ar_1." },
+					outcome: {
+						approved: true,
+						decision: "Approved by Ada.",
+						text: "The change went through.",
+						url: null,
+					},
 				},
 			])
 		}),
@@ -994,7 +1022,7 @@ describe("settling an approval somebody clicked", () => {
 
 			expect(agent.settlements[0]?.decision).toBe("deny")
 			expect(approvals(platform.calls.at(-1)?.blocks ?? [])[0]).toMatchObject({
-				outcome: { approved: false, text: "Declined by Ada. The tool did not run." },
+				outcome: { approved: false, decision: "Declined by Ada. The tool did not run.", text: "" },
 			})
 		}),
 	)
@@ -1010,8 +1038,25 @@ describe("settling an approval somebody clicked", () => {
 			yield* relayInboundEvent(click(), deployment.ports)
 
 			expect(agent.settlements).toEqual([])
-			expect(platform.calls[0]?.verb).toBe("post")
-			expect(notices(blocksOf(platform.calls))[0]).toContain("https://app.maple.dev/integrations")
+			// Only the clicker sees it: it is about their account, not the conversation.
+			expect(platform.calls.map((call) => call.verb)).toEqual(["whisper"])
+			const text = prose(blocksOf(platform.calls))
+			expect(text).toContain("**Link your Testchat account to Maple to approve this.**")
+			expect(text).toContain("(https://app.maple.dev/integrations)")
+		}),
+	)
+
+	it.effect("says it in the open when the platform cannot answer the clicker privately", () =>
+		Effect.gen(function* () {
+			const platform = chat([], { whisper: "fails" })
+			const agent = session([])
+			const deployment = host(platform.outbound, agent.stub, { supportsIdentity: true })
+
+			yield* relayInboundEvent(click(), deployment.ports)
+
+			// An unanswered click reads as a broken button, which is worse than a public notice.
+			expect(platform.calls.map((call) => call.verb)).toEqual(["post"])
+			expect(prose(blocksOf(platform.calls))).toContain("https://app.maple.dev/integrations")
 		}),
 	)
 

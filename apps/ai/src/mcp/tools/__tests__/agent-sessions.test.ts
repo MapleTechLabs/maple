@@ -6,6 +6,8 @@ import { installFakeWarehouse, restoreWarehouse, type FixtureRule } from "../../
 import { aiSpanRow } from "../../__evals__/fixtures"
 import { makeEvalRuntime, markdown, runToolDirect, type EvalRuntime } from "../../__evals__/eval-runtime"
 import type { McpToolResult } from "../types"
+import { Schema } from "effect"
+import { GetAgentSessionOutput, ListAgentSessionsOutput } from "@maple/domain/mcp-outputs"
 
 const SESSION_ID = "wrun_01KZTEST"
 const EMPTY_SESSION_ID = "wrun_01KZEMPTY"
@@ -286,7 +288,10 @@ describe("clipPayload", () => {
 
 describe("list_agent_sessions rendering", () => {
 	it("renders the row and hands the session's own window to the next step", async () => {
-		const output = await rendered("list_agent_sessions", { ...WINDOW })
+		const answer = await result("list_agent_sessions", { ...WINDOW })
+		const structured = Schema.decodeUnknownSync(ListAgentSessionsOutput)(answer.structuredContent)
+		expect(structured.sessions[0]?.sessionId).toBe(SESSION_ID)
+		const output = markdown(answer)
 		const cells = rowCells(output, SESSION_ID)
 		expect(cells?.[1]).toBe("maple")
 		expect(cells?.[2]).toBe("eve")
@@ -303,9 +308,12 @@ describe("list_agent_sessions rendering", () => {
 
 	it("says how to continue when the page is full", async () => {
 		const full = await rendered("list_agent_sessions", { ...WINDOW, limit: 1, offset: 4 })
-		expect(full).toContain("call again with offset=5")
+		// The next page repeats the call, filters and all, from the next offset.
+		expect(full).toMatch(
+			/Next page: `list_agent_sessions start_time="[^"]+" end_time="[^"]+" sort_by="startTime" sort_dir="desc" limit=1 offset=5`/,
+		)
 		const partial = await rendered("list_agent_sessions", { ...WINDOW, limit: 2 })
-		expect(partial).not.toContain("call again with offset=")
+		expect(partial).not.toContain("Next page:")
 	})
 
 	it("parses a comma-separated filter into the entries the SQL matches on", async () => {
@@ -317,8 +325,11 @@ describe("list_agent_sessions rendering", () => {
 describe("get_agent_session rendering", () => {
 	it("renders the verdict, findings, tokens and tools of a failed session", async () => {
 		const answer = await result("get_agent_session", { session_id: SESSION_ID, ...WINDOW })
-		// Text only: neither session tool writes a `__maple_ui` mirror block.
+		// One text block; the typed output travels as structuredContent, never as a mirror block.
 		expect(answer.content).toHaveLength(1)
+		const structured = Schema.decodeUnknownSync(GetAgentSessionOutput)(answer.structuredContent)
+		expect(structured.verdict.status).not.toBe("clean")
+		expect(structured.evidence?.traceId).toBe(TRACE_ID)
 		const output = markdown(answer)
 		expect(output).toContain("### Verdict")
 		// The checks are the reading: a heading with the counts even when nothing
@@ -339,7 +350,7 @@ describe("get_agent_session rendering", () => {
 	// No window: the session's bounds are resolved from the id.
 	it("resolves the session's own bounds when no window is given", async () => {
 		const output = await rendered("get_agent_session", { session_id: SESSION_ID })
-		expect(output).toContain("Window: 2026-08-19 10:00:00.000000000 — 2026-08-19 10:00:05.250000000")
+		expect(output).toContain("Window: 2026-08-19 10:00:00.000000000 to 2026-08-19 10:00:05.250000000")
 	})
 
 	it("answers an unknown session without inventing one", async () => {

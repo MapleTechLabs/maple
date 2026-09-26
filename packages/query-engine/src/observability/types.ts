@@ -237,6 +237,8 @@ export interface ExploreAttributesInput {
 export interface AttributeKeyResult {
 	readonly key: string
 	readonly count: number
+	/** `source: "services"` only: environment, namespace, commit_sha or service. */
+	readonly facetType?: string
 }
 
 export interface AttributeValueResult {

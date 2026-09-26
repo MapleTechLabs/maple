@@ -1,8 +1,8 @@
 ---
-title: "AI Observability"
-status: "exploring"
+title: "AI observability"
+status: "in-progress"
 category: "ai"
 quarter: "Q3 2026"
-description: "Specialized monitoring for AI/LLM workloads. Track token usage, model latency, prompt/completion pairs, and cost per inference across providers."
+description: "Monitoring for AI and LLM workloads: token usage, model latency, prompt and completion pairs, and cost per inference across providers."
 order: 13
 ---

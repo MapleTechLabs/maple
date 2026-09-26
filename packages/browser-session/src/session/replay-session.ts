@@ -17,7 +17,7 @@ export { setActiveTraceIdProvider } from "../events/events-sink"
 
 export interface ReplaySessionOptions extends SessionLifecycleOptions {
 	readonly endpoint: string
-	readonly ingestKey: string
+	readonly ingestKey?: string | undefined
 	/** `x-maple-sdk` value — `sdkHint(name, version)`. */
 	readonly sdk: string
 	readonly maskAllInputs: boolean
