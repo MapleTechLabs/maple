@@ -1,0 +1,314 @@
+---
+title: "Quickstart"
+description: "Send your first trace to Maple in about five minutes, from your own stack or with a single curl request."
+group: "Getting Started"
+order: 2
+---
+
+import LanguageTabs from "../../../components/docs/LanguageTabs.astro"
+import LanguageTab from "../../../components/docs/LanguageTab.astro"
+
+You need a Maple account and either an app to instrument or a terminal with `curl`.
+
+## 1. Sign up and pick a region
+
+Sign up at [app.maple.dev](https://app.maple.dev). During onboarding you pick the region your organization lives in, US or EU. The region cannot be changed later, and each region has its own ingest endpoint:
+
+| Region         | Ingest endpoint               |
+| -------------- | ----------------------------- |
+| United States  | `https://ingest.maple.dev`    |
+| European Union | `https://ingest.eu.maple.dev` |
+
+## 2. Copy your ingest key
+
+Open **Settings → Ingestion** and copy the private key (`maple_sk_…`). It is for servers and scripts. The public key (`maple_pk_…`) is for browser code. Both can only send telemetry. See [Authentication](/docs/reference/authentication#ingest-keys).
+
+## 3. Set the exporter variables
+
+Every OpenTelemetry SDK reads these standard variables:
+
+```bash
+export OTEL_EXPORTER_OTLP_ENDPOINT="https://ingest.maple.dev"   # EU: https://ingest.eu.maple.dev
+export OTEL_EXPORTER_OTLP_HEADERS="Authorization=Bearer YOUR_INGEST_KEY"
+export OTEL_EXPORTER_OTLP_PROTOCOL="http/protobuf"
+export OTEL_SERVICE_NAME="quickstart"
+```
+
+The endpoint is the base URL. Exporters append `/v1/traces`, `/v1/logs` and `/v1/metrics` themselves.
+
+## 4. Send a trace
+
+Pick your stack. Each setup reads the variables from step 3, so run it in the same shell.
+
+<LanguageTabs
+  label="Language or framework"
+  tabs={[
+    { id: "node", label: "Node.js" },
+    { id: "nextjs", label: "Next.js" },
+    { id: "python", label: "Python" },
+    { id: "go", label: "Go" },
+    { id: "java", label: "Java" },
+    { id: "csharp", label: ".NET" },
+    { id: "laravel", label: "Laravel" },
+    { id: "effect", label: "Effect" },
+    { id: "curl", label: "curl" },
+  ]}
+>
+
+<LanguageTab id="node">
+
+Install the auto-instrumentations package and start your app through its `register` entry point. No code changes:
+
+```bash
+npm install @opentelemetry/api @opentelemetry/auto-instrumentations-node
+node --require @opentelemetry/auto-instrumentations-node/register app.js
+```
+
+Send a request to your app. Each incoming HTTP request becomes a trace, with child spans for outgoing calls and database queries. For ES module apps and the full setup with logs and metrics, see the [Node.js guide](/docs/guides/instrumentation-nodejs).
+
+</LanguageTab>
+
+<LanguageTab id="nextjs">
+
+Install `@vercel/otel`:
+
+```bash
+npm install @vercel/otel @opentelemetry/api
+```
+
+Create `instrumentation.ts` in the project root (or `src/instrumentation.ts` if your code lives in `src/`). With no exporter passed, `@vercel/otel` reads the endpoint and headers from the variables:
+
+```typescript
+// instrumentation.ts
+import { registerOTel } from "@vercel/otel"
+
+export function register() {
+	registerOTel({ serviceName: "quickstart" })
+}
+```
+
+Start the dev server with `npm run dev` and open a page. Each request becomes a trace with spans for rendering, route handlers and server `fetch()` calls. On Next.js 13.4 and 14, enable the instrumentation hook first; see the [Next.js guide](/docs/guides/instrumentation-nextjs), which also covers logs and metrics.
+
+</LanguageTab>
+
+<LanguageTab id="python">
+
+Install the distro and the HTTP exporter, then let `opentelemetry-bootstrap` add the instrumentation packages for the libraries you already use:
+
+```bash
+pip install opentelemetry-distro opentelemetry-exporter-otlp-proto-http
+opentelemetry-bootstrap -a install
+```
+
+Start your app through the `opentelemetry-instrument` wrapper. No code changes:
+
+```bash
+opentelemetry-instrument python app.py
+# or: opentelemetry-instrument uvicorn main:app
+```
+
+Send a request to your app. FastAPI, Django, Flask and the common HTTP and database clients are traced automatically. Keep `OTEL_EXPORTER_OTLP_PROTOCOL` from step 3: the distro defaults to gRPC, which Maple does not accept. The wrapper does not work with `uvicorn --reload`. For logs, metrics and a setup in code, see the [Python guide](/docs/guides/instrumentation-python).
+
+</LanguageTab>
+
+<LanguageTab id="go">
+
+Go has no zero-code agent, so add the SDK and wrap your HTTP handler:
+
+```bash
+go get go.opentelemetry.io/otel \
+  go.opentelemetry.io/otel/sdk \
+  go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp \
+  go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp
+```
+
+```go
+package main
+
+import (
+	"context"
+	"log"
+	"net/http"
+
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+)
+
+func main() {
+	ctx := context.Background()
+
+	// Reads OTEL_EXPORTER_OTLP_ENDPOINT and OTEL_EXPORTER_OTLP_HEADERS.
+	exporter, err := otlptracehttp.New(ctx)
+	if err != nil {
+		log.Fatal(err)
+	}
+	tp := sdktrace.NewTracerProvider(sdktrace.WithBatcher(exporter))
+	defer tp.Shutdown(ctx)
+	otel.SetTracerProvider(tp)
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /hello", func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("hello"))
+	})
+	log.Fatal(http.ListenAndServe(":8080", otelhttp.NewHandler(mux, "server")))
+}
+```
+
+Run it with `go run .` and call `curl localhost:8080/hello`. Each request becomes a server span, named after `OTEL_SERVICE_NAME`. For logs, metrics, gRPC and `database/sql`, see the [Go guide](/docs/guides/instrumentation-go).
+
+</LanguageTab>
+
+<LanguageTab id="java">
+
+Download the OpenTelemetry Java agent and attach it when you start your app. No code changes:
+
+```bash
+curl -L -o opentelemetry-javaagent.jar \
+  https://github.com/open-telemetry/opentelemetry-java-instrumentation/releases/latest/download/opentelemetry-javaagent.jar
+java -javaagent:opentelemetry-javaagent.jar -jar app.jar
+```
+
+Send a request to your app. The agent instruments Spring, servlet containers, JDBC, HTTP clients and most other popular libraries, and exports traces, metrics and logs. It works the same for Kotlin and any other JVM app. See the [Java guide](/docs/guides/instrumentation-java) or the [Kotlin guide](/docs/guides/instrumentation-kotlin).
+
+</LanguageTab>
+
+<LanguageTab id="csharp">
+
+Add the hosting extension, the OTLP exporter and ASP.NET Core instrumentation:
+
+```bash
+dotnet add package OpenTelemetry.Extensions.Hosting
+dotnet add package OpenTelemetry.Exporter.OpenTelemetryProtocol
+dotnet add package OpenTelemetry.Instrumentation.AspNetCore
+```
+
+Register OpenTelemetry in `Program.cs`. `UseOtlpExporter()` reads the endpoint, protocol and headers from the variables:
+
+```csharp
+using OpenTelemetry;
+using OpenTelemetry.Trace;
+
+var builder = WebApplication.CreateBuilder(args);
+
+builder.Services.AddOpenTelemetry()
+    .WithTracing(tracing => tracing.AddAspNetCoreInstrumentation())
+    .UseOtlpExporter();
+
+var app = builder.Build();
+app.MapGet("/", () => "Hello!");
+app.Run();
+```
+
+Start it with `dotnet run` and send a request. Each request becomes a server span. For `HttpClient`, Entity Framework, logs and metrics, see the [.NET guide](/docs/guides/instrumentation-csharp).
+
+</LanguageTab>
+
+<LanguageTab id="laravel">
+
+Install the Laravel OpenTelemetry package:
+
+```bash
+composer require keepsuit/laravel-opentelemetry
+```
+
+Laravel reads its configuration from `.env`, so put the values from step 3 there instead of exporting them:
+
+```env
+# .env
+OTEL_SERVICE_NAME=quickstart
+OTEL_EXPORTER_OTLP_ENDPOINT=https://ingest.maple.dev
+OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
+OTEL_EXPORTER_OTLP_HEADERS="Authorization=Bearer YOUR_INGEST_KEY"
+```
+
+Send a request to your app. Each request becomes a trace with spans for database queries, Redis commands and `Http` facade calls. If protobuf export fails in your environment, set `OTEL_EXPORTER_OTLP_PROTOCOL=http/json`. For queues, logs and metrics, see the [Laravel guide](/docs/guides/instrumentation-laravel).
+
+</LanguageTab>
+
+<LanguageTab id="effect">
+
+Install Maple's Effect SDK:
+
+```bash
+npm install @maple-dev/effect-sdk effect
+```
+
+The SDK takes the key from `MAPLE_INGEST_KEY` rather than the OTLP headers variable, and uses `OTEL_EXPORTER_OTLP_ENDPOINT` from step 3 for the region:
+
+```bash
+export MAPLE_INGEST_KEY="YOUR_INGEST_KEY"
+```
+
+Provide the layer to your program:
+
+```typescript
+import { Maple } from "@maple-dev/effect-sdk"
+import { Effect } from "effect"
+
+const program = Effect.gen(function* () {
+	yield* Effect.log("Hello from Effect!")
+}).pipe(Effect.withSpan("hello-maple"))
+
+Effect.runPromise(program.pipe(Effect.provide(Maple.layer({ serviceName: "quickstart" }))))
+```
+
+Run it once. The `hello-maple` span and its log line reach Maple together. For Effect 3, browsers and Cloudflare Workers, see the [Effect SDK](/docs/sdks/effect).
+
+</LanguageTab>
+
+<LanguageTab id="curl">
+
+To check the key and endpoint before touching your app, post one span as OTLP JSON. No SDK needed:
+
+```bash
+NOW=$(date +%s)
+curl -i "${OTEL_EXPORTER_OTLP_ENDPOINT}/v1/traces" \
+  -H "Authorization: Bearer YOUR_INGEST_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+  "resourceSpans": [{
+    "resource": { "attributes": [{ "key": "service.name", "value": { "stringValue": "quickstart" } }] },
+    "scopeSpans": [{
+      "spans": [{
+        "traceId": "5b8efff798038103d269b633813fc60c",
+        "spanId": "eee19b7ec3c1b174",
+        "name": "GET /hello",
+        "kind": 2,
+        "startTimeUnixNano": "'"${NOW}"'000000000",
+        "endTimeUnixNano": "'"${NOW}"'250000000",
+        "status": { "code": 1 }
+      }]
+    }]
+  }]
+}'
+```
+
+A `200` response means Maple accepted the span. Change the `traceId` to send another trace with the same command.
+
+</LanguageTab>
+
+</LanguageTabs>
+
+Rust, Kotlin and other stacks have their own guides under [Instrument your application](/docs/instrumentation). The variables from step 3 stay the same.
+
+## 5. Verify
+
+Open **Explore → Traces** and filter **Service** to `quickstart` (or your `OTEL_SERVICE_NAME`). The trace appears within about a minute. Click it to see its spans.
+
+## Troubleshooting
+
+- **`401` from the ingest endpoint.** The key is wrong, or it belongs to the other region. A US key is rejected by `ingest.eu.maple.dev` and the other way around. See [Regions](/docs/reference/regions).
+- **Nothing shows up.** Maple accepts OTLP over HTTP only. An exporter set to `grpc` or pointed at port `4317` cannot reach it; use `http/protobuf` and the endpoint without a port. Set `OTEL_LOG_LEVEL=debug` to print export errors.
+- **The trace is there, but under a name like `unknown_service`.** `OTEL_SERVICE_NAME` was not set in the shell (or `.env`) that started the app, so the SDK fell back to a default `service.name`.
+- **Still nothing.** Check the time range on the Traces page. For the curl span, your machine's clock sets the timestamp.
+
+More status codes and their meaning are in the [Ingest API reference](/docs/reference/ingest#status-codes).
+
+## Next steps
+
+- [Instrument your application](/docs/instrumentation): full guides per language, with logs and metrics.
+- [Traces](/docs/explore/traces): search, filter and open traces.
+- [Service map](/docs/explore/service-map): see calls between services once two of them are instrumented.
+- [Alert rules](/docs/alerting/alert-rules): get notified when error rate or latency crosses a threshold.

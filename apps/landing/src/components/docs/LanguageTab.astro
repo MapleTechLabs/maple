@@ -1,0 +1,12 @@
+---
+// One panel of a `<LanguageTabs>` group. `id` matches a tab in the group.
+interface Props {
+    id: string;
+}
+
+const { id } = Astro.props;
+---
+
+<div data-lang-panel={id} role="tabpanel">
+    <slot />
+</div>
