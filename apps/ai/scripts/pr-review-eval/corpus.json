@@ -11,17 +11,18 @@
 			"locations": [
 				{
 					"path": "apps/ingest/alchemy.run.ts",
-					"lines": [
-						439,
-						439
-					]
+					"lines": [439, 439]
 				}
-			]
+			],
+			"range": "bf416451b9a70423a71ed010fe741a68cb26b7c8..3b300e66412057b0342780bc330082b17f1cc55f",
+			"expected": "present",
+			"split": "holdout",
+			"enabled": true
 		},
 		{
 			"id": "pr685-fixf390ae8",
 			"number": 685,
-			"bug": "S3 PUTs are sent without Content-Length, so S3 answers 411 and the WAL heartbeat never lands.",
+			"bug": "Empty S3 PUTs omit Content-Length: 0; S3 returns 411 and the WAL heartbeat never lands. Nonempty PUTs are not the target.",
 			"fix": {
 				"sha": "f390ae85ff69e8d53895cd1026ea467bc9b42c38",
 				"subject": "fix(ingest): send Content-Length on S3 PUTs so the WAL heartbeat lands (#936)"
@@ -29,12 +30,13 @@
 			"locations": [
 				{
 					"path": "apps/ingest/src/aws.rs",
-					"lines": [
-						445,
-						448
-					]
+					"lines": [445, 448]
 				}
-			]
+			],
+			"range": "b944cb99d6ae046f81d1f4725793b9edaa5d26f1..11175b9e1631a378374f24f4c838757d6369d0cd",
+			"expected": "present",
+			"split": "holdout",
+			"enabled": true
 		},
 		{
 			"id": "pr853-fix9612a51",
@@ -47,26 +49,22 @@
 			"locations": [
 				{
 					"path": "apps/api/src/platform/genai-spans.ts",
-					"lines": [
-						478,
-						478
-					]
+					"lines": [478, 478]
 				},
 				{
 					"path": "apps/api/src/platform/genai-spans.ts",
-					"lines": [
-						483,
-						483
-					]
+					"lines": [483, 483]
 				},
 				{
 					"path": "apps/api/src/platform/genai-spans.ts",
-					"lines": [
-						489,
-						489
-					]
+					"lines": [489, 489]
 				}
-			]
+			],
+			"range": "ae7d4a5182c33dfcb19e75fe1ec873470fc5c3a6..f7768acc7041023fe2dc7a8886ea7ce08c714fe6",
+			"expected": "present",
+			"split": "holdout",
+			"enabled": false,
+			"curationNote": "Mined attribution is not verified: fix touches a different symbol/path or an older defect. Excluded from scoring until reviewed."
 		},
 		{
 			"id": "pr740-fix520f7a5",
@@ -79,19 +77,18 @@
 			"locations": [
 				{
 					"path": "packages/query-engine-integrations/src/ai/ai-sessions.ts",
-					"lines": [
-						1372,
-						1372
-					]
+					"lines": [1372, 1372]
 				},
 				{
 					"path": "packages/query-engine-integrations/src/ai/ai-sessions.ts",
-					"lines": [
-						1374,
-						1374
-					]
+					"lines": [1374, 1374]
 				}
-			]
+			],
+			"range": "4526f9be9aadeab6895566ac31e2dae4cbadd271..cd2fac1d2d2e3ff70e1330b6d0b591293efe6417",
+			"expected": "present",
+			"split": "holdout",
+			"enabled": false,
+			"curationNote": "Mined attribution is not verified: fix touches a different symbol/path or an older defect. Excluded from scoring until reviewed."
 		},
 		{
 			"id": "pr660-fix0cce5e3",
@@ -104,29 +101,25 @@
 			"locations": [
 				{
 					"path": "apps/web/src/routes/traces/index.tsx",
-					"lines": [
-						115,
-						115
-					]
+					"lines": [115, 115]
 				},
 				{
 					"path": "apps/web/src/routes/traces/index.tsx",
-					"lines": [
-						118,
-						118
-					]
+					"lines": [118, 118]
 				},
 				{
 					"path": "apps/web/src/routes/traces/index.tsx",
-					"lines": [
-						122,
-						122
-					]
+					"lines": [122, 122]
 				}
-			]
+			],
+			"range": "7fb6c2cba3d1693940147c7795e63f435d64df4c..dee7e65708cd0c79eaf495b003ace334d82b2d93",
+			"expected": "present",
+			"split": "holdout",
+			"enabled": false,
+			"curationNote": "Mined attribution is not verified: fix touches a different symbol/path or an older defect. Excluded from scoring until reviewed."
 		},
 		{
-			"id": "pr1057-like-wildcards",
+			"id": "pr1057-like-wildcards-preexisting",
 			"number": 1057,
 			"range": "48ddd6752ab54b6f3cdb31e36b84259126ca49b4..6356ccfa9b8bb47930157fdbf5746e145b41307d",
 			"bug": "interiorSearchTokens splits on `_` and `%`, which are wildcards in the ILIKE the search is pasted into, so `a_foo_b` adds hasToken('foo') and drops the ILIKE match `axfooYb`.",
@@ -137,18 +130,19 @@
 			"locations": [
 				{
 					"path": "packages/query-engine/src/ch/queries/logs.ts",
-					"lines": [
-						106,
-						106
-					]
+					"lines": [106, 106]
 				}
-			]
+			],
+			"expected": "absent",
+			"split": "development",
+			"enabled": true,
+			"curationNote": "Pre-existing-bug control: both lowercasing and wildcard splitting already exist at this base. The PR narrows token filtering and does not introduce these targets. Reporting them as introduced defects is a false positive."
 		},
 		{
-			"id": "pr1057-lowercase-before-ascii-filter",
+			"id": "pr1057-lowercase-before-ascii-filter-preexisting",
 			"number": 1057,
 			"range": "48ddd6752ab54b6f3cdb31e36b84259126ca49b4..6356ccfa9b8bb47930157fdbf5746e145b41307d",
-			"bug": "interiorSearchTokens lowercases before its ASCII filter, so the Kelvin sign `K` folds to ASCII `k`, passes, and hasToken('k') drops a row ClickHouse's ASCII-only lower() still ILIKE-matches.",
+			"bug": "interiorSearchTokens lowercases before its ASCII filter, so the Kelvin sign `\u212a` folds to ASCII `k`, passes, and hasToken('k') drops a row ClickHouse's ASCII-only lower() still ILIKE-matches.",
 			"fix": {
 				"sha": "e2f7fdbe772057171298455074d95356db4693df",
 				"subject": "fix(logs): treat LIKE wildcards and non-ASCII folds as unsafe token boundaries"
@@ -156,12 +150,93 @@
 			"locations": [
 				{
 					"path": "packages/query-engine/src/ch/queries/logs.ts",
-					"lines": [
-						105,
-						108
-					]
+					"lines": [105, 108]
 				}
-			]
+			],
+			"expected": "absent",
+			"split": "development",
+			"enabled": true,
+			"curationNote": "Pre-existing-bug control: both lowercasing and wildcard splitting already exist at this base. The PR narrows token filtering and does not introduce these targets. Reporting them as introduced defects is a false positive."
+		},
+		{
+			"id": "pr1057-like-wildcards-fixed",
+			"number": 1057,
+			"range": "48ddd6752ab54b6f3cdb31e36b84259126ca49b4..e2f7fdbe772057171298455074d95356db4693df",
+			"bug": "interiorSearchTokens splits on `_` and `%`, which are wildcards in the ILIKE the search is pasted into, so `a_foo_b` adds hasToken('foo') and drops the ILIKE match `axfooYb`.",
+			"fix": {
+				"sha": "e2f7fdbe772057171298455074d95356db4693df",
+				"subject": "fix(logs): treat LIKE wildcards and non-ASCII folds as unsafe token boundaries"
+			},
+			"locations": [
+				{
+					"path": "packages/query-engine/src/ch/queries/logs.ts",
+					"lines": [106, 106]
+				}
+			],
+			"expected": "absent",
+			"split": "development",
+			"enabled": true,
+			"curationNote": "Target-specific negative control after the real fix; not a claim the entire PR is bug-free."
+		},
+		{
+			"id": "pr1057-lowercase-before-ascii-filter-fixed",
+			"number": 1057,
+			"range": "48ddd6752ab54b6f3cdb31e36b84259126ca49b4..e2f7fdbe772057171298455074d95356db4693df",
+			"bug": "interiorSearchTokens lowercases before its ASCII filter, so the Kelvin sign `\u212a` folds to ASCII `k`, passes, and hasToken('k') drops a row ClickHouse's ASCII-only lower() still ILIKE-matches.",
+			"fix": {
+				"sha": "e2f7fdbe772057171298455074d95356db4693df",
+				"subject": "fix(logs): treat LIKE wildcards and non-ASCII folds as unsafe token boundaries"
+			},
+			"locations": [
+				{
+					"path": "packages/query-engine/src/ch/queries/logs.ts",
+					"lines": [105, 108]
+				}
+			],
+			"expected": "absent",
+			"split": "development",
+			"enabled": true,
+			"curationNote": "Target-specific negative control after the real fix; not a claim the entire PR is bug-free."
+		},
+		{
+			"id": "pr261-like-wildcards",
+			"number": 261,
+			"range": "875f11ce21fa81d1d4ea9dcfe488940a4b089ed4..84adeb76927beaec26bd0e7855ebd9e845a73cc3",
+			"bug": "New token-mode log search splits on ILIKE wildcards _ and %. Searching a_foo_b matches axfooYb with ILIKE but the added hasToken(foo) condition rejects it. Identify wildcard/token semantic mismatch and false negatives.",
+			"fix": {
+				"sha": "e2f7fdbe772057171298455074d95356db4693df",
+				"subject": "fix(logs): treat LIKE wildcards and non-ASCII folds as unsafe token boundaries"
+			},
+			"locations": [
+				{
+					"path": "packages/query-engine/src/ch/queries/logs.ts",
+					"lines": [69, 73]
+				}
+			],
+			"expected": "present",
+			"split": "development",
+			"enabled": true,
+			"curationNote": "Verified introduction: this PR adds token-mode filtering; the parent used ILIKE without this filter. Shares bug family with the contaminated PR1057 development cases."
+		},
+		{
+			"id": "pr261-lowercase-before-ascii-filter",
+			"number": 261,
+			"range": "875f11ce21fa81d1d4ea9dcfe488940a4b089ed4..84adeb76927beaec26bd0e7855ebd9e845a73cc3",
+			"bug": "New token-mode log search lowercases search text with JavaScript Unicode folding but uses ClickHouse ASCII lower() on Body. A multi-token search containing \u212a yields token k, which is absent from a body containing \u212a; the extra token filter rejects an ILIKE match.",
+			"fix": {
+				"sha": "e2f7fdbe772057171298455074d95356db4693df",
+				"subject": "fix(logs): treat LIKE wildcards and non-ASCII folds as unsafe token boundaries"
+			},
+			"locations": [
+				{
+					"path": "packages/query-engine/src/ch/queries/logs.ts",
+					"lines": [69, 73]
+				}
+			],
+			"expected": "present",
+			"split": "development",
+			"enabled": true,
+			"curationNote": "Verified introduction: this PR adds token-mode filtering; the parent used ILIKE without this filter. Shares bug family with the contaminated PR1057 development cases."
 		}
 	]
 }

@@ -278,8 +278,10 @@ one product behind the same `prreview` rollout flag. Observability is one lens o
   each, at most 12 children and 4 at a time, reserved from the parent's budget. The child answers findings one per line; the parent verifies and files.
 - **Quality gate.** `bun run --cwd apps/ai review:eval mine` blames each `fix:` commit's changed
   lines back to the squash-merged PR that wrote them; a person keeps the real bugs in
-  `apps/ai/scripts/pr-review-eval/corpus.json`. `review:eval run --model <id>` reviews every case and
-  counts it caught when a finding lands within three lines of what the fix changed.
+  `apps/ai/scripts/pr-review-eval/corpus.json`. `review:eval run --models <ids>` replays every case
+  at pinned historical SHAs, and a person grades each finding by meaning, not line overlap. See
+  [the eval README](../apps/ai/scripts/pr-review-eval/README.md) and
+  [the September 2026 audit](pr-review-agent-evaluation.md).
 
 ### Across pushes
 

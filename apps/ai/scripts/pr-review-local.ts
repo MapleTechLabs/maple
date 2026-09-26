@@ -20,6 +20,8 @@
  * repository, else a cached clone), `--model <openrouter id>`, `--prompt-file <path>` (replaces the
  * system prompt), `--out <dir>`, `--allow-exec` (lets `sandbox_exec` run `node` and `bun` in the
  * commit's worktree, as production's sandbox does; this runs model-written code on your machine).
+ * `--historical` disables execution and reads outside the selected head's ancestry.
+ * `--number <n>` preserves the PR identity when replaying a local range.
  */
 import { spawnSync } from "node:child_process"
 import { randomUUID } from "node:crypto"
@@ -50,6 +52,7 @@ import { AGENTS } from "@/chat/agents"
 import type { ChatTurnEvent } from "@/chat/events"
 import { withToolTranscript } from "@/chat/close-out"
 import { PR_REVIEW_TOOLS } from "@/chat/permissions"
+import { normalizeArguments, argumentNotices } from "@/mcp/lib/decode-issues"
 import { PR_REVIEW_CLOSE_OUT_PROMPT } from "@/chat/prompts"
 import { makeReviewCoverage } from "@/chat/review-coverage"
 import { makeReviewLedger } from "@/chat/review-ledger"
@@ -83,6 +86,7 @@ interface Args {
 	readonly range: string | undefined
 	/** Let `sandbox_exec` run `node` and `bun`, which production's sandbox offers. Off by default. */
 	readonly allowExec: boolean
+	readonly historical?: boolean
 }
 
 const usage = () => {
@@ -97,7 +101,7 @@ const parseArgs = (argv: ReadonlyArray<string>): Args => {
 	const positional: Array<string> = []
 	for (let i = 0; i < argv.length; i++) {
 		const arg = argv[i] ?? ""
-		if (arg === "--post" || arg === "--allow-exec") {
+		if (arg === "--post" || arg === "--allow-exec" || arg === "--historical") {
 			flags.set(arg.slice(2), "true")
 		} else if (arg.startsWith("--")) {
 			const value = argv[i + 1]
@@ -109,7 +113,8 @@ const parseArgs = (argv: ReadonlyArray<string>): Args => {
 	const fromUrl = /github\.com\/([^/]+)\/([^/]+)\/pull\/(\d+)/.exec(positional[0] ?? "")
 	const [owner, repo] = fromUrl ? [fromUrl[1], fromUrl[2]] : (positional[0] ?? "").split("/")
 	const range = flags.get("range")
-	const number = range === undefined ? Number(fromUrl ? fromUrl[3] : positional[1]) : 1
+	const number =
+		range === undefined ? Number(fromUrl ? fromUrl[3] : positional[1]) : Number(flags.get("number") ?? 1)
 	if (!owner || !repo || !Number.isInteger(number) || number < 1) usage()
 	if (range !== undefined && (!flags.has("repo-dir") || !/^[^\s.][^\s]*\.\.[^\s.][^\s]*$/.test(range))) {
 		console.error("--range takes base..head and needs --repo-dir, the clone the range lives in")
@@ -126,6 +131,7 @@ const parseArgs = (argv: ReadonlyArray<string>): Args => {
 		post: flags.get("post") === "true",
 		range,
 		allowExec: flags.get("allow-exec") === "true",
+		historical: flags.has("historical"),
 	}
 }
 
@@ -514,7 +520,7 @@ const fetchPullRequestContext = (args: Args, headSha: string): PullRequestContex
 	}
 }
 
-const makeExecutor = (input: {
+export const makeExecutor = (input: {
 	readonly repository: string
 	readonly number: number
 	readonly files: ReadonlyArray<PullRequestFile>
@@ -522,6 +528,7 @@ const makeExecutor = (input: {
 	readonly dir: string
 	readonly headSha: string
 	readonly allowExec: boolean
+	readonly historical?: boolean
 }): { readonly executor: McpToolExecutorApi; readonly cleanup: () => void } => {
 	const git = (args: ReadonlyArray<string>) => run(["git", ...args], input.dir)
 	// `sandbox_exec` runs where production runs it: inside a checkout of the commit, so a bare
@@ -541,6 +548,12 @@ const makeExecutor = (input: {
 		if (ref === undefined) return input.headSha
 		if (unsafeRef(ref)) return failure("ref must be a branch, tag, or commit SHA")
 		const resolved = git(["rev-parse", "--verify", "--quiet", `${ref}^{commit}`])
+		if (
+			input.historical &&
+			resolved.ok &&
+			!git(["merge-base", "--is-ancestor", resolved.stdout.trim(), input.headSha]).ok
+		)
+			return failure("Historical replay cannot read commits after or outside this head.")
 		return resolved.ok
 			? resolved.stdout.trim()
 			: failure(`No ref '${ref}' exists in ${input.repository}.`)
@@ -572,6 +585,10 @@ const makeExecutor = (input: {
 	}
 	const grep = (params: LocalToolParams, pattern: string | undefined, fixed: boolean): McpToolResult => {
 		if (pattern === undefined) return failure("pattern must be 1-512 characters")
+		if (params.glob !== undefined && /[{}]/.test(params.glob))
+			return failure(
+				"The local runner does not support brace globs; use separate *.ts and *.tsx searches or omit glob.",
+			)
 		const ref = refOf(params)
 		if (typeof ref !== "string") return ref
 		const context = Math.min(5, Math.max(0, num(params.context_lines) ?? 0))
@@ -678,6 +695,10 @@ const makeExecutor = (input: {
 				])
 			}
 			case "sandbox_exec": {
+				if (input.historical)
+					return failure(
+						"Execution is disabled in historical replay; use pinned source reads and diffs.",
+					)
 				const command = str(params.command)
 				const args = params.args ?? []
 				if (input.allowExec && (command === "node" || command === "bun")) {
@@ -713,13 +734,27 @@ const makeExecutor = (input: {
 		}
 	}
 	const executor: McpToolExecutorApi = {
+		// The local clone is already prepared before the turn starts.
+		prepareRepository: () => Effect.void,
+		prepareConnectedRepositories: () => Effect.void,
 		execute: (_tenant, name, raw) =>
-			Effect.sync(() =>
-				dispatch(
+			Effect.sync(() => {
+				const normalized = normalizeArguments(raw, Object.keys(LocalToolParams.fields))
+				const result = dispatch(
 					name,
-					Option.getOrElse(decodeParams(raw), () => ({})),
-				),
-			),
+					Option.getOrElse(decodeParams(normalized.args), () => ({})),
+				)
+				return {
+					...result,
+					content: [
+						...argumentNotices(normalized, name).map((notice) => ({
+							type: "text" as const,
+							text: notice,
+						})),
+						...result.content,
+					],
+				}
+			}),
 	}
 	const cleanup = () => {
 		for (const path of worktrees.values()) run(["git", "worktree", "remove", "--force", path], input.dir)
@@ -806,7 +841,7 @@ const newSideLines = (file: PullRequestFile | undefined): Map<number, string> =>
 export const reviewLocally = async (
 	argv: ReadonlyArray<string>,
 	injected: { readonly model?: ResolvedModel } = {},
-): Promise<string | undefined> => {
+): Promise<string> => {
 	const args = parseArgs(argv)
 	if (injected.model === undefined && !process.env.OPENROUTER_API_KEY) {
 		console.error(
@@ -814,7 +849,6 @@ export const reviewLocally = async (
 		)
 		process.exit(1)
 	}
-	if (args.model !== undefined) process.env.MAPLE_REVIEW_MODEL_OPENROUTER = args.model
 	const promptOverride = args.promptFile === undefined ? undefined : readFileSync(args.promptFile, "utf8")
 	const repository = `${args.owner}/${args.repo}`
 
@@ -835,6 +869,7 @@ export const reviewLocally = async (
 		authMode: "self_hosted",
 	}
 	const env = { ...process.env }
+	if (args.model !== undefined) env.MAPLE_REVIEW_MODEL_OPENROUTER = args.model
 	const model =
 		injected.model ?? resolveReviewModel(env, { surface: "chat", orgId, sessionId, turnId: messageId })
 	const kickoff = buildReviewKickoff({
@@ -859,6 +894,7 @@ export const reviewLocally = async (
 		dir: clone.dir,
 		headSha: pr.head.sha,
 		allowExec: args.allowExec,
+		historical: args.historical,
 	})
 
 	const tools: Array<ToolRecord> = []
@@ -1067,7 +1103,7 @@ export const reviewLocally = async (
 			),
 		)
 		console.log(`\n\nNo review submitted (${endReason}). Transcript: ${join(dir, "transcript.md")}`)
-		return undefined
+		return dir
 	}
 
 	const report = submitted.report
