@@ -3,7 +3,7 @@ import type { ReactNode } from "react"
 import { cn } from "@maple/ui/lib/utils"
 import { formatNumber, formatPercent } from "@maple/ui/lib/format"
 import { formatRelativeTime } from "@maple/ui/lib/time-format"
-import type { AiContentFormat, AiProduct } from "@maple/domain/ai-traffic"
+import type { AiContentFormat, AiCrawlPurpose, AiProduct } from "@maple/domain/ai-traffic"
 
 import { ColumnHead, DataTable } from "../../infra/primitives/data-table"
 import { shareBar } from "../../infra/primitives/share-bar"
@@ -177,7 +177,7 @@ export function AiReferralRanking({ ranks }: { ranks: ReadonlyArray<AiReferralRa
 						<div
 							key={rank.product.id}
 							style={shareBar(rank.share)}
-							className="flex items-center gap-3 border-b border-border/40 px-4 py-2 last:border-0"
+							className="flex items-center gap-4 border-b border-border/40 px-4 py-2 last:border-0"
 						>
 							<span className="w-5 text-right font-mono text-[11px] tabular-nums text-muted-foreground/60">
 								{index + 1}
@@ -259,6 +259,7 @@ export function AiCrawlerTable({
 				<DataTable.Root ariaLabel="AI crawlers" maxHeight={360} stickySurfaceClass="bg-card">
 					<DataTable.Head>
 						<ColumnHead label="Crawler" width="w-0 flex-1 min-w-0" />
+						<ColumnHead label="Purpose" width="w-[72px]" />
 						<ColumnHead label="Pages" width="w-12" align="right" />
 						<ColumnHead
 							label="Fetches"
@@ -279,18 +280,16 @@ export function AiCrawlerTable({
 						return (
 							<div
 								key={row.crawler}
-								className="flex items-center gap-3 border-b border-border/40 px-4 py-2 last:border-0"
+								className="flex items-center gap-4 border-b border-border/40 px-4 py-2 last:border-0"
 							>
 								<span className="flex w-0 min-w-0 flex-1 items-center gap-2">
 									<AiProductIcon product={product?.id ?? ""} />
 									<span className="truncate text-[12px] text-foreground/90">
 										{row.crawler}
 									</span>
-									{purpose ? (
-										<span className="shrink-0 text-[11px] text-muted-foreground/70">
-											{purpose}
-										</span>
-									) : null}
+								</span>
+								<span className="flex w-[72px] shrink-0">
+									{purpose ? <PurposeBadge purpose={purpose} /> : null}
 								</span>
 								<span
 									className={cn(
@@ -319,6 +318,26 @@ export function AiCrawlerTable({
 				</DataTable.Root>
 			)}
 		</AiPanel>
+	)
+}
+
+/** One hue per purpose, from the chart tokens, so the column scans by colour. */
+const PURPOSES = {
+	training: { color: "var(--chart-tok-reasoning)", description: "Collects pages to train models" },
+	search: { color: "var(--chart-tok-input)", description: "Indexes pages for AI search results" },
+	answers: { color: "var(--chart-ai-tool)", description: "Fetches a page live to answer a question" },
+} satisfies Record<AiCrawlPurpose, { color: string; description: string }>
+
+function PurposeBadge({ purpose }: { purpose: AiCrawlPurpose }) {
+	const { color, description } = PURPOSES[purpose]
+	return (
+		<span
+			title={description}
+			style={{ color, backgroundColor: `color-mix(in oklab, ${color} 12%, transparent)` }}
+			className="rounded-sm px-1.5 py-px text-[10px] font-medium"
+		>
+			{purpose}
+		</span>
 	)
 }
 
