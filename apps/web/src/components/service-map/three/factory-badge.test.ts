@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { POSTGRES_MARK_PATH } from "@/components/icons/postgres"
+import { POSTGRES_MARK_PATH } from "@maple/ui/components/icons/postgres"
 import { resolveMachineBadge } from "./factory-badge"
 
 describe("factory machine badges", () => {

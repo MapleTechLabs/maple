@@ -2,7 +2,7 @@ import { HYPERDRIVE_DB_NAMESPACE } from "@maple/domain/tinybird/db-query-shape-s
 
 import {
 	ClickhouseIcon,
-	CloudflareIcon,
+	CloudflareBrandIcon,
 	DatabaseIcon,
 	FireIcon,
 	type IconComponent,
@@ -13,14 +13,16 @@ import {
 	PlanetScaleIcon,
 	PostgresIcon,
 	RedisIcon,
-} from "@/components/icons"
-import { PLANETSCALE_COLOR } from "@/components/infra/planetscale/metrics"
+} from "../icons"
 
-import { POSTGRES_MARK_PATH } from "@/components/icons/postgres"
-import { MYSQL_MARK_PATH } from "@/components/icons/mysql"
-import { REDIS_MARK_PATH } from "@/components/icons/redis"
-import { CLICKHOUSE_MARK_PATH } from "@/components/icons/clickhouse"
-import { MONGODB_MARK_PATH } from "@/components/icons/mongodb"
+import { POSTGRES_MARK_PATH } from "../icons/postgres"
+import { MYSQL_MARK_PATH } from "../icons/mysql"
+import { REDIS_MARK_PATH } from "../icons/redis"
+import { CLICKHOUSE_MARK_PATH } from "../icons/clickhouse"
+import { MONGODB_MARK_PATH } from "../icons/mongodb"
+
+/** PlanetScale's neutral brand accent (DB node stripe, minimap, sidebar icon). */
+export const PLANETSCALE_COLOR = "oklch(0.62 0.02 270)"
 
 type DbCategory = "database" | "cache" | "queue" | "search"
 
@@ -190,7 +192,7 @@ export function resolveDbNodePresentation(
 		return {
 			title: "Hyperdrive",
 			badge: sys.label,
-			Icon: CloudflareIcon,
+			Icon: CloudflareBrandIcon,
 			color: HYPERDRIVE_COLOR,
 			branded: true,
 			category: sys.category,
@@ -216,8 +218,6 @@ export function resolveDbNodePresentation(
 export function getDbNodeColor(system: string | undefined, namespace: string): string {
 	return resolveDbNodePresentation(system, namespace).color
 }
-
-export { PLANETSCALE_COLOR }
 
 /**
  * Branded presentation for a DB node whose namespace matched the org's

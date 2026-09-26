@@ -1,6 +1,6 @@
 import { useRef } from "react"
 import { useStoreApi } from "@xyflow/react"
-import { useMountEffect } from "@/hooks/use-mount-effect"
+import { useMountEffect } from "../../hooks/use-mount-effect"
 import { getServiceMapNodeColor, type ServiceMapColorMode, type ServiceNodeData } from "./service-map-utils"
 
 const SVG_NS = "http://www.w3.org/2000/svg"

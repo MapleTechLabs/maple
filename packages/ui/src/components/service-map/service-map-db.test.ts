@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
 import { HYPERDRIVE_DB_NAMESPACE } from "@maple/domain/tinybird/db-query-shape-sql"
 
-import { CloudflareIcon, PostgresIcon } from "@/components/icons"
+import { CloudflareBrandIcon, PostgresIcon } from "../icons"
 import { getDbNodeColor, resolveDbNodePresentation } from "./service-map-db"
 
 describe("resolveDbNodePresentation", () => {
@@ -9,7 +9,7 @@ describe("resolveDbNodePresentation", () => {
 		const p = resolveDbNodePresentation("postgresql", HYPERDRIVE_DB_NAMESPACE)
 		expect(p.title).toBe("Hyperdrive")
 		expect(p.badge).toBe("PostgreSQL")
-		expect(p.Icon).toBe(CloudflareIcon)
+		expect(p.Icon).toBe(CloudflareBrandIcon)
 		expect(p.branded).toBe(true)
 		expect(p.systemLabel).toBe("PostgreSQL via Hyperdrive")
 	})

@@ -1,5 +1,5 @@
 import { memo } from "react"
-import { Button } from "@maple/ui/components/ui/button"
+import { Button } from "../ui/button"
 import {
 	Combobox,
 	ComboboxContent,
@@ -7,13 +7,13 @@ import {
 	ComboboxInput,
 	ComboboxItem,
 	ComboboxList,
-} from "@maple/ui/components/ui/combobox"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@maple/ui/components/ui/select"
-import { Separator } from "@maple/ui/components/ui/separator"
-import { Toggle } from "@maple/ui/components/ui/toggle"
-import { Tooltip, TooltipContent, TooltipTrigger } from "@maple/ui/components/ui/tooltip"
-import { ServiceDot } from "@maple/ui/components/service-dot"
-import { ArrowRotateAnticlockwiseIcon, MagnifierIcon, PaletteIcon, XmarkIcon } from "@/components/icons"
+} from "../ui/combobox"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../ui/select"
+import { Separator } from "../ui/separator"
+import { Toggle } from "../ui/toggle"
+import { Tooltip, TooltipContent, TooltipTrigger } from "../ui/tooltip"
+import { ServiceDot } from "../service-dot"
+import { ArrowRotateAnticlockwiseIcon, MagnifierIcon, PaletteIcon, XmarkIcon } from "../icons"
 import type { ServiceMapColorMode } from "./service-map-utils"
 import type { DeclutterFocus } from "./service-map-declutter"
 

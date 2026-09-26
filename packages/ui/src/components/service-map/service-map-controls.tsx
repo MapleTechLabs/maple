@@ -1,6 +1,6 @@
 import { useRef } from "react"
 import { useReactFlow, useStoreApi } from "@xyflow/react"
-import { useMountEffect } from "@/hooks/use-mount-effect"
+import { useMountEffect } from "../../hooks/use-mount-effect"
 
 /** React Flow camera controls without transform-driven React renders. */
 export function ServiceMapControls() {

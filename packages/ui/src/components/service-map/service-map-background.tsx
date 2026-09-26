@@ -1,6 +1,6 @@
 import { useRef } from "react"
 import { useStoreApi } from "@xyflow/react"
-import { useMountEffect } from "@/hooks/use-mount-effect"
+import { useMountEffect } from "../../hooks/use-mount-effect"
 
 const GAP = 16
 const DOT_SIZE = 1

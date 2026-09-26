@@ -1,7 +1,7 @@
 import { createContext, useContext, useRef } from "react"
 import { useStoreApi } from "@xyflow/react"
-import { useMediaQuery } from "@maple/ui/hooks/use-media-query"
-import { useMountEffect } from "@/hooks/use-mount-effect"
+import { useMediaQuery } from "../../hooks/use-media-query"
+import { useMountEffect } from "../../hooks/use-mount-effect"
 
 /**
  * Canvas particle layer for the service map.

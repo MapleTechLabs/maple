@@ -1,5 +1,5 @@
 import { memo } from "react"
-import { MinimizeIcon } from "@/components/icons"
+import { MinimizeIcon } from "../icons"
 
 export interface NamespaceGroupData {
 	/** The `service.namespace` value used as the box label. */

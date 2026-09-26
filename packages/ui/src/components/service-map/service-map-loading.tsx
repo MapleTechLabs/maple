@@ -1,4 +1,5 @@
 import type { CSSProperties } from "react"
+import "./service-map.css"
 
 /**
  * Loading state for the service map.
@@ -12,7 +13,7 @@ import type { CSSProperties } from "react"
  *
  * Self-contained inline SVG so it scales cleanly, themes via CSS variables, and
  * settles to a static graph under `prefers-reduced-motion` (gated in
- * `styles.css`).
+ * `service-map.css`).
  */
 
 const VIEW_W = 520
@@ -157,7 +158,7 @@ export function ServiceMapLoading() {
 								{/* Layer 2 — hollow core matching the canvas background */}
 								<path
 									d={e.d}
-									style={{ stroke: "var(--service-map-edge-core)" }}
+									style={{ stroke: "var(--service-map-edge-core, var(--background))" }}
 									strokeWidth={EDGE_SW}
 									strokeOpacity={0.5 + EDGE_INTENSITY * 0.2}
 								/>

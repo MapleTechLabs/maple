@@ -1,13 +1,13 @@
-import type { ServicePlatform } from "@/api/warehouse/service-map"
-import type { IconComponent } from "@/components/icons"
-import { NodejsMonoIcon, NODEJS_MARK_PATH } from "@/components/icons/nodejs"
-import { PythonIcon, PYTHON_MARK_PATH } from "@/components/icons/python"
-import { BunIcon, BUN_MARK_PATH } from "@/components/icons/bun"
-import { DenoIcon, DENO_MARK_PATH } from "@/components/icons/deno"
-import { OpenjdkMonoIcon, OPENJDK_MARK_PATH } from "@/components/icons/openjdk"
-import { RustIcon, RUST_MARK_PATH } from "@/components/icons/rust"
-import { RubyIcon, RUBY_MARK_PATH } from "@/components/icons/ruby"
-import { CloudflareMonoIcon, CLOUDFLARE_MARK_PATH } from "@/components/icons/cloudflare"
+import type { ServicePlatform } from "./service-map-types"
+import type { IconComponent } from "../icons"
+import { NodejsMonoIcon, NODEJS_MARK_PATH } from "../icons/nodejs"
+import { PythonIcon, PYTHON_MARK_PATH } from "../icons/python"
+import { BunIcon, BUN_MARK_PATH } from "../icons/bun"
+import { DenoIcon, DENO_MARK_PATH } from "../icons/deno"
+import { OpenjdkMonoIcon, OPENJDK_MARK_PATH } from "../icons/openjdk"
+import { RustIcon, RUST_MARK_PATH } from "../icons/rust"
+import { RubyIcon, RUBY_MARK_PATH } from "../icons/ruby"
+import { CloudflareMonoIcon, CLOUDFLARE_MARK_PATH } from "../icons/cloudflare"
 
 interface RuntimeGlyph {
 	Icon: IconComponent | null

@@ -11,10 +11,14 @@ import {
 	topologyKey,
 	type ServiceNodeData,
 } from "./service-map-utils"
-import type { ServiceDbEdge, ServiceEdge, ServicePlatform } from "@/api/warehouse/service-map"
-import type { ServiceOverview } from "@/api/warehouse/services"
+import type {
+	ServiceMapDbEdgeRow,
+	ServiceMapEdgeRow,
+	ServiceMapOverviewRow,
+	ServicePlatform,
+} from "./service-map-types"
 
-const baseEdge = (overrides: Partial<ServiceEdge> = {}): ServiceEdge => ({
+const baseEdge = (overrides: Partial<ServiceMapEdgeRow> = {}): ServiceMapEdgeRow => ({
 	sourceService: "api",
 	targetService: "auth",
 	callCount: 100,
@@ -28,7 +32,7 @@ const baseEdge = (overrides: Partial<ServiceEdge> = {}): ServiceEdge => ({
 	...overrides,
 })
 
-const baseDbEdge = (overrides: Partial<ServiceDbEdge> = {}): ServiceDbEdge => ({
+const baseDbEdge = (overrides: Partial<ServiceMapDbEdgeRow> = {}): ServiceMapDbEdgeRow => ({
 	sourceService: "api",
 	dbSystem: "clickhouse",
 	dbNamespace: "",
@@ -44,23 +48,17 @@ const baseDbEdge = (overrides: Partial<ServiceDbEdge> = {}): ServiceDbEdge => ({
 	...overrides,
 })
 
-const baseOverview = (overrides: Partial<ServiceOverview> = {}): ServiceOverview =>
-	({
-		serviceName: "api",
-		environment: "prod",
-		throughput: 10,
-		tracedThroughput: 10,
-		hasSampling: false,
-		samplingWeight: 1,
-		errorRate: 0,
-		errorCount: 0,
-		spanCount: 100,
-		p50LatencyMs: 5,
-		p95LatencyMs: 10,
-		p99LatencyMs: 15,
-		commits: [],
-		...overrides,
-	}) as ServiceOverview
+const baseOverview = (overrides: Partial<ServiceMapOverviewRow> = {}): ServiceMapOverviewRow => ({
+	serviceName: "api",
+	serviceNamespace: "",
+	throughput: 10,
+	tracedThroughput: 10,
+	hasSampling: false,
+	samplingWeight: 1,
+	errorRate: 0,
+	p50LatencyMs: 5,
+	...overrides,
+})
 
 describe("buildFlowElements", () => {
 	it("emits a database node and edge when given a db edge", () => {

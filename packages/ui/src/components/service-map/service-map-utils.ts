@@ -1,15 +1,15 @@
 import type { Node, Edge } from "@xyflow/react"
 import { HYPERDRIVE_DB_NAMESPACE } from "@maple/domain/tinybird/db-query-shape-sql"
+import { getServiceColor, getValueHue } from "../../lib/colors"
 import type {
-	CloudflareService,
 	PlanetScaleDatabaseStat,
-	ServiceDbEdge,
-	ServiceEdge,
+	ServiceMapCloudflareRow,
+	ServiceMapDbEdgeRow,
+	ServiceMapEdgeRow,
+	ServiceMapOverviewRow,
+	ServiceMapWorkloadRow,
 	ServicePlatform,
-} from "@/api/warehouse/service-map"
-import type { ServiceOverview } from "@/api/warehouse/services"
-import type { ServiceWorkload } from "@/api/warehouse/service-infra"
-import { getServiceColor, getValueHue } from "@maple/ui/lib/colors"
+} from "./service-map-types"
 import { getDbNodeColor, PLANETSCALE_COLOR, resolveDbNodePresentation } from "./service-map-db"
 import {
 	matchHyperdriveConfigs,
@@ -230,7 +230,10 @@ export const NS_PADDING_Y = 24
 export const NS_LABEL_HEIGHT = 28
 const NS_CLUSTER_GAP = 80
 
-function deriveServiceList(edges: ServiceEdge[], serviceOverviews: ServiceOverview[]): string[] {
+function deriveServiceList(
+	edges: ReadonlyArray<ServiceMapEdgeRow>,
+	serviceOverviews: ReadonlyArray<ServiceMapOverviewRow>,
+): string[] {
 	const services = new Set<string>()
 	for (const edge of edges) {
 		services.add(edge.sourceService)
@@ -243,15 +246,15 @@ function deriveServiceList(edges: ServiceEdge[], serviceOverviews: ServiceOvervi
 }
 
 export interface BuildFlowElementsInput {
-	edges: ServiceEdge[]
-	dbEdges?: ServiceDbEdge[]
-	serviceOverviews: ServiceOverview[]
+	edges: ReadonlyArray<ServiceMapEdgeRow>
+	dbEdges?: ReadonlyArray<ServiceMapDbEdgeRow>
+	serviceOverviews: ReadonlyArray<ServiceMapOverviewRow>
 	durationSeconds: number
-	serviceWorkloads?: ServiceWorkload[]
-	platforms?: Map<string, ServicePlatform>
-	runtimes?: Map<string, string>
+	serviceWorkloads?: ReadonlyArray<ServiceMapWorkloadRow>
+	platforms?: ReadonlyMap<string, ServicePlatform>
+	runtimes?: ReadonlyMap<string, string>
 	/** Cloudflare direct-integration Worker analytics (instrumented-Worker overlay). */
-	cloudflareServices?: CloudflareService[]
+	cloudflareServices?: ReadonlyArray<ServiceMapCloudflareRow>
 	/** service.name → faas.name, so a `cloudflare-worker/{script}` can match its instrumented node. */
 	faasNames?: Map<string, string>
 	/** PlanetScale inventory: lowercased database name → identity + branches. */
@@ -293,7 +296,7 @@ export function buildFlowElements({
 }: BuildFlowElementsInput): { nodes: Node<ServiceNodeData>[]; edges: Edge<ServiceEdgeData>[] } {
 	const services = deriveServiceList(edges, serviceOverviews)
 
-	const overviewMap = new Map<string, ServiceOverview>()
+	const overviewMap = new Map<string, ServiceMapOverviewRow>()
 	for (const svc of serviceOverviews) {
 		// Duplicate names resolve to their highest-throughput row.
 		const existing = overviewMap.get(svc.serviceName)
@@ -639,7 +642,7 @@ function computeLayers(
 
 	// If no roots (pure cycle), pick the node with lowest in-degree
 	if (roots.length === 0) {
-		const sorted = nodes.toSorted((a, b) => {
+		const sorted = [...nodes].sort((a, b) => {
 			const da = inDegree.get(a.id) ?? 0
 			const db = inDegree.get(b.id) ?? 0
 			return da !== db ? da - db : a.id.localeCompare(b.id)
@@ -687,7 +690,7 @@ function computeLayers(
 
 	// Barycenter ordering: sort nodes within each layer by the median position
 	// of their neighbors in adjacent layers to minimize edge crossings
-	const layerIndices = Array.from(layerGroups.keys()).toSorted((a, b) => a - b)
+	const layerIndices = Array.from(layerGroups.keys()).sort((a, b) => a - b)
 	const positionOf = new Map<string, number>()
 
 	function updatePositions() {

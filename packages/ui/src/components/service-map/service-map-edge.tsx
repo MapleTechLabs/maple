@@ -1,6 +1,6 @@
 import { memo, useEffect, useId } from "react"
 import { getSmoothStepPath, type EdgeProps } from "@xyflow/react"
-import { getServiceColor, getValueHue } from "@maple/ui/lib/colors"
+import { getServiceColor, getValueHue } from "../../lib/colors"
 import { getDbNodeColor } from "./service-map-db"
 import {
 	isDbNodeId,
@@ -188,7 +188,7 @@ export const ServiceMapEdge = memo(function ServiceMapEdge({
 			<path
 				d={edgePath}
 				fill="none"
-				style={{ stroke: "var(--service-map-edge-core)" }}
+				style={{ stroke: "var(--service-map-edge-core, var(--background))" }}
 				strokeWidth={sw}
 				strokeOpacity={(0.5 + i * 0.2) * dimFactor}
 				className="react-flow__edge-path"

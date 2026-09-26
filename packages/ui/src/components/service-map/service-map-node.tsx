@@ -1,20 +1,20 @@
-import { formatLatency } from "@maple/ui/lib/format"
+import { formatLatency } from "../../lib/format"
 import { memo } from "react"
 import { Handle, Position } from "@xyflow/react"
-import { cn } from "@maple/ui/lib/utils"
-import { latencyToneClass } from "@maple/ui/lib/latency-tone"
-import { Tooltip, TooltipTrigger, TooltipContent } from "@maple/ui/components/ui/tooltip"
+import { cn } from "../../lib/utils"
+import { latencyToneClass } from "../../lib/latency-tone"
+import { Tooltip, TooltipTrigger, TooltipContent } from "../ui/tooltip"
 import {
 	AwsLambdaIcon,
-	CloudflareIcon,
+	CloudflareBrandIcon,
 	CubeIcon,
 	GlobeIcon,
 	type IconComponent,
 	KubernetesIcon,
 	ServerIcon,
-} from "@/components/icons"
+} from "../icons"
 import { formatRuntime } from "./service-map-runtime"
-import type { ServicePlatform } from "@/api/warehouse/service-map"
+import type { ServicePlatform } from "./service-map-types"
 import { resolveDbNodePresentation, resolvePlanetScaleDbPresentation, withAlpha } from "./service-map-db"
 import { getServiceMapNodeColor, type ServiceNodeData } from "./service-map-utils"
 
@@ -27,7 +27,7 @@ function getPlatformIcon(platform: ServicePlatform | undefined): {
 		case "kubernetes":
 			return { Icon: KubernetesIcon, label: "Kubernetes", branded: true }
 		case "cloudflare":
-			return { Icon: CloudflareIcon, label: "Cloudflare Workers", branded: true }
+			return { Icon: CloudflareBrandIcon, label: "Cloudflare Workers", branded: true }
 		case "lambda":
 			return { Icon: AwsLambdaIcon, label: "AWS Lambda", branded: true }
 		case "web":

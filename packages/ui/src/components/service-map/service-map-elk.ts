@@ -12,7 +12,9 @@ import {
 } from "./service-map-utils"
 
 export type { PreviousPositions }
-import { logClientWarning } from "@/lib/services/common/telemetry"
+
+/** Sink for degraded-path warnings (worker unavailable, worker layout failed). */
+export type ElkWarningReporter = (event: string, error: unknown) => void
 
 // ELK runs inside a dedicated web worker (elk-api + elk-worker) so laying out a
 // large graph never blocks the main thread. The worker is a singleton reused
@@ -41,11 +43,11 @@ function getMainThreadElk(): Promise<ELK> {
 	return mainThreadElk
 }
 
-function getElk(): Promise<ELK> {
+function getElk(onWarning: ElkWarningReporter | undefined): Promise<ELK> {
 	if (workerBroken) return getMainThreadElk()
 	if (!workerElk) {
 		workerElk = createWorkerElk().catch((error) => {
-			logClientWarning("service_map.elk_worker_unavailable", error)
+			onWarning?.("service_map.elk_worker_unavailable", error)
 			workerBroken = true
 			return getMainThreadElk()
 		})
@@ -234,18 +236,19 @@ export async function layoutServiceMapWithElk(
 	edges: Edge<ServiceEdgeData>[],
 	config: LayoutConfig,
 	previous?: PreviousPositions,
+	onWarning?: ElkWarningReporter,
 ): Promise<ElkLayoutResult> {
 	const graph = buildElkGraph(nodes, edges, config, previous)
 
 	let result: ElkNode
 	try {
-		const elk = await getElk()
+		const elk = await getElk(onWarning)
 		result = await elk.layout(graph)
 	} catch (error) {
 		// A failure on the worker path (e.g. the worker chunk 404s at runtime)
 		// demotes to the main-thread build and retries once.
 		if (workerBroken) throw error
-		logClientWarning("service_map.elk_worker_layout_failed", error)
+		onWarning?.("service_map.elk_worker_layout_failed", error)
 		workerBroken = true
 		const elk = await getMainThreadElk()
 		result = await elk.layout(graph)
