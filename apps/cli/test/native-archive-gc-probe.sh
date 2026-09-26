@@ -68,9 +68,13 @@ clear_port() {
 	sleep 0.3
 }
 
+# /local/query is read-only unless the request carries the maintenance token.
+# Every store here lives at $ROOT/data.
 query() {
 	curl --fail-with-body -sS "http://127.0.0.1:$PORT/local/query" \
-		-H 'content-type: application/json' --data "$(jq -nc --arg sql "$1" '{sql:$sql}')"
+		-H 'content-type: application/json' \
+		-H "x-maple-maintenance-token: $(cat "$ROOT/data.maintenance-token")" \
+		--data "$(jq -nc --arg sql "$1" '{sql:$sql}')"
 }
 wait_health() {
 	for _ in $(seq 1 200); do

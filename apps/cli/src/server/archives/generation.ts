@@ -3,9 +3,10 @@ import { createHash, randomUUID } from "node:crypto"
 import { existsSync, readFileSync, statSync } from "node:fs"
 import { lstat, rm, statfs } from "node:fs/promises"
 import { dirname, join, parse, relative, resolve, sep } from "node:path"
-import { arch, cpus, platform, totalmem, userInfo } from "node:os"
+import { Effect, Option, Schema } from "effect"
 import { CHDB_VERSION, MAPLE_VERSION } from "../../version"
-import { SCHEMA_FINGERPRINT } from "../schema-identity"
+import { readRawTelemetryRetentionDays } from "../chdb"
+import { LOCAL_SCHEMA_MANIFEST, SCHEMA_FINGERPRINT } from "../schema-identity"
 import {
 	acquireCheckpointPin,
 	parseCheckpointSelector,
@@ -17,24 +18,27 @@ import {
 	type CheckpointManifest,
 } from "../checkpoints"
 import { durableJson, durableRename, durableWrite, syncDirectory, syncTree } from "../durable-files"
-import { type ArchiveTuning, tuningRecord, type LoadedTuningConfig } from "./config"
-import { archiveVolumeIdentity } from "./calibration-recovery"
+import { type ArchiveTuning, tuningRecord } from "./config"
+import { retireLegacyCalibration } from "./legacy-calibration"
 import {
 	type ArchiveShardRecord,
 	type ArchiveGenerationManifest,
 	parseArchiveActivePointer,
 	readArchiveGenerationManifest,
 } from "./manifest"
+import { ArchiveCreateRefusedError } from "./errors"
+import { NonNegativeSafeInt } from "./schemas"
 import {
 	activePointerPath,
 	archiveRoot,
 	assertArchiveRootSeparate,
 	assertNoSymlink,
+	assertNoSymlinkSync,
 	assertRealDirectory,
 	assertRealFile,
+	assertRealFileSync,
 	buildingGenerationRoot,
 	buildingRoot,
-	catalogPath,
 	classifyArchivePathSync,
 	ensurePrivateDirectory,
 	generationManifestPath,
@@ -96,7 +100,6 @@ export interface ArchiveGenerationFaults {
 	readonly afterShardsWritten?: () => void | Promise<void>
 	readonly afterFirstDurableShard?: () => void
 	readonly afterValidationComplete?: () => void | Promise<void>
-	readonly beforePublicationVolumeRecheck?: () => void | Promise<void>
 	readonly afterManifestWritten?: () => void | Promise<void>
 	readonly afterGenerationRenamed?: () => void | Promise<void>
 	readonly afterGenerationPromoted?: () => void | Promise<void>
@@ -120,6 +123,106 @@ export interface ArchiveGenerationFaults {
 	readonly beforePinReleased?: () => void | Promise<void>
 	readonly beforeScratchRemoved?: () => void | Promise<void>
 	readonly beforeOperationArchived?: () => void | Promise<void>
+}
+
+export interface ArchiveGenerationOptions {
+	/** Let a generation with fewer rows supersede the active one. Without it a
+	 * re-export of a day the live store has partly expired would replace the only
+	 * full archive with a smaller one that `archive gc` then made permanent. */
+	readonly allowShrink?: boolean
+}
+
+const DAY_MS = 86_400_000
+
+/** Retention in days from a TTL clause, e.g. `toDate(Timestamp) + INTERVAL 30 DAY`
+ * or the `toIntervalDay(30)` form ClickHouse renders back. */
+export const ttlDaysFromDefinition = (definition: string): number | null => {
+	const match =
+		definition.match(/\bTTL\b[\s\S]*?\bINTERVAL\s+(\d+)\s+DAY\b/i) ??
+		definition.match(/\bTTL\b[\s\S]*?\btoIntervalDay\((\d+)\)/i)
+	return match?.[1] === undefined ? null : Number(match[1])
+}
+
+/**
+ * Refuse a UTC day that TTL may already have thinned. Raw tables drop a whole
+ * day at UTC midnight `retentionDays` after it, so a day whose expiry is at or
+ * before `asOfMs` can be partial in the source and must not be sealed.
+ */
+export const assertRangeWithinRetention = (
+	signal: string,
+	rangeDate: string,
+	retentionDays: number | null,
+	asOfMs: number,
+): void => {
+	if (retentionDays === null) return
+	const expiresAtMs = Date.parse(`${rangeDate}T00:00:00.000Z`) + retentionDays * DAY_MS
+	if (expiresAtMs <= asOfMs) {
+		throw new ArchiveCreateRefusedError({
+			reason: "retention",
+			message:
+				`refusing archive create: ${signal} ${rangeDate} is past its ${retentionDays}-day retention ` +
+				`(expired ${new Date(expiresAtMs).toISOString()}), so the live store may hold only part of it`,
+		})
+	}
+}
+
+/** Refuse to let a smaller export replace the active generation. */
+export const assertNoArchiveShrink = (
+	signal: string,
+	rangeDate: string,
+	activeRowCount: number | null,
+	sourceRowCount: number,
+	allowShrink: boolean,
+): void => {
+	if (activeRowCount === null || sourceRowCount >= activeRowCount || allowShrink) return
+	throw new ArchiveCreateRefusedError({
+		reason: "shrink",
+		message:
+			`refusing archive create: ${signal} ${rangeDate} would replace the active generation's ` +
+			`${activeRowCount} rows with ${sourceRowCount}; pass --allow-shrink if the smaller set is intended`,
+	})
+}
+
+/** The bundled TTL raised to any configured floor: the longest a day can live. */
+const maximumRetentionDays = (dataDir: string, signal: string): number | null => {
+	const bundled = LOCAL_SCHEMA_MANIFEST.objects.find((object) => object.name === signal)?.ttl
+	const days = bundled === undefined ? null : ttlDaysFromDefinition(`TTL ${bundled}`)
+	if (days === null) return null
+	return Math.max(days, readRawTelemetryRetentionDays(dataDir) ?? 0)
+}
+
+const ArchivedRowCount = Schema.Struct({ archivedRowCount: NonNegativeSafeInt })
+const decodeArchivedRowCount = Schema.decodeUnknownOption(Schema.fromJsonString(ArchivedRowCount))
+
+/** Only the row count, so an active generation in a manifest format this build
+ * no longer reads can still be re-exported (and still guards against shrink). */
+const activeGenerationRowCount = (
+	archiveDir: string,
+	signal: string,
+	rangeDate: string,
+	generationId: string,
+): number | "unreadable" => {
+	const path = generationManifestPath(archiveDir, signal, rangeDate, generationId)
+	assertNoSymlinkSync(archiveDir, path, "archive manifest")
+	assertRealFileSync(path, "archive manifest")
+	const decoded = decodeArchivedRowCount(readFileSync(path, "utf8"))
+	return Option.isSome(decoded) ? decoded.value.archivedRowCount : "unreadable"
+}
+
+const EngineFullRow = Schema.Struct({ engine_full: Schema.String })
+const decodeEngineFullRow = Schema.decodeUnknownOption(Schema.fromJsonString(EngineFullRow))
+
+/** The TTL the restored checkpoint actually carries for one raw table. */
+const restoredRetentionDays = (
+	db: { query: (sql: string, format?: string) => string },
+	signal: ArchiveSignal,
+): number | null => {
+	const text = db.query(
+		`SELECT engine_full FROM system.tables WHERE database = 'default' AND name = '${signal.name}'`,
+		"JSONEachRow",
+	)
+	const row = decodeEngineFullRow(text.split("\n").find((line) => line.trim().length > 0) ?? "")
+	return Option.isSome(row) ? ttlDaysFromDefinition(row.value.engine_full) : null
 }
 
 export interface ArchiveGenerationResult {
@@ -186,7 +289,7 @@ export const assertArchiveScratchFreeSpace = (
 			throw new Error(
 				`archive/scratch volume has ${free} bytes free, below the required ${combinedRequired} bytes ` +
 					`(archive reserve ${minFreeSpaceReserve} + archive working ${estimatedArchiveBytes} + ` +
-					`checkpoint restore ${checkpointBackupBytes}); free space or recalibrate`,
+					`checkpoint restore ${checkpointBackupBytes}); free space`,
 			)
 		}
 		return
@@ -194,7 +297,7 @@ export const assertArchiveScratchFreeSpace = (
 	if (archive.freeBytes < archiveRequired) {
 		throw new Error(
 			`archive volume has ${archive.freeBytes} bytes free, below the required ${archiveRequired} bytes ` +
-				`(reserve ${minFreeSpaceReserve} + working ${estimatedArchiveBytes}); free space or recalibrate`,
+				`(reserve ${minFreeSpaceReserve} + working ${estimatedArchiveBytes}); free space`,
 		)
 	}
 	if (scratch.freeBytes < checkpointBackupBytes) {
@@ -253,52 +356,6 @@ const preflightArchiveScratchFreeSpace = async (
 	)
 }
 
-const assertCalibrationArchiveVolume = async (
-	config: LoadedTuningConfig,
-	archiveDir: string,
-): Promise<void> => {
-	const expected = config.document.environment.archiveVolume
-	const canonicalArchiveDir = resolve(archiveDir)
-	if (expected.archiveDir !== canonicalArchiveDir) {
-		throw new Error(
-			`calibration environment mismatch: archive path ${canonicalArchiveDir} != ${expected.archiveDir}`,
-		)
-	}
-	const actual = await archiveVolumeIdentity(canonicalArchiveDir)
-	if (actual.fsid !== expected.fsid || actual.type !== expected.type) {
-		throw new Error(
-			`calibration environment mismatch: archive volume ${actual.fsid}/${actual.type} != ${expected.fsid}/${expected.type}`,
-		)
-	}
-}
-
-const assertCalibrationEnvironment = async (
-	config: LoadedTuningConfig,
-	archiveDir: string,
-): Promise<void> => {
-	const expected = config.document.environment
-	const cpuList = cpus()
-	const actual = {
-		mapleVersion: MAPLE_VERSION,
-		chdbVersion: CHDB_VERSION,
-		schemaFingerprint: SCHEMA_FINGERPRINT,
-		executionUser: userInfo().username,
-		platform: platform(),
-		arch: arch(),
-		cpuModel: cpuList.length > 0 ? cpuList[0]!.model : "unknown",
-		cpuCount: cpuList.length,
-		totalMemoryBytes: totalmem(),
-	}
-	for (const key of Object.keys(actual) as Array<keyof typeof actual>) {
-		if (actual[key] !== expected[key]) {
-			throw new Error(
-				`calibration environment mismatch: ${key} ${String(actual[key])} != ${String(expected[key])}; recalibrate`,
-			)
-		}
-	}
-	await assertCalibrationArchiveVolume(config, archiveDir)
-}
-
 /**
  * Seal one UTC day of one signal into a new archive generation.
  *
@@ -337,7 +394,7 @@ export const createArchiveGeneration = async (
 	tuning: ArchiveTuning,
 	checkpointSelector: "current" | "previous" | string = "current",
 	faults: ArchiveGenerationFaults = {},
-	loadedTuningConfig: LoadedTuningConfig | null = null,
+	options: ArchiveGenerationOptions = {},
 ): Promise<ArchiveGenerationResult> => {
 	validateSealedRangeDate(rangeDate)
 	// This invariant belongs at the mutation boundary, not only in the CLI:
@@ -354,9 +411,6 @@ export const createArchiveGeneration = async (
 		)
 	}
 	await assertReconciliationRoots(dataDir, archiveDir, tuning.scratchRoot)
-	if (loadedTuningConfig !== null) {
-		await assertCalibrationEnvironment(loadedTuningConfig, archiveDir)
-	}
 	const signal = archiveSignal(signalName)
 	const estimatedArchiveBytes = tuning.targetChunkBytes
 	const generationId = newArchiveGenerationId()
@@ -391,8 +445,27 @@ export const createArchiveGeneration = async (
 			estimatedArchiveBytes,
 			resolved.manifest.backupBytes,
 		)
+		// Cheap refusal before any intent or restore; the restored checkpoint's
+		// own TTL is checked again once it is open.
+		assertRangeWithinRetention(
+			signal.name,
+			rangeDate,
+			maximumRetentionDays(dataDir, signal.name),
+			Date.now(),
+		)
 		// Read the CAS base (current active pointer).
 		const baseActiveGenerationId = resolveBaseActiveGenerationId(archiveDir, signal.name, rangeDate)
+		const activeCount =
+			baseActiveGenerationId === null
+				? null
+				: activeGenerationRowCount(archiveDir, signal.name, rangeDate, baseActiveGenerationId)
+		if (activeCount === "unreadable" && options.allowShrink !== true) {
+			throw new ArchiveCreateRefusedError({
+				reason: "shrink",
+				message: `refusing archive create: the active ${signal.name} ${rangeDate} generation's row count is unreadable; pass --allow-shrink to replace it anyway`,
+			})
+		}
+		const activeRowCount = activeCount === "unreadable" ? null : activeCount
 		// Step 3: write the initial intent BEFORE the pin or any allocation. A
 		// crash here leaves only the journal; reconciliation quarantines it.
 		await faults.beforeIntentDurable?.()
@@ -421,7 +494,7 @@ export const createArchiveGeneration = async (
 			// Steps 5–7: scratch restore + export. The beforeRestore seam records
 			// "scratch-allocated" after the owned scratch dir is created but before
 			// restore; "restored" after the db is usable.
-			return await withRestoredCheckpoint(
+			const created = withRestoredCheckpoint(
 				resolved,
 				{
 					scratchRoot: tuning.scratchRoot,
@@ -436,7 +509,20 @@ export const createArchiveGeneration = async (
 					await advancePhase(archiveDir, operationId, "restored")
 					await faults.afterScratchRestored?.()
 					const dayEndExclusiveIso = nextMidnightUtc(rangeDate)
+					assertRangeWithinRetention(
+						signal.name,
+						rangeDate,
+						restoredRetentionDays(db, signal),
+						Math.max(Date.parse(checkpointManifest.createdAt), Date.now()),
+					)
 					const sourceRowCount = countSignalRowsForDay(db, signal, rangeDate)
+					assertNoArchiveShrink(
+						signal.name,
+						rangeDate,
+						activeRowCount,
+						sourceRowCount,
+						options.allowShrink === true,
+					)
 
 					// Step 6: create owned building.
 					const building = buildingGenerationRoot(archiveDir, generationId)
@@ -474,13 +560,6 @@ export const createArchiveGeneration = async (
 					await advancePhase(archiveDir, operationId, "shards-written")
 					await faults.afterShardsWritten?.()
 					await faults.afterValidationComplete?.()
-					// The volume is checked once before any durable intent and again
-					// immediately before publication. A replacement/mount swap during
-					// export must never publish a config-bound generation.
-					if (loadedTuningConfig !== null) {
-						await faults.beforePublicationVolumeRecheck?.()
-						await assertCalibrationArchiveVolume(loadedTuningConfig, archiveDir)
-					}
 
 					// Step 8: manifest (written inside building/ by promote).
 					const manifest: ArchiveGenerationManifest = {
@@ -498,7 +577,7 @@ export const createArchiveGeneration = async (
 						sourceRowCount,
 						archivedRowCount,
 						tuning: tuningRecord(tuning),
-						tuningConfig: loadedTuningConfig?.identity ?? null,
+						tuningConfig: null,
 						shards: writtenShards.map(toShardRecord),
 					}
 					// Step 9: promote building → final generation + manifest.
@@ -568,6 +647,15 @@ export const createArchiveGeneration = async (
 						superseded,
 					}
 				},
+			)
+			// A refusal is a verdict, not a crash: reconcile the aborted operation
+			// now so it does not linger for the next create to clean up.
+			return await created.catch((error: unknown) =>
+				error instanceof ArchiveCreateRefusedError
+					? reconcileArchiveGeneration(dataDir, archiveDir, tuning.scratchRoot).then(() =>
+							Promise.reject(error),
+						)
+					: Promise.reject(error),
 			)
 		} finally {
 			// Deliberately no durable-state mutation here. Throw and SIGKILL must
@@ -755,39 +843,6 @@ const generationsRootPath = (archiveDir: string, signal: string, rangeDate: stri
 	join(rangeRoot(archiveDir, signal, rangeDate), "generations")
 
 /**
- * Append a generation to the per-signal catalog. Exported for testing catalog
- * append durability and rebuild.
- */
-export const appendCatalog = async (
-	archiveDir: string,
-	signal: string,
-	manifest: ArchiveGenerationManifest,
-	faults: ArchiveGenerationFaults = {},
-): Promise<void> => {
-	const path = catalogPath(archiveDir, signal)
-	// Refuse a symlinked catalog (C-1): a symlinked catalog.jsonl could point
-	// outside the archive root and be overwritten by this append.
-	if (existsSync(path)) await assertRealFile(path, "archive catalog")
-	else await assertNoSymlink(archiveDir, path, "archive catalog")
-	const existing = existsSync(path) ? `${readFileSync(path, "utf8")}` : ""
-	const line = `${JSON.stringify({
-		formatVersion: 1,
-		generationId: manifest.generationId,
-		signal: manifest.signal,
-		rangeStart: manifest.rangeStart,
-		checkpointId: manifest.checkpointId,
-		archivedRowCount: manifest.archivedRowCount,
-		shardCount: manifest.shards.length,
-		createdAt: manifest.createdAt,
-	})}\n`
-	// Catalog append is a durable full rewrite so the appended line is fsynced.
-	// A truncated final line is ignored on rebuild (see catalog rebuild).
-	await durableWrite(path, existing + line)
-	await syncDirectory(dirname(path))
-	await faults.afterCatalogAppended?.()
-}
-
-/**
  * Remove the owned deterministic scratch subdirectory the operation allocated.
  * Only the exact journal-named subdir beneath scratchRoot is removed; anything
  * else (other operations' scratch, the scratch root itself) is over-retained.
@@ -867,6 +922,8 @@ export const reconcileArchiveGeneration = async (
 	faults: ArchiveGenerationFaults = {},
 ): Promise<void> => {
 	void faults
+	// Calibration was removed; retire whatever an interrupted run left. Never throws.
+	await Effect.runPromise(retireLegacyCalibration(dataDir, archiveDir, scratchRoot))
 	// The SINGLE decision-driven executor. inspect → decide → switch on the
 	// decision and execute ONLY that branch's helpers. The decision IS the
 	// operative state machine — no independent re-branching.

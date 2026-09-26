@@ -1,9 +1,7 @@
-import { Deferred, Duration, Effect, Exit, Fiber, Option, Schema, Stream } from "effect"
+import { Effect, Option } from "effect"
 import * as Command from "effect/unstable/cli/Command"
 import * as Flag from "effect/unstable/cli/Flag"
 import * as Argument from "effect/unstable/cli/Argument"
-import * as ChildProcess from "effect/unstable/process/ChildProcess"
-import { ChildProcessSpawner } from "effect/unstable/process/ChildProcessSpawner"
 import { randomUUID } from "node:crypto"
 import { homedir } from "node:os"
 import { join, resolve } from "node:path"
@@ -15,67 +13,15 @@ import {
 	verifyActiveGenerations,
 } from "../server/archives/listing"
 import { runArchiveGc } from "../server/archives/gc"
-import {
-	resolveArchiveTuning,
-	loadTuningConfig,
-	TUNING_CONFIG_FORMAT_VERSION,
-	type ArchiveTuningOverrides,
-} from "../server/archives/config"
+import { resolveArchiveTuning, tuningRecord } from "../server/archives/config"
 import { ARCHIVE_SIGNALS, isArchiveSignalName, type ArchiveSignalName } from "../server/archives/signals"
 import { expireArchiveDay, readRetiredDayLedger, retireLiveDay } from "../server/archives/retention"
 import { validateRangeDate } from "../server/archives/paths"
-import {
-	type CalibrationBudget,
-	type CalibrationCandidate,
-	type CandidateMetrics,
-	type CandidateResult,
-	CANDIDATE_MATRIX,
-	captureEnvironment,
-	meetsCeilings,
-	recommendationToTuning,
-	selectCandidates,
-	writeCalibrationConfig,
-	type CalibrationRecommendation,
-	HELD_OUT_TOLERANCES,
-	isSameCalibrationCandidate,
-	heldOutSampleRows,
-	compareHeldOutPerSignal,
-	validateCalibrationBudget,
-} from "../server/archives/calibrate"
-import {
-	preflightCalibrationFreeSpace,
-	reconcileCalibration,
-	writeCalibrationRecord,
-	directoryTreeBytes,
-	archiveVolumeIdentity,
-	derivedSampleDir,
-	derivedScratchSubdir,
-	calibrationPinPurpose,
-	assertCalibrationSession,
-	cleanupCalibrationSample,
-} from "../server/archives/calibration-recovery"
-import {
-	acquireCheckpointPin,
-	parseCheckpointSelector,
-	maintenanceOperation,
-	resolveCheckpoint,
-	withMaintenanceLock,
-	withRestoredCheckpoint,
-} from "../server/checkpoints"
-import {
-	captureSourceSchema,
-	exportShardPlans,
-	planCalibrationShards,
-	measureShardBytes,
-	type ExportSettings,
-} from "../server/archives/export"
-import { archiveSignal } from "../server/archives/signals"
-import { ensurePrivateDirectory } from "../server/archives/paths"
-import { CHDB_VERSION, MAPLE_VERSION } from "../version"
-import { SCHEMA_FINGERPRINT } from "../server/schema-identity"
+import { maintenanceOperation } from "../server/checkpoints"
 import { amber, bold, dim, green, red } from "../lib/style"
-import { createTimeReport, parsePeakRss, timeArgv } from "../server/archives/timed-process"
 import { ArchiveError } from "../server/archives/errors"
+import { debugLog } from "../lib/debug"
+import { jsonFormatRequested, writeJson } from "./json-output"
 
 const defaultDataDir = (): string => join(homedir(), ".maple", "data")
 const defaultArchiveDir = (): string => join(homedir(), ".maple", "archive")
@@ -115,6 +61,18 @@ const dryRunFlag = Flag.Boolean("dry-run").pipe(
 	Flag.withDefault(false),
 )
 
+const allowShrinkFlag = Flag.Boolean("allow-shrink").pipe(
+	Flag.withDescription(
+		"Let a generation with fewer rows than the active one supersede it (refused by default)",
+	),
+	Flag.withDefault(false),
+)
+
+const gcApplyFlag = Flag.Boolean("apply").pipe(
+	Flag.withDescription("Delete the planned generations (without this flag gc is a dry run)"),
+	Flag.withDefault(false),
+)
+
 const applyFlag = Flag.Boolean("apply").pipe(
 	Flag.withDescription("Apply the destructive operation (omitting this flag is a non-mutating refusal)"),
 	Flag.withDefault(false),
@@ -137,80 +95,10 @@ const keepFlag = Flag.Int("keep").pipe(
 	Flag.withDefault(1),
 )
 
-const memoryBudgetFlag = Flag.Int("memory-budget").pipe(
-	Flag.withDescription("Maximum peak RSS in bytes allowed for any calibration candidate"),
-	Flag.withDefault(512 * 1024 * 1024),
-)
-
-const timeBudgetFlag = Flag.Int("time-budget").pipe(
-	Flag.withDescription("Maximum wall-clock milliseconds for the full calibration matrix"),
-	Flag.withDefault(60_000),
-)
-
-const sampleRowsFlag = Flag.Int("sample-rows").pipe(
-	Flag.withDescription("Rows to sample per calibration candidate"),
-	Flag.withDefault(10_000),
-)
-
-const writeConfigFlag = Flag.optional(
-	Flag.String("write-config").pipe(
-		Flag.withDescription("Write the generated tuning configuration to this path"),
-	),
-)
-
 const configFlag = Flag.optional(
 	Flag.String("config").pipe(
-		Flag.withDescription(
-			"Load tuning overrides from a versioned calibration config document (see: archive calibrate --write-config)",
-		),
+		Flag.withDescription("Ignored: archive tuning is fixed. Accepted so older scripts keep working"),
 	),
-)
-
-const maxCandidateWallMsFlag = Flag.Int("max-candidate-wall-ms").pipe(
-	Flag.withDescription("Maximum wall-clock milliseconds for a single calibration candidate run"),
-	Flag.withDefault(30_000),
-)
-
-const minThroughputFlag = Flag.Int("min-throughput").pipe(
-	Flag.withDescription("Minimum logical write throughput in bytes/sec required of a candidate"),
-	Flag.withDefault(0),
-)
-
-const maxTempDiskFlag = Flag.Int("max-temp-disk").pipe(
-	Flag.withDescription("Maximum peak temporary disk (restored scratch + sample output) in bytes"),
-	Flag.withDefault(2 * 1024 * 1024 * 1024),
-)
-
-const freeSpaceReserveFlag = Flag.Int("free-space-reserve").pipe(
-	Flag.withDescription("Minimum free-space reserve on the archive volume in bytes before calibrating"),
-	Flag.withDefault(512 * 1024 * 1024),
-)
-
-const safetyMarginFlag = Flag.Int("safety-margin-milli").pipe(
-	Flag.withDescription(
-		"Safety margin in thousandths applied inside each ceiling (e.g. 1100 = 1.1x, reserving 10% headroom)",
-	),
-	Flag.withDefault(1100),
-)
-
-const writerThreadsFlag = Flag.Int("writer-threads").pipe(
-	Flag.withDescription("Parquet writer thread count for a calibration run"),
-	Flag.withDefault(1),
-)
-
-const rowGroupRowsFlag = Flag.Int("row-group-rows").pipe(
-	Flag.withDescription("Parquet row-group row count for a calibration run"),
-	Flag.withDefault(10_000),
-)
-
-const maxShardRowsFlag = Flag.Int("max-shard-rows").pipe(
-	Flag.withDescription("Maximum rows per shard for a calibration run"),
-	Flag.withDefault(500_000),
-)
-
-const maxShardBytesFlag = Flag.Int("max-shard-bytes").pipe(
-	Flag.withDescription("Maximum estimated bytes per shard for a calibration run"),
-	Flag.withDefault(256 * 1024 * 1024),
 )
 
 const rangeDateArgument = Argument.String("range-date").pipe(
@@ -223,14 +111,10 @@ const signalArgument = Argument.String("signal").pipe(
 
 const outputFlag = Flag.Literals("output", ["summary", "paths", "json"]).pipe(
 	Flag.withDescription(
-		"Output format: summary (default), paths (machine-readable active Parquet paths), or json",
+		"summary (default) or paths (active Parquet paths for DuckDB); json is a deprecated alias of the global --format json",
 	),
 	Flag.withDefault("summary" as const),
 )
-
-/** Build tuning overrides from parsed flags. */
-const tuningOverrides = (archiveDir: string, scratchRoot: string): ArchiveTuningOverrides =>
-	({ archiveDir, scratchRoot }) satisfies ArchiveTuningOverrides
 
 /** Resolve the archive and scratch roots from flags, falling back to defaults. */
 const resolveRoots = (
@@ -249,6 +133,7 @@ export const archiveCreate = Command.make("create", {
 	scratchRoot: scratchRootFlag,
 	checkpointId: checkpointIdFlag,
 	config: configFlag,
+	allowShrink: allowShrinkFlag,
 	rangeDate: rangeDateArgument,
 	signal: signalArgument,
 }).pipe(
@@ -276,31 +161,15 @@ export const archiveCreate = Command.make("create", {
 				})
 			}
 			const checkpointId = Option.getOrUndefined(a.checkpointId)
-			// Resolve tuning. Precedence: explicit CLI tuning flags > config-file
-			// effective values > defaults. A --config document is loaded from one fd
-			// (SHA-256-bound) and its effective values become the override base; the
-			// config identity is recorded in the manifest so the generation is
-			// reproducible. archive create does not yet expose per-knob CLI flags,
-			// so config-file values override defaults directly; conflicting root
-			// overrides (archiveDir/scratchRoot in config) are not applied — roots
-			// always come from the CLI/defaults.
-			const configPath = Option.getOrUndefined(a.config)
-			const { tuning, tuningConfigIdentity, loadedTuningConfig } = yield* Effect.try({
-				try: () => {
-					if (configPath) {
-						const loaded = loadTuningConfig(configPath)
-						return {
-							tuning: resolveArchiveTuning({ ...loaded.overrides, archiveDir, scratchRoot }),
-							tuningConfigIdentity: loaded.identity,
-							loadedTuningConfig: loaded,
-						}
-					}
-					return {
-						tuning: resolveArchiveTuning(tuningOverrides(archiveDir, scratchRoot)),
-						tuningConfigIdentity: null,
-						loadedTuningConfig: null,
-					}
-				},
+			// Tuning is fixed. A calibration config from an older release is never read.
+			const ignoredConfig = Option.getOrUndefined(a.config)
+			if (ignoredConfig !== undefined) {
+				yield* Effect.sync(() =>
+					debugLog(`archive create: ignoring --config ${ignoredConfig}; archive tuning is fixed`),
+				)
+			}
+			const tuning = yield* Effect.try({
+				try: () => resolveArchiveTuning({ archiveDir, scratchRoot }),
 				catch: (error) =>
 					new ArchiveError({
 						message: error instanceof Error ? error.message : String(error),
@@ -309,9 +178,7 @@ export const archiveCreate = Command.make("create", {
 			yield* Effect.sync(() =>
 				process.stderr.write(
 					`${amber("⟳")} archiving ${bold(a.signal)} for ${bold(rangeDate)} ` +
-						`from ${prettyPath(dataDir)}` +
-						(tuningConfigIdentity ? ` (config ${tuningConfigIdentity.configName})` : "") +
-						`\n`,
+						`from ${prettyPath(dataDir)}\n`,
 				),
 			)
 			const result = yield* maintenanceOperation({
@@ -325,11 +192,24 @@ export const archiveCreate = Command.make("create", {
 						tuning,
 						checkpointId ?? "current",
 						{},
-						loadedTuningConfig,
+						{ allowShrink: a.allowShrink },
 					),
 				catch: (error) =>
 					new ArchiveError({ message: error instanceof Error ? error.message : String(error) }),
 			})
+			const effective =
+				`t=${tuning.writerThreads} rg=${tuning.rowGroupRows} ` +
+				`msr=${tuning.maxShardRows} msb=${tuning.maxShardBytes} ` +
+				`tc=${tuning.targetChunkBytes} reserve=${tuning.minFreeSpaceReserve}`
+			debugLog("archive create effective tuning", effective)
+			if (jsonFormatRequested()) {
+				return yield* writeJson({
+					...result,
+					archiveDir,
+					scratchRoot,
+					tuning: tuningRecord(tuning),
+				})
+			}
 			yield* Effect.sync(() =>
 				process.stdout.write(
 					`${green("✓")} archive generation sealed\n` +
@@ -340,12 +220,6 @@ export const archiveCreate = Command.make("create", {
 						`  ${dim("rows")}         ${result.archivedRowCount}\n` +
 						`  ${dim("archive-dir")}  ${prettyPath(archiveDir)}\n` +
 						`  ${dim("scratch-root")} ${prettyPath(scratchRoot)}\n` +
-						`  ${dim("effective")}    t=${tuning.writerThreads} rg=${tuning.rowGroupRows} ` +
-						`msr=${tuning.maxShardRows} msb=${tuning.maxShardBytes} ` +
-						`tc=${tuning.targetChunkBytes} reserve=${tuning.minFreeSpaceReserve}\n` +
-						(tuningConfigIdentity
-							? `  ${dim("config")}       ${tuningConfigIdentity.configName} (${tuningConfigIdentity.sha256})\n`
-							: "") +
 						(result.superseded ? `  ${dim("superseded")} ${result.superseded}\n` : ""),
 				),
 			)
@@ -370,6 +244,7 @@ export const archiveList = Command.make("list", {
 	Command.withHandler(
 		Effect.fnUntraced(function* (a) {
 			const archiveDir = Option.getOrUndefined(a.archiveDir) ?? defaultArchiveDir()
+			const json = a.output === "json" || (a.output === "summary" && jsonFormatRequested())
 			if (a.output === "paths") {
 				const signalOpt = Option.getOrUndefined(a.signal)
 				if (!signalOpt || !isArchiveSignalName(signalOpt)) {
@@ -398,10 +273,7 @@ export const archiveList = Command.make("list", {
 						cause: error instanceof Error ? error.stack : undefined,
 					}),
 			})
-			if (a.output === "json") {
-				yield* Effect.sync(() => process.stdout.write(`${JSON.stringify(listing, null, 2)}\n`))
-				return
-			}
+			if (json) return yield* writeJson(listing)
 			if (listing.errors.length > 0) {
 				const detail = listing.errors
 					.map((error) => `${error.signal}/${error.rangeStart || "(root)"}: ${error.error}`)
@@ -452,6 +324,7 @@ export const archiveVerify = Command.make("verify", {
 				catch: (error) =>
 					new ArchiveError({ message: error instanceof Error ? error.message : String(error) }),
 			})
+			if (jsonFormatRequested()) return yield* writeJson(result)
 			yield* Effect.sync(() =>
 				process.stdout.write(
 					`${green("✓")} verified ${result.shardCount} active shard(s) across ` +
@@ -488,6 +361,7 @@ export const archiveRebuild = Command.make("rebuild", {
 						cause: error instanceof Error ? error.stack : undefined,
 					}),
 			})
+			if (jsonFormatRequested()) return yield* writeJson({ signal: a.signal, entries })
 			yield* Effect.sync(() =>
 				process.stdout.write(
 					`${green("✓")} rebuilt ${a.signal} catalog with ${entries.length} generation(s)\n`,
@@ -526,6 +400,9 @@ export const archiveReconcile = Command.make("reconcile", {
 				const mig = "migrationRequired" in d && d.migrationRequired ? " (migrate v2)" : ""
 				return `${green("✓")} reconcile ${d.kind}: ${id}${mig}\n`
 			}
+			if (decision.kind !== "FailClosed" && jsonFormatRequested()) {
+				return yield* writeJson({ dryRun: a.dryRun, archiveDir, decision })
+			}
 			if (a.dryRun) {
 				if (decision.kind === "FailClosed") {
 					return yield* new ArchiveError({ message: renderDecision(decision).trim() })
@@ -556,9 +433,10 @@ export const archiveGc = Command.make("gc", {
 	scratchRoot: scratchRootFlag,
 	keep: keepFlag,
 	dryRun: dryRunFlag,
+	apply: gcApplyFlag,
 }).pipe(
 	Command.withDescription(
-		"Reclaim superseded archive generations, retaining the newest N per signal/range (default 1)",
+		"Plan reclaiming superseded archive generations, keeping the newest N per signal/range (default 1); --apply deletes",
 	),
 	Command.withHandler(
 		Effect.fnUntraced(function* (a) {
@@ -568,14 +446,18 @@ export const archiveGc = Command.make("gc", {
 				})
 			}
 			const { dataDir, archiveDir, scratchRoot } = resolveRoots(a.dataDir, a.archiveDir, a.scratchRoot)
+			// Deleting published generations is destructive, so like expire and
+			// retire-live it happens only with --apply; --dry-run always wins.
+			const dryRun = a.dryRun || !a.apply
 			const result = yield* maintenanceOperation({
 				operation: "archive.gc",
-				try: () => runArchiveGc({ dataDir, archiveDir, scratchRoot, keep: a.keep, dryRun: a.dryRun }),
+				try: () => runArchiveGc({ dataDir, archiveDir, scratchRoot, keep: a.keep, dryRun }),
 				catch: (error) =>
 					new ArchiveError({ message: error instanceof Error ? error.message : String(error) }),
 			})
 			const { plan } = result
-			if (a.dryRun) {
+			if (jsonFormatRequested()) return yield* writeJson({ dryRun, ...result })
+			if (dryRun) {
 				yield* Effect.sync(() =>
 					process.stdout.write(
 						`${amber("◌")} dry-run gc: would delete ${plan.deleteSet.length} generation(s), ` +
@@ -591,7 +473,10 @@ export const archiveGc = Command.make("gc", {
 										.join("\n") + "\n") +
 							(plan.excludedSignals.length + plan.excludedRanges.length === 0
 								? ""
-								: `${red("!")} ${plan.excludedSignals.length + plan.excludedRanges.length} range(s)/signal(s) excluded (over-retained)\n`),
+								: `${red("!")} ${plan.excludedSignals.length + plan.excludedRanges.length} range(s)/signal(s) excluded (over-retained)\n`) +
+							(plan.deleteSet.length === 0 || a.dryRun
+								? ""
+								: `  ${dim("next")}      re-run with ${bold("--apply")} to delete them\n`),
 					),
 				)
 				return
@@ -632,6 +517,7 @@ export const archiveExpire = Command.make("expire", {
 				catch: (error) =>
 					new ArchiveError({ message: error instanceof Error ? error.message : String(error) }),
 			})
+			if (jsonFormatRequested()) return yield* writeJson({ expired: a.rangeDate })
 			yield* Effect.sync(() =>
 				process.stdout.write(`${green("✓")} expired archive day ${a.rangeDate}\n`),
 			)
@@ -668,6 +554,7 @@ export const archiveRetireLive = Command.make("retire-live", {
 				catch: (error) =>
 					new ArchiveError({ message: error instanceof Error ? error.message : String(error) }),
 			})
+			if (jsonFormatRequested()) return yield* writeJson({ retired: a.rangeDate })
 			yield* Effect.sync(() => process.stdout.write(`${green("✓")} retired live day ${a.rangeDate}\n`))
 		}),
 	),
@@ -678,1287 +565,6 @@ const formatBytes = (bytes: number): string => {
 	if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KiB`
 	if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MiB`
 	return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GiB`
-}
-
-const pauseAtSessionPhaseFlag = Flag.optional(
-	Flag.String("pause-at-session-phase").pipe(
-		Flag.withDescription("TEST ONLY: pause after durable-writing the parent session phase"),
-	),
-)
-const sessionMarkerDirFlag = Flag.optional(
-	Flag.String("session-marker-dir").pipe(
-		Flag.withDescription("TEST ONLY: marker directory for parent-session pause"),
-	),
-)
-
-type CalibrationSelection = NonNullable<CalibrationRecommendation["selected"]>
-
-/** Require a successful calibration recommendation through Effect's typed
- * error channel. Keeping this check outside Effect.sync prevents an expected
- * calibration failure from becoming an unhandled fiber defect. */
-export const requireCalibrationSelection = (
-	recommendation: Pick<CalibrationRecommendation, "selected" | "note">,
-): Effect.Effect<CalibrationSelection, ArchiveError> =>
-	recommendation.selected === null
-		? Effect.fail(
-				new ArchiveError({
-					message: `${red("!")} calibration did not produce a recommendation: ${recommendation.note}`,
-				}),
-			)
-		: Effect.succeed(recommendation.selected)
-
-export const archiveCalibrate = Command.make("calibrate", {
-	dataDir: dataDirFlag,
-	archiveDir: archiveDirFlag,
-	scratchRoot: scratchRootFlag,
-	checkpointId: checkpointIdFlag,
-	rangeDate: rangeDateArgument,
-	memoryBudget: memoryBudgetFlag,
-	timeBudget: timeBudgetFlag,
-	sampleRows: sampleRowsFlag,
-	maxCandidateWallMs: maxCandidateWallMsFlag,
-	minThroughput: minThroughputFlag,
-	maxTempDisk: maxTempDiskFlag,
-	freeSpaceReserve: freeSpaceReserveFlag,
-	safetyMarginMilli: safetyMarginFlag,
-	writeConfig: writeConfigFlag,
-	pauseAtSessionPhase: pauseAtSessionPhaseFlag,
-	sessionMarkerDir: sessionMarkerDirFlag,
-}).pipe(
-	Command.withDescription(
-		"Calibrate archive tuning by running a candidate matrix against a pinned checkpoint across all six signals",
-	),
-	Command.withHandler(
-		Effect.fnUntraced(function* (a) {
-			const rangeDate = yield* Effect.try({
-				try: () => validateRangeDate(a.rangeDate),
-				catch: (error) =>
-					new ArchiveError({
-						message: error instanceof Error ? error.message : String(error),
-					}),
-			})
-			const budget = yield* Effect.try({
-				try: () =>
-					validateCalibrationBudget({
-						memoryBudget: a.memoryBudget,
-						timeBudget: a.timeBudget,
-						sampleRows: a.sampleRows,
-						maxCandidateWallMs: a.maxCandidateWallMs,
-						minThroughputBytesPerSec: a.minThroughput,
-						maxTempDiskBytes: a.maxTempDisk,
-						freeSpaceReserve: a.freeSpaceReserve,
-						safetyMargin: a.safetyMarginMilli / 1000,
-					}),
-				catch: (error) =>
-					new ArchiveError({
-						message: error instanceof Error ? error.message : String(error),
-					}),
-			})
-			const { dataDir, archiveDir, scratchRoot } = resolveRoots(a.dataDir, a.archiveDir, a.scratchRoot)
-			const checkpointId = Option.getOrUndefined(a.checkpointId) ?? "current"
-			yield* Effect.sync(() =>
-				process.stderr.write(
-					`${amber("⟳")} calibrating all six signals for ${bold(rangeDate)} ` +
-						`(memory ${a.memoryBudget}B, time ${a.timeBudget}ms, sample ${a.sampleRows} rows, ` +
-						`margin ${budget.safetyMargin.toFixed(3)}x)\n`,
-				),
-			)
-			// Run the candidate matrix across all six signals. Each candidate x
-			// signal combination is a fresh calibrate-run child spawned under
-			// /usr/bin/time so peak RSS is measured externally. A per-child watchdog
-			// enforces the candidate wall deadline and temp-disk ceiling DURING the
-			// run (SIGKILL on overrun -> candidate marked failed).
-			const rec = yield* runCalibrationMatrix(
-				process.execPath,
-				dataDir,
-				checkpointId,
-				rangeDate,
-				scratchRoot,
-				archiveDir,
-				budget,
-				{
-					pauseAtPhase: Option.getOrUndefined(a.pauseAtSessionPhase),
-					markerDir: Option.getOrUndefined(a.sessionMarkerDir),
-				},
-			)
-			if (
-				Option.getOrUndefined(a.pauseAtSessionPhase) === "post-session-release" &&
-				Option.getOrUndefined(a.sessionMarkerDir)
-			) {
-				const markerDir = Option.getOrUndefined(a.sessionMarkerDir)!
-				yield* Effect.tryPromise({
-					try: async () => {
-						const { mkdirSync, writeFileSync } = await import("node:fs")
-						mkdirSync(markerDir, { recursive: true })
-						writeFileSync(
-							join(markerDir, "paused"),
-							`post-session-release\n${process.pid}\n${new Date().toISOString()}\n`,
-						)
-					},
-					catch: (error) =>
-						new ArchiveError({
-							message: error instanceof Error ? error.message : String(error),
-						}),
-				})
-				// Deterministic SIGKILL seam after reconcile, before config/no-config
-				// publication. The probes kill -9 here, which is uncatchable, so
-				// interruptibility does not change the crash boundary.
-				return yield* Effect.never
-			}
-			yield* Effect.sync(() => {
-				for (const r of rec.results) {
-					const status = r.ok && r.metrics ? `${r.metrics.peakRssBytes}B RSS` : `FAIL: ${r.error}`
-					process.stderr.write(
-						`  ${dim(`${r.signal} t=${r.candidate.writerThreads} rg=${r.candidate.rowGroupRows}`)}  ${status}\n`,
-					)
-				}
-			})
-			const selected = yield* requireCalibrationSelection(rec)
-			const tuning = recommendationToTuning(rec, archiveDir, scratchRoot)
-			const writePath = Option.getOrUndefined(a.writeConfig)
-			if (writePath) {
-				yield* Effect.try({
-					try: () => writeCalibrationConfig(writePath, rec, tuning),
-					catch: (error) =>
-						new ArchiveError({ message: error instanceof Error ? error.message : String(error) }),
-				})
-				yield* Effect.sync(() =>
-					process.stdout.write(
-						`${green("✓")} calibration ${rec.confidence} confidence; config written to ${writePath}\n` +
-							`  ${dim("selected")} t=${selected.candidate.writerThreads} ` +
-							`rg=${selected.candidate.rowGroupRows} rss=${selected.worstCase.peakRssBytes}B\n` +
-							`  ${dim("margin")}      ${budget.safetyMargin.toFixed(3)}x applied inside each ceiling\n`,
-					),
-				)
-			} else {
-				yield* Effect.sync(() =>
-					process.stdout.write(
-						`${green("✓")} calibration ${rec.confidence} confidence\n` +
-							`  ${dim("selected")} t=${selected.candidate.writerThreads} ` +
-							`rg=${selected.candidate.rowGroupRows} rss=${selected.worstCase.peakRssBytes}B\n` +
-							`  ${dim("note")} pass --write-config <path> to apply\n`,
-					),
-				)
-			}
-		}),
-	),
-)
-
-/**
- * The metrics line printed by calibrate-run children and parsed by the parent.
- * `exportWallMs` is the wall time of the calibrated export section only (not
- * process-launch-to-exit), so write throughput is export-throughput, not
- * end-to-end.
- */
-const NonNegativeFinite = Schema.Finite.check(Schema.isGreaterThanOrEqualTo(0))
-const NonNegativeSafeInteger = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))
-
-const ChildMetricsSchema = Schema.Struct({
-	logicalBytes: NonNegativeFinite,
-	physicalBytes: NonNegativeFinite,
-	peakTempDiskBytes: NonNegativeFinite,
-	peakRssBytes: NonNegativeFinite,
-	exportWallMs: NonNegativeFinite,
-	rowCount: NonNegativeSafeInteger,
-	sample: Schema.Struct({
-		checkpointId: Schema.String,
-		checkpointManifestFingerprint: Schema.String,
-		rangeDate: Schema.String,
-		role: Schema.Literals(["training", "held-out"]),
-		startRow: NonNegativeSafeInteger,
-		requestedRows: NonNegativeSafeInteger,
-		rowCount: NonNegativeSafeInteger,
-	}),
-})
-
-type ChildMetrics = typeof ChildMetricsSchema.Type
-
-export interface ExpectedChildSampleScope {
-	readonly checkpointId: string
-	readonly checkpointManifestFingerprint: string
-	readonly rangeDate: string
-	readonly role: "training" | "held-out"
-	readonly startRow: number
-	readonly requestedRows: number
-}
-
-/** Decode the child protocol exactly and bind its authoritative sample scope
- * to the request that the parent actually sent. */
-export const decodeChildMetrics = (input: unknown, expected: ExpectedChildSampleScope): ChildMetrics => {
-	const raw = Schema.decodeUnknownSync(ChildMetricsSchema, { onExcessProperty: "error" })(input)
-	const sample = raw.sample
-	if (
-		sample.checkpointId !== expected.checkpointId ||
-		sample.checkpointManifestFingerprint !== expected.checkpointManifestFingerprint ||
-		sample.rangeDate !== expected.rangeDate ||
-		sample.role !== expected.role ||
-		sample.startRow !== expected.startRow ||
-		sample.requestedRows !== expected.requestedRows ||
-		sample.rowCount !== raw.rowCount
-	) {
-		throw new Error("calibrate-run emitted an inconsistent sample scope")
-	}
-	return raw
-}
-
-/**
- * Run one calibrate-run child under /usr/bin/time in a DEDICATED PROCESS GROUP
- * so peak RSS is measured externally and the watchdog can kill the entire
- * group (Maple descendant included). The watchdog uses the MINIMUM of the
- * remaining total budget and the per-candidate wallMs. During the run, the
- * parent POLLS the exact derived scratch/sample paths for temp-disk usage and
- * kills the group on overrun (fail-loud: read/symlink/special-file errors fail
- * the candidate). Peak RSS is FAIL-CLOSED: unparseable /usr/bin/time output
- * fails the candidate (no completion-RSS fallback).
- */
-const errorMessage = (error: unknown): string => (error instanceof Error ? error.message : String(error))
-
-/**
- * An internal short-circuit for a candidate that could not produce metrics. It
- * never escapes `runCandidateChild` — the boundary `catchTag` turns it back
- * into a `CandidateResult`. It exists only to replace the old `settled` flag:
- * with a single fiber producing the result, the first failure short-circuits
- * and the rest is interrupted, so there is no second resolution to guard.
- */
-class CandidateFailure extends Schema.TaggedError<CandidateFailure>()("@maple/cli/CandidateFailure", {
-	reason: Schema.String,
-}) {}
-
-/**
- * SIGKILL the child's whole process group, so the Maple descendant dies with
- * `/usr/bin/time` rather than being orphaned.
- *
- * `handle.kill` already group-kills, but it falls back to a child-only kill
- * when the group kill throws, so the explicit `-pgid` is the invariant we own.
- * `process.kill` stays raw inside `Effect.sync` deliberately: it is a
- * synchronous total syscall whose only realistic failure (ESRCH) means the
- * target is already dead. What Effect contributes here is not wrapping the
- * syscall but controlling WHEN it runs — as a finalizer it fires on every exit
- * path, including interruption.
- */
-const reapProcessGroup = (
-	handle: {
-		readonly kill: (options?: { readonly killSignal?: "SIGKILL" }) => Effect.Effect<unknown, unknown>
-	},
-	pgid: number,
-) =>
-	Effect.andThen(
-		Effect.ignore(handle.kill({ killSignal: "SIGKILL" })),
-		Effect.sync(() => {
-			// `-0` is `0`, and POSIX kill(0, sig) signals the CALLER's own process
-			// group — without this guard a missing child pid would SIGKILL the CLI.
-			if (pgid <= 0) return
-			try {
-				process.kill(-pgid, "SIGKILL")
-			} catch {
-				// ESRCH: the group is already reaped.
-			}
-		}),
-	)
-
-export const runCandidateChild = (
-	bundlePath: string,
-	dataDir: string,
-	checkpointId: string,
-	checkpointManifestFingerprint: string,
-	rangeDate: string,
-	signal: string,
-	scratchRoot: string,
-	archiveDir: string,
-	candidate: CalibrationCandidate,
-	budget: CalibrationBudget,
-	operationId: string,
-	startRow: number,
-	sampleRows: number,
-	matrixStart: number,
-): Effect.Effect<CandidateResult, never, ChildProcessSpawner> =>
-	Effect.gen(function* () {
-		const spawner = yield* ChildProcessSpawner
-		// Bun creates nonblocking stdio pipes for spawned children. GNU/BSD `time`
-		// writes a large multi-line report on exit, and that report can fail with
-		// EAGAIN when directed at the inherited stderr pipe. Write it to an
-		// independent temporary file instead; stderr remains available for real
-		// worker diagnostics. The finalizer removes the report directory in EVERY
-		// outcome, interruption included — `remove()` is idempotent, so the happy
-		// path's `readAndRemove()` simply wins the race.
-		const timeReport = yield* Effect.acquireRelease(
-			Effect.try({
-				try: () => createTimeReport(),
-				catch: (error) =>
-					new CandidateFailure({
-						reason: `failed to create time-report directory: ${errorMessage(error)}`,
-					}),
-			}),
-			(report) => Effect.sync(() => report.remove()),
-		)
-		const args = [
-			"archive",
-			"calibrate-run",
-			signal,
-			rangeDate,
-			"--data-dir",
-			dataDir,
-			"--archive-dir",
-			archiveDir,
-			"--scratch-root",
-			scratchRoot,
-			"--checkpoint-id",
-			checkpointId,
-			"--checkpoint-fingerprint",
-			checkpointManifestFingerprint,
-			"--operation-id",
-			operationId,
-			"--start-row",
-			String(startRow),
-			"--sample-rows",
-			String(sampleRows),
-			"--max-temp-disk",
-			String(budget.maxTempDiskBytes),
-			"--free-space-reserve",
-			String(budget.freeSpaceReserve),
-			"--writer-threads",
-			String(candidate.writerThreads),
-			"--row-group-rows",
-			String(candidate.rowGroupRows),
-			"--max-shard-rows",
-			String(candidate.maxShardRows),
-			"--max-shard-bytes",
-			String(candidate.maxShardBytes),
-		]
-		// Spawn under /usr/bin/time in its own process group so the watchdog can
-		// kill the whole group (Maple descendant included), not just /usr/bin/time.
-		// `stdin` and `killSignal` are explicit: the spawner defaults to piping
-		// stdin and to SIGTERM, and a descendant that traps SIGTERM would turn a
-		// hard kill into a hang.
-		const handle = yield* spawner
-			.spawn(
-				ChildProcess.make(
-					"/usr/bin/time",
-					[...timeArgv(), "-o", timeReport.path, bundlePath, ...args],
-					{
-						stdin: "ignore",
-						stdout: "pipe",
-						stderr: "pipe",
-						detached: true,
-						killSignal: "SIGKILL",
-					},
-				),
-			)
-			.pipe(Effect.mapError((error) => new CandidateFailure({ reason: error.message })))
-		const pgid = handle.pid
-		// Reap the whole group on EVERY exit path — success, failure, defect, and
-		// interruption. The old timer-driven kill only ran from inside its own
-		// callback, so a Ctrl-C mid-candidate orphaned the Maple grandchild.
-		yield* Effect.addFinalizer(() => reapProcessGroup(handle, pgid))
-
-		// Watchdog deadline = min(remaining total budget, per-candidate wallMs).
-		const remaining = budget.timeBudget - (Date.now() - matrixStart)
-		const deadline = Math.max(1000, Math.min(budget.maxCandidateWallMs, remaining))
-		// The exact derived paths the parent polls for temp-disk enforcement.
-		const pollScratch = resolve(scratchRoot, `calibrate-${operationId}`)
-		const pollSample = resolve(archiveDir, "calibration", "samples", operationId)
-		const watchdog = Effect.as(
-			Effect.sleep(Duration.millis(deadline)),
-			`exceeded ${deadline}ms wall deadline`,
-		)
-		// Poll temp-disk every 500ms during the run; kill on overrun. Read/symlink/
-		// special-file errors fail-loud (kill the candidate) — the catch lives
-		// INSIDE the poll and yields a kill reason, so a read error can never
-		// silently kill the poller and downgrade fail-loud to fail-late.
-		const pollOnce = Effect.tryPromise({
-			try: async () => (await directoryTreeBytes(pollScratch)) + (await directoryTreeBytes(pollSample)),
-			catch: (error) => error,
-		}).pipe(
-			Effect.map((size) =>
-				size * budget.safetyMargin > budget.maxTempDiskBytes
-					? `exceeded ${budget.maxTempDiskBytes}B temp-disk ceiling (saw ${size}B)`
-					: null,
-			),
-			Effect.catch((error) =>
-				Effect.succeed(`temp-disk poll read error (fail-loud): ${errorMessage(error)}`),
-			),
-		)
-		// Sleep FIRST, like `setInterval`: `Schedule.spaced` would fire an
-		// immediate poll before the child has written anything.
-		const poller: Effect.Effect<string> = Effect.suspend(() =>
-			Effect.sleep(Duration.millis(500)).pipe(
-				Effect.andThen(pollOnce),
-				Effect.flatMap((reason) => (reason === null ? poller : Effect.succeed(reason))),
-			),
-		)
-		const killReason = yield* Deferred.make<string>()
-		// The killer is forked rather than raced against completion: after a kill
-		// the parent must STILL wait for the pipes to drain, both so the next
-		// candidate cannot start while this worker owns them and so the failure
-		// report carries the complete worker diagnostics.
-		const killer = yield* Effect.forkChild(
-			Effect.race(watchdog, poller).pipe(
-				Effect.tap((reason) => Deferred.succeed(killReason, reason)),
-				Effect.andThen(reapProcessGroup(handle, pgid)),
-			),
-		)
-
-		// Completion = the child exited AND both pipes drained. `handle.exitCode`
-		// alone resolves on `exit`, which Node emits before stdio is guaranteed to
-		// drain; the stream folds finish exactly when the readables end, which is
-		// the condition behind `close`.
-		//
-		// `exitCode` FAILS on signal death, and every watchdog kill is a signal
-		// death — collapse that to `null` so a killed candidate lands in the same
-		// `code !== 0` branch as before instead of escaping as an error and
-		// aborting the whole matrix.
-		const [code, stdout, stderr] = yield* Effect.all(
-			[
-				handle.exitCode.pipe(
-					Effect.map((value): number | null => value),
-					Effect.catchCause(() => Effect.succeed(null)),
-				),
-				Stream.mkString(Stream.decodeText(handle.stdout)),
-				Stream.mkString(Stream.decodeText(handle.stderr)),
-			],
-			{ concurrency: "unbounded" },
-		).pipe(
-			// A pipe that cannot be read leaves the candidate unmeasurable, which is
-			// a failed candidate — not a reason to abort the remaining matrix.
-			Effect.catchTag("PlatformError", (error) =>
-				Effect.fail(
-					new CandidateFailure({ reason: `failed to read calibrate-run output: ${error.message}` }),
-				),
-			),
-		)
-		yield* Fiber.interrupt(killer)
-		const killed = yield* Deferred.poll(killReason)
-		const timeOutput = timeReport.readAndRemove()
-		if (Option.isSome(killed)) {
-			// The killer writes its reason BEFORE it signals the group, so a child
-			// that died from the kill always has the reason recorded here.
-			const reason = yield* killed.value
-			return yield* new CandidateFailure({ reason: `candidate killed by watchdog: ${reason}` })
-		}
-		// A nonzero exit means the child failed (export error OR cleanup
-		// failure). The child emits its metrics JSON only after successful
-		// cleanup; a JSON line present with a nonzero exit still means the
-		// owned resources may not have been released. Treat nonzero as failure.
-		if (code !== 0) {
-			const fullDiagnostic = `${stderr}\n${stdout}\n${timeOutput.report}`
-			const diagnostic =
-				fullDiagnostic.length <= 1600
-					? fullDiagnostic
-					: `${fullDiagnostic.slice(0, 800)}\n… diagnostics truncated …\n${fullDiagnostic.slice(-800)}`
-			return yield* new CandidateFailure({
-				reason: `calibrate-run exited ${code} (cleanup or export failure): ${diagnostic}${timeOutput.error ? `\n${timeOutput.error}` : ""}`,
-			})
-		}
-		// Peak RSS: FAIL-CLOSED. Unparseable /usr/bin/time output fails the
-		// candidate (no completion-RSS fallback).
-		const peakRssBytes =
-			timeOutput.error === undefined ? parsePeakRss(timeOutput.report, process.platform) : null
-		if (peakRssBytes === null) {
-			return yield* new CandidateFailure({
-				reason: timeOutput.error
-					? `${timeOutput.error} (fail-closed)`
-					: `failed to parse peak RSS from /usr/bin/time report (fail-closed)`,
-			})
-		}
-		const raw = yield* Effect.try({
-			try: () => {
-				const lines = stdout.trim().split("\n")
-				const parsed: unknown = JSON.parse(lines[lines.length - 1]!)
-				return decodeChildMetrics(parsed, {
-					checkpointId,
-					checkpointManifestFingerprint,
-					rangeDate,
-					role: startRow === 0 ? "training" : "held-out",
-					startRow,
-					requestedRows: sampleRows,
-				})
-			},
-			catch: (error) =>
-				new CandidateFailure({
-					reason: `failed to parse calibrate-run output: ${errorMessage(error)}`,
-				}),
-		})
-		const logicalBytes = raw.logicalBytes
-		const physicalBytes = raw.physicalBytes
-		const compressionRatio = logicalBytes > 0 ? physicalBytes / logicalBytes : 0
-		// Write throughput from the EXPORT section wall time, not process-launch-to-exit.
-		const writeThroughputBytesPerSec = raw.exportWallMs > 0 ? logicalBytes / (raw.exportWallMs / 1000) : 0
-		const metrics: CandidateMetrics = {
-			logicalBytes,
-			physicalBytes,
-			compressionRatio,
-			writeThroughputBytesPerSec,
-			peakTempDiskBytes: raw.peakTempDiskBytes,
-			peakRssBytes,
-			wallMs: raw.exportWallMs,
-			rowCount: raw.rowCount,
-		}
-		return { candidate, signal, metrics, ok: true, sample: raw.sample } satisfies CandidateResult
-	}).pipe(
-		Effect.scoped,
-		// A failed candidate is DATA, not an error-channel failure: the matrix uses
-		// failures to eliminate cells, so short-circuiting here would abort all six
-		// signals on one bad candidate.
-		Effect.catchTag("@maple/cli/CandidateFailure", (failure) =>
-			Effect.succeed({
-				candidate,
-				signal,
-				metrics: null,
-				ok: false,
-				error: failure.reason,
-			} satisfies CandidateResult),
-		),
-	)
-
-/**
- * Run the full calibration matrix across all six signals, select the best
- * candidate by worst-case metrics, and validate it on a DISJOINT held-out
- * sample (row window [sampleRows, 2*sampleRows), not the training window
- * [0, sampleRows)). Requires complete six-signal evidence for eligibility and
- * held-out. Confidence "high" ⟺ a config is emitted; "low" ⟺ selected null
- * (small/unrepresentative data or insufficient disjoint held-out).
- */
-const runCalibrationMatrix = (
-	bundlePath: string,
-	dataDir: string,
-	checkpointSelector: string,
-	rangeDate: string,
-	scratchRoot: string,
-	archiveDir: string,
-	budget: CalibrationBudget,
-	faults: { pauseAtPhase?: string; markerDir?: string } = {},
-): Effect.Effect<CalibrationRecommendation, ArchiveError, ChildProcessSpawner> =>
-	Effect.gen(function* () {
-		if (!Number.isSafeInteger(budget.freeSpaceReserve) || budget.freeSpaceReserve <= 0) {
-			return yield* new ArchiveError({
-				message: "calibration free-space reserve must be a positive integer",
-			})
-		}
-		const operationId = randomUUID()
-		const pinId = randomUUID()
-		const pinPurpose = calibrationPinPurpose(operationId)
-		const scratchSubdir = derivedScratchSubdir(operationId)
-		const sampleDir = derivedSampleDir(archiveDir, operationId)
-		const roots = { dataDir, archiveDir, scratchRoot }
-		const maybePauseSession = async (phase: string): Promise<void> => {
-			if (faults.pauseAtPhase !== phase || !faults.markerDir) return
-			const { mkdirSync, writeFileSync } = await import("node:fs")
-			mkdirSync(faults.markerDir, { recursive: true })
-			writeFileSync(
-				join(faults.markerDir, "paused"),
-				`${phase}\n${process.pid}\n${new Date().toISOString()}\n`,
-			)
-			await new Promise<void>(() => {
-				/* deterministic SIGKILL seam */
-			})
-		}
-		// ONE atomic bridge over the still-raw checkpoint session. The callback body
-		// stays raw on purpose: Effect must never be run from inside a callback
-		// handed to a promise-based module.
-		const session = yield* maintenanceOperation({
-			operation: "archive.calibrate_open",
-			try: () =>
-				withMaintenanceLock(dataDir, operationId, async () => {
-					await reconcileCalibration(archiveDir, roots)
-					const resolved = await resolveCheckpoint(
-						dataDir,
-						parseCheckpointSelector(checkpointSelector),
-					)
-					const manifestFingerprint = `${resolved.manifest.checkpointId}:${resolved.manifest.createdAt}:${resolved.manifest.backupBytes}`
-					await writeCalibrationRecord(archiveDir, {
-						phase: "intent",
-						operationId,
-						pinId,
-						pinPurpose,
-						pinPath: null,
-						checkpointId: resolved.checkpointId,
-						checkpointManifestFingerprint: manifestFingerprint,
-						boundRoots: roots,
-						ownedPaths: { scratchSubdir, sampleDir },
-					})
-					await maybePauseSession("intent")
-					const pinPath = await acquireCheckpointPin(
-						dataDir,
-						resolved.checkpointId,
-						pinPurpose,
-						pinId,
-					)
-					await writeCalibrationRecord(archiveDir, {
-						phase: "pin-acquired",
-						operationId,
-						pinId,
-						pinPurpose,
-						pinPath,
-						checkpointId: resolved.checkpointId,
-						checkpointManifestFingerprint: manifestFingerprint,
-						boundRoots: roots,
-						ownedPaths: { scratchSubdir, sampleDir },
-					})
-					await maybePauseSession("pin-acquired")
-					return { checkpointId: resolved.checkpointId, manifestFingerprint }
-				}),
-			catch: (error) => new ArchiveError({ message: errorMessage(error) }),
-		})
-		const matrix = yield* Effect.exit(
-			runBoundCalibrationMatrix(
-				bundlePath,
-				dataDir,
-				session.checkpointId,
-				session.manifestFingerprint,
-				operationId,
-				rangeDate,
-				scratchRoot,
-				archiveDir,
-				budget,
-			),
-		)
-		// Close the session in EVERY outcome, exactly like the original `finally`.
-		// Kept in the typed error channel rather than `orDie`d: a failed reconcile
-		// is an expected archive failure with a useful message, not a defect.
-		const closed = yield* Effect.exit(
-			maintenanceOperation({
-				operation: "archive.calibrate_close",
-				try: () =>
-					withMaintenanceLock(dataDir, operationId, () => reconcileCalibration(archiveDir, roots)),
-				catch: (error) => new ArchiveError({ message: errorMessage(error) }),
-			}),
-		)
-		// Unlike the original `finally`, a throwing reconcile no longer MASKS the
-		// matrix failure: the matrix error is the actionable one, and a close
-		// failure only decides the outcome when the matrix itself succeeded.
-		if (Exit.isSuccess(matrix)) return yield* Effect.andThen(closed, matrix)
-		return yield* matrix
-	})
-
-const runBoundCalibrationMatrix = (
-	bundlePath: string,
-	dataDir: string,
-	checkpointId: string,
-	checkpointManifestFingerprint: string,
-	operationId: string,
-	rangeDate: string,
-	scratchRoot: string,
-	archiveDir: string,
-	budget: CalibrationBudget,
-): Effect.Effect<CalibrationRecommendation, ArchiveError, ChildProcessSpawner> =>
-	Effect.gen(function* () {
-		const volId = yield* Effect.tryPromise({
-			try: () => archiveVolumeIdentity(archiveDir),
-			catch: (error) => new ArchiveError({ message: errorMessage(error) }),
-		})
-		const environment = captureEnvironment(
-			MAPLE_VERSION,
-			CHDB_VERSION,
-			SCHEMA_FINGERPRINT,
-			archiveDir,
-			volId,
-		)
-		const allResults: CandidateResult[] = []
-		const perSignal = new Map<CalibrationCandidate, CandidateResult[]>()
-		const matrixStart = Date.now()
-		for (const signal of ARCHIVE_SIGNALS) {
-			for (const candidate of CANDIDATE_MATRIX) {
-				if (Date.now() - matrixStart > budget.timeBudget) break
-				const result = yield* runCandidateChild(
-					bundlePath,
-					dataDir,
-					checkpointId,
-					checkpointManifestFingerprint,
-					rangeDate,
-					signal.name,
-					scratchRoot,
-					archiveDir,
-					candidate,
-					budget,
-					operationId,
-					0,
-					budget.sampleRows,
-					matrixStart,
-				)
-				allResults.push(result)
-				const list = perSignal.get(candidate) ?? []
-				list.push(result)
-				perSignal.set(candidate, list)
-			}
-			if (Date.now() - matrixStart > budget.timeBudget) break
-		}
-		// Select eligible candidates requiring EXACTLY six signals each.
-		const requiredSignals = ARCHIVE_SIGNALS.map((s) => s.name)
-		const eligible = selectCandidates(perSignal, budget, requiredSignals)
-		let selected: { candidate: CalibrationCandidate; worstCase: CandidateMetrics } | null = null
-		let selectedHeldOut: CalibrationRecommendation["heldOut"] = null
-		const heldOutAttempts: CalibrationRecommendation["heldOutAttempts"][number][] = []
-		let note: string
-		if (eligible.length === 0) {
-			note =
-				`no candidate met the declared goals across all six signals ` +
-				`(memory ${budget.memoryBudget}B, candidate ${budget.maxCandidateWallMs}ms, ` +
-				`throughput ${budget.minThroughputBytesPerSec}B/s, temp disk ${budget.maxTempDiskBytes}B) ` +
-				`with margin ${budget.safetyMargin.toFixed(3)}x; no configuration emitted`
-		} else {
-			// Held-out validation on a DISJOINT row window: startRow=sampleRows so the
-			// held-out sample is rows [sampleRows, 2*sampleRows) — not overlapping the
-			// training window [0, sampleRows). A candidate that fails held-out is
-			// REJECTED; try the next eligible. If none pass, no config.
-			for (const cand of eligible) {
-				const heldOutResults: CandidateResult[] = []
-				for (const signal of ARCHIVE_SIGNALS) {
-					if (Date.now() - matrixStart > budget.timeBudget) break
-					// Held-out: a STRICTLY LARGER, disjoint window. Training covered
-					// ordered rows [0, sampleRows); held-out covers
-					// [sampleRows, sampleRows + heldOutRows) where heldOutRows is a
-					// fixed multiple of the training size (plan-required larger sample).
-					const result = yield* runCandidateChild(
-						bundlePath,
-						dataDir,
-						checkpointId,
-						checkpointManifestFingerprint,
-						rangeDate,
-						signal.name,
-						scratchRoot,
-						archiveDir,
-						cand.candidate,
-						budget,
-						operationId,
-						budget.sampleRows,
-						heldOutSampleRows(budget.sampleRows),
-						matrixStart,
-					)
-					heldOutResults.push(result)
-				}
-				// Require complete six-signal held-out evidence: every result within
-				// ceilings AND observing exactly heldOutSampleRows rows (a larger
-				// request is not a larger observed sample).
-				const heldOutComplete =
-					heldOutResults.length === requiredSignals.length &&
-					heldOutResults.every(
-						(r) =>
-							meetsCeilings(r, budget) &&
-							r.metrics?.rowCount === heldOutSampleRows(budget.sampleRows),
-					)
-				if (heldOutComplete) {
-					const heldWorst = selectCandidates(
-						new Map([[cand.candidate, heldOutResults]]),
-						budget,
-						requiredSignals,
-					)[0]!.worstCase
-					// PER-SIGNAL, like-for-like hybrid comparison: each signal's held-out
-					// result is paired with the same candidate's TRAINING result for that
-					// signal, and wallMs/physicalBytes are scaled by THAT signal's own
-					// heldOut/training logical-byte ratio. Aggregate extrema never decide
-					// acceptance; heldWorst is a descriptive summary only.
-					const perSignal = compareHeldOutPerSignal(
-						allResults,
-						heldOutResults,
-						requiredSignals,
-						cand.candidate,
-						HELD_OUT_TOLERANCES,
-					)
-					if (perSignal === null) {
-						// Unpairable or non-positive logical bytes: treat as incomplete.
-						heldOutAttempts.push({
-							candidate: cand.candidate,
-							results: heldOutResults,
-							worstCase: null,
-							signalComparisons: [],
-							passed: false,
-						})
-						continue
-					}
-					heldOutAttempts.push({
-						candidate: cand.candidate,
-						results: heldOutResults,
-						worstCase: heldWorst,
-						signalComparisons: perSignal.signalComparisons,
-						passed: perSignal.passed,
-					})
-					if (!perSignal.passed) continue
-					selected = cand
-					selectedHeldOut = {
-						results: heldOutResults,
-						worstCase: heldWorst,
-						signalComparisons: perSignal.signalComparisons,
-						passed: true,
-						tolerances: HELD_OUT_TOLERANCES,
-					}
-					note =
-						`selected the lowest-worst-case-peak-RSS candidate that met every ceiling ` +
-						`on the disjoint held-out window across all six signals (per-signal comparison)`
-					break
-				}
-				heldOutAttempts.push({
-					candidate: cand.candidate,
-					results: heldOutResults,
-					worstCase: null,
-					// Incomplete/over-budget/short-window attempt: no comparisons ran.
-					signalComparisons: [],
-					passed: false,
-				})
-			}
-			if (selected === null) {
-				note =
-					`every eligible candidate failed held-out validation (disjoint window) ` +
-					`or the data was insufficient for a complete six-signal held-out split; ` +
-					`no configuration emitted`
-			}
-		}
-		// Confidence "high" ⟺ selected !== null ⟺ a config is emitted. "low" means
-		// small/unrepresentative data OR no disjoint held-out — always paired with
-		// selected null and no config. Per-signal representative check (not a
-		// cross-candidate sum that repetition could inflate): every signal's
-		// training rowCount must reach at least the sampleRows target for the data
-		// to be representative.
-		const perSignalRepresentative = (() => {
-			if (selected === null) return true // no false-high; selected null → low anyway
-			const bySignal = new Map<string, number>()
-			for (const r of allResults) {
-				if (isSameCalibrationCandidate(r.candidate, selected.candidate) && r.ok && r.metrics) {
-					bySignal.set(r.signal, Math.max(bySignal.get(r.signal) ?? 0, r.metrics.rowCount))
-				}
-			}
-			return requiredSignals.every((s) => bySignal.get(s) === budget.sampleRows)
-		})()
-		const confidence: "high" | "low" = selected !== null && perSignalRepresentative ? "high" : "low"
-		if (confidence === "low" && selected !== null) {
-			// Downgrade to no-config: low confidence ⟺ selected null.
-			note = `selected candidate's per-signal data is unrepresentative (below the ${budget.sampleRows}-row target); no configuration emitted`
-			selected = null
-			selectedHeldOut = null
-		}
-		return {
-			formatVersion: TUNING_CONFIG_FORMAT_VERSION,
-			checkpoint: { checkpointId, manifestFingerprint: checkpointManifestFingerprint },
-			selected,
-			heldOut: selectedHeldOut,
-			heldOutAttempts,
-			results: allResults,
-			budget,
-			environment,
-			confidence,
-			measuredAt: new Date().toISOString(),
-			note: note!,
-		}
-	})
-
-/**
- * Internal calibration worker. The PARENT generates the operation id and passes
- * it via `--operation-id`, along with `--start-row` (for the disjoint held-out
- * window) and the operator's `--max-temp-disk` / `--free-space-reserve`. The
- * child reconciles any prior interrupted run INSIDE the maintenance lock,
- * records ownership derived from the operation id, restores a pinned checkpoint
- * into owned scratch, exports a deterministic EXACT window of rows through the
- * REAL shared writer, measures real metrics, and cleans up via the SAME
- * authoritative reconciler (no duplicate removal logic).
- */
-const operationIdFlag = Flag.optional(
-	Flag.String("operation-id").pipe(
-		Flag.withDescription("Calibration operation id (parent-generated); derives owned paths"),
-	),
-)
-const checkpointFingerprintFlag = Flag.optional(
-	Flag.String("checkpoint-fingerprint").pipe(
-		Flag.withDescription("Exact parent-session checkpoint manifest fingerprint"),
-	),
-)
-const startRowFlag = Flag.Int("start-row").pipe(
-	Flag.withDescription("Start row offset for the calibration window (0=training, sampleRows=held-out)"),
-	Flag.withDefault(0),
-)
-const maxTempDiskCalibFlag = Flag.Int("max-temp-disk").pipe(
-	Flag.withDescription("Maximum peak temporary disk in bytes (operator-supplied ceiling)"),
-	Flag.withDefault(2 * 1024 * 1024 * 1024),
-)
-const freeSpaceReserveCalibFlag = Flag.Int("free-space-reserve").pipe(
-	Flag.withDescription("Minimum free-space reserve on the archive volume in bytes"),
-	Flag.withDefault(512 * 1024 * 1024),
-)
-// TEST SEAM (not for operator use): when set, the child writes a `paused` marker
-// into the marker dir AFTER durable-writing the recovery record at the named
-// phase, then blocks forever. The SIGKILL crash probe waits for the marker,
-// asserts the durable state exists, then kills the process group. This makes the
-// crash boundary deterministic and authoritative (C1).
-const pauseAtPhaseFlag = Flag.optional(
-	Flag.String("pause-at-phase").pipe(
-		Flag.withDescription("TEST ONLY: pause (block) after durable-writing the record at this phase"),
-	),
-)
-const markerDirFlag = Flag.optional(
-	Flag.String("marker-dir").pipe(Flag.withDescription("TEST ONLY: directory for the pause marker file")),
-)
-
-export const archiveCalibrateRun = Command.make("calibrate-run", {
-	signal: signalArgument,
-	rangeDate: rangeDateArgument,
-	dataDir: dataDirFlag,
-	archiveDir: archiveDirFlag,
-	scratchRoot: scratchRootFlag,
-	checkpointId: checkpointIdFlag,
-	checkpointFingerprint: checkpointFingerprintFlag,
-	operationId: operationIdFlag,
-	startRow: startRowFlag,
-	sampleRows: sampleRowsFlag,
-	maxTempDisk: maxTempDiskCalibFlag,
-	freeSpaceReserve: freeSpaceReserveCalibFlag,
-	writerThreads: writerThreadsFlag,
-	rowGroupRows: rowGroupRowsFlag,
-	maxShardRows: maxShardRowsFlag,
-	maxShardBytes: maxShardBytesFlag,
-	pauseAtPhase: pauseAtPhaseFlag,
-	markerDir: markerDirFlag,
-}).pipe(
-	Command.withDescription(
-		"Internal: export a calibration sample through the real writer and print metrics JSON",
-	),
-	Command.withHandler(
-		Effect.fnUntraced(function* (a) {
-			if (!isArchiveSignalName(a.signal)) {
-				return yield* new ArchiveError({ message: `unknown signal '${a.signal}'` })
-			}
-			const rangeDate = yield* Effect.try({
-				try: () => validateRangeDate(a.rangeDate),
-				catch: (error) =>
-					new ArchiveError({
-						message: error instanceof Error ? error.message : String(error),
-					}),
-			})
-			const { dataDir, archiveDir, scratchRoot } = resolveRoots(a.dataDir, a.archiveDir, a.scratchRoot)
-			const checkpointSelector = Option.getOrUndefined(a.checkpointId) ?? "current"
-			yield* maintenanceOperation({
-				operation: "archive.calibrate_sample",
-				try: () =>
-					runCalibrateSample(a, dataDir, archiveDir, scratchRoot, checkpointSelector, rangeDate),
-				catch: (error) =>
-					new ArchiveError({ message: error instanceof Error ? error.message : String(error) }),
-			})
-		}),
-	),
-)
-
-/**
- * Open or close the parent calibration session that owns the single source
- * checkpoint pin and the durable recovery record. The matrix runner does this
- * inline; this command makes the lifecycle explicit so a single child sample
- * (or a SIGKILL probe) can run against an already-open session and so an
- * operator can inspect/retire a wedged session. `open` resolves the checkpoint,
- * reconciles any prior interrupted session, acquires the pin, and durably
- * records `pin-acquired`; it prints the operation id, checkpoint id, and
- * manifest fingerprint a child must bind to. `close` runs the authoritative
- * reconciler (releasing the pin and clearing the record).
- */
-const sessionActionFlag = Flag.optional(
-	Flag.String("action").pipe(
-		Flag.withDescription("open: acquire the session pin + record; close: reconcile + release"),
-	),
-)
-export const archiveCalibrateSession = Command.make("calibrate-session", {
-	dataDir: dataDirFlag,
-	archiveDir: archiveDirFlag,
-	scratchRoot: scratchRootFlag,
-	checkpointId: checkpointIdFlag,
-	action: sessionActionFlag,
-	pauseAtSessionPhase: pauseAtSessionPhaseFlag,
-	sessionMarkerDir: sessionMarkerDirFlag,
-}).pipe(
-	Command.withDescription(
-		"Internal: open or close the parent calibration session that owns the source pin",
-	),
-	Command.withHandler(
-		Effect.fnUntraced(function* (a) {
-			const { dataDir, archiveDir, scratchRoot } = resolveRoots(a.dataDir, a.archiveDir, a.scratchRoot)
-			const action = Option.getOrUndefined(a.action) ?? "open"
-			const checkpointSelector = Option.getOrUndefined(a.checkpointId) ?? "current"
-			const roots = { dataDir, archiveDir, scratchRoot }
-			if (action === "close") {
-				yield* maintenanceOperation({
-					operation: "archive.calibrate_session_close",
-					try: () =>
-						withMaintenanceLock(dataDir, randomUUID(), () =>
-							reconcileCalibration(archiveDir, roots),
-						),
-					catch: (error) =>
-						new ArchiveError({ message: error instanceof Error ? error.message : String(error) }),
-				})
-				process.stdout.write(`${green("✓")} calibration session closed\n`)
-				return
-			}
-			if (action !== "open") {
-				return yield* new ArchiveError({ message: `unknown calibrate-session action '${action}'` })
-			}
-			const operationId = randomUUID()
-			const pinId = randomUUID()
-			const pinPurpose = calibrationPinPurpose(operationId)
-			const scratchSubdir = derivedScratchSubdir(operationId)
-			const sampleDir = derivedSampleDir(archiveDir, operationId)
-			const result = yield* maintenanceOperation({
-				operation: "archive.calibrate_session_open",
-				try: () =>
-					withMaintenanceLock(dataDir, operationId, async () => {
-						await reconcileCalibration(archiveDir, roots)
-						const resolved = await resolveCheckpoint(
-							dataDir,
-							parseCheckpointSelector(checkpointSelector),
-						)
-						const manifestFingerprint = `${resolved.manifest.checkpointId}:${resolved.manifest.createdAt}:${resolved.manifest.backupBytes}`
-						await writeCalibrationRecord(archiveDir, {
-							phase: "intent",
-							operationId,
-							pinId,
-							pinPurpose,
-							pinPath: null,
-							checkpointId: resolved.checkpointId,
-							checkpointManifestFingerprint: manifestFingerprint,
-							boundRoots: roots,
-							ownedPaths: { scratchSubdir, sampleDir },
-						})
-						// TEST seam: a SIGKILL here leaves a durable intent record with
-						// no pin, reproducing the intent-retention wedge.
-						const pausePhase: string | undefined = Option.getOrUndefined(a.pauseAtSessionPhase)
-						const markerDir: string | undefined = Option.getOrUndefined(a.sessionMarkerDir)
-						if (pausePhase === "intent" && markerDir) {
-							const { mkdirSync, writeFileSync } = await import("node:fs")
-							mkdirSync(markerDir, { recursive: true })
-							writeFileSync(
-								join(markerDir, "paused"),
-								`intent\n${process.pid}\n${new Date().toISOString()}\n`,
-							)
-							await new Promise<void>(() => {
-								/* deterministic SIGKILL seam */
-							})
-						}
-						const pinPath = await acquireCheckpointPin(
-							dataDir,
-							resolved.checkpointId,
-							pinPurpose,
-							pinId,
-						)
-						await writeCalibrationRecord(archiveDir, {
-							phase: "pin-acquired",
-							operationId,
-							pinId,
-							pinPurpose,
-							pinPath,
-							checkpointId: resolved.checkpointId,
-							checkpointManifestFingerprint: manifestFingerprint,
-							boundRoots: roots,
-							ownedPaths: { scratchSubdir, sampleDir },
-						})
-						return { checkpointId: resolved.checkpointId, manifestFingerprint, pinPath }
-					}),
-				catch: (error) =>
-					new ArchiveError({ message: error instanceof Error ? error.message : String(error) }),
-			})
-			// Machine-readable: a child binds to operation-id + checkpoint-id + fingerprint.
-			process.stdout.write(
-				`${JSON.stringify({
-					operationId,
-					checkpointId: result.checkpointId,
-					manifestFingerprint: result.manifestFingerprint,
-					pinPath: result.pinPath,
-				})}\n`,
-			)
-		}),
-	),
-)
-
-/**
- * Run one calibration sample (child process). Reconciles any prior interrupted
- * run INSIDE the maintenance lock (so a concurrent run cannot reconcile a live
- * run's resources), then records ownership DERIVED from the operation id,
- * restores a pinned checkpoint, exports a deterministic EXACT window of rows
- * through the REAL shared writer with the row-count assertion, measures real
- * metrics (export-section wall time, not process-launch-to-exit), and cleans up
- * via the SAME authoritative reconciler.
- */
-const runCalibrateSample = async (
-	a: {
-		signal: string
-		operationId: Option.Option<string>
-		startRow: number
-		sampleRows: number
-		maxTempDisk: number
-		freeSpaceReserve: number
-		writerThreads: number
-		rowGroupRows: number
-		maxShardRows: number
-		maxShardBytes: number
-		pauseAtPhase: Option.Option<string>
-		markerDir: Option.Option<string>
-		checkpointFingerprint: Option.Option<string>
-	},
-	dataDir: string,
-	archiveDir: string,
-	scratchRoot: string,
-	checkpointSelector: string,
-	rangeDate: string,
-): Promise<void> => {
-	// The parent generates the operation id; derive the exact owned paths from it.
-	const operationId = Option.getOrUndefined(a.operationId)
-	const checkpointManifestFingerprint = Option.getOrUndefined(a.checkpointFingerprint)
-	if (
-		!operationId ||
-		!checkpointManifestFingerprint ||
-		checkpointSelector === "current" ||
-		checkpointSelector === "previous"
-	) {
-		throw new Error(
-			"calibrate-run requires a parent session operation id, exact checkpoint id, and checkpoint fingerprint",
-		)
-	}
-	// TEST SEAM: if pauseAtPhase is set, write a marker and block after durable-
-	// writing the record at that phase. The crash probe waits for the marker,
-	// asserts the durable state, then SIGKILLs (C1).
-	const pausePhase = Option.getOrUndefined(a.pauseAtPhase)
-	const markerDir = Option.getOrUndefined(a.markerDir)
-	const maybePause = async (phase: string): Promise<void> => {
-		if (pausePhase !== phase || !markerDir) return
-		const { writeFileSync } = await import("node:fs")
-		const { join: joinPath } = await import("node:path")
-		const { mkdirSync } = await import("node:fs")
-		mkdirSync(markerDir, { recursive: true })
-		writeFileSync(
-			joinPath(markerDir, "paused"),
-			`${phase}\n${process.pid}\n${new Date().toISOString()}\n`,
-		)
-		// Block forever until SIGKILL. A thrown error here would run the finally
-		// (cleanup); a SIGKILL does not, leaving the durable state for reconcile.
-		await new Promise<void>(() => {
-			/* block forever */
-		})
-	}
-	// The parent session owns the pin and the durable checkpoint identity; the
-	// child only restores that pinned checkpoint into owned scratch and exports
-	// a sample. See assertCalibrationSession / cleanupCalibrationSample.
-	const scratchSubdir = derivedScratchSubdir(operationId)
-	const sampleDir = derivedSampleDir(archiveDir, operationId)
-	const settings: ExportSettings = {
-		writerThreads: a.writerThreads,
-		rowGroupRows: a.rowGroupRows,
-		maxShardRows: a.maxShardRows,
-		maxShardBytes: a.maxShardBytes,
-	}
-	// Free-space preflight with the OPERATOR-SUPPLIED reserve (not hardcoded).
-	await preflightCalibrationFreeSpace(archiveDir, a.freeSpaceReserve, a.maxShardBytes * 4)
-	const signal = archiveSignal(a.signal as Parameters<typeof archiveSignal>[0])
-	// Captured during export; emitted to stdout ONLY after successful cleanup so
-	// a cleanup failure causes a nonzero exit and the parent marks this candidate
-	// failed (C5: a run that left a pin/record/debris must not be selected).
-	let pendingMetrics: ChildMetrics | null = null
-	// The maintenance lock serializes calibration against create/GC. Reconcile
-	// any prior interrupted run INSIDE the lock, matching generation.ts:246-283.
-	await withMaintenanceLock(dataDir, operationId, async () => {
-		const session = await assertCalibrationSession(
-			archiveDir,
-			{ dataDir, archiveDir, scratchRoot },
-			{
-				operationId,
-				checkpointId: checkpointSelector,
-				checkpointManifestFingerprint,
-			},
-		)
-		await cleanupCalibrationSample(session)
-		const resolved = await resolveCheckpoint(dataDir, parseCheckpointSelector(checkpointSelector))
-		const liveFingerprint = `${resolved.manifest.checkpointId}:${resolved.manifest.createdAt}:${resolved.manifest.backupBytes}`
-		if (liveFingerprint !== checkpointManifestFingerprint) {
-			throw new Error("calibration child checkpoint fingerprint changed; refusing")
-		}
-		await maybePause("pin-acquired")
-		try {
-			await withRestoredCheckpoint(
-				resolved,
-				{
-					scratchRoot,
-					scratchSubdir,
-					cleanup: "never",
-					beforeRestore: async () => {
-						await maybePause("scratch-allocated")
-					},
-				},
-				async ({ db }) => {
-					await ensurePrivateDirectory(sampleDir, archiveDir)
-					// The sampling seam is intentionally after both the durable phase
-					// record and the owned sample directory exist. Together with the
-					// restored scratch allocated by withRestoredCheckpoint, this lets
-					// the SIGKILL probe exercise cleanup of every owned resource.
-					await maybePause("sampling")
-					db.exec(`SYSTEM STOP MERGES ${signal.name}`)
-					const exportStart = Date.now()
-					try {
-						const sourceSchema = captureSourceSchema(db, signal)
-						// EXACT window: plan returns { plansByHour, totalRows } where
-						// totalRows is the exact matching-row count for this window.
-						const { plansByHour, totalRows } = planCalibrationShards(
-							db,
-							signal,
-							rangeDate,
-							settings,
-							a.sampleRows,
-							a.startRow,
-						)
-						// The writer asserts Σ rowCount === totalRows (exact bound).
-						const shards = exportShardPlans(
-							db,
-							signal,
-							rangeDate,
-							sampleDir,
-							settings,
-							sourceSchema,
-							plansByHour,
-							totalRows,
-						)
-						const exportWallMs = Date.now() - exportStart
-						let logicalBytes = 0
-						let physicalBytes = 0
-						let rowCount = 0
-						for (const shard of shards) {
-							const measured = measureShardBytes(db, shard.path)
-							logicalBytes += measured.uncompressed
-							physicalBytes += shard.bytes
-							rowCount += shard.rowCount
-						}
-						const peakTempDiskBytes =
-							(await directoryTreeBytes(resolve(scratchRoot, scratchSubdir))) +
-							(await directoryTreeBytes(sampleDir))
-						// Capture the metrics but DO NOT emit them yet — emit only after
-						// successful cleanup so a cleanup failure causes a nonzero exit and
-						// the parent marks the candidate failed (C5).
-						pendingMetrics = {
-							logicalBytes,
-							physicalBytes,
-							peakTempDiskBytes,
-							peakRssBytes: process.memoryUsage().rss,
-							exportWallMs,
-							rowCount,
-							// The child is the authoritative source of its exact sample scope:
-							// it ran planCalibrationShards(startRow, sampleRows) against this
-							// exact checkpoint/range and the writer asserted rowCount === totalRows.
-							sample: {
-								checkpointId: checkpointSelector,
-								checkpointManifestFingerprint,
-								rangeDate,
-								role: a.startRow === 0 ? "training" : "held-out",
-								startRow: a.startRow,
-								requestedRows: a.sampleRows,
-								rowCount,
-							},
-						}
-					} finally {
-						db.exec(`SYSTEM START MERGES ${signal.name}`)
-					}
-				},
-			)
-		} finally {
-			// Normal cleanup calls the SAME authoritative reconciler (no duplicate
-			// removal logic). A cleanup-reconciliation FAILURE must propagate as a
-			// nonzero exit (NOT suppressed), so the parent marks the candidate
-			// failed and does not select a run that left a pin/record/debris. The
-			// record is PRESERVED for the next run by the reconciler itself.
-			await cleanupCalibrationSample(session)
-			// Emit the metrics JSON ONLY after successful cleanup.
-			if (pendingMetrics) {
-				process.stdout.write(`${JSON.stringify(pendingMetrics)}\n`)
-			}
-		}
-	})
 }
 
 export const archive = Command.make("archive").pipe(
@@ -1972,8 +578,5 @@ export const archive = Command.make("archive").pipe(
 		archiveGc,
 		archiveExpire,
 		archiveRetireLive,
-		archiveCalibrate,
-		archiveCalibrateRun,
-		archiveCalibrateSession,
 	]),
 )

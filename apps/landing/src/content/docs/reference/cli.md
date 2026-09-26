@@ -112,7 +112,7 @@ If the server was started with a custom host, port or data directory, pass the s
 
 ### `maple restore`
 
-Restore the local store from the current checkpoint. Refuses to run while a server owns the store. The existing store is moved into `<data-dir>/backups/quarantine`, never deleted.
+Restore the local store from the current checkpoint. Refuses to run while a server owns the store. The existing store is moved beside the data directory as `<data-dir>.quarantine-<ids>`, never deleted; `maple schema gc` lists it and `--apply` removes it.
 
 | Flag | Default | Description |
 | --- | --- | --- |
@@ -131,21 +131,20 @@ Local mode only. Export whole UTC days of the six raw telemetry tables from a ch
 
 | Subcommand | What it does |
 | --- | --- |
-| `archive create <YYYY-MM-DD> <signal>` | Export one day of one signal. `--checkpoint-id` picks the checkpoint; `--config` loads tuning from `archive calibrate --write-config` |
+| `archive create <YYYY-MM-DD> <signal>` | Export one day of one signal. `--checkpoint-id` picks the checkpoint. Refuses days past retention, and refuses to replace an archived day with fewer rows unless you pass `--allow-shrink` |
 | `archive list [--output summary\|paths\|json] [--signal <name>]` | List archived days. `paths` prints Parquet file paths for DuckDB and needs `--signal` |
 | `archive verify [--signal <name>]` | Re-check the SHA-256 of every archived file |
 | `archive expire <YYYY-MM-DD> --apply` | Delete one archived day across all six signals |
 | `archive retire-live <YYYY-MM-DD> --apply` | Delete a day from the live store once all six signals are archived and verified. The day must be at least `--sealing-lag-hours` (default `24`) past UTC midnight |
-| `archive gc [--keep <n>]` | Delete replaced copies of re-exported days, keeping the newest `n` per signal and day (default `1`) |
+| `archive gc [--keep <n>] [--apply]` | Delete replaced copies of re-exported days, keeping the newest `n` per signal and day (default `1`). Without `--apply` it only prints the plan |
 | `archive reconcile` | Finish an interrupted `create` or `gc` without exporting again |
 | `archive rebuild <signal>` | Rebuild a signal's `catalog.jsonl` from its manifests |
-| `archive calibrate <YYYY-MM-DD>` | Measure export settings on a sample of one day and optionally write them with `--write-config` |
 
 Signals: `logs`, `traces`, `metrics_sum`, `metrics_gauge`, `metrics_histogram`, `metrics_exponential_histogram`.
 
-Common flags: `--data-dir` (default `~/.maple/data`), `--archive-dir` (default `~/.maple/archive`) and `--scratch-root` (default `~/.maple/scratch`). `expire` and `retire-live` change nothing unless you pass `--apply`. `gc` and `reconcile` act by default; pass `--dry-run` to print the plan without changing anything.
+Common flags: `--data-dir` (default `~/.maple/data`), `--archive-dir` (default `~/.maple/archive`) and `--scratch-root` (default `~/.maple/scratch`). `gc`, `expire` and `retire-live` change nothing unless you pass `--apply`. `reconcile` acts by default; pass `--dry-run` to print the plan without changing anything.
 
-`archive calibrate-run` and `archive calibrate-session` also appear in `--help`. They are internal helpers that `archive calibrate` runs itself; do not call them directly.
+Export settings are fixed: one writer thread, 10,000-row row groups, and files of at most 500,000 rows or 256 MiB. Older releases had `archive calibrate`; `archive create` still accepts its `--config` flag but ignores it.
 
 ### `maple schema`
 
@@ -156,7 +155,8 @@ Inspect and migrate the local store's schema. Needed only when a release note sa
 | `schema status` | Show the store's schema identity and migration journal state |
 | `schema plan` | Show the deterministic migration plan for this store |
 | `schema migrate [--dry-run] [--yes]` | Migrate a populated store into a staged current-schema store. Needs a stopped server; keeps the original as a rollback point |
-| `schema abandon [--yes]` | Quarantine an unfinished staged target, preserving the active source |
+| `schema abandon [--yes]` | Quarantine an unfinished staged target, preserving the active source (also when the source was left dirty) |
+| `schema gc [--apply] [--release-preserved]` | List what restores, resets and migrations set aside (quarantined stores, migration sources, stale locks). `--apply` deletes it; `--release-preserved` also unpins the checkpoints a reset kept |
 
 All four take `--data-dir <path>` (default `~/.maple/data`).
 

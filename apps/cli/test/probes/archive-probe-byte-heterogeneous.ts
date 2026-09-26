@@ -4,7 +4,7 @@
 // underestimates and then aborts on the wide tail. Authoritative refinement must
 // split the wide region until every shard meets both bounds.
 // Contract: exit 0 (PASS) when every shard's actual uncompressed size <= the
-// bound; exit nonzero (FAIL) when export aborts with "recalibrate"/"exceeds".
+// bound; exit nonzero (FAIL) when export aborts with "exceeds".
 //
 // Run: MAPLE_LIBCHDB=<bundle>/libchdb.so bun apps/cli/test/probes/archive-probe-byte-heterogeneous.ts
 
@@ -63,7 +63,7 @@ try {
 	)
 } catch (e) {
 	const msg = e instanceof Error ? e.message : String(e)
-	if (/exceeds|maxShardBytes|recalibrate/i.test(msg)) {
+	if (/exceeds|maxShardBytes/i.test(msg)) {
 		h.fail(`heterogeneous export aborted instead of refining: ${msg.slice(0, 160)}`)
 	}
 	h.fail(msg)

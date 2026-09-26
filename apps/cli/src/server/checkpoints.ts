@@ -2,10 +2,9 @@
 import { randomUUID } from "node:crypto"
 import { spawnSync } from "node:child_process"
 import { existsSync, lstatSync, readFileSync, rmSync, writeFileSync } from "node:fs"
-import { cp, lstat, mkdir, readFile, readdir, rm, stat } from "node:fs/promises"
-import { tmpdir } from "node:os"
+import { lstat, mkdir, readFile, readdir, rm, rmdir, stat } from "node:fs/promises"
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path"
-import { Effect, Schema } from "effect"
+import { Duration, Effect, Option, Schema } from "effect"
 import { HttpClient, HttpClientRequest } from "effect/unstable/http"
 import { CHDB_VERSION, MAPLE_VERSION } from "../version"
 import { serverUrl } from "../lib/local-address"
@@ -182,6 +181,8 @@ const RestoreTransactionSchema = Schema.Struct({
 	phase: RestoreTransactionPhase,
 	createdAt: IsoDateTime,
 	validation: Schema.NullOr(CheckpointValidationSchema),
+	// Absent on transactions an older build wrote, which copied the registry.
+	registry: Schema.optionalKey(Schema.Literal("moved")),
 })
 
 type RestoreTransaction = Schema.Schema.Type<typeof RestoreTransactionSchema>
@@ -265,6 +266,17 @@ export class CheckpointRestoreError extends Schema.TaggedError<CheckpointRestore
 	{ ...checkpointErrorFields, selector: Schema.String },
 ) {}
 
+/** A registry or transaction invariant this build refuses to guess past. */
+export class CheckpointStateError extends Schema.TaggedError<CheckpointStateError>()(
+	"@maple/cli/CheckpointStateError",
+	{ message: Schema.String },
+) {}
+
+export class CheckpointRetainedError extends Schema.TaggedError<CheckpointRetainedError>()(
+	"@maple/cli/CheckpointRetainedError",
+	{ dataDir: Schema.String, message: Schema.String, cause: Schema.optionalKey(Schema.String) },
+) {}
+
 const errorMessage = (error: unknown): string => (error instanceof Error ? error.message : String(error))
 
 const errorCause = (error: unknown): string =>
@@ -279,6 +291,9 @@ export interface CheckpointOptions {
 
 export interface ResolvedCheckpoint {
 	readonly checkpointId: CheckpointId
+	/** The data dir whose registry holds the snapshot now, which is not
+	 * necessarily `manifest.sourceDataDir` once the store has been moved. */
+	readonly dataDir: string
 	readonly snapshotDir: string
 	readonly backupDir: string
 	readonly backupSqlPath: string
@@ -358,6 +373,13 @@ export const restoreQuarantinePath = (
 	operationId: CheckpointOperationId,
 	quarantineId: CheckpointQuarantineId,
 ): string => `${resolve(dataDir)}.quarantine-${operationId}-${quarantineId}`
+/** Validation restores go beside the data dir (same volume), never to tmpfs. */
+export const checkpointValidationScratchRoot = (dataDir: string): string =>
+	`${resolve(dataDir)}.checkpoint-scratch`
+/** Consecutive refresh failures, outside the registry so a failing first
+ * checkpoint never makes an empty registry look populated. */
+export const checkpointFailuresPath = (dataDir: string): string =>
+	`${resolve(dataDir)}.checkpoint-failures.json`
 const operationDir = (dataDir: string, operationId: CheckpointOperationId): string =>
 	join(checkpointOperationsRoot(dataDir), `checkpoint-${operationId}`)
 const operationPath = (dataDir: string, operationId: CheckpointOperationId): string =>
@@ -586,6 +608,14 @@ const countFrom = (rows: ReadonlyArray<Record<string, unknown>>): number => {
 
 const queryCount = (db: Chdb, sql: string): number => countFrom(readJsonRows(db.query(sql)))
 
+/** Counts are compared across separate chDB opens and raw tables expire whole
+ * days by TTL, so a merge between two opens that straddle UTC midnight would
+ * fail validation. The stop lives only in this process; nothing is persisted. */
+const freezeBackgroundMerges = (db: Chdb): void => {
+	db.exec("SYSTEM STOP TTL MERGES")
+	db.exec("SYSTEM STOP MERGES")
+}
+
 const validateRestoredDatabase = (db: Chdb): CheckpointValidation => ({
 	validatedAt: new Date().toISOString(),
 	traces: queryCount(db, "SELECT count() FROM traces"),
@@ -622,6 +652,7 @@ export const validateCheckpointDataDir = (dataDir: string): CheckpointValidation
 		bootstrapSchema: false,
 	})
 	try {
+		freezeBackgroundMerges(db)
 		return validateRestoredDatabase(db)
 	} finally {
 		db.close()
@@ -711,10 +742,14 @@ const validateRestoredDatabaseInFreshProcess = (
  */
 export type ManifestCompatibility = "build" | "registry"
 
+/**
+ * `sourceDataDir` is provenance only. A snapshot is bound to its registry by
+ * where it lives (`<dataDir>/backups/snapshots/<id>`, checked below), so a data
+ * dir moved as a whole keeps every checkpoint restorable.
+ */
 export const parseCheckpointManifest = (
 	value: unknown,
 	expectedCheckpointId?: CheckpointId,
-	expectedSourceDataDir?: string,
 	compatibility: ManifestCompatibility = "build",
 ): CheckpointManifest => {
 	let manifest: CheckpointManifest
@@ -728,9 +763,6 @@ export const parseCheckpointManifest = (
 	}
 	if (!isAbsolute(manifest.sourceDataDir)) {
 		throw new Error("checkpoint sourceDataDir must be absolute")
-	}
-	if (expectedSourceDataDir && resolve(manifest.sourceDataDir) !== resolve(expectedSourceDataDir)) {
-		throw new Error("checkpoint sourceDataDir does not match its configured owner")
 	}
 	if (manifest.backupRelativePath !== snapshotBackupRelativePath(manifest.checkpointId)) {
 		throw new Error("checkpoint backup path does not match its immutable ID")
@@ -881,7 +913,6 @@ const resolveCheckpointById = async (
 	const manifest = parseCheckpointManifest(
 		JSON.parse(await readFile(snapshotManifestPath(dataDir, checkpointId), "utf8")),
 		checkpointId,
-		dataDir,
 		compatibility,
 	)
 	const backupDir = snapshotBackupDir(dataDir, checkpointId)
@@ -912,12 +943,20 @@ const resolveCheckpointById = async (
 	}
 	return {
 		checkpointId,
+		dataDir: resolve(dataDir),
 		snapshotDir,
 		backupDir,
 		backupSqlPath: snapshotBackupSqlPath(checkpointId),
 		manifest,
 	}
 }
+
+/** Resolve one snapshot by id against the registry's own integrity only,
+ * without requiring `current` to be restorable by this build. */
+export const resolveCheckpointInRegistry = (
+	dataDir: string,
+	checkpointId: CheckpointId,
+): Promise<ResolvedCheckpoint> => resolveCheckpointById(dataDir, checkpointId, "registry")
 
 export const resolveCheckpoint = async (
 	dataDir: string,
@@ -938,7 +977,7 @@ const restoreResolvedInto = async (
 ): Promise<{ readonly db: Chdb; readonly validation: CheckpointValidation }> => {
 	const scratchParent = dirname(targetDataDir)
 	const scratchConfig = join(scratchParent, `checkpoint-${randomUUID()}.xml`)
-	writeBackupConfig(scratchConfig, resolvedCheckpoint.manifest.sourceDataDir)
+	writeBackupConfig(scratchConfig, resolvedCheckpoint.dataDir)
 	let db: Chdb | undefined
 	try {
 		db = Chdb.open({
@@ -948,10 +987,14 @@ const restoreResolvedInto = async (
 			bootstrapSchema: false,
 		})
 		db.exec("CREATE DATABASE IF NOT EXISTS default")
+		// Before RESTORE in case the stop covers tables created later, and again
+		// after it for the tables RESTORE attached.
+		freezeBackgroundMerges(db)
 		db.exec(
 			`RESTORE DATABASE default FROM Disk('src', '${resolvedCheckpoint.backupSqlPath}') ` +
 				"SETTINGS allow_different_database_def=1",
 		)
+		freezeBackgroundMerges(db)
 		if (resolvedCheckpoint.manifest.formatVersion === MANIFEST_FORMAT_VERSION) {
 			await LocalEventingControlStore.restoreSnapshot(
 				join(resolvedCheckpoint.snapshotDir, "control.sqlite"),
@@ -973,7 +1016,9 @@ const restoreResolvedInto = async (
 export const withRestoredCheckpoint = async <A>(
 	resolvedCheckpoint: ResolvedCheckpoint,
 	options: {
-		readonly scratchRoot?: string
+		/** Required: a full store is restored here, so it must be a real volume
+		 * with room for it (never tmpfs by default). */
+		readonly scratchRoot: string
 		readonly cleanup?: "always" | "never"
 		/**
 		 * A caller-supplied deterministic subdirectory name beneath scratchRoot,
@@ -999,8 +1044,8 @@ export const withRestoredCheckpoint = async <A>(
 		readonly validation: CheckpointValidation
 	}) => A | Promise<A>,
 ): Promise<A> => {
-	const scratchRoot = resolve(options.scratchRoot ?? tmpdir())
-	const sourceDataDir = resolve(resolvedCheckpoint.manifest.sourceDataDir)
+	const scratchRoot = resolve(options.scratchRoot)
+	const sourceDataDir = resolve(resolvedCheckpoint.dataDir)
 	const sourceRelation = relative(sourceDataDir, scratchRoot)
 	if (
 		scratchRoot === sourceDataDir ||
@@ -1291,14 +1336,18 @@ export const reconcileCheckpointOperations = async (
 		await assertNoSymlink(checkpointRoot(dataDir), quarantineRoot)
 		await assertRealDirectory(quarantineRoot, "checkpoint quarantine")
 	}
-	const quarantine = join(quarantineRoot, `operation-${operation.operationId}-${randomUUID()}`)
-	await ensurePrivateDirectory(quarantineRoot)
-	await ensurePrivateDirectory(quarantine)
 	if (existsSync(snapshot)) {
 		await assertNoSymlink(checkpointSnapshotsRoot(dataDir), snapshot)
 		await assertRealDirectory(snapshot, "incomplete checkpoint snapshot")
-		await durableRename(snapshot, join(quarantine, "incomplete-snapshot"))
+		// Never published and referenced by nothing, but a full store copy: keeping
+		// one per failed refresh filled the disk. A crash mid-removal leaves the
+		// operation in place, so the next reconcile repeats this.
+		await rm(snapshot, { recursive: true })
+		await syncDirectory(checkpointSnapshotsRoot(dataDir))
 	}
+	const quarantine = join(quarantineRoot, `operation-${operation.operationId}-${randomUUID()}`)
+	await ensurePrivateDirectory(quarantineRoot)
+	await ensurePrivateDirectory(quarantine)
 	await durableRename(entryDir, join(quarantine, "operation"))
 }
 
@@ -1345,11 +1394,21 @@ export const acquireCheckpointPin = async (
 	pinId: string = randomUUID(),
 ): Promise<string> => {
 	const validatedCheckpointId = validateId(checkpointId, "checkpoint")
-	if (!PIN_PURPOSE.test(purpose)) throw new Error(`invalid checkpoint pin purpose: ${purpose}`)
-	const validatedPinId = validateId(pinId, "pin")
 	// A pin on a checkpoint that does not resolve cannot protect anything; force
 	// the caller to pin real, validated state.
 	await resolveCheckpoint(dataDir, validateCheckpointId(validatedCheckpointId))
+	return writeCheckpointPin(dataDir, validatedCheckpointId, purpose, pinId)
+}
+
+const writeCheckpointPin = async (
+	dataDir: string,
+	checkpointId: string,
+	purpose: string,
+	pinId: string,
+): Promise<string> => {
+	const validatedCheckpointId = validateId(checkpointId, "checkpoint")
+	if (!PIN_PURPOSE.test(purpose)) throw new Error(`invalid checkpoint pin purpose: ${purpose}`)
+	const validatedPinId = validateId(pinId, "pin")
 	const pinsRoot = checkpointPinsRoot(dataDir)
 	const pinDir = join(pinsRoot, validatedCheckpointId)
 	await ensurePrivateDirectory(pinsRoot)
@@ -1624,6 +1683,306 @@ const removeCompletedRetirement = async (
 	await faults.afterRetirementCleanupRemoval?.(cleanup)
 }
 
+const VALIDATION_SCRATCH_ENTRY =
+	/^maple-checkpoint-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+const SWEEP_ENTRY_PREFIX = "sweep-"
+
+/** Remove restores a killed validation left behind. Only the random
+ * `maple-checkpoint-<uuid>` names `withRestoredCheckpoint` allocates here are
+ * touched; the caller holds the maintenance lock, so none is in use. */
+const clearValidationScratch = async (dataDir: string): Promise<void> => {
+	const root = checkpointValidationScratchRoot(dataDir)
+	if (!existsSync(root)) return
+	await assertRealDirectory(root, "checkpoint validation scratch root")
+	for (const entry of await readdir(root, { withFileTypes: true })) {
+		if (!entry.isDirectory() || !VALIDATION_SCRATCH_ENTRY.test(entry.name)) continue
+		await rm(join(root, entry.name), { recursive: true })
+	}
+	await syncDirectory(root)
+}
+
+const unreferencedCheckpointIds = async (
+	dataDir: string,
+	state: CheckpointState,
+): Promise<ReadonlyArray<CheckpointId>> => {
+	const root = checkpointSnapshotsRoot(dataDir)
+	if (!existsSync(root)) return []
+	const ids: CheckpointId[] = []
+	for (const entry of await readdir(root, { withFileTypes: true })) {
+		if (!entry.isDirectory() || !CHECKPOINT_ID.test(entry.name)) continue
+		const checkpointId = validateCheckpointId(entry.name)
+		if (checkpointId === state.current || checkpointId === state.previous) continue
+		if (await hasPins(dataDir, checkpointId)) continue
+		ids.push(checkpointId)
+	}
+	return ids
+}
+
+/** Retire one unreferenced, unpinned snapshot. The rename into `retiring/` is
+ * the commit point: a `sweep-*` entry is owned by construction and any left by
+ * a crash is removed by the next sweep. */
+const retireUnreferencedCheckpoint = async (
+	dataDir: string,
+	checkpointId: CheckpointId,
+	state: CheckpointState,
+): Promise<void> => {
+	if (checkpointId === state.current || checkpointId === state.previous) return
+	if (await hasPins(dataDir, checkpointId)) return
+	// Only a snapshot with a sound manifest is proven to be a finished checkpoint.
+	const resolved = await resolveCheckpointById(dataDir, checkpointId, "registry")
+	const retiringRoot = checkpointRetiringRoot(dataDir)
+	await ensurePrivateDirectory(retiringRoot)
+	await assertNoSymlink(checkpointRoot(dataDir), retiringRoot)
+	const retired = join(retiringRoot, `${SWEEP_ENTRY_PREFIX}${checkpointId}-${randomUUID()}`)
+	await durableRename(resolved.snapshotDir, retired)
+	await rm(retired, { recursive: true })
+	await syncDirectory(retiringRoot)
+}
+
+const removeSweepDebris = async (dataDir: string): Promise<void> => {
+	const retiringRoot = checkpointRetiringRoot(dataDir)
+	if (!existsSync(retiringRoot)) return
+	await assertRealDirectory(retiringRoot, "checkpoint retirement root")
+	for (const entry of await readdir(retiringRoot, { withFileTypes: true })) {
+		if (!entry.isDirectory() || !entry.name.startsWith(SWEEP_ENTRY_PREFIX)) continue
+		await rm(join(retiringRoot, entry.name), { recursive: true })
+	}
+	await syncDirectory(retiringRoot)
+}
+
+/**
+ * Retire every snapshot that neither `current`, `previous` nor a pin holds. A
+ * pinned checkpoint that rotated out used to be skipped once and then kept
+ * forever; releasing its pin now lets the next refresh reclaim it. Best effort:
+ * the new checkpoint is already published, and a snapshot that cannot be
+ * proven sound is kept.
+ */
+export const sweepUnreferencedCheckpoints = (
+	dataDir: string,
+	state: CheckpointState,
+): Effect.Effect<ReadonlyArray<CheckpointId>> =>
+	Effect.gen(function* () {
+		yield* Effect.tryPromise(() => removeSweepDebris(dataDir)).pipe(Effect.ignore)
+		const candidates = yield* Effect.tryPromise(() => unreferencedCheckpointIds(dataDir, state)).pipe(
+			Effect.orElseSucceed((): ReadonlyArray<CheckpointId> => []),
+		)
+		const retired: CheckpointId[] = []
+		for (const checkpointId of candidates) {
+			const outcome = yield* Effect.tryPromise(() =>
+				retireUnreferencedCheckpoint(dataDir, checkpointId, state),
+			).pipe(Effect.option)
+			if (Option.isSome(outcome) && !existsSync(checkpointSnapshotDir(dataDir, checkpointId))) {
+				retired.push(checkpointId)
+			}
+		}
+		yield* Effect.annotateCurrentSpan("maple.checkpoint.swept", retired.length)
+		return retired
+	}).pipe(Effect.withSpan("CheckpointService.sweep"))
+
+/** Purpose of the pins a reset or wipe places on every checkpoint it keeps. */
+export const RESET_PRESERVED_PIN_PURPOSE = "reset-preserved"
+
+/**
+ * Pin every sound snapshot before the live store is cleared. The refresh loop
+ * starts right after a reset, and without this the first two near-empty
+ * checkpoints rotated the pre-reset ones out within an hour. Only an explicit
+ * `maple schema gc --release-preserved --apply` removes these pins.
+ */
+const preserveCheckpointsAcrossReset = (
+	dataDir: string,
+	operationId: CheckpointOperationId,
+): Effect.Effect<ReadonlyArray<CheckpointId>, unknown> =>
+	Effect.gen(function* () {
+		// A registry this build cannot read cannot rotate either: every later
+		// checkpoint refuses it. It needs no pin and must not block the reset.
+		const state = yield* Effect.tryPromise(() => readStateFileOptional(dataDir)).pipe(
+			Effect.orElseSucceed(() => null),
+		)
+		if (state === null) return []
+		const candidates = yield* Effect.tryPromise(() => snapshotIds(dataDir))
+		const preserved: CheckpointId[] = []
+		for (const checkpointId of candidates) {
+			const resolved = yield* Effect.tryPromise(() =>
+				resolveCheckpointById(dataDir, checkpointId, "registry"),
+			).pipe(Effect.option)
+			if (Option.isNone(resolved)) continue
+			// A failed pin write fails the reset: clearing the store while a kept
+			// checkpoint stays retirable would break the promise the reset makes.
+			yield* Effect.tryPromise(() =>
+				writeCheckpointPin(
+					dataDir,
+					checkpointId,
+					`${RESET_PRESERVED_PIN_PURPOSE}:${operationId}`,
+					randomUUID(),
+				),
+			)
+			preserved.push(checkpointId)
+		}
+		return preserved
+	})
+
+const snapshotIds = async (dataDir: string): Promise<ReadonlyArray<CheckpointId>> => {
+	const root = checkpointSnapshotsRoot(dataDir)
+	if (!existsSync(root)) return []
+	await assertRealDirectory(root, "checkpoint snapshots")
+	return (await readdir(root, { withFileTypes: true }))
+		.filter((entry) => entry.isDirectory() && CHECKPOINT_ID.test(entry.name))
+		.map((entry) => validateCheckpointId(entry.name))
+}
+
+export interface PreservedCheckpointPin {
+	readonly checkpointId: CheckpointId
+	readonly pinPath: string
+	readonly purpose: string
+	readonly createdAt: string
+	readonly snapshotExists: boolean
+}
+
+/** Every reset-preservation pin, whether or not its snapshot still exists. */
+export const listPreservedCheckpointPins = async (
+	dataDir: string,
+): Promise<ReadonlyArray<PreservedCheckpointPin>> => {
+	const pinsRoot = checkpointPinsRoot(dataDir)
+	if (!existsSync(pinsRoot)) return []
+	await assertNoSymlink(checkpointRoot(dataDir), pinsRoot)
+	await assertRealDirectory(pinsRoot, "checkpoint pins")
+	const pins: PreservedCheckpointPin[] = []
+	for (const dir of await readdir(pinsRoot, { withFileTypes: true })) {
+		if (!dir.isDirectory() || !CHECKPOINT_ID.test(dir.name)) continue
+		const checkpointId = validateCheckpointId(dir.name)
+		for (const file of await readdir(join(pinsRoot, dir.name), { withFileTypes: true })) {
+			if (!file.isFile() || !file.name.endsWith(".json")) continue
+			const pinPath = join(pinsRoot, dir.name, file.name)
+			const pin = await assertCheckpointPinIdentity(dataDir, checkpointId, pinPath)
+			if (!pin.purpose.startsWith(`${RESET_PRESERVED_PIN_PURPOSE}:`)) continue
+			pins.push({
+				checkpointId,
+				pinPath,
+				purpose: pin.purpose,
+				createdAt: pin.createdAt,
+				snapshotExists: existsSync(checkpointSnapshotDir(dataDir, checkpointId)),
+			})
+		}
+	}
+	return pins
+}
+
+/** Release every reset-preservation pin, then let the sweep retire whatever is
+ * no longer `current` or `previous`. Explicit only (`schema gc`). */
+export const releasePreservedCheckpoints = (
+	dataDir: string,
+): Effect.Effect<
+	{ readonly released: ReadonlyArray<CheckpointId>; readonly retired: ReadonlyArray<CheckpointId> },
+	CheckpointRetainedError
+> => {
+	const operationId = newCheckpointOperationId()
+	const retainedError = (error: unknown): CheckpointRetainedError =>
+		new CheckpointRetainedError({
+			dataDir: resolve(dataDir),
+			message: `could not release preserved checkpoints: ${errorMessage(error)}`,
+			cause: errorCause(error),
+		})
+	return withMaintenance(dataDir, operationId, retainedError, () =>
+		Effect.gen(function* () {
+			const pins = yield* Effect.tryPromise({
+				try: () => listPreservedCheckpointPins(dataDir),
+				catch: retainedError,
+			})
+			for (const pin of pins) {
+				yield* Effect.tryPromise({
+					try: () => releaseCheckpointPin(dataDir, pin.checkpointId, pin.pinPath, pin.purpose),
+					catch: retainedError,
+				})
+			}
+			const state = yield* Effect.tryPromise({
+				try: () => readStateFileOptional(dataDir),
+				catch: retainedError,
+			})
+			const retired = state === null ? [] : yield* sweepUnreferencedCheckpoints(dataDir, state)
+			return { released: [...new Set(pins.map((pin) => pin.checkpointId))], retired }
+		}),
+	)
+}
+
+const CheckpointFailuresSchema = Schema.Struct({
+	formatVersion: Schema.Literal(1),
+	consecutiveFailures: Schema.Number.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(1)),
+	lastFailureAt: IsoDateTime,
+	lastError: Schema.String,
+})
+
+type CheckpointFailures = Schema.Schema.Type<typeof CheckpointFailuresSchema>
+
+const readCheckpointFailures = (dataDir: string): Effect.Effect<CheckpointFailures | null> =>
+	Effect.tryPromise(async () =>
+		existsSync(checkpointFailuresPath(dataDir))
+			? Schema.decodeUnknownSync(CheckpointFailuresSchema)(
+					JSON.parse(await readFile(checkpointFailuresPath(dataDir), "utf8")),
+				)
+			: null,
+	).pipe(Effect.orElseSucceed(() => null))
+
+const recordCheckpointFailure = (dataDir: string, message: string): Effect.Effect<void> =>
+	Effect.flatMap(readCheckpointFailures(dataDir), (previous) =>
+		Effect.tryPromise(() =>
+			durableJson(checkpointFailuresPath(dataDir), {
+				formatVersion: 1,
+				consecutiveFailures: (previous?.consecutiveFailures ?? 0) + 1,
+				lastFailureAt: new Date().toISOString(),
+				lastError: message.slice(0, 2048),
+			} satisfies CheckpointFailures),
+		),
+	).pipe(Effect.ignore)
+
+const clearCheckpointFailures = (dataDir: string): Effect.Effect<void> =>
+	Effect.tryPromise(async () => {
+		if (existsSync(checkpointFailuresPath(dataDir))) await durableRemove(checkpointFailuresPath(dataDir))
+	}).pipe(Effect.ignore)
+
+export interface CheckpointRefreshBackoff {
+	readonly delay: Duration.Duration
+	readonly consecutiveFailures: number
+	readonly lastError: string | null
+}
+
+const MAX_REFRESH_BACKOFF = Duration.hours(4)
+
+/**
+ * How long the refresh loop should wait before its next attempt: the interval
+ * after a success, doubling per consecutive failure, capped at the larger of
+ * the interval and four hours. A success anywhere (`maple checkpoint` by hand
+ * included) resets it.
+ */
+export const checkpointRefreshBackoff = (
+	dataDir: string,
+	interval: Duration.Duration,
+): Effect.Effect<CheckpointRefreshBackoff> =>
+	Effect.map(readCheckpointFailures(dataDir), (failures) => {
+		const consecutiveFailures = failures?.consecutiveFailures ?? 0
+		const base = Duration.toMillis(interval)
+		const cap = Math.max(base, Duration.toMillis(MAX_REFRESH_BACKOFF))
+		const delay =
+			consecutiveFailures === 0 ? base : Math.min(base * 2 ** Math.min(consecutiveFailures, 20), cap)
+		return {
+			delay: Duration.millis(delay),
+			consecutiveFailures,
+			lastError: failures?.lastError ?? null,
+		}
+	})
+
+/** The line the refresh loop prints after a failure, or null when healthy. */
+export const formatCheckpointRefreshBackoff = (
+	backoff: CheckpointRefreshBackoff,
+	retryCommand = "maple checkpoint",
+): string | null =>
+	backoff.consecutiveFailures === 0
+		? null
+		: `checkpoint refresh failed ${backoff.consecutiveFailures} time(s) in a row` +
+			(backoff.lastError === null
+				? ""
+				: ` (last: ${backoff.lastError.split("\n")[0]?.slice(0, 200)})`) +
+			`; next attempt in ${Duration.format(backoff.delay)}. Run \`${retryCommand}\` to retry now.`
+
 const createCheckpointTraced = Effect.fn("CheckpointService.create")(function* (options: CheckpointOptions) {
 	const operationId = newCheckpointOperationId()
 	const checkpointId = newCheckpointId()
@@ -1651,6 +2010,7 @@ const createCheckpointTraced = Effect.fn("CheckpointService.create")(function* (
 					await assertCheckpointInfrastructureSafe(options.dataDir)
 					assertNoLegacyLayout(options.dataDir)
 					await reconcileCheckpointOperations(options.dataDir, options.faults)
+					await clearValidationScratch(options.dataDir)
 					const oldState = await readStateFileOptional(options.dataDir)
 					if (!oldState && (await checkpointLikePaths(options.dataDir)).length > 0) {
 						throw new Error(
@@ -1711,7 +2071,7 @@ const createCheckpointTraced = Effect.fn("CheckpointService.create")(function* (
 						: createError(error),
 				),
 			)
-			return yield* Effect.tryPromise({
+			const created = yield* Effect.tryPromise({
 				try: async () => {
 					const { oldState, snapshot, startedAt } = prepared
 					let { operation } = prepared
@@ -1750,6 +2110,7 @@ const createCheckpointTraced = Effect.fn("CheckpointService.create")(function* (
 					}
 					const provisional: ResolvedCheckpoint = {
 						checkpointId,
+						dataDir: resolve(options.dataDir),
 						snapshotDir: snapshot,
 						backupDir: snapshotBackupDir(options.dataDir, checkpointId),
 						backupSqlPath: snapshotBackupSqlPath(checkpointId),
@@ -1757,9 +2118,21 @@ const createCheckpointTraced = Effect.fn("CheckpointService.create")(function* (
 					}
 					const validation = await withRestoredCheckpoint(
 						provisional,
-						{ cleanup: "always" },
-						(restored) => restored.validation,
+						{ scratchRoot: checkpointValidationScratchRoot(options.dataDir), cleanup: "always" },
+						(restored) => {
+							// Restore also demands a reopen in a fresh process (chDB reloads
+							// persisted metadata only at process start); hold creation to the
+							// same bar so no published checkpoint fails it later.
+							restored.db.close()
+							return validateRestoredDatabaseInFreshProcess(
+								restored.scratchDataDir,
+								restored.validation,
+							)
+						},
 					)
+					const scratchRoot = checkpointValidationScratchRoot(options.dataDir)
+					if (existsSync(scratchRoot) && (await readdir(scratchRoot)).length === 0)
+						await rmdir(scratchRoot)
 					const manifest: CheckpointManifest = { ...provisionalManifest, validation }
 					await durableJson(
 						snapshotManifestPath(options.dataDir, checkpointId),
@@ -1799,8 +2172,12 @@ const createCheckpointTraced = Effect.fn("CheckpointService.create")(function* (
 				},
 				catch: createError,
 			})
+			const swept = yield* sweepUnreferencedCheckpoints(options.dataDir, created.state)
+			return { ...created, swept }
 		}),
 	).pipe(
+		Effect.tap(() => clearCheckpointFailures(options.dataDir)),
+		Effect.tapError((error) => recordCheckpointFailure(options.dataDir, error.message)),
 		Effect.catchTag("@maple/cli/CheckpointPreconditionError", (refusal) =>
 			Effect.as(Effect.annotateCurrentSpan({ "maple.checkpoint.refused": refusal._tag }), refusal),
 		),
@@ -2038,6 +2415,28 @@ const completeRestoreTransaction = async (
 	await durableRemove(restoreTransactionPath(dataDir))
 }
 
+/** Carry the registry from the quarantined old store into the restored live
+ * one by rename (same parent, so same filesystem). Idempotent by topology. */
+const moveRegistryIntoRestoredLive = async (dataDir: string, quarantine: string): Promise<void> => {
+	const from = join(quarantine, "backups")
+	const to = checkpointRoot(dataDir)
+	const fromExists = existsSync(from)
+	const toExists = existsSync(to)
+	if (toExists && !fromExists) {
+		await assertRealDirectory(to, "restored checkpoint registry")
+		return
+	}
+	if (fromExists && toExists) {
+		throw new CheckpointStateError({
+			message: `checkpoint registry exists in both the old and the restored store: ${from}, ${to}`,
+		})
+	}
+	if (!fromExists)
+		throw new CheckpointStateError({ message: `the old store's checkpoint registry is missing: ${from}` })
+	await assertRealDirectory(from, "quarantined checkpoint registry")
+	await durableRename(from, to)
+}
+
 const reconcileRestoreTransactionUnlocked = async (
 	dataDir: string,
 	faults: RestoreRecoveryFaults = {},
@@ -2128,6 +2527,7 @@ const reconcileRestoreTransactionUnlocked = async (
 		!existsSync(restoreData) &&
 		existsSync(quarantine)
 	) {
+		if (transaction.registry === "moved") await moveRegistryIntoRestoredLive(dataDir, quarantine)
 		transaction = await finalizeRestoreMarkers(
 			dataDir,
 			{
@@ -2174,9 +2574,11 @@ export const reconcileCheckpointRecovery = Effect.fn("CheckpointService.reconcil
 
 /**
  * Explicitly remove the live chDB and eventing control stores while preserving
- * the checkpoint registry below `<dataDir>/backups`. The maintenance lock
+ * the checkpoint registry below `<dataDir>/backups`. Every sound checkpoint is
+ * pinned first (see {@link preserveCheckpointsAcrossReset}) so the refresh loop
+ * that starts right after cannot rotate it out. The maintenance lock
  * serializes this destructive operation with checkpoint, restore, and archive
- * work.
+ * work. Returns the checkpoints it pinned.
  */
 export const resetLiveStorePreservingCheckpoints = Effect.fn("CheckpointService.reset")(function* (
 	dataDir: string,
@@ -2192,15 +2594,26 @@ export const resetLiveStorePreservingCheckpoints = Effect.fn("CheckpointService.
 		})
 	yield* Effect.annotateCurrentSpan("maple.checkpoint.operation_id", operationId)
 	return yield* withMaintenance(dataDir, operationId, resetError, () =>
-		Effect.tryPromise({
-			try: async () => {
-				const resetReconciled = await reconcileResetTransactionUnlocked(dataDir, faults)
-				if (!resetReconciled) {
-					await reconcileRestoreTransactionUnlocked(dataDir)
-					await beginResetTransactionUnlocked(dataDir, operationId, faults)
-				}
-			},
-			catch: resetError,
+		Effect.gen(function* () {
+			const resetReconciled = yield* Effect.tryPromise({
+				try: () => reconcileResetTransactionUnlocked(dataDir, faults),
+				catch: resetError,
+			})
+			// The interrupted reset pinned its checkpoints before it began.
+			if (resetReconciled) return { preserved: [] }
+			yield* Effect.tryPromise({
+				try: () => reconcileRestoreTransactionUnlocked(dataDir),
+				catch: resetError,
+			})
+			const preserved = yield* preserveCheckpointsAcrossReset(dataDir, operationId).pipe(
+				Effect.mapError(resetError),
+			)
+			yield* Effect.tryPromise({
+				try: () => beginResetTransactionUnlocked(dataDir, operationId, faults),
+				catch: resetError,
+			})
+			yield* Effect.annotateCurrentSpan("maple.checkpoint.preserved", preserved.length)
+			return { preserved }
 		}),
 	)
 })
@@ -2259,19 +2672,20 @@ export const restoreCheckpoint = Effect.fn("CheckpointService.restore")(function
 				if (!validationCountsMatch(resolvedCheckpoint.manifest.validation, validation)) {
 					throw new Error("restored checkpoint counts do not match its signed manifest")
 				}
-				await cp(checkpointRoot(dataDir), join(restoreData, "backups"), {
-					recursive: true,
-					force: false,
-					errorOnExist: true,
-				})
-				await syncTree(join(restoreData, "backups"))
+				// The registry is renamed across after the swap instead of copied here,
+				// which kept a second full copy of every checkpoint.
+				if (existsSync(join(restoreData, "backups"))) {
+					throw new CheckpointStateError({
+						message: "restored store unexpectedly contains a checkpoint registry",
+					})
+				}
 				await durableJson(restoreReadyPath(dataDir, operationId), {
 					formatVersion: 1,
 					operationId,
 					checkpointId: resolvedCheckpoint.checkpointId,
 				})
 				await syncTree(restoreData, { allowSymlinks: true })
-				transaction = { ...transaction, phase: "restore-ready", validation }
+				transaction = { ...transaction, phase: "restore-ready", validation, registry: "moved" }
 				await writeRestoreTransaction(dataDir, transaction)
 				await reconcileRestoreTransactionUnlocked(dataDir)
 				return {
