@@ -167,7 +167,9 @@ step "verifying the service-map ingress bridge"
 bounded 60 "service-map ingress bridge probe" \
 	env MAPLE_LIBCHDB="$LIBCHDB" bun "$REPO_ROOT/apps/cli/test/native-service-map-ingest-bridge-probe.ts" "$DATA" "$CONFIG"
 
-rollback="$(sed -n 's/^.*rollback *//p' "$ROOT/migrate.out" | tail -1)"
+# Anchor on the `rollback` field label: the reclaim hint below it also mentions
+# the rollback source.
+rollback="$(sed -n 's/^[[:space:]]*rollback[[:space:]][[:space:]]*//p' "$ROOT/migrate.out" | tail -1)"
 [[ -n "$rollback" && -d "$rollback" ]] || fail "native migration did not retain a rollback source"
 [[ -f "$(dirname "$rollback")/maple-store-version.json" ]] || fail "native rollback marker was not retained"
 echo "PASS: native historical migration, rebuilt aggregates, v3 materialization triggers, fresh reopen, and rollback retention"
