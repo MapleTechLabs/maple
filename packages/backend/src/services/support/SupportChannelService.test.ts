@@ -28,7 +28,7 @@ interface World {
 	configured: boolean
 	inviteFails: boolean
 	/** Private channels the bot is in, as `users.conversations` reports them. */
-	botChannels: Array<{ id: string; name: string }>
+	botChannels: Array<{ id: string; name: string; creator: string }>
 	/** Runs while Slack is "creating", to stage a concurrent takeover. */
 	duringCreate: (() => Promise<void>) | null
 	takenNames: Set<string>
@@ -71,6 +71,7 @@ const stubs = (world: World) =>
 							Effect.as({ ok: true, channel: { id: `C_${name}`, name } }),
 						)
 					}
+					if (method === "auth.test") return Effect.succeed({ ok: true, user_id: "U_BOT" })
 					if (method === "users.conversations") {
 						return Effect.succeed({ ok: true, channels: world.botChannels })
 					}
@@ -199,7 +200,7 @@ describe("SupportChannelService", () => {
 		const world = freshWorld()
 		// Slack accepted an earlier create that timed out on our side.
 		world.takenNames.add("maple-acme-inc")
-		world.botChannels = [{ id: "C_orphan", name: "maple-acme-inc" }]
+		world.botChannels = [{ id: "C_orphan", name: "maple-acme-inc", creator: "U_BOT" }]
 		const testDb = createTestDb(trackedDbs)
 		return Effect.gen(function* () {
 			const result = yield* invite(tenant)
@@ -208,10 +209,25 @@ describe("SupportChannelService", () => {
 		}).pipe(Effect.provide(makeLayer(world, testDb)))
 	})
 
+	it.effect("never adopts a channel someone else created, whatever its name", () => {
+		const world = freshWorld()
+		// An internal channel the bot was added to, whose name an org name happens to produce.
+		world.takenNames.add("maple-acme-inc")
+		world.botChannels = [{ id: "C_internal", name: "maple-acme-inc", creator: "U_STAFF" }]
+		const testDb = createTestDb(trackedDbs)
+		return Effect.gen(function* () {
+			const result = yield* invite(tenant)
+			assert.notStrictEqual(result.channel.channelId, "C_internal")
+			assert.strictEqual(result.channel.channelName, "maple-acme-inc-2")
+			const invited = world.calls.find((call) => call.method === "conversations.inviteShared")
+			assert.notStrictEqual(invited?.body.channel, "C_internal")
+		}).pipe(Effect.provide(makeLayer(world, testDb)))
+	})
+
 	it.effect("never adopts a channel another org has recorded", () => {
 		const world = freshWorld()
 		world.takenNames.add("maple-acme-inc")
-		world.botChannels = [{ id: "C_other", name: "maple-acme-inc" }]
+		world.botChannels = [{ id: "C_other", name: "maple-acme-inc", creator: "U_BOT" }]
 		const testDb = createTestDb(trackedDbs)
 		return Effect.gen(function* () {
 			yield* Effect.promise(() =>

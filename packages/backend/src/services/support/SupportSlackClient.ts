@@ -15,7 +15,17 @@ const SlackResponse = Schema.Struct({
 	ok: Schema.Boolean,
 	error: Schema.optionalKey(Schema.String),
 	channel: Schema.optionalKey(Schema.Struct({ id: Schema.String, name: Schema.String })),
-	channels: Schema.optionalKey(Schema.Array(Schema.Struct({ id: Schema.String, name: Schema.String }))),
+	channels: Schema.optionalKey(
+		Schema.Array(
+			Schema.Struct({
+				id: Schema.String,
+				name: Schema.String,
+				creator: Schema.optionalKey(Schema.String),
+			}),
+		),
+	),
+	/** `auth.test`: the bot's own user id. */
+	user_id: Schema.optionalKey(Schema.String),
 	response_metadata: Schema.optionalKey(Schema.Struct({ next_cursor: Schema.optionalKey(Schema.String) })),
 })
 type SlackResponse = Schema.Schema.Type<typeof SlackResponse>
@@ -33,6 +43,7 @@ export type SupportSlackMethod =
 	| "conversations.inviteShared"
 	| "chat.postMessage"
 	| "users.conversations"
+	| "auth.test"
 
 /** Form fields; Slack takes every Web API argument as a string, lists comma-separated. */
 export type SupportSlackArgs = Readonly<Record<string, string | boolean | number>>

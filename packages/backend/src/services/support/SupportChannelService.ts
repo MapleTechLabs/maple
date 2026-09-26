@@ -192,13 +192,17 @@ const make = Effect.gen(function* () {
 			.pipe(Effect.ignore)
 
 	/**
-	 * A channel the bot made that no org has recorded: left behind when a create timed out after
+	 * A channel the bot itself made that no org has recorded: left behind when a create timed out after
 	 * Slack accepted it, or a request died before saving. Nobody was invited to it and nothing was
 	 * posted, so it is safe to adopt instead of stepping to a suffixed name.
 	 */
 	const findUnrecordedChannel = Effect.fn("SupportChannelService.findUnrecordedChannel")(function* (
 		name: string,
 	) {
+		// Only channels the bot created: it can be a member of any private channel in the
+		// workspace, and a name alone would let an org name steer an invite into one of those.
+		const botUserId = (yield* slack.call("auth.test", {})).user_id
+		if (botUserId === undefined) return Option.none<SlackChannelRef>()
 		let cursor = ""
 		for (let page = 0; page < MAX_CHANNEL_PAGES; page++) {
 			const args: UsersConversationsArgs = {
@@ -208,7 +212,9 @@ const make = Effect.gen(function* () {
 			}
 			if (cursor !== "") args.cursor = cursor
 			const response = yield* slack.call("users.conversations", args)
-			const match = response.channels?.find((channel) => channel.name === name)
+			const match = response.channels?.find(
+				(channel) => channel.name === name && channel.creator === botUserId,
+			)
 			if (match !== undefined) {
 				const recorded = yield* database
 					.execute((db) =>
