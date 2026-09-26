@@ -9,6 +9,7 @@ import {
 	DialogDescription,
 	DialogFooter,
 	DialogHeader,
+	DialogPanel,
 	DialogTitle,
 } from "@maple/ui/components/ui/dialog"
 import { Skeleton } from "@maple/ui/components/ui/skeleton"
@@ -79,59 +80,72 @@ function SupportChannelBody() {
 
 	if (invited !== null) {
 		return (
-			<div className="space-y-4">
-				<p className="text-sm">
-					Invite sent to <span className="font-medium">{invited.invited_email}</span>. Open the
-					email or Slack and accept it to add{" "}
-					<span className="font-mono">#{invited.channel_name}</span> to your workspace.
-				</p>
-				<DialogFooter>
-					{invited.slack_url ? <OpenInSlack url={invited.slack_url} /> : null}
-				</DialogFooter>
-			</div>
+			<>
+				<DialogPanel>
+					<p className="text-sm">
+						Invite sent to <span className="font-medium">{invited.invited_email}</span>. Open the
+						email or Slack and accept it to add{" "}
+						<span className="font-mono">#{invited.channel_name}</span> to your workspace.
+					</p>
+				</DialogPanel>
+				{invited.slack_url ? (
+					<DialogFooter>
+						<OpenInSlack url={invited.slack_url} />
+					</DialogFooter>
+				) : null}
+			</>
 		)
 	}
 
 	if (Result.isFailure(result)) {
-		return <p className="text-sm text-destructive">{displayError(result.cause).message}</p>
+		return (
+			<DialogPanel>
+				<p className="text-sm text-destructive">{displayError(result.cause).message}</p>
+			</DialogPanel>
+		)
 	}
 	if (!Result.isSuccess(result)) {
 		return (
-			<div className="space-y-2">
+			<DialogPanel className="space-y-2">
 				<Skeleton className="h-4 w-full" />
 				<Skeleton className="h-4 w-2/3" />
-			</div>
+			</DialogPanel>
 		)
 	}
 
 	const channel = result.value
 	if (channel.status === "unavailable") {
 		return (
-			<p className="text-sm text-muted-foreground">
-				Shared Slack channels are not set up on this Maple instance. Email{" "}
-				<a className="underline" href="mailto:support@maple.dev">
-					support@maple.dev
-				</a>{" "}
-				and we will get back to you.
-			</p>
+			<DialogPanel>
+				<p className="text-sm text-muted-foreground">
+					Shared Slack channels are not set up on this Maple instance. Email{" "}
+					<a className="underline" href="mailto:support@maple.dev">
+						support@maple.dev
+					</a>{" "}
+					and we will get back to you.
+				</p>
+			</DialogPanel>
 		)
 	}
 
 	const target = email ? <span className="font-medium">{email}</span> : "your email"
 	return (
-		<div className="space-y-4">
-			{channel.status === "active" ? (
-				<p className="text-sm">
-					Your team's channel is <span className="font-mono">#{channel.channel_name}</span>. We will
-					send a Slack Connect invite to {target} so you can join it.
-				</p>
-			) : (
-				<p className="text-sm">
-					We will create the channel and send a Slack Connect invite to {target}. Accept it in Slack
-					and the channel shows up in your workspace. Teammates can join the same way from here.
-				</p>
-			)}
-			{error ? <p className="text-sm text-destructive">{error}</p> : null}
+		<>
+			<DialogPanel className="space-y-3">
+				{channel.status === "active" ? (
+					<p className="text-sm">
+						Your team's channel is <span className="font-mono">#{channel.channel_name}</span>. We
+						will send a Slack Connect invite to {target} so you can join it.
+					</p>
+				) : (
+					<p className="text-sm">
+						We will create the channel and send a Slack Connect invite to {target}. Accept it in
+						Slack and the channel shows up in your workspace. Teammates can join the same way from
+						here.
+					</p>
+				)}
+				{error ? <p className="text-sm text-destructive">{error}</p> : null}
+			</DialogPanel>
 			<DialogFooter>
 				{channel.status === "active" && channel.slack_url ? (
 					<OpenInSlack url={channel.slack_url} />
@@ -144,7 +158,7 @@ function SupportChannelBody() {
 							: "Create channel"}
 				</Button>
 			</DialogFooter>
-		</div>
+		</>
 	)
 }
 
