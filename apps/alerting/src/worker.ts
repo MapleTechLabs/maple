@@ -30,6 +30,7 @@ import {
 	appUrlsEnv,
 	authEnv,
 	cloudflareOAuthEnv,
+	googleAnalyticsOAuthEnv,
 	ingestKeyCryptoEnv,
 	merge,
 	optionalPlain,
@@ -99,12 +100,13 @@ const configuredEnv = (stage: MapleStage, region: MapleRegion, domains: MapleDom
 		optionalSecret("AUTUMN_SECRET_KEY"),
 		optionalSecret("INTERNAL_SERVICE_TOKEN"),
 		// The alerting worker is where incidents open and resolve, so it is the one
-		// that sends push (platform/Apns.ts) — and it runs the Cloudflare analytics
-		// and PlanetScale inventory pollers, each of which resolves and refreshes
-		// per-org OAuth tokens with the same config the api worker uses.
+		// that sends push (platform/Apns.ts) — and it runs the Cloudflare analytics,
+		// PlanetScale inventory and Google Analytics pollers, each of which resolves
+		// and refreshes per-org OAuth tokens with the same config the api worker uses.
 		apnsEnv,
 		cloudflareOAuthEnv,
 		planetScaleOAuthEnv,
+		googleAnalyticsOAuthEnv,
 		// `chat` destinations post through a chat connector, which reads the outbound
 		// config it declared; the workspace's own credential is opened with the
 		// ingest-key encryption key above.

@@ -35,6 +35,7 @@ import {
 	allV2GroupLayersWithChat,
 	ApiV2RateLimiterAllowAllLayer,
 	ConfigResourceServiceStubsLayer,
+	GoogleAnalyticsServiceStubsLayer,
 	PlanetScaleServiceStubsLayer,
 	TelemetryServiceStubsLayer,
 } from "./v2-test-support"
@@ -159,6 +160,7 @@ const makeHarness = (
 		Layer.provide(destinationsLayer(recorded)),
 		Layer.provide(AlertsServiceStubLayer),
 		Layer.provide(PlanetScaleServiceStubsLayer),
+		Layer.provide(GoogleAnalyticsServiceStubsLayer),
 		Layer.provide(ConfigResourceServiceStubsLayer),
 		Layer.provide(TelemetryServiceStubsLayer),
 		Layer.provideMerge(ApiAuthorizationV2Layer),

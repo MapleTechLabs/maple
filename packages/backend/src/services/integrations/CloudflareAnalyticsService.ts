@@ -97,7 +97,7 @@ import {
 	mapWorkersGroups,
 	type CloudflareMetricRows,
 } from "./cloudflare-analytics/mapping"
-import { metricRowsToOtlp } from "./cloudflare-analytics/otlp"
+import { metricRowsToOtlp } from "./shared/otlp"
 import {
 	accountAnalyticsDocument,
 	DatasetSettings,

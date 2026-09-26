@@ -65,6 +65,17 @@ const gzipBytes = chunks.reduce((total, chunk) => total + chunk.gzipBytes, 0)
 // the role/intent id literals and legacy-save maps in the quick-start atom the
 // root gate reads, and one lab registry entry. The cards' own copy is split
 // off so the route chunk carries it. main was at 683.4 KB.
+// 687 KB from the Google Analytics integration (2026-09-09): 1.6 KB of startup,
+// all of it the v2 domain contract every page's API client carries. Measured by
+// registering and unregistering that one group against the same build — 686.2
+// with `V2GoogleAnalyticsIntegrationsApiGroup` on `MapleApiV2`, 684.6 without —
+// so the card, the catalog entry, the icon and the template-icon entry cost
+// nothing measurable between them. It is the same category as the Releases and
+// AI-detect contracts above, just larger: five endpoints and six schemas rather
+// than one. The weight is the OpenAPI descriptions, and those are the public API
+// documentation — cutting them to buy back a kilobyte of startup is the wrong
+// trade. Splitting the group out of the client is not available either: every
+// page's client is built from the whole `MapleApiV2` surface.
 // 689 KB from #832 (2026-09-11): the agent Tools pages cost ~6.9 KB of startup
 // measured against main's 681.3 — five internal endpoints on the contract every
 // page's client carries, two route registrations whose search schemas pull in
@@ -77,6 +88,21 @@ const gzipBytes = chunks.reduce((total, chunk) => total + chunk.gzipBytes, 0)
 // for the new reads, and the detail route's `variant` search param. The display
 // rules, the redaction list they read and the modal's parts stay in the route
 // chunk; none of them is in the startup graph.
+// 691 KB on merging the two above (2026-09-11): they stack, so neither branch's
+// own ceiling covers the pair. Measured on the merged tree by the same
+// register/unregister of `V2GoogleAnalyticsIntegrationsApiGroup` — 690.7 with it,
+// 689.1 without — so the GA contract still costs the 1.6 KB it did in isolation.
+// Note the 689.1: the baseline had already reached #832's ceiling before the GA
+// group was added back, so the headroom under 689 was gone independently of this
+// branch. 691 leaves ~0.3 KB, which is thin; the next startup addition of any
+// size will need its own raise and its own measurement.
+// 693 KB on merging #865 with the above (2026-09-12): the same stacking again —
+// #865 measured 690 against a baseline without the GA contract, so neither
+// ceiling covers the pair. Merged measures 692.1, and the same
+// register/unregister puts the GA group at 690.5 without it: 1.6 KB, the third
+// time that number has held. The pattern is now the point — a startup addition
+// merged alongside another one needs its ceiling re-measured on the merge, not
+// taken as the larger of the two.
 // 692 KB from product events as a query-builder source (#877, 2026-09-13):
 // ~1.9 KB of startup measured against main's 689.9 — the fourth source's
 // aggregation, group-by and where-clause vocabularies in the query-builder
@@ -90,13 +116,20 @@ const gzipBytes = chunks.reduce((total, chunk) => total + chunk.gzipBytes, 0)
 // blocks on the stored and v2 schemas, two picker presets with their icon,
 // and the paths widget type's lowering. Both charts, the paths query panel
 // and the sample data stay in lazy chunks.
+// 695 KB on merging #877 and #878 with the GA integration (2026-09-13): the
+// stacking once more. Merged measures 694.6 locally; unregistering
+// `V2GoogleAnalyticsIntegrationsApiGroup` puts it at 693.0, exactly main's
+// ceiling, so the GA contract is still the same 1.6 KB. 695 leaves ~0.4 KB.
 // 695 KB from the onboarding reward checklist (#890, 2026-09-14): ~1.2 KB of
 // startup measured in CI against #878's 693.0 — the checklist group's two
 // endpoints and step/status schemas on the contract every page's client
 // carries, the pill in the persistent top bar with its live clock, and the
 // hook's query and seen-flag atoms. The popover's panel and pointer are small
 // and render only while open, so nothing there is worth a lazy chunk.
-const maxGzipBytes = 695 * 1024
+// 697 KB on merging #890 with the GA integration (2026-09-14): both raised to
+// 695 alone. Merged measures 696.6; without `V2GoogleAnalyticsIntegrationsApiGroup`
+// it is 695.0, main's ceiling exactly, so the GA contract is 1.6 KB a fifth time.
+const maxGzipBytes = 697 * 1024
 const budgetLabel = `${(maxGzipBytes / 1024).toFixed(1)} KB`
 
 // Anything lazy-only: chat, replay, and every dev-only lab surface. The

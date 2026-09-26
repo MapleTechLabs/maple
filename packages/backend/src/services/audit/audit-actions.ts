@@ -80,6 +80,9 @@ export const AuditResources = {
 	planetscale_integration: {
 		verbs: ["connect_started", "organization_selected", "metrics_token_set", "disconnected"],
 	},
+	google_analytics_integration: {
+		verbs: ["connect_started", "disconnected", "property_enabled", "property_disabled"],
+	},
 	/**
 	 * Org membership, learned from Clerk's webhook — the web app changes members
 	 * in Clerk directly, so nothing reaches Maple's own API. The member is the
