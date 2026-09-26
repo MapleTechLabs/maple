@@ -14,7 +14,7 @@ import {
 	type MapleRegion,
 	MAPLE_REGION_LABELS,
 	organizationHomeRegion,
-	organizationRegionChosen,
+	organizationRegionOpen,
 	organizationRegionsFrom,
 	organizationServedIn,
 } from "@maple/domain/organization-regions"
@@ -22,14 +22,16 @@ import { Clock, Context, Effect, Layer, Option, Redacted } from "effect"
 import { Env } from "@maple/backend/platform/Env"
 import { clerkRequest } from "@maple/backend/services/auth/clerk-request"
 
-/** A chosen region never changes, so a minute of reuse is safe. */
+/**
+ * A region that can no longer change: chosen, or past the choice window (`REGION_CHOICE_WINDOW_MS`,
+ * enforced where the choice is written). A minute of reuse is safe.
+ */
 const REGIONS_TTL_MS = 60_000
 /**
- * An organization with only the US default may still choose EU in onboarding, after which this
- * instance must stop serving it. Short enough to close that window, long enough that the many
- * organizations predating regions are not a Clerk read on every request.
+ * An organization still inside its choice window may pick EU in onboarding, after which this
+ * instance must stop serving it. Short enough to close that window.
  */
-const UNCHOSEN_REGION_TTL_MS = 5_000
+const OPEN_REGION_TTL_MS = 5_000
 
 export interface OrganizationRegionServiceApi {
 	/** The instance's own region. */
@@ -53,16 +55,19 @@ export class OrganizationRegionService extends Context.Service<
 					})
 				: undefined
 
-		const cache = new Map<OrgId, { readonly metadata: unknown; readonly atMs: number }>()
+		const cache = new Map<
+			OrgId,
+			{ readonly metadata: unknown; readonly createdAtMs: number; readonly atMs: number }
+		>()
 
 		const read = Effect.fn("OrganizationRegionService.read")(function* (orgId: OrgId) {
 			if (clerk === undefined) return Option.none<unknown>()
 			const nowMs = yield* Clock.currentTimeMillis
 			const cached = cache.get(orgId)
 			const ttlMs =
-				cached !== undefined && organizationRegionChosen(cached.metadata)
+				cached !== undefined && !organizationRegionOpen(cached.metadata, cached.createdAtMs, nowMs)
 					? REGIONS_TTL_MS
-					: UNCHOSEN_REGION_TTL_MS
+					: OPEN_REGION_TTL_MS
 			if (cached !== undefined && nowMs - cached.atMs < ttlMs) {
 				return Option.some(cached.metadata)
 			}
@@ -73,7 +78,11 @@ export class OrganizationRegionService extends Context.Service<
 					// Only a yes is cached. An organization whose region was just chosen in onboarding
 					// arrives here straight away, and a cached no would refuse it for a minute.
 					if (organizationServedIn(organization.publicMetadata, region)) {
-						cache.set(orgId, { metadata: organization.publicMetadata, atMs: nowMs })
+						cache.set(orgId, {
+							metadata: organization.publicMetadata,
+							createdAtMs: organization.createdAt,
+							atMs: nowMs,
+						})
 					}
 					return Option.some<unknown>(organization.publicMetadata)
 				}),
