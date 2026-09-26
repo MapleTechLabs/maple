@@ -9,7 +9,6 @@ import { Tabs, TabsList, TabsTrigger } from "@maple/ui/components/ui/tabs"
 
 import { DashboardLayout } from "@/components/layout/dashboard-layout"
 import { QueryErrorState } from "@/components/common/query-error-state"
-import { PageHero } from "@/components/infra/primitives/page-hero"
 import { PlayRotateClockwiseIcon } from "@/components/icons"
 import { chartBucketSeconds } from "@/components/infra/chart-utils"
 import type { WebAnalyticsBreakdowns, WebAnalyticsEvent } from "@/api/warehouse/web-analytics"
@@ -224,37 +223,29 @@ function WebAnalyticsPage() {
 						</DashboardLayout.Sticky>
 						<DashboardLayout.Scroll>
 							<div className="space-y-6">
-								<PageHero
-									title="Web Analytics"
-									description={
-										activeTab === "ai"
-											? "Which AI assistants send you visitors, and which of their crawlers read your pages."
-											: "Who visited your sites, what they read, and where they came from — from the same browser SDK that records sessions."
-									}
-									meta={
-										chips.length > 0 ? (
-											<div className="flex flex-wrap items-center gap-1.5">
-												{chips.map((chip) => (
-													<button
-														key={`${chip.key}:${chip.value}`}
-														type="button"
-														onClick={() => onFilterChange(chip.key, undefined)}
-														className="rounded-sm border bg-muted/50 px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground transition-colors hover:text-foreground"
-													>
-														{chip.label} ✕
-													</button>
-												))}
-												<button
-													type="button"
-													onClick={onClearFilters}
-													className="px-1 text-[10px] text-muted-foreground underline-offset-2 hover:underline"
-												>
-													Clear all
-												</button>
-											</div>
-										) : undefined
-									}
-								/>
+								{/* Active filters, removable one at a time. The page title used to carry
+								    them; the breadcrumb and tab bar already say where you are. */}
+								{chips.length > 0 ? (
+									<div className="flex flex-wrap items-center gap-1.5">
+										{chips.map((chip) => (
+											<button
+												key={`${chip.key}:${chip.value}`}
+												type="button"
+												onClick={() => onFilterChange(chip.key, undefined)}
+												className="rounded-sm border bg-muted/50 px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground transition-colors hover:text-foreground"
+											>
+												{chip.label} ✕
+											</button>
+										))}
+										<button
+											type="button"
+											onClick={onClearFilters}
+											className="px-1 text-[10px] text-muted-foreground underline-offset-2 hover:underline"
+										>
+											Clear all
+										</button>
+									</div>
+								) : null}
 								{activeTab === "ai" ? (
 									<AnalyticsAiTab
 										startTime={startTime}
