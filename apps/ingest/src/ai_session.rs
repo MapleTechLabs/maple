@@ -28,19 +28,17 @@
 //!
 //! Detection is ordered first-match over the vendor predicates below; the
 //! session ID is the first non-empty session-granularity attribute for the
-//! matched vendor. Vendors without a session-level identifier (their
-//! instrumentation only emits run/user-scoped IDs, or nothing) get no
-//! `maple_ai.session.id`.
+//! matched vendor. A vendor with no session-level key of its own (its
+//! instrumentation only emits run/user-scoped IDs, or nothing) and every
+//! unknown-tier bucket read the OTel GenAI key, `gen_ai.conversation.id`,
+//! which the public docs give any emitter as the way to group its traces.
 //!
 //! One vendor is not a framework: `maple` matches any span carrying a
 //! `maple_ai.session.id` attribute. That is the one key an emitter both writes
-//! and reads back — the gateway strips it and re-stamps it verbatim. It is
-//! Maple's own native convention — `apps/api`'s chat and investigation agents
-//! emit it — and doubles as the
-//! documented opt-in for a generic OTel GenAI emitter that no framework
-//! predicate recognises, which would otherwise land in the unknown tier where
-//! no session is ever stamped. It sits first because it is the only predicate
-//! that expresses deliberate intent rather than a fingerprint.
+//! and reads back: the gateway strips it and re-stamps it verbatim. It is
+//! Maple's own native convention, emitted by the chat and investigation agents
+//! in `apps/ai`, and it sits first because it is the only predicate that
+//! expresses deliberate intent rather than a fingerprint.
 //!
 //! # Performance shape
 //!
@@ -827,6 +825,10 @@ struct Vendor {
     session_keys: &'static [&'static str],
 }
 
+/// The session key of a dialect with none of its own: the OTel GenAI
+/// conversation id, which the docs tell every emitter to set.
+const CONVERSATION_ID_ONLY: &[&str] = &["gen_ai.conversation.id"];
+
 /// Ordered: first match wins. `maple` leads because its key is an explicit
 /// opt-in rather than a framework fingerprint (see the module doc). Then
 /// vendors with a dedicated instrumentation scope; the three detected purely
@@ -865,7 +867,7 @@ static VENDORS: &[Vendor] = &[
     Vendor {
         id: "haystack",
         detect: detect_haystack,
-        session_keys: &[],
+        session_keys: CONVERSATION_ID_ONLY,
     },
     Vendor {
         id: "langchain",
@@ -875,7 +877,7 @@ static VENDORS: &[Vendor] = &[
     Vendor {
         id: "litellm",
         detect: detect_litellm,
-        session_keys: &[],
+        session_keys: CONVERSATION_ID_ONLY,
     },
     Vendor {
         id: "openrouter",
@@ -885,7 +887,7 @@ static VENDORS: &[Vendor] = &[
     Vendor {
         id: "llamaindex",
         detect: detect_llamaindex,
-        session_keys: &[],
+        session_keys: CONVERSATION_ID_ONLY,
     },
     Vendor {
         id: "mastra",
@@ -925,7 +927,7 @@ static VENDORS: &[Vendor] = &[
     Vendor {
         id: "semantic_kernel",
         detect: detect_semantic_kernel,
-        session_keys: &[],
+        session_keys: CONVERSATION_ID_ONLY,
     },
     Vendor {
         id: "smolagents",
@@ -940,7 +942,7 @@ static VENDORS: &[Vendor] = &[
     Vendor {
         id: "effect_ai",
         detect: detect_effect_ai,
-        session_keys: &[],
+        session_keys: CONVERSATION_ID_ONLY,
     },
     Vendor {
         id: "spring_ai",
@@ -950,15 +952,30 @@ static VENDORS: &[Vendor] = &[
     Vendor {
         id: "vercel_ai_sdk",
         detect: detect_vercel_ai_sdk,
-        session_keys: &["ai.settings.context.eve.session.id"],
+        session_keys: &[
+            "ai.settings.context.eve.session.id",
+            "gen_ai.conversation.id",
+        ],
     },
 ];
 
 /// Generic AI-dialect buckets, consulted only when no vendor matched. Ordered.
-static UNKNOWN_TIER: &[(&str, DetectFn)] = &[
-    ("unknown:genai", detect_unknown_genai),
-    ("unknown:openinference", detect_unknown_openinference),
-    ("unknown:other", detect_unknown_other),
+static UNKNOWN_TIER: &[Vendor] = &[
+    Vendor {
+        id: "unknown:genai",
+        detect: detect_unknown_genai,
+        session_keys: CONVERSATION_ID_ONLY,
+    },
+    Vendor {
+        id: "unknown:openinference",
+        detect: detect_unknown_openinference,
+        session_keys: CONVERSATION_ID_ONLY,
+    },
+    Vendor {
+        id: "unknown:other",
+        detect: detect_unknown_other,
+        session_keys: CONVERSATION_ID_ONLY,
+    },
 ];
 
 fn classify_from_facts(
@@ -988,27 +1005,18 @@ fn run_predicates(
         span_name,
         ev,
     };
-    for vendor in VENDORS {
-        if (vendor.detect)(&ctx) {
-            let session_id = vendor
-                .session_keys
-                .iter()
-                .find_map(|key| session_value(span_attrs, key));
-            return Some(AiClassification {
-                vendor: vendor.id,
-                session_id,
-            });
-        }
-    }
-    for (id, detect) in UNKNOWN_TIER {
-        if detect(&ctx) {
-            return Some(AiClassification {
-                vendor: id,
-                session_id: None,
-            });
-        }
-    }
-    None
+    let vendor = VENDORS
+        .iter()
+        .chain(UNKNOWN_TIER)
+        .find(|vendor| (vendor.detect)(&ctx))?;
+    let session_id = vendor
+        .session_keys
+        .iter()
+        .find_map(|key| session_value(span_attrs, key));
+    Some(AiClassification {
+        vendor: vendor.id,
+        session_id,
+    })
 }
 
 /// Session-key lookup, only reached on matched AI spans. Stringifies scalar
@@ -1423,6 +1431,54 @@ mod tests {
             &[],
             "effect_ai",
             None,
+        );
+    }
+
+    #[test]
+    fn sessionless_vendors_fall_back_to_the_conversation_id() {
+        for (scope, span_name, vendor) in [
+            ("haystack", "haystack.pipeline.run", "haystack"),
+            ("litellm", "completion", "litellm"),
+            ("llamaindex.opentelemetry.tracer", "query", "llamaindex"),
+            (
+                "semantic_kernel.functions",
+                "chat.completions",
+                "semantic_kernel",
+            ),
+            ("", "LanguageModel.generateText", "effect_ai"),
+        ] {
+            classified(
+                scope,
+                span_name,
+                &[("gen_ai.conversation.id", "conv-7")],
+                &[],
+                vendor,
+                Some("conv-7"),
+            );
+        }
+        classified(
+            "ai",
+            "ai.generateText",
+            &[
+                ("ai.model.id", "gpt-5"),
+                ("gen_ai.conversation.id", "conv-7"),
+            ],
+            &[],
+            "vercel_ai_sdk",
+            Some("conv-7"),
+        );
+        // An eve turn keeps its own session key ahead of the fallback.
+        classified(
+            "ai",
+            "ai.generateText",
+            &[
+                ("ai.model.id", "gpt-5"),
+                ("gen_ai.conversation.id", "conv-7"),
+                ("ai.settings.context.eve.session.id", "e-1"),
+            ],
+            &[],
+            "vercel_ai_sdk",
+            Some("e-1"),
         );
     }
 
@@ -1860,15 +1916,16 @@ mod tests {
 
     #[test]
     fn maple_session_key_lifts_a_generic_genai_span_out_of_the_unknown_tier() {
-        // Without the key this exact span is `unknown:genai` with no session
-        // (see `unknown_tier_buckets`); the key is the opt-in that makes it
-        // groupable.
+        // Without the key this exact span is `unknown:genai` under its
+        // conversation id (see `unknown_tier_groups_by_the_conversation_id`);
+        // the key claims it for `maple`, and its value wins.
         classified(
             "",
             "chat openai/gpt-5.6-luna",
             &[
                 ("gen_ai.operation.name", "chat"),
                 ("gen_ai.usage.input_tokens", "123"),
+                ("gen_ai.conversation.id", "thread-1"),
                 ("maple_ai.session.id", "org_1:inv-abc"),
             ],
             &[],
@@ -1944,6 +2001,56 @@ mod tests {
             &[("ai.model.id", "m")],
             &[],
             "unknown:other",
+            None,
+        );
+    }
+
+    #[test]
+    fn unknown_tier_groups_by_the_conversation_id() {
+        // The generic path the docs describe: no framework predicate matches,
+        // and the OTel GenAI key still files the span under a session.
+        classified(
+            "",
+            "chat gpt-5",
+            &[
+                ("gen_ai.operation.name", "chat"),
+                ("gen_ai.conversation.id", "conv-9"),
+            ],
+            &[],
+            "unknown:genai",
+            Some("conv-9"),
+        );
+        classified(
+            "",
+            "llm",
+            &[
+                ("openinference.span.kind", "LLM"),
+                ("gen_ai.conversation.id", "conv-9"),
+            ],
+            &[],
+            "unknown:openinference",
+            Some("conv-9"),
+        );
+        classified(
+            "",
+            "task",
+            &[
+                ("traceloop.workflow.name", "w"),
+                ("gen_ai.conversation.id", "conv-9"),
+            ],
+            &[],
+            "unknown:other",
+            Some("conv-9"),
+        );
+        classified(
+            "",
+            "chat gpt-5",
+            &[
+                ("gen_ai.operation.name", "chat"),
+                ("gen_ai.conversation.id", ""),
+            ],
+            &[],
+            "unknown:genai",
             None,
         );
     }
