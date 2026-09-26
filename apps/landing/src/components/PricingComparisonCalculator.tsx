@@ -11,6 +11,8 @@ const MARKS = {
 	dash0: "dash0",
 	openobserve: "openobserve",
 	signoz: "signoz",
+	axiom: "axiom",
+	"better-stack": "betterstack",
 } satisfies Record<Competitor, BrandMarkId>
 
 /** The vendor's mark in its brand colour; on the active (amber) tab it takes the tab's foreground instead. */
