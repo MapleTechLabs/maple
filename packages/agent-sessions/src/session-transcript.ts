@@ -136,6 +136,9 @@ export type TranscriptRow =
 			/** Absent when the call failed, or captured no output text. */
 			readonly text: string | undefined
 			readonly failed: boolean
+			/** The call's whole output was tool calls; the row only names the
+			 *  speaker, so the calls below it are not read as the failed call's. */
+			readonly toolCallsOnly: boolean
 	  })
 	/** A captured prompt whose reply the emitter did not record. */
 	| (SpanRowBase & { readonly kind: "prompt"; readonly text: string })
@@ -466,6 +469,7 @@ function buildTurn(
 		emittedSystem: new Set<string>(),
 		userEmitted: false,
 		lastService: undefined,
+		lastCallFailed: false,
 	}
 
 	const forest = buildForest(spans)
@@ -499,6 +503,8 @@ interface TurnContext {
 	userEmitted: boolean
 	/** The last model call's service, for the capture-boundary note. */
 	lastService: string | undefined
+	/** The previous model call failed — its row broke the speaker run. */
+	lastCallFailed: boolean
 }
 
 /**
@@ -1127,6 +1133,8 @@ function outputRows(
 	const rows: TranscriptRow[] = []
 	const output = messages.filter((message) => message.origin === "output")
 	const failed = spanFailed(span)
+	const afterFailure = scope.context.lastCallFailed
+	scope.context.lastCallFailed = failed
 	const base = { depth: scope.depth, span, startMs: spanStartMs(span) }
 	let partIndex = 0
 
@@ -1142,7 +1150,15 @@ function outputRows(
 			}
 			if (part.kind === "text") {
 				const text = part.text.trim()
-				if (text !== "") rows.push({ ...base, kind: "assistant", key, text: part.text, failed })
+				if (text !== "")
+					rows.push({
+						...base,
+						kind: "assistant",
+						key,
+						text: part.text,
+						failed,
+						toolCallsOnly: false,
+					})
 				continue
 			}
 			if (part.kind === "tool_call") {
@@ -1174,7 +1190,14 @@ function outputRows(
 	if (failed) {
 		return [
 			...rows,
-			{ ...base, kind: "assistant", key: rowKey(scope, span, "failed"), text: undefined, failed: true },
+			{
+				...base,
+				kind: "assistant",
+				key: rowKey(scope, span, "failed"),
+				text: undefined,
+				failed: true,
+				toolCallsOnly: false,
+			},
 		]
 	}
 	const promptText = promptAllowed ? capturedPromptText(messages) : undefined
@@ -1186,8 +1209,22 @@ function outputRows(
 	// model going straight to work, not a missing reply. That is read off the
 	// captured messages, not off the rows: a hidden thinking row and a tool call
 	// a span already covers both leave `rows` empty without the reply having
-	// gone anywhere.
-	if (output.length > 0) return rows
+	// gone anywhere. Straight after a failed call, though, that work needs a
+	// speaker of its own, or its tool calls read as the failed call's.
+	if (output.length > 0) {
+		if (!afterFailure) return rows
+		return [
+			{
+				...base,
+				kind: "assistant",
+				key: rowKey(scope, span, "tool-calls"),
+				text: undefined,
+				failed: false,
+				toolCallsOnly: true,
+			},
+			...rows,
+		]
+	}
 	if (messages.length > 0) {
 		// This call captured something — so the reply is missing, not merely
 		// unrecorded like every call in a capture-off session.
@@ -1198,6 +1235,7 @@ function outputRows(
 				key: rowKey(scope, span, "no-reply"),
 				text: undefined,
 				failed: false,
+				toolCallsOnly: false,
 			},
 		]
 	}

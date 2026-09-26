@@ -1034,6 +1034,57 @@ describe("buildTranscript — session-level states", () => {
 		])
 	})
 
+	// The call after a failure that only called a tool still needs a speaker, or
+	// its tool call hangs under the failed call's "no reply" row.
+	it("gives a tool-only call after a failed call its own speaker row", () => {
+		const spans = turnSpans({
+			startMs: 0,
+			durationMs: 10 * SECOND,
+			children: [
+				llmSpan({
+					spanId: "l1",
+					parentSpanId: "agent",
+					startMs: 0,
+					durationMs: SECOND,
+					statusCode: "Error",
+					statusMessage: "Interrupted",
+					genAi: { errorType: "provider_error" },
+				}),
+				llmSpan({
+					spanId: "l2",
+					parentSpanId: "agent",
+					startMs: 2 * SECOND,
+					durationMs: SECOND,
+					genAi: {
+						outputMessages: [
+							{
+								role: "assistant",
+								parts: [
+									{ type: "tool_call", id: "c1", name: "submit_diagnosis", arguments: {} },
+								],
+							},
+						],
+					},
+				}),
+				toolSpan({
+					spanId: "t1",
+					parentSpanId: "agent",
+					startMs: 3 * SECOND,
+					durationMs: SECOND,
+					toolName: "submit_diagnosis",
+					genAi: { toolCallId: "c1" },
+				}),
+			],
+		})
+
+		const rows = transcript(spans)
+		expect(kinds(rows)).toEqual(["turn", "assistant", "assistant", "tool"])
+		expect(findRows(rows, "assistant").map((row) => [row.failed, row.toolCallsOnly])).toEqual([
+			[true, false],
+			[false, true],
+		])
+	})
+
 	it("drops the app's own HTTP spans and de-duplicates repeated span ids", () => {
 		const tool = toolSpan({
 			spanId: "t1",

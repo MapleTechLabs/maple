@@ -768,7 +768,7 @@ function AssistantBlock({
 					<p className="text-muted-foreground text-xs">No reply was produced by this call.</p>
 				</div>
 			)}
-			{!row.failed && row.text === undefined && (
+			{!row.failed && !row.toolCallsOnly && row.text === undefined && (
 				<InlineNote className="mt-2.5">
 					The reply isn't captured. This emitter recorded the request but not{" "}
 					<span className="font-mono">gen_ai.output.messages</span>, so the call's text is gone — it
