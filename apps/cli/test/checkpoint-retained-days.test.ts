@@ -41,4 +41,21 @@ describe("checkpoint validation per-day counts", () => {
 			false,
 		)
 	})
+
+	it("uses the shorter TTL when the two sides disagree", () => {
+		// Created under a 90-day floor, restored under 30 days: 08-20 is past the shorter TTL on 09-20.
+		const created: RetainedDays = {
+			countedOn: "2026-09-20",
+			tables: Object.fromEntries(
+				TABLES.map((table) => [table, { ttlDays: 90, days: { "2026-08-20": 6, "2026-09-20": 3 } }]),
+			),
+		}
+		const restored: RetainedDays = {
+			countedOn: "2026-09-20",
+			tables: Object.fromEntries(
+				TABLES.map((table) => [table, { ttlDays: 30, days: { "2026-09-20": 3 } }]),
+			),
+		}
+		strictEqual(retainedDaysMatch(created, restored), true)
+	})
 })

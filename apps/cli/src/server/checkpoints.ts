@@ -683,7 +683,11 @@ export const retainedDaysMatch = (left: RetainedDays, right: RetainedDays): bool
 		const leftTable = left.tables[table]
 		const rightTable = right.tables[table]
 		if (leftTable === undefined || rightTable === undefined) return leftTable === rightTable
-		const ttlDays = leftTable.ttlDays ?? rightTable.ttlDays
+		// The shorter TTL decides which days either side may already have dropped.
+		const knownTtls = [leftTable.ttlDays, rightTable.ttlDays].filter(
+			(days): days is number => days !== null,
+		)
+		const ttlDays = knownTtls.length === 0 ? null : Math.min(...knownTtls)
 		const firstKept =
 			ttlDays === null
 				? null
