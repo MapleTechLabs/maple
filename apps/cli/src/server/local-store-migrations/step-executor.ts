@@ -17,6 +17,7 @@ import {
 	expectedManifest,
 	RAW_TABLES,
 	rawRowCounts,
+	retainedRawRowCounts,
 	strictDecoder,
 	UnsignedDecimal,
 } from "./journal-codecs"
@@ -132,6 +133,8 @@ export interface StepState {
 	readonly version: 1
 	readonly rawRows: Readonly<Record<string, string>>
 	readonly retentionDays?: number
+	/** UTC day the raw counts were taken; absent in journals from older binaries. */
+	readonly countedOn?: string
 	readonly [group: string]: unknown
 }
 
@@ -227,17 +230,23 @@ export const stepModule = (spec: StepSpec): LocalStoreMigrationModule<StepState,
 		rawRows: Readonly<Record<string, string>>,
 		counts: Readonly<Record<string, string>> | undefined,
 		retentionDays: number | undefined,
-	): StepState => ({
-		module: spec.id,
-		version: 1,
-		rawRows,
-		...(spec.counts === undefined || counts === undefined ? undefined : { [spec.counts.group]: counts }),
-		...(retentionDays === undefined ? undefined : { retentionDays }),
-	})
+		countedOn: string | undefined,
+	): StepState => {
+		const state: StepState = {
+			module: spec.id,
+			version: 1,
+			rawRows,
+			...(spec.counts === undefined || counts === undefined
+				? undefined
+				: { [spec.counts.group]: counts }),
+			...(retentionDays === undefined ? undefined : { retentionDays }),
+		}
+		return countedOn === undefined ? state : { ...state, countedOn }
+	}
 
 	const decodeState = (value: unknown): StepState => {
 		if (!isRecord(value)) return fail(`${label} state must be an object`)
-		const allowed = new Set(["module", "version", "rawRows", "retentionDays"])
+		const allowed = new Set(["module", "version", "rawRows", "retentionDays", "countedOn"])
 		if (spec.counts !== undefined) allowed.add(spec.counts.group)
 		if (Object.keys(value).some((key) => !allowed.has(key)))
 			return fail(`${label} state contains an unknown field`)
@@ -249,12 +258,18 @@ export const stepModule = (spec: StepSpec): LocalStoreMigrationModule<StepState,
 			(typeof retentionDays !== "number" || !Number.isSafeInteger(retentionDays))
 		)
 			return fail(`${label} retentionDays must be an integer`)
+		const countedOn = value.countedOn
+		if (
+			countedOn !== undefined &&
+			(typeof countedOn !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(countedOn))
+		)
+			return fail(`${label} countedOn must be a YYYY-MM-DD day`)
 		const rawRows = decodeRawRows(value.rawRows)
 		const counts =
 			spec.counts === undefined
 				? undefined
 				: Object.fromEntries(decodeCountGroup(spec.counts.group, value[spec.counts.group]))
-		return makeState(rawRows, counts, retentionDays)
+		return makeState(rawRows, counts, retentionDays, countedOn)
 	}
 
 	const decodeCustomProgress = spec.custom === undefined ? undefined : strictDecoder(spec.custom.progress)
@@ -347,10 +362,12 @@ export const stepModule = (spec: StepSpec): LocalStoreMigrationModule<StepState,
 		preflight: async (context) => {
 			await context.ensureCapacity()
 			const retentionDays = readRawTelemetryRetentionDays(context.dataDir)
+			const countedOn = new Date().toISOString().slice(0, 10)
 			const measured = await context.openSource(
 				(db) => {
-					assertPhysicalSchema(db, expectedManifest(source.manifest, retentionDays))
-					const rawRows = rawRowCounts(db)
+					const manifest = expectedManifest(source.manifest, retentionDays)
+					assertPhysicalSchema(db, manifest)
+					const rawRows = retainedRawRowCounts(db, manifest, countedOn)
 					const counts = spec.counts?.measure.map(
 						([key, sql]) => [key, scalarCount(db, sql)] as const,
 					)
@@ -358,7 +375,7 @@ export const stepModule = (spec: StepSpec): LocalStoreMigrationModule<StepState,
 				},
 				{ schemaSql: source.sql, bootstrapSchema: false },
 			)
-			return makeState(measured.rawRows, measured.counts, retentionDays)
+			return makeState(measured.rawRows, measured.counts, retentionDays, countedOn)
 		},
 		prepareTarget: async (context, state) => {
 			await context.closeStores()
@@ -385,7 +402,15 @@ export const stepModule = (spec: StepSpec): LocalStoreMigrationModule<StepState,
 			await context.openTarget(
 				(db) => {
 					assertPhysicalSchema(db, expectedManifest(target.manifest, state.retentionDays))
-					const targetRows = rawRowCounts(db)
+					// Counted against the source's TTLs, as at preflight; older journals compare exact.
+					const targetRows =
+						typeof state.countedOn === "string"
+							? retainedRawRowCounts(
+									db,
+									expectedManifest(source.manifest, state.retentionDays),
+									state.countedOn,
+								)
+							: rawRowCounts(db)
 					for (const table of RAW_TABLES) {
 						if (targetRows[table] !== state.rawRows[table])
 							throw new RowCountMismatch({

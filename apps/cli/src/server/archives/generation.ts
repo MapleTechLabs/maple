@@ -7,6 +7,9 @@ import { Effect, Option, Schema } from "effect"
 import { CHDB_VERSION, MAPLE_VERSION } from "../../version"
 import { readRawTelemetryRetentionDays } from "../chdb"
 import { LOCAL_SCHEMA_MANIFEST, SCHEMA_FINGERPRINT } from "../schema-identity"
+import { ttlDaysFromDefinition } from "../schema-manifest"
+
+export { ttlDaysFromDefinition }
 import {
 	acquireCheckpointPin,
 	parseCheckpointSelector,
@@ -133,15 +136,6 @@ export interface ArchiveGenerationOptions {
 }
 
 const DAY_MS = 86_400_000
-
-/** Retention in days from a TTL clause, e.g. `toDate(Timestamp) + INTERVAL 30 DAY`
- * or the `toIntervalDay(30)` form ClickHouse renders back. */
-export const ttlDaysFromDefinition = (definition: string): number | null => {
-	const match =
-		definition.match(/\bTTL\b[\s\S]*?\bINTERVAL\s+(\d+)\s+DAY\b/i) ??
-		definition.match(/\bTTL\b[\s\S]*?\btoIntervalDay\((\d+)\)/i)
-	return match?.[1] === undefined ? null : Number(match[1])
-}
 
 /**
  * Refuse a UTC day that TTL may already have thinned. Raw tables drop a whole

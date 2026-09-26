@@ -4,8 +4,12 @@ import { Schema } from "effect"
 import { cp, mkdir, rm } from "node:fs/promises"
 import { dirname, join, sep } from "node:path"
 import { RAW_TELEMETRY_TTL_COLUMNS, type Chdb } from "../chdb"
-import { decodeTableRowCounts } from "../chdb-rows"
-import { withRawTelemetryRetentionFloor, type LocalSchemaManifest } from "../schema-manifest"
+import { decodeRowCounts, decodeTableRowCounts } from "../chdb-rows"
+import {
+	ttlDaysFromDefinition,
+	withRawTelemetryRetentionFloor,
+	type LocalSchemaManifest,
+} from "../schema-manifest"
 
 const RAW_TABLES_INTERNAL = RAW_TELEMETRY_TTL_COLUMNS.map(([table]) => table)
 
@@ -47,6 +51,35 @@ export const rawRowCounts = (db: Chdb): Readonly<Record<string, string>> => {
 	const byTable = new Map(rows.map((row) => [row.table, row.rowCount]))
 	return Object.fromEntries(RAW_TABLES_INTERNAL.map((table) => [table, byTable.get(table) ?? "0"]))
 }
+
+/** A counted row must be at least this many days from its TTL on the count day. */
+const RETAINED_MARGIN_DAYS = 2
+
+/**
+ * Row counts per raw table, limited to rows at least `RETAINED_MARGIN_DAYS` from
+ * expiry on `countedOn` (YYYY-MM-DD). Opening a stopped store lets TTL merges drop
+ * expired rows between the source and target counts, so an exact `system.parts`
+ * comparison failed on every store holding rows past retention.
+ */
+export const retainedRawRowCounts = (
+	db: Chdb,
+	manifest: LocalSchemaManifest,
+	countedOn: string,
+): Readonly<Record<string, string>> =>
+	Object.fromEntries(
+		RAW_TELEMETRY_TTL_COLUMNS.map(([table, column]) => {
+			const ttl = manifest.objects.find((object) => object.name === table)?.ttl
+			const days = ttl === undefined ? null : ttlDaysFromDefinition(`TTL ${ttl}`)
+			const retained =
+				days === null
+					? ""
+					: ` WHERE toDate(${column}) >= toDate('${countedOn}') - ${Math.max(days - RETAINED_MARGIN_DAYS, 0)}`
+			const rows = decodeRowCounts(
+				db.query(`SELECT toString(count()) AS rowCount FROM ${table}${retained}`),
+			)
+			return [table, rows[0]?.rowCount ?? "0"]
+		}),
+	)
 
 /**
  * The manifest a step should expect to find, given the retention floor an
