@@ -2,7 +2,7 @@ import { useMemo } from "react"
 import { Result, useAtomValue } from "@/lib/effect-atom"
 import { retainedQueryV2 } from "@/lib/services/common/v2-atom-client"
 import { errorIssueFromV2 } from "@/lib/services/error-issues"
-import { attributeIssues, type ReleaseIssueCounts, type ReleaseServiceImpact } from "./release-model"
+import { attributeIssues, countIssues, type ReleaseIssueCounts, type ReleaseServiceImpact } from "./release-model"
 
 /** One page of the v2 list; a window that introduced more says so rather than paging. */
 const ISSUE_LIMIT = 100
@@ -28,6 +28,6 @@ export function useReleaseIssueCounts(
 	return useMemo(() => {
 		if (!Result.isSuccess(result)) return { counts: undefined, capped: false }
 		const issues = result.value.data.map(errorIssueFromV2)
-		return { counts: attributeIssues(impacts, issues), capped: result.value.has_more }
+		return { counts: countIssues(attributeIssues(impacts, issues)), capped: result.value.has_more }
 	}, [result, impacts])
 }

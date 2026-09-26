@@ -4,6 +4,7 @@ import { CommitSha, ServiceName } from "@maple/domain/http"
 import type { Release, ReleaseTimelineBucket } from "@/api/warehouse/releases"
 import {
 	attributeIssues,
+	countIssues,
 	deriveReleaseImpacts,
 	groupReleases,
 	lastBucketShares,
@@ -295,24 +296,24 @@ describe("attributeIssues", () => {
 	const impacts = deriveReleaseImpacts(rows, [])
 
 	it("credits the version that was newest when the issue appeared", () => {
-		const counts = attributeIssues(impacts, [
+		const counts = countIssues(attributeIssues(impacts, [
 			{ serviceName: "api", firstSeenAt: "2026-09-05T09:30:00.000Z", lastRegressedAt: null },
 			{ serviceName: "api", firstSeenAt: "2026-09-05T10:02:00.000Z", lastRegressedAt: null },
 			{ serviceName: "api", firstSeenAt: "2026-09-05T09:58:00.000Z", lastRegressedAt: null },
-		])
+		]))
 		expect(counts.get(SHA_A)).toEqual({ fresh: 1, regressed: 0 })
 		expect(counts.get(SHA_B)).toEqual({ fresh: 2, regressed: 0 })
 	})
 
 	it("counts a regression at its regression time, and skips other services", () => {
-		const counts = attributeIssues(impacts, [
+		const counts = countIssues(attributeIssues(impacts, [
 			{
 				serviceName: "api",
 				firstSeenAt: "2026-08-01T00:00:00.000Z",
 				lastRegressedAt: "2026-09-05T10:30:00.000Z",
 			},
 			{ serviceName: "web", firstSeenAt: "2026-09-05T10:30:00.000Z", lastRegressedAt: null },
-		])
+		]))
 		expect(counts.get(SHA_B)).toEqual({ fresh: 0, regressed: 1 })
 		expect(counts.size).toBe(1)
 	})

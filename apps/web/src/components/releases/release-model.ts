@@ -345,21 +345,26 @@ export interface IntroducedIssue {
 	readonly lastRegressedAt: string | null
 }
 
+export interface ReleaseIssues<T extends IntroducedIssue> {
+	fresh: T[]
+	regressed: T[]
+}
+
 /**
  * Credit each issue to the release of its service that was newest when the
  * issue first appeared, or last regressed. Keyed by commit sha.
  */
-export function attributeIssues(
+export function attributeIssues<T extends IntroducedIssue>(
 	impacts: ReadonlyArray<ReleaseServiceImpact>,
-	issues: ReadonlyArray<IntroducedIssue>,
-): Map<string, ReleaseIssueCounts> {
+	issues: ReadonlyArray<T>,
+): Map<string, ReleaseIssues<T>> {
 	const byService = new Map<string, ReleaseServiceImpact[]>()
 	for (const impact of impacts) {
 		const list = byService.get(impact.serviceName)
 		if (list === undefined) byService.set(impact.serviceName, [impact])
 		else list.push(impact)
 	}
-	const counts = new Map<string, ReleaseIssueCounts>()
+	const attributed = new Map<string, ReleaseIssues<T>>()
 	for (const issue of issues) {
 		const firstMs = Date.parse(issue.firstSeenAt)
 		const regressedMs = issue.lastRegressedAt === null ? Number.NaN : Date.parse(issue.lastRegressedAt)
@@ -372,12 +377,24 @@ export function attributeIssues(
 			if (startMs <= atMs && (owner === undefined || impact.firstSeen > owner.firstSeen)) owner = impact
 		}
 		if (owner === undefined) continue
-		const entry = counts.get(owner.commitSha) ?? { fresh: 0, regressed: 0 }
-		if (regressed) entry.regressed += 1
-		else entry.fresh += 1
-		counts.set(owner.commitSha, entry)
+		const entry = attributed.get(owner.commitSha) ?? { fresh: [], regressed: [] }
+		if (regressed) entry.regressed.push(issue)
+		else entry.fresh.push(issue)
+		attributed.set(owner.commitSha, entry)
 	}
-	return counts
+	return attributed
+}
+
+/** `attributeIssues`, reduced to counts for the list. */
+export function countIssues<T extends IntroducedIssue>(
+	attributed: ReadonlyMap<string, ReleaseIssues<T>>,
+): Map<string, ReleaseIssueCounts> {
+	return new Map(
+		[...attributed].map(([sha, issues]) => [
+			sha,
+			{ fresh: issues.fresh.length, regressed: issues.regressed.length },
+		]),
+	)
 }
 
 export interface LiveVersion {

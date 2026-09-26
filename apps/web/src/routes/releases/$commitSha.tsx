@@ -41,6 +41,7 @@ import {
 import { ReleaseComparison, ReleaseVersionsRail } from "@/components/releases/release-detail-panels"
 import { ReleaseIssuesPanel } from "@/components/releases/release-issues-panel"
 import { ReleaseChangeset } from "@/components/releases/release-changeset"
+import { ReleaseDeployOverview } from "@/components/releases/release-deploy-overview"
 import { ReleaseHealthPill, releaseHealthFigure } from "@/components/releases/release-health"
 import { deriveReleaseImpacts, shortReleaseLabel } from "@/components/releases/release-model"
 
@@ -49,7 +50,7 @@ const DEFAULT_PRESET = "7d"
 
 const releaseDetailSearchSchema = Schema.Struct({
 	// The service whose version this page describes. A commit lands on many
-	// services; without one the page offers the list of services it reached.
+	// services; without one the page describes the release across all of them.
 	service: Schema.optional(Schema.String),
 	environments: OptionalStringArrayParam,
 	...TimeRangeSearchFields,
@@ -204,7 +205,15 @@ function ReleaseDetailContent() {
 	return (
 		<DashboardLayout.Root>
 			<DashboardLayout.Breadcrumbs
-				items={[{ label: "Releases", href: "/releases" }, { label: shortReleaseLabel(commitSha) }]}
+				items={
+					service === undefined
+						? [{ label: "Releases", href: "/releases" }, { label: shortReleaseLabel(commitSha) }]
+						: [
+								{ label: "Releases", href: "/releases" },
+								{ label: shortReleaseLabel(commitSha), href: `/releases/${commitSha}` },
+								{ label: service },
+							]
+				}
 			/>
 			<DashboardLayout.Body>
 				<DashboardLayout.Content>
@@ -251,11 +260,12 @@ function ReleaseDetailContent() {
 					</DashboardLayout.Sticky>
 					<DashboardLayout.Scroll>
 						{service === undefined ? (
-							<PickService
+							<ReleaseDeployOverview
 								commitSha={commitSha}
 								startTime={startTime}
 								endTime={endTime}
 								environments={search.environments}
+								timeSearch={timeSearch}
 							/>
 						) : (
 							<ReleaseBody
@@ -280,61 +290,50 @@ interface ScopedProps {
 	environments?: string[]
 }
 
-/** A deep link without a service: list the services this commit reached in the window. */
-function PickService({ commitSha, startTime, endTime, environments }: ScopedProps) {
-	const search = Route.useSearch()
-	const result = useAtomValue(getReleasesResultAtom({ data: { startTime, endTime, environments } }))
-	const services = Result.builder(result)
-		.onSuccess((response) =>
-			[
-				...new Set(
-					response.releases
-						.filter((row) => row.commitSha === commitSha)
-						.map((row) => row.serviceName),
-				),
-			].toSorted(),
-		)
-		.orElse(() => undefined)
+type Series = "version" | "others"
 
-	if (services === undefined) return <Skeleton className="h-24 w-full rounded-md" />
+/**
+ * Finds the version this one replaced before asking for charts, so the baseline
+ * series is that version rather than every other one. Reads the list atom the
+ * list page and the deploy view share, so it is usually already cached.
+ */
+function ReleaseBody(props: ScopedProps & { serviceName: string }) {
+	const { commitSha, serviceName, startTime, endTime, environments } = props
+	const list = useAtomValue(getReleasesResultAtom({ data: { startTime, endTime, environments } }))
+	if (Result.isInitial(list)) return <ReleaseBodySkeleton />
+	const baselineCommitSha = Result.isSuccess(list)
+		? deriveReleaseImpacts(list.value.releases, list.value.timeline)
+				.filter((impact) => impact.serviceName === serviceName && impact.commitSha === commitSha)
+				.toSorted((a, b) => b.spanCount - a.spanCount)[0]?.baseline?.commitSha
+		: undefined
+	return <ReleaseBodyLoaded {...props} baselineCommitSha={baselineCommitSha} />
+}
+
+function ReleaseBodySkeleton() {
 	return (
-		<div className="rounded-md border bg-card p-4 text-sm">
-			<div className="mb-2 text-muted-foreground">
-				{services.length === 0
-					? "This version served no traffic in the window. Widen the time range, or pick the service it was deployed to."
-					: "Pick the service to describe this version for:"}
+		<div className="flex flex-col gap-3">
+			<Skeleton className="h-4 w-80" />
+			<div className="grid gap-3 lg:grid-cols-2">
+				<Skeleton className="h-56 rounded-md" />
+				<Skeleton className="h-56 rounded-md" />
 			</div>
-			<div className="flex flex-wrap gap-2">
-				{services.map((serviceName) => (
-					<Link
-						key={serviceName}
-						to="/releases/$commitSha"
-						params={{ commitSha }}
-						search={{ ...pickTimeRangeSearch(search), environments, service: serviceName }}
-						className="inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs hover:bg-muted"
-					>
-						<ServiceDot serviceName={serviceName} />
-						{serviceName}
-					</Link>
-				))}
-			</div>
+			<Skeleton className="h-72 rounded-md" />
 		</div>
 	)
 }
 
-type Series = "version" | "others"
-
-function ReleaseBody({
+function ReleaseBodyLoaded({
 	commitSha,
 	serviceName,
 	startTime,
 	endTime,
 	environments,
-}: ScopedProps & { serviceName: string }) {
+	baselineCommitSha,
+}: ScopedProps & { serviceName: string; baselineCommitSha: string | undefined }) {
 	const search = Route.useSearch()
 	const { effectiveTimezone } = useTimezonePreference()
 	const atom = getReleaseDetailResultAtom({
-		data: { serviceName, commitSha, startTime, endTime, environments },
+		data: { serviceName, commitSha, baselineCommitSha, startTime, endTime, environments },
 	})
 	const result = useRefreshableAtomValue(atom)
 	const refresh = useAtomRefresh(atom)
@@ -390,18 +389,7 @@ function ReleaseBody({
 			<QueryErrorState error={result.cause} titleOverride="Failed to load release" onRetry={refresh} />
 		)
 	}
-	if (derived === undefined) {
-		return (
-			<div className="flex flex-col gap-3">
-				<Skeleton className="h-4 w-80" />
-				<div className="grid gap-3 lg:grid-cols-2">
-					<Skeleton className="h-56 rounded-md" />
-					<Skeleton className="h-56 rounded-md" />
-				</div>
-				<Skeleton className="h-72 rounded-md" />
-			</div>
-		)
-	}
+	if (derived === undefined) return <ReleaseBodySkeleton />
 
 	const { impact, impacts, response } = derived
 	const timeSearch = pickTimeRangeSearch(search)
@@ -482,14 +470,16 @@ function ReleaseBody({
 							value="others"
 							className="h-6 px-2.5 text-xs font-medium sm:h-6 sm:text-xs"
 						>
-							Other versions
+							{baselineCommitSha === undefined ? "Other versions" : "Previous version"}
 						</TabsTrigger>
 					</TabsList>
 				</Tabs>
 				<span className="text-[11px] text-muted-foreground/70">
 					{series === "version"
 						? `Only spans that carried ${shortReleaseLabel(commitSha)}`
-						: `Every other version of ${serviceName} in the window`}
+						: baselineCommitSha === undefined
+							? `Every other version of ${serviceName} in the window`
+							: `Only spans that carried ${shortReleaseLabel(baselineCommitSha)}, the version it replaced`}
 				</span>
 			</div>
 			<MetricsGrid
