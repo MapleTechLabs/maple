@@ -163,7 +163,9 @@ const v2GroupLayersExceptOnboardingChecklist = (chatWorkspace: Layer.Layer<ChatW
 			Layer.provide(
 				Layer.succeed(SupportChannelService, {
 					retrieve: () => Effect.succeed({ status: "unavailable" }),
-					invite: () => Effect.die("support channels are not exercised by v2 route harnesses"),
+					ensureForCaller: () =>
+						Effect.die("support channels are not exercised by v2 route harnesses"),
+					sendInvite: () => Effect.die("support channels are not exercised by v2 route harnesses"),
 				}),
 			),
 		),

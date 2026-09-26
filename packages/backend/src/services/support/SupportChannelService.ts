@@ -31,25 +31,37 @@ export type SupportChannelView =
 			readonly createdAtMs: number
 	  }
 
-export interface SupportChannelInviteResult {
-	readonly channel: Extract<SupportChannelView, { status: "active" }>
-	readonly invitedEmail: string
+export type ActiveSupportChannel = Extract<SupportChannelView, { status: "active" }>
+
+export interface SupportChannelForCaller {
+	readonly channel: ActiveSupportChannel
+	/** Where the caller's invite goes: their own login email, resolved server-side. */
+	readonly email: string
 	/** True only for the call that created the channel. */
 	readonly created: boolean
 }
 
 export interface SupportChannelServiceApi {
 	readonly retrieve: (orgId: OrgId) => Effect.Effect<SupportChannelView, SupportChannelUnavailableError>
-	/** Create the org's channel if it has none, then send the caller a Slack Connect invite. */
-	readonly invite: (
+	/**
+	 * Resolve the caller's email and create the org's channel if it has none. Split from
+	 * {@link SupportChannelServiceApi.sendInvite} so the route can audit a creation even when the
+	 * invite that follows fails.
+	 */
+	readonly ensureForCaller: (
 		tenant: TenantContext,
 	) => Effect.Effect<
-		SupportChannelInviteResult,
+		SupportChannelForCaller,
 		| SupportChannelNotConfiguredError
 		| SupportChannelBusyError
 		| SupportChannelNoEmailError
 		| SupportChannelUnavailableError
 	>
+	/** Send a Slack Connect invite for the channel to `email`. */
+	readonly sendInvite: (
+		channel: ActiveSupportChannel,
+		email: string,
+	) => Effect.Effect<void, SupportChannelUnavailableError>
 }
 
 const toActive = (row: OrgSupportChannelRow): SupportChannelView =>
@@ -227,28 +239,42 @@ const make = Effect.gen(function* () {
 			})
 		}
 
-		const { channel, orgName } = yield* createSlackChannel(orgId).pipe(
-			Effect.tapError(() => releaseReservation(orgId)),
+		// Create and record as one step: once Slack has the channel, a cancelled request must not
+		// skip the write that remembers it, or the next press would make a second channel.
+		const { channel, orgName, row } = yield* Effect.uninterruptible(
+			Effect.gen(function* () {
+				const { channel, orgName } = yield* createSlackChannel(orgId).pipe(
+					Effect.tapError(() => releaseReservation(orgId)),
+				)
+				yield* Effect.annotateCurrentSpan({ "maple.support_channel.id": channel.id })
+				const now = yield* Clock.currentTimeMillis
+				const [row] = yield* database
+					.execute((db) =>
+						db
+							.update(orgSupportChannels)
+							.set({
+								slackChannelId: channel.id,
+								slackChannelName: channel.name,
+								reservedAt: null,
+								createdAt: new Date(now),
+								updatedAt: new Date(now),
+							})
+							.where(eq(orgSupportChannels.orgId, orgId))
+							.returning(),
+					)
+					.pipe(
+						Effect.mapError(persistenceError("finalize")),
+						// The channel exists in Slack but not here; name it so it can be cleaned up.
+						Effect.tapError(() =>
+							Effect.logError("Support channel created but not recorded", {
+								orgId,
+								channelId: channel.id,
+							}),
+						),
+					)
+				return { channel, orgName, row }
+			}),
 		)
-		yield* Effect.annotateCurrentSpan({ "maple.support_channel.id": channel.id })
-		yield* prepareChannel(channel.id, orgName)
-
-		const now = yield* Clock.currentTimeMillis
-		const [row] = yield* database
-			.execute((db) =>
-				db
-					.update(orgSupportChannels)
-					.set({
-						slackChannelId: channel.id,
-						slackChannelName: channel.name,
-						reservedAt: null,
-						createdAt: new Date(now),
-						updatedAt: new Date(now),
-					})
-					.where(eq(orgSupportChannels.orgId, orgId))
-					.returning(),
-			)
-			.pipe(Effect.mapError(persistenceError("finalize")))
 		if (row === undefined) {
 			return yield* new SupportChannelUnavailableError({
 				message: "Support channel row vanished before it was finalized",
@@ -262,6 +288,7 @@ const make = Effect.gen(function* () {
 				operation: "finalize",
 			})
 		}
+		yield* prepareChannel(channel.id, orgName)
 		return { view, created: true }
 	})
 
@@ -287,18 +314,28 @@ const make = Effect.gen(function* () {
 		return email
 	})
 
-	const invite = Effect.fn("SupportChannelService.invite")(function* (tenant: TenantContext) {
+	const ensureForCaller = Effect.fn("SupportChannelService.ensureForCaller")(function* (
+		tenant: TenantContext,
+	) {
 		yield* Effect.annotateCurrentSpan({ orgId: tenant.orgId })
 		if (!slack.configured) {
 			return yield* new SupportChannelNotConfiguredError({
 				message: "Support Slack bot token is not set",
 			})
 		}
+		// Before creating anything: a caller with nowhere to send the invite gets no channel.
 		const email = yield* callerEmail(tenant)
 		const { view, created } = yield* ensureChannel(tenant.orgId, tenant.userId)
+		return { channel: view, email, created } satisfies SupportChannelForCaller
+	})
+
+	const sendInvite = Effect.fn("SupportChannelService.sendInvite")(function* (
+		channel: ActiveSupportChannel,
+		email: string,
+	) {
 		yield* slack
 			.call("conversations.inviteShared", {
-				channel: view.channelId,
+				channel: channel.channelId,
 				emails: email,
 				// Let the customer's side bring in their own teammates without asking us.
 				external_limited: false,
@@ -314,10 +351,9 @@ const make = Effect.gen(function* () {
 					),
 				),
 			)
-		return { channel: view, invitedEmail: email, created } satisfies SupportChannelInviteResult
 	})
 
-	return { retrieve, invite } satisfies SupportChannelServiceApi
+	return { retrieve, ensureForCaller, sendInvite } satisfies SupportChannelServiceApi
 })
 
 export class SupportChannelService extends Context.Service<SupportChannelService, SupportChannelServiceApi>()(

@@ -20,11 +20,12 @@ const die = () => Effect.die(new Error("not exercised by this test"))
 
 interface World {
 	configured: boolean
+	inviteFails: boolean
 	takenNames: Set<string>
 	calls: Array<{ method: SupportSlackMethod; body: Record<string, unknown> }>
 }
 
-const freshWorld = (): World => ({ configured: true, takenNames: new Set(), calls: [] })
+const freshWorld = (): World => ({ configured: true, inviteFails: false, takenNames: new Set(), calls: [] })
 
 const stubs = (world: World) =>
 	Layer.mergeAll(
@@ -49,6 +50,15 @@ const stubs = (world: World) =>
 						}
 						world.takenNames.add(name)
 						return Effect.succeed({ ok: true, channel: { id: `C_${name}`, name } })
+					}
+					if (method === "conversations.inviteShared" && world.inviteFails) {
+						return Effect.fail(
+							new SupportSlackRefusedError({
+								message: "refused",
+								method,
+								error: "ratelimited",
+							}),
+						)
 					}
 					return Effect.succeed({ ok: true })
 				}),
@@ -87,6 +97,15 @@ const makeLayer = (world: World, testDb: TestDb) =>
 
 const methods = (world: World) => world.calls.map((call) => call.method)
 
+/** What the route does: ensure, then invite. */
+const invite = (tenant: TenantContext) =>
+	Effect.gen(function* () {
+		const service = yield* SupportChannelService
+		const result = yield* service.ensureForCaller(tenant)
+		yield* service.sendInvite(result.channel, result.email)
+		return result
+	})
+
 describe("supportChannelName", () => {
 	it("slugs the org name into Slack's alphabet", () => {
 		assert.strictEqual(supportChannelName("Acme Inc.", "org_1"), "maple-acme-inc")
@@ -111,10 +130,10 @@ describe("SupportChannelService", () => {
 			const service = yield* SupportChannelService
 			assert.deepStrictEqual(yield* service.retrieve(ORG), { status: "not_created" })
 
-			const first = yield* service.invite(tenant)
+			const first = yield* invite(tenant)
 			assert.isTrue(first.created)
 			assert.strictEqual(first.channel.channelName, "maple-acme-inc")
-			assert.strictEqual(first.invitedEmail, "user_support@acme.com")
+			assert.strictEqual(first.email, "user_support@acme.com")
 			assert.deepStrictEqual(methods(world), [
 				"conversations.create",
 				"conversations.invite",
@@ -123,7 +142,7 @@ describe("SupportChannelService", () => {
 			])
 
 			world.calls = []
-			const second = yield* service.invite(tenant)
+			const second = yield* invite(tenant)
 			assert.isFalse(second.created)
 			assert.strictEqual(second.channel.channelId, first.channel.channelId)
 			assert.deepStrictEqual(methods(world), ["conversations.inviteShared"])
@@ -133,12 +152,32 @@ describe("SupportChannelService", () => {
 		}).pipe(Effect.provide(makeLayer(world, testDb)))
 	})
 
+	it.effect("keeps the channel it created when the invite that follows fails", () => {
+		const world = freshWorld()
+		world.inviteFails = true
+		const testDb = createTestDb(trackedDbs)
+		return Effect.gen(function* () {
+			const service = yield* SupportChannelService
+			const first = yield* service.ensureForCaller(tenant)
+			assert.isTrue(first.created)
+			const failed = yield* Effect.flip(service.sendInvite(first.channel, first.email))
+			assert.strictEqual(failed._tag, "@maple/http/errors/SupportChannelUnavailableError")
+
+			world.inviteFails = false
+			world.calls = []
+			const retry = yield* invite(tenant)
+			assert.isFalse(retry.created)
+			assert.strictEqual(retry.channel.channelId, first.channel.channelId)
+			assert.deepStrictEqual(methods(world), ["conversations.inviteShared"])
+		}).pipe(Effect.provide(makeLayer(world, testDb)))
+	})
+
 	it.effect("steps past a channel name that is already taken", () => {
 		const world = freshWorld()
 		world.takenNames.add("maple-acme-inc")
 		const testDb = createTestDb(trackedDbs)
 		return Effect.gen(function* () {
-			const result = yield* (yield* SupportChannelService).invite(tenant)
+			const result = yield* invite(tenant)
 			assert.strictEqual(result.channel.channelName, "maple-acme-inc-2")
 		}).pipe(Effect.provide(makeLayer(world, testDb)))
 	})
@@ -150,7 +189,7 @@ describe("SupportChannelService", () => {
 		return Effect.gen(function* () {
 			const service = yield* SupportChannelService
 			assert.deepStrictEqual(yield* service.retrieve(ORG), { status: "unavailable" })
-			const exit = yield* Effect.exit(service.invite(tenant))
+			const exit = yield* Effect.exit(invite(tenant))
 			assert.isTrue(Exit.isFailure(exit))
 			assert.strictEqual(world.calls.length, 0)
 		}).pipe(Effect.provide(makeLayer(world, testDb)))
@@ -168,7 +207,7 @@ describe("SupportChannelService", () => {
 					[ORG],
 				),
 			)
-			const error = yield* Effect.flip((yield* SupportChannelService).invite(tenant))
+			const error = yield* Effect.flip(invite(tenant))
 			assert.strictEqual(error._tag, "@maple/http/errors/SupportChannelBusyError")
 			assert.isFalse(methods(world).includes("conversations.create"))
 		}).pipe(Effect.provide(makeLayer(world, testDb)))

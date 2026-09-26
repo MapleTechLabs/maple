@@ -46,16 +46,16 @@ export const HttpV2SupportChannelLive = HttpApiBuilder.group(MapleApiV2, "suppor
 			.handle("invite", () =>
 				Effect.gen(function* () {
 					const tenant = yield* CurrentTenant.Context
-					const result = yield* service.invite(tenant)
-					if (result.created) {
+					const { channel, email, created } = yield* service.ensureForCaller(tenant)
+					// Audited before the invite: a creation stays on record even if the invite fails.
+					if (created) {
 						yield* recordHttpAudit("support_channel.created", {
-							metadata: { channel_name: result.channel.channelName },
+							metadata: { channel_name: channel.channelName },
 						})
 					}
-					yield* recordHttpAudit("support_channel.invite_sent", {
-						metadata: { email: result.invitedEmail },
-					})
-					return toV2SupportChannel(result.channel, result.invitedEmail)
+					yield* service.sendInvite(channel, email)
+					yield* recordHttpAudit("support_channel.invite_sent", { metadata: { email } })
+					return toV2SupportChannel(channel, email)
 				}),
 			)
 	}),
