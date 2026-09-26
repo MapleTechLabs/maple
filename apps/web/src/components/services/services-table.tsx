@@ -243,7 +243,7 @@ function deriveDeployInfo(commits: CommitBreakdown[]): DeployCellInfo | undefine
 	// "Errors ↑ since deploy": the newest commit errors at least twice as often
 	// as the version it replaced, by a margin that can't be rounding noise.
 	const previous = pool
-		.filter((c) => c !== latest && c.firstSeen <= latest.firstSeen)
+		.filter((c) => c.firstSeen < latest.firstSeen)
 		.reduce<CommitBreakdown | undefined>(
 			(best, c) => (best === undefined || c.firstSeen > best.firstSeen ? c : best),
 			undefined,

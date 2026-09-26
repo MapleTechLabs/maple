@@ -90,6 +90,27 @@ describe("deriveReleaseImpacts", () => {
 		expect(middle?.baseline?.commitSha).toBe(SHA_A)
 	})
 
+	it("gives versions first seen in the same second no order between them", () => {
+		const rows = [
+			release({
+				commitSha: SHA_C,
+				serviceName: API,
+				firstSeen: "2026-09-05T10:00:00.000Z",
+				spanCount: 10,
+			}),
+			release({
+				commitSha: SHA_B,
+				serviceName: API,
+				firstSeen: "2026-09-05T10:00:00.000Z",
+				spanCount: 5000,
+			}),
+			release({ commitSha: SHA_A, serviceName: API, firstSeen: "2026-09-05T09:00:00.000Z" }),
+		]
+		const [c, b] = deriveReleaseImpacts(rows, [])
+		expect(c?.baseline?.commitSha).toBe(SHA_A)
+		expect(b?.baseline?.commitSha).toBe(SHA_A)
+	})
+
 	it("withholds the comparison below the span floor", () => {
 		const rows = [
 			release({ commitSha: SHA_B, serviceName: API, spanCount: 20, errorCount: 10 }),

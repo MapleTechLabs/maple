@@ -175,10 +175,12 @@ export function deriveReleaseImpacts(
 
 	const impacts: ReleaseServiceImpact[] = []
 	for (const rows of byService.values()) {
-		const ordered = rows.toSorted((a, b) => compareFirstSeen(a, b) || b.spanCount - a.spanCount)
+		const ordered = rows.toSorted(compareFirstSeen)
 		const newestFirstSeen = ordered.at(-1)?.firstSeen ?? ""
 		for (const row of rows) {
-			const previous = ordered[ordered.indexOf(row) - 1]
+			// Strictly earlier: versions first seen in the same second have no known
+			// order, so neither is the other's predecessor.
+			const previous = ordered.findLast((candidate) => candidate.firstSeen < row.firstSeen)
 			const baseline = previous === undefined ? undefined : toBaseline(previous)
 			const errorRate = rate(row.errorCount, row.spanCount)
 			const comparable =
