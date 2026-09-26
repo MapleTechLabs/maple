@@ -1,7 +1,7 @@
 {
   "version": "8",
   "dialect": "postgres",
-  "id": "1ca95d7b-417f-4ec1-b127-d0d60ae86e94",
+  "id": "45f219b0-78ac-49ca-8ffe-f07f8a484280",
   "prevIds": [
     "e218a821-3b70-452a-b4c2-db3773ad322b"
   ],
@@ -10547,6 +10547,19 @@
       "generated": null,
       "identity": null,
       "name": "slack_channel_name",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "org_support_channels"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": false,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "reservation_id",
       "entityType": "columns",
       "schema": "public",
       "table": "org_support_channels"

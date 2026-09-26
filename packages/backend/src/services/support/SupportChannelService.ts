@@ -8,7 +8,7 @@ import {
 	SupportChannelUnavailableError,
 } from "@maple/domain/support-channel"
 import { and, eq, isNull, lt, or } from "drizzle-orm"
-import { Clock, Context, Effect, Layer, Option } from "effect"
+import { Clock, Context, Effect, Layer, Option, Schedule } from "effect"
 import { Database } from "@maple/backend/platform/DatabaseLive"
 import type { TenantContext } from "@maple/backend/services/auth/AuthService"
 import { OrgMembersService } from "@maple/backend/services/org/OrgMembersService"
@@ -17,6 +17,9 @@ import { SupportSlackClient } from "./SupportSlackClient"
 
 /** How long a creation may sit unfinished before another request may take it over. */
 export const CREATE_LEASE_MS = 2 * 60 * 1000
+
+/** Upper bound on the Slack side of creation; must stay well under the lease. */
+const CREATE_TIMEOUT_MS = 60 * 1000
 
 /** `name_taken` retries before giving up; each adds a numeric suffix. */
 const MAX_NAME_ATTEMPTS = 5
@@ -104,15 +107,20 @@ const make = Effect.gen(function* () {
 		})
 	})
 
-	/** Insert the reservation row, or take over a stale one. Reports whether this call won. */
+	/**
+	 * Insert the reservation row, or take over a stale one. Answers the reservation id this call
+	 * now owns; only its owner may finalize or release it.
+	 */
 	const reserve = Effect.fn("SupportChannelService.reserve")(function* (orgId: OrgId, userId: UserId) {
 		const now = yield* Clock.currentTimeMillis
+		const reservationId = crypto.randomUUID()
 		const inserted = yield* database
 			.execute((db) =>
 				db
 					.insert(orgSupportChannels)
 					.values({
 						orgId,
+						reservationId,
 						reservedAt: new Date(now),
 						createdByUserId: userId,
 						createdAt: new Date(now),
@@ -122,12 +130,17 @@ const make = Effect.gen(function* () {
 					.returning({ orgId: orgSupportChannels.orgId }),
 			)
 			.pipe(Effect.mapError(persistenceError("reserve")))
-		if (inserted.length > 0) return true
+		if (inserted.length > 0) return Option.some(reservationId)
 		const takenOver = yield* database
 			.execute((db) =>
 				db
 					.update(orgSupportChannels)
-					.set({ reservedAt: new Date(now), createdByUserId: userId, updatedAt: new Date(now) })
+					.set({
+						reservationId,
+						reservedAt: new Date(now),
+						createdByUserId: userId,
+						updatedAt: new Date(now),
+					})
 					.where(
 						and(
 							eq(orgSupportChannels.orgId, orgId),
@@ -141,18 +154,24 @@ const make = Effect.gen(function* () {
 					.returning({ orgId: orgSupportChannels.orgId }),
 			)
 			.pipe(Effect.mapError(persistenceError("reserve")))
-		return takenOver.length > 0
+		return takenOver.length > 0 ? Option.some(reservationId) : Option.none()
 	})
 
-	const releaseReservation = (orgId: OrgId) =>
+	/** Rows this reservation still owns and that have no channel yet. */
+	const ownedBy = (orgId: OrgId, reservationId: string) =>
+		and(
+			eq(orgSupportChannels.orgId, orgId),
+			eq(orgSupportChannels.reservationId, reservationId),
+			isNull(orgSupportChannels.slackChannelId),
+		)
+
+	const releaseReservation = (orgId: OrgId, reservationId: string) =>
 		database
 			.execute((db) =>
 				db
 					.update(orgSupportChannels)
-					.set({ reservedAt: null })
-					.where(
-						and(eq(orgSupportChannels.orgId, orgId), isNull(orgSupportChannels.slackChannelId)),
-					),
+					.set({ reservedAt: null, reservationId: null })
+					.where(ownedBy(orgId, reservationId)),
 			)
 			.pipe(Effect.ignore)
 
@@ -227,8 +246,8 @@ const make = Effect.gen(function* () {
 			const view = toActive(existing.value)
 			if (view.status === "active") return { view, created: false }
 		}
-		const won = yield* reserve(orgId, userId)
-		if (!won) {
+		const reservation = yield* reserve(orgId, userId)
+		if (Option.isNone(reservation)) {
 			// Lost the race: the winner may have finished between our read and our insert.
 			const row = yield* findRow(orgId)
 			const view = Option.map(row, toActive)
@@ -238,14 +257,27 @@ const make = Effect.gen(function* () {
 				message: `Support channel for ${orgId} is being created`,
 			})
 		}
+		const reservationId = reservation.value
 
-		// Create and record as one step: once Slack has the channel, a cancelled request must not
-		// skip the write that remembers it, or the next press would make a second channel.
-		const { channel, orgName, row } = yield* Effect.uninterruptible(
+		// Creating is interruptible and bounded well inside the lease, so no one can take the
+		// reservation over while we are still talking to Slack. Once Slack has answered, recording
+		// the channel is not: a cancelled request must not skip the write that remembers it.
+		const { channel, orgName, row } = yield* Effect.uninterruptibleMask((restore) =>
 			Effect.gen(function* () {
-				const { channel, orgName } = yield* createSlackChannel(orgId).pipe(
-					Effect.tapError(() => releaseReservation(orgId)),
-				)
+				const { channel, orgName } = yield* restore(
+					createSlackChannel(orgId).pipe(
+						Effect.timeoutOrElse({
+							duration: CREATE_TIMEOUT_MS,
+							orElse: () =>
+								Effect.fail(
+									new SupportChannelUnavailableError({
+										message: "Creating the Slack channel timed out",
+										operation: "conversations.create",
+									}),
+								),
+						}),
+					),
+				).pipe(Effect.tapError(() => releaseReservation(orgId, reservationId)))
 				yield* Effect.annotateCurrentSpan({ "maple.support_channel.id": channel.id })
 				const now = yield* Clock.currentTimeMillis
 				const [row] = yield* database
@@ -256,14 +288,17 @@ const make = Effect.gen(function* () {
 								slackChannelId: channel.id,
 								slackChannelName: channel.name,
 								reservedAt: null,
+								reservationId: null,
 								createdAt: new Date(now),
 								updatedAt: new Date(now),
 							})
-							.where(eq(orgSupportChannels.orgId, orgId))
+							.where(ownedBy(orgId, reservationId))
 							.returning(),
 					)
 					.pipe(
 						Effect.mapError(persistenceError("finalize")),
+						// A transient write failure must not strand a channel Slack already made.
+						Effect.retry({ times: 3, schedule: Schedule.exponential("200 millis") }),
 						// The channel exists in Slack but not here; name it so it can be cleaned up.
 						Effect.tapError(() =>
 							Effect.logError("Support channel created but not recorded", {
@@ -277,7 +312,7 @@ const make = Effect.gen(function* () {
 		)
 		if (row === undefined) {
 			return yield* new SupportChannelUnavailableError({
-				message: "Support channel row vanished before it was finalized",
+				message: `Support channel ${channel.id} was created after this request lost its reservation`,
 				operation: "finalize",
 			})
 		}

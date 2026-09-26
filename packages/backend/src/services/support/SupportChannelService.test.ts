@@ -2,7 +2,13 @@ import { afterEach, assert, describe, it } from "@effect/vitest"
 import { Effect, Exit, Layer, Schema } from "effect"
 import { OrgId, UserId } from "@maple/domain/http"
 import { supportChannelName } from "@maple/domain/support-channel"
-import { cleanupTestDbs, createTestDb, executeSql, type TestDb } from "@maple/backend/platform/test-pglite"
+import {
+	cleanupTestDbs,
+	createTestDb,
+	executeSql,
+	queryFirstRow,
+	type TestDb,
+} from "@maple/backend/platform/test-pglite"
 import type { TenantContext } from "@maple/backend/services/auth/AuthService"
 import { OrgMembersService } from "@maple/backend/services/org/OrgMembersService"
 import { OrganizationService } from "@maple/backend/services/org/OrganizationService"
@@ -21,11 +27,19 @@ const die = () => Effect.die(new Error("not exercised by this test"))
 interface World {
 	configured: boolean
 	inviteFails: boolean
+	/** Runs while Slack is "creating", to stage a concurrent takeover. */
+	duringCreate: (() => Promise<void>) | null
 	takenNames: Set<string>
 	calls: Array<{ method: SupportSlackMethod; body: Record<string, unknown> }>
 }
 
-const freshWorld = (): World => ({ configured: true, inviteFails: false, takenNames: new Set(), calls: [] })
+const freshWorld = (): World => ({
+	configured: true,
+	inviteFails: false,
+	duringCreate: null,
+	takenNames: new Set(),
+	calls: [],
+})
 
 const stubs = (world: World) =>
 	Layer.mergeAll(
@@ -49,7 +63,10 @@ const stubs = (world: World) =>
 							)
 						}
 						world.takenNames.add(name)
-						return Effect.succeed({ ok: true, channel: { id: `C_${name}`, name } })
+						const hook = world.duringCreate
+						return Effect.promise(() => hook?.() ?? Promise.resolve()).pipe(
+							Effect.as({ ok: true, channel: { id: `C_${name}`, name } }),
+						)
 					}
 					if (method === "conversations.inviteShared" && world.inviteFails) {
 						return Effect.fail(
@@ -192,6 +209,49 @@ describe("SupportChannelService", () => {
 			const exit = yield* Effect.exit(invite(tenant))
 			assert.isTrue(Exit.isFailure(exit))
 			assert.strictEqual(world.calls.length, 0)
+		}).pipe(Effect.provide(makeLayer(world, testDb)))
+	})
+
+	it.effect("takes over a reservation whose lease has run out", () => {
+		const world = freshWorld()
+		const testDb = createTestDb(trackedDbs)
+		return Effect.gen(function* () {
+			// The test clock starts at the epoch, so "stale" is dated against it.
+			yield* Effect.promise(() =>
+				executeSql(
+					testDb,
+					`INSERT INTO org_support_channels (org_id, reservation_id, reserved_at, created_by_user_id, created_at, updated_at)
+					 VALUES ($1, 'crashed', to_timestamp(0) - interval '10 minutes', 'user_other', now(), now())`,
+					[ORG],
+				),
+			)
+			const result = yield* invite(tenant)
+			assert.isTrue(result.created)
+		}).pipe(Effect.provide(makeLayer(world, testDb)))
+	})
+
+	it.effect("never lets a creator that lost its reservation overwrite the new owner's row", () => {
+		const world = freshWorld()
+		const testDb = createTestDb(trackedDbs)
+		// While this request waits on Slack, someone else takes the reservation over.
+		world.duringCreate = () =>
+			executeSql(
+				testDb,
+				`UPDATE org_support_channels SET reservation_id = 'someone_else' WHERE org_id = $1`,
+				[ORG],
+			).then(() => undefined)
+		return Effect.gen(function* () {
+			const error = yield* Effect.flip((yield* SupportChannelService).ensureForCaller(tenant))
+			assert.strictEqual(error._tag, "@maple/http/errors/SupportChannelUnavailableError")
+			const row = yield* Effect.promise(() =>
+				queryFirstRow<{ slack_channel_id: string | null; reservation_id: string | null }>(
+					testDb,
+					`SELECT slack_channel_id, reservation_id FROM org_support_channels WHERE org_id = $1`,
+					[ORG],
+				),
+			)
+			assert.strictEqual(row?.slack_channel_id, null)
+			assert.strictEqual(row?.reservation_id, "someone_else")
 		}).pipe(Effect.provide(makeLayer(world, testDb)))
 	})
 

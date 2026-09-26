@@ -12,6 +12,8 @@ export const orgSupportChannels = pgTable("org_support_channels", {
 	orgId: text("org_id").$type<OrgId>().notNull().primaryKey(),
 	slackChannelId: text("slack_channel_id"),
 	slackChannelName: text("slack_channel_name"),
+	/** Owner of the creation in flight; only it may finalize or release the reservation. */
+	reservationId: text("reservation_id"),
 	/** A creation in flight; cleared once the channel exists, and treated as stale after a lease. */
 	reservedAt: timestamp("reserved_at", { withTimezone: true, mode: "date" }),
 	createdByUserId: text("created_by_user_id").notNull(),

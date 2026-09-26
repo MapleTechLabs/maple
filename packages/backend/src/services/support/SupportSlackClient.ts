@@ -65,11 +65,11 @@ export class SupportSlackClient extends Context.Service<SupportSlackClient, Supp
 					cause,
 				})
 
-			const call = Effect.fn("SupportSlackClient.call")(function* (
+			const call = Effect.fn("SupportSlackClient.call", { kind: "client" })(function* (
 				method: SupportSlackMethod,
 				body: Record<string, unknown>,
 			) {
-				yield* Effect.annotateCurrentSpan({ "slack.method": method })
+				yield* Effect.annotateCurrentSpan({ "peer.service": "slack", "slack.method": method })
 				if (Option.isNone(token)) {
 					return yield* new SupportChannelUnavailableError({
 						message: "Support Slack bot token is not configured",
