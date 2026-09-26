@@ -592,8 +592,7 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 		module: "session-replays",
 		name: "sessionReplaysFacetsQuery",
 		label: "page-visited",
-		compile: () =>
-			CH.compileUnionUnsafe(CH.sessionReplaysFacetsQuery({ pagePath: "/pricing" }), window),
+		compile: () => CH.compileUnionUnsafe(CH.sessionReplaysFacetsQuery({ pagePath: "/pricing" }), window),
 	},
 	{
 		module: "session-replays",
@@ -1375,6 +1374,18 @@ export const builderFixtures: ReadonlyArray<BuilderFixture> = [
 		compile: () =>
 			CH.compileUnsafe(
 				CH.traceServicesByTraceIdsQuery({
+					traceIds: [TRACE_ID, "4bf92f3577b34da6a3ce929d0e0e4736"],
+				}),
+				window,
+			),
+	},
+	{
+		module: "traces",
+		name: "traceSpanStatsByTraceIdsQuery",
+		label: "page-enrichment",
+		compile: () =>
+			CH.compileUnsafe(
+				CH.traceSpanStatsByTraceIdsQuery({
 					traceIds: [TRACE_ID, "4bf92f3577b34da6a3ce929d0e0e4736"],
 				}),
 				window,

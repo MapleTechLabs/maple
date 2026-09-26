@@ -1,6 +1,10 @@
-import { deepStrictEqual, ok, rejects, strictEqual } from "node:assert"
+import { deepStrictEqual, ok, strictEqual } from "node:assert"
+import { gzipSync } from "node:zlib"
+import { CloudEventInvalid } from "@maple/eventing-core"
+import { Result } from "effect"
 import { describe, it } from "vitest"
 import { normalizeOtlpLogs } from "../src/server/eventing/otlp"
+import { OutboxEventRejected } from "../src/server/eventing/control-store"
 import { ProjectionActivationConflict, SourceOccurrenceCollision } from "../src/server/eventing/runtime"
 import { __testables } from "../src/server/serve"
 
@@ -106,7 +110,8 @@ describe("Local eventing ingest seam", () => {
 			method: "POST",
 			body: "123456789",
 		})
-		await rejects(() => __testables.readBoundedJson(oversized, 8), /exceeds 8 bytes/)
+		const bounded = await __testables.readBoundedJson(oversized, 8)
+		ok(Result.isFailure(bounded) && /exceeds 8 bytes/.test(bounded.failure.message))
 
 		const gate = new __testables.RequestQuiescenceGate()
 		let releaseMaintenance!: () => void
@@ -586,6 +591,88 @@ describe("Local eventing ingest seam", () => {
 		strictEqual(collision.accepted, 0)
 		const transient = await ingestWith(new Error("control store unavailable"))
 		strictEqual(transient.response.status, 503)
+	})
+
+	it("refuses outbox collisions and invalid events with 400 so exporters do not resend them", async () => {
+		const stageWith = (failure: unknown) =>
+			__testables.ingest(
+				{ exec: () => undefined } as never,
+				{ isRetired: () => false } as never,
+				{
+					evaluateOtlp: () => ({
+						events: [{ id: "event-1" }],
+						recoveredEventIds: [],
+						failures: [],
+						typeMismatchFields: [],
+					}),
+					persistFailures: () => undefined,
+					stage: () => {
+						throw failure
+					},
+				} as never,
+				"logs",
+				new Request("http://127.0.0.1/v1/logs", {
+					method: "POST",
+					headers: { "content-type": "application/json" },
+					body: JSON.stringify({ resourceLogs: [] }),
+				}),
+			)
+		const collision = await stageWith(
+			new OutboxEventRejected({
+				message: "event ID collision with different payload",
+				eventId: "event-1",
+			}),
+		)
+		strictEqual(collision.response.status, 400)
+		const invalid = await stageWith(new CloudEventInvalid({ message: "bad envelope", cause: null }))
+		strictEqual(invalid.response.status, 400)
+		strictEqual((await stageWith(new Error("database is locked"))).response.status, 503)
+	})
+
+	it("acknowledges committed rows when outbox readiness fails and retries readiness", async () => {
+		const retried: Array<readonly string[]> = []
+		const result = await __testables.ingest(
+			{ exec: () => undefined } as never,
+			{
+				isRetired: () => false,
+				filterBatch: (_datasource: string, ndjson: string) => ({ ndjson, accepted: 1, rejected: 0 }),
+			} as never,
+			{
+				evaluateOtlp: () => ({
+					events: [{ id: "event-1" }],
+					recoveredEventIds: [],
+					failures: [],
+					typeMismatchFields: [],
+				}),
+				persistFailures: () => undefined,
+				stage: () => ({ inserted: 1, deduplicated: 0, dropped: 0, eventIds: ["event-1"] }),
+				markReady: () => {
+					throw new Error("database is locked")
+				},
+			} as never,
+			"logs",
+			new Request("http://127.0.0.1/v1/logs", {
+				method: "POST",
+				headers: { "content-type": "application/json" },
+				body: JSON.stringify({
+					resourceLogs: [{ scopeLogs: [{ logRecords: [{ body: { stringValue: "one" } }] }] }],
+				}),
+			}),
+			{ retry: (eventIds) => retried.push(eventIds) },
+		)
+		// A 503 here made exporters resend rows that were already inserted.
+		strictEqual(result.response.status, 200)
+		strictEqual(result.accepted, 1)
+		deepStrictEqual(retried, [["event-1"]])
+	})
+
+	it("refuses a gzip bomb instead of inflating it", () => {
+		const bomb = gzipSync(new Uint8Array(4096))
+		const refused = __testables.decodeOtlp("logs", bomb, "application/x-protobuf", "gzip", 1024)
+		ok(Result.isFailure(refused))
+		strictEqual(refused.failure._tag, "@maple/cli/OtlpBodyTooLarge")
+		const accepted = __testables.decodeOtlp("logs", gzipSync("{}"), "application/json", "gzip", 1024)
+		ok(Result.isSuccess(accepted))
 	})
 
 	it("reports a concurrent activation as a retryable 409", async () => {

@@ -26,6 +26,9 @@ const traceRow = (traceId: string, startTime: string) => ({
 	errorHttpRoute: "",
 	errorQueryContext: "",
 	errorType: "",
+	errorLabel: "RateLimitError",
+	exceptionType: "RateLimitError",
+	exceptionMessage: "429 from gpt-x",
 })
 
 const makeMockExecutor = (
@@ -99,6 +102,33 @@ describe("errorDetail", () => {
 			assert.strictEqual(span!.name, "chat gpt-x")
 			assert.strictEqual(span!.statusMessage, "boom")
 			assert.deepStrictEqual(span!.attributes, { "gen_ai.request.model": "gpt-x" })
+		}),
+	)
+
+	it.effect("names the error the sampled traces belong to", () =>
+		Effect.gen(function* () {
+			const captured: CapturedCalls = { pipeCalls: [] }
+			const result = yield* errorDetail({ fingerprintHash: "123", timeRange }).pipe(
+				Effect.provide(
+					makeLayer(makeMockExecutor(captured, [traceRow("t1", "2026-04-03 12:00:00")])),
+				),
+			)
+			assert.deepStrictEqual(result.error, {
+				label: "RateLimitError",
+				exceptionType: "RateLimitError",
+				message: "429 from gpt-x",
+				serviceName: "api",
+			})
+		}),
+	)
+
+	it.effect("leaves the error unnamed when no trace was sampled", () =>
+		Effect.gen(function* () {
+			const captured: CapturedCalls = { pipeCalls: [] }
+			const result = yield* errorDetail({ fingerprintHash: "123", timeRange }).pipe(
+				Effect.provide(makeLayer(makeMockExecutor(captured, []))),
+			)
+			assert.isUndefined(result.error)
 		}),
 	)
 })

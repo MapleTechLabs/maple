@@ -39,6 +39,12 @@ const rejectNonFingerprint = (rawFingerprint: string): McpInvalidInputError =>
 				example: 'error_detail fingerprint="11640295108927840024"',
 			})
 
+const errorIdentityLine = (error: NonNullable<typeof ErrorDetailOutput.Type.error>): string => {
+	const detail = error.message === "" ? "" : `: ${truncate(error.message, 120)}`
+	const service = error.serviceName === "" ? "" : ` (${error.serviceName})`
+	return `${error.label || error.exceptionType || "Error"}${detail}${service}`
+}
+
 const traceBlocks = (
 	trace: (typeof ErrorDetailOutput.Type.traces)[number],
 	index: number,
@@ -138,6 +144,7 @@ export function registerErrorDetailTool(server: McpToolRegistrar) {
 			return {
 				timeRange: { start: st, end: et },
 				fingerprintHash: fingerprint,
+				...(result.error === undefined ? undefined : { error: result.error }),
 				traces: result.traces.map((t) => ({
 					traceId: t.traceId,
 					rootSpanName: t.rootSpanName,
@@ -155,6 +162,7 @@ export function registerErrorDetailTool(server: McpToolRegistrar) {
 		}),
 		render: (output) => {
 			const scope: ReadonlyArray<readonly [string, string | undefined]> = [
+				["Error", output.error === undefined ? undefined : errorIdentityLine(output.error)],
 				["Time range", `${output.timeRange.start} to ${output.timeRange.end}`],
 				["Service", output.service],
 			]

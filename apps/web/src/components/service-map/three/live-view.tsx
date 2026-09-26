@@ -1,6 +1,6 @@
 import { useMemo } from "react"
 import type { Edge, Node } from "@xyflow/react"
-import type { ServiceEdgeData, ServiceNodeData } from "../service-map-utils"
+import type { ServiceEdgeData, ServiceNodeData } from "@maple/ui/components/service-map/service-map-utils"
 import { liveTopology } from "./live-topology"
 import { ServiceMap3DViewport } from "./viewport"
 

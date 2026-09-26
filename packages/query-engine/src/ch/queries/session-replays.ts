@@ -1028,7 +1028,7 @@ export interface SessionTraceSummaryOutput {
 	readonly durationMs: number
 	readonly rootSpanName: string
 	readonly rootServiceName: string
-	/** Root span's OTel kind (e.g. SPAN_KIND_CLIENT), so the UI can format the HTTP label. */
+	/** Root span's OTel kind as stored (e.g. `Client`), so the UI can format the HTTP label. */
 	readonly rootSpanKind: string
 	/** Root span's attribute map, JSON-encoded — parsed by the UI for `getHttpInfo`. */
 	readonly rootSpanAttributes: string

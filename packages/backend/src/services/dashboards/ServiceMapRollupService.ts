@@ -11,7 +11,7 @@ import { summarizeCause } from "@maple/backend/platform/describe-cause"
 const decodeRoleNameSync = Schema.decodeUnknownSync(RoleName)
 const decodeUserIdSync = Schema.decodeUnknownSync(UserIdSchema)
 
-const HOUR_MS = 3_600_000
+const HOUR_MS = CH.SERVICE_MAP_ROLLUP_HOUR_MS
 
 /**
  * How many completed hours back the rollup re-checks on every run. Bounds the
@@ -26,7 +26,7 @@ const HOUR_MS = 3_600_000
  * turned ~260 orgs into ~6 executions each per tick, of two queries, one of
  * them a raw-`traces` self-join.
  */
-const LOOKBACK_HOURS = 6
+const LOOKBACK_HOURS = CH.SERVICE_MAP_ROLLUP_LOOKBACK_HOURS
 
 /**
  * Discovery window for the active-org scan. Must be a SUPERSET of the per-org
@@ -88,21 +88,16 @@ export class ServiceMapRollupService extends Context.Service<
 			const currentHourMs = Math.floor((yield* Clock.currentTimeMillis) / HOUR_MS) * HOUR_MS
 			const oldestHourMs = currentHourMs - LOOKBACK_HOURS * HOUR_MS
 
-			// Completed hour starts in the lookback window, oldest → newest.
-			const candidates: number[] = []
-			for (let h = oldestHourMs; h < currentHourMs; h += HOUR_MS) candidates.push(h)
+			const candidates = CH.serviceMapRollupCandidateHours(oldestHourMs, currentHourMs)
+			const windowParams = CH.serviceMapRollupWindowParams(orgId, oldestHourMs, currentHourMs)
 
-			const existingCompiled = CH.serviceMapEdgesExistingHoursSQL({
-				orgId,
-				startTime: formatWarehouseDateTime(oldestHourMs),
-				endTime: formatWarehouseDateTime(currentHourMs),
-			})
+			const existingCompiled = CH.serviceMapEdgesExistingHoursSQL(windowParams)
 			const existingRows = yield* warehouse.compiledQuery(tenant, existingCompiled, {
 				context: "serviceMapRollupExistingHours",
 			})
-			const existing = new Set(existingRows.map((row) => Number(row.hourTs)))
+			const existing = CH.serviceMapHourSet(existingRows)
 
-			const missing = candidates.filter((hourMs) => !existing.has(Math.floor(hourMs / 1000)))
+			const missing = CH.serviceMapRollupMissingHours(candidates, existing)
 
 			let hoursRolledUp = 0
 			let edgesWritten = 0
@@ -113,10 +108,9 @@ export class ServiceMapRollupService extends Context.Service<
 				missing,
 				(hourMs) =>
 					Effect.gen(function* () {
-						const hourStart = formatWarehouseDateTime(hourMs)
-						const hourEnd = formatWarehouseDateTime(hourMs + HOUR_MS)
+						const hourParams = CH.serviceMapRollupHourParams(orgId, hourMs)
 
-						const rollup = CH.serviceMapEdgesRollupSQL({ orgId, hourStart, hourEnd })
+						const rollup = CH.serviceMapEdgesRollupSQL(hourParams)
 						const rows = yield* warehouse.compiledQuery(tenant, rollup, {
 							context: "serviceMapRollup",
 						})
@@ -136,11 +130,7 @@ export class ServiceMapRollupService extends Context.Service<
 						// A bounded repair pass below re-evaluates this companion stream
 						// for already-sealed edge hours, so a transient ingest failure does
 						// not leave a permanent address-resolution gap.
-						const resolutionsRollup = CH.serviceMapResolutionsRollupSQL({
-							orgId,
-							hourStart,
-							hourEnd,
-						})
+						const resolutionsRollup = CH.serviceMapResolutionsRollupSQL(hourParams)
 						const resolutionsRows = yield* warehouse.compiledQuery(tenant, resolutionsRollup, {
 							context: "serviceMapResolutionsRollup",
 						})
@@ -170,29 +160,18 @@ export class ServiceMapRollupService extends Context.Service<
 			// tick was the single most expensive thing this service did.
 			const resolvedRows = yield* warehouse.compiledQuery(
 				tenant,
-				CH.serviceMapResolutionsExistingHoursSQL({
-					orgId,
-					startTime: formatWarehouseDateTime(oldestHourMs),
-					endTime: formatWarehouseDateTime(currentHourMs),
-				}),
+				CH.serviceMapResolutionsExistingHoursSQL(windowParams),
 				{ context: "serviceMapResolutionsExistingHours" },
 			)
-			const resolved = new Set(resolvedRows.map((row) => Number(row.hourTs)))
+			const resolved = CH.serviceMapHourSet(resolvedRows)
 
 			yield* Effect.forEach(
-				candidates.filter(
-					(hourMs) =>
-						existing.has(Math.floor(hourMs / 1000)) && !resolved.has(Math.floor(hourMs / 1000)),
-				),
+				CH.serviceMapResolutionRepairHours(candidates, existing, resolved),
 				(hourMs) =>
 					Effect.gen(function* () {
 						const resolutionsRows = yield* warehouse.compiledQuery(
 							tenant,
-							CH.serviceMapResolutionsRollupSQL({
-								orgId,
-								hourStart: formatWarehouseDateTime(hourMs),
-								hourEnd: formatWarehouseDateTime(hourMs + HOUR_MS),
-							}),
+							CH.serviceMapResolutionsRollupSQL(CH.serviceMapRollupHourParams(orgId, hourMs)),
 							{ context: "serviceMapResolutionsRepair" },
 						)
 						resolutionHoursChecked += 1

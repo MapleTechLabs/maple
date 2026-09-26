@@ -56,8 +56,5 @@ export function abnormalState(state: string | null): string | null {
 	return normalized === "ready" || normalized === "active" ? null : normalized
 }
 
-/**
- * PlanetScale's brand mark color, used by the service-map node accent and the
- * integrations catalog tile. One value so the two can't drift.
- */
-export const PLANETSCALE_COLOR = "oklch(0.62 0.02 270)"
+// PlanetScale's brand mark color lives with the service-map node that also uses it.
+export { PLANETSCALE_COLOR } from "@maple/ui/components/service-map/service-map-db"

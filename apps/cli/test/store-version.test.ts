@@ -1,19 +1,23 @@
 import { describe, it } from "@effect/vitest"
-import { ok, strictEqual } from "node:assert"
+import { deepStrictEqual, ok, strictEqual } from "node:assert"
 import { spawn, type ChildProcess } from "node:child_process"
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import {
-	isSchemaStale,
+	adoptLegacySidecars,
+	dataDirSidecarPath,
 	isStoreDirty,
+	legacySidecarPath,
+	makeStoreMarker,
 	markStoreClosed,
 	markStoreClosedDurable,
 	markStoreOpen,
 	markStoreOpenDurable,
+	newerStoreSchemaVersion,
 	readMarker,
 	schemaFingerprint,
-	storeMarkerJson,
+	serverPidPath,
 	storeMarkerPath,
 	storeOpenMarkerPath,
 } from "../src/server/store-version"
@@ -34,9 +38,22 @@ const withDataDir = (run: (dataDir: string) => void): void => {
 /** Simulate a bootstrapped store (chDB creates `store/`). */
 const seedData = (dataDir: string): void => mkdirSync(join(dataDir, "store"), { recursive: true })
 
-/** Write a store marker beside the data dir, as `maple start` does after bootstrap. */
+/** Write a legacy (pre-v2) store marker beside the data dir. */
 const writeMarker = (dataDir: string, schema: string): void =>
-	writeFileSync(storeMarkerPath(dataDir), storeMarkerJson("dev", "2026-01-01T00:00:00.000Z", schema))
+	writeFileSync(
+		storeMarkerPath(dataDir),
+		JSON.stringify({ chdb: "dev", maple: "dev", createdAt: "2026-01-01T00:00:00.000Z", schema }),
+	)
+
+/** A throwaway parent holding any number of data dirs, by basename. */
+const withParent = (run: (parent: string) => void): void => {
+	const parent = mkdtempSync(join(tmpdir(), "maple-sidecar-test-"))
+	try {
+		run(parent)
+	} finally {
+		rmSync(parent, { recursive: true, force: true })
+	}
+}
 
 describe("clean-shutdown sentinel", () => {
 	it("storeOpenMarkerPath sits beside the data dir", () => {
@@ -173,7 +190,7 @@ describe("schemaFingerprint", () => {
 })
 
 describe("store marker schema stamp", () => {
-	it("round-trips the schema fingerprint through storeMarkerJson / readMarker", () => {
+	it("round-trips the schema fingerprint through readMarker", () => {
 		withDataDir((dataDir) => {
 			seedData(dataDir)
 			writeMarker(dataDir, "abc123")
@@ -190,34 +207,114 @@ describe("store marker schema stamp", () => {
 	})
 })
 
-describe("isSchemaStale", () => {
-	it("false for an empty store (nothing to rebuild yet)", () => {
-		withDataDir((dataDir) => {
-			strictEqual(isSchemaStale(dataDir, "fp-current"), false)
+describe("per-data-dir sidecar paths", () => {
+	it("keeps the default `data` layout byte-for-byte", () => {
+		strictEqual(dataDirSidecarPath("/home/u/.maple/data", "maple.pid"), "/home/u/.maple/maple.pid")
+		strictEqual(storeMarkerPath("/home/u/.maple/data"), "/home/u/.maple/maple-store-version.json")
+		strictEqual(storeOpenMarkerPath("/home/u/.maple/data"), "/home/u/.maple/maple-store-open")
+		strictEqual(serverPidPath("/home/u/.maple/data/"), "/home/u/.maple/maple.pid")
+	})
+
+	it("prefixes any other basename so siblings never share state", () => {
+		strictEqual(storeOpenMarkerPath("/home/u/.maple/data-b"), "/home/u/.maple/data-b.maple-store-open")
+		strictEqual(serverPidPath("/var/lib/maple"), "/var/lib/maple.maple.pid")
+	})
+
+	it("a crash of one store no longer makes its sibling look dirty", () => {
+		withParent((parent) => {
+			const a = join(parent, "data")
+			const b = join(parent, "data-b")
+			seedData(a)
+			seedData(b)
+			markStoreOpen(a)
+			strictEqual(isStoreDirty(a), true)
+			strictEqual(isStoreDirty(b), false)
+			markStoreOpen(b)
+			markStoreClosed(b)
+			strictEqual(isStoreDirty(a), true)
+		})
+	})
+})
+
+describe("legacy sidecar adoption", () => {
+	it("moves a custom store's pre-namespacing marker and dirty sentinel beside it", () => {
+		withParent((parent) => {
+			const dataDir = join(parent, "maple")
+			seedData(dataDir)
+			writeFileSync(
+				legacySidecarPath(dataDir, "maple-store-version.json"),
+				'{"chdb":"dev","schema":"fp"}',
+			)
+			writeFileSync(legacySidecarPath(dataDir, "maple-store-open"), "999999\n")
+			// Adopted on first read: the store reads as versioned and dirty, as it was.
+			strictEqual(isStoreDirty(dataDir), true)
+			strictEqual(readMarker(dataDir)?.schema, "fp")
+			ok(existsSync(join(parent, "maple.maple-store-version.json")))
+			ok(!existsSync(join(parent, "maple-store-version.json")))
+			deepStrictEqual(adoptLegacySidecars(dataDir), [])
 		})
 	})
 
-	it("false when the stamped fingerprint matches the current schema", () => {
-		withDataDir((dataDir) => {
-			seedData(dataDir)
-			writeMarker(dataDir, "fp-current")
-			strictEqual(isSchemaStale(dataDir, "fp-current"), false)
+	it("never adopts files a `data` sibling owns", () => {
+		withParent((parent) => {
+			seedData(join(parent, "data"))
+			const other = join(parent, "data-b")
+			seedData(other)
+			writeFileSync(legacySidecarPath(other, "maple-store-open"), "999999\n")
+			deepStrictEqual(adoptLegacySidecars(other), [])
+			strictEqual(isStoreDirty(other), false)
+			strictEqual(isStoreDirty(join(parent, "data")), true)
 		})
 	})
 
-	it("true when the stamped fingerprint differs (schema evolved)", () => {
-		withDataDir((dataDir) => {
+	it("leaves an empty store and an already-migrated store alone", () => {
+		withParent((parent) => {
+			const dataDir = join(parent, "maple")
+			mkdirSync(dataDir, { recursive: true })
+			writeFileSync(legacySidecarPath(dataDir, "maple-store-open"), "999999\n")
+			deepStrictEqual(adoptLegacySidecars(dataDir), [])
 			seedData(dataDir)
-			writeMarker(dataDir, "fp-old")
-			strictEqual(isSchemaStale(dataDir, "fp-current"), true)
+			writeFileSync(storeMarkerPath(dataDir), "{}")
+			deepStrictEqual(adoptLegacySidecars(dataDir), [])
+			ok(existsSync(legacySidecarPath(dataDir, "maple-store-open")))
 		})
 	})
 
-	it("true for a populated legacy store with no schema stamp", () => {
+	it("waits while an older server still runs from the legacy PID file", () => {
+		withParent((parent) => {
+			const dataDir = join(parent, "maple")
+			seedData(dataDir)
+			writeFileSync(legacySidecarPath(dataDir, "maple.pid"), String(process.ppid))
+			writeFileSync(legacySidecarPath(dataDir, "maple-store-open"), `${process.ppid}\n`)
+			deepStrictEqual(adoptLegacySidecars(dataDir), [])
+		})
+	})
+})
+
+describe("newerStoreSchemaVersion", () => {
+	const markerAt = (version: number) =>
+		makeStoreMarker("0.9.0", "2026-01-01T00:00:00.000Z", "0123456789abcdef", {
+			schemaVersion: version,
+			schemaDigest: "a".repeat(64),
+		})
+
+	it("reports a store written by a newer maple, and nothing else", () => {
 		withDataDir((dataDir) => {
 			seedData(dataDir)
-			writeFileSync(storeMarkerPath(dataDir), JSON.stringify({ chdb: "dev", maple: "dev" }))
-			strictEqual(isSchemaStale(dataDir, "fp-current"), true)
+			writeFileSync(storeMarkerPath(dataDir), JSON.stringify(markerAt(9)))
+			strictEqual(newerStoreSchemaVersion(dataDir, 8), 9)
+			strictEqual(newerStoreSchemaVersion(dataDir, 9), undefined)
+			strictEqual(newerStoreSchemaVersion(dataDir, 10), undefined)
+		})
+	})
+
+	it("ignores legacy markers and empty stores", () => {
+		withDataDir((dataDir) => {
+			writeFileSync(storeMarkerPath(dataDir), JSON.stringify(markerAt(9)))
+			strictEqual(newerStoreSchemaVersion(dataDir, 1), undefined)
+			seedData(dataDir)
+			writeMarker(dataDir, "fp")
+			strictEqual(newerStoreSchemaVersion(dataDir, 1), undefined)
 		})
 	})
 })

@@ -357,7 +357,7 @@ export class LocalEventingRuntime {
 			activeProjections: this.listActive().length,
 			deliveryGap: this.#store.deliveryGap(TENANT_ID),
 			outboxCapacity: this.#store.outboxCapacity(),
-			...this.#store.validate(),
+			...this.#store.summary(),
 		}
 	}
 }

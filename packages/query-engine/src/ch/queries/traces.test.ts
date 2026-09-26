@@ -5,6 +5,7 @@ import {
 	spanSearchQuery,
 	traceListQuery,
 	traceServicesByTraceIdsQuery,
+	traceSpanStatsByTraceIdsQuery,
 	traceSummariesQuery,
 	tracesListQuery,
 	tracesRootListQuery,
@@ -51,6 +52,38 @@ describe("traceSummariesQuery", () => {
 		)
 		expect(sql).toMatch(/TraceId IN \(SELECT\s+TraceId AS traceId/)
 		expect(sql).toContain("SpanKind IN ('Server', 'Consumer')")
+	})
+
+	it("forwards contains match modes into the span filters", () => {
+		const { sql } = compileUnsafe(
+			traceSummariesQuery({ spanName: "checkout", matchModes: { spanName: "contains" } }),
+			baseParams,
+		)
+		expect(sql).toContain("positionCaseInsensitive(SpanName, 'checkout') > 0")
+		expect(sql).not.toContain("SpanName = 'checkout'")
+	})
+
+	it("does not add the span semi-join for match modes alone", () => {
+		const { sql } = compileUnsafe(
+			traceSummariesQuery({ matchModes: { spanName: "contains" } }),
+			baseParams,
+		)
+		expect(sql).not.toContain("FROM traces")
+	})
+})
+
+describe("traceSpanStatsByTraceIdsQuery", () => {
+	it("counts every span of the paged traces with primary-key seeks", () => {
+		const { sql } = compileUnsafe(traceSpanStatsByTraceIdsQuery({ traceIds: ["t1", "t2"] }), baseParams)
+		expect(sql).toContain("FROM trace_detail_spans")
+		expect(sql).toContain("OrgId = 'org_1'")
+		expect(sql).toContain("TraceId IN ('t1', 't2')")
+		expect(sql).toContain("count() AS spanCount")
+		expect(sql).toContain("AS services")
+		expect(sql).toContain("subtractHours(")
+		expect(sql).toContain("addHours(")
+		expect(sql).toContain("GROUP BY traceId")
+		expect(sql).toContain("LIMIT 2")
 	})
 })
 
@@ -357,9 +390,69 @@ describe("traceListQuery", () => {
 		expect(sql).toContain("GROUP BY traceId")
 		expect(sql).toContain("count() AS spanCount")
 		expect(sql).toContain("AS services")
-		expect(sql).toContain("ORDER BY startTime DESC, traceId DESC")
+		expect(sql).toContain("ORDER BY startSecond DESC, traceId DESC")
 		expect(sql).toContain("LIMIT 25")
 		expect(sql).toContain("FORMAT JSON")
+	})
+
+	it("orders the raw-traces page by the ns start time stage 1 pages by", () => {
+		const { sql } = compileUnsafe(
+			traceListQuery({ attributeFilters: [{ key: "user.id", value: "u1", mode: "equals" }] }),
+			baseParams,
+		)
+		expect(sql).toContain("ORDER BY startTime DESC, traceId DESC")
+	})
+
+	describe("keyset paging over trace_list_mv", () => {
+		// One second holding five traces whose TraceId order (stage 1's tiebreak
+		// on the second-granular MV) runs opposite to their ns start order.
+		const roots = [
+			{ traceId: "t5", startTime: "2024-01-01 12:00:00.100000000" },
+			{ traceId: "t4", startTime: "2024-01-01 12:00:00.200000000" },
+			{ traceId: "t3", startTime: "2024-01-01 12:00:00.300000000" },
+			{ traceId: "t2", startTime: "2024-01-01 12:00:00.400000000" },
+			{ traceId: "t1", startTime: "2024-01-01 12:00:00.500000000" },
+			{ traceId: "t0", startTime: "2024-01-01 11:59:59.000000000" },
+		]
+		type Root = (typeof roots)[number]
+		type Cursor = { timestamp: string; traceId: string }
+		const second = (ts: string) => ts.slice(0, 19)
+		const desc = (key: (r: Root) => string) => (a: Root, b: Root) =>
+			key(b).localeCompare(key(a)) || b.traceId.localeCompare(a.traceId)
+
+		/** Evaluates one page the way ClickHouse would, reading stage 2's order off the SQL. */
+		const page = (cursor: Cursor | undefined): Root[] => {
+			const { sql } = compileUnsafe(traceListQuery({ limit: 2, cursor }), baseParams)
+			expect(pageSubquery(sql)).toContain("FROM trace_list_mv")
+			const outerOrder = sql.slice(sql.lastIndexOf("ORDER BY "))
+			const cut = cursor && { ts: second(cursor.timestamp), traceId: cursor.traceId }
+			const stage1 = roots
+				.filter(
+					(r) =>
+						!cut ||
+						second(r.startTime) < cut.ts ||
+						(second(r.startTime) === cut.ts && r.traceId < cut.traceId),
+				)
+				.sort(desc((r) => second(r.startTime)))
+				.slice(0, 2)
+			const stage2Key = outerOrder.startsWith("ORDER BY startSecond")
+				? (r: Root) => second(r.startTime)
+				: (r: Root) => r.startTime
+			return stage1.sort(desc(stage2Key))
+		}
+
+		it("never repeats or skips a trace when paging by the last row", () => {
+			const seen: string[] = []
+			let cursor: Cursor | undefined
+			for (let i = 0; i < 5; i++) {
+				const rows = page(cursor)
+				seen.push(...rows.map((r) => r.traceId))
+				const last = rows.at(-1)
+				if (!last) break
+				cursor = { timestamp: last.startTime, traceId: last.traceId }
+			}
+			expect(seen).toEqual(["t5", "t4", "t3", "t2", "t1", "t0"])
+		})
 	})
 
 	it("pages over the roots-only MV by default, read-in-order on its sort key", () => {

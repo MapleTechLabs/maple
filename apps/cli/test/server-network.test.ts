@@ -1,8 +1,13 @@
 import { describe, it } from "@effect/vitest"
 import { deepStrictEqual, ok, rejects, strictEqual } from "node:assert"
-import { Effect, Exit, Tracer } from "effect"
+import { Effect, Exit, Result, Tracer } from "effect"
 import { checkpointQueryUrl } from "../src/server/checkpoints"
-import { __testables, corsHeadersForAllowedOrigin, isBrowserOriginAllowed } from "../src/server/serve"
+import {
+	__testables,
+	corsHeadersForAllowedOrigin,
+	isBrowserOriginAllowed,
+	makeBrowserOriginPolicy,
+} from "../src/server/serve"
 import { serverProbeUrl } from "../src/commands/server-args"
 
 const makeRecordingTracer = () => {
@@ -48,8 +53,43 @@ describe("local HTTP server span status", () => {
 			const span = spans.find((candidate) => candidate.name === "POST /local/query")
 			ok(span)
 			ok(span.status._tag === "Ended" && Exit.isFailure(span.status.exit))
+			// Response bodies can quote rows or SQL; only the status reaches the span.
+			ok(!JSON.stringify(exit).includes("database unavailable"))
 		}),
 	)
+})
+
+describe("request admission on shutdown", () => {
+	it("closes admission and waits for admitted and exclusive work", async () => {
+		const gate = new __testables.RequestQuiescenceGate()
+		const leave = gate.enter()
+		ok(leave)
+		let releaseMaintenance = () => {}
+		const maintenance = gate.exclusive(
+			() =>
+				new Promise<void>((resolve) => {
+					releaseMaintenance = resolve
+				}),
+		)
+		let drained = false
+		const shutdown = gate.shutdown().then(() => {
+			drained = true
+		})
+		strictEqual(gate.enter(), null)
+		await rejects(
+			gate.exclusive(async () => undefined),
+			/maintenance operation is active/,
+		)
+		leave()
+		await new Promise((resolve) => setTimeout(resolve, 0))
+		strictEqual(drained, false)
+		releaseMaintenance()
+		await maintenance
+		await shutdown
+		strictEqual(drained, true)
+		// Admission stays closed after maintenance finishes during shutdown.
+		strictEqual(gate.enter(), null)
+	})
 })
 
 describe("local listener addresses", () => {
@@ -103,73 +143,83 @@ describe("browser origin policy", () => {
 	const requestUrl = new URL("http://node-a.example.test:4418/local/query")
 	const hostedOrigin = "https://local.maple.dev"
 	const browserHosts = ["node-a.example.test", "127.0.0.1"]
+	const makePolicy = (options: { hostedOrigin?: string; extraOrigins?: string; hosts?: string[] } = {}) => {
+		const policy = makeBrowserOriginPolicy({
+			browserHosts: options.hosts ?? browserHosts,
+			hostedOrigin: "hostedOrigin" in options ? options.hostedOrigin : hostedOrigin,
+			extraOrigins: options.extraOrigins,
+		})
+		ok(Result.isSuccess(policy))
+		return policy.success
+	}
+	const allowed = (url: URL | string, origin: string | null, policy = makePolicy()) =>
+		isBrowserOriginAllowed(typeof url === "string" ? new URL(url) : url, origin, policy)
 
 	it("allows non-browser clients, the advertised same-origin UI, and the hosted UI", () => {
-		strictEqual(isBrowserOriginAllowed(requestUrl, null, hostedOrigin, browserHosts), true)
-		strictEqual(
-			isBrowserOriginAllowed(requestUrl, "http://node-a.example.test:4418", hostedOrigin, browserHosts),
-			true,
-		)
-		strictEqual(
-			isBrowserOriginAllowed(
-				requestUrl,
-				"https://node-a.example.test:4418",
-				hostedOrigin,
-				browserHosts,
-			),
-			true,
-		)
-		strictEqual(isBrowserOriginAllowed(requestUrl, hostedOrigin, hostedOrigin, browserHosts), true)
+		strictEqual(allowed(requestUrl, null), true)
+		strictEqual(allowed(requestUrl, "http://node-a.example.test:4418"), true)
+		strictEqual(allowed(requestUrl, "https://node-a.example.test:4418"), true)
+		strictEqual(allowed(requestUrl, hostedOrigin), true)
 	})
 
-	it("allows loopback aliases and the documented Vite proxy across ports", () => {
+	it("allows loopback aliases of this listener and the local-ui Vite origin", () => {
+		const hosts = ["127.0.0.1"]
 		strictEqual(
-			isBrowserOriginAllowed(
-				new URL("http://localhost:4318/local/query"),
-				"http://localhost:4318",
-				hostedOrigin,
-				["127.0.0.1"],
-			),
+			allowed("http://localhost:4318/local/query", "http://localhost:4318", makePolicy({ hosts })),
 			true,
 		)
 		strictEqual(
-			isBrowserOriginAllowed(
-				new URL("http://127.0.0.1:4318/local/query"),
-				"http://127.0.0.1:4319",
-				hostedOrigin,
-				["127.0.0.1"],
-			),
+			allowed("http://127.0.0.1:4318/local/query", "http://127.0.0.1:4319", makePolicy({ hosts })),
 			true,
 		)
 		strictEqual(
-			isBrowserOriginAllowed(
-				new URL("http://[::1]:4318/local/query"),
-				"http://[::1]:4319",
-				hostedOrigin,
-				["[::1]"],
-			),
+			allowed("http://[::1]:4318/local/query", "http://[::1]:4319", makePolicy({ hosts: ["[::1]"] })),
 			true,
 		)
+	})
+
+	it("refuses other local dev servers on the query and admin API", () => {
+		for (const origin of ["http://localhost:3000", "http://127.0.0.1:5173", "https://app.localhost"]) {
+			strictEqual(allowed("http://127.0.0.1:4318/local/query", origin), false, origin)
+			strictEqual(allowed("http://127.0.0.1:4318/local/status", origin), false, origin)
+			strictEqual(allowed("http://127.0.0.1:4318/local/eventing/claims", origin), false, origin)
+		}
+	})
+
+	it("keeps OTLP ingest open to browser SDKs on loopback pages", () => {
+		strictEqual(allowed("http://127.0.0.1:4318/v1/traces", "http://localhost:3000"), true)
+		strictEqual(allowed("http://127.0.0.1:4318/v1/logs", "https://app.localhost"), true)
+		strictEqual(allowed("http://node-a.example.test:4418/v1/traces", "http://localhost:3000"), false)
+	})
+
+	it("honours explicitly allowed origins and rejects malformed ones", () => {
+		const policy = makePolicy({ extraOrigins: " http://localhost:5173/ , https://tools.example.test" })
+		strictEqual(allowed("http://127.0.0.1:4318/local/query", "http://localhost:5173", policy), true)
+		strictEqual(allowed("http://127.0.0.1:4318/local/query", "https://tools.example.test", policy), true)
+		const invalid = makeBrowserOriginPolicy({ browserHosts, extraOrigins: "not a url" })
+		ok(Result.isFailure(invalid))
+		ok(invalid.failure.message.includes("MAPLE_LOCAL_ALLOWED_ORIGINS"))
+	})
+
+	it("accepts no hosted origin when the hosted UI is disabled", () => {
+		for (const hosted of [undefined, ""]) {
+			const policy = makePolicy({ hostedOrigin: hosted })
+			strictEqual(
+				allowed("http://127.0.0.1:4318/local/query", "https://local.maple.dev", policy),
+				false,
+			)
+			strictEqual(allowed("http://127.0.0.1:4318/local/query", "http://127.0.0.1:4318", policy), true)
+		}
 	})
 
 	it("rejects arbitrary and DNS-rebinding browser origins", () => {
+		strictEqual(allowed(requestUrl, "https://attacker.example"), false)
 		strictEqual(
-			isBrowserOriginAllowed(requestUrl, "https://attacker.example", hostedOrigin, browserHosts),
+			allowed("http://rebind.attacker.example:4418/local/query", "http://rebind.attacker.example:4418"),
 			false,
 		)
-		strictEqual(
-			isBrowserOriginAllowed(
-				new URL("http://rebind.attacker.example:4418/local/query"),
-				"http://rebind.attacker.example:4418",
-				hostedOrigin,
-				browserHosts,
-			),
-			false,
-		)
-		strictEqual(
-			isBrowserOriginAllowed(requestUrl, "http://localhost:4319", hostedOrigin, browserHosts),
-			false,
-		)
+		strictEqual(allowed(requestUrl, "http://localhost:4319"), false)
+		strictEqual(allowed(requestUrl, "null"), false)
 	})
 
 	it("echoes any allowed origin instead of a wildcard", () => {
@@ -181,12 +231,7 @@ describe("browser origin policy", () => {
 			vary: "Origin",
 		})
 		const loopbackOrigin = "http://localhost:3000"
-		strictEqual(
-			isBrowserOriginAllowed(new URL("http://127.0.0.1:4318/v1/traces"), loopbackOrigin, hostedOrigin, [
-				"127.0.0.1",
-			]),
-			true,
-		)
+		strictEqual(allowed("http://127.0.0.1:4318/v1/traces", loopbackOrigin), true)
 		strictEqual(
 			corsHeadersForAllowedOrigin(loopbackOrigin)?.["access-control-allow-origin"],
 			loopbackOrigin,

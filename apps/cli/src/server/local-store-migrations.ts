@@ -9,7 +9,7 @@ import { randomUUID } from "node:crypto"
 import { existsSync, readFileSync, statfsSync } from "node:fs"
 import { lstat, readdir, readFile, stat } from "node:fs/promises"
 import { dirname, join, relative, resolve } from "node:path"
-import { Schema } from "effect"
+import { Effect, Schema } from "effect"
 import { Chdb } from "./chdb"
 import { decodeJsonEachRow } from "./chdb-rows"
 import {
@@ -22,11 +22,17 @@ import {
 } from "./schema-identity"
 import {
 	checkStoreCompatible,
+	adoptLegacySidecars,
+	dataDirSidecarPath,
 	ensureStoreMarkerDurable,
 	isStoreDirty,
+	legacySidecarPath,
 	markStoreClosedDurable,
 	markStoreOpenDurable,
+	ownsLegacySidecars,
 	readMarker,
+	serverPidPath,
+	SERVER_PID_NAME,
 	storeHasData,
 	storeMarkerPath,
 	storeOpenMarkerPath,
@@ -37,27 +43,8 @@ import { durableJson, durableRename, ensurePrivateDirectory, syncTree } from "./
 import { MAPLE_VERSION } from "../version"
 import { decodeMigrationJournal, type MigrationJournalSchema } from "./local-store-migrations/journal-schema"
 import { legacyToCurrentModule } from "./local-store-migrations/legacy-to-current"
-import { v1ToV2ErrorRollupModule } from "./local-store-migrations/v1-to-v2-error-rollup"
-import { v2ToV3ServiceMapIngestBridgeModule } from "./local-store-migrations/v2-to-v3-service-map-ingest-bridge"
-import { v3ToV4WebEventsModule } from "./local-store-migrations/v3-to-v4-web-events"
-import { v4ToV5ServiceOverviewMinutelyModule } from "./local-store-migrations/v4-to-v5-service-overview-minutely"
-import { v5ToV6ErrorEventsFingerprintHygieneModule } from "./local-store-migrations/v5-to-v6-error-events-fingerprint-hygiene"
-import { v6ToV7ErrorServiceVersionModule } from "./local-store-migrations/v6-to-v7-error-service-version"
-import { v7ToV8AppleCrashFramesModule } from "./local-store-migrations/v7-to-v8-apple-crash-frames"
-import { v8ToV9MvSweepModule } from "./local-store-migrations/v8-to-v9-mv-sweep"
-import { v9ToV10SemconvKeyRenamesModule } from "./local-store-migrations/v9-to-v10-semconv-key-renames"
-import { v10ToV11ProductEventsModule } from "./local-store-migrations/v10-to-v11-product-events"
-import { v11ToV12ServiceMapEdgeQuantilesModule } from "./local-store-migrations/v11-to-v12-service-map-edge-quantiles"
-import { v12ToV13ServiceOperationsDiscriminatorsModule } from "./local-store-migrations/v12-to-v13-service-operations-discriminators"
-import { v13ToV14AiTraceIndexModule } from "./local-store-migrations/v13-to-v14-ai-trace-index"
-import { v14ToV15CommitShaVcsRevisionModule } from "./local-store-migrations/v14-to-v15-commit-sha-vcs-revision"
-import { v15ToV16AiTraceIndexFilterColumnsModule } from "./local-store-migrations/v15-to-v16-ai-trace-index-filter-columns"
-import { v16ToV17AuditLogModule } from "./local-store-migrations/v16-to-v17-audit-log"
-import { v17ToV18ProductEventsFromTracesModule } from "./local-store-migrations/v17-to-v18-product-events-from-traces"
-import { v18ToV19AiTraceIndexUsageConventionsModule } from "./local-store-migrations/v18-to-v19-ai-trace-index-usage-conventions"
-import { v19ToV20ErrorEventsAttributeFallbackModule } from "./local-store-migrations/v19-to-v20-error-events-attribute-fallback"
-import { v20ToV21AiTraceIndexListColumnsModule } from "./local-store-migrations/v20-to-v21-ai-trace-index-list-columns"
-import { v21ToV22AiTraceIndexToolDetailColumnsModule } from "./local-store-migrations/v21-to-v22-ai-trace-index-tool-detail-columns"
+import { stepModule } from "./local-store-migrations/step-executor"
+import { LOCAL_STORE_STEPS } from "./local-store-migrations/steps"
 import type {
 	AnyLocalStoreMigrationModule,
 	LocalStoreMigration,
@@ -114,29 +101,10 @@ export interface MigrationResult {
 	readonly copiedRows: Readonly<Record<string, number>>
 }
 
+/** v0 -> v1 is a hand-written module; every later edge is a row of `steps.ts`. */
 export const localStoreMigrations: ReadonlyArray<AnyLocalStoreMigrationModule> = [
 	legacyToCurrentModule,
-	v1ToV2ErrorRollupModule,
-	v2ToV3ServiceMapIngestBridgeModule,
-	v3ToV4WebEventsModule,
-	v4ToV5ServiceOverviewMinutelyModule,
-	v5ToV6ErrorEventsFingerprintHygieneModule,
-	v6ToV7ErrorServiceVersionModule,
-	v7ToV8AppleCrashFramesModule,
-	v8ToV9MvSweepModule,
-	v9ToV10SemconvKeyRenamesModule,
-	v10ToV11ProductEventsModule,
-	v11ToV12ServiceMapEdgeQuantilesModule,
-	v12ToV13ServiceOperationsDiscriminatorsModule,
-	v13ToV14AiTraceIndexModule,
-	v14ToV15CommitShaVcsRevisionModule,
-	v15ToV16AiTraceIndexFilterColumnsModule,
-	v16ToV17AuditLogModule,
-	v17ToV18ProductEventsFromTracesModule,
-	v18ToV19AiTraceIndexUsageConventionsModule,
-	v19ToV20ErrorEventsAttributeFallbackModule,
-	v20ToV21AiTraceIndexListColumnsModule,
-	v21ToV22AiTraceIndexToolDetailColumnsModule,
+	...LOCAL_STORE_STEPS.map(stepModule),
 ]
 
 export const validateMigrationRegistry = (
@@ -300,6 +268,7 @@ export const planMigration = (source: LocalSchemaIdentity, target = CURRENT_LOCA
 }
 
 export const formatMigrationPlan = (plan: MigrationPlan): string => {
+	if (plan.chain.length === 0) return `schema is up to date (v${plan.target.version})\n`
 	const lines = [
 		`source schema: ${identityLabel(plan.source)}`,
 		`target schema: ${identityLabel(plan.target)}`,
@@ -324,7 +293,7 @@ export const formatMigrationPlan = (plan: MigrationPlan): string => {
 }
 
 export const migrationJournalPath = (dataDir: string): string =>
-	join(dirname(resolve(dataDir)), "maple-store-migration.json")
+	dataDirSidecarPath(dataDir, "maple-store-migration.json")
 
 export const migrationRootPath = (dataDir: string, migrationId: string): string =>
 	join(dirname(resolve(dataDir)), ".maple-migrations", migrationId)
@@ -468,6 +437,8 @@ const parseJournal = (value: unknown): MigrationJournal => {
  * module or its persisted state is corrupt. */
 export const readMigrationJournalStructure = async (dataDir: string): Promise<MigrationJournal | null> => {
 	try {
+		// A custom-named store may still keep its journal at the pre-sidecar path.
+		adoptLegacySidecars(dataDir)
 		return parseJournal(JSON.parse(await readFile(migrationJournalPath(dataDir), "utf8")) as unknown)
 	} catch (error) {
 		if ((error as NodeJS.ErrnoException).code === "ENOENT") return null
@@ -538,17 +509,27 @@ export const abandonLocalStoreMigration = async (dataDir: string): Promise<strin
 	return abandonedPath
 }
 
+/** The PID a file names if that process still exists; a failed probe counts as not live. */
+const livePidIn = (path: string): number | null => {
+	if (!existsSync(path)) return null
+	const pid = Number.parseInt(readFileSync(path, "utf8").trim(), 10)
+	if (!Number.isInteger(pid) || pid <= 0) return null
+	return Effect.runSync(
+		Effect.try(() => process.kill(pid, 0)).pipe(
+			Effect.as(pid),
+			Effect.orElseSucceed(() => null),
+		),
+	)
+}
+
 const assertNoLiveServer = (dataDir: string): void => {
-	const pidPath = join(dirname(resolve(dataDir)), "maple.pid")
-	if (!existsSync(pidPath)) return
-	const raw = readFileSync(pidPath, "utf8").trim()
-	const pid = Number.parseInt(raw, 10)
-	if (!Number.isInteger(pid) || pid <= 0) return
-	try {
-		process.kill(pid, 0)
-		throw new Error(`maple is running (PID ${pid}); stop it before migrating`)
-	} catch (error) {
-		if (error instanceof Error && error.message.includes("maple is running")) throw error
+	const pidPaths = [
+		serverPidPath(dataDir),
+		...(ownsLegacySidecars(dataDir) ? [legacySidecarPath(dataDir, SERVER_PID_NAME)] : []),
+	]
+	for (const path of pidPaths) {
+		const pid = livePidIn(path)
+		if (pid !== null) throw new Error(`maple is running (PID ${pid}); stop it before migrating`)
 	}
 }
 
@@ -565,6 +546,15 @@ type MigrationStoreRole = "source" | "target"
 interface MigrationSessionOptions extends MigrationDbOptions {
 	readonly role?: MigrationStoreRole
 }
+
+const DIRTY_STORE_RECOVERY =
+	"Recover it with `maple restore --yes` if it has a checkpoint, or `maple start --reset` " +
+	"(this discards its live telemetry)."
+
+/** The one way out when a migration died with the source open. */
+const SOURCE_DIRTY_RECOVERY =
+	"Run `maple schema abandon --yes` to set the unfinished migration aside (the source is not touched). " +
+	DIRTY_STORE_RECOVERY
 
 /** One chDB connection shared across a migration's queries. chDB allows a
  * single connection per process, so the session keeps at most one store open,
@@ -603,12 +593,17 @@ class MigrationDbSession {
 				throw new Error(
 					`${role} store at ${dataDir} was not cleanly closed; refusing to reopen it during migration. ` +
 						(role === "target"
-							? "Discard the incomplete migration and rebuild its staged target explicitly."
-							: "Preserve the source and inspect the open sentinel before retrying."),
+							? "Run `maple schema abandon --yes` to set the staged target aside, then `maple schema migrate --yes` to rebuild it."
+							: SOURCE_DIRTY_RECOVERY),
 				)
 			}
 			await markStoreOpenDurable(dataDir)
 			const db = Chdb.open({ dataDir, schemaSql, bootstrapSchema })
+			// Raw tables expire whole days by TTL, and verification compares counts
+			// taken in different opens; a TTL merge across UTC midnight would fail it.
+			// Only TTL merges stop (inserts still need ordinary merges), and a merge
+			// that meets expired rows keeps them while TTL merges are stopped.
+			db.exec("SYSTEM STOP TTL MERGES")
 			this.#open = { dataDir, db, schemaSql, bootstrapSchema }
 		}
 		return await fn(this.#open.db)
@@ -737,10 +732,9 @@ export const abandonLocalStoreMigrationPreservingSource = async (dataDir: string
 		assertJournalPaths(resolvedDataDir, journal)
 		await assertRealDirectory(resolvedDataDir, "active source data")
 		await assertRealFile(storeMarkerPath(resolvedDataDir), "active source marker")
-		if (isStoreDirty(resolvedDataDir))
-			throw new Error(
-				"active source is dirty; refusing to abandon the target until the source is inspected",
-			)
+		// A dirty source is left exactly as it is: abandoning only sets the target
+		// and journal aside, after which `maple start` offers its ordinary
+		// dirty-store recovery. Refusing here left `--reset` as the only exit.
 		assertJournalSourceMarker(readMarker(resolvedDataDir), journal)
 
 		const root = migrationRootPath(resolvedDataDir, journal.migrationId)
@@ -1432,14 +1426,16 @@ export const runLocalStoreMigration = async (
 	await assertRealDirectory(dataDir, "source data")
 	await assertRealFile(storeMarkerPath(dataDir), "source store marker")
 	if (isStoreDirty(dataDir))
-		throw new Error("source store was not cleanly closed; preserve it and retry after inspection")
+		throw new Error(
+			`source store was not cleanly closed. ${journal === null ? DIRTY_STORE_RECOVERY : SOURCE_DIRTY_RECOVERY}`,
+		)
 
 	const operationId = randomUUID()
 	return withMigrationMaintenanceLock(dataDir, operationId, async () => {
 		assertNoLiveServer(dataDir)
 		if (isStoreDirty(dataDir))
 			throw new Error(
-				"source store became dirty before the migration lock was acquired; refusing to continue",
+				`source store became dirty before the migration lock was acquired. ${SOURCE_DIRTY_RECOVERY}`,
 			)
 		// The canonical journal is created, validated, and written only UNDER the
 		// maintenance lock. The unlocked read above informed planning only: two

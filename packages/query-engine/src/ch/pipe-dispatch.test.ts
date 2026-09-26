@@ -105,6 +105,41 @@ describe("compilePipeQuery", () => {
 		})
 	}
 
+	// `has_error` feeds the same tri-state filter. An absent flag lowered to
+	// `false`, which added `StatusCode != 'Error'` and hid every errored trace
+	// from `maple traces`, `diagnose` and the `search_traces` MCP tool.
+	for (const pipe of ["list_traces", "span_search"]) {
+		describe(`${pipe} has_error`, () => {
+			const sqlFor = (hasError?: unknown) =>
+				compilePipeQuery(
+					pipe,
+					hasError === undefined ? baseParams() : { ...baseParams(), has_error: hasError },
+				)?.sql ?? ""
+			const statusFilters = (sql: string) => sql.match(/StatusCode (=|!=) 'Error'/g) ?? []
+
+			it("applies no status filter when has_error is absent", () => {
+				const sql = sqlFor()
+				expect(sql).toContain("FORMAT JSON")
+				expect(sql).not.toContain("StatusCode != 'Error'")
+			})
+
+			it("keeps only errored spans when has_error is set", () => {
+				const baseline = statusFilters(sqlFor()).length
+				for (const raw of [true, "1", "true"]) {
+					const sql = sqlFor(raw)
+					expect(sql).not.toContain("StatusCode != 'Error'")
+					expect(statusFilters(sql).length).toBeGreaterThan(baseline)
+				}
+			})
+
+			it("treats a falsy has_error value as absent", () => {
+				for (const raw of [false, "0", "false", ""]) {
+					expect(sqlFor(raw)).toBe(sqlFor())
+				}
+			})
+		})
+	}
+
 	it("metric_attribute_values reads metric-scoped values for the given key", () => {
 		const result = compilePipeQuery("metric_attribute_values", {
 			...baseParams(),

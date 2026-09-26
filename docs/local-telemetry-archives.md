@@ -7,8 +7,8 @@ exported from immutable checkpoints. You query them with DuckDB, without
 reloading history into the live store or running a second always-on database.
 
 This is the operator and architecture guide for local archives: the model, the
-happy path, the off-happy-path outcomes, querying, the tuning reference,
-calibration, and the directory and manifest layouts.
+happy path, the off-happy-path outcomes, querying, the fixed export tuning,
+and the directory and manifest layouts.
 
 ## What archives are (and are not)
 
@@ -64,13 +64,10 @@ Live Maple store (chDB)            Archive volume (operator-configured, SEPARATE
         manifest.json                        manifest.json        ← generation manifest (formatVersion 3)
       pins/<checkpoint-id>/<pin-id>.json     shards/HH-NNNN.parquet  ← one or more shards per hour
       operations/active/                   catalog.jsonl          ← canonical rebuildable JSONL index
-      quarantine/                        traces/ ...
+      quarantine/  (operation records)   traces/ ...
       retiring/                        building/<generation-id>/  (in-progress; owned temp output)
                                       quarantine/
                                         building-<operation-id>/ (retained pre-publication debris)
-                                      calibration/               (calibration ownership + samples)
-                                        recovery.json
-                                        samples/<operation-id>/
                                       operations/
                                         active/archive-<operation-id>/
                                           intent.json
@@ -82,6 +79,13 @@ Live Maple store (chDB)            Archive volume (operator-configured, SEPARATE
 The archive volume is an operator-configured directory that **must be separate**
 from the live data directory. The `assertArchiveRootSeparate` check refuses to
 archive into (or beneath) the live store.
+
+Beside the data directory (siblings, not children) live the restore and reset
+transactions, the maintenance lock, `<data>.checkpoint-scratch/` (where a new
+checkpoint is restored and validated; never `tmpdir()`, which is tmpfs on many
+Linux hosts), `<data>.checkpoint-failures.json` (consecutive refresh failures),
+and whatever a restore moved aside (see
+[Checkpoint retention and leftovers](#checkpoint-retention-and-leftovers)).
 
 ### Why checkpoint-restored scratch, not a live copy
 
@@ -110,7 +114,7 @@ generation stays independently reproducible.
 
 ### Separation of logical chunks, physical shards, and row groups
 
-Three distinct units, all configurable and calibratable:
+Three distinct units, each bounded by a fixed tuning value:
 
 - A **logical chunk** is a provisioning target (the `targetChunkBytes` tuning
   value), not a hard limit.
@@ -118,7 +122,7 @@ Three distinct units, all configurable and calibratable:
   `maxShardBytes`. In v1, each shard covers one UTC hour within the sealed day;
   if a single hour exceeds `maxShardBytes` uncompressed, it is recursively
   bisected at the physical `_part_offset` boundary. A single row that exceeds the
-  byte bound is a distinct failure (raise `maxShardBytes` or recalibrate).
+  byte bound is a distinct failure.
 - A **Parquet row group** is the unit of compression and parallel decode inside a
   shard, sized by `rowGroupRows`.
 
@@ -129,16 +133,15 @@ creation, restore, or reset. Inside the lock, it acquires a **persistent pin**
 on the source checkpoint so retention cannot delete the snapshot between
 resolution and export. A stale pin (e.g. from a crashed archive that never
 released it) over-retains data instead of risking deletion. The pin is
-released after the generation is durable. Calibration pins use the purpose
-`archive-calibrate:<operation-id>` so they are unambiguous and operation-scoped.
+released after the generation is durable.
 
 ## Commands
 
-`maple archive` has nine operator-facing subcommands (`create`, `list`,
-`verify`, `rebuild`, `reconcile`, `gc`, `calibrate`, `retire-live`, `expire`)
-plus the internal `calibrate-session` and `calibrate-run` commands used by
-calibration and its fault probes. There are no short flags anywhere in this command tree. Root
-flags fall back to `~/.maple` defaults when omitted.
+`maple archive` has eight subcommands (`create`, `list`, `verify`, `rebuild`,
+`reconcile`, `gc`, `retire-live`, `expire`). There are no short flags anywhere
+in this command tree. Root flags fall back to `~/.maple` defaults when omitted.
+Every subcommand prints JSON instead of its summary when the global
+`--format json` is given.
 
 | Flag             | Default            |
 | ---------------- | ------------------ |
@@ -154,8 +157,7 @@ Seal one UTC day of one signal into a validated Parquet generation.
 maple archive create 2026-06-01 traces \
   --data-dir ~/.maple/data \
   --archive-dir /Volumes/External/maple-archive \
-  --scratch-root /Volumes/External/maple-scratch \
-  --config ./maple-archive-config.json
+  --scratch-root /Volumes/External/maple-scratch
 ```
 
 - `<range-date>`: the UTC day to seal, as `YYYY-MM-DD` (validated; impossible
@@ -163,19 +165,30 @@ maple archive create 2026-06-01 traces \
 - `<signal>`: one of the six signal names (positional, not a flag).
 - `--checkpoint-id`: archive from a specific checkpoint instead of `current`.
 - `--archive-dir` / `--scratch-root` / `--data-dir`: override the defaults.
-- `--config`: load tuning overrides from a versioned calibration config document
-  (see [Tuning configuration](#tuning-configuration)). The config's SHA-256
-  identity is recorded in the generation manifest. The strict config schema has
-  no root override fields; roots always come from the CLI/defaults.
+- `--config`: ignored. It used to load a calibration config; it is still
+  accepted so older scripts keep working, and `--debug` notes that it was
+  ignored.
+- `--allow-shrink`: let a generation with fewer rows than the active one
+  supersede it.
 
 The command resolves and pins the checkpoint, restores it to scratch, exports
 bounded Parquet shards, validates row counts and checksums, publishes the
 generation manifest, atomically selects it, canonically rebuilds the catalog,
 releases the pin, and removes the owned scratch.
 
-**Tuning precedence:** `--config` effective values override compiled tuning
-defaults. `archive create` exposes no per-knob CLI tuning flags in v1; its root
-flags are separate and remain authoritative.
+It refuses two exports that would lose data, after reconciling the aborted
+operation so nothing is left for the next run:
+
+- **A day past its retention.** Raw tables drop a whole UTC day at midnight
+  `N` days after it (30 for logs and traces, 90 for metrics, or the configured
+  floor). A day whose expiry is at or before the later of the checkpoint's
+  creation and now may already be partial, so it is refused, first against the
+  longest retention the store could have and again against the TTL the restored
+  checkpoint carries. `--allow-shrink` does not bypass this.
+- **A shrinking re-export.** A new generation with fewer rows than the active one
+  is refused unless `--allow-shrink` is passed. Without this, re-exporting a day
+  the live store had partly expired replaced the only full archive with a
+  smaller one, and `archive gc` then deleted the full one.
 
 ### `maple archive list`
 
@@ -184,7 +197,7 @@ Report active generations:
 ```sh
 maple archive list --archive-dir /Volumes/External/maple-archive
 maple archive list --output paths --signal traces   # machine-readable paths
-maple archive list --output json                    # full JSON
+maple --format json archive list                    # full JSON
 ```
 
 `--output` modes (`summary` is the default; only `list` has this flag):
@@ -194,7 +207,8 @@ maple archive list --output json                    # full JSON
 - `paths`: a single comma-separated, double-quoted list of the active
   generation's Parquet shard paths (excluding superseded generations), ready for
   DuckDB's `read_parquet`. Requires `--signal`.
-- `json`: the full `listActiveGenerations` object, pretty-printed.
+- `json`: deprecated alias of the global `--format json`: the full
+  `listActiveGenerations` object, pretty-printed.
 
 `list` verifies every shard's actual SHA-256 and byte size against the manifest
 before returning it. A tampered shard fails closed: the affected range surfaces
@@ -269,17 +283,19 @@ zero mutation, exits non-zero), `CreateVerifyComplete`, `CreateAbortPrepublicati
 ### `maple archive gc`
 
 Reclaim superseded archive generations, retaining the newest N per signal/range.
-This is the **only** archive operation that deletes published generations.
+This is the **only** archive operation that deletes published generations, so,
+like `expire` and `retire-live`, it only plans unless `--apply` is passed.
 
 ```sh
-maple archive gc --archive-dir /Volumes/External/maple-archive --keep 1
-maple archive gc --keep 0 --dry-run   # preview reclaiming all superseded
+maple archive gc --keep 0                    # preview reclaiming all superseded
+maple archive gc --archive-dir /Volumes/External/maple-archive --keep 1 --apply
 ```
 
 - `--keep` (default `1`, `>= 0`): generations to retain per signal/range beyond
   the active one. `--keep 0` reclaims all superseded generations.
-- `--dry-run`: plan only, no mutation. If an operation is active in
-  `operations/active/`, the dry run reports the blocker and reclaims nothing.
+- `--apply`: delete the planned generations. Without it, and always with
+  `--dry-run`, gc plans only and mutates nothing. If an operation is active in
+  `operations/active/`, the plan reports the blocker and reclaims nothing.
 
 GC is deliberately conservative. It verifies every generation's manifest and shard
 checksums up front, excludes any signal/range whose catalog is not provably
@@ -287,65 +303,13 @@ reconstructable or whose active pointer is missing, deletes by tombstone-rename
 (never in-place recursive delete), persists progress after every target, and
 proves terminal invariants before retiring the journal.
 
-### `maple archive calibrate <range-date>`
-
-Calibrate archive tuning by running a candidate matrix against a pinned
-checkpoint across **all six signals**.
-
-```sh
-maple archive calibrate 2026-06-01 \
-  --archive-dir /Volumes/External/maple-archive \
-  --memory-budget 536870912 --time-budget 60000 \
-  --write-config ./maple-archive-config.json
-```
-
-Flags (defaults shown):
-
-| Flag                      | Default               | Meaning                                            |
-| ------------------------- | --------------------- | -------------------------------------------------- |
-| `--checkpoint-id`         | `current`             | Source checkpoint                                  |
-| `--memory-budget`         | `536870912` (512 MiB) | Per-candidate RSS ceiling                          |
-| `--time-budget`           | `60000` (ms)          | Total matrix deadline                              |
-| `--sample-rows`           | `10000`               | Rows sampled per signal (training window `[0, N)`) |
-| `--max-candidate-wall-ms` | `30000` (ms)          | Per-candidate wall ceiling                         |
-| `--min-throughput`        | `0` (B/s)             | Throughput floor (0 disables)                      |
-| `--max-temp-disk`         | `2147483648` (2 GiB)  | Temporary disk ceiling                             |
-| `--free-space-reserve`    | `536870912` (512 MiB) | Required free space on the archive volume          |
-| `--safety-margin-milli`   | `1100` (→ 1.1×)       | Margin applied inside each ceiling (thousandths)   |
-| `--write-config`          | none                  | Write the recommended config document to this path |
-
-The calibrator spawns each candidate as a child process under `/usr/bin/time`
-(for independent peak-RSS measurement) inside its own process group with a
-wall-clock and temporary-disk watchdog. It selects the candidate with the lowest
-worst-case peak RSS (tie-broken by wall) that passes every signal's ceiling,
-then validates the selection on a **disjoint held-out window**
-`[sampleRows, 3*sampleRows)` through the same real writer: `N` training rows
-followed by `2N` held-out rows. Confidence is `high` only when a candidate is
-selected and every signal actually produced the complete requested training
-and held-out cardinality; otherwise it is `low` with `selected: null` and no
-config is written. See [Calibration](#calibration).
-
-`maple archive calibrate-session --action open|close` is an internal recovery
-and probe command. `open` reconciles an older session, resolves one checkpoint,
-acquires its operation-scoped pin, and prints the operation/checkpoint identity
-required by `calibrate-run`. `close` invokes the authoritative reconciler,
-removing only the derived sample/scratch paths and exact session pin. Ordinary
-operators should use `calibrate`, which owns this lifecycle automatically.
-After all measurements finish, `calibrate` reconciles the session and releases
-the source pin before publishing the config. A deterministic
-`post-session-release` crash probe proves that interruption in this gap writes
-no config and leaves no pin, recovery record, sample, or scratch debris; the
-operator must rerun calibration.
-
 ## The happy path: fresh checkpoint through DuckDB investigation
 
 1. Ingest telemetry into the running Maple store.
 2. `maple checkpoint` to create a validated checkpoint.
-3. (Optional) `maple archive calibrate <day> --write-config cfg.json` to tune for
-   your hardware, then use `--config cfg.json` on `create`.
-4. `maple archive create 2026-06-01 traces` (and the other five signals).
-5. `maple archive list --output paths --signal traces` to get the Parquet paths.
-6. Query in DuckDB:
+3. `maple archive create 2026-06-01 traces` (and the other five signals).
+4. `maple archive list --output paths --signal traces` to get the Parquet paths.
+5. Query in DuckDB:
 
 ```sh
 duckdb -c "SELECT ServiceName, count(*) FROM read_parquet(['/path/to/00.parquet', ...], union_by_name=true) GROUP BY ServiceName"
@@ -386,235 +350,26 @@ PRAGMA memory_limit='2GB';
 PRAGMA temp_directory='/Volumes/External/duckdb-spill';
 ```
 
-## Tuning configuration
+## Export tuning
 
-The tuning knobs live in one place and can be overridden. Defaults are the
-measured research baselines, **not universal constants**. A deployment should
-calibrate against its checkpoint, archive volume, chDB version, and memory budget
-with `maple archive calibrate`.
+Archive export uses one fixed set of values (`DEFAULT_ARCHIVE_TUNING` in
+`apps/cli/src/server/archives/config.ts`): one writer thread, 10 000-row row
+groups, and shards of at most 500 000 rows or 256 MiB uncompressed. There is no
+per-deployment tuning.
 
-### Fields, defaults, and validation
+### Values
 
-| Field                 | Type   | Default               | Constraint                                 |
-| --------------------- | ------ | --------------------- | ------------------------------------------ |
-| `writerThreads`       | number | `1`                   | positive integer, `<= 32`                  |
-| `rowGroupRows`        | number | `10000`               | positive integer, `<= maxShardRows`        |
-| `maxShardRows`        | number | `500000`              | positive integer                           |
-| `maxShardBytes`       | number | `268435456` (256 MiB) | positive integer, `>= rowGroupRows * 1024` |
-| `targetChunkBytes`    | number | `1073741824` (1 GiB)  | positive integer, `> minFreeSpaceReserve`  |
-| `minFreeSpaceReserve` | number | `536870912` (512 MiB) | positive integer, `< targetChunkBytes`     |
-
-There is no clamping: any out-of-bounds value or unsafe combination fails closed
-with an explicit error. `archiveDir` and `scratchRoot` have no defaults in the
-tuning block; they are always resolved from the CLI/defaults.
-
-- `writerThreads` → chDB `max_threads` (Parquet writer thread count).
-- `rowGroupRows` → `output_format_parquet_row_group_size`.
-- `maxShardRows` / `maxShardBytes` → physical shard split bounds.
-- `targetChunkBytes` → provisioning hint (not a hard limit).
-- `minFreeSpaceReserve` → enforced free-space headroom at operation time.
+| Field                 | Value                 | Used as                                                    |
+| --------------------- | --------------------- | ---------------------------------------------------------- |
+| `writerThreads`       | `1`                   | chDB `max_threads` for the Parquet writer                  |
+| `rowGroupRows`        | `10000`               | `output_format_parquet_row_group_size`                     |
+| `maxShardRows`        | `500000`              | row bound of one shard file                                |
+| `maxShardBytes`       | `268435456` (256 MiB) | uncompressed byte bound of one shard file                  |
+| `targetChunkBytes`    | `1073741824` (1 GiB)  | archive working-space estimate in the free-space preflight |
+| `minFreeSpaceReserve` | `536870912` (512 MiB) | free space kept on the archive volume                      |
 
 Every generation manifest records the effective tuning values (the six knobs
 above), so a generation is reproducible and deployment drift is visible.
-
-### The calibration config document
-
-`maple archive calibrate --write-config <path>` writes a **versioned calibration
-config document** (`formatVersion: 3`, mode `0o600`) with strict, exact-key
-schema. It records the full evidence as well as the numbers, and the loader
-re-derives every aggregate from that evidence instead of trusting it.
-Top-level keys (all required; unknown keys rejected):
-
-| Key                     | Contents                                                               |
-| ----------------------- | ---------------------------------------------------------------------- |
-| `formatVersion`         | `3`                                                                    |
-| `checkpoint`            | `{ checkpointId, manifestFingerprint }`: the single source snapshot    |
-| `candidateMatrix`       | The exact four-candidate matrix evaluated                              |
-| `requiredSignals`       | The exact six-signal set                                               |
-| `budget`                | The full `CalibrationBudget` the run used (see below)                  |
-| `selected`              | `{ candidate, worstCase }` for the chosen candidate (always present)   |
-| `confidence`            | `"high"` (a loadable recommendation is always high-confidence)         |
-| `heldOut`               | Selected held-out evidence, scaling inputs, and six comparisons        |
-| `heldOutAttempts`       | Every attempt, including rejected results and recomputed comparisons   |
-| `samplePolicy`          | The disjoint training/held-out window contract (sizes + windows)       |
-| `environment`           | Maple/chDB version, schema fingerprint, CPU, memory, archive-volume id |
-| `results`               | Per-signal, per-candidate evidence, each with a `sample` scope         |
-| `effective`             | The six effective tuning knobs (what `--config` applies)               |
-| `derivation`            | How `minFreeSpaceReserve`/`targetChunkBytes` are derived               |
-| `safetyMargin`          | The margin applied inside each ceiling                                 |
-| `recalibrationTriggers` | The six events that should prompt recalibration                        |
-| `measuredAt`            | Canonical UTC ISO-8601 timestamp                                       |
-| `note`                  | Human-readable summary                                                 |
-
-Each `results` entry carries a `sample` scope (`{ checkpointId,
-checkpointManifestFingerprint, rangeDate, role, startRow, requestedRows,
-rowCount }`) binding that measurement to one immutable checkpoint/range and an
-exact ordered-row window. Every training sample is `role: "training"`,
-`startRow: 0`; every held-out sample is `role: "held-out"`, `startRow:
-sampleRows`. The loader proves all scopes share one checkpoint/range, that the
-two windows are disjoint, and that actual `rowCount` equals `requestedRows`
-(`N` for training and `2N` for held-out). A short source window is
-unrepresentative and cannot produce a loadable recommendation.
-
-`heldOut` and every complete `heldOutAttempts` entry persist a descriptive
-aggregate `worstCase` plus a `signalComparisons` array with one entry per signal
-in canonical order. Each entry carries its own `scaleRatio`, six metric comparison
-records (adjusted prediction, observation, tolerance, relative delta, pass/fail),
-and a per-signal `passed` flag; raw metrics are not duplicated (the loader
-re-derives them from the training/held-out results by candidate + signal). The
-loader recomputes these values; the document cannot choose its own ratio,
-prediction, tolerance, or signal pairing.
-
-Format 3 treats resource costs directionally: a lower observed RSS, wall time,
-compression ratio, physical-byte count, or temporary-disk peak is safe; only a
-regression beyond tolerance fails. Write operations emit only format 3. For
-upgrade compatibility, the loader also accepts a format-2 document only when
-its _entire_ held-out evidence matches one coherent historical policy: either
-the original symmetric comparison or the brief directional format-2 form. It
-rejects a document that mixes those representations across the selected
-evidence and attempts.
-
-`environment.archiveVolume` records `{ fsid, type, archiveDir }` so a config is
-bound to the volume it was measured on, and `archive create --config` enforces
-that identity (plus the host environment) before exporting. `recalibrationTriggers`
-is exactly:
-
-1. Maple version change
-2. chDB version change
-3. Schema fingerprint change
-4. Hardware change (CPU count, memory, storage speed)
-5. Archive-volume replacement or filesystem change
-6. Material telemetry-shape change (row width, cardinality, signal mix)
-
-A document containing only `formatVersion` + `effective` is **rejected**. All
-evidence fields are required, so a config cannot be hand-edited into existence.
-The loader recomputes the worst cases, the held-out comparisons, the tuning
-derivation, and the sample scopes, and rejects any field that does not match
-(for example a forged tolerance, a redefined derivation, or a scope bound to the
-wrong checkpoint).
-
-### How `--config` loads
-
-`loadTuningConfig` opens the file with defense-in-depth against tampering and
-TOCTOU:
-
-1. `lstat` first: refuse if not a regular file (rejects symlinks/devices).
-2. Size cap: `16 MiB` (`MAX_CONFIG_BYTES`).
-3. `open` with `O_NOFOLLOW`: the kernel refuses a symlink at the final path.
-4. `fstat` the fd: refuse if not a regular file.
-5. **fd-identity check**: the opened fd's `dev`/`ino` must equal the pre-`lstat`
-   `dev`/`ino` (detects a swap between lstat and open).
-6. Bounded read to exactly the fd's size; SHA-256 is computed over those exact
-   bytes.
-
-The result is a `TuningConfigIdentity` bound into the manifest:
-
-```jsonc
-{ "formatVersion": 3, "configName": "maple-archive-config.json", "sha256": "<64 hex>" }
-```
-
-`configName` is the file basename (validated `^[A-Za-z0-9._-]+$`); `sha256` is
-the content hash. A generation thus records exactly which config produced it.
-(The manifest stores this as an opaque, hash-bound identity, so it can describe
-both legacy v1 and verified v2 config documents; only the loader refuses v1 for
-new writes. It also records and accepts format-3 directional config documents.)
-
-## Calibration
-
-Calibration measures how archive export behaves on your hardware and recommends
-the candidate that meets your resource budget with the most headroom. It is the
-recommended way to set tuning; the defaults are a research baseline only.
-
-### The candidate matrix
-
-Four fixed candidates are evaluated, each across **all six signals**:
-
-| Candidate | `writerThreads` | `rowGroupRows` | `maxShardRows` | `maxShardBytes` |
-| --------- | --------------- | -------------- | -------------- | --------------- |
-| 1         | 1               | 10 000         | 500 000        | 256 MiB         |
-| 2         | 1               | 5 000          | 250 000        | 128 MiB         |
-| 3         | 2               | 10 000         | 500 000        | 256 MiB         |
-| 4         | 1               | 20 000         | 1 000 000      | 512 MiB         |
-
-### Worst-case aggregation and selection
-
-For each candidate, per-signal metrics are aggregated into a single worst case:
-**MAX** of every cost metric (`logicalBytes`, `physicalBytes`,
-`compressionRatio`, `peakTempDiskBytes`, `peakRssBytes`, `wallMs`, `rowCount`)
-and **MIN** of `writeThroughputBytesPerSec` (the slowest signal is the worst
-case). A candidate is eligible only if **every** signal individually meets the
-ceilings. Selection is best-first by lowest worst-case peak RSS, tie-broken by
-lowest wall.
-
-### Margin inside each ceiling
-
-The safety margin is applied **inside** each ceiling, not to the result:
-
-- **RSS:** `peakRssBytes * margin > memoryBudget` → fail
-- **Wall:** `wallMs > maxCandidateWallMs` → fail (hard ceiling, no margin)
-- **Throughput** (only if `minThroughputBytesPerSec > 0`):
-  `writeThroughputBytesPerSec / margin < minThroughputBytesPerSec` → fail
-- **Temp disk:** `peakTempDiskBytes * margin > maxTempDiskBytes` → fail
-
-So `safetyMargin` 1.1 reserves 10% headroom under the declared budget for RSS,
-throughput, and temp disk.
-
-### Held-out validation
-
-The selected candidate is re-measured on a **larger, disjoint** row window
-through the same shared writer. Training covered ordered rows `[0, sampleRows)`;
-held-out covers `[sampleRows, sampleRows + 2*sampleRows)`, equivalently
-`[N, 3N)`, strictly larger than training and non-overlapping. Both requested
-windows and observed cardinalities are recorded in every result's `sample`
-scope and in `samplePolicy`; the loader requires actual `N`/`2N` rows.
-
-The comparison is **per-signal and like-for-like**: each signal's held-out
-result is paired with the same candidate's TRAINING result for that signal, and
-the comparison uses that signal's own
-`scaleRatio = heldOut.logicalBytes / training.logicalBytes`. Cross-signal
-aggregate extrema never decide acceptance (they are recorded only as a
-descriptive `worstCase` summary). Each signal's entry in `signalComparisons`
-records its own `scaleRatio`, its six metric comparisons, and a per-signal
-`passed` flag. The attempt passes only when **all six signals** pass. The fixed
-canonical tolerances (`< 1.0` for every metric) apply per metric, per signal:
-
-| Metric                       | Comparison                                    |
-| ---------------------------- | --------------------------------------------- |
-| `peakRssBytes`               | absolute peak, two-sided                      |
-| `wallMs`                     | training prediction × `scaleRatio`, two-sided |
-| `writeThroughputBytesPerSec` | direct; higher observed is better             |
-| `compressionRatio`           | direct, two-sided                             |
-| `physicalBytes`              | training prediction × `scaleRatio`, two-sided |
-| `peakTempDiskBytes`          | absolute peak, two-sided                      |
-
-The loader rejects document-selected tolerances and independently recomputes
-each signal's ratio, adjusted predictions, relative deltas, and per-signal pass
-result by re-pairing the recorded training and held-out results by exact
-candidate + signal identity. Training and held-out `logicalBytes` must both be
-strictly positive for every paired signal (an undefined ratio makes the attempt
-incomplete, never silently ratio 1).
-
-A candidate that fails held-out (any signal fails) is **rejected** and the next
-eligible candidate is tried; every attempt is recorded in `heldOutAttempts`. A
-complete attempt records six `signalComparisons` entries (even when it fails);
-an incomplete or over-budget attempt records `signalComparisons: []`,
-`worstCase: null`, `passed: false`.
-
-### When calibration does not recommend
-
-- **No candidate meets the ceilings across all six signals** → no
-  recommendation; the command exits non-zero with a clear note and **no config
-  is written**.
-- **No eligible candidate passes held-out**, or the data is
-  small/unrepresentative (a signal's training row count below `sampleRows`) →
-  the command exits non-zero with `selected: null` and **no config is written**.
-  The CLI throws before writing a config when there is no recommendation.
-- **An impossible resource budget** is not a special case. It follows from the
-  above: every candidate is rejected and no config is written, with no change
-  to existing configuration and no temporary data left behind.
-
-The calibrator never redefines the operator's goals to make a candidate pass,
-and a config cannot redefine its tolerances, derivation, or sample scope.
 
 ## Manifest, pointer, and catalog formats
 
@@ -636,7 +391,7 @@ One per generation at
 | `mapleVersion` / `chdbVersion` / `schemaFingerprint` | string          |                                                         |
 | `sourceRowCount` / `archivedRowCount`                | number          | Must be equal; `Σ shard.rowCount == archivedRowCount`   |
 | `tuning`                                             | object          | The six effective knobs                                 |
-| `tuningConfig`                                       | object \| null  | `{ formatVersion, configName, sha256 }` or null         |
+| `tuningConfig`                                       | object \| null  | Always null now; older generations may name a config    |
 | `shards`                                             | array           | One `ArchiveShardRecord` per shard                      |
 
 Each `shard` entry: `name` (e.g. `00-0000.parquet`), `rowCount`,
@@ -671,8 +426,7 @@ without rescanning Parquet.
 ## Recovery and reconciliation
 
 Create and GC persist durable ownership/intent records **before** mutation and
-retire them **only after** proving terminal state. Calibration has its own
-recovery records. Catalog rebuild uses a durable atomic rewrite rather than an
+retire them **only after** proving terminal state. Catalog rebuild uses a durable atomic rewrite rather than an
 operation journal. A single pure decision function (`decideReconciliation`) is
 the sole branch logic for create/GC recovery.
 
@@ -701,20 +455,15 @@ reality from disk. Reconciliation runs inside the maintenance lock, and a
 subsequent `create` runs it automatically as its first step, so most
 interruptions heal without an explicit operator action.
 
-### Calibration recovery
+### Leftover calibration state
 
-Calibration has its own durable record at
-`<archiveDir>/calibration/recovery.json` (`formatVersion: 1`), naming owned
-paths **derived from the operation id** (`calibrate-<operationId>` scratch,
-`calibration/samples/<operationId>` archive, and the pin at
-`pinFilePath(dataDir, checkpointId, pinId)` with purpose
-`archive-calibrate:<operationId>`). Because the paths are derived, a crash
-between pin creation and the phase advance (when the record still shows
-`pinPath: null`) still releases the exact pin. A checkpoint-fingerprint
-mismatch fails closed and preserves the record. Reconciliation removes the owned
-dirs only after classifying them as real directories, and clears the record only
-after the pin is confirmed released and both dirs confirmed absent. Otherwise
-it preserves the record for retry.
+Earlier releases had an `archive calibrate` command. Its interrupted runs could
+leave a checkpoint pin with purpose `archive-calibrate:<operation-id>`, a
+`<scratchRoot>/calibrate-<operation-id>` restore and `<archiveDir>/calibration/`.
+Every applying reconcile (`create`, `gc --apply`, `reconcile`, `expire`,
+`retire-live`) releases those pins and removes those directories under the
+maintenance lock. It never fails the command; anything it cannot remove stays
+over-retained and is reported under `--debug`.
 
 ### GC recovery
 
@@ -741,14 +490,13 @@ idempotently confirms an already-absent target.
 | **Full or disconnected archive volume**                 | Free-space preflight fails before any export. No scratch is created.                                                                                                            |
 | **Pointer or catalog corruption**                       | Summary mode omits malformed ranges; JSON exposes their errors, while paths mode fails closed for the requested signal. `archive rebuild` atomically replaces only the catalog. |
 | **Late telemetry**                                      | A new generation supersedes; the old generation is retained but excluded from active paths.                                                                                     |
+| **Shrinking re-export**                                 | Refused unless `--allow-shrink`; the aborted operation is reconciled at once and the active generation stays selected.                                                          |
+| **Day past its retention**                              | Refused before any intent when even the longest possible retention has passed, otherwise once the restored checkpoint's TTL shows it; nothing is published.                      |
 | **Supersession**                                        | Same as late telemetry: the newest generation becomes active; superseded ones remain on disk until `archive gc` reclaims them.                                                  |
 | **Interrupted create**                                  | Reconciles automatically on the next `create`, or via `archive reconcile`. Pre-publication output moves to retained quarantine; post-publication repairs pointer and catalog.   |
 | **Interrupted GC**                                      | Resumes the frozen target set; a half-removed tombstone is finished, an already-absent target is confirmed. Out-of-order mutation fails closed.                                 |
 | **Interrupted live retirement**                         | Before ledger commit, all live rows remain. After commit, startup replays the authoritative retired day before binding and finishes exact UTC deletion.                         |
 | **Interrupted archive expiration**                      | Resumes the frozen day and generation IDs; a tombstoned range is removed and its catalog rebuilt before progress advances.                                                      |
-| **Interrupted calibration**                             | The derived-pin and owned-dir reconciliation releases the pin and removes the sample; the record is preserved until cleanup is proven.                                          |
-| **Insufficient memory budget**                          | Calibration reports `low` confidence (or no recommendation) rather than presenting synthetic precision.                                                                         |
-| **Failed calibration**                                  | No config is written; temporary calibration output is cleaned up. Existing configuration is unchanged.                                                                          |
 
 ### What failures leave untouched vs. require action
 
@@ -766,25 +514,64 @@ idempotently confirms an already-absent target.
   that repeatedly exceeds bounds requires manual inspection.
   `archive reconcile --dry-run` reports the verdict without mutating.
 
+## Checkpoint retention and leftovers
+
+The registry keeps a rotating `current`/`previous` pair. Each new checkpoint is
+restored into `<data>.checkpoint-scratch/`, counted, and reopened in a fresh
+process (the same bar `maple restore` applies, since chDB reloads persisted
+metadata only at process start) before it is published. Validation instances
+stop TTL and ordinary merges, so counts compared across separate opens cannot
+drift when a raw-table day expires at UTC midnight in between; migrations stop
+TTL merges for the same reason.
+
+After publishing, the old `previous` is retired, and so is every other snapshot
+that is neither `current`, `previous` nor pinned and has a sound manifest. A
+pinned checkpoint that rotated out is therefore reclaimed by the first refresh
+after its pin is released. A refresh that fails leaves no store copy behind: the
+incomplete snapshot is deleted and only its operation record goes to
+`backups/quarantine/`. Consecutive failures are recorded in
+`<data>.checkpoint-failures.json`, and the refresh loop waits the interval
+doubled per failure, capped at the larger of the interval and four hours.
+
+`maple reset`, `maple start --reset`, and `--on-dirty-store wipe` clear only the
+engine-owned entries `control`, `data`, `metadata`, `status`, `store`, and `tmp`,
+and first pin every sound checkpoint with purpose `reset-preserved:<operation>`.
+Those pins keep the pre-reset checkpoints through any number of refreshes;
+restore one with `maple restore --checkpoint-id <id> --yes`.
+
+`maple restore` swaps the restored store in by rename and moves the old store to
+the sibling `<data>.quarantine-<operation>-<quarantine>`. The registry is renamed
+from the old store into the new one after the swap, so it is never copied.
+
+Nothing moved aside is deleted automatically. `maple schema gc` lists it: stores
+replaced by a restore, interrupted restores, stale maintenance locks, migration
+rollback sources (`.maple-migrations/<id>/source`, with their old checkpoints),
+abandoned migration targets and journals, checkpoint quarantine, and the
+checkpoints a reset preserved. `--apply` deletes the leftovers under the
+maintenance lock and refuses while a restore or reset is unfinished;
+`--release-preserved` with `--apply` also releases the preservation pins and
+retires what is no longer `current` or `previous`.
+
 ## Capacity and resource model
 
 For a 4 GiB hot-store target, live store plus current and previous checkpoints is
 roughly 3x the live footprint. Checkpoint creation, scratch restore, and archive
 building can temporarily raise aggregate working storage toward 4 to 5x. That is
-an aggregate across volumes, not a free-space requirement for one disk.
+an aggregate across volumes, not a free-space requirement for one disk. A restore
+needs room for one extra store (the restored copy) on the data directory's
+volume; the checkpoint registry is moved, not copied.
 Checkpoint validation and archive export share **one** sacrificial chDB, so
 archive export does not add a second concurrent `f(4)` memory term.
 
 The archive volume grows with retained historical ranges. Use volume-specific
 free-space measurements in deployment. Create requires
-`minFreeSpaceReserve + targetChunkBytes` on the archive filesystem; calibration
-children require `freeSpaceReserve + 4 * maxShardBytes`. GC lets you bound growth
-by reclaiming superseded generations.
+`minFreeSpaceReserve + targetChunkBytes` on the archive filesystem. GC lets you
+bound growth by reclaiming superseded generations.
 
-> **Capacity caveat:** The research baselines were measured on one macOS ARM64
+> **Capacity caveat:** The fixed tuning values were measured on one macOS ARM64
 > machine with one synthetic data distribution. CPU count, RAM, storage speed,
-> row width, cardinality, and compression ratio vary. Operators should
-> calibrate their deployment.
+> row width, cardinality, and compression ratio vary, so measure free space on
+> your own volumes.
 
 ## Non-goals (v1)
 

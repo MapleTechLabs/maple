@@ -14,8 +14,10 @@ export interface ListTracesOutput {
 	readonly spanCount: number
 	readonly services: readonly string[]
 	readonly rootSpanName: string
+	readonly rootSpanId: string
 	readonly rootSpanKind: string
 	readonly rootSpanStatusCode: string
+	readonly rootSpanStatusMessage: string
 	readonly rootHttpMethod: string
 	readonly rootHttpRoute: string
 	readonly rootHttpStatusCode: string
@@ -459,6 +461,9 @@ export interface ErrorDetailTracesOutput {
 	readonly errorHttpRoute: string
 	readonly errorQueryContext: string
 	readonly errorType: string
+	readonly errorLabel: string
+	readonly exceptionType: string
+	readonly exceptionMessage: string
 }
 
 export interface ErrorDetailTracesParams {

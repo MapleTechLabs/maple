@@ -22,7 +22,8 @@ import type { SpanNode } from "@maple/ui/lib/types"
 import { useLocalSpanDetail } from "../hooks/use-local-span-detail"
 import { useLocalSpanLogs } from "../hooks/use-local-span-logs"
 import { ErrorSection } from "@maple/ui/components/error-section"
-import type { LocalLog } from "../lib/log-shape"
+import { logKey, type LocalLog } from "../lib/log-shape"
+import { formatLocalDateTime, formatLocalTimestamp, formatUtcTitle } from "../lib/time"
 import { LogDetailSheet } from "./log-detail-sheet"
 
 /** Matches the query limit in `useLocalSpanLogs`; a full page means "at least". */
@@ -38,10 +39,10 @@ export function SpanDetailPanel({ span, onClose }: SpanDetailPanelProps) {
 	const statusStyle = getSpanStatusBadgeClass(span.statusCode)
 	const kindLabel = getSpanKindLabel(span.spanKind)
 
-	const logs = useLocalSpanLogs(span.traceId, span.spanId)
+	const logs = useLocalSpanLogs(span.traceId, span.spanId, span.startTime, span.durationMs)
 	const logCount = logs.data?.length ?? null
 
-	// Full attribute maps load lazily — the hierarchy query only returns the
+	// Full attribute maps load lazily: the hierarchy query only returns the
 	// trimmed keys the tree renders. Missing (placeholder) spans have no row to
 	// look up, so we fall back to whatever the tree carried.
 	const detail = useLocalSpanDetail(
@@ -50,7 +51,7 @@ export function SpanDetailPanel({ span, onClose }: SpanDetailPanelProps) {
 	)
 
 	return (
-		<aside className="flex h-full w-[28rem] shrink-0 flex-col overflow-hidden border-l bg-background">
+		<aside className="flex h-full w-full shrink-0 flex-col overflow-hidden border-l bg-background sm:w-[28rem]">
 			{/* Header */}
 			<div className="flex shrink-0 items-center justify-between border-b px-3 py-2">
 				<div className="mr-2 min-w-0 flex-1 overflow-hidden">
@@ -150,9 +151,9 @@ export function SpanDetailPanel({ span, onClose }: SpanDetailPanelProps) {
 								<div className="space-y-1 rounded-md border p-2 text-xs">
 									<div className="flex justify-between">
 										<span className="text-muted-foreground">Start Time</span>
-										<span className="font-mono">
+										<span className="font-mono" title={formatUtcTitle(span.startTime)}>
 											<CopyableValue value={span.startTime}>
-												{span.startTime}
+												{formatLocalDateTime(span.startTime)}
 											</CopyableValue>
 										</span>
 									</div>
@@ -271,9 +272,9 @@ function SpanLogs({
 	return (
 		<>
 			<div className="divide-y">
-				{logs.map((log, i) => (
+				{logs.map((log) => (
 					<button
-						key={`${log.timestamp}-${i}`}
+						key={logKey(log)}
 						type="button"
 						className="flex w-full cursor-pointer flex-col gap-1 p-2 text-left hover:bg-muted/30"
 						onClick={() => {
@@ -282,7 +283,9 @@ function SpanLogs({
 						}}
 					>
 						<div className="flex items-center gap-2 text-[10px] text-muted-foreground">
-							<span className="font-mono">{log.timestamp}</span>
+							<span className="font-mono" title={formatUtcTitle(log.timestamp)}>
+								{formatLocalTimestamp(log.timestamp)}
+							</span>
 							<SeverityBadge severity={log.severityText} className="shrink-0" />
 						</div>
 						<p className="line-clamp-3 whitespace-pre-wrap break-all font-mono text-xs">

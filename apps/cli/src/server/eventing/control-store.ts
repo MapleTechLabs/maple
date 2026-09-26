@@ -230,6 +230,12 @@ export class OutboxAdministrationInvalid extends Schema.TaggedError<OutboxAdmini
 	"@maple/cli/eventing/OutboxAdministrationInvalid",
 	{ message: Schema.String },
 ) {}
+/** An event the outbox refuses for the same reason on every retry: an invalid
+ * envelope or an ID already stored with different content. */
+export class OutboxEventRejected extends Schema.TaggedError<OutboxEventRejected>()(
+	"@maple/cli/eventing/OutboxEventRejected",
+	{ message: Schema.String, eventId: Schema.NullOr(Schema.String) },
+) {}
 export interface DeliveryGap {
 	readonly generation: number
 	readonly droppedEvents: number
@@ -604,8 +610,13 @@ export class LocalEventingControlStore {
 					let outboxEvents = asNumber(usage.count)
 					let outboxBytes = asNumber(usage.bytes)
 					for (const candidate of events) {
-						const validated = Result.getOrThrow(validateMapleCloudEvent(candidate))
-						const { event, canonicalJson: eventJson, byteLength: eventBytes } = validated
+						const validated = validateMapleCloudEvent(candidate)
+						if (Result.isFailure(validated))
+							throw new OutboxEventRejected({
+								message: `invalid event: ${validated.failure.message}`,
+								eventId: null,
+							})
+						const { event, canonicalJson: eventJson, byteLength: eventBytes } = validated.success
 						const sourceFingerprint = sourceFingerprints.get(event.id) ?? null
 						if (sourceFingerprint !== null && !/^sha256:[0-9a-f]{64}$/.test(sourceFingerprint))
 							throw new Error(`event has invalid source fingerprint: ${event.id}`)
@@ -633,15 +644,19 @@ export class LocalEventingControlStore {
 							.get(event.id)
 						if (existing) {
 							if (existing.event_json !== eventJson)
-								throw new Error(`event ID collision with different payload: ${event.id}`)
+								throw new OutboxEventRejected({
+									message: `event ID collision with different payload: ${event.id}`,
+									eventId: event.id,
+								})
 							if (
 								sourceFingerprint !== null &&
 								existing.source_fingerprint !== null &&
 								existing.source_fingerprint !== sourceFingerprint
 							)
-								throw new Error(
-									`event ID collision with different source occurrence: ${event.id}`,
-								)
+								throw new OutboxEventRejected({
+									message: `event ID collision with different source occurrence: ${event.id}`,
+									eventId: event.id,
+								})
 							if (
 								existing.state === "staged" &&
 								sourceFingerprint !== null &&
@@ -1328,6 +1343,22 @@ export class LocalEventingControlStore {
 
 	validate(): EventingControlSnapshotValidation {
 		return validateOpenDatabase(this.#db)
+	}
+
+	/** Counts for health reporting. Integrity is verified at open and restore
+	 * (`validate`); these bounded counts are all a health probe pays for. */
+	summary(): EventingControlSnapshotValidation {
+		// Aggregate queries always return one row.
+		const count = (sql: string): number => asNumber(this.#db.query<CountRow, []>(sql).get()?.count ?? 0)
+		const version = this.#db.query<UserVersionRow, []>("PRAGMA user_version").get()
+		const readyEvents = count("SELECT count(*) AS count FROM outbox_ready_events")
+		return {
+			schemaVersion: asNumber(version?.user_version ?? 0),
+			projectionRevisions: count("SELECT count(*) AS count FROM projection_revisions"),
+			projectionFailures: count("SELECT count(*) AS count FROM projection_failures"),
+			stagedEvents: count("SELECT count FROM outbox_usage WHERE singleton = 1") - readyEvents,
+			readyEvents,
+		}
 	}
 
 	captureSnapshot(): Uint8Array {

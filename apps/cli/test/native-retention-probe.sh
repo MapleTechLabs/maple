@@ -41,6 +41,7 @@ query() {
 	local sql="$1"
 	curl --fail-with-body -sS "http://127.0.0.1:$PORT/local/query" \
 		-H 'content-type: application/json' \
+		-H "x-maple-maintenance-token: $(cat "$DATA.maintenance-token")" \
 		--data "$(jq -nc --arg sql "$sql" '{sql:$sql}')"
 }
 
@@ -175,10 +176,11 @@ fi
 grep -q "permanently retired" "$ROOT/late-rearchive.out" \
 	|| fail "retired-day rearchive did not fail for the expected reason: $(cat "$ROOT/late-rearchive.out")"
 
-# Direct SQL mutation is rejected before execution, so neither raw data nor
+# A maintenance-token SQL mutation of a retired day is rejected before execution, so neither raw data nor
 # insert-trigger materialized-view targets receive a late contribution.
 SQL_STATUS="$(curl -sS -o "$ROOT/late-sql.out" -w '%{http_code}' "http://127.0.0.1:$PORT/local/query" \
 	-H 'content-type: application/json' \
+	-H "x-maple-maintenance-token: $(cat "$DATA.maintenance-token")" \
 	--data "$(jq -nc --arg sql "INSERT INTO logs (OrgId, Timestamp, TimestampTime, ServiceName, Body) SELECT 'local', toDateTime64('${RANGE_DATE}T12:00:02.000000000', 9, 'UTC'), toDateTime('${RANGE_DATE}T12:00:02', 'UTC'), 'late-sql', 'late-sql'" '{sql:$sql}')")"
 [[ "$SQL_STATUS" == "405" ]] || fail "late local SQL returned $SQL_STATUS instead of 405"
 [[ "$(query "SELECT count() AS count FROM logs WHERE toDate(TimestampTime, 'UTC') = '$RANGE_DATE'" | jq -r '.[0].count | tonumber')" == "0" ]] \

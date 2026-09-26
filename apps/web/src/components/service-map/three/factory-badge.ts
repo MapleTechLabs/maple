@@ -1,8 +1,8 @@
 import { KAFKA_MARK_PATH } from "@/components/icons/kafka"
 import { NATS_MARK_PATH } from "@/components/icons/nats"
 import { RABBITMQ_MARK_PATH } from "@/components/icons/rabbitmq"
-import { getDbDescriptor } from "../service-map-db"
-import { resolveRuntimeGlyph } from "../service-map-runtime"
+import { getDbDescriptor } from "@maple/ui/components/service-map/service-map-db"
+import { resolveRuntimeGlyph } from "@maple/ui/components/service-map/service-map-runtime"
 import type { Node3D } from "./types"
 
 export type MachineBadge = {

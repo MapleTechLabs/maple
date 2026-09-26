@@ -1,16 +1,19 @@
 #!/usr/bin/env bun
 import { BunRuntime } from "@effect/platform-bun"
 import * as BunServices from "@effect/platform-bun/BunServices"
-import { Effect, Layer, Metric, Runtime } from "effect"
+import { Cause, Console, Effect, Exit, Layer, Logger, Metric, Runtime } from "effect"
+import * as CliOutput from "effect/unstable/cli/CliOutput"
 import * as Command from "effect/unstable/cli/Command"
 import { FetchHttpClient } from "effect/unstable/http"
 import { cli } from "./cli"
 import { MapleConfig } from "./core/config"
-import { Mode, isModeFailure } from "./core/mode"
-import { annotateOutcome, recoverExpected } from "./core/outcomes"
+import { Mode } from "./core/mode"
+import { annotateOutcome, isExpectedFailure, recoverExpected, renderUnexpected } from "./core/outcomes"
 import { TelemetryLayer } from "./core/telemetry"
 import { maybeNotifyUpdate } from "./core/update"
 import { WarehouseExecutorFromMode } from "./core/warehouse"
+import { debugEnabled } from "./lib/debug"
+import { makeHelpCapture, usageHint } from "./lib/help"
 import { archiveErrorMessage } from "./server/archives/errors"
 import { CHECKPOINT_REOPEN_PROBE_ENV, validateCheckpointDataDir } from "./server/checkpoints"
 import { MAPLE_VERSION } from "./version"
@@ -59,6 +62,19 @@ if (checkpointProbeDataDir !== undefined) {
 		process.exitCode = 1
 	}
 } else {
+	const help = makeHelpCapture()
+
+	// `maple stop` ends a foreground server with SIGTERM. That is a clean
+	// shutdown, so it exits 0; Ctrl+C (SIGINT) keeps the conventional 130.
+	let terminated = false
+	process.once("SIGTERM", () => {
+		terminated = true
+	})
+	const teardown: Runtime.Teardown = (exit, onExit) =>
+		terminated && Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause)
+			? onExit(0)
+			: Runtime.defaultTeardown(exit, onExit)
+
 	/* oxlint-disable effecttsgo/multiple-effect-provide */
 	/* oxlint-disable effecttsgo/strict-effect-provide */
 	maybeNotifyUpdate.pipe(
@@ -68,69 +84,58 @@ if (checkpointProbeDataDir !== undefined) {
 				Effect.trackDuration(cliInvocationDuration),
 			),
 		),
-		// The recovery sits *inside* the span: applied outside it, a gracefully
-		// handled archive error still closed the root span as Error.
-		Effect.catchTag("@maple/cli/ArchiveError", (error) =>
-			Effect.sync(() => {
-				process.stderr.write(archiveErrorMessage(error))
-				process.exitCode = 1
-			}),
-		),
-		// Expected outcomes, recovered inside the span for the same reason as the
-		// archive error above. These are the CLI behaving correctly — a refused
-		// precondition, an unresolvable backend, `--help` — and letting them reach
-		// `withSpan` closed the root span `Error`. They dominated the CLI's error
-		// stream (~24k events for the already-running guard alone) and buried real
-		// failures under outcomes nobody needs to act on.
-		//
-		// The outcome is annotated rather than dropped, so `maple.cli.outcome` still
-		// answers "how often do people hit this?" without the span being an error.
-		// Same rule `apps/ingest` applies to expected 4xx rejections.
-		//
-		// Genuine failures stay uncaught on purpose and still close the span `Error`
-		// for `runMain` to report. Each now carries its own tag rather than one
-		// catch-all `ServerError`, so they group into separate issues:
-		// `ServerBindError`, `LocalStoreDirtyError`, `LocalStoreIncompatibleError`,
-		// `LocalStoreSchemaStaleError`, `LocalStoreMigrationError`,
-		// `CheckpointUnavailableError`, `BackgroundServerSpawnError`,
-		// `BackgroundServerTimeoutError`, `ServerStopTimeoutError` — plus the
-		// checkpoint tags (`CheckpointRecoveryError`, `CheckpointResetError`,
-		// `CheckpointRestoreError`, `CheckpointCreateError`) that the commands used
-		// to flatten on their way out. See `commands/server-errors.ts`.
+		// Holds the help page back until we know whether it was asked for (see lib/help.ts).
+		Effect.provideService(CliOutput.Formatter, help.formatter),
+		Effect.provideService(Console.Console, help.console),
 		Effect.catchTags({
-			"@maple/cli/ServerStateError": recoverExpected,
-			// `maple checkpoint` against a server whose chDB config has no
-			// `<backups>` stanza: a refused precondition with an actionable fix, not
-			// a failure. Same category as the already-running guard above.
-			"@maple/cli/CheckpointPreconditionError": recoverExpected,
-			// Mode resolution ("No Maple backend found", "Cannot use --remote and
-			// --local together") reaches here as a `WarehouseConfigError`, because
-			// that is the error type `WarehouseExecutor`'s channel admits — the real
-			// `ModeError` rides in `cause`, and `isModeFailure` is what tells the two
-			// apart. Every other `WarehouseConfigError` is a genuine warehouse
-			// misconfiguration and is re-raised so it still closes the span `Error`.
-			"@maple/http/errors/WarehouseConfigError": (error) =>
-				isModeFailure(error) ? recoverExpected(error) : Effect.fail(error),
-			// `Command.runWith` renders the help text and then re-fails with the same
-			// error, so `maple --help` recorded as an error span. The text is already
-			// on stdout by now; only the exit code is left to honour — 0 for a plain
-			// `--help`, 1 when help was shown because parsing failed.
-			//
-			// The tag is "ShowHelp"; `~effect/cli/CliError/ShowHelp` (what shows up in
-			// telemetry) is the schema *identifier*, not the tag.
+			// The recovery sits *inside* the span: applied outside it, a gracefully
+			// handled archive error still closed the root span as Error.
+			"@maple/cli/ArchiveError": (error) =>
+				Effect.sync(() => {
+					process.stderr.write(archiveErrorMessage(error))
+					process.exitCode = 1
+				}),
+			// `Command.runWith` renders help and then re-fails with the same error, so
+			// `maple --help` recorded as an error span. Only the exit code is left to
+			// honour: 0 for a bare group command, 1 when parsing failed. The tag is
+			// "ShowHelp"; `~effect/cli/CliError/ShowHelp` is the schema identifier.
 			ShowHelp: (error) =>
 				annotateOutcome(error._tag).pipe(
 					Effect.andThen(
 						Effect.sync(() => {
+							if (error.errors.length > 0) {
+								help.discard()
+								process.stderr.write(usageHint(error.commandPath))
+							}
 							process.exitCode = Runtime.getErrorExitCode(error)
 						}),
 					),
 				),
 		}),
+		// Expected outcomes, recovered inside the span for the same reason: a
+		// refused precondition, no backend, a bad `--since`, a trace that is not
+		// there. They are the CLI behaving correctly, and closing the root span
+		// `Error` for them buried real failures (~24k events for the
+		// already-running guard alone). `maple.cli.outcome` still records them.
+		Effect.catchIf(isExpectedFailure, recoverExpected),
+		Effect.ensuring(Effect.sync(help.flush)),
 		Effect.withSpan("maple", { attributes: { "cli.argv": process.argv.slice(2).join(" ") } }),
 		Effect.provide(MainLayer),
 		Effect.provide(TelemetryLayer),
-		BunRuntime.runMain,
+		// Genuine failures reach here after closing the root span `Error`, each
+		// under its own tag (see `commands/server-errors.ts`). They still print
+		// one `error:` line; the cause and stack are behind `--debug`.
+		Effect.catchCause((cause) =>
+			Cause.hasInterruptsOnly(cause)
+				? Effect.failCause(cause)
+				: Effect.sync(() => {
+						process.stderr.write(renderUnexpected(cause, debugEnabled()))
+						process.exitCode = 1
+					}),
+		),
+		// Logs are diagnostics, never results: keep them off stdout.
+		Effect.provideService(Logger.LogToStderr, true),
+		BunRuntime.runMain({ teardown }),
 	)
 	/* oxlint-enable effecttsgo/strict-effect-provide */
 	/* oxlint-enable effecttsgo/multiple-effect-provide */

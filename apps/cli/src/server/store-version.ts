@@ -7,12 +7,12 @@
 // activated.
 
 import { createHash, randomUUID } from "node:crypto"
-import { existsSync, readFileSync, unlinkSync, writeFileSync } from "node:fs"
-import { dirname, join } from "node:path"
+import { existsSync, readFileSync, statSync, unlinkSync } from "node:fs"
+import { basename, dirname, join, resolve } from "node:path"
 import { Effect, Schema, SchemaGetter } from "effect"
 import { CHDB_VERSION } from "../version"
 import { Digest64, Fingerprint16, IsoOrUnknown } from "./identity-schema"
-import { durableRemove, durableWrite } from "./durable-files"
+import { durableRemove, durableRenameSync, durableWrite, durableWriteFileSync } from "./durable-files"
 
 export const STORE_MARKER_FORMAT_VERSION = 2 as const
 
@@ -69,23 +69,135 @@ export type MarkerReadState =
 	| { readonly kind: "malformed"; readonly message: string }
 	| { readonly kind: "valid"; readonly marker: StoreMarker }
 
+/**
+ * Per-data-dir state file beside the data dir. A dir named `data` keeps the
+ * original bare names (`~/.maple/maple.pid`), so the default layout is
+ * unchanged; any other dir prefixes its basename, so two stores that share a
+ * parent (`~/.maple/data`, `~/.maple/data-b`) never share a sentinel or PID.
+ */
+export const dataDirSidecarPath = (dataDir: string, name: string): string => {
+	const resolved = resolve(dataDir)
+	const base = basename(resolved)
+	return join(dirname(resolved), base === "data" ? name : `${base}.${name}`)
+}
+
+/** Where builds before {@link dataDirSidecarPath} kept `name` for this data dir. */
+export const legacySidecarPath = (dataDir: string, name: string): string =>
+	join(dirname(resolve(dataDir)), name)
+
+/**
+ * Whether bare-named files in the parent can belong to this data dir. For a
+ * `data` dir they are its own current files; otherwise they are legacy ones
+ * this dir owns unless a `data` sibling claims them under the current rule.
+ */
+export const ownsLegacySidecars = (dataDir: string): boolean => {
+	const resolved = resolve(dataDir)
+	return basename(resolved) !== "data" && !existsSync(join(dirname(resolved), "data"))
+}
+
+export const STORE_MARKER_NAME = "maple-store-version.json"
+export const STORE_OPEN_MARKER_NAME = "maple-store-open"
+export const MIGRATION_JOURNAL_NAME = "maple-store-migration.json"
+export const SERVER_PID_NAME = "maple.pid"
+
+/** The `maple start` PID file for a data dir (e.g. `~/.maple/maple.pid`). */
+export const serverPidPath = (dataDir: string): string => dataDirSidecarPath(dataDir, SERVER_PID_NAME)
+
+/** Written once a server is listening, removed on clean shutdown:
+ * `{pid, url, dataDir, startedAt}` so other CLI processes can find it. */
+export const serverDiscoveryPath = (dataDir: string): string =>
+	dataDirSidecarPath(dataDir, "maple-server.json")
+
 /** Path to the marker for a given data dir (beside it, like the PID file). */
-export const storeMarkerPath = (dataDir: string): string => join(dirname(dataDir), "maple-store-version.json")
+export const storeMarkerPath = (dataDir: string): string => dataDirSidecarPath(dataDir, STORE_MARKER_NAME)
 
 /** True once chDB has bootstrapped a store here (it creates `store/`/`metadata/`). */
 export const storeHasData = (dataDir: string): boolean =>
 	existsSync(join(dataDir, "store")) || existsSync(join(dataDir, "metadata"))
+
+const pidFileNamesLiveProcess = (path: string): boolean =>
+	Effect.runSync(
+		Effect.try({
+			try: () => {
+				const pid = Number.parseInt(readFileSync(path, "utf8").trim(), 10)
+				if (!Number.isInteger(pid) || pid <= 0 || pid === process.pid) return false
+				process.kill(pid, 0)
+				return true
+			},
+			// EPERM still means the PID exists; only a vanished file or ESRCH is "not live".
+			catch: (error) => error,
+		}).pipe(
+			Effect.catch((error) =>
+				Effect.succeed(
+					typeof error === "object" && error !== null && "code" in error && error.code === "EPERM",
+				),
+			),
+		),
+	)
+
+/**
+ * Move this store's identity files from their pre-{@link dataDirSidecarPath}
+ * location, so upgrading never strands a custom `--data-dir` store as
+ * unversioned or clean-when-dirty. Only for a populated store that has no
+ * current-layout marker yet (so it runs once), when ownership is unambiguous
+ * (see {@link ownsLegacySidecars}) and no older server still runs from the
+ * legacy PID file. Returns the names it moved.
+ */
+export const adoptLegacySidecars = (dataDir: string): ReadonlyArray<string> => {
+	if (!ownsLegacySidecars(dataDir) || !storeHasData(dataDir)) return []
+	if (existsSync(storeMarkerPath(dataDir))) return []
+	if (pidFileNamesLiveProcess(legacySidecarPath(dataDir, SERVER_PID_NAME))) return []
+	const adopted: Array<string> = []
+	for (const name of [STORE_MARKER_NAME, STORE_OPEN_MARKER_NAME, MIGRATION_JOURNAL_NAME]) {
+		const from = legacySidecarPath(dataDir, name)
+		const to = dataDirSidecarPath(dataDir, name)
+		if (!existsSync(from) || existsSync(to)) continue
+		durableRenameSync(from, to)
+		adopted.push(name)
+	}
+	return adopted
+}
+
+// Every "what state is this store in" read adopts first, so callers that never
+// pass through `maple start` (schema, archive) see the same files it does.
+const adoptLegacySidecarsQuietly = (dataDir: string): void =>
+	Effect.runSync(
+		Effect.try({ try: () => adoptLegacySidecars(dataDir), catch: (error) => error }).pipe(Effect.ignore),
+	)
+
+/**
+ * Store schema version recorded by a NEWER maple than this build, if any. Such
+ * a store is not stale: a downgrade wrote nothing, so the fix is reinstalling
+ * the newer build, never a reset.
+ */
+export const newerStoreSchemaVersion = (dataDir: string, currentVersion: number): number | undefined => {
+	if (!storeHasData(dataDir)) return undefined
+	const marker = readMarker(dataDir)
+	return marker?.formatVersion === STORE_MARKER_FORMAT_VERSION && marker.schemaVersion > currentVersion
+		? marker.schemaVersion
+		: undefined
+}
+
+/** Modification time of a file in ms, or undefined when it is missing. */
+export const fileModifiedAtMs = (path: string): number | undefined =>
+	Effect.runSync(
+		Effect.try({ try: () => statSync(path).mtimeMs, catch: (error) => error }).pipe(
+			Effect.orElseSucceed(() => undefined),
+		),
+	)
 
 // Clean-shutdown sentinel. Present from the moment chDB opens successfully until
 // it closes cleanly. It is deliberately separate from the migration journal:
 // a staged target must never look like an active store.
 
 /** Path to the clean-shutdown sentinel for a given data dir (beside it). */
-export const storeOpenMarkerPath = (dataDir: string): string => join(dirname(dataDir), "maple-store-open")
+export const storeOpenMarkerPath = (dataDir: string): string =>
+	dataDirSidecarPath(dataDir, STORE_OPEN_MARKER_NAME)
 
-/** Mark the store as open (not yet cleanly closed). */
+/** Mark the store as open (not yet cleanly closed). Durable: a power loss right
+ * after chDB opens must still leave the store reading as dirty. */
 export const markStoreOpen = (dataDir: string): void => {
-	writeFileSync(storeOpenMarkerPath(dataDir), `${process.pid}\n`, { mode: 0o600 })
+	durableWriteFileSync(storeOpenMarkerPath(dataDir), `${process.pid}\n`)
 }
 
 /** Durable variant used by migration connections. A migration may open a
@@ -100,7 +212,7 @@ export const markStoreClosed = (dataDir: string): void => {
 	try {
 		unlinkSync(storeOpenMarkerPath(dataDir))
 	} catch {
-		// already gone — nothing to clear
+		// already gone, nothing to clear
 	}
 }
 
@@ -111,8 +223,10 @@ export const markStoreClosedDurable = async (dataDir: string): Promise<void> => 
 }
 
 /** True when the store holds data and was not cleanly closed. */
-export const isStoreDirty = (dataDir: string): boolean =>
-	storeHasData(dataDir) && existsSync(storeOpenMarkerPath(dataDir))
+export const isStoreDirty = (dataDir: string): boolean => {
+	adoptLegacySidecarsQuietly(dataDir)
+	return storeHasData(dataDir) && existsSync(storeOpenMarkerPath(dataDir))
+}
 
 /**
  * Provenance fields are read leniently.
@@ -121,7 +235,7 @@ export const isStoreDirty = (dataDir: string): boolean =>
  * what it contains. A store whose provenance is missing or garbled is still a
  * perfectly openable store, so a bad value degrades to "unknown" instead of
  * making the marker malformed and refusing to start. Everything below this
- * comment — the identity fields the loader actually acts on — is strict.
+ * comment (the identity fields the loader actually acts on) is strict.
  */
 const LenientProvenance = Schema.Unknown.pipe(
 	Schema.decodeTo(Schema.String, {
@@ -206,6 +320,7 @@ const parseMarker = (value: unknown): StoreMarker => {
 
 /** Read the marker with an explicit missing/malformed distinction. */
 export const readMarkerState = (dataDir: string): MarkerReadState => {
+	adoptLegacySidecarsQuietly(dataDir)
 	const path = storeMarkerPath(dataDir)
 	if (!existsSync(path)) return { kind: "missing" }
 	try {
@@ -258,22 +373,6 @@ export const makeStoreMarker = (
 		activation: options.activation ?? "active",
 		...(!(options.lastMigration === undefined) ? { lastMigration: options.lastMigration } : undefined),
 	})
-}
-
-/** Serialize a current marker for a known identity. */
-export const storeMarkerJson = (
-	maple: string,
-	now: string,
-	schema: string,
-	options: StoreMarkerWriteOptions = {},
-): string => {
-	// Keep this helper source-compatible for tests and third-party tooling that
-	// used it to manufacture a pre-v2 marker. Production callers use
-	// `ensureStoreMarkerDurable`, which always supplies the full identity.
-	if (options.schemaDigest === undefined || options.schemaVersion === undefined) {
-		return `${JSON.stringify({ chdb: CHDB_VERSION, maple, createdAt: now, schema })}\n`
-	}
-	return `${JSON.stringify(makeStoreMarker(maple, now, schema, options), null, 2)}\n`
 }
 
 /** Upgrade a legacy marker or create a new marker, preserving immutable
@@ -330,28 +429,18 @@ export const ensureStoreMarkerDurable = async (
 	return created
 }
 
-/** Backward-compatible durable writer used by checkpoint restore. It preserves
- * the existing store id and creation timestamp rather than rewriting them. */
+/** Durable writer used by checkpoint restore. It preserves the existing store
+ * id and creation timestamp rather than rewriting them. */
 export const writeStoreMarkerDurable = async (
 	dataDir: string,
 	maple: string,
 	now: string,
 	schema: string,
 	options: StoreMarkerWriteOptions & {
-		readonly schemaVersion?: number
-		readonly schemaDigest?: string
-	} = {},
+		readonly schemaVersion: number
+		readonly schemaDigest: string
+	},
 ): Promise<void> => {
-	if (options.schemaVersion === undefined || options.schemaDigest === undefined) {
-		// Checkpoint restore is only called by a build that knows its current schema;
-		// callers that have not been migrated yet retain the old shape rather than
-		// inventing an identity. The next start will fail closed and offer migration.
-		await durableWrite(
-			storeMarkerPath(dataDir),
-			`${JSON.stringify({ chdb: CHDB_VERSION, maple, createdAt: now, schema })}\n`,
-		)
-		return
-	}
 	await ensureStoreMarkerDurable(
 		dataDir,
 		{
@@ -380,14 +469,8 @@ export const schemaDigest = (schemaSql: string): string =>
 /** Legacy bundle fingerprint retained for compatibility and diagnostics. */
 export const schemaFingerprint = (schemaSql: string): string => schemaDigest(schemaSql).slice(0, 16)
 
-/** True when a populated store was bootstrapped from a different bundled
- * schema. The caller must choose migration or explicit reset. */
-export const isSchemaStale = (dataDir: string, currentFingerprint: string): boolean =>
-	storeHasData(dataDir) && readMarker(dataDir)?.schema !== currentFingerprint
-
-/** Stronger v2 identity gate used before opening a populated store. The legacy
- * helper above remains intentionally fingerprint-only for archive/checkpoint
- * compatibility metadata. */
+/** True when a populated store was bootstrapped from a different schema
+ * identity. The caller must choose migration or explicit reset. */
 export const isSchemaIdentityStale = (
 	dataDir: string,
 	identity: { readonly version: number; readonly digest: string; readonly fingerprint: string },

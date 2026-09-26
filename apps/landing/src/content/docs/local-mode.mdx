@@ -122,11 +122,11 @@ Your telemetry and query results stay on your machine. These calls go out by def
 
 | Call | When | Turn it off |
 | --- | --- | --- |
-| The CLI's own traces, logs and metrics, sent to `https://ingest.maple.dev` with an ingest key built into the binary | Every command, and every request `maple start` handles | `MAPLE_TELEMETRY=off` |
+| The CLI's own traces and metrics, sent to `https://ingest.maple.dev` with an ingest key built into the binary | Every command, and every request `maple start` handles | `MAPLE_TELEMETRY=off` |
 | Release check against the GitHub releases API | At most once per 24 hours, only in an interactive terminal | `MAPLE_NO_UPDATE_CHECK=1` (Homebrew installs set it) |
 | The dashboard page from `local.maple.dev` | When you open the dashboard | `maple start --offline` |
 
-The CLI's own telemetry describes the CLI, not your data. It reports the service name `maple-cli`, the command, its duration and errors. For each OTLP request `maple start` handles it records the signal, the body size and the number of items, never the payload. For each `/local/query` request it records the SQL text (up to 16 KB), which can include service names or filter values you typed. `MAPLE_INGEST_KEY`, `MAPLE_ENDPOINT` and `MAPLE_ENVIRONMENT` redirect or relabel this export; see [Environment variables](/docs/reference/cli#environment-variables).
+The CLI's own telemetry describes the CLI, not your data. It reports the service name `maple-cli`, the command, its duration and errors. For each OTLP request `maple start` handles it records the signal, the body size and the number of items, never the payload. For each `/local/query` request it records only the timing and whether it succeeded. SQL text, filter values and error messages are never exported, and the CLI's own logs are not sent at all. `MAPLE_INGEST_KEY`, `MAPLE_ENDPOINT` and `MAPLE_ENVIRONMENT` redirect or relabel this export; see [Environment variables](/docs/reference/cli#environment-variables).
 
 ## One CLI, two backends
 

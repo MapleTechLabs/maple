@@ -25,6 +25,16 @@ export class ChdbError extends Schema.TaggedError<ChdbError>()("@maple/cli/ChdbE
 	message: Schema.String,
 }) {}
 
+/** A statement chDB rejected; `message` is the engine's error text. */
+export class ChdbQueryError extends Schema.TaggedError<ChdbQueryError>()("@maple/cli/ChdbQueryError", {
+	message: Schema.String,
+}) {}
+
+/** A query reached a connection that shutdown already closed. */
+export class ChdbClosedError extends Schema.TaggedError<ChdbClosedError>()("@maple/cli/ChdbClosed", {
+	message: Schema.String,
+}) {}
+
 /** Locate `libchdb` at runtime, in priority order:
  *  1. `MAPLE_LIBCHDB` env (explicit override)
  *  2. sibling of the executable (the shipped 2-file bundle: `maple` + `libchdb`)
@@ -77,7 +87,11 @@ function symbols(): ChdbSymbols {
 }
 
 const encoder = new TextEncoder()
+const decoder = new TextDecoder()
 const cstr = (s: string): Uint8Array => encoder.encode(s + "\0")
+const DRAIN_SENTINEL = "maple-chdb-drain"
+const DRAIN_SQL = cstr(`SELECT '${DRAIN_SENTINEL}' FORMAT RawBLOB`)
+const DRAIN_FORMAT = cstr("RawBLOB")
 
 export interface ChdbOptions {
 	/** Data directory for persistent ClickHouse storage (chDB `--path`). */
@@ -372,36 +386,71 @@ export class Chdb {
 
 	/** Run a query and return the result bytes decoded as UTF-8 text. */
 	query(sql: string, format = "JSONEachRow"): string {
-		const q = cstr(sql)
-		const f = cstr(format)
-		const res = this.#sym.chdb_query(this.#conn, ptr(q), ptr(f))
-		if (!res) throw new Error("chdb_query returned NULL")
-		try {
-			const errPtr = this.#sym.chdb_result_error(res)
-			// chdb returns a non-null pointer to an EMPTY string on success; only a
-			// non-empty message is a real error (matches chdb-rust `check_error`).
-			const errMsg = errPtr ? new CString(errPtr).toString() : ""
-			if (errMsg.length > 0) throw new Error(errMsg)
-			const len = Number(this.#sym.chdb_result_length(res))
-			if (len === 0) return ""
-			const bufPtr = this.#sym.chdb_result_buffer(res)
-			if (!bufPtr) return ""
-			// Copy out of the chDB-owned buffer before it is destroyed.
-			return new TextDecoder().decode(toArrayBuffer(bufPtr, 0, len).slice(0))
-		} finally {
-			this.#sym.chdb_destroy_query_result(res)
-		}
+		// Decoding reads the chDB-owned buffer directly; it finishes before the
+		// result is destroyed, so no intermediate byte copy is needed.
+		return this.#run(sql, format, (view) => decoder.decode(view), "")
+	}
+
+	/** Run a query and copy its raw result bytes once into the JS heap. */
+	queryBytes(sql: string, format: string): Uint8Array {
+		return this.#run(sql, format, (view) => view.slice(), new Uint8Array(0))
 	}
 
 	/** Run a statement and discard its output. */
 	exec(sql: string): void {
-		this.query(sql, "CSV")
+		this.#run(sql, "CSV", () => undefined, undefined)
+	}
+
+	get closed(): boolean {
+		return this.#connPtrPtr === null
 	}
 
 	close(): void {
 		if (this.#connPtrPtr !== null) {
 			this.#sym.chdb_close_conn(this.#connPtrPtr)
 			this.#connPtrPtr = null
+		}
+	}
+
+	#run<A>(sql: string, format: string, read: (view: Uint8Array) => A, empty: A): A {
+		// The connection pointer is freed by close(); dereferencing it afterwards
+		// would crash natively, so a late request fails with a typed error instead.
+		if (this.#connPtrPtr === null) throw new ChdbClosedError({ message: "chDB connection is closed" })
+		// Held in locals so neither buffer can be collected before the call reads it.
+		const query = cstr(sql)
+		const outputFormat = cstr(format)
+		const res = this.#sym.chdb_query(this.#conn, ptr(query), ptr(outputFormat))
+		if (!res) throw new ChdbQueryError({ message: "chdb_query returned NULL" })
+		let failure = ""
+		try {
+			const errPtr = this.#sym.chdb_result_error(res)
+			// chdb returns a non-null pointer to an EMPTY string on success; only a
+			// non-empty message is a real error (matches chdb-rust `check_error`).
+			failure = errPtr ? new CString(errPtr).toString() : ""
+			if (failure.length === 0) {
+				const len = Number(this.#sym.chdb_result_length(res))
+				const bufPtr = len === 0 ? null : this.#sym.chdb_result_buffer(res)
+				return bufPtr ? read(new Uint8Array(toArrayBuffer(bufPtr, 0, len))) : empty
+			}
+		} finally {
+			this.#sym.chdb_destroy_query_result(res)
+		}
+		this.#drainPartialOutput()
+		throw new ChdbQueryError({ message: failure })
+	}
+
+	// chDB prepends the partial output of a query that failed mid-stream (a
+	// result limit, a timeout, `throwIf`) to the NEXT query's result. Consume it
+	// here so it never reaches another caller.
+	#drainPartialOutput(): void {
+		for (let attempt = 0; attempt < 3; attempt++) {
+			const res = this.#sym.chdb_query(this.#conn, ptr(DRAIN_SQL), ptr(DRAIN_FORMAT))
+			if (!res) return
+			const errPtr = this.#sym.chdb_result_error(res)
+			const clean = !errPtr || new CString(errPtr).toString().length === 0
+			const len = Number(this.#sym.chdb_result_length(res))
+			this.#sym.chdb_destroy_query_result(res)
+			if (clean && len === DRAIN_SENTINEL.length) return
 		}
 	}
 

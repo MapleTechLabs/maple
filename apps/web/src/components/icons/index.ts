@@ -7,10 +7,13 @@ export {
 	ArrowDownIcon,
 	ArrowLeftIcon,
 	ArrowRightIcon,
+	ArrowRotateAnticlockwiseIcon,
 	ArrowRotateClockwiseIcon,
+	AwsLambdaIcon,
 	BellIcon,
 	BoltIcon,
 	BracketsCurlyIcon,
+	BunIcon,
 	CheckIcon,
 	ChevronDownIcon,
 	ChevronExpandYIcon,
@@ -21,12 +24,17 @@ export {
 	CircleInfoIcon,
 	CircleWarningIcon,
 	CircleXmarkIcon,
+	ClickhouseIcon,
 	ClockIcon,
+	CloudflareBrandIcon as CloudflareIcon,
+	CloudflareMonoIcon,
 	CodeIcon,
 	ComputerIcon,
 	ConnectionIcon,
 	CopyIcon,
+	CubeIcon,
 	DatabaseIcon,
+	DenoIcon,
 	DotsIcon,
 	EyeIcon,
 	FileIcon,
@@ -34,18 +42,34 @@ export {
 	FolderOpenIcon,
 	GlobeIcon,
 	GlobePointerIcon,
+	KubernetesIcon,
 	LineHeightIcon,
 	LinkIcon,
 	LoaderIcon,
 	MagnifierCheckIcon,
 	MagnifierIcon,
 	MenuIcon,
+	MinimizeIcon,
 	MinusIcon,
 	MobileIcon,
+	MongodbIcon,
+	MysqlIcon,
 	NetworkNodesIcon,
+	NodejsIcon,
+	NodejsMonoIcon,
+	OpenjdkIcon,
+	OpenjdkMonoIcon,
+	PaletteIcon,
+	PlanetScaleIcon,
+	PostgresIcon,
 	PulseIcon,
+	PythonIcon,
 	RadioCheckedIcon,
+	RedisIcon,
 	RocketIcon,
+	RubyIcon,
+	RustIcon,
+	ServerIcon,
 	SidebarLeftIcon,
 	TabletIcon,
 	TextWrapIcon,
@@ -63,16 +87,13 @@ export { ArceeIcon } from "./arcee"
 export { ArrowPathIcon } from "./arrow-path"
 export { ArrowRightFromLineIcon } from "./arrow-right-from-line"
 export { ArrowThroughLineRightIcon } from "./arrow-through-line-right"
-export { ArrowRotateAnticlockwiseIcon } from "./arrow-rotate-anticlockwise"
 export { ArrowTrendDownIcon } from "./arrow-trend-down"
 export { ArrowTrendUpIcon } from "./arrow-trend-up"
 export { ArrowUpIcon } from "./arrow-up"
 export { ArrowUpDownIcon } from "./arrow-up-down"
-export { AwsLambdaIcon } from "./aws-lambda"
 export { BaiduIcon } from "./baidu"
 export { BluetoothIcon } from "./bluetooth"
 export { BranchForkIcon } from "./branch-fork"
-export { BunIcon } from "./bun"
 export { ByteDanceIcon } from "./bytedance"
 export { ChatBubbleIcon } from "./chat-bubble"
 export { ChatBubbleSparkleIcon } from "./chat-bubble-sparkle"
@@ -83,8 +104,6 @@ export { ChartLineIcon } from "./chart-line"
 export { CirclePercentageIcon } from "./circle-percentage"
 export { CircleQuestionIcon } from "./circle-question"
 export { ClaudeIcon } from "./claude"
-export { ClickhouseIcon } from "./clickhouse"
-export { CloudflareIcon, CloudflareMonoIcon } from "./cloudflare"
 export { CohereIcon } from "./cohere"
 export { CompassIcon } from "./compass"
 export { CrewAiIcon } from "./crewai"
@@ -94,9 +113,7 @@ export { CornerDownLeftIcon } from "./corner-down-left"
 export { CursorIcon } from "./cursor"
 export { CursorPointerIcon } from "./cursor-pointer"
 export { CreditCardIcon } from "./credit-card"
-export { CubeIcon } from "./cube"
 export { DeepSeekIcon } from "./deepseek"
-export { DenoIcon } from "./deno"
 export { DiscordIcon } from "./discord"
 export { DockerIcon } from "./docker"
 export { EffectIcon } from "./effect"
@@ -149,7 +166,6 @@ export { KafkaIcon } from "./kafka"
 export { LangchainIcon } from "./langchain"
 export { KeyIcon } from "./key"
 export { KeyboardIcon } from "./keyboard"
-export { KubernetesIcon } from "./kubernetes"
 export { LanguageIcon } from "./language"
 export { LockIcon } from "./lock"
 export { LayoutLeftIcon } from "./layout-left"
@@ -159,21 +175,13 @@ export { MaximizeIcon } from "./maximize"
 export { MediaPauseIcon } from "./media-pause"
 export { MediaPlayIcon } from "./media-play"
 export { MicrosoftIcon } from "./microsoft"
-export { MinimizeIcon } from "./minimize"
-export { MongodbIcon } from "./mongodb"
 export { MoonIcon } from "./moon"
-export { MysqlIcon } from "./mysql"
 export { NatsIcon } from "./nats"
-export { NodejsIcon, NodejsMonoIcon } from "./nodejs"
 export { OpenAiIcon } from "./openai"
-export { OpenjdkIcon, OpenjdkMonoIcon } from "./openjdk"
 export { OpenRouterIcon } from "./openrouter"
 export { OperaIcon } from "./opera"
-export { PaletteIcon } from "./palette"
 export { PaperPlaneIcon } from "./paper-plane"
 export { PencilIcon } from "./pencil"
-export { PythonIcon } from "./python"
-export { PlanetScaleIcon } from "./planetscale"
 export { PydanticIcon } from "./pydantic"
 // Nucleo Pixel Essential — a deliberately separate family, used where a row
 // needs a type marker rather than an action affordance (the session replay
@@ -186,16 +194,11 @@ export { PixelTriangleWarningIcon } from "./pixel-triangle-warning"
 export { PixelWindowIcon } from "./pixel-window"
 export { PlayRotateClockwiseIcon } from "./play-rotate-clockwise"
 export { PlusIcon } from "./plus"
-export { PostgresIcon } from "./postgres"
 export { PrometheusIcon } from "./prometheus"
 export { RabbitmqIcon } from "./rabbitmq"
 export { PriorityBarsIcon, PRIORITY_LABEL } from "./priority-bars"
 export type { PriorityLevel } from "./priority-bars"
-export { RedisIcon } from "./redis"
-export { RubyIcon } from "./ruby"
-export { RustIcon } from "./rust"
 export { SafariIcon } from "./safari"
-export { ServerIcon } from "./server"
 export { ShieldIcon } from "./shield"
 export { SpringIcon } from "./spring"
 export { SlidersIcon } from "./sliders"
