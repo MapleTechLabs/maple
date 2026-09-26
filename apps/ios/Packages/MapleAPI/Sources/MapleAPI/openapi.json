@@ -7749,6 +7749,10 @@
       "name": "Onboarding Checklist"
     },
     {
+      "description": "A shared Slack channel between the org and the Maple team.",
+      "name": "Support Channel"
+    },
+    {
       "description": "Push-notification registrations for the native apps. Per user, per organization.",
       "name": "Mobile Devices"
     },

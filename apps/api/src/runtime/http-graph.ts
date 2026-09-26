@@ -56,6 +56,7 @@ import { AuditLogService } from "@maple/backend/services/audit/AuditLogService"
 import { HttpV2ScrapeTargetsLive } from "@/routes/v2/scrape-targets.http"
 import { HttpV2InstrumentationAuditLive } from "@/routes/v2/setup-audit.http"
 import { HttpV2OnboardingChecklistLive } from "@/routes/v2/onboarding-checklist.http"
+import { HttpV2SupportChannelLive } from "@/routes/v2/support-channel.http"
 import { HttpV2TelemetrySignalsLive } from "@/routes/v2/telemetry-signals.http"
 import { HttpV2SessionReplaysLive } from "@/routes/v2/session-replays.http"
 import {
@@ -157,6 +158,7 @@ const ApiV2Routes = HttpApiBuilder.layer(MapleApiV2).pipe(
 			HttpV2InstrumentationRecommendationsLive,
 			HttpV2InstrumentationAuditLive,
 			HttpV2OnboardingChecklistLive,
+			HttpV2SupportChannelLive,
 			HttpV2TelemetrySignalsLive,
 			HttpV2SharePublicLive,
 			HttpV2InvestigationsLive,

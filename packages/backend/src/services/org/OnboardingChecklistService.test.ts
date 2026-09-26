@@ -24,6 +24,7 @@ import { OnboardingService } from "@maple/backend/services/org/OnboardingService
 import { OrgMembersService } from "@maple/backend/services/org/OrgMembersService"
 import { OrganizationService } from "@maple/backend/services/org/OrganizationService"
 import { SignalPresenceService } from "@maple/backend/services/org/SignalPresenceService"
+import { SupportChannelService } from "@maple/backend/services/support/SupportChannelService"
 
 const trackedDbs: TestDb[] = []
 afterEach(() => cleanupTestDbs(trackedDbs))
@@ -52,10 +53,12 @@ interface World {
 	/** Autumn's customer subscriptions, already camelized as the client returns them. */
 	subscriptions: Array<{ planId: string; status: string; addOn?: boolean }>
 	orgLookups: number
+	supportChannel: "unavailable" | "not_created" | "active"
 	redeems: Array<{ customerId: string; planId: string; rewardId: string }>
 }
 
 const freshWorld = (): World => ({
+	supportChannel: "unavailable",
 	// The test clock starts at 0, so "created now" is 0 and the window closes a day later.
 	orgCreatedAtMs: 0,
 	orgLookupFails: false,
@@ -79,6 +82,16 @@ const ok = (response: unknown = {}): AutumnResult => ({ statusCode: 200, respons
 
 const stubs = (world: World) =>
 	Layer.mergeAll(
+		Layer.succeed(SupportChannelService, {
+			retrieve: () =>
+				Effect.sync(() =>
+					world.supportChannel === "active"
+						? { status: "active", channelId: "C1", channelName: "maple-acme", createdAtMs: 0 }
+						: { status: world.supportChannel },
+				),
+			ensureForCaller: die,
+			sendInvite: die,
+		}),
 		Layer.succeed(OrganizationService, {
 			retrieve: (orgId) =>
 				Effect.suspend(() => {
@@ -276,6 +289,20 @@ describe("OnboardingChecklistService.read", () => {
 			yield* service.read(tenant)
 			yield* service.read(tenant)
 			assert.strictEqual(world.orgLookups, 1)
+		}).pipe(Effect.provide(makeLayer(world, testDb)))
+	})
+
+	it.effect("adds the optional Slack step only where channels exist, done once the org has one", () => {
+		const world = freshWorld()
+		const testDb = createTestDb(trackedDbs)
+		return Effect.gen(function* () {
+			const service = yield* OnboardingChecklistService
+			assert.isFalse((yield* service.read(tenant)).steps.some((s) => s.id === "join_slack_channel"))
+			world.supportChannel = "not_created"
+			const offered = (yield* service.read(tenant)).steps.at(-1)
+			assert.deepStrictEqual(offered, { id: "join_slack_channel", completed: false, optional: true })
+			world.supportChannel = "active"
+			assert.isTrue((yield* service.read(tenant)).steps.at(-1)?.completed)
 		}).pipe(Effect.provide(makeLayer(world, testDb)))
 	})
 

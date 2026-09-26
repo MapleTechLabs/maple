@@ -82,6 +82,14 @@ export interface EnvConfig {
 	readonly STRIPE_SECRET_KEY: Option.Option<Redacted.Redacted<string>>
 	readonly STRIPE_API_URL: string
 	/**
+	 * Bot token in Maple's OWN Slack workspace, for creating customers' shared support channels
+	 * (scopes `groups:write`, `conversations.connect:write`, `chat:write`). Unset → the dashboard
+	 * reports the feature unavailable. Unrelated to the chat connector's per-workspace tokens.
+	 */
+	readonly MAPLE_SUPPORT_SLACK_BOT_TOKEN: Option.Option<Redacted.Redacted<string>>
+	/** Comma-separated Slack user ids of the Maple team, added to every new support channel. */
+	readonly MAPLE_SUPPORT_SLACK_TEAM_USER_IDS: Option.Option<string>
+	/**
 	 * Self-observability ingest key (`@maple-dev/effect-sdk` reads the same variable
 	 * for OTLP export). Also the default credential for server-side product events.
 	 */
@@ -206,6 +214,8 @@ const envConfig = Config.all({
 	AUTUMN_WEBHOOK_SECRET: optionalRedacted("AUTUMN_WEBHOOK_SECRET"),
 	STRIPE_SECRET_KEY: optionalRedacted("STRIPE_SECRET_KEY"),
 	STRIPE_API_URL: stringWithDefault("STRIPE_API_URL", "https://api.stripe.com"),
+	MAPLE_SUPPORT_SLACK_BOT_TOKEN: optionalRedacted("MAPLE_SUPPORT_SLACK_BOT_TOKEN"),
+	MAPLE_SUPPORT_SLACK_TEAM_USER_IDS: optionalString("MAPLE_SUPPORT_SLACK_TEAM_USER_IDS"),
 	MAPLE_INGEST_KEY: optionalRedacted("MAPLE_INGEST_KEY"),
 	MAPLE_ENDPOINT: optionalString("MAPLE_ENDPOINT"),
 	MAPLE_PRODUCT_EVENTS_INGEST_KEY: optionalRedacted("MAPLE_PRODUCT_EVENTS_INGEST_KEY"),

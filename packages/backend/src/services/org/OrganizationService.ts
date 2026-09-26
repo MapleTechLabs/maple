@@ -40,6 +40,7 @@ import {
 	errorIssues,
 	errorNotificationPolicies,
 	liveActivities,
+	orgSupportChannels,
 	mcpOAuthAuthorizations,
 	mcpOAuthRefreshTokens,
 	mobileDevices,
@@ -138,6 +139,8 @@ const ORG_SCOPED_TABLES = [
 	// APNs update tokens for running Live Activities. `mobile_devices` is purged
 	// here already; leaving these behind keeps a live push channel open.
 	liveActivities,
+	// Nothing secret, but the channel belongs to the org; a recreated org starts fresh.
+	orgSupportChannels,
 ] as const
 
 /**

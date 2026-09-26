@@ -28,6 +28,7 @@
 		"./sandbox": "./src/sandbox.ts",
 		"./onboarding-checklist": "./src/onboarding-checklist.ts",
 		"./setup-audit": "./src/setup-audit.ts",
+		"./support-channel": "./src/support-channel.ts",
 		"./system-agents": "./src/system-agents.ts",
 		"./tinybird-project-sync": "./src/tinybird/project-sync.ts",
 		"./warehouse-queries": "./src/warehouse-queries.ts",

@@ -21,12 +21,14 @@ export const ONBOARDING_CHECKLIST_STEP_IDS = [
 	"create_alert_rule",
 	"connect_mcp_agent",
 	"invite_teammate",
+	"join_slack_channel",
 ] as const
 export type OnboardingChecklistStepId = (typeof ONBOARDING_CHECKLIST_STEP_IDS)[number]
 
 /** Shown and tracked, but never required for the reward; excluded from the counts. */
 export const ONBOARDING_OPTIONAL_STEP_IDS: ReadonlySet<OnboardingChecklistStepId> = new Set([
 	"invite_teammate",
+	"join_slack_channel",
 ])
 
 export type OnboardingChecklistStatus = "in_progress" | "claimable" | "claimed" | "expired"
@@ -42,6 +44,10 @@ export interface OnboardingChecklistInputs {
 	readonly alertDestinationCount: number
 	readonly memberCount: number
 	readonly mcpKeyUsed: boolean
+	/** The instance can create shared Slack channels; without it the Slack step is left out. */
+	readonly supportChannelAvailable: boolean
+	/** The org's shared Slack channel exists. */
+	readonly supportChannelCreated: boolean
 }
 
 export interface OnboardingChecklistStep {
@@ -72,6 +78,8 @@ export const emptyOnboardingChecklistInputs = (
 	alertDestinationCount: 0,
 	memberCount: 0,
 	mcpKeyUsed: false,
+	supportChannelAvailable: false,
+	supportChannelCreated: false,
 })
 
 const stepCompleted = (id: OnboardingChecklistStepId, inputs: OnboardingChecklistInputs): boolean => {
@@ -86,6 +94,8 @@ const stepCompleted = (id: OnboardingChecklistStepId, inputs: OnboardingChecklis
 			return inputs.memberCount > 1
 		case "connect_mcp_agent":
 			return inputs.mcpKeyUsed
+		case "join_slack_channel":
+			return inputs.supportChannelCreated
 	}
 }
 
@@ -97,7 +107,10 @@ export const evaluateOnboardingChecklist = (
 	inputs: OnboardingChecklistInputs,
 	nowMs: number,
 ): OnboardingChecklistEvaluation => {
-	const steps = ONBOARDING_CHECKLIST_STEP_IDS.map((id) => ({
+	// A step nobody on this instance could complete is not shown at all.
+	const steps = ONBOARDING_CHECKLIST_STEP_IDS.filter(
+		(id) => id !== "join_slack_channel" || inputs.supportChannelAvailable,
+	).map((id) => ({
 		id,
 		completed: stepCompleted(id, inputs),
 		optional: ONBOARDING_OPTIONAL_STEP_IDS.has(id),
