@@ -67,7 +67,7 @@ function IssueLine({ issue, onVersion, showService }: IssueLineProps) {
 		>
 			<SeverityBadge severity={issue.severity} className="w-[60px] shrink-0 justify-center" />
 			{showService ? (
-				<span className="shrink-0" title={issue.serviceName}>
+				<span className="inline-flex shrink-0" title={issue.serviceName}>
 					<ServiceDot serviceName={issue.serviceName} />
 				</span>
 			) : null}
