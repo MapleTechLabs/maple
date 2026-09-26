@@ -5343,6 +5343,14 @@
           },
           {
             "in": "query",
+            "name": "introduced_after",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
             "name": "actionable",
             "required": false,
             "schema": {
