@@ -72,6 +72,7 @@ const report = (status: OnboardingChecklistEvaluation["status"]): OnboardingChec
 		{ id: "create_alert_rule", completed: status !== "in_progress", optional: false },
 		{ id: "connect_mcp_agent", completed: status !== "in_progress", optional: false },
 		{ id: "invite_teammate", completed: false, optional: true },
+		{ id: "join_slack_channel", completed: false, optional: true },
 	],
 	completedCount: status === "in_progress" ? 2 : 4,
 	totalCount: 4,
@@ -192,7 +193,9 @@ describe("GET /v2/onboarding/checklist", () => {
 				"create_alert_rule",
 				"connect_mcp_agent",
 				"invite_teammate",
+				"join_slack_channel",
 			])
+			expect(checklist.steps.at(-1)?.href).toBe("/?support=slack_channel")
 			expect(checklist.steps[1]).toEqual({
 				object: "onboarding_checklist_step",
 				id: "connect_github",

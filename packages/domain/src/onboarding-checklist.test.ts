@@ -19,12 +19,17 @@ const allDone: OnboardingChecklistInputs = {
 	alertDestinationCount: 1,
 	memberCount: 2,
 	mcpKeyUsed: true,
+	supportChannelAvailable: true,
+	supportChannelCreated: true,
 }
 
 describe("evaluateOnboardingChecklist", () => {
 	it("always reports every step, in order", () => {
 		const report = evaluateOnboardingChecklist(
-			emptyOnboardingChecklistInputs({ orgCreatedAtMs: CREATED, rewardClaimedAtMs: null }),
+			{
+				...emptyOnboardingChecklistInputs({ orgCreatedAtMs: CREATED, rewardClaimedAtMs: null }),
+				supportChannelAvailable: true,
+			},
 			NOW,
 		)
 		expect(report.steps.map((step) => step.id)).toEqual([...ONBOARDING_CHECKLIST_STEP_IDS])
@@ -77,5 +82,15 @@ describe("evaluateOnboardingChecklist", () => {
 			)?.completed
 		expect(step(1)).toBe(false)
 		expect(step(2)).toBe(true)
+	})
+
+	it("shows the Slack step only where channels can be created, and never requires it", () => {
+		const ids = (inputs: OnboardingChecklistInputs) =>
+			evaluateOnboardingChecklist(inputs, NOW).steps.map((s) => s.id)
+		expect(ids({ ...allDone, supportChannelAvailable: false })).not.toContain("join_slack_channel")
+		expect(ids(allDone).at(-1)).toBe("join_slack_channel")
+		const withoutChannel = evaluateOnboardingChecklist({ ...allDone, supportChannelCreated: false }, NOW)
+		expect(withoutChannel.status).toBe("claimable")
+		expect(withoutChannel.totalCount).toBe(4)
 	})
 })

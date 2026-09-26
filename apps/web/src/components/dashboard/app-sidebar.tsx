@@ -1,5 +1,5 @@
 import { memo, useMemo, useState } from "react"
-import { Link, useRouterState } from "@tanstack/react-router"
+import { Link, useNavigate, useRouterState } from "@tanstack/react-router"
 import { useUser, useClerk } from "@clerk/clerk-react"
 import {
 	CircleQuestionIcon,
@@ -610,6 +610,20 @@ function SettingsRow({ currentPath }: { currentPath: string }) {
 /** Support stops scrolling away by leaving SidebarContent entirely. */
 function SupportMenu() {
 	const [slackOpen, setSlackOpen] = useState(false)
+	// `?support=slack_channel` opens the dialog on any page; the onboarding checklist links to it.
+	const slackDeepLinked = useRouterState({
+		select: (s) => new URLSearchParams(s.location.searchStr).get("support") === "slack_channel",
+	})
+	const navigate = useNavigate()
+	const onSlackOpenChange = (open: boolean) => {
+		setSlackOpen(open)
+		if (!open && slackDeepLinked) {
+			const params = new URLSearchParams(window.location.search)
+			params.delete("support")
+			const query = params.toString()
+			void navigate({ href: `${window.location.pathname}${query ? `?${query}` : ""}`, replace: true })
+		}
+	}
 	return (
 		<>
 			<DropdownMenu>
@@ -661,7 +675,7 @@ function SupportMenu() {
 				</DropdownMenuContent>
 			</DropdownMenu>
 			{isClerkAuthEnabled ? (
-				<SupportChannelDialog open={slackOpen} onOpenChange={setSlackOpen} />
+				<SupportChannelDialog open={slackOpen || slackDeepLinked} onOpenChange={onSlackOpenChange} />
 			) : null}
 		</>
 	)

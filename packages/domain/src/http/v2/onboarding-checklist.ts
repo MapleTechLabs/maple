@@ -78,13 +78,14 @@ export const V2OnboardingChecklist = Schema.Struct({
 	}),
 	total_count: Schema.Number.annotate({ description: "Required steps in total.", examples: [4] }),
 	steps: Schema.Array(V2OnboardingChecklistStep).annotate({
-		description: "Every step, in display order, always the full set.",
+		description:
+			"Every step, in display order. `join_slack_channel` is left out on instances that cannot create shared Slack channels; every other step is always present.",
 	}),
 }).annotate({
 	identifier: "OnboardingChecklist",
 	title: "Onboarding checklist",
 	description:
-		"The org's progress through the onboarding reward checklist: five activation steps that earn a credit when finished within a window of the org's creation.",
+		"The org's progress through the onboarding reward checklist: activation steps that earn a credit when finished within a window of the org's creation.",
 	examples: [
 		wireExample({
 			object: "onboarding_checklist",
