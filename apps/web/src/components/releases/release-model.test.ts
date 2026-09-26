@@ -342,6 +342,18 @@ describe("liveVersions", () => {
 		expect(live.find((v) => v.serviceName === "api")).toMatchObject({ commitSha: SHA_C, behind: 0 })
 	})
 
+	it("ignores a release its siblings are still rolling out", () => {
+		const rolling = [
+			bucket(last, API, SHA_C, 10),
+			bucket(last, API, SHA_B, 90),
+			bucket(last, WEB, SHA_B, 100),
+			bucket(last, DB, SHA_A, 100),
+		]
+		const live = liveVersions(rolling, groups)
+		expect(live.find((v) => v.serviceName === "db-sync")?.behind).toBe(1)
+		expect(live.find((v) => v.serviceName === "api")).toMatchObject({ commitSha: SHA_B, behind: 0 })
+	})
+
 	it("never calls an independently deployed service behind", () => {
 		const solo = [release({ commitSha: SHA_A, serviceName: DB })]
 		const soloTimeline = [bucket(last, DB, SHA_A, 10)]

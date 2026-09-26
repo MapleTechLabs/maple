@@ -251,7 +251,7 @@ function ReleasesTableRows({
 			<Table>
 				<TableHeader>
 					<TableRow className="hover:bg-transparent">
-						<TableHead className="w-[38%] min-w-[260px]">Release</TableHead>
+						<TableHead className="w-[46%] min-w-[260px]">Release</TableHead>
 						<TableHead>Services</TableHead>
 						<TableHead className="whitespace-nowrap">Deployed</TableHead>
 						<TableHead className="whitespace-nowrap">Error rate</TableHead>
@@ -280,7 +280,7 @@ function ReleasesTableRows({
 									</TableRow>
 								) : null}
 								<TableRow className="group/row">
-									<TableCell className="py-2">
+									<TableCell className="max-w-0 py-2">
 										<div className="flex items-start gap-1">
 											<button
 												type="button"
@@ -329,7 +329,10 @@ function ReleasesTableRows({
 									<TableCell className="py-2 align-top">
 										<span className="inline-flex items-center gap-1.5">
 											{multi ? (
-												<span title={`Worst service: ${worst.serviceName}`}>
+												<span
+													className="inline-flex"
+													title={`Worst service: ${worst.serviceName}`}
+												>
 													<ServiceDot serviceName={worst.serviceName} />
 												</span>
 											) : null}

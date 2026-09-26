@@ -386,8 +386,8 @@ export interface LiveVersion {
 	/** Share of the service's last bucket this version carried. */
 	share: number
 	/**
-	 * Newer releases that reached services this one normally ships with, but
-	 * not this one. Zero for a service that never co-deploys with another.
+	 * Newer releases its usual siblings already serve, but this service does not.
+	 * Zero for a service that never co-deploys with another.
 	 */
 	behind: number
 }
@@ -415,12 +415,20 @@ export function liveVersions(
 				.map((impact) => impact.serviceName)
 				.filter((name) => name !== serviceName),
 		)
+		// Only releases some sibling is already serving count: one still rolling
+		// out elsewhere would otherwise mark every service behind for minutes.
+		let siblingsNewest = ""
+		for (const sibling of siblings) {
+			const seen = groupBySha.get(live.get(sibling)?.commitSha ?? "")?.firstSeen ?? ""
+			if (seen > siblingsNewest) siblingsNewest = seen
+		}
 		const behind =
 			liveGroup === undefined || siblings.size === 0
 				? 0
 				: groups.filter(
 						(group) =>
 							group.firstSeen > liveGroup.firstSeen &&
+							group.firstSeen <= siblingsNewest &&
 							!group.services.some((impact) => impact.serviceName === serviceName) &&
 							group.services.some((impact) => siblings.has(impact.serviceName)),
 					).length
