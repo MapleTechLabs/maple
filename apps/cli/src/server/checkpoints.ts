@@ -8,7 +8,8 @@ import { Duration, Effect, Option, Schema } from "effect"
 import { HttpClient, HttpClientRequest } from "effect/unstable/http"
 import { CHDB_VERSION, MAPLE_VERSION } from "../version"
 import { serverUrl } from "../lib/local-address"
-import { Chdb } from "./chdb"
+import { Chdb, RAW_TELEMETRY_TTL_COLUMNS } from "./chdb"
+import { ttlDaysFromDefinition } from "./schema-manifest"
 import { sha256File } from "./checkpoint-digest"
 import {
 	type DurabilityFaults,
@@ -76,6 +77,20 @@ const IsoDateTime = Schema.String.check(
 	}),
 )
 const NonNegativeInt = Schema.Number.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(0))
+/** Rows per UTC day for each raw table, with the table's TTL in days, measured on `countedOn`. */
+const RetainedDaysSchema = Schema.Struct({
+	countedOn: Schema.String.check(Schema.isPattern(/^\d{4}-\d{2}-\d{2}$/)),
+	tables: Schema.Record(
+		Schema.String,
+		Schema.Struct({
+			ttlDays: Schema.NullOr(NonNegativeInt),
+			days: Schema.Record(Schema.String, NonNegativeInt),
+		}),
+	),
+})
+
+export type RetainedDays = Schema.Schema.Type<typeof RetainedDaysSchema>
+
 const CheckpointValidationSchema = Schema.Struct({
 	validatedAt: IsoDateTime,
 	traces: NonNegativeInt,
@@ -85,6 +100,8 @@ const CheckpointValidationSchema = Schema.Struct({
 	metricsHistogram: NonNegativeInt,
 	metricsExponentialHistogram: NonNegativeInt,
 	materializedViews: NonNegativeInt,
+	/** Absent in manifests from older binaries, which compare the totals above. */
+	retained: Schema.optionalKey(RetainedDaysSchema),
 })
 
 export type CheckpointValidation = Schema.Schema.Type<typeof CheckpointValidationSchema>
@@ -616,6 +633,72 @@ const freezeBackgroundMerges = (db: Chdb): void => {
 	db.exec("SYSTEM STOP MERGES")
 }
 
+const DayCountRowSchema = Schema.Struct({
+	day: Schema.String,
+	count: Schema.Union([Schema.Number, Schema.String]),
+})
+const decodeDayCountRow = Schema.decodeUnknownSync(DayCountRowSchema)
+const TableDefinitionRowSchema = Schema.Struct({ name: Schema.String, engine_full: Schema.String })
+const decodeTableDefinitionRow = Schema.decodeUnknownSync(TableDefinitionRowSchema)
+
+/** Rows per UTC day and each table's TTL, so two measurements taken on different
+ * days can still be compared on the days neither side's TTL could have touched. */
+const measureRetainedDays = (db: Chdb, countedOn: string): RetainedDays => {
+	const quoted = RAW_TELEMETRY_TTL_COLUMNS.map(([table]) => `'${table}'`).join(", ")
+	const definitions = new Map(
+		readJsonRows(
+			db.query(
+				`SELECT name, engine_full FROM system.tables WHERE database = 'default' AND name IN (${quoted})`,
+			),
+		)
+			.map((row) => decodeTableDefinitionRow(row))
+			.map((row) => [row.name, row.engine_full] as const),
+	)
+	const tables: Record<string, RetainedDays["tables"][string]> = {}
+	for (const [table, column] of RAW_TELEMETRY_TTL_COLUMNS) {
+		const days: Record<string, number> = {}
+		for (const row of readJsonRows(
+			db.query(
+				`SELECT toString(toDate(${column})) AS day, count() AS count FROM ${table} GROUP BY day`,
+			),
+		)) {
+			const decoded = decodeDayCountRow(row)
+			days[decoded.day] = countFrom([{ count: decoded.count }])
+		}
+		tables[table] = { ttlDays: ttlDaysFromDefinition(definitions.get(table) ?? ""), days }
+	}
+	return { countedOn, tables }
+}
+
+/** A compared day must be at least this many days from expiry on the later measurement day. */
+const RETAINED_MARGIN_DAYS = 2
+const VALIDATION_DAY_MS = 86_400_000
+
+/** Opening a store lets TTL merges drop expired rows before merges can be stopped,
+ * so days near or past expiry are left out; every other day must match exactly. */
+export const retainedDaysMatch = (left: RetainedDays, right: RetainedDays): boolean => {
+	const comparedOn = left.countedOn > right.countedOn ? left.countedOn : right.countedOn
+	const comparedMs = Date.parse(`${comparedOn}T00:00:00Z`)
+	return RAW_TELEMETRY_TTL_COLUMNS.every(([table]) => {
+		const leftTable = left.tables[table]
+		const rightTable = right.tables[table]
+		if (leftTable === undefined || rightTable === undefined) return leftTable === rightTable
+		const ttlDays = leftTable.ttlDays ?? rightTable.ttlDays
+		const firstKept =
+			ttlDays === null
+				? null
+				: new Date(comparedMs - Math.max(ttlDays - RETAINED_MARGIN_DAYS, 0) * VALIDATION_DAY_MS)
+						.toISOString()
+						.slice(0, 10)
+		const days = new Set([...Object.keys(leftTable.days), ...Object.keys(rightTable.days)])
+		return [...days].every(
+			(day) =>
+				(firstKept !== null && day < firstKept) ||
+				(leftTable.days[day] ?? 0) === (rightTable.days[day] ?? 0),
+		)
+	})
+}
+
 const validateRestoredDatabase = (db: Chdb): CheckpointValidation => ({
 	validatedAt: new Date().toISOString(),
 	traces: queryCount(db, "SELECT count() FROM traces"),
@@ -628,6 +711,7 @@ const validateRestoredDatabase = (db: Chdb): CheckpointValidation => ({
 		db,
 		"SELECT count() FROM system.tables WHERE database = 'default' AND engine = 'MaterializedView'",
 	),
+	retained: measureRetainedDays(db, new Date().toISOString().slice(0, 10)),
 })
 
 /** Open and validate a restored store in the current process. Production
@@ -681,6 +765,12 @@ const parseValidation = (value: unknown): CheckpointValidation => {
 }
 
 const validationCountsMatch = (left: CheckpointValidation, right: CheckpointValidation): boolean =>
+	left.retained !== undefined && right.retained !== undefined
+		? left.materializedViews === right.materializedViews &&
+			retainedDaysMatch(left.retained, right.retained)
+		: exactCountsMatch(left, right)
+
+const exactCountsMatch = (left: CheckpointValidation, right: CheckpointValidation): boolean =>
 	left.traces === right.traces &&
 	left.logs === right.logs &&
 	left.metricsSum === right.metricsSum &&
