@@ -22,7 +22,7 @@ const STEP_PRESENTATION = {
 	invite_teammate: { title: "Invite a teammate", href: "/settings?tab=members" },
 	connect_mcp_agent: { title: "Connect an MCP agent", href: "/settings?tab=mcp" },
 	// Opens the shared-channel dialog from the Support menu on any page.
-	join_slack_channel: { title: "Join us on Slack", href: "/?support=slack_channel" },
+	join_slack_channel: { title: "Shared Slack channel", href: "/?support=slack_channel" },
 } satisfies Record<OnboardingChecklistStepId, Pick<V2OnboardingChecklistStep, "title" | "href">>
 
 export const toV2OnboardingChecklist = (report: OnboardingChecklistReport): V2OnboardingChecklist => ({
