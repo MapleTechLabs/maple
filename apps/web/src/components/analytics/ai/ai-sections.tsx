@@ -115,7 +115,7 @@ export function AiProductCard({
 		>
 			<div className="flex items-center justify-between gap-3">
 				<div className="flex min-w-0 items-center gap-2">
-					<AiProductIcon product={product.id} className="text-foreground/80" />
+					<AiProductIcon product={product.id} />
 					<span className="truncate text-[13px] font-medium">{product.label}</span>
 				</div>
 				{visits > 0 && served > 0 ? (
@@ -183,7 +183,7 @@ export function AiReferralRanking({ ranks }: { ranks: ReadonlyArray<AiReferralRa
 								{index + 1}
 							</span>
 							<span className="flex w-0 min-w-0 flex-1 items-center gap-2">
-								<AiProductIcon product={rank.product.id} className="text-foreground/80" />
+								<AiProductIcon product={rank.product.id} />
 								<span className="truncate text-[12px] text-foreground/90">
 									{rank.product.label}
 								</span>
@@ -277,10 +277,7 @@ export function AiCrawlerTable({
 								className="flex items-center gap-3 border-b border-border/40 px-4 py-2 last:border-0"
 							>
 								<span className="flex w-0 min-w-0 flex-1 items-center gap-2">
-									<AiProductIcon
-										product={product?.id ?? ""}
-										className="text-foreground/80"
-									/>
+									<AiProductIcon product={product?.id ?? ""} />
 									<span className="truncate text-[12px] text-foreground/90">
 										{row.crawler}
 									</span>
@@ -420,7 +417,7 @@ function CrawlerMarks({ crawlers }: { crawlers: ReadonlyArray<string> }) {
 		<span className="flex items-center gap-1">
 			{products.slice(0, 6).map((product) => (
 				<span key={product.id} title={product.label}>
-					<AiProductIcon product={product.id} size={12} className="text-foreground/70" />
+					<AiProductIcon product={product.id} size={12} />
 				</span>
 			))}
 			{products.length > 6 ? <span>+{products.length - 6}</span> : null}
