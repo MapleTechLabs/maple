@@ -14,7 +14,11 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { describe, it } from "vitest"
 import type { MapleCloudEvent, SignalProjectionSpec } from "@maple/eventing-core"
-import { eventingControlPath, LocalEventingControlStore } from "../src/server/eventing/control-store"
+import {
+	eventingControlPath,
+	LocalEventingControlStore,
+	OutboxEventRejected,
+} from "../src/server/eventing/control-store"
 import type { EventingTelemetryObservation } from "../src/server/eventing/telemetry"
 
 const withDataDir = async (run: (dataDir: string) => Promise<void>): Promise<void> => {
@@ -182,9 +186,19 @@ describe("LocalEventingControlStore", () => {
 					dropped: 0,
 					eventIds: [event().id, event().id],
 				})
-				throws(() => store.stageEvents([event({ data: { recordId: 43 } })]), /collision/)
+				throws(
+					() => store.stageEvents([event({ data: { recordId: 43 } })]),
+					(error: unknown) =>
+						error instanceof OutboxEventRejected && /collision/.test(error.message),
+				)
+				throws(
+					() => store.stageEvents([{ ...event(), specversion: "0.3" } as never]),
+					(error: unknown) => error instanceof OutboxEventRejected,
+				)
 				throws(() => store.markReady(["unknown"]), /unknown event/)
+				deepStrictEqual(store.summary(), store.validate())
 				store.markReady([event().id])
+				deepStrictEqual(store.summary(), store.validate())
 				store.markReady([event().id])
 				deepStrictEqual(store.listStaged().events, [])
 				deepStrictEqual(

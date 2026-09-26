@@ -372,3 +372,55 @@ describe("external OTLP protobuf compatibility", () => {
 		expect(row.span_attributes["url.full"]).toBe("http://127.0.0.1:18081/ping?i=2")
 	})
 })
+
+describe("non-finite metric values", () => {
+	const gauge = (asDouble: number | string) => ({
+		resourceMetrics: [
+			{ scopeMetrics: [{ metrics: [{ name: "g", gauge: { dataPoints: [{ asDouble }] } }] }] },
+		],
+	})
+	const valueOf = (req: unknown) => JSON.parse(encodeMetrics(req)[0]!.ndjson).value
+
+	it("keeps NaN and infinities instead of serializing them as null (stored as 0)", () => {
+		expect(valueOf(gauge(Number.NaN))).toBe("nan")
+		expect(valueOf(gauge(Number.POSITIVE_INFINITY))).toBe("inf")
+		expect(valueOf(gauge(Number.NEGATIVE_INFINITY))).toBe("-inf")
+		expect(valueOf(gauge(1.5))).toBe(1.5)
+	})
+
+	it("reads the proto3-JSON string forms of doubles", () => {
+		expect(valueOf(gauge("NaN"))).toBe("nan")
+		expect(valueOf(gauge("Infinity"))).toBe("inf")
+		expect(valueOf(gauge("-Infinity"))).toBe("-inf")
+		expect(valueOf(gauge("2.5"))).toBe(2.5)
+		expect(() => encodeMetrics(gauge("not-a-number"))).toThrow(OtlpFieldError)
+	})
+
+	it("preserves non-finite histogram sums, bounds and extrema", () => {
+		const [batch] = encodeMetrics({
+			resourceMetrics: [
+				{
+					scopeMetrics: [
+						{
+							metrics: [
+								{
+									name: "h",
+									histogram: {
+										dataPoints: [
+											{ sum: "NaN", explicitBounds: [1, "Infinity"], min: "-Infinity" },
+										],
+									},
+								},
+							],
+						},
+					],
+				},
+			],
+		})
+		const row = JSON.parse(batch!.ndjson)
+		expect(row.sum).toBe("nan")
+		expect(row.explicit_bounds).toEqual([1, "inf"])
+		expect(row.min).toBe("-inf")
+		expect(row.max).toBeNull()
+	})
+})

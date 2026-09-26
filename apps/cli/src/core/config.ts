@@ -1,17 +1,23 @@
-import { Clock, Context, Effect, Layer, Option, Redacted, type PlatformError, Schema } from "effect"
+import { Clock, Context, Effect, Layer, Option, Redacted, Result, Schema } from "effect"
 import { FileSystem } from "effect/FileSystem"
 import { ChildProcessSpawner } from "effect/unstable/process/ChildProcessSpawner"
 import * as os from "node:os"
 import * as path from "node:path"
 import { defaultLocalUrl } from "../lib/local-address"
-import { deleteNativeCredential, readNativeCredential, writeNativeCredential } from "./credential-store"
+import { durableWrite } from "../server/durable-files"
+import {
+	credentialAccount,
+	deleteNativeCredential,
+	readNativeCredential,
+	writeNativeCredential,
+} from "./credential-store"
 
 /**
  * On-disk CLI config, stored at `~/.maple/config.json` (mode 0600). The same
  * `~/.maple` directory holds the local binary's data dir and the extracted
  * query CLI, so everything Maple-local lives in one place.
  */
-interface StoredConfig {
+export interface StoredConfig {
 	apiUrl?: string
 	token?: string
 	orgId?: string
@@ -26,11 +32,11 @@ interface StoredConfig {
 	latestKnownVersion?: string
 }
 
-/** Malformed on-disk config JSON. Caught immediately by `Effect.orElseSucceed`
- *  (a bad/unreadable file falls back to an empty config), but typed so the error
- *  channel isn't a bare `Error`. */
-class ConfigParseError extends Schema.TaggedError<ConfigParseError>()("@maple/cli/ConfigParseError", {
+/** The config file exists but cannot be read, parsed, or replaced. Names the
+ *  path so the user can repair or remove it. */
+export class ConfigFileError extends Schema.TaggedError<ConfigFileError>()("@maple/cli/ConfigFileError", {
 	message: Schema.String,
+	path: Schema.String,
 }) {}
 
 const CONFIG_DIR = path.join(os.homedir(), ".maple")
@@ -38,34 +44,101 @@ const CONFIG_PATH = path.join(CONFIG_DIR, "config.json")
 
 const DEFAULT_API_URL = "https://api.maple.dev"
 
-const readStored = (fs: FileSystem): Effect.Effect<StoredConfig> =>
-	fs.readFileString(CONFIG_PATH).pipe(
-		Effect.flatMap((raw) =>
-			Effect.try({
-				try: (): StoredConfig => {
-					const parsed = JSON.parse(raw) as unknown
-					return typeof parsed === "object" && parsed !== null ? (parsed as StoredConfig) : {}
-				},
-				catch: () => new ConfigParseError({ message: "invalid config" }),
-			}),
+const StoredConfigFields = Schema.Struct({
+	apiUrl: Schema.optionalKey(Schema.String),
+	token: Schema.optionalKey(Schema.String),
+	orgId: Schema.optionalKey(Schema.String),
+	userId: Schema.optionalKey(Schema.String),
+	credentialStore: Schema.optionalKey(Schema.Literals(["keychain", "file"])),
+	credentialManaged: Schema.optionalKey(Schema.Boolean),
+	defaultMode: Schema.optionalKey(Schema.Literals(["local", "remote"])),
+	lastUpdateCheck: Schema.optionalKey(Schema.String),
+	latestKnownVersion: Schema.optionalKey(Schema.String),
+})
+const KNOWN_KEYS = new Set(Object.keys(StoredConfigFields.fields))
+const decodeConfigObject = Schema.decodeUnknownResult(
+	Schema.fromJsonString(Schema.Record(Schema.String, Schema.Unknown)),
+)
+const decodeStoredConfig = Schema.decodeUnknownResult(StoredConfigFields)
+
+interface ConfigFile {
+	readonly config: StoredConfig
+	/** Keys another CLI version wrote; carried over untouched on write. */
+	readonly unknownFields: Readonly<Record<string, unknown>>
+}
+
+const readConfig = (fs: FileSystem, configPath: string): Effect.Effect<ConfigFile, ConfigFileError> =>
+	fs.readFileString(configPath).pipe(
+		Effect.map(Option.some),
+		Effect.catchTag("PlatformError", (error) =>
+			error.reason._tag === "NotFound"
+				? Effect.succeed(Option.none<string>())
+				: Effect.fail(
+						new ConfigFileError({ path: configPath, message: `cannot read ${configPath}` }),
+					),
 		),
-		// Missing/unreadable/invalid file → empty config. The CLI still works in
-		// local mode (auto-detect) and `maple login` will create the file.
-		Effect.orElseSucceed((): StoredConfig => ({})),
+		Effect.flatMap((raw) => {
+			if (Option.isNone(raw)) return Effect.succeed<ConfigFile>({ config: {}, unknownFields: {} })
+			const invalid = new ConfigFileError({
+				path: configPath,
+				message: `${configPath} is not a valid Maple config; fix or remove it`,
+			})
+			const object = decodeConfigObject(raw.value)
+			if (Result.isFailure(object)) return Effect.fail(invalid)
+			const config = decodeStoredConfig(object.success)
+			if (Result.isFailure(config)) return Effect.fail(invalid)
+			const unknownFields = Object.fromEntries(
+				Object.entries(object.success).filter(([key]) => !KNOWN_KEYS.has(key)),
+			)
+			return Effect.succeed<ConfigFile>({ config: config.success, unknownFields })
+		}),
 	)
 
-const writeMerged = (
+/** Read the config at `configPath`. A missing file is an empty config; an
+ *  unreadable or malformed one is an error, never silently `{}`. */
+export const readConfigFile = (
 	fs: FileSystem,
+	configPath: string,
+): Effect.Effect<StoredConfig, ConfigFileError> =>
+	readConfig(fs, configPath).pipe(Effect.map((file) => file.config))
+
+/** Merge into the config at `configPath` through a temp file + fsync + rename,
+ *  so a crash or full disk leaves the previous file (and its token) intact. */
+export const writeConfigFile = (
+	fs: FileSystem,
+	configPath: string,
 	mutate: (cur: StoredConfig) => StoredConfig,
-): Effect.Effect<void, PlatformError.PlatformError> =>
+): Effect.Effect<void, ConfigFileError> =>
 	Effect.gen(function* () {
-		const merged = mutate(yield* readStored(fs))
-		yield* fs.makeDirectory(CONFIG_DIR, { recursive: true })
-		yield* fs.writeFileString(CONFIG_PATH, `${JSON.stringify(merged, null, 2)}\n`, { mode: 0o600 })
-		// writeFileString's `mode` only applies on create; chmod an existing file
-		// too so a token never sits in a world-readable file (best effort).
-		yield* fs.chmod(CONFIG_PATH, 0o600).pipe(Effect.ignore)
+		const current = yield* readConfig(fs, configPath)
+		const merged = { ...current.unknownFields, ...mutate(current.config) }
+		yield* Effect.tryPromise({
+			try: () => durableWrite(configPath, `${JSON.stringify(merged, null, 2)}\n`),
+			catch: (cause) =>
+				new ConfigFileError({
+					path: configPath,
+					message: `cannot write ${configPath}: ${cause instanceof Error ? cause.message : String(cause)}`,
+				}),
+		})
 	})
+
+const writeMerged = (fs: FileSystem, mutate: (cur: StoredConfig) => StoredConfig) =>
+	writeConfigFile(fs, CONFIG_PATH, mutate)
+
+const sameCredentialOrigin = (left: string, right: string): boolean => {
+	const origins = Result.try(() => [credentialAccount(left), credentialAccount(right)] as const)
+	return Result.isSuccess(origins) && origins.success[0] === origins.success[1]
+}
+
+/** A file-stored token belongs to the API it was issued by; a different
+ *  `MAPLE_API_URL` must not receive it. */
+export const storedTokenFor = (stored: StoredConfig, apiUrl: string | undefined): string | undefined =>
+	stored.token !== undefined &&
+	stored.apiUrl !== undefined &&
+	apiUrl !== undefined &&
+	sameCredentialOrigin(stored.apiUrl, apiUrl)
+		? stored.token
+		: undefined
 
 export interface MapleConfigValues {
 	/** Remote API base URL (env `MAPLE_API_URL` overrides the stored value). */
@@ -88,22 +161,22 @@ export interface MapleConfigValues {
 	/** Latest release tag seen by the last update check, or `None`. */
 	readonly latestKnownVersion: Option.Option<string>
 	/** Persist config fields (merged with existing). */
-	readonly write: (next: StoredConfig) => Effect.Effect<void, PlatformError.PlatformError>
+	readonly write: (next: StoredConfig) => Effect.Effect<void, ConfigFileError>
 	readonly saveRemoteCredential: (next: {
 		readonly apiUrl: string
 		readonly token: string
 		readonly orgId: string
 		readonly userId: string
 		readonly managed: boolean
-	}) => Effect.Effect<"keychain" | "file", PlatformError.PlatformError>
-	readonly clearRemoteCredential: () => Effect.Effect<void, PlatformError.PlatformError>
+	}) => Effect.Effect<"keychain" | "file", ConfigFileError>
+	readonly clearRemoteCredential: () => Effect.Effect<void, ConfigFileError>
 	/** Pin the default mode (used by `maple use local|remote`). */
-	readonly setDefaultMode: (mode: "local" | "remote") => Effect.Effect<void, PlatformError.PlatformError>
+	readonly setDefaultMode: (mode: "local" | "remote") => Effect.Effect<void, ConfigFileError>
 	/** Drop the pinned default mode, reverting to auto-detect (`maple use auto`). */
-	readonly clearDefaultMode: () => Effect.Effect<void, PlatformError.PlatformError>
+	readonly clearDefaultMode: () => Effect.Effect<void, ConfigFileError>
 	/** Stamp the update-check timestamp (always) and the latest seen tag (when
 	 *  provided — omitted on a failed probe so the cached version is preserved). */
-	readonly recordUpdateCheck: (latestTag?: string) => Effect.Effect<void, PlatformError.PlatformError>
+	readonly recordUpdateCheck: (latestTag?: string) => Effect.Effect<void, ConfigFileError>
 }
 
 export class MapleConfig extends Context.Service<MapleConfig, MapleConfigValues>()("@maple/cli/MapleConfig", {
@@ -115,18 +188,24 @@ export class MapleConfig extends Context.Service<MapleConfig, MapleConfigValues>
 		const spawner = yield* ChildProcessSpawner
 		const keychain = <A>(effect: Effect.Effect<A, never, ChildProcessSpawner>): Effect.Effect<A> =>
 			Effect.provideService(effect, ChildProcessSpawner, spawner)
-		const stored = yield* readStored(fs)
+		// An unreadable config still lets local mode run; writes refuse to merge over it.
+		const stored = yield* readConfigFile(fs, CONFIG_PATH).pipe(
+			Effect.catchTag("@maple/cli/ConfigFileError", (error) =>
+				Effect.logWarning(error.message).pipe(Effect.as<StoredConfig>({})),
+			),
+		)
 		const env = process.env
 		const resolvedApiUrl = env.MAPLE_API_URL ?? stored.apiUrl
 		const envToken = env.MAPLE_API_TOKEN
+		const fileToken = storedTokenFor(stored, resolvedApiUrl)
 		const nativeToken =
-			!envToken && !stored.token && stored.credentialStore === "keychain" && resolvedApiUrl
+			!envToken && !fileToken && stored.credentialStore === "keychain" && resolvedApiUrl
 				? yield* keychain(readNativeCredential(resolvedApiUrl))
 				: undefined
-		const resolvedToken = envToken ?? stored.token ?? nativeToken
+		const resolvedToken = envToken ?? fileToken ?? nativeToken
 		const tokenSource = envToken
 			? ("env" as const)
-			: stored.token
+			: fileToken
 				? ("file" as const)
 				: nativeToken
 					? ("keychain" as const)

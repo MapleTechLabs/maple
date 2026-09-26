@@ -36,6 +36,7 @@ query() {
 	local sql="$1"
 	curl --fail-with-body -sS --max-time 30 "http://127.0.0.1:$PORT/local/query" \
 		-H 'content-type: application/json' \
+		-H "x-maple-maintenance-token: $(cat "$DATA.maintenance-token")" \
 		--data "$(jq -nc --arg sql "$sql" '{sql:$sql}')"
 }
 
