@@ -8,16 +8,17 @@ const HOUR_MS = 60 * 60 * 1000
 
 /**
  * Logs emitted within one span, newest first (the span detail's Logs tab).
- * Bounded to the span start ±1h: a span's logs cannot drift further, and an
+ * Bounded to the span's own window ±1h: its logs cannot drift further, and an
  * unbounded scan reads every partition on each span click.
  */
 export function useLocalSpanLogs(
 	traceId: string | undefined,
 	spanId: string | undefined,
 	spanStartTime: string,
+	spanDurationMs: number,
 ) {
 	return useQuery<ReadonlyArray<LocalLog>>({
-		queryKey: ["local", "span-logs", traceId, spanId],
+		queryKey: ["local", "span-logs", traceId, spanId, spanStartTime, spanDurationMs],
 		queryFn:
 			traceId && spanId
 				? async ({ signal }) => {
@@ -27,7 +28,7 @@ export function useLocalSpanLogs(
 								? boundsForRange(WIDEST_RANGE)
 								: {
 										startTime: toClickHouseDateTime(startMs - HOUR_MS),
-										endTime: toClickHouseDateTime(startMs + HOUR_MS),
+										endTime: toClickHouseDateTime(startMs + Math.max(0, spanDurationMs) + HOUR_MS),
 									}
 						const compiled = CH.compile(
 							CH.logsListQuery({ traceId, spanId, limit: 100 }),

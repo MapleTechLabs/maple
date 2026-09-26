@@ -122,8 +122,7 @@ verify_signature() {
 		return 0
 	fi
 	if ! ossl="$(find_ed25519_openssl)"; then
-		say "note: release signature not checked (needs OpenSSL 3); to verify by hand see https://github.com/$REPO/blob/main/docs/local-mode.md#release-signing"
-		return 0
+		die "cannot verify the release signature: needs OpenSSL 3 (macOS: brew install openssl@3). Set MAPLE_SKIP_SIGNATURE=1 to install on the checksum alone."
 	fi
 	curl -fsSL "${url}.sha256.sig" -o "$tmp/bundle.sha256.sig" \
 		|| die "could not fetch the release signature (${url}.sha256.sig). Set MAPLE_SKIP_SIGNATURE=1 to install without it."

@@ -39,7 +39,7 @@ export function SpanDetailPanel({ span, onClose }: SpanDetailPanelProps) {
 	const statusStyle = getSpanStatusBadgeClass(span.statusCode)
 	const kindLabel = getSpanKindLabel(span.spanKind)
 
-	const logs = useLocalSpanLogs(span.traceId, span.spanId, span.startTime)
+	const logs = useLocalSpanLogs(span.traceId, span.spanId, span.startTime, span.durationMs)
 	const logCount = logs.data?.length ?? null
 
 	// Full attribute maps load lazily: the hierarchy query only returns the

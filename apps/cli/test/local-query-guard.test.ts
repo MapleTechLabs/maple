@@ -4,7 +4,12 @@ import { homedir, tmpdir } from "node:os"
 import { join } from "node:path"
 import { Result } from "effect"
 import { Chdb, ChdbClosedError } from "../src/server/chdb"
-import { countArrayRows, prepareLocalQuery, READ_ONLY_REJECTION_PREFIX } from "../src/server/query-guard"
+import {
+	countArrayRows,
+	prepareLocalQuery,
+	READ_ONLY_REJECTION_PREFIX,
+	ReadOnlyQueryRejected,
+} from "../src/server/query-guard"
 import { __testables } from "../src/server/serve"
 
 // Needs a real libchdb; skipped where none is installed.
@@ -78,6 +83,12 @@ describe("read-only statement preparation", () => {
 		const canonical = "INSERT INTO t SELECT 1"
 		const prepared = prepareLocalQuery(engine(canonical), canonical, { allowWrites: true })
 		expect(Result.isSuccess(prepared) && prepared.success).toEqual({ kind: "write", sql: canonical })
+	})
+
+	test("rejects an INSERT whose inline rows canonicalization would drop", () => {
+		const sql = "INSERT INTO t VALUES (1, 'a')"
+		const prepared = prepareLocalQuery(engine("INSERT INTO t FORMAT Values"), sql, { allowWrites: true })
+		expect(Result.isFailure(prepared) && prepared.failure).toBeInstanceOf(ReadOnlyQueryRejected)
 	})
 
 	test("counts array-of-rows output", () => {

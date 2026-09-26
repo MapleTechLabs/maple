@@ -586,9 +586,9 @@ How it is checked (`scripts/sign-local-release.ts` signs,
   verifies the signature against `MAPLE_RELEASE_PUBLIC_KEY`, and only then
   trusts the checksum. A missing or invalid signature stops the update.
 - **The installer** verifies when it finds an OpenSSL that passes an Ed25519
-  self-test (OpenSSL 3 on PATH, or Homebrew's keg-only `openssl@3`). macOS
-  ships LibreSSL, which cannot, so there it prints a one-line note and relies
-  on the checksum.
+  self-test (OpenSSL 3 on PATH, or Homebrew's keg-only `openssl@3`), and
+  refuses to install without one. macOS ships LibreSSL, which cannot, so there
+  it needs `brew install openssl@3` or `MAPLE_SKIP_SIGNATURE=1`.
 - **Before the key is provisioned** (`MAPLE_RELEASE_PUBLIC_KEY` is empty),
   nothing is checked: `maple update` prints a one-line notice and the workflow
   publishes unsigned with a warning.

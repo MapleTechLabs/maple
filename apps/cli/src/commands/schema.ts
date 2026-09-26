@@ -23,6 +23,7 @@ import {
 } from "../server/retained-leftovers"
 import { isStoreDirty, readMarker } from "../server/store-version"
 import { jsonFormatRequested, writeJson } from "./json-output"
+import { commandScope, mapleCommand } from "./server-args"
 
 class SchemaCommandError extends Schema.TaggedError<SchemaCommandError>()("@maple/cli/SchemaCommandError", {
 	message: Schema.String,
@@ -194,7 +195,7 @@ export const schemaMigrate = Command.make("migrate", {
 					if (json) return yield* writeJson({ started: false, plan: planJson(plan) })
 					yield* Effect.sync(() =>
 						process.stderr.write(
-							`${amber("Migration not started.")}\n${planSummary(plan)}Re-run with ${bold("maple schema migrate --yes")} to confirm.\n`,
+							`${amber("Migration not started.")}\n${planSummary(plan)}Re-run with ${bold(mapleCommand("schema migrate --yes", commandScope({ dataDir })))} to confirm.\n`,
 						),
 					)
 					return
@@ -220,7 +221,7 @@ export const schemaMigrate = Command.make("migrate", {
 							`  ${dim("active")}   ${result.targetDataDir}\n` +
 							`  ${dim("guarantee")} raw telemetry exact within each table's retention horizon; older aggregate-only history remains with the retained legacy source\n` +
 							`  ${dim("next")}     create a new checkpoint before resuming long-lived retention\n` +
-							`  ${dim("reclaim")}  ${bold("maple schema gc")} lists the rollback source once you no longer need it\n`,
+							`  ${dim("reclaim")}  ${bold(mapleCommand("schema gc", commandScope({ dataDir })))} lists the rollback source once you no longer need it\n`,
 					),
 				)
 			}
@@ -239,7 +240,7 @@ export const schemaAbandon = Command.make("abandon", {
 			if (!args.yes) {
 				yield* Effect.sync(() =>
 					process.stderr.write(
-						`${amber("Target not abandoned.")} This moves only the journal-owned staged target into a recoverable quarantine and preserves the active source, checkpoints, and rollback data. Re-run with ${bold("maple schema abandon --yes")} to confirm.\n`,
+						`${amber("Target not abandoned.")} This moves only the journal-owned staged target into a recoverable quarantine and preserves the active source, checkpoints, and rollback data. Re-run with ${bold(mapleCommand("schema abandon --yes", commandScope({ dataDir })))} to confirm.\n`,
 					),
 				)
 				return
@@ -259,7 +260,7 @@ export const schemaAbandon = Command.make("abandon", {
 						? `${dim("No unfinished staged migration was found.")}\n`
 						: `${green("✓")} staged target quarantined\n  ${dim("quarantine")} ${quarantine}\n  ${dim("source")}    ${dataDir}\n`) +
 						(sourceDirty
-							? `${amber("!")} the source was not cleanly closed. Recover it with ${bold("maple restore --yes")} if it has a checkpoint, otherwise ${bold("maple start --reset")} (this discards its live telemetry).\n`
+							? `${amber("!")} the source was not cleanly closed. Recover it with ${bold(mapleCommand("restore --yes", commandScope({ dataDir })))} if it has a checkpoint, otherwise ${bold(mapleCommand("start --reset", commandScope({ dataDir })))} (this discards its live telemetry).\n`
 							: ""),
 				),
 			)
@@ -313,7 +314,7 @@ const renderInventory = (inventory: RetainedInventory): string => {
 	}
 	if (inventory.preserved.length > 0) {
 		lines.push(
-			`${inventory.preserved.length} checkpoint(s) preserved across a reset (kept until released; restore one with ${bold("maple restore --checkpoint-id <id> --yes")}):`,
+			`${inventory.preserved.length} checkpoint(s) preserved across a reset (kept until released; restore one with ${bold(mapleCommand("restore --checkpoint-id <id> --yes", commandScope({ dataDir: inventory.dataDir })))}):`,
 		)
 		for (const checkpoint of inventory.preserved) {
 			const counts =
@@ -352,7 +353,7 @@ export const schemaGc = Command.make("gc", {
 						renderInventory(inventory) +
 							(inventory.leftovers.length === 0 && inventory.preserved.length === 0
 								? ""
-								: `${dim("dry run: nothing was removed.")} Re-run with ${bold("maple schema gc --apply")} to delete the leftovers` +
+								: `${dim("dry run: nothing was removed.")} Re-run with ${bold(mapleCommand("schema gc --apply", commandScope({ dataDir })))} to delete the leftovers` +
 									(inventory.preserved.length === 0
 										? ".\n"
 										: `, and add ${bold("--release-preserved")} to also release the preserved checkpoints.\n`)),

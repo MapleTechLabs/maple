@@ -251,7 +251,13 @@ export const prepareLocalQuery = (
 		}
 		const leading = canonical.startsWith("(") ? "SELECT" : first.text
 		if (!READ_STATEMENTS.has(leading)) {
-			if (options.allowWrites) return { kind: "write" as const, sql: canonical }
+			if (options.allowWrites) {
+				// The canonical form drops an INSERT's inline rows (and their unscanned
+				// expressions), so only INSERT ... SELECT survives canonicalization intact.
+				if (first.text === "INSERT" && !words.some((word) => !word.quoted && word.text === "SELECT"))
+					return yield* reject("INSERT with inline data is not allowed; use INSERT ... SELECT")
+				return { kind: "write" as const, sql: canonical }
+			}
 			return yield* reject(
 				`only SELECT, WITH, SHOW, DESCRIBE, EXISTS and EXPLAIN statements are allowed`,
 			)

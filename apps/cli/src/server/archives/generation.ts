@@ -204,6 +204,8 @@ const activeGenerationRowCount = (
 ): number | "unreadable" => {
 	const path = generationManifestPath(archiveDir, signal, rangeDate, generationId)
 	assertNoSymlinkSync(archiveDir, path, "archive manifest")
+	// A missing manifest is as unreadable as a malformed one: --allow-shrink replaces it.
+	if (!existsSync(path)) return "unreadable"
 	assertRealFileSync(path, "archive manifest")
 	const decoded = decodeArchivedRowCount(readFileSync(path, "utf8"))
 	return Option.isSome(decoded) ? decoded.value.archivedRowCount : "unreadable"
