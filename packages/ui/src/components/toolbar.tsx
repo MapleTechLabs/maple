@@ -160,7 +160,12 @@ export function TimeRangeSelect({
 	return (
 		<div className="flex items-center gap-1.5">
 			<ClockIcon strokeWidth={2} className="size-3.5 text-muted-foreground" />
-			<NativeSelect size="sm" value={value} onChange={(e) => onChange(e.target.value)}>
+			<NativeSelect
+				size="sm"
+				aria-label="Time range"
+				value={value}
+				onChange={(e) => onChange(e.target.value)}
+			>
 				{ranges.map((range) => (
 					<NativeSelectOption key={range.key} value={range.key}>
 						{range.label}

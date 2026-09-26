@@ -75,6 +75,10 @@ describe("errorsByTypeQuery", () => {
 		expect(sql).toContain("any(ErrorLabel) AS errorLabel")
 		expect(sql).toContain("count() AS count")
 		expect(sql).toContain("uniq(ServiceName) AS affectedServicesCount")
+		// Names a few services so a list need not look them up per fingerprint.
+		expect(sql).toContain(
+			"arraySort(groupUniqArrayIf(3)(ServiceName, ServiceName != '')) AS serviceNames",
+		)
 		expect(sql).toContain("min(Timestamp) AS firstSeen")
 		expect(sql).toContain("max(Timestamp) AS lastSeen")
 		expect(sql).toContain("GROUP BY fingerprintHash")
@@ -177,6 +181,22 @@ describe("errorsSummaryQuery", () => {
 		expect(sql).toContain("FORMAT JSON")
 	})
 
+	it("reads whole hours from service_usage and the partial end hours from raw spans", () => {
+		// A sub-hour window has no whole hour; reading only the hourly rollup made its
+		// denominator 0 and the error rate 0%.
+		const { sql } = compileUnsafe(errorsSummaryQuery({}), {
+			...baseParams,
+			startTime: "2024-01-01 10:15:00",
+			endTime: "2024-01-01 11:15:00",
+		})
+		expect(sql).toContain("FROM service_usage")
+		expect(sql).toContain("FROM traces")
+		expect(sql).toContain("UNION ALL")
+		expect(sql).toContain("toStartOfHour(toDateTime('2024-01-01 10:15:00'))")
+		expect(sql).toMatch(/Hour >= if\(/)
+		expect(sql).toMatch(/Timestamp < if\(/)
+	})
+
 	it("applies rootOnly and services filters", () => {
 		const q = errorsSummaryQuery({ rootOnly: true, services: ["api"] })
 		const { sql } = compileUnsafe(q, baseParams)
@@ -228,6 +248,15 @@ describe("errorDetailTracesQuery", () => {
 		const q = errorDetailTracesQuery({ fingerprintHash: "1", services: ["api", "web"] })
 		const { sql } = compileUnsafe(q, baseParams)
 		expect(sql).toContain("ServiceName IN ('api', 'web')")
+	})
+
+	it("applies deploymentEnvs filter to the occurrence subquery", () => {
+		const q = errorDetailTracesQuery({ fingerprintHash: "1", deploymentEnvs: ["production"] })
+		const { sql } = compileUnsafe(q, baseParams)
+		expect(sql).toContain("DeploymentEnv IN ('production')")
+		// Absent unless asked for: the span read has no environment column to filter.
+		const unfiltered = compileUnsafe(errorDetailTracesQuery({ fingerprintHash: "1" }), baseParams).sql
+		expect(unfiltered).not.toContain("DeploymentEnv")
 	})
 
 	it("applies custom limit", () => {

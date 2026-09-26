@@ -4751,6 +4751,20 @@ SELECT
         LIMIT 2
         FORMAT JSON
 
+-- builder:traces:traceSpanStatsByTraceIdsQuery:page-enrichment  [e366055a]
+SELECT
+          TraceId AS traceId,
+          count() AS spanCount,
+          arrayDistinct(arrayPushFront(arraySort(groupUniqArray(ServiceName)), argMin(ServiceName, (if(ParentSpanId = '', 0, 1), Timestamp)))) AS services
+        FROM trace_detail_spans
+        WHERE OrgId = 'org_sql_catalog'
+          AND TraceId IN ('0af7651916cd43dd8448eb211c80319c', '4bf92f3577b34da6a3ce929d0e0e4736')
+          AND Timestamp >= subtractHours(toDateTime('2026-01-01 10:30:00'), 1)
+          AND Timestamp <= addHours(toDateTime('2026-01-03 14:15:00'), 1)
+        GROUP BY traceId
+        LIMIT 2
+        FORMAT JSON
+
 -- builder:web-analytics:webAnalyticsBreakdownsQuery:all-dimensions-filtered  [dd21e64d]
 SELECT
           if(ReferrerHost = '', '(none)', ReferrerHost) AS name,
@@ -7150,13 +7164,14 @@ SELECT
         ORDER BY errorRate DESC
         FORMAT JSON
 
--- pipe:errors_by_type:default:baseline  [155d011e]
+-- pipe:errors_by_type:default:baseline  [910e3e1b]
 SELECT
           toString(FingerprintHash) AS fingerprintHash,
           any(ErrorLabel) AS errorLabel,
           any(StatusMessage) AS sampleMessage,
           count() AS count,
           uniq(ServiceName) AS affectedServicesCount,
+          arraySort(groupUniqArrayIf(3)(ServiceName, ServiceName != '')) AS serviceNames,
           min(Timestamp) AS firstSeen,
           max(Timestamp) AS lastSeen
         FROM error_events_by_time
@@ -7168,13 +7183,14 @@ SELECT
         LIMIT 50
         FORMAT JSON
 
--- pipe:errors_by_type:fingerprint-scoped:baseline  [1a02650c]
+-- pipe:errors_by_type:fingerprint-scoped:baseline  [7682b45d]
 SELECT
           toString(FingerprintHash) AS fingerprintHash,
           any(ErrorLabel) AS errorLabel,
           any(StatusMessage) AS sampleMessage,
           count() AS count,
           uniq(ServiceName) AS affectedServicesCount,
+          arraySort(groupUniqArrayIf(3)(ServiceName, ServiceName != '')) AS serviceNames,
           min(Timestamp) AS firstSeen,
           max(Timestamp) AS lastSeen
         FROM error_events
@@ -7188,13 +7204,14 @@ SELECT
         LIMIT 1
         FORMAT JSON
 
--- pipe:errors_by_type:unexpected-identity:baseline  [6d0a8ce0]
+-- pipe:errors_by_type:unexpected-identity:baseline  [fc6bbd41]
 SELECT
           toString(FingerprintHash) AS fingerprintHash,
           any(ErrorLabel) AS errorLabel,
           any(StatusMessage) AS sampleMessage,
           count() AS count,
           uniq(ServiceName) AS affectedServicesCount,
+          arraySort(groupUniqArrayIf(3)(ServiceName, ServiceName != '')) AS serviceNames,
           min(Timestamp) AS firstSeen,
           max(Timestamp) AS lastSeen
         FROM error_events_by_time
@@ -7259,7 +7276,7 @@ SELECT
         LIMIT 50
 FORMAT JSON
 
--- pipe:errors_summary:default:baseline  [49a76169]
+-- pipe:errors_summary:default:baseline  [dc269b0f]
 SELECT
           e.totalErrors AS totalErrors,
           s.totalSpans AS totalSpans,
@@ -7275,11 +7292,23 @@ SELECT
           AND Timestamp >= '2026-01-01 10:30:00'
           AND Timestamp <= '2026-01-03 14:15:00') AS e
         CROSS JOIN (SELECT
-          sum(TraceCount) AS totalSpans
+          sum(bucketSpans) AS totalSpans
+        FROM (
+SELECT
+          sum(TraceCount) AS bucketSpans
         FROM service_usage
         WHERE OrgId = 'org_sql_catalog'
-          AND Hour >= '2026-01-01 10:30:00'
-          AND Hour <= '2026-01-03 14:15:00') AS s
+          AND Hour >= if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR)
+          AND Hour < toStartOfHour(toDateTime('2026-01-03 14:15:00'))
+UNION ALL
+SELECT
+          count() AS bucketSpans
+        FROM traces
+        WHERE OrgId = 'org_sql_catalog'
+          AND Timestamp >= '2026-01-01 10:30:00'
+          AND Timestamp <= '2026-01-03 14:15:00'
+          AND (Timestamp < if(toDateTime('2026-01-01 10:30:00') = toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')), toStartOfHour(toDateTime('2026-01-01 10:30:00')) + INTERVAL 1 HOUR) OR Timestamp >= toStartOfHour(toDateTime('2026-01-03 14:15:00')))
+) AS usage) AS s
         FORMAT JSON
 
 -- pipe:errors_timeseries:default:baseline  [8ea53a5e]

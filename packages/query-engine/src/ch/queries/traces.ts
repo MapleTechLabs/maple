@@ -1342,10 +1342,11 @@ export function traceSummariesQuery(opts: TraceSummariesOpts) {
 	const hasSpanFilters = Object.entries(spanFilters).some(([, value]) =>
 		Array.isArray(value) ? value.length > 0 : value !== undefined,
 	)
+	// Match modes only shape the filters above, so they never force the semi-join on their own.
 	const matchingTraceIds = hasSpanFilters
 		? from(Traces)
 				.select(($) => ({ traceId: $.TraceId }))
-				.where(($) => tracesBaseWhereConditions($, spanFilters))
+				.where(($) => tracesBaseWhereConditions($, { ...spanFilters, matchModes: opts.matchModes }))
 				.groupBy("traceId")
 		: undefined
 
@@ -1839,6 +1840,50 @@ export function traceServicesByTraceIdsQuery(opts: TraceServicesByTraceIdsOpts) 
 			$.TraceId.in_(...opts.traceIds),
 			$.Timestamp.gte(param.dateTimeSeconds("startTime")),
 			$.Timestamp.lte(param.dateTimeSeconds("endTime")),
+		])
+		.groupBy("traceId")
+		.limit(opts.traceIds.length)
+		.format("JSON")
+}
+
+// Trace-list span stats
+
+export interface TraceSpanStatsByTraceIdsOpts {
+	readonly traceIds: readonly string[]
+}
+
+export interface TraceSpanStatsByTraceIdsOutput {
+	readonly traceId: string
+	/** Every span in the trace, as `traceListQuery` counts them. */
+	readonly spanCount: number
+	/** True root first when present, then the remaining services sorted. */
+	readonly services: readonly string[]
+}
+
+/**
+ * Span count and services for one already-paged set of traces, for lists whose
+ * page query reads the roots-only `trace_list_mv` and so cannot count spans.
+ * `trace_detail_spans` is keyed `(OrgId, TraceId, SpanId)`, so the page's ids
+ * are primary-key seeks; the window is padded ±1h as in `traceListQuery`.
+ */
+export function traceSpanStatsByTraceIdsQuery(opts: TraceSpanStatsByTraceIdsOpts) {
+	return from(TraceDetailSpans)
+		.select(($) => {
+			const rootOrder = CH.untypedExpr("(if(ParentSpanId = '', 0, 1), Timestamp)")
+			const rootServiceName = argMin($.ServiceName, rootOrder)
+			return {
+				traceId: $.TraceId,
+				spanCount: CH.count(),
+				services: CH.arrayDistinct(
+					CH.arrayPushFront(CH.arraySort(CH.groupUniqArray($.ServiceName)), rootServiceName),
+				),
+			}
+		})
+		.where(($) => [
+			$.OrgId.eq(param.string("orgId")),
+			$.TraceId.in_(...opts.traceIds),
+			$.Timestamp.gte(subtractHours(CH.toDateTime(param.dateTimeString("startTime")), CH.lit(1))),
+			$.Timestamp.lte(addHours(CH.toDateTime(param.dateTimeString("endTime")), CH.lit(1))),
 		])
 		.groupBy("traceId")
 		.limit(opts.traceIds.length)

@@ -7,16 +7,19 @@ import { latencyToneClass } from "@maple/ui/lib/latency-tone"
 import { ServiceDot } from "@maple/ui/components/service-dot"
 import { Spinner } from "@maple/ui/components/ui/spinner"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@maple/ui/components/ui/table"
-import { QueryBuilderLineChart } from "@maple/ui/components/charts/line/query-builder-line-chart"
-import { formatDuration, formatNumber } from "@maple/ui/lib/format"
+import { formatDuration, formatErrorRate, formatNumber } from "@maple/ui/lib/format"
 import { cn } from "@maple/ui/lib/utils"
 import {
 	useLocalServiceOperations,
 	useLocalServiceOperationsTimeseries,
 	useLocalServiceOverview,
 } from "../hooks/use-local-service-detail"
-import { navigate, useQueryParams } from "../lib/router"
-import { DEFAULT_RANGE } from "../lib/time"
+import { useRange } from "../hooks/use-range"
+import { useTimeWindow } from "../hooks/use-time-window"
+import { hrefFor } from "../lib/router"
+import { chartWindow, WIDEST_RANGE } from "../lib/time"
+import { LinkRow, RowLink } from "../components/row-link"
+import { SeriesChart } from "../components/series-chart"
 import { RefreshButton, TimeRangeSelect } from "../components/toolbar"
 import { EmptyState, ErrorState } from "../components/view-states"
 
@@ -24,63 +27,59 @@ const CHART_SERIES_LIMIT = 8
 
 interface ServiceDetailViewProps {
 	serviceName: string
+	backLabel: string
 	onBack: () => void
 }
 
-export function ServiceDetailView({ serviceName, onBack }: ServiceDetailViewProps) {
-	const [query, setParams] = useQueryParams()
-	const range = query.get("range") || DEFAULT_RANGE
+/**
+ * Drill-down to traces touching this service. Span scope: most services never
+ * own a trace's root span, so a root-scoped search would come back empty.
+ */
+function tracesHref(serviceName: string, range: string, spanName?: string): string {
+	const params = new URLSearchParams({ scope: "spans", service: serviceName, range })
+	if (spanName) params.set("span", spanName)
+	return hrefFor("/traces", params)
+}
 
-	const overview = useLocalServiceOverview(serviceName, range)
-	const operations = useLocalServiceOperations(serviceName, range)
+export function ServiceDetailView({ serviceName, backLabel, onBack }: ServiceDetailViewProps) {
+	const [range, setRange] = useRange()
+	const timeWindow = useTimeWindow(range)
+	const { bounds } = timeWindow
+
+	const overview = useLocalServiceOverview(serviceName, bounds)
+	const operations = useLocalServiceOperations(serviceName, bounds)
 	const topSpanNames = useMemo(
 		() => (operations.data ?? []).slice(0, CHART_SERIES_LIMIT).map((op) => op.spanName),
 		[operations.data],
 	)
-	const timeseries = useLocalServiceOperationsTimeseries(serviceName, topSpanNames, range)
+	const firstSeenMs = overview.data?.firstSeenMs ?? null
+	const chart = useMemo(() => chartWindow(bounds, firstSeenMs), [bounds, firstSeenMs])
+	const timeseries = useLocalServiceOperationsTimeseries(serviceName, topSpanNames, bounds, chart)
 
-	const chartData = useMemo(() => {
-		const byBucket = new Map<string, Record<string, unknown>>()
-		for (const row of timeseries.data ?? []) {
-			let bucketRow = byBucket.get(row.bucket)
-			if (!bucketRow) byBucket.set(row.bucket, (bucketRow = { bucket: row.bucket }))
-			bucketRow[row.spanName] = row.count
-		}
-		return [...byBucket.values()]
-	}, [timeseries.data])
-
-	const openTraces = (spanName?: string) => {
-		const params = new URLSearchParams()
-		params.set("service", serviceName)
-		if (range !== DEFAULT_RANGE) params.set("range", range)
-		if (spanName) params.set("span", spanName)
-		navigate("/traces", params)
-	}
-
-	const stats = overview.data
+	const stats = overview.data?.stats
 
 	return (
 		<div className="flex h-full flex-col">
-			<div className="flex shrink-0 items-center gap-3 border-b px-4 py-2">
+			<div className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-2 border-b px-4 py-2">
 				<Button variant="ghost" size="sm" onClick={onBack} className="gap-1.5">
 					<ArrowLeftIcon size={14} />
-					Services
+					{backLabel}
 				</Button>
 				<span className="flex min-w-0 items-center gap-2">
 					<ServiceDot serviceName={serviceName} />
 					<span className="truncate text-sm font-medium">{serviceName}</span>
 				</span>
-				{stats?.environments.map((environment) => (
+				{stats?.deploymentEnvironments.map((environment) => (
 					<Badge key={environment} variant="outline" className="px-1.5 py-0 text-[10px]">
 						{environment}
 					</Badge>
 				))}
 				<div className="ml-auto flex items-center gap-2">
-					<Button variant="outline" size="sm" onClick={() => openTraces()}>
+					<Button variant="outline" size="sm" render={<a href={tracesHref(serviceName, range)} />}>
 						View traces
 					</Button>
-					<RefreshButton />
-					<TimeRangeSelect value={range} onChange={(next) => setParams({ range: next })} />
+					<RefreshButton advance={timeWindow.advance} since={overview.dataUpdatedAt} />
+					<TimeRangeSelect value={range} onChange={setRange} />
 				</div>
 			</div>
 
@@ -92,10 +91,17 @@ export function ServiceDetailView({ serviceName, onBack }: ServiceDetailViewProp
 				) : overview.isError ? (
 					<ErrorState label="service" error={overview.error} onRetry={() => overview.refetch()} />
 				) : !stats ? (
-					<EmptyState
-						title="No spans in this range"
-						hint="Widen the time range, or send some traffic to this service."
-					/>
+					<div className="flex h-full flex-col items-center justify-center gap-3">
+						<EmptyState
+							title="No spans from this service in this range"
+							hint="Widen the time range, or send some traffic to this service."
+						/>
+						{range !== WIDEST_RANGE ? (
+							<Button variant="outline" size="sm" onClick={() => setRange(WIDEST_RANGE)}>
+								Widen to 30 days
+							</Button>
+						) : null}
+					</div>
 				) : (
 					<div className="space-y-6 p-4">
 						<section className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
@@ -107,7 +113,7 @@ export function ServiceDetailView({ serviceName, onBack }: ServiceDetailViewProp
 							/>
 							<StatCard
 								label="Error rate"
-								value={`${(stats.errorRate * 100).toFixed(1)}%`}
+								value={formatErrorRate(stats.errorRate)}
 								danger={stats.errorRate > 0.05}
 							/>
 							<StatCard
@@ -129,24 +135,12 @@ export function ServiceDetailView({ serviceName, onBack }: ServiceDetailViewProp
 
 						<section className="space-y-2">
 							<h3 className="text-sm font-medium">Throughput by operation</h3>
-							{timeseries.isPending && topSpanNames.length > 0 ? (
-								<div className="flex h-56 items-center justify-center rounded-md border">
-									<Spinner />
-								</div>
-							) : chartData.length < 2 ? (
-								<div className="flex h-56 items-center justify-center rounded-md border text-sm text-muted-foreground">
-									Not enough datapoints to chart this range.
-								</div>
-							) : (
-								<div className="rounded-md border p-3">
-									<QueryBuilderLineChart
-										data={chartData}
-										className="h-56 w-full"
-										legend="visible"
-										curveType="monotone"
-									/>
-								</div>
-							)}
+							<SeriesChart
+								points={timeseries.data}
+								window={chart}
+								fill="zero"
+								isPending={timeseries.isPending && topSpanNames.length > 0}
+							/>
 						</section>
 
 						<section className="space-y-2">
@@ -181,13 +175,14 @@ export function ServiceDetailView({ serviceName, onBack }: ServiceDetailViewProp
 										</TableHeader>
 										<TableBody>
 											{(operations.data ?? []).map((op) => (
-												<TableRow
-													key={op.spanName}
-													onClick={() => openTraces(op.spanName)}
-													className="cursor-pointer"
-												>
+												<LinkRow key={op.spanName}>
 													<TableCell className="max-w-96 truncate font-mono text-xs">
-														{op.spanName}
+														<RowLink
+															href={tracesHref(serviceName, range, op.spanName)}
+															label={`Traces with ${op.spanName}`}
+														>
+															{op.spanName}
+														</RowLink>
 													</TableCell>
 													<TableCell className="text-right tabular-nums">
 														{formatNumber(op.estimatedSpanCount || op.spanCount)}
@@ -203,7 +198,7 @@ export function ServiceDetailView({ serviceName, onBack }: ServiceDetailViewProp
 														)}
 													</TableCell>
 													<TableCell className="text-right tabular-nums">
-														{(op.errorRate * 100).toFixed(1)}%
+														{formatErrorRate(op.errorRate)}
 													</TableCell>
 													<TableCell className="text-right">
 														<LatencyValue ms={op.avgDurationMs} scale="avg" />
@@ -214,7 +209,7 @@ export function ServiceDetailView({ serviceName, onBack }: ServiceDetailViewProp
 													<TableCell className="text-right">
 														<LatencyValue ms={op.p95DurationMs} scale="p95" />
 													</TableCell>
-												</TableRow>
+												</LinkRow>
 											))}
 										</TableBody>
 									</Table>
@@ -237,7 +232,7 @@ function StatCard({
 	label: string
 	value: string
 	danger?: boolean
-	/** Applied after `danger`, so it wins — carries the latency magnitude ramp. */
+	/** Applied after `danger`, so it wins: carries the latency magnitude ramp. */
 	valueClassName?: string
 }) {
 	return (

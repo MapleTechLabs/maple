@@ -28,4 +28,17 @@ describe("compileLocalLogServicesQuery", () => {
 		expect(sql).toContain("FROM logs")
 		expect(sql).not.toContain("logs_aggregates_hourly")
 	})
+
+	it("narrows by severity and search but never by the service it is listing", () => {
+		const { sql } = Effect.runSync(
+			compileLocalLogServicesQuery("2026-07-30 13:05:00", "2026-07-30 14:05:00", {
+				severity: "ERROR",
+				search: "timeout",
+			}),
+		)
+
+		expect(sql).toContain("'ERROR'")
+		expect(sql).toContain("timeout")
+		expect(sql).not.toMatch(/ServiceName\s*=/)
+	})
 })

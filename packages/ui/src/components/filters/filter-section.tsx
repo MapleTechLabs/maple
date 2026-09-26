@@ -331,7 +331,7 @@ function FilterSectionBase({
 										id={`${title}-${option.name}`}
 										checked={selected.includes(option.name) || isExcluded}
 										indeterminate={isExcluded}
-										aria-label={isExcluded ? `${label} — excluded` : undefined}
+										aria-label={isExcluded ? `${label} (excluded)` : label}
 										className={cn(
 											// Tinted rather than filled. The included state is a solid
 											// primary block, and an exclusion painted the same weight in
@@ -569,6 +569,8 @@ export function SingleCheckboxFilter({
 			<Checkbox
 				id={`filter-${title}`}
 				checked={checked}
+				// The `<Label htmlFor>` below does not name Base UI's role=checkbox element.
+				aria-label={title}
 				onCheckedChange={(val) => onChange(val === true)}
 			/>
 			<Label

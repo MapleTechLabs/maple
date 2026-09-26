@@ -5,6 +5,7 @@ import {
 	spanSearchQuery,
 	traceListQuery,
 	traceServicesByTraceIdsQuery,
+	traceSpanStatsByTraceIdsQuery,
 	traceSummariesQuery,
 	tracesListQuery,
 	tracesRootListQuery,
@@ -51,6 +52,38 @@ describe("traceSummariesQuery", () => {
 		)
 		expect(sql).toMatch(/TraceId IN \(SELECT\s+TraceId AS traceId/)
 		expect(sql).toContain("SpanKind IN ('Server', 'Consumer')")
+	})
+
+	it("forwards contains match modes into the span filters", () => {
+		const { sql } = compileUnsafe(
+			traceSummariesQuery({ spanName: "checkout", matchModes: { spanName: "contains" } }),
+			baseParams,
+		)
+		expect(sql).toContain("positionCaseInsensitive(SpanName, 'checkout') > 0")
+		expect(sql).not.toContain("SpanName = 'checkout'")
+	})
+
+	it("does not add the span semi-join for match modes alone", () => {
+		const { sql } = compileUnsafe(
+			traceSummariesQuery({ matchModes: { spanName: "contains" } }),
+			baseParams,
+		)
+		expect(sql).not.toContain("FROM traces")
+	})
+})
+
+describe("traceSpanStatsByTraceIdsQuery", () => {
+	it("counts every span of the paged traces with primary-key seeks", () => {
+		const { sql } = compileUnsafe(traceSpanStatsByTraceIdsQuery({ traceIds: ["t1", "t2"] }), baseParams)
+		expect(sql).toContain("FROM trace_detail_spans")
+		expect(sql).toContain("OrgId = 'org_1'")
+		expect(sql).toContain("TraceId IN ('t1', 't2')")
+		expect(sql).toContain("count() AS spanCount")
+		expect(sql).toContain("AS services")
+		expect(sql).toContain("subtractHours(")
+		expect(sql).toContain("addHours(")
+		expect(sql).toContain("GROUP BY traceId")
+		expect(sql).toContain("LIMIT 2")
 	})
 })
 

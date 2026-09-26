@@ -3,12 +3,13 @@
 // DSL-based query definitions for error aggregation and timeseries.
 
 import { finiteOrZero } from "./format"
+import { edgeCondition, interiorConditions } from "./rollup-splice"
 import * as CH from "@maple-dev/effect-clickhouse/expr"
 // From the root, not `/expr`: these overloads take a `CHQuery`, keeping the
 // subquery's params, table names and column types checked.
 import { exists, inSubquery } from "@maple-dev/effect-clickhouse"
 import { param } from "@maple-dev/effect-clickhouse"
-import { from, fromQuery, type CHQuery, type ColumnAccessor } from "@maple-dev/effect-clickhouse"
+import { from, fromQuery, fromUnion, type CHQuery, type ColumnAccessor } from "@maple-dev/effect-clickhouse"
 import type { ColumnDefs } from "@maple-dev/effect-clickhouse/types"
 import * as T from "@maple-dev/effect-clickhouse/types"
 import { unionAll, type CHUnionQuery } from "@maple-dev/effect-clickhouse"
@@ -177,9 +178,14 @@ export interface ErrorsByTypeOutput {
 	readonly sampleMessage: string
 	readonly count: number
 	readonly affectedServicesCount: number
+	/** Up to three of the services that raised it, sorted; `affectedServicesCount` has the total. */
+	readonly serviceNames: readonly string[]
 	readonly firstSeen: string
 	readonly lastSeen: string
 }
+
+/** How many service names a by-type row carries; enough to name a small blast radius. */
+const ERRORS_BY_TYPE_SERVICE_NAMES = 3
 
 export function errorsByTypeQuery(opts: ErrorsByTypeOpts) {
 	return from(errorEventsTableForRecentScan(opts))
@@ -189,6 +195,9 @@ export function errorsByTypeQuery(opts: ErrorsByTypeOpts) {
 			sampleMessage: CH.any_($.StatusMessage),
 			count: CH.count(),
 			affectedServicesCount: CH.uniq($.ServiceName),
+			serviceNames: CH.arraySort(
+				CH.groupUniqArrayIf(ERRORS_BY_TYPE_SERVICE_NAMES)($.ServiceName, $.ServiceName.neq("")),
+			),
 			firstSeen: CH.min_($.Timestamp),
 			lastSeen: CH.max_($.Timestamp),
 		}))
@@ -965,17 +974,33 @@ export function errorsSummaryQuery(opts: ErrorsSummaryOpts) {
 		)
 	}
 
+	// The hourly usage rollup only answers whole hours inside the window; the
+	// partial hours at each end come from raw spans. Reading the rollup alone
+	// made any window shorter than an hour report 0 spans and a 0% error rate.
+	const wholeHours = from(ServiceUsage)
+		.select(($) => ({
+			bucketSpans: CH.sum($.TraceCount),
+		}))
+		.where(($) => [
+			$.OrgId.eq(param.string("orgId")),
+			...interiorConditions($.Hour),
+			opts.services?.length ? CH.inList($.ServiceName, opts.services) : undefined,
+		])
+	const partialHours = from(Traces)
+		.select(() => ({
+			bucketSpans: CH.count(),
+		}))
+		.where(($) => [
+			$.OrgId.eq(param.string("orgId")),
+			$.Timestamp.gte(param.dateTimeString("startTime")),
+			$.Timestamp.lte(param.dateTimeString("endTime")),
+			edgeCondition("Timestamp"),
+			opts.services?.length ? CH.inList($.ServiceName, opts.services) : undefined,
+		])
 	return buildResult(
-		from(ServiceUsage)
-			.select(($) => ({
-				totalSpans: CH.sum($.TraceCount),
-			}))
-			.where(($) => [
-				$.OrgId.eq(param.string("orgId")),
-				$.Hour.gte(param.dateTimeSeconds("startTime")),
-				$.Hour.lte(param.dateTimeSeconds("endTime")),
-				opts.services?.length ? CH.inList($.ServiceName, opts.services) : undefined,
-			]),
+		fromUnion(unionAll(wholeHours, partialHours), "usage").select(($) => ({
+			totalSpans: CH.sum($.bucketSpans),
+		})),
 	)
 }
 
@@ -1258,6 +1283,7 @@ export interface ErrorDetailTracesOpts {
 	fingerprintHash: string
 	rootOnly?: boolean
 	services?: readonly string[]
+	deploymentEnvs?: readonly string[]
 	limit?: number
 }
 
@@ -1307,6 +1333,7 @@ export function errorDetailTracesQuery(opts: ErrorDetailTracesOpts) {
 			$.Timestamp.lte(param.dateTimeSeconds("endTime")),
 			CH.whenTrue(!!opts.rootOnly, () => $.ParentSpanId.eq("")),
 			opts.services?.length ? CH.inList($.ServiceName, opts.services) : undefined,
+			opts.deploymentEnvs?.length ? CH.inList($.DeploymentEnv, opts.deploymentEnvs) : undefined,
 		])
 		.groupBy("TraceId")
 		// The TraceId tiebreak keeps both reads of this subquery (the IN set and
