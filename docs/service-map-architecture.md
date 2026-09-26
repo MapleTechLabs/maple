@@ -167,6 +167,35 @@ rebuild it. Warm/cool lighting uses a stable soft shadow map refreshed on geomet
 changes. Pause and reduced motion stop scene animation; HTML labels and the shared
 service inspector retain keyboard access.
 
+## Where the client code lives
+
+The data-agnostic map is shared by the cloud app and Maple Local and lives in
+`packages/ui/src/components/service-map/`: node, edge, namespace box, minimap,
+particles, `buildFlowElements`, the ELK layout, declutter, and
+`ServiceMapFlowCanvas`, which owns selection, layout, the toolbar and the legend.
+Hosts supply the rows, where drag positions and prefs are stored, and the
+selected-node panel. `apps/web`'s `ServiceMapCanvas` wires the warehouse bundle,
+per-org atoms, the 3D renderer and the integration panels. Maple Local
+(`apps/local-ui/src/views/service-map-view.tsx`) wires chDB queries and browser
+storage.
+
+In local mode the `maple start` server fills `service_map_edges_hourly` itself
+(`apps/cli/src/server/service-map-rollup.ts`). It shares the hour planning and
+per-hour queries with `ServiceMapRollupService` (`service-map-rollup.ts` in
+`@maple/query-engine`) and writes the same edge and address-resolution rows with
+`INSERT ... SELECT` into chDB. It ticks 60 seconds after start (so exporters
+can flush spans buffered while it was down) and then every 5 minutes, sealing
+each unsealed completed hour of the same 6-hour lookback once the hour has been
+over for 2 minutes. A span that arrives after its hour sealed is not added to
+the rollup, the same late-data limit cloud has. On
+the first tick it also catches up older completed hours back to the first
+traced hour or 7 days, whichever is shorter, newest first, at most 12 hour-joins
+per tick and every 30 seconds until done. Each hour runs inside the server's
+admission gate, so checkpoints and shutdown wait for at most one hour's join.
+Resolutions are written before the edges, so an hour is sealed only once both
+landed. Hours already sealed and retired UTC days are skipped. Local reads can
+therefore use `serviceDependenciesSQL` like cloud.
+
 ## Known-unresolved
 
 - The DB summary and its own chart use different windows for ranges ≤24h: the chart reads raw

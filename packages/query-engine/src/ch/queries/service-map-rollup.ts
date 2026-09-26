@@ -24,6 +24,59 @@ import { deploymentEnvExpr } from "@maple/domain/tinybird/semconv-renames"
 import { serviceMapEdgeJoinQuery } from "./service-map"
 import { CHNumber } from "../schema"
 import type { QueryBuilderError } from "@maple-dev/effect-clickhouse"
+import { formatWarehouseDateTime } from "../../datetime"
+
+// Hour planning shared by the cloud rollup service and the local server's
+// rollup, so both decide which hours to seal the same way.
+
+export const SERVICE_MAP_ROLLUP_HOUR_MS = 3_600_000
+
+/** Completed hours the rollup re-checks on every run; older unsealed hours age out. */
+export const SERVICE_MAP_ROLLUP_LOOKBACK_HOURS = 6
+
+/** Completed hour starts (epoch ms) in `[oldestHourMs, currentHourMs)`, oldest first. */
+export const serviceMapRollupCandidateHours = (
+	oldestHourMs: number,
+	currentHourMs: number,
+): ReadonlyArray<number> => {
+	const hours: number[] = []
+	for (let h = oldestHourMs; h < currentHourMs; h += SERVICE_MAP_ROLLUP_HOUR_MS) hours.push(h)
+	return hours
+}
+
+/** Unix-second hour starts returned by an existing-hours probe. */
+export const serviceMapHourSet = (rows: ReadonlyArray<ServiceMapEdgesExistingHour>): ReadonlySet<number> =>
+	new Set(rows.map((row) => Number(row.hourTs)))
+
+const hasHour = (hours: ReadonlySet<number>, hourMs: number): boolean => hours.has(Math.floor(hourMs / 1000))
+
+/** Candidates not yet sealed in `service_map_edges_hourly`. */
+export const serviceMapRollupMissingHours = (
+	candidates: ReadonlyArray<number>,
+	sealed: ReadonlySet<number>,
+): ReadonlyArray<number> => candidates.filter((hourMs) => !hasHour(sealed, hourMs))
+
+/** Sealed candidates with no address-resolution rows yet. */
+export const serviceMapResolutionRepairHours = (
+	candidates: ReadonlyArray<number>,
+	sealed: ReadonlySet<number>,
+	resolved: ReadonlySet<number>,
+): ReadonlyArray<number> =>
+	candidates.filter((hourMs) => hasHour(sealed, hourMs) && !hasHour(resolved, hourMs))
+
+/** Params for the per-hour edge and resolution rollups of the hour starting at `hourMs`. */
+export const serviceMapRollupHourParams = (orgId: string, hourMs: number): ServiceMapEdgesRollupParams => ({
+	orgId,
+	hourStart: formatWarehouseDateTime(hourMs),
+	hourEnd: formatWarehouseDateTime(hourMs + SERVICE_MAP_ROLLUP_HOUR_MS),
+})
+
+/** Params for the existing-hours probes over `[oldestHourMs, currentHourMs)`. */
+export const serviceMapRollupWindowParams = (orgId: string, oldestHourMs: number, currentHourMs: number) => ({
+	orgId,
+	startTime: formatWarehouseDateTime(oldestHourMs),
+	endTime: formatWarehouseDateTime(currentHourMs),
+})
 
 /** One pre-aggregated service-to-service edge bucket — mirrors the columns of
  * the `service_map_edges_hourly` ClickHouse table. */
