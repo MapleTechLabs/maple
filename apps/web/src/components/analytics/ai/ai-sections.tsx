@@ -168,7 +168,7 @@ export function AiReferralRanking({ ranks }: { ranks: ReadonlyArray<AiReferralRa
 						<ColumnHead label="Share" width="w-14" align="right" />
 						<ColumnHead
 							label="Change"
-							width="w-16"
+							width="w-20"
 							align="right"
 							hidden="hidden @min-[360px]/panel:flex"
 						/>
@@ -194,8 +194,8 @@ export function AiReferralRanking({ ranks }: { ranks: ReadonlyArray<AiReferralRa
 							<span className="w-14 text-right font-mono text-[11px] tabular-nums">
 								{formatPercent(rank.share)}
 							</span>
-							<span className="hidden w-16 justify-end font-mono text-[10px] tabular-nums @min-[360px]/panel:flex">
-								<ShareChange points={rank.shareDeltaPoints} />
+							<span className="hidden w-20 justify-end font-mono text-[10px] tabular-nums @min-[360px]/panel:flex">
+								<ShareChange share={rank.share} points={rank.shareDeltaPoints} />
 							</span>
 						</div>
 					))}
@@ -205,21 +205,26 @@ export function AiReferralRanking({ ranks }: { ranks: ReadonlyArray<AiReferralRa
 	)
 }
 
-function ShareChange({ points }: { points: number | null }) {
-	if (points === null) return <span className="text-muted-foreground/70">New</span>
-	const flat = Math.abs(points) < 0.05
+/**
+ * The share this assistant had in the previous period, not a signed delta: "from 64%"
+ * reads on its own, where "12.5 pts" (percentage points) needed explaining.
+ */
+function ShareChange({ share, points }: { share: number; points: number | null }) {
+	if (points === null) {
+		return (
+			<span className="text-muted-foreground/70" title="No visits from it in the previous period">
+				New
+			</span>
+		)
+	}
+	const before = share - points / 100
+	if (Math.abs(points) < 0.05) return <span className="text-muted-foreground/70">No change</span>
 	return (
 		<span
-			className={cn(
-				flat
-					? "text-muted-foreground/70"
-					: points > 0
-						? "text-[var(--severity-info)]"
-						: "text-[var(--severity-error)]",
-			)}
+			title={`${formatPercent(before)} of AI visits in the previous period, ${formatPercent(share)} now`}
+			className={points > 0 ? "text-[var(--severity-info)]" : "text-[var(--severity-error)]"}
 		>
-			<span aria-hidden>{flat ? "→" : points > 0 ? "↑" : "↓"}</span>
-			{Math.abs(points).toFixed(1)} pts
+			<span aria-hidden>{points > 0 ? "↑" : "↓"}</span> from {formatPercent(before)}
 		</span>
 	)
 }
