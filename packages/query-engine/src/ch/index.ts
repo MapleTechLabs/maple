@@ -184,6 +184,23 @@ export {
 	type ProductEventsFilters,
 } from "./queries/web-analytics"
 
+// Queries: Web Analytics AI tab (AI referrals and AI crawler fetches)
+export {
+	webAnalyticsAiReferralsQuery,
+	webAnalyticsAiCrawlersQuery,
+	webAnalyticsAiCrawlerFormatsQuery,
+	webAnalyticsAiCrawledPagesQuery,
+	aiReferralProductExpr,
+	aiContentFormatExpr,
+	type WebAnalyticsAiReferralsOpts,
+	type WebAnalyticsAiReferralsOutput,
+	type WebAnalyticsAiCrawlerFilters,
+	type WebAnalyticsAiCrawlersOutput,
+	type WebAnalyticsAiCrawlerFormatsOutput,
+	type WebAnalyticsAiCrawledPagesOpts,
+	type WebAnalyticsAiCrawledPagesOutput,
+} from "./queries/web-analytics-ai"
+
 // Queries — Product events (funnels over `product_events`)
 export {
 	productEventsFunnelQuery,

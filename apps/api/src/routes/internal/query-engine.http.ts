@@ -77,6 +77,8 @@ import {
 	WebAnalyticsPagesResponse,
 	WebAnalyticsEventsResponse,
 	WebAnalyticsBreakdownsResponse,
+	WebAnalyticsAiReferralsResponse,
+	WebAnalyticsAiCrawlersResponse,
 	ProductEventsFunnelResponse,
 	ProductEventsFunnelBreakdownResponse,
 	ProductEventsFunnelTimingResponse,
@@ -94,6 +96,7 @@ import {
 	SpanId,
 } from "@maple/domain/http"
 import { SESSION_LIVE_WINDOW_SECONDS } from "@maple/domain/query-engine"
+import { isAiContentFormat } from "@maple/domain/ai-traffic"
 import { Cause, Clock, Effect, Option, Schema } from "effect"
 import { QueryEngineService } from "@maple/backend/services/warehouse/QueryEngineService"
 import {
@@ -2112,6 +2115,71 @@ export const HttpQueryEngineLive = HttpApiBuilder.group(MapleInternalApi, "query
 								buckets[key].push({ name: String(row.name), count: Number(row.count) || 0 })
 						}
 						return new WebAnalyticsBreakdownsResponse({ data: buckets })
+					}),
+				)
+				.handle("webAnalyticsAiReferrals", ({ payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						const rows = yield* withProductEventsFallback(
+							(t, pl) => runQuery(Queries.webAnalyticsAiReferrals, t, pl),
+							(t, pl) => runQuery(Queries.webAnalyticsAiReferralsRaw, t, pl),
+							tenant,
+							payload,
+						)
+						return new WebAnalyticsAiReferralsResponse({
+							data: rows.map((row) => ({
+								bucket: String(row.bucket),
+								product: row.product,
+								sessions: Number(row.sessions) || 0,
+							})),
+						})
+					}),
+				)
+				// No raw fallback: `ai_crawler_requests` is the only source, and a cluster
+				// without migration 0033 answers 502 while the referral half still renders.
+				.handle("webAnalyticsAiCrawlers", ({ payload }) =>
+					Effect.gen(function* () {
+						const tenant = yield* CurrentTenant.Context
+						yield* warehouse.warmRoute(tenant)
+						const [crawlers, formats, pages] = yield* Effect.all(
+							[
+								runQuery(Queries.webAnalyticsAiCrawlers, tenant, payload),
+								runQuery(Queries.webAnalyticsAiCrawlerFormats, tenant, payload),
+								runQuery(Queries.webAnalyticsAiCrawledPages, tenant, payload),
+							],
+							{ concurrency: 3 },
+						)
+						return new WebAnalyticsAiCrawlersResponse({
+							data: {
+								crawlers: crawlers.map((row) => ({
+									crawler: row.crawler,
+									requests: Number(row.requests) || 0,
+									failedRequests: Number(row.failedRequests) || 0,
+									pages: Number(row.pages) || 0,
+									lastSeen: String(row.lastSeen),
+								})),
+								formats: formats.flatMap((row) =>
+									isAiContentFormat(row.format)
+										? [
+												{
+													format: row.format,
+													requests: Number(row.requests) || 0,
+													failedRequests: Number(row.failedRequests) || 0,
+													pages: Number(row.pages) || 0,
+													crawlers: row.crawlers,
+												},
+											]
+										: [],
+								),
+								pages: pages.map((row) => ({
+									host: row.host,
+									path: row.path,
+									requests: Number(row.requests) || 0,
+									crawlers: row.crawlers,
+									lastSeen: String(row.lastSeen),
+								})),
+							},
+						})
 					}),
 				)
 				// Funnels have no raw-`session_events` fallback: server and mobile

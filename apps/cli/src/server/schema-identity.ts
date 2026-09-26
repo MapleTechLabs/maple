@@ -21,6 +21,7 @@ import schemaV19Sql from "./schema/local-schema-v19.sql" with { type: "text" }
 import schemaV20Sql from "./schema/local-schema-v20.sql" with { type: "text" }
 import schemaV21Sql from "./schema/local-schema-v21.sql" with { type: "text" }
 import schemaV22Sql from "./schema/local-schema-v22.sql" with { type: "text" }
+import schemaV23Sql from "./schema/local-schema-v23.sql" with { type: "text" }
 import { schemaDigest as digestSchema, schemaFingerprint as fingerprintSchema } from "./store-version"
 import { buildLocalSchemaManifest, type LocalSchemaManifest } from "./schema-manifest"
 import { LOCAL_SCHEMA_VERSION } from "./local-schema-version"
@@ -87,6 +88,7 @@ const SNAPSHOT_SQL: ReadonlyArray<string> = [
 	schemaV20Sql,
 	schemaV21Sql,
 	schemaV22Sql,
+	schemaV23Sql,
 ]
 
 export interface LocalSchemaSnapshot {
@@ -166,6 +168,7 @@ export const LOCAL_SCHEMA_V11 = localSchemaIdentity(11)
 export const LOCAL_SCHEMA_V20 = localSchemaIdentity(20)
 export const LOCAL_SCHEMA_V21 = localSchemaIdentity(21)
 export const LOCAL_SCHEMA_V22 = localSchemaIdentity(22)
+export const LOCAL_SCHEMA_V23 = localSchemaIdentity(23)
 
 export const CURRENT_LOCAL_SCHEMA: LocalSchemaIdentity = Object.freeze({
 	version: LOCAL_SCHEMA_VERSION,

@@ -43,6 +43,7 @@ import * as releaseQueries from "../ch/queries/releases"
 import * as sessionEventQueries from "../ch/queries/session-events"
 import * as sessionReplayQueries from "../ch/queries/session-replays"
 import * as webAnalyticsQueries from "../ch/queries/web-analytics"
+import * as webAnalyticsAiQueries from "../ch/queries/web-analytics-ai"
 import * as productEventQueries from "../ch/queries/product-events"
 import * as productEventPathQueries from "../ch/queries/product-events-paths"
 import * as productEventExploreQueries from "../ch/queries/product-events-explore"
@@ -279,6 +280,7 @@ const QUERY_MODULES: Record<string, Record<string, unknown>> = {
 	"session-replays": sessionReplayQueries,
 	"top-operations": topOperationQueries,
 	"web-analytics": webAnalyticsQueries,
+	"web-analytics-ai": webAnalyticsAiQueries,
 	"product-events": productEventQueries,
 	"product-events-paths": productEventPathQueries,
 	"product-events-explore": productEventExploreQueries,

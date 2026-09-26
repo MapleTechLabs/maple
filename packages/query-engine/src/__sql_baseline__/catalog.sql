@@ -4765,6 +4765,168 @@ SELECT
         LIMIT 2
         FORMAT JSON
 
+-- builder:web-analytics-ai:webAnalyticsAiCrawledPagesQuery:default  [938997b6]
+SELECT
+          Host AS host,
+          Path AS path,
+          uniq(TraceId) AS requests,
+          arraySort(groupUniqArray(Crawler)) AS crawlers,
+          max(Timestamp) AS lastSeen
+        FROM ai_crawler_requests
+        WHERE OrgId = 'org_sql_catalog'
+          AND Timestamp >= '2026-01-01 10:30:00'
+          AND Timestamp <= '2026-01-03 14:15:00'
+          AND HttpStatus < 400
+        GROUP BY host, path
+        ORDER BY requests DESC
+        LIMIT 50
+        FORMAT JSON
+
+-- builder:web-analytics-ai:webAnalyticsAiCrawlerFormatsQuery:url-filtered  [d4b89adc]
+SELECT
+          multiIf(match(lower(Path), '\\.(md|mdx|markdown)$'), 'markdown', match(lower(Path), '(^|/)llms(-full)?\\.txt$'), 'llms', match(lower(Path), '(/[^/.]*|\\.html?)$'), 'html', 'other') AS format,
+          uniq(TraceId) AS requests,
+          uniqIf(TraceId, NOT (HttpStatus < 400)) AS failedRequests,
+          uniqIf(concat(Host, Path), HttpStatus < 400) AS pages,
+          arraySort(groupUniqArray(Crawler)) AS crawlers
+        FROM ai_crawler_requests
+        WHERE OrgId = 'org_sql_catalog'
+          AND Timestamp >= '2026-01-01 10:30:00'
+          AND Timestamp <= '2026-01-03 14:15:00'
+          AND Host = 'maple.dev'
+          AND Path = '/pricing'
+        GROUP BY format
+        FORMAT JSON
+
+-- builder:web-analytics-ai:webAnalyticsAiCrawlersQuery:default  [7b2521a3]
+SELECT
+          Crawler AS crawler,
+          uniq(TraceId) AS requests,
+          uniqIf(TraceId, NOT (HttpStatus < 400)) AS failedRequests,
+          uniqIf(concat(Host, Path), HttpStatus < 400) AS pages,
+          max(Timestamp) AS lastSeen
+        FROM ai_crawler_requests
+        WHERE OrgId = 'org_sql_catalog'
+          AND Timestamp >= '2026-01-01 10:30:00'
+          AND Timestamp <= '2026-01-03 14:15:00'
+        GROUP BY crawler
+        ORDER BY requests DESC
+        FORMAT JSON
+
+-- builder:web-analytics-ai:webAnalyticsAiReferralsQuery:default  [cce5afb7]
+SELECT
+          toStartOfInterval(StartTime, INTERVAL 3600 SECOND) AS bucket,
+          if(transform(replaceRegexpOne(lower(ReferrerHost), '^www\\.', ''), ['chatgpt.com', 'chat.openai.com', 'com.openai.chatgpt', 'claude.ai', 'com.anthropic.claude', 'gemini.google.com', 'bard.google.com', 'perplexity.ai', 'ai.perplexity.app.android', 'copilot.microsoft.com', 'copilot.cloud.microsoft', 'm365.cloud.microsoft', 'meta.ai', 'doubao.com', 'chat.deepseek.com', 'deepseek.com', 'grok.com', 'chat.mistral.ai', 'kimi.com', 'kimi.moonshot.cn'], ['chatgpt', 'chatgpt', 'chatgpt', 'claude', 'claude', 'gemini', 'gemini', 'perplexity', 'perplexity', 'copilot', 'copilot', 'copilot', 'meta', 'doubao', 'deepseek', 'deepseek', 'grok', 'mistral', 'kimi', 'kimi'], '') != '', transform(replaceRegexpOne(lower(ReferrerHost), '^www\\.', ''), ['chatgpt.com', 'chat.openai.com', 'com.openai.chatgpt', 'claude.ai', 'com.anthropic.claude', 'gemini.google.com', 'bard.google.com', 'perplexity.ai', 'ai.perplexity.app.android', 'copilot.microsoft.com', 'copilot.cloud.microsoft', 'm365.cloud.microsoft', 'meta.ai', 'doubao.com', 'chat.deepseek.com', 'deepseek.com', 'grok.com', 'chat.mistral.ai', 'kimi.com', 'kimi.moonshot.cn'], ['chatgpt', 'chatgpt', 'chatgpt', 'claude', 'claude', 'gemini', 'gemini', 'perplexity', 'perplexity', 'copilot', 'copilot', 'copilot', 'meta', 'doubao', 'deepseek', 'deepseek', 'grok', 'mistral', 'kimi', 'kimi'], ''), transform(lower(UtmSource), ['chatgpt.com', 'chatgpt', 'chat.openai.com', 'openai', 'claude.ai', 'claude', 'gemini.google.com', 'gemini', 'perplexity.ai', 'perplexity', 'copilot.microsoft.com', 'copilot.com', 'copilot', 'meta.ai', 'doubao.com', 'doubao', 'deepseek.com', 'deepseek', 'grok.com', 'grok', 'chat.mistral.ai', 'mistral', 'kimi.com', 'kimi'], ['chatgpt', 'chatgpt', 'chatgpt', 'chatgpt', 'claude', 'claude', 'gemini', 'gemini', 'perplexity', 'perplexity', 'copilot', 'copilot', 'copilot', 'meta', 'doubao', 'doubao', 'deepseek', 'deepseek', 'grok', 'grok', 'mistral', 'mistral', 'kimi', 'kimi'], '')) AS product,
+          uniq(SessionId) AS sessions
+        FROM session_replays
+        WHERE OrgId = 'org_sql_catalog'
+          AND StartTime >= '2026-01-01 10:30:00'
+          AND StartTime <= '2026-01-03 14:15:00'
+          AND (replaceRegexpOne(lower(ReferrerHost), '^www\\.', '') IN ('chatgpt.com', 'chat.openai.com', 'com.openai.chatgpt', 'claude.ai', 'com.anthropic.claude', 'gemini.google.com', 'bard.google.com', 'perplexity.ai', 'ai.perplexity.app.android', 'copilot.microsoft.com', 'copilot.cloud.microsoft', 'm365.cloud.microsoft', 'meta.ai', 'doubao.com', 'chat.deepseek.com', 'deepseek.com', 'grok.com', 'chat.mistral.ai', 'kimi.com', 'kimi.moonshot.cn') OR lower(UtmSource) IN ('chatgpt.com', 'chatgpt', 'chat.openai.com', 'openai', 'claude.ai', 'claude', 'gemini.google.com', 'gemini', 'perplexity.ai', 'perplexity', 'copilot.microsoft.com', 'copilot.com', 'copilot', 'meta.ai', 'doubao.com', 'doubao', 'deepseek.com', 'deepseek', 'grok.com', 'grok', 'chat.mistral.ai', 'mistral', 'kimi.com', 'kimi'))
+        GROUP BY bucket, product
+        ORDER BY bucket ASC
+        FORMAT JSON
+
+-- builder:web-analytics-ai:webAnalyticsAiReferralsQuery:default-rollup  [cce5afb7]
+SELECT
+          toStartOfInterval(StartTime, INTERVAL 3600 SECOND) AS bucket,
+          if(transform(replaceRegexpOne(lower(ReferrerHost), '^www\\.', ''), ['chatgpt.com', 'chat.openai.com', 'com.openai.chatgpt', 'claude.ai', 'com.anthropic.claude', 'gemini.google.com', 'bard.google.com', 'perplexity.ai', 'ai.perplexity.app.android', 'copilot.microsoft.com', 'copilot.cloud.microsoft', 'm365.cloud.microsoft', 'meta.ai', 'doubao.com', 'chat.deepseek.com', 'deepseek.com', 'grok.com', 'chat.mistral.ai', 'kimi.com', 'kimi.moonshot.cn'], ['chatgpt', 'chatgpt', 'chatgpt', 'claude', 'claude', 'gemini', 'gemini', 'perplexity', 'perplexity', 'copilot', 'copilot', 'copilot', 'meta', 'doubao', 'deepseek', 'deepseek', 'grok', 'mistral', 'kimi', 'kimi'], '') != '', transform(replaceRegexpOne(lower(ReferrerHost), '^www\\.', ''), ['chatgpt.com', 'chat.openai.com', 'com.openai.chatgpt', 'claude.ai', 'com.anthropic.claude', 'gemini.google.com', 'bard.google.com', 'perplexity.ai', 'ai.perplexity.app.android', 'copilot.microsoft.com', 'copilot.cloud.microsoft', 'm365.cloud.microsoft', 'meta.ai', 'doubao.com', 'chat.deepseek.com', 'deepseek.com', 'grok.com', 'chat.mistral.ai', 'kimi.com', 'kimi.moonshot.cn'], ['chatgpt', 'chatgpt', 'chatgpt', 'claude', 'claude', 'gemini', 'gemini', 'perplexity', 'perplexity', 'copilot', 'copilot', 'copilot', 'meta', 'doubao', 'deepseek', 'deepseek', 'grok', 'mistral', 'kimi', 'kimi'], ''), transform(lower(UtmSource), ['chatgpt.com', 'chatgpt', 'chat.openai.com', 'openai', 'claude.ai', 'claude', 'gemini.google.com', 'gemini', 'perplexity.ai', 'perplexity', 'copilot.microsoft.com', 'copilot.com', 'copilot', 'meta.ai', 'doubao.com', 'doubao', 'deepseek.com', 'deepseek', 'grok.com', 'grok', 'chat.mistral.ai', 'mistral', 'kimi.com', 'kimi'], ['chatgpt', 'chatgpt', 'chatgpt', 'chatgpt', 'claude', 'claude', 'gemini', 'gemini', 'perplexity', 'perplexity', 'copilot', 'copilot', 'copilot', 'meta', 'doubao', 'doubao', 'deepseek', 'deepseek', 'grok', 'grok', 'mistral', 'mistral', 'kimi', 'kimi'], '')) AS product,
+          uniq(SessionId) AS sessions
+        FROM session_replays
+        WHERE OrgId = 'org_sql_catalog'
+          AND StartTime >= '2026-01-01 10:30:00'
+          AND StartTime <= '2026-01-03 14:15:00'
+          AND (replaceRegexpOne(lower(ReferrerHost), '^www\\.', '') IN ('chatgpt.com', 'chat.openai.com', 'com.openai.chatgpt', 'claude.ai', 'com.anthropic.claude', 'gemini.google.com', 'bard.google.com', 'perplexity.ai', 'ai.perplexity.app.android', 'copilot.microsoft.com', 'copilot.cloud.microsoft', 'm365.cloud.microsoft', 'meta.ai', 'doubao.com', 'chat.deepseek.com', 'deepseek.com', 'grok.com', 'chat.mistral.ai', 'kimi.com', 'kimi.moonshot.cn') OR lower(UtmSource) IN ('chatgpt.com', 'chatgpt', 'chat.openai.com', 'openai', 'claude.ai', 'claude', 'gemini.google.com', 'gemini', 'perplexity.ai', 'perplexity', 'copilot.microsoft.com', 'copilot.com', 'copilot', 'meta.ai', 'doubao.com', 'doubao', 'deepseek.com', 'deepseek', 'grok.com', 'grok', 'chat.mistral.ai', 'mistral', 'kimi.com', 'kimi'))
+        GROUP BY bucket, product
+        ORDER BY bucket ASC
+        FORMAT JSON
+
+-- builder:web-analytics-ai:webAnalyticsAiReferralsQuery:filtered  [f97c96e3]
+SELECT
+          toStartOfInterval(StartTime, INTERVAL 3600 SECOND) AS bucket,
+          if(transform(replaceRegexpOne(lower(ReferrerHost), '^www\\.', ''), ['chatgpt.com', 'chat.openai.com', 'com.openai.chatgpt', 'claude.ai', 'com.anthropic.claude', 'gemini.google.com', 'bard.google.com', 'perplexity.ai', 'ai.perplexity.app.android', 'copilot.microsoft.com', 'copilot.cloud.microsoft', 'm365.cloud.microsoft', 'meta.ai', 'doubao.com', 'chat.deepseek.com', 'deepseek.com', 'grok.com', 'chat.mistral.ai', 'kimi.com', 'kimi.moonshot.cn'], ['chatgpt', 'chatgpt', 'chatgpt', 'claude', 'claude', 'gemini', 'gemini', 'perplexity', 'perplexity', 'copilot', 'copilot', 'copilot', 'meta', 'doubao', 'deepseek', 'deepseek', 'grok', 'mistral', 'kimi', 'kimi'], '') != '', transform(replaceRegexpOne(lower(ReferrerHost), '^www\\.', ''), ['chatgpt.com', 'chat.openai.com', 'com.openai.chatgpt', 'claude.ai', 'com.anthropic.claude', 'gemini.google.com', 'bard.google.com', 'perplexity.ai', 'ai.perplexity.app.android', 'copilot.microsoft.com', 'copilot.cloud.microsoft', 'm365.cloud.microsoft', 'meta.ai', 'doubao.com', 'chat.deepseek.com', 'deepseek.com', 'grok.com', 'chat.mistral.ai', 'kimi.com', 'kimi.moonshot.cn'], ['chatgpt', 'chatgpt', 'chatgpt', 'claude', 'claude', 'gemini', 'gemini', 'perplexity', 'perplexity', 'copilot', 'copilot', 'copilot', 'meta', 'doubao', 'deepseek', 'deepseek', 'grok', 'mistral', 'kimi', 'kimi'], ''), transform(lower(UtmSource), ['chatgpt.com', 'chatgpt', 'chat.openai.com', 'openai', 'claude.ai', 'claude', 'gemini.google.com', 'gemini', 'perplexity.ai', 'perplexity', 'copilot.microsoft.com', 'copilot.com', 'copilot', 'meta.ai', 'doubao.com', 'doubao', 'deepseek.com', 'deepseek', 'grok.com', 'grok', 'chat.mistral.ai', 'mistral', 'kimi.com', 'kimi'], ['chatgpt', 'chatgpt', 'chatgpt', 'chatgpt', 'claude', 'claude', 'gemini', 'gemini', 'perplexity', 'perplexity', 'copilot', 'copilot', 'copilot', 'meta', 'doubao', 'doubao', 'deepseek', 'deepseek', 'grok', 'grok', 'mistral', 'mistral', 'kimi', 'kimi'], '')) AS product,
+          uniq(SessionId) AS sessions
+        FROM session_replays
+        WHERE OrgId = 'org_sql_catalog'
+          AND StartTime >= '2026-01-01 10:30:00'
+          AND StartTime <= '2026-01-03 14:15:00'
+          AND SessionId IN (SELECT
+          SessionId AS sessionId
+        FROM session_events
+        WHERE OrgId = 'org_sql_catalog'
+          AND Timestamp >= '2026-01-01 10:30:00'
+          AND Timestamp <= '2026-01-03 14:15:00'
+          AND Type = 'navigation'
+          AND domain(Url) = 'maple.dev'
+          AND path(Url) = '/pricing'
+        GROUP BY sessionId)
+          AND ReferrerHost = 't.co'
+          AND Country = 'DE'
+          AND DeviceType = 'desktop'
+          AND BrowserName = 'Chrome'
+          AND OsName = 'macOS'
+          AND Language = 'en-US'
+          AND UtmSource = 'twitter'
+          AND UtmMedium = 'social'
+          AND UtmCampaign = 'launch'
+          AND VisitorIsNew = 1
+          AND SessionId IN (SELECT
+          SessionId AS sessionId
+        FROM session_events
+        WHERE OrgId = 'org_sql_catalog'
+          AND Timestamp >= '2026-01-01 10:30:00'
+          AND Timestamp <= '2026-01-03 14:15:00'
+          AND Type = 'custom'
+          AND Message = 'signup_started'
+        GROUP BY sessionId)
+          AND (replaceRegexpOne(lower(ReferrerHost), '^www\\.', '') IN ('chatgpt.com', 'chat.openai.com', 'com.openai.chatgpt', 'claude.ai', 'com.anthropic.claude', 'gemini.google.com', 'bard.google.com', 'perplexity.ai', 'ai.perplexity.app.android', 'copilot.microsoft.com', 'copilot.cloud.microsoft', 'm365.cloud.microsoft', 'meta.ai', 'doubao.com', 'chat.deepseek.com', 'deepseek.com', 'grok.com', 'chat.mistral.ai', 'kimi.com', 'kimi.moonshot.cn') OR lower(UtmSource) IN ('chatgpt.com', 'chatgpt', 'chat.openai.com', 'openai', 'claude.ai', 'claude', 'gemini.google.com', 'gemini', 'perplexity.ai', 'perplexity', 'copilot.microsoft.com', 'copilot.com', 'copilot', 'meta.ai', 'doubao.com', 'doubao', 'deepseek.com', 'deepseek', 'grok.com', 'grok', 'chat.mistral.ai', 'mistral', 'kimi.com', 'kimi'))
+        GROUP BY bucket, product
+        ORDER BY bucket ASC
+        FORMAT JSON
+
+-- builder:web-analytics-ai:webAnalyticsAiReferralsQuery:filtered-rollup  [f59047ac]
+SELECT
+          toStartOfInterval(StartTime, INTERVAL 3600 SECOND) AS bucket,
+          if(transform(replaceRegexpOne(lower(ReferrerHost), '^www\\.', ''), ['chatgpt.com', 'chat.openai.com', 'com.openai.chatgpt', 'claude.ai', 'com.anthropic.claude', 'gemini.google.com', 'bard.google.com', 'perplexity.ai', 'ai.perplexity.app.android', 'copilot.microsoft.com', 'copilot.cloud.microsoft', 'm365.cloud.microsoft', 'meta.ai', 'doubao.com', 'chat.deepseek.com', 'deepseek.com', 'grok.com', 'chat.mistral.ai', 'kimi.com', 'kimi.moonshot.cn'], ['chatgpt', 'chatgpt', 'chatgpt', 'claude', 'claude', 'gemini', 'gemini', 'perplexity', 'perplexity', 'copilot', 'copilot', 'copilot', 'meta', 'doubao', 'deepseek', 'deepseek', 'grok', 'mistral', 'kimi', 'kimi'], '') != '', transform(replaceRegexpOne(lower(ReferrerHost), '^www\\.', ''), ['chatgpt.com', 'chat.openai.com', 'com.openai.chatgpt', 'claude.ai', 'com.anthropic.claude', 'gemini.google.com', 'bard.google.com', 'perplexity.ai', 'ai.perplexity.app.android', 'copilot.microsoft.com', 'copilot.cloud.microsoft', 'm365.cloud.microsoft', 'meta.ai', 'doubao.com', 'chat.deepseek.com', 'deepseek.com', 'grok.com', 'chat.mistral.ai', 'kimi.com', 'kimi.moonshot.cn'], ['chatgpt', 'chatgpt', 'chatgpt', 'claude', 'claude', 'gemini', 'gemini', 'perplexity', 'perplexity', 'copilot', 'copilot', 'copilot', 'meta', 'doubao', 'deepseek', 'deepseek', 'grok', 'mistral', 'kimi', 'kimi'], ''), transform(lower(UtmSource), ['chatgpt.com', 'chatgpt', 'chat.openai.com', 'openai', 'claude.ai', 'claude', 'gemini.google.com', 'gemini', 'perplexity.ai', 'perplexity', 'copilot.microsoft.com', 'copilot.com', 'copilot', 'meta.ai', 'doubao.com', 'doubao', 'deepseek.com', 'deepseek', 'grok.com', 'grok', 'chat.mistral.ai', 'mistral', 'kimi.com', 'kimi'], ['chatgpt', 'chatgpt', 'chatgpt', 'chatgpt', 'claude', 'claude', 'gemini', 'gemini', 'perplexity', 'perplexity', 'copilot', 'copilot', 'copilot', 'meta', 'doubao', 'doubao', 'deepseek', 'deepseek', 'grok', 'grok', 'mistral', 'mistral', 'kimi', 'kimi'], '')) AS product,
+          uniq(SessionId) AS sessions
+        FROM session_replays
+        WHERE OrgId = 'org_sql_catalog'
+          AND StartTime >= '2026-01-01 10:30:00'
+          AND StartTime <= '2026-01-03 14:15:00'
+          AND SessionId IN (SELECT
+          SessionId AS sessionId
+        FROM product_events
+        WHERE OrgId = 'org_sql_catalog'
+          AND Timestamp >= '2026-01-01 10:30:00'
+          AND Timestamp <= '2026-01-03 14:15:00'
+          AND Kind = 'navigation'
+          AND Host = 'maple.dev'
+          AND PagePath = '/pricing'
+        GROUP BY sessionId)
+          AND ReferrerHost = 't.co'
+          AND Country = 'DE'
+          AND DeviceType = 'desktop'
+          AND BrowserName = 'Chrome'
+          AND OsName = 'macOS'
+          AND Language = 'en-US'
+          AND UtmSource = 'twitter'
+          AND UtmMedium = 'social'
+          AND UtmCampaign = 'launch'
+          AND VisitorIsNew = 1
+          AND SessionId IN (SELECT
+          SessionId AS sessionId
+        FROM product_events
+        WHERE OrgId = 'org_sql_catalog'
+          AND Timestamp >= '2026-01-01 10:30:00'
+          AND Timestamp <= '2026-01-03 14:15:00'
+          AND Kind = 'custom'
+          AND EventName = 'signup_started'
+        GROUP BY sessionId)
+          AND (replaceRegexpOne(lower(ReferrerHost), '^www\\.', '') IN ('chatgpt.com', 'chat.openai.com', 'com.openai.chatgpt', 'claude.ai', 'com.anthropic.claude', 'gemini.google.com', 'bard.google.com', 'perplexity.ai', 'ai.perplexity.app.android', 'copilot.microsoft.com', 'copilot.cloud.microsoft', 'm365.cloud.microsoft', 'meta.ai', 'doubao.com', 'chat.deepseek.com', 'deepseek.com', 'grok.com', 'chat.mistral.ai', 'kimi.com', 'kimi.moonshot.cn') OR lower(UtmSource) IN ('chatgpt.com', 'chatgpt', 'chat.openai.com', 'openai', 'claude.ai', 'claude', 'gemini.google.com', 'gemini', 'perplexity.ai', 'perplexity', 'copilot.microsoft.com', 'copilot.com', 'copilot', 'meta.ai', 'doubao.com', 'doubao', 'deepseek.com', 'deepseek', 'grok.com', 'grok', 'chat.mistral.ai', 'mistral', 'kimi.com', 'kimi'))
+        GROUP BY bucket, product
+        ORDER BY bucket ASC
+        FORMAT JSON
+
 -- builder:web-analytics:webAnalyticsBreakdownsQuery:all-dimensions-filtered  [dd21e64d]
 SELECT
           if(ReferrerHost = '', '(none)', ReferrerHost) AS name,

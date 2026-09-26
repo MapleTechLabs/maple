@@ -39,6 +39,12 @@ const TABLE_NOTES: Record<string, ReadonlyArray<string>> = {
 		"Holds only the agent spans, and only their identity — for every span of a detected trace, or for anything it does not carry (`StatusCode`, the tool call's arguments and result, `gen_ai.usage.*` per key), collect `TraceId`s here first, then read `trace_detail_spans` with `TraceId IN (…)` AND a `Timestamp` window.",
 		"Sorting key: `(OrgId, Timestamp, TraceId)`; filled forward by its MV, so windows predating the cluster's schema apply under-report.",
 	],
+	ai_crawler_requests: [
+		"Server spans whose user agent names an AI crawler (GPTBot, OAI-SearchBot, ChatGPT-User, ClaudeBot, Claude-SearchBot, Claude-User, PerplexityBot, Meta-ExternalAgent, Bytespider, CCBot, Amazonbot, ...), with `Crawler` (display name), `Host`, `Path` (no query string) and `HttpStatus` pre-extracted. ALWAYS prefer this over `traces` + `SpanAttributes['user_agent.original']`, which times out past about two days.",
+		"One row per SPAN: a proxied request has several Server spans in one trace, so count requests as `uniq(TraceId)`, never `count()`.",
+		"Scanners borrow crawler user agents and mostly get 404s: count pages actually read with `HttpStatus < 400` (0 means the span carried no status).",
+		"Sorting key: `(OrgId, Timestamp, TraceId)`; filled forward by its MV from migration 0033, never backfilled.",
+	],
 	service_overview_spans: [
 		"Pre-materialized projection of entry-point spans only (Server/Consumer kinds + root spans). Use for per-service request count, error rate, p50/p95/p99 latency.",
 		"`Duration` is NANOSECONDS — divide by 1e6 for ms.",

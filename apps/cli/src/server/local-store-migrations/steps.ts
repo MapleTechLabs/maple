@@ -1024,5 +1024,33 @@ export const LOCAL_STORE_STEPS: ReadonlyArray<StepSpec> = [
 			},
 		],
 	},
+	{
+		// Both objects are new, so the bootstrap's IF NOT EXISTS CREATEs are the whole edge.
+		id: "local-0022-to-0023-ai-crawler-requests",
+		from: 22,
+		to: 23,
+		description:
+			"Create ai_crawler_requests and its materialized view so the Web Analytics AI tab reads AI crawler fetches without scanning raw traces",
+		clonedBefore: "any DDL runs",
+		plan: [
+			[
+				"create-ai-crawler-requests",
+				"Create ai_crawler_requests and ai_crawler_requests_mv via the v23 bootstrap (both new, IF NOT EXISTS)",
+			],
+		],
+		verifies: "Verify the v23 physical schema and the retained raw telemetry counts",
+		dispositions: [
+			{
+				name: "ai_crawler_requests",
+				classification: "derived",
+				disposition: "rebuild-within-retention-horizon",
+				guarantee:
+					"The projection accrues for spans ingested after the migration; older crawler spans stay in raw traces but are invisible to the AI tab until they age out.",
+				preservationInterval: "from the migration forward",
+				sourceRetentionDays: 30,
+				targetRetentionDays: 30,
+			},
+		],
+	},
 	// local-schema:bump appends the next step above this line.
 ]

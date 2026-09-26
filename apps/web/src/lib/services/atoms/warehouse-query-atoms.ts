@@ -130,6 +130,8 @@ import {
 	getAiToolTotals,
 } from "@/api/warehouse/ai-session-tools"
 import {
+	getWebAnalyticsAiCrawlers,
+	getWebAnalyticsAiReferrals,
 	getWebAnalyticsBreakdowns,
 	getWebAnalyticsEvents,
 	getWebAnalyticsLive,
@@ -433,6 +435,15 @@ export const webAnalyticsEventsResultAtom = makeQueryAtomFamily(getWebAnalyticsE
 
 export const webAnalyticsBreakdownsResultAtom = makeQueryAtomFamily(getWebAnalyticsBreakdowns, {
 	staleTime: 30_000,
+})
+
+export const webAnalyticsAiReferralsResultAtom = makeQueryAtomFamily(getWebAnalyticsAiReferrals, {
+	staleTime: 30_000,
+})
+
+// Crawlers visit a few times a day at most; a minute of staleness hides nothing.
+export const webAnalyticsAiCrawlersResultAtom = makeQueryAtomFamily(getWebAnalyticsAiCrawlers, {
+	staleTime: 60_000,
 })
 
 // The event-name list backs the step builder's autocomplete and changes only

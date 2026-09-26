@@ -37,6 +37,7 @@ import { migration_0028_product_events_from_traces } from "./0028_product_events
 import { migration_0030_error_events_attribute_fallback } from "./0030_error_events_attribute_fallback"
 import { migration_0031_ai_trace_index_list_columns } from "./0031_ai_trace_index_list_columns"
 import { migration_0032_ai_trace_index_tool_detail_columns } from "./0032_ai_trace_index_tool_detail_columns"
+import { migration_0033_ai_crawler_requests } from "./0033_ai_crawler_requests"
 import { clickHouseSchemaVersion, latestMigrationVersion, migrations } from "./index"
 
 const backfills = migration_0004_service_namespace_projections.statements.filter(
@@ -53,10 +54,10 @@ describe("ClickHouse migrations", () => {
 	it("keeps migrations ordered by version", () => {
 		expect(migrations.map((m) => m.version)).toEqual([
 			1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27,
-			28, 29, 30, 31, 32,
+			28, 29, 30, 31, 32, 33,
 		])
-		expect(migrations.at(-1)).toBe(migration_0032_ai_trace_index_tool_detail_columns)
-		expect(latestMigrationVersion).toBe(32)
+		expect(migrations.at(-1)).toBe(migration_0033_ai_crawler_requests)
+		expect(latestMigrationVersion).toBe(33)
 		// 0010 and 0014-0020 are read-path only and skipped by the ingest-gating
 		// version; 0021 is not — the gateway writes `session_events`' new identity
 		// columns and `product_events` directly, so a BYO-CH org must apply it
@@ -89,6 +90,8 @@ describe("ClickHouse migrations", () => {
 		// 0031 and 0032 widen the same MV-populated ai_trace_index again.
 		expect(migration_0031_ai_trace_index_list_columns.requiredForIngest).toBe(false)
 		expect(migration_0032_ai_trace_index_tool_detail_columns.requiredForIngest).toBe(false)
+		// 0033 adds the MV-populated ai_crawler_requests.
+		expect(migration_0033_ai_crawler_requests.requiredForIngest).toBe(false)
 	})
 
 	it("recreates both error-events MVs with the span-attribute exception fallback", () => {
@@ -823,6 +826,22 @@ describe("migration 0031 — ai_trace_index list columns", () => {
 	it("does not backfill and does not gate ingest", () => {
 		expect(migration.requiredForIngest).toBe(false)
 		expect(migration.statements.some(isBackfill)).toBe(false)
+	})
+})
+
+describe("migration 0033: ai_crawler_requests", () => {
+	it("creates the table before the view that fills it, with no backfill", () => {
+		const [table, view, ...rest] = migration_0033_ai_crawler_requests.statements
+		expect(rest).toEqual([])
+		expect(table).toMatch(/^CREATE TABLE IF NOT EXISTS ai_crawler_requests \(/)
+		expect(view).toMatch(
+			/^CREATE MATERIALIZED VIEW IF NOT EXISTS ai_crawler_requests_mv TO ai_crawler_requests AS/,
+		)
+		// The view maps to the table by name, so every column must be projected.
+		for (const column of ["Crawler", "Host", "Path", "HttpStatus"]) {
+			expect(view).toContain(` AS ${column}`)
+		}
+		expect(view).toContain("WHERE SpanKind = 'Server'")
 	})
 })
 

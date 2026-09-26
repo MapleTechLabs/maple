@@ -157,6 +157,21 @@ export const AiTraceIndex = table("ai_trace_index", {
 	ErrorFingerprint: T.uint64,
 })
 
+/**
+ * Server spans from AI crawlers (migration 0033), one row per span. A proxied
+ * request has several spans in one trace, so requests are `uniq(TraceId)`.
+ */
+export const AiCrawlerRequests = table("ai_crawler_requests", {
+	OrgId: orgId,
+	Timestamp: dateTime64,
+	TraceId: T.string,
+	ServiceName: T.string,
+	Crawler: T.string,
+	Host: T.string,
+	Path: T.string,
+	HttpStatus: T.uint16,
+})
+
 export const TraceListMv = table("trace_list_mv", {
 	OrgId: orgId,
 	TraceId: T.string,

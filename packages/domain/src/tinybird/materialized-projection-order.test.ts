@@ -110,6 +110,7 @@ describe("materialized projection order", () => {
 	it("keeps materialized projections aligned with target datasource column order", () => {
 		const targets = [
 			["ai_trace_index", "ai_trace_index_mv"],
+			["ai_crawler_requests", "ai_crawler_requests_mv"],
 			["service_map_edges_hourly", "service_map_edges_hourly_ingest_mv"],
 			["service_overview_spans", "service_overview_spans_mv"],
 			["service_overview_hourly", "service_overview_hourly_mv"],
